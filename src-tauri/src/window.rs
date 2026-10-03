@@ -44,6 +44,7 @@ pub fn open_settings(app: AppHandle) -> Result<(), String> {
         .inner_size(600.0, 500.0)
         .center()
         .resizable(true)
+        .decorations(false)
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -62,9 +63,6 @@ pub fn expand_orb_panel(app: AppHandle) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
-        window
-            .set_ignore_cursor_events(false)
-            .map_err(|e| e.to_string())?;
         info!("Orb panel expanded");
     }
     Ok(())
@@ -78,9 +76,6 @@ pub fn collapse_orb_panel(app: AppHandle) -> Result<(), String> {
                 ORB_COLLAPSED_SIZE,
                 ORB_COLLAPSED_SIZE,
             ))
-            .map_err(|e| e.to_string())?;
-        window
-            .set_ignore_cursor_events(true)
             .map_err(|e| e.to_string())?;
         info!("Orb panel collapsed");
     }

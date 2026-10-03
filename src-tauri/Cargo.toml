@@ -1,7 +1,13 @@
+[package]
+name = "assistant-app"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
 [workspace]
 resolver = "2"
 members = [
-    "crates/assistant-app",
     "crates/assistant-config",
     "crates/assistant-orb",
     "crates/assistant-providers",
@@ -36,6 +42,27 @@ assistant-providers = { path = "crates/assistant-providers" }
 assistant-agent = { path = "crates/assistant-agent" }
 assistant-storage = { path = "crates/assistant-storage" }
 assistant-i18n = { path = "crates/assistant-i18n" }
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+tauri = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+tauri-plugin-sql = { workspace = true }
+tauri-plugin-log = { workspace = true }
+tauri-plugin-single-instance = { workspace = true }
+mouse_position = { workspace = true }
+
+assistant-config = { workspace = true }
+assistant-orb = { workspace = true }
+assistant-providers = { workspace = true }
+assistant-agent = { workspace = true }
+assistant-storage = { workspace = true }
+assistant-i18n = { workspace = true }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
 
 [profile.release]
 codegen-units = 1

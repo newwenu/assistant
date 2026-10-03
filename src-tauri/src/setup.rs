@@ -2,7 +2,8 @@
 
 use tauri::{App, Manager};
 
-use assistant_config::{app_conf::AppConf, constant::WINDOW_ORB, orb_conf::OrbConf};
+use assistant_config::{app_conf::AppConf, orb_conf::OrbConf};
+use assistant_storage::db;
 
 use super::tray;
 
@@ -16,8 +17,16 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         log::error!("Failed to init orb config: {}", e);
     }
 
-    if let Some(orb) = handle.get_webview_window(WINDOW_ORB) {
-        let _ = orb.set_ignore_cursor_events(true);
+    match handle.path().app_data_dir() {
+        Ok(data_dir) => {
+            let db_path = data_dir.join("assistant.db");
+            if let Err(e) = db::init_db(&db_path) {
+                log::error!("Failed to init database: {}", e);
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to resolve app data dir: {}", e);
+        }
     }
 
     tray::create_tray(handle);

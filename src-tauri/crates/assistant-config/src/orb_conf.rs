@@ -34,12 +34,15 @@ impl OrbConf {
         }
     }
 
-    pub fn get_conf_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    pub fn get_conf_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
         let config_dir = dirs::config_dir()
             .ok_or("Cannot determine config directory")?
-            .join(APP_IDENTIFIER)
-            .join("orb-config.json");
+            .join(APP_IDENTIFIER);
         Ok(config_dir)
+    }
+
+    pub fn get_conf_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+        Ok(Self::get_conf_dir()?.join("orb-config.json"))
     }
 
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {

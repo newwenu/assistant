@@ -43,6 +43,12 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 }
             }
             "quit" => {
+                if let Some(w) = app.get_webview_window(WINDOW_ORB) {
+                    let _ = w.destroy();
+                }
+                if let Some(w) = app.get_webview_window(WINDOW_MAIN) {
+                    let _ = w.destroy();
+                }
                 app.exit(0);
             }
             _ => {}

@@ -33,6 +33,6 @@ pub fn run() {
             window::expand_orb_panel,
             window::collapse_orb_panel,
         ])
-        .run(tauri::generate_context!("../../tauri.conf.json"))
+        .run(tauri::generate_context!("tauri.conf.json"))
         .expect("error while running tauri application");
 }
