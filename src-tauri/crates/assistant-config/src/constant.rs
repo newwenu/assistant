@@ -1,0 +1,19 @@
+pub const APP_IDENTIFIER: &str = "com.assistant";
+
+pub const WINDOW_MAIN: &str = "main";
+pub const WINDOW_ORB: &str = "orb";
+pub const WINDOW_SETTINGS: &str = "settings";
+
+pub const ORB_COLLAPSED_SIZE: u32 = 64;
+pub const ORB_EXPANDED_WIDTH: u32 = 420;
+pub const ORB_EXPANDED_HEIGHT: u32 = 600;
+
+pub const MAIN_WINDOW_MIN_WIDTH: f64 = 300.0;
+pub const MAIN_WINDOW_MIN_HEIGHT: f64 = 200.0;
+pub const MAIN_WINDOW_DEFAULT_WIDTH: f64 = 960.0;
+pub const MAIN_WINDOW_DEFAULT_HEIGHT: f64 = 640.0;
+
+pub const HOVER_FADE_DURATION_MS: u64 = 300;
+pub const PLACEMENT_SETTLE_DELAY_MS: u64 = 1000;
+pub const PET_DRAG_THRESHOLD_PX: f64 = 8.0;
+pub const WINDOW_EDGE_BUFFER: u32 = 4;
