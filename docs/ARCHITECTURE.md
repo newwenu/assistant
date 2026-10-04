@@ -37,8 +37,8 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 ```json
 {
   "label": "orb",
-  "width": 64,
-  "height": 64,
+  "width": 88,
+  "height": 88,
   "transparent": true,
   "alwaysOnTop": true,
   "skipTaskbar": true,
@@ -46,15 +46,38 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 }
 ```
 
-窗口尺寸固定 420×600，展开/收起通过 CSS `transform: scale()` + `opacity` + `pointer-events` 动画过渡，不改变窗口尺寸。
+初始窗口 88×88（ORB_COLLAPSED_SIZE 64 + 2×ORB_CHROME_INSET 12）。展开时 Rust 端 reposition + resize 至 444×624（ORB_EXPANDED_WIDTH 420 + 2×12, ORB_EXPANDED_HEIGHT 600 + 2×12），CSS `transform: scale()` + `opacity` + `pointer-events` 做 300ms 视觉过渡动画。
+
+**点击穿透机制**：透明区域通过 Tauri `set_ignore_cursor_events(true)` 实现系统级穿透，让鼠标事件传递到下方窗口。悬浮球可见区域（hitbox 48×48）通过光标位置轮询检测，仅在鼠标进入 hitbox 时关闭穿透。坐标系统一使用双约定：**前端逻辑像素**（`OrbCoord.ts` 的 `physicalToLogical`/`logicalToPhysical` 转换）+ **后端物理像素**（`outer_position()`/`outer_size()`/`available_monitors()` 均为物理像素），`WindowBounds` 全部使用物理像素，`ORB_EXPANDED_WIDTH/HEIGHT` 逻辑常量在传入后端时需乘以 `scale_factor` 转换。`getWindowLogicalRect()` 统一使用 `outerPosition()` + `outerSize()` 避免外框/内容区混用。
+
+| 状态 | click-through | 说明 |
+|------|--------------|------|
+| 收起 + 鼠标在 hitbox 外 | ON | 事件穿透到下方窗口 |
+| 收起 + 鼠标在 hitbox 上 | OFF | hitbox 接收点击/拖拽 |
+| 展开 + 鼠标在窗口内 | OFF | 面板接收交互 |
+| 展开 + 鼠标在窗口外 | ON | 事件穿透 |
+| 拖拽中 | OFF | 窗口接收指针事件 |
+
+**穿透实现（按平台）**：
+
+| 平台 | 机制 | 说明 |
+|------|------|------|
+| Windows | CSS `pointer-events` 精细控制 + Rust 辅助 | 容器 `pointer-events: none`（穿透），`.orb-hitbox` / `.orb-panel` 设 `auto`（交互）；同时用 Rust `set_ignore_cursor_events` 配合光标轮询 |
+| macOS | Rust `set_ignore_cursor_events` + 光标轮询 | CSS `pointer-events` 无法穿透到系统级，需 Rust 端控制 |
+
+**穿透优化**：
+- **P0 状态缓存**：Rust `AtomicBool` + 前端 `orbStore.clickThrough`，值相同时跳过系统调用
+- **P1 穿透防抖**：`CLICK_THROUGH_DEBOUNCE_MS = 30`，开启穿透延迟 30ms，关闭穿透立即执行
+- **P1 手抖容差**：`HAND_JITTER_PX = 8`，鼠标离开 hitbox 后 8px 内仍保持不穿透
+- **P2 轮询间隔**：前端 `HOVER_POLL_INTERVAL_MS = 80`，Rust `HOVER_POLL_INTERVAL_MS = 120`
 
 ### 3.2 交互行为
 
 | 事件 | 行为 |
 |------|------|
-| 单击悬浮球 | 展开 Orb 对话面板 |
+| 单击悬浮球 | 展开 Orb 对话面板（方向自适应：根据小球在屏幕位置决定左/右 + 上/下展开） |
 | 面板失焦 | 自动收起为小球 |
-| 拖拽 | 自由移动，松手边缘吸附 |
+| 拖拽 | 自由移动，松手边缘吸附 + 位置持久化（`save_orb_position`） |
 | `Cmd/Ctrl+K` | 全局快捷键唤起/隐藏 |
 | 右键 | 菜单：新建对话 / 打开主窗口 / 退出 |
 
@@ -304,12 +327,14 @@ assistant/
 │   ├── main.tsx                   # 入口（Provider 包裹 + 主题 + StrictMode）
 │   ├── App.tsx                    # 多窗口分流（webview.label → 组件映射）
 │   ├── config/                    # 配置（对应 Rust assistant-config crate）
-│   │   └── constants.ts           # 常量（窗口标签/尺寸/阈值，与 Rust constant.rs 对齐）
+│   │   └── constants.ts           # 常量（窗口标签/尺寸/阈值/穿透防抖，与 Rust constant.rs 对齐）
 │   ├── orb/                       # Orb 悬浮球模块
-│   │   ├── OrbBall.tsx            # 悬浮球主体
-│   │   ├── OrbPanel.tsx           # 展开后的对话面板
-│   │   ├── OrbDrag.tsx            # 拖拽逻辑（8px 阈值 + 边缘吸附）
-│   │   └── OrbExpand.tsx          # 展开/收起动画
+│   │   ├── OrbBall.tsx            # 悬浮球主体（hitbox + 视觉样式 + 拖拽/点击事件 + hover 轮询 + 穿透切换）
+│   │   ├── OrbPanel.tsx           # 展开后的对话面板（失焦收起 + Escape）
+│   │   ├── OrbDrag.tsx            # 拖拽逻辑（8px 阈值 + 平台分发 + 边缘吸附 + 位置保存）
+│   │   ├── OrbExpand.ts           # 展开/收起控制（方向自适应 + click-through 切换）
+│   │   ├── OrbCoord.ts            # 统一逻辑坐标系工具（物理↔逻辑转换 + 几何判断）
+│   │   └── OrbContextMenu.tsx     # 右键菜单（Ant Design Dropdown）
 │   ├── mascot/                    # Mascot 形象
 │   │   ├── RiveMascot.tsx         # Rive 渲染（useRive + useViewModel）
 │   │   ├── faceStates.ts          # MascotFace 枚举 + faceToPose 映射
@@ -338,7 +363,7 @@ assistant/
 │   │   └── WindowControls.tsx     # 窗口控制按钮
 │   ├── stores/                    # Zustand
 │   │   ├── themeStore.ts          # 主题状态（Tauri 原生 API）
-│   │   ├── orbStore.ts            # Orb 状态（展开/收起/位置）
+│   │   ├── orbStore.ts            # Orb 状态（展开/收起/位置/穿透缓存/展开方向）
 │   │   ├── chatStore.ts           # 对话状态
 │   │   ├── mascotStore.ts         # Mascot 表情状态
 │   │   ├── providerStore.ts       # Provider 配置
@@ -411,12 +436,12 @@ assistant/
 
 **交付：** 桌面常驻透明悬浮球，可拖拽、可吸附、可唤起
 
-- [ ] 透明悬浮球窗口（transparent + alwaysOnTop + skipTaskbar，64×64）
-- [ ] 鼠标穿透 + Rust 端鼠标位置获取（mouse_position crate）
-- [ ] 拖拽 + 边缘吸附动画
-- [ ] 全局快捷键 Cmd/Ctrl+K 唤起/隐藏
-- [ ] 点击展开对话面板，失焦自动收起
-- [ ] 右键菜单：新建对话 / 打开主窗口 / 退出
+- [x] 透明悬浮球窗口（transparent + alwaysOnTop + skipTaskbar，88×88 含 chrome inset）
+- [x] 鼠标穿透 + Rust 端鼠标位置获取（mouse_position crate）+ Windows CSS pointer-events 精细控制
+- [x] 拖拽 + 边缘吸附动画
+- [x] 全局快捷键 Cmd/Ctrl+K 唤起/隐藏
+- [x] 点击展开对话面板，失焦自动收起
+- [x] 右键菜单：新建对话 / 打开主窗口 / 退出
 
 **参考：**
 
@@ -430,7 +455,11 @@ assistant/
 | 桌面宠物尺寸 | OpenBitFun | AgentCompanionDesktopPet.tsx L28-29 | `DEFAULT_PET_SIZE = 96`，`WINDOW_EDGE_BUFFER = 4`，边缘留白防裁剪 |
 | Overlay 配置 schema | BongoCat | crates/bongocat-config/src/config_schema/overlay.rs | `OverlayConfig { click_through, always_on_top, scale_percent, opacity_percent, hide_on_pointer_hover, hover_delay_ms }` |
 | 指针悬停隐藏 | BongoCat | crates/bongocat-overlay/src/hover.rs | `PointerHoverObservation` + `HOVER_FADE_DURATION=300ms` + `pointer_inside_window()` 边界检测 |
-| 位置约束 | BongoCat | crates/bongocat-overlay/src/placement.rs | `PLACEMENT_SETTLE_DELAY=1s` + `bounds_inside_screens()` 多显示器检测 |
+| 点击穿透切换 | BongoCat | crates/bongocat-overlay/src/windows/window.rs | `set_click_through()`：`WS_EX_TRANSPARENT|WS_EX_LAYERED` 扩展样式切换 |
+| 点击穿透状态缓存 | BongoCat | crates/bongocat-overlay/src/windows/session.rs | `applied_click_through` 字段避免冗余 Win32 调用 |
+| 像素级碰撞检测 | WindowPet | src/scenes/manager.ts | `InputManager.checkIsMouseInOnPet()`：Phaser `hitTestPointer` + 50ms 防抖 |
+| DOM 像素级穿透 | airi | composables/use-chat-floating-click-through.ts | `elementFromPoint` + `isPaintedAt` + `forward:true` + 8px 手抖容差 |
+| 位置约束 | BongoCat | crates/bongocat-overlay/src/placement.rs | `PLACEMENT_SETTLE_DELAY=1s` + `bounds_inside_screens()` 切片算法（窗口每一像素都必须在屏幕上，正确处理 L 形多屏缺口）+ `OverlayPlacementConstraint` 延迟纠正状态机（窗口位置变化重置倒计时，避免中断拖拽） |
 
 **验收：** 桌面可见透明小球，拖拽贴边，点击展开面板，失焦收起，快捷键唤起
 

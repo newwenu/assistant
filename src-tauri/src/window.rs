@@ -4,7 +4,10 @@
 use std::sync::Mutex;
 
 use log::info;
-use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
+    menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem},
+};
 
 use assistant_config::constant::{
     MAIN_WINDOW_DEFAULT_HEIGHT, MAIN_WINDOW_DEFAULT_WIDTH, MAIN_WINDOW_MIN_HEIGHT,
@@ -160,5 +163,31 @@ pub fn collapse_orb_panel(
             .map_err(|e| e.to_string())?;
         info!("Orb panel collapsed ({} {})", horizontal, vertical);
     }
+    Ok(())
+}
+
+#[command]
+pub fn show_orb_context_menu(app: AppHandle, x: f64, y: f64) -> Result<(), String> {
+    let new_chat = MenuItem::with_id(&app, "orb_new_chat", "新建对话", false, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let open_main = MenuItem::with_id(&app, "orb_open_main", "打开主窗口", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let separator = PredefinedMenuItem::separator(&app)
+        .map_err(|e| e.to_string())?;
+    let quit = MenuItem::with_id(&app, "orb_quit", "退出", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+
+    let menu = Menu::with_items(
+        &app,
+        &[&new_chat, &open_main, &separator, &quit],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let webview_window = app.get_webview_window(WINDOW_ORB).ok_or("orb window not found")?;
+
+    let window = webview_window.as_ref().window();
+    menu.popup_at(window, tauri::LogicalPosition::new(x, y))
+        .map_err(|e: tauri::Error| e.to_string())?;
+
     Ok(())
 }

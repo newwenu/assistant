@@ -217,3 +217,50 @@ pub fn check_and_snap_orb(app: &AppHandle, window_label: &str) -> Option<WindowB
     let _ = window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y));
     Some(snapped)
 }
+
+/// Snap the orb to the nearest screen edge (left or right vertical edge).
+///
+/// If the window is partially or fully outside all screens, it is first
+/// corrected onto the nearest display. Then the horizontal position is
+/// snapped to whichever vertical edge (left / right) of that display is
+/// closer, leaving `edge_buffer` physical pixels of margin. The vertical
+/// position is clamped so the window stays within the screen.
+pub fn snap_orb_to_edge(
+    screens: &[ScreenBounds],
+    bounds: WindowBounds,
+    edge_buffer: i32,
+) -> WindowBounds {
+    if screens.is_empty() {
+        return bounds;
+    }
+
+    let corrected = if !bounds_inside_screens(screens, bounds) {
+        snap_to_nearest_screen(screens, bounds)
+    } else {
+        bounds
+    };
+
+    let screen = match nearest_screen(screens, corrected) {
+        Some(s) => s,
+        None => return corrected,
+    };
+
+    let left_target_x = screen.x + edge_buffer;
+    let right_target_x = screen.x + screen.width as i32 - corrected.width as i32 - edge_buffer;
+
+    let dist_to_left = (corrected.x - left_target_x).abs();
+    let dist_to_right = (corrected.x - right_target_x).abs();
+
+    let target_x = if dist_to_left <= dist_to_right {
+        left_target_x
+    } else {
+        right_target_x
+    };
+
+    let target_y = corrected
+        .y
+        .max(screen.y + edge_buffer)
+        .min(screen.y + screen.height as i32 - corrected.height as i32 - edge_buffer);
+
+    WindowBounds::new(target_x, target_y, corrected.width, corrected.height)
+}

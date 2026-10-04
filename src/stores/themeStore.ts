@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type ThemeMode = "system" | "light" | "dark";
@@ -14,6 +15,14 @@ interface ThemeState {
 
 const SYSTEM_THEME_CYCLE: ThemeMode[] = ["system", "light", "dark"];
 
+const THEME_EVENT = "theme-changed";
+
+function resolveTheme(mode: ThemeMode, systemTheme: string): "light" | "dark" {
+  return mode === "system"
+    ? (systemTheme as "light" | "dark") || "light"
+    : mode;
+}
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
   mode: "system",
   resolved: "light",
@@ -23,6 +32,16 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     invoke("set_theme", { theme: mode }).catch(console.error);
     if (mode !== "system") {
       set({ resolved: mode });
+      invoke("emit_theme_changed", { resolved: mode }).catch(console.error);
+    } else {
+      getCurrentWindow()
+        .theme()
+        .then((sys) => {
+          const resolved = resolveTheme("system", sys || "light");
+          set({ resolved });
+          invoke("emit_theme_changed", { resolved }).catch(console.error);
+        })
+        .catch(console.error);
     }
   },
 
@@ -45,13 +64,18 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
       const win = getCurrentWindow();
       const systemTheme = (await win.theme()) || "light";
-      const resolved = mode === "system" ? systemTheme : mode;
+      const resolved = resolveTheme(mode, systemTheme);
       set({ resolved });
 
       await win.onThemeChanged(({ payload }) => {
         if (get().mode === "system") {
-          set({ resolved: payload as "light" | "dark" });
+          const r = resolveTheme("system", payload);
+          set({ resolved: r });
         }
+      });
+
+      await listen<{ resolved: "light" | "dark" }>(THEME_EVENT, ({ payload }) => {
+        set({ resolved: payload.resolved });
       });
     } catch {
       set({ mode: "system", resolved: "light" });

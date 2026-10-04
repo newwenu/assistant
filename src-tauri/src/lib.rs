@@ -8,6 +8,8 @@ mod window;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use tauri::Manager;
+
 use tauri::Emitter;
 use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
 
@@ -46,7 +48,24 @@ pub fn run() {
             window::open_settings,
             window::expand_orb_panel,
             window::collapse_orb_panel,
+            window::show_orb_context_menu,
         ])
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "orb_open_main" => {
+                window::show_or_create_main(app);
+            }
+            "orb_quit" => {
+                request_exit();
+                if let Some(w) = app.get_webview_window(WINDOW_ORB) {
+                    let _ = w.destroy();
+                }
+                if let Some(w) = app.get_webview_window(WINDOW_MAIN) {
+                    let _ = w.destroy();
+                }
+                app.exit(0);
+            }
+            _ => {}
+        })
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {

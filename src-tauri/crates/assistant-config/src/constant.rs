@@ -25,5 +25,6 @@ pub const WINDOW_EDGE_BUFFER: u32 = 4;
 pub const ORB_HITBOX_SIZE: u32 = 48;
 pub const ORB_BLUR_COLLAPSE_DELAY_MS: u64 = 200;
 pub const ORB_SNAP_DELAY_MS: u64 = 1000;
+pub const ORB_SNAP_ANIMATION_MS: u64 = 250;
 pub const HOVER_POLL_INTERVAL_MS: u64 = 120;
 pub const DRAG_POLL_INTERVAL_MS: u64 = 16;

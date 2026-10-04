@@ -20,7 +20,11 @@ const ThemedApp: React.FC = () => {
   }, [resolved]);
 
   if (isOrb) {
-    return <App />;
+    return (
+      <ConfigProvider theme={antdTheme}>
+        <App />
+      </ConfigProvider>
+    );
   }
 
   return (

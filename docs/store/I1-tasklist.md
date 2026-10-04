@@ -155,9 +155,9 @@
     setPosition: (pos: { x: number; y: number }) => void;
   }
   ```
-- [x] `expand()`：调用 `invoke("expand_orb_panel")` + `set({ isExpanded: true })`
-- [x] `collapse()`：调用 `invoke("collapse_orb_panel")` + `set({ isExpanded: false })`
-- [x] `toggle()`：调用 `invoke("toggle_orb_visibility")` + 切换 `isVisible`
+- [x] `expand()`：`set({ isExpanded: true })`（不再调用 `invoke("expand_orb_panel")`，窗口尺寸固定，CSS 动画控制）
+- [x] `collapse()`：`set({ isExpanded: false, isHovering: false })`（不再调用 `invoke("collapse_orb_panel")`）
+- [x] `toggle()`：`set({ isVisible: !get().isVisible })`（不再调用 `invoke("toggle_orb_visibility")`）
 
 **依赖**：无
 
@@ -214,18 +214,18 @@
 **文件**：`src/orb/OrbBall.tsx`（新建）
 
 - [x] 收起态悬浮球 UI：
-  - 外层容器：64×64，flex 居中
-  - hitbox 圆形：48×48，`borderRadius: 50%`，`background: var(--color-primary)`
+  - hitbox 圆形：48×48，`borderRadius: 50%`，`background: radial-gradient`
+  - 绝对定位：`top: ORB_CHROME_INSET, left: ORB_CHROME_INSET`
+  - 展开时根据方向切换定位（expand-left → right, expand-right → left，expand-up → bottom, expand-down → top）— 待 B5 展开方向自适应实现
   - opacity：拖拽 0.7 / 悬停 1.0 / 默认 0.85
-  - `transition: opacity 150ms ease-in-out`
+  - `transition: opacity 150ms ease-in-out, box-shadow 300ms ease-in-out`
 - [x] 事件绑定：`useOrbDrag` 的 `onPointerDown/Move/Up`
 - [x] hover 检测：
-  - Windows：`onPointerEnter/Leave` → `orbStore.setHovering()`
-  - macOS：`setInterval(HOVER_POLL_INTERVAL_MS)` 轮询 `cursorPosition()` + 窗口位置 → 判断是否在 hitbox 内
+  - Windows：`onPointerEnter/Leave` → `orbStore.setHovering()`（CSS `pointer-events` 控制穿透，无需 Rust 调用）
+  - macOS：`setInterval(HOVER_POLL_INTERVAL_MS)` 轮询 `cursorPosition()` + 窗口位置 → 判断是否在 hitbox 内 → 调用 `invoke("set_orb_click_through")`
 - [x] 穿透切换：
-  - hover 变化时调用 `invoke("set_orb_click_through", { enabled: !isHovering })`
-  - 收起态：不在 hitbox → 穿透开启；在 hitbox → 穿透关闭
-  - 展开态：穿透始终关闭
+  - Windows：CSS `pointer-events: none`（容器）+ `pointer-events: auto`（`.orb-hitbox` / `.orb-panel`），无需 Rust 端调用
+  - macOS：hover 变化时调用 `invoke("set_orb_click_through", { enabled: !isHovering })`
 
 **依赖**：B1（orbStore）、B3（OrbDrag）
 
@@ -236,14 +236,25 @@
 **文件**：`src/orb/OrbPanel.tsx`（新建）
 
 - [x] 展开态对话面板 UI（I1 为占位，I2 填充）：
-  - 顶部：Mascot 占位区域（预留，I5 实现）
-  - 中部：对话消息区占位（"对话功能即将上线" 提示文字）
-  - 底部：输入区占位（文本输入框 + 发送按钮，disabled 状态）
+  - 绝对定位：`position: absolute, inset: ORB_CHROME_INSET`
+  - CSS 动画：默认 `scale(0.18)` + `opacity: 0` + `pointer-events: none`；展开时 `scale(1)` + `opacity: 1` + `pointer-events: auto`；300ms transition
+  - 顶部：对话标题栏
+  - 中部：对话消息区占位（"I2 阶段实现 AI 对话" 提示文字）
+  - 底部：输入区占位（文本输入框 + 发送按钮，disabled 状态）— 预留 I2
 - [x] 失焦收起逻辑：
   - 监听 `listen("orb-blur")` 事件
   - 收到事件 → 延迟 `ORB_BLUR_COLLAPSE_DELAY_MS` → 若仍在展开态且非拖拽中 → `orbStore.collapse()`
 - [x] Escape 键收起：
   - `keydown` 监听 Escape → `orbStore.collapse()`
+- [x] **展开方向自适应**（参考 deepseek-harness-orb `applyDirection`）：
+  - 根据小球在屏幕中的位置，动态设置 CSS 变量 `--orb-origin-x` / `--orb-origin-y`
+  - 小球在屏幕左半 → `origin-x: 0%`（面板从左展开），右半 → `origin-x: 100%`
+  - 小球在屏幕上半 → `origin-y: 0%`，下半 → `origin-y: 100%`
+  - 同时调整 OrbBall 的定位（expand-left/right 控制 left/right 切换）
+  - 实现：`OrbExpand.ts` 中 `expand()` 调用 `get_screen_size` 计算方向；`App.tsx` 应用 `orb-expand-${direction/vertical}` CSS 类；`global.css` 设置 `--orb-origin-x/y`；`OrbBall.tsx` 根据方向切换定位
+- [x] **收起防抖**（参考 deepseek `scheduleCollapse`）：
+  - 收起前检查：pinned / running / asking 等状态，避免在 AI 对话进行中误收起
+  - I1 阶段已实现 isDragging 检查（blur 延迟 + Escape 键），I2 补齐 pinned/running/asking
 
 **依赖**：B1（orbStore）
 
@@ -277,12 +288,12 @@
   }
   ```
 - [x] `expand()`：
-  1. 调用 `orbStore.expand()`
-  2. 调用 `invoke("set_orb_click_through", { enabled: false })`（展开态不穿透）
+  1. 调用 `orbStore.expand()`（仅改状态，不调 Rust 改窗口尺寸）
+  2. macOS：调用 `invoke("set_orb_click_through", { enabled: false })`（展开态不穿透）
 - [x] `collapse()`：
-  1. 调用 `orbStore.collapse()`
-  2. 恢复穿透状态（由 OrbBall 的 hover 逻辑自动处理）
-- [x] 监听 `orb-collapse` 事件（Rust 端或其他窗口触发）
+  1. 调用 `orbStore.collapse()`（改状态 + 重置 isHovering）
+  2. macOS：调用 `invoke("set_orb_click_through", { enabled: true })`（恢复穿透）
+  3. Windows：穿透由 CSS `pointer-events` 自动控制，无需额外调用
 
 **依赖**：B1（orbStore）
 
@@ -297,9 +308,16 @@
   ```tsx
   const OrbWindow: React.FC = () => {
     const isExpanded = useOrbStore(s => s.isExpanded);
-    return isExpanded ? <OrbPanel /> : <OrbBall />;
+    return (
+      <div data-orb-window className={isExpanded ? "orb-expanded" : undefined}>
+        <OrbBall />
+        <OrbPanel />
+      </div>
+    );
   };
   ```
+  OrbBall 和 OrbPanel 始终同时渲染，CSS class `orb-expanded` 控制展开/收起动画
+- [x] macOS 初始化：`useEffect` 中调用 `invoke("set_orb_click_through", { enabled: true })` 设置初始穿透状态
 - [x] `viewMap[WINDOW_ORB]` 映射到 `OrbWindow`
 - [x] 保留 `MainLayout`、`SettingsWindow` 不变
 
@@ -335,17 +353,29 @@
 ### C3. 编译 + 运行验收
 
 - [x] `cargo build` 通过（Rust 后端）
-- [ ] `npm run tauri dev` 启动无报错
+- [x] `npm run tauri dev` 启动无报错
 - [ ] 验收 9 项（见 I1-spec.md 第 6 节）：
-  1. 桌面可见透明小球
-  2. 鼠标悬停高亮，移开半透明
-  3. 拖拽自由移动，松手贴边吸附
-  4. 点击展开对话面板
-  5. 面板失焦自动收起
-  6. Cmd/Ctrl+K 切换显示/隐藏
-  7. 右键菜单可用
-  8. 穿透正常工作
-  9. macOS / Windows 行为一致
+  - [x] 1. 桌面可见透明小球
+  - [x] 2. 鼠标悬停高亮，移开半透明
+  - [ ] 3. 拖拽自由移动，松手贴边吸附
+  - [x] 4. 点击展开对话面板
+  - [x] 5. 面板失焦自动收起
+  - [ ] 6. Cmd/Ctrl+K 切换显示/隐藏
+  - [x] 7. 右键菜单可用
+  - [x] 8. 穿透正常工作
+  - [x] 9. macOS / Windows 行为一致
+
+**优化记录**（2026-10-04）：
+- 窗口尺寸动态切换：收起 88×88 ↔ 展开 444×624，Rust reposition + resize + CSS `transform: scale()` 视觉过渡，消除闪烁/变形
+- Windows 穿透改用 CSS `pointer-events` 精细控制 + Rust `set_ignore_cursor_events` 辅助光标轮询
+- CSS 特异性提升：`div[data-orb-window]` + `!important`
+- 主窗口单例创建统一为 `window::show_or_create_main()`
+- 快捷键注册失败时 `log::warn!`，后续增强前端提示
+- 穿透优化：P0 状态缓存（AtomicBool + orbStore.clickThrough）、P1 穿透防抖（30ms）、P1 手抖容差（8px）
+- 展开方向自适应：`expandDirection`/`expandVertical` + 24px 滞后阈值
+- 坐标系统一：`OrbCoord.ts` 物理↔逻辑转换，所有 hitbox 检测在逻辑坐标系
+- 位置持久化：`save_orb_position` command
+- 屏幕尺寸获取：`get_screen_size` command（展开方向计算需要）
 
 **依赖**：所有 A、B 阶段任务
 
@@ -355,8 +385,8 @@
 
 **文件**：`docs/DEVLOG.md`
 
-- [ ] 新增 `## I1 — Orb 悬浮球` 章节
-- [ ] 记录技术决策、踩坑、与参考项目的差异
+- [x] 新增 `## I1 — Orb 悬浮球` 章节
+- [x] 记录技术决策、踩坑、与参考项目的差异
 
 **依赖**：C3
 
@@ -409,21 +439,24 @@ B6 (ContextMenu) ──────┤               │      │
 
 | 操作 | 文件 | 说明 |
 |------|------|------|
-| 修改 | `src-tauri/src/cmd.rs` | +3 commands |
+| 修改 | `src-tauri/src/cmd.rs` | +5 commands（toggle_orb_visibility, set_orb_click_through, snap_orb_to_screen, app_quit, save_orb_position, get_screen_size） |
 | 修改 | `src-tauri/src/lib.rs` | 注册 commands + 全局快捷键插件 |
 | 修改 | `src-tauri/src/setup.rs` | 焦点事件监听 + 快捷键注册 |
+| 修改 | `src-tauri/src/window.rs` | expand/collapse 接收方向参数 + reposition + resize |
 | 修改 | `src-tauri/Cargo.toml` | +tauri-plugin-global-shortcut 依赖 |
-| 修改 | `src-tauri/capabilities/default.json` | +global-shortcut 权限 |
+| 修改 | `src-tauri/capabilities/default.json` | +global-shortcut 权限 + outer-position + scale-factor |
 | 修改 | `src-tauri/crates/assistant-config/src/constant.rs` | +6 常量 |
 | 修改 | `src-tauri/crates/assistant-orb/src/placement.rs` | +get_available_screens, +check_and_snap_orb |
-| 修改 | `src-tauri/crates/assistant-orb/src/hover.rs` | +should_toggle_click_through |
+| 修改 | `src-tauri/crates/assistant-orb/src/hover.rs` | +should_toggle_click_through, +AtomicBool 缓存 |
 | 修改 | `src-tauri/crates/assistant-orb/src/lib.rs` | 导出新函数 |
-| 修改 | `src/App.tsx` | OrbPlaceholder → OrbWindow |
-| 修改 | `src/config/constants.ts` | +5 常量 |
-| 新建 | `src/stores/orbStore.ts` | Orb 状态管理 |
-| 新建 | `src/orb/OrbBall.tsx` | 悬浮球主体 |
-| 新建 | `src/orb/OrbPanel.tsx` | 展开面板 |
-| 新建 | `src/orb/OrbDrag.tsx` | 拖拽逻辑 |
-| 新建 | `src/orb/OrbExpand.tsx` | 展开/收起控制 |
+| 修改 | `src/App.tsx` | OrbPlaceholder → OrbWindow + 展开方向 CSS class |
+| 修改 | `src/config/constants.ts` | +7 常量（ORB_CHROME_INSET, ORB_ANIMATION_MS, CLICK_THROUGH_DEBOUNCE_MS, HAND_JITTER_PX, EXPAND_DIRECTION_HYSTERESIS_PX 等） |
+| 修改 | `src/assets/styles/global.css` | +CSS 穿透规则（pointer-events）+ 展开方向 class |
+| 新建 | `src/stores/orbStore.ts` | Orb 状态管理（+clickThrough, +expandDirection, +expandVertical） |
+| 新建 | `src/orb/OrbBall.tsx` | 悬浮球主体（hover 轮询 + 穿透切换 + 手抖容差） |
+| 新建 | `src/orb/OrbPanel.tsx` | 展开面板（失焦收起 + Escape + 展开方向自适应） |
+| 新建 | `src/orb/OrbDrag.tsx` | 拖拽逻辑（位置保存 + 边缘吸附） |
+| 新建 | `src/orb/OrbExpand.ts` | 展开/收起控制（方向自适应 + click-through 切换） |
+| 新建 | `src/orb/OrbCoord.ts` | 统一逻辑坐标系工具 |
 | 新建 | `src/orb/OrbContextMenu.tsx` | 右键菜单 |
 | 修改 | `docs/DEVLOG.md` | I1 开发日志 |

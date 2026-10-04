@@ -105,19 +105,30 @@ const SettingsWindow: React.FC = () => {
 };
 
 const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
+const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
 
 const OrbWindow: React.FC = () => {
   const isExpanded = useOrbStore((s) => s.isExpanded);
+  const expandDirection = useOrbStore((s) => s.expandDirection);
+  const expandVertical = useOrbStore((s) => s.expandVertical);
+  const setClickThrough = useOrbStore((s) => s.setClickThrough);
 
   React.useEffect(() => {
-    if (!IS_MACOS) return;
+    if (!IS_MACOS && !IS_WINDOWS) return;
     invoke("set_orb_click_through", { enabled: true });
-  }, []);
+    setClickThrough(true);
+  }, [setClickThrough]);
+
+  const orbClassName = [
+    isExpanded ? "orb-expanded" : "",
+    `orb-expand-${expandDirection}`,
+    `orb-expand-${expandVertical}`,
+  ].filter(Boolean).join(" ");
 
   return (
     <div
       data-orb-window
-      className={isExpanded ? "orb-expanded" : undefined}
+      className={orbClassName}
       style={{
         width: "100%",
         height: "100%",

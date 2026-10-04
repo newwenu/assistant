@@ -375,22 +375,41 @@ system → light → dark → system（三态循环）
 基于 Ant Design 6 的 `theme.token` 体系，在其上定制：
 
 ```typescript
-const customTheme = {
-  algorithm: theme.darkAlgorithm, // 或 defaultAlgorithm
+const commonToken = {
+  borderRadius: 6,
+  fontSize: 14,
+  colorPrimary: '#1677ff',       // Ant Design 6 默认蓝
+};
+
+const lightTheme = {
+  algorithm: theme.defaultAlgorithm,
   token: {
-    colorPrimary: '#...',         // 主色（自行定义，不照搬任何项目）
-    borderRadius: 6,              // 圆角
-    fontSize: 14,                 // 基础字号
-    colorBgLayout: '#...',        // 布局背景
-    colorBgContainer: '#...',     // 容器背景
-    colorBgElevated: '#...',      // 浮层背景
+    ...commonToken,
+    colorBgLayout: '#f5f5f5',     // 布局背景
+    colorBgContainer: '#ffffff',   // 容器背景
+    colorBgElevated: '#ffffff',    // 浮层背景
   },
   components: {
-    Menu: { menuItemHeight: 36 }, // 紧凑菜单
+    Menu: { itemHeight: 36, itemMarginBlock: 2 },
     Button: { controlHeight: 32 },
+    Input: { controlHeight: 32 },
   },
 };
+
+const darkTheme = {
+  algorithm: theme.darkAlgorithm,
+  token: {
+    ...commonToken,
+    colorPrimary: '#1668dc',       // 暗色主色（自动派生）
+    colorBgLayout: '#0a0a0a',      // 布局背景
+    colorBgContainer: '#141414',    // 容器背景
+    colorBgElevated: '#1f1f1f',     // 浮层背景
+  },
+  components: { ...lightTheme.components },
+};
 ```
+
+> 完整 CSS 变量体系见 [DESIGN.md](./DESIGN.md)
 
 ### 3.4 Mascot 外观驱动
 
