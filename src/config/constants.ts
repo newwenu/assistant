@@ -1,0 +1,30 @@
+export const WINDOW_MAIN = "main";
+export const WINDOW_ORB = "orb";
+export const WINDOW_SETTINGS = "settings";
+
+export const ORB_COLLAPSED_SIZE = 64;
+export const ORB_EXPANDED_WIDTH = 420;
+export const ORB_EXPANDED_HEIGHT = 600;
+export const ORB_HITBOX_SIZE = 48;
+export const ORB_CHROME_INSET = 12;
+export const ORB_ANIMATION_MS = 300;
+
+export const MAIN_WINDOW_DEFAULT_WIDTH = 960;
+export const MAIN_WINDOW_DEFAULT_HEIGHT = 640;
+export const MAIN_WINDOW_MIN_WIDTH = 300;
+export const MAIN_WINDOW_MIN_HEIGHT = 200;
+
+export const TITLEBAR_HEIGHT = 38;
+export const MACOS_TRAFFIC_LIGHT_OFFSET = 80;
+export const TITLEBAR_PADDING_LEFT = 12;
+
+export const SIDEBAR_WIDTH = 240;
+export const SIDEBAR_COLLAPSED_WIDTH = 64;
+
+export const PET_DRAG_THRESHOLD_PX = 8;
+export const WINDOW_EDGE_BUFFER = 4;
+
+export const DRAG_POLL_INTERVAL_MS = 16;
+export const HOVER_POLL_INTERVAL_MS = 120;
+export const ORB_BLUR_COLLAPSE_DELAY_MS = 200;
+export const ORB_SNAP_DELAY_MS = 1000;

@@ -3,11 +3,12 @@
 
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::{TrayIcon, TrayIconBuilder},
+    tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager,
 };
 
 use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
+use crate::{request_exit, window::show_or_create_main};
 
 pub fn create_tray(app: &AppHandle) -> TrayIcon {
     let show_main = MenuItem::with_id(app, "show_main", "打开主窗口", true, None::<&str>)
@@ -28,13 +29,11 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
     TrayIconBuilder::new()
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
+        .show_menu_on_left_click(false)
         .tooltip("Assistant")
         .on_menu_event(move |app: &AppHandle, event| match event.id.as_ref() {
             "show_main" => {
-                if let Some(window) = app.get_webview_window(WINDOW_MAIN) {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                show_or_create_main(app);
             }
             "show_orb" => {
                 if let Some(window) = app.get_webview_window(WINDOW_ORB) {
@@ -43,6 +42,7 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 }
             }
             "quit" => {
+                request_exit();
                 if let Some(w) = app.get_webview_window(WINDOW_ORB) {
                     let _ = w.destroy();
                 }
@@ -52,6 +52,16 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 app.exit(0);
             }
             _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_or_create_main(tray.app_handle());
+            }
         })
         .build(app)
         .expect("failed to build tray icon")

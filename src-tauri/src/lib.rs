@@ -6,7 +6,16 @@ mod setup;
 mod tray;
 mod window;
 
-use tauri::Manager;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use tauri::Emitter;
+use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
+
+static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
+
+pub fn request_exit() {
+    SHOULD_EXIT.store(true, Ordering::Relaxed);
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -15,11 +24,9 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::new().build())
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            window::show_or_create_main(app);
         }))
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(setup::init)
         .invoke_handler(tauri::generate_handler![
             cmd::get_mouse_position,
@@ -28,11 +35,41 @@ pub fn run() {
             cmd::get_orb_conf,
             cmd::set_orb_conf,
             cmd::set_theme,
+            cmd::emit_theme_changed,
+            cmd::toggle_orb_visibility,
+            cmd::set_orb_click_through,
+            cmd::get_screen_size,
+            cmd::snap_orb_to_screen,
+            cmd::save_orb_position,
+            cmd::app_quit,
             window::open_main_window,
             window::open_settings,
             window::expand_orb_panel,
             window::collapse_orb_panel,
         ])
-        .run(tauri::generate_context!("tauri.conf.json"))
-        .expect("error while running tauri application");
+        .on_window_event(|window, event| {
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    if window.label() == WINDOW_MAIN {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                }
+                tauri::WindowEvent::Focused(false) => {
+                    if window.label() == WINDOW_ORB {
+                        let _ = window.emit("orb-blur", ());
+                    }
+                }
+                _ => {}
+            }
+        })
+        .build(tauri::generate_context!("tauri.conf.json"))
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                if !SHOULD_EXIT.load(Ordering::Relaxed) {
+                    api.prevent_exit();
+                }
+            }
+        });
 }

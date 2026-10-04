@@ -27,11 +27,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
 thiserror = "2"
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-log = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-global-shortcut = "2"
 mouse_position = "0.1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 dirs = "6"
@@ -52,6 +53,7 @@ tauri-plugin-opener = { workspace = true }
 tauri-plugin-sql = { workspace = true }
 tauri-plugin-log = { workspace = true }
 tauri-plugin-single-instance = { workspace = true }
+tauri-plugin-global-shortcut = { workspace = true }
 mouse_position = { workspace = true }
 
 assistant-config = { workspace = true }

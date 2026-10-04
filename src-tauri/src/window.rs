@@ -1,33 +1,44 @@
 // 参考: ChatGPT/src-tauri/src/core/window.rs — 动态创建窗口
 // 参考: BongoCat overlay placement — 窗口尺寸管理
 
+use std::sync::Mutex;
+
 use log::info;
 use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use assistant_config::constant::{
     MAIN_WINDOW_DEFAULT_HEIGHT, MAIN_WINDOW_DEFAULT_WIDTH, MAIN_WINDOW_MIN_HEIGHT,
     MAIN_WINDOW_MIN_WIDTH, ORB_COLLAPSED_SIZE, ORB_EXPANDED_HEIGHT, ORB_EXPANDED_WIDTH,
-    WINDOW_MAIN, WINDOW_ORB, WINDOW_SETTINGS,
+    ORB_CHROME_INSET, ORB_COLLAPSED_WINDOW_SIZE, ORB_EXPANDED_WINDOW_WIDTH,
+    ORB_EXPANDED_WINDOW_HEIGHT, WINDOW_MAIN, WINDOW_ORB, WINDOW_SETTINGS,
 };
 
-#[command]
-pub fn open_main_window(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window(WINDOW_MAIN) {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
-        info!("Main window already exists, brought to focus");
-        return Ok(());
-    }
+static MAIN_LOCK: Mutex<()> = Mutex::new(());
 
-    WebviewWindowBuilder::new(&app, WINDOW_MAIN, WebviewUrl::App("/".into()))
+pub fn show_or_create_main(app: &AppHandle) {
+    let _lock = MAIN_LOCK.lock().unwrap();
+    if let Some(window) = app.get_webview_window(WINDOW_MAIN) {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    let result = WebviewWindowBuilder::new(app, WINDOW_MAIN, WebviewUrl::App("/".into()))
         .title("Assistant")
         .inner_size(MAIN_WINDOW_DEFAULT_WIDTH, MAIN_WINDOW_DEFAULT_HEIGHT)
         .min_inner_size(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT)
         .center()
-        .build()
-        .map_err(|e| e.to_string())?;
+        .build();
+    if result.is_err() {
+        if let Some(window) = app.get_webview_window(WINDOW_MAIN) {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+}
 
-    info!("Created main window");
+#[command]
+pub fn open_main_window(app: AppHandle) -> Result<(), String> {
+    show_or_create_main(&app);
     Ok(())
 }
 
@@ -53,31 +64,101 @@ pub fn open_settings(app: AppHandle) -> Result<(), String> {
 }
 
 #[command]
-pub fn expand_orb_panel(app: AppHandle) -> Result<(), String> {
+pub fn expand_orb_panel(
+    app: AppHandle,
+    horizontal: String,
+    vertical: String,
+) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(WINDOW_ORB) {
+        let scale = window.scale_factor().map_err(|e| e.to_string())?;
+        let old_pos = window.outer_position().map_err(|e| e.to_string())?;
+        let old_size = window.inner_size().map_err(|e| e.to_string())?;
+
+        let old_logical_w = old_size.width as f64 / scale;
+        let old_logical_h = old_size.height as f64 / scale;
+
+        let ball_x = if horizontal == "left" {
+            old_pos.x as f64 / scale + old_logical_w - ORB_CHROME_INSET as f64 - ORB_COLLAPSED_SIZE as f64
+        } else {
+            old_pos.x as f64 / scale + ORB_CHROME_INSET as f64
+        };
+        let ball_y = if vertical == "up" {
+            old_pos.y as f64 / scale + old_logical_h - ORB_CHROME_INSET as f64 - ORB_COLLAPSED_SIZE as f64
+        } else {
+            old_pos.y as f64 / scale + ORB_CHROME_INSET as f64
+        };
+
+        let new_x = if horizontal == "left" {
+            ball_x - (ORB_EXPANDED_WIDTH as f64 - ORB_COLLAPSED_SIZE as f64) - ORB_CHROME_INSET as f64
+        } else {
+            ball_x - ORB_CHROME_INSET as f64
+        };
+        let new_y = if vertical == "up" {
+            ball_y - (ORB_EXPANDED_HEIGHT as f64 - ORB_COLLAPSED_SIZE as f64) - ORB_CHROME_INSET as f64
+        } else {
+            ball_y - ORB_CHROME_INSET as f64
+        };
+
+        let phys_x = (new_x * scale).round() as i32;
+        let phys_y = (new_y * scale).round() as i32;
+
         window
-            .set_size(tauri::PhysicalSize::new(
-                ORB_EXPANDED_WIDTH,
-                ORB_EXPANDED_HEIGHT,
+            .set_position(tauri::PhysicalPosition::new(phys_x, phys_y))
+            .map_err(|e| e.to_string())?;
+        window
+            .set_size(tauri::LogicalSize::new(
+                ORB_EXPANDED_WINDOW_WIDTH as f64,
+                ORB_EXPANDED_WINDOW_HEIGHT as f64,
             ))
             .map_err(|e| e.to_string())?;
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
-        info!("Orb panel expanded");
+        info!("Orb panel expanded ({} {})", horizontal, vertical);
     }
     Ok(())
 }
 
 #[command]
-pub fn collapse_orb_panel(app: AppHandle) -> Result<(), String> {
+pub fn collapse_orb_panel(
+    app: AppHandle,
+    horizontal: String,
+    vertical: String,
+) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(WINDOW_ORB) {
+        let scale = window.scale_factor().map_err(|e| e.to_string())?;
+        let old_pos = window.outer_position().map_err(|e| e.to_string())?;
+        let old_size = window.inner_size().map_err(|e| e.to_string())?;
+
+        let old_logical_w = old_size.width as f64 / scale;
+        let old_logical_h = old_size.height as f64 / scale;
+
+        let ball_x = if horizontal == "left" {
+            old_pos.x as f64 / scale + old_logical_w - ORB_CHROME_INSET as f64 - ORB_COLLAPSED_SIZE as f64
+        } else {
+            old_pos.x as f64 / scale + ORB_CHROME_INSET as f64
+        };
+        let ball_y = if vertical == "up" {
+            old_pos.y as f64 / scale + old_logical_h - ORB_CHROME_INSET as f64 - ORB_COLLAPSED_SIZE as f64
+        } else {
+            old_pos.y as f64 / scale + ORB_CHROME_INSET as f64
+        };
+
+        let new_x = ball_x - ORB_CHROME_INSET as f64;
+        let new_y = ball_y - ORB_CHROME_INSET as f64;
+
+        let phys_x = (new_x * scale).round() as i32;
+        let phys_y = (new_y * scale).round() as i32;
+
         window
-            .set_size(tauri::PhysicalSize::new(
-                ORB_COLLAPSED_SIZE,
-                ORB_COLLAPSED_SIZE,
+            .set_position(tauri::PhysicalPosition::new(phys_x, phys_y))
+            .map_err(|e| e.to_string())?;
+        window
+            .set_size(tauri::LogicalSize::new(
+                ORB_COLLAPSED_WINDOW_SIZE as f64,
+                ORB_COLLAPSED_WINDOW_SIZE as f64,
             ))
             .map_err(|e| e.to_string())?;
-        info!("Orb panel collapsed");
+        info!("Orb panel collapsed ({} {})", horizontal, vertical);
     }
     Ok(())
 }

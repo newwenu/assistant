@@ -23,8 +23,8 @@
       {
         "label": "orb",
         "title": "Orb",
-        "width": 64,
-        "height": 64,
+        "width": 88,
+        "height": 88,
         "transparent": true,
         "shadow": false,
         "alwaysOnTop": true,
@@ -36,7 +36,8 @@
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

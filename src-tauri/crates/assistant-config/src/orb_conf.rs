@@ -19,6 +19,10 @@ pub struct OrbConf {
     pub hide_on_pointer_hover: bool,
     pub hover_delay_ms: u64,
     pub corner_radius_percent: u8,
+    #[serde(default)]
+    pub position_x: Option<i32>,
+    #[serde(default)]
+    pub position_y: Option<i32>,
 }
 
 impl OrbConf {
@@ -31,6 +35,8 @@ impl OrbConf {
             hide_on_pointer_hover: false,
             hover_delay_ms: 0,
             corner_radius_percent: 50,
+            position_x: None,
+            position_y: None,
         }
     }
 

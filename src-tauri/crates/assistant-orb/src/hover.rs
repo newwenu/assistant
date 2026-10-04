@@ -5,6 +5,14 @@ use std::time::Duration;
 pub const HOVER_FADE_DURATION: Duration = Duration::from_millis(300);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScreenBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PointerHoverObservation {
     pub enabled: bool,
     pub delay: Duration,
@@ -81,6 +89,16 @@ impl HoverState {
             HoverState::FadingIn { elapsed } => {
                 elapsed.as_secs_f32() / HOVER_FADE_DURATION.as_secs_f32()
             }
+        }
+    }
+
+    pub fn should_toggle_click_through(self, prev: HoverState) -> Option<bool> {
+        match (prev, self) {
+            (HoverState::Visible, HoverState::FadingOut { .. }) => Some(true),
+            (HoverState::FadingOut { .. }, HoverState::Hidden) => Some(true),
+            (HoverState::Hidden, HoverState::FadingIn { .. }) => Some(false),
+            (HoverState::FadingIn { .. }, HoverState::Visible) => Some(false),
+            _ => None,
         }
     }
 }
