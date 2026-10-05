@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 
 use log::error;
 use mouse_position::mouse_position::Mouse;
-use rusqlite::params;
 use serde_json::json;
 use tauri::{command, AppHandle, Emitter, Manager, PhysicalPosition};
 use uuid::Uuid;
@@ -26,6 +25,8 @@ use assistant_storage::{
     conversations::{self, ConversationRow, MessageRow},
     providers::{self as provider_store, ProviderRow},
     templates::{self as template_store, PromptTemplateRow},
+    tool_favorites,
+    tool_history,
 };
 use crate::request_exit;
 use crate::chat_tasks::ChatTasks;
@@ -414,9 +415,13 @@ pub fn create_conversation(app: AppHandle, provider_id: String, model_id: String
     let row = ConversationRow {
         id: id.clone(),
         title: "新对话".to_string(),
+        title_source: "placeholder".to_string(),
         provider_id: Some(provider_id),
         model_id,
         system_prompt: None,
+        is_pinned: false,
+        sort_order: 0,
+        generation: 0,
         created_at: now,
         updated_at: now,
     };
@@ -450,15 +455,11 @@ pub fn delete_conversation(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[command]
-pub fn rename_conversation(app: AppHandle, id: String, title: String) -> Result<(), String> {
+pub fn rename_conversation(app: AppHandle, id: String, title: String, title_source: Option<String>) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
-    let now = Utc::now().timestamp_millis();
-    let mut detail = conversations::get_conversation_detail(&conn, &id)?
-        .ok_or_else(|| "Conversation not found".to_string())?;
-    detail.conversation.title = title;
-    detail.conversation.updated_at = now;
-    conversations::update_conversation(&conn, &detail.conversation)
+    let source = title_source.unwrap_or_else(|| "user".to_string());
+    conversations::rename_conversation(&conn, &id, &title, &source)
 }
 
 #[command]
@@ -466,11 +467,11 @@ pub fn update_conversation_model(app: AppHandle, id: String, model_id: String) -
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     let now = Utc::now().timestamp_millis();
-    let mut detail = conversations::get_conversation_detail(&conn, &id)?
+    let mut conv = conversations::get_conversation_by_id(&conn, &id)?
         .ok_or_else(|| "Conversation not found".to_string())?;
-    detail.conversation.model_id = model_id;
-    detail.conversation.updated_at = now;
-    conversations::update_conversation(&conn, &detail.conversation)
+    conv.model_id = model_id;
+    conv.updated_at = now;
+    conversations::update_conversation(&conn, &conv)
 }
 
 #[command]
@@ -478,11 +479,11 @@ pub fn update_conversation_provider(app: AppHandle, id: String, provider_id: Str
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     let now = Utc::now().timestamp_millis();
-    let mut detail = conversations::get_conversation_detail(&conn, &id)?
+    let mut conv = conversations::get_conversation_by_id(&conn, &id)?
         .ok_or_else(|| "Conversation not found".to_string())?;
-    detail.conversation.provider_id = Some(provider_id);
-    detail.conversation.updated_at = now;
-    conversations::update_conversation(&conn, &detail.conversation)
+    conv.provider_id = Some(provider_id);
+    conv.updated_at = now;
+    conversations::update_conversation(&conn, &conv)
 }
 
 #[command]
@@ -528,6 +529,8 @@ pub fn send_chat_message(app: AppHandle, conversation_id: String, content: Strin
         content: content.clone(),
         tokens: None,
         timestamp: now,
+        parent_id: None,
+        is_pinned: false,
     };
     conversations::insert_message(&conn, &user_msg)?;
 
@@ -546,6 +549,8 @@ pub fn send_chat_message(app: AppHandle, conversation_id: String, content: Strin
         content: String::new(),
         tokens: None,
         timestamp: now + 1,
+        parent_id: None,
+        is_pinned: false,
     };
     conversations::insert_message(&conn, &assistant_msg)?;
 
@@ -700,27 +705,7 @@ pub fn get_conversation_paginated(
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
 
-    let conversation = {
-        let mut stmt = conn
-            .prepare("SELECT id, title, provider_id, model_id, system_prompt, created_at, updated_at FROM conversations WHERE id = ?1")
-            .map_err(|e| e.to_string())?;
-        let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
-        if let Some(row) = rows.next().map_err(|e| e.to_string())? {
-            Some(ConversationRow {
-                id: row.get(0).map_err(|e| e.to_string())?,
-                title: row.get(1).map_err(|e| e.to_string())?,
-                provider_id: row.get(2).map_err(|e| e.to_string())?,
-                model_id: row.get(3).map_err(|e| e.to_string())?,
-                system_prompt: row.get(4).map_err(|e| e.to_string())?,
-                created_at: row.get(5).map_err(|e| e.to_string())?,
-                updated_at: row.get(6).map_err(|e| e.to_string())?,
-            })
-        } else {
-            None
-        }
-    };
-
-    match conversation {
+    match conversations::get_conversation_by_id(&conn, &id)? {
         Some(conv) => {
             let page_limit = limit.unwrap_or(50);
             let messages = conversations::get_messages_paginated(&conn, &id, page_limit, before_timestamp)?;
@@ -755,7 +740,95 @@ pub fn export_conversation(app: AppHandle, id: String, format: String) -> Result
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     match format.as_str() {
+        "json" => conversations::export_conversation_json(&conn, &id),
         "markdown" | "md" => conversations::export_conversation_markdown(&conn, &id),
         _ => conversations::export_conversation_markdown(&conn, &id),
     }
+}
+
+#[command]
+pub fn record_tool_usage(app: AppHandle, tool_id: String) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    tool_history::record_usage(&conn, &tool_id)?;
+    let _ = tool_history::cleanup_old_history(&conn);
+    Ok(())
+}
+
+#[command]
+pub fn get_recent_tools(app: AppHandle, limit: Option<i32>) -> Result<serde_json::Value, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    let limit = limit.unwrap_or(10);
+    let rows = tool_history::get_recent_tools(&conn, limit)?;
+    Ok(json!(rows))
+}
+
+#[command]
+pub fn get_favorite_tools(app: AppHandle) -> Result<serde_json::Value, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    let rows = tool_favorites::get_favorites(&conn)?;
+    Ok(json!(rows))
+}
+
+#[command]
+pub fn toggle_tool_favorite(app: AppHandle, tool_id: String) -> Result<bool, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    tool_favorites::toggle_favorite(&conn, &tool_id)
+}
+
+#[command]
+pub fn set_favorite_tools_order(app: AppHandle, tool_ids: Vec<String>) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    tool_favorites::set_favorites_order(&conn, &tool_ids)
+}
+
+#[command]
+pub fn toggle_conversation_pin(app: AppHandle, id: String) -> Result<bool, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    conversations::toggle_pin(&conn, &id)
+}
+
+#[command]
+pub fn duplicate_conversation(app: AppHandle, id: String) -> Result<String, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    conversations::duplicate_conversation(&conn, &id)
+}
+
+#[command]
+pub fn batch_delete_conversations(app: AppHandle, ids: Vec<String>) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    conversations::batch_delete(&conn, &ids)
+}
+
+#[command]
+pub fn purge_conversations(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    conversations::purge_all(&conn)
+}
+
+#[command]
+pub fn edit_message(app: AppHandle, message_id: String, new_content: String) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    conversations::edit_message(&conn, &message_id, &new_content)
+}
+
+#[command]
+pub fn regenerate_message(app: AppHandle, conversation_id: String, message_id: String) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    conversations::delete_message(&conn, &message_id)?;
+    let _ = app.emit("chat-regenerate", json!({
+        "conversation_id": conversation_id,
+        "deleted_message_id": message_id,
+    }));
+    Ok(())
 }

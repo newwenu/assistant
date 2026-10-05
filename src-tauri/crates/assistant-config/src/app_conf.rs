@@ -23,7 +23,7 @@ impl AppConf {
         Self {
             theme: "system".to_string(),
             language: "zh-CN".to_string(),
-            hotkey: "CommandOrControl+K".to_string(),
+            hotkey: "".to_string(),
             stay_on_top: false,
         }
     }

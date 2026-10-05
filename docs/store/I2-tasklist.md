@@ -156,7 +156,7 @@
 
 ### B7. MessageList 消息列表组件
 
-- [x] `src/chat/MessageList.tsx`：滚动容器 + 自动滚底 + 回到底部按钮 + 空状态 TemplateCards
+- [x] `src/chat/MessageList.tsx`：滚动容器 + 自动滚底 + 回到底部按钮（空状态模板卡片已移除）
 
 **依赖**：B6
 
@@ -186,9 +186,9 @@
 
 ---
 
-### B11. TemplateCards Prompt 模板卡片
+### ~~B11. TemplateCards Prompt 模板卡片~~ — 已移除
 
-- [x] `src/chat/TemplateCards.tsx`：2 列网格 + 图标 + 变量提取 + 填写弹窗
+- ~~[x] `src/chat/TemplateCards.tsx`：2 列网格 + 图标 + 变量提取 + 填写弹窗~~ — **已移除**（见 DEVLOG 2026-10-05）
 
 **依赖**：无
 
@@ -319,7 +319,7 @@ B7 (MessageList) ────────────────────┤
 B8 (MessageInput) ───────────────────┤              │
 B9 (ModelSelector) ──────────────────┤              │
 B10 (ConversationSidebar) ───────────┤              │
-B11 (TemplateCards) ─────────────────┤              │
+~~B11 (TemplateCards)~~ 已移除 ──────┤              │
 │                                    │              │
 │                    ┌───────────────┤              │
 │                    ↓               │              │
@@ -373,7 +373,7 @@ B11 (TemplateCards) ─────────────────┤      
 
 第 8 批（前端组件，可并行）：
   B6 (MessageBubble), B8 (MessageInput), B9 (ModelSelector),
-  B10 (ConversationSidebar), B11 (TemplateCards)
+  B10 (ConversationSidebar), ~~B11 (TemplateCards) 已移除~~
 
 第 9 批（依赖第 8 批）：
   B7 (MessageList), B12 (ChatView)

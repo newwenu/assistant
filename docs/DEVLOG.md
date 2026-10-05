@@ -545,3 +545,28 @@ isPointInCircle(px, py, cx, cy, r) // 点在圆内
 | MessageList.tsx | useEffect | `lastScrollHeightRef` 优化 | 流式输出时避免重复 scrollTo 调用 |
 
 **关键知识点**：`min-height: 0` 是让 flex 子项可以缩小到比内容更小的必要条件——没有它，`overflow-y: auto` 永远不会产生滚动条
+
+### 2026-10-05 I2 增强 — 消息历史管理（主窗口）
+
+主窗口新增 `HistoryManager.tsx`（左右分栏：左侧对话列表+搜索+时间分组，右侧消息详情+虚拟滚动+分页加载+删除+导出）。
+
+**Rust 后端**：conversations.rs 新增 `get_messages_paginated`/`get_message_count`/`delete_message`/`search_conversations`/`export_conversation_markdown`；cmd.rs 新增 4 个 Tauri Command。
+
+**前端**：constants.ts 新增 4 常量（MESSAGES_PAGE_SIZE/VIRTUAL_SCROLL_THRESHOLD/OSCAN/SCROLL_LOAD_THRESHOLD_PX）；chatStore.ts 扩展分页加载/持久化删除/全文搜索；App.tsx 新增 `/history` 路由+侧栏菜单项。
+
+**踩坑**：
+- 虚拟滚动/分页误加到 Orb MessageList → 恢复为简单渲染，只在 HistoryManager 使用
+- 消息气泡硬编码颜色 → 改 CSS 变量 `--color-primary-bg`/`--color-primary-border`
+- 对话列表不滚动 → 原生 div + `flex:1; overflow-y:auto; minHeight:0` 替代 Layout.Sider
+- 时间分组用"过去24h"判断 → 改日历日期边界（`new Date(year,month,date).getTime()`）
+- 刷新不更新消息 → `handleRefresh()` 并行刷新列表+消息，15s 定时器同步
+
+### 2026-10-05 移除悬浮窗内置模板卡片（TemplateCards）
+
+移除 Orb 空对话时的模板快捷入口（TemplateCards 组件 + 变量填写 Modal）。原因：悬浮窗空间有限，Modal 在 compact 模式体验差，用户可直接输入 prompt。
+
+删除 `TemplateCards.tsx`；MessageList/ChatView 移除模板相关 props/state/invoke；global.css 移除 `.template-card*` 样式；setup.rs 移除 `seed_builtin_templates` 注释代码。Rust 后端 templates.rs/cmd.rs 和主窗口 TemplateManager 保留。
+
+### 2026-10-05 主窗口标题栏高度被内容撑高修复
+
+Flexbox `min-height:auto` 导致侧边栏内容撑高内层 Layout，Titlebar 被压缩。修复：外层 Layout 加 `overflow:hidden`，内层 Layout 加 `flex:1; minHeight:0; overflow:hidden`，Sider 加 `overflow:hidden`，Titlebar 加 `flexShrink:0`。SettingsWindow 同理。

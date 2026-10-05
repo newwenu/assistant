@@ -1,9 +1,6 @@
 // 参考: ChatGPT/src-tauri/src/core/setup.rs — setup 中初始化配置和窗口
 
 use tauri::{App, Manager};
-use tauri_plugin_global_shortcut::{
-    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
-};
 
 use assistant_config::{
     app_conf::AppConf,
@@ -12,7 +9,6 @@ use assistant_config::{
 };
 use assistant_orb::placement;
 use assistant_storage::db;
-use assistant_storage::templates;
 
 use super::tray;
 
@@ -33,9 +29,6 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             let db_path = data_dir.join("assistant.db");
             match db::init_db(&db_path) {
                 Ok(conn) => {
-                    if let Err(e) = templates::seed_builtin_templates(&conn) {
-                        log::error!("Failed to seed builtin templates: {}", e);
-                    }
                     handle.manage(DbState(std::sync::Mutex::new(conn)));
                 }
                 Err(e) => {
@@ -54,27 +47,29 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     position_orb_window(handle);
 
-    let shortcut: Shortcut = Shortcut::new(Some(Modifiers::SUPER), Code::KeyK);
-    if let Err(e) = handle.global_shortcut().on_shortcut(shortcut, |app, _shortcut, event| {
-        if event.state == ShortcutState::Pressed {
-            if let Some(window) = app.get_webview_window(WINDOW_ORB) {
-                if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
-                    let _ = window.hide();
-                } else {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
-        }
-    }) {
-        log::warn!("Failed to register global shortcut (may be occupied by another app): {}", e);
-        if let Some(orb) = handle.get_webview_window(WINDOW_ORB) {
-            let _ = orb.eval(&format!(
-                "window.__shortcutError = '快捷键 Cmd/Ctrl+K 注册失败，可能被其它应用占用({})';",
-                e
-            ));
-        }
-    }
+    // NOTE: CommandOrControl+K 全局快捷键暂时置空，与 I3 CommandPalette 冲突
+    // 后续 I4 阶段改为可配置快捷键时再恢复
+    // let shortcut: Shortcut = Shortcut::new(Some(Modifiers::SUPER), Code::KeyK);
+    // if let Err(e) = handle.global_shortcut().on_shortcut(shortcut, |app, _shortcut, event| {
+    //     if event.state == ShortcutState::Pressed {
+    //         if let Some(window) = app.get_webview_window(WINDOW_ORB) {
+    //             if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+    //                 let _ = window.hide();
+    //             } else {
+    //                 let _ = window.show();
+    //                 let _ = window.set_focus();
+    //             }
+    //         }
+    //     }
+    // }) {
+    //     log::warn!("Failed to register global shortcut (may be occupied by another app): {}", e);
+    //     if let Some(orb) = handle.get_webview_window(WINDOW_ORB) {
+    //         let _ = orb.eval(&format!(
+    //             "window.__shortcutError = '快捷键 Cmd/Ctrl+K 注册失败，可能被其它应用占用({})';",
+    //             e
+    //         ));
+    //     }
+    // }
 
     log::info!("Assistant started");
     Ok(())

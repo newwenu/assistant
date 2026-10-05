@@ -266,6 +266,28 @@ abstract class BaseProviderAdapter {
 
 SSE 逐 token 渲染 + `chatDeltaCoalescer` 增量合并（借鉴 OpenHuman）。
 
+### 6.3 错误处理
+
+前端 `ChatError` 体系（13 种错误码，含 retryable 标记）：
+
+| ChatErrorCode | 说明 | retryable |
+|---------------|------|-----------|
+| ApiKeyMissing | API Key 未配置 | ❌ |
+| AuthFailed | 认证失败 | ❌ |
+| RateLimited | 请求限流 | ✅ |
+| ModelNotFound | 模型不可用 | ❌ |
+| ContextOverflow | 上下文过长 | ❌ |
+| NetworkError | 网络错误 | ✅ |
+| Timeout | 请求超时 | ✅ |
+| ServerError | 服务端错误 | ✅ |
+| RequestRejected | 请求被拒绝 | ❌ |
+| ParseError | 解析错误 | ❌ |
+| Cancelled | 已取消 | ❌ |
+| StreamError | 流式错误 | ✅ |
+| InternalError | 内部错误 | ❌ |
+
+retryable 错误支持指数退避重试（max 3 次，base 1s，max 30s）。
+
 ---
 
 ## 7. 项目目录
@@ -395,6 +417,7 @@ assistant/
 │       ├── styles/
 │       │   ├── global.css          # CSS 变量（亮/暗两套）
 │       │   └── theme.ts            # Ant Design 主题令牌配置
+│       │   # 注：各组件使用 CSS Modules（*.module.css）实现样式隔离
 │       └── mascot.riv              # Rive 动画资源
 │
 ├── package.json
@@ -504,6 +527,9 @@ assistant/
 | 流式调度器 | OpenHuman | chatDeltaCoalescer.ts L56-68 | `frameScheduler`：`requestAnimationFrame` + `setTimeout(50)` 双保险，窗口不可见时 rAF 暂停但 timer 兜底 |
 | delta 合并条件 | OpenHuman | chatDeltaCoalescer.ts L97-106 | 仅 `(thread_id, request_id, round, channel)` 完全相同的相邻 delta 才合并，不同 key 间保序 |
 | 排序保证 | OpenHuman | chatDeltaCoalescer.ts L30-36 | 非 delta 事件（如 tool_call）必须先 `flush()` 再处理，确保文本在工具调用之前 |
+| Provider 管理 UI | ChatGPT | src/components/ProviderModal.tsx | Provider 列表 + 添加/编辑/删除 + API Key 输入 + 模型选择 |
+| 对话列表侧栏 | ChatGPT | src/components/Sidebar.tsx | 对话列表 + 新建/删除/重命名 + 搜索过滤 |
+| 错误处理 + 重试 | xsai | src/retry.ts | 指数退避重试策略 + 可重试错误分类 |
 
 **验收：** 配置 API Key 后 Orb 面板内可正常对话，流式输出，历史可查看
 
@@ -540,12 +566,17 @@ assistant/
 
 **交付：** 可用的工具箱，分类导航 + 搜索 + 12+ 工具
 
-- [ ] 工具注册系统（ToolDefinition 接口）
-- [ ] 工具箱首页（分类 + 搜索 + 收藏 + 最近使用）
-- [ ] 开发工具：JSON 格式化、Base64、URL 编解码、正则测试、颜色转换、时间戳转换、Hash、UUID
-- [ ] 文本工具：Diff 对比、字数统计、Markdown 预览、文本去重
-- [ ] 工具使用历史（SQLite tool_history）
-- [ ] 侧边栏导航：工具箱 / 设置
+- [ ] 工具注册系统（ToolDefinition 接口 + defineTool 工厂）
+- [ ] 工具箱首页（分类 + 搜索 + 收藏 + 最近使用 + 拖拽排序）
+- [ ] 加密工具：Hash 计算、UUID 生成、Base64 编解码
+- [ ] 转换器工具：颜色转换、时间戳转换、进制转换、URL 编解码
+- [ ] 开发工具：JSON 格式化、正则测试器、JWT 解码
+- [ ] 文本工具：Diff 对比、字数统计
+- [ ] 工具使用历史（SQLite tool_history）+ 收藏持久化（SQLite tool_favorites）
+- [ ] 命令面板（Ctrl/Cmd+K）+ 模糊搜索（fuse.js）
+- [ ] 侧边栏可折叠分类菜单（CollapsibleToolMenu）
+
+**规格**：详见 [I3-spec.md](./store/I3-spec.md) / [I3-tasklist.md](./store/I3-tasklist.md)
 
 **参考：**
 
@@ -557,6 +588,10 @@ assistant/
 | 模糊搜索 | IT-Tools | src/composable/fuzzySearch.ts | `useFuzzySearch`：基于 **fuse.js**，支持 keywords 权重搜索，空查询可配置返回全部或空 |
 | 命令面板 | IT-Tools | src/modules/command-palette/ | `Ctrl/Cmd+K` 唤起，工具 + 操作 + 外部链接混合搜索，键盘导航（↑↓+Enter） |
 | 侧边栏布局 | IT-Tools | src/layouts/base.layout.vue | 收藏工具置顶 + 按分类折叠菜单（`CollapsibleToolMenu`）+ 版本号页脚 |
+| 工具页布局 | IT-Tools | src/layouts/tool.layout.vue | 标题(h1,40px) + 收藏按钮 + 分隔线(200px,2px,20%透明度) + 描述 + 内容(max-width:600px居中) |
+| 工具卡片 | IT-Tools | src/components/ToolCard.vue | 图标(40px) + isNew 徽章 + 收藏按钮 + 名称(truncate) + 描述(line-clamp-2) |
+| 首页网格 | IT-Tools | src/pages/Home.page.vue | 收藏拖拽排序(vuedraggable) + 新工具区 + 全部工具区(按分类分组) |
+| 折叠菜单 | IT-Tools | src/components/CollapsibleToolMenu.vue | ▶/▼ 箭头 + localStorage 折叠状态持久化 + toggle 分类 |
 
 **验收：** 主窗口工具箱可正常使用所有工具，搜索过滤，收藏置顶
 

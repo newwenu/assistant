@@ -149,6 +149,32 @@ export const HistoryManager: React.FC = () => {
     }
   }, []);
 
+  const refreshMessages = useCallback(async () => {
+    if (!selectedId) return;
+    try {
+      const result = await invoke("get_conversation_paginated", {
+        id: selectedId,
+        limit: MESSAGES_PAGE_SIZE,
+        beforeTimestamp: null,
+      });
+      const detail = result as {
+        messages: Message[];
+        total_count: number;
+      } | null;
+      if (detail) {
+        setMessages(detail.messages || []);
+        setTotalCount(detail.total_count);
+        setHasMore((detail.messages || []).length < detail.total_count);
+      }
+    } catch (e) {
+      console.error("Failed to refresh messages:", e);
+    }
+  }, [selectedId]);
+
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([refreshConversations(), refreshMessages()]);
+  }, [refreshConversations, refreshMessages]);
+
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
@@ -156,11 +182,12 @@ export const HistoryManager: React.FC = () => {
   useEffect(() => {
     refreshTimerRef.current = setInterval(() => {
       refreshConversations();
+      refreshMessages();
     }, REFRESH_INTERVAL_MS);
     return () => {
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
     };
-  }, [refreshConversations]);
+  }, [refreshConversations, refreshMessages]);
 
   const handleSearch = useCallback((value: string) => {
     setSearchQuery(value);
@@ -401,7 +428,7 @@ export const HistoryManager: React.FC = () => {
               type="text"
               size="small"
               icon={<ReloadOutlined spin={refreshing} />}
-              onClick={refreshConversations}
+              onClick={handleRefresh}
               style={{ flexShrink: 0 }}
             />
           </Tooltip>

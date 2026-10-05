@@ -1,15 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { MessageBubble, RoleContext } from "./MessageBubble";
-import { TemplateCards } from "./TemplateCards";
 import type { Message } from "../stores/chatStore";
-import type { PromptTemplate } from "./TemplateCards";
 import css from "./MessageList.module.css";
 
 interface MessageListProps {
   messages: Message[];
   isStreaming: boolean;
-  templates: PromptTemplate[];
-  onTemplateSelect: (content: string) => void;
   compact?: boolean;
   onDeleteMessage?: (id: string) => void;
   onRetryMessage?: () => void;
@@ -18,8 +14,6 @@ interface MessageListProps {
 export const MessageList: React.FC<MessageListProps> = ({
   messages,
   isStreaming,
-  templates,
-  onTemplateSelect,
   compact = false,
   onDeleteMessage,
   onRetryMessage,
@@ -69,9 +63,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           .filter(Boolean)
           .join(" ")}
         ref={scrollRef}
-      >
-        <TemplateCards templates={templates} onSelect={onTemplateSelect} />
-      </div>
+      />
     );
   }
 

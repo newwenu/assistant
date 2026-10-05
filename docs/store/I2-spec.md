@@ -203,7 +203,7 @@ OrbPanel 从 I1 占位替换为完整对话界面。
 - 用户消息：右对齐，蓝色气泡
 - 助手消息：左对齐，灰色气泡，支持 Markdown 渲染
 - 流式输出中：助手消息末尾显示闪烁光标 `▍`
-- 空状态：显示 Prompt 模板快捷入口（5 个内置模板）
+- 空状态：空白（内置模板快捷入口已移除，见 DEVLOG 2026-10-05）
 - 自动滚动：新消息时滚到底部，用户上滚时停止自动滚动（"回到底部"按钮出现）
 - 消息渲染：`react-markdown` + `remark-gfm`（GFM 表格/删除线/任务列表）
 
@@ -293,8 +293,8 @@ OrbPanel 从 I1 占位替换为完整对话界面。
 | 头脑风暴 | daily | `请针对以下主题给出{{count}}个创意想法：\n\n{{topic}}` |
 
 **UI**：
-- 空对话时显示模板卡片（图标 + 名称 + 点击填充输入框）
-- 变量占位符 `{{variable}}` → 点击模板后弹出变量填写表单
+- ~~空对话时显示模板卡片（图标 + 名称 + 点击填充输入框）~~ — **已移除**（见 DEVLOG 2026-10-05）
+- ~~变量占位符 `{{variable}}` → 点击模板后弹出变量填写表单~~ — **已移除**
 - 管理页：`/settings/templates`（I2 仅展示内置模板，自定义模板 I3 扩展）
 
 ## 3. Rust 后端规格
@@ -404,7 +404,7 @@ impl ChatTasks {
 | ModelSelector | `src/chat/ModelSelector.tsx` | 模型选择下拉 |
 | ProviderSelector | `src/chat/ProviderSelector.tsx` | Provider 选择（对话栏内嵌下拉） |
 | ConversationSidebar | `src/chat/ConversationSidebar.tsx` | 对话列表侧栏 |
-| TemplateCards | `src/chat/TemplateCards.tsx` | Prompt 模板快捷入口卡片 |
+| ~~TemplateCards~~ | ~~`src/chat/TemplateCards.tsx`~~ | ~~Prompt 模板快捷入口卡片~~ **已移除** |
 | HistoryManager | `src/chat/HistoryManager.tsx` | 消息历史管理页（I2-history 前置 UI 骨架） |
 | ProviderManager | `src/settings/ProviderManager.tsx` | Provider 配置管理页 |
 | AddProviderDialog | `src/settings/AddProviderDialog.tsx` | Provider 预设选择对话框 |
@@ -549,7 +549,7 @@ OrbContextMenu "新建对话" 从 disabled 改为 enabled：
 5. 流式输出中可点击 Stop 按钮取消
 6. 对话历史持久化，关闭重开后可查看
 7. 对话列表可新建/删除/重命名/切换
-8. 空对话时显示 Prompt 模板快捷入口
+8. ~~空对话时显示 Prompt 模板快捷入口~~ — **已移除**（见 DEVLOG 2026-10-05）
 9. 无 Provider 配置时显示引导提示
 10. 窗口隐藏时流式输出不卡死（timer 兜底）
 11. API Key 在 SQLite 中为加密密文，前端永远不接触明文

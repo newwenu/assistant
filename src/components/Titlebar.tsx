@@ -26,6 +26,7 @@ export const Titlebar: React.FC<TitlebarProps> = ({ title = "Assistant" }) => {
       style={
         {
           height: TITLEBAR_HEIGHT,
+          flexShrink: 0,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",

@@ -9,7 +9,9 @@
 
 ## 2. 数据模型扩展
 
-### 2.1 Branded Type ID
+### 2.1 Branded Type ID ⏸️暂缓
+
+> **暂缓理由**：当前项目规模小，string ID 混淆风险极低；TypeScript branded type 是编译期幻影类型，运行时零防护，实际收益有限。
 
 当前 `Message.id` / `Conversation.id` / `ToolCall.id` 均为 `string`，编译期无法区分，易混淆传参。
 
@@ -67,7 +69,9 @@ type MessageSource =
   | { kind: 'system-prompt' }
 ```
 
-### 2.4 消息分支（Branching）
+### 2.4 消息分支（Branching）⏸️暂缓
+
+> **暂缓理由**：分支是复杂度最高的特性之一，当前应用连基础消息持久化都有 bug，分支会让数据模型和 UI 状态管理复杂度翻倍。ChatGPT 也是上线很久后才加分支。建议先实现"编辑后删除后续消息重新发送"的简单模式。
 
 编辑用户消息后产生分支，同一用户消息下可有多个助手回复。
 
@@ -106,16 +110,16 @@ interface Conversation {
 }
 ```
 
-| 新增字段 | 类型 | 说明 | 参考 |
+| 新增字段 | 类型 | 说明 | 参考 | |
 |---------|------|------|------|
 | `is_pinned` | boolean | 置顶，排序优先 | 通用 |
 | `is_starred` | boolean | 收藏，快速筛选 | 通用 |
-| `color_mark` | string \| null | 颜色标记（如 `"red"` / `"blue"`） | 通用 |
-| `labels` | string[] | 标签/分类 | openhuman `Thread.labels` |
-| `draft_content` | string \| null | 输入框草稿 | 通用 |
-| `draft_updated_at` | number \| null | 草稿更新时间 | 通用 |
+| `color_mark` | string \| null | 颜色标记（如 `"red"` / `"blue"`） | 通用 | ⏸️暂缓：使用频率低 |
+| `labels` | string[] | 标签/分类 | openhuman `Thread.labels` | ⏸️暂缓：使用频率低 |
+| `draft_content` | string \| null | 输入框草稿 | 通用 | ⏸️暂缓：当前前端内存方式够用，避免草稿管理复杂度 |
+| `draft_updated_at` | number \| null | 草稿更新时间 | 通用 | ⏸️暂缓 |
 | `message_count` | number | 消息数（冗余缓存，避免 COUNT 查询） | openhuman |
-| `total_tokens` | number | 总 token 数（冗余缓存） | openhuman |
+| `total_tokens` | number | 总 token 数（冗余缓存） | openhuman | ⏸️暂缓：冗余缓存增加维护负担，需每次增删消息同步更新 |
 | `generation` | number | 渲染优化版本号 | airi `sessionGenerations` |
 
 ### 2.6 Tool Call 状态模型
@@ -134,10 +138,10 @@ interface ToolCallEntry {
   started_at: number
   finished_at: number | null
   is_error?: boolean
-  subagent?: SubagentActivity
+  subagent?: SubagentActivity  // ⏸️暂缓：当前无 subagent 架构
 }
 
-interface SubagentActivity {
+interface SubagentActivity {  // ⏸️暂缓：当前无 subagent 架构，为未来预留的过度设计
   task_id: string
   agent_id: string
   status: 'running' | 'awaiting_user' | 'completed' | 'failed'
@@ -160,7 +164,7 @@ interface TokenUsage {
   total_tokens: number
   cache_read_tokens?: number
   cache_write_tokens?: number
-  cost_usd?: number
+  cost_usd?: number                    // ⏸️暂缓：无通用 budget API，各 Provider 计费方式不同
   context_window_tokens?: number
 }
 ```
@@ -182,10 +186,10 @@ enum ChatErrorCode {
   Cancelled = "Cancelled",
   StreamError = "StreamError",
   InternalError = "InternalError",
-  GuardrailBlocked = "GuardrailBlocked",
-  BudgetExhausted = "BudgetExhausted",
-  ToolTimeout = "ToolTimeout",
-  SubagentFailed = "SubagentFailed",
+  GuardrailBlocked = "GuardrailBlocked",    // ⏸️暂缓：当前无 guardrail
+  BudgetExhausted = "BudgetExhausted",      // ⏸️暂缓：当前无 budget
+  ToolTimeout = "ToolTimeout",              // ⏸️暂缓：当前无 tool timeout
+  SubagentFailed = "SubagentFailed",        // ⏸️暂缓：当前无 subagent
 }
 ```
 
@@ -196,12 +200,12 @@ enum ChatErrorCode {
 ```sql
 ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE conversations ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE conversations ADD COLUMN color_mark TEXT;
-ALTER TABLE conversations ADD COLUMN labels TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE conversations ADD COLUMN color_mark TEXT;              -- ⏸️暂缓
+ALTER TABLE conversations ADD COLUMN labels TEXT NOT NULL DEFAULT '[]';  -- ⏸️暂缓
 ALTER TABLE conversations ADD COLUMN draft_content TEXT;
 ALTER TABLE conversations ADD COLUMN draft_updated_at INTEGER;
 ALTER TABLE conversations ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE conversations ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE conversations ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0;  -- ⏸️暂缓
 ALTER TABLE conversations ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE conversations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
 ```
@@ -249,22 +253,29 @@ CREATE TABLE IF NOT EXISTS conversation_labels (
 );
 ```
 
-### 3.5 Schema Migration
+### 3.5 Schema 策略：不迁移，删旧重建
+
+> **策略**：当前无生产数据，不做 Schema 迁移。`init_db` 中 `CREATE TABLE IF NOT EXISTS` 已包含完整表结构。若表结构变更，删除旧 DB 文件让应用重建即可。
+>
+> **理由**：迁移代码（ALTER TABLE / DROP TABLE）容易引入难以发现的 bug（如 v1 迁移 DROP TABLE conversations 导致 messages 全部丢失）。当前阶段无生产数据需要保留，迁移的收益为零，风险为正。
 
 `db.rs` 的 `run_migrations` 增加 v2 迁移：
 
+~~v2 迁移代码已废弃，不再使用。新字段直接写入 `CREATE TABLE IF NOT EXISTS` 语句中，删旧 DB 重建即可。~~
+
+<!--
 ```rust
 if current_version < 2 {
     info!("Running migration v2: I3 chat history management");
     conn.execute_batch(
         "ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
          ALTER TABLE conversations ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0;
-         ALTER TABLE conversations ADD COLUMN color_mark TEXT;
-         ALTER TABLE conversations ADD COLUMN labels TEXT NOT NULL DEFAULT '[]';
+         ALTER TABLE conversations ADD COLUMN color_mark TEXT;              -- ⏸️暂缓
+         ALTER TABLE conversations ADD COLUMN labels TEXT NOT NULL DEFAULT '[]';  -- ⏸️暂缓
          ALTER TABLE conversations ADD COLUMN draft_content TEXT;
          ALTER TABLE conversations ADD COLUMN draft_updated_at INTEGER;
          ALTER TABLE conversations ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0;
-         ALTER TABLE conversations ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE conversations ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0;  -- ⏸️暂缓
          ALTER TABLE conversations ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;
          ALTER TABLE conversations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
          ALTER TABLE messages ADD COLUMN parent_id TEXT;
@@ -292,6 +303,7 @@ if current_version < 2 {
     ).map_err(|e| e.to_string())?;
 }
 ```
+-->
 
 ## 4. 功能规格
 
@@ -403,7 +415,9 @@ pub fn toggle_conversation_pin(app: AppHandle, id: String) -> Result<(), String>
 pub fn toggle_conversation_star(app: AppHandle, id: String) -> Result<(), String>
 ```
 
-#### 草稿保存/恢复
+#### 草稿保存/恢复 ⏸️暂缓
+
+> **暂缓理由**：当前前端内存方式已够用（切换对话时输入框内容保留在内存），DB 持久化草稿增加管理复杂度（何时保存、何时清除、草稿与实际消息不一致等），暂不需要。
 
 ```rust
 #[command]
@@ -432,7 +446,9 @@ pub fn export_conversation(app: AppHandle, id: String, format: String) -> Result
 - `format`：`"json"` / `"markdown"` / `"text"`
 - 返回导出内容字符串，前端触发下载
 
-#### 对话导入
+#### 对话导入 ⏸️暂缓
+
+> **暂缓理由**：导入需要格式校验、版本兼容、ID 冲突处理，复杂度高但使用频率极低。
 
 ```rust
 #[command]
@@ -593,7 +609,9 @@ renameConversation: async (id, title) => {
 }
 ```
 
-### 4.9 自动重试
+### 4.9 自动重试 ⏸️暂缓
+
+> **暂缓理由**：流式场景下自动重试行为复杂（半截消息怎么重试？），当前流式出错用户手动重发即可。
 
 ```typescript
 interface RetryConfig {
@@ -649,12 +667,16 @@ async function retryWithBackoff(
   - 📌 固定到上下文
   - 🗑️ 删除
 
-#### 消息反馈
+#### 消息反馈 ⏸️暂缓
+
+> **暂缓理由**：本地个人应用无 RLHF 训练管线，点赞/点踩数据无处消费，存 DB 无实际用途。
 
 - 点赞/点踩存入 `messages.feedback`
 - 用于后续模型评估和 RLHF 数据收集
 
-### 4.11 虚拟滚动
+### 4.11 虚拟滚动 ⏸️暂缓
+
+> **暂缓理由**：react-virtuoso 集成复杂（动态高度、跟随最新消息、分页加载配合），且当前对话很少超过 100 条。分页加载已解决大部分性能问题。
 
 当消息数 > `VIRTUAL_SCROLL_THRESHOLD`（默认 100）时启用虚拟列表。
 
@@ -695,7 +717,9 @@ async function retryWithBackoff(
 └─────────────────────┘
 ```
 
-#### 多选模式
+#### 多选模式 ⏸️暂缓
+
+> **暂缓理由**：复杂 UI 交互，使用频率低，批量删除用 Shift 多选或右键即可。
 
 - 侧栏顶部增加 ☑ 按钮，点击进入多选模式
 - 多选模式：每项前显示 Checkbox，底部显示操作栏（批量删除/批量导出/批量置顶/批量收藏）
@@ -708,7 +732,9 @@ async function retryWithBackoff(
 - `is_starred` 项显示 ⭐ 图标
 - `color_mark` 项显示对应颜色圆点
 
-#### 键盘导航
+#### 键盘导航 ⏸️暂缓
+
+> **暂缓理由**：侧栏键盘导航是桌面应用的锦上添花，不是核心需求。
 
 | 快捷键 | 操作 |
 |--------|------|
@@ -740,7 +766,9 @@ finishStream: () => {
 
 ### 4.14 辅助功能
 
-#### TTS 语音朗读
+#### TTS 语音朗读 ⏸️暂缓
+
+> **暂缓理由**：Web Speech API 兼容性差、语音质量参差、中英文混合效果不好，投入产出比低。
 
 - 助手消息操作栏增加 🔊 朗读按钮
 - 使用 Web Speech API `speechSynthesis.speak()`
@@ -753,7 +781,9 @@ finishStream: () => {
 - 使用 `tiktoken` 的 WASM 版本（`js-tiktoken`）或简单估算（字符数 / 4）
 - 格式：`~128 tokens`
 
-#### 流式速率指示
+#### 流式速率指示 ⏸️暂缓
+
+> **暂缓理由**：信息价值低，用户不关心速率数字，关心的是内容本身。
 
 - 流式中在助手消息底部显示 `XX tokens/s`
 - 计算：`completion_tokens / (now - streamStartTime) * 1000`
@@ -777,7 +807,7 @@ finishStream: () => {
 | `get_messages_paginated` | `(conn, conversation_id, limit, before_timestamp) → Result<Vec<MessageRow>>` | 分页查询消息 |
 | `toggle_pin` | `(conn, id) → Result<()>` | 切换置顶 |
 | `toggle_star` | `(conn, id) → Result<()>` | 切换收藏 |
-| `save_draft` | `(conn, id, content) → Result<()>` | 保存草稿 |
+| `save_draft` | `(conn, id, content) → Result<()>` | 保存草稿 | ⏸️暂缓 |
 | `duplicate_conversation` | `(conn, id) → Result<String>` | 复制对话 |
 | `search_conversations` | `(conn, query) → Result<Vec<ConversationRow>>` | 全文搜索 |
 | `batch_delete` | `(conn, ids) → Result<()>` | 批量删除 |
@@ -791,7 +821,7 @@ finishStream: () => {
 |------|------|------|
 | `delete_message` | `(conn, id) → Result<()>` | 删除单条消息（含级联 tool_calls） |
 | `edit_message` | `(conn, id, new_content) → Result<()>` | 编辑消息内容 |
-| `update_feedback` | `(conn, id, feedback) → Result<()>` | 更新消息反馈 |
+| `update_feedback` | `(conn, id, feedback) → Result<()>` | 更新消息反馈 | ⏸️暂缓 |
 | `get_children` | `(conn, parent_id) → Result<Vec<MessageRow>>` | 获取分支子消息 |
 | `export_conversation` | `(conn, id, format) → Result<String>` | 导出对话 |
 | `import_conversation` | `(conn, data, format) → Result<String>` | 导入对话 |
@@ -806,24 +836,24 @@ finishStream: () => {
 
 ### 5.3 Tauri Commands 新增
 
-| command | 签名 | 说明 |
-|---------|------|------|
+| command | 签名 | 说明 | |
+|---------|------|------|------|
 | `get_conversation_paginated` | `(id, limit?, before_timestamp?) → Result<ConversationDetail>` | 分页获取对话 |
 | `toggle_conversation_pin` | `(id) → Result<()>` | 切换置顶 |
 | `toggle_conversation_star` | `(id) → Result<()>` | 切换收藏 |
-| `save_conversation_draft` | `(id, content) → Result<()>` | 保存草稿 |
+| `save_conversation_draft` | `(id, content) → Result<()>` | 保存草稿 | ⏸️暂缓 |
 | `duplicate_conversation` | `(id) → Result<String>` | 复制对话 |
 | `export_conversation` | `(id, format) → Result<String>` | 导出对话 |
-| `import_conversation` | `(data, format) → Result<String>` | 导入对话 |
+| `import_conversation` | `(data, format) → Result<String>` | 导入对话 | ⏸️暂缓 |
 | `batch_delete_conversations` | `(ids) → Result<()>` | 批量删除 |
 | `purge_conversations` | `() → Result<()>` | 清空所有 |
 | `search_conversations` | `(query) → Result<Vec<ConversationRow>>` | 全文搜索 |
 | `edit_message` | `(message_id, new_content) → Result<()>` | 编辑消息 |
 | `regenerate_message` | `(conversation_id, message_id) → Result<()>` | 重新生成 |
 | `delete_message_persist` | `(message_id) → Result<()>` | 持久化删除消息 |
-| `update_message_feedback` | `(message_id, feedback) → Result<()>` | 更新反馈 |
-| `set_conversation_color_mark` | `(id, color) → Result<()>` | 设置颜色标记 |
-| `set_conversation_labels` | `(id, labels) → Result<()>` | 设置标签 |
+| `update_message_feedback` | `(message_id, feedback) → Result<()>` | 更新反馈 | ⏸️暂缓 |
+| `set_conversation_color_mark` | `(id, color) → Result<()>` | 设置颜色标记 | ⏸️暂缓 |
+| `set_conversation_labels` | `(id, labels) → Result<()>` | 设置标签 | ⏸️暂缓 |
 
 ## 6. 前端规格
 
@@ -893,7 +923,7 @@ interface ChatState {
 | MessageList | `src/chat/MessageList.tsx` | 重构 | 虚拟滚动 + 分页加载 + 骨架屏 |
 | ChatView | `src/chat/ChatView.tsx` | 修改 | 上下文进度条 + 草稿保存 |
 | ContextBar | `src/chat/ContextBar.tsx` | 新增 | 上下文窗口使用量进度条 |
-| BranchSwitcher | `src/chat/BranchSwitcher.tsx` | 新增 | 消息分支切换器 |
+| BranchSwitcher | `src/chat/BranchSwitcher.tsx` | 新增 | 消息分支切换器 | ⏸️暂缓 |
 | ToolCallBubble | `src/chat/ToolCallBubble.tsx` | 新增 | Tool Call 状态渲染（五态） |
 | ToolTimeline | `src/chat/ToolTimeline.tsx` | 新增 | 工具调用时间线视图 |
 | ConversationGroup | `src/chat/ConversationGroup.tsx` | 新增 | 对话分组标题 + 可折叠 |
@@ -923,19 +953,19 @@ export const SCROLL_LOAD_THRESHOLD_PX = 100
 | 2 | 虚拟滚动：200 条消息对话，DOM 节点数 < 60 | Chrome DevTools Elements 计数 |
 | 3 | 时间分组：侧栏按"今天/昨天/近 7 天/近 30 天/更早"分组显示 | 手动测试 |
 | 4 | 置顶/收藏：置顶对话在侧栏最顶部，收藏筛选仅显示收藏对话 | 手动测试 |
-| 5 | 草稿保存：输入框输入内容 → 切换对话 → 切回 → 内容恢复 | 手动测试 |
+| 5 | 草稿保存：输入框输入内容 → 切换对话 → 切回 → 内容恢复 | 手动测试 | ⏸️暂缓 |
 | 6 | 消息编辑：编辑用户消息 → 后续消息删除 → 重新发送 | 手动测试 |
-| 7 | 消息重新生成：点击重新生成 → 新回复产生 → 分支指示器显示 | 手动测试 |
-| 8 | 分支切换：编辑产生分支 → ◀▶ 切换 → 消息子树替换 | 手动测试 |
+| 7 | 消息重新生成：点击重新生成 → 新回复产生 → 分支指示器显示 | 手动测试 | ⏸️暂缓（依赖分支） |
+| 8 | 分支切换：编辑产生分支 → ◀▶ 切换 → 消息子树替换 | 手动测试 | ⏸️暂缓 |
 | 9 | 消息删除持久化：删除消息 → 刷新页面 → 消息不再出现 | 手动测试 |
 | 10 | Tool Call 五态：工具调用显示 running/success/error/awaiting_user/cancelled | Deep 模式测试 |
 | 11 | 上下文监控：进度条显示使用量，>80% 黄色警告 | 长对话测试 |
 | 12 | Persist Queue：快速连续操作（重命名+删除+发送）无数据丢失 | 压力测试 |
-| 13 | 自动重试：模拟网络断开 → 恢复 → 消息自动重试成功 | DevTools Network Offline |
+| 13 | 自动重试：模拟网络断开 → 恢复 → 消息自动重试成功 | DevTools Network Offline | ⏸️暂缓 |
 | 14 | 全文搜索：搜索消息内容 → 匹配对话显示 | 手动测试 |
-| 15 | 对话导出/导入：导出 JSON → 删除对话 → 导入 → 对话恢复 | 手动测试 |
+| 15 | 对话导出/导入：导出 JSON → 删除对话 → 导入 → 对话恢复 | 手动测试 | 导出保留，导入⏸️暂缓 |
 | 16 | 代码高亮：代码块语法高亮 + 复制按钮 | 手动测试 |
 | 17 | 数学公式：`$$E=mc^2$$` 正确渲染 | 手动测试 |
 | 18 | Reasoning 折叠：思考内容默认折叠，点击展开 | 手动测试 |
-| 19 | 消息反馈：点赞/点踩存入 DB | 手动测试 + DB 查询 |
-| 20 | Branded Type：`MessageId` / `ConversationId` 类型不匹配时编译报错 | TypeScript 编译 |
+| 19 | 消息反馈：点赞/点踩存入 DB | 手动测试 + DB 查询 | ⏸️暂缓 |
+| 20 | Branded Type：`MessageId` / `ConversationId` 类型不匹配时编译报错 | TypeScript 编译 | ⏸️暂缓 |

@@ -13,7 +13,6 @@ import { MessageInput } from "./MessageInput";
 import { ModelSelector } from "./ModelSelector";
 import { ProviderSelector } from "./ProviderSelector";
 import { ConversationSidebar } from "./ConversationSidebar";
-import type { PromptTemplate } from "./TemplateCards";
 import { CHAT_PANEL_HEADER_HEIGHT } from "../config/constants";
 
 interface ChatViewProps {
@@ -27,7 +26,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
 }) => {
   const chat = useChatStore();
   const provider = useProviderStore();
-  const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [currentModelId, setCurrentModelId] = useState("");
   const [currentProviderId, setCurrentProviderId] = useState<string | null>(
     null,
@@ -37,9 +35,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
   useEffect(() => {
     provider.loadProviders();
     chat.loadConversations();
-    invoke("list_prompt_templates").then((result) => {
-      setTemplates((result as PromptTemplate[]) || []);
-    });
   }, []);
 
   useEffect(() => {
@@ -75,13 +70,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
       chat.sendMessage(lastUserMsg.content);
     }
   }, [chat]);
-
-  const handleTemplateSelect = useCallback(
-    (content: string) => {
-      chat.sendMessage(content);
-    },
-    [chat],
-  );
 
   const handleProviderChange = useCallback(
     (newProviderId: string) => {
@@ -200,8 +188,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
             <MessageList
               messages={chat.messages}
               isStreaming={chat.isStreaming}
-              templates={templates}
-              onTemplateSelect={handleTemplateSelect}
               compact
               onDeleteMessage={chat.deleteMessage}
               onRetryMessage={handleRetry}
@@ -304,8 +290,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
           <MessageList
             messages={chat.messages}
             isStreaming={chat.isStreaming}
-            templates={templates}
-            onTemplateSelect={handleTemplateSelect}
             onDeleteMessage={chat.deleteMessage}
             onRetryMessage={handleRetry}
           />

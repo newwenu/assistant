@@ -70,6 +70,17 @@ pub fn run() {
             cmd::delete_message_persist,
             cmd::search_conversations,
             cmd::export_conversation,
+            cmd::record_tool_usage,
+            cmd::get_recent_tools,
+            cmd::get_favorite_tools,
+            cmd::toggle_tool_favorite,
+            cmd::set_favorite_tools_order,
+            cmd::toggle_conversation_pin,
+            cmd::duplicate_conversation,
+            cmd::batch_delete_conversations,
+            cmd::purge_conversations,
+            cmd::edit_message,
+            cmd::regenerate_message,
         ])
         .on_menu_event(|app, event| match event.id.as_ref() {
             "orb_new_chat" => {

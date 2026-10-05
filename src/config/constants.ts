@@ -50,3 +50,11 @@ export const MESSAGES_PAGE_SIZE = 50;
 export const VIRTUAL_SCROLL_THRESHOLD = 100;
 export const VIRTUAL_SCROLL_OVERSCAN = 5;
 export const SCROLL_LOAD_THRESHOLD_PX = 100;
+
+export const TOOL_DEFAULT_MAX_WIDTH = 640;
+export const TOOL_WIDE_MAX_WIDTH = 960;
+export const TOOL_CARD_GAP = 12;
+export const TOOL_SEARCH_THRESHOLD = 0.3;
+export const TOOL_NEW_WEEKS = 2;
+export const RECENT_TOOLS_LIMIT = 10;
+export const COMMAND_PALETTE_MAX_PER_CATEGORY = 5;

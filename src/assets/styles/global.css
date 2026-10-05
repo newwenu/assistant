@@ -575,44 +575,6 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   opacity: 0.6;
 }
 
-.template-cards {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  padding: 16px;
-}
-
-.template-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 12px 8px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border-secondary);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.template-card:hover {
-  border-color: var(--color-primary);
-  background: var(--color-border-secondary);
-}
-
-.template-card-icon {
-  font-size: 24px;
-  margin-bottom: 4px;
-}
-
-.template-card-name {
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.template-card-category {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-}
-
 .chat-no-provider {
   display: flex;
   flex-direction: column;

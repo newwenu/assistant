@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
@@ -19,26 +19,14 @@ import {
   SIDEBAR_WIDTH,
 } from "@/config/constants";
 import { useOrbStore } from "@/stores/orbStore";
+import { useToolStore } from "@/stores/toolStore";
 import { ProviderManager } from "@/settings/ProviderManager";
 import { TemplateManager } from "@/settings/TemplateManager";
 import { HistoryManager } from "@/chat/HistoryManager";
-
-const ToolboxPage: React.FC = () => {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100%",
-        color: "var(--color-text-tertiary)",
-      }}
-    >
-      <Typography.Text type="secondary">选择左侧工具开始使用</Typography.Text>
-    </div>
-  );
-};
+import { ToolBox } from "@/tools/ToolBox";
+import { ToolPage } from "@/tools/ToolPage";
+import { CommandPalette } from "@/tools/CommandPalette";
+import { toolsByCategory, toolsMap } from "@/tools/registry";
 
 const SettingsPage: React.FC = () => {
   return (
@@ -60,49 +48,104 @@ const SettingsPage: React.FC = () => {
 const MainLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const loadFavorites = useToolStore((s) => s.loadFavorites);
+  const loadRecentTools = useToolStore((s) => s.loadRecentTools);
 
-  const menuItems = [
-    { key: "/", label: "工具" },
-    { key: "/history", label: "消息历史" },
-    { key: "/settings", label: "设置" },
-    { type: "divider" as const },
-    {
-      key: "ai-group",
-      label: "AI 设置",
-      type: "group" as const,
-      children: [
-        { key: "/settings/providers", label: "Provider 管理" },
-        { key: "/settings/templates", label: "Prompt 模板" },
-      ],
-    },
-  ];
+  useEffect(() => {
+    loadFavorites();
+    loadRecentTools();
+  }, [loadFavorites, loadRecentTools]);
+
+  const isToolRoute = location.pathname.startsWith("/tools/");
+
+  const favoriteToolIds = useToolStore((s) => s.favoriteToolIds);
+
+  const buildToolCategoryItems = () => {
+    const items: {
+      key: string;
+      label: string;
+      children?: { key: string; label: string }[];
+    }[] = [];
+
+    if (favoriteToolIds.length > 0) {
+      items.push({
+        key: "fav-group",
+        label: "★ 收藏",
+        children: favoriteToolIds
+          .map((id) => toolsMap[id])
+          .filter(Boolean)
+          .map((t) => ({ key: `/tools/${t.id}`, label: t.name })),
+      });
+    }
+
+    for (const group of toolsByCategory) {
+      items.push({
+        key: `cat-${group.category}`,
+        label: `${group.meta.label}`,
+        children: group.tools.map((t) => ({
+          key: `/tools/${t.id}`,
+          label: t.name,
+        })),
+      });
+    }
+
+    return items;
+  };
 
   return (
-    <Layout style={{ height: "100vh", background: "var(--color-bg-layout)" }}>
+    <Layout
+      style={{
+        height: "100vh",
+        background: "var(--color-bg-layout)",
+        overflow: "hidden",
+      }}
+    >
       <Titlebar />
-      <Layout>
+      <Layout style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
         <Layout.Sider
           width={SIDEBAR_WIDTH}
           style={{
             background: "var(--color-bg-sidebar)",
             borderRight: "1px solid var(--color-border)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
           }}
         >
-          <div style={{ padding: "16px 16px 8px" }}>
-            <Typography.Text
-              strong
-              style={{ fontSize: 15, color: "var(--color-text)" }}
-            >
-              工具箱
-            </Typography.Text>
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+            <Menu
+              mode="inline"
+              selectedKeys={[isToolRoute ? "/" : location.pathname]}
+              defaultOpenKeys={["tool-group"]}
+              style={{ background: "transparent", border: "none" }}
+              items={[
+                {
+                  key: "tool-group",
+                  label: "工具箱",
+                  type: "group" as const,
+                  children: [
+                    { key: "/", label: "全部工具" },
+                    ...buildToolCategoryItems(),
+                  ],
+                },
+                { type: "divider" as const },
+                { key: "/history", label: "消息历史" },
+                { type: "divider" as const },
+                {
+                  key: "settings-group",
+                  label: "设置",
+                  type: "group" as const,
+                  children: [
+                    { key: "/settings", label: "通用设置" },
+                    { key: "/settings/providers", label: "Provider 管理" },
+                    { key: "/settings/templates", label: "Prompt 模板" },
+                  ],
+                },
+              ]}
+              onClick={({ key }) => navigate(key)}
+            />
           </div>
-          <Menu
-            mode="inline"
-            selectedKeys={[location.pathname]}
-            style={{ background: "transparent", border: "none" }}
-            items={menuItems}
-            onClick={({ key }) => navigate(key)}
-          />
+          <CommandPalette />
         </Layout.Sider>
         <Layout.Content
           style={{
@@ -111,7 +154,8 @@ const MainLayout: React.FC = () => {
           }}
         >
           <Routes>
-            <Route path="/" element={<ToolboxPage />} />
+            <Route path="/" element={<ToolBox />} />
+            <Route path="/tools/:id" element={<ToolPage />} />
             <Route path="/history" element={<HistoryManager />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/providers" element={<ProviderManager />} />
@@ -125,10 +169,21 @@ const MainLayout: React.FC = () => {
 
 const SettingsWindow: React.FC = () => {
   return (
-    <Layout style={{ height: "100vh", background: "var(--color-bg)" }}>
+    <Layout
+      style={{
+        height: "100vh",
+        background: "var(--color-bg)",
+        overflow: "hidden",
+      }}
+    >
       <Titlebar title="Settings" />
       <Layout.Content
-        style={{ background: "var(--color-bg)", overflow: "auto" }}
+        style={{
+          background: "var(--color-bg)",
+          overflow: "auto",
+          flex: 1,
+          minHeight: 0,
+        }}
       >
         <Routes>
           <Route path="/settings" element={<SettingsPage />} />
