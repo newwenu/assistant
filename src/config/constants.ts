@@ -38,3 +38,15 @@ export const ORB_SNAP_DELAY_MS = 1000;
 export const ORB_SNAP_ANIMATION_MS = 250;
 export const CLICK_THROUGH_DEBOUNCE_MS = 30;
 export const HAND_JITTER_PX = 8;
+
+export const CHAT_PANEL_HEADER_HEIGHT = 40;
+export const CHAT_INPUT_MIN_ROWS = 1;
+export const CHAT_INPUT_MAX_ROWS = 4;
+export const CHAT_AUTO_TITLE_LENGTH = 20;
+export const CHAT_SIDEBAR_WIDTH = 200;
+export const STREAM_COALESCE_TIMER_MS = 50;
+export const BUILTIN_TEMPLATE_COUNT = 5;
+export const MESSAGES_PAGE_SIZE = 50;
+export const VIRTUAL_SCROLL_THRESHOLD = 100;
+export const VIRTUAL_SCROLL_OVERSCAN = 5;
+export const SCROLL_LOAD_THRESHOLD_PX = 100;

@@ -28,3 +28,10 @@ pub const ORB_SNAP_DELAY_MS: u64 = 1000;
 pub const ORB_SNAP_ANIMATION_MS: u64 = 250;
 pub const HOVER_POLL_INTERVAL_MS: u64 = 120;
 pub const DRAG_POLL_INTERVAL_MS: u64 = 16;
+
+pub const CHAT_PANEL_HEADER_HEIGHT: u32 = 40;
+pub const CHAT_INPUT_MIN_ROWS: u32 = 1;
+pub const CHAT_INPUT_MAX_ROWS: u32 = 4;
+pub const CHAT_AUTO_TITLE_LENGTH: usize = 20;
+pub const CHAT_SIDEBAR_WIDTH: u32 = 200;
+pub const STREAM_COALESCE_TIMER_MS: u64 = 50;

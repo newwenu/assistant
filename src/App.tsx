@@ -1,11 +1,17 @@
 import React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
 import { Titlebar } from "@/components/Titlebar";
 import { OrbBall } from "@/orb/OrbBall";
 import { OrbPanel } from "@/orb/OrbPanel";
-import { Layout, Typography } from "antd";
+import { Layout, Typography, Menu } from "antd";
 import {
   WINDOW_MAIN,
   WINDOW_ORB,
@@ -13,6 +19,9 @@ import {
   SIDEBAR_WIDTH,
 } from "@/config/constants";
 import { useOrbStore } from "@/stores/orbStore";
+import { ProviderManager } from "@/settings/ProviderManager";
+import { TemplateManager } from "@/settings/TemplateManager";
+import { HistoryManager } from "@/chat/HistoryManager";
 
 const ToolboxPage: React.FC = () => {
   return (
@@ -49,58 +58,83 @@ const SettingsPage: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const menuItems = [
+    { key: "/", label: "工具" },
+    { key: "/history", label: "消息历史" },
+    { key: "/settings", label: "设置" },
+    { type: "divider" as const },
+    {
+      key: "ai-group",
+      label: "AI 设置",
+      type: "group" as const,
+      children: [
+        { key: "/settings/providers", label: "Provider 管理" },
+        { key: "/settings/templates", label: "Prompt 模板" },
+      ],
+    },
+  ];
+
   return (
-    <BrowserRouter>
-      <Layout style={{ height: "100vh", background: "var(--color-bg-layout)" }}>
-        <Titlebar />
-        <Layout>
-          <Layout.Sider
-            width={SIDEBAR_WIDTH}
-            style={{
-              background: "var(--color-bg-sidebar)",
-              borderRight: "1px solid var(--color-border)",
-            }}
-          >
-            <div style={{ padding: "16px 16px 8px" }}>
-              <Typography.Text
-                strong
-                style={{ fontSize: 15, color: "var(--color-text)" }}
-              >
-                工具箱
-              </Typography.Text>
-            </div>
-          </Layout.Sider>
-          <Layout.Content
-            style={{
-              background: "var(--color-bg)",
-              overflow: "auto",
-            }}
-          >
-            <Routes>
-              <Route path="/" element={<ToolboxPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
-          </Layout.Content>
-        </Layout>
+    <Layout style={{ height: "100vh", background: "var(--color-bg-layout)" }}>
+      <Titlebar />
+      <Layout>
+        <Layout.Sider
+          width={SIDEBAR_WIDTH}
+          style={{
+            background: "var(--color-bg-sidebar)",
+            borderRight: "1px solid var(--color-border)",
+          }}
+        >
+          <div style={{ padding: "16px 16px 8px" }}>
+            <Typography.Text
+              strong
+              style={{ fontSize: 15, color: "var(--color-text)" }}
+            >
+              工具箱
+            </Typography.Text>
+          </div>
+          <Menu
+            mode="inline"
+            selectedKeys={[location.pathname]}
+            style={{ background: "transparent", border: "none" }}
+            items={menuItems}
+            onClick={({ key }) => navigate(key)}
+          />
+        </Layout.Sider>
+        <Layout.Content
+          style={{
+            background: "var(--color-bg)",
+            overflow: "auto",
+          }}
+        >
+          <Routes>
+            <Route path="/" element={<ToolboxPage />} />
+            <Route path="/history" element={<HistoryManager />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/providers" element={<ProviderManager />} />
+            <Route path="/settings/templates" element={<TemplateManager />} />
+          </Routes>
+        </Layout.Content>
       </Layout>
-    </BrowserRouter>
+    </Layout>
   );
 };
 
 const SettingsWindow: React.FC = () => {
   return (
-    <BrowserRouter>
-      <Layout style={{ height: "100vh", background: "var(--color-bg)" }}>
-        <Titlebar title="Settings" />
-        <Layout.Content
-          style={{ background: "var(--color-bg)", overflow: "auto" }}
-        >
-          <Routes>
-            <Route path="/settings" element={<SettingsPage />} />
-          </Routes>
-        </Layout.Content>
-      </Layout>
-    </BrowserRouter>
+    <Layout style={{ height: "100vh", background: "var(--color-bg)" }}>
+      <Titlebar title="Settings" />
+      <Layout.Content
+        style={{ background: "var(--color-bg)", overflow: "auto" }}
+      >
+        <Routes>
+          <Route path="/settings" element={<SettingsPage />} />
+        </Routes>
+      </Layout.Content>
+    </Layout>
   );
 };
 
@@ -123,7 +157,9 @@ const OrbWindow: React.FC = () => {
     isExpanded ? "orb-expanded" : "",
     `orb-expand-${expandDirection}`,
     `orb-expand-${expandVertical}`,
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div
@@ -150,7 +186,11 @@ const viewMap: Record<string, React.FC> = {
 function App() {
   const webview = getCurrentWebview();
   const View = viewMap[webview.label] ?? MainLayout;
-  return <View />;
+  return (
+    <BrowserRouter>
+      <View />
+    </BrowserRouter>
+  );
 }
 
 export default App;

@@ -168,7 +168,7 @@ pub fn collapse_orb_panel(
 
 #[command]
 pub fn show_orb_context_menu(app: AppHandle, x: f64, y: f64) -> Result<(), String> {
-    let new_chat = MenuItem::with_id(&app, "orb_new_chat", "新建对话", false, None::<&str>)
+    let new_chat = MenuItem::with_id(&app, "orb_new_chat", "新建对话", true, None::<&str>)
         .map_err(|e| e.to_string())?;
     let open_main = MenuItem::with_id(&app, "orb_open_main", "打开主窗口", true, None::<&str>)
         .map_err(|e| e.to_string())?;

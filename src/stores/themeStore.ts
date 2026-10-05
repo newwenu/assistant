@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { dispatchThemeChanged } from "../settings/settingsDispatcher";
 
 type ThemeMode = "system" | "light" | "dark";
 
@@ -28,21 +29,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   resolved: "light",
 
   setMode: (mode: ThemeMode) => {
-    set({ mode });
-    invoke("set_theme", { theme: mode }).catch(console.error);
-    if (mode !== "system") {
-      set({ resolved: mode });
-      invoke("emit_theme_changed", { resolved: mode }).catch(console.error);
-    } else {
-      getCurrentWindow()
-        .theme()
-        .then((sys) => {
-          const resolved = resolveTheme("system", sys || "light");
-          set({ resolved });
-          invoke("emit_theme_changed", { resolved }).catch(console.error);
-        })
-        .catch(console.error);
-    }
+    dispatchThemeChanged(mode).catch(console.error);
   },
 
   cycleMode: () => {
@@ -74,9 +61,12 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         }
       });
 
-      await listen<{ resolved: "light" | "dark" }>(THEME_EVENT, ({ payload }) => {
-        set({ resolved: payload.resolved });
-      });
+      await listen<{ resolved: "light" | "dark" }>(
+        THEME_EVENT,
+        ({ payload }) => {
+          set({ resolved: payload.resolved });
+        },
+      );
     } catch {
       set({ mode: "system", resolved: "light" });
     }

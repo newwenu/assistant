@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { flushSync } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useOrbStore } from "../stores/orbStore";
 import {
@@ -8,11 +9,41 @@ import {
   ORB_CHROME_INSET,
   EXPAND_DIRECTION_HYSTERESIS_PX,
 } from "../config/constants";
-import { getWindowLogicalRect, physicalToLogical, physicalSizeToLogical } from "./OrbCoord";
+import {
+  getWindowLogicalRect,
+  physicalToLogical,
+  physicalSizeToLogical,
+} from "./OrbCoord";
 
 const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
 const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
 const NEEDS_CLICK_THROUGH_TOGGLE = IS_MACOS || IS_WINDOWS;
+
+function waitForPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
+const PANEL_TRANSITION_MS = 300;
+
+function waitForPanelTransition(): Promise<void> {
+  const panel = document.querySelector<HTMLElement>(".orb-panel");
+  if (!panel) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timeout = setTimeout(resolve, PANEL_TRANSITION_MS + 50);
+    const onEnd = (e: TransitionEvent) => {
+      if (e.target === panel && e.propertyName === "opacity") {
+        clearTimeout(timeout);
+        panel.removeEventListener("transitionend", onEnd as EventListener);
+        resolve();
+      }
+    };
+    panel.addEventListener("transitionend", onEnd as EventListener);
+  });
+}
 
 interface UseOrbExpandReturn {
   isExpanded: boolean;
@@ -27,6 +58,7 @@ export function useOrbExpand(): UseOrbExpandReturn {
   const setExpandDirection = useOrbStore((s) => s.setExpandDirection);
   const setExpandVertical = useOrbStore((s) => s.setExpandVertical);
   const setClickThrough = useOrbStore((s) => s.setClickThrough);
+  const setBallVisible = useOrbStore((s) => s.setBallVisible);
 
   const expand = useCallback(async () => {
     let direction: "left" | "right" = "right";
@@ -73,7 +105,10 @@ export function useOrbExpand(): UseOrbExpandReturn {
       } else {
         if (!fitsLeft && fitsRight) {
           direction = "right";
-        } else if (fitsRight && roomRight >= roomLeft + EXPAND_DIRECTION_HYSTERESIS_PX) {
+        } else if (
+          fitsRight &&
+          roomRight >= roomLeft + EXPAND_DIRECTION_HYSTERESIS_PX
+        ) {
           direction = "right";
         } else {
           direction = "left";
@@ -89,7 +124,10 @@ export function useOrbExpand(): UseOrbExpandReturn {
       } else {
         if (!fitsUp && fitsDown) {
           vertical = "down";
-        } else if (fitsDown && roomDown >= roomUp + EXPAND_DIRECTION_HYSTERESIS_PX) {
+        } else if (
+          fitsDown &&
+          roomDown >= roomUp + EXPAND_DIRECTION_HYSTERESIS_PX
+        ) {
           vertical = "down";
         } else {
           vertical = "up";
@@ -110,24 +148,34 @@ export function useOrbExpand(): UseOrbExpandReturn {
       setExpandVertical("down");
     }
 
+    flushSync(() => setBallVisible(false));
+    await waitForPaint();
     await invoke("expand_orb_panel", { horizontal: direction, vertical });
     await storeExpand();
     if (NEEDS_CLICK_THROUGH_TOGGLE) {
       await invoke("set_orb_click_through", { enabled: false });
       setClickThrough(false);
     }
-  }, [storeExpand, setExpandDirection, setExpandVertical, setClickThrough]);
+  }, [
+    storeExpand,
+    setExpandDirection,
+    setExpandVertical,
+    setClickThrough,
+    setBallVisible,
+  ]);
 
   const collapse = useCallback(async () => {
     const direction = useOrbStore.getState().expandDirection;
     const vertical = useOrbStore.getState().expandVertical;
     await storeCollapse();
+    await waitForPanelTransition();
     await invoke("collapse_orb_panel", { horizontal: direction, vertical });
+    setBallVisible(true);
     if (NEEDS_CLICK_THROUGH_TOGGLE) {
       await invoke("set_orb_click_through", { enabled: true });
       setClickThrough(true);
     }
-  }, [storeCollapse, setClickThrough]);
+  }, [storeCollapse, setClickThrough, setBallVisible]);
 
   return { isExpanded, expand, collapse };
 }

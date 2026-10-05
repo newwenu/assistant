@@ -25,10 +25,7 @@ export function physicalToLogical(px: number, py: number): LogicalPos {
   return { x: px / s, y: py / s };
 }
 
-export function physicalSizeToLogical(
-  pw: number,
-  ph: number,
-): LogicalSize {
+export function physicalSizeToLogical(pw: number, ph: number): LogicalSize {
   const s = dpr();
   return { width: pw / s, height: ph / s };
 }
@@ -47,10 +44,7 @@ export async function getMouseLogicalPos(): Promise<LogicalPos> {
 
 export async function getWindowLogicalRect(): Promise<LogicalRect> {
   const win = getCurrentWindow();
-  const [pos, size] = await Promise.all([
-    win.outerPosition(),
-    win.outerSize(),
-  ]);
+  const [pos, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
   const lp = physicalToLogical(pos.x, pos.y);
   const ls = physicalSizeToLogical(size.width, size.height);
   return { x: lp.x, y: lp.y, width: ls.width, height: ls.height };

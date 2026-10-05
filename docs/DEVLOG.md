@@ -283,3 +283,265 @@ isPointInCircle(px, py, cx, cy, r) // 点在圆内
 - `window.rs`：`expand_orb_panel` / `collapse_orb_panel` 接收 horizontal/vertical 方向参数，reposition + resize
 - `OrbExpand.ts`：`expand()` / `collapse()` 调用 Rust IPC 移动窗口
 - `tauri.conf.json`：orb 窗口初始大小 88×88（折叠态）
+
+### 2026-10-04 展开闪烁修复 — flushSync + 双 rAF + transitionend
+
+**问题**：展开时小球闪跳到窗口左上角再归位；收起时面板被裁切闪烁
+
+**根因分析**：
+
+1. **展开闪烁**：Rust `expand_orb_panel` 分两步执行 `set_position` → `set_size`，中间有一帧窗口在新位置但仍是旧尺寸，`isExpanded` 还是 `false`，小球 CSS 位置（`ballLeft: 12px`）对应新窗口左上角而非正确角落。React 重渲染后 `isExpanded=true` 才把小球推到 `calc(100%-76px)`，产生可见跳变
+2. **收起闪烁**：`storeCollapse()` 触发面板 300ms CSS 淡出动画，但紧接着 `invoke("collapse_orb_panel")` 立刻 resize 窗口到 88×88，面板动画还没播完就被裁切
+
+**参考对比**：
+- BongoCat：单次 `SetWindowPos` 同时设 x/y/width/height，无中间帧跳变
+- deepseek-harness-orb：Electron `setBounds` 原子操作
+- 我们的 Tauri：`set_position` + `set_size` 两次独立调用，无法合并
+
+**修复 — 纯前端方案，零 Rust 改动**：
+
+1. **orbStore.ts 新增 `isBallVisible` 状态**：`isBallVisible: boolean` + `setBallVisible(v)`，控制小球显隐，独立于 `isExpanded`
+
+2. **展开时序**（OrbExpand.ts `expand()`）：
+   ```
+   flushSync(() => setBallVisible(false))   ← React 同步渲染，小球 opacity:0
+   await waitForPaint()                     ← 双 rAF，等浏览器 compositor 上屏
+   await invoke("expand_orb_panel")         ← Rust resize，小球已不可见
+   await storeExpand()                      ← 面板淡入动画开始
+   ```
+   - `flushSync`：保证 React 同步渲染到 DOM，不走调度
+   - 双 `requestAnimationFrame`：第1帧等 style/layout 计算，第2帧确保 compositor 已上屏
+   - Rust invoke 时小球已从屏幕上消失，跳变不可见
+
+3. **收起时序**（OrbExpand.ts `collapse()`）：
+   ```
+   await storeCollapse()                    ← 面板淡出动画开始 (300ms)
+   await waitForPanelTransition()           ← 等 transitionend + 超时兜底
+   await invoke("collapse_orb_panel")       ← Rust resize，面板已完全透明
+   setBallVisible(true)                     ← 小球恢复显示
+   ```
+   - `waitForPanelTransition()`：监听 `.orb-panel` 的 `transitionend` 事件（`opacity` 属性），加 350ms 超时兜底
+   - Rust resize 时面板已完全透明，无裁切闪烁
+
+4. **CSS**（global.css）：`.orb-ball-hidden` 规则 — `opacity: 0 !important` + `pointer-events: none !important` + `transition: none !important`（瞬间隐藏，不走 150ms opacity transition）
+
+5. **OrbBall.tsx**：读取 `isBallVisible`，切换 `orb-ball-hidden` CSS 类
+
+**设计原则**：
+- 前端是"发令者"，Rust 是"执行者"——前端确保视觉状态就绪后再调 Rust IPC
+- `flushSync` + 双 rAF 是前端控制上屏时序的标准模式，比 `eval` 注入或 Rust 端设窗口透明度更可控
+- `transitionend` + 超时兜底确保收起时面板动画完整播放，不依赖固定延时
+
+## I2 — Orb AI 对话
+
+### 2026-10-05 实施记录
+
+**阶段 A — Rust 后端**（A1~A10 全部完成）
+
+- A1: Cargo.toml workspace 添加 13 个依赖（reqwest/tokio/futures/aes-gcm/sha2/base64/machine-uid/tokio-stream/async-stream/rand/thiserror/uuid/chrono）
+- A2: crypto.rs — AES-256-GCM 加密 + B64 辅助函数 + get_machine_id + 单元测试
+- A3: base.rs — ProviderKind/ProviderConfig/ChatMessage/ChatDelta/ProviderError + 工厂函数
+- A4: openai.rs — OpenAIAdapter 完整实现（chat_completion_stream + list_models + 120s 超时 + 429 限流）
+- A5: storage CRUD — providers.rs + conversations.rs + templates.rs + seed_builtin_templates
+- A6: Provider cmds — list/save/delete_provider + list_models + preview_models_cmd
+- A7: Conv cmds — create/list/get/delete/rename_conversation + list/save_prompt_template
+- A8: Stream 核心 — send_chat_message + cancel_chat + chat_tasks.rs
+- A9: setup/lib 集成 — DbState + ChatTasks manage + seed + 全部 commands 注册
+- A10: Rust 常量 — CHAT_PANEL_HEADER_HEIGHT 等 6 个常量
+
+**阶段 B — 前端**（B1~B19 全部完成）
+
+- B1: npm install react-markdown + remark-gfm
+- B2: TS 常量 — 7 个常量
+- B3: chatStore — 全部方法 + ensureCurrentConversation + streamingMessageId + chat-delta 监听
+- B4: providerStore — 全部方法
+- B5: streamCoalescer — createChatDeltaCoalescer（rAF + setTimeout + 合并 + flush + dispose）+ **11 个单元测试**
+- B6: MessageBubble — 用户/助手样式 + Markdown + 流式光标 + 错误 + hover 时间戳 + 删除
+- B7: MessageList — 滚动容器 + 自动滚底 + 回到底部按钮 + TemplateCards
+- B8: MessageInput — TextArea 自适应 + Enter 发送 + Shift+Enter 换行 + Send/Stop
+- B9: ModelSelector — Select + chip 变体 + providerId 过滤
+- B10: ConversationSidebar — 搜索 + 列表 + 相对时间 + 右键菜单 + inline 编辑 + 删除确认
+- B11: TemplateCards — 2 列网格 + 图标 + 变量提取 + 填写弹窗
+- B12: ChatView — 整合全部组件 + 无 Provider 引导 + compact 模式 + **ProviderSelector 内嵌对话栏**
+- B13: OrbPanel — 接入 ChatView + 失焦/Escape + 历史下拉
+- B14: ProviderManager — 卡片列表 + 添加/编辑/删除 + 空状态 + 预设选择
+- B15: ProviderForm — 表单 + 获取模型 + 编辑模式 Key 占位符
+- B16: TemplateManager — 只读卡片网格 + 变量标签 + 内置标签
+- B17: 路由扩展 — /settings/providers + /settings/templates + AI 设置分组
+- B18: OrbContextMenu — Rust 端 orb_new_chat → emit orb-new-conversation → 前端 DOM 事件委托 → ChatView.handleNewConversation
+- B19: CSS 样式 — 对话/气泡/光标/侧栏/模板/Markdown/ProviderSelector chip 样式
+
+**阶段 C — 集成验收**（C1~C2 完成）
+
+- C1: SQL 权限已配置
+- C2: cargo build + tsc --noEmit + vite build 全部通过
+
+### 2026-10-05 设置变更器（Settings Dispatcher）模式
+
+**参考**：WindowPet `handleSettingChange` — 统一入口，集成持久化 + store 更新 + 跨窗口事件发射
+
+**实现**：
+
+1. **events.ts** — SettingAction 枚举 + SettingEvent 枚举 + SettingEventPayload 接口
+2. **settingsDispatcher.ts** — dispatchProviderSaved / dispatchProviderDeleted / dispatchThemeChanged / dispatchAppConfChanged / dispatchOrbConfChanged / dispatchTemplateSaved
+   - 每个函数：先 `invoke()` 持久化 → 再更新对应 store → 最后 `emitSettingEvent()` 通知其他窗口
+   - `emitSettingEvent()`：遍历 [WINDOW_MAIN, WINDOW_ORB]，`WebviewWindow.getByLabel(label)` → `win.emit(event, payload)`
+3. **settingListeners.ts** — `initSettingListeners()` 在各窗口初始化时调用，监听跨窗口事件并更新 store
+   - ProviderChanged → loadProviders
+   - ThemeChanged → setTheme
+   - AppConfChanged / OrbConfChanged → 对应 store 更新
+
+**踩坑**：
+- Tauri 2 `WebviewWindow.getByLabel()` 返回 `Promise<WebviewWindow | null>`，必须 `await` 后才能调 `.emit()`
+- `WebviewWindow` 从 `@tauri-apps/api/webviewWindow` 导入，非 `@tauri-apps/api/window`
+
+### 2026-10-05 B18 右键菜单"新建对话"接入
+
+**问题**：OrbContextMenu 的"新建对话" MenuItem 在 Rust 端创建但 `on_menu_event` 未处理 `orb_new_chat`
+
+**修复**：
+- Rust 端 `lib.rs` `on_menu_event` 新增 `"orb_new_chat"` 分支 → `app.emit("orb-new-conversation", ())`
+- 前端 OrbPanel 监听 `orb-new-conversation` → 派发 DOM 事件 `chat-new-conversation`
+- ChatView 监听 DOM 事件 → 调用 `handleNewConversation()`
+
+**设计选择 — DOM 事件委托而非直接调 store**：
+- OrbPanel 不直接持有 `currentProviderId` 状态（在 ChatView 内部）
+- 通过 DOM CustomEvent 委托，ChatView 自行决定用哪个 Provider 创建对话
+- 避免跨组件状态同步问题
+
+### 2026-10-05 B12 多 Provider 选择 — 内嵌下拉而非弹窗
+
+**问题**：多 Provider 时新建对话直接取 `providers[0]`，用户无法选择
+
+**方案对比**：
+- ❌ Modal 弹窗选择：打断用户操作流，Orb compact 模式下弹窗体验差
+- ✅ 对话栏内嵌 ProviderSelector 下拉：与 ModelSelector 风格一致，选择后立即生效
+
+**实现**：
+- 新建 `ProviderSelector.tsx` — 类似 ModelSelector 的 Select 组件
+  - `variant="chip"` 时显示为圆角药丸样式（`.orb-provider-chip`）
+  - `providers.length <= 1` 时返回 null（无需选择）
+- ChatView chrome bar / header 中 ProviderSelector 排在 ModelSelector 前面
+- 切换 Provider 时自动重置 Model 为新 Provider 的默认模型
+- `handleNewConversation()` 直接用当前选中的 `currentProviderId`，不再弹窗
+- OrbPanel 移除 Modal/Radio 依赖，通过 DOM 事件委托
+
+### 2026-10-05 B5 streamCoalescer 单元测试
+
+**测试框架**：vitest（新增 devDependency）
+
+**测试覆盖**（11 个用例）：
+- 单事件投递
+- 同 conversation_id + message_id 的 delta 合并
+- 不同 message_id 不合并
+- 不同 conversation_id 不合并
+- flush 立即排空队列
+- dispose 触发 flush
+- flush 后继续 push 正常工作
+- 跨 message 边界合并正确
+- 空队列 flush 无操作
+- frameScheduler setTimeout 回调
+- frameScheduler cancel 阻止回调
+
+**vitest 配置**：`vitest.config.ts` 限制 `include: ["src/**/*.test.ts"]`，排除 references 目录
+
+### 2026-10-05 简化/偏差记录
+
+- **A8 锁竞争**：`tokio::spawn` 内通过 `app_clone.state()` 获取 DbState，极端并发可能锁竞争。短期可接受，长期改用 `Arc<Pool>`
+- **B3 删除确认**：chatStore `deleteConversation` 无确认弹窗，但 ConversationSidebar 已有 `Modal.confirm` 兜底
+- **B15 Key 清空歧义**：前端 `Input.Password` 清空 → Rust 端 `starts_with("••••")` 判断保留旧 Key，但空字符串不匹配 → 清空 Key 被当作"未修改"。后续可加显式"清除 Key"按钮
+
+### 2026-10-05 Provider-对话关系解耦 — provider_id nullable
+
+**问题**：删除 Provider 时级联删除所有关联对话，用户误删 Provider 后对话历史全丢
+
+**设计变更**：
+
+```
+旧：providers (1) ──→ (N) conversations   provider_id NOT NULL REFERENCES providers(id)
+新：providers (1) ──→ (N) conversations   provider_id TEXT (nullable, 无外键约束)
+```
+
+**修改清单**：
+
+| 文件 | 修改 |
+|------|------|
+| db.rs | `provider_id TEXT NOT NULL REFERENCES providers(id)` → `provider_id TEXT`；添加 `run_migrations` v1 迁移（CREATE conversations_v1 + INSERT + DROP + RENAME） |
+| conversations.rs | `ConversationRow.provider_id: String` → `Option<String>` |
+| providers.rs | `delete_provider`：`DELETE FROM conversations WHERE provider_id=?` → `UPDATE conversations SET provider_id=NULL WHERE provider_id=?` |
+| cmd.rs | `send_chat_message`：`provider_id` 为 None 时返回错误提示"此对话的 Provider 已被删除，请重新选择 Provider 后再发送" |
+| cmd.rs | 新增 `update_conversation_provider` command，切换 Provider 时持久化到 DB |
+| lib.rs | 注册 `update_conversation_provider` |
+| chatStore.ts | `Conversation.provider_id: string` → `string \| null` |
+| ProviderManager.tsx | 删除确认文案改为"删除后，使用此 Provider 的对话将保留，但需要重新选择 Provider 才能继续对话" |
+| ConversationSidebar.tsx | 新增 `providerIds` prop，`provider_id` 为 null 或不在 providerIds 中时显示"Provider 不可用"标记 |
+| ChatView.tsx | `handleProviderChange` 同步调用 `update_conversation_provider` 持久化；传递 `providerIds` 给 ConversationSidebar |
+| ARCHITECTURE.md | 更新 conversations 表 schema |
+
+### 2026-10-05 悬浮窗发送消息崩溃修复 — tokio::spawn → tauri::async_runtime::spawn
+
+**问题**：Orb 悬浮窗发送消息时进程崩溃，exit code `0xc0000409 STATUS_STACK_BUFFER_OVERRUN`
+
+**根因链**：
+1. `send_chat_message` command 中使用 `tokio::spawn` 启动异步流处理
+2. Tauri 2.x 的 `#[command]` 默认运行在主线程（UI 线程），**没有 Tokio runtime 上下文**
+3. `tokio::spawn` 要求当前线程在 Tokio runtime 内 → panic: `there is no reactor running, must be called from the context of a Tokio 1.x runtime`
+4. panic 发生在无法 unwind 的函数中 → 触发 `STATUS_STACK_BUFFER_OVERRUN` 进程终止
+
+**参考项目做法**：
+
+| 项目 | 处理方式 |
+|------|----------|
+| OpenHuman | Core/Shell 分离，spawn 内不访问 State，用 `mpsc::channel` 解耦 |
+| OpenBitFun | `mpsc::unbounded_channel` 解耦，`CancellationToken` 取消，spawn 内不访问 State |
+| BongoCat | GPUI 框架 `cx.spawn()` 自动处理上下文 |
+| deepseek-harness-orb | TypeScript `async function*` + `AbortController` |
+| ChatGPT/WindowPet | 无流式聊天，同步 command |
+
+**修复 1 — `tauri::async_runtime::spawn` 替代 `tokio::spawn`**：
+
+- `tauri::async_runtime::spawn` 使用 Tauri 内置的 Tokio runtime（在 `Builder::setup` 阶段已初始化）
+- `tokio::spawn` 需要当前线程已在 Tokio runtime 上下文中——Tauri 的同步 command 运行在主线程，不满足
+- 3 处替换：DB 写入 channel consumer、finish channel consumer、stream 主循环
+
+**修复 2 — `mpsc::unbounded_channel` 解耦 State 访问**：
+
+- DB 写入（`DbState`）和任务完成（`ChatTasks`）从 stream 循环中解耦到独立 task
+- stream task 只通过 channel 发消息（`db_tx.send()` / `finish_tx.send()`），不直接访问 `tauri::State`
+- channel consumer task 通过 `AppHandle.state()` 安全访问 State
+
+**修复 3 — `Box::pin` 防止栈溢出**：
+
+- 大 async future 用 `Box::pin` 包装，堆分配避免栈溢出
+- `tauri::async_runtime::spawn(Box::pin(stream_future))`
+
+**修复 4 — 生命周期问题**：
+
+- `get_db_conn(&state)` 返回 `Result<MutexGuard, String>`，`if let Ok(conn)` 写法导致临时 `MutexGuard` 和 `state` 生命周期冲突
+- 改为 `match get_db_conn(&state)` + 分号结尾，确保临时值在块结束前 drop
+
+**涉及文件**：`src-tauri/src/cmd.rs`（send_chat_message 函数）
+
+### 2026-10-05 消息列表滚动修复 — Flexbox min-height: 0
+
+**问题**：消息列表无法滚动，内容超出视口时被裁切而非出现滚动条
+
+**根因**：CSS Flexbox 子元素默认 `min-height: auto`，不会缩小到比内容更小 → `overflow-y: auto` 永远不触发滚动条，容器无限撑高
+
+**Flexbox 滚动规则**：
+```
+父容器 (flex column, 固定高度)
+  └─ 子容器 (flex: 1, min-height: 0, overflow-y: auto)  ← 滚动生效 ✅
+  └─ 固定元素 (flex-shrink: 0)                           ← 不被压缩 ✅
+```
+
+**修复**：
+
+| 文件 | 选择器 | 添加属性 | 原因 |
+|------|--------|----------|------|
+| global.css | `.chat-view-compact` | `flex: 1; min-height: 0;` | compact 视图填满 orb-panel 且允许缩小 |
+| global.css | `.chat-main` | `min-height: 0;` | 允许缩小到比内容更小，使 MessageList overflow-y 生效 |
+| global.css | `.chat-input` | `flex-shrink: 0;` | 防止输入框被压缩 |
+| MessageList.tsx | useEffect | `lastScrollHeightRef` 优化 | 流式输出时避免重复 scrollTo 调用 |
+
+**关键知识点**：`min-height: 0` 是让 flex 子项可以缩小到比内容更小的必要条件——没有它，`overflow-y: auto` 永远不会产生滚动条

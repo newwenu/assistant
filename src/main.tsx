@@ -6,6 +6,10 @@ import { useThemeStore } from "@/stores/themeStore";
 import { useTheme } from "@/hooks/useTheme";
 import { lightTheme, darkTheme } from "@/assets/styles/theme";
 import { WINDOW_ORB } from "@/config/constants";
+import {
+  initSettingListeners,
+  cleanupSettingListeners,
+} from "@/settings/settingListeners";
 import App from "./App";
 import "./assets/styles/global.css";
 
@@ -18,6 +22,13 @@ const ThemedApp: React.FC = () => {
   React.useEffect(() => {
     document.documentElement.setAttribute("data-theme", resolved);
   }, [resolved]);
+
+  React.useEffect(() => {
+    initSettingListeners();
+    return () => {
+      cleanupSettingListeners();
+    };
+  }, []);
 
   if (isOrb) {
     return (

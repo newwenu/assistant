@@ -1,6 +1,7 @@
 // 参考: ChatGPT/src-tauri/src/main.rs — Builder 链式配置 + setup + invoke_handler
 // 参考: BongoCat/crates/bongocat-app/src/lib.rs — 模块化组织
 
+mod chat_tasks;
 mod cmd;
 mod setup;
 mod tray;
@@ -49,8 +50,31 @@ pub fn run() {
             window::expand_orb_panel,
             window::collapse_orb_panel,
             window::show_orb_context_menu,
+            cmd::list_providers,
+            cmd::save_provider,
+            cmd::delete_provider,
+            cmd::list_models_cmd,
+            cmd::preview_models_cmd,
+            cmd::create_conversation,
+            cmd::list_conversations,
+            cmd::get_conversation,
+            cmd::delete_conversation,
+            cmd::rename_conversation,
+            cmd::update_conversation_model,
+            cmd::update_conversation_provider,
+            cmd::list_prompt_templates,
+            cmd::save_prompt_template,
+            cmd::send_chat_message,
+            cmd::cancel_chat,
+            cmd::get_conversation_paginated,
+            cmd::delete_message_persist,
+            cmd::search_conversations,
+            cmd::export_conversation,
         ])
         .on_menu_event(|app, event| match event.id.as_ref() {
+            "orb_new_chat" => {
+                let _ = app.emit("orb-new-conversation", ());
+            }
             "orb_open_main" => {
                 window::show_or_create_main(app);
             }

@@ -36,6 +36,19 @@ tauri-plugin-global-shortcut = "2"
 mouse_position = "0.1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 dirs = "6"
+reqwest = { version = "0.12", features = ["stream", "json"] }
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+aes-gcm = "0.10"
+sha2 = "0.10"
+base64 = "0.22"
+machine-uid = "0.2"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tokio-stream = "0.1"
+async-stream = "0.3"
+rand = "0.8"
 
 assistant-config = { path = "crates/assistant-config" }
 assistant-orb = { path = "crates/assistant-orb" }
@@ -55,6 +68,13 @@ tauri-plugin-log = { workspace = true }
 tauri-plugin-single-instance = { workspace = true }
 tauri-plugin-global-shortcut = { workspace = true }
 mouse_position = { workspace = true }
+rusqlite = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tokio-util = { workspace = true }
 
 assistant-config = { workspace = true }
 assistant-orb = { workspace = true }

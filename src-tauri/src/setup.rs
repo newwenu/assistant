@@ -12,8 +12,11 @@ use assistant_config::{
 };
 use assistant_orb::placement;
 use assistant_storage::db;
+use assistant_storage::templates;
 
 use super::tray;
+
+pub struct DbState(pub std::sync::Mutex<rusqlite::Connection>);
 
 pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle();
@@ -28,14 +31,24 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     match handle.path().app_data_dir() {
         Ok(data_dir) => {
             let db_path = data_dir.join("assistant.db");
-            if let Err(e) = db::init_db(&db_path) {
-                log::error!("Failed to init database: {}", e);
+            match db::init_db(&db_path) {
+                Ok(conn) => {
+                    if let Err(e) = templates::seed_builtin_templates(&conn) {
+                        log::error!("Failed to seed builtin templates: {}", e);
+                    }
+                    handle.manage(DbState(std::sync::Mutex::new(conn)));
+                }
+                Err(e) => {
+                    log::error!("Failed to init database: {}", e);
+                }
             }
         }
         Err(e) => {
             log::error!("Failed to resolve app data dir: {}", e);
         }
     }
+
+    handle.manage(crate::chat_tasks::ChatTasks::new());
 
     tray::create_tray(handle);
 

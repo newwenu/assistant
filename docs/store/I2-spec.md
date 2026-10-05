@@ -43,7 +43,9 @@ Orb 面板内可用的多模型 AI 对话，流式输出，历史可查看，对
 - `encrypt_api_key(key: &str, machine_id: &[u8]) → Result<Vec<u8>, String>`
 - `decrypt_api_key(encrypted: &[u8], machine_id: &[u8]) → Result<String, String>`
 - `get_machine_id() → Result<Vec<u8>, String>` — SHA-256(machine_uid)
-- 依赖：`aes-gcm` crate + `machine-uid` crate + `sha2` crate + `base64` crate
+- `encrypt_api_key_b64(key: &str, machine_id: &[u8]) → Result<String, String>` — 加密后 Base64 编码，直接存入 SQLite TEXT 字段
+- `decrypt_api_key_b64(encrypted_b64: &str, machine_id: &[u8]) → Result<String, String>` — Base64 解码后解密，从 SQLite TEXT 字段读取
+- 依赖：`aes-gcm` crate + `machine-uid` crate + `sha2` crate + `base64` crate + `rand` crate（随机 nonce 生成）
 
 ### 2.3 Rust 端 Provider 适配器
 
@@ -103,7 +105,33 @@ pub struct TokenUsage {
 - HTTP 客户端：`reqwest` crate（stream + JSON）
 - SSE 解析：`eventsource-stream` crate 或手动按行解析
 
-**依赖**：`reqwest`（+ stream feature）、`tokio`、`futures`、`eventsource-stream`
+**ProviderError 错误类型**（`thiserror` crate 派生）：5 种变体 — ApiKeyMissing（Provider 未配置 API Key）、RequestFailed（网络/HTTP 错误）、ParseError（JSON/SSE 解析错误）、RateLimited（429 状态码）、ModelNotFound（模型不存在）。
+
+**前端 ChatError 错误体系**（`src/chat/chatErrors.ts`）：扩展 Rust 端 ProviderError 为 13 种前端错误码，覆盖更多用户可感知的错误场景：
+
+| ChatErrorCode | 说明 | retryable |
+|---------------|------|-----------|
+| ApiKeyMissing | API Key 未配置 | ❌ |
+| AuthFailed | 认证失败 | ❌ |
+| RateLimited | 请求限流 | ✅ |
+| ModelNotFound | 模型不可用 | ❌ |
+| ContextOverflow | 上下文过长 | ❌ |
+| NetworkError | 网络错误 | ✅ |
+| Timeout | 请求超时 | ✅ |
+| ServerError | 服务端错误 | ✅ |
+| RequestRejected | 请求被拒绝 | ❌ |
+| ParseError | 解析错误 | ❌ |
+| Cancelled | 已取消 | ❌ |
+| StreamError | 流式错误 | ✅ |
+| InternalError | 内部错误 | ❌ |
+
+**ProviderKind 枚举**：OpenAI / Anthropic / Gemini / Custom{base_url}，Custom 变体携带自定义 base_url。
+
+**ProviderConfig 结构体**：kind + api_key_encrypted + base_url + default_model + max_tokens + temperature，封装适配器所需的全部配置。
+
+**create_provider_adapter 工厂函数**：接收 ProviderConfig，根据 ProviderKind 创建对应适配器实例（I2 仅实现 OpenAI，后续扩展 Anthropic/Gemini）。
+
+**依赖**：`reqwest`（+ stream feature）、`tokio`、`futures`、`tokio-stream`、`async-stream`、`thiserror`
 
 ### 2.4 前端 Provider 适配层
 
@@ -116,7 +144,8 @@ pub struct TokenUsage {
 | `list_providers` | `() → Result<Vec<ProviderRow>>` | 列出所有 Provider（api_key 返回脱敏 `sk-***...`） |
 | `save_provider` | `(provider: ProviderInput) → Result<()>` | 新增/更新 Provider（api_key 明文传入，Rust 端加密） |
 | `delete_provider` | `(id: String) → Result<()>` | 删除 Provider + 级联删除 conversations |
-| `list_models` | `(provider_id: String) → Result<Vec<ModelConfig>>` | 调用 Provider API 获取模型列表 |
+| `list_models` | `(provider_id: String) → Result<Vec<ModelConfig>>` | 调用 Provider API 获取模型列表（需已保存的 Provider） |
+| `preview_models` | `(provider_type: String, base_url: String, api_key: String) → Result<Vec<ModelConfig>>` | 用明文 Key 预览模型列表（保存前预览，不依赖已保存 Provider） |
 | `send_chat_message` | `(conversation_id: String, content: String) → Result<()>` | 发送用户消息，开始流式响应 |
 | `cancel_chat` | `(conversation_id: String) → Result<()>` | 取消当前流式响应 |
 | `list_conversations` | `(provider_id: Option<String>) → Result<Vec<ConversationRow>>` | 列出对话（可按 provider 过滤） |
@@ -126,6 +155,14 @@ pub struct TokenUsage {
 | `rename_conversation` | `(id: String, title: String) → Result<()>` | 重命名对话 |
 | `list_prompt_templates` | `() → Result<Vec<PromptTemplate>>` | 列出 Prompt 模板 |
 | `save_prompt_template` | `(template: PromptTemplateInput) → Result<()>` | 新增/更新模板 |
+
+> **I2 迭代后期前置实现**（属 I2-history 范围，已提前实现）：
+
+| command | 签名 | 说明 |
+|---------|------|------|
+| `get_conversation_paginated` | `(id, limit?, before_timestamp?) → Result<ConversationDetail>` | 分页获取对话 |
+| `export_conversation` | `(id, format) → Result<String>` | 导出对话（format: json/markdown/text） |
+| `search_conversations` | `(query) → Result<Vec<ConversationRow>>` | 全文搜索（标题 + 消息内容） |
 
 **流式事件**：Rust 端通过 `app.emit("chat-delta", payload)` 推送增量到前端：
 
@@ -233,6 +270,7 @@ OrbPanel 从 I1 占位替换为完整对话界面。
 | `delete_conversation` | `(id: &str) → Result<()>` | 删除对话 + 级联消息 |
 | `insert_message` | `(MessageRow) → Result<()>` | 插入消息 |
 | `get_messages` | `(conversation_id: &str) → Result<Vec<MessageRow>>` | 查询对话消息 |
+| `update_message_content` | `(id: &str, content: &str, tokens: Option<i64>) → Result<()>` | 更新消息内容（流式完成后写回完整内容 + token 用量） |
 | `insert_prompt_template` | `(PromptTemplateRow) → Result<()>` | 插入模板 |
 | `get_prompt_templates` | `() → Result<Vec<PromptTemplateRow>>` | 查询模板 |
 | `seed_builtin_templates` | `() → Result<()>` | 插入 5 个内置模板 |
@@ -271,6 +309,10 @@ OrbPanel 从 I1 占位替换为完整对话界面。
 - `sha2 = "0.10"`
 - `base64 = "0.22"`
 - `machine-uid = "0.2"`
+- `tokio-stream = "0.1"` — Stream trait 支持（SSE 流式消费）
+- `async-stream = "0.3"` — `stream!` 宏优雅实现 SSE 流
+- `rand = "0.8"` — 随机 nonce 生成（AES-GCM）
+- `thiserror = "2"` — ProviderError 错误类型派生
 
 **assistant-storage/Cargo.toml**：
 - `uuid = { version = "1", features = ["v4"] }`
@@ -283,8 +325,11 @@ OrbPanel 从 I1 占位替换为完整对话界面。
 
 **crypto.rs**（完整实现）：
 - `get_machine_id()` → `machine_uid::get()` → SHA-256 → 32 字节密钥
-- `encrypt_api_key(key, machine_id)` → AES-256-GCM 加密 → Base64(IV ‖ ciphertext ‖ tag)
-- `decrypt_api_key(encrypted, machine_id)` → Base64 decode → AES-256-GCM 解密 → 明文
+- `encrypt_api_key(key, machine_id)` → AES-256-GCM 加密 → `IV ‖ ciphertext ‖ tag`（原始字节）
+- `decrypt_api_key(encrypted, machine_id)` → AES-256-GCM 解密 → 明文
+- `encrypt_api_key_b64(key, machine_id)` → 加密后 Base64 编码 → `String`（直接存 SQLite TEXT）
+- `decrypt_api_key_b64(encrypted_b64, machine_id)` → Base64 解码后解密 → 明文
+- 随机 nonce：`rand::thread_rng().gen()` 生成 12 字节 nonce
 
 **openai.rs**（完整实现）：
 - `chat_completion_stream(messages, model, options)` → reqwest POST → SSE 解析 → `impl Stream<Item = Result<ChatDelta>>`
@@ -296,6 +341,11 @@ OrbPanel 从 I1 占位替换为完整对话界面。
 - 新增 `ChatOptions`、`ChatDelta`、`ModelConfig`、`TokenUsage` 结构体
 - `BaseProviderAdapter::chat_completion_stream` 返回 `Stream` 而非 `Result<()>`
 - `BaseProviderAdapter::list_models` 新增方法
+- 新增 `ProviderError` 枚举（5 种变体：ApiKeyMissing / RequestFailed / ParseError / RateLimited / ModelNotFound）
+- 新增 `ProviderKind` 枚举（OpenAI / Anthropic / Gemini / Custom{base_url}）
+- 新增 `ProviderConfig` 结构体（kind + api_key_encrypted + base_url + default_model + max_tokens + temperature）
+- 新增 `create_provider_adapter(config) → Box<dyn BaseProviderAdapter>` 工厂函数
+- 新增 `provider_kind_from_str()` / `message_role_from_str()` 辅助转换函数
 
 ### 3.3 assistant-storage crate 扩展
 
@@ -311,7 +361,12 @@ OrbPanel 从 I1 占位替换为完整对话界面。
 
 ### 3.4 Tauri Commands 新增
 
-**cmd.rs** 新增 13 个 command（见 2.4 节表），核心逻辑：
+**cmd.rs** 新增 14 个 command（见 2.4 节表），核心逻辑：
+
+- `preview_models`：
+  - 接收明文 provider_type + base_url + api_key
+  - 临时加密 api_key → 构造 ProviderConfig → 创建 adapter → `list_models()` → 返回
+  - 用途：ProviderForm 保存前预览可用模型列表，无需先保存 Provider
 
 - `send_chat_message`：
   1. 插入 user message 到 SQLite
@@ -347,11 +402,17 @@ impl ChatTasks {
 | MessageBubble | `src/chat/MessageBubble.tsx` | 单条消息气泡（Markdown 渲染 + 流式光标） |
 | MessageInput | `src/chat/MessageInput.tsx` | 输入区（TextArea + 发送/停止按钮） |
 | ModelSelector | `src/chat/ModelSelector.tsx` | 模型选择下拉 |
+| ProviderSelector | `src/chat/ProviderSelector.tsx` | Provider 选择（对话栏内嵌下拉） |
 | ConversationSidebar | `src/chat/ConversationSidebar.tsx` | 对话列表侧栏 |
 | TemplateCards | `src/chat/TemplateCards.tsx` | Prompt 模板快捷入口卡片 |
+| HistoryManager | `src/chat/HistoryManager.tsx` | 消息历史管理页（I2-history 前置 UI 骨架） |
 | ProviderManager | `src/settings/ProviderManager.tsx` | Provider 配置管理页 |
-| ProviderForm | `src/settings/ProviderForm.tsx` | Provider 编辑表单 |
+| AddProviderDialog | `src/settings/AddProviderDialog.tsx` | Provider 预设选择对话框 |
+| ConnectDialog | `src/settings/ConnectDialog.tsx` | Provider 连接配置对话框 |
+| ProviderSwatch | `src/settings/ProviderSwatch.tsx` | Provider 格式标签 |
 | TemplateManager | `src/settings/TemplateManager.tsx` | Prompt 模板管理页 |
+
+> **实现说明**：spec 原始设计为单一 `ProviderForm` 组件，实际拆分为 `AddProviderDialog`（预设选择）+ `ConnectDialog`（连接配置）+ `ProviderSwatch`（格式标签），交互更清晰。`ProviderSelector` 为对话栏内嵌的 Provider 切换组件，spec 未单独列出。`HistoryManager` 为 I2-history 前置 UI 骨架，已接入 `/history` 路由。
 
 ### 4.2 新增 Store
 
@@ -364,9 +425,11 @@ interface ChatState {
   messages: Message[];
   isStreaming: boolean;
   streamingContent: string;
+  streamingMessageId: string | null;
   sidebarOpen: boolean;
 
   loadConversations: () => Promise<void>;
+  ensureCurrentConversation: () => Promise<void>;
   createConversation: (providerId: string, modelId: string) => Promise<string>;
   switchConversation: (id: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
@@ -379,6 +442,9 @@ interface ChatState {
   toggleSidebar: () => void;
 }
 ```
+
+- `streamingMessageId`：当前流式输出中助手消息的 ID，用于将 delta 精确追加到对应消息，避免多对话并发时错位。
+- `ensureCurrentConversation()`：初始化时保证存在真实对话 — 若 currentConversationId 为空且有对话列表则切换到第一个；若列表也为空但有 Provider 则自动创建新对话并切换；若无 Provider 则保持空状态等待引导。避免用户首次打开面对空白界面。
 
 **providerStore** — `src/stores/providerStore.ts`：
 
@@ -414,10 +480,12 @@ const OrbPanel: React.FC = () => {
 ### 4.4 主窗口路由扩展
 
 App.tsx `MainLayout` 路由新增：
+- `/history` → `HistoryManager`（I2-history 前置 UI 骨架）
 - `/settings/providers` → `ProviderManager`
 - `/settings/templates` → `TemplateManager`
 
 侧边栏新增：
+- "消息历史" 菜单项
 - "AI 设置" 分组：Provider 管理 + Prompt 模板
 
 ### 4.5 右键菜单启用
@@ -437,6 +505,21 @@ OrbContextMenu "新建对话" 从 disabled 改为 enabled：
 | `STREAM_COALESCE_TIMER_MS` | 50 | 隐藏窗口兜底 timer 间隔 |
 | `BUILTIN_TEMPLATE_COUNT` | 5 | 内置模板数量 |
 
+> **I2-history 前置常量**（已提前实现）：
+
+| 常量 | 值 | 说明 |
+|------|-----|------|
+| `MESSAGES_PAGE_SIZE` | 50 | 消息分页大小 |
+| `VIRTUAL_SCROLL_THRESHOLD` | 100 | 虚拟滚动启用阈值 |
+| `VIRTUAL_SCROLL_OVERSCAN` | 5 | 虚拟滚动额外渲染行数 |
+| `SCROLL_LOAD_THRESHOLD_PX` | 100 | 滚动加载触发距离 |
+| `CONTEXT_WARN_THRESHOLD` | 0.8 | 上下文警告阈值 |
+| `CONTEXT_DANGER_THRESHOLD` | 0.95 | 上下文危险阈值 |
+| `RETRY_MAX_ATTEMPTS` | 3 | 重试最大次数 |
+| `RETRY_BASE_DELAY_MS` | 1000 | 重试基础延迟 |
+| `RETRY_MAX_DELAY_MS` | 30000 | 重试最大延迟 |
+| `CONVERSATION_SUMMARY_LENGTH` | 30 | 对话摘要截取长度 |
+
 ### 4.7 新增前端依赖
 
 | 依赖 | 版本 | 用途 |
@@ -450,12 +533,12 @@ OrbContextMenu "新建对话" 从 disabled 改为 enabled：
 - ❌ Mascot 形象联动（I5）
 - ❌ 工具调用 / MCP（I4/I6）
 - ❌ Anthropic / Gemini 原生适配器（I2 仅实现 OpenAI 兼容格式，Anthropic/Gemini 可通过 Custom + 兼容端点使用）
-- ❌ 对话搜索（I3）
-- ❌ 对话导出（I3）
 - ❌ 自定义 Prompt 模板（I2 仅内置模板，自定义 I3）
 - ❌ Context Compaction（I6）
 - ❌ 多轮 token 计费展示（I3 增强）
 - ❌ 流式 thinking/reasoning 展示（I3 增强）
+
+> **实现前置说明**：对话搜索（`search_conversations`）和对话导出（`export_conversation`）的 Rust 端 commands 及前端 HistoryManager 组件已在 I2 迭代后期提前实现，作为 I2-history 的前置骨架。完整功能（分页/分支/高级搜索/导入等）在 I2-history 中补全。
 
 ## 6. 验收标准
 

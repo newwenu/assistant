@@ -24,7 +24,7 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
         CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
-            provider_id TEXT NOT NULL REFERENCES providers(id),
+            provider_id TEXT,
             model_id TEXT NOT NULL,
             system_prompt TEXT,
             created_at INTEGER NOT NULL,
@@ -72,6 +72,46 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
     )
     .map_err(|e| e.to_string())?;
 
+    run_migrations(&conn)?;
+
     info!("Database initialized at {:?}", db_path);
     Ok(conn)
+}
+
+fn run_migrations(conn: &Connection) -> Result<(), String> {
+    let current_version: i64 = conn
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = 'schema_version'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    if current_version < 1 {
+        info!("Running migration v1: provider_id nullable");
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS conversations_v1 (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                provider_id TEXT,
+                model_id TEXT NOT NULL,
+                system_prompt TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            INSERT OR IGNORE INTO conversations_v1
+                SELECT id, title, provider_id, model_id, system_prompt, created_at, updated_at
+                FROM conversations;
+            DROP TABLE conversations;
+            ALTER TABLE conversations_v1 RENAME TO conversations;",
+        )
+        .map_err(|e| format!("Migration v1 failed: {}", e))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '1')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }

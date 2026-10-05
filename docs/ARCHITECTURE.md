@@ -124,6 +124,7 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 | 路由 | 页面 |
 |------|------|
 | `/` | 工具箱首页（分类导航 + 搜索 + 收藏） |
+| `/history` | 消息历史管理（对话列表 + 搜索 + 筛选 + 批量操作） |
 | `/tools/:id` | 具体工具界面 |
 | `/settings` | 设置首页 |
 | `/settings/providers` | AI Provider 配置 |
@@ -187,7 +188,7 @@ CREATE TABLE providers (
 CREATE TABLE conversations (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
-  provider_id TEXT NOT NULL REFERENCES providers(id),
+  provider_id TEXT,
   model_id TEXT NOT NULL,
   system_prompt TEXT,
   created_at INTEGER NOT NULL,
@@ -234,6 +235,8 @@ CREATE TABLE app_settings (
 );
 ```
 
+> **I2-History Schema v2（规划中）**：conversations 新增 is_pinned / is_starred / color_mark / labels / draft_content / draft_updated_at / message_count / total_tokens / generation / sort_order 共 9 列；messages 新增 parent_id / source / feedback / is_pinned 共 4 列；新增 tool_calls 表（id / message_id / name / arguments / result / status / started_at / finished_at / is_error）+ 2 个索引。
+
 ### 5.2 文件结构
 
 ```
@@ -269,7 +272,7 @@ SSE 逐 token 渲染 + `chatDeltaCoalescer` 增量合并（借鉴 OpenHuman）�
 
 > Rust 后端结构择优参考 BongoCat 的 workspace 多 crate 架构（编译隔离 + API 边界强制 + 独立测试），按我们的领域划分为 1 个根包 + 6 个 workspace crate，远少于 BongoCat 的 20 个。ChatGPT 的 core 模块组织（cmd/conf/constant/setup/window）融入 `assistant-app` 根包。Tauri 2 CLI 要求二进制包位于 `src-tauri/` 根目录（`Cargo.toml` 同时包含 `[package]` 和 `[workspace]`），因此 `assistant-app` 作为根包而非子 crate。
 
-> **实现状态**：Rust 后端 7 crate 骨架已在 I0 中实现；前端仅完成基础脚手架（main.tsx / App.tsx / 主题系统 / 标题栏），以下前端目录中 orb/ mascot/ chat/ tools/ settings/ services/ 等业务模块均为规划结构，将在后续迭代中逐步实现。
+> **实现状态**：Rust 后端 7 crate 骨架已在 I0 中实现；I1 完成 Orb 悬浮球全部功能；I2 完成 AI 对话全部功能（Provider 管理 + 流式输出 + 对话持久化 + Prompt 模板 + ChatError 错误体系）；I2-History 进行中（Schema v2 迁移 + 高级 CRUD + 虚拟滚动 + 搜索导出等）。前端 mascot/ tools/ 等业务模块仍为规划结构，将在后续迭代中逐步实现。
 
 ```
 assistant/
@@ -277,7 +280,9 @@ assistant/
 │   ├── src/                       # assistant-app 根包（Tauri 集成层）
 │   │   ├── main.rs                # 入口（windows_subsystem → assistant_app::run()）
 │   │   ├── lib.rs                 # Builder + plugins + setup + invoke_handler
-│   │   ├── cmd.rs                 # Tauri commands（前端可调用）
+│   │   ├── cmd.rs                 # Tauri commands（前端可调用，17 个）
+│   │   ├── chat_tasks.rs          # 流式聊天任务管理（cancel + retry）
+│   │   ├── sse_log.rs             # SSE 调试日志模块
 │   │   ├── setup.rs               # 应用初始化（配置 + 数据库 + 窗口 + 托盘）
 │   │   ├── tray.rs                # 系统托盘
 │   │   └── window.rs              # 窗口管理（创建/展开/收起/设置）
@@ -311,7 +316,10 @@ assistant/
 │   │   ├── assistant-storage/     # 数据层 crate
 │   │   │   ├── src/
 │   │   │   │   ├── lib.rs
-│   │   │   │   └── db.rs          # SQLite 初始化 + 迁移
+│   │   │   │   ├── db.rs          # SQLite 初始化 + 迁移
+│   │   │   │   ├── conversations.rs # 对话+消息 CRUD（含分页/搜索/导出）
+│   │   │   │   ├── providers.rs   # Provider CRUD
+│   │   │   │   └── templates.rs   # Prompt 模板 CRUD
 │   │   │   └── Cargo.toml
 │   │   └── assistant-i18n/        # 国际化 crate（参考 BongoCat bongocat-i18n）
 │   │       ├── src/
@@ -345,6 +353,8 @@ assistant/
 │   │   ├── MessageList.tsx
 │   │   ├── MessageInput.tsx
 │   │   ├── ModelSelector.tsx
+│   │   ├── ProviderSelector.tsx   # 对话栏内嵌 Provider 切换
+│   │   ├── chatErrors.ts          # ChatError 13 种错误码 + retryable 标记
 │   │   └── streamCoalescer.ts     # 流式增量合并（rAF + setTimeout 双保险）
 │   ├── tools/                     # 工具箱（主窗口使用）
 │   │   ├── ToolBox.tsx            # 工具箱首页（分类 + 搜索 + 收藏）
@@ -355,7 +365,14 @@ assistant/
 │   ├── settings/                  # 设置页面
 │   │   ├── SettingsPage.tsx
 │   │   ├── ProviderManager.tsx
-│   │   └── TemplateManager.tsx
+│   │   ├── AddProviderDialog.tsx  # 新增 Provider（预设选择）
+│   │   ├── ConnectDialog.tsx      # Provider 连接配置
+│   │   ├── ProviderSwatch.tsx     # Provider 格式标签
+│   │   ├── TemplateManager.tsx
+│   │   ├── settingListeners.ts    # 设置变更监听
+│   │   └── settingsDispatcher.ts  # 设置分发逻辑
+│   ├── history/                   # 消息历史管理（I2-History）
+│   │   └── HistoryManager.tsx     # 对话列表 + 搜索 + 筛选 + 批量操作
 │   ├── components/                # 通用组件
 │   │   ├── Titlebar.tsx           # 自定义标题栏
 │   │   ├── Sidebar.tsx            # 侧边栏（可折叠分类菜单）
@@ -364,7 +381,7 @@ assistant/
 │   ├── stores/                    # Zustand
 │   │   ├── themeStore.ts          # 主题状态（Tauri 原生 API）
 │   │   ├── orbStore.ts            # Orb 状态（展开/收起/位置/穿透缓存/展开方向）
-│   │   ├── chatStore.ts           # 对话状态
+│   │   ├── chatStore.ts           # 对话状态（含分页加载/搜索/错误处理）
 │   │   ├── mascotStore.ts         # Mascot 表情状态
 │   │   ├── providerStore.ts       # Provider 配置
 │   │   └── toolStore.ts           # 工具状态（分类/收藏/搜索）
@@ -400,7 +417,7 @@ assistant/
 
 采用迭代交付，每个迭代交付**完整可用的功能增量**。
 
-### I0 — 项目脚手架
+### I0 — 项目脚手架 ✅
 
 **交付：** 可运行的 Tauri 2 空项目 + Cargo workspace + 开发环境
 
@@ -432,7 +449,7 @@ assistant/
 
 ---
 
-### I1 — Orb 悬浮球
+### I1 — Orb 悬浮球 ✅
 
 **交付：** 桌面常驻透明悬浮球，可拖拽、可吸附、可唤起
 
@@ -465,19 +482,19 @@ assistant/
 
 ---
 
-### I2 — Orb AI 对话
+### I2 — Orb AI 对话 ✅
 
 **交付：** Orb 面板内可用的多模型对话，流式输出
 
-- [ ] Provider 配置 UI（主窗口设置页内）
-- [ ] API Key 加密存储（Rust 端 AES-256）
-- [ ] Rust 端 Provider 适配器（OpenAI 兼容格式为基准）
-- [ ] 前端 Provider 适配层（统一接口）
-- [ ] Orb 面板对话 UI：消息列表 + 输入框 + 模型选择
-- [ ] 流式输出实时渲染（SSE + chatDeltaCoalescer）
-- [ ] 对话管理（新建 / 列表 / 删除 / 重命名）
-- [ ] 对话持久化（SQLite conversations + messages）
-- [ ] Prompt 模板库（内置 5 个）
+- [x] Provider 配置 UI（主窗口设置页内）
+- [x] API Key 加密存储（Rust 端 AES-256）
+- [x] Rust 端 Provider 适配器（OpenAI 兼容格式为基准）
+- [x] 前端 Provider 适配层（统一接口）
+- [x] Orb 面板对话 UI：消息列表 + 输入框 + 模型选择
+- [x] 流式输出实时渲染（SSE + chatDeltaCoalescer）
+- [x] 对话管理（新建 / 列表 / 删除 / 重命名）
+- [x] 对话持久化（SQLite conversations + messages）
+- [x] Prompt 模板库（内置 5 个）
 
 **参考：**
 
@@ -489,6 +506,33 @@ assistant/
 | 排序保证 | OpenHuman | chatDeltaCoalescer.ts L30-36 | 非 delta 事件（如 tool_call）必须先 `flush()` 再处理，确保文本在工具调用之前 |
 
 **验收：** 配置 API Key 后 Orb 面板内可正常对话，流式输出，历史可查看
+
+---
+
+### I2-History — 聊天消息历史管理（进行中）
+
+**交付：** 完整的对话历史管理：分页加载、虚拟滚动、搜索、导出、置顶/收藏、分支、重试
+
+- [ ] Schema v2 迁移（conversations 新增 9 列 + messages 新增 4 列 + tool_calls 新表 + 2 索引）
+- [ ] ConversationRow / MessageRow 结构体扩展（is_pinned / is_starred / color_mark / labels / draft / message_count / total_tokens / generation / sort_order + parent_id / source / feedback）
+- [ ] tool_calls.rs 新模块（ToolCallRow + CRUD）
+- [ ] conversations.rs 新增 CRUD（toggle_pin / toggle_star / save_draft / duplicate / search / batch_delete / purge_all / increment_generation / update_stats / set_color_mark / set_labels）
+- [ ] messages.rs 新增 CRUD（delete / edit / update_feedback / get_children / export JSON/Markdown / import JSON）
+- [ ] Tauri Commands 对话高级操作（toggle_pin / toggle_star / save_draft / duplicate / export / import / batch_delete / purge / search / set_color_mark / set_labels）
+- [ ] Tauri Commands 消息操作（edit / regenerate / delete / update_feedback）
+- [ ] 流式事件扩展（tool_call_status / tool_call_result / tool_call_started_at / tool_call_finished_at）
+- [ ] 前端 branded type（MessageId / ConversationId / ToolCallId / ProviderId）
+- [ ] ContentBlock 类型（text / image / tool_call / tool_result / thinking）
+- [ ] chatStore 扩展（分页加载 / 虚拟滚动 / 搜索 / 导出 / 重试 / 分支 / 错误处理 + ChatError 13 种错误码）
+- [ ] HistoryManager UI（主窗口 /history 路由，对话列表 + 搜索 + 筛选 + 批量操作）
+- [ ] 虚拟滚动（react-virtuoso，阈值 100 条以上启用）
+- [ ] 代码高亮（shiki）+ 数学公式（KaTeX）
+
+> **前置实现**：I2 迭代中已提前实现部分 I2-History 功能——get_conversation_paginated / search_conversations / export_conversation 三个 Tauri Command、chatStore 分页加载/搜索方法、HistoryManager UI 骨架（/history 路由）、ChatError 13 种错误码体系、相关常量（MESSAGES_PAGE_SIZE / VIRTUAL_SCROLL_* / CONTEXT_* / RETRY_*）。
+
+**规格**：详见 [I2-history-spec.md](./store/I2-history-spec.md) / [I2-history-tasklist.md](./store/I2-history-tasklist.md)
+
+**验收：** 长对话分页加载流畅，搜索/导出可用，置顶/收藏/颜色标记可用，消息可编辑/重试/分支
 
 ---
 
@@ -657,9 +701,10 @@ struct CompressionState {
 ### 迭代依赖
 
 ```
-I0 脚手架
- └→ I1 悬浮球
-     └→ I2 Orb AI 对话
+I0 脚手架 ✅
+ └→ I1 悬浮球 ✅
+     └→ I2 Orb AI 对话 ✅
+         ├→ I2-History 消息历史管理（进行中）
          ├→ I3 工具箱基础
          │   └→ I4 工具箱扩展
          └→ I5 Mascot 形象
@@ -668,7 +713,7 @@ I0 脚手架
                      └→ I8 打包发布
 ```
 
-I3 和 I5 可并行；I6 依赖 I2+I5；I7 依赖 I6
+I2-History 依赖 I2；I3 和 I5 可并行；I6 依赖 I2+I5；I7 依赖 I6
 
 ---
 

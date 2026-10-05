@@ -87,6 +87,10 @@
 | 侧边栏宽度 | `240px` | `--sidebar-width` | 展开态 |
 | 侧边栏折叠宽度 | `64px` | `--sidebar-collapsed-width` | 折叠态（仅图标） |
 | 标题栏高度 | `38px` | `--titlebar-height` | 自定义标题栏 |
+| Orb 球体尺寸 | `64px` | `--orb-ball-size` | 球体渲染大小 |
+| Orb 命中框尺寸 | `48px` | `--orb-hitbox-size` | 可点击区域 |
+| Orb 面板内边距 | `12px` | `--orb-chrome-inset` | 面板与窗口边距 |
+| Orb 面板头高度 | `36px` | `--orb-header-height` | 面板顶部拖拽栏 |
 
 组件内间距遵循 Ant Design 6 默认 token（padding, margin 等），不额外定义。
 
@@ -134,6 +138,7 @@ global.css (:root / [data-theme="dark"])
 | `--radius` | 圆角 | `--radius`, `--radius-lg` |
 | `--sidebar-` | 侧边栏布局 | `--sidebar-width`, `--sidebar-collapsed-width` |
 | `--titlebar-` | 标题栏布局 | `--titlebar-height` |
+| `--orb-` | Orb 布局 | `--orb-ball-size`, `--orb-hitbox-size`, `--orb-chrome-inset`, `--orb-header-height` |
 
 ### 5.3 禁止事项
 
@@ -167,5 +172,6 @@ global.css (:root / [data-theme="dark"])
 | ThemeToggle | Ant `Button` type="text" | Ant token |
 | Layout.Sider | inline style | `--color-bg-sidebar`, `--color-border` |
 | Layout.Content | inline style | `--color-bg-layout`, `--color-bg` |
-| OrbBall | inline style | `--color-orb-gradient-start/end`, `--shadow-orb`, `--color-border` |
-| OrbPanel | inline style | `--color-bg`, `--radius-lg`, `--shadow-panel`, `--color-border-secondary`, `--color-text-tertiary` |
+| OrbBall | CSS 类 `.orb-hitbox` + 状态类 | `--color-orb-gradient-start/end`, `--filter-orb`, `--orb-hitbox-size` |
+| OrbPanel | CSS 类 `.orb-panel` + `.orb-compact` | `--color-bg`, `--radius-lg`, `--shadow-panel`, `--color-border-secondary`, `--orb-chrome-inset`, `--orb-header-height` |
+| OrbPanelHeader | CSS 类 `.orb-panel-header` | `--orb-header-height`, `--color-border-secondary` |

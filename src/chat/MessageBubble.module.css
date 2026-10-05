@@ -1,0 +1,390 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0;
+  position: relative;
+}
+
+.root + .root {
+  margin-top: 4px;
+}
+
+.rootRoleUser {
+  align-items: flex-end;
+}
+
+.rootRoleAssistant {
+  align-items: flex-start;
+}
+
+.rootGroupGap {
+  margin-top: 12px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(calc(var(--chat-content-width, 420px) * 0.702), 82%);
+}
+
+.rootRoleAssistant .stack {
+  max-width: 100%;
+}
+
+.bubble {
+  max-width: 100%;
+  padding: 10px 16px;
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  position: relative;
+}
+
+.bubbleUser {
+  background: var(--color-primary);
+  color: var(--color-text-on-primary, #fff);
+  border-bottom-right-radius: 4px;
+}
+
+.bubbleAssistant {
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-secondary);
+  border-bottom-left-radius: 4px;
+}
+
+.bubbleError {
+  border-color: var(--color-error, #ff4d4f) !important;
+}
+
+.content {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.content :global(p) {
+  margin: 0;
+}
+
+.content :global(p + p) {
+  margin-top: 8px;
+}
+
+.content :global(pre) {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--color-bg-layout);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.content :global(code) {
+  font-size: 13px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--color-bg-layout);
+}
+
+.content :global(pre code) {
+  padding: 0;
+  background: none;
+  border-radius: 0;
+}
+
+.content :global(a) {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.content :global(a:hover) {
+  text-decoration: underline;
+}
+
+.content :global(table) {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+  width: 100%;
+}
+
+.content :global(th),
+.content :global(td) {
+  border: 1px solid var(--color-border);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.content :global(th) {
+  background: var(--color-bg-layout);
+  font-weight: 600;
+}
+
+.content :global(blockquote) {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.content :global(ul),
+.content :global(ol) {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.content :global(li) {
+  margin: 2px 0;
+}
+
+.content :global(img) {
+  max-width: 100%;
+  border-radius: var(--radius);
+}
+
+.errorHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  color: var(--color-error, #ff4d4f);
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.errorIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.errorTitle {
+  font-weight: 600;
+}
+
+.errorBlock {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border-secondary);
+}
+
+.errorMessage {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.errorRetryHint {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.errorRetryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease-in-out, color 0.15s ease-in-out;
+}
+
+.errorRetryBtn:hover {
+  background: var(--color-primary);
+  color: var(--color-text-on-primary, #fff);
+  border-color: var(--color-primary);
+}
+
+.reasoningBlock {
+  margin-bottom: 8px;
+}
+
+.reasoningToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease-in-out;
+}
+
+.reasoningToggle:hover {
+  background: var(--color-bg-layout);
+}
+
+.reasoningIcon {
+  font-size: 14px;
+}
+
+.reasoningStreaming {
+  color: var(--color-primary);
+  font-style: italic;
+  margin-left: 4px;
+  animation: pulse-cursor 1.2s ease-in-out infinite;
+}
+
+.reasoningContent {
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-bg-layout);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.toolCallBlock {
+  margin-bottom: 6px;
+}
+
+.toolCallToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease-in-out;
+}
+
+.toolCallToggle:hover {
+  background: var(--color-bg-layout);
+}
+
+.toolCallName {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.toolCallArgs {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--color-bg-layout);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.streamingCursor {
+  display: inline-block;
+  width: 2px;
+  height: 16px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--color-primary);
+  border-radius: 1px;
+  animation: pulse-cursor 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-cursor {
+  0%, 100% { opacity: 1; transform: scaleY(1); }
+  50% { opacity: 0.3; transform: scaleY(0.6); }
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out;
+  pointer-events: none;
+}
+
+.root:hover .actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.actionBtn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease-in-out, color 0.15s ease-in-out;
+  font-size: 13px;
+}
+
+.actionBtn:hover {
+  background: var(--color-border-secondary);
+  color: var(--color-text-secondary);
+}
+
+.timestamp {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+  user-select: none;
+}
+
+.root:hover .timestamp {
+  opacity: 1;
+}
+
+.compact .bubble {
+  padding: 8px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.compact .bubbleUser {
+  border-bottom-right-radius: 3px;
+}
+
+.compact .bubbleAssistant {
+  border-bottom-left-radius: 3px;
+}
+
+.compact .stack {
+  max-width: 92%;
+}
+
+.compact .rootRoleAssistant .stack {
+  max-width: 100%;
+}
+
+.compact .timestamp {
+  font-size: 10px;
+}

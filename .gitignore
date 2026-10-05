@@ -24,6 +24,7 @@ dist-ssr
 *.sw?
 
 references/
+for_generate/
 .trae/
 .vscode/
 

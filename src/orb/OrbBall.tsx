@@ -9,7 +9,11 @@ import {
   HAND_JITTER_PX,
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
-import { getMouseLogicalPos, getWindowLogicalRect, isPointInRect } from "./OrbCoord";
+import {
+  getMouseLogicalPos,
+  getWindowLogicalRect,
+  isPointInRect,
+} from "./OrbCoord";
 import { useOrbDrag } from "./OrbDrag";
 import { useOrbExpand } from "./OrbExpand";
 import { OrbContextMenu } from "./OrbContextMenu";
@@ -22,6 +26,7 @@ export const OrbBall: React.FC = () => {
   const isExpanded = useOrbStore((s) => s.isExpanded);
   const isHovering = useOrbStore((s) => s.isHovering);
   const isDragging = useOrbStore((s) => s.isDragging);
+  const isBallVisible = useOrbStore((s) => s.isBallVisible);
   const expandDirection = useOrbStore((s) => s.expandDirection);
   const expandVertical = useOrbStore((s) => s.expandVertical);
   const setHovering = useOrbStore((s) => s.setHovering);
@@ -126,7 +131,8 @@ export const OrbBall: React.FC = () => {
     }, HOVER_POLL_INTERVAL_MS);
     return () => {
       if (hoverTimerRef.current !== null) clearInterval(hoverTimerRef.current);
-      if (debounceTimerRef.current !== null) clearTimeout(debounceTimerRef.current);
+      if (debounceTimerRef.current !== null)
+        clearTimeout(debounceTimerRef.current);
     };
   }, [setHovering, applyClickThrough]);
 
@@ -147,43 +153,31 @@ export const OrbBall: React.FC = () => {
     }
   }, [isExpanded, expand, hasDraggedRef]);
 
-  const opacity = isDragging ? 0.7 : isHovering ? 1.0 : 0.85;
+  const ballLeft =
+    isExpanded && expandDirection === "left"
+      ? `calc(100% - ${ORB_CHROME_INSET + ORB_COLLAPSED_SIZE}px)`
+      : ORB_CHROME_INSET;
+  const ballTop =
+    isExpanded && expandVertical === "up"
+      ? `calc(100% - ${ORB_CHROME_INSET + ORB_COLLAPSED_SIZE}px)`
+      : ORB_CHROME_INSET;
 
-  const ballLeft = isExpanded && expandDirection === "left"
-    ? `calc(100% - ${ORB_CHROME_INSET + ORB_COLLAPSED_SIZE}px)`
-    : ORB_CHROME_INSET;
-  const ballTop = isExpanded && expandVertical === "up"
-    ? `calc(100% - ${ORB_CHROME_INSET + ORB_COLLAPSED_SIZE}px)`
-    : ORB_CHROME_INSET;
-
-  const ballStyle: React.CSSProperties = {
-    position: "absolute",
-    top: ballTop,
-    left: ballLeft,
-  };
+  const stateClass = isDragging
+    ? "orb-dragging"
+    : isHovering
+      ? "orb-hover"
+      : "orb-idle";
 
   return (
     <OrbContextMenu>
       <div
-        className="orb-hitbox"
+        className={`orb-hitbox${!isBallVisible ? " orb-ball-hidden" : ""} ${stateClass}`}
         style={{
-          ...ballStyle,
+          position: "absolute",
+          top: ballTop,
+          left: ballLeft,
           width: ORB_HITBOX_SIZE,
           height: ORB_HITBOX_SIZE,
-          borderRadius: "50%",
-          background:
-            "radial-gradient(circle at 30% 30%, var(--color-orb-gradient-start), var(--color-orb-gradient-end))",
-          boxShadow: "none",
-          filter: isExpanded
-            ? "none"
-            : "var(--filter-orb)",
-          cursor: "grab",
-          userSelect: "none",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          opacity,
-          transition: "opacity 150ms ease-in-out, filter 300ms ease-in-out",
           zIndex: 1,
         }}
         onPointerDown={onPointerDown}
