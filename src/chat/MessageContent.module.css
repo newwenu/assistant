@@ -1,0 +1,97 @@
+.root {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.root[data-streaming] :global(pre) {
+  transition: none;
+}
+
+.root[data-streaming] :global(code) {
+  transition: none;
+}
+
+.root[data-streaming] :global(table) {
+  transition: none;
+}
+
+.root :global(p) {
+  margin: 0;
+}
+
+.root :global(p + p) {
+  margin-top: 8px;
+}
+
+.root :global(pre) {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--color-bg-layout);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.root :global(code) {
+  font-size: 13px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--color-bg-layout);
+}
+
+.root :global(pre code) {
+  padding: 0;
+  background: none;
+  border-radius: 0;
+}
+
+.root :global(a) {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.root :global(a:hover) {
+  text-decoration: underline;
+}
+
+.root :global(table) {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+  width: 100%;
+}
+
+.root :global(th),
+.root :global(td) {
+  border: 1px solid var(--color-border);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.root :global(th) {
+  background: var(--color-bg-layout);
+  font-weight: 600;
+}
+
+.root :global(blockquote) {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.root :global(ul),
+.root :global(ol) {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.root :global(li) {
+  margin: 2px 0;
+}
+
+.root :global(img) {
+  max-width: 100%;
+  border-radius: var(--radius);
+}

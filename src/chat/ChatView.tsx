@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, type RefObject } from "react";
-import { Button, Modal, Typography } from "antd";
+import { Button, Modal, Typography, Progress, Tooltip } from "antd";
 import {
   ArrowLeftOutlined,
   PlusOutlined,
@@ -7,6 +7,10 @@ import {
 } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "../stores/chatStore";
+import {
+  CONTEXT_WARN_THRESHOLD,
+  CONTEXT_DANGER_THRESHOLD,
+} from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
@@ -18,6 +22,38 @@ import { CHAT_PANEL_HEADER_HEIGHT } from "../config/constants";
 interface ChatViewProps {
   compact?: boolean;
   modelOpenRef?: RefObject<boolean>;
+}
+
+function ContextBar({
+  usage,
+}: {
+  usage: { used_tokens: number; max_tokens: number; percentage: number } | null;
+}) {
+  if (!usage) return null;
+  const pct = Math.min(usage.percentage * 100, 100);
+  let status: "normal" | "exception" | "active" = "normal";
+  if (pct >= CONTEXT_DANGER_THRESHOLD * 100) status = "exception";
+  else if (pct >= CONTEXT_WARN_THRESHOLD * 100) status = "active";
+  return (
+    <Tooltip
+      title={`${Math.round(usage.used_tokens).toLocaleString()} / ${Math.round(usage.max_tokens).toLocaleString()} tokens (${pct.toFixed(1)}%)`}
+    >
+      <Progress
+        percent={pct}
+        size="small"
+        status={status}
+        showInfo={false}
+        style={{ width: 80, margin: 0 }}
+        strokeColor={
+          status === "exception"
+            ? "#ff4d4f"
+            : status === "active"
+              ? "#faad14"
+              : undefined
+        }
+      />
+    </Tooltip>
+  );
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -142,6 +178,20 @@ export const ChatView: React.FC<ChatViewProps> = ({
     setSidebarOpen((v) => !v);
   }, []);
 
+  const handleEditMessage = useCallback(
+    (messageId: string, newContent: string) => {
+      chat.editMessage(messageId, newContent);
+    },
+    [chat],
+  );
+
+  const handleRegenerateMessage = useCallback(
+    (messageId: string) => {
+      chat.regenerateMessage(messageId);
+    },
+    [chat],
+  );
+
   if (compact) {
     return (
       <div className="chat-view chat-view-compact">
@@ -162,6 +212,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               variant="chip"
               openRef={modelOpenRef}
             />
+            <ContextBar usage={chat.contextUsage} />
             <Button
               type="text"
               size="small"
@@ -189,7 +240,12 @@ export const ChatView: React.FC<ChatViewProps> = ({
               messages={chat.messages}
               isStreaming={chat.isStreaming}
               compact
+              hasMore={chat.hasMoreMessages}
+              isLoadingMore={chat.isLoadingMoreMessages}
+              onLoadMore={chat.loadMoreMessages}
               onDeleteMessage={chat.deleteMessage}
+              onEditMessage={handleEditMessage}
+              onRegenerateMessage={handleRegenerateMessage}
               onRetryMessage={handleRetry}
             />
           )}
@@ -216,7 +272,12 @@ export const ChatView: React.FC<ChatViewProps> = ({
         onCreate={handleNewConversation}
         onSearch={chat.searchConversations}
         onClearSearch={chat.clearSearch}
+        onTogglePin={chat.togglePin}
+        onDuplicate={chat.duplicateConversation}
+        onExport={chat.exportConversation}
         searchResults={chat.searchResults}
+        searchFullText={chat.searchFullText}
+        onToggleSearchFullText={chat.toggleSearchFullText}
         visible={sidebarOpen}
       />
       <div className="chat-main">
@@ -244,6 +305,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             </Typography.Text>
           </div>
           <div className="chat-header-right">
+            <ContextBar usage={chat.contextUsage} />
             <ProviderSelector
               providerId={currentProviderId}
               providers={provider.providers}
@@ -290,7 +352,12 @@ export const ChatView: React.FC<ChatViewProps> = ({
           <MessageList
             messages={chat.messages}
             isStreaming={chat.isStreaming}
+            hasMore={chat.hasMoreMessages}
+            isLoadingMore={chat.isLoadingMoreMessages}
+            onLoadMore={chat.loadMoreMessages}
             onDeleteMessage={chat.deleteMessage}
+            onEditMessage={handleEditMessage}
+            onRegenerateMessage={handleRegenerateMessage}
             onRetryMessage={handleRetry}
           />
         )}

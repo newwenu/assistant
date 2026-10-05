@@ -44,12 +44,15 @@ export const CHAT_INPUT_MIN_ROWS = 1;
 export const CHAT_INPUT_MAX_ROWS = 4;
 export const CHAT_AUTO_TITLE_LENGTH = 20;
 export const CHAT_SIDEBAR_WIDTH = 200;
-export const STREAM_COALESCE_TIMER_MS = 50;
+export const STREAM_COALESCE_TIMER_MS = 32;
 export const BUILTIN_TEMPLATE_COUNT = 5;
 export const MESSAGES_PAGE_SIZE = 50;
 export const VIRTUAL_SCROLL_THRESHOLD = 100;
 export const VIRTUAL_SCROLL_OVERSCAN = 5;
 export const SCROLL_LOAD_THRESHOLD_PX = 100;
+export const CONTEXT_WARN_THRESHOLD = 0.8;
+export const CONTEXT_DANGER_THRESHOLD = 0.95;
+export const CONVERSATION_SUMMARY_LENGTH = 30;
 
 export const TOOL_DEFAULT_MAX_WIDTH = 640;
 export const TOOL_WIDE_MAX_WIDTH = 960;

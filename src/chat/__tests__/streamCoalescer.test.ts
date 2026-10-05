@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   createChatDeltaCoalescer,
+  createSeqDedupFilter,
   frameScheduler,
   type CoalescibleDelta,
 } from "../streamCoalescer";
@@ -292,5 +293,187 @@ describe("frameScheduler", () => {
     vi.advanceTimersByTime(100);
 
     expect(flush).not.toHaveBeenCalled();
+  });
+});
+
+describe("createChatDeltaCoalescer with accept", () => {
+  it("filters out events rejected by accept", () => {
+    const deliver = vi.fn();
+    const accept = vi.fn().mockReturnValue(false);
+    const coalescer = createChatDeltaCoalescer<TestDelta>(
+      deliver,
+      immediateScheduler,
+      accept,
+    );
+
+    coalescer.push({
+      conversation_id: "c1",
+      message_id: "m1",
+      delta: "dropped",
+    });
+
+    expect(accept).toHaveBeenCalledTimes(1);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
+  it("passes through events accepted by accept", () => {
+    const deliver = vi.fn();
+    const accept = vi.fn().mockReturnValue(true);
+    const coalescer = createChatDeltaCoalescer<TestDelta>(
+      deliver,
+      immediateScheduler,
+      accept,
+    );
+
+    coalescer.push({
+      conversation_id: "c1",
+      message_id: "m1",
+      delta: "kept",
+    });
+
+    expect(deliver).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith({
+      conversation_id: "c1",
+      message_id: "m1",
+      delta: "kept",
+    });
+  });
+});
+
+describe("createSeqDedupFilter", () => {
+  it("accepts deltas without seq", () => {
+    const { accept } = createSeqDedupFilter();
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        delta: "a",
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts first delta with seq", () => {
+    const { accept } = createSeqDedupFilter();
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        seq: 1,
+        delta: "a",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects replayed delta with same or lower seq", () => {
+    const { accept } = createSeqDedupFilter();
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        seq: 3,
+        delta: "a",
+      }),
+    ).toBe(true);
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        seq: 3,
+        delta: "a",
+      }),
+    ).toBe(false);
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        seq: 2,
+        delta: "a",
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts delta with higher seq", () => {
+    const { accept } = createSeqDedupFilter();
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        seq: 1,
+        delta: "a",
+      }),
+    ).toBe(true);
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        seq: 2,
+        delta: "b",
+      }),
+    ).toBe(true);
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        seq: 3,
+        delta: "c",
+      }),
+    ).toBe(true);
+  });
+
+  it("tracks seq per conversation+message pair", () => {
+    const { accept } = createSeqDedupFilter();
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        seq: 1,
+        delta: "a",
+      }),
+    ).toBe(true);
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m2",
+        seq: 1,
+        delta: "b",
+      }),
+    ).toBe(true);
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        seq: 1,
+        delta: "replay",
+      }),
+    ).toBe(false);
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m2",
+        seq: 1,
+        delta: "replay",
+      }),
+    ).toBe(false);
+  });
+
+  it("reset clears all tracked seqs", () => {
+    const { accept, reset } = createSeqDedupFilter();
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        seq: 1,
+        delta: "a",
+      }),
+    ).toBe(true);
+    reset();
+    expect(
+      accept({
+        conversation_id: "c1",
+        message_id: "m1",
+        seq: 1,
+        delta: "a",
+      }),
+    ).toBe(true);
   });
 });

@@ -4,9 +4,13 @@ import { listen } from "@tauri-apps/api/event";
 import {
   CHAT_AUTO_TITLE_LENGTH,
   MESSAGES_PAGE_SIZE,
+  CONTEXT_WARN_THRESHOLD,
+  CONTEXT_DANGER_THRESHOLD,
 } from "../config/constants";
 import {
   createChatDeltaCoalescer,
+  createSeqDedupFilter,
+  textChunkScheduler,
   type CoalescibleDelta,
 } from "../chat/streamCoalescer";
 import {
@@ -26,6 +30,8 @@ export interface Message {
   tokens: number | null;
   timestamp: number;
   error?: ChatError | null;
+  parent_id?: string | null;
+  is_pinned?: boolean;
 }
 
 export interface ToolCall {
@@ -37,9 +43,13 @@ export interface ToolCall {
 export interface Conversation {
   id: string;
   title: string;
+  title_source: string;
   provider_id: string | null;
   model_id: string;
   system_prompt: string | null;
+  is_pinned: boolean;
+  sort_order: number;
+  generation: number;
   created_at: number;
   updated_at: number;
 }
@@ -50,6 +60,64 @@ export interface TokenUsage {
   total_tokens: number;
   cache_read_tokens?: number;
   cache_write_tokens?: number;
+  context_window_tokens?: number;
+}
+
+export interface ContextUsage {
+  used_tokens: number;
+  max_tokens: number;
+  percentage: number;
+}
+
+interface PersistEntry {
+  fn: () => Promise<void>;
+  resolve: () => void;
+  reject: (e: unknown) => void;
+}
+
+class PersistQueue {
+  private queue: PersistEntry[] = [];
+  private running = false;
+
+  enqueue(fn: () => Promise<void>): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ fn, resolve, reject });
+      this.runNext();
+    });
+  }
+
+  private async runNext() {
+    if (this.running || this.queue.length === 0) return;
+    this.running = true;
+    const entry = this.queue.shift()!;
+    try {
+      await entry.fn();
+      entry.resolve();
+    } catch (e) {
+      entry.reject(e);
+    } finally {
+      this.running = false;
+      this.runNext();
+    }
+  }
+}
+
+const persistQueue = new PersistQueue();
+
+function fallbackTitleFromUserMessage(
+  userMessage: string,
+  maxLength = CHAT_AUTO_TITLE_LENGTH,
+): string {
+  const firstLine = userMessage.split("\n").find((l) => l.trim()) || "";
+  if (firstLine.length <= maxLength) return firstLine.trim();
+  const puncts = ["。", "？", "！", ".", "?", "!", "；", ";", "，", ","];
+  for (const p of puncts) {
+    const idx = firstLine.indexOf(p);
+    if (idx > 0 && idx < maxLength) {
+      return firstLine.slice(0, idx + 1).trim();
+    }
+  }
+  return firstLine.slice(0, maxLength).trim() + "…";
 }
 
 interface ChatState {
@@ -65,13 +133,20 @@ interface ChatState {
   totalMessageCount: number;
   searchResults: Conversation[] | null;
   searchQuery: string;
+  searchFullText: boolean;
+  filterProviderId: string | null;
+  contextUsage: ContextUsage | null;
 
   loadConversations: () => Promise<void>;
   createConversation: (providerId: string, modelId: string) => Promise<string>;
   ensureCurrentConversation: () => Promise<void>;
   switchConversation: (id: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
-  renameConversation: (id: string, title: string) => Promise<void>;
+  renameConversation: (
+    id: string,
+    title: string,
+    titleSource?: string,
+  ) => Promise<void>;
   updateModel: (id: string, modelId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   cancelStream: () => Promise<void>;
@@ -80,9 +155,18 @@ interface ChatState {
   errorStream: (error: ChatError) => void;
   toggleSidebar: () => void;
   deleteMessage: (id: string) => Promise<void>;
+  editMessage: (messageId: string, newContent: string) => Promise<void>;
+  regenerateMessage: (messageId: string) => Promise<void>;
   loadMoreMessages: () => Promise<void>;
   searchConversations: (query: string) => Promise<void>;
   clearSearch: () => void;
+  toggleSearchFullText: () => void;
+  togglePin: (id: string) => Promise<void>;
+  duplicateConversation: (id: string) => Promise<void>;
+  exportConversation: (id: string, format: string) => Promise<void>;
+  batchDelete: (ids: string[]) => Promise<void>;
+  purgeAll: () => Promise<void>;
+  setFilterProviderId: (id: string | null) => void;
 }
 
 let chatDeltaUnlisten: (() => void) | null = null;
@@ -100,6 +184,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   totalMessageCount: 0,
   searchResults: null,
   searchQuery: "",
+  searchFullText: false,
+  filterProviderId: null,
+  contextUsage: null,
 
   loadConversations: async () => {
     try {
@@ -175,11 +262,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   deleteConversation: async (id: string) => {
-    try {
+    await persistQueue.enqueue(async () => {
       await invoke("delete_conversation", { id });
-    } catch (e) {
-      console.error("Failed to delete conversation:", e);
-    }
+    });
     const state = get();
     if (state.currentConversationId === id) {
       set({
@@ -192,21 +277,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await get().loadConversations();
   },
 
-  renameConversation: async (id: string, title: string) => {
-    try {
-      await invoke("rename_conversation", { id, title });
-    } catch (e) {
-      console.error("Failed to rename conversation:", e);
-    }
+  renameConversation: async (
+    id: string,
+    title: string,
+    titleSource?: string,
+  ) => {
+    await persistQueue.enqueue(async () => {
+      await invoke("rename_conversation", {
+        id,
+        title,
+        titleSource: titleSource || "user",
+      });
+    });
     await get().loadConversations();
   },
 
   updateModel: async (id: string, modelId: string) => {
-    try {
+    await persistQueue.enqueue(async () => {
       await invoke("update_conversation_model", { id, modelId });
-    } catch (e) {
-      console.error("Failed to update model:", e);
-    }
+    });
     await get().loadConversations();
   },
 
@@ -288,7 +377,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: true,
       streamingContent: "",
       streamingMessageId: assistantMsgId,
+      contextUsage: null,
     });
+
+    const conv = currentState.conversations.find((c) => c.id === convId);
+    if (conv && conv.title_source === "placeholder") {
+      const fbTitle = fallbackTitleFromUserMessage(content);
+      get().renameConversation(convId, fbTitle, "fallback");
+    }
 
     try {
       await invoke("send_chat_message", {
@@ -316,41 +412,44 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   appendDelta: (delta: string) => {
     const state = get();
+    const prevLen = state.streamingContent.length;
     const newContent = state.streamingContent + delta;
-    set({ streamingContent: newContent });
+    if (import.meta.env.DEV) {
+      console.debug(
+        `[appendDelta] +${delta.length}ch prev=${prevLen} new=${newContent.length} snippet=${JSON.stringify(delta.slice(0, 40))}`,
+      );
+    }
     if (state.streamingMessageId) {
       set({
+        streamingContent: newContent,
         messages: state.messages.map((m) =>
           m.id === state.streamingMessageId ? { ...m, content: newContent } : m,
         ),
       });
+    } else {
+      set({ streamingContent: newContent });
     }
   },
 
-  finishStream: (_usage?: TokenUsage) => {
+  finishStream: (usage?: TokenUsage) => {
     const state = get();
+    const newContextUsage = usage
+      ? {
+          used_tokens: usage.total_tokens,
+          max_tokens: usage.context_window_tokens || usage.total_tokens,
+          percentage:
+            usage.context_window_tokens && usage.context_window_tokens > 0
+              ? usage.total_tokens / usage.context_window_tokens
+              : 0,
+        }
+      : state.contextUsage;
+
     set({
       isStreaming: false,
       streamingContent: "",
       streamingMessageId: null,
+      contextUsage: newContextUsage,
     });
-    if (state.currentConversationId && state.messages.length > 0) {
-      const lastAssistant = [...state.messages]
-        .reverse()
-        .find((m) => m.role === "assistant");
-      if (
-        lastAssistant &&
-        lastAssistant.content.length > 0 &&
-        state.conversations.find((c) => c.id === state.currentConversationId)
-          ?.title === "新对话"
-      ) {
-        const autoTitle = lastAssistant.content.slice(
-          0,
-          CHAT_AUTO_TITLE_LENGTH,
-        );
-        get().renameConversation(state.currentConversationId, autoTitle);
-      }
-    }
   },
 
   errorStream: (error: ChatError) => {
@@ -386,11 +485,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: state.messages.filter((m) => m.id !== id),
       totalMessageCount: Math.max(0, state.totalMessageCount - 1),
     });
-    try {
+    await persistQueue.enqueue(async () => {
       await invoke("delete_message_persist", { messageId: id });
-    } catch (e) {
-      console.error("Failed to delete message:", e);
+    });
+  },
+
+  editMessage: async (messageId: string, newContent: string) => {
+    const state = get();
+    const msg = state.messages.find((m) => m.id === messageId);
+    if (!msg) return;
+
+    set({
+      messages: state.messages
+        .filter((m) => m.timestamp < msg.timestamp || m.id === messageId)
+        .map((m) => (m.id === messageId ? { ...m, content: newContent } : m)),
+    });
+
+    await persistQueue.enqueue(async () => {
+      await invoke("edit_message", { messageId, newContent });
+    });
+
+    if (msg.role === "user") {
+      get().sendMessage(newContent);
     }
+  },
+
+  regenerateMessage: async (messageId: string) => {
+    const state = get();
+    const convId = state.currentConversationId;
+    if (!convId) return;
+
+    const msg = state.messages.find((m) => m.id === messageId);
+    if (!msg || msg.role !== "assistant") return;
+
+    const lastUserMsg = [...state.messages]
+      .reverse()
+      .find((m) => m.role === "user" && m.timestamp < msg.timestamp);
+    if (!lastUserMsg) return;
+
+    set({
+      messages: state.messages.filter(
+        (m) => m.timestamp < msg.timestamp && m.id !== messageId,
+      ),
+    });
+
+    await persistQueue.enqueue(async () => {
+      await invoke("regenerate_message", {
+        conversationId: convId,
+        messageId,
+      });
+    });
+
+    get().sendMessage(lastUserMsg.content);
   },
 
   loadMoreMessages: async () => {
@@ -436,8 +582,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
     try {
-      const result = await invoke("search_conversations", { query });
-      set({ searchResults: (result as Conversation[]) || [] });
+      if (get().searchFullText) {
+        const result = await invoke("search_conversations", { query });
+        set({ searchResults: (result as Conversation[]) || [] });
+      } else {
+        const q = query.toLowerCase();
+        const filtered = get().conversations.filter((c) =>
+          c.title.toLowerCase().includes(q),
+        );
+        set({ searchResults: filtered });
+      }
     } catch (e) {
       console.error("Failed to search conversations:", e);
       set({ searchResults: [] });
@@ -447,22 +601,108 @@ export const useChatStore = create<ChatState>((set, get) => ({
   clearSearch: () => {
     set({ searchResults: null, searchQuery: "" });
   },
+
+  toggleSearchFullText: () => {
+    set({ searchFullText: !get().searchFullText });
+  },
+
+  togglePin: async (id: string) => {
+    await persistQueue.enqueue(async () => {
+      await invoke("toggle_conversation_pin", { id });
+    });
+    await get().loadConversations();
+  },
+
+  duplicateConversation: async (id: string) => {
+    await persistQueue.enqueue(async () => {
+      await invoke("duplicate_conversation", { id });
+    });
+    await get().loadConversations();
+  },
+
+  exportConversation: async (id: string, format: string) => {
+    try {
+      const content = await invoke<string>("export_conversation", {
+        id,
+        format,
+      });
+      const ext = format === "json" ? "json" : "md";
+      const mime = format === "json" ? "application/json" : "text/markdown";
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `conversation.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Failed to export conversation:", e);
+    }
+  },
+
+  batchDelete: async (ids: string[]) => {
+    await persistQueue.enqueue(async () => {
+      await invoke("batch_delete_conversations", { ids });
+    });
+    const state = get();
+    if (
+      state.currentConversationId &&
+      ids.includes(state.currentConversationId)
+    ) {
+      set({
+        currentConversationId: null,
+        messages: [],
+        isStreaming: false,
+        streamingContent: "",
+      });
+    }
+    await get().loadConversations();
+  },
+
+  purgeAll: async () => {
+    await persistQueue.enqueue(async () => {
+      await invoke("purge_conversations");
+    });
+    set({
+      conversations: [],
+      currentConversationId: null,
+      messages: [],
+      isStreaming: false,
+      streamingContent: "",
+    });
+  },
+
+  setFilterProviderId: (id: string | null) => {
+    set({ filterProviderId: id });
+  },
 }));
 
 export async function initChatDeltaListener() {
   if (chatDeltaUnlisten) return;
   const store = useChatStore;
 
-  const coalescer = createChatDeltaCoalescer<CoalescibleDelta>((event) => {
-    if (event.delta) {
-      store.getState().appendDelta(event.delta);
-    }
-  });
+  const seqDedup = createSeqDedupFilter();
+
+  const coalescer = createChatDeltaCoalescer<CoalescibleDelta>(
+    (event) => {
+      if (event.delta) {
+        if (import.meta.env.DEV) {
+          console.debug(
+            `[coalescer-deliver] seq=${event.seq} len=${event.delta.length} snippet=${JSON.stringify(event.delta.slice(0, 40))}`,
+          );
+        }
+        store.getState().appendDelta(event.delta);
+      }
+    },
+    textChunkScheduler,
+    seqDedup.accept,
+  );
 
   chatDeltaUnlisten = await listen("chat-delta", (event) => {
     const payload = event.payload as {
       conversation_id: string;
       message_id: string;
+      seq?: number;
       delta_text?: string;
       delta_reasoning?: string;
       delta_tool_call_id?: string;
@@ -481,6 +721,7 @@ export async function initChatDeltaListener() {
       coalescer.push({
         conversation_id: payload.conversation_id,
         message_id: payload.message_id,
+        seq: payload.seq,
         delta: payload.delta_text,
       });
     }
@@ -530,7 +771,10 @@ export async function initChatDeltaListener() {
     }
     if (payload.finish_reason) {
       coalescer.flush();
+      seqDedup.reset();
       store.getState().finishStream(payload.usage);
     }
   });
 }
+
+export { CONTEXT_WARN_THRESHOLD, CONTEXT_DANGER_THRESHOLD };

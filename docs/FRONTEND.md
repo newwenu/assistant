@@ -548,6 +548,6 @@ Agent 状态 → mood（rest/analyzing/waiting/working）
 | **I1 悬浮球** | OrbBall + OrbPanel + 拖拽 + 展开/收起 | OpenBitFun + ChatGPT | `AgentCompanionDesktopPet.tsx`（拖拽+阈值+边缘缓冲）、`Titlebar.tsx`（窗口主题监听） |
 | **I2 Orb 对话** | ChatView + 流式渲染 + Provider UI | OpenBitFun + ChatGPT + openhuman | `aiService.ts`（Provider 适配）、`Ask.tsx`（对话输入）、`chatDeltaCoalescer.ts`（流式合并） |
 | **I3 工具箱** | ToolBox + 注册表 + 搜索 + 收藏 | it-tools | `tools.types.ts`（Tool 接口）、`tools.store.ts`（分类+收藏）、`fuzzySearch.ts`（fuse.js）、`command-palette.vue`（命令面板）、`CollapsibleToolMenu.vue`（折叠菜单） |
-| **I4 工具扩展** | 剪贴板感知 + 更多工具 | it-tools | 60+ 工具实现逻辑（Vue→React 迁移） |
+| **I4 工具扩展** | 更多工具 | it-tools | 60+ 工具实现逻辑（Vue→React 迁移） |
 | **I5 Mascot** | Rive 集成 + 表情状态机 | openhuman | `RiveMascot.tsx`（useRive+ViewModel）、`Ghosty.tsx`（18种表情参数）、`riveMaps.ts`（映射+归一化）、`visemes.ts`（口型插值） |
 | **I6 Agent** | 模式切换 UI + token 追踪 | OpenBitFun | `agentCompanionMood.ts`（mood 派生）、`chatInputMode.ts`（模式切换） |

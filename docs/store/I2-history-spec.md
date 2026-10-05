@@ -27,7 +27,9 @@ function asConversationId(id: string): ConversationId { return id as Conversatio
 
 **Rust 端**：无需 branded type（Rust 的 newtype 模式更重，且 Tauri command 序列化边界已做校验），仅前端 TypeScript 使用。
 
-### 2.2 ContentBlock 多模态内容
+### 2.2 ContentBlock 多模态内容 ⏸️暂缓
+
+> **暂缓理由**：当前 `Message.content` 为纯 `string`，`MessageBubble` 直接用 `ReactMarkdown` 渲染。改为 `ContentBlock[]` 需要 Rust 端序列化/反序列化改造 + 前端所有读取 `message.content` 的地方重写 + 向后兼容逻辑，是巨大重构。且当前 `content:string` + `toolCalls?: ToolCall[]` + `reasoning?: string` 的现有结构已够用。总架构声明 Function Calling 暂不实现（ARCHITECTURE.md I6），`tool_call`/`tool_result` ContentBlock 类型无消费方。等真正需要图片消息或 Agent Loop 时再改。
 
 消息 `content` 从纯 `string` 改为结构化 `ContentBlock[]`，支持文本/图片/工具调用/思考内嵌。
 
@@ -57,7 +59,9 @@ interface Message {
 
 **向后兼容**：Rust 端存储仍为 `content TEXT`（JSON 序列化 `ContentBlock[]`），读取时若为纯字符串则自动包装为 `[{ type: 'text', text: content }]`。
 
-### 2.3 MessageSource 来源追踪
+### 2.3 MessageSource 来源追踪 ⏸️暂缓
+
+> **暂缓理由**：当前 `Message` 接口里完全没有 `source` 字段，也没有任何代码读取或使用来源信息。`{ kind: 'tool' }` 依赖工具执行（总架构声明 Function Calling 暂不实现），`{ kind: 'model' }` 的 `replay_state` 依赖 Provider 切换后重放功能（尚未实现）。加 `source` 字段增加 `sendMessage` 复杂度但无处消费，等有重放需求时再加。
 
 每条消息携带来源信息，支持 Provider 切换后重放和 UI 来源标识。
 
@@ -93,36 +97,40 @@ interface Message {
 interface Conversation {
   id: ConversationId
   title: string
+  title_source: 'placeholder' | 'fallback' | 'ai' | 'user'   // 标题来源（占位/fallback/AI生成/用户手动）
   provider_id: ProviderId | null
   model_id: string
   system_prompt: string | null
   is_pinned: boolean
-  is_starred: boolean
-  color_mark: string | null
-  labels: string[]
-  draft_content: string | null
-  draft_updated_at: number | null
-  message_count: number
-  total_tokens: number
+  sort_order: number
   generation: number
   created_at: number
   updated_at: number
+  color_mark: string | null              // ⏸️暂缓
+  labels: string[]                       // ⏸️暂缓
+  draft_content: string | null           // ⏸️暂缓
+  draft_updated_at: number | null        // ⏸️暂缓
+  message_count: number                  // ⏸️暂缓
+  total_tokens: number                   // ⏸️暂缓
 }
 ```
 
 | 新增字段 | 类型 | 说明 | 参考 | |
-|---------|------|------|------|
+|---------|------|------|------|-
+| `title_source` | `'placeholder' \| 'fallback' \| 'ai' \| 'user'` | 标题来源追踪：`placeholder`（占位标题"新对话"）、`fallback`（从用户消息截取）、`ai`（AI 生成）、`user`（用户手动重命名）。仅 `placeholder`/`fallback` 状态下允许自动标题覆盖，`user`/`ai` 状态下不覆盖 | openhuman `is_auto_generated_thread_title`、OpenBitFun `titleSource` |
 | `is_pinned` | boolean | 置顶，排序优先 | 通用 |
-| `is_starred` | boolean | 收藏，快速筛选 | 通用 |
+| `sort_order` | number | 置顶组内排序权重（置顶时 `MAX+1`） | 通用 |
+| `generation` | number | 渲染优化版本号 | airi `sessionGenerations` |
 | `color_mark` | string \| null | 颜色标记（如 `"red"` / `"blue"`） | 通用 | ⏸️暂缓：使用频率低 |
 | `labels` | string[] | 标签/分类 | openhuman `Thread.labels` | ⏸️暂缓：使用频率低 |
-| `draft_content` | string \| null | 输入框草稿 | 通用 | ⏸️暂缓：当前前端内存方式够用，避免草稿管理复杂度 |
+| `draft_content` | string \| null | 输入框草稿 | 通用 | ⏸️暂缓：当前切换对话时输入框内容不丢失但会"串台"（所有对话共享同一输入框 state），理想行为是每对话独立草稿，但使用频率低 |
 | `draft_updated_at` | number \| null | 草稿更新时间 | 通用 | ⏸️暂缓 |
-| `message_count` | number | 消息数（冗余缓存，避免 COUNT 查询） | openhuman |
+| `message_count` | number | 消息数（冗余缓存，避免 COUNT 查询） | openhuman | ⏸️暂缓：与 total_tokens 同为冗余缓存，维护负担类似；分页加载的 `get_message_count` 已用 `COUNT(*)` 实时查询，性能足够 |
 | `total_tokens` | number | 总 token 数（冗余缓存） | openhuman | ⏸️暂缓：冗余缓存增加维护负担，需每次增删消息同步更新 |
-| `generation` | number | 渲染优化版本号 | airi `sessionGenerations` |
 
-### 2.6 Tool Call 状态模型
+### 2.6 Tool Call 状态模型 ⏸️暂缓
+
+> **暂缓理由**：总架构明确声明"Function Calling / 内置工具 / MCP 客户端暂不实现"（ARCHITECTURE.md I6）。当前 `send_chat_message` 无 agent loop（不执行工具调用），LLM 返回 tool_call 后应用只透传前端显示，不做"调用工具→回填结果→继续对话"。因此：① `running→success/error` 状态转换依赖工具执行，无 agent loop 则状态永远无法推进；② `tool_calls` 表的 `result`/`status`/`finished_at` 永远无值可写；③ `awaiting_user`/`cancelled` 态无触发场景。等 I6 实现 Agent Loop 后再回来实现完整五态模型。
 
 当前 `ToolCall` 仅有 `id/name/arguments`，无状态追踪。扩展为五态模型：
 
@@ -199,12 +207,11 @@ enum ChatErrorCode {
 
 ```sql
 ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE conversations ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE conversations ADD COLUMN color_mark TEXT;              -- ⏸️暂缓
 ALTER TABLE conversations ADD COLUMN labels TEXT NOT NULL DEFAULT '[]';  -- ⏸️暂缓
-ALTER TABLE conversations ADD COLUMN draft_content TEXT;
-ALTER TABLE conversations ADD COLUMN draft_updated_at INTEGER;
-ALTER TABLE conversations ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE conversations ADD COLUMN draft_content TEXT;              -- ⏸️暂缓：同 §2.5
+ALTER TABLE conversations ADD COLUMN draft_updated_at INTEGER;        -- ⏸️暂缓
+ALTER TABLE conversations ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0;  -- ⏸️暂缓
 ALTER TABLE conversations ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0;  -- ⏸️暂缓
 ALTER TABLE conversations ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE conversations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
@@ -214,8 +221,8 @@ ALTER TABLE conversations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
 
 ```sql
 ALTER TABLE messages ADD COLUMN parent_id TEXT;
-ALTER TABLE messages ADD COLUMN source TEXT;
-ALTER TABLE messages ADD COLUMN feedback TEXT;
+ALTER TABLE messages ADD COLUMN source TEXT;              -- ⏸️暂缓：同 §2.3
+ALTER TABLE messages ADD COLUMN feedback TEXT;            -- ⏸️暂缓：同 §4.10 消息反馈暂缓
 ALTER TABLE messages ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_messages_conv_ts
@@ -224,7 +231,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_parent
   ON messages(parent_id);
 ```
 
-### 3.3 tool_calls 新表
+### 3.3 tool_calls 新表 ⏸️暂缓
+
+> **暂缓理由**：同 §2.6，总架构声明 Function Calling 暂不实现，无 agent loop 则 `result`/`status`/`finished_at` 永远无值可写，建表无意义。
 
 ```sql
 CREATE TABLE IF NOT EXISTS tool_calls (
@@ -253,57 +262,53 @@ CREATE TABLE IF NOT EXISTS conversation_labels (
 );
 ```
 
-### 3.5 Schema 策略：不迁移，删旧重建
+### 3.5 Schema 策略：编写迁移函数，1→0 版本迁移
 
-> **策略**：当前无生产数据，不做 Schema 迁移。`init_db` 中 `CREATE TABLE IF NOT EXISTS` 已包含完整表结构。若表结构变更，删除旧 DB 文件让应用重建即可。
+> **策略**：`init_db` 中 `CREATE TABLE IF NOT EXISTS` 包含完整表结构（v1），新 DB 直接写入 `schema_version = 1`。同时新增独立文件 `migrations.rs`，`run_migrations(conn)` 函数负责检测 `app_settings.schema_version` 并按版本号顺序执行 `ALTER TABLE ADD COLUMN` 迁移。旧 DB（v0）启动时自动迁移到 v1。
 >
-> **理由**：迁移代码（ALTER TABLE / DROP TABLE）容易引入难以发现的 bug（如 v1 迁移 DROP TABLE conversations 导致 messages 全部丢失）。当前阶段无生产数据需要保留，迁移的收益为零，风险为正。
+> **迁移函数设计**：
+> - 独立文件 `migrations.rs`，由 `lib.rs` 导出 `pub mod migrations;`
+> - 读取 `app_settings` 表中 `schema_version`，不存在则默认为 0
+> - 按版本号顺序执行：v0→v1 使用 `ALTER TABLE ADD COLUMN`（仅加列，不删列不改列，安全可逆）
+> - 每个迁移步骤包裹在事务中，失败时回滚并报错
+> - 迁移完成后写入 `schema_version = 1`
+> - 版本号设计：新 DB 创建时直接写入 `schema_version = 1`，下次启动检测到已是 v1 则跳过迁移，方便复用
 
-`db.rs` 的 `run_migrations` 增加 v2 迁移：
-
-~~v2 迁移代码已废弃，不再使用。新字段直接写入 `CREATE TABLE IF NOT EXISTS` 语句中，删旧 DB 重建即可。~~
-
-<!--
 ```rust
-if current_version < 2 {
-    info!("Running migration v2: I3 chat history management");
-    conn.execute_batch(
-        "ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
-         ALTER TABLE conversations ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0;
-         ALTER TABLE conversations ADD COLUMN color_mark TEXT;              -- ⏸️暂缓
-         ALTER TABLE conversations ADD COLUMN labels TEXT NOT NULL DEFAULT '[]';  -- ⏸️暂缓
-         ALTER TABLE conversations ADD COLUMN draft_content TEXT;
-         ALTER TABLE conversations ADD COLUMN draft_updated_at INTEGER;
-         ALTER TABLE conversations ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0;
-         ALTER TABLE conversations ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0;  -- ⏸️暂缓
-         ALTER TABLE conversations ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;
-         ALTER TABLE conversations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
-         ALTER TABLE messages ADD COLUMN parent_id TEXT;
-         ALTER TABLE messages ADD COLUMN source TEXT;
-         ALTER TABLE messages ADD COLUMN feedback TEXT;
-         ALTER TABLE messages ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
-         CREATE INDEX IF NOT EXISTS idx_messages_conv_ts ON messages(conversation_id, timestamp);
-         CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
-         CREATE TABLE IF NOT EXISTS tool_calls (
-           id TEXT PRIMARY KEY,
-           message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-           name TEXT NOT NULL,
-           arguments TEXT NOT NULL,
-           result TEXT,
-           status TEXT NOT NULL DEFAULT 'running',
-           started_at INTEGER NOT NULL,
-           finished_at INTEGER,
-           is_error INTEGER NOT NULL DEFAULT 0
-         );
-         CREATE INDEX IF NOT EXISTS idx_tool_calls_message ON tool_calls(message_id);"
-    ).map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '2')",
-        [],
-    ).map_err(|e| e.to_string())?;
+// migrations.rs — 独立迁移文件
+use log::info;
+use rusqlite::Connection;
+
+pub fn run_migrations(conn: &Connection) -> Result<(), String> {
+    let current_version: i64 = conn
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = 'schema_version'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    if current_version < 1 {
+        info!("Running migration v0→v1: I2-History chat history management");
+        conn.execute_batch(
+            "ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE conversations ADD COLUMN title_source TEXT NOT NULL DEFAULT 'placeholder';
+             ALTER TABLE conversations ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE conversations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE messages ADD COLUMN parent_id TEXT;
+             ALTER TABLE messages ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
+             CREATE INDEX IF NOT EXISTS idx_messages_conv_ts ON messages(conversation_id, timestamp);",
+        ).map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '1')",
+            [],
+        ).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 ```
--->
+
+> **注意**：暂缓字段（color_mark / labels / draft_content / draft_updated_at / message_count / total_tokens / source / feedback / tool_calls 表 / is_starred）不包含在 v0→v1 迁移中，等对应功能实现时再在后续版本迁移中添加。
 
 ## 4. 功能规格
 
@@ -393,8 +398,6 @@ function groupConversations(convs: Conversation[]): ConversationGroup[] {
 
 **Provider 过滤**：侧栏顶部增加 Provider 筛选标签栏（`Tabs` 组件），"全部" + 各 Provider 名称。
 
-**收藏筛选**：侧栏顶部增加 ⭐ 图标按钮，切换仅显示 `is_starred = true` 的对话。
-
 ### 4.3 对话高级操作
 
 #### 置顶/取消置顶
@@ -408,16 +411,9 @@ pub fn toggle_conversation_pin(app: AppHandle, id: String) -> Result<(), String>
 - 置顶时 `sort_order = MAX(sort_order) + 1`（置顶组内排序）
 - 取消置顶时 `sort_order = 0`
 
-#### 收藏/取消收藏
+#### 草稿保存/恢复
 
-```rust
-#[command]
-pub fn toggle_conversation_star(app: AppHandle, id: String) -> Result<(), String>
-```
-
-#### 草稿保存/恢复 ⏸️暂缓
-
-> **暂缓理由**：当前前端内存方式已够用（切换对话时输入框内容保留在内存），DB 持久化草稿增加管理复杂度（何时保存、何时清除、草稿与实际消息不一致等），暂不需要。
+> **说明**：当前 `MessageInput` 使用 `useState("")` 管理输入框内容，因组件切换对话时不卸载（无 `key={conversationId}`），输入框内容在切换时**不会丢失但会"串台"**——对话 A 输入半截切到 B，B 的输入框会显示 A 的半截内容，切回 A 仍显示 B 的内容。理想行为是每个对话独立保存/恢复草稿。实现简单（切换前 `invoke("save_draft")`，切换后恢复），但使用频率低，暂缓也可接受。
 
 ```rust
 #[command]
@@ -469,15 +465,34 @@ pub fn batch_delete_conversations(app: AppHandle, ids: Vec<String>) -> Result<()
 pub fn purge_conversations(app: AppHandle) -> Result<(), String>
 ```
 
-#### 全文搜索
+#### 对话搜索（标题搜索 + 全文搜索）
+
+**设计原则**：默认搜索标题（前端本地过滤，快速无延迟），全文搜索（搜索消息内容）作为需手动开启的开关（后端 SQL 查询，有 IO 开销）。
+
+**标题搜索（默认）**：
+
+- 前端本地过滤，无需后端调用（`conversations` 已在 `chatStore` 中）
+- 实现：`conversations.filter(c => c.title.toLowerCase().includes(query.toLowerCase()))`
+- 优势：即时响应、无网络开销、输入即搜
+
+**全文搜索（需开启开关）**：
 
 ```rust
 #[command]
 pub fn search_conversations(app: AppHandle, query: String) -> Result<serde_json::Value, String>
 ```
 
-- SQL：`SELECT DISTINCT c.* FROM conversations c JOIN messages m ON m.conversation_id = c.id WHERE c.title LIKE ?1 OR m.content LIKE ?1 ORDER BY c.updated_at DESC`
+- SQL：`SELECT DISTINCT c.* FROM conversations c JOIN messages m ON m.conversation_id = c.id WHERE m.content LIKE ?1 ORDER BY c.updated_at DESC`
 - 参数：`%query%`
+- 仅搜索消息内容（`m.content LIKE`），标题搜索由前端负责
+- 开关状态：`chatStore.searchFullText: boolean`（默认 `false`）
+
+**搜索流程**：
+
+1. 用户输入搜索词 → 防抖 300ms
+2. 若 `searchFullText === false`（默认）→ 前端本地过滤 `conversations` by `title`
+3. 若 `searchFullText === true` → 调用后端 `search_conversations` → 返回消息内容匹配的对话列表
+4. 清空搜索词 → 恢复完整对话列表
 
 ### 4.4 消息编辑与重新生成
 
@@ -526,7 +541,9 @@ deleteMessage: async (id: string) => {
 }
 ```
 
-### 4.6 Tool Call 状态追踪
+### 4.6 Tool Call 状态追踪 ⏸️暂缓
+
+> **暂缓理由**：同 §2.6，总架构声明 Function Calling 暂不实现。当前 `send_chat_message` 无 agent loop，无法 emit `tool_call_status`/`tool_call_result`/`tool_call_finished_at` 事件。前端只能收到 `delta_tool_call_id/name/arguments`（LLM 返回的工具调用意图），无法推进到 `success/error` 状态。等 I6 实现 Agent Loop 后再实现。
 
 **流式事件扩展**：
 
@@ -609,7 +626,146 @@ renameConversation: async (id, title) => {
 }
 ```
 
-### 4.9 自动重试 ⏸️暂缓
+### 4.9 对话标题生成
+
+**当前问题**：`finishStream` 中用助手回复前 20 字符做标题（`lastAssistant.content.slice(0, 20)`），语义不直观（用户看到 AI 回复截断而非自身意图），且硬编码 `"新对话"` 判断不够健壮，用户手动重命名后仍可能被覆盖。
+
+**参考方案**：
+
+| 项目 | Fallback 来源 | AI 生成 | 占位标题检测 | 用户重命名保护 | 语言感知 |
+|------|-------------|---------|------------|-------------|---------|
+| openhuman | 用户消息首行非空文本 | ✅ `summarization` 角色轻量模型 | ✅ 正则匹配 `"Chat Mon day H:MM AM"` 格式 | ✅ 非占位标题不覆盖 | — |
+| OpenBitFun | 用户消息 normalize + 智能截断 | ✅ `session_title` 任务模型（可配置） | ✅ `titleSource` 字段 | ✅ `titleSource='text'` 不覆盖 | ✅ 按用户语言生成 |
+
+**设计**：
+
+#### 4.9.1 标题来源追踪 `title_source`
+
+```typescript
+type TitleSource = 'placeholder' | 'fallback' | 'ai' | 'user'
+```
+
+- `placeholder`：创建对话时的占位标题（"新对话"）
+- `fallback`：从用户消息截取的 fallback 标题
+- `ai`：AI 模型生成的标题
+- `user`：用户手动重命名的标题
+
+**覆盖规则**：仅 `placeholder` / `fallback` 状态下允许自动标题生成覆盖；`ai` / `user` 状态下不覆盖（保护用户/AI 已确定的标题）。
+
+#### 4.9.2 Fallback 标题（从用户消息截取）
+
+```typescript
+function fallbackTitleFromUserMessage(userMessage: string, maxLength: number = 30): string {
+  const normalized = userMessage.replace(/\s+/g, ' ').trim()
+  if (!normalized) return '新对话'
+  
+  // 取首行非空文本
+  const firstLine = normalized.split('\n').find(l => l.trim())?.trim() ?? normalized
+  
+  // 智能截断：优先在句号/问号/感叹号处断开
+  if (firstLine.length <= maxLength) return firstLine
+  
+  const sentenceBreaks = ['。', '！', '？', '.', '!', '?']
+  const allBreaks = [...sentenceBreaks, '；', ';', '，', ',', ' ']
+  const minBreakIndex = Math.floor(maxLength / 2)
+  
+  let bestBreakIndex = -1
+  for (let i = 0; i < maxLength; i++) {
+    if (allBreaks.includes(firstLine[i]) && i >= minBreakIndex) {
+      bestBreakIndex = i
+    }
+  }
+  
+  if (bestBreakIndex >= 0) {
+    const candidate = firstLine.slice(0, bestBreakIndex + 1)
+    // 句末标点直接返回，不加省略号
+    return sentenceBreaks.includes(firstLine[bestBreakIndex]) ? candidate : candidate.trimEnd() + '...'
+  }
+  
+  return firstLine.slice(0, maxLength) + '...'
+}
+```
+
+**与当前实现的区别**：
+- 来源：**用户消息**（而非助手回复）— 语义直观，用户看到自己的意图
+- 截断：智能截断（优先在句末标点处断开）— 而非硬截断
+- 长度：30 字符（而非 20）— 更完整的语义表达
+
+#### 4.9.3 AI 标题生成 ⏸️暂缓
+
+> **暂缓理由**：需要 Rust 端 `generate_conversation_title` command + 轻量模型调用链路，当前 fallback 已满足基本需求。AI 标题生成作为体验增强，优先级低于核心历史管理功能。
+
+```rust
+#[command]
+pub async fn generate_conversation_title(
+    app: AppHandle,
+    conversation_id: String,
+) -> Result<(), String>
+```
+
+**流程**：
+1. 检查 `title_source`：若为 `user` 或 `ai`，跳过（不覆盖）
+2. 获取首条用户消息 + 首条助手回复
+3. 若无助手回复 → fallback 标题
+4. 若有助手回复 → 调用轻量模型（temperature=0.2）生成标题
+5. AI 生成失败/空 → fallback 标题
+6. AI 生成成功 → `sanitize_generated_title`（去引号、去 markdown、限制长度）→ 更新标题 + `title_source = 'ai'`
+
+**System Prompt**（参考 openhuman/OpenBitFun）：
+```
+You are a conversation title generation assistant. Based on the user's message, generate a concise title.
+Requirements:
+- At most 5 words
+- No quotes, no markdown
+- Return only the title text
+```
+
+**User Prompt**：
+```
+First user message:
+{user_message}
+
+Assistant reply:
+{assistant_message}
+
+Return the best conversation title.
+```
+
+#### 4.9.4 前端触发时机
+
+**当前**：`finishStream`（流式完成后）同步执行。
+
+**优化**：`sendMessage` 中用户消息追加后，fire-and-forget 异步执行 fallback 标题生成（不等 AI 回复完成）：
+
+```typescript
+sendMessage: async (content) => {
+  // ... 追加用户消息 ...
+  
+  // fire-and-forget: fallback 标题生成
+  const conv = get().conversations.find(c => c.id === get().currentConversationId)
+  if (conv && (conv.title_source === 'placeholder')) {
+    const fallbackTitle = fallbackTitleFromUserMessage(content)
+    get().renameConversation(conv.id, fallbackTitle)  // 内部设置 title_source = 'fallback'
+  }
+  
+  // ... 开始流式请求 ...
+}
+```
+
+**AI 标题生成触发**（⏸️暂缓）：`finishStream` 中，若 `title_source === 'fallback'`，fire-and-forget 调用 `generate_conversation_title`。
+
+#### 4.9.5 用户手动重命名保护
+
+```typescript
+renameConversation: async (id, title) => {
+  await enqueuePersist(() => invoke("rename_conversation", { id, title, titleSource: 'user' }))
+  await get().loadConversations()
+}
+```
+
+- 用户手动重命名时 `title_source = 'user'`，后续自动标题生成不再覆盖。
+
+### 4.10 自动重试 ⏸️暂缓
 
 > **暂缓理由**：流式场景下自动重试行为复杂（半截消息怎么重试？），当前流式出错用户手动重发即可。
 
@@ -705,7 +861,6 @@ async function retryWithBackoff(
 
 ```
 ┌─ 置顶/取消置顶 ─────┐
-│ 收藏/取消收藏        │
 │ 颜色标记 → 子菜单    │
 │ 标签管理 → 子菜单    │
 │─────────────────────│
@@ -722,14 +877,13 @@ async function retryWithBackoff(
 > **暂缓理由**：复杂 UI 交互，使用频率低，批量删除用 Shift 多选或右键即可。
 
 - 侧栏顶部增加 ☑ 按钮，点击进入多选模式
-- 多选模式：每项前显示 Checkbox，底部显示操作栏（批量删除/批量导出/批量置顶/批量收藏）
+- 多选模式：每项前显示 Checkbox，底部显示操作栏（批量删除/批量导出/批量置顶）
 - Escape 退出多选模式
 
 #### 对话摘要预览
 
 - 每项显示：标题 + 最后一条消息摘要（30 字符截断）+ 相对时间 + Provider 图标
 - `is_pinned` 项显示 📌 图标
-- `is_starred` 项显示 ⭐ 图标
 - `color_mark` 项显示对应颜色圆点
 
 #### 键盘导航 ⏸️暂缓
@@ -806,10 +960,11 @@ finishStream: () => {
 |------|------|------|
 | `get_messages_paginated` | `(conn, conversation_id, limit, before_timestamp) → Result<Vec<MessageRow>>` | 分页查询消息 |
 | `toggle_pin` | `(conn, id) → Result<()>` | 切换置顶 |
-| `toggle_star` | `(conn, id) → Result<()>` | 切换收藏 |
 | `save_draft` | `(conn, id, content) → Result<()>` | 保存草稿 | ⏸️暂缓 |
 | `duplicate_conversation` | `(conn, id) → Result<String>` | 复制对话 |
-| `search_conversations` | `(conn, query) → Result<Vec<ConversationRow>>` | 全文搜索 |
+| `search_conversations` | `(conn, query) → Result<Vec<ConversationRow>>` | 消息内容搜索（仅 `m.content LIKE`，标题搜索由前端负责） |
+| `rename_conversation` | `(conn, id, title, title_source) → Result<()>` | 重命名对话（含 `title_source` 更新） |
+| `generate_conversation_title` | `(conn, id) → Result<()>` | AI 标题生成（⏸️暂缓：需轻量模型调用链路） | ⏸️暂缓 |
 | `batch_delete` | `(conn, ids) → Result<()>` | 批量删除 |
 | `purge_all` | `(conn) → Result<()>` | 清空所有对话 |
 | `increment_generation` | `(conn, id) → Result<()>` | 递增 generation |
@@ -826,7 +981,7 @@ finishStream: () => {
 | `export_conversation` | `(conn, id, format) → Result<String>` | 导出对话 |
 | `import_conversation` | `(conn, data, format) → Result<String>` | 导入对话 |
 
-**tool_calls.rs 新增模块**：
+**tool_calls.rs 新增模块** ⏸️暂缓（同 §2.6，总架构声明 Function Calling 暂不实现）：
 
 | 函数 | 签名 | 说明 |
 |------|------|------|
@@ -840,14 +995,15 @@ finishStream: () => {
 |---------|------|------|------|
 | `get_conversation_paginated` | `(id, limit?, before_timestamp?) → Result<ConversationDetail>` | 分页获取对话 |
 | `toggle_conversation_pin` | `(id) → Result<()>` | 切换置顶 |
-| `toggle_conversation_star` | `(id) → Result<()>` | 切换收藏 |
 | `save_conversation_draft` | `(id, content) → Result<()>` | 保存草稿 | ⏸️暂缓 |
 | `duplicate_conversation` | `(id) → Result<String>` | 复制对话 |
 | `export_conversation` | `(id, format) → Result<String>` | 导出对话 |
 | `import_conversation` | `(data, format) → Result<String>` | 导入对话 | ⏸️暂缓 |
 | `batch_delete_conversations` | `(ids) → Result<()>` | 批量删除 |
 | `purge_conversations` | `() → Result<()>` | 清空所有 |
-| `search_conversations` | `(query) → Result<Vec<ConversationRow>>` | 全文搜索 |
+| `search_conversations` | `(query) → Result<Vec<ConversationRow>>` | 消息内容搜索（标题搜索由前端本地过滤） |
+| `rename_conversation` | `(id, title, title_source) → Result<()>` | 重命名对话（含 `title_source` 更新） |
+| `generate_conversation_title` | `(conversation_id) → Result<()>` | AI 标题生成 | ⏸️暂缓 |
 | `edit_message` | `(message_id, new_content) → Result<()>` | 编辑消息 |
 | `regenerate_message` | `(conversation_id, message_id) → Result<()>` | 重新生成 |
 | `delete_message_persist` | `(message_id) → Result<()>` | 持久化删除消息 |
@@ -872,35 +1028,37 @@ interface ChatState {
   isLoadingMoreMessages: boolean
   contextUsage: { used_tokens: number; max_tokens: number; percentage: number } | null
   generation: number
-  activeBranchMap: Record<string, number>
+  activeBranchMap: Record<string, number>              // ⏸️暂缓：依赖消息分支
   searchQuery: string
   searchResults: Conversation[] | null
+  searchFullText: boolean                            // 全文搜索开关（默认 false，仅搜标题；true 时搜消息内容）
   filterProviderId: ProviderId | null
   filterStarred: boolean
-  multiSelectMode: boolean
-  selectedConversationIds: Set<ConversationId>
+  multiSelectMode: boolean                             // ⏸️暂缓：复杂 UI 交互，使用频率低
+  selectedConversationIds: Set<ConversationId>         // ⏸️暂缓
 
   loadConversations: () => Promise<void>
   createConversation: (providerId: string, modelId: string) => Promise<string>
   ensureCurrentConversation: () => Promise<void>
   switchConversation: (id: string) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
-  renameConversation: (id: string, title: string) => Promise<void>
+  renameConversation: (id: string, title: string, titleSource?: TitleSource) => Promise<void>
   updateModel: (id: string, modelId: string) => Promise<void>
   togglePin: (id: string) => Promise<void>
-  toggleStar: (id: string) => Promise<void>
-  saveDraft: (content: string) => Promise<void>
+  saveDraft: (content: string) => Promise<void>        // ⏸️暂缓：输入框"串台"问题使用频率低
   duplicateConversation: (id: string) => Promise<void>
   exportConversation: (id: string, format: string) => Promise<void>
   searchConversations: (query: string) => Promise<void>
+  toggleSearchFullText: () => void
+  generateConversationTitle: (id: string) => Promise<void>  // ⏸️暂缓：AI 标题生成
 
   sendMessage: (content: string) => Promise<void>
   cancelStream: () => Promise<void>
   editMessage: (messageId: string, newContent: string) => Promise<void>
   regenerateMessage: (messageId: string) => Promise<void>
   deleteMessage: (id: string) => Promise<void>
-  updateFeedback: (messageId: string, feedback: 'positive' | 'negative' | null) => Promise<void>
-  switchBranch: (parentId: string, index: number) => void
+  updateFeedback: (messageId: string, feedback: 'positive' | 'negative' | null) => Promise<void>  // ⏸️暂缓：同 §4.10
+  switchBranch: (parentId: string, index: number) => void  // ⏸️暂缓：依赖消息分支
 
   loadMoreMessages: () => Promise<void>
   appendDelta: (delta: string) => void
@@ -908,7 +1066,6 @@ interface ChatState {
   errorStream: (error: ChatError) => void
   toggleSidebar: () => void
   setFilterProvider: (providerId: string | null) => void
-  setFilterStarred: (starred: boolean) => void
   toggleMultiSelect: () => void
   toggleSelectConversation: (id: string) => void
 }
@@ -916,33 +1073,35 @@ interface ChatState {
 
 ### 6.2 新增/修改组件
 
-| 组件 | 路径 | 变更 | 职责 |
-|------|------|------|------|
-| ConversationSidebar | `src/chat/ConversationSidebar.tsx` | 重构 | 时间分组 + Provider 过滤 + 收藏筛选 + 多选 + 右键菜单扩展 |
-| MessageBubble | `src/chat/MessageBubble.tsx` | 重构 | 操作栏 + 分支切换 + 反馈 + 折叠 reasoning + Tool Call 状态 |
-| MessageList | `src/chat/MessageList.tsx` | 重构 | 虚拟滚动 + 分页加载 + 骨架屏 |
-| ChatView | `src/chat/ChatView.tsx` | 修改 | 上下文进度条 + 草稿保存 |
+| 组件 | 路径 | 变更 | 职责 | |
+|------|------|------|------|-|
+| ConversationSidebar | `src/chat/ConversationSidebar.tsx` | 重构 | 时间分组 + Provider 过滤 + 右键菜单扩展 |
+| MessageBubble | `src/chat/MessageBubble.tsx` | 重构 | 操作栏 + 折叠 reasoning |
+| MessageList | `src/chat/MessageList.tsx` | 重构 | 分页加载 + 骨架屏 |
+| ChatView | `src/chat/ChatView.tsx` | 修改 | 上下文进度条 |
 | ContextBar | `src/chat/ContextBar.tsx` | 新增 | 上下文窗口使用量进度条 |
-| BranchSwitcher | `src/chat/BranchSwitcher.tsx` | 新增 | 消息分支切换器 | ⏸️暂缓 |
-| ToolCallBubble | `src/chat/ToolCallBubble.tsx` | 新增 | Tool Call 状态渲染（五态） |
-| ToolTimeline | `src/chat/ToolTimeline.tsx` | 新增 | 工具调用时间线视图 |
 | ConversationGroup | `src/chat/ConversationGroup.tsx` | 新增 | 对话分组标题 + 可折叠 |
-| MessageActionBar | `src/chat/MessageActionBar.tsx` | 新增 | 消息操作栏（复制/编辑/重生成/反馈/固定/删除） |
-| SearchBar | `src/chat/SearchBar.tsx` | 新增 | 全文搜索（标题 + 消息内容） |
+| MessageActionBar | `src/chat/MessageActionBar.tsx` | 新增 | 消息操作栏（复制/编辑/重生成/固定/删除） |
+| SearchBar | `src/chat/SearchBar.tsx` | 新增 | 对话搜索（默认标题搜索 + 全文搜索开关） |
+| BranchSwitcher | `src/chat/BranchSwitcher.tsx` | 新增 | 消息分支切换器 | ⏸️暂缓：依赖消息分支 |
+| ToolCallBubble | `src/chat/ToolCallBubble.tsx` | 新增 | Tool Call 状态渲染（五态） | ⏸️暂缓：同 §2.6 |
+| ToolTimeline | `src/chat/ToolTimeline.tsx` | 新增 | 工具调用时间线视图 | ⏸️暂缓：同 §2.6 |
 
 ### 6.3 常量新增
 
 ```typescript
 export const MESSAGES_PAGE_SIZE = 50
-export const VIRTUAL_SCROLL_THRESHOLD = 100
-export const VIRTUAL_SCROLL_OVERSCAN = 5
 export const CONTEXT_WARN_THRESHOLD = 0.8
 export const CONTEXT_DANGER_THRESHOLD = 0.95
-export const RETRY_MAX_ATTEMPTS = 3
-export const RETRY_BASE_DELAY_MS = 1000
-export const RETRY_MAX_DELAY_MS = 30000
 export const CONVERSATION_SUMMARY_LENGTH = 30
 export const SCROLL_LOAD_THRESHOLD_PX = 100
+export const FALLBACK_TITLE_MAX_LENGTH = 30
+// ⏸️暂缓常量
+// export const VIRTUAL_SCROLL_THRESHOLD = 100
+// export const VIRTUAL_SCROLL_OVERSCAN = 5
+// export const RETRY_MAX_ATTEMPTS = 3
+// export const RETRY_BASE_DELAY_MS = 1000
+// export const RETRY_MAX_DELAY_MS = 30000
 ```
 
 ## 7. 验收标准
@@ -952,20 +1111,23 @@ export const SCROLL_LOAD_THRESHOLD_PX = 100
 | 1 | 消息分页加载：500 条消息对话，首次加载 50 条，向上滚动加载更多，无卡顿 | 手动测试 |
 | 2 | 虚拟滚动：200 条消息对话，DOM 节点数 < 60 | Chrome DevTools Elements 计数 |
 | 3 | 时间分组：侧栏按"今天/昨天/近 7 天/近 30 天/更早"分组显示 | 手动测试 |
-| 4 | 置顶/收藏：置顶对话在侧栏最顶部，收藏筛选仅显示收藏对话 | 手动测试 |
+| 4 | 置顶：置顶对话在侧栏最顶部 | 手动测试 |
 | 5 | 草稿保存：输入框输入内容 → 切换对话 → 切回 → 内容恢复 | 手动测试 | ⏸️暂缓 |
 | 6 | 消息编辑：编辑用户消息 → 后续消息删除 → 重新发送 | 手动测试 |
 | 7 | 消息重新生成：点击重新生成 → 新回复产生 → 分支指示器显示 | 手动测试 | ⏸️暂缓（依赖分支） |
 | 8 | 分支切换：编辑产生分支 → ◀▶ 切换 → 消息子树替换 | 手动测试 | ⏸️暂缓 |
 | 9 | 消息删除持久化：删除消息 → 刷新页面 → 消息不再出现 | 手动测试 |
-| 10 | Tool Call 五态：工具调用显示 running/success/error/awaiting_user/cancelled | Deep 模式测试 |
+| 10 | Tool Call 五态：工具调用显示 running/success/error/awaiting_user/cancelled | Deep 模式测试 | ⏸️暂缓：同 §2.6 |
 | 11 | 上下文监控：进度条显示使用量，>80% 黄色警告 | 长对话测试 |
 | 12 | Persist Queue：快速连续操作（重命名+删除+发送）无数据丢失 | 压力测试 |
 | 13 | 自动重试：模拟网络断开 → 恢复 → 消息自动重试成功 | DevTools Network Offline | ⏸️暂缓 |
-| 14 | 全文搜索：搜索消息内容 → 匹配对话显示 | 手动测试 |
-| 15 | 对话导出/导入：导出 JSON → 删除对话 → 导入 → 对话恢复 | 手动测试 | 导出保留，导入⏸️暂缓 |
-| 16 | 代码高亮：代码块语法高亮 + 复制按钮 | 手动测试 |
-| 17 | 数学公式：`$$E=mc^2$$` 正确渲染 | 手动测试 |
-| 18 | Reasoning 折叠：思考内容默认折叠，点击展开 | 手动测试 |
-| 19 | 消息反馈：点赞/点踩存入 DB | 手动测试 + DB 查询 | ⏸️暂缓 |
-| 20 | Branded Type：`MessageId` / `ConversationId` 类型不匹配时编译报错 | TypeScript 编译 | ⏸️暂缓 |
+| 14 | 对话搜索：默认标题搜索即时过滤；开启全文搜索开关后搜索消息内容 → 匹配对话显示 | 手动测试 |
+| 15 | Fallback 标题：发送首条消息 → 标题从用户消息智能截取（非助手回复）→ `title_source='fallback'` | 手动测试 |
+| 16 | 标题来源保护：用户手动重命名 → `title_source='user'` → 后续自动标题不再覆盖 | 手动测试 |
+| 17 | AI 标题生成：`title_source='fallback'` → AI 生成成功 → `title_source='ai'` | 手动测试 | ⏸️暂缓 |
+| 18 | 对话导出/导入：导出 JSON → 删除对话 → 导入 → 对话恢复 | 手动测试 | 导出保留，导入⏸️暂缓 |
+| 19 | 代码高亮：代码块语法高亮 + 复制按钮 | 手动测试 |
+| 20 | 数学公式：`$$E=mc^2$$` 正确渲染 | 手动测试 |
+| 21 | Reasoning 折叠：思考内容默认折叠，点击展开 | 手动测试 |
+| 22 | 消息反馈：点赞/点踩存入 DB | 手动测试 + DB 查询 | ⏸️暂缓 |
+| 23 | Branded Type：`MessageId` / `ConversationId` 类型不匹配时编译报错 | TypeScript 编译 | ⏸️暂缓 |

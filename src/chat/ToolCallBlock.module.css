@@ -1,0 +1,40 @@
+.root {
+  margin-bottom: 6px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease-in-out;
+}
+
+.toggle:hover {
+  background: var(--color-bg-layout);
+}
+
+.name {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.args {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--color-bg-layout);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

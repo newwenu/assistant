@@ -361,7 +361,6 @@ App.tsx `MainLayout` 路由新增：
 
 ## 5. 不做的事（I3 范围外）
 
-- ❌ 剪贴板感知 / Smart Detection（I4）
 - ❌ 日常工具（二维码/计算器/单位换算/密码生成/IP查询）（I4）
 - ❌ 多媒体工具（图片压缩/SVG预览）（I4）
 - ❌ 对话导出 Markdown/JSON（I2-History）

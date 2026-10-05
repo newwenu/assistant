@@ -5,13 +5,15 @@ import React, {
   useRef,
   useEffect,
 } from "react";
-import { Input, Button, Modal, Dropdown } from "antd";
+import { Input, Button, Modal, Dropdown, Switch, Tooltip } from "antd";
 import {
   PlusOutlined,
   DeleteOutlined,
   EditOutlined,
   SearchOutlined,
   ExportOutlined,
+  PushpinOutlined,
+  CopyOutlined,
 } from "@ant-design/icons";
 import type { Conversation } from "../stores/chatStore";
 import { CHAT_SIDEBAR_WIDTH } from "../config/constants";
@@ -26,7 +28,12 @@ interface ConversationSidebarProps {
   onCreate: () => void;
   onSearch: (query: string) => void;
   onClearSearch: () => void;
+  onTogglePin?: (id: string) => void;
+  onDuplicate?: (id: string) => void;
+  onExport?: (id: string, format: string) => void;
   searchResults: Conversation[] | null;
+  searchFullText?: boolean;
+  onToggleSearchFullText?: () => void;
   visible: boolean;
 }
 
@@ -49,6 +56,12 @@ function relativeTime(timestamp: number): string {
 function groupConversations(convs: Conversation[]): ConversationGroup[] {
   const groups: ConversationGroup[] = [];
 
+  const pinned = convs.filter((c) => c.is_pinned);
+  if (pinned.length > 0)
+    groups.push({ key: "pinned", label: "置顶", conversations: pinned });
+
+  const unpinned = convs.filter((c) => !c.is_pinned);
+
   const now = new Date();
   const todayStart = new Date(
     now.getFullYear(),
@@ -59,17 +72,17 @@ function groupConversations(convs: Conversation[]): ConversationGroup[] {
   const weekStart = todayStart - 6 * 86400000;
   const monthStart = todayStart - 29 * 86400000;
 
-  const today = convs.filter((c) => c.updated_at >= todayStart);
-  const yesterday = convs.filter(
+  const today = unpinned.filter((c) => c.updated_at >= todayStart);
+  const yesterday = unpinned.filter(
     (c) => c.updated_at >= yesterdayStart && c.updated_at < todayStart,
   );
-  const week = convs.filter(
+  const week = unpinned.filter(
     (c) => c.updated_at >= weekStart && c.updated_at < yesterdayStart,
   );
-  const month = convs.filter(
+  const month = unpinned.filter(
     (c) => c.updated_at >= monthStart && c.updated_at < weekStart,
   );
-  const older = convs.filter((c) => c.updated_at < monthStart);
+  const older = unpinned.filter((c) => c.updated_at < monthStart);
 
   if (today.length)
     groups.push({ key: "today", label: "今天", conversations: today });
@@ -95,7 +108,12 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   onCreate,
   onSearch,
   onClearSearch,
+  onTogglePin,
+  onDuplicate,
+  onExport,
   searchResults,
+  searchFullText,
+  onToggleSearchFullText,
   visible,
 }) => {
   const [search, setSearch] = useState("");
@@ -169,6 +187,11 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         ) : (
           <>
             <div className="chat-sidebar-item-title">
+              {conv.is_pinned && (
+                <PushpinOutlined
+                  style={{ fontSize: 10, marginRight: 4, color: "#faad14" }}
+                />
+              )}
               {conv.title}
               {conv.provider_id && !providerIds.has(conv.provider_id) && (
                 <span className="chat-sidebar-item-badge">Provider 不可用</span>
@@ -193,12 +216,28 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                     },
                   },
                   {
-                    key: "export",
+                    key: "pin",
+                    icon: <PushpinOutlined />,
+                    label: conv.is_pinned ? "取消置顶" : "置顶",
+                    onClick: () => onTogglePin?.(conv.id),
+                  },
+                  {
+                    key: "duplicate",
+                    icon: <CopyOutlined />,
+                    label: "复制",
+                    onClick: () => onDuplicate?.(conv.id),
+                  },
+                  {
+                    key: "export-md",
                     icon: <ExportOutlined />,
-                    label: "导出",
-                    onClick: () => {
-                      handleExportConversation(conv);
-                    },
+                    label: "导出 Markdown",
+                    onClick: () => onExport?.(conv.id, "markdown"),
+                  },
+                  {
+                    key: "export-json",
+                    icon: <ExportOutlined />,
+                    label: "导出 JSON",
+                    onClick: () => onExport?.(conv.id, "json"),
                   },
                   { type: "divider" },
                   {
@@ -231,6 +270,9 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
       providerIds,
       onSelect,
       onDelete,
+      onTogglePin,
+      onDuplicate,
+      onExport,
       handleRename,
     ],
   );
@@ -257,6 +299,16 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
           }
           className="chat-sidebar-search"
         />
+        {search.trim() && onToggleSearchFullText && (
+          <Tooltip title="全文搜索消息内容">
+            <Switch
+              size="small"
+              checked={searchFullText}
+              onChange={onToggleSearchFullText}
+              style={{ marginLeft: 8 }}
+            />
+          </Tooltip>
+        )}
       </div>
       <div className="chat-sidebar-list">
         {displayConversations.length === 0 && (
@@ -303,22 +355,3 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     </div>
   );
 };
-
-async function handleExportConversation(conv: Conversation) {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const content = await invoke<string>("export_conversation", {
-      id: conv.id,
-      format: "markdown",
-    });
-    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${conv.title}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    console.error("Failed to export conversation:", e);
-  }
-}

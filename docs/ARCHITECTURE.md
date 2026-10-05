@@ -155,10 +155,6 @@ interface ToolDefinition {
 | 日常 | 二维码生成、计算器、单位换算、密码生成、IP 查询 |
 | 多媒体 | 图片压缩、SVG 预览 |
 
-#### 剪贴板感知
-
-监听剪贴板变化，自动识别内容类型推荐工具：JSON → JSON 格式化，URL → URL 解码，颜色值 → 颜色转换…
-
 ### 4.3 设置
 
 - **Provider 管理**：添加/编辑/删除 AI Provider（名称 + API Key + Base URL + 模型列表）
@@ -537,28 +533,17 @@ assistant/
 
 ### I2-History — 聊天消息历史管理（进行中）
 
-**交付：** 完整的对话历史管理：分页加载、虚拟滚动、搜索、导出、置顶/收藏、分支、重试
+**交付：** 分页加载、搜索、导出、置顶/收藏、消息编辑/重试、代码高亮
 
-- [ ] Schema v2 迁移（conversations 新增 9 列 + messages 新增 4 列 + tool_calls 新表 + 2 索引）
-- [ ] ConversationRow / MessageRow 结构体扩展（is_pinned / is_starred / color_mark / labels / draft / message_count / total_tokens / generation / sort_order + parent_id / source / feedback）
-- [ ] tool_calls.rs 新模块（ToolCallRow + CRUD）
-- [ ] conversations.rs 新增 CRUD（toggle_pin / toggle_star / save_draft / duplicate / search / batch_delete / purge_all / increment_generation / update_stats / set_color_mark / set_labels）
-- [ ] messages.rs 新增 CRUD（delete / edit / update_feedback / get_children / export JSON/Markdown / import JSON）
-- [ ] Tauri Commands 对话高级操作（toggle_pin / toggle_star / save_draft / duplicate / export / import / batch_delete / purge / search / set_color_mark / set_labels）
-- [ ] Tauri Commands 消息操作（edit / regenerate / delete / update_feedback）
-- [ ] 流式事件扩展（tool_call_status / tool_call_result / tool_call_started_at / tool_call_finished_at）
-- [ ] 前端 branded type（MessageId / ConversationId / ToolCallId / ProviderId）
-- [ ] ContentBlock 类型（text / image / tool_call / tool_result / thinking）
-- [ ] chatStore 扩展（分页加载 / 虚拟滚动 / 搜索 / 导出 / 重试 / 分支 / 错误处理 + ChatError 13 种错误码）
-- [ ] HistoryManager UI（主窗口 /history 路由，对话列表 + 搜索 + 筛选 + 批量操作）
-- [ ] 虚拟滚动（react-virtuoso，阈值 100 条以上启用）
+- [ ] Schema 扩展（新字段写入 CREATE TABLE，删旧 DB 重建）+ 结构体扩展
+- [ ] 对话高级操作 CRUD + Tauri Commands（置顶/收藏/复制/批量删除/搜索）
+- [ ] 消息操作 CRUD + Tauri Commands（编辑/重试/删除）
+- [ ] chatStore 扩展（分页/搜索/导出/重试）+ UI 组件
 - [ ] 代码高亮（shiki）+ 数学公式（KaTeX）
 
-> **前置实现**：I2 迭代中已提前实现部分 I2-History 功能——get_conversation_paginated / search_conversations / export_conversation 三个 Tauri Command、chatStore 分页加载/搜索方法、HistoryManager UI 骨架（/history 路由）、ChatError 13 种错误码体系、相关常量（MESSAGES_PAGE_SIZE / VIRTUAL_SCROLL_* / CONTEXT_* / RETRY_*）。
+> **前置实现**：分页加载、搜索、导出、ChatError 13 种错误码已实现。规格详见 [I2-history-spec.md](./store/I2-history-spec.md) / [I2-history-tasklist.md](./store/I2-history-tasklist.md)
 
-**规格**：详见 [I2-history-spec.md](./store/I2-history-spec.md) / [I2-history-tasklist.md](./store/I2-history-tasklist.md)
-
-**验收：** 长对话分页加载流畅，搜索/导出可用，置顶/收藏/颜色标记可用，消息可编辑/重试/分支
+**验收：** 分页加载流畅，搜索/导出可用，置顶/收藏可用，消息可编辑/重试
 
 ---
 
@@ -597,14 +582,13 @@ assistant/
 
 ---
 
-### I4 — 工具箱扩展 + 剪贴板感知
+### I4 — 工具箱扩展
 
-**交付：** 完整工具箱（20+）+ 剪贴板智能推荐
+**交付：** 完整工具箱（20+）
 
 - [ ] 开发工具：进制转换、JWT 解码、SQL 格式化、Cron 解析
 - [ ] 日常工具：二维码、计算器、单位换算、密码生成、IP 查询
 - [ ] 多媒体工具：图片压缩、SVG 预览
-- [ ] 剪贴板监听 + Smart Detection（自动识别推荐工具）
 - [ ] 对话导出（Markdown / JSON）
 
 **参考：**
@@ -613,9 +597,8 @@ assistant/
 |--------|---------|---------|---------|
 | 工具数量与分类 | IT-Tools | src/tools/index.ts | 60+ 工具按功能分类导入，每个工具独立目录（`tool-name/tool-name.vue` + `tool-name/index.ts`） |
 | 工具布局 | IT-Tools | src/layouts/tool.layout.vue | 工具页统一布局：标题 + 收藏按钮 + 分隔线 + 描述 + `<slot />` 内容区 |
-| 剪贴板感知 | — | — | IT-Tools 未实现 Smart Detection，需自行设计：监听 `navigator.clipboard.readText()` → 正则识别 JSON/URL/颜色/Base64 → 推荐对应工具 |
 
-**验收：** 20+ 工具可用；复制 JSON 后自动提示格式化
+**验收：** 20+ 工具可用
 
 ---
 

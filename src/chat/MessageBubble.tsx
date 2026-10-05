@@ -1,19 +1,11 @@
-import React, { useCallback } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import {
-  CopyOutlined,
-  DeleteOutlined,
-  RedoOutlined,
-  ToolOutlined,
-} from "@ant-design/icons";
+import React, { useCallback, useState } from "react";
 import type { Message, ToolCall } from "../stores/chatStore";
-import {
-  type ChatError,
-  ChatErrorCode,
-  ERROR_DISPLAY,
-  formatRetryAfter,
-} from "./chatErrors";
+import { ErrorBlock } from "./ErrorBlock";
+import { ReasoningBlock } from "./ReasoningBlock";
+import { ToolCallBlock } from "./ToolCallBlock";
+import { EditBlock } from "./EditBlock";
+import { MessageContent } from "./MessageContent";
+import { MessageActions } from "./MessageActions";
 import css from "./MessageBubble.module.css";
 
 interface MessageBubbleProps {
@@ -21,99 +13,9 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   compact?: boolean;
   onDelete?: (id: string) => void;
+  onEdit?: (id: string, newContent: string) => void;
+  onRegenerate?: (id: string) => void;
   onRetry?: () => void;
-}
-
-function ErrorBlock({
-  error,
-  onRetry,
-}: {
-  error: ChatError;
-  onRetry?: () => void;
-}) {
-  const display =
-    ERROR_DISPLAY[error.code] ?? ERROR_DISPLAY[ChatErrorCode.InternalError];
-  const retryHint = formatRetryAfter(error.retry_after_ms);
-
-  return (
-    <div className={css.errorBlock}>
-      <div className={css.errorHeader}>
-        <span className={css.errorIcon}>{display.icon}</span>
-        <span className={css.errorTitle}>{display.title}</span>
-      </div>
-      <div className={css.errorMessage}>{error.message}</div>
-      {retryHint && <div className={css.errorRetryHint}>{retryHint}</div>}
-      {error.retryable && onRetry && (
-        <button className={css.errorRetryBtn} onClick={onRetry} type="button">
-          <RedoOutlined style={{ fontSize: 12, marginRight: 4 }} />
-          重试
-        </button>
-      )}
-    </div>
-  );
-}
-
-function ReasoningBlock({
-  content,
-  isStreaming,
-}: {
-  content: string;
-  isStreaming?: boolean;
-}) {
-  const [expanded, setExpanded] = React.useState(false);
-
-  return (
-    <div className={css.reasoningBlock}>
-      <button
-        className={css.reasoningToggle}
-        onClick={() => setExpanded((v) => !v)}
-        type="button"
-      >
-        <span className={css.reasoningIcon}>💭</span>
-        <span>{expanded ? "收起思考" : "展开思考"}</span>
-        {isStreaming && <span className={css.reasoningStreaming}>思考中…</span>}
-      </button>
-      {expanded && (
-        <div className={css.reasoningContent}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
-  const [expanded, setExpanded] = React.useState(false);
-  const argsPreview =
-    toolCall.arguments.length > 120
-      ? toolCall.arguments.slice(0, 120) + "…"
-      : toolCall.arguments;
-
-  return (
-    <div className={css.toolCallBlock}>
-      <button
-        className={css.toolCallToggle}
-        onClick={() => setExpanded((v) => !v)}
-        type="button"
-      >
-        <ToolOutlined style={{ fontSize: 12, marginRight: 4 }} />
-        <span className={css.toolCallName}>{toolCall.name || toolCall.id}</span>
-      </button>
-      {expanded && (
-        <pre className={css.toolCallArgs}>
-          {tryFormatJson(toolCall.arguments) || argsPreview}
-        </pre>
-      )}
-    </div>
-  );
-}
-
-function tryFormatJson(text: string): string | null {
-  try {
-    return JSON.stringify(JSON.parse(text), null, 2);
-  } catch {
-    return null;
-  }
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({
@@ -121,12 +23,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   isStreaming = false,
   compact = false,
   onDelete,
+  onEdit,
+  onRegenerate,
   onRetry,
 }) => {
   const isUser = message.role === "user";
   const hasError = message.error != null;
   const hasReasoning = !!message.reasoning;
   const hasToolCalls = !!message.toolCalls && message.toolCalls.length > 0;
+
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState(message.content);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.content).catch(() => {});
@@ -135,6 +42,27 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const handleDelete = useCallback(() => {
     onDelete?.(message.id);
   }, [onDelete, message.id]);
+
+  const startEdit = useCallback(() => {
+    setEditContent(message.content);
+    setEditing(true);
+  }, [message.content]);
+
+  const confirmEdit = useCallback(() => {
+    if (editContent.trim() && editContent !== message.content) {
+      onEdit?.(message.id, editContent.trim());
+    }
+    setEditing(false);
+  }, [editContent, message.id, message.content, onEdit]);
+
+  const cancelEdit = useCallback(() => {
+    setEditing(false);
+    setEditContent(message.content);
+  }, [message.content]);
+
+  const handleRegenerate = useCallback(() => {
+    onRegenerate?.(message.id);
+  }, [onRegenerate, message.id]);
 
   const prevRole = React.useContext(RoleContext);
   const isGroupGap = prevRole !== undefined && prevRole !== message.role;
@@ -170,42 +98,39 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             />
           )}
           {hasToolCalls &&
-            message.toolCalls!.map((tc) => (
+            message.toolCalls!.map((tc: ToolCall) => (
               <ToolCallBlock key={tc.id} toolCall={tc} />
             ))}
-          {message.content && (
-            <div className={css.content}>
-              {isUser ? (
-                <p>{message.content}</p>
-              ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {message.content}
-                </ReactMarkdown>
-              )}
-            </div>
-          )}
-          {isStreaming && <span className={css.streamingCursor} />}
-        </div>
-        <div className={css.actions}>
-          <button
-            className={css.actionBtn}
-            onClick={handleCopy}
-            title="复制"
-            type="button"
-          >
-            <CopyOutlined style={{ fontSize: 12 }} />
-          </button>
-          {onDelete && (
-            <button
-              className={css.actionBtn}
-              onClick={handleDelete}
-              title="删除"
-              type="button"
-            >
-              <DeleteOutlined style={{ fontSize: 12 }} />
-            </button>
+          {editing ? (
+            <EditBlock
+              value={editContent}
+              onChange={setEditContent}
+              onConfirm={confirmEdit}
+              onCancel={cancelEdit}
+            />
+          ) : (
+            <>
+              <MessageContent
+                content={message.content}
+                role={message.role}
+                isStreaming={isStreaming}
+              />
+              {isStreaming && <span className={css.streamingCursor} />}
+            </>
           )}
         </div>
+        {!editing && (
+          <div className={css.actionsWrapper}>
+            <MessageActions
+              role={message.role}
+              isStreaming={isStreaming}
+              onCopy={handleCopy}
+              onDelete={onDelete ? handleDelete : undefined}
+              onEdit={onEdit ? startEdit : undefined}
+              onRegenerate={onRegenerate ? handleRegenerate : undefined}
+            />
+          </div>
+        )}
       </div>
       <div className={css.timestamp}>
         {new Date(message.timestamp).toLocaleTimeString()}

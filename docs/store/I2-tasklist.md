@@ -67,7 +67,7 @@
 
 ### A7. Tauri Commands — 对话管理
 
-- [x] `cmd.rs`：实现 I2-spec §2.4 对话相关命令（create/list/get/delete/rename_conversation + list/save_prompt_template）
+- [x] `cmd.rs`：实现 I2-spec §2.4 对话相关命令（create/list/get/delete/rename_conversation + list/save_prompt_template），`rename_conversation` 已支持 `title_source` 参数
 
 **依赖**：A5
 
@@ -469,8 +469,8 @@ B10 (ConversationSidebar) ───────────┤              │
 - **settingListeners / settingsDispatcher**：设置页事件监听与分发模块，spec 未列出
 - **MessageBubble.module.css / MessageList.module.css**：CSS Modules 样式隔离，spec 列为 B19 global.css 补充，实际采用 CSS Modules 方案
 - **sse_log.rs**：Rust 端 SSE 日志模块，辅助 OpenAI 流式调试，spec 未列出
-- **chatStore 扩展方法**：`updateModel` / `deleteMessage` / `loadMoreMessages` / `searchConversations` / `clearSearch` / `hasMoreMessages` / `isLoadingMoreMessages` / `totalMessageCount` / `searchResults` / `searchQuery`，部分为 I2-history 前置实现
-- **get_conversation_paginated / export_conversation / search_conversations**：Rust 端已实现部分 I2-history commands，作为 I2 迭代后期的前置实现
+- **chatStore 扩展方法**：`updateModel` / `deleteMessage` / `loadMoreMessages` / `searchConversations` / `clearSearch` / `toggleSearchFullText` / `hasMoreMessages` / `isLoadingMoreMessages` / `totalMessageCount` / `searchResults` / `searchQuery` / `searchFullText`，部分为 I2-history 前置实现
+- **get_conversation_paginated / export_conversation / search_conversations**：Rust 端已实现部分 I2-history commands，`search_conversations` 仅搜索消息内容（标题搜索由前端负责），作为 I2 迭代后期的前置实现
 
 ### 后续优化（I2-history）
 

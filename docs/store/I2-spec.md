@@ -152,7 +152,7 @@ pub struct TokenUsage {
 | `get_conversation` | `(id: String) → Result<ConversationDetail>` | 获取对话详情（含所有 messages） |
 | `create_conversation` | `(provider_id: String, model_id: String) → Result<String>` | 新建对话，返回 id |
 | `delete_conversation` | `(id: String) → Result<()>` | 删除对话 |
-| `rename_conversation` | `(id: String, title: String) → Result<()>` | 重命名对话 |
+| `rename_conversation` | `(id: String, title: String, title_source?: String) → Result<()>` | 重命名对话（含标题来源追踪） |
 | `list_prompt_templates` | `() → Result<Vec<PromptTemplate>>` | 列出 Prompt 模板 |
 | `save_prompt_template` | `(template: PromptTemplateInput) → Result<()>` | 新增/更新模板 |
 
@@ -162,7 +162,7 @@ pub struct TokenUsage {
 |---------|------|------|
 | `get_conversation_paginated` | `(id, limit?, before_timestamp?) → Result<ConversationDetail>` | 分页获取对话 |
 | `export_conversation` | `(id, format) → Result<String>` | 导出对话（format: json/markdown/text） |
-| `search_conversations` | `(query) → Result<Vec<ConversationRow>>` | 全文搜索（标题 + 消息内容） |
+| `search_conversations` | `(query) → Result<Vec<ConversationRow>>` | 消息内容搜索（标题搜索由前端本地过滤） |
 
 **流式事件**：Rust 端通过 `app.emit("chat-delta", payload)` 推送增量到前端：
 
