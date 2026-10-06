@@ -2,6 +2,7 @@
 
 > 规格：[I3-spec.md](./I3-spec.md)
 > 前置：I2 ✅ 已完成
+> **原 I4（工具箱扩展）已合并入 I3**，一次性交付 20+ 工具
 
 ---
 
@@ -16,8 +17,8 @@
 ## 阶段 B — 前端：类型 + 注册表 + Store + 搜索 ✅
 
 - [x] B1. 前端依赖安装：fuse.js ^7.5.0 + @dnd-kit/core ^6.3.1 + @dnd-kit/sortable ^10.0.0 + @dnd-kit/utilities ^3.2.2 + date-fns ^4.4.0
-- [x] B2. 工具类型定义：types.ts（ToolDefinition / ToolCategory / ToolCategoryMeta / WidthMode）+ categories.ts（6 分类）+ defineTool 工厂
-- [x] B3. 工具注册表：registry.ts 导入 12 个工具定义，导出 tools / toolsByCategory / toolsMap，React.lazy 懒加载
+- [x] B2. 工具类型定义：types.ts（ToolDefinition / ToolCategory / ToolCategoryMeta / WidthMode）+ categories.ts（8 分类：crypto/converter/web/dev/text/math/daily/media）+ defineTool 工厂
+- [x] B3. 工具注册表：registry.ts 导入 12 个工具定义，导出 tools / toolsByCategory / toolsMap，React.lazy 懒加载（后续阶段 D5 新增 9 个工具时扩展注册表）
 - [x] B4. toolStore：Zustand store — loadFavorites / toggleFavorite / reorderFavorites / loadRecentTools / recordUsage / search（fuse.js 实例）
 - [x] B5. 搜索系统：ToolSearchBar.tsx + fuse.js（name:w2, keywords:w1.5, description:w1, threshold:0.3）+ 分类分组
 - [x] B6. 命令面板：CommandPalette.tsx — Ctrl/Cmd+K 唤起 + 键盘导航 + 混合搜索（工具/操作/设置）+ 每分类 5 条
@@ -36,16 +37,22 @@
 
 ---
 
-## 阶段 D — 工具实现（12 个） ✅
+## 阶段 D — 工具实现（21 个） ✅（D1~D4）/ 📋（D5）
 
 - [x] D1. 加密类（3）：hash-text（SHA1/SHA256/SHA512）+ uuid-generator（v1/v4+批量）+ base64-string-converter（编解码切换）
 - [x] D2. 转换器类（4）：color-converter（HEX/RGB/HSL/RGBA+色板）+ date-time-converter（时间戳↔日期）+ integer-base-converter（2/8/10/16进制）+ url-encoder（编解码+URL解析）
 - [x] D3. 开发类（3）：json-viewer（格式化/压缩/验证+排序键）+ regex-tester（匹配高亮+捕获组）+ jwt-parser（解码+过期检查）
 - [x] D4. 文本类（2）：text-diff（双栏+统一/拆分视图）+ text-statistics（字符/单词/行/字节统计）
+- [ ] D5. 扩展工具（9）：
+  - [ ] D5a. 开发类（2）：sql-formatter（格式化/压缩+多方言）+ cron-parser（Cron表达式解析+下次执行时间）
+  - [ ] D5b. 日常类（5）：qrcode-generator（文本/URL→二维码+下载）+ calculator（数学表达式+历史）+ unit-converter（长度/重量/温度等互转）+ password-generator（可配置长度/字符集+强度评估）+ ip-info（本机/指定IP查询）
+  - [ ] D5c. 多媒体类（2）：image-compressor（上传+质量/尺寸调整+压缩对比+下载）+ svg-preview（SVG编辑+实时预览+优化+下载）
+  - [ ] D5d. 注册表扩展：registry.ts 新增 9 个工具 defineTool + React.lazy 懒加载
+  - [ ] D5e. 分类扩展：categories.ts 新增 daily / media 分类定义
 
 ---
 
-## 阶段 E — 集成验证 ✅
+## 阶段 E — 集成验证 ✅（E1~E3）/ 📋（E4）
 
 ### E1. 编译验证 ✅
 
@@ -57,7 +64,7 @@
 
 ---
 
-### E2. 功能验证 ✅
+### E2. 功能验证 ✅（12 工具）
 
 - [x] 工具箱首页 12 个工具卡片可见，按分类分组 — ToolBox.tsx 渲染 toolsByCategory，registry.ts 注册 12 工具
 - [x] 最近使用工具在首页「最近使用」区域展示 — ToolBox.tsx recentToolDefs 区块，toolStore.loadRecentTools 调用 Rust get_recent_tools
@@ -73,9 +80,9 @@
 
 ---
 
-### E3. 验收标准 ✅
+### E3. 验收标准 ✅（12 工具阶段）
 
-- [x] I3-spec §6 验收标准 1~12 项全部通过：
+- [x] I3-spec §6 验收标准 1~11 项通过（12 工具阶段）：
   1. ✅ 主窗口工具箱首页可见 12 个工具卡片，按分类分组
   2. ✅ 搜索框输入关键词，实时过滤工具列表
   3. ✅ 点击工具卡片 → 跳转工具页 → 懒加载组件渲染
@@ -87,6 +94,16 @@
   9. ✅ Ctrl/Cmd+K 唤起命令面板，搜索工具+操作+设置
   10. ✅ 工具使用后 `tool_history` 表写入记录
   11. ✅ `cargo check` ✅ / `tsc --noEmit` ✅ / `lint 0 errors` ✅
-  12. ✅ 12 个工具全部功能可用（输入→处理→输出→复制）
 
 **依赖**：E2
+
+---
+
+### E4. 扩展工具集成验证 📋
+
+- [ ] E4a. 工具箱首页 21 个工具卡片可见，含日常/多媒体分类
+- [ ] E4b. 9 个扩展工具功能可用（sql-formatter/cron-parser/qrcode-generator/calculator/unit-converter/password-generator/ip-info/image-compressor/svg-preview）
+- [ ] E4c. `cargo check` ✅ / `tsc --noEmit` ✅ / `lint 0 errors` ✅
+- [ ] E4d. I3-spec §6 验收标准第 12 项：20+ 工具全部功能可用
+
+**依赖**：D5

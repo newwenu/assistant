@@ -14,8 +14,8 @@ pub fn get_machine_id() -> Result<Vec<u8>, String> {
 }
 
 pub fn encrypt_api_key(key: &str, machine_id: &[u8]) -> Result<Vec<u8>, String> {
-    let cipher = Aes256Gcm::new_from_slice(machine_id)
-        .map_err(|e| format!("Invalid key length: {}", e))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(machine_id).map_err(|e| format!("Invalid key length: {}", e))?;
     let nonce_bytes: [u8; 12] = rand::thread_rng().gen();
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher
@@ -31,8 +31,8 @@ pub fn decrypt_api_key(encrypted: &[u8], machine_id: &[u8]) -> Result<String, St
     if encrypted.len() < 12 {
         return Err("Encrypted data too short".to_string());
     }
-    let cipher = Aes256Gcm::new_from_slice(machine_id)
-        .map_err(|e| format!("Invalid key length: {}", e))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(machine_id).map_err(|e| format!("Invalid key length: {}", e))?;
     let nonce = Nonce::from_slice(&encrypted[..12]);
     let ciphertext = &encrypted[12..];
     let plaintext = cipher

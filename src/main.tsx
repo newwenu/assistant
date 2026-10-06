@@ -6,10 +6,7 @@ import { useThemeStore } from "@/stores/themeStore";
 import { useTheme } from "@/hooks/useTheme";
 import { lightTheme, darkTheme } from "@/assets/styles/theme";
 import { WINDOW_ORB } from "@/config/constants";
-import {
-  initSettingListeners,
-  cleanupSettingListeners,
-} from "@/settings/settingListeners";
+import { subscribeSettingEvents } from "@/services/settingEvents";
 import App from "./App";
 import "./assets/styles/global.css";
 
@@ -24,10 +21,8 @@ const ThemedApp: React.FC = () => {
   }, [resolved]);
 
   React.useEffect(() => {
-    initSettingListeners();
-    return () => {
-      cleanupSettingListeners();
-    };
+    const cleanup = subscribeSettingEvents();
+    return cleanup;
   }, []);
 
   if (isOrb) {

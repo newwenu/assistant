@@ -28,6 +28,7 @@ export const SIDEBAR_WIDTH = 240;
 export const SIDEBAR_COLLAPSED_WIDTH = 64;
 
 export const PET_DRAG_THRESHOLD_PX = 8;
+export const PET_DRAG_THRESHOLD_TOUCH_PX = 16;
 export const WINDOW_EDGE_BUFFER = 4;
 export const EXPAND_DIRECTION_HYSTERESIS_PX = 24;
 
@@ -38,6 +39,9 @@ export const ORB_SNAP_DELAY_MS = 1000;
 export const ORB_SNAP_ANIMATION_MS = 250;
 export const CLICK_THROUGH_DEBOUNCE_MS = 30;
 export const HAND_JITTER_PX = 8;
+export const HAND_JITTER_TOUCH_PX = 24;
+export const LONG_PRESS_DURATION_MS = 500;
+export const ORB_HITBOX_TOUCH_SIZE = 56;
 
 export const CHAT_PANEL_HEADER_HEIGHT = 40;
 export const CHAT_INPUT_MIN_ROWS = 1;

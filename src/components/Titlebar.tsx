@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { ThemeToggle } from "./ThemeToggle";
 import { WindowControls } from "./WindowControls";
+import { PinToggle } from "./PinToggle";
+import { SettingsEntry } from "./SettingsEntry";
 import {
   TITLEBAR_HEIGHT,
   MACOS_TRAFFIC_LIGHT_OFFSET,
@@ -70,6 +72,8 @@ export const Titlebar: React.FC<TitlebarProps> = ({ title = "Assistant" }) => {
           } as React.CSSProperties
         }
       >
+        <PinToggle />
+        <SettingsEntry />
         <ThemeToggle />
         <WindowControls />
       </div>

@@ -40,7 +40,8 @@ pub fn get_providers(conn: &Connection) -> Result<Vec<ProviderRow>, String> {
             })
         })
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn get_provider_by_id(conn: &Connection, id: &str) -> Result<Option<ProviderRow>, String> {
@@ -73,8 +74,11 @@ pub fn update_provider(conn: &Connection, row: &ProviderRow) -> Result<(), Strin
 }
 
 pub fn delete_provider(conn: &Connection, id: &str) -> Result<(), String> {
-    conn.execute("UPDATE conversations SET provider_id = NULL WHERE provider_id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE conversations SET provider_id = NULL WHERE provider_id = ?1",
+        params![id],
+    )
+    .map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM providers WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())

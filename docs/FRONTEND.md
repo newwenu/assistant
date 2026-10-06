@@ -547,7 +547,7 @@ Agent 状态 → mood（rest/analyzing/waiting/working）
 | **I0 脚手架** | 主题系统 + 路由 + ESLint + 入口 | ChatGPT + WindowPet | `useTheme.tsx`（Tauri 原生主题 API）、`App.tsx`（多窗口分流）、`main.tsx`（Provider 包裹）、`tsconfig.json`（路径别名） |
 | **I1 悬浮球** | OrbBall + OrbPanel + 拖拽 + 展开/收起 | OpenBitFun + ChatGPT | `AgentCompanionDesktopPet.tsx`（拖拽+阈值+边缘缓冲）、`Titlebar.tsx`（窗口主题监听） |
 | **I2 Orb 对话** | ChatView + 流式渲染 + Provider UI | OpenBitFun + ChatGPT + openhuman | `aiService.ts`（Provider 适配）、`Ask.tsx`（对话输入）、`chatDeltaCoalescer.ts`（流式合并） |
-| **I3 工具箱** | ToolBox + 注册表 + 搜索 + 收藏 | it-tools | `tools.types.ts`（Tool 接口）、`tools.store.ts`（分类+收藏）、`fuzzySearch.ts`（fuse.js）、`command-palette.vue`（命令面板）、`CollapsibleToolMenu.vue`（折叠菜单） |
-| **I4 工具扩展** | 更多工具 | it-tools | 60+ 工具实现逻辑（Vue→React 迁移） |
+| **I3 工具箱** | ToolBox + 注册表 + 搜索 + 收藏 + 20+ 工具 | it-tools | `tools.types.ts`（Tool 接口）、`tools.store.ts`（分类+收藏）、`fuzzySearch.ts`（fuse.js）、`command-palette.vue`（命令面板）、`CollapsibleToolMenu.vue`（折叠菜单） |
+| **I4 设置+快捷键+UI改造** | 设置页 + 快捷键录制 + 全局快捷键 + 侧边栏重组 + 标题栏增强 | OpenBitFun + ChatGPT + it-tools | `settingsRegistry.ts`（definePage）、`KeyboardShortcutsTab.tsx`（录制+冲突检测）、`ShortcutManager.ts`（持久化）、`conf.rs`（AppConf 向后兼容）、`CollapsibleToolMenu.vue`（折叠分类菜单）、`base.layout.vue`（侧边栏三区域） |
 | **I5 Mascot** | Rive 集成 + 表情状态机 | openhuman | `RiveMascot.tsx`（useRive+ViewModel）、`Ghosty.tsx`（18种表情参数）、`riveMaps.ts`（映射+归一化）、`visemes.ts`（口型插值） |
-| **I6 Agent** | 模式切换 UI + token 追踪 | OpenBitFun | `agentCompanionMood.ts`（mood 派生）、`chatInputMode.ts`（模式切换） |
+| **I6 Agent** | 自定义模式 UI + token 追踪 | OpenBitFun | `custom_agent.rs`（自定义Agent定义）、`agentsStore.ts`（前端管理）、`agentCompanionMood.ts`（mood 派生）、`chatInputMode.ts`（模式切换） |

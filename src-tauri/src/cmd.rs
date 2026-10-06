@@ -4,16 +4,21 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use chrono::Utc;
 use log::error;
 use mouse_position::mouse_position::Mouse;
 use serde_json::json;
 use tauri::{command, AppHandle, Emitter, Manager, PhysicalPosition};
 use uuid::Uuid;
-use chrono::Utc;
 
+use crate::chat_tasks::ChatTasks;
+use crate::request_exit;
 use assistant_config::{
     app_conf::AppConf,
-    constant::{ORB_SNAP_ANIMATION_MS, WINDOW_EDGE_BUFFER, WINDOW_ORB},
+    constant::{
+        ORB_CHROME_INSET, ORB_HITBOX_SIZE, ORB_SNAP_ANIMATION_MS, ORB_VISUAL_CENTER_OFFSET_X,
+        WINDOW_EDGE_BUFFER, WINDOW_ORB,
+    },
     orb_conf::OrbConf,
 };
 use assistant_orb::placement;
@@ -25,11 +30,8 @@ use assistant_storage::{
     conversations::{self, ConversationRow, MessageRow},
     providers::{self as provider_store, ProviderRow},
     templates::{self as template_store, PromptTemplateRow},
-    tool_favorites,
-    tool_history,
+    tool_favorites, tool_history,
 };
-use crate::request_exit;
-use crate::chat_tasks::ChatTasks;
 
 static ORB_CLICK_THROUGH: AtomicBool = AtomicBool::new(false);
 static ORB_SNAP_CANCEL: AtomicBool = AtomicBool::new(false);
@@ -110,6 +112,7 @@ pub fn toggle_orb_visibility(app: AppHandle) -> Result<(), String> {
 
 #[command]
 pub fn set_orb_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
+
     if ORB_CLICK_THROUGH.load(Ordering::Acquire) == enabled {
         return Ok(());
     }
@@ -125,7 +128,12 @@ pub fn set_orb_click_through(app: AppHandle, enabled: bool) -> Result<(), String
 }
 
 #[command]
-pub fn get_screen_size(app: AppHandle, center_x: f64, center_y: f64, scale_factor: f64) -> serde_json::Value {
+pub fn get_screen_size(
+    app: AppHandle,
+    center_x: f64,
+    center_y: f64,
+    scale_factor: f64,
+) -> serde_json::Value {
     let cx_phys = center_x * scale_factor;
     let cy_phys = center_y * scale_factor;
     let screens = placement::get_available_screens(&app);
@@ -146,6 +154,38 @@ pub fn get_screen_size(app: AppHandle, center_x: f64, center_y: f64, scale_facto
 
 #[command]
 pub fn snap_orb_to_screen(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window(WINDOW_ORB)
+        .ok_or_else(|| "Orb window not found".to_string())?;
+    let pos = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+
+    let screens = placement::get_available_screens(&app);
+    let bounds = placement::WindowBounds::new(pos.x, pos.y, size.width, size.height);
+
+    let visual_x = pos.x + ORB_CHROME_INSET as i32;
+    let visual_y = pos.y + ORB_CHROME_INSET as i32;
+    let visual_bounds =
+        placement::WindowBounds::new(visual_x, visual_y, ORB_HITBOX_SIZE, ORB_HITBOX_SIZE);
+
+    if placement::bounds_inside_screens(&screens, visual_bounds) {
+        return Ok(());
+    }
+
+    let target = placement::snap_to_nearest_screen(&screens, bounds);
+
+    if target.x == bounds.x && target.y == bounds.y {
+        let _ = save_orb_position_sync(&app);
+        return Ok(());
+    }
+
+    let _ = window.set_position(PhysicalPosition::new(target.x, target.y));
+    let _ = save_orb_position_sync(&app);
+    Ok(())
+}
+
+#[command]
+pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
     ORB_SNAP_CANCEL.store(true, Ordering::Release);
 
     let window = app
@@ -156,7 +196,8 @@ pub fn snap_orb_to_screen(app: AppHandle) -> Result<(), String> {
 
     let screens = placement::get_available_screens(&app);
     let bounds = placement::WindowBounds::new(pos.x, pos.y, size.width, size.height);
-    let target = placement::snap_orb_to_edge(&screens, bounds, WINDOW_EDGE_BUFFER as i32);
+    let border_x = ORB_VISUAL_CENTER_OFFSET_X;
+    let target = placement::snap_orb_to_edge(&screens, bounds, WINDOW_EDGE_BUFFER as i32, border_x);
 
     if target.x == bounds.x && target.y == bounds.y {
         let _ = save_orb_position_sync(&app);
@@ -255,7 +296,9 @@ pub fn perform_exit(app: &AppHandle) {
     app.exit(0);
 }
 
-fn get_db_conn<'a>(state: &'a tauri::State<'a, crate::setup::DbState>) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, String> {
+fn get_db_conn<'a>(
+    state: &'a tauri::State<'a, crate::setup::DbState>,
+) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, String> {
     state.0.lock().map_err(|e| format!("DB lock: {}", e))
 }
 
@@ -319,9 +362,18 @@ pub fn list_providers(app: AppHandle) -> Result<serde_json::Value, String> {
 #[command]
 pub fn save_provider(app: AppHandle, provider: serde_json::Value) -> Result<(), String> {
     let id = provider["id"].as_str().unwrap_or("").to_string();
-    let name = provider["name"].as_str().ok_or("name required")?.to_string();
-    let type_ = provider["type"].as_str().ok_or("type required")?.to_string();
-    let base_url = provider["base_url"].as_str().ok_or("base_url required")?.to_string();
+    let name = provider["name"]
+        .as_str()
+        .ok_or("name required")?
+        .to_string();
+    let type_ = provider["type"]
+        .as_str()
+        .ok_or("type required")?
+        .to_string();
+    let base_url = provider["base_url"]
+        .as_str()
+        .ok_or("base_url required")?
+        .to_string();
     let api_key_plain = provider["api_key"].as_str().unwrap_or("").to_string();
     let api_key_changed = provider["api_key_changed"].as_bool().unwrap_or(true);
     let models_json = provider["models"].as_str().unwrap_or("[]").to_string();
@@ -371,9 +423,12 @@ pub fn save_provider(app: AppHandle, provider: serde_json::Value) -> Result<(), 
         provider_store::update_provider(&conn, &row)?;
     }
 
-    let _ = app.emit("setting:provider-changed", json!({
-        "action": "provider-saved",
-    }));
+    let _ = app.emit(
+        "setting:provider-changed",
+        json!({
+            "action": "provider-saved",
+        }),
+    );
     Ok(())
 }
 
@@ -382,10 +437,13 @@ pub fn delete_provider(app: AppHandle, id: String) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     provider_store::delete_provider(&conn, &id)?;
-    let _ = app.emit("setting:provider-changed", json!({
-        "action": "provider-deleted",
-        "id": id,
-    }));
+    let _ = app.emit(
+        "setting:provider-changed",
+        json!({
+            "action": "provider-deleted",
+            "id": id,
+        }),
+    );
     Ok(())
 }
 
@@ -423,7 +481,11 @@ pub fn preview_models_cmd(
 }
 
 #[command]
-pub fn create_conversation(app: AppHandle, provider_id: String, model_id: String) -> Result<String, String> {
+pub fn create_conversation(
+    app: AppHandle,
+    provider_id: String,
+    model_id: String,
+) -> Result<String, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     provider_store::get_provider_by_id(&conn, &provider_id)?
@@ -449,7 +511,10 @@ pub fn create_conversation(app: AppHandle, provider_id: String, model_id: String
 }
 
 #[command]
-pub fn list_conversations(app: AppHandle, provider_id: Option<String>) -> Result<serde_json::Value, String> {
+pub fn list_conversations(
+    app: AppHandle,
+    provider_id: Option<String>,
+) -> Result<serde_json::Value, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     let rows = conversations::get_conversations(&conn, provider_id.as_deref())?;
@@ -472,7 +537,12 @@ pub fn delete_conversation(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[command]
-pub fn rename_conversation(app: AppHandle, id: String, title: String, title_source: Option<String>) -> Result<(), String> {
+pub fn rename_conversation(
+    app: AppHandle,
+    id: String,
+    title: String,
+    title_source: Option<String>,
+) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     let source = title_source.unwrap_or_else(|| "user".to_string());
@@ -480,7 +550,11 @@ pub fn rename_conversation(app: AppHandle, id: String, title: String, title_sour
 }
 
 #[command]
-pub fn update_conversation_model(app: AppHandle, id: String, model_id: String) -> Result<(), String> {
+pub fn update_conversation_model(
+    app: AppHandle,
+    id: String,
+    model_id: String,
+) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     let now = Utc::now().timestamp_millis();
@@ -492,7 +566,11 @@ pub fn update_conversation_model(app: AppHandle, id: String, model_id: String) -
 }
 
 #[command]
-pub fn update_conversation_provider(app: AppHandle, id: String, provider_id: String) -> Result<(), String> {
+pub fn update_conversation_provider(
+    app: AppHandle,
+    id: String,
+    provider_id: String,
+) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     let now = Utc::now().timestamp_millis();
@@ -514,14 +592,27 @@ pub fn list_prompt_templates(app: AppHandle) -> Result<serde_json::Value, String
 #[command]
 pub fn save_prompt_template(app: AppHandle, template: serde_json::Value) -> Result<(), String> {
     let id = template["id"].as_str().unwrap_or("").to_string();
-    let name = template["name"].as_str().ok_or("name required")?.to_string();
-    let category = template["category"].as_str().ok_or("category required")?.to_string();
-    let content = template["content"].as_str().ok_or("content required")?.to_string();
+    let name = template["name"]
+        .as_str()
+        .ok_or("name required")?
+        .to_string();
+    let category = template["category"]
+        .as_str()
+        .ok_or("category required")?
+        .to_string();
+    let content = template["content"]
+        .as_str()
+        .ok_or("content required")?
+        .to_string();
     let variables_json = template["variables"].as_str().map(|s| s.to_string());
     let is_builtin = template["is_builtin"].as_bool().unwrap_or(false);
 
     let row = PromptTemplateRow {
-        id: if id.is_empty() { Uuid::new_v4().to_string() } else { id },
+        id: if id.is_empty() {
+            Uuid::new_v4().to_string()
+        } else {
+            id
+        },
         name,
         category,
         content,
@@ -534,7 +625,11 @@ pub fn save_prompt_template(app: AppHandle, template: serde_json::Value) -> Resu
 }
 
 #[command]
-pub fn send_chat_message(app: AppHandle, conversation_id: String, content: String) -> Result<(), String> {
+pub fn send_chat_message(
+    app: AppHandle,
+    conversation_id: String,
+    content: String,
+) -> Result<(), String> {
     if content.trim().is_empty() {
         return Err("消息内容不能为空".to_string());
     }
@@ -556,7 +651,9 @@ pub fn send_chat_message(app: AppHandle, conversation_id: String, content: Strin
 
     let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
         .ok_or_else(|| "Conversation not found".to_string())?;
-    let provider_id = detail.conversation.provider_id
+    let provider_id = detail
+        .conversation
+        .provider_id
         .ok_or_else(|| "此对话的 Provider 已被删除，请重新选择 Provider 后再发送".to_string())?;
     let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
         .ok_or_else(|| "Provider not found".to_string())?;
@@ -589,7 +686,9 @@ pub fn send_chat_message(app: AppHandle, conversation_id: String, content: Strin
 
     let context_window_tokens = {
         let mut ctx = base::get_context_window_tokens(&model);
-        if let Ok(model_list) = serde_json::from_str::<Vec<base::ModelConfig>>(&provider_row.models_json) {
+        if let Ok(model_list) =
+            serde_json::from_str::<Vec<base::ModelConfig>>(&provider_row.models_json)
+        {
             if let Some(mc) = model_list.iter().find(|m| m.id == model) {
                 if mc.context_window > 0 {
                     ctx = mc.context_window;
@@ -615,19 +714,25 @@ pub fn send_chat_message(app: AppHandle, conversation_id: String, content: Strin
     let conv_id = conversation_id.clone();
     let msg_id = assistant_msg_id.clone();
 
-    let (db_tx, mut db_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String, Option<i64>)>();
+    let (db_tx, mut db_rx) =
+        tokio::sync::mpsc::unbounded_channel::<(String, String, Option<i64>)>();
     let db_app = app.clone();
     tauri::async_runtime::spawn(async move {
         while let Some((msg_id, content, tokens)) = db_rx.recv().await {
             let state = db_app.state::<crate::setup::DbState>();
             match get_db_conn(&state) {
                 Ok(conn) => {
-                    if let Err(db_err) = conversations::update_message_content(&conn, &msg_id, &content, tokens) {
+                    if let Err(db_err) =
+                        conversations::update_message_content(&conn, &msg_id, &content, tokens)
+                    {
                         error!("Failed to save content: {}", db_err);
                     }
                 }
                 Err(_) => {
-                    error!("DB lock failed, content not saved ({} bytes)", content.len());
+                    error!(
+                        "DB lock failed, content not saved ({} bytes)",
+                        content.len()
+                    );
                 }
             };
         }
@@ -647,11 +752,14 @@ pub fn send_chat_message(app: AppHandle, conversation_id: String, content: Strin
             Ok(s) => s,
             Err(e) => {
                 let payload = ProviderErrorPayload::from(&e);
-                if let Err(emit_err) = orb_window.emit("chat-delta", json!({
-                    "conversation_id": conv_id,
-                    "message_id": msg_id,
-                    "error": payload,
-                })) {
+                if let Err(emit_err) = orb_window.emit(
+                    "chat-delta",
+                    json!({
+                        "conversation_id": conv_id,
+                        "message_id": msg_id,
+                        "error": payload,
+                    }),
+                ) {
                     error!("Failed to emit stream error event: {}", emit_err);
                 }
                 let _ = finish_tx.send(conv_id);
@@ -666,11 +774,14 @@ pub fn send_chat_message(app: AppHandle, conversation_id: String, content: Strin
         while let Some(result) = stream.next().await {
             if cancel_token.is_cancelled() {
                 let _ = db_tx.send((msg_id.clone(), full_content.clone(), last_tokens));
-                if let Err(emit_err) = orb_window.emit("chat-delta", json!({
-                    "conversation_id": conv_id,
-                    "message_id": msg_id,
-                    "error": ProviderErrorPayload::from(&ProviderError::Cancelled),
-                })) {
+                if let Err(emit_err) = orb_window.emit(
+                    "chat-delta",
+                    json!({
+                        "conversation_id": conv_id,
+                        "message_id": msg_id,
+                        "error": ProviderErrorPayload::from(&ProviderError::Cancelled),
+                    }),
+                ) {
                     error!("Failed to emit cancel event: {}", emit_err);
                 }
                 let _ = finish_tx.send(conv_id);
@@ -688,18 +799,21 @@ pub fn send_chat_message(app: AppHandle, conversation_id: String, content: Strin
                         }
                     }
                     seq += 1;
-                    if let Err(emit_err) = orb_window.emit("chat-delta", json!({
-                        "conversation_id": conv_id,
-                        "message_id": msg_id,
-                        "seq": seq,
-                        "delta_text": delta.delta_text,
-                        "delta_reasoning": delta.delta_reasoning,
-                        "delta_tool_call_id": delta.delta_tool_call_id,
-                        "delta_tool_call_name": delta.delta_tool_call_name,
-                        "delta_tool_call_arguments": delta.delta_tool_call_arguments,
-                        "finish_reason": delta.finish_reason,
-                        "usage": delta.usage,
-                    })) {
+                    if let Err(emit_err) = orb_window.emit(
+                        "chat-delta",
+                        json!({
+                            "conversation_id": conv_id,
+                            "message_id": msg_id,
+                            "seq": seq,
+                            "delta_text": delta.delta_text,
+                            "delta_reasoning": delta.delta_reasoning,
+                            "delta_tool_call_id": delta.delta_tool_call_id,
+                            "delta_tool_call_name": delta.delta_tool_call_name,
+                            "delta_tool_call_arguments": delta.delta_tool_call_arguments,
+                            "finish_reason": delta.finish_reason,
+                            "usage": delta.usage,
+                        }),
+                    ) {
                         error!("Failed to emit chat-delta: {}", emit_err);
                     }
                     if delta.finish_reason.is_some() {
@@ -711,11 +825,14 @@ pub fn send_chat_message(app: AppHandle, conversation_id: String, content: Strin
                 Err(e) => {
                     let _ = db_tx.send((msg_id.clone(), full_content.clone(), last_tokens));
                     let payload = ProviderErrorPayload::from(&e);
-                    if let Err(emit_err) = orb_window.emit("chat-delta", json!({
-                        "conversation_id": conv_id,
-                        "message_id": msg_id,
-                        "error": payload,
-                    })) {
+                    if let Err(emit_err) = orb_window.emit(
+                        "chat-delta",
+                        json!({
+                            "conversation_id": conv_id,
+                            "message_id": msg_id,
+                            "error": payload,
+                        }),
+                    ) {
                         error!("Failed to emit error event: {}", emit_err);
                     }
                     let _ = finish_tx.send(conv_id);
@@ -750,7 +867,8 @@ pub fn get_conversation_paginated(
     match conversations::get_conversation_by_id(&conn, &id)? {
         Some(conv) => {
             let page_limit = limit.unwrap_or(50);
-            let messages = conversations::get_messages_paginated(&conn, &id, page_limit, before_timestamp)?;
+            let messages =
+                conversations::get_messages_paginated(&conn, &id, page_limit, before_timestamp)?;
             let total_count = conversations::get_message_count(&conn, &id)?;
             Ok(json!({
                 "conversation": conv,
@@ -867,13 +985,50 @@ pub fn edit_message(app: AppHandle, message_id: String, new_content: String) -> 
 }
 
 #[command]
-pub fn regenerate_message(app: AppHandle, conversation_id: String, message_id: String) -> Result<(), String> {
+pub fn regenerate_message(
+    app: AppHandle,
+    conversation_id: String,
+    message_id: String,
+) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     conversations::delete_message_and_after(&conn, &message_id)?;
-    let _ = app.emit("chat-regenerate", json!({
-        "conversation_id": conversation_id,
-        "deleted_message_id": message_id,
-    }));
+    let _ = app.emit(
+        "chat-regenerate",
+        json!({
+            "conversation_id": conversation_id,
+            "deleted_message_id": message_id,
+        }),
+    );
     Ok(())
+}
+
+#[command]
+pub fn reload_shortcuts(app: AppHandle) -> Result<(), String> {
+    crate::setup::register_global_shortcuts(&app);
+    Ok(())
+}
+
+#[command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[command]
+pub fn get_rustc_version() -> String {
+    rustc_version_runtime::version().to_string()
+}
+
+#[command]
+pub fn set_launch_at_login(app: AppHandle, enable: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    if enable {
+        manager.enable().map_err(|e| e.to_string())?;
+    } else {
+        manager.disable().map_err(|e| e.to_string())?;
+    }
+    let mut conf = AppConf::load().map_err(|e| e.to_string())?;
+    conf.launch_at_login = enable;
+    conf.save().map_err(|e| e.to_string())
 }

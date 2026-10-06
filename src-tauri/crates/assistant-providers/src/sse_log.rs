@@ -25,7 +25,10 @@ impl SseLogCollector {
 
     pub fn push(&mut self, data: String) {
         let byte_len = data.len();
-        while self.buffer.len() >= self.config.max_events || (self.retained_bytes + byte_len > self.config.max_retained_bytes && !self.buffer.is_empty()) {
+        while self.buffer.len() >= self.config.max_events
+            || (self.retained_bytes + byte_len > self.config.max_retained_bytes
+                && !self.buffer.is_empty())
+        {
             if let Some(removed) = self.buffer.pop_front() {
                 self.retained_bytes -= removed.len();
                 self.dropped_events += 1;
@@ -45,9 +48,15 @@ impl SseLogCollector {
         let head_count = 50usize;
         let tail_count = self.buffer.len().saturating_sub(head_count);
         let mut output = String::with_capacity(self.retained_bytes + 256);
-        output.push_str(&format!("SSE error: {}\nSSE history ({} events", context, total));
+        output.push_str(&format!(
+            "SSE error: {}\nSSE history ({} events",
+            context, total
+        ));
         if self.dropped_events > 0 {
-            output.push_str(&format!(", {} dropped ({} bytes)", self.dropped_events, self.dropped_bytes));
+            output.push_str(&format!(
+                ", {} dropped ({} bytes)",
+                self.dropped_events, self.dropped_bytes
+            ));
         }
         output.push_str("):\n");
         for (i, event) in self.buffer.iter().enumerate() {

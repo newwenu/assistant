@@ -9,7 +9,7 @@ use tauri::{AppHandle, Manager};
 use super::hover::ScreenBounds;
 
 pub const PLACEMENT_SETTLE_DELAY: Duration = Duration::from_millis(1000);
-pub const PLACEMENT_INSPECTION_INTERVAL: Duration = Duration::from_millis(500);
+pub const PLACEMENT_INSPECTION_INTERVAL: Duration = Duration::from_millis(800);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WindowBounds {
@@ -21,14 +21,25 @@ pub struct WindowBounds {
 
 impl WindowBounds {
     pub fn new(x: i32, y: i32, width: u32, height: u32) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     pub fn clamp_to(self, screen: ScreenBounds) -> Self {
         let s_right = screen.x + screen.width as i32;
         let s_bottom = screen.y + screen.height as i32;
-        let x = self.x.max(screen.x).min(s_right.saturating_sub(self.width as i32));
-        let y = self.y.max(screen.y).min(s_bottom.saturating_sub(self.height as i32));
+        let x = self
+            .x
+            .max(screen.x)
+            .min(s_right.saturating_sub(self.width as i32));
+        let y = self
+            .y
+            .max(screen.y)
+            .min(s_bottom.saturating_sub(self.height as i32));
         Self { x, y, ..self }
     }
 }
@@ -193,7 +204,10 @@ fn nearest_screen(screens: &[ScreenBounds], bounds: WindowBounds) -> Option<Scre
 ///
 /// The target display is the one with the largest intersection with the window,
 /// with ties broken by the nearest center. The window size is never changed.
-pub fn correction_for_screens(screens: &[ScreenBounds], bounds: WindowBounds) -> Option<WindowBounds> {
+pub fn correction_for_screens(
+    screens: &[ScreenBounds],
+    bounds: WindowBounds,
+) -> Option<WindowBounds> {
     nearest_screen(screens, bounds).map(|screen| bounds.clamp_to(screen))
 }
 
@@ -225,10 +239,16 @@ pub fn check_and_snap_orb(app: &AppHandle, window_label: &str) -> Option<WindowB
 /// snapped to whichever vertical edge (left / right) of that display is
 /// closer, leaving `edge_buffer` physical pixels of margin. The vertical
 /// position is clamped so the window stays within the screen.
+///
+/// `border_x` compensates for the invisible DWM border on Windows:
+/// `outer_size.width - inner_size.width) / 2`. On the left edge Windows
+/// clips this border off-screen automatically, but on the right edge it
+/// does not, so we shift the right target inward by `border_x`.
 pub fn snap_orb_to_edge(
     screens: &[ScreenBounds],
     bounds: WindowBounds,
     edge_buffer: i32,
+    border_x: i32,
 ) -> WindowBounds {
     if screens.is_empty() {
         return bounds;
@@ -246,7 +266,7 @@ pub fn snap_orb_to_edge(
     };
 
     let left_target_x = screen.x + edge_buffer;
-    let right_target_x = screen.x + screen.width as i32 - corrected.width as i32 - edge_buffer;
+    let right_target_x = screen.x + screen.width as i32 - corrected.width as i32 - edge_buffer + border_x;
 
     let dist_to_left = (corrected.x - left_target_x).abs();
     let dist_to_right = (corrected.x - right_target_x).abs();

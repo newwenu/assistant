@@ -20,7 +20,14 @@ pub struct PointerHoverObservation {
     pub now: Duration,
 }
 
-pub fn pointer_inside_window(x: f64, y: f64, win_x: f64, win_y: f64, win_w: f64, win_h: f64) -> bool {
+pub fn pointer_inside_window(
+    x: f64,
+    y: f64,
+    win_x: f64,
+    win_y: f64,
+    win_w: f64,
+    win_h: f64,
+) -> bool {
     if !x.is_finite() || !y.is_finite() {
         return false;
     }
@@ -44,7 +51,9 @@ impl HoverState {
         match self {
             HoverState::Visible => {
                 if obs.pointer_inside && obs.now >= obs.delay {
-                    HoverState::FadingOut { elapsed: Duration::ZERO }
+                    HoverState::FadingOut {
+                        elapsed: Duration::ZERO,
+                    }
                 } else {
                     HoverState::Visible
                 }
@@ -54,25 +63,33 @@ impl HoverState {
                 if new_elapsed >= HOVER_FADE_DURATION {
                     HoverState::Hidden
                 } else {
-                    HoverState::FadingOut { elapsed: new_elapsed }
+                    HoverState::FadingOut {
+                        elapsed: new_elapsed,
+                    }
                 }
             }
             HoverState::Hidden => {
                 if !obs.pointer_inside {
-                    HoverState::FadingIn { elapsed: Duration::ZERO }
+                    HoverState::FadingIn {
+                        elapsed: Duration::ZERO,
+                    }
                 } else {
                     HoverState::Hidden
                 }
             }
             HoverState::FadingIn { elapsed } => {
                 if obs.pointer_inside {
-                    HoverState::FadingOut { elapsed: HOVER_FADE_DURATION - elapsed }
+                    HoverState::FadingOut {
+                        elapsed: HOVER_FADE_DURATION - elapsed,
+                    }
                 } else {
                     let new_elapsed = elapsed + obs.now;
                     if new_elapsed >= HOVER_FADE_DURATION {
                         HoverState::Visible
                     } else {
-                        HoverState::FadingIn { elapsed: new_elapsed }
+                        HoverState::FadingIn {
+                            elapsed: new_elapsed,
+                        }
                     }
                 }
             }

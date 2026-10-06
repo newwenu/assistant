@@ -2,13 +2,16 @@ import React, { useEffect, useRef, useState } from "react";
 import { Modal, Input, Typography, Divider } from "antd";
 import {
   SearchOutlined,
-  SettingOutlined,
   ThunderboltOutlined,
+  AppstoreOutlined,
+  BulbOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import Fuse from "fuse.js";
 import { tools } from "@/tools/registry";
 import { COMMAND_PALETTE_MAX_PER_CATEGORY } from "@/config/constants";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { dispatchThemeChanged } from "@/settings/settingsDispatcher";
 
 interface PaletteOption {
   id: string;
@@ -26,6 +29,8 @@ export const CommandPalette: React.FC = () => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const appConf = useSettingsStore((s) => s.appConf);
+  const saveAppConf = useSettingsStore((s) => s.saveAppConf);
 
   const allOptions: PaletteOption[] = React.useMemo(() => {
     const toolOpts: PaletteOption[] = tools.map((t) => ({
@@ -35,6 +40,59 @@ export const CommandPalette: React.FC = () => {
       category: "Tools",
       action: () => navigate(`/tools/${t.id}`),
     }));
+
+    const navOpts: PaletteOption[] = [
+      {
+        id: "nav:history",
+        name: "消息历史",
+        description: "查看对话历史记录",
+        category: "Navigation",
+        action: () => navigate("/history"),
+      },
+      {
+        id: "nav:settings-general",
+        name: "通用设置",
+        description: "语言、开机自启、关闭到托盘",
+        category: "Navigation",
+        action: () => navigate("/settings/general"),
+      },
+      {
+        id: "nav:settings-appearance",
+        name: "外观设置",
+        description: "主题、Orb 外观配置",
+        category: "Navigation",
+        action: () => navigate("/settings/appearance"),
+      },
+      {
+        id: "nav:settings-shortcuts",
+        name: "快捷键",
+        description: "全局与应用内快捷键配置",
+        category: "Navigation",
+        action: () => navigate("/settings/shortcuts"),
+      },
+      {
+        id: "nav:settings-providers",
+        name: "Provider 管理",
+        description: "管理 AI Provider 配置",
+        category: "Navigation",
+        action: () => navigate("/settings/providers"),
+      },
+      {
+        id: "nav:settings-templates",
+        name: "Prompt 模板",
+        description: "管理 Prompt 模板",
+        category: "Navigation",
+        action: () => navigate("/settings/templates"),
+      },
+      {
+        id: "nav:settings-about",
+        name: "关于",
+        description: "版本信息与更新",
+        category: "Navigation",
+        action: () => navigate("/settings/about"),
+      },
+    ];
+
     const actionOpts: PaletteOption[] = [
       {
         id: "action:random-tool",
@@ -46,25 +104,28 @@ export const CommandPalette: React.FC = () => {
           navigate(`/tools/${t.id}`);
         },
       },
-    ];
-    const settingOpts: PaletteOption[] = [
       {
-        id: "setting:providers",
-        name: "Provider 管理",
-        description: "管理 AI Provider 配置",
-        category: "Settings",
-        action: () => navigate("/settings/providers"),
-      },
-      {
-        id: "setting:templates",
-        name: "Prompt 模板",
-        description: "管理 Prompt 模板",
-        category: "Settings",
-        action: () => navigate("/settings/templates"),
+        id: "action:toggle-theme",
+        name: "切换主题",
+        description: "循环切换 亮色 → 暗色 → 跟随系统",
+        category: "Actions",
+        action: async () => {
+          if (!appConf) return;
+          const order: Array<"system" | "light" | "dark"> = [
+            "system",
+            "light",
+            "dark",
+          ];
+          const current = appConf.theme as "system" | "light" | "dark";
+          const next = order[(order.indexOf(current) + 1) % order.length];
+          await saveAppConf({ ...appConf, theme: next });
+          await dispatchThemeChanged(next);
+        },
       },
     ];
-    return [...toolOpts, ...actionOpts, ...settingOpts];
-  }, [navigate]);
+
+    return [...toolOpts, ...navOpts, ...actionOpts];
+  }, [navigate, appConf, saveAppConf]);
 
   const fuse = React.useMemo(
     () =>
@@ -100,8 +161,26 @@ export const CommandPalette: React.FC = () => {
   );
 
   useEffect(() => {
+    const binding = appConf?.keybindings?.command_palette ?? "Super+K";
+
+    const requireMeta = /\bsuper\b/i.test(binding) || /\bcmd\b/i.test(binding);
+    const requireCtrl = /\bctrl\b/i.test(binding) && !requireMeta;
+    const requireShift = /\bshift\b/i.test(binding);
+    const requireAlt = /\balt\b/i.test(binding);
+    const keyMatch = binding.match(/\b([A-Z0-9])\s*$/i);
+    const key = keyMatch ? keyMatch[1].toLowerCase() : "k";
+
     const handler = (e: KeyboardEvent) => {
-      if ((IS_MAC ? e.metaKey : e.ctrlKey) && e.key === "k") {
+      const metaOk = requireMeta
+        ? IS_MAC
+          ? e.metaKey
+          : e.ctrlKey
+        : !e.metaKey && !e.ctrlKey;
+      const ctrlOk = requireCtrl ? e.ctrlKey : true;
+      const shiftOk = requireShift ? e.shiftKey : !e.shiftKey;
+      const altOk = requireAlt ? e.altKey : !e.altKey;
+
+      if (metaOk && ctrlOk && shiftOk && altOk && e.key.toLowerCase() === key) {
         e.preventDefault();
         setOpen((v) => !v);
         setQuery("");
@@ -110,7 +189,7 @@ export const CommandPalette: React.FC = () => {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [appConf?.keybindings?.command_palette]);
 
   useEffect(() => {
     if (open) {
@@ -141,8 +220,8 @@ export const CommandPalette: React.FC = () => {
 
   const categoryIcons: Record<string, React.ReactNode> = {
     Tools: <ThunderboltOutlined />,
-    Actions: <SearchOutlined />,
-    Settings: <SettingOutlined />,
+    Navigation: <AppstoreOutlined />,
+    Actions: <BulbOutlined />,
   };
 
   return (
@@ -161,7 +240,7 @@ export const CommandPalette: React.FC = () => {
         <Input
           ref={inputRef as any}
           prefix={<SearchOutlined />}
-          placeholder="搜索工具、操作、设置..."
+          placeholder="搜索工具、页面、操作..."
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);

@@ -549,17 +549,22 @@ assistant/
 
 ### I3 — 主窗口工具箱
 
-**交付：** 可用的工具箱，分类导航 + 搜索 + 12+ 工具
+**交付：** 完整工具箱，分类导航 + 搜索 + 收藏 + 20+ 工具
 
 - [ ] 工具注册系统（ToolDefinition 接口 + defineTool 工厂）
 - [ ] 工具箱首页（分类 + 搜索 + 收藏 + 最近使用 + 拖拽排序）
 - [ ] 加密工具：Hash 计算、UUID 生成、Base64 编解码
 - [ ] 转换器工具：颜色转换、时间戳转换、进制转换、URL 编解码
-- [ ] 开发工具：JSON 格式化、正则测试器、JWT 解码
+- [ ] 开发工具：JSON 格式化、正则测试器、JWT 解码、SQL 格式化、Cron 解析
 - [ ] 文本工具：Diff 对比、字数统计
+- [ ] 日常工具：二维码、计算器、单位换算、密码生成、IP 查询
+- [ ] 多媒体工具：图片压缩、SVG 预览
 - [ ] 工具使用历史（SQLite tool_history）+ 收藏持久化（SQLite tool_favorites）
 - [ ] 命令面板（Ctrl/Cmd+K）+ 模糊搜索（fuse.js）
 - [ ] 侧边栏可折叠分类菜单（CollapsibleToolMenu）
+- [ ] 对话导出（Markdown / JSON）
+
+> **原 I4（工具箱扩展）已合并入 I3**。I4 本质是 I3 的量变（仅新增工具组件，框架零改动），拆分两个迭代人为制造交付断层。合并后一次性交付完整工具箱，与参考项目 it-tools（60+ 工具一体交付）一致。
 
 **规格**：详见 [I3-spec.md](./store/I3-spec.md) / [I3-tasklist.md](./store/I3-tasklist.md)
 
@@ -577,28 +582,44 @@ assistant/
 | 工具卡片 | IT-Tools | src/components/ToolCard.vue | 图标(40px) + isNew 徽章 + 收藏按钮 + 名称(truncate) + 描述(line-clamp-2) |
 | 首页网格 | IT-Tools | src/pages/Home.page.vue | 收藏拖拽排序(vuedraggable) + 新工具区 + 全部工具区(按分类分组) |
 | 折叠菜单 | IT-Tools | src/components/CollapsibleToolMenu.vue | ▶/▼ 箭头 + localStorage 折叠状态持久化 + toggle 分类 |
+| 工具数量与分类 | IT-Tools | src/tools/index.ts | 60+ 工具按功能分类导入，每个工具独立目录（`tool-name/tool-name.vue` + `tool-name/index.ts`） |
 
-**验收：** 主窗口工具箱可正常使用所有工具，搜索过滤，收藏置顶
+**验收：** 主窗口工具箱可正常使用 20+ 工具，搜索过滤，收藏置顶
 
 ---
 
-### I4 — 工具箱扩展
+### I4 — 设置系统 + 全局快捷键 + 主窗口 UI 改造
 
-**交付：** 完整工具箱（20+）
+**交付：** 完整设置系统 + 全局快捷键注册与配置 + 侧边栏重组/折叠菜单/标题栏增强
 
-- [ ] 开发工具：进制转换、JWT 解码、SQL 格式化、Cron 解析
-- [ ] 日常工具：二维码、计算器、单位换算、密码生成、IP 查询
-- [ ] 多媒体工具：图片压缩、SVG 预览
-- [ ] 对话导出（Markdown / JSON）
+- [ ] 通用设置页（语言/开机自启/关闭到托盘/置顶）
+- [ ] 外观设置页（主题切换 + Orb 透明度/缩放/圆角/穿透/悬停配置）
+- [ ] 快捷键配置页（分组展示 + 点击录制 + 冲突检测 + 重置）
+- [ ] 关于页（版本/构建/技术栈/许可证）
+- [ ] AppConf 扩展（launch_at_login / close_to_tray / keybindings）
+- [ ] 全局快捷键注册（toggle_orb / toggle_main / new_chat）
+- [ ] 托盘菜单增强（新建对话 + 设置入口）
+- [ ] tauri-plugin-autostart 开机自启
+- [ ] 侧边栏重组（工具箱区/导航区/设置区三区域 + 可折叠分类菜单 + 底部版本号）
+- [ ] 侧边栏选中态修复（进入工具页高亮当前工具项）
+- [ ] 标题栏增强（置顶切换 + 设置入口按钮）
+
+**规格**：详见 [I4-spec.md](./store/I4-spec.md) / [I4-tasklist.md](./store/I4-tasklist.md)
 
 **参考：**
 
 | 功能点 | 参考项目 | 参考文件 | 借鉴内容 |
 |--------|---------|---------|---------|
-| 工具数量与分类 | IT-Tools | src/tools/index.ts | 60+ 工具按功能分类导入，每个工具独立目录（`tool-name/tool-name.vue` + `tool-name/index.ts`） |
-| 工具布局 | IT-Tools | src/layouts/tool.layout.vue | 工具页统一布局：标题 + 收藏按钮 + 分隔线 + 描述 + `<slot />` 内容区 |
+| 设置页注册表 | OpenBitFun | web-ui/.../settingsRegistry.ts | `definePage()` 懒加载 + `SettingsPageManifest`（id/categoryId/labelKey/keywords/load），分类导航 |
+| 快捷键配置 UI | OpenBitFun | web-ui/.../KeyboardShortcutsTab.tsx | 分组展示 + 搜索过滤 + 点击录制 + 冲突检测 + 重置默认 |
+| 快捷键管理器 | OpenBitFun | web-ui/.../ShortcutManager.ts | `ShortcutRegistration` + `parseStoredKeybindings` / `buildStoredKeybindings`，持久化到 configManager |
+| AppConf 扩展 | ChatGPT | src-tauri/src/core/conf.rs | `AppConf` 结构体 + `amend()` 向后兼容 + `load()` 缺失字段补默认值 |
+| 托盘菜单 | WindowPet | src-tauri/src/tray.rs | 菜单项 + 事件处理 + 左键点击行为 |
+| 开机自启 | Tauri 2 | tauri-plugin-autostart | `Manager::enable()` / `Manager::disable()` / `Manager::is_enabled()` |
+| 可折叠分类菜单 | it-tools | CollapsibleToolMenu.vue | ▶/▼ 折叠箭头 + localStorage 持久化 + 收藏置顶 |
+| 侧边栏布局 | it-tools | base.layout.vue | Logo 区 + CollapsibleToolMenu + 底部版本号 |
 
-**验收：** 20+ 工具可用
+**验收：** 设置页全部可用，快捷键可录制/重置/冲突检测，全局快捷键生效，托盘菜单完整
 
 ---
 
@@ -629,24 +650,31 @@ assistant/
 
 ---
 
-### I6 — Agent 模式
+### I6 — Agent 自定义模式
 
-**交付：** Agent 模式分级切换 + token 追踪
+**交付：** 内置预设 + 用户自定义 Agent 模式 + token 追踪
 
-- [ ] Agent 模式切换 UI（Quick / Standard / Deep）
-- [ ] 模式配置（每种模式的 system prompt / 温度 / 最大 token）
+- [ ] SQLite `agent_modes` 表 + Rust CRUD（assistant-storage）
+- [ ] 3 个内置预设（Quick / Standard / Deep）自动 seed
+- [ ] 前端 AgentModeManager（主窗口设置页：列表 + 创建/编辑/删除 + 排序）
+- [ ] Orb 面板模式切换 UI（下拉/Tab，显示内置 + 自定义）
+- [ ] chatStore 集成（发送消息时注入选中模式的 system_prompt / temperature / max_tokens）
 - [ ] token 追踪 + 费用估算
+
+> **原 I6（Agent 模式固定三级）升级为用户自定义**。参考 OpenBitFun `CustomAgentDefinition`，用户可创建自己的 Agent 模式（如"翻译助手"、"代码审查"），自定义 system_prompt / temperature / max_tokens / model / tools 组合。内置 Quick/Standard/Deep 作为预设 seed，不可删除。
 
 **参考：**
 
 | 功能点 | 参考项目 | 参考文件 | 借鉴内容 |
 |--------|---------|---------|---------|
-| Agent 模式定义 | OpenBitFun | crates/.../agent-runtime/src/agents.rs | `mode_presentation_rank`：Standard=0, Cowork=1, DeepResearch=2, Ultimate=3, Creative=4，排序展示 |
+| 内置 Agent 模式 | OpenBitFun | crates/.../agent-runtime/src/agents.rs | `mode_presentation_rank`：Standard=0, Cowork=1, DeepResearch=2, Ultimate=3, Creative=4，排序展示 |
+| 自定义 Agent 定义 | OpenBitFun | crates/.../agent-runtime/src/custom_agent.rs | `CustomAgentDefinition { id, name, description, kind, tools, prompt, readonly, review, level, model }`，用户可创建 Mode / Subagent |
+| 前端 Agent 管理 | OpenBitFun | web-ui/src/app/scenes/agents/agentsStore.ts | `AgentFilterLevel`（all/builtin/user/project/external）+ 创建/编辑页面 |
 | 模式配置 profile | OpenBitFun | agents.rs L22-27 | `STANDARD_HARNESS_CONFIG`：mode 可组合为 profile，支持子代理 |
 
 > **Function Calling / 内置工具 / MCP 客户端暂不实现**，后续迭代按需加入。参考方案已验证：OpenBitFun `mcp_tool_bridge.rs` 命名规范 + 三维安全标记(read_only/destructive/open_world)。
 
-**验收：** 可切换 Agent 模式，不同模式 system prompt / 温度不同，token 用量可见
+**验收：** 可切换 Agent 模式（内置 + 自定义），可创建/编辑/删除自定义模式，不同模式 system prompt / 温度不同，token 用量可见
 
 ---
 
@@ -723,15 +751,15 @@ I0 脚手架 ✅
  └→ I1 悬浮球 ✅
      └→ I2 Orb AI 对话 ✅
          ├→ I2-History 消息历史管理（进行中）
-         ├→ I3 工具箱基础
-         │   └→ I4 工具箱扩展
-         └→ I5 Mascot 形象
-             └→ I6 Agent 模式
-                 └→ I7 Context Compaction
-                     └→ I8 打包发布
+         ├→ I3 工具箱（20+ 工具）
+         └→ I4 设置 + 快捷键 + UI改造
+             └→ I5 Mascot 形象
+                 └→ I6 Agent 自定义模式
+                     └→ I7 Context Compaction
+                         └→ I8 打包发布
 ```
 
-I2-History 依赖 I2；I3 和 I5 可并行；I6 依赖 I2+I5；I7 依赖 I6
+I2-History 依赖 I2；I3 和 I4 可并行（均依赖 I2）；I5 依赖 I2+I4；I6 依赖 I2+I5；I7 依赖 I6
 
 ---
 

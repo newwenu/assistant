@@ -1,10 +1,17 @@
 // 参考: ChatGPT/src-tauri/src/core/setup.rs — setup 中初始化配置和窗口
 
-use tauri::{App, Manager};
+use std::str::FromStr;
+use tauri::{App, Emitter, Manager};
+use tauri_plugin_global_shortcut::{
+    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
+};
 
 use assistant_config::{
     app_conf::AppConf,
-    constant::{ORB_EXPANDED_WIDTH, ORB_EXPANDED_HEIGHT, WINDOW_ORB},
+    constant::{
+        ORB_CHROME_INSET, ORB_EXPANDED_HEIGHT, ORB_EXPANDED_WIDTH, ORB_HITBOX_SIZE, WINDOW_MAIN,
+        WINDOW_ORB,
+    },
     orb_conf::OrbConf,
 };
 use assistant_orb::placement;
@@ -47,32 +54,103 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     position_orb_window(handle);
 
-    // NOTE: CommandOrControl+K 全局快捷键暂时置空，与 I3 CommandPalette 冲突
-    // 后续 I4 阶段改为可配置快捷键时再恢复
-    // let shortcut: Shortcut = Shortcut::new(Some(Modifiers::SUPER), Code::KeyK);
-    // if let Err(e) = handle.global_shortcut().on_shortcut(shortcut, |app, _shortcut, event| {
-    //     if event.state == ShortcutState::Pressed {
-    //         if let Some(window) = app.get_webview_window(WINDOW_ORB) {
-    //             if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
-    //                 let _ = window.hide();
-    //             } else {
-    //                 let _ = window.show();
-    //                 let _ = window.set_focus();
-    //             }
-    //         }
-    //     }
-    // }) {
-    //     log::warn!("Failed to register global shortcut (may be occupied by another app): {}", e);
-    //     if let Some(orb) = handle.get_webview_window(WINDOW_ORB) {
-    //         let _ = orb.eval(&format!(
-    //             "window.__shortcutError = '快捷键 Cmd/Ctrl+K 注册失败，可能被其它应用占用({})';",
-    //             e
-    //         ));
-    //     }
-    // }
+    spawn_screen_inspection(handle.clone());
+
+    register_global_shortcuts(handle);
 
     log::info!("Assistant started");
     Ok(())
+}
+
+fn parse_shortcut(s: &str) -> Option<Shortcut> {
+    let mut modifiers = Modifiers::empty();
+    let mut code: Option<Code> = None;
+
+    for part in s.split('+') {
+        let part = part.trim();
+        match part.to_lowercase().as_str() {
+            "super" | "cmd" | "ctrl" => modifiers |= Modifiers::SUPER,
+            "shift" => modifiers |= Modifiers::SHIFT,
+            "alt" | "option" => modifiers |= Modifiers::ALT,
+            "control" => modifiers |= Modifiers::CONTROL,
+            other => {
+                if let Ok(c) = Code::from_str(other) {
+                    code = Some(c);
+                } else if let Ok(c) = Code::from_str(&format!("Key{}", other)) {
+                    code = Some(c);
+                }
+            }
+        }
+    }
+
+    code.map(|c| Shortcut::new(Some(modifiers), c))
+}
+
+pub fn register_global_shortcuts(handle: &tauri::AppHandle) {
+    let conf = match AppConf::load() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    let bindings = &conf.keybindings;
+    let gs = handle.global_shortcut();
+
+    let _ = gs.unregister_all();
+
+    let shortcut_ids = [
+        ("toggle_orb", "Super+Shift+O"),
+        ("toggle_main", "Super+Shift+M"),
+        ("new_chat", "Super+Shift+N"),
+    ];
+
+    for (id, default) in shortcut_ids {
+        let binding = bindings.get(id).map(|s| s.as_str()).unwrap_or(default);
+        let Some(shortcut) = parse_shortcut(binding) else {
+            log::warn!("Failed to parse shortcut binding for {}: {}", id, binding);
+            continue;
+        };
+
+        if let Err(e) = gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
+            match id {
+                "toggle_orb" => {
+                    if let Some(window) = app.get_webview_window(WINDOW_ORB) {
+                        if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
+                "toggle_main" => {
+                    if let Some(window) = app.get_webview_window(WINDOW_MAIN) {
+                        if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    } else {
+                        crate::window::show_or_create_main(app);
+                    }
+                }
+                "new_chat" => {
+                    let _ = app.emit("orb-new-conversation", ());
+                }
+                _ => {}
+            }
+        }) {
+            log::warn!("Failed to register shortcut {} ({}): {}", id, binding, e);
+            let _ = handle.emit("shortcut-warning", serde_json::json!({
+                "id": id,
+                "binding": binding,
+                "error": e.to_string(),
+            }));
+        }
+    }
 }
 
 fn position_orb_window(handle: &tauri::AppHandle) {
@@ -105,4 +183,44 @@ fn position_orb_window(handle: &tauri::AppHandle) {
     let x = primary.x + primary.width as i32 - orb_w_phys as i32 - edge_margin;
     let y = primary.y + primary.height as i32 - orb_h_phys as i32 - edge_margin;
     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+fn spawn_screen_inspection(handle: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(placement::PLACEMENT_INSPECTION_INTERVAL);
+            if crate::SHOULD_EXIT.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            let Some(window) = handle.get_webview_window(WINDOW_ORB) else {
+                continue;
+            };
+            let Ok(pos) = window.outer_position() else {
+                continue;
+            };
+            let Ok(size) = window.outer_size() else {
+                continue;
+            };
+            let screens = placement::get_available_screens(&handle);
+            let visual_x = pos.x + ORB_CHROME_INSET as i32;
+            let visual_y = pos.y + ORB_CHROME_INSET as i32;
+            let visual_bounds = placement::WindowBounds::new(
+                visual_x,
+                visual_y,
+                ORB_HITBOX_SIZE,
+                ORB_HITBOX_SIZE,
+            );
+            if placement::bounds_inside_screens(&screens, visual_bounds) {
+                continue;
+            }
+            let bounds = placement::WindowBounds::new(pos.x, pos.y, size.width, size.height);
+            let snapped = placement::snap_to_nearest_screen(&screens, bounds);
+            let _ = window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y));
+            if let Ok(mut conf) = OrbConf::load() {
+                conf.position_x = Some(snapped.x);
+                conf.position_y = Some(snapped.y);
+                let _ = conf.save();
+            }
+        }
+    });
 }

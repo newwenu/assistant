@@ -8,7 +8,7 @@ import { useOrbStore } from "../stores/orbStore";
 import { useOrbExpand } from "./OrbExpand";
 import { ChatView } from "../chat/ChatView";
 import { useChatStore } from "../stores/chatStore";
-import { initChatDeltaListener, cleanupChatDeltaListener } from "../stores/chatStore";
+import { subscribeChatDeltaEvents } from "../services/chatDeltaEvents";
 import {
   getMouseLogicalPos,
   getWindowLogicalRect,
@@ -65,11 +65,11 @@ export const OrbPanel: React.FC = () => {
       }
       window.dispatchEvent(new CustomEvent("chat-new-conversation"));
     });
-    initChatDeltaListener();
+    const cleanupChatDelta = subscribeChatDeltaEvents();
     return () => {
       unlistenBlur.then((fn) => fn());
       unlistenNewChat.then((fn) => fn());
-      cleanupChatDeltaListener();
+      cleanupChatDelta();
       if (timer !== null) clearTimeout(timer);
     };
   }, [expand, collapse, closeAllMenus]);

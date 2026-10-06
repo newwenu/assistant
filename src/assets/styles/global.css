@@ -35,6 +35,11 @@
   --orb-hitbox-size: 48px;
   --orb-chrome-inset: 12px;
   --orb-header-height: 36px;
+
+  --scrollbar-size: 6px;
+  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.25);
+  --scrollbar-track: transparent;
 }
 
 [data-theme="dark"] {
@@ -64,6 +69,11 @@
     drop-shadow(0 0.5px 1px rgba(0, 0, 0, 0.2));
   --color-orb-gradient-start: #4d8cd8;
   --color-orb-gradient-end: #2563eb;
+
+  --scrollbar-size: 6px;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+  --scrollbar-track: transparent;
 }
 
 *,
@@ -91,6 +101,33 @@ body {
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: calc(var(--scrollbar-size) / 2);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
 }
 
 [data-tauri-drag-region] {
@@ -151,6 +188,15 @@ div[data-orb-window] .orb-hitbox.orb-dragging {
 
 div[data-orb-window] .orb-hitbox.orb-idle {
   opacity: 0.85;
+}
+
+div[data-orb-window] .orb-hitbox.orb-touch {
+  cursor: default !important;
+}
+
+div[data-orb-window] .orb-hitbox.orb-touch:active {
+  transform: scale(0.92);
+  opacity: 0.9 !important;
 }
 
 @keyframes orb-breathe {

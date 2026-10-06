@@ -1,18 +1,11 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import {
   CHAT_AUTO_TITLE_LENGTH,
   MESSAGES_PAGE_SIZE,
   CONTEXT_WARN_THRESHOLD,
   CONTEXT_DANGER_THRESHOLD,
 } from "../config/constants";
-import {
-  createChatDeltaCoalescer,
-  createSeqDedupFilter,
-  textChunkScheduler,
-  type CoalescibleDelta,
-} from "../chat/streamCoalescer";
 import {
   type ChatError,
   ChatErrorCode,
@@ -170,8 +163,6 @@ interface ChatState {
   setFilterProviderId: (id: string | null) => void;
 }
 
-let chatDeltaUnlisten: (() => void) | null = null;
-let chatDeltaInitializing = false;
 let sendInProgress = false;
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -320,112 +311,112 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (sendInProgress) return;
     sendInProgress = true;
     try {
-    const state = get();
-    if (state.isStreaming && state.currentConversationId) {
-      await invoke("cancel_chat", {
-        conversationId: state.currentConversationId,
-      }).catch(() => {});
-      set({
-        isStreaming: false,
-        streamingContent: "",
-        streamingMessageId: null,
-        isReasoningStreaming: false,
-      });
-    }
-    if (!state.currentConversationId) {
-      try {
-        const providers = await invoke("list_providers");
-        const provList =
-          (providers as { id: string; default_model: string }[]) || [];
-        if (provList.length === 0) {
-          const errConvId = `err-${Date.now()}`;
-          const userMsg: Message = {
-            id: `temp-user-${Date.now()}`,
-            conversation_id: errConvId,
-            role: "user",
-            content,
-            tokens: null,
-            timestamp: Date.now(),
-          };
-          const assistantMsgId = `temp-assistant-${Date.now()}`;
-          set({
-            messages: [
-              userMsg,
-              {
-                id: assistantMsgId,
-                conversation_id: errConvId,
-                role: "assistant",
-                content: "",
-                tokens: null,
-                timestamp: Date.now() + 1,
-              },
-            ],
-            isStreaming: true,
-            streamingMessageId: assistantMsgId,
+      const state = get();
+      if (state.isStreaming && state.currentConversationId) {
+        await invoke("cancel_chat", {
+          conversationId: state.currentConversationId,
+        }).catch(() => {});
+        set({
+          isStreaming: false,
+          streamingContent: "",
+          streamingMessageId: null,
+          isReasoningStreaming: false,
+        });
+      }
+      if (!state.currentConversationId) {
+        try {
+          const providers = await invoke("list_providers");
+          const provList =
+            (providers as { id: string; default_model: string }[]) || [];
+          if (provList.length === 0) {
+            const errConvId = `err-${Date.now()}`;
+            const userMsg: Message = {
+              id: `temp-user-${Date.now()}`,
+              conversation_id: errConvId,
+              role: "user",
+              content,
+              tokens: null,
+              timestamp: Date.now(),
+            };
+            const assistantMsgId = `temp-assistant-${Date.now()}`;
+            set({
+              messages: [
+                userMsg,
+                {
+                  id: assistantMsgId,
+                  conversation_id: errConvId,
+                  role: "assistant",
+                  content: "",
+                  tokens: null,
+                  timestamp: Date.now() + 1,
+                },
+              ],
+              isStreaming: true,
+              streamingMessageId: assistantMsgId,
+            });
+            get().errorStream({
+              code: ChatErrorCode.ApiKeyMissing,
+              message: "请先配置 AI Provider（在设置中添加）",
+              retry_after_ms: null,
+              retryable: false,
+            });
+            return;
+          }
+          const p = provList[0];
+          const newId = await invoke<string>("create_conversation", {
+            providerId: p.id,
+            modelId: p.default_model || "",
           });
-          get().errorStream({
-            code: ChatErrorCode.ApiKeyMissing,
-            message: "请先配置 AI Provider（在设置中添加）",
-            retry_after_ms: null,
-            retryable: false,
-          });
+          set({ currentConversationId: newId });
+          await get().loadConversations();
+        } catch (e) {
+          get().errorStream(toChatError(`创建对话失败: ${e}`));
           return;
         }
-        const p = provList[0];
-        const newId = await invoke<string>("create_conversation", {
-          providerId: p.id,
-          modelId: p.default_model || "",
-        });
-        set({ currentConversationId: newId });
-        await get().loadConversations();
-      } catch (e) {
-        get().errorStream(toChatError(`创建对话失败: ${e}`));
-        return;
       }
-    }
 
-    const convId = get().currentConversationId!;
-    const currentState = get();
-    const userMsg: Message = {
-      id: `temp-user-${Date.now()}`,
-      conversation_id: convId,
-      role: "user",
-      content,
-      tokens: null,
-      timestamp: Date.now(),
-    };
-    const assistantMsgId = `temp-assistant-${Date.now()}`;
-    const assistantMsg: Message = {
-      id: assistantMsgId,
-      conversation_id: convId,
-      role: "assistant",
-      content: "",
-      tokens: null,
-      timestamp: Date.now() + 1,
-    };
-    set({
-      messages: [...currentState.messages, userMsg, assistantMsg],
-      isStreaming: true,
-      streamingContent: "",
-      streamingMessageId: assistantMsgId,
-      contextUsage: { used_tokens: 0, max_tokens: 128_000, percentage: 0 },
-    });
-
-    const conv = currentState.conversations.find((c) => c.id === convId);
-    if (conv && conv.title_source === "placeholder") {
-      const fbTitle = fallbackTitleFromUserMessage(content);
-      get().renameConversation(convId, fbTitle, "fallback");
-    }
-
-    try {
-      await invoke("send_chat_message", {
-        conversationId: convId,
+      const convId = get().currentConversationId!;
+      const currentState = get();
+      const userMsg: Message = {
+        id: `temp-user-${Date.now()}`,
+        conversation_id: convId,
+        role: "user",
         content,
+        tokens: null,
+        timestamp: Date.now(),
+      };
+      const assistantMsgId = `temp-assistant-${Date.now()}`;
+      const assistantMsg: Message = {
+        id: assistantMsgId,
+        conversation_id: convId,
+        role: "assistant",
+        content: "",
+        tokens: null,
+        timestamp: Date.now() + 1,
+      };
+      set({
+        messages: [...currentState.messages, userMsg, assistantMsg],
+        isStreaming: true,
+        streamingContent: "",
+        streamingMessageId: assistantMsgId,
+        contextUsage: { used_tokens: 0, max_tokens: 128_000, percentage: 0 },
       });
-    } catch (e) {
-      console.error("Failed to send message:", e);
-      get().errorStream(toChatError(e));
-    }
+
+      const conv = currentState.conversations.find((c) => c.id === convId);
+      if (conv && conv.title_source === "placeholder") {
+        const fbTitle = fallbackTitleFromUserMessage(content);
+        get().renameConversation(convId, fbTitle, "fallback");
+      }
+
+      try {
+        await invoke("send_chat_message", {
+          conversationId: convId,
+          content,
+        });
+      } catch (e) {
+        console.error("Failed to send message:", e);
+        get().errorStream(toChatError(e));
+      }
     } finally {
       sendInProgress = false;
     }
@@ -737,132 +728,5 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ filterProviderId: id });
   },
 }));
-
-export async function initChatDeltaListener() {
-  if (chatDeltaUnlisten || chatDeltaInitializing) return;
-  chatDeltaInitializing = true;
-  const store = useChatStore;
-
-  const seqDedup = createSeqDedupFilter();
-
-  const coalescer = createChatDeltaCoalescer<CoalescibleDelta>(
-    (event) => {
-      if (event.delta) {
-        if (import.meta.env.DEV) {
-          console.debug(
-            `[coalescer-deliver] seq=${event.seq} len=${event.delta.length} snippet=${JSON.stringify(event.delta.slice(0, 40))}`,
-          );
-        }
-        store.getState().appendDelta(event.delta);
-      }
-    },
-    textChunkScheduler,
-    seqDedup.accept,
-  );
-
-  chatDeltaUnlisten = await listen("chat-delta", (event) => {
-    const payload = event.payload as {
-      conversation_id: string;
-      message_id: string;
-      seq?: number;
-      delta_text?: string;
-      delta_reasoning?: string;
-      delta_tool_call_id?: string;
-      delta_tool_call_name?: string;
-      delta_tool_call_arguments?: string;
-      finish_reason?: string;
-      usage?: TokenUsage;
-      error?: unknown;
-    };
-    if (payload.error) {
-      coalescer.flush();
-      store.getState().errorStream(toChatError(payload.error));
-      return;
-    }
-    if (payload.delta_text) {
-      store.setState({ isReasoningStreaming: false });
-      coalescer.push({
-        conversation_id: payload.conversation_id,
-        message_id: payload.message_id,
-        seq: payload.seq,
-        delta: payload.delta_text,
-      });
-    }
-    if (payload.delta_reasoning) {
-      const state = store.getState();
-      if (state.streamingMessageId) {
-        store.setState({
-          isReasoningStreaming: true,
-          messages: state.messages.map((m) =>
-            m.id === state.streamingMessageId
-              ? {
-                  ...m,
-                  reasoning: (m.reasoning || "") + payload.delta_reasoning,
-                }
-              : m,
-          ),
-        });
-      }
-    }
-    if (
-      payload.delta_tool_call_id ||
-      payload.delta_tool_call_name ||
-      payload.delta_tool_call_arguments
-    ) {
-      const state = store.getState();
-      if (state.streamingMessageId) {
-        store.setState({
-          messages: state.messages.map((m) => {
-            if (m.id !== state.streamingMessageId) return m;
-            const toolCalls = [...(m.toolCalls || [])];
-            if (payload.delta_tool_call_id) {
-              toolCalls.push({
-                id: payload.delta_tool_call_id,
-                name: payload.delta_tool_call_name || "",
-                arguments: payload.delta_tool_call_arguments || "",
-              });
-            } else if (toolCalls.length > 0) {
-              const last = toolCalls[toolCalls.length - 1];
-              if (payload.delta_tool_call_name)
-                last.name += payload.delta_tool_call_name;
-              if (payload.delta_tool_call_arguments)
-                last.arguments += payload.delta_tool_call_arguments;
-            }
-            return { ...m, toolCalls };
-          }),
-        });
-      }
-    }
-    if (payload.usage) {
-      const u = payload.usage;
-      const ctx =
-        u.context_window_tokens && u.context_window_tokens > 0
-          ? u.context_window_tokens
-          : 128_000;
-      store.setState({
-        contextUsage: {
-          used_tokens: u.prompt_tokens,
-          max_tokens: ctx,
-          percentage: u.prompt_tokens / ctx,
-        },
-      });
-    }
-    if (payload.finish_reason) {
-      coalescer.flush();
-      seqDedup.reset();
-      store.getState().finishStream(payload.usage);
-    }
-  });
-  chatDeltaInitializing = false;
-}
-
-export function cleanupChatDeltaListener() {
-  if (chatDeltaUnlisten) {
-    chatDeltaUnlisten();
-    chatDeltaUnlisten = null;
-  }
-  chatDeltaInitializing = false;
-  sendInProgress = false;
-}
 
 export { CONTEXT_WARN_THRESHOLD, CONTEXT_DANGER_THRESHOLD };

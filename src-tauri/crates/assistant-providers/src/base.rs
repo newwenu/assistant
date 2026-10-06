@@ -213,7 +213,10 @@ pub fn get_context_window_tokens(model_id: &str) -> u32 {
         64_000
     } else if id.contains("deepseek") {
         64_000
-    } else if id.contains("gemini-1.5-pro") || id.contains("gemini-2.0") || id.contains("gemini-2.5") {
+    } else if id.contains("gemini-1.5-pro")
+        || id.contains("gemini-2.0")
+        || id.contains("gemini-2.5")
+    {
         1_000_000
     } else if id.contains("gemini-1.5-flash") || id.contains("gemini-2.0-flash") {
         1_000_000
@@ -227,7 +230,10 @@ pub fn get_context_window_tokens(model_id: &str) -> u32 {
         1_000_000
     } else if id.contains("glm-4") {
         128_000
-    } else if id.contains("llama-3.1-405b") || id.contains("llama-3.1-70b") || id.contains("llama-3.1-8b") {
+    } else if id.contains("llama-3.1-405b")
+        || id.contains("llama-3.1-70b")
+        || id.contains("llama-3.1-8b")
+    {
         128_000
     } else if id.contains("llama-3-70b") || id.contains("llama-3-8b") {
         8_192
@@ -262,7 +268,9 @@ impl RetryConfig {
             (self.base_delay_ms << shift).min(self.max_delay_ms)
         };
         match error.retry_after_ms() {
-            Some(hint) if hint > 0 && is_rate_limit => hint.max(fallback).min(self.rate_limit_max_ms),
+            Some(hint) if hint > 0 && is_rate_limit => {
+                hint.max(fallback).min(self.rate_limit_max_ms)
+            }
             Some(hint) if hint > 0 => hint.min(self.max_delay_ms),
             _ => fallback,
         }

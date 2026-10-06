@@ -21,14 +21,13 @@ pub fn record_usage(conn: &Connection, tool_id: &str) -> Result<(), String> {
 
 pub fn get_recent_tools(conn: &Connection, limit: i32) -> Result<Vec<String>, String> {
     let mut stmt = conn
-        .prepare(
-            "SELECT tool_id FROM tool_history ORDER BY used_at DESC LIMIT ?1",
-        )
+        .prepare("SELECT tool_id FROM tool_history ORDER BY used_at DESC LIMIT ?1")
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map(params![limit], |row| row.get(0))
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn cleanup_old_history(conn: &Connection) -> Result<usize, String> {

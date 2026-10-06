@@ -2,7 +2,9 @@
 
 ## 1. 交付目标
 
-主窗口内可用的工具箱，分类导航 + 搜索 + 收藏 + 12+ 开发/文本工具，工具使用历史持久化。
+主窗口内可用的工具箱，分类导航 + 搜索 + 收藏 + 20+ 开发/文本/日常/多媒体工具，工具使用历史持久化。
+
+> **原 I4（工具箱扩展）已合并入 I3**。I4 本质是 I3 的量变（仅新增工具组件，框架零改动），合并后一次性交付完整工具箱。
 
 ## 2. 功能规格
 
@@ -24,7 +26,7 @@ interface ToolDefinition {
   widthMode?: 'default' | 'wide' | 'full';
 }
 
-type ToolCategory = 'crypto' | 'converter' | 'web' | 'dev' | 'text' | 'math';
+type ToolCategory = 'crypto' | 'converter' | 'web' | 'dev' | 'text' | 'math' | 'daily' | 'media';
 
 interface ToolCategoryMeta {
   key: ToolCategory;
@@ -149,13 +151,24 @@ function defineTool(tool: Omit<ToolDefinition, 'isNew'>): ToolDefinition {
     时间戳转换
     进制转换
     URL 编解码
-  开发 (3)
+  开发 (5)
     JSON 格式化
     正则测试器
     JWT 解码
+    SQL 格式化
+    Cron 解析
   文本 (2)
     Diff 对比
     字数统计
+  日常 (5)
+    二维码
+    计算器
+    单位换算
+    密码生成
+    IP 查询
+  多媒体 (2)
+    图片压缩
+    SVG 预览
 ──────────
 v0.x.x
 ```
@@ -213,7 +226,7 @@ SQLite `tool_history` 表（已存在，I0 创建）：
 
 > 收藏数据优先使用 Rust 端 SQLite 持久化（跨窗口共享），localStorage 仅作降级缓存。
 
-### 2.8 I3 工具清单（12+ 工具）
+### 2.8 I3 工具清单（20+ 工具）
 
 | 分类 | 工具 | id | widthMode | 说明 |
 |------|------|----|-----------|------|
@@ -227,8 +240,17 @@ SQLite `tool_history` 表（已存在，I0 创建）：
 | **开发** | JSON 格式化 | `json-viewer` | wide | JSON 格式化/压缩/验证 + 语法高亮 + 树形查看 |
 | **开发** | 正则测试器 | `regex-tester` | default | 正则输入 + 测试文本 + 匹配高亮 + 捕获组 |
 | **开发** | JWT 解码 | `jwt-parser` | default | JWT 解码→header+payload JSON 展示 |
+| **开发** | SQL 格式化 | `sql-formatter` | wide | SQL 格式化/压缩 + 多方言支持 |
+| **开发** | Cron 解析 | `cron-parser` | default | Cron 表达式解析 + 下次执行时间列表 |
 | **文本** | Diff 对比 | `text-diff` | wide | 双栏文本输入 + diff 高亮 + 统一/拆分视图 |
 | **文本** | 字数统计 | `text-statistics` | default | 字符数/单词数/行数/字节数 |
+| **日常** | 二维码 | `qrcode-generator` | default | 文本/URL→二维码 + 自定义尺寸 + 下载 |
+| **日常** | 计算器 | `calculator` | default | 数学表达式计算 + 历史记录 |
+| **日常** | 单位换算 | `unit-converter` | default | 长度/重量/温度/面积/体积等互转 |
+| **日常** | 密码生成 | `password-generator` | default | 可配置长度/字符集/数量 + 强度评估 |
+| **日常** | IP 查询 | `ip-info` | default | 本机/指定 IP 地址信息查询 |
+| **多媒体** | 图片压缩 | `image-compressor` | full | 图片上传 + 质量/尺寸调整 + 压缩对比 + 下载 |
+| **多媒体** | SVG 预览 | `svg-preview` | full | SVG 代码编辑 + 实时预览 + 优化 + 下载 |
 
 ## 3. Rust 后端规格
 
@@ -306,8 +328,17 @@ pub fn set_favorites_order(conn: &Connection, tool_ids: &[String]) -> Result<(),
 | JSON 格式化 | `src/tools/json-viewer/index.tsx` | it-tools json-viewer.vue + json.models.ts |
 | 正则测试器 | `src/tools/regex-tester/index.tsx` | it-tools regex-tester.vue |
 | JWT 解码 | `src/tools/jwt-parser/index.tsx` | it-tools jwt-parser.vue + service.ts |
+| SQL 格式化 | `src/tools/sql-formatter/index.tsx` | it-tools sql-formatter.vue |
+| Cron 解析 | `src/tools/cron-parser/index.tsx` | it-tools cron-parser.vue |
 | Diff 对比 | `src/tools/text-diff/index.tsx` | it-tools text-diff.vue |
 | 字数统计 | `src/tools/text-statistics/index.tsx` | it-tools text-statistics.vue |
+| 二维码 | `src/tools/qrcode-generator/index.tsx` | it-tools qrcode-generator.vue |
+| 计算器 | `src/tools/calculator/index.tsx` | it-tools calculator.vue |
+| 单位换算 | `src/tools/unit-converter/index.tsx` | it-tools unit-converter.vue |
+| 密码生成 | `src/tools/password-generator/index.tsx` | it-tools password-generator.vue |
+| IP 查询 | `src/tools/ip-info/index.tsx` | it-tools ip-info.vue |
+| 图片压缩 | `src/tools/image-compressor/index.tsx` | it-tools image-compressor.vue |
+| SVG 预览 | `src/tools/svg-preview/index.tsx` | it-tools svg-preview.vue |
 
 ### 4.4 Store 扩展
 
@@ -361,15 +392,14 @@ App.tsx `MainLayout` 路由新增：
 
 ## 5. 不做的事（I3 范围外）
 
-- ❌ 日常工具（二维码/计算器/单位换算/密码生成/IP查询）（I4）
-- ❌ 多媒体工具（图片压缩/SVG预览）（I4）
 - ❌ 对话导出 Markdown/JSON（I2-History）
-- ❌ SQL 格式化 / Cron 解析 / 进制转换增强（I4）
 - ❌ i18n 多语言（后续全局迭代）
+- ❌ 工具结果分享/嵌入（后续迭代）
+- ❌ 自定义工具插件系统（后续迭代）
 
 ## 6. 验收标准
 
-1. 主窗口工具箱首页可见 12 个工具卡片，按分类分组
+1. 主窗口工具箱首页可见 20+ 工具卡片，按分类分组
 2. 搜索框输入关键词，实时过滤工具列表
 3. 点击工具卡片 → 跳转工具页 → 懒加载组件渲染
 4. 工具页标题→分隔线→描述→内容层级正确
@@ -380,4 +410,4 @@ App.tsx `MainLayout` 路由新增：
 9. Ctrl/Cmd+K 唤起命令面板，搜索工具+操作+设置
 10. 工具使用后 `tool_history` 表写入记录
 11. `cargo check` ✅ / `tsc --noEmit` ✅ / `lint 0 errors` ✅
-12. 12 个工具全部功能可用（输入→处理→输出→复制）
+12. 20+ 工具全部功能可用（输入→处理→输出→复制）

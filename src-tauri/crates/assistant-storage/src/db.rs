@@ -95,7 +95,8 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
         conn.execute(
             "INSERT INTO app_settings (key, value) VALUES ('schema_version', '1')",
             [],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
         info!("New database created with schema_version = 1");
     } else {
         #[allow(unused)]

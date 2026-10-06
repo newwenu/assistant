@@ -33,6 +33,7 @@
     "sql:allow-select",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
-    "global-shortcut:allow-is-registered"
+    "global-shortcut:allow-is-registered",
+    "autostart:default"
   ]
 }

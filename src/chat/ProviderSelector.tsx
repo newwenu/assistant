@@ -1,4 +1,4 @@
-import React, { useState, useCallback, type RefObject } from "react";
+import React, { useState, useEffect, useCallback, type RefObject } from "react";
 import { Select } from "antd";
 import { DownOutlined } from "@ant-design/icons";
 import type { Provider } from "../stores/providerStore";
@@ -29,6 +29,15 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
     },
     [openRef],
   );
+
+  useEffect(() => {
+    const handler = () => {
+      setOpen(false);
+      if (openRef) openRef.current = false;
+    };
+    window.addEventListener("orb-close-menus", handler);
+    return () => window.removeEventListener("orb-close-menus", handler);
+  }, [openRef]);
 
   if (providers.length <= 1) return null;
 

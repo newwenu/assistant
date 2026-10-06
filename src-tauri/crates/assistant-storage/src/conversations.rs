@@ -2,7 +2,8 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
 const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at";
-const MSG_SELECT: &str = "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned";
+const MSG_SELECT: &str =
+    "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConversationRow {
@@ -68,9 +69,25 @@ fn read_msg_row(row: &rusqlite::Row) -> rusqlite::Result<MessageRow> {
 
 pub fn insert_conversation(conn: &Connection, row: &ConversationRow) -> Result<(), String> {
     conn.execute(
-        &format!("INSERT INTO conversations ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)", CONV_SELECT),
-        params![row.id, row.title, row.title_source, row.provider_id, row.model_id, row.system_prompt, row.is_pinned as i64, row.sort_order, row.generation, row.created_at, row.updated_at],
-    ).map_err(|e| e.to_string())?;
+        &format!(
+            "INSERT INTO conversations ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            CONV_SELECT
+        ),
+        params![
+            row.id,
+            row.title,
+            row.title_source,
+            row.provider_id,
+            row.model_id,
+            row.system_prompt,
+            row.is_pinned as i64,
+            row.sort_order,
+            row.generation,
+            row.created_at,
+            row.updated_at
+        ],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -81,13 +98,19 @@ pub fn get_conversations(
     if let Some(pid) = provider_id {
         let sql = format!("SELECT {} FROM conversations WHERE provider_id = ?1 ORDER BY is_pinned DESC, sort_order DESC, updated_at DESC", CONV_SELECT);
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![pid], read_conv_row).map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        let rows = stmt
+            .query_map(params![pid], read_conv_row)
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
     } else {
         let sql = format!("SELECT {} FROM conversations ORDER BY is_pinned DESC, sort_order DESC, updated_at DESC", CONV_SELECT);
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([], read_conv_row).map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        let rows = stmt
+            .query_map([], read_conv_row)
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -131,8 +154,11 @@ pub fn update_conversation(conn: &Connection, row: &ConversationRow) -> Result<(
 }
 
 pub fn delete_conversation(conn: &Connection, id: &str) -> Result<(), String> {
-    conn.execute("DELETE FROM messages WHERE conversation_id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM messages WHERE conversation_id = ?1",
+        params![id],
+    )
+    .map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM conversations WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -140,19 +166,36 @@ pub fn delete_conversation(conn: &Connection, id: &str) -> Result<(), String> {
 
 pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String> {
     conn.execute(
-        &format!("INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)", MSG_SELECT),
-        params![row.id, row.conversation_id, row.role, row.content, row.tokens, row.timestamp, row.parent_id, row.is_pinned as i64],
-    ).map_err(|e| e.to_string())?;
+        &format!(
+            "INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            MSG_SELECT
+        ),
+        params![
+            row.id,
+            row.conversation_id,
+            row.role,
+            row.content,
+            row.tokens,
+            row.timestamp,
+            row.parent_id,
+            row.is_pinned as i64
+        ],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 pub fn get_messages(conn: &Connection, conversation_id: &str) -> Result<Vec<MessageRow>, String> {
-    let sql = format!("SELECT {} FROM messages WHERE conversation_id = ?1 ORDER BY timestamp ASC", MSG_SELECT);
+    let sql = format!(
+        "SELECT {} FROM messages WHERE conversation_id = ?1 ORDER BY timestamp ASC",
+        MSG_SELECT
+    );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map(params![conversation_id], read_msg_row)
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn update_message_content(
@@ -181,16 +224,23 @@ pub fn get_messages_paginated(
         let result = stmt
             .query_map(params![conversation_id, ts, limit], read_msg_row)
             .map_err(|e| e.to_string())?;
-        let mut r: Vec<MessageRow> = result.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        let mut r: Vec<MessageRow> = result
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
         r.reverse();
         r
     } else {
-        let sql = format!("SELECT {} FROM messages WHERE conversation_id = ?1 ORDER BY timestamp DESC LIMIT ?2", MSG_SELECT);
+        let sql = format!(
+            "SELECT {} FROM messages WHERE conversation_id = ?1 ORDER BY timestamp DESC LIMIT ?2",
+            MSG_SELECT
+        );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let result = stmt
             .query_map(params![conversation_id, limit], read_msg_row)
             .map_err(|e| e.to_string())?;
-        let mut r: Vec<MessageRow> = result.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        let mut r: Vec<MessageRow> = result
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
         r.reverse();
         r
     };
@@ -247,15 +297,13 @@ pub fn search_conversations(
     let rows = stmt
         .query_map(params![pattern], read_conv_row)
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
-pub fn export_conversation_markdown(
-    conn: &Connection,
-    id: &str,
-) -> Result<String, String> {
-    let detail = get_conversation_detail(conn, id)?
-        .ok_or_else(|| "Conversation not found".to_string())?;
+pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<String, String> {
+    let detail =
+        get_conversation_detail(conn, id)?.ok_or_else(|| "Conversation not found".to_string())?;
     let mut md = format!("# {}\n\n", detail.conversation.title);
     for msg in &detail.messages {
         match msg.role.as_str() {
@@ -268,12 +316,9 @@ pub fn export_conversation_markdown(
     Ok(md)
 }
 
-pub fn export_conversation_json(
-    conn: &Connection,
-    id: &str,
-) -> Result<String, String> {
-    let detail = get_conversation_detail(conn, id)?
-        .ok_or_else(|| "Conversation not found".to_string())?;
+pub fn export_conversation_json(conn: &Connection, id: &str) -> Result<String, String> {
+    let detail =
+        get_conversation_detail(conn, id)?.ok_or_else(|| "Conversation not found".to_string())?;
     serde_json::to_string_pretty(&detail).map_err(|e| e.to_string())
 }
 
@@ -305,14 +350,15 @@ pub fn toggle_pin(conn: &Connection, id: &str) -> Result<bool, String> {
         conn.execute(
             "UPDATE conversations SET is_pinned = 0, sort_order = 0, updated_at = ?2 WHERE id = ?1",
             params![id, now],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
     }
     Ok(new_pinned)
 }
 
 pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, String> {
-    let detail = get_conversation_detail(conn, id)?
-        .ok_or_else(|| "Conversation not found".to_string())?;
+    let detail =
+        get_conversation_detail(conn, id)?.ok_or_else(|| "Conversation not found".to_string())?;
 
     let new_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
@@ -347,12 +393,18 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Str
     Ok(new_id)
 }
 
-pub fn rename_conversation(conn: &Connection, id: &str, title: &str, title_source: &str) -> Result<(), String> {
+pub fn rename_conversation(
+    conn: &Connection,
+    id: &str,
+    title: &str,
+    title_source: &str,
+) -> Result<(), String> {
     let now = chrono::Utc::now().timestamp_millis();
     conn.execute(
         "UPDATE conversations SET title = ?2, title_source = ?3, updated_at = ?4 WHERE id = ?1",
         params![id, title, title_source, now],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -375,7 +427,8 @@ pub fn increment_generation(conn: &Connection, id: &str) -> Result<i64, String> 
     conn.execute(
         "UPDATE conversations SET generation = generation + 1 WHERE id = ?1",
         params![id],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     let gen: i64 = conn
         .query_row(
             "SELECT generation FROM conversations WHERE id = ?1",

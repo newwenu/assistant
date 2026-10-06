@@ -134,7 +134,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
     setModels([]);
   };
 
-  const showNameAndType = !isEdit && !isPreset;
+  const showType = !isEdit && !isPreset;
 
   return (
     <Modal
@@ -180,23 +180,22 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
               : "输入 API Key，密钥将加密存储。"}
         </Typography.Paragraph>
 
-        {showNameAndType && (
-          <>
-            <Form.Item
-              name="name"
-              label="名称"
-              rules={[{ required: true, message: "请输入名称" }]}
-            >
-              <Input placeholder="如 My Gateway" />
-            </Form.Item>
-            <Form.Item
-              name="type"
-              label="Provider ID"
-              rules={[{ required: true, message: "请输入 ID" }]}
-            >
-              <Input placeholder="小写英文，如 my-gateway" />
-            </Form.Item>
-          </>
+        <Form.Item
+          name="name"
+          label="名称"
+          rules={[{ required: true, message: "请输入名称" }]}
+        >
+          <Input placeholder="如 My Gateway" />
+        </Form.Item>
+
+        {showType && (
+          <Form.Item
+            name="type"
+            label="Provider ID"
+            rules={[{ required: true, message: "请输入 ID" }]}
+          >
+            <Input placeholder="小写英文，如 my-gateway" />
+          </Form.Item>
         )}
 
         {!isLocal && (

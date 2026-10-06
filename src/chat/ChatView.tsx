@@ -70,17 +70,59 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     chat.loadConversations();
   }, []);
 
+  const resolveProviderModel = useCallback(
+    (providerId: string | null, modelId: string) => {
+      const availableProviders = provider.providers;
+      if (availableProviders.length === 0) {
+        return { providerId: null, modelId: "" };
+      }
+      const p = availableProviders.find((pr) => pr.id === providerId);
+      if (!p) {
+        const fallback = availableProviders[0];
+        let fallbackModel = fallback.default_model || "";
+        try {
+          const models = JSON.parse(fallback.models || "[]");
+          if (models.length > 0 && !fallbackModel) fallbackModel = models[0].id;
+        } catch { /* ignore */ }
+        return { providerId: fallback.id, modelId: fallbackModel };
+      }
+      let models: { id: string }[] = [];
+      try {
+        models = JSON.parse(p.models || "[]");
+      } catch { /* ignore */ }
+      const modelExists = models.some((m) => m.id === modelId);
+      if (!modelExists) {
+        let fallbackModel = p.default_model || "";
+        if (models.length > 0 && !fallbackModel) fallbackModel = models[0].id;
+        return { providerId: p.id, modelId: fallbackModel };
+      }
+      return { providerId: p.id, modelId };
+    },
+    [provider.providers],
+  );
+
   useEffect(() => {
     if (chat.currentConversationId && chat.conversations.length > 0) {
       const conv = chat.conversations.find(
         (c) => c.id === chat.currentConversationId,
       );
       if (conv) {
-        setCurrentProviderId(conv.provider_id);
-        setCurrentModelId(conv.model_id);
+        const resolved = resolveProviderModel(conv.provider_id, conv.model_id);
+        setCurrentProviderId(resolved.providerId);
+        setCurrentModelId(resolved.modelId);
       }
     }
-  }, [chat.currentConversationId, chat.conversations]);
+  }, [chat.currentConversationId, chat.conversations, resolveProviderModel]);
+
+  useEffect(() => {
+    if (!currentProviderId) return;
+    const exists = provider.providers.some((p) => p.id === currentProviderId);
+    if (!exists) {
+      const resolved = resolveProviderModel(null, currentModelId);
+      setCurrentProviderId(resolved.providerId);
+      setCurrentModelId(resolved.modelId);
+    }
+  }, [provider.providers, currentProviderId, currentModelId, resolveProviderModel]);
 
   const noProviders = provider.providers.length === 0;
 

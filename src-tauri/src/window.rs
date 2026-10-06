@@ -5,15 +5,16 @@ use std::sync::Mutex;
 
 use log::info;
 use tauri::{
-    command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
+    command,
     menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem},
+    AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 
 use assistant_config::constant::{
     MAIN_WINDOW_DEFAULT_HEIGHT, MAIN_WINDOW_DEFAULT_WIDTH, MAIN_WINDOW_MIN_HEIGHT,
-    MAIN_WINDOW_MIN_WIDTH, ORB_COLLAPSED_SIZE, ORB_EXPANDED_HEIGHT, ORB_EXPANDED_WIDTH,
-    ORB_CHROME_INSET, ORB_COLLAPSED_WINDOW_SIZE, ORB_EXPANDED_WINDOW_WIDTH,
-    ORB_EXPANDED_WINDOW_HEIGHT, WINDOW_MAIN, WINDOW_ORB, WINDOW_SETTINGS,
+    MAIN_WINDOW_MIN_WIDTH, ORB_CHROME_INSET, ORB_COLLAPSED_SIZE, ORB_COLLAPSED_WINDOW_SIZE,
+    ORB_EXPANDED_HEIGHT, ORB_EXPANDED_WIDTH, ORB_EXPANDED_WINDOW_HEIGHT, ORB_EXPANDED_WINDOW_WIDTH,
+    WINDOW_MAIN, WINDOW_ORB, WINDOW_SETTINGS,
 };
 
 static MAIN_LOCK: Mutex<()> = Mutex::new(());
@@ -81,23 +82,31 @@ pub fn expand_orb_panel(
         let old_logical_h = old_size.height as f64 / scale;
 
         let ball_x = if horizontal == "left" {
-            old_pos.x as f64 / scale + old_logical_w - ORB_CHROME_INSET as f64 - ORB_COLLAPSED_SIZE as f64
+            old_pos.x as f64 / scale + old_logical_w
+                - ORB_CHROME_INSET as f64
+                - ORB_COLLAPSED_SIZE as f64
         } else {
             old_pos.x as f64 / scale + ORB_CHROME_INSET as f64
         };
         let ball_y = if vertical == "up" {
-            old_pos.y as f64 / scale + old_logical_h - ORB_CHROME_INSET as f64 - ORB_COLLAPSED_SIZE as f64
+            old_pos.y as f64 / scale + old_logical_h
+                - ORB_CHROME_INSET as f64
+                - ORB_COLLAPSED_SIZE as f64
         } else {
             old_pos.y as f64 / scale + ORB_CHROME_INSET as f64
         };
 
         let new_x = if horizontal == "left" {
-            ball_x - (ORB_EXPANDED_WIDTH as f64 - ORB_COLLAPSED_SIZE as f64) - ORB_CHROME_INSET as f64
+            ball_x
+                - (ORB_EXPANDED_WIDTH as f64 - ORB_COLLAPSED_SIZE as f64)
+                - ORB_CHROME_INSET as f64
         } else {
             ball_x - ORB_CHROME_INSET as f64
         };
         let new_y = if vertical == "up" {
-            ball_y - (ORB_EXPANDED_HEIGHT as f64 - ORB_COLLAPSED_SIZE as f64) - ORB_CHROME_INSET as f64
+            ball_y
+                - (ORB_EXPANDED_HEIGHT as f64 - ORB_COLLAPSED_SIZE as f64)
+                - ORB_CHROME_INSET as f64
         } else {
             ball_y - ORB_CHROME_INSET as f64
         };
@@ -136,12 +145,16 @@ pub fn collapse_orb_panel(
         let old_logical_h = old_size.height as f64 / scale;
 
         let ball_x = if horizontal == "left" {
-            old_pos.x as f64 / scale + old_logical_w - ORB_CHROME_INSET as f64 - ORB_COLLAPSED_SIZE as f64
+            old_pos.x as f64 / scale + old_logical_w
+                - ORB_CHROME_INSET as f64
+                - ORB_COLLAPSED_SIZE as f64
         } else {
             old_pos.x as f64 / scale + ORB_CHROME_INSET as f64
         };
         let ball_y = if vertical == "up" {
-            old_pos.y as f64 / scale + old_logical_h - ORB_CHROME_INSET as f64 - ORB_COLLAPSED_SIZE as f64
+            old_pos.y as f64 / scale + old_logical_h
+                - ORB_CHROME_INSET as f64
+                - ORB_COLLAPSED_SIZE as f64
         } else {
             old_pos.y as f64 / scale + ORB_CHROME_INSET as f64
         };
@@ -172,18 +185,16 @@ pub fn show_orb_context_menu(app: AppHandle, x: f64, y: f64) -> Result<(), Strin
         .map_err(|e| e.to_string())?;
     let open_main = MenuItem::with_id(&app, "orb_open_main", "打开主窗口", true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    let separator = PredefinedMenuItem::separator(&app)
-        .map_err(|e| e.to_string())?;
+    let separator = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
     let quit = MenuItem::with_id(&app, "orb_quit", "退出", true, None::<&str>)
         .map_err(|e| e.to_string())?;
 
-    let menu = Menu::with_items(
-        &app,
-        &[&new_chat, &open_main, &separator, &quit],
-    )
-    .map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(&app, &[&new_chat, &open_main, &separator, &quit])
+        .map_err(|e| e.to_string())?;
 
-    let webview_window = app.get_webview_window(WINDOW_ORB).ok_or("orb window not found")?;
+    let webview_window = app
+        .get_webview_window(WINDOW_ORB)
+        .ok_or("orb window not found")?;
 
     let window = webview_window.as_ref().window();
     menu.popup_at(window, tauri::LogicalPosition::new(x, y))

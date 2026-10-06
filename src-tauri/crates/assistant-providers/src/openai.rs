@@ -70,8 +70,7 @@ impl OpenAIAdapter {
     }
 
     fn decrypt_api_key(&self) -> Result<String, ProviderError> {
-        let machine_id =
-            crypto::get_machine_id().map_err(|e| ProviderError::ApiKeyMissing(e))?;
+        let machine_id = crypto::get_machine_id().map_err(|e| ProviderError::ApiKeyMissing(e))?;
         crypto::decrypt_api_key_b64(&self.config.api_key_encrypted, &machine_id)
             .map_err(|e| ProviderError::ApiKeyMissing(e))
     }
@@ -253,7 +252,8 @@ impl BaseProviderAdapter for OpenAIAdapter {
         messages: &[ChatMessage],
         model: &str,
         options: &ChatOptions,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<ChatDelta, ProviderError>> + Send>>, ProviderError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<ChatDelta, ProviderError>> + Send>>, ProviderError>
+    {
         let api_key = self.decrypt_api_key()?;
         let base_url = self.base_url().to_string();
         let req_messages: Vec<ChatRequestMessage> = messages
@@ -554,9 +554,8 @@ impl BaseProviderAdapter for OpenAIAdapter {
     }
 
     fn list_models(&self) -> Result<Vec<ModelConfig>, ProviderError> {
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            ProviderError::RequestFailed(format!("Create runtime: {}", e))
-        })?;
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ProviderError::RequestFailed(format!("Create runtime: {}", e)))?;
         rt.block_on(async {
             let api_key = self.decrypt_api_key()?;
             let url = format!("{}/models", self.base_url());
@@ -578,9 +577,10 @@ impl BaseProviderAdapter for OpenAIAdapter {
                 let text = resp.text().await.unwrap_or_default();
                 return Err(classify_http_error(status, &text));
             }
-            let text = resp.text().await.map_err(|e| {
-                ProviderError::ParseError(format!("Read response body: {}", e))
-            })?;
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| ProviderError::ParseError(format!("Read response body: {}", e)))?;
             let body: ModelsResponse = serde_json::from_str(&text).map_err(|e| {
                 ProviderError::ParseError(format!(
                     "Parse models response: {} (body: {})",

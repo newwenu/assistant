@@ -37,7 +37,8 @@ pub fn get_templates(conn: &Connection) -> Result<Vec<PromptTemplateRow>, String
             })
         })
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn seed_builtin_templates(conn: &Connection) -> Result<(), String> {

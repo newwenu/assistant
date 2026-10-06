@@ -9,8 +9,8 @@ mod window;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::Emitter;
 use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
+use tauri::Emitter;
 
 static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
 
@@ -28,6 +28,10 @@ pub fn run() {
             window::show_or_create_main(app);
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(setup::init)
         .invoke_handler(tauri::generate_handler![
             cmd::get_mouse_position,
@@ -41,6 +45,7 @@ pub fn run() {
             cmd::set_orb_click_through,
             cmd::get_screen_size,
             cmd::snap_orb_to_screen,
+            cmd::snap_orb_to_edge,
             cmd::save_orb_position,
             cmd::app_quit,
             window::open_main_window,
@@ -79,6 +84,10 @@ pub fn run() {
             cmd::purge_conversations,
             cmd::edit_message,
             cmd::regenerate_message,
+            cmd::reload_shortcuts,
+            cmd::get_app_version,
+            cmd::get_rustc_version,
+            cmd::set_launch_at_login,
         ])
         .on_menu_event(|app, event| match event.id.as_ref() {
             "orb_new_chat" => {
@@ -92,21 +101,24 @@ pub fn run() {
             }
             _ => {}
         })
-        .on_window_event(|window, event| {
-            match event {
-                tauri::WindowEvent::CloseRequested { api, .. } => {
-                    if window.label() == WINDOW_MAIN {
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                if window.label() == WINDOW_MAIN {
+                    let close_to_tray = assistant_config::app_conf::AppConf::load()
+                        .map(|c| c.close_to_tray)
+                        .unwrap_or(true);
+                    if close_to_tray {
                         api.prevent_close();
                         let _ = window.hide();
                     }
                 }
-                tauri::WindowEvent::Focused(false) => {
-                    if window.label() == WINDOW_ORB {
-                        let _ = window.emit("orb-blur", ());
-                    }
-                }
-                _ => {}
             }
+            tauri::WindowEvent::Focused(false) => {
+                if window.label() == WINDOW_ORB {
+                    let _ = window.emit("orb-blur", ());
+                }
+            }
+            _ => {}
         })
         .build(tauri::generate_context!("tauri.conf.json"))
         .expect("error while building tauri application")

@@ -88,7 +88,7 @@ export const ProviderManager: React.FC = () => {
   return (
     <div className="provider-manager">
       <div className="provider-manager-header">
-        <Typography.Title level={4}>AI Provider 设置</Typography.Title>
+        <Typography.Title level={5}>AI Provider 设置</Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
           添加 Provider
         </Button>

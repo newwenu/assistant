@@ -22,7 +22,7 @@ export const TemplateManager: React.FC = () => {
 
   return (
     <div className="template-manager">
-      <Typography.Title level={4}>Prompt 模板</Typography.Title>
+      <Typography.Title level={5}>Prompt 模板</Typography.Title>
       <div className="template-manager-grid">
         {templates.map((t) => (
           <Card key={t.id} size="small" className="template-manager-card">

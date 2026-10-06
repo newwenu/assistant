@@ -7,7 +7,8 @@ pub fn get_favorites(conn: &Connection) -> Result<Vec<String>, String> {
     let rows = stmt
         .query_map([], |row| row.get(0))
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn toggle_favorite(conn: &Connection, tool_id: &str) -> Result<bool, String> {

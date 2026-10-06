@@ -28,7 +28,7 @@ pub struct OrbConf {
 impl OrbConf {
     pub fn new() -> Self {
         Self {
-            click_through: true,
+            click_through: false,
             always_on_top: true,
             scale_percent: 100,
             opacity_percent: 100,
@@ -67,7 +67,10 @@ impl OrbConf {
         match serde_json::from_str(&contents) {
             Ok(config) => Ok(config),
             Err(e) => {
-                error!("[OrbConf::load] parse error: {}, falling back to defaults", e);
+                error!(
+                    "[OrbConf::load] parse error: {}, falling back to defaults",
+                    e
+                );
                 let default = Self::new();
                 default.save()?;
                 Ok(default)
