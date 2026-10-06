@@ -1,7 +1,10 @@
 import React, { useState, useCallback } from "react";
 import { Input, Button } from "antd";
-import { SendOutlined, StopOutlined } from "@ant-design/icons";
-import { CHAT_INPUT_MIN_ROWS, CHAT_INPUT_MAX_ROWS } from "../config/constants";
+import { SendOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import {
+  CHAT_INPUT_MIN_ROWS,
+  CHAT_INPUT_MAX_ROWS,
+} from "../../config/constants";
 
 interface MessageInputProps {
   onSend: (content: string) => void;
@@ -20,9 +23,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !disabled && !isStreaming) {
         e.preventDefault();
-        if (value.trim().length > 0 && !disabled && !isStreaming) {
+        if (value.trim().length > 0) {
           onSend(value.trim());
           setValue("");
         }
@@ -48,14 +51,20 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           minRows: CHAT_INPUT_MIN_ROWS,
           maxRows: CHAT_INPUT_MAX_ROWS,
         }}
-        placeholder={disabled ? "请先配置 AI Provider" : "输入消息..."}
-        disabled={disabled || isStreaming}
+        placeholder={
+          disabled
+            ? "请先配置 AI Provider"
+            : isStreaming
+              ? "输入下一条消息，回车将在回复结束后发送..."
+              : "输入消息..."
+        }
+        disabled={disabled}
       />
       {isStreaming ? (
         <Button
-          type="primary"
+          type="default"
           danger
-          icon={<StopOutlined />}
+          icon={<CloseCircleOutlined />}
           onClick={onCancel}
           className="chat-send-btn"
         />

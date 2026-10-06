@@ -299,8 +299,14 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
           }
           className="chat-sidebar-search"
         />
-        {search.trim() && onToggleSearchFullText && (
-          <Tooltip title="全文搜索消息内容">
+        {onToggleSearchFullText && (
+          <Tooltip
+            title={
+              searchFullText
+                ? "全文搜索：搜索消息内容"
+                : "标题搜索：仅搜索对话标题"
+            }
+          >
             <Switch
               size="small"
               checked={searchFullText}
@@ -311,6 +317,12 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         )}
       </div>
       <div className="chat-sidebar-list">
+        {search.trim() && (
+          <div className="chat-sidebar-filter-hint">
+            {searchFullText ? "全文" : "标题"}搜索 ·{" "}
+            {displayConversations.length} 条结果
+          </div>
+        )}
         {displayConversations.length === 0 && (
           <div className="chat-sidebar-empty">
             {search ? "未找到匹配的对话" : "暂无对话"}

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { DownOutlined, LoadingOutlined } from "@ant-design/icons";
 import { MessageBubble, RoleContext } from "./MessageBubble";
-import type { Message } from "../stores/chatStore";
+import type { Message } from "../../stores/chatStore";
 import css from "./MessageList.module.css";
 
 const SCROLL_THRESHOLD = 100;
@@ -9,6 +9,9 @@ const SCROLL_THRESHOLD = 100;
 interface MessageListProps {
   messages: Message[];
   isStreaming: boolean;
+  isReasoningStreaming?: boolean;
+  streamingMessageId?: string | null;
+  streamingContent?: string;
   compact?: boolean;
   hasMore?: boolean;
   isLoadingMore?: boolean;
@@ -22,6 +25,9 @@ interface MessageListProps {
 export const MessageList: React.FC<MessageListProps> = ({
   messages,
   isStreaming,
+  isReasoningStreaming = false,
+  streamingMessageId,
+  streamingContent,
   compact = false,
   hasMore = false,
   isLoadingMore = false,
@@ -58,7 +64,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         behavior: isStreaming ? "auto" : "smooth",
       });
     }
-  }, [messages, isStreaming, userScrolledUp]);
+  }, [messages, isStreaming, streamingContent, userScrolledUp]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -109,9 +115,13 @@ export const MessageList: React.FC<MessageListProps> = ({
     }
   }, []);
 
-  const streamingMsgId = messages.find(
-    (m) => m.role === "assistant" && isStreaming,
-  )?.id;
+  const streamingMsgId =
+    streamingMessageId ??
+    (messages.length > 0 && isStreaming
+      ? messages[messages.length - 1].role === "assistant"
+        ? messages[messages.length - 1].id
+        : undefined
+      : undefined);
 
   const containerClass = [css.container, compact ? css.compact : ""]
     .filter(Boolean)
@@ -146,22 +156,32 @@ export const MessageList: React.FC<MessageListProps> = ({
             )}
           </div>
         )}
-        {messages.map((msg, index) => (
-          <RoleContext.Provider
-            key={msg.id}
-            value={index > 0 ? messages[index - 1].role : undefined}
-          >
-            <MessageBubble
-              message={msg}
-              isStreaming={msg.id === streamingMsgId}
-              compact={compact}
-              onDelete={onDeleteMessage}
-              onEdit={onEditMessage}
-              onRegenerate={onRegenerateMessage}
-              onRetry={msg.error?.retryable ? onRetryMessage : undefined}
-            />
-          </RoleContext.Provider>
-        ))}
+        {messages.map((msg, index) => {
+          const isStreamingMsg = msg.id === streamingMsgId;
+          const displayMsg =
+            isStreamingMsg && streamingContent != null
+              ? { ...msg, content: streamingContent }
+              : msg;
+          return (
+            <RoleContext.Provider
+              key={msg.id}
+              value={index > 0 ? messages[index - 1].role : undefined}
+            >
+              <MessageBubble
+                message={displayMsg}
+                isStreaming={isStreamingMsg}
+                isReasoningStreaming={
+                  isStreamingMsg && isReasoningStreaming
+                }
+                compact={compact}
+                onDelete={onDeleteMessage}
+                onEdit={onEditMessage}
+                onRegenerate={onRegenerateMessage}
+                onRetry={msg.error?.retryable ? onRetryMessage : undefined}
+              />
+            </RoleContext.Provider>
+          );
+        })}
       </div>
       <button
         className={[

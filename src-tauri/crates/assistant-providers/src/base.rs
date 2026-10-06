@@ -144,10 +144,13 @@ pub struct ChatOptions {
     pub temperature: f32,
     pub max_tokens: u32,
     pub stream: bool,
+    #[serde(default)]
+    pub context_window_tokens: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ChatDelta {
+    pub seq: Option<u32>,
     pub delta_text: Option<String>,
     pub delta_reasoning: Option<String>,
     pub delta_tool_call_id: Option<String>,
@@ -162,6 +165,8 @@ pub struct ModelConfig {
     pub id: String,
     pub name: String,
     pub owned_by: String,
+    #[serde(default)]
+    pub context_window: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -173,6 +178,8 @@ pub struct TokenUsage {
     pub cache_read_tokens: u32,
     #[serde(default)]
     pub cache_write_tokens: u32,
+    #[serde(default)]
+    pub context_window_tokens: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -182,6 +189,55 @@ pub struct RetryConfig {
     pub max_delay_ms: u64,
     pub rate_limit_base_ms: u64,
     pub rate_limit_max_ms: u64,
+}
+
+pub fn get_context_window_tokens(model_id: &str) -> u32 {
+    let id = model_id.to_lowercase();
+    if id.contains("gpt-4o") || id.contains("gpt-4-turbo") {
+        128_000
+    } else if id.contains("gpt-4-32k") {
+        32_768
+    } else if id.contains("gpt-4") && !id.contains("turbo") {
+        8_192
+    } else if id.contains("gpt-3.5-turbo-16k") {
+        16_384
+    } else if id.contains("gpt-3.5") {
+        4_096
+    } else if id.contains("claude-3.5-sonnet") || id.contains("claude-3-5-sonnet") {
+        200_000
+    } else if id.contains("claude-3-opus") {
+        200_000
+    } else if id.contains("claude-3-haiku") || id.contains("claude-3-5-haiku") {
+        200_000
+    } else if id.contains("deepseek-reasoner") || id.contains("deepseek-r1") {
+        64_000
+    } else if id.contains("deepseek") {
+        64_000
+    } else if id.contains("gemini-1.5-pro") || id.contains("gemini-2.0") || id.contains("gemini-2.5") {
+        1_000_000
+    } else if id.contains("gemini-1.5-flash") || id.contains("gemini-2.0-flash") {
+        1_000_000
+    } else if id.contains("gemini-pro") {
+        32_000
+    } else if id.contains("qwen-max") || id.contains("qwen-long") {
+        1_000_000
+    } else if id.contains("qwen-plus") {
+        131_072
+    } else if id.contains("qwen-turbo") {
+        1_000_000
+    } else if id.contains("glm-4") {
+        128_000
+    } else if id.contains("llama-3.1-405b") || id.contains("llama-3.1-70b") || id.contains("llama-3.1-8b") {
+        128_000
+    } else if id.contains("llama-3-70b") || id.contains("llama-3-8b") {
+        8_192
+    } else if id.contains("mistral-large") || id.contains("mistral-medium") {
+        32_000
+    } else if id.contains("mistral-7b") || id.contains("mixtral") {
+        32_000
+    } else {
+        128_000
+    }
 }
 
 impl Default for RetryConfig {

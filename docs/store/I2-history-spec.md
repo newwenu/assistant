@@ -262,53 +262,19 @@ CREATE TABLE IF NOT EXISTS conversation_labels (
 );
 ```
 
-### 3.5 Schema 策略：编写迁移函数，1→0 版本迁移
+### 3.5 Schema 策略 ~~：编写迁移函数，1→0 版本迁移~~ ❌已取消
 
-> **策略**：`init_db` 中 `CREATE TABLE IF NOT EXISTS` 包含完整表结构（v1），新 DB 直接写入 `schema_version = 1`。同时新增独立文件 `migrations.rs`，`run_migrations(conn)` 函数负责检测 `app_settings.schema_version` 并按版本号顺序执行 `ALTER TABLE ADD COLUMN` 迁移。旧 DB（v0）启动时自动迁移到 v1。
+> **⚠️ 可靠程度有问题，迁移路径已取消**
 >
-> **迁移函数设计**：
-> - 独立文件 `migrations.rs`，由 `lib.rs` 导出 `pub mod migrations;`
-> - 读取 `app_settings` 表中 `schema_version`，不存在则默认为 0
-> - 按版本号顺序执行：v0→v1 使用 `ALTER TABLE ADD COLUMN`（仅加列，不删列不改列，安全可逆）
-> - 每个迁移步骤包裹在事务中，失败时回滚并报错
-> - 迁移完成后写入 `schema_version = 1`
-> - 版本号设计：新 DB 创建时直接写入 `schema_version = 1`，下次启动检测到已是 v1 则跳过迁移，方便复用
-
-```rust
-// migrations.rs — 独立迁移文件
-use log::info;
-use rusqlite::Connection;
-
-pub fn run_migrations(conn: &Connection) -> Result<(), String> {
-    let current_version: i64 = conn
-        .query_row(
-            "SELECT value FROM app_settings WHERE key = 'schema_version'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
-
-    if current_version < 1 {
-        info!("Running migration v0→v1: I2-History chat history management");
-        conn.execute_batch(
-            "ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
-             ALTER TABLE conversations ADD COLUMN title_source TEXT NOT NULL DEFAULT 'placeholder';
-             ALTER TABLE conversations ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;
-             ALTER TABLE conversations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
-             ALTER TABLE messages ADD COLUMN parent_id TEXT;
-             ALTER TABLE messages ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
-             CREATE INDEX IF NOT EXISTS idx_messages_conv_ts ON messages(conversation_id, timestamp);",
-        ).map_err(|e| e.to_string())?;
-        conn.execute(
-            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '1')",
-            [],
-        ).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-```
-
-> **注意**：暂缓字段（color_mark / labels / draft_content / draft_updated_at / message_count / total_tokens / source / feedback / tool_calls 表 / is_starred）不包含在 v0→v1 迁移中，等对应功能实现时再在后续版本迁移中添加。
+> 原设计：`init_db` 中 `CREATE TABLE IF NOT EXISTS` 包含完整表结构（v1），同时 `migrations.rs` 中 `run_migrations(conn)` 负责 `ALTER TABLE ADD COLUMN` 迁移旧 DB（v0→v1）。
+>
+> **取消理由**：
+> - `ALTER TABLE ADD COLUMN` 在 SQLite 中对已存在列会报错，无法幂等执行，迁移函数可靠性无法保证
+> - `CREATE TABLE IF NOT EXISTS` 已包含 v1 完整表结构，新 DB 直接为 v1，实际部署中旧 DB（v0）几乎不存在（项目尚在内测阶段，无外部用户）
+> - 迁移函数 `run_migrations` 被禁用后，`db.rs` 中 `CREATE TABLE IF NOT EXISTS` 兜底已足够
+> - 若未来有真实升级需求，应改用整库重建（导出→删库→建库→导入）而非增量迁移
+>
+> **当前策略**：仅靠 `init_db` 中 `CREATE TABLE IF NOT EXISTS` 创建完整 v1 表结构，`migrations.rs` 保留空壳函数但不执行迁移逻辑。新 DB 直接写入 `schema_version = 1`。
 
 ## 4. 功能规格
 

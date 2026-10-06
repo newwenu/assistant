@@ -9,8 +9,6 @@ mod window;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::Manager;
-
 use tauri::Emitter;
 use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
 
@@ -90,14 +88,7 @@ pub fn run() {
                 window::show_or_create_main(app);
             }
             "orb_quit" => {
-                request_exit();
-                if let Some(w) = app.get_webview_window(WINDOW_ORB) {
-                    let _ = w.destroy();
-                }
-                if let Some(w) = app.get_webview_window(WINDOW_MAIN) {
-                    let _ = w.destroy();
-                }
-                app.exit(0);
+                cmd::perform_exit(app);
             }
             _ => {}
         })

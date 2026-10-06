@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import css from "./MessageContent.module.css";
 
 interface MessageContentProps {
@@ -39,7 +42,8 @@ export const MessageContent: React.FC<MessageContentProps> = ({
     };
   }, [isStreaming]);
 
-  const remarkPlugins = useMemo(() => [remarkGfm], []);
+  const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
+  const rehypePlugins = useMemo(() => [rehypeKatex], []);
 
   if (!content) return null;
 
@@ -48,7 +52,12 @@ export const MessageContent: React.FC<MessageContentProps> = ({
       {isUser ? (
         <p>{content}</p>
       ) : (
-        <ReactMarkdown remarkPlugins={remarkPlugins}>{content}</ReactMarkdown>
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins}
+        >
+          {content}
+        </ReactMarkdown>
       )}
     </div>
   );

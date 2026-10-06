@@ -16,12 +16,13 @@
   --color-text-on-primary: #ffffff;
   --color-error: #ff4d4f;
   --color-success: #52c41a;
-  --color-format-anthropic: #D97757;
+  --color-format-anthropic: #d97757;
   --color-shadow: rgba(0, 0, 0, 0.06);
   --color-shadow-secondary: rgba(0, 0, 0, 0.04);
   --shadow-orb: 0 1px 4px rgba(0, 0, 0, 0.15);
   --shadow-panel: 0 2px 12px rgba(0, 0, 0, 0.08);
-  --filter-orb: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.12)) drop-shadow(0 0.5px 1px rgba(0, 0, 0, 0.08));
+  --filter-orb: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.12))
+    drop-shadow(0 0.5px 1px rgba(0, 0, 0, 0.08));
   --color-orb-gradient-start: #6ea8fe;
   --color-orb-gradient-end: #3b82f6;
   --radius: 6px;
@@ -54,12 +55,13 @@
   --color-text-on-primary: #ffffff;
   --color-error: #ff4d4f;
   --color-success: #73d13d;
-  --color-format-anthropic: #E8916A;
+  --color-format-anthropic: #e8916a;
   --color-shadow: rgba(0, 0, 0, 0.2);
   --color-shadow-secondary: rgba(0, 0, 0, 0.12);
   --shadow-orb: 0 1px 4px rgba(0, 0, 0, 0.3);
   --shadow-panel: 0 2px 12px rgba(0, 0, 0, 0.2);
-  --filter-orb: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.25)) drop-shadow(0 0.5px 1px rgba(0, 0, 0, 0.2));
+  --filter-orb: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.25))
+    drop-shadow(0 0.5px 1px rgba(0, 0, 0, 0.2));
   --color-orb-gradient-start: #4d8cd8;
   --color-orb-gradient-end: #2563eb;
 }
@@ -81,8 +83,9 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: var(--color-text);
@@ -114,11 +117,18 @@ div[data-orb-window] .orb-hitbox {
   touch-action: none !important;
   -webkit-user-drag: none !important;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, var(--color-orb-gradient-start), var(--color-orb-gradient-end));
+  background: radial-gradient(
+    circle at 30% 30%,
+    var(--color-orb-gradient-start),
+    var(--color-orb-gradient-end)
+  );
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 150ms ease-in-out, filter 300ms ease-in-out, transform 200ms ease-out;
+  transition:
+    opacity 150ms ease-in-out,
+    filter 300ms ease-in-out,
+    transform 200ms ease-out;
 }
 
 div[data-orb-window] .orb-hitbox:active {
@@ -144,8 +154,13 @@ div[data-orb-window] .orb-hitbox.orb-idle {
 }
 
 @keyframes orb-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.04); }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
 }
 
 div[data-orb-window] .orb-hitbox.orb-idle:not(.orb-hover):not(.orb-dragging) {
@@ -163,7 +178,9 @@ div[data-orb-window] .orb-panel {
   opacity: 0;
   transform: scale(0.18);
   transform-origin: var(--orb-origin-x, 0%) var(--orb-origin-y, 0%);
-  transition: opacity 300ms ease-in-out, transform 300ms ease-in-out;
+  transition:
+    opacity 300ms ease-in-out,
+    transform 300ms ease-in-out;
   position: absolute;
   top: var(--orb-chrome-inset);
   left: var(--orb-chrome-inset);
@@ -382,7 +399,8 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   font-size: 13px;
 }
 
-.orb-dropdown .ant-select-item-option-active:not(.ant-select-item-option-selected) {
+.orb-dropdown
+  .ant-select-item-option-active:not(.ant-select-item-option-selected) {
   background: var(--color-border-secondary) !important;
 }
 
@@ -462,14 +480,31 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   flex: 1;
 }
 
+.chat-context-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 1px 10px;
+  flex-shrink: 0;
+  line-height: 1;
+  background: var(--color-bg);
+}
+
+.chat-context-bar-text {
+  font-size: 10px;
+  color: var(--color-text-quaternary);
+  min-width: 24px;
+}
+
 .chat-send-btn {
   flex-shrink: 0;
 }
 
-
-
 .chat-sidebar {
-  transition: transform 0.25s ease, width 0.25s ease;
+  transition:
+    transform 0.25s ease,
+    width 0.25s ease;
   overflow: hidden;
   border-right: 1px solid var(--color-border-secondary);
   display: flex;
@@ -493,6 +528,13 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   text-align: center;
   color: var(--color-text-tertiary);
   font-size: 13px;
+}
+
+.chat-sidebar-filter-hint {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  border-bottom: 1px solid var(--color-border-secondary);
 }
 
 .chat-sidebar-item {

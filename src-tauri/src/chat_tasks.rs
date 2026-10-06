@@ -23,7 +23,9 @@ impl ChatTasks {
         let token = CancellationToken::new();
         let clone = token.clone();
         let mut map = self.lock_map();
-        map.insert(conversation_id, token);
+        if let Some(old) = map.insert(conversation_id, token) {
+            old.cancel();
+        }
         clone
     }
 

@@ -1,10 +1,6 @@
 import React, { useEffect, useState, useCallback, type RefObject } from "react";
 import { Button, Modal, Typography, Progress, Tooltip } from "antd";
-import {
-  ArrowLeftOutlined,
-  PlusOutlined,
-  SettingOutlined,
-} from "@ant-design/icons";
+import { PlusOutlined, SettingOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "../stores/chatStore";
 import {
@@ -12,61 +8,62 @@ import {
   CONTEXT_DANGER_THRESHOLD,
 } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
-import { MessageList } from "./MessageList";
-import { MessageInput } from "./MessageInput";
+import { MessageList } from "./message/MessageList";
+import { MessageInput } from "./message/MessageInput";
 import { ModelSelector } from "./ModelSelector";
 import { ProviderSelector } from "./ProviderSelector";
-import { ConversationSidebar } from "./ConversationSidebar";
-import { CHAT_PANEL_HEADER_HEIGHT } from "../config/constants";
 
 interface ChatViewProps {
-  compact?: boolean;
   modelOpenRef?: RefObject<boolean>;
 }
 
 function ContextBar({
   usage,
 }: {
-  usage: { used_tokens: number; max_tokens: number; percentage: number } | null;
+  usage: { used_tokens: number; max_tokens: number; percentage: number };
 }) {
-  if (!usage) return null;
   const pct = Math.min(usage.percentage * 100, 100);
   let status: "normal" | "exception" | "active" = "normal";
   if (pct >= CONTEXT_DANGER_THRESHOLD * 100) status = "exception";
   else if (pct >= CONTEXT_WARN_THRESHOLD * 100) status = "active";
+  const formatK = (n: number) =>
+    n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
   return (
     <Tooltip
       title={`${Math.round(usage.used_tokens).toLocaleString()} / ${Math.round(usage.max_tokens).toLocaleString()} tokens (${pct.toFixed(1)}%)`}
     >
-      <Progress
-        percent={pct}
-        size="small"
-        status={status}
-        showInfo={false}
-        style={{ width: 80, margin: 0 }}
-        strokeColor={
-          status === "exception"
-            ? "#ff4d4f"
-            : status === "active"
-              ? "#faad14"
-              : undefined
-        }
-      />
+      <div className="chat-context-bar">
+        <span className="chat-context-bar-text">
+          {formatK(Math.round(usage.used_tokens))}/
+          {formatK(Math.round(usage.max_tokens))}
+        </span>
+        <Progress
+          percent={pct}
+          size="small"
+          status={status}
+          showInfo={false}
+          style={{ width: 48, margin: 0 }}
+          strokeColor={
+            status === "exception"
+              ? "#ff4d4f"
+              : status === "active"
+                ? "#faad14"
+                : undefined
+          }
+        />
+        <span className="chat-context-bar-text">{pct.toFixed(0)}%</span>
+      </div>
     </Tooltip>
   );
 }
 
-export const ChatView: React.FC<ChatViewProps> = ({
-  compact = false,
-  modelOpenRef,
-}) => {
+export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   const chat = useChatStore();
   const provider = useProviderStore();
   const [currentModelId, setCurrentModelId] = useState("");
   const [currentProviderId, setCurrentProviderId] = useState<string | null>(
     null,
   );
-  const [sidebarOpen, setSidebarOpen] = useState(!compact);
 
   useEffect(() => {
     provider.loadProviders();
@@ -174,10 +171,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
     invoke("open_main_window");
   }, []);
 
-  const toggleSidebar = useCallback(() => {
-    setSidebarOpen((v) => !v);
-  }, []);
-
   const handleEditMessage = useCallback(
     (messageId: string, newContent: string) => {
       chat.editMessage(messageId, newContent);
@@ -192,150 +185,35 @@ export const ChatView: React.FC<ChatViewProps> = ({
     [chat],
   );
 
-  if (compact) {
-    return (
-      <div className="chat-view chat-view-compact">
-        <div className="chat-main">
-          <div className="orb-chrome-bar">
-            <ProviderSelector
-              providerId={currentProviderId}
-              providers={provider.providers}
-              onProviderChange={handleProviderChange}
-              variant="chip"
-            />
-            <ModelSelector
-              providerId={currentProviderId}
-              modelId={currentModelId}
-              onModelChange={handleModelChange}
-              providers={provider.providers}
-              width={120}
-              variant="chip"
-              openRef={modelOpenRef}
-            />
-            <ContextBar usage={chat.contextUsage} />
-            <Button
-              type="text"
-              size="small"
-              className="orb-chrome-btn"
-              icon={<PlusOutlined />}
-              onClick={handleNewConversation}
-            />
-          </div>
-          {chat.messages.length === 0 && noProviders ? (
-            <div className="chat-empty-hint">
-              <Typography.Text type="secondary">
-                配置 AI Provider 后即可开始对话
-              </Typography.Text>
-              <Button
-                type="primary"
-                size="small"
-                icon={<SettingOutlined />}
-                onClick={handleOpenSettings}
-              >
-                去设置
-              </Button>
-            </div>
-          ) : (
-            <MessageList
-              messages={chat.messages}
-              isStreaming={chat.isStreaming}
-              compact
-              hasMore={chat.hasMoreMessages}
-              isLoadingMore={chat.isLoadingMoreMessages}
-              onLoadMore={chat.loadMoreMessages}
-              onDeleteMessage={chat.deleteMessage}
-              onEditMessage={handleEditMessage}
-              onRegenerateMessage={handleRegenerateMessage}
-              onRetryMessage={handleRetry}
-            />
-          )}
-          <MessageInput
-            onSend={handleSend}
-            onCancel={handleCancel}
-            isStreaming={chat.isStreaming}
-            disabled={false}
+  return (
+    <div className="chat-view chat-view-compact">
+      <div className="chat-main">
+        <div className="orb-chrome-bar">
+          <ProviderSelector
+            providerId={currentProviderId}
+            providers={provider.providers}
+            onProviderChange={handleProviderChange}
+            variant="chip"
+          />
+          <ModelSelector
+            providerId={currentProviderId}
+            modelId={currentModelId}
+            onModelChange={handleModelChange}
+            providers={provider.providers}
+            width={120}
+            variant="chip"
+            openRef={modelOpenRef}
+          />
+          <Button
+            type="text"
+            size="small"
+            className="orb-chrome-btn"
+            icon={<PlusOutlined />}
+            onClick={handleNewConversation}
           />
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="chat-view">
-      <ConversationSidebar
-        conversations={chat.conversations}
-        currentId={chat.currentConversationId}
-        providerIds={new Set(provider.providers.map((p) => p.id))}
-        onSelect={chat.switchConversation}
-        onDelete={chat.deleteConversation}
-        onRename={chat.renameConversation}
-        onCreate={handleNewConversation}
-        onSearch={chat.searchConversations}
-        onClearSearch={chat.clearSearch}
-        onTogglePin={chat.togglePin}
-        onDuplicate={chat.duplicateConversation}
-        onExport={chat.exportConversation}
-        searchResults={chat.searchResults}
-        searchFullText={chat.searchFullText}
-        onToggleSearchFullText={chat.toggleSearchFullText}
-        visible={sidebarOpen}
-      />
-      <div className="chat-main">
-        <div
-          className="chat-header"
-          style={{ height: CHAT_PANEL_HEADER_HEIGHT }}
-        >
-          <div className="chat-header-left">
-            <Button
-              type="text"
-              size="small"
-              icon={<ArrowLeftOutlined />}
-              onClick={toggleSidebar}
-            />
-            <Typography.Text
-              strong
-              ellipsis
-              style={{ maxWidth: 120, cursor: "pointer" }}
-            >
-              {chat.currentConversationId
-                ? chat.conversations.find(
-                    (c) => c.id === chat.currentConversationId,
-                  )?.title || "新对话"
-                : "新对话"}
-            </Typography.Text>
-          </div>
-          <div className="chat-header-right">
-            <ContextBar usage={chat.contextUsage} />
-            <ProviderSelector
-              providerId={currentProviderId}
-              providers={provider.providers}
-              onProviderChange={handleProviderChange}
-            />
-            <ModelSelector
-              providerId={currentProviderId}
-              modelId={currentModelId}
-              onModelChange={handleModelChange}
-              providers={provider.providers}
-            />
-            <Button
-              type="text"
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={handleNewConversation}
-            />
-          </div>
-        </div>
         {chat.messages.length === 0 && noProviders ? (
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 12,
-            }}
-          >
+          <div className="chat-empty-hint">
             <Typography.Text type="secondary">
               配置 AI Provider 后即可开始对话
             </Typography.Text>
@@ -352,6 +230,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
           <MessageList
             messages={chat.messages}
             isStreaming={chat.isStreaming}
+            isReasoningStreaming={chat.isReasoningStreaming}
+            streamingMessageId={chat.streamingMessageId}
+            streamingContent={chat.streamingContent}
+            compact
             hasMore={chat.hasMoreMessages}
             isLoadingMore={chat.isLoadingMoreMessages}
             onLoadMore={chat.loadMoreMessages}
@@ -367,6 +249,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
           isStreaming={chat.isStreaming}
           disabled={false}
         />
+        <ContextBar usage={chat.contextUsage} />
       </div>
     </div>
   );

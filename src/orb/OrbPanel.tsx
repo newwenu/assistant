@@ -8,7 +8,7 @@ import { useOrbStore } from "../stores/orbStore";
 import { useOrbExpand } from "./OrbExpand";
 import { ChatView } from "../chat/ChatView";
 import { useChatStore } from "../stores/chatStore";
-import { initChatDeltaListener } from "../stores/chatStore";
+import { initChatDeltaListener, cleanupChatDeltaListener } from "../stores/chatStore";
 import {
   getMouseLogicalPos,
   getWindowLogicalRect,
@@ -69,6 +69,7 @@ export const OrbPanel: React.FC = () => {
     return () => {
       unlistenBlur.then((fn) => fn());
       unlistenNewChat.then((fn) => fn());
+      cleanupChatDeltaListener();
       if (timer !== null) clearTimeout(timer);
     };
   }, [expand, collapse, closeAllMenus]);
@@ -198,7 +199,7 @@ export const OrbPanel: React.FC = () => {
           />
         </Tooltip>
       </div>
-      <ChatView compact modelOpenRef={modelOpenRef} />
+      <ChatView modelOpenRef={modelOpenRef} />
     </div>
   );
 };

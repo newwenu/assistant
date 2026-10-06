@@ -95,3 +95,35 @@
   max-width: 100%;
   border-radius: var(--radius);
 }
+
+.root :global(.katex-display) {
+  margin: 12px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.root :global(.katex-display > .katex) {
+  line-height: normal;
+}
+
+.root :global(.katex-display > .katex > .katex-html) {
+  padding: 0.15em 0;
+}
+
+.root :global(.katex) {
+  line-height: normal;
+}
+
+.root :global(.katex-html) {
+  padding: 0.1em 0;
+}
+
+.root :global(p:has(.katex)) {
+  line-height: 2.4;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.root :global(li:has(.katex)) {
+  line-height: 2.4;
+}

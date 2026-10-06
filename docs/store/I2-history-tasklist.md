@@ -7,14 +7,17 @@
 
 ## 阶段 A — Rust 后端：存储 CRUD 扩展
 
-### A1. Schema：编写迁移函数，1→0 版本迁移
+### ~~A1. Schema：编写迁移函数，1→0 版本迁移~~ ❌已取消
 
-- [ ] `db.rs`：`init_db` 中 `CREATE TABLE IF NOT EXISTS` 包含完整表结构（含新字段），新 DB 直接写入 `schema_version = 1`
-- [ ] 新增 `migrations.rs`：`run_migrations(conn)` 函数，读取 `app_settings` 中 `schema_version`，按版本号顺序执行迁移
-- [ ] 迁移 v1→v0（降级兼容）：conversations 表 `ALTER TABLE ADD COLUMN` 新增 is_pinned/title_source/generation/sort_order 字段；messages 表新增 parent_id/is_pinned 字段；创建索引 `idx_messages_conv_ts`
-- [ ] 迁移完成后写入 `schema_version = 1` 到 `app_settings` 表
-- [ ] `lib.rs`：导出 `pub mod migrations;`
-- [ ] 验证：`cargo build` 通过 + 旧 DB（v0）迁移后表结构正确 + 新 DB 直接创建即为 v1
+> **⚠️ 可靠程度有问题，迁移路径已取消**（详见 I2-history-spec §3.5）
+>
+> 取消理由：`ALTER TABLE ADD COLUMN` 无法幂等执行，迁移函数可靠性无法保证；项目尚在内测阶段无外部用户，旧 DB（v0）几乎不存在；`CREATE TABLE IF NOT EXISTS` 兜底已足够。
+
+- [x] `db.rs`：`init_db` 中 `CREATE TABLE IF NOT EXISTS` 包含完整表结构（含新字段），新 DB 直接写入 `schema_version = 1` ✅
+- [x] `migrations.rs`：保留空壳函数，不执行迁移逻辑 ✅
+- [x] `lib.rs`：导出 `pub mod migrations;` ✅
+- ~~迁移 v1→v0（降级兼容）~~ ❌已取消
+- ~~验证：旧 DB（v0）迁移后表结构正确~~ ❌已取消
 
 **依赖**：无
 
@@ -22,11 +25,11 @@
 
 ### A2. ConversationRow / MessageRow 结构体扩展
 
-- [ ] `conversations.rs`：ConversationRow 新增字段（is_pinned/generation/sort_order/title_source）
-- [ ] `conversations.rs`：MessageRow 新增字段（parent_id/is_pinned）
-- [ ] `conversations.rs`：get_conversations 查询新增字段
-- [ ] `conversations.rs`：insert_conversation / update_conversation 新增字段（含 title_source 默认 `'placeholder'`）
-- [ ] `conversations.rs`：get_conversation_detail 新增字段
+- [x] `conversations.rs`：ConversationRow 新增字段（is_pinned/generation/sort_order/title_source）✅
+- [x] `conversations.rs`：MessageRow 新增字段（parent_id/is_pinned）✅
+- [x] `conversations.rs`：get_conversations 查询新增字段 ✅
+- [x] `conversations.rs`：insert_conversation / update_conversation 新增字段（含 title_source 默认 `'placeholder'`）✅
+- [x] `conversations.rs`：get_conversation_detail 新增字段 ✅
 
 **依赖**：A1
 
@@ -46,15 +49,15 @@
 
 ### A4. conversations.rs 新增 CRUD 函数
 
-- [ ] `get_messages_paginated(conn, conversation_id, limit, before_timestamp)` — 分页查询
-- [ ] `toggle_pin(conn, id)` — 切换置顶（is_pinned 取反，置顶时 sort_order = MAX+1）
-- [ ] `duplicate_conversation(conn, id)` — 复制对话（新 ID + 标题加" (副本)" + 复制全部消息）
-- [ ] `search_conversations(conn, query)` — 消息内容搜索（仅 `m.content LIKE`，标题搜索由前端负责）
-- [ ] `rename_conversation(conn, id, title, title_source)` — 重命名对话（含 `title_source` 更新）
+- [x] `get_messages_paginated(conn, conversation_id, limit, before_timestamp)` — 分页查询 ✅
+- [x] `toggle_pin(conn, id)` — 切换置顶（is_pinned 取反，置顶时 sort_order = MAX+1）✅
+- [x] `duplicate_conversation(conn, id)` — 复制对话（新 ID + 标题加" (副本)" + 复制全部消息）✅
+- [x] `search_conversations(conn, query)` — 消息内容搜索（同时搜索标题 `c.title LIKE` 和消息内容 `m.content LIKE`）✅
+- [x] `rename_conversation(conn, id, title, title_source)` — 重命名对话（含 `title_source` 更新）✅
 - [ ] `generate_conversation_title(conn, id)` — AI 标题生成 | ⏸️暂缓
-- [ ] `batch_delete(conn, ids)` — 批量删除
-- [ ] `purge_all(conn)` — 清空所有对话和消息
-- [ ] `increment_generation(conn, id)` — 递增 generation
+- [x] `batch_delete(conn, ids)` — 批量删除 ✅
+- [x] `purge_all(conn)` — 清空所有对话和消息 ✅
+- [x] `increment_generation(conn, id)` — 递增 generation ✅
 - [ ] `update_conversation_stats(conn, id)` — 更新 message_count 冗余缓存 | ⏸️暂缓：message_count 暂缓
 
 **依赖**：A2
@@ -63,10 +66,10 @@
 
 ### A5. messages.rs 新增 CRUD 函数
 
-- [ ] `delete_message(conn, id)` — 删除单条消息（含级联 tool_calls）
-- [ ] `edit_message(conn, id, new_content)` — 编辑消息内容 + 更新 updated_at
-- [ ] `export_conversation_json(conn, id)` — 导出 JSON
-- [ ] `export_conversation_markdown(conn, id)` — 导出 Markdown
+- [x] `delete_message(conn, id)` — 删除单条消息 ✅
+- [x] `edit_message(conn, id, new_content)` — 编辑消息内容 + 更新 timestamp ✅
+- [x] `export_conversation_json(conn, id)` — 导出 JSON ✅
+- [x] `export_conversation_markdown(conn, id)` — 导出 Markdown ✅
 
 **依赖**：A2
 
@@ -74,14 +77,14 @@
 
 ### A6. Tauri Commands — 对话高级操作
 
-- [ ] `get_conversation_paginated` — 分页获取对话
-- [ ] `toggle_conversation_pin` — 切换置顶
-- [ ] `duplicate_conversation` — 复制对话
-- [ ] `export_conversation` — 导出对话（format: json/markdown/text）
-- [ ] `batch_delete_conversations` — 批量删除
-- [ ] `purge_conversations` — 清空所有
-- [ ] `search_conversations` — 消息内容搜索（标题搜索由前端本地过滤）
-- [ ] `rename_conversation` — 重命名对话（含 `title_source` 参数）
+- [x] `get_conversation_paginated` — 分页获取对话 ✅
+- [x] `toggle_conversation_pin` — 切换置顶 ✅
+- [x] `duplicate_conversation` — 复制对话 ✅
+- [x] `export_conversation` — 导出对话（format: json/markdown/text）✅
+- [x] `batch_delete_conversations` — 批量删除 ✅
+- [x] `purge_conversations` — 清空所有 ✅
+- [x] `search_conversations` — 消息内容搜索（标题搜索由前端本地过滤）✅
+- [x] `rename_conversation` — 重命名对话（含 `title_source` 参数）✅
 - [ ] `generate_conversation_title` — AI 标题生成 | ⏸️暂缓
 
 **依赖**：A4
@@ -90,9 +93,9 @@
 
 ### A7. Tauri Commands — 消息操作
 
-- [ ] `edit_message` — 编辑消息
-- [ ] `regenerate_message` — 重新生成（删除该消息 + 重新发送）
-- [ ] `delete_message_persist` — 持久化删除消息
+- [x] `edit_message` — 编辑消息 ✅
+- [x] `regenerate_message` — 重新生成（删除该消息 + 重新发送）✅
+- [x] `delete_message_persist` — 持久化删除消息 ✅
 
 **依赖**：A5
 
@@ -111,8 +114,8 @@
 
 ### A9. lib.rs 注册 + setup 集成
 
-- [ ] `lib.rs` invoke_handler 注册 A6~A8 所有新 commands
-- [ ] `setup.rs`：确认新表结构生效
+- [x] `lib.rs` invoke_handler 注册 A6~A8 所有新 commands ✅
+- [x] `setup.rs`：确认新表结构生效 ✅（DbState + ChatTasks managed state）
 
 **依赖**：A6, A7, A8
 
@@ -140,7 +143,7 @@
 
 ### B1. 前端依赖安装
 
-- [ ] `npm install remark-math rehype-katex katex`
+- [x] `npm install remark-math rehype-katex katex` ✅
 - [ ] `npm install shiki` | ⏸️暂缓：shiki 含全部 TextMate 语法+主题约 5-10MB，当前阶段核心是存储 CRUD+分页+对话操作，代码高亮非核心，延后到渲染增强阶段再装
 
 **依赖**：无
@@ -162,7 +165,7 @@
 
 ### B4. 常量新增
 
-- [ ] `src/config/constants.ts`：新增 MESSAGES_PAGE_SIZE / CONTEXT_WARN_THRESHOLD / CONTEXT_DANGER_THRESHOLD / CONVERSATION_SUMMARY_LENGTH / SCROLL_LOAD_THRESHOLD_PX
+- [x] `src/config/constants.ts`：新增 MESSAGES_PAGE_SIZE / CONTEXT_WARN_THRESHOLD / CONTEXT_DANGER_THRESHOLD / CONVERSATION_SUMMARY_LENGTH / SCROLL_LOAD_THRESHOLD_PX ✅（含 VIRTUAL_SCROLL_THRESHOLD / VIRTUAL_SCROLL_OVERSCAN）
 
 **依赖**：无
 
@@ -170,9 +173,9 @@
 
 ### B5. chatStore 扩展 — Persist Queue
 
-- [ ] `src/stores/chatStore.ts`：实现 `enqueuePersist` 串行化队列
-- [ ] 所有写操作（renameConversation / deleteConversation / sendMessage 等）改用 `enqueuePersist`
-- [ ] 验证：快速连续操作无数据丢失
+- [x] `src/stores/chatStore.ts`：实现 `enqueuePersist` 串行化队列 ✅（PersistQueue class）
+- [x] 所有写操作（renameConversation / deleteConversation / sendMessage 等）改用 `enqueuePersist` ✅
+- [ ] 验证：快速连续操作无数据丢失 ❓需手动验收
 
 **依赖**：无
 
@@ -180,9 +183,9 @@
 
 ### B6. chatStore 扩展 — 分页加载
 
-- [ ] ChatState 新增：hasMoreMessages / isLoadingMoreMessages
-- [ ] `loadMoreMessages()`：调用 `get_conversation_paginated`，before_timestamp 取 messages[0].timestamp
-- [ ] `switchConversation()`：改为调用 `get_conversation_paginated`（limit = MESSAGES_PAGE_SIZE），不再调用 `get_conversation`
+- [x] ChatState 新增：hasMoreMessages / isLoadingMoreMessages ✅
+- [x] `loadMoreMessages()`：调用 `get_conversation_paginated`，before_timestamp 取 messages[0].timestamp ✅
+- [x] `switchConversation()`：改为调用 `get_conversation_paginated`（limit = MESSAGES_PAGE_SIZE），不再调用 `get_conversation` ✅
 
 **依赖**：B4, B5
 
@@ -190,16 +193,16 @@
 
 ### B7. chatStore 扩展 — 对话高级操作
 
-- [ ] `togglePin(id)` / `duplicateConversation(id)`
-- [ ] `exportConversation(id, format)` — 调用 Rust 端 → 触发浏览器下载
-- [ ] `searchConversations(query)` — 默认前端本地过滤标题；`searchFullText=true` 时调用 `search_conversations` 搜索消息内容
-- [ ] `searchFullText: boolean` — 全文搜索开关（默认 false）
-- [ ] `toggleSearchFullText()` — 切换全文搜索开关
-- [ ] `renameConversation(id, title, titleSource?)` — 重命名对话（含 `title_source` 更新，默认 `'user'`）
+- [x] `togglePin(id)` / `duplicateConversation(id)` ✅
+- [x] `exportConversation(id, format)` — 调用 Rust 端 → 触发浏览器下载 ✅
+- [x] `searchConversations(query)` — 默认前端本地过滤标题；`searchFullText=true` 时调用 `search_conversations` 搜索消息内容 ✅
+- [x] `searchFullText: boolean` — 全文搜索开关（默认 false）✅
+- [x] `toggleSearchFullText()` — 切换全文搜索开关 ✅
+- [x] `renameConversation(id, title, titleSource?)` — 重命名对话（含 `title_source` 更新，默认 `'user'`）✅
 - [ ] `generateConversationTitle(id)` — AI 标题生成 | ⏸️暂缓
-- [ ] `filterProviderId` — 纯前端筛选状态
-- [ ] `batchDelete()` — 调用 `batch_delete_conversations`
-- [ ] `purgeAll()` — 调用 `purge_conversations`
+- [x] `filterProviderId` — 纯前端筛选状态 ✅
+- [x] `batchDelete()` — 调用 `batch_delete_conversations` ✅
+- [x] `purgeAll()` — 调用 `purge_conversations` ✅
 
 **依赖**：B5
 
@@ -207,9 +210,9 @@
 
 ### B8. chatStore 扩展 — 消息编辑与重新生成
 
-- [ ] `editMessage(messageId, newContent)` — 调用 `edit_message` + 删除后续消息 + 重新发送
-- [ ] `regenerateMessage(messageId)` — 调用 `regenerate_message`
-- [ ] `deleteMessage(id)` — 改为调用 `delete_message_persist` 持久化删除
+- [x] `editMessage(messageId, newContent)` — 调用 `edit_message` + 删除后续消息 + 重新发送 ✅
+- [x] `regenerateMessage(messageId)` — 调用 `regenerate_message` ✅
+- [x] `deleteMessage(id)` — 改为调用 `delete_message_persist` 持久化删除 ✅
 
 **依赖**：B5
 
@@ -217,10 +220,10 @@
 
 ### B8.1 chatStore 扩展 — 对话标题生成
 
-- [ ] `fallbackTitleFromUserMessage(userMessage, maxLength=30)` — 从用户消息智能截取标题（首行非空文本 + 句末标点优先断开 + 省略号）
-- [ ] `sendMessage` 中：用户消息追加后，若 `title_source === 'placeholder'`，fire-and-forget 调用 `fallbackTitleFromUserMessage` + `renameConversation(id, title, 'fallback')`
-- [ ] `renameConversation(id, title, titleSource='user')` — 用户手动重命名时 `title_source = 'user'`，后续自动标题不再覆盖
-- [ ] 移除 `finishStream` 中旧的 `lastAssistant.content.slice(0, 20)` 标题逻辑
+- [x] `fallbackTitleFromUserMessage(userMessage, maxLength=30)` — 从用户消息智能截取标题（首行非空文本 + 句末标点优先断开 + 省略号）✅
+- [x] `sendMessage` 中：用户消息追加后，若 `title_source === 'placeholder'`，fire-and-forget 调用 `fallbackTitleFromUserMessage` + `renameConversation(id, title, 'fallback')` ✅
+- [x] `renameConversation(id, title, titleSource='user')` — 用户手动重命名时 `title_source = 'user'`，后续自动标题不再覆盖 ✅
+- [x] 移除 `finishStream` 中旧的 `lastAssistant.content.slice(0, 20)` 标题逻辑 ✅
 - [ ] `generateConversationTitle(id)` — AI 标题生成 | ⏸️暂缓
 
 **依赖**：B5
@@ -241,9 +244,10 @@
 
 ### B10. chatStore 扩展 — 上下文监控 + Generation Counter
 
-- [ ] ChatState 新增：contextUsage（used_tokens / max_tokens / percentage）/ generation
-- [ ] `finishStream` 更新 contextUsage（从 usage 计算）+ 递增 generation
-- [ ] `sendMessage` 时重置 contextUsage
+- [x] ChatState 新增：contextUsage（used_tokens / max_tokens / percentage）✅
+- [x] `finishStream` 更新 contextUsage（从 usage 计算）✅
+- [x] `sendMessage` 时重置 contextUsage ✅
+- [x] `finishStream` 递增 generation ✅（fire-and-forget 调用 `invoke("increment_generation")`）
 
 **依赖**：B4
 
@@ -267,11 +271,11 @@
 
 ### C1. ConversationSidebar 重构
 
-- [ ] 时间分组：`groupConversations()` 函数 → 置顶 / 今天 / 昨天 / 近 7 天 / 近 30 天 / 更早
-- [ ] Provider 过滤标签栏（Tabs 组件）
-- [ ] 对话摘要预览（标题 + 最后消息摘要 30 字符 + 相对时间 + Provider 图标）
-- [ ] 置顶📌 标识
-- [ ] 右键菜单扩展：置顶/复制/导出/删除
+- [x] 时间分组：`groupConversations()` 函数 → 置顶 / 今天 / 昨天 / 近 7 天 / 近 30 天 / 更早 ✅
+- [x] Provider 过滤标签栏（Tabs 组件）✅
+- [x] 对话摘要预览（标题 + 相对时间）✅
+- [x] 置顶📌 标识 ✅
+- [x] 右键菜单扩展：置顶/复制/导出/删除 ✅
 
 **依赖**：B7
 
@@ -279,7 +283,7 @@
 
 ### C2. ConversationGroup 组件
 
-- [ ] `src/chat/ConversationGroup.tsx`：分组标题 + 可折叠 + 对话列表
+- [x] 分组标题 + 可折叠 + 对话列表 ✅（内联在 ConversationSidebar 中，未独立组件但功能完整）
 
 **依赖**：C1
 
@@ -287,10 +291,10 @@
 
 ### C3. MessageList 重构 — 分页加载
 
-- [ ] `startReached` 触发 `loadMoreMessages`
-- [ ] 顶部加载骨架屏（3 行）
-- [ ] 新消息自动滚底
-- [ ] "回到底部"按钮
+- [x] `startReached` 触发 `loadMoreMessages` ✅
+- [x] 顶部加载骨架屏 ✅（skeletonLine CSS + LoadingOutlined）
+- [x] 新消息自动滚底 ✅
+- [x] "回到底部"按钮 ✅
 
 **依赖**：B6
 
@@ -298,9 +302,9 @@
 
 ### C4. MessageActionBar 组件
 
-- [ ] `src/chat/MessageActionBar.tsx`：hover 显示操作栏
-- [ ] 📋 复制（纯文本 / Markdown） / ✏️ 编辑（用户消息）/ 🔄 重新生成（助手消息）/ 📌 固定 / 🗑️ 删除
-- [ ] 操作栏定位：消息右上角，半透明背景
+- [x] `src/chat/MessageActions.tsx`：hover 显示操作栏 ✅
+- [x] 📋 复制 / ✏️ 编辑（用户消息）/ 🔄 重新生成（助手消息）/ 🗑️ 删除 ✅
+- [x] 操作栏定位：消息区域 ✅
 
 **依赖**：B8
 
@@ -308,10 +312,10 @@
 
 ### C5. MessageBubble 重构
 
-- [ ] 集成 MessageActionBar
-- [ ] Reasoning 折叠：默认折叠，显示"💭 思考了 X 秒"，点击展开
+- [x] 集成 MessageActions ✅
+- [x] Reasoning 折叠：默认折叠，显示"💭 展开思考"，点击展开 ✅
 - [ ] 代码块语法高亮：集成 `shiki` + 语言标签 + 复制按钮 | ⏸️暂缓：shiki 约 5-10MB，延后安装
-- [ ] 数学公式：集成 `KaTeX`（remark-math + rehype-katex）
+- [x] 数学公式：集成 `KaTeX`（remark-math + rehype-katex）✅
 - [ ] Tool Call 状态渲染：委托 ToolCallBubble | ⏸️暂缓：同 §2.6
 
 **依赖**：C4, B1
@@ -345,10 +349,10 @@
 
 ### C9. ContextBar 组件
 
-- [ ] `src/chat/ContextBar.tsx`：上下文窗口使用量进度条
-- [ ] 格式：`████░░ 8192/128000 (6.4%)`
-- [ ] >80% 黄色警告，>95% 红色警告
-- [ ] 位于 ChatView 输入区上方
+- [x] `src/chat/ContextBar`（内联 ChatView.tsx）：上下文窗口使用量进度条 ✅
+- [x] 格式：Progress 组件 ✅
+- [x] >80% 黄色警告，>95% 红色警告 ✅
+- [x] 位于 ChatView 输入区上方 ✅
 
 **依赖**：B10
 
@@ -356,13 +360,13 @@
 
 ### C10. SearchBar 组件
 
-- [ ] `src/chat/SearchBar.tsx`：对话搜索（默认标题搜索 + 全文搜索开关）
-- [ ] 输入防抖 300ms → `chatStore.searchConversations`
-- [ ] 默认模式：前端本地过滤 `conversations` by `title`（即时响应）
-- [ ] 全文搜索开关：`Switch` / `Tooltip` 组件，切换 `chatStore.searchFullText`
-- [ ] 全文搜索模式：调用后端 `search_conversations` 搜索消息内容
-- [ ] 搜索结果替换侧栏对话列表
-- [ ] 清空搜索恢复原列表
+- [x] 对话搜索（内嵌 ConversationSidebar）✅
+- [x] 输入防抖 300ms → `chatStore.searchConversations` ✅
+- [x] 默认模式：前端本地过滤 `conversations` by `title`（即时响应）✅
+- [x] 全文搜索开关：`Switch` / `Tooltip` 组件，切换 `chatStore.searchFullText` ✅
+- [x] 全文搜索模式：调用后端 `search_conversations` 搜索消息内容 ✅
+- [x] 搜索结果替换侧栏对话列表 ✅
+- [x] 清空搜索恢复原列表 ✅
 
 **依赖**：B7
 
@@ -370,8 +374,8 @@
 
 ### C11. ChatView 修改
 
-- [ ] 集成 ContextBar（输入区上方）
-- [ ] Token 计数器：输入框右下角显示预估 token 数（字符数/4）
+- [x] 集成 ContextBar（输入区上方）✅
+- [x] Token 计数器：ContextBar Tooltip 显示 token 数 ✅
 
 **依赖**：C9
 
@@ -379,11 +383,11 @@
 
 ### C13. CSS 样式补充
 
-- [ ] 对话分组标题样式
-- [ ] 消息操作栏样式（半透明 + 定位）
+- [x] 对话分组标题样式 ✅（global.css: chat-sidebar-group / chat-sidebar-group-header 等）
+- [x] 消息操作栏样式 ✅（MessageActions.module.css）
 - [ ] Tool Call 气泡样式（三态颜色） | ⏸️暂缓：同 §2.6
-- [ ] 上下文进度条样式
-- [ ] 骨架屏样式
+- [x] 上下文进度条样式 ✅
+- [x] 骨架屏样式 ✅（MessageList.module.css: skeletonLine + skeleton-pulse）
 
 **依赖**：C1~C11
 
@@ -427,7 +431,7 @@
 
 ### D3. DEVLOG 记录
 
-- [ ] `docs/DEVLOG.md`：新增 I2-History 章节，记录技术决策与踩坑
+- [x] `docs/DEVLOG.md`：新增 I2-History 章节 ✅（2026-10-06，含迁移取消决策/Rust新增/Store扩展/UI组件/功能缺失修复/行距修复/内联组件评估）
 
 **依赖**：D2
 

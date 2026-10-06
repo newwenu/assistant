@@ -7,8 +7,8 @@ use tauri::{
     AppHandle, Manager,
 };
 
-use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
-use crate::{request_exit, window::show_or_create_main};
+use assistant_config::constant::WINDOW_ORB;
+use crate::window::show_or_create_main;
 
 pub fn create_tray(app: &AppHandle) -> TrayIcon {
     let show_main = MenuItem::with_id(app, "show_main", "打开主窗口", true, None::<&str>)
@@ -42,14 +42,7 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 }
             }
             "quit" => {
-                request_exit();
-                if let Some(w) = app.get_webview_window(WINDOW_ORB) {
-                    let _ = w.destroy();
-                }
-                if let Some(w) = app.get_webview_window(WINDOW_MAIN) {
-                    let _ = w.destroy();
-                }
-                app.exit(0);
+                crate::cmd::perform_exit(app);
             }
             _ => {}
         })

@@ -214,6 +214,23 @@ pub fn delete_message(conn: &Connection, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn delete_message_and_after(conn: &Connection, id: &str) -> Result<(), String> {
+    let row: (String, i64) = conn
+        .query_row(
+            "SELECT conversation_id, timestamp FROM messages WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+    let (conversation_id, timestamp) = row;
+    conn.execute(
+        "DELETE FROM messages WHERE conversation_id = ?1 AND timestamp >= ?2",
+        params![conversation_id, timestamp],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn search_conversations(
     conn: &Connection,
     query: &str,
@@ -371,9 +388,33 @@ pub fn increment_generation(conn: &Connection, id: &str) -> Result<i64, String> 
 
 pub fn edit_message(conn: &Connection, id: &str, new_content: &str) -> Result<(), String> {
     let now = chrono::Utc::now().timestamp_millis();
+
+    let timestamp: i64 = conn
+        .query_row(
+            "SELECT timestamp FROM messages WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let conversation_id: String = conn
+        .query_row(
+            "SELECT conversation_id FROM messages WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "DELETE FROM messages WHERE conversation_id = ?1 AND timestamp > ?2 AND id != ?3",
+        params![conversation_id, timestamp, id],
+    )
+    .map_err(|e| e.to_string())?;
+
     conn.execute(
         "UPDATE messages SET content = ?2, timestamp = ?3 WHERE id = ?1",
         params![id, new_content, now],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }

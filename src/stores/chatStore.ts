@@ -127,6 +127,7 @@ interface ChatState {
   isStreaming: boolean;
   streamingContent: string;
   streamingMessageId: string | null;
+  isReasoningStreaming: boolean;
   sidebarOpen: boolean;
   hasMoreMessages: boolean;
   isLoadingMoreMessages: boolean;
@@ -135,7 +136,7 @@ interface ChatState {
   searchQuery: string;
   searchFullText: boolean;
   filterProviderId: string | null;
-  contextUsage: ContextUsage | null;
+  contextUsage: ContextUsage;
 
   loadConversations: () => Promise<void>;
   createConversation: (providerId: string, modelId: string) => Promise<string>;
@@ -170,6 +171,8 @@ interface ChatState {
 }
 
 let chatDeltaUnlisten: (() => void) | null = null;
+let chatDeltaInitializing = false;
+let sendInProgress = false;
 
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
@@ -178,6 +181,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStreaming: false,
   streamingContent: "",
   streamingMessageId: null,
+  isReasoningStreaming: false,
   sidebarOpen: false,
   hasMoreMessages: false,
   isLoadingMoreMessages: false,
@@ -186,7 +190,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   searchQuery: "",
   searchFullText: false,
   filterProviderId: null,
-  contextUsage: null,
+  contextUsage: { used_tokens: 0, max_tokens: 128_000, percentage: 0 },
 
   loadConversations: async () => {
     try {
@@ -234,6 +238,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   switchConversation: async (id: string) => {
+    const prevConvId = get().currentConversationId;
+    if (get().isStreaming) {
+      if (prevConvId) {
+        invoke("cancel_chat", { conversationId: prevConvId }).catch(() => {});
+      }
+      set({
+        isStreaming: false,
+        streamingContent: "",
+        streamingMessageId: null,
+        isReasoningStreaming: false,
+      });
+    }
     try {
       const result = await invoke("get_conversation_paginated", {
         id,
@@ -252,6 +268,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           isStreaming: false,
           streamingContent: "",
           streamingMessageId: null,
+          isReasoningStreaming: false,
           hasMoreMessages: (detail.messages || []).length < detail.total_count,
           totalMessageCount: detail.total_count,
         });
@@ -300,7 +317,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (content: string) => {
+    if (sendInProgress) return;
+    sendInProgress = true;
+    try {
     const state = get();
+    if (state.isStreaming && state.currentConversationId) {
+      await invoke("cancel_chat", {
+        conversationId: state.currentConversationId,
+      }).catch(() => {});
+      set({
+        isStreaming: false,
+        streamingContent: "",
+        streamingMessageId: null,
+        isReasoningStreaming: false,
+      });
+    }
     if (!state.currentConversationId) {
       try {
         const providers = await invoke("list_providers");
@@ -377,7 +408,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: true,
       streamingContent: "",
       streamingMessageId: assistantMsgId,
-      contextUsage: null,
+      contextUsage: { used_tokens: 0, max_tokens: 128_000, percentage: 0 },
     });
 
     const conv = currentState.conversations.find((c) => c.id === convId);
@@ -394,6 +425,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (e) {
       console.error("Failed to send message:", e);
       get().errorStream(toChatError(e));
+    }
+    } finally {
+      sendInProgress = false;
     }
   },
 
@@ -412,44 +446,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   appendDelta: (delta: string) => {
     const state = get();
-    const prevLen = state.streamingContent.length;
     const newContent = state.streamingContent + delta;
     if (import.meta.env.DEV) {
       console.debug(
-        `[appendDelta] +${delta.length}ch prev=${prevLen} new=${newContent.length} snippet=${JSON.stringify(delta.slice(0, 40))}`,
+        `[appendDelta] +${delta.length}ch prev=${state.streamingContent.length} new=${newContent.length} snippet=${JSON.stringify(delta.slice(0, 40))}`,
       );
     }
-    if (state.streamingMessageId) {
-      set({
-        streamingContent: newContent,
-        messages: state.messages.map((m) =>
-          m.id === state.streamingMessageId ? { ...m, content: newContent } : m,
-        ),
-      });
-    } else {
-      set({ streamingContent: newContent });
-    }
+    set({ streamingContent: newContent });
   },
 
   finishStream: (usage?: TokenUsage) => {
     const state = get();
+    if (!state.isStreaming) return;
+    const convId = state.currentConversationId;
     const newContextUsage = usage
       ? {
-          used_tokens: usage.total_tokens,
-          max_tokens: usage.context_window_tokens || usage.total_tokens,
+          used_tokens: usage.prompt_tokens,
+          max_tokens: usage.context_window_tokens || 128_000,
           percentage:
             usage.context_window_tokens && usage.context_window_tokens > 0
-              ? usage.total_tokens / usage.context_window_tokens
-              : 0,
+              ? usage.prompt_tokens / usage.context_window_tokens
+              : usage.prompt_tokens / 128_000,
         }
       : state.contextUsage;
+
+    const msgTokens = usage
+      ? usage.prompt_tokens + usage.completion_tokens
+      : null;
 
     set({
       isStreaming: false,
       streamingContent: "",
       streamingMessageId: null,
+      isReasoningStreaming: false,
       contextUsage: newContextUsage,
+      messages: state.streamingMessageId
+        ? state.messages.map((m) =>
+            m.id === state.streamingMessageId
+              ? {
+                  ...m,
+                  content: state.streamingContent || m.content,
+                  ...(msgTokens !== null && msgTokens > 0
+                    ? { tokens: msgTokens }
+                    : {}),
+                }
+              : m,
+          )
+        : state.messages,
     });
+
+    if (convId) {
+      invoke("increment_generation", { id: convId }).catch(() => {});
+    }
   },
 
   errorStream: (error: ChatError) => {
@@ -462,12 +510,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({
         messages: state.messages.map((m) =>
           m.id === state.streamingMessageId
-            ? { ...m, content: m.content, error }
+            ? { ...m, content: state.streamingContent || m.content, error }
             : m,
         ),
         isStreaming: false,
         streamingContent: "",
         streamingMessageId: null,
+        isReasoningStreaming: false,
       });
       console.warn(
         `[chat-error] code=${error.code} retryable=${error.retryable} message=${displayMessage}`,
@@ -494,6 +543,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const state = get();
     const msg = state.messages.find((m) => m.id === messageId);
     if (!msg) return;
+
+    if (state.isStreaming && state.currentConversationId) {
+      await invoke("cancel_chat", {
+        conversationId: state.currentConversationId,
+      }).catch(() => {});
+      set({
+        isStreaming: false,
+        streamingContent: "",
+        streamingMessageId: null,
+        isReasoningStreaming: false,
+      });
+    }
 
     set({
       messages: state.messages
@@ -678,7 +739,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 }));
 
 export async function initChatDeltaListener() {
-  if (chatDeltaUnlisten) return;
+  if (chatDeltaUnlisten || chatDeltaInitializing) return;
+  chatDeltaInitializing = true;
   const store = useChatStore;
 
   const seqDedup = createSeqDedupFilter();
@@ -718,6 +780,7 @@ export async function initChatDeltaListener() {
       return;
     }
     if (payload.delta_text) {
+      store.setState({ isReasoningStreaming: false });
       coalescer.push({
         conversation_id: payload.conversation_id,
         message_id: payload.message_id,
@@ -729,6 +792,7 @@ export async function initChatDeltaListener() {
       const state = store.getState();
       if (state.streamingMessageId) {
         store.setState({
+          isReasoningStreaming: true,
           messages: state.messages.map((m) =>
             m.id === state.streamingMessageId
               ? {
@@ -769,12 +833,36 @@ export async function initChatDeltaListener() {
         });
       }
     }
+    if (payload.usage) {
+      const u = payload.usage;
+      const ctx =
+        u.context_window_tokens && u.context_window_tokens > 0
+          ? u.context_window_tokens
+          : 128_000;
+      store.setState({
+        contextUsage: {
+          used_tokens: u.prompt_tokens,
+          max_tokens: ctx,
+          percentage: u.prompt_tokens / ctx,
+        },
+      });
+    }
     if (payload.finish_reason) {
       coalescer.flush();
       seqDedup.reset();
       store.getState().finishStream(payload.usage);
     }
   });
+  chatDeltaInitializing = false;
+}
+
+export function cleanupChatDeltaListener() {
+  if (chatDeltaUnlisten) {
+    chatDeltaUnlisten();
+    chatDeltaUnlisten = null;
+  }
+  chatDeltaInitializing = false;
+  sendInProgress = false;
 }
 
 export { CONTEXT_WARN_THRESHOLD, CONTEXT_DANGER_THRESHOLD };

@@ -9,6 +9,7 @@ export interface ModelConfig {
   id: string;
   name: string;
   owned_by: string;
+  context_window?: number;
 }
 
 export interface Provider {

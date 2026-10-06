@@ -570,3 +570,75 @@ isPointInCircle(px, py, cx, cy, r) // 点在圆内
 ### 2026-10-05 主窗口标题栏高度被内容撑高修复
 
 Flexbox `min-height:auto` 导致侧边栏内容撑高内层 Layout，Titlebar 被压缩。修复：外层 Layout 加 `overflow:hidden`，内层 Layout 加 `flex:1; minHeight:0; overflow:hidden`，Sider 加 `overflow:hidden`，Titlebar 加 `flexShrink:0`。SettingsWindow 同理。
+
+### 2026-10-06 I2-History — 聊天消息历史管理增强
+
+规格：[I2-history-spec.md](./store/I2-history-spec.md) | 任务清单：[I2-history-tasklist.md](./store/I2-history-tasklist.md)
+
+#### 迁移路径取消
+
+`ALTER TABLE ADD COLUMN` 无法幂等（已存在列报错），内测期无旧用户，改用 `CREATE TABLE IF NOT EXISTS` 兜底。`migrations.rs` 保留空壳。
+
+#### Rust 后端
+
+Row 扩展（is_pinned/generation/sort_order/title_source/parent_id）+ 新增 CRUD（分页/置顶/复制/搜索/重命名/批量删除/清空/generation递增/消息删除编辑/导出JSON/Markdown）+ 11 个 Tauri Commands
+
+#### 前端 Store
+
+PersistQueue 串行化队列 + 分页加载 + 对话高级操作（置顶/复制/导出/搜索/批量删除/清空）+ 消息编辑/重新生成/持久化删除 + fallback 标题生成 + contextUsage 上下文监控 + generation 递增
+
+#### 前端 UI
+
+Sidebar 时间分组 + Provider 过滤 + 置顶标识 + 右键菜单 + 搜索栏（防抖+全文开关）+ MessageList 分页/骨架屏/回到底部 + MessageActions hover 操作栏 + ContextBar 进度条
+
+#### Bug 修复
+
+1. **KaTeX 未接入**：MessageContent/ReasoningBlock 添加 remarkMath+rehypeKatex。踩坑：`as const` 导致 readonly 不兼容 Pluggable[]，去掉解决
+2. **generation 未递增**：finishStream 末尾 fire-and-forget 调用 `invoke("increment_generation")`
+3. **行距过大**：`white-space: pre-wrap` 从 `.bubble` 积到 `.bubbleUser`。根因：pre-wrap 渲染 ReactMarkdown `<p>` 间 `\n` 为空行（22.4px），叠加 margin-top 8px = 30.4px 段落间距
+
+### 2026-10-06 chat/ 目录重组 — 扁平→分组
+
+**问题**：chat/ 下 23 个文件扁平堆在一起，维护困难
+
+**重组**：
+
+```
+chat/
+  blocks/                     ← 消息内嵌块
+    EditBlock.tsx / .module.css
+    ErrorBlock.tsx / .module.css
+    ReasoningBlock.tsx / .module.css
+    ToolCallBlock.tsx / .module.css
+  message/                    ← 消息组合
+    MessageBubble.tsx / .module.css
+    MessageContent.tsx / .module.css
+    MessageList.tsx / .module.css
+    MessageInput.tsx
+    MessageActions.tsx / .module.css
+  ChatView.tsx / ConversationSidebar.tsx / HistoryManager.tsx / ...
+```
+
+**导入路径变更**：ErrorBlock→`../chatErrors`、ToolCallBlock→`../../stores/chatStore`、MessageBubble→`../blocks/*`+`../../stores/*`、MessageList→`../../stores/chatStore`、MessageInput→`../../config/constants`、ChatView→`./message/MessageList`+`./message/MessageInput`
+
+### 2026-10-06 ReasoningBlock 瘦身 — 移除 Markdown/KaTeX 依赖
+
+**问题**：ReasoningBlock 用 ReactMarkdown+remarkMath+rehypeKatex 渲染思维链内容，但思维链（`delta_reasoning`）是纯自然语言推理过程，极少出现 Markdown/LaTeX。~64KB 依赖完全浪费。
+
+**修复**：ReasoningBlock 改用原生 `<pre>` + `white-space: pre-wrap` + `word-break: break-word`，移除全部 Markdown/KaTeX 导入。CSS 从 87 行（含 6 条 KaTeX `:global()` 规则）减至 58 行。
+
+### 2026-10-06 流式消息并发写入 Bug 修复
+
+**问题**：多个 Rust tokio::spawn 同时向前端 emit `chat-delta`，导致消息内容交叉/重复/写入错误对话。
+
+**3 个 Bug**：
+
+| Bug | 位置 | 触发场景 |
+|-----|------|---------|
+| 切换对话不取消流 | chatStore.ts switchConversation | 对话A流式输出→切换到对话B，A的delta继续到达 |
+| 重复发送不取消旧流 | chatStore.ts sendMessage | 流式输出中→快速再发一条，两个spawn同时emit |
+| 编辑消息不取消流 | chatStore.ts editMessage | 流式输出中→编辑重发，旧流+新流同时写入 |
+
+**前端修复**（3 处）：switchConversation / sendMessage / editMessage 操作前先 `invoke("cancel_chat")` + 重置 `isStreaming/streamingContent/streamingMessageId`
+
+**Rust 端修复**（1 处）：`ChatTasks.start()` 原来 `map.insert()` 直接覆盖旧 CancellationToken，旧流不知道被取消。改为 `if let Some(old) = map.insert(id, token) { old.cancel(); }` 先取消同一对话的旧流

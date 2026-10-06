@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::Stream;
 
 use super::base::{
-    BaseProviderAdapter, ChatDelta, ChatMessage, ChatOptions, MessageRole, ModelConfig,
-    ProviderConfig, ProviderError, ProviderKind, RetryConfig, SseLogConfig, StreamTimeoutConfig,
-    TokenUsage,
+    get_context_window_tokens, BaseProviderAdapter, ChatDelta, ChatMessage, ChatOptions,
+    MessageRole, ModelConfig, ProviderConfig, ProviderError, ProviderKind, RetryConfig,
+    SseLogConfig, StreamTimeoutConfig, TokenUsage,
 };
 use super::crypto;
 use super::sse_log::SseLogCollector;
@@ -94,6 +94,13 @@ struct ChatRequest {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_options: Option<StreamOptions>,
+}
+
+#[derive(Serialize)]
+struct StreamOptions {
+    include_usage: bool,
 }
 
 #[derive(Serialize)]
@@ -270,12 +277,16 @@ impl BaseProviderAdapter for OpenAIAdapter {
             } else {
                 None
             },
+            stream_options: Some(StreamOptions {
+                include_usage: true,
+            }),
         };
 
         let client = self.client.clone();
         let retry_config = self.retry_config.clone();
         let timeout_config = self.timeout_config.clone();
         let sse_log_config = self.sse_log_config.clone();
+        let context_window_tokens = options.context_window_tokens;
         let stream = async_stream::stream! {
             let mut attempt: u32 = 0;
             'retry: loop {
@@ -309,6 +320,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
                             let delay = retry_config.delay_ms(attempt, &err);
                             warn!("Attempt {} failed, retrying in {}ms: {}", attempt + 1, delay, err);
                             yield Ok(ChatDelta {
+                                seq: None,
                                 delta_text: Some(format!("[retry {}] {}\n", attempt + 1, err)),
                                 delta_reasoning: None,
                                 delta_tool_call_id: None,
@@ -334,6 +346,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
                         let delay = retry_config.delay_ms(attempt, &err);
                         warn!("Attempt {} failed (HTTP {}), retrying in {}ms", attempt + 1, status, delay);
                         yield Ok(ChatDelta {
+                            seq: None,
                             delta_text: Some(format!("[retry {}] HTTP {}\n", attempt + 1, status)),
                             delta_reasoning: None,
                             delta_tool_call_id: None,
@@ -439,6 +452,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
                         }
                         if line == "data: [DONE]" {
                             yield Ok(ChatDelta {
+                                seq: None,
                                 delta_text: None,
                                 delta_reasoning: None,
                                 delta_tool_call_id: None,
@@ -470,6 +484,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
                         if let Some(usage) = chunk.usage {
                             let cache_read = usage.prompt_tokens_details.as_ref().and_then(|d| d.cached_tokens).unwrap_or(0);
                             yield Ok(ChatDelta {
+                                seq: None,
                                 delta_text: None,
                                 delta_reasoning: None,
                                 delta_tool_call_id: None,
@@ -482,6 +497,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
                                     total_tokens: usage.total_tokens.unwrap_or(0),
                                     cache_read_tokens: cache_read,
                                     cache_write_tokens: 0,
+                                    context_window_tokens: context_window_tokens,
                                 }),
                             });
                         }
@@ -517,6 +533,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
                                         first_token_received = true;
                                     }
                                     yield Ok(ChatDelta {
+                                        seq: None,
                                         delta_text,
                                         delta_reasoning,
                                         delta_tool_call_id: tc_id,
@@ -575,10 +592,14 @@ impl BaseProviderAdapter for OpenAIAdapter {
                 .data
                 .unwrap_or_default()
                 .into_iter()
-                .map(|m| ModelConfig {
-                    id: m.id.clone(),
-                    name: m.id,
-                    owned_by: m.owned_by.unwrap_or_default(),
+                .map(|m| {
+                    let ctx = get_context_window_tokens(&m.id);
+                    ModelConfig {
+                        id: m.id.clone(),
+                        name: m.id,
+                        owned_by: m.owned_by.unwrap_or_default(),
+                        context_window: ctx,
+                    }
                 })
                 .collect();
             Ok(models)
