@@ -78,12 +78,20 @@
 
 | ID | 分组 | 类别 | 默认绑定 | 说明 |
 |----|------|------|---------|------|
-| `toggle_orb` | 全局 | 全局快捷键 | `Super+Shift+O` | 显示/隐藏悬浮球 |
-| `toggle_main` | 全局 | 全局快捷键 | `Super+Shift+M` | 显示/隐藏主窗口 |
-| `new_chat` | 全局 | 全局快捷键 | `Super+Shift+N` | 新建对话 |
-| `command_palette` | 主窗口 | 应用内快捷键 | `Super+K` | 命令面板（已有，I3） |
+| `toggle_orb` | 全局 | 全局快捷键 | macOS: `Meta+Shift+O` / 其他: `Control+Shift+O` | 显示/隐藏悬浮球 |
+| `toggle_main` | 全局 | 全局快捷键 | macOS: `Meta+Shift+M` / 其他: `Control+Shift+M` | 显示/隐藏主窗口 |
+| `new_chat` | 全局 | 全局快捷键 | macOS: `Meta+Shift+N` / 其他: `Control+Shift+N` | 新建对话 |
+| `command_palette` | 主窗口 | 应用内快捷键 | macOS: `Meta+K` / 其他: `Control+K` | 命令面板（已有，I3） |
 
-> **跨平台注意**：`Super` 在 macOS 映射为 ⌘Cmd，在 Windows 映射为 ⊞Win 键。Windows 上 Win 键组合易与系统快捷键冲突（如 Win+Shift+S 为系统截图），后续可考虑按平台提供不同默认值。
+> **跨平台修饰键映射**（参照 BongoCat `ShortcutChord` + `ShortcutModifiers` 设计）：
+>
+> 配置层使用平台中立标识：`Meta` = 平台主修饰键（macOS ⌘Cmd / Windows ⊞Win），`Control` = Ctrl 键。两者不混淆。
+>
+> - **默认绑定**：macOS 用 `Meta`（⌘Cmd），Windows/Linux 用 `Control`（Ctrl），避免 Win 键与系统快捷键冲突
+> - **Rust `parse_shortcut`**：`"meta"/"cmd"/"win"` → `Modifiers::META`；`"ctrl"/"control"` → `Modifiers::CONTROL`
+> - **前端显示**：macOS 用符号（⌘⇧⌥⌃），非 macOS 原样显示 canonical 字符串（如 `Control + Shift + O`）
+> - **前端录制**：macOS `metaKey` → 保存 `"Meta"`，Windows `ctrlKey` → 保存 `"Control"`
+> - **配置迁移**：旧 `"Super"` 值在 `AppConf::load()` 时自动映射为 `"Meta"`
 
 **快捷键录制**：
 

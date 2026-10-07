@@ -11,33 +11,36 @@ export const SHORTCUT_GROUPS = [
   { key: "main", label: "主窗口" },
 ] as const;
 
+const IS_MAC = /\bMacintosh\b/i.test(navigator.userAgent);
+const PRIMARY_MOD = IS_MAC ? "Meta" : "Control";
+
 export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   {
     id: "toggle_orb",
     group: "global",
     label: "显示/隐藏悬浮球",
-    defaultBinding: "Super+Shift+O",
+    defaultBinding: `${PRIMARY_MOD}+Shift+O`,
     kind: "global",
   },
   {
     id: "toggle_main",
     group: "global",
     label: "显示/隐藏主窗口",
-    defaultBinding: "Super+Shift+M",
+    defaultBinding: `${PRIMARY_MOD}+Shift+M`,
     kind: "global",
   },
   {
     id: "new_chat",
     group: "global",
     label: "新建对话",
-    defaultBinding: "Super+Shift+N",
+    defaultBinding: `${PRIMARY_MOD}+Shift+N`,
     kind: "global",
   },
   {
     id: "command_palette",
     group: "main",
     label: "命令面板",
-    defaultBinding: "Super+K",
+    defaultBinding: `${PRIMARY_MOD}+K`,
     kind: "in-app",
   },
 ];
@@ -48,12 +51,19 @@ export const DEFAULT_KEYBINDINGS: Record<string, string> = Object.fromEntries(
 
 export function formatBinding(binding: string): string {
   if (!binding) return "未设置";
+  if (!IS_MAC) return binding.replace(/\+/g, " + ");
   return binding
-    .replace(/Super/g, "⌘")
-    .replace(/Shift/g, "⇧")
-    .replace(/Alt/g, "⌥")
-    .replace(/Control/g, "⌃")
-    .replace(/\+/g, " + ");
+    .split("+")
+    .map((token) => {
+      switch (token.trim()) {
+        case "Control": return "⌃";
+        case "Alt": return "⌥";
+        case "Shift": return "⇧";
+        case "Meta": return "⌘";
+        default: return token.trim();
+      }
+    })
+    .join(" ");
 }
 
 export interface ConflictInfo {

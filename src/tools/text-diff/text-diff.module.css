@@ -1,0 +1,81 @@
+.container {
+  --diff-add-text: #24692b;
+  --diff-remove-text: #9e2c2c;
+  --diff-add-bg: #e6ffed;
+  --diff-remove-bg: #ffeef0;
+  --diff-add-char: #acf2bd;
+  --diff-remove-char: #fdb8c0;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+:global([data-theme="dark"]) .container {
+  --diff-add-text: #6bc476;
+  --diff-remove-text: #e87070;
+  --diff-add-bg: #1a3a2a;
+  --diff-remove-bg: #3a1a1f;
+  --diff-add-char: #2a5a3a;
+  --diff-remove-char: #5a2a2f;
+}
+
+.headerRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.countText {
+  font-size: 12px;
+}
+
+.sideBySide {
+  display: flex;
+  gap: 8px;
+}
+
+.panel {
+  flex: 1;
+}
+
+.sectionLabel {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.diffContainer {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: monospace;
+  font-size: 13px;
+  max-height: 400px;
+  overflow: auto;
+  white-space: pre;
+}
+
+.diffLine {
+  padding: 0 4px;
+  min-height: 20px;
+}
+
+.lineNum {
+  opacity: 0.5;
+  margin-right: 8px;
+  display: inline-block;
+  width: 30px;
+  text-align: right;
+}
+
+.charAdd {
+  background: var(--diff-add-char);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.charRemove {
+  background: var(--diff-remove-char);
+  border-radius: 2px;
+  padding: 0 1px;
+}

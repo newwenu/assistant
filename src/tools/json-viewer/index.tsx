@@ -9,6 +9,8 @@ import {
   Space,
 } from "antd";
 import { CopyOutlined, CompressOutlined } from "@ant-design/icons";
+import JSON5 from "json5";
+import styles from "./json-viewer.module.css";
 
 const { TextArea } = Input;
 
@@ -19,14 +21,15 @@ export default function JsonViewer() {
 
   const formatted = useMemo(() => {
     try {
-      const obj = JSON.parse(rawJson);
-      const sortObj = (o: any): any => {
+      const obj = JSON5.parse(rawJson);
+      const sortObj = (o: unknown): unknown => {
         if (Array.isArray(o)) return o.map(sortObj);
         if (o && typeof o === "object") {
-          const sorted: any = {};
-          const keys = Object.keys(o);
+          const sorted: Record<string, unknown> = {};
+          const keys = Object.keys(o as Record<string, unknown>);
           if (sortKeys) keys.sort();
-          for (const k of keys) sorted[k] = sortObj(o[k]);
+          for (const k of keys)
+            sorted[k] = sortObj((o as Record<string, unknown>)[k]);
           return sorted;
         }
         return o;
@@ -39,7 +42,7 @@ export default function JsonViewer() {
 
   const minified = useMemo(() => {
     try {
-      return JSON.stringify(JSON.parse(rawJson));
+      return JSON.stringify(JSON5.parse(rawJson));
     } catch {
       return null;
     }
@@ -54,7 +57,7 @@ export default function JsonViewer() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 12 }}>
+      <Space className={styles.optionsBar}>
         <Typography.Text>排序键:</Typography.Text>
         <Switch checked={sortKeys} onChange={setSortKeys} size="small" />
         <Typography.Text>缩进:</Typography.Text>
@@ -67,7 +70,7 @@ export default function JsonViewer() {
           style={{ width: 60 }}
         />
       </Space>
-      <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
+      <Typography.Text strong className={styles.sectionLabel}>
         输入 JSON
       </Typography.Text>
       <TextArea
@@ -78,16 +81,13 @@ export default function JsonViewer() {
         status={isValid ? undefined : "error"}
       />
       {!isValid && (
-        <Typography.Text
-          type="danger"
-          style={{ display: "block", marginBottom: 8 }}
-        >
-          JSON 格式无效
+        <Typography.Text type="danger" className={styles.errorText}>
+          JSON 格式无效（支持 JSON5 语法）
         </Typography.Text>
       )}
       {isValid && (
         <>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <div className={styles.buttonRow}>
             <Button
               icon={<CopyOutlined />}
               onClick={() => formatted && copy(formatted)}
@@ -101,7 +101,7 @@ export default function JsonViewer() {
               复制压缩
             </Button>
           </div>
-          <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
+          <Typography.Text strong className={styles.sectionLabel}>
             格式化结果
           </Typography.Text>
           <TextArea

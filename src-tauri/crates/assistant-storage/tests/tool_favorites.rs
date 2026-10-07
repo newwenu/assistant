@@ -37,7 +37,6 @@ fn set_favorites_order_rejects_duplicate_tool_ids() {
 }
 
 #[test]
-#[ignore]
 fn set_favorites_order_should_preserve_old_data_on_failure() {
     let conn = init_db();
     tool_favorites::toggle_favorite(&conn, "keep-me").unwrap();

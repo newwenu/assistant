@@ -99,7 +99,7 @@ export function useOrbDrag() {
             setDragging(false);
             hasDraggedRef.current = false;
             setTimeout(() => {
-              invoke("snap_orb_to_screen").catch(console.error);
+              invoke("snap_orb_to_edge").catch(console.error);
             }, ORB_SNAP_DELAY_MS);
           });
           return;
@@ -111,7 +111,7 @@ export function useOrbDrag() {
             setDragging(false);
             hasDraggedRef.current = false;
             setTimeout(() => {
-              invoke("snap_orb_to_screen").catch(console.error);
+              invoke("snap_orb_to_edge").catch(console.error);
             }, ORB_SNAP_DELAY_MS);
           });
       }
@@ -139,7 +139,7 @@ export function useOrbDrag() {
           setClickThrough(true);
         }
         setTimeout(() => {
-          invoke("snap_orb_to_screen").catch(console.error);
+          invoke("snap_orb_to_edge").catch(console.error);
         }, ORB_SNAP_DELAY_MS);
       }
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Input, Button, Typography, message } from "antd";
 import { CopyOutlined, SwapOutlined } from "@ant-design/icons";
+import styles from "./url-encoder.module.css";
 
 const { TextArea } = Input;
 
@@ -54,14 +55,7 @@ export default function UrlEncoder() {
 
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 12,
-          alignItems: "center",
-        }}
-      >
+      <div className={styles.headerRow}>
         <Typography.Text strong>
           {mode === "encode" ? "URL 编码" : "URL 解码"}
         </Typography.Text>
@@ -78,13 +72,13 @@ export default function UrlEncoder() {
         rows={3}
         style={{ marginBottom: 8 }}
       />
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+      <div className={styles.buttonRow}>
         <Button type="primary" onClick={convert}>
           {mode === "encode" ? "编码" : "解码"}
         </Button>
         <Button onClick={parseUrl}>解析 URL</Button>
       </div>
-      <div style={{ position: "relative" }}>
+      <div className={styles.outputWrapper}>
         <TextArea
           value={output}
           readOnly
@@ -96,7 +90,7 @@ export default function UrlEncoder() {
             icon={<CopyOutlined />}
             size="small"
             onClick={copy}
-            style={{ position: "absolute", top: 4, right: 4 }}
+            className={styles.copyButton}
           />
         )}
       </div>

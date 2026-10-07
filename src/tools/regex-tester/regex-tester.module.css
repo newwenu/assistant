@@ -1,0 +1,55 @@
+.root {
+  --mark-bg: #ffe58f;
+}
+
+:global([data-theme="dark"]) .root {
+  --mark-bg: #594a1a;
+}
+
+.sectionLabel {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.errorText {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.flagsRow {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.highlightBox {
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  min-height: 40px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 13px;
+}
+
+.replaceResult {
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+.libraryTags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.smallText {
+  font-size: 12px;
+}

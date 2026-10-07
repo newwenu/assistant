@@ -1,108 +1,205 @@
-import { useState, useEffect } from "react";
-import { Input, Typography, Button, message, Divider } from "antd";
+import { useState, useMemo } from "react";
+import { Input, Typography, Button, Select, message } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
+import styles from "./date-time-converter.module.css";
+import {
+  formatISO,
+  formatISO9075,
+  formatRFC3339,
+  formatRFC7231,
+  fromUnixTime,
+  getTime,
+  getUnixTime,
+  isValid,
+  parseISO,
+} from "date-fns";
+
+interface DateFormat {
+  name: string;
+  fromDate: (date: Date) => string;
+  toDate: (value: string) => Date;
+  match: (value: string) => boolean;
+}
+
+function isUnixTimestamp(value: string): boolean {
+  return /^\d{10}$/.test(value.trim());
+}
+
+function isTimestamp(value: string): boolean {
+  return /^\d{13}$/.test(value.trim());
+}
+
+function isMongoObjectId(value: string): boolean {
+  return /^[0-9a-fA-F]{24}$/.test(value.trim());
+}
+
+function isExcelFormat(value: string): boolean {
+  const n = Number(value);
+  return !isNaN(n) && n > 0 && n < 2958466;
+}
+
+function dateToExcel(date: Date): string {
+  const epoch = new Date(1899, 11, 30);
+  return String((date.getTime() - epoch.getTime()) / 86400000);
+}
+
+function excelToDate(value: string): Date {
+  const epoch = new Date(1899, 11, 30);
+  return new Date(epoch.getTime() + Number(value) * 86400000);
+}
+
+const FORMATS: DateFormat[] = [
+  {
+    name: "ISO 8601",
+    fromDate: formatISO,
+    toDate: parseISO,
+    match: (v) => /^\d{4}-\d{2}-\d{2}T/.test(v),
+  },
+  {
+    name: "ISO 9075",
+    fromDate: formatISO9075,
+    toDate: parseISO,
+    match: (v) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(v),
+  },
+  {
+    name: "RFC 3339",
+    fromDate: formatRFC3339,
+    toDate: (v) => new Date(v),
+    match: (v) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v),
+  },
+  {
+    name: "RFC 7231",
+    fromDate: formatRFC7231,
+    toDate: (v) => new Date(v),
+    match: (v) => /^[A-Z][a-z]{2}, \d{2}/.test(v),
+  },
+  {
+    name: "Unix 时间戳 (秒)",
+    fromDate: (d) => String(getUnixTime(d)),
+    toDate: (v) => fromUnixTime(Number(v)),
+    match: isUnixTimestamp,
+  },
+  {
+    name: "时间戳 (毫秒)",
+    fromDate: (d) => String(getTime(d)),
+    toDate: (v) => new Date(Number(v)),
+    match: isTimestamp,
+  },
+  {
+    name: "UTC 格式",
+    fromDate: (d) => d.toUTCString(),
+    toDate: (v) => new Date(v),
+    match: (v) => /^[A-Z][a-z]{2}, /.test(v),
+  },
+  {
+    name: "Mongo ObjectID",
+    fromDate: (d) =>
+      `${Math.floor(d.getTime() / 1000).toString(16)}0000000000000000`,
+    toDate: (v) => new Date(Number.parseInt(v.substring(0, 8), 16) * 1000),
+    match: isMongoObjectId,
+  },
+  {
+    name: "Excel 日期",
+    fromDate: dateToExcel,
+    toDate: excelToDate,
+    match: isExcelFormat,
+  },
+];
 
 export default function DateTimeConverter() {
-  const [timestamp, setTimestamp] = useState<string>(
-    String(Math.floor(Date.now() / 1000)),
-  );
-  const [readable, setReadable] = useState("");
-  const [dateInput, setDateInput] = useState("");
+  const [inputDate, setInputDate] = useState("");
+  const [formatIndex, setFormatIndex] = useState(4);
 
-  useEffect(() => {
-    const ts = Number(timestamp);
-    if (isNaN(ts)) {
-      setReadable("无效时间戳");
-      return;
-    }
+  const normalizedDate = useMemo(() => {
+    if (!inputDate) return null;
     try {
-      const ms = ts > 1e12 ? ts : ts * 1000;
-      setReadable(new Date(ms).toLocaleString());
+      const date = FORMATS[formatIndex].toDate(inputDate);
+      return isValid(date) ? date : null;
     } catch {
-      setReadable("无效时间戳");
+      return null;
     }
-  }, [timestamp]);
+  }, [inputDate, formatIndex]);
 
-  const fromDateString = () => {
-    try {
-      const d = new Date(dateInput);
-      if (isNaN(d.getTime())) {
-        message.error("无效日期");
-        return;
-      }
-      setTimestamp(String(Math.floor(d.getTime() / 1000)));
-    } catch {
-      message.error("无效日期");
+  const isValidInput = !inputDate || normalizedDate !== null;
+
+  const handleInputChange = (value: string) => {
+    setInputDate(value);
+    const matchingIndex = FORMATS.findIndex((f) => f.match(value));
+    if (matchingIndex !== -1) {
+      setFormatIndex(matchingIndex);
     }
   };
 
-  const now = () => setTimestamp(String(Math.floor(Date.now() / 1000)));
+  const setNow = () => {
+    const now = new Date();
+    setInputDate(FORMATS[formatIndex].fromDate(now));
+  };
 
   const copy = (value: string) => {
     navigator.clipboard.writeText(value);
     message.success("已复制");
   };
 
+  const formatDate = (format: DateFormat, date: Date | null) => {
+    if (!date) return "";
+    try {
+      return format.fromDate(date);
+    } catch {
+      return "";
+    }
+  };
+
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 12,
-          alignItems: "center",
-        }}
-      >
-        <Typography.Text strong style={{ flex: "0 0 80px" }}>
-          Unix 时间戳
-        </Typography.Text>
+      <div className={styles.inputRow}>
         <Input
-          value={timestamp}
-          onChange={(e) => setTimestamp(e.target.value)}
+          value={inputDate}
+          onChange={(e) => handleInputChange(e.target.value)}
+          placeholder="输入日期字符串..."
+          status={isValidInput ? undefined : "error"}
           style={{ flex: 1, fontFamily: "monospace" }}
         />
-        <Button size="small" onClick={now}>
+        <Select
+          value={formatIndex}
+          onChange={setFormatIndex}
+          options={FORMATS.map((f, i) => ({ label: f.name, value: i }))}
+          style={{ width: 180 }}
+        />
+        <Button size="small" onClick={setNow}>
           当前
         </Button>
-        <Button
-          icon={<CopyOutlined />}
-          size="small"
-          onClick={() => copy(timestamp)}
-        />
       </div>
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 12,
-          alignItems: "center",
-        }}
-      >
-        <Typography.Text strong style={{ flex: "0 0 80px" }}>
-          可读日期
+      {!isValidInput && (
+        <Typography.Text type="danger" className={styles.errorText}>
+          无效的日期格式
         </Typography.Text>
-        <Input value={readable} readOnly style={{ flex: 1 }} />
-        <Button
-          icon={<CopyOutlined />}
-          size="small"
-          onClick={() => copy(readable)}
-        />
-      </div>
-      <Divider />
-      <Typography.Text strong style={{ display: "block", marginBottom: 8 }}>
-        日期 → 时间戳
-      </Typography.Text>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <Input
-          value={dateInput}
-          onChange={(e) => setDateInput(e.target.value)}
-          placeholder="2025-01-01 或 2025-01-01T12:00:00"
-          style={{ flex: 1 }}
-        />
-        <Button type="primary" onClick={fromDateString}>
-          转换
-        </Button>
-      </div>
+      )}
+      {FORMATS.map((format, idx) => {
+        const value = formatDate(format, normalizedDate);
+        return (
+          <div key={format.name} className={styles.resultRow}>
+            <Typography.Text strong className={styles.resultLabel}>
+              {format.name}
+            </Typography.Text>
+            <Input
+              value={value}
+              readOnly
+              size="small"
+              placeholder={normalizedDate ? "" : "无效日期..."}
+              style={{ flex: 1, fontFamily: "monospace" }}
+              status={
+                idx === formatIndex && !isValidInput ? "error" : undefined
+              }
+            />
+            <Button
+              icon={<CopyOutlined />}
+              size="small"
+              disabled={!value}
+              onClick={() => copy(value)}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

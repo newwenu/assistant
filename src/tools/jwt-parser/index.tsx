@@ -1,27 +1,34 @@
 import { useState, useMemo } from "react";
 import { Input, Typography, Table, Tag } from "antd";
+import { jwtDecode } from "jwt-decode";
+import styles from "./jwt-parser.module.css";
 
 const { TextArea } = Input;
 
-function base64UrlDecode(str: string): string {
-  let base64 = str.replace(/-/g, "+").replace(/_/g, "/");
-  while (base64.length % 4) base64 += "=";
-  return atob(base64);
-}
-
-function decodeJwtPart(part: string): Record<string, unknown> {
-  const json = base64UrlDecode(part);
-  return JSON.parse(json);
-}
-
 const CLAIM_DESCRIPTIONS: Record<string, string> = {
-  iss: "签发者",
-  sub: "主题",
-  aud: "受众",
-  exp: "过期时间",
-  nbf: "生效时间",
-  iat: "签发时间",
+  iss: "签发者 (Issuer)",
+  sub: "主题 (Subject)",
+  aud: "受众 (Audience)",
+  exp: "过期时间 (Expiration)",
+  nbf: "生效时间 (Not Before)",
+  iat: "签发时间 (Issued At)",
   jti: "JWT ID",
+};
+
+const ALGORITHM_DESCRIPTIONS: Record<string, string> = {
+  HS256: "HMAC using SHA-256",
+  HS384: "HMAC using SHA-384",
+  HS512: "HMAC using SHA-512",
+  RS256: "RSASSA-PKCS1-v1_5 using SHA-256",
+  RS384: "RSASSA-PKCS1-v1_5 using SHA-384",
+  RS512: "RSASSA-PKCS1-v1_5 using SHA-512",
+  ES256: "ECDSA using P-256 curve and SHA-256",
+  ES384: "ECDSA using P-384 curve and SHA-384",
+  ES512: "ECDSA using P-521 curve and SHA-512",
+  PS256: "RSASSA-PSS using SHA-256",
+  PS384: "RSASSA-PSS using SHA-384",
+  PS512: "RSASSA-PSS using SHA-512",
+  none: "无签名 (Unsecured)",
 };
 
 function formatValue(
@@ -33,8 +40,12 @@ function formatValue(
       const date = new Date(value * 1000).toLocaleString();
       return { display: String(value), friendly: date };
     } catch {
-      // invalid date, fall through
+      // fall through
     }
+  }
+  if (claim === "alg" && typeof value === "string") {
+    const desc = ALGORITHM_DESCRIPTIONS[value];
+    if (desc) return { display: String(value), friendly: desc };
   }
   if (typeof value === "object") {
     return { display: JSON.stringify(value, null, 2), friendly: null };
@@ -49,13 +60,14 @@ export default function JwtParser() {
 
   const { header, payload, error } = useMemo(() => {
     try {
-      const parts = rawJwt.trim().split(".");
-      if (parts.length !== 3) throw new Error("JWT 必须包含 3 部分");
-      const header = decodeJwtPart(parts[0]);
-      const payload = decodeJwtPart(parts[1]);
+      const header = jwtDecode(rawJwt, { header: true }) as Record<
+        string,
+        unknown
+      >;
+      const payload = jwtDecode(rawJwt) as Record<string, unknown>;
       return { header, payload, error: null };
-    } catch (e: any) {
-      return { header: null, payload: null, error: e.message };
+    } catch {
+      return { header: null, payload: null, error: "无效的 JWT Token" };
     }
   }, [rawJwt]);
 
@@ -65,9 +77,9 @@ export default function JwtParser() {
   ) => {
     if (!data) return null;
     const columns = [
-      { title: "字段", dataIndex: "claim", key: "claim", width: 120 },
+      { title: "字段", dataIndex: "claim", key: "claim", width: 100 },
       { title: "值", dataIndex: "value", key: "value" },
-      { title: "说明", dataIndex: "friendly", key: "friendly", width: 200 },
+      { title: "说明", dataIndex: "friendly", key: "friendly", width: 220 },
     ];
     const rows = Object.entries(data).map(([claim, value]) => {
       const { display, friendly } = formatValue(claim, value);
@@ -90,8 +102,8 @@ export default function JwtParser() {
       };
     });
     return (
-      <div style={{ marginBottom: 16 }}>
-        <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
+      <div className={styles.section}>
+        <Typography.Text strong className={styles.sectionLabel}>
           {title}
         </Typography.Text>
         <Table
@@ -106,7 +118,7 @@ export default function JwtParser() {
 
   return (
     <div>
-      <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
+      <Typography.Text strong className={styles.sectionLabel}>
         JWT Token
       </Typography.Text>
       <TextArea
@@ -118,10 +130,7 @@ export default function JwtParser() {
         status={error ? "error" : undefined}
       />
       {error && (
-        <Typography.Text
-          type="danger"
-          style={{ display: "block", marginBottom: 8 }}
-        >
+        <Typography.Text type="danger" className={styles.errorText}>
           {error}
         </Typography.Text>
       )}

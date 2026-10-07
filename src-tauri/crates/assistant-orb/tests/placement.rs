@@ -79,7 +79,6 @@ fn clamp_far_negative_to_origin() {
 }
 
 #[test]
-#[ignore]
 fn clamp_oversized_window_should_stay_non_negative() {
     let s = screen(0, 0, 1920, 1080);
     let clamped = WindowBounds::new(0, 0, 2560, 1440).clamp_to(s);

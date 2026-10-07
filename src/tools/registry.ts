@@ -13,6 +13,15 @@ import {
   KeyOutlined,
   DiffOutlined,
   FileTextOutlined,
+  SafetyCertificateOutlined,
+  QrcodeOutlined,
+  DatabaseOutlined,
+  FieldTimeOutlined,
+  CalculatorOutlined,
+  SwapRightOutlined,
+  GlobalOutlined,
+  PictureOutlined,
+  EditOutlined,
 } from "@ant-design/icons";
 import type { ToolDefinition, ToolCategoryGroup } from "./types";
 import { TOOL_CATEGORIES } from "./categories";
@@ -167,6 +176,123 @@ const textStatistics = defineTool({
   widthMode: "default",
 });
 
+const passwordGenerator = defineTool({
+  id: "password-generator",
+  name: "密码生成器",
+  description: "生成安全密码并评估强度与破解耗时",
+  category: "daily",
+  icon: SafetyCertificateOutlined,
+  keywords: ["password", "generator", "strength", "entropy", "crack", "secure"],
+  component: React.lazy(() => import("./password-generator")),
+  widthMode: "default",
+  createdAt: new Date("2025-09-15"),
+});
+
+const qrcodeGenerator = defineTool({
+  id: "qrcode-generator",
+  name: "二维码生成",
+  description: "文本/URL 生成二维码，支持颜色与容错等级",
+  category: "daily",
+  icon: QrcodeOutlined,
+  keywords: ["qrcode", "qr", "code", "generate", "url", "text"],
+  component: React.lazy(() => import("./qrcode-generator")),
+  widthMode: "default",
+  createdAt: new Date("2025-09-15"),
+});
+
+const sqlFormatter = defineTool({
+  id: "sql-formatter",
+  name: "SQL 格式化",
+  description: "SQL 格式化/压缩，支持多种方言",
+  category: "dev",
+  icon: DatabaseOutlined,
+  keywords: ["sql", "format", "prettify", "minify", "dialect", "query"],
+  component: React.lazy(() => import("./sql-formatter")),
+  widthMode: "wide",
+});
+
+const cronParser = defineTool({
+  id: "cron-parser",
+  name: "Cron 解析",
+  description: "Cron 表达式解析与下次执行时间",
+  category: "dev",
+  icon: FieldTimeOutlined,
+  keywords: ["cron", "crontab", "schedule", "parse", "timer"],
+  component: React.lazy(() => import("./cron-parser")),
+  widthMode: "default",
+});
+
+const calculator = defineTool({
+  id: "calculator",
+  name: "计算器",
+  description: "数学表达式计算与历史记录",
+  category: "math",
+  icon: CalculatorOutlined,
+  keywords: ["calculator", "math", "evaluate", "expression", "compute"],
+  component: React.lazy(() => import("./calculator")),
+  widthMode: "default",
+});
+
+const unitConverter = defineTool({
+  id: "unit-converter",
+  name: "单位换算",
+  description: "长度/重量/温度/面积/体积等互转",
+  category: "converter",
+  icon: SwapRightOutlined,
+  keywords: [
+    "unit",
+    "convert",
+    "length",
+    "weight",
+    "temperature",
+    "area",
+    "volume",
+  ],
+  component: React.lazy(() => import("./unit-converter")),
+  widthMode: "default",
+});
+
+const ipInfo = defineTool({
+  id: "ip-info",
+  name: "IP 查询",
+  description: "本机/指定 IP 地址信息查询与转换",
+  category: "web",
+  icon: GlobalOutlined,
+  keywords: ["ip", "address", "ipv4", "ipv6", "lookup", "geo"],
+  component: React.lazy(() => import("./ip-info")),
+  widthMode: "default",
+});
+
+const imageCompressor = defineTool({
+  id: "image-compressor",
+  name: "图片压缩",
+  description: "图片上传、质量/尺寸调整、压缩对比与下载",
+  category: "media",
+  icon: PictureOutlined,
+  keywords: [
+    "image",
+    "compress",
+    "resize",
+    "quality",
+    "optimize",
+    "jpg",
+    "png",
+  ],
+  component: React.lazy(() => import("./image-compressor")),
+  widthMode: "full",
+});
+
+const svgPreview = defineTool({
+  id: "svg-preview",
+  name: "SVG 预览",
+  description: "SVG 代码编辑、实时预览、优化与下载",
+  category: "media",
+  icon: EditOutlined,
+  keywords: ["svg", "preview", "edit", "optimize", "vector", "download"],
+  component: React.lazy(() => import("./svg-preview")),
+  widthMode: "full",
+});
+
 export const tools: ToolDefinition[] = [
   hashText,
   uuidGenerator,
@@ -178,8 +304,17 @@ export const tools: ToolDefinition[] = [
   jsonViewer,
   regexTester,
   jwtParser,
+  sqlFormatter,
+  cronParser,
   textDiff,
   textStatistics,
+  qrcodeGenerator,
+  calculator,
+  unitConverter,
+  passwordGenerator,
+  ipInfo,
+  imageCompressor,
+  svgPreview,
 ];
 
 export const toolsMap = Object.fromEntries(

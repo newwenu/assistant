@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 
 export type ToolCategory =
-  "crypto" | "converter" | "web" | "dev" | "text" | "math";
+  "crypto" | "converter" | "web" | "dev" | "text" | "math" | "daily" | "media";
 
 export type WidthMode = "default" | "wide" | "full";
 

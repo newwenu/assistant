@@ -308,7 +308,7 @@ pub fn set_favorites_order(conn: &Connection, tool_ids: &[String]) -> Result<(),
 | `ToolCard` | `src/tools/ToolCard.tsx` | 工具卡片（图标+名称+描述+收藏+isNew） |
 | `FavoriteButton` | `src/tools/FavoriteButton.tsx` | 收藏按钮（心形图标+切换） |
 | `CollapsibleToolMenu` | `src/tools/CollapsibleToolMenu.tsx` | 可折叠分类菜单 |
-| `CommandPalette` | `src/tools/CommandPalette.tsx` | 命令面板（Ctrl/Cmd+K） |
+| `CommandPalette` | `src/components/CommandPalette.tsx` | 命令面板（Ctrl/Cmd+K，keywords+External+closeOnSelect） |
 | `ToolSearchBar` | `src/tools/ToolSearchBar.tsx` | 搜索框（fuse.js 驱动） |
 | `registry` | `src/tools/registry.ts` | 工具注册表（defineTool + toolsByCategory） |
 

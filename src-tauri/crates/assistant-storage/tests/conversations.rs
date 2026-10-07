@@ -62,7 +62,6 @@ fn delete_message_and_after_removes_target_and_all_later() {
 }
 
 #[test]
-#[ignore]
 fn delete_message_and_after_should_only_remove_target_when_timestamps_unique() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();
@@ -94,7 +93,6 @@ fn edit_message_removes_later_and_moves_timestamp() {
 }
 
 #[test]
-#[ignore]
 fn edit_message_should_delete_only_later_messages_not_same_timestamp_siblings() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();

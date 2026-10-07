@@ -1,0 +1,22 @@
+.headerRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+
+.buttonRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.outputWrapper {
+  position: relative;
+}
+
+.copyButton {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}

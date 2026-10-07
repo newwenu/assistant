@@ -29,9 +29,9 @@ pub struct AppConf {
 impl AppConf {
     pub fn new() -> Self {
         let mut keybindings = HashMap::new();
-        keybindings.insert("toggle_orb".to_string(), "Super+Shift+O".to_string());
-        keybindings.insert("toggle_main".to_string(), "Super+Shift+M".to_string());
-        keybindings.insert("new_chat".to_string(), "Super+Shift+N".to_string());
+        keybindings.insert("toggle_orb".to_string(), "Meta+Shift+O".to_string());
+        keybindings.insert("toggle_main".to_string(), "Meta+Shift+M".to_string());
+        keybindings.insert("new_chat".to_string(), "Meta+Shift+N".to_string());
 
         Self {
             theme: "system".to_string(),
@@ -78,6 +78,9 @@ impl AppConf {
                 if config.keybindings.is_empty() {
                     let defaults = Self::new();
                     config.keybindings = defaults.keybindings;
+                }
+                for binding in config.keybindings.values_mut() {
+                    *binding = binding.replace("Super", "Meta");
                 }
                 Ok(config)
             }

@@ -69,10 +69,10 @@ fn parse_shortcut(s: &str) -> Option<Shortcut> {
     for part in s.split('+') {
         let part = part.trim();
         match part.to_lowercase().as_str() {
-            "super" | "cmd" | "ctrl" => modifiers |= Modifiers::SUPER,
+            "meta" | "super" | "cmd" | "win" | "windows" => modifiers |= Modifiers::META,
+            "ctrl" | "control" => modifiers |= Modifiers::CONTROL,
             "shift" => modifiers |= Modifiers::SHIFT,
             "alt" | "option" => modifiers |= Modifiers::ALT,
-            "control" => modifiers |= Modifiers::CONTROL,
             other => {
                 if let Ok(c) = Code::from_str(other) {
                     code = Some(c);
@@ -97,10 +97,19 @@ pub fn register_global_shortcuts(handle: &tauri::AppHandle) {
 
     let _ = gs.unregister_all();
 
-    let shortcut_ids = [
-        ("toggle_orb", "Super+Shift+O"),
-        ("toggle_main", "Super+Shift+M"),
-        ("new_chat", "Super+Shift+N"),
+    let primary_mod = if cfg!(target_os = "macos") {
+        "Meta"
+    } else {
+        "Control"
+    };
+    let default_toggle_orb = format!("{}+Shift+O", primary_mod);
+    let default_toggle_main = format!("{}+Shift+M", primary_mod);
+    let default_new_chat = format!("{}+Shift+N", primary_mod);
+
+    let shortcut_ids: [(&str, &str); 3] = [
+        ("toggle_orb", &default_toggle_orb),
+        ("toggle_main", &default_toggle_main),
+        ("new_chat", &default_new_chat),
     ];
 
     for (id, default) in shortcut_ids {

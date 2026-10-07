@@ -1,5 +1,7 @@
 import { useState, useMemo } from "react";
 import { Input, Typography, Segmented } from "antd";
+import { diffLines, diffChars } from "diff";
+import styles from "./text-diff.module.css";
 
 const { TextArea } = Input;
 
@@ -10,88 +12,115 @@ interface DiffLine {
   content: string;
   lineNumOld?: number;
   lineNumNew?: number;
+  charParts?: { text: string; added?: boolean; removed?: boolean }[];
 }
 
 function computeDiff(oldText: string, newText: string): DiffLine[] {
-  const oldLines = oldText.split("\n");
-  const newLines = newText.split("\n");
+  const changes = diffLines(oldText, newText);
   const result: DiffLine[] = [];
+  let lineNumOld = 1;
+  let lineNumNew = 1;
 
-  let oi = 0,
-    ni = 0;
-
-  while (oi < oldLines.length || ni < newLines.length) {
-    if (
-      oi < oldLines.length &&
-      ni < newLines.length &&
-      oldLines[oi] === newLines[ni]
-    ) {
-      result.push({
-        type: "same",
-        content: oldLines[oi],
-        lineNumOld: oi + 1,
-        lineNumNew: ni + 1,
-      });
-      oi++;
-      ni++;
-    } else {
-      let found = false;
-      for (let look = 1; look <= 3 && !found; look++) {
-        if (
-          ni + look < newLines.length &&
-          oldLines[oi] === newLines[ni + look]
-        ) {
-          for (let k = 0; k < look; k++) {
-            result.push({
-              type: "add",
-              content: newLines[ni + k],
-              lineNumNew: ni + k + 1,
-            });
+  for (const change of changes) {
+    const lines = change.value.replace(/\n$/, "").split("\n");
+    for (const line of lines) {
+      if (change.added) {
+        let charParts: DiffLine["charParts"];
+        if (result.length > 0) {
+          const prev = result[result.length - 1];
+          if (prev.type === "remove" && prev.content === line) {
+            const charDiff = diffChars(prev.content, line);
+            prev.charParts = charDiff
+              .filter((c) => !c.added)
+              .map((c) => ({
+                text: c.value,
+                removed: !c.added && !c.removed ? undefined : c.removed,
+              }));
+            prev.type = "same";
+            prev.lineNumNew = lineNumNew;
+            lineNumNew++;
+            lineNumOld++;
+            continue;
           }
-          ni += look;
-          found = true;
         }
-        if (
-          oi + look < oldLines.length &&
-          newLines[ni] === oldLines[oi + look]
-        ) {
-          for (let k = 0; k < look; k++) {
-            result.push({
-              type: "remove",
-              content: oldLines[oi + k],
-              lineNumOld: oi + k + 1,
-            });
-          }
-          oi += look;
-          found = true;
-        }
-      }
-      if (!found) {
-        if (oi < oldLines.length) {
-          result.push({
-            type: "remove",
-            content: oldLines[oi],
-            lineNumOld: oi + 1,
-          });
-          oi++;
-        }
-        if (ni < newLines.length) {
-          result.push({
-            type: "add",
-            content: newLines[ni],
-            lineNumNew: ni + 1,
-          });
-          ni++;
-        }
+        result.push({
+          type: "add",
+          content: line,
+          lineNumNew: lineNumNew++,
+          charParts,
+        });
+      } else if (change.removed) {
+        result.push({
+          type: "remove",
+          content: line,
+          lineNumOld: lineNumOld++,
+        });
+      } else {
+        result.push({
+          type: "same",
+          content: line,
+          lineNumOld: lineNumOld++,
+          lineNumNew: lineNumNew++,
+        });
       }
     }
   }
-  return result;
+
+  const final: DiffLine[] = [];
+  let i = 0;
+  while (i < result.length) {
+    if (result[i].type === "remove") {
+      const removeGroup: DiffLine[] = [];
+      while (i < result.length && result[i].type === "remove") {
+        removeGroup.push(result[i++]);
+      }
+      const addGroup: DiffLine[] = [];
+      while (i < result.length && result[i].type === "add") {
+        addGroup.push(result[i++]);
+      }
+      const pairLen = Math.min(removeGroup.length, addGroup.length);
+      for (let p = 0; p < pairLen; p++) {
+        const charDiff = diffChars(removeGroup[p].content, addGroup[p].content);
+        final.push({
+          type: "remove",
+          content: removeGroup[p].content,
+          lineNumOld: removeGroup[p].lineNumOld,
+          charParts: charDiff
+            .filter((c) => !c.added)
+            .map((c) => ({
+              text: c.value,
+              removed: c.removed || undefined,
+            })),
+        });
+        final.push({
+          type: "add",
+          content: addGroup[p].content,
+          lineNumNew: addGroup[p].lineNumNew,
+          charParts: charDiff
+            .filter((c) => !c.removed)
+            .map((c) => ({
+              text: c.value,
+              added: c.added || undefined,
+            })),
+        });
+      }
+      for (let p = pairLen; p < removeGroup.length; p++) {
+        final.push(removeGroup[p]);
+      }
+      for (let p = pairLen; p < addGroup.length; p++) {
+        final.push(addGroup[p]);
+      }
+    } else {
+      final.push(result[i++]);
+    }
+  }
+
+  return final;
 }
 
 const LINE_COLORS: Record<string, string> = {
-  add: "#e6ffed",
-  remove: "#ffeef0",
+  add: "var(--diff-add-bg)",
+  remove: "var(--diff-remove-bg)",
   same: "transparent",
 };
 
@@ -100,6 +129,33 @@ const PREFIX: Record<string, string> = {
   remove: "- ",
   same: "  ",
 };
+
+function renderCharParts(
+  parts: { text: string; added?: boolean; removed?: boolean }[],
+  baseColor: string,
+) {
+  return parts.map((part, idx) => {
+    if (part.added) {
+      return (
+        <span key={idx} className={styles.charAdd}>
+          {part.text}
+        </span>
+      );
+    }
+    if (part.removed) {
+      return (
+        <span key={idx} className={styles.charRemove}>
+          {part.text}
+        </span>
+      );
+    }
+    return (
+      <span key={idx} style={{ color: baseColor }}>
+        {part.text}
+      </span>
+    );
+  });
+}
 
 export default function TextDiff() {
   const [oldText, setOldText] = useState("");
@@ -112,8 +168,8 @@ export default function TextDiff() {
   const removeCount = diff.filter((d) => d.type === "remove").length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div className={styles.container}>
+      <div className={styles.headerRow}>
         <Segmented
           options={[
             { value: "unified", label: "统一视图" },
@@ -122,19 +178,18 @@ export default function TextDiff() {
           value={viewMode}
           onChange={(v) => setViewMode(v as ViewMode)}
         />
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          <span style={{ color: "#52c41a" }}>+{addCount}</span>{" "}
-          <span style={{ color: "#ff4d4f" }}>-{removeCount}</span>
+        <Typography.Text type="secondary" className={styles.countText}>
+          <span style={{ color: "var(--diff-add-text)" }}>+{addCount}</span>{" "}
+          <span style={{ color: "var(--diff-remove-text)" }}>
+            -{removeCount}
+          </span>
         </Typography.Text>
       </div>
 
       {viewMode === "split" ? (
-        <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1 }}>
-            <Typography.Text
-              strong
-              style={{ display: "block", marginBottom: 4 }}
-            >
+        <div className={styles.sideBySide}>
+          <div className={styles.panel}>
+            <Typography.Text strong className={styles.sectionLabel}>
               原始文本
             </Typography.Text>
             <TextArea
@@ -144,11 +199,8 @@ export default function TextDiff() {
               style={{ fontFamily: "monospace" }}
             />
           </div>
-          <div style={{ flex: 1 }}>
-            <Typography.Text
-              strong
-              style={{ display: "block", marginBottom: 4 }}
-            >
+          <div className={styles.panel}>
+            <Typography.Text strong className={styles.sectionLabel}>
               修改文本
             </Typography.Text>
             <TextArea
@@ -161,12 +213,9 @@ export default function TextDiff() {
         </div>
       ) : (
         <>
-          <div style={{ display: "flex", gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              <Typography.Text
-                strong
-                style={{ display: "block", marginBottom: 4 }}
-              >
+          <div className={styles.sideBySide}>
+            <div className={styles.panel}>
+              <Typography.Text strong className={styles.sectionLabel}>
                 原始文本
               </Typography.Text>
               <TextArea
@@ -176,11 +225,8 @@ export default function TextDiff() {
                 style={{ fontFamily: "monospace" }}
               />
             </div>
-            <div style={{ flex: 1 }}>
-              <Typography.Text
-                strong
-                style={{ display: "block", marginBottom: 4 }}
-              >
+            <div className={styles.panel}>
+              <Typography.Text strong className={styles.sectionLabel}>
                 修改文本
               </Typography.Text>
               <TextArea
@@ -191,61 +237,36 @@ export default function TextDiff() {
               />
             </div>
           </div>
-          <div
-            style={{
-              border: "1px solid var(--color-border)",
-              borderRadius: 6,
-              padding: 8,
-              fontFamily: "monospace",
-              fontSize: 13,
-              maxHeight: 400,
-              overflow: "auto",
-              whiteSpace: "pre",
-            }}
-          >
+          <div className={styles.diffContainer}>
             {diff.map((line, i) => (
               <div
                 key={i}
-                style={{
-                  background: LINE_COLORS[line.type],
-                  padding: "0 4px",
-                  minHeight: 20,
-                }}
+                className={styles.diffLine}
+                style={{ background: LINE_COLORS[line.type] }}
               >
-                <span
-                  style={{
-                    opacity: 0.5,
-                    marginRight: 8,
-                    display: "inline-block",
-                    width: 30,
-                    textAlign: "right",
-                  }}
-                >
-                  {line.lineNumOld ?? ""}
-                </span>
-                <span
-                  style={{
-                    opacity: 0.5,
-                    marginRight: 8,
-                    display: "inline-block",
-                    width: 30,
-                    textAlign: "right",
-                  }}
-                >
-                  {line.lineNumNew ?? ""}
-                </span>
+                <span className={styles.lineNum}>{line.lineNumOld ?? ""}</span>
+                <span className={styles.lineNum}>{line.lineNumNew ?? ""}</span>
                 <span
                   style={{
                     color:
                       line.type === "add"
-                        ? "#52c41a"
+                        ? "var(--diff-add-text)"
                         : line.type === "remove"
-                          ? "#ff4d4f"
+                          ? "var(--diff-remove-text)"
                           : "inherit",
                   }}
                 >
                   {PREFIX[line.type]}
-                  {line.content}
+                  {line.charParts
+                    ? renderCharParts(
+                        line.charParts,
+                        line.type === "add"
+                          ? "var(--diff-add-text)"
+                          : line.type === "remove"
+                            ? "var(--diff-remove-text)"
+                            : "inherit",
+                      )
+                    : line.content}
                 </span>
               </div>
             ))}

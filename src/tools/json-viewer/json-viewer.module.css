@@ -1,0 +1,19 @@
+.optionsBar {
+  margin-bottom: 12px;
+}
+
+.sectionLabel {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.errorText {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.buttonRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}

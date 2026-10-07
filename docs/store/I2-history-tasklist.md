@@ -269,13 +269,15 @@
 
 ## 阶段 C — 前端：UI 组件
 
-### C1. ConversationSidebar 重构
+### C1. HistoryManager 对话列表重构
 
 - [x] 时间分组：`groupConversations()` 函数 → 置顶 / 今天 / 昨天 / 近 7 天 / 近 30 天 / 更早 ✅
-- [x] Provider 过滤标签栏（Tabs 组件）✅
 - [x] 对话摘要预览（标题 + 相对时间）✅
 - [x] 置顶📌 标识 ✅
-- [x] 右键菜单扩展：置顶/复制/导出/删除 ✅
+- [x] 右键菜单扩展：置顶/复制/导出 Markdown/导出 JSON/删除 ✅
+- [x] 搜索模式切换：suffix 小文字链接（标题/全文），点击切换 ✅
+
+> **注**：原 ConversationSidebar 已删除（孤立组件，无引用），功能迁移至 HistoryManager。
 
 **依赖**：B7
 
@@ -283,7 +285,7 @@
 
 ### C2. ConversationGroup 组件
 
-- [x] 分组标题 + 可折叠 + 对话列表 ✅（内联在 ConversationSidebar 中，未独立组件但功能完整）
+- [x] 分组标题 + 可折叠 + 对话列表 ✅（内联在 HistoryManager 中，未独立组件但功能完整）
 
 **依赖**：C1
 
@@ -360,10 +362,10 @@
 
 ### C10. SearchBar 组件
 
-- [x] 对话搜索（内嵌 ConversationSidebar）✅
-- [x] 输入防抖 300ms → `chatStore.searchConversations` ✅
+- [x] 对话搜索（内嵌 HistoryManager）✅
+- [x] 输入防抖 300ms ✅
 - [x] 默认模式：前端本地过滤 `conversations` by `title`（即时响应）✅
-- [x] 全文搜索开关：`Switch` / `Tooltip` 组件，切换 `chatStore.searchFullText` ✅
+- [x] 全文搜索切换：suffix 小文字链接（标题/全文），点击切换 ✅
 - [x] 全文搜索模式：调用后端 `search_conversations` 搜索消息内容 ✅
 - [x] 搜索结果替换侧栏对话列表 ✅
 - [x] 清空搜索恢复原列表 ✅

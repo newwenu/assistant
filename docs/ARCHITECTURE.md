@@ -126,7 +126,10 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 | `/` | 工具箱首页（分类导航 + 搜索 + 收藏） |
 | `/history` | 消息历史管理（对话列表 + 搜索 + 筛选 + 批量操作） |
 | `/tools/:id` | 具体工具界面 |
-| `/settings` | 设置首页 |
+| `/settings` | 设置首页（重定向到 `/settings/general`） |
+| `/settings/general` | 通用设置（语言/开机自启/关闭到托盘/置顶） |
+| `/settings/appearance` | 外观设置（主题 + Orb 外观） |
+| `/settings/shortcuts` | 快捷键配置 |
 | `/settings/providers` | AI Provider 配置 |
 | `/settings/templates` | Prompt 模板管理 |
 | `/settings/about` | 关于 |
@@ -139,7 +142,7 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 interface ToolDefinition {
   id: string
   name: string
-  category: 'dev' | 'text' | 'daily' | 'media'
+  category: 'crypto' | 'converter' | 'dev' | 'text' | 'math' | 'web' | 'daily' | 'media'
   icon: string
   keywords: string[]
   component: React.LazyExoticComponent<any>
@@ -150,9 +153,13 @@ interface ToolDefinition {
 
 | 分类 | 工具 |
 |------|------|
-| 开发 | JSON 格式化、Base64 编解码、URL 编解码、正则测试器、颜色转换、时间戳转换、Hash 计算、UUID 生成、进制转换、JWT 解码、SQL 格式化、Cron 解析 |
-| 文本 | Diff 对比、字数统计、Markdown 预览、文本去重、文本转换 |
-| 日常 | 二维码生成、计算器、单位换算、密码生成、IP 查询 |
+| 加密 | Hash 计算、UUID 生成、Base64 编解码 |
+| 转换器 | 颜色转换、时间戳转换、进制转换、URL 编解码、单位换算 |
+| 开发 | JSON 格式化、正则测试器、JWT 解码、SQL 格式化、Cron 解析 |
+| 文本 | Diff 对比、字数统计 |
+| 数学 | 计算器 |
+| 网络 | IP 查询 |
+| 日常 | 二维码生成、密码生成 |
 | 多媒体 | 图片压缩、SVG 预览 |
 
 ### 4.3 设置
@@ -378,8 +385,10 @@ assistant/
 │   │   ├── ToolBox.tsx            # 工具箱首页（分类 + 搜索 + 收藏）
 │   │   ├── ToolPage.tsx           # 工具页统一布局（标题+分隔线+描述+内容）
 │   │   ├── registry.ts            # 工具注册表（defineTool 工厂）
-│   │   ├── CommandPalette.tsx     # 命令面板（Ctrl/Cmd+K）
 │   │   └── [tool-name]/           # 各工具实现
+│   ├── components/                # 全局共享组件
+│   │   ├── CommandPalette.tsx     # 命令面板（Ctrl/Cmd+K，keywords+External+closeOnSelect）
+│   │   └── CommandPalette.module.css
 │   ├── settings/                  # 设置页面
 │   │   ├── SettingsPage.tsx
 │   │   ├── ProviderManager.tsx
@@ -535,34 +544,36 @@ assistant/
 
 **交付：** 分页加载、搜索、导出、置顶/收藏、消息编辑/重试、代码高亮
 
-- [ ] Schema 扩展（新字段写入 CREATE TABLE，删旧 DB 重建）+ 结构体扩展
-- [ ] 对话高级操作 CRUD + Tauri Commands（置顶/收藏/复制/批量删除/搜索）
-- [ ] 消息操作 CRUD + Tauri Commands（编辑/重试/删除）
-- [ ] chatStore 扩展（分页/搜索/导出/重试）+ UI 组件
+- [x] Schema 扩展（新字段写入 CREATE TABLE，删旧 DB 重建）+ 结构体扩展
+- [x] 对话高级操作 CRUD + Tauri Commands（置顶/收藏/复制/批量删除/搜索）
+- [x] 消息操作 CRUD + Tauri Commands（编辑/重试/删除）
+- [x] chatStore 扩展（分页/搜索/导出/重试）+ UI 组件
 - [ ] 代码高亮（shiki）+ 数学公式（KaTeX）
 
-> **前置实现**：分页加载、搜索、导出、ChatError 13 种错误码已实现。规格详见 [I2-history-spec.md](./store/I2-history-spec.md) / [I2-history-tasklist.md](./store/I2-history-tasklist.md)
+> **前置实现**：分页加载、搜索、导出、ChatError 13 种错误码已实现。ConversationSidebar 已删除（孤立组件），功能迁移至 HistoryManager。规格详见 [I2-history-spec.md](./store/I2-history-spec.md) / [I2-history-tasklist.md](./store/I2-history-tasklist.md)
 
 **验收：** 分页加载流畅，搜索/导出可用，置顶/收藏可用，消息可编辑/重试
 
 ---
 
-### I3 — 主窗口工具箱
+### I3 — 主窗口工具箱 ✅
 
-**交付：** 完整工具箱，分类导航 + 搜索 + 收藏 + 20+ 工具
+**交付：** 完整工具箱，分类导航 + 搜索 + 收藏 + 21 工具
 
-- [ ] 工具注册系统（ToolDefinition 接口 + defineTool 工厂）
-- [ ] 工具箱首页（分类 + 搜索 + 收藏 + 最近使用 + 拖拽排序）
-- [ ] 加密工具：Hash 计算、UUID 生成、Base64 编解码
-- [ ] 转换器工具：颜色转换、时间戳转换、进制转换、URL 编解码
-- [ ] 开发工具：JSON 格式化、正则测试器、JWT 解码、SQL 格式化、Cron 解析
-- [ ] 文本工具：Diff 对比、字数统计
-- [ ] 日常工具：二维码、计算器、单位换算、密码生成、IP 查询
-- [ ] 多媒体工具：图片压缩、SVG 预览
-- [ ] 工具使用历史（SQLite tool_history）+ 收藏持久化（SQLite tool_favorites）
-- [ ] 命令面板（Ctrl/Cmd+K）+ 模糊搜索（fuse.js）
-- [ ] 侧边栏可折叠分类菜单（CollapsibleToolMenu）
-- [ ] 对话导出（Markdown / JSON）
+- [x] 工具注册系统（ToolDefinition 接口 + defineTool 工厂）
+- [x] 工具箱首页（分类 + 搜索 + 收藏 + 最近使用 + 拖拽排序）
+- [x] 加密工具：Hash 计算、UUID 生成、Base64 编解码
+- [x] 转换器工具：颜色转换、时间戳转换、进制转换、URL 编解码、单位换算
+- [x] 开发工具：JSON 格式化、正则测试器、JWT 解码、SQL 格式化、Cron 解析
+- [x] 文本工具：Diff 对比、字数统计
+- [x] 数学工具：计算器
+- [x] 网络工具：IP 查询
+- [x] 日常工具：二维码、密码生成
+- [x] 多媒体工具：图片压缩、SVG 预览
+- [x] 工具使用历史（SQLite tool_history）+ 收藏持久化（SQLite tool_favorites）
+- [x] 命令面板（Ctrl/Cmd+K）+ 模糊搜索（fuse.js）
+- [x] 侧边栏可折叠分类菜单（CollapsibleToolMenu）
+- [x] 对话导出（Markdown / JSON）
 
 > **原 I4（工具箱扩展）已合并入 I3**。I4 本质是 I3 的量变（仅新增工具组件，框架零改动），拆分两个迭代人为制造交付断层。合并后一次性交付完整工具箱，与参考项目 it-tools（60+ 工具一体交付）一致。
 
@@ -576,7 +587,7 @@ assistant/
 | 工具注册 | IT-Tools | src/tools/tool.ts | `defineTool()`：自动计算 `isNew`（createdAt 在 2 周内），统一入口 |
 | 工具 Store | IT-Tools | src/tools/tools.store.ts | `useToolStore`：`toolsByCategory`（groupBy 分类）、`favoriteTools`（localStorage 持久化）、`newTools`（新工具过滤）、`addToolToFavorites/removeToolFromFavorites` |
 | 模糊搜索 | IT-Tools | src/composable/fuzzySearch.ts | `useFuzzySearch`：基于 **fuse.js**，支持 keywords 权重搜索，空查询可配置返回全部或空 |
-| 命令面板 | IT-Tools | src/modules/command-palette/ | `Ctrl/Cmd+K` 唤起，工具 + 操作 + 外部链接混合搜索，键盘导航（↑↓+Enter） |
+| 命令面板 | IT-Tools | src/components/CommandPalette.tsx | `Ctrl/Cmd+K` 唤起，Tools+Navigation+Actions+External 四分类混合搜索，keywords 权重(w:1.5)，选项图标，closeOnSelect，键盘导航（↑↓+Enter） |
 | 侧边栏布局 | IT-Tools | src/layouts/base.layout.vue | 收藏工具置顶 + 按分类折叠菜单（`CollapsibleToolMenu`）+ 版本号页脚 |
 | 工具页布局 | IT-Tools | src/layouts/tool.layout.vue | 标题(h1,40px) + 收藏按钮 + 分隔线(200px,2px,20%透明度) + 描述 + 内容(max-width:600px居中) |
 | 工具卡片 | IT-Tools | src/components/ToolCard.vue | 图标(40px) + isNew 徽章 + 收藏按钮 + 名称(truncate) + 描述(line-clamp-2) |
@@ -588,21 +599,22 @@ assistant/
 
 ---
 
-### I4 — 设置系统 + 全局快捷键 + 主窗口 UI 改造
+### I4 — 设置系统 + 全局快捷键 + 主窗口 UI 改造（进行中）
 
 **交付：** 完整设置系统 + 全局快捷键注册与配置 + 侧边栏重组/折叠菜单/标题栏增强
 
-- [ ] 通用设置页（语言/开机自启/关闭到托盘/置顶）
-- [ ] 外观设置页（主题切换 + Orb 透明度/缩放/圆角/穿透/悬停配置）
-- [ ] 快捷键配置页（分组展示 + 点击录制 + 冲突检测 + 重置）
-- [ ] 关于页（版本/构建/技术栈/许可证）
-- [ ] AppConf 扩展（launch_at_login / close_to_tray / keybindings）
-- [ ] 全局快捷键注册（toggle_orb / toggle_main / new_chat）
-- [ ] 托盘菜单增强（新建对话 + 设置入口）
-- [ ] tauri-plugin-autostart 开机自启
-- [ ] 侧边栏重组（工具箱区/导航区/设置区三区域 + 可折叠分类菜单 + 底部版本号）
-- [ ] 侧边栏选中态修复（进入工具页高亮当前工具项）
-- [ ] 标题栏增强（置顶切换 + 设置入口按钮）
+- [x] 通用设置页（语言/开机自启/关闭到托盘/置顶）
+- [x] 外观设置页（主题切换 + Orb 透明度/缩放/圆角/穿透/悬停配置）
+- [x] 快捷键配置页（分组展示 + 点击录制 + 冲突检测 + 重置）
+- [x] 关于页（版本/构建/技术栈/许可证）
+- [x] AppConf 扩展（launch_at_login / close_to_tray / keybindings）
+- [x] 全局快捷键注册（toggle_orb / toggle_main / new_chat）
+- [x] 托盘菜单增强（新建对话 + 设置入口）
+- [x] tauri-plugin-autostart 开机自启
+- [x] 侧边栏重组（工具箱区/导航区/设置区三区域 + 可折叠分类菜单 + 底部版本号）
+- [x] 侧边栏选中态修复（进入工具页高亮当前工具项）
+- [x] 标题栏增强（置顶切换 + 设置入口按钮）
+- [ ] Orb 外观实时更新（Orb 窗口未监听 `orb-conf-changed` 事件应用配置变更）
 
 **规格**：详见 [I4-spec.md](./store/I4-spec.md) / [I4-tasklist.md](./store/I4-tasklist.md)
 
@@ -751,8 +763,8 @@ I0 脚手架 ✅
  └→ I1 悬浮球 ✅
      └→ I2 Orb AI 对话 ✅
          ├→ I2-History 消息历史管理（进行中）
-         ├→ I3 工具箱（20+ 工具）
-         └→ I4 设置 + 快捷键 + UI改造
+         ├→ I3 工具箱 ✅（21 工具，8 分类）
+         └→ I4 设置 + 快捷键 + UI改造（进行中）
              └→ I5 Mascot 形象
                  └→ I6 Agent 自定义模式
                      └→ I7 Context Compaction

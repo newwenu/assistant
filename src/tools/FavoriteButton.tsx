@@ -19,7 +19,7 @@ export const FavoriteButton: React.FC<FavoriteButtonProps> = ({ toolId }) => {
       style={{ cursor: "pointer", fontSize: 16, lineHeight: 1 }}
     >
       {isFavorite ? (
-        <HeartFilled style={{ color: "#ff4d4f" }} />
+        <HeartFilled style={{ color: "var(--color-error)" }} />
       ) : (
         <HeartOutlined style={{ color: "var(--color-text-quaternary)" }} />
       )}

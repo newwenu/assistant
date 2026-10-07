@@ -642,3 +642,64 @@ chat/
 **前端修复**（3 处）：switchConversation / sendMessage / editMessage 操作前先 `invoke("cancel_chat")` + 重置 `isStreaming/streamingContent/streamingMessageId`
 
 **Rust 端修复**（1 处）：`ChatTasks.start()` 原来 `map.insert()` 直接覆盖旧 CancellationToken，旧流不知道被取消。改为 `if let Some(old) = map.insert(id, token) { old.cancel(); }` 先取消同一对话的旧流
+
+### 2026-10-07 Orb 贴边命令语义拆分 + 右边缘视觉补偿 + 屏幕巡检
+
+#### 命令语义拆分
+
+**问题**：`snap_orb_to_screen` 同时承担"回到屏幕"和"贴边"两个语义，拖拽松手后贴边合理，但屏幕变化恢复时不应贴边
+
+**拆分**：
+
+| 命令 | 语义 | 触发场景 | 行为 |
+|------|------|---------|------|
+| `snap_orb_to_screen` | 回到屏幕 | 运行中屏幕变化（巡检） | 在屏幕内→不动；离屏→最小位移推入最近屏幕，不贴边，无动画 |
+| `snap_orb_to_edge` | 贴边 | 拖拽松手后 | 先回屏幕（如离屏），再吸附到最近左/右边缘，250ms ease-out cubic 缓动动画 |
+
+**改动**：cmd.rs 原 `snap_orb_to_screen` → 新 `snap_orb_to_edge`（贴边+动画）；新建 `snap_orb_to_screen`（只回屏幕，无动画，直接 set_position）；lib.rs 注册两命令；OrbDrag.tsx 3 处 invoke 改为 `snap_orb_to_edge`
+
+#### 右边缘视觉不对称修复
+
+**问题**：Orb 吸附右边缘后，球的视觉距屏幕右明显大于左边缘距屏幕左
+
+**根因**：窗口 88px（`ORB_COLLAPSED_SIZE(64) + 2×ORB_CHROME_INSET(12)`），但 hitbox 实际只有 48px（`ORB_HITBOX_SIZE`），放在窗口内 (12, 12) 处：
+
+```
+球左距窗口左 = ORB_CHROME_INSET = 12px
+球右距窗口右 = 88 - 12 - 48 = 28px
+差值 = 28 - 12 = 16px ← 球在窗口内偏左 16px
+```
+
+左吸附时球距屏幕左 = 4(edge_buffer) + 12 = **16px**
+右吸附时球距屏幕右 = 4(edge_buffer) + 28 = **32px** ← 多了 16px
+
+**修复**：
+
+- constant.rs 新增 `ORB_VISUAL_CENTER_OFFSET_X = 16`（编译期常量：`(88 - 12 - 48) - 12`）
+- placement.rs `snap_orb_to_edge` 新增 `border_x: i32` 参数，`right_target_x += border_x` 补偿右边缘
+- cmd.rs `snap_orb_to_edge` 命令传入 `ORB_VISUAL_CENTER_OFFSET_X`
+
+修复后：右边缘 `right_target_x = screen.width - 88 - 4 + 16 = screen.width - 76`，球视觉右边缘距屏幕右 = 16px，与左边缘对称 ✅
+
+#### 屏幕内巡检 — 视觉边界检测
+
+**问题**：右边缘补偿后窗口故意超出屏幕 12px（窗口右边缘 = screen.width + 12），`bounds_inside_screens` 检测窗口边界认为出屏→巡检推回→抵消补偿
+
+**修复**：`snap_orb_to_screen` 和巡检线程改用**球的视觉边界**（hitbox 48×48 在窗口内偏移 12,12）做 `bounds_inside_screens` 检测，而非窗口边界：
+
+```rust
+let visual_x = pos.x + ORB_CHROME_INSET as i32;
+let visual_y = pos.y + ORB_CHROME_INSET as i32;
+let visual_bounds = WindowBounds::new(visual_x, visual_y, ORB_HITBOX_SIZE, ORB_HITBOX_SIZE);
+if bounds_inside_screens(&screens, visual_bounds) { return Ok(()); }
+```
+
+右边缘吸附后：visual 右边缘 = screen.width - 16，在屏幕内 ✅ 巡检不触发
+
+#### 屏幕变化巡检线程
+
+**方案**：800ms 间隔轮询（`PLACEMENT_INSPECTION_INTERVAL`），在 setup.rs `spawn_screen_inspection` 中启动
+
+- 用 `SHOULD_EXIT` 原子布尔退出（复用 app_quit 信号）
+- 视觉边界检测→离屏→`snap_to_nearest_screen` 恢复→保存 OrbConf
+- 99% 情况 `bounds_inside_screens` 直接返回 true，开销极低

@@ -38,14 +38,16 @@ pub fn toggle_favorite(conn: &Connection, tool_id: &str) -> Result<bool, String>
 }
 
 pub fn set_favorites_order(conn: &Connection, tool_ids: &[String]) -> Result<(), String> {
-    conn.execute("DELETE FROM tool_favorites", [])
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM tool_favorites", [])
         .map_err(|e| e.to_string())?;
     for (i, tool_id) in tool_ids.iter().enumerate() {
-        conn.execute(
+        tx.execute(
             "INSERT INTO tool_favorites (tool_id, rowid) VALUES (?1, ?2)",
             params![tool_id, (i + 1) as i64],
         )
         .map_err(|e| e.to_string())?;
     }
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }

@@ -84,7 +84,7 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
 
   const buildBinding = useCallback((e: KeyboardEvent): string | null => {
     const parts: string[] = [];
-    if (e.metaKey) parts.push("Super");
+    if (e.metaKey) parts.push("Meta");
     if (e.ctrlKey && !e.metaKey) parts.push("Control");
     if (e.shiftKey) parts.push("Shift");
     if (e.altKey) parts.push("Alt");
@@ -92,7 +92,7 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
     const key = CODE_MAP[e.code];
     if (!key) return null;
 
-    if (["Super", "Control", "Shift", "Alt"].includes(key)) return null;
+    if (["Meta", "Control", "Shift", "Alt"].includes(key)) return null;
 
     parts.push(key);
     return parts.join("+");
@@ -157,13 +157,22 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
     };
   }, [recording, buildBinding]);
 
+  const IS_MAC = /\bMacintosh\b/i.test(navigator.userAgent);
+
   const formatDisplay = (binding: string) => {
+    if (!IS_MAC) return binding.replace(/\+/g, " + ");
     return binding
-      .replace(/Super/g, "⌘")
-      .replace(/Shift/g, "⇧")
-      .replace(/Alt/g, "⌥")
-      .replace(/Control/g, "⌃")
-      .replace(/\+/g, " + ");
+      .split("+")
+      .map((token) => {
+        switch (token.trim()) {
+          case "Control": return "⌃";
+          case "Alt": return "⌥";
+          case "Shift": return "⇧";
+          case "Meta": return "⌘";
+          default: return token.trim();
+        }
+      })
+      .join(" ");
   };
 
   if (recording) {

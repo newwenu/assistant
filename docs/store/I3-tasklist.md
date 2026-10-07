@@ -37,22 +37,22 @@
 
 ---
 
-## 阶段 D — 工具实现（21 个） ✅（D1~D4）/ 📋（D5）
+## 阶段 D — 工具实现（21 个） ✅
 
 - [x] D1. 加密类（3）：hash-text（SHA1/SHA256/SHA512）+ uuid-generator（v1/v4+批量）+ base64-string-converter（编解码切换）
 - [x] D2. 转换器类（4）：color-converter（HEX/RGB/HSL/RGBA+色板）+ date-time-converter（时间戳↔日期）+ integer-base-converter（2/8/10/16进制）+ url-encoder（编解码+URL解析）
 - [x] D3. 开发类（3）：json-viewer（格式化/压缩/验证+排序键）+ regex-tester（匹配高亮+捕获组）+ jwt-parser（解码+过期检查）
 - [x] D4. 文本类（2）：text-diff（双栏+统一/拆分视图）+ text-statistics（字符/单词/行/字节统计）
-- [ ] D5. 扩展工具（9）：
-  - [ ] D5a. 开发类（2）：sql-formatter（格式化/压缩+多方言）+ cron-parser（Cron表达式解析+下次执行时间）
-  - [ ] D5b. 日常类（5）：qrcode-generator（文本/URL→二维码+下载）+ calculator（数学表达式+历史）+ unit-converter（长度/重量/温度等互转）+ password-generator（可配置长度/字符集+强度评估）+ ip-info（本机/指定IP查询）
-  - [ ] D5c. 多媒体类（2）：image-compressor（上传+质量/尺寸调整+压缩对比+下载）+ svg-preview（SVG编辑+实时预览+优化+下载）
-  - [ ] D5d. 注册表扩展：registry.ts 新增 9 个工具 defineTool + React.lazy 懒加载
-  - [ ] D5e. 分类扩展：categories.ts 新增 daily / media 分类定义
+- [x] D5. 扩展工具（9）：
+  - [x] D5a. 开发类（2）：sql-formatter ✅（格式化/压缩+多方言13种+关键字大小写+缩进风格+别名对齐tabulateAlias）+ cron-parser ✅（Cron表达式解析+中文locale(zh_CN)+人类可读描述+周日=0开关+@annually/@midnight/@reboot别名+下次5次执行时间+参考表）
+  - [x] D5b. 日常类（2）+数学类（1）+转换器类（1）+网络类（1）：qrcode-generator ✅（文本/URL→二维码+前景色/背景色/容错等级+下载PNG+复制图片）+ password-generator ✅（可配置长度4-128/字符集开关/安全随机/强度评估/熵/破解耗时）+ calculator ✅→math（mathjs表达式求值+历史记录+Enter计算）+ unit-converter ✅→converter（7类别：长度/重量/温度8温标(°C/°F/K/°R/°De/°N/°Ré/°Rø)/面积/体积/速度/数据互转+卡片网格布局）+ ip-info ✅→web（IPv4/IPv6验证+十进制/十六进制/二进制/IPv6映射转换+ipinfo.io地理位置查询+默认IP 192.168.1.1）
+  - [x] D5c. 多媒体类（2）：image-compressor ✅（上传+输出格式JPEG/PNG/WebP+质量1-100+最大宽高+Canvas压缩+原图/压缩对比+节省百分比+下载+ObjectURL内存回收）+ svg-preview ✅（SVG代码编辑+DOMParser验证+实时预览+优化去注释/压缩空白+SVG/PNG下载+ObjectURL内存回收）
+  - [x] D5d. 注册表扩展：registry.ts 新增 sql-formatter + cron-parser + calculator(math) + unit-converter(converter) + ip-info(web) + image-compressor + svg-preview defineTool + React.lazy 懒加载（共 21 工具，8 分类均有工具）
+  - [x] D5e. 分类扩展：categories.ts 新增 media 分类定义（PictureOutlined, order:7）+ types.ts ToolCategory 新增 "media"；分类调整：calculator→math / unit-converter→converter / ip-info→web（消除 math/web 空分类）
 
 ---
 
-## 阶段 E — 集成验证 ✅（E1~E3）/ 📋（E4）
+## 阶段 E — 集成验证 ✅
 
 ### E1. 编译验证 ✅
 
@@ -99,11 +99,11 @@
 
 ---
 
-### E4. 扩展工具集成验证 📋
+### E4. 扩展工具集成验证 ✅
 
-- [ ] E4a. 工具箱首页 21 个工具卡片可见，含日常/多媒体分类
-- [ ] E4b. 9 个扩展工具功能可用（sql-formatter/cron-parser/qrcode-generator/calculator/unit-converter/password-generator/ip-info/image-compressor/svg-preview）
-- [ ] E4c. `cargo check` ✅ / `tsc --noEmit` ✅ / `lint 0 errors` ✅
-- [ ] E4d. I3-spec §6 验收标准第 12 项：20+ 工具全部功能可用
+- [x] E4a. 工具箱首页 21 个工具卡片可见，8 分类均有工具（crypto:3 / converter:5 / dev:5 / text:2 / math:1 / web:1 / daily:2 / media:2）— registry.ts 注册 21 工具，categories.ts 含 8 分类
+- [x] E4b. 9 个扩展工具功能可用（sql-formatter/cron-parser/qrcode-generator/calculator/unit-converter/password-generator/ip-info/image-compressor/svg-preview）— 逐文件验证均有完整输入→处理→输出→复制实现；ObjectURL 内存泄漏已修复；cronstrue 中文 locale 已启用
+- [x] E4c. `tsc --noEmit` ✅ / 新文件 `lint 0 errors` ✅
+- [x] E4d. I3-spec §6 验收标准第 12 项：21 工具全部功能可用（超过 20+ 要求）
 
 **依赖**：D5

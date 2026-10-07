@@ -1,0 +1,53 @@
+.input {
+  margin-bottom: 12px;
+}
+
+.resultCard {
+  background: var(--color-bg-layout);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.resultLabel {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+}
+
+.resultValue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 500;
+  font-family: monospace;
+}
+
+.historySection {
+  margin-top: 8px;
+}
+
+.historyHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.historyItem {
+  cursor: pointer;
+}
+
+.historyExpr {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.historyResult {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}

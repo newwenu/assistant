@@ -23,6 +23,9 @@ impl CompactionState {
     }
 
     pub fn needs_compaction(&self) -> bool {
+        if self.max_tokens == 0 {
+            return false;
+        }
         let threshold = self.max_tokens as f32 * (self.compaction_threshold_percent as f32 / 100.0);
         self.total_tokens as f32 >= threshold
     }

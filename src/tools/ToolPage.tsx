@@ -1,6 +1,6 @@
-import React, { Suspense, useEffect } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Typography, Spin, Button } from "antd";
+import { Typography, Button, Spin } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { toolsMap } from "./registry";
 import { FavoriteButton } from "./FavoriteButton";
@@ -22,9 +22,11 @@ export const ToolPage: React.FC = () => {
   const navigate = useNavigate();
   const recordUsage = useToolStore((s) => s.recordUsage);
   const tool = id ? toolsMap[id] : undefined;
+  const [animKey, setAnimKey] = useState(0);
 
   useEffect(() => {
     if (id) recordUsage(id);
+    setAnimKey((k) => k + 1);
   }, [id, recordUsage]);
 
   if (!tool) {
@@ -48,7 +50,11 @@ export const ToolPage: React.FC = () => {
     : TOOL_DEFAULT_MAX_WIDTH;
 
   return (
-    <div style={{ padding: "24px 32px", height: "100%", overflow: "auto" }}>
+    <div
+      key={id}
+      className="tool-page-enter"
+      style={{ padding: "24px 32px", height: "100%", overflow: "auto" }}
+    >
       <div
         style={{
           display: "flex",
@@ -95,13 +101,19 @@ export const ToolPage: React.FC = () => {
         }}
       >
         <Suspense
+          key={`${id}-${animKey}`}
           fallback={
-            <div style={{ textAlign: "center", padding: 40 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
               <Spin size="large" />
             </div>
           }
         >
-          <tool.component />
+          <tool.component key={id} />
         </Suspense>
       </div>
     </div>

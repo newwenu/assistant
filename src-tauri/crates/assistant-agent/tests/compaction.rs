@@ -48,7 +48,6 @@ fn very_large_max_tokens() {
 }
 
 #[test]
-#[ignore]
 fn max_tokens_zero_should_not_need_compaction() {
     let s = CompactionState::new(0);
     assert!(!s.needs_compaction());

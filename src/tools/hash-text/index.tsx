@@ -1,21 +1,62 @@
 import { useState, useEffect } from "react";
-import { Input, Typography, Button, message } from "antd";
+import { Input, Typography, Button, Select, message } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
+import {
+  MD5,
+  SHA1,
+  SHA256,
+  SHA224,
+  SHA512,
+  SHA384,
+  SHA3,
+  RIPEMD160,
+  enc,
+  type lib,
+} from "crypto-js";
+import styles from "./hash-text.module.css";
 
 const { TextArea } = Input;
 
-const ALGORITHMS = ["SHA-1", "SHA-256", "SHA-512"] as const;
+const ALGORITHMS = {
+  MD5,
+  SHA1,
+  SHA256,
+  SHA224,
+  SHA512,
+  SHA384,
+  SHA3,
+  RIPEMD160,
+} as const;
 
-async function computeHash(text: string, algo: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(text);
-  const hashBuffer = await crypto.subtle.digest(algo, data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+type AlgoName = keyof typeof ALGORITHMS;
+type Encoding = "Hex" | "Base64" | "Base64url" | "Bin";
+const ALGO_NAMES = Object.keys(ALGORITHMS) as AlgoName[];
+
+const ENCODING_OPTIONS: { value: Encoding; label: string }[] = [
+  { value: "Hex", label: "十六进制 (Hex)" },
+  { value: "Base64", label: "Base64" },
+  { value: "Base64url", label: "Base64url" },
+  { value: "Bin", label: "二进制 (Binary)" },
+];
+
+function hexToBin(hex: string): string {
+  return hex
+    .trim()
+    .split("")
+    .map((byte) => Number.parseInt(byte, 16).toString(2).padStart(4, "0"))
+    .join("");
+}
+
+function formatOutput(words: lib.WordArray, encoding: Encoding): string {
+  if (encoding === "Bin") {
+    return hexToBin(words.toString(enc.Hex));
+  }
+  return words.toString(enc[encoding]);
 }
 
 export default function HashText() {
   const [text, setText] = useState("");
+  const [encoding, setEncoding] = useState<Encoding>("Hex");
   const [results, setResults] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -23,15 +64,12 @@ export default function HashText() {
       setResults({});
       return;
     }
-    const computeAll = async () => {
-      const r: Record<string, string> = {};
-      for (const algo of ALGORITHMS) {
-        r[algo] = await computeHash(text, algo);
-      }
-      setResults(r);
-    };
-    computeAll();
-  }, [text]);
+    const r: Record<string, string> = {};
+    for (const algo of ALGO_NAMES) {
+      r[algo] = formatOutput(ALGORITHMS[algo](text), encoding);
+    }
+    setResults(r);
+  }, [text, encoding]);
 
   const copy = (value: string) => {
     navigator.clipboard.writeText(value);
@@ -45,26 +83,29 @@ export default function HashText() {
         onChange={(e) => setText(e.target.value)}
         placeholder="输入要哈希的文本..."
         rows={3}
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 12 }}
       />
-      {ALGORITHMS.map((algo) => (
-        <div
-          key={algo}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 8,
-          }}
-        >
-          <Typography.Text strong style={{ flex: "0 0 80px", fontSize: 13 }}>
+      <div className={styles.encodingRow}>
+        <Typography.Text strong className={styles.encodingLabel}>
+          输出编码
+        </Typography.Text>
+        <Select
+          value={encoding}
+          onChange={setEncoding}
+          options={ENCODING_OPTIONS}
+          style={{ width: 180 }}
+        />
+      </div>
+      {ALGO_NAMES.map((algo) => (
+        <div key={algo} className={styles.resultRow}>
+          <Typography.Text strong className={styles.algoLabel}>
             {algo}
           </Typography.Text>
           <Input
             value={results[algo] ?? ""}
             readOnly
             size="small"
-            style={{ flex: 1, fontFamily: "monospace" }}
+            className={styles.algoInput}
           />
           <Button
             icon={<CopyOutlined />}

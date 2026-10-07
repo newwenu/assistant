@@ -26,6 +26,8 @@ import {
   MessageOutlined,
   ClockCircleOutlined,
   ReloadOutlined,
+  PushpinOutlined,
+  CopyOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import type { Conversation, Message } from "../stores/chatStore";
@@ -45,6 +47,12 @@ interface ConversationGroup {
 function groupConversations(convs: Conversation[]): ConversationGroup[] {
   const groups: ConversationGroup[] = [];
 
+  const pinned = convs.filter((c) => c.is_pinned);
+  if (pinned.length > 0)
+    groups.push({ key: "pinned", label: "置顶", conversations: pinned });
+
+  const unpinned = convs.filter((c) => !c.is_pinned);
+
   const now = new Date();
   const todayStart = new Date(
     now.getFullYear(),
@@ -55,17 +63,17 @@ function groupConversations(convs: Conversation[]): ConversationGroup[] {
   const weekStart = todayStart - 6 * 86400000;
   const monthStart = todayStart - 29 * 86400000;
 
-  const today = convs.filter((c) => c.updated_at >= todayStart);
-  const yesterday = convs.filter(
+  const today = unpinned.filter((c) => c.updated_at >= todayStart);
+  const yesterday = unpinned.filter(
     (c) => c.updated_at >= yesterdayStart && c.updated_at < todayStart,
   );
-  const week = convs.filter(
+  const week = unpinned.filter(
     (c) => c.updated_at >= weekStart && c.updated_at < yesterdayStart,
   );
-  const month = convs.filter(
+  const month = unpinned.filter(
     (c) => c.updated_at >= monthStart && c.updated_at < weekStart,
   );
-  const older = convs.filter((c) => c.updated_at < monthStart);
+  const older = unpinned.filter((c) => c.updated_at < monthStart);
 
   if (today.length)
     groups.push({ key: "today", label: "今天", conversations: today });
@@ -119,6 +127,7 @@ export const HistoryManager: React.FC = () => {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set(),
   );
+  const [searchFullText, setSearchFullText] = useState(false);
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -189,23 +198,44 @@ export const HistoryManager: React.FC = () => {
     };
   }, [refreshConversations, refreshMessages]);
 
-  const handleSearch = useCallback((value: string) => {
-    setSearchQuery(value);
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (!value.trim()) {
-      setSearchResults(null);
-      return;
-    }
-    searchTimerRef.current = setTimeout(async () => {
-      try {
-        const result = await invoke("search_conversations", { query: value });
-        setSearchResults((result as Conversation[]) || []);
-      } catch (e) {
-        console.error("Search failed:", e);
-        setSearchResults([]);
+  const handleSearch = useCallback(
+    (value: string) => {
+      setSearchQuery(value);
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+      if (!value.trim()) {
+        setSearchResults(null);
+        return;
       }
-    }, 300);
-  }, []);
+      searchTimerRef.current = setTimeout(async () => {
+        try {
+          if (searchFullText) {
+            const result = await invoke("search_conversations", {
+              query: value,
+            });
+            setSearchResults((result as Conversation[]) || []);
+          } else {
+            const q = value.toLowerCase();
+            const filtered = conversations.filter((c) =>
+              c.title.toLowerCase().includes(q),
+            );
+            setSearchResults(filtered);
+          }
+        } catch (e) {
+          console.error("Search failed:", e);
+          setSearchResults([]);
+        }
+      }, 300);
+    },
+    [searchFullText, conversations],
+  );
+
+  const searchQueryRef = useRef(searchQuery);
+  searchQueryRef.current = searchQuery;
+
+  useEffect(() => {
+    const q = searchQueryRef.current;
+    if (q.trim()) handleSearch(q);
+  }, [searchFullText, handleSearch]);
 
   const selectConversation = useCallback(async (id: string) => {
     setSelectedId(id);
@@ -309,25 +339,60 @@ export const HistoryManager: React.FC = () => {
     [loadConversations],
   );
 
-  const exportConversation = useCallback(async (id: string) => {
-    try {
-      const md = await invoke<string>("export_conversation", {
-        id,
-        format: "markdown",
-      });
-      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `conversation-${id}.md`;
-      a.click();
-      URL.revokeObjectURL(url);
-      message.success("导出成功");
-    } catch (e) {
-      console.error("Export failed:", e);
-      message.error("导出失败");
-    }
-  }, []);
+  const exportConversation = useCallback(
+    async (id: string, format: string = "markdown") => {
+      try {
+        const content = await invoke<string>("export_conversation", {
+          id,
+          format,
+        });
+        const ext = format === "json" ? "json" : "md";
+        const mime =
+          format === "json"
+            ? "application/json;charset=utf-8"
+            : "text/markdown;charset=utf-8";
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `conversation-${id}.${ext}`;
+        a.click();
+        URL.revokeObjectURL(url);
+        message.success("导出成功");
+      } catch (e) {
+        console.error("Export failed:", e);
+        message.error("导出失败");
+      }
+    },
+    [],
+  );
+
+  const togglePin = useCallback(
+    async (id: string) => {
+      try {
+        await invoke("toggle_conversation_pin", { id });
+        await loadConversations();
+      } catch (e) {
+        console.error("Failed to toggle pin:", e);
+        message.error("操作失败");
+      }
+    },
+    [loadConversations],
+  );
+
+  const duplicateConversation = useCallback(
+    async (id: string) => {
+      try {
+        await invoke("duplicate_conversation", { id });
+        await loadConversations();
+        message.success("已复制");
+      } catch (e) {
+        console.error("Failed to duplicate:", e);
+        message.error("复制失败");
+      }
+    },
+    [loadConversations],
+  );
 
   const handleScroll = useCallback(() => {
     if (!messageListRef.current) return;
@@ -422,6 +487,26 @@ export const HistoryManager: React.FC = () => {
             onChange={(e) => handleSearch(e.target.value)}
             size="small"
             style={{ flex: 1 }}
+            suffix={
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSearchFullText((prev) => !prev);
+                }}
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-primary)",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  userSelect: "none",
+                  textDecoration: "underline",
+                  textDecorationStyle: "dotted",
+                  textUnderlineOffset: 2,
+                }}
+              >
+                {searchFullText ? "全文" : "标题"}
+              </span>
+            }
           />
           <Tooltip title="刷新列表">
             <Button
@@ -445,6 +530,32 @@ export const HistoryManager: React.FC = () => {
             <div style={{ textAlign: "center", padding: 24 }}>
               <Spin />
             </div>
+          ) : searchQuery.trim() && searchResults !== null ? (
+            <>
+              <div className="chat-sidebar-filter-hint">
+                {displayConvs.length} 条结果
+              </div>
+              {displayConvs.length === 0 ? (
+                <Empty
+                  description="未找到匹配的对话"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+              ) : (
+                displayConvs.map((conv) => (
+                  <ConversationListItem
+                    key={conv.id}
+                    conversation={conv}
+                    selected={conv.id === selectedId}
+                    onSelect={selectConversation}
+                    onDelete={deleteConversation}
+                    onRename={renameConversation}
+                    onExport={exportConversation}
+                    onTogglePin={togglePin}
+                    onDuplicate={duplicateConversation}
+                  />
+                ))
+              )}
+            </>
           ) : groups.length === 0 ? (
             <Empty
               description="暂无对话"
@@ -477,6 +588,8 @@ export const HistoryManager: React.FC = () => {
                       onDelete={deleteConversation}
                       onRename={renameConversation}
                       onExport={exportConversation}
+                      onTogglePin={togglePin}
+                      onDuplicate={duplicateConversation}
                     />
                   ))}
               </div>
@@ -513,7 +626,7 @@ export const HistoryManager: React.FC = () => {
               <Button
                 size="small"
                 icon={<ExportOutlined />}
-                onClick={() => exportConversation(selectedId)}
+                onClick={() => exportConversation(selectedId, "markdown")}
               >
                 导出
               </Button>
@@ -632,11 +745,22 @@ interface ConversationListItemProps {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
-  onExport: (id: string) => void;
+  onExport: (id: string, format: string) => void;
+  onTogglePin: (id: string) => void;
+  onDuplicate: (id: string) => void;
 }
 
 const ConversationListItem: React.FC<ConversationListItemProps> = React.memo(
-  ({ conversation, selected, onSelect, onDelete, onRename, onExport }) => {
+  ({
+    conversation,
+    selected,
+    onSelect,
+    onDelete,
+    onRename,
+    onExport,
+    onTogglePin,
+    onDuplicate,
+  }) => {
     const [editing, setEditing] = useState(false);
     const [editTitle, setEditTitle] = useState("");
 
@@ -654,7 +778,14 @@ const ConversationListItem: React.FC<ConversationListItemProps> = React.memo(
 
     const menuItems: MenuProps["items"] = [
       { key: "rename", icon: <EditOutlined />, label: "重命名" },
-      { key: "export", icon: <ExportOutlined />, label: "导出" },
+      {
+        key: "pin",
+        icon: <PushpinOutlined />,
+        label: conversation.is_pinned ? "取消置顶" : "置顶",
+      },
+      { key: "duplicate", icon: <CopyOutlined />, label: "复制" },
+      { key: "export-md", icon: <ExportOutlined />, label: "导出 Markdown" },
+      { key: "export-json", icon: <ExportOutlined />, label: "导出 JSON" },
       { type: "divider" },
       {
         key: "delete",
@@ -666,7 +797,10 @@ const ConversationListItem: React.FC<ConversationListItemProps> = React.memo(
 
     const handleMenuClick: MenuProps["onClick"] = ({ key }) => {
       if (key === "rename") startRename();
-      else if (key === "export") onExport(conversation.id);
+      else if (key === "pin") onTogglePin(conversation.id);
+      else if (key === "duplicate") onDuplicate(conversation.id);
+      else if (key === "export-md") onExport(conversation.id, "markdown");
+      else if (key === "export-json") onExport(conversation.id, "json");
       else if (key === "delete") onDelete(conversation.id);
     };
 
@@ -719,6 +853,11 @@ const ConversationListItem: React.FC<ConversationListItemProps> = React.memo(
                   lineHeight: "18px",
                 }}
               >
+                {conversation.is_pinned && (
+                  <PushpinOutlined
+                    style={{ fontSize: 10, marginRight: 4, color: "#faad14" }}
+                  />
+                )}
                 {conversation.title || "新对话"}
               </Typography.Text>
               <Typography.Text

@@ -20,7 +20,7 @@ export function useToolMenuItems(onToolboxTitleClick?: () => void): MenuItem[] {
     if (favoriteTools.length > 0) {
       children.push({
         key: "tool-favorites",
-        icon: <HeartFilled style={{ color: "#ff4d4f" }} />,
+        icon: <HeartFilled style={{ color: "var(--color-error)" }} />,
         label: "收藏",
         children: favoriteTools.map((t) => ({
           key: `/tools/${t.id}`,

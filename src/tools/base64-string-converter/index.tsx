@@ -1,20 +1,54 @@
 import { useState } from "react";
-import { Input, Button, Typography, message } from "antd";
+import { Input, Button, Switch, Typography, message } from "antd";
 import { CopyOutlined, SwapOutlined } from "@ant-design/icons";
+import styles from "./base64-string-converter.module.css";
 
 const { TextArea } = Input;
+
+function textToBase64(text: string, urlSafe: boolean): string {
+  const encoded = btoa(unescape(encodeURIComponent(text)));
+  if (urlSafe) {
+    return encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  return encoded;
+}
+
+function base64ToText(base64: string, urlSafe: boolean): string {
+  let b64 = base64;
+  if (urlSafe) {
+    b64 = b64.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = (4 - (b64.length % 4)) % 4;
+    b64 += "=".repeat(pad);
+  }
+  return decodeURIComponent(escape(atob(b64)));
+}
+
+function isValidBase64(base64: string, urlSafe: boolean): boolean {
+  try {
+    base64ToText(base64, urlSafe);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export default function Base64StringConverter() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [mode, setMode] = useState<"encode" | "decode">("encode");
+  const [urlSafe, setUrlSafe] = useState(false);
 
   const convert = () => {
     try {
       if (mode === "encode") {
-        setOutput(btoa(unescape(encodeURIComponent(input))));
+        setOutput(textToBase64(input, urlSafe));
       } else {
-        setOutput(decodeURIComponent(escape(atob(input))));
+        if (!isValidBase64(input, urlSafe)) {
+          message.error("输入不是有效的 Base64 字符串");
+          setOutput("");
+          return;
+        }
+        setOutput(base64ToText(input, urlSafe));
       }
     } catch {
       message.error(
@@ -37,20 +71,22 @@ export default function Base64StringConverter() {
 
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 12,
-          alignItems: "center",
-        }}
-      >
+      <div className={styles.headerRow}>
         <Typography.Text strong>
           {mode === "encode" ? "字符串 → Base64" : "Base64 → 字符串"}
         </Typography.Text>
-        <Button icon={<SwapOutlined />} size="small" onClick={swap}>
-          切换
-        </Button>
+        <div className={styles.headerActions}>
+          <Switch
+            checked={urlSafe}
+            onChange={setUrlSafe}
+            checkedChildren="URL-safe"
+            unCheckedChildren="标准"
+            size="small"
+          />
+          <Button icon={<SwapOutlined />} size="small" onClick={swap}>
+            切换
+          </Button>
+        </div>
       </div>
       <TextArea
         value={input}
@@ -62,7 +98,7 @@ export default function Base64StringConverter() {
       <Button type="primary" onClick={convert} style={{ marginBottom: 8 }}>
         {mode === "encode" ? "编码" : "解码"}
       </Button>
-      <div style={{ position: "relative" }}>
+      <div className={styles.outputWrapper}>
         <TextArea
           value={output}
           readOnly
@@ -74,7 +110,7 @@ export default function Base64StringConverter() {
             icon={<CopyOutlined />}
             size="small"
             onClick={copy}
-            style={{ position: "absolute", top: 4, right: 4 }}
+            className={styles.copyButton}
           />
         )}
       </div>

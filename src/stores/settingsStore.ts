@@ -35,10 +35,13 @@ interface SettingsState {
   resetKeybindings: () => Promise<void>;
 }
 
+const IS_MAC = /\bMacintosh\b/i.test(navigator.userAgent);
+const PRIMARY_MOD = IS_MAC ? "Meta" : "Control";
+
 const DEFAULT_KEYBINDINGS: Record<string, string> = {
-  toggle_orb: "Super+Shift+O",
-  toggle_main: "Super+Shift+M",
-  new_chat: "Super+Shift+N",
+  toggle_orb: `${PRIMARY_MOD}+Shift+O`,
+  toggle_main: `${PRIMARY_MOD}+Shift+M`,
+  new_chat: `${PRIMARY_MOD}+Shift+N`,
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({

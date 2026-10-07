@@ -35,11 +35,13 @@ impl WindowBounds {
         let x = self
             .x
             .max(screen.x)
-            .min(s_right.saturating_sub(self.width as i32));
+            .min(s_right.saturating_sub(self.width as i32))
+            .max(0);
         let y = self
             .y
             .max(screen.y)
-            .min(s_bottom.saturating_sub(self.height as i32));
+            .min(s_bottom.saturating_sub(self.height as i32))
+            .max(0);
         Self { x, y, ..self }
     }
 }
