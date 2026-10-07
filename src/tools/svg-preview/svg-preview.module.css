@@ -44,9 +44,10 @@
   justify-content: center;
   overflow: hidden;
   background: repeating-conic-gradient(
-    var(--color-bg-layout) 0% 25%,
-    transparent 0% 50%
-  ) 50% / 16px 16px;
+      var(--color-bg-layout) 0% 25%,
+      transparent 0% 50%
+    )
+    50% / 16px 16px;
 }
 
 .previewImg {

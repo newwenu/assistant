@@ -360,12 +360,38 @@ App.tsx `MainLayout` 路由新增：
 - 解析绑定字符串（如 `Super+K`）为修饰键+键码，用于 DOM `keydown` 监听
 - 绑定变更时（store 更新）自动重新绑定监听器
 
-### 4.7 Orb 外观实时更新
+### 4.7 设置配置中间层 — 统一保存→生效链路
 
-`OrbAppearanceCard` 保存 OrbConf 后，需 emit 事件通知 Orb 窗口重新应用配置：
+当前设置保存→生效存在 3 套并行模式，需统一到 Provider 已验证的标准路径。
 
-- 保存后调用 `invoke("emit", { event: "orb-conf-changed" })` 或通过 Tauri event API
-- Orb 窗口监听 `orb-conf-changed` 事件，重新读取 OrbConf 并应用透明度/缩放/圆角等
+#### 标准路径（Provider 已验证）
+
+```
+UI → providerStore.saveProvider()
+    → dispatchProviderSaved(provider)            // settingsDispatcher 统一入口
+        → invoke("save_provider", {provider})    // 写后端
+        → useProviderStore.loadProviders()       // 刷新本地缓存
+        → emitSettingEvent(SettingEvent.ProviderChanged)  // 跨窗口广播
+    消费端: settingEvents.ts listen(SettingEvent.ProviderChanged) → loadProviders()
+```
+
+#### 当前问题
+
+| 模式 | 使用方 | 问题 |
+|------|--------|------|
+| ① settingsDispatcher 标准路径 | Provider / Theme | ✅ 规范 |
+| ② 裸 invoke + 裸 emit | OrbConf | ❌ `OrbAppearanceSection` 用裸 `emit("orb-conf-changed")`，未走 `dispatchOrbConfChanged` |
+| ③ 组件内联侧效应 | AppConf | ❌ `GeneralSettings` 直接 `invoke("set_app_conf")` + 内联 `autostart.enable()` / `setAlwaysOnTop()`，未走 `dispatchAppConfChanged` |
+
+#### 改造目标
+
+1. **AppConf 收敛**：`GeneralSettings` → `dispatchAppConfChanged(conf)`，侧效应（autostart / setAlwaysOnTop）提取到 dispatcher 内
+2. **OrbConf 收敛**：`OrbAppearanceSection` → `dispatchOrbConfChanged(conf)`，`useOrbConfSync` 改用 `listen(SettingEvent.OrbConfChanged)`
+3. **settingEvents 补齐**：新增 `AppConfChanged` / `OrbConfChanged` 监听，消费端处理运行时生效
+4. **CSS 变量消费链补齐**：`global.css` 中 `.orb-ball` 等使用 `var(--orb-opacity)` / `var(--orb-scale)` / `var(--orb-radius)`
+5. **OrbConf 字段消费补齐**：`opacity_percent` / `scale_percent` / `corner_radius_percent` / `click_through` / `hide_on_pointer_hover` / `hover_delay_ms` / `always_on_top` 全部在 `useOrbConfSync` 中生效
+
+> `dispatchAppConfChanged` / `dispatchOrbConfChanged` / `SettingEvent.AppConfChanged` / `SettingEvent.OrbConfChanged` 已在 `settingsDispatcher.ts` + `events.ts` 中定义但未接入，仅需启用使用。
 
 ## 5. 不做的事（I4 范围外）
 

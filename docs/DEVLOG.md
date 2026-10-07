@@ -703,3 +703,43 @@ if bounds_inside_screens(&screens, visual_bounds) { return Ok(()); }
 - 用 `SHOULD_EXIT` 原子布尔退出（复用 app_quit 信号）
 - 视觉边界检测→离屏→`snap_to_nearest_screen` 恢复→保存 OrbConf
 - 99% 情况 `bounds_inside_screens` 直接返回 true，开销极低
+
+### 2026-10-07 RiveMascot canvas 分辨率在 CSS transform 下初始化错误
+
+**问题**：OrbPanel 收起态（88×88 窗口）下 `.orb-panel` 处于 `transform: scale(0.18)` 变换中，此时 MessageInput 中的 RiveMascot 已挂载，但 Rive 库内部 ResizeObserver 拿到的 `contentRect` 受变换影响返回缩放后的小尺寸（≈11×11），导致 canvas 像素缓冲区初始化为 11×11。展开后虽然容器 layout 尺寸不变（始终 44×44），ResizeObserver 不重新触发，canvas 分辨率停留在初始化的小值，Mascot 模糊/马赛克
+
+**根因链**：
+
+1. `.orb-panel` 收起态 CSS `transform: scale(0.18)`（global.css），OrbPanel 和内部 RiveMascot 始终渲染
+2. Rive `useResizeCanvas` 内部用 `ResizeObserver` 的 `contentRect` 触发重算，再以 `clientWidth`/`clientHeight` 设 canvas 尺寸
+3. `scale(0.18)` 下 `contentRect` 返回变换后的小值（44 × 0.18 ≈ 8 → 取整 11×11）
+4. 展开后 `scale(1)`，但容器 layout 尺寸（`width: 44px`）未变 → ResizeObserver 不触发 → canvas 分辨率不更新
+
+**修复 — `useFixCanvasUnderTransform` hook**（RiveMascot.tsx）：
+
+三层防护，核心思路：用 `offsetWidth`/`offsetHeight`（不受 CSS transform 影响，始终返回 layout 尺寸）替代 Rive 库内部可能受变换影响的尺寸来源
+
+| 层级 | 机制 | 解决什么 |
+|------|------|----------|
+| ① mount 校正 | rive 就绪后立即用 `offsetWidth`/`offsetHeight` 算真实 layout 尺寸，强制写入 canvas `width`/`height` + 调用 `rive.resizeDrawingSurfaceToCanvas()` | 初始化时 canvas 被设为 11×11 |
+| ② ResizeObserver | 对容器 div 挂 ResizeObserver，回调中复用同一校正逻辑 | 容器 layout 尺寸变化时自动重校 |
+| ③ transitionend 监听 | 监听 `.orb-panel` 的 `transform` 属性 `transitionend` + 350ms 超时兜底 | 展开/收起过渡完成后触发重校（transform 变化但 layout 不变 → ResizeObserver 不触发） |
+
+**校正逻辑**：
+
+```typescript
+const layoutW = el.offsetWidth;   // 不受 CSS transform 影响
+const layoutH = el.offsetHeight;
+const dpr = window.devicePixelRatio || 1;
+const expectedW = Math.round(layoutW * dpr);
+const expectedH = Math.round(layoutH * dpr);
+if (canvas.width !== expectedW || canvas.height !== expectedH) {
+  canvas.width = expectedW;
+  canvas.height = expectedH;
+  canvas.style.width = `${layoutW}px`;
+  canvas.style.height = `${layoutH}px`;
+}
+rive.resizeDrawingSurfaceToCanvas();  // 通知 Rive 重新适配 WebGL 绘图面
+```
+
+**涉及文件**：`src/mascot/RiveMascot.tsx`（新增 `useFixCanvasUnderTransform` hook + `containerRef` + `useOrbStore` 依赖）

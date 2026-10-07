@@ -23,3 +23,16 @@
   background: var(--color-border-secondary);
   color: var(--color-text-secondary);
 }
+
+.btnCopied {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-success, #52c41a);
+  cursor: default;
+  transition: color 0.15s ease-in-out;
+}

@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { Button, Tooltip } from "antd";
 import { PushpinOutlined, PushpinFilled } from "@ant-design/icons";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { dispatchAppConfChanged } from "@/settings/settingsDispatcher";
 import type { AppConf } from "@/stores/settingsStore";
 
 export const PinToggle: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);
-  const saveAppConf = useSettingsStore((s) => s.saveAppConf);
   const [pinned, setPinned] = useState(appConf?.stay_on_top ?? false);
 
   useEffect(() => {
@@ -17,14 +16,11 @@ export const PinToggle: React.FC = () => {
   const handleToggle = async () => {
     const next = !pinned;
     setPinned(next);
-    try {
-      await getCurrentWindow().setAlwaysOnTop(next);
-    } catch (e) {
-      console.error("[PinToggle] setAlwaysOnTop failed:", e);
-    }
     if (appConf) {
       const newConf: AppConf = { ...appConf, stay_on_top: next };
-      await saveAppConf(newConf);
+      await dispatchAppConfChanged(
+        newConf as unknown as Record<string, unknown>,
+      );
     }
   };
 

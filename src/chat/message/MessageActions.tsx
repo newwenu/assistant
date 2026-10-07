@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   CopyOutlined,
+  CheckOutlined,
   DeleteOutlined,
   EditOutlined,
   RedoOutlined,
@@ -16,6 +17,8 @@ interface MessageActionsProps {
   onRegenerate?: () => void;
 }
 
+const COPY_FEEDBACK_MS = 1500;
+
 export const MessageActions: React.FC<MessageActionsProps> = ({
   role,
   isStreaming,
@@ -26,12 +29,33 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
 }) => {
   const isUser = role === "user";
   const isAssistant = role === "assistant";
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<number | null>(null);
+
+  const handleCopy = useCallback(() => {
+    onCopy?.();
+    setCopied(true);
+    if (timerRef.current !== null) clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(
+      () => setCopied(false),
+      COPY_FEEDBACK_MS,
+    );
+  }, [onCopy]);
 
   return (
     <div className={css.root}>
       {onCopy && (
-        <button className={css.btn} onClick={onCopy} title="复制" type="button">
-          <CopyOutlined style={{ fontSize: 12 }} />
+        <button
+          className={copied ? css.btnCopied : css.btn}
+          onClick={handleCopy}
+          title={copied ? "已复制" : "复制"}
+          type="button"
+        >
+          {copied ? (
+            <CheckOutlined style={{ fontSize: 12 }} />
+          ) : (
+            <CopyOutlined style={{ fontSize: 12 }} />
+          )}
         </button>
       )}
       {isUser && onEdit && !isStreaming && (

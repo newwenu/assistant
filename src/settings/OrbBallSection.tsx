@@ -1,29 +1,33 @@
+import { useEffect } from "react";
 import { Form, Slider, Switch, message } from "antd";
-import { emit } from "@tauri-apps/api/event";
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { OrbConf } from "@/stores/settingsStore";
+import { useDebouncedOrbSave } from "./useDebouncedOrbSave";
 
-export const OrbAppearanceSection: React.FC = () => {
+export const OrbBallSection: React.FC = () => {
   const orbConf = useSettingsStore((s) => s.orbConf);
-  const saveOrbConf = useSettingsStore((s) => s.saveOrbConf);
   const [messageApi, contextHolder] = message.useMessage();
+  const [form] = Form.useForm();
+  const handleSave = useDebouncedOrbSave(orbConf, () =>
+    messageApi.success("已保存"),
+  );
 
-  const handleSave = async (values: Partial<OrbConf>) => {
+  useEffect(() => {
     if (!orbConf) return;
-    const newConf: OrbConf = { ...orbConf, ...values };
-    await saveOrbConf(newConf);
-    try {
-      await emit("orb-conf-changed", newConf);
-    } catch (e) {
-      console.error("[OrbAppearanceSection] emit orb-conf-changed failed:", e);
-    }
-    messageApi.success("已保存");
-  };
+    form.setFieldsValue({
+      opacity_percent: orbConf.opacity_percent,
+      scale_percent: orbConf.scale_percent,
+      corner_radius_percent: orbConf.corner_radius_percent,
+      click_through: orbConf.click_through,
+      hide_on_pointer_hover: orbConf.hide_on_pointer_hover,
+      hover_delay_ms: orbConf.hover_delay_ms,
+    });
+  }, [orbConf, form]);
 
   return (
     <>
       {contextHolder}
       <Form
+        form={form}
         layout="vertical"
         initialValues={{
           opacity_percent: orbConf?.opacity_percent ?? 100,
@@ -32,9 +36,13 @@ export const OrbAppearanceSection: React.FC = () => {
           click_through: orbConf?.click_through ?? false,
           hide_on_pointer_hover: orbConf?.hide_on_pointer_hover ?? false,
           hover_delay_ms: orbConf?.hover_delay_ms ?? 0,
-          always_on_top: orbConf?.always_on_top ?? true,
         }}
-        onValuesChange={(_changed, all) => handleSave(all)}
+        onValuesChange={(changed, all) => {
+          const isSlider = Object.keys(changed).some(
+            (k) => k.endsWith("_percent") || k === "hover_delay_ms",
+          );
+          handleSave(all, isSlider);
+        }}
       >
         <Form.Item label="透明度" name="opacity_percent">
           <Slider min={10} max={100} marks={{ 10: "10%", 100: "100%" }} />
@@ -57,6 +65,7 @@ export const OrbAppearanceSection: React.FC = () => {
           label="鼠标穿透"
           name="click_through"
           valuePropName="checked"
+          extra="开启后鼠标可穿透悬浮球点击下方内容"
         >
           <Switch />
         </Form.Item>
@@ -64,6 +73,7 @@ export const OrbAppearanceSection: React.FC = () => {
           label="悬停隐藏"
           name="hide_on_pointer_hover"
           valuePropName="checked"
+          extra="鼠标悬停在悬浮球上时自动隐藏"
         >
           <Switch />
         </Form.Item>
@@ -74,13 +84,6 @@ export const OrbAppearanceSection: React.FC = () => {
             step={100}
             marks={{ 0: "0", 1000: "1s", 2000: "2s" }}
           />
-        </Form.Item>
-        <Form.Item
-          label="始终置顶"
-          name="always_on_top"
-          valuePropName="checked"
-        >
-          <Switch />
         </Form.Item>
       </Form>
     </>

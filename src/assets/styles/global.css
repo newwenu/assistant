@@ -40,6 +40,15 @@
   --scrollbar-thumb: rgba(0, 0, 0, 0.15);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.25);
   --scrollbar-track: transparent;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Noto Sans CJK SC", sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji";
+  --font-mono:
+    "SF Mono", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono",
+    Menlo, Courier, "PingFang SC", "Microsoft YaHei", monospace;
 }
 
 [data-theme="dark"] {
@@ -93,9 +102,7 @@ body,
 }
 
 body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, "Noto Sans", sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   color: var(--color-text);
@@ -153,19 +160,19 @@ div[data-orb-window] .orb-hitbox {
   cursor: grab !important;
   touch-action: none !important;
   -webkit-user-drag: none !important;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle at 30% 30%,
-    var(--color-orb-gradient-start),
-    var(--color-orb-gradient-end)
-  );
+  border-radius: var(--orb-radius, 50%);
+  background: transparent;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+  opacity: var(--orb-opacity, 1);
+  transform: scale(var(--orb-scale, 1));
   transition:
     opacity 150ms ease-in-out,
     filter 300ms ease-in-out,
-    transform 200ms ease-out;
+    transform 200ms ease-out,
+    border-radius 200ms ease-out;
 }
 
 div[data-orb-window] .orb-hitbox:active {
@@ -217,6 +224,17 @@ div[data-orb-window] .orb-ball-hidden {
   opacity: 0 !important;
   pointer-events: none !important;
   transition: none !important;
+}
+
+:root.orb-hover-hide
+  div[data-orb-window]
+  .orb-hitbox:not(.orb-ball-hidden):hover {
+  opacity: 0 !important;
+  transition: opacity var(--orb-hover-delay, 0ms) ease-out;
+}
+
+:root.orb-hover-hide div[data-orb-window] .orb-hitbox:not(.orb-ball-hidden) {
+  transition: opacity var(--orb-hover-delay, 0ms) ease-in;
 }
 
 div[data-orb-window] .orb-panel {
@@ -299,6 +317,11 @@ div[data-orb-window].orb-expanded .orb-hitbox {
 
 .orb-chrome-top button {
   -webkit-app-region: no-drag;
+}
+
+.orb-chrome-mascot {
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
 }
 
 .orb-chrome-center {
@@ -545,6 +568,61 @@ div[data-orb-window].orb-expanded .orb-hitbox {
 
 .chat-send-btn {
   flex-shrink: 0;
+}
+
+.chat-mascot-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  overflow: visible;
+  transition:
+    opacity 150ms ease-in-out,
+    transform 150ms ease-in-out;
+  opacity: 0.5;
+}
+
+.chat-mascot-btn-active {
+  opacity: 1;
+}
+
+.chat-mascot-btn-streaming {
+  opacity: 1;
+  animation: chat-mascot-pulse 1.5s ease-in-out infinite;
+}
+
+.chat-mascot-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+  animation: none;
+}
+
+.chat-mascot-btn:not(:disabled):hover {
+  transform: scale(1.08);
+}
+
+.chat-mascot-btn:not(:disabled):active {
+  transform: scale(0.92);
+}
+
+.chat-mascot-btn-canvas {
+  width: 44px;
+  height: 44px;
+  margin: -6px;
+}
+
+@keyframes chat-mascot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 .chat-sidebar {

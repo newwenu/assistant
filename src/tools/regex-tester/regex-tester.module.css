@@ -41,7 +41,7 @@
   white-space: pre-wrap;
   word-break: break-all;
   font-size: 13px;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .libraryTags {

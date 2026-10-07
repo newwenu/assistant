@@ -17,7 +17,7 @@ use assistant_config::{
     app_conf::AppConf,
     constant::{
         ORB_CHROME_INSET, ORB_HITBOX_SIZE, ORB_SNAP_ANIMATION_MS, ORB_VISUAL_CENTER_OFFSET_X,
-        WINDOW_EDGE_BUFFER, WINDOW_ORB,
+        WINDOW_EDGE_BUFFER, WINDOW_MAIN, WINDOW_ORB,
     },
     orb_conf::OrbConf,
 };
@@ -63,8 +63,42 @@ pub fn get_app_conf() -> serde_json::Value {
 }
 
 #[command]
-pub fn set_app_conf(conf: AppConf) -> Result<(), String> {
-    conf.save().map_err(|e| e.to_string())
+pub fn set_app_conf(app: AppHandle, conf: AppConf) -> Result<(), String> {
+    conf.validate()?;
+
+    let prev = AppConf::load().map_err(|e| e.to_string())?;
+
+    conf.save().map_err(|e| e.to_string())?;
+
+    if prev.launch_at_login != conf.launch_at_login {
+        if let Err(e) = apply_autostart(&app, conf.launch_at_login) {
+            log::error!("[set_app_conf] autostart failed: {}", e);
+        }
+    }
+
+    if prev.stay_on_top != conf.stay_on_top {
+        if let Some(window) = app.get_webview_window(WINDOW_MAIN) {
+            if let Err(e) = window.set_always_on_top(conf.stay_on_top) {
+                log::error!("[set_app_conf] set_always_on_top failed: {}", e);
+            }
+        }
+    }
+
+    if prev.keybindings != conf.keybindings {
+        crate::setup::register_global_shortcuts(&app);
+    }
+
+    Ok(())
+}
+
+fn apply_autostart(app: &AppHandle, enable: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    if enable {
+        manager.enable().map_err(|e| e.to_string())
+    } else {
+        manager.disable().map_err(|e| e.to_string())
+    }
 }
 
 #[command]
@@ -79,8 +113,43 @@ pub fn get_orb_conf() -> serde_json::Value {
 }
 
 #[command]
-pub fn set_orb_conf(conf: OrbConf) -> Result<(), String> {
-    conf.save().map_err(|e| e.to_string())
+pub fn set_orb_conf(app: AppHandle, conf: OrbConf) -> Result<(), String> {
+    conf.validate()?;
+
+    let prev = OrbConf::load().map_err(|e| e.to_string())?;
+
+    conf.save().map_err(|e| e.to_string())?;
+
+    if prev.always_on_top != conf.always_on_top {
+        if let Some(window) = app.get_webview_window(WINDOW_ORB) {
+            if let Err(e) = window.set_always_on_top(conf.always_on_top) {
+                log::error!("[set_orb_conf] set_always_on_top failed: {}", e);
+            }
+        }
+    }
+
+    if prev.click_through != conf.click_through {
+        if let Err(e) = apply_orb_click_through(&app, conf.click_through) {
+            log::error!("[set_orb_conf] set_orb_click_through failed: {}", e);
+        }
+    }
+
+    let _ = app.emit("orb-conf-changed", &conf);
+    Ok(())
+}
+
+fn apply_orb_click_through(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    if ORB_CLICK_THROUGH.load(Ordering::Acquire) == enabled {
+        return Ok(());
+    }
+    let window = app
+        .get_webview_window(WINDOW_ORB)
+        .ok_or_else(|| "Orb window not found".to_string())?;
+    window
+        .set_ignore_cursor_events(enabled)
+        .map_err(|e| e.to_string())?;
+    ORB_CLICK_THROUGH.store(enabled, Ordering::Release);
+    Ok(())
 }
 
 #[command]

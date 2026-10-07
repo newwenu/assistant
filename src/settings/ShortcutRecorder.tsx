@@ -165,11 +165,16 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
       .split("+")
       .map((token) => {
         switch (token.trim()) {
-          case "Control": return "⌃";
-          case "Alt": return "⌥";
-          case "Shift": return "⇧";
-          case "Meta": return "⌘";
-          default: return token.trim();
+          case "Control":
+            return "⌃";
+          case "Alt":
+            return "⌥";
+          case "Shift":
+            return "⇧";
+          case "Meta":
+            return "⌘";
+          default:
+            return token.trim();
         }
       })
       .join(" ");

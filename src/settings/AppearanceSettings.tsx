@@ -1,15 +1,18 @@
 import { useEffect } from "react";
 import { Form, Radio, Typography, message } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { OrbAppearanceSection } from "./OrbAppearanceSection";
-import { dispatchThemeChanged } from "./settingsDispatcher";
+import { OrbBallSection } from "./OrbBallSection";
+import { OrbPanelSection } from "./OrbPanelSection";
+import {
+  dispatchAppConfChanged,
+  dispatchThemeChanged,
+} from "./settingsDispatcher";
 import type { AppConf } from "@/stores/settingsStore";
 
 export const AppearanceSettings: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);
   const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
-  const saveAppConf = useSettingsStore((s) => s.saveAppConf);
   const [messageApi, contextHolder] = message.useMessage();
 
   useEffect(() => {
@@ -20,7 +23,7 @@ export const AppearanceSettings: React.FC = () => {
   const handleThemeChange = async (theme: string) => {
     if (!appConf) return;
     const newConf: AppConf = { ...appConf, theme };
-    await saveAppConf(newConf);
+    await dispatchAppConfChanged(newConf as unknown as Record<string, unknown>);
     await dispatchThemeChanged(theme as "system" | "light" | "dark");
     messageApi.success("主题已切换");
   };
@@ -33,10 +36,7 @@ export const AppearanceSettings: React.FC = () => {
           主题
         </Typography.Title>
         <Form layout="vertical">
-          <Form.Item
-            label="主题模式"
-            initialValue={appConf?.theme ?? "system"}
-          >
+          <Form.Item label="主题模式" initialValue={appConf?.theme ?? "system"}>
             <Radio.Group
               onChange={(e) => handleThemeChange(e.target.value)}
               value={appConf?.theme ?? "system"}
@@ -48,13 +48,27 @@ export const AppearanceSettings: React.FC = () => {
           </Form.Item>
         </Form>
 
-        <Typography.Title
-          level={5}
-          style={{ marginTop: 32, marginBottom: 16 }}
-        >
-          Orb 外观
+        <Typography.Title level={5} style={{ marginTop: 32, marginBottom: 16 }}>
+          悬浮球
         </Typography.Title>
-        <OrbAppearanceSection />
+        <Typography.Text
+          type="secondary"
+          style={{ display: "block", marginBottom: 16 }}
+        >
+          桌面上的圆形助手图标，点击展开悬浮窗
+        </Typography.Text>
+        <OrbBallSection />
+
+        <Typography.Title level={5} style={{ marginTop: 32, marginBottom: 16 }}>
+          悬浮窗
+        </Typography.Title>
+        <Typography.Text
+          type="secondary"
+          style={{ display: "block", marginBottom: 16 }}
+        >
+          展开后的对话面板，用于与助手交互
+        </Typography.Text>
+        <OrbPanelSection />
       </div>
     </>
   );

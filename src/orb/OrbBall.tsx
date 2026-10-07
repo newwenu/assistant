@@ -17,12 +17,16 @@ import {
 import { useOrbDrag } from "./OrbDrag";
 import { useOrbExpand } from "./OrbExpand";
 import { OrbContextMenu } from "./OrbContextMenu";
+import { useOrbConfSync } from "./useOrbConfSync";
+import { RiveMascot } from "../mascot/RiveMascot";
+import { useMascotStore } from "../mascot/mascotStore";
 
 const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
 const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
 const NEEDS_CURSOR_POLL = IS_MACOS || IS_WINDOWS;
 
 export const OrbBall: React.FC = () => {
+  useOrbConfSync();
   const isExpanded = useOrbStore((s) => s.isExpanded);
   const isHovering = useOrbStore((s) => s.isHovering);
   const isDragging = useOrbStore((s) => s.isDragging);
@@ -31,6 +35,7 @@ export const OrbBall: React.FC = () => {
   const expandVertical = useOrbStore((s) => s.expandVertical);
   const setHovering = useOrbStore((s) => s.setHovering);
   const setClickThrough = useOrbStore((s) => s.setClickThrough);
+  const mascotFace = useMascotStore((s) => s.face);
   const { expand } = useOrbExpand();
   const { onPointerDown, onPointerMove, onPointerUp, hasDraggedRef } =
     useOrbDrag();
@@ -187,9 +192,7 @@ export const OrbBall: React.FC = () => {
         onPointerLeave={handlePointerLeave}
         onClick={handleClick}
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="4" fill="white" opacity="0.9" />
-        </svg>
+        <RiveMascot face={mascotFace} size={ORB_HITBOX_SIZE} idlePoseRotation />
       </div>
     </OrbContextMenu>
   );

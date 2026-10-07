@@ -9,6 +9,7 @@ import { useOrbExpand } from "./OrbExpand";
 import { ChatView } from "../chat/ChatView";
 import { useChatStore } from "../stores/chatStore";
 import { subscribeChatDeltaEvents } from "../services/chatDeltaEvents";
+import { useMascotChatSync } from "../mascot/useMascotChatSync";
 import {
   getMouseLogicalPos,
   getWindowLogicalRect,
@@ -29,6 +30,7 @@ export const OrbPanel: React.FC = () => {
   const { expand, collapse } = useOrbExpand();
   const expandDirection = useOrbStore((s) => s.expandDirection);
   const chat = useChatStore();
+  useMascotChatSync();
   const [search, setSearch] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const modelOpenRef = useRef(false);

@@ -1,10 +1,14 @@
 import type { ThemeConfig } from "antd";
 import { theme } from "antd";
 
+const SANS_STACK =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+
 const commonToken = {
   borderRadius: 6,
   fontSize: 14,
   colorPrimary: "#1677ff",
+  fontFamily: SANS_STACK,
 };
 
 export const lightTheme: ThemeConfig = {

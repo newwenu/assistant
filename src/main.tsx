@@ -8,6 +8,7 @@ import { lightTheme, darkTheme } from "@/assets/styles/theme";
 import { WINDOW_ORB } from "@/config/constants";
 import { subscribeSettingEvents } from "@/services/settingEvents";
 import App from "./App";
+import "./assets/styles/fonts.css";
 import "./assets/styles/global.css";
 
 const ThemedApp: React.FC = () => {

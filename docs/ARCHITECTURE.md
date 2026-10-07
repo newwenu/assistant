@@ -614,7 +614,7 @@ assistant/
 - [x] 侧边栏重组（工具箱区/导航区/设置区三区域 + 可折叠分类菜单 + 底部版本号）
 - [x] 侧边栏选中态修复（进入工具页高亮当前工具项）
 - [x] 标题栏增强（置顶切换 + 设置入口按钮）
-- [ ] Orb 外观实时更新（Orb 窗口未监听 `orb-conf-changed` 事件应用配置变更）
+- [ ] 设置配置中间层（AppConf/OrbConf 收敛到 settingsDispatcher 标准路径 + CSS 变量消费链 + OrbConf 字段生效）
 
 **规格**：详见 [I4-spec.md](./store/I4-spec.md) / [I4-tasklist.md](./store/I4-tasklist.md)
 
@@ -639,11 +639,16 @@ assistant/
 
 **交付：** Rive 动画 Mascot，与对话状态联动
 
-- [ ] Rive 运行时集成（@rive-app/react-webgl2）
-- [ ] .riv 动画文件（9 种状态：idle/listening/thinking/speaking/happy/concerned/curious/working/waving）
-- [ ] 表情状态机（对话事件 → 表情切换）
-- [ ] Mascot 显示于 Orb 悬浮球内 / 对话面板顶部
-- [ ] jiwen 情感引擎集成（5 轴模型，阈值触发主动行为）
+- [x] Rive 运行时集成（@rive-app/react-webgl2）
+- [x] .riv 动画文件（9 种 RivePose：idle/thinking/celebration/bookreading/coffeedrink/writing/bobbateadrink/hand_wave/dancing）
+- [x] 表情状态机（对话事件 → 表情切换）
+- [x] Mascot 显示于 Orb 悬浮球内 + 发送按钮
+- [ ] MascotFace 扩展至 18 种（对齐 OpenHuman Ghosty.tsx）
+- [ ] FACE_TO_POSE 完整映射（18→9）
+- [ ] RiveMascot 颜色换肤（primaryColor/secondaryColor）
+- [ ] RiveMascot buffer 内存加载
+- [ ] 用户输入 listening 状态联动
+- [ ] ack 表情增强（proud 判断）
 
 **参考：**
 

@@ -3,13 +3,14 @@
 use log::error;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, File},
-    io::{Read, Write},
+    fs::File,
+    io::Read,
     path::PathBuf,
 };
 
 use std::collections::HashMap;
 
+use super::atomic_write::{atomic_write, recover_temp};
 use super::constant::APP_IDENTIFIER;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -58,6 +59,15 @@ impl AppConf {
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         let path = Self::get_conf_path()?;
 
+        if let Some(tmp_bytes) = recover_temp(&path) {
+            if let Ok(config) = serde_json::from_slice::<Self>(&tmp_bytes) {
+                let migrated = Self::migrate(config);
+                migrated.save()?;
+                return Ok(migrated);
+            }
+            error!("[AppConf::load] temp file invalid, discarding");
+        }
+
         if !path.exists() {
             let config = Self::new();
             config.save()?;
@@ -69,20 +79,12 @@ impl AppConf {
         file.read_to_string(&mut contents)?;
 
         match serde_json::from_str::<Self>(&contents) {
-            Ok(mut config) => {
-                if config.keybindings.is_empty() && !config.hotkey.is_empty() {
-                    config
-                        .keybindings
-                        .insert("toggle_orb".to_string(), config.hotkey.clone());
+            Ok(config) => {
+                let migrated = Self::migrate(config);
+                if contents != serde_json::to_string_pretty(&migrated)? {
+                    migrated.save()?;
                 }
-                if config.keybindings.is_empty() {
-                    let defaults = Self::new();
-                    config.keybindings = defaults.keybindings;
-                }
-                for binding in config.keybindings.values_mut() {
-                    *binding = binding.replace("Super", "Meta");
-                }
-                Ok(config)
+                Ok(migrated)
             }
             Err(e) => {
                 error!(
@@ -96,17 +98,40 @@ impl AppConf {
         }
     }
 
+    fn migrate(mut config: Self) -> Self {
+        if config.keybindings.is_empty() && !config.hotkey.is_empty() {
+            config
+                .keybindings
+                .insert("toggle_orb".to_string(), config.hotkey.clone());
+        }
+        if config.keybindings.is_empty() {
+            let defaults = Self::new();
+            config.keybindings = defaults.keybindings;
+        }
+        for binding in config.keybindings.values_mut() {
+            *binding = binding.replace("Super", "Meta");
+        }
+        config
+    }
+
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
         let path = Self::get_conf_path()?;
-
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
         let json = serde_json::to_string_pretty(self)?;
-        let mut file = File::create(path)?;
-        file.write_all(json.as_bytes())?;
+        atomic_write(&path, json.as_bytes())?;
+        Ok(())
+    }
 
+    pub fn validate(&self) -> Result<(), String> {
+        let valid_themes = ["system", "light", "dark"];
+        if !valid_themes.contains(&self.theme.as_str()) {
+            return Err(format!(
+                "theme must be system/light/dark, got {}",
+                self.theme
+            ));
+        }
+        if self.language.is_empty() {
+            return Err("language must not be empty".to_string());
+        }
         Ok(())
     }
 }

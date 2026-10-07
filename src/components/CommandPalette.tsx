@@ -53,7 +53,6 @@ export const CommandPalette: React.FC = () => {
   const listRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const appConf = useSettingsStore((s) => s.appConf);
-  const saveAppConf = useSettingsStore((s) => s.saveAppConf);
 
   const allOptions: PaletteOption[] = React.useMemo(() => {
     const toolOpts: PaletteOption[] = tools.map((t) => ({
@@ -161,7 +160,12 @@ export const CommandPalette: React.FC = () => {
           ];
           const current = appConf.theme as "system" | "light" | "dark";
           const next = order[(order.indexOf(current) + 1) % order.length];
-          await saveAppConf({ ...appConf, theme: next });
+          const { dispatchAppConfChanged } =
+            await import("@/settings/settingsDispatcher");
+          await dispatchAppConfChanged({
+            ...appConf,
+            theme: next,
+          } as unknown as Record<string, unknown>);
           await dispatchThemeChanged(next);
         },
       },
@@ -190,7 +194,7 @@ export const CommandPalette: React.FC = () => {
     ];
 
     return [...toolOpts, ...navOpts, ...actionOpts, ...externalOpts];
-  }, [navigate, appConf, saveAppConf]);
+  }, [navigate, appConf]);
 
   const fuse = React.useMemo(
     () =>

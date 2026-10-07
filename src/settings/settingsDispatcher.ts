@@ -8,6 +8,7 @@ import {
 import { WINDOW_MAIN, WINDOW_ORB } from "../config/constants";
 import { useProviderStore } from "../stores/providerStore";
 import { useThemeStore } from "../stores/themeStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 async function emitSettingEvent(
   event: SettingEvent,
@@ -46,7 +47,6 @@ export async function dispatchProviderDeleted(id: string) {
 }
 
 export async function dispatchThemeChanged(mode: "system" | "light" | "dark") {
-  await invoke("set_theme", { theme: mode });
   let resolved: "light" | "dark";
   if (mode !== "system") {
     resolved = mode;
@@ -65,6 +65,7 @@ export async function dispatchThemeChanged(mode: "system" | "light" | "dark") {
 
 export async function dispatchAppConfChanged(conf: Record<string, unknown>) {
   await invoke("set_app_conf", { conf });
+  useSettingsStore.getState().loadAppConf();
   await emitSettingEvent(SettingEvent.AppConfChanged, {
     action: SettingAction.AppConfChanged,
     value: conf,
@@ -73,6 +74,7 @@ export async function dispatchAppConfChanged(conf: Record<string, unknown>) {
 
 export async function dispatchOrbConfChanged(conf: Record<string, unknown>) {
   await invoke("set_orb_conf", { conf });
+  useSettingsStore.getState().loadOrbConf();
   await emitSettingEvent(SettingEvent.OrbConfChanged, {
     action: SettingAction.OrbConfChanged,
     value: conf,

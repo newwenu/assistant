@@ -6,6 +6,7 @@ import {
 } from "../types/events";
 import { useProviderStore } from "../stores/providerStore";
 import { useThemeStore } from "../stores/themeStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 export function subscribeSettingEvents(): () => void {
   let disposed = false;
@@ -41,6 +42,24 @@ export function subscribeSettingEvents(): () => void {
         useThemeStore.setState({
           resolved: payload.value as "light" | "dark",
         });
+      }
+    }),
+  );
+
+  track(
+    listen<SettingEventPayload>(SettingEvent.AppConfChanged, ({ payload }) => {
+      if (disposed) return;
+      if (payload.action === SettingAction.AppConfChanged) {
+        useSettingsStore.getState().loadAppConf();
+      }
+    }),
+  );
+
+  track(
+    listen<SettingEventPayload>(SettingEvent.OrbConfChanged, ({ payload }) => {
+      if (disposed) return;
+      if (payload.action === SettingAction.OrbConfChanged) {
+        useSettingsStore.getState().loadOrbConf();
       }
     }),
   );

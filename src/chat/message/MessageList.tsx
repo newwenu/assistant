@@ -170,9 +170,7 @@ export const MessageList: React.FC<MessageListProps> = ({
               <MessageBubble
                 message={displayMsg}
                 isStreaming={isStreamingMsg}
-                isReasoningStreaming={
-                  isStreamingMsg && isReasoningStreaming
-                }
+                isReasoningStreaming={isStreamingMsg && isReasoningStreaming}
                 compact={compact}
                 onDelete={onDeleteMessage}
                 onEdit={onEditMessage}

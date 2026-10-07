@@ -47,7 +47,7 @@
 
 .resultValue {
   font-size: 16px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   word-break: break-all;
   color: var(--color-text);
 }

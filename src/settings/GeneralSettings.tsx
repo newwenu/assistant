@@ -2,42 +2,32 @@ import { useEffect } from "react";
 import { Form, Select, Switch, Typography, message } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { AppConf } from "@/stores/settingsStore";
+import { dispatchAppConfChanged } from "./settingsDispatcher";
 
 export const GeneralSettings: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);
-  const saveAppConf = useSettingsStore((s) => s.saveAppConf);
   const [messageApi, contextHolder] = message.useMessage();
+  const [form] = Form.useForm();
 
   useEffect(() => {
     loadAppConf();
   }, [loadAppConf]);
 
+  useEffect(() => {
+    if (!appConf) return;
+    form.setFieldsValue({
+      language: appConf.language,
+      launch_at_login: appConf.launch_at_login,
+      close_to_tray: appConf.close_to_tray,
+      stay_on_top: appConf.stay_on_top,
+    });
+  }, [appConf, form]);
+
   const handleSave = async (values: Partial<AppConf>) => {
     if (!appConf) return;
     const newConf: AppConf = { ...appConf, ...values };
-    await saveAppConf(newConf);
-    if (values.launch_at_login !== undefined) {
-      try {
-        const { enable, disable } =
-          await import("@tauri-apps/plugin-autostart");
-        if (values.launch_at_login) {
-          await enable();
-        } else {
-          await disable();
-        }
-      } catch (e) {
-        console.error("[GeneralSettings] autostart failed:", e);
-      }
-    }
-    if (values.stay_on_top !== undefined) {
-      try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        await getCurrentWindow().setAlwaysOnTop(values.stay_on_top);
-      } catch (e) {
-        console.error("[GeneralSettings] setAlwaysOnTop failed:", e);
-      }
-    }
+    await dispatchAppConfChanged(newConf as unknown as Record<string, unknown>);
     messageApi.success("已保存");
   };
 
@@ -49,6 +39,7 @@ export const GeneralSettings: React.FC = () => {
           通用设置
         </Typography.Title>
         <Form
+          form={form}
           layout="vertical"
           initialValues={{
             language: appConf?.language ?? "zh-CN",

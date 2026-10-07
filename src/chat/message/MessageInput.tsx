@@ -1,10 +1,11 @@
 import React, { useState, useCallback } from "react";
-import { Input, Button } from "antd";
-import { SendOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import { Input } from "antd";
 import {
   CHAT_INPUT_MIN_ROWS,
   CHAT_INPUT_MAX_ROWS,
 } from "../../config/constants";
+import { RiveMascot } from "../../mascot/RiveMascot";
+import { useMascotStore } from "../../mascot/mascotStore";
 
 interface MessageInputProps {
   onSend: (content: string) => void;
@@ -20,6 +21,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   disabled,
 }) => {
   const [value, setValue] = useState("");
+  const mascotFace = useMascotStore((s) => s.face);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -41,6 +43,16 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   }, [value, disabled, isStreaming, onSend]);
 
+  const handleMascotClick = useCallback(() => {
+    if (isStreaming) {
+      onCancel();
+    } else {
+      handleSend();
+    }
+  }, [isStreaming, onCancel, handleSend]);
+
+  const canSend = !disabled && !isStreaming && value.trim().length > 0;
+
   return (
     <div className="chat-input">
       <Input.TextArea
@@ -60,23 +72,17 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         }
         disabled={disabled}
       />
-      {isStreaming ? (
-        <Button
-          type="default"
-          danger
-          icon={<CloseCircleOutlined />}
-          onClick={onCancel}
-          className="chat-send-btn"
-        />
-      ) : (
-        <Button
-          type="primary"
-          icon={<SendOutlined />}
-          onClick={handleSend}
-          disabled={disabled || value.trim().length === 0}
-          className="chat-send-btn"
-        />
-      )}
+      <button
+        type="button"
+        className={`chat-mascot-btn${canSend ? " chat-mascot-btn-active" : ""}${isStreaming ? " chat-mascot-btn-streaming" : ""}`}
+        onClick={handleMascotClick}
+        disabled={!isStreaming && !canSend}
+        title={isStreaming ? "停止生成" : "发送消息"}
+      >
+        <div className="chat-mascot-btn-canvas">
+          <RiveMascot face={mascotFace} size={44} />
+        </div>
+      </button>
     </div>
   );
 };

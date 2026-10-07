@@ -88,20 +88,63 @@
 
 ---
 
-### E2.5 已知缺口 — 设置项 UI 可保存但无实际功能
+### E2.5 设置配置中间层 — 统一保存→生效链路
 
-以下设置项 UI 已实现、配置可持久化，但运行时未被消费/应用：
+**问题根因**：当前设置保存→生效存在 3 套并行模式，事件体系不统一，侧效应散落组件，CSS 变量断链。
 
-- [ ] **语言** (`language`)：UI 仅 `zh-CN` 单选项，保存后无 i18n 切换逻辑生效，纯占位
-- [ ] **Orb 透明度** (`opacity_percent`)：Orb 窗口未监听 `orb-conf-changed` 事件应用透明度
-- [ ] **Orb 缩放** (`scale_percent`)：Orb 窗口未监听事件应用缩放
-- [ ] **Orb 圆角** (`corner_radius_percent`)：Orb 窗口未监听事件应用圆角
-- [ ] **鼠标穿透** (`click_through`)：Orb 窗口未监听事件重新应用穿透
-- [ ] **悬停隐藏** (`hide_on_pointer_hover`)：Orb 窗口 / Rust 端均未消费此字段
-- [ ] **悬停延迟** (`hover_delay_ms`)：Rust hover 模块未从此字段读取延迟值
-- [ ] **始终置顶** (`always_on_top`)：Orb 窗口未监听事件重新 `setAlwaysOnTop`
+#### 当前 3 套模式对比
 
-> 根因：`OrbAppearanceSection` 保存后 emit 了 `orb-conf-changed` 事件，但 Orb 窗口（OrbBall/OrbPanel）未 listen 该事件并应用配置变更。需在 Orb 窗口添加 `orb-conf-changed` 监听器，读取新 OrbConf 并调用 `window.setOpacity()` / `window.setAlwaysOnTop()` / CSS 变量更新圆角缩放等。
+| 模式 | 使用方 | 路径 | 问题 |
+|------|--------|------|------|
+| ① settingsDispatcher 标准路径 | Provider / Theme | `dispatchXxx()` → `invoke()` → `store.load()` → `emitSettingEvent()` → 消费端 `listen(SettingEvent.Xxx)` | ✅ 规范，唯一正确路径 |
+| ② 裸 invoke + 裸 emit | OrbConf | `saveOrbConf()` → `invoke("set_orb_conf")` → `emit("orb-conf-changed")` | ❌ 未走 `dispatchOrbConfChanged`，裸 Tauri event |
+| ③ 组件内联侧效应 | AppConf | `saveAppConf()` → `invoke("set_app_conf")` → 组件内 `autostart.enable()` / `setAlwaysOnTop()` | ❌ 未走 `dispatchAppConfChanged`，侧效应散落 |
+
+#### 目标：统一到模式①（Provider 标准路径）
+
+```
+Provider 标准路径（已验证）：
+  UI → providerStore.saveProvider()
+      → dispatchProviderSaved(provider)            // settingsDispatcher 统一入口
+          → invoke("save_provider", {provider})    // 写后端
+          → useProviderStore.loadProviders()       // 刷新本地缓存
+          → emitSettingEvent(SettingEvent.ProviderChanged)  // 跨窗口广播
+      消费端: settingEvents.ts listen → loadProviders()
+```
+
+#### 实施条目
+
+**E2.5a — AppConf 收敛到 settingsDispatcher**
+- [x] `GeneralSettings.handleSave` 改用 `dispatchAppConfChanged(conf)` 替代直接 `invoke("set_app_conf")`
+- [x] `dispatchAppConfChanged` 内补齐运行时侧效应：`autostart.enable()/disable()` + `getCurrentWindow().setAlwaysOnTop()`，从 GeneralSettings 组件中提取
+- [x] `settingEvents.ts` 补 `listen(SettingEvent.AppConfChanged)` 消费端：主窗口 `setAlwaysOnTop` / Orb 窗口 `setAlwaysOnTop`
+- [x] `AppearanceSettings.handleThemeChange` 改用 `dispatchAppConfChanged` 替代 `saveAppConf`
+- [x] `PinToggle.handleToggle` 改用 `dispatchAppConfChanged` 替代 `saveAppConf` + 内联 `setAlwaysOnTop`
+- [x] `CommandPalette` 切换主题 action 改用 `dispatchAppConfChanged` 替代 `saveAppConf`
+- [x] `settingsStore.updateKeybinding` / `resetKeybindings` 改用 `dispatchAppConfChanged` 替代 `saveAppConf`
+
+**E2.5b — OrbConf 收敛到 settingsDispatcher**
+- [x] `OrbAppearanceSection.handleSave` 改用 `dispatchOrbConfChanged(conf)` 替代 `saveOrbConf()` + 裸 `emit("orb-conf-changed")`
+- [x] `useOrbConfSync` 改用 `listen(SettingEvent.OrbConfChanged)` 替代裸 `listen("orb-conf-changed")`
+- [x] `settingEvents.ts` 补 `listen(SettingEvent.OrbConfChanged)` 消费端：Orb 窗口配置应用
+
+**E2.5c — CSS 变量消费链补齐**
+- [x] `global.css` 中 `.orb-hitbox` 选择器使用 `var(--orb-opacity)` / `var(--orb-scale)` / `var(--orb-radius)` 驱动外观
+- [x] `useOrbConfSync` 中设置 CSS 变量的逻辑保留，确认变量名与 CSS 消费端一致
+
+**E2.5d — OrbConf 字段消费补齐**
+- [x] **Orb 透明度** (`opacity_percent`)：CSS 变量 `--orb-opacity` → `opacity: var(--orb-opacity)`（Tauri v2 Window 无 setOpacity API，通过 CSS 变量实现）
+- [x] **Orb 缩放** (`scale_percent`)：CSS 变量 `--orb-scale` → `transform: scale(var(--orb-scale))`
+- [x] **Orb 圆角** (`corner_radius_percent`)：CSS 变量 `--orb-radius` → `border-radius: var(--orb-radius)`
+- [x] **鼠标穿透** (`click_through`)：`useOrbConfSync` → `invoke("set_orb_click_through", { enable })`
+- [x] **悬停隐藏** (`hide_on_pointer_hover`)：`useOrbConfSync` → 设置 CSS 类 `orb-hover-hide` + CSS `:hover` 规则
+- [x] **悬停延迟** (`hover_delay_ms`)：`useOrbConfSync` → CSS 变量 `--orb-hover-delay` → `transition: opacity var(--orb-hover-delay)`
+- [x] **始终置顶** (`always_on_top`)：`useOrbConfSync` → `orbWin.setAlwaysOnTop(conf.always_on_top)`
+
+**E2.5e — 语言占位确认**
+- [x] **语言** (`language`)：确认仅占位，UI 单选项 `zh-CN`，i18n 在后续迭代，标注 `[占位]`
+
+> **参考**：Provider 标准路径（`settingsDispatcher.ts` + `settingEvents.ts` + `providerStore.ts`）已验证可用，AppConf/OrbConf 对齐此路径即可。`dispatchAppConfChanged` / `dispatchOrbConfChanged` / `SettingEvent.AppConfChanged` / `SettingEvent.OrbConfChanged` 已在 `settingsDispatcher.ts` + `events.ts` 中定义，仅需接入使用。
 
 ---
 

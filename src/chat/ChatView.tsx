@@ -83,13 +83,17 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
         try {
           const models = JSON.parse(fallback.models || "[]");
           if (models.length > 0 && !fallbackModel) fallbackModel = models[0].id;
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         return { providerId: fallback.id, modelId: fallbackModel };
       }
       let models: { id: string }[] = [];
       try {
         models = JSON.parse(p.models || "[]");
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       const modelExists = models.some((m) => m.id === modelId);
       if (!modelExists) {
         let fallbackModel = p.default_model || "";
@@ -122,7 +126,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       setCurrentProviderId(resolved.providerId);
       setCurrentModelId(resolved.modelId);
     }
-  }, [provider.providers, currentProviderId, currentModelId, resolveProviderModel]);
+  }, [
+    provider.providers,
+    currentProviderId,
+    currentModelId,
+    resolveProviderModel,
+  ]);
 
   const noProviders = provider.providers.length === 0;
 

@@ -28,9 +28,7 @@ interface SettingsState {
   orbConf: OrbConf | null;
 
   loadAppConf: () => Promise<void>;
-  saveAppConf: (conf: AppConf) => Promise<void>;
   loadOrbConf: () => Promise<void>;
-  saveOrbConf: (conf: OrbConf) => Promise<void>;
   updateKeybinding: (id: string, binding: string) => Promise<void>;
   resetKeybindings: () => Promise<void>;
 }
@@ -57,15 +55,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
-  saveAppConf: async (conf: AppConf) => {
-    try {
-      await invoke("set_app_conf", { conf });
-      set({ appConf: conf });
-    } catch (e) {
-      console.error("[settingsStore] saveAppConf failed:", e);
-    }
-  },
-
   loadOrbConf: async () => {
     try {
       const conf = (await invoke("get_orb_conf")) as OrbConf;
@@ -75,37 +64,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
-  saveOrbConf: async (conf: OrbConf) => {
-    try {
-      await invoke("set_orb_conf", { conf });
-      set({ orbConf: conf });
-    } catch (e) {
-      console.error("[settingsStore] saveOrbConf failed:", e);
-    }
-  },
-
   updateKeybinding: async (id: string, binding: string) => {
     const { appConf } = get();
     if (!appConf) return;
     const newKeybindings = { ...appConf.keybindings, [id]: binding };
     const newConf = { ...appConf, keybindings: newKeybindings };
-    await get().saveAppConf(newConf);
-    try {
-      await invoke("reload_shortcuts");
-    } catch (e) {
-      console.error("[settingsStore] reload_shortcuts failed:", e);
-    }
+    const { dispatchAppConfChanged } =
+      await import("../settings/settingsDispatcher");
+    await dispatchAppConfChanged(newConf as unknown as Record<string, unknown>);
   },
 
   resetKeybindings: async () => {
     const { appConf } = get();
     if (!appConf) return;
     const newConf = { ...appConf, keybindings: { ...DEFAULT_KEYBINDINGS } };
-    await get().saveAppConf(newConf);
-    try {
-      await invoke("reload_shortcuts");
-    } catch (e) {
-      console.error("[settingsStore] reload_shortcuts failed:", e);
-    }
+    const { dispatchAppConfChanged } =
+      await import("../settings/settingsDispatcher");
+    await dispatchAppConfChanged(newConf as unknown as Record<string, unknown>);
   },
 }));

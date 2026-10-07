@@ -3,11 +3,12 @@
 use log::error;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, File},
-    io::{Read, Write},
+    fs::File,
+    io::Read,
     path::PathBuf,
 };
 
+use super::atomic_write::{atomic_write, recover_temp};
 use super::constant::APP_IDENTIFIER;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -54,6 +55,14 @@ impl OrbConf {
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         let path = Self::get_conf_path()?;
 
+        if let Some(tmp_bytes) = recover_temp(&path) {
+            if let Ok(config) = serde_json::from_slice::<Self>(&tmp_bytes) {
+                config.save()?;
+                return Ok(config);
+            }
+            error!("[OrbConf::load] temp file invalid, discarding");
+        }
+
         if !path.exists() {
             let config = Self::new();
             config.save()?;
@@ -80,15 +89,36 @@ impl OrbConf {
 
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
         let path = Self::get_conf_path()?;
-
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
         let json = serde_json::to_string_pretty(self)?;
-        let mut file = File::create(path)?;
-        file.write_all(json.as_bytes())?;
+        atomic_write(&path, json.as_bytes())?;
+        Ok(())
+    }
 
+    pub fn validate(&self) -> Result<(), String> {
+        if self.scale_percent < 10 || self.scale_percent > 300 {
+            return Err(format!(
+                "scale_percent must be 10-300, got {}",
+                self.scale_percent
+            ));
+        }
+        if self.opacity_percent < 10 || self.opacity_percent > 100 {
+            return Err(format!(
+                "opacity_percent must be 10-100, got {}",
+                self.opacity_percent
+            ));
+        }
+        if self.corner_radius_percent > 100 {
+            return Err(format!(
+                "corner_radius_percent must be 0-100, got {}",
+                self.corner_radius_percent
+            ));
+        }
+        if self.hover_delay_ms > 5000 {
+            return Err(format!(
+                "hover_delay_ms must be 0-5000, got {}",
+                self.hover_delay_ms
+            ));
+        }
         Ok(())
     }
 }
