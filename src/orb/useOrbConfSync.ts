@@ -21,10 +21,6 @@ async function applyOrbConf(
     "--orb-scale",
     `${conf.scale_percent / 100}`,
   );
-  document.documentElement.style.setProperty(
-    "--orb-radius",
-    `${conf.corner_radius_percent}%`,
-  );
 
   if (conf.hide_on_pointer_hover) {
     document.documentElement.classList.add("orb-hover-hide");
@@ -35,6 +31,10 @@ async function applyOrbConf(
   document.documentElement.style.setProperty(
     "--orb-hover-delay",
     `${conf.hover_delay_ms}ms`,
+  );
+  document.documentElement.style.setProperty(
+    "--orb-idle-opacity",
+    `${conf.idle_opacity_percent / 100}`,
   );
 }
 

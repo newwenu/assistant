@@ -1,8 +1,10 @@
 import { useEffect } from "react";
-import { Form, Radio, Typography, message } from "antd";
+import { Form, Radio, message } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { OrbBallSection } from "./OrbBallSection";
 import { OrbPanelSection } from "./OrbPanelSection";
+import { SettingsSection } from "./SettingsSection";
+import { SettingsPageShell } from "./SettingsPageShell";
 import {
   dispatchAppConfChanged,
   dispatchThemeChanged,
@@ -28,48 +30,41 @@ export const AppearanceSettings: React.FC = () => {
     messageApi.success("主题已切换");
   };
 
+  const handleSaved = () => messageApi.success("已保存");
+
   return (
     <>
       {contextHolder}
-      <div style={{ maxWidth: 600, margin: "0 auto", padding: 24 }}>
-        <Typography.Title level={5} style={{ marginBottom: 16 }}>
-          主题
-        </Typography.Title>
-        <Form layout="vertical">
-          <Form.Item label="主题模式" initialValue={appConf?.theme ?? "system"}>
-            <Radio.Group
-              onChange={(e) => handleThemeChange(e.target.value)}
-              value={appConf?.theme ?? "system"}
+      <SettingsPageShell>
+        <SettingsSection title="主题" style={{ marginTop: 0 }}>
+          <Form layout="vertical">
+            <Form.Item
+              label="主题模式"
+              initialValue={appConf?.theme ?? "system"}
             >
-              <Radio.Button value="system">跟随系统</Radio.Button>
-              <Radio.Button value="light">亮色</Radio.Button>
-              <Radio.Button value="dark">暗色</Radio.Button>
-            </Radio.Group>
-          </Form.Item>
-        </Form>
+              <Radio.Group
+                onChange={(e) => handleThemeChange(e.target.value)}
+                value={appConf?.theme ?? "system"}
+              >
+                <Radio.Button value="system">跟随系统</Radio.Button>
+                <Radio.Button value="light">亮色</Radio.Button>
+                <Radio.Button value="dark">暗色</Radio.Button>
+              </Radio.Group>
+            </Form.Item>
+          </Form>
+        </SettingsSection>
 
-        <Typography.Title level={5} style={{ marginTop: 32, marginBottom: 16 }}>
-          悬浮球
-        </Typography.Title>
-        <Typography.Text
-          type="secondary"
-          style={{ display: "block", marginBottom: 16 }}
+        <SettingsSection
+          title="悬浮球"
+          description="桌面上的圆形助手图标，点击展开悬浮窗"
         >
-          桌面上的圆形助手图标，点击展开悬浮窗
-        </Typography.Text>
-        <OrbBallSection />
+          <OrbBallSection onSaved={handleSaved} />
+        </SettingsSection>
 
-        <Typography.Title level={5} style={{ marginTop: 32, marginBottom: 16 }}>
-          悬浮窗
-        </Typography.Title>
-        <Typography.Text
-          type="secondary"
-          style={{ display: "block", marginBottom: 16 }}
-        >
-          展开后的对话面板，用于与助手交互
-        </Typography.Text>
-        <OrbPanelSection />
-      </div>
+        <SettingsSection title="悬浮窗">
+          <OrbPanelSection onSaved={handleSaved} />
+        </SettingsSection>
+      </SettingsPageShell>
     </>
   );
 };

@@ -4,7 +4,6 @@ export enum SettingAction {
   ThemeChanged = "theme-changed",
   AppConfChanged = "app-conf-changed",
   OrbConfChanged = "orb-conf-changed",
-  TemplateSaved = "template-saved",
 }
 
 export enum SettingEvent {
@@ -12,7 +11,6 @@ export enum SettingEvent {
   ThemeChanged = "setting:theme-changed",
   AppConfChanged = "setting:app-conf-changed",
   OrbConfChanged = "setting:orb-conf-changed",
-  TemplateChanged = "setting:template-changed",
 }
 
 export interface SettingEventPayload {

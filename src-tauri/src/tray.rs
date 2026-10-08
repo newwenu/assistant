@@ -4,11 +4,11 @@
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager,
+    AppHandle, Emitter,
 };
 
-use crate::window::show_or_create_main;
-use assistant_config::constant::WINDOW_ORB;
+use crate::window;
+use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
 
 pub fn create_tray(app: &AppHandle) -> TrayIcon {
     let new_chat = MenuItem::with_id(app, "new_chat", "新建对话", true, None::<&str>)
@@ -18,12 +18,15 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
     let show_orb = MenuItem::with_id(app, "show_orb", "显示悬浮球", true, None::<&str>)
         .expect("failed to create show_orb menu item");
     let separator1 = PredefinedMenuItem::separator(app).expect("failed to create separator");
-    let settings_general = MenuItem::with_id(app, "settings_general", "通用设置", true, None::<&str>)
-        .expect("failed to create settings_general menu item");
-    let settings_appearance = MenuItem::with_id(app, "settings_appearance", "外观设置", true, None::<&str>)
-        .expect("failed to create settings_appearance menu item");
-    let settings_shortcuts = MenuItem::with_id(app, "settings_shortcuts", "快捷键", true, None::<&str>)
-        .expect("failed to create settings_shortcuts menu item");
+    let settings_general =
+        MenuItem::with_id(app, "settings_general", "通用设置", true, None::<&str>)
+            .expect("failed to create settings_general menu item");
+    let settings_appearance =
+        MenuItem::with_id(app, "settings_appearance", "外观设置", true, None::<&str>)
+            .expect("failed to create settings_appearance menu item");
+    let settings_shortcuts =
+        MenuItem::with_id(app, "settings_shortcuts", "快捷键", true, None::<&str>)
+            .expect("failed to create settings_shortcuts menu item");
     let separator2 = PredefinedMenuItem::separator(app).expect("failed to create separator");
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)
         .expect("failed to create quit menu item");
@@ -54,24 +57,21 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 let _ = app.emit("orb-new-conversation", ());
             }
             "show_main" => {
-                show_or_create_main(app);
+                let _ = window::show_or_create(app, WINDOW_MAIN);
             }
             "show_orb" => {
-                if let Some(window) = app.get_webview_window(WINDOW_ORB) {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                let _ = window::show_or_create(app, WINDOW_ORB);
             }
             "settings_general" => {
-                show_or_create_main(app);
+                let _ = window::show_or_create(app, WINDOW_MAIN);
                 let _ = app.emit("navigate", "/settings/general");
             }
             "settings_appearance" => {
-                show_or_create_main(app);
+                let _ = window::show_or_create(app, WINDOW_MAIN);
                 let _ = app.emit("navigate", "/settings/appearance");
             }
             "settings_shortcuts" => {
-                show_or_create_main(app);
+                let _ = window::show_or_create(app, WINDOW_MAIN);
                 let _ = app.emit("navigate", "/settings/shortcuts");
             }
             "quit" => {
@@ -86,7 +86,7 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 ..
             } = event
             {
-                show_or_create_main(tray.app_handle());
+                let _ = window::show_or_create(tray.app_handle(), WINDOW_MAIN);
             }
         })
         .build(app)

@@ -2,6 +2,7 @@ use log::info;
 use rusqlite::Connection;
 use std::path::Path;
 
+use crate::agent_modes;
 use crate::migrations;
 
 pub fn init_db(db_path: &Path) -> Result<Connection, String> {
@@ -48,15 +49,6 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             is_pinned INTEGER NOT NULL DEFAULT 0
         );
 
-        CREATE TABLE IF NOT EXISTS prompt_templates (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            category TEXT NOT NULL,
-            content TEXT NOT NULL,
-            variables TEXT,
-            is_builtin INTEGER NOT NULL DEFAULT 0
-        );
-
         CREATE TABLE IF NOT EXISTS tool_favorites (
             tool_id TEXT PRIMARY KEY
         );
@@ -81,6 +73,24 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
           ON messages(conversation_id, timestamp);",
     )
     .map_err(|e| e.to_string())?;
+
+    agent_modes::init_table(&conn)?;
+
+    let has_mode_id: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'mode_id'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_mode_id {
+        conn.execute_batch("ALTER TABLE conversations ADD COLUMN mode_id TEXT;")
+            .map_err(|e| e.to_string())?;
+        info!("Added mode_id column to conversations table");
+    }
+
+    agent_modes::seed_builtin_modes(&conn)?;
 
     let is_new_db: bool = conn
         .query_row(

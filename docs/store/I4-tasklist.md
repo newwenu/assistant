@@ -28,7 +28,7 @@
 
 - [x] C1. GeneralSettings：语言 Select + 开机自启 Switch + 关闭到托盘 Switch + 置顶主窗口 Switch，保存调用 `saveAppConf`
 - [x] C2. AppearanceSettings：主题 RadioGroup（system/light/dark）+ OrbAppearanceCard
-- [ ] C3. OrbAppearanceCard：透明度 Slider(10-100) + 缩放 Slider(50-200) + 圆角 Slider(0-100) + 鼠标穿透 Switch + 悬停隐藏 Switch + 悬停延迟 Slider(0-2000ms)，保存调用 `saveOrbConf` + 实时更新 Orb 窗口
+- [x] C3. OrbAppearanceCard：透明度 Slider(10-100) + 缩放 Slider(50-200) + 圆角 Slider(0-100) + 鼠标穿透 Switch + 悬停隐藏 Switch + 悬停延迟 Slider(0-2000ms)，保存调用 `saveOrbConf` + 实时更新 Orb 窗口（拆分为 `OrbBallSection` + `OrbPanelSection`，功能完整覆盖）
 - [x] C4. ShortcutSettings：分组展示（全局/主窗口）+ 搜索过滤 + 每行显示 ID/说明/当前绑定 + 点击进入录制 + 冲突检测高亮 + 重置按钮
 - [x] C5. ShortcutRecorder：录制模式组件 — 监听 keydown 捕获组合键 → 显示绑定 → Esc 取消 / Backspace 清除 / Enter 确认
 - [x] C6. AboutPage：应用名 + 版本号(invoke get_app_version) + 构建日期 + Rust 工具链 + 技术栈 + 许可证 + 检查更新按钮（预留）
@@ -47,7 +47,7 @@
 - [x] D4. 标题栏增强：新增 `PinToggle`（置顶切换）+ `SettingsEntry`（设置入口）按钮，插入 ThemeToggle 左侧
 - [x] D5. 删除 SettingsPage 空占位组件，`/settings` 路由改为 `<Navigate to="/settings/general" replace />`
 - [x] D6. 全局快捷键事件监听：前端 listen `shortcut-warning` 事件 → 显示 Notification 警告
-- [ ] D7. Orb 外观实时更新：OrbAppearanceCard 保存后 invoke `set_orb_conf` + emit 事件通知 Orb 窗口重新应用配置
+- [x] D7. Orb 外观实时更新：OrbAppearanceCard 保存后 invoke `set_orb_conf` + emit 事件通知 Orb 窗口重新应用配置（`useDebouncedOrbSave` → `dispatchOrbConfChanged` → Rust `set_orb_conf` → `useOrbConfSync` listen → CSS 变量生效，完整链路已打通）
 
 ---
 
@@ -151,6 +151,7 @@ Provider 标准路径（已验证）：
 ### E2.6 快捷键跨平台修复
 
 - [x] Rust `parse_shortcut`：`"meta"`/`"cmd"`/`"win"` → `Modifiers::META`；`"ctrl"`/`"control"` → `Modifiers::CONTROL`，不再混淆
+- [x] Rust `parse_shortcut` 键码解析修复：`other` 使用原始 `part.to_uppercase()` 而非小写化后的值，单字母 → `Key{O}` / 数字 → `Digit{N}` / 命名键直接传（参考 BongoCat `shortcut_code`），修复 `Control+Shift+O` 等绑定解析失败
 - [x] 前端默认绑定：`"Super"` → `"Meta"`（平台中立标识）
 - [x] 前端 `formatBinding`：加平台检测，macOS `Meta`→⌘，Windows `Meta`→⊞、`Control`→Ctrl
 - [x] 前端 `ShortcutRecorder`：macOS `metaKey`→`"Meta"`，Windows `ctrlKey`→`"Control"`

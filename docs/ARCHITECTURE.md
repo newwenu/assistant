@@ -107,9 +107,13 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 
 | 模式 | 能力 |
 |------|------|
-| **Quick** | 单轮对话，无工具调用 |
-| **Standard** | 多轮对话 + 基础工具（搜索/计算/翻译） |
-| **Deep** | 多轮对话 + 全部工具 + MCP + 自主规划 |
+| **默认** | 无 system prompt，标准参数(0.7/4096)——最常用的纯对话模式 |
+| **快速** | 无 system prompt，低温度(0.3) + 短输出(2048)——简短确定的回答 |
+| **深度** | 无 system prompt，长输出(8192)——需要长篇回答的场景 |
+| **翻译助手** | 内置翻译 system prompt，低温度(0.3)——高频且 prompt 稳定 |
+| **自定义** | 用户自定义 system_prompt / temperature / max_tokens / model / tools 组合 |
+
+> 原 Prompt 模板（代码解释/文本摘要/续写/头脑风暴）不再内置，用户可自行创建自定义模式。I6 实现。
 
 ---
 
@@ -131,7 +135,7 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 | `/settings/appearance` | 外观设置（主题 + Orb 外观） |
 | `/settings/shortcuts` | 快捷键配置 |
 | `/settings/providers` | AI Provider 配置 |
-| `/settings/templates` | Prompt 模板管理 |
+| `/settings/agents` | Agent 模式管理（合并原 Prompt 模板） |
 | `/settings/about` | 关于 |
 
 ### 4.2 工具箱
@@ -164,11 +168,14 @@ interface ToolDefinition {
 
 ### 4.3 设置
 
+- **通用设置**：语言（占位 zh-CN）/ 开机自启 / 关闭到托盘 / 置顶主窗口
+- **外观设置**：主题（亮/暗/跟随系统）+ Orb 悬浮球外观（透明度/缩放/圆角/鼠标穿透/悬停隐藏/悬停延迟）+ Orb 悬浮窗（始终置顶）
+- **快捷键**：全局快捷键（toggle_orb / toggle_main / new_chat）+ 应用内快捷键（command_palette），分组展示 + 录制 + 冲突检测 + 重置
 - **Provider 管理**：添加/编辑/删除 AI Provider（名称 + API Key + Base URL + 模型列表）
-- **Prompt 模板**：内置 + 自定义模板，支持变量占位符 `{{variable}}`
-- **主题**：亮 / 暗 / 跟随系统
-- **快捷键**：自定义全局快捷键
-- **关于**：版本信息 + 检查更新
+- **Agent 模式**：内置（默认/快速/深度/翻译助手）+ 自定义模式，支持 system_prompt / temperature / max_tokens / model / tools 组合
+- **关于**：版本信息 + 构建信息 + 检查更新（预留）
+
+> **设置保存统一链路**：所有设置变更通过 `settingsDispatcher` 统一入口 → `invoke()` 写后端 → `store.load()` 刷新缓存 → `emitSettingEvent()` 跨窗口广播 → 消费端 `listen()` 生效。
 
 ---
 
@@ -207,13 +214,20 @@ CREATE TABLE messages (
   timestamp INTEGER NOT NULL
 );
 
-CREATE TABLE prompt_templates (
+CREATE TABLE agent_modes (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  category TEXT NOT NULL,
-  content TEXT NOT NULL,
-  variables TEXT,
-  is_builtin INTEGER NOT NULL DEFAULT 0
+  description TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'custom',
+  prompt TEXT NOT NULL DEFAULT '',
+  model TEXT,
+  temperature REAL,
+  max_tokens INTEGER,
+  tools TEXT NOT NULL DEFAULT '[]',
+  presentation_rank INTEGER NOT NULL DEFAULT 99,
+  is_builtin INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 
 CREATE TABLE tool_favorites (
@@ -297,7 +311,7 @@ retryable 错误支持指数退避重试（max 3 次，base 1s，max 30s）。
 
 > Rust 后端结构择优参考 BongoCat 的 workspace 多 crate 架构（编译隔离 + API 边界强制 + 独立测试），按我们的领域划分为 1 个根包 + 6 个 workspace crate，远少于 BongoCat 的 20 个。ChatGPT 的 core 模块组织（cmd/conf/constant/setup/window）融入 `assistant-app` 根包。Tauri 2 CLI 要求二进制包位于 `src-tauri/` 根目录（`Cargo.toml` 同时包含 `[package]` 和 `[workspace]`），因此 `assistant-app` 作为根包而非子 crate。
 
-> **实现状态**：Rust 后端 7 crate 骨架已在 I0 中实现；I1 完成 Orb 悬浮球全部功能；I2 完成 AI 对话全部功能（Provider 管理 + 流式输出 + 对话持久化 + Prompt 模板 + ChatError 错误体系）；I2-History 进行中（Schema v2 迁移 + 高级 CRUD + 虚拟滚动 + 搜索导出等）。前端 mascot/ tools/ 等业务模块仍为规划结构，将在后续迭代中逐步实现。
+> **实现状态**：Rust 后端 7 crate 骨架已在 I0 中实现；I1 完成 Orb 悬浮球全部功能；I2 完成 AI 对话全部功能（Provider 管理 + 流式输出 + 对话持久化 + ChatError 错误体系）；I3 完成工具箱全部功能（21 工具 + 命令面板 + 侧边栏）；I4 完成设置系统全部功能（通用/外观/快捷键/关于 + 全局快捷键注册 + 侧边栏重组 + 标题栏增强 + settingsDispatcher 统一链路）；I6 完成 Agent 自定义模式（agent_modes 表 + 内置预设 + 模式切换 + token 追踪 + Prompt 模板合并）。I2-History 进行中（Schema v2 迁移 + 高级 CRUD + 虚拟滚动 + 搜索导出等）。前端 mascot/ 等业务模块仍为规划结构，将在后续迭代中逐步实现。
 
 ```
 assistant/
@@ -305,7 +319,7 @@ assistant/
 │   ├── src/                       # assistant-app 根包（Tauri 集成层）
 │   │   ├── main.rs                # 入口（windows_subsystem → assistant_app::run()）
 │   │   ├── lib.rs                 # Builder + plugins + setup + invoke_handler
-│   │   ├── cmd.rs                 # Tauri commands（前端可调用，17 个）
+│   │   ├── cmd.rs                 # Tauri commands（前端可调用，53 个）
 │   │   ├── chat_tasks.rs          # 流式聊天任务管理（cancel + retry）
 │   │   ├── sse_log.rs             # SSE 调试日志模块
 │   │   ├── setup.rs               # 应用初始化（配置 + 数据库 + 窗口 + 托盘）
@@ -315,7 +329,7 @@ assistant/
 │   │   ├── assistant-config/      # 配置 crate（独立于 Tauri，可纯测试）
 │   │   │   ├── src/
 │   │   │   │   ├── lib.rs
-│   │   │   │   ├── app_conf.rs    # AppConf（theme/language/hotkey/stay_on_top）
+│   │   │   │   ├── app_conf.rs    # AppConf（theme/language/hotkey/stay_on_top/launch_at_login/close_to_tray/keybindings）
 │   │   │   │   ├── orb_conf.rs    # OrbConf（click_through/opacity/hover/placement）
 │   │   │   │   └── constant.rs    # 常量（窗口标签/尺寸/阈值）
 │   │   │   └── Cargo.toml
@@ -344,7 +358,7 @@ assistant/
 │   │   │   │   ├── db.rs          # SQLite 初始化 + 迁移
 │   │   │   │   ├── conversations.rs # 对话+消息 CRUD（含分页/搜索/导出）
 │   │   │   │   ├── providers.rs   # Provider CRUD
-│   │   │   │   └── templates.rs   # Prompt 模板 CRUD
+│   │   │   │   ├── agent_modes.rs # Agent 模式 CRUD（合并原 Prompt 模板）
 │   │   │   └── Cargo.toml
 │   │   └── assistant-i18n/        # 国际化 crate（参考 BongoCat bongocat-i18n）
 │   │       ├── src/
@@ -367,7 +381,8 @@ assistant/
 │   │   ├── OrbDrag.tsx            # 拖拽逻辑（8px 阈值 + 平台分发 + 边缘吸附 + 位置保存）
 │   │   ├── OrbExpand.ts           # 展开/收起控制（方向自适应 + click-through 切换）
 │   │   ├── OrbCoord.ts            # 统一逻辑坐标系工具（物理↔逻辑转换 + 几何判断）
-│   │   └── OrbContextMenu.tsx     # 右键菜单（Ant Design Dropdown）
+│   │   ├── OrbContextMenu.tsx     # 右键菜单（Ant Design Dropdown）
+│   │   └── useOrbConfSync.ts      # Orb 配置实时同步（listen OrbConfChanged → CSS 变量 + 运行时生效）
 │   ├── mascot/                    # Mascot 形象
 │   │   ├── RiveMascot.tsx         # Rive 渲染（useRive + useViewModel）
 │   │   ├── faceStates.ts          # MascotFace 枚举 + faceToPose 映射
@@ -378,6 +393,8 @@ assistant/
 │   │   ├── MessageList.tsx
 │   │   ├── MessageInput.tsx
 │   │   ├── ModelSelector.tsx
+│   │   ├── ModeSelector.tsx       # Agent 模式选择器（I6）
+│   │   ├── TokenUsageBar.tsx      # token 用量指示条（I6）
 │   │   ├── ProviderSelector.tsx   # 对话栏内嵌 Provider 切换
 │   │   ├── chatErrors.ts          # ChatError 13 种错误码 + retryable 标记
 │   │   └── streamCoalescer.ts     # 流式增量合并（rAF + setTimeout 双保险）
@@ -390,30 +407,45 @@ assistant/
 │   │   ├── CommandPalette.tsx     # 命令面板（Ctrl/Cmd+K，keywords+External+closeOnSelect）
 │   │   └── CommandPalette.module.css
 │   ├── settings/                  # 设置页面
-│   │   ├── SettingsPage.tsx
+│   │   ├── GeneralSettings.tsx    # 通用设置（语言/开机自启/关闭到托盘/置顶）
+│   │   ├── AppearanceSettings.tsx # 外观设置（主题 + Orb 外观）
+│   │   ├── OrbBallSection.tsx     # Orb 悬浮球外观（透明度/缩放/圆角/穿透/悬停）
+│   │   ├── OrbPanelSection.tsx    # Orb 悬浮窗设置（始终置顶）
+│   │   ├── useDebouncedOrbSave.ts # Orb 配置防抖保存 hook
+│   │   ├── ShortcutSettings.tsx   # 快捷键配置页
+│   │   ├── ShortcutRecorder.tsx   # 快捷键录制组件
+│   │   ├── AboutPage.tsx          # 关于页
 │   │   ├── ProviderManager.tsx
 │   │   ├── AddProviderDialog.tsx  # 新增 Provider（预设选择）
 │   │   ├── ConnectDialog.tsx      # Provider 连接配置
 │   │   ├── ProviderSwatch.tsx     # Provider 格式标签
-│   │   ├── TemplateManager.tsx
-│   │   ├── settingListeners.ts    # 设置变更监听
-│   │   └── settingsDispatcher.ts  # 设置分发逻辑
+│   │   ├── AgentModeManager.tsx   # Agent 模式管理
+│   │   ├── settingsDispatcher.ts  # 设置统一分发（dispatchAppConfChanged / dispatchOrbConfChanged / dispatchThemeChanged / dispatchProviderSaved）
+│   │   └── settingListeners.ts    # 设置变更监听
 │   ├── history/                   # 消息历史管理（I2-History）
 │   │   └── HistoryManager.tsx     # 对话列表 + 搜索 + 筛选 + 批量操作
 │   ├── components/                # 通用组件
-│   │   ├── Titlebar.tsx           # 自定义标题栏
-│   │   ├── Sidebar.tsx            # 侧边栏（可折叠分类菜单）
+│   │   ├── Titlebar.tsx           # 自定义标题栏（含 PinToggle + SettingsEntry）
+│   │   ├── Sidebar.tsx            # 侧边栏（三区域布局：工具箱/导航/设置 + 底部版本号）
+│   │   ├── CollapsibleToolMenu.tsx # 可折叠分类菜单
 │   │   ├── ThemeToggle.tsx        # 主题三态切换
+│   │   ├── PinToggle.tsx          # 窗口置顶切换
+│   │   ├── SettingsEntry.tsx      # 设置入口按钮
 │   │   └── WindowControls.tsx     # 窗口控制按钮
 │   ├── stores/                    # Zustand
 │   │   ├── themeStore.ts          # 主题状态（Tauri 原生 API）
 │   │   ├── orbStore.ts            # Orb 状态（展开/收起/位置/穿透缓存/展开方向）
-│   │   ├── chatStore.ts           # 对话状态（含分页加载/搜索/错误处理）
+│   │   ├── chatStore.ts           # 对话状态（含分页加载/搜索/错误处理/模式选择/token用量）
+│   │   ├── agentModeStore.ts      # Agent 模式状态
+│   │   ├── settingsStore.ts       # 设置状态（appConf / orbConf / load/save/updateKeybinding/resetKeybindings）
 │   │   ├── mascotStore.ts         # Mascot 表情状态
 │   │   ├── providerStore.ts       # Provider 配置
 │   │   └── toolStore.ts           # 工具状态（分类/收藏/搜索）
 │   ├── services/
-│   │   └── providers/             # Provider 前端适配
+│   │   ├── providers/             # Provider 前端适配
+│   │   └── settingEvents.ts       # 设置事件消费端（listen SettingEvent → store.load）
+│   ├── types/
+│   │   └── events.ts             # SettingEvent / SettingAction / SettingEventPayload 枚举
 │   ├── hooks/
 │   │   └── useTheme.ts            # Tauri 原生主题 hook
 │   ├── utils/
@@ -599,7 +631,7 @@ assistant/
 
 ---
 
-### I4 — 设置系统 + 全局快捷键 + 主窗口 UI 改造（进行中）
+### I4 — 设置系统 + 全局快捷键 + 主窗口 UI 改造 ✅
 
 **交付：** 完整设置系统 + 全局快捷键注册与配置 + 侧边栏重组/折叠菜单/标题栏增强
 
@@ -614,7 +646,8 @@ assistant/
 - [x] 侧边栏重组（工具箱区/导航区/设置区三区域 + 可折叠分类菜单 + 底部版本号）
 - [x] 侧边栏选中态修复（进入工具页高亮当前工具项）
 - [x] 标题栏增强（置顶切换 + 设置入口按钮）
-- [ ] 设置配置中间层（AppConf/OrbConf 收敛到 settingsDispatcher 标准路径 + CSS 变量消费链 + OrbConf 字段生效）
+- [x] 设置配置中间层（AppConf/OrbConf 收敛到 settingsDispatcher 标准路径 + CSS 变量消费链 + OrbConf 字段生效）
+- [x] 快捷键跨平台修复（parse_shortcut 键码大小写 + Meta/Control 平台映射）
 
 **规格**：详见 [I4-spec.md](./store/I4-spec.md) / [I4-tasklist.md](./store/I4-tasklist.md)
 
@@ -667,16 +700,19 @@ assistant/
 
 ---
 
-### I6 — Agent 自定义模式
+### I6 — Agent 自定义模式 + Prompt 模板合并 ✅
 
-**交付：** 内置预设 + 用户自定义 Agent 模式 + token 追踪
+**交付：** 内置预设 + 用户自定义 Agent 模式 + Prompt 模板合并为统一体系 + token 追踪
 
-- [ ] SQLite `agent_modes` 表 + Rust CRUD（assistant-storage）
-- [ ] 3 个内置预设（Quick / Standard / Deep）自动 seed
-- [ ] 前端 AgentModeManager（主窗口设置页：列表 + 创建/编辑/删除 + 排序）
-- [ ] Orb 面板模式切换 UI（下拉/Tab，显示内置 + 自定义）
-- [ ] chatStore 集成（发送消息时注入选中模式的 system_prompt / temperature / max_tokens）
-- [ ] token 追踪 + 费用估算
+- [x] SQLite `agent_modes` 表 + Rust CRUD（assistant-storage）
+- [x] 4 个内置预设（默认/快速/深度 + 翻译助手）自动 seed
+- [x] Prompt 模板移除：`prompt_templates` 表 DROP、`templates.rs` 删除、`TemplateManager.tsx` 删除、路由删除
+- [x] 前端 AgentModeManager（主窗口设置页：列表 + 创建/编辑/删除 + 排序）
+- [x] Orb 面板模式切换 UI（下拉 Select，显示内置 + 自定义）
+- [x] chatStore 集成（发送消息时注入选中模式的 system_prompt / temperature / max_tokens）
+- [x] token 追踪 + 用量指示条
+
+> **Prompt 模板合并**：原 `prompt_templates` 的核心能力（system prompt + 分类 + 内置预设）合并到 `agent_modes`。变量占位符 `{{variable}}` 交互已在 I2 中移除（DEVLOG 2026-10-05），不再保留。原 5 个内置模板仅保留翻译助手（kind='custom'），其余 4 个不再内置——这些场景的 prompt 因人而异，用户可自行创建自定义模式。默认/快速/深度三个模式均无 system prompt，仅控制 temperature / max_tokens。
 
 > **原 I6（Agent 模式固定三级）升级为用户自定义**。参考 OpenBitFun `CustomAgentDefinition`，用户可创建自己的 Agent 模式（如"翻译助手"、"代码审查"），自定义 system_prompt / temperature / max_tokens / model / tools 组合。内置 Quick/Standard/Deep 作为预设 seed，不可删除。
 
@@ -691,7 +727,7 @@ assistant/
 
 > **Function Calling / 内置工具 / MCP 客户端暂不实现**，后续迭代按需加入。参考方案已验证：OpenBitFun `mcp_tool_bridge.rs` 命名规范 + 三维安全标记(read_only/destructive/open_world)。
 
-**验收：** 可切换 Agent 模式（内置 + 自定义），可创建/编辑/删除自定义模式，不同模式 system prompt / 温度不同，token 用量可见
+**验收：** 可切换 Agent 模式（内置 + 自定义），可创建/编辑/删除自定义模式，不同模式 system prompt / 温度不同，token 用量可见，Prompt 模板管理页合并到 Agent 模式页
 
 ---
 
@@ -769,9 +805,9 @@ I0 脚手架 ✅
      └→ I2 Orb AI 对话 ✅
          ├→ I2-History 消息历史管理（进行中）
          ├→ I3 工具箱 ✅（21 工具，8 分类）
-         └→ I4 设置 + 快捷键 + UI改造（进行中）
+         └→ I4 设置 + 快捷键 + UI改造 ✅
              └→ I5 Mascot 形象
-                 └→ I6 Agent 自定义模式
+                 └→ I6 Agent 自定义模式 ✅
                      └→ I7 Context Compaction
                          └→ I8 打包发布
 ```

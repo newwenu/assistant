@@ -12,6 +12,7 @@ import {
   toChatError,
   formatRetryAfter,
 } from "../chat/chatErrors";
+import { useAgentModeStore } from "./agentModeStore";
 
 export interface Message {
   id: string;
@@ -262,7 +263,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
           isReasoningStreaming: false,
           hasMoreMessages: (detail.messages || []).length < detail.total_count,
           totalMessageCount: detail.total_count,
+          contextUsage: { used_tokens: 0, max_tokens: 128_000, percentage: 0 },
         });
+        invoke<{
+          total_tokens: number;
+          context_window_tokens: number;
+          percentage: number;
+        }>("get_conversation_token_usage", {
+          conversationId: id,
+        })
+          .then((summary) => {
+            if (get().currentConversationId === id) {
+              set({
+                contextUsage: {
+                  used_tokens: summary.total_tokens,
+                  max_tokens: summary.context_window_tokens,
+                  percentage: summary.percentage,
+                },
+              });
+            }
+          })
+          .catch(() => {});
       }
     } catch (e) {
       console.error("Failed to switch conversation:", e);
@@ -363,9 +384,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             return;
           }
           const p = provList[0];
+          const modeId = useAgentModeStore.getState().selectedModeId;
           const newId = await invoke<string>("create_conversation", {
             providerId: p.id,
             modelId: p.default_model || "",
+            modeId,
           });
           set({ currentConversationId: newId });
           await get().loadConversations();
@@ -409,9 +432,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       try {
+        const modeId = useAgentModeStore.getState().selectedModeId;
         await invoke("send_chat_message", {
           conversationId: convId,
           content,
+          modeId,
         });
       } catch (e) {
         console.error("Failed to send message:", e);
@@ -488,6 +513,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     if (convId) {
       invoke("increment_generation", { id: convId }).catch(() => {});
+    }
+
+    if (convId && !usage) {
+      invoke<{
+        total_tokens: number;
+        context_window_tokens: number;
+        percentage: number;
+      }>("get_conversation_token_usage", {
+        conversationId: convId,
+      })
+        .then((summary) => {
+          if (get().currentConversationId === convId) {
+            set({
+              contextUsage: {
+                used_tokens: summary.total_tokens,
+                max_tokens: summary.context_window_tokens,
+                percentage: summary.percentage,
+              },
+            });
+          }
+        })
+        .catch(() => {});
     }
   },
 

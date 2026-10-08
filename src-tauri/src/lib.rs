@@ -65,8 +65,6 @@ pub fn run() {
             cmd::rename_conversation,
             cmd::update_conversation_model,
             cmd::update_conversation_provider,
-            cmd::list_prompt_templates,
-            cmd::save_prompt_template,
             cmd::send_chat_message,
             cmd::cancel_chat,
             cmd::get_conversation_paginated,
@@ -88,13 +86,18 @@ pub fn run() {
             cmd::get_app_version,
             cmd::get_rustc_version,
             cmd::set_launch_at_login,
+            cmd::list_agent_modes,
+            cmd::save_agent_mode,
+            cmd::delete_agent_mode,
+            cmd::reset_builtin_mode,
+            cmd::get_conversation_token_usage,
         ])
         .on_menu_event(|app, event| match event.id.as_ref() {
             "orb_new_chat" => {
                 let _ = app.emit("orb-new-conversation", ());
             }
             "orb_open_main" => {
-                window::show_or_create_main(app);
+                let _ = window::show_or_create(app, WINDOW_MAIN);
             }
             "orb_quit" => {
                 cmd::perform_exit(app);

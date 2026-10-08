@@ -2,10 +2,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 
-pub fn atomic_write(
-    path: &Path,
-    data: &[u8],
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn atomic_write(path: &Path, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }

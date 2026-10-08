@@ -1,5 +1,5 @@
-use assistant_storage::providers::{self, ProviderRow};
 use assistant_storage::db;
+use assistant_storage::providers::{self, ProviderRow};
 
 fn init_db() -> rusqlite::Connection {
     let dir = tempfile::tempdir().unwrap();
@@ -45,8 +45,13 @@ fn delete_provider_nullifies_all_referencing_conversations() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(null_count, 2, "both conversations should have provider_id = NULL");
-    assert!(providers::get_provider_by_id(&conn, "p1").unwrap().is_none());
+    assert_eq!(
+        null_count, 2,
+        "both conversations should have provider_id = NULL"
+    );
+    assert!(providers::get_provider_by_id(&conn, "p1")
+        .unwrap()
+        .is_none());
 }
 
 #[test]
@@ -58,7 +63,11 @@ fn get_providers_ordered_by_updated_at_desc() {
 
     let all = providers::get_providers(&conn).unwrap();
     let ids: Vec<&str> = all.iter().map(|p| p.id.as_str()).collect();
-    assert_eq!(ids, ["p2", "p3", "p1"], "should be sorted by updated_at DESC");
+    assert_eq!(
+        ids,
+        ["p2", "p3", "p1"],
+        "should be sorted by updated_at DESC"
+    );
 }
 
 #[test]

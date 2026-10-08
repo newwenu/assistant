@@ -8,13 +8,14 @@ import {
   Navigate,
   useNavigate,
   useLocation,
+  useParams,
 } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 import { notification } from "antd";
 import { Titlebar } from "@/components/Titlebar";
 import { OrbBall } from "@/orb/OrbBall";
 import { OrbPanel } from "@/orb/OrbPanel";
-import { Layout, Typography, Menu } from "antd";
+import { Layout, Menu } from "antd";
 import { HistoryOutlined, SettingOutlined } from "@ant-design/icons";
 import {
   WINDOW_MAIN,
@@ -25,18 +26,42 @@ import {
 import { useOrbStore } from "@/stores/orbStore";
 import { useToolStore } from "@/stores/toolStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { ProviderManager } from "@/settings/ProviderManager";
-import { TemplateManager } from "@/settings/TemplateManager";
-import { GeneralSettings } from "@/settings/GeneralSettings";
-import { AppearanceSettings } from "@/settings/AppearanceSettings";
-import { ShortcutSettings } from "@/settings/ShortcutSettings";
-import { AboutPage } from "@/settings/AboutPage";
+import {
+  SETTINGS_PAGES,
+  DEFAULT_SETTINGS_PAGE_ID,
+  getSettingsPageManifest,
+  isSettingsPageId,
+} from "@/settings/settingsRegistry";
+import type { SettingsPageId } from "@/settings/settingsTypes";
 import { HistoryManager } from "@/chat/HistoryManager";
 import { ToolBox } from "@/tools/ToolBox";
 import { ToolPage } from "@/tools/ToolPage";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useToolMenuItems } from "@/tools/CollapsibleToolMenu";
 import { toolsMap } from "@/tools/registry";
+
+const SettingsContent: React.FC = () => {
+  const { pageId } = useParams<{ pageId: string }>();
+
+  if (!pageId || !isSettingsPageId(pageId)) {
+    return <Navigate to={`/settings/${DEFAULT_SETTINGS_PAGE_ID}`} replace />;
+  }
+
+  const manifest = getSettingsPageManifest(pageId as SettingsPageId);
+  const Content = manifest.component;
+
+  return (
+    <React.Suspense
+      fallback={
+        <div style={{ padding: 24, color: "var(--color-text-secondary)" }}>
+          加载中...
+        </div>
+      }
+    >
+      <Content />
+    </React.Suspense>
+  );
+};
 
 const MainLayout: React.FC = () => {
   const navigate = useNavigate();
@@ -45,7 +70,6 @@ const MainLayout: React.FC = () => {
   const loadFavorites = useToolStore((s) => s.loadFavorites);
   const loadRecentTools = useToolStore((s) => s.loadRecentTools);
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);
-  const [appVersion, setAppVersion] = useState("");
   const [api, contextHolder] = notification.useNotification();
 
   const [openKeys, setOpenKeys] = useState<string[]>([
@@ -80,12 +104,6 @@ const MainLayout: React.FC = () => {
     loadRecentTools();
     loadAppConf();
   }, [loadFavorites, loadRecentTools, loadAppConf]);
-
-  useEffect(() => {
-    invoke<string>("get_app_version")
-      .then((v) => setAppVersion(v))
-      .catch(() => setAppVersion(""));
-  }, []);
 
   useEffect(() => {
     const unlisten = listen<{ id: string; binding: string; error: string }>(
@@ -162,47 +180,14 @@ const MainLayout: React.FC = () => {
                     key: "settings-sub",
                     label: "设置",
                     icon: <SettingOutlined />,
-                    children: [
-                      {
-                        key: "/settings/general",
-                        label: "通用设置",
-                      },
-                      {
-                        key: "/settings/appearance",
-                        label: "外观设置",
-                      },
-                      {
-                        key: "/settings/shortcuts",
-                        label: "快捷键",
-                      },
-                      {
-                        key: "/settings/providers",
-                        label: "Provider 管理",
-                      },
-                      {
-                        key: "/settings/templates",
-                        label: "Prompt 模板",
-                      },
-                      {
-                        key: "/settings/about",
-                        label: "关于",
-                      },
-                    ],
+                    children: SETTINGS_PAGES.map((page) => ({
+                      key: `/settings/${page.id}`,
+                      label: page.label,
+                    })),
                   },
                 ]}
                 onClick={({ key }) => navigate(key)}
               />
-            </div>
-            <div
-              style={{
-                padding: "8px 16px",
-                borderTop: "1px solid var(--color-border-secondary)",
-                textAlign: "center",
-              }}
-            >
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                v{appVersion || "..."}
-              </Typography.Text>
             </div>
           </Layout.Sider>
           <Layout.Content
@@ -217,20 +202,14 @@ const MainLayout: React.FC = () => {
               <Route path="/history" element={<HistoryManager />} />
               <Route
                 path="/settings"
-                element={<Navigate to="/settings/general" replace />}
+                element={
+                  <Navigate
+                    to={`/settings/${DEFAULT_SETTINGS_PAGE_ID}`}
+                    replace
+                  />
+                }
               />
-              <Route path="/settings/general" element={<GeneralSettings />} />
-              <Route
-                path="/settings/appearance"
-                element={<AppearanceSettings />}
-              />
-              <Route
-                path="/settings/shortcuts"
-                element={<ShortcutSettings />}
-              />
-              <Route path="/settings/providers" element={<ProviderManager />} />
-              <Route path="/settings/templates" element={<TemplateManager />} />
-              <Route path="/settings/about" element={<AboutPage />} />
+              <Route path="/settings/:pageId" element={<SettingsContent />} />
             </Routes>
           </Layout.Content>
         </Layout>
@@ -261,9 +240,11 @@ const SettingsWindow: React.FC = () => {
         <Routes>
           <Route
             path="/settings"
-            element={<Navigate to="/settings/general" replace />}
+            element={
+              <Navigate to={`/settings/${DEFAULT_SETTINGS_PAGE_ID}`} replace />
+            }
           />
-          <Route path="/settings/general" element={<GeneralSettings />} />
+          <Route path="/settings/:pageId" element={<SettingsContent />} />
         </Routes>
       </Layout.Content>
     </Layout>

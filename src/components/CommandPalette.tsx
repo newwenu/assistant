@@ -11,7 +11,6 @@ import {
   SkinOutlined,
   KeyOutlined,
   ApiOutlined,
-  FileTextOutlined,
   InfoCircleOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
@@ -109,15 +108,6 @@ export const CommandPalette: React.FC = () => {
         category: "Navigation",
         icon: <ApiOutlined />,
         action: () => navigate("/settings/providers"),
-      },
-      {
-        id: "nav:settings-templates",
-        name: "Prompt 模板",
-        description: "管理 Prompt 模板",
-        keywords: ["template", "prompt", "模板", "提示词"],
-        category: "Navigation",
-        icon: <FileTextOutlined />,
-        action: () => navigate("/settings/templates"),
       },
       {
         id: "nav:settings-about",

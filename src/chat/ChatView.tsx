@@ -11,7 +11,9 @@ import { useProviderStore } from "../stores/providerStore";
 import { MessageList } from "./message/MessageList";
 import { MessageInput } from "./message/MessageInput";
 import { ModelSelector } from "./ModelSelector";
+import { ModeSelector } from "./ModeSelector";
 import { ProviderSelector } from "./ProviderSelector";
+import { useAgentModeStore } from "../stores/agentModeStore";
 
 interface ChatViewProps {
   modelOpenRef?: RefObject<boolean>;
@@ -222,6 +224,35 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     invoke("open_main_window");
   }, []);
 
+  const handleModeChange = useCallback(
+    (modeId: string) => {
+      const modes = useAgentModeStore.getState().modes;
+      const mode = modes.find((m) => m.id === modeId);
+      if (mode?.model) {
+        for (const p of provider.providers) {
+          try {
+            const models: { id: string }[] = JSON.parse(p.models || "[]");
+            if (models.some((m) => m.id === mode.model)) {
+              setCurrentProviderId(p.id);
+              setCurrentModelId(mode.model);
+              if (chat.currentConversationId) {
+                invoke("update_conversation_provider", {
+                  id: chat.currentConversationId,
+                  providerId: p.id,
+                }).catch(() => {});
+                chat.updateModel(chat.currentConversationId, mode.model);
+              }
+              break;
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    },
+    [provider.providers, chat],
+  );
+
   const handleEditMessage = useCallback(
     (messageId: string, newContent: string) => {
       chat.editMessage(messageId, newContent);
@@ -294,6 +325,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
             onRetryMessage={handleRetry}
           />
         )}
+        <div className="orb-mode-bar">
+          <ModeSelector variant="chip" onModeChange={handleModeChange} />
+        </div>
         <MessageInput
           onSend={handleSend}
           onCancel={handleCancel}

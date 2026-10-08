@@ -1,5 +1,5 @@
-use assistant_storage::tool_favorites;
 use assistant_storage::db;
+use assistant_storage::tool_favorites;
 
 fn init_db() -> rusqlite::Connection {
     let dir = tempfile::tempdir().unwrap();
@@ -26,21 +26,31 @@ fn set_favorites_order_replaces_entire_set() {
 
     tool_favorites::set_favorites_order(&conn, &["c".into(), "a".into(), "b".into()]).unwrap();
     let favs = tool_favorites::get_favorites(&conn).unwrap();
-    assert_eq!(favs, vec!["c", "a", "b"], "should completely replace, not merge");
+    assert_eq!(
+        favs,
+        vec!["c", "a", "b"],
+        "should completely replace, not merge"
+    );
 }
 
 #[test]
 fn set_favorites_order_rejects_duplicate_tool_ids() {
     let conn = init_db();
     let result = tool_favorites::set_favorites_order(&conn, &["x".into(), "x".into()]);
-    assert!(result.is_err(), "duplicate tool_ids should fail due to PRIMARY KEY constraint");
+    assert!(
+        result.is_err(),
+        "duplicate tool_ids should fail due to PRIMARY KEY constraint"
+    );
 }
 
 #[test]
 fn set_favorites_order_should_preserve_old_data_on_failure() {
     let conn = init_db();
     tool_favorites::toggle_favorite(&conn, "keep-me").unwrap();
-    assert_eq!(tool_favorites::get_favorites(&conn).unwrap(), vec!["keep-me"]);
+    assert_eq!(
+        tool_favorites::get_favorites(&conn).unwrap(),
+        vec!["keep-me"]
+    );
 
     let result = tool_favorites::set_favorites_order(&conn, &["x".into(), "x".into()]);
     assert!(result.is_err());

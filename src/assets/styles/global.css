@@ -160,7 +160,6 @@ div[data-orb-window] .orb-hitbox {
   cursor: grab !important;
   touch-action: none !important;
   -webkit-user-drag: none !important;
-  border-radius: var(--orb-radius, 50%);
   background: transparent;
   overflow: hidden;
   display: flex;
@@ -171,8 +170,7 @@ div[data-orb-window] .orb-hitbox {
   transition:
     opacity 150ms ease-in-out,
     filter 300ms ease-in-out,
-    transform 200ms ease-out,
-    border-radius 200ms ease-out;
+    transform 200ms ease-out;
 }
 
 div[data-orb-window] .orb-hitbox:active {
@@ -194,7 +192,7 @@ div[data-orb-window] .orb-hitbox.orb-dragging {
 }
 
 div[data-orb-window] .orb-hitbox.orb-idle {
-  opacity: 0.85;
+  opacity: var(--orb-idle-opacity, 0.85);
 }
 
 div[data-orb-window] .orb-hitbox.orb-touch {
@@ -436,6 +434,49 @@ div[data-orb-window].orb-expanded .orb-hitbox {
 .orb-provider-chip .ant-select-selection-item {
   font-size: 12px;
   line-height: 26px;
+}
+
+.orb-mode-chip {
+  min-width: 0;
+  max-width: 100px;
+  height: 28px !important;
+  padding: 0 8px !important;
+  border: none !important;
+  border-radius: 999px !important;
+  background: var(--color-border-secondary) !important;
+  font-size: 12px !important;
+  line-height: 20px !important;
+  cursor: pointer;
+}
+
+.orb-mode-chip:hover {
+  background: var(--color-border) !important;
+}
+
+.orb-mode-chip .ant-select-selector {
+  border: none !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  padding: 0 4px !important;
+  min-height: 28px !important;
+  cursor: pointer;
+}
+
+.orb-mode-chip:hover .ant-select-selector {
+  background: transparent !important;
+}
+
+.orb-mode-chip .ant-select-selection-item {
+  font-size: 12px;
+  line-height: 26px;
+}
+
+.orb-mode-bar {
+  display: flex;
+  align-items: center;
+  padding: 2px 10px;
+  flex-shrink: 0;
+  gap: 4px;
 }
 
 .orb-dropdown {
@@ -761,6 +802,10 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   margin-bottom: 16px;
 }
 
+.agent-mode-manager {
+  padding: 24px;
+}
+
 .provider-section-label {
   display: flex;
   align-items: center;
@@ -974,23 +1019,6 @@ div[data-orb-window].orb-expanded .orb-hitbox {
 
 .provider-form {
   padding: 24px;
-}
-
-.template-manager {
-  padding: 24px;
-}
-
-.template-manager-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.template-manager-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 @keyframes tool-page-fade-in {

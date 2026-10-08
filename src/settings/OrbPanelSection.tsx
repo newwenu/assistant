@@ -1,12 +1,17 @@
 import { useEffect } from "react";
-import { Form, Switch, message } from "antd";
+import { Form, Switch } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { OrbConf } from "@/stores/settingsStore";
 import { dispatchOrbConfChanged } from "./settingsDispatcher";
 
-export const OrbPanelSection: React.FC = () => {
+interface OrbPanelSectionProps {
+  onSaved?: () => void;
+}
+
+export const OrbPanelSection: React.FC<OrbPanelSectionProps> = ({
+  onSaved,
+}) => {
   const orbConf = useSettingsStore((s) => s.orbConf);
-  const [messageApi, contextHolder] = message.useMessage();
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -20,29 +25,21 @@ export const OrbPanelSection: React.FC = () => {
     if (!orbConf) return;
     const newConf: OrbConf = { ...orbConf, ...values };
     await dispatchOrbConfChanged(newConf as unknown as Record<string, unknown>);
-    messageApi.success("已保存");
+    onSaved?.();
   };
 
   return (
-    <>
-      {contextHolder}
-      <Form
-        form={form}
-        layout="vertical"
-        initialValues={{
-          always_on_top: orbConf?.always_on_top ?? true,
-        }}
-        onValuesChange={(_changed, all) => handleSave(all)}
-      >
-        <Form.Item
-          label="始终置顶"
-          name="always_on_top"
-          valuePropName="checked"
-          extra="悬浮窗始终保持在其他窗口之上"
-        >
-          <Switch />
-        </Form.Item>
-      </Form>
-    </>
+    <Form
+      form={form}
+      layout="vertical"
+      initialValues={{
+        always_on_top: orbConf?.always_on_top ?? true,
+      }}
+      onValuesChange={(_changed, all) => handleSave(all)}
+    >
+      <Form.Item label="始终置顶" name="always_on_top" valuePropName="checked">
+        <Switch />
+      </Form.Item>
+    </Form>
   );
 };

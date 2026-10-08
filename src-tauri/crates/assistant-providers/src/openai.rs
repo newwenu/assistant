@@ -369,6 +369,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
                 let mut sse_error_count: u32 = 0;
                 let mut sse_log = SseLogCollector::new(sse_log_config.clone());
                 let mut first_token_received = false;
+                let mut sse_chunk_count: u32 = 0;
                 let stream_start = Instant::now();
                 let mut last_chunk_time = Instant::now();
 
@@ -451,6 +452,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
                             continue;
                         }
                         if line == "data: [DONE]" {
+                            eprintln!("[SSE] stream done after {} chunks, no usage in final chunk", sse_chunk_count);
                             yield Ok(ChatDelta {
                                 seq: None,
                                 delta_text: None,
@@ -465,6 +467,11 @@ impl BaseProviderAdapter for OpenAIAdapter {
                         }
                         let data = line.strip_prefix("data: ").unwrap_or(&line);
                         sse_log.push(data.to_string());
+                        sse_chunk_count += 1;
+                        if sse_chunk_count <= 5 || data.contains("\"usage\"") {
+                            let preview = &data[..data.len().min(200)];
+                            eprintln!("[SSE #{}] {}", sse_chunk_count, preview);
+                        }
                         let chunk: ChatResponseChunk = match serde_json::from_str(data) {
                             Ok(c) => c,
                             Err(e) => {
@@ -483,6 +490,13 @@ impl BaseProviderAdapter for OpenAIAdapter {
                         };
                         if let Some(usage) = chunk.usage {
                             let cache_read = usage.prompt_tokens_details.as_ref().and_then(|d| d.cached_tokens).unwrap_or(0);
+                            eprintln!(
+                                "[SSE usage] prompt={} completion={} total={} cached={}",
+                                usage.prompt_tokens.unwrap_or(0),
+                                usage.completion_tokens.unwrap_or(0),
+                                usage.total_tokens.unwrap_or(0),
+                                cache_read,
+                            );
                             yield Ok(ChatDelta {
                                 seq: None,
                                 delta_text: None,

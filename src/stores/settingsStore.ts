@@ -18,7 +18,7 @@ export interface OrbConf {
   opacity_percent: number;
   hide_on_pointer_hover: boolean;
   hover_delay_ms: number;
-  corner_radius_percent: number;
+  idle_opacity_percent: number;
   position_x: number | null;
   position_y: number | null;
 }

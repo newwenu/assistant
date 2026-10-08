@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use log::error;
+use log::{error, info};
 use mouse_position::mouse_position::Mouse;
 use serde_json::json;
 use tauri::{command, AppHandle, Emitter, Manager, PhysicalPosition};
@@ -27,9 +27,9 @@ use assistant_providers::{
     crypto,
 };
 use assistant_storage::{
+    agent_modes::{self, AgentModeRow},
     conversations::{self, ConversationRow, MessageRow},
     providers::{self as provider_store, ProviderRow},
-    templates::{self as template_store, PromptTemplateRow},
     tool_favorites, tool_history,
 };
 
@@ -142,9 +142,7 @@ fn apply_orb_click_through(app: &AppHandle, enabled: bool) -> Result<(), String>
     if ORB_CLICK_THROUGH.load(Ordering::Acquire) == enabled {
         return Ok(());
     }
-    let window = app
-        .get_webview_window(WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
+    let window = crate::window::get_or_error(app, WINDOW_ORB)?;
     window
         .set_ignore_cursor_events(enabled)
         .map_err(|e| e.to_string())?;
@@ -167,27 +165,15 @@ pub fn emit_theme_changed(app: AppHandle, resolved: String) -> Result<(), String
 
 #[command]
 pub fn toggle_orb_visibility(app: AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window(WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
-    if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
-        let _ = window.hide();
-    } else {
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-    Ok(())
+    crate::window::toggle(&app, WINDOW_ORB)
 }
 
 #[command]
 pub fn set_orb_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
-
     if ORB_CLICK_THROUGH.load(Ordering::Acquire) == enabled {
         return Ok(());
     }
-    let window = app
-        .get_webview_window(WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
+    let window = crate::window::get_or_error(&app, WINDOW_ORB)?;
     window
         .set_ignore_cursor_events(enabled)
         .map_err(|e| e.to_string())?;
@@ -223,9 +209,7 @@ pub fn get_screen_size(
 
 #[command]
 pub fn snap_orb_to_screen(app: AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window(WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
+    let window = crate::window::get_or_error(&app, WINDOW_ORB)?;
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
 
@@ -257,9 +241,7 @@ pub fn snap_orb_to_screen(app: AppHandle) -> Result<(), String> {
 pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
     ORB_SNAP_CANCEL.store(true, Ordering::Release);
 
-    let window = app
-        .get_webview_window(WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
+    let window = crate::window::get_or_error(&app, WINDOW_ORB)?;
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
 
@@ -317,9 +299,7 @@ pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
 }
 
 fn save_orb_position_sync(app: &AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window(WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
+    let window = crate::window::get_or_error(app, WINDOW_ORB)?;
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let mut conf = OrbConf::load().map_err(|e| e.to_string())?;
     conf.position_x = Some(pos.x);
@@ -329,9 +309,7 @@ fn save_orb_position_sync(app: &AppHandle) -> Result<(), String> {
 
 #[command]
 pub fn save_orb_position(app: AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window(WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
+    let window = crate::window::get_or_error(&app, WINDOW_ORB)?;
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let mut conf = OrbConf::load().map_err(|e| e.to_string())?;
     conf.position_x = Some(pos.x);
@@ -346,7 +324,7 @@ pub fn app_quit(app: AppHandle) -> Result<(), String> {
 }
 
 pub fn perform_exit(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window(WINDOW_ORB) {
+    if let Ok(w) = crate::window::get_or_error(app, WINDOW_ORB) {
         if let Ok(pos) = w.outer_position() {
             if let Ok(mut conf) = OrbConf::load() {
                 conf.position_x = Some(pos.x);
@@ -356,12 +334,7 @@ pub fn perform_exit(app: &AppHandle) {
         }
     }
     request_exit();
-    if let Some(w) = app.get_webview_window(WINDOW_ORB) {
-        let _ = w.destroy();
-    }
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.destroy();
-    }
+    crate::window::destroy_all(app, &[WINDOW_ORB, WINDOW_MAIN]);
     app.exit(0);
 }
 
@@ -526,7 +499,7 @@ pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<serde_json
     let config = build_provider_config(&row);
     let adapter = base::create_provider_adapter(config);
     let models = adapter.list_models().map_err(|e| e.to_string())?;
-    Ok(serde_json::to_value(&models).map_err(|e| e.to_string())?)
+    serde_json::to_value(&models).map_err(|e| e.to_string())
 }
 
 #[command]
@@ -546,7 +519,7 @@ pub fn preview_models_cmd(
     };
     let adapter = base::create_provider_adapter(config);
     let models = adapter.list_models().map_err(|e| e.to_string())?;
-    Ok(serde_json::to_value(&models).map_err(|e| e.to_string())?)
+    serde_json::to_value(&models).map_err(|e| e.to_string())
 }
 
 #[command]
@@ -554,6 +527,7 @@ pub fn create_conversation(
     app: AppHandle,
     provider_id: String,
     model_id: String,
+    mode_id: Option<String>,
 ) -> Result<String, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
@@ -576,6 +550,14 @@ pub fn create_conversation(
         updated_at: now,
     };
     conversations::insert_conversation(&conn, &row)?;
+
+    if let Some(mid) = mode_id {
+        let _ = conn.execute(
+            "UPDATE conversations SET mode_id = ?1 WHERE id = ?2",
+            rusqlite::params![mid, id],
+        );
+    }
+
     Ok(id)
 }
 
@@ -587,7 +569,7 @@ pub fn list_conversations(
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     let rows = conversations::get_conversations(&conn, provider_id.as_deref())?;
-    Ok(serde_json::to_value(&rows).map_err(|e| e.to_string())?)
+    serde_json::to_value(&rows).map_err(|e| e.to_string())
 }
 
 #[command]
@@ -595,7 +577,7 @@ pub fn get_conversation(app: AppHandle, id: String) -> Result<serde_json::Value,
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     let detail = conversations::get_conversation_detail(&conn, &id)?;
-    Ok(serde_json::to_value(&detail).map_err(|e| e.to_string())?)
+    serde_json::to_value(&detail).map_err(|e| e.to_string())
 }
 
 #[command]
@@ -651,53 +633,11 @@ pub fn update_conversation_provider(
 }
 
 #[command]
-pub fn list_prompt_templates(app: AppHandle) -> Result<serde_json::Value, String> {
-    let state = app.state::<crate::setup::DbState>();
-    let conn = get_db_conn(&state)?;
-    let rows = template_store::get_templates(&conn)?;
-    Ok(serde_json::to_value(&rows).map_err(|e| e.to_string())?)
-}
-
-#[command]
-pub fn save_prompt_template(app: AppHandle, template: serde_json::Value) -> Result<(), String> {
-    let id = template["id"].as_str().unwrap_or("").to_string();
-    let name = template["name"]
-        .as_str()
-        .ok_or("name required")?
-        .to_string();
-    let category = template["category"]
-        .as_str()
-        .ok_or("category required")?
-        .to_string();
-    let content = template["content"]
-        .as_str()
-        .ok_or("content required")?
-        .to_string();
-    let variables_json = template["variables"].as_str().map(|s| s.to_string());
-    let is_builtin = template["is_builtin"].as_bool().unwrap_or(false);
-
-    let row = PromptTemplateRow {
-        id: if id.is_empty() {
-            Uuid::new_v4().to_string()
-        } else {
-            id
-        },
-        name,
-        category,
-        content,
-        variables_json,
-        is_builtin,
-    };
-    let state = app.state::<crate::setup::DbState>();
-    let conn = get_db_conn(&state)?;
-    template_store::insert_template(&conn, &row)
-}
-
-#[command]
 pub fn send_chat_message(
     app: AppHandle,
     conversation_id: String,
     content: String,
+    mode_id: Option<String>,
 ) -> Result<(), String> {
     if content.trim().is_empty() {
         return Err("消息内容不能为空".to_string());
@@ -705,6 +645,10 @@ pub fn send_chat_message(
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     let now = Utc::now().timestamp_millis();
+
+    let mode: Option<AgentModeRow> = mode_id
+        .as_ref()
+        .and_then(|id| agent_modes::get_by_id(&conn, id).ok().flatten());
 
     let user_msg = MessageRow {
         id: Uuid::new_v4().to_string(),
@@ -740,7 +684,7 @@ pub fn send_chat_message(
     };
     conversations::insert_message(&conn, &assistant_msg)?;
 
-    let chat_messages: Vec<ChatMessage> = detail
+    let mut chat_messages: Vec<ChatMessage> = detail
         .messages
         .iter()
         .map(|m| ChatMessage {
@@ -748,6 +692,17 @@ pub fn send_chat_message(
             content: m.content.clone(),
         })
         .collect();
+
+    let system_prompt = mode.as_ref().map(|m| m.prompt.as_str()).unwrap_or("");
+    if !system_prompt.is_empty() {
+        chat_messages.insert(
+            0,
+            ChatMessage {
+                role: base::message_role_from_str("system"),
+                content: system_prompt.to_string(),
+            },
+        );
+    }
 
     let config = build_provider_config(&provider_row);
     let adapter = base::create_provider_adapter(config);
@@ -767,9 +722,12 @@ pub fn send_chat_message(
         ctx
     };
 
+    let temperature = mode.as_ref().and_then(|m| m.temperature).unwrap_or(0.7);
+    let max_tokens = mode.as_ref().and_then(|m| m.max_tokens).unwrap_or(4096);
+
     let options = ChatOptions {
-        temperature: 0.7,
-        max_tokens: 4096,
+        temperature,
+        max_tokens,
         stream: true,
         context_window_tokens,
     };
@@ -842,7 +800,13 @@ pub fn send_chat_message(
         let mut last_tokens: Option<i64> = None;
         while let Some(result) = stream.next().await {
             if cancel_token.is_cancelled() {
-                let _ = db_tx.send((msg_id.clone(), full_content.clone(), last_tokens));
+                let cancel_tokens = last_tokens.or_else(|| {
+                    if full_content.is_empty() {
+                        return None;
+                    }
+                    Some((full_content.len() as i64 + 3) / 4 + 4)
+                });
+                let _ = db_tx.send((msg_id.clone(), full_content.clone(), cancel_tokens));
                 if let Err(emit_err) = orb_window.emit(
                     "chat-delta",
                     json!({
@@ -858,6 +822,16 @@ pub fn send_chat_message(
             }
             match result {
                 Ok(delta) => {
+                    if seq <= 3 || delta.usage.is_some() || delta.finish_reason.is_some() {
+                        info!(
+                            "[chat-delta] seq={} has_text={} has_usage={} has_finish={:?} usage={:?}",
+                            seq,
+                            delta.delta_text.is_some(),
+                            delta.usage.is_some(),
+                            delta.finish_reason,
+                            delta.usage.as_ref().map(|u| (u.prompt_tokens, u.completion_tokens, u.total_tokens)),
+                        );
+                    }
                     if let Some(text) = &delta.delta_text {
                         full_content.push_str(text);
                     }
@@ -866,6 +840,10 @@ pub fn send_chat_message(
                         if total > 0 {
                             last_tokens = Some(total);
                         }
+                        info!(
+                            "[chat-delta] seq={} usage: prompt={} completion={} total={} ctx_window={}",
+                            seq, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, usage.context_window_tokens
+                        );
                     }
                     seq += 1;
                     if let Err(emit_err) = orb_window.emit(
@@ -886,13 +864,33 @@ pub fn send_chat_message(
                         error!("Failed to emit chat-delta: {}", emit_err);
                     }
                     if delta.finish_reason.is_some() {
-                        let _ = db_tx.send((msg_id.clone(), full_content.clone(), last_tokens));
+                        let final_tokens = if last_tokens.is_none() && !full_content.is_empty() {
+                            let estimated = (full_content.len() as i64 + 3) / 4 + 4;
+                            info!(
+                                "[chat-delta] stream finished: reason={:?} no_usage=>estimated={} (content_len={})",
+                                delta.finish_reason, estimated, full_content.len()
+                            );
+                            Some(estimated)
+                        } else {
+                            info!(
+                                "[chat-delta] stream finished: reason={:?} last_tokens={:?} has_usage={}",
+                                delta.finish_reason, last_tokens, delta.usage.is_some()
+                            );
+                            last_tokens
+                        };
+                        let _ = db_tx.send((msg_id.clone(), full_content.clone(), final_tokens));
                         let _ = finish_tx.send(conv_id);
                         break;
                     }
                 }
                 Err(e) => {
-                    let _ = db_tx.send((msg_id.clone(), full_content.clone(), last_tokens));
+                    let err_tokens = last_tokens.or_else(|| {
+                        if full_content.is_empty() {
+                            return None;
+                        }
+                        Some((full_content.len() as i64 + 3) / 4 + 4)
+                    });
+                    let _ = db_tx.send((msg_id.clone(), full_content.clone(), err_tokens));
                     let payload = ProviderErrorPayload::from(&e);
                     if let Err(emit_err) = orb_window.emit(
                         "chat-delta",
@@ -961,7 +959,7 @@ pub fn search_conversations(app: AppHandle, query: String) -> Result<serde_json:
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     let rows = conversations::search_conversations(&conn, &query)?;
-    Ok(serde_json::to_value(&rows).map_err(|e| e.to_string())?)
+    serde_json::to_value(&rows).map_err(|e| e.to_string())
 }
 
 #[command]
@@ -1100,4 +1098,114 @@ pub fn set_launch_at_login(app: AppHandle, enable: bool) -> Result<(), String> {
     let mut conf = AppConf::load().map_err(|e| e.to_string())?;
     conf.launch_at_login = enable;
     conf.save().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn list_agent_modes(app: AppHandle) -> Result<serde_json::Value, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    let modes = agent_modes::get_modes(&conn)?;
+    serde_json::to_value(&modes).map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn save_agent_mode(app: AppHandle, mode: serde_json::Value) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+
+    let id = mode.get("id").and_then(|v| v.as_str()).unwrap_or("");
+
+    let is_new = id.is_empty();
+    let now = Utc::now().timestamp_millis();
+
+    let row = AgentModeRow {
+        id: if is_new {
+            Uuid::new_v4().to_string()
+        } else {
+            id.to_string()
+        },
+        name: mode
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        description: mode
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        kind: mode
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("custom")
+            .to_string(),
+        prompt: mode
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        model: mode
+            .get("model")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        temperature: mode
+            .get("temperature")
+            .and_then(|v| v.as_f64())
+            .map(|f| f as f32),
+        max_tokens: mode
+            .get("max_tokens")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32),
+        tools_json: mode
+            .get("tools")
+            .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string()))
+            .unwrap_or_else(|| "[]".to_string()),
+        presentation_rank: mode
+            .get("presentation_rank")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(99) as u32,
+        is_builtin: mode
+            .get("is_builtin")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        created_at: mode
+            .get("created_at")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(now),
+        updated_at: now,
+    };
+
+    if is_new {
+        agent_modes::insert_mode(&conn, &row)?;
+    } else {
+        agent_modes::update_mode(&conn, &row)?;
+    }
+    Ok(())
+}
+
+#[command]
+pub fn delete_agent_mode(app: AppHandle, id: String) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    agent_modes::delete_mode(&conn, &id)
+}
+
+#[command]
+pub fn reset_builtin_mode(app: AppHandle, id: String) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    agent_modes::reset_builtin_mode(&conn, &id)
+}
+
+#[command]
+pub fn get_conversation_token_usage(
+    app: AppHandle,
+    conversation_id: String,
+    context_window_tokens: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = get_db_conn(&state)?;
+    let ctx = context_window_tokens.unwrap_or(128_000);
+    let summary = agent_modes::get_conversation_token_usage(&conn, &conversation_id, ctx)?;
+    serde_json::to_value(&summary).map_err(|e| e.to_string())
 }

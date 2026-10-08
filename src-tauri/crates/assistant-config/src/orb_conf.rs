@@ -1,17 +1,13 @@
-// 参考: BongoCat/crates/bongocat-config/src/config_schema/overlay.rs — OverlayConfig 字段设计
-
-use log::error;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::File,
-    io::Read,
-    path::PathBuf,
-};
+use std::path::Path;
 
-use super::atomic_write::{atomic_write, recover_temp};
-use super::constant::APP_IDENTIFIER;
+use super::json_config::{get_conf_dir, load_json_config, save_json_config};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+fn default_idle_opacity() -> u8 {
+    85
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct OrbConf {
     pub click_through: bool,
     pub always_on_top: bool,
@@ -19,7 +15,8 @@ pub struct OrbConf {
     pub opacity_percent: u8,
     pub hide_on_pointer_hover: bool,
     pub hover_delay_ms: u64,
-    pub corner_radius_percent: u8,
+    #[serde(default = "default_idle_opacity")]
+    pub idle_opacity_percent: u8,
     #[serde(default)]
     pub position_x: Option<i32>,
     #[serde(default)]
@@ -35,63 +32,34 @@ impl OrbConf {
             opacity_percent: 100,
             hide_on_pointer_hover: false,
             hover_delay_ms: 0,
-            corner_radius_percent: 50,
+            idle_opacity_percent: 85,
             position_x: None,
             position_y: None,
         }
     }
 
-    pub fn get_conf_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let config_dir = dirs::config_dir()
-            .ok_or("Cannot determine config directory")?
-            .join(APP_IDENTIFIER);
-        Ok(config_dir)
+    pub fn get_conf_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+        get_conf_dir()
     }
 
-    pub fn get_conf_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-        Ok(Self::get_conf_dir()?.join("orb-config.json"))
+    pub fn get_conf_path() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+        Ok(get_conf_dir()?.join("orb-config.json"))
     }
 
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        let path = Self::get_conf_path()?;
+        Self::load_from(&Self::get_conf_path()?)
+    }
 
-        if let Some(tmp_bytes) = recover_temp(&path) {
-            if let Ok(config) = serde_json::from_slice::<Self>(&tmp_bytes) {
-                config.save()?;
-                return Ok(config);
-            }
-            error!("[OrbConf::load] temp file invalid, discarding");
-        }
-
-        if !path.exists() {
-            let config = Self::new();
-            config.save()?;
-            return Ok(config);
-        }
-
-        let mut file = File::open(&path)?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-
-        match serde_json::from_str(&contents) {
-            Ok(config) => Ok(config),
-            Err(e) => {
-                error!(
-                    "[OrbConf::load] parse error: {}, falling back to defaults",
-                    e
-                );
-                let default = Self::new();
-                default.save()?;
-                Ok(default)
-            }
-        }
+    pub fn load_from(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        load_json_config(path, Self::new, "OrbConf")
     }
 
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let path = Self::get_conf_path()?;
-        let json = serde_json::to_string_pretty(self)?;
-        atomic_write(&path, json.as_bytes())?;
-        Ok(())
+        self.save_to(&Self::get_conf_path()?)
+    }
+
+    pub fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        save_json_config(path, self)
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -107,10 +75,10 @@ impl OrbConf {
                 self.opacity_percent
             ));
         }
-        if self.corner_radius_percent > 100 {
+        if self.idle_opacity_percent < 10 || self.idle_opacity_percent > 100 {
             return Err(format!(
-                "corner_radius_percent must be 0-100, got {}",
-                self.corner_radius_percent
+                "idle_opacity_percent must be 10-100, got {}",
+                self.idle_opacity_percent
             ));
         }
         if self.hover_delay_ms > 5000 {

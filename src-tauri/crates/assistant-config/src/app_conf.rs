@@ -1,19 +1,11 @@
-// 参考: ChatGPT/src-tauri/src/core/conf.rs — AppConf 结构体 + load/save 模式
-
-use log::error;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::File,
-    io::Read,
-    path::PathBuf,
-};
+use std::path::Path;
 
 use std::collections::HashMap;
 
-use super::atomic_write::{atomic_write, recover_temp};
-use super::constant::APP_IDENTIFIER;
+use super::json_config::{get_conf_dir, load_json_config_with_migrate, save_json_config};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AppConf {
     pub theme: String,
     pub language: String,
@@ -45,80 +37,32 @@ impl AppConf {
         }
     }
 
-    pub fn get_conf_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let config_dir = dirs::config_dir()
-            .ok_or("Cannot determine config directory")?
-            .join(APP_IDENTIFIER);
-        Ok(config_dir)
+    pub fn get_conf_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+        get_conf_dir()
     }
 
-    pub fn get_conf_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-        Ok(Self::get_conf_dir()?.join("config.json"))
+    pub fn get_conf_path() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+        Ok(get_conf_dir()?.join("config.json"))
     }
 
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        let path = Self::get_conf_path()?;
-
-        if let Some(tmp_bytes) = recover_temp(&path) {
-            if let Ok(config) = serde_json::from_slice::<Self>(&tmp_bytes) {
-                let migrated = Self::migrate(config);
-                migrated.save()?;
-                return Ok(migrated);
-            }
-            error!("[AppConf::load] temp file invalid, discarding");
-        }
-
-        if !path.exists() {
-            let config = Self::new();
-            config.save()?;
-            return Ok(config);
-        }
-
-        let mut file = File::open(&path)?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-
-        match serde_json::from_str::<Self>(&contents) {
-            Ok(config) => {
-                let migrated = Self::migrate(config);
-                if contents != serde_json::to_string_pretty(&migrated)? {
-                    migrated.save()?;
-                }
-                Ok(migrated)
-            }
-            Err(e) => {
-                error!(
-                    "[AppConf::load] parse error: {}, falling back to defaults",
-                    e
-                );
-                let default = Self::new();
-                default.save()?;
-                Ok(default)
-            }
-        }
+        Self::load_from(&Self::get_conf_path()?)
     }
 
-    fn migrate(mut config: Self) -> Self {
-        if config.keybindings.is_empty() && !config.hotkey.is_empty() {
-            config
-                .keybindings
-                .insert("toggle_orb".to_string(), config.hotkey.clone());
-        }
-        if config.keybindings.is_empty() {
-            let defaults = Self::new();
-            config.keybindings = defaults.keybindings;
-        }
-        for binding in config.keybindings.values_mut() {
-            *binding = binding.replace("Super", "Meta");
-        }
+    pub fn load_from(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        load_json_config_with_migrate(path, Self::new, Self::migrate, "AppConf")
+    }
+
+    fn migrate(config: Self) -> Self {
         config
     }
 
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let path = Self::get_conf_path()?;
-        let json = serde_json::to_string_pretty(self)?;
-        atomic_write(&path, json.as_bytes())?;
-        Ok(())
+        self.save_to(&Self::get_conf_path()?)
+    }
+
+    pub fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        save_json_config(path, self)
     }
 
     pub fn validate(&self) -> Result<(), String> {

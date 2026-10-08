@@ -80,12 +80,3 @@ export async function dispatchOrbConfChanged(conf: Record<string, unknown>) {
     value: conf,
   });
 }
-
-export async function dispatchTemplateSaved(template: Record<string, unknown>) {
-  await invoke("save_prompt_template", { template });
-  await emitSettingEvent(SettingEvent.TemplateChanged, {
-    action: SettingAction.TemplateSaved,
-    id: template.id as string,
-    value: template,
-  });
-}

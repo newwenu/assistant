@@ -2,9 +2,7 @@
 
 use std::str::FromStr;
 use tauri::{App, Emitter, Manager};
-use tauri_plugin_global_shortcut::{
-    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
-};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 use assistant_config::{
     app_conf::AppConf,
@@ -73,10 +71,13 @@ fn parse_shortcut(s: &str) -> Option<Shortcut> {
             "ctrl" | "control" => modifiers |= Modifiers::CONTROL,
             "shift" => modifiers |= Modifiers::SHIFT,
             "alt" | "option" => modifiers |= Modifiers::ALT,
-            other => {
-                if let Ok(c) = Code::from_str(other) {
+            _ => {
+                let key_part = part.to_uppercase();
+                if let Ok(c) = Code::from_str(&key_part) {
                     code = Some(c);
-                } else if let Ok(c) = Code::from_str(&format!("Key{}", other)) {
+                } else if let Ok(c) = Code::from_str(&format!("Key{}", key_part)) {
+                    code = Some(c);
+                } else if let Ok(c) = Code::from_str(&format!("Digit{}", key_part)) {
                     code = Some(c);
                 }
             }
@@ -125,26 +126,10 @@ pub fn register_global_shortcuts(handle: &tauri::AppHandle) {
             }
             match id {
                 "toggle_orb" => {
-                    if let Some(window) = app.get_webview_window(WINDOW_ORB) {
-                        if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
-                            let _ = window.hide();
-                        } else {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
+                    let _ = crate::window::toggle(app, WINDOW_ORB);
                 }
                 "toggle_main" => {
-                    if let Some(window) = app.get_webview_window(WINDOW_MAIN) {
-                        if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
-                            let _ = window.hide();
-                        } else {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    } else {
-                        crate::window::show_or_create_main(app);
-                    }
+                    let _ = crate::window::toggle(app, WINDOW_MAIN);
                 }
                 "new_chat" => {
                     let _ = app.emit("orb-new-conversation", ());
@@ -153,11 +138,14 @@ pub fn register_global_shortcuts(handle: &tauri::AppHandle) {
             }
         }) {
             log::warn!("Failed to register shortcut {} ({}): {}", id, binding, e);
-            let _ = handle.emit("shortcut-warning", serde_json::json!({
-                "id": id,
-                "binding": binding,
-                "error": e.to_string(),
-            }));
+            let _ = handle.emit(
+                "shortcut-warning",
+                serde_json::json!({
+                    "id": id,
+                    "binding": binding,
+                    "error": e.to_string(),
+                }),
+            );
         }
     }
 }
@@ -195,41 +183,35 @@ fn position_orb_window(handle: &tauri::AppHandle) {
 }
 
 fn spawn_screen_inspection(handle: tauri::AppHandle) {
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(placement::PLACEMENT_INSPECTION_INTERVAL);
-            if crate::SHOULD_EXIT.load(std::sync::atomic::Ordering::Relaxed) {
-                break;
-            }
-            let Some(window) = handle.get_webview_window(WINDOW_ORB) else {
-                continue;
-            };
-            let Ok(pos) = window.outer_position() else {
-                continue;
-            };
-            let Ok(size) = window.outer_size() else {
-                continue;
-            };
-            let screens = placement::get_available_screens(&handle);
-            let visual_x = pos.x + ORB_CHROME_INSET as i32;
-            let visual_y = pos.y + ORB_CHROME_INSET as i32;
-            let visual_bounds = placement::WindowBounds::new(
-                visual_x,
-                visual_y,
-                ORB_HITBOX_SIZE,
-                ORB_HITBOX_SIZE,
-            );
-            if placement::bounds_inside_screens(&screens, visual_bounds) {
-                continue;
-            }
-            let bounds = placement::WindowBounds::new(pos.x, pos.y, size.width, size.height);
-            let snapped = placement::snap_to_nearest_screen(&screens, bounds);
-            let _ = window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y));
-            if let Ok(mut conf) = OrbConf::load() {
-                conf.position_x = Some(snapped.x);
-                conf.position_y = Some(snapped.y);
-                let _ = conf.save();
-            }
+    std::thread::spawn(move || loop {
+        std::thread::sleep(placement::PLACEMENT_INSPECTION_INTERVAL);
+        if crate::SHOULD_EXIT.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        let Some(window) = handle.get_webview_window(WINDOW_ORB) else {
+            continue;
+        };
+        let Ok(pos) = window.outer_position() else {
+            continue;
+        };
+        let Ok(size) = window.outer_size() else {
+            continue;
+        };
+        let screens = placement::get_available_screens(&handle);
+        let visual_x = pos.x + ORB_CHROME_INSET as i32;
+        let visual_y = pos.y + ORB_CHROME_INSET as i32;
+        let visual_bounds =
+            placement::WindowBounds::new(visual_x, visual_y, ORB_HITBOX_SIZE, ORB_HITBOX_SIZE);
+        if placement::bounds_inside_screens(&screens, visual_bounds) {
+            continue;
+        }
+        let bounds = placement::WindowBounds::new(pos.x, pos.y, size.width, size.height);
+        let snapped = placement::snap_to_nearest_screen(&screens, bounds);
+        let _ = window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y));
+        if let Ok(mut conf) = OrbConf::load() {
+            conf.position_x = Some(snapped.x);
+            conf.position_y = Some(snapped.y);
+            let _ = conf.save();
         }
     });
 }

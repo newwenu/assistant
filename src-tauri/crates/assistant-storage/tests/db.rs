@@ -104,5 +104,8 @@ fn init_db_cascade_deletes_messages() {
     let msg_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(msg_count, 0, "CASCADE should delete messages when conversation is deleted");
+    assert_eq!(
+        msg_count, 0,
+        "CASCADE should delete messages when conversation is deleted"
+    );
 }

@@ -1,8 +1,8 @@
 #![cfg(feature = "slow-tests")]
 
 use assistant_storage::conversations::{self, ConversationRow, MessageRow};
-use assistant_storage::tool_favorites;
 use assistant_storage::db;
+use assistant_storage::tool_favorites;
 use proptest::prelude::*;
 
 fn init_db() -> rusqlite::Connection {

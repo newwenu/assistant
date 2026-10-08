@@ -1,5 +1,5 @@
-use assistant_storage::tool_history;
 use assistant_storage::db;
+use assistant_storage::tool_history;
 
 fn init_db() -> rusqlite::Connection {
     let dir = tempfile::tempdir().unwrap();
@@ -14,7 +14,11 @@ fn record_usage_deduplicates_by_tool_id() {
     tool_history::record_usage(&conn, "tool-a").unwrap();
 
     let recent = tool_history::get_recent_tools(&conn, 10).unwrap();
-    assert_eq!(recent.len(), 1, "INSERT OR REPLACE should not duplicate tool_id");
+    assert_eq!(
+        recent.len(),
+        1,
+        "INSERT OR REPLACE should not duplicate tool_id"
+    );
 }
 
 #[test]
@@ -66,5 +70,8 @@ fn cleanup_keeps_entries_within_90_days() {
     .unwrap();
 
     let removed = tool_history::cleanup_old_history(&conn).unwrap();
-    assert_eq!(removed, 0, "entries within 90 days should NOT be cleaned up");
+    assert_eq!(
+        removed, 0,
+        "entries within 90 days should NOT be cleaned up"
+    );
 }

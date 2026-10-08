@@ -44,7 +44,9 @@ fn delete_conversation_removes_all_messages() {
 
     conversations::delete_conversation(&conn, "c1").unwrap();
     assert_eq!(conversations::get_message_count(&conn, "c1").unwrap(), 0);
-    assert!(conversations::get_conversation_by_id(&conn, "c1").unwrap().is_none());
+    assert!(conversations::get_conversation_by_id(&conn, "c1")
+        .unwrap()
+        .is_none());
 }
 
 #[test]
@@ -67,7 +69,8 @@ fn delete_message_and_after_should_only_remove_target_when_timestamps_unique() {
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();
     conversations::insert_message(&conn, &msg("m1", "c1", "user", "keep", 100)).unwrap();
     conversations::insert_message(&conn, &msg("m2", "c1", "assistant", "target", 200)).unwrap();
-    conversations::insert_message(&conn, &msg("m3", "c1", "user", "same-ts-unrelated", 200)).unwrap();
+    conversations::insert_message(&conn, &msg("m3", "c1", "user", "same-ts-unrelated", 200))
+        .unwrap();
     conversations::insert_message(&conn, &msg("m4", "c1", "assistant", "later", 300)).unwrap();
 
     conversations::delete_message_and_after(&conn, "m2").unwrap();
@@ -89,7 +92,10 @@ fn edit_message_removes_later_and_moves_timestamp() {
     let remaining = conversations::get_messages(&conn, "c1").unwrap();
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].content, "edited");
-    assert!(remaining[0].timestamp > 100, "edited message should get a new timestamp");
+    assert!(
+        remaining[0].timestamp > 100,
+        "edited message should get a new timestamp"
+    );
 }
 
 #[test]
@@ -114,15 +120,25 @@ fn toggle_pin_is_involution_and_sorts() {
 
     let pinned = conversations::toggle_pin(&conn, "c1").unwrap();
     assert!(pinned);
-    let c = conversations::get_conversation_by_id(&conn, "c1").unwrap().unwrap();
+    let c = conversations::get_conversation_by_id(&conn, "c1")
+        .unwrap()
+        .unwrap();
     assert!(c.is_pinned);
-    assert!(c.sort_order > 0, "pinned conversation should have positive sort_order");
+    assert!(
+        c.sort_order > 0,
+        "pinned conversation should have positive sort_order"
+    );
 
     let unpinned = conversations::toggle_pin(&conn, "c1").unwrap();
     assert!(!unpinned);
-    let c = conversations::get_conversation_by_id(&conn, "c1").unwrap().unwrap();
+    let c = conversations::get_conversation_by_id(&conn, "c1")
+        .unwrap()
+        .unwrap();
     assert!(!c.is_pinned);
-    assert_eq!(c.sort_order, 0, "unpinned conversation should reset sort_order");
+    assert_eq!(
+        c.sort_order, 0,
+        "unpinned conversation should reset sort_order"
+    );
 }
 
 #[test]
@@ -138,7 +154,10 @@ fn pinned_conversations_appear_first() {
     conversations::toggle_pin(&conn, "c2").unwrap();
 
     let all = conversations::get_conversations(&conn, None).unwrap();
-    assert_eq!(all[0].id, "c2", "pinned conversation should appear first even with older updated_at");
+    assert_eq!(
+        all[0].id, "c2",
+        "pinned conversation should appear first even with older updated_at"
+    );
     assert_eq!(all[1].id, "c1");
 }
 
@@ -148,10 +167,15 @@ fn search_returns_distinct_results() {
     let mut c = conv("c1");
     c.title = "Rust guide".to_string();
     conversations::insert_conversation(&conn, &c).unwrap();
-    conversations::insert_message(&conn, &msg("m1", "c1", "user", "Learn Rust today", 100)).unwrap();
+    conversations::insert_message(&conn, &msg("m1", "c1", "user", "Learn Rust today", 100))
+        .unwrap();
 
     let results = conversations::search_conversations(&conn, "Rust").unwrap();
-    assert_eq!(results.len(), 1, "conversation matching both title and content should appear once");
+    assert_eq!(
+        results.len(),
+        1,
+        "conversation matching both title and content should appear once"
+    );
 }
 
 #[test]
@@ -172,7 +196,11 @@ fn search_empty_query_returns_all() {
     conversations::insert_conversation(&conn, &conv("c2")).unwrap();
 
     let results = conversations::search_conversations(&conn, "").unwrap();
-    assert_eq!(results.len(), 2, "empty query matches everything via LIKE '%%'");
+    assert_eq!(
+        results.len(),
+        2,
+        "empty query matches everything via LIKE '%%'"
+    );
 }
 
 #[test]
@@ -184,8 +212,14 @@ fn duplicate_creates_independent_copy() {
     let new_id = conversations::duplicate_conversation(&conn, "c1").unwrap();
 
     conversations::delete_conversation(&conn, "c1").unwrap();
-    let detail = conversations::get_conversation_detail(&conn, &new_id).unwrap().unwrap();
-    assert_eq!(detail.messages.len(), 1, "copy should survive original deletion");
+    let detail = conversations::get_conversation_detail(&conn, &new_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        detail.messages.len(),
+        1,
+        "copy should survive original deletion"
+    );
     assert!(detail.conversation.title.contains("副本"));
 }
 
@@ -194,7 +228,17 @@ fn pagination_covers_all_messages_without_overlap_or_gap() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();
     for i in 0..5 {
-        conversations::insert_message(&conn, &msg(&format!("m{}", i), "c1", "user", &format!("msg{}", i), (i as i64) * 100)).unwrap();
+        conversations::insert_message(
+            &conn,
+            &msg(
+                &format!("m{}", i),
+                "c1",
+                "user",
+                &format!("msg{}", i),
+                (i as i64) * 100,
+            ),
+        )
+        .unwrap();
     }
 
     let page1 = conversations::get_messages_paginated(&conn, "c1", 3, None).unwrap();
@@ -202,11 +246,23 @@ fn pagination_covers_all_messages_without_overlap_or_gap() {
 
     let oldest_ts = page1.first().unwrap().timestamp;
     let page2 = conversations::get_messages_paginated(&conn, "c1", 3, Some(oldest_ts)).unwrap();
-    assert_eq!(page2.len(), 2, "remaining 2 messages before oldest of page1");
+    assert_eq!(
+        page2.len(),
+        2,
+        "remaining 2 messages before oldest of page1"
+    );
 
-    let all_ids: Vec<&str> = page1.iter().chain(page2.iter()).map(|m| m.id.as_str()).collect();
+    let all_ids: Vec<&str> = page1
+        .iter()
+        .chain(page2.iter())
+        .map(|m| m.id.as_str())
+        .collect();
     let unique: std::collections::HashSet<&str> = all_ids.iter().copied().collect();
-    assert_eq!(unique.len(), 5, "pages should cover all messages without overlap");
+    assert_eq!(
+        unique.len(),
+        5,
+        "pages should cover all messages without overlap"
+    );
 }
 
 #[test]
@@ -254,21 +310,30 @@ fn export_json_roundtrip() {
 #[test]
 fn delete_provider_nullifies_conversation_provider_id() {
     let conn = init_db();
-    assistant_storage::providers::insert_provider(&conn, &assistant_storage::providers::ProviderRow {
-        id: "p1".to_string(),
-        name: "test".to_string(),
-        type_: "openai".to_string(),
-        base_url: "http://x".to_string(),
-        api_key_encrypted: String::new(),
-        models_json: "[]".to_string(),
-        default_model: "gpt-4".to_string(),
-        updated_at: 0,
-    }).unwrap();
+    assistant_storage::providers::insert_provider(
+        &conn,
+        &assistant_storage::providers::ProviderRow {
+            id: "p1".to_string(),
+            name: "test".to_string(),
+            type_: "openai".to_string(),
+            base_url: "http://x".to_string(),
+            api_key_encrypted: String::new(),
+            models_json: "[]".to_string(),
+            default_model: "gpt-4".to_string(),
+            updated_at: 0,
+        },
+    )
+    .unwrap();
     let mut c = conv("c1");
     c.provider_id = Some("p1".to_string());
     conversations::insert_conversation(&conn, &c).unwrap();
 
     assistant_storage::providers::delete_provider(&conn, "p1").unwrap();
-    let fetched = conversations::get_conversation_by_id(&conn, "c1").unwrap().unwrap();
-    assert!(fetched.provider_id.is_none(), "referential integrity: provider_id must be NULL after provider deleted");
+    let fetched = conversations::get_conversation_by_id(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    assert!(
+        fetched.provider_id.is_none(),
+        "referential integrity: provider_id must be NULL after provider deleted"
+    );
 }
