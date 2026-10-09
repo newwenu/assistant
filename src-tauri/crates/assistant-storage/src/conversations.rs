@@ -286,14 +286,12 @@ pub fn search_conversations(
     query: &str,
 ) -> Result<Vec<ConversationRow>, String> {
     let pattern = format!("%{}%", query);
-    let sql = format!(
-        "SELECT DISTINCT c.id, c.title, c.title_source, c.provider_id, c.model_id, c.system_prompt, c.is_pinned, c.sort_order, c.generation, c.created_at, c.updated_at \
+    let sql = "SELECT DISTINCT c.id, c.title, c.title_source, c.provider_id, c.model_id, c.system_prompt, c.is_pinned, c.sort_order, c.generation, c.created_at, c.updated_at \
          FROM conversations c \
          LEFT JOIN messages m ON m.conversation_id = c.id \
          WHERE c.title LIKE ?1 OR m.content LIKE ?1 \
-         ORDER BY c.is_pinned DESC, c.sort_order DESC, c.updated_at DESC"
-    );
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+         ORDER BY c.is_pinned DESC, c.sort_order DESC, c.updated_at DESC";
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map(params![pattern], read_conv_row)
         .map_err(|e| e.to_string())?;
@@ -452,7 +450,7 @@ pub fn edit_message(conn: &Connection, id: &str, new_content: &str) -> Result<()
     let (conversation_id, timestamp) = row;
 
     conn.execute(
-        "DELETE FROM messages WHERE conversation_id = ?1 AND timestamp > ?2 AND id != ?3",
+        "DELETE FROM messages WHERE conversation_id = ?1 AND timestamp >= ?2 AND id != ?3",
         params![conversation_id, timestamp, id],
     )
     .map_err(|e| e.to_string())?;

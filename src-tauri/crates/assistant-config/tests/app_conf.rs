@@ -130,3 +130,86 @@ fn load_from_recovers_from_temp_file() {
     assert_eq!(loaded.theme, "dark");
     assert!(!temp.exists());
 }
+
+#[test]
+fn amend_single_field() {
+    let conf = AppConf::new();
+    let patch = serde_json::json!({ "theme": "dark" });
+    let merged = conf.amend(patch).unwrap();
+    assert_eq!(merged.theme, "dark");
+    assert_eq!(merged.language, "zh-CN");
+    assert!(!merged.stay_on_top);
+}
+
+#[test]
+fn amend_multiple_fields() {
+    let conf = AppConf::new();
+    let patch =
+        serde_json::json!({ "theme": "light", "stay_on_top": true, "launch_at_login": true });
+    let merged = conf.amend(patch).unwrap();
+    assert_eq!(merged.theme, "light");
+    assert!(merged.stay_on_top);
+    assert!(merged.launch_at_login);
+    assert_eq!(merged.language, "zh-CN");
+}
+
+#[test]
+fn amend_preserves_unpatched_fields() {
+    let mut conf = AppConf::new();
+    conf.language = "en-US".to_string();
+    conf.close_to_tray = false;
+    let patch = serde_json::json!({ "theme": "dark" });
+    let merged = conf.amend(patch).unwrap();
+    assert_eq!(merged.theme, "dark");
+    assert_eq!(merged.language, "en-US");
+    assert!(!merged.close_to_tray);
+}
+
+#[test]
+fn amend_type_mismatch_returns_error() {
+    let conf = AppConf::new();
+    let patch = serde_json::json!({ "stay_on_top": "not_a_bool" });
+    assert!(conf.amend(patch).is_err());
+}
+
+#[test]
+fn amend_unknown_key_ignored() {
+    let conf = AppConf::new();
+    let patch = serde_json::json!({ "nonexistent": 42, "theme": "dark" });
+    let merged = conf.amend(patch).unwrap();
+    assert_eq!(merged.theme, "dark");
+}
+
+#[test]
+fn amend_keybindings() {
+    let conf = AppConf::new();
+    let patch = serde_json::json!({ "keybindings": { "toggle_orb": "Ctrl+O" } });
+    let merged = conf.amend(patch).unwrap();
+    assert_eq!(merged.keybindings.get("toggle_orb").unwrap(), "Ctrl+O");
+}
+
+#[cfg(feature = "slow-tests")]
+mod property {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn validate_theme_only_system_light_dark(theme in "[a-zA-Z]{1,10}") {
+            let mut conf = AppConf::new();
+            conf.theme = theme.clone();
+            let valid = ["system", "light", "dark"];
+            assert_eq!(conf.validate().is_ok(), valid.contains(&theme.as_str()));
+        }
+
+        #[test]
+        fn serde_roundtrip_preserves_validate(theme in "(system|light|dark)", language in "[a-zA-Z-]{1,10}") {
+            let mut conf = AppConf::new();
+            conf.theme = theme;
+            conf.language = language;
+            let json = serde_json::to_string(&conf).unwrap();
+            let decoded: AppConf = serde_json::from_str(&json).unwrap();
+            assert_eq!(conf.validate().is_ok(), decoded.validate().is_ok());
+        }
+    }
+}

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use super::json_config::{get_conf_dir, load_json_config, save_json_config};
@@ -88,6 +89,21 @@ impl OrbConf {
             ));
         }
         Ok(())
+    }
+
+    pub fn amend(self, patch: serde_json::Value) -> Result<Self, String> {
+        let val = serde_json::to_value(&self).map_err(|e| e.to_string())?;
+        let mut config: BTreeMap<String, serde_json::Value> =
+            serde_json::from_value(val).map_err(|e| e.to_string())?;
+        let new_json: BTreeMap<String, serde_json::Value> =
+            serde_json::from_value(patch).map_err(|e| e.to_string())?;
+        for (k, v) in new_json {
+            config.insert(k, v);
+        }
+        serde_json::from_str::<OrbConf>(
+            &serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| format!("amend deserialization failed: {}", e))
     }
 }
 

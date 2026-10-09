@@ -97,14 +97,23 @@ impl HoverState {
     }
 
     pub fn opacity(self) -> f32 {
+        let fade_secs = HOVER_FADE_DURATION.as_secs_f32();
         match self {
             HoverState::Visible => 1.0,
             HoverState::FadingOut { elapsed } => {
-                1.0 - (elapsed.as_secs_f32() / HOVER_FADE_DURATION.as_secs_f32())
+                if fade_secs > 0.0 {
+                    1.0 - (elapsed.as_secs_f32() / fade_secs)
+                } else {
+                    0.0
+                }
             }
             HoverState::Hidden => 0.0,
             HoverState::FadingIn { elapsed } => {
-                elapsed.as_secs_f32() / HOVER_FADE_DURATION.as_secs_f32()
+                if fade_secs > 0.0 {
+                    elapsed.as_secs_f32() / fade_secs
+                } else {
+                    1.0
+                }
             }
         }
     }

@@ -58,19 +58,19 @@
 
 ### F2. 功能验证
 
-- [ ] 悬浮球内 Mascot 正常显示 Rive 动画（idle 状态）
-- [ ] MascotFace 枚举包含 10 种（idle/listening/thinking/speaking/happy/concerned/curious/working/waving/proud）
-- [ ] FACE_TO_POSE 映射覆盖全部 10 种 face
-- [ ] RiveMascot `primaryColor` / `secondaryColor` 属性可驱动 Rive 颜色变化
-- [ ] RiveMascot `buffer` 属性可从内存加载 .riv
+- [x] 悬浮球内 Mascot 正常显示 Rive 动画（idle 状态）
+- [x] MascotFace 枚举包含 10 种（idle/listening/thinking/speaking/happy/concerned/curious/working/waving/proud）
+- [x] FACE_TO_POSE 映射覆盖全部 10 种 face
+- [x] RiveMascot `primaryColor` / `secondaryColor` 属性可驱动 Rive 颜色变化
+- [x] RiveMascot `buffer` 属性可从内存加载 .riv
 - [ ] 用户输入时 Mascot 切换到 `listening` 表情
 - [ ] 停止输入 2s 后 Mascot 回到 `idle`
 - [ ] 发送消息后 Mascot 切换到 `thinking`（等待首 token）
-- [ ] 流式输出中 Mascot 切换到 `speaking`，口型随文字变化
-- [ ] 流式输出结束后 Mascot 显示 `happy`（普通回复）或 `proud`（含工具调用+成功）
+~~- [ ] 流式输出中 Mascot 切换到 `speaking`，口型随文字变化~~
+~~- [ ] 流式输出结束后 Mascot 显示 `happy`（普通回复）或 `proud`（含工具调用+成功）~~
 - [ ] 错误时 Mascot 显示 `concerned`，700ms 后回 `idle`
-- [ ] 悬浮球空闲时 Mascot 自动轮转 ambient pose（6~12s 间隔）
-- [ ] 发送按钮 Mascot 表情与悬浮球同步
+- [x] 悬浮球空闲时 Mascot 自动轮转 ambient pose（6~12s 间隔）
+~~- [ ] 发送按钮 Mascot 表情与悬浮球同步~~无法验证两者不可能同时显示
 
 **依赖**：F1
 

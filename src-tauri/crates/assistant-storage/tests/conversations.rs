@@ -64,20 +64,22 @@ fn delete_message_and_after_removes_target_and_all_later() {
 }
 
 #[test]
-fn delete_message_and_after_should_only_remove_target_when_timestamps_unique() {
+fn delete_message_and_after_preserves_same_timestamp_siblings() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();
     conversations::insert_message(&conn, &msg("m1", "c1", "user", "keep", 100)).unwrap();
     conversations::insert_message(&conn, &msg("m2", "c1", "assistant", "target", 200)).unwrap();
-    conversations::insert_message(&conn, &msg("m3", "c1", "user", "same-ts-unrelated", 200))
-        .unwrap();
+    conversations::insert_message(&conn, &msg("m3", "c1", "user", "same-ts-sibling", 200)).unwrap();
     conversations::insert_message(&conn, &msg("m4", "c1", "assistant", "later", 300)).unwrap();
 
     conversations::delete_message_and_after(&conn, "m2").unwrap();
     let remaining = conversations::get_messages(&conn, "c1").unwrap();
-    assert_eq!(remaining.len(), 2, "m3 at same timestamp is unrelated and should survive; current impl uses timestamp >= so it gets deleted");
+    assert_eq!(remaining.len(), 2);
     assert_eq!(remaining[0].id, "m1");
-    assert_eq!(remaining[1].id, "m3");
+    assert_eq!(
+        remaining[1].id, "m3",
+        "same-timestamp sibling should survive"
+    );
 }
 
 #[test]
@@ -99,18 +101,18 @@ fn edit_message_removes_later_and_moves_timestamp() {
 }
 
 #[test]
-fn edit_message_should_delete_only_later_messages_not_same_timestamp_siblings() {
+fn edit_message_removes_same_timestamp_siblings() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();
     conversations::insert_message(&conn, &msg("m1", "c1", "user", "edit-me", 200)).unwrap();
-    conversations::insert_message(&conn, &msg("m2", "c1", "assistant", "same-ts", 200)).unwrap();
+    conversations::insert_message(&conn, &msg("m2", "c1", "assistant", "same-ts-sibling", 200))
+        .unwrap();
     conversations::insert_message(&conn, &msg("m3", "c1", "user", "later", 300)).unwrap();
 
     conversations::edit_message(&conn, "m1", "edited").unwrap();
     let remaining = conversations::get_messages(&conn, "c1").unwrap();
-    assert_eq!(remaining.len(), 2, "m2 at same timestamp is a sibling and should survive; m3 at ts=300 should be deleted; current impl leaves m2 but that's accidental, not intentional");
-    assert_eq!(remaining[0].id, "m2");
-    assert_eq!(remaining[1].content, "edited");
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].content, "edited");
 }
 
 #[test]
@@ -336,4 +338,82 @@ fn delete_provider_nullifies_conversation_provider_id() {
         fetched.provider_id.is_none(),
         "referential integrity: provider_id must be NULL after provider deleted"
     );
+}
+
+#[cfg(feature = "slow-tests")]
+mod property {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn message_count_never_negative(n_msgs in 0usize..20) {
+            let conn = init_db();
+            let conv = ConversationRow {
+                id: "c1".to_string(),
+                title: "t".to_string(),
+                title_source: "placeholder".to_string(),
+                provider_id: None,
+                model_id: "m".to_string(),
+                system_prompt: None,
+                is_pinned: false,
+                sort_order: 0,
+                generation: 0,
+                created_at: 0,
+                updated_at: 0,
+            };
+            conversations::insert_conversation(&conn, &conv).unwrap();
+            for i in 0..n_msgs {
+                conversations::insert_message(&conn, &MessageRow {
+                    id: format!("m{}", i),
+                    conversation_id: "c1".to_string(),
+                    role: "user".to_string(),
+                    content: "x".to_string(),
+                    tokens: None,
+                    timestamp: i as i64,
+                    parent_id: None,
+                    is_pinned: false,
+                }).unwrap();
+            }
+            let count = conversations::get_message_count(&conn, "c1").unwrap();
+            assert_eq!(count, n_msgs as i64);
+        }
+
+        #[test]
+        fn search_result_always_subset_of_all(
+            title in "[a-z]{1,5}",
+            content in "[a-z]{1,5}",
+            query in "[a-z]{1,3}",
+        ) {
+            let conn = init_db();
+            let conv = ConversationRow {
+                id: "c1".to_string(),
+                title: title.clone(),
+                title_source: "placeholder".to_string(),
+                provider_id: None,
+                model_id: "m".to_string(),
+                system_prompt: None,
+                is_pinned: false,
+                sort_order: 0,
+                generation: 0,
+                created_at: 0,
+                updated_at: 0,
+            };
+            conversations::insert_conversation(&conn, &conv).unwrap();
+            conversations::insert_message(&conn, &MessageRow {
+                id: "m1".to_string(),
+                conversation_id: "c1".to_string(),
+                role: "user".to_string(),
+                content: content.clone(),
+                tokens: None,
+                timestamp: 0,
+                parent_id: None,
+                is_pinned: false,
+            }).unwrap();
+
+            let all = conversations::get_conversations(&conn, None).unwrap();
+            let found = conversations::search_conversations(&conn, &query).unwrap();
+            assert!(found.len() <= all.len());
+        }
+    }
 }

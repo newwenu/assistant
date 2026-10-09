@@ -19,7 +19,10 @@ import Fuse from "fuse.js";
 import { tools } from "@/tools/registry";
 import { COMMAND_PALETTE_MAX_PER_CATEGORY } from "@/config/constants";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { dispatchThemeChanged } from "@/settings/settingsDispatcher";
+import {
+  dispatchConfPatch,
+  dispatchThemeChanged,
+} from "@/settings/settingsDispatcher";
 import styles from "./CommandPalette.module.css";
 
 interface PaletteOption {
@@ -150,12 +153,7 @@ export const CommandPalette: React.FC = () => {
           ];
           const current = appConf.theme as "system" | "light" | "dark";
           const next = order[(order.indexOf(current) + 1) % order.length];
-          const { dispatchAppConfChanged } =
-            await import("@/settings/settingsDispatcher");
-          await dispatchAppConfChanged({
-            ...appConf,
-            theme: next,
-          } as unknown as Record<string, unknown>);
+          await dispatchConfPatch("app", { theme: next });
           await dispatchThemeChanged(next);
         },
       },

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   SettingAction,
@@ -10,11 +11,14 @@ import { useProviderStore } from "../stores/providerStore";
 import { useThemeStore } from "../stores/themeStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
-async function emitSettingEvent(
+async function emitSettingEventToPeers(
   event: SettingEvent,
   payload: SettingEventPayload,
 ) {
-  const targets = [WINDOW_MAIN, WINDOW_ORB];
+  const selfLabel = getCurrentWebview().label;
+  const targets = [WINDOW_MAIN, WINDOW_ORB].filter(
+    (label) => label !== selfLabel,
+  );
   for (const label of targets) {
     const win = await WebviewWindow.getByLabel(label);
     if (win) {
@@ -30,7 +34,7 @@ async function emitSettingEvent(
 export async function dispatchProviderSaved(provider: Record<string, unknown>) {
   await invoke("save_provider", { provider });
   useProviderStore.getState().loadProviders();
-  await emitSettingEvent(SettingEvent.ProviderChanged, {
+  await emitSettingEventToPeers(SettingEvent.ProviderChanged, {
     action: SettingAction.ProviderSaved,
     id: provider.id as string,
     value: provider,
@@ -40,7 +44,7 @@ export async function dispatchProviderSaved(provider: Record<string, unknown>) {
 export async function dispatchProviderDeleted(id: string) {
   await invoke("delete_provider", { id });
   useProviderStore.getState().loadProviders();
-  await emitSettingEvent(SettingEvent.ProviderChanged, {
+  await emitSettingEventToPeers(SettingEvent.ProviderChanged, {
     action: SettingAction.ProviderDeleted,
     id,
   });
@@ -57,26 +61,23 @@ export async function dispatchThemeChanged(mode: "system" | "light" | "dark") {
   }
   useThemeStore.setState({ mode, resolved });
   await invoke("emit_theme_changed", { resolved });
-  await emitSettingEvent(SettingEvent.ThemeChanged, {
+  await emitSettingEventToPeers(SettingEvent.ThemeChanged, {
     action: SettingAction.ThemeChanged,
     value: resolved,
   });
 }
 
-export async function dispatchAppConfChanged(conf: Record<string, unknown>) {
-  await invoke("set_app_conf", { conf });
-  useSettingsStore.getState().loadAppConf();
-  await emitSettingEvent(SettingEvent.AppConfChanged, {
-    action: SettingAction.AppConfChanged,
-    value: conf,
-  });
-}
-
-export async function dispatchOrbConfChanged(conf: Record<string, unknown>) {
-  await invoke("set_orb_conf", { conf });
-  useSettingsStore.getState().loadOrbConf();
-  await emitSettingEvent(SettingEvent.OrbConfChanged, {
-    action: SettingAction.OrbConfChanged,
-    value: conf,
+export async function dispatchConfPatch(
+  group: "app" | "orb" | "mascot",
+  patch: Record<string, unknown>,
+) {
+  await invoke("patch_conf", { group, patch });
+  const store = useSettingsStore.getState();
+  if (group === "app") await store.loadAppConf();
+  else if (group === "orb") await store.loadOrbConf();
+  else if (group === "mascot") await store.loadMascotConf();
+  await emitSettingEventToPeers(SettingEvent.ConfPatched, {
+    action: SettingAction.ConfPatched,
+    value: { group, patch },
   });
 }

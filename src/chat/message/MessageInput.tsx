@@ -6,6 +6,18 @@ import {
 } from "../../config/constants";
 import { RiveMascot } from "../../mascot/RiveMascot";
 import { useMascotStore } from "../../mascot/mascotStore";
+import { useSettingsStore } from "../../stores/settingsStore";
+
+function hexToArgb(hex: string | null | undefined): number | undefined {
+  if (!hex) return undefined;
+  const h = hex.replace("#", "");
+  return (
+    (0xff << 24) |
+    (parseInt(h.slice(0, 2), 16) << 16) |
+    (parseInt(h.slice(2, 4), 16) << 8) |
+    parseInt(h.slice(4, 6), 16)
+  );
+}
 
 interface MessageInputProps {
   onSend: (content: string) => void;
@@ -22,6 +34,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 }) => {
   const [value, setValue] = useState("");
   const mascotFace = useMascotStore((s) => s.face);
+  const mascotConf = useSettingsStore((s) => s.mascotConf);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -83,7 +96,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         title={isStreaming ? "停止生成" : "发送消息"}
       >
         <div className="chat-mascot-btn-canvas">
-          <RiveMascot face={mascotFace} size={44} />
+          <RiveMascot
+            face={mascotFace}
+            size={44}
+            primaryColor={hexToArgb(mascotConf?.primary_color)}
+            secondaryColor={hexToArgb(mascotConf?.secondary_color)}
+          />
         </div>
       </button>
     </div>

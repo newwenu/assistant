@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Tooltip } from "antd";
 import { PushpinOutlined, PushpinFilled } from "@ant-design/icons";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { dispatchAppConfChanged } from "@/settings/settingsDispatcher";
-import type { AppConf } from "@/stores/settingsStore";
+import { dispatchConfPatch } from "@/settings/settingsDispatcher";
 
 export const PinToggle: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);
@@ -16,12 +15,7 @@ export const PinToggle: React.FC = () => {
   const handleToggle = async () => {
     const next = !pinned;
     setPinned(next);
-    if (appConf) {
-      const newConf: AppConf = { ...appConf, stay_on_top: next };
-      await dispatchAppConfChanged(
-        newConf as unknown as Record<string, unknown>,
-      );
-    }
+    await dispatchConfPatch("app", { stay_on_top: next });
   };
 
   return (

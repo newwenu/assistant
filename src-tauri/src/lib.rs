@@ -3,6 +3,7 @@
 
 mod chat_tasks;
 mod cmd;
+pub mod crash_dump;
 mod setup;
 mod tray;
 mod window;
@@ -36,9 +37,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             cmd::get_mouse_position,
             cmd::get_app_conf,
-            cmd::set_app_conf,
             cmd::get_orb_conf,
-            cmd::set_orb_conf,
+            cmd::get_mascot_conf,
+            cmd::patch_conf,
             cmd::set_theme,
             cmd::emit_theme_changed,
             cmd::toggle_orb_visibility,

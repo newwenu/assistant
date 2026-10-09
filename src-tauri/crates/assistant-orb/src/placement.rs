@@ -33,6 +33,7 @@ pub fn get_available_screens(app: &AppHandle) -> Vec<ScreenBounds> {
         }
     }
     if screens.is_empty() {
+        #[allow(clippy::collapsible_match)]
         if let Ok(primary) = app.primary_monitor() {
             if let Some(monitor) = primary {
                 let pos = monitor.position();

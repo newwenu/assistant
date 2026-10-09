@@ -191,6 +191,7 @@ pub struct RetryConfig {
     pub rate_limit_max_ms: u64,
 }
 
+#[allow(clippy::if_same_then_else)]
 pub fn get_context_window_tokens(model_id: &str) -> u32 {
     let id = model_id.to_lowercase();
     if id.contains("gpt-4o") || id.contains("gpt-4-turbo") {
@@ -260,7 +261,7 @@ impl Default for RetryConfig {
 
 impl RetryConfig {
     pub fn delay_ms(&self, attempt: u32, error: &ProviderError) -> u64 {
-        let shift = attempt.min(6) as u32;
+        let shift = attempt.min(6);
         let is_rate_limit = matches!(error, ProviderError::RateLimited { .. });
         let fallback = if is_rate_limit {
             (self.rate_limit_base_ms << shift).min(self.rate_limit_max_ms)
@@ -309,6 +310,8 @@ impl Default for SseLogConfig {
     }
 }
 
+pub type ChatStream = Pin<Box<dyn Stream<Item = Result<ChatDelta, ProviderError>> + Send>>;
+
 pub trait BaseProviderAdapter: Send + Sync {
     fn kind(&self) -> &ProviderKind;
     fn config(&self) -> &ProviderConfig;
@@ -317,7 +320,7 @@ pub trait BaseProviderAdapter: Send + Sync {
         messages: &[ChatMessage],
         model: &str,
         options: &ChatOptions,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<ChatDelta, ProviderError>> + Send>>, ProviderError>;
+    ) -> Result<ChatStream, ProviderError>;
     fn list_models(&self) -> Result<Vec<ModelConfig>, ProviderError>;
 }
 

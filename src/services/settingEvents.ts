@@ -47,19 +47,15 @@ export function subscribeSettingEvents(): () => void {
   );
 
   track(
-    listen<SettingEventPayload>(SettingEvent.AppConfChanged, ({ payload }) => {
+    listen<SettingEventPayload>(SettingEvent.ConfPatched, ({ payload }) => {
       if (disposed) return;
-      if (payload.action === SettingAction.AppConfChanged) {
-        useSettingsStore.getState().loadAppConf();
-      }
-    }),
-  );
-
-  track(
-    listen<SettingEventPayload>(SettingEvent.OrbConfChanged, ({ payload }) => {
-      if (disposed) return;
-      if (payload.action === SettingAction.OrbConfChanged) {
-        useSettingsStore.getState().loadOrbConf();
+      if (payload.action === SettingAction.ConfPatched) {
+        const { group } = (payload.value as { group: string; patch: unknown })
+          ?? { group: "" };
+        const store = useSettingsStore.getState();
+        if (group === "app") store.loadAppConf();
+        else if (group === "orb") store.loadOrbConf();
+        else if (group === "mascot") store.loadMascotConf();
       }
     }),
   );

@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use crate::chat_tasks::ChatTasks;
 use assistant_config::constant::WINDOW_ORB;
-use assistant_providers::{
-    base::{self, ChatMessage, ChatOptions, ProviderError, ProviderErrorPayload},
+use assistant_providers::base::{
+    self, ChatMessage, ChatOptions, ProviderError, ProviderErrorPayload,
 };
 use assistant_storage::{
     agent_modes::{self, AgentModeRow},

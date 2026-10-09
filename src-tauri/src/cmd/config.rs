@@ -29,7 +29,9 @@ static APP_SIDE_EFFECTS: &[(&str, AppSideEffectFn)] = &[
     ("stay_on_top", |_app, prev, conf| {
         if prev.stay_on_top != conf.stay_on_top {
             if let Some(window) = _app.get_webview_window(WINDOW_MAIN) {
-                window.set_always_on_top(conf.stay_on_top).map_err(|e| e.to_string())?;
+                window
+                    .set_always_on_top(conf.stay_on_top)
+                    .map_err(|e| e.to_string())?;
             }
         }
         Ok(())
@@ -46,7 +48,9 @@ static ORB_SIDE_EFFECTS: &[(&str, OrbSideEffectFn)] = &[
     ("always_on_top", |_app, prev, conf| {
         if prev.always_on_top != conf.always_on_top {
             if let Some(window) = _app.get_webview_window(WINDOW_ORB) {
-                window.set_always_on_top(conf.always_on_top).map_err(|e| e.to_string())?;
+                window
+                    .set_always_on_top(conf.always_on_top)
+                    .map_err(|e| e.to_string())?;
             }
         }
         Ok(())
@@ -137,11 +141,7 @@ pub fn get_mascot_conf() -> serde_json::Value {
 }
 
 #[command]
-pub fn patch_conf(
-    app: AppHandle,
-    group: String,
-    patch: serde_json::Value,
-) -> Result<(), String> {
+pub fn patch_conf(app: AppHandle, group: String, patch: serde_json::Value) -> Result<(), String> {
     let _guard = CONF_LOCK.lock().map_err(|e| e.to_string())?;
 
     match group.as_str() {

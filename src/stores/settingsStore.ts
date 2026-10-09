@@ -23,12 +23,19 @@ export interface OrbConf {
   position_y: number | null;
 }
 
+export interface MascotConf {
+  primary_color: string | null;
+  secondary_color: string | null;
+}
+
 interface SettingsState {
   appConf: AppConf | null;
   orbConf: OrbConf | null;
+  mascotConf: MascotConf | null;
 
   loadAppConf: () => Promise<void>;
   loadOrbConf: () => Promise<void>;
+  loadMascotConf: () => Promise<void>;
   updateKeybinding: (id: string, binding: string) => Promise<void>;
   resetKeybindings: () => Promise<void>;
 }
@@ -45,6 +52,7 @@ const DEFAULT_KEYBINDINGS: Record<string, string> = {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   appConf: null,
   orbConf: null,
+  mascotConf: null,
 
   loadAppConf: async () => {
     try {
@@ -64,22 +72,27 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
+  loadMascotConf: async () => {
+    try {
+      const conf = (await invoke("get_mascot_conf")) as MascotConf;
+      set({ mascotConf: conf });
+    } catch (e) {
+      console.error("[settingsStore] loadMascotConf failed:", e);
+    }
+  },
+
   updateKeybinding: async (id: string, binding: string) => {
     const { appConf } = get();
     if (!appConf) return;
     const newKeybindings = { ...appConf.keybindings, [id]: binding };
-    const newConf = { ...appConf, keybindings: newKeybindings };
-    const { dispatchAppConfChanged } =
+    const { dispatchConfPatch } =
       await import("../settings/settingsDispatcher");
-    await dispatchAppConfChanged(newConf as unknown as Record<string, unknown>);
+    await dispatchConfPatch("app", { keybindings: newKeybindings });
   },
 
   resetKeybindings: async () => {
-    const { appConf } = get();
-    if (!appConf) return;
-    const newConf = { ...appConf, keybindings: { ...DEFAULT_KEYBINDINGS } };
-    const { dispatchAppConfChanged } =
+    const { dispatchConfPatch } =
       await import("../settings/settingsDispatcher");
-    await dispatchAppConfChanged(newConf as unknown as Record<string, unknown>);
+    await dispatchConfPatch("app", { keybindings: { ...DEFAULT_KEYBINDINGS } });
   },
 }));

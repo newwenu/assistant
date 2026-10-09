@@ -1,20 +1,20 @@
-mod config;
-mod orb;
-mod provider;
-mod conversation;
-mod chat;
-mod tool;
 mod agent_mode;
 mod app;
+mod chat;
+mod config;
+mod conversation;
+mod orb;
+mod provider;
+mod tool;
 
-pub use config::*;
-pub use orb::*;
-pub use provider::*;
-pub use conversation::*;
-pub use chat::*;
-pub use tool::*;
 pub use agent_mode::*;
 pub use app::*;
+pub use chat::*;
+pub use config::*;
+pub use conversation::*;
+pub use orb::*;
+pub use provider::*;
+pub use tool::*;
 
 pub(crate) fn get_db_conn<'a>(
     state: &'a tauri::State<'a, crate::setup::DbState>,

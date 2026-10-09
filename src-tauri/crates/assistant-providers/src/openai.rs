@@ -1,15 +1,13 @@
-use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
-use log::warn;
+use log::{debug, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tokio_stream::Stream;
 
 use super::base::{
     get_context_window_tokens, BaseProviderAdapter, ChatDelta, ChatMessage, ChatOptions,
-    MessageRole, ModelConfig, ProviderConfig, ProviderError, ProviderKind, RetryConfig,
+    ChatStream, MessageRole, ModelConfig, ProviderConfig, ProviderError, ProviderKind, RetryConfig,
     SseLogConfig, StreamTimeoutConfig, TokenUsage,
 };
 use super::crypto;
@@ -70,9 +68,9 @@ impl OpenAIAdapter {
     }
 
     fn decrypt_api_key(&self) -> Result<String, ProviderError> {
-        let machine_id = crypto::get_machine_id().map_err(|e| ProviderError::ApiKeyMissing(e))?;
+        let machine_id = crypto::get_machine_id().map_err(ProviderError::ApiKeyMissing)?;
         crypto::decrypt_api_key_b64(&self.config.api_key_encrypted, &machine_id)
-            .map_err(|e| ProviderError::ApiKeyMissing(e))
+            .map_err(ProviderError::ApiKeyMissing)
     }
 
     fn role_str(role: &MessageRole) -> &str {
@@ -252,8 +250,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
         messages: &[ChatMessage],
         model: &str,
         options: &ChatOptions,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<ChatDelta, ProviderError>> + Send>>, ProviderError>
-    {
+    ) -> Result<ChatStream, ProviderError> {
         let api_key = self.decrypt_api_key()?;
         let base_url = self.base_url().to_string();
         let req_messages: Vec<ChatRequestMessage> = messages
@@ -393,23 +390,21 @@ impl BaseProviderAdapter for OpenAIAdapter {
                             yield Err(err);
                             return;
                         }
-                    } else {
-                        if now.duration_since(last_chunk_time) > timeout_config.idle_timeout {
-                            let err = ProviderError::Timeout(format!(
-                                "No chunk received for {}s (stream idle)",
-                                timeout_config.idle_timeout.as_secs()
-                            ));
-                            sse_log.flush_on_error("stream idle timeout");
-                            if attempt < retry_config.max_attempts {
-                                let delay = retry_config.delay_ms(attempt, &err);
-                                warn!("Stream idle timeout, retrying in {}ms", delay);
-                                tokio::time::sleep(Duration::from_millis(delay)).await;
-                                attempt += 1;
-                                continue 'retry;
-                            }
-                            yield Err(err);
-                            return;
+                    } else if now.duration_since(last_chunk_time) > timeout_config.idle_timeout {
+                        let err = ProviderError::Timeout(format!(
+                            "No chunk received for {}s (stream idle)",
+                            timeout_config.idle_timeout.as_secs()
+                        ));
+                        sse_log.flush_on_error("stream idle timeout");
+                        if attempt < retry_config.max_attempts {
+                            let delay = retry_config.delay_ms(attempt, &err);
+                            warn!("Stream idle timeout, retrying in {}ms", delay);
+                            tokio::time::sleep(Duration::from_millis(delay)).await;
+                            attempt += 1;
+                            continue 'retry;
                         }
+                        yield Err(err);
+                        return;
                     }
 
                     let chunk = match chunk_result {
@@ -452,7 +447,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
                             continue;
                         }
                         if line == "data: [DONE]" {
-                            eprintln!("[SSE] stream done after {} chunks, no usage in final chunk", sse_chunk_count);
+                            debug!("[SSE] stream done after {} chunks, no usage in final chunk", sse_chunk_count);
                             yield Ok(ChatDelta {
                                 seq: None,
                                 delta_text: None,
@@ -468,9 +463,9 @@ impl BaseProviderAdapter for OpenAIAdapter {
                         let data = line.strip_prefix("data: ").unwrap_or(&line);
                         sse_log.push(data.to_string());
                         sse_chunk_count += 1;
-                        if sse_chunk_count <= 5 || data.contains("\"usage\"") {
+                        if data.contains("\"usage\"") {
                             let preview = &data[..data.len().min(200)];
-                            eprintln!("[SSE #{}] {}", sse_chunk_count, preview);
+                            debug!("[SSE #{}] {}", sse_chunk_count, preview);
                         }
                         let chunk: ChatResponseChunk = match serde_json::from_str(data) {
                             Ok(c) => c,
@@ -490,7 +485,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
                         };
                         if let Some(usage) = chunk.usage {
                             let cache_read = usage.prompt_tokens_details.as_ref().and_then(|d| d.cached_tokens).unwrap_or(0);
-                            eprintln!(
+                            debug!(
                                 "[SSE usage] prompt={} completion={} total={} cached={}",
                                 usage.prompt_tokens.unwrap_or(0),
                                 usage.completion_tokens.unwrap_or(0),
@@ -511,7 +506,7 @@ impl BaseProviderAdapter for OpenAIAdapter {
                                     total_tokens: usage.total_tokens.unwrap_or(0),
                                     cache_read_tokens: cache_read,
                                     cache_write_tokens: 0,
-                                    context_window_tokens: context_window_tokens,
+                                    context_window_tokens,
                                 }),
                             });
                         }

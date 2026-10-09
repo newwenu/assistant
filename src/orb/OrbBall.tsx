@@ -20,10 +20,22 @@ import { OrbContextMenu } from "./OrbContextMenu";
 import { useOrbConfSync } from "./useOrbConfSync";
 import { RiveMascot } from "../mascot/RiveMascot";
 import { useMascotStore } from "../mascot/mascotStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
 const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
 const NEEDS_CURSOR_POLL = IS_MACOS || IS_WINDOWS;
+
+function hexToArgb(hex: string | null | undefined): number | undefined {
+  if (!hex) return undefined;
+  const h = hex.replace("#", "");
+  return (
+    (0xff << 24) |
+    (parseInt(h.slice(0, 2), 16) << 16) |
+    (parseInt(h.slice(2, 4), 16) << 8) |
+    parseInt(h.slice(4, 6), 16)
+  );
+}
 
 export const OrbBall: React.FC = () => {
   useOrbConfSync();
@@ -36,6 +48,7 @@ export const OrbBall: React.FC = () => {
   const setHovering = useOrbStore((s) => s.setHovering);
   const setClickThrough = useOrbStore((s) => s.setClickThrough);
   const mascotFace = useMascotStore((s) => s.face);
+  const mascotConf = useSettingsStore((s) => s.mascotConf);
   const { expand } = useOrbExpand();
   const { onPointerDown, onPointerMove, onPointerUp, hasDraggedRef } =
     useOrbDrag();
@@ -192,7 +205,13 @@ export const OrbBall: React.FC = () => {
         onPointerLeave={handlePointerLeave}
         onClick={handleClick}
       >
-        <RiveMascot face={mascotFace} size={ORB_HITBOX_SIZE} idlePoseRotation />
+        <RiveMascot
+          face={mascotFace}
+          size={ORB_HITBOX_SIZE}
+          idlePoseRotation
+          primaryColor={hexToArgb(mascotConf?.primary_color)}
+          secondaryColor={hexToArgb(mascotConf?.secondary_color)}
+        />
       </div>
     </OrbContextMenu>
   );

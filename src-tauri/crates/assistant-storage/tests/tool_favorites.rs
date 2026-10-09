@@ -44,20 +44,34 @@ fn set_favorites_order_rejects_duplicate_tool_ids() {
 }
 
 #[test]
-fn set_favorites_order_should_preserve_old_data_on_failure() {
+fn set_favorites_order_atomic_on_failure() {
     let conn = init_db();
     tool_favorites::toggle_favorite(&conn, "keep-me").unwrap();
-    assert_eq!(
-        tool_favorites::get_favorites(&conn).unwrap(),
-        vec!["keep-me"]
-    );
 
     let result = tool_favorites::set_favorites_order(&conn, &["x".into(), "x".into()]);
     assert!(result.is_err());
 
     let favs = tool_favorites::get_favorites(&conn).unwrap();
     assert_eq!(
-        favs, vec!["keep-me"],
-        "on failure, old favorites should be preserved; current impl is non-atomic (DELETE then INSERT) so data is lost"
+        favs,
+        vec!["keep-me"],
+        "on failure, old favorites should be preserved (atomic transaction)"
     );
+}
+
+#[cfg(feature = "slow-tests")]
+mod property {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn toggle_double_is_noop(tool_id in "[a-z]{1,10}") {
+            let conn = init_db();
+            let r1 = tool_favorites::toggle_favorite(&conn, &tool_id).unwrap();
+            let r2 = tool_favorites::toggle_favorite(&conn, &tool_id).unwrap();
+            assert_ne!(r1, r2, "consecutive toggles must return opposite values");
+            assert!(tool_favorites::get_favorites(&conn).unwrap().is_empty());
+        }
+    }
 }

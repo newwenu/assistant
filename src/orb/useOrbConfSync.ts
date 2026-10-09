@@ -2,8 +2,19 @@ import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import type { OrbConf } from "@/stores/settingsStore";
-import { SettingEvent } from "../types/events";
+import { SettingEvent, SettingAction } from "../types/events";
 import type { SettingEventPayload } from "../types/events";
+
+async function reloadAndApply(
+  appliedRef: React.MutableRefObject<string>,
+) {
+  try {
+    const conf = await invoke<OrbConf>("get_orb_conf");
+    await applyOrbConf(conf, appliedRef);
+  } catch (e) {
+    console.warn("[useOrbConfSync] reload failed:", e);
+  }
+}
 
 async function applyOrbConf(
   conf: OrbConf,
@@ -42,18 +53,14 @@ export function useOrbConfSync(): void {
   const appliedRef = useRef<string>("");
 
   useEffect(() => {
-    invoke<OrbConf>("get_orb_conf")
-      .then((conf) => applyOrbConf(conf, appliedRef))
-      .catch((e) => console.warn("[useOrbConfSync] initial load failed:", e));
+    reloadAndApply(appliedRef);
 
     const unlisten = listen<SettingEventPayload>(
-      SettingEvent.OrbConfChanged,
-      async (event) => {
-        const payload = event.payload;
-        if (!payload || payload.action !== "orb-conf-changed") return;
-        const conf = payload.value as OrbConf;
-        if (!conf) return;
-        await applyOrbConf(conf, appliedRef);
+      SettingEvent.ConfPatched,
+      ({ payload }) => {
+        if (payload.action !== SettingAction.ConfPatched) return;
+        const { group } = (payload.value as { group: string }) ?? {};
+        if (group === "orb") reloadAndApply(appliedRef);
       },
     );
 

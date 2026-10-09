@@ -52,6 +52,8 @@ tokio-stream = "0.1"
 async-stream = "0.3"
 rand = "0.8"
 proptest = "1"
+crash-handler = "0.6"
+minidump-writer = "0.10"
 
 assistant-config = { path = "crates/assistant-config" }
 assistant-orb = { path = "crates/assistant-orb" }
@@ -87,6 +89,9 @@ assistant-agent = { workspace = true }
 assistant-storage = { workspace = true }
 assistant-i18n = { workspace = true }
 rustc_version_runtime.workspace = true
+crash-handler = { workspace = true }
+minidump-writer = { workspace = true }
+dirs = { workspace = true }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -97,3 +102,8 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+[dev-dependencies]
+minidump = "0.27.0"
+pdb = "0.8"
+rustc-demangle = "0.1"

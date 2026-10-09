@@ -1,31 +1,28 @@
 import { useEffect } from "react";
 import { Form, Radio, message } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { MascotColorSection } from "./MascotColorSection";
 import { OrbBallSection } from "./OrbBallSection";
 import { OrbPanelSection } from "./OrbPanelSection";
 import { SettingsSection } from "./SettingsSection";
 import { SettingsPageShell } from "./SettingsPageShell";
-import {
-  dispatchAppConfChanged,
-  dispatchThemeChanged,
-} from "./settingsDispatcher";
-import type { AppConf } from "@/stores/settingsStore";
+import { dispatchConfPatch, dispatchThemeChanged } from "./settingsDispatcher";
 
 export const AppearanceSettings: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);
   const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
+  const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
   const [messageApi, contextHolder] = message.useMessage();
 
   useEffect(() => {
     loadAppConf();
     loadOrbConf();
-  }, [loadAppConf, loadOrbConf]);
+    loadMascotConf();
+  }, [loadAppConf, loadOrbConf, loadMascotConf]);
 
   const handleThemeChange = async (theme: string) => {
-    if (!appConf) return;
-    const newConf: AppConf = { ...appConf, theme };
-    await dispatchAppConfChanged(newConf as unknown as Record<string, unknown>);
+    await dispatchConfPatch("app", { theme });
     await dispatchThemeChanged(theme as "system" | "light" | "dark");
     messageApi.success("主题已切换");
   };
@@ -52,6 +49,13 @@ export const AppearanceSettings: React.FC = () => {
               </Radio.Group>
             </Form.Item>
           </Form>
+        </SettingsSection>
+
+        <SettingsSection
+          title="吉祥物颜色"
+          description="自定义吉祥物的主色和辅色，点击应用后生效"
+        >
+          <MascotColorSection onSaved={handleSaved} />
         </SettingsSection>
 
         <SettingsSection

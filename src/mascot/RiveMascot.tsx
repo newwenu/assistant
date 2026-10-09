@@ -152,21 +152,35 @@ export const RiveMascot: FC<RiveMascotProps> = ({
     "mouthVisemeCode",
     vmInstance,
   );
-  const { setValue: setPrimaryColor } = useViewModelInstanceColor(
-    "primaryColor",
-    vmInstance,
-  );
-  const { setValue: setSecondaryColor } = useViewModelInstanceColor(
-    "secondaryColor",
-    vmInstance,
-  );
+  const { value: primaryColorValue, setValue: setPrimaryColor } =
+    useViewModelInstanceColor("primaryColor", vmInstance);
+  const { value: secondaryColorValue, setValue: setSecondaryColor } =
+    useViewModelInstanceColor("secondaryColor", vmInstance);
+
+  const defaultPrimaryRef = useRef<number | null>(null);
+  const defaultSecondaryRef = useRef<number | null>(null);
+
+  if (defaultPrimaryRef.current === null && primaryColorValue != null) {
+    defaultPrimaryRef.current = primaryColorValue;
+  }
+  if (defaultSecondaryRef.current === null && secondaryColorValue != null) {
+    defaultSecondaryRef.current = secondaryColorValue;
+  }
 
   useEffect(() => {
-    if (primaryColor != null) setPrimaryColor(primaryColor);
+    if (primaryColor != null) {
+      setPrimaryColor(primaryColor);
+    } else if (defaultPrimaryRef.current != null) {
+      setPrimaryColor(defaultPrimaryRef.current);
+    }
   }, [primaryColor, setPrimaryColor]);
 
   useEffect(() => {
-    if (secondaryColor != null) setSecondaryColor(secondaryColor);
+    if (secondaryColor != null) {
+      setSecondaryColor(secondaryColor);
+    } else if (defaultSecondaryRef.current != null) {
+      setSecondaryColor(defaultSecondaryRef.current);
+    }
   }, [secondaryColor, setSecondaryColor]);
 
   const basePose = faceToPose(face);

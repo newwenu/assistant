@@ -171,6 +171,9 @@ pub fn expand_orb_panel(
     let window = get_or_error(&app, WINDOW_ORB)?;
 
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    if scale <= 0.0 {
+        return Err("scale_factor returned non-positive value".to_string());
+    }
     let old_pos = window.outer_position().map_err(|e| e.to_string())?;
     let old_size = window.inner_size().map_err(|e| e.to_string())?;
 
@@ -230,6 +233,9 @@ pub fn collapse_orb_panel(
     let window = get_or_error(&app, WINDOW_ORB)?;
 
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    if scale <= 0.0 {
+        return Err("scale_factor returned non-positive value".to_string());
+    }
     let old_pos = window.outer_position().map_err(|e| e.to_string())?;
     let old_size = window.inner_size().map_err(|e| e.to_string())?;
 
