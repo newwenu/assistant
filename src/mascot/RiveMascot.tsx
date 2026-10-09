@@ -4,6 +4,7 @@ import {
   useRive,
   useViewModel,
   useViewModelInstance,
+  useViewModelInstanceColor,
   useViewModelInstanceEnum,
 } from "@rive-app/react-webgl2";
 import { type FC, useCallback, useEffect, useRef, useState } from "react";
@@ -32,9 +33,12 @@ const DEFAULT_MASCOT_SRC = "/mascot.riv";
 interface RiveMascotProps {
   face?: MascotFace;
   size?: number | string;
+  primaryColor?: number;
+  secondaryColor?: number;
   visemeCode?: string;
   idlePoseRotation?: boolean;
   src?: string;
+  buffer?: ArrayBuffer;
   stateMachine?: string;
 }
 
@@ -113,16 +117,20 @@ function useFixCanvasUnderTransform(
 export const RiveMascot: FC<RiveMascotProps> = ({
   face = "idle",
   size = "100%",
+  primaryColor,
+  secondaryColor,
   visemeCode = "sil",
   idlePoseRotation = false,
   src = DEFAULT_MASCOT_SRC,
+  buffer,
   stateMachine = MASCOT_STATE_MACHINE,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const riveSource = buffer ? { buffer } : { src };
   const { rive, RiveComponent } = useRive(
     {
-      src,
+      ...riveSource,
       stateMachines: stateMachine,
       autoplay: true,
       layout: RIVE_LAYOUT,
@@ -144,6 +152,22 @@ export const RiveMascot: FC<RiveMascotProps> = ({
     "mouthVisemeCode",
     vmInstance,
   );
+  const { setValue: setPrimaryColor } = useViewModelInstanceColor(
+    "primaryColor",
+    vmInstance,
+  );
+  const { setValue: setSecondaryColor } = useViewModelInstanceColor(
+    "secondaryColor",
+    vmInstance,
+  );
+
+  useEffect(() => {
+    if (primaryColor != null) setPrimaryColor(primaryColor);
+  }, [primaryColor, setPrimaryColor]);
+
+  useEffect(() => {
+    if (secondaryColor != null) setSecondaryColor(secondaryColor);
+  }, [secondaryColor, setSecondaryColor]);
 
   const basePose = faceToPose(face);
 

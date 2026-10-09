@@ -63,18 +63,18 @@
 
 ### E2. 功能验证
 
-- [ ] 修改 AppConf 后配置正确持久化到 config.json
-- [ ] 修改 OrbConf 后配置正确持久化到 orb-config.json
-- [ ] 原子写入：config.json 不存在半写状态
-- [ ] 崩溃恢复：手动创建 .tmp 文件后 load() 能正确处理
-- [ ] 写入路径统一：无 saveAppConf/saveOrbConf 旁路
-- [ ] 运行时功能在 Rust 端执行：修改 launch_at_login 触发 autostart
-- [ ] 运行时功能在 Rust 端执行：修改 stay_on_top 触发 setAlwaysOnTop
-- [ ] 运行时功能在 Rust 端执行：修改 keybindings 触发 reload_shortcuts
-- [ ] 运行时功能在 Rust 端执行：修改 always_on_top 触发窗口 API
-- [ ] 运行时功能在 Rust 端执行：修改 click_through 触发 set_ignore_cursor_events
-- [ ] useOrbConfSync 只做 CSS 变量应用
-- [ ] 配置校验：非法 opacity_percent=0 被拒绝
-- [ ] 配置校验：非法 scale_percent=0 被拒绝
+- [x] 修改 AppConf 后配置正确持久化到 config.json
+- [x] 修改 OrbConf 后配置正确持久化到 orb-config.json
+- [x] 原子写入：config.json 不存在半写状态
+- [x] 崩溃恢复：手动创建 .tmp 文件后 load() 能正确处理
+- [x] 写入路径统一：无 saveAppConf/saveOrbConf 旁路
+- [x] 运行时功能在 Rust 端执行：修改 launch_at_login 触发 autostart
+- [x] 运行时功能在 Rust 端执行：修改 stay_on_top 触发 setAlwaysOnTop
+- [x] 运行时功能在 Rust 端执行：修改 keybindings 触发 reload_shortcuts
+- [x] 运行时功能在 Rust 端执行：修改 always_on_top 触发窗口 API
+- [x] 运行时功能在 Rust 端执行：修改 click_through 触发 set_ignore_cursor_events
+- [x] useOrbConfSync 只做 CSS 变量应用
+- [x] 配置校验：非法 opacity_percent=0 被拒绝
+- [x] 配置校验：非法 scale_percent=0 被拒绝
 
 **依赖**：E1

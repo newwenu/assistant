@@ -57,7 +57,10 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     <div className="chat-input">
       <Input.TextArea
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          useMascotStore.getState().notifyListening();
+        }}
         onKeyDown={handleKeyDown}
         autoSize={{
           minRows: CHAT_INPUT_MIN_ROWS,

@@ -19,12 +19,13 @@ export const FACE_TO_POSE: Record<MascotFace, RivePose> = {
   idle: "idle",
   listening: "idle",
   thinking: "thinking",
-  speaking: "idle",
+  speaking: "writing",
   happy: "celebration",
   concerned: "thinking",
   curious: "bookreading",
   working: "writing",
   waving: "hand_wave",
+  proud: "celebration",
 };
 
 export function faceToPose(face: MascotFace): RivePose {

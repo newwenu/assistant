@@ -1,16 +1,20 @@
 import { useEffect, useRef } from "react";
 import { useChatStore } from "../stores/chatStore";
 import { useMascotStore } from "./mascotStore";
-import { pickVisemeCode } from "./riveMaps";
 import type { MascotFace } from "./faceStates";
 
 const CONCERNED_RE = /\b(sorry|failed|error|cannot|unable|problem)\b/i;
 const HAPPY_RE = /\b(done|completed|fixed|success|ready|great)\b/i;
 
-function pickAckFace(fullText: string): MascotFace | null {
+function pickAckFace(
+  fullText: string,
+  hadToolCall?: boolean,
+): MascotFace | null {
   if (!fullText.trim()) return null;
   if (CONCERNED_RE.test(fullText)) return "concerned";
+  if (hadToolCall && HAPPY_RE.test(fullText)) return "proud";
   if (HAPPY_RE.test(fullText)) return "happy";
+  if (hadToolCall) return "happy";
   return null;
 }
 
@@ -21,10 +25,23 @@ export function useMascotChatSync(): void {
 
   useEffect(() => {
     const unsubscribe = useChatStore.subscribe((state) => {
-      const { isStreaming, isReasoningStreaming } = state;
-      const hasError = state.messages.some(
+      const { isStreaming, isReasoningStreaming, messages } = state;
+      const hasError = messages.some(
         (m) => m.error != null && m.role === "assistant",
       );
+
+      const lastUserMsgIdx = [...messages]
+        .reverse()
+        .findIndex((m) => m.role === "user");
+      const hadToolCall =
+        lastUserMsgIdx >= 0 &&
+        messages
+          .slice(messages.length - 1 - lastUserMsgIdx)
+          .some(
+            (m) =>
+              m.role === "tool" ||
+              (m.role === "assistant" && (m.toolCalls?.length ?? 0) > 0),
+          );
 
       const justStartedStreaming = isStreaming && !prevStreamingRef.current;
       const justStoppedStreaming = !isStreaming && prevStreamingRef.current;
@@ -33,32 +50,31 @@ export function useMascotChatSync(): void {
 
       if (justStartedStreaming && isReasoningStreaming) {
         useMascotStore.getState().setFace("thinking");
+      } else if (justStartedStreaming && hadToolCall) {
+        useMascotStore.getState().setFace("working");
       } else if (justStartedStreaming) {
         useMascotStore.getState().setFace("speaking");
       }
 
       if (justStoppedReasoning && isStreaming) {
-        useMascotStore.getState().setFace("speaking");
+        if (hadToolCall) {
+          useMascotStore.getState().setFace("working");
+        } else {
+          useMascotStore.getState().setFace("speaking");
+        }
       }
 
       if (justStoppedStreaming) {
-        const lastAssistantMsg = [...state.messages]
+        const lastAssistantMsg = [...messages]
           .reverse()
           .find((m) => m.role === "assistant");
         const fullText = lastAssistantMsg?.content ?? "";
-        const ackFace = pickAckFace(fullText) ?? "happy";
+        const ackFace = pickAckFace(fullText, hadToolCall) ?? "happy";
         useMascotStore.getState().holdThenIdle(ackFace);
       }
 
       if (hasError && !prevErrorRef.current) {
         useMascotStore.getState().holdThenIdle("concerned");
-      }
-
-      if (isStreaming && !isReasoningStreaming) {
-        const lastDelta = state.streamingContent.slice(-1);
-        if (lastDelta) {
-          useMascotStore.getState().setVisemeCode(pickVisemeCode(lastDelta));
-        }
       }
 
       prevStreamingRef.current = isStreaming;

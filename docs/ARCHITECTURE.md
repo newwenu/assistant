@@ -97,8 +97,10 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 | 闲置 | idle |
 | 用户输入 | listening |
 | 等待首 token | thinking |
-| 流式输出中 | speaking |
+| Agent 工具调用中 | working |
+| 流式输出中 | speaking（→ writing pose） |
 | 输出完成 | happy → idle |
+| 工具调用成功 | proud → idle |
 | 错误 | concerned |
 
 情感引擎（jiwen 5 轴模型）驱动主动行为：bond / stubbornness / mood / anxiety / busyness 阈值触发打招呼、提醒休息等。
@@ -311,7 +313,7 @@ retryable 错误支持指数退避重试（max 3 次，base 1s，max 30s）。
 
 > Rust 后端结构择优参考 BongoCat 的 workspace 多 crate 架构（编译隔离 + API 边界强制 + 独立测试），按我们的领域划分为 1 个根包 + 6 个 workspace crate，远少于 BongoCat 的 20 个。ChatGPT 的 core 模块组织（cmd/conf/constant/setup/window）融入 `assistant-app` 根包。Tauri 2 CLI 要求二进制包位于 `src-tauri/` 根目录（`Cargo.toml` 同时包含 `[package]` 和 `[workspace]`），因此 `assistant-app` 作为根包而非子 crate。
 
-> **实现状态**：Rust 后端 7 crate 骨架已在 I0 中实现；I1 完成 Orb 悬浮球全部功能；I2 完成 AI 对话全部功能（Provider 管理 + 流式输出 + 对话持久化 + ChatError 错误体系）；I3 完成工具箱全部功能（21 工具 + 命令面板 + 侧边栏）；I4 完成设置系统全部功能（通用/外观/快捷键/关于 + 全局快捷键注册 + 侧边栏重组 + 标题栏增强 + settingsDispatcher 统一链路）；I6 完成 Agent 自定义模式（agent_modes 表 + 内置预设 + 模式切换 + token 追踪 + Prompt 模板合并）。I2-History 进行中（Schema v2 迁移 + 高级 CRUD + 虚拟滚动 + 搜索导出等）。前端 mascot/ 等业务模块仍为规划结构，将在后续迭代中逐步实现。
+> **实现状态**：Rust 后端 7 crate 骨架已在 I0 中实现；I1 完成 Orb 悬浮球全部功能；I2 完成 AI 对话全部功能（Provider 管理 + 流式输出 + 对话持久化 + ChatError 错误体系）；I3 完成工具箱全部功能（21 工具 + 命令面板 + 侧边栏）；I4 完成设置系统全部功能（通用/外观/快捷键/关于 + 全局快捷键注册 + 侧边栏重组 + 标题栏增强 + settingsDispatcher 统一链路）；I5 完成 Mascot 形象 + 表情联动（MascotFace 10 种 + FACE_TO_POSE 10→9 映射 + 颜色换肤 + buffer 加载 + listening 状态联动 + ack proud 增强）；I6 完成 Agent 自定义模式（agent_modes 表 + 内置预设 + 模式切换 + token 追踪 + Prompt 模板合并）。I2-History 进行中（Schema v2 迁移 + 高级 CRUD + 虚拟滚动 + 搜索导出等）。
 
 ```
 assistant/
@@ -385,8 +387,10 @@ assistant/
 │   │   └── useOrbConfSync.ts      # Orb 配置实时同步（listen OrbConfChanged → CSS 变量 + 运行时生效）
 │   ├── mascot/                    # Mascot 形象
 │   │   ├── RiveMascot.tsx         # Rive 渲染（useRive + useViewModel）
-│   │   ├── faceStates.ts          # MascotFace 枚举 + faceToPose 映射
-│   │   ├── visemes.ts             # 口型系统（openness/width + lerpViseme）
+│   │   ├── faceStates.ts          # MascotFace 枚举
+│   │   ├── riveMaps.ts            # FACE_TO_POSE 映射 + viseme 映射 + ambient 轮转
+│   │   ├── useMascotChatSync.ts   # 对话事件 → 表情联动（流式输出→writing，完成→happy）
+│   │   ├── mascotStore.ts         # Zustand 状态（face/visemeCode/holdThenIdle/notifyListening）
 │   │   └── emotionEngine.ts       # jiwen 情感引擎集成
 │   ├── chat/                      # 对话组件（Orb 面板内使用）
 │   │   ├── ChatView.tsx
@@ -676,22 +680,22 @@ assistant/
 - [x] .riv 动画文件（9 种 RivePose：idle/thinking/celebration/bookreading/coffeedrink/writing/bobbateadrink/hand_wave/dancing）
 - [x] 表情状态机（对话事件 → 表情切换）
 - [x] Mascot 显示于 Orb 悬浮球内 + 发送按钮
-- [ ] MascotFace 扩展至 18 种（对齐 OpenHuman Ghosty.tsx）
-- [ ] FACE_TO_POSE 完整映射（18→9）
-- [ ] RiveMascot 颜色换肤（primaryColor/secondaryColor）
-- [ ] RiveMascot buffer 内存加载
-- [ ] 用户输入 listening 状态联动
-- [ ] ack 表情增强（proud 判断）
+- [x] MascotFace 扩展至 10 种
+- [x] FACE_TO_POSE 完整映射（10→9）
+- [x] RiveMascot 颜色换肤（primaryColor/secondaryColor）
+- [x] RiveMascot buffer 内存加载
+- [x] 用户输入 listening 状态联动
+- [x] ack 表情增强（proud 判断）
 
 **参考：**
 
 | 功能点 | 参考项目 | 参考文件 | 借鉴内容 |
 |--------|---------|---------|---------|
 | Rive 运行时 | OpenHuman | app/src/features/human/Mascot/RiveMascot.tsx | `useRive` + `useViewModel` + `useViewModelInstanceEnum` + `useViewModelInstanceColor`，支持换色/换表情/换 .riv 文件 |
-| 表情词汇表 | OpenHuman | Ghosty.tsx L20-38 | `MascotFace` 18 种：sleep/idle/listening/thinking/confused/speaking/happy/concerned/curious/proud/cautious/celebrating/writing/reading/waving/dancing/drinking_coffee/drinking_boba |
-| 表情→Rive pose 映射 | OpenHuman | riveMaps.ts L48-67 | `FACE_TO_POSE` 表：18 种 MascotFace → 9 种 RivePose（idle/thinking/celebration/bookreading/coffeedrink/writing/bobbateadrink/hand_wave/dancing） |
-| 口型同步 | OpenHuman | visemes.ts | 8 种口型 `VisemeId`（REST/A/E/I/O/U/M/F），每个 `{openness, width}`，SVG 路径动态生成；`lerpViseme` 插值平滑过渡 |
-| Rive viseme 映射 | OpenHuman | riveMaps.ts L82-119 | 15 种 Oculus viseme set + 别名归一化（不同 TTS 提供商大小写不一致，统一映射到 Rive asset 的 `visme_codes` enum） |
+| 表情词汇表 | OpenHuman | Ghosty.tsx L20-38 | `MascotFace` 10 种：idle/listening/thinking/speaking/happy/concerned/curious/working/waving/proud（OpenHuman 18 种精简，不引入语义重复或仅 ambient 用途的表情） |
+| 表情→Rive pose 映射 | OpenHuman | riveMaps.ts L48-67 | `FACE_TO_POSE` 表：10 种 MascotFace → 9 种 RivePose（speaking→writing，其余按语义映射） |
+| 口型同步 | — | — | 已移除（口型在 writing 姿势下不可见，不再驱动 viseme） |
+| Rive viseme 映射 | OpenHuman | riveMaps.ts L82-119 | 15 种 Oculus viseme set + 别名归一化（保留映射表供后续 TTS 场景使用，当前流式输出不驱动口型） |
 | 空闲动画轮转 | OpenHuman | RiveMascot.tsx L30-35 | `AMBIENT_IDLE_MIN_MS=6000, MAX=12000`：idle 6-12 秒后随机切换 ambient pose，2.5-5 秒后回 idle |
 | 宠物情绪映射 | OpenBitFun | flow_chat/utils/agentCompanionMood.ts | `deriveAgentCompanionMood`：4 种 mood（rest/analyzing/waiting/working），从 `SessionStateMachine` 的 `ProcessingPhase` 派生 |
 | 情绪外观 facet | OpenBitFun | AgentCompanionPet.appearance.ts | `data-openbitfun-mood` 属性驱动 CSS：rest/analyzing/waiting/working/hover/dragging |

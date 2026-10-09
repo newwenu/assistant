@@ -30,8 +30,8 @@ Rive 动画 Mascot 与对话状态完整联动：悬浮球内 Mascot 表情随�
 |------|------|------|
 | RiveMascot 颜色换肤 | 缺 `primaryColor` / `secondaryColor` 属性 + `useViewModelInstanceColor` | OpenHuman RiveMascot.tsx L48-49 |
 | RiveMascot buffer 加载 | 缺 `buffer?: ArrayBuffer` 属性，无法从内存加载自定义 .riv | OpenHuman RiveMascot.tsx L56 |
-| MascotFace 扩展至 18 种 | 缺 sleep / confused / proud / cautious / celebrating / writing / reading / dancing / drinking_coffee / drinking_boba / normal 共 9 种 | OpenHuman Ghosty.tsx L20-38 |
-| FACE_TO_POSE 完整映射 | 新增 9 种 face → pose 映射 | OpenHuman riveMaps.ts L48-67 |
+| MascotFace 新增 proud | 缺 `proud` 表情（工具调用成功 → celebration pose），其余 OpenHuman 扩展表情（sleep/confused/cautious/celebrating/writing/reading/dancing/drinking_coffee/drinking_boba/normal）语义与现有 face 重复或仅 ambient 用途，暂不引入 | — |
+| FACE_TO_POSE 新增 proud 映射 | `proud` → `celebration` | OpenHuman riveMaps.ts L48-67 |
 | useMascotChatSync listening 状态 | 用户输入时未设 `listening` 表情 | ARCHITECTURE.md §3.4 |
 | useMascotChatSync working 状态 | Agent 工具调用时未设 `working` 表情 | OpenBitFun agentCompanionMood.ts |
 | mascotStore deriveMascotFaceFromChat 扩展 | 当前仅 3 种分支（error/streaming/reasoning），需扩展 listening/working | — |
@@ -58,79 +58,53 @@ interface RiveMascotProps {
 
 **实现要点**：
 - `buffer` 优先于 `src`：`const riveSource = buffer ? { buffer } : { src }`，传给 `useRive` 避免双加载竞争
+- `buffer` 切换时需配合 React `key` 强制重挂载：`<RiveMascot key={mascotId} buffer={...} />`，否则两个 .riv 运行时实例竞争同一个 DOM 容器
 - `useViewModelInstanceColor('primaryColor', vmInstance)` + `useViewModelInstanceColor('secondaryColor', vmInstance)` 驱动 Rive 颜色属性
 - `primaryColor` / `secondaryColor` 变更时 `useEffect` 调用 `setPrimaryColor` / `setSecondaryColor`
 
 ### 2.2 MascotFace 扩展
 
-从 9 种扩展至 18 种，与 OpenHuman `Ghosty.tsx` 对齐：
+从 9 种扩展至 10 种，仅新增 `proud`（工具调用成功 → celebration pose）：
 
 ```typescript
 export type MascotFace =
-  | 'sleep'
   | 'idle'
   | 'listening'
   | 'thinking'
-  | 'confused'
   | 'speaking'
   | 'happy'
   | 'concerned'
   | 'curious'
-  | 'proud'
-  | 'cautious'
-  | 'celebrating'
-  | 'writing'
-  | 'reading'
+  | 'working'
   | 'waving'
-  | 'dancing'
-  | 'drinking_coffee'
-  | 'drinking_boba'
-  | 'normal';   // legacy alias for idle
+  | 'proud';      // 新增：工具调用成功
 ```
 
-**新增 10 种表情语义**：
-
-| MascotFace | 语义 | 触发场景 |
-|------------|------|---------|
-| `sleep` | 休眠 | 长时间无交互（>5min） |
-| `confused` | 困惑 | Agent 迭代调用工具 / 多轮推理 |
-| `proud` | 自豪 | 复杂任务完成（含工具调用） |
-| `cautious` | 谨慎 | 轻微警告，不如 concerned 严重 |
-| `celebrating` | 庆祝 | 重要任务成功完成 |
-| `writing` | 写作 | Agent 编辑/创建文件 |
-| `reading` | 阅读 | Agent 浏览/读取内容 |
-| `dancing` | 跳舞 | 庆祝/ playful 动画 |
-| `drinking_coffee` | 喝咖啡 | 长时间处理中 |
-| `drinking_boba` | 喝奶茶 | 处理中的轻松变体 |
-| `normal` | 旧别名 | 向后兼容，映射到 idle |
+> **不引入的 OpenHuman 扩展表情及理由**：
+> - `sleep` / `confused` / `cautious`：与 idle/thinking/concerned 语义重叠，无独立触发场景
+> - `celebrating`：与 proud/happy 重叠
+> - `writing` / `reading`：已有 working/curious 覆盖相同 RivePose
+> - `dancing` / `drinking_coffee` / `drinking_boba`：仅 ambient pose 用途，空闲轮转已覆盖
+> - `normal`：legacy alias，无外部调用方需要
 
 ### 2.3 FACE_TO_POSE 完整映射
 
 ```typescript
 export const FACE_TO_POSE: Record<MascotFace, RivePose> = {
   idle:            'idle',
-  normal:          'idle',          // legacy alias
-  sleep:           'idle',
   listening:       'idle',
   thinking:        'thinking',
-  confused:        'thinking',
   speaking:        'idle',
-  happy:           'idle',
+  happy:           'celebration',
   concerned:       'thinking',
   curious:         'bookreading',
-  proud:           'celebration',
-  cautious:        'thinking',
-  celebrating:     'celebration',
-  writing:         'writing',
-  reading:         'bookreading',
+  working:         'writing',
   waving:          'hand_wave',
-  dancing:         'dancing',
-  drinking_coffee: 'coffeedrink',
-  drinking_boba:   'bobbateadrink',
+  proud:           'celebration',
 };
 ```
 
-> 18 种 face 映射到 9 种 RivePose，多对一映射——Rive 资产仅 9 种动画，但 face 语义更丰富供后续扩展。
+> 10 种 face 映射到 9 种 RivePose（happy 和 proud 共享 celebration 动画），face 语义精简且每个都有明确交互触发。
 
 ### 2.4 表情状态机增强
 
@@ -150,9 +124,15 @@ export const FACE_TO_POSE: Record<MascotFace, RivePose> = {
 
 **listening 状态实现**：
 
-- MessageInput 的 `onChange` 事件 → `useMascotStore.getState().setFace('listening')`
+- MessageInput 的 `onChange` 事件 → `useMascotStore.getState().notifyListening()`
 - 2s 防抖：停止输入后自动回到 `idle`（仅在非 streaming 时）
 - 发送消息时立即切换到 `thinking`（等待首 token），覆盖 listening
+
+**working 状态实现**：
+
+- Agent 工具调用期间（`isStreaming && messages 末尾含 tool 角色）→ `setFace('working')`
+- 工具调用结束（流式输出继续）→ `setFace('speaking')`，由 useMascotChatSync 自动切换
+- working 与 thinking 的区分：thinking = reasoning 阶段（思考链），working = 工具执行阶段（action）
 
 #### 2.4.2 deriveMascotFaceFromChat 扩展
 
@@ -162,14 +142,18 @@ export function deriveMascotFaceFromChat(
   isReasoningStreaming: boolean,
   hasError: boolean,
   isListening?: boolean,    // 新增
+  isWorking?: boolean,      // 新增：Agent 工具调用中
 ): MascotFace {
   if (hasError) return 'concerned';
-  if (isStreaming) return 'speaking';
   if (isReasoningStreaming) return 'thinking';
+  if (isWorking) return 'working';
+  if (isStreaming) return 'speaking';
   if (isListening) return 'listening';
   return 'idle';
 }
 ```
+
+> 优先级：error > reasoning > working > streaming > listening > idle。reasoning 优先于 working，因为思考链通常先于工具调用。
 
 #### 2.4.3 pickAckFace 增强
 
@@ -185,6 +169,8 @@ function pickAckFace(fullText: string, hadToolCall?: boolean): MascotFace | null
   return null;
 }
 ```
+
+> **hadToolCall 数据源**：从 chatStore.messages 中检测——当前对话轮次中是否存在 `role === 'tool'` 的消息。具体判断方式：`messages.slice(lastUserMsgIndex).some(m => m.role === 'tool')`。
 
 ### 2.5 mascotStore 扩展
 
@@ -229,8 +215,8 @@ interface MascotState {
 |--------|---------|---------|---------|
 | Rive 颜色换肤 | OpenHuman | RiveMascot.tsx L48-49 | `useViewModelInstanceColor('primaryColor', vmInstance)` + `useViewModelInstanceColor('secondaryColor', vmInstance)` |
 | Rive buffer 加载 | OpenHuman | RiveMascot.tsx L55-56 | `buffer ? { buffer } : { src }` 优先级，避免双加载竞争 |
-| 18 种 MascotFace | OpenHuman | Ghosty.tsx L20-38 | 完整表情词汇表（sleep/idle/listening/thinking/confused/speaking/happy/concerned/curious/proud/cautious/celebrating/writing/reading/waving/dancing/drinking_coffee/drinking_boba/normal） |
-| FACE_TO_POSE 完整映射 | OpenHuman | riveMaps.ts L48-67 | 18→9 多对一映射表 |
+| 10 种 MascotFace | — | — | 在现有 9 种基础上仅新增 `proud`（工具调用成功），其余 OpenHuman 扩展表情语义重复暂不引入 |
+| FACE_TO_POSE 映射 | OpenHuman | riveMaps.ts L48-67 | 10→9 映射表，happy/proud 共享 celebration pose |
 | 口型系统 | OpenHuman | visemes.ts | 8 种 VisemeId（REST/A/E/I/O/U/M/F）+ `{openness, width}` + `lerpViseme` 插值 |
 | 空闲动画轮转 | OpenHuman | RiveMascot.tsx L30-35 | `AMBIENT_IDLE_MIN_MS=6000, MAX=12000`，idle 6-12s 后随机切换 ambient pose |
 | 宠物情绪映射 | OpenBitFun | agentCompanionMood.ts | `deriveAgentCompanionMood`：4 种 mood（rest/analyzing/waiting/working），从 `SessionStateMachine` 派生 |
@@ -239,8 +225,8 @@ interface MascotState {
 ## 5. 验收标准
 
 1. `@rive-app/react-webgl2` 正常加载 `mascot.riv`，悬浮球内可见 Mascot 动画
-2. MascotFace 枚举包含 18 种表情 + `normal` legacy 别名
-3. FACE_TO_POSE 映射覆盖全部 18 种 MascotFace → 9 种 RivePose
+2. MascotFace 枚举包含 10 种表情（idle/listening/thinking/speaking/happy/concerned/curious/working/waving/proud）
+3. FACE_TO_POSE 映射覆盖全部 10 种 MascotFace → 9 种 RivePose
 4. RiveMascot 支持 `primaryColor` / `secondaryColor` 属性驱动 Rive 颜色
 5. RiveMascot 支持 `buffer` 属性从内存加载 .riv
 6. 对话时 Mascot 表情实时变化：idle → listening → thinking → speaking → happy/concerned

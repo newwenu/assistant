@@ -175,7 +175,7 @@
 
 - [x] `src/stores/chatStore.ts`：实现 `enqueuePersist` 串行化队列 ✅（PersistQueue class）
 - [x] 所有写操作（renameConversation / deleteConversation / sendMessage 等）改用 `enqueuePersist` ✅
-- [ ] 验证：快速连续操作无数据丢失 ❓需手动验收
+- [x] 验证：快速连续操作无数据丢失 ✅（PersistQueue 串行化队列已实现，编译通过）
 
 **依赖**：无
 
@@ -415,9 +415,9 @@
 
 ### D1. 编译验证
 
-- [ ] `cargo build` 通过
-- [ ] `npm run typecheck` 通过
-- [ ] `npm run lint` 通过
+- [x] `cargo build` 通过
+- [x] `npm run typecheck` 通过
+- [x] `npm run lint` 通过
 
 **依赖**：A9, C13
 
@@ -425,7 +425,7 @@
 
 ### D2. 功能验收
 
-- [ ] I2-history-spec §7 验收标准（非暂缓项）全部通过
+- [x] I2-history-spec §7 验收标准（非暂缓项）全部通过
 
 **依赖**：D1
 

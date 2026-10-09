@@ -7,4 +7,5 @@ export type MascotFace =
   | "concerned"
   | "curious"
   | "working"
-  | "waving";
+  | "waving"
+  | "proud";
