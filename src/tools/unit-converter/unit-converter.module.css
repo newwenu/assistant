@@ -1,0 +1,53 @@
+.configRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.configItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.configLabel {
+  flex: 0 0 auto;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.resultRow {
+  background: var(--color-bg-layout);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.2s;
+}
+
+.resultRow:hover {
+  border-color: var(--color-primary);
+}
+
+.resultName {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.resultValue {
+  font-size: 16px;
+  font-family: var(--font-mono);
+  word-break: break-all;
+  color: var(--color-text);
+}

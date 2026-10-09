@@ -1,0 +1,40 @@
+.inputRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+
+.inputLabel {
+  flex: 0 0 60px;
+}
+
+.errorText {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.resultRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.resultLabel {
+  flex: 0 0 120px;
+  font-size: 13px;
+}
+
+.customRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.customLabel {
+  flex: 0 0 120px;
+  font-size: 13px;
+}

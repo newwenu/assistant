@@ -1,0 +1,23 @@
+.toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+
+.toolbarItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.resultArea {
+  font-family: var(--font-mono);
+}
+
+.v35Row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  align-items: center;
+}

@@ -1,0 +1,23 @@
+.headerRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.headerActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.outputWrapper {
+  position: relative;
+}
+
+.copyButton {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}

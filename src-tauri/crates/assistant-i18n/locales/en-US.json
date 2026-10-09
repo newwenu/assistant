@@ -1,0 +1,13 @@
+{
+  "app_name": "Assistant",
+  "tray_show_main": "Open Main Window",
+  "tray_show_orb": "Show Orb",
+  "tray_quit": "Quit",
+  "settings_title": "Settings",
+  "settings_theme": "Theme",
+  "settings_language": "Language",
+  "settings_hotkey": "Hotkey",
+  "settings_providers": "Model Providers",
+  "orb_new_chat": "New Chat",
+  "orb_input_placeholder": "Type a message..."
+}

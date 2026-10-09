@@ -1,0 +1,51 @@
+.pickerRow {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+
+.colorPicker {
+  width: 48px;
+  height: 48px;
+  border: none;
+  cursor: pointer;
+}
+
+.hexInput {
+  flex: 1;
+  font-family: var(--font-mono);
+}
+
+.alphaRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+
+.alphaLabel {
+  flex: 0 0 50px;
+}
+
+.alphaValue {
+  flex: 0 0 40px;
+  text-align: right;
+}
+
+.formatRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.formatLabel {
+  flex: 0 0 50px;
+  font-size: 13px;
+}
+
+.formatInput {
+  flex: 1;
+  font-family: var(--font-mono);
+}

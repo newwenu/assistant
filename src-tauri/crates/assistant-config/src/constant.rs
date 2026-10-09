@@ -1,0 +1,40 @@
+pub const APP_IDENTIFIER: &str = "com.assistant";
+
+pub const WINDOW_MAIN: &str = "main";
+pub const WINDOW_ORB: &str = "orb";
+pub const WINDOW_SETTINGS: &str = "settings";
+
+pub const ORB_COLLAPSED_SIZE: u32 = 64;
+pub const ORB_EXPANDED_WIDTH: u32 = 420;
+pub const ORB_EXPANDED_HEIGHT: u32 = 600;
+pub const ORB_CHROME_INSET: u32 = 12;
+pub const ORB_COLLAPSED_WINDOW_SIZE: u32 = ORB_COLLAPSED_SIZE + 2 * ORB_CHROME_INSET;
+pub const ORB_EXPANDED_WINDOW_WIDTH: u32 = ORB_EXPANDED_WIDTH + 2 * ORB_CHROME_INSET;
+pub const ORB_EXPANDED_WINDOW_HEIGHT: u32 = ORB_EXPANDED_HEIGHT + 2 * ORB_CHROME_INSET;
+
+pub const MAIN_WINDOW_MIN_WIDTH: f64 = 300.0;
+pub const MAIN_WINDOW_MIN_HEIGHT: f64 = 200.0;
+pub const MAIN_WINDOW_DEFAULT_WIDTH: f64 = 960.0;
+pub const MAIN_WINDOW_DEFAULT_HEIGHT: f64 = 640.0;
+
+pub const HOVER_FADE_DURATION_MS: u64 = 300;
+pub const PLACEMENT_SETTLE_DELAY_MS: u64 = 1000;
+pub const PET_DRAG_THRESHOLD_PX: f64 = 8.0;
+pub const WINDOW_EDGE_BUFFER: u32 = 4;
+
+pub const ORB_HITBOX_SIZE: u32 = 48;
+pub const ORB_VISUAL_CENTER_OFFSET_X: i32 =
+    (ORB_COLLAPSED_WINDOW_SIZE as i32 - ORB_CHROME_INSET as i32 - ORB_HITBOX_SIZE as i32)
+        - ORB_CHROME_INSET as i32;
+pub const ORB_BLUR_COLLAPSE_DELAY_MS: u64 = 200;
+pub const ORB_SNAP_DELAY_MS: u64 = 1000;
+pub const ORB_SNAP_ANIMATION_MS: u64 = 250;
+pub const HOVER_POLL_INTERVAL_MS: u64 = 120;
+pub const DRAG_POLL_INTERVAL_MS: u64 = 16;
+
+pub const CHAT_PANEL_HEADER_HEIGHT: u32 = 40;
+pub const CHAT_INPUT_MIN_ROWS: u32 = 1;
+pub const CHAT_INPUT_MAX_ROWS: u32 = 4;
+pub const CHAT_AUTO_TITLE_LENGTH: usize = 20;
+pub const CHAT_SIDEBAR_WIDTH: u32 = 200;
+pub const STREAM_COALESCE_TIMER_MS: u64 = 50;

@@ -1,0 +1,70 @@
+.root {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.configCol {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.optionLabel {
+  flex: 0 0 70px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.previewCol {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.imageCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+
+.resultHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.previewImg {
+  max-width: 100%;
+  max-height: 300px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius);
+  object-fit: contain;
+}
+
+.fileName {
+  font-size: 12px;
+}
+
+.placeholder {
+  width: 200px;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--color-border-secondary);
+  border-radius: var(--radius);
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}

@@ -1,0 +1,138 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0;
+  position: relative;
+}
+
+.root + .root {
+  margin-top: 4px;
+}
+
+.rootRoleUser {
+  align-items: flex-end;
+}
+
+.rootRoleAssistant {
+  align-items: flex-start;
+}
+
+.rootGroupGap {
+  margin-top: 12px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(calc(var(--chat-content-width, 420px) * 0.702), 82%);
+}
+
+.rootRoleAssistant .stack {
+  max-width: 100%;
+}
+
+.bubble {
+  max-width: 100%;
+  padding: 10px 16px;
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  position: relative;
+}
+
+.bubbleUser {
+  background: var(--color-primary);
+  color: var(--color-text-on-primary, #fff);
+  border-bottom-right-radius: 4px;
+  white-space: pre-wrap;
+}
+
+.bubbleAssistant {
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-secondary);
+  border-bottom-left-radius: 4px;
+}
+
+.bubbleError {
+  border-color: var(--color-error, #ff4d4f) !important;
+}
+
+.streamingCursor {
+  display: inline-block;
+  width: 2px;
+  height: 16px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--color-primary);
+  border-radius: 1px;
+  animation: pulse-cursor 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-cursor {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scaleY(0.6);
+  }
+}
+
+.actionsWrapper {
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out;
+  pointer-events: none;
+}
+
+.root:hover .actionsWrapper {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.timestamp {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+  user-select: none;
+}
+
+.root:hover .timestamp {
+  opacity: 1;
+}
+
+.compact .bubble {
+  padding: 8px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.compact .bubbleUser {
+  border-bottom-right-radius: 3px;
+}
+
+.compact .bubbleAssistant {
+  border-bottom-left-radius: 3px;
+}
+
+.compact .stack {
+  max-width: 92%;
+}
+
+.compact .rootRoleAssistant .stack {
+  max-width: 100%;
+}
+
+.compact .timestamp {
+  font-size: 10px;
+}

@@ -1,0 +1,99 @@
+[package]
+name = "assistant-app"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/assistant-config",
+    "crates/assistant-orb",
+    "crates/assistant-providers",
+    "crates/assistant-agent",
+    "crates/assistant-storage",
+    "crates/assistant-i18n",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+thiserror = "2"
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+tauri-plugin-opener = "2"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-log = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+rustc_version_runtime = "0.3"
+mouse_position = "0.1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+dirs = "6"
+reqwest = { version = "0.12", features = ["stream", "json"] }
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+aes-gcm = "0.10"
+sha2 = "0.10"
+base64 = "0.22"
+machine-uid = "0.2"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tokio-stream = "0.1"
+async-stream = "0.3"
+rand = "0.8"
+proptest = "1"
+
+assistant-config = { path = "crates/assistant-config" }
+assistant-orb = { path = "crates/assistant-orb" }
+assistant-providers = { path = "crates/assistant-providers" }
+assistant-agent = { path = "crates/assistant-agent" }
+assistant-storage = { path = "crates/assistant-storage" }
+assistant-i18n = { path = "crates/assistant-i18n" }
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+tauri = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+tauri-plugin-sql = { workspace = true }
+tauri-plugin-log = { workspace = true }
+tauri-plugin-single-instance = { workspace = true }
+tauri-plugin-global-shortcut = { workspace = true }
+tauri-plugin-autostart = { workspace = true }
+mouse_position = { workspace = true }
+rusqlite = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tokio-util = { workspace = true }
+
+assistant-config = { workspace = true }
+assistant-orb = { workspace = true }
+assistant-providers = { workspace = true }
+assistant-agent = { workspace = true }
+assistant-storage = { workspace = true }
+assistant-i18n = { workspace = true }
+rustc_version_runtime.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

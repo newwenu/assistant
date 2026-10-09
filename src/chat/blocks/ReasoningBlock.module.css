@@ -1,0 +1,58 @@
+.root {
+  margin-bottom: 8px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease-in-out;
+}
+
+.toggle:hover {
+  background: var(--color-bg-layout);
+}
+
+.icon {
+  font-size: 14px;
+}
+
+.streaming {
+  color: var(--color-primary);
+  font-style: italic;
+  margin-left: 4px;
+  animation: reasoning-pulse 1.2s ease-in-out infinite;
+}
+
+.content {
+  margin: 6px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-bg-layout);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  font-family: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+@keyframes reasoning-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}

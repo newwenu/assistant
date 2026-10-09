@@ -1,0 +1,27 @@
+.encodingRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.encodingLabel {
+  margin-right: 8px;
+}
+
+.resultRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.algoLabel {
+  flex: 0 0 90px;
+  font-size: 13px;
+}
+
+.algoInput {
+  flex: 1;
+  font-family: var(--font-mono);
+}

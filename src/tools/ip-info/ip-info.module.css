@@ -1,0 +1,44 @@
+.inputRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.alert {
+  margin-bottom: 12px;
+}
+
+.section {
+  margin-top: 16px;
+}
+
+.desc {
+  margin-top: 8px;
+}
+
+.valueRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.spin {
+  display: block;
+  margin: 16px auto;
+}
+
+.subnetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cidrRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cidrInput {
+  width: 64px;
+}
