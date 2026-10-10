@@ -1,10 +1,15 @@
 import { useEffect, useRef } from "react";
 import { useChatStore } from "../stores/chatStore";
 import { useMascotStore } from "./mascotStore";
-import type { MascotFace } from "./faceStates";
+import type { MascotFace } from "./core/types";
 
 const CONCERNED_RE = /\b(sorry|failed|error|cannot|unable|problem)\b/i;
+const CAUTIOUS_RE = /\b(warning|careful|note|caution|might not|may not)\b/i;
 const HAPPY_RE = /\b(done|completed|fixed|success|ready|great)\b/i;
+const CELEBRATING_RE =
+  /\b(congratulations|awesome|perfect|excellent|brilliant)\b/i;
+const WRITING_RE = /\b(wrote|created|saved|updated file|edited)\b/i;
+const READING_RE = /\b(read|found|searched|browsed|looked up)\b/i;
 
 function pickAckFace(
   fullText: string,
@@ -12,8 +17,12 @@ function pickAckFace(
 ): MascotFace | null {
   if (!fullText.trim()) return null;
   if (CONCERNED_RE.test(fullText)) return "concerned";
+  if (CAUTIOUS_RE.test(fullText)) return "cautious";
+  if (hadToolCall && CELEBRATING_RE.test(fullText)) return "celebrating";
   if (hadToolCall && HAPPY_RE.test(fullText)) return "proud";
   if (HAPPY_RE.test(fullText)) return "happy";
+  if (WRITING_RE.test(fullText)) return "writing";
+  if (READING_RE.test(fullText)) return "reading";
   if (hadToolCall) return "happy";
   return null;
 }

@@ -18,24 +18,18 @@ import { useOrbDrag } from "./OrbDrag";
 import { useOrbExpand } from "./OrbExpand";
 import { OrbContextMenu } from "./OrbContextMenu";
 import { useOrbConfSync } from "./useOrbConfSync";
-import { RiveMascot } from "../mascot/RiveMascot";
-import { useMascotStore } from "../mascot/mascotStore";
+import {
+  MascotRenderer,
+  asRendererId,
+  hexToArgb,
+  useMascotStore,
+} from "../mascot";
+import { buildRendererConfig } from "../settings/settingsDispatcher";
 import { useSettingsStore } from "../stores/settingsStore";
 
 const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
 const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
 const NEEDS_CURSOR_POLL = IS_MACOS || IS_WINDOWS;
-
-function hexToArgb(hex: string | null | undefined): number | undefined {
-  if (!hex) return undefined;
-  const h = hex.replace("#", "");
-  return (
-    (0xff << 24) |
-    (parseInt(h.slice(0, 2), 16) << 16) |
-    (parseInt(h.slice(2, 4), 16) << 8) |
-    parseInt(h.slice(4, 6), 16)
-  );
-}
 
 export const OrbBall: React.FC = () => {
   useOrbConfSync();
@@ -205,12 +199,15 @@ export const OrbBall: React.FC = () => {
         onPointerLeave={handlePointerLeave}
         onClick={handleClick}
       >
-        <RiveMascot
+        <MascotRenderer
+          renderer={asRendererId(mascotConf?.renderer ?? "rive")}
           face={mascotFace}
           size={ORB_HITBOX_SIZE}
-          idlePoseRotation
           primaryColor={hexToArgb(mascotConf?.primary_color)}
           secondaryColor={hexToArgb(mascotConf?.secondary_color)}
+          rendererConfig={
+            mascotConf ? buildRendererConfig(mascotConf) : undefined
+          }
         />
       </div>
     </OrbContextMenu>

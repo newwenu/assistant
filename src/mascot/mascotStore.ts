@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { MascotFace } from "./faceStates";
+import type { MascotFace } from "./core/types";
 
 const ACK_FACE_HOLD_MS = 700;
 const VISEME_DECAY_MS = 180;

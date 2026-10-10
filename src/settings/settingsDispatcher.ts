@@ -10,6 +10,33 @@ import { WINDOW_MAIN, WINDOW_ORB } from "../config/constants";
 import { useProviderStore } from "../stores/providerStore";
 import { useThemeStore } from "../stores/themeStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import type { MascotConf } from "../stores/settingsStore";
+
+export function buildRendererConfig(conf: MascotConf): Record<string, unknown> {
+  return {
+    idlePoseRotation: conf.rive_idle_pose_rotation,
+    animated: conf.svg_animated,
+    src: conf.gif_src,
+    borderRadius: conf.gif_border_radius,
+  };
+}
+
+export function buildMascotPatch(
+  renderer: string,
+  rendererConfig?: Record<string, unknown>,
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = { renderer };
+  if (rendererConfig) {
+    if (rendererConfig.idlePoseRotation !== undefined)
+      patch.rive_idle_pose_rotation = rendererConfig.idlePoseRotation;
+    if (rendererConfig.animated !== undefined)
+      patch.svg_animated = rendererConfig.animated;
+    if (rendererConfig.src !== undefined) patch.gif_src = rendererConfig.src;
+    if (rendererConfig.borderRadius !== undefined)
+      patch.gif_border_radius = rendererConfig.borderRadius;
+  }
+  return patch;
+}
 
 async function emitSettingEventToPeers(
   event: SettingEvent,

@@ -743,3 +743,124 @@ rive.resizeDrawingSurfaceToCanvas();  // 通知 Rive 重新适配 WebGL 绘图�
 ```
 
 **涉及文件**：`src/mascot/RiveMascot.tsx`（新增 `useFixCanvasUnderTransform` hook + `containerRef` + `useOrbStore` 依赖）
+
+### 2026-10-10 RiveMascot canvas 尺寸守卫重构 — transitionend 三层防护 → rAF 轮询 watchdog
+
+原三层防护（mount 校正 + ResizeObserver + transitionend 监听）存在跨层技术债：Rive 渲染器依赖 `useOrbStore.isExpanded` 作为"CSS transform 可能变了"的信号，还全局查询 `.orb-panel` DOM 绑定 `transitionend`。所有 WebGL 渲染器（Live2D / Spine / MMD）都会遇到同样问题。
+
+**根因**：CSS `transform` 变化不触发 `ResizeObserver`（transform 不改变 layout box），需要额外信号触发 canvas 尺寸校正。旧方案用 `isExpanded` 状态变化作为信号，引入了渲染器 → orbStore 的反向依赖。
+
+**新方案 — rAF 轮询守卫（watchdog）**：每帧检查 canvas 像素尺寸是否匹配 layout 期望尺寸，不匹配就校正。不需要任何外部信号，不需要 DOM 事件监听，不需要 `useOrbStore`。
+
+```typescript
+function useCanvasSizeWatchdog(containerRef, rive) {
+  useEffect(() => {
+    if (!rive) return;
+    let raf: number;
+    const check = () => {
+      const el = containerRef.current;
+      if (!el) { raf = requestAnimationFrame(check); return; }
+      const canvas = el.querySelector("canvas");
+      if (!canvas) { raf = requestAnimationFrame(check); return; }
+      const layoutW = el.offsetWidth;
+      const layoutH = el.offsetHeight;
+      if (layoutW === 0 || layoutH === 0) { raf = requestAnimationFrame(check); return; }
+      const dpr = window.devicePixelRatio || 1;
+      const expectedW = Math.round(layoutW * dpr);
+      const expectedH = Math.round(layoutH * dpr);
+      if (canvas.width !== expectedW || canvas.height !== expectedH) {
+        canvas.width = expectedW;
+        canvas.height = expectedH;
+        canvas.style.width = `${layoutW}px`;
+        canvas.style.height = `${layoutH}px`;
+        rive.resizeDrawingSurfaceToCanvas();
+      }
+      raf = requestAnimationFrame(check);
+    };
+    // 页面隐藏时暂停轮询，恢复时重启
+    const startCheck = () => { raf = requestAnimationFrame(check); };
+    const stopCheck = () => cancelAnimationFrame(raf);
+    const onVisibilityChange = () => {
+      if (document.hidden) stopCheck(); else startCheck();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    startCheck();
+    return () => {
+      stopCheck();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [rive, containerRef]);
+}
+```
+
+**对比旧方案**：
+
+| 维度 | 旧（transitionend 三层防护） | 新（rAF watchdog） |
+|------|---------------------------|-------------------|
+| 外部依赖 | `useOrbStore.isExpanded` + `.orb-panel` DOM 查询 | **零** |
+| 触发方式 | 事件驱动（mount + ResizeObserver + transitionend + setTimeout） | 轮询驱动（每帧检查） |
+| React 开销 | 2 useEffect + 1 useState + 1 useCallback | 1 useEffect |
+| 校正条件 | 每次触发都调 `resizeDrawingSurfaceToCanvas()` | 仅 canvas 尺寸不匹配时调 |
+| 通用性 | 需每个消费端知道监听哪个 DOM | 所有 WebGL 渲染器通用 |
+| 稳态开销 | ~0.05ms/s | ~0.3ms/s（页面隐藏时 0） |
+| 响应延迟 | 事件后 0ms | 下一帧 ≤16ms |
+
+**为什么 rAF 轮询可行**：`offsetWidth`/`offsetHeight` 从浏览器缓存读取（O(1)，不触发 layout），两个整数比较 < 0.01ms/帧。页面隐藏时 `visibilitychange` 暂停轮询，开销降为 0。16ms 延迟在 300ms CSS transition 中不可感知。
+
+**涉及文件**：`src/mascot/RiveMascot.tsx`（`useFixCanvasUnderTransform` → `useCanvasSizeWatchdog`，移除 `useOrbStore` 依赖）
+
+### 2026-10-10 RiveMascot canvas 尺寸守卫优化 — rAF 持续轮询 → 祖先 transitionrun/end 感知 + 按需轮询
+
+原 rAF 轮询 watchdog 每帧检查 canvas 尺寸，稳态下持续占用主线程（~0.3ms/s）。此前尝试的纯事件驱动方案和 settling 守卫均失败，根因有两个：
+
+1. **DOM 结构**：`.orb-hitbox`（有 `transform: scale()` + `transition`）与 RiveMascot 的 `containerRef` 是**父子关系**，但 `.orb-panel`（另一个有 transform 的元素）是 `.orb-hitbox` 的**兄弟节点**。在 `containerRef` 上监听 `transitionend` 只能收到冒泡自 `.orb-hitbox` 的事件，无法覆盖所有 transform 来源。
+2. **Rive 异步设错**：Rive 内部 ResizeObserver 可能在 transition 结束后才异步修改 canvas 尺寸，此时 settling 循环已停止，无人纠正。
+
+**新方案 — 祖先链 transitionrun/end 感知 + 按需轮询**：
+
+1. **向上遍历所有祖先**，在每一层挂 `transitionrun` / `transitionend` / `transitioncancel` 监听
+2. `transitionrun` → `activeTransitionCount++`，启动持续 rAF 轮询
+3. `transitionend` / `transitioncancel` → `activeTransitionCount--`，归零时停止轮询 + 跑 5 帧 settling 兜底
+4. ResizeObserver / matchMedia(resolution) / visibilitychange → 触发 5 帧 settling
+5. 初始 mount → 5 帧 settling
+
+```typescript
+// 祖先链监听
+const ancestors: Element[] = [];
+let node: Element | null = el;
+while (node) { ancestors.push(node); node = node.parentElement; }
+for (const a of ancestors) {
+  a.addEventListener("transitionrun", onTransitionRun);
+  a.addEventListener("transitionend", onTransitionEnd);
+  a.addEventListener("transitioncancel", onTransitionEnd);
+}
+
+// transition 期间持续轮询，结束后 settling 兜底
+const onTransitionRun = (e) => {
+  if (e.propertyName === "transform" || e.propertyName === "opacity") {
+    activeTransitionCount++;
+    startPolling();  // 持续 rAF，直到 transition 结束
+  }
+};
+const onTransitionEnd = (e) => {
+  activeTransitionCount--;
+  if (activeTransitionCount === 0) {
+    stopPolling();
+    runSettling();   // 5 帧兜底，覆盖 Rive 异步设错
+  }
+};
+```
+
+**对比**：
+
+| 维度 | 旧（rAF 持续轮询） | 新（祖先 transition 感知 + 按需轮询） |
+|------|-------------------|--------------------------------------|
+| 稳态开销 | ~0.3ms/s | **0**（无 rAF 运行） |
+| transition 期间 | 持续轮询（已含） | 持续轮询（transitionrun 启动） |
+| transition 结束 | 继续轮询 | 停止 + 5 帧 settling 兜底 |
+| 兄弟节点 transform | 靠轮询自然捕获 | 祖先链冒泡覆盖 |
+| Rive 延迟设错 | 下一帧纠正 | settling 5 帧兜底 |
+| 初始 mount | 无条件轮询 | 5 帧 settling |
+| 外部依赖 | 零 | 零（祖先链遍历是 DOM 标准API） |
+
+**涉及文件**：`src/mascot/renderers/rive/RiveMascot.tsx`（`useCanvasSizeWatchdog` 重构）

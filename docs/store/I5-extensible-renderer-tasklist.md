@@ -2,124 +2,170 @@
 
 > 规格：[I5-extensible-renderer-spec.md](./I5-extensible-renderer-spec.md)
 > 前置：I5 ✅（MascotFace 10 种 + FACE_TO_POSE + RiveMascot + mascotStore + useMascotChatSync）
+> 实施日期：2026-10-10
 
 ---
 
-## 阶段 A — 确认编译基线（Step 0）
+## A — 编译基线
 
-> 当前代码中 `stateEngine` 引用已不存在，A 阶段可能已完成。先验证编译状态。
+**提供**：编译通过、I5 残留已清理
 
-- [ ] A1. `tsc --noEmit` 通过，确认当前编译无破损
-- [ ] A2. 如有破损，修复后再验证；如已通过，标记 A 阶段完成
-
----
-
-## 阶段 B — Core 层（Step 1）
-
-> 跨引擎共享的类型 + 通用工具函数
-
-- [ ] B1. 新建 `src/mascot/core/types.ts`：从 `faceStates.ts` 提取 `MascotFace` 类型 + 新增 `MascotRendererId` 类型
-- [ ] B2. 新建 `src/mascot/core/resolve.ts`：`resolveVisemeCode(code, visemeCodes: string[])` + `pickIdleFlourish(cycle: string[], exclude?, rng?)`
-- [ ] B3. 新建 `src/mascot/core/index.ts`：re-export types + resolve
+- [x] A1. `tsc --noEmit` 通过；如有破损先修复
+- [x] A2. 确认 `stateEngine` 引用已不存在（I5 阶段已清理）
 
 ---
 
-## 阶段 C — Renderers 层：Rive 迁移（Step 2）
+## B — Core 层 → spec §4.1
 
-- [ ] C1. 新建 `src/mascot/renderers/rive/` 目录
-- [ ] C2. 新建 `renderers/rive/riveStateEngine.ts`：`RiveStateEngine` 接口（visemeCodes + states + idlePoseCycle + channels）+ `resolveFaceToPose` 函数（两级回退）+ `BUILTIN_RIVE_STATE_ENGINE` 常量（数据与原 `FACE_TO_POSE` + `RIVE_VISEME_SET` + `AMBIENT_POSES` 语义一致）
-- [ ] C3. 迁移 `riveMaps.ts` → `renderers/rive/riveMaps.ts`：保留 `MASCOT_STATE_MACHINE` / `RIVE_POSES` / `RivePose` / `toRiveVisemeCode` / `pickVisemeCode`；移除 `FACE_TO_POSE` / `faceToPose` / `AMBIENT_POSES` / `pickAmbientPose`；import 路径从 `./faceStates` 改为 `../../core/types`
-- [ ] C4. 迁移 `RiveMascot.tsx` → `renderers/rive/RiveMascot.tsx`：import 路径更新（`../../core` / `./riveStateEngine` / `./riveMaps` / `../../../stores/orbStore`）
-- [ ] C5. `renderers/rive/RiveMascot.tsx` 改造核心逻辑：`faceToPose(face)` → `resolveFaceToPose(face, engine)`；`toRiveVisemeCode(visemeCode)` → `resolveVisemeCode(toRiveVisemeCode(visemeCode), engine.visemeCodes)`；`pickAmbientPose(...)` → `pickIdleFlourish(engine.idlePoseCycle, ...)`
-- [ ] C6. `renderers/rive/RiveMascot.tsx` 新增 `stateEngine?: RiveStateEngine` prop，默认 `BUILTIN_RIVE_STATE_ENGINE`，组件内 `const engine = stateEngine ?? BUILTIN_RIVE_STATE_ENGINE`
-- [ ] C7. 新建 `src/mascot/renderers/rive/index.ts`：re-export `RiveMascot`
+**需要**：A
+**提供**：`core/types`（MascotFace, MascotRendererId, RendererMeta, MascotRendererProps）、`core/resolve`（resolveVisemeCode, pickIdleFlourish）、`core/registry`（registerRenderer, getRenderer, getAllRendererMetas）
 
----
-
-## 阶段 D — Renderers 层：SVG + GIF（Step 3）
-
-- [ ] D1. 新建 `src/mascot/renderers/svg/GhostyMascot.tsx`：纯 SVG 渲染组件，接受 `MascotFace` + `visemeCode` + `animated` props；组件内部定义 `FACE_PRESETS` / `SVG_VISEME_CODES` / `SVG_IDLE_CYCLE`；SVG path 变换实现 bob/blink/wave/viseme（参考 OpenHuman Ghosty.tsx）
-- [ ] D2. 新建 `src/mascot/renderers/svg/index.ts`：re-export `GhostyMascot`
-- [ ] D3. 新建 `src/mascot/renderers/gif/GifMascot.tsx`：GIF 渲染器，`<img>` + `data-face` + 圆形裁剪，接受 `src` + `face` + `size` + `playing` props；实现 `freezeGif()` 冻结技术（`canvas.drawImage → toDataURL`，参考 deepseek-harness-orb `floating.js`）；`playing=true` 时播放，`playing=false` 时冻结到首帧
-- [ ] D4. 新建 `src/mascot/renderers/gif/index.ts`：re-export `GifMascot`
+- [x] B1. 新建 `src/mascot/core/types.ts`
+- [x] B2. 新建 `src/mascot/core/resolve.ts`
+- [x] B3. 新建 `src/mascot/core/registry.ts`
+- [x] B4. 新建 `src/mascot/core/index.ts`（re-export）
+- [x] B5. 新建 `src/mascot/core/colorUtils.ts`（hexToArgb，跨渲染器通用颜色工具）
 
 ---
 
-## 阶段 E — Orchestration 层：MascotRenderer（Step 4）
+## C — 渲染器层 → spec §4.2
 
-- [ ] E1. 新建 `src/mascot/MascotRenderer.tsx`：渲染器调度组件，switch `renderer` 切换 RiveMascot / GhostyMascot / GifMascot / null
-- [ ] E2. Props：`renderer` / `face` / `visemeCode` / `size` / `idlePoseRotation` / `primaryColor` / `secondaryColor` / `customGifSrc`；GIF case 传入 `playing={face !== "idle"}`
+**需要**：B（core/types + core/resolve + core/registry）
+**提供**：三个渲染器完整实现 + 自注册
 
----
+### C1 — Rive 迁移
 
-## 阶段 F — mascotStore 改造（Step 5）
+- [x] C1.1 新建 `src/mascot/renderers/rive/` 目录
+- [x] C1.2 新建 `renderers/rive/riveStateEngine.ts`
+- [x] C1.3 迁移 `riveMaps.ts` → `renderers/rive/riveMaps.ts`，移除被 Core 替代的导出（FACE_TO_POSE / faceToPose / AMBIENT_POSES / pickAmbientPose）
+- [x] C1.4 迁移 `RiveMascot.tsx` → `renderers/rive/RiveMascot.tsx`，更新 import 路径
+- [x] C1.5 RiveMascot 核心逻辑改造（依赖替换 + 状态引擎参数化 + rendererConfig 提取）
+- [x] C1.6 RiveMascot 新增 `stateEngine` 可选 prop（默认 BUILTIN_RIVE_STATE_ENGINE）
+- [x] C1.7 新建 `renderers/rive/index.ts`，`registerRenderer()` 自注册
 
-- [ ] F1. `mascotStore.ts` import 路径更新：`MascotFace` / `MascotRendererId` 从 `./core/types`
-- [ ] F2. `MascotState` 新增 `renderer: MascotRendererId`（默认 `"rive"`）+ `customGifSrc: string | null`（默认 `null`）
-- [ ] F3. 新增 `setRenderer` / `setCustomGifSrc` 方法
-- [ ] F4. mascotStore 不持有渲染器内部状态
+### C2 — SVG 渲染器
 
----
+- [x] C2.1 新建 `renderers/svg/GhostyMascot.tsx`（纯 SVG + setTimeout 驱动 idle 循环 + FACE_PRESETS 10 种表情 + resolveVisemeCode + pickIdleFlourish）
+- [x] C2.2 新建 `renderers/svg/index.ts`，`registerRenderer()` 自注册
 
-## 阶段 G — 消费端改造（Step 6）
+### C3 — GIF 渲染器
 
-- [ ] G1. `OrbBall.tsx`：`import { RiveMascot }` → `import { MascotRenderer }`；从 mascotStore 读取 `renderer`；`<RiveMascot ...>` → `<MascotRenderer renderer={renderer} ...>`
-- [ ] G2. `MessageInput.tsx`：同上改造
-- [ ] G3. 全局搜索所有 `from "../mascot/RiveMascot"` / `from "../../mascot/RiveMascot"` 引用，替换为 `MascotRenderer`
-
----
-
-## 阶段 H — 旧文件清理（Step 7）
-
-- [ ] H1. 删除 `src/mascot/faceStates.ts`（已被 `core/types.ts` 替代）
-- [ ] H2. 删除 `src/mascot/riveMaps.ts`（已迁移至 `renderers/rive/riveMaps.ts`）
-- [ ] H3. 删除 `src/mascot/RiveMascot.tsx`（已迁移至 `renderers/rive/RiveMascot.tsx`）
-- [ ] H4. 全局搜索所有对旧文件的 import，更新路径
+- [x] C3.1 新建 `renderers/gif/GifMascot.tsx`（img + 圆形裁剪 + freezeGif 冻结首帧 + idle 冻结/非 idle 播放）
+- [x] C3.2 新建 `renderers/gif/index.ts`，`registerRenderer()` 自注册
 
 ---
 
-## 阶段 I — 公共 API + index.ts
+## D — 编排层 → spec §4.3
 
-- [ ] I1. 新建 `src/mascot/index.ts`：re-export `MascotRenderer` / `useMascotStore` / `useMascotChatSync` / `MascotFace` / `MascotRendererId` / `resolveVisemeCode` / `pickIdleFlourish`
+**需要**：B（core/types）、C（三个渲染器自注册完成）
+**提供**：MascotRenderer 调度组件、mascotStore 扩展字段
 
----
+### D1 — MascotRenderer
 
-## 阶段 J — 外观设置集成
+- [x] D1.1 新建 `src/mascot/MascotRenderer.tsx`（副作用 import + 注册表查找 + 优雅降级）
+- [x] D1.2 Props 定义 + 能力自适应（`capabilities.visemeSync` + `capabilities.colorCustomization`）
+- [x] D1.3 `useEffect` 追踪 renderer 变化，切换时调用旧渲染器 `dispose()`；WebGL 渲染器使用 `useCanvasSizeWatchdog`（rAF 轮询守卫）校正 canvas 尺寸，不依赖 `useOrbStore` / DOM 事件监听
 
-- [ ] J1. 新建 `src/settings/MascotSection.tsx`：渲染方式 Select（Rive/SVG/GIF/禁用）+ 条件设置区（Rive: 主色调/辅色调/空闲动画；SVG: 空闲动画；GIF: 图片路径 + 局限性提示）
-- [ ] J2. `AppearanceSettings.tsx` 新增"助手形象" SettingsSection，嵌入 MascotSection
-- [ ] J3. Rust 后端：`assistant-config` 新增 `MascotConf` 结构体（renderer + primary_color + secondary_color + custom_gif_src）
-- [ ] J4. Rust 后端：`mascot_conf.rs` load / save / get_conf_path（与 `orb_conf.rs` 同模式）
-- [ ] J5. Rust 后端：`cmd.rs` 新增 `get_mascot_conf` / `save_mascot_conf` / `install_mascot_avatar` 命令（`install_mascot_avatar` 含大小限制 2MB + MIME 嗅探 + 扩展名校验，参考 deepseek-harness-orb `orb-avatar.ts`）
-- [ ] J6. Rust 后端：`lib.rs` invoke_handler 注册新命令
+### D2 — mascotStore
 
----
-
-## 阶段 K — 编译验证
-
-- [ ] K1. `tsc --noEmit` 通过
-- [ ] K2. `npm run lint` 0 errors
-- [ ] K3. `cargo check` 通过
-
-**依赖**：A1~A2, B1~B3, C1~C7, D1~D4, E1~E2, F1~F4, G1~G3, H1~H4, I1, J1~J6
+- [x] D2.1 import 路径更新（`MascotFace` / `MascotRendererId` 从 `./core/types`）
+- [x] D2.2 确认不新增 `renderer` 字段（已在 `mascotConf` 中），不持有渲染器内部状态，不持有渲染器专属配置
 
 ---
 
-## 阶段 L — 功能验证
+## E — 接入层 → spec §3.1 + §6
 
-- [ ] L1. `renderer === "rive"` 时行为与改造前完全一致（回归测试）
-- [ ] L2. `renderer === "svg"` 时 GhostyMascot 正常显示，表情随 face 变化
-- [ ] L3. `renderer === "gif"` 时 GifMascot 正常显示 GIF 动画；`face === "idle"` 时冻结到首帧，`face !== "idle"` 时播放
-- [ ] L4. `renderer === "disabled"` 时无 Mascot 渲染
-- [ ] L5. 外观设置"助手形象"区可切换渲染方式，立即生效
-- [ ] L6. `useMascotChatSync` 表情联动正常（不受渲染器切换影响）
+**需要**：D（MascotRenderer + mascotStore.renderer）、C（RiveMascot 已迁移）
+**提供**：消费端全部使用 MascotRenderer、旧文件清理、公共 API
 
-**依赖**：K1~K3
+### E1 — 消费端改造
+
+- [x] E1.1 `OrbBall.tsx`：`RiveMascot` → `MascotRenderer`，颜色经 `hexToArgb()` 转换后传 `primaryColor` / `secondaryColor` 顶层 prop，渲染器专属配置经 `buildRendererConfig()` 映射
+- [x] E1.2 `MessageInput.tsx`：同上
+- [x] E1.3 全局搜索其余 `from "*/RiveMascot"` 引用，替换
+
+### E2 — 旧文件清理
+
+- [x] E2.1 删除 `src/mascot/faceStates.ts`
+- [x] E2.2 删除 `src/mascot/riveMaps.ts`
+- [x] E2.3 删除 `src/mascot/RiveMascot.tsx`
+- [x] E2.4 删除 `src/settings/MascotColorSection.tsx`（被 MascotSection 统一替代）
+- [x] E2.5 全局搜索旧 import 路径，更新
+
+### E3 — 公共 API
+
+- [x] E3.1 新建 `src/mascot/index.ts`（re-export 公共 API）
 
 ---
 
-## 阶段 M — 验收标准
+## F — 设置集成 → spec §5
 
-- [ ] M1. I5-extensible-renderer-spec.md §11 验收标准 1~18 项全部通过
+**需要**：B（core/registry 提供 getAllRendererMetas / getRenderer）、D（mascotStore.renderer）
+**提供**：MascotSection 设置 UI、Rust MascotConf 扩展
 
-**依赖**：L1~L6
+- [x] F1. 新建 `src/settings/MascotSection.tsx`（渲染方式 Select 从注册表动态生成，局限性提示，颜色区按 capabilities.colorCustomization 条件显隐 + dirty/应用/重置交互，渲染器专属设置按 renderer 条件渲染）
+- [x] F2. `AppearanceSettings.tsx` 移除独立"吉祥物颜色"区，新增"助手形象" SettingsSection 嵌入 MascotSection
+- [x] F3. Rust：`MascotConf` 新增 `renderer` + `rive_idle_pose_rotation` + `svg_animated` + `gif_src` 扁平强类型字段，`validate` 校验全字段（renderer 枚举 + hex 格式 + gif_src 非空）；TS `MascotConf` 镜像同步 4 个新字段；dispatcher `buildRendererConfig()` + `buildMascotPatch()` 映射
+- [ ] F4. Rust：`cmd.rs` 新增 `install_mascot_asset` 通用命令（文件上传 + 大小限制 2MB + MIME 嗅探）
+- [ ] F5. Rust：`lib.rs` invoke_handler 注册新命令
+
+---
+
+## G — 验证 → spec §11
+
+**需要**：E + F（全部实现完成）
+**提供**：编译通过 + 功能验证 + 验收通过
+
+### G1 — 编译
+
+- [x] G1.1 `tsc --noEmit` 通过
+- [x] G1.2 `eslint` 0 errors
+- [x] G1.3 `cargo check` 通过
+
+### G2 — 功能
+
+- [x] G2.1 Rive 回归：行为与改造前完全一致
+- [x] G2.2 SVG：GhostyMascot 正常显示，表情随 face 变化
+- [x] G2.3 GIF：播放/冻结二态正确（idle 冻结，非 idle 播放）
+- [x] G2.4 Disabled：无 Mascot 渲染
+- [x] G2.5 设置 UI：渲染方式切换立即生效
+- [x] G2.6 `useMascotChatSync` 表情联动不受渲染器影响
+- [x] G2.7 默认颜色：null → 内嵌色，选色 → 生效，重置 → null
+- [x] G2.8 颜色区显隐：SVG/GIF 隐藏，Rive 显示
+
+### G3 — 验收
+
+- [x] G3.1 spec §11 验收标准 1~23 项全部通过
+
+---
+
+## 依赖视图
+
+```
+A
+│
+B
+│
+├──→ C ──→ D ──→ E ──┐
+│              │       │
+│         D2 ←─┘       │
+│                      │
+└──→ F ←───────────────┘
+     │
+     └──→ G
+```
+
+D 内部：D1 需要 C，D2 仅需 B，可并行
+E 与 F：E 依赖 D，F 依赖 B+D2，可部分并行（F 在 D2 完成后即可开始）
+
+---
+
+## 实施备注
+
+| 项目 | 说明 |
+|------|------|
+| 新增 B5 | `core/colorUtils.ts`（hexToArgb）是跨渲染器通用工具，消费端 OrbBall/MessageInput 也需要，规格未单独列出但实现中合理新增 |
+| 新增 E2.4 | 删除 `MascotColorSection.tsx`，颜色设置统一在 MascotSection 内按 capabilities 条件显隐，消除重复 |
+| F4/F5 未完成 | `install_mascot_asset` 通用文件上传命令未实现，属于后续迭代内容（当前 GIF src 通过手动配置 mascot-config.json 设置） |
+| SVG 用 setTimeout | 规格提到 `useMascotClock` RAF 驱动，实际 SVG idle 循环用 setTimeout + pickIdleFlourish，无逐帧动画需求，更省 CPU |
+| 颜色交互 dirty+应用 | 与原 MascotColorSection 保持一致的"修改→应用"模式，避免即时生效误操作 |

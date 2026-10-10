@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Form, Radio, message } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { MascotColorSection } from "./MascotColorSection";
+import { MascotSection } from "./MascotSection";
 import { OrbBallSection } from "./OrbBallSection";
 import { OrbPanelSection } from "./OrbPanelSection";
 import { SettingsSection } from "./SettingsSection";
@@ -52,10 +52,10 @@ export const AppearanceSettings: React.FC = () => {
         </SettingsSection>
 
         <SettingsSection
-          title="吉祥物颜色"
-          description="自定义吉祥物的主色和辅色，点击应用后生效"
+          title="助手形象"
+          description="选择吉祥物的渲染方式、颜色和专属设置"
         >
-          <MascotColorSection onSaved={handleSaved} />
+          <MascotSection />
         </SettingsSection>
 
         <SettingsSection

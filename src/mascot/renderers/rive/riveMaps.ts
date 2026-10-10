@@ -1,5 +1,3 @@
-import type { MascotFace } from "./faceStates";
-
 export const MASCOT_STATE_MACHINE = "MascotSM";
 
 export const RIVE_POSES = [
@@ -14,23 +12,6 @@ export const RIVE_POSES = [
   "dancing",
 ] as const;
 export type RivePose = (typeof RIVE_POSES)[number];
-
-export const FACE_TO_POSE: Record<MascotFace, RivePose> = {
-  idle: "idle",
-  listening: "idle",
-  thinking: "thinking",
-  speaking: "writing",
-  happy: "celebration",
-  concerned: "thinking",
-  curious: "bookreading",
-  working: "writing",
-  waving: "hand_wave",
-  proud: "celebration",
-};
-
-export function faceToPose(face: MascotFace): RivePose {
-  return FACE_TO_POSE[face] ?? "idle";
-}
 
 export const RIVE_VISEME_SET = [
   "sil",
@@ -94,29 +75,6 @@ export function toRiveVisemeCode(code: string): RiveVisemeCode {
   return VISEME_ALIAS[code.toLowerCase()] ?? "sil";
 }
 
-export const AMBIENT_POSES: readonly RivePose[] = [
-  "thinking",
-  "bookreading",
-  "coffeedrink",
-  "writing",
-  "bobbateadrink",
-  "dancing",
-  "hand_wave",
-  "celebration",
-];
-
-export function pickAmbientPose(
-  exclude?: RivePose,
-  rng: () => number = Math.random,
-): RivePose {
-  const pool = exclude
-    ? AMBIENT_POSES.filter((p) => p !== exclude)
-    : AMBIENT_POSES;
-  const choices = pool.length > 0 ? pool : AMBIENT_POSES;
-  const idx = Math.min(choices.length - 1, Math.floor(rng() * choices.length));
-  return choices[idx];
-}
-
 export function pickVisemeCode(delta: string): string {
   const ch = delta
     .replace(/[^a-zA-Z]/g, "")
@@ -129,12 +87,12 @@ export function pickVisemeCode(delta: string): string {
       return "E";
     case "i":
     case "y":
-      return "I";
+      return "ih";
     case "o":
-      return "O";
+      return "oh";
     case "u":
     case "w":
-      return "U";
+      return "ou";
     case "m":
     case "b":
     case "p":

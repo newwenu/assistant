@@ -1,0 +1,65 @@
+import { type FC, useEffect, useRef } from "react";
+
+import type { MascotRendererId, MascotRendererProps } from "./core/types";
+import { getRenderer } from "./core/registry";
+import { BUILTIN_RENDERER_IDS } from "./core/types";
+
+import "./renderers/rive";
+import "./renderers/svg";
+import "./renderers/gif";
+
+interface Props extends MascotRendererProps {
+  renderer: MascotRendererId;
+}
+
+export const MascotRenderer: FC<Props> = (props) => {
+  const prevRendererRef = useRef<MascotRendererId | null>(null);
+
+  useEffect(() => {
+    if (prevRendererRef.current && prevRendererRef.current !== props.renderer) {
+      const oldEntry = getRenderer(prevRendererRef.current);
+      oldEntry?.dispose?.();
+    }
+    prevRendererRef.current = props.renderer;
+  }, [props.renderer]);
+
+  if (props.renderer === BUILTIN_RENDERER_IDS.disabled) return null;
+
+  const entry = getRenderer(props.renderer);
+  if (!entry) {
+    console.warn(
+      `[mascot] unknown renderer "${props.renderer}", falling back to rive`,
+    );
+    const fallback = getRenderer(BUILTIN_RENDERER_IDS.rive);
+    if (!fallback) return null;
+    const Component = fallback.component;
+    return (
+      <Component
+        face={props.face}
+        size={props.size}
+        visemeCode={props.visemeCode}
+        primaryColor={props.primaryColor}
+        secondaryColor={props.secondaryColor}
+        rendererConfig={props.rendererConfig}
+      />
+    );
+  }
+
+  const Component = entry.component;
+  const { capabilities } = entry.meta;
+
+  return (
+    <Component
+      face={props.face}
+      size={props.size}
+      visemeCode={capabilities.visemeSync ? props.visemeCode : undefined}
+      primaryColor={
+        capabilities.colorCustomization ? props.primaryColor : undefined
+      }
+      secondaryColor={
+        capabilities.colorCustomization ? props.secondaryColor : undefined
+      }
+      rendererConfig={props.rendererConfig}
+    />
+  );
+};

@@ -24,8 +24,13 @@ export interface OrbConf {
 }
 
 export interface MascotConf {
+  renderer: string;
   primary_color: string | null;
   secondary_color: string | null;
+  rive_idle_pose_rotation: boolean;
+  svg_animated: boolean;
+  gif_src: string | null;
+  gif_border_radius: number;
 }
 
 interface SettingsState {

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 describe("settingRegistry", () => {
   beforeEach(async () => {
     const mod = await import("./settingRegistry");
-    const defs = mod.getAllDefinitions();
+    mod.getAllDefinitions();
     const registry = mod as unknown as { definitions: unknown[] };
     registry.definitions = [];
   });

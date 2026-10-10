@@ -70,6 +70,8 @@ const MainLayout: React.FC = () => {
   const loadFavorites = useToolStore((s) => s.loadFavorites);
   const loadRecentTools = useToolStore((s) => s.loadRecentTools);
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);
+  const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
+  const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
   const [api, contextHolder] = notification.useNotification();
 
   const [openKeys, setOpenKeys] = useState<string[]>([
@@ -103,7 +105,15 @@ const MainLayout: React.FC = () => {
     loadFavorites();
     loadRecentTools();
     loadAppConf();
-  }, [loadFavorites, loadRecentTools, loadAppConf]);
+    loadOrbConf();
+    loadMascotConf();
+  }, [
+    loadFavorites,
+    loadRecentTools,
+    loadAppConf,
+    loadOrbConf,
+    loadMascotConf,
+  ]);
 
   useEffect(() => {
     const unlisten = listen<{ id: string; binding: string; error: string }>(
@@ -259,12 +269,19 @@ const OrbWindow: React.FC = () => {
   const expandDirection = useOrbStore((s) => s.expandDirection);
   const expandVertical = useOrbStore((s) => s.expandVertical);
   const setClickThrough = useOrbStore((s) => s.setClickThrough);
+  const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
+  const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
 
   React.useEffect(() => {
     if (!IS_MACOS && !IS_WINDOWS) return;
     invoke("set_orb_click_through", { enabled: true });
     setClickThrough(true);
   }, [setClickThrough]);
+
+  React.useEffect(() => {
+    loadOrbConf();
+    loadMascotConf();
+  }, [loadOrbConf, loadMascotConf]);
 
   const orbClassName = [
     isExpanded ? "orb-expanded" : "",
