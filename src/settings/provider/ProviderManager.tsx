@@ -14,7 +14,7 @@ import {
   API_FORMATS,
   getApiFormatByType,
 } from "@/stores/providerStore";
-import { FormatTag } from "./ProviderSwatch";
+import { FormatTag } from "./FormatTag";
 import { AddProviderDialog } from "./AddProviderDialog";
 import { ConnectDialog } from "./ConnectDialog";
 

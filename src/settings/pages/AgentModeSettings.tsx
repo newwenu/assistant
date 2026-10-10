@@ -73,7 +73,7 @@ const defaultFormData: ModeFormData = {
   reasoning_effort: null,
 };
 
-export const AgentModeManager: React.FC = () => {
+export const AgentModeSettings: React.FC = () => {
   const store = useAgentModeStore();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingMode, setEditingMode] = useState<AgentMode | null>(null);

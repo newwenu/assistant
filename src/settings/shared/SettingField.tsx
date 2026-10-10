@@ -1,6 +1,6 @@
 import { Switch, Input, InputNumber, Slider, Select, ColorPicker } from "antd";
-import type { SettingFieldProps } from "../core/settingRegistry";
-import { getSettingTypeRenderer } from "../core/settingRegistry";
+import type { SettingFieldProps } from "../core/fieldRegistry";
+import { getSettingTypeRenderer } from "../core/fieldRegistry";
 
 function BooleanField({ value, onChange }: SettingFieldProps) {
   return <Switch checked={!!value} onChange={(checked) => onChange(checked)} />;

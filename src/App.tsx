@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   BrowserRouter,
@@ -31,8 +30,8 @@ import {
   DEFAULT_SETTINGS_PAGE_ID,
   getSettingsPageManifest,
   isSettingsPageId,
-} from "@/settings/core/settingsRegistry";
-import type { SettingsPageId } from "@/settings/core/settingsTypes";
+} from "@/settings/core/pageRegistry";
+import type { SettingsPageId } from "@/settings/core/pageTypes";
 import { HistoryManager } from "@/chat/HistoryManager";
 import { ToolBox } from "@/tools/ToolBox";
 import { ToolPage } from "@/tools/ToolPage";
@@ -261,22 +260,12 @@ const SettingsWindow: React.FC = () => {
   );
 };
 
-const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
-const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
-
 const OrbWindow: React.FC = () => {
   const isExpanded = useOrbStore((s) => s.isExpanded);
   const expandDirection = useOrbStore((s) => s.expandDirection);
   const expandVertical = useOrbStore((s) => s.expandVertical);
-  const setClickThrough = useOrbStore((s) => s.setClickThrough);
   const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
   const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
-
-  React.useEffect(() => {
-    if (!IS_MACOS && !IS_WINDOWS) return;
-    invoke("set_orb_click_through", { enabled: true });
-    setClickThrough(true);
-  }, [setClickThrough]);
 
   React.useEffect(() => {
     loadOrbConf();

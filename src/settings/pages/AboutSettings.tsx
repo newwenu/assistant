@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { SettingsSection } from "../shared/SettingsSection";
 import { SettingsPageShell } from "../shared/SettingsPageShell";
 
-export const AboutPage: React.FC = () => {
+export const AboutSettings: React.FC = () => {
   const [version, setVersion] = useState("");
   const [rustcVersion, setRustcVersion] = useState("");
 

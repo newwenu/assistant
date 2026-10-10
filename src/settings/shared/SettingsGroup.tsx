@@ -1,6 +1,6 @@
 import { Form, message } from "antd";
-import type { SettingDefinition, ConfGroup } from "../core/settingRegistry";
-import { getDefinitionsByGroup } from "../core/settingRegistry";
+import type { SettingDefinition, ConfGroup } from "../core/fieldRegistry";
+import { getDefinitionsByGroup } from "../core/fieldRegistry";
 import { SettingField } from "./SettingField";
 import { dispatchConfPatch } from "../core/settingsDispatcher";
 import { useSettingsStore } from "@/stores/settingsStore";

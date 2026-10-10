@@ -9,7 +9,6 @@ interface OrbState {
   isDragging: boolean;
   isBallVisible: boolean;
   isVisible: boolean;
-  clickThrough: boolean | null;
   position: { x: number; y: number } | null;
   expandDirection: ExpandDirection;
   expandVertical: ExpandVertical;
@@ -18,7 +17,6 @@ interface OrbState {
   toggle: () => Promise<void>;
   setHovering: (v: boolean) => void;
   setDragging: (v: boolean) => void;
-  setClickThrough: (v: boolean) => void;
   setBallVisible: (v: boolean) => void;
   setVisible: (v: boolean) => void;
   setPosition: (pos: { x: number; y: number }) => void;
@@ -32,7 +30,6 @@ export const useOrbStore = create<OrbState>((set, get) => ({
   isDragging: false,
   isBallVisible: true,
   isVisible: true,
-  clickThrough: null,
   position: null,
   expandDirection: "right",
   expandVertical: "down",
@@ -51,7 +48,6 @@ export const useOrbStore = create<OrbState>((set, get) => ({
 
   setHovering: (v: boolean) => set({ isHovering: v }),
   setDragging: (v: boolean) => set({ isDragging: v }),
-  setClickThrough: (v: boolean) => set({ clickThrough: v }),
   setBallVisible: (v: boolean) => set({ isBallVisible: v }),
   setVisible: (v: boolean) => set({ isVisible: v }),
   setPosition: (pos: { x: number; y: number }) => set({ position: pos }),

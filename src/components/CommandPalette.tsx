@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Modal, Input, Typography, Divider } from "antd";
+import type { InputRef } from "antd";
 import {
   SearchOutlined,
   ThunderboltOutlined,
@@ -51,7 +52,7 @@ export const CommandPalette: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<InputRef>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const appConf = useSettingsStore((s) => s.appConf);
@@ -320,7 +321,7 @@ export const CommandPalette: React.FC = () => {
     >
       <div className={styles.inputWrapper}>
         <Input
-          ref={inputRef as any}
+          ref={inputRef}
           prefix={<SearchOutlined />}
           placeholder="搜索工具、页面、操作..."
           value={query}

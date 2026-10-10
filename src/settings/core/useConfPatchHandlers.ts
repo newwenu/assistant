@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { ConfGroup } from "./settingRegistry";
+import type { ConfGroup } from "./fieldRegistry";
 import { dispatchConfPatch } from "./settingsDispatcher";
 import { useSettingsStore } from "@/stores/settingsStore";
 

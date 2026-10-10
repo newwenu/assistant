@@ -1,4 +1,4 @@
-import { defineSetting } from "./settingRegistry";
+import { defineSetting } from "./fieldRegistry";
 
 export const APP_SETTINGS = [
   defineSetting({

@@ -8,7 +8,7 @@ use tauri::{command, AppHandle, PhysicalPosition};
 
 use assistant_config::{
     constant::{
-        ORB_CHROME_INSET, ORB_HITBOX_SIZE, ORB_SNAP_ANIMATION_MS, ORB_VISUAL_CENTER_OFFSET_X,
+        ORB_CHROME_INSET, ORB_HITBOX_SIZE, ORB_SNAP_ANIMATION_MS, ORB_SNAP_BORDER_X,
         WINDOW_EDGE_BUFFER, WINDOW_ORB,
     },
     orb_conf::OrbConf,
@@ -129,7 +129,7 @@ pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
 
     let screens = placement::get_available_screens(&app);
     let bounds = placement::WindowBounds::new(pos.x, pos.y, size.width, size.height);
-    let border_x = ORB_VISUAL_CENTER_OFFSET_X;
+    let border_x = ORB_SNAP_BORDER_X;
     let target = placement::snap_orb_to_edge(&screens, bounds, WINDOW_EDGE_BUFFER as i32, border_x);
 
     if target.x == bounds.x && target.y == bounds.y {

@@ -4,7 +4,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { SettingsGroup } from "../shared/SettingsGroup";
 import { SettingsSection } from "../shared/SettingsSection";
 import { SettingsPageShell } from "../shared/SettingsPageShell";
-import { APP_SETTINGS } from "../core/definitions";
+import { APP_SETTINGS } from "../core/fieldDefinitions";
 import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
 
 export const GeneralSettings: React.FC = () => {

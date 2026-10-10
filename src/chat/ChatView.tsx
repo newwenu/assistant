@@ -68,8 +68,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   );
 
   useEffect(() => {
-    provider.loadProviders();
-    chat.loadConversations();
+    useProviderStore.getState().loadProviders();
+    useChatStore.getState().loadConversations();
   }, []);
 
   const resolveProviderModel = useCallback(

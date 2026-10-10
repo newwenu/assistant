@@ -11,14 +11,13 @@ import {
   ORB_SNAP_DELAY_MS,
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
 const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
-const NEEDS_CLICK_THROUGH_TOGGLE = IS_MACOS || IS_WINDOWS;
 
 export function useOrbDrag() {
   const setDragging = useOrbStore((s) => s.setDragging);
-  const setClickThrough = useOrbStore((s) => s.setClickThrough);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
   const hasDraggedRef = useRef(false);
   const dragStopRef = useRef<(() => void) | null>(null);
@@ -81,11 +80,11 @@ export function useOrbDrag() {
         hasDraggedRef.current = true;
         setDragging(true);
 
-        if (NEEDS_CLICK_THROUGH_TOGGLE) {
+        const orbConf = useSettingsStore.getState().orbConf;
+        if (orbConf?.click_through) {
           invoke("set_orb_click_through", { enabled: false }).catch(
             console.error,
           );
-          setClickThrough(false);
         }
 
         if (IS_WINDOWS) {
@@ -132,11 +131,13 @@ export function useOrbDrag() {
       if (hasDraggedRef.current) {
         setDragging(false);
         const state = useOrbStore.getState();
-        if (!state.isExpanded && NEEDS_CLICK_THROUGH_TOGGLE) {
-          invoke("set_orb_click_through", { enabled: true }).catch(
-            console.error,
-          );
-          setClickThrough(true);
+        if (!state.isExpanded) {
+          const orbConf = useSettingsStore.getState().orbConf;
+          if (orbConf?.click_through) {
+            invoke("set_orb_click_through", { enabled: true }).catch(
+              console.error,
+            );
+          }
         }
         setTimeout(() => {
           invoke("snap_orb_to_edge").catch(console.error);
@@ -149,7 +150,7 @@ export function useOrbDrag() {
         // ignore
       }
     },
-    [setDragging, setClickThrough],
+    [setDragging],
   );
 
   return { onPointerDown, onPointerMove, onPointerUp, hasDraggedRef };

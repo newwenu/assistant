@@ -14,10 +14,8 @@ fn window_geometry_consistent() {
         ORB_EXPANDED_WINDOW_HEIGHT,
         ORB_EXPANDED_HEIGHT + 2 * ORB_CHROME_INSET
     );
-    let expected =
-        (ORB_COLLAPSED_WINDOW_SIZE as i32 - ORB_CHROME_INSET as i32 - ORB_HITBOX_SIZE as i32)
-            - ORB_CHROME_INSET as i32;
-    assert_eq!(ORB_VISUAL_CENTER_OFFSET_X, expected);
+    assert_eq!(ORB_HITBOX_SIZE, ORB_COLLAPSED_WINDOW_SIZE);
+    assert_eq!(ORB_SNAP_BORDER_X, 24);
 }
 
 #[test]
@@ -50,7 +48,6 @@ fn identifiers_and_durations_valid() {
     assert!(PET_DRAG_THRESHOLD_PX > 0.0);
     assert!(WINDOW_EDGE_BUFFER > 0);
     assert!(ORB_HITBOX_SIZE > 0);
-    assert!(HOVER_POLL_INTERVAL_MS > 0);
     assert!(DRAG_POLL_INTERVAL_MS > 0);
     assert!(STREAM_COALESCE_TIMER_MS > 0);
 }

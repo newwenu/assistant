@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { flushSync } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useOrbStore } from "../stores/orbStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import {
   ORB_COLLAPSED_SIZE,
   ORB_EXPANDED_WIDTH,
@@ -14,10 +15,6 @@ import {
   physicalToLogical,
   physicalSizeToLogical,
 } from "./OrbCoord";
-
-const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
-const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
-const NEEDS_CLICK_THROUGH_TOGGLE = IS_MACOS || IS_WINDOWS;
 
 function waitForPaint(): Promise<void> {
   return new Promise((resolve) => {
@@ -57,7 +54,6 @@ export function useOrbExpand(): UseOrbExpandReturn {
   const storeCollapse = useOrbStore((s) => s.collapse);
   const setExpandDirection = useOrbStore((s) => s.setExpandDirection);
   const setExpandVertical = useOrbStore((s) => s.setExpandVertical);
-  const setClickThrough = useOrbStore((s) => s.setClickThrough);
   const setBallVisible = useOrbStore((s) => s.setBallVisible);
 
   const expand = useCallback(async () => {
@@ -152,17 +148,11 @@ export function useOrbExpand(): UseOrbExpandReturn {
     await waitForPaint();
     await invoke("expand_orb_panel", { horizontal: direction, vertical });
     await storeExpand();
-    if (NEEDS_CLICK_THROUGH_TOGGLE) {
+    const orbConf = useSettingsStore.getState().orbConf;
+    if (orbConf?.click_through) {
       await invoke("set_orb_click_through", { enabled: false });
-      setClickThrough(false);
     }
-  }, [
-    storeExpand,
-    setExpandDirection,
-    setExpandVertical,
-    setClickThrough,
-    setBallVisible,
-  ]);
+  }, [storeExpand, setExpandDirection, setExpandVertical, setBallVisible]);
 
   const collapse = useCallback(async () => {
     const direction = useOrbStore.getState().expandDirection;
@@ -171,11 +161,11 @@ export function useOrbExpand(): UseOrbExpandReturn {
     await waitForPanelTransition();
     await invoke("collapse_orb_panel", { horizontal: direction, vertical });
     setBallVisible(true);
-    if (NEEDS_CLICK_THROUGH_TOGGLE) {
+    const orbConf = useSettingsStore.getState().orbConf;
+    if (orbConf?.click_through) {
       await invoke("set_orb_click_through", { enabled: true });
-      setClickThrough(true);
     }
-  }, [storeCollapse, setClickThrough, setBallVisible]);
+  }, [storeCollapse, setBallVisible]);
 
   return { isExpanded, expand, collapse };
 }

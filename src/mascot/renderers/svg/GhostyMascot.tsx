@@ -238,7 +238,11 @@ export const GhostyMascot: FC<MascotRendererProps> = ({
     const bob = Math.sin(t * Math.PI * 1.2) * 14;
 
     const g = groundRef.current;
-    if (g) g.setAttribute("transform", `translate(500, 970) scale(${1 - bob / 600}, 1)`);
+    if (g)
+      g.setAttribute(
+        "transform",
+        `translate(500, 970) scale(${1 - bob / 600}, 1)`,
+      );
 
     const bg = bodyGroupRef.current;
     if (bg) bg.setAttribute("transform", `translate(0, ${bob})`);
@@ -250,7 +254,11 @@ export const GhostyMascot: FC<MascotRendererProps> = ({
     const dotSquashY = 1 - 0.08 * press;
     const dotSquashX = 1 + 0.05 * press;
     const dg = dotGroupRef.current;
-    if (dg) dg.setAttribute("transform", `translate(${dotDx}, ${dotDy}) translate(520 240) scale(${dotSquashX} ${dotSquashY}) translate(-520 -240)`);
+    if (dg)
+      dg.setAttribute(
+        "transform",
+        `translate(${dotDx}, ${dotDy}) translate(520 240) scale(${dotSquashX} ${dotSquashY}) translate(-520 -240)`,
+      );
 
     const wave = showArm ? Math.sin(t * Math.PI * 2.4) * 12 : 0;
     const ag = armGroupRef.current;
@@ -328,8 +336,15 @@ export const GhostyMascot: FC<MascotRendererProps> = ({
           <path d={RIGHT_LEG_PATH} fill={bodyFill} />
         </g>
 
-        <g ref={bodyGroupRef} transform="translate(0, 0)" filter={`url(#${id("drop")})`}>
-          <g ref={dotGroupRef} transform="translate(0, 0) translate(520 240) scale(1 1) translate(-520 -240)">
+        <g
+          ref={bodyGroupRef}
+          transform="translate(0, 0)"
+          filter={`url(#${id("drop")})`}
+        >
+          <g
+            ref={dotGroupRef}
+            transform="translate(0, 0) translate(520 240) scale(1 1) translate(-520 -240)"
+          >
             <ellipse cx={520} cy={155} rx={92} ry={88} fill={dotFill} />
             <ellipse
               cx={490}
@@ -434,8 +449,20 @@ export const GhostyMascot: FC<MascotRendererProps> = ({
               ry={40 * preset.eyeScaleY}
               fill={INK_COLOR}
             />
-            <circle ref={leftHighlightRef} cx={425} cy={501} r={7} fill={HIGHLIGHT_COLOR} />
-            <circle ref={rightHighlightRef} cx={635} cy={501} r={7} fill={HIGHLIGHT_COLOR} />
+            <circle
+              ref={leftHighlightRef}
+              cx={425}
+              cy={501}
+              r={7}
+              fill={HIGHLIGHT_COLOR}
+            />
+            <circle
+              ref={rightHighlightRef}
+              cx={635}
+              cy={501}
+              r={7}
+              fill={HIGHLIGHT_COLOR}
+            />
           </g>
 
           <path d={mouthPath} fill={INK_COLOR} data-face={face} />

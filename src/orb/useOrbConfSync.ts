@@ -5,9 +5,7 @@ import type { OrbConf } from "@/stores/settingsStore";
 import { SettingEvent, SettingAction } from "../types/events";
 import type { SettingEventPayload } from "../types/events";
 
-async function reloadAndApply(
-  appliedRef: React.MutableRefObject<string>,
-) {
+async function reloadAndApply(appliedRef: React.MutableRefObject<string>) {
   try {
     const conf = await invoke<OrbConf>("get_orb_conf");
     await applyOrbConf(conf, appliedRef);
@@ -47,6 +45,12 @@ async function applyOrbConf(
     "--orb-idle-opacity",
     `${conf.idle_opacity_percent / 100}`,
   );
+
+  try {
+    await invoke("set_orb_click_through", { enabled: conf.click_through });
+  } catch (e) {
+    console.warn("[useOrbConfSync] set_orb_click_through failed:", e);
+  }
 }
 
 export function useOrbConfSync(): void {

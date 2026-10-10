@@ -50,8 +50,10 @@ export function subscribeSettingEvents(): () => void {
     listen<SettingEventPayload>(SettingEvent.ConfPatched, ({ payload }) => {
       if (disposed) return;
       if (payload.action === SettingAction.ConfPatched) {
-        const { group } = (payload.value as { group: string; patch: unknown })
-          ?? { group: "" };
+        const { group } = (payload.value as {
+          group: string;
+          patch: unknown;
+        }) ?? { group: "" };
         const store = useSettingsStore.getState();
         if (group === "app") store.loadAppConf();
         else if (group === "orb") store.loadOrbConf();

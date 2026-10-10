@@ -117,14 +117,4 @@ impl HoverState {
             }
         }
     }
-
-    pub fn should_toggle_click_through(self, prev: HoverState) -> Option<bool> {
-        match (prev, self) {
-            (HoverState::Visible, HoverState::FadingOut { .. }) => Some(true),
-            (HoverState::FadingOut { .. }, HoverState::Hidden) => Some(true),
-            (HoverState::Hidden, HoverState::FadingIn { .. }) => Some(false),
-            (HoverState::FadingIn { .. }, HoverState::Visible) => Some(false),
-            _ => None,
-        }
-    }
 }

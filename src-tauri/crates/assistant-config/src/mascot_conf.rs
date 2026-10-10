@@ -4,19 +4,46 @@ use std::path::Path;
 
 use super::json_config::{get_conf_dir, load_json_config, save_json_config};
 
+fn default_renderer() -> String {
+    "rive".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_gif_border_radius() -> u32 {
+    50
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct MascotConf {
+    #[serde(default = "default_renderer")]
+    pub renderer: String,
     #[serde(default)]
     pub primary_color: Option<String>,
     #[serde(default)]
     pub secondary_color: Option<String>,
+    #[serde(default)]
+    pub rive_idle_pose_rotation: bool,
+    #[serde(default = "default_true")]
+    pub svg_animated: bool,
+    #[serde(default)]
+    pub gif_src: Option<String>,
+    #[serde(default = "default_gif_border_radius")]
+    pub gif_border_radius: u32,
 }
 
 impl MascotConf {
     pub fn new() -> Self {
         Self {
+            renderer: default_renderer(),
             primary_color: None,
             secondary_color: None,
+            rive_idle_pose_rotation: false,
+            svg_animated: true,
+            gif_src: None,
+            gif_border_radius: default_gif_border_radius(),
         }
     }
 
@@ -45,6 +72,13 @@ impl MascotConf {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        let valid_renderers = ["rive", "svg", "gif", "disabled"];
+        if !valid_renderers.contains(&self.renderer.as_str()) {
+            return Err(format!(
+                "renderer must be one of {:?}, got {}",
+                valid_renderers, self.renderer
+            ));
+        }
         if let Some(ref c) = self.primary_color {
             if !c.starts_with('#') || c.len() != 7 {
                 return Err(format!("primary_color must be #RRGGBB, got {}", c));
@@ -54,6 +88,17 @@ impl MascotConf {
             if !c.starts_with('#') || c.len() != 7 {
                 return Err(format!("secondary_color must be #RRGGBB, got {}", c));
             }
+        }
+        if let Some(ref s) = self.gif_src {
+            if s.is_empty() {
+                return Err("gif_src must not be empty string".to_string());
+            }
+        }
+        if self.gif_border_radius > 50 {
+            return Err(format!(
+                "gif_border_radius must be 0..=50, got {}",
+                self.gif_border_radius
+            ));
         }
         Ok(())
     }

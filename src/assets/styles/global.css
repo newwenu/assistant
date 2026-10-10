@@ -31,9 +31,9 @@
   --sidebar-collapsed-width: 64px;
   --titlebar-height: 38px;
 
-  --orb-ball-size: 64px;
-  --orb-hitbox-size: 48px;
-  --orb-chrome-inset: 12px;
+  --orb-ball-size: 72px;
+  --orb-hitbox-size: 88px;
+  --orb-chrome-inset: 8px;
   --orb-header-height: 36px;
 
   --scrollbar-size: 6px;
@@ -149,7 +149,6 @@ body {
 }
 
 div[data-orb-window] {
-  pointer-events: none !important;
   user-select: none !important;
   -webkit-user-select: none !important;
   background: transparent !important;
@@ -212,6 +211,11 @@ div[data-orb-window] .orb-hitbox.orb-touch:active {
   50% {
     transform: scale(1.04);
   }
+}
+
+div[data-orb-window] .orb-hitbox.orb-settling {
+  transition: none !important;
+  animation: none !important;
 }
 
 div[data-orb-window] .orb-hitbox.orb-idle:not(.orb-hover):not(.orb-dragging) {

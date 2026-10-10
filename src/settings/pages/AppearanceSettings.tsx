@@ -1,12 +1,15 @@
 import { useEffect } from "react";
 import { Form, Radio, message } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { MascotSection } from "./MascotSection";
-import { OrbBallSection } from "./OrbBallSection";
-import { OrbPanelSection } from "./OrbPanelSection";
+import { MascotSection } from "../shared/MascotSection";
+import { OrbBallSection } from "../shared/OrbBallSection";
+import { OrbPanelSection } from "../shared/OrbPanelSection";
 import { SettingsSection } from "../shared/SettingsSection";
 import { SettingsPageShell } from "../shared/SettingsPageShell";
-import { dispatchConfPatch, dispatchThemeChanged } from "../core/settingsDispatcher";
+import {
+  dispatchConfPatch,
+  dispatchThemeChanged,
+} from "../core/settingsDispatcher";
 
 export const AppearanceSettings: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);

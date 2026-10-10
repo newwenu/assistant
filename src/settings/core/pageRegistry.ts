@@ -4,7 +4,7 @@ import type {
   SettingsCategoryId,
   SettingsPageId,
   SettingsPageManifest,
-} from "./settingsTypes";
+} from "./pageTypes";
 
 type SettingsPageInput = Omit<SettingsPageManifest, "component"> & {
   component: React.LazyExoticComponent<ComponentType>;
@@ -20,7 +20,9 @@ const general = definePage({
   label: "通用设置",
   keywords: ["language", "launch", "tray", "top", "startup"],
   component: React.lazy(() =>
-    import("../pages/GeneralSettings").then((m) => ({ default: m.GeneralSettings })),
+    import("../pages/GeneralSettings").then((m) => ({
+      default: m.GeneralSettings,
+    })),
   ),
 });
 
@@ -42,7 +44,9 @@ const shortcuts = definePage({
   label: "快捷键",
   keywords: ["keyboard", "shortcut", "keybinding", "hotkey"],
   component: React.lazy(() =>
-    import("../pages/ShortcutSettings").then((m) => ({ default: m.ShortcutSettings })),
+    import("../pages/ShortcutSettings").then((m) => ({
+      default: m.ShortcutSettings,
+    })),
   ),
 });
 
@@ -52,7 +56,9 @@ const providers = definePage({
   label: "Provider 管理",
   keywords: ["provider", "api", "model", "openai", "preset"],
   component: React.lazy(() =>
-    import("../provider/ProviderManager").then((m) => ({ default: m.ProviderManager })),
+    import("../provider/ProviderManager").then((m) => ({
+      default: m.ProviderManager,
+    })),
   ),
 });
 
@@ -62,7 +68,9 @@ const agents = definePage({
   label: "Agent 模式",
   keywords: ["agent", "mode", "kind", "quick", "deep"],
   component: React.lazy(() =>
-    import("../pages/AgentModeManager").then((m) => ({ default: m.AgentModeManager })),
+    import("../pages/AgentModeSettings").then((m) => ({
+      default: m.AgentModeSettings,
+    })),
   ),
 });
 
@@ -72,7 +80,9 @@ const about = definePage({
   label: "关于",
   keywords: ["version", "rustc", "build", "about"],
   component: React.lazy(() =>
-    import("../pages/AboutPage").then((m) => ({ default: m.AboutPage })),
+    import("../pages/AboutSettings").then((m) => ({
+      default: m.AboutSettings,
+    })),
   ),
 });
 

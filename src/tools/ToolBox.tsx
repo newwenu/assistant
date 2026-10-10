@@ -7,6 +7,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  type DragEndEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -73,7 +74,7 @@ export const ToolBox: React.FC = () => {
 
   const newTools = allTools.filter((t) => t.isNew);
 
-  const handleDragEnd = (event: any) => {
+  const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIdx = favoriteTools.findIndex((t) => t.id === active.id);

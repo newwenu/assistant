@@ -1,6 +1,6 @@
 import { Form } from "antd";
-import { SettingsGroup } from "../shared/SettingsGroup";
-import { ORB_PANEL_SETTINGS } from "../core/definitions";
+import { SettingsGroup } from "./SettingsGroup";
+import { ORB_PANEL_SETTINGS } from "../core/fieldDefinitions";
 import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
 
 export const OrbPanelSection: React.FC = () => {

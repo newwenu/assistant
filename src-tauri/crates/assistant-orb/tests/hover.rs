@@ -258,23 +258,6 @@ mod property {
 }
 
 #[test]
-fn should_toggle_click_through() {
-    use HoverState::*;
-    let fo = FadingOut {
-        elapsed: Duration::ZERO,
-    };
-    let fi = FadingIn {
-        elapsed: Duration::ZERO,
-    };
-    assert_eq!(fo.should_toggle_click_through(Visible), Some(true));
-    assert_eq!(Hidden.should_toggle_click_through(fo), Some(true));
-    assert_eq!(fi.should_toggle_click_through(Hidden), Some(false));
-    assert_eq!(Visible.should_toggle_click_through(fi), Some(false));
-    assert_eq!(Visible.should_toggle_click_through(Visible), None);
-    assert_eq!(Hidden.should_toggle_click_through(Hidden), None);
-}
-
-#[test]
 fn full_cycle() {
     let enter = obs(true, true, 500, 0);
     let tick = obs(true, true, 100, 0);

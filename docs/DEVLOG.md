@@ -864,3 +864,129 @@ const onTransitionEnd = (e) => {
 | 外部依赖 | 零 | 零（祖先链遍历是 DOM 标准API） |
 
 **涉及文件**：`src/mascot/renderers/rive/RiveMascot.tsx`（`useCanvasSizeWatchdog` 重构）
+
+### 2026-10-10 I1-orb-no-clickthrough — 移除自动穿透轮询，改用设置驱动穿透
+
+规格：[I1-orb-no-clickthrough-spec.md](./store/I1-orb-no-clickthrough-spec.md)
+
+#### 问题
+
+Orb 球体使用 80ms 间隔轮询鼠标位置 vs hitbox 矩形来决定是否穿透，这套自动穿透逻辑存在多个问题：
+
+1. **持续 CPU 开销**：即使球静止不动，轮询每 80ms 一次 `getMouseLogicalPos()` + `getWindowLogicalRect()` + `isPointInRect()`
+2. **复杂度高**：防抖（30ms）、手抖容差（8px）、状态缓存（`clickThrough` store 字段 + Rust `AtomicBool`）、多平台分支（`NEEDS_CURSOR_POLL`/`NEEDS_CLICK_THROUGH_TOGGLE`），维护成本大
+3. **语义混淆**：`click_through` 用户设置项（是否启用穿透）与自动轮询实现细节耦合，关闭 `click_through` 后轮询仍在运行
+4. **常量语义不清**：`ORB_HITBOX_SIZE` 在前端=72（球体视觉尺寸），在 Rust=48（贴边优化后的 hitbox），实际是两个不同概念
+
+#### 设计决策
+
+| 决策 | 理由 |
+|------|------|
+| 移除自动轮询，改用 `orbConf.click_through` 设置驱动穿透 | 轮询是实现细节，`click_through` 是用户功能开关，两者解耦 |
+| 保留 Rust `set_orb_click_through` 命令 | 封装了平台相关 `set_ignore_cursor_events` API，保留成本极低，将来可能复用 |
+| 保留 `click_through` 设置项 | 用户功能开关，与自动轮询无关 |
+| 前端 `ORB_HITBOX_SIZE` 改为 `ORB_COLLAPSED_SIZE + 2 * ORB_CHROME_INSET` = 88 | hitbox 是交互命中区域，应铺满窗口（72 + 2×8） |
+| Rust `ORB_HITBOX_SIZE` 改为 `ORB_COLLAPSED_WINDOW_SIZE` = 88 | 与前端对齐，hitbox = 窗口尺寸 |
+| 新增 `ORB_SNAP_BORDER_X = 24` 解耦贴边偏移 | 原 `ORB_VISUAL_CENTER_OFFSET_X` 是 hitbox 尺寸的派生常量，hitbox 变后语义不再正确，独立常量更清晰 |
+
+#### 常量语义区分
+
+| 常量 | 含义 | 值 |
+|------|------|-----|
+| `ORB_COLLAPSED_SIZE` | 球体视觉渲染尺寸（MascotRenderer 的 width/height） | 72 |
+| `ORB_HITBOX_SIZE` | 交互命中区域尺寸（铺满窗口） | 88 = 72 + 2×8 |
+| `ORB_SNAP_BORDER_X` | 贴边吸附时右边缘补偿偏移 | 24 |
+
+Rust 端原 `ORB_HITBOX_SIZE = 48` 不是遗留 bug，是有意为之的贴边优化——通过 `ORB_VISUAL_CENTER_OFFSET_X` 让球体贴边效果更好。引入独立 `ORB_SNAP_BORDER_X` 解耦后，hitbox 尺寸可以独立变化而不影响贴边逻辑。
+
+#### 穿透驱动逻辑变更
+
+**旧**：轮询检测鼠标位置 → 自动切换穿透 → `setClickThrough` store 同步
+**新**：`orbConf.click_through` 设置项 → 配置变更时生效 → 展开/拖拽临时互斥保护
+
+穿透切换仅在 `click_through = true` 时生效：
+
+```
+收起态：穿透 ON（click_through=true 时）
+  │  展开 → 临时关闭穿透（面板需要接收事件）
+  │  拖拽 → 临时关闭穿透（球需要接收拖拽事件）
+  │
+展开态/拖拽中：穿透 OFF
+  │  收起/松手 → 恢复穿透
+```
+
+`click_through = false`（默认）时，所有穿透切换 if 块不执行，穿透始终 OFF。
+
+#### 修改清单
+
+| 文件 | 改动 |
+|------|------|
+| `constants.ts` | `ORB_HITBOX_SIZE` 72→88(派生)；移除 `HOVER_POLL_INTERVAL_MS`/`CLICK_THROUGH_DEBOUNCE_MS`/`HAND_JITTER_PX` |
+| `constant.rs` | `ORB_HITBOX_SIZE` 48→88(派生)；`ORB_VISUAL_CENTER_OFFSET_X`→`ORB_SNAP_BORDER_X=24`；移除 `HOVER_POLL_INTERVAL_MS` |
+| `global.css` | `--orb-hitbox-size` 72px→88px；移除 `div[data-orb-window]` 的 `pointer-events: none !important` |
+| `OrbBall.tsx` | 移除全部轮询逻辑(~100行)；`MascotRenderer size`→`ORB_COLLAPSED_SIZE`；收起态 `ballLeft`/`ballTop`→0；`handlePointerEnter`/`Leave` 简化为直接 `setHovering` |
+| `OrbExpand.ts` | 移除 `NEEDS_CLICK_THROUGH_TOGGLE`/`setClickThrough`；穿透切换改为 `orbConf.click_through` 驱动 |
+| `OrbDrag.tsx` | 移除 `NEEDS_CLICK_THROUGH_TOGGLE`/`setClickThrough`；穿透切换改为 `orbConf.click_through` 驱动 |
+| `App.tsx` | 移除硬编码穿透初始化 useEffect + `invoke`/`IS_MACOS`/`IS_WINDOWS`/`setClickThrough` |
+| `orbStore.ts` | 移除 `clickThrough` 状态 + `setClickThrough` action |
+| `useOrbConfSync.ts` | `applyOrbConf` 中新增 `invoke("set_orb_click_through", { enabled: conf.click_through })` |
+| `orb.rs` | import `ORB_VISUAL_CENTER_OFFSET_X`→`ORB_SNAP_BORDER_X`；`snap_orb_to_edge` 引用更新 |
+| `hover.rs` | 移除 `should_toggle_click_through` 方法 |
+| `hover.rs 测试` | 移除 `should_toggle_click_through` 测试 |
+| `constant.rs 测试` | 更新断言：`ORB_HITBOX_SIZE=ORB_COLLAPSED_WINDOW_SIZE`、`ORB_SNAP_BORDER_X=24`；移除 `HOVER_POLL_INTERVAL_MS`/`ORB_VISUAL_CENTER_OFFSET_X` 断言 |
+
+#### 移除 vs 保留总结
+
+**移除**（自动穿透实现细节）：
+- 前端：`NEEDS_CURSOR_POLL`/`NEEDS_CLICK_THROUGH_TOGGLE` 常量、`HOVER_POLL_INTERVAL_MS`/`CLICK_THROUGH_DEBOUNCE_MS`/`HAND_JITTER_PX` 常量、OrbBall 中全部轮询逻辑（`setInterval`、`applyClickThrough`、防抖、手抖容差、refs）、`orbStore.clickThrough`/`setClickThrough`、App.tsx 硬编码穿透初始化
+- Rust：`HOVER_POLL_INTERVAL_MS` 常量、`ORB_VISUAL_CENTER_OFFSET_X` 派生常量、`should_toggle_click_through` 方法及测试
+
+**保留**（穿透基础设施 + 用户功能）：
+- Rust `set_orb_click_through` 命令：封装平台相关 `set_ignore_cursor_events` API，将来可能复用（如 macOS 原生穿透、快捷键切换穿透模式等），保留成本极低
+- Rust `ORB_CLICK_THROUGH` AtomicBool 缓存：避免冗余系统调用
+- `OrbConf.click_through` 设置项：用户功能开关，配置变更时通过 `useOrbConfSync` 生效
+- 展开/拖拽中的临时穿透切换：`click_through=true` 时，展开/拖拽需要事件→临时关闭穿透，收起/松手→恢复穿透
+
+### 2026-10-11 修复首次悬浮触发小球消失闪烁
+
+#### 问题
+
+Orb 球体首次鼠标悬浮时出现瞬间消失再恢复的闪烁，后续悬浮不再复现。
+
+#### 根因分析
+
+闪烁是多个初始化时序竞争叠加的结果：
+
+1. **Rive canvas 初始尺寸异常**：Rive 组件挂载后 canvas 像素尺寸为占位值（如 11×11），`useCanvasSizeWatchdog` 需要若干帧才能修正到正确尺寸（72×72 × DPR）。修正期间的布局跳变会打断正在进行的 CSS transition。
+
+2. **CSS 变量延迟就绪**：`useOrbConfSync` 在 `useEffect` 中异步调用 `invoke("get_orb_conf")`，CSS 自定义属性（`--orb-opacity`、`--orb-idle-opacity`、`--orb-scale`）在首帧不存在，`opacity`/`transform` 使用默认值。配置加载完成后变量写入 DOM，与 `orb-idle` → `orb-hover` 的类切换同帧生效，transition 无起始值可过渡，直接跳变。
+
+3. **breathe 动画与 transition 互斥**：`orb-idle` 状态下 `orb-breathe` 动画持续运行（`transform: scale()`），首次 hover 切换到 `orb-hover` 时动画移除 + `transform: scale(1.08)` transition 启动，两者在同一帧切换，浏览器可能以动画中间值作为 transition 起始值，产生视觉跳变。
+
+4. **`orb-hover-hide` 类竞态**（`hide_on_pointer_hover` 启用时）：`orb-hover-hide` 类在鼠标已 hover 的状态下才被添加到 `<html>`，`:hover` 伪类与 `orb-hover-hide` 同时满足，`opacity: 0 !important` 立即生效但 `transition` 同帧设置，无过渡动画。
+
+**核心矛盾**：首次 hover 时，CSS transition 的起始状态（canvas 尺寸、CSS 变量、动画中间值）尚未稳定，transition 基于错误的起始值运行，产生闪烁。后续不再闪烁是因为一切已稳定。
+
+#### 修复方案
+
+在 `OrbBall` 挂载后引入短暂的"稳定期"（`orb-settling` 类），禁止 transition 和 animation，等待 2 帧后再启用，确保首次 hover 时一切就绪。
+
+**OrbBall.tsx**：
+- 新增 `settled` state，挂载后 2 帧（`requestAnimationFrame` × 2）设为 `true`
+- 未稳定时 hitbox 添加 `orb-settling` 类，稳定后移除
+- `handlePointerEnter` 在 `settled` 为 `false` 时忽略 hover 事件
+
+**global.css**：
+- 新增规则 `div[data-orb-window] .orb-hitbox.orb-settling { transition: none !important; animation: none !important; }`
+- 稳定期内同时禁止 transition 和 animation（含 `orb-breathe`），消除所有时序竞争
+
+#### 时序对比
+
+| 阶段 | `orb-settling` | transition | animation | hover 响应 |
+|------|:-:|:-:|:-:|:-:|
+| 挂载 → 2帧 | ✅ 有 | ❌ 禁止 | ❌ 禁止 | ❌ 忽略 |
+| 2帧后 | ❌ 移除 | ✅ 启用 | ✅ 启用 | ✅ 正常 |
+
+稳定期约 32ms（2帧@60fps），用户无感知，但足以让 canvas watchdog 完成首次修正和 CSS 变量生效。
+
+**涉及文件**：`src/orb/OrbBall.tsx`（`settled` state + `orb-settling` 类 + hover 守卫）、`src/assets/styles/global.css`（`.orb-settling` 规则）

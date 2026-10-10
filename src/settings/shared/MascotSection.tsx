@@ -19,8 +19,8 @@ import {
 } from "@/mascot";
 import { dispatchConfPatch } from "../core/settingsDispatcher";
 import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
-import { SettingsGroup } from "../shared/SettingsGroup";
-import { defineSetting } from "../core/settingRegistry";
+import { SettingsGroup } from "./SettingsGroup";
+import { defineSetting } from "../core/fieldRegistry";
 
 const { Text } = Typography;
 

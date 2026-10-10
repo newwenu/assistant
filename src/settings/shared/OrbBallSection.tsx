@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import { Form } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { SettingsGroup } from "../shared/SettingsGroup";
-import { ORB_BALL_SETTINGS } from "../core/definitions";
+import { SettingsGroup } from "./SettingsGroup";
+import { ORB_BALL_SETTINGS } from "../core/fieldDefinitions";
 import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
 
 export const OrbBallSection: React.FC = () => {
