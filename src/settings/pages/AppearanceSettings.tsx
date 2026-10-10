@@ -4,9 +4,9 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { MascotSection } from "./MascotSection";
 import { OrbBallSection } from "./OrbBallSection";
 import { OrbPanelSection } from "./OrbPanelSection";
-import { SettingsSection } from "./SettingsSection";
-import { SettingsPageShell } from "./SettingsPageShell";
-import { dispatchConfPatch, dispatchThemeChanged } from "./settingsDispatcher";
+import { SettingsSection } from "../shared/SettingsSection";
+import { SettingsPageShell } from "../shared/SettingsPageShell";
+import { dispatchConfPatch, dispatchThemeChanged } from "../core/settingsDispatcher";
 
 export const AppearanceSettings: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);
@@ -26,8 +26,6 @@ export const AppearanceSettings: React.FC = () => {
     await dispatchThemeChanged(theme as "system" | "light" | "dark");
     messageApi.success("主题已切换");
   };
-
-  const handleSaved = () => messageApi.success("已保存");
 
   return (
     <>
@@ -62,11 +60,11 @@ export const AppearanceSettings: React.FC = () => {
           title="悬浮球"
           description="桌面上的圆形助手图标，点击展开悬浮窗"
         >
-          <OrbBallSection onSaved={handleSaved} />
+          <OrbBallSection />
         </SettingsSection>
 
         <SettingsSection title="悬浮窗">
-          <OrbPanelSection onSaved={handleSaved} />
+          <OrbPanelSection />
         </SettingsSection>
       </SettingsPageShell>
     </>

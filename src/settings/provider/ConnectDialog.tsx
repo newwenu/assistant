@@ -9,7 +9,7 @@ import {
   API_FORMAT_MAP,
   getApiFormatByType,
   PRESET_MAP,
-} from "../stores/providerStore";
+} from "@/stores/providerStore";
 import { FormatTag } from "./ProviderSwatch";
 
 interface ConnectDialogProps {

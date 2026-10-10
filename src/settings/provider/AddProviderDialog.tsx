@@ -6,7 +6,7 @@ import {
   PROVIDER_PRESETS,
   type ApiFormat,
   type ProviderPreset,
-} from "../stores/providerStore";
+} from "@/stores/providerStore";
 
 interface AddProviderDialogProps {
   open: boolean;

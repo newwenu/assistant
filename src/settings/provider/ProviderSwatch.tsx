@@ -3,7 +3,7 @@ import {
   getApiFormatByType,
   API_FORMAT_MAP,
   type ApiFormat,
-} from "../stores/providerStore";
+} from "@/stores/providerStore";
 
 interface FormatTagProps {
   type: string;

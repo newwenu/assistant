@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Tooltip } from "antd";
 import { PushpinOutlined, PushpinFilled } from "@ant-design/icons";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { dispatchConfPatch } from "@/settings/settingsDispatcher";
+import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
 
 export const PinToggle: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);

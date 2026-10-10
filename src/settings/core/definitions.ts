@@ -16,6 +16,7 @@ export const APP_SETTINGS = [
     default: false,
     label: "开机自启",
     sideEffect: "autostart",
+    saveMessage: "开机自启已更新",
   }),
   defineSetting({
     key: "close_to_tray",
@@ -32,6 +33,7 @@ export const APP_SETTINGS = [
     default: false,
     label: "置顶主窗口",
     sideEffect: "always_on_top",
+    saveMessage: "置顶状态已更新",
   }),
 ];
 
@@ -74,6 +76,7 @@ export const ORB_BALL_SETTINGS = [
     label: "鼠标穿透",
     extra: "开启后鼠标可穿透悬浮球点击下方内容",
     sideEffect: "orb_click_through",
+    saveMessage: false,
   }),
   defineSetting({
     key: "hide_on_pointer_hover",

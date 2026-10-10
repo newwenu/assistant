@@ -5,12 +5,12 @@ import {
   SettingAction,
   SettingEvent,
   type SettingEventPayload,
-} from "../types/events";
-import { WINDOW_MAIN, WINDOW_ORB } from "../config/constants";
-import { useProviderStore } from "../stores/providerStore";
-import { useThemeStore } from "../stores/themeStore";
-import { useSettingsStore } from "../stores/settingsStore";
-import type { MascotConf } from "../stores/settingsStore";
+} from "@/types/events";
+import { WINDOW_MAIN, WINDOW_ORB } from "@/config/constants";
+import { useProviderStore } from "@/stores/providerStore";
+import { useThemeStore } from "@/stores/themeStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import type { MascotConf } from "@/stores/settingsStore";
 
 export function buildRendererConfig(conf: MascotConf): Record<string, unknown> {
   return {

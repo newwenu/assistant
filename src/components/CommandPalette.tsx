@@ -22,7 +22,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import {
   dispatchConfPatch,
   dispatchThemeChanged,
-} from "@/settings/settingsDispatcher";
+} from "@/settings/core/settingsDispatcher";
 import styles from "./CommandPalette.module.css";
 
 interface PaletteOption {

@@ -1,6 +1,6 @@
 import { Switch, Input, InputNumber, Slider, Select, ColorPicker } from "antd";
-import type { SettingFieldProps } from "./settingRegistry";
-import { getSettingTypeRenderer } from "./settingRegistry";
+import type { SettingFieldProps } from "../core/settingRegistry";
+import { getSettingTypeRenderer } from "../core/settingRegistry";
 
 function BooleanField({ value, onChange }: SettingFieldProps) {
   return <Switch checked={!!value} onChange={(checked) => onChange(checked)} />;
@@ -16,7 +16,12 @@ function NumberField({ value, onChange }: SettingFieldProps) {
   return <InputNumber value={value as number} onChange={(v) => onChange(v)} />;
 }
 
-function SliderField({ def, value, onChange }: SettingFieldProps) {
+function SliderField({
+  def,
+  value,
+  onChange,
+  onChangeComplete,
+}: SettingFieldProps) {
   return (
     <Slider
       min={def.min}
@@ -25,6 +30,9 @@ function SliderField({ def, value, onChange }: SettingFieldProps) {
       marks={def.marks}
       value={value as number}
       onChange={(v) => onChange(v)}
+      onChangeComplete={
+        onChangeComplete ? (v) => onChangeComplete(v) : undefined
+      }
     />
   );
 }
@@ -66,21 +74,45 @@ const BUILTIN_RENDERERS: Record<string, React.FC<SettingFieldProps>> = {
   color: ColorField,
 };
 
-export function SettingField({ def, value, onChange }: SettingFieldProps) {
+export function SettingField({
+  def,
+  value,
+  onChange,
+  onChangeComplete,
+}: SettingFieldProps) {
   if (def.customRender) {
-    return <def.customRender value={value} onChange={onChange} def={def} />;
+    return (
+      <def.customRender
+        value={value}
+        onChange={onChange}
+        onChangeComplete={onChangeComplete}
+        def={def}
+      />
+    );
   }
 
   const customRenderer = getSettingTypeRenderer(def.type);
   if (customRenderer) {
     return (
-      <customRenderer.component def={def} value={value} onChange={onChange} />
+      <customRenderer.component
+        def={def}
+        value={value}
+        onChange={onChange}
+        onChangeComplete={onChangeComplete}
+      />
     );
   }
 
   const BuiltinComponent = BUILTIN_RENDERERS[def.type];
   if (BuiltinComponent) {
-    return <BuiltinComponent def={def} value={value} onChange={onChange} />;
+    return (
+      <BuiltinComponent
+        def={def}
+        value={value}
+        onChange={onChange}
+        onChangeComplete={onChangeComplete}
+      />
+    );
   }
 
   return (

@@ -31,8 +31,8 @@ import {
   DEFAULT_SETTINGS_PAGE_ID,
   getSettingsPageManifest,
   isSettingsPageId,
-} from "@/settings/settingsRegistry";
-import type { SettingsPageId } from "@/settings/settingsTypes";
+} from "@/settings/core/settingsRegistry";
+import type { SettingsPageId } from "@/settings/core/settingsTypes";
 import { HistoryManager } from "@/chat/HistoryManager";
 import { ToolBox } from "@/tools/ToolBox";
 import { ToolPage } from "@/tools/ToolPage";

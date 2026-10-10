@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Input, Button, Typography, Space, Tag, message } from "antd";
 import { SearchOutlined, UndoOutlined } from "@ant-design/icons";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { ShortcutRecorder } from "./ShortcutRecorder";
-import { SettingsSection } from "./SettingsSection";
-import { SettingsPageShell } from "./SettingsPageShell";
+import { ShortcutRecorder } from "../shared/ShortcutRecorder";
+import { SettingsSection } from "../shared/SettingsSection";
+import { SettingsPageShell } from "../shared/SettingsPageShell";
 import {
   SHORTCUT_DEFINITIONS,
   SHORTCUT_GROUPS,
@@ -12,7 +12,7 @@ import {
   formatBinding,
   detectConflicts,
   type ConflictInfo,
-} from "./shortcutTypes";
+} from "../core/shortcutTypes";
 
 export const ShortcutSettings: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);

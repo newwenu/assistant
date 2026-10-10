@@ -13,7 +13,7 @@ import {
   type ApiFormat,
   API_FORMATS,
   getApiFormatByType,
-} from "../stores/providerStore";
+} from "@/stores/providerStore";
 import { FormatTag } from "./ProviderSwatch";
 import { AddProviderDialog } from "./AddProviderDialog";
 import { ConnectDialog } from "./ConnectDialog";
@@ -29,9 +29,11 @@ export const ProviderManager: React.FC = () => {
   const [editProvider, setEditProvider] = useState<Provider | null>(null);
   const [connectOpen, setConnectOpen] = useState(false);
 
+  const loadProviders = useProviderStore((s) => s.loadProviders);
+
   useEffect(() => {
-    providerStore.loadProviders();
-  }, []);
+    loadProviders();
+  }, [loadProviders]);
 
   const handleAdd = () => {
     setAddDialogOpen(true);

@@ -91,13 +91,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!appConf) return;
     const newKeybindings = { ...appConf.keybindings, [id]: binding };
     const { dispatchConfPatch } =
-      await import("../settings/settingsDispatcher");
+      await import("../settings/core/settingsDispatcher");
     await dispatchConfPatch("app", { keybindings: newKeybindings });
   },
 
   resetKeybindings: async () => {
     const { dispatchConfPatch } =
-      await import("../settings/settingsDispatcher");
+      await import("../settings/core/settingsDispatcher");
     await dispatchConfPatch("app", { keybindings: { ...DEFAULT_KEYBINDINGS } });
   },
 }));

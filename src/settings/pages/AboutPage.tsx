@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Descriptions, Button, Typography } from "antd";
 import { invoke } from "@tauri-apps/api/core";
-import { SettingsSection } from "./SettingsSection";
-import { SettingsPageShell } from "./SettingsPageShell";
+import { SettingsSection } from "../shared/SettingsSection";
+import { SettingsPageShell } from "../shared/SettingsPageShell";
 
 export const AboutPage: React.FC = () => {
   const [version, setVersion] = useState("");

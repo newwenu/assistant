@@ -6,6 +6,8 @@ import {
   Space,
   Typography,
   Switch,
+  Input,
+  Form,
   message,
 } from "antd";
 import type { AggregationColor } from "antd/es/color-picker/color";
@@ -15,9 +17,25 @@ import {
   asRendererId,
   BUILTIN_RENDERER_IDS,
 } from "@/mascot";
-import { dispatchConfPatch } from "./settingsDispatcher";
+import { dispatchConfPatch } from "../core/settingsDispatcher";
+import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
+import { SettingsGroup } from "../shared/SettingsGroup";
+import { defineSetting } from "../core/settingRegistry";
 
 const { Text } = Typography;
+
+const GIF_SETTINGS = [
+  defineSetting({
+    key: "gif_border_radius",
+    group: "mascot",
+    type: "slider",
+    default: 50,
+    label: "圆角",
+    min: 0,
+    max: 50,
+    extra: "0 = 方形，50 = 圆形",
+  }),
+];
 
 function toHex(
   color: AggregationColor | string | null | undefined,
@@ -62,18 +80,29 @@ export const MascotSection: React.FC = () => {
   );
   const [dirty, setDirty] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [gifSrcInput, setGifSrcInput] = useState<string>(
+    mascotConf?.gif_src ?? "",
+  );
   const [messageApi, contextHolder] = message.useMessage();
+
+  const { onPatch: mascotPatch, onPatchComplete: mascotPatchComplete } =
+    useConfPatchHandlers("mascot");
 
   useEffect(() => {
     if (!mascotConf) return;
     setPrimaryColor(mascotConf.primary_color ?? null);
     setSecondaryColor(mascotConf.secondary_color ?? null);
+    setGifSrcInput(mascotConf.gif_src ?? "");
     setDirty(false);
   }, [mascotConf]);
 
-  const handleRendererChange = useCallback(async (value: string) => {
-    await dispatchConfPatch("mascot", { renderer: value });
-  }, []);
+  const handleRendererChange = useCallback(
+    async (value: string) => {
+      await mascotPatch({ renderer: value });
+      messageApi.success("渲染方式已切换");
+    },
+    [mascotPatch, messageApi],
+  );
 
   const handlePrimaryChange = useCallback(
     (_: AggregationColor) => {
@@ -125,13 +154,26 @@ export const MascotSection: React.FC = () => {
     );
   }, [mascotConf]);
 
-  const handleIdlePoseRotationChange = useCallback(async (checked: boolean) => {
-    await dispatchConfPatch("mascot", { rive_idle_pose_rotation: checked });
-  }, []);
+  const handleSwitchPatch = useCallback(
+    (key: string, checked: boolean) => {
+      mascotPatch({ [key]: checked });
+      messageApi.success("已保存");
+    },
+    [mascotPatch, messageApi],
+  );
 
-  const handleSvgAnimatedChange = useCallback(async (checked: boolean) => {
-    await dispatchConfPatch("mascot", { svg_animated: checked });
-  }, []);
+  const handleGifSrcSubmit = useCallback(async () => {
+    const trimmed = gifSrcInput.trim();
+    const next = trimmed.length === 0 ? null : trimmed;
+    if (next === mascotConf?.gif_src) return;
+    try {
+      await dispatchConfPatch("mascot", { gif_src: next });
+      messageApi.success("GIF 来源已更新");
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      messageApi.error(`更新失败: ${errMsg}`);
+    }
+  }, [gifSrcInput, mascotConf, messageApi]);
 
   return (
     <>
@@ -231,7 +273,7 @@ export const MascotSection: React.FC = () => {
             </Text>
             <Switch
               checked={mascotConf?.rive_idle_pose_rotation ?? false}
-              onChange={handleIdlePoseRotationChange}
+              onChange={(c) => handleSwitchPatch("rive_idle_pose_rotation", c)}
             />
           </div>
         )}
@@ -246,9 +288,43 @@ export const MascotSection: React.FC = () => {
             </Text>
             <Switch
               checked={mascotConf?.svg_animated ?? true}
-              onChange={handleSvgAnimatedChange}
+              onChange={(c) => handleSwitchPatch("svg_animated", c)}
             />
           </div>
+        )}
+
+        {currentRendererId === BUILTIN_RENDERER_IDS.gif && (
+          <>
+            <Form layout="vertical">
+              <SettingsGroup
+                group="mascot"
+                definitions={GIF_SETTINGS}
+                onPatch={mascotPatch}
+                onPatchComplete={mascotPatchComplete}
+              />
+            </Form>
+            <div>
+              <Text
+                type="secondary"
+                style={{ display: "block", marginBottom: 4 }}
+              >
+                GIF 来源
+              </Text>
+              <Input
+                placeholder="/mascot.gif"
+                value={gifSrcInput}
+                onChange={(e) => setGifSrcInput(e.target.value)}
+                onBlur={handleGifSrcSubmit}
+                onPressEnter={handleGifSrcSubmit}
+              />
+              <Text
+                type="secondary"
+                style={{ fontSize: 12, display: "block", marginTop: 4 }}
+              >
+                支持 URL、本地路径或 data URI，留空使用默认
+              </Text>
+            </div>
+          </>
         )}
       </div>
     </>

@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   dispatchProviderSaved,
   dispatchProviderDeleted,
-} from "../settings/settingsDispatcher";
+} from "../settings/core/settingsDispatcher";
 
 export interface ModelConfig {
   id: string;

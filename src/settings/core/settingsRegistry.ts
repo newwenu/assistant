@@ -20,7 +20,7 @@ const general = definePage({
   label: "通用设置",
   keywords: ["language", "launch", "tray", "top", "startup"],
   component: React.lazy(() =>
-    import("./GeneralSettings").then((m) => ({ default: m.GeneralSettings })),
+    import("../pages/GeneralSettings").then((m) => ({ default: m.GeneralSettings })),
   ),
 });
 
@@ -30,7 +30,7 @@ const appearance = definePage({
   label: "外观设置",
   keywords: ["theme", "dark", "light", "orb", "ball", "panel"],
   component: React.lazy(() =>
-    import("./AppearanceSettings").then((m) => ({
+    import("../pages/AppearanceSettings").then((m) => ({
       default: m.AppearanceSettings,
     })),
   ),
@@ -42,7 +42,7 @@ const shortcuts = definePage({
   label: "快捷键",
   keywords: ["keyboard", "shortcut", "keybinding", "hotkey"],
   component: React.lazy(() =>
-    import("./ShortcutSettings").then((m) => ({ default: m.ShortcutSettings })),
+    import("../pages/ShortcutSettings").then((m) => ({ default: m.ShortcutSettings })),
   ),
 });
 
@@ -52,7 +52,7 @@ const providers = definePage({
   label: "Provider 管理",
   keywords: ["provider", "api", "model", "openai", "preset"],
   component: React.lazy(() =>
-    import("./ProviderManager").then((m) => ({ default: m.ProviderManager })),
+    import("../provider/ProviderManager").then((m) => ({ default: m.ProviderManager })),
   ),
 });
 
@@ -62,7 +62,7 @@ const agents = definePage({
   label: "Agent 模式",
   keywords: ["agent", "mode", "kind", "quick", "deep"],
   component: React.lazy(() =>
-    import("./AgentModeManager").then((m) => ({ default: m.AgentModeManager })),
+    import("../pages/AgentModeManager").then((m) => ({ default: m.AgentModeManager })),
   ),
 });
 
@@ -72,7 +72,7 @@ const about = definePage({
   label: "关于",
   keywords: ["version", "rustc", "build", "about"],
   component: React.lazy(() =>
-    import("./AboutPage").then((m) => ({ default: m.AboutPage })),
+    import("../pages/AboutPage").then((m) => ({ default: m.AboutPage })),
   ),
 });
 

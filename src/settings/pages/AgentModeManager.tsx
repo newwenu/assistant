@@ -20,7 +20,7 @@ import {
   DeleteOutlined,
   UndoOutlined,
 } from "@ant-design/icons";
-import { useAgentModeStore, type AgentMode } from "../stores/agentModeStore";
+import { useAgentModeStore, type AgentMode } from "@/stores/agentModeStore";
 
 const KIND_OPTIONS = [
   { value: "default", label: "默认" },
@@ -80,9 +80,11 @@ export const AgentModeManager: React.FC = () => {
   const [form] = Form.useForm<ModeFormData>();
   const [searchQuery, setSearchQuery] = useState("");
 
+  const loadModes = useAgentModeStore((s) => s.loadModes);
+
   useEffect(() => {
-    store.loadModes();
-  }, [store.loadModes]);
+    loadModes();
+  }, [loadModes]);
 
   const builtinModes = store.modes.filter((m) => m.is_builtin);
   const customModes = store.modes.filter((m) => !m.is_builtin);
@@ -345,7 +347,11 @@ export const AgentModeManager: React.FC = () => {
               style={{ width: "100%" }}
             />
           </Form.Item>
-          <Form.Item name="reasoning_enabled" label="Reasoning" valuePropName="checked">
+          <Form.Item
+            name="reasoning_enabled"
+            label="Reasoning"
+            valuePropName="checked"
+          >
             <Switch
               checkedChildren="开"
               unCheckedChildren="关"
@@ -361,7 +367,9 @@ export const AgentModeManager: React.FC = () => {
             name="reasoning_effort"
             label="Reasoning Effort"
             style={{
-              display: form.getFieldValue("reasoning_enabled") ? undefined : "none",
+              display: form.getFieldValue("reasoning_enabled")
+                ? undefined
+                : "none",
             }}
           >
             <Select

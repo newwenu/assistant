@@ -32,12 +32,14 @@ export interface SettingDefinition {
   marks?: Record<number, string>;
   extra?: string;
   valuePropName?: string;
+  saveMessage?: string | false;
   customRender?: FC<SettingFieldCustomProps>;
 }
 
 export interface SettingFieldCustomProps {
   value?: unknown;
   onChange?: (value: unknown) => void;
+  onChangeComplete?: (value: unknown) => void;
   def: SettingDefinition;
 }
 
@@ -45,6 +47,7 @@ export interface SettingFieldProps {
   def: SettingDefinition;
   value: unknown;
   onChange: (value: unknown) => void;
+  onChangeComplete?: (value: unknown) => void;
 }
 
 export interface SettingTypeRenderer {

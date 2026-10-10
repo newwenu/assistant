@@ -10,7 +10,7 @@ import {
   hexToArgb,
   useMascotStore,
 } from "../../mascot";
-import { buildRendererConfig } from "../../settings/settingsDispatcher";
+import { buildRendererConfig } from "../../settings/core/settingsDispatcher";
 import { useSettingsStore } from "../../stores/settingsStore";
 
 interface MessageInputProps {

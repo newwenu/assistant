@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { dispatchThemeChanged } from "../settings/settingsDispatcher";
+import { dispatchThemeChanged } from "../settings/core/settingsDispatcher";
 
 type ThemeMode = "system" | "light" | "dark";
 
