@@ -307,11 +307,12 @@ assistant-providers/src/
 | 函数 | 行为 |
 |------|------|
 | `should_append_tool_stream(url, model)` | 智谱/DashScope 在 tool_calls 后需追加空 tool_call chunk，否则流异常终止；DashScope 仅 GLM-4+/GLM-5+ 需要 |
-| `apply_reasoning_toggle(body, enabled, url)` | DeepSeek: `thinking: {type: "enabled"/"disabled"}`；DashScope/SiliconFlow: `enable_thinking: true/false` |
+| `apply_reasoning_toggle(body, enabled, url)` | DeepSeek: `thinking: {type: "enabled"/"disabled"}`；ZhipuAI: `thinking: {type: "enabled"/"disabled"}`；DashScope/SiliconFlow: `enable_thinking: true/false`；其他 URL 返回 false 由调用方 fallback 注入 `thinking` |
 | `is_deepseek_reasoning_effort_model(model)` | DeepSeek V4 Flash/Pro 支持 reasoning_effort 参数 |
 | `normalize_deepseek_reasoning_effort(effort)` | 将 low/medium/high/max/xhigh 映射到 DeepSeek 实际支持的值 |
 | `is_glm_reasoning_effort_model(model)` | GLM-5.2+ 支持 reasoning_effort 参数 |
 | `normalize_glm_reasoning_effort(effort)` | GLM reasoning effort 归一化 |
+| `normalize_generic_reasoning_effort(effort)` | 通用 reasoning effort 归一化（low/medium/high），用于 OpenAI/Anthropic/Gemini 等标准 API |
 | `wants_bearer_auth(url)` | 某些 Anthropic 兼容端点（Nous Portal、Xiaomi MiMo、Moonshot）使用 Bearer 认证而非 x-api-key |
 | `is_minimax_final_chunk(json)` | MiniMax 终帧用 `chat.completion`（非 `chat.completion.chunk`），choice 用 `message` 而非 `delta` |
 | `extract_sse_api_error(json)` | 检测 SSE 流内错误，识别 `context_length_exceeded` 等错误码 |
@@ -323,6 +324,85 @@ assistant-providers/src/
 - 非标准 chunk 用 `is_minimax_final_chunk` 宽松兼容
 - tool_call 流结束时按 `should_append_tool_stream` 决定是否追加空 chunk
 - reasoning 开关通过 `apply_reasoning_toggle` 注入请求体
+
+---
+
+### Phase 3.5: Reasoning Effort 端到端打通
+
+**目标**：让 `reasoning_enabled` / `reasoning_effort` 从前端 UI 传递到后端 quirks，实现推理强度的用户可配置化。
+
+**参考**：OpenBitFun `ReasoningPreset` + `ReasoningPresetAction` + `compile_chat_reasoning_action`
+
+#### 4.3.5.1 数据流全链路
+
+```
+前端 UI (AgentMode 表单)
+  ↓ reasoning_enabled: bool, reasoning_effort: "low"|"medium"|"high"
+前端 Store (agentModeStore)
+  ↓ invoke("save_agent_mode", { ... })
+Rust cmd (cmd/agent_mode.rs)
+  ↓ AgentModeRow 写入 SQLite
+Rust cmd (cmd/chat.rs)
+  ↓ 从 mode 读取 reasoning_enabled / reasoning_effort → ChatOptions
+assistant-providers (openai/chat.rs)
+  ↓ ChatOptions.reasoning_enabled → apply_reasoning_toggle
+  ↓ ChatOptions.reasoning_effort → normalize_*_reasoning_effort → request body
+Provider API (DeepSeek / GLM / 通用)
+```
+
+#### 4.3.5.2 存储层扩展
+
+`AgentModeRow` 新增字段：
+
+| 字段 | SQLite 类型 | Rust 类型 | 说明 |
+|------|------------|----------|------|
+| `reasoning_enabled` | `INTEGER` (nullable) | `Option<bool>` | `None` = 跟随模型默认；`Some(true)` = 强制开启；`Some(false)` = 强制关闭 |
+| `reasoning_effort` | `TEXT` (nullable) | `Option<String>` | `None` = 不设置；`Some("low"/"medium"/"high")` = 推理强度 |
+
+SQLite 迁移：`ALTER TABLE agent_modes ADD COLUMN reasoning_enabled INTEGER; ALTER TABLE agent_modes ADD COLUMN reasoning_effort TEXT;`
+
+内置模式默认值：
+
+| mode | reasoning_enabled | reasoning_effort |
+|------|-------------------|-----------------|
+| builtin-default | `None` | `None` |
+| builtin-quick | `None` | `None` |
+| builtin-deep | `Some(true)` | `Some("high")` |
+| builtin-translate | `None` | `None` |
+
+#### 4.3.5.3 Effort 归一化
+
+与参考项目 OpenBitFun 一致，effort 值按 provider 分三路归一化：
+
+| 路径 | 函数 | 输入 → 输出 |
+|------|------|------------|
+| DeepSeek V4 | `normalize_deepseek_reasoning_effort(model, effort)` | low(flash only)→low, medium/low→high, high→high, max→max, xhigh→max |
+| GLM-5.2 | `normalize_glm_reasoning_effort(effort)` | low/medium/high→high, max/xhigh→max |
+| 通用 (OpenAI/Anthropic/Gemini) | `normalize_generic_reasoning_effort(effort)` | low→low, medium→medium, high→high |
+
+前端 UI 选项仅暴露通用三档 `low / medium / high`，DeepSeek/GLM 的 `max` 由各自 normalize 函数内部映射。
+
+#### 4.3.5.4 前端接口扩展
+
+`AgentMode` interface 新增：
+
+```typescript
+reasoning_enabled: boolean | null;  // null = 跟随默认
+reasoning_effort: string | null;    // null = 不设置, "low"|"medium"|"high"
+```
+
+UI 控件：
+- **Reasoning 开关**：`Switch`，`checkedChildren="开"` / `unCheckedChildren="关"`，关闭时自动清空 `reasoning_effort`
+- **Reasoning Effort 下拉**：`Select`，选项 `[{low, medium, high}]`，仅当 `reasoning_enabled === true` 时显示
+
+#### 4.3.5.5 与参考项目的差异
+
+| 方面 | 当前项目 | OpenBitFun | 原因 |
+|------|---------|-----------|------|
+| 数据模型 | `AgentModeRow` 直接存两个字段 | `ReasoningConfig` + `ReasoningPreset[]` + `ReasoningPresetAction[]` | AgentMode 已有 kind 分类，effort 直接绑定 mode |
+| 前端 UI | 表单内嵌 Switch + Select | 独立 ReasoningConfigPanel + ReasoningPresetEditor | 设置页更简洁 |
+| effort 值域 | `low/medium/high` 三档 | 同 + `max/xhigh` (DeepSeek/GLM) | normalize 内部映射，前端无需暴露 |
+| 作用范围 | per-AgentMode | per-model-config | model 由 conversation 绑定，mode 控制推理行为更自然 |
 
 ---
 
@@ -382,7 +462,7 @@ assistant-providers/src/
 位于 `anthropic/request.rs`，`apply_headers()` 根据URL选择认证方式：
 
 - **标准 Anthropic**（api.anthropic.com）：`x-api-key` + `anthropic-version`
-- **Bearer 认证端点**（bigmodel.cn / api.z.ai / api.kimi.com / Nous Portal / Xiaomi MiMo）：`Authorization: Bearer` + `anthropic-version`
+- **Bearer 认证端点**（bigmodel.cn / api.z.ai / api.kimi.com/coding / api.moonshot.{cn,ai}/anthropic / inference-api.nousresearch.com / api.xiaomimimo.com/anthropic）：`Authorization: Bearer` + `anthropic-version`
 - 通过 `quirks::wants_bearer_auth(url)` 统一判断
 
 ---
@@ -463,17 +543,23 @@ assistant-providers/src/
 
 ---
 
-### Phase 7（候选）: OpenAI Responses API + Gemini Code Assist
+### Phase 7: OpenAI Responses API + Gemini Code Assist ✅
 
-**说明**：以下为后续扩展候选，不在当前实施范围内，但架构已预留扩展点。
+#### OpenAI Responses API ✅
 
-#### OpenAI Responses API
+- [x] `openai/responses_types.rs` — ResponsesStreamEvent / ResponsesUsage / replay capture 类型定义 + 解析函数 + 8 个单元测试
+- [x] `openai/responses_stream.rs` — SSE 流处理（事件分发 + InProgressToolCall 跟踪 + arguments 尾部补齐 + replay capture + response.failed/incomplete 处理）
+- [x] `ProviderKind::OpenAIResponses` 枚举变体 + `provider_kind_from_str` 映射
+- [x] `UnifiedToolCall.arguments_is_snapshot: bool` 字段（G5 差距关闭）
+- [x] `UnifiedResponse.model_response_replay: Option<ModelResponseReplayCapture>` 字段（G6 差距关闭）
+- [x] `ReasoningContentKind::Summary` 变体（reasoning_summary_text.delta 支持）
+- [x] `ModelResponseReplayCapture` / `ModelResponseReplayItem` / `ReasoningSummaryPart` 类型
 
-OpenBitFun 已实现 `openai/responses.rs` + `stream/stream_handler/responses.rs`。这是 OpenAI 新推出的 Responses API（非 Chat Completions），事件模型不同（`response.created` / `response.output_item.added` 等）。
+#### Gemini Code Assist ✅
 
-#### Gemini Code Assist
-
-OpenBitFun 已实现 `gemini/code_assist.rs`。这是 Gemini 的代码辅助 API（不同于 streamGenerateContent），用于代码补全/生成场景。
+- [x] `gemini/code_assist.rs` — Code Assist 流处理（v1internal:streamGenerateContent 端点 + thinkingConfig + 默认模型列表）
+- [x] `ProviderKind::GeminiCodeAssist` 枚举变体 + `provider_kind_from_str` 映射
+- [x] Code Assist 专用 base URL（`https://cloudcode-pa.googleapis.com`）
 
 ---
 
@@ -489,11 +575,14 @@ Phase 2: StreamTimeoutController + StreamStats + eventsource_stream
     ▼
 Phase 3: quirks 模块（Provider 特异行为）
     │
+    ▼
+Phase 3.5: Reasoning Effort 端到端打通
+    │
     ├──────────────────────┐
     ▼                      ▼
 Phase 4: Anthropic    Phase 5: Gemini
     │                      │
-    └──────────┬───────────�8
+    └──────────┬───────────┘
                ▼
 Phase 6: Provider 工厂 + 配置扩展
 ```
@@ -508,15 +597,89 @@ Phase 6: Provider 工厂 + 配置扩展
 
 ## 6. 新增依赖
 
+### 6.1 上游开源 crate
+
+| crate | 版本 | 用途 | Phase | 优先级 | 说明 |
+|-------|------|------|-------|--------|------|
+| `eventsource-stream` | 0.2.3 | SSE 协议解析 | B3 | 🔴 P0 | 替换手动 buffer+find('\n')，4 个 Adapter 复用；OpenBitFun 已验证 |
+| `jsonrepair` | 待定 | 流式 tool_call arguments JSON 修复 | B2+ | 🟡 P1 | OpenBitFun fork 自 `jsonrepair-rs` 0.2.1，修复 LLM 输出的截断/不完整 JSON；Phase 2 先用简单拼接，后续引入 |
+
+### 6.2 从参考项目移植的模块（零外部依赖）
+
+| 模块 | 来源 | 行数 | Phase | 优先级 | 说明 |
+|------|------|------|-------|--------|------|
+| `HiddenTextStreamParser` | OpenBitFun `agent-stream/hidden_text.rs` | ~120 | B1 | 🟢 P2 | 通用标签状态机，支持多标签跨 chunk 解析；InlineThink 是其特化版本（仅 `<tool_call>` 标签） |
+| `StreamStats` | OpenBitFun `stream/stream_handler/stream_stats.rs` | ~70 | B1 | 🟢 P2 | 7 计数器 + HashMap 自定义 + wall clock + log_summary |
+| `StreamTimeoutController` | OpenBitFun `stream/stream_handler/timeout.rs` | ~70 | B1 | 🟢 P2 | TTFT + Idle 两阶段超时，从 chat.rs 内联逻辑抽取 |
+| `ToolCallAccumulator` | OpenBitFun `agent-stream/tool_call_accumulator.rs` | ~300 | B2 | 🔵 P3 | BTreeMap 按 index 排序，跨 chunk 拼装；需适配 UnifiedResponse 输入 + ChatDelta 输出 |
+| `quirks` | OpenBitFun `client/quirks.rs` | ~150 | C1-C2 | 🔵 P3 | URL 检测 + reasoning toggle + reasoning_effort normalize + Bearer auth 检测 |
+
+### 6.3 不建议引入的上游 SDK
+
+| crate | 原因 |
+|-------|------|
+| `anthropic-sdk` | 过重，我们只需 messages API + SSE，自行实现更轻量可控 |
+| `google-gemini-client` | 同上，Gemini REST API 简单直接 |
+| `async-openai` | 绑定 OpenAI 特定格式，不支持 Anthropic/Gemini 原生 |
+| `llm-client` | 抽象层过厚，与 UnifiedResponse 体系不兼容 |
+
+### 6.4 Cargo.toml 变更
+
 ```toml
 # assistant-providers/Cargo.toml
 [dependencies]
-eventsource-stream = "0.2"   # SSE 协议解析
+eventsource-stream = "0.2.3"  # SSE 协议解析（P0，Phase B3）
+# jsonrepair = "0.2"          # JSON 修复（P1，Phase B2+，暂缓引入）
 ```
 
 ---
 
-## 7. 风险与缓解
+## 7. Phase 1 实施差距（与参考项目 OpenBitFun 对比）
+
+> Phase 1（A1-A4）已完成，以下为与参考项目成熟实现的差距，需后续 Phase 增量补齐。
+
+### 7.1 into_unified_responses 差距
+
+| # | 差距 | 影响 | 补补 Phase | 参考 OpenBitFun 实现 |
+|---|------|------|-----------|---------------------|
+| G1 | MiniMax `chat.completion` 非流式帧兼容 | ✅ 已完成 (C1) | C1 | `is_valid_chat_completion_chunk_weak()` 宽松校验 |
+| G2 | `object` 字段校验 | ✅ 已完成 (C1) | C1 | 校验 `object` 字段过滤非标准事件 |
+| G3 | SSE 流内 error 提取 | ✅ 已完成 (C1) | C1 | `extract_sse_api_error()` 提取流内错误 |
+| G4 | `received_finish_reason` 兜底 | ✅ 已完成 (B3) | B3 | eventsource_stream 流结束检测 + finish_reason 兜底 |
+
+### 7.2 UnifiedResponse 类型差距
+
+| # | 缺失字段 | 用途 | 补补 Phase | 状态 |
+|---|---------|------|-----------|------|
+| G5 | `arguments_is_snapshot: bool` | OpenAI Responses API 的 tool_call arguments 是完整快照而非增量，影响 ToolCallAccumulator 拼装策略 | Phase 7 | ✅ 已完成 |
+| G6 | `model_response_replay: Option<ModelResponseReplayCapture>` | Anthropic/Gemini thinking signature 回传；✅ D2/D3 已实现 Anthropic thinking_signature 透传，Gemini 侧待 E2 | D2/E2 | ✅ 已完成（Responses API replay capture + Anthropic thinking_signature） |
+
+### 7.3 流处理基础设施差距
+
+| # | 差距 | 当前状态 | 补补 Phase |
+|---|------|---------|-----------|
+| G7 | StreamTimeoutController | ✅ 已完成 (B1) | B1 |
+| G8 | StreamStats | ✅ 已完成 (B1) | B1 |
+| G9 | InlineThink 状态机 | ✅ 已完成 (B1) | B1 |
+| G10 | ToolCallAccumulator | ✅ 已完成 (B2) | B2 |
+| G11 | eventsource_stream | ✅ 已完成 (B3) | B3 |
+
+### 7.4 quirks 差距
+
+| # | 差距 | 当前状态 | 补补 Phase |
+|---|------|---------|-----------|
+| G12 | URL 检测（DeepSeek/ZhipuAI/DashScope/SiliconFlow/MiniMax/GLM） | ✅ 已完成 (C1) | C1 |
+| G13 | reasoning toggle（OpenAI 兼容 provider 的 reasoning 开关注入） | ✅ 已完成 (C2+C'4) | C2 |
+| G14 | reasoning_effort normalize（DeepSeek/GLM 的 reasoning_effort 值归一化） | ✅ 已完成 (C2) | C2 |
+| G15 | Bearer auth 检测（Anthropic 兼容端点认证方式选择） | ✅ 已完成 (C1) | C1 |
+| G16 | generic reasoning_effort normalize（OpenAI/Anthropic/Gemini 通用 effort 归一化） | ✅ 已完成 (C'4) | C'4 |
+| G17 | reasoning effort 端到端（前端 UI → SQLite → ChatOptions → request body） | ✅ 已完成 (C'1-C'5) | C' |
+| G18 | ZhipuAI GLM reasoning toggle（智谱 GLM-5.2 的 thinking 开关） | ✅ 已完成 (C'4) | C'4 |
+| G19 | generic reasoning toggle fallback（非特异 URL 的 thinking 开关兜底） | ✅ 已完成 (C'4) | C'4 |
+
+---
+
+## 8. 风险与缓解
 
 | 风险 | 缓解措施 |
 |------|---------|
@@ -531,3 +694,26 @@ eventsource-stream = "0.2"   # SSE 协议解析
 | 流式 tool_call 片段拼装 | ToolCallAccumulator 按 index 增量合并 id/name/arguments |
 | DeepSeek inline thinking 混入 text | InlineThink 解析器用状态机分离 `<think>` 标签 |
 | API Key 日志泄露 | trace.rs 中脱敏处理，diagnostics.rs 控制敏感信息输出 |
+
+---
+
+## 8. Phase 7 验证清单
+
+### H1 编译验证 ✅
+
+- [x] `cargo check -p assistant-providers` 通过
+- [x] `cargo clippy -p assistant-providers` 无实质 warning
+- [x] `cargo test -p assistant-providers` — 171 个单元测试全部通过
+
+### H2 功能验证（运行时）
+
+| # | 验证项 | 状态 |
+|---|--------|------|
+| 1 | OpenAI Responses API 流式对话正常（文本 + reasoning + reasoning_summary + tool_call） | ⬜ |
+| 2 | Responses API `output_item.done` arguments 尾部补齐正确 | ⬜ |
+| 3 | Responses API `response.failed` / `response.incomplete` 事件正确处理 | ⬜ |
+| 4 | Responses API `model_response_replay` capture 正确构建（含 opaque reasoning） | ⬜ |
+| 5 | Gemini Code Assist 流式对话正常（文本 + thinking + function_call） | ⬜ |
+| 6 | `ProviderKind::OpenAIResponses` 工厂分发到 responses_stream | ⬜ |
+| 7 | `ProviderKind::GeminiCodeAssist` 工厂分发到 code_assist_stream | ⬜ |
+| 8 | ChatDelta 接口不变，前端无需修改 | ⬜ |

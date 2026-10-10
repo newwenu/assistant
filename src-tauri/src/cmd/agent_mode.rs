@@ -60,6 +60,14 @@ pub fn save_agent_mode(app: AppHandle, mode: serde_json::Value) -> Result<(), St
             .get("max_tokens")
             .and_then(|v| v.as_u64())
             .map(|v| v as u32),
+        reasoning_enabled: mode
+            .get("reasoning_enabled")
+            .and_then(|v| v.as_bool()),
+        reasoning_effort: mode
+            .get("reasoning_effort")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
         tools_json: mode
             .get("tools")
             .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string()))

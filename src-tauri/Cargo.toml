@@ -51,6 +51,8 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tokio-stream = "0.1"
 async-stream = "0.3"
 rand = "0.8"
+bytes = "1"
+urlencoding = "2"
 proptest = "1"
 crash-handler = "0.6"
 minidump-writer = "0.10"

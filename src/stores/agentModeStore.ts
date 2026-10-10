@@ -10,6 +10,8 @@ export interface AgentMode {
   model: string | null;
   temperature: number | null;
   max_tokens: number | null;
+  reasoning_enabled: boolean | null;
+  reasoning_effort: string | null;
   tools: string[];
   presentation_rank: number;
   is_builtin: boolean;
@@ -66,6 +68,8 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
       model: mode.model ?? null,
       temperature: mode.temperature ?? null,
       max_tokens: mode.max_tokens ?? null,
+      reasoning_enabled: mode.reasoning_enabled ?? null,
+      reasoning_effort: mode.reasoning_effort ?? null,
       tools: mode.tools || [],
       presentation_rank: mode.presentation_rank ?? 99,
       is_builtin: mode.is_builtin ?? false,

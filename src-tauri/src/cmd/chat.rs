@@ -73,6 +73,11 @@ pub fn send_chat_message(
         .map(|m| ChatMessage {
             role: base::message_role_from_str(&m.role),
             content: m.content.clone(),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            is_error: false,
+            thinking_signature: None,
         })
         .collect();
 
@@ -83,6 +88,11 @@ pub fn send_chat_message(
             ChatMessage {
                 role: base::message_role_from_str("system"),
                 content: system_prompt.to_string(),
+                tool_calls: None,
+                tool_call_id: None,
+                name: None,
+                is_error: false,
+                thinking_signature: None,
             },
         );
     }
@@ -107,12 +117,16 @@ pub fn send_chat_message(
 
     let temperature = mode.as_ref().and_then(|m| m.temperature).unwrap_or(0.7);
     let max_tokens = mode.as_ref().and_then(|m| m.max_tokens).unwrap_or(4096);
+    let reasoning_enabled = mode.as_ref().and_then(|m| m.reasoning_enabled);
+    let reasoning_effort = mode.as_ref().and_then(|m| m.reasoning_effort.clone());
 
     let options = ChatOptions {
         temperature,
         max_tokens,
         stream: true,
         context_window_tokens,
+        reasoning_enabled,
+        reasoning_effort,
     };
 
     let chat_tasks: tauri::State<'_, ChatTasks> = app.state::<ChatTasks>();

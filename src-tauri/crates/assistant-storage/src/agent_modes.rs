@@ -11,6 +11,8 @@ pub struct AgentModeRow {
     pub model: Option<String>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
+    pub reasoning_enabled: Option<bool>,
+    pub reasoning_effort: Option<String>,
     pub tools_json: String,
     pub presentation_rank: u32,
     pub is_builtin: bool,
@@ -25,7 +27,7 @@ pub struct TokenUsageSummary {
     pub percentage: f32,
 }
 
-const MODE_SELECT: &str = "id, name, description, kind, prompt, model, temperature, max_tokens, tools, presentation_rank, is_builtin, created_at, updated_at";
+const MODE_SELECT: &str = "id, name, description, kind, prompt, model, temperature, max_tokens, reasoning_enabled, reasoning_effort, tools, presentation_rank, is_builtin, created_at, updated_at";
 
 fn read_mode_row(row: &rusqlite::Row) -> rusqlite::Result<AgentModeRow> {
     Ok(AgentModeRow {
@@ -37,11 +39,13 @@ fn read_mode_row(row: &rusqlite::Row) -> rusqlite::Result<AgentModeRow> {
         model: row.get(5)?,
         temperature: row.get(6)?,
         max_tokens: row.get(7)?,
-        tools_json: row.get(8)?,
-        presentation_rank: row.get::<_, i64>(9)? as u32,
-        is_builtin: row.get::<_, i64>(10)? != 0,
-        created_at: row.get(11)?,
-        updated_at: row.get(12)?,
+        reasoning_enabled: row.get::<_, Option<i64>>(8)?.map(|v| v != 0),
+        reasoning_effort: row.get(9)?,
+        tools_json: row.get(10)?,
+        presentation_rank: row.get::<_, i64>(11)? as u32,
+        is_builtin: row.get::<_, i64>(12)? != 0,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
     })
 }
 
@@ -56,6 +60,8 @@ pub fn init_table(conn: &Connection) -> Result<(), String> {
             model TEXT,
             temperature REAL,
             max_tokens INTEGER,
+            reasoning_enabled INTEGER,
+            reasoning_effort TEXT,
             tools TEXT NOT NULL DEFAULT '[]',
             presentation_rank INTEGER NOT NULL DEFAULT 99,
             is_builtin INTEGER NOT NULL DEFAULT 0,
@@ -64,13 +70,31 @@ pub fn init_table(conn: &Connection) -> Result<(), String> {
         );",
     )
     .map_err(|e| e.to_string())?;
+
+    let has_reasoning_enabled: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('agent_modes') WHERE name = 'reasoning_enabled'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_reasoning_enabled {
+        conn.execute_batch(
+            "ALTER TABLE agent_modes ADD COLUMN reasoning_enabled INTEGER;
+             ALTER TABLE agent_modes ADD COLUMN reasoning_effort TEXT;",
+        )
+        .map_err(|e| e.to_string())?;
+        log::info!("Added reasoning_enabled and reasoning_effort columns to agent_modes table");
+    }
+
     Ok(())
 }
 
 pub fn insert_mode(conn: &Connection, row: &AgentModeRow) -> Result<(), String> {
     conn.execute(
         &format!(
-            "INSERT OR IGNORE INTO agent_modes ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+            "INSERT OR IGNORE INTO agent_modes ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
             MODE_SELECT
         ),
         params![
@@ -82,6 +106,8 @@ pub fn insert_mode(conn: &Connection, row: &AgentModeRow) -> Result<(), String> 
             row.model,
             row.temperature,
             row.max_tokens,
+            row.reasoning_enabled.map(|b| b as i64),
+            row.reasoning_effort,
             row.tools_json,
             row.presentation_rank as i64,
             row.is_builtin as i64,
@@ -119,7 +145,7 @@ pub fn get_by_id(conn: &Connection, id: &str) -> Result<Option<AgentModeRow>, St
 
 pub fn update_mode(conn: &Connection, row: &AgentModeRow) -> Result<(), String> {
     conn.execute(
-        "UPDATE agent_modes SET name=?2, description=?3, kind=?4, prompt=?5, model=?6, temperature=?7, max_tokens=?8, tools=?9, presentation_rank=?10, is_builtin=?11, updated_at=?12 WHERE id=?1",
+        "UPDATE agent_modes SET name=?2, description=?3, kind=?4, prompt=?5, model=?6, temperature=?7, max_tokens=?8, reasoning_enabled=?9, reasoning_effort=?10, tools=?11, presentation_rank=?12, is_builtin=?13, updated_at=?14 WHERE id=?1",
         params![
             row.id,
             row.name,
@@ -129,6 +155,8 @@ pub fn update_mode(conn: &Connection, row: &AgentModeRow) -> Result<(), String> 
             row.model,
             row.temperature,
             row.max_tokens,
+            row.reasoning_enabled.map(|b| b as i64),
+            row.reasoning_effort,
             row.tools_json,
             row.presentation_rank as i64,
             row.is_builtin as i64,
@@ -162,6 +190,8 @@ fn builtin_defaults(now: i64) -> Vec<AgentModeRow> {
             model: None,
             temperature: Some(0.7),
             max_tokens: Some(4096),
+            reasoning_enabled: None,
+            reasoning_effort: None,
             tools_json: "[]".to_string(),
             presentation_rank: 0,
             is_builtin: true,
@@ -177,6 +207,8 @@ fn builtin_defaults(now: i64) -> Vec<AgentModeRow> {
             model: None,
             temperature: Some(0.3),
             max_tokens: Some(2048),
+            reasoning_enabled: None,
+            reasoning_effort: None,
             tools_json: "[]".to_string(),
             presentation_rank: 1,
             is_builtin: true,
@@ -192,6 +224,8 @@ fn builtin_defaults(now: i64) -> Vec<AgentModeRow> {
             model: None,
             temperature: Some(0.7),
             max_tokens: Some(8192),
+            reasoning_enabled: Some(true),
+            reasoning_effort: Some("high".to_string()),
             tools_json: "[]".to_string(),
             presentation_rank: 2,
             is_builtin: true,
@@ -207,6 +241,8 @@ fn builtin_defaults(now: i64) -> Vec<AgentModeRow> {
             model: None,
             temperature: Some(0.3),
             max_tokens: Some(4096),
+            reasoning_enabled: None,
+            reasoning_effort: None,
             tools_json: "[]".to_string(),
             presentation_rank: 10,
             is_builtin: true,
@@ -233,7 +269,7 @@ pub fn reset_builtin_mode(conn: &Connection, id: &str) -> Result<(), String> {
         .ok_or_else(|| "不是内置模式，无法恢复默认".to_string())?;
 
     conn.execute(
-        "UPDATE agent_modes SET description=?2, prompt=?3, model=?4, temperature=?5, max_tokens=?6, tools=?7, updated_at=?8 WHERE id=?1",
+        "UPDATE agent_modes SET description=?2, prompt=?3, model=?4, temperature=?5, max_tokens=?6, reasoning_enabled=?7, reasoning_effort=?8, tools=?9, updated_at=?10 WHERE id=?1",
         params![
             id,
             default_mode.description,
@@ -241,6 +277,8 @@ pub fn reset_builtin_mode(conn: &Connection, id: &str) -> Result<(), String> {
             default_mode.model,
             default_mode.temperature,
             default_mode.max_tokens,
+            default_mode.reasoning_enabled.map(|b| b as i64),
+            default_mode.reasoning_effort,
             default_mode.tools_json,
             now
         ],

@@ -10,6 +10,7 @@ import {
   Select,
   Slider,
   InputNumber,
+  Switch,
   Tag,
   Space,
 } from "antd";
@@ -42,6 +43,12 @@ const KIND_LABELS: Record<string, string> = {
   custom: "自定义",
 };
 
+const REASONING_EFFORT_OPTIONS = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
 interface ModeFormData {
   name: string;
   description: string;
@@ -50,6 +57,8 @@ interface ModeFormData {
   model: string | null;
   temperature: number | null;
   max_tokens: number | null;
+  reasoning_enabled: boolean | null;
+  reasoning_effort: string | null;
 }
 
 const defaultFormData: ModeFormData = {
@@ -60,6 +69,8 @@ const defaultFormData: ModeFormData = {
   model: null,
   temperature: null,
   max_tokens: null,
+  reasoning_enabled: null,
+  reasoning_effort: null,
 };
 
 export const AgentModeManager: React.FC = () => {
@@ -107,6 +118,8 @@ export const AgentModeManager: React.FC = () => {
       model: mode.model,
       temperature: mode.temperature,
       max_tokens: mode.max_tokens,
+      reasoning_enabled: mode.reasoning_enabled,
+      reasoning_effort: mode.reasoning_effort,
     });
     setDrawerOpen(true);
   };
@@ -330,6 +343,31 @@ export const AgentModeManager: React.FC = () => {
               step={256}
               placeholder="默认 4096"
               style={{ width: "100%" }}
+            />
+          </Form.Item>
+          <Form.Item name="reasoning_enabled" label="Reasoning" valuePropName="checked">
+            <Switch
+              checkedChildren="开"
+              unCheckedChildren="关"
+              onChange={(checked) => {
+                form.setFieldValue("reasoning_enabled", checked);
+                if (!checked) {
+                  form.setFieldValue("reasoning_effort", null);
+                }
+              }}
+            />
+          </Form.Item>
+          <Form.Item
+            name="reasoning_effort"
+            label="Reasoning Effort"
+            style={{
+              display: form.getFieldValue("reasoning_enabled") ? undefined : "none",
+            }}
+          >
+            <Select
+              allowClear
+              placeholder="选择推理强度"
+              options={REASONING_EFFORT_OPTIONS}
             />
           </Form.Item>
         </Form>
