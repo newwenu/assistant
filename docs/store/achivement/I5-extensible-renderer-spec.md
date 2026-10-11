@@ -557,6 +557,8 @@ pub struct MascotConf {
     // ── B 类：各渲染器专属配置（强类型扁平字段，{renderer}_{field} 命名）──
     #[serde(default)]
     pub rive_idle_pose_rotation: bool,  // settings/rive/*
+    #[serde(default)]
+    pub rive_src: Option<String>,       // settings/rive/*
     #[serde(default = "default_true")]
     pub svg_animated: bool,             // settings/svg/*
     #[serde(default)]
@@ -575,6 +577,7 @@ export interface MascotConf {
   primary_color: string | null;
   secondary_color: string | null;
   rive_idle_pose_rotation: boolean;
+  rive_src: string | null;
   svg_animated: boolean;
   gif_src: string | null;
 }
@@ -585,10 +588,11 @@ export interface MascotConf {
 ```typescript
 // 从 mascotConf 扁平字段构建 rendererConfig Record（传入渲染器）
 export function buildRendererConfig(conf: MascotConf): Record<string, unknown> {
+  const renderer = conf.renderer ?? "rive";
   return {
     idlePoseRotation: conf.rive_idle_pose_rotation,
+    src: renderer === "rive" ? conf.rive_src : conf.gif_src,
     animated: conf.svg_animated,
-    src: conf.gif_src,
   };
 }
 
@@ -603,8 +607,10 @@ export function buildMascotPatch(
       patch.rive_idle_pose_rotation = rendererConfig.idlePoseRotation;
     if (rendererConfig.animated !== undefined)
       patch.svg_animated = rendererConfig.animated;
-    if (rendererConfig.src !== undefined)
-      patch.gif_src = rendererConfig.src;
+    if (rendererConfig.src !== undefined) {
+      if (renderer === "rive") patch.rive_src = rendererConfig.src;
+      else patch.gif_src = rendererConfig.src;
+    }
   }
   return patch;
 }
@@ -642,6 +648,7 @@ export function buildMascotPatch(
   "primary_color": null,
   "secondary_color": null,
   "rive_idle_pose_rotation": false,
+  "rive_src": null,
   "svg_animated": true,
   "gif_src": null
 }
@@ -707,7 +714,7 @@ MascotRenderer ← mascotStore ← useMascotChatSync
 
 - ❌ 优先级调度器（idle/normal/force 三级）——当前无动画冲突场景，后续按需加入
 - ❌ 动画事件总线（onPoseChange / onTransitionComplete）——当前无跨组件动画协调需求
-- ❌ 自定义 .riv 文件上传 UI——RiveMascot 的 `stateEngine` prop 已预留接口，UI 在后续迭代
+- ✅ 自定义 .riv 文件上传 UI——RiveMascot 的 `stateEngine` prop 已预留接口，MascotSection 已实现文件选择/重置按钮
 - ❌ 远程 .riv manifest 加载——RiveMascot 的 `stateEngine` prop 已预留，JSON manifest 解析在后续迭代
 - ❌ Lottie / Spine / Live2D 渲染器——架构已支持扩展，具体引擎在后续按需实现
 - ❌ CSS 动画 token 体系——与渲染器扩展正交，后续独立迭代

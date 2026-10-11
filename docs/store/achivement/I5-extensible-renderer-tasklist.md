@@ -105,9 +105,12 @@
 
 - [x] F1. 新建 `src/settings/MascotSection.tsx`（渲染方式 Select 从注册表动态生成，局限性提示，颜色区按 capabilities.colorCustomization 条件显隐 + dirty/应用/重置交互，渲染器专属设置按 renderer 条件渲染）
 - [x] F2. `AppearanceSettings.tsx` 移除独立"吉祥物颜色"区，新增"助手形象" SettingsSection 嵌入 MascotSection
-- [x] F3. Rust：`MascotConf` 新增 `renderer` + `rive_idle_pose_rotation` + `svg_animated` + `gif_src` 扁平强类型字段，`validate` 校验全字段（renderer 枚举 + hex 格式 + gif_src 非空）；TS `MascotConf` 镜像同步 4 个新字段；dispatcher `buildRendererConfig()` + `buildMascotPatch()` 映射
-- [ ] F4. Rust：`cmd.rs` 新增 `install_mascot_asset` 通用命令（文件上传 + 大小限制 2MB + MIME 嗅探）
-- [ ] F5. Rust：`lib.rs` invoke_handler 注册新命令
+- [x] F3. Rust：`MascotConf` 新增 `renderer` + `rive_idle_pose_rotation` + `svg_animated` + `gif_src` + `rive_src` + `gif_border_radius` 扁平强类型字段，`validate` 校验全字段（renderer 枚举 + hex 格式 + gif_src/rive_src 非空）；TS `MascotConf` 镜像同步；dispatcher `buildRendererConfig()` + `buildMascotPatch()` 映射（按 renderer 类型分发 src 字段）
+- [x] F4. Rust：`config.rs` 新增 `install_mascot_asset` / `uninstall_mascot_asset` 命令（文件上传 + 大小限制 2MB + MIME 嗅探 GIF/PNG/WebP/SVG/Rive + 扩展名白名单 + `$APPDATA/mascot-assets/` 写入 + mtime 版本戳）
+- [x] F5. Rust：`lib.rs` invoke_handler 注册新命令
+- [x] F6. Tauri v2 asset protocol：`tauri.conf.json` 新增 `security.assetProtocol` scope 白名单 `$APPDATA/mascot-assets/**`；`Cargo.toml` 启用 `protocol-asset` feature
+- [x] F7. gifUrlValidator：添加 `asset.localhost` hostname 白名单（Tauri v2 `convertFileSrc()` 生成 `http://asset.localhost/...`）
+- [x] F8. MascotSection：GIF 渲染器下添加文件选择/重置按钮；Rive 渲染器下添加文件选择/重置按钮
 
 ---
 
@@ -166,6 +169,6 @@ E 与 F：E 依赖 D，F 依赖 B+D2，可部分并行（F 在 D2 完成后即�
 |------|------|
 | 新增 B5 | `core/colorUtils.ts`（hexToArgb）是跨渲染器通用工具，消费端 OrbBall/MessageInput 也需要，规格未单独列出但实现中合理新增 |
 | 新增 E2.4 | 删除 `MascotColorSection.tsx`，颜色设置统一在 MascotSection 内按 capabilities 条件显隐，消除重复 |
-| F4/F5 未完成 | `install_mascot_asset` 通用文件上传命令未实现，属于后续迭代内容（当前 GIF src 通过手动配置 mascot-config.json 设置） |
+| F4-F8 已完成 | `install_mascot_asset` / `uninstall_mascot_asset` 已实现，支持 GIF/PNG/WebP/SVG/Rive 五种 MIME 嗅探；Tauri v2 asset protocol scope 已配置；gifUrlValidator 已添加 `asset.localhost` 白名单；MascotSection 已添加 GIF/Rive 文件上传 UI |
 | SVG 用 setTimeout | 规格提到 `useMascotClock` RAF 驱动，实际 SVG idle 循环用 setTimeout + pickIdleFlourish，无逐帧动画需求，更省 CPU |
 | 颜色交互 dirty+应用 | 与原 MascotColorSection 保持一致的"修改→应用"模式，避免即时生效误操作 |

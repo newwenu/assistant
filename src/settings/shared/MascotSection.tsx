@@ -11,6 +11,9 @@ import {
   message,
 } from "antd";
 import type { AggregationColor } from "antd/es/color-picker/color";
+import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
   getAllRendererMetas,
@@ -20,22 +23,15 @@ import {
 import { dispatchConfPatch } from "../core/settingsDispatcher";
 import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
 import { SettingsGroup } from "./SettingsGroup";
-import { defineSetting } from "../core/fieldRegistry";
+import { MASCOT_GIF_SETTINGS } from "../core/fieldDefinitions";
 
 const { Text } = Typography;
 
-const GIF_SETTINGS = [
-  defineSetting({
-    key: "gif_border_radius",
-    group: "mascot",
-    type: "slider",
-    default: 50,
-    label: "圆角",
-    min: 0,
-    max: 50,
-    extra: "0 = 方形，50 = 圆形",
-  }),
-];
+interface InstallAssetResult {
+  installed_path: string;
+  bytes: number;
+  version: number;
+}
 
 function toHex(
   color: AggregationColor | string | null | undefined,
@@ -175,6 +171,75 @@ export const MascotSection: React.FC = () => {
     }
   }, [gifSrcInput, mascotConf, messageApi]);
 
+  const handleGifFilePick = useCallback(async () => {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: "Image", extensions: ["gif", "png", "webp"] }],
+    });
+    if (!selected || typeof selected !== "string") return;
+    try {
+      const result = (await invoke("install_mascot_asset", {
+        assetType: "gif",
+        filePath: selected,
+      })) as InstallAssetResult;
+      const assetUrl = `${convertFileSrc(result.installed_path)}?v=${result.version}`;
+      await dispatchConfPatch("mascot", { gif_src: assetUrl });
+      messageApi.success(`已安装图片 (${(result.bytes / 1024).toFixed(1)} KB)`);
+    } catch (e) {
+      messageApi.error(
+        `安装失败: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }, [messageApi]);
+
+  const handleGifSrcReset = useCallback(async () => {
+    try {
+      await invoke("uninstall_mascot_asset", { assetType: "gif" });
+      await dispatchConfPatch("mascot", { gif_src: null });
+      setGifSrcInput("");
+      messageApi.success("已重置为默认");
+    } catch (e) {
+      messageApi.error(
+        `重置失败: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }, [messageApi]);
+
+  const handleRiveFilePick = useCallback(async () => {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: "Rive", extensions: ["riv"] }],
+    });
+    if (!selected || typeof selected !== "string") return;
+    try {
+      const result = (await invoke("install_mascot_asset", {
+        assetType: "rive",
+        filePath: selected,
+      })) as InstallAssetResult;
+      const assetUrl = `${convertFileSrc(result.installed_path)}?v=${result.version}`;
+      await dispatchConfPatch("mascot", { rive_src: assetUrl });
+      messageApi.success(
+        `已安装 Rive 文件 (${(result.bytes / 1024).toFixed(1)} KB)`,
+      );
+    } catch (e) {
+      messageApi.error(
+        `安装失败: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }, [messageApi]);
+
+  const handleRiveSrcReset = useCallback(async () => {
+    try {
+      await invoke("uninstall_mascot_asset", { assetType: "rive" });
+      await dispatchConfPatch("mascot", { rive_src: null });
+      messageApi.success("已重置为默认");
+    } catch (e) {
+      messageApi.error(
+        `重置失败: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }, [messageApi]);
+
   return (
     <>
       {contextHolder}
@@ -275,6 +340,30 @@ export const MascotSection: React.FC = () => {
               checked={mascotConf?.rive_idle_pose_rotation ?? false}
               onChange={(c) => handleSwitchPatch("rive_idle_pose_rotation", c)}
             />
+            <div style={{ marginTop: 12 }}>
+              <Text
+                type="secondary"
+                style={{ display: "block", marginBottom: 4 }}
+              >
+                自定义 Rive 文件
+              </Text>
+              <Space>
+                <Button size="small" onClick={handleRiveFilePick}>
+                  选择文件
+                </Button>
+                {mascotConf?.rive_src && (
+                  <Button size="small" danger onClick={handleRiveSrcReset}>
+                    重置为默认
+                  </Button>
+                )}
+              </Space>
+              <Text
+                type="secondary"
+                style={{ fontSize: 12, display: "block", marginTop: 4 }}
+              >
+                支持 .riv 文件，替换内置 mascot
+              </Text>
+            </div>
           </div>
         )}
 
@@ -298,7 +387,7 @@ export const MascotSection: React.FC = () => {
             <Form layout="vertical">
               <SettingsGroup
                 group="mascot"
-                definitions={GIF_SETTINGS}
+                definitions={MASCOT_GIF_SETTINGS}
                 onPatch={mascotPatch}
                 onPatchComplete={mascotPatchComplete}
               />
@@ -310,18 +399,30 @@ export const MascotSection: React.FC = () => {
               >
                 GIF 来源
               </Text>
-              <Input
-                placeholder="/mascot.gif"
-                value={gifSrcInput}
-                onChange={(e) => setGifSrcInput(e.target.value)}
-                onBlur={handleGifSrcSubmit}
-                onPressEnter={handleGifSrcSubmit}
-              />
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <Space>
+                  <Button size="small" onClick={handleGifFilePick}>
+                    选择文件
+                  </Button>
+                  {mascotConf?.gif_src && (
+                    <Button size="small" danger onClick={handleGifSrcReset}>
+                      重置为默认
+                    </Button>
+                  )}
+                </Space>
+                <Input
+                  placeholder="或输入 URL / 本地路径 / data URI"
+                  value={gifSrcInput}
+                  onChange={(e) => setGifSrcInput(e.target.value)}
+                  onBlur={handleGifSrcSubmit}
+                  onPressEnter={handleGifSrcSubmit}
+                />
+              </Space>
               <Text
                 type="secondary"
                 style={{ fontSize: 12, display: "block", marginTop: 4 }}
               >
-                支持 URL、本地路径或 data URI，留空使用默认
+                支持 GIF/PNG/WebP 文件上传，或 URL、本地路径、data URI
               </Text>
             </div>
           </>
