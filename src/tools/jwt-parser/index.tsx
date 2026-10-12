@@ -50,7 +50,14 @@ function formatValue(
   if (typeof value === "object") {
     return { display: JSON.stringify(value, null, 2), friendly: null };
   }
-  return { display: String(value), friendly: null };
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return { display: String(value), friendly: null };
+  }
+  return { display: JSON.stringify(value), friendly: null };
 }
 
 export default function JwtParser() {
@@ -60,11 +67,10 @@ export default function JwtParser() {
 
   const { header, payload, error } = useMemo(() => {
     try {
-      const header = jwtDecode(rawJwt, { header: true }) as Record<
-        string,
-        unknown
-      >;
-      const payload = jwtDecode(rawJwt) as Record<string, unknown>;
+      const header = jwtDecode<Record<string, unknown>>(rawJwt, {
+        header: true,
+      });
+      const payload = jwtDecode<Record<string, unknown>>(rawJwt);
       return { header, payload, error: null };
     } catch {
       return { header: null, payload: null, error: "无效的 JWT Token" };

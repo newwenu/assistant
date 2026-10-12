@@ -45,7 +45,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   let models: { id: string; name: string }[] = [];
   if (currentProvider) {
     try {
-      models = JSON.parse(currentProvider.models || "[]");
+      models = JSON.parse(currentProvider.models || "[]") as {
+        id: string;
+        name: string;
+      }[];
     } catch {
       models = [];
     }
@@ -60,15 +63,15 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         disabled={!providerId}
         className="orb-model-chip"
         popupMatchSelectWidth={false}
-        popupClassName="orb-dropdown"
+        classNames={{ popup: { root: "orb-dropdown" } }}
         size="small"
         open={open}
-        onDropdownVisibleChange={handleOpenChange}
+        onOpenChange={handleOpenChange}
         options={models.map((m) => ({
           value: m.id,
           label: m.name || m.id,
         }))}
-        suffixIcon={<DownOutlined style={{ fontSize: 10 }} />}
+        suffix={<DownOutlined style={{ fontSize: 10 }} />}
       />
     );
   }

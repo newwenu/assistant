@@ -94,7 +94,7 @@ async function emitSettingEventToPeers(
 
 export async function dispatchProviderSaved(provider: Record<string, unknown>) {
   await invoke("save_provider", { provider });
-  useProviderStore.getState().loadProviders();
+  await useProviderStore.getState().loadProviders();
   await emitSettingEventToPeers(SettingEvent.ProviderChanged, {
     action: SettingAction.ProviderSaved,
     id: provider.id as string,
@@ -104,7 +104,7 @@ export async function dispatchProviderSaved(provider: Record<string, unknown>) {
 
 export async function dispatchProviderDeleted(id: string) {
   await invoke("delete_provider", { id });
-  useProviderStore.getState().loadProviders();
+  await useProviderStore.getState().loadProviders();
   await emitSettingEventToPeers(SettingEvent.ProviderChanged, {
     action: SettingAction.ProviderDeleted,
     id,
@@ -118,7 +118,7 @@ export async function dispatchThemeChanged(mode: "system" | "light" | "dark") {
   } else {
     const mainWin = await WebviewWindow.getByLabel(WINDOW_MAIN);
     const sys = mainWin ? ((await mainWin.theme()) ?? "light") : "light";
-    resolved = sys as "light" | "dark";
+    resolved = sys;
   }
   useThemeStore.setState({ mode, resolved });
   await invoke("emit_theme_changed", { resolved });
@@ -132,13 +132,17 @@ export async function dispatchConfPatch(
   group: ConfGroup,
   patch: Record<string, unknown>,
 ) {
-  await invoke("patch_conf", { group, patch });
-  const store = useSettingsStore.getState();
-  if (group === "app") await store.loadAppConf();
-  else if (group === "orb") await store.loadOrbConf();
-  else if (group === "mascot") await store.loadMascotConf();
-  await emitSettingEventToPeers(SettingEvent.ConfPatched, {
-    action: SettingAction.ConfPatched,
-    value: { group, patch },
-  });
+  try {
+    await invoke("patch_conf", { group, patch });
+    const store = useSettingsStore.getState();
+    if (group === "app") await store.loadAppConf();
+    else if (group === "orb") await store.loadOrbConf();
+    else if (group === "mascot") await store.loadMascotConf();
+    await emitSettingEventToPeers(SettingEvent.ConfPatched, {
+      action: SettingAction.ConfPatched,
+      value: { group, patch },
+    });
+  } catch (e) {
+    console.error("[settingsDispatcher] dispatchConfPatch failed:", e);
+  }
 }

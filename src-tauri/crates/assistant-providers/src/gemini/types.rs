@@ -120,4 +120,6 @@ pub(crate) struct GeminiModelEntry {
     pub display_name: Option<String>,
     #[serde(default)]
     pub supported_generation_methods: Vec<String>,
+    #[serde(default)]
+    pub input_token_limit: Option<u32>,
 }

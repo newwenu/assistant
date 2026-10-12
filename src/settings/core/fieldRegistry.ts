@@ -1,27 +1,23 @@
 import type { FC } from "react";
+import type {
+  SettingType,
+  SelectOption,
+  AssetConfig,
+  FieldSchema,
+  FieldRenderProps,
+  SettingFieldProps,
+} from "./fieldSchema";
 
-export type SettingType =
-  | "boolean"
-  | "string"
-  | "number"
-  | "color"
-  | "slider"
-  | "select"
-  | "asset-picker"
-  | "keybinding";
+export type {
+  SettingType,
+  SelectOption,
+  AssetConfig,
+  FieldSchema,
+  FieldRenderProps,
+  SettingFieldProps,
+};
 
 export type ConfGroup = "app" | "orb" | "mascot";
-
-export interface SelectOption {
-  label: string;
-  value: string;
-}
-
-export interface AssetConfig {
-  assetType: string;
-  fileFilter: { name: string; extensions: string[] };
-  urlInput?: boolean;
-}
 
 export interface SettingSectionDef {
   id: string;
@@ -31,48 +27,19 @@ export interface SettingSectionDef {
   keywords?: string[];
 }
 
-export interface SettingDefinition {
-  key: string;
+export interface SettingDefinition extends FieldSchema {
   group: ConfGroup;
-  type: SettingType;
   default: unknown;
-  label: string;
   section?: string;
-  description?: string;
   sideEffect?: string;
   visible?: (conf: Record<string, unknown>) => boolean;
-  min?: number;
-  max?: number;
-  step?: number;
-  options?: SelectOption[];
-  marks?: Record<number, string>;
-  extra?: string;
-  valuePropName?: string;
   saveMessage?: string | false;
-  customRender?: FC<SettingFieldCustomProps>;
   pageId?: string;
   readValue?: (conf: Record<string, unknown>) => unknown;
   buildPatch?: (
     value: unknown,
     conf: Record<string, unknown>,
   ) => Record<string, unknown>;
-  assetConfig?: AssetConfig;
-}
-
-export interface SettingFieldCustomProps {
-  value?: unknown;
-  onChange?: (value: unknown) => void;
-  onChangeComplete?: (value: unknown) => void;
-  def: SettingDefinition;
-  conf?: Record<string, unknown>;
-}
-
-export interface SettingFieldProps {
-  def: SettingDefinition;
-  value: unknown;
-  onChange: (value: unknown) => void;
-  onChangeComplete?: (value: unknown) => void;
-  conf?: Record<string, unknown>;
 }
 
 export interface SettingTypeRenderer {
@@ -145,4 +112,5 @@ export const INTERMEDIATE_TYPES = new Set<SettingType>([
   "string",
   "number",
   "color",
+  "textarea",
 ]);

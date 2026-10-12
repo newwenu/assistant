@@ -17,10 +17,7 @@ export function useCommandPaletteShortcut(
     const key = keyMatch ? keyMatch[1].toLowerCase() : "k";
 
     const handler = (e: KeyboardEvent) => {
-      if (
-        e.target instanceof HTMLInputElement &&
-        (e.target as HTMLInputElement).isContentEditable
-      )
+      if (e.target instanceof HTMLInputElement && e.target.isContentEditable)
         return;
       const metaOk = requireMeta
         ? IS_MAC

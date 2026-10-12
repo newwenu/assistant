@@ -12,9 +12,9 @@ interface OrbState {
   position: { x: number; y: number } | null;
   expandDirection: ExpandDirection;
   expandVertical: ExpandVertical;
-  expand: () => Promise<void>;
-  collapse: () => Promise<void>;
-  toggle: () => Promise<void>;
+  expand: () => void;
+  collapse: () => void;
+  toggle: () => void;
   setHovering: (v: boolean) => void;
   setDragging: (v: boolean) => void;
   setBallVisible: (v: boolean) => void;
@@ -34,15 +34,15 @@ export const useOrbStore = create<OrbState>((set, get) => ({
   expandDirection: "right",
   expandVertical: "down",
 
-  expand: async () => {
+  expand: () => {
     set({ isExpanded: true });
   },
 
-  collapse: async () => {
+  collapse: () => {
     set({ isExpanded: false, isHovering: false });
   },
 
-  toggle: async () => {
+  toggle: () => {
     set({ isVisible: !get().isVisible });
   },
 

@@ -136,4 +136,29 @@ pub(crate) struct AnthropicModelEntry {
     pub id: String,
     #[serde(default)]
     pub display_name: Option<String>,
+    #[serde(default)]
+    pub context_window: Option<u32>,
+    #[serde(default)]
+    pub max_input_tokens: Option<u32>,
+    #[serde(default)]
+    pub limit: Option<AnthropicModelLimit>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub(crate) struct AnthropicModelLimit {
+    #[serde(default)]
+    pub context: Option<u32>,
+}
+
+impl AnthropicModelEntry {
+    pub(crate) fn resolved_context_window(&self) -> Option<u32> {
+        [
+            self.context_window,
+            self.max_input_tokens,
+            self.limit.as_ref().and_then(|l| l.context),
+        ]
+        .into_iter()
+        .flatten()
+        .find(|&v| v > 0)
+    }
 }

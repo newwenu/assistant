@@ -49,15 +49,15 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
         placeholder="Provider"
         className="orb-provider-chip"
         popupMatchSelectWidth={false}
-        popupClassName="orb-dropdown"
+        classNames={{ popup: { root: "orb-dropdown" } }}
         size="small"
         open={open}
-        onDropdownVisibleChange={handleOpenChange}
+        onOpenChange={handleOpenChange}
         options={providers.map((p) => ({
           value: p.id,
           label: p.name,
         }))}
-        suffixIcon={<DownOutlined style={{ fontSize: 10 }} />}
+        suffix={<DownOutlined style={{ fontSize: 10 }} />}
       />
     );
   }

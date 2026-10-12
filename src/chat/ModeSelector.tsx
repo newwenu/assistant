@@ -20,7 +20,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
 
   useEffect(() => {
     if (modes.length === 0) {
-      loadModes();
+      void loadModes();
     }
   }, [modes.length, loadModes]);
 
@@ -51,12 +51,12 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
         placeholder="模式"
         className="orb-mode-chip"
         popupMatchSelectWidth={false}
-        popupClassName="orb-dropdown"
+        classNames={{ popup: { root: "orb-dropdown" } }}
         size="small"
         open={open}
-        onDropdownVisibleChange={setOpen}
+        onOpenChange={setOpen}
         options={options}
-        suffixIcon={<DownOutlined style={{ fontSize: 10 }} />}
+        suffix={<DownOutlined style={{ fontSize: 10 }} />}
       />
     );
   }

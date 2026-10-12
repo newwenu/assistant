@@ -33,17 +33,18 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
   const [saving, setSaving] = useState(false);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
+  const [messageApi, contextHolder] = message.useMessage();
 
   const isEdit = !!provider;
   const effectiveFormat = isEdit
-    ? getApiFormatByType(provider!.type)
+    ? getApiFormatByType(provider.type)
     : (preset?.format ?? customFormat ?? "openai");
   const formatInfo = API_FORMAT_MAP.get(effectiveFormat);
-  const isPreset = isEdit ? !!PRESET_MAP.get(provider!.type) : !!preset;
+  const isPreset = isEdit ? !!PRESET_MAP.get(provider.type) : !!preset;
   const isLocal = effectiveFormat === "local";
 
   const getTitle = () => {
-    if (isEdit) return `编辑 ${provider!.name}`;
+    if (isEdit) return `编辑 ${provider.name}`;
     if (preset) return `连接 ${preset.label}`;
     return `添加自定义 ${formatInfo?.label ?? ""} Provider`;
   };
@@ -51,7 +52,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
   const handleOk = async () => {
     let values: Record<string, string>;
     try {
-      values = await form.validateFields();
+      values = (await form.validateFields()) as Record<string, string>;
     } catch {
       return;
     }
@@ -61,7 +62,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
         id: provider?.id || "",
         name: values.name || (isPreset && preset ? preset.label : ""),
         type: isEdit
-          ? provider!.type
+          ? provider.type
           : isPreset && preset
             ? preset.slug
             : values.type || "custom",
@@ -83,18 +84,18 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
       (isPreset && preset ? preset.defaultBaseUrl : "");
     const apiKey = (form.getFieldValue("api_key") as string) || "";
     if (!apiKey && !isLocal && !isEdit) {
-      message.warning("请先输入 API Key");
+      messageApi.warning("请先输入 API Key");
       return;
     }
     setFetchingModels(true);
     try {
       let result: unknown;
       if (isEdit && !apiKey) {
-        result = await invoke("list_models_cmd", { providerId: provider!.id });
+        result = await invoke("list_models_cmd", { providerId: provider.id });
       } else {
         result = await invoke("preview_models_cmd", {
           providerType: isEdit
-            ? provider!.type
+            ? provider.type
             : isPreset && preset
               ? preset.slug
               : "custom",
@@ -103,11 +104,13 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
         });
       }
       setModels((result as ModelConfig[]) || []);
-      message.success(
+      messageApi.success(
         `获取到 ${((result as ModelConfig[]) || []).length} 个模型`,
       );
     } catch (e) {
-      message.error(`获取模型列表失败: ${e}`);
+      messageApi.error(
+        `获取模型列表失败: ${e instanceof Error ? e.message : String(e)}`,
+      );
     } finally {
       setFetchingModels(false);
     }
@@ -116,11 +119,11 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
   const handleAfterOpen = () => {
     if (isEdit) {
       form.setFieldsValue({
-        name: provider!.name,
-        type: provider!.type,
-        base_url: provider!.base_url,
+        name: provider.name,
+        type: provider.type,
+        base_url: provider.base_url,
         api_key: "",
-        default_model: provider!.default_model,
+        default_model: provider.default_model,
       });
     } else {
       form.setFieldsValue({
@@ -144,7 +147,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
           <FormatTag
             type={
               isEdit
-                ? provider!.type
+                ? provider.type
                 : isPreset && preset
                   ? preset.slug
                   : effectiveFormat
@@ -161,13 +164,20 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
       footer={
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Button onClick={onClose}>取消</Button>
-          <Button type="primary" loading={saving} onClick={handleOk}>
+          <Button
+            type="primary"
+            loading={saving}
+            onClick={() => {
+              void handleOk();
+            }}
+          >
             {isEdit ? "保存" : "连接"}
           </Button>
         </div>
       }
       width={440}
     >
+      {contextHolder}
       <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
         <Typography.Paragraph
           type="secondary"
@@ -236,7 +246,12 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
                 style={{ flex: 1 }}
               />
             </Form.Item>
-            <Button onClick={handleFetchModels} loading={fetchingModels}>
+            <Button
+              onClick={() => {
+                void handleFetchModels();
+              }}
+              loading={fetchingModels}
+            >
               获取模型
             </Button>
           </div>

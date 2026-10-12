@@ -14,9 +14,9 @@ export const AppearanceSettings: React.FC = () => {
   const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
 
   useEffect(() => {
-    loadAppConf();
-    loadOrbConf();
-    loadMascotConf();
+    void loadAppConf();
+    void loadOrbConf();
+    void loadMascotConf();
   }, [loadAppConf, loadOrbConf, loadMascotConf]);
 
   return (

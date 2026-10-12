@@ -46,31 +46,35 @@ export const OrbPanel: React.FC = () => {
     const unlistenBlur = listen("orb-blur", () => {
       closeAllMenus();
       if (timer !== null) clearTimeout(timer);
-      timer = window.setTimeout(async () => {
-        const state = useOrbStore.getState();
-        if (state.isDragging) return;
-        try {
-          const [mouse, winRect] = await Promise.all([
-            getMouseLogicalPos(),
-            getWindowLogicalRect(),
-          ]);
-          if (isPointInRect(mouse.x, mouse.y, winRect)) return;
-        } catch {
-          // if coord check fails, fall through to collapse
-        }
-        collapse();
+      timer = window.setTimeout(() => {
+        void (async () => {
+          const state = useOrbStore.getState();
+          if (state.isDragging) return;
+          try {
+            const [mouse, winRect] = await Promise.all([
+              getMouseLogicalPos(),
+              getWindowLogicalRect(),
+            ]);
+            if (isPointInRect(mouse.x, mouse.y, winRect)) return;
+          } catch {
+            // if coord check fails, fall through to collapse
+          }
+          void collapse();
+        })();
       }, ORB_BLUR_COLLAPSE_DELAY_MS);
     });
-    const unlistenNewChat = listen("orb-new-conversation", async () => {
-      if (!useOrbStore.getState().isExpanded) {
-        await expand();
-      }
-      window.dispatchEvent(new CustomEvent("chat-new-conversation"));
+    const unlistenNewChat = listen("orb-new-conversation", () => {
+      void (async () => {
+        if (!useOrbStore.getState().isExpanded) {
+          await expand();
+        }
+        window.dispatchEvent(new CustomEvent("chat-new-conversation"));
+      })();
     });
     const cleanupChatDelta = subscribeChatDeltaEvents();
     return () => {
-      unlistenBlur.then((fn) => fn());
-      unlistenNewChat.then((fn) => fn());
+      void unlistenBlur.then((fn) => fn());
+      void unlistenNewChat.then((fn) => fn());
       cleanupChatDelta();
       if (timer !== null) clearTimeout(timer);
     };
@@ -85,7 +89,7 @@ export const OrbPanel: React.FC = () => {
         }
         const state = useOrbStore.getState();
         if (state.isDragging) return;
-        collapse();
+        void collapse();
       }
     },
     [collapse, historyOpen, closeAllMenus],
@@ -148,7 +152,7 @@ export const OrbPanel: React.FC = () => {
         </div>
       ),
       onClick: () => {
-        chat.switchConversation(conv.id);
+        void chat.switchConversation(conv.id);
         setHistoryOpen(false);
       },
     })),
@@ -176,7 +180,7 @@ export const OrbPanel: React.FC = () => {
           placement="bottomLeft"
           open={historyOpen}
           onOpenChange={setHistoryOpen}
-          overlayClassName="orb-dropdown"
+          classNames={{ root: "orb-dropdown" }}
         >
           <Tooltip title="对话列表" mouseEnterDelay={0.5}>
             <Button
@@ -196,7 +200,7 @@ export const OrbPanel: React.FC = () => {
             icon={<CollapseIcon />}
             onClick={() => {
               closeAllMenus();
-              collapse();
+              void collapse();
             }}
           />
         </Tooltip>

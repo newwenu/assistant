@@ -14,7 +14,9 @@ export const ToolCard: React.FC<ToolCardProps> = ({ tool }) => {
   return (
     <Card
       hoverable
-      onClick={() => navigate(`/tools/${tool.id}`)}
+      onClick={() => {
+        void navigate(`/tools/${tool.id}`);
+      }}
       style={{ height: "100%", cursor: "pointer" }}
       styles={{ body: { padding: 16 } }}
     >

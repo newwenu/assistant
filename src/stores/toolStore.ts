@@ -42,12 +42,12 @@ export const useToolStore = create<ToolState>((set) => ({
 
   loadFavorites: async () => {
     try {
-      const ids = (await invoke("get_favorite_tools")) as string[];
+      const ids = await invoke<string[]>("get_favorite_tools");
       set({ favoriteToolIds: ids });
     } catch {
       const stored = localStorage.getItem("favoriteToolIds");
       if (stored) {
-        set({ favoriteToolIds: JSON.parse(stored) });
+        set({ favoriteToolIds: JSON.parse(stored) as string[] });
       }
     }
   },
@@ -83,9 +83,9 @@ export const useToolStore = create<ToolState>((set) => ({
 
   loadRecentTools: async (limit?: number) => {
     try {
-      const ids = (await invoke("get_recent_tools", {
+      const ids = await invoke<string[]>("get_recent_tools", {
         limit: limit ?? RECENT_TOOLS_LIMIT,
-      })) as string[];
+      });
       set({ recentTools: ids });
     } catch {
       // fallback: recentTools already updated optimistically

@@ -3,7 +3,7 @@ import { Button, Space, Input, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { SettingFieldProps } from "../core/fieldRegistry";
+import type { SettingFieldProps } from "../core/fieldSchema";
 
 interface InstallAssetResult {
   installed_path: string;
@@ -11,8 +11,12 @@ interface InstallAssetResult {
   version: number;
 }
 
-export function AssetPickerField({ def, value, onChange }: SettingFieldProps) {
-  const config = def.assetConfig;
+export function AssetPickerField({
+  schema,
+  value,
+  onChange,
+}: SettingFieldProps) {
+  const config = schema.assetConfig;
   const [urlInput, setUrlInput] = useState<string>((value as string) ?? "");
   const [messageApi, contextHolder] = message.useMessage();
 
@@ -24,10 +28,10 @@ export function AssetPickerField({ def, value, onChange }: SettingFieldProps) {
     });
     if (!selected || typeof selected !== "string") return;
     try {
-      const result = (await invoke("install_mascot_asset", {
+      const result = await invoke<InstallAssetResult>("install_mascot_asset", {
         assetType: config.assetType,
         filePath: selected,
-      })) as InstallAssetResult;
+      });
       const assetUrl = `${convertFileSrc(result.installed_path)}?v=${result.version}`;
       onChange(assetUrl);
       setUrlInput(assetUrl);
@@ -55,7 +59,7 @@ export function AssetPickerField({ def, value, onChange }: SettingFieldProps) {
     }
   }, [config, onChange, messageApi]);
 
-  const handleUrlSubmit = useCallback(async () => {
+  const handleUrlSubmit = useCallback(() => {
     const trimmed = urlInput.trim();
     const next = trimmed.length === 0 ? null : trimmed;
     onChange(next);
@@ -66,13 +70,24 @@ export function AssetPickerField({ def, value, onChange }: SettingFieldProps) {
   return (
     <>
       {contextHolder}
-      <Space direction="vertical" style={{ width: "100%" }}>
+      <Space orientation="vertical" style={{ width: "100%" }}>
         <Space>
-          <Button size="small" onClick={handleFilePick}>
+          <Button
+            size="small"
+            onClick={() => {
+              void handleFilePick();
+            }}
+          >
             选择文件
           </Button>
           {value != null && (
-            <Button size="small" danger onClick={handleReset}>
+            <Button
+              size="small"
+              danger
+              onClick={() => {
+                void handleReset();
+              }}
+            >
               重置为默认
             </Button>
           )}

@@ -72,7 +72,7 @@ export default function HashText() {
   }, [text, encoding]);
 
   const copy = (value: string) => {
-    navigator.clipboard.writeText(value);
+    void navigator.clipboard.writeText(value);
     message.success("已复制");
   };
 

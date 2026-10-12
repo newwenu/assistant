@@ -18,8 +18,12 @@ function shortcutIdFromKey(key: string): string | undefined {
   return key.slice("keybindings.".length);
 }
 
-export function KeybindingField({ def, value, onChange }: SettingFieldProps) {
-  const shortcutId = shortcutIdFromKey(def.key);
+export function KeybindingField({
+  schema,
+  value,
+  onChange,
+}: SettingFieldProps) {
+  const shortcutId = shortcutIdFromKey(schema.key);
   const appConf = useSettingsStore((s) => s.appConf);
   const keybindings = appConf?.keybindings ?? DEFAULT_KEYBINDINGS;
 

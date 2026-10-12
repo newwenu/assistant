@@ -86,6 +86,15 @@ impl Default for SseLogConfig {
     }
 }
 
+pub fn resolve_context_window(model_id: &str, api_context: Option<u32>) -> u32 {
+    if let Some(ctx) = api_context {
+        if ctx > 0 {
+            return ctx;
+        }
+    }
+    get_context_window_tokens(model_id)
+}
+
 pub fn get_context_window_tokens(model_id: &str) -> u32 {
     let id = model_id.to_lowercase();
     if id.contains("gpt-4o") || id.contains("gpt-4-turbo") {

@@ -102,7 +102,7 @@ export const CommandPalette: React.FC = () => {
 
   const activate = useCallback(
     (cmd: CommandDefinition, keepOpen = false) => {
-      cmd.action();
+      void cmd.action();
       if (cmd.closeOnSelect !== false && !keepOpen) close();
     },
     [close],

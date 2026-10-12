@@ -223,13 +223,9 @@ fn validate_mime(data: &[u8], asset_type: &str) -> Result<(), String> {
             }
             let is_gif = &data[0..3] == b"GIF";
             let is_png = &data[0..8] == b"\x89PNG\r\n\x1a\n";
-            let is_webp = data.len() >= 12
-                && &data[0..4] == b"RIFF"
-                && &data[8..12] == b"WEBP";
+            let is_webp = data.len() >= 12 && &data[0..4] == b"RIFF" && &data[8..12] == b"WEBP";
             if !is_gif && !is_png && !is_webp {
-                return Err(
-                    "not a valid image file (expected GIF, PNG, or WebP)".to_string()
-                );
+                return Err("not a valid image file (expected GIF, PNG, or WebP)".to_string());
             }
         }
         "svg" => {

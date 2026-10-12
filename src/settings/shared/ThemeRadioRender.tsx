@@ -1,5 +1,5 @@
 import { Radio } from "antd";
-import type { SettingFieldCustomProps } from "../core/fieldRegistry";
+import type { FieldRenderProps } from "../core/fieldSchema";
 
 const THEME_OPTIONS = [
   { label: "跟随系统", value: "system" },
@@ -7,7 +7,7 @@ const THEME_OPTIONS = [
   { label: "暗色", value: "dark" },
 ];
 
-export function ThemeRadioRender({ value, onChange }: SettingFieldCustomProps) {
+export function ThemeRadioRender({ value, onChange }: FieldRenderProps) {
   return (
     <Radio.Group
       value={value ?? "system"}

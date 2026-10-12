@@ -31,7 +31,7 @@ import {
   getSettingsPageManifest,
   isSettingsPageId,
 } from "@/settings/core/pageRegistry";
-import type { SettingsPageId } from "@/settings/core/pageTypes";
+
 import { HistoryManager } from "@/chat/HistoryManager";
 import { ToolBox } from "@/tools/ToolBox";
 import { ToolPage } from "@/tools/ToolPage";
@@ -46,7 +46,7 @@ const SettingsContent: React.FC = () => {
     return <Navigate to={`/settings/${DEFAULT_SETTINGS_PAGE_ID}`} replace />;
   }
 
-  const manifest = getSettingsPageManifest(pageId as SettingsPageId);
+  const manifest = getSettingsPageManifest(pageId);
   const Content = manifest.component;
 
   return (
@@ -65,7 +65,9 @@ const SettingsContent: React.FC = () => {
 const MainLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const toolMenuItems = useToolMenuItems(() => navigate("/"));
+  const toolMenuItems = useToolMenuItems(() => {
+    void navigate("/");
+  });
   const loadFavorites = useToolStore((s) => s.loadFavorites);
   const loadRecentTools = useToolStore((s) => s.loadRecentTools);
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);
@@ -101,11 +103,11 @@ const MainLayout: React.FC = () => {
   }, [location.pathname]);
 
   useEffect(() => {
-    loadFavorites();
-    loadRecentTools();
-    loadAppConf();
-    loadOrbConf();
-    loadMascotConf();
+    void loadFavorites();
+    void loadRecentTools();
+    void loadAppConf();
+    void loadOrbConf();
+    void loadMascotConf();
   }, [
     loadFavorites,
     loadRecentTools,
@@ -126,16 +128,16 @@ const MainLayout: React.FC = () => {
       },
     );
     return () => {
-      unlisten.then((fn) => fn());
+      void unlisten.then((fn) => fn());
     };
   }, [api]);
 
   useEffect(() => {
     const unlisten = listen<string>("navigate", ({ payload }) => {
-      navigate(payload);
+      void navigate(payload);
     });
     return () => {
-      unlisten.then((fn) => fn());
+      void unlisten.then((fn) => fn());
     };
   }, [navigate]);
 
@@ -195,7 +197,9 @@ const MainLayout: React.FC = () => {
                     })),
                   },
                 ]}
-                onClick={({ key }) => navigate(key)}
+                onClick={({ key }) => {
+                  void navigate(key);
+                }}
               />
             </div>
           </Layout.Sider>
@@ -268,8 +272,8 @@ const OrbWindow: React.FC = () => {
   const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
 
   React.useEffect(() => {
-    loadOrbConf();
-    loadMascotConf();
+    void loadOrbConf();
+    void loadMascotConf();
   }, [loadOrbConf, loadMascotConf]);
 
   const orbClassName = [

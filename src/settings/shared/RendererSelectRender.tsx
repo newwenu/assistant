@@ -1,13 +1,10 @@
 import { Select, Typography } from "antd";
-import type { SettingFieldCustomProps } from "../core/fieldRegistry";
+import type { FieldRenderProps } from "../core/fieldSchema";
 import { getAllRendererMetas, asRendererId } from "@/mascot";
 
 const { Text } = Typography;
 
-export function RendererSelectRender({
-  value,
-  onChange,
-}: SettingFieldCustomProps) {
+export function RendererSelectRender({ value, onChange }: FieldRenderProps) {
   const metas = getAllRendererMetas();
   const currentMeta = metas.find(
     (m) => m.id === asRendererId((value as string) ?? "rive"),
@@ -20,7 +17,7 @@ export function RendererSelectRender({
         onChange={(v) => onChange?.(v)}
         style={{ width: "100%" }}
         options={metas.map((m) => ({
-          value: m.id as string,
+          value: m.id,
           label: m.label,
         }))}
       />

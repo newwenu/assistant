@@ -21,7 +21,7 @@ export const ShortcutSettings: React.FC = () => {
   const [messageApi, contextHolder] = message.useMessage();
 
   useEffect(() => {
-    loadAppConf();
+    void loadAppConf();
   }, [loadAppConf]);
 
   const keybindings = appConf?.keybindings ?? DEFAULT_KEYBINDINGS;
@@ -68,7 +68,7 @@ export const ShortcutSettings: React.FC = () => {
           id="shortcuts-main"
           style={{ marginTop: 0 }}
           extra={
-            <Button icon={<UndoOutlined />} onClick={handleReset}>
+            <Button icon={<UndoOutlined />} onClick={() => void handleReset()}>
               恢复默认
             </Button>
           }

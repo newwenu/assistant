@@ -20,9 +20,9 @@ export const OrbContextMenu: React.FC<{
   }, []);
 
   const handleContextMenu = useCallback(
-    async (e: React.MouseEvent) => {
+    (e: React.MouseEvent) => {
       e.preventDefault();
-      await showMenu(e.clientX, e.clientY);
+      void showMenu(e.clientX, e.clientY);
     },
     [showMenu],
   );

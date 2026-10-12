@@ -125,7 +125,7 @@ export default function PasswordGenerator() {
   );
 
   const copy = () => {
-    navigator.clipboard.writeText(password);
+    void navigator.clipboard.writeText(password);
     message.success("已复制");
   };
 

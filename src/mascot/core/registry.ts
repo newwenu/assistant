@@ -53,19 +53,19 @@ function registerRendererSettings(
 }
 
 export function registerRenderer(entry: RendererEntry): void {
-  if (registry.has(entry.meta.id as string)) {
+  if (registry.has(entry.meta.id)) {
     console.warn(
       `[mascot] renderer "${entry.meta.id}" already registered, overwriting`,
     );
   }
-  registry.set(entry.meta.id as string, entry);
+  registry.set(entry.meta.id, entry);
   if (entry.meta.settings?.length) {
     registerRendererSettings(entry.meta.id, entry.meta.settings);
   }
 }
 
 export function getRenderer(id: MascotRendererId): RendererEntry | undefined {
-  return registry.get(id as string);
+  return registry.get(id);
 }
 
 export function getAllRendererMetas(): RendererMeta[] {
@@ -73,9 +73,9 @@ export function getAllRendererMetas(): RendererMeta[] {
 }
 
 export function unregisterRenderer(id: MascotRendererId): void {
-  const entry = registry.get(id as string);
+  const entry = registry.get(id);
   entry?.dispose?.();
-  registry.delete(id as string);
+  registry.delete(id);
 }
 
 type MascotCapabilityKey =

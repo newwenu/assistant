@@ -77,11 +77,11 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
       selector = `[data-setting-key="${focusKey}"]`;
     }
 
-    const el = container.querySelector(selector) as HTMLElement | null;
+    const el = container.querySelector<HTMLElement>(selector);
     if (!el) {
       const root = container.closest(".settings-page-shell");
       if (root) {
-        const rootEl = root.querySelector(selector) as HTMLElement | null;
+        const rootEl = root.querySelector<HTMLElement>(selector);
         if (rootEl) {
           rootEl.scrollIntoView({ behavior: "smooth", block: "center" });
           rootEl.classList.add("setting-focus-highlight");
@@ -151,7 +151,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
       <div ref={containerRef} style={{ display: "contents" }}>
         {contextHolder}
         {visibleDefs.map((d) => {
-          const isIntermediate = INTERMEDIATE_TYPES.has(d.type as never);
+          const isIntermediate = INTERMEDIATE_TYPES.has(d.type);
           return (
             <span key={d.key} data-setting-key={d.key}>
               <Form.Item
@@ -161,16 +161,20 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
                 valuePropName={d.type === "boolean" ? "checked" : "value"}
               >
                 <SettingField
-                  def={d}
+                  schema={d}
                   value={readFieldValue(d, conf)}
                   onChange={
                     isIntermediate
                       ? (v) => handleIntermediateChange(d.key, v)
-                      : (v) => handleChange(d, v)
+                      : (v) => {
+                          void handleChange(d, v);
+                        }
                   }
                   onChangeComplete={
                     isIntermediate
-                      ? (v) => handleIntermediateChangeComplete(d, v)
+                      ? (v) => {
+                          void handleIntermediateChangeComplete(d, v);
+                        }
                       : undefined
                   }
                   conf={conf}

@@ -1,7 +1,65 @@
+use super::types::ModelItem;
 use super::types::ModelsResponse;
 use super::OpenAIAdapter;
-use crate::base::{get_context_window_tokens, ModelConfig, ProviderError};
+use crate::base::{resolve_context_window, ModelConfig, ProviderError};
 use crate::client::error::classify_http_error;
+
+fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
+    let mut configs = Vec::new();
+
+    if let Some(data) = &body.data {
+        for m in data {
+            let id = match m.resolved_id() {
+                Some(id) => id,
+                None => continue,
+            };
+            let ctx = resolve_context_window(&id, m.resolved_context_window());
+            let name = {
+                let n = m.resolved_name();
+                if n.is_empty() {
+                    id.clone()
+                } else {
+                    n
+                }
+            };
+            configs.push(ModelConfig {
+                id: id.clone(),
+                name,
+                owned_by: m.owned_by.clone().unwrap_or_default(),
+                context_window: ctx,
+            });
+        }
+    }
+
+    if configs.is_empty() {
+        if let Some(models_map) = &body.models {
+            for (key, value) in models_map {
+                let m: ModelItem = match serde_json::from_value(value.clone()) {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+                let id = m.resolved_id().unwrap_or_else(|| key.clone());
+                let ctx = resolve_context_window(&id, m.resolved_context_window());
+                let name = {
+                    let n = m.resolved_name();
+                    if n.is_empty() {
+                        id.clone()
+                    } else {
+                        n
+                    }
+                };
+                configs.push(ModelConfig {
+                    id: id.clone(),
+                    name,
+                    owned_by: m.owned_by.clone().unwrap_or_default(),
+                    context_window: ctx,
+                });
+            }
+        }
+    }
+
+    configs
+}
 
 pub(crate) fn list_models(adapter: &OpenAIAdapter) -> Result<Vec<ModelConfig>, ProviderError> {
     let rt = tokio::runtime::Runtime::new()
@@ -38,20 +96,6 @@ pub(crate) fn list_models(adapter: &OpenAIAdapter) -> Result<Vec<ModelConfig>, P
                 &text[..text.len().min(200)]
             ))
         })?;
-        let models = body
-            .data
-            .unwrap_or_default()
-            .into_iter()
-            .map(|m| {
-                let ctx = get_context_window_tokens(&m.id);
-                ModelConfig {
-                    id: m.id.clone(),
-                    name: m.id,
-                    owned_by: m.owned_by.unwrap_or_default(),
-                    context_window: ctx,
-                }
-            })
-            .collect();
-        Ok(models)
+        Ok(extract_model_configs(&body))
     })
 }

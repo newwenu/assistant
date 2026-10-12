@@ -12,7 +12,7 @@ export const GeneralSettings: React.FC = () => {
   const { onPatch, onPatchComplete } = useConfPatchHandlers("app");
 
   useEffect(() => {
-    loadAppConf();
+    void loadAppConf();
   }, [loadAppConf]);
 
   return (

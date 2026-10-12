@@ -47,7 +47,7 @@ export function useOrbDrag() {
                 ),
               );
             }
-            if (!stopped) setTimeout(tick, DRAG_POLL_INTERVAL_MS);
+            if (!stopped) setTimeout(() => void tick(), DRAG_POLL_INTERVAL_MS);
           } catch {
             stop();
           }

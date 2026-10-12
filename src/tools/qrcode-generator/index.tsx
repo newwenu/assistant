@@ -122,7 +122,12 @@ export default function QRCodeGenerator() {
           >
             下载 PNG
           </Button>
-          <Button onClick={copyImage} disabled={!dataUrl}>
+          <Button
+            onClick={() => {
+              void copyImage();
+            }}
+            disabled={!dataUrl}
+          >
             复制图片
           </Button>
         </div>

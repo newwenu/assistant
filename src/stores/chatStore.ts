@@ -13,6 +13,7 @@ import {
   formatRetryAfter,
 } from "../chat/chatErrors";
 import { useAgentModeStore } from "./agentModeStore";
+import { useProviderStore, type ModelConfig } from "./providerStore";
 
 export interface Message {
   id: string;
@@ -76,7 +77,7 @@ class PersistQueue {
   enqueue(fn: () => Promise<void>): Promise<void> {
     return new Promise((resolve, reject) => {
       this.queue.push({ fn, resolve, reject });
-      this.runNext();
+      void this.runNext();
     });
   }
 
@@ -91,12 +92,33 @@ class PersistQueue {
       entry.reject(e);
     } finally {
       this.running = false;
-      this.runNext();
+      void this.runNext();
     }
   }
 }
 
 const persistQueue = new PersistQueue();
+
+function resolveContextWindowTokens(
+  modelId: string,
+  providerId: string | null,
+): number | undefined {
+  if (!providerId) return undefined;
+  const provider = useProviderStore
+    .getState()
+    .providers.find((p) => p.id === providerId);
+  if (!provider) return undefined;
+  try {
+    const models = JSON.parse(provider.models) as ModelConfig[];
+    const model = models.find((m) => m.id === modelId);
+    if (model && model.context_window && model.context_window > 0) {
+      return model.context_window;
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return undefined;
+}
 
 function fallbackTitleFromUserMessage(
   userMessage: string,
@@ -220,13 +242,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   createConversation: async (providerId: string, modelId: string) => {
-    const id = await invoke<string>("create_conversation", {
-      providerId,
-      modelId,
-    });
-    await get().loadConversations();
-    await get().switchConversation(id);
-    return id;
+    try {
+      const id = await invoke<string>("create_conversation", {
+        providerId,
+        modelId,
+      });
+      await get().loadConversations();
+      await get().switchConversation(id);
+      return id;
+    } catch (e) {
+      console.error("[chatStore] createConversation failed:", e);
+      return "";
+    }
   },
 
   switchConversation: async (id: string) => {
@@ -271,6 +298,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           percentage: number;
         }>("get_conversation_token_usage", {
           conversationId: id,
+          contextWindowTokens: resolveContextWindowTokens(
+            detail.conversation.model_id,
+            detail.conversation.provider_id,
+          ),
         })
           .then((summary) => {
             if (get().currentConversationId === id) {
@@ -311,21 +342,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
     title: string,
     titleSource?: string,
   ) => {
-    await persistQueue.enqueue(async () => {
-      await invoke("rename_conversation", {
-        id,
-        title,
-        titleSource: titleSource || "user",
+    try {
+      await persistQueue.enqueue(async () => {
+        await invoke("rename_conversation", {
+          id,
+          title,
+          titleSource: titleSource || "user",
+        });
       });
-    });
-    await get().loadConversations();
+      await get().loadConversations();
+    } catch (e) {
+      console.error("[chatStore] renameConversation failed:", e);
+    }
   },
 
   updateModel: async (id: string, modelId: string) => {
-    await persistQueue.enqueue(async () => {
-      await invoke("update_conversation_model", { id, modelId });
-    });
-    await get().loadConversations();
+    try {
+      await persistQueue.enqueue(async () => {
+        await invoke("update_conversation_model", { id, modelId });
+      });
+      await get().loadConversations();
+    } catch (e) {
+      console.error("[chatStore] updateModel failed:", e);
+    }
   },
 
   sendMessage: async (content: string) => {
@@ -393,7 +432,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           set({ currentConversationId: newId });
           await get().loadConversations();
         } catch (e) {
-          get().errorStream(toChatError(`创建对话失败: ${e}`));
+          get().errorStream(toChatError(`创建对话失败: ${String(e)}`));
           return;
         }
       }
@@ -428,7 +467,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const conv = currentState.conversations.find((c) => c.id === convId);
       if (conv && conv.title_source === "placeholder") {
         const fbTitle = fallbackTitleFromUserMessage(content);
-        get().renameConversation(convId, fbTitle, "fallback");
+        void get().renameConversation(convId, fbTitle, "fallback");
       }
 
       try {
@@ -516,12 +555,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     if (convId && !usage) {
+      const conv = state.conversations.find((c) => c.id === convId);
       invoke<{
         total_tokens: number;
         context_window_tokens: number;
         percentage: number;
       }>("get_conversation_token_usage", {
         conversationId: convId,
+        contextWindowTokens: resolveContextWindowTokens(
+          conv?.model_id ?? "",
+          conv?.provider_id ?? null,
+        ),
       })
         .then((summary) => {
           if (get().currentConversationId === convId) {
@@ -572,9 +616,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: state.messages.filter((m) => m.id !== id),
       totalMessageCount: Math.max(0, state.totalMessageCount - 1),
     });
-    await persistQueue.enqueue(async () => {
-      await invoke("delete_message_persist", { messageId: id });
-    });
+    try {
+      await persistQueue.enqueue(async () => {
+        await invoke("delete_message_persist", { messageId: id });
+      });
+    } catch (e) {
+      console.error("[chatStore] deleteMessage failed:", e);
+    }
   },
 
   editMessage: async (messageId: string, newContent: string) => {
@@ -600,12 +648,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         .map((m) => (m.id === messageId ? { ...m, content: newContent } : m)),
     });
 
-    await persistQueue.enqueue(async () => {
-      await invoke("edit_message", { messageId, newContent });
-    });
+    try {
+      await persistQueue.enqueue(async () => {
+        await invoke("edit_message", { messageId, newContent });
+      });
+    } catch (e) {
+      console.error("[chatStore] editMessage failed:", e);
+    }
 
     if (msg.role === "user") {
-      get().sendMessage(newContent);
+      void get().sendMessage(newContent);
     }
   },
 
@@ -628,14 +680,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ),
     });
 
-    await persistQueue.enqueue(async () => {
-      await invoke("regenerate_message", {
-        conversationId: convId,
-        messageId,
+    try {
+      await persistQueue.enqueue(async () => {
+        await invoke("regenerate_message", {
+          conversationId: convId,
+          messageId,
+        });
       });
-    });
+    } catch (e) {
+      console.error("[chatStore] regenerateMessage failed:", e);
+    }
 
-    get().sendMessage(lastUserMsg.content);
+    void get().sendMessage(lastUserMsg.content);
   },
 
   loadMoreMessages: async () => {

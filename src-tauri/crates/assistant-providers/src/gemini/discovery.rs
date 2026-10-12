@@ -1,4 +1,4 @@
-use crate::base::{get_context_window_tokens, ModelConfig, ProviderError};
+use crate::base::{resolve_context_window, ModelConfig, ProviderError};
 use crate::client::error::classify_http_error;
 
 use super::request::gemini_base_url;
@@ -61,7 +61,7 @@ pub(crate) fn list_models(adapter: &GeminiAdapter) -> Result<Vec<ModelConfig>, P
                     .strip_prefix("models/")
                     .unwrap_or(&model.name)
                     .to_string();
-                let ctx = get_context_window_tokens(&id);
+                let ctx = resolve_context_window(&id, model.input_token_limit);
                 ModelConfig {
                     id: id.clone(),
                     name: model.display_name.unwrap_or(id),

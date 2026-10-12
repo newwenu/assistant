@@ -5,7 +5,7 @@ export async function tauriInvoke<T>(
   args?: Record<string, unknown>,
 ): Promise<T> {
   try {
-    return (await invoke(command, args)) as T;
+    return await invoke(command, args);
   } catch (e) {
     console.error(`[tauriInvoke] ${command} failed:`, e);
     throw e;

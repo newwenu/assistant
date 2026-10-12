@@ -66,7 +66,7 @@ export default function UUIDGenerator() {
   const text = uuids.join("\n");
 
   const copy = () => {
-    navigator.clipboard.writeText(text);
+    void navigator.clipboard.writeText(text);
     message.success("已复制");
   };
 

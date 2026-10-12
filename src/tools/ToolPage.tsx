@@ -1,7 +1,7 @@
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState, Component } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Typography, Button, Spin } from "antd";
-import { ArrowLeftOutlined } from "@ant-design/icons";
+import { Typography, Button, Spin, Result } from "antd";
+import { ArrowLeftOutlined, ReloadOutlined } from "@ant-design/icons";
 import { toolsMap } from "./registry";
 import { FavoriteButton } from "./FavoriteButton";
 import { useToolStore } from "@/stores/toolStore";
@@ -17,6 +17,44 @@ const WIDTH_MAP: Record<WidthMode, number> = {
   full: 0,
 };
 
+interface LazyErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class LazyErrorBoundary extends Component<
+  { children: React.ReactNode; onRetry: () => void },
+  LazyErrorBoundaryState
+> {
+  state: LazyErrorBoundaryState = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error: Error): LazyErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Result
+          status="error"
+          title="组件加载失败"
+          subTitle={this.state.error?.message || "请刷新页面重试"}
+          extra={
+            <Button
+              type="primary"
+              icon={<ReloadOutlined />}
+              onClick={this.props.onRetry}
+            >
+              重新加载
+            </Button>
+          }
+        />
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export const ToolPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -25,7 +63,7 @@ export const ToolPage: React.FC = () => {
   const [animKey, setAnimKey] = useState(0);
 
   useEffect(() => {
-    if (id) recordUsage(id);
+    if (id) void recordUsage(id);
     setAnimKey((k) => k + 1);
   }, [id, recordUsage]);
 
@@ -49,6 +87,10 @@ export const ToolPage: React.FC = () => {
     ? WIDTH_MAP[tool.widthMode]
     : TOOL_DEFAULT_MAX_WIDTH;
 
+  const handleRetry = () => {
+    setAnimKey((k) => k + 1);
+  };
+
   return (
     <div
       key={id}
@@ -66,7 +108,9 @@ export const ToolPage: React.FC = () => {
         <Button
           type="text"
           icon={<ArrowLeftOutlined />}
-          onClick={() => navigate("/")}
+          onClick={() => {
+            void navigate("/");
+          }}
           size="small"
         />
         <Typography.Title
@@ -100,21 +144,23 @@ export const ToolPage: React.FC = () => {
           margin: maxWidth ? "0 auto" : undefined,
         }}
       >
-        <Suspense
-          key={`${id}-${animKey}`}
-          fallback={
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-              }}
-            >
-              <Spin size="large" />
-            </div>
-          }
-        >
-          <tool.component key={id} />
-        </Suspense>
+        <LazyErrorBoundary onRetry={handleRetry}>
+          <Suspense
+            key={`${id}-${animKey}`}
+            fallback={
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                }}
+              >
+                <Spin size="large" />
+              </div>
+            }
+          >
+            <tool.component key={id} />
+          </Suspense>
+        </LazyErrorBoundary>
       </div>
     </div>
   );

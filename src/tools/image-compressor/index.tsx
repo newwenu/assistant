@@ -240,7 +240,9 @@ export default function ImageCompressor() {
 
         <Button
           type="primary"
-          onClick={handleCompress}
+          onClick={() => {
+            void handleCompress();
+          }}
           loading={compressing}
           disabled={!file}
           style={{ width: "100%" }}

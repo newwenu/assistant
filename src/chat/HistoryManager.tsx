@@ -185,13 +185,13 @@ export const HistoryManager: React.FC = () => {
   }, [refreshConversations, refreshMessages]);
 
   useEffect(() => {
-    loadConversations();
+    void loadConversations();
   }, [loadConversations]);
 
   useEffect(() => {
     refreshTimerRef.current = setInterval(() => {
-      refreshConversations();
-      refreshMessages();
+      void refreshConversations();
+      void refreshMessages();
     }, REFRESH_INTERVAL_MS);
     return () => {
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
@@ -206,24 +206,26 @@ export const HistoryManager: React.FC = () => {
         setSearchResults(null);
         return;
       }
-      searchTimerRef.current = setTimeout(async () => {
-        try {
-          if (searchFullText) {
-            const result = await invoke("search_conversations", {
-              query: value,
-            });
-            setSearchResults((result as Conversation[]) || []);
-          } else {
-            const q = value.toLowerCase();
-            const filtered = conversations.filter((c) =>
-              c.title.toLowerCase().includes(q),
-            );
-            setSearchResults(filtered);
+      searchTimerRef.current = setTimeout(() => {
+        void (async () => {
+          try {
+            if (searchFullText) {
+              const result = await invoke("search_conversations", {
+                query: value,
+              });
+              setSearchResults((result as Conversation[]) || []);
+            } else {
+              const q = value.toLowerCase();
+              const filtered = conversations.filter((c) =>
+                c.title.toLowerCase().includes(q),
+              );
+              setSearchResults(filtered);
+            }
+          } catch (e) {
+            console.error("Search failed:", e);
+            setSearchResults([]);
           }
-        } catch (e) {
-          console.error("Search failed:", e);
-          setSearchResults([]);
-        }
+        })();
       }, 300);
     },
     [searchFullText, conversations],
@@ -400,7 +402,7 @@ export const HistoryManager: React.FC = () => {
     setUserScrolledUp(scrollHeight - scrollTop - clientHeight > 100);
 
     if (hasMore && !loadingMore && scrollTop < SCROLL_LOAD_THRESHOLD_PX) {
-      loadMoreMessages();
+      void loadMoreMessages();
     }
   }, [hasMore, loadingMore, loadMoreMessages]);
 
@@ -513,7 +515,9 @@ export const HistoryManager: React.FC = () => {
               type="text"
               size="small"
               icon={<ReloadOutlined spin={refreshing} />}
-              onClick={handleRefresh}
+              onClick={() => {
+                void handleRefresh();
+              }}
               style={{ flexShrink: 0 }}
             />
           </Tooltip>
@@ -546,12 +550,24 @@ export const HistoryManager: React.FC = () => {
                     key={conv.id}
                     conversation={conv}
                     selected={conv.id === selectedId}
-                    onSelect={selectConversation}
-                    onDelete={deleteConversation}
-                    onRename={renameConversation}
-                    onExport={exportConversation}
-                    onTogglePin={togglePin}
-                    onDuplicate={duplicateConversation}
+                    onSelect={(id) => {
+                      void selectConversation(id);
+                    }}
+                    onDelete={(id) => {
+                      void deleteConversation(id);
+                    }}
+                    onRename={(id, title) => {
+                      void renameConversation(id, title);
+                    }}
+                    onExport={(id, format) => {
+                      void exportConversation(id, format);
+                    }}
+                    onTogglePin={(id) => {
+                      void togglePin(id);
+                    }}
+                    onDuplicate={(id) => {
+                      void duplicateConversation(id);
+                    }}
                   />
                 ))
               )}
@@ -584,12 +600,24 @@ export const HistoryManager: React.FC = () => {
                       key={conv.id}
                       conversation={conv}
                       selected={conv.id === selectedId}
-                      onSelect={selectConversation}
-                      onDelete={deleteConversation}
-                      onRename={renameConversation}
-                      onExport={exportConversation}
-                      onTogglePin={togglePin}
-                      onDuplicate={duplicateConversation}
+                      onSelect={(id) => {
+                        void selectConversation(id);
+                      }}
+                      onDelete={(id) => {
+                        void deleteConversation(id);
+                      }}
+                      onRename={(id, title) => {
+                        void renameConversation(id, title);
+                      }}
+                      onExport={(id, format) => {
+                        void exportConversation(id, format);
+                      }}
+                      onTogglePin={(id) => {
+                        void togglePin(id);
+                      }}
+                      onDuplicate={(id) => {
+                        void duplicateConversation(id);
+                      }}
                     />
                   ))}
               </div>
@@ -626,13 +654,17 @@ export const HistoryManager: React.FC = () => {
               <Button
                 size="small"
                 icon={<ExportOutlined />}
-                onClick={() => exportConversation(selectedId, "markdown")}
+                onClick={() => {
+                  void exportConversation(selectedId, "markdown");
+                }}
               >
                 导出
               </Button>
               <Popconfirm
                 title="确定删除此对话？"
-                onConfirm={() => deleteConversation(selectedId)}
+                onConfirm={() => {
+                  void deleteConversation(selectedId);
+                }}
               >
                 <Button size="small" danger icon={<DeleteOutlined />}>
                   删除对话
@@ -686,7 +718,9 @@ export const HistoryManager: React.FC = () => {
                       <HistoryMessageItem
                         key={msg.id}
                         message={msg}
-                        onDelete={deleteMessage}
+                        onDelete={(id) => {
+                          void deleteMessage(id);
+                        }}
                       />
                     ),
                   )}
@@ -824,13 +858,10 @@ const ConversationListItem: React.FC<ConversationListItemProps> = React.memo(
           }}
           onMouseEnter={(e) => {
             if (!selected)
-              (e.currentTarget as HTMLDivElement).style.background =
-                "var(--color-bg-hover)";
+              e.currentTarget.style.background = "var(--color-bg-hover)";
           }}
           onMouseLeave={(e) => {
-            if (!selected)
-              (e.currentTarget as HTMLDivElement).style.background =
-                "transparent";
+            if (!selected) e.currentTarget.style.background = "transparent";
           }}
         >
           {editing ? (

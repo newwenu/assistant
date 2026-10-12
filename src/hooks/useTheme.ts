@@ -5,6 +5,6 @@ export function useTheme() {
   const init = useThemeStore((s) => s.init);
 
   useEffect(() => {
-    init();
+    void init();
   }, [init]);
 }

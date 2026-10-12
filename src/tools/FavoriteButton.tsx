@@ -14,7 +14,7 @@ export const FavoriteButton: React.FC<FavoriteButtonProps> = ({ toolId }) => {
     <span
       onClick={(e) => {
         e.stopPropagation();
-        toggleFavorite(toolId);
+        void toggleFavorite(toolId);
       }}
       style={{ cursor: "pointer", fontSize: 16, lineHeight: 1 }}
     >

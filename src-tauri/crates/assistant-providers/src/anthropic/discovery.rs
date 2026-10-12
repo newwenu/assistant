@@ -1,4 +1,4 @@
-use crate::base::{get_context_window_tokens, ModelConfig, ProviderError};
+use crate::base::{resolve_context_window, ModelConfig, ProviderError};
 use crate::client::error::classify_http_error;
 use crate::client::quirks::wants_bearer_auth;
 
@@ -56,7 +56,7 @@ pub(crate) fn list_models(adapter: &AnthropicAdapter) -> Result<Vec<ModelConfig>
             .data
             .into_iter()
             .map(|m| {
-                let ctx = get_context_window_tokens(&m.id);
+                let ctx = resolve_context_window(&m.id, m.resolved_context_window());
                 ModelConfig {
                     id: m.id.clone(),
                     name: m.display_name.unwrap_or(m.id),

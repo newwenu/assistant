@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { ColorPicker, Button, Space, message } from "antd";
 import type { AggregationColor } from "antd/es/color-picker/color";
-import type { SettingFieldCustomProps } from "../core/fieldRegistry";
+import type { FieldRenderProps } from "../core/fieldSchema";
 import { dispatchConfPatch } from "../core/settingsDispatcher";
 import { getAllRendererMetas, asRendererId } from "@/mascot";
 
@@ -29,10 +29,7 @@ function colorsEqual(
   return a === b;
 }
 
-export function MascotColorGroupRender({
-  value,
-  conf,
-}: SettingFieldCustomProps) {
+export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
   const rendererId = (conf?.renderer as string) ?? "rive";
   const metas = getAllRendererMetas();
   const currentMeta = metas.find((m) => m.id === asRendererId(rendererId));
@@ -155,7 +152,9 @@ export function MascotColorGroupRender({
               size="small"
               disabled={!dirty}
               loading={applying}
-              onClick={handleApply}
+              onClick={() => {
+                void handleApply();
+              }}
             >
               应用
             </Button>

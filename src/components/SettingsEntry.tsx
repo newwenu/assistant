@@ -11,7 +11,9 @@ export const SettingsEntry: React.FC = () => {
         type="text"
         size="small"
         icon={<SettingOutlined />}
-        onClick={() => navigate("/settings/general")}
+        onClick={() => {
+          void navigate("/settings/general");
+        }}
         style={{ width: 32, height: 28 }}
       />
     </Tooltip>

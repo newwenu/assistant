@@ -20,6 +20,7 @@ import { ConnectDialog } from "./ConnectDialog";
 
 export const ProviderManager: React.FC = () => {
   const providerStore = useProviderStore();
+  const [modal, modalContextHolder] = Modal.useModal();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [connectPreset, setConnectPreset] = useState<ProviderPreset | null>(
     null,
@@ -32,7 +33,7 @@ export const ProviderManager: React.FC = () => {
   const loadProviders = useProviderStore((s) => s.loadProviders);
 
   useEffect(() => {
-    loadProviders();
+    void loadProviders();
   }, [loadProviders]);
 
   const handleAdd = () => {
@@ -63,7 +64,7 @@ export const ProviderManager: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: "确认删除此 Provider？",
       content:
         "删除后，使用此 Provider 的对话将保留，但需要重新选择 Provider 才能继续对话",
@@ -89,6 +90,7 @@ export const ProviderManager: React.FC = () => {
 
   return (
     <div className="provider-manager">
+      {modalContextHolder}
       <div className="provider-manager-header">
         <Typography.Title level={5}>AI Provider 设置</Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
@@ -178,7 +180,7 @@ export const ProviderManager: React.FC = () => {
           setConnectCustomFormat(null);
           setEditProvider(null);
         }}
-        onSubmit={handleConnect}
+        onSubmit={(input) => void handleConnect(input)}
       />
     </div>
   );

@@ -1,9 +1,11 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Input, Button, Typography, Space, message } from "antd";
 import { CopyOutlined, DownloadOutlined } from "@ant-design/icons";
 import styles from "./svg-preview.module.css";
 
 const { TextArea } = Input;
+
+const PARSERERROR_NS = "http://www.mozilla.org/newlayout/xml/parsererror.xml";
 
 const DEFAULT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
   <circle cx="100" cy="100" r="80" fill="#4f46e5" opacity="0.8"/>
@@ -20,37 +22,38 @@ function optimizeSvg(svg: string): string {
     .trim();
 }
 
+function svgToDataUrl(svg: string): string {
+  const bytes = new TextEncoder().encode(svg);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  const encoded = btoa(binary);
+  return `data:image/svg+xml;base64,${encoded}`;
+}
+
+function isValidSvg(svg: string): boolean {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svg, "image/svg+xml");
+    return (
+      doc.getElementsByTagNameNS(PARSERERROR_NS, "parsererror").length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 export default function SvgPreview() {
   const [svgCode, setSvgCode] = useState(DEFAULT_SVG);
-  const objectUrlRef = useRef("");
 
   const isValid = useMemo(() => {
-    try {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(svgCode, "image/svg+xml");
-      return !doc.querySelector("parsererror");
-    } catch {
-      return false;
-    }
+    if (!svgCode.trim()) return false;
+    return isValidSvg(svgCode);
   }, [svgCode]);
 
   const svgDataUrl = useMemo(() => {
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = "";
-    }
     if (!isValid || !svgCode.trim()) return "";
-    const blob = new Blob([svgCode], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-    objectUrlRef.current = url;
-    return url;
+    return svgToDataUrl(svgCode);
   }, [svgCode, isValid]);
-
-  useEffect(() => {
-    return () => {
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-    };
-  }, []);
 
   const optimized = useMemo(() => {
     if (!isValid) return "";
@@ -58,7 +61,7 @@ export default function SvgPreview() {
   }, [svgCode, isValid]);
 
   const copy = useCallback((text: string) => {
-    navigator.clipboard.writeText(text);
+    void navigator.clipboard.writeText(text);
     message.success("已复制");
   }, []);
 

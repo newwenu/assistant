@@ -5,7 +5,8 @@ use tokio_stream::Stream;
 
 pub use crate::types::chat_delta::{ChatDelta, TokenUsage};
 pub use crate::types::config::{
-    get_context_window_tokens, ChatOptions, RetryConfig, SseLogConfig, StreamTimeoutConfig,
+    get_context_window_tokens, resolve_context_window, ChatOptions, RetryConfig, SseLogConfig,
+    StreamTimeoutConfig,
 };
 pub use crate::types::message::{message_role_from_str, ChatMessage, MessageRole};
 pub use crate::types::tool::ToolCall;
@@ -170,12 +171,13 @@ pub trait BaseProviderAdapter: Send + Sync {
 }
 
 pub fn provider_kind_from_str(type_str: &str, base_url: String) -> ProviderKind {
-    match type_str {
-        "OpenAI" => ProviderKind::OpenAI,
-        "OpenAIResponses" => ProviderKind::OpenAIResponses,
-        "Anthropic" => ProviderKind::Anthropic,
-        "Gemini" => ProviderKind::Gemini,
-        "GeminiCodeAssist" => ProviderKind::GeminiCodeAssist,
+    let lower = type_str.to_ascii_lowercase();
+    match lower.as_str() {
+        "openai" => ProviderKind::OpenAI,
+        "openairesponses" => ProviderKind::OpenAIResponses,
+        "anthropic" => ProviderKind::Anthropic,
+        "gemini" => ProviderKind::Gemini,
+        "geminicodeassist" => ProviderKind::GeminiCodeAssist,
         _ => ProviderKind::Custom { base_url },
     }
 }

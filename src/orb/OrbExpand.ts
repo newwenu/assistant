@@ -145,25 +145,33 @@ export function useOrbExpand(): UseOrbExpandReturn {
     }
 
     flushSync(() => setBallVisible(false));
-    await waitForPaint();
-    await invoke("expand_orb_panel", { horizontal: direction, vertical });
-    await storeExpand();
-    const orbConf = useSettingsStore.getState().orbConf;
-    if (orbConf?.click_through) {
-      await invoke("set_orb_click_through", { enabled: false });
+    try {
+      await waitForPaint();
+      await invoke("expand_orb_panel", { horizontal: direction, vertical });
+      storeExpand();
+      const orbConf = useSettingsStore.getState().orbConf;
+      if (orbConf?.click_through) {
+        await invoke("set_orb_click_through", { enabled: false });
+      }
+    } catch (e) {
+      console.error("[OrbExpand] expand invoke failed:", e);
     }
   }, [storeExpand, setExpandDirection, setExpandVertical, setBallVisible]);
 
   const collapse = useCallback(async () => {
     const direction = useOrbStore.getState().expandDirection;
     const vertical = useOrbStore.getState().expandVertical;
-    await storeCollapse();
-    await waitForPanelTransition();
-    await invoke("collapse_orb_panel", { horizontal: direction, vertical });
-    setBallVisible(true);
-    const orbConf = useSettingsStore.getState().orbConf;
-    if (orbConf?.click_through) {
-      await invoke("set_orb_click_through", { enabled: true });
+    try {
+      storeCollapse();
+      await waitForPanelTransition();
+      await invoke("collapse_orb_panel", { horizontal: direction, vertical });
+      setBallVisible(true);
+      const orbConf = useSettingsStore.getState().orbConf;
+      if (orbConf?.click_through) {
+        await invoke("set_orb_click_through", { enabled: true });
+      }
+    } catch (e) {
+      console.error("[OrbExpand] collapse invoke failed:", e);
     }
   }, [storeCollapse, setBallVisible]);
 

@@ -237,7 +237,7 @@ fn builtin_defaults(now: i64) -> Vec<AgentModeRow> {
             name: "翻译助手".to_string(),
             description: "内置翻译 system prompt，低温度".to_string(),
             kind: "custom".to_string(),
-            prompt: "请将以下内容翻译为目标语言，保持原文的语气和格式。".to_string(),
+            prompt: "你是专业翻译助手，默认中英互译，用户指定其他语言对时按指示翻译。保持原文语气、格式和专业术语准确性。".to_string(),
             model: None,
             temperature: Some(0.3),
             max_tokens: Some(4096),

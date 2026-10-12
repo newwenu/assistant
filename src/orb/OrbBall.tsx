@@ -54,7 +54,7 @@ export const OrbBall: React.FC = () => {
   const handleClick = useCallback(() => {
     if (hasDraggedRef.current) return;
     if (!isExpanded) {
-      expand();
+      void expand();
     }
   }, [isExpanded, expand, hasDraggedRef]);
 

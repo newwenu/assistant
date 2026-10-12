@@ -29,7 +29,7 @@ export function subscribeSettingEvents(): () => void {
       switch (payload.action) {
         case SettingAction.ProviderSaved:
         case SettingAction.ProviderDeleted:
-          useProviderStore.getState().loadProviders();
+          void useProviderStore.getState().loadProviders();
           break;
       }
     }),
@@ -55,9 +55,9 @@ export function subscribeSettingEvents(): () => void {
           patch: unknown;
         }) ?? { group: "" };
         const store = useSettingsStore.getState();
-        if (group === "app") store.loadAppConf();
-        else if (group === "orb") store.loadOrbConf();
-        else if (group === "mascot") store.loadMascotConf();
+        if (group === "app") void store.loadAppConf();
+        else if (group === "orb") void store.loadOrbConf();
+        else if (group === "mascot") void store.loadMascotConf();
       }
     }),
   );

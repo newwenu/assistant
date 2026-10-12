@@ -198,7 +198,7 @@ export default function CronParser() {
       {!valid && cron.trim() && (
         <Alert
           type="error"
-          message="无效的 Cron 表达式"
+          title="无效的 Cron 表达式"
           className={styles.alert}
         />
       )}

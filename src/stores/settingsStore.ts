@@ -54,7 +54,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadAppConf: async () => {
     try {
-      const conf = (await invoke("get_app_conf")) as AppConf;
+      const conf = await invoke<AppConf>("get_app_conf");
       set({ appConf: conf });
     } catch (e) {
       console.error("[settingsStore] loadAppConf failed:", e);
@@ -63,7 +63,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadOrbConf: async () => {
     try {
-      const conf = (await invoke("get_orb_conf")) as OrbConf;
+      const conf = await invoke<OrbConf>("get_orb_conf");
       set({ orbConf: conf });
     } catch (e) {
       console.error("[settingsStore] loadOrbConf failed:", e);
@@ -72,7 +72,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadMascotConf: async () => {
     try {
-      const conf = (await invoke("get_mascot_conf")) as MascotConf;
+      const conf = await invoke<MascotConf>("get_mascot_conf");
       set({ mascotConf: conf });
     } catch (e) {
       console.error("[settingsStore] loadMascotConf failed:", e);

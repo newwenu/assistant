@@ -13,22 +13,24 @@ export const WindowControls: React.FC = () => {
 
   useEffect(() => {
     const win = getCurrentWindow();
-    win.isMaximized().then((max) => setIsMax(!!max));
+    void win.isMaximized().then((max) => setIsMax(!!max));
   }, []);
 
   const handleMinimize = () => {
-    getCurrentWindow().minimize();
+    void getCurrentWindow().minimize();
   };
 
-  const handleToggleMaximize = async () => {
-    const win = getCurrentWindow();
-    await win.toggleMaximize();
-    const max = await win.isMaximized();
-    setIsMax(!!max);
+  const handleToggleMaximize = () => {
+    void (async () => {
+      const win = getCurrentWindow();
+      await win.toggleMaximize();
+      const max = await win.isMaximized();
+      setIsMax(!!max);
+    })();
   };
 
   const handleClose = () => {
-    getCurrentWindow().close();
+    void getCurrentWindow().close();
   };
 
   return (

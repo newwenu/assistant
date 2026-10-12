@@ -12,10 +12,10 @@ export const PinToggle: React.FC = () => {
     if (appConf) setPinned(appConf.stay_on_top);
   }, [appConf]);
 
-  const handleToggle = async () => {
+  const handleToggle = () => {
     const next = !pinned;
     setPinned(next);
-    await dispatchConfPatch("app", { stay_on_top: next });
+    void dispatchConfPatch("app", { stay_on_top: next });
   };
 
   return (

@@ -62,14 +62,15 @@ function ContextBar({
 export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   const chat = useChatStore();
   const provider = useProviderStore();
+  const [modal, modalContextHolder] = Modal.useModal();
   const [currentModelId, setCurrentModelId] = useState("");
   const [currentProviderId, setCurrentProviderId] = useState<string | null>(
     null,
   );
 
   useEffect(() => {
-    useProviderStore.getState().loadProviders();
-    useChatStore.getState().loadConversations();
+    void useProviderStore.getState().loadProviders();
+    void useChatStore.getState().loadConversations();
   }, []);
 
   const resolveProviderModel = useCallback(
@@ -83,7 +84,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
         const fallback = availableProviders[0];
         let fallbackModel = fallback.default_model || "";
         try {
-          const models = JSON.parse(fallback.models || "[]");
+          const models = JSON.parse(fallback.models || "[]") as {
+            id: string;
+          }[];
           if (models.length > 0 && !fallbackModel) fallbackModel = models[0].id;
         } catch {
           /* ignore */
@@ -92,7 +95,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       }
       let models: { id: string }[] = [];
       try {
-        models = JSON.parse(p.models || "[]");
+        models = JSON.parse(p.models || "[]") as { id: string }[];
       } catch {
         /* ignore */
       }
@@ -139,13 +142,13 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
 
   const handleSend = useCallback(
     (content: string) => {
-      chat.sendMessage(content);
+      void chat.sendMessage(content);
     },
     [chat],
   );
 
   const handleCancel = useCallback(() => {
-    chat.cancelStream();
+    void chat.cancelStream();
   }, [chat]);
 
   const handleRetry = useCallback(() => {
@@ -153,7 +156,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       .reverse()
       .find((m) => m.role === "user");
     if (lastUserMsg) {
-      chat.sendMessage(lastUserMsg.content);
+      void chat.sendMessage(lastUserMsg.content);
     }
   }, [chat]);
 
@@ -164,7 +167,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       let modelId = p?.default_model || "";
       if (p) {
         try {
-          const models = JSON.parse(p.models || "[]");
+          const models = JSON.parse(p.models || "[]") as { id: string }[];
           if (models.length > 0 && !modelId) modelId = models[0].id;
         } catch {
           // ignore
@@ -176,7 +179,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
           id: chat.currentConversationId,
           providerId: newProviderId,
         }).catch((e) => console.error("Failed to update provider:", e));
-        chat.updateModel(chat.currentConversationId, modelId);
+        void chat.updateModel(chat.currentConversationId, modelId);
       }
     },
     [provider.providers, chat],
@@ -184,7 +187,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
 
   const handleNewConversation = useCallback(() => {
     if (provider.providers.length === 0) {
-      Modal.warning({
+      modal.warning({
         title: "请先配置 AI Provider",
         content: "在设置中添加 AI Provider 后即可开始对话",
       });
@@ -195,14 +198,14 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     let modelId = p?.default_model || "";
     if (p) {
       try {
-        const models = JSON.parse(p.models || "[]");
+        const models = JSON.parse(p.models || "[]") as { id: string }[];
         if (models.length > 0 && !modelId) modelId = models[0].id;
       } catch {
         // ignore
       }
     }
-    chat.createConversation(pid, modelId);
-  }, [provider.providers, currentProviderId, chat]);
+    void chat.createConversation(pid, modelId);
+  }, [provider.providers, currentProviderId, chat, modal]);
 
   useEffect(() => {
     const handler = () => handleNewConversation();
@@ -214,14 +217,16 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     (modelId: string) => {
       setCurrentModelId(modelId);
       if (chat.currentConversationId) {
-        chat.updateModel(chat.currentConversationId, modelId);
+        void chat.updateModel(chat.currentConversationId, modelId);
       }
     },
     [chat],
   );
 
   const handleOpenSettings = useCallback(() => {
-    invoke("open_main_window");
+    invoke("open_main_window").catch((e) =>
+      console.error("Failed to open main window:", e),
+    );
   }, []);
 
   const handleModeChange = useCallback(
@@ -231,7 +236,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       if (mode?.model) {
         for (const p of provider.providers) {
           try {
-            const models: { id: string }[] = JSON.parse(p.models || "[]");
+            const models = JSON.parse(p.models || "[]") as { id: string }[];
             if (models.some((m) => m.id === mode.model)) {
               setCurrentProviderId(p.id);
               setCurrentModelId(mode.model);
@@ -240,7 +245,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
                   id: chat.currentConversationId,
                   providerId: p.id,
                 }).catch(() => {});
-                chat.updateModel(chat.currentConversationId, mode.model);
+                void chat.updateModel(chat.currentConversationId, mode.model);
               }
               break;
             }
@@ -255,20 +260,21 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
 
   const handleEditMessage = useCallback(
     (messageId: string, newContent: string) => {
-      chat.editMessage(messageId, newContent);
+      void chat.editMessage(messageId, newContent);
     },
     [chat],
   );
 
   const handleRegenerateMessage = useCallback(
     (messageId: string) => {
-      chat.regenerateMessage(messageId);
+      void chat.regenerateMessage(messageId);
     },
     [chat],
   );
 
   return (
     <div className="chat-view chat-view-compact">
+      {modalContextHolder}
       <div className="chat-main">
         <div className="orb-chrome-bar">
           <ProviderSelector
@@ -318,8 +324,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
             compact
             hasMore={chat.hasMoreMessages}
             isLoadingMore={chat.isLoadingMoreMessages}
-            onLoadMore={chat.loadMoreMessages}
-            onDeleteMessage={chat.deleteMessage}
+            onLoadMore={() => {
+              void chat.loadMoreMessages();
+            }}
+            onDeleteMessage={(id) => {
+              void chat.deleteMessage(id);
+            }}
             onEditMessage={handleEditMessage}
             onRegenerateMessage={handleRegenerateMessage}
             onRetryMessage={handleRetry}

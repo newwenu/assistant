@@ -94,12 +94,73 @@ pub(crate) struct ChatPromptTokensDetails {
 
 #[derive(Deserialize, Debug)]
 pub(crate) struct ModelsResponse {
+    #[serde(default)]
     pub data: Option<Vec<ModelItem>>,
+    #[serde(default)]
+    pub models: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Deserialize, Debug)]
 pub(crate) struct ModelItem {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
     #[serde(default)]
     pub owned_by: Option<String>,
+    #[serde(default)]
+    pub context_window: Option<u32>,
+    #[serde(default)]
+    pub context_length: Option<u32>,
+    #[serde(default)]
+    pub max_input_tokens: Option<u32>,
+    #[serde(default)]
+    pub limit: Option<ModelLimit>,
+    #[serde(default)]
+    pub top_provider: Option<TopProvider>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub(crate) struct ModelLimit {
+    #[serde(default)]
+    pub context: Option<u32>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub(crate) struct TopProvider {
+    #[serde(default)]
+    pub context_length: Option<u32>,
+}
+
+impl ModelItem {
+    pub(crate) fn resolved_context_window(&self) -> Option<u32> {
+        [
+            self.context_window,
+            self.context_length,
+            self.max_input_tokens,
+            self.limit.as_ref().and_then(|l| l.context),
+            self.top_provider.as_ref().and_then(|t| t.context_length),
+        ]
+        .into_iter()
+        .flatten()
+        .find(|&v| v > 0)
+    }
+
+    pub(crate) fn resolved_id(&self) -> Option<String> {
+        if !self.id.as_ref().map_or(false, |s| s.is_empty()) {
+            self.id.clone()
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn resolved_name(&self) -> String {
+        self.name
+            .as_deref()
+            .or(self.display_name.as_deref())
+            .unwrap_or("")
+            .to_string()
+    }
 }

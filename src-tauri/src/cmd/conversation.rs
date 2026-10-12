@@ -236,7 +236,38 @@ pub fn get_conversation_token_usage(
 ) -> Result<serde_json::Value, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    let ctx = context_window_tokens.unwrap_or(128_000);
+    let ctx = if let Some(c) = context_window_tokens {
+        c
+    } else {
+        resolve_context_window_for_conversation(&conn, &conversation_id)
+    };
     let summary = agent_modes::get_conversation_token_usage(&conn, &conversation_id, ctx)?;
     serde_json::to_value(&summary).map_err(|e| e.to_string())
+}
+
+fn resolve_context_window_for_conversation(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+) -> u32 {
+    let conv = match conversations::get_conversation_by_id(conn, conversation_id) {
+        Ok(Some(c)) => c,
+        _ => return 128_000,
+    };
+    let model_id = &conv.model_id;
+    let mut ctx = assistant_providers::base::get_context_window_tokens(model_id);
+    if let Some(ref provider_id) = conv.provider_id {
+        if let Ok(Some(provider_row)) = provider_store::get_provider_by_id(conn, provider_id) {
+            if let Ok(model_list) = serde_json::from_str::<
+                Vec<assistant_providers::base::ModelConfig>,
+            >(&provider_row.models_json)
+            {
+                if let Some(mc) = model_list.iter().find(|m| m.id == *model_id) {
+                    if mc.context_window > 0 {
+                        ctx = mc.context_window;
+                    }
+                }
+            }
+        }
+    }
+    ctx
 }

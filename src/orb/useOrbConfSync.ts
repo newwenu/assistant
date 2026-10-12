@@ -5,7 +5,7 @@ import type { OrbConf } from "@/stores/settingsStore";
 import { SettingEvent, SettingAction } from "../types/events";
 import type { SettingEventPayload } from "../types/events";
 
-async function reloadAndApply(appliedRef: React.MutableRefObject<string>) {
+async function reloadAndApply(appliedRef: React.RefObject<string>) {
   try {
     const conf = await invoke<OrbConf>("get_orb_conf");
     await applyOrbConf(conf, appliedRef);
@@ -16,7 +16,7 @@ async function reloadAndApply(appliedRef: React.MutableRefObject<string>) {
 
 async function applyOrbConf(
   conf: OrbConf,
-  appliedRef: React.MutableRefObject<string>,
+  appliedRef: React.RefObject<string>,
 ) {
   const key = JSON.stringify(conf);
   if (key === appliedRef.current) return;
@@ -57,19 +57,19 @@ export function useOrbConfSync(): void {
   const appliedRef = useRef<string>("");
 
   useEffect(() => {
-    reloadAndApply(appliedRef);
+    void reloadAndApply(appliedRef);
 
     const unlisten = listen<SettingEventPayload>(
       SettingEvent.ConfPatched,
       ({ payload }) => {
         if (payload.action !== SettingAction.ConfPatched) return;
         const { group } = (payload.value as { group: string }) ?? {};
-        if (group === "orb") reloadAndApply(appliedRef);
+        if (group === "orb") void reloadAndApply(appliedRef);
       },
     );
 
     return () => {
-      unlisten.then((fn) => fn());
+      void unlisten.then((fn) => fn());
     };
   }, []);
 }
