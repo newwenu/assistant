@@ -13,6 +13,14 @@ registerRenderer({
       idleAnimation: true,
     },
     defaultColors: { primary: "#3dd17f", secondary: null },
+    settings: [
+      {
+        key: "svg_animated",
+        type: "boolean",
+        default: true,
+        label: "SVG 动画",
+      },
+    ],
   },
   component: GhostyMascot,
 });

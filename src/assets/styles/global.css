@@ -31,10 +31,15 @@
   --sidebar-collapsed-width: 64px;
   --titlebar-height: 38px;
 
-  --orb-ball-size: 72px;
+  --orb-ball-size: 84px;
   --orb-hitbox-size: 88px;
   --orb-chrome-inset: 8px;
   --orb-header-height: 36px;
+
+  --orb-opacity: 1;
+  --orb-scale: 1;
+  --orb-idle-opacity: 0.85;
+  --orb-hover-delay: 0ms;
 
   --scrollbar-size: 6px;
   --scrollbar-thumb: rgba(0, 0, 0, 0.15);
@@ -214,6 +219,7 @@ div[data-orb-window] .orb-hitbox.orb-touch:active {
 }
 
 div[data-orb-window] .orb-hitbox.orb-settling {
+  opacity: 0 !important;
   transition: none !important;
   animation: none !important;
 }
@@ -473,6 +479,21 @@ div[data-orb-window].orb-expanded .orb-hitbox {
 .orb-mode-chip .ant-select-selection-item {
   font-size: 12px;
   line-height: 26px;
+}
+
+.setting-focus-highlight {
+  animation: setting-focus-flash 2s ease-out;
+}
+
+@keyframes setting-focus-flash {
+  0% {
+    background: var(--color-primary-bg);
+    box-shadow: 0 0 0 2px var(--color-primary);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
 }
 
 .orb-mode-bar {

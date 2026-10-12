@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { DEFAULT_KEYBINDINGS } from "@/settings/core/shortcutTypes";
 
 export interface AppConf {
   theme: string;
@@ -28,6 +29,7 @@ export interface MascotConf {
   primary_color: string | null;
   secondary_color: string | null;
   rive_idle_pose_rotation: boolean;
+  rive_src: string | null;
   svg_animated: boolean;
   gif_src: string | null;
   gif_border_radius: number;
@@ -44,15 +46,6 @@ interface SettingsState {
   updateKeybinding: (id: string, binding: string) => Promise<void>;
   resetKeybindings: () => Promise<void>;
 }
-
-const IS_MAC = /\bMacintosh\b/i.test(navigator.userAgent);
-const PRIMARY_MOD = IS_MAC ? "Meta" : "Control";
-
-const DEFAULT_KEYBINDINGS: Record<string, string> = {
-  toggle_orb: `${PRIMARY_MOD}+Shift+O`,
-  toggle_main: `${PRIMARY_MOD}+Shift+M`,
-  new_chat: `${PRIMARY_MOD}+Shift+N`,
-};
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   appConf: null,

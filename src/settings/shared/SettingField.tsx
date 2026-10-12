@@ -6,14 +6,25 @@ function BooleanField({ value, onChange }: SettingFieldProps) {
   return <Switch checked={!!value} onChange={(checked) => onChange(checked)} />;
 }
 
-function StringField({ value, onChange }: SettingFieldProps) {
+function StringField({ value, onChange, onChangeComplete }: SettingFieldProps) {
   return (
-    <Input value={value as string} onChange={(e) => onChange(e.target.value)} />
+    <Input
+      value={value as string}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={() => onChangeComplete?.(value)}
+      onPressEnter={() => onChangeComplete?.(value)}
+    />
   );
 }
 
-function NumberField({ value, onChange }: SettingFieldProps) {
-  return <InputNumber value={value as number} onChange={(v) => onChange(v)} />;
+function NumberField({ value, onChange, onChangeComplete }: SettingFieldProps) {
+  return (
+    <InputNumber
+      value={value as number}
+      onChange={(v) => onChange(v)}
+      onBlur={() => onChangeComplete?.(value)}
+    />
+  );
 }
 
 function SliderField({
@@ -48,7 +59,7 @@ function SelectField({ def, value, onChange }: SettingFieldProps) {
   );
 }
 
-function ColorField({ value, onChange }: SettingFieldProps) {
+function ColorField({ value, onChange, onChangeComplete }: SettingFieldProps) {
   return (
     <ColorPicker
       size="small"
@@ -57,6 +68,15 @@ function ColorField({ value, onChange }: SettingFieldProps) {
         try {
           const hex = color.toHexString();
           onChange(hex);
+        } catch {
+          /* ignore */
+        }
+      }}
+      onChangeComplete={(color) => {
+        if (!onChangeComplete) return;
+        try {
+          const hex = color.toHexString();
+          onChangeComplete(hex);
         } catch {
           /* ignore */
         }
@@ -79,6 +99,7 @@ export function SettingField({
   value,
   onChange,
   onChangeComplete,
+  conf,
 }: SettingFieldProps) {
   if (def.customRender) {
     return (
@@ -87,6 +108,7 @@ export function SettingField({
         onChange={onChange}
         onChangeComplete={onChangeComplete}
         def={def}
+        conf={conf}
       />
     );
   }

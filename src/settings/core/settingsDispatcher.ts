@@ -10,13 +10,44 @@ import { WINDOW_MAIN, WINDOW_ORB } from "@/config/constants";
 import { useProviderStore } from "@/stores/providerStore";
 import { useThemeStore } from "@/stores/themeStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { MascotConf } from "@/stores/settingsStore";
+import type { AppConf, OrbConf, MascotConf } from "@/stores/settingsStore";
+import type { ConfGroup } from "./fieldRegistry";
+
+const CONF_KEY_MAP: Record<ConfGroup, "appConf" | "orbConf" | "mascotConf"> = {
+  app: "appConf",
+  orb: "orbConf",
+  mascot: "mascotConf",
+};
+
+type ConfUnion = AppConf | OrbConf | MascotConf;
+
+export function toConfRecord(
+  conf: ConfUnion | null,
+): Record<string, unknown> | null {
+  if (!conf) return null;
+  return conf as unknown as Record<string, unknown>;
+}
+
+export function optimisticConfUpdate(
+  group: ConfGroup,
+  key: string,
+  value: unknown,
+): void {
+  const confKey = CONF_KEY_MAP[group];
+  const store = useSettingsStore.getState();
+  const current = store[confKey] as unknown as Record<string, unknown> | null;
+  if (!current) return;
+  useSettingsStore.setState({
+    [confKey]: { ...current, [key]: value },
+  });
+}
 
 export function buildRendererConfig(conf: MascotConf): Record<string, unknown> {
+  const renderer = conf.renderer ?? "rive";
   return {
     idlePoseRotation: conf.rive_idle_pose_rotation,
+    src: renderer === "rive" ? conf.rive_src : conf.gif_src,
     animated: conf.svg_animated,
-    src: conf.gif_src,
     borderRadius: conf.gif_border_radius,
   };
 }
@@ -31,7 +62,10 @@ export function buildMascotPatch(
       patch.rive_idle_pose_rotation = rendererConfig.idlePoseRotation;
     if (rendererConfig.animated !== undefined)
       patch.svg_animated = rendererConfig.animated;
-    if (rendererConfig.src !== undefined) patch.gif_src = rendererConfig.src;
+    if (rendererConfig.src !== undefined) {
+      if (renderer === "rive") patch.rive_src = rendererConfig.src;
+      else patch.gif_src = rendererConfig.src;
+    }
     if (rendererConfig.borderRadius !== undefined)
       patch.gif_border_radius = rendererConfig.borderRadius;
   }
@@ -95,7 +129,7 @@ export async function dispatchThemeChanged(mode: "system" | "light" | "dark") {
 }
 
 export async function dispatchConfPatch(
-  group: "app" | "orb" | "mascot",
+  group: ConfGroup,
   patch: Record<string, unknown>,
 ) {
   await invoke("patch_conf", { group, patch });

@@ -30,7 +30,7 @@ const appearance = definePage({
   id: "appearance",
   categoryId: "general",
   label: "外观设置",
-  keywords: ["theme", "dark", "light", "orb", "ball", "panel"],
+  keywords: ["mascot", "渲染", "颜色"],
   component: React.lazy(() =>
     import("../pages/AppearanceSettings").then((m) => ({
       default: m.AppearanceSettings,

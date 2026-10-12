@@ -26,6 +26,8 @@ pub struct MascotConf {
     pub secondary_color: Option<String>,
     #[serde(default)]
     pub rive_idle_pose_rotation: bool,
+    #[serde(default)]
+    pub rive_src: Option<String>,
     #[serde(default = "default_true")]
     pub svg_animated: bool,
     #[serde(default)]
@@ -41,6 +43,7 @@ impl MascotConf {
             primary_color: None,
             secondary_color: None,
             rive_idle_pose_rotation: false,
+            rive_src: None,
             svg_animated: true,
             gif_src: None,
             gif_border_radius: default_gif_border_radius(),
@@ -92,6 +95,11 @@ impl MascotConf {
         if let Some(ref s) = self.gif_src {
             if s.is_empty() {
                 return Err("gif_src must not be empty string".to_string());
+            }
+        }
+        if let Some(ref s) = self.rive_src {
+            if s.is_empty() {
+                return Err("rive_src must not be empty string".to_string());
             }
         }
         if self.gif_border_radius > 50 {

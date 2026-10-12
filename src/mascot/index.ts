@@ -7,12 +7,17 @@ export type {
   MascotRendererProps,
   RendererMeta,
   RendererCapabilities,
+  RendererSettingDef,
   RiveRendererConfig,
   SvgRendererConfig,
   GifRendererConfig,
 } from "./core/types";
 export { asRendererId, BUILTIN_RENDERER_IDS } from "./core/types";
-export { getAllRendererMetas, getRenderer } from "./core/registry";
+export {
+  getAllRendererMetas,
+  getRenderer,
+  createMascotCapabilityVisible,
+} from "./core/registry";
 export { hexToArgb, shadeHex, argbToHex } from "./core/colorUtils";
 export type { VisemeShape } from "./core/resolve";
 export {

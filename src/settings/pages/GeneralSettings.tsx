@@ -17,7 +17,7 @@ export const GeneralSettings: React.FC = () => {
 
   return (
     <SettingsPageShell>
-      <SettingsSection title="通用设置" style={{ marginTop: 0 }}>
+      <SettingsSection id="general-main" style={{ marginTop: 0 }}>
         <Form layout="vertical">
           <SettingsGroup
             group="app"

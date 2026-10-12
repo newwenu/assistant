@@ -4,7 +4,7 @@ import { ORB_PANEL_SETTINGS } from "../core/fieldDefinitions";
 import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
 
 export const OrbPanelSection: React.FC = () => {
-  const { onPatch } = useConfPatchHandlers("orb");
+  const { onPatch, onPatchComplete } = useConfPatchHandlers("orb");
 
   return (
     <Form layout="vertical">
@@ -12,6 +12,7 @@ export const OrbPanelSection: React.FC = () => {
         group="orb"
         definitions={ORB_PANEL_SETTINGS}
         onPatch={onPatch}
+        onPatchComplete={onPatchComplete}
       />
     </Form>
   );

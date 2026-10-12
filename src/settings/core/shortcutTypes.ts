@@ -11,8 +11,8 @@ export const SHORTCUT_GROUPS = [
   { key: "main", label: "主窗口" },
 ] as const;
 
-const IS_MAC = /\bMacintosh\b/i.test(navigator.userAgent);
-const PRIMARY_MOD = IS_MAC ? "Meta" : "Control";
+export const IS_MAC = /\bMacintosh\b/i.test(navigator.userAgent);
+export const PRIMARY_MOD = IS_MAC ? "Meta" : "Control";
 
 export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   {
@@ -49,9 +49,24 @@ export const DEFAULT_KEYBINDINGS: Record<string, string> = Object.fromEntries(
   SHORTCUT_DEFINITIONS.map((s) => [s.id, s.defaultBinding]),
 );
 
+export function normalizeBinding(binding: string): string {
+  return binding.replace(/\bControl\b/gi, "Meta");
+}
+
 export function formatBinding(binding: string): string {
   if (!binding) return "未设置";
-  if (!IS_MAC) return binding.replace(/\+/g, " + ");
+  if (!IS_MAC) {
+    return binding
+      .split("+")
+      .map((t) => {
+        const s = t.trim();
+        if (s === "Meta" || s === "Control") return "Ctrl";
+        if (s === "Alt") return "Alt";
+        if (s === "Shift") return "Shift";
+        return s;
+      })
+      .join(" + ");
+  }
   return binding
     .split("+")
     .map((token) => {

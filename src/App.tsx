@@ -35,7 +35,7 @@ import type { SettingsPageId } from "@/settings/core/pageTypes";
 import { HistoryManager } from "@/chat/HistoryManager";
 import { ToolBox } from "@/tools/ToolBox";
 import { ToolPage } from "@/tools/ToolPage";
-import { CommandPalette } from "@/components/CommandPalette";
+import { CommandPalette } from "@/components/commandPalette/CommandPalette";
 import { useToolMenuItems } from "@/tools/CollapsibleToolMenu";
 import { toolsMap } from "@/tools/registry";
 

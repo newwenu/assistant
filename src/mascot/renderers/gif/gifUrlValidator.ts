@@ -29,7 +29,13 @@ export function isValidGifSrc(value: unknown): value is string {
     if (parsed.protocol === "https:" || parsed.protocol === "file:")
       return true;
     if (parsed.protocol !== "http:") return false;
-    return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname);
+    return [
+      "localhost",
+      "asset.localhost",
+      "127.0.0.1",
+      "::1",
+      "[::1]",
+    ].includes(parsed.hostname);
   } catch {
     return (
       hasImagePath(trimmed) &&

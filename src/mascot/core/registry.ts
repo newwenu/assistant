@@ -3,7 +3,13 @@ import type {
   MascotRendererId,
   MascotRendererProps,
   RendererMeta,
+  RendererSettingDef,
 } from "./types";
+import {
+  defineSetting,
+  type SettingDefinition,
+  type ConfGroup,
+} from "@/settings/core/fieldRegistry";
 
 interface RendererEntry {
   meta: RendererMeta;
@@ -13,6 +19,39 @@ interface RendererEntry {
 
 const registry = new Map<string, RendererEntry>();
 
+function registerRendererSettings(
+  rendererId: MascotRendererId,
+  settings: RendererSettingDef[],
+): void {
+  const group: ConfGroup = "mascot";
+  const section = "orb-ball";
+  const visibleForThisRenderer = (conf: Record<string, unknown>) =>
+    conf.renderer === (rendererId as string);
+
+  for (const s of settings) {
+    const def: SettingDefinition = {
+      key: s.key,
+      group,
+      section,
+      type: s.type as SettingDefinition["type"],
+      default: s.default,
+      label: s.label,
+      description: s.description,
+      sideEffect: s.sideEffect,
+      visible: visibleForThisRenderer,
+      min: s.min,
+      max: s.max,
+      step: s.step,
+      options: s.options,
+      marks: s.marks,
+      extra: s.extra,
+      saveMessage: s.saveMessage,
+      assetConfig: s.assetConfig,
+    };
+    defineSetting(def);
+  }
+}
+
 export function registerRenderer(entry: RendererEntry): void {
   if (registry.has(entry.meta.id as string)) {
     console.warn(
@@ -20,6 +59,9 @@ export function registerRenderer(entry: RendererEntry): void {
     );
   }
   registry.set(entry.meta.id as string, entry);
+  if (entry.meta.settings?.length) {
+    registerRendererSettings(entry.meta.id, entry.meta.settings);
+  }
 }
 
 export function getRenderer(id: MascotRendererId): RendererEntry | undefined {
@@ -34,4 +76,24 @@ export function unregisterRenderer(id: MascotRendererId): void {
   const entry = registry.get(id as string);
   entry?.dispose?.();
   registry.delete(id as string);
+}
+
+type MascotCapabilityKey =
+  "colorCustomization" | "idleAnimation" | "hasDefaultColors";
+
+export function createMascotCapabilityVisible(
+  ...requiredCaps: MascotCapabilityKey[]
+): (conf: Record<string, unknown>) => boolean {
+  return (conf) => {
+    const rendererId = (conf.renderer as string) ?? "rive";
+    const meta = getAllRendererMetas().find(
+      (m) => m.id === (rendererId as MascotRendererId),
+    );
+    const caps: Record<MascotCapabilityKey, boolean> = {
+      colorCustomization: !!meta?.capabilities?.colorCustomization,
+      idleAnimation: !!meta?.capabilities?.idleAnimation,
+      hasDefaultColors: !!meta?.defaultColors,
+    };
+    return requiredCaps.every((c) => caps[c]);
+  };
 }

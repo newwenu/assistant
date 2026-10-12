@@ -19,7 +19,7 @@ export const AboutSettings: React.FC = () => {
 
   return (
     <SettingsPageShell>
-      <SettingsSection title="关于" style={{ marginTop: 0 }}>
+      <SettingsSection id="about-main" style={{ marginTop: 0 }}>
         <Descriptions column={1} bordered size="small">
           <Descriptions.Item label="应用名称">Assistant</Descriptions.Item>
           <Descriptions.Item label="版本号">

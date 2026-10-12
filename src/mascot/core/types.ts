@@ -43,6 +43,28 @@ export interface RendererMeta {
   capabilities: RendererCapabilities;
   limitations?: string;
   defaultColors?: { primary: string; secondary: string | null } | null;
+  settings?: RendererSettingDef[];
+}
+
+export interface RendererSettingDef {
+  key: string;
+  type: string;
+  default: unknown;
+  label: string;
+  description?: string;
+  sideEffect?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: { label: string; value: string }[];
+  marks?: Record<number, string>;
+  extra?: string;
+  saveMessage?: string | false;
+  assetConfig?: {
+    assetType: string;
+    fileFilter: { name: string; extensions: string[] };
+    urlInput?: boolean;
+  };
 }
 
 export interface RiveRendererConfig {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Tag } from "antd";
+import { formatBinding } from "../core/shortcutTypes";
 
 interface ShortcutRecorderProps {
   currentBinding: string;
@@ -157,29 +158,6 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
     };
   }, [recording, buildBinding]);
 
-  const IS_MAC = /\bMacintosh\b/i.test(navigator.userAgent);
-
-  const formatDisplay = (binding: string) => {
-    if (!IS_MAC) return binding.replace(/\+/g, " + ");
-    return binding
-      .split("+")
-      .map((token) => {
-        switch (token.trim()) {
-          case "Control":
-            return "⌃";
-          case "Alt":
-            return "⌥";
-          case "Shift":
-            return "⇧";
-          case "Meta":
-            return "⌘";
-          default:
-            return token.trim();
-        }
-      })
-      .join(" ");
-  };
-
   if (recording) {
     return (
       <div
@@ -192,7 +170,7 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
         }}
       >
         {captured ? (
-          <Tag color="blue">{formatDisplay(captured)}</Tag>
+          <Tag color="blue">{formatBinding(captured)}</Tag>
         ) : (
           <Tag color="processing">请按下快捷键...</Tag>
         )}
@@ -214,7 +192,7 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
         style={{ cursor: "pointer" }}
         color={currentBinding ? "default" : "warning"}
       >
-        {currentBinding ? formatDisplay(currentBinding) : "未设置"}
+        {currentBinding ? formatBinding(currentBinding) : "未设置"}
       </Tag>
     </div>
   );

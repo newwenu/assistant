@@ -4,7 +4,7 @@ pub const WINDOW_MAIN: &str = "main";
 pub const WINDOW_ORB: &str = "orb";
 pub const WINDOW_SETTINGS: &str = "settings";
 
-pub const ORB_COLLAPSED_SIZE: u32 = 72;
+pub const ORB_COLLAPSED_SIZE: u32 = 84;
 pub const ORB_EXPANDED_WIDTH: u32 = 420;
 pub const ORB_EXPANDED_HEIGHT: u32 = 600;
 pub const ORB_CHROME_INSET: u32 = 8;

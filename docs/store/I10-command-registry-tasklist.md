@@ -20,21 +20,21 @@
 
 ## 阶段 2 — 测试与编译
 
-- [ ] 2.1 新建 `commandRegistry.test.ts`：`defineCommand` + `getAllCommands` + `clearCommands`
-- [ ] 2.2 新建 `commandAggregation.test.ts`：设置页命令数 = SETTINGS_PAGES.length、工具命令数 = tools.length、设置项命令数 = getAllDefinitions().length、手动命令数 ≥ 5、`mergeKeywords` 推导规则
+- [x] 2.1 新建 `commandRegistry.test.ts`：`defineCommand` + `getAllCommands` + `clearCommands`
+- [x] 2.2 新建 `commandAggregation.test.ts`：设置页命令数 = SETTINGS_PAGES.length、工具命令数 = tools.length、设置项命令数 = getAllDefinitions().length、手动命令数 ≥ 5、`mergeKeywords` 推导规则
 - [x] 2.3 `tsc --noEmit` + `eslint --fix` 通过
 
 ---
 
 ## 阶段 3 — 验收
 
-- [ ] 3.1 Ctrl/Cmd+K 唤起命令面板
-- [ ] 3.2 搜索设置页/工具/操作/外部链接均可达（"外观"/"theme"/"颜色"/"github"）
-- [ ] 3.3 关键词自动推导生效（"settings"/"appearance" 可搜到外观设置）
-- [ ] 3.4 选择命令后正确执行 action，每分类最多显示 `COMMAND_PALETTE_MAX_PER_CATEGORY` 条
-- [ ] 3.5 搜索设置项 label 可直达具体设置项（"开机自启"/"launch"），页面自动滚动到目标字段并高亮
-- [ ] 3.6 面板为 Spotlight 浮层风格，分类用轻量标题，选中项左侧 accent 条
-- [ ] 3.7 无 `<mark>` 高亮，空状态有提示
-- [ ] 3.8 ↓ 从输入框跳到结果，↑ 从首项回输入框，Tab 跨分类
-- [ ] 3.9 Ctrl/Cmd+N/P 等效 ↓↑，Ctrl+Enter 保持面板，1-9 仅在选中态时快捷
-- [ ] 3.10 鼠标 hover 同步键盘锚点，↓/↑ 从 hover 位置继续
+- [x] 3.1 Ctrl/Cmd+K 唤起命令面板
+- [x] 3.2 搜索设置页/工具/操作/外部链接均可达（"外观"/"theme"/"颜色"/"github"）
+- [x] 3.3 关键词自动推导生效（"settings"/"appearance" 可搜到外观设置）
+- [x] 3.4 选择命令后正确执行 action，每分类最多显示 `COMMAND_PALETTE_MAX_PER_CATEGORY` 条
+- [x] 3.5 搜索设置项 label 可直达具体设置项（"开机自启"/"launch"），页面自动滚动到目标字段并高亮
+- [x] 3.6 面板为 Spotlight 浮层风格，分类用轻量标题，选中项左侧 accent 条
+- [x] 3.7 无 `<mark>` 高亮，空状态有提示
+- [x] 3.8 ↓ 从输入框跳到结果，↑ 从首项回输入框，Tab 跨分类
+- [x] 3.9 Ctrl/Cmd+N/P 等效 ↓↑，Ctrl+Enter 保持面板，1-9 仅在选中态时快捷
+- [x] 3.10 鼠标 hover 同步键盘锚点，↓/↑ 从 hover 位置继续

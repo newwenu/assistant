@@ -7,9 +7,12 @@ import { useTheme } from "@/hooks/useTheme";
 import { lightTheme, darkTheme } from "@/assets/styles/theme";
 import { WINDOW_ORB } from "@/config/constants";
 import { subscribeSettingEvents } from "@/services/settingEvents";
+import { initSettingSystem } from "@/settings/core/initSettingSystem";
 import App from "./App";
 import "./assets/styles/fonts.css";
 import "./assets/styles/global.css";
+
+initSettingSystem();
 
 const ThemedApp: React.FC = () => {
   useTheme();

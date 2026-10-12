@@ -147,7 +147,7 @@ mod property {
         #[test]
         fn snap_edge_preserves_size(wx in 0i32..1920, wy in 0i32..1080) {
             let screen = ScreenBounds { x: 0, y: 0, width: 1920, height: 1080 };
-            let snapped = snap_orb_to_edge(&[screen], WindowBounds::new(wx, wy, 88, 88), 4, 0);
+            let snapped = snap_orb_to_edge(&[screen], WindowBounds::new(wx, wy, 100, 100), 4, 0);
             assert_eq!((snapped.width, snapped.height), (88, 88));
         }
     }

@@ -1,24 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import { Input, Button, Typography, Space, Tag, message } from "antd";
+import { Input, Button, Typography, message } from "antd";
 import { SearchOutlined, UndoOutlined } from "@ant-design/icons";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { ShortcutRecorder } from "../shared/ShortcutRecorder";
+import { SettingsGroup } from "../shared/SettingsGroup";
 import { SettingsSection } from "../shared/SettingsSection";
 import { SettingsPageShell } from "../shared/SettingsPageShell";
+import { SHORTCUT_SETTINGS } from "../core/fieldDefinitions";
 import {
   SHORTCUT_DEFINITIONS,
   SHORTCUT_GROUPS,
   DEFAULT_KEYBINDINGS,
   formatBinding,
-  detectConflicts,
-  type ConflictInfo,
 } from "../core/shortcutTypes";
 
 export const ShortcutSettings: React.FC = () => {
-  const appConf = useSettingsStore((s) => s.appConf);
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);
-  const updateKeybinding = useSettingsStore((s) => s.updateKeybinding);
   const resetKeybindings = useSettingsStore((s) => s.resetKeybindings);
+  const appConf = useSettingsStore((s) => s.appConf);
   const [searchQuery, setSearchQuery] = useState("");
   const [messageApi, contextHolder] = message.useMessage();
 
@@ -28,42 +26,46 @@ export const ShortcutSettings: React.FC = () => {
 
   const keybindings = appConf?.keybindings ?? DEFAULT_KEYBINDINGS;
 
-  const conflicts = useMemo(() => detectConflicts(keybindings), [keybindings]);
-
   const filteredDefinitions = useMemo(() => {
-    if (!searchQuery.trim()) return SHORTCUT_DEFINITIONS;
+    if (!searchQuery.trim()) return SHORTCUT_SETTINGS;
     const q = searchQuery.toLowerCase();
-    return SHORTCUT_DEFINITIONS.filter(
-      (s) =>
-        s.label.toLowerCase().includes(q) ||
-        s.id.toLowerCase().includes(q) ||
-        formatBinding(keybindings[s.id] ?? s.defaultBinding)
-          .toLowerCase()
-          .includes(q),
-    );
+    return SHORTCUT_SETTINGS.filter((def) => {
+      const shortcutId = def.key.replace("keybindings.", "");
+      const shortcut = SHORTCUT_DEFINITIONS.find((s) => s.id === shortcutId);
+      const currentBinding = shortcut
+        ? formatBinding(keybindings[shortcut.id] ?? shortcut.defaultBinding)
+        : "";
+      return (
+        def.label.toLowerCase().includes(q) ||
+        def.key.toLowerCase().includes(q) ||
+        currentBinding.toLowerCase().includes(q)
+      );
+    });
   }, [searchQuery, keybindings]);
-
-  const handleConfirm = (id: string) => async (binding: string) => {
-    await updateKeybinding(id, binding);
-    messageApi.success("快捷键已更新");
-  };
-
-  const handleClear = (id: string) => async () => {
-    await updateKeybinding(id, "");
-    messageApi.info("快捷键已清除");
-  };
 
   const handleReset = async () => {
     await resetKeybindings();
     messageApi.success("已恢复默认快捷键");
   };
 
+  const groupedDefinitions = useMemo(() => {
+    const groups: Record<string, typeof SHORTCUT_SETTINGS> = {};
+    for (const def of filteredDefinitions) {
+      const shortcutId = def.key.replace("keybindings.", "");
+      const shortcut = SHORTCUT_DEFINITIONS.find((s) => s.id === shortcutId);
+      const groupKey = shortcut?.group ?? "other";
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(def);
+    }
+    return groups;
+  }, [filteredDefinitions]);
+
   return (
     <>
       {contextHolder}
       <SettingsPageShell>
         <SettingsSection
-          title="快捷键"
+          id="shortcuts-main"
           style={{ marginTop: 0 }}
           extra={
             <Button icon={<UndoOutlined />} onClick={handleReset}>
@@ -81,79 +83,16 @@ export const ShortcutSettings: React.FC = () => {
           />
 
           {SHORTCUT_GROUPS.map((group) => {
-            const groupItems = filteredDefinitions.filter(
-              (s) => s.group === group.key,
-            );
-            if (groupItems.length === 0) return null;
+            const groupDefs = groupedDefinitions[group.key];
+            if (!groupDefs || groupDefs.length === 0) return null;
 
             return (
               <div key={group.key} style={{ marginBottom: 16 }}>
-                <Typography.Text
-                  strong
-                  style={{ fontSize: 13, color: "var(--color-text-secondary)" }}
-                >
+                <Typography.Text strong style={{ fontSize: 14 }}>
                   {group.label}
                 </Typography.Text>
                 <div style={{ marginTop: 8 }}>
-                  {groupItems.map((shortcut) => {
-                    const currentBinding =
-                      keybindings[shortcut.id] ?? shortcut.defaultBinding;
-                    const conflict: ConflictInfo | undefined =
-                      conflicts[shortcut.id];
-
-                    return (
-                      <div
-                        key={shortcut.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          padding: "8px 12px",
-                          borderBottom:
-                            "1px solid var(--color-border-secondary)",
-                          background: conflict
-                            ? conflict.level === "error"
-                              ? "var(--color-error-bg)"
-                              : "var(--color-warning-bg)"
-                            : "transparent",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 2,
-                          }}
-                        >
-                          <Typography.Text>{shortcut.label}</Typography.Text>
-                          {conflict && (
-                            <Typography.Text
-                              type={
-                                conflict.level === "error"
-                                  ? "danger"
-                                  : "warning"
-                              }
-                              style={{ fontSize: 12 }}
-                            >
-                              {conflict.level === "error"
-                                ? "同组快捷键冲突"
-                                : "跨组快捷键冲突，可能无法同时生效"}
-                            </Typography.Text>
-                          )}
-                        </div>
-                        <Space>
-                          <ShortcutRecorder
-                            currentBinding={currentBinding}
-                            onConfirm={handleConfirm(shortcut.id)}
-                            onClear={handleClear(shortcut.id)}
-                          />
-                          {currentBinding !== shortcut.defaultBinding && (
-                            <Tag color="orange">已修改</Tag>
-                          )}
-                        </Space>
-                      </div>
-                    );
-                  })}
+                  <SettingsGroup group="app" definitions={groupDefs} />
                 </div>
               </div>
             );
