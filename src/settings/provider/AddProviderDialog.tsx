@@ -27,7 +27,7 @@ export const AddProviderDialog: React.FC<AddProviderDialogProps> = ({
       open={open}
       onCancel={onClose}
       footer={null}
-      width={520}
+      width="var(--modal-width-select)"
       className="add-provider-dialog"
     >
       {API_FORMATS.map((fmt) => {

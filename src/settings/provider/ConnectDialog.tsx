@@ -175,7 +175,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
           </Button>
         </div>
       }
-      width={440}
+      width="var(--modal-width-form)"
     >
       {contextHolder}
       <Form form={form} layout="vertical" style={{ marginTop: 16 }}>

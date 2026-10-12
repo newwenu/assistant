@@ -3,24 +3,20 @@ import {
   Button,
   Typography,
   Modal,
-  Empty,
   Drawer,
   Form,
   Tag,
   Space,
-  Input,
   message,
 } from "antd";
-import {
-  PlusOutlined,
-  SearchOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  UndoOutlined,
-} from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined, UndoOutlined } from "@ant-design/icons";
 import { useAgentModeStore, type AgentMode } from "@/stores/agentModeStore";
 import type { FieldSchema } from "../core/fieldSchema";
 import { SettingField } from "../shared/SettingField";
+import {
+  EntityListPageShell,
+  type EntityListSectionConfig,
+} from "../shared/EntityListPageShell";
 import {
   getAllAgentKinds,
   getAgentKindLabel,
@@ -263,26 +259,9 @@ export const AgentModeSettings: React.FC = () => {
   };
 
   const renderModeRow = (mode: AgentMode) => (
-    <div
-      key={mode.id}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "8px 12px",
-        borderBottom: "1px solid var(--color-border-secondary)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          flex: 1,
-          minWidth: 0,
-        }}
-      >
-        <Typography.Text strong style={{ flexShrink: 0 }}>
+    <div key={mode.id} className="entity-list-row">
+      <div className="entity-list-row-info">
+        <Typography.Text strong className="entity-list-row-name">
           {mode.name}
         </Typography.Text>
         <Tag color={getAgentKindColor(mode.kind)} style={{ flexShrink: 0 }}>
@@ -292,7 +271,7 @@ export const AgentModeSettings: React.FC = () => {
           <Typography.Text
             type="secondary"
             ellipsis
-            style={{ flex: 1, minWidth: 0 }}
+            className="entity-list-row-detail"
           >
             {mode.description}
           </Typography.Text>
@@ -326,128 +305,81 @@ export const AgentModeSettings: React.FC = () => {
     </div>
   );
 
+  const sections: EntityListSectionConfig<AgentMode>[] = [
+    { label: "内置模式", items: filteredBuiltin, renderRow: renderModeRow },
+    { label: "自定义模式", items: filteredCustom, renderRow: renderModeRow },
+  ];
+
   return (
-    <div className="agent-mode-manager">
+    <>
       {messageContextHolder}
       {modalContextHolder}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 16,
-        }}
+      <EntityListPageShell<AgentMode>
+        title="Agent 模式管理"
+        items={store.modes}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        addLabel="新建模式"
+        onAdd={handleAdd}
+        emptyDescription="暂无 Agent 模式"
+        sections={sections}
       >
-        <Typography.Title level={5} style={{ margin: 0 }}>
-          Agent 模式管理
-        </Typography.Title>
-        <Space>
-          <Form.Item style={{ marginBottom: 0 }}>
-            <Space>
-              <Input
-                placeholder="搜索模式"
-                prefix={<SearchOutlined />}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                allowClear
-                style={{ width: 180 }}
-              />
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={handleAdd}
-              >
-                新建模式
-              </Button>
-            </Space>
-          </Form.Item>
-        </Space>
-      </div>
-
-      {store.modes.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="暂无 Agent 模式"
-        />
-      ) : (
-        <>
-          {filteredBuiltin.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <Typography.Text
-                type="secondary"
-                style={{ fontSize: 12, marginBottom: 4, display: "block" }}
-              >
-                内置模式
-              </Typography.Text>
-              {filteredBuiltin.map(renderModeRow)}
-            </div>
-          )}
-          {filteredCustom.length > 0 && (
-            <div>
-              <Typography.Text
-                type="secondary"
-                style={{ fontSize: 12, marginBottom: 4, display: "block" }}
-              >
-                自定义模式
-              </Typography.Text>
-              {filteredCustom.map(renderModeRow)}
-            </div>
-          )}
-        </>
-      )}
-
-      <Drawer
-        title={editingMode ? "编辑模式" : "新建模式"}
-        open={drawerOpen}
-        onClose={() => {
-          setDrawerOpen(false);
-          setEditingMode(null);
-        }}
-        size="large"
-        extra={
-          <Button type="primary" onClick={() => void handleSave()}>
-            保存
-          </Button>
-        }
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={defaultFormData}
-          onValuesChange={(changed) => {
-            if ("reasoning_enabled" in changed && !changed.reasoning_enabled) {
-              form.setFieldValue("reasoning_effort", null);
-            }
+        <Drawer
+          title={editingMode ? "编辑模式" : "新建模式"}
+          open={drawerOpen}
+          onClose={() => {
+            setDrawerOpen(false);
+            setEditingMode(null);
           }}
+          size="large"
+          extra={
+            <Button type="primary" onClick={() => void handleSave()}>
+              保存
+            </Button>
+          }
         >
-          {fieldSchemas.filter(shouldShowField).map((schema) => (
-            <Form.Item
-              key={schema.key}
-              name={schema.key}
-              label={schema.label}
-              tooltip={schema.description || undefined}
-              extra={schema.extra}
-              rules={
-                schema.key === "name"
-                  ? [{ required: true, message: "请输入模式名称" }]
-                  : undefined
+          <Form
+            form={form}
+            layout="vertical"
+            initialValues={defaultFormData}
+            onValuesChange={(changed) => {
+              if (
+                "reasoning_enabled" in changed &&
+                !changed.reasoning_enabled
+              ) {
+                form.setFieldValue("reasoning_effort", null);
               }
-              getValueProps={
-                schema.key === "temperature"
-                  ? (v: unknown) => ({ value: v ?? 0.7 })
-                  : undefined
-              }
-            >
-              <SettingField
-                schema={schema}
-                value={null}
-                onChange={() => {}}
-                disabled={isFieldDisabled(schema)}
-              />
-            </Form.Item>
-          ))}
-        </Form>
-      </Drawer>
-    </div>
+            }}
+          >
+            {fieldSchemas.filter(shouldShowField).map((schema) => (
+              <Form.Item
+                key={schema.key}
+                name={schema.key}
+                label={schema.label}
+                tooltip={schema.description || undefined}
+                extra={schema.extra}
+                rules={
+                  schema.key === "name"
+                    ? [{ required: true, message: "请输入模式名称" }]
+                    : undefined
+                }
+                getValueProps={
+                  schema.key === "temperature"
+                    ? (v: unknown) => ({ value: v ?? 0.7 })
+                    : undefined
+                }
+              >
+                <SettingField
+                  schema={schema}
+                  value={null}
+                  onChange={() => {}}
+                  disabled={isFieldDisabled(schema)}
+                />
+              </Form.Item>
+            ))}
+          </Form>
+        </Drawer>
+      </EntityListPageShell>
+    </>
   );
 };

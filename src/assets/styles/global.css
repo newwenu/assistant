@@ -23,6 +23,8 @@
   --shadow-panel: 0 2px 12px rgba(0, 0, 0, 0.08);
   --filter-orb: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.12))
     drop-shadow(0 0.5px 1px rgba(0, 0, 0, 0.08));
+  --modal-width-select: 600px;
+  --modal-width-form: 500px;
   --color-orb-gradient-start: #6ea8fe;
   --color-orb-gradient-end: #3b82f6;
   --radius: 6px;
@@ -816,22 +818,18 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   gap: 12px;
 }
 
-.provider-manager {
+.entity-list-page {
   padding: 24px;
 }
 
-.provider-manager-header {
+.entity-list-page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
 }
 
-.agent-mode-manager {
-  padding: 24px;
-}
-
-.provider-section-label {
+.entity-list-section-label {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -844,7 +842,7 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   margin-top: 4px;
 }
 
-.provider-section-count {
+.entity-list-section-count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -859,13 +857,13 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   line-height: 1;
 }
 
-.provider-list {
+.entity-list-rows {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.provider-row {
+.entity-list-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -874,11 +872,11 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   transition: background 0.15s;
 }
 
-.provider-row:hover {
+.entity-list-row:hover {
   background: var(--color-bg-hover);
 }
 
-.provider-row-info {
+.entity-list-row-info {
   flex: 1;
   display: flex;
   align-items: center;
@@ -886,13 +884,13 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   min-width: 0;
 }
 
-.provider-row-name {
+.entity-list-row-name {
   font-weight: 500;
   font-size: 13px;
   white-space: nowrap;
 }
 
-.provider-row-detail {
+.entity-list-row-detail {
   font-size: 12px;
   color: var(--color-text-secondary);
   white-space: nowrap;
@@ -900,7 +898,7 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   text-overflow: ellipsis;
 }
 
-.provider-row-model {
+.entity-list-row-model {
   font-size: 12px;
   color: var(--color-text-tertiary);
   margin-left: auto;
@@ -997,8 +995,8 @@ div[data-orb-window].orb-expanded .orb-hitbox {
 }
 
 .add-provider-grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 4px;
 }
 

@@ -1,11 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { Button, Typography, Modal, Empty, Dropdown } from "antd";
-import {
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  MoreOutlined,
-} from "@ant-design/icons";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Button, Typography, Modal, Dropdown } from "antd";
+import { EditOutlined, DeleteOutlined, MoreOutlined } from "@ant-design/icons";
 import {
   useProviderStore,
   type Provider,
@@ -17,6 +12,10 @@ import {
 import { FormatTag } from "./FormatTag";
 import { AddProviderDialog } from "./AddProviderDialog";
 import { ConnectDialog } from "./ConnectDialog";
+import {
+  EntityListPageShell,
+  type EntityListSectionConfig,
+} from "../shared/EntityListPageShell";
 
 export const ProviderManager: React.FC = () => {
   const providerStore = useProviderStore();
@@ -29,6 +28,7 @@ export const ProviderManager: React.FC = () => {
     useState<ApiFormat | null>(null);
   const [editProvider, setEditProvider] = useState<Provider | null>(null);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const loadProviders = useProviderStore((s) => s.loadProviders);
 
@@ -56,21 +56,24 @@ export const ProviderManager: React.FC = () => {
     setConnectOpen(true);
   };
 
-  const handleEdit = (provider: Provider) => {
+  const handleEdit = useCallback((provider: Provider) => {
     setConnectPreset(null);
     setConnectCustomFormat(null);
     setEditProvider(provider);
     setConnectOpen(true);
-  };
+  }, []);
 
-  const handleDelete = (id: string) => {
-    modal.confirm({
-      title: "确认删除此 Provider？",
-      content:
-        "删除后，使用此 Provider 的对话将保留，但需要重新选择 Provider 才能继续对话",
-      onOk: () => providerStore.deleteProvider(id),
-    });
-  };
+  const handleDelete = useCallback(
+    (id: string) => {
+      modal.confirm({
+        title: "确认删除此 Provider？",
+        content:
+          "删除后，使用此 Provider 的对话将保留，但需要重新选择 Provider 才能继续对话",
+        onOk: () => providerStore.deleteProvider(id),
+      });
+    },
+    [modal, providerStore],
+  );
 
   const handleConnect = async (input: Record<string, unknown>) => {
     await providerStore.saveProvider(input);
@@ -80,108 +83,109 @@ export const ProviderManager: React.FC = () => {
     setEditProvider(null);
   };
 
-  const providersByFormat = new Map<ApiFormat, Provider[]>();
-  for (const p of providerStore.providers) {
-    const fmt = getApiFormatByType(p.type);
-    const list = providersByFormat.get(fmt) ?? [];
-    list.push(p);
-    providersByFormat.set(fmt, list);
-  }
+  const providersByFormat = useMemo(() => {
+    const map = new Map<ApiFormat, Provider[]>();
+    for (const p of providerStore.providers) {
+      const fmt = getApiFormatByType(p.type);
+      const list = map.get(fmt) ?? [];
+      list.push(p);
+      map.set(fmt, list);
+    }
+    return map;
+  }, [providerStore.providers]);
 
-  return (
-    <div className="provider-manager">
-      {modalContextHolder}
-      <div className="provider-manager-header">
-        <Typography.Title level={5}>AI Provider 设置</Typography.Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          添加 Provider
-        </Button>
-      </div>
-
-      {providerStore.providers.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="尚未配置 Provider"
-        >
-          <Button type="primary" onClick={handleAdd}>
-            添加 Provider
-          </Button>
-        </Empty>
-      ) : (
-        API_FORMATS.filter(
-          (fmt) => (providersByFormat.get(fmt.format)?.length ?? 0) > 0,
-        ).map((fmt) => (
-          <div key={fmt.format} style={{ marginBottom: 16 }}>
-            <div className="provider-section-label">
-              {fmt.label}
-              <span className="provider-section-count">
-                {providersByFormat.get(fmt.format)!.length}
+  const sections: EntityListSectionConfig<Provider>[] = useMemo(() => {
+    return API_FORMATS.filter(
+      (fmt) => (providersByFormat.get(fmt.format)?.length ?? 0) > 0,
+    ).map((fmt) => {
+      const allItems = providersByFormat.get(fmt.format)!;
+      const filteredItems = searchQuery
+        ? allItems.filter(
+            (p) =>
+              p.name.includes(searchQuery) || p.base_url.includes(searchQuery),
+          )
+        : allItems;
+      return {
+        label: fmt.label,
+        items: filteredItems,
+        renderRow: (p: Provider) => (
+          <div key={p.id} className="entity-list-row">
+            <div className="entity-list-row-info">
+              <Typography.Text strong className="entity-list-row-name">
+                {p.name}
+              </Typography.Text>
+              <FormatTag type={p.type} size="small" />
+              <span className="entity-list-row-detail">
+                {p.api_key_masked
+                  ? p.api_key_masked
+                  : p.base_url.replace(/^https?:\/\//, "").split("/")[0]}
+              </span>
+              <span className="entity-list-row-model">
+                {p.default_model || "—"}
               </span>
             </div>
-            <div className="provider-list">
-              {providersByFormat.get(fmt.format)!.map((p) => (
-                <div key={p.id} className="provider-row">
-                  <div className="provider-row-info">
-                    <span className="provider-row-name">{p.name}</span>
-                    <FormatTag type={p.type} size="small" />
-                    <span className="provider-row-detail">
-                      {p.api_key_masked
-                        ? p.api_key_masked
-                        : p.base_url.replace(/^https?:\/\//, "").split("/")[0]}
-                    </span>
-                    <span className="provider-row-model">
-                      {p.default_model || "—"}
-                    </span>
-                  </div>
-                  <Dropdown
-                    menu={{
-                      items: [
-                        {
-                          key: "edit",
-                          icon: <EditOutlined />,
-                          label: "编辑",
-                          onClick: () => handleEdit(p),
-                        },
-                        {
-                          key: "delete",
-                          icon: <DeleteOutlined />,
-                          label: "删除",
-                          danger: true,
-                          onClick: () => handleDelete(p.id),
-                        },
-                      ],
-                    }}
-                    trigger={["click"]}
-                  >
-                    <Button type="text" size="small" icon={<MoreOutlined />} />
-                  </Dropdown>
-                </div>
-              ))}
-            </div>
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: "edit",
+                    icon: <EditOutlined />,
+                    label: "编辑",
+                    onClick: () => handleEdit(p),
+                  },
+                  {
+                    key: "delete",
+                    icon: <DeleteOutlined />,
+                    label: "删除",
+                    danger: true,
+                    onClick: () => handleDelete(p.id),
+                  },
+                ],
+              }}
+              trigger={["click"]}
+            >
+              <Button type="text" size="small" icon={<MoreOutlined />} />
+            </Dropdown>
           </div>
-        ))
-      )}
+        ),
+      };
+    });
+  }, [providersByFormat, searchQuery, handleEdit, handleDelete]);
 
-      <AddProviderDialog
-        open={addDialogOpen}
-        onClose={() => setAddDialogOpen(false)}
-        onPickPreset={handlePickPreset}
-        onAddCustom={handleAddCustom}
-      />
+  return (
+    <>
+      {modalContextHolder}
+      <EntityListPageShell<Provider>
+        title="AI Provider 设置"
+        items={providerStore.providers}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        addLabel="添加 Provider"
+        onAdd={handleAdd}
+        emptyDescription="尚未配置 Provider"
+        sections={sections}
+      >
+        <AddProviderDialog
+          open={addDialogOpen}
+          onClose={() => setAddDialogOpen(false)}
+          onPickPreset={handlePickPreset}
+          onAddCustom={handleAddCustom}
+        />
 
-      <ConnectDialog
-        provider={editProvider}
-        preset={connectPreset}
-        customFormat={connectCustomFormat}
-        open={connectOpen}
-        onClose={() => {
-          setConnectOpen(false);
-          setConnectPreset(null);
-          setConnectCustomFormat(null);
-          setEditProvider(null);
-        }}
-        onSubmit={(input) => void handleConnect(input)}
-      />
-    </div>
+        <ConnectDialog
+          provider={editProvider}
+          preset={connectPreset}
+          customFormat={connectCustomFormat}
+          open={connectOpen}
+          onClose={() => {
+            setConnectOpen(false);
+            setConnectPreset(null);
+            setConnectCustomFormat(null);
+            setEditProvider(null);
+          }}
+          onSubmit={(input) => void handleConnect(input)}
+        />
+      </EntityListPageShell>
+    </>
   );
 };
