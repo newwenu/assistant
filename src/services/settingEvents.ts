@@ -50,13 +50,21 @@ export function subscribeSettingEvents(): () => void {
     listen<SettingEventPayload>(SettingEvent.ConfPatched, ({ payload }) => {
       if (disposed) return;
       if (payload.action === SettingAction.ConfPatched) {
-        const { group } = (payload.value as {
+        const { group, patch } = (payload.value as {
           group: string;
-          patch: unknown;
-        }) ?? { group: "" };
+          patch: Record<string, unknown>;
+        }) ?? { group: "", patch: {} };
         const store = useSettingsStore.getState();
-        if (group === "app") void store.loadAppConf();
-        else if (group === "orb") void store.loadOrbConf();
+        if (group === "app") {
+          void store.loadAppConf().then(async () => {
+            if ("language" in patch) {
+              const { applyLocaleChange } = await import("@/main");
+              const lang =
+                useSettingsStore.getState().appConf?.language ?? "zh-CN";
+              await applyLocaleChange(lang);
+            }
+          });
+        } else if (group === "orb") void store.loadOrbConf();
         else if (group === "mascot") void store.loadMascotConf();
       }
     }),

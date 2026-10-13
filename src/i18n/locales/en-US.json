@@ -1,28 +1,30 @@
 {
-  "navigation": {
-    "general": { "title": "General" },
-    "appearance": { "title": "Appearance" },
-    "shortcuts": { "title": "Shortcuts" },
-    "providers": { "title": "Provider Management" },
-    "agents": { "title": "Agent Modes" },
-    "about": { "title": "About" },
-    "chat_history": "Chat History",
-    "settings": "Settings"
+  "common": {
+    "navigation": {
+      "general": { "title": "General" },
+      "appearance": { "title": "Appearance" },
+      "shortcuts": { "title": "Shortcuts" },
+      "providers": { "title": "Provider Management" },
+      "agents": { "title": "Agent Modes" },
+      "about": { "title": "About" },
+      "chat_history": "Chat History",
+      "settings": "Settings"
+    },
+    "actions": {
+      "saved": "Saved",
+      "save": "Save",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Delete",
+      "loading": "Loading..."
+    }
   },
   "settings": {
-    "general_main": { "title": "General Settings" },
-    "theme": { "title": "Theme" },
-    "orb_ball": {
-      "title": "Orb Ball",
-      "description": "Mascot rendering, colors, opacity, scale, etc."
-    },
-    "orb_panel": { "title": "Orb Panel" },
-    "shortcuts_main": { "title": "Shortcuts" },
-    "about_main": { "title": "About" },
     "general": {
-      "language": {
-        "label": "Language"
+      "main": {
+        "title": "General Settings"
       },
+      "language": { "label": "Language" },
       "launch_at_login": {
         "label": "Launch at Login",
         "save_message": "Launch at login updated"
@@ -38,6 +40,7 @@
     },
     "appearance": {
       "theme": {
+        "title": "Theme",
         "label": "Theme Mode",
         "save_message": "Theme switched",
         "options": {
@@ -45,6 +48,13 @@
           "light": "Light",
           "dark": "Dark"
         }
+      },
+      "orb_ball": {
+        "title": "Orb Ball",
+        "description": "Mascot rendering, colors, opacity, scale, etc."
+      },
+      "orb_panel": {
+        "title": "Orb Panel"
       }
     },
     "orb": {
@@ -62,16 +72,202 @@
     "mascot": {
       "renderer": {
         "label": "Renderer",
-        "description": "Choose the mascot rendering method"
+        "description": "Choose the mascot rendering method",
+        "svg": { "label": "SVG", "animated": "SVG Animation" },
+        "rive": {
+          "label": "Rive",
+          "idle_pose_rotation": "Idle Pose Rotation",
+          "custom_rive": {
+            "label": "Custom Rive File",
+            "extra": "Supports .riv files, replaces built-in mascot",
+            "save_message": "Rive file updated"
+          }
+        },
+        "gif": {
+          "label": "GIF",
+          "limitations": "In GIF mode, the assistant will not respond to chat state changes",
+          "border_radius": {
+            "label": "Border Radius",
+            "extra": "0 = square, 50 = circle"
+          },
+          "gif_src": {
+            "label": "GIF Source",
+            "extra": "Supports GIF/PNG/WebP file upload, or URL, local path, data URI",
+            "save_message": "GIF source updated"
+          }
+        }
+      },
+      "color": {
+        "primary": "Primary",
+        "secondary": "Secondary",
+        "apply": "Apply",
+        "reset": "Reset",
+        "applied": "Colors applied",
+        "apply_failed": "Apply failed: {{error}}"
       }
     },
     "shortcuts": {
+      "main": {
+        "title": "Shortcuts"
+      },
+      "group": { "global": "Global Shortcuts", "main": "Main Window" },
+      "toggle_orb": "Show/Hide Orb",
+      "toggle_main": "Show/Hide Main Window",
+      "new_chat": "New Chat",
+      "command_palette": "Command Palette",
+      "not_set": "Not Set",
+      "recording": "Press shortcut...",
+      "modified": "Modified",
+      "conflict": {
+        "same_group": "Same-group shortcut conflict",
+        "cross_group": "Cross-group shortcut conflict"
+      },
       "save_message": "Shortcuts updated",
       "reset_success": "Shortcuts reset to defaults",
       "reset_default": "Reset to Defaults",
       "search_placeholder": "Search shortcuts..."
     },
+    "asset_picker": {
+      "pick_file": "Choose File",
+      "reset_default": "Reset to Default",
+      "url_placeholder": "Or enter URL / local path / data URI",
+      "installed": "File installed ({{size}} KB)",
+      "install_failed": "Install failed: {{error}}",
+      "reset_success": "Reset to default",
+      "reset_failed": "Reset failed: {{error}}"
+    },
+    "entity_list": {
+      "search_placeholder": "Search {{title}}"
+    },
+    "agent_mode": {
+      "title": "Agent Mode Management",
+      "add": "New Mode",
+      "edit": "Edit Mode",
+      "empty": "No agent modes",
+      "section": { "builtin": "Built-in Modes", "custom": "Custom Modes" },
+      "kind": {
+        "default": "Default",
+        "quick": "Quick",
+        "deep": "Deep",
+        "custom": "Custom"
+      },
+      "field": {
+        "name": {
+          "label": "Name",
+          "placeholder": "Mode name",
+          "required": "Please enter a mode name"
+        },
+        "description": {
+          "label": "Description",
+          "placeholder": "Mode description"
+        },
+        "kind": { "label": "Type" },
+        "prompt": {
+          "label": "System Prompt",
+          "placeholder": "Leave empty to skip system prompt injection"
+        },
+        "model": { "label": "Model", "placeholder": "Follow chat model" },
+        "temperature": { "label": "Temperature" },
+        "max_tokens": { "label": "Max Tokens", "placeholder": "Default 4096" },
+        "reasoning_enabled": { "label": "Reasoning" },
+        "reasoning_effort": {
+          "label": "Reasoning Effort",
+          "placeholder": "Select reasoning effort"
+        }
+      },
+      "confirm_delete": {
+        "title": "Delete this mode?",
+        "content": "This action cannot be undone"
+      },
+      "confirm_reset": {
+        "title": "Reset to defaults?",
+        "content": "Reset prompt, temperature, max_tokens etc. of \"{{name}}\" to built-in defaults"
+      },
+      "deleted": "Deleted",
+      "delete_failed": "Delete failed: {{error}}",
+      "reset_success": "Reset to defaults",
+      "reset_failed": "Reset failed: {{error}}",
+      "saved": "Changes saved",
+      "created": "Mode created",
+      "save_failed": "Save failed: {{error}}"
+    },
+    "provider": {
+      "title": "AI Provider Settings",
+      "add": "Add Provider",
+      "add_title": "Add Provider",
+      "empty": "No providers configured",
+      "connect": "Connect",
+      "edit_title": "Edit {{name}}",
+      "connect_title": "Connect {{name}}",
+      "add_custom_title": "Add Custom {{format}} Provider",
+      "custom_format": "Custom {{format}}",
+      "custom_format_detail": "Any {{format}} endpoint",
+      "description": {
+        "local": "Enter endpoint URL, make sure the service is running locally.",
+        "edit": "Save changes to apply. Leave API Key empty to keep the original key.",
+        "add": "Enter API Key, it will be stored encrypted."
+      },
+      "confirm_delete": {
+        "title": "Delete this Provider?",
+        "content": "After deletion, conversations using this Provider will be preserved, but you need to select a new Provider to continue"
+      },
+      "format": {
+        "openai": "OpenAI Compatible",
+        "openai.description": "Chat Completions /v1 endpoint",
+        "anthropic": "Anthropic Compatible",
+        "anthropic.description": "Messages /v1 endpoint",
+        "local": "Local Runtime",
+        "local.description": "Ollama / LM Studio and other local services"
+      },
+      "preset": {
+        "openai": "OpenAI",
+        "deepseek": "DeepSeek",
+        "groq": "Groq",
+        "openrouter": "OpenRouter",
+        "mistral": "Mistral",
+        "zhipu": "Zhipu GLM",
+        "qwen": "Qwen",
+        "anthropic": "Anthropic",
+        "ollama": "Ollama",
+        "lmstudio": "LM Studio"
+      },
+      "field": {
+        "name": {
+          "label": "Name",
+          "placeholder": "e.g. My Gateway",
+          "required": "Please enter a name"
+        },
+        "type": {
+          "label": "Provider ID",
+          "placeholder": "lowercase, e.g. my-gateway",
+          "required": "Please enter an ID"
+        },
+        "api_key": {
+          "label": "API Key",
+          "keep": "Keep original key",
+          "required": "Please enter API Key",
+          "required_first": "Please enter API Key first",
+          "encrypted_hint": "Key will be stored encrypted",
+          "keep_hint": "Leave empty to keep the original key"
+        },
+        "base_url": {
+          "label": "Base URL",
+          "required": "Please enter Base URL"
+        },
+        "default_model": {
+          "label": "Default Model",
+          "placeholder": "Fetch models or enter manually"
+        },
+        "fetch_models": "Fetch Models",
+        "models_fetched": "Fetched {{count}} models",
+        "models_fetch_failed": "Failed to fetch models: {{error}}",
+        "models_more": "{{count}} more models..."
+      }
+    },
     "about": {
+      "main": {
+        "title": "About"
+      },
       "field": {
         "app_name": { "label": "App Name" },
         "version": { "label": "Version" },
@@ -84,213 +280,6 @@
       "license_value": "MIT",
       "app_name_value": "Assistant",
       "check_update": "Check for Updates (Coming Soon)"
-    }
-  },
-  "shortcut": {
-    "group": {
-      "global": "Global Shortcuts",
-      "main": "Main Window"
-    },
-    "toggle_orb": "Show/Hide Orb",
-    "toggle_main": "Show/Hide Main Window",
-    "new_chat": "New Chat",
-    "command_palette": "Command Palette",
-    "not_set": "Not Set",
-    "recording": "Press shortcut...",
-    "modified": "Modified",
-    "conflict": {
-      "same_group": "Same-group shortcut conflict",
-      "cross_group": "Cross-group shortcut conflict"
-    }
-  },
-  "mascot_renderer": {
-    "svg": {
-      "label": "SVG",
-      "animated": "SVG Animation"
-    },
-    "rive": {
-      "label": "Rive",
-      "idle_pose_rotation": "Idle Pose Rotation",
-      "custom_rive": {
-        "label": "Custom Rive File",
-        "extra": "Supports .riv files, replaces built-in mascot",
-        "save_message": "Rive file updated"
-      }
-    },
-    "gif": {
-      "label": "GIF",
-      "limitations": "In GIF mode, the assistant will not respond to chat state changes",
-      "border_radius": {
-        "label": "Border Radius",
-        "extra": "0 = square, 50 = circle"
-      },
-      "gif_src": {
-        "label": "GIF Source",
-        "extra": "Supports GIF/PNG/WebP file upload, or URL, local path, data URI",
-        "save_message": "GIF source updated"
-      }
-    }
-  },
-  "mascot_color": {
-    "primary": "Primary",
-    "secondary": "Secondary",
-    "apply": "Apply",
-    "reset": "Reset",
-    "applied": "Colors applied",
-    "apply_failed": "Apply failed: {{error}}"
-  },
-  "asset_picker": {
-    "pick_file": "Choose File",
-    "reset_default": "Reset to Default",
-    "url_placeholder": "Or enter URL / local path / data URI",
-    "installed": "File installed ({{size}} KB)",
-    "install_failed": "Install failed: {{error}}",
-    "reset_success": "Reset to default",
-    "reset_failed": "Reset failed: {{error}}"
-  },
-  "entity_list": {
-    "search_placeholder": "Search {{title}}"
-  },
-  "actions": {
-    "saved": "Saved",
-    "save": "Save",
-    "cancel": "Cancel",
-    "edit": "Edit",
-    "delete": "Delete",
-    "loading": "Loading..."
-  },
-  "agent_mode": {
-    "title": "Agent Mode Management",
-    "add": "New Mode",
-    "edit": "Edit Mode",
-    "empty": "No agent modes",
-    "section": {
-      "builtin": "Built-in Modes",
-      "custom": "Custom Modes"
-    },
-    "kind": {
-      "default": "Default",
-      "quick": "Quick",
-      "deep": "Deep",
-      "custom": "Custom"
-    },
-    "field": {
-      "name": {
-        "label": "Name",
-        "placeholder": "Mode name",
-        "required": "Please enter a mode name"
-      },
-      "description": {
-        "label": "Description",
-        "placeholder": "Mode description"
-      },
-      "kind": { "label": "Type" },
-      "prompt": {
-        "label": "System Prompt",
-        "placeholder": "Leave empty to skip system prompt injection"
-      },
-      "model": {
-        "label": "Model",
-        "placeholder": "Follow chat model"
-      },
-      "temperature": { "label": "Temperature" },
-      "max_tokens": {
-        "label": "Max Tokens",
-        "placeholder": "Default 4096"
-      },
-      "reasoning_enabled": { "label": "Reasoning" },
-      "reasoning_effort": {
-        "label": "Reasoning Effort",
-        "placeholder": "Select reasoning effort"
-      }
-    },
-    "confirm_delete": {
-      "title": "Delete this mode?",
-      "content": "This action cannot be undone"
-    },
-    "confirm_reset": {
-      "title": "Reset to defaults?",
-      "content": "Reset prompt, temperature, max_tokens etc. of \"{{name}}\" to built-in defaults"
-    },
-    "deleted": "Deleted",
-    "delete_failed": "Delete failed: {{error}}",
-    "reset_success": "Reset to defaults",
-    "reset_failed": "Reset failed: {{error}}",
-    "saved": "Changes saved",
-    "created": "Mode created",
-    "save_failed": "Save failed: {{error}}"
-  },
-  "provider": {
-    "title": "AI Provider Settings",
-    "add": "Add Provider",
-    "add_title": "Add Provider",
-    "empty": "No providers configured",
-    "connect": "Connect",
-    "edit_title": "Edit {{name}}",
-    "connect_title": "Connect {{name}}",
-    "add_custom_title": "Add Custom {{format}} Provider",
-    "custom_format": "Custom {{format}}",
-    "custom_format_detail": "Any {{format}} endpoint",
-    "description": {
-      "local": "Enter endpoint URL, make sure the service is running locally.",
-      "edit": "Save changes to apply. Leave API Key empty to keep the original key.",
-      "add": "Enter API Key, it will be stored encrypted."
-    },
-    "confirm_delete": {
-      "title": "Delete this Provider?",
-      "content": "After deletion, conversations using this Provider will be preserved, but you need to select a new Provider to continue"
-    },
-    "format": {
-      "openai": "OpenAI Compatible",
-      "openai.description": "Chat Completions /v1 endpoint",
-      "anthropic": "Anthropic Compatible",
-      "anthropic.description": "Messages /v1 endpoint",
-      "local": "Local Runtime",
-      "local.description": "Ollama / LM Studio and other local services"
-    },
-    "preset": {
-      "openai": "OpenAI",
-      "deepseek": "DeepSeek",
-      "groq": "Groq",
-      "openrouter": "OpenRouter",
-      "mistral": "Mistral",
-      "zhipu": "Zhipu GLM",
-      "qwen": "Qwen",
-      "anthropic": "Anthropic",
-      "ollama": "Ollama",
-      "lmstudio": "LM Studio"
-    },
-    "field": {
-      "name": {
-        "label": "Name",
-        "placeholder": "e.g. My Gateway",
-        "required": "Please enter a name"
-      },
-      "type": {
-        "label": "Provider ID",
-        "placeholder": "lowercase, e.g. my-gateway",
-        "required": "Please enter an ID"
-      },
-      "api_key": {
-        "label": "API Key",
-        "keep": "Keep original key",
-        "required": "Please enter API Key",
-        "required_first": "Please enter API Key first",
-        "encrypted_hint": "Key will be stored encrypted",
-        "keep_hint": "Leave empty to keep the original key"
-      },
-      "base_url": {
-        "label": "Base URL",
-        "required": "Please enter Base URL"
-      },
-      "default_model": {
-        "label": "Default Model",
-        "placeholder": "Fetch models or enter manually"
-      },
-      "fetch_models": "Fetch Models",
-      "models_fetched": "Fetched {{count}} models",
-      "models_fetch_failed": "Failed to fetch models: {{error}}",
-      "models_more": "{{count}} more models..."
     }
   }
 }

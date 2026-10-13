@@ -90,10 +90,12 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
         secondary_color: secondaryColor,
       });
       setDirty(false);
-      messageApi.success(t("mascot_color.applied"));
+      messageApi.success(t("settings.mascot.color.applied"));
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      messageApi.error(t("mascot_color.apply_failed", { error: errMsg }));
+      messageApi.error(
+        t("settings.mascot.color.apply_failed", { error: errMsg }),
+      );
     } finally {
       setApplying(false);
     }
@@ -116,7 +118,7 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
           <div>
             <div style={{ marginBottom: 4, fontSize: 14 }}>
-              {t("mascot_color.primary")}
+              {t("settings.mascot.color.primary")}
             </div>
             <Space>
               <ColorPicker
@@ -134,7 +136,7 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
           {showSecondary && (
             <div>
               <div style={{ marginBottom: 4, fontSize: 14 }}>
-                {t("mascot_color.secondary")}
+                {t("settings.mascot.color.secondary")}
               </div>
               <Space>
                 <ColorPicker
@@ -162,10 +164,10 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
                 void handleApply();
               }}
             >
-              {t("mascot_color.apply")}
+              {t("settings.mascot.color.apply")}
             </Button>
             <Button size="small" onClick={handleReset}>
-              {t("mascot_color.reset")}
+              {t("settings.mascot.color.reset")}
             </Button>
           </Space>
         </div>

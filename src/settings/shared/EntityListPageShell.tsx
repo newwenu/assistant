@@ -43,7 +43,9 @@ export function EntityListPageShell<T>({
         </Typography.Title>
         <Space>
           <Input
-            placeholder={t("entity_list.search_placeholder", { title })}
+            placeholder={t("settings.entity_list.search_placeholder", {
+              title,
+            })}
             prefix={<SearchOutlined />}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}

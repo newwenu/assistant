@@ -5,7 +5,7 @@ import { RiveMascot } from "./RiveMascot";
 registerRenderer({
   meta: {
     id: BUILTIN_RENDERER_IDS.rive,
-    label: "mascot_renderer.rive.label",
+    label: "settings.mascot.renderer.rive.label",
     capabilities: {
       visemeSync: true,
       faceTransition: true,
@@ -18,15 +18,15 @@ registerRenderer({
         key: "rive_idle_pose_rotation",
         type: "boolean",
         default: false,
-        label: "mascot_renderer.rive.idle_pose_rotation",
+        label: "settings.mascot.renderer.rive.idle_pose_rotation",
       },
       {
         key: "rive_src",
         type: "asset-picker",
         default: null,
-        label: "mascot_renderer.rive.custom_rive.label",
-        extra: "mascot_renderer.rive.custom_rive.extra",
-        saveMessage: "mascot_renderer.rive.custom_rive.save_message",
+        label: "settings.mascot.renderer.rive.custom_rive.label",
+        extra: "settings.mascot.renderer.rive.custom_rive.extra",
+        saveMessage: "settings.mascot.renderer.rive.custom_rive.save_message",
         assetConfig: {
           assetType: "rive",
           fileFilter: { name: "Rive", extensions: ["riv"] },

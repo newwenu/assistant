@@ -1,5 +1,5 @@
 import { Radio } from "antd";
-import { useTranslation } from "react-i18next";
+import { translateKey } from "@/i18n";
 import type { FieldRenderProps } from "../core/fieldSchema";
 
 const THEME_OPTIONS = [
@@ -9,7 +9,6 @@ const THEME_OPTIONS = [
 ];
 
 export function ThemeRadioRender({ value, onChange }: FieldRenderProps) {
-  const { t } = useTranslation();
   return (
     <Radio.Group
       value={value ?? "system"}
@@ -17,7 +16,7 @@ export function ThemeRadioRender({ value, onChange }: FieldRenderProps) {
     >
       {THEME_OPTIONS.map((opt) => (
         <Radio.Button key={opt.value} value={opt.value}>
-          {t(opt.labelKey)}
+          {translateKey(opt.labelKey)}
         </Radio.Button>
       ))}
     </Radio.Group>

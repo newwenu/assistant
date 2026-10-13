@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Form, message } from "antd";
 import { useSearchParams, useLocation } from "react-router-dom";
-import { useTranslation } from "react-i18next";
+import { translateKey } from "@/i18n";
 import type { SettingDefinition, ConfGroup } from "../core/fieldRegistry";
 import {
   getDefinitionsByGroup,
@@ -20,7 +20,7 @@ interface SettingsGroupProps {
   onPatchComplete?: (patch: Record<string, unknown>) => Promise<void>;
 }
 
-const DEFAULT_SAVE_MESSAGE_KEY = "actions.saved";
+const DEFAULT_SAVE_MESSAGE_KEY = "common.actions.saved";
 
 function useConfByGroup(group: ConfGroup): Record<string, unknown> | null {
   const conf = useSettingsStore((s) => {
@@ -52,7 +52,6 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
   onPatch: externalOnPatch,
   onPatchComplete: externalOnPatchComplete,
 }) => {
-  const { t } = useTranslation();
   const defs = definitions ?? getDefinitionsByGroup(group);
   const conf = useConfByGroup(group);
   const { onPatch: internalOnPatch, onPatchComplete: internalOnPatchComplete } =
@@ -112,7 +111,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
   const showSaveMessage = (def: SettingDefinition) => {
     if (def.saveMessage === false) return;
     const msgKey = def.saveMessage || DEFAULT_SAVE_MESSAGE_KEY;
-    messageApi.success(t(msgKey));
+    messageApi.success(translateKey(msgKey));
   };
 
   const handleChange = async (def: SettingDefinition, value: unknown) => {
@@ -156,23 +155,25 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
           const isIntermediate = INTERMEDIATE_TYPES.has(d.type);
           const translatedDescription =
             d.description && typeof d.description === "string"
-              ? t(d.description)
+              ? translateKey(d.description)
               : undefined;
           const translatedExtra =
-            d.extra && typeof d.extra === "string" ? t(d.extra) : undefined;
+            d.extra && typeof d.extra === "string"
+              ? translateKey(d.extra)
+              : undefined;
           const translatedPlaceholder =
             d.placeholder && typeof d.placeholder === "string"
-              ? t(d.placeholder)
+              ? translateKey(d.placeholder)
               : undefined;
           const translatedSchema: SettingDefinition = {
             ...d,
-            label: t(d.label),
+            label: translateKey(d.label),
             description: translatedDescription,
             extra: translatedExtra,
             placeholder: translatedPlaceholder,
             options: d.options?.map((opt) => ({
               ...opt,
-              label: t(opt.label),
+              label: translateKey(opt.label),
             })),
           };
           return (

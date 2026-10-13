@@ -8,42 +8,42 @@ import { createMascotCapabilityVisible } from "@/mascot";
 defineSection({
   id: "general-main",
   pageId: "general",
-  title: "settings.general_main.title",
+  title: "settings.general.main.title",
 });
 
 defineSection({
   id: "theme",
   pageId: "appearance",
-  title: "settings.theme.title",
+  title: "settings.appearance.theme.title",
   keywords: ["dark", "light", "system", "暗色", "亮色"],
 });
 
 defineSection({
   id: "orb-ball",
   pageId: "appearance",
-  title: "settings.orb_ball.title",
-  description: "settings.orb_ball.description",
+  title: "settings.appearance.orb_ball.title",
+  description: "settings.appearance.orb_ball.description",
   keywords: ["orb", "ball", "透明度", "缩放", "吉祥物", "助手形象"],
 });
 
 defineSection({
   id: "orb-panel",
   pageId: "appearance",
-  title: "settings.orb_panel.title",
+  title: "settings.appearance.orb_panel.title",
   keywords: ["panel", "置顶"],
 });
 
 defineSection({
   id: "shortcuts-main",
   pageId: "shortcuts",
-  title: "settings.shortcuts_main.title",
+  title: "settings.shortcuts.main.title",
   keywords: ["keyboard", "hotkey", "热键"],
 });
 
 defineSection({
   id: "about-main",
   pageId: "about",
-  title: "settings.about_main.title",
+  title: "settings.about.main.title",
   keywords: ["version", "版本"],
 });
 

@@ -1,5 +1,5 @@
 import { Typography } from "antd";
-import { useTranslation } from "react-i18next";
+import { translateKey } from "@/i18n";
 import type React from "react";
 import { getSectionById } from "../core/fieldRegistry";
 
@@ -16,10 +16,11 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
   children,
   style,
 }) => {
-  const { t } = useTranslation();
   const sec = getSectionById(id);
-  const title = sec?.title ? t(sec.title) : id;
-  const description = sec?.description ? t(sec.description) : undefined;
+  const title = sec?.title ? translateKey(sec.title) : id;
+  const description = sec?.description
+    ? translateKey(sec.description)
+    : undefined;
 
   return (
     <div data-section-id={id} style={{ marginTop: 24, ...style }}>

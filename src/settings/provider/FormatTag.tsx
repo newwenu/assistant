@@ -1,5 +1,5 @@
 import React from "react";
-import { useTranslation } from "react-i18next";
+import { translateKey } from "@/i18n";
 import { getApiFormatByType } from "@/stores/providerStore";
 import {
   getProviderFormatLabel,
@@ -15,7 +15,6 @@ export const FormatTag: React.FC<FormatTagProps> = ({
   type,
   size = "default",
 }) => {
-  const { t } = useTranslation();
   const format = getApiFormatByType(type);
   const labelKey = getProviderFormatLabel(format);
   const color = getProviderFormatColor(format);
@@ -33,7 +32,7 @@ export const FormatTag: React.FC<FormatTagProps> = ({
         lineHeight: isSmall ? "16px" : "18px",
       }}
     >
-      {t(labelKey)}
+      {translateKey(labelKey)}
     </span>
   );
 };

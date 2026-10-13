@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Typography, Modal, Dropdown } from "antd";
 import { EditOutlined, DeleteOutlined, MoreOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { translateKey } from "@/i18n";
 import {
   useProviderStore,
   type Provider,
@@ -69,8 +70,8 @@ export const ProviderManager: React.FC = () => {
   const handleDelete = useCallback(
     (id: string) => {
       modal.confirm({
-        title: t("provider.confirm_delete.title"),
-        content: t("provider.confirm_delete.content"),
+        title: t("settings.provider.confirm_delete.title"),
+        content: t("settings.provider.confirm_delete.content"),
         onOk: () => providerStore.deleteProvider(id),
       });
     },
@@ -108,7 +109,7 @@ export const ProviderManager: React.FC = () => {
           )
         : allItems;
       return {
-        label: t(getProviderFormatLabel(fmt.format)),
+        label: translateKey(getProviderFormatLabel(fmt.format)),
         items: filteredItems,
         renderRow: (p: Provider) => (
           <div key={p.id} className="entity-list-row">
@@ -132,13 +133,13 @@ export const ProviderManager: React.FC = () => {
                   {
                     key: "edit",
                     icon: <EditOutlined />,
-                    label: t("actions.edit"),
+                    label: t("common.actions.edit"),
                     onClick: () => handleEdit(p),
                   },
                   {
                     key: "delete",
                     icon: <DeleteOutlined />,
-                    label: t("actions.delete"),
+                    label: t("common.actions.delete"),
                     danger: true,
                     onClick: () => handleDelete(p.id),
                   },
@@ -158,13 +159,13 @@ export const ProviderManager: React.FC = () => {
     <>
       {modalContextHolder}
       <EntityListPageShell<Provider>
-        title={t("provider.title")}
+        title={t("settings.provider.title")}
         items={providerStore.providers}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        addLabel={t("provider.add")}
+        addLabel={t("settings.provider.add")}
         onAdd={handleAdd}
-        emptyDescription={t("provider.empty")}
+        emptyDescription={t("settings.provider.empty")}
         sections={sections}
       >
         <AddProviderDialog

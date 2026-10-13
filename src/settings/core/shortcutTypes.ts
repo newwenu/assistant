@@ -7,8 +7,8 @@ export interface ShortcutDefinition {
 }
 
 export const SHORTCUT_GROUPS = [
-  { key: "global", label: "shortcut.group.global" },
-  { key: "main", label: "shortcut.group.main" },
+  { key: "global", label: "settings.shortcuts.group.global" },
+  { key: "main", label: "settings.shortcuts.group.main" },
 ] as const;
 
 export const IS_MAC = /\bMacintosh\b/i.test(navigator.userAgent);
@@ -18,28 +18,28 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   {
     id: "toggle_orb",
     group: "global",
-    label: "shortcut.toggle_orb",
+    label: "settings.shortcuts.toggle_orb",
     defaultBinding: `${PRIMARY_MOD}+Shift+O`,
     kind: "global",
   },
   {
     id: "toggle_main",
     group: "global",
-    label: "shortcut.toggle_main",
+    label: "settings.shortcuts.toggle_main",
     defaultBinding: `${PRIMARY_MOD}+Shift+M`,
     kind: "global",
   },
   {
     id: "new_chat",
     group: "global",
-    label: "shortcut.new_chat",
+    label: "settings.shortcuts.new_chat",
     defaultBinding: `${PRIMARY_MOD}+Shift+N`,
     kind: "global",
   },
   {
     id: "command_palette",
     group: "main",
-    label: "shortcut.command_palette",
+    label: "settings.shortcuts.command_palette",
     defaultBinding: `${PRIMARY_MOD}+K`,
     kind: "in-app",
   },
@@ -54,7 +54,7 @@ export function normalizeBinding(binding: string): string {
 }
 
 export function formatBinding(binding: string): string {
-  if (!binding) return "shortcut.not_set";
+  if (!binding) return "settings.shortcuts.not_set";
   if (!IS_MAC) {
     return binding
       .split("+")

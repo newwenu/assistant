@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { translateKey } from "@/i18n";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   BrowserRouter,
@@ -55,7 +56,7 @@ const SettingsContent: React.FC = () => {
     <React.Suspense
       fallback={
         <div style={{ padding: 24, color: "var(--color-text-secondary)" }}>
-          {t("actions.loading")}
+          {t("common.actions.loading")}
         </div>
       }
     >
@@ -186,17 +187,17 @@ const MainLayout: React.FC = () => {
                   { type: "divider" as const },
                   {
                     key: "/history",
-                    label: t("navigation.chat_history"),
+                    label: t("common.navigation.chat_history"),
                     icon: <HistoryOutlined />,
                   },
                   { type: "divider" as const },
                   {
                     key: "settings-sub",
-                    label: t("navigation.settings"),
+                    label: t("common.navigation.settings"),
                     icon: <SettingOutlined />,
                     children: SETTINGS_PAGES.map((page) => ({
                       key: `/settings/${page.id}`,
-                      label: t(page.label),
+                      label: translateKey(page.label),
                     })),
                   },
                 ]}

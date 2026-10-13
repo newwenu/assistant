@@ -11,6 +11,7 @@ import {
 } from "antd";
 import { EditOutlined, DeleteOutlined, UndoOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { translateKey } from "@/i18n";
 import { useAgentModeStore, type AgentMode } from "@/stores/agentModeStore";
 import type { FieldSchema } from "../core/fieldSchema";
 import { SettingField } from "../shared/SettingField";
@@ -70,8 +71,12 @@ export const AgentModeSettings: React.FC = () => {
   const loadModes = useAgentModeStore((s) => s.loadModes);
 
   const kindOptions = useMemo(
-    () => getAllAgentKinds().map((k) => ({ value: k.id, label: t(k.label) })),
-    [t],
+    () =>
+      getAllAgentKinds().map((k) => ({
+        value: k.id,
+        label: translateKey(k.label),
+      })),
+    [],
   );
 
   const fieldSchemas = useMemo<FieldSchema[]>(
@@ -79,41 +84,41 @@ export const AgentModeSettings: React.FC = () => {
       {
         key: "name",
         type: "string",
-        label: t("agent_mode.field.name.label"),
-        placeholder: t("agent_mode.field.name.placeholder"),
+        label: t("settings.agent_mode.field.name.label"),
+        placeholder: t("settings.agent_mode.field.name.placeholder"),
       },
       {
         key: "description",
         type: "textarea",
-        label: t("agent_mode.field.description.label"),
+        label: t("settings.agent_mode.field.description.label"),
         rows: 2,
-        placeholder: t("agent_mode.field.description.placeholder"),
+        placeholder: t("settings.agent_mode.field.description.placeholder"),
       },
       {
         key: "kind",
         type: "select",
-        label: t("agent_mode.field.kind.label"),
+        label: t("settings.agent_mode.field.kind.label"),
         options: kindOptions,
       },
       {
         key: "prompt",
         type: "textarea",
-        label: t("agent_mode.field.prompt.label"),
+        label: t("settings.agent_mode.field.prompt.label"),
         rows: 4,
-        placeholder: t("agent_mode.field.prompt.placeholder"),
+        placeholder: t("settings.agent_mode.field.prompt.placeholder"),
       },
       {
         key: "model",
         type: "select",
-        label: t("agent_mode.field.model.label"),
+        label: t("settings.agent_mode.field.model.label"),
         options: [],
         allowClear: true,
-        placeholder: t("agent_mode.field.model.placeholder"),
+        placeholder: t("settings.agent_mode.field.model.placeholder"),
       },
       {
         key: "temperature",
         type: "slider",
-        label: t("agent_mode.field.temperature.label"),
+        label: t("settings.agent_mode.field.temperature.label"),
         min: 0,
         max: 2,
         step: 0.1,
@@ -122,24 +127,26 @@ export const AgentModeSettings: React.FC = () => {
       {
         key: "max_tokens",
         type: "number",
-        label: t("agent_mode.field.max_tokens.label"),
+        label: t("settings.agent_mode.field.max_tokens.label"),
         min: 256,
         max: 128_000,
         step: 256,
-        placeholder: t("agent_mode.field.max_tokens.placeholder"),
+        placeholder: t("settings.agent_mode.field.max_tokens.placeholder"),
       },
       {
         key: "reasoning_enabled",
         type: "boolean",
-        label: t("agent_mode.field.reasoning_enabled.label"),
+        label: t("settings.agent_mode.field.reasoning_enabled.label"),
       },
       {
         key: "reasoning_effort",
         type: "select",
-        label: t("agent_mode.field.reasoning_effort.label"),
+        label: t("settings.agent_mode.field.reasoning_effort.label"),
         options: REASONING_EFFORT_OPTIONS,
         allowClear: true,
-        placeholder: t("agent_mode.field.reasoning_effort.placeholder"),
+        placeholder: t(
+          "settings.agent_mode.field.reasoning_effort.placeholder",
+        ),
         visible: (fv) => fv.reasoning_enabled === true,
       },
     ],
@@ -194,15 +201,15 @@ export const AgentModeSettings: React.FC = () => {
 
   const handleDelete = (id: string) => {
     modal.confirm({
-      title: t("agent_mode.confirm_delete.title"),
-      content: t("agent_mode.confirm_delete.content"),
+      title: t("settings.agent_mode.confirm_delete.title"),
+      content: t("settings.agent_mode.confirm_delete.content"),
       onOk: async () => {
         try {
           await store.deleteMode(id);
-          messageApi.success(t("agent_mode.deleted"));
+          messageApi.success(t("settings.agent_mode.deleted"));
         } catch (e) {
           messageApi.error(
-            t("agent_mode.delete_failed", {
+            t("settings.agent_mode.delete_failed", {
               error: e instanceof Error ? e.message : String(e),
             }),
           );
@@ -213,15 +220,17 @@ export const AgentModeSettings: React.FC = () => {
 
   const handleReset = (mode: AgentMode) => {
     modal.confirm({
-      title: t("agent_mode.confirm_reset.title"),
-      content: t("agent_mode.confirm_reset.content", { name: mode.name }),
+      title: t("settings.agent_mode.confirm_reset.title"),
+      content: t("settings.agent_mode.confirm_reset.content", {
+        name: mode.name,
+      }),
       onOk: async () => {
         try {
           await store.resetBuiltinMode(mode.id);
-          messageApi.success(t("agent_mode.reset_success"));
+          messageApi.success(t("settings.agent_mode.reset_success"));
         } catch (e) {
           messageApi.error(
-            t("agent_mode.reset_failed", {
+            t("settings.agent_mode.reset_failed", {
               error: e instanceof Error ? e.message : String(e),
             }),
           );
@@ -253,13 +262,15 @@ export const AgentModeSettings: React.FC = () => {
         });
       }
       messageApi.success(
-        editingMode ? t("agent_mode.saved") : t("agent_mode.created"),
+        editingMode
+          ? t("settings.agent_mode.saved")
+          : t("settings.agent_mode.created"),
       );
       setDrawerOpen(false);
       setEditingMode(null);
     } catch (e) {
       messageApi.error(
-        t("agent_mode.save_failed", {
+        t("settings.agent_mode.save_failed", {
           error: e instanceof Error ? e.message : String(e),
         }),
       );
@@ -289,7 +300,7 @@ export const AgentModeSettings: React.FC = () => {
           {mode.name}
         </Typography.Text>
         <Tag color={getAgentKindColor(mode.kind)} style={{ flexShrink: 0 }}>
-          {t(getAgentKindLabelKey(mode.kind))}
+          {translateKey(getAgentKindLabelKey(mode.kind))}
         </Tag>
         {mode.description && (
           <Typography.Text
@@ -331,12 +342,12 @@ export const AgentModeSettings: React.FC = () => {
 
   const sections: EntityListSectionConfig<AgentMode>[] = [
     {
-      label: t("agent_mode.section.builtin"),
+      label: t("settings.agent_mode.section.builtin"),
       items: filteredBuiltin,
       renderRow: renderModeRow,
     },
     {
-      label: t("agent_mode.section.custom"),
+      label: t("settings.agent_mode.section.custom"),
       items: filteredCustom,
       renderRow: renderModeRow,
     },
@@ -347,17 +358,21 @@ export const AgentModeSettings: React.FC = () => {
       {messageContextHolder}
       {modalContextHolder}
       <EntityListPageShell<AgentMode>
-        title={t("agent_mode.title")}
+        title={t("settings.agent_mode.title")}
         items={store.modes}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        addLabel={t("agent_mode.add")}
+        addLabel={t("settings.agent_mode.add")}
         onAdd={handleAdd}
-        emptyDescription={t("agent_mode.empty")}
+        emptyDescription={t("settings.agent_mode.empty")}
         sections={sections}
       >
         <Drawer
-          title={editingMode ? t("agent_mode.edit") : t("agent_mode.add")}
+          title={
+            editingMode
+              ? t("settings.agent_mode.edit")
+              : t("settings.agent_mode.add")
+          }
           open={drawerOpen}
           onClose={() => {
             setDrawerOpen(false);
@@ -366,7 +381,7 @@ export const AgentModeSettings: React.FC = () => {
           size="large"
           extra={
             <Button type="primary" onClick={() => void handleSave()}>
-              {t("actions.save")}
+              {t("common.actions.save")}
             </Button>
           }
         >
@@ -401,7 +416,7 @@ export const AgentModeSettings: React.FC = () => {
                     ? [
                         {
                           required: true,
-                          message: t("agent_mode.field.name.required"),
+                          message: t("settings.agent_mode.field.name.required"),
                         },
                       ]
                     : undefined

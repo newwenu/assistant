@@ -54,8 +54,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadAppConf: async () => {
     try {
+      const prevLang = get().appConf?.language;
       const conf = await invoke<AppConf>("get_app_conf");
       set({ appConf: conf });
+      if (conf.language && conf.language !== prevLang) {
+        const { applyLocaleChange } = await import("../main");
+        await applyLocaleChange(conf.language);
+      }
     } catch (e) {
       console.error("[settingsStore] loadAppConf failed:", e);
     }

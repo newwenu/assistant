@@ -5,18 +5,22 @@ import {
 
 defineAgentKind({
   id: "default",
-  label: "agent_mode.kind.default",
+  label: "settings.agent_mode.kind.default",
   color: "blue",
 });
 defineAgentKind({
   id: "quick",
-  label: "agent_mode.kind.quick",
+  label: "settings.agent_mode.kind.quick",
   color: "green",
 });
-defineAgentKind({ id: "deep", label: "agent_mode.kind.deep", color: "purple" });
+defineAgentKind({
+  id: "deep",
+  label: "settings.agent_mode.kind.deep",
+  color: "purple",
+});
 defineAgentKind({
   id: "custom",
-  label: "agent_mode.kind.custom",
+  label: "settings.agent_mode.kind.custom",
   color: "orange",
 });
 

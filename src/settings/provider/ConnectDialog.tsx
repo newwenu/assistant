@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Modal, Form, Button, Typography, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
+import { translateKey } from "@/i18n";
 import {
   type Provider,
   type ProviderPreset,
@@ -66,31 +67,31 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
       {
         key: "name",
         type: "string",
-        label: t("provider.field.name.label"),
+        label: t("settings.provider.field.name.label"),
         placeholder: (ctx) =>
           ctx.mode === "add" && ctx.preset
             ? (ctx.preset as ProviderPreset).label
-            : t("provider.field.name.placeholder"),
+            : t("settings.provider.field.name.placeholder"),
       },
       {
         key: "type",
         type: "string",
-        label: t("provider.field.type.label"),
-        placeholder: t("provider.field.type.placeholder"),
+        label: t("settings.provider.field.type.label"),
+        placeholder: t("settings.provider.field.type.placeholder"),
         visible: () => showType,
       },
       {
         key: "api_key",
         type: "secret",
-        label: t("provider.field.api_key.label"),
+        label: t("settings.provider.field.api_key.label"),
         description: (ctx) =>
           ctx.mode === "edit"
-            ? t("provider.field.api_key.keep_hint")
-            : t("provider.field.api_key.encrypted_hint"),
+            ? t("settings.provider.field.api_key.keep_hint")
+            : t("settings.provider.field.api_key.encrypted_hint"),
         placeholder: (ctx) =>
           ctx.mode === "edit"
             ? (ctx.entity as Provider)?.api_key_masked ||
-              t("provider.field.api_key.keep")
+              t("settings.provider.field.api_key.keep")
             : formatInfo?.keyPlaceholder || "sk-...",
         visible: () => !isLocal,
         keepIfEmpty: isEdit,
@@ -98,7 +99,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
       {
         key: "base_url",
         type: "string",
-        label: t("provider.field.base_url.label"),
+        label: t("settings.provider.field.base_url.label"),
         placeholder: (ctx) =>
           ctx.preset
             ? (ctx.preset as ProviderPreset).defaultBaseUrl
@@ -107,9 +108,9 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
       {
         key: "default_model",
         type: "select",
-        label: t("provider.field.default_model.label"),
+        label: t("settings.provider.field.default_model.label"),
         allowClear: true,
-        placeholder: t("provider.field.default_model.placeholder"),
+        placeholder: t("settings.provider.field.default_model.placeholder"),
         options: models.map((m) => ({
           label: m.name || m.id,
           value: m.id,
@@ -117,7 +118,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
         actions: [
           {
             key: "fetch_models",
-            label: t("provider.field.fetch_models"),
+            label: t("settings.provider.field.fetch_models"),
             onClick: async (ctx, callbacks) => {
               const fv = ctx.formValues;
               const baseUrl =
@@ -127,7 +128,9 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
                   : "");
               const apiKey = (fv.api_key as string) || "";
               if (!apiKey && !isLocal && ctx.mode === "add") {
-                messageApi.warning(t("provider.field.api_key.required_first"));
+                messageApi.warning(
+                  t("settings.provider.field.api_key.required_first"),
+                );
                 return;
               }
               try {
@@ -157,13 +160,13 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
                   })),
                 );
                 messageApi.success(
-                  t("provider.field.models_fetched", {
+                  t("settings.provider.field.models_fetched", {
                     count: modelList.length,
                   }),
                 );
               } catch (e) {
                 messageApi.error(
-                  t("provider.field.models_fetch_failed", {
+                  t("settings.provider.field.models_fetch_failed", {
                     error: e instanceof Error ? e.message : String(e),
                   }),
                 );
@@ -177,15 +180,17 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
   );
 
   const getTitle = () => {
-    if (isEdit) return t("provider.edit_title", { name: provider.name });
-    if (preset) return t("provider.connect_title", { name: preset.label });
-    return t("provider.add_custom_title", {
-      format: t(getProviderFormatLabel(effectiveFormat)),
+    if (isEdit)
+      return t("settings.provider.edit_title", { name: provider.name });
+    if (preset)
+      return t("settings.provider.connect_title", { name: preset.label });
+    return t("settings.provider.add_custom_title", {
+      format: translateKey(getProviderFormatLabel(effectiveFormat)),
     });
   };
 
   const getDescription = () => {
-    if (isLocal) return t("provider.description.local");
+    if (isLocal) return t("settings.provider.description.local");
     return undefined;
   };
 
@@ -268,7 +273,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
       }}
       footer={
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <Button onClick={onClose}>{t("actions.cancel")}</Button>
+          <Button onClick={onClose}>{t("common.actions.cancel")}</Button>
           <Button
             type="primary"
             loading={saving}
@@ -276,7 +281,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
               void handleOk();
             }}
           >
-            {isEdit ? t("actions.save") : t("provider.connect")}
+            {isEdit ? t("common.actions.save") : t("settings.provider.connect")}
           </Button>
         </div>
       }
@@ -315,28 +320,34 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
                   ? [
                       {
                         required: true,
-                        message: t("provider.field.name.required"),
+                        message: t("settings.provider.field.name.required"),
                       },
                     ]
                   : schema.key === "base_url"
                     ? [
                         {
                           required: true,
-                          message: t("provider.field.base_url.required"),
+                          message: t(
+                            "settings.provider.field.base_url.required",
+                          ),
                         },
                       ]
                     : schema.key === "api_key" && !isEdit && !isLocal
                       ? [
                           {
                             required: true,
-                            message: t("provider.field.api_key.required"),
+                            message: t(
+                              "settings.provider.field.api_key.required",
+                            ),
                           },
                         ]
                       : schema.key === "type" && showType
                         ? [
                             {
                               required: true,
-                              message: t("provider.field.type.required"),
+                              message: t(
+                                "settings.provider.field.type.required",
+                              ),
                             },
                           ]
                         : undefined
@@ -370,7 +381,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
                 type="secondary"
                 style={{ fontSize: 11, padding: "4px 0" }}
               >
-                {t("provider.field.models_more", {
+                {t("settings.provider.field.models_more", {
                   count: models.length - 20,
                 })}
               </Typography.Text>

@@ -69,8 +69,8 @@ export function KeybindingField({
             style={{ fontSize: 12 }}
           >
             {conflict.level === "error"
-              ? t("shortcut.conflict.same_group")
-              : t("shortcut.conflict.cross_group")}
+              ? t("settings.shortcuts.conflict.same_group")
+              : t("settings.shortcuts.conflict.cross_group")}
           </Text>
         )}
       </div>
@@ -80,7 +80,9 @@ export function KeybindingField({
           onConfirm={handleConfirm}
           onClear={handleClear}
         />
-        {isModified && <Tag color="orange">{t("shortcut.modified")}</Tag>}
+        {isModified && (
+          <Tag color="orange">{t("settings.shortcuts.modified")}</Tag>
+        )}
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import React from "react";
 import { Modal, Typography } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { translateKey } from "@/i18n";
 import { type ApiFormat, type ProviderPreset } from "@/stores/providerStore";
 import { getAllProviderFormats } from "../core/providerFormatRegistry";
 import { getPresetsByFormat } from "../core/providerPresetRegistry";
@@ -24,7 +25,7 @@ export const AddProviderDialog: React.FC<AddProviderDialogProps> = ({
 
   return (
     <Modal
-      title={t("provider.add_title")}
+      title={t("settings.provider.add_title")}
       open={open}
       onCancel={onClose}
       footer={null}
@@ -39,9 +40,9 @@ export const AddProviderDialog: React.FC<AddProviderDialogProps> = ({
               type="secondary"
               className="add-provider-section-title"
             >
-              {t(fmt.label)}
+              {translateKey(fmt.label)}
               <span className="add-provider-section-desc">
-                {t(fmt.description)}
+                {translateKey(fmt.description)}
               </span>
             </Typography.Text>
             <div className="add-provider-grid">
@@ -53,7 +54,7 @@ export const AddProviderDialog: React.FC<AddProviderDialogProps> = ({
                   onClick={() =>
                     onPickPreset({
                       slug: preset.slug,
-                      label: t(preset.label),
+                      label: translateKey(preset.label),
                       format: preset.format as ApiFormat,
                       defaultBaseUrl: preset.defaultBaseUrl,
                     })
@@ -61,7 +62,7 @@ export const AddProviderDialog: React.FC<AddProviderDialogProps> = ({
                 >
                   <div className="provider-tile-info">
                     <span className="provider-tile-name">
-                      {t(preset.label)}
+                      {translateKey(preset.label)}
                     </span>
                     <span className="provider-tile-detail">
                       {
@@ -81,11 +82,13 @@ export const AddProviderDialog: React.FC<AddProviderDialogProps> = ({
               >
                 <div className="provider-tile-info">
                   <span className="provider-tile-name">
-                    {t("provider.custom_format", { format: t(fmt.label) })}
+                    {t("settings.provider.custom_format", {
+                      format: translateKey(fmt.label),
+                    })}
                   </span>
                   <span className="provider-tile-detail">
-                    {t("provider.custom_format_detail", {
-                      format: t(fmt.label),
+                    {t("settings.provider.custom_format_detail", {
+                      format: translateKey(fmt.label),
                     })}
                   </span>
                 </div>

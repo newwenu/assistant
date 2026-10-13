@@ -38,11 +38,13 @@ export function AssetPickerField({
       onChange(assetUrl);
       setUrlInput(assetUrl);
       messageApi.success(
-        t("asset_picker.installed", { size: (result.bytes / 1024).toFixed(1) }),
+        t("settings.asset_picker.installed", {
+          size: (result.bytes / 1024).toFixed(1),
+        }),
       );
     } catch (e) {
       messageApi.error(
-        t("asset_picker.install_failed", {
+        t("settings.asset_picker.install_failed", {
           error: e instanceof Error ? e.message : String(e),
         }),
       );
@@ -57,10 +59,10 @@ export function AssetPickerField({
       });
       onChange(null);
       setUrlInput("");
-      messageApi.success(t("asset_picker.reset_success"));
+      messageApi.success(t("settings.asset_picker.reset_success"));
     } catch (e) {
       messageApi.error(
-        t("asset_picker.reset_failed", {
+        t("settings.asset_picker.reset_failed", {
           error: e instanceof Error ? e.message : String(e),
         }),
       );
@@ -86,7 +88,7 @@ export function AssetPickerField({
               void handleFilePick();
             }}
           >
-            {t("asset_picker.pick_file")}
+            {t("settings.asset_picker.pick_file")}
           </Button>
           {value != null && (
             <Button
@@ -96,13 +98,13 @@ export function AssetPickerField({
                 void handleReset();
               }}
             >
-              {t("asset_picker.reset_default")}
+              {t("settings.asset_picker.reset_default")}
             </Button>
           )}
         </Space>
         {config.urlInput && (
           <Input
-            placeholder={t("asset_picker.url_placeholder")}
+            placeholder={t("settings.asset_picker.url_placeholder")}
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             onBlur={handleUrlSubmit}

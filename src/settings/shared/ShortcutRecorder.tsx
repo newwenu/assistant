@@ -174,7 +174,7 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
         {captured ? (
           <Tag color="blue">{formatBinding(captured)}</Tag>
         ) : (
-          <Tag color="processing">{t("shortcut.recording")}</Tag>
+          <Tag color="processing">{t("settings.shortcuts.recording")}</Tag>
         )}
       </div>
     );
@@ -194,7 +194,9 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
         style={{ cursor: "pointer" }}
         color={currentBinding ? "default" : "warning"}
       >
-        {currentBinding ? formatBinding(currentBinding) : t("shortcut.not_set")}
+        {currentBinding
+          ? formatBinding(currentBinding)
+          : t("settings.shortcuts.not_set")}
       </Tag>
     </div>
   );
