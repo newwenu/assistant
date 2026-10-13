@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Form, message } from "antd";
 import { useSearchParams, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { SettingDefinition, ConfGroup } from "../core/fieldRegistry";
 import {
   getDefinitionsByGroup,
@@ -19,7 +20,7 @@ interface SettingsGroupProps {
   onPatchComplete?: (patch: Record<string, unknown>) => Promise<void>;
 }
 
-const DEFAULT_SAVE_MESSAGE = "已保存";
+const DEFAULT_SAVE_MESSAGE_KEY = "actions.saved";
 
 function useConfByGroup(group: ConfGroup): Record<string, unknown> | null {
   const conf = useSettingsStore((s) => {
@@ -51,6 +52,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
   onPatch: externalOnPatch,
   onPatchComplete: externalOnPatchComplete,
 }) => {
+  const { t } = useTranslation();
   const defs = definitions ?? getDefinitionsByGroup(group);
   const conf = useConfByGroup(group);
   const { onPatch: internalOnPatch, onPatchComplete: internalOnPatchComplete } =
@@ -109,8 +111,8 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
 
   const showSaveMessage = (def: SettingDefinition) => {
     if (def.saveMessage === false) return;
-    const msg = def.saveMessage || DEFAULT_SAVE_MESSAGE;
-    messageApi.success(msg);
+    const msgKey = def.saveMessage || DEFAULT_SAVE_MESSAGE_KEY;
+    messageApi.success(t(msgKey));
   };
 
   const handleChange = async (def: SettingDefinition, value: unknown) => {
@@ -152,16 +154,27 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
         {contextHolder}
         {visibleDefs.map((d) => {
           const isIntermediate = INTERMEDIATE_TYPES.has(d.type);
+          const translatedSchema: SettingDefinition = {
+            ...d,
+            label: t(d.label),
+            description: d.description ? t(d.description) : undefined,
+            extra: d.extra ? t(d.extra) : undefined,
+            placeholder: d.placeholder ? t(d.placeholder) : undefined,
+            options: d.options?.map((opt) => ({
+              ...opt,
+              label: t(opt.label),
+            })),
+          };
           return (
             <span key={d.key} data-setting-key={d.key}>
               <Form.Item
-                label={d.label}
-                tooltip={d.description || undefined}
-                extra={d.extra}
+                label={translatedSchema.label}
+                tooltip={translatedSchema.description}
+                extra={translatedSchema.extra}
                 valuePropName={d.type === "boolean" ? "checked" : "value"}
               >
                 <SettingField
-                  schema={d}
+                  schema={translatedSchema}
                   value={readFieldValue(d, conf)}
                   onChange={
                     isIntermediate

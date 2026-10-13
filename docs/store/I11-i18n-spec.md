@@ -95,10 +95,49 @@
 
 ### 4.2 前端翻译使用
 
-- 组件内通过 `useTranslation()` 获取 `t` 函数
+采用**混合模式**，按场景选择翻译策略：
+
+#### 4.2.1 模式 C — 声明式定义层 + 集中翻译边界（Presentation 层）
+
+适用于声明式设置系统的数据驱动渲染链路：
+
+```
+定义层 (defineSetting/defineSection/definePage)     翻译层 (SettingsGroup)              渲染层 (SettingField)
+─────────────────────────────────────────────     ─────────────────────────────     ──────────────────────────
+label: "settings.xxx.label"                    →  label: "语言"                   →  <span>{label}</span>
+extra: "settings.xxx.extra"                    →  extra: "关闭时最小化到托盘"       →  <span>{extra}</span>
+options[0].label: "settings.xxx.opt.key"       →  options[0].label: "跟随系统"     →  <Select options={options} />
+saveMessage: "settings.xxx.save_msg"           →  saveMessage: "已保存"            →  messageApi.success(msg)
+placeholder: "settings.xxx.placeholder"        →  placeholder: "请输入..."         →  <Input placeholder={ph} />
+```
+
+**核心原则**：
+- **定义层存 i18n key 全路径字面量**，禁止拼接（与 BongoCat `presentation.rs` 对齐）
+- **翻译层（SettingsGroup）统一调用 `t()`**，将 schema 中所有 i18n key 翻译为 display string
+- **渲染层（SettingField）纯渲染**，不依赖 `useTranslation`，不调用 `t()`，接收的 props 全部是已翻译的 display string
+- key 路径 = JSON 嵌套路径，与 UI 结构同构
+
+**优点**：
+1. i18n 职责集中在单一翻译边界，与 BongoCat `presentation.rs` 完全对齐
+2. SettingField 变成纯渲染组件，不 import `useTranslation` / `react-i18next`
+3. 新增 setting 类型零成本 — 新 Field 组件不需要碰 i18n
+4. 与声明式系统的数据驱动架构一致：`defineSetting() → 数据 → SettingsGroup(翻译) → SettingField(渲染)`
+
+#### 4.2.2 模式 A — 组件内直接 `t()`
+
+适用于不在 SettingsGroup 翻译链路上的组件：
+- 自定义渲染器（ThemeRadioRender、RendererSelectRender、MascotColorGroupRender、KeybindingField）
+- Chat / Provider 对话框 / 命令面板等普通 UI 组件
+- 错误码映射（chatErrors.ts）
+
+这些组件直接 `const { t } = useTranslation(); t("key")`，主流做法，简单直觉。
+
+#### 4.2.3 通用规则
+
 - 非组件上下文通过 `i18n.t()` 直接调用
 - 禁止在组件中残留任何用户可见的中/英文字面量
 - 技术性标识（CSS class、HTML id、路由 path、Tauri event 名）不翻译
+- 语言选项的 label 使用**本名（endonym）**，不走 i18n（如 "简体中文" 永远显示为 "简体中文"，不随界面语言变化）
 
 ### 4.3 第三方库 locale 联动
 
@@ -127,7 +166,7 @@
 ### 4.6 语言选项
 
 - 首版支持 `zh-CN`（简体中文）和 `en-US`（English）
-- 选项 label 自身也走 i18n（中文环境下显示 "English"，英文环境下显示 "简体中文"）
+- 选项 label 使用**本名（endonym）**直接硬编码，不走 i18n：`"简体中文"` / `"English"` 永远以自身语言显示，不随界面语言变化（与 Chrome / VS Code / macOS 等主流产品对齐）
 - 后续扩展只需添加 locale JSON 文件 + 注册到 shipped locales 列表
 
 ## 5. 硬编码替换策略

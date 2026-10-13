@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { ColorPicker, Button, Space, message } from "antd";
 import type { AggregationColor } from "antd/es/color-picker/color";
+import { useTranslation } from "react-i18next";
 import type { FieldRenderProps } from "../core/fieldSchema";
 import { dispatchConfPatch } from "../core/settingsDispatcher";
 import { getAllRendererMetas, asRendererId } from "@/mascot";
@@ -30,6 +31,7 @@ function colorsEqual(
 }
 
 export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
+  const { t } = useTranslation();
   const rendererId = (conf?.renderer as string) ?? "rive";
   const metas = getAllRendererMetas();
   const currentMeta = metas.find((m) => m.id === asRendererId(rendererId));
@@ -88,14 +90,14 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
         secondary_color: secondaryColor,
       });
       setDirty(false);
-      messageApi.success("颜色已应用");
+      messageApi.success(t("mascot_color.applied"));
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      messageApi.error(`应用失败: ${errMsg}`);
+      messageApi.error(t("mascot_color.apply_failed", { error: errMsg }));
     } finally {
       setApplying(false);
     }
-  }, [primaryColor, secondaryColor, messageApi]);
+  }, [primaryColor, secondaryColor, messageApi, t]);
 
   const handleReset = useCallback(() => {
     setPrimaryColor(null);
@@ -113,7 +115,9 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
           <div>
-            <div style={{ marginBottom: 4, fontSize: 14 }}>主色</div>
+            <div style={{ marginBottom: 4, fontSize: 14 }}>
+              {t("mascot_color.primary")}
+            </div>
             <Space>
               <ColorPicker
                 size="small"
@@ -129,7 +133,9 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
           </div>
           {showSecondary && (
             <div>
-              <div style={{ marginBottom: 4, fontSize: 14 }}>辅色</div>
+              <div style={{ marginBottom: 4, fontSize: 14 }}>
+                {t("mascot_color.secondary")}
+              </div>
               <Space>
                 <ColorPicker
                   size="small"
@@ -156,10 +162,10 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
                 void handleApply();
               }}
             >
-              应用
+              {t("mascot_color.apply")}
             </Button>
             <Button size="small" onClick={handleReset}>
-              重置
+              {t("mascot_color.reset")}
             </Button>
           </Space>
         </div>

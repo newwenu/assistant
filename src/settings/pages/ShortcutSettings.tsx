@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Input, Button, Typography, message } from "antd";
 import { SearchOutlined, UndoOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { SettingsGroup } from "../shared/SettingsGroup";
 import { SettingsSection } from "../shared/SettingsSection";
@@ -14,6 +15,7 @@ import {
 } from "../core/shortcutTypes";
 
 export const ShortcutSettings: React.FC = () => {
+  const { t } = useTranslation();
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);
   const resetKeybindings = useSettingsStore((s) => s.resetKeybindings);
   const appConf = useSettingsStore((s) => s.appConf);
@@ -45,7 +47,7 @@ export const ShortcutSettings: React.FC = () => {
 
   const handleReset = async () => {
     await resetKeybindings();
-    messageApi.success("已恢复默认快捷键");
+    messageApi.success(t("settings.shortcuts.reset_success"));
   };
 
   const groupedDefinitions = useMemo(() => {
@@ -69,12 +71,12 @@ export const ShortcutSettings: React.FC = () => {
           style={{ marginTop: 0 }}
           extra={
             <Button icon={<UndoOutlined />} onClick={() => void handleReset()}>
-              恢复默认
+              {t("settings.shortcuts.reset_default")}
             </Button>
           }
         >
           <Input
-            placeholder="搜索快捷键..."
+            placeholder={t("settings.shortcuts.search_placeholder")}
             prefix={<SearchOutlined />}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -89,7 +91,7 @@ export const ShortcutSettings: React.FC = () => {
             return (
               <div key={group.key} style={{ marginBottom: 16 }}>
                 <Typography.Text strong style={{ fontSize: 14 }}>
-                  {group.label}
+                  {t(group.label)}
                 </Typography.Text>
                 <div style={{ marginTop: 8 }}>
                   <SettingsGroup group="app" definitions={groupDefs} />

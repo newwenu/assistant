@@ -17,4 +17,13 @@ export function initSettingSystem(): void {
     const theme = next.theme as "system" | "light" | "dark";
     await dispatchThemeChanged(theme);
   });
+
+  registerSideEffect("locale_change", async (_prev, next) => {
+    const language = next.language as string;
+    if (!language) return;
+    const i18n = (await import("@/i18n")).default;
+    if (i18n.language !== language) {
+      await i18n.changeLanguage(language);
+    }
+  });
 }

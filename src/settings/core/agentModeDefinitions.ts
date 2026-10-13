@@ -3,10 +3,10 @@ import {
   defineBuiltinModeDefaults,
 } from "./agentModeRegistry";
 
-defineAgentKind({ id: "default", label: "默认", color: "blue" });
-defineAgentKind({ id: "quick", label: "快速", color: "green" });
-defineAgentKind({ id: "deep", label: "深度", color: "purple" });
-defineAgentKind({ id: "custom", label: "自定义", color: "orange" });
+defineAgentKind({ id: "default", label: "agent_kind.default", color: "blue" });
+defineAgentKind({ id: "quick", label: "agent_kind.quick", color: "green" });
+defineAgentKind({ id: "deep", label: "agent_kind.deep", color: "purple" });
+defineAgentKind({ id: "custom", label: "agent_kind.custom", color: "orange" });
 
 defineBuiltinModeDefaults("builtin-default", {
   prompt: "",

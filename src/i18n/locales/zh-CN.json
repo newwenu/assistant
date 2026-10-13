@@ -1,0 +1,206 @@
+{
+  "navigation": {
+    "general": { "title": "通用设置" },
+    "appearance": { "title": "外观设置" },
+    "shortcuts": { "title": "快捷键" },
+    "providers": { "title": "Provider 管理" },
+    "agents": { "title": "Agent 模式" },
+    "about": { "title": "关于" },
+    "chat_history": "消息历史",
+    "settings": "设置"
+  },
+  "settings": {
+    "general_main": { "title": "通用设置" },
+    "theme": { "title": "主题" },
+    "orb_ball": {
+      "title": "悬浮球",
+      "description": "助手形象渲染、颜色，以及透明度、缩放等"
+    },
+    "orb_panel": { "title": "悬浮窗" },
+    "shortcuts_main": { "title": "快捷键" },
+    "about_main": { "title": "关于" },
+    "general": {
+      "language": {
+        "label": "语言"
+      },
+      "launch_at_login": {
+        "label": "开机自启",
+        "save_message": "开机自启已更新"
+      },
+      "close_to_tray": {
+        "label": "关闭到托盘",
+        "extra": "关闭主窗口时最小化到托盘而非退出"
+      },
+      "stay_on_top": {
+        "label": "置顶主窗口",
+        "save_message": "置顶状态已更新"
+      }
+    },
+    "appearance": {
+      "theme": {
+        "label": "主题模式",
+        "save_message": "主题已切换",
+        "options": {
+          "system": "跟随系统",
+          "light": "亮色",
+          "dark": "暗色"
+        }
+      }
+    },
+    "orb": {
+      "opacity_percent": { "label": "悬停透明度" },
+      "idle_opacity_percent": { "label": "空闲透明度" },
+      "scale_percent": { "label": "缩放" },
+      "click_through": {
+        "label": "鼠标穿透",
+        "extra": "开启后鼠标可穿透悬浮球点击下方内容"
+      },
+      "hide_on_pointer_hover": { "label": "悬停隐藏" },
+      "hover_delay_ms": { "label": "悬停延迟 (ms)" },
+      "always_on_top": { "label": "始终置顶" }
+    },
+    "mascot": {
+      "renderer": {
+        "label": "渲染方式",
+        "description": "选择吉祥物的渲染方式"
+      }
+    },
+    "shortcuts": {
+      "save_message": "快捷键已更新",
+      "reset_success": "已恢复默认快捷键",
+      "reset_default": "恢复默认",
+      "search_placeholder": "搜索快捷键..."
+    }
+  },
+  "agent_kind": {
+    "default": "默认",
+    "quick": "快速",
+    "deep": "深度",
+    "custom": "自定义"
+  },
+  "shortcut": {
+    "group": {
+      "global": "全局快捷键",
+      "main": "主窗口"
+    },
+    "toggle_orb": "显示/隐藏悬浮球",
+    "toggle_main": "显示/隐藏主窗口",
+    "new_chat": "新建对话",
+    "command_palette": "命令面板",
+    "not_set": "未设置",
+    "recording": "请按下快捷键...",
+    "modified": "已修改",
+    "conflict": {
+      "same_group": "同组快捷键冲突",
+      "cross_group": "跨组快捷键冲突"
+    }
+  },
+  "mascot_renderer": {
+    "svg": {
+      "label": "SVG",
+      "animated": "SVG 动画"
+    },
+    "rive": {
+      "label": "Rive",
+      "idle_pose_rotation": "空闲轮转动画",
+      "custom_rive": {
+        "label": "自定义 Rive 文件",
+        "extra": "支持 .riv 文件，替换内置 mascot",
+        "save_message": "Rive 文件已更新"
+      }
+    },
+    "gif": {
+      "label": "GIF",
+      "limitations": "GIF 模式下助手不会响应对话状态变化",
+      "border_radius": {
+        "label": "圆角",
+        "extra": "0 = 方形，50 = 圆形"
+      },
+      "gif_src": {
+        "label": "GIF 来源",
+        "extra": "支持 GIF/PNG/WebP 文件上传，或 URL、本地路径、data URI",
+        "save_message": "GIF 来源已更新"
+      }
+    }
+  },
+  "mascot_color": {
+    "primary": "主色",
+    "secondary": "辅色",
+    "apply": "应用",
+    "reset": "重置",
+    "applied": "颜色已应用",
+    "apply_failed": "应用失败: {{error}}"
+  },
+  "asset_picker": {
+    "pick_file": "选择文件",
+    "reset_default": "重置为默认",
+    "url_placeholder": "或输入 URL / 本地路径 / data URI",
+    "installed": "已安装文件 ({{size}} KB)",
+    "install_failed": "安装失败: {{error}}",
+    "reset_success": "已重置为默认",
+    "reset_failed": "重置失败: {{error}}"
+  },
+  "entity_list": {
+    "search_placeholder": "搜索{{title}}"
+  },
+  "actions": {
+    "saved": "已保存",
+    "save": "保存",
+    "loading": "加载中..."
+  },
+  "agent_mode": {
+    "title": "Agent 模式管理",
+    "add": "新建模式",
+    "edit": "编辑模式",
+    "empty": "暂无 Agent 模式",
+    "section": {
+      "builtin": "内置模式",
+      "custom": "自定义模式"
+    },
+    "field": {
+      "name": {
+        "label": "名称",
+        "placeholder": "模式名称",
+        "required": "请输入模式名称"
+      },
+      "description": {
+        "label": "描述",
+        "placeholder": "模式描述"
+      },
+      "kind": { "label": "类型" },
+      "prompt": {
+        "label": "系统提示词",
+        "placeholder": "留空则不注入 system prompt"
+      },
+      "model": {
+        "label": "指定模型",
+        "placeholder": "跟随对话模型"
+      },
+      "temperature": { "label": "温度" },
+      "max_tokens": {
+        "label": "最大令牌数",
+        "placeholder": "默认 4096"
+      },
+      "reasoning_enabled": { "label": "推理" },
+      "reasoning_effort": {
+        "label": "推理强度",
+        "placeholder": "选择推理强度"
+      }
+    },
+    "confirm_delete": {
+      "title": "确认删除此模式？",
+      "content": "删除后不可恢复"
+    },
+    "confirm_reset": {
+      "title": "恢复默认参数？",
+      "content": "将\"{{name}}\"的 prompt、temperature、max_tokens 等恢复为内置默认值"
+    },
+    "deleted": "已删除",
+    "delete_failed": "删除失败: {{error}}",
+    "reset_success": "已恢复默认",
+    "reset_failed": "恢复失败: {{error}}",
+    "saved": "已保存修改",
+    "created": "已创建模式",
+    "save_failed": "保存失败: {{error}}"
+  }
+}

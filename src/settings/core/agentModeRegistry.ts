@@ -19,7 +19,7 @@ export function getAllAgentKinds(): AgentKindDef[] {
   return Array.from(kindMap.values());
 }
 
-export function getAgentKindLabel(id: string): string {
+export function getAgentKindLabelKey(id: string): string {
   return kindMap.get(id)?.label ?? id;
 }
 

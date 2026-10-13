@@ -5,41 +5,45 @@ import { MascotColorGroupRender } from "../shared/MascotColorGroupRender";
 import { SHORTCUT_DEFINITIONS, DEFAULT_KEYBINDINGS } from "./shortcutTypes";
 import { createMascotCapabilityVisible } from "@/mascot";
 
-defineSection({ id: "general-main", pageId: "general", title: "通用设置" });
+defineSection({
+  id: "general-main",
+  pageId: "general",
+  title: "settings.general_main.title",
+});
 
 defineSection({
   id: "theme",
   pageId: "appearance",
-  title: "主题",
+  title: "settings.theme.title",
   keywords: ["dark", "light", "system", "暗色", "亮色"],
 });
 
 defineSection({
   id: "orb-ball",
   pageId: "appearance",
-  title: "悬浮球",
-  description: "助手形象渲染、颜色，以及透明度、缩放等",
+  title: "settings.orb_ball.title",
+  description: "settings.orb_ball.description",
   keywords: ["orb", "ball", "透明度", "缩放", "吉祥物", "助手形象"],
 });
 
 defineSection({
   id: "orb-panel",
   pageId: "appearance",
-  title: "悬浮窗",
+  title: "settings.orb_panel.title",
   keywords: ["panel", "置顶"],
 });
 
 defineSection({
   id: "shortcuts-main",
   pageId: "shortcuts",
-  title: "快捷键",
+  title: "settings.shortcuts_main.title",
   keywords: ["keyboard", "hotkey", "热键"],
 });
 
 defineSection({
   id: "about-main",
   pageId: "about",
-  title: "关于",
+  title: "settings.about_main.title",
   keywords: ["version", "版本"],
 });
 
@@ -50,8 +54,12 @@ export const APP_SETTINGS = [
     section: "general-main",
     type: "select",
     default: "zh-CN",
-    label: "语言",
-    options: [{ label: "简体中文", value: "zh-CN" }],
+    label: "settings.general.language.label",
+    options: [
+      { label: "简体中文", value: "zh-CN" },
+      { label: "English", value: "en-US" },
+    ],
+    sideEffect: "locale_change",
   }),
   defineSetting({
     key: "launch_at_login",
@@ -59,8 +67,8 @@ export const APP_SETTINGS = [
     section: "general-main",
     type: "boolean",
     default: false,
-    label: "开机自启",
-    saveMessage: "开机自启已更新",
+    label: "settings.general.launch_at_login.label",
+    saveMessage: "settings.general.launch_at_login.save_message",
   }),
   defineSetting({
     key: "close_to_tray",
@@ -68,8 +76,8 @@ export const APP_SETTINGS = [
     section: "general-main",
     type: "boolean",
     default: true,
-    label: "关闭到托盘",
-    extra: "关闭主窗口时最小化到托盘而非退出",
+    label: "settings.general.close_to_tray.label",
+    extra: "settings.general.close_to_tray.extra",
   }),
   defineSetting({
     key: "stay_on_top",
@@ -77,8 +85,8 @@ export const APP_SETTINGS = [
     section: "general-main",
     type: "boolean",
     default: false,
-    label: "置顶主窗口",
-    saveMessage: "置顶状态已更新",
+    label: "settings.general.stay_on_top.label",
+    saveMessage: "settings.general.stay_on_top.save_message",
   }),
 ];
 
@@ -88,14 +96,14 @@ export const THEME_SETTING = defineSetting({
   section: "theme",
   type: "select",
   default: "system",
-  label: "主题模式",
+  label: "settings.appearance.theme.label",
   options: [
-    { label: "跟随系统", value: "system" },
-    { label: "亮色", value: "light" },
-    { label: "暗色", value: "dark" },
+    { label: "settings.appearance.theme.options.system", value: "system" },
+    { label: "settings.appearance.theme.options.light", value: "light" },
+    { label: "settings.appearance.theme.options.dark", value: "dark" },
   ],
   sideEffect: "theme_change",
-  saveMessage: "主题已切换",
+  saveMessage: "settings.appearance.theme.save_message",
   customRender: ThemeRadioRender,
 });
 
@@ -106,7 +114,7 @@ export const ORB_BALL_SETTINGS = [
     section: "orb-ball",
     type: "slider",
     default: 100,
-    label: "悬停透明度",
+    label: "settings.orb.opacity_percent.label",
     min: 10,
     max: 100,
     marks: { 10: "10%", 100: "100%" },
@@ -117,7 +125,7 @@ export const ORB_BALL_SETTINGS = [
     section: "orb-ball",
     type: "slider",
     default: 85,
-    label: "空闲透明度",
+    label: "settings.orb.idle_opacity_percent.label",
     min: 10,
     max: 100,
     marks: { 10: "10%", 85: "85%", 100: "100%" },
@@ -128,7 +136,7 @@ export const ORB_BALL_SETTINGS = [
     section: "orb-ball",
     type: "slider",
     default: 100,
-    label: "缩放",
+    label: "settings.orb.scale_percent.label",
     min: 50,
     max: 200,
     marks: { 50: "50%", 100: "100%", 200: "200%" },
@@ -139,8 +147,8 @@ export const ORB_BALL_SETTINGS = [
     section: "orb-ball",
     type: "boolean",
     default: false,
-    label: "鼠标穿透",
-    extra: "开启后鼠标可穿透悬浮球点击下方内容",
+    label: "settings.orb.click_through.label",
+    extra: "settings.orb.click_through.extra",
     saveMessage: false,
   }),
   defineSetting({
@@ -149,7 +157,7 @@ export const ORB_BALL_SETTINGS = [
     section: "orb-ball",
     type: "boolean",
     default: false,
-    label: "悬停隐藏",
+    label: "settings.orb.hide_on_pointer_hover.label",
   }),
   defineSetting({
     key: "hover_delay_ms",
@@ -157,7 +165,7 @@ export const ORB_BALL_SETTINGS = [
     section: "orb-ball",
     type: "slider",
     default: 0,
-    label: "悬停延迟 (ms)",
+    label: "settings.orb.hover_delay_ms.label",
     min: 0,
     max: 5000,
     step: 50,
@@ -172,7 +180,7 @@ export const ORB_PANEL_SETTINGS = [
     section: "orb-panel",
     type: "boolean",
     default: true,
-    label: "始终置顶",
+    label: "settings.orb.always_on_top.label",
   }),
 ];
 
@@ -196,8 +204,8 @@ export const MASCOT_RENDERER_SETTING = defineSetting({
   section: "orb-ball",
   type: "select",
   default: "rive",
-  label: "渲染方式",
-  description: "选择吉祥物的渲染方式",
+  label: "settings.mascot.renderer.label",
+  description: "settings.mascot.renderer.description",
   customRender: RendererSelectRender,
 });
 
@@ -210,7 +218,7 @@ export const SHORTCUT_SETTINGS = SHORTCUT_DEFINITIONS.map((shortcut) =>
     default: shortcut.defaultBinding,
     label: shortcut.label,
     pageId: "shortcuts",
-    saveMessage: "快捷键已更新",
+    saveMessage: "settings.shortcuts.save_message",
     readValue: (conf: Record<string, unknown>) =>
       (conf.keybindings as Record<string, string>)?.[shortcut.id] ??
       DEFAULT_KEYBINDINGS[shortcut.id],

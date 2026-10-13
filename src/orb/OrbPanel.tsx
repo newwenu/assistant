@@ -1,7 +1,13 @@
 import React, { useEffect, useCallback, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Button, Tooltip, Dropdown, Input } from "antd";
-import { LeftOutlined, RightOutlined, MenuOutlined } from "@ant-design/icons";
+import {
+  LeftOutlined,
+  RightOutlined,
+  MenuOutlined,
+  PushpinOutlined,
+  PushpinFilled,
+} from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { ORB_BLUR_COLLAPSE_DELAY_MS } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
@@ -29,6 +35,8 @@ function relativeTime(timestamp: number): string {
 export const OrbPanel: React.FC = () => {
   const { expand, collapse } = useOrbExpand();
   const expandDirection = useOrbStore((s) => s.expandDirection);
+  const isPinned = useOrbStore((s) => s.isPinned);
+  const setPinned = useOrbStore((s) => s.setPinned);
   const chat = useChatStore();
   useMascotChatSync();
   const [search, setSearch] = useState("");
@@ -45,6 +53,7 @@ export const OrbPanel: React.FC = () => {
     let timer: number | null = null;
     const unlistenBlur = listen("orb-blur", () => {
       closeAllMenus();
+      if (useOrbStore.getState().isPinned) return;
       if (timer !== null) clearTimeout(timer);
       timer = window.setTimeout(() => {
         void (async () => {
@@ -192,6 +201,15 @@ export const OrbPanel: React.FC = () => {
           </Tooltip>
         </Dropdown>
         <div className="orb-chrome-center" />
+        <Tooltip title={isPinned ? "取消固定" : "固定"} mouseEnterDelay={0.5}>
+          <Button
+            type="text"
+            size="small"
+            className="orb-chrome-btn"
+            icon={isPinned ? <PushpinFilled /> : <PushpinOutlined />}
+            onClick={() => setPinned(!isPinned)}
+          />
+        </Tooltip>
         <Tooltip title="折叠" mouseEnterDelay={0.5}>
           <Button
             type="text"

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Typography, Tag } from "antd";
+import { useTranslation } from "react-i18next";
 import type { SettingFieldProps } from "../core/fieldRegistry";
 import { ShortcutRecorder } from "./ShortcutRecorder";
 import {
@@ -23,6 +24,7 @@ export function KeybindingField({
   value,
   onChange,
 }: SettingFieldProps) {
+  const { t } = useTranslation();
   const shortcutId = shortcutIdFromKey(schema.key);
   const appConf = useSettingsStore((s) => s.appConf);
   const keybindings = appConf?.keybindings ?? DEFAULT_KEYBINDINGS;
@@ -67,8 +69,8 @@ export function KeybindingField({
             style={{ fontSize: 12 }}
           >
             {conflict.level === "error"
-              ? "同组快捷键冲突"
-              : "跨组快捷键冲突，可能无法同时生效"}
+              ? t("shortcut.conflict.same_group")
+              : t("shortcut.conflict.cross_group")}
           </Text>
         )}
       </div>
@@ -78,7 +80,7 @@ export function KeybindingField({
           onConfirm={handleConfirm}
           onClear={handleClear}
         />
-        {isModified && <Tag color="orange">已修改</Tag>}
+        {isModified && <Tag color="orange">{t("shortcut.modified")}</Tag>}
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { Button, Space, Input, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useTranslation } from "react-i18next";
 import type { SettingFieldProps } from "../core/fieldSchema";
 
 interface InstallAssetResult {
@@ -16,6 +17,7 @@ export function AssetPickerField({
   value,
   onChange,
 }: SettingFieldProps) {
+  const { t } = useTranslation();
   const config = schema.assetConfig;
   const [urlInput, setUrlInput] = useState<string>((value as string) ?? "");
   const [messageApi, contextHolder] = message.useMessage();
@@ -35,13 +37,17 @@ export function AssetPickerField({
       const assetUrl = `${convertFileSrc(result.installed_path)}?v=${result.version}`;
       onChange(assetUrl);
       setUrlInput(assetUrl);
-      messageApi.success(`已安装文件 (${(result.bytes / 1024).toFixed(1)} KB)`);
+      messageApi.success(
+        t("asset_picker.installed", { size: (result.bytes / 1024).toFixed(1) }),
+      );
     } catch (e) {
       messageApi.error(
-        `安装失败: ${e instanceof Error ? e.message : String(e)}`,
+        t("asset_picker.install_failed", {
+          error: e instanceof Error ? e.message : String(e),
+        }),
       );
     }
-  }, [config, onChange, messageApi]);
+  }, [config, onChange, messageApi, t]);
 
   const handleReset = useCallback(async () => {
     if (!config) return;
@@ -51,13 +57,15 @@ export function AssetPickerField({
       });
       onChange(null);
       setUrlInput("");
-      messageApi.success("已重置为默认");
+      messageApi.success(t("asset_picker.reset_success"));
     } catch (e) {
       messageApi.error(
-        `重置失败: ${e instanceof Error ? e.message : String(e)}`,
+        t("asset_picker.reset_failed", {
+          error: e instanceof Error ? e.message : String(e),
+        }),
       );
     }
-  }, [config, onChange, messageApi]);
+  }, [config, onChange, messageApi, t]);
 
   const handleUrlSubmit = useCallback(() => {
     const trimmed = urlInput.trim();
@@ -78,7 +86,7 @@ export function AssetPickerField({
               void handleFilePick();
             }}
           >
-            选择文件
+            {t("asset_picker.pick_file")}
           </Button>
           {value != null && (
             <Button
@@ -88,13 +96,13 @@ export function AssetPickerField({
                 void handleReset();
               }}
             >
-              重置为默认
+              {t("asset_picker.reset_default")}
             </Button>
           )}
         </Space>
         {config.urlInput && (
           <Input
-            placeholder="或输入 URL / 本地路径 / data URI"
+            placeholder={t("asset_picker.url_placeholder")}
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             onBlur={handleUrlSubmit}

@@ -1,5 +1,6 @@
 import { Button, Empty, Input, Space, Typography } from "antd";
 import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import type React from "react";
 
 export interface EntityListSectionConfig<T> {
@@ -31,6 +32,7 @@ export function EntityListPageShell<T>({
   sections,
   children,
 }: EntityListPageShellProps<T>) {
+  const { t } = useTranslation();
   const nonEmptySections = sections.filter((s) => s.items.length > 0);
 
   return (
@@ -41,7 +43,7 @@ export function EntityListPageShell<T>({
         </Typography.Title>
         <Space>
           <Input
-            placeholder={`搜索${title}`}
+            placeholder={t("entity_list.search_placeholder", { title })}
             prefix={<SearchOutlined />}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}

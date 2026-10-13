@@ -17,7 +17,7 @@ export function definePage(page: SettingsPageInput): SettingsPageManifest {
 const general = definePage({
   id: "general",
   categoryId: "general",
-  label: "通用设置",
+  label: "navigation.general.title",
   keywords: ["language", "launch", "tray", "top", "startup"],
   component: React.lazy(() =>
     import("../pages/GeneralSettings").then((m) => ({
@@ -29,7 +29,7 @@ const general = definePage({
 const appearance = definePage({
   id: "appearance",
   categoryId: "general",
-  label: "外观设置",
+  label: "navigation.appearance.title",
   keywords: ["mascot", "渲染", "颜色"],
   component: React.lazy(() =>
     import("../pages/AppearanceSettings").then((m) => ({
@@ -41,7 +41,7 @@ const appearance = definePage({
 const shortcuts = definePage({
   id: "shortcuts",
   categoryId: "general",
-  label: "快捷键",
+  label: "navigation.shortcuts.title",
   keywords: ["keyboard", "shortcut", "keybinding", "hotkey"],
   component: React.lazy(() =>
     import("../pages/ShortcutSettings").then((m) => ({
@@ -53,7 +53,7 @@ const shortcuts = definePage({
 const providers = definePage({
   id: "providers",
   categoryId: "provider",
-  label: "Provider 管理",
+  label: "navigation.providers.title",
   keywords: ["provider", "api", "model", "openai", "preset"],
   component: React.lazy(() =>
     import("../provider/ProviderManager").then((m) => ({
@@ -65,7 +65,7 @@ const providers = definePage({
 const agents = definePage({
   id: "agents",
   categoryId: "provider",
-  label: "Agent 模式",
+  label: "navigation.agents.title",
   keywords: ["agent", "mode", "kind", "quick", "deep"],
   component: React.lazy(() =>
     import("../pages/AgentModeSettings").then((m) => ({
@@ -77,7 +77,7 @@ const agents = definePage({
 const about = definePage({
   id: "about",
   categoryId: "about",
-  label: "关于",
+  label: "navigation.about.title",
   keywords: ["version", "rustc", "build", "about"],
   component: React.lazy(() =>
     import("../pages/AboutSettings").then((m) => ({

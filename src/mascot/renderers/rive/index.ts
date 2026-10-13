@@ -5,7 +5,7 @@ import { RiveMascot } from "./RiveMascot";
 registerRenderer({
   meta: {
     id: BUILTIN_RENDERER_IDS.rive,
-    label: "Rive",
+    label: "mascot_renderer.rive.label",
     capabilities: {
       visemeSync: true,
       faceTransition: true,
@@ -18,15 +18,15 @@ registerRenderer({
         key: "rive_idle_pose_rotation",
         type: "boolean",
         default: false,
-        label: "空闲轮转动画",
+        label: "mascot_renderer.rive.idle_pose_rotation",
       },
       {
         key: "rive_src",
         type: "asset-picker",
         default: null,
-        label: "自定义 Rive 文件",
-        extra: "支持 .riv 文件，替换内置 mascot",
-        saveMessage: "Rive 文件已更新",
+        label: "mascot_renderer.rive.custom_rive.label",
+        extra: "mascot_renderer.rive.custom_rive.extra",
+        saveMessage: "mascot_renderer.rive.custom_rive.save_message",
         assetConfig: {
           assetType: "rive",
           fileFilter: { name: "Rive", extensions: ["riv"] },

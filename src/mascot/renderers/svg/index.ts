@@ -5,7 +5,7 @@ import { GhostyMascot } from "./GhostyMascot";
 registerRenderer({
   meta: {
     id: BUILTIN_RENDERER_IDS.svg,
-    label: "SVG",
+    label: "mascot_renderer.svg.label",
     capabilities: {
       visemeSync: true,
       faceTransition: true,
@@ -18,7 +18,7 @@ registerRenderer({
         key: "svg_animated",
         type: "boolean",
         default: true,
-        label: "SVG 动画",
+        label: "mascot_renderer.svg.animated",
       },
     ],
   },

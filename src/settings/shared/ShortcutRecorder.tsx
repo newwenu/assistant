@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Tag } from "antd";
+import { useTranslation } from "react-i18next";
 import { formatBinding } from "../core/shortcutTypes";
 
 interface ShortcutRecorderProps {
@@ -74,6 +75,7 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
   onConfirm,
   onClear,
 }) => {
+  const { t } = useTranslation();
   const [recording, setRecording] = useState(false);
   const [captured, setCaptured] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -172,7 +174,7 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
         {captured ? (
           <Tag color="blue">{formatBinding(captured)}</Tag>
         ) : (
-          <Tag color="processing">请按下快捷键...</Tag>
+          <Tag color="processing">{t("shortcut.recording")}</Tag>
         )}
       </div>
     );
@@ -192,7 +194,7 @@ export const ShortcutRecorder: React.FC<ShortcutRecorderProps> = ({
         style={{ cursor: "pointer" }}
         color={currentBinding ? "default" : "warning"}
       >
-        {currentBinding ? formatBinding(currentBinding) : "未设置"}
+        {currentBinding ? formatBinding(currentBinding) : t("shortcut.not_set")}
       </Tag>
     </div>
   );

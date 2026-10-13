@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   BrowserRouter,
@@ -40,6 +41,7 @@ import { useToolMenuItems } from "@/tools/CollapsibleToolMenu";
 import { toolsMap } from "@/tools/registry";
 
 const SettingsContent: React.FC = () => {
+  const { t } = useTranslation();
   const { pageId } = useParams<{ pageId: string }>();
 
   if (!pageId || !isSettingsPageId(pageId)) {
@@ -53,7 +55,7 @@ const SettingsContent: React.FC = () => {
     <React.Suspense
       fallback={
         <div style={{ padding: 24, color: "var(--color-text-secondary)" }}>
-          加载中...
+          {t("actions.loading")}
         </div>
       }
     >
@@ -63,6 +65,7 @@ const SettingsContent: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const toolMenuItems = useToolMenuItems(() => {
@@ -183,17 +186,17 @@ const MainLayout: React.FC = () => {
                   { type: "divider" as const },
                   {
                     key: "/history",
-                    label: "消息历史",
+                    label: t("navigation.chat_history"),
                     icon: <HistoryOutlined />,
                   },
                   { type: "divider" as const },
                   {
                     key: "settings-sub",
-                    label: "设置",
+                    label: t("navigation.settings"),
                     icon: <SettingOutlined />,
                     children: SETTINGS_PAGES.map((page) => ({
                       key: `/settings/${page.id}`,
-                      label: page.label,
+                      label: t(page.label),
                     })),
                   },
                 ]}
