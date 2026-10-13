@@ -3,10 +3,12 @@ import { Button, Tooltip } from "antd";
 import { PushpinOutlined, PushpinFilled } from "@ant-design/icons";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
+import { useTranslation } from "react-i18next";
 
 export const PinToggle: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);
   const [pinned, setPinned] = useState(appConf?.stay_on_top ?? false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (appConf) setPinned(appConf.stay_on_top);
@@ -19,7 +21,10 @@ export const PinToggle: React.FC = () => {
   };
 
   return (
-    <Tooltip title={pinned ? "取消置顶" : "置顶"} mouseEnterDelay={0.5}>
+    <Tooltip
+      title={pinned ? t("common.actions.unpin") : t("common.actions.pin")}
+      mouseEnterDelay={0.5}
+    >
       <Button
         type="text"
         size="small"

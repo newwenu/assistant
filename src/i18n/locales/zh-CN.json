@@ -16,7 +16,45 @@
       "cancel": "取消",
       "edit": "编辑",
       "delete": "删除",
-      "loading": "加载中..."
+      "loading": "加载中...",
+      "confirm": "确认",
+      "retry": "重试",
+      "refresh": "刷新",
+      "export": "导出",
+      "copy": "复制",
+      "copied": "已复制",
+      "rename": "重命名",
+      "pin": "置顶",
+      "unpin": "取消置顶",
+      "duplicate": "复制",
+      "close": "关闭",
+      "minimize": "最小化",
+      "maximize": "最大化",
+      "restore": "还原",
+      "settings": "设置",
+      "go_settings": "去设置",
+      "collapse": "折叠"
+    },
+    "time": {
+      "just_now": "刚刚",
+      "minutes_ago": "{{count}} 分钟前",
+      "hours_ago": "{{count}} 小时前",
+      "yesterday": "昨天",
+      "today": "今天",
+      "last_7_days": "近 7 天",
+      "last_30_days": "近 30 天",
+      "earlier": "更早",
+      "pinned": "置顶"
+    },
+    "window": {
+      "shortcut_register_failed": "快捷键注册失败",
+      "shortcut_occupied": "{{id}}（{{binding}}）可能被其它应用占用"
+    },
+    "theme": {
+      "system": "跟随系统",
+      "light": "亮色模式",
+      "dark": "暗色模式",
+      "switch_to": "切换到{{label}}"
     }
   },
   "settings": {
@@ -264,6 +302,122 @@
       "license_value": "MIT",
       "app_name_value": "Assistant",
       "check_update": "检查更新（即将推出）"
+    }
+  },
+  "chat": {
+    "error": {
+      "ApiKeyMissing": "API Key 未配置",
+      "AuthFailed": "认证失败",
+      "RateLimited": "请求限流",
+      "ModelNotFound": "模型不可用",
+      "ContextOverflow": "上下文过长",
+      "NetworkError": "网络错误",
+      "Timeout": "请求超时",
+      "ServerError": "服务端错误",
+      "RequestRejected": "请求被拒绝",
+      "ParseError": "解析错误",
+      "Cancelled": "已取消",
+      "StreamError": "流式错误",
+      "InternalError": "内部错误",
+      "unknown_error": "未知错误",
+      "retry_after_seconds": "请 {{count}} 秒后重试",
+      "retry_after_minutes": "请约 {{count}} 分钟后重试"
+    },
+    "input": {
+      "placeholder": "输入消息...",
+      "placeholder_no_provider": "请先配置 AI Provider",
+      "placeholder_streaming": "输入下一条消息，回车将在回复结束后发送...",
+      "send": "发送消息",
+      "stop": "停止生成"
+    },
+    "view": {
+      "no_provider_title": "请先配置 AI Provider",
+      "no_provider_content": "在设置中添加 AI Provider 后即可开始对话",
+      "no_provider_hint": "配置 AI Provider 后即可开始对话",
+      "provider_deleted_error": "此对话的 Provider 已被删除，请重新选择 Provider 后再发送",
+      "create_failed": "创建对话失败: {{error}}",
+      "provider_required": "请先配置 AI Provider（在设置中添加）"
+    },
+    "message": {
+      "loading_more": "加载中…",
+      "load_earlier": "加载更早的消息",
+      "scroll_to_bottom": "回到底部",
+      "edit": "编辑",
+      "regenerate": "重新生成",
+      "confirm_delete_message": "确定删除此消息？",
+      "message_deleted": "消息已删除",
+      "delete_failed": "删除失败"
+    },
+    "history": {
+      "search_placeholder": "搜索对话...",
+      "search_fulltext": "全文",
+      "search_title": "标题",
+      "refresh_list": "刷新列表",
+      "result_count": "{{count}} 条结果",
+      "no_match": "未找到匹配的对话",
+      "no_conversations": "暂无对话",
+      "new_conversation": "新对话",
+      "message_count": "{{count}} 条消息",
+      "export_markdown": "导出 Markdown",
+      "export_json": "导出 JSON",
+      "confirm_delete_conversation": "确定删除此对话？",
+      "delete_conversation": "删除对话",
+      "conversation_deleted": "对话已删除",
+      "renamed": "已重命名",
+      "rename_failed": "重命名失败",
+      "export_success": "导出成功",
+      "export_failed": "导出失败",
+      "operation_failed": "操作失败",
+      "duplicated": "已复制",
+      "duplicate_failed": "复制失败",
+      "no_messages": "暂无消息",
+      "scroll_load_more": "↑ 向上滚动加载更多消息",
+      "back_to_bottom": "↓ 回到底部",
+      "select_to_view": "选择左侧对话查看消息历史"
+    },
+    "provider": {
+      "select_placeholder": "选择 Provider"
+    },
+    "model": {
+      "placeholder": "模型",
+      "select_placeholder": "选择模型"
+    },
+    "mode": {
+      "placeholder": "模式",
+      "select_placeholder": "选择模式"
+    },
+    "reasoning": {
+      "expand": "展开思考",
+      "collapse": "收起思考",
+      "thinking": "思考中…"
+    },
+    "orb": {
+      "conversation_list": "对话列表",
+      "search_conversation": "搜索对话"
+    }
+  },
+  "command": {
+    "search_placeholder": "搜索工具、页面、操作...",
+    "no_match": "没有匹配的命令",
+    "category": {
+      "tools": "工具",
+      "navigation": "导航",
+      "actions": "操作",
+      "external": "外部"
+    },
+    "action": {
+      "toggle_theme": "切换主题",
+      "toggle_theme_desc": "循环切换 亮色 → 暗色 → 跟随系统",
+      "random_tool": "随机工具",
+      "random_tool_desc": "随机打开一个工具",
+      "github_repo": "GitHub 仓库",
+      "github_repo_desc": "查看源代码",
+      "bug_report": "报告问题",
+      "bug_report_desc": "提交 Bug 或功能建议",
+      "setting_item": "设置项 · {{key}}",
+      "setting_page": "{{label}}设置",
+      "chat_history": "消息历史",
+      "chat_history_desc": "查看对话历史记录"
     }
   }
 }

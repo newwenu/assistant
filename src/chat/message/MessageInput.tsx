@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { Input } from "antd";
+import { useTranslation } from "react-i18next";
 import {
   CHAT_INPUT_MIN_ROWS,
   CHAT_INPUT_MAX_ROWS,
@@ -29,6 +30,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [value, setValue] = useState("");
   const mascotFace = useMascotStore((s) => s.face);
   const mascotConf = useSettingsStore((s) => s.mascotConf);
+  const { t } = useTranslation();
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -75,10 +77,10 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         }}
         placeholder={
           disabled
-            ? "请先配置 AI Provider"
+            ? t("chat.input.placeholder_no_provider")
             : isStreaming
-              ? "输入下一条消息，回车将在回复结束后发送..."
-              : "输入消息..."
+              ? t("chat.input.placeholder_streaming")
+              : t("chat.input.placeholder")
         }
         disabled={disabled}
       />
@@ -87,7 +89,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         className={`chat-mascot-btn${canSend ? " chat-mascot-btn-active" : ""}${isStreaming ? " chat-mascot-btn-streaming" : ""}`}
         onClick={handleMascotClick}
         disabled={!isStreaming && !canSend}
-        title={isStreaming ? "停止生成" : "发送消息"}
+        title={isStreaming ? t("chat.input.stop") : t("chat.input.send")}
       >
         <div className="chat-mascot-btn-canvas">
           <MascotRenderer

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, type RefObject } from "react";
 import { Select } from "antd";
 import { DownOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import type { Provider } from "../stores/providerStore";
 
 interface ProviderSelectorProps {
@@ -21,6 +22,7 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
   openRef,
 }) => {
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
 
   const handleOpenChange = useCallback(
     (v: boolean) => {
@@ -66,7 +68,7 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
     <Select
       value={providerId || undefined}
       onChange={onProviderChange}
-      placeholder="选择 Provider"
+      placeholder={t("chat.provider.select_placeholder")}
       style={{ width }}
       size="small"
       options={providers.map((p) => ({

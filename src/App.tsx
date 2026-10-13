@@ -125,8 +125,11 @@ const MainLayout: React.FC = () => {
       "shortcut-warning",
       ({ payload }) => {
         api.warning({
-          message: "快捷键注册失败",
-          description: `${payload.id}（${payload.binding}）可能被其它应用占用`,
+          message: translateKey("common.window.shortcut_register_failed"),
+          description: translateKey("common.window.shortcut_occupied", {
+            id: payload.id,
+            binding: payload.binding,
+          }),
           placement: "topRight",
         });
       },

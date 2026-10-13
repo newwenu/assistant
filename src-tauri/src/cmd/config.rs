@@ -46,6 +46,13 @@ static APP_SIDE_EFFECTS: &[(&str, AppSideEffectFn)] = &[
         }
         Ok(())
     }),
+    ("language", |app, prev, conf| {
+        if prev.language != conf.language {
+            assistant_i18n::set_locale(&conf.language);
+            crate::tray::rebuild_tray(app);
+        }
+        Ok(())
+    }),
 ];
 
 static ORB_SIDE_EFFECTS: &[(&str, OrbSideEffectFn)] = &[
@@ -131,6 +138,13 @@ pub fn emit_theme_changed(app: AppHandle, resolved: String) -> Result<(), String
     use tauri::Emitter;
     app.emit("theme-changed", serde_json::json!({ "resolved": resolved }))
         .map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn set_locale(app: AppHandle, locale: String) -> Result<(), String> {
+    assistant_i18n::set_locale(&locale);
+    crate::tray::rebuild_tray(&app);
+    Ok(())
 }
 
 #[command]

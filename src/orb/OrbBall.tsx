@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ORB_HITBOX_SIZE,
   ORB_COLLAPSED_SIZE,
@@ -6,7 +6,7 @@ import {
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
 import { useOrbDrag } from "./OrbDrag";
-import { useOrbExpand } from "./OrbExpand";
+import { useOrbExpand, collapseOrbOnInit } from "./OrbExpand";
 import { OrbContextMenu } from "./OrbContextMenu";
 import { useOrbConfSync } from "./useOrbConfSync";
 import {
@@ -19,7 +19,7 @@ import { buildRendererConfig } from "../settings/core/settingsDispatcher";
 import { useSettingsStore } from "../stores/settingsStore";
 
 export const OrbBall: React.FC = () => {
-  useOrbConfSync();
+  const { ready: confReady } = useOrbConfSync();
   const isExpanded = useOrbStore((s) => s.isExpanded);
   const isHovering = useOrbStore((s) => s.isHovering);
   const isDragging = useOrbStore((s) => s.isDragging);
@@ -34,12 +34,27 @@ export const OrbBall: React.FC = () => {
     useOrbDrag();
 
   const [settled, setSettled] = useState(false);
+  const [settledIn, setSettledIn] = useState(false);
+  const initGuardRef = useRef(false);
+  const confReadyRef = useRef(confReady);
+  confReadyRef.current = confReady;
   useEffect(() => {
-    requestAnimationFrame(() => {
+    if (initGuardRef.current) return;
+    initGuardRef.current = true;
+    void (async () => {
+      await confReadyRef.current;
       requestAnimationFrame(() => {
-        setSettled(true);
+        requestAnimationFrame(() => {
+          void collapseOrbOnInit().then(() => {
+            requestAnimationFrame(() => {
+              setSettled(true);
+              setSettledIn(true);
+              requestAnimationFrame(() => setSettledIn(false));
+            });
+          });
+        });
       });
-    });
+    })();
   }, []);
 
   const handlePointerEnter = useCallback(() => {
@@ -76,7 +91,7 @@ export const OrbBall: React.FC = () => {
   return (
     <OrbContextMenu>
       <div
-        className={`orb-hitbox${!isBallVisible ? " orb-ball-hidden" : ""}${!settled ? " orb-settling" : ""} ${stateClass}`}
+        className={`orb-hitbox${!isBallVisible ? " orb-ball-hidden" : ""}${!settled ? " orb-settling" : ""}${settledIn ? " orb-settled-in" : ""} ${stateClass}`}
         style={{
           position: "absolute",
           top: ballTop,

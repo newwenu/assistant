@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, type RefObject } from "react";
 import { Button, Modal, Typography, Progress, Tooltip } from "antd";
 import { PlusOutlined, SettingOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "../stores/chatStore";
 import {
@@ -63,6 +64,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   const chat = useChatStore();
   const provider = useProviderStore();
   const [modal, modalContextHolder] = Modal.useModal();
+  const { t } = useTranslation();
   const [currentModelId, setCurrentModelId] = useState("");
   const [currentProviderId, setCurrentProviderId] = useState<string | null>(
     null,
@@ -188,8 +190,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   const handleNewConversation = useCallback(() => {
     if (provider.providers.length === 0) {
       modal.warning({
-        title: "请先配置 AI Provider",
-        content: "在设置中添加 AI Provider 后即可开始对话",
+        title: t("chat.view.no_provider_title"),
+        content: t("chat.view.no_provider_content"),
       });
       return;
     }
@@ -303,7 +305,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
         {chat.messages.length === 0 && noProviders ? (
           <div className="chat-empty-hint">
             <Typography.Text type="secondary">
-              配置 AI Provider 后即可开始对话
+              {t("chat.view.no_provider_hint")}
             </Typography.Text>
             <Button
               type="primary"
@@ -311,7 +313,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
               icon={<SettingOutlined />}
               onClick={handleOpenSettings}
             >
-              去设置
+              {t("common.actions.go_settings")}
             </Button>
           </div>
         ) : (

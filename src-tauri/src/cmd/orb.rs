@@ -96,20 +96,20 @@ pub fn snap_orb_to_screen(app: AppHandle) -> Result<(), String> {
     let size = window.outer_size().map_err(|e| e.to_string())?;
 
     let screens = placement::get_available_screens(&app);
-    let bounds = placement::WindowBounds::new(pos.x, pos.y, size.width, size.height);
-
-    let visual_x = pos.x + ORB_CHROME_INSET as i32;
-    let visual_y = pos.y + ORB_CHROME_INSET as i32;
-    let visual_bounds =
-        placement::WindowBounds::new(visual_x, visual_y, ORB_HITBOX_SIZE, ORB_HITBOX_SIZE);
-
-    if placement::bounds_inside_screens(&screens, visual_bounds) {
+    let Some(target) = placement::ensure_orb_on_screen(
+        &screens,
+        pos.x,
+        pos.y,
+        size.width,
+        size.height,
+        ORB_CHROME_INSET,
+        ORB_HITBOX_SIZE,
+    ) else {
+        let _ = save_orb_position_sync(&app);
         return Ok(());
-    }
+    };
 
-    let target = placement::snap_to_nearest_screen(&screens, bounds);
-
-    if target.x == bounds.x && target.y == bounds.y {
+    if target.x == pos.x && target.y == pos.y {
         let _ = save_orb_position_sync(&app);
         return Ok(());
     }

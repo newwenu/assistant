@@ -416,7 +416,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
             });
             get().errorStream({
               code: ChatErrorCode.ApiKeyMissing,
-              message: "请先配置 AI Provider（在设置中添加）",
               retry_after_ms: null,
               retryable: false,
             });
@@ -432,7 +431,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           set({ currentConversationId: newId });
           await get().loadConversations();
         } catch (e) {
-          get().errorStream(toChatError(`创建对话失败: ${String(e)}`));
+          get().errorStream({
+            code: ChatErrorCode.InternalError,
+            message: String(e),
+            retry_after_ms: null,
+            retryable: false,
+          });
           return;
         }
       }
@@ -587,8 +591,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (state.streamingMessageId) {
       const retryHint = formatRetryAfter(error.retry_after_ms);
       const displayMessage = retryHint
-        ? `${error.message} ${retryHint}`
-        : error.message;
+        ? `${error.message ?? ""} ${retryHint}`
+        : (error.message ?? error.code);
       set({
         messages: state.messages.map((m) =>
           m.id === state.streamingMessageId

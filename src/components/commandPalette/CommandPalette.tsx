@@ -9,6 +9,7 @@ import { Input, Typography } from "antd";
 import type { InputRef } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import Fuse from "fuse.js";
 import {
   getAllCommands,
@@ -29,6 +30,7 @@ export const CommandPalette: React.FC = () => {
   const inputRef = useRef<InputRef>(null);
   const optionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const appConf = useSettingsStore((s) => s.appConf);
   const binding = appConf?.keybindings?.command_palette;
 
@@ -207,7 +209,7 @@ export const CommandPalette: React.FC = () => {
           <Input
             ref={inputRef}
             prefix={<SearchOutlined />}
-            placeholder="搜索工具、页面、操作..."
+            placeholder={t("command.search_placeholder")}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -222,7 +224,9 @@ export const CommandPalette: React.FC = () => {
           {flatResults.length === 0 && (
             <div className={styles.emptyState}>
               <SearchOutlined style={{ fontSize: 24, opacity: 0.3 }} />
-              <Typography.Text type="secondary">没有匹配的命令</Typography.Text>
+              <Typography.Text type="secondary">
+                {t("command.no_match")}
+              </Typography.Text>
             </div>
           )}
           {sortedGroups.map(([catKey, cmds]) => {

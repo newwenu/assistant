@@ -6,6 +6,7 @@ import {
   EditOutlined,
   RedoOutlined,
 } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import css from "./MessageActions.module.css";
 
 interface MessageActionsProps {
@@ -31,6 +32,7 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
   const isAssistant = role === "assistant";
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<number | null>(null);
+  const { t } = useTranslation();
 
   const handleCopy = useCallback(() => {
     onCopy?.();
@@ -48,7 +50,7 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
         <button
           className={copied ? css.btnCopied : css.btn}
           onClick={handleCopy}
-          title={copied ? "已复制" : "复制"}
+          title={copied ? t("common.actions.copied") : t("common.actions.copy")}
           type="button"
         >
           {copied ? (
@@ -59,7 +61,12 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
         </button>
       )}
       {isUser && onEdit && !isStreaming && (
-        <button className={css.btn} onClick={onEdit} title="编辑" type="button">
+        <button
+          className={css.btn}
+          onClick={onEdit}
+          title={t("chat.message.edit")}
+          type="button"
+        >
           <EditOutlined style={{ fontSize: 12 }} />
         </button>
       )}
@@ -67,7 +74,7 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
         <button
           className={css.btn}
           onClick={onRegenerate}
-          title="重新生成"
+          title={t("chat.message.regenerate")}
           type="button"
         >
           <RedoOutlined style={{ fontSize: 12 }} />
@@ -77,7 +84,7 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
         <button
           className={css.btn}
           onClick={onDelete}
-          title="删除"
+          title={t("common.actions.delete")}
           type="button"
         >
           <DeleteOutlined style={{ fontSize: 12 }} />

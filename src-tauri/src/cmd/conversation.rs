@@ -19,13 +19,13 @@ pub fn create_conversation(
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     provider_store::get_provider_by_id(&conn, &provider_id)?
-        .ok_or_else(|| "Provider not found".to_string())?;
+        .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
 
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().timestamp_millis();
     let row = ConversationRow {
         id: id.clone(),
-        title: "新对话".to_string(),
+        title: assistant_i18n::t("chat.new_conversation_title"),
         title_source: "placeholder".to_string(),
         provider_id: Some(provider_id),
         model_id,
@@ -97,7 +97,7 @@ pub fn update_conversation_model(
     let conn = super::get_db_conn(&state)?;
     let now = Utc::now().timestamp_millis();
     let mut conv = conversations::get_conversation_by_id(&conn, &id)?
-        .ok_or_else(|| "Conversation not found".to_string())?;
+        .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
     conv.model_id = model_id;
     conv.updated_at = now;
     conversations::update_conversation(&conn, &conv)
@@ -113,7 +113,7 @@ pub fn update_conversation_provider(
     let conn = super::get_db_conn(&state)?;
     let now = Utc::now().timestamp_millis();
     let mut conv = conversations::get_conversation_by_id(&conn, &id)?
-        .ok_or_else(|| "Conversation not found".to_string())?;
+        .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
     conv.provider_id = Some(provider_id);
     conv.updated_at = now;
     conversations::update_conversation(&conn, &conv)

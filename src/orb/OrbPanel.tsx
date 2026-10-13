@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { useTranslation } from "react-i18next";
 import { Button, Tooltip, Dropdown, Input } from "antd";
 import {
   LeftOutlined,
@@ -21,16 +22,7 @@ import {
   getWindowLogicalRect,
   isPointInRect,
 } from "./OrbCoord";
-
-function relativeTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-  if (diff < 60000) return "刚刚";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
-  if (diff < 172800000) return "昨天";
-  return new Date(timestamp).toLocaleDateString();
-}
+import { formatRelativeTime } from "../utils/formatRelativeTime";
 
 export const OrbPanel: React.FC = () => {
   const { expand, collapse } = useOrbExpand();
@@ -38,6 +30,7 @@ export const OrbPanel: React.FC = () => {
   const isPinned = useOrbStore((s) => s.isPinned);
   const setPinned = useOrbStore((s) => s.setPinned);
   const chat = useChatStore();
+  const { t } = useTranslation();
   useMascotChatSync();
   const [search, setSearch] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -116,7 +109,7 @@ export const OrbPanel: React.FC = () => {
       key: "search",
       label: (
         <Input.Search
-          placeholder="搜索对话"
+          placeholder={t("chat.orb.search_conversation")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           size="small"
@@ -156,7 +149,7 @@ export const OrbPanel: React.FC = () => {
               flexShrink: 0,
             }}
           >
-            {relativeTime(conv.updated_at)}
+            {formatRelativeTime(conv.updated_at)}
           </span>
         </div>
       ),
@@ -171,7 +164,7 @@ export const OrbPanel: React.FC = () => {
     historyMenuItems.splice(1);
     historyMenuItems.push({
       key: "empty",
-      label: "暂无对话",
+      label: t("chat.history.no_conversations"),
       disabled: true,
     });
   }
@@ -191,7 +184,10 @@ export const OrbPanel: React.FC = () => {
           onOpenChange={setHistoryOpen}
           classNames={{ root: "orb-dropdown" }}
         >
-          <Tooltip title="对话列表" mouseEnterDelay={0.5}>
+          <Tooltip
+            title={t("chat.orb.conversation_list")}
+            mouseEnterDelay={0.5}
+          >
             <Button
               type="text"
               size="small"
@@ -201,7 +197,10 @@ export const OrbPanel: React.FC = () => {
           </Tooltip>
         </Dropdown>
         <div className="orb-chrome-center" />
-        <Tooltip title={isPinned ? "取消固定" : "固定"} mouseEnterDelay={0.5}>
+        <Tooltip
+          title={isPinned ? t("common.actions.unpin") : t("common.actions.pin")}
+          mouseEnterDelay={0.5}
+        >
           <Button
             type="text"
             size="small"
@@ -210,7 +209,7 @@ export const OrbPanel: React.FC = () => {
             onClick={() => setPinned(!isPinned)}
           />
         </Tooltip>
-        <Tooltip title="折叠" mouseEnterDelay={0.5}>
+        <Tooltip title={t("common.actions.collapse")} mouseEnterDelay={0.5}>
           <Button
             type="text"
             size="small"

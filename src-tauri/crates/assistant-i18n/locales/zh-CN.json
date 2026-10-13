@@ -1,13 +1,35 @@
 {
-  "app_name": "Assistant",
-  "tray_show_main": "打开主窗口",
-  "tray_show_orb": "显示悬浮球",
-  "tray_quit": "退出",
-  "settings_title": "设置",
-  "settings_theme": "主题",
-  "settings_language": "语言",
-  "settings_hotkey": "快捷键",
-  "settings_providers": "模型提供商",
-  "orb_new_chat": "新对话",
-  "orb_input_placeholder": "输入消息..."
+  "app": {
+    "name": "Assistant"
+  },
+  "tray": {
+    "new_chat": "新建对话",
+    "show_main": "打开主窗口",
+    "show_orb": "显示悬浮球",
+    "settings_general": "通用设置",
+    "settings_appearance": "外观设置",
+    "settings_shortcuts": "快捷键",
+    "quit": "退出"
+  },
+  "orb": {
+    "context_new_chat": "新建对话",
+    "context_open_main": "打开主窗口",
+    "context_quit": "退出"
+  },
+  "chat": {
+    "empty_content": "消息内容不能为空",
+    "provider_deleted": "此对话的 Provider 已被删除，请重新选择 Provider 后再发送",
+    "new_conversation_title": "新对话"
+  },
+  "window": {
+    "title_main": "Assistant",
+    "title_settings": "设置",
+    "unknown_label": "未知窗口标签: {{label}}"
+  },
+  "error": {
+    "conversation_not_found": "对话未找到",
+    "provider_not_found": "Provider 未找到",
+    "orb_window_not_found": "Orb 窗口未找到",
+    "db_lock": "数据库锁: {{error}}"
+  }
 }

@@ -1,5 +1,6 @@
 import React from "react";
 import { CheckOutlined, CloseOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import css from "./EditBlock.module.css";
 
 interface EditBlockProps {
@@ -15,6 +16,8 @@ export const EditBlock: React.FC<EditBlockProps> = ({
   onConfirm,
   onCancel,
 }) => {
+  const { t } = useTranslation();
+
   return (
     <div className={css.root}>
       <textarea
@@ -36,7 +39,7 @@ export const EditBlock: React.FC<EditBlockProps> = ({
         <button
           className={css.confirmBtn}
           onClick={onConfirm}
-          title="确认"
+          title={t("common.actions.confirm")}
           type="button"
         >
           <CheckOutlined style={{ fontSize: 12 }} />
@@ -44,7 +47,7 @@ export const EditBlock: React.FC<EditBlockProps> = ({
         <button
           className={css.cancelBtn}
           onClick={onCancel}
-          title="取消"
+          title={t("common.actions.cancel")}
           type="button"
         >
           <CloseOutlined style={{ fontSize: 12 }} />

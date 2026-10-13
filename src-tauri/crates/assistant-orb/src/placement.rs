@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use log::error;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use super::hover::ScreenBounds;
 
@@ -50,16 +50,21 @@ pub fn get_available_screens(app: &AppHandle) -> Vec<ScreenBounds> {
     screens
 }
 
-pub fn check_and_snap_orb(app: &AppHandle, window_label: &str) -> Option<WindowBounds> {
-    let window = app.get_webview_window(window_label)?;
-    let pos = window.outer_position().ok()?;
-    let size = window.outer_size().ok()?;
-    let bounds = WindowBounds::new(pos.x, pos.y, size.width, size.height);
-    let screens = get_available_screens(app);
-    if bounds_inside_screens(&screens, bounds) {
+pub fn ensure_orb_on_screen(
+    screens: &[ScreenBounds],
+    win_x: i32,
+    win_y: i32,
+    win_w: u32,
+    win_h: u32,
+    chrome_inset: u32,
+    hitbox_size: u32,
+) -> Option<WindowBounds> {
+    let visual_x = win_x + chrome_inset as i32;
+    let visual_y = win_y + chrome_inset as i32;
+    let visual_bounds = WindowBounds::new(visual_x, visual_y, hitbox_size, hitbox_size);
+    if bounds_inside_screens(screens, visual_bounds) {
         return None;
     }
-    let snapped = snap_to_nearest_screen(&screens, bounds);
-    let _ = window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y));
-    Some(snapped)
+    let bounds = WindowBounds::new(win_x, win_y, win_w, win_h);
+    Some(snap_to_nearest_screen(screens, bounds))
 }

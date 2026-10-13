@@ -177,3 +177,22 @@ export function useOrbExpand(): UseOrbExpandReturn {
 
   return { isExpanded, expand, collapse };
 }
+
+export async function collapseOrbOnInit(): Promise<void> {
+  const { expandDirection, expandVertical } = useOrbStore.getState();
+  try {
+    await invoke("collapse_orb_panel", {
+      horizontal: expandDirection,
+      vertical: expandVertical,
+    });
+    useOrbStore.getState().collapse();
+    useOrbStore.getState().setBallVisible(true);
+    await useSettingsStore.getState().loadOrbConf();
+    const orbConf = useSettingsStore.getState().orbConf;
+    if (orbConf?.click_through) {
+      await invoke("set_orb_click_through", { enabled: true });
+    }
+  } catch (e) {
+    console.error("[OrbExpand] collapseOrbOnInit failed:", e);
+  }
+}

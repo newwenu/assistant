@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Select } from "antd";
 import { DownOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import { useAgentModeStore } from "../stores/agentModeStore";
 
 interface ModeSelectorProps {
@@ -13,6 +14,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
   onModeChange,
 }) => {
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
   const modes = useAgentModeStore((s) => s.modes);
   const selectedModeId = useAgentModeStore((s) => s.selectedModeId);
   const selectMode = useAgentModeStore((s) => s.selectMode);
@@ -48,7 +50,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
       <Select
         value={selectedModeId || undefined}
         onChange={handleChange}
-        placeholder="模式"
+        placeholder={t("chat.mode.placeholder")}
         className="orb-mode-chip"
         popupMatchSelectWidth={false}
         classNames={{ popup: { root: "orb-dropdown" } }}

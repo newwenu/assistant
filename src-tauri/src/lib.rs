@@ -43,6 +43,7 @@ pub fn run() {
             cmd::patch_conf,
             cmd::set_theme,
             cmd::emit_theme_changed,
+            cmd::set_locale,
             cmd::toggle_orb_visibility,
             cmd::set_orb_click_through,
             cmd::get_screen_size,

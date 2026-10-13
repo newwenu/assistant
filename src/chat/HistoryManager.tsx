@@ -6,6 +6,7 @@ import React, {
   useMemo,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import {
   Input,
   Typography,
@@ -37,6 +38,9 @@ import {
   VIRTUAL_SCROLL_OVERSCAN,
   SCROLL_LOAD_THRESHOLD_PX,
 } from "../config/constants";
+import { formatRelativeTime } from "../utils/formatRelativeTime";
+
+import { translateKey } from "../i18n";
 
 interface ConversationGroup {
   key: string;
@@ -44,12 +48,25 @@ interface ConversationGroup {
   conversations: Conversation[];
 }
 
+const GROUP_LABELS: Record<string, string> = {
+  pinned: "common.time.pinned",
+  today: "common.time.today",
+  yesterday: "common.time.yesterday",
+  week: "common.time.last_7_days",
+  month: "common.time.last_30_days",
+  older: "common.time.earlier",
+};
+
 function groupConversations(convs: Conversation[]): ConversationGroup[] {
   const groups: ConversationGroup[] = [];
 
   const pinned = convs.filter((c) => c.is_pinned);
   if (pinned.length > 0)
-    groups.push({ key: "pinned", label: "置顶", conversations: pinned });
+    groups.push({
+      key: "pinned",
+      label: translateKey(GROUP_LABELS.pinned),
+      conversations: pinned,
+    });
 
   const unpinned = convs.filter((c) => !c.is_pinned);
 
@@ -76,41 +93,43 @@ function groupConversations(convs: Conversation[]): ConversationGroup[] {
   const older = unpinned.filter((c) => c.updated_at < monthStart);
 
   if (today.length)
-    groups.push({ key: "today", label: "今天", conversations: today });
+    groups.push({
+      key: "today",
+      label: translateKey(GROUP_LABELS.today),
+      conversations: today,
+    });
   if (yesterday.length)
-    groups.push({ key: "yesterday", label: "昨天", conversations: yesterday });
+    groups.push({
+      key: "yesterday",
+      label: translateKey(GROUP_LABELS.yesterday),
+      conversations: yesterday,
+    });
   if (week.length)
-    groups.push({ key: "week", label: "近 7 天", conversations: week });
+    groups.push({
+      key: "week",
+      label: translateKey(GROUP_LABELS.week),
+      conversations: week,
+    });
   if (month.length)
-    groups.push({ key: "month", label: "近 30 天", conversations: month });
+    groups.push({
+      key: "month",
+      label: translateKey(GROUP_LABELS.month),
+      conversations: month,
+    });
   if (older.length)
-    groups.push({ key: "older", label: "更早", conversations: older });
+    groups.push({
+      key: "older",
+      label: translateKey(GROUP_LABELS.older),
+      conversations: older,
+    });
 
   return groups;
-}
-
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  return d.toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatRelativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  if (diff < 60000) return "刚刚";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
-  if (diff < 172800000) return "昨天";
-  return formatTime(ts);
 }
 
 const REFRESH_INTERVAL_MS = 15000;
 
 export const HistoryManager: React.FC = () => {
+  const { t } = useTranslation();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation[] | null>(
@@ -296,17 +315,20 @@ export const HistoryManager: React.FC = () => {
     }
   }, [loadingMore, hasMore, selectedId, messages]);
 
-  const deleteMessage = useCallback(async (msgId: string) => {
-    try {
-      await invoke("delete_message_persist", { messageId: msgId });
-      setMessages((prev) => prev.filter((m) => m.id !== msgId));
-      setTotalCount((prev) => Math.max(0, prev - 1));
-      message.success("消息已删除");
-    } catch (e) {
-      console.error("Failed to delete message:", e);
-      message.error("删除失败");
-    }
-  }, []);
+  const deleteMessage = useCallback(
+    async (msgId: string) => {
+      try {
+        await invoke("delete_message_persist", { messageId: msgId });
+        setMessages((prev) => prev.filter((m) => m.id !== msgId));
+        setTotalCount((prev) => Math.max(0, prev - 1));
+        message.success(t("chat.message.message_deleted"));
+      } catch (e) {
+        console.error("Failed to delete message:", e);
+        message.error(t("chat.message.delete_failed"));
+      }
+    },
+    [t],
+  );
 
   const deleteConversation = useCallback(
     async (id: string) => {
@@ -318,13 +340,13 @@ export const HistoryManager: React.FC = () => {
           setTotalCount(0);
         }
         await loadConversations();
-        message.success("对话已删除");
+        message.success(t("chat.history.conversation_deleted"));
       } catch (e) {
         console.error("Failed to delete conversation:", e);
-        message.error("删除失败");
+        message.error(t("chat.history.operation_failed"));
       }
     },
-    [selectedId, loadConversations],
+    [selectedId, loadConversations, t],
   );
 
   const renameConversation = useCallback(
@@ -332,13 +354,13 @@ export const HistoryManager: React.FC = () => {
       try {
         await invoke("rename_conversation", { id, title });
         await loadConversations();
-        message.success("已重命名");
+        message.success(t("chat.history.renamed"));
       } catch (e) {
         console.error("Failed to rename:", e);
-        message.error("重命名失败");
+        message.error(t("chat.history.rename_failed"));
       }
     },
-    [loadConversations],
+    [loadConversations, t],
   );
 
   const exportConversation = useCallback(
@@ -360,13 +382,13 @@ export const HistoryManager: React.FC = () => {
         a.download = `conversation-${id}.${ext}`;
         a.click();
         URL.revokeObjectURL(url);
-        message.success("导出成功");
+        message.success(t("chat.history.export_success"));
       } catch (e) {
         console.error("Export failed:", e);
-        message.error("导出失败");
+        message.error(t("chat.history.export_failed"));
       }
     },
-    [],
+    [t],
   );
 
   const togglePin = useCallback(
@@ -376,10 +398,10 @@ export const HistoryManager: React.FC = () => {
         await loadConversations();
       } catch (e) {
         console.error("Failed to toggle pin:", e);
-        message.error("操作失败");
+        message.error(t("chat.history.operation_failed"));
       }
     },
-    [loadConversations],
+    [loadConversations, t],
   );
 
   const duplicateConversation = useCallback(
@@ -387,13 +409,13 @@ export const HistoryManager: React.FC = () => {
       try {
         await invoke("duplicate_conversation", { id });
         await loadConversations();
-        message.success("已复制");
+        message.success(t("chat.history.duplicated"));
       } catch (e) {
         console.error("Failed to duplicate:", e);
-        message.error("复制失败");
+        message.error(t("chat.history.duplicate_failed"));
       }
     },
-    [loadConversations],
+    [loadConversations, t],
   );
 
   const handleScroll = useCallback(() => {
@@ -483,7 +505,7 @@ export const HistoryManager: React.FC = () => {
         >
           <Input
             prefix={<SearchOutlined />}
-            placeholder="搜索对话..."
+            placeholder={t("chat.history.search_placeholder")}
             allowClear
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
@@ -506,11 +528,13 @@ export const HistoryManager: React.FC = () => {
                   textUnderlineOffset: 2,
                 }}
               >
-                {searchFullText ? "全文" : "标题"}
+                {searchFullText
+                  ? t("chat.history.search_fulltext")
+                  : t("chat.history.search_title")}
               </span>
             }
           />
-          <Tooltip title="刷新列表">
+          <Tooltip title={t("chat.history.refresh_list")}>
             <Button
               type="text"
               size="small"
@@ -537,11 +561,11 @@ export const HistoryManager: React.FC = () => {
           ) : searchQuery.trim() && searchResults !== null ? (
             <>
               <div className="chat-sidebar-filter-hint">
-                {displayConvs.length} 条结果
+                {t("chat.history.result_count", { count: displayConvs.length })}
               </div>
               {displayConvs.length === 0 ? (
                 <Empty
-                  description="未找到匹配的对话"
+                  description={t("chat.history.no_match")}
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                 />
               ) : (
@@ -574,7 +598,7 @@ export const HistoryManager: React.FC = () => {
             </>
           ) : groups.length === 0 ? (
             <Empty
-              description="暂无对话"
+              description={t("chat.history.no_conversations")}
               image={Empty.PRESENTED_IMAGE_SIMPLE}
             />
           ) : (
@@ -650,7 +674,9 @@ export const HistoryManager: React.FC = () => {
               <Typography.Text strong ellipsis style={{ flex: 1 }}>
                 {selectedConv.title}
               </Typography.Text>
-              <Tag>{totalCount} 条消息</Tag>
+              <Tag>
+                {t("chat.history.message_count", { count: totalCount })}
+              </Tag>
               <Button
                 size="small"
                 icon={<ExportOutlined />}
@@ -658,16 +684,16 @@ export const HistoryManager: React.FC = () => {
                   void exportConversation(selectedId, "markdown");
                 }}
               >
-                导出
+                {t("common.actions.export")}
               </Button>
               <Popconfirm
-                title="确定删除此对话？"
+                title={t("chat.history.confirm_delete_conversation")}
                 onConfirm={() => {
                   void deleteConversation(selectedId);
                 }}
               >
                 <Button size="small" danger icon={<DeleteOutlined />}>
-                  删除对话
+                  {t("chat.history.delete_conversation")}
                 </Button>
               </Popconfirm>
             </div>
@@ -687,7 +713,7 @@ export const HistoryManager: React.FC = () => {
                   <Spin />
                 </div>
               ) : messages.length === 0 ? (
-                <Empty description="暂无消息" />
+                <Empty description={t("chat.history.no_messages")} />
               ) : (
                 <>
                   {loadingMore && (
@@ -697,7 +723,7 @@ export const HistoryManager: React.FC = () => {
                         type="secondary"
                         style={{ marginLeft: 8, fontSize: 12 }}
                       >
-                        加载中...
+                        {t("common.actions.loading")}
                       </Typography.Text>
                     </div>
                   )}
@@ -710,7 +736,7 @@ export const HistoryManager: React.FC = () => {
                         color: "var(--color-text-tertiary)",
                       }}
                     >
-                      ↑ 向上滚动加载更多消息
+                      {t("chat.history.scroll_load_more")}
                     </div>
                   )}
                   {(useVirtualScroll ? visibleMessages : messages).map(
@@ -745,7 +771,7 @@ export const HistoryManager: React.FC = () => {
                     boxShadow: "var(--shadow-orb)",
                   }}
                 >
-                  ↓ 回到底部
+                  {t("chat.history.back_to_bottom")}
                 </button>
               )}
             </div>
@@ -764,7 +790,7 @@ export const HistoryManager: React.FC = () => {
           >
             <MessageOutlined style={{ fontSize: 48, opacity: 0.3 }} />
             <Typography.Text type="secondary">
-              选择左侧对话查看消息历史
+              {t("chat.history.select_to_view")}
             </Typography.Text>
           </div>
         )}
@@ -795,6 +821,7 @@ const ConversationListItem: React.FC<ConversationListItemProps> = React.memo(
     onTogglePin,
     onDuplicate,
   }) => {
+    const { t } = useTranslation();
     const [editing, setEditing] = useState(false);
     const [editTitle, setEditTitle] = useState("");
 
@@ -811,20 +838,38 @@ const ConversationListItem: React.FC<ConversationListItemProps> = React.memo(
     };
 
     const menuItems: MenuProps["items"] = [
-      { key: "rename", icon: <EditOutlined />, label: "重命名" },
+      {
+        key: "rename",
+        icon: <EditOutlined />,
+        label: t("common.actions.rename"),
+      },
       {
         key: "pin",
         icon: <PushpinOutlined />,
-        label: conversation.is_pinned ? "取消置顶" : "置顶",
+        label: conversation.is_pinned
+          ? t("common.actions.unpin")
+          : t("common.actions.pin"),
       },
-      { key: "duplicate", icon: <CopyOutlined />, label: "复制" },
-      { key: "export-md", icon: <ExportOutlined />, label: "导出 Markdown" },
-      { key: "export-json", icon: <ExportOutlined />, label: "导出 JSON" },
+      {
+        key: "duplicate",
+        icon: <CopyOutlined />,
+        label: t("common.actions.duplicate"),
+      },
+      {
+        key: "export-md",
+        icon: <ExportOutlined />,
+        label: t("chat.history.export_markdown"),
+      },
+      {
+        key: "export-json",
+        icon: <ExportOutlined />,
+        label: t("chat.history.export_json"),
+      },
       { type: "divider" },
       {
         key: "delete",
         icon: <DeleteOutlined />,
-        label: "删除",
+        label: t("common.actions.delete"),
         danger: true,
       },
     ];
@@ -889,7 +934,7 @@ const ConversationListItem: React.FC<ConversationListItemProps> = React.memo(
                     style={{ fontSize: 10, marginRight: 4, color: "#faad14" }}
                   />
                 )}
-                {conversation.title || "新对话"}
+                {conversation.title || t("chat.history.new_conversation")}
               </Typography.Text>
               <Typography.Text
                 type="secondary"
@@ -913,6 +958,7 @@ interface HistoryMessageItemProps {
 
 const HistoryMessageItem: React.FC<HistoryMessageItemProps> = React.memo(
   ({ message: msg, onDelete }) => {
+    const { t } = useTranslation();
     const isUser = msg.role === "user";
     const isSystem = msg.role === "system";
 
@@ -959,7 +1005,7 @@ const HistoryMessageItem: React.FC<HistoryMessageItemProps> = React.memo(
               {msg.role}
             </Tag>
             <Typography.Text type="secondary" style={{ fontSize: 10 }}>
-              {formatTime(msg.timestamp)}
+              {new Date(msg.timestamp).toLocaleString()}
             </Typography.Text>
             {msg.tokens != null && (
               <Typography.Text type="secondary" style={{ fontSize: 10 }}>
@@ -967,7 +1013,7 @@ const HistoryMessageItem: React.FC<HistoryMessageItemProps> = React.memo(
               </Typography.Text>
             )}
             <Popconfirm
-              title="确定删除此消息？"
+              title={t("chat.message.confirm_delete_message")}
               onConfirm={() => onDelete(msg.id)}
             >
               <DeleteOutlined

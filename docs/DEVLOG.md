@@ -1,10 +1,10 @@
 # 开发日志
 
-记录技术决策、踩坑与架构变更，按迭代组织。原则：只记**为什么**和**踩了什么坑**，不记冗余步骤。
+记录技术决策、踩坑与架构变更，按日期组织。原则：只记**为什么**和**踩了什么坑**，不记冗余步骤。
+
+##
 
 ---
-
-## I0 — 项目脚手架
 
 ### 2026-10-03 文档审查
 
@@ -107,8 +107,6 @@ ARCHITECTURE.md 与实际代码不一致项（已修正）：
 **根因**：关闭主窗口后窗口被 Tauri 销毁，`get_webview_window("main")` 返回 `None`，`show()` + `set_focus()` 不执行
 
 **修复**：提取 `show_or_create_main(app)` 函数，窗口存在则 show+focus，不存在则 `WebviewWindowBuilder` 创建。左键点击、菜单"打开主窗口"统一调用此函数
-
-## I1 — Orb 悬浮球
 
 ### 2026-10-03 实施记录
 
@@ -331,8 +329,6 @@ isPointInCircle(px, py, cx, cy, r) // 点在圆内
 - 前端是"发令者"，Rust 是"执行者"——前端确保视觉状态就绪后再调 Rust IPC
 - `flushSync` + 双 rAF 是前端控制上屏时序的标准模式，比 `eval` 注入或 Rust 端设窗口透明度更可控
 - `transitionend` + 超时兜底确保收起时面板动画完整播放，不依赖固定延时
-
-## I2 — Orb AI 对话
 
 ### 2026-10-05 实施记录
 
@@ -990,3 +986,71 @@ Orb 球体首次鼠标悬浮时出现瞬间消失再恢复的闪烁，后续悬�
 稳定期约 32ms（2帧@60fps），用户无感知，但足以让 canvas watchdog 完成首次修正和 CSS 变量生效。
 
 **涉及文件**：`src/orb/OrbBall.tsx`（`settled` state + `orb-settling` 类 + hover 守卫）、`src/assets/styles/global.css`（`.orb-settling` 规则）
+
+### 2026-10-13 Orb 初始化态稳定化 — 屏幕内检查统一 + 显式 collapse + 闪烁消除
+
+#### 问题
+
+Orb 启动后初始态不稳定，表现为：
+1. 球可能出现在错误位置（上次退出为展开态时，保存的 `position_x/y` 是展开态窗口位置）
+2. `click_through`/`expandDirection`/`expandVertical` 等标志依赖隐式约定而非显式同步
+3. 首次 hover 时 opacity 从 0 渐显 150ms（`orb-settling` 移除后 transition 生效），产生闪烁
+4. React StrictMode 导致 `collapseOrbOnInit` 被调用 3 次（`confReady` 引用变化触发 effect 重执行）
+
+#### 修复 1 — 屏幕内检查逻辑统一
+
+**问题**：`bounds_inside_screens` + visual bounds 检查 + snap 修正的模式在 3 处重复（`setup.rs` 启动定位、`setup.rs` 巡检线程、`cmd/orb.rs` snap 命令），且 `position_orb_window` 启动时用了 expanded 尺寸（420×600）+ outer bounds 检查，与其他两处不一致。
+
+**修复**：提取 `ensure_orb_on_screen()` 函数（`placement.rs`），统一用 visual bounds 判断 + outer bounds snap。3 个调用点全部改用此函数。`position_orb_window` 改用 collapsed 尺寸（88×88）。移除从未被调用的 `check_and_snap_orb`。
+
+#### 修复 2 — 初始化时显式触发一次 collapse
+
+**问题**：`collapse_orb_panel` 从未被调用，Rust 侧窗口尺寸/位置、前端 `isExpanded`/`isBallVisible`/`click_through` 全靠隐式约定与 store 默认值一致。
+
+**修复**：新增 `collapseOrbOnInit()`（`OrbExpand.ts`），在 `OrbBall` 的 settling 流程中调用。与用户交互 `collapse()` 的区别：跳过 `waitForPanelTransition()`（300ms 动画等待），因为初始化时面板不可见。
+
+该调用一次性解决：
+- Rust 侧窗口尺寸/位置显式归位
+- `isExpanded=false`、`isBallVisible=true` 显式设置
+- `click_through` 配置显式应用（内部 `await loadOrbConf()` 自加载，不依赖外部时序）
+
+#### 修复 3 — 初始化时序链完善
+
+**问题**：`orb-settling`（opacity:0）移除时机偏早，多个异步依赖可能未就绪。
+
+**修复**：完整时序链：
+
+```
+mount → orb-settling (opacity:0, transition:none, animation:none)
+  → await confReady          ← 等 useOrbConfSync 首次 apply 完成（CSS 变量生效）
+  → rAF × 2                  ← 等 DOM 稳定
+  → collapseOrbOnInit()      ← Rust 侧归位 + store 显式同步
+  → rAF                      ← 等 Rust 窗口 resize 被 paint
+  → settled=true + settledIn=true   ← orb-settling 移除，orb-settled-in 生效（transition:none）
+  → rAF                      ← opacity 瞬间跳到目标值，无 transition
+  → settledIn=false          ← transition 恢复，但值已在目标态，无跳变
+```
+
+**`useOrbConfSync` 改为返回 `{ ready: Promise<void> }`**：暴露首次 apply 完成的 promise，供 `OrbBall` await。
+
+**`orb-settled-in` 中间态 CSS**（`global.css`）：`transition: none !important`，确保 `orb-settling` 移除时 opacity 瞬间跳到 `--orb-idle-opacity` 而非 150ms 渐显。下一帧移除 `orb-settled-in`，transition 恢复但值已在目标态，无视觉跳变。
+
+#### 修复 4 — StrictMode 下 effect 只执行一次
+
+**问题**：`confReady` 每次渲染是新 Promise 对象，作为 effect 依赖导致重新触发；StrictMode 双执行 effect 又触发一次。共 3 次 `collapseOrbOnInit` 调用。
+
+**修复**：
+- `confReadyRef = useRef(confReady)` + 每渲染更新 `.current`，effect 依赖为 `[]`
+- `initGuardRef = useRef(false)` 守卫，effect 首次执行后设为 `true`，StrictMode remount 不再触发
+
+#### 涉及文件
+
+| 文件 | 改动 |
+|------|------|
+| `assistant-orb/src/placement.rs` | 新增 `ensure_orb_on_screen()`；移除 `check_and_snap_orb`；移除 `Manager` import |
+| `src-tauri/src/setup.rs` | `position_orb_window` 改用 collapsed 尺寸 + `ensure_orb_on_screen`；巡检改用 `ensure_orb_on_screen`；移除 `ORB_EXPANDED_*` import |
+| `src-tauri/src/cmd/orb.rs` | `snap_orb_to_screen` 改用 `ensure_orb_on_screen`；`pos` 替代 `bounds` 比较位置 |
+| `src/orb/OrbExpand.ts` | 新增 `collapseOrbOnInit()`（跳过动画等待，自加载 orbConf） |
+| `src/orb/OrbBall.tsx` | `initGuardRef` + `confReadyRef` 守卫；`settled`/`settledIn` 双状态；`orb-settled-in` class |
+| `src/orb/useOrbConfSync.ts` | 返回 `{ ready: Promise<void> }`；`readyRef` 暴露首次 apply promise |
+| `src/assets/styles/global.css` | 新增 `.orb-hitbox.orb-settled-in { transition: none !important }` |

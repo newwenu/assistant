@@ -226,6 +226,10 @@ div[data-orb-window] .orb-hitbox.orb-settling {
   animation: none !important;
 }
 
+div[data-orb-window] .orb-hitbox.orb-settled-in {
+  transition: none !important;
+}
+
 div[data-orb-window] .orb-hitbox.orb-idle:not(.orb-hover):not(.orb-dragging) {
   animation: orb-breathe 3s ease-in-out infinite;
 }

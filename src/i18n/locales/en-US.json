@@ -16,7 +16,45 @@
       "cancel": "Cancel",
       "edit": "Edit",
       "delete": "Delete",
-      "loading": "Loading..."
+      "loading": "Loading...",
+      "confirm": "Confirm",
+      "retry": "Retry",
+      "refresh": "Refresh",
+      "export": "Export",
+      "copy": "Copy",
+      "copied": "Copied",
+      "rename": "Rename",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "duplicate": "Duplicate",
+      "close": "Close",
+      "minimize": "Minimize",
+      "maximize": "Maximize",
+      "restore": "Restore",
+      "settings": "Settings",
+      "go_settings": "Go to Settings",
+      "collapse": "Collapse"
+    },
+    "time": {
+      "just_now": "just now",
+      "minutes_ago": "{{count}} min ago",
+      "hours_ago": "{{count}} hr ago",
+      "yesterday": "Yesterday",
+      "today": "Today",
+      "last_7_days": "Last 7 Days",
+      "last_30_days": "Last 30 Days",
+      "earlier": "Earlier",
+      "pinned": "Pinned"
+    },
+    "window": {
+      "shortcut_register_failed": "Shortcut registration failed",
+      "shortcut_occupied": "{{id}} ({{binding}}) may be occupied by another app"
+    },
+    "theme": {
+      "system": "Follow System",
+      "light": "Light Mode",
+      "dark": "Dark Mode",
+      "switch_to": "Switch to {{label}}"
     }
   },
   "settings": {
@@ -280,6 +318,122 @@
       "license_value": "MIT",
       "app_name_value": "Assistant",
       "check_update": "Check for Updates (Coming Soon)"
+    }
+  },
+  "chat": {
+    "error": {
+      "ApiKeyMissing": "API Key Not Configured",
+      "AuthFailed": "Authentication Failed",
+      "RateLimited": "Rate Limited",
+      "ModelNotFound": "Model Unavailable",
+      "ContextOverflow": "Context Too Long",
+      "NetworkError": "Network Error",
+      "Timeout": "Request Timeout",
+      "ServerError": "Server Error",
+      "RequestRejected": "Request Rejected",
+      "ParseError": "Parse Error",
+      "Cancelled": "Cancelled",
+      "StreamError": "Stream Error",
+      "InternalError": "Internal Error",
+      "unknown_error": "Unknown error",
+      "retry_after_seconds": "Retry after {{count}}s",
+      "retry_after_minutes": "Retry after ~{{count}}min"
+    },
+    "input": {
+      "placeholder": "Type a message...",
+      "placeholder_no_provider": "Please configure an AI Provider first",
+      "placeholder_streaming": "Type next message, Enter will send after reply finishes...",
+      "send": "Send message",
+      "stop": "Stop generating"
+    },
+    "view": {
+      "no_provider_title": "Please configure an AI Provider first",
+      "no_provider_content": "Add an AI Provider in Settings to start chatting",
+      "no_provider_hint": "Configure an AI Provider to start chatting",
+      "provider_deleted_error": "The Provider for this conversation has been deleted. Please select a new Provider to continue",
+      "create_failed": "Failed to create conversation: {{error}}",
+      "provider_required": "Please configure an AI Provider first (add in Settings)"
+    },
+    "message": {
+      "loading_more": "Loading…",
+      "load_earlier": "Load earlier messages",
+      "scroll_to_bottom": "Back to bottom",
+      "edit": "Edit",
+      "regenerate": "Regenerate",
+      "confirm_delete_message": "Delete this message?",
+      "message_deleted": "Message deleted",
+      "delete_failed": "Delete failed"
+    },
+    "history": {
+      "search_placeholder": "Search conversations...",
+      "search_fulltext": "Full Text",
+      "search_title": "Title",
+      "refresh_list": "Refresh list",
+      "result_count": "{{count}} results",
+      "no_match": "No matching conversations",
+      "no_conversations": "No conversations yet",
+      "new_conversation": "New conversation",
+      "message_count": "{{count}} messages",
+      "export_markdown": "Export Markdown",
+      "export_json": "Export JSON",
+      "confirm_delete_conversation": "Delete this conversation?",
+      "delete_conversation": "Delete Conversation",
+      "conversation_deleted": "Conversation deleted",
+      "renamed": "Renamed",
+      "rename_failed": "Rename failed",
+      "export_success": "Exported successfully",
+      "export_failed": "Export failed",
+      "operation_failed": "Operation failed",
+      "duplicated": "Duplicated",
+      "duplicate_failed": "Duplicate failed",
+      "no_messages": "No messages yet",
+      "scroll_load_more": "↑ Scroll up to load more messages",
+      "back_to_bottom": "↓ Back to bottom",
+      "select_to_view": "Select a conversation on the left to view message history"
+    },
+    "provider": {
+      "select_placeholder": "Select Provider"
+    },
+    "model": {
+      "placeholder": "Model",
+      "select_placeholder": "Select Model"
+    },
+    "mode": {
+      "placeholder": "Mode",
+      "select_placeholder": "Select Mode"
+    },
+    "reasoning": {
+      "expand": "Show thinking",
+      "collapse": "Hide thinking",
+      "thinking": "Thinking…"
+    },
+    "orb": {
+      "conversation_list": "Conversation list",
+      "search_conversation": "Search conversations"
+    }
+  },
+  "command": {
+    "search_placeholder": "Search tools, pages, actions...",
+    "no_match": "No matching commands",
+    "category": {
+      "tools": "Tools",
+      "navigation": "Navigation",
+      "actions": "Actions",
+      "external": "External"
+    },
+    "action": {
+      "toggle_theme": "Toggle Theme",
+      "toggle_theme_desc": "Cycle Light → Dark → Follow System",
+      "random_tool": "Random Tool",
+      "random_tool_desc": "Open a random tool",
+      "github_repo": "GitHub Repository",
+      "github_repo_desc": "View source code",
+      "bug_report": "Report Issue",
+      "bug_report_desc": "Submit a bug or feature request",
+      "setting_item": "Setting · {{key}}",
+      "setting_page": "{{label}} Settings",
+      "chat_history": "Chat History",
+      "chat_history_desc": "View conversation history"
     }
   }
 }

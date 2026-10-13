@@ -53,11 +53,12 @@ async function applyOrbConf(
   }
 }
 
-export function useOrbConfSync(): void {
+export function useOrbConfSync(): { ready: Promise<void> } {
   const appliedRef = useRef<string>("");
+  const readyRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
-    void reloadAndApply(appliedRef);
+    readyRef.current = reloadAndApply(appliedRef);
 
     const unlisten = listen<SettingEventPayload>(
       SettingEvent.ConfPatched,
@@ -72,4 +73,6 @@ export function useOrbConfSync(): void {
       void unlisten.then((fn) => fn());
     };
   }, []);
+
+  return { ready: readyRef.current ?? Promise.resolve() };
 }

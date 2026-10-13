@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { DownOutlined, LoadingOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import { MessageBubble, RoleContext } from "./MessageBubble";
 import type { Message } from "../../stores/chatStore";
 import css from "./MessageList.module.css";
@@ -39,6 +40,7 @@ export const MessageList: React.FC<MessageListProps> = ({
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const { t } = useTranslation();
   const [unreadCount, setUnreadCount] = useState(0);
   const lastScrollHeightRef = useRef(0);
   const seenMessageCountRef = useRef(messages.length);
@@ -143,7 +145,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             {isLoadingMore ? (
               <span className={css.loadMoreSpinner}>
                 <LoadingOutlined style={{ fontSize: 14 }} />
-                <span>加载中…</span>
+                <span>{t("chat.message.loading_more")}</span>
               </span>
             ) : (
               <button
@@ -151,7 +153,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                 onClick={onLoadMore}
                 type="button"
               >
-                加载更早的消息
+                {t("chat.message.load_earlier")}
               </button>
             )}
           </div>
@@ -190,7 +192,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           .join(" ")}
         onClick={scrollToBottom}
         aria-hidden={!userScrolledUp}
-        aria-label="回到底部"
+        aria-label={t("chat.message.scroll_to_bottom")}
         tabIndex={userScrolledUp ? 0 : -1}
       >
         <DownOutlined style={{ fontSize: 14 }} />

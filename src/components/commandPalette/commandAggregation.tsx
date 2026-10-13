@@ -26,6 +26,7 @@ import {
   dispatchThemeChanged,
 } from "@/settings/core/settingsDispatcher";
 import { defineCommand, clearCommands } from "./commandRegistry";
+import { translateKey } from "@/i18n";
 
 function tokenize(text: string): string[] {
   return text
@@ -74,7 +75,9 @@ function registerSettingsCommands(navigate: NavigateFunction): void {
     defineCommand({
       id: `nav:settings-${page.id}`,
       name: page.label,
-      description: catLabel ? `${catLabel}设置` : undefined,
+      description: catLabel
+        ? translateKey("command.action.setting_page", { label: catLabel })
+        : undefined,
       keywords,
       category: "navigation",
       icon: CATEGORY_ICON_MAP[page.categoryId] ?? <SettingOutlined />,
@@ -119,7 +122,9 @@ function registerSettingFieldCommands(navigate: NavigateFunction): void {
     defineCommand({
       id: `nav:setting-field:${def.key}`,
       name: def.label,
-      description: `设置项 · ${def.key}`,
+      description: translateKey("command.action.setting_item", {
+        key: def.key,
+      }),
       keywords,
       category: "navigation",
       action: () => navigate(`/settings/${pageId}?focus=${def.key}`),
@@ -149,10 +154,10 @@ function registerToolCommands(navigate: NavigateFunction): void {
 function registerManualCommands(): void {
   defineCommand({
     id: "action:toggle-theme",
-    name: "切换主题",
-    description: "循环切换 亮色 → 暗色 → 跟随系统",
+    name: translateKey("command.action.toggle_theme"),
+    description: translateKey("command.action.toggle_theme_desc"),
     keywords: mergeKeywords(
-      ["切换主题", "toggle theme"],
+      [translateKey("command.action.toggle_theme"), "toggle theme"],
       ["dark", "light", "system", "theme", "主题", "暗色", "亮色"],
     ),
     category: "actions",
@@ -175,10 +180,10 @@ function registerManualCommands(): void {
 
   defineCommand({
     id: "action:random-tool",
-    name: "随机工具",
-    description: "随机打开一个工具",
+    name: translateKey("command.action.random_tool"),
+    description: translateKey("command.action.random_tool_desc"),
     keywords: mergeKeywords(
-      ["随机工具", "random tool"],
+      [translateKey("command.action.random_tool"), "random tool"],
       ["random", "dice", "随机", "随便"],
     ),
     category: "actions",
@@ -191,10 +196,10 @@ function registerManualCommands(): void {
 
   defineCommand({
     id: "ext:github",
-    name: "GitHub 仓库",
-    description: "查看源代码",
+    name: translateKey("command.action.github_repo"),
+    description: translateKey("command.action.github_repo_desc"),
     keywords: mergeKeywords(
-      ["GitHub 仓库"],
+      [translateKey("command.action.github_repo")],
       ["github", "repo", "source", "代码", "源码"],
     ),
     category: "external",
@@ -206,10 +211,10 @@ function registerManualCommands(): void {
 
   defineCommand({
     id: "ext:bug-report",
-    name: "报告问题",
-    description: "提交 Bug 或功能建议",
+    name: translateKey("command.action.bug_report"),
+    description: translateKey("command.action.bug_report_desc"),
     keywords: mergeKeywords(
-      ["报告问题"],
+      [translateKey("command.action.bug_report")],
       ["bug", "issue", "report", "问题", "反馈", "建议"],
     ),
     category: "external",
@@ -221,9 +226,12 @@ function registerManualCommands(): void {
 
   defineCommand({
     id: "nav:history",
-    name: "消息历史",
-    description: "查看对话历史记录",
-    keywords: mergeKeywords(["消息历史"], ["history", "chat", "对话", "历史"]),
+    name: translateKey("command.action.chat_history"),
+    description: translateKey("command.action.chat_history_desc"),
+    keywords: mergeKeywords(
+      [translateKey("command.action.chat_history")],
+      ["history", "chat", "对话", "历史"],
+    ),
     category: "navigation",
     icon: <HistoryOutlined />,
     action: () => {

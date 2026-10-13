@@ -23,7 +23,7 @@ pub fn send_chat_message(
     mode_id: Option<String>,
 ) -> Result<(), String> {
     if content.trim().is_empty() {
-        return Err("消息内容不能为空".to_string());
+        return Err(assistant_i18n::t("chat.empty_content"));
     }
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
@@ -46,13 +46,13 @@ pub fn send_chat_message(
     conversations::insert_message(&conn, &user_msg)?;
 
     let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
-        .ok_or_else(|| "Conversation not found".to_string())?;
+        .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
     let provider_id = detail
         .conversation
         .provider_id
-        .ok_or_else(|| "此对话的 Provider 已被删除，请重新选择 Provider 后再发送".to_string())?;
+        .ok_or_else(|| assistant_i18n::t("chat.provider_deleted"))?;
     let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
-        .ok_or_else(|| "Provider not found".to_string())?;
+        .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
 
     let assistant_msg_id = Uuid::new_v4().to_string();
     let assistant_msg = MessageRow {
@@ -134,7 +134,7 @@ pub fn send_chat_message(
 
     let orb_window = app
         .get_webview_window(WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
+        .ok_or_else(|| assistant_i18n::t("error.orb_window_not_found"))?;
     let conv_id = conversation_id.clone();
     let msg_id = assistant_msg_id.clone();
 

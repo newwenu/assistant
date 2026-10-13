@@ -7,9 +7,11 @@ import {
   BlockOutlined,
   CloseOutlined,
 } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 
 export const WindowControls: React.FC = () => {
   const [isMax, setIsMax] = useState(false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     const win = getCurrentWindow();
@@ -35,7 +37,7 @@ export const WindowControls: React.FC = () => {
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-      <Tooltip title="最小化" mouseEnterDelay={0.5}>
+      <Tooltip title={t("common.actions.minimize")} mouseEnterDelay={0.5}>
         <Button
           type="text"
           size="small"
@@ -44,7 +46,12 @@ export const WindowControls: React.FC = () => {
           style={{ width: 32, height: 28 }}
         />
       </Tooltip>
-      <Tooltip title={isMax ? "还原" : "最大化"} mouseEnterDelay={0.5}>
+      <Tooltip
+        title={
+          isMax ? t("common.actions.restore") : t("common.actions.maximize")
+        }
+        mouseEnterDelay={0.5}
+      >
         <Button
           type="text"
           size="small"
@@ -53,7 +60,7 @@ export const WindowControls: React.FC = () => {
           style={{ width: 32, height: 28 }}
         />
       </Tooltip>
-      <Tooltip title="关闭" mouseEnterDelay={0.5}>
+      <Tooltip title={t("common.actions.close")} mouseEnterDelay={0.5}>
         <Button
           type="text"
           size="small"

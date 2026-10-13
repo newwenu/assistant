@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, type RefObject } from "react";
 import { Select } from "antd";
 import { DownOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import type { Provider } from "../stores/providerStore";
 
 interface ModelSelectorProps {
@@ -23,6 +24,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   openRef,
 }) => {
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
 
   const handleOpenChange = useCallback(
     (v: boolean) => {
@@ -59,7 +61,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       <Select
         value={modelId || undefined}
         onChange={onModelChange}
-        placeholder="模型"
+        placeholder={t("chat.model.placeholder")}
         disabled={!providerId}
         className="orb-model-chip"
         popupMatchSelectWidth={false}
@@ -80,7 +82,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     <Select
       value={modelId || undefined}
       onChange={onModelChange}
-      placeholder="选择模型"
+      placeholder={t("chat.model.select_placeholder")}
       disabled={!providerId}
       style={{ width }}
       size="small"

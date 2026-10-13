@@ -1,13 +1,35 @@
 {
-  "app_name": "Assistant",
-  "tray_show_main": "Open Main Window",
-  "tray_show_orb": "Show Orb",
-  "tray_quit": "Quit",
-  "settings_title": "Settings",
-  "settings_theme": "Theme",
-  "settings_language": "Language",
-  "settings_hotkey": "Hotkey",
-  "settings_providers": "Model Providers",
-  "orb_new_chat": "New Chat",
-  "orb_input_placeholder": "Type a message..."
+  "app": {
+    "name": "Assistant"
+  },
+  "tray": {
+    "new_chat": "New Chat",
+    "show_main": "Open Main Window",
+    "show_orb": "Show Orb",
+    "settings_general": "General Settings",
+    "settings_appearance": "Appearance Settings",
+    "settings_shortcuts": "Shortcuts",
+    "quit": "Quit"
+  },
+  "orb": {
+    "context_new_chat": "New Chat",
+    "context_open_main": "Open Main Window",
+    "context_quit": "Quit"
+  },
+  "chat": {
+    "empty_content": "Message content cannot be empty",
+    "provider_deleted": "The Provider for this conversation has been deleted. Please select a new Provider before sending",
+    "new_conversation_title": "New Chat"
+  },
+  "window": {
+    "title_main": "Assistant",
+    "title_settings": "Settings",
+    "unknown_label": "Unknown window label: {{label}}"
+  },
+  "error": {
+    "conversation_not_found": "Conversation not found",
+    "provider_not_found": "Provider not found",
+    "orb_window_not_found": "Orb window not found",
+    "db_lock": "DB lock: {{error}}"
+  }
 }
