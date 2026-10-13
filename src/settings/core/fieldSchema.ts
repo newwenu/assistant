@@ -9,7 +9,9 @@ export type SettingType =
   | "select"
   | "textarea"
   | "asset-picker"
-  | "keybinding";
+  | "keybinding"
+  | "secret"
+  | "readonly";
 
 export interface SelectOption {
   label: string;
@@ -22,14 +24,40 @@ export interface AssetConfig {
   urlInput?: boolean;
 }
 
+export interface FieldContext {
+  mode: "add" | "edit";
+  formValues: Record<string, unknown>;
+  entity?: unknown;
+  preset?: unknown;
+}
+
+export type DynamicString = string | ((ctx: FieldContext) => string);
+
+export interface FieldActionCallbacks {
+  setFieldOptions: (options: SelectOption[]) => void;
+  setFieldValue: (value: unknown) => void;
+}
+
+export interface FieldAction {
+  key: string;
+  label: string;
+  icon?: FC;
+  onClick: (
+    ctx: FieldContext,
+    callbacks: FieldActionCallbacks,
+  ) => void | Promise<void>;
+}
+
 export interface FieldSchema {
   key: string;
   type: SettingType;
   label: string;
-  description?: string;
-  extra?: string;
-  placeholder?: string;
+  description?: DynamicString;
+  extra?: DynamicString;
+  placeholder?: DynamicString;
   options?: SelectOption[];
+  loadOptions?: (ctx: FieldContext) => Promise<SelectOption[]>;
+  actions?: FieldAction[];
   min?: number;
   max?: number;
   step?: number;
@@ -40,6 +68,10 @@ export interface FieldSchema {
   customRender?: FC<FieldRenderProps>;
   assetConfig?: AssetConfig;
   visible?: (formValues: Record<string, unknown>) => boolean;
+  maskedValue?: string;
+  keepIfEmpty?: boolean;
+  copyable?: boolean;
+  loadValue?: (ctx: FieldContext) => Promise<unknown>;
 }
 
 export interface FieldRenderProps {
@@ -49,6 +81,7 @@ export interface FieldRenderProps {
   schema: FieldSchema;
   conf?: Record<string, unknown>;
   disabled?: boolean;
+  fieldContext?: FieldContext;
 }
 
 export interface SettingFieldProps {
@@ -58,4 +91,5 @@ export interface SettingFieldProps {
   onChangeComplete?: (value: unknown) => void;
   conf?: Record<string, unknown>;
   disabled?: boolean;
+  fieldContext?: FieldContext;
 }

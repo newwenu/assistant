@@ -388,8 +388,14 @@ export const AgentModeSettings: React.FC = () => {
                 key={schema.key}
                 name={schema.key}
                 label={schema.label}
-                tooltip={schema.description}
-                extra={schema.extra}
+                tooltip={
+                  typeof schema.description === "string"
+                    ? schema.description
+                    : undefined
+                }
+                extra={
+                  typeof schema.extra === "string" ? schema.extra : undefined
+                }
                 rules={
                   schema.key === "name"
                     ? [

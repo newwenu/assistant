@@ -109,8 +109,9 @@ function registerSettingFieldCommands(navigate: NavigateFunction): void {
     const pageId = def.pageId ?? GROUP_TO_PAGE[def.group];
     if (!pageId) continue;
     const autoSources: string[] = [def.label, def.key, def.group];
-    if (def.description) autoSources.push(def.description);
-    if (def.extra) autoSources.push(def.extra);
+    if (def.description && typeof def.description === "string")
+      autoSources.push(def.description);
+    if (def.extra && typeof def.extra === "string") autoSources.push(def.extra);
     if (def.options) {
       for (const opt of def.options) autoSources.push(opt.label);
     }

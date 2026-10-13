@@ -70,13 +70,21 @@
       "reset_success": "已恢复默认快捷键",
       "reset_default": "恢复默认",
       "search_placeholder": "搜索快捷键..."
+    },
+    "about": {
+      "field": {
+        "app_name": { "label": "应用名称" },
+        "version": { "label": "版本号" },
+        "build_date": { "label": "构建日期" },
+        "rust_toolchain": { "label": "Rust 工具链" },
+        "tech_stack": { "label": "前端技术栈" },
+        "license": { "label": "许可证" }
+      },
+      "tech_stack_value": "Tauri 2 + React 19 + Ant Design",
+      "license_value": "MIT",
+      "app_name_value": "Assistant",
+      "check_update": "检查更新（即将推出）"
     }
-  },
-  "agent_kind": {
-    "default": "默认",
-    "quick": "快速",
-    "deep": "深度",
-    "custom": "自定义"
   },
   "shortcut": {
     "group": {
@@ -146,6 +154,9 @@
   "actions": {
     "saved": "已保存",
     "save": "保存",
+    "cancel": "取消",
+    "edit": "编辑",
+    "delete": "删除",
     "loading": "加载中..."
   },
   "agent_mode": {
@@ -156,6 +167,12 @@
     "section": {
       "builtin": "内置模式",
       "custom": "自定义模式"
+    },
+    "kind": {
+      "default": "默认",
+      "quick": "快速",
+      "deep": "深度",
+      "custom": "自定义"
     },
     "field": {
       "name": {
@@ -202,5 +219,78 @@
     "saved": "已保存修改",
     "created": "已创建模式",
     "save_failed": "保存失败: {{error}}"
+  },
+  "provider": {
+    "title": "AI Provider 设置",
+    "add": "添加 Provider",
+    "add_title": "添加 Provider",
+    "empty": "尚未配置 Provider",
+    "connect": "连接",
+    "edit_title": "编辑 {{name}}",
+    "connect_title": "连接 {{name}}",
+    "add_custom_title": "添加自定义 {{format}} Provider",
+    "custom_format": "自定义 {{format}}",
+    "custom_format_detail": "任意 {{format}} 端点",
+    "description": {
+      "local": "输入端点地址，确保服务已在本地运行。",
+      "edit": "修改后保存即可生效。留空 API Key 则保留原密钥。",
+      "add": "输入 API Key，密钥将加密存储。"
+    },
+    "confirm_delete": {
+      "title": "确认删除此 Provider？",
+      "content": "删除后，使用此 Provider 的对话将保留，但需要重新选择 Provider 才能继续对话"
+    },
+    "format": {
+      "openai": "OpenAI 兼容",
+      "openai.description": "Chat Completions /v1 端点",
+      "anthropic": "Anthropic 兼容",
+      "anthropic.description": "Messages /v1 端点",
+      "local": "本地运行时",
+      "local.description": "Ollama / LM Studio 等本地服务"
+    },
+    "preset": {
+      "openai": "OpenAI",
+      "deepseek": "DeepSeek",
+      "groq": "Groq",
+      "openrouter": "OpenRouter",
+      "mistral": "Mistral",
+      "zhipu": "智谱 GLM",
+      "qwen": "通义千问",
+      "anthropic": "Anthropic",
+      "ollama": "Ollama",
+      "lmstudio": "LM Studio"
+    },
+    "field": {
+      "name": {
+        "label": "名称",
+        "placeholder": "如 My Gateway",
+        "required": "请输入名称"
+      },
+      "type": {
+        "label": "Provider ID",
+        "placeholder": "小写英文，如 my-gateway",
+        "required": "请输入 ID"
+      },
+      "api_key": {
+        "label": "API Key",
+        "keep": "保留原密钥",
+        "required": "请输入 API Key",
+        "required_first": "请先输入 API Key",
+        "encrypted_hint": "密钥将加密存储",
+        "keep_hint": "留空则保留原密钥"
+      },
+      "base_url": {
+        "label": "Base URL",
+        "required": "请输入 Base URL"
+      },
+      "default_model": {
+        "label": "默认模型",
+        "placeholder": "获取模型后选择或手动输入"
+      },
+      "fetch_models": "获取模型",
+      "models_fetched": "获取到 {{count}} 个模型",
+      "models_fetch_failed": "获取模型列表失败: {{error}}",
+      "models_more": "还有 {{count}} 个模型..."
+    }
   }
 }

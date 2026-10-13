@@ -70,13 +70,21 @@
       "reset_success": "Shortcuts reset to defaults",
       "reset_default": "Reset to Defaults",
       "search_placeholder": "Search shortcuts..."
+    },
+    "about": {
+      "field": {
+        "app_name": { "label": "App Name" },
+        "version": { "label": "Version" },
+        "build_date": { "label": "Build Date" },
+        "rust_toolchain": { "label": "Rust Toolchain" },
+        "tech_stack": { "label": "Tech Stack" },
+        "license": { "label": "License" }
+      },
+      "tech_stack_value": "Tauri 2 + React 19 + Ant Design",
+      "license_value": "MIT",
+      "app_name_value": "Assistant",
+      "check_update": "Check for Updates (Coming Soon)"
     }
-  },
-  "agent_kind": {
-    "default": "Default",
-    "quick": "Quick",
-    "deep": "Deep",
-    "custom": "Custom"
   },
   "shortcut": {
     "group": {
@@ -146,6 +154,9 @@
   "actions": {
     "saved": "Saved",
     "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
     "loading": "Loading..."
   },
   "agent_mode": {
@@ -156,6 +167,12 @@
     "section": {
       "builtin": "Built-in Modes",
       "custom": "Custom Modes"
+    },
+    "kind": {
+      "default": "Default",
+      "quick": "Quick",
+      "deep": "Deep",
+      "custom": "Custom"
     },
     "field": {
       "name": {
@@ -202,5 +219,78 @@
     "saved": "Changes saved",
     "created": "Mode created",
     "save_failed": "Save failed: {{error}}"
+  },
+  "provider": {
+    "title": "AI Provider Settings",
+    "add": "Add Provider",
+    "add_title": "Add Provider",
+    "empty": "No providers configured",
+    "connect": "Connect",
+    "edit_title": "Edit {{name}}",
+    "connect_title": "Connect {{name}}",
+    "add_custom_title": "Add Custom {{format}} Provider",
+    "custom_format": "Custom {{format}}",
+    "custom_format_detail": "Any {{format}} endpoint",
+    "description": {
+      "local": "Enter endpoint URL, make sure the service is running locally.",
+      "edit": "Save changes to apply. Leave API Key empty to keep the original key.",
+      "add": "Enter API Key, it will be stored encrypted."
+    },
+    "confirm_delete": {
+      "title": "Delete this Provider?",
+      "content": "After deletion, conversations using this Provider will be preserved, but you need to select a new Provider to continue"
+    },
+    "format": {
+      "openai": "OpenAI Compatible",
+      "openai.description": "Chat Completions /v1 endpoint",
+      "anthropic": "Anthropic Compatible",
+      "anthropic.description": "Messages /v1 endpoint",
+      "local": "Local Runtime",
+      "local.description": "Ollama / LM Studio and other local services"
+    },
+    "preset": {
+      "openai": "OpenAI",
+      "deepseek": "DeepSeek",
+      "groq": "Groq",
+      "openrouter": "OpenRouter",
+      "mistral": "Mistral",
+      "zhipu": "Zhipu GLM",
+      "qwen": "Qwen",
+      "anthropic": "Anthropic",
+      "ollama": "Ollama",
+      "lmstudio": "LM Studio"
+    },
+    "field": {
+      "name": {
+        "label": "Name",
+        "placeholder": "e.g. My Gateway",
+        "required": "Please enter a name"
+      },
+      "type": {
+        "label": "Provider ID",
+        "placeholder": "lowercase, e.g. my-gateway",
+        "required": "Please enter an ID"
+      },
+      "api_key": {
+        "label": "API Key",
+        "keep": "Keep original key",
+        "required": "Please enter API Key",
+        "required_first": "Please enter API Key first",
+        "encrypted_hint": "Key will be stored encrypted",
+        "keep_hint": "Leave empty to keep the original key"
+      },
+      "base_url": {
+        "label": "Base URL",
+        "required": "Please enter Base URL"
+      },
+      "default_model": {
+        "label": "Default Model",
+        "placeholder": "Fetch models or enter manually"
+      },
+      "fetch_models": "Fetch Models",
+      "models_fetched": "Fetched {{count}} models",
+      "models_fetch_failed": "Failed to fetch models: {{error}}",
+      "models_more": "{{count}} more models..."
+    }
   }
 }

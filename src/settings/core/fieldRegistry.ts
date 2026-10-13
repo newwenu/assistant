@@ -6,6 +6,10 @@ import type {
   FieldSchema,
   FieldRenderProps,
   SettingFieldProps,
+  FieldContext,
+  DynamicString,
+  FieldAction,
+  FieldActionCallbacks,
 } from "./fieldSchema";
 
 export type {
@@ -15,6 +19,10 @@ export type {
   FieldSchema,
   FieldRenderProps,
   SettingFieldProps,
+  FieldContext,
+  DynamicString,
+  FieldAction,
+  FieldActionCallbacks,
 };
 
 export type ConfGroup = "app" | "orb" | "mascot";
@@ -113,4 +121,6 @@ export const INTERMEDIATE_TYPES = new Set<SettingType>([
   "number",
   "color",
   "textarea",
+  "secret",
+  "readonly",
 ]);

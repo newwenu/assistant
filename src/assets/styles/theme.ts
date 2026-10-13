@@ -23,6 +23,7 @@ export const lightTheme: ThemeConfig = {
     Menu: { itemHeight: 36, itemMarginBlock: 2 },
     Button: { controlHeight: 32 },
     Input: { controlHeight: 32 },
+    Form: { itemMarginBottom: 16 },
   },
 };
 
@@ -39,5 +40,6 @@ export const darkTheme: ThemeConfig = {
     Menu: { itemHeight: 36, itemMarginBlock: 2 },
     Button: { controlHeight: 32 },
     Input: { controlHeight: 32 },
+    Form: { itemMarginBottom: 16 },
   },
 };

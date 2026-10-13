@@ -4,6 +4,17 @@ import {
   dispatchProviderSaved,
   dispatchProviderDeleted,
 } from "../settings/core/settingsDispatcher";
+import {
+  getAllProviderFormats,
+  getProviderFormat,
+  providerFormatNeedsApiKey,
+} from "../settings/core/providerFormatRegistry";
+import {
+  getProviderPreset,
+  getAllProviderPresets,
+  getApiFormatByType as getApiFormatByTypeFromRegistry,
+} from "../settings/core/providerPresetRegistry";
+import "../settings/core/providerDefinitions";
 
 export interface ModelConfig {
   id: string;
@@ -33,28 +44,15 @@ export interface ApiFormatInfo {
   keyPlaceholder?: string;
 }
 
-export const API_FORMATS: ApiFormatInfo[] = [
-  {
-    format: "openai",
-    label: "OpenAI 兼容",
-    description: "Chat Completions /v1 端点",
-    needsApiKey: true,
-    keyPlaceholder: "sk-...",
-  },
-  {
-    format: "anthropic",
-    label: "Anthropic 兼容",
-    description: "Messages /v1 端点",
-    needsApiKey: true,
-    keyPlaceholder: "sk-ant-...",
-  },
-  {
-    format: "local",
-    label: "本地运行时",
-    description: "Ollama / LM Studio 等本地服务",
-    needsApiKey: false,
-  },
-];
+export const API_FORMATS: ApiFormatInfo[] = getAllProviderFormats().map(
+  (f) => ({
+    format: f.id as ApiFormat,
+    label: f.label,
+    description: f.description,
+    needsApiKey: f.needsApiKey,
+    keyPlaceholder: f.keyPlaceholder,
+  }),
+);
 
 export const API_FORMAT_MAP = new Map<ApiFormat, ApiFormatInfo>(
   API_FORMATS.map((f) => [f.format, f]),
@@ -67,81 +65,48 @@ export interface ProviderPreset {
   defaultBaseUrl: string;
 }
 
-export const PROVIDER_PRESETS: ProviderPreset[] = [
-  {
-    slug: "openai",
-    label: "OpenAI",
-    format: "openai",
-    defaultBaseUrl: "https://api.openai.com/v1",
-  },
-  {
-    slug: "deepseek",
-    label: "DeepSeek",
-    format: "openai",
-    defaultBaseUrl: "https://api.deepseek.com/v1",
-  },
-  {
-    slug: "groq",
-    label: "Groq",
-    format: "openai",
-    defaultBaseUrl: "https://api.groq.com/openai/v1",
-  },
-  {
-    slug: "openrouter",
-    label: "OpenRouter",
-    format: "openai",
-    defaultBaseUrl: "https://openrouter.ai/api/v1",
-  },
-  {
-    slug: "mistral",
-    label: "Mistral",
-    format: "openai",
-    defaultBaseUrl: "https://api.mistral.ai/v1",
-  },
-  {
-    slug: "zhipu",
-    label: "智谱 GLM",
-    format: "openai",
-    defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
-  },
-  {
-    slug: "qwen",
-    label: "通义千问",
-    format: "openai",
-    defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  },
-  {
-    slug: "anthropic",
-    label: "Anthropic",
-    format: "anthropic",
-    defaultBaseUrl: "https://api.anthropic.com/v1",
-  },
-  {
-    slug: "ollama",
-    label: "Ollama",
-    format: "local",
-    defaultBaseUrl: "http://localhost:11434/v1",
-  },
-  {
-    slug: "lmstudio",
-    label: "LM Studio",
-    format: "local",
-    defaultBaseUrl: "http://localhost:1234/v1",
-  },
-];
+export const PROVIDER_PRESETS: ProviderPreset[] = getAllProviderPresets().map(
+  (p) => ({
+    slug: p.slug,
+    label: p.label,
+    format: p.format as ApiFormat,
+    defaultBaseUrl: p.defaultBaseUrl,
+  }),
+);
 
 export const PRESET_MAP = new Map<string, ProviderPreset>(
   PROVIDER_PRESETS.map((p) => [p.slug, p]),
 );
 
 export function getPresetByType(type: string): ProviderPreset | undefined {
-  return PRESET_MAP.get(type);
+  const def = getProviderPreset(type);
+  if (!def) return undefined;
+  return {
+    slug: def.slug,
+    label: def.label,
+    format: def.format as ApiFormat,
+    defaultBaseUrl: def.defaultBaseUrl,
+  };
 }
 
 export function getApiFormatByType(type: string): ApiFormat {
-  const preset = PRESET_MAP.get(type);
-  if (preset) return preset.format;
-  return "openai";
+  return getApiFormatByTypeFromRegistry(type) as ApiFormat;
+}
+
+export function getFormatInfo(format: ApiFormat): ApiFormatInfo | undefined {
+  const def = getProviderFormat(format);
+  if (!def) return undefined;
+  return {
+    format: def.id as ApiFormat,
+    label: def.label,
+    description: def.description,
+    needsApiKey: def.needsApiKey,
+    keyPlaceholder: def.keyPlaceholder,
+  };
+}
+
+export function formatNeedsApiKey(format: string): boolean {
+  return providerFormatNeedsApiKey(format);
 }
 
 interface ProviderState {

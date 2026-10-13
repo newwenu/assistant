@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Typography, Modal, Dropdown } from "antd";
 import { EditOutlined, DeleteOutlined, MoreOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import {
   useProviderStore,
   type Provider,
@@ -16,8 +17,10 @@ import {
   EntityListPageShell,
   type EntityListSectionConfig,
 } from "../shared/EntityListPageShell";
+import { getProviderFormatLabel } from "../core/providerFormatRegistry";
 
 export const ProviderManager: React.FC = () => {
+  const { t } = useTranslation();
   const providerStore = useProviderStore();
   const [modal, modalContextHolder] = Modal.useModal();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -66,13 +69,12 @@ export const ProviderManager: React.FC = () => {
   const handleDelete = useCallback(
     (id: string) => {
       modal.confirm({
-        title: "确认删除此 Provider？",
-        content:
-          "删除后，使用此 Provider 的对话将保留，但需要重新选择 Provider 才能继续对话",
+        title: t("provider.confirm_delete.title"),
+        content: t("provider.confirm_delete.content"),
         onOk: () => providerStore.deleteProvider(id),
       });
     },
-    [modal, providerStore],
+    [modal, providerStore, t],
   );
 
   const handleConnect = async (input: Record<string, unknown>) => {
@@ -106,7 +108,7 @@ export const ProviderManager: React.FC = () => {
           )
         : allItems;
       return {
-        label: fmt.label,
+        label: t(getProviderFormatLabel(fmt.format)),
         items: filteredItems,
         renderRow: (p: Provider) => (
           <div key={p.id} className="entity-list-row">
@@ -130,13 +132,13 @@ export const ProviderManager: React.FC = () => {
                   {
                     key: "edit",
                     icon: <EditOutlined />,
-                    label: "编辑",
+                    label: t("actions.edit"),
                     onClick: () => handleEdit(p),
                   },
                   {
                     key: "delete",
                     icon: <DeleteOutlined />,
-                    label: "删除",
+                    label: t("actions.delete"),
                     danger: true,
                     onClick: () => handleDelete(p.id),
                   },
@@ -150,19 +152,19 @@ export const ProviderManager: React.FC = () => {
         ),
       };
     });
-  }, [providersByFormat, searchQuery, handleEdit, handleDelete]);
+  }, [providersByFormat, searchQuery, handleEdit, handleDelete, t]);
 
   return (
     <>
       {modalContextHolder}
       <EntityListPageShell<Provider>
-        title="AI Provider 设置"
+        title={t("provider.title")}
         items={providerStore.providers}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        addLabel="添加 Provider"
+        addLabel={t("provider.add")}
         onAdd={handleAdd}
-        emptyDescription="尚未配置 Provider"
+        emptyDescription={t("provider.empty")}
         sections={sections}
       >
         <AddProviderDialog

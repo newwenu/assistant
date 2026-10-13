@@ -1,28 +1,24 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
+import { getApiFormatByType } from "@/stores/providerStore";
 import {
-  getApiFormatByType,
-  API_FORMAT_MAP,
-  type ApiFormat,
-} from "@/stores/providerStore";
+  getProviderFormatLabel,
+  getProviderFormatColor,
+} from "../core/providerFormatRegistry";
 
 interface FormatTagProps {
   type: string;
   size?: "small" | "default";
 }
 
-const FORMAT_COLORS: Record<ApiFormat, string> = {
-  openai: "var(--color-primary)",
-  anthropic: "var(--color-format-anthropic)",
-  local: "var(--color-success)",
-};
-
 export const FormatTag: React.FC<FormatTagProps> = ({
   type,
   size = "default",
 }) => {
+  const { t } = useTranslation();
   const format = getApiFormatByType(type);
-  const info = API_FORMAT_MAP.get(format);
-  const color = FORMAT_COLORS[format];
+  const labelKey = getProviderFormatLabel(format);
+  const color = getProviderFormatColor(format);
 
   const isSmall = size === "small";
 
@@ -37,7 +33,7 @@ export const FormatTag: React.FC<FormatTagProps> = ({
         lineHeight: isSmall ? "16px" : "18px",
       }}
     >
-      {info?.label ?? format}
+      {t(labelKey)}
     </span>
   );
 };

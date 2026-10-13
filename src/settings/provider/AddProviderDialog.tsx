@@ -1,12 +1,10 @@
 import React from "react";
 import { Modal, Typography } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
-import {
-  API_FORMATS,
-  PROVIDER_PRESETS,
-  type ApiFormat,
-  type ProviderPreset,
-} from "@/stores/providerStore";
+import { useTranslation } from "react-i18next";
+import { type ApiFormat, type ProviderPreset } from "@/stores/providerStore";
+import { getAllProviderFormats } from "../core/providerFormatRegistry";
+import { getPresetsByFormat } from "../core/providerPresetRegistry";
 
 interface AddProviderDialogProps {
   open: boolean;
@@ -21,26 +19,29 @@ export const AddProviderDialog: React.FC<AddProviderDialogProps> = ({
   onPickPreset,
   onAddCustom,
 }) => {
+  const { t } = useTranslation();
+  const formats = getAllProviderFormats();
+
   return (
     <Modal
-      title="添加 Provider"
+      title={t("provider.add_title")}
       open={open}
       onCancel={onClose}
       footer={null}
       width="var(--modal-width-select)"
       className="add-provider-dialog"
     >
-      {API_FORMATS.map((fmt) => {
-        const presets = PROVIDER_PRESETS.filter((p) => p.format === fmt.format);
+      {formats.map((fmt) => {
+        const presets = getPresetsByFormat(fmt.id);
         return (
-          <div key={fmt.format} className="add-provider-section">
+          <div key={fmt.id} className="add-provider-section">
             <Typography.Text
               type="secondary"
               className="add-provider-section-title"
             >
-              {fmt.label}
+              {t(fmt.label)}
               <span className="add-provider-section-desc">
-                {fmt.description}
+                {t(fmt.description)}
               </span>
             </Typography.Text>
             <div className="add-provider-grid">
@@ -49,10 +50,19 @@ export const AddProviderDialog: React.FC<AddProviderDialogProps> = ({
                   key={preset.slug}
                   type="button"
                   className="provider-tile"
-                  onClick={() => onPickPreset(preset)}
+                  onClick={() =>
+                    onPickPreset({
+                      slug: preset.slug,
+                      label: t(preset.label),
+                      format: preset.format as ApiFormat,
+                      defaultBaseUrl: preset.defaultBaseUrl,
+                    })
+                  }
                 >
                   <div className="provider-tile-info">
-                    <span className="provider-tile-name">{preset.label}</span>
+                    <span className="provider-tile-name">
+                      {t(preset.label)}
+                    </span>
                     <span className="provider-tile-detail">
                       {
                         preset.defaultBaseUrl
@@ -67,12 +77,16 @@ export const AddProviderDialog: React.FC<AddProviderDialogProps> = ({
               <button
                 type="button"
                 className="provider-tile provider-tile-custom"
-                onClick={() => onAddCustom(fmt.format)}
+                onClick={() => onAddCustom(fmt.id as ApiFormat)}
               >
                 <div className="provider-tile-info">
-                  <span className="provider-tile-name">自定义 {fmt.label}</span>
+                  <span className="provider-tile-name">
+                    {t("provider.custom_format", { format: t(fmt.label) })}
+                  </span>
                   <span className="provider-tile-detail">
-                    任意 {fmt.label} 端点
+                    {t("provider.custom_format_detail", {
+                      format: t(fmt.label),
+                    })}
                   </span>
                 </div>
                 <PlusOutlined className="provider-tile-icon" />

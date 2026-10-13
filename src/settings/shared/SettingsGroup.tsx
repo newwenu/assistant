@@ -154,12 +154,22 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
         {contextHolder}
         {visibleDefs.map((d) => {
           const isIntermediate = INTERMEDIATE_TYPES.has(d.type);
+          const translatedDescription =
+            d.description && typeof d.description === "string"
+              ? t(d.description)
+              : undefined;
+          const translatedExtra =
+            d.extra && typeof d.extra === "string" ? t(d.extra) : undefined;
+          const translatedPlaceholder =
+            d.placeholder && typeof d.placeholder === "string"
+              ? t(d.placeholder)
+              : undefined;
           const translatedSchema: SettingDefinition = {
             ...d,
             label: t(d.label),
-            description: d.description ? t(d.description) : undefined,
-            extra: d.extra ? t(d.extra) : undefined,
-            placeholder: d.placeholder ? t(d.placeholder) : undefined,
+            description: translatedDescription,
+            extra: translatedExtra,
+            placeholder: translatedPlaceholder,
             options: d.options?.map((opt) => ({
               ...opt,
               label: t(opt.label),
@@ -169,8 +179,8 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
             <span key={d.key} data-setting-key={d.key}>
               <Form.Item
                 label={translatedSchema.label}
-                tooltip={translatedSchema.description}
-                extra={translatedSchema.extra}
+                tooltip={translatedDescription}
+                extra={translatedExtra}
                 valuePropName={d.type === "boolean" ? "checked" : "value"}
               >
                 <SettingField
