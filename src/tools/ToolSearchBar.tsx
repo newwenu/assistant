@@ -1,6 +1,7 @@
 import React from "react";
 import { Input } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
+import { translateKey } from "@/i18n";
 import { useToolStore } from "@/stores/toolStore";
 
 interface ToolSearchBarProps {
@@ -8,7 +9,7 @@ interface ToolSearchBarProps {
 }
 
 export const ToolSearchBar: React.FC<ToolSearchBarProps> = ({
-  placeholder = "搜索工具...",
+  placeholder = translateKey("tools.search_placeholder"),
 }) => {
   const searchQuery = useToolStore((s) => s.searchQuery);
   const search = useToolStore((s) => s.search);

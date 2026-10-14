@@ -31,6 +31,8 @@
         "skipTaskbar": true,
         "decorations": false,
         "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
         "acceptFirstMouse": true
       }
     ],

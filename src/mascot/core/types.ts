@@ -82,6 +82,7 @@ export interface RiveRendererConfig {
   src?: string | null;
   buffer?: ArrayBuffer | null;
   stateMachine?: string | null;
+  faceToPose?: Record<string, string>;
 }
 
 export interface SvgRendererConfig {

@@ -1,4 +1,4 @@
-use tauri::{command, AppHandle};
+use tauri::{command, AppHandle, Emitter};
 
 use assistant_config::{
     app_conf::AppConf,
@@ -55,4 +55,11 @@ pub fn set_launch_at_login(app: AppHandle, enable: bool) -> Result<(), String> {
     let mut conf = AppConf::load().map_err(|e| e.to_string())?;
     conf.launch_at_login = enable;
     conf.save().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn open_main_window_and_navigate(app: AppHandle, route: String) -> Result<(), String> {
+    crate::window::show_or_create(&app, WINDOW_MAIN)?;
+    let _ = app.emit("navigate", route);
+    Ok(())
 }

@@ -135,14 +135,14 @@ function registerSettingFieldCommands(navigate: NavigateFunction): void {
 function registerToolCommands(navigate: NavigateFunction): void {
   for (const tool of tools) {
     const keywords = mergeKeywords(
-      [tool.name, tool.id, tool.category],
+      [translateKey(tool.name), tool.id, tool.category],
       [...tool.keywords],
     );
     const IconComp = tool.icon;
     defineCommand({
       id: `tool:${tool.id}`,
-      name: tool.name,
-      description: tool.description,
+      name: translateKey(tool.name),
+      description: translateKey(tool.description),
       keywords,
       category: "tools",
       icon: React.createElement(IconComp),

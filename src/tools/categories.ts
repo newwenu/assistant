@@ -167,15 +167,50 @@ export function classifyKeywords(keywords: readonly string[]): ToolCategory {
 }
 
 export const TOOL_CATEGORIES: ToolCategoryMeta[] = [
-  { key: "security", label: "安全", icon: SafetyCertificateOutlined, order: 0 },
-  { key: "codec", label: "编解码", icon: SwapOutlined, order: 1 },
-  { key: "dev", label: "开发", icon: CodeOutlined, order: 2 },
-  { key: "time", label: "时间", icon: ClockCircleOutlined, order: 3 },
-  { key: "math", label: "数学", icon: CalculatorOutlined, order: 4 },
-  { key: "media", label: "媒体", icon: PictureOutlined, order: 5 },
-  { key: "text", label: "文本", icon: FontSizeOutlined, order: 6 },
-  { key: "generate", label: "生成", icon: RocketOutlined, order: 7 },
-  { key: "network", label: "网络", icon: GlobalOutlined, order: 8 },
+  {
+    key: "security",
+    label: "tools.category.security",
+    icon: SafetyCertificateOutlined,
+    order: 0,
+  },
+  { key: "codec", label: "tools.category.codec", icon: SwapOutlined, order: 1 },
+  { key: "dev", label: "tools.category.dev", icon: CodeOutlined, order: 2 },
+  {
+    key: "time",
+    label: "tools.category.time",
+    icon: ClockCircleOutlined,
+    order: 3,
+  },
+  {
+    key: "math",
+    label: "tools.category.math",
+    icon: CalculatorOutlined,
+    order: 4,
+  },
+  {
+    key: "media",
+    label: "tools.category.media",
+    icon: PictureOutlined,
+    order: 5,
+  },
+  {
+    key: "text",
+    label: "tools.category.text",
+    icon: FontSizeOutlined,
+    order: 6,
+  },
+  {
+    key: "generate",
+    label: "tools.category.generate",
+    icon: RocketOutlined,
+    order: 7,
+  },
+  {
+    key: "network",
+    label: "tools.category.network",
+    icon: GlobalOutlined,
+    order: 8,
+  },
 ];
 
 export const CATEGORY_MAP = Object.fromEntries(

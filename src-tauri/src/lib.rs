@@ -89,6 +89,7 @@ pub fn run() {
             cmd::get_app_version,
             cmd::get_rustc_version,
             cmd::set_launch_at_login,
+            cmd::open_main_window_and_navigate,
             cmd::list_agent_modes,
             cmd::save_agent_mode,
             cmd::delete_agent_mode,

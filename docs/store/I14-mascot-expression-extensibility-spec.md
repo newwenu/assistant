@@ -98,7 +98,8 @@ interface EmotionEvent {
 |------|------|------|
 | `core/types.ts` | `MascotFace` → branded string；`RendererMeta` 新增 `supportedFaces` | 重构 |
 | `core/types.ts` | 新增 `ChatFacePolicy` / `AckRule` / `ExpressionPolicy` / `EmotionEngine` / `EmotionEvent` 接口 | 新增 |
-| `useMascotChatSync.ts` | 硬编码 → `DEFAULT_EXPRESSION_POLICY` 数据 + 规则求值逻辑 | 重构 |
+| `core/expressionPolicy.ts` | 默认映射数据（`DEFAULT_ACK_RULES` / `DEFAULT_CHAT_FACE_POLICY` / `DEFAULT_EXPRESSION_POLICY`），与逻辑分离 | 新增 |
+| `useMascotChatSync.ts` | 硬编码 → 引用 `DEFAULT_EXPRESSION_POLICY` + 规则求值逻辑，零硬编码映射 | 重构 |
 | `MascotRenderer.tsx` | 新增 `supportedFaces` fallback 逻辑 | 增强 |
 | `mascotStore.ts` | 新增 `attachEmotionEngine` / `detachEmotionEngine` | 新增 |
 | 各渲染器 `index.ts` | `meta` 新增 `supportedFaces` 声明 | 补充 |

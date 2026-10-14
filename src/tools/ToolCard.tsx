@@ -1,6 +1,7 @@
 import React from "react";
 import { Card, Typography, Tag } from "antd";
 import { useNavigate } from "react-router-dom";
+import { translateKey } from "@/i18n";
 import { FavoriteButton } from "./FavoriteButton";
 import type { ToolDefinition } from "./types";
 
@@ -35,7 +36,9 @@ export const ToolCard: React.FC<ToolCardProps> = ({ tool }) => {
           },
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {tool.isNew && <Tag color="blue">新</Tag>}
+          {tool.isNew && (
+            <Tag color="blue">{translateKey("tools.new_tag")}</Tag>
+          )}
           <FavoriteButton toolId={tool.id} />
         </div>
       </div>
@@ -44,7 +47,7 @@ export const ToolCard: React.FC<ToolCardProps> = ({ tool }) => {
         ellipsis
         style={{ display: "block", marginBottom: 4, fontSize: 15 }}
       >
-        {tool.name}
+        {translateKey(tool.name)}
       </Typography.Text>
       <div
         style={{
@@ -57,7 +60,7 @@ export const ToolCard: React.FC<ToolCardProps> = ({ tool }) => {
           lineHeight: 1.4,
         }}
       >
-        {tool.description}
+        {translateKey(tool.description)}
       </div>
     </Card>
   );

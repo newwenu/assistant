@@ -15,8 +15,8 @@ import { resolveVisemeCode, pickIdleFlourish } from "../../core/resolve";
 import { MASCOT_STATE_MACHINE, toRiveVisemeCode } from "./riveMaps";
 import {
   type RiveStateEngine,
-  BUILTIN_RIVE_STATE_ENGINE,
   resolveFaceToPose,
+  buildStateEngine,
 } from "./riveStateEngine";
 
 const AMBIENT_IDLE_MIN_MS = 6_000;
@@ -190,7 +190,8 @@ export const RiveMascot: FC<RiveMascotProps> = ({
   const buffer = config?.buffer ?? undefined;
   const stateMachine = config?.stateMachine ?? MASCOT_STATE_MACHINE;
 
-  const engine: RiveStateEngine = stateEngine ?? BUILTIN_RIVE_STATE_ENGINE;
+  const engine: RiveStateEngine =
+    stateEngine ?? buildStateEngine(config?.faceToPose);
 
   const containerRef = useRef<HTMLDivElement>(null);
 

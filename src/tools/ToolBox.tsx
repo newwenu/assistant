@@ -1,6 +1,7 @@
 import React from "react";
 import { Typography, Row, Col, Empty } from "antd";
 import { useNavigate } from "react-router-dom";
+import { translateKey } from "@/i18n";
 import {
   DndContext,
   closestCenter,
@@ -100,7 +101,7 @@ export const ToolBox: React.FC = () => {
             ))}
           </Row>
         ) : (
-          <Empty description="未找到匹配的工具" />
+          <Empty description={translateKey("tools.no_match")} />
         )
       ) : (
         <>
@@ -111,7 +112,7 @@ export const ToolBox: React.FC = () => {
                 type="secondary"
                 style={{ display: "block", marginBottom: 8, fontSize: 14 }}
               >
-                ★ 收藏
+                ★ {translateKey("tools.favorites")}
               </Typography.Text>
               <DndContext
                 sensors={sensors}
@@ -141,7 +142,7 @@ export const ToolBox: React.FC = () => {
                 type="secondary"
                 style={{ display: "block", marginBottom: 8, fontSize: 14 }}
               >
-                ⏱ 最近使用
+                ⏱ {translateKey("tools.recent")}
               </Typography.Text>
               <div
                 style={{
@@ -185,7 +186,7 @@ export const ToolBox: React.FC = () => {
                         },
                       },
                     )}
-                    <span>{tool.name}</span>
+                    <span>{translateKey(tool.name)}</span>
                   </div>
                 ))}
               </div>
@@ -199,7 +200,7 @@ export const ToolBox: React.FC = () => {
                 type="secondary"
                 style={{ display: "block", marginBottom: 8, fontSize: 14 }}
               >
-                新工具
+                {translateKey("tools.new_tools")}
               </Typography.Text>
               <Row gutter={[TOOL_CARD_GAP, TOOL_CARD_GAP]}>
                 {newTools.map((tool) => (
@@ -218,7 +219,7 @@ export const ToolBox: React.FC = () => {
                 type="secondary"
                 style={{ display: "block", marginBottom: 8, fontSize: 14 }}
               >
-                {group.meta.label}
+                {translateKey(group.meta.label)}
               </Typography.Text>
               <Row gutter={[TOOL_CARD_GAP, TOOL_CARD_GAP]}>
                 {group.tools.map((tool) => (

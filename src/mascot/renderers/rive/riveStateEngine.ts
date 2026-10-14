@@ -60,3 +60,15 @@ export function resolveFaceToPose(
   if (mapped) return mapped;
   return engine.states.idle;
 }
+
+export function buildStateEngine(
+  faceToPose?: Record<string, string>,
+): RiveStateEngine {
+  if (!faceToPose || Object.keys(faceToPose).length === 0) {
+    return BUILTIN_RIVE_STATE_ENGINE;
+  }
+  return {
+    ...BUILTIN_RIVE_STATE_ENGINE,
+    states: { ...BUILTIN_RIVE_STATE_ENGINE.states, ...faceToPose },
+  };
+}

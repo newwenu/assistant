@@ -437,5 +437,113 @@
       "chat_history": "Chat History",
       "chat_history_desc": "View conversation history"
     }
+  },
+  "tools": {
+    "category": {
+      "security": "Security",
+      "codec": "Encode / Decode",
+      "dev": "Development",
+      "time": "Time",
+      "math": "Math",
+      "media": "Media",
+      "text": "Text",
+      "generate": "Generate",
+      "network": "Network"
+    },
+    "search_placeholder": "Search tools...",
+    "no_match": "No matching tools found",
+    "favorites": "Favorites",
+    "recent": "Recent",
+    "new_tools": "New Tools",
+    "new_tag": "New",
+    "toolbox": "Toolbox",
+    "load_failed": "Component failed to load",
+    "retry_hint": "Please refresh and try again",
+    "reload": "Reload",
+    "not_found": "Tool not found",
+    "hash_text": {
+      "name": "Hash Calculator",
+      "description": "Calculate SHA1/SHA256/SHA512 hash of text"
+    },
+    "uuid_generator": {
+      "name": "UUID Generator",
+      "description": "Generate v1/v4 UUIDs with batch support"
+    },
+    "base64_string_converter": {
+      "name": "Base64 Encode / Decode",
+      "description": "Convert between string and Base64"
+    },
+    "color_converter": {
+      "name": "Color Converter",
+      "description": "Convert between HEX/RGB/HSL/RGBA color formats"
+    },
+    "date_time_converter": {
+      "name": "Timestamp Converter",
+      "description": "Convert between Unix timestamp and readable date"
+    },
+    "integer_base_converter": {
+      "name": "Base Converter",
+      "description": "Convert between binary/octal/decimal/hexadecimal"
+    },
+    "url_encoder": {
+      "name": "URL Encode / Decode",
+      "description": "URL encode/decode and component parsing"
+    },
+    "json_viewer": {
+      "name": "JSON Formatter",
+      "description": "Format, minify, validate JSON with syntax highlighting"
+    },
+    "regex_tester": {
+      "name": "Regex Tester",
+      "description": "Test regular expressions with match highlighting and capture groups"
+    },
+    "jwt_parser": {
+      "name": "JWT Decoder",
+      "description": "Decode JWT Token, display Header and Payload"
+    },
+    "text_diff": {
+      "name": "Text Diff",
+      "description": "Side-by-side text comparison with diff highlighting"
+    },
+    "text_statistics": {
+      "name": "Word Counter",
+      "description": "Count characters, words, lines, and bytes"
+    },
+    "password_generator": {
+      "name": "Password Generator",
+      "description": "Generate secure passwords with strength and crack time estimation"
+    },
+    "qrcode_generator": {
+      "name": "QR Code Generator",
+      "description": "Generate QR codes from text/URL with color and error correction level"
+    },
+    "sql_formatter": {
+      "name": "SQL Formatter",
+      "description": "Format and minify SQL with multiple dialect support"
+    },
+    "cron_parser": {
+      "name": "Cron Parser",
+      "description": "Parse Cron expressions and show next execution times"
+    },
+    "calculator": {
+      "name": "Calculator",
+      "description": "Evaluate math expressions with history"
+    },
+    "unit_converter": {
+      "name": "Unit Converter",
+      "description": "Convert between length/weight/temperature/area/volume units"
+    },
+    "ip_info": {
+      "name": "IP Lookup",
+      "description": "Query and convert local or specified IP address information"
+    },
+    "image_compressor": {
+      "name": "Image Compressor",
+      "description": "Upload images, adjust quality/size, compare and download"
+    },
+    "svg_preview": {
+      "name": "SVG Preview",
+      "description": "Edit SVG code with live preview, optimize and download"
+    }
   }
 }

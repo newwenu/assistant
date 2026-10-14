@@ -11,93 +11,12 @@ import {
 } from "antd";
 import { CopyOutlined, ReloadOutlined } from "@ant-design/icons";
 import styles from "./password-generator.module.css";
-
-const LOWERCASE = "abcdefghijklmnopqrstuvwxyz";
-const UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const DIGITS = "0123456789";
-const SPECIAL = "!@#$%^&*()_+-=[]{}|;:',.<>?/`~";
-
-function getCharsetLength(password: string): number {
-  let len = 0;
-  if (/[a-z]/.test(password)) len += 26;
-  if (/[A-Z]/.test(password)) len += 26;
-  if (/\d/.test(password)) len += 10;
-  if (/\W|_/.test(password)) len += 32;
-  return len;
-}
-
-function getCrackTimeEstimation(password: string, guessesPerSecond = 1e9) {
-  const charsetLength = getCharsetLength(password);
-  const passwordLength = password.length;
-  const entropy =
-    passwordLength === 0 ? 0 : Math.log2(charsetLength) * passwordLength;
-  const secondsToCrack = 2 ** entropy / guessesPerSecond;
-  const score = Math.min(entropy / 128, 1);
-  return { entropy, charsetLength, passwordLength, secondsToCrack, score };
-}
-
-function formatDuration(seconds: number): string {
-  if (seconds <= 0.001) return "瞬间";
-  if (seconds <= 1) return "不到 1 秒";
-
-  const units = [
-    { unit: "千年", s: 31536000000 },
-    { unit: "世纪", s: 3153600000 },
-    { unit: "十年", s: 315360000 },
-    { unit: "年", s: 31536000 },
-    { unit: "月", s: 2592000 },
-    { unit: "周", s: 604800 },
-    { unit: "天", s: 86400 },
-    { unit: "小时", s: 3600 },
-    { unit: "分钟", s: 60 },
-    { unit: "秒", s: 1 },
-  ];
-
-  const parts: string[] = [];
-  let remaining = seconds;
-  for (const { unit, s } of units) {
-    const qty = Math.floor(remaining / s);
-    if (qty > 0) {
-      parts.push(`${qty} ${unit}`);
-      remaining %= s;
-    }
-    if (parts.length >= 2) break;
-  }
-  return parts.join(" ") || "不到 1 秒";
-}
-
-function getStrengthLevel(score: number): {
-  label: string;
-  color: string;
-  percent: number;
-} {
-  if (score < 0.25)
-    return { label: "极弱", color: "#ff4d4f", percent: score * 100 };
-  if (score < 0.5)
-    return { label: "弱", color: "#faad14", percent: score * 100 };
-  if (score < 0.75)
-    return { label: "中等", color: "#1677ff", percent: score * 100 };
-  return { label: "强", color: "#52c41a", percent: score * 100 };
-}
-
-function generatePassword(
-  length: number,
-  useLower: boolean,
-  useUpper: boolean,
-  useDigits: boolean,
-  useSpecial: boolean,
-): string {
-  let charset = "";
-  if (useLower) charset += LOWERCASE;
-  if (useUpper) charset += UPPERCASE;
-  if (useDigits) charset += DIGITS;
-  if (useSpecial) charset += SPECIAL;
-  if (!charset) charset = LOWERCASE;
-
-  const array = new Uint32Array(length);
-  crypto.getRandomValues(array);
-  return Array.from(array, (v) => charset[v % charset.length]).join("");
-}
+import {
+  generatePassword,
+  getCrackTimeEstimation,
+  formatDuration,
+  getStrengthLevel,
+} from "./password-generator.service";
 
 export default function PasswordGenerator() {
   const [length, setLength] = useState(16);

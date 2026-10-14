@@ -6,7 +6,7 @@ import type {
   ChatOrchestratorDeps,
   ChatOrchestrator,
 } from "../chatOrchestrator";
-import type { Message, TokenUsage } from "../../chat/chatTypes";
+import type { TokenUsage } from "../../chat/chatTypes";
 import { ChatErrorCode } from "../../chat/chatErrors";
 
 vi.mock("../chatService", () => ({
@@ -71,8 +71,8 @@ describe("chatOrchestrator — 契约测试", () => {
       await orchestrator.send("hello");
       expect(mockDeps.state.beginSend).toHaveBeenCalled();
       const call = vi.mocked(mockDeps.state.beginSend).mock.calls[0];
-      const messages = call[0] as Message[];
-      const assistantMsgId = call[1] as string;
+      const messages = call[0];
+      const assistantMsgId = call[1];
       expect(messages.length).toBe(2);
       expect(messages[0].role).toBe("user");
       expect(messages[0].content).toBe("hello");
@@ -194,7 +194,7 @@ describe("chatOrchestrator — 契约测试", () => {
           completion_tokens: 50,
           total_tokens: 150,
           context_window_tokens: 1000,
-        } as TokenUsage,
+        },
       });
       expect(mockDeps.state.updateContextUsage).toHaveBeenCalledWith({
         used_tokens: 100,

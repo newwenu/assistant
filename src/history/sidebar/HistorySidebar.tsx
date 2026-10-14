@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Empty, Spin } from "antd";
+import { RightOutlined, DownOutlined } from "@ant-design/icons";
 import type { Conversation } from "../../chat/chatTypes";
 import {
   groupConversations,
@@ -128,7 +129,11 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = React.memo(
                   onClick={() => onToggleGroup(group.key)}
                 >
                   <span className={css.groupArrow}>
-                    {collapsedGroups.has(group.key) ? "▶" : "▼"}
+                    {collapsedGroups.has(group.key) ? (
+                      <RightOutlined />
+                    ) : (
+                      <DownOutlined />
+                    )}
                   </span>
                   <span className={css.groupLabel}>{group.label}</span>
                   <span className={css.groupCount}>

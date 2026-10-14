@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import Fuse from "fuse.js";
+import i18n, { translateKey } from "@/i18n";
 import { tools, toolsByCategory } from "../tools/registry";
 import type { ToolDefinition, ToolCategoryGroup } from "../tools/types";
 import { TOOL_SEARCH_THRESHOLD, RECENT_TOOLS_LIMIT } from "../config/constants";
@@ -22,13 +23,28 @@ interface ToolState {
   search: (query: string) => void;
 }
 
-const fuseInstance = new Fuse(tools, {
-  keys: [
-    { name: "name", weight: 2 },
-    { name: "keywords", weight: 1.5 },
-    { name: "description", weight: 1 },
-  ],
-  threshold: TOOL_SEARCH_THRESHOLD,
+function buildFuseInstance(): Fuse<ToolDefinition> {
+  return new Fuse(
+    tools.map((t) => ({
+      ...t,
+      name: translateKey(t.name),
+      description: translateKey(t.description),
+    })),
+    {
+      keys: [
+        { name: "name", weight: 2 },
+        { name: "keywords", weight: 1.5 },
+        { name: "description", weight: 1 },
+      ],
+      threshold: TOOL_SEARCH_THRESHOLD,
+    },
+  );
+}
+
+let fuseInstance = buildFuseInstance();
+
+i18n.on("languageChanged", () => {
+  fuseInstance = buildFuseInstance();
 });
 
 export const useToolStore = create<ToolState>((set) => ({

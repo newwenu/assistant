@@ -45,9 +45,7 @@ describe("chatService — 契约测试", () => {
     });
 
     it("returns casted result with || [] fallback", async () => {
-      mockInvoke.mockResolvedValue([
-        { id: "openai", default_model: "gpt-4" },
-      ]);
+      mockInvoke.mockResolvedValue([{ id: "openai", default_model: "gpt-4" }]);
       const result = await chatService.listProviders();
       expect(result).toEqual([{ id: "openai", default_model: "gpt-4" }]);
     });
@@ -134,10 +132,7 @@ describe("chatService — 契约测试", () => {
         percentage: 0.00078,
       };
       mockInvoke.mockResolvedValue(summary);
-      const result = await chatService.getConversationTokenUsage(
-        "c1",
-        128000,
-      );
+      const result = await chatService.getConversationTokenUsage("c1", 128000);
       expect(mockInvoke).toHaveBeenCalledWith("get_conversation_token_usage", {
         conversationId: "c1",
         contextWindowTokens: 128000,

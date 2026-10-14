@@ -2,6 +2,7 @@ import React, { Suspense, useEffect, useState, Component } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Typography, Button, Spin, Result } from "antd";
 import { ArrowLeftOutlined, ReloadOutlined } from "@ant-design/icons";
+import { translateKey } from "@/i18n";
 import { toolsMap } from "./registry";
 import { FavoriteButton } from "./FavoriteButton";
 import { useToolStore } from "@/stores/toolStore";
@@ -37,15 +38,17 @@ class LazyErrorBoundary extends Component<
       return (
         <Result
           status="error"
-          title="组件加载失败"
-          subTitle={this.state.error?.message || "请刷新页面重试"}
+          title={translateKey("tools.load_failed")}
+          subTitle={
+            this.state.error?.message || translateKey("tools.retry_hint")
+          }
           extra={
             <Button
               type="primary"
               icon={<ReloadOutlined />}
               onClick={this.props.onRetry}
             >
-              重新加载
+              {translateKey("tools.reload")}
             </Button>
           }
         />
@@ -78,7 +81,9 @@ export const ToolPage: React.FC = () => {
           height: "100%",
         }}
       >
-        <Typography.Text type="secondary">工具未找到</Typography.Text>
+        <Typography.Text type="secondary">
+          {translateKey("tools.not_found")}
+        </Typography.Text>
       </div>
     );
   }
@@ -117,7 +122,7 @@ export const ToolPage: React.FC = () => {
           level={2}
           style={{ margin: 0, fontWeight: 500, fontSize: 28 }}
         >
-          {tool.name}
+          {translateKey(tool.name)}
         </Typography.Title>
         <div style={{ marginLeft: "auto" }}>
           <FavoriteButton toolId={tool.id} />
@@ -136,7 +141,7 @@ export const ToolPage: React.FC = () => {
         type="secondary"
         style={{ display: "block", marginBottom: 20, fontSize: 14 }}
       >
-        {tool.description}
+        {translateKey(tool.description)}
       </Typography.Text>
       <div
         style={{
