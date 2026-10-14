@@ -1,0 +1,44 @@
+.root {
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  border-left: 2px solid transparent;
+  margin-bottom: 2px;
+  transition: background 0.15s;
+}
+
+.root:hover {
+  background: var(--color-bg-hover);
+}
+
+.rootSelected {
+  background: var(--color-bg-elevated);
+  border-left-color: var(--color-primary);
+}
+
+.rootSelected:hover {
+  background: var(--color-bg-elevated);
+}
+
+.title {
+  font-size: 13px;
+  display: block;
+  line-height: 18px;
+}
+
+.pinIcon {
+  font-size: 10px;
+  margin-right: 4px;
+  color: #faad14;
+}
+
+.time {
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.timeIcon {
+  margin-right: 4px;
+  font-size: 10px;
+}

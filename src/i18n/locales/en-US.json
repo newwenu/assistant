@@ -409,7 +409,9 @@
     },
     "orb": {
       "conversation_list": "Conversation list",
-      "search_conversation": "Search conversations"
+      "search_conversation": "Search conversations",
+      "view_all_in_main": "View all conversations in main window",
+      "search_more_in_main": "Search more results in main window"
     }
   },
   "command": {

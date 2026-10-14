@@ -1,0 +1,179 @@
+import React, { useRef, useState, useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import { Typography, Button, Empty, Spin, Tag, Popconfirm } from "antd";
+import {
+  DeleteOutlined,
+  ExportOutlined,
+  MessageOutlined,
+} from "@ant-design/icons";
+import type { Conversation, Message } from "../../chat/chatTypes";
+import {
+  VIRTUAL_SCROLL_THRESHOLD,
+  VIRTUAL_SCROLL_OVERSCAN,
+  SCROLL_LOAD_THRESHOLD_PX,
+} from "../../config/constants";
+import { HistoryMessageItem } from "./HistoryMessageItem";
+import css from "./HistoryDetail.module.css";
+
+interface HistoryDetailProps {
+  selectedId: string | null;
+  selectedConv: Conversation | undefined;
+  messages: Message[];
+  totalCount: number;
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadingMessages: boolean;
+  onExport: (id: string, format: string) => void;
+  onDeleteConversation: (id: string) => void;
+  onDeleteMessage: (id: string) => void;
+  onLoadMore: () => void;
+}
+
+export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
+  ({
+    selectedId,
+    selectedConv,
+    messages,
+    totalCount,
+    hasMore,
+    loadingMore,
+    loadingMessages,
+    onExport,
+    onDeleteConversation,
+    onDeleteMessage,
+    onLoadMore,
+  }) => {
+    const { t } = useTranslation();
+    const messageListRef = useRef<HTMLDivElement>(null);
+    const [userScrolledUp, setUserScrolledUp] = useState(false);
+
+    const useVirtualScroll = messages.length > VIRTUAL_SCROLL_THRESHOLD;
+
+    const visibleMessages = useMemo(() => {
+      if (!useVirtualScroll) return messages;
+      const container = messageListRef.current;
+      if (!container) return messages;
+
+      const ESTIMATED_ITEM_HEIGHT = 80;
+      const { scrollTop, clientHeight } = container;
+      const start = Math.max(
+        0,
+        Math.floor(scrollTop / ESTIMATED_ITEM_HEIGHT) - VIRTUAL_SCROLL_OVERSCAN,
+      );
+      const end = Math.min(
+        messages.length,
+        Math.ceil((scrollTop + clientHeight) / ESTIMATED_ITEM_HEIGHT) +
+          VIRTUAL_SCROLL_OVERSCAN,
+      );
+      return messages.slice(start, end);
+    }, [messages, useVirtualScroll]);
+
+    const handleScroll = useCallback(() => {
+      if (!messageListRef.current) return;
+      const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
+      setUserScrolledUp(scrollHeight - scrollTop - clientHeight > 100);
+
+      if (hasMore && !loadingMore && scrollTop < SCROLL_LOAD_THRESHOLD_PX) {
+        onLoadMore();
+      }
+    }, [hasMore, loadingMore, onLoadMore]);
+
+    const scrollToBottom = useCallback(() => {
+      if (messageListRef.current) {
+        messageListRef.current.scrollTo({
+          top: messageListRef.current.scrollHeight,
+          behavior: "smooth",
+        });
+        setUserScrolledUp(false);
+      }
+    }, []);
+
+    if (!selectedId || !selectedConv) {
+      return (
+        <div className={css.detail}>
+          <div className={css.emptyState}>
+            <MessageOutlined style={{ fontSize: 48, opacity: 0.3 }} />
+            <Typography.Text type="secondary">
+              {t("chat.history.select_to_view")}
+            </Typography.Text>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={css.detail}>
+        <div className={css.header}>
+          <Typography.Text
+            strong
+            ellipsis
+            className={css.headerTitle}
+            style={{ display: "block" }}
+          >
+            {selectedConv.title}
+          </Typography.Text>
+          <Tag>{t("chat.history.message_count", { count: totalCount })}</Tag>
+          <Button
+            size="small"
+            icon={<ExportOutlined />}
+            onClick={() => onExport(selectedId, "markdown")}
+          >
+            {t("common.actions.export")}
+          </Button>
+          <Popconfirm
+            title={t("chat.history.confirm_delete_conversation")}
+            onConfirm={() => onDeleteConversation(selectedId)}
+          >
+            <Button size="small" danger icon={<DeleteOutlined />}>
+              {t("chat.history.delete_conversation")}
+            </Button>
+          </Popconfirm>
+        </div>
+        <div
+          ref={messageListRef}
+          onScroll={handleScroll}
+          className={css.messageList}
+        >
+          {loadingMessages ? (
+            <div className={css.loadingWrap}>
+              <Spin />
+            </div>
+          ) : messages.length === 0 ? (
+            <Empty description={t("chat.history.no_messages")} />
+          ) : (
+            <>
+              {loadingMore && (
+                <div className={css.loadingMoreWrap}>
+                  <Spin size="small" />
+                  <Typography.Text
+                    type="secondary"
+                    style={{ marginLeft: 8, fontSize: 12 }}
+                  >
+                    {t("common.actions.loading")}
+                  </Typography.Text>
+                </div>
+              )}
+              {hasMore && !loadingMore && (
+                <div className={css.loadMoreHint}>
+                  {t("chat.history.scroll_load_more")}
+                </div>
+              )}
+              {(useVirtualScroll ? visibleMessages : messages).map((msg) => (
+                <HistoryMessageItem
+                  key={msg.id}
+                  message={msg}
+                  onDelete={onDeleteMessage}
+                />
+              ))}
+            </>
+          )}
+          {userScrolledUp && (
+            <button className={css.scrollToBottom} onClick={scrollToBottom}>
+              {t("chat.history.back_to_bottom")}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  },
+);

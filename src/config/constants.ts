@@ -54,6 +54,7 @@ export const SCROLL_LOAD_THRESHOLD_PX = 100;
 export const CONTEXT_WARN_THRESHOLD = 0.7;
 export const CONTEXT_DANGER_THRESHOLD = 0.9;
 export const CONVERSATION_SUMMARY_LENGTH = 30;
+export const ORB_HISTORY_LIST_LIMIT = 50;
 
 export const TOOL_DEFAULT_MAX_WIDTH = 640;
 export const TOOL_WIDE_MAX_WIDTH = 960;

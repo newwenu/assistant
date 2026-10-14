@@ -1,0 +1,21 @@
+.searchBar {
+  padding: 10px 10px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.searchInput {
+  flex: 1;
+}
+
+.searchModeToggle {
+  font-size: 11px;
+  color: var(--color-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}

@@ -10,7 +10,10 @@ import {
   PushpinFilled,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
-import { ORB_BLUR_COLLAPSE_DELAY_MS } from "../config/constants";
+import {
+  ORB_BLUR_COLLAPSE_DELAY_MS,
+  ORB_HISTORY_LIST_LIMIT,
+} from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
 import { useOrbExpand } from "./OrbExpand";
 import { ChatView } from "../chat/ChatView";
@@ -23,6 +26,7 @@ import {
   isPointInRect,
 } from "./OrbCoord";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
+import { invoke } from "@tauri-apps/api/core";
 
 export const OrbPanel: React.FC = () => {
   const { expand, collapse } = useOrbExpand();
@@ -104,6 +108,15 @@ export const OrbPanel: React.FC = () => {
     c.title.toLowerCase().includes(search.toLowerCase()),
   );
 
+  const truncated = filtered.slice(0, ORB_HISTORY_LIST_LIMIT);
+  const isTruncated = filtered.length > ORB_HISTORY_LIST_LIMIT;
+
+  const handleOpenHistoryInMain = useCallback(() => {
+    void invoke("open_main_window_and_navigate", { route: "/history" });
+    setHistoryOpen(false);
+    void collapse();
+  }, [collapse]);
+
   const historyMenuItems: MenuProps["items"] = [
     {
       key: "search",
@@ -120,7 +133,7 @@ export const OrbPanel: React.FC = () => {
       disabled: true,
     },
     { type: "divider" },
-    ...filtered.map((conv) => ({
+    ...truncated.map((conv) => ({
       key: conv.id,
       label: (
         <div
@@ -159,6 +172,23 @@ export const OrbPanel: React.FC = () => {
       },
     })),
   ];
+
+  if (isTruncated) {
+    historyMenuItems.push(
+      { type: "divider" },
+      {
+        key: "view-all",
+        label: (
+          <span style={{ color: "var(--color-primary)" }}>
+            {search
+              ? t("chat.orb.search_more_in_main")
+              : t("chat.orb.view_all_in_main")}
+          </span>
+        ),
+        onClick: handleOpenHistoryInMain,
+      },
+    );
+  }
 
   if (filtered.length === 0 && chat.conversations.length === 0) {
     historyMenuItems.splice(1);

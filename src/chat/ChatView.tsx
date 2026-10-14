@@ -207,7 +207,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       }
     }
     void chat.createConversation(pid, modelId);
-  }, [provider.providers, currentProviderId, chat, modal]);
+  }, [provider.providers, currentProviderId, chat, modal, t]);
 
   useEffect(() => {
     const handler = () => handleNewConversation();

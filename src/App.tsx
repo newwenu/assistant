@@ -34,7 +34,7 @@ import {
   isSettingsPageId,
 } from "@/settings/core/pageRegistry";
 
-import { HistoryManager } from "@/chat/HistoryManager";
+import { HistoryManager } from "@/history";
 import { ToolBox } from "@/tools/ToolBox";
 import { ToolPage } from "@/tools/ToolPage";
 import { CommandPalette } from "@/components/commandPalette/CommandPalette";

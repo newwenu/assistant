@@ -12,90 +12,22 @@ import {
   toChatError,
   formatRetryAfter,
 } from "../chat/chatErrors";
+import type {
+  Message,
+  Conversation,
+  TokenUsage,
+  ContextUsage,
+} from "../chat/chatTypes";
+export type {
+  Message,
+  ToolCall,
+  Conversation,
+  TokenUsage,
+  ContextUsage,
+} from "../chat/chatTypes";
+import { PersistQueue } from "../utils/persistQueue";
 import { useAgentModeStore } from "./agentModeStore";
 import { useProviderStore, type ModelConfig } from "./providerStore";
-
-export interface Message {
-  id: string;
-  conversation_id: string;
-  role: string;
-  content: string;
-  reasoning?: string;
-  toolCalls?: ToolCall[];
-  tokens: number | null;
-  timestamp: number;
-  error?: ChatError | null;
-  parent_id?: string | null;
-  is_pinned?: boolean;
-}
-
-export interface ToolCall {
-  id: string;
-  name: string;
-  arguments: string;
-}
-
-export interface Conversation {
-  id: string;
-  title: string;
-  title_source: string;
-  provider_id: string | null;
-  model_id: string;
-  system_prompt: string | null;
-  is_pinned: boolean;
-  sort_order: number;
-  generation: number;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface TokenUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-  cache_read_tokens?: number;
-  cache_write_tokens?: number;
-  context_window_tokens?: number;
-}
-
-export interface ContextUsage {
-  used_tokens: number;
-  max_tokens: number;
-  percentage: number;
-}
-
-interface PersistEntry {
-  fn: () => Promise<void>;
-  resolve: () => void;
-  reject: (e: unknown) => void;
-}
-
-class PersistQueue {
-  private queue: PersistEntry[] = [];
-  private running = false;
-
-  enqueue(fn: () => Promise<void>): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.queue.push({ fn, resolve, reject });
-      void this.runNext();
-    });
-  }
-
-  private async runNext() {
-    if (this.running || this.queue.length === 0) return;
-    this.running = true;
-    const entry = this.queue.shift()!;
-    try {
-      await entry.fn();
-      entry.resolve();
-    } catch (e) {
-      entry.reject(e);
-    } finally {
-      this.running = false;
-      void this.runNext();
-    }
-  }
-}
 
 const persistQueue = new PersistQueue();
 
@@ -144,17 +76,13 @@ interface ChatState {
   streamingContent: string;
   streamingMessageId: string | null;
   isReasoningStreaming: boolean;
-  sidebarOpen: boolean;
   hasMoreMessages: boolean;
   isLoadingMoreMessages: boolean;
+  isLoadingConversations: boolean;
   totalMessageCount: number;
-  searchResults: Conversation[] | null;
-  searchQuery: string;
-  searchFullText: boolean;
-  filterProviderId: string | null;
   contextUsage: ContextUsage;
 
-  loadConversations: () => Promise<void>;
+  loadConversations: (silent?: boolean) => Promise<void>;
   createConversation: (providerId: string, modelId: string) => Promise<string>;
   ensureCurrentConversation: () => Promise<void>;
   switchConversation: (id: string) => Promise<void>;
@@ -170,20 +98,14 @@ interface ChatState {
   appendDelta: (delta: string) => void;
   finishStream: (usage?: TokenUsage) => void;
   errorStream: (error: ChatError) => void;
-  toggleSidebar: () => void;
   deleteMessage: (id: string) => Promise<void>;
   editMessage: (messageId: string, newContent: string) => Promise<void>;
   regenerateMessage: (messageId: string) => Promise<void>;
   loadMoreMessages: () => Promise<void>;
-  searchConversations: (query: string) => Promise<void>;
-  clearSearch: () => void;
-  toggleSearchFullText: () => void;
   togglePin: (id: string) => Promise<void>;
   duplicateConversation: (id: string) => Promise<void>;
-  exportConversation: (id: string, format: string) => Promise<void>;
   batchDelete: (ids: string[]) => Promise<void>;
   purgeAll: () => Promise<void>;
-  setFilterProviderId: (id: string | null) => void;
 }
 
 let sendInProgress = false;
@@ -196,17 +118,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamingContent: "",
   streamingMessageId: null,
   isReasoningStreaming: false,
-  sidebarOpen: false,
   hasMoreMessages: false,
   isLoadingMoreMessages: false,
+  isLoadingConversations: false,
   totalMessageCount: 0,
-  searchResults: null,
-  searchQuery: "",
-  searchFullText: false,
-  filterProviderId: null,
   contextUsage: { used_tokens: 0, max_tokens: 128_000, percentage: 0 },
 
-  loadConversations: async () => {
+  loadConversations: async (silent?: boolean) => {
+    if (!silent) set({ isLoadingConversations: true });
     try {
       const result = await invoke("list_conversations", { providerId: null });
       const convs = (result as Conversation[]) || [];
@@ -214,6 +133,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await get().ensureCurrentConversation();
     } catch (e) {
       console.error("Failed to load conversations:", e);
+    } finally {
+      if (!silent) set({ isLoadingConversations: false });
     }
   },
 
@@ -610,10 +531,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  toggleSidebar: () => {
-    set({ sidebarOpen: !get().sidebarOpen });
-  },
-
   deleteMessage: async (id: string) => {
     const state = get();
     set({
@@ -734,37 +651,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  searchConversations: async (query: string) => {
-    set({ searchQuery: query });
-    if (!query.trim()) {
-      set({ searchResults: null });
-      return;
-    }
-    try {
-      if (get().searchFullText) {
-        const result = await invoke("search_conversations", { query });
-        set({ searchResults: (result as Conversation[]) || [] });
-      } else {
-        const q = query.toLowerCase();
-        const filtered = get().conversations.filter((c) =>
-          c.title.toLowerCase().includes(q),
-        );
-        set({ searchResults: filtered });
-      }
-    } catch (e) {
-      console.error("Failed to search conversations:", e);
-      set({ searchResults: [] });
-    }
-  },
-
-  clearSearch: () => {
-    set({ searchResults: null, searchQuery: "" });
-  },
-
-  toggleSearchFullText: () => {
-    set({ searchFullText: !get().searchFullText });
-  },
-
   togglePin: async (id: string) => {
     await persistQueue.enqueue(async () => {
       await invoke("toggle_conversation_pin", { id });
@@ -777,26 +663,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await invoke("duplicate_conversation", { id });
     });
     await get().loadConversations();
-  },
-
-  exportConversation: async (id: string, format: string) => {
-    try {
-      const content = await invoke<string>("export_conversation", {
-        id,
-        format,
-      });
-      const ext = format === "json" ? "json" : "md";
-      const mime = format === "json" ? "application/json" : "text/markdown";
-      const blob = new Blob([content], { type: mime });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `conversation.${ext}`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error("Failed to export conversation:", e);
-    }
   },
 
   batchDelete: async (ids: string[]) => {
@@ -829,10 +695,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: false,
       streamingContent: "",
     });
-  },
-
-  setFilterProviderId: (id: string | null) => {
-    set({ filterProviderId: id });
   },
 }));
 
