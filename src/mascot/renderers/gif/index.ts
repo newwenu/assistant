@@ -1,5 +1,5 @@
 import { registerRenderer } from "../../core/registry";
-import { BUILTIN_RENDERER_IDS } from "../../core/types";
+import { BUILTIN_RENDERER_IDS, asFace } from "../../core/types";
 import { GifMascot } from "./GifMascot";
 
 registerRenderer({
@@ -14,6 +14,7 @@ registerRenderer({
     },
     limitations: "settings.mascot.renderer.gif.limitations",
     defaultColors: null,
+    supportedFaces: [asFace("idle")],
     settings: [
       {
         key: "gif_border_radius",

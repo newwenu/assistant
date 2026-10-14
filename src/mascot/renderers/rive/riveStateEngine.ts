@@ -14,7 +14,7 @@ export interface RiveChannel {
 
 export interface RiveStateEngine {
   visemeCodes: readonly string[];
-  states: Record<MascotFace, string> & { idle: string; thinking: string };
+  states: Record<string, string> & { idle: string; thinking: string };
   idlePoseCycle: string[];
   channels?: RiveChannel[];
 }

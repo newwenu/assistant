@@ -1,8 +1,13 @@
 export { MascotRenderer } from "./MascotRenderer";
-export { useMascotStore, deriveMascotFaceFromChat } from "./mascotStore";
+export {
+  useMascotStore,
+  attachEmotionEngine,
+  detachEmotionEngine,
+} from "./mascotStore";
 export { useMascotChatSync } from "./useMascotChatSync";
 export type {
   MascotFace,
+  BuiltinFace,
   MascotRendererId,
   MascotRendererProps,
   RendererMeta,
@@ -11,8 +16,23 @@ export type {
   RiveRendererConfig,
   SvgRendererConfig,
   GifRendererConfig,
+  ChatFacePolicy,
+  AckRule,
+  ExpressionPolicy,
+  EmotionEvent,
+  EmotionEngine,
 } from "./core/types";
-export { asRendererId, BUILTIN_RENDERER_IDS } from "./core/types";
+export {
+  asFace,
+  asRendererId,
+  BUILTIN_FACES,
+  BUILTIN_RENDERER_IDS,
+} from "./core/types";
+export {
+  DEFAULT_ACK_RULES,
+  DEFAULT_CHAT_FACE_POLICY,
+  DEFAULT_EXPRESSION_POLICY,
+} from "./core/expressionPolicy";
 export {
   getAllRendererMetas,
   getRenderer,

@@ -1,5 +1,5 @@
 import { registerRenderer } from "../../core/registry";
-import { BUILTIN_RENDERER_IDS } from "../../core/types";
+import { BUILTIN_RENDERER_IDS, BUILTIN_FACES, asFace } from "../../core/types";
 import { RiveMascot } from "./RiveMascot";
 
 registerRenderer({
@@ -13,6 +13,7 @@ registerRenderer({
       idleAnimation: true,
     },
     defaultColors: { primary: "#71c7df", secondary: "#e9f65c" },
+    supportedFaces: BUILTIN_FACES.map(asFace),
     settings: [
       {
         key: "rive_idle_pose_rotation",

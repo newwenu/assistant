@@ -1,21 +1,30 @@
-export type MascotFace =
-  | "sleep"
-  | "idle"
-  | "listening"
-  | "thinking"
-  | "confused"
-  | "speaking"
-  | "happy"
-  | "concerned"
-  | "curious"
-  | "proud"
-  | "cautious"
-  | "celebrating"
-  | "writing"
-  | "reading"
-  | "waving"
-  | "dancing"
-  | "working";
+export type MascotFace = string & { __brand: "MascotFace" };
+
+export function asFace(s: string): MascotFace {
+  return s as MascotFace;
+}
+
+export const BUILTIN_FACES = [
+  "sleep",
+  "idle",
+  "listening",
+  "thinking",
+  "confused",
+  "speaking",
+  "happy",
+  "concerned",
+  "curious",
+  "proud",
+  "cautious",
+  "celebrating",
+  "writing",
+  "reading",
+  "waving",
+  "dancing",
+  "working",
+] as const;
+
+export type BuiltinFace = (typeof BUILTIN_FACES)[number];
 
 export type MascotRendererId = string & { __brand: "MascotRendererId" };
 
@@ -44,6 +53,7 @@ export interface RendererMeta {
   limitations?: string;
   defaultColors?: { primary: string; secondary: string | null } | null;
   settings?: RendererSettingDef[];
+  supportedFaces?: MascotFace[];
 }
 
 export interface RendererSettingDef {
@@ -91,4 +101,36 @@ export interface MascotRendererProps {
   primaryColor?: number | null;
   secondaryColor?: number | null;
   rendererConfig?: Record<string, unknown>;
+}
+
+export interface ChatFacePolicy {
+  onStreamStart: {
+    reasoning: MascotFace;
+    toolCall: MascotFace;
+    default: MascotFace;
+  };
+  onStreamEnd: MascotFace;
+  onReasoningEnd: { toolCall: MascotFace; default: MascotFace };
+  onError: MascotFace;
+}
+
+export interface AckRule {
+  pattern: RegExp;
+  face: MascotFace;
+  priority?: number;
+  requiresToolCall?: boolean;
+}
+
+export interface ExpressionPolicy {
+  chatFace: ChatFacePolicy;
+  ackRules: AckRule[];
+}
+
+export interface EmotionEvent {
+  face: MascotFace;
+  holdMs?: number;
+}
+
+export interface EmotionEngine {
+  subscribe: (listener: (event: EmotionEvent) => void) => () => void;
 }

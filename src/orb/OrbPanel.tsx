@@ -17,8 +17,11 @@ import {
 import { useOrbStore } from "../stores/orbStore";
 import { useOrbExpand } from "./OrbExpand";
 import { ChatView } from "../chat/ChatView";
-import { useChatStore } from "../stores/chatStore";
-import { subscribeChatDeltaEvents } from "../services/chatDeltaEvents";
+import { useChatStore, getChatOrchestrator } from "../stores/chatStore";
+import {
+  subscribeChatDeltaEvents,
+  setChatOrchestrator,
+} from "../services/chatDeltaEvents";
 import { useMascotChatSync } from "../mascot/useMascotChatSync";
 import {
   getMouseLogicalPos,
@@ -77,6 +80,8 @@ export const OrbPanel: React.FC = () => {
         window.dispatchEvent(new CustomEvent("chat-new-conversation"));
       })();
     });
+    const orchestrator = getChatOrchestrator();
+    if (orchestrator) setChatOrchestrator(orchestrator);
     const cleanupChatDelta = subscribeChatDeltaEvents();
     return () => {
       void unlistenBlur.then((fn) => fn());

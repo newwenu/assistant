@@ -1,5 +1,5 @@
 import { registerRenderer } from "../../core/registry";
-import { BUILTIN_RENDERER_IDS } from "../../core/types";
+import { BUILTIN_RENDERER_IDS, BUILTIN_FACES, asFace } from "../../core/types";
 import { GhostyMascot } from "./GhostyMascot";
 
 registerRenderer({
@@ -13,6 +13,7 @@ registerRenderer({
       idleAnimation: true,
     },
     defaultColors: { primary: "#3dd17f", secondary: null },
+    supportedFaces: BUILTIN_FACES.map(asFace),
     settings: [
       {
         key: "svg_animated",

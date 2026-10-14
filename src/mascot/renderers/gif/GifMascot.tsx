@@ -1,6 +1,7 @@
 import { type FC, useEffect, useRef } from "react";
 
 import type { MascotRendererProps, GifRendererConfig } from "../../core/types";
+import { asFace } from "../../core/types";
 import { isValidGifSrc } from "./gifUrlValidator";
 
 const DEFAULT_GIF_SRC = "/mascot.gif";
@@ -25,7 +26,7 @@ function freezeGif(img: HTMLImageElement): void {
 }
 
 export const GifMascot: FC<MascotRendererProps> = ({
-  face = "idle",
+  face = asFace("idle"),
   size = "100%",
   rendererConfig,
 }) => {

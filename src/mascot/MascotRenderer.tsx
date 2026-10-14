@@ -2,7 +2,7 @@ import { type FC, useEffect, useRef } from "react";
 
 import type { MascotRendererId, MascotRendererProps } from "./core/types";
 import { getRenderer } from "./core/registry";
-import { BUILTIN_RENDERER_IDS } from "./core/types";
+import { BUILTIN_RENDERER_IDS, asFace } from "./core/types";
 
 import "./renderers/rive";
 import "./renderers/svg";
@@ -46,11 +46,16 @@ export const MascotRenderer: FC<Props> = (props) => {
   }
 
   const Component = entry.component;
-  const { capabilities } = entry.meta;
+  const { capabilities, supportedFaces } = entry.meta;
+
+  const effectiveFace =
+    !supportedFaces || supportedFaces.includes(props.face)
+      ? props.face
+      : asFace("idle");
 
   return (
     <Component
-      face={props.face}
+      face={effectiveFace}
       size={props.size}
       visemeCode={capabilities.visemeSync ? props.visemeCode : undefined}
       primaryColor={

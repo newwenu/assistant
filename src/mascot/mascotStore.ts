@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { MascotFace } from "./core/types";
+import type { MascotFace, EmotionEngine } from "./core/types";
+import { asFace } from "./core/types";
 
 const ACK_FACE_HOLD_MS = 700;
 const VISEME_DECAY_MS = 180;
@@ -40,7 +41,7 @@ function clearListeningTimer() {
 }
 
 export const useMascotStore = create<MascotState>((set, get) => ({
-  face: "idle",
+  face: asFace("idle"),
   visemeCode: "sil",
 
   setFace: (face: MascotFace) => {
@@ -64,33 +65,39 @@ export const useMascotStore = create<MascotState>((set, get) => ({
     set({ face: ackFace });
     ackTimer = setTimeout(() => {
       ackTimer = null;
-      set({ face: "idle" });
+      set({ face: asFace("idle") });
     }, ms);
   },
 
   notifyListening: () => {
     const { face } = get();
-    if (face !== "idle" && face !== "listening") return;
+    if (face !== asFace("idle") && face !== asFace("listening")) return;
     clearListeningTimer();
-    set({ face: "listening" });
+    set({ face: asFace("listening") });
     listeningTimer = setTimeout(() => {
       listeningTimer = null;
-      set({ face: "idle" });
+      set({ face: asFace("idle") });
     }, LISTENING_DEBOUNCE_MS);
   },
 }));
 
-export function deriveMascotFaceFromChat(
-  isStreaming: boolean,
-  isReasoningStreaming: boolean,
-  hasError: boolean,
-  isListening?: boolean,
-  isWorking?: boolean,
-): MascotFace {
-  if (hasError) return "concerned";
-  if (isReasoningStreaming) return "thinking";
-  if (isWorking) return "working";
-  if (isStreaming) return "speaking";
-  if (isListening) return "listening";
-  return "idle";
+let emotionUnsubscribe: (() => void) | null = null;
+
+export function attachEmotionEngine(engine: EmotionEngine): void {
+  detachEmotionEngine();
+  emotionUnsubscribe = engine.subscribe((event) => {
+    const { holdMs } = event;
+    if (holdMs != null) {
+      useMascotStore.getState().holdThenIdle(event.face, holdMs);
+    } else {
+      useMascotStore.getState().setFace(event.face);
+    }
+  });
+}
+
+export function detachEmotionEngine(): void {
+  if (emotionUnsubscribe) {
+    emotionUnsubscribe();
+    emotionUnsubscribe = null;
+  }
 }

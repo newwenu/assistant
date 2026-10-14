@@ -10,6 +10,7 @@ import {
 import { type FC, useEffect, useRef } from "react";
 
 import type { MascotRendererProps, RiveRendererConfig } from "../../core/types";
+import { asFace } from "../../core/types";
 import { resolveVisemeCode, pickIdleFlourish } from "../../core/resolve";
 import { MASCOT_STATE_MACHINE, toRiveVisemeCode } from "./riveMaps";
 import {
@@ -175,7 +176,7 @@ export interface RiveMascotProps extends MascotRendererProps {
 }
 
 export const RiveMascot: FC<RiveMascotProps> = ({
-  face = "idle",
+  face = asFace("idle"),
   size = "100%",
   primaryColor,
   secondaryColor,

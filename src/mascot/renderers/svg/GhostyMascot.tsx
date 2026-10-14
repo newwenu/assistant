@@ -5,6 +5,7 @@ import type {
   MascotRendererProps,
   SvgRendererConfig,
 } from "../../core/types";
+import { asFace } from "../../core/types";
 import { argbToHex } from "../../core/colorUtils";
 import type { VisemeShape } from "../../core/resolve";
 import { GhostyDefs, type GhostyVariant } from "./Defs";
@@ -37,7 +38,7 @@ interface FacePreset {
   blushOpacity: number;
 }
 
-const FACE_PRESETS: Record<MascotFace, FacePreset> = {
+const FACE_PRESETS: Record<string, FacePreset> = {
   sleep: {
     eyeScaleY: 0.1,
     eyeScaleX: 1,
@@ -208,7 +209,7 @@ function restMouthPath(face: MascotFace): string {
 }
 
 export const GhostyMascot: FC<MascotRendererProps> = ({
-  face = "idle",
+  face = asFace("idle"),
   size = "100%",
   visemeCode,
   primaryColor,
@@ -222,8 +223,10 @@ export const GhostyMascot: FC<MascotRendererProps> = ({
 
   const preset = FACE_PRESETS[face] ?? FACE_PRESETS.idle;
   const showArm =
-    face === "waving" || face === "celebrating" || face === "dancing";
-  const blinkMs = face === "thinking" ? 4200 : 2600;
+    face === asFace("waving") ||
+    face === asFace("celebrating") ||
+    face === asFace("dancing");
+  const blinkMs = face === asFace("thinking") ? 4200 : 2600;
 
   const groundRef = useRef<SVGGElement>(null);
   const bodyGroupRef = useRef<SVGGElement>(null);
@@ -286,12 +289,13 @@ export const GhostyMascot: FC<MascotRendererProps> = ({
   const dotFill = `url(#${id("dot")})`;
 
   const viseme: VisemeShape = useMemo(() => {
-    if (!visemeCode || face === "idle" || face === "sleep") return VISEMES.REST;
+    if (!visemeCode || face === asFace("idle") || face === asFace("sleep"))
+      return VISEMES.REST;
     return resolveSvgViseme(visemeCode);
   }, [visemeCode, face]);
 
   const mouthPath =
-    face === "speaking" ? visemePath(viseme) : restMouthPath(face);
+    face === asFace("speaking") ? visemePath(viseme) : restMouthPath(face);
   const sizeStyle = typeof size === "number" ? `${size}px` : size;
 
   return (
