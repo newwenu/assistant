@@ -4,7 +4,7 @@ import type {
   SettingsCategoryId,
   SettingsPageId,
   SettingsPageManifest,
-} from "./pageTypes";
+} from "./types/pageTypes";
 
 type SettingsPageInput = Omit<SettingsPageManifest, "component"> & {
   component: React.LazyExoticComponent<ComponentType>;

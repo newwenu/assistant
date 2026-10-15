@@ -2,8 +2,8 @@ import React from "react";
 import { Button, Modal } from "antd";
 import { PlusOutlined, UnlockOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useChatStore } from "../stores/chatStore";
-import { useProviderStore } from "../stores/providerStore";
+import { useChatStore } from "../../stores/chatStore";
+import { useProviderStore } from "../../stores/providerStore";
 import css from "./CompactBanner.module.css";
 
 export const CompactBanner: React.FC = () => {

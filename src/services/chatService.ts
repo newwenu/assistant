@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Conversation, Message } from "../chat/chatTypes";
+import type { Conversation, Message } from "../chat/core/chatTypes";
 
 export interface ConversationDetail {
   conversation: Conversation;

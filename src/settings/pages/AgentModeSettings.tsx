@@ -12,19 +12,20 @@ import {
 import { EditOutlined, DeleteOutlined, UndoOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
-import { useAgentModeStore, type AgentMode } from "@/stores/agentModeStore";
-import type { FieldSchema } from "../core/fieldSchema";
-import { SettingField } from "../shared/SettingField";
+import { useAgentModeStore } from "@/stores/agentModeStore";
+import type { AgentMode } from "@/settings/agentMode/types";
+import type { FieldSchema } from "../core/types/fieldSchema";
+import { SettingField } from "../shared/layout/SettingField";
 import {
   EntityListPageShell,
   type EntityListSectionConfig,
-} from "../shared/EntityListPageShell";
+} from "../shared/layout/EntityListPageShell";
 import {
   getAllAgentKinds,
   getAgentKindLabelKey,
   getAgentKindColor,
-} from "../core/agentModeRegistry";
-import "../core/agentModeDefinitions";
+} from "../core/agentKind/agentModeRegistry";
+import "../core/agentKind/agentModeDefinitions";
 
 const REASONING_EFFORT_OPTIONS = [
   { value: "low", label: "Low" },

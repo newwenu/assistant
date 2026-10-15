@@ -8,41 +8,29 @@ import {
   getAllProviderFormats,
   getProviderFormat,
   providerFormatNeedsApiKey,
-} from "../settings/core/providerFormatRegistry";
+} from "../settings/core/provider/providerFormatRegistry";
 import {
   getProviderPreset,
   getAllProviderPresets,
   getApiFormatByType as getApiFormatByTypeFromRegistry,
-} from "../settings/core/providerPresetRegistry";
-import "../settings/core/providerDefinitions";
-
-export interface ModelConfig {
-  id: string;
-  name: string;
-  owned_by: string;
-  context_window?: number;
-}
-
-export interface Provider {
-  id: string;
-  name: string;
-  type: string;
-  base_url: string;
-  api_key_masked: string;
-  models: string;
-  default_model: string;
-  updated_at: number;
-}
-
-export type ApiFormat = "openai" | "anthropic" | "local";
-
-export interface ApiFormatInfo {
-  format: ApiFormat;
-  label: string;
-  description: string;
-  needsApiKey: boolean;
-  keyPlaceholder?: string;
-}
+} from "../settings/core/provider/providerPresetRegistry";
+import "../settings/core/provider/providerDefinitions";
+export type {
+  ModelConfig,
+  Provider,
+  ProviderInput,
+  ApiFormat,
+  ApiFormatInfo,
+  ProviderPreset,
+} from "@/settings/provider/types";
+import type {
+  ModelConfig,
+  Provider,
+  ProviderInput,
+  ApiFormat,
+  ApiFormatInfo,
+  ProviderPreset,
+} from "@/settings/provider/types";
 
 export const API_FORMATS: ApiFormatInfo[] = getAllProviderFormats().map(
   (f) => ({
@@ -57,13 +45,6 @@ export const API_FORMATS: ApiFormatInfo[] = getAllProviderFormats().map(
 export const API_FORMAT_MAP = new Map<ApiFormat, ApiFormatInfo>(
   API_FORMATS.map((f) => [f.format, f]),
 );
-
-export interface ProviderPreset {
-  slug: string;
-  label: string;
-  format: ApiFormat;
-  defaultBaseUrl: string;
-}
 
 export const PROVIDER_PRESETS: ProviderPreset[] = getAllProviderPresets().map(
   (p) => ({
@@ -114,7 +95,7 @@ interface ProviderState {
   loading: boolean;
 
   loadProviders: () => Promise<void>;
-  saveProvider: (provider: Record<string, unknown>) => Promise<void>;
+  saveProvider: (provider: ProviderInput) => Promise<void>;
   deleteProvider: (id: string) => Promise<void>;
   fetchModels: (providerId: string) => Promise<ModelConfig[]>;
 }
@@ -134,7 +115,7 @@ export const useProviderStore = create<ProviderState>((set) => ({
     }
   },
 
-  saveProvider: async (provider: Record<string, unknown>) => {
+  saveProvider: async (provider: ProviderInput) => {
     await dispatchProviderSaved(provider);
   },
 

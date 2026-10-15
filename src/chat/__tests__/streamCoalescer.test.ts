@@ -4,7 +4,7 @@ import {
   createSeqDedupFilter,
   frameScheduler,
   type CoalescibleDelta,
-} from "../streamCoalescer";
+} from "../core/streamCoalescer";
 
 interface TestDelta extends CoalescibleDelta {
   delta: string;

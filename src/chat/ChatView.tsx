@@ -15,11 +15,11 @@ import {
 import { useProviderStore } from "../stores/providerStore";
 import { MessageList } from "./message/MessageList";
 import { MessageInput } from "./message/MessageInput";
-import { ModelSelector } from "./ModelSelector";
-import { ModeSelector } from "./ModeSelector";
-import { ProviderSelector } from "./ProviderSelector";
-import { CompactBanner } from "./CompactBanner";
-import { CompactErrorBanner } from "./CompactErrorBanner";
+import { ModelSelector } from "./selectors/ModelSelector";
+import { ModeSelector } from "./selectors/ModeSelector";
+import { ProviderSelector } from "./selectors/ProviderSelector";
+import { CompactBanner } from "./compact/CompactBanner";
+import { CompactErrorBanner } from "./compact/CompactErrorBanner";
 import { useAgentModeStore } from "../stores/agentModeStore";
 
 interface ChatViewProps {

@@ -12,23 +12,24 @@ import {
   CONTEXT_WARN_THRESHOLD,
   CONTEXT_DANGER_THRESHOLD,
 } from "../config/constants";
-import { type ChatError, formatRetryAfter } from "../chat/chatErrors";
+import { type ChatError, formatRetryAfter } from "../chat/core/chatErrors";
 import type {
   Message,
   Conversation,
   TokenUsage,
   ContextUsage,
-} from "../chat/chatTypes";
+} from "../chat/core/chatTypes";
 export type {
   Message,
   ToolCall,
   Conversation,
   TokenUsage,
   ContextUsage,
-} from "../chat/chatTypes";
+} from "../chat/core/chatTypes";
 import { PersistQueue } from "../utils/persistQueue";
 import { useAgentModeStore } from "./agentModeStore";
-import { useProviderStore, type ModelConfig } from "./providerStore";
+import { useProviderStore } from "./providerStore";
+import type { ModelConfig } from "../settings/provider/types";
 
 const persistQueue = new PersistQueue();
 

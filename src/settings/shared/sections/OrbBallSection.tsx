@@ -1,14 +1,14 @@
 import { useEffect, useMemo } from "react";
 import { Form } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { SettingsGroup } from "./SettingsGroup";
+import { SettingsGroup } from "../layout/SettingsGroup";
 import {
   ORB_BALL_SETTINGS,
   MASCOT_RENDERER_SETTING,
   MASCOT_COLOR_SETTING,
-} from "../core/fieldDefinitions";
-import { getDefinitionsByGroup } from "../core/fieldRegistry";
-import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
+} from "../../core/field/fieldDefinitions";
+import { getDefinitionsByGroup } from "../../core/field/fieldRegistry";
+import { useConfPatchHandlers } from "../../core/useConfPatchHandlers";
 
 const MASCOT_FIXED_SETTINGS = [MASCOT_RENDERER_SETTING, MASCOT_COLOR_SETTING];
 

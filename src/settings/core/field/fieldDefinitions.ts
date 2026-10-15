@@ -1,8 +1,11 @@
 import { defineSetting, defineSection } from "./fieldRegistry";
-import { ThemeRadioRender } from "../shared/ThemeRadioRender";
-import { RendererSelectRender } from "../shared/RendererSelectRender";
-import { MascotColorGroupRender } from "../shared/MascotColorGroupRender";
-import { SHORTCUT_DEFINITIONS, DEFAULT_KEYBINDINGS } from "./shortcutTypes";
+import { ThemeRadioRender } from "../../shared/renderers/ThemeRadioRender";
+import { RendererSelectRender } from "../../shared/renderers/RendererSelectRender";
+import { MascotColorGroupRender } from "../../shared/renderers/MascotColorGroupRender";
+import {
+  SHORTCUT_DEFINITIONS,
+  DEFAULT_KEYBINDINGS,
+} from "../types/shortcutTypes";
 import { createMascotCapabilityVisible } from "@/mascot";
 import {
   COMPACTION_THRESHOLD_PERCENT,

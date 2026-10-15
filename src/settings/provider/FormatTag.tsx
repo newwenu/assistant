@@ -4,7 +4,7 @@ import { getApiFormatByType } from "@/stores/providerStore";
 import {
   getProviderFormatLabel,
   getProviderFormatColor,
-} from "../core/providerFormatRegistry";
+} from "../core/provider/providerFormatRegistry";
 
 interface FormatTagProps {
   type: string;

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Message } from "../../chat/chatTypes";
+import type { Message } from "../../chat/core/chatTypes";
 import { MESSAGES_PAGE_SIZE } from "../../config/constants";
 
 const REFRESH_INTERVAL_MS = 15000;

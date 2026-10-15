@@ -1,6 +1,6 @@
 import { Select, Typography } from "antd";
 import { translateKey } from "@/i18n";
-import type { FieldRenderProps } from "../core/fieldSchema";
+import type { FieldRenderProps } from "../../core/types/fieldSchema";
 import { getAllRendererMetas, asRendererId } from "@/mascot";
 
 const { Text } = Typography;

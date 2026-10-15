@@ -4,9 +4,9 @@ import type {
   Conversation,
   TokenUsage,
   ContextUsage,
-} from "../chat/chatTypes";
-import type { ChatError } from "../chat/chatErrors";
-import { ChatErrorCode, toChatError } from "../chat/chatErrors";
+} from "../chat/core/chatTypes";
+import type { ChatError } from "../chat/core/chatErrors";
+import { ChatErrorCode, toChatError } from "../chat/core/chatErrors";
 import { CHAT_AUTO_TITLE_LENGTH } from "../config/constants";
 
 export type ChatPhase =

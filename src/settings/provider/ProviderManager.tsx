@@ -5,20 +5,23 @@ import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
 import {
   useProviderStore,
-  type Provider,
-  type ProviderPreset,
-  type ApiFormat,
   API_FORMATS,
   getApiFormatByType,
 } from "@/stores/providerStore";
+import type {
+  Provider,
+  ProviderInput,
+  ProviderPreset,
+  ApiFormat,
+} from "./types";
 import { FormatTag } from "./FormatTag";
 import { AddProviderDialog } from "./AddProviderDialog";
 import { ConnectDialog } from "./ConnectDialog";
 import {
   EntityListPageShell,
   type EntityListSectionConfig,
-} from "../shared/EntityListPageShell";
-import { getProviderFormatLabel } from "../core/providerFormatRegistry";
+} from "../shared/layout/EntityListPageShell";
+import { getProviderFormatLabel } from "../core/provider/providerFormatRegistry";
 
 export const ProviderManager: React.FC = () => {
   const { t } = useTranslation();
@@ -78,7 +81,7 @@ export const ProviderManager: React.FC = () => {
     [modal, providerStore, t],
   );
 
-  const handleConnect = async (input: Record<string, unknown>) => {
+  const handleConnect = async (input: ProviderInput) => {
     await providerStore.saveProvider(input);
     setConnectOpen(false);
     setConnectPreset(null);

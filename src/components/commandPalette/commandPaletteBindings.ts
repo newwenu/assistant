@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { IS_MAC } from "@/settings/core/shortcutTypes";
+import { IS_MAC } from "@/settings/core/types/shortcutTypes";
 
 export function useCommandPaletteShortcut(
   binding: string | undefined,

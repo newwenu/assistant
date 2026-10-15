@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Typography, Tag } from "antd";
 import { useTranslation } from "react-i18next";
-import type { SettingFieldProps } from "../core/fieldRegistry";
+import type { SettingFieldProps } from "../../core/field/fieldRegistry";
 import { ShortcutRecorder } from "./ShortcutRecorder";
 import {
   detectConflicts,
@@ -9,7 +9,7 @@ import {
   DEFAULT_KEYBINDINGS,
   normalizeBinding,
   type ConflictInfo,
-} from "../core/shortcutTypes";
+} from "../../core/types/shortcutTypes";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 const { Text } = Typography;

@@ -9,7 +9,7 @@ import {
   defineSetting,
   type SettingDefinition,
   type ConfGroup,
-} from "@/settings/core/fieldRegistry";
+} from "@/settings/core/field/fieldRegistry";
 
 interface RendererEntry {
   meta: RendererMeta;

@@ -3,9 +3,9 @@ import { Modal, Typography } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
-import { type ApiFormat, type ProviderPreset } from "@/stores/providerStore";
-import { getAllProviderFormats } from "../core/providerFormatRegistry";
-import { getPresetsByFormat } from "../core/providerPresetRegistry";
+import type { ApiFormat, ProviderPreset } from "./types";
+import { getAllProviderFormats } from "../core/provider/providerFormatRegistry";
+import { getPresetsByFormat } from "../core/provider/providerPresetRegistry";
 
 interface AddProviderDialogProps {
   open: boolean;

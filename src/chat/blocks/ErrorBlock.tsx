@@ -6,7 +6,7 @@ import {
   ChatErrorCode,
   getErrorDisplay,
   formatRetryAfter,
-} from "../chatErrors";
+} from "../core/chatErrors";
 import css from "./ErrorBlock.module.css";
 
 interface ErrorBlockProps {

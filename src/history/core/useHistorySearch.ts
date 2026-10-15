@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Conversation } from "../../chat/chatTypes";
+import type { Conversation } from "../../chat/core/chatTypes";
 
 interface UseHistorySearchReturn {
   searchQuery: string;

@@ -15,8 +15,8 @@ import type {
   FieldContext,
   DynamicString,
   FieldActionCallbacks,
-} from "../core/fieldSchema";
-import { getSettingTypeRenderer } from "../core/fieldRegistry";
+} from "../../core/types/fieldSchema";
+import { getSettingTypeRenderer } from "../../core/field/fieldRegistry";
 
 function resolveDynamic(
   value: DynamicString | undefined,

@@ -2,7 +2,7 @@ import React from "react";
 import { Button, Typography } from "antd";
 import { CloseOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useChatStore } from "../stores/chatStore";
+import { useChatStore } from "../../stores/chatStore";
 import css from "./CompactErrorBanner.module.css";
 
 export const CompactErrorBanner: React.FC = () => {

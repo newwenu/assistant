@@ -2,15 +2,21 @@ import { useEffect, useRef } from "react";
 import { Form, message } from "antd";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { translateKey } from "@/i18n";
-import type { SettingDefinition, ConfGroup } from "../core/fieldRegistry";
+import type {
+  SettingDefinition,
+  ConfGroup,
+} from "../../core/field/fieldRegistry";
 import {
   getDefinitionsByGroup,
   INTERMEDIATE_TYPES,
-} from "../core/fieldRegistry";
-import { runSideEffects } from "../core/sideEffectRegistry";
+} from "../../core/field/fieldRegistry";
+import { runSideEffects } from "../../core/sideEffectRegistry";
 import { SettingField } from "./SettingField";
-import { toConfRecord, optimisticConfUpdate } from "../core/settingsDispatcher";
-import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
+import {
+  toConfRecord,
+  optimisticConfUpdate,
+} from "../../core/settingsDispatcher";
+import { useConfPatchHandlers } from "../../core/useConfPatchHandlers";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 interface SettingsGroupProps {

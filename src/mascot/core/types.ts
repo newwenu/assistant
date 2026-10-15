@@ -95,13 +95,16 @@ export interface GifRendererConfig {
   borderRadius?: number;
 }
 
+export type RendererConfig =
+  RiveRendererConfig | SvgRendererConfig | GifRendererConfig;
+
 export interface MascotRendererProps {
   face: MascotFace;
   size?: number | string;
   visemeCode?: string;
   primaryColor?: number | null;
   secondaryColor?: number | null;
-  rendererConfig?: Record<string, unknown>;
+  rendererConfig?: RendererConfig;
 }
 
 export interface ChatFacePolicy {

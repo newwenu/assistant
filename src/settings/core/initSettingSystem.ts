@@ -1,7 +1,7 @@
-import { registerSettingType } from "./fieldRegistry";
+import { registerSettingType } from "./field/fieldRegistry";
 import { registerSideEffect } from "./sideEffectRegistry";
-import { AssetPickerField } from "../shared/AssetPickerField";
-import { KeybindingField } from "../shared/KeybindingField";
+import { AssetPickerField } from "../shared/renderers/AssetPickerField";
+import { KeybindingField } from "../shared/renderers/KeybindingField";
 import { dispatchThemeChanged } from "./settingsDispatcher";
 
 export function initSettingSystem(): void {

@@ -3,16 +3,16 @@ import { Input, Button, Typography, message } from "antd";
 import { SearchOutlined, UndoOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { SettingsGroup } from "../shared/SettingsGroup";
-import { SettingsSection } from "../shared/SettingsSection";
-import { SettingsPageShell } from "../shared/SettingsPageShell";
-import { SHORTCUT_SETTINGS } from "../core/fieldDefinitions";
+import { SettingsGroup } from "../shared/layout/SettingsGroup";
+import { SettingsSection } from "../shared/layout/SettingsSection";
+import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
+import { SHORTCUT_SETTINGS } from "../core/field/fieldDefinitions";
 import {
   SHORTCUT_DEFINITIONS,
   SHORTCUT_GROUPS,
   DEFAULT_KEYBINDINGS,
   formatBinding,
-} from "../core/shortcutTypes";
+} from "../core/types/shortcutTypes";
 
 export const ShortcutSettings: React.FC = () => {
   const { t } = useTranslation();

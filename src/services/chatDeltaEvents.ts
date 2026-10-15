@@ -8,13 +8,13 @@ import {
   createSeqDedupFilter,
   textChunkScheduler,
   type CoalescibleDelta,
-} from "../chat/streamCoalescer";
+} from "../chat/core/streamCoalescer";
 import { useChatStore } from "../stores/chatStore";
 import type {
   ConversationTerminatedPayload,
   ConversationCompactFailedPayload,
   ConversationUnlockedPayload,
-} from "../chat/chatTypes";
+} from "../chat/core/chatTypes";
 
 const CHAT_DELTA_EVENT = "chat-delta";
 

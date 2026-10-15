@@ -10,8 +10,14 @@ import { WINDOW_MAIN, WINDOW_ORB } from "@/config/constants";
 import { useProviderStore } from "@/stores/providerStore";
 import { useThemeStore } from "@/stores/themeStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { AppConf, OrbConf, MascotConf } from "@/stores/settingsStore";
-import type { ConfGroup } from "./fieldRegistry";
+import type {
+  AppConf,
+  OrbConf,
+  MascotConf,
+} from "@/settings/core/types/confTypes";
+import type { ProviderInput } from "@/settings/provider/types";
+import type { RendererConfig } from "@/mascot/core/types";
+import type { ConfGroup } from "./field/fieldRegistry";
 
 const CONF_KEY_MAP: Record<ConfGroup, "appConf" | "orbConf" | "mascotConf"> = {
   app: "appConf",
@@ -20,6 +26,14 @@ const CONF_KEY_MAP: Record<ConfGroup, "appConf" | "orbConf" | "mascotConf"> = {
 };
 
 type ConfUnion = AppConf | OrbConf | MascotConf;
+
+export type ConfOf<G extends ConfGroup> = G extends "app"
+  ? AppConf
+  : G extends "orb"
+    ? OrbConf
+    : G extends "mascot"
+      ? MascotConf
+      : never;
 
 export function toConfRecord(
   conf: ConfUnion | null,
@@ -42,7 +56,7 @@ export function optimisticConfUpdate(
   });
 }
 
-export function buildRendererConfig(conf: MascotConf): Record<string, unknown> {
+export function buildRendererConfig(conf: MascotConf): RendererConfig {
   const renderer = conf.renderer ?? "rive";
   return {
     idlePoseRotation: conf.rive_idle_pose_rotation,
@@ -54,19 +68,27 @@ export function buildRendererConfig(conf: MascotConf): Record<string, unknown> {
 
 export function buildMascotPatch(
   renderer: string,
-  rendererConfig?: Record<string, unknown>,
-): Record<string, unknown> {
-  const patch: Record<string, unknown> = { renderer };
+  rendererConfig?: RendererConfig,
+): Partial<MascotConf> {
+  const patch: Partial<MascotConf> = {
+    renderer: renderer,
+  };
   if (rendererConfig) {
-    if (rendererConfig.idlePoseRotation !== undefined)
+    if (
+      "idlePoseRotation" in rendererConfig &&
+      rendererConfig.idlePoseRotation !== undefined
+    )
       patch.rive_idle_pose_rotation = rendererConfig.idlePoseRotation;
-    if (rendererConfig.animated !== undefined)
+    if ("animated" in rendererConfig && rendererConfig.animated !== undefined)
       patch.svg_animated = rendererConfig.animated;
-    if (rendererConfig.src !== undefined) {
+    if ("src" in rendererConfig && rendererConfig.src !== undefined) {
       if (renderer === "rive") patch.rive_src = rendererConfig.src;
       else patch.gif_src = rendererConfig.src;
     }
-    if (rendererConfig.borderRadius !== undefined)
+    if (
+      "borderRadius" in rendererConfig &&
+      rendererConfig.borderRadius !== undefined
+    )
       patch.gif_border_radius = rendererConfig.borderRadius;
   }
   return patch;
@@ -92,12 +114,12 @@ async function emitSettingEventToPeers(
   }
 }
 
-export async function dispatchProviderSaved(provider: Record<string, unknown>) {
+export async function dispatchProviderSaved(provider: ProviderInput) {
   await invoke("save_provider", { provider });
   await useProviderStore.getState().loadProviders();
   await emitSettingEventToPeers(SettingEvent.ProviderChanged, {
     action: SettingAction.ProviderSaved,
-    id: provider.id as string,
+    id: provider.id,
     value: provider,
   });
 }
@@ -128,9 +150,9 @@ export async function dispatchThemeChanged(mode: "system" | "light" | "dark") {
   });
 }
 
-export async function dispatchConfPatch(
-  group: ConfGroup,
-  patch: Record<string, unknown>,
+export async function dispatchConfPatch<G extends ConfGroup>(
+  group: G,
+  patch: Partial<ConfOf<G>>,
 ) {
   try {
     await invoke("patch_conf", { group, patch });

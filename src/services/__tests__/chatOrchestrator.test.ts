@@ -6,8 +6,8 @@ import type {
   ChatOrchestratorDeps,
   ChatOrchestrator,
 } from "../chatOrchestrator";
-import type { TokenUsage } from "../../chat/chatTypes";
-import { ChatErrorCode } from "../../chat/chatErrors";
+import type { TokenUsage } from "../../chat/core/chatTypes";
+import { ChatErrorCode } from "../../chat/core/chatErrors";
 
 vi.mock("../chatService", () => ({
   chatService: {

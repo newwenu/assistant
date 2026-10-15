@@ -21,7 +21,7 @@ import { aggregateCommands } from "./commandAggregation";
 import { useCommandPaletteShortcut } from "./commandPaletteBindings";
 import { COMMAND_PALETTE_MAX_PER_CATEGORY } from "@/config/constants";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { IS_MAC } from "@/settings/core/shortcutTypes";
+import { IS_MAC } from "@/settings/core/types/shortcutTypes";
 import styles from "./CommandPalette.module.css";
 
 export const CommandPalette: React.FC = () => {

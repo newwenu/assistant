@@ -2,22 +2,24 @@ import React, { useState, useEffect, useCallback, type RefObject } from "react";
 import { Select } from "antd";
 import { DownOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import type { Provider } from "../stores/providerStore";
+import type { Provider } from "../../settings/provider/types";
 
-interface ProviderSelectorProps {
+interface ModelSelectorProps {
   providerId: string | null;
+  modelId: string;
+  onModelChange: (modelId: string) => void;
   providers: Provider[];
-  onProviderChange: (providerId: string) => void;
   width?: number;
   variant?: "default" | "chip";
   openRef?: RefObject<boolean>;
 }
 
-export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
+export const ModelSelector: React.FC<ModelSelectorProps> = ({
   providerId,
+  modelId,
+  onModelChange,
   providers,
-  onProviderChange,
-  width = 140,
+  width = 160,
   variant = "default",
   openRef,
 }) => {
@@ -41,23 +43,35 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
     return () => window.removeEventListener("orb-close-menus", handler);
   }, [openRef]);
 
-  if (providers.length <= 1) return null;
+  const currentProvider = providers.find((p) => p.id === providerId);
+  let models: { id: string; name: string }[] = [];
+  if (currentProvider) {
+    try {
+      models = JSON.parse(currentProvider.models || "[]") as {
+        id: string;
+        name: string;
+      }[];
+    } catch {
+      models = [];
+    }
+  }
 
   if (variant === "chip") {
     return (
       <Select
-        value={providerId || undefined}
-        onChange={onProviderChange}
-        placeholder={t("chat.provider.select_placeholder")}
-        className="orb-provider-chip"
+        value={modelId || undefined}
+        onChange={onModelChange}
+        placeholder={t("chat.model.placeholder")}
+        disabled={!providerId}
+        className="orb-model-chip"
         popupMatchSelectWidth={false}
         classNames={{ popup: { root: "orb-dropdown" } }}
         size="small"
         open={open}
         onOpenChange={handleOpenChange}
-        options={providers.map((p) => ({
-          value: p.id,
-          label: p.name,
+        options={models.map((m) => ({
+          value: m.id,
+          label: m.name || m.id,
         }))}
         suffix={<DownOutlined style={{ fontSize: 10 }} />}
       />
@@ -66,14 +80,15 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
 
   return (
     <Select
-      value={providerId || undefined}
-      onChange={onProviderChange}
-      placeholder={t("chat.provider.select_placeholder")}
+      value={modelId || undefined}
+      onChange={onModelChange}
+      placeholder={t("chat.model.select_placeholder")}
+      disabled={!providerId}
       style={{ width }}
       size="small"
-      options={providers.map((p) => ({
-        value: p.id,
-        label: p.name,
+      options={models.map((m) => ({
+        value: m.id,
+        label: m.name || m.id,
       }))}
     />
   );

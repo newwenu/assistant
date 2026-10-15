@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Select } from "antd";
 import { DownOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useAgentModeStore } from "../stores/agentModeStore";
+import { useAgentModeStore } from "../../stores/agentModeStore";
 
 interface ModeSelectorProps {
   variant?: "default" | "chip";

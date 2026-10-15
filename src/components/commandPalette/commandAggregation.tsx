@@ -17,9 +17,9 @@ import {
 import {
   getAllDefinitions,
   getAllSections,
-} from "@/settings/core/fieldRegistry";
-import type { ConfGroup } from "@/settings/core/fieldRegistry";
-import "@/settings/core/fieldDefinitions";
+} from "@/settings/core/field/fieldRegistry";
+import type { ConfGroup } from "@/settings/core/field/fieldRegistry";
+import "@/settings/core/field/fieldDefinitions";
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
   dispatchConfPatch,

@@ -1,15 +1,21 @@
 import { useCallback } from "react";
-import type { ConfGroup } from "./fieldRegistry";
-import { dispatchConfPatch, optimisticConfUpdate } from "./settingsDispatcher";
+import type { ConfGroup } from "./field/fieldRegistry";
+import {
+  dispatchConfPatch,
+  optimisticConfUpdate,
+  type ConfOf,
+} from "./settingsDispatcher";
 
-export interface PatchHandlers {
-  onPatch: (patch: Record<string, unknown>) => Promise<void>;
-  onPatchComplete: (patch: Record<string, unknown>) => Promise<void>;
+export interface PatchHandlers<G extends ConfGroup = ConfGroup> {
+  onPatch: (patch: Partial<ConfOf<G>>) => Promise<void>;
+  onPatchComplete: (patch: Partial<ConfOf<G>>) => Promise<void>;
 }
 
-export function useConfPatchHandlers(group: ConfGroup): PatchHandlers {
+export function useConfPatchHandlers<G extends ConfGroup>(
+  group: G,
+): PatchHandlers<G> {
   const onPatch = useCallback(
-    async (patch: Record<string, unknown>) => {
+    async (patch: Partial<ConfOf<G>>) => {
       for (const [key, value] of Object.entries(patch)) {
         optimisticConfUpdate(group, key, value);
       }
@@ -19,7 +25,7 @@ export function useConfPatchHandlers(group: ConfGroup): PatchHandlers {
   );
 
   const onPatchComplete = useCallback(
-    async (patch: Record<string, unknown>) => {
+    async (patch: Partial<ConfOf<G>>) => {
       await dispatchConfPatch(group, patch);
     },
     [group],

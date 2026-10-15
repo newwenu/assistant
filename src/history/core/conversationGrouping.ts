@@ -1,4 +1,4 @@
-import type { Conversation } from "../../chat/chatTypes";
+import type { Conversation } from "../../chat/core/chatTypes";
 
 export interface ConversationGroup {
   key: string;

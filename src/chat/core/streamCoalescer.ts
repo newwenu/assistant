@@ -1,4 +1,4 @@
-import { STREAM_COALESCE_TIMER_MS } from "../config/constants";
+import { STREAM_COALESCE_TIMER_MS } from "../../config/constants";
 
 export interface CoalescibleDelta {
   conversation_id: string;

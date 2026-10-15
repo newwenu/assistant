@@ -1,12 +1,12 @@
 import { useEffect } from "react";
 import { Form } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { OrbBallSection } from "../shared/OrbBallSection";
-import { OrbPanelSection } from "../shared/OrbPanelSection";
-import { SettingsSection } from "../shared/SettingsSection";
-import { SettingsPageShell } from "../shared/SettingsPageShell";
-import { SettingsGroup } from "../shared/SettingsGroup";
-import { THEME_SETTING } from "../core/fieldDefinitions";
+import { OrbBallSection } from "../shared/sections/OrbBallSection";
+import { OrbPanelSection } from "../shared/sections/OrbPanelSection";
+import { SettingsSection } from "../shared/layout/SettingsSection";
+import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
+import { SettingsGroup } from "../shared/layout/SettingsGroup";
+import { THEME_SETTING } from "../core/field/fieldDefinitions";
 
 export const AppearanceSettings: React.FC = () => {
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);

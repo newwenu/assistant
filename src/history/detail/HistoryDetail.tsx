@@ -6,7 +6,7 @@ import {
   ExportOutlined,
   MessageOutlined,
 } from "@ant-design/icons";
-import type { Conversation, Message } from "../../chat/chatTypes";
+import type { Conversation, Message } from "../../chat/core/chatTypes";
 import {
   VIRTUAL_SCROLL_THRESHOLD,
   VIRTUAL_SCROLL_OVERSCAN,

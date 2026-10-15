@@ -10,6 +10,7 @@ export type {
   BuiltinFace,
   MascotRendererId,
   MascotRendererProps,
+  RendererConfig,
   RendererMeta,
   RendererCapabilities,
   RendererSettingDef,

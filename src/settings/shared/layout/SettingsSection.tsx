@@ -1,7 +1,7 @@
 import { Typography } from "antd";
 import { translateKey } from "@/i18n";
 import type React from "react";
-import { getSectionById } from "../core/fieldRegistry";
+import { getSectionById } from "../../core/field/fieldRegistry";
 
 interface SettingsSectionProps {
   id: string;

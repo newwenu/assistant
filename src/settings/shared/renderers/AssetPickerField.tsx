@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
-import type { SettingFieldProps } from "../core/fieldSchema";
+import type { SettingFieldProps } from "../../core/types/fieldSchema";
 
 interface InstallAssetResult {
   installed_path: string;

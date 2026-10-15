@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { message } from "antd";
-import type { Message } from "../chat/chatTypes";
+import type { Message } from "../chat/core/chatTypes";
 import { MESSAGES_PAGE_SIZE } from "../config/constants";
 import { useChatStore } from "../stores/chatStore";
 import { PersistQueue } from "../utils/persistQueue";

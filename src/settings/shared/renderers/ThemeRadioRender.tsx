@@ -1,6 +1,6 @@
 import { Radio } from "antd";
 import { translateKey } from "@/i18n";
-import type { FieldRenderProps } from "../core/fieldSchema";
+import type { FieldRenderProps } from "../../core/types/fieldSchema";
 
 const THEME_OPTIONS = [
   { labelKey: "settings.appearance.theme.options.system", value: "system" },

@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Descriptions, Button, Typography } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
-import type { FieldSchema } from "../core/fieldSchema";
-import { SettingsSection } from "../shared/SettingsSection";
-import { SettingsPageShell } from "../shared/SettingsPageShell";
+import type { FieldSchema } from "../core/types/fieldSchema";
+import { SettingsSection } from "../shared/layout/SettingsSection";
+import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
 
 export const AboutSettings: React.FC = () => {
   const { t } = useTranslation();

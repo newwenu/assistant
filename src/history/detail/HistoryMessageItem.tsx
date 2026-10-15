@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { Typography, Tag, Popconfirm } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
-import type { Message } from "../../chat/chatTypes";
+import type { Message } from "../../chat/core/chatTypes";
 import css from "./HistoryMessageItem.module.css";
 
 interface HistoryMessageItemProps {

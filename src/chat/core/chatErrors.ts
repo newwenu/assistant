@@ -1,4 +1,4 @@
-import { translateKey } from "../i18n";
+import { translateKey } from "../../i18n";
 
 export enum ChatErrorCode {
   ApiKeyMissing = "ApiKeyMissing",

@@ -2,7 +2,7 @@ import React, { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Empty, Spin } from "antd";
 import { RightOutlined, DownOutlined } from "@ant-design/icons";
-import type { Conversation } from "../../chat/chatTypes";
+import type { Conversation } from "../../chat/core/chatTypes";
 import {
   groupConversations,
   type ConversationGroup,

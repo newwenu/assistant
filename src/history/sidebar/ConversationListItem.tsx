@@ -11,7 +11,7 @@ import {
   LockOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
-import type { Conversation } from "../../chat/chatTypes";
+import type { Conversation } from "../../chat/core/chatTypes";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
 import css from "./ConversationListItem.module.css";
 

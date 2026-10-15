@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Tag } from "antd";
 import { useTranslation } from "react-i18next";
-import { formatBinding } from "../core/shortcutTypes";
+import { formatBinding } from "../../core/types/shortcutTypes";
 
 interface ShortcutRecorderProps {
   currentBinding: string;

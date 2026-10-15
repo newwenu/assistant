@@ -1,23 +1,9 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-
-export interface AgentMode {
-  id: string;
-  name: string;
-  description: string;
-  kind: "default" | "quick" | "deep" | "custom";
-  prompt: string;
-  model: string | null;
-  temperature: number | null;
-  max_tokens: number | null;
-  reasoning_enabled: boolean | null;
-  reasoning_effort: string | null;
-  tools: string[];
-  presentation_rank: number;
-  is_builtin: boolean;
-  created_at: number;
-  updated_at: number;
-}
+export type { AgentMode, AgentModeInput } from "@/settings/agentMode/types";
+export { toModeInput } from "@/settings/agentMode/types";
+import type { AgentMode } from "@/settings/agentMode/types";
+import { toModeInput } from "@/settings/agentMode/types";
 
 interface AgentModeState {
   modes: AgentMode[];
@@ -59,23 +45,7 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
   },
 
   saveMode: async (mode: Partial<AgentMode> & { id?: string }) => {
-    const payload: Record<string, unknown> = {
-      id: mode.id || "",
-      name: mode.name || "",
-      description: mode.description || "",
-      kind: mode.kind || "custom",
-      prompt: mode.prompt || "",
-      model: mode.model ?? null,
-      temperature: mode.temperature ?? null,
-      max_tokens: mode.max_tokens ?? null,
-      reasoning_enabled: mode.reasoning_enabled ?? null,
-      reasoning_effort: mode.reasoning_effort ?? null,
-      tools: mode.tools || [],
-      presentation_rank: mode.presentation_rank ?? 99,
-      is_builtin: mode.is_builtin ?? false,
-      created_at: mode.created_at ?? Date.now(),
-    };
-    await invoke("save_agent_mode", { mode: payload });
+    await invoke("save_agent_mode", { mode: toModeInput(mode) });
     await get().loadModes();
   },
 

@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { ColorPicker, Button, Space, message } from "antd";
 import type { AggregationColor } from "antd/es/color-picker/color";
 import { useTranslation } from "react-i18next";
-import type { FieldRenderProps } from "../core/fieldSchema";
-import { dispatchConfPatch } from "../core/settingsDispatcher";
+import type { FieldRenderProps } from "../../core/types/fieldSchema";
+import { dispatchConfPatch } from "../../core/settingsDispatcher";
 import { getAllRendererMetas, asRendererId } from "@/mascot";
 
 function toHex(

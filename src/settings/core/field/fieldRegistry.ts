@@ -10,7 +10,7 @@ import type {
   DynamicString,
   FieldAction,
   FieldActionCallbacks,
-} from "./fieldSchema";
+} from "../types/fieldSchema";
 
 export type {
   SettingType,

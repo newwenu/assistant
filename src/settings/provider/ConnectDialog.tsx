@@ -3,18 +3,18 @@ import { Modal, Form, Button, Typography, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
-import {
-  type Provider,
-  type ProviderPreset,
-  type ModelConfig,
-  type ApiFormat,
-  getApiFormatByType,
-  getFormatInfo,
-} from "@/stores/providerStore";
-import { getProviderPreset } from "../core/providerPresetRegistry";
-import { getProviderFormatLabel } from "../core/providerFormatRegistry";
-import type { FieldSchema, FieldContext } from "../core/fieldSchema";
-import { SettingField } from "../shared/SettingField";
+import { getApiFormatByType, getFormatInfo } from "@/stores/providerStore";
+import type {
+  Provider,
+  ProviderInput,
+  ProviderPreset,
+  ModelConfig,
+  ApiFormat,
+} from "./types";
+import { getProviderPreset } from "../core/provider/providerPresetRegistry";
+import { getProviderFormatLabel } from "../core/provider/providerFormatRegistry";
+import type { FieldSchema, FieldContext } from "../core/types/fieldSchema";
+import { SettingField } from "../shared/layout/SettingField";
 import { FormatTag } from "./FormatTag";
 
 interface ConnectDialogProps {
@@ -23,7 +23,7 @@ interface ConnectDialogProps {
   customFormat: ApiFormat | null;
   open: boolean;
   onClose: () => void;
-  onSubmit: (input: Record<string, unknown>) => void;
+  onSubmit: (input: ProviderInput) => void;
 }
 
 export const ConnectDialog: React.FC<ConnectDialogProps> = ({
@@ -203,7 +203,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
     }
     setSaving(true);
     try {
-      const input: Record<string, unknown> = {
+      const input: ProviderInput = {
         id: provider?.id || "",
         name: values.name || (isPreset && preset ? preset.label : ""),
         type: isEdit

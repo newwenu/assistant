@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { Message, ToolCall } from "../../stores/chatStore";
 import type { RetryNotification } from "../../services/chatOrchestrator";
 import { ErrorBlock } from "../blocks/ErrorBlock";
-import { getErrorDisplay, ChatErrorCode } from "../chatErrors";
+import { getErrorDisplay, ChatErrorCode } from "../core/chatErrors";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
 import { ToolCallBlock } from "../blocks/ToolCallBlock";
 import { EditBlock } from "../blocks/EditBlock";
