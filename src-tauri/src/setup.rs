@@ -52,7 +52,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    handle.manage(crate::chat_tasks::ChatTasks::new());
+    handle.manage(assistant_agent::chat_tasks::ChatTasks::new());
 
     tray::create_tray(handle);
 

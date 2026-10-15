@@ -2,6 +2,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   ChatOrchestrator,
   ChatDeltaPayload,
+  ChatStreamStartPayload,
 } from "../services/chatOrchestrator";
 import {
   createChatDeltaCoalescer,
@@ -41,6 +42,17 @@ export function subscribeChatDeltaEvents(): () => void {
 
   const seqDedup = createSeqDedupFilter();
 
+  track(
+    listen("chat-stream-start", (event) => {
+      if (disposed) return;
+      const payload = event.payload as ChatStreamStartPayload;
+      const store = useChatStore.getState();
+      if (store.currentConversationId === payload.conversation_id) {
+        store.setActiveAttemptId(payload.attempt_id, payload.message_id);
+      }
+    }),
+  );
+
   const coalescer = createChatDeltaCoalescer<CoalescibleDelta>(
     (event) => {
       if (event.delta) {
@@ -67,6 +79,7 @@ export function subscribeChatDeltaEvents(): () => void {
       if (payload.delta_text) {
         coalescer.push({
           conversation_id: payload.conversation_id,
+          attempt_id: payload.attempt_id,
           message_id: payload.message_id,
           seq: payload.seq,
           delta: payload.delta_text,
@@ -86,6 +99,7 @@ export function subscribeChatDeltaEvents(): () => void {
         coalescer.flush();
         const nonTextPayload: ChatDeltaPayload = {
           conversation_id: payload.conversation_id,
+          attempt_id: payload.attempt_id,
           message_id: payload.message_id,
           seq: payload.seq,
           delta_reasoning: payload.delta_reasoning,

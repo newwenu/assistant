@@ -15,6 +15,8 @@ export type ChatPhase =
 export interface ChatStatePort {
   beginSend: (messages: Message[], assistantMsgId: string) => void;
   cancelStreaming: () => void;
+  setActiveAttemptId: (attemptId: string, realMessageId: string) => void;
+  clearActiveAttemptId: () => void;
   appendDelta: (delta: string) => void;
   setReasoningStreaming: (streaming: boolean) => void;
   appendReasoningDelta: (messageId: string, delta: string) => void;
@@ -34,6 +36,7 @@ export interface ChatEnvPort {
   getActiveConversationId: () => string | null;
   getIsStreaming: () => boolean;
   getStreamingMessageId: () => string | null;
+  getActiveAttemptId: () => string | null;
   getMessages: () => Message[];
   getConversations: () => Conversation[];
   getSelectedModeId: () => string | null;
@@ -60,6 +63,7 @@ export interface RetryNotification {
 
 export interface ChatDeltaPayload {
   conversation_id: string;
+  attempt_id?: string;
   message_id: string;
   seq?: number;
   delta_text?: string;
@@ -71,6 +75,12 @@ export interface ChatDeltaPayload {
   usage?: TokenUsage;
   error?: unknown;
   delta_retry?: RetryNotification;
+}
+
+export interface ChatStreamStartPayload {
+  conversation_id: string;
+  attempt_id: string;
+  message_id: string;
 }
 
 export interface ChatOrchestrator {
@@ -119,6 +129,7 @@ export function createChatOrchestrator(
         if (prevConvId) {
           await chatService.cancelChat(prevConvId).catch(() => {});
         }
+        deps.state.clearActiveAttemptId();
         deps.state.cancelStreaming();
       }
 
@@ -230,6 +241,14 @@ export function createChatOrchestrator(
   }
 
   function handleDeltaEvent(payload: ChatDeltaPayload) {
+    const activeAttemptId = deps.env.getActiveAttemptId();
+
+    if (payload.attempt_id) {
+      if (activeAttemptId === null || payload.attempt_id !== activeAttemptId) {
+        return;
+      }
+    }
+
     if (payload.error) {
       setPhase("error");
       deps.state.errorStream(toChatError(payload.error));

@@ -46,7 +46,9 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             tokens INTEGER,
             timestamp INTEGER NOT NULL,
             parent_id TEXT,
-            is_pinned INTEGER NOT NULL DEFAULT 0
+            is_pinned INTEGER NOT NULL DEFAULT 0,
+            reasoning TEXT,
+            tool_calls_json TEXT
         );
 
         CREATE TABLE IF NOT EXISTS tool_favorites (
@@ -104,6 +106,34 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
         )
         .map_err(|e| e.to_string())?;
         info!("Added is_full column to conversations table");
+    }
+
+    let has_reasoning: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'reasoning'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_reasoning {
+        conn.execute_batch("ALTER TABLE messages ADD COLUMN reasoning TEXT;")
+            .map_err(|e| e.to_string())?;
+        info!("Added reasoning column to messages table");
+    }
+
+    let has_tool_calls_json: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'tool_calls_json'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_tool_calls_json {
+        conn.execute_batch("ALTER TABLE messages ADD COLUMN tool_calls_json TEXT;")
+            .map_err(|e| e.to_string())?;
+        info!("Added tool_calls_json column to messages table");
     }
 
     agent_modes::seed_builtin_modes(&conn)?;

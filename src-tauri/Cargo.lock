@@ -127,10 +127,16 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 name = "assistant-agent"
 version = "0.1.0"
 dependencies = [
+ "assistant-providers",
+ "assistant-storage",
+ "futures",
  "log",
  "proptest",
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -168,8 +174,6 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-sql",
  "tokio",
- "tokio-stream",
- "tokio-util",
  "uuid",
 ]
 

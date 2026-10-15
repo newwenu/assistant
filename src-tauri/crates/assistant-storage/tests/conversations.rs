@@ -19,6 +19,7 @@ fn conv(id: &str) -> ConversationRow {
         generation: 0,
         created_at: 1000,
         updated_at: 1000,
+        is_full: false,
     }
 }
 
@@ -32,6 +33,8 @@ fn msg(id: &str, conv_id: &str, role: &str, content: &str, ts: i64) -> MessageRo
         timestamp: ts,
         parent_id: None,
         is_pinned: false,
+        reasoning: None,
+        tool_calls_json: None,
     }
 }
 
@@ -373,6 +376,8 @@ mod property {
                     timestamp: i as i64,
                     parent_id: None,
                     is_pinned: false,
+                    reasoning: None,
+                    tool_calls_json: None,
                 }).unwrap();
             }
             let count = conversations::get_message_count(&conn, "c1").unwrap();
@@ -409,6 +414,8 @@ mod property {
                 timestamp: 0,
                 parent_id: None,
                 is_pinned: false,
+                reasoning: None,
+                tool_calls_json: None,
             }).unwrap();
 
             let all = conversations::get_conversations(&conn, None).unwrap();

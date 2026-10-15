@@ -61,6 +61,7 @@ interface ChatState {
   isStreaming: boolean;
   streamingContent: string;
   streamingMessageId: string | null;
+  activeAttemptId: string | null;
   isReasoningStreaming: boolean;
   hasMoreMessages: boolean;
   isLoadingMoreMessages: boolean;
@@ -84,6 +85,8 @@ interface ChatState {
   ) => Promise<void>;
   updateModel: (id: string, modelId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
+  setActiveAttemptId: (attemptId: string, realMessageId: string) => void;
+  clearActiveAttemptId: () => void;
   cancelStream: () => Promise<void>;
   appendDelta: (delta: string) => void;
   finishStream: (usage?: TokenUsage) => void;
@@ -119,10 +122,22 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({
         isStreaming: false,
         streamingContent: "",
-        streamingMessageId: null,
         isReasoningStreaming: false,
         retryStatus: null,
       });
+    },
+    setActiveAttemptId: (attemptId: string, realMessageId: string) => {
+      const state = get();
+      set({
+        activeAttemptId: attemptId,
+        streamingMessageId: realMessageId,
+        messages: state.messages.map((m) =>
+          m.id === state.streamingMessageId ? { ...m, id: realMessageId } : m,
+        ),
+      });
+    },
+    clearActiveAttemptId: () => {
+      set({ activeAttemptId: null, streamingMessageId: null });
     },
     appendDelta: (delta: string) => {
       const state = get();
@@ -199,6 +214,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         isStreaming: false,
         streamingContent: "",
         streamingMessageId: null,
+        activeAttemptId: null,
         isReasoningStreaming: false,
         contextUsage: newContextUsage,
         messages: state.streamingMessageId
@@ -260,6 +276,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           isStreaming: false,
           streamingContent: "",
           streamingMessageId: null,
+          activeAttemptId: null,
           isReasoningStreaming: false,
           retryStatus: null,
         });
@@ -277,6 +294,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     getActiveConversationId: () => get().currentConversationId,
     getIsStreaming: () => get().isStreaming,
     getStreamingMessageId: () => get().streamingMessageId,
+    getActiveAttemptId: () => get().activeAttemptId,
     getMessages: () => get().messages,
     getConversations: () => get().conversations,
     getSelectedModeId: () => useAgentModeStore.getState().selectedModeId,
@@ -300,6 +318,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     isStreaming: false,
     streamingContent: "",
     streamingMessageId: null,
+    activeAttemptId: null,
     isReasoningStreaming: false,
     hasMoreMessages: false,
     isLoadingMoreMessages: false,
@@ -368,6 +387,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           isStreaming: false,
           streamingContent: "",
           streamingMessageId: null,
+          activeAttemptId: null,
           isReasoningStreaming: false,
         });
       }
@@ -384,6 +404,7 @@ export const useChatStore = create<ChatState>((set, get) => {
             isStreaming: false,
             streamingContent: "",
             streamingMessageId: null,
+            activeAttemptId: null,
             isReasoningStreaming: false,
             hasMoreMessages:
               (detail.messages || []).length < detail.total_count,
@@ -435,6 +456,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           isStreaming: false,
           streamingContent: "",
           streamingMessageId: null,
+          activeAttemptId: null,
           isReasoningStreaming: false,
         });
       }
@@ -473,6 +495,8 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     sendMessage: (content: string) => orchestrator.send(content),
 
+    setActiveAttemptId: statePort.setActiveAttemptId,
+
     cancelStream: () => orchestrator.cancel(),
 
     appendDelta: statePort.appendDelta,
@@ -508,7 +532,6 @@ export const useChatStore = create<ChatState>((set, get) => {
         set({
           isStreaming: false,
           streamingContent: "",
-          streamingMessageId: null,
           isReasoningStreaming: false,
         });
       }
@@ -626,6 +649,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           isStreaming: false,
           streamingContent: "",
           streamingMessageId: null,
+          activeAttemptId: null,
           isReasoningStreaming: false,
         });
       }
@@ -643,6 +667,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         isStreaming: false,
         streamingContent: "",
         streamingMessageId: null,
+        activeAttemptId: null,
         isReasoningStreaming: false,
       });
     },
@@ -674,6 +699,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           isStreaming: false,
           streamingContent: "",
           streamingMessageId: null,
+          activeAttemptId: null,
         });
       }
     },

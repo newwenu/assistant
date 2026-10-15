@@ -3,6 +3,9 @@ use serde_json::json;
 use tauri::{command, AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
+use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError};
+use assistant_agent::chat_tasks::ChatTasks;
+use assistant_agent::prompt_builder;
 use assistant_providers::base;
 use assistant_storage::{
     agent_modes,
@@ -298,8 +301,7 @@ pub fn manual_compact_conversation(app: AppHandle, conversation_id: String) -> R
     let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
         .ok_or_else(|| "Provider not found".to_string())?;
 
-    let chat_tasks: tauri::State<'_, crate::chat_tasks::ChatTasks> =
-        app.state::<crate::chat_tasks::ChatTasks>();
+    let chat_tasks: tauri::State<'_, ChatTasks> = app.state::<ChatTasks>();
     if chat_tasks.is_running(&conversation_id) {
         return Err("Cannot compact while stream is running".to_string());
     }
@@ -355,7 +357,7 @@ pub(crate) async fn execute_compaction(
 ) -> Result<(), String> {
     use assistant_agent::compaction::{set_terminating, DEFAULT_COMPACT_SUMMARY_PROMPT};
     use assistant_config::app_conf::AppConf;
-    use assistant_providers::base::{ChatMessage, ChatOptions};
+    use assistant_providers::base::{ChatOptions, ProviderError, ProviderErrorPayload};
     use std::time::Duration;
 
     let app_conf = AppConf::load().map_err(|e| e.to_string())?;
@@ -370,49 +372,12 @@ pub(crate) async fn execute_compaction(
         .as_deref()
         .unwrap_or(DEFAULT_COMPACT_SUMMARY_PROMPT);
 
-    let config = super::provider::build_provider_config(&provider_row);
+    let chat_messages =
+        prompt_builder::prepare_messages(detail, &system_prompt, Some(summary_prompt));
+
+    let config = super::provider::build_provider_config(provider_row);
     let adapter = base::create_provider_adapter(config);
     let model = detail.conversation.model_id.clone();
-
-    let mut chat_messages: Vec<ChatMessage> = detail
-        .messages
-        .iter()
-        .filter(|m| m.role != "compact_summary")
-        .map(|m| ChatMessage {
-            role: base::message_role_from_str(&m.role),
-            content: m.content.clone(),
-            tool_calls: None,
-            tool_call_id: None,
-            name: None,
-            is_error: false,
-            thinking_signature: None,
-        })
-        .collect();
-
-    if !system_prompt.is_empty() {
-        chat_messages.insert(
-            0,
-            ChatMessage {
-                role: base::message_role_from_str("system"),
-                content: system_prompt.to_string(),
-                tool_calls: None,
-                tool_call_id: None,
-                name: None,
-                is_error: false,
-                thinking_signature: None,
-            },
-        );
-    }
-
-    chat_messages.push(ChatMessage {
-        role: base::message_role_from_str("user"),
-        content: summary_prompt.to_string(),
-        tool_calls: None,
-        tool_call_id: None,
-        name: None,
-        is_error: false,
-        thinking_signature: None,
-    });
 
     let max_tokens = app_conf.compact_summary_max_tokens as u32;
 
@@ -428,6 +393,9 @@ pub(crate) async fn execute_compaction(
     let stream = adapter
         .chat_completion_stream(&chat_messages, &model, &options)
         .map_err(|e| e.to_string())?;
+
+    let chat_tasks = app.state::<ChatTasks>();
+    let (cancel_token, attempt_id) = chat_tasks.start(conversation_id.to_string());
 
     let summary_msg_id = Uuid::new_v4().to_string();
     {
@@ -445,6 +413,8 @@ pub(crate) async fn execute_compaction(
                 timestamp: now,
                 parent_id: None,
                 is_pinned: false,
+                reasoning: None,
+                tool_calls_json: None,
             },
         )?;
     }
@@ -454,117 +424,186 @@ pub(crate) async fn execute_compaction(
         .ok_or_else(|| "Orb window not found".to_string())?;
 
     let _ = orb_window.emit(
+        "chat-stream-start",
+        json!({
+            "conversation_id": conversation_id,
+            "attempt_id": attempt_id,
+            "message_id": summary_msg_id,
+        }),
+    );
+
+    let _ = orb_window.emit(
         "chat-delta",
         json!({
             "conversation_id": conversation_id,
+            "attempt_id": attempt_id,
             "message_id": summary_msg_id,
             "seq": 0,
             "delta_text": "",
         }),
     );
 
-    let mut summary = String::new();
-    let stream_result: Result<(), String> = {
-        use tokio_stream::StreamExt as TokioStreamExt;
-        let mut stream = stream;
-        let mut seq: u32 = 0;
-        let timeout_res = tokio::time::timeout(Duration::from_secs(30), async {
-            while let Some(result) = TokioStreamExt::next(&mut stream).await {
-                match result {
-                    Ok(delta) => {
-                        if let Some(text) = &delta.delta_text {
-                            summary.push_str(text);
-                        }
-                        seq += 1;
-                        let _ = orb_window.emit(
-                            "chat-delta",
-                            json!({
-                                "conversation_id": conversation_id,
-                                "message_id": summary_msg_id,
-                                "seq": seq,
-                                "delta_text": delta.delta_text,
-                                "finish_reason": delta.finish_reason,
-                            }),
-                        );
-                        if delta.finish_reason.is_some() {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        let _ = orb_window.emit(
-                            "chat-delta",
-                            json!({
-                                "conversation_id": conversation_id,
-                                "message_id": summary_msg_id,
-                                "error": { "code": "provider_error", "message": e.to_string() },
-                            }),
-                        );
-                        return Err(e.to_string());
-                    }
-                }
+    let conv_id = conversation_id.to_string();
+    let msg_id = summary_msg_id.clone();
+    let aid = attempt_id.clone();
+    let orb_win = orb_window.clone();
+
+    let result = chat_runtime::consume_stream(
+        stream,
+        cancel_token,
+        move |seq, delta| {
+            let _ = orb_win.emit(
+                "chat-delta",
+                json!({
+                    "conversation_id": conv_id,
+                    "attempt_id": aid,
+                    "message_id": msg_id,
+                    "seq": seq,
+                    "delta_text": delta.delta_text,
+                    "finish_reason": delta.finish_reason,
+                }),
+            );
+        },
+        Some(Duration::from_secs(30)),
+    )
+    .await;
+
+    chat_tasks.finish(conversation_id);
+
+    match result {
+        Ok(outcome) => {
+            let mut summary = outcome.full_content;
+
+            let max_summary_chars =
+                (assistant_config::constant::MAX_SUMMARY_OUTPUT_TOKENS as usize) * 4;
+            if summary.len() > max_summary_chars {
+                summary.truncate(max_summary_chars);
+                summary.push_str("\n\n[摘要已截断，完整信息请通过 search_history 检索]");
             }
+
+            {
+                let state = app.state::<crate::setup::DbState>();
+                let conn = super::get_db_conn(&state)?;
+
+                let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+
+                conversations::update_message_content(
+                    &tx,
+                    &summary_msg_id,
+                    &summary,
+                    None,
+                    None,
+                    None,
+                )?;
+                conversations::set_conversation_is_full(&tx, conversation_id, true)?;
+
+                let now = chrono::Utc::now().timestamp_millis();
+                let existing = conversations::get_compression_state(&tx, conversation_id)?;
+                let new_count = existing
+                    .as_ref()
+                    .map(|s| s.compression_count + 1)
+                    .unwrap_or(1);
+                let state_row = conversations::CompressionStateRow {
+                    conversation_id: conversation_id.to_string(),
+                    last_compression_at: Some(now),
+                    compression_count: new_count,
+                };
+                conversations::upsert_compression_state(&tx, &state_row)?;
+
+                tx.commit().map_err(|e| e.to_string())?;
+            }
+
+            set_terminating(conversation_id, false);
+
+            let _ = app.emit(
+                "conversation_terminated",
+                json!({
+                    "conversation_id": conversation_id,
+                    "summary": summary,
+                    "is_full": true,
+                }),
+            );
+
+            log::info!(
+                "Conversation {} terminated with summary ({} chars)",
+                conversation_id,
+                summary.len()
+            );
+
             Ok(())
-        })
-        .await;
-        timeout_res.map_err(|_| "Summary generation timed out (30s)".to_string())?
-    };
-
-    if let Err(e) = stream_result {
-        {
-            let state = app.state::<crate::setup::DbState>();
-            let conn = super::get_db_conn(&state)?;
-            conversations::delete_message(&conn, &summary_msg_id)?;
         }
-        return Err(e);
+        Err(StreamError::Cancelled(partial)) => {
+            save_compaction_partial(app, &summary_msg_id, &partial);
+            set_terminating(conversation_id, false);
+            let _ = orb_window.emit(
+                "chat-delta",
+                json!({
+                    "conversation_id": conversation_id,
+                    "attempt_id": attempt_id,
+                    "message_id": summary_msg_id,
+                    "error": ProviderErrorPayload::from(&ProviderError::Cancelled),
+                }),
+            );
+            Err("Compaction cancelled".to_string())
+        }
+        Err(StreamError::Provider(e, partial)) => {
+            save_compaction_partial(app, &summary_msg_id, &partial);
+            set_terminating(conversation_id, false);
+            let _ = orb_window.emit(
+                "chat-delta",
+                json!({
+                    "conversation_id": conversation_id,
+                    "attempt_id": attempt_id,
+                    "message_id": summary_msg_id,
+                    "error": ProviderErrorPayload::from(&e),
+                }),
+            );
+            Err(e.to_string())
+        }
+        Err(StreamError::Timeout(partial)) => {
+            save_compaction_partial(app, &summary_msg_id, &partial);
+            set_terminating(conversation_id, false);
+            let _ = orb_window.emit(
+                "chat-delta",
+                json!({
+                    "conversation_id": conversation_id,
+                    "attempt_id": attempt_id,
+                    "message_id": summary_msg_id,
+                    "error": ProviderErrorPayload::from(&ProviderError::Timeout(
+                        "Summary generation timed out (30s)".to_string(),
+                    )),
+                }),
+            );
+            Err("Summary generation timed out (30s)".to_string())
+        }
     }
+}
 
-    let max_summary_chars = (assistant_config::constant::MAX_SUMMARY_OUTPUT_TOKENS as usize) * 4;
-    if summary.len() > max_summary_chars {
-        summary.truncate(max_summary_chars);
-        summary.push_str("\n\n[摘要已截断，完整信息请通过 search_history 检索]");
+fn save_compaction_partial(app: &AppHandle, msg_id: &str, partial: &PartialOutcome) {
+    if !partial.has_effective_output {
+        return;
     }
-
-    {
-        let state = app.state::<crate::setup::DbState>();
-        let conn = super::get_db_conn(&state)?;
-
-        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-
-        conversations::update_message_content(&tx, &summary_msg_id, &summary, None)?;
-        conversations::set_conversation_is_full(&tx, conversation_id, true)?;
-
-        let now = chrono::Utc::now().timestamp_millis();
-        let existing = conversations::get_compression_state(&tx, conversation_id)?;
-        let new_count = existing
-            .as_ref()
-            .map(|s| s.compression_count + 1)
-            .unwrap_or(1);
-        let state_row = conversations::CompressionStateRow {
-            conversation_id: conversation_id.to_string(),
-            last_compression_at: Some(now),
-            compression_count: new_count,
-        };
-        conversations::upsert_compression_state(&tx, &state_row)?;
-
-        tx.commit().map_err(|e| e.to_string())?;
-    }
-
-    set_terminating(conversation_id, false);
-
-    let _ = app.emit(
-        "conversation_terminated",
-        json!({
-            "conversation_id": conversation_id,
-            "summary": summary,
-            "is_full": true,
-        }),
+    let state = app.state::<crate::setup::DbState>();
+    let Ok(conn) = super::get_db_conn(&state) else {
+        return;
+    };
+    let tokens = partial
+        .total_tokens
+        .map(|t| t as i64)
+        .or_else(|| estimate_compaction_tokens(&partial.full_content));
+    let _ = conversations::update_message_content(
+        &conn,
+        msg_id,
+        &partial.full_content,
+        tokens,
+        None,
+        None,
     );
+}
 
-    log::info!(
-        "Conversation {} terminated with summary ({} chars)",
-        conversation_id,
-        summary.len()
-    );
-
-    Ok(())
+fn estimate_compaction_tokens(content: &str) -> Option<i64> {
+    if content.is_empty() {
+        return None;
+    }
+    Some((content.len() as i64 + 3) / 4 + 4)
 }

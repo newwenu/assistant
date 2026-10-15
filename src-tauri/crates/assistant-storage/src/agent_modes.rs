@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct AgentModeRow {
     pub id: String,
     pub name: String,

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at, is_full";
 const MSG_SELECT: &str =
-    "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned";
+    "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConversationRow {
@@ -31,6 +31,8 @@ pub struct MessageRow {
     pub timestamp: i64,
     pub parent_id: Option<String>,
     pub is_pinned: bool,
+    pub reasoning: Option<String>,
+    pub tool_calls_json: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -66,6 +68,8 @@ fn read_msg_row(row: &rusqlite::Row) -> rusqlite::Result<MessageRow> {
         timestamp: row.get(5)?,
         parent_id: row.get(6)?,
         is_pinned: row.get::<_, i64>(7)? != 0,
+        reasoning: row.get(8)?,
+        tool_calls_json: row.get(9)?,
     })
 }
 
@@ -170,7 +174,7 @@ pub fn delete_conversation(conn: &Connection, id: &str) -> Result<(), String> {
 pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String> {
     conn.execute(
         &format!(
-            "INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            "INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
             MSG_SELECT
         ),
         params![
@@ -181,7 +185,9 @@ pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String>
             row.tokens,
             row.timestamp,
             row.parent_id,
-            row.is_pinned as i64
+            row.is_pinned as i64,
+            row.reasoning,
+            row.tool_calls_json
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -206,10 +212,12 @@ pub fn update_message_content(
     id: &str,
     content: &str,
     tokens: Option<i64>,
+    reasoning: Option<&str>,
+    tool_calls_json: Option<&str>,
 ) -> Result<(), String> {
     conn.execute(
-        "UPDATE messages SET content = ?2, tokens = ?3 WHERE id = ?1",
-        params![id, content, tokens],
+        "UPDATE messages SET content = ?2, tokens = ?3, reasoning = ?4, tool_calls_json = ?5 WHERE id = ?1",
+        params![id, content, tokens, reasoning, tool_calls_json],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -389,6 +397,8 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Str
             timestamp: msg.timestamp,
             parent_id: None,
             is_pinned: msg.is_pinned,
+            reasoning: msg.reasoning.clone(),
+            tool_calls_json: msg.tool_calls_json.clone(),
         };
         insert_message(conn, &new_msg)?;
     }
