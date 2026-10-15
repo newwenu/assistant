@@ -67,7 +67,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
     <Select
       value={selectedModeId || undefined}
       onChange={handleChange}
-      placeholder="选择模式"
+      placeholder={t("chat.mode.select_placeholder")}
       style={{ width: 140 }}
       size="small"
       options={options}

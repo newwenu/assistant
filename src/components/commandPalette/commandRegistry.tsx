@@ -5,7 +5,6 @@ import {
   BulbOutlined,
   GlobalOutlined,
 } from "@ant-design/icons";
-import { translateKey } from "@/i18n";
 
 export type CommandCategory = "tools" | "navigation" | "actions" | "external";
 
@@ -30,25 +29,25 @@ export interface CommandDefinition {
 export const COMMAND_CATEGORIES: readonly CommandCategoryMeta[] = [
   {
     key: "tools",
-    label: translateKey("command.category.tools"),
+    label: "command.category.tools",
     icon: <ThunderboltOutlined />,
     order: 0,
   },
   {
     key: "navigation",
-    label: translateKey("command.category.navigation"),
+    label: "command.category.navigation",
     icon: <AppstoreOutlined />,
     order: 1,
   },
   {
     key: "actions",
-    label: translateKey("command.category.actions"),
+    label: "command.category.actions",
     icon: <BulbOutlined />,
     order: 2,
   },
   {
     key: "external",
-    label: translateKey("command.category.external"),
+    label: "command.category.external",
     icon: <GlobalOutlined />,
     order: 3,
   },

@@ -8,6 +8,7 @@ import {
   ClockCircleOutlined,
   PushpinOutlined,
   CopyOutlined,
+  LockOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import type { Conversation } from "../../chat/chatTypes";
@@ -128,6 +129,12 @@ export const ConversationListItem: React.FC<ConversationListItemProps> =
                 >
                   {conversation.is_pinned && (
                     <PushpinOutlined className={css.pinIcon} />
+                  )}
+                  {conversation.is_full && (
+                    <LockOutlined
+                      className={css.pinIcon}
+                      style={{ color: "var(--ant-color-warning)" }}
+                    />
                   )}
                   {conversation.title || t("chat.history.new_conversation")}
                 </Typography.Text>

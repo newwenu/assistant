@@ -6,6 +6,18 @@ use std::collections::HashMap;
 
 use super::json_config::{get_conf_dir, load_json_config_with_migrate, save_json_config};
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_compaction_threshold() -> u8 {
+    super::constant::COMPACTION_THRESHOLD_PERCENT
+}
+
+fn default_max_summary_tokens() -> u16 {
+    super::constant::MAX_SUMMARY_REQUEST_TOKENS as u16
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AppConf {
     pub theme: String,
@@ -18,6 +30,14 @@ pub struct AppConf {
     pub close_to_tray: bool,
     #[serde(default)]
     pub keybindings: HashMap<String, String>,
+    #[serde(default = "default_true")]
+    pub auto_compact: bool,
+    #[serde(default = "default_compaction_threshold")]
+    pub compact_threshold_percent: u8,
+    #[serde(default)]
+    pub compact_summary_prompt: Option<String>,
+    #[serde(default = "default_max_summary_tokens")]
+    pub compact_summary_max_tokens: u16,
 }
 
 impl AppConf {
@@ -35,6 +55,10 @@ impl AppConf {
             launch_at_login: false,
             close_to_tray: true,
             keybindings,
+            auto_compact: true,
+            compact_threshold_percent: super::constant::COMPACTION_THRESHOLD_PERCENT,
+            compact_summary_prompt: None,
+            compact_summary_max_tokens: super::constant::MAX_SUMMARY_REQUEST_TOKENS as u16,
         }
     }
 

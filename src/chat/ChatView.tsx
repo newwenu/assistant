@@ -1,6 +1,10 @@
 import React, { useEffect, useState, useCallback, type RefObject } from "react";
 import { Button, Modal, Typography, Progress, Tooltip } from "antd";
-import { PlusOutlined, SettingOutlined } from "@ant-design/icons";
+import {
+  PlusOutlined,
+  SettingOutlined,
+  ThunderboltOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "../stores/chatStore";
@@ -14,6 +18,8 @@ import { MessageInput } from "./message/MessageInput";
 import { ModelSelector } from "./ModelSelector";
 import { ModeSelector } from "./ModeSelector";
 import { ProviderSelector } from "./ProviderSelector";
+import { CompactBanner } from "./CompactBanner";
+import { CompactErrorBanner } from "./CompactErrorBanner";
 import { useAgentModeStore } from "../stores/agentModeStore";
 
 interface ChatViewProps {
@@ -274,6 +280,17 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     [chat],
   );
 
+  const handleLoadMore = useCallback(() => {
+    void chat.loadMoreMessages();
+  }, [chat]);
+
+  const handleDeleteMessage = useCallback(
+    (id: string) => {
+      void chat.deleteMessage(id);
+    },
+    [chat],
+  );
+
   return (
     <div className="chat-view chat-view-compact">
       {modalContextHolder}
@@ -326,26 +343,43 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
             compact
             hasMore={chat.hasMoreMessages}
             isLoadingMore={chat.isLoadingMoreMessages}
-            onLoadMore={() => {
-              void chat.loadMoreMessages();
-            }}
-            onDeleteMessage={(id) => {
-              void chat.deleteMessage(id);
-            }}
+            onLoadMore={handleLoadMore}
+            onDeleteMessage={handleDeleteMessage}
             onEditMessage={handleEditMessage}
             onRegenerateMessage={handleRegenerateMessage}
             onRetryMessage={handleRetry}
+            retryStatus={chat.retryStatus}
           />
         )}
-        <div className="orb-mode-bar">
+        <div className="chat-tool-bar">
           <ModeSelector variant="chip" onModeChange={handleModeChange} />
+          {!chat.isFull && (
+            <Tooltip title={t("chat.compact.generate_summary")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<ThunderboltOutlined />}
+                onClick={() => {
+                  modal.confirm({
+                    title: t("chat.compact.generate_summary"),
+                    content: t("chat.compact.generate_confirm"),
+                    onOk: () => chat.manualCompact(),
+                  });
+                }}
+                disabled={chat.isStreaming}
+              />
+            </Tooltip>
+          )}
         </div>
         <MessageInput
           onSend={handleSend}
           onCancel={handleCancel}
           isStreaming={chat.isStreaming}
-          disabled={false}
+          disabled={chat.isFull || noProviders}
+          isFull={chat.isFull}
         />
+        <CompactBanner />
+        <CompactErrorBanner />
         <ContextBar usage={chat.contextUsage} />
       </div>
     </div>

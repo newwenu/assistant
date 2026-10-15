@@ -90,6 +90,22 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
         info!("Added mode_id column to conversations table");
     }
 
+    let has_is_full: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'is_full'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_is_full {
+        conn.execute_batch(
+            "ALTER TABLE conversations ADD COLUMN is_full INTEGER NOT NULL DEFAULT 0;",
+        )
+        .map_err(|e| e.to_string())?;
+        info!("Added is_full column to conversations table");
+    }
+
     agent_modes::seed_builtin_modes(&conn)?;
 
     let is_new_db: bool = conn

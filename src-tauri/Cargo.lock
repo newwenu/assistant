@@ -168,6 +168,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-sql",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "uuid",
 ]

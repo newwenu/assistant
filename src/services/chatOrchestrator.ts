@@ -27,6 +27,7 @@ export interface ChatStatePort {
   updateContextUsage: (usage: ContextUsage) => void;
   finishStream: (usage?: TokenUsage) => void;
   errorStream: (error: ChatError) => void;
+  setRetryStatus: (retry: RetryNotification | null) => void;
 }
 
 export interface ChatEnvPort {
@@ -50,6 +51,13 @@ export interface ChatOrchestratorDeps {
   ) => Promise<void>;
 }
 
+export interface RetryNotification {
+  attempt: number;
+  max_attempts: number;
+  delay_ms: number;
+  message: string;
+}
+
 export interface ChatDeltaPayload {
   conversation_id: string;
   message_id: string;
@@ -62,6 +70,7 @@ export interface ChatDeltaPayload {
   finish_reason?: string;
   usage?: TokenUsage;
   error?: unknown;
+  delta_retry?: RetryNotification;
 }
 
 export interface ChatOrchestrator {
@@ -227,6 +236,11 @@ export function createChatOrchestrator(
       return;
     }
 
+    if (payload.delta_retry) {
+      deps.state.setRetryStatus(payload.delta_retry);
+      return;
+    }
+
     if (payload.delta_reasoning) {
       const messageId = deps.env.getStreamingMessageId();
       if (messageId) {
@@ -268,6 +282,7 @@ export function createChatOrchestrator(
 
     if (payload.finish_reason) {
       setPhase("idle");
+      deps.state.setRetryStatus(null);
       deps.state.finishStream(payload.usage);
     }
   }

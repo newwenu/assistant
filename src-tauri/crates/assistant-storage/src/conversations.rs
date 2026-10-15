@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at";
+const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at, is_full";
 const MSG_SELECT: &str =
     "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned";
 
@@ -18,6 +18,7 @@ pub struct ConversationRow {
     pub generation: i64,
     pub created_at: i64,
     pub updated_at: i64,
+    pub is_full: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -51,6 +52,7 @@ fn read_conv_row(row: &rusqlite::Row) -> rusqlite::Result<ConversationRow> {
         generation: row.get(8)?,
         created_at: row.get(9)?,
         updated_at: row.get(10)?,
+        is_full: row.get::<_, i64>(11)? != 0,
     })
 }
 
@@ -70,7 +72,7 @@ fn read_msg_row(row: &rusqlite::Row) -> rusqlite::Result<MessageRow> {
 pub fn insert_conversation(conn: &Connection, row: &ConversationRow) -> Result<(), String> {
     conn.execute(
         &format!(
-            "INSERT INTO conversations ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            "INSERT INTO conversations ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
             CONV_SELECT
         ),
         params![
@@ -84,7 +86,8 @@ pub fn insert_conversation(conn: &Connection, row: &ConversationRow) -> Result<(
             row.sort_order,
             row.generation,
             row.created_at,
-            row.updated_at
+            row.updated_at,
+            row.is_full as i64
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -147,8 +150,8 @@ pub fn get_conversation_detail(
 
 pub fn update_conversation(conn: &Connection, row: &ConversationRow) -> Result<(), String> {
     conn.execute(
-        "UPDATE conversations SET title=?2, title_source=?3, provider_id=?4, model_id=?5, system_prompt=?6, is_pinned=?7, sort_order=?8, generation=?9, created_at=?10, updated_at=?11 WHERE id=?1",
-        params![row.id, row.title, row.title_source, row.provider_id, row.model_id, row.system_prompt, row.is_pinned as i64, row.sort_order, row.generation, row.created_at, row.updated_at],
+        "UPDATE conversations SET title=?2, title_source=?3, provider_id=?4, model_id=?5, system_prompt=?6, is_pinned=?7, sort_order=?8, generation=?9, created_at=?10, updated_at=?11, is_full=?12 WHERE id=?1",
+        params![row.id, row.title, row.title_source, row.provider_id, row.model_id, row.system_prompt, row.is_pinned as i64, row.sort_order, row.generation, row.created_at, row.updated_at, row.is_full as i64],
     ).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -286,7 +289,7 @@ pub fn search_conversations(
     query: &str,
 ) -> Result<Vec<ConversationRow>, String> {
     let pattern = format!("%{}%", query);
-    let sql = "SELECT DISTINCT c.id, c.title, c.title_source, c.provider_id, c.model_id, c.system_prompt, c.is_pinned, c.sort_order, c.generation, c.created_at, c.updated_at \
+    let sql = "SELECT DISTINCT c.id, c.title, c.title_source, c.provider_id, c.model_id, c.system_prompt, c.is_pinned, c.sort_order, c.generation, c.created_at, c.updated_at, c.is_full \
          FROM conversations c \
          LEFT JOIN messages m ON m.conversation_id = c.id \
          WHERE c.title LIKE ?1 OR m.content LIKE ?1 \
@@ -372,6 +375,7 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Str
         generation: 0,
         created_at: now,
         updated_at: now,
+        is_full: false,
     };
     insert_conversation(conn, &new_conv)?;
 
@@ -461,4 +465,84 @@ pub fn edit_message(conn: &Connection, id: &str, new_content: &str) -> Result<()
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CompressionStateRow {
+    pub conversation_id: String,
+    pub last_compression_at: Option<i64>,
+    pub compression_count: i64,
+}
+
+fn read_compression_state_row(row: &rusqlite::Row) -> rusqlite::Result<CompressionStateRow> {
+    Ok(CompressionStateRow {
+        conversation_id: row.get(0)?,
+        last_compression_at: row.get(1)?,
+        compression_count: row.get(2)?,
+    })
+}
+
+pub fn get_compression_state(
+    conn: &Connection,
+    conversation_id: &str,
+) -> Result<Option<CompressionStateRow>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT conversation_id, last_compression_at, compression_count FROM compression_state WHERE conversation_id = ?1",
+        )
+        .map_err(|e| e.to_string())?;
+    let mut rows = stmt
+        .query(params![conversation_id])
+        .map_err(|e| e.to_string())?;
+    if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        Ok(Some(
+            read_compression_state_row(row).map_err(|e| e.to_string())?,
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn upsert_compression_state(
+    conn: &Connection,
+    row: &CompressionStateRow,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO compression_state (conversation_id, last_compression_at, compression_count)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(conversation_id) DO UPDATE SET
+           last_compression_at = excluded.last_compression_at,
+           compression_count = excluded.compression_count",
+        params![
+            row.conversation_id,
+            row.last_compression_at,
+            row.compression_count,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn set_conversation_is_full(
+    conn: &Connection,
+    conversation_id: &str,
+    is_full: bool,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE conversations SET is_full = ?2 WHERE id = ?1",
+        params![conversation_id, is_full as i64],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn is_conversation_full(conn: &Connection, conversation_id: &str) -> Result<bool, String> {
+    let result: Option<bool> = conn
+        .query_row(
+            "SELECT is_full FROM conversations WHERE id = ?1",
+            params![conversation_id],
+            |row| row.get(0),
+        )
+        .ok();
+    result.ok_or_else(|| "Conversation not found".to_string())
 }

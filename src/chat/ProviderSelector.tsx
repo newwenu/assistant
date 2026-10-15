@@ -48,7 +48,7 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
       <Select
         value={providerId || undefined}
         onChange={onProviderChange}
-        placeholder="Provider"
+        placeholder={t("chat.provider.select_placeholder")}
         className="orb-provider-chip"
         popupMatchSelectWidth={false}
         classNames={{ popup: { root: "orb-dropdown" } }}

@@ -25,6 +25,7 @@
 
 .title {
   font-weight: 600;
+  user-select: text;
 }
 
 .message {
@@ -32,6 +33,8 @@
   font-size: 13px;
   line-height: 1.5;
   margin-bottom: 4px;
+  user-select: text;
+  cursor: text;
 }
 
 .retryHint {

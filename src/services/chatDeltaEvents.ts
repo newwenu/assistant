@@ -9,6 +9,12 @@ import {
   textChunkScheduler,
   type CoalescibleDelta,
 } from "../chat/streamCoalescer";
+import { useChatStore } from "../stores/chatStore";
+import type {
+  ConversationTerminatedPayload,
+  ConversationCompactFailedPayload,
+  ConversationUnlockedPayload,
+} from "../chat/chatTypes";
 
 const CHAT_DELTA_EVENT = "chat-delta";
 
@@ -74,7 +80,8 @@ export function subscribeChatDeltaEvents(): () => void {
         payload.delta_tool_call_arguments ||
         payload.usage ||
         payload.finish_reason ||
-        payload.error
+        payload.error ||
+        payload.delta_retry
       ) {
         coalescer.flush();
         const nonTextPayload: ChatDeltaPayload = {
@@ -88,6 +95,7 @@ export function subscribeChatDeltaEvents(): () => void {
           usage: payload.usage,
           finish_reason: payload.finish_reason,
           error: payload.error,
+          delta_retry: payload.delta_retry,
         };
         if (orchestratorInstance) {
           orchestratorInstance.handleDeltaEvent(nonTextPayload);
@@ -97,6 +105,49 @@ export function subscribeChatDeltaEvents(): () => void {
       if (payload.finish_reason) {
         seqDedup.reset();
       }
+    }),
+  );
+
+  track(
+    listen("conversation_terminated", (event) => {
+      if (disposed) return;
+      const payload = event.payload as ConversationTerminatedPayload;
+      const store = useChatStore.getState();
+      if (store.currentConversationId === payload.conversation_id) {
+        useChatStore.setState({
+          isFull: payload.is_full,
+          compactSummary: payload.summary,
+          compactError: null,
+        });
+      }
+      void useChatStore.getState().loadConversations(true);
+    }),
+  );
+
+  track(
+    listen("conversation_compact_failed", (event) => {
+      if (disposed) return;
+      const payload = event.payload as ConversationCompactFailedPayload;
+      const store = useChatStore.getState();
+      if (store.currentConversationId === payload.conversation_id) {
+        useChatStore.setState({ compactError: payload.error });
+      }
+    }),
+  );
+
+  track(
+    listen("conversation_unlocked", (event) => {
+      if (disposed) return;
+      const payload = event.payload as ConversationUnlockedPayload;
+      const store = useChatStore.getState();
+      if (store.currentConversationId === payload.conversation_id) {
+        useChatStore.setState({
+          isFull: false,
+          compactSummary: null,
+          compactError: null,
+        });
+      }
+      void useChatStore.getState().loadConversations(true);
     }),
   );
 

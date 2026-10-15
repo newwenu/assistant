@@ -131,7 +131,7 @@ pub(crate) fn chat_completion_stream(
                     if err.is_retryable() && attempt < retry_config.max_attempts {
                         let delay = retry_config.delay_ms(attempt, &err);
                         warn!("Attempt {} failed, retrying in {}ms: {}", attempt + 1, delay, err);
-                        yield Ok(ChatDelta::retry_notification(attempt, &err));
+                        yield Ok(ChatDelta::retry_notification(attempt, retry_config.max_attempts, delay, &err));
                         tokio::time::sleep(Duration::from_millis(delay)).await;
                         attempt += 1;
                         continue 'retry;
@@ -148,7 +148,7 @@ pub(crate) fn chat_completion_stream(
                 if err.is_retryable() && attempt < retry_config.max_attempts {
                     let delay = retry_config.delay_ms(attempt, &err);
                     warn!("Attempt {} failed (HTTP {}), retrying in {}ms", attempt + 1, status, delay);
-                    yield Ok(ChatDelta::retry_http_notification(attempt, status));
+                    yield Ok(ChatDelta::retry_http_notification(attempt, retry_config.max_attempts, delay, status));
                     tokio::time::sleep(Duration::from_millis(delay)).await;
                     attempt += 1;
                     continue 'retry;
@@ -184,6 +184,7 @@ pub(crate) fn chat_completion_stream(
                             if attempt < retry_config.max_attempts {
                                 let delay = retry_config.delay_ms(attempt, &err);
                                 warn!("First token timeout, retrying in {}ms", delay);
+                                yield Ok(ChatDelta::retry_notification(attempt, retry_config.max_attempts, delay, &err));
                                 tokio::time::sleep(Duration::from_millis(delay)).await;
                                 attempt += 1;
                                 continue 'retry;
@@ -211,6 +212,7 @@ pub(crate) fn chat_completion_stream(
                         if !timeout_ctrl.first_token_received() && err.is_retryable() && attempt < retry_config.max_attempts {
                             let delay = retry_config.delay_ms(attempt, &err);
                             warn!("SSE stream error, retrying in {}ms: {}", delay, err);
+                            yield Ok(ChatDelta::retry_notification(attempt, retry_config.max_attempts, delay, &err));
                             tokio::time::sleep(Duration::from_millis(delay)).await;
                             attempt += 1;
                             continue 'retry;

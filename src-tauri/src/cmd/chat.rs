@@ -5,6 +5,7 @@ use tauri::{command, AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
 use crate::chat_tasks::ChatTasks;
+use assistant_agent::compaction;
 use assistant_config::constant::WINDOW_ORB;
 use assistant_providers::base::{
     self, ChatMessage, ChatOptions, ProviderError, ProviderErrorPayload,
@@ -25,8 +26,16 @@ pub fn send_chat_message(
     if content.trim().is_empty() {
         return Err(assistant_i18n::t("chat.empty_content"));
     }
+    if compaction::is_terminating(&conversation_id) {
+        return Err("Conversation is being terminated".to_string());
+    }
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
+
+    if conversations::is_conversation_full(&conn, &conversation_id)? {
+        return Err("Conversation is full, cannot send".to_string());
+    }
+
     let now = Utc::now().timestamp_millis();
 
     let mode: Option<AgentModeRow> = mode_id
@@ -50,6 +59,7 @@ pub fn send_chat_message(
     let provider_id = detail
         .conversation
         .provider_id
+        .clone()
         .ok_or_else(|| assistant_i18n::t("chat.provider_deleted"))?;
     let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
         .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
@@ -70,6 +80,7 @@ pub fn send_chat_message(
     let mut chat_messages: Vec<ChatMessage> = detail
         .messages
         .iter()
+        .filter(|m| m.role != "compact_summary")
         .map(|m| ChatMessage {
             role: base::message_role_from_str(&m.role),
             content: m.content.clone(),
@@ -138,6 +149,21 @@ pub fn send_chat_message(
     let conv_id = conversation_id.clone();
     let msg_id = assistant_msg_id.clone();
 
+    let (auto_compact, compact_threshold_percent) = {
+        match assistant_config::app_conf::AppConf::load() {
+            Ok(conf) => (conf.auto_compact, conf.compact_threshold_percent),
+            Err(_) => (
+                true,
+                assistant_config::constant::COMPACTION_THRESHOLD_PERCENT,
+            ),
+        }
+    };
+    let compact_app = app.clone();
+    let compact_conv_id = conversation_id.clone();
+    let compact_ctx = context_window_tokens;
+    let compact_detail = detail.clone();
+    let compact_provider_row = provider_row.clone();
+
     let (db_tx, mut db_rx) =
         tokio::sync::mpsc::unbounded_channel::<(String, String, Option<i64>)>();
     let db_app = app.clone();
@@ -195,6 +221,7 @@ pub fn send_chat_message(
         let mut full_content = String::new();
         let mut seq: u32 = 0;
         let mut last_tokens: Option<i64> = None;
+        let mut last_prompt_tokens: Option<u32> = None;
         while let Some(result) = stream.next().await {
             if cancel_token.is_cancelled() {
                 let cancel_tokens = last_tokens.or_else(|| {
@@ -222,10 +249,19 @@ pub fn send_chat_message(
                     if let Some(text) = &delta.delta_text {
                         full_content.push_str(text);
                     }
+                    if let Some(ref retry) = delta.delta_retry {
+                        info!(
+                            "[chat-delta] retry notification: attempt={}/{} delay={}ms message={}",
+                            retry.attempt, retry.max_attempts, retry.delay_ms, retry.message
+                        );
+                    }
                     if let Some(ref usage) = delta.usage {
                         let total = usage.prompt_tokens as i64 + usage.completion_tokens as i64;
                         if total > 0 {
                             last_tokens = Some(total);
+                        }
+                        if usage.prompt_tokens > 0 {
+                            last_prompt_tokens = Some(usage.prompt_tokens);
                         }
                         info!(
                             "[chat-delta] seq={} usage: prompt={} completion={} total={} ctx_window={}",
@@ -246,6 +282,7 @@ pub fn send_chat_message(
                             "delta_tool_call_arguments": delta.delta_tool_call_arguments,
                             "finish_reason": delta.finish_reason,
                             "usage": delta.usage,
+                            "delta_retry": delta.delta_retry,
                         }),
                     ) {
                         error!("Failed to emit chat-delta: {}", emit_err);
@@ -266,6 +303,40 @@ pub fn send_chat_message(
                             last_tokens
                         };
                         let _ = db_tx.send((msg_id.clone(), full_content.clone(), final_tokens));
+                        if let Some(prompt_tokens) = last_prompt_tokens {
+                            if compaction::should_terminate(
+                                prompt_tokens,
+                                compact_ctx,
+                                auto_compact,
+                                compact_threshold_percent,
+                            ) {
+                                let app = compact_app.clone();
+                                let conv_id = compact_conv_id.clone();
+                                let detail = compact_detail.clone();
+                                let provider_row = compact_provider_row.clone();
+                                compaction::set_terminating(&conv_id, true);
+                                tauri::async_runtime::spawn(async move {
+                                    if let Err(e) = super::conversation::execute_compaction(
+                                        &app,
+                                        &conv_id,
+                                        &detail,
+                                        &provider_row,
+                                    )
+                                    .await
+                                    {
+                                        compaction::set_terminating(&conv_id, false);
+                                        let _ = app.emit(
+                                            "conversation_compact_failed",
+                                            json!({
+                                                "conversation_id": conv_id,
+                                                "error": e,
+                                            }),
+                                        );
+                                        log::error!("Auto compaction failed: {}", e);
+                                    }
+                                });
+                            }
+                        }
                         let _ = finish_tx.send(conv_id);
                         break;
                     }

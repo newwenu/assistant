@@ -139,6 +139,53 @@ placeholder: "settings.xxx.placeholder"        →  placeholder: "请输入..." 
 - 技术性标识（CSS class、HTML id、路由 path、Tauri event 名）不翻译
 - 语言选项的 label 使用**本名（endonym）**，不走 i18n（如 "简体中文" 永远显示为 "简体中文"，不随界面语言变化）
 
+#### 4.2.4 命令面板规则
+
+命令面板（CommandPalette）是 `useMemo` 驱动的数据管线，存在两个特有陷阱：
+
+**陷阱 1：模块级常量提前翻译**
+
+`COMMAND_CATEGORIES` 等模块级数组在 import 时执行，此时 `translateKey()` 可能返回 key 本身（i18n 未初始化）或旧语言文本（语言切换后不重算）。
+
+**做法**：模块级常量存 i18n key，渲染时翻译。
+
+```ts
+// ❌ 模块级翻译 — 语言切换后不更新
+export const COMMAND_CATEGORIES = [
+  { key: "tools", label: translateKey("command.category.tools"), ... },
+];
+
+// ✅ 模块级存 key，渲染时翻译
+export const COMMAND_CATEGORIES = [
+  { key: "tools", label: "command.category.tools", ... },
+];
+// 渲染处：{meta?.icon} {translateKey(meta.label)}
+```
+
+**陷阱 2：可变引用相等性**
+
+`getAllCommands()` 返回模块级可变数组 `commandStore` 的同一引用。`useMemo` 用 `Object.is()` 比较依赖——引用相同就命中缓存，即使内容已变。
+
+**做法**：展开为新数组，打破引用相等性。
+
+```ts
+// ❌ 返回同一引用 — useMemo 不重算
+const allCommands = useMemo(() => {
+  aggregateCommands(navigate);
+  return getAllCommands();
+}, [navigate, currentI18n.language]);
+
+// ✅ 展开为新数组 — 语言切换时产生新引用
+const allCommands = useMemo(() => {
+  aggregateCommands(navigate);
+  return [...getAllCommands()];
+}, [navigate, currentI18n.language]);
+```
+
+**陷阱 3：useMemo 依赖缺少语言**
+
+`useMemo` 必须包含 `currentI18n.language`（来自 `useTranslation()`），否则语言切换不触发重算。
+
 ### 4.3 第三方库 locale 联动
 
 | 库 | 联动方式 |

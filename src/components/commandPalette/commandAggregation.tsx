@@ -68,15 +68,23 @@ function registerSettingsCommands(navigate: NavigateFunction): void {
   for (const page of SETTINGS_PAGES) {
     const catLabel =
       SETTINGS_CATEGORIES.find((c) => c.id === page.categoryId)?.label ?? "";
+    const translatedLabel = translateKey(page.label);
     const keywords = mergeKeywords(
-      [page.label, page.id, `/settings/${page.id}`, catLabel],
+      [
+        translatedLabel,
+        page.id,
+        `/settings/${page.id}`,
+        translateKey(catLabel),
+      ],
       [...page.keywords],
     );
     defineCommand({
       id: `nav:settings-${page.id}`,
-      name: page.label,
+      name: translatedLabel,
       description: catLabel
-        ? translateKey("command.action.setting_page", { label: catLabel })
+        ? translateKey("command.action.setting_page", {
+            label: translateKey(catLabel),
+          })
         : undefined,
       keywords,
       category: "navigation",
@@ -91,13 +99,14 @@ function registerSettingSectionCommands(navigate: NavigateFunction): void {
   for (const sec of allSections) {
     const page = SETTINGS_PAGES.find((p) => p.id === sec.pageId);
     if (!page) continue;
-    const autoSources: string[] = [sec.title, sec.id, sec.pageId];
-    if (sec.description) autoSources.push(sec.description);
+    const translatedTitle = translateKey(sec.title);
+    const autoSources: string[] = [translatedTitle, sec.id, sec.pageId];
+    if (sec.description) autoSources.push(translateKey(sec.description));
     const keywords = mergeKeywords(autoSources, [...(sec.keywords ?? [])]);
     defineCommand({
       id: `nav:setting-section:${sec.id}`,
-      name: sec.title,
-      description: `${page.label} · ${sec.title}`,
+      name: translatedTitle,
+      description: `${translateKey(page.label)} · ${translatedTitle}`,
       keywords,
       category: "navigation",
       icon: CATEGORY_ICON_MAP[page.categoryId] ?? <SettingOutlined />,
@@ -111,17 +120,18 @@ function registerSettingFieldCommands(navigate: NavigateFunction): void {
   for (const def of allDefs) {
     const pageId = def.pageId ?? GROUP_TO_PAGE[def.group];
     if (!pageId) continue;
-    const autoSources: string[] = [def.label, def.key, def.group];
+    const translatedLabel = translateKey(def.label);
+    const autoSources: string[] = [translatedLabel, def.key, def.group];
     if (def.description && typeof def.description === "string")
-      autoSources.push(def.description);
+      autoSources.push(translateKey(def.description));
     if (def.extra && typeof def.extra === "string") autoSources.push(def.extra);
     if (def.options) {
-      for (const opt of def.options) autoSources.push(opt.label);
+      for (const opt of def.options) autoSources.push(translateKey(opt.label));
     }
     const keywords = mergeKeywords(autoSources, []);
     defineCommand({
       id: `nav:setting-field:${def.key}`,
-      name: def.label,
+      name: translatedLabel,
       description: translateKey("command.action.setting_item", {
         key: def.key,
       }),

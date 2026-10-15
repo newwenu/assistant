@@ -502,7 +502,7 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   }
 }
 
-.orb-mode-bar {
+.chat-tool-bar {
   display: flex;
   align-items: center;
   padding: 2px 10px;

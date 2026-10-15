@@ -5,6 +5,7 @@ import {
   type ChatStatePort,
   type ChatEnvPort,
   type ChatOrchestrator,
+  type RetryNotification,
 } from "../services/chatOrchestrator";
 import {
   MESSAGES_PAGE_SIZE,
@@ -65,6 +66,10 @@ interface ChatState {
   isLoadingConversations: boolean;
   totalMessageCount: number;
   contextUsage: ContextUsage;
+  isFull: boolean;
+  compactSummary: string | null;
+  compactError: string | null;
+  retryStatus: RetryNotification | null;
 
   loadConversations: (silent?: boolean) => Promise<void>;
   createConversation: (providerId: string, modelId: string) => Promise<string>;
@@ -90,6 +95,9 @@ interface ChatState {
   duplicateConversation: (id: string) => Promise<void>;
   batchDelete: (ids: string[]) => Promise<void>;
   purgeAll: () => Promise<void>;
+  manualCompact: () => Promise<void>;
+  unlockConversation: () => Promise<void>;
+  clearCompactError: () => void;
 }
 
 let _orchestrator: ChatOrchestrator | null = null;
@@ -103,6 +111,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         streamingContent: "",
         streamingMessageId: assistantMsgId,
         contextUsage: { used_tokens: 0, max_tokens: 128_000, percentage: 0 },
+        retryStatus: null,
       });
     },
     cancelStreaming: () => {
@@ -111,6 +120,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         streamingContent: "",
         streamingMessageId: null,
         isReasoningStreaming: false,
+        retryStatus: null,
       });
     },
     appendDelta: (delta: string) => {
@@ -250,11 +260,15 @@ export const useChatStore = create<ChatState>((set, get) => {
           streamingContent: "",
           streamingMessageId: null,
           isReasoningStreaming: false,
+          retryStatus: null,
         });
         console.warn(
           `[chat-error] code=${error.code} retryable=${error.retryable} message=${displayMessage}`,
         );
       }
+    },
+    setRetryStatus: (retry: RetryNotification | null) => {
+      set({ retryStatus: retry });
     },
   };
 
@@ -291,6 +305,10 @@ export const useChatStore = create<ChatState>((set, get) => {
     isLoadingConversations: false,
     totalMessageCount: 0,
     contextUsage: { used_tokens: 0, max_tokens: 128_000, percentage: 0 },
+    isFull: false,
+    compactSummary: null,
+    compactError: null,
+    retryStatus: null,
 
     loadConversations: async (silent?: boolean) => {
       if (!silent) set({ isLoadingConversations: true });
@@ -374,6 +392,9 @@ export const useChatStore = create<ChatState>((set, get) => {
               max_tokens: 128_000,
               percentage: 0,
             },
+            isFull: detail.conversation?.is_full ?? false,
+            compactSummary: null,
+            compactError: null,
           });
           chatService
             .getConversationTokenUsage(
@@ -623,6 +644,51 @@ export const useChatStore = create<ChatState>((set, get) => {
         streamingMessageId: null,
         isReasoningStreaming: false,
       });
+    },
+
+    manualCompact: async () => {
+      const convId = get().currentConversationId;
+      if (!convId) return;
+      const summaryMsgId = `temp-compact-${Date.now()}`;
+      const summaryMsg: Message = {
+        id: summaryMsgId,
+        conversation_id: convId,
+        role: "compact_summary",
+        content: "",
+        tokens: null,
+        timestamp: Date.now(),
+      };
+      set({
+        messages: [...get().messages, summaryMsg],
+        isStreaming: true,
+        streamingContent: "",
+        streamingMessageId: summaryMsgId,
+      });
+      try {
+        await chatService.manualCompactConversation(convId);
+      } catch (e) {
+        console.error("Manual compact failed:", e);
+        set({
+          messages: get().messages.filter((m) => m.id !== summaryMsgId),
+          isStreaming: false,
+          streamingContent: "",
+          streamingMessageId: null,
+        });
+      }
+    },
+
+    unlockConversation: async () => {
+      const convId = get().currentConversationId;
+      if (!convId) return;
+      try {
+        await chatService.unlockConversation(convId);
+      } catch (e) {
+        console.error("Unlock conversation failed:", e);
+      }
+    },
+
+    clearCompactError: () => {
+      set({ compactError: null });
     },
   };
 });

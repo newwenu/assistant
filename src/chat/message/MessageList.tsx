@@ -3,6 +3,7 @@ import { DownOutlined, LoadingOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { MessageBubble, RoleContext } from "./MessageBubble";
 import type { Message } from "../../stores/chatStore";
+import type { RetryNotification } from "../../services/chatOrchestrator";
 import css from "./MessageList.module.css";
 
 const SCROLL_THRESHOLD = 100;
@@ -21,6 +22,7 @@ interface MessageListProps {
   onEditMessage?: (id: string, newContent: string) => void;
   onRegenerateMessage?: (id: string) => void;
   onRetryMessage?: () => void;
+  retryStatus?: RetryNotification | null;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
@@ -37,6 +39,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   onEditMessage,
   onRegenerateMessage,
   onRetryMessage,
+  retryStatus,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
@@ -173,6 +176,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                 message={displayMsg}
                 isStreaming={isStreamingMsg}
                 isReasoningStreaming={isStreamingMsg && isReasoningStreaming}
+                retryStatus={isStreamingMsg ? retryStatus : null}
                 compact={compact}
                 onDelete={onDeleteMessage}
                 onEdit={onEditMessage}

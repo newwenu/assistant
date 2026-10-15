@@ -19,6 +19,7 @@ interface MessageInputProps {
   onCancel: () => void;
   isStreaming: boolean;
   disabled: boolean;
+  isFull?: boolean;
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
@@ -26,6 +27,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   onCancel,
   isStreaming,
   disabled,
+  isFull = false,
 }) => {
   const [value, setValue] = useState("");
   const mascotFace = useMascotStore((s) => s.face);
@@ -76,11 +78,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           maxRows: CHAT_INPUT_MAX_ROWS,
         }}
         placeholder={
-          disabled
-            ? t("chat.input.placeholder_no_provider")
-            : isStreaming
-              ? t("chat.input.placeholder_streaming")
-              : t("chat.input.placeholder")
+          isFull
+            ? t("chat.input.placeholder_full")
+            : disabled
+              ? t("chat.input.placeholder_no_provider")
+              : isStreaming
+                ? t("chat.input.placeholder_streaming")
+                : t("chat.input.placeholder")
         }
         disabled={disabled}
       />

@@ -11,6 +11,7 @@ import { SearchOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import Fuse from "fuse.js";
+import { translateKey } from "@/i18n";
 import {
   getAllCommands,
   COMMAND_CATEGORIES,
@@ -30,18 +31,19 @@ export const CommandPalette: React.FC = () => {
   const inputRef = useRef<InputRef>(null);
   const optionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, i18n: currentI18n } = useTranslation();
   const appConf = useSettingsStore((s) => s.appConf);
   const binding = appConf?.keybindings?.command_palette;
 
   const allCommands = useMemo(() => {
+    void currentI18n.language;
     aggregateCommands(navigate);
-    return getAllCommands();
-  }, [navigate]);
+    return [...getAllCommands()];
+  }, [navigate, currentI18n.language]);
 
   const fuse = useMemo(
     () =>
-      new Fuse(allCommands as CommandDefinition[], {
+      new Fuse(allCommands, {
         keys: [
           { name: "name", weight: 10 },
           { name: "keywords", weight: 1 },
@@ -58,9 +60,7 @@ export const CommandPalette: React.FC = () => {
   }, [query, fuse]);
 
   const groupedResults = useMemo(() => {
-    const items = fuseResults
-      ? fuseResults.map((r) => r.item)
-      : (allCommands as CommandDefinition[]);
+    const items = fuseResults ? fuseResults.map((r) => r.item) : allCommands;
     const groups: Record<string, CommandDefinition[]> = {};
     for (const cmd of items) {
       if (!groups[cmd.category]) groups[cmd.category] = [];
@@ -234,7 +234,7 @@ export const CommandPalette: React.FC = () => {
             return (
               <div key={catKey}>
                 <div className={styles.categoryTitle}>
-                  {meta?.icon} {meta?.label ?? catKey}
+                  {meta?.icon} {translateKey(meta?.label ?? catKey)}
                 </div>
                 {cmds.map((cmd) => {
                   const flatIdx = flatResults.indexOf(cmd);

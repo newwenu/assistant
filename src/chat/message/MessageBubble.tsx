@@ -1,6 +1,11 @@
 import React, { useCallback, useState } from "react";
+import { Typography } from "antd";
+import { CompressOutlined, ReloadOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import type { Message, ToolCall } from "../../stores/chatStore";
+import type { RetryNotification } from "../../services/chatOrchestrator";
 import { ErrorBlock } from "../blocks/ErrorBlock";
+import { getErrorDisplay, ChatErrorCode } from "../chatErrors";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
 import { ToolCallBlock } from "../blocks/ToolCallBlock";
 import { EditBlock } from "../blocks/EditBlock";
@@ -12,6 +17,7 @@ interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
   isReasoningStreaming?: boolean;
+  retryStatus?: RetryNotification | null;
   compact?: boolean;
   onDelete?: (id: string) => void;
   onEdit?: (id: string, newContent: string) => void;
@@ -24,13 +30,16 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     message,
     isStreaming = false,
     isReasoningStreaming = false,
+    retryStatus = null,
     compact = false,
     onDelete,
     onEdit,
     onRegenerate,
     onRetry,
   }) => {
+    const { t } = useTranslation();
     const isUser = message.role === "user";
+    const isCompactSummary = message.role === "compact_summary";
     const hasError = message.error != null;
     const hasReasoning = !!message.reasoning;
     const hasToolCalls = !!message.toolCalls && message.toolCalls.length > 0;
@@ -39,8 +48,19 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     const [editContent, setEditContent] = useState(message.content);
 
     const handleCopy = useCallback(() => {
-      navigator.clipboard.writeText(message.content).catch(() => {});
-    }, [message.content]);
+      let text = message.content;
+      if (message.error) {
+        const display =
+          getErrorDisplay(message.error.code) ??
+          getErrorDisplay(ChatErrorCode.InternalError);
+        const errorParts: string[] = [];
+        if (text) errorParts.push(text);
+        errorParts.push(`[${display.title}]`);
+        if (message.error.message) errorParts.push(message.error.message);
+        text = errorParts.join("\n");
+      }
+      navigator.clipboard.writeText(text).catch(() => {});
+    }, [message.content, message.error]);
 
     const handleDelete = useCallback(() => {
       onDelete?.(message.id);
@@ -72,7 +92,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
 
     const rootClass = [
       css.root,
-      isUser ? css.rootRoleUser : css.rootRoleAssistant,
+      isUser
+        ? css.rootRoleUser
+        : isCompactSummary
+          ? css.rootRoleCompactSummary
+          : css.rootRoleAssistant,
       isGroupGap ? css.rootGroupGap : "",
       compact ? css.compact : "",
     ]
@@ -93,6 +117,27 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
           >
             {hasError && message.error && (
               <ErrorBlock error={message.error} onRetry={onRetry} />
+            )}
+            {retryStatus && isStreaming && (
+              <div className={css.retryBanner}>
+                <ReloadOutlined spin style={{ fontSize: 12, marginRight: 6 }} />
+                <span>
+                  {t("chat.retry.retrying", {
+                    attempt: retryStatus.attempt + 1,
+                    max: retryStatus.max_attempts,
+                    delay: Math.ceil(retryStatus.delay_ms / 1000),
+                  })}
+                </span>
+                <span className={css.retryMessage}>{retryStatus.message}</span>
+              </div>
+            )}
+            {isCompactSummary && (
+              <div className={css.compactSummaryHeader}>
+                <CompressOutlined style={{ marginRight: 6 }} />
+                <Typography.Text type="warning" strong>
+                  {t("chat.compact.summary_label")}
+                </Typography.Text>
+              </div>
             )}
             {hasReasoning && (
               <ReasoningBlock
@@ -151,6 +196,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     if (prev.message.timestamp !== next.message.timestamp) return false;
     if (prev.isStreaming !== next.isStreaming) return false;
     if (prev.isReasoningStreaming !== next.isReasoningStreaming) return false;
+    if (prev.retryStatus !== next.retryStatus) return false;
     if (prev.compact !== next.compact) return false;
     if (prev.onDelete !== next.onDelete) return false;
     if (prev.onEdit !== next.onEdit) return false;

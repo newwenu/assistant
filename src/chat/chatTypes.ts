@@ -32,6 +32,7 @@ export interface Conversation {
   generation: number;
   created_at: number;
   updated_at: number;
+  is_full: boolean;
 }
 
 export interface TokenUsage {
@@ -47,4 +48,19 @@ export interface ContextUsage {
   used_tokens: number;
   max_tokens: number;
   percentage: number;
+}
+
+export interface ConversationTerminatedPayload {
+  conversation_id: string;
+  summary: string;
+  is_full: boolean;
+}
+
+export interface ConversationCompactFailedPayload {
+  conversation_id: string;
+  error: string;
+}
+
+export interface ConversationUnlockedPayload {
+  conversation_id: string;
 }

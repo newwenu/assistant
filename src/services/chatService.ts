@@ -99,4 +99,10 @@ export const chatService = {
     invoke("batch_delete_conversations", { ids }),
 
   purgeConversations: (): Promise<void> => invoke("purge_conversations"),
+
+  manualCompactConversation: (conversationId: string): Promise<void> =>
+    invoke("manual_compact_conversation", { conversationId }),
+
+  unlockConversation: (conversationId: string): Promise<void> =>
+    invoke("unlock_conversation", { conversationId }),
 };

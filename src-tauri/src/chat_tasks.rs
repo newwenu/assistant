@@ -40,4 +40,9 @@ impl ChatTasks {
         let mut map = self.lock_map();
         map.remove(conversation_id);
     }
+
+    pub fn is_running(&self, conversation_id: &str) -> bool {
+        let map = self.lock_map();
+        map.contains_key(conversation_id)
+    }
 }

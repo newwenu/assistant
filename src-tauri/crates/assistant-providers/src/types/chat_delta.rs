@@ -3,6 +3,14 @@ use serde::{Deserialize, Serialize};
 use super::unified::{UnifiedResponse, UnifiedTokenUsage};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct RetryNotification {
+    pub attempt: u32,
+    pub max_attempts: u32,
+    pub delay_ms: u64,
+    pub message: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ChatDelta {
     pub seq: Option<u32>,
     pub delta_text: Option<String>,
@@ -12,19 +20,41 @@ pub struct ChatDelta {
     pub delta_tool_call_arguments: Option<String>,
     pub finish_reason: Option<String>,
     pub usage: Option<TokenUsage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delta_retry: Option<RetryNotification>,
 }
 
 impl ChatDelta {
-    pub fn retry_notification(attempt: u32, message: impl std::fmt::Display) -> Self {
+    pub fn retry_notification(
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        message: impl std::fmt::Display,
+    ) -> Self {
         Self {
-            delta_text: Some(format!("[retry {}] {}\n", attempt + 1, message)),
+            delta_retry: Some(RetryNotification {
+                attempt,
+                max_attempts,
+                delay_ms,
+                message: message.to_string(),
+            }),
             ..Default::default()
         }
     }
 
-    pub fn retry_http_notification(attempt: u32, status: reqwest::StatusCode) -> Self {
+    pub fn retry_http_notification(
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        status: reqwest::StatusCode,
+    ) -> Self {
         Self {
-            delta_text: Some(format!("[retry {}] HTTP {}\n", attempt + 1, status)),
+            delta_retry: Some(RetryNotification {
+                attempt,
+                max_attempts,
+                delay_ms,
+                message: format!("HTTP {}", status),
+            }),
             ..Default::default()
         }
     }
@@ -85,6 +115,7 @@ fn unified_response_into_chat_deltas(
             delta_tool_call_arguments: None,
             finish_reason: None,
             usage,
+            delta_retry: None,
         });
     }
 
@@ -106,6 +137,7 @@ fn unified_response_into_chat_deltas(
             delta_tool_call_arguments: tc.arguments,
             finish_reason: None,
             usage,
+            delta_retry: None,
         });
     }
 
@@ -133,6 +165,7 @@ fn unified_response_into_chat_deltas(
                     .usage
                     .as_ref()
                     .map(|u| unified_usage_to_token_usage(u, context_window_tokens)),
+                delta_retry: None,
             });
         }
     }

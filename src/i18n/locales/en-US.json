@@ -74,6 +74,15 @@
       "stay_on_top": {
         "label": "Stay on Top",
         "save_message": "Stay on top updated"
+      },
+      "compact": {
+        "auto_compact": { "label": "Auto-terminate on context limit" },
+        "compact_threshold_percent": { "label": "Termination threshold" },
+        "compact_summary_prompt": {
+          "label": "Custom summary prompt",
+          "placeholder": "Leave empty to use default template"
+        },
+        "compact_summary_max_tokens": { "label": "Max summary length" }
       }
     },
     "appearance": {
@@ -342,6 +351,7 @@
     "input": {
       "placeholder": "Type a message...",
       "placeholder_no_provider": "Please configure an AI Provider first",
+      "placeholder_full": "Conversation terminated — generate a handoff summary or start a new chat",
       "placeholder_streaming": "Type next message, Enter will send after reply finishes...",
       "send": "Send message",
       "stop": "Stop generating"
@@ -406,6 +416,22 @@
       "expand": "Show thinking",
       "collapse": "Hide thinking",
       "thinking": "Thinking…"
+    },
+    "compact": {
+      "banner_title": "Conversation reached context limit",
+      "copy_summary": "Copy summary",
+      "new_conversation": "New conversation",
+      "unlock": "Unlock conversation",
+      "unlock_confirm": "Unlocking may cause the conversation to reach the limit again. Continue?",
+      "generate_summary": "Generate handoff summary",
+      "generate_confirm": "This will generate a handoff summary and terminate the conversation. Continue?",
+      "error_title": "Summary generation failed",
+      "retry": "Retry",
+      "conversation_full": "Conversation is full, cannot send",
+      "summary_label": "Handoff Summary"
+    },
+    "retry": {
+      "retrying": "Retrying ({{attempt}}/{{max}}) in {{delay}}s…"
     },
     "orb": {
       "conversation_list": "Conversation list",

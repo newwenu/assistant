@@ -10,6 +10,10 @@ export interface AppConf {
   launch_at_login: boolean;
   close_to_tray: boolean;
   keybindings: Record<string, string>;
+  auto_compact: boolean;
+  compact_threshold_percent: number;
+  compact_summary_prompt: string | null;
+  compact_summary_max_tokens: number;
 }
 
 export interface OrbConf {

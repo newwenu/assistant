@@ -97,6 +97,8 @@ pub fn run() {
             cmd::get_conversation_token_usage,
             cmd::install_mascot_asset,
             cmd::uninstall_mascot_asset,
+            cmd::manual_compact_conversation,
+            cmd::unlock_conversation,
         ])
         .on_menu_event(|app, event| match event.id.as_ref() {
             "orb_new_chat" => {

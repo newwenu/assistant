@@ -4,6 +4,10 @@ import { RendererSelectRender } from "../shared/RendererSelectRender";
 import { MascotColorGroupRender } from "../shared/MascotColorGroupRender";
 import { SHORTCUT_DEFINITIONS, DEFAULT_KEYBINDINGS } from "./shortcutTypes";
 import { createMascotCapabilityVisible } from "@/mascot";
+import {
+  COMPACTION_THRESHOLD_PERCENT,
+  MAX_SUMMARY_REQUEST_TOKENS,
+} from "@/config/constants";
 
 defineSection({
   id: "general-main",
@@ -233,3 +237,50 @@ export const SHORTCUT_SETTINGS = SHORTCUT_DEFINITIONS.map((shortcut) =>
     }),
   }),
 );
+
+export const COMPACT_SETTINGS = [
+  defineSetting({
+    key: "auto_compact",
+    group: "app",
+    section: "general-main",
+    type: "boolean",
+    default: true,
+    label: "settings.general.compact.auto_compact.label",
+  }),
+  defineSetting({
+    key: "compact_threshold_percent",
+    group: "app",
+    section: "general-main",
+    type: "slider",
+    default: COMPACTION_THRESHOLD_PERCENT,
+    label: "settings.general.compact.compact_threshold_percent.label",
+    min: 50,
+    max: 99,
+    step: 1,
+    marks: { 50: "50%", 80: "80%", 99: "99%" },
+    visible: (conf: Record<string, unknown>) => !!conf.auto_compact,
+  }),
+  defineSetting({
+    key: "compact_summary_prompt",
+    group: "app",
+    section: "general-main",
+    type: "textarea",
+    default: null,
+    label: "settings.general.compact.compact_summary_prompt.label",
+    placeholder: "settings.general.compact.compact_summary_prompt.placeholder",
+    rows: 6,
+    visible: (conf: Record<string, unknown>) => !!conf.auto_compact,
+  }),
+  defineSetting({
+    key: "compact_summary_max_tokens",
+    group: "app",
+    section: "general-main",
+    type: "number",
+    default: MAX_SUMMARY_REQUEST_TOKENS,
+    label: "settings.general.compact.compact_summary_max_tokens.label",
+    min: 512,
+    max: 16384,
+    step: 256,
+    visible: (conf: Record<string, unknown>) => !!conf.auto_compact,
+  }),
+];

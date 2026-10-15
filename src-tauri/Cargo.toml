@@ -82,6 +82,7 @@ rusqlite = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
+tokio-stream = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 tokio-util = { workspace = true }

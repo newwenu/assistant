@@ -35,6 +35,7 @@ function createMockDeps(): {
     updateContextUsage: vi.fn(),
     finishStream: vi.fn(),
     errorStream: vi.fn(),
+    setRetryStatus: vi.fn(),
   };
 
   const env: ChatEnvPort = {
