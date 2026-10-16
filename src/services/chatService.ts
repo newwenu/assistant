@@ -1,30 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Conversation, Message } from "../chat/core/chatTypes";
-import {
-  invokeList,
-  invokeSingle,
-  rowToConversation,
-  rowToConversationDetail,
-  rowToTokenUsageSummary,
-} from "../chat/core/protocolAdapter";
+import type {
+  Conversation,
+  ConversationDetail,
+  TokenUsageSummary,
+} from "../chat/core/chatTypes";
 
-export interface ConversationDetail {
-  conversation: Conversation;
-  messages: Message[];
-  totalCount: number;
-}
-
-export interface TokenUsageSummary {
-  totalTokens: number;
-  contextWindowTokens: number;
-  percentage: number;
-}
+export type { ConversationDetail, TokenUsageSummary };
 
 export const chatService = {
   listConversations: (): Promise<Conversation[]> =>
-    invokeList(
-      invoke("list_conversations", { providerId: null }),
-      rowToConversation,
+    invoke<Conversation[]>("list_conversations", { providerId: null }).then(
+      (r) => r || [],
     ),
 
   createConversation: (
@@ -39,22 +25,20 @@ export const chatService = {
     limit: number,
     beforeTimestamp: number | null,
   ): Promise<ConversationDetail | null> =>
-    invokeSingle(
-      invoke("get_conversation_paginated", { id, limit, beforeTimestamp }),
-      rowToConversationDetail,
-    ),
+    invoke<ConversationDetail | null>("get_conversation_paginated", {
+      id,
+      limit,
+      beforeTimestamp,
+    }).then((r) => r ?? null),
 
   getConversationTokenUsage: (
     conversationId: string,
     contextWindowTokens: number | undefined,
   ): Promise<TokenUsageSummary | null> =>
-    invokeSingle(
-      invoke("get_conversation_token_usage", {
-        conversationId,
-        contextWindowTokens,
-      }),
-      rowToTokenUsageSummary,
-    ),
+    invoke<TokenUsageSummary | null>("get_conversation_token_usage", {
+      conversationId,
+      contextWindowTokens,
+    }).then((r) => r ?? null),
 
   deleteConversation: (id: string): Promise<void> =>
     invoke("delete_conversation", { id }),

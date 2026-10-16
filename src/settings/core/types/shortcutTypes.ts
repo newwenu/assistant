@@ -37,7 +37,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     kind: "global",
   },
   {
-    id: "command_palette",
+    id: "commandPalette",
     group: "main",
     label: "settings.shortcuts.command_palette",
     defaultBinding: `${PRIMARY_MOD}+K`,

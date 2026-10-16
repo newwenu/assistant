@@ -12,7 +12,7 @@ use assistant_config::{
     mascot_conf::MascotConf,
     orb_conf::OrbConf,
 };
-use crate::protocol::ThemeChangedPayload;
+use crate::protocol::{AppConfDto, MascotConfDto, OrbConfDto, ThemeChangedPayloadDto};
 
 static CONF_LOCK: Mutex<()> = Mutex::new(());
 
@@ -105,19 +105,23 @@ fn apply_autostart(app: &AppHandle, enable: bool) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 #[command]
-pub fn get_app_conf() -> Result<AppConf, String> {
-    AppConf::load().map_err(|e| {
-        error!("Failed to load app config: {}", e);
-        e.to_string()
-    })
+pub fn get_app_conf() -> Result<AppConfDto, String> {
+    AppConf::load()
+        .map(AppConfDto::from)
+        .map_err(|e| {
+            error!("Failed to load app config: {}", e);
+            e.to_string()
+        })
 }
 
 #[command]
-pub fn get_orb_conf() -> Result<OrbConf, String> {
-    OrbConf::load().map_err(|e| {
-        error!("Failed to load orb config: {}", e);
-        e.to_string()
-    })
+pub fn get_orb_conf() -> Result<OrbConfDto, String> {
+    OrbConf::load()
+        .map(OrbConfDto::from)
+        .map_err(|e| {
+            error!("Failed to load orb config: {}", e);
+            e.to_string()
+        })
 }
 
 #[command]
@@ -132,7 +136,7 @@ pub fn emit_theme_changed(app: AppHandle, resolved: String) -> Result<(), String
     use tauri::Emitter;
     app.emit(
         "theme-changed",
-        ThemeChangedPayload {
+        ThemeChangedPayloadDto {
             resolved,
         },
     )
@@ -147,11 +151,13 @@ pub fn set_locale(app: AppHandle, locale: String) -> Result<(), String> {
 }
 
 #[command]
-pub fn get_mascot_conf() -> Result<MascotConf, String> {
-    MascotConf::load().map_err(|e| {
-        error!("Failed to load mascot config: {}", e);
-        e.to_string()
-    })
+pub fn get_mascot_conf() -> Result<MascotConfDto, String> {
+    MascotConf::load()
+        .map(MascotConfDto::from)
+        .map_err(|e| {
+            error!("Failed to load mascot config: {}", e);
+            e.to_string()
+        })
 }
 
 #[command]

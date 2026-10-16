@@ -91,7 +91,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       const p = availableProviders.find((pr) => pr.id === providerId);
       if (!p) {
         const fallback = availableProviders[0];
-        let fallbackModel = fallback.default_model || "";
+        let fallbackModel = fallback.defaultModel || "";
         if (fallback.models.length > 0 && !fallbackModel)
           fallbackModel = fallback.models[0].id;
         return { providerId: fallback.id, modelId: fallbackModel };
@@ -99,7 +99,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       const models = p.models;
       const modelExists = models.some((m) => m.id === modelId);
       if (!modelExists) {
-        let fallbackModel = p.default_model || "";
+        let fallbackModel = p.defaultModel || "";
         if (models.length > 0 && !fallbackModel) fallbackModel = models[0].id;
         return { providerId: p.id, modelId: fallbackModel };
       }
@@ -162,7 +162,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     (newProviderId: string) => {
       setCurrentProviderId(newProviderId);
       const p = provider.providers.find((pr) => pr.id === newProviderId);
-      let modelId = p?.default_model || "";
+      let modelId = p?.defaultModel || "";
       if (p && p.models.length > 0 && !modelId) modelId = p.models[0].id;
       setCurrentModelId(modelId);
       if (chat.currentConversationId) {
@@ -185,7 +185,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     }
     const pid = currentProviderId || provider.providers[0].id;
     const p = provider.providers.find((pr) => pr.id === pid);
-    let modelId = p?.default_model || "";
+    let modelId = p?.defaultModel || "";
     if (p && p.models.length > 0 && !modelId) modelId = p.models[0].id;
     void chat.createConversation(pid, modelId);
   }, [provider.providers, currentProviderId, chat, modal, t]);

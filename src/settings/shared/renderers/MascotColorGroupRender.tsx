@@ -39,8 +39,8 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
   const defaultColors = currentMeta?.defaultColors;
   const showSecondary = defaultColors?.secondary != null;
 
-  const confPrimary = (conf?.primary_color as string) ?? null;
-  const confSecondary = (conf?.secondary_color as string) ?? null;
+  const confPrimary = (conf?.primaryColor as string) ?? null;
+  const confSecondary = (conf?.secondaryColor as string) ?? null;
 
   const [primaryColor, setPrimaryColor] = useState<string | null>(
     (value as string) ?? null,
@@ -86,8 +86,8 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
     try {
       setApplying(true);
       await dispatchConfPatch("mascot", {
-        primary_color: primaryColor,
-        secondary_color: secondaryColor,
+        primaryColor: primaryColor,
+        secondaryColor: secondaryColor,
       });
       setDirty(false);
       messageApi.success(t("settings.mascot.color.applied"));

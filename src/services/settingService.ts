@@ -5,8 +5,22 @@ import type {
   MascotConf,
 } from "../settings/core/types/confTypes";
 
+function toSnakeCaseKey(key: string): string {
+  return key.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);
+}
+
+function patchToSnakeCase(
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    result[toSnakeCaseKey(key)] = value;
+  }
+  return result;
+}
+
 export interface InstallAssetResult {
-  installed_path: string;
+  installedPath: string;
   bytes: number;
   version: number;
 }
@@ -39,5 +53,5 @@ export const settingService = {
     invoke("emit_theme_changed", { resolved }),
 
   patchConf: (group: string, patch: Record<string, unknown>): Promise<void> =>
-    invoke("patch_conf", { group, patch }),
+    invoke("patch_conf", { group, patch: patchToSnakeCase(patch) }),
 };

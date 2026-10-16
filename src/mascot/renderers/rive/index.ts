@@ -16,13 +16,13 @@ registerRenderer({
     supportedFaces: BUILTIN_FACES.map(asFace),
     settings: [
       {
-        key: "rive_idle_pose_rotation",
+        key: "riveIdlePoseRotation",
         type: "boolean",
         default: false,
         label: "settings.mascot.renderer.rive.idle_pose_rotation",
       },
       {
-        key: "rive_src",
+        key: "riveSrc",
         type: "asset-picker",
         default: null,
         label: "settings.mascot.renderer.rive.custom_rive.label",

@@ -1,232 +1,225 @@
 import { describe, it, expect } from "vitest";
 import type {
-  MessageRow,
-  ConversationRow,
-  ConversationDetailRow,
-  TokenUsageRow,
-  RetryNotificationRow,
+  Message,
+  Conversation,
+  ConversationDetail,
+  TokenUsage,
+  RetryNotification,
   ChatDeltaPayload,
   ChatStreamStartPayload,
   ConversationTerminatedPayload,
   ConversationCompactFailedPayload,
   ConversationUnlockedPayload,
   ChatRegeneratePayload,
-} from "../protocol";
+} from "../chatTypes";
 import type { Provider } from "../../../settings/provider/types";
 import type { SettingEventPayload } from "../../../types/events";
 import { SettingAction } from "../../../types/events";
-import {
-  rowToMessage,
-  rowToConversation,
-  rowToConversationDetail,
-  messageToRow,
-  conversationToRow,
-} from "../protocolAdapter";
 
-const sampleMessageRow: MessageRow = {
+const sampleMessage: Message = {
   id: "msg-1",
-  conversation_id: "conv-1",
+  conversationId: "conv-1",
   role: "user",
   content: "hello",
   tokens: null,
   timestamp: 1000,
-  parent_id: null,
-  is_pinned: false,
-  reasoning: null,
-  tool_calls_json: null,
+  parentId: null,
+  isPinned: false,
+  reasoning: undefined,
+  toolCalls: undefined,
 };
 
-const sampleConversationRow: ConversationRow = {
+const sampleConversation: Conversation = {
   id: "conv-1",
   title: "Test",
-  title_source: "placeholder",
-  provider_id: null,
-  model_id: "gpt-4",
-  system_prompt: null,
-  is_pinned: false,
-  sort_order: 0,
+  titleSource: "placeholder",
+  providerId: null,
+  modelId: "gpt-4",
+  systemPrompt: null,
+  isPinned: false,
+  sortOrder: 0,
   generation: 0,
-  created_at: 1000,
-  updated_at: 1000,
-  is_full: false,
+  createdAt: 1000,
+  updatedAt: 1000,
+  isFull: false,
 };
 
-const sampleConversationDetailRow: ConversationDetailRow = {
-  conversation: sampleConversationRow,
-  messages: [sampleMessageRow],
-  total_count: 1,
+const sampleConversationDetail: ConversationDetail = {
+  conversation: sampleConversation,
+  messages: [sampleMessage],
+  totalCount: 1,
 };
 
-describe("protocol DTO — wire format contract", () => {
-  it("MessageRow uses snake_case fields", () => {
-    const row = sampleMessageRow;
-    expect(row).toHaveProperty("conversation_id");
-    expect(row).toHaveProperty("parent_id");
-    expect(row).toHaveProperty("is_pinned");
-    expect(row).toHaveProperty("tool_calls_json");
-    expect(row).not.toHaveProperty("conversationId");
-    expect(row).not.toHaveProperty("parentId");
-    expect(row).not.toHaveProperty("isPinned");
-    expect(row).not.toHaveProperty("toolCallsJson");
+describe("protocol DTO — camelCase contract", () => {
+  it("Message uses camelCase fields", () => {
+    const msg = sampleMessage;
+    expect(msg).toHaveProperty("conversationId");
+    expect(msg).toHaveProperty("parentId");
+    expect(msg).toHaveProperty("isPinned");
+    expect(msg).toHaveProperty("toolCalls");
+    expect(msg).not.toHaveProperty("conversation_id");
+    expect(msg).not.toHaveProperty("parent_id");
+    expect(msg).not.toHaveProperty("is_pinned");
+    expect(msg).not.toHaveProperty("tool_calls");
   });
 
-  it("ConversationRow uses snake_case fields", () => {
-    const row = sampleConversationRow;
-    expect(row).toHaveProperty("provider_id");
-    expect(row).toHaveProperty("title_source");
-    expect(row).toHaveProperty("system_prompt");
-    expect(row).toHaveProperty("is_pinned");
-    expect(row).toHaveProperty("sort_order");
-    expect(row).toHaveProperty("created_at");
-    expect(row).toHaveProperty("updated_at");
-    expect(row).toHaveProperty("is_full");
-    expect(row).not.toHaveProperty("providerId");
-    expect(row).not.toHaveProperty("titleSource");
-    expect(row).not.toHaveProperty("isPinned");
-    expect(row).not.toHaveProperty("createdAt");
+  it("Conversation uses camelCase fields", () => {
+    const conv = sampleConversation;
+    expect(conv).toHaveProperty("providerId");
+    expect(conv).toHaveProperty("titleSource");
+    expect(conv).toHaveProperty("systemPrompt");
+    expect(conv).toHaveProperty("isPinned");
+    expect(conv).toHaveProperty("sortOrder");
+    expect(conv).toHaveProperty("createdAt");
+    expect(conv).toHaveProperty("updatedAt");
+    expect(conv).toHaveProperty("isFull");
+    expect(conv).not.toHaveProperty("provider_id");
+    expect(conv).not.toHaveProperty("title_source");
+    expect(conv).not.toHaveProperty("is_pinned");
+    expect(conv).not.toHaveProperty("created_at");
   });
 
-  it("ChatDeltaPayload uses snake_case fields", () => {
+  it("ChatDeltaPayload uses camelCase fields", () => {
     const payload: ChatDeltaPayload = {
-      conversation_id: "c",
-      attempt_id: "a",
-      message_id: "m",
+      conversationId: "c",
+      attemptId: "a",
+      messageId: "m",
       seq: 0,
-      delta_text: "hi",
-      delta_reasoning: undefined,
-      delta_tool_call_id: undefined,
-      delta_tool_call_name: undefined,
-      delta_tool_call_arguments: undefined,
-      finish_reason: undefined,
+      deltaText: "hi",
+      deltaReasoning: undefined,
+      deltaToolCallId: undefined,
+      deltaToolCallName: undefined,
+      deltaToolCallArguments: undefined,
+      finishReason: undefined,
       usage: undefined,
       error: undefined,
-      delta_retry: undefined,
+      deltaRetry: undefined,
     };
-    expect(payload).toHaveProperty("conversation_id");
-    expect(payload).toHaveProperty("attempt_id");
-    expect(payload).toHaveProperty("message_id");
-    expect(payload).toHaveProperty("delta_text");
-    expect(payload).toHaveProperty("delta_reasoning");
-    expect(payload).toHaveProperty("delta_tool_call_id");
-    expect(payload).toHaveProperty("delta_tool_call_name");
-    expect(payload).toHaveProperty("delta_tool_call_arguments");
-    expect(payload).toHaveProperty("finish_reason");
-    expect(payload).not.toHaveProperty("conversationId");
-    expect(payload).not.toHaveProperty("deltaText");
-    expect(payload).not.toHaveProperty("finishReason");
+    expect(payload).toHaveProperty("conversationId");
+    expect(payload).toHaveProperty("attemptId");
+    expect(payload).toHaveProperty("messageId");
+    expect(payload).toHaveProperty("deltaText");
+    expect(payload).toHaveProperty("deltaReasoning");
+    expect(payload).toHaveProperty("deltaToolCallId");
+    expect(payload).toHaveProperty("deltaToolCallName");
+    expect(payload).toHaveProperty("deltaToolCallArguments");
+    expect(payload).toHaveProperty("finishReason");
+    expect(payload).not.toHaveProperty("conversation_id");
+    expect(payload).not.toHaveProperty("delta_text");
+    expect(payload).not.toHaveProperty("finish_reason");
   });
 
-  it("ChatStreamStartPayload uses snake_case fields", () => {
+  it("ChatStreamStartPayload uses camelCase fields", () => {
     const payload: ChatStreamStartPayload = {
-      conversation_id: "c",
-      attempt_id: "a",
-      message_id: "m",
+      conversationId: "c",
+      attemptId: "a",
+      messageId: "m",
     };
-    expect(payload).toHaveProperty("conversation_id");
-    expect(payload).toHaveProperty("attempt_id");
-    expect(payload).not.toHaveProperty("conversationId");
+    expect(payload).toHaveProperty("conversationId");
+    expect(payload).toHaveProperty("attemptId");
+    expect(payload).not.toHaveProperty("conversation_id");
   });
 
-  it("ConversationTerminatedPayload uses snake_case fields", () => {
+  it("ConversationTerminatedPayload uses camelCase fields", () => {
     const payload: ConversationTerminatedPayload = {
-      conversation_id: "c",
+      conversationId: "c",
       summary: "done",
-      is_full: false,
+      isFull: false,
     };
-    expect(payload).toHaveProperty("conversation_id");
-    expect(payload).toHaveProperty("is_full");
-    expect(payload).not.toHaveProperty("isFull");
+    expect(payload).toHaveProperty("conversationId");
+    expect(payload).toHaveProperty("isFull");
+    expect(payload).not.toHaveProperty("is_full");
   });
 
-  it("ConversationCompactFailedPayload uses snake_case fields", () => {
+  it("ConversationCompactFailedPayload uses camelCase fields", () => {
     const payload: ConversationCompactFailedPayload = {
-      conversation_id: "c",
+      conversationId: "c",
       error: "oom",
     };
-    expect(payload).toHaveProperty("conversation_id");
+    expect(payload).toHaveProperty("conversationId");
   });
 
-  it("ConversationUnlockedPayload uses snake_case fields", () => {
+  it("ConversationUnlockedPayload uses camelCase fields", () => {
     const payload: ConversationUnlockedPayload = {
-      conversation_id: "c",
+      conversationId: "c",
     };
-    expect(payload).toHaveProperty("conversation_id");
+    expect(payload).toHaveProperty("conversationId");
     expect(Object.keys(payload)).toHaveLength(1);
   });
 
-  it("TokenUsageRow uses snake_case fields", () => {
-    const usage: TokenUsageRow = {
-      prompt_tokens: 10,
-      completion_tokens: 20,
-      total_tokens: 30,
-      cache_read_tokens: 0,
-      cache_write_tokens: 0,
-      context_window_tokens: 0,
+  it("TokenUsage uses camelCase fields", () => {
+    const usage: TokenUsage = {
+      promptTokens: 10,
+      completionTokens: 20,
+      totalTokens: 30,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      contextWindowTokens: 0,
     };
-    expect(usage).toHaveProperty("prompt_tokens");
-    expect(usage).toHaveProperty("completion_tokens");
-    expect(usage).toHaveProperty("total_tokens");
-    expect(usage).toHaveProperty("cache_read_tokens");
-    expect(usage).toHaveProperty("cache_write_tokens");
-    expect(usage).toHaveProperty("context_window_tokens");
-    expect(usage).not.toHaveProperty("promptTokens");
-    expect(usage).not.toHaveProperty("cacheReadTokens");
+    expect(usage).toHaveProperty("promptTokens");
+    expect(usage).toHaveProperty("completionTokens");
+    expect(usage).toHaveProperty("totalTokens");
+    expect(usage).toHaveProperty("cacheReadTokens");
+    expect(usage).toHaveProperty("cacheWriteTokens");
+    expect(usage).toHaveProperty("contextWindowTokens");
+    expect(usage).not.toHaveProperty("prompt_tokens");
+    expect(usage).not.toHaveProperty("cache_read_tokens");
   });
 
-  it("RetryNotificationRow uses snake_case fields", () => {
-    const retry: RetryNotificationRow = {
+  it("RetryNotification uses camelCase fields", () => {
+    const retry: RetryNotification = {
       attempt: 1,
-      max_attempts: 3,
-      delay_ms: 500,
+      maxAttempts: 3,
+      delayMs: 500,
       message: "retrying",
     };
-    expect(retry).toHaveProperty("delay_ms");
-    expect(retry).toHaveProperty("max_attempts");
-    expect(retry).not.toHaveProperty("delayMs");
-    expect(retry).not.toHaveProperty("maxAttempts");
+    expect(retry).toHaveProperty("delayMs");
+    expect(retry).toHaveProperty("maxAttempts");
+    expect(retry).not.toHaveProperty("delay_ms");
+    expect(retry).not.toHaveProperty("max_attempts");
   });
 
-  it("ChatRegeneratePayload uses snake_case fields", () => {
+  it("ChatRegeneratePayload uses camelCase fields", () => {
     const payload: ChatRegeneratePayload = {
-      conversation_id: "c",
-      deleted_message_id: "m",
+      conversationId: "c",
+      deletedMessageId: "m",
     };
-    expect(payload).toHaveProperty("conversation_id");
-    expect(payload).toHaveProperty("deleted_message_id");
-    expect(payload).not.toHaveProperty("conversationId");
-    expect(payload).not.toHaveProperty("deletedMessageId");
+    expect(payload).toHaveProperty("conversationId");
+    expect(payload).toHaveProperty("deletedMessageId");
+    expect(payload).not.toHaveProperty("conversation_id");
+    expect(payload).not.toHaveProperty("deleted_message_id");
     expect(Object.keys(payload)).toHaveLength(2);
   });
 
-  it("Provider (ProviderListRow mirror) uses snake_case fields", () => {
+  it("Provider uses camelCase fields", () => {
     const provider: Provider = {
       id: "p1",
       name: "OpenAI",
       type: "openai",
-      base_url: "https://api.openai.com",
-      api_key_masked: "sk-***",
+      baseUrl: "https://api.openai.com",
+      apiKeyMasked: "sk-***",
       models: [
         {
           id: "gpt-4",
           name: "GPT-4",
-          owned_by: "openai",
-          context_window: 8192,
+          ownedBy: "openai",
+          contextWindow: 8192,
         },
       ],
-      default_model: "gpt-4",
-      updated_at: 1000,
+      defaultModel: "gpt-4",
+      updatedAt: 1000,
     };
-    expect(provider).toHaveProperty("base_url");
-    expect(provider).toHaveProperty("api_key_masked");
-    expect(provider).toHaveProperty("default_model");
-    expect(provider).toHaveProperty("updated_at");
-    expect(provider).not.toHaveProperty("baseUrl");
-    expect(provider).not.toHaveProperty("apiKeyMasked");
-    expect(provider).not.toHaveProperty("defaultModel");
-    expect(provider).not.toHaveProperty("updatedAt");
+    expect(provider).toHaveProperty("baseUrl");
+    expect(provider).toHaveProperty("apiKeyMasked");
+    expect(provider).toHaveProperty("defaultModel");
+    expect(provider).toHaveProperty("updatedAt");
+    expect(provider).not.toHaveProperty("base_url");
+    expect(provider).not.toHaveProperty("api_key_masked");
+    expect(provider).not.toHaveProperty("default_model");
+    expect(provider).not.toHaveProperty("updated_at");
   });
 
-  it("SettingEventPayload (SettingProviderChangedPayload mirror) uses snake_case fields", () => {
+  it("SettingEventPayload uses camelCase fields", () => {
     const payload: SettingEventPayload = {
       action: SettingAction.ProviderSaved,
       id: "p1",
@@ -237,9 +230,9 @@ describe("protocol DTO — wire format contract", () => {
   });
 });
 
-describe("protocolAdapter — DTO ↔ business type mapping", () => {
-  it("rowToMessage preserves all fields", () => {
-    const msg = rowToMessage(sampleMessageRow);
+describe("business type — field preservation", () => {
+  it("Message preserves all fields", () => {
+    const msg = sampleMessage;
     expect(msg.id).toBe("msg-1");
     expect(msg.conversationId).toBe("conv-1");
     expect(msg.role).toBe("user");
@@ -249,31 +242,14 @@ describe("protocolAdapter — DTO ↔ business type mapping", () => {
     expect(msg.isPinned).toBe(false);
   });
 
-  it("rowToMessage handles null → undefined for optional fields", () => {
-    const msg = rowToMessage(sampleMessageRow);
-    expect(msg.parentId).toBeUndefined();
+  it("Message handles null/undefined for optional fields", () => {
+    const msg = sampleMessage;
+    expect(msg.parentId).toBeNull();
     expect(msg.reasoning).toBeUndefined();
   });
 
-  it("rowToMessage parses tool_calls_json", () => {
-    const row: MessageRow = {
-      ...sampleMessageRow,
-      tool_calls_json: JSON.stringify([
-        { id: "tc1", name: "search", arguments: "{}" },
-      ]),
-    };
-    const msg = rowToMessage(row);
-    expect(msg.toolCalls).toHaveLength(1);
-    expect(msg.toolCalls![0].name).toBe("search");
-  });
-
-  it("rowToMessage returns undefined toolCalls for null tool_calls_json", () => {
-    const msg = rowToMessage(sampleMessageRow);
-    expect(msg.toolCalls).toBeUndefined();
-  });
-
-  it("rowToConversation preserves all fields", () => {
-    const conv = rowToConversation(sampleConversationRow);
+  it("Conversation preserves all fields", () => {
+    const conv = sampleConversation;
     expect(conv.id).toBe("conv-1");
     expect(conv.title).toBe("Test");
     expect(conv.providerId).toBeNull();
@@ -282,64 +258,11 @@ describe("protocolAdapter — DTO ↔ business type mapping", () => {
     expect(conv.isFull).toBe(false);
   });
 
-  it("rowToConversationDetail maps nested structures", () => {
-    const detail = rowToConversationDetail(sampleConversationDetailRow);
+  it("ConversationDetail maps nested structures", () => {
+    const detail = sampleConversationDetail;
     expect(detail.conversation.id).toBe("conv-1");
     expect(detail.messages).toHaveLength(1);
     expect(detail.messages[0].id).toBe("msg-1");
     expect(detail.totalCount).toBe(1);
-  });
-
-  it("messageToRow converts business Message back to DTO MessageRow", () => {
-    const msg = rowToMessage(sampleMessageRow);
-    const row = messageToRow(msg);
-    expect(row.id).toBe("msg-1");
-    expect(row.conversation_id).toBe("conv-1");
-    expect(row.parent_id).toBeNull();
-    expect(row.reasoning).toBeNull();
-    expect(row.tool_calls_json).toBeNull();
-  });
-
-  it("messageToRow serializes toolCalls to tool_calls_json", () => {
-    const row: MessageRow = {
-      ...sampleMessageRow,
-      tool_calls_json: JSON.stringify([
-        { id: "tc1", name: "search", arguments: "{}" },
-      ]),
-    };
-    const msg = rowToMessage(row);
-    const back = messageToRow(msg);
-    expect(back.tool_calls_json).not.toBeNull();
-    const parsed = JSON.parse(back.tool_calls_json!) as Array<{
-      name: string;
-    }>;
-    expect(parsed[0].name).toBe("search");
-  });
-
-  it("conversationToRow converts business Conversation back to DTO ConversationRow", () => {
-    const conv = rowToConversation(sampleConversationRow);
-    const row = conversationToRow(conv);
-    expect(row.id).toBe("conv-1");
-    expect(row.provider_id).toBeNull();
-    expect(row.is_pinned).toBe(false);
-  });
-
-  it("round-trip: MessageRow → Message → MessageRow preserves data", () => {
-    const original = sampleMessageRow;
-    const msg = rowToMessage(original);
-    const restored = messageToRow(msg);
-    expect(restored.id).toBe(original.id);
-    expect(restored.conversation_id).toBe(original.conversation_id);
-    expect(restored.role).toBe(original.role);
-    expect(restored.content).toBe(original.content);
-    expect(restored.tokens).toBe(original.tokens);
-    expect(restored.timestamp).toBe(original.timestamp);
-  });
-
-  it("round-trip: ConversationRow → Conversation → ConversationRow preserves data", () => {
-    const original = sampleConversationRow;
-    const conv = rowToConversation(original);
-    const restored = conversationToRow(conv);
-    expect(restored).toEqual(original);
   });
 });

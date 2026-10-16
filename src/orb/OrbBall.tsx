@@ -111,8 +111,8 @@ export const OrbBall: React.FC = () => {
           renderer={asRendererId(mascotConf?.renderer ?? "rive")}
           face={mascotFace}
           size={ORB_COLLAPSED_SIZE}
-          primaryColor={hexToArgb(mascotConf?.primary_color)}
-          secondaryColor={hexToArgb(mascotConf?.secondary_color)}
+          primaryColor={hexToArgb(mascotConf?.primaryColor)}
+          secondaryColor={hexToArgb(mascotConf?.secondaryColor)}
           rendererConfig={
             mascotConf ? buildRendererConfig(mascotConf) : undefined
           }

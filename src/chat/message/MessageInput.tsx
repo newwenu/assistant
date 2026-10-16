@@ -100,8 +100,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             renderer={asRendererId(mascotConf?.renderer ?? "rive")}
             face={mascotFace}
             size={44}
-            primaryColor={hexToArgb(mascotConf?.primary_color)}
-            secondaryColor={hexToArgb(mascotConf?.secondary_color)}
+            primaryColor={hexToArgb(mascotConf?.primaryColor)}
+            secondaryColor={hexToArgb(mascotConf?.secondaryColor)}
             rendererConfig={
               mascotConf ? buildRendererConfig(mascotConf) : undefined
             }

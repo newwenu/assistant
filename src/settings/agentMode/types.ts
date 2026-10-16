@@ -6,14 +6,14 @@ export interface AgentMode {
   prompt: string;
   model: string | null;
   temperature: number | null;
-  max_tokens: number | null;
-  reasoning_enabled: boolean | null;
-  reasoning_effort: string | null;
+  maxTokens: number | null;
+  reasoningEnabled: boolean | null;
+  reasoningEffort: string | null;
   tools: string[];
-  presentation_rank: number;
-  is_builtin: boolean;
-  created_at: number;
-  updated_at: number;
+  presentationRank: number;
+  isBuiltin: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface AgentModeInput {
@@ -24,13 +24,13 @@ export interface AgentModeInput {
   prompt: string;
   model: string | null;
   temperature: number | null;
-  max_tokens: number | null;
-  reasoning_enabled: boolean | null;
-  reasoning_effort: string | null;
+  maxTokens: number | null;
+  reasoningEnabled: boolean | null;
+  reasoningEffort: string | null;
   tools: string[];
-  presentation_rank: number;
-  is_builtin: boolean;
-  created_at: number;
+  presentationRank: number;
+  isBuiltin: boolean;
+  createdAt: number;
 }
 
 export function toModeInput(
@@ -44,12 +44,12 @@ export function toModeInput(
     prompt: mode.prompt || "",
     model: mode.model ?? null,
     temperature: mode.temperature ?? null,
-    max_tokens: mode.max_tokens ?? null,
-    reasoning_enabled: mode.reasoning_enabled ?? null,
-    reasoning_effort: mode.reasoning_effort ?? null,
+    maxTokens: mode.maxTokens ?? null,
+    reasoningEnabled: mode.reasoningEnabled ?? null,
+    reasoningEffort: mode.reasoningEffort ?? null,
     tools: mode.tools || [],
-    presentation_rank: mode.presentation_rank ?? 99,
-    is_builtin: mode.is_builtin ?? false,
-    created_at: mode.created_at ?? Date.now(),
+    presentationRank: mode.presentationRank ?? 99,
+    isBuiltin: mode.isBuiltin ?? false,
+    createdAt: mode.createdAt ?? Date.now(),
   };
 }

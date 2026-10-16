@@ -16,7 +16,7 @@ registerRenderer({
     supportedFaces: BUILTIN_FACES.map(asFace),
     settings: [
       {
-        key: "svg_animated",
+        key: "svgAnimated",
         type: "boolean",
         default: true,
         label: "settings.mascot.renderer.svg.animated",

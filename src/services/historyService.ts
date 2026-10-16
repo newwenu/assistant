@@ -1,15 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { chatService } from "./chatService";
-import type { ConversationRow } from "../chat/core/protocol";
-import { rowToConversation } from "../chat/core/protocolAdapter";
 import type { Conversation } from "../chat/core/chatTypes";
 
 export const historyService = {
   getConversationPaginated: chatService.getConversationPaginated,
 
   searchConversations: (query: string): Promise<Conversation[]> =>
-    invoke<ConversationRow[]>("search_conversations", { query }).then((r) =>
-      (r || []).map(rowToConversation),
+    invoke<Conversation[]>("search_conversations", { query }).then(
+      (r) => r || [],
     ),
 
   deleteMessagePersist: (messageId: string): Promise<void> =>

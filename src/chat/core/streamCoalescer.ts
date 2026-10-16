@@ -1,9 +1,9 @@
 import { STREAM_COALESCE_TIMER_MS } from "../../config/constants";
 
 export interface CoalescibleDelta {
-  conversation_id: string;
-  attempt_id: string;
-  message_id: string;
+  conversationId: string;
+  attemptId: string;
+  messageId: string;
   seq: number;
   delta: string;
 }
@@ -93,11 +93,11 @@ export function createChatDeltaCoalescer<E extends CoalescibleDelta>(
   const push = (event: E) => {
     if (accept && !accept(event)) return;
     const last = queue[queue.length - 1];
-    const eventKey = event.attempt_id;
-    const lastKey = last ? last.event.attempt_id : undefined;
+    const eventKey = event.attemptId;
+    const lastKey = last ? last.event.attemptId : undefined;
     if (
       last &&
-      last.event.conversation_id === event.conversation_id &&
+      last.event.conversationId === event.conversationId &&
       lastKey === eventKey
     ) {
       last.event = { ...event, delta: `${last.event.delta}${event.delta}` };
@@ -119,8 +119,8 @@ export function createSeqDedupFilter(): {
   const lastSeqByRequest = new Map<string, number>();
 
   const accept = (event: CoalescibleDelta): boolean => {
-    const streamKey = event.attempt_id;
-    const key = `${event.conversation_id}:${streamKey}`;
+    const streamKey = event.attemptId;
+    const key = `${event.conversationId}:${streamKey}`;
     const last = lastSeqByRequest.get(key);
     if (last !== undefined && event.seq <= last) {
       return false;

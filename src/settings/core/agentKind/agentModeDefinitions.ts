@@ -27,23 +27,23 @@ defineAgentKind({
 defineBuiltinModeDefaults("builtin-default", {
   prompt: "",
   temperature: 0.7,
-  max_tokens: 4096,
-  reasoning_enabled: null,
-  reasoning_effort: null,
+  maxTokens: 4096,
+  reasoningEnabled: null,
+  reasoningEffort: null,
 });
 
 defineBuiltinModeDefaults("builtin-quick", {
   prompt: "",
   temperature: 0.3,
-  max_tokens: 2048,
-  reasoning_enabled: false,
-  reasoning_effort: null,
+  maxTokens: 2048,
+  reasoningEnabled: false,
+  reasoningEffort: null,
 });
 
 defineBuiltinModeDefaults("builtin-deep", {
   prompt: "",
   temperature: 0.7,
-  max_tokens: 8192,
-  reasoning_enabled: true,
-  reasoning_effort: "high",
+  maxTokens: 8192,
+  reasoningEnabled: true,
+  reasoningEffort: "high",
 });

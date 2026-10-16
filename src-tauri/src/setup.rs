@@ -15,7 +15,7 @@ use assistant_orb::placement;
 use assistant_storage::db;
 
 use super::tray;
-use crate::protocol::ShortcutWarningPayload;
+use crate::protocol::ShortcutWarningPayloadDto;
 
 pub struct DbState(pub std::sync::Mutex<rusqlite::Connection>);
 
@@ -147,7 +147,7 @@ pub fn register_global_shortcuts(handle: &tauri::AppHandle) {
             log::warn!("Failed to register shortcut {} ({}): {}", id, binding, e);
             let _ = handle.emit(
                 "shortcut-warning",
-                ShortcutWarningPayload {
+                ShortcutWarningPayloadDto {
                     id: id.to_string(),
                     binding: binding.to_string(),
                     error: e.to_string(),

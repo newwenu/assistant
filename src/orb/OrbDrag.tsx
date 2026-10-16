@@ -81,7 +81,7 @@ export function useOrbDrag() {
         setDragging(true);
 
         const orbConf = useSettingsStore.getState().orbConf;
-        if (orbConf?.click_through) {
+        if (orbConf?.clickThrough) {
           orbService.setOrbClickThrough(false).catch(console.error);
         }
 
@@ -131,7 +131,7 @@ export function useOrbDrag() {
         const state = useOrbStore.getState();
         if (!state.isExpanded) {
           const orbConf = useSettingsStore.getState().orbConf;
-          if (orbConf?.click_through) {
+          if (orbConf?.clickThrough) {
             orbService.setOrbClickThrough(true).catch(console.error);
           }
         }

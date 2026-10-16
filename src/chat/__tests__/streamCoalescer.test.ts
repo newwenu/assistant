@@ -14,9 +14,9 @@ function mkDelta(
   overrides: Partial<TestDelta> & Pick<TestDelta, "delta">,
 ): TestDelta {
   return {
-    conversation_id: "c1",
-    attempt_id: "a1",
-    message_id: "m1",
+    conversationId: "c1",
+    attemptId: "a1",
+    messageId: "m1",
     seq: 0,
     ...overrides,
   };
@@ -84,7 +84,7 @@ describe("createChatDeltaCoalescer", () => {
     const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
 
     coalescer.push(mkDelta({ delta: "hello" }));
-    coalescer.push(mkDelta({ attempt_id: "a2", delta: "world" }));
+    coalescer.push(mkDelta({ attemptId: "a2", delta: "world" }));
 
     trigger();
 
@@ -92,7 +92,7 @@ describe("createChatDeltaCoalescer", () => {
     expect(deliver).toHaveBeenNthCalledWith(1, mkDelta({ delta: "hello" }));
     expect(deliver).toHaveBeenNthCalledWith(
       2,
-      mkDelta({ attempt_id: "a2", delta: "world" }),
+      mkDelta({ attemptId: "a2", delta: "world" }),
     );
   });
 
@@ -102,7 +102,7 @@ describe("createChatDeltaCoalescer", () => {
     const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
 
     coalescer.push(mkDelta({ delta: "hello" }));
-    coalescer.push(mkDelta({ conversation_id: "c2", delta: "world" }));
+    coalescer.push(mkDelta({ conversationId: "c2", delta: "world" }));
 
     trigger();
 
@@ -158,8 +158,8 @@ describe("createChatDeltaCoalescer", () => {
 
     coalescer.push(mkDelta({ delta: "a" }));
     coalescer.push(mkDelta({ delta: "b" }));
-    coalescer.push(mkDelta({ attempt_id: "a2", delta: "c" }));
-    coalescer.push(mkDelta({ attempt_id: "a2", delta: "d" }));
+    coalescer.push(mkDelta({ attemptId: "a2", delta: "c" }));
+    coalescer.push(mkDelta({ attemptId: "a2", delta: "d" }));
 
     trigger();
 
@@ -167,7 +167,7 @@ describe("createChatDeltaCoalescer", () => {
     expect(deliver).toHaveBeenNthCalledWith(1, mkDelta({ delta: "ab" }));
     expect(deliver).toHaveBeenNthCalledWith(
       2,
-      mkDelta({ attempt_id: "a2", delta: "cd" }),
+      mkDelta({ attemptId: "a2", delta: "cd" }),
     );
   });
 
@@ -271,16 +271,14 @@ describe("createSeqDedupFilter", () => {
     const { accept } = createSeqDedupFilter();
     expect(accept(mkDelta({ seq: 1, delta: "a" }))).toBe(true);
     expect(
-      accept(
-        mkDelta({ attempt_id: "a2", message_id: "m2", seq: 1, delta: "b" }),
-      ),
+      accept(mkDelta({ attemptId: "a2", messageId: "m2", seq: 1, delta: "b" })),
     ).toBe(true);
     expect(accept(mkDelta({ seq: 1, delta: "replay" }))).toBe(false);
     expect(
       accept(
         mkDelta({
-          attempt_id: "a2",
-          message_id: "m2",
+          attemptId: "a2",
+          messageId: "m2",
           seq: 1,
           delta: "replay",
         }),

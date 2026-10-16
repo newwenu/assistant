@@ -7,7 +7,7 @@ use assistant_providers::{
     crypto,
 };
 use assistant_storage::providers::{self as provider_store, ProviderRow};
-use crate::protocol::{ModelConfigWire, ProviderInputWire, ProviderListRow, SettingProviderChangedPayload};
+use crate::protocol::{ModelConfigDto, ProviderInputDto, ProviderListDto, SettingProviderChangedPayloadDto};
 
 fn mask_api_key_encrypted(encrypted: &str) -> String {
     if encrypted.is_empty() {
@@ -44,16 +44,16 @@ pub(crate) fn build_provider_config(row: &ProviderRow) -> ProviderConfig {
 }
 
 #[command]
-pub fn list_providers(app: AppHandle) -> Result<Vec<ProviderListRow>, String> {
+pub fn list_providers(app: AppHandle) -> Result<Vec<ProviderListDto>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let rows = provider_store::get_providers(&conn)?;
-    let masked: Vec<ProviderListRow> = rows
+    let masked: Vec<ProviderListDto> = rows
         .iter()
         .map(|r| {
-            let models: Vec<ModelConfigWire> =
+            let models: Vec<ModelConfigDto> =
                 serde_json::from_str(&r.models_json).unwrap_or_default();
-            ProviderListRow {
+            ProviderListDto {
                 id: r.id.clone(),
                 name: r.name.clone(),
                 type_: r.type_.clone(),
@@ -69,7 +69,7 @@ pub fn list_providers(app: AppHandle) -> Result<Vec<ProviderListRow>, String> {
 }
 
 #[command]
-pub fn save_provider(app: AppHandle, provider: ProviderInputWire) -> Result<(), String> {
+pub fn save_provider(app: AppHandle, provider: ProviderInputDto) -> Result<(), String> {
     let id = provider.id;
     let name = provider.name;
     let type_ = provider.type_;
@@ -129,7 +129,7 @@ pub fn save_provider(app: AppHandle, provider: ProviderInputWire) -> Result<(), 
 
     let _ = app.emit(
         "setting:provider-changed",
-        SettingProviderChangedPayload {
+        SettingProviderChangedPayloadDto {
             action: "provider-saved".to_string(),
             id: None,
         },
@@ -144,7 +144,7 @@ pub fn delete_provider(app: AppHandle, id: String) -> Result<(), String> {
     provider_store::delete_provider(&conn, &id)?;
     let _ = app.emit(
         "setting:provider-changed",
-        SettingProviderChangedPayload {
+        SettingProviderChangedPayloadDto {
             action: "provider-deleted".to_string(),
             id: Some(id),
         },
@@ -153,7 +153,7 @@ pub fn delete_provider(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[command]
-pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelConfigWire>, String> {
+pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelConfigDto>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let row = provider_store::get_provider_by_id(&conn, &provider_id)?
@@ -164,7 +164,7 @@ pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelC
     let models = adapter.list_models().map_err(|e| e.to_string())?;
     Ok(models
         .into_iter()
-        .map(|m| ModelConfigWire {
+        .map(|m| ModelConfigDto {
             id: m.id,
             name: m.name,
             owned_by: m.owned_by,
@@ -178,7 +178,7 @@ pub fn preview_models_cmd(
     provider_type: String,
     base_url: String,
     api_key: String,
-) -> Result<Vec<ModelConfigWire>, String> {
+) -> Result<Vec<ModelConfigDto>, String> {
     let api_key_encrypted = crypto::encrypt_api_key_b64(&api_key, &crypto::get_machine_id()?)?;
     let config = ProviderConfig {
         kind: base::provider_kind_from_str(&provider_type, base_url.clone()),
@@ -192,7 +192,7 @@ pub fn preview_models_cmd(
     let models = adapter.list_models().map_err(|e| e.to_string())?;
     Ok(models
         .into_iter()
-        .map(|m| ModelConfigWire {
+        .map(|m| ModelConfigDto {
             id: m.id,
             name: m.name,
             owned_by: m.owned_by,

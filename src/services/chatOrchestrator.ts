@@ -5,12 +5,9 @@ import type {
   Conversation,
   TokenUsage,
   ContextUsage,
-} from "../chat/core/chatTypes";
-import type {
   ChatDeltaPayload,
-  RetryNotificationRow,
-} from "../chat/core/protocol";
-import { rowToTokenUsage } from "../chat/core/protocolAdapter";
+  RetryNotification,
+} from "../chat/core/chatTypes";
 import type { ChatError } from "../chat/core/chatErrors";
 import { ChatErrorCode, toChatError } from "../chat/core/chatErrors";
 import { CHAT_AUTO_TITLE_LENGTH } from "../config/constants";
@@ -35,7 +32,7 @@ export interface ChatStatePort {
   updateContextUsage: (usage: ContextUsage) => void;
   finishStream: (usage?: TokenUsage) => void;
   errorStream: (error: ChatError) => void;
-  setRetryStatus: (retry: RetryNotificationRow | null) => void;
+  setRetryStatus: (retry: RetryNotification | null) => void;
 }
 
 export interface ChatEnvPort {
@@ -135,7 +132,7 @@ export function createChatOrchestrator(
           deps.state.beginSend([userMsg, assistantMsg], assistantMsgId);
           deps.state.errorStream({
             code: ChatErrorCode.ApiKeyMissing,
-            retry_after_ms: null,
+            retryAfterMs: null,
             retryable: false,
           });
           return;
@@ -144,7 +141,7 @@ export function createChatOrchestrator(
         const modeId = deps.env.getSelectedModeId();
         const newId = await chatService.createConversation(
           p.id,
-          p.default_model || "",
+          p.defaultModel || "",
           modeId,
         );
         await deps.loadConversations();
@@ -156,7 +153,7 @@ export function createChatOrchestrator(
         deps.state.errorStream({
           code: ChatErrorCode.InternalError,
           message: "No conversation available",
-          retry_after_ms: null,
+          retryAfterMs: null,
           retryable: false,
         });
         return;
@@ -220,7 +217,7 @@ export function createChatOrchestrator(
   function handleDeltaEvent(payload: ChatDeltaPayload) {
     const activeAttemptId = deps.env.getActiveAttemptId();
 
-    if (activeAttemptId === null || payload.attempt_id !== activeAttemptId) {
+    if (activeAttemptId === null || payload.attemptId !== activeAttemptId) {
       return;
     }
 
@@ -230,39 +227,39 @@ export function createChatOrchestrator(
       return;
     }
 
-    if (payload.delta_retry) {
-      deps.state.setRetryStatus(payload.delta_retry);
+    if (payload.deltaRetry) {
+      deps.state.setRetryStatus(payload.deltaRetry);
       return;
     }
 
-    if (payload.delta_reasoning) {
+    if (payload.deltaReasoning) {
       const messageId = deps.env.getStreamingMessageId();
       if (messageId) {
         if (phase === "sending") setPhase("streaming");
         deps.state.setReasoningStreaming(true);
-        deps.state.appendReasoningDelta(messageId, payload.delta_reasoning);
+        deps.state.appendReasoningDelta(messageId, payload.deltaReasoning);
       }
     }
 
     if (
-      payload.delta_tool_call_id ||
-      payload.delta_tool_call_name ||
-      payload.delta_tool_call_arguments
+      payload.deltaToolCallId ||
+      payload.deltaToolCallName ||
+      payload.deltaToolCallArguments
     ) {
       const messageId = deps.env.getStreamingMessageId();
       if (messageId) {
         if (phase === "sending") setPhase("streaming");
         deps.state.appendToolCallDelta(
           messageId,
-          payload.delta_tool_call_id,
-          payload.delta_tool_call_name,
-          payload.delta_tool_call_arguments,
+          payload.deltaToolCallId,
+          payload.deltaToolCallName,
+          payload.deltaToolCallArguments,
         );
       }
     }
 
     if (payload.usage) {
-      const usage = rowToTokenUsage(payload.usage);
+      const usage = payload.usage;
       const ctx =
         usage.contextWindowTokens && usage.contextWindowTokens > 0
           ? usage.contextWindowTokens
@@ -274,12 +271,10 @@ export function createChatOrchestrator(
       });
     }
 
-    if (payload.finish_reason) {
+    if (payload.finishReason) {
       setPhase("idle");
       deps.state.setRetryStatus(null);
-      deps.state.finishStream(
-        payload.usage ? rowToTokenUsage(payload.usage) : undefined,
-      );
+      deps.state.finishStream(payload.usage ?? undefined);
     }
   }
 

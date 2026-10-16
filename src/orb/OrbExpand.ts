@@ -148,7 +148,7 @@ export function useOrbExpand(): UseOrbExpandReturn {
       await orbService.expandOrbPanel(direction, vertical);
       storeExpand();
       const orbConf = useSettingsStore.getState().orbConf;
-      if (orbConf?.click_through) {
+      if (orbConf?.clickThrough) {
         await orbService.setOrbClickThrough(false);
       }
     } catch (e) {
@@ -165,7 +165,7 @@ export function useOrbExpand(): UseOrbExpandReturn {
       await orbService.collapseOrbPanel(direction, vertical);
       setBallVisible(true);
       const orbConf = useSettingsStore.getState().orbConf;
-      if (orbConf?.click_through) {
+      if (orbConf?.clickThrough) {
         await orbService.setOrbClickThrough(true);
       }
     } catch (e) {
@@ -184,7 +184,7 @@ export async function collapseOrbOnInit(): Promise<void> {
     useOrbStore.getState().setBallVisible(true);
     await useSettingsStore.getState().loadOrbConf();
     const orbConf = useSettingsStore.getState().orbConf;
-    if (orbConf?.click_through) {
+    if (orbConf?.clickThrough) {
       await orbService.setOrbClickThrough(true);
     }
   } catch (e) {

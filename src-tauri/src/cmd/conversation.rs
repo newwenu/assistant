@@ -8,16 +8,17 @@ use uuid::Uuid;
 use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::prompt_builder;
-use assistant_providers::base;
+use assistant_providers::base::{self, ProviderErrorPayload};
 use assistant_storage::{
     agent_modes,
     conversations::{self, ConversationRow},
     providers::{self as provider_store},
 };
 use crate::protocol::{
-    ChatDeltaPayload, ChatRegeneratePayload, ChatStreamStartPayload,
-    ConversationCompactFailedPayload, ConversationDetailResponse, ConversationTerminatedPayload,
-    ConversationUnlockedPayload,
+    ChatDeltaPayloadDto, ChatRegeneratePayloadDto, ChatStreamStartPayloadDto,
+    ConversationCompactFailedPayloadDto, ConversationDetailDto, ConversationDto,
+    ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto,
+    ProviderErrorPayloadDto, TokenUsageSummaryDto,
 };
 
 #[command]
@@ -64,19 +65,26 @@ pub fn create_conversation(
 pub fn list_conversations(
     app: AppHandle,
     provider_id: Option<String>,
-) -> Result<Vec<conversations::ConversationRow>, String> {
+) -> Result<Vec<ConversationDto>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let rows = conversations::get_conversations(&conn, provider_id.as_deref())?;
-    Ok(rows)
+    Ok(rows.into_iter().map(Into::into).collect())
 }
 
 #[command]
-pub fn get_conversation(app: AppHandle, id: String) -> Result<Option<conversations::ConversationDetail>, String> {
+pub fn get_conversation(app: AppHandle, id: String) -> Result<Option<ConversationDetailDto>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let detail = conversations::get_conversation_detail(&conn, &id)?;
-    Ok(detail)
+    Ok(detail.map(|d| {
+        let total_count = d.messages.len() as i64;
+        ConversationDetailDto {
+            conversation: d.conversation.into(),
+            messages: d.messages.into_iter().map(Into::into).collect(),
+            total_count,
+        }
+    }))
 }
 
 #[command]
@@ -137,7 +145,7 @@ pub fn get_conversation_paginated(
     id: String,
     limit: Option<i64>,
     before_timestamp: Option<i64>,
-) -> Result<Option<ConversationDetailResponse>, String> {
+) -> Result<Option<ConversationDetailDto>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
 
@@ -147,9 +155,9 @@ pub fn get_conversation_paginated(
             let messages =
                 conversations::get_messages_paginated(&conn, &id, page_limit, before_timestamp)?;
             let total_count = conversations::get_message_count(&conn, &id)?;
-            Ok(Some(ConversationDetailResponse {
-                conversation: conv,
-                messages,
+            Ok(Some(ConversationDetailDto {
+                conversation: conv.into(),
+                messages: messages.into_iter().map(Into::into).collect(),
                 total_count,
             }))
         }
@@ -165,11 +173,11 @@ pub fn delete_message_persist(app: AppHandle, message_id: String) -> Result<(), 
 }
 
 #[command]
-pub fn search_conversations(app: AppHandle, query: String) -> Result<Vec<conversations::ConversationRow>, String> {
+pub fn search_conversations(app: AppHandle, query: String) -> Result<Vec<ConversationDto>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let rows = conversations::search_conversations(&conn, &query)?;
-    Ok(rows)
+    Ok(rows.into_iter().map(Into::into).collect())
 }
 
 #[command]
@@ -232,7 +240,7 @@ pub fn regenerate_message(
     conversations::delete_message_and_after(&conn, &message_id)?;
     let _ = app.emit(
         "chat-regenerate",
-        ChatRegeneratePayload {
+        ChatRegeneratePayloadDto {
             conversation_id: conversation_id.clone(),
             deleted_message_id: message_id,
         },
@@ -245,7 +253,7 @@ pub fn get_conversation_token_usage(
     app: AppHandle,
     conversation_id: String,
     context_window_tokens: Option<u32>,
-) -> Result<agent_modes::TokenUsageSummary, String> {
+) -> Result<TokenUsageSummaryDto, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let ctx = if let Some(c) = context_window_tokens {
@@ -254,7 +262,7 @@ pub fn get_conversation_token_usage(
         resolve_context_window_for_conversation(&conn, &conversation_id)
     };
     let summary = agent_modes::get_conversation_token_usage(&conn, &conversation_id, ctx)?;
-    Ok(summary)
+    Ok(summary.into())
 }
 
 fn resolve_context_window_for_conversation(
@@ -327,7 +335,7 @@ pub fn manual_compact_conversation(app: AppHandle, conversation_id: String) -> R
             set_terminating(&conv_id, false);
             let _ = app_clone.emit(
                 "conversation_compact_failed",
-                ConversationCompactFailedPayload {
+                ConversationCompactFailedPayloadDto {
                     conversation_id: conv_id.clone(),
                     error: e.clone(),
                 },
@@ -348,7 +356,7 @@ pub fn unlock_conversation(app: AppHandle, conversation_id: String) -> Result<()
 
     let _ = app.emit(
         "conversation_unlocked",
-        ConversationUnlockedPayload {
+        ConversationUnlockedPayloadDto {
             conversation_id: conversation_id.clone(),
         },
     );
@@ -364,7 +372,7 @@ pub(crate) async fn execute_compaction(
 ) -> Result<(), String> {
     use assistant_agent::compaction::{set_terminating, DEFAULT_COMPACT_SUMMARY_PROMPT};
     use assistant_config::app_conf::AppConf;
-    use assistant_providers::base::{ChatOptions, ProviderError, ProviderErrorPayload};
+    use assistant_providers::base::{ChatOptions, ProviderError};
     use std::time::Duration;
 
     let app_conf = AppConf::load().map_err(|e| e.to_string())?;
@@ -432,7 +440,7 @@ pub(crate) async fn execute_compaction(
 
     let _ = orb_window.emit(
         "chat-stream-start",
-        ChatStreamStartPayload {
+        ChatStreamStartPayloadDto {
             conversation_id: conversation_id.to_string(),
             attempt_id: attempt_id.to_string(),
             message_id: summary_msg_id.to_string(),
@@ -441,7 +449,7 @@ pub(crate) async fn execute_compaction(
 
     let _ = orb_window.emit(
         "chat-delta",
-        ChatDeltaPayload {
+        ChatDeltaPayloadDto {
             conversation_id: conversation_id.to_string(),
             attempt_id: attempt_id.to_string(),
             message_id: summary_msg_id.to_string(),
@@ -464,7 +472,7 @@ pub(crate) async fn execute_compaction(
         cancel_token,
         move |seq, delta| {
             last_seq_clone.store(seq, Ordering::Relaxed);
-            let payload = ChatDeltaPayload {
+            let payload = ChatDeltaPayloadDto {
                 conversation_id: conv_id.clone(),
                 attempt_id: aid.clone(),
                 message_id: msg_id.clone(),
@@ -530,7 +538,7 @@ pub(crate) async fn execute_compaction(
 
             let _ = app.emit(
                 "conversation_terminated",
-                ConversationTerminatedPayload {
+                ConversationTerminatedPayloadDto {
                     conversation_id: conversation_id.to_string(),
                     summary: summary.clone(),
                     is_full: true,
@@ -550,12 +558,12 @@ pub(crate) async fn execute_compaction(
             set_terminating(conversation_id, false);
             let _ = orb_window.emit(
                 "chat-delta",
-                ChatDeltaPayload {
+                ChatDeltaPayloadDto {
                     conversation_id: conversation_id.to_string(),
                     attempt_id: attempt_id.to_string(),
                     message_id: summary_msg_id.to_string(),
                     seq: seq_val,
-                    error: Some(ProviderErrorPayload::from(&ProviderError::Cancelled)),
+                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(&ProviderError::Cancelled))),
                     ..Default::default()
                 },
             );
@@ -566,12 +574,12 @@ pub(crate) async fn execute_compaction(
             set_terminating(conversation_id, false);
             let _ = orb_window.emit(
                 "chat-delta",
-                ChatDeltaPayload {
+                ChatDeltaPayloadDto {
                     conversation_id: conversation_id.to_string(),
                     attempt_id: attempt_id.to_string(),
                     message_id: summary_msg_id.to_string(),
                     seq: seq_val,
-                    error: Some(ProviderErrorPayload::from(&e)),
+                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(&e))),
                     ..Default::default()
                 },
             );
@@ -582,14 +590,14 @@ pub(crate) async fn execute_compaction(
             set_terminating(conversation_id, false);
             let _ = orb_window.emit(
                 "chat-delta",
-                ChatDeltaPayload {
+                ChatDeltaPayloadDto {
                     conversation_id: conversation_id.to_string(),
                     attempt_id: attempt_id.to_string(),
                     message_id: summary_msg_id.to_string(),
                     seq: seq_val,
-                    error: Some(ProviderErrorPayload::from(&ProviderError::Timeout(
+                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(&ProviderError::Timeout(
                         "Summary generation timed out (30s)".to_string(),
-                    ))),
+                    )))),
                     ..Default::default()
                 },
             );

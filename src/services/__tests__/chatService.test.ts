@@ -23,11 +23,11 @@ describe("chatService", () => {
   });
 
   describe("getConversationPaginated", () => {
-    it("converts DTO to business type (totalCount from total_count)", async () => {
+    it("converts DTO to business type (totalCount from totalCount)", async () => {
       mockInvoke.mockResolvedValue({
         conversation: { id: "c1" },
         messages: [],
-        total_count: 42,
+        totalCount: 42,
       });
       const result = await chatService.getConversationPaginated("c1", 50, null);
       expect(result).not.toBeNull();
@@ -44,8 +44,8 @@ describe("chatService", () => {
   describe("getConversationTokenUsage", () => {
     it("returns business type with totalTokens/contextWindowTokens", async () => {
       const row = {
-        total_tokens: 100,
-        context_window_tokens: 128000,
+        totalTokens: 100,
+        contextWindowTokens: 128000,
         percentage: 0.00078,
       };
       mockInvoke.mockResolvedValue(row);

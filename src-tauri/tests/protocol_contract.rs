@@ -1,8 +1,11 @@
-use assistant_app::protocol::{ChatDeltaPayload, ChatRegeneratePayload, MousePosition, ScreenRect, ScreenSize};
+use assistant_app::protocol::{
+    ChatDeltaPayloadDto, ConversationDetailDto, ConversationDto, MessageDto, TokenUsageDto,
+    RetryNotificationDto, ProviderErrorPayloadDto,
+};
 use assistant_providers::base::{ProviderErrorCode, ProviderErrorPayload};
 use assistant_providers::types::chat_delta::{RetryNotification, TokenUsage};
 use assistant_storage::conversations::{ConversationRow, MessageRow};
-use assistant_storage::providers::ProviderRow;
+
 fn sample_conversation_row() -> ConversationRow {
     ConversationRow {
         id: "conv-1".into(),
@@ -64,8 +67,8 @@ fn sample_retry_notification() -> RetryNotification {
     }
 }
 
-fn sample_chat_delta_payload() -> ChatDeltaPayload {
-    ChatDeltaPayload {
+fn sample_chat_delta_dto() -> ChatDeltaPayloadDto {
+    ChatDeltaPayloadDto {
         conversation_id: "c".into(),
         attempt_id: "a".into(),
         message_id: "m".into(),
@@ -83,22 +86,22 @@ fn sample_chat_delta_payload() -> ChatDeltaPayload {
 }
 
 #[test]
-fn chat_delta_payload_skip_serializing_none() {
-    let payload = ChatDeltaPayload {
-        ..sample_chat_delta_payload()
+fn chat_delta_payload_dto_skip_serializing_none() {
+    let payload = ChatDeltaPayloadDto {
+        ..sample_chat_delta_dto()
     };
     let v = serde_json::to_value(&payload).unwrap();
     let obj = v.as_object().unwrap();
 
     assert!(!obj.contains_key("error"), "error should be skipped when None");
-    assert!(!obj.contains_key("delta_retry"), "delta_retry should be skipped when None");
+    assert!(!obj.contains_key("deltaRetry"), "deltaRetry should be skipped when None");
 }
 
 #[test]
-fn chat_delta_payload_error_field_present_when_some() {
-    let payload = ChatDeltaPayload {
-        error: Some(sample_error_payload()),
-        ..sample_chat_delta_payload()
+fn chat_delta_payload_dto_error_field_present_when_some() {
+    let payload = ChatDeltaPayloadDto {
+        error: Some(ProviderErrorPayloadDto::from(sample_error_payload())),
+        ..sample_chat_delta_dto()
     };
     let v = serde_json::to_value(&payload).unwrap();
     let obj = v.as_object().unwrap();
@@ -107,84 +110,88 @@ fn chat_delta_payload_error_field_present_when_some() {
     let error_obj = obj["error"].as_object().unwrap();
     assert!(error_obj.contains_key("code"), "error.code missing");
     assert!(error_obj.contains_key("message"), "error.message missing");
-    assert!(error_obj.contains_key("retry_after_ms"), "error.retry_after_ms missing");
+    assert!(error_obj.contains_key("retryAfterMs"), "error.retryAfterMs missing");
     assert!(error_obj.contains_key("retryable"), "error.retryable missing");
 }
 
 #[test]
-fn conversation_row_no_camel_case_leak() {
-    let row = sample_conversation_row();
-    let v = serde_json::to_value(&row).unwrap();
+fn conversation_dto_outputs_camel_case() {
+    let dto = ConversationDto::from(sample_conversation_row());
+    let v = serde_json::to_value(&dto).unwrap();
     let obj = v.as_object().unwrap();
 
-    let camel_keys: Vec<&String> = obj
-        .keys()
-        .filter(|k| k.chars().any(|c| c.is_ascii_uppercase()))
-        .collect();
-    assert!(
-        camel_keys.is_empty(),
-        "ConversationRow has camelCase keys in wire format: {:?}",
-        camel_keys
-    );
+    assert!(obj.contains_key("titleSource"), "titleSource should be camelCase");
+    assert!(obj.contains_key("providerId"), "providerId should be camelCase");
+    assert!(obj.contains_key("modelId"), "modelId should be camelCase");
+    assert!(obj.contains_key("systemPrompt"), "systemPrompt should be camelCase");
+    assert!(obj.contains_key("isPinned"), "isPinned should be camelCase");
+    assert!(obj.contains_key("sortOrder"), "sortOrder should be camelCase");
+    assert!(obj.contains_key("createdAt"), "createdAt should be camelCase");
+    assert!(obj.contains_key("updatedAt"), "updatedAt should be camelCase");
+    assert!(obj.contains_key("isFull"), "isFull should be camelCase");
+
+    assert!(!obj.contains_key("title_source"), "no snake_case in wire format");
+    assert!(!obj.contains_key("provider_id"), "no snake_case in wire format");
+    assert!(!obj.contains_key("created_at"), "no snake_case in wire format");
 }
 
 #[test]
-fn chat_delta_payload_round_trip() {
-    let original = ChatDeltaPayload {
+fn chat_delta_payload_dto_round_trip() {
+    let original = ChatDeltaPayloadDto {
         conversation_id: "c".into(),
         attempt_id: "a".into(),
         message_id: "m".into(),
         seq: 42,
         delta_text: Some("hello".into()),
         delta_reasoning: Some("thinking".into()),
+        delta_tool_call_id: None,
+        delta_tool_call_name: None,
+        delta_tool_call_arguments: None,
         finish_reason: Some("stop".into()),
-        usage: Some(sample_token_usage()),
-        delta_retry: Some(sample_retry_notification()),
-        error: Some(sample_error_payload()),
-        ..Default::default()
+        usage: Some(TokenUsageDto::from(sample_token_usage())),
+        delta_retry: Some(RetryNotificationDto::from(sample_retry_notification())),
+        error: Some(ProviderErrorPayloadDto::from(sample_error_payload())),
     };
     let json = serde_json::to_string(&original).unwrap();
     let restored: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-    assert_eq!(restored["conversation_id"], "c");
-    assert_eq!(restored["attempt_id"], "a");
-    assert_eq!(restored["message_id"], "m");
+    assert_eq!(restored["conversationId"], "c");
+    assert_eq!(restored["attemptId"], "a");
+    assert_eq!(restored["messageId"], "m");
     assert_eq!(restored["seq"], 42);
-    assert_eq!(restored["delta_text"], "hello");
-    assert_eq!(restored["delta_reasoning"], "thinking");
-    assert_eq!(restored["finish_reason"], "stop");
-    assert_eq!(restored["usage"]["prompt_tokens"], 10);
-    assert_eq!(restored["usage"]["total_tokens"], 30);
-    assert_eq!(restored["delta_retry"]["attempt"], 1);
-    assert_eq!(restored["delta_retry"]["delay_ms"], 500);
+    assert_eq!(restored["deltaText"], "hello");
+    assert_eq!(restored["deltaReasoning"], "thinking");
+    assert_eq!(restored["finishReason"], "stop");
+    assert_eq!(restored["usage"]["promptTokens"], 10);
+    assert_eq!(restored["usage"]["totalTokens"], 30);
+    assert_eq!(restored["deltaRetry"]["attempt"], 1);
+    assert_eq!(restored["deltaRetry"]["delayMs"], 500);
     assert_eq!(restored["error"]["code"], "RateLimited");
     assert_eq!(restored["error"]["retryable"], true);
 }
 
 #[test]
-fn conversation_detail_response_wire_format() {
-    use assistant_app::protocol::ConversationDetailResponse;
-
-    let resp = ConversationDetailResponse {
-        conversation: sample_conversation_row(),
-        messages: vec![sample_message_row()],
+fn conversation_detail_dto_wire_format() {
+    let dto = ConversationDetailDto {
+        conversation: ConversationDto::from(sample_conversation_row()),
+        messages: vec![MessageDto::from(sample_message_row())],
         total_count: 1,
     };
-    let v = serde_json::to_value(&resp).unwrap();
+    let v = serde_json::to_value(&dto).unwrap();
     let obj = v.as_object().unwrap();
 
     assert!(obj.contains_key("conversation"));
     assert!(obj.contains_key("messages"));
-    assert!(obj.contains_key("total_count"));
-    assert!(!obj.contains_key("totalCount"));
+    assert!(obj.contains_key("totalCount"), "totalCount should be camelCase");
+    assert!(!obj.contains_key("total_count"), "no snake_case in wire format");
 
     let conv = obj["conversation"].as_object().unwrap();
-    assert!(conv.contains_key("provider_id"));
-    assert!(!conv.contains_key("providerId"));
+    assert!(conv.contains_key("providerId"), "providerId should be camelCase");
+    assert!(!conv.contains_key("provider_id"), "no snake_case in wire format");
 
     let msgs = obj["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), 1);
-    assert!(msgs[0].as_object().unwrap().contains_key("conversation_id"));
+    assert!(msgs[0].as_object().unwrap().contains_key("conversationId"), "conversationId should be camelCase");
 }
 
 #[test]
@@ -224,121 +231,26 @@ fn provider_error_code_round_trip() {
 }
 
 #[test]
-fn token_usage_serde_default_fields() {
-    let json = r#"{"prompt_tokens":5,"completion_tokens":10,"total_tokens":15}"#;
-    let usage: TokenUsage = serde_json::from_str(json).unwrap();
+fn token_usage_dto_serde_default_fields() {
+    let json = r#"{"promptTokens":5,"completionTokens":10,"totalTokens":15}"#;
+    let usage: TokenUsageDto = serde_json::from_str(json).unwrap();
     assert_eq!(usage.prompt_tokens, 5);
     assert_eq!(usage.completion_tokens, 10);
     assert_eq!(usage.total_tokens, 15);
-    assert_eq!(usage.cache_read_tokens, 0, "cache_read_tokens should default to 0");
-    assert_eq!(usage.cache_write_tokens, 0, "cache_write_tokens should default to 0");
-    assert_eq!(usage.context_window_tokens, 0, "context_window_tokens should default to 0");
+    assert_eq!(usage.cache_read_tokens, 0, "cacheReadTokens should default to 0");
+    assert_eq!(usage.cache_write_tokens, 0, "cacheWriteTokens should default to 0");
+    assert_eq!(usage.context_window_tokens, 0, "contextWindowTokens should default to 0");
 }
 
 #[test]
-fn token_usage_round_trip() {
-    let usage = sample_token_usage();
+fn token_usage_dto_round_trip() {
+    let usage = TokenUsageDto::from(sample_token_usage());
     let json = serde_json::to_string(&usage).unwrap();
-    let restored: TokenUsage = serde_json::from_str(&json).unwrap();
+    let restored: TokenUsageDto = serde_json::from_str(&json).unwrap();
     assert_eq!(usage.prompt_tokens, restored.prompt_tokens);
     assert_eq!(usage.completion_tokens, restored.completion_tokens);
     assert_eq!(usage.total_tokens, restored.total_tokens);
     assert_eq!(usage.cache_read_tokens, restored.cache_read_tokens);
     assert_eq!(usage.cache_write_tokens, restored.cache_write_tokens);
     assert_eq!(usage.context_window_tokens, restored.context_window_tokens);
-}
-
-#[test]
-fn provider_row_wire_format_is_snake_case() {
-    let row = ProviderRow {
-        id: "p1".into(),
-        name: "OpenAI".into(),
-        type_: "openai".into(),
-        base_url: "https://api.openai.com".into(),
-        api_key_encrypted: "enc".into(),
-        models_json: "[]".into(),
-        default_model: "gpt-4".into(),
-        updated_at: 1000,
-    };
-    let v = serde_json::to_value(&row).unwrap();
-    let obj = v.as_object().unwrap();
-
-    assert!(obj.contains_key("api_key_encrypted"));
-    assert!(obj.contains_key("models_json"));
-    assert!(obj.contains_key("default_model"));
-    assert!(obj.contains_key("updated_at"));
-    assert!(!obj.contains_key("apiKeyEncrypted"), "camelCase leak: apiKeyEncrypted");
-    assert!(!obj.contains_key("modelsJson"), "camelCase leak: modelsJson");
-    assert!(!obj.contains_key("defaultModel"), "camelCase leak: defaultModel");
-
-    assert!(
-        obj.contains_key("type_"),
-        "ProviderRow.type_ serializes as type_ (Rust identifier), NOT type - cmd layer must use json! macro or serde rename"
-    );
-}
-
-#[test]
-fn message_row_no_camel_case_leak() {
-    let row = sample_message_row();
-    let v = serde_json::to_value(&row).unwrap();
-    let obj = v.as_object().unwrap();
-
-    let camel_keys: Vec<&String> = obj
-        .keys()
-        .filter(|k| k.chars().any(|c| c.is_ascii_uppercase()))
-        .collect();
-    assert!(
-        camel_keys.is_empty(),
-        "MessageRow has camelCase keys in wire format: {:?}",
-        camel_keys
-    );
-}
-
-#[test]
-fn chat_regenerate_payload_wire_format() {
-    let payload = ChatRegeneratePayload {
-        conversation_id: "conv-1".into(),
-        deleted_message_id: "msg-1".into(),
-    };
-    let v = serde_json::to_value(&payload).unwrap();
-    let obj = v.as_object().unwrap();
-
-    assert_eq!(obj["conversation_id"], "conv-1");
-    assert_eq!(obj["deleted_message_id"], "msg-1");
-    assert!(!obj.contains_key("deletedMessageId"), "camelCase leak: deletedMessageId");
-}
-
-#[test]
-fn mouse_position_wire_format() {
-    let pos = MousePosition {
-        client_x: 100,
-        client_y: 200,
-    };
-    let v = serde_json::to_value(&pos).unwrap();
-    let obj = v.as_object().unwrap();
-
-    assert_eq!(obj["client_x"], 100);
-    assert_eq!(obj["client_y"], 200);
-    assert!(!obj.contains_key("clientX"), "camelCase leak: clientX");
-    assert!(!obj.contains_key("clientY"), "camelCase leak: clientY");
-}
-
-#[test]
-fn screen_size_wire_format() {
-    let size = ScreenSize {
-        screen: ScreenRect {
-            x: 0,
-            y: 0,
-            width: 1920,
-            height: 1080,
-        },
-    };
-    let v = serde_json::to_value(&size).unwrap();
-    let obj = v.as_object().unwrap();
-
-    let screen = obj["screen"].as_object().unwrap();
-    assert_eq!(screen["x"], 0);
-    assert_eq!(screen["y"], 0);
-    assert_eq!(screen["width"], 1920);
-    assert_eq!(screen["height"], 1080);
 }

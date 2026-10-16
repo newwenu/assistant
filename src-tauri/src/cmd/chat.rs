@@ -17,7 +17,7 @@ use assistant_storage::{
     providers::{self as provider_store},
 };
 use serde_json;
-use crate::protocol::{ChatDeltaPayload, ChatStreamStartPayload, ConversationCompactFailedPayload};
+use crate::protocol::{ChatDeltaPayloadDto, ChatStreamStartPayloadDto, ConversationCompactFailedPayloadDto, ProviderErrorPayloadDto};
 
 struct StreamEmitCtx<'a> {
     orb_window: &'a tauri::WebviewWindow,
@@ -83,7 +83,7 @@ fn emit_delta(ectx: &StreamEmitCtx, seq: u32, delta: &base::ChatDelta) {
             seq, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, usage.context_window_tokens
         );
     }
-    let payload = ChatDeltaPayload {
+    let payload = ChatDeltaPayloadDto {
         conversation_id: ectx.conv_id.to_string(),
         attempt_id: ectx.attempt_id.to_string(),
         message_id: ectx.msg_id.to_string(),
@@ -94,8 +94,8 @@ fn emit_delta(ectx: &StreamEmitCtx, seq: u32, delta: &base::ChatDelta) {
         delta_tool_call_name: delta.delta_tool_call_name.clone(),
         delta_tool_call_arguments: delta.delta_tool_call_arguments.clone(),
         finish_reason: delta.finish_reason.clone(),
-        usage: delta.usage.clone(),
-        delta_retry: delta.delta_retry.clone(),
+        usage: delta.usage.clone().map(Into::into),
+        delta_retry: delta.delta_retry.clone().map(Into::into),
         ..Default::default()
     };
     if let Err(emit_err) = ectx.orb_window.emit("chat-delta", payload) {
@@ -104,12 +104,12 @@ fn emit_delta(ectx: &StreamEmitCtx, seq: u32, delta: &base::ChatDelta) {
 }
 
 fn emit_stream_error(ectx: &StreamEmitCtx, last_seq: u32, error: &ProviderErrorPayload) {
-    let payload = ChatDeltaPayload {
+    let payload = ChatDeltaPayloadDto {
         conversation_id: ectx.conv_id.to_string(),
         attempt_id: ectx.attempt_id.to_string(),
         message_id: ectx.msg_id.to_string(),
         seq: last_seq,
-        error: Some(error.clone()),
+        error: Some(ProviderErrorPayloadDto::from(error.clone())),
         ..Default::default()
     };
     if let Err(emit_err) = ectx.orb_window.emit("chat-delta", payload) {
@@ -203,7 +203,7 @@ fn spawn_compaction_listener(
                     compaction::set_terminating(&conv_id, false);
                     let _ = app.emit(
                         "conversation_compact_failed",
-                        ConversationCompactFailedPayload {
+                        ConversationCompactFailedPayloadDto {
                             conversation_id: conv_id.clone(),
                             error: e.clone(),
                         },
@@ -310,7 +310,7 @@ pub fn send_chat_message(
         .ok_or_else(|| assistant_i18n::t("error.orb_window_not_found"))?;
     if let Err(emit_err) = orb_window.emit(
         "chat-stream-start",
-        ChatStreamStartPayload {
+        ChatStreamStartPayloadDto {
             conversation_id: conversation_id.clone(),
             attempt_id: attempt_id.clone(),
             message_id: assistant_msg_id.clone(),

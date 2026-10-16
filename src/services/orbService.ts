@@ -1,11 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export interface MousePositionRow {
-  client_x: number;
-  client_y: number;
+export interface MousePosition {
+  clientX: number;
+  clientY: number;
 }
 
-export interface ScreenSizeRow {
+export interface ScreenSize {
   screen: {
     x: number;
     y: number;
@@ -15,15 +15,15 @@ export interface ScreenSizeRow {
 }
 
 export const orbService = {
-  getMousePosition: (): Promise<MousePositionRow> =>
-    invoke<MousePositionRow>("get_mouse_position"),
+  getMousePosition: (): Promise<MousePosition> =>
+    invoke<MousePosition>("get_mouse_position"),
 
   getScreenSize: (
     centerX: number,
     centerY: number,
     scaleFactor: number,
-  ): Promise<ScreenSizeRow> =>
-    invoke<ScreenSizeRow>("get_screen_size", {
+  ): Promise<ScreenSize> =>
+    invoke<ScreenSize>("get_screen_size", {
       centerX,
       centerY,
       scaleFactor,

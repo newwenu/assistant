@@ -13,16 +13,16 @@ use assistant_config::{
     orb_conf::OrbConf,
 };
 use assistant_orb::placement;
-use crate::protocol::{MousePosition, ScreenRect, ScreenSize};
+use crate::protocol::{MousePositionDto, ScreenRectDto, ScreenSizeDto};
 
 pub(crate) static ORB_CLICK_THROUGH: AtomicBool = AtomicBool::new(false);
 static ORB_SNAP_CANCEL: AtomicBool = AtomicBool::new(false);
 
 #[command]
-pub fn get_mouse_position() -> Option<MousePosition> {
+pub fn get_mouse_position() -> Option<MousePositionDto> {
     let position = Mouse::get_mouse_position();
     match position {
-        Mouse::Position { x, y } => Some(MousePosition {
+        Mouse::Position { x, y } => Some(MousePositionDto {
             client_x: x,
             client_y: y,
         }),
@@ -70,7 +70,7 @@ pub fn get_screen_size(
     center_x: f64,
     center_y: f64,
     scale_factor: f64,
-) -> ScreenSize {
+) -> ScreenSizeDto {
     let cx_phys = center_x * scale_factor;
     let cy_phys = center_y * scale_factor;
     let screens = placement::get_available_screens(&app);
@@ -82,20 +82,20 @@ pub fn get_screen_size(
         dx * dx + dy * dy
     });
     let rect = match best {
-        Some(s) => ScreenRect {
+        Some(s) => ScreenRectDto {
             x: s.x,
             y: s.y,
             width: s.width,
             height: s.height,
         },
-        None => ScreenRect {
+        None => ScreenRectDto {
             x: 0,
             y: 0,
             width: 1920,
             height: 1080,
         },
     };
-    ScreenSize { screen: rect }
+    ScreenSizeDto { screen: rect }
 }
 
 #[command]

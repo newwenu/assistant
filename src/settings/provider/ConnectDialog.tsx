@@ -81,7 +81,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
         visible: () => showType,
       },
       {
-        key: "api_key",
+        key: "apiKey",
         type: "secret",
         label: t("settings.provider.field.api_key.label"),
         description: (ctx) =>
@@ -90,14 +90,14 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
             : t("settings.provider.field.api_key.encrypted_hint"),
         placeholder: (ctx) =>
           ctx.mode === "edit"
-            ? (ctx.entity as Provider)?.api_key_masked ||
+            ? (ctx.entity as Provider)?.apiKeyMasked ||
               t("settings.provider.field.api_key.keep")
             : formatInfo?.keyPlaceholder || "sk-...",
         visible: () => !isLocal,
         keepIfEmpty: isEdit,
       },
       {
-        key: "base_url",
+        key: "baseUrl",
         type: "string",
         label: t("settings.provider.field.base_url.label"),
         placeholder: (ctx) =>
@@ -106,7 +106,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
             : "https://...",
       },
       {
-        key: "default_model",
+        key: "defaultModel",
         type: "select",
         label: t("settings.provider.field.default_model.label"),
         allowClear: true,
@@ -122,11 +122,11 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
             onClick: async (ctx, callbacks) => {
               const fv = ctx.formValues;
               const baseUrl =
-                (fv.base_url as string) ||
+                (fv.baseUrl as string) ||
                 (ctx.preset
                   ? (ctx.preset as ProviderPreset).defaultBaseUrl
                   : "");
-              const apiKey = (fv.api_key as string) || "";
+              const apiKey = (fv.apiKey as string) || "";
               if (!apiKey && !isLocal && ctx.mode === "add") {
                 messageApi.warning(
                   t("settings.provider.field.api_key.required_first"),
@@ -210,12 +210,12 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
           : isPreset && preset
             ? preset.slug
             : values.type || "custom",
-        base_url:
-          values.base_url || (isPreset && preset ? preset.defaultBaseUrl : ""),
-        api_key: values.api_key || "",
-        api_key_changed: !isEdit || !!values.api_key,
+        baseUrl:
+          values.baseUrl || (isPreset && preset ? preset.defaultBaseUrl : ""),
+        apiKey: values.apiKey || "",
+        apiKeyChanged: !isEdit || !!values.apiKey,
         models: JSON.stringify(models),
-        default_model: values.default_model || "",
+        defaultModel: values.defaultModel || "",
       };
       onSubmit(input);
     } finally {
@@ -228,17 +228,17 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
       form.setFieldsValue({
         name: provider.name,
         type: provider.type,
-        base_url: provider.base_url,
-        api_key: "",
-        default_model: provider.default_model,
+        baseUrl: provider.baseUrl,
+        apiKey: "",
+        defaultModel: provider.defaultModel,
       });
     } else {
       form.setFieldsValue({
         name: isPreset && preset ? preset.label : "",
         type: isPreset && preset ? preset.slug : "",
-        base_url: isPreset && preset ? preset.defaultBaseUrl : "",
-        api_key: "",
-        default_model: undefined,
+        baseUrl: isPreset && preset ? preset.defaultBaseUrl : "",
+        apiKey: "",
+        defaultModel: undefined,
       });
     }
     setModels([]);
@@ -323,7 +323,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
                         message: t("settings.provider.field.name.required"),
                       },
                     ]
-                  : schema.key === "base_url"
+                  : schema.key === "baseUrl"
                     ? [
                         {
                           required: true,
@@ -332,7 +332,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
                           ),
                         },
                       ]
-                    : schema.key === "api_key" && !isEdit && !isLocal
+                    : schema.key === "apiKey" && !isEdit && !isLocal
                       ? [
                           {
                             required: true,
@@ -370,7 +370,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
                 key={m.id}
                 type="button"
                 className="connect-model-item"
-                onClick={() => form.setFieldsValue({ default_model: m.id })}
+                onClick={() => form.setFieldsValue({ defaultModel: m.id })}
               >
                 <span className="connect-model-name">{m.name || m.id}</span>
                 <span className="connect-model-id">{m.id}</span>

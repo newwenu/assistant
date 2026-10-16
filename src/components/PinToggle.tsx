@@ -7,17 +7,17 @@ import { useTranslation } from "react-i18next";
 
 export const PinToggle: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);
-  const [pinned, setPinned] = useState(appConf?.stay_on_top ?? false);
+  const [pinned, setPinned] = useState(appConf?.stayOnTop ?? false);
   const { t } = useTranslation();
 
   useEffect(() => {
-    if (appConf) setPinned(appConf.stay_on_top);
+    if (appConf) setPinned(appConf.stayOnTop);
   }, [appConf]);
 
   const handleToggle = () => {
     const next = !pinned;
     setPinned(next);
-    void dispatchConfPatch("app", { stay_on_top: next });
+    void dispatchConfPatch("app", { stayOnTop: next });
   };
 
   return (

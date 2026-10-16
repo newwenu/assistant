@@ -59,10 +59,10 @@ export function optimisticConfUpdate(
 export function buildRendererConfig(conf: MascotConf): RendererConfig {
   const renderer = conf.renderer ?? "rive";
   return {
-    idlePoseRotation: conf.rive_idle_pose_rotation,
-    src: renderer === "rive" ? conf.rive_src : conf.gif_src,
-    animated: conf.svg_animated,
-    borderRadius: conf.gif_border_radius,
+    idlePoseRotation: conf.riveIdlePoseRotation,
+    src: renderer === "rive" ? conf.riveSrc : conf.gifSrc,
+    animated: conf.svgAnimated,
+    borderRadius: conf.gifBorderRadius,
   };
 }
 
@@ -78,18 +78,18 @@ export function buildMascotPatch(
       "idlePoseRotation" in rendererConfig &&
       rendererConfig.idlePoseRotation !== undefined
     )
-      patch.rive_idle_pose_rotation = rendererConfig.idlePoseRotation;
+      patch.riveIdlePoseRotation = rendererConfig.idlePoseRotation;
     if ("animated" in rendererConfig && rendererConfig.animated !== undefined)
-      patch.svg_animated = rendererConfig.animated;
+      patch.svgAnimated = rendererConfig.animated;
     if ("src" in rendererConfig && rendererConfig.src !== undefined) {
-      if (renderer === "rive") patch.rive_src = rendererConfig.src;
-      else patch.gif_src = rendererConfig.src;
+      if (renderer === "rive") patch.riveSrc = rendererConfig.src;
+      else patch.gifSrc = rendererConfig.src;
     }
     if (
       "borderRadius" in rendererConfig &&
       rendererConfig.borderRadius !== undefined
     )
-      patch.gif_border_radius = rendererConfig.borderRadius;
+      patch.gifBorderRadius = rendererConfig.borderRadius;
   }
   return patch;
 }

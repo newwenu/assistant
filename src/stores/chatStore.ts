@@ -7,7 +7,7 @@ import {
   type ChatEnvPort,
   type ChatOrchestrator,
 } from "../services/chatOrchestrator";
-import type { RetryNotificationRow } from "../chat/core/protocol";
+import type { RetryNotification } from "../chat/core/chatTypes";
 import {
   MESSAGES_PAGE_SIZE,
   CONTEXT_WARN_THRESHOLD,
@@ -44,8 +44,8 @@ function resolveContextWindowTokens(
   if (!provider) return undefined;
   const models = provider.models;
   const model = models.find((m) => m.id === modelId);
-  if (model && model.context_window && model.context_window > 0) {
-    return model.context_window;
+  if (model && model.contextWindow && model.contextWindow > 0) {
+    return model.contextWindow;
   }
   return undefined;
 }
@@ -67,7 +67,7 @@ interface ChatState {
   isFull: boolean;
   compactSummary: string | null;
   compactError: string | null;
-  retryStatus: RetryNotificationRow | null;
+  retryStatus: RetryNotification | null;
 
   loadConversations: (silent?: boolean) => Promise<void>;
   createConversation: (providerId: string, modelId: string) => Promise<string>;
@@ -259,7 +259,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     errorStream: (error: ChatError) => {
       const state = get();
       if (state.streamingMessageId) {
-        const retryHint = formatRetryAfter(error.retry_after_ms);
+        const retryHint = formatRetryAfter(error.retryAfterMs);
         const displayMessage = retryHint
           ? `${error.message ?? ""} ${retryHint}`
           : (error.message ?? error.code);
@@ -281,7 +281,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         );
       }
     },
-    setRetryStatus: (retry: RetryNotificationRow | null) => {
+    setRetryStatus: (retry: RetryNotification | null) => {
       set({ retryStatus: retry });
     },
   };
@@ -352,7 +352,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         const p = provList[0];
         const id = await chatService.createConversation(
           p.id,
-          p.default_model || "",
+          p.defaultModel || "",
         );
         await get().loadConversations();
         await get().switchConversation(id);

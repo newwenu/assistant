@@ -6,7 +6,7 @@ import type {
   ConversationTerminatedPayload,
   ConversationCompactFailedPayload,
   ConversationUnlockedPayload,
-} from "../chat/core/protocol";
+} from "../chat/core/chatTypes";
 import {
   createChatDeltaCoalescer,
   createSeqDedupFilter,
@@ -24,9 +24,9 @@ export function setChatOrchestrator(orchestrator: ChatOrchestrator): void {
 }
 
 interface StreamStartIds {
-  conversation_id: string;
-  attempt_id: string;
-  message_id: string;
+  conversationId: string;
+  attemptId: string;
+  messageId: string;
 }
 
 export function subscribeChatDeltaEvents(): () => void {
@@ -53,14 +53,14 @@ export function subscribeChatDeltaEvents(): () => void {
       if (disposed) return;
       const payload = event.payload as ChatStreamStartPayload;
       streamStartIds = {
-        conversation_id: payload.conversation_id,
-        attempt_id: payload.attempt_id,
-        message_id: payload.message_id,
+        conversationId: payload.conversationId,
+        attemptId: payload.attemptId,
+        messageId: payload.messageId,
       };
       firstDeltaChecked = false;
       const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversation_id) {
-        store.setActiveAttemptId(payload.attempt_id, payload.message_id);
+      if (store.currentConversationId === payload.conversationId) {
+        store.setActiveAttemptId(payload.attemptId, payload.messageId);
       }
     }),
   );
@@ -94,67 +94,67 @@ export function subscribeChatDeltaEvents(): () => void {
         firstDeltaChecked = true;
         const ids = streamStartIds;
         if (
-          ids.conversation_id !== payload.conversation_id ||
-          ids.attempt_id !== payload.attempt_id ||
-          ids.message_id !== payload.message_id
+          ids.conversationId !== payload.conversationId ||
+          ids.attemptId !== payload.attemptId ||
+          ids.messageId !== payload.messageId
         ) {
           console.error(
-            `[R3] stream-start/delta id mismatch: start=(${ids.conversation_id},${ids.attempt_id},${ids.message_id}) delta=(${payload.conversation_id},${payload.attempt_id},${payload.message_id})`,
+            `[R3] stream-start/delta id mismatch: start=(${ids.conversationId},${ids.attemptId},${ids.messageId}) delta=(${payload.conversationId},${payload.attemptId},${payload.messageId})`,
           );
         }
       }
 
-      const lastSeq = lastSeqByAttempt.get(payload.attempt_id);
+      const lastSeq = lastSeqByAttempt.get(payload.attemptId);
       if (lastSeq !== undefined && payload.seq <= lastSeq) {
         console.error(
-          `[R4] seq non-monotonic: attempt_id=${payload.attempt_id} prev_seq=${lastSeq} curr_seq=${payload.seq}`,
+          `[R4] seq non-monotonic: attemptId=${payload.attemptId} prevSeq=${lastSeq} currSeq=${payload.seq}`,
         );
       }
-      lastSeqByAttempt.set(payload.attempt_id, payload.seq);
+      lastSeqByAttempt.set(payload.attemptId, payload.seq);
 
-      if (payload.delta_text) {
+      if (payload.deltaText) {
         coalescer.push({
-          conversation_id: payload.conversation_id,
-          attempt_id: payload.attempt_id,
-          message_id: payload.message_id,
+          conversationId: payload.conversationId,
+          attemptId: payload.attemptId,
+          messageId: payload.messageId,
           seq: payload.seq,
-          delta: payload.delta_text,
+          delta: payload.deltaText,
         });
       }
 
       if (
-        payload.delta_reasoning ||
-        payload.delta_tool_call_id ||
-        payload.delta_tool_call_name ||
-        payload.delta_tool_call_arguments ||
+        payload.deltaReasoning ||
+        payload.deltaToolCallId ||
+        payload.deltaToolCallName ||
+        payload.deltaToolCallArguments ||
         payload.usage ||
-        payload.finish_reason ||
+        payload.finishReason ||
         payload.error ||
-        payload.delta_retry
+        payload.deltaRetry
       ) {
         coalescer.flush();
         const nonTextPayload: ChatDeltaPayload = {
-          conversation_id: payload.conversation_id,
-          attempt_id: payload.attempt_id,
-          message_id: payload.message_id,
+          conversationId: payload.conversationId,
+          attemptId: payload.attemptId,
+          messageId: payload.messageId,
           seq: payload.seq,
-          delta_reasoning: payload.delta_reasoning,
-          delta_tool_call_id: payload.delta_tool_call_id,
-          delta_tool_call_name: payload.delta_tool_call_name,
-          delta_tool_call_arguments: payload.delta_tool_call_arguments,
+          deltaReasoning: payload.deltaReasoning,
+          deltaToolCallId: payload.deltaToolCallId,
+          deltaToolCallName: payload.deltaToolCallName,
+          deltaToolCallArguments: payload.deltaToolCallArguments,
           usage: payload.usage,
-          finish_reason: payload.finish_reason,
+          finishReason: payload.finishReason,
           error: payload.error,
-          delta_retry: payload.delta_retry,
+          deltaRetry: payload.deltaRetry,
         };
         if (orchestratorInstance) {
           orchestratorInstance.handleDeltaEvent(nonTextPayload);
         }
       }
 
-      if (payload.finish_reason) {
+      if (payload.finishReason) {
         seqDedup.reset();
-        lastSeqByAttempt.delete(payload.attempt_id);
+        lastSeqByAttempt.delete(payload.attemptId);
       }
     }),
   );
@@ -164,9 +164,9 @@ export function subscribeChatDeltaEvents(): () => void {
       if (disposed) return;
       const payload = event.payload as ConversationTerminatedPayload;
       const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversation_id) {
+      if (store.currentConversationId === payload.conversationId) {
         useChatStore.setState({
-          isFull: payload.is_full,
+          isFull: payload.isFull,
           compactSummary: payload.summary,
           compactError: null,
         });
@@ -180,7 +180,7 @@ export function subscribeChatDeltaEvents(): () => void {
       if (disposed) return;
       const payload = event.payload as ConversationCompactFailedPayload;
       const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversation_id) {
+      if (store.currentConversationId === payload.conversationId) {
         useChatStore.setState({ compactError: payload.error });
       }
     }),
@@ -191,7 +191,7 @@ export function subscribeChatDeltaEvents(): () => void {
       if (disposed) return;
       const payload = event.payload as ConversationUnlockedPayload;
       const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversation_id) {
+      if (store.currentConversationId === payload.conversationId) {
         useChatStore.setState({
           isFull: false,
           compactSummary: null,

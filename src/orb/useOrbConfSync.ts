@@ -25,14 +25,14 @@ async function applyOrbConf(
 
   document.documentElement.style.setProperty(
     "--orb-opacity",
-    `${conf.opacity_percent / 100}`,
+    `${conf.opacityPercent / 100}`,
   );
   document.documentElement.style.setProperty(
     "--orb-scale",
-    `${conf.scale_percent / 100}`,
+    `${conf.scalePercent / 100}`,
   );
 
-  if (conf.hide_on_pointer_hover) {
+  if (conf.hideOnPointerHover) {
     document.documentElement.classList.add("orb-hover-hide");
   } else {
     document.documentElement.classList.remove("orb-hover-hide");
@@ -40,15 +40,15 @@ async function applyOrbConf(
 
   document.documentElement.style.setProperty(
     "--orb-hover-delay",
-    `${conf.hover_delay_ms}ms`,
+    `${conf.hoverDelayMs}ms`,
   );
   document.documentElement.style.setProperty(
     "--orb-idle-opacity",
-    `${conf.idle_opacity_percent / 100}`,
+    `${conf.idleOpacityPercent / 100}`,
   );
 
   try {
-    await orbService.setOrbClickThrough(conf.click_through);
+    await orbService.setOrbClickThrough(conf.clickThrough);
   } catch (e) {
     console.warn("[useOrbConfSync] set_orb_click_through failed:", e);
   }

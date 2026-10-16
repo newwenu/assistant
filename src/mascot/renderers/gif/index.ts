@@ -17,7 +17,7 @@ registerRenderer({
     supportedFaces: [asFace("idle")],
     settings: [
       {
-        key: "gif_border_radius",
+        key: "gifBorderRadius",
         type: "slider",
         default: 50,
         label: "settings.mascot.renderer.gif.border_radius.label",
@@ -26,7 +26,7 @@ registerRenderer({
         extra: "settings.mascot.renderer.gif.border_radius.extra",
       },
       {
-        key: "gif_src",
+        key: "gifSrc",
         type: "asset-picker",
         default: null,
         label: "settings.mascot.renderer.gif.gif_src.label",

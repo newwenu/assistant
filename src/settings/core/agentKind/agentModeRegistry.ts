@@ -30,9 +30,9 @@ export function getAgentKindColor(id: string): string {
 export interface BuiltinModeDefaults {
   prompt: string;
   temperature: number | null;
-  max_tokens: number | null;
-  reasoning_enabled: boolean | null;
-  reasoning_effort: string | null;
+  maxTokens: number | null;
+  reasoningEnabled: boolean | null;
+  reasoningEffort: string | null;
 }
 
 const builtinDefaultsMap = new Map<string, BuiltinModeDefaults>();

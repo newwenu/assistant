@@ -49,3 +49,64 @@ export interface ContextUsage {
   maxTokens: number;
   percentage: number;
 }
+
+export interface RetryNotification {
+  attempt: number;
+  maxAttempts: number;
+  delayMs: number;
+  message: string;
+}
+
+export interface ConversationDetail {
+  conversation: Conversation;
+  messages: Message[];
+  totalCount: number;
+}
+
+export interface TokenUsageSummary {
+  totalTokens: number;
+  contextWindowTokens: number;
+  percentage: number;
+}
+
+export interface ChatDeltaPayload {
+  conversationId: string;
+  attemptId: string;
+  messageId: string;
+  seq: number;
+  deltaText?: string;
+  deltaReasoning?: string;
+  deltaToolCallId?: string;
+  deltaToolCallName?: string;
+  deltaToolCallArguments?: string;
+  finishReason?: string;
+  usage?: TokenUsage;
+  error?: ChatError;
+  deltaRetry?: RetryNotification;
+}
+
+export interface ChatStreamStartPayload {
+  conversationId: string;
+  attemptId: string;
+  messageId: string;
+}
+
+export interface ConversationTerminatedPayload {
+  conversationId: string;
+  summary: string;
+  isFull: boolean;
+}
+
+export interface ConversationCompactFailedPayload {
+  conversationId: string;
+  error: string;
+}
+
+export interface ConversationUnlockedPayload {
+  conversationId: string;
+}
+
+export interface ChatRegeneratePayload {
+  conversationId: string;
+  deletedMessageId: string;
+}

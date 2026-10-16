@@ -17,7 +17,7 @@ interface ErrorBlockProps {
 export const ErrorBlock: React.FC<ErrorBlockProps> = ({ error, onRetry }) => {
   const display =
     getErrorDisplay(error.code) ?? getErrorDisplay(ChatErrorCode.InternalError);
-  const retryHint = formatRetryAfter(error.retry_after_ms);
+  const retryHint = formatRetryAfter(error.retryAfterMs);
   const { t } = useTranslation();
 
   return (

@@ -28,7 +28,7 @@ export function AssetPickerField({
         config.assetType,
         selected,
       );
-      const assetUrl = `${convertFileSrc(result.installed_path)}?v=${result.version}`;
+      const assetUrl = `${convertFileSrc(result.installedPath)}?v=${result.version}`;
       onChange(assetUrl);
       setUrlInput(assetUrl);
       messageApi.success(

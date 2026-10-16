@@ -37,7 +37,7 @@ export function logicalToPhysical(lx: number, ly: number): PhysicalPosition {
 
 export async function getMouseLogicalPos(): Promise<LogicalPos> {
   const pos = await orbService.getMousePosition();
-  return physicalToLogical(pos.client_x, pos.client_y);
+  return physicalToLogical(pos.clientX, pos.clientY);
 }
 
 export async function getWindowLogicalRect(): Promise<LogicalRect> {

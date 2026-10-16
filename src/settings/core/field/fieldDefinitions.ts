@@ -69,7 +69,7 @@ export const APP_SETTINGS = [
     sideEffect: "locale_change",
   }),
   defineSetting({
-    key: "launch_at_login",
+    key: "launchAtLogin",
     group: "app",
     section: "general-main",
     type: "boolean",
@@ -78,7 +78,7 @@ export const APP_SETTINGS = [
     saveMessage: "settings.general.launch_at_login.save_message",
   }),
   defineSetting({
-    key: "close_to_tray",
+    key: "closeToTray",
     group: "app",
     section: "general-main",
     type: "boolean",
@@ -87,7 +87,7 @@ export const APP_SETTINGS = [
     extra: "settings.general.close_to_tray.extra",
   }),
   defineSetting({
-    key: "stay_on_top",
+    key: "stayOnTop",
     group: "app",
     section: "general-main",
     type: "boolean",
@@ -116,7 +116,7 @@ export const THEME_SETTING = defineSetting({
 
 export const ORB_BALL_SETTINGS = [
   defineSetting({
-    key: "opacity_percent",
+    key: "opacityPercent",
     group: "orb",
     section: "orb-ball",
     type: "slider",
@@ -127,7 +127,7 @@ export const ORB_BALL_SETTINGS = [
     marks: { 10: "10%", 100: "100%" },
   }),
   defineSetting({
-    key: "idle_opacity_percent",
+    key: "idleOpacityPercent",
     group: "orb",
     section: "orb-ball",
     type: "slider",
@@ -138,7 +138,7 @@ export const ORB_BALL_SETTINGS = [
     marks: { 10: "10%", 85: "85%", 100: "100%" },
   }),
   defineSetting({
-    key: "scale_percent",
+    key: "scalePercent",
     group: "orb",
     section: "orb-ball",
     type: "slider",
@@ -149,7 +149,7 @@ export const ORB_BALL_SETTINGS = [
     marks: { 50: "50%", 100: "100%", 200: "200%" },
   }),
   defineSetting({
-    key: "click_through",
+    key: "clickThrough",
     group: "orb",
     section: "orb-ball",
     type: "boolean",
@@ -159,7 +159,7 @@ export const ORB_BALL_SETTINGS = [
     saveMessage: false,
   }),
   defineSetting({
-    key: "hide_on_pointer_hover",
+    key: "hideOnPointerHover",
     group: "orb",
     section: "orb-ball",
     type: "boolean",
@@ -167,7 +167,7 @@ export const ORB_BALL_SETTINGS = [
     label: "settings.orb.hide_on_pointer_hover.label",
   }),
   defineSetting({
-    key: "hover_delay_ms",
+    key: "hoverDelayMs",
     group: "orb",
     section: "orb-ball",
     type: "slider",
@@ -182,7 +182,7 @@ export const ORB_BALL_SETTINGS = [
 
 export const ORB_PANEL_SETTINGS = [
   defineSetting({
-    key: "always_on_top",
+    key: "alwaysOnTop",
     group: "orb",
     section: "orb-panel",
     type: "boolean",
@@ -192,7 +192,7 @@ export const ORB_PANEL_SETTINGS = [
 ];
 
 export const MASCOT_COLOR_SETTING = defineSetting({
-  key: "primary_color",
+  key: "primaryColor",
   group: "mascot",
   section: "orb-ball",
   type: "color",
@@ -243,7 +243,7 @@ export const SHORTCUT_SETTINGS = SHORTCUT_DEFINITIONS.map((shortcut) =>
 
 export const COMPACT_SETTINGS = [
   defineSetting({
-    key: "auto_compact",
+    key: "autoCompact",
     group: "app",
     section: "general-main",
     type: "boolean",
@@ -251,7 +251,7 @@ export const COMPACT_SETTINGS = [
     label: "settings.general.compact.auto_compact.label",
   }),
   defineSetting({
-    key: "compact_threshold_percent",
+    key: "compactThresholdPercent",
     group: "app",
     section: "general-main",
     type: "slider",
@@ -261,10 +261,10 @@ export const COMPACT_SETTINGS = [
     max: 99,
     step: 1,
     marks: { 50: "50%", 80: "80%", 99: "99%" },
-    visible: (conf: Record<string, unknown>) => !!conf.auto_compact,
+    visible: (conf: Record<string, unknown>) => !!conf.autoCompact,
   }),
   defineSetting({
-    key: "compact_summary_prompt",
+    key: "compactSummaryPrompt",
     group: "app",
     section: "general-main",
     type: "textarea",
@@ -272,10 +272,10 @@ export const COMPACT_SETTINGS = [
     label: "settings.general.compact.compact_summary_prompt.label",
     placeholder: "settings.general.compact.compact_summary_prompt.placeholder",
     rows: 6,
-    visible: (conf: Record<string, unknown>) => !!conf.auto_compact,
+    visible: (conf: Record<string, unknown>) => !!conf.autoCompact,
   }),
   defineSetting({
-    key: "compact_summary_max_tokens",
+    key: "compactSummaryMaxTokens",
     group: "app",
     section: "general-main",
     type: "number",
@@ -284,6 +284,6 @@ export const COMPACT_SETTINGS = [
     min: 512,
     max: 16384,
     step: 256,
-    visible: (conf: Record<string, unknown>) => !!conf.auto_compact,
+    visible: (conf: Record<string, unknown>) => !!conf.autoCompact,
   }),
 ];

@@ -17,7 +17,7 @@ export const CompactBanner: React.FC = () => {
     const provider = useProviderStore.getState().providers;
     if (provider.length === 0) return;
     const pid = provider[0].id;
-    let modelId = provider[0].default_model || "";
+    let modelId = provider[0].defaultModel || "";
     if (provider[0].models.length > 0 && !modelId)
       modelId = provider[0].models[0].id;
     void chat.createConversation(pid, modelId);

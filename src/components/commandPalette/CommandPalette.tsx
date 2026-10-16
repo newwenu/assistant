@@ -33,7 +33,7 @@ export const CommandPalette: React.FC = () => {
   const navigate = useNavigate();
   const { t, i18n: currentI18n } = useTranslation();
   const appConf = useSettingsStore((s) => s.appConf);
-  const binding = appConf?.keybindings?.command_palette;
+  const binding = appConf?.keybindings?.commandPalette;
 
   const allCommands = useMemo(() => {
     void currentI18n.language;

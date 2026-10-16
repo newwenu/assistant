@@ -3,7 +3,7 @@ import { Typography } from "antd";
 import { CompressOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { Message, ToolCall } from "../../stores/chatStore";
-import type { RetryNotificationRow } from "../../chat/core/protocol";
+import type { RetryNotification } from "../../chat/core/chatTypes";
 import { ErrorBlock } from "../blocks/ErrorBlock";
 import { getErrorDisplay, ChatErrorCode } from "../core/chatErrors";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
@@ -17,7 +17,7 @@ interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
   isReasoningStreaming?: boolean;
-  retryStatus?: RetryNotificationRow | null;
+  retryStatus?: RetryNotification | null;
   compact?: boolean;
   onDelete?: (id: string) => void;
   onEdit?: (id: string, newContent: string) => void;
@@ -124,8 +124,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                 <span>
                   {t("chat.retry.retrying", {
                     attempt: retryStatus.attempt + 1,
-                    max: retryStatus.max_attempts,
-                    delay: Math.ceil(retryStatus.delay_ms / 1000),
+                    max: retryStatus.maxAttempts,
+                    delay: Math.ceil(retryStatus.delayMs / 1000),
                   })}
                 </span>
                 <span className={css.retryMessage}>{retryStatus.message}</span>

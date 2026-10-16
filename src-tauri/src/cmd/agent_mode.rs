@@ -3,39 +3,22 @@ use tauri::{command, AppHandle, Manager};
 use uuid::Uuid;
 
 use assistant_storage::agent_modes::{self, AgentModeRow};
-use crate::protocol::{AgentModeInputWire, AgentModeWire};
+use crate::protocol::{AgentModeDto, AgentModeInputDto};
 
-fn row_to_wire(row: &AgentModeRow) -> AgentModeWire {
-    let tools: Vec<String> = serde_json::from_str(&row.tools_json).unwrap_or_default();
-    AgentModeWire {
-        id: row.id.clone(),
-        name: row.name.clone(),
-        description: row.description.clone(),
-        kind: row.kind.clone(),
-        prompt: row.prompt.clone(),
-        model: row.model.clone(),
-        temperature: row.temperature,
-        max_tokens: row.max_tokens,
-        reasoning_enabled: row.reasoning_enabled,
-        reasoning_effort: row.reasoning_effort.clone(),
-        tools,
-        presentation_rank: row.presentation_rank,
-        is_builtin: row.is_builtin,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-    }
+fn row_to_dto(row: &AgentModeRow) -> AgentModeDto {
+    AgentModeDto::from_row(row)
 }
 
 #[command]
-pub fn list_agent_modes(app: AppHandle) -> Result<Vec<AgentModeWire>, String> {
+pub fn list_agent_modes(app: AppHandle) -> Result<Vec<AgentModeDto>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let modes = agent_modes::get_modes(&conn)?;
-    Ok(modes.iter().map(row_to_wire).collect())
+    Ok(modes.iter().map(row_to_dto).collect())
 }
 
 #[command]
-pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputWire) -> Result<(), String> {
+pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
 

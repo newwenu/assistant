@@ -6,14 +6,14 @@ import type {
   ChatOrchestratorDeps,
   ChatOrchestrator,
 } from "../chatOrchestrator";
-import type { ProviderErrorPayloadRow } from "../../chat/core/protocol";
+import type { ChatError } from "../../chat/core/chatErrors";
 import { ChatErrorCode } from "../../chat/core/chatErrors";
 
-function makeError(message: string): ProviderErrorPayloadRow {
+function makeError(message: string): ChatError {
   return {
     code: ChatErrorCode.StreamError,
     message,
-    retry_after_ms: null,
+    retryAfterMs: null,
     retryable: false,
   };
 }
@@ -21,7 +21,7 @@ function makeError(message: string): ProviderErrorPayloadRow {
 vi.mock("../chatService", () => ({
   chatService: {
     listProviders: vi.fn(() =>
-      Promise.resolve([{ id: "p1", default_model: "m1" }]),
+      Promise.resolve([{ id: "p1", defaultModel: "m1" }]),
     ),
     createConversation: vi.fn(() => Promise.resolve("conv-new")),
     sendChatMessage: vi.fn(() => Promise.resolve()),
@@ -114,13 +114,13 @@ describe("chatOrchestrator", () => {
   });
 
   describe("handleDeltaEvent — routing", () => {
-    it("routes delta_reasoning → appendReasoningDelta", () => {
+    it("routes deltaReasoning → appendReasoningDelta", () => {
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: "conv-1:1",
-        message_id: "msg-1",
+        conversationId: "conv-1",
+        attemptId: "conv-1:1",
+        messageId: "msg-1",
         seq: 1,
-        delta_reasoning: "thinking...",
+        deltaReasoning: "thinking...",
       });
       expect(mockDeps.state.appendReasoningDelta).toHaveBeenCalledWith(
         "msg-assistant",
@@ -130,17 +130,17 @@ describe("chatOrchestrator", () => {
 
     it("routes usage → updateContextUsage (DTO→business conversion)", () => {
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: "conv-1:1",
-        message_id: "msg-1",
+        conversationId: "conv-1",
+        attemptId: "conv-1:1",
+        messageId: "msg-1",
         seq: 1,
         usage: {
-          prompt_tokens: 100,
-          completion_tokens: 50,
-          total_tokens: 150,
-          cache_read_tokens: 0,
-          cache_write_tokens: 0,
-          context_window_tokens: 1000,
+          promptTokens: 100,
+          completionTokens: 50,
+          totalTokens: 150,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          contextWindowTokens: 1000,
         },
       });
       expect(mockDeps.state.updateContextUsage).toHaveBeenCalledWith({
@@ -150,20 +150,20 @@ describe("chatOrchestrator", () => {
       });
     });
 
-    it("routes finish_reason → finishStream with business TokenUsage", () => {
+    it("routes finishReason → finishStream with business TokenUsage", () => {
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: "conv-1:1",
-        message_id: "msg-assistant",
+        conversationId: "conv-1",
+        attemptId: "conv-1:1",
+        messageId: "msg-assistant",
         seq: 1,
-        finish_reason: "stop",
+        finishReason: "stop",
         usage: {
-          prompt_tokens: 100,
-          completion_tokens: 50,
-          total_tokens: 150,
-          cache_read_tokens: 0,
-          cache_write_tokens: 0,
-          context_window_tokens: 0,
+          promptTokens: 100,
+          completionTokens: 50,
+          totalTokens: 150,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          contextWindowTokens: 0,
         },
       });
       expect(mockDeps.state.finishStream).toHaveBeenCalledWith({
@@ -177,43 +177,43 @@ describe("chatOrchestrator", () => {
     });
   });
 
-  describe("handleDeltaEvent — stale attempt_id filtering", () => {
-    it("ignores all event types from stale attempt_id", () => {
+  describe("handleDeltaEvent — stale attemptId filtering", () => {
+    it("ignores all event types from stale attemptId", () => {
       const staleId = "conv-1:0";
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: staleId,
-        message_id: "msg-1",
+        conversationId: "conv-1",
+        attemptId: staleId,
+        messageId: "msg-1",
         seq: 1,
-        delta_reasoning: "stale",
+        deltaReasoning: "stale",
       });
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: staleId,
-        message_id: "msg-1",
+        conversationId: "conv-1",
+        attemptId: staleId,
+        messageId: "msg-1",
         seq: 1,
         usage: {
-          prompt_tokens: 100,
-          completion_tokens: 50,
-          total_tokens: 150,
-          cache_read_tokens: 0,
-          cache_write_tokens: 0,
-          context_window_tokens: 1000,
+          promptTokens: 100,
+          completionTokens: 50,
+          totalTokens: 150,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          contextWindowTokens: 1000,
         },
       });
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: staleId,
-        message_id: "msg-1",
+        conversationId: "conv-1",
+        attemptId: staleId,
+        messageId: "msg-1",
         seq: 1,
         error: makeError("stale error"),
       });
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: staleId,
-        message_id: "msg-1",
+        conversationId: "conv-1",
+        attemptId: staleId,
+        messageId: "msg-1",
         seq: 1,
-        finish_reason: "stop",
+        finishReason: "stop",
       });
       expect(mockDeps.state.appendReasoningDelta).not.toHaveBeenCalled();
       expect(mockDeps.state.updateContextUsage).not.toHaveBeenCalled();
@@ -221,16 +221,16 @@ describe("chatOrchestrator", () => {
       expect(mockDeps.state.finishStream).not.toHaveBeenCalled();
     });
 
-    it("processes events from current attempt_id after stale ones", () => {
+    it("processes events from current attemptId after stale ones", () => {
       const currentId = "conv-1:2";
       vi.mocked(mockDeps.env.getActiveAttemptId).mockReturnValue(currentId);
 
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: currentId,
-        message_id: "msg-new",
+        conversationId: "conv-1",
+        attemptId: currentId,
+        messageId: "msg-new",
         seq: 1,
-        delta_reasoning: "fresh reasoning",
+        deltaReasoning: "fresh reasoning",
       });
       expect(mockDeps.state.appendReasoningDelta).toHaveBeenCalledWith(
         "msg-assistant",
@@ -238,17 +238,17 @@ describe("chatOrchestrator", () => {
       );
 
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: currentId,
-        message_id: "msg-new",
+        conversationId: "conv-1",
+        attemptId: currentId,
+        messageId: "msg-new",
         seq: 1,
         usage: {
-          prompt_tokens: 200,
-          completion_tokens: 80,
-          total_tokens: 280,
-          cache_read_tokens: 0,
-          cache_write_tokens: 0,
-          context_window_tokens: 2000,
+          promptTokens: 200,
+          completionTokens: 80,
+          totalTokens: 280,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          contextWindowTokens: 2000,
         },
       });
       expect(mockDeps.state.updateContextUsage).toHaveBeenCalledWith({
@@ -261,9 +261,9 @@ describe("chatOrchestrator", () => {
     it("filters events when activeAttemptId is null", () => {
       vi.mocked(mockDeps.env.getActiveAttemptId).mockReturnValue(null);
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: "conv-1:1",
-        message_id: "msg-1",
+        conversationId: "conv-1",
+        attemptId: "conv-1:1",
+        messageId: "msg-1",
         seq: 1,
         error: makeError("cancelled"),
       });
@@ -279,9 +279,9 @@ describe("chatOrchestrator", () => {
       await sendPromise;
 
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: "conv-1:1",
-        message_id: "msg-assistant",
+        conversationId: "conv-1",
+        attemptId: "conv-1:1",
+        messageId: "msg-assistant",
         seq: 1,
         error: makeError("fail"),
       });
@@ -290,34 +290,34 @@ describe("chatOrchestrator", () => {
 
     it("transitions to idle on finish", () => {
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: "conv-1:1",
-        message_id: "msg-assistant",
+        conversationId: "conv-1",
+        attemptId: "conv-1:1",
+        messageId: "msg-assistant",
         seq: 1,
-        finish_reason: "stop",
+        finishReason: "stop",
       });
       expect(orchestrator.getPhase()).toBe("idle");
     });
   });
 
-  describe("attempt_id — editMessage 重发", () => {
-    it("旧 attempt_id 的 finish/error 被忽略，新的正常处理", () => {
+  describe("attemptId — editMessage 重发", () => {
+    it("旧 attemptId 的 finish/error 被忽略，新的正常处理", () => {
       const secondAttemptId = "conv-1:2";
       vi.mocked(mockDeps.env.getActiveAttemptId).mockReturnValue(
         secondAttemptId,
       );
 
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: "conv-1:1",
-        message_id: "msg-1",
+        conversationId: "conv-1",
+        attemptId: "conv-1:1",
+        messageId: "msg-1",
         seq: 1,
-        finish_reason: "stop",
+        finishReason: "stop",
       });
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: "conv-1:1",
-        message_id: "msg-1",
+        conversationId: "conv-1",
+        attemptId: "conv-1:1",
+        messageId: "msg-1",
         seq: 1,
         error: makeError("old error"),
       });
@@ -325,11 +325,11 @@ describe("chatOrchestrator", () => {
       expect(mockDeps.state.errorStream).not.toHaveBeenCalled();
 
       orchestrator.handleDeltaEvent({
-        conversation_id: "conv-1",
-        attempt_id: secondAttemptId,
-        message_id: "msg-2",
+        conversationId: "conv-1",
+        attemptId: secondAttemptId,
+        messageId: "msg-2",
         seq: 1,
-        finish_reason: "stop",
+        finishReason: "stop",
       });
       expect(mockDeps.state.finishStream).toHaveBeenCalled();
     });

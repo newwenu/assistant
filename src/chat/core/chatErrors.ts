@@ -19,7 +19,7 @@ export enum ChatErrorCode {
 export interface ChatError {
   code: ChatErrorCode;
   message?: string;
-  retry_after_ms: number | null;
+  retryAfterMs: number | null;
   retryable: boolean;
 }
 
@@ -74,7 +74,7 @@ export function toChatError(value: unknown): ChatError {
     return {
       code: value.code,
       message: value.message,
-      retry_after_ms: value.retry_after_ms ?? null,
+      retryAfterMs: value.retryAfterMs ?? null,
       retryable: value.retryable,
     };
   }
@@ -82,14 +82,14 @@ export function toChatError(value: unknown): ChatError {
     return {
       code: ChatErrorCode.InternalError,
       message: value,
-      retry_after_ms: null,
+      retryAfterMs: null,
       retryable: false,
     };
   }
   return {
     code: ChatErrorCode.InternalError,
     message: translateKey("chat.error.unknown_error"),
-    retry_after_ms: null,
+    retryAfterMs: null,
     retryable: false,
   };
 }

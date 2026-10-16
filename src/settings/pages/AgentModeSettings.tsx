@@ -40,9 +40,9 @@ interface ModeFormData {
   prompt: string;
   model: string | null;
   temperature: number | null;
-  max_tokens: number | null;
-  reasoning_enabled: boolean | null;
-  reasoning_effort: string | null;
+  maxTokens: number | null;
+  reasoningEnabled: boolean | null;
+  reasoningEffort: string | null;
 }
 
 const defaultFormData: ModeFormData = {
@@ -52,9 +52,9 @@ const defaultFormData: ModeFormData = {
   prompt: "",
   model: null,
   temperature: null,
-  max_tokens: null,
-  reasoning_enabled: null,
-  reasoning_effort: null,
+  maxTokens: null,
+  reasoningEnabled: null,
+  reasoningEffort: null,
 };
 
 export const AgentModeSettings: React.FC = () => {
@@ -126,7 +126,7 @@ export const AgentModeSettings: React.FC = () => {
         marks: { 0: "0", 0.3: "0.3", 0.7: "0.7", 1: "1", 2: "2" },
       },
       {
-        key: "max_tokens",
+        key: "maxTokens",
         type: "number",
         label: t("settings.agent_mode.field.max_tokens.label"),
         min: 256,
@@ -135,12 +135,12 @@ export const AgentModeSettings: React.FC = () => {
         placeholder: t("settings.agent_mode.field.max_tokens.placeholder"),
       },
       {
-        key: "reasoning_enabled",
+        key: "reasoningEnabled",
         type: "boolean",
         label: t("settings.agent_mode.field.reasoning_enabled.label"),
       },
       {
-        key: "reasoning_effort",
+        key: "reasoningEffort",
         type: "select",
         label: t("settings.agent_mode.field.reasoning_effort.label"),
         options: REASONING_EFFORT_OPTIONS,
@@ -148,7 +148,7 @@ export const AgentModeSettings: React.FC = () => {
         placeholder: t(
           "settings.agent_mode.field.reasoning_effort.placeholder",
         ),
-        visible: (fv) => fv.reasoning_enabled === true,
+        visible: (fv) => fv.reasoningEnabled === true,
       },
     ],
     [t, kindOptions],
@@ -158,8 +158,8 @@ export const AgentModeSettings: React.FC = () => {
     void loadModes();
   }, [loadModes]);
 
-  const builtinModes = store.modes.filter((m) => m.is_builtin);
-  const customModes = store.modes.filter((m) => !m.is_builtin);
+  const builtinModes = store.modes.filter((m) => m.isBuiltin);
+  const customModes = store.modes.filter((m) => !m.isBuiltin);
 
   const filteredBuiltin = searchQuery
     ? builtinModes.filter(
@@ -175,7 +175,7 @@ export const AgentModeSettings: React.FC = () => {
       )
     : customModes;
 
-  const isBuiltinEditing = !!editingMode?.is_builtin;
+  const isBuiltinEditing = !!editingMode?.isBuiltin;
 
   const handleAdd = () => {
     setEditingMode(null);
@@ -193,9 +193,9 @@ export const AgentModeSettings: React.FC = () => {
       prompt: mode.prompt,
       model: mode.model,
       temperature: mode.temperature,
-      max_tokens: mode.max_tokens,
-      reasoning_enabled: mode.reasoning_enabled,
-      reasoning_effort: mode.reasoning_effort,
+      maxTokens: mode.maxTokens,
+      reasoningEnabled: mode.reasoningEnabled,
+      reasoningEffort: mode.reasoningEffort,
     });
     setDrawerOpen(true);
   };
@@ -250,16 +250,16 @@ export const AgentModeSettings: React.FC = () => {
           ...values,
           kind,
           tools: editingMode.tools,
-          presentation_rank: editingMode.presentation_rank,
-          is_builtin: editingMode.is_builtin,
+          presentationRank: editingMode.presentationRank,
+          isBuiltin: editingMode.isBuiltin,
         });
       } else {
         await store.saveMode({
           ...values,
           kind,
           tools: [],
-          presentation_rank: 99,
-          is_builtin: false,
+          presentationRank: 99,
+          isBuiltin: false,
         });
       }
       messageApi.success(
@@ -320,7 +320,7 @@ export const AgentModeSettings: React.FC = () => {
           icon={<EditOutlined />}
           onClick={() => handleEdit(mode)}
         />
-        {mode.is_builtin && (
+        {mode.isBuiltin && (
           <Button
             type="text"
             size="small"
@@ -328,7 +328,7 @@ export const AgentModeSettings: React.FC = () => {
             onClick={() => handleReset(mode)}
           />
         )}
-        {!mode.is_builtin && (
+        {!mode.isBuiltin && (
           <Button
             type="text"
             size="small"
@@ -391,11 +391,8 @@ export const AgentModeSettings: React.FC = () => {
             layout="vertical"
             initialValues={defaultFormData}
             onValuesChange={(changed) => {
-              if (
-                "reasoning_enabled" in changed &&
-                !changed.reasoning_enabled
-              ) {
-                form.setFieldValue("reasoning_effort", null);
+              if ("reasoningEnabled" in changed && !changed.reasoningEnabled) {
+                form.setFieldValue("reasoningEffort", null);
               }
             }}
           >

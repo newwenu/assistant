@@ -108,7 +108,7 @@ export const ProviderManager: React.FC = () => {
       const filteredItems = searchQuery
         ? allItems.filter(
             (p) =>
-              p.name.includes(searchQuery) || p.base_url.includes(searchQuery),
+              p.name.includes(searchQuery) || p.baseUrl.includes(searchQuery),
           )
         : allItems;
       return {
@@ -122,12 +122,12 @@ export const ProviderManager: React.FC = () => {
               </Typography.Text>
               <FormatTag type={p.type} size="small" />
               <span className="entity-list-row-detail">
-                {p.api_key_masked
-                  ? p.api_key_masked
-                  : p.base_url.replace(/^https?:\/\//, "").split("/")[0]}
+                {p.apiKeyMasked
+                  ? p.apiKeyMasked
+                  : p.baseUrl.replace(/^https?:\/\//, "").split("/")[0]}
               </span>
               <span className="entity-list-row-model">
-                {p.default_model || "—"}
+                {p.defaultModel || "—"}
               </span>
             </div>
             <Dropdown
