@@ -3,7 +3,6 @@ use std::time::{Duration, Instant};
 
 use log::error;
 use mouse_position::mouse_position::Mouse;
-use serde_json::json;
 use tauri::{command, AppHandle, PhysicalPosition};
 
 use assistant_config::{
@@ -14,21 +13,22 @@ use assistant_config::{
     orb_conf::OrbConf,
 };
 use assistant_orb::placement;
+use crate::protocol::{MousePosition, ScreenRect, ScreenSize};
 
 pub(crate) static ORB_CLICK_THROUGH: AtomicBool = AtomicBool::new(false);
 static ORB_SNAP_CANCEL: AtomicBool = AtomicBool::new(false);
 
 #[command]
-pub fn get_mouse_position() -> serde_json::Value {
+pub fn get_mouse_position() -> Option<MousePosition> {
     let position = Mouse::get_mouse_position();
     match position {
-        Mouse::Position { x, y } => json!({
-            "clientX": x,
-            "clientY": y
+        Mouse::Position { x, y } => Some(MousePosition {
+            client_x: x,
+            client_y: y,
         }),
         Mouse::Error => {
             error!("Error getting mouse position");
-            json!(null)
+            None
         }
     }
 }
@@ -70,7 +70,7 @@ pub fn get_screen_size(
     center_x: f64,
     center_y: f64,
     scale_factor: f64,
-) -> serde_json::Value {
+) -> ScreenSize {
     let cx_phys = center_x * scale_factor;
     let cy_phys = center_y * scale_factor;
     let screens = placement::get_available_screens(&app);
@@ -81,12 +81,21 @@ pub fn get_screen_size(
         let dy = cy_phys as i64 - sy as i64;
         dx * dx + dy * dy
     });
-    match best {
-        Some(s) => json!({
-            "screen": { "x": s.x, "y": s.y, "width": s.width, "height": s.height }
-        }),
-        None => json!({ "screen": { "x": 0, "y": 0, "width": 1920, "height": 1080 } }),
-    }
+    let rect = match best {
+        Some(s) => ScreenRect {
+            x: s.x,
+            y: s.y,
+            width: s.width,
+            height: s.height,
+        },
+        None => ScreenRect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        },
+    };
+    ScreenSize { screen: rect }
 }
 
 #[command]

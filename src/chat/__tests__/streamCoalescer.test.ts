@@ -78,13 +78,13 @@ describe("createChatDeltaCoalescer", () => {
     expect(deliver).toHaveBeenCalledWith(mkDelta({ delta: "hello world" }));
   });
 
-  it("does not coalesce deltas with different message ids", () => {
+  it("does not coalesce deltas with different attempt ids", () => {
     const deliver = vi.fn();
     const { schedule, trigger } = manualScheduler();
     const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
 
     coalescer.push(mkDelta({ delta: "hello" }));
-    coalescer.push(mkDelta({ message_id: "m2", delta: "world" }));
+    coalescer.push(mkDelta({ attempt_id: "a2", delta: "world" }));
 
     trigger();
 
@@ -92,7 +92,7 @@ describe("createChatDeltaCoalescer", () => {
     expect(deliver).toHaveBeenNthCalledWith(1, mkDelta({ delta: "hello" }));
     expect(deliver).toHaveBeenNthCalledWith(
       2,
-      mkDelta({ message_id: "m2", delta: "world" }),
+      mkDelta({ attempt_id: "a2", delta: "world" }),
     );
   });
 
@@ -151,15 +151,15 @@ describe("createChatDeltaCoalescer", () => {
     expect(deliver).toHaveBeenNthCalledWith(2, mkDelta({ delta: "second" }));
   });
 
-  it("coalesces across message boundary correctly", () => {
+  it("coalesces across attempt boundary correctly", () => {
     const deliver = vi.fn();
     const { schedule, trigger } = manualScheduler();
     const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
 
     coalescer.push(mkDelta({ delta: "a" }));
     coalescer.push(mkDelta({ delta: "b" }));
-    coalescer.push(mkDelta({ message_id: "m2", delta: "c" }));
-    coalescer.push(mkDelta({ message_id: "m2", delta: "d" }));
+    coalescer.push(mkDelta({ attempt_id: "a2", delta: "c" }));
+    coalescer.push(mkDelta({ attempt_id: "a2", delta: "d" }));
 
     trigger();
 
@@ -167,7 +167,7 @@ describe("createChatDeltaCoalescer", () => {
     expect(deliver).toHaveBeenNthCalledWith(1, mkDelta({ delta: "ab" }));
     expect(deliver).toHaveBeenNthCalledWith(
       2,
-      mkDelta({ message_id: "m2", delta: "cd" }),
+      mkDelta({ attempt_id: "a2", delta: "cd" }),
     );
   });
 

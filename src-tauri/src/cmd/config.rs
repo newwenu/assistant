@@ -1,6 +1,5 @@
 use log::error;
 use serde::Serialize;
-use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -13,6 +12,7 @@ use assistant_config::{
     mascot_conf::MascotConf,
     orb_conf::OrbConf,
 };
+use crate::protocol::ThemeChangedPayload;
 
 static CONF_LOCK: Mutex<()> = Mutex::new(());
 
@@ -105,25 +105,19 @@ fn apply_autostart(app: &AppHandle, enable: bool) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 #[command]
-pub fn get_app_conf() -> serde_json::Value {
-    match AppConf::load() {
-        Ok(conf) => serde_json::to_value(&conf).unwrap_or(json!(null)),
-        Err(e) => {
-            error!("Failed to load app config: {}", e);
-            json!(null)
-        }
-    }
+pub fn get_app_conf() -> Result<AppConf, String> {
+    AppConf::load().map_err(|e| {
+        error!("Failed to load app config: {}", e);
+        e.to_string()
+    })
 }
 
 #[command]
-pub fn get_orb_conf() -> serde_json::Value {
-    match OrbConf::load() {
-        Ok(conf) => serde_json::to_value(&conf).unwrap_or(json!(null)),
-        Err(e) => {
-            error!("Failed to load orb config: {}", e);
-            json!(null)
-        }
-    }
+pub fn get_orb_conf() -> Result<OrbConf, String> {
+    OrbConf::load().map_err(|e| {
+        error!("Failed to load orb config: {}", e);
+        e.to_string()
+    })
 }
 
 #[command]
@@ -136,8 +130,13 @@ pub fn set_theme(theme: String) -> Result<(), String> {
 #[command]
 pub fn emit_theme_changed(app: AppHandle, resolved: String) -> Result<(), String> {
     use tauri::Emitter;
-    app.emit("theme-changed", serde_json::json!({ "resolved": resolved }))
-        .map_err(|e| e.to_string())
+    app.emit(
+        "theme-changed",
+        ThemeChangedPayload {
+            resolved,
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[command]
@@ -148,14 +147,11 @@ pub fn set_locale(app: AppHandle, locale: String) -> Result<(), String> {
 }
 
 #[command]
-pub fn get_mascot_conf() -> serde_json::Value {
-    match MascotConf::load() {
-        Ok(conf) => serde_json::to_value(&conf).unwrap_or(json!(null)),
-        Err(e) => {
-            error!("Failed to load mascot config: {}", e);
-            json!(null)
-        }
-    }
+pub fn get_mascot_conf() -> Result<MascotConf, String> {
+    MascotConf::load().map_err(|e| {
+        error!("Failed to load mascot config: {}", e);
+        e.to_string()
+    })
 }
 
 #[command]

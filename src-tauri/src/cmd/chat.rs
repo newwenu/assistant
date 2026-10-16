@@ -1,6 +1,7 @@
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use chrono::Utc;
 use log::{error, info};
-use serde_json::json;
 use tauri::{command, AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
@@ -15,6 +16,8 @@ use assistant_storage::{
     conversations::{self, MessageRow},
     providers::{self as provider_store},
 };
+use serde_json;
+use crate::protocol::{ChatDeltaPayload, ChatStreamStartPayload, ConversationCompactFailedPayload};
 
 struct StreamEmitCtx<'a> {
     orb_window: &'a tauri::WebviewWindow,
@@ -80,65 +83,82 @@ fn emit_delta(ectx: &StreamEmitCtx, seq: u32, delta: &base::ChatDelta) {
             seq, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, usage.context_window_tokens
         );
     }
-    if let Err(emit_err) = ectx.orb_window.emit(
-        "chat-delta",
-        json!({
-            "conversation_id": ectx.conv_id,
-            "attempt_id": ectx.attempt_id,
-            "message_id": ectx.msg_id,
-            "seq": seq,
-            "delta_text": delta.delta_text,
-            "delta_reasoning": delta.delta_reasoning,
-            "delta_tool_call_id": delta.delta_tool_call_id,
-            "delta_tool_call_name": delta.delta_tool_call_name,
-            "delta_tool_call_arguments": delta.delta_tool_call_arguments,
-            "finish_reason": delta.finish_reason,
-            "usage": delta.usage,
-            "delta_retry": delta.delta_retry,
-        }),
-    ) {
+    let payload = ChatDeltaPayload {
+        conversation_id: ectx.conv_id.to_string(),
+        attempt_id: ectx.attempt_id.to_string(),
+        message_id: ectx.msg_id.to_string(),
+        seq,
+        delta_text: delta.delta_text.clone(),
+        delta_reasoning: delta.delta_reasoning.clone(),
+        delta_tool_call_id: delta.delta_tool_call_id.clone(),
+        delta_tool_call_name: delta.delta_tool_call_name.clone(),
+        delta_tool_call_arguments: delta.delta_tool_call_arguments.clone(),
+        finish_reason: delta.finish_reason.clone(),
+        usage: delta.usage.clone(),
+        delta_retry: delta.delta_retry.clone(),
+        ..Default::default()
+    };
+    if let Err(emit_err) = ectx.orb_window.emit("chat-delta", payload) {
         error!("Failed to emit chat-delta: {}", emit_err);
     }
 }
 
-fn emit_stream_error(ectx: &StreamEmitCtx, error: &ProviderErrorPayload) {
-    if let Err(emit_err) = ectx.orb_window.emit(
-        "chat-delta",
-        json!({
-            "conversation_id": ectx.conv_id,
-            "attempt_id": ectx.attempt_id,
-            "message_id": ectx.msg_id,
-            "error": error,
-        }),
-    ) {
+fn emit_stream_error(ectx: &StreamEmitCtx, last_seq: u32, error: &ProviderErrorPayload) {
+    let payload = ChatDeltaPayload {
+        conversation_id: ectx.conv_id.to_string(),
+        attempt_id: ectx.attempt_id.to_string(),
+        message_id: ectx.msg_id.to_string(),
+        seq: last_seq,
+        error: Some(error.clone()),
+        ..Default::default()
+    };
+    if let Err(emit_err) = ectx.orb_window.emit("chat-delta", payload) {
         error!("Failed to emit stream error event: {}", emit_err);
     }
 }
 
-type DbSender = tokio::sync::mpsc::UnboundedSender<(String, String, Option<i64>, Option<String>)>;
+struct DbWriteMsg {
+    msg_id: String,
+    content: String,
+    tokens: Option<i64>,
+    reasoning: Option<String>,
+    tool_calls_json: Option<String>,
+}
+
+type DbSender = tokio::sync::mpsc::UnboundedSender<DbWriteMsg>;
 
 fn save_partial_on_error(db_tx: &DbSender, msg_id: &str, partial: &PartialOutcome) {
     let tokens = resolve_partial_tokens(partial);
-    let _ = db_tx.send((msg_id.to_string(), partial.full_content.clone(), tokens, None));
+    let _ = db_tx.send(DbWriteMsg {
+        msg_id: msg_id.to_string(),
+        content: partial.full_content.clone(),
+        tokens,
+        reasoning: None,
+        tool_calls_json: None,
+    });
 }
 
 fn spawn_db_writer(app: &AppHandle) -> DbSender {
-    let (db_tx, mut db_rx) =
-        tokio::sync::mpsc::unbounded_channel::<(String, String, Option<i64>, Option<String>)>();
+    let (db_tx, mut db_rx) = tokio::sync::mpsc::unbounded_channel::<DbWriteMsg>();
     let db_app = app.clone();
     tauri::async_runtime::spawn(async move {
-        while let Some((msg_id, content, tokens, reasoning)) = db_rx.recv().await {
+        while let Some(msg) = db_rx.recv().await {
             let state = db_app.state::<crate::setup::DbState>();
             match super::get_db_conn(&state) {
                 Ok(conn) => {
                     if let Err(db_err) = conversations::update_message_content(
-                        &conn, &msg_id, &content, tokens, reasoning.as_deref(), None,
+                        &conn,
+                        &msg.msg_id,
+                        &msg.content,
+                        msg.tokens,
+                        msg.reasoning.as_deref(),
+                        msg.tool_calls_json.as_deref(),
                     ) {
                         error!("Failed to save content: {}", db_err);
                     }
                 }
                 Err(_) => {
-                    error!("DB lock failed, content not saved ({} bytes)", content.len());
+                    error!("DB lock failed, content not saved ({} bytes)", msg.content.len());
                 }
             };
         }
@@ -183,7 +203,10 @@ fn spawn_compaction_listener(
                     compaction::set_terminating(&conv_id, false);
                     let _ = app.emit(
                         "conversation_compact_failed",
-                        json!({ "conversation_id": conv_id, "error": e }),
+                        ConversationCompactFailedPayload {
+                            conversation_id: conv_id.clone(),
+                            error: e.clone(),
+                        },
                     );
                     log::error!("Auto compaction failed: {}", e);
                 }
@@ -287,11 +310,11 @@ pub fn send_chat_message(
         .ok_or_else(|| assistant_i18n::t("error.orb_window_not_found"))?;
     if let Err(emit_err) = orb_window.emit(
         "chat-stream-start",
-        json!({
-            "conversation_id": conversation_id,
-            "attempt_id": attempt_id,
-            "message_id": assistant_msg_id,
-        }),
+        ChatStreamStartPayload {
+            conversation_id: conversation_id.clone(),
+            attempt_id: attempt_id.clone(),
+            message_id: assistant_msg_id.clone(),
+        },
     ) {
         error!("Failed to emit chat-stream-start: {}", emit_err);
     }
@@ -319,7 +342,7 @@ pub fn send_chat_message(
                     attempt_id: &attempt_id_clone,
                     msg_id: &msg_id,
                 };
-                emit_stream_error(&ectx, &ProviderErrorPayload::from(&e));
+                emit_stream_error(&ectx, 0, &ProviderErrorPayload::from(&e));
                 let _ = finish_tx.send(conv_id);
                 return;
             }
@@ -332,13 +355,20 @@ pub fn send_chat_message(
             msg_id: &msg_id,
         };
 
+        let last_seq = AtomicU32::new(0);
+
         let result = chat_runtime::consume_stream(
             stream,
             cancel_token,
-            |seq, delta| emit_delta(&ectx, seq, delta),
+            |seq, delta| {
+                last_seq.store(seq, Ordering::Relaxed);
+                emit_delta(&ectx, seq, delta);
+            },
             None,
         )
         .await;
+
+        let seq_val = last_seq.load(Ordering::Relaxed);
 
         match result {
             Ok(outcome) => {
@@ -349,8 +379,18 @@ pub fn send_chat_message(
                     } else {
                         None
                     };
-                let _ =
-                    db_tx.send((msg_id.clone(), outcome.full_content.clone(), tokens, reasoning));
+                let tool_calls_json = outcome
+                    .tool_calls
+                    .as_ref()
+                    .filter(|tc| !tc.is_empty())
+                    .and_then(|tc| serde_json::to_string(tc).ok());
+                let _ = db_tx.send(DbWriteMsg {
+                    msg_id: msg_id.clone(),
+                    content: outcome.full_content.clone(),
+                    tokens,
+                    reasoning,
+                    tool_calls_json,
+                });
                 if let Some(pt) = outcome.prompt_tokens {
                     if compaction::should_terminate(
                         pt,
@@ -367,19 +407,21 @@ pub fn send_chat_message(
                 save_partial_on_error(&db_tx, &msg_id, &partial);
                 emit_stream_error(
                     &ectx,
+                    seq_val,
                     &ProviderErrorPayload::from(&ProviderError::Cancelled),
                 );
                 let _ = finish_tx.send(conv_id);
             }
             Err(StreamError::Provider(e, partial)) => {
                 save_partial_on_error(&db_tx, &msg_id, &partial);
-                emit_stream_error(&ectx, &ProviderErrorPayload::from(&e));
+                emit_stream_error(&ectx, seq_val, &ProviderErrorPayload::from(&e));
                 let _ = finish_tx.send(conv_id);
             }
             Err(StreamError::Timeout(partial)) => {
                 save_partial_on_error(&db_tx, &msg_id, &partial);
                 emit_stream_error(
                     &ectx,
+                    seq_val,
                     &ProviderErrorPayload::from(&ProviderError::Timeout(
                         "Stream timed out".to_string(),
                     )),

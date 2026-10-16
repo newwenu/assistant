@@ -243,7 +243,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
             ),
           )
           .then((summary) => {
-            if (get().currentConversationId === convId) {
+            if (summary && get().currentConversationId === convId) {
               set({
                 contextUsage: {
                   usedTokens: summary.totalTokens,
@@ -422,7 +422,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
               ),
             )
             .then((summary) => {
-              if (get().currentConversationId === id) {
+              if (summary && get().currentConversationId === id) {
                 set({
                   contextUsage: {
                     usedTokens: summary.totalTokens,

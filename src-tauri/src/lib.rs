@@ -3,6 +3,7 @@
 
 mod cmd;
 pub mod crash_dump;
+pub mod protocol;
 mod setup;
 mod tray;
 mod window;

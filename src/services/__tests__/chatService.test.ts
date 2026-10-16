@@ -43,14 +43,18 @@ describe("chatService", () => {
 
   describe("getConversationTokenUsage", () => {
     it("returns business type with totalTokens/contextWindowTokens", async () => {
-      const summary = {
+      const row = {
+        total_tokens: 100,
+        context_window_tokens: 128000,
+        percentage: 0.00078,
+      };
+      mockInvoke.mockResolvedValue(row);
+      const result = await chatService.getConversationTokenUsage("c1", 128000);
+      expect(result).toEqual({
         totalTokens: 100,
         contextWindowTokens: 128000,
         percentage: 0.00078,
-      };
-      mockInvoke.mockResolvedValue(summary);
-      const result = await chatService.getConversationTokenUsage("c1", 128000);
-      expect(result).toEqual(summary);
+      });
     });
   });
 });

@@ -13,6 +13,7 @@ import type {
   ConversationRow,
   ConversationDetailRow,
   TokenUsageRow,
+  TokenUsageSummaryRow,
 } from "./protocol";
 
 export function invokeList<TDto, TBusiness>(
@@ -137,5 +138,13 @@ export function rowToTokenUsage(row: TokenUsageRow): TokenUsage {
     cacheReadTokens: row.cache_read_tokens,
     cacheWriteTokens: row.cache_write_tokens,
     contextWindowTokens: row.context_window_tokens,
+  };
+}
+
+export function rowToTokenUsageSummary(row: TokenUsageSummaryRow) {
+  return {
+    totalTokens: row.total_tokens,
+    contextWindowTokens: row.context_window_tokens,
+    percentage: row.percentage,
   };
 }

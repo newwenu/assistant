@@ -93,8 +93,8 @@ export function createChatDeltaCoalescer<E extends CoalescibleDelta>(
   const push = (event: E) => {
     if (accept && !accept(event)) return;
     const last = queue[queue.length - 1];
-    const eventKey = event.message_id;
-    const lastKey = last ? last.event.message_id : undefined;
+    const eventKey = event.attempt_id;
+    const lastKey = last ? last.event.attempt_id : undefined;
     if (
       last &&
       last.event.conversation_id === event.conversation_id &&

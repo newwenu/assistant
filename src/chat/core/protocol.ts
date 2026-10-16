@@ -56,6 +56,12 @@ export interface RetryNotificationRow {
   message: string;
 }
 
+export interface TokenUsageSummaryRow {
+  total_tokens: number;
+  context_window_tokens: number;
+  percentage: number;
+}
+
 export type ProviderErrorCode =
   | "ApiKeyMissing"
   | "AuthFailed"

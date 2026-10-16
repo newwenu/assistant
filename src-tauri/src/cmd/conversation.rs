@@ -1,5 +1,7 @@
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+
 use chrono::Utc;
-use serde_json::json;
 use tauri::{command, AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
@@ -11,6 +13,11 @@ use assistant_storage::{
     agent_modes,
     conversations::{self, ConversationRow},
     providers::{self as provider_store},
+};
+use crate::protocol::{
+    ChatDeltaPayload, ChatRegeneratePayload, ChatStreamStartPayload,
+    ConversationCompactFailedPayload, ConversationDetailResponse, ConversationTerminatedPayload,
+    ConversationUnlockedPayload,
 };
 
 #[command]
@@ -57,19 +64,19 @@ pub fn create_conversation(
 pub fn list_conversations(
     app: AppHandle,
     provider_id: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<Vec<conversations::ConversationRow>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let rows = conversations::get_conversations(&conn, provider_id.as_deref())?;
-    serde_json::to_value(&rows).map_err(|e| e.to_string())
+    Ok(rows)
 }
 
 #[command]
-pub fn get_conversation(app: AppHandle, id: String) -> Result<serde_json::Value, String> {
+pub fn get_conversation(app: AppHandle, id: String) -> Result<Option<conversations::ConversationDetail>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let detail = conversations::get_conversation_detail(&conn, &id)?;
-    serde_json::to_value(&detail).map_err(|e| e.to_string())
+    Ok(detail)
 }
 
 #[command]
@@ -130,7 +137,7 @@ pub fn get_conversation_paginated(
     id: String,
     limit: Option<i64>,
     before_timestamp: Option<i64>,
-) -> Result<serde_json::Value, String> {
+) -> Result<Option<ConversationDetailResponse>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
 
@@ -140,13 +147,13 @@ pub fn get_conversation_paginated(
             let messages =
                 conversations::get_messages_paginated(&conn, &id, page_limit, before_timestamp)?;
             let total_count = conversations::get_message_count(&conn, &id)?;
-            Ok(json!({
-                "conversation": conv,
-                "messages": messages,
-                "total_count": total_count,
+            Ok(Some(ConversationDetailResponse {
+                conversation: conv,
+                messages,
+                total_count,
             }))
         }
-        None => Ok(json!(null)),
+        None => Ok(None),
     }
 }
 
@@ -158,11 +165,11 @@ pub fn delete_message_persist(app: AppHandle, message_id: String) -> Result<(), 
 }
 
 #[command]
-pub fn search_conversations(app: AppHandle, query: String) -> Result<serde_json::Value, String> {
+pub fn search_conversations(app: AppHandle, query: String) -> Result<Vec<conversations::ConversationRow>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let rows = conversations::search_conversations(&conn, &query)?;
-    serde_json::to_value(&rows).map_err(|e| e.to_string())
+    Ok(rows)
 }
 
 #[command]
@@ -225,10 +232,10 @@ pub fn regenerate_message(
     conversations::delete_message_and_after(&conn, &message_id)?;
     let _ = app.emit(
         "chat-regenerate",
-        json!({
-            "conversation_id": conversation_id,
-            "deleted_message_id": message_id,
-        }),
+        ChatRegeneratePayload {
+            conversation_id: conversation_id.clone(),
+            deleted_message_id: message_id,
+        },
     );
     Ok(())
 }
@@ -238,7 +245,7 @@ pub fn get_conversation_token_usage(
     app: AppHandle,
     conversation_id: String,
     context_window_tokens: Option<u32>,
-) -> Result<serde_json::Value, String> {
+) -> Result<agent_modes::TokenUsageSummary, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let ctx = if let Some(c) = context_window_tokens {
@@ -247,7 +254,7 @@ pub fn get_conversation_token_usage(
         resolve_context_window_for_conversation(&conn, &conversation_id)
     };
     let summary = agent_modes::get_conversation_token_usage(&conn, &conversation_id, ctx)?;
-    serde_json::to_value(&summary).map_err(|e| e.to_string())
+    Ok(summary)
 }
 
 fn resolve_context_window_for_conversation(
@@ -320,10 +327,10 @@ pub fn manual_compact_conversation(app: AppHandle, conversation_id: String) -> R
             set_terminating(&conv_id, false);
             let _ = app_clone.emit(
                 "conversation_compact_failed",
-                json!({
-                    "conversation_id": conv_id,
-                    "error": e,
-                }),
+                ConversationCompactFailedPayload {
+                    conversation_id: conv_id.clone(),
+                    error: e.clone(),
+                },
             );
             log::error!("Manual compaction failed for {}: {}", conv_id, e);
         }
@@ -341,9 +348,9 @@ pub fn unlock_conversation(app: AppHandle, conversation_id: String) -> Result<()
 
     let _ = app.emit(
         "conversation_unlocked",
-        json!({
-            "conversation_id": conversation_id,
-        }),
+        ConversationUnlockedPayload {
+            conversation_id: conversation_id.clone(),
+        },
     );
 
     Ok(())
@@ -425,22 +432,23 @@ pub(crate) async fn execute_compaction(
 
     let _ = orb_window.emit(
         "chat-stream-start",
-        json!({
-            "conversation_id": conversation_id,
-            "attempt_id": attempt_id,
-            "message_id": summary_msg_id,
-        }),
+        ChatStreamStartPayload {
+            conversation_id: conversation_id.to_string(),
+            attempt_id: attempt_id.to_string(),
+            message_id: summary_msg_id.to_string(),
+        },
     );
 
     let _ = orb_window.emit(
         "chat-delta",
-        json!({
-            "conversation_id": conversation_id,
-            "attempt_id": attempt_id,
-            "message_id": summary_msg_id,
-            "seq": 0,
-            "delta_text": "",
-        }),
+        ChatDeltaPayload {
+            conversation_id: conversation_id.to_string(),
+            attempt_id: attempt_id.to_string(),
+            message_id: summary_msg_id.to_string(),
+            seq: 0,
+            delta_text: Some(String::new()),
+            ..Default::default()
+        },
     );
 
     let conv_id = conversation_id.to_string();
@@ -448,25 +456,30 @@ pub(crate) async fn execute_compaction(
     let aid = attempt_id.clone();
     let orb_win = orb_window.clone();
 
+    let last_seq = Arc::new(AtomicU32::new(0));
+    let last_seq_clone = last_seq.clone();
+
     let result = chat_runtime::consume_stream(
         stream,
         cancel_token,
         move |seq, delta| {
-            let _ = orb_win.emit(
-                "chat-delta",
-                json!({
-                    "conversation_id": conv_id,
-                    "attempt_id": aid,
-                    "message_id": msg_id,
-                    "seq": seq,
-                    "delta_text": delta.delta_text,
-                    "finish_reason": delta.finish_reason,
-                }),
-            );
+            last_seq_clone.store(seq, Ordering::Relaxed);
+            let payload = ChatDeltaPayload {
+                conversation_id: conv_id.clone(),
+                attempt_id: aid.clone(),
+                message_id: msg_id.clone(),
+                seq,
+                delta_text: delta.delta_text.clone(),
+                finish_reason: delta.finish_reason.clone(),
+                ..Default::default()
+            };
+            let _ = orb_win.emit("chat-delta", payload);
         },
         Some(Duration::from_secs(30)),
     )
     .await;
+
+    let seq_val = last_seq.load(Ordering::Relaxed);
 
     chat_tasks.finish(conversation_id);
 
@@ -517,11 +530,11 @@ pub(crate) async fn execute_compaction(
 
             let _ = app.emit(
                 "conversation_terminated",
-                json!({
-                    "conversation_id": conversation_id,
-                    "summary": summary,
-                    "is_full": true,
-                }),
+                ConversationTerminatedPayload {
+                    conversation_id: conversation_id.to_string(),
+                    summary: summary.clone(),
+                    is_full: true,
+                },
             );
 
             log::info!(
@@ -537,12 +550,14 @@ pub(crate) async fn execute_compaction(
             set_terminating(conversation_id, false);
             let _ = orb_window.emit(
                 "chat-delta",
-                json!({
-                    "conversation_id": conversation_id,
-                    "attempt_id": attempt_id,
-                    "message_id": summary_msg_id,
-                    "error": ProviderErrorPayload::from(&ProviderError::Cancelled),
-                }),
+                ChatDeltaPayload {
+                    conversation_id: conversation_id.to_string(),
+                    attempt_id: attempt_id.to_string(),
+                    message_id: summary_msg_id.to_string(),
+                    seq: seq_val,
+                    error: Some(ProviderErrorPayload::from(&ProviderError::Cancelled)),
+                    ..Default::default()
+                },
             );
             Err("Compaction cancelled".to_string())
         }
@@ -551,12 +566,14 @@ pub(crate) async fn execute_compaction(
             set_terminating(conversation_id, false);
             let _ = orb_window.emit(
                 "chat-delta",
-                json!({
-                    "conversation_id": conversation_id,
-                    "attempt_id": attempt_id,
-                    "message_id": summary_msg_id,
-                    "error": ProviderErrorPayload::from(&e),
-                }),
+                ChatDeltaPayload {
+                    conversation_id: conversation_id.to_string(),
+                    attempt_id: attempt_id.to_string(),
+                    message_id: summary_msg_id.to_string(),
+                    seq: seq_val,
+                    error: Some(ProviderErrorPayload::from(&e)),
+                    ..Default::default()
+                },
             );
             Err(e.to_string())
         }
@@ -565,14 +582,16 @@ pub(crate) async fn execute_compaction(
             set_terminating(conversation_id, false);
             let _ = orb_window.emit(
                 "chat-delta",
-                json!({
-                    "conversation_id": conversation_id,
-                    "attempt_id": attempt_id,
-                    "message_id": summary_msg_id,
-                    "error": ProviderErrorPayload::from(&ProviderError::Timeout(
+                ChatDeltaPayload {
+                    conversation_id: conversation_id.to_string(),
+                    attempt_id: attempt_id.to_string(),
+                    message_id: summary_msg_id.to_string(),
+                    seq: seq_val,
+                    error: Some(ProviderErrorPayload::from(&ProviderError::Timeout(
                         "Summary generation timed out (30s)".to_string(),
-                    )),
-                }),
+                    ))),
+                    ..Default::default()
+                },
             );
             Err("Summary generation timed out (30s)".to_string())
         }

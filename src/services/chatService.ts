@@ -5,6 +5,7 @@ import {
   invokeSingle,
   rowToConversation,
   rowToConversationDetail,
+  rowToTokenUsageSummary,
 } from "../chat/core/protocolAdapter";
 
 export interface ConversationDetail {
@@ -46,11 +47,14 @@ export const chatService = {
   getConversationTokenUsage: (
     conversationId: string,
     contextWindowTokens: number | undefined,
-  ): Promise<TokenUsageSummary> =>
-    invoke<TokenUsageSummary>("get_conversation_token_usage", {
-      conversationId,
-      contextWindowTokens,
-    }),
+  ): Promise<TokenUsageSummary | null> =>
+    invokeSingle(
+      invoke("get_conversation_token_usage", {
+        conversationId,
+        contextWindowTokens,
+      }),
+      rowToTokenUsageSummary,
+    ),
 
   deleteConversation: (id: string): Promise<void> =>
     invoke("delete_conversation", { id }),
