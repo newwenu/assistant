@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { orbService } from "../services/orbService";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 
 export interface LogicalPos {
@@ -36,10 +36,8 @@ export function logicalToPhysical(lx: number, ly: number): PhysicalPosition {
 }
 
 export async function getMouseLogicalPos(): Promise<LogicalPos> {
-  const pos = await invoke<{ clientX: number; clientY: number }>(
-    "get_mouse_position",
-  );
-  return physicalToLogical(pos.clientX, pos.clientY);
+  const pos = await orbService.getMousePosition();
+  return physicalToLogical(pos.client_x, pos.client_y);
 }
 
 export async function getWindowLogicalRect(): Promise<LogicalRect> {

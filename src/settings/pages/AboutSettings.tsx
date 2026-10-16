@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Descriptions, Button, Typography } from "antd";
-import { invoke } from "@tauri-apps/api/core";
+import { settingService } from "../../services/settingService";
 import { useTranslation } from "react-i18next";
 import type { FieldSchema } from "../core/types/fieldSchema";
 import { SettingsSection } from "../shared/layout/SettingsSection";
@@ -62,10 +62,12 @@ export const AboutSettings: React.FC = () => {
   );
 
   useEffect(() => {
-    invoke<string>("get_app_version")
+    settingService
+      .getAppVersion()
       .then((v) => setVersion(v))
       .catch(() => setVersion("-"));
-    invoke<string>("get_rustc_version")
+    settingService
+      .getRustcVersion()
       .then((v) => setRustcVersion(v))
       .catch(() => setRustcVersion("-"));
   }, []);

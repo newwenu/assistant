@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { agentModeService } from "../services/agentModeService";
 export type { AgentMode, AgentModeInput } from "@/settings/agentMode/types";
 export { toModeInput } from "@/settings/agentMode/types";
 import type { AgentMode } from "@/settings/agentMode/types";
@@ -24,9 +24,8 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
   loadModes: async () => {
     set({ loading: true });
     try {
-      const result = await invoke("list_agent_modes");
-      const modes = (result as AgentMode[]) || [];
-      set({ modes, loading: false });
+      const modes = await agentModeService.listModes();
+      set({ modes: modes || [], loading: false });
       const state = get();
       if (
         state.selectedModeId &&
@@ -45,12 +44,12 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
   },
 
   saveMode: async (mode: Partial<AgentMode> & { id?: string }) => {
-    await invoke("save_agent_mode", { mode: toModeInput(mode) });
+    await agentModeService.saveMode(toModeInput(mode));
     await get().loadModes();
   },
 
   deleteMode: async (id: string) => {
-    await invoke("delete_agent_mode", { id });
+    await agentModeService.deleteMode(id);
     const state = get();
     if (state.selectedModeId === id) {
       set({ selectedModeId: "builtin-default" });
@@ -59,7 +58,7 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
   },
 
   resetBuiltinMode: async (id: string) => {
-    await invoke("reset_builtin_mode", { id });
+    await agentModeService.resetBuiltinMode(id);
     await get().loadModes();
   },
 }));

@@ -1,8 +1,8 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { dispatchThemeChanged } from "../settings/core/settingsDispatcher";
+import { settingService } from "../services/settingService";
 
 type ThemeMode = "system" | "light" | "dark";
 
@@ -43,7 +43,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
   init: async () => {
     try {
-      const conf = await invoke<{ theme: string }>("get_app_conf");
+      const conf = await settingService.getAppConf();
       const mode = (
         ["system", "light", "dark"].includes(conf.theme) ? conf.theme : "system"
       ) as ThemeMode;

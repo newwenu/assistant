@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Modal, Form, Button, Typography, message } from "antd";
-import { invoke } from "@tauri-apps/api/core";
+import { providerService } from "@/services/providerService";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
 import { getApiFormatByType, getFormatInfo } from "@/stores/providerStore";
@@ -134,24 +134,23 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
                 return;
               }
               try {
-                let result: unknown;
+                let modelList: ModelConfig[];
                 if (ctx.mode === "edit" && !apiKey) {
-                  result = await invoke("list_models_cmd", {
-                    providerId: (ctx.entity as Provider)?.id,
-                  });
+                  modelList = await providerService.listModels(
+                    (ctx.entity as Provider)?.id,
+                  );
                 } else {
-                  result = await invoke("preview_models_cmd", {
-                    providerType:
-                      ctx.mode === "edit"
-                        ? (ctx.entity as Provider)?.type
-                        : ctx.preset
-                          ? (ctx.preset as ProviderPreset).slug
-                          : "custom",
+                  modelList = await providerService.previewModels(
+                    ctx.mode === "edit"
+                      ? (ctx.entity as Provider)?.type
+                      : ctx.preset
+                        ? (ctx.preset as ProviderPreset).slug
+                        : "custom",
                     baseUrl,
                     apiKey,
-                  });
+                  );
                 }
-                const modelList = (result as ModelConfig[]) || [];
+                modelList = modelList || [];
                 setModels(modelList);
                 callbacks.setFieldOptions(
                   modelList.map((m) => ({
@@ -214,6 +213,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
         base_url:
           values.base_url || (isPreset && preset ? preset.defaultBaseUrl : ""),
         api_key: values.api_key || "",
+        api_key_changed: !isEdit || !!values.api_key,
         models: JSON.stringify(models),
         default_model: values.default_model || "",
       };

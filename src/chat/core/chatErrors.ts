@@ -70,7 +70,14 @@ export function isChatError(value: unknown): value is ChatError {
 }
 
 export function toChatError(value: unknown): ChatError {
-  if (isChatError(value)) return value;
+  if (isChatError(value)) {
+    return {
+      code: value.code,
+      message: value.message,
+      retry_after_ms: value.retry_after_ms ?? null,
+      retryable: value.retryable,
+    };
+  }
   if (typeof value === "string") {
     return {
       code: ChatErrorCode.InternalError,

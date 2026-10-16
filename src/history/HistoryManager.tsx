@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { message } from "antd";
 import type { Message } from "../chat/core/chatTypes";
 import { MESSAGES_PAGE_SIZE } from "../config/constants";
+import { historyService } from "../services/historyService";
 import { useChatStore } from "../stores/chatStore";
 import { PersistQueue } from "../utils/persistQueue";
 import { HistorySidebar } from "./sidebar/HistorySidebar";
@@ -62,19 +62,15 @@ export const HistoryManager: React.FC = () => {
     setLoadingMessages(true);
     setMessages([]);
     try {
-      const result = await invoke("get_conversation_paginated", {
+      const detail = await historyService.getConversationPaginated(
         id,
-        limit: MESSAGES_PAGE_SIZE,
-        beforeTimestamp: null,
-      });
-      const detail = result as {
-        messages: Message[];
-        total_count: number;
-      } | null;
+        MESSAGES_PAGE_SIZE,
+        null,
+      );
       if (detail) {
         setMessages(detail.messages || []);
-        setTotalCount(detail.total_count);
-        setHasMore((detail.messages || []).length < detail.total_count);
+        setTotalCount(detail.totalCount);
+        setHasMore((detail.messages || []).length < detail.totalCount);
       }
     } catch (e) {
       console.error("Failed to load messages:", e);
@@ -88,12 +84,11 @@ export const HistoryManager: React.FC = () => {
     setLoadingMore(true);
     try {
       const earliestTimestamp = messages[0].timestamp;
-      const result = await invoke("get_conversation_paginated", {
-        id: selectedId,
-        limit: MESSAGES_PAGE_SIZE,
-        beforeTimestamp: earliestTimestamp,
-      });
-      const detail = result as { messages: Message[] } | null;
+      const detail = await historyService.getConversationPaginated(
+        selectedId,
+        MESSAGES_PAGE_SIZE,
+        earliestTimestamp,
+      );
       if (detail && detail.messages.length > 0) {
         const older = detail.messages.filter(
           (m) => m.timestamp < earliestTimestamp,
@@ -118,7 +113,7 @@ export const HistoryManager: React.FC = () => {
     async (msgId: string) => {
       try {
         await historyPersistQueue.enqueue(async () => {
-          await invoke("delete_message_persist", { messageId: msgId });
+          await historyService.deleteMessagePersist(msgId);
         });
         setMessages((prev) => prev.filter((m) => m.id !== msgId));
         setTotalCount((prev) => Math.max(0, prev - 1));
@@ -136,7 +131,7 @@ export const HistoryManager: React.FC = () => {
     async (id: string) => {
       try {
         await historyPersistQueue.enqueue(async () => {
-          await invoke("delete_conversation", { id });
+          await historyService.deleteConversation(id);
         });
         if (selectedId === id) {
           setSelectedId(null);
@@ -157,7 +152,7 @@ export const HistoryManager: React.FC = () => {
     async (id: string, title: string) => {
       try {
         await historyPersistQueue.enqueue(async () => {
-          await invoke("rename_conversation", { id, title });
+          await historyService.renameConversation(id, title);
         });
         await chatStoreLoadConversations(true);
         message.success(t("chat.history.renamed"));
@@ -172,10 +167,7 @@ export const HistoryManager: React.FC = () => {
   const exportConversation = useCallback(
     async (id: string, format: string = "markdown") => {
       try {
-        const content = await invoke<string>("export_conversation", {
-          id,
-          format,
-        });
+        const content = await historyService.exportConversation(id, format);
         const ext = format === "json" ? "json" : "md";
         const mime =
           format === "json"
@@ -201,7 +193,7 @@ export const HistoryManager: React.FC = () => {
     async (id: string) => {
       try {
         await historyPersistQueue.enqueue(async () => {
-          await invoke("toggle_conversation_pin", { id });
+          await historyService.toggleConversationPin(id);
         });
         await chatStoreLoadConversations(true);
       } catch (e) {
@@ -216,7 +208,7 @@ export const HistoryManager: React.FC = () => {
     async (id: string) => {
       try {
         await historyPersistQueue.enqueue(async () => {
-          await invoke("duplicate_conversation", { id });
+          await historyService.duplicateConversation(id);
         });
         await chatStoreLoadConversations(true);
         message.success(t("chat.history.duplicated"));

@@ -46,14 +46,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const currentProvider = providers.find((p) => p.id === providerId);
   let models: { id: string; name: string }[] = [];
   if (currentProvider) {
-    try {
-      models = JSON.parse(currentProvider.models || "[]") as {
-        id: string;
-        name: string;
-      }[];
-    } catch {
-      models = [];
-    }
+    models = currentProvider.models;
   }
 
   if (variant === "chip") {

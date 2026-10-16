@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { Conversation } from "../../chat/core/chatTypes";
+import { historyService } from "../../services/historyService";
 
 interface UseHistorySearchReturn {
   searchQuery: string;
@@ -33,10 +33,8 @@ export function useHistorySearch(
         void (async () => {
           try {
             if (searchFullText) {
-              const result = await invoke("search_conversations", {
-                query: value,
-              });
-              setSearchResults((result as Conversation[]) || []);
+              const results = await historyService.searchConversations(value);
+              setSearchResults(results);
             } else {
               const q = value.toLowerCase();
               const filtered = conversations.filter((c) =>

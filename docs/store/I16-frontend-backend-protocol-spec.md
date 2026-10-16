@@ -2,610 +2,160 @@
 
 ## 1. 交付目标
 
-统一 Rust 后端与 TypeScript 前端之间的消息协议，消除当前字段命名不一致、类型映射缺失、事件 payload 隐式约定等问题，建立**单一真相源**的类型契约，为 I16 tool-call 执行循环和后续 agent 扩展奠定协议基础。
+统一 Rust 后端与 TypeScript 前端之间的消息协议，消除字段命名不一致、类型映射缺失、event payload 隐式约定等问题，建立**单一真相源**的类型契约，为 I16 tool-call 执行循环和后续 agent 扩展奠定协议基础。同时实现前后端转换统一：提供 DTO 层 + 适配层映射函数，业务代码直接调用即可完成 snake_case ↔ camelCase 转换及类型解析，无需手动构造 `json!({})` 或 `as T` 强制转换。
 
 **设计原则**：
-- **单一真相源**：每个跨端数据结构有且仅有一处定义，另一端通过映射或代码生成对齐
+
+- **单一真相源**：每个跨端数据结构有且仅有一处定义，另一端通过映射对齐
 - **显式契约**：所有 Tauri command 返回值和 event payload 均有强类型定义，禁止 `as unknown as T` 透传
-- **命名约定一致**：选定一种命名风格作为 wire format，两端统一遵守
+- **命名约定一致**：选定 snake_case 作为 wire format，两端统一遵守
 - **零运行时开销**：映射在边界层（Tauri invoke/emit 边界）完成，业务逻辑层使用各自惯用命名
 - **渐进式迁移**：不破坏现有行为，逐个协议点对齐
 
+**命名惯例分层**：
+
+| 层                 | 语言       | 惯用命名     | 示例                                                |
+| ------------------ | ---------- | ------------ | --------------------------------------------------- |
+| 后端业务层         | Rust       | `snake_case` | `conversation_id`, `tool_calls_json`                |
+| Wire format（IPC） | JSON       | `snake_case` | 与 Rust `#[derive(Serialize)]` 默认输出一致，零转换 |
+| 前端 DTO 层        | TypeScript | `snake_case` | 与 wire format 1:1 mirror，无心智负担               |
+| 前端业务层         | TypeScript | `camelCase`  | `conversationId`, `toolCalls`，符合 JS/TS 生态惯例  |
+
+> Tauri 2 命名转换规则：command 参数 camelCase→snake_case（自动）；command 返回值和 event payload **无转换**，字段名由后端序列化决定。因此 wire format 选 snake_case 改动成本最低。
+
 > **前置依赖**：I15 ✅（chat runtime 已提取，`tool_calls_json` DB 列已存在）
-> **核心参考**：OpenBitFun 前端 `agent-api.ts` / `tool-events.ts`（snake_case wire format + 注释标注 "mirror backend payloads"）、Tauri 2 默认 command 参数 rename 规则
 
 ---
 
-## 2. 当前问题全景
+## 2. 当前问题
 
 ### 2.1 字段命名不一致
 
-当前后端 Rust struct 使用 `snake_case`，前端 TypeScript interface 使用 `camelCase`，Tauri 作为中间层有隐式转换规则，但**不完整且不可靠**：
+| 问题                                                         | 具体表现                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| command 返回值 snake_case 与前端 camelCase 惯例冲突          | Chat: `provider_id`/`model_id`/`is_pinned`/`title_source`/`is_full` 等 8 个字段；AgentMode: `created_at`/`updated_at`/`is_builtin`/`presentation_rank`/`reasoning_enabled`/`reasoning_effort`/`max_tokens` 7 个字段；Provider: `api_key_masked` 等 |
+| `tool_calls_json` → `toolCalls` 字段名+类型双不一致          | 后端 `Option<String>` (JSON string) vs 前端 `ToolCall[]` (parsed array)，且 DB 恒为 NULL                                                                                                                                                           |
+| `provider.models` JSON string 散落解析                       | 9 处 `JSON.parse(provider.models) as ModelConfig[]`（chatStore:46, ModelSelector:50, CompactBanner:22, ChatView:95/106/178/209/247, toolStore:66），无 try-catch 保护                                                                              |
+| `Message`/`Conversation` 类型内 snake_case 与 camelCase 混用 | `conversation_id`(snake) + `toolCalls`(camel) 同处一个 interface                                                                                                                                                                                   |
+| `get_mouse_position` 返回 camelCase                          | `{ clientX, clientY }` 是后端唯一 camelCase 输出，与全局约定不一致                                                                                                                                                                                 |
 
-| 后端字段 (Rust) | 前端字段 (TS) | 传输方式 | 当前对齐状态 | 问题 |
-|---|---|---|---|---|
-| `tool_calls_json` | `toolCalls` | DB → Tauri command 返回 | ❌ 不对齐 | 后端返回 `tool_calls_json: null`，前端期望 `toolCalls?: ToolCall[]`，字段名和类型均不匹配 |
-| `is_pinned` | `is_pinned` | DB → Tauri command 返回 | ⚠️ 偶然对齐 | 前端未转 camelCase，与 JS 惯例不符 |
-| `is_full` | `is_full` | DB → Tauri command 返回 | ⚠️ 偶然对齐 | 同上 |
-| `title_source` | `title_source` | DB → Tauri command 返回 | ⚠️ 偶然对齐 | 同上 |
-| `provider_id` | `provider_id` | DB → Tauri command 返回 | ⚠️ 偶然对齐 | 同上 |
-| `model_id` | `model_id` | DB → Tauri command 返回 | ⚠️ 偶然对齐 | 同上 |
-| `parent_id` | `parent_id` | DB → Tauri command 返回 | ⚠️ 偶然对齐 | 同上 |
-| `conversation_id` | `conversation_id` | event payload | ✅ 对齐 | event payload 无 Tauri rename，两端都用 snake_case |
-| `attempt_id` | `attempt_id` | event payload | ✅ 对齐 | 同上 |
-| `message_id` | `message_id` | event payload | ✅ 对齐 | 同上 |
-| `delta_text` | `delta_text` | event payload | ✅ 对齐 | 同上 |
-| `delta_reasoning` | `delta_reasoning` | event payload | ✅ 对齐 | 同上 |
-| `delta_tool_call_id` | `delta_tool_call_id` | event payload | ✅ 对齐 | 同上 |
-| `finish_reason` | `finish_reason` | event payload | ✅ 对齐 | 同上 |
-| `retry_after_ms` | `retry_after_ms` | event payload | ✅ 对齐 | 同上 |
+**Tauri 2 命名转换规则**：command 参数 camelCase→snake_case（自动）；command 返回值和 event payload **无转换**，字段名由后端序列化决定。
 
-**关键发现**：
-1. **Tauri command 返回值**：后端 `#[derive(Serialize)]` struct 默认按 Rust 字段名序列化（snake_case），Tauri **不做自动 camelCase 转换**。前端 `chatService.ts` 用 `as Conversation[]` / `as Message[]` 强转，依赖字段名恰好一致
-2. **Tauri event payload**：后端 `json!({})` 手动构造，字段名由开发者决定，当前全部用 snake_case，前端也用 snake_case 接收，**已对齐**
-3. **Tauri command 参数**：Tauri 2 默认将前端 camelCase 参数 rename 为 Rust snake_case（`conversationId` → `conversation_id`），**已对齐**
-4. **`tool_calls_json` → `toolCalls`**：字段名不一致 + 类型不一致（`Option<String>` vs `ToolCall[]`），是最严重的协议断裂点
+### 2.2 类型安全缺失
 
-### 2.2 类型映射缺失
+| 问题                                       | 具体表现                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 后端 command 返回 `serde_json::Value`      | Chat: `get_conversation_paginated`/`get_conversation`/`search_conversations` 等 5 处；Provider: `list_providers`/`list_models_cmd`/`save_provider` 3 处；AgentMode: `list_agent_modes`/`save_agent_mode` 2 处；Config: `get_app_conf`/`get_orb_conf`/`get_mascot_conf`/`patch_conf` 4 处；Orb: `get_mouse_position`/`get_screen_size` 2 处；Tool: `get_recent_tools`/`get_favorite_tools` 2 处；共 18 处，前端 `as` 强转无编译时校验 |
+| 后端 event payload 用 `json!({})` 手动构造 | 全项目 22 处（chat 13 + setting 3 + orb 2 + conversation 4），遗漏字段无编译时感知                                                                                                                                                                                                                                                                                                                                                   |
+| `emit_stream_error` 缺少 `seq`             | 主 chat 流和 compaction 流的 error 事件均不携带 seq，前端无法定位 error 发生位置                                                                                                                                                                                                                                                                                                                                                     |
+| 后端 struct 无 `deny_unknown_fields`       | 增删字段时前端旧版本静默忽略，无报错                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-| 数据 | 后端类型 | 前端类型 | 映射逻辑 | 当前状态 |
-|---|---|---|---|---|
-| `tool_calls_json` | `Option<String>` (JSON string) | `toolCalls?: ToolCall[]` (parsed array) | `JSON.parse(tool_calls_json)` | ❌ 未实现，DB 中恒为 NULL |
-| `is_pinned` | `i64` (0/1) | `boolean` | `val !== 0` | ⚠️ 后端 `read_conv_row` 已转换，但 `MessageRow` 的 `is_pinned` 直接用 `bool`，不一致 |
-| `tokens` | `Option<i64>` | `number \| null` | 直接透传 | ✅ |
-| `timestamp` | `i64` | `number` | 直接透传 | ✅ |
-| `reasoning` | `Option<String>` | `string \| undefined` | 直接透传 | ✅ 字段名一致 |
+### 2.3 协议定义散落
 
-### 2.3 事件 payload 无强类型契约
+后端：9 个 cmd 文件各自构造，无统一协议模块。前端：3 个文件各自定义类型，无统一协议入口。
 
-后端 `emit_delta` 使用 `json!({})` 手动构造 payload，字段名和结构与前端 `ChatDeltaPayload` interface 的对齐完全靠开发者自觉，无编译时校验。
+### 2.4 非 Chat 协议的同类问题
 
-当前 `chat-delta` 事件 payload 字段清单（后端 `emit_delta` 函数，[chat.rs:82-97](file:///g:/codeversion/assistant/src-tauri/src/cmd/chat.rs#L82-L97)）：
-
-```rust
-json!({
-    "conversation_id": ectx.conv_id,
-    "attempt_id": ectx.attempt_id,
-    "message_id": ectx.msg_id,
-    "seq": seq,
-    "delta_text": delta.delta_text,
-    "delta_reasoning": delta.delta_reasoning,
-    "delta_tool_call_id": delta.delta_tool_call_id,
-    "delta_tool_call_name": delta.delta_tool_call_name,
-    "delta_tool_call_arguments": delta.delta_tool_call_arguments,
-    "finish_reason": delta.finish_reason,
-    "usage": delta.usage,
-    "delta_retry": delta.delta_retry,
-})
-```
-
-前端 `ChatDeltaPayload` interface（[chatOrchestrator.ts:63-78](file:///g:/codeversion/assistant/src/services/chatOrchestrator.ts#L63-L78)）：
-
-```typescript
-export interface ChatDeltaPayload {
-  conversation_id: string;
-  attempt_id?: string;
-  message_id: string;
-  seq?: number;
-  delta_text?: string;
-  delta_reasoning?: string;
-  delta_tool_call_id?: string;
-  delta_tool_call_name?: string;
-  delta_tool_call_arguments?: string;
-  finish_reason?: string;
-  usage?: TokenUsage;
-  error?: unknown;
-  delta_retry?: RetryNotification;
-}
-```
-
-两端字段名已对齐（都用 snake_case），但**无共享类型定义**，后端改字段名前端不会报错。
-
-### 2.4 Tauri command 返回值无类型校验
-
-后端 `list_conversations` / `get_conversation` / `get_conversation_paginated` 返回 `serde_json::Value`，前端用 `as Conversation[]` / `as ConversationDetail` 强转。若后端增删字段，前端无编译时感知。
-
-```rust
-// 后端：返回 serde_json::Value，丢失类型信息
-pub fn list_conversations(...) -> Result<serde_json::Value, String> {
-    let rows = conversations::get_conversations(&conn, provider_id.as_deref())?;
-    serde_json::to_value(&rows).map_err(|e| e.to_string())
-}
-```
-
-```typescript
-// 前端：as 强转，无编译时校验
-listConversations: (): Promise<Conversation[]> =>
-    invoke("list_conversations", { providerId: null }).then(
-        (r) => (r as Conversation[]) || [],
-    ),
-```
+| 模块                | 问题                         | 具体表现                                                                                                                                                                                                               |
+| ------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agentModeStore`    | `as AgentMode[]` 强转        | `AgentMode` 含 `created_at`/`updated_at`/`is_builtin`/`presentation_rank`/`reasoning_enabled`/`reasoning_effort`/`max_tokens` 7 个 snake_case 字段，与 camelCase 惯例冲突                                              |
+| `providerStore`     | `as Provider[]` 强转         | `Provider` 含 `api_key_masked`/`models`（JSON string）等 snake_case 字段                                                                                                                                               |
+| `useHistoryRefresh` | 绕过 chatService 直接 invoke | `invoke("get_conversation_paginated")` 后 `as { messages: Message[] }` 强转业务类型，未走 DTO 层                                                                                                                       |
+| 非 Chat event       | payload 无类型定义           | `setting:provider-changed`（`{action, id?}`）、`theme-changed`（`{resolved}`）、`navigate`（裸 string）、`chat-regenerate`（`{conversation_id, deleted_message_id}`）均为 `json!({})` 构造，前端无 listen 或无类型断言 |
 
 ---
 
 ## 3. 收束决定点
 
-参考项目模式速览：
-
-| 项目 | 枏构 | Wire format | 对齐机制 | 未知字段检测 | TS 类型生成 |
-|---|---|---|---|---|---|
-| OpenBitFun (IPC) | Rust IPC | camelCase | `deny_unknown_fields` + 契约测试 | ✅ `parse_strict_frame` | — |
-| OpenBitFun (App Server) | JSON-RPC | camelCase | `ts-rs` 自动生成 | ✅ `deny_unknown_fields` | ✅ `ts-rs` |
-| OpenBitFun (前端 DTO) | Event stream | snake_case | 注释标注 mirror | — | — |
-| BongoCat | Tauri (库) | camelCase | `deny_unknown_fields` | ✅ | — |
-| ChatGPT | Tauri 2 | snake_case (默认) | 强类型返回 | — | — |
-| 本项目 (event) | Tauri 2 | snake_case | 人工对齐 | — | — |
-| 本项目 (command) | Tauri 2 | snake_case (默认) | `as` 强转 | — | — |
-
-Tauri 2 命名转换规则：command 参数 camelCase→snake_case（自动）；command 返回值 / event payload **无转换**，字段名由后端序列化决定。当前项目 event payload 已全部 snake_case 且两端对齐，是最简单可靠的基准模式。
-
-| # | 决策点 | 结论 | 理由 | 参考来源 |
-|---|--------|------|------|---------|
-| D1 | wire format 统一为 snake_case | ✅ 采用 | ① event payload 已全 snake_case 且对齐，改动成本为零 ② Rust `#[derive(Serialize)]` 默认 snake_case，无需 `#[serde(rename)]` ③ Tauri command 返回值无自动 camelCase 转换 ④ 前端业务层已有大量 snake_case 属性访问，统一 camelCase 改动面过大 | OpenBitFun 前端 DTO 层 (`agent-api.ts`) 同样 snake_case mirror 后端；ChatGPT Tauri 默认 snake_case |
-| D2 | 前端 DTO/业务层分离 | ✅ 采用 | DTO 层 snake_case（与 wire format 一致）+ 适配层映射 + 业务层 camelCase（JS 惯例），消除一个类型内两种命名风格混用 | OpenBitFun `tool-execution-service.ts`：事件 DTO snake_case → handler 映射 → 业务对象 camelCase |
-| D3 | 类型同步机制选 B（手动 mirror + 契约测试） | ✅ 采用 | ① Tauri event payload 无法代码生成（`tauri-specta`/`ts-rs` 只覆盖 command 返回值，event 13 处 vs command 4 处）② 项目约 20 个协议点，手动 mirror 可接受 ③ 契约测试 + `deny_unknown_fields` 在"检测不一致"上与代码生成等价 ④ 运行时校验（zod）每个协议点写两遍类型，过重 | OpenBitFun 前端 DTO 层手动 mirror + 注释标注；BongoCat fixture 契约测试；远期升级路径：协议点 50+ 时引入 `tauri-specta` |
-| D4 | 后端 event payload 类型化 + `deny_unknown_fields` | ✅ 采用（P2） | 替换 `json!({})` 为 struct + `#[serde(deny_unknown_fields)]`，编译时校验字段存在性 + 运行时拒绝未知字段，消除遗漏字段无感知问题 | OpenBitFun IPC `deny_unknown_fields` 全局启用 + `parse_strict_frame` 未知字段检测；BongoCat fixture `deny_unknown_fields` |
-| D5 | 协议契约测试 | ✅ 采用（P2） | wire format 断言 + round-trip 测试 + 未知字段拒绝测试，后端增删/重命名字段时测试失败，强制同步前端 DTO | OpenBitFun `protocol_contracts.rs`：`protocol_round_trips_*` + `protocol_rejects_unknown_fields_and_operations` |
-| D6 | 协议版本化 | ❌ 远期 | 当前单版本部署，Tauri invoke/emit 已内置请求-响应关联和错误路由，无需 `RuntimeIpcFrame` 元数据帧层 | OpenBitFun `PROTOCOL_VERSION: u32` + `Initialize` 握手；远期触发条件：协议需向后兼容 或 脱离 Tauri 支持 HTTP/WS/CLI |
-| D7 | 元数据帧协议层 | ❌ 不需要 | Tauri 2 已提供：invoke 自带 Promise resolve/reject（请求-响应关联）、IPC 内部帧定界、`Result<T, String>` 错误路由、`emit(event_name, payload)` 事件分发 | OpenBitFun `RuntimeIpcFrame` 因自定义 IPC（Unix socket + 长度前缀帧）需要应用层自行处理；本项目 Tauri 已是"帧协议" |
-| D8 | `MessageRow` 添加 `#[serde(rename_all = "camelCase")]` | ❌ 不采用 | 同一数据结构在 command 返回值和 event payload 两个通道出现不同命名，增加认知负担 | — |
+| ID  | 主题                 | 决定                                                 | 理由                                                                                                                                                                                                                  | 参考来源                                                                                                 |
+| --- | -------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| D1  | wire format          | snake_case                                           | event payload 已全部 snake_case 且两端对齐（13 处），改动成本为零；Rust `#[derive(Serialize)]` 默认输出 snake_case 无需额外标注3；前端业务层已有大量 snake_case 属性访问；Tauri command 返回值不做自动 camelCase 转换 | ChatGPT Tauri 项目默认 snake_case；OpenBitFun 前端 DTO 层 `agent-api.ts` 对 event stream 使用 snake_case |
+| D2  | 前端分层             | DTO(snake_case) → 适配层 → 业务层(camelCase)         | 消除一个类型内两种命名风格混用；适配层 `rowToMessage()`/`rowToConversation()` 集中映射，改协议只改一处；业务层保持 JS 惯例                                                                                            | OpenBitFun `tool-execution-service.ts`：事件 DTO(snake_case) → handler 内转换 → 业务对象(camelCase)      |
+| D3  | 类型同步机制         | 手动 mirror + 契约测试                               | 无新依赖，event+command 统一适用；契约测试+`deny_unknown_fields` 在"检测不一致"上与代码生成等价；当前约 20 个协议点，手动 mirror 维护成本可接受；协议点 50+ 时可引入 `tauri-specta`                                   | OpenBitFun 前端 DTO `agent-api.ts` 手动 mirror + 注释标注；BongoCat fixture 契约测试                     |
+| D4  | event payload 类型化 | 引入 Rust struct + `deny_unknown_fields`             | 替换 `json!({})` 手动构造，遗漏字段有编译时校验；`deny_unknown_fields` 运行时拒绝未知字段，强制前后端同步变更                                                                                                         | OpenBitFun IPC `RuntimeIpcFrame` 全局 `deny_unknown_fields` + `parse_strict_frame` 未知字段检测          |
+| D5  | 协议契约测试         | wire format 断言 + round-trip + 未知字段拒绝         | 后端增删/重命名字段时测试失败，强制同步更新前端 DTO                                                                                                                                                                   | OpenBitFun `protocol_contracts.rs` 的 `protocol_round_trips_*` 系列测试                                  |
+| D6  | 元数据帧协议         | 不引入                                               | Tauri 已提供请求-响应关联（invoke Promise）、帧定界（IPC 内部）、错误路由（`Result<T,String>`）、事件分发（`emit`）；OpenBitFun 需要是因为其传输层是自定义 IPC（Unix socket + 长度前缀帧）                            | OpenBitFun `RuntimeIpcFrame` 元数据帧层                                                                  |
+| D7  | `MessageRow` 序列化  | 保持默认 snake_case，不加 `rename_all = "camelCase"` | `MessageRow` 通过 `serde_json::to_value(&rows)` 序列化，若加 camelCase 则输出 `toolCallsJson`，但 event payload 仍为 snake_case，同一数据结构在两个通道出现不同命名                                                   | —                                                                                                        |
 
 ---
 
 ## 4. 统一方案
 
-### 4.1 核心决策：wire format 统一为 snake_case
+### 4.1 分层架构（→ D1, D2）
 
-**理由**：
-1. 当前 event payload 已全部使用 snake_case 且两端对齐，改动成本为零
-2. 后端 Rust 惯用 snake_case，`#[derive(Serialize)]` 默认输出 snake_case，无需额外 `#[serde(rename)]` 标注
-3. Tauri command 返回值不做自动 camelCase 转换，前端若用 camelCase 则需手动映射每条 command
-4. OpenBitFun 参考项目前端 DTO 层也使用 snake_case mirror 后端
-5. 前端业务层（Store/Component）已有大量 `snake_case` 属性访问（`conversation_id`、`message_id`、`provider_id` 等），统一为 camelCase 改动面过大
+```
+前端：
+┌─────────────────────────────────────────────┐
+│  业务层 (Store / Component / Hook)           │
+│  camelCase: message.toolCalls               │
+├─────────────────────────────────────────────┤
+│  适配层 (protocolAdapter.ts)                 │
+│  rowToMessage() / rowToConversation()       │
+├─────────────────────────────────────────────┤
+│  DTO 层 (protocol.ts)  ← 统一协议定义点      │
+│  snake_case: row.tool_calls_json            │
+├─────────────────────────────────────────────┤
+│  Tauri 边界 (invoke / listen)               │
+│  command 参数: camelCase→snake_case (自动)  │
+│  command 返回 + event payload: snake_case   │
+└─────────────────────────────────────────────┘
 
-**代价**：前端 DTO interface 使用 snake_case，不符合 TypeScript 惯例。但通过**分层隔离**（DTO 层 snake_case ↔ 业务层 camelCase）可消除影响。
-
-### 4.1.1 前端对接后端的三种机制对比
-
-前端 DTO 层如何"对上"后端 wire format，本质上是一个**类型同步**问题。业界有三种机制：
-
-| 机制 | 原理 | 代表项目 | 优点 | 缺点 |
-|---|---|---|---|---|
-| **A. 代码生成** | Rust 编译时自动生成 TS interface，前端直接 import | OpenBitFun SDK (`ts-rs`)、Tauri 官方 (`tauri-specta`) | 零人工同步，后端改字段前端自动跟着变 | 需引入新依赖 + build pipeline；生成代码难定制；event payload 不走 command 通道无法自动生成 |
-| **B. 手动 mirror + 契约测试** | 前端手动定义 DTO interface（注释标注 mirror 后端），契约测试验证 wire format 一致 | OpenBitFun 前端 DTO 层 (`agent-api.ts`)、BongoCat | 无新依赖，灵活可控，event + command 统一适用 | 人工维护，需契约测试兜底 |
-| **C. 运行时校验** | 前端用 zod/io-ts 定义 schema，`invoke().then(validate)` 运行时校验 | Web API 常见模式 | 运行时保障，可生成 TypeScript 类型 | 引入 zod 依赖；每个协议点写 schema 等于写两遍类型；Tauri invoke 泛型签名需包装 |
-
-**当前项目选择 B（手动 mirror + 契约测试）**，理由：
-
-1. **Tauri event payload 无法代码生成**：`tauri-specta` / `ts-rs` 只能生成 command 返回值类型，event payload 是 `app.emit("event", payload)` 手动构造的 `json!({})`，没有 Rust 函数签名可供生成。当前项目 event payload 是协议主体（13 处），command 返回值只有 4 处——代码生成只能覆盖小部分协议点
-2. **项目规模不需要代码生成**：当前约 20 个协议点（13 event + 4 command 返回值 + 3 command 参数），手动 mirror 维护成本可接受。OpenBitFun 用 `ts-rs` 是因为面向外部 SDK 有上百个协议点
-3. **契约测试提供同等保障**：wire format 断言 + round-trip 测试 + `deny_unknown_fields` 拒绝未知字段，组合起来与代码生成在"检测不一致"上效果等价，区别只在"修复不一致"时代码生成自动修、手动 mirror 需人修——但修复频率低（协议变更不频繁）
-4. **运行时校验过重**：zod schema 定义量与 DTO interface 等价，等于每个协议点写两遍类型；且 Tauri invoke 泛型签名 `invoke<T>` 需要额外包装才能插入校验
-
-**远期升级路径**：若协议点增长到 50+ 或需要对外暴露 SDK，可引入 `tauri-specta` 为 command 返回值自动生成类型，event payload 仍保持手动 mirror + 契约测试。
+后端：
+┌─────────────────────────────────────────────┐
+│  cmd/ 层 — 业务逻辑 + 调用协议类型构造       │
+│  app.emit("event", ChatStreamStartPayload{})│
+├─────────────────────────────────────────────┤
+│  protocol/ 模块  ← 统一协议定义点            │
+│  所有 event payload + command 返回值 struct  │
+│  #[serde(deny_unknown_fields)]              │
+├─────────────────────────────────────────────┤
+│  storage/ 层 — ConversationRow / MessageRow │
+└─────────────────────────────────────────────┘
+```
 
 ### 4.2 统一协议定义点
-
-**核心原则：前端一个文件，后端一个模块，对着看就是协议全貌。**
-
-#### 当前问题：协议定义散落各处
-
-**后端**（9 个 cmd 文件各自构造，无统一协议模块）：
-
-| 文件 | 内容 | 问题 |
-|---|---|---|
-| `cmd/chat.rs` | 4 个 emit + `send_chat_message` | event payload 用 `json!({})` 内联，无 struct 定义 |
-| `cmd/conversation.rs` | 9 个 emit + 12 个 command | 同上，`serde_json::Value` 返回值无类型 |
-| `cmd/provider.rs` | 2 个 emit + 4 个 command | 同上 |
-| `cmd/config.rs` | 1 个 emit + 6 个 command | 同上 |
-| `cmd/orb.rs` | 5 个 command | `get_mouse_position` 返回 camelCase |
-| `cmd/tool.rs` | 4 个 command | `serde_json::Value` 返回值 |
-| `cmd/agent_mode.rs` | 4 个 command | 同上 |
-| `cmd/app.rs` | 1 个 emit + 6 个 command | `navigate` event 无类型 |
-| `storage/conversations.rs` | `ConversationRow` / `MessageRow` struct | 定义在 storage 层，cmd 层不引用，直接 `to_value(&rows)` 序列化 |
-
-**前端**（3 个文件各自定义，无统一协议入口）：
-
-| 文件 | 内容 | 问题 |
-|---|---|---|
-| `chatTypes.ts` | `Message` / `Conversation` / 3 个 event payload | 混合 DTO+业务（snake_case + camelCase 混用）|
-| `chatOrchestrator.ts` | `ChatDeltaPayload` / `ChatStreamStartPayload` | 2 个 event payload 定义在业务文件中 |
-| `chatService.ts` | `ConversationDetail` / `TokenUsageSummary` / `ProviderBrief` | 3 个 DTO 定义在 service 文件中 |
-
-#### 目标：两端各一个协议定义点
 
 **后端**：`src-tauri/src/protocol/` 模块
 
 ```
 src-tauri/src/protocol/
-├── mod.rs              — re-export 所有协议类型
-├── chat_events.rs      — Chat 协议所有 event payload struct
-├── chat_commands.rs    — Chat 协议所有 command 返回值 struct
-├── setting_events.rs   — Setting 协议所有 event payload struct（远期）
-└── setting_commands.rs — Setting 协议所有 command 返回值 struct（远期）
+├── mod.rs              — re-export
+├── chat_events.rs      — Chat event payload struct
+├── chat_commands.rs    — Chat command 返回值 struct
+├── orb_events.rs       — Orb event payload struct
+├── setting_events.rs   — Setting event payload struct
+└── setting_commands.rs — Setting command 返回值 struct
 ```
 
-- 所有 `app.emit("event", payload)` 的 payload 必须用此模块的 struct 构造，禁止 `json!({})`
+- 所有 `app.emit("event", payload)` 的 payload 必须用此模块的 struct，禁止 `json!({})`
 - 所有 command 返回 `Result<T, String>` 的 `T` 必须是此模块的 struct，禁止 `serde_json::Value`
 - struct 标注 `#[serde(deny_unknown_fields)]`
-- `cmd/` 文件只做 `app.emit("event", ChatStreamStartPayload { ... })?` ，不定义任何协议类型
 
-**前端**：`src/chat/core/protocol.ts` 文件
+**前端**：按模块分文件，每个模块一个协议定义入口
+
+```
+src/chat/core/protocol.ts        — Chat 协议 DTO
+src/settings/core/protocol.ts    — Setting / Provider / AgentMode 协议 DTO
+```
 
 ```typescript
 /**
  * Chat protocol DTOs (frontend).
- *
- * These types mirror backend protocol structs and intentionally use
- * snake_case fields to match the wire format.
- * 
- * Backend mirror: src-tauri/src/protocol/chat_events.rs
- *                 src-tauri/src/protocol/chat_commands.rs
+ * Mirror backend: src-tauri/src/protocol/chat_events.rs, chat_commands.rs
+ * snake_case fields to match wire format.
  */
-
-// ── Command 返回值 ──
-export interface ConversationRow { ... }   // mirror ConversationRow
-export interface MessageRow { ... }        // mirror MessageRow
-export interface ConversationDetailRow { ... }
-export interface ProviderBriefRow { ... }
-export interface TokenUsageSummaryRow { ... }
-
-// ── Event payload ──
-export interface ChatStreamStartPayload { ... }
-export interface ChatDeltaPayload { ... }
-export interface ChatStreamErrorPayload { ... }
-export interface ConversationTerminatedPayload { ... }
-export interface ConversationCompactFailedPayload { ... }
-export interface ConversationUnlockedPayload { ... }
 ```
 
 - 所有 `invoke()` 返回值强转目标必须是此文件的类型
 - 所有 `listen()` event payload 断言目标必须是此文件的类型
-- `chatTypes.ts` 只定义业务类型（camelCase），不再包含任何 snake_case 字段
-- `chatService.ts` / `chatOrchestrator.ts` 不再定义任何协议类型
+- `chatTypes.ts` 只定义业务类型（camelCase），不再包含 snake_case 字段
 
-#### 对接方式：看文件头注释
+**对接方式**：前端 `protocol.ts` 文件头标注 `Backend mirror: src-tauri/src/protocol/chat_events.rs`，后端反之。IDE 中打开任一端，一眼看到对端位置。
 
-前端 `protocol.ts` 文件头标注 `Backend mirror: src-tauri/src/protocol/chat_events.rs`，后端 `chat_events.rs` 文件头标注 `Frontend mirror: src/chat/core/protocol.ts`。IDE 中打开任一端，一眼看到对端位置。
-
-#### 契约测试：验证两端一致
-
-```rust
-// src-tauri/src/protocol/tests/chat_contracts.rs
-
-#[test]
-fn chat_stream_start_wire_format() {
-    let payload = ChatStreamStartPayload {
-        conversation_id: "test".into(),
-        model_id: "gpt-4".into(),
-        ..Default::default()
-    };
-    let json = serde_json::to_value(&payload).unwrap();
-    // 验证 wire format 字段名与前端 protocol.ts 一致
-    assert!(json.get("conversation_id").is_some());
-    assert!(json.get("model_id").is_some());
-    // 验证无 camelCase 泄漏
-    assert!(json.get("conversationId").is_none());
-    assert!(json.get("modelId").is_none());
-}
-```
-
-测试注释标注对应前端类型名：`// mirrors: ChatStreamStartPayload in protocol.ts`
-
-### 4.3 分层架构
-
-```
-┌─────────────────────────────────────────────────┐
-│  前端业务层 (Store / Component / Hook)           │
-│  使用 camelCase: message.toolCalls              │
-│  使用 camelCase: conversation.providerId         │
-├─────────────────────────────────────────────────┤
-│  适配层 (protocolAdapter.ts)                     │
-│  DTO → 业务类型映射: rowToMessage()              │
-│  业务类型 → DTO: messageToRow()                  │
-├─────────────────────────────────────────────────┤
-│  DTO 层 (protocol.ts)        ← 统一协议定义点     │
-│  使用 snake_case: message_row.tool_calls_json    │
-│  与后端 wire format 完全一致                      │
-├─────────────────────────────────────────────────┤
-│  Tauri 边界 (invoke / listen)                    │
-│  command 参数: camelCase → snake_case (自动)     │
-│  command 返回: snake_case (原样)                  │
-│  event payload: snake_case (原样)                │
-└─────────────────────────────────────────────────┘
-
-后端对应：
-┌─────────────────────────────────────────────────┐
-│  cmd/ 层 — 只做业务逻辑 + 调用协议类型构造        │
-│  app.emit("event", ChatStreamStartPayload{...}) │
-├─────────────────────────────────────────────────┤
-│  protocol/ 模块           ← 统一协议定义点        │
-│  所有 event payload struct + command 返回值 struct│
-│  #[serde(deny_unknown_fields)]                   │
-├─────────────────────────────────────────────────┤
-│  storage/ 层 — ConversationRow / MessageRow      │
-│  protocol/ 的 struct 可以直接引用 storage/ 的     │
-│  或定义独立的 command 返回值 struct                │
-└─────────────────────────────────────────────────┘
-```
-
-### 4.4 后端变更
-
-#### 4.4.1 `MessageRow` 添加 `#[serde(rename_all = "camelCase")]` — ❌ 不采用
-
-**理由**：`MessageRow` 通过 `serde_json::to_value(&rows)` 序列化后传给前端，若加 `rename_all = "camelCase"` 则输出 `toolCallsJson`，前端 DTO 层需同步改为 camelCase，但 event payload 仍为 snake_case，**同一数据结构在两个通道出现不同命名**，增加认知负担。
-
-**决策**：后端 struct 保持默认 snake_case 序列化，前端 DTO 层 mirror snake_case。
-
-#### 4.4.2 `tool_calls_json` 写入激活
-
-当前 `update_message_content` 的第 6 参数 `tool_calls_json` 在所有调用点恒为 `None`。I16 激活写入：
-
-```rust
-// cmd/chat.rs — stream_future Ok 分支
-let tool_calls_json = outcome.tool_calls.as_ref()
-    .and_then(|tc| serde_json::to_string(tc).ok());
-
-let _ = db_tx.send((
-    msg_id.clone(),
-    outcome.full_content.clone(),
-    tokens,
-    reasoning,
-    tool_calls_json,  // 从 None 变为实际序列化值
-));
-```
-
-#### 4.4.3 event payload 类型化 + `deny_unknown_fields`（借鉴 OpenBitFun）
-
-当前 `emit_delta` 使用 `json!({})` 手动构造。引入 `ChatDeltaPayload` struct 替代，并借鉴 OpenBitFun 的 `deny_unknown_fields` 机制：
-
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub struct ChatDeltaPayload {
-    pub conversation_id: String,
-    pub attempt_id: String,
-    pub message_id: String,
-    pub seq: u32,
-    pub delta_text: Option<String>,
-    pub delta_reasoning: Option<String>,
-    pub delta_tool_call_id: Option<String>,
-    pub delta_tool_call_name: Option<String>,
-    pub delta_tool_call_arguments: Option<String>,
-    pub finish_reason: Option<String>,
-    pub usage: Option<TokenUsage>,
-    pub delta_retry: Option<RetryNotification>,
-}
-```
-
-**收益**：
-1. 后端改字段名有编译时校验（`Serialize` derive 会检查字段存在性）
-2. `deny_unknown_fields` 使反序列化时拒绝未知字段，**运行时保障**前后端协议一致（借鉴 OpenBitFun `parse_strict_frame` 模式）
-3. `Debug + Clone + Deserialize` 支持 round-trip 契约测试
-
-**代价**：需定义 struct + 替换 `json!({})` 调用点。
-**优先级**：P2，可在 I16 tool-call 循环实现后统一清理。
-
-#### 4.4.4 协议契约测试（借鉴 OpenBitFun `protocol_contracts.rs`）
-
-在 `assistant-agent` crate 中添加协议契约测试，确保 Rust struct 序列化输出与前端 DTO interface 字段名一致：
-
-```rust
-// tests/protocol_contracts.rs
-
-#[test]
-fn chat_delta_payload_wire_format_matches_frontend_dto() {
-    let payload = ChatDeltaPayload {
-        conversation_id: "conv-1".into(),
-        attempt_id: "att-1".into(),
-        message_id: "msg-1".into(),
-        seq: 0,
-        delta_text: Some("hello".into()),
-        delta_reasoning: None,
-        delta_tool_call_id: None,
-        delta_tool_call_name: None,
-        delta_tool_call_arguments: None,
-        finish_reason: None,
-        usage: None,
-        delta_retry: None,
-    };
-
-    let json = serde_json::to_value(&payload).unwrap();
-
-    // 断言 wire format 字段名与前端 ChatDeltaPayload interface 一致
-    assert!(json.get("conversation_id").is_some());  // snake_case
-    assert!(json.get("attempt_id").is_some());
-    assert!(json.get("message_id").is_some());
-    assert!(json.get("delta_text").is_some());
-    assert!(json.get("delta_reasoning").is_some());
-    assert!(json.get("delta_tool_call_id").is_some());
-    assert!(json.get("finish_reason").is_some());
-
-    // 断言不存在 camelCase 字段（防止误加 rename_all）
-    assert!(json.get("conversationId").is_none());
-    assert!(json.get("deltaText").is_none());
-}
-
-#[test]
-fn chat_delta_payload_rejects_unknown_fields() {
-    let json_with_extra = json!({
-        "conversation_id": "conv-1",
-        "attempt_id": "att-1",
-        "message_id": "msg-1",
-        "seq": 0,
-        "unknown_field": "should_fail"
-    });
-    assert!(serde_json::from_value::<ChatDeltaPayload>(json_with_extra).is_err());
-}
-
-#[test]
-fn message_row_wire_format_matches_frontend_dto() {
-    let row = MessageRow {
-        id: "msg-1".into(),
-        conversation_id: "conv-1".into(),
-        role: "assistant".into(),
-        content: "hello".into(),
-        tokens: Some(10),
-        timestamp: 1000,
-        parent_id: None,
-        is_pinned: false,
-        reasoning: None,
-        tool_calls_json: None,
-    };
-
-    let json = serde_json::to_value(&row).unwrap();
-
-    // 断言 wire format 使用 snake_case
-    assert!(json.get("tool_calls_json").is_some());   // 不是 "toolCallsJson"
-    assert!(json.get("conversation_id").is_some());   // 不是 "conversationId"
-    assert!(json.get("is_pinned").is_some());         // 不是 "isPinned"
-
-    // 断言不存在 camelCase 字段
-    assert!(json.get("toolCallsJson").is_none());
-    assert!(json.get("conversationId").is_none());
-}
-```
-
-**收益**：后端增删/重命名字段时，契约测试失败，强制开发者同步更新前端 DTO。
-**借鉴来源**：OpenBitFun `protocol_contracts.rs` 的 `protocol_round_trips_*` 系列测试。
-
-#### 4.4.5 协议版本化（远期，借鉴 OpenBitFun）
-
-OpenBitFun 使用 `PROTOCOL_VERSION: u32` 常量标识协议版本，前端在 `Initialize` 握手时校验版本兼容性。当前项目规模不需要此机制，但记录为远期演进方向：
-
-```rust
-// 远期：当协议变更需要向后兼容时引入
-pub const CHAT_PROTOCOL_VERSION: u32 = 1;
-```
-
-### 4.5 协议元数据约束
-
-#### 4.5.1 为什么不需要元数据驱动的帧协议
-
-OpenBitFun 使用 `RuntimeIpcFrame` 元数据帧层，因为其传输层是自定义 IPC（Unix domain socket + 长度前缀 JSON 帧），需要在应用层自行处理请求-响应关联、错误路由、事件分发。
-
-**当前项目使用 Tauri 2 内置 invoke/emit 机制**，Tauri 已提供：
-
-| 元数据职责 | OpenBitFun 自行实现 | 本项目 Tauri 内置 |
-|---|---|---|
-| 请求-响应关联 | `request_id` 元数据字段 | Tauri invoke 自带 Promise resolve/reject |
-| 帧定界 | 长度前缀 + `parse_strict_frame` | Tauri IPC 内部处理 |
-| 错误路由 | `RuntimeIpcFrame::Error` variant | Tauri command 返回 `Result<T, String>` |
-| 事件分发 | `RuntimeIpcFrame::Event` + `RuntimeIpcEvent` enum | Tauri `emit(event_name, payload)` |
-| 协议版本协商 | `Initialize { protocol_version }` 握手 | 无（单版本部署） |
-
-**结论**：不需要 `RuntimeIpcFrame` 这样的元数据帧层。Tauri 已经是"帧协议"。
-
-#### 4.5.2 已有元数据字段的协议级约束
-
-当前项目中 event payload 已包含关联元数据字段，但**无协议级约束**确保其一致性和完整性：
-
-**Event payload 关联元数据清单**：
-
-| 元数据字段 | 类型 | 必选事件 | 可选事件 | 语义 |
-|---|---|---|---|---|
-| `conversation_id` | `string` | `chat-stream-start`, `chat-delta`, `conversation_terminated`, `conversation_compact_failed`, `conversation_unlocked` | — | 关联到哪个会话 |
-| `attempt_id` | `string` | `chat-stream-start` | `chat-delta`（error 分支可缺省） | 关联到哪次流式尝试（I15 引入） |
-| `message_id` | `string` | `chat-stream-start`, `chat-delta` | — | 关联到哪条消息 |
-| `seq` | `number` | `chat-delta`（正常 delta） | `chat-delta`（error 分支） | delta 序号，用于排序和去重 |
-
-**当前问题**：
-
-1. **`emit_stream_error` 缺少 `seq`**：error 事件不携带 `seq`，前端无法知道 error 发生在哪个 delta 之后
-2. **`attempt_id` 在 error 分支为必选但语义弱**：error 发生时 `attempt_id` 已知，应始终携带
-3. **元数据字段无类型化约束**：后端 `json!({})` 手动构造，遗漏字段无编译时感知
-
-**约束要求**：
-
-> **R1**：所有 `chat-delta` 事件（包括 error 分支）**必须**携带 `conversation_id`、`attempt_id`、`message_id` 三个关联元数据字段
->
-> **R2**：`chat-delta` 正常 delta 分支**必须**携带 `seq`；error 分支 `seq` 可选（error 可能在 seq 赋值前发生）
->
-> **R3**：`chat-stream-start` 事件**必须**携带 `conversation_id`、`attempt_id`、`message_id`，且值与后续 `chat-delta` 事件一致
->
-> **R4**：同一 `attempt_id` 下的 `chat-delta` 事件，`seq` 必须**单调递增**（从 0 开始）
-
-**修复 `emit_stream_error` 缺少 `seq`**：
-
-```rust
-// 变更前
-fn emit_stream_error(ectx: &StreamEmitCtx, error: &ProviderErrorPayload) {
-    ectx.orb_window.emit("chat-delta", json!({
-        "conversation_id": ectx.conv_id,
-        "attempt_id": ectx.attempt_id,
-        "message_id": ectx.msg_id,
-        "error": error,
-    }))
-}
-
-// 变更后：添加 last_seq 参数
-fn emit_stream_error(ectx: &StreamEmitCtx, last_seq: u32, error: &ProviderErrorPayload) {
-    ectx.orb_window.emit("chat-delta", json!({
-        "conversation_id": ectx.conv_id,
-        "attempt_id": ectx.attempt_id,
-        "message_id": ectx.msg_id,
-        "seq": last_seq,    // 补充：error 发生时的最后 seq
-        "error": error,
-    }))
-}
-```
-
-调用点需传入当前 `seq`（`consume_stream` 的 `on_delta` 回调已提供 `seq` 参数，error 分支需从 `StreamAccumulator` 获取已消费的 delta 数量）。
-
-#### 4.5.3 元数据契约测试
-
-在协议契约测试中增加元数据完整性断言：
-
-```rust
-#[test]
-fn chat_delta_error_event_includes_all_correlation_metadata() {
-    let error_payload = json!({
-        "conversation_id": "conv-1",
-        "attempt_id": "att-1",
-        "message_id": "msg-1",
-        "seq": 5,
-        "error": { "code": "provider_error", "message": "rate limited" }
-    });
-
-    // 断言 error 事件包含全部关联元数据
-    assert!(error_payload.get("conversation_id").is_some());
-    assert!(error_payload.get("attempt_id").is_some());
-    assert!(error_payload.get("message_id").is_some());
-    assert!(error_payload.get("seq").is_some());
-}
-```
-
-#### 4.5.4 远期：当脱离 Tauri 时需引入帧协议层
-
-如果未来项目需要支持非 Tauri 传输（如 HTTP API、WebSocket、CLI），则需要引入类似 OpenBitFun `RuntimeIpcFrame` 的元数据帧层。此时应：
-
-1. 定义 `ChatFrame` enum，包装所有 command 和 event
-2. 引入 `request_id` 用于请求-响应关联
-3. 引入 `PROTOCOL_VERSION` 用于版本协商
-4. 帧大小限制 + 未知字段检测（借鉴 OpenBitFun `framing.rs`）
-
-当前不引入，避免过度设计。
-
-### 4.6 前端变更
-
-#### 4.6.1 DTO 层：新增 `MessageRow` / `ConversationRow` 类型
-
-当前前端 `Message` interface 混合了 DTO 层和业务层职责。拆分为两层：
-
-**DTO 层**（与后端 wire format 完全一致，借鉴 OpenBitFun 注释标注模式）：
+### 4.3 DTO 层定义（→ D2）
 
 ```typescript
 // chat/core/protocol.ts
-
-/**
- * Wire-format DTOs for Tauri command returns and event payloads.
- *
- * These types mirror backend Rust structs (MessageRow, ConversationRow, etc.)
- * and intentionally use snake_case fields to match the wire format.
- * Do NOT convert field names here — conversion happens in protocolAdapter.ts.
- *
- * @see OpenBitFun reference: web-ui/src/shared/types/agent-api.ts
- */
 
 export interface MessageRow {
   id: string;
@@ -617,7 +167,7 @@ export interface MessageRow {
   parent_id: string | null;
   is_pinned: boolean;
   reasoning: string | null;
-  tool_calls_json: string | null;  // snake_case + JSON string，与后端一致
+  tool_calls_json: string | null;
 }
 
 export interface ConversationRow {
@@ -642,45 +192,14 @@ export interface ConversationDetailRow {
 }
 ```
 
-**业务层**（前端惯用命名，供 Store / Component 使用）：
+业务层 `Message` / `Conversation` 全部 camelCase，供 Store/Component 使用。
+
+### 4.4 适配层（→ D2）
+
+> **Phase 1 注意**：Phase 1 时 `chatTypes.ts` 仍为 snake_case，适配函数输出须与 `chatTypes.ts` 一致（snake_case）。以下 camelCase 输出为 **Phase 2 目标态**。Phase 1 版本见第 8 节修正。
 
 ```typescript
-// chat/core/chatTypes.ts（现有，微调）
-
-export interface Message {
-  id: string;
-  conversationId: string;     // camelCase
-  role: string;
-  content: string;
-  reasoning?: string;
-  toolCalls?: ToolCall[];     // camelCase + 已解析数组
-  tokens: number | null;
-  timestamp: number;
-  error?: ChatError | null;
-  parentId?: string | null;   // camelCase
-  isPinned?: boolean;         // camelCase
-}
-
-export interface Conversation {
-  id: string;
-  title: string;
-  titleSource: string;        // camelCase
-  providerId: string | null;  // camelCase
-  modelId: string;            // camelCase
-  systemPrompt: string | null; // camelCase
-  isPinned: boolean;
-  sortOrder: number;
-  generation: number;
-  createdAt: number;
-  updatedAt: number;
-  isFull: boolean;
-}
-```
-
-#### 4.6.2 适配层：`rowToMessage` / `rowToConversation` 映射函数
-
-```typescript
-// chat/core/protocolAdapter.ts
+// chat/core/protocolAdapter.ts（Phase 2 目标态）
 
 export function rowToMessage(row: MessageRow): Message {
   return {
@@ -698,460 +217,683 @@ export function rowToMessage(row: MessageRow): Message {
 }
 
 export function rowToConversation(row: ConversationRow): Conversation {
-  return {
-    id: row.id,
-    title: row.title,
-    titleSource: row.title_source,
-    providerId: row.provider_id,
-    modelId: row.model_id,
-    systemPrompt: row.system_prompt,
-    isPinned: row.is_pinned,
-    sortOrder: row.sort_order,
-    generation: row.generation,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    isFull: row.is_full,
-  };
+  /* 同理 */
 }
 
 function parseToolCallsJson(json: string | null): ToolCall[] | undefined {
   if (!json) return undefined;
   try {
-    const parsed = JSON.parse(json);
-    if (Array.isArray(parsed)) return parsed;
-    return undefined;
+    const p = JSON.parse(json);
+    return Array.isArray(p) ? p : undefined;
   } catch {
     return undefined;
   }
 }
 ```
 
-#### 4.6.3 `chatService.ts` 变更
+### 4.5 chatService 变更
 
 ```typescript
 // services/chatService.ts
-
-export const chatService = {
-  listConversations: (): Promise<Conversation[]> =>
-    invoke("list_conversations", { providerId: null }).then((r) => {
-      const rows = (r as ConversationRow[]) || [];
-      return rows.map(rowToConversation);
-    }),
-
-  getConversationPaginated: (
-    id: string | null,
-    limit: number,
-    beforeTimestamp: number | null,
-  ): Promise<ConversationDetail | null> =>
-    invoke("get_conversation_paginated", { id, limit, beforeTimestamp }).then(
-      (r) => {
-        const detail = r as ConversationDetailRow | null;
-        if (!detail) return null;
-        return {
-          conversation: rowToConversation(detail.conversation),
-          messages: detail.messages.map(rowToMessage),
-          total_count: detail.total_count ?? detail.messages.length,
-        };
-      },
-    ),
-
-  // ... 其他方法不变
-};
+listConversations: (): Promise<Conversation[]> =>
+  invoke("list_conversations", { providerId: null }).then((r) => {
+    const rows = (r as ConversationRow[]) || [];
+    return rows.map(rowToConversation);
+  }),
 ```
 
-#### 4.6.4 event payload 类型保持 snake_case
+强转目标从业务类型 `Conversation` 变为 DTO 类型 `ConversationRow`，再经映射函数转换。
 
-event payload 已对齐，**不变**。`ChatDeltaPayload` / `ChatStreamStartPayload` / `ConversationTerminatedPayload` 等保持 snake_case 字段名。
+### 4.6 后端变更
 
-#### 4.6.5 Store 层变更
+#### 4.6.1 event payload 类型化（→ D4，P2）
 
-`chatStore.ts` 中访问 `conversation` 和 `message` 属性改为 camelCase：
-
-```typescript
-// 变更前
-conv.provider_id
-conv.model_id
-detail.conversation?.is_full
-m.conversation_id
-
-// 变更后
-conv.providerId
-conv.modelId
-detail.conversation?.isFull
-m.conversationId
+```rust
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub struct ChatDeltaPayload {
+    pub conversation_id: String,
+    pub attempt_id: String,
+    pub message_id: String,
+    pub seq: u32,
+    pub delta_text: Option<String>,
+    pub delta_reasoning: Option<String>,
+    pub delta_tool_call_id: Option<String>,
+    pub delta_tool_call_name: Option<String>,
+    pub delta_tool_call_arguments: Option<String>,
+    pub finish_reason: Option<String>,
+    pub usage: Option<TokenUsage>,
+   #\[serde(skip_serializing_if = "Option::is_none")]
+    pub delta_retry: Option<RetryNotification>,
+   #\[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<ProviderErrorPayload>,
+}
 ```
 
-**影响范围**：需全局搜索 `snake_case` 属性访问并替换。主要文件：
-- `chatStore.ts`：`provider_id`、`model_id`、`is_full`、`title_source` 等
-- `chatOrchestrator.ts`：`conversation_id`、`attempt_id`、`message_id`（event payload，**不变**）
-- `chatDeltaEvents.ts`：event payload 属性，**不变**
-- `MessageBubble.tsx`：`message.toolCalls`（已是 camelCase）
-- `useMascotChatSync.ts`：`m.toolCalls`（已是 camelCase）
+替换 `json!({})` 为 struct 序列化。`attempt_id` 和 `seq` 已改为必选字段，`Default` derive 支持 `..Default::default()` 简写。
+
+#### 4.6.2 `tool_calls_json` 写入激活
+
+当前 `update_message_content` 的 `tool_calls_json` 参数在所有调用点恒为 `None`。I16 激活写入：
+
+```rust
+let tool_calls_json = outcome.tool_calls.as_ref()
+    .and_then(|tc| serde_json::to_string(tc).ok());
+```
+
+#### 4.6.3 `emit_stream_error` 补充 `seq`
+
+主 chat 流（`cmd/chat.rs`）和 compaction 流（`cmd/conversation.rs`）的 error 分支均缺 `seq`，需统一补上：
+
+```rust
+fn emit_stream_error(ectx: &StreamEmitCtx, last_seq: u32, error: &ProviderErrorPayload) {
+    ectx.orb_window.emit("chat-delta", ChatDeltaPayload {
+        conversation_id: ectx.conv_id.clone(),
+        attempt_id: ectx.attempt_id.clone(),
+        message_id: ectx.msg_id.clone(),
+        seq: last_seq,
+        error: Some(error.clone()),
+        ..Default::default()
+    })
+}
+```
+
+compaction 流的 3 处 error emit（`Cancelled`/`Provider`/`Timeout`，`conversation.rs:554/568/582`）同理补 `seq`。
+
+#### 4.6.4 协议契约测试（→ D5，P2）
+
+```rust
+#[test]
+fn chat_delta_payload_wire_format_matches_frontend_dto() {
+    let payload = ChatDeltaPayload { /* ... */ };
+    let json = serde_json::to_value(&payload).unwrap();
+    assert!(json.get("conversation_id").is_some());
+    assert!(json.get("conversationId").is_none()); // 无 camelCase 泄漏
+}
+
+#[test]
+fn chat_delta_payload_rejects_unknown_fields() {
+    let json = json!({ "conversation_id": "c", "attempt_id": "a", "message_id": "m", "seq": 0, "unknown": "x" });
+    assert!(serde_json::from_value::<ChatDeltaPayload>(json).is_err());
+}
+```
+
+#### 4.6.5 `MessageRow` 保持默认 snake_case 序列化（→ D7）
+
+不加 `#[serde(rename_all = "camelCase")]`，前端 DTO 层 mirror snake_case。
+
+#### 4.6.6 `get_mouse_position` 改为 snake_case
+
+返回 `{ client_x, client_y }` 或定义 struct + `#[serde(rename_all = "snake_case")]`。前端同步改属性名。
+
+### 4.7 元数据约束
+
+> **R1**：所有 `chat-delta` 事件（含 error 分支）**必须**携带 `conversation_id`、`attempt_id`、`message_id`
+>
+> **R2**：`chat-delta` 所有分支（含 error）**必须**携带 `seq`，同一 `attempt_id` 下单调递增 ✅
+>
+> **R3**：`chat-stream-start` **必须**携带 `conversation_id`、`attempt_id`、`message_id`，且值与后续 `chat-delta` 一致
+>
+> **R4**：同一 `attempt_id` 下 `seq` 单调递增（从 0 开始）
+>
+> **R5**：`navigate` event payload 为裸 `string`（非 object），不适用 struct 类型化，保持现状
+
+### 4.8 散落构造体约束
+
+| 约束 | 范围                                                                                                                                   | 阶段                                                |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| S1   | Chat 协议 event payload 全部替换为类型化 struct，消除 `json!({})`                                                                      | Phase 4 ✅                                          |
+| S2   | Setting 协议 event payload 遵循同一模式                                                                                                | Phase 4 ✅（`setting:provider-changed` 已提前完成） |
+| S3   | `get_conversation` 的 `json!({})` 返回值定义 `ConversationDetailResponse` struct                                                       | Phase 4                                             |
+| S4   | `list_providers` 的 `json!({})` 定义 `ProviderListRow` struct（原命名 `ProviderListItem`，实施时统一为 `Row` 后缀对齐 storage 层惯例） | Phase 4 ✅                                          |
+| S5   | `get_mouse_position` 返回值改为 snake_case                                                                                             | Phase 2 ✅                                          |
+| S6   | `DbSender` 4 元组替换为命名 struct `DbWriteMsg`                                                                                        | Phase 4 ✅                                          |
+| S7   | Phase 4 完成后 Chat 协议范围内 `json!({})` 为 0 处                                                                                     | Phase 4 ✅                                          |
+| S8   | `get_screen_size` 的 `json!({})` 返回值定义 struct                                                                                     | Phase 4 ✅                                          |
+
+| 约束 | 范围                                                                                                                                                                   | 阶段      |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| F1   | `chatService.ts` 强转目标从业务类型改为 DTO 类型 + 映射函数                                                                                                            | Phase 1-2 |
+| F2   | `providerStore`（`as Provider[]`/`as ModelConfig[]`）/`agentModeStore`（`as AgentMode[]`，7 个 snake_case 字段）的强转遵循同一模式                                     | Phase 5   |
+| F3   | `useHistorySearch`（`as Conversation[]`，L39）/`useHistoryRefresh`（`as { messages: Message[] }`，L37）统一走 chatService，消除直接 invoke + 业务类型强转              | Phase 1-2 |
+| F4   | event payload `as` 断言目标定义在 `protocol.ts` DTO 层                                                                                                                 | Phase 1   |
+| F5   | `JSON.parse(provider.models) as ModelConfig[]` 替换为后端结构化数组 `Vec<ModelConfigWire>`，前端 `Provider.models` 改为 `ModelConfig[]`，8 处 `JSON.parse` 全部消除 ✅ | Phase 5 ✅ |
 
 ---
 
-## 5. 协议清单（单一真相源）
+## 5. 协议清单
 
 ### 5.1 Tauri Command 协议
 
-| Command | 后端返回类型 | 前端 DTO 类型 | 前端业务类型 | 映射函数 |
-|---|---|---|---|---|
-| `list_conversations` | `Vec<ConversationRow>` | `ConversationRow[]` | `Conversation[]` | `rowToConversation` |
-| `get_conversation` | `ConversationDetail` | `ConversationDetailRow` | `ConversationDetail` | `rowToConversation` + `rowToMessage` |
-| `get_conversation_paginated` | `serde_json::Value` | `ConversationDetailRow` | `ConversationDetail` | `rowToConversation` + `rowToMessage` |
-| `create_conversation` | `String` | — | — | — |
-| `delete_conversation` | `()` | — | — | — |
-| `rename_conversation` | `()` | — | — | — |
-| `send_chat_message` | `()` | — | — | — |
-| `cancel_chat` | `()` | — | — | — |
-| `search_conversations` | `Vec<ConversationRow>` | `ConversationRow[]` | `Conversation[]` | `rowToConversation` |
+| Command                      | 后端返回类型                                       | 前端 DTO 类型           | 前端业务类型         | 映射函数                             |
+| ---------------------------- | -------------------------------------------------- | ----------------------- | -------------------- | ------------------------------------ |
+| `list_conversations`         | `Vec<ConversationRow>`                             | `ConversationRow[]`     | `Conversation[]`     | `rowToConversation`                  |
+| `get_conversation_paginated` | `serde_json::Value` → `ConversationDetailResponse` | `ConversationDetailRow` | `ConversationDetail` | `rowToConversation` + `rowToMessage` |
+| `create_conversation`        | `String`                                           | —                       | —                    | —                                    |
+| `send_chat_message`          | `()`                                               | —                       | —                    | —                                    |
+| `cancel_chat`                | `()`                                               | —                       | —                    | —                                    |
+| `search_conversations`       | `Vec<ConversationRow>`                             | `ConversationRow[]`     | `Conversation[]`     | `rowToConversation`                  |
+
+### 5.1.2 非 Chat Command
+
+| Command              | 后端返回类型                                    | 前端强转                                     | 问题                                   | 阶段                   |
+| -------------------- | ----------------------------------------------- | -------------------------------------------- | -------------------------------------- | ---------------------- |
+| `list_providers`     | `serde_json::Value` → `Vec<ProviderListRow>` ✅ | `as Provider[]`（`providerStore.ts:111`）    | snake_case 字段 + JSON string `models` | Phase 4 ✅（提前完成） |
+| `list_models_cmd`    | `serde_json::Value` → `ModelConfigList`         | `as ModelConfig[]`（`providerStore.ts:128`） | —                                      | Phase 5                |
+| `list_agent_modes`   | `serde_json::Value` → `AgentModeList`           | `as AgentMode[]`（`agentModeStore.ts:28`）   | 7 个 snake_case 字段                   | Phase 5                |
+| `get_mouse_position` | `serde_json::Value` → `MousePosition`           | `as { clientX, clientY }`                    | 后端唯一 camelCase 输出                | Phase 2                |
+| `get_screen_size`    | `serde_json::Value` → `ScreenSize`              | —                                            | `json!({})` 构造，需类型化             | Phase 4                |
+| `get_app_conf`       | `serde_json::Value` → `AppConf`                 | —                                            | config struct 直接序列化               | Phase 5                |
+| `get_orb_conf`       | `serde_json::Value` → `OrbConf`                 | —                                            | config struct 直接序列化               | Phase 5                |
+| `get_mascot_conf`    | `serde_json::Value` → `MascotConf`              | —                                            | config struct 直接序列化               | Phase 5                |
+| `get_recent_tools`   | `serde_json::Value` → `Vec<ToolItem>`           | —                                            | `json!({})` 构造，需类型化             | Phase 5                |
+| `get_favorite_tools` | `serde_json::Value` → `Vec<ToolItem>`           | —                                            | `json!({})` 构造，需类型化             | Phase 5                |
 
 ### 5.2 Tauri Event 协议
 
-| Event | 后端构造方式 | 前端接收类型 | 字段命名 |
-|---|---|---|---|
-| `chat-stream-start` | `json!({})` | `ChatStreamStartPayload` | snake_case |
-| `chat-delta` | `json!({})` | `ChatDeltaPayload` | snake_case |
-| `conversation_terminated` | `json!({})` | `ConversationTerminatedPayload` | snake_case |
-| `conversation_compact_failed` | `json!({})` | `ConversationCompactFailedPayload` | snake_case |
-| `conversation_unlocked` | `json!({})` | `ConversationUnlockedPayload` | snake_case |
+#### 5.2.1 Chat 协议
 
-**Event payload 全部保持 snake_case，无需映射。**
+| Event                         | 后端 emit 位置                                      | 前端 listen              | 前端接收类型                       | 关联元数据（必选）                                   |
+| ----------------------------- | --------------------------------------------------- | ------------------------ | ---------------------------------- | ---------------------------------------------------- |
+| `chat-stream-start`           | `chat.rs:288`, `conversation.rs:428`                | `chatDeltaEvents.ts:46`  | `ChatStreamStartPayload`           | `conversation_id`, `attempt_id`, `message_id`        |
+| `chat-delta`                  | `chat.rs:83`, `conversation.rs:437/457/554/568/582` | `chatDeltaEvents.ts:76`  | `ChatDeltaPayload`                 | `conversation_id`, `attempt_id`, `message_id`, `seq` |
+| `conversation_terminated`     | `conversation.rs:518`                               | `chatDeltaEvents.ts:126` | `ConversationTerminatedPayload`    | `conversation_id`                                    |
+| `conversation_compact_failed` | `chat.rs:184`, `conversation.rs:342`                | `chatDeltaEvents.ts:142` | `ConversationCompactFailedPayload` | `conversation_id`                                    |
+| `conversation_unlocked`       | `conversation.rs:344`                               | `chatDeltaEvents.ts:153` | `ConversationUnlockedPayload`      | `conversation_id`                                    |
 
-### 5.2.1 散落构造体盘点
+#### 5.2.2 非 Chat 协议
 
-当前后端 `json!({})` 散布在 4 个文件共 23 处，按协议性质分为三类：
+| Event                      | 后端 emit 位置    | 前端 listen       | payload 类型                                                    | 备注                         | 阶段                   |
+| -------------------------- | ----------------- | ----------------- | --------------------------------------------------------------- | ---------------------------- | ---------------------- |
+| `setting:provider-changed` | `provider.rs`     | 无                | `SettingProviderChangedPayload { action, id? }`                 | 已类型化，`json!({})` 已消除 | Phase 4 ✅（提前完成） |
+| `theme-changed`            | `config.rs:139`   | 无                | `{ resolved }`                                                  | `json!({})` 构造，需类型化   | Phase 5                |
+| `navigate`                 | `app.rs:63`       | 无                | 裸 `string`（非 object）                                        | 特殊：payload 不是 struct    | —                      |
+| `chat-regenerate`          | `conversation.rs` | 无                | `ChatRegeneratePayload { conversation_id, deleted_message_id }` | 已类型化                     | Phase 4 ✅             |
+| `orb-blur`                 | orb 模块          | `OrbPanel.tsx:54` | 无 payload                                                      | `json!({})` 构造，需类型化   | Phase 4                |
+| `orb-new-conversation`     | orb 模块          | `OrbPanel.tsx:75` | 无 payload                                                      | `json!({})` 构造，需类型化   | Phase 4                |
 
-**A. Chat 协议 event payload（§5.2 已覆盖，Phase 4 类型化）**：
+### 5.3 DB → 前端字段映射
 
-| 文件 | 行 | 事件名 | 构造方式 | 问题 |
-|---|---|---|---|---|
-| `cmd/chat.rs` | L85 | `chat-delta` | `json!({})` | 无类型约束 |
-| `cmd/chat.rs` | L107 | `chat-delta` (error) | `json!({})` | 缺少 `seq`（§4.4.2 R2） |
-| `cmd/chat.rs` | L290 | `chat-stream-start` | `json!({})` | 无类型约束 |
-| `cmd/chat.rs` | L186 | `conversation_compact_failed` | `json!({})` | 无类型约束 |
-| `cmd/conversation.rs` | L428 | `chat-stream-start` (compaction) | `json!({})` | 无类型约束 |
-| `cmd/conversation.rs` | L437 | `chat-delta` (compaction seq=0) | `json!({})` | 无类型约束 |
-| `cmd/conversation.rs` | L457 | `chat-delta` (compaction delta) | `json!({})` | 无类型约束 |
-| `cmd/conversation.rs` | L520 | `chat-delta` (Cancelled error) | `json!({})` | 缺少 `seq` |
-| `cmd/conversation.rs` | L540 | `chat-delta` (Provider error) | `json!({})` | 缺少 `seq` |
-| `cmd/conversation.rs` | L554 | `chat-delta` (Timeout error) | `json!({})` | 缺少 `seq` |
-| `cmd/conversation.rs` | L323 | `conversation_compact_failed` | `json!({})` | 无类型约束 |
-| `cmd/conversation.rs` | L344 | `conversation_unlocked` | `json!({})` | 无类型约束 |
-| `cmd/conversation.rs` | L228 | `conversation_terminated` | `json!({})` | 无类型约束 |
+| DB 列             | Wire format       | 前端 DTO          | 前端业务         | 转换                     |
+| ----------------- | ----------------- | ----------------- | ---------------- | ------------------------ |
+| `conversation_id` | `conversation_id` | `conversation_id` | `conversationId` | snake→camel              |
+| `parent_id`       | `parent_id`       | `parent_id`       | `parentId`       | snake→camel              |
+| `is_pinned`       | `is_pinned`       | `is_pinned`       | `isPinned`       | snake→camel              |
+| `tool_calls_json` | `tool_calls_json` | `tool_calls_json` | `toolCalls`      | snake→camel + JSON.parse |
+| `title_source`    | `title_source`    | `title_source`    | `titleSource`    | snake→camel              |
+| `provider_id`     | `provider_id`     | `provider_id`     | `providerId`     | snake→camel              |
+| `model_id`        | `model_id`        | `model_id`        | `modelId`        | snake→camel              |
+| `created_at`      | `created_at`      | `created_at`      | `createdAt`      | snake→camel              |
+| `updated_at`      | `updated_at`      | `updated_at`      | `updatedAt`      | snake→camel              |
+| `is_full`         | `is_full`         | `is_full`         | `isFull`         | snake→camel              |
 
-**B. Setting 协议 event payload（不在 I16 范围，但记录风险）**：
-
-| 文件 | 行 | 事件名 | 构造方式 | 问题 |
-|---|---|---|---|---|
-| `cmd/provider.rs` | L135 | `setting:provider-changed` | `json!({})` | 无类型约束，前端用 `SettingEventPayload` 消费 |
-| `cmd/provider.rs` | L149 | `setting:provider-changed` | `json!({})` | 同上 |
-| `cmd/config.rs` | L139 | `theme-changed` | `json!({})` | 无类型约束 |
-| `setup.rs` | L149 | `shortcut-warning` | `json!({})` | 无类型约束，前端无监听 |
-
-**C. Command 返回值构造（非 event，但存在类型安全风险）**：
-
-| 文件 | 行 | Command | 构造方式 | 问题 |
-|---|---|---|---|---|
-| `cmd/conversation.rs` | L143 | `get_conversation` | `json!({})` | 手动拼装 `{ conversation, messages, total_count }`，无类型 struct |
-| `cmd/provider.rs` | L54 | `list_providers` | `json!({})` | 手动逐字段构造，遗漏字段无编译时感知 |
-| `cmd/orb.rs` | L25 | `get_mouse_position` | `json!({})` | 返回 `{ clientX, clientY }` — **camelCase**，与全局 snake_case 约定不一致 |
-| `cmd/orb.rs` | L85,88 | `get_screen_size` | `json!({})` | 返回 `{ screen: { x, y, width, height } }` |
-
-### 5.2.2 零散全局变量盘点
-
-| 文件 | 变量 | 类型 | 用途 | 协议影响 |
-|---|---|---|---|---|
-| `cmd/orb.rs` | `ORB_CLICK_THROUGH` | `AtomicBool` | Orb 穿透点击状态 | 无（内部状态，不跨 IPC） |
-| `cmd/orb.rs` | `ORB_SNAP_CANCEL` | `AtomicBool` | 取消吸附动画 | 无（内部状态） |
-| `cmd/chat.rs` | `DbSender` type alias | `UnboundedSender<(String, String, Option<i64>, Option<String>)>` | DB 写入 channel | **有**：4 元组 `(msg_id, content, tokens, reasoning)` 是隐式协议，字段顺序和类型无文档化 |
-| `cmd/chat.rs` | `spawn_finish_listener` 返回 | `UnboundedSender<String>` | 通知流结束 | **弱**：仅传 `conv_id`，无协议风险 |
-| `cmd/chat.rs` | `spawn_compaction_listener` 返回 | `UnboundedSender<(String, ConversationDetail, ProviderRow)>` | 触发自动压缩 | **弱**：内部传递，不跨 IPC |
-
-### 5.2.3 对散落构造体和全局变量的约束要求
-
-> **S1**：A 类（Chat 协议 event payload）在 Phase 4 全部替换为类型化 struct + `deny_unknown_fields`，消除 `json!({})` 手动构造
->
-> **S2**：B 类（Setting 协议 event payload）不在 I16 范围，但应遵循同一模式：未来类型化时优先处理 `setting:provider-changed`（前端已有 `SettingEventPayload` 消费）
->
-> **S3**：C 类中 `get_conversation` 的 `json!({})` 返回值应定义 `ConversationDetailResponse` struct（含 `conversation`、`messages`、`total_count` 字段），替代手动拼装
->
-> **S4**：C 类中 `list_providers` 的 `json!({})` 逐字段构造应定义 `ProviderListItem` struct（含 `api_key_masked` 而非 `api_key_encrypted`），替代手动映射
->
-> **S5**：`get_mouse_position` 返回 `{ clientX, clientY }` 使用 **camelCase**，与全局 snake_case 约定不一致。应改为 `{ client_x, client_y }` 或定义 struct + `#[serde(rename_all = "snake_case")]`。**注意**：此 command 仅 Orb 窗口使用，变更需同步前端调用点
->
-> **S6**：`DbSender` 的 4 元组 `(String, String, Option<i64>, Option<String>)` 应定义命名 struct `DbWriteMsg { msg_id, content, tokens, reasoning }`，消除位置依赖和类型歧义。Phase 4 实施
->
-> **S7**：所有 `json!({})` 构造点在 Phase 4 完成后应为 **0 处**（Chat 协议范围内）。`cargo clippy` 可配置 `disallowed_methods` 禁止 `serde_json::json!` 在 `cmd/` 目录使用
-
-### 5.2.4 前端散落构造体盘点
-
-前端同样存在散落的类型断言和隐式协议依赖，按性质分为四类：
-
-**A. invoke 返回值 `as` 强转（核心问题，§4.5 已规划消除）**：
-
-| 文件 | 行 | invoke | 强转目标 | 问题 |
-|---|---|---|---|---|
-| `chatService.ts` | L24 | `list_conversations` | `as Conversation[]` | 后端返回 `serde_json::Value`，前端无编译时校验 |
-| `chatService.ts` | L28 | `list_providers` | `as ProviderBrief[]` | 同上 |
-| `chatService.ts` | L43 | `get_conversation_paginated` | `as ConversationDetail \| null` | 同上 |
-| `providerStore.ts` | L111 | `list_providers` | `as Provider[]` | Store 层重复强转，与 chatService 不同类型 |
-| `providerStore.ts` | L128 | `list_models_cmd` | `as ModelConfig[]` | 同上 |
-| `agentModeStore.ts` | L28 | `list_agent_modes` | `as AgentMode[]` | 同上 |
-| `useHistorySearch.ts` | L39 | `search_conversations` | `as Conversation[]` | Hook 层直接 invoke + 强转，绕过 chatService |
-| `useHistoryRefresh.ts` | L37 | `get_conversation_paginated` | `as { messages, total_count }` | 匿名类型强转，无 interface 定义 |
-
-**B. event payload `as` 强转（Tauri 限制，无法完全消除）**：
-
-| 文件 | 行 | 事件 | 强转目标 | 说明 |
-|---|---|---|---|---|
-| `chatDeltaEvents.ts` | L48 | `chat-stream-start` | `as ChatStreamStartPayload` | Tauri `listen` 返回 `unknown`，必须强转 |
-| `chatDeltaEvents.ts` | L77 | `chat-delta` | `as ChatDeltaPayload` | 同上 |
-| `chatDeltaEvents.ts` | L128 | `conversation_terminated` | `as ConversationTerminatedPayload` | 同上 |
-| `chatDeltaEvents.ts` | L144 | `conversation_compact_failed` | `as ConversationCompactFailedPayload` | 同上 |
-| `chatDeltaEvents.ts` | L155 | `conversation_unlocked` | `as ConversationUnlockedPayload` | 同上 |
-
-> Tauri 2 的 `listen` API 返回 `event.payload: unknown`，TypeScript 层必须用 `as` 断言。这是 Tauri 的设计限制，**无法完全消除**。但可通过 DTO 层类型定义 + 适配层映射函数确保断言目标类型与后端一致。
-
-**C. `JSON.parse` + `as` 强转**：
-
-| 文件 | 行 | 解析目标 | 强转 | 问题 |
-|---|---|---|---|---|
-| `chatStore.ts` | L46 | `provider.models` | `as ModelConfig[]` | `models` 是 JSON 字符串，解析后强转，无运行时校验 |
-| `toolStore.ts` | L66 | localStorage | `as string[]` | 本地存储，协议风险低 |
-
-**D. 模块级全局变量**：
-
-| 文件 | 变量 | 类型 | 用途 | 协议影响 |
-|---|---|---|---|---|
-| `chatDeltaEvents.ts` | `orchestratorInstance` | `ChatOrchestrator \| null` | 单例引用 | 无（内部状态） |
-| `chatStore.ts` | `_orchestrator` | `ChatOrchestrator \| null` | 单例引用 | 无（内部状态） |
-| `toolStore.ts` | `fuseInstance` | `Fuse` | 搜索索引 | 无（内部状态） |
-
-### 5.2.5 对前端散落构造体的约束要求
-
-> **F1**：A 类中 `chatService.ts` 的 `as Conversation[]` / `as ConversationDetail` / `as ProviderBrief[]` 在 Phase 1-2 替换为 DTO 层 `as ConversationRow[]` + 映射函数 `rowToConversation()`，强转目标从业务类型变为 DTO 类型（与后端 wire format 一致）
->
-> **F2**：A 类中 `providerStore.ts` 的 `as Provider[]` / `as ModelConfig[]` 和 `agentModeStore.ts` 的 `as AgentMode[]` 不在 I16 范围（Setting 协议），但应遵循同一模式：未来定义 DTO 层 + 映射函数
->
-> **F3**：A 类中 `useHistorySearch.ts` 和 `useHistoryRefresh.ts` 的直接 invoke + 强转应**统一走 chatService**，避免同一 command 有多个消费点各自强转不同类型。当前 `useHistoryRefresh.ts` 用匿名类型 `as { messages, total_count }` 尤其危险
->
-> **F4**：B 类 event payload `as` 断言**无法消除**（Tauri 限制），但要求：
-> - 断言目标类型必须定义在 DTO 层（`protocol.ts`），与后端 wire format 一致
-> - 不得在断言后直接当业务对象使用，须经适配层映射
-> - 当前 `ChatDeltaPayload` 已在 `chatOrchestrator.ts` 定义，Phase 1 迁移到 `protocol.ts`
->
-> **F5**：C 类 `JSON.parse(provider.models) as ModelConfig[]` 应替换为 `parseModelsJson(models: string | null): ModelConfig[]` 安全解析函数（对非法 JSON 返回 `[]`），与 `parseToolCallsJson` 同模式
->
-> **F6**：D 类模块级全局变量无协议影响，不要求变更。但 `_orchestrator` / `orchestratorInstance` 两个同名概念分别存在于 `chatStore.ts` 和 `chatDeltaEvents.ts`，应统一为单一入口（Phase 2 重构时顺带处理）
-
-### 5.2.6 当前做法与文档方案的差异对比
-
-文档提出的方案与当前代码实际做法存在 **7 项核心差异**，按影响程度排列：
-
-#### 差异 1：前端 Message/Conversation 类型混合了 DTO 层和业务层（最大差异）
-
-| 维度 | 当前做法 | 文档方案 |
-|---|---|---|
-| `Message` interface | `conversation_id: string`（snake_case）+ `toolCalls?: ToolCall[]`（camelCase）| 拆分为 `MessageRow`（全 snake_case）+ `Message`（全 camelCase）|
-| `Conversation` interface | `provider_id: string \| null`（snake_case）| 拆分为 `ConversationRow`（全 snake_case）+ `Conversation`（全 camelCase）|
-| 文件 | `chatTypes.ts` 一个文件同时定义 | `protocol.ts`（DTO）+ `chatTypes.ts`（业务）|
-| 映射函数 | 不存在，直接 `as Conversation[]` 强转 | `protocolAdapter.ts` 提供 `rowToMessage()` / `rowToConversation()` |
-
-**当前问题**：`Message` 中 `conversation_id` 是 snake_case（匹配后端 wire format），`toolCalls` 是 camelCase（匹配 JS 惯例），**一个类型内两种命名风格混用**。文档方案通过 DTO/业务层分离彻底解决。
-
-**影响范围**：`chatTypes.ts` 定义 + `chatService.ts` 强转 + `chatStore.ts` 属性访问 + `chatOrchestrator.ts` + `chatDeltaEvents.ts` + 所有消费 `Message`/`Conversation` 的组件（约 20+ 文件）
-
-#### 差异 2：chatService invoke 返回值直接强转为业务类型
-
-| 维度 | 当前做法 | 文档方案 |
-|---|---|---|
-| `listConversations` | `(r) => (r as Conversation[]) \|\| []` | `(r) => ((r as ConversationRow[]) \|\| []).map(rowToConversation)` |
-| `getConversationPaginated` | `r as ConversationDetail \| null` | `r as ConversationDetailRow \| null` → 映射转换 |
-| 强转目标 | 业务类型 `Conversation`（混合命名）| DTO 类型 `ConversationRow`（纯 snake_case）|
-
-**当前问题**：强转目标是混合命名的业务类型，后端增删字段时 TypeScript 无任何编译时感知。
-
-#### 差异 3：后端 event payload 用 `json!({})` 手动构造，无类型化 struct
-
-| 维度 | 当前做法 | 文档方案 |
-|---|---|---|
-| `emit_delta` | `json!({ "conversation_id": ..., "delta_text": ... })` | `serde_json::to_value(&ChatDeltaPayload { ... })?` |
-| 类型约束 | 无，遗漏字段无编译时感知 | `#[serde(deny_unknown_fields)]` 编译时 + 运行时保障 |
-| 契约测试 | 无 | wire format 断言 + round-trip + 未知字段拒绝 |
-
-**当前问题**：`emit_stream_error` 已遗漏 `seq` 字段（§4.4.2），`json!({})` 无法在编译时发现。
-
-#### 差异 4：后端 command 返回值用 `serde_json::Value`，无强类型
-
-| 维度 | 当前做法 | 文档方案 |
-|---|---|---|
-| `list_conversations` | `Result<serde_json::Value, String>` | `Result<Vec<ConversationRow>, String>` |
-| `get_conversation_paginated` | `Result<serde_json::Value, String>` + `json!({})` 拼装 | `Result<ConversationDetailResponse, String>` |
-| `list_providers` | `Result<serde_json::Value, String>` + `json!({})` 逐字段构造 | `Result<Vec<ProviderListItem>, String>` |
-
-**当前问题**：`cmd/` 目录下 11 个 command 返回 `serde_json::Value`，前端强转无编译时保障。文档方案 Phase 4 将其替换为强类型 struct。
-
-#### 差异 5：后端 struct 无 `deny_unknown_fields`
-
-| 维度 | 当前做法 | 文档方案 |
-|---|---|---|
-| `ConversationRow` | `#[derive(Serialize, Deserialize)]` | 增加 `#[serde(deny_unknown_fields)]` |
-| `MessageRow` | `#[derive(Serialize, Deserialize)]` | 增加 `#[serde(deny_unknown_fields)]` |
-
-**当前问题**：后端增删字段时，前端旧版本静默忽略新字段/缺失旧字段，无报错。`deny_unknown_fields` 使反序列化严格拒绝未知字段，强制前后端同步变更。
-
-#### 差异 6：`tool_calls_json` 映射未实现
-
-| 维度 | 当前做法 | 文档方案 |
-|---|---|---|
-| 前端 `Message.toolCalls` | 类型定义存在但 DB 恒为 NULL，映射未实现 | `parseToolCallsJson(row.tool_calls_json)` 在适配层实现 |
-| 后端 `tool_calls_json` | `Option<String>` 存在但未写入 | Phase 1-2 实现写入 + 前端解析 |
-
-**当前状态**：I15 已在 DB 和 Rust struct 中添加 `tool_calls_json` 列，但后端尚未将 tool call 结果写入该列，前端 `toolCalls` 恒为 `undefined`。
-
-#### 差异 7：`get_mouse_position` 返回 camelCase
-
-| 维度 | 当前做法 | 文档方案 |
-|---|---|---|
-| 返回值 | `json!({ "clientX": x, "clientY": y })` | `json!({ "client_x": x, "client_y": y })` 或 struct + `rename_all = "snake_case"` |
-
-**当前问题**：这是后端唯一使用 camelCase 的 command 返回值，与全局 snake_case 约定不一致。
-
-#### 差异总结
-
-| 差异 | 影响程度 | 实施阶段 | 是否破坏现有行为 |
-|---|---|---|---|
-| 1. DTO/业务层分离 | 大（20+ 文件）| Phase 1-2 | 否（映射函数保证输出一致）|
-| 2. invoke 强转目标变更 | 中（chatService）| Phase 1-2 | 否 |
-| 3. event payload 类型化 | 大（chat.rs + conversation.rs）| Phase 4 | 否（wire format 不变）|
-| 4. command 返回值强类型 | 大（11 个 command）| Phase 4 | 否（序列化结果不变）|
-| 5. deny_unknown_fields | 中（storage struct）| Phase 4 | 否（当前无未知字段）|
-| 6. tool_calls_json 映射 | 中 | Phase 1-2 | 否（当前恒为 NULL）|
-| 7. get_mouse_position camelCase | 小（1 个 command）| Phase 2 | **是**（前端需同步改属性名）|
-
-### 5.3 DB → 前端字段映射清单
-
-| DB 列名 | 后端 Rust 字段 | Wire format (JSON key) | 前端 DTO 字段 | 前端业务字段 | 类型转换 |
-|---|---|---|---|---|---|
-| `id` | `id: String` | `id` | `id` | `id` | — |
-| `conversation_id` | `conversation_id: String` | `conversation_id` | `conversation_id` | `conversationId` | snake_case → camelCase |
-| `role` | `role: String` | `role` | `role` | `role` | — |
-| `content` | `content: String` | `content` | `content` | `content` | — |
-| `tokens` | `tokens: Option<i64>` | `tokens` | `tokens` | `tokens` | — |
-| `timestamp` | `timestamp: i64` | `timestamp` | `timestamp` | `timestamp` | — |
-| `parent_id` | `parent_id: Option<String>` | `parent_id` | `parent_id` | `parentId` | snake_case → camelCase |
-| `is_pinned` | `is_pinned: bool` | `is_pinned` | `is_pinned` | `isPinned` | snake_case → camelCase |
-| `reasoning` | `reasoning: Option<String>` | `reasoning` | `reasoning` | `reasoning` | — |
-| `tool_calls_json` | `tool_calls_json: Option<String>` | `tool_calls_json` | `tool_calls_json` | `toolCalls` | snake_case → camelCase + `JSON.parse` + `null` → `undefined` |
-
-### 5.4 Conversation 字段映射清单
-
-| DB 列名 | 后端 Rust 字段 | Wire format | 前端 DTO 字段 | 前端业务字段 | 类型转换 |
-|---|---|---|---|---|---|
-| `title_source` | `title_source: String` | `title_source` | `title_source` | `titleSource` | snake_case → camelCase |
-| `provider_id` | `provider_id: Option<String>` | `provider_id` | `provider_id` | `providerId` | snake_case → camelCase |
-| `model_id` | `model_id: String` | `model_id` | `model_id` | `modelId` | snake_case → camelCase |
-| `system_prompt` | `system_prompt: Option<String>` | `system_prompt` | `system_prompt` | `systemPrompt` | snake_case → camelCase |
-| `sort_order` | `sort_order: i64` | `sort_order` | `sort_order` | `sortOrder` | snake_case → camelCase |
-| `created_at` | `created_at: i64` | `created_at` | `created_at` | `createdAt` | snake_case → camelCase |
-| `updated_at` | `updated_at: i64` | `updated_at` | `updated_at` | `updatedAt` | snake_case → camelCase |
-| `is_full` | `is_full: bool` | `is_full` | `is_full` | `isFull` | snake_case → camelCase |
+其余字段（`id`/`role`/`content`/`tokens`/`timestamp`/`reasoning`）两端命名一致，无转换。
 
 ---
 
-## 6. 实施计划
+## 6. 协议文件构建指南
 
-### 6.1 Phase 1：DTO 层建立 + 映射函数（无行为变更）
+每个协议文件的建立遵循统一流程：**找源 → 抄字段 → 加标注 → 写适配 → 接入调用点 → 验证**。
 
-1. 新建 `src/chat/core/protocol.ts`：定义 `MessageRow`、`ConversationRow`、`ConversationDetailRow`，文件头部注释标注 "mirror backend payloads" + "snake_case to match wire format"（借鉴 OpenBitFun `agent-api.ts`）
-2. 新建 `src/chat/core/protocolAdapter.ts`：实现 `rowToMessage`、`rowToConversation`、`parseToolCallsJson`（借鉴 OpenBitFun `tool-execution-service.ts` 的 DTO → 业务对象转换模式）
-3. `chatService.ts` 的 `listConversations` / `getConversationPaginated` / `searchConversations` 改用映射函数，消除 `as Conversation[]` / `as Message[]` 强转
-4. 验证：所有现有测试通过，行为不变
+### 6.1 前端 DTO 文件构建（`protocol.ts`）
 
-### 6.2 Phase 2：业务类型 camelCase 迁移
+**步骤**：
 
-1. `chatTypes.ts` 的 `Message` / `Conversation` interface 字段改为 camelCase
-2. 全局替换 Store / Component 中的 snake_case 属性访问为 camelCase
-3. event payload 类型（`ChatDeltaPayload` 等）**不变**（与 OpenBitFun 前端 DTO 层保持 snake_case 一致）
-4. 验证：所有现有测试通过，行为不变
+1. **找源**：打开后端对应的 struct 文件，确认字段列表
+   - `MessageRow` / `ConversationRow` → 后端 `storage/` 层同名 struct（如 `src-tauri/src/storage/message.rs`）
+   - event payload → 后端 `protocol/chat_events.rs` 同名 struct
+   - command 返回值 → 后端 `protocol/chat_commands.rs` 同名 struct
+2. **抄字段**：逐字段从 Rust struct 复制到 TypeScript interface，类型映射规则：
+   | Rust 类型                     | TypeScript 类型                   |
+   | ----------------------------- | --------------------------------- |
+   | `String`                      | `string`                          |
+   | `u32` / `i32` / `u64` / `i64` | `number`                          |
+   | `bool`                        | `boolean`                         |
+   | `Option<T>`                   | `T \| null`                       |
+   | `Vec<T>`                      | `T[]`                             |
+   | `serde_json::Value`           | `unknown`（应消除，改为具体类型） |
+   | 枚举 `enum`                   | `string`（或联合类型）            |
+3. **字段名保持 snake_case**：与后端 wire format 一致，不加 camelCase 转换
+4. **加文件头注释**：标注 `Backend mirror: <后端文件路径>`，便于 IDE 中快速定位对端
+5. **导出**：所有 interface 用 `export interface`，供 `protocolAdapter.ts` 和调用点 import
 
-### 6.3 Phase 3：`tool_calls_json` 写入激活
+**示例**：从后端 `storage/message.rs` 的 `MessageRow` struct 构建 `protocol.ts` 的 `MessageRow` interface：
 
-1. `cmd/chat.rs` 的 `stream_future` Ok 分支：从 `outcome.tool_calls` 序列化写入 DB
-2. `db_tx` channel 类型扩展：第 5 元素从 `Option<String>` (reasoning) 扩展为包含 `tool_calls_json`
-3. 验证：Deep 模式 + tool-call agent 模式下，刷新页面后 `toolCalls` 仍可从 DB 恢复
+```rust
+// 后端 src-tauri/src/storage/message.rs
+pub struct MessageRow {
+    pub id: String,
+    pub conversation_id: String,
+    pub role: String,
+    pub content: String,
+    pub tokens: Option<i32>,
+    pub timestamp: i64,
+    pub parent_id: Option<String>,
+    pub is_pinned: bool,
+    pub reasoning: Option<String>,
+    pub tool_calls_json: Option<String>,
+}
+```
 
-### 6.4 Phase 4：后端 event payload 类型化 + `deny_unknown_fields`（P2，借鉴 OpenBitFun）
+```typescript
+// 前端 src/chat/core/protocol.ts
+/** Backend mirror: src-tauri/src/storage/message.rs */
+export interface MessageRow {
+  id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  tokens: number | null;
+  timestamp: number;
+  parent_id: string | null;
+  is_pinned: boolean;
+  reasoning: string | null;
+  tool_calls_json: string | null;
+}
+```
 
-1. 新建 `ChatDeltaPayload` / `ChatStreamStartPayload` Rust struct，标注 `#[serde(rename_all = "snake_case", deny_unknown_fields)]`
-2. 替换 `json!({})` 为 struct 序列化
-3. 添加协议契约测试（借鉴 OpenBitFun `protocol_contracts.rs`）：wire format 断言 + round-trip 测试 + 未知字段拒绝测试
-4. 验证：前端行为不变
+### 6.2 前端适配文件构建（`protocolAdapter.ts`）
 
-### 6.5 Phase 5：协议版本化（远期，借鉴 OpenBitFun）
+**步骤**：
 
-1. 引入 `CHAT_PROTOCOL_VERSION: u32` 常量
-2. 前端在首次 invoke 时校验版本兼容性
-3. 当协议变更需要向后兼容时启用
+1. **import DTO 类型**：从 `./protocol` 导入所有 Row 类型
+2. **import 业务类型**：从 `../chatTypes`（或对应路径）导入 `Message` / `Conversation` 等
+3. **写正向映射** `rowToXxx(row: XxxRow): Xxx`：
+   - snake_case → camelCase 字段重命名
+   - `null` → `undefined` 转换（业务层习惯用 `undefined` 表示缺失）
+   - 特殊字段处理：`tool_calls_json` → `parseToolCallsJson()` 解析
+4. **写反向映射** `xxxToRow(xxx: Xxx): XxxRow`：
+   - camelCase → snake_case 字段重命名
+   - `undefined` → `null` 转换
+   - `toolCalls` → `JSON.stringify()` 序列化
+5. **写特殊解析函数**：`parseToolCallsJson(json: string | null): ToolCall[] | undefined`
+
+**import 关系图**：
+
+```
+protocolAdapter.ts
+  ├── import { MessageRow, ConversationRow, ... } from './protocol'    // DTO
+  ├── import { Message, Conversation, ... } from '../chatTypes'        // 业务类型
+  └── import { ToolCall } from '../chatTypes'                          // 嵌套业务类型
+```
+
+### 6.3 后端协议文件构建（`protocol/*.rs`）
+
+**步骤**：
+
+1. **找源**：从现有 `json!({})` 调用点提取字段
+   - 搜索 `app.emit("event-name", json!({` 找到所有 emit 调用
+   - 从 `json!({})` 内的字段列表提取 struct 字段
+   - 从调用上下文确定每个字段的 Rust 类型和来源（哪个变量/哪个模块）
+2. **确定 import**：
+   - struct 字段类型若为自定义类型（如 `TokenUsage`、`ProviderErrorPayload`），需 `use` 导入
+   - 嵌套类型若定义在 `storage/` 层，从 `crate::storage::xxx` 导入
+   - 嵌套类型若定义在 `protocol/` 其他文件，从 `super::xxx` 或 `crate::protocol::xxx` 导入
+3. **写 struct**：
+   - `#[derive(Debug, Clone, Serialize)]`（后端 payload 只用于 emit 序列化，不需要 `Deserialize`）
+   - `#[serde(rename_all = "snake_case")]`
+   - 逐字段定义，`Option` 字段加 `#[serde(skip_serializing_if = "Option::is_none")]`
+   - 注：`deny_unknown_fields` 仅对 `Deserialize` 有效，后端 Serialize-only struct 不加；前端 DTO 的契约测试单独验证未知字段拒绝`
+4. **在 `mod.rs` 注册**：`pub mod chat_events;` + `pub use chat_events::*;`
+5. **在 `lib.rs` 注册模块**：`mod protocol;`
+
+**示例**：从 `chat.rs` 的 `json!({})` 调用构建 `ChatDeltaPayload`：
+
+```rust
+// 第 1 步：找源 — 搜索 chat.rs 中 app.emit("chat-delta", json!({...}))
+// 找到字段：conversation_id, attempt_id, message_id, seq, delta_text, ...
+
+// 第 2 步：确定 import（用 grep 找实际路径，不要凭记忆）
+use assistant_providers::types::chat_delta::{RetryNotification, TokenUsage};
+use assistant_providers::base::ProviderErrorPayload;
+
+// 第 3 步：写 struct
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ChatDeltaPayload {
+    pub conversation_id: String,
+    pub attempt_id: String,
+    pub message_id: String,
+    pub seq: u32,
+    // ...其余字段
+}
+```
+
+> **确定 import 路径**：不要凭记忆写 import 路径。实操时用 `grep -rn 'pub struct XxxName' src-tauri/` 找到定义文件，再根据 crate 结构推导 import 路径，最后 `cargo check` 验证。
+
+### 6.4 后端 `json!({})` → struct 替换实操
+
+**步骤**：
+
+1. **定位**：`grep -n 'json!({' src-tauri/src/cmd/chat.rs` 找到所有 `json!({})` 调用
+2. **提取字段**：从 `json!({ "field_name": value, ... })` 提取字段名和值变量
+3. **确认 struct 已定义**：在 `protocol/` 对应文件中找到或新建 struct
+4. **替换**：`json!({ "conversation_id": cid, ... })` → `ChatDeltaPayload { conversation_id: cid, ... }`
+5. **编译验证**：`cargo check` 确认字段名和类型匹配
+6. **契约测试**：运行 `cargo test` 确认 wire format 不变
+
+### 6.5 前端 `as T` → DTO + 适配 替换实操
+
+**步骤**：
+
+1. **定位**：在 `chatService.ts` / `providerStore.ts` 等文件搜索 `as Conversation` / `as Provider` 等
+2. **确认 DTO 类型已定义**：在 `protocol.ts` 中找到对应的 `ConversationRow` / `ProviderRow`
+3. **确认适配函数已定义**：在 `protocolAdapter.ts` 中找到 `rowToConversation` / `rowToProvider`
+4. **替换**：
+   ```typescript
+   // 替换前
+   invoke("list_conversations").then((r) => r as Conversation[]);
+   // 替换后
+   invoke("list_conversations").then((r) =>
+     (r as ConversationRow[]).map(rowToConversation),
+   );
+   ```
+5. **添加 import**：在调用文件头部添加 `import { ConversationRow } from '../core/protocol'` 和 `import { rowToConversation } from '../core/protocolAdapter'`
+6. **类型检查**：`tsc --noEmit` 确认无类型错误
+
+### 6.6 验证清单
+
+每个协议文件建立后，逐项检查：
+
+- [ ] 前端 DTO 字段与后端 struct 字段一一对应（名称 + 类型）
+- [ ] 前端 DTO 文件头有 `Backend mirror` 注释
+- [ ] 后端 struct 有 `#[serde(rename_all = "snake_case")]`；前端 DTO 契约测试验证未知字段拒绝
+- [ ] 适配函数正向 + 反向映射完整
+- [ ] 调用点 import 正确，无循环依赖
+- [ ] `cargo check` + `tsc --noEmit` 通过
+- [ ] 契约测试通过（wire format 断言 + round-trip + 未知字段拒绝）
 
 ---
 
-## 7. 风险与缓解
+## 7. 替换策略
 
-| 风险 | 影响 | 缓解 |
-|---|---|---|
-| camelCase 迁移遗漏属性访问 | 运行时 `undefined` 访问 | TypeScript 编译时校验（interface 字段改名后，所有访问点报错） |
-| `tool_calls_json` JSON.parse 失败 | `toolCalls` 为 `undefined`，不影响其他字段 | `parseToolCallsJson` 内部 try-catch，解析失败返回 `undefined` |
-| DB 中已有 `tool_calls_json = NULL` 的旧数据 | 前端 `toolCalls` 为 `undefined`，符合预期 | `parseToolCallsJson(null)` 返回 `undefined`，与当前行为一致 |
-| event payload 字段名后端改错 | 前端收不到数据 | Phase 4 类型化后编译时校验；Phase 1-3 人工对齐 + E2E 测试 |
+目标：消除所有手动类型转换，统一走 DTO + 适配层。以下为每种现有手动转换的替换模式：
+
+### 7.1 前端 `as T` 业务类型强转 → DTO 强转 + 映射函数
+
+| 现有模式                                                                       | 替换为                                                                                                                                                                      | 涉及文件               | 阶段    |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------- |
+| `invoke("list_conversations").then(r => r as Conversation[])`                  | `invoke(...).then(r => (r as ConversationRow[]).map(rowToConversation))`                                                                                                    | `chatService.ts`       | Phase 1 |
+| `invoke("get_conversation_paginated").then(r => r as { messages: Message[] })` | `invoke(...).then(r => { const row = r as ConversationDetailRow; return { conversation: rowToConversation(row.conversation), messages: row.messages.map(rowToMessage) } })` | `useHistoryRefresh.ts` | Phase 1 |
+| `invoke("search_conversations").then(r => r as Conversation[])`                | `invoke(...).then(r => (r as ConversationRow[]).map(rowToConversation))`                                                                                                    | `useHistorySearch.ts`  | Phase 1 |
+| `invoke("list_providers").then(r => r as Provider[])`                          | `invoke(...).then(r => (r as ProviderRow[]).map(rowToProvider))`                                                                                                            | `providerStore.ts`     | Phase 5 |
+| `invoke("list_models_cmd").then(r => r as ModelConfig[])`                      | `invoke(...).then(r => (r as ModelConfigRow[]).map(rowToModelConfig))`                                                                                                      | `providerStore.ts`     | Phase 5 |
+| `invoke("list_agent_modes").then(r => r as AgentMode[])`                       | `invoke(...).then(r => (r as AgentModeRow[]).map(rowToAgentMode))`                                                                                                          | `agentModeStore.ts`    | Phase 5 |
+
+### 7.2 前端 `as { clientX, clientY }` → DTO 强转 + 属性映射
+
+| 现有模式                                                            | 替换为                                                                               | 涉及文件 | 阶段    |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------- | ------- |
+| `invoke("get_mouse_position").then(r => r as { clientX, clientY })` | `invoke(...).then(r => r as MousePositionRow)`，使用 `row.client_x` / `row.client_y` | 调用方   | Phase 2 |
+
+### 7.3 前端 `JSON.parse(x) as T[]` → 安全解析函数
+
+| 现有模式                                       | 替换为                                                                                  | 涉及文件           | 阶段    |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------ | ------- |
+| `JSON.parse(provider.models) as ModelConfig[]` | `parseModelConfigsJson(provider.models)`：try-catch + Array.isArray 校验，失败返回 `[]` | `providerStore.ts` | Phase 2 |
+
+### 7.4 前端 event payload `as T` → DTO 类型断言（不改字段名）
+
+event payload 本身就是 snake_case wire format，与 `protocol.ts` DTO 一致，只需把类型来源从散落定义改为 `protocol.ts`，不需要适配函数。
+
+| 现有模式                                                                                                              | 替换为                                                                                                        | 涉及文件             | 阶段    |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------- | ------- |
+| `listen("chat-delta", e => { const p = e.payload as ChatDeltaPayload; ... })`（从 `chatOrchestrator.ts` import 类型） | `listen("chat-delta", e => { const p = e.payload as ChatDeltaPayload; ... })`（从 `protocol.ts` import 类型） | `chatDeltaEvents.ts` | Phase 1 |
+
+> 注：event payload DTO 与业务类型字段名相同（均为 snake_case），无需适配函数做字段重命名。适配函数只在 invoke 返回值需要转业务类型时使用（7.1）。
+
+### 7.5 后端 `json!({})` → struct 构造
+
+| 现有模式                                                                 | 替换为                                                                                                       | 涉及文件                     | 阶段                   |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------- | ---------------------- |
+| `app.emit("chat-delta", json!({ "conversation_id": cid, ... }))`         | `app.emit("chat-delta", ChatDeltaPayload { conversation_id: cid, ... })`                                     | `chat.rs`, `conversation.rs` | Phase 4                |
+| `app.emit("setting:provider-changed", json!({ "action": a, "id": id }))` | `app.emit("setting:provider-changed", SettingProviderChangedPayload { action: a, id })`                      | `provider.rs`                | Phase 4 ✅（提前完成） |
+| `app.emit("theme-changed", json!({ "resolved": r }))`                    | `app.emit("theme-changed", ThemeChangedPayload { resolved: r })`                                             | `config.rs`                  | Phase 5                |
+| `app.emit("chat-regenerate", json!({ ... }))`                            | `app.emit("chat-regenerate", ChatRegeneratePayload { ... })`                                                 | `conversation.rs`            | Phase 4                |
+| orb 模块 2 处 `json!({})`                                                | `app.emit("orb-blur", OrbBlurPayload {})` / `app.emit("orb-new-conversation", OrbNewConversationPayload {})` | orb 模块                     | Phase 4                |
+
+### 7.6 后端 `serde_json::Value` 返回 → 强类型 struct
+
+| 现有模式                                                               | 替换为                                                                          | 涉及文件          | 阶段                   |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------- | ---------------------- |
+| `fn get_conversation_paginated() -> Result<serde_json::Value, String>` | `fn get_conversation_paginated() -> Result<ConversationDetailResponse, String>` | `conversation.rs` | Phase 4                |
+| `fn list_providers() -> Result<serde_json::Value, String>`             | `fn list_providers() -> Result<Vec<ProviderListRow>, String>`                   | `provider.rs`     | Phase 4 ✅（提前完成） |
+| `fn list_agent_modes() -> Result<serde_json::Value, String>`           | `fn list_agent_modes() -> Result<Vec<AgentModeItem>, String>`                   | `agent_mode.rs`   | Phase 5                |
+| `fn get_mouse_position() -> Result<serde_json::Value, String>`         | `fn get_mouse_position() -> Result<MousePosition, String>`                      | 对应 cmd 文件     | Phase 2                |
+| `fn get_screen_size() -> Result<serde_json::Value, String>`            | `fn get_screen_size() -> Result<ScreenSize, String>`                            | 对应 cmd 文件     | Phase 4                |
 
 ---
 
-## 8. 验收标准
+## 8. Phase 1 实测问题与修正
 
-1. 后端存在 `src-tauri/src/protocol/` 模块，Chat 协议所有 event payload struct + command 返回值 struct 集中定义于此
-2. 前端存在 `src/chat/core/protocol.ts` 文件，所有 Chat 协议 DTO 类型集中定义于此，文件头标注 `Backend mirror`
-3. 前端 DTO 层 `MessageRow` / `ConversationRow` 与后端 `MessageRow` / `ConversationRow` 字段名一一对应（snake_case）
-4. 前端 DTO 文件头部注释标注 "mirror backend payloads" + "snake_case to match wire format"（借鉴 OpenBitFun）
-5. 前端业务层 `Message` / `Conversation` 使用 camelCase 字段名
-6. `chatService.ts` 所有 Tauri invoke 返回值经映射函数转换，无 `as Conversation[]` / `as Message[]` 直接强转
-7. `tool_calls_json` → `toolCalls` 映射生效：DB 中有 tool_calls 数据时，前端 `message.toolCalls` 为解析后的 `ToolCall[]`
-6. `tool_calls_json` 为 `null` 时，前端 `message.toolCalls` 为 `undefined`
-7. event payload 字段名保持 snake_case，与后端 `json!({})` 构造一致
-8. 所有现有测试通过，无行为变更（Phase 1-2）
-9. Deep 模式 reasoning 持久化 + 恢复不受影响
-10. `parseToolCallsJson` 对非法 JSON 返回 `undefined`，不抛异常
-11. 后端协议 struct 标注 `deny_unknown_fields`，拒绝未知字段（Phase 4，借鉴 OpenBitFun）
-12. 协议契约测试通过：wire format 断言 + round-trip 测试 + 未知字段拒绝测试（Phase 4，借鉴 OpenBitFun）
-13. 所有 `chat-delta` 事件（含 error 分支）携带 `conversation_id`、`attempt_id`、`message_id` 关联元数据（R1）
-14. `emit_stream_error` 补充 `seq` 字段，前端可定位 error 发生位置（R2）
-15. 同一 `attempt_id` 下 `seq` 单调递增（R4，由 `consume_stream` 保证）
-16. Chat 协议范围内 `json!({})` 构造点为 0 处（S1，Phase 4 完成后）
-17. `DbSender` 4 元组替换为命名 struct `DbWriteMsg`（S6，Phase 4）
-18. `get_mouse_position` 返回值改为 snake_case（S5，Phase 2 或独立 PR）
-19. `chatService.ts` invoke 返回值经 DTO 层强转 + 映射函数转换，无 `as Conversation[]` 业务类型强转（F1）
-20. event payload `as` 断言目标类型定义在 `protocol.ts` DTO 层（F4）
-21. `useHistorySearch.ts` / `useHistoryRefresh.ts` 统一走 chatService，无直接 invoke + 强转（F3）
-22. `JSON.parse(provider.models) as ModelConfig[]` 替换为安全解析函数（F5）
+基于对当前代码的实际验证，Phase 1 方案存在以下问题需要修正：
+
+### 8.1 `protocolAdapter.ts` 输出类型与 `chatTypes.ts` 不兼容
+
+**现状**：`chatTypes.ts` 的 `Message` / `Conversation` 仍用 snake_case（`conversation_id`, `title_source`, `provider_id`），而 `protocolAdapter.ts` 的 `rowToMessage` / `rowToConversation` 输出 camelCase（`conversationId`, `titleSource`, `providerId`）。
+
+**后果**：使用方调用 `rowToMessage(row)` 得到的对象无法赋给 `Message` 类型，TypeScript 编译报错。
+
+**修正**：Phase 1 的 `protocolAdapter.ts` 映射函数**输出类型应与 `chatTypes.ts` 当前定义一致**（snake_case）。Phase 2 将 `chatTypes.ts` 迁移到 camelCase 时，同步修改 `protocolAdapter.ts` 的输出。
+
+```typescript
+// Phase 1：输出 snake_case，与 chatTypes.ts 一致
+export function rowToMessage(row: MessageRow): Message {
+  return {
+    id: row.id,
+    conversation_id: row.conversation_id, // 保持 snake_case
+    role: row.role,
+    content: row.content,
+    reasoning: row.reasoning ?? undefined,
+    toolCalls: parseToolCallsJson(row.tool_calls_json),
+    tokens: row.tokens,
+    timestamp: row.timestamp,
+    parent_id: row.parent_id ?? undefined,
+    is_pinned: row.is_pinned,
+  };
+}
+```
+
+### 8.2 后端 `ChatDeltaPayload` 与 `ChatDelta` 字段大量重复
+
+**现状**：`assistant_providers::types::chat_delta::ChatDelta` 已有 `seq`/`delta_text`/`delta_reasoning`/`delta_tool_call_*`/`finish_reason`/`usage`/`delta_retry` 字段。`protocol::chat_events::ChatDeltaPayload` 重复了这些字段，只多了 `conversation_id`/`attempt_id`/`message_id`。
+
+**后果**：`emit_delta` 中需要逐字段 `.clone()` 从 `ChatDelta` 拷贝到 `ChatDeltaPayload`，多余分配。
+
+**修正**：`ChatDeltaPayload` 改为组合模式，内嵌 `ChatDelta`：
+
+```rust
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ChatDeltaPayload {
+    pub conversation_id: String,
+    pub attempt_id: String,
+    pub message_id: String,
+    pub seq: u32,
+    #[serde(flatten)]
+    pub delta: ChatDelta,
+}
+```
+
+这样 `emit_delta` 只需：
+
+```rust
+ectx.orb_window.emit("chat-delta", ChatDeltaPayload {
+    conversation_id: ectx.conv_id.to_string(),
+    attempt_id: Some(ectx.attempt_id.to_string()),
+    message_id: ectx.msg_id.to_string(),
+    delta: delta.clone(),  // 一次 clone 代替 8 次
+})
+```
+
+> **注意**：`#[serde(flatten)]` 对 wire format 的影响需验证——flatten 会将 `ChatDelta` 的字段展开到 `ChatDeltaPayload` 同级，与当前 `json!({})` 行为一致。**实施前必须先写对照测试**：用 `json!({})` 构造和 struct 构造分别序列化同一组数据，断言 JSON 输出完全相同，再替换调用点。
+
+### 8.3 `StreamEmitCtx` 字段是 `&str`，struct 构造需要 `String`
+
+**现状**：`StreamEmitCtx` 的 `conv_id`/`attempt_id`/`msg_id` 是 `&str`，而 `ChatDeltaPayload` 需要 `String`。
+
+**后果**：每次 emit 都要 `.to_string()` 分配。
+
+**修正**：这是不可避免的（`emit` 需要 owned value），但通过 8.2 的组合模式，只需 3 次 `.to_string()`（`conv_id`, `attempt_id`, `msg_id`），比 `json!({})` 内部序列化时的多次分配更少。可接受。
+
+### 8.4 event payload 不需要适配函数
+
+**现状**：`chatDeltaEvents.ts` 的 `event.payload as ChatDeltaPayload` 后直接使用 snake_case 字段（`payload.conversation_id`, `payload.delta_text`），这些字段名与 `protocol.ts` 的 `ChatDeltaPayload` 一致。
+
+**后果**：event payload 不需要 `rowToXxx` 适配函数，只需把 `as ChatDeltaPayload` 的类型来源从 `chatOrchestrator.ts` 改为 `protocol.ts`。
+
+**修正**：7.4 替换策略中"event payload `as T` → DTO 类型断言 + 适配函数"应改为"event payload `as T` → DTO 类型断言（不改字段名）"。适配函数只在 invoke 返回值需要转业务类型时使用。
+
+### 8.5 `chatService.ts` 的 `ConversationDetail` 也用 snake_case
+
+**现状**：`chatService.ts` 定义的 `ConversationDetail` 接口里 `total_count` 是 snake_case，与 `protocol.ts` 的 `ConversationDetailRow` 一致。
+
+**后果**：Phase 1 替换 `as ConversationDetail` 为 `(r as ConversationDetailRow)` 后，使用方直接用 `detail.total_count`，无需适配。
+
+**修正**：`ConversationDetail` 接口应删除，统一用 `ConversationDetailRow`。
 
 ---
 
-## 9. 与 I15 的关系
+## 9. 实施计划
 
-I15 已完成的工作为 I16 协议统一奠定基础：
+### Phase 1：DTO 层建立 + 映射函数（无行为变更）
 
-| I15 交付物 | I16 依赖 |
-|---|---|
-| DB `messages` 表新增 `tool_calls_json TEXT` 列 | I16 激活写入 + 前端映射 |
-| `MessageRow.tool_calls_json: Option<String>` 字段 | I16 DTO 层 mirror 此字段 |
-| `update_message_content` 签名已含 `tool_calls_json` 参数 | I16 传入实际值（当前恒 None） |
-| `StreamOutcome.tool_calls: Option<Vec<ToolCall>>` | I16 序列化写入 DB |
-| `ChatDelta` 含 `delta_tool_call_*` 字段 | I16 event payload 已对齐，无需变更 |
-| `chat-stream-start` 事件 + `attempt_id` 协议 | I16 event payload 保持 snake_case，无需变更 |
+1. **新建文件（零代码改动）**：
+   - **前端**：
+     - 新建 `src/chat/core/protocol.ts`：定义 `MessageRow`、`ConversationRow`、`ConversationDetailRow`，文件头标注 `Backend mirror` + `snake_case to match wire format`
+     - 新建 `src/chat/core/protocolAdapter.ts`：实现 `rowToMessage`、`rowToConversation`、`messageToRow`、`conversationToRow`、`parseToolCallsJson`（双向映射：DTO↔业务）
+   - **后端**：
+     - 新建 `src-tauri/src/protocol/mod.rs`：模块声明 + re-export
+     - 新建 `src-tauri/src/protocol/chat_events.rs`：`ChatStreamStartPayload` / `ChatDeltaPayload` / `ConversationTerminatedPayload` / `ConversationCompactFailedPayload` / `ConversationUnlockedPayload` struct 骨架，标注 `#[derive(Debug, Clone, Serialize)]` + `#[serde(rename_all = "snake_case")]`
+     - 新建 `src-tauri/src/protocol/chat_commands.rs`：`ConversationDetailResponse` struct 骨架
+     - 在 `src-tauri/src/lib.rs`（或 `main.rs`）添加 `mod protocol;`
+2. 按 7.1 替换 `chatService.ts` 的 3 个 `as` 强转为 DTO 强转 + 映射函数
+3. 按 7.4 替换 `chatDeltaEvents.ts` 的 event payload `as` 断言类型来源从 `chatOrchestrator.ts`/`chatTypes.ts` 改为 `protocol.ts`（event payload 字段名与 DTO 一致均为 snake_case，Phase 1 无需适配函数；Phase 2 业务类型改 camelCase 后才需适配函数）
+4. event payload 类型迁移到 `protocol.ts`；从 `chatDeltaEvents.ts` 等原文件**删除**已迁移的旧类型定义（单一真相源）
+5. 按 7.1 替换 `useHistorySearch` / `useHistoryRefresh` 的直接 invoke + 业务类型强转，统一走 chatService
 
-I15 spec 明确标注的 I16 预留项：
+> **本 Phase 消除**：`chatService.ts` 3 处 `as Conversation[]`/`as ConversationDetail`、`useHistoryRefresh.ts` 1 处 `as { messages: Message[] }`、`useHistorySearch.ts` 1 处 `as Conversation[]`、`chatDeltaEvents.ts` 5 处 event payload `as` 断言
 
-> `tool_calls_json` → `toolCalls` 前端映射：tool_calls 当前未实际接入项目可用状态；I16 设计统一前后端消息协议时一并解决字段映射，I15 不做临时 JSON.parse 补丁
+### Phase 2：业务类型 camelCase 迁移 ✅
 
-本设计文档即为此预留项的完整实施方案。
+1. `chatTypes.ts` 的 `Message` / `Conversation` / `TokenUsage` / `ContextUsage` interface 字段改为 camelCase，删除原有 snake_case 字段 ✅
+2. 全局替换 Store / Component / 测试中的 snake_case 属性访问为 camelCase ✅
+3. event payload 类型（`ChatDeltaPayload` 等）**不变**（保持 snake_case） ✅
+4. `protocolAdapter.ts` 新增 `rowToTokenUsage()` 适配函数，`chatOrchestrator.ts` 中 `payload.usage` 经此函数转换 ✅
+5. 按 7.2 替换 `get_mouse_position` 后端返回值为 snake_case struct（S5）✅（已在 Phase 4 提前完成）；前端同步改 `clientX→client_x` / `clientY→client_y` ✅
+6. 按 7.3 替换 `JSON.parse(provider.models) as ModelConfig[]` 为安全解析函数（F5）— 延至 Phase 5
+7. 确认 `MessageRow` 无 `#[serde(rename_all = "camelCase")]`，保持默认 snake_case 序列化（D7） ✅
+
+> **本 Phase 消除**：`get_mouse_position` 1 处 camelCase 返回值 ✅、业务层 snake_case/camelCase 混用（14 个字段 × 10+ 消费方）
+
+### Phase 3：`tool_calls_json` 写入激活 ✅
+
+1. `cmd/chat.rs` 的 `stream_future` Ok 分支：从 `outcome.tool_calls` 序列化写入 DB ✅
+2. `db_tx` channel 类型 `DbWriteMsg` 扩展包含 `tool_calls_json` ✅
+
+> **本 Phase 消除**：`tool_calls_json` 恒为 NULL 的写入缺失 ✅（非手动转换，是功能激活）
+
+### Phase 4：后端类型化 + 契约测试
+
+1. **新建文件（零代码改动）**：
+   - 新建 `src-tauri/src/protocol/chat_events.rs` 补充 `ChatRegeneratePayload` struct ✅
+   - 新建 `src-tauri/src/protocol/setting_events.rs`：`ProviderListRow` / `SettingProviderChangedPayload` struct ✅（提前从 Phase 5 拉入，因 provider.rs 改动一并完成）
+   - ~~新建 `src-tauri/src/protocol/orb_events.rs`：`OrbBlurPayload` / `OrbNewConversationPayload` struct~~ → **决定不建**：`orb-blur` / `orb-new-conversation` 均 emit `()`（空元组），无 payload 字段，无需 struct
+   - 新建 `src-tauri/src/protocol/orb_commands.rs`：`MousePosition` / `ScreenSize` / `ScreenRect` struct ✅（S5 + S8）
+   - 新建协议契约测试文件：wire format 断言 + round-trip + 未知字段拒绝 ✅（14 个测试全部通过）
+2. 按 7.5 替换 `chat.rs` / `conversation.rs` 中 `json!({})` 为 `protocol::chat_events` struct 构造 ✅（chat.rs 4 处 + conversation.rs 11 处全部消除）
+3. 按 7.5 替换 `provider.rs` 中 `json!({})` 为 `protocol::setting_events` struct 构造 ✅（3 处全部消除，提前从 Phase 5 拉入）
+4. ~~按 7.5 替换 orb 模块中 `json!({})` 为 `protocol::orb_events` struct 构造~~ → orb event 为空 payload `()`，无需 struct
+5. 按 7.6 替换 command 返回值 `serde_json::Value` 为强类型 struct（S3 ✅, S4 ✅, S5 ✅, S8 ✅）
+   - `get_mouse_position` → `Option<MousePosition>` ✅，前端 `OrbCoord.ts` 同步改为 `client_x` / `client_y`
+   - `get_screen_size` → `ScreenSize` ✅，wire format 与前端一致无需改前端
+6. `DbSender` 4 元组替换为命名 struct `DbWriteMsg` ✅（S6）
+7. `emit_stream_error` 补充 `seq` ✅：主 chat 流 + compaction 流 3 处，使用 `AtomicU32` 追踪 `consume_stream` 回调中的最新 `seq`（主 chat 流用栈上 `AtomicU32`，compaction 流用 `Arc<AtomicU32>` 因闭包为 `move`）
+8. `ChatDeltaPayload` 加 `derive(Default)` ✅，7 处构造点改为 `..Default::default()` 补全
+9. ~~给 `storage/` 层 `MessageRow` / `ConversationRow` 添加 `#[serde(deny_unknown_fields)]`~~ → **决定不加**：storage 层 struct 从 DB 读取不参与 IPC 反序列化，加 `deny_unknown_fields` 反而阻碍未来加字段时的向前兼容；protocol 层 struct 为 Serialize-only（emit 方向），`deny_unknown_fields` 仅对 Deserialize 有效，亦不适用；前端契约测试已覆盖未知字段检测
+10. 前端 `chatDeltaEvents.ts` 添加 R3/R4 运行时校验 ✅：`chat-stream-start` 的 id 与首条 `chat-delta` 一致（R3）；同一 `attempt_id` 下 `seq` 单调递增（R4）；不一致时 `console.error`；`finish_reason` 时清理 per-attempt seq 追踪
+11. 验证 Chat + Provider + Orb 协议范围内 `json!({})` 为 0 处 ✅（chat.rs 0 + conversation.rs 0 + provider.rs 0 + orb.rs 0）
+12. 前端协议同步 ✅：
+    - `protocol.ts` 新增 `ProviderErrorCode` / `ProviderErrorPayloadRow`，`ChatDeltaPayload.error` 从 `unknown` 改为 `ProviderErrorPayloadRow`
+    - `TokenUsageRow` 可选字段（`cache_read_tokens`/`cache_write_tokens`/`context_window_tokens`）修正为必选，对齐后端 `#[serde(default)]` 行为
+    - `ProviderListRow.type_` 使用 `#[serde(rename = "type")]` 解决 Rust 保留字转义，wire format 输出 `"type"` 对齐前端
+    - `OrbCoord.ts` 的 `get_mouse_position` 返回值从 `{ clientX, clientY }` 改为 `{ client_x, client_y }`，与 snake_case wire format 一致
+    - 前端契约测试扩展至 14 个（新增 `MousePosition` / `ScreenSize` wire format 测试）
+
+> **本 Phase 消除**：`chat.rs` 4 处 + `conversation.rs` 11 处 + `provider.rs` 3 处 `json!({})`（共 18 处 ✅）、`get_conversation_paginated` 1 处 `serde_json::Value` 返回 ✅、`list_providers` 1 处 `serde_json::Value` 返回 ✅、`chat-regenerate` 1 处 `json!({})` ✅、`setting:provider-changed` 2 处 `json!({})` ✅
+
+### Phase 5：Setting / Provider / AgentMode 协议统一
+
+> **注意**：`provider.rs` 3 处 `json!({})`、`setting:provider-changed` event payload、`list_providers` 返回值已在 Phase 4 提前完成。以下仅列剩余项。
+
+1. **新建文件** ✅：
+   - ~~新建 `src-tauri/src/protocol/setting_events.rs`~~ → 已在 Phase 4 完成
+   - 新建 `src-tauri/src/protocol/setting_commands.rs` ✅：`AgentModeWire` / `AgentModeInputWire` / `ModelConfigWire` / `ThemeChangedPayload` / `ProviderInputWire` struct
+   - ~~新建前端 `src/settings/core/protocol.ts`~~ → 决定不建：前端已有 `AgentMode`/`AgentModeInput`/`ModelConfig`/`Provider`/`ProviderInput` interface 对齐，无需额外 DTO 层
+   - ~~新建 Setting 协议契约测试文件~~ → 决定不建：Setting struct 字段与前端 interface 已对齐，wire format 由 `#[serde(rename_all = "snake_case")]` 保证
+2. 按 7.5 替换 `config.rs` / `agent_mode.rs` / `tool.rs` / `provider.rs` / `setup.rs` 中 `json!({})` 为 `protocol::setting_*` struct 构造 ✅
+   - `config.rs`：`get_app_conf`/`get_orb_conf`/`get_mascot_conf` 返回强类型 `Result<T, String>`；`emit_theme_changed` 用 `ThemeChangedPayload`
+   - `agent_mode.rs`：`list_agent_modes` 返回 `Vec<AgentModeWire>`；`save_agent_mode` 参数改为 `AgentModeInputWire`；`row_to_wire()` 转换 `tools_json` → `tools: Vec<String>`
+   - `tool.rs`：`get_recent_tools`/`get_favorite_tools` 返回 `Vec<String>`（去掉 `json!`）
+   - `provider.rs`：`list_models_cmd`/`preview_models_cmd` 返回 `Vec<ModelConfigWire>`；`save_provider` 参数改为 `ProviderInputWire`
+   - `setup.rs`：`shortcut-warning` event 用 `ShortcutWarningPayload`
+3. 按 7.1 替换前端强转 ✅：
+   - `agentModeStore.ts`：`as AgentMode[]` → `invoke<AgentMode[]>("list_agent_modes")`
+   - `providerStore.ts`：`as Provider[]` → `invoke<Provider[]>("list_providers")`；`as ModelConfig[]` → `invoke<ModelConfig[]>("list_models_cmd")`
+   - `ConnectDialog.tsx`：`as ModelConfig[]` → `invoke<ModelConfig[]>("preview_models_cmd")`
+   - `ProviderInput` 新增 `api_key_changed?: boolean` 字段，`ConnectDialog.tsx` 构造时设置
+4. 验证全协议范围内 `json!({})` 为 0 处 ✅（全局扫描确认 0 处）
+
+> **本 Phase 消除**：`config.rs` 3 处 `serde_json::Value` 返回 + 1 处 `json!({})`、`agent_mode.rs` 1 处 `serde_json::Value` 返回 + 1 处 `serde_json::Value` 参数、`tool.rs` 2 处 `json!({})`、`provider.rs` 2 处 `serde_json::Value` 返回 + 1 处 `serde_json::Value` 参数、`setup.rs` 1 处 `json!({})`、前端 3 处业务类型强转
+
+### Phase 6：最终验证
+
+1. 全局扫描前端 `as unknown as` ✅：2 处，`settingsDispatcher.ts` 1 处（TS 结构类型限制，interface→Record 需 double assertion）+ `i18n/index.ts` 1 处（I11-A6 设计决定，绕过 i18next 严格类型签名）
+2. 全局扫描前端业务类型强转 ✅：0 处（`JSON.parse(provider.models) as ModelConfig[]` 已消除，后端 `ProviderListRow.models` 改为 `Vec<ModelConfigWire>`）
+3. 全局扫描后端 `json!({})` ✅：0 处
+4. 全局扫描后端 `serde_json::Value` command 返回/参数 ✅：1 处，`config.rs:patch_conf`（动态 JSON merge，保留合理）
+5. 运行全部协议契约测试，确认通过 ✅（14 个测试全部通过）
+6. 运行 R3/R4 运行时校验，确认集成测试通过 ✅
+
+---
+
+## 10. 验收标准
+
+1. 后端存在 `src-tauri/src/protocol/` 模块，所有 event payload + command 返回值 struct 集中定义（含 Chat + Orb + Setting + Provider + AgentMode）
+2. 前端存在 `src/chat/core/protocol.ts` + `src/settings/core/protocol.ts`，按模块分文件，文件头标注 `Backend mirror`
+3. 前端 DTO 层 `MessageRow` / `ConversationRow` 与后端字段名一一对应（snake_case）
+4. 前端业务层 `Message` / `Conversation` 使用 camelCase
+5. `chatService.ts` invoke 返回值经 DTO 层强转 + 映射函数转换，无 `as Conversation[]` 业务类型强转
+6. `tool_calls_json` → `toolCalls` 映射生效：DB 有数据时前端为 `ToolCall[]`，null 时为 `undefined`
+7. event payload 字段名保持 snake_case
+8. 所有 `chat-delta` 事件（含 error 分支）携带 `conversation_id`、`attempt_id`、`message_id`、`seq`（R1, R2）✅
+9. compaction 流 error 分支补上 `seq` ✅（Phase 4）
+10. 后端协议 struct 标注 `#[serde(rename_all = "snake_case")]`；storage struct（`MessageRow`/`ConversationRow`）不加 `deny_unknown_fields`（storage 从 DB 读取不参与 IPC 反序列化，加此标注阻碍向前兼容）；Rust 保留字字段（如 `type_`）使用 `#[serde(rename = "type")]` 显式转义
+11. 协议契约测试通过：wire format 断言 + round-trip + 未知字段拒绝（Phase 4-5）
+12. 全协议范围内 `json!({})` 为 0 处（Phase 5 完成后）
+13. `get_mouse_position` 返回 snake_case（S5）✅
+14. `useHistorySearch`（L39）/`useHistoryRefresh`（L37）统一走 chatService，无直接 invoke + 业务类型强转（F3）
+15. `navigate` event payload 保持裸 string，不强制类型化（R5）
+16. `providerStore` / `agentModeStore` 强转改为 DTO 类型 + 映射函数（F2，Phase 5）
+17. `get_screen_size` 返回值类型化为 `ScreenSize` struct（S8，Phase 4）✅
+18. `chat-regenerate` event payload 类型化为 `ChatRegeneratePayload` struct（Phase 4）✅
+19. Setting event payload（`setting:provider-changed` / `theme-changed`）类型化（S2，Phase 5）
+20. `protocolAdapter.ts` 提供双向映射：`rowToMessage`/`rowToConversation`（DTO→业务）+ `messageToRow`/`conversationToRow`（业务→DTO），业务代码无需手动构造 snake_case 字段
+21. Orb event payload（`orb-blur`/`orb-new-conversation`）为空 payload，emit `()` 无需 struct（Phase 4）✅
+22. `chatDeltaEvents.ts` 原散落类型定义已删除，唯一类型定义在 `protocol.ts`（单一真相源）
+23. `chatDeltaEvents.ts` listen 回调内部经适配函数转换 DTO→业务类型再 dispatch 给 Store（**Phase 2 完成后**生效；Phase 1 时 event payload 与业务类型均为 snake_case，无需适配函数）
+24. 前端 `chatDeltaEvents.ts` 包含 R3/R4 运行时校验：stream-start id 一致性 + seq 单调递增
+25. `chatService.ts` / `chatDeltaEvents.ts` 等文件无 `as unknown as` 违规（仅 `settingsDispatcher.ts:toConfRecord` 和 `i18n/index.ts:translateKey` 允许，各有明确技术原因）
+26. 前端 `ChatDeltaPayload.error` 类型为 `ProviderErrorPayloadRow`（非 `unknown`），与后端 `ProviderErrorPayload` wire format 对齐
+27. 前端 `TokenUsageRow` 的 `cache_read_tokens`/`cache_write_tokens`/`context_window_tokens` 为必选字段（非可选），与后端 `#[serde(default)]` 保证 wire format 一定有值的行为对齐
+
+---
+
+## 11. 与 I15 的关系
+
+| I15 交付物                                        | I16 依赖                                    |
+| ------------------------------------------------- | ------------------------------------------- |
+| DB `messages.tool_calls_json TEXT` 列             | I16 激活写入 + 前端映射                     |
+| `MessageRow.tool_calls_json: Option<String>`      | I16 DTO 层 mirror 此字段                    |
+| `StreamOutcome.tool_calls: Option<Vec<ToolCall>>` | I16 序列化写入 DB                           |
+| `chat-stream-start` + `attempt_id` 协议           | I16 event payload 保持 snake_case，无需变更 |

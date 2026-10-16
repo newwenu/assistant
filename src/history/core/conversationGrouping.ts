@@ -21,7 +21,7 @@ export function groupConversations(
 ): ConversationGroup[] {
   const groups: ConversationGroup[] = [];
 
-  const pinned = convs.filter((c) => c.is_pinned);
+  const pinned = convs.filter((c) => c.isPinned);
   if (pinned.length > 0)
     groups.push({
       key: "pinned",
@@ -29,7 +29,7 @@ export function groupConversations(
       conversations: pinned,
     });
 
-  const unpinned = convs.filter((c) => !c.is_pinned);
+  const unpinned = convs.filter((c) => !c.isPinned);
 
   const now = new Date();
   const todayStart = new Date(
@@ -41,17 +41,17 @@ export function groupConversations(
   const weekStart = todayStart - 6 * 86400000;
   const monthStart = todayStart - 29 * 86400000;
 
-  const today = unpinned.filter((c) => c.updated_at >= todayStart);
+  const today = unpinned.filter((c) => c.updatedAt >= todayStart);
   const yesterday = unpinned.filter(
-    (c) => c.updated_at >= yesterdayStart && c.updated_at < todayStart,
+    (c) => c.updatedAt >= yesterdayStart && c.updatedAt < todayStart,
   );
   const week = unpinned.filter(
-    (c) => c.updated_at >= weekStart && c.updated_at < yesterdayStart,
+    (c) => c.updatedAt >= weekStart && c.updatedAt < yesterdayStart,
   );
   const month = unpinned.filter(
-    (c) => c.updated_at >= monthStart && c.updated_at < weekStart,
+    (c) => c.updatedAt >= monthStart && c.updatedAt < weekStart,
   );
-  const older = unpinned.filter((c) => c.updated_at < monthStart);
+  const older = unpinned.filter((c) => c.updatedAt < monthStart);
 
   if (today.length)
     groups.push({

@@ -3,7 +3,7 @@ import { DownOutlined, LoadingOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { MessageBubble, RoleContext } from "./MessageBubble";
 import type { Message } from "../../stores/chatStore";
-import type { RetryNotification } from "../../services/chatOrchestrator";
+import type { RetryNotificationRow } from "../../chat/core/protocol";
 import css from "./MessageList.module.css";
 
 const SCROLL_THRESHOLD = 100;
@@ -22,7 +22,7 @@ interface MessageListProps {
   onEditMessage?: (id: string, newContent: string) => void;
   onRegenerateMessage?: (id: string) => void;
   onRetryMessage?: () => void;
-  retryStatus?: RetryNotification | null;
+  retryStatus?: RetryNotificationRow | null;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({

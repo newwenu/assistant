@@ -1,10 +1,16 @@
 import { chatService } from "./chatService";
+import { providerService } from "./providerService";
 import type {
   Message,
   Conversation,
   TokenUsage,
   ContextUsage,
 } from "../chat/core/chatTypes";
+import type {
+  ChatDeltaPayload,
+  RetryNotificationRow,
+} from "../chat/core/protocol";
+import { rowToTokenUsage } from "../chat/core/protocolAdapter";
 import type { ChatError } from "../chat/core/chatErrors";
 import { ChatErrorCode, toChatError } from "../chat/core/chatErrors";
 import { CHAT_AUTO_TITLE_LENGTH } from "../config/constants";
@@ -29,7 +35,7 @@ export interface ChatStatePort {
   updateContextUsage: (usage: ContextUsage) => void;
   finishStream: (usage?: TokenUsage) => void;
   errorStream: (error: ChatError) => void;
-  setRetryStatus: (retry: RetryNotification | null) => void;
+  setRetryStatus: (retry: RetryNotificationRow | null) => void;
 }
 
 export interface ChatEnvPort {
@@ -52,35 +58,6 @@ export interface ChatOrchestratorDeps {
     title: string,
     titleSource: string,
   ) => Promise<void>;
-}
-
-export interface RetryNotification {
-  attempt: number;
-  max_attempts: number;
-  delay_ms: number;
-  message: string;
-}
-
-export interface ChatDeltaPayload {
-  conversation_id: string;
-  attempt_id?: string;
-  message_id: string;
-  seq?: number;
-  delta_text?: string;
-  delta_reasoning?: string;
-  delta_tool_call_id?: string;
-  delta_tool_call_name?: string;
-  delta_tool_call_arguments?: string;
-  finish_reason?: string;
-  usage?: TokenUsage;
-  error?: unknown;
-  delta_retry?: RetryNotification;
-}
-
-export interface ChatStreamStartPayload {
-  conversation_id: string;
-  attempt_id: string;
-  message_id: string;
 }
 
 export interface ChatOrchestrator {
@@ -135,12 +112,12 @@ export function createChatOrchestrator(
 
       let convId = deps.env.getActiveConversationId();
       if (!convId) {
-        const provList = await chatService.listProviders();
+        const provList = await providerService.listProviders();
         if (provList.length === 0) {
           const errConvId = `err-${Date.now()}`;
           const userMsg: Message = {
             id: `temp-user-${Date.now()}`,
-            conversation_id: errConvId,
+            conversationId: errConvId,
             role: "user",
             content,
             tokens: null,
@@ -149,7 +126,7 @@ export function createChatOrchestrator(
           const assistantMsgId = `temp-assistant-${Date.now()}`;
           const assistantMsg: Message = {
             id: assistantMsgId,
-            conversation_id: errConvId,
+            conversationId: errConvId,
             role: "assistant",
             content: "",
             tokens: null,
@@ -188,7 +165,7 @@ export function createChatOrchestrator(
       const currentMessages = deps.env.getMessages();
       const userMsg: Message = {
         id: `temp-user-${Date.now()}`,
-        conversation_id: convId,
+        conversationId: convId,
         role: "user",
         content,
         tokens: null,
@@ -197,7 +174,7 @@ export function createChatOrchestrator(
       const assistantMsgId = `temp-assistant-${Date.now()}`;
       const assistantMsg: Message = {
         id: assistantMsgId,
-        conversation_id: convId,
+        conversationId: convId,
         role: "assistant",
         content: "",
         tokens: null,
@@ -211,7 +188,7 @@ export function createChatOrchestrator(
 
       const convs = deps.env.getConversations();
       const conv = convs.find((c) => c.id === convId);
-      if (conv && conv.title_source === "placeholder") {
+      if (conv && conv.titleSource === "placeholder") {
         const fbTitle = fallbackTitleFromUserMessage(content);
         void deps.renameConversation(convId, fbTitle, "fallback");
       }
@@ -243,10 +220,8 @@ export function createChatOrchestrator(
   function handleDeltaEvent(payload: ChatDeltaPayload) {
     const activeAttemptId = deps.env.getActiveAttemptId();
 
-    if (payload.attempt_id) {
-      if (activeAttemptId === null || payload.attempt_id !== activeAttemptId) {
-        return;
-      }
+    if (activeAttemptId === null || payload.attempt_id !== activeAttemptId) {
+      return;
     }
 
     if (payload.error) {
@@ -287,22 +262,24 @@ export function createChatOrchestrator(
     }
 
     if (payload.usage) {
-      const u = payload.usage;
+      const usage = rowToTokenUsage(payload.usage);
       const ctx =
-        u.context_window_tokens && u.context_window_tokens > 0
-          ? u.context_window_tokens
+        usage.contextWindowTokens && usage.contextWindowTokens > 0
+          ? usage.contextWindowTokens
           : 128_000;
       deps.state.updateContextUsage({
-        used_tokens: u.prompt_tokens,
-        max_tokens: ctx,
-        percentage: u.prompt_tokens / ctx,
+        usedTokens: usage.promptTokens,
+        maxTokens: ctx,
+        percentage: usage.promptTokens / ctx,
       });
     }
 
     if (payload.finish_reason) {
       setPhase("idle");
       deps.state.setRetryStatus(null);
-      deps.state.finishStream(payload.usage);
+      deps.state.finishStream(
+        payload.usage ? rowToTokenUsage(payload.usage) : undefined,
+      );
     }
   }
 

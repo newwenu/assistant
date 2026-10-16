@@ -4,7 +4,7 @@ import {
   PhysicalPosition,
   cursorPosition,
 } from "@tauri-apps/api/window";
-import { invoke } from "@tauri-apps/api/core";
+import { orbService } from "../services/orbService";
 import {
   PET_DRAG_THRESHOLD_PX,
   DRAG_POLL_INTERVAL_MS,
@@ -82,9 +82,7 @@ export function useOrbDrag() {
 
         const orbConf = useSettingsStore.getState().orbConf;
         if (orbConf?.click_through) {
-          invoke("set_orb_click_through", { enabled: false }).catch(
-            console.error,
-          );
+          orbService.setOrbClickThrough(false).catch(console.error);
         }
 
         if (IS_WINDOWS) {
@@ -98,7 +96,7 @@ export function useOrbDrag() {
             setDragging(false);
             hasDraggedRef.current = false;
             setTimeout(() => {
-              invoke("snap_orb_to_edge").catch(console.error);
+              orbService.snapOrbToEdge().catch(console.error);
             }, ORB_SNAP_DELAY_MS);
           });
           return;
@@ -110,7 +108,7 @@ export function useOrbDrag() {
             setDragging(false);
             hasDraggedRef.current = false;
             setTimeout(() => {
-              invoke("snap_orb_to_edge").catch(console.error);
+              orbService.snapOrbToEdge().catch(console.error);
             }, ORB_SNAP_DELAY_MS);
           });
       }
@@ -134,13 +132,11 @@ export function useOrbDrag() {
         if (!state.isExpanded) {
           const orbConf = useSettingsStore.getState().orbConf;
           if (orbConf?.click_through) {
-            invoke("set_orb_click_through", { enabled: true }).catch(
-              console.error,
-            );
+            orbService.setOrbClickThrough(true).catch(console.error);
           }
         }
         setTimeout(() => {
-          invoke("snap_orb_to_edge").catch(console.error);
+          orbService.snapOrbToEdge().catch(console.error);
         }, ORB_SNAP_DELAY_MS);
       }
 

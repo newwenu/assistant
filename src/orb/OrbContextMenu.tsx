@@ -1,5 +1,5 @@
 import React, { useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { orbService } from "../services/orbService";
 import { LONG_PRESS_DURATION_MS } from "../config/constants";
 
 const IS_TOUCH_DEVICE =
@@ -13,7 +13,7 @@ export const OrbContextMenu: React.FC<{
 
   const showMenu = useCallback(async (x: number, y: number) => {
     try {
-      await invoke("show_orb_context_menu", { x, y });
+      await orbService.showOrbContextMenu(x, y);
     } catch (err) {
       console.error(err);
     }

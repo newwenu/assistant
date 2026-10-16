@@ -6,7 +6,8 @@ import {
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
+import { chatService } from "../services/chatService";
+import { orbService } from "../services/orbService";
 import { useChatStore } from "../stores/chatStore";
 import {
   CONTEXT_WARN_THRESHOLD,
@@ -29,7 +30,7 @@ interface ChatViewProps {
 function ContextBar({
   usage,
 }: {
-  usage: { used_tokens: number; max_tokens: number; percentage: number };
+  usage: { usedTokens: number; maxTokens: number; percentage: number };
 }) {
   const pct = Math.min(usage.percentage * 100, 100);
   let status: "normal" | "exception" | "active" = "normal";
@@ -39,12 +40,12 @@ function ContextBar({
     n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
   return (
     <Tooltip
-      title={`${Math.round(usage.used_tokens).toLocaleString()} / ${Math.round(usage.max_tokens).toLocaleString()} tokens (${pct.toFixed(1)}%)`}
+      title={`${Math.round(usage.usedTokens).toLocaleString()} / ${Math.round(usage.maxTokens).toLocaleString()} tokens (${pct.toFixed(1)}%)`}
     >
       <div className="chat-context-bar">
         <span className="chat-context-bar-text">
-          {formatK(Math.round(usage.used_tokens))}/
-          {formatK(Math.round(usage.max_tokens))}
+          {formatK(Math.round(usage.usedTokens))}/
+          {formatK(Math.round(usage.maxTokens))}
         </span>
         <Progress
           percent={pct}
@@ -91,22 +92,11 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       if (!p) {
         const fallback = availableProviders[0];
         let fallbackModel = fallback.default_model || "";
-        try {
-          const models = JSON.parse(fallback.models || "[]") as {
-            id: string;
-          }[];
-          if (models.length > 0 && !fallbackModel) fallbackModel = models[0].id;
-        } catch {
-          /* ignore */
-        }
+        if (fallback.models.length > 0 && !fallbackModel)
+          fallbackModel = fallback.models[0].id;
         return { providerId: fallback.id, modelId: fallbackModel };
       }
-      let models: { id: string }[] = [];
-      try {
-        models = JSON.parse(p.models || "[]") as { id: string }[];
-      } catch {
-        /* ignore */
-      }
+      const models = p.models;
       const modelExists = models.some((m) => m.id === modelId);
       if (!modelExists) {
         let fallbackModel = p.default_model || "";
@@ -124,7 +114,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
         (c) => c.id === chat.currentConversationId,
       );
       if (conv) {
-        const resolved = resolveProviderModel(conv.provider_id, conv.model_id);
+        const resolved = resolveProviderModel(conv.providerId, conv.modelId);
         setCurrentProviderId(resolved.providerId);
         setCurrentModelId(resolved.modelId);
       }
@@ -173,20 +163,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       setCurrentProviderId(newProviderId);
       const p = provider.providers.find((pr) => pr.id === newProviderId);
       let modelId = p?.default_model || "";
-      if (p) {
-        try {
-          const models = JSON.parse(p.models || "[]") as { id: string }[];
-          if (models.length > 0 && !modelId) modelId = models[0].id;
-        } catch {
-          // ignore
-        }
-      }
+      if (p && p.models.length > 0 && !modelId) modelId = p.models[0].id;
       setCurrentModelId(modelId);
       if (chat.currentConversationId) {
-        invoke("update_conversation_provider", {
-          id: chat.currentConversationId,
-          providerId: newProviderId,
-        }).catch((e) => console.error("Failed to update provider:", e));
+        chatService
+          .updateConversationProvider(chat.currentConversationId, newProviderId)
+          .catch((e) => console.error("Failed to update provider:", e));
         void chat.updateModel(chat.currentConversationId, modelId);
       }
     },
@@ -204,14 +186,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     const pid = currentProviderId || provider.providers[0].id;
     const p = provider.providers.find((pr) => pr.id === pid);
     let modelId = p?.default_model || "";
-    if (p) {
-      try {
-        const models = JSON.parse(p.models || "[]") as { id: string }[];
-        if (models.length > 0 && !modelId) modelId = models[0].id;
-      } catch {
-        // ignore
-      }
-    }
+    if (p && p.models.length > 0 && !modelId) modelId = p.models[0].id;
     void chat.createConversation(pid, modelId);
   }, [provider.providers, currentProviderId, chat, modal, t]);
 
@@ -232,9 +207,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   );
 
   const handleOpenSettings = useCallback(() => {
-    invoke("open_main_window").catch((e) =>
-      console.error("Failed to open main window:", e),
-    );
+    orbService
+      .openMainWindow()
+      .catch((e) => console.error("Failed to open main window:", e));
   }, []);
 
   const handleModeChange = useCallback(
@@ -243,22 +218,16 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       const mode = modes.find((m) => m.id === modeId);
       if (mode?.model) {
         for (const p of provider.providers) {
-          try {
-            const models = JSON.parse(p.models || "[]") as { id: string }[];
-            if (models.some((m) => m.id === mode.model)) {
-              setCurrentProviderId(p.id);
-              setCurrentModelId(mode.model);
-              if (chat.currentConversationId) {
-                invoke("update_conversation_provider", {
-                  id: chat.currentConversationId,
-                  providerId: p.id,
-                }).catch(() => {});
-                void chat.updateModel(chat.currentConversationId, mode.model);
-              }
-              break;
+          if (p.models.some((m) => m.id === mode.model)) {
+            setCurrentProviderId(p.id);
+            setCurrentModelId(mode.model);
+            if (chat.currentConversationId) {
+              chatService
+                .updateConversationProvider(chat.currentConversationId, p.id)
+                .catch(() => {});
+              void chat.updateModel(chat.currentConversationId, mode.model);
             }
-          } catch {
-            /* ignore */
+            break;
           }
         }
       }

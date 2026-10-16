@@ -1,13 +1,14 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
+import { settingService } from "../services/settingService";
+import { orbService } from "../services/orbService";
 import type { OrbConf } from "@/settings/core/types/confTypes";
 import { SettingEvent, SettingAction } from "../types/events";
 import type { SettingEventPayload } from "../types/events";
 
 async function reloadAndApply(appliedRef: React.RefObject<string>) {
   try {
-    const conf = await invoke<OrbConf>("get_orb_conf");
+    const conf = await settingService.getOrbConf();
     await applyOrbConf(conf, appliedRef);
   } catch (e) {
     console.warn("[useOrbConfSync] reload failed:", e);
@@ -47,7 +48,7 @@ async function applyOrbConf(
   );
 
   try {
-    await invoke("set_orb_click_through", { enabled: conf.click_through });
+    await orbService.setOrbClickThrough(conf.click_through);
   } catch (e) {
     console.warn("[useOrbConfSync] set_orb_click_through failed:", e);
   }

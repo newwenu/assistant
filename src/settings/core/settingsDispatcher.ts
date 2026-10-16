@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -10,6 +9,9 @@ import { WINDOW_MAIN, WINDOW_ORB } from "@/config/constants";
 import { useProviderStore } from "@/stores/providerStore";
 import { useThemeStore } from "@/stores/themeStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import type { SettingsState } from "@/stores/settingsStore";
+import { providerService } from "@/services/providerService";
+import { settingService } from "@/services/settingService";
 import type {
   AppConf,
   OrbConf,
@@ -17,13 +19,11 @@ import type {
 } from "@/settings/core/types/confTypes";
 import type { ProviderInput } from "@/settings/provider/types";
 import type { RendererConfig } from "@/mascot/core/types";
-import type { ConfGroup } from "./field/fieldRegistry";
-
-const CONF_KEY_MAP: Record<ConfGroup, "appConf" | "orbConf" | "mascotConf"> = {
-  app: "appConf",
-  orb: "orbConf",
-  mascot: "mascotConf",
-};
+import {
+  CONF_KEY_MAP,
+  CONF_LOAD_KEY_MAP,
+  type ConfGroup,
+} from "./field/fieldRegistry";
 
 type ConfUnion = AppConf | OrbConf | MascotConf;
 
@@ -49,11 +49,11 @@ export function optimisticConfUpdate(
 ): void {
   const confKey = CONF_KEY_MAP[group];
   const store = useSettingsStore.getState();
-  const current = store[confKey] as unknown as Record<string, unknown> | null;
+  const current = store[confKey];
   if (!current) return;
   useSettingsStore.setState({
     [confKey]: { ...current, [key]: value },
-  });
+  } as Partial<SettingsState>);
 }
 
 export function buildRendererConfig(conf: MascotConf): RendererConfig {
@@ -115,7 +115,7 @@ async function emitSettingEventToPeers(
 }
 
 export async function dispatchProviderSaved(provider: ProviderInput) {
-  await invoke("save_provider", { provider });
+  await providerService.saveProvider(provider);
   await useProviderStore.getState().loadProviders();
   await emitSettingEventToPeers(SettingEvent.ProviderChanged, {
     action: SettingAction.ProviderSaved,
@@ -125,7 +125,7 @@ export async function dispatchProviderSaved(provider: ProviderInput) {
 }
 
 export async function dispatchProviderDeleted(id: string) {
-  await invoke("delete_provider", { id });
+  await providerService.deleteProvider(id);
   await useProviderStore.getState().loadProviders();
   await emitSettingEventToPeers(SettingEvent.ProviderChanged, {
     action: SettingAction.ProviderDeleted,
@@ -143,7 +143,7 @@ export async function dispatchThemeChanged(mode: "system" | "light" | "dark") {
     resolved = sys;
   }
   useThemeStore.setState({ mode, resolved });
-  await invoke("emit_theme_changed", { resolved });
+  await settingService.emitThemeChanged(resolved);
   await emitSettingEventToPeers(SettingEvent.ThemeChanged, {
     action: SettingAction.ThemeChanged,
     value: resolved,
@@ -155,11 +155,9 @@ export async function dispatchConfPatch<G extends ConfGroup>(
   patch: Partial<ConfOf<G>>,
 ) {
   try {
-    await invoke("patch_conf", { group, patch });
+    await settingService.patchConf(group, patch);
     const store = useSettingsStore.getState();
-    if (group === "app") await store.loadAppConf();
-    else if (group === "orb") await store.loadOrbConf();
-    else if (group === "mascot") await store.loadMascotConf();
+    await store[CONF_LOAD_KEY_MAP[group]]();
     await emitSettingEventToPeers(SettingEvent.ConfPatched, {
       action: SettingAction.ConfPatched,
       value: { group, patch },

@@ -1,9 +1,12 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { ChatOrchestrator } from "../services/chatOrchestrator";
 import type {
-  ChatOrchestrator,
   ChatDeltaPayload,
   ChatStreamStartPayload,
-} from "../services/chatOrchestrator";
+  ConversationTerminatedPayload,
+  ConversationCompactFailedPayload,
+  ConversationUnlockedPayload,
+} from "../chat/core/protocol";
 import {
   createChatDeltaCoalescer,
   createSeqDedupFilter,
@@ -11,11 +14,6 @@ import {
   type CoalescibleDelta,
 } from "../chat/core/streamCoalescer";
 import { useChatStore } from "../stores/chatStore";
-import type {
-  ConversationTerminatedPayload,
-  ConversationCompactFailedPayload,
-  ConversationUnlockedPayload,
-} from "../chat/core/chatTypes";
 
 const CHAT_DELTA_EVENT = "chat-delta";
 
@@ -23,6 +21,12 @@ let orchestratorInstance: ChatOrchestrator | null = null;
 
 export function setChatOrchestrator(orchestrator: ChatOrchestrator): void {
   orchestratorInstance = orchestrator;
+}
+
+interface StreamStartIds {
+  conversation_id: string;
+  attempt_id: string;
+  message_id: string;
 }
 
 export function subscribeChatDeltaEvents(): () => void {
@@ -41,11 +45,19 @@ export function subscribeChatDeltaEvents(): () => void {
   };
 
   const seqDedup = createSeqDedupFilter();
+  let streamStartIds: StreamStartIds | null = null;
+  let firstDeltaChecked = false;
 
   track(
     listen("chat-stream-start", (event) => {
       if (disposed) return;
       const payload = event.payload as ChatStreamStartPayload;
+      streamStartIds = {
+        conversation_id: payload.conversation_id,
+        attempt_id: payload.attempt_id,
+        message_id: payload.message_id,
+      };
+      firstDeltaChecked = false;
       const store = useChatStore.getState();
       if (store.currentConversationId === payload.conversation_id) {
         store.setActiveAttemptId(payload.attempt_id, payload.message_id);
@@ -70,11 +82,35 @@ export function subscribeChatDeltaEvents(): () => void {
     seqDedup.accept,
   );
 
+  const lastSeqByAttempt = new Map<string, number>();
+
   track(
     listen(CHAT_DELTA_EVENT, (event) => {
       if (disposed) return;
 
       const payload = event.payload as ChatDeltaPayload;
+
+      if (!firstDeltaChecked && streamStartIds) {
+        firstDeltaChecked = true;
+        const ids = streamStartIds;
+        if (
+          ids.conversation_id !== payload.conversation_id ||
+          ids.attempt_id !== payload.attempt_id ||
+          ids.message_id !== payload.message_id
+        ) {
+          console.error(
+            `[R3] stream-start/delta id mismatch: start=(${ids.conversation_id},${ids.attempt_id},${ids.message_id}) delta=(${payload.conversation_id},${payload.attempt_id},${payload.message_id})`,
+          );
+        }
+      }
+
+      const lastSeq = lastSeqByAttempt.get(payload.attempt_id);
+      if (lastSeq !== undefined && payload.seq <= lastSeq) {
+        console.error(
+          `[R4] seq non-monotonic: attempt_id=${payload.attempt_id} prev_seq=${lastSeq} curr_seq=${payload.seq}`,
+        );
+      }
+      lastSeqByAttempt.set(payload.attempt_id, payload.seq);
 
       if (payload.delta_text) {
         coalescer.push({
@@ -118,6 +154,7 @@ export function subscribeChatDeltaEvents(): () => void {
 
       if (payload.finish_reason) {
         seqDedup.reset();
+        lastSeqByAttempt.delete(payload.attempt_id);
       }
     }),
   );

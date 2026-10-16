@@ -2,7 +2,7 @@ import { type ChatError } from "./chatErrors";
 
 export interface Message {
   id: string;
-  conversation_id: string;
+  conversationId: string;
   role: string;
   content: string;
   reasoning?: string;
@@ -10,8 +10,8 @@ export interface Message {
   tokens: number | null;
   timestamp: number;
   error?: ChatError | null;
-  parent_id?: string | null;
-  is_pinned?: boolean;
+  parentId?: string | null;
+  isPinned?: boolean;
 }
 
 export interface ToolCall {
@@ -23,44 +23,29 @@ export interface ToolCall {
 export interface Conversation {
   id: string;
   title: string;
-  title_source: string;
-  provider_id: string | null;
-  model_id: string;
-  system_prompt: string | null;
-  is_pinned: boolean;
-  sort_order: number;
+  titleSource: string;
+  providerId: string | null;
+  modelId: string;
+  systemPrompt: string | null;
+  isPinned: boolean;
+  sortOrder: number;
   generation: number;
-  created_at: number;
-  updated_at: number;
-  is_full: boolean;
+  createdAt: number;
+  updatedAt: number;
+  isFull: boolean;
 }
 
 export interface TokenUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-  cache_read_tokens?: number;
-  cache_write_tokens?: number;
-  context_window_tokens?: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  contextWindowTokens?: number;
 }
 
 export interface ContextUsage {
-  used_tokens: number;
-  max_tokens: number;
+  usedTokens: number;
+  maxTokens: number;
   percentage: number;
-}
-
-export interface ConversationTerminatedPayload {
-  conversation_id: string;
-  summary: string;
-  is_full: boolean;
-}
-
-export interface ConversationCompactFailedPayload {
-  conversation_id: string;
-  error: string;
-}
-
-export interface ConversationUnlockedPayload {
-  conversation_id: string;
 }

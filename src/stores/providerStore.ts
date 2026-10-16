@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { providerService } from "../services/providerService";
 import {
   dispatchProviderSaved,
   dispatchProviderDeleted,
@@ -107,8 +107,8 @@ export const useProviderStore = create<ProviderState>((set) => ({
   loadProviders: async () => {
     set({ loading: true });
     try {
-      const result = await invoke("list_providers");
-      set({ providers: (result as Provider[]) || [], loading: false });
+      const providers = await providerService.listProviders();
+      set({ providers: providers || [], loading: false });
     } catch (e) {
       console.error("Failed to load providers:", e);
       set({ loading: false });
@@ -124,7 +124,7 @@ export const useProviderStore = create<ProviderState>((set) => ({
   },
 
   fetchModels: async (providerId: string) => {
-    const result = await invoke("list_models_cmd", { providerId });
-    return (result as ModelConfig[]) || [];
+    const models = await providerService.listModels(providerId);
+    return models || [];
   },
 }));

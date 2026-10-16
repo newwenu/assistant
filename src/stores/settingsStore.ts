@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import { DEFAULT_KEYBINDINGS } from "@/settings/core/types/shortcutTypes";
 export type {
   AppConf,
@@ -11,8 +10,9 @@ import type {
   OrbConf,
   MascotConf,
 } from "@/settings/core/types/confTypes";
+import { settingService } from "../services/settingService";
 
-interface SettingsState {
+export interface SettingsState {
   appConf: AppConf | null;
   orbConf: OrbConf | null;
   mascotConf: MascotConf | null;
@@ -32,7 +32,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   loadAppConf: async () => {
     try {
       const prevLang = get().appConf?.language;
-      const conf = await invoke<AppConf>("get_app_conf");
+      const conf = await settingService.getAppConf();
       set({ appConf: conf });
       if (conf.language && conf.language !== prevLang) {
         const { applyLocaleChange } = await import("../main");
@@ -45,7 +45,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadOrbConf: async () => {
     try {
-      const conf = await invoke<OrbConf>("get_orb_conf");
+      const conf = await settingService.getOrbConf();
       set({ orbConf: conf });
     } catch (e) {
       console.error("[settingsStore] loadOrbConf failed:", e);
@@ -54,7 +54,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadMascotConf: async () => {
     try {
-      const conf = await invoke<MascotConf>("get_mascot_conf");
+      const conf = await settingService.getMascotConf();
       set({ mascotConf: conf });
     } catch (e) {
       console.error("[settingsStore] loadMascotConf failed:", e);

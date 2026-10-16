@@ -11,7 +11,7 @@ export interface Provider {
   type: string;
   base_url: string;
   api_key_masked: string;
-  models: string;
+  models: ModelConfig[];
   default_model: string;
   updated_at: number;
 }
@@ -22,6 +22,7 @@ export interface ProviderInput {
   type: string;
   base_url: string;
   api_key: string;
+  api_key_changed?: boolean;
   models: string;
   default_model: string;
 }

@@ -63,7 +63,7 @@ export const ConversationListItem: React.FC<ConversationListItemProps> =
         {
           key: "pin",
           icon: <PushpinOutlined />,
-          label: conversation.is_pinned
+          label: conversation.isPinned
             ? t("common.actions.unpin")
             : t("common.actions.pin"),
         },
@@ -127,10 +127,10 @@ export const ConversationListItem: React.FC<ConversationListItemProps> =
                   className={css.title}
                   style={{ display: "block" }}
                 >
-                  {conversation.is_pinned && (
+                  {conversation.isPinned && (
                     <PushpinOutlined className={css.pinIcon} />
                   )}
-                  {conversation.is_full && (
+                  {conversation.isFull && (
                     <LockOutlined
                       className={css.pinIcon}
                       style={{ color: "var(--ant-color-warning)" }}
@@ -144,7 +144,7 @@ export const ConversationListItem: React.FC<ConversationListItemProps> =
                   style={{ display: "block" }}
                 >
                   <ClockCircleOutlined className={css.timeIcon} />
-                  {formatRelativeTime(conversation.updated_at)}
+                  {formatRelativeTime(conversation.updatedAt)}
                 </Typography.Text>
               </>
             )}

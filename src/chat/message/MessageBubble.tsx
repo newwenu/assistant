@@ -3,7 +3,7 @@ import { Typography } from "antd";
 import { CompressOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { Message, ToolCall } from "../../stores/chatStore";
-import type { RetryNotification } from "../../services/chatOrchestrator";
+import type { RetryNotificationRow } from "../../chat/core/protocol";
 import { ErrorBlock } from "../blocks/ErrorBlock";
 import { getErrorDisplay, ChatErrorCode } from "../core/chatErrors";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
@@ -17,7 +17,7 @@ interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
   isReasoningStreaming?: boolean;
-  retryStatus?: RetryNotification | null;
+  retryStatus?: RetryNotificationRow | null;
   compact?: boolean;
   onDelete?: (id: string) => void;
   onEdit?: (id: string, newContent: string) => void;

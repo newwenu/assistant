@@ -18,12 +18,8 @@ export const CompactBanner: React.FC = () => {
     if (provider.length === 0) return;
     const pid = provider[0].id;
     let modelId = provider[0].default_model || "";
-    try {
-      const models = JSON.parse(provider[0].models || "[]") as { id: string }[];
-      if (models.length > 0 && !modelId) modelId = models[0].id;
-    } catch {
-      /* ignore */
-    }
+    if (provider[0].models.length > 0 && !modelId)
+      modelId = provider[0].models[0].id;
     void chat.createConversation(pid, modelId);
   };
 

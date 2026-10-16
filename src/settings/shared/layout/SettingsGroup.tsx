@@ -9,6 +9,7 @@ import type {
 import {
   getDefinitionsByGroup,
   INTERMEDIATE_TYPES,
+  CONF_KEY_MAP,
 } from "../../core/field/fieldRegistry";
 import { runSideEffects } from "../../core/sideEffectRegistry";
 import { SettingField } from "./SettingField";
@@ -29,11 +30,8 @@ interface SettingsGroupProps {
 const DEFAULT_SAVE_MESSAGE_KEY = "common.actions.saved";
 
 function useConfByGroup(group: ConfGroup): Record<string, unknown> | null {
-  const conf = useSettingsStore((s) => {
-    if (group === "app") return s.appConf;
-    if (group === "orb") return s.orbConf;
-    return s.mascotConf;
-  });
+  const confKey = CONF_KEY_MAP[group];
+  const conf = useSettingsStore((s) => s[confKey]);
   return toConfRecord(conf);
 }
 

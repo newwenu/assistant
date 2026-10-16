@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { historyService } from "../../services/historyService";
 import type { Message } from "../../chat/core/chatTypes";
 import { MESSAGES_PAGE_SIZE } from "../../config/constants";
 
@@ -34,17 +34,13 @@ export function useHistoryRefresh(
   const refreshMessages = useCallback(async () => {
     if (!selectedId) return;
     try {
-      const result = await invoke("get_conversation_paginated", {
-        id: selectedId,
-        limit: MESSAGES_PAGE_SIZE,
-        beforeTimestamp: null,
-      });
-      const detail = result as {
-        messages: Message[];
-        total_count: number;
-      } | null;
+      const detail = await historyService.getConversationPaginated(
+        selectedId,
+        MESSAGES_PAGE_SIZE,
+        null,
+      );
       if (detail) {
-        onMessagesRefreshed(detail.messages || [], detail.total_count);
+        onMessagesRefreshed(detail.messages || [], detail.totalCount);
       }
     } catch (e) {
       console.error("Failed to refresh messages:", e);

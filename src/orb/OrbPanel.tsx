@@ -29,7 +29,7 @@ import {
   isPointInRect,
 } from "./OrbCoord";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
-import { invoke } from "@tauri-apps/api/core";
+import { orbService } from "../services/orbService";
 
 export const OrbPanel: React.FC = () => {
   const { expand, collapse } = useOrbExpand();
@@ -117,7 +117,7 @@ export const OrbPanel: React.FC = () => {
   const isTruncated = filtered.length > ORB_HISTORY_LIST_LIMIT;
 
   const handleOpenHistoryInMain = useCallback(() => {
-    void invoke("open_main_window_and_navigate", { route: "/history" });
+    void orbService.openMainWindowAndNavigate("/history");
     setHistoryOpen(false);
     void collapse();
   }, [collapse]);
@@ -167,7 +167,7 @@ export const OrbPanel: React.FC = () => {
               flexShrink: 0,
             }}
           >
-            {formatRelativeTime(conv.updated_at)}
+            {formatRelativeTime(conv.updatedAt)}
           </span>
         </div>
       ),

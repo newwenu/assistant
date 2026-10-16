@@ -1,16 +1,10 @@
 import { useState, useCallback } from "react";
 import { Button, Space, Input, message } from "antd";
-import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
+import { settingService } from "../../../services/settingService";
 import type { SettingFieldProps } from "../../core/types/fieldSchema";
-
-interface InstallAssetResult {
-  installed_path: string;
-  bytes: number;
-  version: number;
-}
 
 export function AssetPickerField({
   schema,
@@ -30,10 +24,10 @@ export function AssetPickerField({
     });
     if (!selected || typeof selected !== "string") return;
     try {
-      const result = await invoke<InstallAssetResult>("install_mascot_asset", {
-        assetType: config.assetType,
-        filePath: selected,
-      });
+      const result = await settingService.installMascotAsset(
+        config.assetType,
+        selected,
+      );
       const assetUrl = `${convertFileSrc(result.installed_path)}?v=${result.version}`;
       onChange(assetUrl);
       setUrlInput(assetUrl);
@@ -54,9 +48,7 @@ export function AssetPickerField({
   const handleReset = useCallback(async () => {
     if (!config) return;
     try {
-      await invoke("uninstall_mascot_asset", {
-        assetType: config.assetType,
-      });
+      await settingService.uninstallMascotAsset(config.assetType);
       onChange(null);
       setUrlInput("");
       messageApi.success(t("settings.asset_picker.reset_success"));

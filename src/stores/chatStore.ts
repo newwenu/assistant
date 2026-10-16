@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import { chatService } from "../services/chatService";
+import { providerService } from "../services/providerService";
 import {
   createChatOrchestrator,
   type ChatStatePort,
   type ChatEnvPort,
   type ChatOrchestrator,
-  type RetryNotification,
 } from "../services/chatOrchestrator";
+import type { RetryNotificationRow } from "../chat/core/protocol";
 import {
   MESSAGES_PAGE_SIZE,
   CONTEXT_WARN_THRESHOLD,
@@ -29,7 +30,6 @@ export type {
 import { PersistQueue } from "../utils/persistQueue";
 import { useAgentModeStore } from "./agentModeStore";
 import { useProviderStore } from "./providerStore";
-import type { ModelConfig } from "../settings/provider/types";
 
 const persistQueue = new PersistQueue();
 
@@ -42,14 +42,10 @@ function resolveContextWindowTokens(
     .getState()
     .providers.find((p) => p.id === providerId);
   if (!provider) return undefined;
-  try {
-    const models = JSON.parse(provider.models) as ModelConfig[];
-    const model = models.find((m) => m.id === modelId);
-    if (model && model.context_window && model.context_window > 0) {
-      return model.context_window;
-    }
-  } catch {
-    // ignore parse errors
+  const models = provider.models;
+  const model = models.find((m) => m.id === modelId);
+  if (model && model.context_window && model.context_window > 0) {
+    return model.context_window;
   }
   return undefined;
 }
@@ -71,7 +67,7 @@ interface ChatState {
   isFull: boolean;
   compactSummary: string | null;
   compactError: string | null;
-  retryStatus: RetryNotification | null;
+  retryStatus: RetryNotificationRow | null;
 
   loadConversations: (silent?: boolean) => Promise<void>;
   createConversation: (providerId: string, modelId: string) => Promise<string>;
@@ -106,7 +102,7 @@ interface ChatState {
 
 let _orchestrator: ChatOrchestrator | null = null;
 
-export const useChatStore = create<ChatState>((set, get) => {
+export const useChatStore = create<ChatState>()((set, get): ChatState => {
   const statePort: ChatStatePort = {
     beginSend: (messages: Message[], assistantMsgId: string) => {
       set({
@@ -114,7 +110,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         isStreaming: true,
         streamingContent: "",
         streamingMessageId: assistantMsgId,
-        contextUsage: { used_tokens: 0, max_tokens: 128_000, percentage: 0 },
+        contextUsage: { usedTokens: 0, maxTokens: 128_000, percentage: 0 },
         retryStatus: null,
       });
     },
@@ -197,17 +193,17 @@ export const useChatStore = create<ChatState>((set, get) => {
       const convId = state.currentConversationId;
       const newContextUsage = usage
         ? {
-            used_tokens: usage.prompt_tokens,
-            max_tokens: usage.context_window_tokens || 128_000,
+            usedTokens: usage.promptTokens,
+            maxTokens: usage.contextWindowTokens || 128_000,
             percentage:
-              usage.context_window_tokens && usage.context_window_tokens > 0
-                ? usage.prompt_tokens / usage.context_window_tokens
-                : usage.prompt_tokens / 128_000,
+              usage.contextWindowTokens && usage.contextWindowTokens > 0
+                ? usage.promptTokens / usage.contextWindowTokens
+                : usage.promptTokens / 128_000,
           }
         : state.contextUsage;
 
       const msgTokens = usage
-        ? usage.prompt_tokens + usage.completion_tokens
+        ? usage.promptTokens + usage.completionTokens
         : null;
 
       set({
@@ -242,16 +238,16 @@ export const useChatStore = create<ChatState>((set, get) => {
           .getConversationTokenUsage(
             convId,
             resolveContextWindowTokens(
-              conv?.model_id ?? "",
-              conv?.provider_id ?? null,
+              conv?.modelId ?? "",
+              conv?.providerId ?? null,
             ),
           )
           .then((summary) => {
             if (get().currentConversationId === convId) {
               set({
                 contextUsage: {
-                  used_tokens: summary.total_tokens,
-                  max_tokens: summary.context_window_tokens,
+                  usedTokens: summary.totalTokens,
+                  maxTokens: summary.contextWindowTokens,
                   percentage: summary.percentage,
                 },
               });
@@ -285,7 +281,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         );
       }
     },
-    setRetryStatus: (retry: RetryNotification | null) => {
+    setRetryStatus: (retry: RetryNotificationRow | null) => {
       set({ retryStatus: retry });
     },
   };
@@ -324,7 +320,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     isLoadingMoreMessages: false,
     isLoadingConversations: false,
     totalMessageCount: 0,
-    contextUsage: { used_tokens: 0, max_tokens: 128_000, percentage: 0 },
+    contextUsage: { usedTokens: 0, maxTokens: 128_000, percentage: 0 },
     isFull: false,
     compactSummary: null,
     compactError: null,
@@ -351,7 +347,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         return;
       }
       try {
-        const provList = await chatService.listProviders();
+        const provList = await providerService.listProviders();
         if (provList.length === 0) return;
         const p = provList[0];
         const id = await chatService.createConversation(
@@ -406,15 +402,14 @@ export const useChatStore = create<ChatState>((set, get) => {
             streamingMessageId: null,
             activeAttemptId: null,
             isReasoningStreaming: false,
-            hasMoreMessages:
-              (detail.messages || []).length < detail.total_count,
-            totalMessageCount: detail.total_count,
+            hasMoreMessages: (detail.messages || []).length < detail.totalCount,
+            totalMessageCount: detail.totalCount,
             contextUsage: {
-              used_tokens: 0,
-              max_tokens: 128_000,
+              usedTokens: 0,
+              maxTokens: 128_000,
               percentage: 0,
             },
-            isFull: detail.conversation?.is_full ?? false,
+            isFull: detail.conversation?.isFull ?? false,
             compactSummary: null,
             compactError: null,
           });
@@ -422,16 +417,16 @@ export const useChatStore = create<ChatState>((set, get) => {
             .getConversationTokenUsage(
               id,
               resolveContextWindowTokens(
-                detail.conversation.model_id,
-                detail.conversation.provider_id,
+                detail.conversation.modelId,
+                detail.conversation.providerId,
               ),
             )
             .then((summary) => {
               if (get().currentConversationId === id) {
                 set({
                   contextUsage: {
-                    used_tokens: summary.total_tokens,
-                    max_tokens: summary.context_window_tokens,
+                    usedTokens: summary.totalTokens,
+                    maxTokens: summary.contextWindowTokens,
                     percentage: summary.percentage,
                   },
                 });
@@ -496,6 +491,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     sendMessage: (content: string) => orchestrator.send(content),
 
     setActiveAttemptId: statePort.setActiveAttemptId,
+    clearActiveAttemptId: statePort.clearActiveAttemptId,
 
     cancelStream: () => orchestrator.cancel(),
 
@@ -678,7 +674,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       const summaryMsgId = `temp-compact-${Date.now()}`;
       const summaryMsg: Message = {
         id: summaryMsgId,
-        conversation_id: convId,
+        conversationId: convId,
         role: "compact_summary",
         content: "",
         tokens: null,
@@ -726,7 +722,6 @@ export {
   type ChatOrchestrator,
   type ChatStatePort,
   type ChatEnvPort,
-  type ChatDeltaPayload,
 } from "../services/chatOrchestrator";
 
 export function getChatOrchestrator(): ChatOrchestrator | null {

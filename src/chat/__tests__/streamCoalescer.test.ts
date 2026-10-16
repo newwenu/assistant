@@ -10,6 +10,18 @@ interface TestDelta extends CoalescibleDelta {
   delta: string;
 }
 
+function mkDelta(
+  overrides: Partial<TestDelta> & Pick<TestDelta, "delta">,
+): TestDelta {
+  return {
+    conversation_id: "c1",
+    attempt_id: "a1",
+    message_id: "m1",
+    seq: 0,
+    ...overrides,
+  };
+}
+
 function immediateScheduler(flush: () => void): () => void {
   flush();
   return () => {};
@@ -45,18 +57,10 @@ describe("createChatDeltaCoalescer", () => {
       immediateScheduler,
     );
 
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "hello",
-    });
+    coalescer.push(mkDelta({ delta: "hello" }));
 
     expect(deliver).toHaveBeenCalledTimes(1);
-    expect(deliver).toHaveBeenCalledWith({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "hello",
-    });
+    expect(deliver).toHaveBeenCalledWith(mkDelta({ delta: "hello" }));
   });
 
   it("coalesces consecutive deltas with same conversation and message id", () => {
@@ -64,30 +68,14 @@ describe("createChatDeltaCoalescer", () => {
     const { schedule, trigger } = manualScheduler();
     const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
 
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "hel",
-    });
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "lo",
-    });
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: " world",
-    });
+    coalescer.push(mkDelta({ delta: "hel" }));
+    coalescer.push(mkDelta({ delta: "lo" }));
+    coalescer.push(mkDelta({ delta: " world" }));
 
     trigger();
 
     expect(deliver).toHaveBeenCalledTimes(1);
-    expect(deliver).toHaveBeenCalledWith({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "hello world",
-    });
+    expect(deliver).toHaveBeenCalledWith(mkDelta({ delta: "hello world" }));
   });
 
   it("does not coalesce deltas with different message ids", () => {
@@ -95,30 +83,17 @@ describe("createChatDeltaCoalescer", () => {
     const { schedule, trigger } = manualScheduler();
     const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
 
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "hello",
-    });
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m2",
-      delta: "world",
-    });
+    coalescer.push(mkDelta({ delta: "hello" }));
+    coalescer.push(mkDelta({ message_id: "m2", delta: "world" }));
 
     trigger();
 
     expect(deliver).toHaveBeenCalledTimes(2);
-    expect(deliver).toHaveBeenNthCalledWith(1, {
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "hello",
-    });
-    expect(deliver).toHaveBeenNthCalledWith(2, {
-      conversation_id: "c1",
-      message_id: "m2",
-      delta: "world",
-    });
+    expect(deliver).toHaveBeenNthCalledWith(1, mkDelta({ delta: "hello" }));
+    expect(deliver).toHaveBeenNthCalledWith(
+      2,
+      mkDelta({ message_id: "m2", delta: "world" }),
+    );
   });
 
   it("does not coalesce deltas with different conversation ids", () => {
@@ -126,16 +101,8 @@ describe("createChatDeltaCoalescer", () => {
     const { schedule, trigger } = manualScheduler();
     const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
 
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "hello",
-    });
-    coalescer.push({
-      conversation_id: "c2",
-      message_id: "m1",
-      delta: "world",
-    });
+    coalescer.push(mkDelta({ delta: "hello" }));
+    coalescer.push(mkDelta({ conversation_id: "c2", delta: "world" }));
 
     trigger();
 
@@ -147,25 +114,13 @@ describe("createChatDeltaCoalescer", () => {
     const { schedule } = manualScheduler();
     const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
 
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "a",
-    });
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "b",
-    });
+    coalescer.push(mkDelta({ delta: "a" }));
+    coalescer.push(mkDelta({ delta: "b" }));
 
     coalescer.flush();
 
     expect(deliver).toHaveBeenCalledTimes(1);
-    expect(deliver).toHaveBeenCalledWith({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "ab",
-    });
+    expect(deliver).toHaveBeenCalledWith(mkDelta({ delta: "ab" }));
   });
 
   it("dispose flushes remaining events", () => {
@@ -173,11 +128,7 @@ describe("createChatDeltaCoalescer", () => {
     const { schedule } = manualScheduler();
     const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
 
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "data",
-    });
+    coalescer.push(mkDelta({ delta: "data" }));
 
     coalescer.dispose();
 
@@ -189,31 +140,15 @@ describe("createChatDeltaCoalescer", () => {
     const { schedule, trigger } = manualScheduler();
     const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
 
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "first",
-    });
+    coalescer.push(mkDelta({ delta: "first" }));
     coalescer.flush();
 
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "second",
-    });
+    coalescer.push(mkDelta({ delta: "second" }));
     trigger();
 
     expect(deliver).toHaveBeenCalledTimes(2);
-    expect(deliver).toHaveBeenNthCalledWith(1, {
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "first",
-    });
-    expect(deliver).toHaveBeenNthCalledWith(2, {
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "second",
-    });
+    expect(deliver).toHaveBeenNthCalledWith(1, mkDelta({ delta: "first" }));
+    expect(deliver).toHaveBeenNthCalledWith(2, mkDelta({ delta: "second" }));
   });
 
   it("coalesces across message boundary correctly", () => {
@@ -221,40 +156,19 @@ describe("createChatDeltaCoalescer", () => {
     const { schedule, trigger } = manualScheduler();
     const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
 
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "a",
-    });
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "b",
-    });
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m2",
-      delta: "c",
-    });
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m2",
-      delta: "d",
-    });
+    coalescer.push(mkDelta({ delta: "a" }));
+    coalescer.push(mkDelta({ delta: "b" }));
+    coalescer.push(mkDelta({ message_id: "m2", delta: "c" }));
+    coalescer.push(mkDelta({ message_id: "m2", delta: "d" }));
 
     trigger();
 
     expect(deliver).toHaveBeenCalledTimes(2);
-    expect(deliver).toHaveBeenNthCalledWith(1, {
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "ab",
-    });
-    expect(deliver).toHaveBeenNthCalledWith(2, {
-      conversation_id: "c1",
-      message_id: "m2",
-      delta: "cd",
-    });
+    expect(deliver).toHaveBeenNthCalledWith(1, mkDelta({ delta: "ab" }));
+    expect(deliver).toHaveBeenNthCalledWith(
+      2,
+      mkDelta({ message_id: "m2", delta: "cd" }),
+    );
   });
 
   it("does nothing on flush with empty queue", () => {
@@ -306,11 +220,7 @@ describe("createChatDeltaCoalescer with accept", () => {
       accept,
     );
 
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "dropped",
-    });
+    coalescer.push(mkDelta({ delta: "dropped" }));
 
     expect(accept).toHaveBeenCalledTimes(1);
     expect(deliver).not.toHaveBeenCalled();
@@ -325,155 +235,63 @@ describe("createChatDeltaCoalescer with accept", () => {
       accept,
     );
 
-    coalescer.push({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "kept",
-    });
+    coalescer.push(mkDelta({ delta: "kept" }));
 
     expect(deliver).toHaveBeenCalledTimes(1);
-    expect(deliver).toHaveBeenCalledWith({
-      conversation_id: "c1",
-      message_id: "m1",
-      delta: "kept",
-    });
+    expect(deliver).toHaveBeenCalledWith(mkDelta({ delta: "kept" }));
   });
 });
 
 describe("createSeqDedupFilter", () => {
   it("accepts deltas without seq", () => {
     const { accept } = createSeqDedupFilter();
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        delta: "a",
-      }),
-    ).toBe(true);
+    expect(accept(mkDelta({ delta: "a" }))).toBe(true);
   });
 
   it("accepts first delta with seq", () => {
     const { accept } = createSeqDedupFilter();
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        seq: 1,
-        delta: "a",
-      }),
-    ).toBe(true);
+    expect(accept(mkDelta({ seq: 1, delta: "a" }))).toBe(true);
   });
 
   it("rejects replayed delta with same or lower seq", () => {
     const { accept } = createSeqDedupFilter();
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        seq: 3,
-        delta: "a",
-      }),
-    ).toBe(true);
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        seq: 3,
-        delta: "a",
-      }),
-    ).toBe(false);
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        seq: 2,
-        delta: "a",
-      }),
-    ).toBe(false);
+    expect(accept(mkDelta({ seq: 3, delta: "a" }))).toBe(true);
+    expect(accept(mkDelta({ seq: 3, delta: "a" }))).toBe(false);
+    expect(accept(mkDelta({ seq: 2, delta: "a" }))).toBe(false);
   });
 
   it("accepts delta with higher seq", () => {
     const { accept } = createSeqDedupFilter();
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        seq: 1,
-        delta: "a",
-      }),
-    ).toBe(true);
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        seq: 2,
-        delta: "b",
-      }),
-    ).toBe(true);
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        seq: 3,
-        delta: "c",
-      }),
-    ).toBe(true);
+    expect(accept(mkDelta({ seq: 1, delta: "a" }))).toBe(true);
+    expect(accept(mkDelta({ seq: 2, delta: "b" }))).toBe(true);
+    expect(accept(mkDelta({ seq: 3, delta: "c" }))).toBe(true);
   });
 
-  it("tracks seq per conversation+message pair", () => {
+  it("tracks seq per conversation+attempt pair", () => {
     const { accept } = createSeqDedupFilter();
+    expect(accept(mkDelta({ seq: 1, delta: "a" }))).toBe(true);
     expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        seq: 1,
-        delta: "a",
-      }),
+      accept(
+        mkDelta({ attempt_id: "a2", message_id: "m2", seq: 1, delta: "b" }),
+      ),
     ).toBe(true);
+    expect(accept(mkDelta({ seq: 1, delta: "replay" }))).toBe(false);
     expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m2",
-        seq: 1,
-        delta: "b",
-      }),
-    ).toBe(true);
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        seq: 1,
-        delta: "replay",
-      }),
-    ).toBe(false);
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m2",
-        seq: 1,
-        delta: "replay",
-      }),
+      accept(
+        mkDelta({
+          attempt_id: "a2",
+          message_id: "m2",
+          seq: 1,
+          delta: "replay",
+        }),
+      ),
     ).toBe(false);
   });
 
   it("reset clears all tracked seqs", () => {
     const { accept, reset } = createSeqDedupFilter();
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        seq: 1,
-        delta: "a",
-      }),
-    ).toBe(true);
+    expect(accept(mkDelta({ seq: 1, delta: "a" }))).toBe(true);
     reset();
-    expect(
-      accept({
-        conversation_id: "c1",
-        message_id: "m1",
-        seq: 1,
-        delta: "a",
-      }),
-    ).toBe(true);
+    expect(accept(mkDelta({ seq: 1, delta: "a" }))).toBe(true);
   });
 });

@@ -25,7 +25,21 @@ export type {
   FieldActionCallbacks,
 };
 
-export type ConfGroup = "app" | "orb" | "mascot";
+export const CONF_KEY_MAP = {
+  app: "appConf",
+  orb: "orbConf",
+  mascot: "mascotConf",
+} as const;
+
+export const CONF_LOAD_KEY_MAP = {
+  app: "loadAppConf",
+  orb: "loadOrbConf",
+  mascot: "loadMascotConf",
+} as const;
+
+export type ConfGroup = keyof typeof CONF_KEY_MAP;
+export type ConfKey = (typeof CONF_KEY_MAP)[ConfGroup];
+export type ConfLoadKey = (typeof CONF_LOAD_KEY_MAP)[ConfGroup];
 
 export interface SettingSectionDef {
   id: string;

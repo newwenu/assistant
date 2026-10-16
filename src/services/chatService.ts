@@ -1,31 +1,30 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Conversation, Message } from "../chat/core/chatTypes";
+import {
+  invokeList,
+  invokeSingle,
+  rowToConversation,
+  rowToConversationDetail,
+} from "../chat/core/protocolAdapter";
 
 export interface ConversationDetail {
   conversation: Conversation;
   messages: Message[];
-  total_count: number;
+  totalCount: number;
 }
 
 export interface TokenUsageSummary {
-  total_tokens: number;
-  context_window_tokens: number;
+  totalTokens: number;
+  contextWindowTokens: number;
   percentage: number;
-}
-
-export interface ProviderBrief {
-  id: string;
-  default_model: string;
 }
 
 export const chatService = {
   listConversations: (): Promise<Conversation[]> =>
-    invoke("list_conversations", { providerId: null }).then(
-      (r) => (r as Conversation[]) || [],
+    invokeList(
+      invoke("list_conversations", { providerId: null }),
+      rowToConversation,
     ),
-
-  listProviders: (): Promise<ProviderBrief[]> =>
-    invoke("list_providers").then((r) => (r as ProviderBrief[]) || []),
 
   createConversation: (
     providerId: string,
@@ -39,8 +38,9 @@ export const chatService = {
     limit: number,
     beforeTimestamp: number | null,
   ): Promise<ConversationDetail | null> =>
-    invoke("get_conversation_paginated", { id, limit, beforeTimestamp }).then(
-      (r) => r as ConversationDetail | null,
+    invokeSingle(
+      invoke("get_conversation_paginated", { id, limit, beforeTimestamp }),
+      rowToConversationDetail,
     ),
 
   getConversationTokenUsage: (
@@ -63,6 +63,9 @@ export const chatService = {
 
   updateConversationModel: (id: string, modelId: string): Promise<void> =>
     invoke("update_conversation_model", { id, modelId }),
+
+  updateConversationProvider: (id: string, providerId: string): Promise<void> =>
+    invoke("update_conversation_provider", { id, providerId }),
 
   sendChatMessage: (
     conversationId: string,

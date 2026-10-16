@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { toolService } from "../services/toolService";
 import Fuse from "fuse.js";
 import i18n, { translateKey } from "@/i18n";
 import { tools, toolsByCategory } from "../tools/registry";
@@ -58,7 +58,7 @@ export const useToolStore = create<ToolState>((set) => ({
 
   loadFavorites: async () => {
     try {
-      const ids = await invoke<string[]>("get_favorite_tools");
+      const ids = await toolService.getFavoriteTools();
       set({ favoriteToolIds: ids });
     } catch {
       const stored = localStorage.getItem("favoriteToolIds");
@@ -70,7 +70,7 @@ export const useToolStore = create<ToolState>((set) => ({
 
   toggleFavorite: async (toolId: string) => {
     try {
-      const isFav = await invoke<boolean>("toggle_tool_favorite", { toolId });
+      const isFav = await toolService.toggleFavorite(toolId);
       set((s) => ({
         favoriteToolIds: isFav
           ? [...s.favoriteToolIds, toolId]
@@ -91,7 +91,7 @@ export const useToolStore = create<ToolState>((set) => ({
   reorderFavorites: async (toolIds: string[]) => {
     set({ favoriteToolIds: toolIds });
     try {
-      await invoke("set_favorite_tools_order", { toolIds });
+      await toolService.reorderFavorites(toolIds);
     } catch {
       localStorage.setItem("favoriteToolIds", JSON.stringify(toolIds));
     }
@@ -99,9 +99,7 @@ export const useToolStore = create<ToolState>((set) => ({
 
   loadRecentTools: async (limit?: number) => {
     try {
-      const ids = await invoke<string[]>("get_recent_tools", {
-        limit: limit ?? RECENT_TOOLS_LIMIT,
-      });
+      const ids = await toolService.getRecentTools(limit ?? RECENT_TOOLS_LIMIT);
       set({ recentTools: ids });
     } catch {
       // fallback: recentTools already updated optimistically
@@ -113,7 +111,7 @@ export const useToolStore = create<ToolState>((set) => ({
       recentTools: [toolId, ...s.recentTools.filter((id) => id !== toolId)],
     }));
     try {
-      await invoke("record_tool_usage", { toolId });
+      await toolService.recordUsage(toolId);
     } catch {
       // fallback: usage recorded optimistically in state
     }
