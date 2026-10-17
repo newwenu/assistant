@@ -14,6 +14,7 @@ use crate::stream::timeout::{StreamTimeoutController, StreamTimeoutStage};
 use crate::tool_call_accumulator::{ToolCallAccumulator, ToolCallBoundary, ToolCallStreamKey};
 use crate::trace;
 use crate::types::chat_delta::unified_responses_into_chat_deltas;
+use tokio_util::sync::CancellationToken;
 
 use super::message_converter;
 use super::GeminiAdapter;
@@ -24,6 +25,7 @@ pub(crate) fn chat_completion_stream(
     messages: &[ChatMessage],
     model: &str,
     options: &ChatOptions,
+    cancel_token: CancellationToken,
 ) -> Result<ChatStream, ProviderError> {
     let api_key = adapter.decrypt_api_key()?;
     let base_url = adapter.base_url().to_string();
@@ -134,8 +136,14 @@ pub(crate) fn chat_completion_stream(
                     if err.is_retryable() && attempt < retry_config.max_attempts {
                         let delay = retry_config.delay_ms(attempt, &err);
                         warn!("Attempt {} failed, retrying in {}ms: {}", attempt + 1, delay, err);
-                        yield Ok(ChatDelta::retry_notification(attempt, retry_config.max_attempts, delay, &err));
-                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                        yield Ok(ChatDelta::retry_notification_with_code(attempt, retry_config.max_attempts, delay, &err, err.code()));
+                        tokio::select! {
+                            _ = tokio::time::sleep(Duration::from_millis(delay)) => {},
+                            _ = cancel_token.cancelled() => {
+                                yield Err(ProviderError::Cancelled);
+                                return;
+                            }
+                        };
                         attempt += 1;
                         continue 'retry;
                     }
@@ -147,17 +155,23 @@ pub(crate) fn chat_completion_stream(
             if !resp.status().is_success() {
                 let status = resp.status();
                 let text = resp.text().await.unwrap_or_default();
-                let err = classify_http_error(status, &text);
-                trace::log_error(attempt, &err.to_string());
-                if err.is_retryable() && attempt < retry_config.max_attempts {
-                    let delay = retry_config.delay_ms(attempt, &err);
+                let classified = classify_http_error(status, &text);
+                trace::log_error(attempt, &classified.error.to_string());
+                if classified.error.is_retryable() && attempt < retry_config.max_attempts {
+                    let delay = retry_config.delay_ms(attempt, &classified.error);
                     warn!("Attempt {} failed (HTTP {}), retrying in {}ms", attempt + 1, status, delay);
-                    yield Ok(ChatDelta::retry_http_notification(attempt, retry_config.max_attempts, delay, status));
-                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    yield Ok(ChatDelta::retry_http_notification_with_code(attempt, retry_config.max_attempts, delay, status, classified.error.code()));
+                    tokio::select! {
+                        _ = tokio::time::sleep(Duration::from_millis(delay)) => {},
+                        _ = cancel_token.cancelled() => {
+                            yield Err(ProviderError::Cancelled);
+                            return;
+                        }
+                    };
                     attempt += 1;
                     continue 'retry;
                 }
-                yield Err(err);
+                yield Err(classified.error);
                 return;
             }
 
@@ -186,8 +200,14 @@ pub(crate) fn chat_completion_stream(
                             if attempt < retry_config.max_attempts {
                                 let delay = retry_config.delay_ms(attempt, &err);
                                 warn!("First token timeout, retrying in {}ms", delay);
-                                yield Ok(ChatDelta::retry_notification(attempt, retry_config.max_attempts, delay, &err));
-                                tokio::time::sleep(Duration::from_millis(delay)).await;
+                                yield Ok(ChatDelta::retry_notification_with_code(attempt, retry_config.max_attempts, delay, &err, err.code()));
+                                tokio::select! {
+                                    _ = tokio::time::sleep(Duration::from_millis(delay)) => {},
+                                    _ = cancel_token.cancelled() => {
+                                        yield Err(ProviderError::Cancelled);
+                                        return;
+                                    }
+                                };
                                 attempt += 1;
                                 continue 'retry;
                             }
@@ -214,8 +234,14 @@ pub(crate) fn chat_completion_stream(
                         if !timeout_ctrl.first_token_received() && err.is_retryable() && attempt < retry_config.max_attempts {
                             let delay = retry_config.delay_ms(attempt, &err);
                             warn!("SSE stream error, retrying in {}ms: {}", delay, err);
-                            yield Ok(ChatDelta::retry_notification(attempt, retry_config.max_attempts, delay, &err));
-                            tokio::time::sleep(Duration::from_millis(delay)).await;
+                            yield Ok(ChatDelta::retry_notification_with_code(attempt, retry_config.max_attempts, delay, &err, err.code()));
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_millis(delay)) => {},
+                                _ = cancel_token.cancelled() => {
+                                    yield Err(ProviderError::Cancelled);
+                                    return;
+                                }
+                            };
                             attempt += 1;
                             continue 'retry;
                         }

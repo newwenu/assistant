@@ -24,7 +24,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_sql::Builder::new().build())
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             window::show_or_create_main(app);
@@ -99,6 +98,7 @@ pub fn run() {
             cmd::uninstall_mascot_asset,
             cmd::manual_compact_conversation,
             cmd::unlock_conversation,
+            cmd::os_tool_exec,
         ])
         .on_menu_event(|app, event| match event.id.as_ref() {
             "orb_new_chat" => {

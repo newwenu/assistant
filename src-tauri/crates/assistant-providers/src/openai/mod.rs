@@ -89,12 +89,13 @@ impl BaseProviderAdapter for OpenAIAdapter {
         messages: &[crate::base::ChatMessage],
         model: &str,
         options: &crate::base::ChatOptions,
+        cancel_token: tokio_util::sync::CancellationToken,
     ) -> Result<ChatStream, ProviderError> {
         match self.config.kind {
             ProviderKind::OpenAIResponses => {
-                responses_stream::responses_stream(self, messages, model, options)
+                responses_stream::responses_stream(self, messages, model, options, cancel_token)
             }
-            _ => chat::chat_completion_stream(self, messages, model, options),
+            _ => chat::chat_completion_stream(self, messages, model, options, cancel_token),
         }
     }
 

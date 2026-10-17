@@ -106,12 +106,12 @@
 
 ## 阶段 I — P6：Rust 端
 
-- [ ] I1. `assistant-i18n` crate 升级为 `rust_i18n` 驱动
-- [ ] I2. Rust locale JSON 扩展至与前端同构的领域结构
-- [ ] I3. `tray.rs` — 菜单项文本改为 `assistant_i18n::text()` 调用
-- [ ] I4. `window.rs` — Orb 右键菜单文本改为 `assistant_i18n::text()` 调用
-- [ ] I5. `cmd/conversation.rs` + `cmd/chat.rs` — 错误消息翻译
-- [ ] I6. `agent_modes.rs` — 内置模式 seed 改为稳定 key，显示层翻译
+- [x] I1. `assistant-i18n` crate 升级为 `rust_i18n` 驱动
+- [x] I2. Rust locale JSON 扩展至与前端同构的领域结构
+- [x] I3. `tray.rs` — 菜单项文本改为 `assistant_i18n::text()` 调用
+- [x] I4. `window.rs` — Orb 右键菜单文本改为 `assistant_i18n::text()` 调用
+- [x] I5. `cmd/conversation.rs` + `cmd/chat.rs` — 错误消息翻译
+- [x] I6. `agent_modes.rs` — 内置模式 seed 改为稳定 key，显示层翻译
 
 ---
 

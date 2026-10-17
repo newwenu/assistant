@@ -41,11 +41,30 @@ pub(crate) fn extract_error_detail(body: &str) -> String {
     body.chars().take(300).collect()
 }
 
-pub(crate) fn classify_http_error(status: reqwest::StatusCode, body: &str) -> ProviderError {
+#[allow(dead_code)]
+pub(crate) struct ClassifiedError {
+    pub error: ProviderError,
+    pub http_status: u16,
+    pub provider_code: Option<String>,
+}
+
+fn extract_provider_code(body: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| {
+            v.get("error")
+                .and_then(|e| e.get("code"))
+                .and_then(|c| c.as_str())
+                .map(String::from)
+        })
+}
+
+pub(crate) fn classify_http_error(status: reqwest::StatusCode, body: &str) -> ClassifiedError {
     let retry_after_ms = parse_retry_after_secs(body).map(|s| s * 1000);
     let error_detail = extract_error_detail(body);
+    let provider_code = extract_provider_code(body);
     let status_code = status.as_u16();
-    match status_code {
+    let error = match status_code {
         401 | 403 => ProviderError::AuthFailed(error_detail),
         429 => ProviderError::RateLimited { retry_after_ms },
         404 => ProviderError::ModelNotFound(error_detail),
@@ -60,6 +79,11 @@ pub(crate) fn classify_http_error(status: reqwest::StatusCode, body: &str) -> Pr
         408 | 504 => ProviderError::Timeout(error_detail),
         _ if status.is_server_error() => ProviderError::ServerError(error_detail),
         _ => ProviderError::RequestFailed(format!("HTTP {}: {}", status_code, error_detail)),
+    };
+    ClassifiedError {
+        error,
+        http_status: status_code,
+        provider_code,
     }
 }
 
@@ -88,28 +112,35 @@ mod tests {
 
     #[test]
     fn classify_http_status() {
-        let err = classify_http_error(reqwest::StatusCode::from_u16(401).unwrap(), "unauthorized");
-        assert!(matches!(err, ProviderError::AuthFailed(_)));
+        let classified =
+            classify_http_error(reqwest::StatusCode::from_u16(401).unwrap(), "unauthorized");
+        assert!(matches!(classified.error, ProviderError::AuthFailed(_)));
+        assert_eq!(classified.http_status, 401);
 
-        let err = classify_http_error(reqwest::StatusCode::from_u16(429).unwrap(), "retry after 5");
+        let classified =
+            classify_http_error(reqwest::StatusCode::from_u16(429).unwrap(), "retry after 5");
         assert!(matches!(
-            err,
+            classified.error,
             ProviderError::RateLimited {
                 retry_after_ms: Some(5000)
             }
         ));
+        assert_eq!(classified.http_status, 429);
 
-        let err = classify_http_error(
+        let classified = classify_http_error(
             reqwest::StatusCode::from_u16(400).unwrap(),
             "context length exceeded max tokens",
         );
-        assert!(matches!(err, ProviderError::ContextOverflow(_)));
+        assert!(matches!(
+            classified.error,
+            ProviderError::ContextOverflow(_)
+        ));
 
-        let err = classify_http_error(
+        let classified = classify_http_error(
             reqwest::StatusCode::from_u16(500).unwrap(),
             "internal error",
         );
-        assert!(matches!(err, ProviderError::ServerError(_)));
+        assert!(matches!(classified.error, ProviderError::ServerError(_)));
     }
 
     #[test]

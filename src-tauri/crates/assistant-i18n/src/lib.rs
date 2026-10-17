@@ -1,135 +1,97 @@
-use log::error;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::RwLock;
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, OnceLock, RwLock},
+};
 
-static ZH_CN: &str = include_str!("../locales/zh-CN.json");
-static EN_US: &str = include_str!("../locales/en-US.json");
+#[macro_use]
+extern crate rust_i18n;
 
-static GLOBAL_I18N: RwLock<Option<I18n>> = RwLock::new(None);
+rust_i18n::i18n!("locales", fallback = "zh-CN");
 
-pub struct I18n {
-    locale: String,
-    flat: HashMap<String, String>,
+#[doc(hidden)]
+pub const CATALOG_REVISION: &str = env!("ASSISTANT_I18N_CATALOG_REVISION");
+
+pub const DEFAULT_LOCALE: &str = "zh-CN";
+
+pub const SHIPPED_LOCALES: [&str; 2] = ["zh-CN", "en-US"];
+
+pub fn locale_code(code: &str) -> &str {
+    let normalized = code.replace('_', "-").to_ascii_lowercase();
+    SHIPPED_LOCALES
+        .iter()
+        .copied()
+        .find(|shipped| shipped.to_ascii_lowercase() == normalized)
+        .unwrap_or(DEFAULT_LOCALE)
 }
 
-impl I18n {
-    pub fn new(locale: &str) -> Self {
-        let flat = Self::load_and_flatten(locale);
-        Self {
-            locale: locale.to_string(),
-            flat,
-        }
+pub fn text(locale: &str, key: &str) -> &'static str {
+    static CACHE: OnceLock<RwLock<HashMap<String, &'static str>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| RwLock::new(HashMap::new()));
+    let cache_key = format!("{}\0{key}", locale_code(locale));
+    if let Some(value) = cache
+        .read()
+        .expect("translation cache read lock")
+        .get(&cache_key)
+    {
+        return value;
     }
-
-    fn load_and_flatten(locale: &str) -> HashMap<String, String> {
-        let json_str = match locale {
-            "zh-CN" => ZH_CN,
-            "en-US" => EN_US,
-            _ => ZH_CN,
-        };
-
-        let mut flat = HashMap::new();
-        match serde_json::from_str::<Value>(json_str) {
-            Ok(root) => Self::flatten_value(&root, String::new(), &mut flat),
-            Err(e) => {
-                error!("[i18n] Failed to parse locale {}: {}", locale, e);
-            }
-        }
-        flat
-    }
-
-    fn flatten_value(value: &Value, prefix: String, out: &mut HashMap<String, String>) {
-        match value {
-            Value::Object(obj) => {
-                for (k, v) in obj {
-                    let new_prefix = if prefix.is_empty() {
-                        k.clone()
-                    } else {
-                        format!("{}.{}", prefix, k)
-                    };
-                    Self::flatten_value(v, new_prefix, out);
-                }
-            }
-            Value::String(s) => {
-                out.insert(prefix, s.clone());
-            }
-            Value::Number(n) => {
-                out.insert(prefix, n.to_string());
-            }
-            Value::Bool(b) => {
-                out.insert(prefix, b.to_string());
-            }
-            Value::Null => {
-                out.insert(prefix, String::new());
-            }
-            _ => {}
-        }
-    }
-
-    pub fn t(&self, key: &str) -> String {
-        self.flat
-            .get(key)
-            .cloned()
-            .unwrap_or_else(|| key.to_string())
-    }
-
-    pub fn t_with_args(&self, key: &str, args: &HashMap<&str, &str>) -> String {
-        let template = self
-            .flat
-            .get(key)
-            .cloned()
-            .unwrap_or_else(|| key.to_string());
-        let mut result = template;
-        for (k, v) in args {
-            let placeholder = format!("{{{{{}}}}}", k);
-            result = result.replace(&placeholder, v);
-        }
-        result
-    }
-
-    pub fn locale(&self) -> &str {
-        &self.locale
-    }
+    let value = Box::leak(
+        t!(key, locale = locale_code(locale))
+            .to_string()
+            .into_boxed_str(),
+    );
+    cache
+        .write()
+        .expect("translation cache write lock")
+        .insert(cache_key, value);
+    value
 }
+
+pub fn format_text(locale: &str, key: &str, values: &[(&str, String)]) -> String {
+    let mut message = text(locale, key).to_owned();
+    for (name, value) in values {
+        message = message.replace(&format!("%{{{name}}}"), value);
+    }
+    message
+}
+
+static CURRENT_LOCALE: LazyLock<RwLock<String>> =
+    LazyLock::new(|| RwLock::new(String::from(DEFAULT_LOCALE)));
 
 pub fn init_global(locale: &str) {
-    let i18n = I18n::new(locale);
-    if let Ok(mut guard) = GLOBAL_I18N.write() {
-        *guard = Some(i18n);
+    let resolved = locale_code(locale);
+    if let Ok(mut guard) = CURRENT_LOCALE.write() {
+        *guard = resolved.to_string();
     }
 }
 
 pub fn set_locale(locale: &str) {
-    let i18n = I18n::new(locale);
-    if let Ok(mut guard) = GLOBAL_I18N.write() {
-        *guard = Some(i18n);
+    let resolved = locale_code(locale);
+    if let Ok(mut guard) = CURRENT_LOCALE.write() {
+        *guard = resolved.to_string();
     }
 }
 
 pub fn t(key: &str) -> String {
-    if let Ok(guard) = GLOBAL_I18N.read() {
-        if let Some(i18n) = guard.as_ref() {
-            return i18n.t(key);
-        }
-    }
-    key.to_string()
+    let locale = current_locale();
+    text(&locale, key).to_string()
 }
 
 pub fn t_with_args(key: &str, args: &HashMap<&str, &str>) -> String {
-    if let Ok(guard) = GLOBAL_I18N.read() {
-        if let Some(i18n) = guard.as_ref() {
-            return i18n.t_with_args(key, args);
-        }
-    }
-    key.to_string()
+    let locale = current_locale();
+    format_text(
+        &locale,
+        key,
+        &args
+            .iter()
+            .map(|(k, v)| (*k, v.to_string()))
+            .collect::<Vec<_>>(),
+    )
 }
 
 pub fn current_locale() -> String {
-    if let Ok(guard) = GLOBAL_I18N.read() {
-        if let Some(i18n) = guard.as_ref() {
-            return i18n.locale().to_string();
-        }
-    }
-    "zh-CN".to_string()
+    CURRENT_LOCALE
+        .read()
+        .map(|guard| guard.clone())
+        .unwrap_or_else(|_| DEFAULT_LOCALE.to_string())
 }

@@ -22,6 +22,7 @@ import {
   GlobalOutlined,
   PictureOutlined,
   EditOutlined,
+  FolderOutlined,
 } from "@ant-design/icons";
 import type { ToolDefinition, ToolCategoryGroup } from "./types";
 import { TOOL_CATEGORIES, classifyKeywords } from "./categories";
@@ -276,6 +277,24 @@ const svgPreview = defineTool({
   widthMode: "full",
 });
 
+const fsLink = defineTool({
+  id: "fs-link",
+  name: "tools.fs_link.name",
+  description: "tools.fs_link.description",
+  icon: FolderOutlined,
+  keywords: [
+    "link",
+    "symlink",
+    "hardlink",
+    "junction",
+    "filesystem",
+    "path",
+    "shortcut",
+  ],
+  component: React.lazy(() => import("./fs-link")),
+  widthMode: "default",
+});
+
 export const tools: ToolDefinition[] = [
   hashText,
   uuidGenerator,
@@ -298,6 +317,7 @@ export const tools: ToolDefinition[] = [
   ipInfo,
   imageCompressor,
   svgPreview,
+  fsLink,
 ];
 
 export const toolsMap = Object.fromEntries(

@@ -62,6 +62,7 @@ export interface ChatOrchestrator {
   cancel: () => Promise<void>;
   handleDeltaEvent: (payload: ChatDeltaPayload) => void;
   onTextDelta: (delta: string) => void;
+  ensureIdle: () => Promise<void>;
   getSendInProgress: () => boolean;
   getPhase: () => ChatPhase;
 }
@@ -82,19 +83,54 @@ function fallbackTitleFromUserMessage(
   return firstLine.slice(0, maxLength).trim() + "…";
 }
 
+const ENSURE_IDLE_TIMEOUT_MS = 5000;
+
 export function createChatOrchestrator(
   deps: ChatOrchestratorDeps,
 ): ChatOrchestrator {
   let sendInProgress = false;
   let phase: ChatPhase = "idle";
+  const handledTerminalEvents = new Set<string>();
 
   function setPhase(next: ChatPhase) {
     phase = next;
   }
 
+  async function ensureIdle(): Promise<void> {
+    if (!sendInProgress && phase === "idle") return;
+
+    const convId = deps.env.getActiveConversationId();
+    if (convId) {
+      await chatService.cancelChat(convId).catch(() => {});
+    }
+    deps.state.cancelStreaming();
+
+    const start = Date.now();
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        if (phase === "idle" || phase === "error") {
+          if (phase === "error") setPhase("idle");
+          resolve();
+        } else if (Date.now() - start > ENSURE_IDLE_TIMEOUT_MS) {
+          console.warn(
+            "[orchestrator] ensureIdle timeout, force resetting phase",
+          );
+          setPhase("idle");
+          resolve();
+        } else {
+          setTimeout(check, 50);
+        }
+      };
+      setTimeout(check, 50);
+    });
+
+    sendInProgress = false;
+  }
+
   async function send(content: string) {
     if (sendInProgress) return;
     sendInProgress = true;
+    handledTerminalEvents.clear();
     setPhase("sending");
 
     try {
@@ -222,6 +258,9 @@ export function createChatOrchestrator(
     }
 
     if (payload.error) {
+      const terminalKey = `${payload.attemptId}:error`;
+      if (handledTerminalEvents.has(terminalKey)) return;
+      handledTerminalEvents.add(terminalKey);
       setPhase("error");
       deps.state.errorStream(toChatError(payload.error));
       return;
@@ -272,6 +311,9 @@ export function createChatOrchestrator(
     }
 
     if (payload.finishReason) {
+      const terminalKey = `${payload.attemptId}:finish`;
+      if (handledTerminalEvents.has(terminalKey)) return;
+      handledTerminalEvents.add(terminalKey);
       setPhase("idle");
       deps.state.setRetryStatus(null);
       deps.state.finishStream(payload.usage ?? undefined);
@@ -289,6 +331,7 @@ export function createChatOrchestrator(
     cancel,
     handleDeltaEvent,
     onTextDelta,
+    ensureIdle,
     getSendInProgress: () => sendInProgress,
     getPhase: () => phase,
   };

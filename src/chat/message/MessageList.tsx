@@ -21,7 +21,7 @@ interface MessageListProps {
   onDeleteMessage?: (id: string) => void;
   onEditMessage?: (id: string, newContent: string) => void;
   onRegenerateMessage?: (id: string) => void;
-  onRetryMessage?: () => void;
+  onRetryMessage?: (messageId: string) => void;
   retryStatus?: RetryNotification | null;
 }
 
@@ -181,7 +181,11 @@ export const MessageList: React.FC<MessageListProps> = ({
                 onDelete={onDeleteMessage}
                 onEdit={onEditMessage}
                 onRegenerate={onRegenerateMessage}
-                onRetry={msg.error?.retryable ? onRetryMessage : undefined}
+                onRetry={
+                  msg.error?.retryable
+                    ? () => onRetryMessage?.(msg.id)
+                    : undefined
+                }
               />
             </RoleContext.Provider>
           );

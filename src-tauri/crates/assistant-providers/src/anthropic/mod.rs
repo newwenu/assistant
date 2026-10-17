@@ -87,8 +87,9 @@ impl BaseProviderAdapter for AnthropicAdapter {
         messages: &[crate::base::ChatMessage],
         model: &str,
         options: &crate::base::ChatOptions,
+        cancel_token: tokio_util::sync::CancellationToken,
     ) -> Result<ChatStream, ProviderError> {
-        request::chat_completion_stream(self, messages, model, options)
+        request::chat_completion_stream(self, messages, model, options, cancel_token)
     }
 
     fn list_models(&self) -> Result<Vec<crate::base::ModelConfig>, ProviderError> {

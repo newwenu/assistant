@@ -29,7 +29,7 @@ pub(crate) fn list_models(adapter: &GeminiAdapter) -> Result<Vec<ModelConfig>, P
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(classify_http_error(status, &text));
+            return Err(classify_http_error(status, &text).error);
         }
 
         let text = resp

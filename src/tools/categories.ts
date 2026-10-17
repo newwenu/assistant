@@ -9,6 +9,7 @@ import {
   FontSizeOutlined,
   RocketOutlined,
   GlobalOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 
 export const CATEGORY_KEYS = [
@@ -21,6 +22,7 @@ export const CATEGORY_KEYS = [
   "text",
   "generate",
   "network",
+  "filesystem",
 ] as const;
 
 export type ToolCategory = (typeof CATEGORY_KEYS)[number];
@@ -145,6 +147,16 @@ const CATEGORY_SIGNATURES: Record<ToolCategory, readonly string[]> = {
     "v1",
   ],
   network: ["ip", "address", "ipv4", "ipv6", "lookup", "geo", "network"],
+  filesystem: [
+    "file",
+    "link",
+    "symlink",
+    "hardlink",
+    "junction",
+    "filesystem",
+    "path",
+    "directory",
+  ],
 };
 
 export function classifyKeywords(keywords: readonly string[]): ToolCategory {
@@ -210,6 +222,12 @@ export const TOOL_CATEGORIES: ToolCategoryMeta[] = [
     label: "tools.category.network",
     icon: GlobalOutlined,
     order: 8,
+  },
+  {
+    key: "filesystem",
+    label: "tools.category.filesystem",
+    icon: FolderOpenOutlined,
+    order: 9,
   },
 ];
 

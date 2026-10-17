@@ -149,14 +149,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     void chat.cancelStream();
   }, [chat]);
 
-  const handleRetry = useCallback(() => {
-    const lastUserMsg = [...chat.messages]
-      .reverse()
-      .find((m) => m.role === "user");
-    if (lastUserMsg) {
-      void chat.sendMessage(lastUserMsg.content);
-    }
-  }, [chat]);
+  const handleRetry = useCallback(
+    (messageId: string) => {
+      void chat.retryFromError(messageId);
+    },
+    [chat],
+  );
 
   const handleProviderChange = useCallback(
     (newProviderId: string) => {

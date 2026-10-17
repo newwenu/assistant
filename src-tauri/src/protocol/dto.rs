@@ -134,12 +134,14 @@ impl From<TokenUsageSummary> for TokenUsageSummaryDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct RetryNotificationDto {
     pub attempt: u32,
     pub max_attempts: u32,
     pub delay_ms: u64,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<ProviderErrorCode>,
 }
 
 impl From<RetryNotification> for RetryNotificationDto {
@@ -149,18 +151,25 @@ impl From<RetryNotification> for RetryNotificationDto {
             max_attempts: r.max_attempts,
             delay_ms: r.delay_ms,
             message: r.message,
+            error_code: r.error_code,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderErrorPayloadDto {
     pub code: ProviderErrorCode,
     pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_after_ms: Option<u64>,
     pub retryable: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_code: Option<String>,
 }
 
 impl From<ProviderErrorPayload> for ProviderErrorPayloadDto {
@@ -170,6 +179,9 @@ impl From<ProviderErrorPayload> for ProviderErrorPayloadDto {
             message: p.message,
             retry_after_ms: p.retry_after_ms,
             retryable: p.retryable,
+            http_status: p.http_status,
+            provider: p.provider,
+            provider_code: p.provider_code,
         }
     }
 }

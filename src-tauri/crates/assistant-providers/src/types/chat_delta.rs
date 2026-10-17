@@ -8,6 +8,8 @@ pub struct RetryNotification {
     pub max_attempts: u32,
     pub delay_ms: u64,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<crate::base::ProviderErrorCode>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -37,6 +39,26 @@ impl ChatDelta {
                 max_attempts,
                 delay_ms,
                 message: message.to_string(),
+                error_code: None,
+            }),
+            ..Default::default()
+        }
+    }
+
+    pub fn retry_notification_with_code(
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        message: impl std::fmt::Display,
+        error_code: crate::base::ProviderErrorCode,
+    ) -> Self {
+        Self {
+            delta_retry: Some(RetryNotification {
+                attempt,
+                max_attempts,
+                delay_ms,
+                message: message.to_string(),
+                error_code: Some(error_code),
             }),
             ..Default::default()
         }
@@ -54,6 +76,26 @@ impl ChatDelta {
                 max_attempts,
                 delay_ms,
                 message: format!("HTTP {}", status),
+                error_code: None,
+            }),
+            ..Default::default()
+        }
+    }
+
+    pub fn retry_http_notification_with_code(
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        status: reqwest::StatusCode,
+        error_code: crate::base::ProviderErrorCode,
+    ) -> Self {
+        Self {
+            delta_retry: Some(RetryNotification {
+                attempt,
+                max_attempts,
+                delay_ms,
+                message: format!("HTTP {}", status),
+                error_code: Some(error_code),
             }),
             ..Default::default()
         }

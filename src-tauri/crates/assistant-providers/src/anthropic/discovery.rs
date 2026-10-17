@@ -36,7 +36,7 @@ pub(crate) fn list_models(adapter: &AnthropicAdapter) -> Result<Vec<ModelConfig>
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(classify_http_error(status, &text));
+            return Err(classify_http_error(status, &text).error);
         }
 
         let text = resp

@@ -2,12 +2,14 @@ use chrono::Utc;
 use tauri::{command, AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
+use crate::protocol::{
+    ModelConfigDto, ProviderInputDto, ProviderListDto, SettingProviderChangedPayloadDto,
+};
 use assistant_providers::{
     base::{self, ProviderConfig},
     crypto,
 };
 use assistant_storage::providers::{self as provider_store, ProviderRow};
-use crate::protocol::{ModelConfigDto, ProviderInputDto, ProviderListDto, SettingProviderChangedPayloadDto};
 
 fn mask_api_key_encrypted(encrypted: &str) -> String {
     if encrypted.is_empty() {

@@ -1,10 +1,11 @@
 import React, { useCallback, useState } from "react";
 import { Typography } from "antd";
-import { CompressOutlined, ReloadOutlined } from "@ant-design/icons";
+import { CompressOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { Message, ToolCall } from "../../stores/chatStore";
 import type { RetryNotification } from "../../chat/core/chatTypes";
 import { ErrorBlock } from "../blocks/ErrorBlock";
+import { RetryBanner } from "../blocks/RetryBanner";
 import { getErrorDisplay, ChatErrorCode } from "../core/chatErrors";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
 import { ToolCallBlock } from "../blocks/ToolCallBlock";
@@ -119,17 +120,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
               <ErrorBlock error={message.error} onRetry={onRetry} />
             )}
             {retryStatus && isStreaming && (
-              <div className={css.retryBanner}>
-                <ReloadOutlined spin style={{ fontSize: 12, marginRight: 6 }} />
-                <span>
-                  {t("chat.retry.retrying", {
-                    attempt: retryStatus.attempt + 1,
-                    max: retryStatus.maxAttempts,
-                    delay: Math.ceil(retryStatus.delayMs / 1000),
-                  })}
-                </span>
-                <span className={css.retryMessage}>{retryStatus.message}</span>
-              </div>
+              <RetryBanner
+                retryStatus={retryStatus}
+                onCancel={() => onRetry?.()}
+              />
             )}
             {isCompactSummary && (
               <div className={css.compactSummaryHeader}>

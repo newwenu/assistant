@@ -1,6 +1,6 @@
 use assistant_app::protocol::{
-    ChatDeltaPayloadDto, ConversationDetailDto, ConversationDto, MessageDto, TokenUsageDto,
-    RetryNotificationDto, ProviderErrorPayloadDto,
+    ChatDeltaPayloadDto, ConversationDetailDto, ConversationDto, MessageDto,
+    ProviderErrorPayloadDto, RetryNotificationDto, TokenUsageDto,
 };
 use assistant_providers::base::{ProviderErrorCode, ProviderErrorPayload};
 use assistant_providers::types::chat_delta::{RetryNotification, TokenUsage};
@@ -93,8 +93,14 @@ fn chat_delta_payload_dto_skip_serializing_none() {
     let v = serde_json::to_value(&payload).unwrap();
     let obj = v.as_object().unwrap();
 
-    assert!(!obj.contains_key("error"), "error should be skipped when None");
-    assert!(!obj.contains_key("deltaRetry"), "deltaRetry should be skipped when None");
+    assert!(
+        !obj.contains_key("error"),
+        "error should be skipped when None"
+    );
+    assert!(
+        !obj.contains_key("deltaRetry"),
+        "deltaRetry should be skipped when None"
+    );
 }
 
 #[test]
@@ -106,12 +112,21 @@ fn chat_delta_payload_dto_error_field_present_when_some() {
     let v = serde_json::to_value(&payload).unwrap();
     let obj = v.as_object().unwrap();
 
-    assert!(obj.contains_key("error"), "error should be present when Some");
+    assert!(
+        obj.contains_key("error"),
+        "error should be present when Some"
+    );
     let error_obj = obj["error"].as_object().unwrap();
     assert!(error_obj.contains_key("code"), "error.code missing");
     assert!(error_obj.contains_key("message"), "error.message missing");
-    assert!(error_obj.contains_key("retryAfterMs"), "error.retryAfterMs missing");
-    assert!(error_obj.contains_key("retryable"), "error.retryable missing");
+    assert!(
+        error_obj.contains_key("retryAfterMs"),
+        "error.retryAfterMs missing"
+    );
+    assert!(
+        error_obj.contains_key("retryable"),
+        "error.retryable missing"
+    );
 }
 
 #[test]
@@ -120,19 +135,46 @@ fn conversation_dto_outputs_camel_case() {
     let v = serde_json::to_value(&dto).unwrap();
     let obj = v.as_object().unwrap();
 
-    assert!(obj.contains_key("titleSource"), "titleSource should be camelCase");
-    assert!(obj.contains_key("providerId"), "providerId should be camelCase");
+    assert!(
+        obj.contains_key("titleSource"),
+        "titleSource should be camelCase"
+    );
+    assert!(
+        obj.contains_key("providerId"),
+        "providerId should be camelCase"
+    );
     assert!(obj.contains_key("modelId"), "modelId should be camelCase");
-    assert!(obj.contains_key("systemPrompt"), "systemPrompt should be camelCase");
+    assert!(
+        obj.contains_key("systemPrompt"),
+        "systemPrompt should be camelCase"
+    );
     assert!(obj.contains_key("isPinned"), "isPinned should be camelCase");
-    assert!(obj.contains_key("sortOrder"), "sortOrder should be camelCase");
-    assert!(obj.contains_key("createdAt"), "createdAt should be camelCase");
-    assert!(obj.contains_key("updatedAt"), "updatedAt should be camelCase");
+    assert!(
+        obj.contains_key("sortOrder"),
+        "sortOrder should be camelCase"
+    );
+    assert!(
+        obj.contains_key("createdAt"),
+        "createdAt should be camelCase"
+    );
+    assert!(
+        obj.contains_key("updatedAt"),
+        "updatedAt should be camelCase"
+    );
     assert!(obj.contains_key("isFull"), "isFull should be camelCase");
 
-    assert!(!obj.contains_key("title_source"), "no snake_case in wire format");
-    assert!(!obj.contains_key("provider_id"), "no snake_case in wire format");
-    assert!(!obj.contains_key("created_at"), "no snake_case in wire format");
+    assert!(
+        !obj.contains_key("title_source"),
+        "no snake_case in wire format"
+    );
+    assert!(
+        !obj.contains_key("provider_id"),
+        "no snake_case in wire format"
+    );
+    assert!(
+        !obj.contains_key("created_at"),
+        "no snake_case in wire format"
+    );
 }
 
 #[test]
@@ -182,22 +224,40 @@ fn conversation_detail_dto_wire_format() {
 
     assert!(obj.contains_key("conversation"));
     assert!(obj.contains_key("messages"));
-    assert!(obj.contains_key("totalCount"), "totalCount should be camelCase");
-    assert!(!obj.contains_key("total_count"), "no snake_case in wire format");
+    assert!(
+        obj.contains_key("totalCount"),
+        "totalCount should be camelCase"
+    );
+    assert!(
+        !obj.contains_key("total_count"),
+        "no snake_case in wire format"
+    );
 
     let conv = obj["conversation"].as_object().unwrap();
-    assert!(conv.contains_key("providerId"), "providerId should be camelCase");
-    assert!(!conv.contains_key("provider_id"), "no snake_case in wire format");
+    assert!(
+        conv.contains_key("providerId"),
+        "providerId should be camelCase"
+    );
+    assert!(
+        !conv.contains_key("provider_id"),
+        "no snake_case in wire format"
+    );
 
     let msgs = obj["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), 1);
-    assert!(msgs[0].as_object().unwrap().contains_key("conversationId"), "conversationId should be camelCase");
+    assert!(
+        msgs[0].as_object().unwrap().contains_key("conversationId"),
+        "conversationId should be camelCase"
+    );
 }
 
 #[test]
 fn provider_error_code_serializes_to_pascal_case() {
     let v = serde_json::to_value(&ProviderErrorCode::RateLimited).unwrap();
-    assert_eq!(v, "RateLimited", "ProviderErrorCode serializes as PascalCase by default (no rename_all)");
+    assert_eq!(
+        v, "RateLimited",
+        "ProviderErrorCode serializes as PascalCase by default (no rename_all)"
+    );
 
     let v2 = serde_json::to_value(&ProviderErrorCode::ApiKeyMissing).unwrap();
     assert_eq!(v2, "ApiKeyMissing");
@@ -237,9 +297,18 @@ fn token_usage_dto_serde_default_fields() {
     assert_eq!(usage.prompt_tokens, 5);
     assert_eq!(usage.completion_tokens, 10);
     assert_eq!(usage.total_tokens, 15);
-    assert_eq!(usage.cache_read_tokens, 0, "cacheReadTokens should default to 0");
-    assert_eq!(usage.cache_write_tokens, 0, "cacheWriteTokens should default to 0");
-    assert_eq!(usage.context_window_tokens, 0, "contextWindowTokens should default to 0");
+    assert_eq!(
+        usage.cache_read_tokens, 0,
+        "cacheReadTokens should default to 0"
+    );
+    assert_eq!(
+        usage.cache_write_tokens, 0,
+        "cacheWriteTokens should default to 0"
+    );
+    assert_eq!(
+        usage.context_window_tokens, 0,
+        "contextWindowTokens should default to 0"
+    );
 }
 
 #[test]

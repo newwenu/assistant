@@ -81,6 +81,7 @@ interface ChatState {
   ) => Promise<void>;
   updateModel: (id: string, modelId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
+  resendFrom: (pivotTimestamp: number, contentToSend: string) => Promise<void>;
   setActiveAttemptId: (attemptId: string, realMessageId: string) => void;
   clearActiveAttemptId: () => void;
   cancelStream: () => Promise<void>;
@@ -90,6 +91,7 @@ interface ChatState {
   deleteMessage: (id: string) => Promise<void>;
   editMessage: (messageId: string, newContent: string) => Promise<void>;
   regenerateMessage: (messageId: string) => Promise<void>;
+  retryFromError: (messageId: string) => Promise<void>;
   loadMoreMessages: () => Promise<void>;
   togglePin: (id: string) => Promise<void>;
   duplicateConversation: (id: string) => Promise<void>;
@@ -115,11 +117,21 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       });
     },
     cancelStreaming: () => {
+      const state = get();
       set({
         isStreaming: false,
         streamingContent: "",
+        streamingMessageId: null,
+        activeAttemptId: null,
         isReasoningStreaming: false,
         retryStatus: null,
+        messages: state.streamingMessageId
+          ? state.messages.map((m) =>
+              m.id === state.streamingMessageId
+                ? { ...m, content: state.streamingContent || m.content }
+                : m,
+            )
+          : state.messages,
       });
     },
     setActiveAttemptId: (attemptId: string, realMessageId: string) => {
@@ -490,6 +502,22 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
 
     sendMessage: (content: string) => orchestrator.send(content),
 
+    resendFrom: async (pivotTimestamp: number, contentToSend: string) => {
+      await orchestrator.ensureIdle();
+
+      const snapshot = get().messages;
+      set((state) => ({
+        messages: state.messages.filter((m) => m.timestamp < pivotTimestamp),
+      }));
+
+      try {
+        void get().sendMessage(contentToSend);
+      } catch (e) {
+        console.error("[chatStore] resendFrom send failed, rolling back:", e);
+        set({ messages: snapshot });
+      }
+    },
+
     setActiveAttemptId: statePort.setActiveAttemptId,
     clearActiveAttemptId: statePort.clearActiveAttemptId,
 
@@ -521,23 +549,6 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       const msg = state.messages.find((m) => m.id === messageId);
       if (!msg) return;
 
-      if (state.isStreaming && state.currentConversationId) {
-        await chatService
-          .cancelChat(state.currentConversationId)
-          .catch(() => {});
-        set({
-          isStreaming: false,
-          streamingContent: "",
-          isReasoningStreaming: false,
-        });
-      }
-
-      set({
-        messages: state.messages
-          .filter((m) => m.timestamp < msg.timestamp || m.id === messageId)
-          .map((m) => (m.id === messageId ? { ...m, content: newContent } : m)),
-      });
-
       try {
         await persistQueue.enqueue(async () => {
           await chatService.editMessage(messageId, newContent);
@@ -546,8 +557,14 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         console.error("[chatStore] editMessage failed:", e);
       }
 
+      set((s) => ({
+        messages: s.messages.map((m) =>
+          m.id === messageId ? { ...m, content: newContent } : m,
+        ),
+      }));
+
       if (msg.role === "user") {
-        void get().sendMessage(newContent);
+        await get().resendFrom(msg.timestamp, newContent);
       }
     },
 
@@ -579,6 +596,33 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       }
 
       void get().sendMessage(lastUserMsg.content);
+    },
+
+    retryFromError: async (messageId: string) => {
+      const state = get();
+      const msgIndex = state.messages.findIndex((m) => m.id === messageId);
+      if (msgIndex === -1 || state.messages[msgIndex].role !== "assistant")
+        return;
+
+      const msg = state.messages[msgIndex];
+      const userMsg = [...state.messages]
+        .slice(0, msgIndex)
+        .reverse()
+        .find((m) => m.role === "user");
+      if (!userMsg) return;
+
+      const convId = state.currentConversationId;
+      if (convId) {
+        try {
+          await persistQueue.enqueue(async () => {
+            await chatService.regenerateMessage(convId, messageId);
+          });
+        } catch (e) {
+          console.error("[chatStore] retryFromError persist failed:", e);
+        }
+      }
+
+      await get().resendFrom(msg.timestamp, userMsg.content);
     },
 
     loadMoreMessages: async () => {

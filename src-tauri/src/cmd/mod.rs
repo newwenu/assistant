@@ -4,6 +4,7 @@ mod chat;
 mod config;
 mod conversation;
 mod orb;
+mod os_tool_exec;
 mod provider;
 mod tool;
 
@@ -13,6 +14,7 @@ pub use chat::*;
 pub use config::*;
 pub use conversation::*;
 pub use orb::*;
+pub use os_tool_exec::*;
 pub use provider::*;
 pub use tool::*;
 

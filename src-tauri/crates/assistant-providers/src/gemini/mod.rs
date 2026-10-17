@@ -88,12 +88,13 @@ impl BaseProviderAdapter for GeminiAdapter {
         messages: &[crate::base::ChatMessage],
         model: &str,
         options: &crate::base::ChatOptions,
+        cancel_token: tokio_util::sync::CancellationToken,
     ) -> Result<ChatStream, ProviderError> {
         match self.config.kind {
             ProviderKind::GeminiCodeAssist => {
-                code_assist::code_assist_stream(self, messages, model, options)
+                code_assist::code_assist_stream(self, messages, model, options, cancel_token)
             }
-            _ => request::chat_completion_stream(self, messages, model, options),
+            _ => request::chat_completion_stream(self, messages, model, options, cancel_token),
         }
     }
 

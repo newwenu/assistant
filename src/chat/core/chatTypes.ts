@@ -55,6 +55,7 @@ export interface RetryNotification {
   maxAttempts: number;
   delayMs: number;
   message: string;
+  errorCode?: string;
 }
 
 export interface ConversationDetail {

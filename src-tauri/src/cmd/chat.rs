@@ -5,6 +5,10 @@ use log::{error, info};
 use tauri::{command, AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
+use crate::protocol::{
+    ChatDeltaPayloadDto, ChatStreamStartPayloadDto, ConversationCompactFailedPayloadDto,
+    ProviderErrorPayloadDto,
+};
 use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError, StreamOutcome};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::compaction;
@@ -17,7 +21,6 @@ use assistant_storage::{
     providers::{self as provider_store},
 };
 use serde_json;
-use crate::protocol::{ChatDeltaPayloadDto, ChatStreamStartPayloadDto, ConversationCompactFailedPayloadDto, ProviderErrorPayloadDto};
 
 struct StreamEmitCtx<'a> {
     orb_window: &'a tauri::WebviewWindow,
@@ -28,7 +31,8 @@ struct StreamEmitCtx<'a> {
 
 fn resolve_context_window(model: &str, provider_row: &provider_store::ProviderRow) -> u32 {
     let mut ctx = base::get_context_window_tokens(model);
-    if let Ok(model_list) = serde_json::from_str::<Vec<base::ModelConfig>>(&provider_row.models_json)
+    if let Ok(model_list) =
+        serde_json::from_str::<Vec<base::ModelConfig>>(&provider_row.models_json)
     {
         if let Some(mc) = model_list.iter().find(|m| m.id == model) {
             if mc.context_window > 0 {
@@ -51,7 +55,9 @@ fn resolve_final_tokens(outcome: &StreamOutcome) -> Option<i64> {
         let estimated = estimate_tokens(&outcome.full_content).unwrap();
         info!(
             "[chat-delta] stream finished: reason={:?} no_usage=>estimated={} (content_len={})",
-            outcome.finish_reason, estimated, outcome.full_content.len()
+            outcome.finish_reason,
+            estimated,
+            outcome.full_content.len()
         );
         Some(estimated)
     } else {
@@ -80,7 +86,11 @@ fn emit_delta(ectx: &StreamEmitCtx, seq: u32, delta: &base::ChatDelta) {
     if let Some(ref usage) = delta.usage {
         info!(
             "[chat-delta] seq={} usage: prompt={} completion={} total={} ctx_window={}",
-            seq, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, usage.context_window_tokens
+            seq,
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.total_tokens,
+            usage.context_window_tokens
         );
     }
     let payload = ChatDeltaPayloadDto {
@@ -158,7 +168,10 @@ fn spawn_db_writer(app: &AppHandle) -> DbSender {
                     }
                 }
                 Err(_) => {
-                    error!("DB lock failed, content not saved ({} bytes)", msg.content.len());
+                    error!(
+                        "DB lock failed, content not saved ({} bytes)",
+                        msg.content.len()
+                    );
                 }
             };
         }
@@ -319,10 +332,12 @@ pub fn send_chat_message(
         error!("Failed to emit chat-stream-start: {}", emit_err);
     }
 
-    let (auto_compact, compact_threshold_percent) =
-        assistant_config::app_conf::AppConf::load()
-            .map(|c| (c.auto_compact, c.compact_threshold_percent))
-            .unwrap_or((true, assistant_config::constant::COMPACTION_THRESHOLD_PERCENT));
+    let (auto_compact, compact_threshold_percent) = assistant_config::app_conf::AppConf::load()
+        .map(|c| (c.auto_compact, c.compact_threshold_percent))
+        .unwrap_or((
+            true,
+            assistant_config::constant::COMPACTION_THRESHOLD_PERCENT,
+        ));
 
     let db_tx = spawn_db_writer(&app);
     let finish_tx = spawn_finish_listener(&app);
@@ -333,7 +348,12 @@ pub fn send_chat_message(
     let attempt_id_clone = attempt_id.clone();
 
     let stream_future = async move {
-        let stream = match adapter.chat_completion_stream(&chat_messages, &model, &options) {
+        let stream = match adapter.chat_completion_stream(
+            &chat_messages,
+            &model,
+            &options,
+            cancel_token.clone(),
+        ) {
             Ok(s) => s,
             Err(e) => {
                 let ectx = StreamEmitCtx {
@@ -373,12 +393,11 @@ pub fn send_chat_message(
         match result {
             Ok(outcome) => {
                 let tokens = resolve_final_tokens(&outcome);
-                let reasoning =
-                    if kind.persists_reasoning() && !outcome.full_reasoning.is_empty() {
-                        Some(outcome.full_reasoning)
-                    } else {
-                        None
-                    };
+                let reasoning = if kind.persists_reasoning() && !outcome.full_reasoning.is_empty() {
+                    Some(outcome.full_reasoning)
+                } else {
+                    None
+                };
                 let tool_calls_json = outcome
                     .tool_calls
                     .as_ref()

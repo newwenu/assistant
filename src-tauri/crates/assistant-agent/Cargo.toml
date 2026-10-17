@@ -18,6 +18,7 @@ tokio-util = { workspace = true }
 futures = { workspace = true }
 assistant-providers = { workspace = true }
 assistant-storage = { workspace = true }
+assistant-i18n = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

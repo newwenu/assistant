@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{command, AppHandle, Manager};
 
+use crate::protocol::{AppConfDto, MascotConfDto, OrbConfDto, ThemeChangedPayloadDto};
 use assistant_config::{
     app_conf::AppConf,
     atomic_write::atomic_write,
@@ -12,7 +13,6 @@ use assistant_config::{
     mascot_conf::MascotConf,
     orb_conf::OrbConf,
 };
-use crate::protocol::{AppConfDto, MascotConfDto, OrbConfDto, ThemeChangedPayloadDto};
 
 static CONF_LOCK: Mutex<()> = Mutex::new(());
 
@@ -106,22 +106,18 @@ fn apply_autostart(app: &AppHandle, enable: bool) -> Result<(), String> {
 
 #[command]
 pub fn get_app_conf() -> Result<AppConfDto, String> {
-    AppConf::load()
-        .map(AppConfDto::from)
-        .map_err(|e| {
-            error!("Failed to load app config: {}", e);
-            e.to_string()
-        })
+    AppConf::load().map(AppConfDto::from).map_err(|e| {
+        error!("Failed to load app config: {}", e);
+        e.to_string()
+    })
 }
 
 #[command]
 pub fn get_orb_conf() -> Result<OrbConfDto, String> {
-    OrbConf::load()
-        .map(OrbConfDto::from)
-        .map_err(|e| {
-            error!("Failed to load orb config: {}", e);
-            e.to_string()
-        })
+    OrbConf::load().map(OrbConfDto::from).map_err(|e| {
+        error!("Failed to load orb config: {}", e);
+        e.to_string()
+    })
 }
 
 #[command]
@@ -134,13 +130,8 @@ pub fn set_theme(theme: String) -> Result<(), String> {
 #[command]
 pub fn emit_theme_changed(app: AppHandle, resolved: String) -> Result<(), String> {
     use tauri::Emitter;
-    app.emit(
-        "theme-changed",
-        ThemeChangedPayloadDto {
-            resolved,
-        },
-    )
-    .map_err(|e| e.to_string())
+    app.emit("theme-changed", ThemeChangedPayloadDto { resolved })
+        .map_err(|e| e.to_string())
 }
 
 #[command]
@@ -152,12 +143,10 @@ pub fn set_locale(app: AppHandle, locale: String) -> Result<(), String> {
 
 #[command]
 pub fn get_mascot_conf() -> Result<MascotConfDto, String> {
-    MascotConf::load()
-        .map(MascotConfDto::from)
-        .map_err(|e| {
-            error!("Failed to load mascot config: {}", e);
-            e.to_string()
-        })
+    MascotConf::load().map(MascotConfDto::from).map_err(|e| {
+        error!("Failed to load mascot config: {}", e);
+        e.to_string()
+    })
 }
 
 #[command]

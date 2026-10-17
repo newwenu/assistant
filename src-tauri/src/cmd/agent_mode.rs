@@ -2,8 +2,8 @@ use chrono::Utc;
 use tauri::{command, AppHandle, Manager};
 use uuid::Uuid;
 
-use assistant_storage::agent_modes::{self, AgentModeRow};
 use crate::protocol::{AgentModeDto, AgentModeInputDto};
+use assistant_storage::agent_modes::{self, AgentModeRow};
 
 fn row_to_dto(row: &AgentModeRow) -> AgentModeDto {
     AgentModeDto::from_row(row)

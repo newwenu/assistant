@@ -1,6 +1,7 @@
 // 参考: ChatGPT/src-tauri/src/core/setup.rs — setup 中初始化配置和窗口
 
 use std::str::FromStr;
+use std::sync::Arc;
 use tauri::{App, Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -13,6 +14,7 @@ use assistant_config::{
 };
 use assistant_orb::placement;
 use assistant_storage::db;
+use assistant_tools::{os, ToolRegistry};
 
 use super::tray;
 use crate::protocol::ShortcutWarningPayloadDto;
@@ -54,6 +56,13 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     handle.manage(assistant_agent::chat_tasks::ChatTasks::new());
+
+    {
+        let registry = Arc::new(ToolRegistry::new());
+        os::register_os_tools(&registry);
+        handle.manage(registry);
+        log::info!("OS tool registry initialized");
+    }
 
     tray::create_tray(handle);
 

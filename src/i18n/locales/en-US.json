@@ -474,7 +474,8 @@
       "media": "Media",
       "text": "Text",
       "generate": "Generate",
-      "network": "Network"
+      "network": "Network",
+      "filesystem": "Filesystem"
     },
     "search_placeholder": "Search tools...",
     "no_match": "No matching tools found",
@@ -570,6 +571,10 @@
     "svg_preview": {
       "name": "SVG Preview",
       "description": "Edit SVG code with live preview, optimize and download"
+    },
+    "fs_link": {
+      "name": "File Link",
+      "description": "Create/check symlinks, hardlinks, and junctions"
     }
   }
 }

@@ -5,6 +5,7 @@ use log::error;
 use mouse_position::mouse_position::Mouse;
 use tauri::{command, AppHandle, PhysicalPosition};
 
+use crate::protocol::{MousePositionDto, ScreenRectDto, ScreenSizeDto};
 use assistant_config::{
     constant::{
         ORB_CHROME_INSET, ORB_HITBOX_SIZE, ORB_SNAP_ANIMATION_MS, ORB_SNAP_BORDER_X,
@@ -13,7 +14,6 @@ use assistant_config::{
     orb_conf::OrbConf,
 };
 use assistant_orb::placement;
-use crate::protocol::{MousePositionDto, ScreenRectDto, ScreenSizeDto};
 
 pub(crate) static ORB_CLICK_THROUGH: AtomicBool = AtomicBool::new(false);
 static ORB_SNAP_CANCEL: AtomicBool = AtomicBool::new(false);

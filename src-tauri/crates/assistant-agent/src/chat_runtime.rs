@@ -135,7 +135,10 @@ impl StreamAccumulator {
 
         if tc_outcome.finalized_previous.is_some()
             || tc_outcome.params_partial.is_some()
-            || delta.delta_tool_call_id.as_deref().map_or(false, |id| !id.is_empty())
+            || delta
+                .delta_tool_call_id
+                .as_deref()
+                .map_or(false, |id| !id.is_empty())
         {
             self.has_effective_output = true;
         }
@@ -253,8 +256,8 @@ impl ToolCallAccumulator {
     pub fn finish(self) -> Result<Vec<ToolCall>, ToolCallAccumulateError> {
         let mut result = Vec::with_capacity(self.pending.len());
         for partial in self.pending {
-            let _validated: serde_json::Value =
-                serde_json::from_str(&partial.arguments_buf).map_err(|e| {
+            let _validated: serde_json::Value = serde_json::from_str(&partial.arguments_buf)
+                .map_err(|e| {
                     ToolCallAccumulateError::InvalidJson(format!(
                         "tool call '{}' arguments: {}",
                         partial.name, e

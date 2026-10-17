@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use thiserror::Error;
-use tokio_stream::Stream;
+use futures::Stream;
+use tokio_util::sync::CancellationToken;
 
 pub use crate::types::chat_delta::{ChatDelta, TokenUsage};
 pub use crate::types::config::{
@@ -102,16 +103,33 @@ pub struct ProviderErrorPayload {
     pub message: String,
     pub retry_after_ms: Option<u64>,
     pub retryable: bool,
+    pub http_status: Option<u16>,
+    pub provider: Option<String>,
+    pub provider_code: Option<String>,
 }
 
-impl From<&ProviderError> for ProviderErrorPayload {
-    fn from(e: &ProviderError) -> Self {
+impl ProviderErrorPayload {
+    pub fn from_error(
+        e: &ProviderError,
+        http_status: Option<u16>,
+        provider: Option<&str>,
+        provider_code: Option<&str>,
+    ) -> Self {
         Self {
             code: e.code(),
             message: e.to_string(),
             retry_after_ms: e.retry_after_ms(),
             retryable: e.is_retryable(),
+            http_status,
+            provider: provider.map(String::from),
+            provider_code: provider_code.map(String::from),
         }
+    }
+}
+
+impl From<&ProviderError> for ProviderErrorPayload {
+    fn from(e: &ProviderError) -> Self {
+        Self::from_error(e, None, None, None)
     }
 }
 
@@ -166,6 +184,7 @@ pub trait BaseProviderAdapter: Send + Sync {
         messages: &[ChatMessage],
         model: &str,
         options: &ChatOptions,
+        cancel_token: CancellationToken,
     ) -> Result<ChatStream, ProviderError>;
     fn list_models(&self) -> Result<Vec<ModelConfig>, ProviderError>;
 }

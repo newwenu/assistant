@@ -155,7 +155,7 @@
   margin-bottom: 6px;
   padding: 4px 8px;
   border-radius: 6px;
-  background: var(--color-warning-bg, rgba(250, 173, 20, 0.1));
+  background: var(--color-warning-bg);
   color: var(--color-warning, #faad14);
   font-size: 12px;
   line-height: 1.5;

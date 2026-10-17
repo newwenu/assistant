@@ -1,6 +1,8 @@
-use assistant_providers::base::{self, ChatDelta, ProviderError, TokenUsage};
-use assistant_agent::chat_runtime::{self, ApplyDeltaOutcome, StreamAccumulator, StreamError, ToolCallAccumulator};
+use assistant_agent::chat_runtime::{
+    self, ApplyDeltaOutcome, StreamAccumulator, StreamError, ToolCallAccumulator,
+};
 use assistant_agent::prompt_builder::{self, AgentKind};
+use assistant_providers::base::{self, ChatDelta, ProviderError, TokenUsage};
 use assistant_storage::agent_modes::AgentModeRow;
 use assistant_storage::conversations::{ConversationDetail, ConversationRow, MessageRow};
 use std::sync::{Arc, Mutex};
@@ -231,9 +233,7 @@ async fn c8_consume_stream_normal_completion() {
 async fn c8_consume_stream_cancelled() {
     use futures::stream;
 
-    let deltas: Vec<Result<ChatDelta, ProviderError>> = vec![
-        Ok(text_delta("Partial")),
-    ];
+    let deltas: Vec<Result<ChatDelta, ProviderError>> = vec![Ok(text_delta("Partial"))];
 
     let stream = stream::iter(deltas);
     let cancel_token = CancellationToken::new();
@@ -252,10 +252,8 @@ async fn c8_consume_stream_cancelled() {
 async fn c8_consume_stream_cancelled_after_partial_output() {
     use futures::stream;
 
-    let deltas: Vec<Result<ChatDelta, ProviderError>> = vec![
-        Ok(text_delta("Partial")),
-        Ok(text_delta(" output")),
-    ];
+    let deltas: Vec<Result<ChatDelta, ProviderError>> =
+        vec![Ok(text_delta("Partial")), Ok(text_delta(" output"))];
 
     let stream = stream::iter(deltas);
     let cancel_token = CancellationToken::new();
@@ -279,9 +277,7 @@ async fn c8_consume_stream_cancelled_after_partial_output() {
 async fn c8_consume_stream_timeout() {
     use futures::stream;
 
-    let deltas: Vec<Result<ChatDelta, ProviderError>> = vec![
-        Ok(text_delta("Data")),
-    ];
+    let deltas: Vec<Result<ChatDelta, ProviderError>> = vec![Ok(text_delta("Data"))];
 
     let stream = stream::iter(deltas);
     let cancel_token = CancellationToken::new();
@@ -479,9 +475,7 @@ fn d4_prepare_messages_system_prompt_insertion() {
 
 #[test]
 fn d4_prepare_messages_empty_system_prompt_no_insert() {
-    let detail = make_detail(vec![
-        make_message_row("user", "hello"),
-    ]);
+    let detail = make_detail(vec![make_message_row("user", "hello")]);
 
     let result = prompt_builder::prepare_messages(&detail, "", None);
 
@@ -686,7 +680,13 @@ async fn g4_compaction_on_delta_ignores_reasoning_and_tool_call() {
         }
     };
 
-    let result = chat_runtime::consume_stream(stream, cancel_token, on_delta, Some(std::time::Duration::from_secs(30))).await;
+    let result = chat_runtime::consume_stream(
+        stream,
+        cancel_token,
+        on_delta,
+        Some(std::time::Duration::from_secs(30)),
+    )
+    .await;
     let outcome = result.unwrap();
 
     assert_eq!(outcome.full_content, "Summary text");
@@ -741,9 +741,7 @@ async fn g7_compaction_cancel_returns_partial_outcome() {
 async fn g7_compaction_timeout_returns_partial_outcome() {
     use futures::stream;
 
-    let deltas: Vec<Result<ChatDelta, ProviderError>> = vec![
-        Ok(text_delta("Partial")),
-    ];
+    let deltas: Vec<Result<ChatDelta, ProviderError>> = vec![Ok(text_delta("Partial"))];
 
     let stream = stream::iter(deltas);
     let cancel_token = CancellationToken::new();

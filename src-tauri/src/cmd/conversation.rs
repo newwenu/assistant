@@ -5,6 +5,12 @@ use chrono::Utc;
 use tauri::{command, AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
+use crate::protocol::{
+    ChatDeltaPayloadDto, ChatRegeneratePayloadDto, ChatStreamStartPayloadDto,
+    ConversationCompactFailedPayloadDto, ConversationDetailDto, ConversationDto,
+    ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto, ProviderErrorPayloadDto,
+    TokenUsageSummaryDto,
+};
 use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::prompt_builder;
@@ -13,12 +19,6 @@ use assistant_storage::{
     agent_modes,
     conversations::{self, ConversationRow},
     providers::{self as provider_store},
-};
-use crate::protocol::{
-    ChatDeltaPayloadDto, ChatRegeneratePayloadDto, ChatStreamStartPayloadDto,
-    ConversationCompactFailedPayloadDto, ConversationDetailDto, ConversationDto,
-    ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto,
-    ProviderErrorPayloadDto, TokenUsageSummaryDto,
 };
 
 #[command]
@@ -73,7 +73,10 @@ pub fn list_conversations(
 }
 
 #[command]
-pub fn get_conversation(app: AppHandle, id: String) -> Result<Option<ConversationDetailDto>, String> {
+pub fn get_conversation(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<ConversationDetailDto>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let detail = conversations::get_conversation_detail(&conn, &id)?;
@@ -370,7 +373,7 @@ pub(crate) async fn execute_compaction(
     detail: &conversations::ConversationDetail,
     provider_row: &provider_store::ProviderRow,
 ) -> Result<(), String> {
-    use assistant_agent::compaction::{set_terminating, DEFAULT_COMPACT_SUMMARY_PROMPT};
+    use assistant_agent::compaction::{default_compact_summary_prompt, set_terminating};
     use assistant_config::app_conf::AppConf;
     use assistant_providers::base::{ChatOptions, ProviderError};
     use std::time::Duration;
@@ -382,10 +385,11 @@ pub(crate) async fn execute_compaction(
         .clone()
         .unwrap_or_default();
 
+    let default_prompt = default_compact_summary_prompt();
     let summary_prompt = app_conf
         .compact_summary_prompt
         .as_deref()
-        .unwrap_or(DEFAULT_COMPACT_SUMMARY_PROMPT);
+        .unwrap_or(&default_prompt);
 
     let chat_messages =
         prompt_builder::prepare_messages(detail, &system_prompt, Some(summary_prompt));
@@ -405,12 +409,12 @@ pub(crate) async fn execute_compaction(
         reasoning_effort: None,
     };
 
-    let stream = adapter
-        .chat_completion_stream(&chat_messages, &model, &options)
-        .map_err(|e| e.to_string())?;
-
     let chat_tasks = app.state::<ChatTasks>();
     let (cancel_token, attempt_id) = chat_tasks.start(conversation_id.to_string());
+
+    let stream = adapter
+        .chat_completion_stream(&chat_messages, &model, &options, cancel_token.clone())
+        .map_err(|e| e.to_string())?;
 
     let summary_msg_id = Uuid::new_v4().to_string();
     {
@@ -499,7 +503,10 @@ pub(crate) async fn execute_compaction(
                 (assistant_config::constant::MAX_SUMMARY_OUTPUT_TOKENS as usize) * 4;
             if summary.len() > max_summary_chars {
                 summary.truncate(max_summary_chars);
-                summary.push_str("\n\n[摘要已截断，完整信息请通过 search_history 检索]");
+                summary.push_str(&format!(
+                    "\n\n{}",
+                    assistant_i18n::t("chat.compaction.summary_truncated")
+                ));
             }
 
             {
@@ -563,7 +570,9 @@ pub(crate) async fn execute_compaction(
                     attempt_id: attempt_id.to_string(),
                     message_id: summary_msg_id.to_string(),
                     seq: seq_val,
-                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(&ProviderError::Cancelled))),
+                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(
+                        &ProviderError::Cancelled,
+                    ))),
                     ..Default::default()
                 },
             );
@@ -579,7 +588,9 @@ pub(crate) async fn execute_compaction(
                     attempt_id: attempt_id.to_string(),
                     message_id: summary_msg_id.to_string(),
                     seq: seq_val,
-                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(&e))),
+                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(
+                        &e,
+                    ))),
                     ..Default::default()
                 },
             );
@@ -595,9 +606,9 @@ pub(crate) async fn execute_compaction(
                     attempt_id: attempt_id.to_string(),
                     message_id: summary_msg_id.to_string(),
                     seq: seq_val,
-                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(&ProviderError::Timeout(
-                        "Summary generation timed out (30s)".to_string(),
-                    )))),
+                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(
+                        &ProviderError::Timeout("Summary generation timed out (30s)".to_string()),
+                    ))),
                     ..Default::default()
                 },
             );

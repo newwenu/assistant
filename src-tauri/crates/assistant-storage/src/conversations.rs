@@ -311,8 +311,8 @@ pub fn search_conversations(
 }
 
 pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<String, String> {
-    let detail =
-        get_conversation_detail(conn, id)?.ok_or_else(|| "Conversation not found".to_string())?;
+    let detail = get_conversation_detail(conn, id)?
+        .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
     let mut md = format!("# {}\n\n", detail.conversation.title);
     for msg in &detail.messages {
         match msg.role.as_str() {
@@ -326,8 +326,8 @@ pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<Strin
 }
 
 pub fn export_conversation_json(conn: &Connection, id: &str) -> Result<String, String> {
-    let detail =
-        get_conversation_detail(conn, id)?.ok_or_else(|| "Conversation not found".to_string())?;
+    let detail = get_conversation_detail(conn, id)?
+        .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
     serde_json::to_string_pretty(&detail).map_err(|e| e.to_string())
 }
 
@@ -366,14 +366,18 @@ pub fn toggle_pin(conn: &Connection, id: &str) -> Result<bool, String> {
 }
 
 pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, String> {
-    let detail =
-        get_conversation_detail(conn, id)?.ok_or_else(|| "Conversation not found".to_string())?;
+    let detail = get_conversation_detail(conn, id)?
+        .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
 
     let new_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
     let new_conv = ConversationRow {
         id: new_id.clone(),
-        title: format!("{} (副本)", detail.conversation.title),
+        title: format!(
+            "{}{}",
+            detail.conversation.title,
+            assistant_i18n::t("conversation.copy_suffix")
+        ),
         title_source: "user".to_string(),
         provider_id: detail.conversation.provider_id.clone(),
         model_id: detail.conversation.model_id.clone(),
@@ -452,8 +456,6 @@ pub fn increment_generation(conn: &Connection, id: &str) -> Result<i64, String> 
 }
 
 pub fn edit_message(conn: &Connection, id: &str, new_content: &str) -> Result<(), String> {
-    let now = chrono::Utc::now().timestamp_millis();
-
     let row: (String, i64) = conn
         .query_row(
             "SELECT conversation_id, timestamp FROM messages WHERE id = ?1",
@@ -470,8 +472,8 @@ pub fn edit_message(conn: &Connection, id: &str, new_content: &str) -> Result<()
     .map_err(|e| e.to_string())?;
 
     conn.execute(
-        "UPDATE messages SET content = ?2, timestamp = ?3 WHERE id = ?1",
-        params![id, new_content, now],
+        "UPDATE messages SET content = ?2 WHERE id = ?1",
+        params![id, new_content],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -554,5 +556,5 @@ pub fn is_conversation_full(conn: &Connection, conversation_id: &str) -> Result<
             |row| row.get(0),
         )
         .ok();
-    result.ok_or_else(|| "Conversation not found".to_string())
+    result.ok_or_else(|| assistant_i18n::t("conversation.not_found"))
 }

@@ -171,7 +171,7 @@ pub fn delete_mode(conn: &Connection, id: &str) -> Result<(), String> {
     let mode = get_by_id(conn, id)?;
     if let Some(m) = &mode {
         if m.is_builtin {
-            return Err("内置模式不可删除".to_string());
+            return Err(assistant_i18n::t("agent_mode.builtin_cannot_delete"));
         }
     }
     conn.execute("DELETE FROM agent_modes WHERE id = ?1", params![id])
@@ -183,8 +183,8 @@ fn builtin_defaults(now: i64) -> Vec<AgentModeRow> {
     vec![
         AgentModeRow {
             id: "builtin-default".to_string(),
-            name: "默认".to_string(),
-            description: "标准参数，最常用的纯对话模式".to_string(),
+            name: "agent_mode.builtin.default.name".to_string(),
+            description: "agent_mode.builtin.default.description".to_string(),
             kind: "default".to_string(),
             prompt: String::new(),
             model: None,
@@ -200,8 +200,8 @@ fn builtin_defaults(now: i64) -> Vec<AgentModeRow> {
         },
         AgentModeRow {
             id: "builtin-quick".to_string(),
-            name: "快速".to_string(),
-            description: "低温度 + 短输出，适合简单问答".to_string(),
+            name: "agent_mode.builtin.quick.name".to_string(),
+            description: "agent_mode.builtin.quick.description".to_string(),
             kind: "quick".to_string(),
             prompt: String::new(),
             model: None,
@@ -217,8 +217,8 @@ fn builtin_defaults(now: i64) -> Vec<AgentModeRow> {
         },
         AgentModeRow {
             id: "builtin-deep".to_string(),
-            name: "深度".to_string(),
-            description: "长输出，适合需要长篇回答的场景".to_string(),
+            name: "agent_mode.builtin.deep.name".to_string(),
+            description: "agent_mode.builtin.deep.description".to_string(),
             kind: "deep".to_string(),
             prompt: String::new(),
             model: None,
@@ -234,10 +234,10 @@ fn builtin_defaults(now: i64) -> Vec<AgentModeRow> {
         },
         AgentModeRow {
             id: "builtin-translate".to_string(),
-            name: "翻译助手".to_string(),
-            description: "内置翻译 system prompt，低温度".to_string(),
+            name: "agent_mode.builtin.translate.name".to_string(),
+            description: "agent_mode.builtin.translate.description".to_string(),
             kind: "custom".to_string(),
-            prompt: "你是专业翻译助手，默认中英互译，用户指定其他语言对时按指示翻译。保持原文语气、格式和专业术语准确性。".to_string(),
+            prompt: "agent_mode.builtin.translate.prompt".to_string(),
             model: None,
             temperature: Some(0.3),
             max_tokens: Some(4096),
@@ -266,7 +266,7 @@ pub fn reset_builtin_mode(conn: &Connection, id: &str) -> Result<(), String> {
     let default_mode = defaults
         .iter()
         .find(|m| m.id == id)
-        .ok_or_else(|| "不是内置模式，无法恢复默认".to_string())?;
+        .ok_or_else(|| assistant_i18n::t("agent_mode.not_builtin_cannot_reset"))?;
 
     conn.execute(
         "UPDATE agent_modes SET description=?2, prompt=?3, model=?4, temperature=?5, max_tokens=?6, reasoning_enabled=?7, reasoning_effort=?8, tools=?9, updated_at=?10 WHERE id=?1",

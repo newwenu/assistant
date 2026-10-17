@@ -1,0 +1,64 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldHint {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.input {
+  margin-top: 4px;
+}
+
+.select {
+  width: 220px;
+  margin-top: 4px;
+}
+
+.actions {
+  margin-top: 4px;
+}
+
+.alert {
+  margin-top: 8px;
+}
+
+.hint {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--ant-color-bg-container);
+  border-radius: 6px;
+}
+
+.dropActive {
+  position: relative;
+  border-radius: 6px;
+  outline: 2px dashed var(--ant-color-primary);
+  outline-offset: -2px;
+}
+
+.dropOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--ant-color-bg-base) 35%, transparent);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.dropText {
+  font-size: 16px;
+  color: var(--ant-color-primary);
+}

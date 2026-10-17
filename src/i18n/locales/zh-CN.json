@@ -458,7 +458,8 @@
       "media": "媒体",
       "text": "文本",
       "generate": "生成",
-      "network": "网络"
+      "network": "网络",
+      "filesystem": "文件系统"
     },
     "search_placeholder": "搜索工具...",
     "no_match": "未找到匹配的工具",
@@ -554,6 +555,10 @@
     "svg_preview": {
       "name": "SVG 预览",
       "description": "SVG 代码编辑、实时预览、优化与下载"
+    },
+    "fs_link": {
+      "name": "文件链接",
+      "description": "创建/检测符号链接、硬链接、目录联接"
     }
   }
 }

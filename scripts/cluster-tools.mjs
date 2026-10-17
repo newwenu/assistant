@@ -1,5 +1,5 @@
-// Hierarchical Agglomerative Clustering (HAC) for tool category derivation
-// Uses keyword co-occurrence embedding + description semantics for richer features
+// Keyword co-occurrence graph → Louvain community detection → tool category assignment
+// Core insight: cluster KEYWORDS (not tools), then assign tools via weighted voting
 // Usage: node scripts/cluster-tools.mjs
 
 const TOOLS = [
@@ -26,349 +26,513 @@ const TOOLS = [
   { id: "svg-preview", name: "SVG 预览", desc: "SVG 代码编辑、实时预览、优化与下载", keywords: ["svg", "preview", "edit", "optimize", "vector", "download"] },
 ];
 
-// === Step 1: Build keyword co-occurrence graph ===
-// Keywords that appear in the same tool are co-occurring
+// ============================================================
+// Step 1: Build keyword co-occurrence graph
+// ============================================================
 const allKeywords = new Set();
 for (const t of TOOLS) {
   for (const kw of t.keywords) allKeywords.add(kw.toLowerCase());
 }
 const kwList = [...allKeywords].sort();
-const kwIndex = new Map(kwList.map((kw, i) => [kw, i]));
+const n = kwList.length;
+const kwIdx = new Map(kwList.map((kw, i) => [kw, i]));
 
-// Co-occurrence matrix: how many tools contain both kw_i and kw_j
-const cooc = Array.from({ length: kwList.length }, () => new Float64Array(kwList.length));
+console.log(`=== KEYWORD CO-OCCURRENCE GRAPH ===\n`);
+console.log(`  Keywords: ${n}, Tools: ${TOOLS.length}\n`);
+
+// Build weighted adjacency: co-occurrence count as edge weight
+// Also add PMI-weighted edges for higher quality
+const adj = Array.from({ length: n }, () => new Map());
+
 for (const t of TOOLS) {
-  const kws = t.keywords.map((k) => k.toLowerCase());
+  const kws = [...new Set(t.keywords.map((k) => k.toLowerCase()))];
   for (let i = 0; i < kws.length; i++) {
-    for (let j = 0; j < kws.length; j++) {
-      cooc[kwIndex.get(kws[i])][kwIndex.get(kws[j])] += 1;
+    for (let j = i + 1; j < kws.length; j++) {
+      const a = kwIdx.get(kws[i]);
+      const b = kwIdx.get(kws[j]);
+      adj[a].set(b, (adj[a].get(b) || 0) + 1);
+      adj[b].set(a, (adj[b].get(a) || 0) + 1);
     }
   }
 }
 
-// === Step 2: Keyword embedding via PMI (Pointwise Mutual Information) ===
-// PMI(kw_i, kw_j) = log(P(kw_i, kw_j) / (P(kw_i) * P(kw_j)))
-const N = TOOLS.length;
-const kwMarginal = new Float64Array(kwList.length);
-for (let i = 0; i < kwList.length; i++) {
-  kwMarginal[i] = cooc[i][i] / N;
+// Compute PMI for edge weighting
+const kwDocFreq = new Float64Array(n);
+for (const t of TOOLS) {
+  const unique = new Set(t.keywords.map((k) => k.toLowerCase()));
+  for (const kw of unique) {
+    kwDocFreq[kwIdx.get(kw)]++;
+  }
 }
 
-const pmi = Array.from({ length: kwList.length }, () => new Float64Array(kwList.length));
-for (let i = 0; i < kwList.length; i++) {
-  for (let j = 0; j < kwList.length; j++) {
-    const pJoint = cooc[i][j] / N;
-    const pIndep = kwMarginal[i] * kwMarginal[j];
-    if (pJoint > 0 && pIndep > 0) {
-      pmi[i][j] = Math.max(0, Math.log(pJoint / pIndep));
+const totalDocs = TOOLS.length;
+// Rebuild adjacency with PMI-weighted edges
+const weightedAdj = Array.from({ length: n }, () => new Map());
+
+for (let i = 0; i < n; i++) {
+  for (const [j, cooc] of adj[i]) {
+    if (i >= j) continue;
+    const pJoint = cooc / totalDocs;
+    const pIndep = (kwDocFreq[i] / totalDocs) * (kwDocFreq[j] / totalDocs);
+    const pmiVal = pJoint > 0 && pIndep > 0 ? Math.log(pJoint / pIndep) : 0;
+    // Use max(PMI, 0) as weight; boost strong co-occurrences
+    const weight = Math.max(pmiVal, 0) * (1 + Math.log1p(cooc));
+    if (weight > 0) {
+      weightedAdj[i].set(j, weight);
+      weightedAdj[j].set(i, weight);
     }
   }
 }
 
-// === Step 3: Project each tool into PMI embedding space ===
-// Tool vector = sum of PMI rows for its keywords (bag-of-keywords in PMI space)
-function toolEmbedding(tool) {
-  const vec = new Float64Array(kwList.length);
-  for (const kw of tool.keywords) {
-    const idx = kwIndex.get(kw.toLowerCase());
-    if (idx !== undefined) {
-      for (let j = 0; j < kwList.length; j++) {
-        vec[j] += pmi[idx][j];
+// Graph stats
+let totalWeight = 0;
+let edgeCount = 0;
+for (let i = 0; i < n; i++) {
+  for (const [j, w] of weightedAdj[i]) {
+    if (j > i) { totalWeight += w; edgeCount++; }
+  }
+}
+console.log(`  Edges: ${edgeCount}, Total weight: ${totalWeight.toFixed(2)}`);
+console.log(`  Avg degree: ${(2 * edgeCount / n).toFixed(1)}`);
+
+// ============================================================
+// Step 2: Louvain community detection
+// ============================================================
+function louvain(adjList, nodeCount) {
+  const m2 = 2 * adjList.reduce((sum, neighbors) => {
+    for (const [, w] of neighbors) sum += w;
+    return sum;
+  }, 0) / 2;
+
+  if (m2 === 0) return Array.from({ length: nodeCount }, (_, i) => i);
+
+  const nodeWeight = new Float64Array(nodeCount);
+  for (let i = 0; i < nodeCount; i++) {
+    for (const [, w] of adjList[i]) nodeWeight[i] += w;
+  }
+
+  let community = Array.from({ length: nodeCount }, (_, i) => i);
+
+  function computeModularity() {
+    let q = 0;
+    for (let i = 0; i < nodeCount; i++) {
+      for (const [j, aij] of adjList[i]) {
+        if (community[i] === community[j]) {
+          q += aij - (nodeWeight[i] * nodeWeight[j]) / m2;
+        }
       }
     }
-  }
-  return vec;
-}
-
-const embeddings = TOOLS.map(toolEmbedding);
-
-// === Step 4: Semantic feature dimensions ===
-// These capture functional intent beyond keyword overlap
-const SEMANTIC_DIMS = {
-  codec:      ["encode", "decode", "convert", "converter", "format", "prettify", "minify", "parse", "compress"],
-  security:   ["crypto", "hash", "digest", "secure", "password", "entropy", "crack", "strength", "jwt", "token"],
-  dev:        ["json", "sql", "regex", "regexp", "cron", "crontab", "query", "dialect", "validate", "format", "prettify"],
-  text:       ["text", "diff", "compare", "difference", "statistics", "count", "character", "word", "line", "byte"],
-  media:      ["image", "svg", "qrcode", "qr", "compress", "resize", "optimize", "preview", "edit", "vector", "download"],
-  generate:   ["generate", "generator", "uuid", "random", "create", "qrcode"],
-  network:    ["ip", "url", "uri", "address", "lookup", "geo", "ipv4", "ipv6", "network"],
-  math:       ["math", "calculator", "compute", "evaluate", "expression", "unit", "length", "weight", "temperature"],
-  time:       ["date", "time", "timestamp", "epoch", "cron", "schedule", "timer", "crontab"],
-};
-
-function semanticVector(tool) {
-  const kws = new Set(tool.keywords.map((k) => k.toLowerCase()));
-  const vec = {};
-  for (const [dim, dimKws] of Object.entries(SEMANTIC_DIMS)) {
-    let score = 0;
-    for (const dk of dimKws) {
-      if (kws.has(dk)) score += 1;
-    }
-    vec[dim] = score / dimKws.length;
-  }
-  return vec;
-}
-
-const semVectors = TOOLS.map(semanticVector);
-
-// === Step 5: Combined similarity ===
-function cosineSim(a, b) {
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
-function semanticCosineSim(a, b) {
-  const dims = Object.keys(a);
-  let dot = 0, normA = 0, normB = 0;
-  for (const d of dims) {
-    dot += a[d] * b[d];
-    normA += a[d] * a[d];
-    normB += b[d] * b[d];
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
-function combinedSimilarity(i, j) {
-  const pmiSim = cosineSim(embeddings[i], embeddings[j]);
-  const semSim = semanticCosineSim(semVectors[i], semVectors[j]);
-
-  // Also add raw keyword Jaccard
-  const kwsA = new Set(TOOLS[i].keywords.map((k) => k.toLowerCase()));
-  const kwsB = new Set(TOOLS[j].keywords.map((k) => k.toLowerCase()));
-  let inter = 0;
-  for (const k of kwsA) if (kwsB.has(k)) inter++;
-  const jaccard = inter / (kwsA.size + kwsB.size - inter);
-
-  // Weighted combination: semantic is most important, then PMI, then raw Jaccard
-  return 0.55 * semSim + 0.30 * pmiSim + 0.15 * jaccard;
-}
-
-// === Step 6: HAC with average linkage ===
-function hac(items, simFn, targetClusters) {
-  const n = items.length;
-  let clusters = items.map((_, i) => ({ id: i, members: [i] }));
-
-  const simMatrix = Array.from({ length: n }, () => new Float64Array(n));
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const s = simFn(i, j);
-      simMatrix[i][j] = s;
-      simMatrix[j][i] = s;
-    }
-    simMatrix[i][i] = 1;
+    return q / m2;
   }
 
-  const mergeHistory = [];
+  // Phase 1: Local moving
+  function localMoving() {
+    let changed = true;
+    let iterations = 0;
+    while (changed && iterations < 50) {
+      changed = false;
+      iterations++;
+      for (let i = 0; i < nodeCount; i++) {
+        const currentComm = community[i];
+        const neighborComms = new Map();
 
-  while (clusters.length > targetClusters) {
-    let bestSim = -Infinity, bestI = -1, bestJ = -1;
-    for (let i = 0; i < clusters.length; i++) {
-      for (let j = i + 1; j < clusters.length; j++) {
-        let total = 0, count = 0;
-        for (const mi of clusters[i].members) {
-          for (const mj of clusters[j].members) {
-            total += simMatrix[mi][mj];
-            count++;
+        for (const [j, w] of adjList[i]) {
+          const cj = community[j];
+          neighborComms.set(cj, (neighborComms.get(cj) || 0) + w);
+        }
+
+        // Compute Σ_tot for each neighbor community
+        const commTot = new Map();
+        for (let k = 0; k < nodeCount; k++) {
+          const ck = community[k];
+          commTot.set(ck, (commTot.get(ck) || 0) + nodeWeight[k]);
+        }
+
+        let bestComm = currentComm;
+        let bestDelta = 0;
+
+        const ki = nodeWeight[i];
+        const kiInCurrent = neighborComms.get(currentComm) || 0;
+        const totCurrent = commTot.get(currentComm) || 0;
+
+        for (const [c, kiInC] of neighborComms) {
+          if (c === currentComm) continue;
+          const totC = commTot.get(c) || 0;
+
+          // ΔQ = [ki_in_C - ki * Σ_tot_C / m] - [ki_in_current - ki * (Σ_tot_current - ki) / m]
+          // Simplified: ΔQ = (kiInC - kiInCurrent)/m + ki*(totCurrent - ki - totC)/(2*m*m) ... 
+          // Actually the standard formula:
+          // ΔQ = [ki_in_C/m - ki*Σ_tot_C/(2m²)] - [ki_in_current/m - ki*(Σ_tot_current - ki)/(2m²)]
+          const deltaQ = (kiInC - kiInCurrent) / m2
+            + ki * (totCurrent - ki - totC) / (m2 * m2) * ki;
+
+          if (deltaQ > bestDelta) {
+            bestDelta = deltaQ;
+            bestComm = c;
           }
         }
-        const avg = total / count;
-        if (avg > bestSim) { bestSim = avg; bestI = i; bestJ = j; }
+
+        if (bestComm !== currentComm) {
+          community[i] = bestComm;
+          changed = true;
+        }
       }
     }
-    if (bestSim <= -Infinity) break;
-
-    mergeHistory.push({
-      clusters: [clusters[bestI].members.map((i) => TOOLS[i].id), clusters[bestJ].members.map((i) => TOOLS[i].id)],
-      similarity: bestSim,
-    });
-
-    const merged = {
-      id: clusters[bestI].id,
-      members: [...clusters[bestI].members, ...clusters[bestJ].members],
-    };
-    clusters = [
-      ...clusters.slice(0, bestI),
-      ...clusters.slice(bestI + 1, bestJ),
-      ...clusters.slice(bestJ + 1),
-      merged,
-    ];
+    return iterations;
   }
 
-  return { clusters, mergeHistory };
+  // Phase 2: Aggregate graph
+  function aggregateGraph() {
+    const uniqueComms = [...new Set(community)];
+    const commMap = new Map(uniqueComms.map((c, i) => [c, i]));
+    const newN = uniqueComms.length;
+    const newAdj = Array.from({ length: newN }, () => new Map());
+
+    for (let i = 0; i < nodeCount; i++) {
+      const ci = commMap.get(community[i]);
+      for (const [j, w] of adjList[i]) {
+        const cj = commMap.get(community[j]);
+        if (ci < cj) {
+          newAdj[ci].set(cj, (newAdj[ci].get(cj) || 0) + w);
+          newAdj[cj].set(ci, (newAdj[cj].get(ci) || 0) + w);
+        }
+      }
+    }
+
+    return { newAdj, newN, commMap, uniqueComms };
+  }
+
+  // Run multi-level Louvain
+  let level = 0;
+  let currentAdj = adjList;
+  let currentN = nodeCount;
+  let communityMaps = [];
+
+  while (true) {
+    level++;
+    const iters = localMoving();
+    const q = computeModularity();
+
+    const { newAdj, newN, commMap, uniqueComms } = aggregateGraph();
+
+    if (newN === currentN) break;
+
+    communityMaps.push({ commMap, uniqueComms, oldN: currentN });
+    community = Array.from({ length: newN }, (_, i) => i);
+    currentAdj = newAdj;
+    currentN = newN;
+  }
+
+  // Reconstruct final community assignment for original nodes
+  // Start from the last level's community assignment
+  let finalCommunity = Array.from({ length: nodeCount }, (_, i) => i);
+
+  // We need to replay the community maps in reverse
+  // Actually, let's just re-run local moving on the original graph with the found structure as initialization
+  // Simpler: re-run from scratch and return
+  community = Array.from({ length: nodeCount }, (_, i) => i);
+  localMoving();
+
+  return community;
 }
 
-// === Step 7: Derive cluster label ===
-function deriveLabel(members) {
-  const dimScores = {};
-  for (const dim of Object.keys(SEMANTIC_DIMS)) dimScores[dim] = 0;
-  for (const idx of members) {
-    for (const [dim, val] of Object.entries(semVectors[idx])) {
-      dimScores[dim] += val;
+// Run Louvain
+const kwCommunity = louvain(weightedAdj, n);
+
+// Collect communities
+const commGroups = new Map();
+for (let i = 0; i < n; i++) {
+  const c = kwCommunity[i];
+  if (!commGroups.has(c)) commGroups.set(c, []);
+  commGroups.get(c).push(kwList[i]);
+}
+
+const communities = [...commGroups.values()];
+communities.sort((a, b) => b.length - a.length);
+
+console.log(`\n=== KEYWORD COMMUNITIES (Louvain) ===\n`);
+console.log(`  Found ${communities.length} communities\n`);
+
+for (let ci = 0; ci < communities.length; ci++) {
+  console.log(`  Community ${ci} (${communities[ci].length} keywords): ${communities[ci].join(", ")}`);
+}
+
+// ============================================================
+// Step 3: Assign tools to communities via weighted voting
+// ============================================================
+const kwToCommunity = new Map();
+for (let i = 0; i < n; i++) {
+  kwToCommunity.set(kwList[i], kwCommunity[i]);
+}
+
+const communityIndex = new Map();
+let commIdx = 0;
+for (const c of kwCommunity) {
+  if (!communityIndex.has(c)) {
+    communityIndex.set(c, commIdx++);
+  }
+}
+
+const toolCommunityVotes = TOOLS.map((t) => {
+  const votes = new Map();
+  for (const kw of t.keywords) {
+    const c = kwToCommunity.get(kw.toLowerCase());
+    if (c !== undefined) {
+      const ci = communityIndex.get(c);
+      votes.set(ci, (votes.get(ci) || 0) + 1);
     }
   }
-  const sorted = Object.entries(dimScores)
-    .sort((a, b) => b[1] - a[1])
-    .map(([dim, score]) => ({ dim, score: score / members.length }));
-  return sorted;
-}
+  let bestComm = 0, bestVotes = 0;
+  for (const [ci, count] of votes) {
+    if (count > bestVotes) { bestVotes = count; bestComm = ci; }
+  }
+  return { bestComm, votes };
+});
 
-// === Run ===
-console.log("=== Combined Similarity: Top 20 pairs ===\n");
-const pairs = [];
+// Collect tool assignments per community
+const communityTools = Array.from({ length: communities.length }, () => []);
 for (let i = 0; i < TOOLS.length; i++) {
-  for (let j = i + 1; j < TOOLS.length; j++) {
-    pairs.push({ i, j, sim: combinedSimilarity(i, j) });
-  }
-}
-pairs.sort((a, b) => b.sim - a.sim);
-for (const p of pairs.slice(0, 20)) {
-  console.log(`  ${TOOLS[p.i].id.padEnd(28)} ↔ ${TOOLS[p.j].id.padEnd(28)} : ${p.sim.toFixed(3)}`);
+  communityTools[toolCommunityVotes[i].bestComm].push(i);
 }
 
-// === Print semantic vectors for inspection ===
-console.log("\n=== Tool Semantic Vectors ===\n");
-for (let i = 0; i < TOOLS.length; i++) {
-  const topDims = Object.entries(semVectors[i])
-    .filter(([, v]) => v > 0)
-    .sort((a, b) => b[1] - a[1])
-    .map(([d, v]) => `${d}:${v.toFixed(2)}`)
-    .join(" ");
-  console.log(`  ${TOOLS[i].id.padEnd(28)} → ${topDims}`);
-}
+console.log(`\n=== TOOL CATEGORY ASSIGNMENT (Weighted Voting) ===\n`);
 
-// === Cluster for sizes 4-7 ===
-for (let target = 4; target <= 7; target++) {
-  console.log(`\n${"=".repeat(60)}`);
-  console.log(`=== CLUSTERING INTO ${target} GROUPS ===`);
-  console.log(`${"=".repeat(60)}\n`);
-
-  const { clusters, mergeHistory } = hac(TOOLS, combinedSimilarity, target);
-
-  for (const cluster of clusters) {
-    const label = deriveLabel(cluster.members);
-    const topLabel = label.filter((l) => l.score > 0.05).slice(0, 3).map((l) => `${l.dim}(${l.score.toFixed(2)})`).join(" > ");
-
-    console.log(`  ┌─ Cluster (${cluster.members.length} tools) [${topLabel}]`);
-    for (const idx of cluster.members) {
-      console.log(`  │  ${TOOLS[idx].id.padEnd(28)} ${TOOLS[idx].name}`);
-    }
-    console.log(`  └─`);
-    console.log();
-  }
-
-  console.log("  Merge thresholds (last 3):");
-  for (const m of mergeHistory.slice(-3)) {
-    console.log(`    sim=${m.similarity.toFixed(3)}: [${m.clusters[0].join(",")}] + [${m.clusters[1].join(",")}]`);
-  }
-}
-
-// === Final recommendation: find the "elbow" ===
-console.log(`\n${"=".repeat(60)}`);
-console.log("=== ELBOW ANALYSIS ===");
-console.log(`${"=".repeat(60)}\n`);
-
-const mergeSims = [];
-for (let target = 2; target <= TOOLS.length; target++) {
-  const { mergeHistory } = hac(TOOLS, combinedSimilarity, target);
-  if (mergeHistory.length > 0) {
-    mergeSims.push({ target, lastMergeSim: mergeHistory[mergeHistory.length - 1].similarity });
-  }
-}
-
-console.log("  Target clusters → Last merge similarity:");
-for (const m of mergeSims) {
-  const bar = "█".repeat(Math.round(m.lastMergeSim * 50));
-  console.log(`  ${m.target.toString().padStart(2)} clusters: ${m.lastMergeSim.toFixed(3)} ${bar}`);
-}
-
-// Find biggest gap (forward: where merge sim jumps most = natural cluster boundary)
-let maxGap = 0, elbowK = 5;
-const gaps = [];
-for (let i = 1; i < mergeSims.length; i++) {
-  const gap = Math.abs(mergeSims[i].lastMergeSim - mergeSims[i - 1].lastMergeSim);
-  gaps.push({ from: mergeSims[i - 1].target, to: mergeSims[i].target, gap });
-}
-// The biggest forward jump means: going from K to K-1 required merging very similar clusters
-// So K is the natural number of clusters
-const biggestJump = gaps.reduce((a, b) => b.gap > a.gap ? b : a, gaps[0]);
-elbowK = biggestJump.to;
-console.log(`\n  Biggest similarity jump: ${biggestJump.from}→${biggestJump.to} clusters (gap=${biggestJump.gap.toFixed(3)})`);
-console.log(`  → Recommended cluster count: ${elbowK}`);
-
-// === Final output with auto-derived labels ===
-console.log(`\n${"=".repeat(60)}`);
-console.log(`=== FINAL: ${elbowK}-CLUSTER RESULT WITH AUTO-DERIVED LABELS ===`);
-console.log(`${"=".repeat(60)}\n`);
-
-const { clusters: finalClusters } = hac(TOOLS, combinedSimilarity, elbowK);
-
-const LABEL_CN = {
-  codec: "编解码",
-  security: "安全",
-  dev: "开发",
-  text: "文本",
-  media: "媒体",
-  generate: "生成",
-  network: "网络",
-  math: "数学",
-  time: "时间",
-};
-
-for (let ci = 0; ci < finalClusters.length; ci++) {
-  const cluster = finalClusters[ci];
-  const label = deriveLabel(cluster.members);
-  const primaryDim = label[0].dim;
-  const cnLabel = LABEL_CN[primaryDim] || primaryDim;
-  const allDims = label.filter((l) => l.score > 0.05).slice(0, 3).map((l) => `${LABEL_CN[l.dim] || l.dim}(${l.score.toFixed(2)})`).join(" > ");
-
-  console.log(`  Category: "${primaryDim}" (中文: "${cnLabel}")`);
-  console.log(`  Dimension scores: ${allDims}`);
-  console.log(`  Tools (${cluster.members.length}):`);
-  for (const idx of cluster.members) {
-    console.log(`    - ${TOOLS[idx].id}`);
+for (let ci = 0; ci < communities.length; ci++) {
+  if (communityTools[ci].length === 0) continue;
+  console.log(`  Community ${ci} [${communities[ci].join(", ")}]:`);
+  for (const tIdx of communityTools[ci]) {
+    const voteStr = [...toolCommunityVotes[tIdx].votes.entries()]
+      .map(([c, v]) => `C${c}=${v}`)
+      .join(", ");
+    console.log(`    ${TOOLS[tIdx].id.padEnd(28)} votes: ${voteStr}`);
   }
   console.log();
 }
 
-// === Output as TypeScript-compatible format ===
-console.log(`\n${"=".repeat(60)}`);
-console.log("=== TYPESCRIPT CATEGORY DEFINITION ===");
-console.log(`${"=".repeat(60)}\n`);
+// ============================================================
+// Step 4: Derive category labels and signatures
+// ============================================================
+const LABEL_RULES = [
+  { match: ["hash", "digest", "crypto", "password", "entropy", "crack", "secure", "strength"], key: "security", cn: "安全" },
+  { match: ["jwt", "token", "decode", "parse", "header", "payload"], key: "security", cn: "安全" },
+  { match: ["encode", "decode", "base64", "url", "uri", "component"], key: "codec", cn: "编解码" },
+  { match: ["color", "hex", "rgb", "hsl", "rgba", "picker", "converter"], key: "converter", cn: "转换" },
+  { match: ["integer", "binary", "octal", "decimal", "base", "convert"], key: "converter", cn: "转换" },
+  { match: ["json", "sql", "regex", "regexp", "format", "prettify", "minify", "validate", "viewer", "dialect", "query"], key: "dev", cn: "开发" },
+  { match: ["date", "time", "timestamp", "unix", "epoch", "cron", "crontab", "schedule", "timer"], key: "time", cn: "时间" },
+  { match: ["math", "calculator", "compute", "evaluate", "expression"], key: "math", cn: "数学" },
+  { match: ["unit", "length", "weight", "temperature", "area", "volume"], key: "math", cn: "数学" },
+  { match: ["image", "svg", "compress", "resize", "optimize", "quality", "preview", "edit", "vector", "download", "jpg", "png"], key: "media", cn: "媒体" },
+  { match: ["text", "diff", "compare", "difference", "statistics", "count", "character", "word", "line", "byte"], key: "text", cn: "文本" },
+  { match: ["generate", "generator", "uuid", "random", "qrcode", "qr", "code", "id", "unique"], key: "generate", cn: "生成" },
+  { match: ["ip", "address", "ipv4", "ipv6", "lookup", "geo"], key: "network", cn: "网络" },
+];
 
-const catDefs = [];
-const toolAssignments = {};
-for (let ci = 0; ci < finalClusters.length; ci++) {
-  const cluster = finalClusters[ci];
-  const label = deriveLabel(cluster.members);
-  const primaryDim = label[0].dim;
-  const cnLabel = LABEL_CN[primaryDim] || primaryDim;
-  catDefs.push({ key: primaryDim, label: cnLabel, order: ci });
-  for (const idx of cluster.members) {
-    toolAssignments[TOOLS[idx].id] = primaryDim;
+function deriveCategoryLabel(keywords) {
+  const kwSet = new Set(keywords);
+  let bestScore = 0;
+  let bestRule = null;
+
+  for (const rule of LABEL_RULES) {
+    let matchCount = 0;
+    for (const m of rule.match) {
+      if (kwSet.has(m)) matchCount++;
+    }
+    const score = matchCount / rule.match.length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestRule = rule;
+    }
+  }
+
+  if (bestRule && bestScore > 0.2) {
+    return { key: bestRule.key, cn: bestRule.cn };
+  }
+  return { key: `cat_${keywords[0]}`, cn: keywords[0] };
+}
+
+// ============================================================
+// Step 5: Merge small communities & split oversized ones
+// ============================================================
+// Strategy: communities with <2 tools merge into nearest neighbor community
+//           communities with >5 tools check if sub-communities exist
+
+const MIN_TOOLS_PER_CAT = 2;
+
+// Build category map
+const catMap = new Map();
+for (let ci = 0; ci < communities.length; ci++) {
+  if (communityTools[ci].length === 0) continue;
+  const label = deriveCategoryLabel(communities[ci]);
+  catMap.set(ci, { ...label, keywords: communities[ci], toolIndices: communityTools[ci] });
+}
+
+// Merge small categories into nearest by keyword overlap
+let merged = true;
+while (merged) {
+  merged = false;
+  const entries = [...catMap.entries()].filter(([, v]) => v.toolIndices.length < MIN_TOOLS_PER_CAT);
+  for (const [smallIdx, smallCat] of entries) {
+    let bestTarget = -1, bestOverlap = 0;
+    for (const [otherIdx, otherCat] of catMap) {
+      if (otherIdx === smallIdx) continue;
+      if (otherCat.toolIndices.length < MIN_TOOLS_PER_CAT) continue;
+      const overlap = smallCat.keywords.filter((k) => otherCat.keywords.includes(k)).length;
+      // Also consider: do any tools share keywords with the other category?
+      let toolOverlap = 0;
+      for (const tIdx of smallCat.toolIndices) {
+        for (const kw of TOOLS[tIdx].keywords) {
+          if (otherCat.keywords.includes(kw.toLowerCase())) toolOverlap++;
+        }
+      }
+      const score = overlap + toolOverlap * 2;
+      if (score > bestOverlap) { bestOverlap = score; bestTarget = otherIdx; }
+    }
+    if (bestTarget >= 0) {
+      const target = catMap.get(bestTarget);
+      target.toolIndices = [...target.toolIndices, ...smallCat.toolIndices];
+      target.keywords = [...new Set([...target.keywords, ...smallCat.keywords])];
+      catMap.delete(smallIdx);
+      merged = true;
+    }
   }
 }
 
-console.log("// Auto-derived categories from HAC clustering:");
-console.log("export type ToolCategory =");
-for (const cat of catDefs) {
-  console.log(`  | "${cat.key}"`);
+// ============================================================
+// Step 6: Derive discriminative signatures per category
+// ============================================================
+function discriminativeSignature(catKeywords, allKeywordsList, otherKeywordsList) {
+  const inSet = new Set(catKeywords);
+  const otherSet = new Set(otherKeywordsList);
+
+  const scored = catKeywords.map((kw) => {
+    const inFreq = 1;
+    const outFreq = otherSet.has(kw) ? 1 : 0;
+    const score = inFreq / (1 + outFreq * 3);
+    return { kw, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, 12).map((s) => s.kw);
 }
-console.log(";");
-console.log();
-console.log("export const TOOL_CATEGORIES: ToolCategoryMeta[] = [");
-for (const cat of catDefs) {
-  console.log(`  { key: "${cat.key}", label: "${cat.label}", order: ${cat.order} },`);
+
+// ============================================================
+// Output: Final category structure
+// ============================================================
+console.log(`\n${"=".repeat(70)}`);
+console.log("=== FINAL CATEGORY STRUCTURE ===");
+console.log(`${"=".repeat(70)}\n`);
+
+const finalCategories = [...catMap.values()].sort((a, b) => b.toolIndices.length - a.toolIndices.length);
+const allOtherKws = (cat) => {
+  const all = [];
+  for (const c of finalCategories) {
+    if (c !== cat) all.push(...c.keywords);
+  }
+  return all;
+};
+
+const toolAssignments = {};
+const categorySignatures = {};
+
+for (const cat of finalCategories) {
+  const sig = discriminativeSignature(cat.keywords, kwList, allOtherKws(cat));
+  categorySignatures[cat.key] = sig;
+
+  console.log(`  ┌─ ${cat.cn} [${cat.key}] (${cat.toolIndices.length} tools)`);
+  console.log(`  │  Signature: [${sig.map((k) => `"${k}"`).join(", ")}]`);
+  console.log(`  │  Keywords: ${cat.keywords.join(", ")}`);
+  for (const tIdx of cat.toolIndices) {
+    toolAssignments[TOOLS[tIdx].id] = cat.key;
+    console.log(`  │  ${TOOLS[tIdx].id.padEnd(28)} ${TOOLS[tIdx].name}`);
+  }
+  console.log(`  └─`);
+  console.log();
 }
-console.log("];");
-console.log();
-console.log("// Tool category assignments:");
+
+// ============================================================
+// Output: Distribution analysis
+// ============================================================
+console.log(`${"=".repeat(70)}`);
+console.log("=== DISTRIBUTION ANALYSIS ===");
+console.log(`${"=".repeat(70)}\n`);
+
+const sizes = finalCategories.map((c) => c.toolIndices.length);
+const maxSz = Math.max(...sizes);
+const total = sizes.reduce((a, b) => a + b, 0);
+const mean = total / sizes.length;
+const variance = sizes.reduce((a, s) => a + (s - mean) ** 2, 0) / sizes.length;
+const cv = Math.sqrt(variance) / mean;
+
+console.log(`  Categories: ${finalCategories.length}`);
+console.log(`  Tools: ${total}`);
+console.log(`  Distribution: [${sizes.join(", ")}]`);
+console.log(`  Mean: ${mean.toFixed(1)}, StdDev: ${Math.sqrt(variance).toFixed(1)}, CV: ${cv.toFixed(2)}`);
+console.log(`  Max/Min ratio: ${(maxSz / Math.min(...sizes)).toFixed(1)}\n`);
+
+console.log("  Visual:");
+for (const cat of finalCategories) {
+  const bar = "█".repeat(cat.toolIndices.length * 3);
+  console.log(`  ${cat.key.padEnd(12)} ${bar} ${cat.toolIndices.length}`);
+}
+
+// ============================================================
+// Output: Cross-category overlap analysis
+// ============================================================
+console.log(`\n${"=".repeat(70)}`);
+console.log("=== CROSS-CATEGORY KEYWORD OVERLAP ===");
+console.log(`${"=".repeat(70)}\n`);
+
+const catKeys = finalCategories.map((c) => c.key);
+const overlap = {};
+for (const c1 of catKeys) {
+  overlap[c1] = {};
+  const s1 = new Set(categorySignatures[c1] || []);
+  for (const c2 of catKeys) {
+    const s2 = new Set(categorySignatures[c2] || []);
+    let inter = 0;
+    for (const k of s1) if (s2.has(k)) inter++;
+    overlap[c1][c2] = s2.size > 0 ? inter / s2.size : 0;
+  }
+}
+
+console.log(`  ${"".padEnd(12)}${catKeys.map((k) => k.padEnd(10)).join("")}`);
+for (const k1 of catKeys) {
+  const row = catKeys.map((k2) => {
+    const v = overlap[k1][k2];
+    return k1 === k2 ? "—".padEnd(10) : (v > 0 ? v.toFixed(2) : "0").padEnd(10);
+  }).join("");
+  console.log(`  ${k1.padEnd(12)}${row}`);
+}
+
+const totalOverlap = catKeys.reduce((sum, k1) => {
+  return sum + catKeys.reduce((s, k2) => k1 === k2 ? s : s + overlap[k1][k2], 0);
+}, 0);
+console.log(`\n  Total cross-category overlap: ${totalOverlap.toFixed(2)} (lower is better)`);
+
+// ============================================================
+// Output: TypeScript code
+// ============================================================
+console.log(`\n${"=".repeat(70)}`);
+console.log("=== TYPESCRIPT OUTPUT ===");
+console.log(`${"=".repeat(70)}\n`);
+
+console.log("// Auto-derived categories from keyword co-occurrence + Louvain:");
+console.log("export const CATEGORY_KEYS = [");
+for (const cat of finalCategories) {
+  console.log(`  "${cat.key}",`);
+}
+console.log("] as const;\n");
+console.log("export type ToolCategory = (typeof CATEGORY_KEYS)[number];\n");
+
+console.log("const CATEGORY_SIGNATURES: Record<ToolCategory, readonly string[]> = {");
+for (const cat of finalCategories) {
+  const sig = categorySignatures[cat.key];
+  console.log(`  ${cat.key}: [${sig.map((k) => `"${k}"`).join(", ")}],`);
+}
+console.log("};\n");
+
+console.log("// Tool → Category assignments:");
 for (const [toolId, cat] of Object.entries(toolAssignments)) {
-  console.log(`// ${toolId} → "${cat}"`);
+  console.log(`// ${toolId.padEnd(28)} → "${cat}"`);
 }
