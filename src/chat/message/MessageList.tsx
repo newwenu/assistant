@@ -1,4 +1,10 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import { DownOutlined, LoadingOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { MessageBubble, RoleContext } from "./MessageBubble";
@@ -22,6 +28,8 @@ interface MessageListProps {
   onEditMessage?: (id: string, newContent: string) => void;
   onRegenerateMessage?: (id: string) => void;
   onRetryMessage?: (messageId: string) => void;
+  onSwitchBranch?: (messageId: string, direction: "prev" | "next") => void;
+  onFork?: (messageId: string) => void;
   retryStatus?: RetryNotification | null;
 }
 
@@ -39,6 +47,8 @@ export const MessageList: React.FC<MessageListProps> = ({
   onEditMessage,
   onRegenerateMessage,
   onRetryMessage,
+  onSwitchBranch,
+  onFork,
   retryStatus,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -49,6 +59,13 @@ export const MessageList: React.FC<MessageListProps> = ({
   const seenMessageCountRef = useRef(messages.length);
   const rafIdRef = useRef<number | null>(null);
   const loadMoreTriggeredRef = useRef(false);
+
+  const lastAssistantIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") return i;
+    }
+    return -1;
+  }, [messages]);
 
   useEffect(() => {
     if (userScrolledUp) {
@@ -167,6 +184,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             isStreamingMsg && streamingContent != null
               ? { ...msg, content: streamingContent }
               : msg;
+          const isLastAssistant = index === lastAssistantIndex;
           return (
             <RoleContext.Provider
               key={msg.id}
@@ -180,12 +198,14 @@ export const MessageList: React.FC<MessageListProps> = ({
                 compact={compact}
                 onDelete={onDeleteMessage}
                 onEdit={onEditMessage}
-                onRegenerate={onRegenerateMessage}
+                onRegenerate={isLastAssistant ? onRegenerateMessage : undefined}
                 onRetry={
                   msg.error?.retryable
                     ? () => onRetryMessage?.(msg.id)
                     : undefined
                 }
+                onSwitchBranch={onSwitchBranch}
+                onFork={onFork}
               />
             </RoleContext.Provider>
           );

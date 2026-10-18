@@ -57,6 +57,8 @@ function createMockDeps(): {
     getMessages: vi.fn(() => []),
     getConversations: vi.fn(() => []),
     getSelectedModeId: vi.fn(() => null),
+    getPendingBranchPoint: vi.fn(() => null),
+    clearPendingBranchPoint: vi.fn(),
   };
 
   const deps: ChatOrchestratorDeps = {

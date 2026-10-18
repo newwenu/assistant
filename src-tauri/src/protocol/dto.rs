@@ -23,6 +23,8 @@ pub struct ConversationDto {
     pub created_at: i64,
     pub updated_at: i64,
     pub is_full: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_branch_id: Option<String>,
 }
 
 impl From<ConversationRow> for ConversationDto {
@@ -40,6 +42,7 @@ impl From<ConversationRow> for ConversationDto {
             created_at: r.created_at,
             updated_at: r.updated_at,
             is_full: r.is_full,
+            active_branch_id: r.active_branch_id,
         }
     }
 }
@@ -61,6 +64,10 @@ pub struct MessageDto {
     pub reasoning: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls_json: Option<String>,
+    #[serde(default)]
+    pub sibling_index: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_count: Option<i64>,
 }
 
 impl From<MessageRow> for MessageDto {
@@ -76,6 +83,8 @@ impl From<MessageRow> for MessageDto {
             is_pinned: r.is_pinned,
             reasoning: r.reasoning,
             tool_calls_json: r.tool_calls_json,
+            sibling_index: r.sibling_index,
+            sibling_count: None,
         }
     }
 }
@@ -500,6 +509,46 @@ pub struct ScreenRectDto {
     pub y: i32,
     pub width: u32,
     pub height: u32,
+}
+
+// ── Branch DTOs ────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SiblingInfoDto {
+    pub id: String,
+    pub sibling_index: i64,
+    pub content_preview: String,
+}
+
+impl From<assistant_storage::conversations::SiblingInfo> for SiblingInfoDto {
+    fn from(s: assistant_storage::conversations::SiblingInfo) -> Self {
+        Self {
+            id: s.id,
+            sibling_index: s.sibling_index,
+            content_preview: s.content_preview,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessagesChangedPayloadDto {
+    pub conversation_id: String,
+    pub change_kind: String,
+    pub messages: Vec<MessageDto>,
+    pub active_branch_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub _seq: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MaxSiblingsExceededErrorDto {
+    pub conversation_id: String,
+    pub parent_id: Option<String>,
+    pub current_count: i64,
+    pub max_siblings: i64,
 }
 
 // ── Round-trip tests ────────────────────────

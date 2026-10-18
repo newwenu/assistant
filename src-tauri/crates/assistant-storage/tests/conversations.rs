@@ -20,6 +20,7 @@ fn conv(id: &str) -> ConversationRow {
         created_at: 1000,
         updated_at: 1000,
         is_full: false,
+        active_branch_id: None,
     }
 }
 
@@ -35,6 +36,7 @@ fn msg(id: &str, conv_id: &str, role: &str, content: &str, ts: i64) -> MessageRo
         is_pinned: false,
         reasoning: None,
         tool_calls_json: None,
+        sibling_index: 0,
     }
 }
 
@@ -50,72 +52,6 @@ fn delete_conversation_removes_all_messages() {
     assert!(conversations::get_conversation_by_id(&conn, "c1")
         .unwrap()
         .is_none());
-}
-
-#[test]
-fn delete_message_and_after_removes_target_and_all_later() {
-    let conn = init_db();
-    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
-    conversations::insert_message(&conn, &msg("m1", "c1", "user", "keep", 100)).unwrap();
-    conversations::insert_message(&conn, &msg("m2", "c1", "assistant", "target", 200)).unwrap();
-    conversations::insert_message(&conn, &msg("m3", "c1", "user", "later", 300)).unwrap();
-
-    conversations::delete_message_and_after(&conn, "m2").unwrap();
-    let remaining = conversations::get_messages(&conn, "c1").unwrap();
-    assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0].id, "m1");
-}
-
-#[test]
-fn delete_message_and_after_preserves_same_timestamp_siblings() {
-    let conn = init_db();
-    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
-    conversations::insert_message(&conn, &msg("m1", "c1", "user", "keep", 100)).unwrap();
-    conversations::insert_message(&conn, &msg("m2", "c1", "assistant", "target", 200)).unwrap();
-    conversations::insert_message(&conn, &msg("m3", "c1", "user", "same-ts-sibling", 200)).unwrap();
-    conversations::insert_message(&conn, &msg("m4", "c1", "assistant", "later", 300)).unwrap();
-
-    conversations::delete_message_and_after(&conn, "m2").unwrap();
-    let remaining = conversations::get_messages(&conn, "c1").unwrap();
-    assert_eq!(remaining.len(), 2);
-    assert_eq!(remaining[0].id, "m1");
-    assert_eq!(
-        remaining[1].id, "m3",
-        "same-timestamp sibling should survive"
-    );
-}
-
-#[test]
-fn edit_message_removes_later_and_moves_timestamp() {
-    let conn = init_db();
-    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
-    conversations::insert_message(&conn, &msg("m1", "c1", "user", "original", 100)).unwrap();
-    conversations::insert_message(&conn, &msg("m2", "c1", "assistant", "response", 200)).unwrap();
-    conversations::insert_message(&conn, &msg("m3", "c1", "user", "followup", 300)).unwrap();
-
-    conversations::edit_message(&conn, "m1", "edited").unwrap();
-    let remaining = conversations::get_messages(&conn, "c1").unwrap();
-    assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0].content, "edited");
-    assert!(
-        remaining[0].timestamp > 100,
-        "edited message should get a new timestamp"
-    );
-}
-
-#[test]
-fn edit_message_removes_same_timestamp_siblings() {
-    let conn = init_db();
-    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
-    conversations::insert_message(&conn, &msg("m1", "c1", "user", "edit-me", 200)).unwrap();
-    conversations::insert_message(&conn, &msg("m2", "c1", "assistant", "same-ts-sibling", 200))
-        .unwrap();
-    conversations::insert_message(&conn, &msg("m3", "c1", "user", "later", 300)).unwrap();
-
-    conversations::edit_message(&conn, "m1", "edited").unwrap();
-    let remaining = conversations::get_messages(&conn, "c1").unwrap();
-    assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0].content, "edited");
 }
 
 #[test]
@@ -364,6 +300,8 @@ mod property {
                 generation: 0,
                 created_at: 0,
                 updated_at: 0,
+                is_full: false,
+                active_branch_id: None,
             };
             conversations::insert_conversation(&conn, &conv).unwrap();
             for i in 0..n_msgs {
@@ -378,6 +316,7 @@ mod property {
                     is_pinned: false,
                     reasoning: None,
                     tool_calls_json: None,
+                    sibling_index: 0,
                 }).unwrap();
             }
             let count = conversations::get_message_count(&conn, "c1").unwrap();
@@ -403,6 +342,8 @@ mod property {
                 generation: 0,
                 created_at: 0,
                 updated_at: 0,
+                is_full: false,
+                active_branch_id: None,
             };
             conversations::insert_conversation(&conn, &conv).unwrap();
             conversations::insert_message(&conn, &MessageRow {
@@ -416,6 +357,7 @@ mod property {
                 is_pinned: false,
                 reasoning: None,
                 tool_calls_json: None,
+                sibling_index: 0,
             }).unwrap();
 
             let all = conversations::get_conversations(&conn, None).unwrap();
@@ -423,4 +365,304 @@ mod property {
             assert!(found.len() <= all.len());
         }
     }
+}
+
+fn msg_with_parent(
+    id: &str,
+    conv_id: &str,
+    role: &str,
+    content: &str,
+    ts: i64,
+    parent_id: Option<&str>,
+    sibling_index: i64,
+) -> MessageRow {
+    MessageRow {
+        id: id.to_string(),
+        conversation_id: conv_id.to_string(),
+        role: role.to_string(),
+        content: content.to_string(),
+        tokens: None,
+        timestamp: ts,
+        parent_id: parent_id.map(|s| s.to_string()),
+        is_pinned: false,
+        reasoning: None,
+        tool_calls_json: None,
+        sibling_index,
+    }
+}
+
+#[test]
+fn create_branch_appends_sibling_without_deleting() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "hello", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "world", 200, Some("u1"), 0),
+    )
+    .unwrap();
+
+    let new_msg =
+        conversations::create_branch(&conn, "c1", "a1", "assistant", "regenerated").unwrap();
+
+    assert_eq!(new_msg.role, "assistant");
+    assert_eq!(new_msg.content, "regenerated");
+    assert_eq!(new_msg.sibling_index, 1);
+    assert_eq!(new_msg.parent_id.as_deref(), Some("u1"));
+
+    let all = conversations::get_messages(&conn, "c1").unwrap();
+    assert_eq!(all.len(), 3, "original a1 must still exist");
+
+    let detail = conversations::get_conversation_detail(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        detail.messages.len(),
+        2,
+        "active branch should have 2 messages"
+    );
+    assert_eq!(
+        detail.messages[1].id, new_msg.id,
+        "active branch should point to new sibling"
+    );
+}
+
+#[test]
+fn create_branch_increments_sibling_index() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "hello", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "first", 200, Some("u1"), 0),
+    )
+    .unwrap();
+
+    let branch2 = conversations::create_branch(&conn, "c1", "a1", "assistant", "second").unwrap();
+    assert_eq!(branch2.sibling_index, 1);
+
+    let branch3 = conversations::create_branch(&conn, "c1", "a1", "assistant", "third").unwrap();
+    assert_eq!(branch3.sibling_index, 2);
+}
+
+#[test]
+fn create_branch_max_siblings_enforced() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "hello", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a0", "c1", "assistant", "orig", 200, Some("u1"), 0),
+    )
+    .unwrap();
+
+    for i in 1..20 {
+        let result =
+            conversations::create_branch(&conn, "c1", "a0", "assistant", &format!("branch{}", i));
+        assert!(result.is_ok(), "branch {} should succeed", i);
+    }
+
+    let result = conversations::create_branch(&conn, "c1", "a0", "assistant", "overflow");
+    assert!(result.is_err(), "21st sibling should be rejected");
+    assert!(result.unwrap_err().contains("MaxSiblingsExceeded"));
+}
+
+#[test]
+fn create_branch_updates_active_branch_id() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "hello", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "world", 200, Some("u1"), 0),
+    )
+    .unwrap();
+
+    let new_msg = conversations::create_branch(&conn, "c1", "a1", "assistant", "new").unwrap();
+
+    let conv = conversations::get_conversation_by_id(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(conv.active_branch_id.as_deref(), Some(new_msg.id.as_str()));
+}
+
+#[test]
+fn switch_branch_changes_active_messages() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "hello", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "first", 200, Some("u1"), 0),
+    )
+    .unwrap();
+
+    let a2 = conversations::create_branch(&conn, "c1", "a1", "assistant", "second").unwrap();
+
+    let detail_before = conversations::get_conversation_detail(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(detail_before.messages[1].id, a2.id);
+
+    conversations::switch_branch(&conn, "c1", "a1").unwrap();
+
+    let detail_after = conversations::get_conversation_detail(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(detail_after.messages[1].id, "a1");
+
+    let conv = conversations::get_conversation_by_id(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(conv.active_branch_id.as_deref(), Some("a1"));
+}
+
+#[test]
+fn switch_branch_rejects_nonexistent_message() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+
+    let result = conversations::switch_branch(&conn, "c1", "ghost");
+    assert!(result.is_err());
+}
+
+#[test]
+fn get_message_siblings_returns_ordered_list() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "hello", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "first", 200, Some("u1"), 0),
+    )
+    .unwrap();
+
+    let a2 = conversations::create_branch(&conn, "c1", "a1", "assistant", "second").unwrap();
+
+    let siblings = conversations::get_message_siblings(&conn, &a2.id).unwrap();
+    assert_eq!(siblings.len(), 2);
+    assert_eq!(siblings[0].id, "a1");
+    assert_eq!(siblings[0].sibling_index, 0);
+    assert_eq!(siblings[1].id, a2.id);
+    assert_eq!(siblings[1].sibling_index, 1);
+}
+
+#[test]
+fn trace_active_branch_follows_parent_chain() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "hello", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "world", 200, Some("u1"), 0),
+    )
+    .unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("u2", "c1", "user", "next", 300, Some("a1"), 0),
+    )
+    .unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a2", "c1", "assistant", "reply", 400, Some("u2"), 0),
+    )
+    .unwrap();
+
+    let path = conversations::trace_active_branch(&conn, "c1", "a2").unwrap();
+    assert_eq!(path.len(), 4);
+    assert_eq!(path[0].id, "u1");
+    assert_eq!(path[1].id, "a1");
+    assert_eq!(path[2].id, "u2");
+    assert_eq!(path[3].id, "a2");
+}
+
+#[test]
+fn fork_to_new_conversation_copies_active_branch() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "hello", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "world", 200, Some("u1"), 0),
+    )
+    .unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("u2", "c1", "user", "next", 300, Some("a1"), 0),
+    )
+    .unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a2", "c1", "assistant", "reply", 400, Some("u2"), 0),
+    )
+    .unwrap();
+
+    let new_id = conversations::fork_to_new_conversation(&conn, "c1", "a2").unwrap();
+
+    let new_detail = conversations::get_conversation_detail(&conn, &new_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(new_detail.messages.len(), 4);
+    assert_eq!(new_detail.messages[0].content, "hello");
+    assert_eq!(new_detail.messages[3].content, "reply");
+
+    let orig_detail = conversations::get_conversation_detail(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        orig_detail.messages.len(),
+        4,
+        "original conversation must be untouched"
+    );
+}
+
+#[test]
+fn fork_preserves_parent_chain_in_new_conversation() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "hello", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "world", 200, Some("u1"), 0),
+    )
+    .unwrap();
+
+    let new_id = conversations::fork_to_new_conversation(&conn, "c1", "a1").unwrap();
+
+    let new_msgs = conversations::get_messages(&conn, &new_id).unwrap();
+    assert_eq!(new_msgs.len(), 2);
+    let new_u1 = &new_msgs[0];
+    let new_a1 = &new_msgs[1];
+    assert_eq!(
+        new_a1.parent_id.as_deref(),
+        Some(new_u1.id.as_str()),
+        "forked messages must have remapped parentId"
+    );
+}
+
+#[test]
+fn get_sibling_counts_batch_efficient() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "hello", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "first", 200, Some("u1"), 0),
+    )
+    .unwrap();
+    conversations::create_branch(&conn, "c1", "a1", "assistant", "second").unwrap();
+
+    let counts =
+        conversations::get_sibling_counts_batch(&conn, "c1", &["u1".to_string(), "a1".to_string()])
+            .unwrap();
+    assert_eq!(
+        counts.get("u1").copied(),
+        Some(1),
+        "u1 has no siblings at root level"
+    );
+    assert_eq!(
+        counts.get("a1").copied(),
+        Some(2),
+        "a1 has 2 siblings under u1"
+    );
 }

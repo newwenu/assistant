@@ -6,6 +6,7 @@ import type {
   ConversationTerminatedPayload,
   ConversationCompactFailedPayload,
   ConversationUnlockedPayload,
+  ChatMessagesChangedPayload,
 } from "../chat/core/chatTypes";
 import {
   createChatDeltaCoalescer,
@@ -199,6 +200,29 @@ export function subscribeChatDeltaEvents(): () => void {
         });
       }
       void useChatStore.getState().loadConversations(true);
+    }),
+  );
+
+  let lastProcessedSeq = 0;
+
+  track(
+    listen<ChatMessagesChangedPayload>("chat-messages-changed", (event) => {
+      if (disposed) return;
+      const payload = event.payload;
+      const store = useChatStore.getState();
+      if (store.currentConversationId === payload.conversationId) {
+        if (payload._seq !== undefined && payload._seq <= lastProcessedSeq) {
+          void store.switchConversation(payload.conversationId);
+          return;
+        }
+        if (payload._seq !== undefined) {
+          lastProcessedSeq = payload._seq;
+        }
+        useChatStore.setState({
+          messages: payload.messages,
+          activeBranchId: payload.activeBranchId,
+        });
+      }
     }),
   );
 

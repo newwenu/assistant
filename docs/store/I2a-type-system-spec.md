@@ -83,7 +83,6 @@ interface Message {
   error?: ChatError | null
   parent_id?: MessageId | null
   children_ids?: MessageId[]
-  feedback?: 'positive' | 'negative' | null
   is_pinned?: boolean
 }
 ```

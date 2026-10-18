@@ -27,8 +27,8 @@
 
 | 项目 | 分支模型 | 实现状态 | 分支上限 | 事件通知 |
 |------|---------|---------|---------|---------|
-| **ChatGPT** | Tree Branch + `< 1/3 >` 选择器 | ✅ 完整实现 | 20/parent，达到后禁止新建+提示Fork | 后端返回完整 snapshot |
-| **OpenHuman (assistant-ui)** | Tree Branch（`BranchPickerPrimitive` 框架） | 🟡 框架就位，`setMessages` 是空操作 | — | — |
+| **ChatGPT** | 闭源，内部实现不可确认（UI 有 `< 1/3 >` 分支选择器，见 2.5.1） | ✅ UI 完整可用 | 闭源 | 闭源 |
+| **OpenHuman (assistant-ui)** | 截断式（`BranchPickerPrimitive` 框架就位但 `setMessages` 为空操作） | 🟡 框架就位，分支逻辑未实现 | — | — |
 | **OpenBitFun** | Session Fork（复制到新会话） | ✅ 已实现 `forkChatSession` | 无（Fork 本身就是降级） | 后端返回新 session ID |
 | **我们** | 无 | ❌ `parentId` 字段存在但未使用 | — | — |
 
@@ -52,17 +52,13 @@
 
 ## 2.5 参考项目分支实现详析
 
-### 2.5.1 ChatGPT（Tree Branch + `< 1/3 >` 选择器）
+### 2.5.1 ChatGPT（闭源，内部实现不可确认）
 
-**模型**：原地消息树分支，每条消息可有多个兄弟（sibling），用户通过 `< 1/3 >` 导航器在兄弟间切换。
+**UI 可观察行为**：
+- 编辑/重新生成后，原始回复保留，可通过 `< 1/3 >` 导航器切换回原分支
+- `BranchPicker` 组件：`<ChevronLeft /> 1/3 <ChevronRight />`，单分支时隐藏
 
-**关键设计**：
-- 消息表存储 `parent_message_id`，同一 parent 下的兄弟按创建时间排序
-- `conversation` 表存储 `current_leaf_message_id` 指向活跃分支末端
-- 编辑/重新生成时**不删除**原消息，而是插入新兄弟 + 更新 leaf 指针
-- `GET /conversation/{id}` 只返回活跃分支的线性消息序列（从 root 到 leaf 回溯）
-- 前端 `BranchPicker` 组件：`<ChevronLeft /> 1/3 <ChevronRight />`，单分支时隐藏
-- **分支上限**：同一 parent 下最多 20 个兄弟，达到后禁止新建分支，提示 Fork 到新对话
+**不可确认的推测（已移除）**：此前文档基于 UI 行为反推了内部存储结构（`current_leaf_message_id` leaf 指针、`parent_message_id` 列、20/parent 上限等），经实际验证发现与 ChatGPT 真实实现不符，已删除。ChatGPT 为闭源服务端应用，内部分支存储策略不可得知，不应作为设计依据。
 
 ### 2.5.2 OpenHuman / assistant-ui（BranchPickerPrimitive 框架）
 
@@ -120,8 +116,8 @@ export async function forkChatSession(
 
 | 项目 | 分支模型 | 事件通知 | 分支上限 | 降级策略 |
 |------|---------|---------|---------|---------|
-| **ChatGPT** | 原地 Tree Branch | 后端返回完整 snapshot | 20/parent | 提示开启新对话 |
-| **OpenHuman** | 框架就位，未实现 | — | — | — |
+| **ChatGPT** | 闭源，内部实现不可确认 | 闭源 | 闭源 | 闭源 |
+| **OpenHuman** | 截断式（框架就位，分支逻辑未实现） | — | — | — |
 | **OpenBitFun** | Session Fork（复制到新会话） | 后端返回新 session ID | 无 | Fork 本身就是降级 |
 | **我们（I17b）** | 原地 Tree Branch | `chat-messages-changed` 事件（见 3.7） | 20/parent（硬上限） | 达到上限禁止新建，提示 Fork 到新对话（见 3.8） |
 

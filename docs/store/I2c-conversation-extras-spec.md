@@ -8,7 +8,6 @@
 实现对话级别的扩展功能，提升组织和管理效率：
 - **对话视觉标识**：颜色标记 + 标签分类
 - **草稿保存/恢复**：每对话独立输入框草稿
-- **消息反馈**：点赞/点踩
 - **冗余统计缓存**：message_count / total_tokens
 - **对话导入**：JSON 导入 + ID 冲突处理
 - **AI 标题生成**：轻量模型自动生成对话标题
@@ -129,44 +128,6 @@ interface ChatState {
 ### 3.3 暂缓理由
 
 输入框"串台"问题使用频率低，用户通常不会在多个对话间频繁切换且保留半截输入。
-
----
-
-## 4. 消息反馈
-
-### 4.1 设计
-
-```typescript
-interface Message {
-  // ... 现有字段 ...
-  feedback?: 'positive' | 'negative' | null
-}
-```
-
-**Rust 端**：
-
-```sql
-ALTER TABLE messages ADD COLUMN feedback TEXT;
-```
-
-```rust
-pub fn update_feedback(conn: &Connection, id: &str, feedback: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE messages SET feedback = ?1 WHERE id = ?2",
-        params![feedback, id],
-    )?;
-    Ok(())
-}
-
-#[command]
-pub fn update_message_feedback(app: AppHandle, message_id: String, feedback: String) -> Result<(), String>
-```
-
-**UI**：助手消息操作栏增加 👍/👎 图标。
-
-### 4.2 暂缓理由
-
-本地个人应用无 RLHF 训练管线，点赞/点踩数据无处消费，存 DB 无实际用途。
 
 ---
 
@@ -346,14 +307,7 @@ Web Speech API 兼容性差、语音质量参差、中英文混合效果不好�
 2. Rust 端：新增 `save_conversation_draft` command
 3. 前端：`switchConversation` 中保存/恢复草稿
 
-### Step 3：消息反馈
-
-1. Rust 端：`messages` 表新增 `feedback` 列
-2. Rust 端：新增 `update_message_feedback` command
-3. 前端：`Message` 接口新增 `feedback` 字段
-4. 前端：助手消息操作栏增加 👍/👎
-
-### Step 4：冗余统计缓存
+### Step 3：冗余统计缓存
 
 1. Rust 端：`conversations` 表新增 `message_count` / `total_tokens` 列
 2. Rust 端：新增 `update_conversation_stats` 函数，增删消息后调用
@@ -374,7 +328,7 @@ Web Speech API 兼容性差、语音质量参差、中英文混合效果不好�
 1. 前端：多选模式 UI + 状态管理
 2. 前端：键盘导航事件处理
 
-### Step 8：TTS + 流式速率
+### Step 7：TTS + 流式速率
 
 1. 前端：Web Speech API 集成
 2. 前端：流式速率计算 + 显示
@@ -386,7 +340,6 @@ Web Speech API 兼容性差、语音质量参差、中英文混合效果不好�
 - [ ] **颜色标记**：右键菜单设置颜色 → 侧栏显示颜色圆点
 - [ ] **标签**：右键菜单管理标签 → 侧栏按标签过滤
 - [ ] **草稿保存**：输入框输入内容 → 切换对话 → 切回 → 内容恢复
-- [ ] **消息反馈**：点赞/点踩存入 DB
 - [ ] **统计缓存**：`message_count` / `total_tokens` 与实际一致
 - [ ] **对话导入**：导出 JSON → 删除对话 → 导入 → 对话恢复
 - [ ] **AI 标题**：`title_source='fallback'` → AI 生成成功 → `title_source='ai'`

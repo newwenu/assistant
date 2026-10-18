@@ -6,10 +6,10 @@ use tauri::{command, AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
 use crate::protocol::{
-    ChatDeltaPayloadDto, ChatRegeneratePayloadDto, ChatStreamStartPayloadDto,
+    ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto, ChatStreamStartPayloadDto,
     ConversationCompactFailedPayloadDto, ConversationDetailDto, ConversationDto,
-    ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto, ProviderErrorPayloadDto,
-    TokenUsageSummaryDto,
+    ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto, MessageDto,
+    ProviderErrorPayloadDto, TokenUsageSummaryDto,
 };
 use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError};
 use assistant_agent::chat_tasks::ChatTasks;
@@ -48,6 +48,7 @@ pub fn create_conversation(
         created_at: now,
         updated_at: now,
         is_full: false,
+        active_branch_id: None,
     };
     conversations::insert_conversation(&conn, &row)?;
 
@@ -80,14 +81,28 @@ pub fn get_conversation(
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let detail = conversations::get_conversation_detail(&conn, &id)?;
-    Ok(detail.map(|d| {
-        let total_count = d.messages.len() as i64;
-        ConversationDetailDto {
-            conversation: d.conversation.into(),
-            messages: d.messages.into_iter().map(Into::into).collect(),
-            total_count,
+    match detail {
+        Some(d) => {
+            let total_count = d.messages.len() as i64;
+            let msg_ids: Vec<String> = d.messages.iter().map(|m| m.id.clone()).collect();
+            let sibling_counts = conversations::get_sibling_counts_batch(&conn, &id, &msg_ids)?;
+            let messages: Vec<MessageDto> = d
+                .messages
+                .into_iter()
+                .map(|m| {
+                    let mut dto = MessageDto::from(m);
+                    dto.sibling_count = sibling_counts.get(&dto.id).copied();
+                    dto
+                })
+                .collect();
+            Ok(Some(ConversationDetailDto {
+                conversation: d.conversation.into(),
+                messages,
+                total_count,
+            }))
         }
-    }))
+        None => Ok(None),
+    }
 }
 
 #[command]
@@ -155,12 +170,33 @@ pub fn get_conversation_paginated(
     match conversations::get_conversation_by_id(&conn, &id)? {
         Some(conv) => {
             let page_limit = limit.unwrap_or(50);
-            let messages =
-                conversations::get_messages_paginated(&conn, &id, page_limit, before_timestamp)?;
-            let total_count = conversations::get_message_count(&conn, &id)?;
+            let (messages, total_count) = if let Some(ref leaf_id) = conv.active_branch_id {
+                let branch = conversations::trace_active_branch(&conn, &id, leaf_id)?;
+                let count = conversations::get_message_count(&conn, &id)?;
+                (branch, count)
+            } else {
+                let msgs = conversations::get_messages_paginated(
+                    &conn,
+                    &id,
+                    page_limit,
+                    before_timestamp,
+                )?;
+                let count = conversations::get_message_count(&conn, &id)?;
+                (msgs, count)
+            };
+            let msg_ids: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
+            let sibling_counts = conversations::get_sibling_counts_batch(&conn, &id, &msg_ids)?;
+            let message_dtos: Vec<MessageDto> = messages
+                .into_iter()
+                .map(|m| {
+                    let mut dto = MessageDto::from(m);
+                    dto.sibling_count = sibling_counts.get(&dto.id).copied();
+                    dto
+                })
+                .collect();
             Ok(Some(ConversationDetailDto {
                 conversation: conv.into(),
-                messages: messages.into_iter().map(Into::into).collect(),
+                messages: message_dtos,
                 total_count,
             }))
         }
@@ -169,10 +205,71 @@ pub fn get_conversation_paginated(
 }
 
 #[command]
+pub fn get_conversation_all_messages(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<ConversationDetailDto>, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = super::get_db_conn(&state)?;
+
+    match conversations::get_conversation_by_id(&conn, &id)? {
+        Some(conv) => {
+            let messages = conversations::get_messages(&conn, &id)?;
+            let total_count = messages.len() as i64;
+            let msg_ids: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
+            let sibling_counts = conversations::get_sibling_counts_batch(&conn, &id, &msg_ids)?;
+            let message_dtos: Vec<MessageDto> = messages
+                .into_iter()
+                .map(|m| {
+                    let mut dto = MessageDto::from(m);
+                    dto.sibling_count = sibling_counts.get(&dto.id).copied();
+                    dto
+                })
+                .collect();
+            Ok(Some(ConversationDetailDto {
+                conversation: conv.into(),
+                messages: message_dtos,
+                total_count,
+            }))
+        }
+        None => Ok(None),
+    }
+}
+
+#[command]
+pub fn get_message_subtree_size(app: AppHandle, message_id: String) -> Result<i64, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = super::get_db_conn(&state)?;
+    conversations::get_subtree_size(&conn, &message_id)
+}
+
+#[command]
 pub fn delete_message_persist(app: AppHandle, message_id: String) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    conversations::delete_message(&conn, &message_id)
+    let conv_id = conversations::get_conversation_id_by_message(&conn, &message_id)?;
+    conversations::delete_subtree(&conn, &message_id)?;
+
+    if let Some(ref cid) = conv_id {
+        if let Some(detail) = conversations::get_conversation_detail(&conn, cid)? {
+            if let Err(e) = app.emit(
+                "chat-messages-changed",
+                ChatMessagesChangedPayloadDto {
+                    conversation_id: cid.clone(),
+                    change_kind: "message_deleted".to_string(),
+                    messages: messages_with_sibling_counts(&conn, cid, &detail.messages)?,
+                    active_branch_id: detail.conversation.active_branch_id.clone(),
+                    _seq: None,
+                },
+            ) {
+                log::error!(
+                    "Failed to emit chat-messages-changed (message_deleted): {}",
+                    e
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 #[command]
@@ -223,32 +320,6 @@ pub fn purge_conversations(app: AppHandle) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     conversations::purge_all(&conn)
-}
-
-#[command]
-pub fn edit_message(app: AppHandle, message_id: String, new_content: String) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
-    let conn = super::get_db_conn(&state)?;
-    conversations::edit_message(&conn, &message_id, &new_content)
-}
-
-#[command]
-pub fn regenerate_message(
-    app: AppHandle,
-    conversation_id: String,
-    message_id: String,
-) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
-    let conn = super::get_db_conn(&state)?;
-    conversations::delete_message_and_after(&conn, &message_id)?;
-    let _ = app.emit(
-        "chat-regenerate",
-        ChatRegeneratePayloadDto {
-            conversation_id: conversation_id.clone(),
-            deleted_message_id: message_id,
-        },
-    );
-    Ok(())
 }
 
 #[command]
@@ -434,6 +505,7 @@ pub(crate) async fn execute_compaction(
                 is_pinned: false,
                 reasoning: None,
                 tool_calls_json: None,
+                sibling_index: 0,
             },
         )?;
     }
@@ -644,4 +716,172 @@ fn estimate_compaction_tokens(content: &str) -> Option<i64> {
         return None;
     }
     Some((content.len() as i64 + 3) / 4 + 4)
+}
+
+pub fn messages_with_sibling_counts(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+    messages: &[assistant_storage::conversations::MessageRow],
+) -> Result<Vec<crate::protocol::MessageDto>, String> {
+    let msg_ids: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
+    let sibling_counts = conversations::get_sibling_counts_batch(conn, conversation_id, &msg_ids)?;
+    Ok(messages
+        .iter()
+        .map(|m| {
+            let mut dto = crate::protocol::MessageDto::from(m.clone());
+            dto.sibling_count = sibling_counts.get(&dto.id).copied();
+            dto
+        })
+        .collect())
+}
+
+#[command]
+pub fn create_branch(
+    app: AppHandle,
+    conversation_id: String,
+    branch_point_message_id: String,
+    new_role: String,
+    new_content: String,
+    _seq: Option<u32>,
+) -> Result<crate::protocol::MessageDto, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = super::get_db_conn(&state)?;
+
+    let new_msg = conversations::create_branch(
+        &conn,
+        &conversation_id,
+        &branch_point_message_id,
+        &new_role,
+        &new_content,
+    )?;
+
+    let orb_window = app
+        .get_webview_window(assistant_config::constant::WINDOW_ORB)
+        .ok_or_else(|| "Orb window not found".to_string())?;
+
+    let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
+        .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
+
+    if let Err(e) = orb_window.emit(
+        "chat-messages-changed",
+        crate::protocol::ChatMessagesChangedPayloadDto {
+            conversation_id: conversation_id.clone(),
+            change_kind: "branch_created".to_string(),
+            messages: messages_with_sibling_counts(&conn, &conversation_id, &detail.messages)?,
+            active_branch_id: detail.conversation.active_branch_id.clone(),
+            _seq,
+        },
+    ) {
+        log::error!(
+            "Failed to emit chat-messages-changed (branch_created): {}",
+            e
+        );
+    }
+
+    Ok(crate::protocol::MessageDto::from(new_msg))
+}
+
+#[command]
+pub fn switch_branch(
+    app: AppHandle,
+    conversation_id: String,
+    target_message_id: String,
+    _seq: Option<u32>,
+) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = super::get_db_conn(&state)?;
+
+    conversations::switch_branch(&conn, &conversation_id, &target_message_id)?;
+
+    let orb_window = app
+        .get_webview_window(assistant_config::constant::WINDOW_ORB)
+        .ok_or_else(|| "Orb window not found".to_string())?;
+
+    let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
+        .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
+
+    if let Err(e) = orb_window.emit(
+        "chat-messages-changed",
+        crate::protocol::ChatMessagesChangedPayloadDto {
+            conversation_id: conversation_id.clone(),
+            change_kind: "branch_switched".to_string(),
+            messages: messages_with_sibling_counts(&conn, &conversation_id, &detail.messages)?,
+            active_branch_id: detail.conversation.active_branch_id.clone(),
+            _seq,
+        },
+    ) {
+        log::error!(
+            "Failed to emit chat-messages-changed (branch_switched): {}",
+            e
+        );
+    }
+
+    Ok(())
+}
+
+#[command]
+pub fn get_message_siblings(
+    app: AppHandle,
+    message_id: String,
+) -> Result<Vec<crate::protocol::SiblingInfoDto>, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = super::get_db_conn(&state)?;
+
+    let siblings = conversations::get_message_siblings(&conn, &message_id)?;
+    Ok(siblings
+        .into_iter()
+        .map(crate::protocol::SiblingInfoDto::from)
+        .collect())
+}
+
+#[command]
+pub fn increment_generation(app: AppHandle, id: String) -> Result<i64, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = super::get_db_conn(&state)?;
+    conversations::increment_generation(&conn, &id)
+}
+
+#[command]
+pub fn fork_to_new_conversation(
+    app: AppHandle,
+    source_conversation_id: String,
+    branch_leaf_message_id: String,
+) -> Result<String, String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = super::get_db_conn(&state)?;
+
+    let new_conv_id = conversations::fork_to_new_conversation(
+        &conn,
+        &source_conversation_id,
+        &branch_leaf_message_id,
+    )?;
+
+    let orb_window = app
+        .get_webview_window(assistant_config::constant::WINDOW_ORB)
+        .ok_or_else(|| "Orb window not found".to_string())?;
+
+    let detail = conversations::get_conversation_detail(&conn, &source_conversation_id)?
+        .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
+
+    if let Err(e) = orb_window.emit(
+        "chat-messages-changed",
+        crate::protocol::ChatMessagesChangedPayloadDto {
+            conversation_id: source_conversation_id.clone(),
+            change_kind: "branch_forked".to_string(),
+            messages: messages_with_sibling_counts(
+                &conn,
+                &source_conversation_id,
+                &detail.messages,
+            )?,
+            active_branch_id: detail.conversation.active_branch_id.clone(),
+            _seq: None,
+        },
+    ) {
+        log::error!(
+            "Failed to emit chat-messages-changed (branch_forked): {}",
+            e
+        );
+    }
+
+    Ok(new_conv_id)
 }

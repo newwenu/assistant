@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { historyService } from "../../services/historyService";
 import type { Message } from "../../chat/core/chatTypes";
-import { MESSAGES_PAGE_SIZE } from "../../config/constants";
 
 const REFRESH_INTERVAL_MS = 15000;
 
@@ -34,11 +33,8 @@ export function useHistoryRefresh(
   const refreshMessages = useCallback(async () => {
     if (!selectedId) return;
     try {
-      const detail = await historyService.getConversationPaginated(
-        selectedId,
-        MESSAGES_PAGE_SIZE,
-        null,
-      );
+      const detail =
+        await historyService.getConversationAllMessages(selectedId);
       if (detail) {
         onMessagesRefreshed(detail.messages || [], detail.totalCount);
       }

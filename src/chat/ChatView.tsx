@@ -22,6 +22,7 @@ import { ProviderSelector } from "./selectors/ProviderSelector";
 import { CompactBanner } from "./compact/CompactBanner";
 import { CompactErrorBanner } from "./compact/CompactErrorBanner";
 import { useAgentModeStore } from "../stores/agentModeStore";
+import { ForkDialog } from "./blocks/ForkDialog";
 
 interface ChatViewProps {
   modelOpenRef?: RefObject<boolean>;
@@ -76,6 +77,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   const [currentProviderId, setCurrentProviderId] = useState<string | null>(
     null,
   );
+  const [forkTarget, setForkTarget] = useState<string | null>(null);
 
   useEffect(() => {
     void useProviderStore.getState().loadProviders();
@@ -253,14 +255,81 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
 
   const handleDeleteMessage = useCallback(
     (id: string) => {
-      void chat.deleteMessage(id);
+      void (async () => {
+        try {
+          const subtreeSize = await chatService.getMessageSubtreeSize(id);
+          const confirmed = await new Promise<boolean>((resolve) => {
+            modal.confirm({
+              title: t("chat.message.confirm_delete_subtree", {
+                count: subtreeSize,
+              }),
+              content: t("chat.message.confirm_delete_subtree_desc"),
+              okText: t("common.actions.confirm"),
+              cancelText: t("common.actions.cancel"),
+              okType: "danger",
+              onOk: () => resolve(true),
+              onCancel: () => resolve(false),
+            });
+          });
+          if (!confirmed) return;
+          void chat.deleteMessage(id);
+        } catch (e) {
+          console.error("[ChatView] deleteMessage failed:", e);
+        }
+      })();
     },
-    [chat],
+    [chat, modal, t],
   );
+
+  const handleSwitchBranch = useCallback(
+    (messageId: string, direction: "prev" | "next") => {
+      void (async () => {
+        try {
+          const siblings = await chatService.getMessageSiblings(messageId);
+          const msg = chat.messages.find((m) => m.id === messageId);
+          if (!msg) return;
+          const targetIdx =
+            direction === "next" ? msg.siblingIndex + 1 : msg.siblingIndex - 1;
+          const target = siblings[targetIdx];
+          if (target) await chat.switchBranch(target.id);
+        } catch (e) {
+          console.error("[ChatView] switchBranch failed:", e);
+        }
+      })();
+    },
+    [chat, chatService],
+  );
+
+  const handleFork = useCallback((messageId: string) => {
+    setForkTarget(messageId);
+  }, []);
+
+  const confirmFork = useCallback(async () => {
+    if (!forkTarget) return;
+    const convId = chat.currentConversationId;
+    if (!convId) return;
+    try {
+      const newConvId = await chatService.forkToNewConversation(
+        convId,
+        forkTarget,
+      );
+      setForkTarget(null);
+      await chat.loadConversations();
+      await chat.switchConversation(newConvId);
+    } catch (e) {
+      console.error("[ChatView] fork failed:", e);
+      setForkTarget(null);
+    }
+  }, [forkTarget, chat]);
 
   return (
     <div className="chat-view chat-view-compact">
       {modalContextHolder}
+      <ForkDialog
+        open={forkTarget !== null}
+        onFork={() => void confirmFork()}
+        onCancel={() => setForkTarget(null)}
+      />
       <div className="chat-main">
         <div className="orb-chrome-bar">
           <ProviderSelector
@@ -315,6 +384,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
             onEditMessage={handleEditMessage}
             onRegenerateMessage={handleRegenerateMessage}
             onRetryMessage={handleRetry}
+            onSwitchBranch={handleSwitchBranch}
+            onFork={handleFork}
             retryStatus={chat.retryStatus}
           />
         )}

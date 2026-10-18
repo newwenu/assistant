@@ -19,6 +19,7 @@ import type {
   Conversation,
   TokenUsage,
   ContextUsage,
+  TruncationStrategy,
 } from "../chat/core/chatTypes";
 export type {
   Message,
@@ -26,6 +27,7 @@ export type {
   Conversation,
   TokenUsage,
   ContextUsage,
+  TruncationStrategy,
 } from "../chat/core/chatTypes";
 import { PersistQueue } from "../utils/persistQueue";
 import { useAgentModeStore } from "./agentModeStore";
@@ -68,6 +70,9 @@ interface ChatState {
   compactSummary: string | null;
   compactError: string | null;
   retryStatus: RetryNotification | null;
+  pendingBranchPoint: string | null;
+  activeBranchId: string | null;
+  branchOperationSeq: number;
 
   loadConversations: (silent?: boolean) => Promise<void>;
   createConversation: (providerId: string, modelId: string) => Promise<string>;
@@ -81,7 +86,11 @@ interface ChatState {
   ) => Promise<void>;
   updateModel: (id: string, modelId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
-  resendFrom: (pivotTimestamp: number, contentToSend: string) => Promise<void>;
+  resendFrom: (
+    pivotTimestamp: number,
+    contentToSend: string,
+    strategy?: TruncationStrategy,
+  ) => Promise<void>;
   setActiveAttemptId: (attemptId: string, realMessageId: string) => void;
   clearActiveAttemptId: () => void;
   cancelStream: () => Promise<void>;
@@ -100,6 +109,7 @@ interface ChatState {
   manualCompact: () => Promise<void>;
   unlockConversation: () => Promise<void>;
   clearCompactError: () => void;
+  switchBranch: (messageId: string) => Promise<void>;
 }
 
 let _orchestrator: ChatOrchestrator | null = null;
@@ -306,6 +316,8 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     getMessages: () => get().messages,
     getConversations: () => get().conversations,
     getSelectedModeId: () => useAgentModeStore.getState().selectedModeId,
+    getPendingBranchPoint: () => get().pendingBranchPoint,
+    clearPendingBranchPoint: () => set({ pendingBranchPoint: null }),
   };
 
   const orchestrator: ChatOrchestrator = createChatOrchestrator({
@@ -337,6 +349,9 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     compactSummary: null,
     compactError: null,
     retryStatus: null,
+    pendingBranchPoint: null,
+    activeBranchId: null,
+    branchOperationSeq: 0,
 
     loadConversations: async (silent?: boolean) => {
       if (!silent) set({ isLoadingConversations: true });
@@ -406,6 +421,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
           null,
         );
         if (detail) {
+          const hasBranch = !!detail.conversation?.activeBranchId;
           set({
             currentConversationId: id,
             messages: detail.messages || [],
@@ -414,7 +430,9 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
             streamingMessageId: null,
             activeAttemptId: null,
             isReasoningStreaming: false,
-            hasMoreMessages: (detail.messages || []).length < detail.totalCount,
+            activeBranchId: detail.conversation?.activeBranchId ?? null,
+            hasMoreMessages:
+              !hasBranch && (detail.messages || []).length < detail.totalCount,
             totalMessageCount: detail.totalCount,
             contextUsage: {
               usedTokens: 0,
@@ -502,19 +520,33 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
 
     sendMessage: (content: string) => orchestrator.send(content),
 
-    resendFrom: async (pivotTimestamp: number, contentToSend: string) => {
+    resendFrom: async (
+      pivotTimestamp: number,
+      contentToSend: string,
+      strategy?: TruncationStrategy,
+    ) => {
       await orchestrator.ensureIdle();
 
-      const snapshot = get().messages;
-      set((state) => ({
-        messages: state.messages.filter((m) => m.timestamp < pivotTimestamp),
-      }));
+      if (!strategy || strategy.kind === "truncate") {
+        const snapshot = get().messages;
+        set((state) => ({
+          messages: state.messages.filter((m) => m.timestamp < pivotTimestamp),
+        }));
 
-      try {
-        void get().sendMessage(contentToSend);
-      } catch (e) {
-        console.error("[chatStore] resendFrom send failed, rolling back:", e);
-        set({ messages: snapshot });
+        try {
+          void get().sendMessage(contentToSend);
+        } catch (e) {
+          console.error("[chatStore] resendFrom send failed, rolling back:", e);
+          set({ messages: snapshot });
+        }
+      } else {
+        set({ pendingBranchPoint: strategy.branchPointMessageId });
+        try {
+          await get().sendMessage(contentToSend);
+        } catch (e) {
+          console.error("[chatStore] resendFrom branch send failed:", e);
+          set({ pendingBranchPoint: null });
+        }
       }
     },
 
@@ -530,11 +562,6 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     errorStream: statePort.errorStream,
 
     deleteMessage: async (id: string) => {
-      const state = get();
-      set({
-        messages: state.messages.filter((m) => m.id !== id),
-        totalMessageCount: Math.max(0, state.totalMessageCount - 1),
-      });
       try {
         await persistQueue.enqueue(async () => {
           await chatService.deleteMessagePersist(id);
@@ -549,22 +576,15 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       const msg = state.messages.find((m) => m.id === messageId);
       if (!msg) return;
 
-      try {
-        await persistQueue.enqueue(async () => {
-          await chatService.editMessage(messageId, newContent);
-        });
-      } catch (e) {
-        console.error("[chatStore] editMessage failed:", e);
-      }
-
-      set((s) => ({
-        messages: s.messages.map((m) =>
-          m.id === messageId ? { ...m, content: newContent } : m,
-        ),
-      }));
-
       if (msg.role === "user") {
-        await get().resendFrom(msg.timestamp, newContent);
+        try {
+          await get().resendFrom(msg.timestamp, newContent, {
+            kind: "branch",
+            branchPointMessageId: messageId,
+          });
+        } catch (e) {
+          console.error("[chatStore] editMessage failed:", e);
+        }
       }
     },
 
@@ -576,26 +596,19 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       const msg = state.messages.find((m) => m.id === messageId);
       if (!msg || msg.role !== "assistant") return;
 
-      const lastUserMsg = [...state.messages]
-        .reverse()
-        .find((m) => m.role === "user" && m.timestamp < msg.timestamp);
-      if (!lastUserMsg) return;
-
-      set({
-        messages: state.messages.filter(
-          (m) => m.timestamp < msg.timestamp && m.id !== messageId,
-        ),
-      });
+      const parentMsg = msg.parentId
+        ? state.messages.find((m) => m.id === msg.parentId)
+        : undefined;
+      if (!parentMsg || parentMsg.role !== "user") return;
 
       try {
-        await persistQueue.enqueue(async () => {
-          await chatService.regenerateMessage(convId, messageId);
+        await get().resendFrom(msg.timestamp, parentMsg.content, {
+          kind: "branch",
+          branchPointMessageId: messageId,
         });
       } catch (e) {
         console.error("[chatStore] regenerateMessage failed:", e);
       }
-
-      void get().sendMessage(lastUserMsg.content);
     },
 
     retryFromError: async (messageId: string) => {
@@ -611,18 +624,14 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         .find((m) => m.role === "user");
       if (!userMsg) return;
 
-      const convId = state.currentConversationId;
-      if (convId) {
-        try {
-          await persistQueue.enqueue(async () => {
-            await chatService.regenerateMessage(convId, messageId);
-          });
-        } catch (e) {
-          console.error("[chatStore] retryFromError persist failed:", e);
-        }
+      try {
+        await get().resendFrom(msg.timestamp, userMsg.content, {
+          kind: "branch",
+          branchPointMessageId: messageId,
+        });
+      } catch (e) {
+        console.error("[chatStore] retryFromError failed:", e);
       }
-
-      await get().resendFrom(msg.timestamp, userMsg.content);
     },
 
     loadMoreMessages: async () => {
@@ -723,6 +732,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         content: "",
         tokens: null,
         timestamp: Date.now(),
+        siblingIndex: 0,
       };
       set({
         messages: [...get().messages, summaryMsg],
@@ -756,6 +766,21 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
 
     clearCompactError: () => {
       set({ compactError: null });
+    },
+
+    switchBranch: async (messageId: string) => {
+      const state = get();
+      const convId = state.currentConversationId;
+      if (!convId) return;
+
+      set((s) => ({ branchOperationSeq: s.branchOperationSeq + 1 }));
+      const seq = get().branchOperationSeq;
+
+      try {
+        await chatService.switchBranch(convId, messageId, seq);
+      } catch (e) {
+        console.error("[chatStore] switchBranch failed:", e);
+      }
     },
   };
 });

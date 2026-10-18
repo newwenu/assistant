@@ -24,6 +24,7 @@ const sampleMessage: Message = {
   tokens: null,
   timestamp: 1000,
   parentId: null,
+  siblingIndex: 0,
   isPinned: false,
   reasoning: undefined,
   toolCalls: undefined,
@@ -42,6 +43,7 @@ const sampleConversation: Conversation = {
   createdAt: 1000,
   updatedAt: 1000,
   isFull: false,
+  activeBranchId: null,
 };
 
 const sampleConversationDetail: ConversationDetail = {

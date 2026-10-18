@@ -15,6 +15,88 @@ import {
 import { HistoryMessageItem } from "./HistoryMessageItem";
 import css from "./HistoryDetail.module.css";
 
+interface BranchSlot {
+  siblings: Message[];
+  activeIndex: number;
+  branchLabel: string;
+}
+
+function buildBranchView(messages: Message[]): BranchSlot[] {
+  if (messages.length === 0) return [];
+
+  const byId = new Map<string, Message>();
+  for (const msg of messages) {
+    byId.set(msg.id, msg);
+  }
+
+  const childrenOf = new Map<string, Message[]>();
+  const roots: Message[] = [];
+
+  for (const msg of messages) {
+    const pid = msg.parentId;
+    if (pid && byId.has(pid)) {
+      let siblings = childrenOf.get(pid);
+      if (!siblings) {
+        siblings = [];
+        childrenOf.set(pid, siblings);
+      }
+      siblings.push(msg);
+    } else {
+      roots.push(msg);
+    }
+  }
+
+  const sortSiblings = (siblings: Message[]) =>
+    siblings.sort((a, b) => a.siblingIndex - b.siblingIndex);
+  sortSiblings(roots);
+  for (const siblings of childrenOf.values()) {
+    sortSiblings(siblings);
+  }
+
+  const depthOf = new Map<string, number>();
+  const bfsQueue: string[] = [];
+  for (const root of roots) {
+    depthOf.set(root.id, 0);
+    bfsQueue.push(root.id);
+  }
+  while (bfsQueue.length > 0) {
+    const id = bfsQueue.shift()!;
+    const depth = depthOf.get(id)!;
+    const children = childrenOf.get(id);
+    if (children) {
+      for (const child of children) {
+        depthOf.set(child.id, depth + 1);
+        bfsQueue.push(child.id);
+      }
+    }
+  }
+
+  const byDepth = new Map<number, Message[]>();
+  for (const msg of messages) {
+    const depth = depthOf.get(msg.id) ?? 0;
+    let group = byDepth.get(depth);
+    if (!group) {
+      group = [];
+      byDepth.set(depth, group);
+    }
+    group.push(msg);
+  }
+
+  const depths = Array.from(byDepth.keys()).sort((a, b) => a - b);
+  const slots: BranchSlot[] = [];
+
+  for (const depth of depths) {
+    const group = byDepth.get(depth)!;
+    slots.push({
+      siblings: group,
+      activeIndex: 0,
+      branchLabel: `B${depth + 1}`,
+    });
+  }
+
+  return slots;
+}
+
 interface HistoryDetailProps {
   selectedId: string | null;
   selectedConv: Conversation | undefined;
@@ -47,12 +129,14 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
     const messageListRef = useRef<HTMLDivElement>(null);
     const [userScrolledUp, setUserScrolledUp] = useState(false);
 
-    const useVirtualScroll = messages.length > VIRTUAL_SCROLL_THRESHOLD;
+    const branchSlots = useMemo(() => buildBranchView(messages), [messages]);
 
-    const visibleMessages = useMemo(() => {
-      if (!useVirtualScroll) return messages;
+    const useVirtualScroll = branchSlots.length > VIRTUAL_SCROLL_THRESHOLD;
+
+    const visibleSlots = useMemo(() => {
+      if (!useVirtualScroll) return branchSlots;
       const container = messageListRef.current;
-      if (!container) return messages;
+      if (!container) return branchSlots;
 
       const ESTIMATED_ITEM_HEIGHT = 80;
       const { scrollTop, clientHeight } = container;
@@ -61,12 +145,12 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
         Math.floor(scrollTop / ESTIMATED_ITEM_HEIGHT) - VIRTUAL_SCROLL_OVERSCAN,
       );
       const end = Math.min(
-        messages.length,
+        branchSlots.length,
         Math.ceil((scrollTop + clientHeight) / ESTIMATED_ITEM_HEIGHT) +
           VIRTUAL_SCROLL_OVERSCAN,
       );
-      return messages.slice(start, end);
-    }, [messages, useVirtualScroll]);
+      return branchSlots.slice(start, end);
+    }, [branchSlots, useVirtualScroll]);
 
     const handleScroll = useCallback(() => {
       if (!messageListRef.current) return;
@@ -158,10 +242,12 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
                   {t("chat.history.scroll_load_more")}
                 </div>
               )}
-              {(useVirtualScroll ? visibleMessages : messages).map((msg) => (
+              {(useVirtualScroll ? visibleSlots : branchSlots).map((slot) => (
                 <HistoryMessageItem
-                  key={msg.id}
-                  message={msg}
+                  key={slot.siblings[slot.activeIndex].id}
+                  siblings={slot.siblings}
+                  activeIndex={slot.activeIndex}
+                  branchLabel={slot.branchLabel}
                   onDelete={onDeleteMessage}
                 />
               ))}

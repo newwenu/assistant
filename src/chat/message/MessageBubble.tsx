@@ -10,6 +10,7 @@ import { getErrorDisplay, ChatErrorCode } from "../core/chatErrors";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
 import { ToolCallBlock } from "../blocks/ToolCallBlock";
 import { EditBlock } from "../blocks/EditBlock";
+import { BranchPicker } from "../blocks/BranchPicker";
 import { MessageContent } from "./MessageContent";
 import { MessageActions } from "./MessageActions";
 import css from "./MessageBubble.module.css";
@@ -24,6 +25,8 @@ interface MessageBubbleProps {
   onEdit?: (id: string, newContent: string) => void;
   onRegenerate?: (id: string) => void;
   onRetry?: () => void;
+  onSwitchBranch?: (messageId: string, direction: "prev" | "next") => void;
+  onFork?: (messageId: string) => void;
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
@@ -37,6 +40,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     onEdit,
     onRegenerate,
     onRetry,
+    onSwitchBranch,
+    onFork,
   }) => {
     const { t } = useTranslation();
     const isUser = message.role === "user";
@@ -165,13 +170,23 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
           </div>
           {!editing && (
             <div className={css.actionsWrapper}>
+              <BranchPicker
+                currentSiblingIndex={message.siblingIndex}
+                siblingCount={message.siblingCount ?? 1}
+                onSwitch={(direction) => {
+                  onSwitchBranch?.(message.id, direction);
+                }}
+                onFork={onFork ? () => onFork(message.id) : undefined}
+              />
               <MessageActions
                 role={message.role}
                 isStreaming={isStreaming}
+                isBranchAtLimit={(message.siblingCount ?? 1) >= 20}
                 onCopy={handleCopy}
                 onDelete={onDelete ? handleDelete : undefined}
                 onEdit={onEdit ? startEdit : undefined}
                 onRegenerate={onRegenerate ? handleRegenerate : undefined}
+                onFork={onFork ? () => onFork(message.id) : undefined}
               />
             </div>
           )}
@@ -196,6 +211,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     if (prev.onEdit !== next.onEdit) return false;
     if (prev.onRegenerate !== next.onRegenerate) return false;
     if (prev.onRetry !== next.onRetry) return false;
+    if (prev.onSwitchBranch !== next.onSwitchBranch) return false;
+    if (prev.onFork !== next.onFork) return false;
+    if (prev.message.siblingIndex !== next.message.siblingIndex) return false;
+    if (prev.message.siblingCount !== next.message.siblingCount) return false;
     const prevTc = prev.message.toolCalls;
     const nextTc = next.message.toolCalls;
     if (prevTc !== nextTc) {

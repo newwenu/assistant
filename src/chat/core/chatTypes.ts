@@ -11,6 +11,8 @@ export interface Message {
   timestamp: number;
   error?: ChatError | null;
   parentId?: string | null;
+  siblingIndex: number;
+  siblingCount?: number;
   isPinned?: boolean;
 }
 
@@ -33,6 +35,7 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   isFull: boolean;
+  activeBranchId?: string | null;
 }
 
 export interface TokenUsage {
@@ -111,3 +114,28 @@ export interface ChatRegeneratePayload {
   conversationId: string;
   deletedMessageId: string;
 }
+
+export interface SiblingInfo {
+  id: string;
+  siblingIndex: number;
+  contentPreview: string;
+}
+
+export type MessageChangeKind =
+  | "branch_created"
+  | "branch_switched"
+  | "branch_forked"
+  | "message_edited"
+  | "message_deleted"
+  | "messages_regenerated";
+
+export interface ChatMessagesChangedPayload {
+  conversationId: string;
+  changeKind: MessageChangeKind;
+  messages: Message[];
+  activeBranchId: string | null;
+  _seq?: number;
+}
+
+export type TruncationStrategy =
+  { kind: "truncate" } | { kind: "branch"; branchPointMessageId: string };

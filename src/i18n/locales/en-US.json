@@ -370,9 +370,23 @@
       "scroll_to_bottom": "Back to bottom",
       "edit": "Edit",
       "regenerate": "Regenerate",
+      "fork": "Fork to new chat",
       "confirm_delete_message": "Delete this message?",
+      "confirm_delete_subtree": "Will delete {{count}} message(s)",
+      "confirm_delete_subtree_desc": "This action cannot be undone",
       "message_deleted": "Message deleted",
       "delete_failed": "Delete failed"
+    },
+    "branch": {
+      "previous": "Previous version",
+      "next": "Next version",
+      "nearLimitHint": "Approaching branch limit ({{max}})",
+      "forkTitle": "Fork to new chat",
+      "forkMessage": "Copy the conversation up to this point into a new chat, so you can explore different directions from here.",
+      "forkHint": "The original conversation is unaffected and remains available.",
+      "forkAction": "Fork to new chat",
+      "atLimitDisableEdit": "Cannot edit — branch limit reached. Fork instead.",
+      "atLimitDisableRegenerate": "Cannot regenerate — branch limit reached. Fork instead."
     },
     "history": {
       "search_placeholder": "Search conversations...",

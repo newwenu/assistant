@@ -421,6 +421,7 @@ fn make_detail(messages: Vec<MessageRow>) -> ConversationDetail {
             created_at: 0,
             updated_at: 0,
             is_full: false,
+            active_branch_id: None,
         },
         messages,
     }
@@ -438,6 +439,7 @@ fn make_message_row(role: &str, content: &str) -> MessageRow {
         is_pinned: false,
         reasoning: None,
         tool_calls_json: None,
+        sibling_index: 0,
     }
 }
 

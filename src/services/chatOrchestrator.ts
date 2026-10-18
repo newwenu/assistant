@@ -43,6 +43,8 @@ export interface ChatEnvPort {
   getMessages: () => Message[];
   getConversations: () => Conversation[];
   getSelectedModeId: () => string | null;
+  getPendingBranchPoint: () => string | null;
+  clearPendingBranchPoint: () => void;
 }
 
 export interface ChatOrchestratorDeps {
@@ -155,6 +157,7 @@ export function createChatOrchestrator(
             content,
             tokens: null,
             timestamp: Date.now(),
+            siblingIndex: 0,
           };
           const assistantMsgId = `temp-assistant-${Date.now()}`;
           const assistantMsg: Message = {
@@ -164,6 +167,7 @@ export function createChatOrchestrator(
             content: "",
             tokens: null,
             timestamp: Date.now() + 1,
+            siblingIndex: 0,
           };
           deps.state.beginSend([userMsg, assistantMsg], assistantMsgId);
           deps.state.errorStream({
@@ -196,28 +200,73 @@ export function createChatOrchestrator(
       }
 
       const currentMessages = deps.env.getMessages();
-      const userMsg: Message = {
-        id: `temp-user-${Date.now()}`,
-        conversationId: convId,
-        role: "user",
-        content,
-        tokens: null,
-        timestamp: Date.now(),
-      };
-      const assistantMsgId = `temp-assistant-${Date.now()}`;
-      const assistantMsg: Message = {
-        id: assistantMsgId,
-        conversationId: convId,
-        role: "assistant",
-        content: "",
-        tokens: null,
-        timestamp: Date.now() + 1,
-      };
+      const pendingBranchPoint = deps.env.getPendingBranchPoint();
+      if (pendingBranchPoint) {
+        deps.env.clearPendingBranchPoint();
+      }
 
-      deps.state.beginSend(
-        [...currentMessages, userMsg, assistantMsg],
-        assistantMsgId,
-      );
+      const branchPointMsg = pendingBranchPoint
+        ? currentMessages.find((m) => m.id === pendingBranchPoint)
+        : undefined;
+
+      const userParentId = branchPointMsg
+        ? branchPointMsg.parentId
+        : (currentMessages[currentMessages.length - 1]?.id ?? null);
+
+      let optimisticMessages: Message[];
+
+      if (branchPointMsg) {
+        const branchPointIndex = currentMessages.findIndex(
+          (m) => m.id === pendingBranchPoint,
+        );
+        const baseMessages =
+          branchPointIndex >= 0
+            ? currentMessages.slice(0, branchPointIndex)
+            : currentMessages;
+        optimisticMessages = [...baseMessages];
+      } else {
+        optimisticMessages = [...currentMessages];
+      }
+
+      if (branchPointMsg && branchPointMsg.role === "assistant") {
+        const assistantMsgId = `temp-assistant-${Date.now()}`;
+        const assistantMsg: Message = {
+          id: assistantMsgId,
+          conversationId: convId,
+          role: "assistant",
+          content: "",
+          tokens: null,
+          timestamp: Date.now(),
+          parentId: userParentId,
+          siblingIndex: 0,
+        };
+        optimisticMessages.push(assistantMsg);
+        deps.state.beginSend(optimisticMessages, assistantMsgId);
+      } else {
+        const userMsg: Message = {
+          id: `temp-user-${Date.now()}`,
+          conversationId: convId,
+          role: "user",
+          content,
+          tokens: null,
+          timestamp: Date.now(),
+          parentId: userParentId,
+          siblingIndex: 0,
+        };
+        const assistantMsgId = `temp-assistant-${Date.now()}`;
+        const assistantMsg: Message = {
+          id: assistantMsgId,
+          conversationId: convId,
+          role: "assistant",
+          content: "",
+          tokens: null,
+          timestamp: Date.now() + 1,
+          parentId: userMsg.id,
+          siblingIndex: 0,
+        };
+        optimisticMessages.push(userMsg, assistantMsg);
+        deps.state.beginSend(optimisticMessages, assistantMsgId);
+      }
 
       const convs = deps.env.getConversations();
       const conv = convs.find((c) => c.id === convId);
@@ -228,7 +277,12 @@ export function createChatOrchestrator(
 
       try {
         const modeId = deps.env.getSelectedModeId();
-        await chatService.sendChatMessage(convId, content, modeId);
+        await chatService.sendChatMessage(
+          convId,
+          content,
+          modeId,
+          pendingBranchPoint,
+        );
       } catch (e) {
         console.error("[orchestrator] sendChatMessage failed:", e);
         deps.state.errorStream(toChatError(e));

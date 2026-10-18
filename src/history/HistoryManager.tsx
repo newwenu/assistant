@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { message } from "antd";
+import { message, Modal } from "antd";
 import type { Message } from "../chat/core/chatTypes";
 import { MESSAGES_PAGE_SIZE } from "../config/constants";
 import { historyService } from "../services/historyService";
@@ -16,6 +16,7 @@ const historyPersistQueue = new PersistQueue();
 
 export const HistoryManager: React.FC = () => {
   const { t } = useTranslation();
+  const [modal, modalContextHolder] = Modal.useModal();
   const conversations = useChatStore((s) => s.conversations);
   const isLoadingConversations = useChatStore((s) => s.isLoadingConversations);
   const chatStoreLoadConversations = useChatStore((s) => s.loadConversations);
@@ -62,15 +63,11 @@ export const HistoryManager: React.FC = () => {
     setLoadingMessages(true);
     setMessages([]);
     try {
-      const detail = await historyService.getConversationPaginated(
-        id,
-        MESSAGES_PAGE_SIZE,
-        null,
-      );
+      const detail = await historyService.getConversationAllMessages(id);
       if (detail) {
         setMessages(detail.messages || []);
         setTotalCount(detail.totalCount);
-        setHasMore((detail.messages || []).length < detail.totalCount);
+        setHasMore(false);
       }
     } catch (e) {
       console.error("Failed to load messages:", e);
@@ -109,14 +106,44 @@ export const HistoryManager: React.FC = () => {
     }
   }, [loadingMore, hasMore, selectedId, messages]);
 
+  const reloadMessages = useCallback(async () => {
+    if (!selectedId) return;
+    try {
+      const detail =
+        await historyService.getConversationAllMessages(selectedId);
+      if (detail) {
+        setMessages(detail.messages || []);
+        setTotalCount(detail.totalCount);
+        setHasMore(false);
+      }
+    } catch (e) {
+      console.error("Failed to reload messages:", e);
+    }
+  }, [selectedId]);
+
   const deleteMessage = useCallback(
     async (msgId: string) => {
       try {
+        const subtreeSize = await historyService.getMessageSubtreeSize(msgId);
+        const confirmed = await new Promise<boolean>((resolve) => {
+          modal.confirm({
+            title: t("chat.message.confirm_delete_subtree", {
+              count: subtreeSize,
+            }),
+            content: t("chat.message.confirm_delete_subtree_desc"),
+            okText: t("common.actions.confirm"),
+            cancelText: t("common.actions.cancel"),
+            okType: "danger",
+            onOk: () => resolve(true),
+            onCancel: () => resolve(false),
+          });
+        });
+        if (!confirmed) return;
+
         await historyPersistQueue.enqueue(async () => {
           await historyService.deleteMessagePersist(msgId);
         });
-        setMessages((prev) => prev.filter((m) => m.id !== msgId));
-        setTotalCount((prev) => Math.max(0, prev - 1));
+        await reloadMessages();
         await chatStoreLoadConversations(true);
         message.success(t("chat.message.message_deleted"));
       } catch (e) {
@@ -124,7 +151,7 @@ export const HistoryManager: React.FC = () => {
         message.error(t("chat.message.delete_failed"));
       }
     },
-    [chatStoreLoadConversations, t],
+    [chatStoreLoadConversations, t, reloadMessages, modal],
   );
 
   const deleteConversation = useCallback(
@@ -152,7 +179,7 @@ export const HistoryManager: React.FC = () => {
     async (id: string, title: string) => {
       try {
         await historyPersistQueue.enqueue(async () => {
-          await historyService.renameConversation(id, title);
+          await historyService.renameConversation(id, title, "user");
         });
         await chatStoreLoadConversations(true);
         message.success(t("chat.history.renamed"));
@@ -233,6 +260,7 @@ export const HistoryManager: React.FC = () => {
 
   return (
     <div className={css.root}>
+      {modalContextHolder}
       <HistorySidebar
         conversations={conversations}
         isLoadingConversations={isLoadingConversations}
@@ -264,7 +292,9 @@ export const HistoryManager: React.FC = () => {
         onExport={(id, format) => void exportConversation(id, format)}
         onDeleteConversation={(id) => void deleteConversation(id)}
         onDeleteMessage={(id) => void deleteMessage(id)}
-        onLoadMore={() => void loadMoreMessages()}
+        onLoadMore={() => {
+          void loadMoreMessages();
+        }}
       />
     </div>
   );

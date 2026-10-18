@@ -20,6 +20,7 @@ fn sample_conversation_row() -> ConversationRow {
         created_at: 1000,
         updated_at: 1000,
         is_full: false,
+        active_branch_id: None,
     }
 }
 
@@ -35,6 +36,7 @@ fn sample_message_row() -> MessageRow {
         is_pinned: false,
         reasoning: None,
         tool_calls_json: None,
+        sibling_index: 0,
     }
 }
 

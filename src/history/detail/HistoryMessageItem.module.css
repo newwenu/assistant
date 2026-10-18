@@ -2,6 +2,7 @@
   display: flex;
   justify-content: flex-end;
   margin-bottom: 8px;
+  position: relative;
 }
 
 .rootRoleAssistant {
@@ -12,13 +13,46 @@
   justify-content: flex-start;
 }
 
-.bubble {
+.branchBar {
+  width: 3px;
+  border-radius: 2px;
+  margin-right: 6px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.branchTag {
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 4px;
+  margin: 0;
+}
+
+.cardStack {
+  position: relative;
   max-width: 80%;
+  flex: 1;
+}
+
+.stackedCard {
+  position: absolute;
+  inset: 2px 0 0 2px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border-secondary);
+  background: var(--color-bg-elevated);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  pointer-events: none;
+}
+
+.bubble {
+  max-width: 100%;
   padding: 8px 12px;
   border-radius: 12px 12px 2px 12px;
   font-size: 13px;
   line-height: 1.6;
   word-break: break-word;
+  position: relative;
+  z-index: 10;
 }
 
 .bubbleUser {

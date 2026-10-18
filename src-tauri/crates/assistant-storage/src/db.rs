@@ -35,7 +35,8 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             sort_order INTEGER NOT NULL DEFAULT 0,
             generation INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
+            updated_at INTEGER NOT NULL,
+            active_branch_id TEXT
         );
 
         CREATE TABLE IF NOT EXISTS messages (
@@ -46,6 +47,7 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             tokens INTEGER,
             timestamp INTEGER NOT NULL,
             parent_id TEXT,
+            sibling_index INTEGER NOT NULL DEFAULT 0,
             is_pinned INTEGER NOT NULL DEFAULT 0,
             reasoning TEXT,
             tool_calls_json TEXT
@@ -136,6 +138,42 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
         info!("Added tool_calls_json column to messages table");
     }
 
+    let has_sibling_index: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'sibling_index'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_sibling_index {
+        conn.execute_batch(
+            "ALTER TABLE messages ADD COLUMN sibling_index INTEGER NOT NULL DEFAULT 0;",
+        )
+        .map_err(|e| e.to_string())?;
+        info!("Added sibling_index column to messages table");
+    }
+
+    let has_active_branch_id: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'active_branch_id'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_active_branch_id {
+        conn.execute_batch("ALTER TABLE conversations ADD COLUMN active_branch_id TEXT;")
+            .map_err(|e| e.to_string())?;
+        info!("Added active_branch_id column to conversations table");
+    }
+
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_messages_parent_id
+          ON messages(conversation_id, parent_id, sibling_index);",
+    )
+    .map_err(|e| e.to_string())?;
+
     agent_modes::seed_builtin_modes(&conn)?;
 
     let is_new_db: bool = conn
@@ -163,4 +201,10 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
 
     info!("Database initialized at {:?}", db_path);
     Ok(conn)
+}
+
+#[allow(dead_code)]
+fn migrate_chain_parent_ids(_conn: &Connection) -> Result<(), String> {
+    log::info!("migrate_chain_parent_ids disabled — breaks branch sibling semantics");
+    Ok(())
 }

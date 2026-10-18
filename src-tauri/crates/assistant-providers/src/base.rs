@@ -1,7 +1,7 @@
+use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use thiserror::Error;
-use futures::Stream;
 use tokio_util::sync::CancellationToken;
 
 pub use crate::types::chat_delta::{ChatDelta, TokenUsage};
