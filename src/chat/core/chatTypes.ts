@@ -121,13 +121,22 @@ export interface SiblingInfo {
   contentPreview: string;
 }
 
+export enum ChatEvent {
+  StreamStart = "chat-stream-start",
+  Delta = "chat-delta",
+  MessagesChanged = "chat-messages-changed",
+  ConversationTerminated = "conversation_terminated",
+  ConversationCompactFailed = "conversation_compact_failed",
+  ConversationUnlocked = "conversation_unlocked",
+}
+
 export type MessageChangeKind =
   | "branch_created"
   | "branch_switched"
   | "branch_forked"
-  | "message_edited"
   | "message_deleted"
-  | "messages_regenerated";
+  | "messages_compacted"
+  | "stream_finished";
 
 export interface ChatMessagesChangedPayload {
   conversationId: string;

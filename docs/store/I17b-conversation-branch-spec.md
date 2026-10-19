@@ -64,7 +64,7 @@
 
 **模型**：assistant-ui 框架提供 `BranchPickerPrimitive` 组件原语，但实际分支逻辑由宿主应用实现。
 
-**关键代码**（[thread.tsx:L1839-1872](file:///g:/codeversion/assistant/references/openhuman/app/src/components/assistant-ui/thread.tsx#L1839-L1872)）：
+**关键代码**（`thread.tsx:L1839-1872`）：
 ```tsx
 const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({ className, ...rest }) => {
   const { canSwitchToBranch } = useAuiEditCapabilities();
@@ -94,7 +94,7 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({ className, ...rest
 
 **模型**：不在原地分支，而是将对话**复制到新会话**（fork）。用户在某个 turn 点 fork 后，新会话从该 turn 开始，原会话不受影响。
 
-**关键代码**（[SessionModule.ts:L774-823](file:///g:/codeversion/assistant/references/OpenBitFun/src/web-ui/src/flow_chat/services/flow-chat-manager/SessionModule.ts#L774-L823)）：
+**关键代码**（`SessionModule.ts:L774-823`）：
 ```typescript
 export async function forkChatSession(
   context: FlowChatContext,

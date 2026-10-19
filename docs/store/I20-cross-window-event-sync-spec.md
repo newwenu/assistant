@@ -67,11 +67,11 @@
 
 ### 1.3 emit 目标不一致（P1）
 
-同一个 `chat-messages-changed` 事件，5 处 emit 中仅 1 处用 `app.emit`（广播，`message_deleted`）、4 处用 `orb_window.emit`（定向，`branch_created`/`branch_switched`/`branch_forked`/`stream_finished`）。主窗口即使加了监听也收不到后 4 种。
+同一个 `chat-messages-changed` 事件，6 处 emit 中 2 处用 `app.emit`（广播，`message_deleted` / `messages_compacted`）、4 处用 `orb_window.emit`（定向，`branch_created` / `branch_switched` / `branch_forked` / `stream_finished`）。主窗口即使加了监听也收不到后 4 种。
 
 ### 1.3.1 `MessageChangeKind` 类型与实际 emit 脱节（P1）
 
-TS 的 `MessageChangeKind` 枚举包含 `message_edited` / `messages_regenerated` 但后端从未 emit 这两个值（编辑和重新生成都走"创建分支+重发"路径，通知走 `stream_finished`）；反之，后端实际 emit 的 `stream_finished` 不在枚举中。详见 §7.3。
+TS 的 `MessageChangeKind` 枚举包含 `message_edited`（后端从未 emit）和 `messages_regenerated`（后端在 compaction 后 emit，但语义错误——compaction 是压缩而非重新生成，已改名为 `messages_compacted`）；反之，后端实际 emit 的 `stream_finished` 不在枚举中。详见 §7.3。
 
 ### 1.4 问题关联图
 
@@ -330,7 +330,7 @@ pub fn rename_conversation(
 
 **职责**：在主窗口挂载期间监听后端事件，驱动 `historyStore` 和 `chatStore`（仅 conversations 字段）的数据刷新。
 
-**沿用的模式**：与 [settingEvents.ts](file:///g:/codeversion/assistant1/src/services/settingEvents.ts) 和 [chatLifecycleEvents.ts](file:///g:/codeversion/assistant1/src/services/chatLifecycleEvents.ts) 完全一致：
+**沿用的模式**：与 `settingEvents.ts` 和 `chatLifecycleEvents.ts` 完全一致：
 - 返回 cleanup 函数（`() => void`）
 - 内部用 `disposed` 标志防止异步回调泄漏
 - 用 `track()` 辅助函数统一处理 listener 注册和错误处理
@@ -484,14 +484,13 @@ Orb 窗口当前通过 `chatLifecycleEvents.ts` 监听 `conversation_terminated`
 
 ### 5.7 轮询降级为兜底
 
-事件驱动为主路径，轮询仅防极端丢失。间隔从 15s 延长到 60s：
+事件驱动为主路径，轮询仅防极端丢失。`useHistoryRefresh` 改造：
 
-```
-改动前：REFRESH_INTERVAL_MS = 15000
-改动后：REFRESH_INTERVAL_MS = 60000
-```
-
-轮询同时负责刷新对话列表和消息（`refreshConversations` + `refreshMessages`）。事件驱动覆盖了大部分场景，60s 兜底足以应对极端事件丢失。
+- **间隔**：`REFRESH_INTERVAL_MS` 从 15s 延长到 60s
+- **绕过 `loadConversations`**：`refreshConversations` 改为调 `chatService.listConversations()` + `chatStore.updateConversations(convs)`，与事件监听器走同一路径，避免 `ensureCurrentConversation` 对主窗口的副作用
+- **职责降级**：语义从"主刷新路径"降级为"兜底防丢失"
+- **降级策略**：`listen()` 注册失败时，`useHistoryRefresh` 的轮询间隔恢复为 15s（纯轮询模式），保证退化为改造前行为
+- **调用方**：`HistoryManager` 仍通过 `useHistoryRefresh` 获取 `refreshing` / `handleRefresh` 供 UI 下拉刷新使用；定时轮询自动运行
 
 ---
 
@@ -574,7 +573,7 @@ Orb 窗口当前通过 `chatLifecycleEvents.ts` 监听 `conversation_terminated`
 
 ### 6.5 updateConversationProvider 的特殊处理
 
-[ChatView.tsx](file:///g:/codeversion/assistant1/src/chat/ChatView.tsx) 中 `handleProviderChange` 直接调用 `chatService.updateConversationProvider()` 绕过 store。后端加了 `conversation-list-changed` 事件后，前端无需手动 `loadConversations`，事件监听器会处理。
+`ChatView.tsx` 中 `handleProviderChange` 直接调用 `chatService.updateConversationProvider()` 绕过 store。后端加了 `conversation-list-changed` 事件后，前端无需手动 `loadConversations`，事件监听器会处理。
 
 ---
 
@@ -638,72 +637,17 @@ emit_orb_only(&app, event_name::CHAT_DELTA, payload);
 
 ### 7.2 前端：事件名 enum
 
-扩展 `src/types/events.ts` 为全事件注册表：
-
-```typescript
-export enum AppEvent {
-  ChatMessagesChanged = "chat-messages-changed",
-  ChatDelta = "chat-delta",
-  ChatStreamStart = "chat-stream-start",
-  ConversationListChanged = "conversation-list-changed",
-  ConversationTerminated = "conversation_terminated",
-  ConversationUnlocked = "conversation_unlocked",
-  ConversationCompactFailed = "conversation_compact_failed",
-  OrbNewConversation = "orb-new-conversation",
-  OrbBlur = "orb-blur",
-  Navigate = "navigate",
-  ThemeChanged = "theme-changed",
-  SettingProviderChanged = "setting:provider-changed",
-  SettingThemeChanged = "setting:theme-changed",
-  SettingConfPatched = "setting:conf-patched",
-}
-```
-
-所有 `listen("chat-messages-changed", ...)` 改为 `listen(AppEvent.ChatMessagesChanged, ...)`。
+扩展 `src/types/events.ts` 为全事件注册表，新增 `AppEvent` enum 覆盖所有事件名常量（`ChatMessagesChanged`、`ChatDelta`、`ChatStreamStart`、`ConversationListChanged`、`ConversationTerminated`、`ConversationUnlocked`、`ConversationCompactFailed`、`OrbNewConversation`、`OrbBlur`、`Navigate`、`ThemeChanged`、`SettingProviderChanged`、`SettingThemeChanged`、`SettingConfPatched`）。所有 `listen("...", ...)` 调用改为 `listen(AppEvent.Xxx, ...)`。
 
 ### 7.3 前端类型补充
 
-在 `src/chat/core/chatTypes.ts` 中新增：
+在 `src/chat/core/chatTypes.ts` 中新增 `ConversationListChangeKind`（值：`renamed` / `deleted` / `pin_toggled` / `duplicated` / `model_updated` / `provider_updated` / `batch_deleted` / `purged` / `created`）和 `ConversationListChangedPayload`（含 `changeKind`、`conversationId`、可选 `affectedIds` 仅 `batch_deleted` 时有值）。
 
-```typescript
-export type ConversationListChangeKind =
-  | "renamed"
-  | "deleted"
-  | "pin_toggled"
-  | "duplicated"
-  | "model_updated"
-  | "provider_updated"
-  | "batch_deleted"
-  | "purged"
-  | "created";
+修正 `MessageChangeKind`：对齐后端实际 emit 的值集合，删除有害预留值，修正语义错误值：
 
-export interface ConversationListChangedPayload {
-  changeKind: ConversationListChangeKind;
-  conversationId: string | null;
-  affectedIds?: string[];  // 仅 batch_deleted 时有值
-}
-```
-
-修正 `MessageChangeKind`：补入后端实际 emit 但类型遗漏的值，删除有害预留值：
-
-```typescript
-export type MessageChangeKind =
-  | "branch_created"
-  | "branch_switched"
-  | "branch_forked"
-  | "message_deleted"
-  | "stream_finished";
-```
-
-**删除 `message_edited` / `messages_regenerated` 的理由**：
-
-这两个值在 TS 枚举中定义，但后端从未 emit 过。原因是当前架构中"编辑"和"重新生成"都走 `resendFrom()` → `sendMessage()` → 流式输出 → `stream_finished` 路径，本质是"创建分支 + 重发"，不存在"原地修改/原地重新生成"的操作。保留这两个值是有害的：
-
-- **误导**：暗示存在不存在的事件路径，新开发者可能写永远不会触发的处理逻辑
-- **掩盖真问题**：注意力被"预留值"吸引，反而忽略 `stream_finished` 缺失的真 bug
-- **违反 YAGNI**：加一个枚举值是一行代码的事，提前预留的收益几乎为零，成本是认知负担
-
-如果未来实现"原地编辑消息内容（不创建分支）"，届时加回 `message_edited` 即可。
+- **删除 `message_edited`**：后端从未 emit，当前架构中"编辑"走 `resendFrom()` → `sendMessage()` → 流式输出 → `stream_finished` 路径，本质是"创建分支 + 重发"，不存在"原地修改"操作。保留会误导开发者写永远不会触发的处理逻辑，违反 YAGNI。未来实现"原地编辑消息内容（不创建分支）"时再加回即可。
+- **`messages_regenerated` → `messages_compacted`**：后端在 compaction 完成后 emit 此值，但 `messages_regenerated` 语义暗示"重新生成了回复"，实际是"消息被压缩替换"，语义错误。改名为 `messages_compacted`。此事件不可删除——compaction 后需要刷新消息列表，否则用户看到的还是压缩前的旧消息。
+- **补入 `stream_finished`**：后端实际 emit 但类型遗漏，流式输出完成后触发。
 
 ### 7.4 改动量评估
 

@@ -287,3 +287,43 @@ export const COMPACT_SETTINGS = [
     visible: (conf: Record<string, unknown>) => !!conf.autoCompact,
   }),
 ];
+
+defineSetting({
+  key: "app_name",
+  group: "app",
+  section: "about-main",
+  type: "readonly",
+  default: "",
+  label: "settings.about.field.app_name.label",
+  readValue: () => "Assistant",
+});
+
+defineSetting({
+  key: "build_date",
+  group: "app",
+  section: "about-main",
+  type: "readonly",
+  default: "",
+  label: "settings.about.field.build_date.label",
+  readValue: () => __BUILD_DATE__,
+});
+
+defineSetting({
+  key: "tech_stack",
+  group: "app",
+  section: "about-main",
+  type: "readonly",
+  default: "",
+  label: "settings.about.field.tech_stack.label",
+  readValue: () => "Tauri 2 + React 19 + Ant Design",
+});
+
+defineSetting({
+  key: "license",
+  group: "app",
+  section: "about-main",
+  type: "readonly",
+  default: "",
+  label: "settings.about.field.license.label",
+  readValue: () => "MIT",
+});

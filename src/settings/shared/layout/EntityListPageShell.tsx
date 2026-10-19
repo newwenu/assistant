@@ -1,6 +1,11 @@
-import { Button, Empty, Input, Space, Typography } from "antd";
-import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { Button, Divider, Empty, Input, Space, Typography } from "antd";
+import {
+  PlusOutlined,
+  SearchOutlined,
+  ArrowLeftOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import type React from "react";
 
 export interface EntityListSectionConfig<T> {
@@ -33,14 +38,26 @@ export function EntityListPageShell<T>({
   children,
 }: EntityListPageShellProps<T>) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const nonEmptySections = sections.filter((s) => s.items.length > 0);
 
   return (
     <div className="entity-list-page">
       <div className="entity-list-page-header">
-        <Typography.Title level={5} style={{ margin: 0 }}>
-          {title}
-        </Typography.Title>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Button
+            type="text"
+            size="small"
+            icon={<ArrowLeftOutlined />}
+            onClick={() => {
+              void navigate("/settings/overview");
+            }}
+            style={{ color: "var(--color-text-secondary)" }}
+          />
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {title}
+          </Typography.Title>
+        </div>
         <Space>
           <Input
             placeholder={t("settings.entity_list.search_placeholder", {
@@ -57,6 +74,7 @@ export function EntityListPageShell<T>({
           </Button>
         </Space>
       </div>
+      <Divider style={{ margin: "0 0 16px" }} />
 
       {items.length === 0 ? (
         <Empty

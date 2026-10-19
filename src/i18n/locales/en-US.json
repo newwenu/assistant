@@ -65,6 +65,14 @@
     }
   },
   "settings": {
+    "overview": {
+      "title": "Settings Overview",
+      "subtitle": "View current configuration, click to open detailed settings",
+      "open_detail": "Details",
+      "on": "On",
+      "off": "Off",
+      "more_items": "{{count}} more…"
+    },
     "general": {
       "main": {
         "title": "General Settings"
@@ -373,11 +381,26 @@
       "action_copy_diagnostics": "Copy Diagnostics"
     },
     "errors": {
-      "renameFailed": { "title": "Rename Failed", "description": "Conversation rename was unsuccessful, please try again later" },
-      "updateModelFailed": { "title": "Model Switch Failed", "description": "Model switch was unsuccessful, please try again later" },
-      "deleteMessageFailed": { "title": "Delete Message Failed", "description": "Message deletion was unsuccessful, please try again later" },
-      "switchBranchFailed": { "title": "Switch Branch Failed", "description": "Branch switch was unsuccessful, please try again later" },
-      "compactFailed": { "title": "Compact Failed", "description": "Conversation compaction was unsuccessful, please try again later" }
+      "renameFailed": {
+        "title": "Rename Failed",
+        "description": "Conversation rename was unsuccessful, please try again later"
+      },
+      "updateModelFailed": {
+        "title": "Model Switch Failed",
+        "description": "Model switch was unsuccessful, please try again later"
+      },
+      "deleteMessageFailed": {
+        "title": "Delete Message Failed",
+        "description": "Message deletion was unsuccessful, please try again later"
+      },
+      "switchBranchFailed": {
+        "title": "Switch Branch Failed",
+        "description": "Branch switch was unsuccessful, please try again later"
+      },
+      "compactFailed": {
+        "title": "Compact Failed",
+        "description": "Conversation compaction was unsuccessful, please try again later"
+      }
     },
     "input": {
       "placeholder": "Type a message...",
@@ -485,9 +508,18 @@
     "back_to_bottom": "↓ Back to bottom",
     "select_to_view": "Select a conversation on the left to view message history",
     "errors": {
-      "deleteConversationFailed": { "title": "Delete Failed", "description": "Conversation deletion was unsuccessful, please try again later" },
-      "renameFailed": { "title": "Rename Failed", "description": "Conversation rename was unsuccessful, please try again later" },
-      "exportFailed": { "title": "Export Failed", "description": "Conversation export was unsuccessful, please try again later" }
+      "deleteConversationFailed": {
+        "title": "Delete Failed",
+        "description": "Conversation deletion was unsuccessful, please try again later"
+      },
+      "renameFailed": {
+        "title": "Rename Failed",
+        "description": "Conversation rename was unsuccessful, please try again later"
+      },
+      "exportFailed": {
+        "title": "Export Failed",
+        "description": "Conversation export was unsuccessful, please try again later"
+      }
     }
   },
   "command": {

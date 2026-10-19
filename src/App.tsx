@@ -12,6 +12,7 @@ import {
   useParams,
 } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
+import { UiEvent, type ShortcutWarningPayload } from "@/types/events";
 import { notification } from "antd";
 import { Titlebar } from "@/components/Titlebar";
 import { OrbBall } from "@/orb/OrbBall";
@@ -34,7 +35,7 @@ import { useOrbStore } from "@/stores/orbStore";
 import { useToolStore } from "@/stores/toolStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
-  SETTINGS_PAGES,
+  SETTINGS_DETAIL_PAGES,
   DEFAULT_SETTINGS_PAGE_ID,
   getSettingsPageManifest,
   isSettingsPageId,
@@ -144,8 +145,8 @@ const MainLayout: React.FC = () => {
   ]);
 
   useEffect(() => {
-    const unlisten = listen<{ id: string; binding: string; error: string }>(
-      "shortcut-warning",
+    const unlisten = listen<ShortcutWarningPayload>(
+      UiEvent.ShortcutWarning,
       ({ payload }) => {
         api.warning({
           message: translateKey("common.window.shortcut_register_failed"),
@@ -163,7 +164,7 @@ const MainLayout: React.FC = () => {
   }, [api]);
 
   useEffect(() => {
-    const unlisten = listen<string>("navigate", ({ payload }) => {
+    const unlisten = listen<string>(UiEvent.Navigate, ({ payload }) => {
       void navigate(payload);
     });
     return () => {
@@ -266,9 +267,9 @@ const MainLayout: React.FC = () => {
                     label: t("common.navigation.settings"),
                     icon: <SettingOutlined />,
                     onTitleClick: () => {
-                      void navigate(`/settings/${DEFAULT_SETTINGS_PAGE_ID}`);
+                      void navigate(`/settings/overview`);
                     },
-                    children: SETTINGS_PAGES.map((page) => ({
+                    children: SETTINGS_DETAIL_PAGES.map((page) => ({
                       key: `/settings/${page.id}`,
                       label: translateKey(page.label),
                     })),

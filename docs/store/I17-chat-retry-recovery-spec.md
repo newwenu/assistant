@@ -121,7 +121,7 @@ continue 'retry;
 
 ### 2.7 `editMessage` 前后端 timestamp 不一致
 
-后端 `edit_message`（[conversations.rs:L454-482](file:///g:/codeversion/assistant/src-tauri/crates/assistant-storage/src/conversations.rs#L454-L482)）执行两步 SQL：
+后端 `edit_message`（`conversations.rs:L454-482`）执行两步 SQL：
 
 ```sql
 -- Step 1: 删除 timestamp >= 该消息且 id != 该消息 的所有消息（即删除后续）

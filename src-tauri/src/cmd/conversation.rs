@@ -638,14 +638,14 @@ pub(crate) async fn execute_compaction(
                         "chat-messages-changed",
                         ChatMessagesChangedPayloadDto {
                             conversation_id: conversation_id.to_string(),
-                            change_kind: "messages_regenerated".to_string(),
+                            change_kind: "messages_compacted".to_string(),
                             messages,
                             active_branch_id: detail.conversation.active_branch_id.clone(),
                             _seq: None,
                         },
                     ) {
                         log::error!(
-                            "Failed to emit chat-messages-changed (messages_regenerated): {}",
+                            "Failed to emit chat-messages-changed (messages_compacted): {}",
                             e
                         );
                     }

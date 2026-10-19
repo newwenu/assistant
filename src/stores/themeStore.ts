@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { dispatchThemeChanged } from "../settings/core/settingsDispatcher";
 import { settingService } from "../services/settingService";
 import { createLogger } from "@/services/logger";
+import { UiEvent, type ThemeChangedPayload } from "@/types/events";
 
 const log = createLogger("themeStore");
 
@@ -18,8 +19,6 @@ interface ThemeState {
 }
 
 const SYSTEM_THEME_CYCLE: ThemeMode[] = ["system", "light", "dark"];
-
-const THEME_EVENT = "theme-changed";
 
 function resolveTheme(mode: ThemeMode, systemTheme: string): "light" | "dark" {
   return mode === "system"
@@ -66,12 +65,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         }
       });
 
-      await listen<{ resolved: "light" | "dark" }>(
-        THEME_EVENT,
-        ({ payload }) => {
-          set({ resolved: payload.resolved });
-        },
-      );
+      await listen<ThemeChangedPayload>(UiEvent.ThemeChanged, ({ payload }) => {
+        set({ resolved: payload.resolved });
+      });
     } catch (e) {
       log.warn("Theme init failed, using defaults", e);
       set({ mode: "system", resolved: "light" });

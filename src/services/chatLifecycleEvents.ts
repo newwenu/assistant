@@ -6,6 +6,7 @@ import type {
   ChatMessagesChangedPayload,
   Message,
 } from "../chat/core/chatTypes";
+import { ChatEvent } from "../chat/core/chatTypes";
 import { toChatError } from "../chat/core/chatErrors";
 import { useChatStore } from "../stores/chatStore";
 import { createLogger } from "@/services/logger";
@@ -49,52 +50,61 @@ export function subscribeChatLifecycleEvents(): () => void {
   };
 
   track(
-    listen("conversation_terminated", (event) => {
-      if (disposed) return;
-      const payload = event.payload as ConversationTerminatedPayload;
-      const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversationId) {
-        useChatStore.setState({
-          isFull: payload.isFull,
-          compactSummary: payload.summary,
-          compactError: null,
-        });
-      }
-      void useChatStore.getState().loadConversations(true);
-    }),
+    listen<ConversationTerminatedPayload>(
+      ChatEvent.ConversationTerminated,
+      (event) => {
+        if (disposed) return;
+        const payload = event.payload;
+        const store = useChatStore.getState();
+        if (store.currentConversationId === payload.conversationId) {
+          useChatStore.setState({
+            isFull: payload.isFull,
+            compactSummary: payload.summary,
+            compactError: null,
+          });
+        }
+        void useChatStore.getState().loadConversations(true);
+      },
+    ),
   );
 
   track(
-    listen("conversation_compact_failed", (event) => {
-      if (disposed) return;
-      const payload = event.payload as ConversationCompactFailedPayload;
-      const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversationId) {
-        useChatStore.setState({ compactError: toChatError(payload.error) });
-      }
-    }),
+    listen<ConversationCompactFailedPayload>(
+      ChatEvent.ConversationCompactFailed,
+      (event) => {
+        if (disposed) return;
+        const payload = event.payload;
+        const store = useChatStore.getState();
+        if (store.currentConversationId === payload.conversationId) {
+          useChatStore.setState({ compactError: toChatError(payload.error) });
+        }
+      },
+    ),
   );
 
   track(
-    listen("conversation_unlocked", (event) => {
-      if (disposed) return;
-      const payload = event.payload as ConversationUnlockedPayload;
-      const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversationId) {
-        useChatStore.setState({
-          isFull: false,
-          compactSummary: null,
-          compactError: null,
-        });
-      }
-      void useChatStore.getState().loadConversations(true);
-    }),
+    listen<ConversationUnlockedPayload>(
+      ChatEvent.ConversationUnlocked,
+      (event) => {
+        if (disposed) return;
+        const payload = event.payload;
+        const store = useChatStore.getState();
+        if (store.currentConversationId === payload.conversationId) {
+          useChatStore.setState({
+            isFull: false,
+            compactSummary: null,
+            compactError: null,
+          });
+        }
+        void useChatStore.getState().loadConversations(true);
+      },
+    ),
   );
 
   let lastProcessedSeq = 0;
 
   track(
-    listen<ChatMessagesChangedPayload>("chat-messages-changed", (event) => {
+    listen<ChatMessagesChangedPayload>(ChatEvent.MessagesChanged, (event) => {
       if (disposed) return;
       const payload = event.payload;
       const store = useChatStore.getState();

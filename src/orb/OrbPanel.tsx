@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { UiEvent } from "@/types/events";
 import { useTranslation } from "react-i18next";
 import { Button, Tooltip, Dropdown, Input, message } from "antd";
 import {
@@ -71,7 +72,7 @@ export const OrbPanel: React.FC = () => {
 
   useEffect(() => {
     let timer: number | null = null;
-    const unlistenBlur = listen("orb-blur", () => {
+    const unlistenBlur = listen(UiEvent.OrbBlur, () => {
       closeAllMenus();
       if (useOrbStore.getState().isPinned) return;
       if (timer !== null) clearTimeout(timer);
@@ -92,7 +93,7 @@ export const OrbPanel: React.FC = () => {
         })();
       }, ORB_BLUR_COLLAPSE_DELAY_MS);
     });
-    const unlistenNewChat = listen("orb-new-conversation", () => {
+    const unlistenNewChat = listen(UiEvent.OrbNewConversation, () => {
       void (async () => {
         if (!useOrbStore.getState().isExpanded) {
           await expand();

@@ -4,6 +4,7 @@ import type {
   ChatDeltaPayload,
   ChatStreamStartPayload,
 } from "../chat/core/chatTypes";
+import { ChatEvent } from "../chat/core/chatTypes";
 import {
   createChatDeltaCoalescer,
   createSeqDedupFilter,
@@ -12,7 +13,7 @@ import {
 } from "../chat/core/streamCoalescer";
 import { createLogger } from "@/services/logger";
 
-const CHAT_DELTA_EVENT = "chat-delta";
+const CHAT_DELTA_EVENT = ChatEvent.Delta;
 const log = createLogger("chatStreamEvents");
 
 let orchestratorInstance: ChatOrchestrator | null = null;
@@ -47,9 +48,9 @@ export function subscribeChatStreamEvents(): () => void {
   let firstDeltaChecked = false;
 
   track(
-    listen("chat-stream-start", (event) => {
+    listen<ChatStreamStartPayload>(ChatEvent.StreamStart, (event) => {
       if (disposed) return;
-      const payload = event.payload as ChatStreamStartPayload;
+      const payload = event.payload;
       streamStartIds = {
         conversationId: payload.conversationId,
         attemptId: payload.attemptId,
@@ -89,10 +90,10 @@ export function subscribeChatStreamEvents(): () => void {
   const lastSeqByAttempt = new Map<string, number>();
 
   track(
-    listen(CHAT_DELTA_EVENT, (event) => {
+    listen<ChatDeltaPayload>(CHAT_DELTA_EVENT, (event) => {
       if (disposed) return;
 
-      const payload = event.payload as ChatDeltaPayload;
+      const payload = event.payload;
 
       if (!firstDeltaChecked && streamStartIds) {
         firstDeltaChecked = true;

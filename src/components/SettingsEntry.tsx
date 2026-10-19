@@ -14,7 +14,7 @@ export const SettingsEntry: React.FC = () => {
         size="small"
         icon={<SettingOutlined />}
         onClick={() => {
-          void navigate("/settings/general");
+          void navigate("/settings/overview");
         }}
         style={{ width: 32, height: 28 }}
       />
