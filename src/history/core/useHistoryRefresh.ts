@@ -1,23 +1,20 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { historyService } from "../../services/historyService";
-import type { Message } from "../../chat/core/chatTypes";
+import { chatService } from "../../services/chatService";
+import { useChatStore } from "../../stores/chatStore";
 import { createLogger } from "@/services/logger";
 
 const log = createLogger("useHistoryRefresh");
 
-const REFRESH_INTERVAL_MS = 15000;
+const REFRESH_INTERVAL_MS = 60000;
 
 interface UseHistoryRefreshReturn {
   refreshing: boolean;
   refreshConversations: () => Promise<void>;
-  refreshMessages: () => Promise<void>;
   handleRefresh: () => Promise<void>;
 }
 
 export function useHistoryRefresh(
-  chatStoreLoadConversations: (silent?: boolean) => Promise<void>,
-  selectedId: string | null,
-  onMessagesRefreshed: (messages: Message[], totalCount: number) => void,
+  refreshMessages: () => Promise<void>,
 ): UseHistoryRefreshReturn {
   const [refreshing, setRefreshing] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -25,26 +22,14 @@ export function useHistoryRefresh(
   const refreshConversations = useCallback(async () => {
     setRefreshing(true);
     try {
-      await chatStoreLoadConversations(true);
+      const convs = await chatService.listConversations();
+      useChatStore.getState().updateConversations(convs);
     } catch (e) {
       log.error("Failed to refresh conversations", e);
     } finally {
       setRefreshing(false);
     }
-  }, [chatStoreLoadConversations]);
-
-  const refreshMessages = useCallback(async () => {
-    if (!selectedId) return;
-    try {
-      const detail =
-        await historyService.getConversationAllMessages(selectedId);
-      if (detail) {
-        onMessagesRefreshed(detail.messages || [], detail.totalCount);
-      }
-    } catch (e) {
-      log.error("Failed to refresh messages", e);
-    }
-  }, [selectedId, onMessagesRefreshed]);
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     await Promise.all([refreshConversations(), refreshMessages()]);
@@ -63,7 +48,6 @@ export function useHistoryRefresh(
   return {
     refreshing,
     refreshConversations,
-    refreshMessages,
     handleRefresh,
   };
 }

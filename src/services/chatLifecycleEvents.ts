@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  ConversationListChangedPayload,
   ConversationTerminatedPayload,
   ConversationCompactFailedPayload,
   ConversationUnlockedPayload,
@@ -48,6 +49,35 @@ export function subscribeChatLifecycleEvents(): () => void {
         log.debug("listener unavailable", error);
       });
   };
+
+  track(
+    listen<ConversationListChangedPayload>(
+      ChatEvent.ConversationListChanged,
+      (event) => {
+        if (disposed) return;
+        const payload = event.payload;
+        const store = useChatStore.getState();
+        const currentId = store.currentConversationId;
+
+        const isSelectedDeleted =
+          (payload.changeKind === "deleted" &&
+            payload.conversationId === currentId) ||
+          (payload.changeKind === "batch_deleted" &&
+            currentId != null &&
+            payload.affectedIds?.includes(currentId)) ||
+          (payload.changeKind === "purged" && currentId !== null);
+
+        if (isSelectedDeleted) {
+          useChatStore.setState({
+            currentConversationId: null,
+            messages: [],
+          });
+        }
+
+        void useChatStore.getState().loadConversations(true);
+      },
+    ),
+  );
 
   track(
     listen<ConversationTerminatedPayload>(

@@ -1,4 +1,6 @@
-use tauri::{command, AppHandle, Emitter};
+use tauri::{command, AppHandle};
+
+use crate::protocol::events::{emit_broadcast, event_name};
 
 use assistant_config::{
     app_conf::AppConf,
@@ -60,6 +62,6 @@ pub fn set_launch_at_login(app: AppHandle, enable: bool) -> Result<(), String> {
 #[command]
 pub fn open_main_window_and_navigate(app: AppHandle, route: String) -> Result<(), String> {
     crate::window::show_or_create(&app, WINDOW_MAIN)?;
-    let _ = app.emit("navigate", route);
+    emit_broadcast(&app, event_name::NAVIGATE, route);
     Ok(())
 }

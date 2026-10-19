@@ -8,9 +8,10 @@ use uuid::Uuid;
 use crate::protocol::{
     ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto, ChatStreamStartPayloadDto,
     ConversationCompactFailedPayloadDto, ConversationDetailDto, ConversationDto,
-    ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto, MessageDto,
-    ProviderErrorPayloadDto, TokenUsageSummaryDto,
+    ConversationListChangedPayloadDto, ConversationTerminatedPayloadDto,
+    ConversationUnlockedPayloadDto, MessageDto, ProviderErrorPayloadDto, TokenUsageSummaryDto,
 };
+use crate::protocol::events::{emit_broadcast, emit_orb_only, event_name};
 use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::prompt_builder;
@@ -20,6 +21,23 @@ use assistant_storage::{
     conversations::{self, ConversationRow},
     providers::{self as provider_store},
 };
+
+fn emit_list_changed(
+    app: &AppHandle,
+    kind: &str,
+    id: Option<String>,
+    affected: Option<Vec<String>>,
+) {
+    emit_broadcast(
+        app,
+        event_name::CONVERSATION_LIST_CHANGED,
+        ConversationListChangedPayloadDto {
+            change_kind: kind.to_string(),
+            conversation_id: id,
+            affected_ids: affected,
+        },
+    );
+}
 
 #[command]
 pub fn create_conversation(
@@ -58,6 +76,8 @@ pub fn create_conversation(
             rusqlite::params![mid, id],
         );
     }
+
+    emit_list_changed(&app, "created", Some(id.clone()), None);
 
     Ok(id)
 }
@@ -109,7 +129,11 @@ pub fn get_conversation(
 pub fn delete_conversation(app: AppHandle, id: String) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    conversations::delete_conversation(&conn, &id)
+    conversations::delete_conversation(&conn, &id)?;
+
+    emit_list_changed(&app, "deleted", Some(id), None);
+
+    Ok(())
 }
 
 #[command]
@@ -122,7 +146,11 @@ pub fn rename_conversation(
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let source = title_source.unwrap_or_else(|| "user".to_string());
-    conversations::rename_conversation(&conn, &id, &title, &source)
+    conversations::rename_conversation(&conn, &id, &title, &source)?;
+
+    emit_list_changed(&app, "renamed", Some(id), None);
+
+    Ok(())
 }
 
 #[command]
@@ -138,7 +166,11 @@ pub fn update_conversation_model(
         .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
     conv.model_id = model_id;
     conv.updated_at = now;
-    conversations::update_conversation(&conn, &conv)
+    conversations::update_conversation(&conn, &conv)?;
+
+    emit_list_changed(&app, "model_updated", Some(id), None);
+
+    Ok(())
 }
 
 #[command]
@@ -154,7 +186,11 @@ pub fn update_conversation_provider(
         .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
     conv.provider_id = Some(provider_id);
     conv.updated_at = now;
-    conversations::update_conversation(&conn, &conv)
+    conversations::update_conversation(&conn, &conv)?;
+
+    emit_list_changed(&app, "provider_updated", Some(id), None);
+
+    Ok(())
 }
 
 #[command]
@@ -252,8 +288,9 @@ pub fn delete_message_persist(app: AppHandle, message_id: String) -> Result<(), 
 
     if let Some(ref cid) = conv_id {
         if let Some(detail) = conversations::get_conversation_detail(&conn, cid)? {
-            if let Err(e) = app.emit(
-                "chat-messages-changed",
+            emit_broadcast(
+                &app,
+                event_name::CHAT_MESSAGES_CHANGED,
                 ChatMessagesChangedPayloadDto {
                     conversation_id: cid.clone(),
                     change_kind: "message_deleted".to_string(),
@@ -261,12 +298,7 @@ pub fn delete_message_persist(app: AppHandle, message_id: String) -> Result<(), 
                     active_branch_id: detail.conversation.active_branch_id.clone(),
                     _seq: None,
                 },
-            ) {
-                log::error!(
-                    "Failed to emit chat-messages-changed (message_deleted): {}",
-                    e
-                );
-            }
+            );
         }
     }
     Ok(())
@@ -295,14 +327,22 @@ pub fn export_conversation(app: AppHandle, id: String, format: String) -> Result
 pub fn toggle_conversation_pin(app: AppHandle, id: String) -> Result<bool, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    conversations::toggle_pin(&conn, &id)
+    let result = conversations::toggle_pin(&conn, &id)?;
+
+    emit_list_changed(&app, "pin_toggled", Some(id), None);
+
+    Ok(result)
 }
 
 #[command]
 pub fn duplicate_conversation(app: AppHandle, id: String) -> Result<String, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    conversations::duplicate_conversation(&conn, &id)
+    let new_id = conversations::duplicate_conversation(&conn, &id)?;
+
+    emit_list_changed(&app, "duplicated", Some(new_id.clone()), None);
+
+    Ok(new_id)
 }
 
 #[command]
@@ -312,14 +352,23 @@ pub fn batch_delete_conversations(app: AppHandle, ids: Vec<String>) -> Result<()
     }
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    conversations::batch_delete(&conn, &ids)
+    let affected = ids.clone();
+    conversations::batch_delete(&conn, &ids)?;
+
+    emit_list_changed(&app, "batch_deleted", None, Some(affected));
+
+    Ok(())
 }
 
 #[command]
 pub fn purge_conversations(app: AppHandle) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    conversations::purge_all(&conn)
+    conversations::purge_all(&conn)?;
+
+    emit_list_changed(&app, "purged", None, None);
+
+    Ok(())
 }
 
 #[command]
@@ -407,8 +456,9 @@ pub fn manual_compact_conversation(app: AppHandle, conversation_id: String) -> R
         {
             use assistant_agent::compaction::set_terminating;
             set_terminating(&conv_id, false);
-            let _ = app_clone.emit(
-                "conversation_compact_failed",
+            emit_broadcast(
+                &app_clone,
+                event_name::CONVERSATION_COMPACT_FAILED,
                 ConversationCompactFailedPayloadDto {
                     conversation_id: conv_id.clone(),
                     error: e.clone(),
@@ -428,8 +478,9 @@ pub fn unlock_conversation(app: AppHandle, conversation_id: String) -> Result<()
 
     conversations::set_conversation_is_full(&conn, &conversation_id, false)?;
 
-    let _ = app.emit(
-        "conversation_unlocked",
+    emit_broadcast(
+        &app,
+        event_name::CONVERSATION_UNLOCKED,
         ConversationUnlockedPayloadDto {
             conversation_id: conversation_id.clone(),
         },
@@ -511,12 +562,13 @@ pub(crate) async fn execute_compaction(
         )?;
     }
 
-    let orb_window = app
+    let orb_win = app
         .get_webview_window(assistant_config::constant::WINDOW_ORB)
         .ok_or_else(|| "Orb window not found".to_string())?;
 
-    let _ = orb_window.emit(
-        "chat-stream-start",
+    emit_orb_only(
+        &app,
+        event_name::CHAT_STREAM_START,
         ChatStreamStartPayloadDto {
             conversation_id: conversation_id.to_string(),
             attempt_id: attempt_id.to_string(),
@@ -524,8 +576,9 @@ pub(crate) async fn execute_compaction(
         },
     );
 
-    let _ = orb_window.emit(
-        "chat-delta",
+    emit_orb_only(
+        &app,
+        event_name::CHAT_DELTA,
         ChatDeltaPayloadDto {
             conversation_id: conversation_id.to_string(),
             attempt_id: attempt_id.to_string(),
@@ -539,7 +592,6 @@ pub(crate) async fn execute_compaction(
     let conv_id = conversation_id.to_string();
     let msg_id = summary_msg_id.clone();
     let aid = attempt_id.clone();
-    let orb_win = orb_window.clone();
 
     let last_seq = Arc::new(AtomicU32::new(0));
     let last_seq_clone = last_seq.clone();
@@ -558,7 +610,7 @@ pub(crate) async fn execute_compaction(
                 finish_reason: delta.finish_reason.clone(),
                 ..Default::default()
             };
-            let _ = orb_win.emit("chat-delta", payload);
+            let _ = orb_win.emit(event_name::CHAT_DELTA, payload);
         },
         Some(Duration::from_secs(30)),
     )
@@ -617,8 +669,9 @@ pub(crate) async fn execute_compaction(
 
             set_terminating(conversation_id, false);
 
-            let _ = app.emit(
-                "conversation_terminated",
+            emit_broadcast(
+                &app,
+                event_name::CONVERSATION_TERMINATED,
                 ConversationTerminatedPayloadDto {
                     conversation_id: conversation_id.to_string(),
                     summary: summary.clone(),
@@ -634,8 +687,9 @@ pub(crate) async fn execute_compaction(
                 {
                     let messages =
                         messages_with_sibling_counts(&conn, conversation_id, &detail.messages)?;
-                    if let Err(e) = app.emit(
-                        "chat-messages-changed",
+                    emit_broadcast(
+                        &app,
+                        event_name::CHAT_MESSAGES_CHANGED,
                         ChatMessagesChangedPayloadDto {
                             conversation_id: conversation_id.to_string(),
                             change_kind: "messages_compacted".to_string(),
@@ -643,12 +697,7 @@ pub(crate) async fn execute_compaction(
                             active_branch_id: detail.conversation.active_branch_id.clone(),
                             _seq: None,
                         },
-                    ) {
-                        log::error!(
-                            "Failed to emit chat-messages-changed (messages_compacted): {}",
-                            e
-                        );
-                    }
+                    );
                 }
             }
 
@@ -663,8 +712,9 @@ pub(crate) async fn execute_compaction(
         Err(StreamError::Cancelled(partial)) => {
             save_compaction_partial(app, &summary_msg_id, &partial);
             set_terminating(conversation_id, false);
-            let _ = orb_window.emit(
-                "chat-delta",
+            emit_orb_only(
+                app,
+                event_name::CHAT_DELTA,
                 ChatDeltaPayloadDto {
                     conversation_id: conversation_id.to_string(),
                     attempt_id: attempt_id.to_string(),
@@ -681,8 +731,9 @@ pub(crate) async fn execute_compaction(
         Err(StreamError::Provider(e, partial)) => {
             save_compaction_partial(app, &summary_msg_id, &partial);
             set_terminating(conversation_id, false);
-            let _ = orb_window.emit(
-                "chat-delta",
+            emit_orb_only(
+                app,
+                event_name::CHAT_DELTA,
                 ChatDeltaPayloadDto {
                     conversation_id: conversation_id.to_string(),
                     attempt_id: attempt_id.to_string(),
@@ -699,8 +750,9 @@ pub(crate) async fn execute_compaction(
         Err(StreamError::Timeout(partial)) => {
             save_compaction_partial(app, &summary_msg_id, &partial);
             set_terminating(conversation_id, false);
-            let _ = orb_window.emit(
-                "chat-delta",
+            emit_orb_only(
+                app,
+                event_name::CHAT_DELTA,
                 ChatDeltaPayloadDto {
                     conversation_id: conversation_id.to_string(),
                     attempt_id: attempt_id.to_string(),
@@ -783,15 +835,12 @@ pub fn create_branch(
         &new_content,
     )?;
 
-    let orb_window = app
-        .get_webview_window(assistant_config::constant::WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
-
     let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
         .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
 
-    if let Err(e) = orb_window.emit(
-        "chat-messages-changed",
+    emit_broadcast(
+        &app,
+        event_name::CHAT_MESSAGES_CHANGED,
         crate::protocol::ChatMessagesChangedPayloadDto {
             conversation_id: conversation_id.clone(),
             change_kind: "branch_created".to_string(),
@@ -799,12 +848,7 @@ pub fn create_branch(
             active_branch_id: detail.conversation.active_branch_id.clone(),
             _seq,
         },
-    ) {
-        log::error!(
-            "Failed to emit chat-messages-changed (branch_created): {}",
-            e
-        );
-    }
+    );
 
     Ok(crate::protocol::MessageDto::from(new_msg))
 }
@@ -821,15 +865,12 @@ pub fn switch_branch(
 
     conversations::switch_branch(&conn, &conversation_id, &target_message_id)?;
 
-    let orb_window = app
-        .get_webview_window(assistant_config::constant::WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
-
     let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
         .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
 
-    if let Err(e) = orb_window.emit(
-        "chat-messages-changed",
+    emit_broadcast(
+        &app,
+        event_name::CHAT_MESSAGES_CHANGED,
         crate::protocol::ChatMessagesChangedPayloadDto {
             conversation_id: conversation_id.clone(),
             change_kind: "branch_switched".to_string(),
@@ -837,12 +878,7 @@ pub fn switch_branch(
             active_branch_id: detail.conversation.active_branch_id.clone(),
             _seq,
         },
-    ) {
-        log::error!(
-            "Failed to emit chat-messages-changed (branch_switched): {}",
-            e
-        );
-    }
+    );
 
     Ok(())
 }
@@ -884,15 +920,12 @@ pub fn fork_to_new_conversation(
         &branch_leaf_message_id,
     )?;
 
-    let orb_window = app
-        .get_webview_window(assistant_config::constant::WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
-
     let detail = conversations::get_conversation_detail(&conn, &source_conversation_id)?
         .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
 
-    if let Err(e) = orb_window.emit(
-        "chat-messages-changed",
+    emit_broadcast(
+        &app,
+        event_name::CHAT_MESSAGES_CHANGED,
         crate::protocol::ChatMessagesChangedPayloadDto {
             conversation_id: source_conversation_id.clone(),
             change_kind: "branch_forked".to_string(),
@@ -904,12 +937,9 @@ pub fn fork_to_new_conversation(
             active_branch_id: detail.conversation.active_branch_id.clone(),
             _seq: None,
         },
-    ) {
-        log::error!(
-            "Failed to emit chat-messages-changed (branch_forked): {}",
-            e
-        );
-    }
+    );
+
+    emit_list_changed(&app, "created", Some(new_conv_id.clone()), None);
 
     Ok(new_conv_id)
 }

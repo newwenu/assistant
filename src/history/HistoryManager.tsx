@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { message, Modal } from "antd";
-import type { Message } from "../chat/core/chatTypes";
-import { MESSAGES_PAGE_SIZE } from "../config/constants";
+import { App } from "antd";
 import { historyService } from "../services/historyService";
+import { subscribeHistoryEvents } from "../services/historyEvents";
 import { useChatStore } from "../stores/chatStore";
+import { useHistoryStore } from "../stores/historyStore";
 import { PersistQueue } from "../utils/persistQueue";
 import { createLogger } from "@/services/logger";
 import { notifyError } from "@/services/errorNotifier";
@@ -19,20 +19,23 @@ const log = createLogger("HistoryManager");
 
 export const HistoryManager: React.FC = () => {
   const { t } = useTranslation();
-  const [modal, modalContextHolder] = Modal.useModal();
+  const { message, modal } = App.useApp();
   const conversations = useChatStore((s) => s.conversations);
   const isLoadingConversations = useChatStore((s) => s.isLoadingConversations);
-  const chatStoreLoadConversations = useChatStore((s) => s.loadConversations);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
-    new Set(),
-  );
+  const selectedId = useHistoryStore((s) => s.selectedId);
+  const messages = useHistoryStore((s) => s.messages);
+  const totalCount = useHistoryStore((s) => s.totalCount);
+  const hasMore = useHistoryStore((s) => s.hasMore);
+  const loadingMore = useHistoryStore((s) => s.loadingMore);
+  const loadingMessages = useHistoryStore((s) => s.loadingMessages);
+  const collapsedGroups = useHistoryStore((s) => s.collapsedGroups);
+  const selectConversation = useHistoryStore((s) => s.selectConversation);
+  const clearSelection = useHistoryStore((s) => s.clearSelection);
+  const refreshMessages = useHistoryStore((s) => s.refreshMessages);
+  const loadMoreMessages = useHistoryStore((s) => s.loadMoreMessages);
+  const toggleGroup = useHistoryStore((s) => s.toggleGroup);
+  const loadConversations = useHistoryStore((s) => s.loadConversations);
 
   const {
     searchQuery,
@@ -42,87 +45,16 @@ export const HistoryManager: React.FC = () => {
     handleSearch,
   } = useHistorySearch(conversations);
 
-  const handleMessagesRefreshed = useCallback(
-    (refreshedMessages: Message[], refreshedTotal: number) => {
-      setMessages(refreshedMessages);
-      setTotalCount(refreshedTotal);
-      setHasMore(refreshedMessages.length < refreshedTotal);
-    },
-    [],
-  );
-
-  const { refreshing, handleRefresh } = useHistoryRefresh(
-    chatStoreLoadConversations,
-    selectedId,
-    handleMessagesRefreshed,
-  );
+  const { refreshing, handleRefresh } = useHistoryRefresh(refreshMessages);
 
   useEffect(() => {
-    void chatStoreLoadConversations();
-  }, [chatStoreLoadConversations]);
+    void loadConversations();
+  }, [loadConversations]);
 
-  const selectConversation = useCallback(async (id: string) => {
-    setSelectedId(id);
-    setLoadingMessages(true);
-    setMessages([]);
-    try {
-      const detail = await historyService.getConversationAllMessages(id);
-      if (detail) {
-        setMessages(detail.messages || []);
-        setTotalCount(detail.totalCount);
-        setHasMore(false);
-      }
-    } catch (e) {
-      log.error("Failed to load messages", e);
-    } finally {
-      setLoadingMessages(false);
-    }
+  useEffect(() => {
+    const cleanup = subscribeHistoryEvents();
+    return cleanup;
   }, []);
-
-  const loadMoreMessages = useCallback(async () => {
-    if (loadingMore || !hasMore || !selectedId || messages.length === 0) return;
-    setLoadingMore(true);
-    try {
-      const earliestTimestamp = messages[0].timestamp;
-      const detail = await historyService.getConversationPaginated(
-        selectedId,
-        MESSAGES_PAGE_SIZE,
-        earliestTimestamp,
-      );
-      if (detail && detail.messages.length > 0) {
-        const older = detail.messages.filter(
-          (m) => m.timestamp < earliestTimestamp,
-        );
-        if (older.length > 0) {
-          setMessages((prev) => [...older, ...prev]);
-          setHasMore(older.length >= MESSAGES_PAGE_SIZE);
-        } else {
-          setHasMore(false);
-        }
-      } else {
-        setHasMore(false);
-      }
-    } catch (e) {
-      log.error("Failed to load more messages", e);
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [loadingMore, hasMore, selectedId, messages]);
-
-  const reloadMessages = useCallback(async () => {
-    if (!selectedId) return;
-    try {
-      const detail =
-        await historyService.getConversationAllMessages(selectedId);
-      if (detail) {
-        setMessages(detail.messages || []);
-        setTotalCount(detail.totalCount);
-        setHasMore(false);
-      }
-    } catch (e) {
-      log.error("Failed to reload messages", e);
-    }
-  }, [selectedId]);
 
   const deleteMessage = useCallback(
     async (msgId: string) => {
@@ -143,18 +75,24 @@ export const HistoryManager: React.FC = () => {
         });
         if (!confirmed) return;
 
-        await historyPersistQueue.enqueue(async () => {
-          await historyService.deleteMessagePersist(msgId);
-        });
-        await reloadMessages();
-        await chatStoreLoadConversations(true);
-        message.success(t("chat.message.message_deleted"));
+        const hide = message.loading(t("history.deleting_message"), 0);
+        try {
+          await historyPersistQueue.enqueue(async () => {
+            await historyService.deleteMessagePersist(msgId);
+          });
+          await refreshMessages();
+          hide();
+          message.success(t("chat.message.message_deleted"));
+        } catch (e) {
+          hide();
+          throw e;
+        }
       } catch (e) {
         log.error("Failed to delete message", e);
         message.error(t("chat.message.delete_failed"));
       }
     },
-    [chatStoreLoadConversations, t, reloadMessages, modal],
+    [t, message, modal, refreshMessages],
   );
 
   const deleteConversation = useCallback(
@@ -164,11 +102,8 @@ export const HistoryManager: React.FC = () => {
           await historyService.deleteConversation(id);
         });
         if (selectedId === id) {
-          setSelectedId(null);
-          setMessages([]);
-          setTotalCount(0);
+          clearSelection();
         }
-        await chatStoreLoadConversations(true);
         message.success(t("history.conversation_deleted"));
       } catch (e) {
         log.error("Failed to delete conversation", e);
@@ -179,7 +114,7 @@ export const HistoryManager: React.FC = () => {
         message.error(t("history.operation_failed"));
       }
     },
-    [selectedId, chatStoreLoadConversations, t],
+    [selectedId, t, message, clearSelection],
   );
 
   const renameConversation = useCallback(
@@ -188,7 +123,6 @@ export const HistoryManager: React.FC = () => {
         await historyPersistQueue.enqueue(async () => {
           await historyService.renameConversation(id, title, "user");
         });
-        await chatStoreLoadConversations(true);
         message.success(t("history.renamed"));
       } catch (e) {
         log.error("Failed to rename", e);
@@ -199,7 +133,7 @@ export const HistoryManager: React.FC = () => {
         message.error(t("history.rename_failed"));
       }
     },
-    [chatStoreLoadConversations, t],
+    [t, message],
   );
 
   const exportConversation = useCallback(
@@ -228,7 +162,7 @@ export const HistoryManager: React.FC = () => {
         message.error(t("history.export_failed"));
       }
     },
-    [t],
+    [t, message],
   );
 
   const togglePin = useCallback(
@@ -237,13 +171,12 @@ export const HistoryManager: React.FC = () => {
         await historyPersistQueue.enqueue(async () => {
           await historyService.toggleConversationPin(id);
         });
-        await chatStoreLoadConversations(true);
       } catch (e) {
         log.error("Failed to toggle pin", e);
         message.error(t("history.operation_failed"));
       }
     },
-    [chatStoreLoadConversations, t],
+    [t, message],
   );
 
   const duplicateConversation = useCallback(
@@ -252,30 +185,19 @@ export const HistoryManager: React.FC = () => {
         await historyPersistQueue.enqueue(async () => {
           await historyService.duplicateConversation(id);
         });
-        await chatStoreLoadConversations(true);
         message.success(t("history.duplicated"));
       } catch (e) {
         log.error("Failed to duplicate", e);
         message.error(t("history.duplicate_failed"));
       }
     },
-    [chatStoreLoadConversations, t],
+    [t, message],
   );
-
-  const toggleGroup = useCallback((key: string) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
 
   const selectedConv = conversations.find((c) => c.id === selectedId);
 
   return (
     <div className={css.root}>
-      {modalContextHolder}
       <HistorySidebar
         conversations={conversations}
         isLoadingConversations={isLoadingConversations}

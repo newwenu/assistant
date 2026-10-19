@@ -482,6 +482,7 @@
     "export_json": "导出 JSON",
     "confirm_delete_conversation": "确定删除此对话？",
     "delete_conversation": "删除对话",
+    "deleting_message": "正在删除消息…",
     "conversation_deleted": "对话已删除",
     "renamed": "已重命名",
     "rename_failed": "重命名失败",

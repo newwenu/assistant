@@ -16,9 +16,16 @@
 .branchBar {
   width: 3px;
   border-radius: 2px;
-  margin-right: 6px;
   flex-shrink: 0;
   align-self: stretch;
+}
+
+.branchBarLeft {
+  margin-right: 6px;
+}
+
+.branchBarRight {
+  margin-left: 6px;
 }
 
 .branchTag {
@@ -29,19 +36,8 @@
 }
 
 .cardStack {
-  position: relative;
   max-width: 80%;
   flex: 1;
-}
-
-.stackedCard {
-  position: absolute;
-  inset: 2px 0 0 2px;
-  border-radius: 12px;
-  border: 1px solid var(--color-border-secondary);
-  background: var(--color-bg-elevated);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  pointer-events: none;
 }
 
 .bubble {
@@ -51,8 +47,6 @@
   font-size: 13px;
   line-height: 1.6;
   word-break: break-word;
-  position: relative;
-  z-index: 10;
 }
 
 .bubbleUser {

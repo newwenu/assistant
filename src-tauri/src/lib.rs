@@ -11,7 +11,8 @@ mod window;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
-use tauri::Emitter;
+
+use crate::protocol::events::{emit_broadcast, event_name};
 
 static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
 
@@ -107,7 +108,7 @@ pub fn run() {
         ])
         .on_menu_event(|app, event| match event.id.as_ref() {
             "orb_new_chat" => {
-                let _ = app.emit("orb-new-conversation", ());
+                emit_broadcast(app, event_name::ORB_NEW_CONVERSATION, ());
             }
             "orb_open_main" => {
                 let _ = window::show_or_create(app, WINDOW_MAIN);
@@ -131,7 +132,8 @@ pub fn run() {
             }
             tauri::WindowEvent::Focused(false) => {
                 if window.label() == WINDOW_ORB {
-                    let _ = window.emit("orb-blur", ());
+                    use tauri::Emitter;
+                    let _ = window.emit(event_name::ORB_BLUR, ());
                 }
             }
             _ => {}

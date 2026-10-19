@@ -84,6 +84,7 @@ interface ChatState {
   unlockConversation: () => Promise<void>;
   clearCompactError: () => void;
   switchBranch: (messageId: string) => Promise<void>;
+  updateConversations: (convs: Conversation[]) => void;
 }
 
 let _orchestrator: ChatOrchestrator | null = null;
@@ -227,7 +228,6 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
           messages: [],
         });
       }
-      await get().loadConversations();
     },
 
     renameConversation: async (
@@ -243,7 +243,6 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
             titleSource || "user",
           );
         });
-        await get().loadConversations();
       } catch (e) {
         log.error("renameConversation failed", e);
         notifyError(
@@ -258,7 +257,6 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         await persistQueue.enqueue(async () => {
           await chatService.updateConversationModel(id, modelId);
         });
-        await get().loadConversations();
       } catch (e) {
         log.error("updateModel failed", e);
         notifyError(
@@ -418,14 +416,12 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       await persistQueue.enqueue(async () => {
         await chatService.toggleConversationPin(id);
       });
-      await get().loadConversations();
     },
 
     duplicateConversation: async (id: string) => {
       await persistQueue.enqueue(async () => {
         await chatService.duplicateConversation(id);
       });
-      await get().loadConversations();
     },
 
     batchDelete: async (ids: string[]) => {
@@ -443,7 +439,6 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
           messages: [],
         });
       }
-      await get().loadConversations();
     },
 
     purgeAll: async () => {
@@ -521,6 +516,10 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
           "chat.errors.switchBranchFailed.description",
         );
       }
+    },
+
+    updateConversations: (convs: Conversation[]) => {
+      set({ conversations: convs });
     },
   };
 });

@@ -9,6 +9,7 @@ use crate::protocol::{
     ChatDeltaPayloadDto, ChatStreamStartPayloadDto, ConversationCompactFailedPayloadDto,
     ProviderErrorPayloadDto,
 };
+use crate::protocol::events::{emit_broadcast, emit_orb_only, event_name};
 use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError, StreamOutcome};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::compaction;
@@ -108,7 +109,7 @@ fn emit_delta(ectx: &StreamEmitCtx, seq: u32, delta: &base::ChatDelta) {
         delta_retry: delta.delta_retry.clone().map(Into::into),
         ..Default::default()
     };
-    if let Err(emit_err) = ectx.orb_window.emit("chat-delta", payload) {
+    if let Err(emit_err) = ectx.orb_window.emit(event_name::CHAT_DELTA, payload) {
         error!("Failed to emit chat-delta: {}", emit_err);
     }
 }
@@ -122,7 +123,7 @@ fn emit_stream_error(ectx: &StreamEmitCtx, last_seq: u32, error: &ProviderErrorP
         error: Some(ProviderErrorPayloadDto::from(error.clone())),
         ..Default::default()
     };
-    if let Err(emit_err) = ectx.orb_window.emit("chat-delta", payload) {
+    if let Err(emit_err) = ectx.orb_window.emit(event_name::CHAT_DELTA, payload) {
         error!("Failed to emit stream error event: {}", emit_err);
     }
 }
@@ -187,7 +188,7 @@ fn spawn_finish_listener(app: &AppHandle) -> tokio::sync::mpsc::UnboundedSender<
             let tasks = finish_app.state::<ChatTasks>();
             tasks.finish(&conv_id);
 
-            if let Some(orb_window) = finish_app.get_webview_window(WINDOW_ORB) {
+            {
                 let state = finish_app.state::<crate::setup::DbState>();
                 match super::get_db_conn(&state) {
                     Ok(conn) => {
@@ -205,8 +206,9 @@ fn spawn_finish_listener(app: &AppHandle) -> tokio::sync::mpsc::UnboundedSender<
                                     detail.messages.iter().map(|m| m.clone().into()).collect()
                                 }
                             };
-                            if let Err(e) = orb_window.emit(
-                                "chat-messages-changed",
+                            emit_broadcast(
+                                &finish_app,
+                                event_name::CHAT_MESSAGES_CHANGED,
                                 crate::protocol::ChatMessagesChangedPayloadDto {
                                     conversation_id: conv_id.clone(),
                                     change_kind: "stream_finished".to_string(),
@@ -214,12 +216,16 @@ fn spawn_finish_listener(app: &AppHandle) -> tokio::sync::mpsc::UnboundedSender<
                                     active_branch_id: detail.conversation.active_branch_id.clone(),
                                     _seq: None,
                                 },
-                            ) {
-                                log::error!(
-                                    "Failed to emit chat-messages-changed (stream_finished): {}",
-                                    e
-                                );
-                            }
+                            );
+                            emit_broadcast(
+                                &finish_app,
+                                event_name::CONVERSATION_LIST_CHANGED,
+                                crate::protocol::ConversationListChangedPayloadDto {
+                                    change_kind: "stream_finished".to_string(),
+                                    conversation_id: Some(conv_id.clone()),
+                                    affected_ids: None,
+                                },
+                            );
                         }
                     }
                     Err(_) => {
@@ -255,8 +261,9 @@ fn spawn_compaction_listener(
                         .await
                 {
                     compaction::set_terminating(&conv_id, false);
-                    let _ = app.emit(
-                        "conversation_compact_failed",
+                    emit_broadcast(
+                        &app,
+                        event_name::CONVERSATION_COMPACT_FAILED,
                         ConversationCompactFailedPayloadDto {
                             conversation_id: conv_id.clone(),
                             error: e.clone(),
@@ -461,16 +468,15 @@ pub fn send_chat_message(
     let orb_window = app
         .get_webview_window(WINDOW_ORB)
         .ok_or_else(|| assistant_i18n::t("error.orb_window_not_found"))?;
-    if let Err(emit_err) = orb_window.emit(
-        "chat-stream-start",
+    emit_orb_only(
+        &app,
+        event_name::CHAT_STREAM_START,
         ChatStreamStartPayloadDto {
             conversation_id: conversation_id.clone(),
             attempt_id: attempt_id.clone(),
             message_id: assistant_msg_id.clone(),
         },
-    ) {
-        error!("Failed to emit chat-stream-start: {}", emit_err);
-    }
+    );
 
     let (auto_compact, compact_threshold_percent) = assistant_config::app_conf::AppConf::load()
         .map(|c| (c.auto_compact, c.compact_threshold_percent))

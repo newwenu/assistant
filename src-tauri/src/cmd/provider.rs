@@ -1,10 +1,11 @@
 use chrono::Utc;
-use tauri::{command, AppHandle, Emitter, Manager};
+use tauri::{command, AppHandle, Manager};
 use uuid::Uuid;
 
 use crate::protocol::{
     ModelConfigDto, ProviderInputDto, ProviderListDto, SettingProviderChangedPayloadDto,
 };
+use crate::protocol::events::{emit_broadcast, event_name};
 use assistant_providers::{
     base::{self, ProviderConfig},
     crypto,
@@ -129,8 +130,9 @@ pub fn save_provider(app: AppHandle, provider: ProviderInputDto) -> Result<(), S
         provider_store::update_provider(&conn, &row)?;
     }
 
-    let _ = app.emit(
-        "setting:provider-changed",
+    emit_broadcast(
+        &app,
+        event_name::SETTING_PROVIDER_CHANGED,
         SettingProviderChangedPayloadDto {
             action: "provider-saved".to_string(),
             id: None,
@@ -144,8 +146,9 @@ pub fn delete_provider(app: AppHandle, id: String) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     provider_store::delete_provider(&conn, &id)?;
-    let _ = app.emit(
-        "setting:provider-changed",
+    emit_broadcast(
+        &app,
+        event_name::SETTING_PROVIDER_CHANGED,
         SettingProviderChangedPayloadDto {
             action: "provider-deleted".to_string(),
             id: Some(id),

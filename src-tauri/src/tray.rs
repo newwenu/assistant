@@ -4,8 +4,10 @@
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter,
+    AppHandle,
 };
+
+use crate::protocol::events::{emit_broadcast, event_name};
 
 use crate::window;
 use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
@@ -93,7 +95,7 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
         .tooltip(&assistant_i18n::t("app.name"))
         .on_menu_event(move |app: &AppHandle, event| match event.id.as_ref() {
             "new_chat" => {
-                let _ = app.emit("orb-new-conversation", ());
+                emit_broadcast(app, event_name::ORB_NEW_CONVERSATION, ());
             }
             "show_main" => {
                 let _ = window::show_or_create(app, WINDOW_MAIN);
@@ -103,15 +105,15 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
             }
             "settings_general" => {
                 let _ = window::show_or_create(app, WINDOW_MAIN);
-                let _ = app.emit("navigate", "/settings/general");
+                emit_broadcast(app, event_name::NAVIGATE, "/settings/general");
             }
             "settings_appearance" => {
                 let _ = window::show_or_create(app, WINDOW_MAIN);
-                let _ = app.emit("navigate", "/settings/appearance");
+                emit_broadcast(app, event_name::NAVIGATE, "/settings/appearance");
             }
             "settings_shortcuts" => {
                 let _ = window::show_or_create(app, WINDOW_MAIN);
-                let _ = app.emit("navigate", "/settings/shortcuts");
+                emit_broadcast(app, event_name::NAVIGATE, "/settings/shortcuts");
             }
             "quit" => {
                 crate::cmd::perform_exit(app);

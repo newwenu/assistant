@@ -495,6 +495,7 @@
     "export_json": "Export JSON",
     "confirm_delete_conversation": "Delete this conversation?",
     "delete_conversation": "Delete Conversation",
+    "deleting_message": "Deleting message…",
     "conversation_deleted": "Conversation deleted",
     "renamed": "Renamed",
     "rename_failed": "Rename failed",

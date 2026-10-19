@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use tauri::{command, AppHandle, Manager};
 
 use crate::protocol::{AppConfDto, MascotConfDto, OrbConfDto, ThemeChangedPayloadDto};
+use crate::protocol::events::{emit_broadcast, event_name};
 use assistant_config::{
     app_conf::AppConf,
     atomic_write::atomic_write,
@@ -129,9 +130,12 @@ pub fn set_theme(theme: String) -> Result<(), String> {
 
 #[command]
 pub fn emit_theme_changed(app: AppHandle, resolved: String) -> Result<(), String> {
-    use tauri::Emitter;
-    app.emit("theme-changed", ThemeChangedPayloadDto { resolved })
-        .map_err(|e| e.to_string())
+    emit_broadcast(
+        &app,
+        event_name::THEME_CHANGED,
+        ThemeChangedPayloadDto { resolved },
+    );
+    Ok(())
 }
 
 #[command]

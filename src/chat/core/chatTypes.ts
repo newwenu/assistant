@@ -125,6 +125,7 @@ export enum ChatEvent {
   StreamStart = "chat-stream-start",
   Delta = "chat-delta",
   MessagesChanged = "chat-messages-changed",
+  ConversationListChanged = "conversation-list-changed",
   ConversationTerminated = "conversation_terminated",
   ConversationCompactFailed = "conversation_compact_failed",
   ConversationUnlocked = "conversation_unlocked",
@@ -148,3 +149,21 @@ export interface ChatMessagesChangedPayload {
 
 export type TruncationStrategy =
   { kind: "truncate" } | { kind: "branch"; branchPointMessageId: string };
+
+export type ConversationListChangeKind =
+  | "renamed"
+  | "deleted"
+  | "pin_toggled"
+  | "duplicated"
+  | "model_updated"
+  | "provider_updated"
+  | "batch_deleted"
+  | "purged"
+  | "created"
+  | "stream_finished";
+
+export interface ConversationListChangedPayload {
+  changeKind: ConversationListChangeKind;
+  conversationId: string | null;
+  affectedIds?: string[];
+}

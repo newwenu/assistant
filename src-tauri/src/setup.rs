@@ -2,7 +2,9 @@
 
 use std::str::FromStr;
 use std::sync::Arc;
-use tauri::{App, Emitter, Manager};
+use tauri::{App, Manager};
+
+use crate::protocol::events::{emit_broadcast, event_name};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 use assistant_config::{
@@ -148,14 +150,15 @@ pub fn register_global_shortcuts(handle: &tauri::AppHandle) {
                     let _ = crate::window::toggle(app, WINDOW_MAIN);
                 }
                 "new_chat" => {
-                    let _ = app.emit("orb-new-conversation", ());
+                    emit_broadcast(app, event_name::ORB_NEW_CONVERSATION, ());
                 }
                 _ => {}
             }
         }) {
             log::warn!("Failed to register shortcut {} ({}): {}", id, binding, e);
-            let _ = handle.emit(
-                "shortcut-warning",
+            emit_broadcast(
+                handle,
+                event_name::SHORTCUT_WARNING,
                 ShortcutWarningPayloadDto {
                     id: id.to_string(),
                     binding: binding.to_string(),

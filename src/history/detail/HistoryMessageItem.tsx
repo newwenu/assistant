@@ -31,9 +31,6 @@ export const HistoryMessageItem: React.FC<HistoryMessageItemProps> = React.memo(
     const isUser = msg.role === "user";
     const isSystem = msg.role === "system";
     const siblingCount = siblings.length;
-    const hasSiblings = siblingCount > 1;
-    const stackCount = hasSiblings ? Math.min(siblingCount - 1, 2) : 0;
-
     const handleSwitch = useCallback(
       (direction: "prev" | "next") => {
         if (direction === "next" && localIndex < siblingCount - 1) {
@@ -67,25 +64,17 @@ export const HistoryMessageItem: React.FC<HistoryMessageItemProps> = React.memo(
       (parseInt(branchLabel.replace("B", ""), 10) - 1) % BRANCH_COLORS.length;
     const branchColor = BRANCH_COLORS[colorIdx >= 0 ? colorIdx : 0];
 
+    const branchBar = (
+      <div
+        className={[css.branchBar, isUser ? css.branchBarRight : css.branchBarLeft].join(" ")}
+        style={{ backgroundColor: branchColor }}
+      />
+    );
+
     return (
       <div className={rootClass}>
-        <div
-          className={css.branchBar}
-          style={{ backgroundColor: branchColor }}
-        />
+        {!isUser && branchBar}
         <div className={css.cardStack}>
-          {hasSiblings &&
-            Array.from({ length: stackCount }, (_, i) => (
-              <div
-                key={`stack-${i}`}
-                className={css.stackedCard}
-                style={{
-                  top: (i + 1) * 5,
-                  left: (i + 1) * 4,
-                  zIndex: stackCount - i,
-                }}
-              />
-            ))}
           <div className={bubbleClass}>
             <div className={css.meta}>
               <Tag
@@ -126,6 +115,7 @@ export const HistoryMessageItem: React.FC<HistoryMessageItemProps> = React.memo(
             />
           </div>
         </div>
+        {isUser && branchBar}
       </div>
     );
   },
