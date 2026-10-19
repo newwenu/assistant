@@ -7,6 +7,7 @@ import type { RetryNotification } from "../../chat/core/chatTypes";
 import { ErrorBlock } from "../blocks/ErrorBlock";
 import { RetryBanner } from "../blocks/RetryBanner";
 import { getErrorDisplay, ChatErrorCode } from "../core/chatErrors";
+import { getErrorPresentation } from "../core/chatErrorRecovery";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
 import { ToolCallBlock } from "../blocks/ToolCallBlock";
 import { EditBlock } from "../blocks/EditBlock";
@@ -96,6 +97,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     const prevRole = React.useContext(RoleContext);
     const isGroupGap = prevRole !== undefined && prevRole !== message.role;
 
+    const errorSeverity =
+      hasError && message.error
+        ? getErrorPresentation(message.error).severity
+        : null;
+
     const rootClass = [
       css.root,
       isUser
@@ -116,7 +122,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
             className={[
               css.bubble,
               isUser ? css.bubbleUser : css.bubbleAssistant,
-              hasError ? css.bubbleError : "",
+              errorSeverity === "warning"
+                ? css.bubbleWarning
+                : hasError
+                  ? css.bubbleError
+                  : "",
             ]
               .filter(Boolean)
               .join(" ")}

@@ -50,9 +50,14 @@ export const ErrorBlock: React.FC<ErrorBlockProps> = ({
     }
   };
 
+  const headerClass =
+    presentation.severity === "warning"
+      ? `${css.header} ${css.headerWarning}`
+      : css.header;
+
   return (
     <div className={css.root}>
-      <div className={css.header}>
+      <div className={headerClass}>
         <span className={css.icon}>{display.icon}</span>
         <span className={css.title}>{translateKey(presentation.titleKey)}</span>
       </div>

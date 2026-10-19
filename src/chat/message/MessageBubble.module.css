@@ -67,6 +67,10 @@
   border-color: var(--color-error, #ff4d4f) !important;
 }
 
+.bubbleWarning {
+  border-color: var(--color-warning-border, #ffe58f) !important;
+}
+
 .streamingCursor {
   display: inline-block;
   width: 2px;

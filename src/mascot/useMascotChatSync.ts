@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useChatStore } from "../stores/chatStore";
+import { useChatStreamStore } from "../stores/chatStreamStore";
 import { useMascotStore } from "./mascotStore";
 import type { MascotFace, ExpressionPolicy, AckRule } from "./core/types";
 import { DEFAULT_EXPRESSION_POLICY } from "./core/expressionPolicy";
@@ -32,8 +33,9 @@ export function useMascotChatSync(
   const prevErrorRef = useRef(false);
 
   useEffect(() => {
-    const unsubscribe = useChatStore.subscribe((state) => {
-      const { isStreaming, isReasoningStreaming, messages } = state;
+    const unsubscribeStream = useChatStreamStore.subscribe((streamState) => {
+      const { isStreaming, isReasoningStreaming } = streamState;
+      const messages = useChatStore.getState().messages;
       const hasError = messages.some(
         (m) => m.error != null && m.role === "assistant",
       );
@@ -96,10 +98,25 @@ export function useMascotChatSync(
       prevErrorRef.current = hasError;
     });
 
-    const initial = useChatStore.getState();
-    prevStreamingRef.current = initial.isStreaming;
-    prevReasoningRef.current = initial.isReasoningStreaming;
+    const unsubscribeChat = useChatStore.subscribe((chatState) => {
+      const { messages } = chatState;
+      const hasError = messages.some(
+        (m) => m.error != null && m.role === "assistant",
+      );
 
-    return unsubscribe;
+      if (hasError && !prevErrorRef.current) {
+        useMascotStore.getState().holdThenIdle(policy.chatFace.onError);
+      }
+      prevErrorRef.current = hasError;
+    });
+
+    const initialStream = useChatStreamStore.getState();
+    prevStreamingRef.current = initialStream.isStreaming;
+    prevReasoningRef.current = initialStream.isReasoningStreaming;
+
+    return () => {
+      unsubscribeStream();
+      unsubscribeChat();
+    };
   }, [policy]);
 }

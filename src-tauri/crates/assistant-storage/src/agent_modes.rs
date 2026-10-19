@@ -71,23 +71,6 @@ pub fn init_table(conn: &Connection) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
-    let has_reasoning_enabled: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('agent_modes') WHERE name = 'reasoning_enabled'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|e| e.to_string())?
-        > 0;
-    if !has_reasoning_enabled {
-        conn.execute_batch(
-            "ALTER TABLE agent_modes ADD COLUMN reasoning_enabled INTEGER;
-             ALTER TABLE agent_modes ADD COLUMN reasoning_effort TEXT;",
-        )
-        .map_err(|e| e.to_string())?;
-        log::info!("Added reasoning_enabled and reasoning_effort columns to agent_modes table");
-    }
-
     Ok(())
 }
 

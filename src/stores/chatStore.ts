@@ -3,26 +3,19 @@ import { chatService } from "../services/chatService";
 import { providerService } from "../services/providerService";
 import { createLogger } from "@/services/logger";
 import { notifyError } from "@/services/errorNotifier";
-import {
-  createChatOrchestrator,
-  type ChatStatePort,
-  type ChatEnvPort,
-  type ChatOrchestrator,
-} from "../services/chatOrchestrator";
-import type { RetryNotification } from "../chat/core/chatTypes";
+import { type ChatOrchestrator } from "../services/chatOrchestrator";
 import {
   MESSAGES_PAGE_SIZE,
   CONTEXT_WARN_THRESHOLD,
   CONTEXT_DANGER_THRESHOLD,
 } from "../config/constants";
-import { type ChatError, formatRetryAfter } from "../chat/core/chatErrors";
 import type {
   Message,
   Conversation,
-  TokenUsage,
   ContextUsage,
   TruncationStrategy,
 } from "../chat/core/chatTypes";
+import type { ChatError } from "../chat/core/chatErrors";
 export type {
   Message,
   ToolCall,
@@ -32,38 +25,22 @@ export type {
   TruncationStrategy,
 } from "../chat/core/chatTypes";
 import { PersistQueue } from "../utils/persistQueue";
-import { useAgentModeStore } from "./agentModeStore";
-import { useProviderStore } from "./providerStore";
+import { useChatStreamStore } from "./chatStreamStore";
+import {
+  createStatePort,
+  createEnvPort,
+  createOrchestrator,
+  fetchTokenUsage,
+  type FetchTokenUsageDeps,
+} from "./chatStorePorts";
 
 const persistQueue = new PersistQueue();
 const log = createLogger("chatStore");
-
-function resolveContextWindowTokens(
-  modelId: string,
-  providerId: string | null,
-): number | undefined {
-  if (!providerId) return undefined;
-  const provider = useProviderStore
-    .getState()
-    .providers.find((p) => p.id === providerId);
-  if (!provider) return undefined;
-  const models = provider.models;
-  const model = models.find((m) => m.id === modelId);
-  if (model && model.contextWindow && model.contextWindow > 0) {
-    return model.contextWindow;
-  }
-  return undefined;
-}
 
 interface ChatState {
   conversations: Conversation[];
   currentConversationId: string | null;
   messages: Message[];
-  isStreaming: boolean;
-  streamingContent: string;
-  streamingMessageId: string | null;
-  activeAttemptId: string | null;
-  isReasoningStreaming: boolean;
   hasMoreMessages: boolean;
   isLoadingMoreMessages: boolean;
   isLoadingConversations: boolean;
@@ -72,7 +49,6 @@ interface ChatState {
   isFull: boolean;
   compactSummary: string | null;
   compactError: ChatError | null;
-  retryStatus: RetryNotification | null;
   pendingBranchPoint: string | null;
   activeBranchId: string | null;
   branchOperationSeq: number;
@@ -94,12 +70,7 @@ interface ChatState {
     contentToSend: string,
     strategy?: TruncationStrategy,
   ) => Promise<void>;
-  setActiveAttemptId: (attemptId: string, realMessageId: string) => void;
-  clearActiveAttemptId: () => void;
   cancelStream: () => Promise<void>;
-  appendDelta: (delta: string) => void;
-  finishStream: (usage?: TokenUsage) => void;
-  errorStream: (error: ChatError) => void;
   deleteMessage: (id: string) => Promise<void>;
   editMessage: (messageId: string, newContent: string) => Promise<void>;
   regenerateMessage: (messageId: string) => Promise<void>;
@@ -118,214 +89,13 @@ interface ChatState {
 let _orchestrator: ChatOrchestrator | null = null;
 
 export const useChatStore = create<ChatState>()((set, get): ChatState => {
-  const statePort: ChatStatePort = {
-    beginSend: (messages: Message[], assistantMsgId: string) => {
-      set({
-        messages,
-        isStreaming: true,
-        streamingContent: "",
-        streamingMessageId: assistantMsgId,
-        contextUsage: { usedTokens: 0, maxTokens: 128_000, percentage: 0 },
-        retryStatus: null,
-      });
-    },
-    cancelStreaming: () => {
-      const state = get();
-      set({
-        isStreaming: false,
-        streamingContent: "",
-        streamingMessageId: null,
-        activeAttemptId: null,
-        isReasoningStreaming: false,
-        retryStatus: null,
-        messages: state.streamingMessageId
-          ? state.messages.map((m) =>
-              m.id === state.streamingMessageId
-                ? { ...m, content: state.streamingContent || m.content }
-                : m,
-            )
-          : state.messages,
-      });
-    },
-    setActiveAttemptId: (attemptId: string, realMessageId: string) => {
-      const state = get();
-      set({
-        activeAttemptId: attemptId,
-        streamingMessageId: realMessageId,
-        messages: state.messages.map((m) =>
-          m.id === state.streamingMessageId ? { ...m, id: realMessageId } : m,
-        ),
-      });
-    },
-    clearActiveAttemptId: () => {
-      set({ activeAttemptId: null, streamingMessageId: null });
-    },
-    appendDelta: (delta: string) => {
-      const state = get();
-      const newContent = state.streamingContent + delta;
-      if (import.meta.env.DEV) {
-        console.debug(
-          `[appendDelta] +${delta.length}ch prev=${state.streamingContent.length} new=${newContent.length} snippet=${JSON.stringify(delta.slice(0, 40))}`,
-        );
-      }
-      set({ streamingContent: newContent });
-    },
-    setReasoningStreaming: (streaming: boolean) => {
-      set({ isReasoningStreaming: streaming });
-    },
-    appendReasoningDelta: (messageId: string, delta: string) => {
-      const state = get();
-      set({
-        messages: state.messages.map((m) =>
-          m.id === messageId
-            ? { ...m, reasoning: (m.reasoning || "") + delta }
-            : m,
-        ),
-      });
-    },
-    appendToolCallDelta: (
-      messageId: string,
-      toolCallId: string | undefined,
-      toolCallName: string | undefined,
-      toolCallArguments: string | undefined,
-    ) => {
-      const state = get();
-      set({
-        messages: state.messages.map((m) => {
-          if (m.id !== messageId) return m;
-          const toolCalls = [...(m.toolCalls || [])];
-          if (toolCallId) {
-            toolCalls.push({
-              id: toolCallId,
-              name: toolCallName || "",
-              arguments: toolCallArguments || "",
-            });
-          } else if (toolCalls.length > 0) {
-            const last = toolCalls[toolCalls.length - 1];
-            if (toolCallName) last.name += toolCallName;
-            if (toolCallArguments) last.arguments += toolCallArguments;
-          }
-          return { ...m, toolCalls };
-        }),
-      });
-    },
-    updateContextUsage: (usage: ContextUsage) => {
-      set({ contextUsage: usage });
-    },
-    finishStream: (usage?: TokenUsage) => {
-      const state = get();
-      if (!state.isStreaming) return;
-      const convId = state.currentConversationId;
-      const newContextUsage = usage
-        ? {
-            usedTokens: usage.promptTokens,
-            maxTokens: usage.contextWindowTokens || 128_000,
-            percentage:
-              usage.contextWindowTokens && usage.contextWindowTokens > 0
-                ? usage.promptTokens / usage.contextWindowTokens
-                : usage.promptTokens / 128_000,
-          }
-        : state.contextUsage;
-
-      const msgTokens = usage
-        ? usage.promptTokens + usage.completionTokens
-        : null;
-
-      set({
-        isStreaming: false,
-        streamingContent: "",
-        streamingMessageId: null,
-        activeAttemptId: null,
-        isReasoningStreaming: false,
-        contextUsage: newContextUsage,
-        messages: state.streamingMessageId
-          ? state.messages.map((m) =>
-              m.id === state.streamingMessageId
-                ? {
-                    ...m,
-                    content: state.streamingContent || m.content,
-                    ...(msgTokens !== null && msgTokens > 0
-                      ? { tokens: msgTokens }
-                      : {}),
-                  }
-                : m,
-            )
-          : state.messages,
-      });
-
-      if (convId) {
-        chatService.incrementGeneration(convId).catch(() => {});
-      }
-
-      if (convId && !usage) {
-        const conv = state.conversations.find((c) => c.id === convId);
-        chatService
-          .getConversationTokenUsage(
-            convId,
-            resolveContextWindowTokens(
-              conv?.modelId ?? "",
-              conv?.providerId ?? null,
-            ),
-          )
-          .then((summary) => {
-            if (summary && get().currentConversationId === convId) {
-              set({
-                contextUsage: {
-                  usedTokens: summary.totalTokens,
-                  maxTokens: summary.contextWindowTokens,
-                  percentage: summary.percentage,
-                },
-              });
-            }
-          })
-          .catch(() => {});
-      }
-    },
-    errorStream: (error: ChatError) => {
-      const state = get();
-      if (state.streamingMessageId) {
-        const retryHint = formatRetryAfter(error.retryAfterMs);
-        const displayMessage = retryHint
-          ? `${error.message ?? ""} ${retryHint}`
-          : (error.message ?? error.code);
-        set({
-          messages: state.messages.map((m) =>
-            m.id === state.streamingMessageId
-              ? { ...m, content: state.streamingContent || m.content, error }
-              : m,
-          ),
-          isStreaming: false,
-          streamingContent: "",
-          streamingMessageId: null,
-          activeAttemptId: null,
-          isReasoningStreaming: false,
-          retryStatus: null,
-        });
-        log.warn(
-          `chat-error code=${error.code} retryable=${error.retryable} message=${displayMessage}`,
-        );
-      }
-    },
-    setRetryStatus: (retry: RetryNotification | null) => {
-      set({ retryStatus: retry });
-    },
+  const fetchTokenUsageDeps: FetchTokenUsageDeps = {
+    isActiveConv: (convId: string) => get().currentConversationId === convId,
+    setContextUsage: (usage: ContextUsage) => set({ contextUsage: usage }),
   };
-
-  const envPort: ChatEnvPort = {
-    getActiveConversationId: () => get().currentConversationId,
-    getIsStreaming: () => get().isStreaming,
-    getStreamingMessageId: () => get().streamingMessageId,
-    getActiveAttemptId: () => get().activeAttemptId,
-    getMessages: () => get().messages,
-    getConversations: () => get().conversations,
-    getSelectedModeId: () => useAgentModeStore.getState().selectedModeId,
-    getPendingBranchPoint: () => get().pendingBranchPoint,
-    clearPendingBranchPoint: () => set({ pendingBranchPoint: null }),
-  };
-
-  const orchestrator: ChatOrchestrator = createChatOrchestrator({
-    state: statePort,
-    env: envPort,
+  const statePort = createStatePort(set, get, fetchTokenUsageDeps);
+  const envPort = createEnvPort(get, set);
+  const orchestrator = createOrchestrator(statePort, envPort, {
     loadConversations: () => get().loadConversations(),
     switchConversation: (id: string) => get().switchConversation(id),
     renameConversation: (id: string, title: string, titleSource: string) =>
@@ -338,11 +108,6 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     conversations: [],
     currentConversationId: null,
     messages: [],
-    isStreaming: false,
-    streamingContent: "",
-    streamingMessageId: null,
-    activeAttemptId: null,
-    isReasoningStreaming: false,
     hasMoreMessages: false,
     isLoadingMoreMessages: false,
     isLoadingConversations: false,
@@ -351,7 +116,6 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     isFull: false,
     compactSummary: null,
     compactError: null,
-    retryStatus: null,
     pendingBranchPoint: null,
     activeBranchId: null,
     branchOperationSeq: 0,
@@ -405,7 +169,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
 
     switchConversation: async (id: string) => {
       const prevConvId = get().currentConversationId;
-      if (get().isStreaming) {
+      if (useChatStreamStore.getState().isStreaming) {
         if (prevConvId) {
           chatService
             .cancelChat(prevConvId)
@@ -413,13 +177,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
               log.warn("cancelChat failed in switchConversation", e),
             );
         }
-        set({
-          isStreaming: false,
-          streamingContent: "",
-          streamingMessageId: null,
-          activeAttemptId: null,
-          isReasoningStreaming: false,
-        });
+        useChatStreamStore.getState().resetStreaming();
       }
       try {
         const detail = await chatService.getConversationPaginated(
@@ -432,11 +190,6 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
           set({
             currentConversationId: id,
             messages: detail.messages || [],
-            isStreaming: false,
-            streamingContent: "",
-            streamingMessageId: null,
-            activeAttemptId: null,
-            isReasoningStreaming: false,
             activeBranchId: detail.conversation?.activeBranchId ?? null,
             hasMoreMessages:
               !hasBranch && (detail.messages || []).length < detail.totalCount,
@@ -450,26 +203,12 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
             compactSummary: null,
             compactError: null,
           });
-          chatService
-            .getConversationTokenUsage(
-              id,
-              resolveContextWindowTokens(
-                detail.conversation.modelId,
-                detail.conversation.providerId,
-              ),
-            )
-            .then((summary) => {
-              if (summary && get().currentConversationId === id) {
-                set({
-                  contextUsage: {
-                    usedTokens: summary.totalTokens,
-                    maxTokens: summary.contextWindowTokens,
-                    percentage: summary.percentage,
-                  },
-                });
-              }
-            })
-            .catch(() => {});
+          fetchTokenUsage(
+            id,
+            detail.conversation.modelId,
+            detail.conversation.providerId,
+            fetchTokenUsageDeps,
+          );
         }
       } catch (e) {
         log.error("Failed to switch conversation", e);
@@ -482,14 +221,10 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       });
       const state = get();
       if (state.currentConversationId === id) {
+        useChatStreamStore.getState().resetStreaming();
         set({
           currentConversationId: null,
           messages: [],
-          isStreaming: false,
-          streamingContent: "",
-          streamingMessageId: null,
-          activeAttemptId: null,
-          isReasoningStreaming: false,
         });
       }
       await get().loadConversations();
@@ -565,16 +300,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       }
     },
 
-    setActiveAttemptId: statePort.setActiveAttemptId,
-    clearActiveAttemptId: statePort.clearActiveAttemptId,
-
     cancelStream: () => orchestrator.cancel(),
-
-    appendDelta: statePort.appendDelta,
-
-    finishStream: statePort.finishStream,
-
-    errorStream: statePort.errorStream,
 
     deleteMessage: async (id: string) => {
       try {
@@ -711,14 +437,10 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         state.currentConversationId &&
         ids.includes(state.currentConversationId)
       ) {
+        useChatStreamStore.getState().resetStreaming();
         set({
           currentConversationId: null,
           messages: [],
-          isStreaming: false,
-          streamingContent: "",
-          streamingMessageId: null,
-          activeAttemptId: null,
-          isReasoningStreaming: false,
         });
       }
       await get().loadConversations();
@@ -728,15 +450,11 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       await persistQueue.enqueue(async () => {
         await chatService.purgeConversations();
       });
+      useChatStreamStore.getState().resetStreaming();
       set({
         conversations: [],
         currentConversationId: null,
         messages: [],
-        isStreaming: false,
-        streamingContent: "",
-        streamingMessageId: null,
-        activeAttemptId: null,
-        isReasoningStreaming: false,
       });
     },
 
@@ -753,11 +471,9 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         timestamp: Date.now(),
         siblingIndex: 0,
       };
+      useChatStreamStore.getState().beginStream(summaryMsgId);
       set({
         messages: [...get().messages, summaryMsg],
-        isStreaming: true,
-        streamingContent: "",
-        streamingMessageId: summaryMsgId,
       });
       try {
         await chatService.manualCompactConversation(convId);
@@ -767,12 +483,9 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
           "chat.errors.compactFailed.title",
           "chat.errors.compactFailed.description",
         );
+        useChatStreamStore.getState().cancelStreaming();
         set({
           messages: get().messages.filter((m) => m.id !== summaryMsgId),
-          isStreaming: false,
-          streamingContent: "",
-          streamingMessageId: null,
-          activeAttemptId: null,
         });
       }
     },
@@ -819,7 +532,6 @@ export {
   type ChatStatePort,
   type ChatEnvPort,
 } from "../services/chatOrchestrator";
-
 export function getChatOrchestrator(): ChatOrchestrator | null {
   return _orchestrator;
 }

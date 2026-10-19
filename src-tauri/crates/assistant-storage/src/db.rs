@@ -34,6 +34,8 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             is_pinned INTEGER NOT NULL DEFAULT 0,
             sort_order INTEGER NOT NULL DEFAULT 0,
             generation INTEGER NOT NULL DEFAULT 0,
+            mode_id TEXT,
+            is_full INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             active_branch_id TEXT
@@ -80,94 +82,6 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
 
     agent_modes::init_table(&conn)?;
 
-    let has_mode_id: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'mode_id'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|e| e.to_string())?
-        > 0;
-    if !has_mode_id {
-        conn.execute_batch("ALTER TABLE conversations ADD COLUMN mode_id TEXT;")
-            .map_err(|e| e.to_string())?;
-        info!("Added mode_id column to conversations table");
-    }
-
-    let has_is_full: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'is_full'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|e| e.to_string())?
-        > 0;
-    if !has_is_full {
-        conn.execute_batch(
-            "ALTER TABLE conversations ADD COLUMN is_full INTEGER NOT NULL DEFAULT 0;",
-        )
-        .map_err(|e| e.to_string())?;
-        info!("Added is_full column to conversations table");
-    }
-
-    let has_reasoning: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'reasoning'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|e| e.to_string())?
-        > 0;
-    if !has_reasoning {
-        conn.execute_batch("ALTER TABLE messages ADD COLUMN reasoning TEXT;")
-            .map_err(|e| e.to_string())?;
-        info!("Added reasoning column to messages table");
-    }
-
-    let has_tool_calls_json: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'tool_calls_json'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|e| e.to_string())?
-        > 0;
-    if !has_tool_calls_json {
-        conn.execute_batch("ALTER TABLE messages ADD COLUMN tool_calls_json TEXT;")
-            .map_err(|e| e.to_string())?;
-        info!("Added tool_calls_json column to messages table");
-    }
-
-    let has_sibling_index: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'sibling_index'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|e| e.to_string())?
-        > 0;
-    if !has_sibling_index {
-        conn.execute_batch(
-            "ALTER TABLE messages ADD COLUMN sibling_index INTEGER NOT NULL DEFAULT 0;",
-        )
-        .map_err(|e| e.to_string())?;
-        info!("Added sibling_index column to messages table");
-    }
-
-    let has_active_branch_id: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'active_branch_id'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|e| e.to_string())?
-        > 0;
-    if !has_active_branch_id {
-        conn.execute_batch("ALTER TABLE conversations ADD COLUMN active_branch_id TEXT;")
-            .map_err(|e| e.to_string())?;
-        info!("Added active_branch_id column to conversations table");
-    }
-
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_messages_parent_id
           ON messages(conversation_id, parent_id, sibling_index);",
@@ -202,6 +116,37 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
     info!("Database initialized at {:?}", db_path);
     Ok(conn)
 }
+
+// ── Migration pattern ──────────────────────────────────────────────
+// This project only supports ADD COLUMN migrations (no DROP / RENAME / data
+// rewrite). The workflow is:
+//
+//   1. Add the new column to the CREATE TABLE statement above (with DEFAULT
+//      so existing rows get a value automatically on fresh DB creation).
+//   2. Add a pragma_table_info guard + ALTER TABLE below so **existing**
+//      databases that lack the column get it added on next launch.
+//
+// Template (copy & rename for each new column):
+//
+//     let has_{column}: bool = conn
+//         .query_row(
+//             "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'",
+//             [],
+//             |row| row.get::<_, i64>(0),
+//         )
+//         .map_err(|e| e.to_string())?
+//         > 0;
+//     if !has_{column} {
+//         conn.execute_batch(
+//             "ALTER TABLE {table} ADD COLUMN {column} {type} {constraints};",
+//         )
+//         .map_err(|e| e.to_string())?;
+//         info!("Added {column} column to {table} table");
+//     }
+//
+// Once every user has upgraded (column is guaranteed present), the guard can
+// be removed and only the CREATE TABLE definition remains.
+// ───────────────────────────────────────────────────────────────────
 
 #[allow(dead_code)]
 fn migrate_chain_parent_ids(_conn: &Connection) -> Result<(), String> {

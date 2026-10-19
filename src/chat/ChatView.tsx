@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { chatService } from "../services/chatService";
 import { orbService } from "../services/orbService";
 import { useChatStore } from "../stores/chatStore";
+import { useChatStreamStore } from "../stores/chatStreamStore";
 import {
   CONTEXT_WARN_THRESHOLD,
   CONTEXT_DANGER_THRESHOLD,
@@ -74,6 +75,7 @@ function ContextBar({
 
 export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   const chat = useChatStore();
+  const stream = useChatStreamStore();
   const provider = useProviderStore();
   const [modal, modalContextHolder] = Modal.useModal();
   const { t } = useTranslation();
@@ -382,10 +384,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
           ) : (
             <MessageList
               messages={chat.messages}
-              isStreaming={chat.isStreaming}
-              isReasoningStreaming={chat.isReasoningStreaming}
-              streamingMessageId={chat.streamingMessageId}
-              streamingContent={chat.streamingContent}
+              isStreaming={stream.isStreaming}
+              isReasoningStreaming={stream.isReasoningStreaming}
+              streamingMessageId={stream.streamingMessageId}
+              streamingContent={stream.streamingContent}
               compact
               hasMore={chat.hasMoreMessages}
               isLoadingMore={chat.isLoadingMoreMessages}
@@ -396,7 +398,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
               onRetryMessage={handleRetry}
               onSwitchBranch={handleSwitchBranch}
               onFork={handleFork}
-              retryStatus={chat.retryStatus}
+              retryStatus={stream.retryStatus}
             />
           )}
           <div className="chat-tool-bar">
@@ -414,7 +416,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
                       onOk: () => chat.manualCompact(),
                     });
                   }}
-                  disabled={chat.isStreaming}
+                  disabled={stream.isStreaming}
                 />
               </Tooltip>
             )}
@@ -422,7 +424,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
           <MessageInput
             onSend={handleSend}
             onCancel={handleCancel}
-            isStreaming={chat.isStreaming}
+            isStreaming={stream.isStreaming}
             disabled={chat.isFull || noProviders}
             isFull={chat.isFull}
           />

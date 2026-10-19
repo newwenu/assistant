@@ -46,6 +46,7 @@ function createMockDeps(): {
     updateContextUsage: vi.fn(),
     finishStream: vi.fn(),
     errorStream: vi.fn(),
+    setErrorOnMessage: vi.fn(),
     setRetryStatus: vi.fn(),
   };
 
@@ -334,6 +335,25 @@ describe("chatOrchestrator", () => {
         finishReason: "stop",
       });
       expect(mockDeps.state.finishStream).toHaveBeenCalled();
+    });
+  });
+
+  describe("onStreamStart", () => {
+    it("delegates to state.setActiveAttemptId", () => {
+      orchestrator.onStreamStart("conv-1:3", "msg-new");
+      expect(mockDeps.state.setActiveAttemptId).toHaveBeenCalledWith(
+        "conv-1:3",
+        "msg-new",
+      );
+    });
+  });
+
+  describe("getActiveConversationId", () => {
+    it("delegates to env.getActiveConversationId", () => {
+      vi.mocked(mockDeps.env.getActiveConversationId).mockReturnValue(
+        "conv-42",
+      );
+      expect(orchestrator.getActiveConversationId()).toBe("conv-42");
     });
   });
 });

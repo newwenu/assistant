@@ -58,17 +58,18 @@ const DEFAULT_ACTIONS: Record<ChatErrorCategory, RecoveryActionCode[]> = {
   [ChatErrorCategory.InvalidRequest]: ["copy_diagnostics"],
   [ChatErrorCategory.ContentPolicy]: ["copy_diagnostics"],
   [ChatErrorCategory.ModelError]: ["retry", "switch_model", "copy_diagnostics"],
+  [ChatErrorCategory.Cancelled]: ["copy_diagnostics"],
   [ChatErrorCategory.Unknown]: ["retry", "switch_model", "copy_diagnostics"],
 };
 
 const ACTION_LABEL_KEYS: Record<RecoveryActionCode, string> = {
-  retry: "chat.error.action.retry",
-  wait_and_retry: "chat.error.action.wait_and_retry",
-  switch_model: "chat.error.action.switch_model",
-  compress_context: "chat.error.action.compress_context",
-  start_new_chat: "chat.error.action.start_new_chat",
-  open_model_settings: "chat.error.action.open_model_settings",
-  copy_diagnostics: "chat.error.action.copy_diagnostics",
+  retry: "common.actions.retry",
+  wait_and_retry: "chat.error.action_wait_and_retry",
+  switch_model: "chat.error.action_switch_model",
+  compress_context: "chat.error.action_compress_context",
+  start_new_chat: "chat.error.action_start_new_chat",
+  open_model_settings: "common.actions.settings",
+  copy_diagnostics: "chat.error.action_copy_diagnostics",
 };
 
 const CATEGORY_INFO: Record<
@@ -76,58 +77,63 @@ const CATEGORY_INFO: Record<
   { titleKey: string; messageKey: string; severity: "warning" | "error" }
 > = {
   [ChatErrorCategory.Network]: {
-    titleKey: "chat.error.category.network.title",
-    messageKey: "chat.error.category.network.message",
+    titleKey: "chat.error.NetworkError",
+    messageKey: "chat.error.category_network_message",
     severity: "error",
   },
   [ChatErrorCategory.Auth]: {
-    titleKey: "chat.error.category.auth.title",
-    messageKey: "chat.error.category.auth.message",
+    titleKey: "chat.error.AuthFailed",
+    messageKey: "chat.error.category_auth_message",
     severity: "error",
   },
   [ChatErrorCategory.RateLimit]: {
-    titleKey: "chat.error.category.rate_limit.title",
-    messageKey: "chat.error.category.rate_limit.message",
+    titleKey: "chat.error.RateLimited",
+    messageKey: "chat.error.category_rate_limit_message",
     severity: "warning",
   },
   [ChatErrorCategory.ContextOverflow]: {
-    titleKey: "chat.error.category.context_overflow.title",
-    messageKey: "chat.error.category.context_overflow.message",
+    titleKey: "chat.error.ContextOverflow",
+    messageKey: "chat.error.category_context_overflow_message",
     severity: "error",
   },
   [ChatErrorCategory.Timeout]: {
-    titleKey: "chat.error.category.timeout.title",
-    messageKey: "chat.error.category.timeout.message",
+    titleKey: "chat.error.Timeout",
+    messageKey: "chat.error.category_timeout_message",
     severity: "warning",
   },
   [ChatErrorCategory.ProviderQuota]: {
-    titleKey: "chat.error.category.provider_quota.title",
-    messageKey: "chat.error.category.provider_quota.message",
+    titleKey: "chat.error.RateLimited",
+    messageKey: "chat.error.category_provider_quota_message",
     severity: "error",
   },
   [ChatErrorCategory.ProviderUnavailable]: {
-    titleKey: "chat.error.category.provider_unavailable.title",
-    messageKey: "chat.error.category.provider_unavailable.message",
+    titleKey: "chat.error.ServerError",
+    messageKey: "chat.error.category_provider_unavailable_message",
     severity: "warning",
   },
   [ChatErrorCategory.InvalidRequest]: {
-    titleKey: "chat.error.category.invalid_request.title",
-    messageKey: "chat.error.category.invalid_request.message",
+    titleKey: "chat.error.ParseError",
+    messageKey: "chat.error.category_invalid_request_message",
     severity: "error",
   },
   [ChatErrorCategory.ContentPolicy]: {
-    titleKey: "chat.error.category.content_policy.title",
-    messageKey: "chat.error.category.content_policy.message",
+    titleKey: "chat.error.RequestRejected",
+    messageKey: "chat.error.category_content_policy_message",
     severity: "error",
   },
   [ChatErrorCategory.ModelError]: {
-    titleKey: "chat.error.category.model_error.title",
-    messageKey: "chat.error.category.model_error.message",
+    titleKey: "chat.error.ModelNotFound",
+    messageKey: "chat.error.category_model_error_message",
     severity: "error",
   },
+  [ChatErrorCategory.Cancelled]: {
+    titleKey: "chat.error.Cancelled",
+    messageKey: "chat.error.category_cancelled_message",
+    severity: "warning",
+  },
   [ChatErrorCategory.Unknown]: {
-    titleKey: "chat.error.category.unknown.title",
-    messageKey: "chat.error.category.unknown.message",
+    titleKey: "chat.error.InternalError",
+    messageKey: "chat.error.category_unknown_message",
     severity: "error",
   },
 };

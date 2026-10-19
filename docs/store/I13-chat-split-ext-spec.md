@@ -74,7 +74,15 @@
 │  特征：零跨 store 读写，纯标量 set/get                         │
 │  消费者：ChatView / MessageBubble / useMascotChatSync          │
 ├───────────────────────────────────────────────────────────────┤
-│  chatStore.ts  (~530 行) — 持久化状态 + messages 流式写入 Port │
+│  chatStorePorts.ts  (~285 行) — Port 工厂 + 辅助函数          │
+│  工厂：createStatePort(set, get, deps) / createEnvPort(...)   │
+│        / createOrchestrator(...)                              │
+│  辅助：resolveContextWindowTokens / fetchTokenUsage            │
+│        / mergeStreamingContent                                │
+│  特征：零 chatStore import（依赖通过参数注入，无循环依赖）     │
+│  FetchTokenUsageDeps：isActiveConv / setContextUsage           │
+├───────────────────────────────────────────────────────────────┤
+│  chatStore.ts  (~540 行) — 持久化状态 + CRUD action            │
 │  持久字段：conversations / currentConversationId / messages     │
 │            contextUsage / hasMoreMessages / isLoading...       │
 │            totalMessageCount                                   │
@@ -86,12 +94,9 @@
 │                  / clearCompactError                            │
 │  Branch action：switchBranch                                   │
 │  编排委托：sendMessage / cancelStream / resendFrom              │
-│  statePort 实现：appendReasoningDelta / appendToolCallDelta    │
-│                   / finishStream / errorStream                  │
-│                   / beginSend / cancelStreaming                 │
-│                   / setActiveAttemptId / clearActiveAttemptId   │
-│  特征：statePort 中流式标量部分委托 chatStreamStore             │
-│        messages 写入部分留在 chatStore（零跨 store）            │
+│  Port 组装：createStatePort / createEnvPort / createOrchestrator│
+│  特征：statePort/envPort 实现委托 chatStorePorts 工厂函数       │
+│        流式标量委托 chatStreamStore（零跨 store 读写 messages） │
 ├───────────────────────────────────────────────────────────────┤
 │  chatStreamEvents.ts  (~80 行) — 流式事件订阅                  │
 │  监听：chat-stream-start + chat-delta                           │
@@ -113,9 +118,13 @@
 ```
 chatStreamEvents.ts ──→ chatOrchestrator.ts ──→ chatService.ts
                          ↑          ↑
-chatStore.ts ────────────┘          |
-  (statePort 委托 chatStreamStore)  |
-  (envPort 内联闭包)                |
+chatStorePorts.ts ───────┘          |
+  (createStatePort / createEnvPort / createOrchestrator)         |
+  (→ chatStreamStore, chatOrchestrator, chatService)             |
+  (零 chatStore import ✅)                                       |
+chatStore.ts ──→ chatStorePorts.ts                               |
+  (Port 工厂调用 + FetchTokenUsageDeps 注入)                     |
+  (→ chatStreamStore)                                            |
 chatLifecycleEvents.ts ──→ chatStore.ts
   (写持久化状态)
 useAgentModeStore ─────────────────┘
@@ -221,108 +230,50 @@ export const useChatStreamStore = create<ChatStreamState>()((set, get) => ({
 
 ### 3.5 chatStore statePort 改造
 
-statePort 实现改为**标量部分委托 chatStreamStore + messages 操作留在 chatStore**：
+statePort/envPort 实现从 chatStore 内联提取到 `chatStorePorts.ts` 工厂函数，chatStore 仅做组装调用：
 
 ```typescript
-const statePort: ChatStatePort = {
-  beginSend: (messages: Message[], assistantMsgId: string) => {
-    useChatStreamStore.getState().beginStream(assistantMsgId);
-    set({
-      messages,
-      contextUsage: { usedTokens: 0, maxTokens: 128_000, percentage: 0 },
-    });
-  },
-
-  cancelStreaming: () => {
-    const stream = useChatStreamStore.getState();
-    const streamingMsgId = stream.streamingMessageId;
-    const streamingContent = stream.streamingContent;
-    useChatStreamStore.getState().cancelStreaming();
-    set({
-      messages: streamingMsgId
-        ? get().messages.map((m) =>
-            m.id === streamingMsgId
-              ? { ...m, content: streamingContent || m.content }
-              : m,
-          )
-        : get().messages,
-    });
-  },
-
-  setActiveAttemptId: (attemptId: string, realMessageId: string) => {
-    const oldStreamingMsgId = useChatStreamStore.getState().streamingMessageId;
-    useChatStreamStore.getState().setActiveAttemptId(attemptId, realMessageId);
-    set({
-      messages: get().messages.map((m) =>
-        m.id === oldStreamingMsgId ? { ...m, id: realMessageId } : m,
-      ),
-    });
-  },
-
-  clearActiveAttemptId: () => {
-    useChatStreamStore.getState().clearActiveAttemptId();
-  },
-
-  appendDelta: (delta: string) => {
-    useChatStreamStore.getState().appendDelta(delta);
-  },
-
-  setReasoningStreaming: (streaming: boolean) => {
-    useChatStreamStore.getState().setReasoningStreaming(streaming);
-  },
-
-  appendReasoningDelta: (messageId: string, delta: string) => {
-    set({
-      messages: get().messages.map((m) =>
-        m.id === messageId
-          ? { ...m, reasoning: (m.reasoning || "") + delta }
-          : m,
-      ),
-    });
-  },
-
-  appendToolCallDelta: (...) => {
-    set({ messages: ... });
-  },
-
-  updateContextUsage: (usage: ContextUsage) => {
-    set({ contextUsage: usage });
-  },
-
-  finishStream: (usage?: TokenUsage) => {
-    const stream = useChatStreamStore.getState();
-    if (!stream.isStreaming) return;
-    const convId = get().currentConversationId;
-    // ... 计算 newContextUsage / msgTokens
-    useChatStreamStore.getState().cancelStreaming();
-    set({
-      contextUsage: newContextUsage,
-      messages: stream.streamingMessageId
-        ? get().messages.map((m) => ...)
-        : get().messages,
-    });
-    // 编排副作用
-    if (convId) {
-      chatService.incrementGeneration(convId).catch(() => {});
-    }
-    // ... getConversationTokenUsage
-  },
-
-  errorStream: (error: ChatError) => {
-    const stream = useChatStreamStore.getState();
-    if (stream.streamingMessageId) {
-      useChatStreamStore.getState().cancelStreaming();
-      set({
-        messages: get().messages.map((m) => ...),
-      });
-    }
-  },
-
-  setRetryStatus: (retry: RetryNotification | null) => {
-    useChatStreamStore.getState().setRetryStatus(retry);
-  },
+// chatStore.ts
+const fetchTokenUsageDeps: FetchTokenUsageDeps = {
+  isActiveConv: (convId: string) => get().currentConversationId === convId,
+  setContextUsage: (usage: ContextUsage) => set({ contextUsage: usage }),
 };
+const statePort = createStatePort(set, get, fetchTokenUsageDeps);
+const envPort = createEnvPort(get, set);
+const orchestrator = createOrchestrator(statePort, envPort, { ... });
 ```
+
+`chatStorePorts.ts` 中 `createStatePort` 的实现逻辑：**标量部分委托 chatStreamStore + messages 操作通过 set/get 参数**：
+
+```typescript
+// chatStorePorts.ts
+export function createStatePort(
+  set: (partial: Partial<StatePortWritable>) => void,
+  get: () => StatePortReadable,
+  fetchTokenUsageDeps: FetchTokenUsageDeps,
+): ChatStatePort {
+  return {
+    beginSend: (messages, assistantMsgId) => {
+      useChatStreamStore.getState().beginStream(assistantMsgId);
+      set({ messages, contextUsage: { usedTokens: 0, maxTokens: 128_000, percentage: 0 } });
+    },
+    cancelStreaming: () => {
+      const stream = useChatStreamStore.getState();
+      useChatStreamStore.getState().cancelStreaming();
+      set({ messages: mergeStreamingContent(get().messages, stream.streamingMessageId, stream.streamingContent) });
+    },
+    // ... 其余 Port 方法同理
+  };
+}
+```
+
+**关键设计决策**：
+
+| # | 决策点 | 结论 | 理由 |
+|---|--------|------|------|
+| 1 | `fetchTokenUsage` 是否直接 `import useChatStore` | **否，通过 FetchTokenUsageDeps 参数注入** | 消除 chatStorePorts ↔ chatStore 循环依赖 |
+| 2 | `set`/`get` 类型 | **最小接口（StatePortWritable/StatePortReadable）** | 比 `Partial<ChatState>` 更精确，且不引入 ChatState 类型依赖 |
+| 3 | Port 实现放在哪 | **chatStorePorts.ts 工厂函数** | chatStore 主文件只做组装，Port 实现细节独立可测 |
 
 ### 3.6 chatStore 流式重置统一化
 
@@ -387,6 +338,7 @@ export interface ChatOrchestrator {
   handleDeltaEvent: (payload: ChatDeltaPayload) => void;
   onTextDelta: (delta: string) => void;
   onStreamStart: (attemptId: string, messageId: string) => void;  // 新增
+  getActiveConversationId: () => string | null;                   // 新增
   ensureIdle: () => Promise<void>;
   getSendInProgress: () => boolean;
   getPhase: () => ChatPhase;
@@ -394,6 +346,8 @@ export interface ChatOrchestrator {
 ```
 
 **新增 `onStreamStart`**：将 `chat-stream-start` 事件的处理从 chatDeltaEvents 直接调 `store.setActiveAttemptId` 改为走 orchestrator Port。
+
+**新增 `getActiveConversationId`**：供 `chatStreamEvents.ts` 判断 `chat-stream-start` 事件是否属于当前对话（避免非当前对话的 stream-start 干扰当前流式状态）。
 
 ### 3.8 chatDeltaEvents 拆分
 
@@ -517,7 +471,9 @@ export function useMascotChatSync(policy: ExpressionPolicy = DEFAULT_EXPRESSION_
 
 | 验证项 | 方法 |
 |--------|------|
-| 流式标量 set/get 等价 | chatStreamStore 单元测试 |
+| 旧行为锁定 | **characterization test**：先对 chatStore 当前流式标量字段写测试，覆盖初始值 / beginSend / appendDelta / setActiveAttemptId / cancelStreaming / resetStreaming / setReasoningStreaming / setRetryStatus / finishStream / errorStream，锁定旧行为契约 |
+| 新 store 行为复现 | chatStreamStore 单元测试：用与 characterization test 相同的用例结构验证 chatStreamStore，确认复现了旧 chatStore 的流式标量行为 |
+| 集成后行为等价 | 集成完成后，characterization test 改为读 chatStreamStore，仍全部通过——行为等价性闭环 |
 | statePort 行为等价 | chatOrchestrator 契约测试（mock statePort，验证调了正确方法） |
 | UI 渲染等价 | 手动验证：发送消息 → 流式输出 → 取消 → 错误 → mascot 表情 |
 | 事件监听等价 | 手动验证：conversation_terminated/compact_failed/unlocked/messages-changed 事件正常处理 |
@@ -526,10 +482,11 @@ export function useMascotChatSync(policy: ExpressionPolicy = DEFAULT_EXPRESSION_
 
 | 维度 | 改造前 | 改造后 |
 |------|--------|--------|
-| chatStore 行数 | 825 | ~530 |
+| chatStore 行数 | 825 | ~540 |
+| chatStorePorts 行数 | — | ~285 |
 | chatStreamStore 行数 | — | ~60 |
-| chatStreamEvents 行数 | — | ~80 |
-| chatLifecycleEvents 行数 | — | ~50 |
+| chatStreamEvents 行数 | — | ~170 |
+| chatLifecycleEvents 行数 | — | ~100 |
 | chatDeltaEvents 行数 | 237 | 0（删除） |
 | ChatState 公开 action 数 | 22（含 appendDelta/finishStream/errorStream） | 19（移除 3 个仅 Port 使用的） |
 | ChatState 流式字段 | 6 个混在 ChatState 中 | 0（独立 chatStreamStore） |
@@ -537,24 +494,28 @@ export function useMascotChatSync(policy: ExpressionPolicy = DEFAULT_EXPRESSION_
 | 跨 store 读写 | 0（全在 chatStore 内） | 0（标量委托 + messages 留 chatStore） |
 | chatDeltaEvents store 依赖 | `import { useChatStore }` + 11 处调用 | chatStreamEvents 零依赖 + chatLifecycleEvents 合理依赖 |
 | manualCompact Bug | 遗漏 `isReasoningStreaming: false` | 已修复 |
-| chatService 契约测试 | 4/24 | 24/24 |
+| chatService 契约测试 | 4/24 | 4/4 有业务逻辑的方法全覆盖（20 个 passthrough 无需测试） |
 | chatOrchestrator 契约测试 | 12/~18 | ~18/~18 |
 
 ## 6. 风险与缓解
 
 | 风险 | 缓解 | 严重度 |
 |------|------|--------|
+| chatStorePorts ↔ chatStore 循环依赖 | `fetchTokenUsage` 通过 `FetchTokenUsageDeps` 参数注入，chatStorePorts 零 chatStore import ✅ | 已消除 |
 | useMascotChatSync 双 subscribe 时序 | stream subscribe 中同步读 `useChatStore.getState().messages`，Zustand set 同步完成，无时序问题 | 低 |
 | ChatState 移除流式字段后 UI 编译报错 | 逐个 grep 消费点，全部改为 useChatStreamStore | 中 |
 | chatDeltaEvents 拆分后事件丢失 | 拆分后立即手动验证全部 6 个事件 | 中 |
 | chatStreamStore 忘记设 activeAttemptId 导致 orchestrator 忽略事件 | chatStreamStore 单元测试覆盖 setActiveAttemptId | 低 |
 | finishStream 中先 cancelStreaming 再 set messages 的短暂窗口 | cancelStreaming 只重置标量不写 messages，messages 的合并和标量重置在同一调用栈中完成 | 低 |
 | chatStreamStore 独立后被非预期模块直接依赖 | 文件头注释标注消费者白名单（ChatView / useMascotChatSync / chatStore statePort），code review 时拦截 | 低 |
-| 拆分步骤引入行为偏差且发现较晚 | 每步完成后打 git tag（`i13-ext-stepN`），发现偏差可快速回滚到上一步 | 中 |
+| 拆分步骤引入行为偏差且发现较晚 | 每步验证门（`tsc --noEmit`）即时捕获编译偏差；行为偏差由最终冒烟测试覆盖，失败则在当前步内修复而非回滚 | 中 |
 
 ## 7. 验收标准
 
 - [ ] `chatStreamStore.ts` 存在，持有 6 个流式标量字段 + 8 个方法
+- [ ] `chatStorePorts.ts` 存在，含 `createStatePort` / `createEnvPort` / `createOrchestrator` 工厂函数
+- [ ] `chatStorePorts.ts` 零 `chatStore` import（无循环依赖）
+- [ ] `fetchTokenUsage` 通过 `FetchTokenUsageDeps` 参数注入，不直接操作 store
 - [ ] `chatStore.ts` 中 `ChatState` 接口不含 `isStreaming`/`streamingContent`/`streamingMessageId`/`activeAttemptId`/`isReasoningStreaming`/`retryStatus`
 - [ ] `chatStore.ts` 中 `ChatState` 接口不含 `appendDelta`/`finishStream`/`errorStream`
 - [ ] `chatStore.ts` 中 statePort 标量部分全部委托 `useChatStreamStore.getState()`
@@ -564,12 +525,12 @@ export function useMascotChatSync(policy: ExpressionPolicy = DEFAULT_EXPRESSION_
 - [ ] `chatStreamEvents.ts` 存在，零 store 依赖
 - [ ] `chatLifecycleEvents.ts` 存在，合理依赖 useChatStore
 - [ ] `chatDeltaEvents.ts` 已删除
-- [ ] `ChatOrchestrator` 接口包含 `onStreamStart`
+- [ ] `ChatOrchestrator` 接口包含 `onStreamStart` + `getActiveConversationId`
 - [ ] `chat-stream-start` 事件走 `orchestrator.onStreamStart()`
 - [ ] UI 消费者（ChatView/useMascotChatSync）流式状态从 `useChatStreamStore` 读取
 - [ ] `useMascotChatSync` 使用两个独立 subscribe
 - [ ] chatStore 行数 ≤ 550
-- [ ] chatService 契约测试覆盖全部 24 个方法
+- [ ] chatService 契约测试覆盖 4 个有业务逻辑的方法（20 个 passthrough 无需测试）
 - [ ] chatOrchestrator 契约测试覆盖 send/cancel/ensureIdle/handleDeltaEvent/onTextDelta/onStreamStart/phase
 - [ ] chatStreamStore 单元测试覆盖全部 8 个方法
 - [ ] TypeScript 编译通过

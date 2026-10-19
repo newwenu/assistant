@@ -35,6 +35,7 @@ export interface ChatStatePort {
   updateContextUsage: (usage: ContextUsage) => void;
   finishStream: (usage?: TokenUsage) => void;
   errorStream: (error: ChatError) => void;
+  setErrorOnMessage: (messageId: string, error: ChatError) => void;
   setRetryStatus: (retry: RetryNotification | null) => void;
 }
 
@@ -67,9 +68,11 @@ export interface ChatOrchestrator {
   cancel: () => Promise<void>;
   handleDeltaEvent: (payload: ChatDeltaPayload) => void;
   onTextDelta: (delta: string) => void;
+  onStreamStart: (attemptId: string, messageId: string) => void;
   ensureIdle: () => Promise<void>;
   getSendInProgress: () => boolean;
   getPhase: () => ChatPhase;
+  getActiveConversationId: () => string | null;
 }
 
 function fallbackTitleFromUserMessage(
@@ -305,12 +308,23 @@ export function createChatOrchestrator(
   async function cancel() {
     const convId = deps.env.getActiveConversationId();
     if (!convId) return;
+    const streamingMsgId = deps.env.getStreamingMessageId();
     try {
       await chatService.cancelChat(convId);
     } catch (e) {
       log.error("cancel failed", e);
     }
     deps.state.cancelStreaming();
+    if (streamingMsgId) {
+      deps.state.setErrorOnMessage(
+        streamingMsgId,
+        toChatError({
+          code: ChatErrorCode.Cancelled,
+          retryAfterMs: null,
+          retryable: false,
+        }),
+      );
+    }
     setPhase("idle");
   }
 
@@ -390,13 +404,19 @@ export function createChatOrchestrator(
     deps.state.appendDelta(delta);
   }
 
+  function onStreamStart(attemptId: string, messageId: string) {
+    deps.state.setActiveAttemptId(attemptId, messageId);
+  }
+
   return {
     send,
     cancel,
     handleDeltaEvent,
     onTextDelta,
+    onStreamStart,
     ensureIdle,
     getSendInProgress: () => sendInProgress,
     getPhase: () => phase,
+    getActiveConversationId: () => deps.env.getActiveConversationId(),
   };
 }

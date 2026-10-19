@@ -41,6 +41,25 @@ describe("chatService", () => {
     });
   });
 
+  describe("getConversationAllMessages", () => {
+    it("returns ConversationDetail when invoke returns data", async () => {
+      mockInvoke.mockResolvedValue({
+        conversation: { id: "c1" },
+        messages: [{ id: "m1" }],
+        totalCount: 1,
+      });
+      const result = await chatService.getConversationAllMessages("c1");
+      expect(result).not.toBeNull();
+      expect(result!.messages).toHaveLength(1);
+    });
+
+    it("returns null when invoke returns null (fallback)", async () => {
+      mockInvoke.mockResolvedValue(null);
+      const result = await chatService.getConversationAllMessages("c1");
+      expect(result).toBeNull();
+    });
+  });
+
   describe("getConversationTokenUsage", () => {
     it("returns business type with totalTokens/contextWindowTokens", async () => {
       const row = {

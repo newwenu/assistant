@@ -1,12 +1,8 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { ChatOrchestrator } from "../services/chatOrchestrator";
+import type { ChatOrchestrator } from "./chatOrchestrator";
 import type {
   ChatDeltaPayload,
   ChatStreamStartPayload,
-  ConversationTerminatedPayload,
-  ConversationCompactFailedPayload,
-  ConversationUnlockedPayload,
-  ChatMessagesChangedPayload,
 } from "../chat/core/chatTypes";
 import {
   createChatDeltaCoalescer,
@@ -14,12 +10,10 @@ import {
   textChunkScheduler,
   type CoalescibleDelta,
 } from "../chat/core/streamCoalescer";
-import { toChatError } from "../chat/core/chatErrors";
-import { useChatStore } from "../stores/chatStore";
 import { createLogger } from "@/services/logger";
 
 const CHAT_DELTA_EVENT = "chat-delta";
-const log = createLogger("chatDeltaEvents");
+const log = createLogger("chatStreamEvents");
 
 let orchestratorInstance: ChatOrchestrator | null = null;
 
@@ -33,7 +27,7 @@ interface StreamStartIds {
   messageId: string;
 }
 
-export function subscribeChatDeltaEvents(): () => void {
+export function subscribeChatStreamEvents(): () => void {
   let disposed = false;
   const unlisteners: UnlistenFn[] = [];
 
@@ -62,9 +56,15 @@ export function subscribeChatDeltaEvents(): () => void {
         messageId: payload.messageId,
       };
       firstDeltaChecked = false;
-      const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversationId) {
-        store.setActiveAttemptId(payload.attemptId, payload.messageId);
+      if (
+        orchestratorInstance &&
+        orchestratorInstance.getActiveConversationId() ===
+          payload.conversationId
+      ) {
+        orchestratorInstance.onStreamStart(
+          payload.attemptId,
+          payload.messageId,
+        );
       }
     }),
   );
@@ -159,72 +159,6 @@ export function subscribeChatDeltaEvents(): () => void {
       if (payload.finishReason) {
         seqDedup.reset();
         lastSeqByAttempt.delete(payload.attemptId);
-      }
-    }),
-  );
-
-  track(
-    listen("conversation_terminated", (event) => {
-      if (disposed) return;
-      const payload = event.payload as ConversationTerminatedPayload;
-      const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversationId) {
-        useChatStore.setState({
-          isFull: payload.isFull,
-          compactSummary: payload.summary,
-          compactError: null,
-        });
-      }
-      void useChatStore.getState().loadConversations(true);
-    }),
-  );
-
-  track(
-    listen("conversation_compact_failed", (event) => {
-      if (disposed) return;
-      const payload = event.payload as ConversationCompactFailedPayload;
-      const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversationId) {
-        useChatStore.setState({ compactError: toChatError(payload.error) });
-      }
-    }),
-  );
-
-  track(
-    listen("conversation_unlocked", (event) => {
-      if (disposed) return;
-      const payload = event.payload as ConversationUnlockedPayload;
-      const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversationId) {
-        useChatStore.setState({
-          isFull: false,
-          compactSummary: null,
-          compactError: null,
-        });
-      }
-      void useChatStore.getState().loadConversations(true);
-    }),
-  );
-
-  let lastProcessedSeq = 0;
-
-  track(
-    listen<ChatMessagesChangedPayload>("chat-messages-changed", (event) => {
-      if (disposed) return;
-      const payload = event.payload;
-      const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversationId) {
-        if (payload._seq !== undefined && payload._seq <= lastProcessedSeq) {
-          void store.switchConversation(payload.conversationId);
-          return;
-        }
-        if (payload._seq !== undefined) {
-          lastProcessedSeq = payload._seq;
-        }
-        useChatStore.setState({
-          messages: payload.messages,
-          activeBranchId: payload.activeBranchId,
-        });
       }
     }),
   );

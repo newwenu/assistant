@@ -488,6 +488,7 @@ pub(crate) async fn execute_compaction(
         .map_err(|e| e.to_string())?;
 
     let summary_msg_id = Uuid::new_v4().to_string();
+    let summary_parent_id = detail.messages.last().map(|m| m.id.clone());
     {
         let state = app.state::<crate::setup::DbState>();
         let conn = super::get_db_conn(&state)?;
@@ -501,7 +502,7 @@ pub(crate) async fn execute_compaction(
                 content: String::new(),
                 tokens: None,
                 timestamp: now,
-                parent_id: None,
+                parent_id: summary_parent_id,
                 is_pinned: false,
                 reasoning: None,
                 tool_calls_json: None,
@@ -596,6 +597,7 @@ pub(crate) async fn execute_compaction(
                     None,
                 )?;
                 conversations::set_conversation_is_full(&tx, conversation_id, true)?;
+                conversations::update_active_branch_id(&tx, conversation_id, &summary_msg_id)?;
 
                 let now = chrono::Utc::now().timestamp_millis();
                 let existing = conversations::get_compression_state(&tx, conversation_id)?;
@@ -623,6 +625,32 @@ pub(crate) async fn execute_compaction(
                     is_full: true,
                 },
             );
+
+            {
+                let state = app.state::<crate::setup::DbState>();
+                let conn = super::get_db_conn(&state)?;
+                if let Some(detail) =
+                    conversations::get_conversation_detail(&conn, conversation_id)?
+                {
+                    let messages =
+                        messages_with_sibling_counts(&conn, conversation_id, &detail.messages)?;
+                    if let Err(e) = app.emit(
+                        "chat-messages-changed",
+                        ChatMessagesChangedPayloadDto {
+                            conversation_id: conversation_id.to_string(),
+                            change_kind: "messages_regenerated".to_string(),
+                            messages,
+                            active_branch_id: detail.conversation.active_branch_id.clone(),
+                            _seq: None,
+                        },
+                    ) {
+                        log::error!(
+                            "Failed to emit chat-messages-changed (messages_regenerated): {}",
+                            e
+                        );
+                    }
+                }
+            }
 
             log::info!(
                 "Conversation {} terminated with summary ({} chars)",

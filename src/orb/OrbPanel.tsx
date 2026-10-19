@@ -19,9 +19,10 @@ import { useOrbExpand } from "./OrbExpand";
 import { ChatView } from "../chat/ChatView";
 import { useChatStore, getChatOrchestrator } from "../stores/chatStore";
 import {
-  subscribeChatDeltaEvents,
+  subscribeChatStreamEvents,
   setChatOrchestrator,
-} from "../services/chatDeltaEvents";
+} from "../services/chatStreamEvents";
+import { subscribeChatLifecycleEvents } from "../services/chatLifecycleEvents";
 import { useMascotChatSync } from "../mascot/useMascotChatSync";
 import {
   getMouseLogicalPos,
@@ -101,11 +102,13 @@ export const OrbPanel: React.FC = () => {
     });
     const orchestrator = getChatOrchestrator();
     if (orchestrator) setChatOrchestrator(orchestrator);
-    const cleanupChatDelta = subscribeChatDeltaEvents();
+    const cleanupChatStream = subscribeChatStreamEvents();
+    const cleanupChatLifecycle = subscribeChatLifecycleEvents();
     return () => {
       void unlistenBlur.then((fn) => fn());
       void unlistenNewChat.then((fn) => fn());
-      cleanupChatDelta();
+      cleanupChatStream();
+      cleanupChatLifecycle();
       if (timer !== null) clearTimeout(timer);
     };
   }, [expand, collapse, closeAllMenus]);

@@ -27,6 +27,7 @@ export enum ChatErrorCategory {
   InvalidRequest = "invalid_request",
   ContentPolicy = "content_policy",
   ModelError = "model_error",
+  Cancelled = "cancelled",
   Unknown = "unknown",
 }
 
@@ -109,6 +110,8 @@ export function inferCategory(error: ChatError): ChatErrorCategory {
     [ChatErrorCode.RequestRejected]: ChatErrorCategory.ContentPolicy,
     [ChatErrorCode.ParseError]: ChatErrorCategory.InvalidRequest,
     [ChatErrorCode.StreamError]: ChatErrorCategory.Network,
+    [ChatErrorCode.Cancelled]: ChatErrorCategory.Cancelled,
+    [ChatErrorCode.InternalError]: ChatErrorCategory.Unknown,
   };
 
   if (codeToCategory[error.code]) return codeToCategory[error.code]!;
