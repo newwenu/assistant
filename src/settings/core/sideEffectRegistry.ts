@@ -1,3 +1,7 @@
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("sideEffect");
+
 export type SideEffectHandler = (
   prev: Record<string, unknown>,
   next: Record<string, unknown>,
@@ -21,9 +25,7 @@ export function runSideEffects(
   if (handler) {
     const result = handler(prev, next);
     if (result instanceof Promise) {
-      result.catch((err: unknown) =>
-        console.warn(`[sideEffect:${id}] failed:`, err),
-      );
+      result.catch((err: unknown) => log.warn(`sideEffect:${id} failed`, err));
     }
   }
 }

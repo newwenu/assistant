@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { agentModeService } from "../services/agentModeService";
+import { createLogger } from "@/services/logger";
 export type { AgentMode, AgentModeInput } from "@/settings/agentMode/types";
 export { toModeInput } from "@/settings/agentMode/types";
 import type { AgentMode } from "@/settings/agentMode/types";
@@ -15,6 +16,8 @@ interface AgentModeState {
   deleteMode: (id: string) => Promise<void>;
   resetBuiltinMode: (id: string) => Promise<void>;
 }
+
+const log = createLogger("agentModeStore");
 
 export const useAgentModeStore = create<AgentModeState>((set, get) => ({
   modes: [],
@@ -34,7 +37,7 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
         set({ selectedModeId: "builtin-default" });
       }
     } catch (e) {
-      console.error("Failed to load agent modes:", e);
+      log.error("Failed to load agent modes", e);
       set({ loading: false });
     }
   },

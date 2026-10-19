@@ -28,7 +28,7 @@ export const HistorySearchBar: React.FC<HistorySearchBarProps> = React.memo(
       <div className={css.searchBar}>
         <Input
           prefix={<SearchOutlined />}
-          placeholder={t("chat.history.search_placeholder")}
+          placeholder={t("history.search_placeholder")}
           allowClear
           value={searchQuery}
           onChange={(e) => onSearch(e.target.value)}
@@ -43,12 +43,12 @@ export const HistorySearchBar: React.FC<HistorySearchBarProps> = React.memo(
               className={css.searchModeToggle}
             >
               {searchFullText
-                ? t("chat.history.search_fulltext")
-                : t("chat.history.search_title")}
+                ? t("history.search_fulltext")
+                : t("history.search_title")}
             </span>
           }
         />
-        <Tooltip title={t("chat.history.refresh_list")}>
+        <Tooltip title={t("history.refresh_list")}>
           <Button
             type="text"
             size="small"

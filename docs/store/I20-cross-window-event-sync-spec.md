@@ -22,7 +22,7 @@
 | 步骤 | 做什么 | 为什么 |
 |------|--------|--------|
 | **① 打通管道** | 后端所有数据变更操作都 `app.emit` 广播 | 当前元数据操作不发事件、部分事件用 `orb_window.emit` 主窗口收不到 |
-| **② 接通主窗口** | 主窗口添加事件监听 hook | 当前主窗口零监听，只靠 15s 轮询 |
+| **② 接通主窗口** | 新增 `historyStore` + `subscribeHistoryEvents()` 驱动主窗口数据刷新 | 当前主窗口零监听，只靠 15s 轮询；且主窗口状态管理方式与 Orb 有本质差异，不能直接复用 chatStore |
 | **③ 清理双写** | 操作方删掉手动 `loadConversations()` | 加了事件监听后，操作方 invoke → 后端 emit → 自己的监听器也会刷新，手动调用变成冗余 |
 
 ---
@@ -67,7 +67,11 @@
 
 ### 1.3 emit 目标不一致（P1）
 
-同一个 `chat-messages-changed` 事件，5 处 emit 中 3 处用 `app.emit`（广播）、4 处用 `orb_window.emit`（定向）。主窗口即使加了监听也收不到后 4 种（`create_branch`、`switch_branch`、`fork_to_new_conversation`、`stream_finished`）。
+同一个 `chat-messages-changed` 事件，5 处 emit 中仅 1 处用 `app.emit`（广播，`message_deleted`）、4 处用 `orb_window.emit`（定向，`branch_created`/`branch_switched`/`branch_forked`/`stream_finished`）。主窗口即使加了监听也收不到后 4 种。
+
+### 1.3.1 `MessageChangeKind` 类型与实际 emit 脱节（P1）
+
+TS 的 `MessageChangeKind` 枚举包含 `message_edited` / `messages_regenerated` 但后端从未 emit 这两个值（编辑和重新生成都走"创建分支+重发"路径，通知走 `stream_finished`）；反之，后端实际 emit 的 `stream_finished` 不在枚举中。详见 §7.3。
 
 ### 1.4 问题关联图
 
@@ -128,10 +132,10 @@ Orb 窗口操作 ──→ 后端 ──→ DB 写入
 
 | 文件 | 行号 | 当前 | 改为 |
 |------|------|------|------|
-| conversation.rs | 765 | `orb_window.emit("chat-messages-changed", ...)` | `emit_broadcast(&app, ...)` |
-| conversation.rs | 803 | `orb_window.emit("chat-messages-changed", ...)` | `emit_broadcast(&app, ...)` |
-| conversation.rs | 859 | `orb_window.emit("chat-messages-changed", ...)` | `emit_broadcast(&app, ...)` |
-| chat.rs | 208 | `orb_window.emit("chat-messages-changed", ...)` | `emit_broadcast(&app, ...)` |
+| conversation.rs | 765 | `orb_window.emit`（`branch_created`） | `emit_broadcast(&app, ...)` |
+| conversation.rs | 803 | `orb_window.emit`（`branch_switched`） | `emit_broadcast(&app, ...)` |
+| conversation.rs | 866 | `orb_window.emit`（`branch_forked`） | `emit_broadcast(&app, ...)` |
+| chat.rs | 208 | `orb_window.emit`（`stream_finished`） | `emit_broadcast(&app, ...)` |
 
 改动细节：
 - `create_branch` / `switch_branch` / `fork_to_new_conversation`：移除 `get_webview_window(WINDOW_ORB)` 调用（仅用于 emit，改为 `emit_broadcast` 后不再需要）
@@ -149,36 +153,40 @@ Orb 窗口操作 ──→ 后端 ──→ DB 写入
 pub struct ConversationListChangedPayloadDto {
     pub change_kind: String,
     pub conversation_id: Option<String>,
+    /// 批量删除时携带被删除的 ID 列表，供前端精确判断当前选中是否受影响
+    pub affected_ids: Option<Vec<String>>,
 }
 ```
 
 **change_kind 枚举**：
 
-| change_kind | 含义 | conversation_id |
-|-------------|------|-----------------|
-| `renamed` | 对话重命名 | Some(id) |
-| `deleted` | 对话删除 | Some(id) |
-| `pin_toggled` | 置顶状态变更 | Some(id) |
-| `duplicated` | 对话复制 | Some(新对话id) |
-| `model_updated` | 模型切换 | Some(id) |
-| `provider_updated` | Provider 切换 | Some(id) |
-| `batch_deleted` | 批量删除 | None |
-| `purged` | 全部清空 | None |
-| `created` | 新建对话 | Some(id) |
+| change_kind | 含义 | conversation_id | affected_ids |
+|-------------|------|-----------------|--------------|
+| `renamed` | 对话重命名 | Some(id) | None |
+| `deleted` | 对话删除 | Some(id) | None |
+| `pin_toggled` | 置顶状态变更 | Some(id) | None |
+| `duplicated` | 对话复制 | Some(新对话id) | None |
+| `model_updated` | 模型切换 | Some(id) | None |
+| `provider_updated` | Provider 切换 | Some(id) | None |
+| `batch_deleted` | 批量删除 | None | Some(被删ID列表) |
+| `purged` | 全部清空 | None | None |
+| `created` | 新建对话 | Some(id) | None |
+
+> **设计决策**：`batch_deleted` 必须携带 `affected_ids`。如果只传 `None`，前端无法判断当前选中的对话是否在被批量删除的集合中——要么保守地无条件清空选中状态（误伤），要么不做清理（遗漏）。携带 ID 列表可精确匹配。
 
 **后端改动**：在以下函数末尾添加 `emit_broadcast`：
 
-| 函数 | change_kind |
-|------|-------------|
-| `delete_conversation` | `"deleted"` |
-| `rename_conversation` | `"renamed"` |
-| `toggle_conversation_pin` | `"pin_toggled"` |
-| `duplicate_conversation` | `"duplicated"` |
-| `update_conversation_model` | `"model_updated"` |
-| `update_conversation_provider` | `"provider_updated"` |
-| `batch_delete_conversations` | `"batch_deleted"` |
-| `purge_conversations` | `"purged"` |
-| `create_conversation` | `"created"` |
+| 函数 | change_kind | affected_ids |
+|------|-------------|-------------|
+| `delete_conversation` | `"deleted"` | None |
+| `rename_conversation` | `"renamed"` | None |
+| `toggle_conversation_pin` | `"pin_toggled"` | None |
+| `duplicate_conversation` | `"duplicated"` | None |
+| `update_conversation_model` | `"model_updated"` | None |
+| `update_conversation_provider` | `"provider_updated"` | None |
+| `batch_delete_conversations` | `"batch_deleted"` | Some(被删ID列表) |
+| `purge_conversations` | `"purged"` | None |
+| `create_conversation` | `"created"` | None |
 
 **示例**：
 
@@ -201,6 +209,7 @@ pub fn rename_conversation(
         ConversationListChangedPayloadDto {
             change_kind: "renamed".to_string(),
             conversation_id: Some(id),
+            affected_ids: None,
         },
     );
 
@@ -208,196 +217,237 @@ pub fn rename_conversation(
 }
 ```
 
+**额外补充**：`fork_to_new_conversation` 当前仅 emit `chat-messages-changed`（源对话的消息变更），但 fork 创建了新对话，主窗口侧边栏不会出现新对话。需在该函数末尾额外 emit `conversation-list-changed`（`changeKind = "created"`，`conversationId = 新对话ID`）。
+
 ---
 
-## 5. ② 接通主窗口 — 添加事件监听
+## 5. ② 接通主窗口 — historyStore + subscribeHistoryEvents
 
-### 5.1 新增 `useHistoryEvents` hook
+### 5.1 为什么不能直接复用 chatStore（关键分析）
 
-**文件**：`src/history/core/useHistoryEvents.ts`
+初步直觉是让主窗口也用 `chatStore.currentConversationId` 和 `chatStore.messages`，与 Orb 共享同一个 store。但深入分析代码后发现**不可行**，原因有二：
 
-职责：在 HistoryManager 挂载期间监听后端事件，驱动数据刷新。
+#### 5.1.1 分支展示模式本质不同
 
-```typescript
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useEffect, useRef } from "react";
-import type { ChatMessagesChangedPayload } from "../../chat/core/chatTypes";
-import { useChatStore } from "../../stores/chatStore";
+| 维度 | Orb（ChatView） | 主窗口（HistoryManager） |
+|------|----------------|------------------------|
+| **消息加载策略** | 分页加载（`getConversationPaginated`），默认加载最新 N 条 | 全量加载（`getConversationAllMessages`），一次性拿完所有消息 |
+| **分支可见性** | 只显示当前活跃分支（由后端 `activeBranchId` 决定） | 所有分支**同时平铺展示**（`buildBranchView()` 按深度分组，每个深度层级作为 BranchSlot 并列显示） |
+| **分支切换方式** | 调后端 `switch_branch` 改变 `activeBranchId`，重新拉取消息 | 纯前端本地 state 切换（`localIndex`），不调后端，不改 `activeBranchId` |
+| **交互能力** | 编辑/重试/重新生成/fork/发送消息 | 只读查看 + 删除消息 |
 
-interface ConversationListChangedPayload {
-  changeKind: string;
-  conversationId: string | null;
-}
+主窗口的 `buildBranchView()` 函数需要拿到**所有消息（含所有分支）**来构建平铺视图。而后端的 `getConversationPaginated` + `activeBranchId` 只返回当前活跃分支的消息。因此 `chatStore.messages` 对主窗口**不可用**——它永远只有活跃分支的数据。
 
-interface UseHistoryEventsOptions {
-  selectedId: string | null;
-  onConversationsChanged: () => Promise<void>;  // 返回值被忽略，标记 Promise 仅表示异步副作用
-}
+#### 5.1.2 `ensureCurrentConversation` 对主窗口有害
 
-export function useHistoryEvents({
-  selectedId,
-  onConversationsChanged,
-}: UseHistoryEventsOptions): void {
-  const disposedRef = useRef(false);
-  const unlistenersRef = useRef<UnlistenFn[]>([]);
-  const selectedIdRef = useRef(selectedId);
-  selectedIdRef.current = selectedId;
+`chatStore.loadConversations()` 内部会调用 `ensureCurrentConversation()`，检查 `currentConversationId` 是否有效。若为 `null` 则自动选中第一个对话甚至创建新对话。
 
-  useEffect(() => {
-    disposedRef.current = false;
-    const unlisteners: UnlistenFn[] = [];
+主窗口的选中状态可以是 `null`（用户未选中任何对话或当前选中被删除后）。如果直接调 `chatStore.loadConversations()`，会触发自动选中行为——用户看到未点击却突然选中了一个对话，体验异常。
 
-    const track = (promise: Promise<UnlistenFn>) => {
-      promise
-        .then((unlisten) => {
-          if (disposedRef.current) unlisten();
-          else unlisteners.push(unlisten);
-        })
-        .catch((err) => {
-          console.debug("[history-events] listener unavailable:", err);
-        });
-    };
+> 这两个约束使得"统一到 chatStore"的方案 A 不可行。必须为主窗口建立独立的状态管理。
 
-    let convTimer: ReturnType<typeof setTimeout> | null = null;
-    const debouncedConvRefresh = () => {
-      if (disposedRef.current) return;
-      if (convTimer) clearTimeout(convTimer);
-      convTimer = setTimeout(() => {
-        convTimer = null;
-        void onConversationsChanged();
-      }, 300);
-    };
+### 5.2 方案选择：historyStore + subscribeHistoryEvents（沿用项目既有模式）
 
-    track(
-      listen<ConversationListChangedPayload>(
-        "conversation-list-changed",
-        (event) => {
-          if (disposedRef.current) return;
-          const { changeKind, conversationId } = event.payload;
+项目已有两套完全相同的事件驱动模式：
 
-          if (
-            (changeKind === "deleted" ||
-              changeKind === "batch_deleted" ||
-              changeKind === "purged") &&
-            conversationId &&
-            useChatStore.getState().currentConversationId === conversationId
-          ) {
-            useChatStore.setState({ currentConversationId: null, messages: [] });
-          }
+| 层 | Orb 窗口 | 设置页 |
+|----|---------|-------|
+| **Store** | `useChatStore` | `useProviderStore` / `useThemeStore` / `useSettingsStore` |
+| **Events** | `subscribeChatDeltaEvents()` | `subscribeSettingEvents()` |
+| **事件→Store** | `useChatStore.getState().xxx()` | `useXxxStore.getState().xxx()` / `useXxxStore.setState(...)` |
 
-          debouncedConvRefresh();
-        },
-      ),
-    );
+本项目共 8 个 Zustand store + 2 个 events 模块，全部遵循"store + subscribeEvents"模式。新方案延续这一模式：
 
-    track(
-      listen<ChatMessagesChangedPayload>(
-        "chat-messages-changed",
-        (event) => {
-          if (disposedRef.current) return;
-          const { conversationId, messages, activeBranchId } = event.payload;
-          if (selectedIdRef.current === conversationId) {
-            useChatStore.setState({ messages, activeBranchId });
-          }
-        },
-      ),
-    );
-
-    track(
-      listen("conversation_terminated", debouncedConvRefresh),
-    );
-
-    track(
-      listen("conversation_unlocked", debouncedConvRefresh),
-    );
-
-    track(
-      listen<ConversationCompactFailedPayload>(
-        "conversation_compact_failed",
-        (event) => {
-          if (disposedRef.current) return;
-          const { conversationId, error } = event.payload;
-          if (selectedIdRef.current === conversationId) {
-            useChatStore.setState({ compactError: error });
-          }
-        },
-      ),
-    );
-
-    unlistenersRef.current = unlisteners;
-
-    return () => {
-      disposedRef.current = true;
-      if (convTimer) clearTimeout(convTimer);
-      for (const unlisten of unlisteners.splice(0)) unlisten();
-    };
-  }, [onConversationsChanged]);
-}
 ```
+┌─────────────────────────────────────────────────┐
+│                   chatStore                      │
+│  conversations ◄────── 两窗口共享 ──────► conversations │
+│  currentConversationId  (Orb 专用)               │
+│  messages / isStreaming   (Orb 专用)              │
+└─────────────────────────────────────────────────┘
+         ▲                                    ▲
+         │ loadConversations                  │ loadConversations
+         │ (Orb 通过 store 方法)              │ (主窗口通过 service 直接 setState)
+         │                                    │
+┌────────┴────────┐                  ┌────────┴────────┐
+│  subscribeChat   │                  │ subscribeHistory │
+│  DeltaEvents()   │                  │ Events()         │
+│  (Orb 窗口)      │                  │ (主窗口)          │
+└─────────────────┘                  └────────┬────────┘
+                                              │
+                                              ▼
+                                    ┌─────────────────────┐
+                                    │   useHistoryStore    │
+                                    │  selectedId          │
+                                    │  messages (全量)     │
+                                    │  totalCount / hasMore│
+                                    │  collapsedGroups     │
+                                    └─────────────────────┘
+```
+
+**核心优势**：
+- **零新模式**：store + subscribeEvents 是项目既定模式，新开发者立刻能理解
+- **不改 chatStore**：避免对 Orb 侧的任何影响评估
+- **绕过 ensureCurrentConversation**：主窗口的事件监听器直接调 `chatService.listConversations()` + `useChatStore.setState({ conversations })`，不走 `loadConversations()`
+- **保留全量加载 + 分支平铺**：`historyStore.refreshMessages()` 调 `getConversationAllMessages`，不受 `activeBranchId` 过滤
+
+### 5.3 新增 `useHistoryStore`
+
+**文件**：`src/stores/historyStore.ts`
+
+**职责**：管理主窗口 HistoryManager 的全部视图状态，将当前散落在组件内的 7 个 `useState` 提升为全局 store。
+
+**包含的状态**（从 HistoryManager 原样搬出）：
+
+| 状态 | 类型 | 说明 |
+|------|------|------|
+| `selectedId` | `string \| null` | 当前选中的对话 ID |
+| `messages` | `Message[]` | 当前选中对话的全量消息（所有分支） |
+| `totalCount` | `number` | 消息总数 |
+| `hasMore` | `boolean` | 是否有更多消息可加载（主窗口通常为 false，因全量加载） |
+| `loadingMore` | `boolean` | 加载更多中 |
+| `loadingMessages` | `boolean` | 消息加载中 |
+| `collapsedGroups` | `Set<string>` | 侧边栏分组折叠状态 |
+
+**包含的方法**（从 HistoryManager 原样搬出）：
+
+| 方法 | 说明 |
+|------|------|
+| `selectConversation(id)` | 选中对话，调用 `getConversationAllMessages` 全量加载消息 |
+| `clearSelection()` | 清空选中（设 selectedId 为 null，messages 为空数组） |
+| `refreshMessages()` | 重新加载当前选中对话的消息（事件驱动刷新入口） |
+| `loadMoreMessages()` | 分页加载更早的消息（保留现有分页逻辑） |
+| `toggleGroup(key)` | 切换侧边栏分组折叠状态 |
 
 **设计要点**：
+- 这些方法是从 HistoryManager **原样搬出**的，不是新写的——只是从 `useState` + `useCallback` 变成了 Zustand store 的 `set` / `get`
+- `selectConversation` 和 `refreshMessages` 都走 `getConversationAllMessages`（全量），保证分支平铺功能不受影响
+- `collapsedGroups` 也放入 store 是因为它是跨组件共享状态（Sidebar 和 Manager 都需要）
 
-1. **`selectedIdRef`**：用 ref 捕获 `selectedId` 最新值，避免作为 `useEffect` 依赖导致 listener 频繁重注册
-2. **`chat-messages-changed` 直接使用 payload**：与 Orb 窗口行为一致，直接 `useChatStore.setState({ messages, activeBranchId })`，无需再 IPC 拉取
-3. **`conversation_compact_failed` 监听**：主窗口选中正在 compact 的对话时也能显示错误
-4. **跨窗口选中状态清理**：`conversation-list-changed` 中 `deleted`/`batch_deleted`/`purged` 时，若当前对话被删则清空 `currentConversationId`
-5. **`onConversationsChanged` 必须是稳定引用**：该回调作为 `useEffect` 依赖，若每次渲染产生新引用会导致 listener 频繁重注册。Zustand selector 返回的 store 函数天然稳定；若用 `useCallback` 包裹也需确保依赖为空或稳定
+### 5.4 新增 `subscribeHistoryEvents`
 
-### 5.2 HistoryManager 集成
+**文件**：`src/services/historyEvents.ts`
 
-```diff
-  const { refreshing, handleRefresh } = useHistoryRefresh(
-    chatStoreLoadConversations,
-    selectedId,
-    handleMessagesRefreshed,
-  );
+**职责**：在主窗口挂载期间监听后端事件，驱动 `historyStore` 和 `chatStore`（仅 conversations 字段）的数据刷新。
 
-+ useHistoryEvents({
-+   selectedId,
-+   onConversationsChanged: () => chatStoreLoadConversations(true),
-+ });
-```
+**沿用的模式**：与 [settingEvents.ts](file:///g:/codeversion/assistant1/src/services/settingEvents.ts) 和 [chatDeltaEvents.ts](file:///g:/codeversion/assistant1/src/services/chatDeltaEvents.ts) 完全一致：
+- 返回 cleanup 函数（`() => void`）
+- 内部用 `disposed` 标志防止异步回调泄漏
+- 用 `track()` 辅助函数统一处理 listener 注册和错误处理
+- 事件处理函数内直接调 `store.getState()` 或 `store.setState()`，无回调桥接
 
-> 传 `true` 表示静默刷新（不显示 loading），事件驱动刷新不应弹出 loading 状态。
+**监听的事件及处理逻辑**：
 
-### 5.3 Orb 窗口补全 `conversation-list-changed` 监听
+| 事件 | 处理逻辑 |
+|------|---------|
+| `conversation-list-changed` | ① 判断当前选中是否被删除（见下文详细说明）；② 若被删除则调 `historyStore.clearSelection()`；③ 防抖 300ms 后刷新对话列表 |
+| `chat-messages-changed` | 若 `payload.conversationId === historyStore.selectedId`，则调 `historyStore.refreshMessages()`（全量重载，不用 payload 的 messages） |
+| `conversation_terminated` | 防抖 300ms 后刷新对话列表（isFull 状态变了） |
+| `conversation_unlocked` | 防抖 300ms 后刷新对话列表 |
+| `conversation_compact_failed` | **不监听**——compact 错误只在 Orb 的对话面板中显示，主窗口的历史详情页不展示 compact 状态 |
 
-Orb 窗口当前通过 `chatDeltaEvents.ts` 监听 `conversation_terminated` 和 `conversation_unlocked`，但元数据操作在 Orb 侧也没有事件驱动刷新。
-
-**改动位置**：`src/services/chatDeltaEvents.ts` 的 `subscribeChatDeltaEvents()` 中新增：
+**对话列表刷新的实现细节**：
 
 ```typescript
-track(
-  listen<ConversationListChangedPayload>(
-    "conversation-list-changed",
-    (event) => {
-      if (disposed) return;
-      const { changeKind, conversationId } = event.payload;
-
-      if (
-        (changeKind === "deleted" ||
-          changeKind === "batch_deleted" ||
-          changeKind === "purged") &&
-        conversationId &&
-        useChatStore.getState().currentConversationId === conversationId
-      ) {
-        useChatStore.setState({ currentConversationId: null, messages: [] });
-      }
-
-      void useChatStore.getState().loadConversations(true);
-    },
-  ),
-);
+// 不调 useChatStore.getState().loadConversations()
+// （因为 loadConversations 内部会调 ensureCurrentConversation，对主窗口有害）
+// 改为直接调 service + setState：
+const convs = await chatService.listConversations();
+useChatStore.setState({ conversations: convs });
 ```
 
-### 5.4 轮询降级为兜底
+这是方案 C 的关键设计决策：**绕过 chatStore 的 loadConversations 方法，直接操作其 conversations 字段**。这样既利用了 chatStore 作为 conversations 的单一数据源（两窗口共享），又避免了 ensureCurrentConversation 的副作用。
+
+**选中状态清理的详细逻辑**（`conversation-list-changed` 监听器内）：
+
+```typescript
+const selectedId = useHistoryStore.getState().selectedId;
+const { changeKind, conversationId, affectedIds } = event.payload;
+
+const isSelectedDeleted =
+  // 单个删除：conversationId 匹配
+  (changeKind === "deleted" && conversationId === selectedId) ||
+  // 批量删除：affectedIds 包含 selectedId
+  (changeKind === "batch_deleted" &&
+    selectedId != null &&
+    affectedIds?.includes(selectedId)) ||
+  // 全部清空：只要当前有选中就一定被删
+  (changeKind === "purged" && selectedId !== null);
+
+if (isSelectedDeleted) {
+  useHistoryStore.getState().clearSelection();
+}
+```
+
+> **为什么 `purged` 时 conversationId 为 null 但仍要清理？**
+> `purged` 表示所有对话被清空，此时前端无法知道具体哪些 ID 被删（或者可以说所有 ID 都被删）。保守策略是：只要有当前选中就清空。这与 `batch_deleted` 不同——后者有 `affectedIds` 可以精确判断。
+
+**`chat-messages-changed` 为什么不用 payload 的 messages？**
+
+Orb 的 `chat-messages-changed` 监听器直接 `useChatStore.setState({ messages: payload.messages })`，因为 Orb 只看活跃分支，payload 里的 messages 就是它需要的。
+
+但主窗口需要**全量消息（所有分支）**来做平铺展示，而 `chat-messages-changed` 的 payload 只包含**活跃分支的消息**（后端返回的是按 `activeBranchId` 过滤的结果）。所以主窗口收到此事件后必须重新调 `getConversationAllMessages` 全量拉取，不能用 payload。
+
+> 性能影响：广播到主窗口的 `chat-messages-changed` 携带完整消息列表（可能几十 KB），但主窗口只用 `conversationId` 做判断，payload 的 messages 浪费了。短期接受（Tauri 2 事件系统不支持选择性反序列化），长期可考虑拆分为轻量通知事件 + 按需拉取。
+
+### 5.5 HistoryManager 简化为薄组件
+
+集成 `historyStore` + `subscribeHistoryEvents` 后，HistoryManager 从"状态管理+事件处理+UI 渲染"的厚组件简化为"纯 UI 渲染"薄组件：
+
+**移除的内容**：
+- 7 个 `useState`（selectedId, messages, totalCount, hasMore, loadingMore, loadingMessages, collapsedGroups）
+- 5 个 `useCallback`（selectConversation, reloadMessages, loadMoreMessages, deleteMessage 中的 reloadMessages 部分, toggleGroup）
+- 所有操作回调中的 `chatStoreLoadConversations(true)` 调用（5 处）
+
+**保留的内容**：
+- 从 `useHistoryStore` 读取状态的 selector hooks
+- 从 `useChatStore` 读取 `conversations` 的 selector hook（两窗口共享）
+- 操作回调中的 `invoke` 调用（rename/delete/togglePin/duplicate/export）
+- 操作回调中的 toast 通知（message.success/error）
+- `handleSearch` 等 search 相关逻辑
+- JSX 渲染（HistorySidebar + HistoryDetail）
+
+**新增的内容**：
+- `useEffect` 中调用 `subscribeHistoryEvents()` 并在卸载时 cleanup
+
+**示例（renameConversation 改动前后对比）**：
+
+```
+改动前：
+  const renameConversation = useCallback(async (id, title) => {
+    await historyPersistQueue.enqueue(() => historyService.renameConversation(id, title));
+    await chatStoreLoadConversations(true);  ← 手动刷新（冗余）
+    message.success(t("..."));
+  }, [chatStoreLoadConversations, t]);
+
+改动后：
+  const renameConversation = useCallback(async (id, title) => {
+    await historyPersistQueue.enqueue(() => historyService.renameConversation(id, title));
+    // 不再手动 loadConversations —— 事件监听器会触发
+    message.success(t("..."));
+  }, [t]);
+```
+
+### 5.6 Orb 窗口补全 `conversation-list-changed` 监听
+
+Orb 窗口当前通过 `chatDeltaEvents.ts` 监听 `conversation_terminated` 和 `conversation_unlocked` 来刷新对话列表，但元数据操作（重命名/置顶/复制等）在 Orb 侧也没有事件驱动刷新。
+
+**改动位置**：`src/services/chatDeltaEvents.ts` 的 `subscribeChatDeltaEvents()` 中新增 `conversation-list-changed` 监听。
+
+**处理逻辑**：
+- 判断当前 `currentConversationId` 是否被删除（deleted/batch_deleted/purged），若是则清空
+- 调 `useChatStore.getState().loadConversations(true)` 刷新列表（Orb 可以安全调这个方法，ensureCurrentConversation 对 Orb 是正确行为）
+
+### 5.7 轮询降级为兜底
 
 事件驱动为主路径，轮询仅防极端丢失。间隔从 15s 延长到 60s：
 
-```diff
-- const REFRESH_INTERVAL_MS = 15000;
-+ const REFRESH_INTERVAL_MS = 60000;
 ```
+改动前：REFRESH_INTERVAL_MS = 15000
+改动后：REFRESH_INTERVAL_MS = 60000
+```
+
+轮询同时负责刷新对话列表和消息（`refreshConversations` + `refreshMessages`）。事件驱动覆盖了大部分场景，60s 兜底足以应对极端事件丢失。
 
 ---
 
@@ -422,7 +472,7 @@ track(
 
 **原则：谁触发操作，谁就不手动刷新列表——交给事件监听器统一处理。**
 
-### 6.2 chatStore.ts 改动
+### 6.2 chatStore.ts 改动（Orb 侧）
 
 | 操作 | 当前 | 改后 | 保留的本地状态逻辑 |
 |------|------|------|-------------------|
@@ -437,37 +487,40 @@ track(
 
 > `createConversation` 保留手动 `loadConversations` 是因为 `switchConversation(id)` 依赖列表已加载。事件驱动的 `loadConversations(true)` 对操作方窗口是冗余但无害的，对其他窗口是同步。
 
-### 6.3 HistoryManager.tsx 改动
+### 6.3 HistoryManager.tsx 改动（主窗口侧）
 
 删除各操作回调中的 `chatStoreLoadConversations(true)`：
 
-```diff
-  const renameConversation = useCallback(
-    async (id: string, title: string) => {
-      try {
-        await historyPersistQueue.enqueue(async () => {
-          await historyService.renameConversation(id, title);
-        });
--       await chatStoreLoadConversations(true);
-        message.success(t("chat.history.renamed"));
-      } catch (e) { ... }
-    },
--   [chatStoreLoadConversations, t],
-+   [t],
-  );
+```
+改动前：
+  const renameConversation = useCallback(async (id, title) => {
+    await historyPersistQueue.enqueue(() => historyService.renameConversation(id, title));
+    await chatStoreLoadConversations(true);  ← 删掉这行
+    message.success(t("..."));
+  }, [chatStoreLoadConversations, t]);
+
+改动后：
+  const renameConversation = useCallback(async (id, title) => {
+    await historyPersistQueue.enqueue(() => historyService.renameConversation(id, title));
+    message.success(t("..."));
+  }, [t]);
 ```
 
 同样适用于 `deleteConversation`、`togglePin`、`duplicateConversation`。
+
+**注意**：`deleteConversation` 中的本地状态清理（`setSelectedId(null)` + `setMessages([])`）也需要删除——因为 `subscribeHistoryEvents` 的 `conversation-list-changed` 监听器已经会调 `historyStore.clearSelection()`。但保留也无害（幂等操作），可根据团队偏好决定是否删除。
 
 ### 6.4 deleteMessage 的特殊处理
 
 `deleteMessage` 回调中同时有 `reloadMessages()` + `chatStoreLoadConversations(true)`：
 - `chatStoreLoadConversations(true)` → **删除**（消息删除不改变列表结构）
-- `reloadMessages()` → **暂时保留**，等主窗口 `useHistoryEvents` 集成 `chat-messages-changed` 监听后再删
+- `reloadMessages()` → **暂时保留**，等确认 `subscribeHistoryEvents` 的 `chat-messages-changed` 监听稳定后再删
+
+> 暂时保留的原因：`reloadMessages` 走 `getConversationAllMessages` 全量加载，而事件监听器的 `refreshMessages` 也走同样的路径。两者并发执行结果相同，但双重 IPC 浪费。待事件驱动路径验证稳定后再删 `reloadMessages`。
 
 ### 6.5 updateConversationProvider 的特殊处理
 
-[ChatView.tsx:170](file:///g:/codeversion/assistant/src/chat/ChatView.tsx#L170) 中 `handleProviderChange` 直接调用 `chatService.updateConversationProvider()` 绕过 store。后端加了 `conversation-list-changed` 事件后，前端无需手动 `loadConversations`，事件监听器会处理。
+[ChatView.tsx](file:///g:/codeversion/assistant1/src/chat/ChatView.tsx) 中 `handleProviderChange` 直接调用 `chatService.updateConversationProvider()` 绕过 store。后端加了 `conversation-list-changed` 事件后，前端无需手动 `loadConversations`，事件监听器会处理。
 
 ---
 
@@ -573,21 +626,30 @@ export type ConversationListChangeKind =
 export interface ConversationListChangedPayload {
   changeKind: ConversationListChangeKind;
   conversationId: string | null;
+  affectedIds?: string[];  // 仅 batch_deleted 时有值
 }
 ```
 
-扩展 `MessageChangeKind` 覆盖后端实际 emit 的全部 `changeKind`：
+修正 `MessageChangeKind`：补入后端实际 emit 但类型遗漏的值，删除有害预留值：
 
 ```typescript
 export type MessageChangeKind =
-  | "message_edited"
-  | "message_deleted"
-  | "messages_regenerated"
   | "branch_created"
   | "branch_switched"
   | "branch_forked"
+  | "message_deleted"
   | "stream_finished";
 ```
+
+**删除 `message_edited` / `messages_regenerated` 的理由**：
+
+这两个值在 TS 枚举中定义，但后端从未 emit 过。原因是当前架构中"编辑"和"重新生成"都走 `resendFrom()` → `sendMessage()` → 流式输出 → `stream_finished` 路径，本质是"创建分支 + 重发"，不存在"原地修改/原地重新生成"的操作。保留这两个值是有害的：
+
+- **误导**：暗示存在不存在的事件路径，新开发者可能写永远不会触发的处理逻辑
+- **掩盖真问题**：注意力被"预留值"吸引，反而忽略 `stream_finished` 缺失的真 bug
+- **违反 YAGNI**：加一个枚举值是一行代码的事，提前预留的收益几乎为零，成本是认知负担
+
+如果未来实现"原地编辑消息内容（不创建分支）"，届时加回 `message_edited` 即可。
 
 ### 7.4 改动量评估
 
@@ -610,8 +672,8 @@ export type MessageChangeKind =
 |------|------|
 | `protocol/events.rs` | **新建**：事件名常量 + `emit_broadcast` / `emit_orb_only` |
 | `protocol/mod.rs` | 导出 events 模块 |
-| `protocol/dto.rs` | 新增 `ConversationListChangedPayloadDto` |
-| `cmd/conversation.rs` | ① 9 个元数据命令末尾加 `emit_broadcast`；② 3 处 `orb_window.emit` → `emit_broadcast`；③ 字符串事件名 → 常量 |
+| `protocol/dto.rs` | 新增 `ConversationListChangedPayloadDto`（含 `affected_ids` 字段） |
+| `cmd/conversation.rs` | ① 9 个元数据命令末尾加 `emit_broadcast`；② 3 处 `orb_window.emit` → `emit_broadcast`；③ `fork_to_new_conversation` 额外加 `conversation-list-changed` emit；④ 字符串事件名 → 常量 |
 | `cmd/chat.rs` | ① `stream_finished` 的 `orb_window.emit` → `emit_broadcast`；② 字符串事件名 → 常量 |
 | `cmd/config.rs` / `cmd/provider.rs` / `tray.rs` / `setup.rs` / `lib.rs` / `cmd/app.rs` | 字符串事件名 → 常量 |
 
@@ -620,9 +682,10 @@ export type MessageChangeKind =
 | 文件 | 改动 |
 |------|------|
 | `types/events.ts` | 扩展 `AppEvent` enum 覆盖全部事件名 |
-| `chat/core/chatTypes.ts` | 新增 `ConversationListChangeKind`、`ConversationListChangedPayload`；扩展 `MessageChangeKind` |
-| `history/core/useHistoryEvents.ts` | **新建**：主窗口事件监听 hook |
-| `history/HistoryManager.tsx` | ① 集成 `useHistoryEvents`；② 删除操作回调中的 `chatStoreLoadConversations(true)` |
+| `chat/core/chatTypes.ts` | 新增 `ConversationListChangeKind`、`ConversationListChangedPayload`（含 `affectedIds`）；扩展 `MessageChangeKind` |
+| `stores/historyStore.ts` | **新建**：主窗口视图状态 store（从 HistoryManager 搬出 7 个 state + 5 个方法） |
+| `services/historyEvents.ts` | **新建**：主窗口事件监听模块（沿用 settingEvents/chatDeltaEvents 模式） |
+| `history/HistoryManager.tsx` | ① 集成 `subscribeHistoryEvents()`；② 7 个 useState 替换为 useHistoryStore selector；③ 删除 5 处 `chatStoreLoadConversations(true)`；④ 5 个 useCallback 简化或删除 |
 | `history/core/useHistoryRefresh.ts` | 轮询间隔 15s → 60s |
 | `services/chatDeltaEvents.ts` | ① 新增 `conversation-list-changed` 监听（含选中状态清理）；② 字符串事件名 → `AppEvent.*` |
 | `stores/chatStore.ts` | 删除 6 处 `loadConversations()` 调用，保留本地状态清理逻辑 |
@@ -639,65 +702,102 @@ export type MessageChangeKind =
 | `chatStore.createConversation()` | 保留手动 `loadConversations` + `switchConversation`，需要返回值 |
 | `chatStore.purgeAll()` | 前端直接置空，无需 IPC |
 | Orb 窗口现有 `chat-messages-changed` 监听 | `app.emit` 广播后 Orb 仍能收到，行为不变 |
+| `chatStore.loadConversations()` 的 `ensureCurrentConversation` | 不修改该方法签名；主窗口通过 `subscribeHistoryEvents` 绕过它（直接调 service + setState） |
+| `chatStore.switchConversation()` 的分页加载逻辑 | 不修改；主窗口通过 `historyStore.selectConversation` 走全量加载路径 |
 
 ---
 
-## 10. 审查遗漏（已修正）
+## 10. 实施步骤
 
-| # | 问题 | 修正 |
-|---|------|------|
-| 1 | `updateConversationProvider` 绕过 store 直接调用 service | 后端加 emit，前端无需手动 loadConversations |
-| 2 | `deleteMessage` 中 `chatStoreLoadConversations(true)` 应删除 | 消息删除不改变列表结构 |
-| 3 | `selectedId` 作为 useEffect 依赖导致 listener 频繁重注册 | 改用 `selectedIdRef` |
-| 4 | 主窗口 `chat-messages-changed` 应直接用 payload 而非重新 IPC 拉取 | 与 Orb 行为一致，直接 `setState` |
-| 5 | `orb-new-conversation` 主窗口不需要监听 | 事件分类表已标注 |
-| 6 | `emit_orb_only` 在 Orb 窗口不存在时应静默跳过 | 返回 `()`，内部 `if let Some` |
-| 7 | `conversation_compact_failed` 主窗口需要监听 | `useHistoryEvents` 已添加 |
-| 8 | 删除对话后非操作方窗口 `currentConversationId` 未清理 | 监听器中对 `deleted`/`batch_deleted`/`purged` 做特殊处理 |
-| 9 | `MessageChangeKind` TS 类型不完整 | 扩展为 7 种联合类型 |
-| 10 | `ConversationListChangedPayload.changeKind` 类型为 `string` | 新增 `ConversationListChangeKind` 字面量联合类型 |
+| Phase | 目标 | 改动 |
+|-------|------|------|
+| **1. 后端管道** | 所有数据变更都 `app.emit` 广播 | 新建 `protocol/events.rs`（常量+辅助函数）；新增 `ConversationListChangedPayloadDto`（含 `affected_ids`）；9 个元数据命令末尾加 `emit_broadcast`；4 处 `orb_window.emit` → `emit_broadcast`；`fork_to_new_conversation` 额外加 `conversation-list-changed` emit；全局字符串事件名 → 常量 |
+| **2. historyStore** | 主窗口状态从组件提升到 store | 新建 `stores/historyStore.ts`，将 HistoryManager 的 7 个 useState + 5 个 useCallback 原样搬入；HistoryManager 改为 useSelector 读取 |
+| **3. historyEvents** | 主窗口接通事件驱动 | 新建 `services/historyEvents.ts`，实现 4 个监听器（conversation-list-changed / chat-messages-changed / conversation_terminated / conversation_unlocked）；HistoryManager `useEffect` 中调 `subscribeHistoryEvents()`；删 5 处手动 `chatStoreLoadConversations(true)` |
+| **4. Orb 补全** | Orb 也监听 conversation-list-changed | `chatDeltaEvents.ts` 新增监听；chatStore 删 6 处手动 `loadConversations()` |
+| **5. 收尾** | 轮询降频 + 类型完善 | `useHistoryRefresh` 15s → 60s；前端事件名 enum + 类型补充；全局字符串 → enum 替换 |
 
 ---
 
-## 11. 验证方案
+## 11. 风险与缓解
 
-### 11.1 功能验证
+### 11.1 已识别风险
+
+| # | 风险 | 严重度 | 缓解措施 |
+|---|------|--------|---------|
+| 1 | `batch_deleted` 缺少 `affected_ids` 导致无法精确判断选中是否受影响 | 🔴 P0 | Payload 设计已包含此字段 |
+| 2 | 操作方 invoke 返回 → 事件到达间隙（~300ms），列表短暂显示旧数据 | 🟡 P1 | 可接受的用户体验；如需优化可在操作方做乐观更新（写 chatStore.conversations 数组中单项） |
+| 3 | `chat-messages-changed` 广播重 payload 到主窗口但主窗口不用 messages | 🟢 P2 | 短期接受；长期拆分为轻量通知 + 按需拉取 |
+| 4 | `createConversation` 双重 loadConversations（手动 + 事件驱动） | 🟢 P2 | 事件驱动的对操作方是冗余但无害；可接受 |
+| 5 | `deleteMessage` 的 `reloadMessages` 与事件驱动的 `refreshMessages` 双重执行 | 🟢 P2 | 暂时保留 `reloadMessages`，Phase 3 验证稳定后再删 |
+| 6 | `historyStore` 是新 store，团队成员需理解其与 `chatStore` 的职责边界 | 🟡 P1 | 文档明确标注：historyStore 管理主窗口视图状态，chatStore 管理 Orb 对话状态 + 两窗口共享的 conversations |
+| 7 | 主窗口隐藏（非销毁）期间事件丢失 | 🟢 P2 | 重新显示时初始 `useEffect` 会触发 `chatStoreLoadConversations()` 加载最新数据；60s 兜底轮询也覆盖 |
+
+### 11.2 架构决策记录
+
+| 决策 | 选择 | 否决的替代方案 | 原因 |
+|------|------|---------------|------|
+| 主窗口状态管理 | 新建 `historyStore` | 复用 `chatStore`（方案 A） | 分支平铺展示需要全量消息，chatStore.messages 只有活跃分支；ensureCurrentConversation 对主窗口有害 |
+| 事件→状态传递方式 | `store.getState()` 直接调用（方案 C） | 回调桥接（方案 B） | 零新模式（沿用 settingEvents/chatDeltaEvents）；无回调稳定性问题（ref 桥接样板代码） |
+| 对话列表刷新方式 | 直接调 `chatService.listConversations()` + `setState` | 改 `loadConversations` 加 `skipEnsure` 参数 | 不改 chatStore 签名，零对 Orb 影响 |
+| `batch_deleted` payload | 携带 `affected_ids` | 保守清空选中 / 不清理 | 精确判断 vs 误伤 vs 遗漏，携带 ID 列表是最优解 |
+| `chat-messages-changed` 在主窗口的处理 | 重新全量加载 | 直接用 payload | payload 只有活跃分支消息，主窗口需要全量（分支平铺） |
+
+---
+
+## 12. 验证方案
+
+### 12.1 功能验证
 
 | 场景 | 操作 | 预期 |
 |------|------|------|
 | Orb 重命名 → 主窗口 | Orb 中重命名对话 | 主窗口侧边栏 <1s 内更新标题 |
-| 主窗口删除 → Orb | 主窗口删除对话 | Orb 对话列表 <1s 内移除该项 |
+| 主窗口删除 → Orb | 主窗口删除对话 | Orb 对话列表 <1s 内移除该项；若删除的是 Orb 当前选中对话，Orb 清空选中 |
 | Orb 置顶 → 主窗口 | Orb 中置顶对话 | 主窗口侧边栏 <1s 内排序更新 |
-| Orb 发消息 → 主窗口 | Orb 中发送消息 | 主窗口选中同一对话时消息列表实时更新 |
-| Orb 分支操作 → 主窗口 | Orb 中创建/切换分支 | 主窗口选中同一对话时消息列表实时更新 |
+| Orb 发消息 → 主窗口 | Orb 中发送消息 | 主窗口选中同一对话时消息列表 <1s 内更新（全量重载，含所有分支） |
+| Orb 分支操作 → 主窗口 | Orb 中创建/切换分支 | 主窗口选中同一对话时消息列表 <1s 内更新（全量重载，分支平铺视图反映最新） |
 | 主窗口重命名 → Orb | 主窗口重命名对话 | Orb 对话列表 <1s 内更新标题 |
+| 批量删除 → 两个窗口 | 主窗口批量删除 3 个对话 | 两窗口 <1s 内移除这 3 项；若 Orb/主窗口当前选中在其中，自动清空选中 |
+| 全部清空 → 两个窗口 | 主窗口点击"清空所有" | 两窗口 <1s 内清空列表并清空选中 |
+| Fork → 主窗口 | Orb 中 fork 到新对话 | 主窗口侧边栏 <1s 内出现新对话（依赖 fork_to_new_conversation 额外 emit） |
 
-### 11.2 性能验证
+### 12.2 性能验证
 
 | 指标 | 基线 | 目标 |
 |------|------|------|
 | 主窗口 `list_conversations` 调用频率 | 每 15s 1 次 | 事件驱动 + 每 60s 兜底 |
-| `chat-messages-changed` 广播开销 | 仅 Orb 接收 | 两窗口接收，主窗口仅在选中同一对话时处理 |
-| `conversation-list-changed` 开销 | 无 | 每次元数据操作多 1 次 emit，payload ~50 bytes |
+| `chat-messages-changed` 广播开销 | 仅 Orb 接收 | 两窗口接收，主窗口仅在选中同一对话时处理（且走全量重载而非用 payload） |
+| `conversation-list-changed` 开销 | 无 | 每次元数据操作多 1 次 emit，payload ~50-200 bytes（batch_deleted 带 ID 列表时稍大） |
 
-### 11.3 边界场景
+### 12.3 边界场景
 
 | 场景 | 处理 |
 |------|------|
 | 主窗口未打开（仅 Orb） | `app.emit` 广播，主窗口无 listener，事件被丢弃，无副作用 |
 | 事件丢失（极端情况） | 60s 兜底轮询覆盖 |
-| 快速连续操作 | 事件监听器内置 300ms 防抖，合并短时间内的多次 `loadConversations` |
-| 操作方 invoke 后事件尚未到达 | 同进程 IPC，延迟 <1ms；极端丢失由 60s 兜底覆盖 |
+| 快速连续操作（如连续重命名 5 个对话） | 事件监听器内置 300ms 防抖，合并短时间内的多次对话列表刷新 |
+| 操作方 invoke 后事件尚未到达 | 同进程 IPC，延迟 <1ms；极端丢失由 60s 兜底覆盖；用户可能看到 ~300ms 旧数据（防抖窗口），可接受 |
+| 主窗口选中对话 A，Orb 删除对话 A | 主窗口 `conversation-list-changed` 监听器检测到 `isSelectedDeleted` → `historyStore.clearSelection()` → 右侧详情面板清空 |
+| 主窗口选中对话 A，Orb 批量删除 [A, B, C] | `batch_deleted` 的 `affectedIds` 包含 A → `isSelectedDeleted` 为 true → 清空选中 |
+| 主窗口选中对话 D，Orb 批量删除 [A, B, C] | `affectedIds` 不包含 D → `isSelectedDeleted` 为 false → 选中保持不变 ✅ |
 
 ---
 
-## 12. 可选优化（P2，不在本次范围）
+## 13. 可选优化（P2，不在本次范围）
 
-### 12.1 增量更新
+### 13.1 增量更新
 
 `loadConversations` 每次全量拉取。可改为事件携带变更的 `ConversationDto`，前端直接 patch store。但当前列表通常 <100 条，全量拉取 <10ms，收益不大。
 
-### 12.2 完整事件抽象层
+### 13.2 chat-messages-changed 拆分
+
+当前 `chat-messages-changed` 对主窗口来说 payload 浪费（只读 conversationId）。可拆分为：
+- `chat-messages-changed-light`：只传 `{ conversationId }`，主窗口用它触发全量重载
+- `chat-messages-changed`（保持不变）：传完整 messages，Orb 直接用
+
+但这增加了事件种类和维护成本，当前不必要。
+
+### 13.3 完整事件抽象层
 
 当项目规模增长到以下任一条件时，升级为 OpenBitFun 式的完整抽象层（`EventEmitter` trait + `TauriTransportAdapter` + `frontend_projection`）：
 

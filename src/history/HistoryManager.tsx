@@ -6,6 +6,8 @@ import { MESSAGES_PAGE_SIZE } from "../config/constants";
 import { historyService } from "../services/historyService";
 import { useChatStore } from "../stores/chatStore";
 import { PersistQueue } from "../utils/persistQueue";
+import { createLogger } from "@/services/logger";
+import { notifyError } from "@/services/errorNotifier";
 import { HistorySidebar } from "./sidebar/HistorySidebar";
 import { HistoryDetail } from "./detail/HistoryDetail";
 import { useHistorySearch } from "./core/useHistorySearch";
@@ -13,6 +15,7 @@ import { useHistoryRefresh } from "./core/useHistoryRefresh";
 import css from "./HistoryManager.module.css";
 
 const historyPersistQueue = new PersistQueue();
+const log = createLogger("HistoryManager");
 
 export const HistoryManager: React.FC = () => {
   const { t } = useTranslation();
@@ -70,7 +73,7 @@ export const HistoryManager: React.FC = () => {
         setHasMore(false);
       }
     } catch (e) {
-      console.error("Failed to load messages:", e);
+      log.error("Failed to load messages", e);
     } finally {
       setLoadingMessages(false);
     }
@@ -100,7 +103,7 @@ export const HistoryManager: React.FC = () => {
         setHasMore(false);
       }
     } catch (e) {
-      console.error("Failed to load more messages:", e);
+      log.error("Failed to load more messages", e);
     } finally {
       setLoadingMore(false);
     }
@@ -117,7 +120,7 @@ export const HistoryManager: React.FC = () => {
         setHasMore(false);
       }
     } catch (e) {
-      console.error("Failed to reload messages:", e);
+      log.error("Failed to reload messages", e);
     }
   }, [selectedId]);
 
@@ -147,7 +150,7 @@ export const HistoryManager: React.FC = () => {
         await chatStoreLoadConversations(true);
         message.success(t("chat.message.message_deleted"));
       } catch (e) {
-        console.error("Failed to delete message:", e);
+        log.error("Failed to delete message", e);
         message.error(t("chat.message.delete_failed"));
       }
     },
@@ -166,10 +169,14 @@ export const HistoryManager: React.FC = () => {
           setTotalCount(0);
         }
         await chatStoreLoadConversations(true);
-        message.success(t("chat.history.conversation_deleted"));
+        message.success(t("history.conversation_deleted"));
       } catch (e) {
-        console.error("Failed to delete conversation:", e);
-        message.error(t("chat.history.operation_failed"));
+        log.error("Failed to delete conversation", e);
+        notifyError(
+          "history.errors.deleteConversationFailed.title",
+          "history.errors.deleteConversationFailed.description",
+        );
+        message.error(t("history.operation_failed"));
       }
     },
     [selectedId, chatStoreLoadConversations, t],
@@ -182,10 +189,14 @@ export const HistoryManager: React.FC = () => {
           await historyService.renameConversation(id, title, "user");
         });
         await chatStoreLoadConversations(true);
-        message.success(t("chat.history.renamed"));
+        message.success(t("history.renamed"));
       } catch (e) {
-        console.error("Failed to rename:", e);
-        message.error(t("chat.history.rename_failed"));
+        log.error("Failed to rename", e);
+        notifyError(
+          "history.errors.renameFailed.title",
+          "history.errors.renameFailed.description",
+        );
+        message.error(t("history.rename_failed"));
       }
     },
     [chatStoreLoadConversations, t],
@@ -207,10 +218,14 @@ export const HistoryManager: React.FC = () => {
         a.download = `conversation-${id}.${ext}`;
         a.click();
         URL.revokeObjectURL(url);
-        message.success(t("chat.history.export_success"));
+        message.success(t("history.export_success"));
       } catch (e) {
-        console.error("Export failed:", e);
-        message.error(t("chat.history.export_failed"));
+        log.error("Export failed", e);
+        notifyError(
+          "history.errors.exportFailed.title",
+          "history.errors.exportFailed.description",
+        );
+        message.error(t("history.export_failed"));
       }
     },
     [t],
@@ -224,8 +239,8 @@ export const HistoryManager: React.FC = () => {
         });
         await chatStoreLoadConversations(true);
       } catch (e) {
-        console.error("Failed to toggle pin:", e);
-        message.error(t("chat.history.operation_failed"));
+        log.error("Failed to toggle pin", e);
+        message.error(t("history.operation_failed"));
       }
     },
     [chatStoreLoadConversations, t],
@@ -238,10 +253,10 @@ export const HistoryManager: React.FC = () => {
           await historyService.duplicateConversation(id);
         });
         await chatStoreLoadConversations(true);
-        message.success(t("chat.history.duplicated"));
+        message.success(t("history.duplicated"));
       } catch (e) {
-        console.error("Failed to duplicate:", e);
-        message.error(t("chat.history.duplicate_failed"));
+        log.error("Failed to duplicate", e);
+        message.error(t("history.duplicate_failed"));
       }
     },
     [chatStoreLoadConversations, t],

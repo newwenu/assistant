@@ -7,6 +7,9 @@ import {
 import { useProviderStore } from "../stores/providerStore";
 import { useThemeStore } from "../stores/themeStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { createLogger } from "./logger";
+
+const log = createLogger("setting-events");
 
 export function subscribeSettingEvents(): () => void {
   let disposed = false;
@@ -19,7 +22,7 @@ export function subscribeSettingEvents(): () => void {
         else unlisteners.push(unlisten);
       })
       .catch((error) => {
-        console.debug("[setting-events] listener unavailable:", error);
+        log.debug("listener unavailable", error);
       });
   };
 

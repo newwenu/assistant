@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import type { RecoverableLazyComponent } from "@/utils/lazyWithRecovery";
 
 export type SettingsCategoryId = "general" | "provider" | "about";
 
@@ -10,5 +11,5 @@ export interface SettingsPageManifest {
   categoryId: SettingsCategoryId;
   label: string;
   keywords: string[];
-  component: React.LazyExoticComponent<ComponentType>;
+  component: RecoverableLazyComponent<ComponentType>;
 }

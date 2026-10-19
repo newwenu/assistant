@@ -12,6 +12,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import type { SettingsState } from "@/stores/settingsStore";
 import { providerService } from "@/services/providerService";
 import { settingService } from "@/services/settingService";
+import { createLogger } from "@/services/logger";
 import type {
   AppConf,
   OrbConf,
@@ -26,6 +27,8 @@ import {
 } from "./field/fieldRegistry";
 
 type ConfUnion = AppConf | OrbConf | MascotConf;
+
+const log = createLogger("settingsDispatcher");
 
 export type ConfOf<G extends ConfGroup> = G extends "app"
   ? AppConf
@@ -107,9 +110,7 @@ async function emitSettingEventToPeers(
     if (win) {
       win
         .emit(event, payload)
-        .catch((err: unknown) =>
-          console.warn(`[settingsDispatcher] emit to ${label} failed:`, err),
-        );
+        .catch((err: unknown) => log.warn(`emit to ${label} failed`, err));
     }
   }
 }
@@ -163,6 +164,6 @@ export async function dispatchConfPatch<G extends ConfGroup>(
       value: { group, patch },
     });
   } catch (e) {
-    console.error("[settingsDispatcher] dispatchConfPatch failed:", e);
+    log.error("dispatchConfPatch failed", e);
   }
 }

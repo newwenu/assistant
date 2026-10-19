@@ -1,5 +1,5 @@
-import React from "react";
 import { isAfter, subWeeks } from "date-fns";
+import { lazyWithRecovery } from "@/utils/lazyWithRecovery";
 import {
   EyeInvisibleOutlined,
   IdcardOutlined,
@@ -46,7 +46,7 @@ const hashText = defineTool({
   description: "tools.hash_text.description",
   icon: EyeInvisibleOutlined,
   keywords: ["hash", "digest", "crypto", "SHA1", "SHA256", "SHA512"],
-  component: React.lazy(() => import("./hash-text")),
+  component: lazyWithRecovery(() => import("./hash-text")),
   widthMode: "default",
 });
 
@@ -56,7 +56,7 @@ const uuidGenerator = defineTool({
   description: "tools.uuid_generator.description",
   icon: IdcardOutlined,
   keywords: ["uuid", "v4", "v1", "random", "id", "unique"],
-  component: React.lazy(() => import("./uuid-generator")),
+  component: lazyWithRecovery(() => import("./uuid-generator")),
   widthMode: "default",
 });
 
@@ -66,7 +66,7 @@ const base64StringConverter = defineTool({
   description: "tools.base64_string_converter.description",
   icon: SwapOutlined,
   keywords: ["base64", "encode", "decode", "convert"],
-  component: React.lazy(() => import("./base64-string-converter")),
+  component: lazyWithRecovery(() => import("./base64-string-converter")),
   widthMode: "default",
 });
 
@@ -76,7 +76,7 @@ const colorConverter = defineTool({
   description: "tools.color_converter.description",
   icon: BgColorsOutlined,
   keywords: ["color", "hex", "rgb", "hsl", "rgba", "picker", "converter"],
-  component: React.lazy(() => import("./color-converter")),
+  component: lazyWithRecovery(() => import("./color-converter")),
   widthMode: "default",
 });
 
@@ -86,7 +86,7 @@ const dateTimeConverter = defineTool({
   description: "tools.date_time_converter.description",
   icon: ClockCircleOutlined,
   keywords: ["date", "time", "timestamp", "unix", "converter", "epoch"],
-  component: React.lazy(() => import("./date-time-converter")),
+  component: lazyWithRecovery(() => import("./date-time-converter")),
   widthMode: "default",
 });
 
@@ -96,7 +96,7 @@ const integerBaseConverter = defineTool({
   description: "tools.integer_base_converter.description",
   icon: NumberOutlined,
   keywords: ["integer", "base", "binary", "octal", "decimal", "hex", "convert"],
-  component: React.lazy(() => import("./integer-base-converter")),
+  component: lazyWithRecovery(() => import("./integer-base-converter")),
   widthMode: "default",
 });
 
@@ -106,7 +106,7 @@ const urlEncoder = defineTool({
   description: "tools.url_encoder.description",
   icon: LinkOutlined,
   keywords: ["url", "encode", "decode", "uri", "component"],
-  component: React.lazy(() => import("./url-encoder")),
+  component: lazyWithRecovery(() => import("./url-encoder")),
   widthMode: "default",
 });
 
@@ -116,7 +116,7 @@ const jsonViewer = defineTool({
   description: "tools.json_viewer.description",
   icon: CodeOutlined,
   keywords: ["json", "format", "prettify", "minify", "validate", "viewer"],
-  component: React.lazy(() => import("./json-viewer")),
+  component: lazyWithRecovery(() => import("./json-viewer")),
   widthMode: "wide",
 });
 
@@ -126,7 +126,7 @@ const regexTester = defineTool({
   description: "tools.regex_tester.description",
   icon: SearchOutlined,
   keywords: ["regex", "regexp", "test", "match", "capture"],
-  component: React.lazy(() => import("./regex-tester")),
+  component: lazyWithRecovery(() => import("./regex-tester")),
   widthMode: "default",
 });
 
@@ -136,7 +136,7 @@ const jwtParser = defineTool({
   description: "tools.jwt_parser.description",
   icon: KeyOutlined,
   keywords: ["jwt", "token", "decode", "parse", "header", "payload"],
-  component: React.lazy(() => import("./jwt-parser")),
+  component: lazyWithRecovery(() => import("./jwt-parser")),
   widthMode: "default",
 });
 
@@ -146,7 +146,7 @@ const textDiff = defineTool({
   description: "tools.text_diff.description",
   icon: DiffOutlined,
   keywords: ["diff", "compare", "text", "difference"],
-  component: React.lazy(() => import("./text-diff")),
+  component: lazyWithRecovery(() => import("./text-diff")),
   widthMode: "wide",
   createdAt: new Date("2025-09-01"),
 });
@@ -165,7 +165,7 @@ const textStatistics = defineTool({
     "line",
     "byte",
   ],
-  component: React.lazy(() => import("./text-statistics")),
+  component: lazyWithRecovery(() => import("./text-statistics")),
   widthMode: "default",
 });
 
@@ -175,7 +175,7 @@ const passwordGenerator = defineTool({
   description: "tools.password_generator.description",
   icon: SafetyCertificateOutlined,
   keywords: ["password", "generator", "strength", "entropy", "crack", "secure"],
-  component: React.lazy(() => import("./password-generator")),
+  component: lazyWithRecovery(() => import("./password-generator")),
   widthMode: "default",
   createdAt: new Date("2025-09-15"),
 });
@@ -186,7 +186,7 @@ const qrcodeGenerator = defineTool({
   description: "tools.qrcode_generator.description",
   icon: QrcodeOutlined,
   keywords: ["qrcode", "qr", "code", "generate", "url", "text"],
-  component: React.lazy(() => import("./qrcode-generator")),
+  component: lazyWithRecovery(() => import("./qrcode-generator")),
   widthMode: "default",
   createdAt: new Date("2025-09-15"),
 });
@@ -197,7 +197,7 @@ const sqlFormatter = defineTool({
   description: "tools.sql_formatter.description",
   icon: DatabaseOutlined,
   keywords: ["sql", "format", "prettify", "minify", "dialect", "query"],
-  component: React.lazy(() => import("./sql-formatter")),
+  component: lazyWithRecovery(() => import("./sql-formatter")),
   widthMode: "wide",
 });
 
@@ -207,7 +207,7 @@ const cronParser = defineTool({
   description: "tools.cron_parser.description",
   icon: FieldTimeOutlined,
   keywords: ["cron", "crontab", "schedule", "parse", "timer"],
-  component: React.lazy(() => import("./cron-parser")),
+  component: lazyWithRecovery(() => import("./cron-parser")),
   widthMode: "default",
 });
 
@@ -217,7 +217,7 @@ const calculator = defineTool({
   description: "tools.calculator.description",
   icon: CalculatorOutlined,
   keywords: ["calculator", "math", "evaluate", "expression", "compute"],
-  component: React.lazy(() => import("./calculator")),
+  component: lazyWithRecovery(() => import("./calculator")),
   widthMode: "default",
 });
 
@@ -235,7 +235,7 @@ const unitConverter = defineTool({
     "area",
     "volume",
   ],
-  component: React.lazy(() => import("./unit-converter")),
+  component: lazyWithRecovery(() => import("./unit-converter")),
   widthMode: "default",
 });
 
@@ -245,7 +245,7 @@ const ipInfo = defineTool({
   description: "tools.ip_info.description",
   icon: GlobalOutlined,
   keywords: ["ip", "address", "ipv4", "ipv6", "lookup", "geo"],
-  component: React.lazy(() => import("./ip-info")),
+  component: lazyWithRecovery(() => import("./ip-info")),
   widthMode: "default",
 });
 
@@ -263,7 +263,7 @@ const imageCompressor = defineTool({
     "jpg",
     "png",
   ],
-  component: React.lazy(() => import("./image-compressor")),
+  component: lazyWithRecovery(() => import("./image-compressor")),
   widthMode: "full",
 });
 
@@ -273,7 +273,7 @@ const svgPreview = defineTool({
   description: "tools.svg_preview.description",
   icon: EditOutlined,
   keywords: ["svg", "preview", "edit", "optimize", "vector", "download"],
-  component: React.lazy(() => import("./svg-preview")),
+  component: lazyWithRecovery(() => import("./svg-preview")),
   widthMode: "full",
 });
 
@@ -291,7 +291,7 @@ const fsLink = defineTool({
     "path",
     "shortcut",
   ],
-  component: React.lazy(() => import("./fs-link")),
+  component: lazyWithRecovery(() => import("./fs-link")),
   widthMode: "default",
 });
 

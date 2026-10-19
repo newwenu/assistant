@@ -23,6 +23,10 @@ import { CompactBanner } from "./compact/CompactBanner";
 import { CompactErrorBanner } from "./compact/CompactErrorBanner";
 import { useAgentModeStore } from "../stores/agentModeStore";
 import { ForkDialog } from "./blocks/ForkDialog";
+import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("ChatView");
 
 interface ChatViewProps {
   modelOpenRef?: RefObject<boolean>;
@@ -168,7 +172,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       if (chat.currentConversationId) {
         chatService
           .updateConversationProvider(chat.currentConversationId, newProviderId)
-          .catch((e) => console.error("Failed to update provider:", e));
+          .catch((e) => log.error("Failed to update provider", e));
         void chat.updateModel(chat.currentConversationId, modelId);
       }
     },
@@ -209,7 +213,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   const handleOpenSettings = useCallback(() => {
     orbService
       .openMainWindow()
-      .catch((e) => console.error("Failed to open main window:", e));
+      .catch((e) => log.warn("Failed to open main window", e));
   }, []);
 
   const handleModeChange = useCallback(
@@ -224,7 +228,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
             if (chat.currentConversationId) {
               chatService
                 .updateConversationProvider(chat.currentConversationId, p.id)
-                .catch(() => {});
+                .catch((e) =>
+                  log.warn(
+                    "updateConversationProvider failed in modeChange",
+                    e,
+                  ),
+                );
               void chat.updateModel(chat.currentConversationId, mode.model);
             }
             break;
@@ -274,7 +283,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
           if (!confirmed) return;
           void chat.deleteMessage(id);
         } catch (e) {
-          console.error("[ChatView] deleteMessage failed:", e);
+          log.error("deleteMessage failed", e);
         }
       })();
     },
@@ -293,11 +302,11 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
           const target = siblings[targetIdx];
           if (target) await chat.switchBranch(target.id);
         } catch (e) {
-          console.error("[ChatView] switchBranch failed:", e);
+          log.error("switchBranch failed", e);
         }
       })();
     },
-    [chat, chatService],
+    [chat],
   );
 
   const handleFork = useCallback((messageId: string) => {
@@ -317,109 +326,111 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       await chat.loadConversations();
       await chat.switchConversation(newConvId);
     } catch (e) {
-      console.error("[ChatView] fork failed:", e);
+      log.error("fork failed", e);
       setForkTarget(null);
     }
   }, [forkTarget, chat]);
 
   return (
-    <div className="chat-view chat-view-compact">
-      {modalContextHolder}
-      <ForkDialog
-        open={forkTarget !== null}
-        onFork={() => void confirmFork()}
-        onCancel={() => setForkTarget(null)}
-      />
-      <div className="chat-main">
-        <div className="orb-chrome-bar">
-          <ProviderSelector
-            providerId={currentProviderId}
-            providers={provider.providers}
-            onProviderChange={handleProviderChange}
-            variant="chip"
-          />
-          <ModelSelector
-            providerId={currentProviderId}
-            modelId={currentModelId}
-            onModelChange={handleModelChange}
-            providers={provider.providers}
-            width={120}
-            variant="chip"
-            openRef={modelOpenRef}
-          />
-          <Button
-            type="text"
-            size="small"
-            className="orb-chrome-btn"
-            icon={<PlusOutlined />}
-            onClick={handleNewConversation}
-          />
-        </div>
-        {chat.messages.length === 0 && noProviders ? (
-          <div className="chat-empty-hint">
-            <Typography.Text type="secondary">
-              {t("chat.view.no_provider_hint")}
-            </Typography.Text>
-            <Button
-              type="primary"
-              size="small"
-              icon={<SettingOutlined />}
-              onClick={handleOpenSettings}
-            >
-              {t("common.actions.go_settings")}
-            </Button>
-          </div>
-        ) : (
-          <MessageList
-            messages={chat.messages}
-            isStreaming={chat.isStreaming}
-            isReasoningStreaming={chat.isReasoningStreaming}
-            streamingMessageId={chat.streamingMessageId}
-            streamingContent={chat.streamingContent}
-            compact
-            hasMore={chat.hasMoreMessages}
-            isLoadingMore={chat.isLoadingMoreMessages}
-            onLoadMore={handleLoadMore}
-            onDeleteMessage={handleDeleteMessage}
-            onEditMessage={handleEditMessage}
-            onRegenerateMessage={handleRegenerateMessage}
-            onRetryMessage={handleRetry}
-            onSwitchBranch={handleSwitchBranch}
-            onFork={handleFork}
-            retryStatus={chat.retryStatus}
-          />
-        )}
-        <div className="chat-tool-bar">
-          <ModeSelector variant="chip" onModeChange={handleModeChange} />
-          {!chat.isFull && (
-            <Tooltip title={t("chat.compact.generate_summary")}>
-              <Button
-                size="small"
-                type="text"
-                icon={<ThunderboltOutlined />}
-                onClick={() => {
-                  modal.confirm({
-                    title: t("chat.compact.generate_summary"),
-                    content: t("chat.compact.generate_confirm"),
-                    onOk: () => chat.manualCompact(),
-                  });
-                }}
-                disabled={chat.isStreaming}
-              />
-            </Tooltip>
-          )}
-        </div>
-        <MessageInput
-          onSend={handleSend}
-          onCancel={handleCancel}
-          isStreaming={chat.isStreaming}
-          disabled={chat.isFull || noProviders}
-          isFull={chat.isFull}
+    <FeatureErrorBoundary featureName="对话">
+      <div className="chat-view chat-view-compact">
+        {modalContextHolder}
+        <ForkDialog
+          open={forkTarget !== null}
+          onFork={() => void confirmFork()}
+          onCancel={() => setForkTarget(null)}
         />
-        <CompactBanner />
-        <CompactErrorBanner />
-        <ContextBar usage={chat.contextUsage} />
+        <div className="chat-main">
+          <div className="orb-chrome-bar">
+            <ProviderSelector
+              providerId={currentProviderId}
+              providers={provider.providers}
+              onProviderChange={handleProviderChange}
+              variant="chip"
+            />
+            <ModelSelector
+              providerId={currentProviderId}
+              modelId={currentModelId}
+              onModelChange={handleModelChange}
+              providers={provider.providers}
+              width={120}
+              variant="chip"
+              openRef={modelOpenRef}
+            />
+            <Button
+              type="text"
+              size="small"
+              className="orb-chrome-btn"
+              icon={<PlusOutlined />}
+              onClick={handleNewConversation}
+            />
+          </div>
+          {chat.messages.length === 0 && noProviders ? (
+            <div className="chat-empty-hint">
+              <Typography.Text type="secondary">
+                {t("chat.view.no_provider_hint")}
+              </Typography.Text>
+              <Button
+                type="primary"
+                size="small"
+                icon={<SettingOutlined />}
+                onClick={handleOpenSettings}
+              >
+                {t("common.actions.go_settings")}
+              </Button>
+            </div>
+          ) : (
+            <MessageList
+              messages={chat.messages}
+              isStreaming={chat.isStreaming}
+              isReasoningStreaming={chat.isReasoningStreaming}
+              streamingMessageId={chat.streamingMessageId}
+              streamingContent={chat.streamingContent}
+              compact
+              hasMore={chat.hasMoreMessages}
+              isLoadingMore={chat.isLoadingMoreMessages}
+              onLoadMore={handleLoadMore}
+              onDeleteMessage={handleDeleteMessage}
+              onEditMessage={handleEditMessage}
+              onRegenerateMessage={handleRegenerateMessage}
+              onRetryMessage={handleRetry}
+              onSwitchBranch={handleSwitchBranch}
+              onFork={handleFork}
+              retryStatus={chat.retryStatus}
+            />
+          )}
+          <div className="chat-tool-bar">
+            <ModeSelector variant="chip" onModeChange={handleModeChange} />
+            {!chat.isFull && (
+              <Tooltip title={t("chat.compact.generate_summary")}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<ThunderboltOutlined />}
+                  onClick={() => {
+                    modal.confirm({
+                      title: t("chat.compact.generate_summary"),
+                      content: t("chat.compact.generate_confirm"),
+                      onOk: () => chat.manualCompact(),
+                    });
+                  }}
+                  disabled={chat.isStreaming}
+                />
+              </Tooltip>
+            )}
+          </div>
+          <MessageInput
+            onSend={handleSend}
+            onCancel={handleCancel}
+            isStreaming={chat.isStreaming}
+            disabled={chat.isFull || noProviders}
+            isFull={chat.isFull}
+          />
+          <CompactBanner />
+          <CompactErrorBanner />
+          <ContextBar usage={chat.contextUsage} />
+        </div>
       </div>
-    </div>
+    </FeatureErrorBoundary>
   );
 };

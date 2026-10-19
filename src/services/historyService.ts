@@ -24,8 +24,7 @@ export const historyService = {
     id: string,
     title: string,
     titleSource?: string,
-  ): Promise<void> =>
-    invoke("rename_conversation", { id, title, titleSource }),
+  ): Promise<void> => invoke("rename_conversation", { id, title, titleSource }),
 
   exportConversation: (id: string, format: string): Promise<string> =>
     invoke<string>("export_conversation", { id, format }),

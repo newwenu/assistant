@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
-import { Button, Tooltip, Dropdown, Input } from "antd";
+import { Button, Tooltip, Dropdown, Input, message } from "antd";
 import {
   LeftOutlined,
   RightOutlined,
@@ -30,6 +30,8 @@ import {
 } from "./OrbCoord";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { orbService } from "../services/orbService";
+import { useErrorNotifyStore } from "../services/errorNotifier";
+import { translateKey } from "../i18n";
 
 export const OrbPanel: React.FC = () => {
   const { expand, collapse } = useOrbExpand();
@@ -37,6 +39,23 @@ export const OrbPanel: React.FC = () => {
   const isPinned = useOrbStore((s) => s.isPinned);
   const setPinned = useOrbStore((s) => s.setPinned);
   const chat = useChatStore();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [messageApi, messageContextHolder] = message.useMessage({
+    getContainer: () => panelRef.current ?? document.body,
+  });
+  const errorNotifyPending = useErrorNotifyStore((s) => s.pending);
+  const errorNotifyDequeue = useErrorNotifyStore((s) => s.dequeue);
+
+  React.useEffect(() => {
+    while (errorNotifyPending.length > 0) {
+      const item = errorNotifyDequeue();
+      if (!item) break;
+      messageApi.error({
+        content: translateKey(item.titleKey, item.options),
+        duration: 3,
+      });
+    }
+  }, [errorNotifyPending, errorNotifyDequeue, messageApi]);
   const { t } = useTranslation();
   useMascotChatSync();
   const [search, setSearch] = useState("");
@@ -199,13 +218,14 @@ export const OrbPanel: React.FC = () => {
     historyMenuItems.splice(1);
     historyMenuItems.push({
       key: "empty",
-      label: t("chat.history.no_conversations"),
+      label: t("history.no_conversations"),
       disabled: true,
     });
   }
 
   return (
     <div
+      ref={panelRef}
       className="orb-panel orb-compact"
       onKeyDown={handleKeyDown}
       tabIndex={-1}
@@ -257,6 +277,7 @@ export const OrbPanel: React.FC = () => {
           />
         </Tooltip>
       </div>
+      {messageContextHolder}
       <ChatView modelOpenRef={modelOpenRef} />
     </div>
   );

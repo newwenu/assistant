@@ -105,11 +105,11 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = React.memo(
           ) : searchQuery.trim() && searchResults !== null ? (
             <>
               <div className={css.filterHint}>
-                {t("chat.history.result_count", { count: displayConvs.length })}
+                {t("history.result_count", { count: displayConvs.length })}
               </div>
               {displayConvs.length === 0 ? (
                 <Empty
-                  description={t("chat.history.no_match")}
+                  description={t("history.no_match")}
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                 />
               ) : (
@@ -118,7 +118,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = React.memo(
             </>
           ) : groups.length === 0 ? (
             <Empty
-              description={t("chat.history.no_conversations")}
+              description={t("history.no_conversations")}
               image={Empty.PRESENTED_IMAGE_SIMPLE}
             />
           ) : (

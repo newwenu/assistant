@@ -17,12 +17,18 @@ import { Titlebar } from "@/components/Titlebar";
 import { OrbBall } from "@/orb/OrbBall";
 import { OrbPanel } from "@/orb/OrbPanel";
 import { Layout, Menu } from "antd";
-import { HistoryOutlined, SettingOutlined } from "@ant-design/icons";
+import {
+  HistoryOutlined,
+  SettingOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+} from "@ant-design/icons";
 import {
   WINDOW_MAIN,
   WINDOW_ORB,
   WINDOW_SETTINGS,
   SIDEBAR_WIDTH,
+  SIDEBAR_COLLAPSED_WIDTH,
 } from "@/config/constants";
 import { useOrbStore } from "@/stores/orbStore";
 import { useToolStore } from "@/stores/toolStore";
@@ -35,6 +41,8 @@ import {
 } from "@/settings/core/pageRegistry";
 
 import { HistoryManager } from "@/history";
+import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
+import { useErrorNotifyStore } from "@/services/errorNotifier";
 import { ToolBox } from "@/tools/ToolBox";
 import { ToolPage } from "@/tools/ToolPage";
 import { CommandPalette } from "@/components/commandPalette/CommandPalette";
@@ -78,11 +86,26 @@ const MainLayout: React.FC = () => {
   const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
   const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
   const [api, contextHolder] = notification.useNotification();
+  const errorNotifyPending = useErrorNotifyStore((s) => s.pending);
+  const errorNotifyDequeue = useErrorNotifyStore((s) => s.dequeue);
+
+  useEffect(() => {
+    while (errorNotifyPending.length > 0) {
+      const item = errorNotifyDequeue();
+      if (!item) break;
+      api.error({
+        message: translateKey(item.titleKey, item.options),
+        description: translateKey(item.descriptionKey, item.options),
+        placement: "topRight",
+      });
+    }
+  }, [errorNotifyPending, errorNotifyDequeue, api]);
 
   const [openKeys, setOpenKeys] = useState<string[]>([
     "toolbox",
     "settings-sub",
   ]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     if (location.pathname.startsWith("/tools/")) {
@@ -162,6 +185,11 @@ const MainLayout: React.FC = () => {
         <Layout style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
           <Layout.Sider
             width={SIDEBAR_WIDTH}
+            collapsedWidth={SIDEBAR_COLLAPSED_WIDTH}
+            collapsed={sidebarCollapsed}
+            collapsible
+            onCollapse={setSidebarCollapsed}
+            trigger={null}
             style={{
               background: "var(--color-bg-sidebar)",
               borderRight: "1px solid var(--color-border)",
@@ -178,11 +206,50 @@ const MainLayout: React.FC = () => {
               },
             }}
           >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: sidebarCollapsed ? "center" : "space-between",
+                padding: sidebarCollapsed ? "12px 0" : "12px 16px",
+                borderBottom: "1px solid var(--color-border)",
+                flexShrink: 0,
+                minHeight: 48,
+              }}
+            >
+              {!sidebarCollapsed && (
+                <span
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 600,
+                    color: "var(--color-text-primary)",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                  }}
+                >
+                  Assistant
+                </span>
+              )}
+              <span
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                style={{
+                  cursor: "pointer",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                {sidebarCollapsed ? (
+                  <MenuUnfoldOutlined />
+                ) : (
+                  <MenuFoldOutlined />
+                )}
+              </span>
+            </div>
             <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
               <Menu
                 mode="inline"
+                inlineCollapsed={sidebarCollapsed}
                 selectedKeys={[location.pathname]}
-                openKeys={openKeys}
+                openKeys={sidebarCollapsed ? [] : openKeys}
                 onOpenChange={(keys) => setOpenKeys(keys)}
                 style={{ background: "transparent", border: "none" }}
                 items={[
@@ -198,6 +265,9 @@ const MainLayout: React.FC = () => {
                     key: "settings-sub",
                     label: t("common.navigation.settings"),
                     icon: <SettingOutlined />,
+                    onTitleClick: () => {
+                      void navigate(`/settings/${DEFAULT_SETTINGS_PAGE_ID}`);
+                    },
                     children: SETTINGS_PAGES.map((page) => ({
                       key: `/settings/${page.id}`,
                       label: translateKey(page.label),
@@ -219,7 +289,14 @@ const MainLayout: React.FC = () => {
             <Routes>
               <Route path="/" element={<ToolBox />} />
               <Route path="/tools/:id" element={<ToolPage />} />
-              <Route path="/history" element={<HistoryManager />} />
+              <Route
+                path="/history"
+                element={
+                  <FeatureErrorBoundary featureName="历史记录">
+                    <HistoryManager />
+                  </FeatureErrorBoundary>
+                }
+              />
               <Route
                 path="/settings"
                 element={
@@ -229,7 +306,14 @@ const MainLayout: React.FC = () => {
                   />
                 }
               />
-              <Route path="/settings/:pageId" element={<SettingsContent />} />
+              <Route
+                path="/settings/:pageId"
+                element={
+                  <FeatureErrorBoundary featureName="设置">
+                    <SettingsContent />
+                  </FeatureErrorBoundary>
+                }
+              />
             </Routes>
           </Layout.Content>
         </Layout>
@@ -264,7 +348,14 @@ const SettingsWindow: React.FC = () => {
               <Navigate to={`/settings/${DEFAULT_SETTINGS_PAGE_ID}`} replace />
             }
           />
-          <Route path="/settings/:pageId" element={<SettingsContent />} />
+          <Route
+            path="/settings/:pageId"
+            element={
+              <FeatureErrorBoundary featureName="设置">
+                <SettingsContent />
+              </FeatureErrorBoundary>
+            }
+          />
         </Routes>
       </Layout.Content>
     </Layout>

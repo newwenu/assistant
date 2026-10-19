@@ -5,6 +5,9 @@ import i18n, { translateKey } from "@/i18n";
 import { tools, toolsByCategory } from "../tools/registry";
 import type { ToolDefinition, ToolCategoryGroup } from "../tools/types";
 import { TOOL_SEARCH_THRESHOLD, RECENT_TOOLS_LIMIT } from "../config/constants";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("toolStore");
 
 interface ToolState {
   tools: ToolDefinition[];
@@ -60,10 +63,17 @@ export const useToolStore = create<ToolState>((set) => ({
     try {
       const ids = await toolService.getFavoriteTools();
       set({ favoriteToolIds: ids });
-    } catch {
+    } catch (e) {
+      log.debug("loadFavorites failed, trying localStorage fallback", e);
       const stored = localStorage.getItem("favoriteToolIds");
       if (stored) {
-        set({ favoriteToolIds: JSON.parse(stored) as string[] });
+        try {
+          const parsed: unknown = JSON.parse(stored);
+          if (Array.isArray(parsed))
+            set({ favoriteToolIds: parsed as string[] });
+        } catch {
+          /* corrupted localStorage, ignore */
+        }
       }
     }
   },
@@ -76,7 +86,8 @@ export const useToolStore = create<ToolState>((set) => ({
           ? [...s.favoriteToolIds, toolId]
           : s.favoriteToolIds.filter((id) => id !== toolId),
       }));
-    } catch {
+    } catch (e) {
+      log.debug("toggleFavorite failed, using localStorage fallback", e);
       set((s) => {
         const isFav = s.favoriteToolIds.includes(toolId);
         const next = isFav
@@ -92,7 +103,8 @@ export const useToolStore = create<ToolState>((set) => ({
     set({ favoriteToolIds: toolIds });
     try {
       await toolService.reorderFavorites(toolIds);
-    } catch {
+    } catch (e) {
+      log.debug("reorderFavorites failed, saving to localStorage", e);
       localStorage.setItem("favoriteToolIds", JSON.stringify(toolIds));
     }
   },
@@ -101,8 +113,8 @@ export const useToolStore = create<ToolState>((set) => ({
     try {
       const ids = await toolService.getRecentTools(limit ?? RECENT_TOOLS_LIMIT);
       set({ recentTools: ids });
-    } catch {
-      // fallback: recentTools already updated optimistically
+    } catch (e) {
+      log.debug("loadRecentTools failed", e);
     }
   },
 
@@ -112,8 +124,8 @@ export const useToolStore = create<ToolState>((set) => ({
     }));
     try {
       await toolService.recordUsage(toolId);
-    } catch {
-      // fallback: usage recorded optimistically in state
+    } catch (e) {
+      log.debug("recordUsage failed", e);
     }
   },
 

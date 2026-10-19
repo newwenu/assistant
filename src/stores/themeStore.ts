@@ -3,6 +3,9 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { dispatchThemeChanged } from "../settings/core/settingsDispatcher";
 import { settingService } from "../services/settingService";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("themeStore");
 
 type ThemeMode = "system" | "light" | "dark";
 
@@ -29,7 +32,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   resolved: "light",
 
   setMode: (mode: ThemeMode) => {
-    dispatchThemeChanged(mode).catch(console.error);
+    dispatchThemeChanged(mode).catch((e) =>
+      log.warn("dispatchThemeChanged failed", e),
+    );
   },
 
   cycleMode: () => {
@@ -67,7 +72,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
           set({ resolved: payload.resolved });
         },
       );
-    } catch {
+    } catch (e) {
+      log.warn("Theme init failed, using defaults", e);
       set({ mode: "system", resolved: "light" });
     }
   },

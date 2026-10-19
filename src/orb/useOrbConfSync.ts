@@ -5,13 +5,16 @@ import { orbService } from "../services/orbService";
 import type { OrbConf } from "@/settings/core/types/confTypes";
 import { SettingEvent, SettingAction } from "../types/events";
 import type { SettingEventPayload } from "../types/events";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("useOrbConfSync");
 
 async function reloadAndApply(appliedRef: React.RefObject<string>) {
   try {
     const conf = await settingService.getOrbConf();
     await applyOrbConf(conf, appliedRef);
   } catch (e) {
-    console.warn("[useOrbConfSync] reload failed:", e);
+    log.warn("reload failed", e);
   }
 }
 
@@ -50,7 +53,7 @@ async function applyOrbConf(
   try {
     await orbService.setOrbClickThrough(conf.clickThrough);
   } catch (e) {
-    console.warn("[useOrbConfSync] set_orb_click_through failed:", e);
+    log.warn("set_orb_click_through failed", e);
   }
 }
 

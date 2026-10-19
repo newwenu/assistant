@@ -75,12 +75,12 @@ export const ConversationListItem: React.FC<ConversationListItemProps> =
         {
           key: "export-md",
           icon: <ExportOutlined />,
-          label: t("chat.history.export_markdown"),
+          label: t("history.export_markdown"),
         },
         {
           key: "export-json",
           icon: <ExportOutlined />,
-          label: t("chat.history.export_json"),
+          label: t("history.export_json"),
         },
         { type: "divider" },
         {
@@ -136,7 +136,7 @@ export const ConversationListItem: React.FC<ConversationListItemProps> =
                       style={{ color: "var(--ant-color-warning)" }}
                     />
                   )}
-                  {conversation.title || t("chat.history.new_conversation")}
+                  {conversation.title || t("history.new_conversation")}
                 </Typography.Text>
                 <Typography.Text
                   type="secondary"

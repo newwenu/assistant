@@ -1327,31 +1327,42 @@ if (effectiveSiblingCount <= 1) return null;  // 不显示 BranchPicker
 | 事件 snapshot 响应体过大 | 活跃分支通常 < 100 条消息，snapshot 大小与 `get_conversation_detail` 一致，可接受 |
 | Fork 到新对话时消息 ID 变更 | Fork 后新对话的消息使用新 ID，`parentId` 通过 `id_map` 重新映射；原对话完全不受影响 |
 | 截断模式与分支模式切换不一致 | `resendFrom` 内部按 `strategy.kind` 严格分支，不存在混合路径；截断模式保留 I17 行为不变 |
+| `parent_id` 链存在环（数据损坏） | `trace_active_branch` / `find_branch_leaf` 使用 `visited` HashSet 检测循环，遇到环立即返回错误 |
+| 分支深度异常（数据损坏） | `MAX_BRANCH_DEPTH = 1000` 硬上限，超过后返回错误，防止无限递归 |
+| 删除消息后 `active_branch_id` 悬空 | `delete_subtree` 事务内调用 `find_new_active_leaf` 自动修复指针 + `compact_sibling_indices` 重编序号 |
+| 流式完成后前端 state 不一致 | `stream_finished` 时也 emit `chat-messages-changed` 事件，确保前端最终一致 |
+| 多条消息 `siblingCount` 查询性能 | `get_sibling_counts_batch` 按 `parent_id` 去重批量查询，避免 N+1 |
 
 ## 7. 验收标准
 
-- [ ] **非破坏性编辑**：编辑 user 消息后，原始 assistant 回复保留，`BranchPicker` 显示 `2/2`
-- [ ] **非破坏性重试**：重试失败消息后，原始错误消息保留，新回复作为兄弟追加
-- [ ] **非破坏性重新生成**：重新生成后，原始回复保留，形成多个候选
-- [ ] **分支切换**：点击 `BranchPicker` 箭头，消息列表更新为目标分支
-- [ ] **活跃分支持久化**：切换分支后 reload 对话，仍显示上次选择的分支
-- [ ] **单分支不显示选择器**：`siblingCount = 1` 时 `BranchPicker` 不渲染
-- [ ] **向后兼容**：旧数据（`parent_id = NULL`, `sibling_index = 0`）行为与 I17 完全相同
-- [ ] **截断策略仍可用**：`resendFrom` 传入 `{ kind: "truncate" }` 仍执行截断（I17 行为）
-- [ ] **上下文正确**：分支模式下，`send_chat_message` 的上下文仅包含活跃分支的消息
-- [ ] **并发安全**：同时编辑两条消息，`sibling_index` 不重复（事务保证）
-- [ ] **非 leaf 切换**：`switch_branch` 到中间节点时，显示该节点到 root 的路径；自动延伸到 `siblingIndex = 0` 的子节点
-- [ ] **`chat-messages-changed` 事件正确**：`create_branch` / `switch_branch` / `edit_message`（分支模式）后，前端收到事件且 `messages` snapshot 与 `get_conversation_detail` 一致
-- [ ] **事件驱动更新**：分支操作后前端 state 由事件更新，非乐观推算；`switchBranch` 不调用 `getConversationDetail`
-- [ ] **截断模式即时反馈**：`resendFrom` 传入 `{ kind: "truncate" }` 时，前端仍做乐观更新（I17 行为不变）
-- [ ] **`MAX_SIBLINGS = 20` 硬上限**：同一 `parentId` 下达到 20 个兄弟时，`create_branch` 返回 `MaxSiblingsExceeded` 错误，禁止新建分支
-- [ ] **接近上限提醒**：兄弟数达到 15 时，`BranchPicker` 显示 warning 样式 + 始终可见文字"分支较多，可 Fork 到新对话"
-- [ ] **达到上限 BranchPicker 表现**：兄弟数达到 20 时，`BranchPicker` 显示 Fork 图标按钮，点击弹出 `ForkDialog`
-- [ ] **达到上限禁用操作按钮**：`siblingCount >= MAX_SIBLINGS` 时，编辑/重新生成按钮 disabled，hover 提示"分支已达上限，可 Fork 到新对话"
-- [ ] **Fork 到新对话**：`ForkDialog` 确认后，活跃分支消息复制到新对话，原对话不受影响
-- [ ] **Fork 为常规操作**：`MessageActions` 中 Fork 按钮始终可用（不限上限状态），任何消息都可 Fork
-- [ ] **`MessageTree` 辅助类**：`getSiblings` / `getPathToRoot` / `getActiveLeafId` 方法正确，可独立测试
-- [ ] **操作序列号验证**：乱序 `chat-messages-changed` 事件触发 `loadConversation` 刷新
+- [x] **非破坏性编辑**：编辑 user 消息后，原始 assistant 回复保留，`BranchPicker` 显示 `2/2`
+- [x] **非破坏性重试**：重试失败消息后，原始错误消息保留，新回复作为兄弟追加
+- [x] **非破坏性重新生成**：重新生成后，原始回复保留，形成多个候选
+- [x] **分支切换**：点击 `BranchPicker` 箭头，消息列表更新为目标分支
+- [x] **活跃分支持久化**：切换分支后 reload 对话，仍显示上次选择的分支
+- [x] **单分支不显示选择器**：`siblingCount = 1` 时 `BranchPicker` 不渲染
+- [x] **向后兼容**：旧数据（`parent_id = NULL`, `sibling_index = 0`）行为与 I17 完全相同
+- [x] **截断策略仍可用**：`resendFrom` 传入 `{ kind: "truncate" }` 仍执行截断（I17 行为）
+- [x] **上下文正确**：分支模式下，`send_chat_message` 的上下文仅包含活跃分支的消息
+- [x] **并发安全**：同时编辑两条消息，`sibling_index` 不重复（事务保证）
+- [x] **非 leaf 切换**：`switch_branch` 到中间节点时，显示该节点到 root 的路径；自动延伸到 `sibling_index` 最大的子节点（最新分支），`find_branch_leaf` 递归到末端 leaf
+- [x] **`chat-messages-changed` 事件正确**：`create_branch` / `switch_branch` / `edit_message`（分支模式）后，前端收到事件且 `messages` snapshot 与 `get_conversation_detail` 一致
+- [x] **事件驱动更新**：分支操作后前端 state 由事件更新，非乐观推算；`switchBranch` 不调用 `getConversationDetail`
+- [x] **截断模式即时反馈**：`resendFrom` 传入 `{ kind: "truncate" }` 时，前端仍做乐观更新（I17 行为不变）
+- [x] **`MAX_SIBLINGS = 20` 硬上限**：同一 `parentId` 下达到 20 个兄弟时，`create_branch` 返回 `MaxSiblingsExceeded` 错误，禁止新建分支
+- [x] **接近上限提醒**：兄弟数达到 15 时，`BranchPicker` 显示 warning 样式 + 始终可见文字"分支较多，可 Fork 到新对话"
+- [x] **达到上限 BranchPicker 表现**：兄弟数达到 20 时，`BranchPicker` 显示 Fork 图标按钮，点击弹出 `ForkDialog`
+- [x] **达到上限禁用操作按钮**：`siblingCount >= MAX_SIBLINGS` 时，编辑/重新生成按钮 disabled，hover 提示"分支已达上限，可 Fork 到新对话"
+- [x] **Fork 到新对话**：`ForkDialog` 确认后，活跃分支消息复制到新对话，原对话不受影响
+- [x] **Fork 为常规操作**：`MessageActions` 中 Fork 按钮始终可用（不限上限状态），任何消息都可 Fork
+- [x] **`MessageTree` 辅助类**：`getSiblings` / `getPathToRoot` / `getActiveLeafId` 方法正确，可独立测试
+- [x] **操作序列号验证**：乱序 `chat-messages-changed` 事件触发 `loadConversation` 刷新
+- [x] **循环检测**：`trace_active_branch` / `find_branch_leaf` 检测 `parent_id` 链中的环，遇到时返回错误而非无限循环
+- [x] **深度限制**：`MAX_BRANCH_DEPTH = 1000`，超过后返回错误
+- [x] **删除后指针修复**：`delete_subtree` 后 `active_branch_id` 悬空时自动重定向到同 parent 下 `sibling_index` 最小的兄弟的 leaf
+- [x] **删除后序号紧凑化**：`compact_sibling_indices` 重编 `sibling_index`，消除删除后的空洞
+- [x] **批量 siblingCount**：`get_sibling_counts_batch` 按 `parent_id` 去重批量查询，O(去重后 parent 数) 而非 O(消息数)
+- [x] **流式完成事件**：`stream_finished` 时 emit `chat-messages-changed`，确保前端最终一致
 
 ## 8. I17 ↔ I17b 边界总结
 

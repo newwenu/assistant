@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import type { RecoverableLazyComponent } from "@/utils/lazyWithRecovery";
 
 export type { ToolCategory } from "./categories";
 export type { ToolCategoryMeta } from "./categories";
@@ -12,7 +13,7 @@ export interface ToolDefinition {
   category: import("./categories").ToolCategory;
   icon: ComponentType;
   keywords: string[];
-  component: React.LazyExoticComponent<ComponentType>;
+  component: RecoverableLazyComponent<ComponentType>;
   isNew?: boolean;
   createdAt?: Date;
   widthMode?: WidthMode;

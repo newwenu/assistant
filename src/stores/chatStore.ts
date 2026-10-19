@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { chatService } from "../services/chatService";
 import { providerService } from "../services/providerService";
+import { createLogger } from "@/services/logger";
+import { notifyError } from "@/services/errorNotifier";
 import {
   createChatOrchestrator,
   type ChatStatePort,
@@ -34,6 +36,7 @@ import { useAgentModeStore } from "./agentModeStore";
 import { useProviderStore } from "./providerStore";
 
 const persistQueue = new PersistQueue();
+const log = createLogger("chatStore");
 
 function resolveContextWindowTokens(
   modelId: string,
@@ -68,7 +71,7 @@ interface ChatState {
   contextUsage: ContextUsage;
   isFull: boolean;
   compactSummary: string | null;
-  compactError: string | null;
+  compactError: ChatError | null;
   retryStatus: RetryNotification | null;
   pendingBranchPoint: string | null;
   activeBranchId: string | null;
@@ -298,8 +301,8 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
           isReasoningStreaming: false,
           retryStatus: null,
         });
-        console.warn(
-          `[chat-error] code=${error.code} retryable=${error.retryable} message=${displayMessage}`,
+        log.warn(
+          `chat-error code=${error.code} retryable=${error.retryable} message=${displayMessage}`,
         );
       }
     },
@@ -360,7 +363,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         set({ conversations: convs });
         await get().ensureCurrentConversation();
       } catch (e) {
-        console.error("Failed to load conversations:", e);
+        log.error("Failed to load conversations", e);
       } finally {
         if (!silent) set({ isLoadingConversations: false });
       }
@@ -384,7 +387,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         await get().loadConversations();
         await get().switchConversation(id);
       } catch (e) {
-        console.error("Failed to create initial conversation:", e);
+        log.error("Failed to create initial conversation", e);
       }
     },
 
@@ -395,7 +398,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         await get().switchConversation(id);
         return id;
       } catch (e) {
-        console.error("[chatStore] createConversation failed:", e);
+        log.error("createConversation failed", e);
         return "";
       }
     },
@@ -404,7 +407,11 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       const prevConvId = get().currentConversationId;
       if (get().isStreaming) {
         if (prevConvId) {
-          chatService.cancelChat(prevConvId).catch(() => {});
+          chatService
+            .cancelChat(prevConvId)
+            .catch((e) =>
+              log.warn("cancelChat failed in switchConversation", e),
+            );
         }
         set({
           isStreaming: false,
@@ -465,7 +472,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
             .catch(() => {});
         }
       } catch (e) {
-        console.error("Failed to switch conversation:", e);
+        log.error("Failed to switch conversation", e);
       }
     },
 
@@ -503,7 +510,11 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         });
         await get().loadConversations();
       } catch (e) {
-        console.error("[chatStore] renameConversation failed:", e);
+        log.error("renameConversation failed", e);
+        notifyError(
+          "chat.errors.renameFailed.title",
+          "chat.errors.renameFailed.description",
+        );
       }
     },
 
@@ -514,7 +525,11 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         });
         await get().loadConversations();
       } catch (e) {
-        console.error("[chatStore] updateModel failed:", e);
+        log.error("updateModel failed", e);
+        notifyError(
+          "chat.errors.updateModelFailed.title",
+          "chat.errors.updateModelFailed.description",
+        );
       }
     },
 
@@ -536,7 +551,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         try {
           void get().sendMessage(contentToSend);
         } catch (e) {
-          console.error("[chatStore] resendFrom send failed, rolling back:", e);
+          log.error("resendFrom send failed, rolling back", e);
           set({ messages: snapshot });
         }
       } else {
@@ -544,7 +559,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         try {
           await get().sendMessage(contentToSend);
         } catch (e) {
-          console.error("[chatStore] resendFrom branch send failed:", e);
+          log.error("resendFrom branch send failed", e);
           set({ pendingBranchPoint: null });
         }
       }
@@ -567,7 +582,11 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
           await chatService.deleteMessagePersist(id);
         });
       } catch (e) {
-        console.error("[chatStore] deleteMessage failed:", e);
+        log.error("deleteMessage failed", e);
+        notifyError(
+          "chat.errors.deleteMessageFailed.title",
+          "chat.errors.deleteMessageFailed.description",
+        );
       }
     },
 
@@ -583,7 +602,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
             branchPointMessageId: messageId,
           });
         } catch (e) {
-          console.error("[chatStore] editMessage failed:", e);
+          log.error("editMessage failed", e);
         }
       }
     },
@@ -607,7 +626,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
           branchPointMessageId: messageId,
         });
       } catch (e) {
-        console.error("[chatStore] regenerateMessage failed:", e);
+        log.error("regenerateMessage failed", e);
       }
     },
 
@@ -630,7 +649,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
           branchPointMessageId: messageId,
         });
       } catch (e) {
-        console.error("[chatStore] retryFromError failed:", e);
+        log.error("retryFromError failed", e);
       }
     },
 
@@ -663,7 +682,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
           set({ hasMoreMessages: false });
         }
       } catch (e) {
-        console.error("Failed to load more messages:", e);
+        log.error("Failed to load more messages", e);
       } finally {
         set({ isLoadingMoreMessages: false });
       }
@@ -743,7 +762,11 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       try {
         await chatService.manualCompactConversation(convId);
       } catch (e) {
-        console.error("Manual compact failed:", e);
+        log.error("Manual compact failed", e);
+        notifyError(
+          "chat.errors.compactFailed.title",
+          "chat.errors.compactFailed.description",
+        );
         set({
           messages: get().messages.filter((m) => m.id !== summaryMsgId),
           isStreaming: false,
@@ -760,7 +783,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       try {
         await chatService.unlockConversation(convId);
       } catch (e) {
-        console.error("Unlock conversation failed:", e);
+        log.error("Unlock conversation failed", e);
       }
     },
 
@@ -779,7 +802,11 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
       try {
         await chatService.switchBranch(convId, messageId, seq);
       } catch (e) {
-        console.error("[chatStore] switchBranch failed:", e);
+        log.error("switchBranch failed", e);
+        notifyError(
+          "chat.errors.switchBranchFailed.title",
+          "chat.errors.switchBranchFailed.description",
+        );
       }
     },
   };

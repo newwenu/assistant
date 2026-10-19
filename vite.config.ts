@@ -1,7 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
-// @ts-expect-error type error without @types/node package
 import process from "node:process";
 
 const host = process.env.TAURI_DEV_HOST;
@@ -16,6 +15,10 @@ export default defineConfig(() => ({
   },
   define: {
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+  },
+
+  optimizeDeps: {
+    entries: ["index.html"],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -35,8 +38,8 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri` and `references`
+      ignored: ["**/src-tauri/**", "**/references/**"],
     },
   },
 }));

@@ -1,6 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { Conversation } from "../../chat/core/chatTypes";
 import { historyService } from "../../services/historyService";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("useHistorySearch");
 
 interface UseHistorySearchReturn {
   searchQuery: string;
@@ -43,7 +46,7 @@ export function useHistorySearch(
               setSearchResults(filtered);
             }
           } catch (e) {
-            console.error("Search failed:", e);
+            log.error("Search failed", e);
             setSearchResults([]);
           }
         })();

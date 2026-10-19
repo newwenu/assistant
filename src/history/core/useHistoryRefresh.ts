@@ -1,6 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { historyService } from "../../services/historyService";
 import type { Message } from "../../chat/core/chatTypes";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("useHistoryRefresh");
 
 const REFRESH_INTERVAL_MS = 15000;
 
@@ -24,7 +27,7 @@ export function useHistoryRefresh(
     try {
       await chatStoreLoadConversations(true);
     } catch (e) {
-      console.error("Failed to refresh conversations:", e);
+      log.error("Failed to refresh conversations", e);
     } finally {
       setRefreshing(false);
     }
@@ -39,7 +42,7 @@ export function useHistoryRefresh(
         onMessagesRefreshed(detail.messages || [], detail.totalCount);
       }
     } catch (e) {
-      console.error("Failed to refresh messages:", e);
+      log.error("Failed to refresh messages", e);
     }
   }, [selectedId, onMessagesRefreshed]);
 

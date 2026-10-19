@@ -11,6 +11,9 @@ import type {
 import type { ChatError } from "../chat/core/chatErrors";
 import { ChatErrorCode, toChatError } from "../chat/core/chatErrors";
 import { CHAT_AUTO_TITLE_LENGTH } from "../config/constants";
+import { createLogger } from "./logger";
+
+const log = createLogger("orchestrator");
 
 export type ChatPhase =
   "idle" | "sending" | "streaming" | "tool_executing" | "error";
@@ -103,7 +106,9 @@ export function createChatOrchestrator(
 
     const convId = deps.env.getActiveConversationId();
     if (convId) {
-      await chatService.cancelChat(convId).catch(() => {});
+      await chatService
+        .cancelChat(convId)
+        .catch((e) => log.warn("cancelChat failed in ensureIdle", e));
     }
     deps.state.cancelStreaming();
 
@@ -114,9 +119,7 @@ export function createChatOrchestrator(
           if (phase === "error") setPhase("idle");
           resolve();
         } else if (Date.now() - start > ENSURE_IDLE_TIMEOUT_MS) {
-          console.warn(
-            "[orchestrator] ensureIdle timeout, force resetting phase",
-          );
+          log.warn("ensureIdle timeout, force resetting phase");
           setPhase("idle");
           resolve();
         } else {
@@ -139,7 +142,9 @@ export function createChatOrchestrator(
       if (deps.env.getIsStreaming()) {
         const prevConvId = deps.env.getActiveConversationId();
         if (prevConvId) {
-          await chatService.cancelChat(prevConvId).catch(() => {});
+          await chatService
+            .cancelChat(prevConvId)
+            .catch((e) => log.warn("cancelChat failed in send", e));
         }
         deps.state.clearActiveAttemptId();
         deps.state.cancelStreaming();
@@ -284,8 +289,13 @@ export function createChatOrchestrator(
           pendingBranchPoint,
         );
       } catch (e) {
-        console.error("[orchestrator] sendChatMessage failed:", e);
-        deps.state.errorStream(toChatError(e));
+        log.error("sendChatMessage failed", e);
+        deps.state.errorStream(
+          toChatError(e, {
+            command: "send_chat_message",
+            conversationId: convId,
+          }),
+        );
       }
     } finally {
       sendInProgress = false;
@@ -298,7 +308,7 @@ export function createChatOrchestrator(
     try {
       await chatService.cancelChat(convId);
     } catch (e) {
-      console.error("[orchestrator] cancel failed:", e);
+      log.error("cancel failed", e);
     }
     deps.state.cancelStreaming();
     setPhase("idle");

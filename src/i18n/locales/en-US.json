@@ -55,6 +55,13 @@
       "light": "Light Mode",
       "dark": "Dark Mode",
       "switch_to": "Switch to {{label}}"
+    },
+    "errors": {
+      "reload": "Reload",
+      "technicalDetails": "Technical Details",
+      "featureCrashed": "{{feature}} encountered an error",
+      "retry": "Retry",
+      "moduleLoadFailed": "Module failed to load"
     }
   },
   "settings": {
@@ -348,6 +355,13 @@
       "retry_after_seconds": "Retry after {{count}}s",
       "retry_after_minutes": "Retry after ~{{count}}min"
     },
+    "errors": {
+      "renameFailed": { "title": "Rename Failed", "description": "Conversation rename was unsuccessful, please try again later" },
+      "updateModelFailed": { "title": "Model Switch Failed", "description": "Model switch was unsuccessful, please try again later" },
+      "deleteMessageFailed": { "title": "Delete Message Failed", "description": "Message deletion was unsuccessful, please try again later" },
+      "switchBranchFailed": { "title": "Switch Branch Failed", "description": "Branch switch was unsuccessful, please try again later" },
+      "compactFailed": { "title": "Compact Failed", "description": "Conversation compaction was unsuccessful, please try again later" }
+    },
     "input": {
       "placeholder": "Type a message...",
       "placeholder_no_provider": "Please configure an AI Provider first",
@@ -388,33 +402,6 @@
       "atLimitDisableEdit": "Cannot edit — branch limit reached. Fork instead.",
       "atLimitDisableRegenerate": "Cannot regenerate — branch limit reached. Fork instead."
     },
-    "history": {
-      "search_placeholder": "Search conversations...",
-      "search_fulltext": "Full Text",
-      "search_title": "Title",
-      "refresh_list": "Refresh list",
-      "result_count": "{{count}} results",
-      "no_match": "No matching conversations",
-      "no_conversations": "No conversations yet",
-      "new_conversation": "New conversation",
-      "message_count": "{{count}} messages",
-      "export_markdown": "Export Markdown",
-      "export_json": "Export JSON",
-      "confirm_delete_conversation": "Delete this conversation?",
-      "delete_conversation": "Delete Conversation",
-      "conversation_deleted": "Conversation deleted",
-      "renamed": "Renamed",
-      "rename_failed": "Rename failed",
-      "export_success": "Exported successfully",
-      "export_failed": "Export failed",
-      "operation_failed": "Operation failed",
-      "duplicated": "Duplicated",
-      "duplicate_failed": "Duplicate failed",
-      "no_messages": "No messages yet",
-      "scroll_load_more": "↑ Scroll up to load more messages",
-      "back_to_bottom": "↓ Back to bottom",
-      "select_to_view": "Select a conversation on the left to view message history"
-    },
     "provider": {
       "select_placeholder": "Select Provider"
     },
@@ -454,6 +441,38 @@
       "search_more_in_main": "Search more results in main window"
     }
   },
+  "history": {
+    "search_placeholder": "Search conversations...",
+    "search_fulltext": "Full Text",
+    "search_title": "Title",
+    "refresh_list": "Refresh list",
+    "result_count": "{{count}} results",
+    "no_match": "No matching conversations",
+    "no_conversations": "No conversations yet",
+    "new_conversation": "New conversation",
+    "message_count": "{{count}} messages",
+    "export_markdown": "Export Markdown",
+    "export_json": "Export JSON",
+    "confirm_delete_conversation": "Delete this conversation?",
+    "delete_conversation": "Delete Conversation",
+    "conversation_deleted": "Conversation deleted",
+    "renamed": "Renamed",
+    "rename_failed": "Rename failed",
+    "export_success": "Exported successfully",
+    "export_failed": "Export failed",
+    "operation_failed": "Operation failed",
+    "duplicated": "Duplicated",
+    "duplicate_failed": "Duplicate failed",
+    "no_messages": "No messages yet",
+    "scroll_load_more": "↑ Scroll up to load more messages",
+    "back_to_bottom": "↓ Back to bottom",
+    "select_to_view": "Select a conversation on the left to view message history",
+    "errors": {
+      "deleteConversationFailed": { "title": "Delete Failed", "description": "Conversation deletion was unsuccessful, please try again later" },
+      "renameFailed": { "title": "Rename Failed", "description": "Conversation rename was unsuccessful, please try again later" },
+      "exportFailed": { "title": "Export Failed", "description": "Conversation export was unsuccessful, please try again later" }
+    }
+  },
   "command": {
     "search_placeholder": "Search tools, pages, actions...",
     "no_match": "No matching commands",
@@ -480,16 +499,10 @@
   },
   "tools": {
     "category": {
-      "security": "Security",
-      "codec": "Encode / Decode",
       "dev": "Development",
-      "time": "Time",
-      "math": "Math",
-      "media": "Media",
-      "text": "Text",
-      "generate": "Generate",
-      "network": "Network",
-      "filesystem": "Filesystem"
+      "converter": "Converter",
+      "security": "Security",
+      "media": "Media"
     },
     "search_placeholder": "Search tools...",
     "no_match": "No matching tools found",

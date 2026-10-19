@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { DEFAULT_KEYBINDINGS } from "@/settings/core/types/shortcutTypes";
+import { createLogger } from "@/services/logger";
 export type {
   AppConf,
   OrbConf,
@@ -11,6 +12,8 @@ import type {
   MascotConf,
 } from "@/settings/core/types/confTypes";
 import { settingService } from "../services/settingService";
+
+const log = createLogger("settingsStore");
 
 export interface SettingsState {
   appConf: AppConf | null;
@@ -39,7 +42,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         await applyLocaleChange(conf.language);
       }
     } catch (e) {
-      console.error("[settingsStore] loadAppConf failed:", e);
+      log.error("loadAppConf failed", e);
     }
   },
 
@@ -48,7 +51,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const conf = await settingService.getOrbConf();
       set({ orbConf: conf });
     } catch (e) {
-      console.error("[settingsStore] loadOrbConf failed:", e);
+      log.error("loadOrbConf failed", e);
     }
   },
 
@@ -57,7 +60,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const conf = await settingService.getMascotConf();
       set({ mascotConf: conf });
     } catch (e) {
-      console.error("[settingsStore] loadMascotConf failed:", e);
+      log.error("loadMascotConf failed", e);
     }
   },
 

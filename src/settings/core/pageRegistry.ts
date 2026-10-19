@@ -1,17 +1,19 @@
-import React from "react";
-import type { ComponentType } from "react";
 import type {
   SettingsCategoryId,
   SettingsPageId,
   SettingsPageManifest,
 } from "./types/pageTypes";
+import { lazyWithRecovery } from "@/utils/lazyWithRecovery";
 
-type SettingsPageInput = Omit<SettingsPageManifest, "component"> & {
-  component: React.LazyExoticComponent<ComponentType>;
+type SettingsPageDefinition = Omit<SettingsPageManifest, "component"> & {
+  load: () => Promise<{ default: import("react").ComponentType }>;
 };
 
-export function definePage(page: SettingsPageInput): SettingsPageManifest {
-  return { ...page };
+export function definePage(
+  definition: SettingsPageDefinition,
+): SettingsPageManifest {
+  const component = lazyWithRecovery(definition.load);
+  return { ...definition, component };
 }
 
 const general = definePage({
@@ -19,11 +21,10 @@ const general = definePage({
   categoryId: "general",
   label: "common.navigation.general.title",
   keywords: ["language", "launch", "tray", "top", "startup"],
-  component: React.lazy(() =>
+  load: () =>
     import("../pages/GeneralSettings").then((m) => ({
       default: m.GeneralSettings,
     })),
-  ),
 });
 
 const appearance = definePage({
@@ -31,11 +32,10 @@ const appearance = definePage({
   categoryId: "general",
   label: "common.navigation.appearance.title",
   keywords: ["mascot", "渲染", "颜色"],
-  component: React.lazy(() =>
+  load: () =>
     import("../pages/AppearanceSettings").then((m) => ({
       default: m.AppearanceSettings,
     })),
-  ),
 });
 
 const shortcuts = definePage({
@@ -43,11 +43,10 @@ const shortcuts = definePage({
   categoryId: "general",
   label: "common.navigation.shortcuts.title",
   keywords: ["keyboard", "shortcut", "keybinding", "hotkey"],
-  component: React.lazy(() =>
+  load: () =>
     import("../pages/ShortcutSettings").then((m) => ({
       default: m.ShortcutSettings,
     })),
-  ),
 });
 
 const providers = definePage({
@@ -55,11 +54,10 @@ const providers = definePage({
   categoryId: "provider",
   label: "common.navigation.providers.title",
   keywords: ["provider", "api", "model", "openai", "preset"],
-  component: React.lazy(() =>
+  load: () =>
     import("../provider/ProviderManager").then((m) => ({
       default: m.ProviderManager,
     })),
-  ),
 });
 
 const agents = definePage({
@@ -67,11 +65,10 @@ const agents = definePage({
   categoryId: "provider",
   label: "common.navigation.agents.title",
   keywords: ["agent", "mode", "kind", "quick", "deep"],
-  component: React.lazy(() =>
+  load: () =>
     import("../pages/AgentModeSettings").then((m) => ({
       default: m.AgentModeSettings,
     })),
-  ),
 });
 
 const about = definePage({
@@ -79,11 +76,10 @@ const about = definePage({
   categoryId: "about",
   label: "common.navigation.about.title",
   keywords: ["version", "rustc", "build", "about"],
-  component: React.lazy(() =>
+  load: () =>
     import("../pages/AboutSettings").then((m) => ({
       default: m.AboutSettings,
     })),
-  ),
 });
 
 export const SETTINGS_PAGES: readonly SettingsPageManifest[] = [

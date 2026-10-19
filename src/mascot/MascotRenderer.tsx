@@ -3,6 +3,9 @@ import { type FC, useEffect, useRef } from "react";
 import type { MascotRendererId, MascotRendererProps } from "./core/types";
 import { getRenderer } from "./core/registry";
 import { BUILTIN_RENDERER_IDS, asFace } from "./core/types";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("MascotRenderer");
 
 import "./renderers/rive";
 import "./renderers/svg";
@@ -27,9 +30,7 @@ export const MascotRenderer: FC<Props> = (props) => {
 
   const entry = getRenderer(props.renderer);
   if (!entry) {
-    console.warn(
-      `[mascot] unknown renderer "${props.renderer}", falling back to rive`,
-    );
+    log.warn(`unknown renderer "${props.renderer}", falling back to rive`);
     const fallback = getRenderer(BUILTIN_RENDERER_IDS.rive);
     if (!fallback) return null;
     const Component = fallback.component;

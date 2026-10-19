@@ -5,6 +5,7 @@ import {
   cursorPosition,
 } from "@tauri-apps/api/window";
 import { orbService } from "../services/orbService";
+import { createLogger } from "@/services/logger";
 import {
   PET_DRAG_THRESHOLD_PX,
   DRAG_POLL_INTERVAL_MS,
@@ -15,6 +16,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 
 const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
 const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
+const log = createLogger("OrbDrag");
 
 export function useOrbDrag() {
   const setDragging = useOrbStore((s) => s.setDragging);
@@ -82,7 +84,9 @@ export function useOrbDrag() {
 
         const orbConf = useSettingsStore.getState().orbConf;
         if (orbConf?.clickThrough) {
-          orbService.setOrbClickThrough(false).catch(console.error);
+          orbService
+            .setOrbClickThrough(false)
+            .catch((e) => log.warn("OrbDrag operation failed", e));
         }
 
         if (IS_WINDOWS) {
@@ -96,7 +100,9 @@ export function useOrbDrag() {
             setDragging(false);
             hasDraggedRef.current = false;
             setTimeout(() => {
-              orbService.snapOrbToEdge().catch(console.error);
+              orbService
+                .snapOrbToEdge()
+                .catch((e) => log.warn("OrbDrag operation failed", e));
             }, ORB_SNAP_DELAY_MS);
           });
           return;
@@ -108,7 +114,9 @@ export function useOrbDrag() {
             setDragging(false);
             hasDraggedRef.current = false;
             setTimeout(() => {
-              orbService.snapOrbToEdge().catch(console.error);
+              orbService
+                .snapOrbToEdge()
+                .catch((e) => log.warn("OrbDrag operation failed", e));
             }, ORB_SNAP_DELAY_MS);
           });
       }
@@ -132,11 +140,15 @@ export function useOrbDrag() {
         if (!state.isExpanded) {
           const orbConf = useSettingsStore.getState().orbConf;
           if (orbConf?.clickThrough) {
-            orbService.setOrbClickThrough(true).catch(console.error);
+            orbService
+              .setOrbClickThrough(true)
+              .catch((e) => log.warn("OrbDrag operation failed", e));
           }
         }
         setTimeout(() => {
-          orbService.snapOrbToEdge().catch(console.error);
+          orbService
+            .snapOrbToEdge()
+            .catch((e) => log.warn("OrbDrag operation failed", e));
         }, ORB_SNAP_DELAY_MS);
       }
 

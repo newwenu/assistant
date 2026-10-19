@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Form, message } from "antd";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { translateKey } from "@/i18n";
+import { createLogger } from "@/services/logger";
 import type {
   SettingDefinition,
   ConfGroup,
@@ -19,6 +20,8 @@ import {
 } from "../../core/settingsDispatcher";
 import { useConfPatchHandlers } from "../../core/useConfPatchHandlers";
 import { useSettingsStore } from "@/stores/settingsStore";
+
+const log = createLogger("SettingsGroup");
 
 interface SettingsGroupProps {
   group: ConfGroup;
@@ -127,7 +130,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
         runSideEffects(def.sideEffect, conf, { ...conf, [def.key]: value });
       }
     } catch (e) {
-      console.error(`[SettingsGroup] patch failed for ${def.key}:`, e);
+      log.error(`patch failed for ${def.key}`, e);
     }
   };
 
@@ -147,7 +150,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
         runSideEffects(def.sideEffect, conf, { ...conf, [def.key]: value });
       }
     } catch (e) {
-      console.error(`[SettingsGroup] patch failed for ${def.key}:`, e);
+      log.error(`patch failed for ${def.key}`, e);
     }
   };
 

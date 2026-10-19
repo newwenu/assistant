@@ -10,6 +10,9 @@ import {
   type SettingDefinition,
   type ConfGroup,
 } from "@/settings/core/field/fieldRegistry";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("mascot-registry");
 
 interface RendererEntry {
   meta: RendererMeta;
@@ -54,9 +57,7 @@ function registerRendererSettings(
 
 export function registerRenderer(entry: RendererEntry): void {
   if (registry.has(entry.meta.id)) {
-    console.warn(
-      `[mascot] renderer "${entry.meta.id}" already registered, overwriting`,
-    );
+    log.warn(`renderer "${entry.meta.id}" already registered, overwriting`);
   }
   registry.set(entry.meta.id, entry);
   if (entry.meta.settings?.length) {

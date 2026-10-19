@@ -178,7 +178,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
           <div className={css.emptyState}>
             <MessageOutlined style={{ fontSize: 48, opacity: 0.3 }} />
             <Typography.Text type="secondary">
-              {t("chat.history.select_to_view")}
+              {t("history.select_to_view")}
             </Typography.Text>
           </div>
         </div>
@@ -196,7 +196,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
           >
             {selectedConv.title}
           </Typography.Text>
-          <Tag>{t("chat.history.message_count", { count: totalCount })}</Tag>
+          <Tag>{t("history.message_count", { count: totalCount })}</Tag>
           <Button
             size="small"
             icon={<ExportOutlined />}
@@ -205,11 +205,11 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
             {t("common.actions.export")}
           </Button>
           <Popconfirm
-            title={t("chat.history.confirm_delete_conversation")}
+            title={t("history.confirm_delete_conversation")}
             onConfirm={() => onDeleteConversation(selectedId)}
           >
             <Button size="small" danger icon={<DeleteOutlined />}>
-              {t("chat.history.delete_conversation")}
+              {t("history.delete_conversation")}
             </Button>
           </Popconfirm>
         </div>
@@ -223,7 +223,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
               <Spin />
             </div>
           ) : messages.length === 0 ? (
-            <Empty description={t("chat.history.no_messages")} />
+            <Empty description={t("history.no_messages")} />
           ) : (
             <>
               {loadingMore && (
@@ -239,7 +239,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
               )}
               {hasMore && !loadingMore && (
                 <div className={css.loadMoreHint}>
-                  {t("chat.history.scroll_load_more")}
+                  {t("history.scroll_load_more")}
                 </div>
               )}
               {(useVirtualScroll ? visibleSlots : branchSlots).map((slot) => (
@@ -255,7 +255,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
           )}
           {userScrolledUp && (
             <button className={css.scrollToBottom} onClick={scrollToBottom}>
-              {t("chat.history.back_to_bottom")}
+              {t("history.back_to_bottom")}
             </button>
           )}
         </div>

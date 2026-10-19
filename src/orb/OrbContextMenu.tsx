@@ -1,6 +1,9 @@
 import React, { useCallback, useRef } from "react";
 import { orbService } from "../services/orbService";
 import { LONG_PRESS_DURATION_MS } from "../config/constants";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("OrbContextMenu");
 
 const IS_TOUCH_DEVICE =
   "ontouchstart" in window || navigator.maxTouchPoints > 0;
@@ -15,7 +18,7 @@ export const OrbContextMenu: React.FC<{
     try {
       await orbService.showOrbContextMenu(x, y);
     } catch (err) {
-      console.error(err);
+      log.error("showOrbContextMenu failed", err);
     }
   }, []);
 

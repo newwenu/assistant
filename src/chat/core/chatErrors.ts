@@ -39,6 +39,7 @@ export interface ChatError {
   provider?: string;
   providerCode?: string;
   category?: ChatErrorCategory;
+  details?: Record<string, unknown>;
 }
 
 const ERROR_ICONS: Record<ChatErrorCode, string> = {
@@ -89,7 +90,9 @@ export function isChatError(value: unknown): value is ChatError {
       typeof obj.retryAfterMs === "number") &&
     (obj.httpStatus === undefined || typeof obj.httpStatus === "number") &&
     (obj.provider === undefined || typeof obj.provider === "string") &&
-    (obj.providerCode === undefined || typeof obj.providerCode === "string")
+    (obj.providerCode === undefined || typeof obj.providerCode === "string") &&
+    (obj.details === undefined ||
+      (typeof obj.details === "object" && obj.details !== null))
   );
 }
 
@@ -133,8 +136,14 @@ export function inferCategory(error: ChatError): ChatErrorCategory {
   return ChatErrorCategory.Unknown;
 }
 
-export function toChatError(value: unknown): ChatError {
+export function toChatError(
+  value: unknown,
+  extra?: Record<string, unknown>,
+): ChatError {
   if (isChatError(value)) {
+    const mergedDetails: Record<string, unknown> = {};
+    if (value.details) Object.assign(mergedDetails, value.details);
+    if (extra) Object.assign(mergedDetails, extra);
     const err: ChatError = {
       code: value.code,
       message: value.message,
@@ -143,6 +152,8 @@ export function toChatError(value: unknown): ChatError {
       httpStatus: value.httpStatus,
       provider: value.provider,
       providerCode: value.providerCode,
+      details:
+        Object.keys(mergedDetails).length > 0 ? mergedDetails : undefined,
     };
     err.category = inferCategory(err);
     return err;
@@ -154,6 +165,7 @@ export function toChatError(value: unknown): ChatError {
       retryAfterMs: null,
       retryable: false,
       category: ChatErrorCategory.Unknown,
+      details: extra,
     };
   }
   return {
@@ -162,5 +174,6 @@ export function toChatError(value: unknown): ChatError {
     retryAfterMs: null,
     retryable: false,
     category: ChatErrorCategory.Unknown,
+    details: extra,
   };
 }

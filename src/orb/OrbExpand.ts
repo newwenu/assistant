@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { orbService } from "../services/orbService";
 import { useOrbStore } from "../stores/orbStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { createLogger } from "@/services/logger";
 import {
   ORB_COLLAPSED_SIZE,
   ORB_EXPANDED_WIDTH,
@@ -15,6 +16,8 @@ import {
   physicalToLogical,
   physicalSizeToLogical,
 } from "./OrbCoord";
+
+const log = createLogger("OrbExpand");
 
 function waitForPaint(): Promise<void> {
   return new Promise((resolve) => {
@@ -137,7 +140,8 @@ export function useOrbExpand(): UseOrbExpandReturn {
 
       setExpandDirection(direction);
       setExpandVertical(vertical);
-    } catch {
+    } catch (e) {
+      log.warn("Screen size detection failed, using defaults", e);
       setExpandDirection("right");
       setExpandVertical("down");
     }
@@ -152,7 +156,7 @@ export function useOrbExpand(): UseOrbExpandReturn {
         await orbService.setOrbClickThrough(false);
       }
     } catch (e) {
-      console.error("[OrbExpand] expand invoke failed:", e);
+      log.error("expand invoke failed", e);
     }
   }, [storeExpand, setExpandDirection, setExpandVertical, setBallVisible]);
 
@@ -169,7 +173,7 @@ export function useOrbExpand(): UseOrbExpandReturn {
         await orbService.setOrbClickThrough(true);
       }
     } catch (e) {
-      console.error("[OrbExpand] collapse invoke failed:", e);
+      log.error("collapse invoke failed", e);
     }
   }, [storeCollapse, setBallVisible]);
 
@@ -188,6 +192,6 @@ export async function collapseOrbOnInit(): Promise<void> {
       await orbService.setOrbClickThrough(true);
     }
   } catch (e) {
-    console.error("[OrbExpand] collapseOrbOnInit failed:", e);
+    log.error("collapseOrbOnInit failed", e);
   }
 }

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { providerService } from "../services/providerService";
+import { createLogger } from "@/services/logger";
 import {
   dispatchProviderSaved,
   dispatchProviderDeleted,
@@ -100,6 +101,8 @@ interface ProviderState {
   fetchModels: (providerId: string) => Promise<ModelConfig[]>;
 }
 
+const log = createLogger("providerStore");
+
 export const useProviderStore = create<ProviderState>((set) => ({
   providers: [],
   loading: false,
@@ -110,7 +113,7 @@ export const useProviderStore = create<ProviderState>((set) => ({
       const providers = await providerService.listProviders();
       set({ providers: providers || [], loading: false });
     } catch (e) {
-      console.error("Failed to load providers:", e);
+      log.error("Failed to load providers", e);
       set({ loading: false });
     }
   },

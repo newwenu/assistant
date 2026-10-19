@@ -11,6 +11,9 @@ import { lightTheme, darkTheme } from "@/assets/styles/theme";
 import { WINDOW_ORB } from "@/config/constants";
 import { subscribeSettingEvents } from "@/services/settingEvents";
 import { initSettingSystem } from "@/settings/core/initSettingSystem";
+import { bootstrapLogger } from "@/services/logger";
+import { registerGlobalErrorHandlers } from "@/services/globalErrorHandler";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import "@/i18n";
 import App from "./App";
 import "./assets/styles/fonts.css";
@@ -22,6 +25,9 @@ const ANTD_LOCALE_MAP: Record<string, typeof zhCNAntd> = {
 };
 
 initSettingSystem();
+
+bootstrapLogger();
+registerGlobalErrorHandlers();
 
 export async function applyLocaleChange(language: string): Promise<void> {
   const i18n = (await import("@/i18n")).default;
@@ -64,7 +70,9 @@ const ThemedApp: React.FC = () => {
   if (isOrb) {
     return (
       <ConfigProvider theme={antdTheme} locale={antdLocale}>
-        <App />
+        <AntApp component={false}>
+          <App />
+        </AntApp>
       </ConfigProvider>
     );
   }
@@ -81,7 +89,9 @@ const ThemedApp: React.FC = () => {
 void bootstrap().then(() => {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <ThemedApp />
+      <AppErrorBoundary>
+        <ThemedApp />
+      </AppErrorBoundary>
     </React.StrictMode>,
   );
 });

@@ -14,9 +14,12 @@ import {
   textChunkScheduler,
   type CoalescibleDelta,
 } from "../chat/core/streamCoalescer";
+import { toChatError } from "../chat/core/chatErrors";
 import { useChatStore } from "../stores/chatStore";
+import { createLogger } from "@/services/logger";
 
 const CHAT_DELTA_EVENT = "chat-delta";
+const log = createLogger("chatDeltaEvents");
 
 let orchestratorInstance: ChatOrchestrator | null = null;
 
@@ -41,7 +44,7 @@ export function subscribeChatDeltaEvents(): () => void {
         else unlisteners.push(unlisten);
       })
       .catch((error) => {
-        console.debug("[chat-delta] listener unavailable:", error);
+        log.debug("listener unavailable", error);
       });
   };
 
@@ -99,16 +102,16 @@ export function subscribeChatDeltaEvents(): () => void {
           ids.attemptId !== payload.attemptId ||
           ids.messageId !== payload.messageId
         ) {
-          console.error(
-            `[R3] stream-start/delta id mismatch: start=(${ids.conversationId},${ids.attemptId},${ids.messageId}) delta=(${payload.conversationId},${payload.attemptId},${payload.messageId})`,
+          log.error(
+            `R3 stream-start/delta id mismatch: start=(${ids.conversationId},${ids.attemptId},${ids.messageId}) delta=(${payload.conversationId},${payload.attemptId},${payload.messageId})`,
           );
         }
       }
 
       const lastSeq = lastSeqByAttempt.get(payload.attemptId);
       if (lastSeq !== undefined && payload.seq <= lastSeq) {
-        console.error(
-          `[R4] seq non-monotonic: attemptId=${payload.attemptId} prevSeq=${lastSeq} currSeq=${payload.seq}`,
+        log.error(
+          `R4 seq non-monotonic: attemptId=${payload.attemptId} prevSeq=${lastSeq} currSeq=${payload.seq}`,
         );
       }
       lastSeqByAttempt.set(payload.attemptId, payload.seq);
@@ -182,7 +185,7 @@ export function subscribeChatDeltaEvents(): () => void {
       const payload = event.payload as ConversationCompactFailedPayload;
       const store = useChatStore.getState();
       if (store.currentConversationId === payload.conversationId) {
-        useChatStore.setState({ compactError: payload.error });
+        useChatStore.setState({ compactError: toChatError(payload.error) });
       }
     }),
   );

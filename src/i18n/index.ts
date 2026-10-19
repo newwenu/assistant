@@ -3,6 +3,9 @@ import { initReactI18next } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 import zhCN from "./locales/zh-CN.json";
 import enUS from "./locales/en-US.json";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("i18n");
 
 export const SUPPORTED_LOCALES = ["zh-CN", "en-US"] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
@@ -26,9 +29,7 @@ void i18n
       caches: ["localStorage"],
     },
     missingKeyHandler: (lngs, ns, key) => {
-      console.warn(
-        `[i18n] missing key: "${key}" (langs: ${lngs.join(", ")}, ns: ${ns})`,
-      );
+      log.warn(`missing key: "${key}" (langs: ${lngs.join(", ")}, ns: ${ns})`);
     },
   });
 

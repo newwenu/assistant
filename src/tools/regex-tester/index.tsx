@@ -181,11 +181,13 @@ export default function RegexTester() {
       if (lastIdx < testText.length) {
         parts.push({ text: testText.slice(lastIdx), isMatch: false });
       }
+      const esc = (s: string) =>
+        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       html = parts
         .map((p) =>
           p.isMatch
-            ? `<mark style="background:var(--mark-bg);padding:0 2px;border-radius:2px">${p.text}</mark>`
-            : p.text.replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+            ? `<mark style="background:var(--mark-bg);padding:0 2px;border-radius:2px">${esc(p.text)}</mark>`
+            : esc(p.text),
         )
         .join("");
     }

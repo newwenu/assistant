@@ -573,6 +573,13 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   background: var(--color-bg);
 }
 
+.orb-panel .ant-message-top {
+  top: 20px;
+  right: 8px;
+  left: auto;
+  transform: none;
+}
+
 .chat-empty-hint {
   flex: 1;
   display: flex;
