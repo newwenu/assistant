@@ -21,12 +21,12 @@ export default function JsonViewer() {
 
   const formatted = useMemo(() => {
     try {
-      const obj = JSON5.parse(rawJson);
+      const obj: unknown = JSON5.parse(rawJson);
       const sortObj = (o: unknown): unknown => {
         if (Array.isArray(o)) return o.map(sortObj);
         if (o && typeof o === "object") {
           const sorted: Record<string, unknown> = {};
-          const keys = Object.keys(o as Record<string, unknown>);
+          const keys = Object.keys(o);
           if (sortKeys) keys.sort();
           for (const k of keys)
             sorted[k] = sortObj((o as Record<string, unknown>)[k]);
@@ -51,7 +51,7 @@ export default function JsonViewer() {
   const isValid = formatted !== null;
 
   const copy = (value: string) => {
-    navigator.clipboard.writeText(value);
+    void navigator.clipboard.writeText(value);
     message.success("已复制");
   };
 

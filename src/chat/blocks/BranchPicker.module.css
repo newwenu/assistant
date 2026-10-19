@@ -1,0 +1,70 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border-secondary);
+}
+
+.warning {
+  border-color: var(--ant-color-warning);
+  color: var(--ant-color-warning);
+}
+
+.arrowBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.arrowBtn:hover:not(:disabled) {
+  background: var(--ant-color-bg-text-hover);
+}
+
+.arrowBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.label {
+  min-width: 32px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.warningText {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--ant-color-warning);
+}
+
+.forkBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ant-color-warning);
+  cursor: pointer;
+  border-radius: 2px;
+  margin-left: 4px;
+}
+
+.forkBtn:hover {
+  background: var(--ant-color-bg-text-hover);
+}

@@ -3,12 +3,12 @@ use std::time::{Duration, Instant};
 
 use log::error;
 use mouse_position::mouse_position::Mouse;
-use serde_json::json;
 use tauri::{command, AppHandle, PhysicalPosition};
 
+use crate::protocol::{MousePositionDto, ScreenRectDto, ScreenSizeDto};
 use assistant_config::{
     constant::{
-        ORB_CHROME_INSET, ORB_HITBOX_SIZE, ORB_SNAP_ANIMATION_MS, ORB_VISUAL_CENTER_OFFSET_X,
+        ORB_CHROME_INSET, ORB_HITBOX_SIZE, ORB_SNAP_ANIMATION_MS, ORB_SNAP_BORDER_X,
         WINDOW_EDGE_BUFFER, WINDOW_ORB,
     },
     orb_conf::OrbConf,
@@ -19,16 +19,16 @@ pub(crate) static ORB_CLICK_THROUGH: AtomicBool = AtomicBool::new(false);
 static ORB_SNAP_CANCEL: AtomicBool = AtomicBool::new(false);
 
 #[command]
-pub fn get_mouse_position() -> serde_json::Value {
+pub fn get_mouse_position() -> Option<MousePositionDto> {
     let position = Mouse::get_mouse_position();
     match position {
-        Mouse::Position { x, y } => json!({
-            "clientX": x,
-            "clientY": y
+        Mouse::Position { x, y } => Some(MousePositionDto {
+            client_x: x,
+            client_y: y,
         }),
         Mouse::Error => {
             error!("Error getting mouse position");
-            json!(null)
+            None
         }
     }
 }
@@ -70,7 +70,7 @@ pub fn get_screen_size(
     center_x: f64,
     center_y: f64,
     scale_factor: f64,
-) -> serde_json::Value {
+) -> ScreenSizeDto {
     let cx_phys = center_x * scale_factor;
     let cy_phys = center_y * scale_factor;
     let screens = placement::get_available_screens(&app);
@@ -81,12 +81,21 @@ pub fn get_screen_size(
         let dy = cy_phys as i64 - sy as i64;
         dx * dx + dy * dy
     });
-    match best {
-        Some(s) => json!({
-            "screen": { "x": s.x, "y": s.y, "width": s.width, "height": s.height }
-        }),
-        None => json!({ "screen": { "x": 0, "y": 0, "width": 1920, "height": 1080 } }),
-    }
+    let rect = match best {
+        Some(s) => ScreenRectDto {
+            x: s.x,
+            y: s.y,
+            width: s.width,
+            height: s.height,
+        },
+        None => ScreenRectDto {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        },
+    };
+    ScreenSizeDto { screen: rect }
 }
 
 #[command]
@@ -96,20 +105,20 @@ pub fn snap_orb_to_screen(app: AppHandle) -> Result<(), String> {
     let size = window.outer_size().map_err(|e| e.to_string())?;
 
     let screens = placement::get_available_screens(&app);
-    let bounds = placement::WindowBounds::new(pos.x, pos.y, size.width, size.height);
-
-    let visual_x = pos.x + ORB_CHROME_INSET as i32;
-    let visual_y = pos.y + ORB_CHROME_INSET as i32;
-    let visual_bounds =
-        placement::WindowBounds::new(visual_x, visual_y, ORB_HITBOX_SIZE, ORB_HITBOX_SIZE);
-
-    if placement::bounds_inside_screens(&screens, visual_bounds) {
+    let Some(target) = placement::ensure_orb_on_screen(
+        &screens,
+        pos.x,
+        pos.y,
+        size.width,
+        size.height,
+        ORB_CHROME_INSET,
+        ORB_HITBOX_SIZE,
+    ) else {
+        let _ = save_orb_position_sync(&app);
         return Ok(());
-    }
+    };
 
-    let target = placement::snap_to_nearest_screen(&screens, bounds);
-
-    if target.x == bounds.x && target.y == bounds.y {
+    if target.x == pos.x && target.y == pos.y {
         let _ = save_orb_position_sync(&app);
         return Ok(());
     }
@@ -129,7 +138,7 @@ pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
 
     let screens = placement::get_available_screens(&app);
     let bounds = placement::WindowBounds::new(pos.x, pos.y, size.width, size.height);
-    let border_x = ORB_VISUAL_CENTER_OFFSET_X;
+    let border_x = ORB_SNAP_BORDER_X;
     let target = placement::snap_orb_to_edge(&screens, bounds, WINDOW_EDGE_BUFFER as i32, border_x);
 
     if target.x == bounds.x && target.y == bounds.y {

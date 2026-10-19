@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
+import { translateKey } from "@/i18n";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   BrowserRouter,
@@ -11,50 +12,60 @@ import {
   useParams,
 } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
+import { UiEvent, type ShortcutWarningPayload } from "@/types/events";
 import { notification } from "antd";
 import { Titlebar } from "@/components/Titlebar";
 import { OrbBall } from "@/orb/OrbBall";
 import { OrbPanel } from "@/orb/OrbPanel";
 import { Layout, Menu } from "antd";
-import { HistoryOutlined, SettingOutlined } from "@ant-design/icons";
+import {
+  HistoryOutlined,
+  SettingOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+} from "@ant-design/icons";
 import {
   WINDOW_MAIN,
   WINDOW_ORB,
   WINDOW_SETTINGS,
   SIDEBAR_WIDTH,
+  SIDEBAR_COLLAPSED_WIDTH,
 } from "@/config/constants";
 import { useOrbStore } from "@/stores/orbStore";
 import { useToolStore } from "@/stores/toolStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
-  SETTINGS_PAGES,
+  SETTINGS_DETAIL_PAGES,
   DEFAULT_SETTINGS_PAGE_ID,
   getSettingsPageManifest,
   isSettingsPageId,
-} from "@/settings/settingsRegistry";
-import type { SettingsPageId } from "@/settings/settingsTypes";
-import { HistoryManager } from "@/chat/HistoryManager";
+} from "@/settings/core/pageRegistry";
+
+import { HistoryManager } from "@/history";
+import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
+import { useErrorNotifyStore } from "@/services/errorNotifier";
 import { ToolBox } from "@/tools/ToolBox";
 import { ToolPage } from "@/tools/ToolPage";
-import { CommandPalette } from "@/components/CommandPalette";
+import { CommandPalette } from "@/components/commandPalette/CommandPalette";
 import { useToolMenuItems } from "@/tools/CollapsibleToolMenu";
 import { toolsMap } from "@/tools/registry";
 
 const SettingsContent: React.FC = () => {
+  const { t } = useTranslation();
   const { pageId } = useParams<{ pageId: string }>();
 
   if (!pageId || !isSettingsPageId(pageId)) {
     return <Navigate to={`/settings/${DEFAULT_SETTINGS_PAGE_ID}`} replace />;
   }
 
-  const manifest = getSettingsPageManifest(pageId as SettingsPageId);
+  const manifest = getSettingsPageManifest(pageId);
   const Content = manifest.component;
 
   return (
     <React.Suspense
       fallback={
         <div style={{ padding: 24, color: "var(--color-text-secondary)" }}>
-          加载中...
+          {t("common.actions.loading")}
         </div>
       }
     >
@@ -64,18 +75,38 @@ const SettingsContent: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const toolMenuItems = useToolMenuItems(() => navigate("/"));
+  const toolMenuItems = useToolMenuItems(() => {
+    void navigate("/");
+  });
   const loadFavorites = useToolStore((s) => s.loadFavorites);
   const loadRecentTools = useToolStore((s) => s.loadRecentTools);
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);
+  const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
+  const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
   const [api, contextHolder] = notification.useNotification();
+  const errorNotifyPending = useErrorNotifyStore((s) => s.pending);
+  const errorNotifyDequeue = useErrorNotifyStore((s) => s.dequeue);
+
+  useEffect(() => {
+    while (errorNotifyPending.length > 0) {
+      const item = errorNotifyDequeue();
+      if (!item) break;
+      api.error({
+        message: translateKey(item.titleKey, item.options),
+        description: translateKey(item.descriptionKey, item.options),
+        placement: "topRight",
+      });
+    }
+  }, [errorNotifyPending, errorNotifyDequeue, api]);
 
   const [openKeys, setOpenKeys] = useState<string[]>([
     "toolbox",
     "settings-sub",
   ]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     if (location.pathname.startsWith("/tools/")) {
@@ -100,33 +131,44 @@ const MainLayout: React.FC = () => {
   }, [location.pathname]);
 
   useEffect(() => {
-    loadFavorites();
-    loadRecentTools();
-    loadAppConf();
-  }, [loadFavorites, loadRecentTools, loadAppConf]);
+    void loadFavorites();
+    void loadRecentTools();
+    void loadAppConf();
+    void loadOrbConf();
+    void loadMascotConf();
+  }, [
+    loadFavorites,
+    loadRecentTools,
+    loadAppConf,
+    loadOrbConf,
+    loadMascotConf,
+  ]);
 
   useEffect(() => {
-    const unlisten = listen<{ id: string; binding: string; error: string }>(
-      "shortcut-warning",
+    const unlisten = listen<ShortcutWarningPayload>(
+      UiEvent.ShortcutWarning,
       ({ payload }) => {
         api.warning({
-          message: "快捷键注册失败",
-          description: `${payload.id}（${payload.binding}）可能被其它应用占用`,
+          message: translateKey("common.window.shortcut_register_failed"),
+          description: translateKey("common.window.shortcut_occupied", {
+            id: payload.id,
+            binding: payload.binding,
+          }),
           placement: "topRight",
         });
       },
     );
     return () => {
-      unlisten.then((fn) => fn());
+      void unlisten.then((fn) => fn());
     };
   }, [api]);
 
   useEffect(() => {
-    const unlisten = listen<string>("navigate", ({ payload }) => {
-      navigate(payload);
+    const unlisten = listen<string>(UiEvent.Navigate, ({ payload }) => {
+      void navigate(payload);
     });
     return () => {
-      unlisten.then((fn) => fn());
+      void unlisten.then((fn) => fn());
     };
   }, [navigate]);
 
@@ -144,6 +186,11 @@ const MainLayout: React.FC = () => {
         <Layout style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
           <Layout.Sider
             width={SIDEBAR_WIDTH}
+            collapsedWidth={SIDEBAR_COLLAPSED_WIDTH}
+            collapsed={sidebarCollapsed}
+            collapsible
+            onCollapse={setSidebarCollapsed}
+            trigger={null}
             style={{
               background: "var(--color-bg-sidebar)",
               borderRight: "1px solid var(--color-border)",
@@ -160,11 +207,50 @@ const MainLayout: React.FC = () => {
               },
             }}
           >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: sidebarCollapsed ? "center" : "space-between",
+                padding: sidebarCollapsed ? "12px 0" : "12px 16px",
+                borderBottom: "1px solid var(--color-border)",
+                flexShrink: 0,
+                minHeight: 48,
+              }}
+            >
+              {!sidebarCollapsed && (
+                <span
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 600,
+                    color: "var(--color-text-primary)",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                  }}
+                >
+                  Assistant
+                </span>
+              )}
+              <span
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                style={{
+                  cursor: "pointer",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                {sidebarCollapsed ? (
+                  <MenuUnfoldOutlined />
+                ) : (
+                  <MenuFoldOutlined />
+                )}
+              </span>
+            </div>
             <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
               <Menu
                 mode="inline"
+                inlineCollapsed={sidebarCollapsed}
                 selectedKeys={[location.pathname]}
-                openKeys={openKeys}
+                openKeys={sidebarCollapsed ? [] : openKeys}
                 onOpenChange={(keys) => setOpenKeys(keys)}
                 style={{ background: "transparent", border: "none" }}
                 items={[
@@ -172,21 +258,26 @@ const MainLayout: React.FC = () => {
                   { type: "divider" as const },
                   {
                     key: "/history",
-                    label: "消息历史",
+                    label: t("common.navigation.chat_history"),
                     icon: <HistoryOutlined />,
                   },
                   { type: "divider" as const },
                   {
                     key: "settings-sub",
-                    label: "设置",
+                    label: t("common.navigation.settings"),
                     icon: <SettingOutlined />,
-                    children: SETTINGS_PAGES.map((page) => ({
+                    onTitleClick: () => {
+                      void navigate(`/settings/overview`);
+                    },
+                    children: SETTINGS_DETAIL_PAGES.map((page) => ({
                       key: `/settings/${page.id}`,
-                      label: page.label,
+                      label: translateKey(page.label),
                     })),
                   },
                 ]}
-                onClick={({ key }) => navigate(key)}
+                onClick={({ key }) => {
+                  void navigate(key);
+                }}
               />
             </div>
           </Layout.Sider>
@@ -199,7 +290,14 @@ const MainLayout: React.FC = () => {
             <Routes>
               <Route path="/" element={<ToolBox />} />
               <Route path="/tools/:id" element={<ToolPage />} />
-              <Route path="/history" element={<HistoryManager />} />
+              <Route
+                path="/history"
+                element={
+                  <FeatureErrorBoundary featureName="历史记录">
+                    <HistoryManager />
+                  </FeatureErrorBoundary>
+                }
+              />
               <Route
                 path="/settings"
                 element={
@@ -209,7 +307,14 @@ const MainLayout: React.FC = () => {
                   />
                 }
               />
-              <Route path="/settings/:pageId" element={<SettingsContent />} />
+              <Route
+                path="/settings/:pageId"
+                element={
+                  <FeatureErrorBoundary featureName="设置">
+                    <SettingsContent />
+                  </FeatureErrorBoundary>
+                }
+              />
             </Routes>
           </Layout.Content>
         </Layout>
@@ -244,27 +349,31 @@ const SettingsWindow: React.FC = () => {
               <Navigate to={`/settings/${DEFAULT_SETTINGS_PAGE_ID}`} replace />
             }
           />
-          <Route path="/settings/:pageId" element={<SettingsContent />} />
+          <Route
+            path="/settings/:pageId"
+            element={
+              <FeatureErrorBoundary featureName="设置">
+                <SettingsContent />
+              </FeatureErrorBoundary>
+            }
+          />
         </Routes>
       </Layout.Content>
     </Layout>
   );
 };
 
-const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
-const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
-
 const OrbWindow: React.FC = () => {
   const isExpanded = useOrbStore((s) => s.isExpanded);
   const expandDirection = useOrbStore((s) => s.expandDirection);
   const expandVertical = useOrbStore((s) => s.expandVertical);
-  const setClickThrough = useOrbStore((s) => s.setClickThrough);
+  const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
+  const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
 
   React.useEffect(() => {
-    if (!IS_MACOS && !IS_WINDOWS) return;
-    invoke("set_orb_click_through", { enabled: true });
-    setClickThrough(true);
-  }, [setClickThrough]);
+    void loadOrbConf();
+    void loadMascotConf();
+  }, [loadOrbConf, loadMascotConf]);
 
   const orbClassName = [
     isExpanded ? "orb-expanded" : "",

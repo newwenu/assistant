@@ -35,43 +35,33 @@ fn get_recent_ordered_by_used_at_desc() {
 }
 
 #[test]
-fn cleanup_removes_only_entries_older_than_90_days() {
+fn cleanup_keeps_only_10_most_recent() {
     let conn = init_db();
-    let ninety_one_days_ago = chrono::Utc::now()
-        .checked_sub_signed(chrono::Duration::days(91))
-        .unwrap()
-        .timestamp_millis();
-    conn.execute(
-        "INSERT INTO tool_history (tool_id, used_at) VALUES ('old-tool', ?1)",
-        rusqlite::params![ninety_one_days_ago],
-    )
-    .unwrap();
-
-    tool_history::record_usage(&conn, "new-tool").unwrap();
+    for i in 0..15 {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        tool_history::record_usage(&conn, &format!("tool-{}", i)).unwrap();
+    }
 
     let removed = tool_history::cleanup_old_history(&conn).unwrap();
-    assert_eq!(removed, 1);
+    assert_eq!(removed, 5, "should remove 5 oldest entries beyond 10");
 
-    let recent = tool_history::get_recent_tools(&conn, 10).unwrap();
-    assert_eq!(recent, vec!["new-tool"]);
+    let recent = tool_history::get_recent_tools(&conn, 20).unwrap();
+    assert_eq!(recent.len(), 10);
+    assert_eq!(recent[0], "tool-14", "most recent should survive");
+    assert_eq!(recent[9], "tool-5", "10th most recent should survive");
 }
 
 #[test]
-fn cleanup_keeps_entries_within_90_days() {
+fn cleanup_noop_when_at_or_below_capacity() {
     let conn = init_db();
-    let eighty_nine_days_ago = chrono::Utc::now()
-        .checked_sub_signed(chrono::Duration::days(89))
-        .unwrap()
-        .timestamp_millis();
-    conn.execute(
-        "INSERT INTO tool_history (tool_id, used_at) VALUES ('recent', ?1)",
-        rusqlite::params![eighty_nine_days_ago],
-    )
-    .unwrap();
+    for i in 0..10 {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        tool_history::record_usage(&conn, &format!("tool-{}", i)).unwrap();
+    }
 
     let removed = tool_history::cleanup_old_history(&conn).unwrap();
-    assert_eq!(
-        removed, 0,
-        "entries within 90 days should NOT be cleaned up"
-    );
+    assert_eq!(removed, 0, "at capacity, nothing should be removed");
+
+    let recent = tool_history::get_recent_tools(&conn, 20).unwrap();
+    assert_eq!(recent.len(), 10);
 }

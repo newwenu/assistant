@@ -33,7 +33,7 @@ fn provider_kind_fallback() {
 
 #[test]
 fn message_role_unknown_defaults_user() {
-    assert_eq!(message_role_from_str("tool"), MessageRole::User);
+    assert_eq!(message_role_from_str("tool"), MessageRole::Tool);
     assert_eq!(message_role_from_str(""), MessageRole::User);
 }
 
@@ -66,12 +66,59 @@ fn error_retryable_classification() {
 }
 
 #[test]
-fn retry_config_rate_limit_hint() {
+fn retry_config_behavior() {
     let cfg = RetryConfig::default();
-    let e = ProviderError::RateLimited {
+    let net_err = ProviderError::NetworkError("timeout".to_string());
+    let rate_err = ProviderError::RateLimited {
+        retry_after_ms: None,
+    };
+
+    let d0 = cfg.delay_ms(0, &net_err);
+    let d1 = cfg.delay_ms(1, &net_err);
+    let d2 = cfg.delay_ms(2, &net_err);
+    assert!(d1 > d0, "exponential backoff: {} > {}", d1, d0);
+    assert!(d2 > d1, "exponential backoff: {} > {}", d2, d1);
+    assert!(d2 <= cfg.max_delay_ms, "capped at max_delay_ms");
+
+    let d_net = cfg.delay_ms(0, &net_err);
+    let d_rate = cfg.delay_ms(0, &rate_err);
+    assert!(
+        d_rate > d_net,
+        "rate limit base larger: {} > {}",
+        d_rate,
+        d_net
+    );
+
+    let hint_err = ProviderError::RateLimited {
         retry_after_ms: Some(10_000),
     };
-    let delay = cfg.delay_ms(0, &e);
-    assert!(delay >= 10_000);
-    assert!(delay <= cfg.max_delay_ms);
+    let delay = cfg.delay_ms(0, &hint_err);
+    assert!(
+        delay >= 10_000,
+        "retry_after_ms honored: {} >= 10000",
+        delay
+    );
+    assert!(
+        delay <= cfg.rate_limit_max_ms,
+        "capped at rate_limit_max_ms"
+    );
+
+    let huge_err = ProviderError::RateLimited {
+        retry_after_ms: Some(999_999_999),
+    };
+    assert!(
+        cfg.delay_ms(0, &huge_err) <= cfg.rate_limit_max_ms,
+        "extreme hint capped"
+    );
+}
+
+#[test]
+fn provider_kind_use_native_api() {
+    assert!(!ProviderKind::OpenAI.use_native_api());
+    assert!(ProviderKind::Anthropic.use_native_api());
+    assert!(ProviderKind::Gemini.use_native_api());
+    assert!(!ProviderKind::Custom {
+        base_url: String::new()
+    }
+    .use_native_api());
 }

@@ -83,7 +83,7 @@ export default function IntegerBaseConverter() {
   }, [inputValue, inputBase, customBase]);
 
   const copy = (value: string) => {
-    navigator.clipboard.writeText(value);
+    void navigator.clipboard.writeText(value);
     message.success("已复制");
   };
 

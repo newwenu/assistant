@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { HeartFilled, AppstoreOutlined } from "@ant-design/icons";
 import type { MenuProps } from "antd";
+import { translateKey } from "@/i18n";
 import { useToolStore } from "@/stores/toolStore";
 import { toolsByCategory as allToolsByCategory, toolsMap } from "./registry";
 import { CATEGORY_MAP } from "./categories";
@@ -21,10 +22,10 @@ export function useToolMenuItems(onToolboxTitleClick?: () => void): MenuItem[] {
       children.push({
         key: "tool-favorites",
         icon: <HeartFilled style={{ color: "var(--color-error)" }} />,
-        label: "收藏",
+        label: translateKey("tools.favorites"),
         children: favoriteTools.map((t) => ({
           key: `/tools/${t.id}`,
-          label: t.name,
+          label: translateKey(t.name),
         })),
       });
     }
@@ -34,10 +35,10 @@ export function useToolMenuItems(onToolboxTitleClick?: () => void): MenuItem[] {
       children.push({
         key: `tool-cat-${group.category}`,
         icon: CategoryIcon ? <CategoryIcon /> : undefined,
-        label: group.meta.label,
+        label: translateKey(group.meta.label),
         children: group.tools.map((t) => ({
           key: `/tools/${t.id}`,
-          label: t.name,
+          label: translateKey(t.name),
         })),
       });
     }
@@ -46,7 +47,7 @@ export function useToolMenuItems(onToolboxTitleClick?: () => void): MenuItem[] {
       {
         key: "toolbox",
         icon: <AppstoreOutlined />,
-        label: "工具箱",
+        label: translateKey("tools.toolbox"),
         onTitleClick: onToolboxTitleClick
           ? () => onToolboxTitleClick()
           : undefined,

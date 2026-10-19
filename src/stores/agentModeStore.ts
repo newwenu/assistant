@@ -1,21 +1,10 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
-
-export interface AgentMode {
-  id: string;
-  name: string;
-  description: string;
-  kind: "default" | "quick" | "deep" | "custom";
-  prompt: string;
-  model: string | null;
-  temperature: number | null;
-  max_tokens: number | null;
-  tools: string[];
-  presentation_rank: number;
-  is_builtin: boolean;
-  created_at: number;
-  updated_at: number;
-}
+import { agentModeService } from "../services/agentModeService";
+import { createLogger } from "@/services/logger";
+export type { AgentMode, AgentModeInput } from "@/settings/agentMode/types";
+export { toModeInput } from "@/settings/agentMode/types";
+import type { AgentMode } from "@/settings/agentMode/types";
+import { toModeInput } from "@/settings/agentMode/types";
 
 interface AgentModeState {
   modes: AgentMode[];
@@ -28,6 +17,8 @@ interface AgentModeState {
   resetBuiltinMode: (id: string) => Promise<void>;
 }
 
+const log = createLogger("agentModeStore");
+
 export const useAgentModeStore = create<AgentModeState>((set, get) => ({
   modes: [],
   selectedModeId: "builtin-default",
@@ -36,9 +27,8 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
   loadModes: async () => {
     set({ loading: true });
     try {
-      const result = await invoke("list_agent_modes");
-      const modes = (result as AgentMode[]) || [];
-      set({ modes, loading: false });
+      const modes = await agentModeService.listModes();
+      set({ modes: modes || [], loading: false });
       const state = get();
       if (
         state.selectedModeId &&
@@ -47,7 +37,7 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
         set({ selectedModeId: "builtin-default" });
       }
     } catch (e) {
-      console.error("Failed to load agent modes:", e);
+      log.error("Failed to load agent modes", e);
       set({ loading: false });
     }
   },
@@ -57,26 +47,12 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
   },
 
   saveMode: async (mode: Partial<AgentMode> & { id?: string }) => {
-    const payload: Record<string, unknown> = {
-      id: mode.id || "",
-      name: mode.name || "",
-      description: mode.description || "",
-      kind: mode.kind || "custom",
-      prompt: mode.prompt || "",
-      model: mode.model ?? null,
-      temperature: mode.temperature ?? null,
-      max_tokens: mode.max_tokens ?? null,
-      tools: mode.tools || [],
-      presentation_rank: mode.presentation_rank ?? 99,
-      is_builtin: mode.is_builtin ?? false,
-      created_at: mode.created_at ?? Date.now(),
-    };
-    await invoke("save_agent_mode", { mode: payload });
+    await agentModeService.saveMode(toModeInput(mode));
     await get().loadModes();
   },
 
   deleteMode: async (id: string) => {
-    await invoke("delete_agent_mode", { id });
+    await agentModeService.deleteMode(id);
     const state = get();
     if (state.selectedModeId === id) {
       set({ selectedModeId: "builtin-default" });
@@ -85,7 +61,7 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
   },
 
   resetBuiltinMode: async (id: string) => {
-    await invoke("reset_builtin_mode", { id });
+    await agentModeService.resetBuiltinMode(id);
     await get().loadModes();
   },
 }));

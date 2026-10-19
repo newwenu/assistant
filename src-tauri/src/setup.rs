@@ -1,21 +1,25 @@
 // 参考: ChatGPT/src-tauri/src/core/setup.rs — setup 中初始化配置和窗口
 
 use std::str::FromStr;
-use tauri::{App, Emitter, Manager};
+use std::sync::Arc;
+use tauri::{App, Manager};
+
+use crate::protocol::events::{emit_broadcast, event_name};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 use assistant_config::{
     app_conf::AppConf,
     constant::{
-        ORB_CHROME_INSET, ORB_EXPANDED_HEIGHT, ORB_EXPANDED_WIDTH, ORB_HITBOX_SIZE, WINDOW_MAIN,
-        WINDOW_ORB,
+        ORB_CHROME_INSET, ORB_COLLAPSED_WINDOW_SIZE, ORB_HITBOX_SIZE, WINDOW_MAIN, WINDOW_ORB,
     },
     orb_conf::OrbConf,
 };
 use assistant_orb::placement;
 use assistant_storage::db;
+use assistant_tools::{os, ToolRegistry};
 
 use super::tray;
+use crate::protocol::ShortcutWarningPayloadDto;
 
 pub struct DbState(pub std::sync::Mutex<rusqlite::Connection>);
 
@@ -27,6 +31,13 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     }
     if let Err(e) = OrbConf::load() {
         log::error!("Failed to init orb config: {}", e);
+    }
+
+    {
+        let locale = AppConf::load()
+            .map(|c| c.language)
+            .unwrap_or_else(|_| "zh-CN".to_string());
+        assistant_i18n::init_global(&locale);
     }
 
     match handle.path().app_data_dir() {
@@ -46,7 +57,14 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    handle.manage(crate::chat_tasks::ChatTasks::new());
+    handle.manage(assistant_agent::chat_tasks::ChatTasks::new());
+
+    {
+        let registry = Arc::new(ToolRegistry::new());
+        os::register_os_tools(&registry);
+        handle.manage(registry);
+        log::info!("OS tool registry initialized");
+    }
 
     tray::create_tray(handle);
 
@@ -132,19 +150,20 @@ pub fn register_global_shortcuts(handle: &tauri::AppHandle) {
                     let _ = crate::window::toggle(app, WINDOW_MAIN);
                 }
                 "new_chat" => {
-                    let _ = app.emit("orb-new-conversation", ());
+                    emit_broadcast(app, event_name::ORB_NEW_CONVERSATION, ());
                 }
                 _ => {}
             }
         }) {
             log::warn!("Failed to register shortcut {} ({}): {}", id, binding, e);
-            let _ = handle.emit(
-                "shortcut-warning",
-                serde_json::json!({
-                    "id": id,
-                    "binding": binding,
-                    "error": e.to_string(),
-                }),
+            emit_broadcast(
+                handle,
+                event_name::SHORTCUT_WARNING,
+                ShortcutWarningPayloadDto {
+                    id: id.to_string(),
+                    binding: binding.to_string(),
+                    error: e.to_string(),
+                },
             );
         }
     }
@@ -157,18 +176,23 @@ fn position_orb_window(handle: &tauri::AppHandle) {
 
     let screens = placement::get_available_screens(handle);
     let scale = window.scale_factor().unwrap_or(1.0);
-    let orb_w_phys = (ORB_EXPANDED_WIDTH as f64 * scale) as u32;
-    let orb_h_phys = (ORB_EXPANDED_HEIGHT as f64 * scale) as u32;
+    let collapsed_phys = (ORB_COLLAPSED_WINDOW_SIZE as f64 * scale) as u32;
 
     if let Ok(conf) = OrbConf::load() {
         if let (Some(x), Some(y)) = (conf.position_x, conf.position_y) {
-            let bounds = placement::WindowBounds::new(x, y, orb_w_phys, orb_h_phys);
-            if placement::bounds_inside_screens(&screens, bounds) {
+            if let Some(snapped) = placement::ensure_orb_on_screen(
+                &screens,
+                x,
+                y,
+                collapsed_phys,
+                collapsed_phys,
+                ORB_CHROME_INSET,
+                ORB_HITBOX_SIZE,
+            ) {
+                let _ = window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y));
+            } else {
                 let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
-                return;
             }
-            let snapped = placement::snap_to_nearest_screen(&screens, bounds);
-            let _ = window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y));
             return;
         }
     }
@@ -177,8 +201,8 @@ fn position_orb_window(handle: &tauri::AppHandle) {
         return;
     };
     let edge_margin = 20;
-    let x = primary.x + primary.width as i32 - orb_w_phys as i32 - edge_margin;
-    let y = primary.y + primary.height as i32 - orb_h_phys as i32 - edge_margin;
+    let x = primary.x + primary.width as i32 - collapsed_phys as i32 - edge_margin;
+    let y = primary.y + primary.height as i32 - collapsed_phys as i32 - edge_margin;
     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
@@ -198,15 +222,17 @@ fn spawn_screen_inspection(handle: tauri::AppHandle) {
             continue;
         };
         let screens = placement::get_available_screens(&handle);
-        let visual_x = pos.x + ORB_CHROME_INSET as i32;
-        let visual_y = pos.y + ORB_CHROME_INSET as i32;
-        let visual_bounds =
-            placement::WindowBounds::new(visual_x, visual_y, ORB_HITBOX_SIZE, ORB_HITBOX_SIZE);
-        if placement::bounds_inside_screens(&screens, visual_bounds) {
+        let Some(snapped) = placement::ensure_orb_on_screen(
+            &screens,
+            pos.x,
+            pos.y,
+            size.width,
+            size.height,
+            ORB_CHROME_INSET,
+            ORB_HITBOX_SIZE,
+        ) else {
             continue;
-        }
-        let bounds = placement::WindowBounds::new(pos.x, pos.y, size.width, size.height);
-        let snapped = placement::snap_to_nearest_screen(&screens, bounds);
+        };
         let _ = window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y));
         if let Ok(mut conf) = OrbConf::load() {
             conf.position_x = Some(snapped.x);

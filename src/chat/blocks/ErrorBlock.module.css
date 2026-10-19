@@ -14,6 +14,10 @@
   font-size: 13px;
 }
 
+.headerWarning {
+  color: var(--color-warning, #faad14);
+}
+
 .icon {
   display: inline-flex;
   align-items: center;
@@ -25,6 +29,7 @@
 
 .title {
   font-weight: 600;
+  user-select: text;
 }
 
 .message {
@@ -32,6 +37,21 @@
   font-size: 13px;
   line-height: 1.5;
   margin-bottom: 4px;
+  user-select: text;
+  cursor: text;
+}
+
+.suggestion {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .retryHint {
@@ -44,7 +64,7 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin-top: 6px;
+  margin-top: 4px;
   padding: 2px 10px;
   border: 1px solid var(--color-border-secondary);
   border-radius: var(--radius);

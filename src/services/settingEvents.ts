@@ -7,6 +7,9 @@ import {
 import { useProviderStore } from "../stores/providerStore";
 import { useThemeStore } from "../stores/themeStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { createLogger } from "./logger";
+
+const log = createLogger("setting-events");
 
 export function subscribeSettingEvents(): () => void {
   let disposed = false;
@@ -19,7 +22,7 @@ export function subscribeSettingEvents(): () => void {
         else unlisteners.push(unlisten);
       })
       .catch((error) => {
-        console.debug("[setting-events] listener unavailable:", error);
+        log.debug("listener unavailable", error);
       });
   };
 
@@ -29,7 +32,7 @@ export function subscribeSettingEvents(): () => void {
       switch (payload.action) {
         case SettingAction.ProviderSaved:
         case SettingAction.ProviderDeleted:
-          useProviderStore.getState().loadProviders();
+          void useProviderStore.getState().loadProviders();
           break;
       }
     }),
@@ -47,19 +50,25 @@ export function subscribeSettingEvents(): () => void {
   );
 
   track(
-    listen<SettingEventPayload>(SettingEvent.AppConfChanged, ({ payload }) => {
+    listen<SettingEventPayload>(SettingEvent.ConfPatched, ({ payload }) => {
       if (disposed) return;
-      if (payload.action === SettingAction.AppConfChanged) {
-        useSettingsStore.getState().loadAppConf();
-      }
-    }),
-  );
-
-  track(
-    listen<SettingEventPayload>(SettingEvent.OrbConfChanged, ({ payload }) => {
-      if (disposed) return;
-      if (payload.action === SettingAction.OrbConfChanged) {
-        useSettingsStore.getState().loadOrbConf();
+      if (payload.action === SettingAction.ConfPatched) {
+        const { group, patch } = (payload.value as {
+          group: string;
+          patch: Record<string, unknown>;
+        }) ?? { group: "", patch: {} };
+        const store = useSettingsStore.getState();
+        if (group === "app") {
+          void store.loadAppConf().then(async () => {
+            if ("language" in patch) {
+              const { applyLocaleChange } = await import("@/main");
+              const lang =
+                useSettingsStore.getState().appConf?.language ?? "zh-CN";
+              await applyLocaleChange(lang);
+            }
+          });
+        } else if (group === "orb") void store.loadOrbConf();
+        else if (group === "mascot") void store.loadMascotConf();
       }
     }),
   );

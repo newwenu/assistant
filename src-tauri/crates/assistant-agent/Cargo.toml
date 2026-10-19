@@ -12,6 +12,14 @@ slow-tests = []
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+assistant-providers = { workspace = true }
+assistant-storage = { workspace = true }
+assistant-i18n = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros"] }

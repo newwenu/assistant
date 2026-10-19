@@ -31,11 +31,19 @@
         "skipTaskbar": true,
         "decorations": false,
         "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
         "acceptFirstMouse": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": ["$APPDATA/mascot-assets/**"]
+        }
+      }
     },
     "macOSPrivateApi": true
   },

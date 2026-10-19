@@ -1,17 +1,25 @@
 import React, { useState, useCallback } from "react";
 import { Input } from "antd";
+import { useTranslation } from "react-i18next";
 import {
   CHAT_INPUT_MIN_ROWS,
   CHAT_INPUT_MAX_ROWS,
 } from "../../config/constants";
-import { RiveMascot } from "../../mascot/RiveMascot";
-import { useMascotStore } from "../../mascot/mascotStore";
+import {
+  MascotRenderer,
+  asRendererId,
+  hexToArgb,
+  useMascotStore,
+} from "../../mascot";
+import { buildRendererConfig } from "../../settings/core/settingsDispatcher";
+import { useSettingsStore } from "../../stores/settingsStore";
 
 interface MessageInputProps {
   onSend: (content: string) => void;
   onCancel: () => void;
   isStreaming: boolean;
   disabled: boolean;
+  isFull?: boolean;
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
@@ -19,9 +27,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   onCancel,
   isStreaming,
   disabled,
+  isFull = false,
 }) => {
   const [value, setValue] = useState("");
   const mascotFace = useMascotStore((s) => s.face);
+  const mascotConf = useSettingsStore((s) => s.mascotConf);
+  const { t } = useTranslation();
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -67,11 +78,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           maxRows: CHAT_INPUT_MAX_ROWS,
         }}
         placeholder={
-          disabled
-            ? "请先配置 AI Provider"
-            : isStreaming
-              ? "输入下一条消息，回车将在回复结束后发送..."
-              : "输入消息..."
+          isFull
+            ? t("chat.input.placeholder_full")
+            : disabled
+              ? t("chat.input.placeholder_no_provider")
+              : isStreaming
+                ? t("chat.input.placeholder_streaming")
+                : t("chat.input.placeholder")
         }
         disabled={disabled}
       />
@@ -80,10 +93,19 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         className={`chat-mascot-btn${canSend ? " chat-mascot-btn-active" : ""}${isStreaming ? " chat-mascot-btn-streaming" : ""}`}
         onClick={handleMascotClick}
         disabled={!isStreaming && !canSend}
-        title={isStreaming ? "停止生成" : "发送消息"}
+        title={isStreaming ? t("chat.input.stop") : t("chat.input.send")}
       >
         <div className="chat-mascot-btn-canvas">
-          <RiveMascot face={mascotFace} size={44} />
+          <MascotRenderer
+            renderer={asRendererId(mascotConf?.renderer ?? "rive")}
+            face={mascotFace}
+            size={44}
+            primaryColor={hexToArgb(mascotConf?.primaryColor)}
+            secondaryColor={hexToArgb(mascotConf?.secondaryColor)}
+            rendererConfig={
+              mascotConf ? buildRendererConfig(mascotConf) : undefined
+            }
+          />
         </div>
       </button>
     </div>

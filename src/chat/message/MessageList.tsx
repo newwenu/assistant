@@ -1,7 +1,15 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import { DownOutlined, LoadingOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import { MessageBubble, RoleContext } from "./MessageBubble";
 import type { Message } from "../../stores/chatStore";
+import type { RetryNotification } from "../../chat/core/chatTypes";
 import css from "./MessageList.module.css";
 
 const SCROLL_THRESHOLD = 100;
@@ -19,7 +27,10 @@ interface MessageListProps {
   onDeleteMessage?: (id: string) => void;
   onEditMessage?: (id: string, newContent: string) => void;
   onRegenerateMessage?: (id: string) => void;
-  onRetryMessage?: () => void;
+  onRetryMessage?: (messageId: string) => void;
+  onSwitchBranch?: (messageId: string, direction: "prev" | "next") => void;
+  onFork?: (messageId: string) => void;
+  retryStatus?: RetryNotification | null;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
@@ -36,14 +47,25 @@ export const MessageList: React.FC<MessageListProps> = ({
   onEditMessage,
   onRegenerateMessage,
   onRetryMessage,
+  onSwitchBranch,
+  onFork,
+  retryStatus,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const { t } = useTranslation();
   const [unreadCount, setUnreadCount] = useState(0);
   const lastScrollHeightRef = useRef(0);
   const seenMessageCountRef = useRef(messages.length);
   const rafIdRef = useRef<number | null>(null);
   const loadMoreTriggeredRef = useRef(false);
+
+  const lastAssistantIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") return i;
+    }
+    return -1;
+  }, [messages]);
 
   useEffect(() => {
     if (userScrolledUp) {
@@ -143,7 +165,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             {isLoadingMore ? (
               <span className={css.loadMoreSpinner}>
                 <LoadingOutlined style={{ fontSize: 14 }} />
-                <span>加载中…</span>
+                <span>{t("chat.message.loading_more")}</span>
               </span>
             ) : (
               <button
@@ -151,7 +173,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                 onClick={onLoadMore}
                 type="button"
               >
-                加载更早的消息
+                {t("chat.message.load_earlier")}
               </button>
             )}
           </div>
@@ -162,6 +184,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             isStreamingMsg && streamingContent != null
               ? { ...msg, content: streamingContent }
               : msg;
+          const isLastAssistant = index === lastAssistantIndex;
           return (
             <RoleContext.Provider
               key={msg.id}
@@ -171,11 +194,18 @@ export const MessageList: React.FC<MessageListProps> = ({
                 message={displayMsg}
                 isStreaming={isStreamingMsg}
                 isReasoningStreaming={isStreamingMsg && isReasoningStreaming}
+                retryStatus={isStreamingMsg ? retryStatus : null}
                 compact={compact}
                 onDelete={onDeleteMessage}
                 onEdit={onEditMessage}
-                onRegenerate={onRegenerateMessage}
-                onRetry={msg.error?.retryable ? onRetryMessage : undefined}
+                onRegenerate={isLastAssistant ? onRegenerateMessage : undefined}
+                onRetry={
+                  msg.error?.retryable
+                    ? () => onRetryMessage?.(msg.id)
+                    : undefined
+                }
+                onSwitchBranch={onSwitchBranch}
+                onFork={onFork}
               />
             </RoleContext.Provider>
           );
@@ -190,7 +220,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           .join(" ")}
         onClick={scrollToBottom}
         aria-hidden={!userScrolledUp}
-        aria-label="回到底部"
+        aria-label={t("chat.message.scroll_to_bottom")}
         tabIndex={userScrolledUp ? 0 : -1}
       >
         <DownOutlined style={{ fontSize: 14 }} />

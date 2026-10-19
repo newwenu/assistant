@@ -1,35 +1,64 @@
 import React, { useEffect, useCallback, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Button, Tooltip, Dropdown, Input } from "antd";
-import { LeftOutlined, RightOutlined, MenuOutlined } from "@ant-design/icons";
+import { UiEvent } from "@/types/events";
+import { useTranslation } from "react-i18next";
+import { Button, Tooltip, Dropdown, Input, message } from "antd";
+import {
+  LeftOutlined,
+  RightOutlined,
+  MenuOutlined,
+  PushpinOutlined,
+  PushpinFilled,
+} from "@ant-design/icons";
 import type { MenuProps } from "antd";
-import { ORB_BLUR_COLLAPSE_DELAY_MS } from "../config/constants";
+import {
+  ORB_BLUR_COLLAPSE_DELAY_MS,
+  ORB_HISTORY_LIST_LIMIT,
+} from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
 import { useOrbExpand } from "./OrbExpand";
 import { ChatView } from "../chat/ChatView";
-import { useChatStore } from "../stores/chatStore";
-import { subscribeChatDeltaEvents } from "../services/chatDeltaEvents";
+import { useChatStore, getChatOrchestrator } from "../stores/chatStore";
+import {
+  subscribeChatStreamEvents,
+  setChatOrchestrator,
+} from "../services/chatStreamEvents";
+import { subscribeChatLifecycleEvents } from "../services/chatLifecycleEvents";
 import { useMascotChatSync } from "../mascot/useMascotChatSync";
 import {
   getMouseLogicalPos,
   getWindowLogicalRect,
   isPointInRect,
 } from "./OrbCoord";
-
-function relativeTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-  if (diff < 60000) return "刚刚";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
-  if (diff < 172800000) return "昨天";
-  return new Date(timestamp).toLocaleDateString();
-}
+import { formatRelativeTime } from "../utils/formatRelativeTime";
+import { orbService } from "../services/orbService";
+import { useErrorNotifyStore } from "../services/errorNotifier";
+import { translateKey } from "../i18n";
 
 export const OrbPanel: React.FC = () => {
   const { expand, collapse } = useOrbExpand();
   const expandDirection = useOrbStore((s) => s.expandDirection);
+  const isPinned = useOrbStore((s) => s.isPinned);
+  const setPinned = useOrbStore((s) => s.setPinned);
   const chat = useChatStore();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [messageApi, messageContextHolder] = message.useMessage({
+    getContainer: () => panelRef.current ?? document.body,
+  });
+  const errorNotifyPending = useErrorNotifyStore((s) => s.pending);
+  const errorNotifyDequeue = useErrorNotifyStore((s) => s.dequeue);
+
+  React.useEffect(() => {
+    while (errorNotifyPending.length > 0) {
+      const item = errorNotifyDequeue();
+      if (!item) break;
+      messageApi.error({
+        content: translateKey(item.titleKey, item.options),
+        duration: 3,
+      });
+    }
+  }, [errorNotifyPending, errorNotifyDequeue, messageApi]);
+  const { t } = useTranslation();
   useMascotChatSync();
   const [search, setSearch] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -43,35 +72,44 @@ export const OrbPanel: React.FC = () => {
 
   useEffect(() => {
     let timer: number | null = null;
-    const unlistenBlur = listen("orb-blur", () => {
+    const unlistenBlur = listen(UiEvent.OrbBlur, () => {
       closeAllMenus();
+      if (useOrbStore.getState().isPinned) return;
       if (timer !== null) clearTimeout(timer);
-      timer = window.setTimeout(async () => {
-        const state = useOrbStore.getState();
-        if (state.isDragging) return;
-        try {
-          const [mouse, winRect] = await Promise.all([
-            getMouseLogicalPos(),
-            getWindowLogicalRect(),
-          ]);
-          if (isPointInRect(mouse.x, mouse.y, winRect)) return;
-        } catch {
-          // if coord check fails, fall through to collapse
-        }
-        collapse();
+      timer = window.setTimeout(() => {
+        void (async () => {
+          const state = useOrbStore.getState();
+          if (state.isDragging) return;
+          try {
+            const [mouse, winRect] = await Promise.all([
+              getMouseLogicalPos(),
+              getWindowLogicalRect(),
+            ]);
+            if (isPointInRect(mouse.x, mouse.y, winRect)) return;
+          } catch {
+            // if coord check fails, fall through to collapse
+          }
+          void collapse();
+        })();
       }, ORB_BLUR_COLLAPSE_DELAY_MS);
     });
-    const unlistenNewChat = listen("orb-new-conversation", async () => {
-      if (!useOrbStore.getState().isExpanded) {
-        await expand();
-      }
-      window.dispatchEvent(new CustomEvent("chat-new-conversation"));
+    const unlistenNewChat = listen(UiEvent.OrbNewConversation, () => {
+      void (async () => {
+        if (!useOrbStore.getState().isExpanded) {
+          await expand();
+        }
+        window.dispatchEvent(new CustomEvent("chat-new-conversation"));
+      })();
     });
-    const cleanupChatDelta = subscribeChatDeltaEvents();
+    const orchestrator = getChatOrchestrator();
+    if (orchestrator) setChatOrchestrator(orchestrator);
+    const cleanupChatStream = subscribeChatStreamEvents();
+    const cleanupChatLifecycle = subscribeChatLifecycleEvents();
     return () => {
-      unlistenBlur.then((fn) => fn());
-      unlistenNewChat.then((fn) => fn());
-      cleanupChatDelta();
+      void unlistenBlur.then((fn) => fn());
+      void unlistenNewChat.then((fn) => fn());
+      cleanupChatStream();
+      cleanupChatLifecycle();
       if (timer !== null) clearTimeout(timer);
     };
   }, [expand, collapse, closeAllMenus]);
@@ -85,7 +123,7 @@ export const OrbPanel: React.FC = () => {
         }
         const state = useOrbStore.getState();
         if (state.isDragging) return;
-        collapse();
+        void collapse();
       }
     },
     [collapse, historyOpen, closeAllMenus],
@@ -98,12 +136,21 @@ export const OrbPanel: React.FC = () => {
     c.title.toLowerCase().includes(search.toLowerCase()),
   );
 
+  const truncated = filtered.slice(0, ORB_HISTORY_LIST_LIMIT);
+  const isTruncated = filtered.length > ORB_HISTORY_LIST_LIMIT;
+
+  const handleOpenHistoryInMain = useCallback(() => {
+    void orbService.openMainWindowAndNavigate("/history");
+    setHistoryOpen(false);
+    void collapse();
+  }, [collapse]);
+
   const historyMenuItems: MenuProps["items"] = [
     {
       key: "search",
       label: (
         <Input.Search
-          placeholder="搜索对话"
+          placeholder={t("chat.orb.search_conversation")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           size="small"
@@ -114,7 +161,7 @@ export const OrbPanel: React.FC = () => {
       disabled: true,
     },
     { type: "divider" },
-    ...filtered.map((conv) => ({
+    ...truncated.map((conv) => ({
       key: conv.id,
       label: (
         <div
@@ -143,28 +190,46 @@ export const OrbPanel: React.FC = () => {
               flexShrink: 0,
             }}
           >
-            {relativeTime(conv.updated_at)}
+            {formatRelativeTime(conv.updatedAt)}
           </span>
         </div>
       ),
       onClick: () => {
-        chat.switchConversation(conv.id);
+        void chat.switchConversation(conv.id);
         setHistoryOpen(false);
       },
     })),
   ];
 
+  if (isTruncated) {
+    historyMenuItems.push(
+      { type: "divider" },
+      {
+        key: "view-all",
+        label: (
+          <span style={{ color: "var(--color-primary)" }}>
+            {search
+              ? t("chat.orb.search_more_in_main")
+              : t("chat.orb.view_all_in_main")}
+          </span>
+        ),
+        onClick: handleOpenHistoryInMain,
+      },
+    );
+  }
+
   if (filtered.length === 0 && chat.conversations.length === 0) {
     historyMenuItems.splice(1);
     historyMenuItems.push({
       key: "empty",
-      label: "暂无对话",
+      label: t("history.no_conversations"),
       disabled: true,
     });
   }
 
   return (
     <div
+      ref={panelRef}
       className="orb-panel orb-compact"
       onKeyDown={handleKeyDown}
       tabIndex={-1}
@@ -176,9 +241,12 @@ export const OrbPanel: React.FC = () => {
           placement="bottomLeft"
           open={historyOpen}
           onOpenChange={setHistoryOpen}
-          overlayClassName="orb-dropdown"
+          classNames={{ root: "orb-dropdown" }}
         >
-          <Tooltip title="对话列表" mouseEnterDelay={0.5}>
+          <Tooltip
+            title={t("chat.orb.conversation_list")}
+            mouseEnterDelay={0.5}
+          >
             <Button
               type="text"
               size="small"
@@ -188,7 +256,19 @@ export const OrbPanel: React.FC = () => {
           </Tooltip>
         </Dropdown>
         <div className="orb-chrome-center" />
-        <Tooltip title="折叠" mouseEnterDelay={0.5}>
+        <Tooltip
+          title={isPinned ? t("common.actions.unpin") : t("common.actions.pin")}
+          mouseEnterDelay={0.5}
+        >
+          <Button
+            type="text"
+            size="small"
+            className="orb-chrome-btn"
+            icon={isPinned ? <PushpinFilled /> : <PushpinOutlined />}
+            onClick={() => setPinned(!isPinned)}
+          />
+        </Tooltip>
+        <Tooltip title={t("common.actions.collapse")} mouseEnterDelay={0.5}>
           <Button
             type="text"
             size="small"
@@ -196,11 +276,12 @@ export const OrbPanel: React.FC = () => {
             icon={<CollapseIcon />}
             onClick={() => {
               closeAllMenus();
-              collapse();
+              void collapse();
             }}
           />
         </Tooltip>
       </div>
+      {messageContextHolder}
       <ChatView modelOpenRef={modelOpenRef} />
     </div>
   );

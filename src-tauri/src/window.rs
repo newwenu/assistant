@@ -87,12 +87,20 @@ pub fn show_or_create(app: &AppHandle, label: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    let spec = WINDOW_SPECS
-        .get(label)
-        .ok_or_else(|| format!("Unknown window label: {}", label))?;
+    let spec = WINDOW_SPECS.get(label).ok_or_else(|| {
+        let mut args = std::collections::HashMap::new();
+        args.insert("label", label);
+        assistant_i18n::t_with_args("window.unknown_label", &args)
+    })?;
+
+    let resolved_title = match label {
+        WINDOW_MAIN => assistant_i18n::t("window.title_main"),
+        WINDOW_SETTINGS => assistant_i18n::t("window.title_settings"),
+        _ => spec.title.to_string(),
+    };
 
     let mut builder = WebviewWindowBuilder::new(app, spec.label, WebviewUrl::App(spec.url.into()))
-        .title(spec.title)
+        .title(&resolved_title)
         .inner_size(spec.width, spec.height)
         .resizable(spec.resizable)
         .decorations(spec.decorations)
@@ -171,6 +179,9 @@ pub fn expand_orb_panel(
     let window = get_or_error(&app, WINDOW_ORB)?;
 
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    if scale <= 0.0 {
+        return Err("scale_factor returned non-positive value".to_string());
+    }
     let old_pos = window.outer_position().map_err(|e| e.to_string())?;
     let old_size = window.inner_size().map_err(|e| e.to_string())?;
 
@@ -230,6 +241,9 @@ pub fn collapse_orb_panel(
     let window = get_or_error(&app, WINDOW_ORB)?;
 
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    if scale <= 0.0 {
+        return Err("scale_factor returned non-positive value".to_string());
+    }
     let old_pos = window.outer_position().map_err(|e| e.to_string())?;
     let old_size = window.inner_size().map_err(|e| e.to_string())?;
 
@@ -272,13 +286,31 @@ pub fn collapse_orb_panel(
 
 #[command]
 pub fn show_orb_context_menu(app: AppHandle, x: f64, y: f64) -> Result<(), String> {
-    let new_chat = MenuItem::with_id(&app, "orb_new_chat", "新建对话", true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let open_main = MenuItem::with_id(&app, "orb_open_main", "打开主窗口", true, None::<&str>)
-        .map_err(|e| e.to_string())?;
+    let new_chat = MenuItem::with_id(
+        &app,
+        "orb_new_chat",
+        assistant_i18n::t("orb.context_new_chat"),
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    let open_main = MenuItem::with_id(
+        &app,
+        "orb_open_main",
+        assistant_i18n::t("orb.context_open_main"),
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
     let separator = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
-    let quit = MenuItem::with_id(&app, "orb_quit", "退出", true, None::<&str>)
-        .map_err(|e| e.to_string())?;
+    let quit = MenuItem::with_id(
+        &app,
+        "orb_quit",
+        assistant_i18n::t("orb.context_quit"),
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
 
     let menu = Menu::with_items(&app, &[&new_chat, &open_main, &separator, &quit])
         .map_err(|e| e.to_string())?;

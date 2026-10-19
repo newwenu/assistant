@@ -1,9 +1,22 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use std::collections::HashMap;
 
 use super::json_config::{get_conf_dir, load_json_config_with_migrate, save_json_config};
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_compaction_threshold() -> u8 {
+    super::constant::COMPACTION_THRESHOLD_PERCENT
+}
+
+fn default_max_summary_tokens() -> u16 {
+    super::constant::MAX_SUMMARY_REQUEST_TOKENS as u16
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AppConf {
@@ -17,6 +30,14 @@ pub struct AppConf {
     pub close_to_tray: bool,
     #[serde(default)]
     pub keybindings: HashMap<String, String>,
+    #[serde(default = "default_true")]
+    pub auto_compact: bool,
+    #[serde(default = "default_compaction_threshold")]
+    pub compact_threshold_percent: u8,
+    #[serde(default)]
+    pub compact_summary_prompt: Option<String>,
+    #[serde(default = "default_max_summary_tokens")]
+    pub compact_summary_max_tokens: u16,
 }
 
 impl AppConf {
@@ -34,6 +55,10 @@ impl AppConf {
             launch_at_login: false,
             close_to_tray: true,
             keybindings,
+            auto_compact: true,
+            compact_threshold_percent: super::constant::COMPACTION_THRESHOLD_PERCENT,
+            compact_summary_prompt: None,
+            compact_summary_max_tokens: super::constant::MAX_SUMMARY_REQUEST_TOKENS as u16,
         }
     }
 
@@ -77,6 +102,21 @@ impl AppConf {
             return Err("language must not be empty".to_string());
         }
         Ok(())
+    }
+
+    pub fn amend(self, patch: serde_json::Value) -> Result<Self, String> {
+        let val = serde_json::to_value(&self).map_err(|e| e.to_string())?;
+        let mut config: BTreeMap<String, serde_json::Value> =
+            serde_json::from_value(val).map_err(|e| e.to_string())?;
+        let new_json: BTreeMap<String, serde_json::Value> =
+            serde_json::from_value(patch).map_err(|e| e.to_string())?;
+        for (k, v) in new_json {
+            config.insert(k, v);
+        }
+        serde_json::from_str::<AppConf>(
+            &serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| format!("amend deserialization failed: {}", e))
     }
 }
 

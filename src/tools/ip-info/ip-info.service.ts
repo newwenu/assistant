@@ -27,7 +27,7 @@ function expandIpv6(ip: string): string | null {
     if (missing < 1) return null;
     const full = [
       ...beforeGroups,
-      ...Array(missing).fill("0"),
+      ...Array<string>(missing).fill("0"),
       ...afterGroups,
     ].join(":");
     return normalizeIpv6Groups(full);

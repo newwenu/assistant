@@ -14,6 +14,7 @@ members = [
     "crates/assistant-agent",
     "crates/assistant-storage",
     "crates/assistant-i18n",
+    "crates/assistant-tools",
 ]
 
 [workspace.package]
@@ -27,13 +28,14 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
 thiserror = "2"
-tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api", "protocol-asset"] }
 tauri-plugin-opener = "2"
-tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+# tauri-plugin-sql 已移除：前端未使用 JS 绑定，Rust 端统一用 rusqlite，避免双份 SQLite 编译
 tauri-plugin-log = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
 rustc_version_runtime = "0.3"
 mouse_position = "0.1"
 rusqlite = { version = "0.31", features = ["bundled"] }
@@ -48,10 +50,20 @@ machine-uid = "0.2"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 tokio-util = { version = "0.7", features = ["rt"] }
-tokio-stream = "0.1"
+# tokio-stream 已移除：仅用 Stream trait re-export，已替换为 futures::Stream（同一 trait）
+# async-trait 保留：Rust 原生 async fn in trait 不兼容 dyn Trait（无法构建 vtable），见 assistant-tools/src/trait.rs
+async-trait = "0.1"
+dashmap = "6"
+chardetng = "0.1"
+encoding_rs = "0.8"
 async-stream = "0.3"
 rand = "0.8"
+bytes = "1"
+urlencoding = "2"
 proptest = "1"
+rust-i18n = "4"
+crash-handler = "0.6"
+minidump-writer = "0.10"
 
 assistant-config = { path = "crates/assistant-config" }
 assistant-orb = { path = "crates/assistant-orb" }
@@ -59,6 +71,7 @@ assistant-providers = { path = "crates/assistant-providers" }
 assistant-agent = { path = "crates/assistant-agent" }
 assistant-storage = { path = "crates/assistant-storage" }
 assistant-i18n = { path = "crates/assistant-i18n" }
+assistant-tools = { path = "crates/assistant-tools" }
 
 [dependencies]
 serde = { workspace = true }
@@ -66,11 +79,11 @@ serde_json = { workspace = true }
 log = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }
-tauri-plugin-sql = { workspace = true }
-tauri-plugin-log = { workspace = true }
 tauri-plugin-single-instance = { workspace = true }
+tauri-plugin-log = { workspace = true }
 tauri-plugin-global-shortcut = { workspace = true }
 tauri-plugin-autostart = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
 mouse_position = { workspace = true }
 rusqlite = { workspace = true }
 reqwest = { workspace = true }
@@ -78,7 +91,6 @@ tokio = { workspace = true }
 futures = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-tokio-util = { workspace = true }
 
 assistant-config = { workspace = true }
 assistant-orb = { workspace = true }
@@ -86,7 +98,11 @@ assistant-providers = { workspace = true }
 assistant-agent = { workspace = true }
 assistant-storage = { workspace = true }
 assistant-i18n = { workspace = true }
+assistant-tools = { workspace = true }
 rustc_version_runtime.workspace = true
+crash-handler = { workspace = true }
+minidump-writer = { workspace = true }
+dirs = { workspace = true }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -97,3 +113,8 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+[dev-dependencies]
+minidump = "0.27.0"
+pdb = "0.8"
+rustc-demangle = "0.1"

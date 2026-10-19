@@ -17,6 +17,10 @@
   align-items: flex-start;
 }
 
+.rootRoleCompactSummary {
+  align-items: flex-start;
+}
+
 .rootGroupGap {
   margin-top: 12px;
 }
@@ -42,6 +46,7 @@
   word-break: break-word;
   overflow-wrap: anywhere;
   position: relative;
+  user-select: text;
 }
 
 .bubbleUser {
@@ -60,6 +65,10 @@
 
 .bubbleError {
   border-color: var(--color-error, #ff4d4f) !important;
+}
+
+.bubbleWarning {
+  border-color: var(--color-warning-border, #ffe58f) !important;
 }
 
 .streamingCursor {
@@ -135,4 +144,29 @@
 
 .compact .timestamp {
   font-size: 10px;
+}
+
+.compactSummaryHeader {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.retryBanner {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--color-warning-bg);
+  color: var(--color-warning, #faad14);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.retryMessage {
+  margin-left: 8px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
 }

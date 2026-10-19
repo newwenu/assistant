@@ -1,12 +1,14 @@
 import React from "react";
 import { Typography, Row, Col, Empty } from "antd";
 import { useNavigate } from "react-router-dom";
+import { translateKey } from "@/i18n";
 import {
   DndContext,
   closestCenter,
   PointerSensor,
   useSensor,
   useSensors,
+  type DragEndEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -65,22 +67,22 @@ export const ToolBox: React.FC = () => {
 
   const favoriteTools = favoriteToolIds
     .map((id) => toolsMap[id])
-    .filter(Boolean) as ToolDefinition[];
+    .filter((t): t is ToolDefinition => Boolean(t));
 
   const recentToolDefs = recentTools
     .map((id) => toolsMap[id])
-    .filter(Boolean) as ToolDefinition[];
+    .filter((t): t is ToolDefinition => Boolean(t));
 
   const newTools = allTools.filter((t) => t.isNew);
 
-  const handleDragEnd = (event: any) => {
+  const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIdx = favoriteTools.findIndex((t) => t.id === active.id);
     const newIdx = favoriteTools.findIndex((t) => t.id === over.id);
     if (oldIdx === -1 || newIdx === -1) return;
     const reordered = arrayMove(favoriteTools, oldIdx, newIdx);
-    reorderFavorites(reordered.map((t) => t.id));
+    void reorderFavorites(reordered.map((t) => t.id));
   };
 
   const isSearching = searchQuery.trim().length > 0;
@@ -93,24 +95,24 @@ export const ToolBox: React.FC = () => {
         searchResults.length > 0 ? (
           <Row gutter={[TOOL_CARD_GAP, TOOL_CARD_GAP]}>
             {searchResults.map((tool) => (
-              <Col key={tool.id} xs={24} sm={12} md={8} lg={6}>
+              <Col key={`search-${tool.id}`} xs={24} sm={12} md={8} lg={6}>
                 <ToolCard tool={tool} />
               </Col>
             ))}
           </Row>
         ) : (
-          <Empty description="未找到匹配的工具" />
+          <Empty description={translateKey("tools.no_match")} />
         )
       ) : (
         <>
           {favoriteTools.length > 0 && (
-            <>
+            <div key="section-favorites" style={{ marginBottom: 20 }}>
               <Typography.Text
                 strong
                 type="secondary"
                 style={{ display: "block", marginBottom: 8, fontSize: 14 }}
               >
-                ★ 收藏
+                ★ {translateKey("tools.favorites")}
               </Typography.Text>
               <DndContext
                 sensors={sensors}
@@ -121,42 +123,40 @@ export const ToolBox: React.FC = () => {
                   items={favoriteTools.map((t) => t.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <Row
-                    gutter={[TOOL_CARD_GAP, TOOL_CARD_GAP]}
-                    style={{ marginBottom: 20 }}
-                  >
+                  <Row gutter={[TOOL_CARD_GAP, TOOL_CARD_GAP]}>
                     {favoriteTools.map((tool) => (
-                      <Col key={tool.id} xs={24} sm={12} md={8} lg={6}>
+                      <Col key={`fav-${tool.id}`} xs={24} sm={12} md={8} lg={6}>
                         <SortableToolCard tool={tool} />
                       </Col>
                     ))}
                   </Row>
                 </SortableContext>
               </DndContext>
-            </>
+            </div>
           )}
 
           {recentToolDefs.length > 0 && (
-            <>
+            <div key="section-recent" style={{ marginBottom: 20 }}>
               <Typography.Text
                 strong
                 type="secondary"
                 style={{ display: "block", marginBottom: 8, fontSize: 14 }}
               >
-                ⏱ 最近使用
+                ⏱ {translateKey("tools.recent")}
               </Typography.Text>
               <div
                 style={{
                   display: "flex",
                   flexWrap: "wrap",
                   gap: 8,
-                  marginBottom: 20,
                 }}
               >
                 {recentToolDefs.map((tool) => (
                   <div
-                    key={tool.id}
-                    onClick={() => navigate(`/tools/${tool.id}`)}
+                    key={`recent-${tool.id}`}
+                    onClick={() => {
+                      void navigate(`/tools/${tool.id}`);
+                    }}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -186,47 +186,44 @@ export const ToolBox: React.FC = () => {
                         },
                       },
                     )}
-                    <span>{tool.name}</span>
+                    <span>{translateKey(tool.name)}</span>
                   </div>
                 ))}
               </div>
-            </>
+            </div>
           )}
 
           {newTools.length > 0 && (
-            <>
+            <div key="section-new" style={{ marginBottom: 20 }}>
               <Typography.Text
                 strong
                 type="secondary"
                 style={{ display: "block", marginBottom: 8, fontSize: 14 }}
               >
-                新工具
+                {translateKey("tools.new_tools")}
               </Typography.Text>
-              <Row
-                gutter={[TOOL_CARD_GAP, TOOL_CARD_GAP]}
-                style={{ marginBottom: 20 }}
-              >
+              <Row gutter={[TOOL_CARD_GAP, TOOL_CARD_GAP]}>
                 {newTools.map((tool) => (
-                  <Col key={tool.id} xs={24} sm={12} md={8} lg={6}>
+                  <Col key={`new-${tool.id}`} xs={24} sm={12} md={8} lg={6}>
                     <ToolCard tool={tool} />
                   </Col>
                 ))}
               </Row>
-            </>
+            </div>
           )}
 
           {toolsByCategory.map((group) => (
-            <div key={group.category} style={{ marginBottom: 20 }}>
+            <div key={`section-${group.category}`} style={{ marginBottom: 20 }}>
               <Typography.Text
                 strong
                 type="secondary"
                 style={{ display: "block", marginBottom: 8, fontSize: 14 }}
               >
-                {group.meta.label}
+                {translateKey(group.meta.label)}
               </Typography.Text>
               <Row gutter={[TOOL_CARD_GAP, TOOL_CARD_GAP]}>
                 {group.tools.map((tool) => (
-                  <Col key={tool.id} xs={24} sm={12} md={8} lg={6}>
+                  <Col key={`cat-${tool.id}`} xs={24} sm={12} md={8} lg={6}>
                     <ToolCard tool={tool} />
                   </Col>
                 ))}

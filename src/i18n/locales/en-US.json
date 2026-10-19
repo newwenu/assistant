@@ -1,0 +1,657 @@
+{
+  "common": {
+    "navigation": {
+      "general": { "title": "General" },
+      "appearance": { "title": "Appearance" },
+      "shortcuts": { "title": "Shortcuts" },
+      "providers": { "title": "Provider Management" },
+      "agents": { "title": "Agent Modes" },
+      "about": { "title": "About" },
+      "chat_history": "Chat History",
+      "settings": "Settings"
+    },
+    "actions": {
+      "saved": "Saved",
+      "save": "Save",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Delete",
+      "loading": "Loading...",
+      "confirm": "Confirm",
+      "retry": "Retry",
+      "refresh": "Refresh",
+      "export": "Export",
+      "copy": "Copy",
+      "copied": "Copied",
+      "rename": "Rename",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "duplicate": "Duplicate",
+      "close": "Close",
+      "minimize": "Minimize",
+      "maximize": "Maximize",
+      "restore": "Restore",
+      "settings": "Settings",
+      "go_settings": "Go to Settings",
+      "collapse": "Collapse"
+    },
+    "time": {
+      "just_now": "just now",
+      "minutes_ago": "{{count}} min ago",
+      "hours_ago": "{{count}} hr ago",
+      "yesterday": "Yesterday",
+      "today": "Today",
+      "last_7_days": "Last 7 Days",
+      "last_30_days": "Last 30 Days",
+      "earlier": "Earlier",
+      "pinned": "Pinned"
+    },
+    "window": {
+      "shortcut_register_failed": "Shortcut registration failed",
+      "shortcut_occupied": "{{id}} ({{binding}}) may be occupied by another app"
+    },
+    "theme": {
+      "system": "Follow System",
+      "light": "Light Mode",
+      "dark": "Dark Mode",
+      "switch_to": "Switch to {{label}}"
+    },
+    "errors": {
+      "reload": "Reload",
+      "technicalDetails": "Technical Details",
+      "featureCrashed": "{{feature}} encountered an error",
+      "retry": "Retry",
+      "moduleLoadFailed": "Module failed to load"
+    }
+  },
+  "settings": {
+    "overview": {
+      "title": "Settings Overview",
+      "subtitle": "View current configuration, click to open detailed settings",
+      "open_detail": "Details",
+      "on": "On",
+      "off": "Off",
+      "more_items": "{{count}} more…"
+    },
+    "general": {
+      "main": {
+        "title": "General Settings"
+      },
+      "language": { "label": "Language" },
+      "launch_at_login": {
+        "label": "Launch at Login",
+        "save_message": "Launch at login updated"
+      },
+      "close_to_tray": {
+        "label": "Close to Tray",
+        "extra": "Minimize to tray instead of quitting when closing the main window"
+      },
+      "stay_on_top": {
+        "label": "Stay on Top",
+        "save_message": "Stay on top updated"
+      },
+      "compact": {
+        "auto_compact": { "label": "Auto-terminate on context limit" },
+        "compact_threshold_percent": { "label": "Termination threshold" },
+        "compact_summary_prompt": {
+          "label": "Custom summary prompt",
+          "placeholder": "Leave empty to use default template"
+        },
+        "compact_summary_max_tokens": { "label": "Max summary length" }
+      }
+    },
+    "appearance": {
+      "theme": {
+        "title": "Theme",
+        "label": "Theme Mode",
+        "save_message": "Theme switched",
+        "options": {
+          "system": "Follow System",
+          "light": "Light",
+          "dark": "Dark"
+        }
+      },
+      "orb_ball": {
+        "title": "Orb Ball",
+        "description": "Mascot rendering, colors, opacity, scale, etc."
+      },
+      "orb_panel": {
+        "title": "Orb Panel"
+      }
+    },
+    "orb": {
+      "opacity_percent": { "label": "Hover Opacity" },
+      "idle_opacity_percent": { "label": "Idle Opacity" },
+      "scale_percent": { "label": "Scale" },
+      "click_through": {
+        "label": "Click Through",
+        "extra": "When enabled, clicks pass through the orb to content below"
+      },
+      "hide_on_pointer_hover": { "label": "Hide on Hover" },
+      "hover_delay_ms": { "label": "Hover Delay (ms)" },
+      "always_on_top": { "label": "Always on Top" }
+    },
+    "mascot": {
+      "renderer": {
+        "label": "Renderer",
+        "description": "Choose the mascot rendering method",
+        "svg": { "label": "SVG", "animated": "SVG Animation" },
+        "rive": {
+          "label": "Rive",
+          "idle_pose_rotation": "Idle Pose Rotation",
+          "custom_rive": {
+            "label": "Custom Rive File",
+            "extra": "Supports .riv files, replaces built-in mascot",
+            "save_message": "Rive file updated"
+          }
+        },
+        "gif": {
+          "label": "GIF",
+          "limitations": "In GIF mode, the assistant will not respond to chat state changes",
+          "border_radius": {
+            "label": "Border Radius",
+            "extra": "0 = square, 50 = circle"
+          },
+          "gif_src": {
+            "label": "GIF Source",
+            "extra": "Supports GIF/PNG/WebP file upload, or URL, local path, data URI",
+            "save_message": "GIF source updated"
+          }
+        }
+      },
+      "color": {
+        "primary": "Primary",
+        "secondary": "Secondary",
+        "apply": "Apply",
+        "reset": "Reset",
+        "applied": "Colors applied",
+        "apply_failed": "Apply failed: {{error}}"
+      }
+    },
+    "shortcuts": {
+      "main": {
+        "title": "Shortcuts"
+      },
+      "group": { "global": "Global Shortcuts", "main": "Main Window" },
+      "toggle_orb": "Show/Hide Orb",
+      "toggle_main": "Show/Hide Main Window",
+      "new_chat": "New Chat",
+      "command_palette": "Command Palette",
+      "not_set": "Not Set",
+      "recording": "Press shortcut...",
+      "modified": "Modified",
+      "conflict": {
+        "same_group": "Same-group shortcut conflict",
+        "cross_group": "Cross-group shortcut conflict"
+      },
+      "save_message": "Shortcuts updated",
+      "reset_success": "Shortcuts reset to defaults",
+      "reset_default": "Reset to Defaults",
+      "search_placeholder": "Search shortcuts..."
+    },
+    "asset_picker": {
+      "pick_file": "Choose File",
+      "reset_default": "Reset to Default",
+      "url_placeholder": "Or enter URL / local path / data URI",
+      "installed": "File installed ({{size}} KB)",
+      "install_failed": "Install failed: {{error}}",
+      "reset_success": "Reset to default",
+      "reset_failed": "Reset failed: {{error}}"
+    },
+    "entity_list": {
+      "search_placeholder": "Search {{title}}"
+    },
+    "agent_mode": {
+      "title": "Agent Mode Management",
+      "add": "New Mode",
+      "edit": "Edit Mode",
+      "empty": "No agent modes",
+      "section": { "builtin": "Built-in Modes", "custom": "Custom Modes" },
+      "kind": {
+        "default": "Default",
+        "quick": "Quick",
+        "deep": "Deep",
+        "custom": "Custom"
+      },
+      "field": {
+        "name": {
+          "label": "Name",
+          "placeholder": "Mode name",
+          "required": "Please enter a mode name"
+        },
+        "description": {
+          "label": "Description",
+          "placeholder": "Mode description"
+        },
+        "kind": { "label": "Type" },
+        "prompt": {
+          "label": "System Prompt",
+          "placeholder": "Leave empty to skip system prompt injection"
+        },
+        "model": { "label": "Model", "placeholder": "Follow chat model" },
+        "temperature": { "label": "Temperature" },
+        "max_tokens": { "label": "Max Tokens", "placeholder": "Default 4096" },
+        "reasoning_enabled": { "label": "Reasoning" },
+        "reasoning_effort": {
+          "label": "Reasoning Effort",
+          "placeholder": "Select reasoning effort"
+        }
+      },
+      "confirm_delete": {
+        "title": "Delete this mode?",
+        "content": "This action cannot be undone"
+      },
+      "confirm_reset": {
+        "title": "Reset to defaults?",
+        "content": "Reset prompt, temperature, max_tokens etc. of \"{{name}}\" to built-in defaults"
+      },
+      "deleted": "Deleted",
+      "delete_failed": "Delete failed: {{error}}",
+      "reset_success": "Reset to defaults",
+      "reset_failed": "Reset failed: {{error}}",
+      "saved": "Changes saved",
+      "created": "Mode created",
+      "save_failed": "Save failed: {{error}}"
+    },
+    "provider": {
+      "title": "AI Provider Settings",
+      "add": "Add Provider",
+      "add_title": "Add Provider",
+      "empty": "No providers configured",
+      "connect": "Connect",
+      "edit_title": "Edit {{name}}",
+      "connect_title": "Connect {{name}}",
+      "add_custom_title": "Add Custom {{format}} Provider",
+      "custom_format": "Custom {{format}}",
+      "custom_format_detail": "Any {{format}} endpoint",
+      "description": {
+        "local": "Enter endpoint URL, make sure the service is running locally.",
+        "edit": "Save changes to apply. Leave API Key empty to keep the original key.",
+        "add": "Enter API Key, it will be stored encrypted."
+      },
+      "confirm_delete": {
+        "title": "Delete this Provider?",
+        "content": "After deletion, conversations using this Provider will be preserved, but you need to select a new Provider to continue"
+      },
+      "format": {
+        "openai": "OpenAI Compatible",
+        "openai.description": "Chat Completions /v1 endpoint",
+        "anthropic": "Anthropic Compatible",
+        "anthropic.description": "Messages /v1 endpoint",
+        "local": "Local Runtime",
+        "local.description": "Ollama / LM Studio and other local services"
+      },
+      "preset": {
+        "openai": "OpenAI",
+        "deepseek": "DeepSeek",
+        "groq": "Groq",
+        "openrouter": "OpenRouter",
+        "mistral": "Mistral",
+        "zhipu": "Zhipu GLM",
+        "qwen": "Qwen",
+        "anthropic": "Anthropic",
+        "ollama": "Ollama",
+        "lmstudio": "LM Studio"
+      },
+      "field": {
+        "name": {
+          "label": "Name",
+          "placeholder": "e.g. My Gateway",
+          "required": "Please enter a name"
+        },
+        "type": {
+          "label": "Provider ID",
+          "placeholder": "lowercase, e.g. my-gateway",
+          "required": "Please enter an ID"
+        },
+        "api_key": {
+          "label": "API Key",
+          "keep": "Keep original key",
+          "required": "Please enter API Key",
+          "required_first": "Please enter API Key first",
+          "encrypted_hint": "Key will be stored encrypted",
+          "keep_hint": "Leave empty to keep the original key"
+        },
+        "base_url": {
+          "label": "Base URL",
+          "required": "Please enter Base URL"
+        },
+        "default_model": {
+          "label": "Default Model",
+          "placeholder": "Fetch models or enter manually"
+        },
+        "fetch_models": "Fetch Models",
+        "models_fetched": "Fetched {{count}} models",
+        "models_fetch_failed": "Failed to fetch models: {{error}}",
+        "models_more": "{{count}} more models..."
+      }
+    },
+    "about": {
+      "main": {
+        "title": "About"
+      },
+      "field": {
+        "app_name": { "label": "App Name" },
+        "version": { "label": "Version" },
+        "build_date": { "label": "Build Date" },
+        "rust_toolchain": { "label": "Rust Toolchain" },
+        "tech_stack": { "label": "Tech Stack" },
+        "license": { "label": "License" }
+      },
+      "tech_stack_value": "Tauri 2 + React 19 + Ant Design",
+      "license_value": "MIT",
+      "app_name_value": "Assistant",
+      "check_update": "Check for Updates (Coming Soon)"
+    }
+  },
+  "chat": {
+    "error": {
+      "ApiKeyMissing": "API Key Not Configured",
+      "AuthFailed": "Authentication Failed",
+      "RateLimited": "Rate Limited",
+      "ModelNotFound": "Model Unavailable",
+      "ContextOverflow": "Context Too Long",
+      "NetworkError": "Network Error",
+      "Timeout": "Request Timeout",
+      "ServerError": "Server Error",
+      "RequestRejected": "Request Rejected",
+      "ParseError": "Parse Error",
+      "Cancelled": "Cancelled",
+      "StreamError": "Stream Error",
+      "InternalError": "Internal Error",
+      "unknown_error": "Unknown error",
+      "retry_after_seconds": "Retry after {{count}}s",
+      "retry_after_minutes": "Retry after ~{{count}}min",
+      "category_network_message": "Unable to connect to the service. Please check your network and retry",
+      "category_auth_message": "API Key is invalid or expired. Please check your settings",
+      "category_rate_limit_message": "Too many requests. Please retry after a short wait",
+      "category_context_overflow_message": "Conversation exceeds the model's context window limit",
+      "category_timeout_message": "Service is taking too long to respond. Please retry",
+      "category_provider_quota_message": "Provider account quota is exhausted. Check your account or switch provider",
+      "category_provider_unavailable_message": "Provider service is temporarily unavailable. Please retry later",
+      "category_invalid_request_message": "The request format is invalid. Please check your input",
+      "category_content_policy_message": "Content violated safety policy. Please modify and retry",
+      "category_model_error_message": "The model encountered an error. Please retry or switch models",
+      "category_cancelled_message": "The request was cancelled",
+      "category_unknown_message": "An unknown error occurred. Please retry or check diagnostics",
+      "action_wait_and_retry": "Wait & Retry",
+      "action_switch_model": "Switch Model",
+      "action_compress_context": "Compress Context",
+      "action_start_new_chat": "New Chat",
+      "action_copy_diagnostics": "Copy Diagnostics"
+    },
+    "errors": {
+      "renameFailed": {
+        "title": "Rename Failed",
+        "description": "Conversation rename was unsuccessful, please try again later"
+      },
+      "updateModelFailed": {
+        "title": "Model Switch Failed",
+        "description": "Model switch was unsuccessful, please try again later"
+      },
+      "deleteMessageFailed": {
+        "title": "Delete Message Failed",
+        "description": "Message deletion was unsuccessful, please try again later"
+      },
+      "switchBranchFailed": {
+        "title": "Switch Branch Failed",
+        "description": "Branch switch was unsuccessful, please try again later"
+      },
+      "compactFailed": {
+        "title": "Compact Failed",
+        "description": "Conversation compaction was unsuccessful, please try again later"
+      }
+    },
+    "input": {
+      "placeholder": "Type a message...",
+      "placeholder_no_provider": "Please configure an AI Provider first",
+      "placeholder_full": "Conversation terminated — generate a handoff summary or start a new chat",
+      "placeholder_streaming": "Type next message, Enter will send after reply finishes...",
+      "send": "Send message",
+      "stop": "Stop generating"
+    },
+    "view": {
+      "no_provider_title": "Please configure an AI Provider first",
+      "no_provider_content": "Add an AI Provider in Settings to start chatting",
+      "no_provider_hint": "Configure an AI Provider to start chatting",
+      "provider_deleted_error": "The Provider for this conversation has been deleted. Please select a new Provider to continue",
+      "create_failed": "Failed to create conversation: {{error}}",
+      "provider_required": "Please configure an AI Provider first (add in Settings)"
+    },
+    "message": {
+      "loading_more": "Loading…",
+      "load_earlier": "Load earlier messages",
+      "scroll_to_bottom": "Back to bottom",
+      "edit": "Edit",
+      "regenerate": "Regenerate",
+      "fork": "Fork to new chat",
+      "confirm_delete_message": "Delete this message?",
+      "confirm_delete_subtree": "Will delete {{count}} message(s)",
+      "confirm_delete_subtree_desc": "This action cannot be undone",
+      "message_deleted": "Message deleted",
+      "delete_failed": "Delete failed"
+    },
+    "branch": {
+      "previous": "Previous version",
+      "next": "Next version",
+      "nearLimitHint": "Approaching branch limit ({{max}})",
+      "forkTitle": "Fork to new chat",
+      "forkMessage": "Copy the conversation up to this point into a new chat, so you can explore different directions from here.",
+      "forkHint": "The original conversation is unaffected and remains available.",
+      "forkAction": "Fork to new chat",
+      "atLimitDisableEdit": "Cannot edit — branch limit reached. Fork instead.",
+      "atLimitDisableRegenerate": "Cannot regenerate — branch limit reached. Fork instead."
+    },
+    "provider": {
+      "select_placeholder": "Select Provider"
+    },
+    "model": {
+      "placeholder": "Model",
+      "select_placeholder": "Select Model"
+    },
+    "mode": {
+      "placeholder": "Mode",
+      "select_placeholder": "Select Mode"
+    },
+    "reasoning": {
+      "expand": "Show thinking",
+      "collapse": "Hide thinking",
+      "thinking": "Thinking…"
+    },
+    "compact": {
+      "banner_title": "Conversation reached context limit",
+      "copy_summary": "Copy summary",
+      "new_conversation": "New conversation",
+      "unlock": "Unlock conversation",
+      "unlock_confirm": "Unlocking may cause the conversation to reach the limit again. Continue?",
+      "generate_summary": "Generate handoff summary",
+      "generate_confirm": "This will generate a handoff summary and terminate the conversation. Continue?",
+      "error_title": "Summary generation failed",
+      "retry": "Retry",
+      "conversation_full": "Conversation is full, cannot send",
+      "summary_label": "Handoff Summary"
+    },
+    "retry": {
+      "retrying": "Retrying ({{attempt}}/{{max}}) in {{delay}}s…"
+    },
+    "orb": {
+      "conversation_list": "Conversation list",
+      "search_conversation": "Search conversations",
+      "view_all_in_main": "View all conversations in main window",
+      "search_more_in_main": "Search more results in main window"
+    }
+  },
+  "history": {
+    "search_placeholder": "Search conversations...",
+    "search_fulltext": "Full Text",
+    "search_title": "Title",
+    "refresh_list": "Refresh list",
+    "result_count": "{{count}} results",
+    "no_match": "No matching conversations",
+    "no_conversations": "No conversations yet",
+    "new_conversation": "New conversation",
+    "message_count": "{{count}} messages",
+    "export_markdown": "Export Markdown",
+    "export_json": "Export JSON",
+    "confirm_delete_conversation": "Delete this conversation?",
+    "delete_conversation": "Delete Conversation",
+    "deleting_message": "Deleting message…",
+    "conversation_deleted": "Conversation deleted",
+    "renamed": "Renamed",
+    "rename_failed": "Rename failed",
+    "export_success": "Exported successfully",
+    "export_failed": "Export failed",
+    "operation_failed": "Operation failed",
+    "duplicated": "Duplicated",
+    "duplicate_failed": "Duplicate failed",
+    "no_messages": "No messages yet",
+    "scroll_load_more": "↑ Scroll up to load more messages",
+    "back_to_bottom": "↓ Back to bottom",
+    "select_to_view": "Select a conversation on the left to view message history",
+    "errors": {
+      "deleteConversationFailed": {
+        "title": "Delete Failed",
+        "description": "Conversation deletion was unsuccessful, please try again later"
+      },
+      "renameFailed": {
+        "title": "Rename Failed",
+        "description": "Conversation rename was unsuccessful, please try again later"
+      },
+      "exportFailed": {
+        "title": "Export Failed",
+        "description": "Conversation export was unsuccessful, please try again later"
+      }
+    }
+  },
+  "command": {
+    "search_placeholder": "Search tools, pages, actions...",
+    "no_match": "No matching commands",
+    "category": {
+      "tools": "Tools",
+      "navigation": "Navigation",
+      "actions": "Actions",
+      "external": "External"
+    },
+    "action": {
+      "toggle_theme": "Toggle Theme",
+      "toggle_theme_desc": "Cycle Light → Dark → Follow System",
+      "random_tool": "Random Tool",
+      "random_tool_desc": "Open a random tool",
+      "github_repo": "GitHub Repository",
+      "github_repo_desc": "View source code",
+      "bug_report": "Report Issue",
+      "bug_report_desc": "Submit a bug or feature request",
+      "setting_item": "Setting · {{key}}",
+      "setting_page": "{{label}} Settings",
+      "chat_history": "Chat History",
+      "chat_history_desc": "View conversation history"
+    }
+  },
+  "tools": {
+    "category": {
+      "dev": "Development",
+      "converter": "Converter",
+      "security": "Security",
+      "media": "Media"
+    },
+    "search_placeholder": "Search tools...",
+    "no_match": "No matching tools found",
+    "favorites": "Favorites",
+    "recent": "Recent",
+    "new_tools": "New Tools",
+    "new_tag": "New",
+    "toolbox": "Toolbox",
+    "load_failed": "Component failed to load",
+    "retry_hint": "Please refresh and try again",
+    "reload": "Reload",
+    "not_found": "Tool not found",
+    "hash_text": {
+      "name": "Hash Calculator",
+      "description": "Calculate SHA1/SHA256/SHA512 hash of text"
+    },
+    "uuid_generator": {
+      "name": "UUID Generator",
+      "description": "Generate v1/v4 UUIDs with batch support"
+    },
+    "base64_string_converter": {
+      "name": "Base64 Encode / Decode",
+      "description": "Convert between string and Base64"
+    },
+    "color_converter": {
+      "name": "Color Converter",
+      "description": "Convert between HEX/RGB/HSL/RGBA color formats"
+    },
+    "date_time_converter": {
+      "name": "Timestamp Converter",
+      "description": "Convert between Unix timestamp and readable date"
+    },
+    "integer_base_converter": {
+      "name": "Base Converter",
+      "description": "Convert between binary/octal/decimal/hexadecimal"
+    },
+    "url_encoder": {
+      "name": "URL Encode / Decode",
+      "description": "URL encode/decode and component parsing"
+    },
+    "json_viewer": {
+      "name": "JSON Formatter",
+      "description": "Format, minify, validate JSON with syntax highlighting"
+    },
+    "regex_tester": {
+      "name": "Regex Tester",
+      "description": "Test regular expressions with match highlighting and capture groups"
+    },
+    "jwt_parser": {
+      "name": "JWT Decoder",
+      "description": "Decode JWT Token, display Header and Payload"
+    },
+    "text_diff": {
+      "name": "Text Diff",
+      "description": "Side-by-side text comparison with diff highlighting"
+    },
+    "text_statistics": {
+      "name": "Word Counter",
+      "description": "Count characters, words, lines, and bytes"
+    },
+    "password_generator": {
+      "name": "Password Generator",
+      "description": "Generate secure passwords with strength and crack time estimation"
+    },
+    "qrcode_generator": {
+      "name": "QR Code Generator",
+      "description": "Generate QR codes from text/URL with color and error correction level"
+    },
+    "sql_formatter": {
+      "name": "SQL Formatter",
+      "description": "Format and minify SQL with multiple dialect support"
+    },
+    "cron_parser": {
+      "name": "Cron Parser",
+      "description": "Parse Cron expressions and show next execution times"
+    },
+    "calculator": {
+      "name": "Calculator",
+      "description": "Evaluate math expressions with history"
+    },
+    "unit_converter": {
+      "name": "Unit Converter",
+      "description": "Convert between length/weight/temperature/area/volume units"
+    },
+    "ip_info": {
+      "name": "IP Lookup",
+      "description": "Query and convert local or specified IP address information"
+    },
+    "image_compressor": {
+      "name": "Image Compressor",
+      "description": "Upload images, adjust quality/size, compare and download"
+    },
+    "svg_preview": {
+      "name": "SVG Preview",
+      "description": "Edit SVG code with live preview, optimize and download"
+    },
+    "fs_link": {
+      "name": "File Link",
+      "description": "Create/check symlinks, hardlinks, and junctions"
+    }
+  }
+}

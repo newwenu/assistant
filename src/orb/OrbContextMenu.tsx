@@ -1,6 +1,9 @@
 import React, { useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { orbService } from "../services/orbService";
 import { LONG_PRESS_DURATION_MS } from "../config/constants";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("OrbContextMenu");
 
 const IS_TOUCH_DEVICE =
   "ontouchstart" in window || navigator.maxTouchPoints > 0;
@@ -13,16 +16,16 @@ export const OrbContextMenu: React.FC<{
 
   const showMenu = useCallback(async (x: number, y: number) => {
     try {
-      await invoke("show_orb_context_menu", { x, y });
+      await orbService.showOrbContextMenu(x, y);
     } catch (err) {
-      console.error(err);
+      log.error("showOrbContextMenu failed", err);
     }
   }, []);
 
   const handleContextMenu = useCallback(
-    async (e: React.MouseEvent) => {
+    (e: React.MouseEvent) => {
       e.preventDefault();
-      await showMenu(e.clientX, e.clientY);
+      void showMenu(e.clientX, e.clientY);
     },
     [showMenu],
   );

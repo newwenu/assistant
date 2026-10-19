@@ -1,7 +1,8 @@
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Typography, Button, Spin } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
+import { translateKey } from "@/i18n";
 import { toolsMap } from "./registry";
 import { FavoriteButton } from "./FavoriteButton";
 import { useToolStore } from "@/stores/toolStore";
@@ -22,11 +23,9 @@ export const ToolPage: React.FC = () => {
   const navigate = useNavigate();
   const recordUsage = useToolStore((s) => s.recordUsage);
   const tool = id ? toolsMap[id] : undefined;
-  const [animKey, setAnimKey] = useState(0);
 
   useEffect(() => {
-    if (id) recordUsage(id);
-    setAnimKey((k) => k + 1);
+    if (id) void recordUsage(id);
   }, [id, recordUsage]);
 
   if (!tool) {
@@ -40,7 +39,9 @@ export const ToolPage: React.FC = () => {
           height: "100%",
         }}
       >
-        <Typography.Text type="secondary">工具未找到</Typography.Text>
+        <Typography.Text type="secondary">
+          {translateKey("tools.not_found")}
+        </Typography.Text>
       </div>
     );
   }
@@ -66,14 +67,16 @@ export const ToolPage: React.FC = () => {
         <Button
           type="text"
           icon={<ArrowLeftOutlined />}
-          onClick={() => navigate("/")}
+          onClick={() => {
+            void navigate("/");
+          }}
           size="small"
         />
         <Typography.Title
           level={2}
           style={{ margin: 0, fontWeight: 500, fontSize: 28 }}
         >
-          {tool.name}
+          {translateKey(tool.name)}
         </Typography.Title>
         <div style={{ marginLeft: "auto" }}>
           <FavoriteButton toolId={tool.id} />
@@ -92,7 +95,7 @@ export const ToolPage: React.FC = () => {
         type="secondary"
         style={{ display: "block", marginBottom: 20, fontSize: 14 }}
       >
-        {tool.description}
+        {translateKey(tool.description)}
       </Typography.Text>
       <div
         style={{
@@ -101,7 +104,6 @@ export const ToolPage: React.FC = () => {
         }}
       >
         <Suspense
-          key={`${id}-${animKey}`}
           fallback={
             <div
               style={{

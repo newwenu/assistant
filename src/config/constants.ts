@@ -2,11 +2,11 @@ export const WINDOW_MAIN = "main";
 export const WINDOW_ORB = "orb";
 export const WINDOW_SETTINGS = "settings";
 
-export const ORB_COLLAPSED_SIZE = 64;
+export const ORB_COLLAPSED_SIZE = 84;
 export const ORB_EXPANDED_WIDTH = 420;
 export const ORB_EXPANDED_HEIGHT = 600;
-export const ORB_HITBOX_SIZE = 64;
-export const ORB_CHROME_INSET = 12;
+export const ORB_CHROME_INSET = 2;
+export const ORB_HITBOX_SIZE = ORB_COLLAPSED_SIZE + 2 * ORB_CHROME_INSET;
 export const ORB_ANIMATION_MS = 300;
 export const ORB_COLLAPSED_WINDOW_SIZE =
   ORB_COLLAPSED_SIZE + 2 * ORB_CHROME_INSET;
@@ -33,12 +33,9 @@ export const WINDOW_EDGE_BUFFER = 4;
 export const EXPAND_DIRECTION_HYSTERESIS_PX = 24;
 
 export const DRAG_POLL_INTERVAL_MS = 16;
-export const HOVER_POLL_INTERVAL_MS = 80;
 export const ORB_BLUR_COLLAPSE_DELAY_MS = 200;
 export const ORB_SNAP_DELAY_MS = 1000;
 export const ORB_SNAP_ANIMATION_MS = 250;
-export const CLICK_THROUGH_DEBOUNCE_MS = 30;
-export const HAND_JITTER_PX = 8;
 export const HAND_JITTER_TOUCH_PX = 24;
 export const LONG_PRESS_DURATION_MS = 500;
 export const ORB_HITBOX_TOUCH_SIZE = 56;
@@ -56,7 +53,11 @@ export const VIRTUAL_SCROLL_OVERSCAN = 5;
 export const SCROLL_LOAD_THRESHOLD_PX = 100;
 export const CONTEXT_WARN_THRESHOLD = 0.7;
 export const CONTEXT_DANGER_THRESHOLD = 0.9;
+export const COMPACTION_THRESHOLD_PERCENT = 80;
+export const MAX_SUMMARY_REQUEST_TOKENS = 4096;
+export const MAX_SUMMARY_OUTPUT_TOKENS = 2000;
 export const CONVERSATION_SUMMARY_LENGTH = 30;
+export const ORB_HISTORY_LIST_LIMIT = 50;
 
 export const TOOL_DEFAULT_MAX_WIDTH = 640;
 export const TOOL_WIDE_MAX_WIDTH = 960;

@@ -36,3 +36,16 @@
   cursor: default;
   transition: color 0.15s ease-in-out;
 }
+
+.btnDisabled {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-quaternary);
+  cursor: not-allowed;
+  opacity: 0.4;
+}

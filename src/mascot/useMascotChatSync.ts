@@ -1,31 +1,41 @@
 import { useEffect, useRef } from "react";
 import { useChatStore } from "../stores/chatStore";
+import { useChatStreamStore } from "../stores/chatStreamStore";
 import { useMascotStore } from "./mascotStore";
-import type { MascotFace } from "./faceStates";
+import type { MascotFace, ExpressionPolicy, AckRule } from "./core/types";
+import { DEFAULT_EXPRESSION_POLICY } from "./core/expressionPolicy";
 
-const CONCERNED_RE = /\b(sorry|failed|error|cannot|unable|problem)\b/i;
-const HAPPY_RE = /\b(done|completed|fixed|success|ready|great)\b/i;
+export type { ExpressionPolicy, AckRule } from "./core/types";
+export { DEFAULT_EXPRESSION_POLICY } from "./core/expressionPolicy";
 
 function pickAckFace(
   fullText: string,
-  hadToolCall?: boolean,
-): MascotFace | null {
-  if (!fullText.trim()) return null;
-  if (CONCERNED_RE.test(fullText)) return "concerned";
-  if (hadToolCall && HAPPY_RE.test(fullText)) return "proud";
-  if (HAPPY_RE.test(fullText)) return "happy";
-  if (hadToolCall) return "happy";
-  return null;
+  hadToolCall: boolean,
+  rules: AckRule[],
+  fallback: MascotFace,
+): MascotFace {
+  if (!fullText.trim()) return fallback;
+  const sorted = [...rules].sort(
+    (a, b) => (b.priority ?? 0) - (a.priority ?? 0),
+  );
+  for (const rule of sorted) {
+    if (rule.requiresToolCall && !hadToolCall) continue;
+    if (rule.pattern.test(fullText)) return rule.face;
+  }
+  return fallback;
 }
 
-export function useMascotChatSync(): void {
+export function useMascotChatSync(
+  policy: ExpressionPolicy = DEFAULT_EXPRESSION_POLICY,
+): void {
   const prevStreamingRef = useRef(false);
   const prevReasoningRef = useRef(false);
   const prevErrorRef = useRef(false);
 
   useEffect(() => {
-    const unsubscribe = useChatStore.subscribe((state) => {
-      const { isStreaming, isReasoningStreaming, messages } = state;
+    const unsubscribeStream = useChatStreamStore.subscribe((streamState) => {
+      const { isStreaming, isReasoningStreaming } = streamState;
+      const messages = useChatStore.getState().messages;
       const hasError = messages.some(
         (m) => m.error != null && m.role === "assistant",
       );
@@ -47,20 +57,21 @@ export function useMascotChatSync(): void {
       const justStoppedStreaming = !isStreaming && prevStreamingRef.current;
       const justStoppedReasoning =
         !isReasoningStreaming && prevReasoningRef.current;
+      const { chatFace, ackRules } = policy;
 
       if (justStartedStreaming && isReasoningStreaming) {
-        useMascotStore.getState().setFace("thinking");
+        useMascotStore.getState().setFace(chatFace.onStreamStart.reasoning);
       } else if (justStartedStreaming && hadToolCall) {
-        useMascotStore.getState().setFace("working");
+        useMascotStore.getState().setFace(chatFace.onStreamStart.toolCall);
       } else if (justStartedStreaming) {
-        useMascotStore.getState().setFace("speaking");
+        useMascotStore.getState().setFace(chatFace.onStreamStart.default);
       }
 
       if (justStoppedReasoning && isStreaming) {
         if (hadToolCall) {
-          useMascotStore.getState().setFace("working");
+          useMascotStore.getState().setFace(chatFace.onReasoningEnd.toolCall);
         } else {
-          useMascotStore.getState().setFace("speaking");
+          useMascotStore.getState().setFace(chatFace.onReasoningEnd.default);
         }
       }
 
@@ -69,12 +80,17 @@ export function useMascotChatSync(): void {
           .reverse()
           .find((m) => m.role === "assistant");
         const fullText = lastAssistantMsg?.content ?? "";
-        const ackFace = pickAckFace(fullText, hadToolCall) ?? "happy";
+        const ackFace = pickAckFace(
+          fullText,
+          hadToolCall,
+          ackRules,
+          chatFace.onStreamEnd,
+        );
         useMascotStore.getState().holdThenIdle(ackFace);
       }
 
       if (hasError && !prevErrorRef.current) {
-        useMascotStore.getState().holdThenIdle("concerned");
+        useMascotStore.getState().holdThenIdle(chatFace.onError);
       }
 
       prevStreamingRef.current = isStreaming;
@@ -82,10 +98,25 @@ export function useMascotChatSync(): void {
       prevErrorRef.current = hasError;
     });
 
-    const initial = useChatStore.getState();
-    prevStreamingRef.current = initial.isStreaming;
-    prevReasoningRef.current = initial.isReasoningStreaming;
+    const unsubscribeChat = useChatStore.subscribe((chatState) => {
+      const { messages } = chatState;
+      const hasError = messages.some(
+        (m) => m.error != null && m.role === "assistant",
+      );
 
-    return unsubscribe;
-  }, []);
+      if (hasError && !prevErrorRef.current) {
+        useMascotStore.getState().holdThenIdle(policy.chatFace.onError);
+      }
+      prevErrorRef.current = hasError;
+    });
+
+    const initialStream = useChatStreamStore.getState();
+    prevStreamingRef.current = initialStream.isStreaming;
+    prevReasoningRef.current = initialStream.isReasoningStreaming;
+
+    return () => {
+      unsubscribeStream();
+      unsubscribeChat();
+    };
+  }, [policy]);
 }

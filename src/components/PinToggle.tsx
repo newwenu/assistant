@@ -2,30 +2,29 @@ import { useEffect, useState } from "react";
 import { Button, Tooltip } from "antd";
 import { PushpinOutlined, PushpinFilled } from "@ant-design/icons";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { dispatchAppConfChanged } from "@/settings/settingsDispatcher";
-import type { AppConf } from "@/stores/settingsStore";
+import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
+import { useTranslation } from "react-i18next";
 
 export const PinToggle: React.FC = () => {
   const appConf = useSettingsStore((s) => s.appConf);
-  const [pinned, setPinned] = useState(appConf?.stay_on_top ?? false);
+  const [pinned, setPinned] = useState(appConf?.stayOnTop ?? false);
+  const { t } = useTranslation();
 
   useEffect(() => {
-    if (appConf) setPinned(appConf.stay_on_top);
+    if (appConf) setPinned(appConf.stayOnTop);
   }, [appConf]);
 
-  const handleToggle = async () => {
+  const handleToggle = () => {
     const next = !pinned;
     setPinned(next);
-    if (appConf) {
-      const newConf: AppConf = { ...appConf, stay_on_top: next };
-      await dispatchAppConfChanged(
-        newConf as unknown as Record<string, unknown>,
-      );
-    }
+    void dispatchConfPatch("app", { stayOnTop: next });
   };
 
   return (
-    <Tooltip title={pinned ? "取消置顶" : "置顶"} mouseEnterDelay={0.5}>
+    <Tooltip
+      title={pinned ? t("common.actions.unpin") : t("common.actions.pin")}
+      mouseEnterDelay={0.5}
+    >
       <Button
         type="text"
         size="small"

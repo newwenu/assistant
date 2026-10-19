@@ -1,9 +1,13 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { toolService } from "../services/toolService";
 import Fuse from "fuse.js";
+import i18n, { translateKey } from "@/i18n";
 import { tools, toolsByCategory } from "../tools/registry";
 import type { ToolDefinition, ToolCategoryGroup } from "../tools/types";
 import { TOOL_SEARCH_THRESHOLD, RECENT_TOOLS_LIMIT } from "../config/constants";
+import { createLogger } from "@/services/logger";
+
+const log = createLogger("toolStore");
 
 interface ToolState {
   tools: ToolDefinition[];
@@ -22,13 +26,28 @@ interface ToolState {
   search: (query: string) => void;
 }
 
-const fuseInstance = new Fuse(tools, {
-  keys: [
-    { name: "name", weight: 2 },
-    { name: "keywords", weight: 1.5 },
-    { name: "description", weight: 1 },
-  ],
-  threshold: TOOL_SEARCH_THRESHOLD,
+function buildFuseInstance(): Fuse<ToolDefinition> {
+  return new Fuse(
+    tools.map((t) => ({
+      ...t,
+      name: translateKey(t.name),
+      description: translateKey(t.description),
+    })),
+    {
+      keys: [
+        { name: "name", weight: 2 },
+        { name: "keywords", weight: 1.5 },
+        { name: "description", weight: 1 },
+      ],
+      threshold: TOOL_SEARCH_THRESHOLD,
+    },
+  );
+}
+
+let fuseInstance = buildFuseInstance();
+
+i18n.on("languageChanged", () => {
+  fuseInstance = buildFuseInstance();
 });
 
 export const useToolStore = create<ToolState>((set) => ({
@@ -42,25 +61,33 @@ export const useToolStore = create<ToolState>((set) => ({
 
   loadFavorites: async () => {
     try {
-      const ids = (await invoke("get_favorite_tools")) as string[];
+      const ids = await toolService.getFavoriteTools();
       set({ favoriteToolIds: ids });
-    } catch {
+    } catch (e) {
+      log.debug("loadFavorites failed, trying localStorage fallback", e);
       const stored = localStorage.getItem("favoriteToolIds");
       if (stored) {
-        set({ favoriteToolIds: JSON.parse(stored) });
+        try {
+          const parsed: unknown = JSON.parse(stored);
+          if (Array.isArray(parsed))
+            set({ favoriteToolIds: parsed as string[] });
+        } catch {
+          /* corrupted localStorage, ignore */
+        }
       }
     }
   },
 
   toggleFavorite: async (toolId: string) => {
     try {
-      const isFav = await invoke<boolean>("toggle_tool_favorite", { toolId });
+      const isFav = await toolService.toggleFavorite(toolId);
       set((s) => ({
         favoriteToolIds: isFav
           ? [...s.favoriteToolIds, toolId]
           : s.favoriteToolIds.filter((id) => id !== toolId),
       }));
-    } catch {
+    } catch (e) {
+      log.debug("toggleFavorite failed, using localStorage fallback", e);
       set((s) => {
         const isFav = s.favoriteToolIds.includes(toolId);
         const next = isFav
@@ -75,20 +102,19 @@ export const useToolStore = create<ToolState>((set) => ({
   reorderFavorites: async (toolIds: string[]) => {
     set({ favoriteToolIds: toolIds });
     try {
-      await invoke("set_favorite_tools_order", { toolIds });
-    } catch {
+      await toolService.reorderFavorites(toolIds);
+    } catch (e) {
+      log.debug("reorderFavorites failed, saving to localStorage", e);
       localStorage.setItem("favoriteToolIds", JSON.stringify(toolIds));
     }
   },
 
   loadRecentTools: async (limit?: number) => {
     try {
-      const ids = (await invoke("get_recent_tools", {
-        limit: limit ?? RECENT_TOOLS_LIMIT,
-      })) as string[];
+      const ids = await toolService.getRecentTools(limit ?? RECENT_TOOLS_LIMIT);
       set({ recentTools: ids });
-    } catch {
-      // fallback: recentTools already updated optimistically
+    } catch (e) {
+      log.debug("loadRecentTools failed", e);
     }
   },
 
@@ -97,9 +123,9 @@ export const useToolStore = create<ToolState>((set) => ({
       recentTools: [toolId, ...s.recentTools.filter((id) => id !== toolId)],
     }));
     try {
-      await invoke("record_tool_usage", { toolId });
-    } catch {
-      // fallback: usage recorded optimistically in state
+      await toolService.recordUsage(toolId);
+    } catch (e) {
+      log.debug("recordUsage failed", e);
     }
   },
 

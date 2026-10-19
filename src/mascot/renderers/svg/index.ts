@@ -1,0 +1,27 @@
+import { registerRenderer } from "../../core/registry";
+import { BUILTIN_RENDERER_IDS, BUILTIN_FACES, asFace } from "../../core/types";
+import { GhostyMascot } from "./GhostyMascot";
+
+registerRenderer({
+  meta: {
+    id: BUILTIN_RENDERER_IDS.svg,
+    label: "settings.mascot.renderer.svg.label",
+    capabilities: {
+      visemeSync: true,
+      faceTransition: true,
+      colorCustomization: true,
+      idleAnimation: true,
+    },
+    defaultColors: { primary: "#3dd17f", secondary: null },
+    supportedFaces: BUILTIN_FACES.map(asFace),
+    settings: [
+      {
+        key: "svgAnimated",
+        type: "boolean",
+        default: true,
+        label: "settings.mascot.renderer.svg.animated",
+      },
+    ],
+  },
+  component: GhostyMascot,
+});

@@ -1,56 +1,97 @@
-// 参考: BongoCat/crates/bongocat-i18n — i18n 加载逻辑
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, OnceLock, RwLock},
+};
 
-use log::error;
-use serde_json::Value;
-use std::collections::HashMap;
+#[macro_use]
+extern crate rust_i18n;
 
-static ZH_CN: &str = include_str!("../locales/zh-CN.json");
-static EN_US: &str = include_str!("../locales/en-US.json");
+rust_i18n::i18n!("locales", fallback = "zh-CN");
 
-pub struct I18n {
-    locale: String,
-    translations: HashMap<String, Value>,
+#[doc(hidden)]
+pub const CATALOG_REVISION: &str = env!("ASSISTANT_I18N_CATALOG_REVISION");
+
+pub const DEFAULT_LOCALE: &str = "zh-CN";
+
+pub const SHIPPED_LOCALES: [&str; 2] = ["zh-CN", "en-US"];
+
+pub fn locale_code(code: &str) -> &str {
+    let normalized = code.replace('_', "-").to_ascii_lowercase();
+    SHIPPED_LOCALES
+        .iter()
+        .copied()
+        .find(|shipped| shipped.to_ascii_lowercase() == normalized)
+        .unwrap_or(DEFAULT_LOCALE)
 }
 
-impl I18n {
-    pub fn new(locale: &str) -> Self {
-        let translations = Self::load_translations(locale);
-        Self {
-            locale: locale.to_string(),
-            translations,
-        }
+pub fn text(locale: &str, key: &str) -> &'static str {
+    static CACHE: OnceLock<RwLock<HashMap<String, &'static str>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| RwLock::new(HashMap::new()));
+    let cache_key = format!("{}\0{key}", locale_code(locale));
+    if let Some(value) = cache
+        .read()
+        .expect("translation cache read lock")
+        .get(&cache_key)
+    {
+        return value;
     }
+    let value = Box::leak(
+        t!(key, locale = locale_code(locale))
+            .to_string()
+            .into_boxed_str(),
+    );
+    cache
+        .write()
+        .expect("translation cache write lock")
+        .insert(cache_key, value);
+    value
+}
 
-    fn load_translations(locale: &str) -> HashMap<String, Value> {
-        let json_str = match locale {
-            "zh-CN" => ZH_CN,
-            "en-US" => EN_US,
-            _ => ZH_CN,
-        };
-
-        let mut map = HashMap::new();
-        match serde_json::from_str::<Value>(json_str) {
-            Ok(Value::Object(obj)) => {
-                for (k, v) in obj {
-                    map.insert(k, v);
-                }
-            }
-            Err(e) => {
-                error!("[i18n] Failed to parse locale {}: {}", locale, e);
-            }
-            _ => {}
-        }
-        map
+pub fn format_text(locale: &str, key: &str, values: &[(&str, String)]) -> String {
+    let mut message = text(locale, key).to_owned();
+    for (name, value) in values {
+        message = message.replace(&format!("%{{{name}}}"), value);
     }
+    message
+}
 
-    pub fn t(&self, key: &str) -> String {
-        if let Some(Value::String(s)) = self.translations.get(key) {
-            return s.clone();
-        }
-        key.to_string()
-    }
+static CURRENT_LOCALE: LazyLock<RwLock<String>> =
+    LazyLock::new(|| RwLock::new(String::from(DEFAULT_LOCALE)));
 
-    pub fn locale(&self) -> &str {
-        &self.locale
+pub fn init_global(locale: &str) {
+    let resolved = locale_code(locale);
+    if let Ok(mut guard) = CURRENT_LOCALE.write() {
+        *guard = resolved.to_string();
     }
+}
+
+pub fn set_locale(locale: &str) {
+    let resolved = locale_code(locale);
+    if let Ok(mut guard) = CURRENT_LOCALE.write() {
+        *guard = resolved.to_string();
+    }
+}
+
+pub fn t(key: &str) -> String {
+    let locale = current_locale();
+    text(&locale, key).to_string()
+}
+
+pub fn t_with_args(key: &str, args: &HashMap<&str, &str>) -> String {
+    let locale = current_locale();
+    format_text(
+        &locale,
+        key,
+        &args
+            .iter()
+            .map(|(k, v)| (*k, v.to_string()))
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub fn current_locale() -> String {
+    CURRENT_LOCALE
+        .read()
+        .map(|guard| guard.clone())
+        .unwrap_or_else(|_| DEFAULT_LOCALE.to_string())
 }

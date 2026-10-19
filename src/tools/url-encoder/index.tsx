@@ -30,7 +30,7 @@ export default function UrlEncoder() {
   };
 
   const copy = () => {
-    navigator.clipboard.writeText(output);
+    void navigator.clipboard.writeText(output);
     message.success("已复制");
   };
 

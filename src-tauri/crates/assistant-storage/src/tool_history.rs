@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-const MAX_HISTORY_AGE_DAYS: i64 = 90;
+const MAX_HISTORY_ENTRIES: i32 = 10;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ToolHistoryRow {
@@ -31,14 +31,12 @@ pub fn get_recent_tools(conn: &Connection, limit: i32) -> Result<Vec<String>, St
 }
 
 pub fn cleanup_old_history(conn: &Connection) -> Result<usize, String> {
-    let cutoff = chrono::Utc::now()
-        .checked_sub_signed(chrono::Duration::days(MAX_HISTORY_AGE_DAYS))
-        .ok_or("date overflow")?
-        .timestamp_millis();
     let affected = conn
         .execute(
-            "DELETE FROM tool_history WHERE used_at < ?1",
-            params![cutoff],
+            "DELETE FROM tool_history WHERE tool_id NOT IN (
+                SELECT tool_id FROM tool_history ORDER BY used_at DESC LIMIT ?1
+            )",
+            params![MAX_HISTORY_ENTRIES],
         )
         .map_err(|e| e.to_string())?;
     Ok(affected)

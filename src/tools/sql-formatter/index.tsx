@@ -84,7 +84,7 @@ export default function SqlFormatter() {
   }, [rawSQL]);
 
   const copy = (text: string) => {
-    navigator.clipboard.writeText(text);
+    void navigator.clipboard.writeText(text);
     message.success("已复制");
   };
 

@@ -1,4 +1,3 @@
-use serde_json::json;
 use tauri::{command, AppHandle, Manager};
 
 use assistant_storage::{tool_favorites, tool_history};
@@ -13,20 +12,18 @@ pub fn record_tool_usage(app: AppHandle, tool_id: String) -> Result<(), String> 
 }
 
 #[command]
-pub fn get_recent_tools(app: AppHandle, limit: Option<i32>) -> Result<serde_json::Value, String> {
+pub fn get_recent_tools(app: AppHandle, limit: Option<i32>) -> Result<Vec<String>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let limit = limit.unwrap_or(10);
-    let rows = tool_history::get_recent_tools(&conn, limit)?;
-    Ok(json!(rows))
+    tool_history::get_recent_tools(&conn, limit)
 }
 
 #[command]
-pub fn get_favorite_tools(app: AppHandle) -> Result<serde_json::Value, String> {
+pub fn get_favorite_tools(app: AppHandle) -> Result<Vec<String>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    let rows = tool_favorites::get_favorites(&conn)?;
-    Ok(json!(rows))
+    tool_favorites::get_favorites(&conn)
 }
 
 #[command]

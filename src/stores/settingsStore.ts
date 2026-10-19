@@ -1,66 +1,66 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { DEFAULT_KEYBINDINGS } from "@/settings/core/types/shortcutTypes";
+import { createLogger } from "@/services/logger";
+export type {
+  AppConf,
+  OrbConf,
+  MascotConf,
+} from "@/settings/core/types/confTypes";
+import type {
+  AppConf,
+  OrbConf,
+  MascotConf,
+} from "@/settings/core/types/confTypes";
+import { settingService } from "../services/settingService";
 
-export interface AppConf {
-  theme: string;
-  language: string;
-  hotkey: string;
-  stay_on_top: boolean;
-  launch_at_login: boolean;
-  close_to_tray: boolean;
-  keybindings: Record<string, string>;
-}
+const log = createLogger("settingsStore");
 
-export interface OrbConf {
-  click_through: boolean;
-  always_on_top: boolean;
-  scale_percent: number;
-  opacity_percent: number;
-  hide_on_pointer_hover: boolean;
-  hover_delay_ms: number;
-  idle_opacity_percent: number;
-  position_x: number | null;
-  position_y: number | null;
-}
-
-interface SettingsState {
+export interface SettingsState {
   appConf: AppConf | null;
   orbConf: OrbConf | null;
+  mascotConf: MascotConf | null;
 
   loadAppConf: () => Promise<void>;
   loadOrbConf: () => Promise<void>;
+  loadMascotConf: () => Promise<void>;
   updateKeybinding: (id: string, binding: string) => Promise<void>;
   resetKeybindings: () => Promise<void>;
 }
 
-const IS_MAC = /\bMacintosh\b/i.test(navigator.userAgent);
-const PRIMARY_MOD = IS_MAC ? "Meta" : "Control";
-
-const DEFAULT_KEYBINDINGS: Record<string, string> = {
-  toggle_orb: `${PRIMARY_MOD}+Shift+O`,
-  toggle_main: `${PRIMARY_MOD}+Shift+M`,
-  new_chat: `${PRIMARY_MOD}+Shift+N`,
-};
-
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   appConf: null,
   orbConf: null,
+  mascotConf: null,
 
   loadAppConf: async () => {
     try {
-      const conf = (await invoke("get_app_conf")) as AppConf;
+      const prevLang = get().appConf?.language;
+      const conf = await settingService.getAppConf();
       set({ appConf: conf });
+      if (conf.language && conf.language !== prevLang) {
+        const { applyLocaleChange } = await import("../main");
+        await applyLocaleChange(conf.language);
+      }
     } catch (e) {
-      console.error("[settingsStore] loadAppConf failed:", e);
+      log.error("loadAppConf failed", e);
     }
   },
 
   loadOrbConf: async () => {
     try {
-      const conf = (await invoke("get_orb_conf")) as OrbConf;
+      const conf = await settingService.getOrbConf();
       set({ orbConf: conf });
     } catch (e) {
-      console.error("[settingsStore] loadOrbConf failed:", e);
+      log.error("loadOrbConf failed", e);
+    }
+  },
+
+  loadMascotConf: async () => {
+    try {
+      const conf = await settingService.getMascotConf();
+      set({ mascotConf: conf });
+    } catch (e) {
+      log.error("loadMascotConf failed", e);
     }
   },
 
@@ -68,18 +68,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const { appConf } = get();
     if (!appConf) return;
     const newKeybindings = { ...appConf.keybindings, [id]: binding };
-    const newConf = { ...appConf, keybindings: newKeybindings };
-    const { dispatchAppConfChanged } =
-      await import("../settings/settingsDispatcher");
-    await dispatchAppConfChanged(newConf as unknown as Record<string, unknown>);
+    const { dispatchConfPatch } =
+      await import("../settings/core/settingsDispatcher");
+    await dispatchConfPatch("app", { keybindings: newKeybindings });
   },
 
   resetKeybindings: async () => {
-    const { appConf } = get();
-    if (!appConf) return;
-    const newConf = { ...appConf, keybindings: { ...DEFAULT_KEYBINDINGS } };
-    const { dispatchAppConfChanged } =
-      await import("../settings/settingsDispatcher");
-    await dispatchAppConfChanged(newConf as unknown as Record<string, unknown>);
+    const { dispatchConfPatch } =
+      await import("../settings/core/settingsDispatcher");
+    await dispatchConfPatch("app", { keybindings: { ...DEFAULT_KEYBINDINGS } });
   },
 }));

@@ -4,21 +4,22 @@ import {
   PhysicalPosition,
   cursorPosition,
 } from "@tauri-apps/api/window";
-import { invoke } from "@tauri-apps/api/core";
+import { orbService } from "../services/orbService";
+import { createLogger } from "@/services/logger";
 import {
   PET_DRAG_THRESHOLD_PX,
   DRAG_POLL_INTERVAL_MS,
   ORB_SNAP_DELAY_MS,
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
 const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
-const NEEDS_CLICK_THROUGH_TOGGLE = IS_MACOS || IS_WINDOWS;
+const log = createLogger("OrbDrag");
 
 export function useOrbDrag() {
   const setDragging = useOrbStore((s) => s.setDragging);
-  const setClickThrough = useOrbStore((s) => s.setClickThrough);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
   const hasDraggedRef = useRef(false);
   const dragStopRef = useRef<(() => void) | null>(null);
@@ -48,7 +49,7 @@ export function useOrbDrag() {
                 ),
               );
             }
-            if (!stopped) setTimeout(tick, DRAG_POLL_INTERVAL_MS);
+            if (!stopped) setTimeout(() => void tick(), DRAG_POLL_INTERVAL_MS);
           } catch {
             stop();
           }
@@ -81,11 +82,11 @@ export function useOrbDrag() {
         hasDraggedRef.current = true;
         setDragging(true);
 
-        if (NEEDS_CLICK_THROUGH_TOGGLE) {
-          invoke("set_orb_click_through", { enabled: false }).catch(
-            console.error,
-          );
-          setClickThrough(false);
+        const orbConf = useSettingsStore.getState().orbConf;
+        if (orbConf?.clickThrough) {
+          orbService
+            .setOrbClickThrough(false)
+            .catch((e) => log.warn("OrbDrag operation failed", e));
         }
 
         if (IS_WINDOWS) {
@@ -99,7 +100,9 @@ export function useOrbDrag() {
             setDragging(false);
             hasDraggedRef.current = false;
             setTimeout(() => {
-              invoke("snap_orb_to_edge").catch(console.error);
+              orbService
+                .snapOrbToEdge()
+                .catch((e) => log.warn("OrbDrag operation failed", e));
             }, ORB_SNAP_DELAY_MS);
           });
           return;
@@ -111,7 +114,9 @@ export function useOrbDrag() {
             setDragging(false);
             hasDraggedRef.current = false;
             setTimeout(() => {
-              invoke("snap_orb_to_edge").catch(console.error);
+              orbService
+                .snapOrbToEdge()
+                .catch((e) => log.warn("OrbDrag operation failed", e));
             }, ORB_SNAP_DELAY_MS);
           });
       }
@@ -132,14 +137,18 @@ export function useOrbDrag() {
       if (hasDraggedRef.current) {
         setDragging(false);
         const state = useOrbStore.getState();
-        if (!state.isExpanded && NEEDS_CLICK_THROUGH_TOGGLE) {
-          invoke("set_orb_click_through", { enabled: true }).catch(
-            console.error,
-          );
-          setClickThrough(true);
+        if (!state.isExpanded) {
+          const orbConf = useSettingsStore.getState().orbConf;
+          if (orbConf?.clickThrough) {
+            orbService
+              .setOrbClickThrough(true)
+              .catch((e) => log.warn("OrbDrag operation failed", e));
+          }
         }
         setTimeout(() => {
-          invoke("snap_orb_to_edge").catch(console.error);
+          orbService
+            .snapOrbToEdge()
+            .catch((e) => log.warn("OrbDrag operation failed", e));
         }, ORB_SNAP_DELAY_MS);
       }
 
@@ -149,7 +158,7 @@ export function useOrbDrag() {
         // ignore
       }
     },
-    [setDragging, setClickThrough],
+    [setDragging],
   );
 
   return { onPointerDown, onPointerMove, onPointerUp, hasDraggedRef };

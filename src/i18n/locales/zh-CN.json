@@ -1,0 +1,644 @@
+{
+  "common": {
+    "navigation": {
+      "general": { "title": "通用设置" },
+      "appearance": { "title": "外观设置" },
+      "shortcuts": { "title": "快捷键" },
+      "providers": { "title": "Provider 管理" },
+      "agents": { "title": "Agent 模式" },
+      "about": { "title": "关于" },
+      "chat_history": "消息历史",
+      "settings": "设置"
+    },
+    "actions": {
+      "saved": "已保存",
+      "save": "保存",
+      "cancel": "取消",
+      "edit": "编辑",
+      "delete": "删除",
+      "loading": "加载中...",
+      "confirm": "确认",
+      "retry": "重试",
+      "refresh": "刷新",
+      "export": "导出",
+      "copy": "复制",
+      "copied": "已复制",
+      "rename": "重命名",
+      "pin": "置顶",
+      "unpin": "取消置顶",
+      "duplicate": "复制",
+      "close": "关闭",
+      "minimize": "最小化",
+      "maximize": "最大化",
+      "restore": "还原",
+      "settings": "设置",
+      "go_settings": "去设置",
+      "collapse": "折叠"
+    },
+    "time": {
+      "just_now": "刚刚",
+      "minutes_ago": "{{count}} 分钟前",
+      "hours_ago": "{{count}} 小时前",
+      "yesterday": "昨天",
+      "today": "今天",
+      "last_7_days": "近 7 天",
+      "last_30_days": "近 30 天",
+      "earlier": "更早",
+      "pinned": "置顶"
+    },
+    "window": {
+      "shortcut_register_failed": "快捷键注册失败",
+      "shortcut_occupied": "{{id}}（{{binding}}）可能被其它应用占用"
+    },
+    "theme": {
+      "system": "跟随系统",
+      "light": "亮色模式",
+      "dark": "暗色模式",
+      "switch_to": "切换到{{label}}"
+    },
+    "errors": {
+      "reload": "重新加载",
+      "technicalDetails": "技术详情",
+      "featureCrashed": "{{feature}} 遇到了问题",
+      "retry": "重试",
+      "moduleLoadFailed": "模块加载失败"
+    }
+  },
+  "settings": {
+    "overview": {
+      "title": "设置总览",
+      "subtitle": "查看当前配置状态，点击进入详细设置",
+      "open_detail": "详细设置",
+      "on": "开",
+      "off": "关",
+      "more_items": "还有 {{count}} 项…"
+    },
+    "general": {
+      "main": {
+        "title": "通用设置"
+      },
+      "language": { "label": "语言" },
+      "launch_at_login": {
+        "label": "开机自启",
+        "save_message": "开机自启已更新"
+      },
+      "close_to_tray": {
+        "label": "关闭到托盘",
+        "extra": "关闭主窗口时最小化到托盘而非退出"
+      },
+      "stay_on_top": {
+        "label": "置顶主窗口",
+        "save_message": "置顶状态已更新"
+      },
+      "compact": {
+        "auto_compact": { "label": "上下文上限自动终止" },
+        "compact_threshold_percent": { "label": "终止阈值" },
+        "compact_summary_prompt": {
+          "label": "自定义摘要提示词",
+          "placeholder": "留空使用默认模板"
+        },
+        "compact_summary_max_tokens": { "label": "摘要最大长度" }
+      }
+    },
+    "appearance": {
+      "theme": {
+        "title": "主题",
+        "label": "主题模式",
+        "save_message": "主题已切换",
+        "options": { "system": "跟随系统", "light": "亮色", "dark": "暗色" }
+      },
+      "orb_ball": {
+        "title": "悬浮球",
+        "description": "助手形象渲染、颜色，以及透明度、缩放等"
+      },
+      "orb_panel": {
+        "title": "悬浮窗"
+      }
+    },
+    "orb": {
+      "opacity_percent": { "label": "悬停透明度" },
+      "idle_opacity_percent": { "label": "空闲透明度" },
+      "scale_percent": { "label": "缩放" },
+      "click_through": {
+        "label": "鼠标穿透",
+        "extra": "开启后鼠标可穿透悬浮球点击下方内容"
+      },
+      "hide_on_pointer_hover": { "label": "悬停隐藏" },
+      "hover_delay_ms": { "label": "悬停延迟 (ms)" },
+      "always_on_top": { "label": "始终置顶" }
+    },
+    "mascot": {
+      "renderer": {
+        "label": "渲染方式",
+        "description": "选择吉祥物的渲染方式",
+        "svg": { "label": "SVG", "animated": "SVG 动画" },
+        "rive": {
+          "label": "Rive",
+          "idle_pose_rotation": "空闲轮转动画",
+          "custom_rive": {
+            "label": "自定义 Rive 文件",
+            "extra": "支持 .riv 文件，替换内置 mascot",
+            "save_message": "Rive 文件已更新"
+          }
+        },
+        "gif": {
+          "label": "GIF",
+          "limitations": "GIF 模式下助手不会响应对话状态变化",
+          "border_radius": { "label": "圆角", "extra": "0 = 方形，50 = 圆形" },
+          "gif_src": {
+            "label": "GIF 来源",
+            "extra": "支持 GIF/PNG/WebP 文件上传，或 URL、本地路径、data URI",
+            "save_message": "GIF 来源已更新"
+          }
+        }
+      },
+      "color": {
+        "primary": "主色",
+        "secondary": "辅色",
+        "apply": "应用",
+        "reset": "重置",
+        "applied": "颜色已应用",
+        "apply_failed": "应用失败: {{error}}"
+      }
+    },
+    "shortcuts": {
+      "main": {
+        "title": "快捷键"
+      },
+      "group": { "global": "全局快捷键", "main": "主窗口" },
+      "toggle_orb": "显示/隐藏悬浮球",
+      "toggle_main": "显示/隐藏主窗口",
+      "new_chat": "新建对话",
+      "command_palette": "命令面板",
+      "not_set": "未设置",
+      "recording": "请按下快捷键...",
+      "modified": "已修改",
+      "conflict": {
+        "same_group": "同组快捷键冲突",
+        "cross_group": "跨组快捷键冲突"
+      },
+      "save_message": "快捷键已更新",
+      "reset_success": "已恢复默认快捷键",
+      "reset_default": "恢复默认",
+      "search_placeholder": "搜索快捷键..."
+    },
+    "asset_picker": {
+      "pick_file": "选择文件",
+      "reset_default": "重置为默认",
+      "url_placeholder": "或输入 URL / 本地路径 / data URI",
+      "installed": "已安装文件 ({{size}} KB)",
+      "install_failed": "安装失败: {{error}}",
+      "reset_success": "已重置为默认",
+      "reset_failed": "重置失败: {{error}}"
+    },
+    "entity_list": {
+      "search_placeholder": "搜索{{title}}"
+    },
+    "agent_mode": {
+      "title": "Agent 模式管理",
+      "add": "新建模式",
+      "edit": "编辑模式",
+      "empty": "暂无 Agent 模式",
+      "section": { "builtin": "内置模式", "custom": "自定义模式" },
+      "kind": {
+        "default": "默认",
+        "quick": "快速",
+        "deep": "深度",
+        "custom": "自定义"
+      },
+      "field": {
+        "name": {
+          "label": "名称",
+          "placeholder": "模式名称",
+          "required": "请输入模式名称"
+        },
+        "description": { "label": "描述", "placeholder": "模式描述" },
+        "kind": { "label": "类型" },
+        "prompt": {
+          "label": "系统提示词",
+          "placeholder": "留空则不注入 system prompt"
+        },
+        "model": { "label": "指定模型", "placeholder": "跟随对话模型" },
+        "temperature": { "label": "温度" },
+        "max_tokens": { "label": "最大令牌数", "placeholder": "默认 4096" },
+        "reasoning_enabled": { "label": "推理" },
+        "reasoning_effort": {
+          "label": "推理强度",
+          "placeholder": "选择推理强度"
+        }
+      },
+      "confirm_delete": {
+        "title": "确认删除此模式？",
+        "content": "删除后不可恢复"
+      },
+      "confirm_reset": {
+        "title": "恢复默认参数？",
+        "content": "将\"{{name}}\"的 prompt、temperature、max_tokens 等恢复为内置默认值"
+      },
+      "deleted": "已删除",
+      "delete_failed": "删除失败: {{error}}",
+      "reset_success": "已恢复默认",
+      "reset_failed": "恢复失败: {{error}}",
+      "saved": "已保存修改",
+      "created": "已创建模式",
+      "save_failed": "保存失败: {{error}}"
+    },
+    "provider": {
+      "title": "AI Provider 设置",
+      "add": "添加 Provider",
+      "add_title": "添加 Provider",
+      "empty": "尚未配置 Provider",
+      "connect": "连接",
+      "edit_title": "编辑 {{name}}",
+      "connect_title": "连接 {{name}}",
+      "add_custom_title": "添加自定义 {{format}} Provider",
+      "custom_format": "自定义 {{format}}",
+      "custom_format_detail": "任意 {{format}} 端点",
+      "description": {
+        "local": "输入端点地址，确保服务已在本地运行。",
+        "edit": "修改后保存即可生效。留空 API Key 则保留原密钥。",
+        "add": "输入 API Key，密钥将加密存储。"
+      },
+      "confirm_delete": {
+        "title": "确认删除此 Provider？",
+        "content": "删除后，使用此 Provider 的对话将保留，但需要重新选择 Provider 才能继续对话"
+      },
+      "format": {
+        "openai": "OpenAI 兼容",
+        "openai.description": "Chat Completions /v1 端点",
+        "anthropic": "Anthropic 兼容",
+        "anthropic.description": "Messages /v1 端点",
+        "local": "本地运行时",
+        "local.description": "Ollama / LM Studio 等本地服务"
+      },
+      "preset": {
+        "openai": "OpenAI",
+        "deepseek": "DeepSeek",
+        "groq": "Groq",
+        "openrouter": "OpenRouter",
+        "mistral": "Mistral",
+        "zhipu": "智谱 GLM",
+        "qwen": "通义千问",
+        "anthropic": "Anthropic",
+        "ollama": "Ollama",
+        "lmstudio": "LM Studio"
+      },
+      "field": {
+        "name": {
+          "label": "名称",
+          "placeholder": "如 My Gateway",
+          "required": "请输入名称"
+        },
+        "type": {
+          "label": "Provider ID",
+          "placeholder": "小写英文，如 my-gateway",
+          "required": "请输入 ID"
+        },
+        "api_key": {
+          "label": "API Key",
+          "keep": "保留原密钥",
+          "required": "请输入 API Key",
+          "required_first": "请先输入 API Key",
+          "encrypted_hint": "密钥将加密存储",
+          "keep_hint": "留空则保留原密钥"
+        },
+        "base_url": { "label": "Base URL", "required": "请输入 Base URL" },
+        "default_model": {
+          "label": "默认模型",
+          "placeholder": "获取模型后选择或手动输入"
+        },
+        "fetch_models": "获取模型",
+        "models_fetched": "获取到 {{count}} 个模型",
+        "models_fetch_failed": "获取模型列表失败: {{error}}",
+        "models_more": "还有 {{count}} 个模型..."
+      }
+    },
+    "about": {
+      "main": {
+        "title": "关于"
+      },
+      "field": {
+        "app_name": { "label": "应用名称" },
+        "version": { "label": "版本号" },
+        "build_date": { "label": "构建日期" },
+        "rust_toolchain": { "label": "Rust 工具链" },
+        "tech_stack": { "label": "前端技术栈" },
+        "license": { "label": "许可证" }
+      },
+      "tech_stack_value": "Tauri 2 + React 19 + Ant Design",
+      "license_value": "MIT",
+      "app_name_value": "Assistant",
+      "check_update": "检查更新（即将推出）"
+    }
+  },
+  "chat": {
+    "error": {
+      "ApiKeyMissing": "API Key 未配置",
+      "AuthFailed": "认证失败",
+      "RateLimited": "请求限流",
+      "ModelNotFound": "模型不可用",
+      "ContextOverflow": "上下文过长",
+      "NetworkError": "网络错误",
+      "Timeout": "请求超时",
+      "ServerError": "服务端错误",
+      "RequestRejected": "请求被拒绝",
+      "ParseError": "解析错误",
+      "Cancelled": "已取消",
+      "StreamError": "流式错误",
+      "InternalError": "内部错误",
+      "unknown_error": "未知错误",
+      "retry_after_seconds": "请 {{count}} 秒后重试",
+      "retry_after_minutes": "请约 {{count}} 分钟后重试",
+      "category_network_message": "无法连接到服务，请检查网络后重试",
+      "category_auth_message": "API Key 无效或已过期，请在设置中检查配置",
+      "category_rate_limit_message": "请求过于频繁，请稍后重试",
+      "category_context_overflow_message": "对话内容超出模型上下文窗口限制",
+      "category_timeout_message": "服务响应时间过长，请稍后重试",
+      "category_provider_quota_message": "Provider 账户配额已用尽，请检查账户或切换 Provider",
+      "category_provider_unavailable_message": "Provider 服务暂时不可用，请稍后重试",
+      "category_invalid_request_message": "发送的请求格式有误，请检查输入内容",
+      "category_content_policy_message": "内容违反了安全策略，请修改后重试",
+      "category_model_error_message": "模型处理请求时出错，请重试或切换模型",
+      "category_cancelled_message": "请求已被取消",
+      "category_unknown_message": "发生了未知错误，请重试或查看诊断信息",
+      "action_wait_and_retry": "等待并重试",
+      "action_switch_model": "切换模型",
+      "action_compress_context": "压缩上下文",
+      "action_start_new_chat": "新建对话",
+      "action_copy_diagnostics": "复制诊断信息"
+    },
+    "errors": {
+      "renameFailed": {
+        "title": "重命名失败",
+        "description": "对话重命名未成功，请稍后重试"
+      },
+      "updateModelFailed": {
+        "title": "切换模型失败",
+        "description": "模型切换未成功，请稍后重试"
+      },
+      "deleteMessageFailed": {
+        "title": "删除消息失败",
+        "description": "消息删除未成功，请稍后重试"
+      },
+      "switchBranchFailed": {
+        "title": "切换分支失败",
+        "description": "分支切换未成功，请稍后重试"
+      },
+      "compactFailed": {
+        "title": "压缩失败",
+        "description": "对话压缩未成功，请稍后重试"
+      }
+    },
+    "input": {
+      "placeholder": "输入消息...",
+      "placeholder_no_provider": "请先配置 AI Provider",
+      "placeholder_full": "对话已终止，请生成交接摘要或新建对话",
+      "placeholder_streaming": "输入下一条消息，回车将在回复结束后发送...",
+      "send": "发送消息",
+      "stop": "停止生成"
+    },
+    "view": {
+      "no_provider_title": "请先配置 AI Provider",
+      "no_provider_content": "在设置中添加 AI Provider 后即可开始对话",
+      "no_provider_hint": "配置 AI Provider 后即可开始对话",
+      "provider_deleted_error": "此对话的 Provider 已被删除，请重新选择 Provider 后再发送",
+      "create_failed": "创建对话失败: {{error}}",
+      "provider_required": "请先配置 AI Provider（在设置中添加）"
+    },
+    "message": {
+      "loading_more": "加载中…",
+      "load_earlier": "加载更早的消息",
+      "scroll_to_bottom": "回到底部",
+      "edit": "编辑",
+      "regenerate": "重新生成",
+      "fork": "分叉到新对话",
+      "confirm_delete_message": "确定删除此消息？",
+      "confirm_delete_subtree": "将删除 {{count}} 条消息",
+      "confirm_delete_subtree_desc": "此操作不可撤销",
+      "message_deleted": "消息已删除",
+      "delete_failed": "删除失败"
+    },
+    "branch": {
+      "previous": "上一个版本",
+      "next": "下一个版本",
+      "nearLimitHint": "接近分支上限（{{max}}）",
+      "forkTitle": "分叉到新对话",
+      "forkMessage": "将到此处为止的对话复制到新对话中，以便从该点继续探索不同方向。",
+      "forkHint": "原对话不受影响，仍可继续使用。",
+      "forkAction": "分叉到新对话",
+      "atLimitDisableEdit": "无法编辑 — 已达分支上限，请改用分叉。",
+      "atLimitDisableRegenerate": "无法重新生成 — 已达分支上限，请改用分叉。"
+    },
+    "provider": {
+      "select_placeholder": "选择 Provider"
+    },
+    "model": {
+      "placeholder": "模型",
+      "select_placeholder": "选择模型"
+    },
+    "mode": {
+      "placeholder": "模式",
+      "select_placeholder": "选择模式"
+    },
+    "reasoning": {
+      "expand": "展开思考",
+      "collapse": "收起思考",
+      "thinking": "思考中…"
+    },
+    "compact": {
+      "banner_title": "对话已达上下文上限",
+      "copy_summary": "复制摘要",
+      "new_conversation": "新建对话",
+      "unlock": "解锁对话",
+      "unlock_confirm": "解锁后对话可能再次达到上限，是否继续？",
+      "generate_summary": "生成交接摘要",
+      "generate_confirm": "将生成交接摘要并终止当前对话，是否继续？",
+      "error_title": "摘要生成失败",
+      "retry": "重试",
+      "conversation_full": "对话已满，无法发送",
+      "summary_label": "交接摘要"
+    },
+    "retry": {
+      "retrying": "正在重试 ({{attempt}}/{{max}})，{{delay}}秒后…"
+    },
+    "orb": {
+      "conversation_list": "对话列表",
+      "search_conversation": "搜索对话",
+      "view_all_in_main": "在主窗口查看全部对话",
+      "search_more_in_main": "在主窗口搜索更多结果"
+    }
+  },
+  "history": {
+    "search_placeholder": "搜索对话...",
+    "search_fulltext": "全文",
+    "search_title": "标题",
+    "refresh_list": "刷新列表",
+    "result_count": "{{count}} 条结果",
+    "no_match": "未找到匹配的对话",
+    "no_conversations": "暂无对话",
+    "new_conversation": "新对话",
+    "message_count": "{{count}} 条消息",
+    "export_markdown": "导出 Markdown",
+    "export_json": "导出 JSON",
+    "confirm_delete_conversation": "确定删除此对话？",
+    "delete_conversation": "删除对话",
+    "deleting_message": "正在删除消息…",
+    "conversation_deleted": "对话已删除",
+    "renamed": "已重命名",
+    "rename_failed": "重命名失败",
+    "export_success": "导出成功",
+    "export_failed": "导出失败",
+    "operation_failed": "操作失败",
+    "duplicated": "已复制",
+    "duplicate_failed": "复制失败",
+    "no_messages": "暂无消息",
+    "scroll_load_more": "↑ 向上滚动加载更多消息",
+    "back_to_bottom": "↓ 回到底部",
+    "select_to_view": "选择左侧对话查看消息历史",
+    "errors": {
+      "deleteConversationFailed": {
+        "title": "删除失败",
+        "description": "对话删除未成功，请稍后重试"
+      },
+      "renameFailed": {
+        "title": "重命名失败",
+        "description": "对话重命名未成功，请稍后重试"
+      },
+      "exportFailed": {
+        "title": "导出失败",
+        "description": "对话导出未成功，请稍后重试"
+      }
+    }
+  },
+  "command": {
+    "search_placeholder": "搜索工具、页面、操作...",
+    "no_match": "没有匹配的命令",
+    "category": {
+      "tools": "工具",
+      "navigation": "导航",
+      "actions": "操作",
+      "external": "外部"
+    },
+    "action": {
+      "toggle_theme": "切换主题",
+      "toggle_theme_desc": "循环切换 亮色 → 暗色 → 跟随系统",
+      "random_tool": "随机工具",
+      "random_tool_desc": "随机打开一个工具",
+      "github_repo": "GitHub 仓库",
+      "github_repo_desc": "查看源代码",
+      "bug_report": "报告问题",
+      "bug_report_desc": "提交 Bug 或功能建议",
+      "setting_item": "设置项 · {{key}}",
+      "setting_page": "{{label}}设置",
+      "chat_history": "消息历史",
+      "chat_history_desc": "查看对话历史记录"
+    }
+  },
+  "tools": {
+    "category": {
+      "dev": "开发",
+      "converter": "转换",
+      "security": "安全",
+      "media": "媒体"
+    },
+    "search_placeholder": "搜索工具...",
+    "no_match": "未找到匹配的工具",
+    "favorites": "收藏",
+    "recent": "最近使用",
+    "new_tools": "新工具",
+    "new_tag": "新",
+    "toolbox": "工具箱",
+    "load_failed": "组件加载失败",
+    "retry_hint": "请刷新页面重试",
+    "reload": "重新加载",
+    "not_found": "工具未找到",
+    "hash_text": {
+      "name": "Hash 计算",
+      "description": "计算文本的 SHA1/SHA256/SHA512 哈希值"
+    },
+    "uuid_generator": {
+      "name": "UUID 生成",
+      "description": "生成 v1/v4 UUID，支持批量生成"
+    },
+    "base64_string_converter": {
+      "name": "Base64 编解码",
+      "description": "字符串与 Base64 互转"
+    },
+    "color_converter": {
+      "name": "颜色转换",
+      "description": "HEX/RGB/HSL/RGBA 颜色格式互转"
+    },
+    "date_time_converter": {
+      "name": "时间戳转换",
+      "description": "Unix 时间戳与可读日期互转"
+    },
+    "integer_base_converter": {
+      "name": "进制转换",
+      "description": "二进制/八进制/十进制/十六进制互转"
+    },
+    "url_encoder": {
+      "name": "URL 编解码",
+      "description": "URL encode/decode 与组件解析"
+    },
+    "json_viewer": {
+      "name": "JSON 格式化",
+      "description": "JSON 格式化/压缩/验证与语法高亮"
+    },
+    "regex_tester": {
+      "name": "正则测试器",
+      "description": "测试正则表达式，匹配高亮与捕获组"
+    },
+    "jwt_parser": {
+      "name": "JWT 解码",
+      "description": "解码 JWT Token，展示 Header 与 Payload"
+    },
+    "text_diff": {
+      "name": "Diff 对比",
+      "description": "双栏文本对比，差异高亮"
+    },
+    "text_statistics": {
+      "name": "字数统计",
+      "description": "统计字符数/单词数/行数/字节数"
+    },
+    "password_generator": {
+      "name": "密码生成器",
+      "description": "生成安全密码并评估强度与破解耗时"
+    },
+    "qrcode_generator": {
+      "name": "二维码生成",
+      "description": "文本/URL 生成二维码，支持颜色与容错等级"
+    },
+    "sql_formatter": {
+      "name": "SQL 格式化",
+      "description": "SQL 格式化/压缩，支持多种方言"
+    },
+    "cron_parser": {
+      "name": "Cron 解析",
+      "description": "Cron 表达式解析与下次执行时间"
+    },
+    "calculator": {
+      "name": "计算器",
+      "description": "数学表达式计算与历史记录"
+    },
+    "unit_converter": {
+      "name": "单位换算",
+      "description": "长度/重量/温度/面积/体积等互转"
+    },
+    "ip_info": {
+      "name": "IP 查询",
+      "description": "本机/指定 IP 地址信息查询与转换"
+    },
+    "image_compressor": {
+      "name": "图片压缩",
+      "description": "图片上传、质量/尺寸调整、压缩对比与下载"
+    },
+    "svg_preview": {
+      "name": "SVG 预览",
+      "description": "SVG 代码编辑、实时预览、优化与下载"
+    },
+    "fs_link": {
+      "name": "文件链接",
+      "description": "创建/检测符号链接、硬链接、目录联接"
+    }
+  }
+}

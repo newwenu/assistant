@@ -67,11 +67,11 @@ export default function IpInfo() {
     try {
       const resp = await fetch(`https://ipinfo.io/${trimmed}/json`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+      const data = (await resp.json()) as IpGeoInfo & { bogon?: boolean };
       if (data.bogon) {
         setError("该 IP 为保留/私有地址，无地理位置信息");
       } else {
-        setGeoInfo(data as IpGeoInfo);
+        setGeoInfo(data);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "查询失败");
@@ -81,7 +81,7 @@ export default function IpInfo() {
   };
 
   const copy = (text: string) => {
-    navigator.clipboard.writeText(text);
+    void navigator.clipboard.writeText(text);
     message.success("已复制");
   };
 
@@ -164,12 +164,16 @@ export default function IpInfo() {
           placeholder="输入 IPv4 或 IPv6 地址..."
           status={valid ? undefined : "error"}
           style={{ fontFamily: "monospace" }}
-          onKeyDown={(e) => e.key === "Enter" && lookup()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void lookup();
+          }}
         />
         <Button
           type="primary"
           icon={<SearchOutlined />}
-          onClick={lookup}
+          onClick={() => {
+            void lookup();
+          }}
           loading={loading}
           disabled={!valid || !trimmed}
         >
@@ -178,7 +182,7 @@ export default function IpInfo() {
       </div>
 
       {!valid && (
-        <Alert type="error" message="无效的 IP 地址" className={styles.alert} />
+        <Alert type="error" title="无效的 IP 地址" className={styles.alert} />
       )}
 
       {ipv4Conversions && (
@@ -270,9 +274,7 @@ export default function IpInfo() {
 
       {loading && <Spin className={styles.spin} />}
 
-      {error && (
-        <Alert type="warning" message={error} className={styles.alert} />
-      )}
+      {error && <Alert type="warning" title={error} className={styles.alert} />}
 
       {geoInfo && (
         <div className={styles.section}>

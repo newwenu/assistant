@@ -1,5 +1,5 @@
-import React from "react";
 import { isAfter, subWeeks } from "date-fns";
+import { lazyWithRecovery } from "@/utils/lazyWithRecovery";
 import {
   EyeInvisibleOutlined,
   IdcardOutlined,
@@ -22,146 +22,139 @@ import {
   GlobalOutlined,
   PictureOutlined,
   EditOutlined,
+  FolderOutlined,
 } from "@ant-design/icons";
 import type { ToolDefinition, ToolCategoryGroup } from "./types";
-import { TOOL_CATEGORIES } from "./categories";
+import { TOOL_CATEGORIES, classifyKeywords } from "./categories";
 
-type ToolInput = Omit<ToolDefinition, "isNew"> & { isNew?: boolean };
+type ToolInput = Omit<ToolDefinition, "category" | "isNew"> & {
+  category?: never;
+  isNew?: boolean;
+};
 
 export function defineTool(tool: ToolInput): ToolDefinition {
+  const category = classifyKeywords(tool.keywords);
   const isNew = tool.createdAt
     ? isAfter(tool.createdAt, subWeeks(new Date(), 2))
     : false;
-  return { ...tool, isNew };
+  return { ...tool, category, isNew };
 }
 
 const hashText = defineTool({
   id: "hash-text",
-  name: "Hash 计算",
-  description: "计算文本的 SHA1/SHA256/SHA512 哈希值",
-  category: "crypto",
+  name: "tools.hash_text.name",
+  description: "tools.hash_text.description",
   icon: EyeInvisibleOutlined,
   keywords: ["hash", "digest", "crypto", "SHA1", "SHA256", "SHA512"],
-  component: React.lazy(() => import("./hash-text")),
+  component: lazyWithRecovery(() => import("./hash-text")),
   widthMode: "default",
 });
 
 const uuidGenerator = defineTool({
   id: "uuid-generator",
-  name: "UUID 生成",
-  description: "生成 v1/v4 UUID，支持批量生成",
-  category: "crypto",
+  name: "tools.uuid_generator.name",
+  description: "tools.uuid_generator.description",
   icon: IdcardOutlined,
   keywords: ["uuid", "v4", "v1", "random", "id", "unique"],
-  component: React.lazy(() => import("./uuid-generator")),
+  component: lazyWithRecovery(() => import("./uuid-generator")),
   widthMode: "default",
 });
 
 const base64StringConverter = defineTool({
   id: "base64-string-converter",
-  name: "Base64 编解码",
-  description: "字符串与 Base64 互转",
-  category: "crypto",
+  name: "tools.base64_string_converter.name",
+  description: "tools.base64_string_converter.description",
   icon: SwapOutlined,
   keywords: ["base64", "encode", "decode", "convert"],
-  component: React.lazy(() => import("./base64-string-converter")),
+  component: lazyWithRecovery(() => import("./base64-string-converter")),
   widthMode: "default",
 });
 
 const colorConverter = defineTool({
   id: "color-converter",
-  name: "颜色转换",
-  description: "HEX/RGB/HSL/RGBA 颜色格式互转",
-  category: "converter",
+  name: "tools.color_converter.name",
+  description: "tools.color_converter.description",
   icon: BgColorsOutlined,
   keywords: ["color", "hex", "rgb", "hsl", "rgba", "picker", "converter"],
-  component: React.lazy(() => import("./color-converter")),
+  component: lazyWithRecovery(() => import("./color-converter")),
   widthMode: "default",
 });
 
 const dateTimeConverter = defineTool({
   id: "date-time-converter",
-  name: "时间戳转换",
-  description: "Unix 时间戳与可读日期互转",
-  category: "converter",
+  name: "tools.date_time_converter.name",
+  description: "tools.date_time_converter.description",
   icon: ClockCircleOutlined,
   keywords: ["date", "time", "timestamp", "unix", "converter", "epoch"],
-  component: React.lazy(() => import("./date-time-converter")),
+  component: lazyWithRecovery(() => import("./date-time-converter")),
   widthMode: "default",
 });
 
 const integerBaseConverter = defineTool({
   id: "integer-base-converter",
-  name: "进制转换",
-  description: "二进制/八进制/十进制/十六进制互转",
-  category: "converter",
+  name: "tools.integer_base_converter.name",
+  description: "tools.integer_base_converter.description",
   icon: NumberOutlined,
   keywords: ["integer", "base", "binary", "octal", "decimal", "hex", "convert"],
-  component: React.lazy(() => import("./integer-base-converter")),
+  component: lazyWithRecovery(() => import("./integer-base-converter")),
   widthMode: "default",
 });
 
 const urlEncoder = defineTool({
   id: "url-encoder",
-  name: "URL 编解码",
-  description: "URL encode/decode 与组件解析",
-  category: "converter",
+  name: "tools.url_encoder.name",
+  description: "tools.url_encoder.description",
   icon: LinkOutlined,
   keywords: ["url", "encode", "decode", "uri", "component"],
-  component: React.lazy(() => import("./url-encoder")),
+  component: lazyWithRecovery(() => import("./url-encoder")),
   widthMode: "default",
 });
 
 const jsonViewer = defineTool({
   id: "json-viewer",
-  name: "JSON 格式化",
-  description: "JSON 格式化/压缩/验证与语法高亮",
-  category: "dev",
+  name: "tools.json_viewer.name",
+  description: "tools.json_viewer.description",
   icon: CodeOutlined,
   keywords: ["json", "format", "prettify", "minify", "validate", "viewer"],
-  component: React.lazy(() => import("./json-viewer")),
+  component: lazyWithRecovery(() => import("./json-viewer")),
   widthMode: "wide",
 });
 
 const regexTester = defineTool({
   id: "regex-tester",
-  name: "正则测试器",
-  description: "测试正则表达式，匹配高亮与捕获组",
-  category: "dev",
+  name: "tools.regex_tester.name",
+  description: "tools.regex_tester.description",
   icon: SearchOutlined,
   keywords: ["regex", "regexp", "test", "match", "capture"],
-  component: React.lazy(() => import("./regex-tester")),
+  component: lazyWithRecovery(() => import("./regex-tester")),
   widthMode: "default",
 });
 
 const jwtParser = defineTool({
   id: "jwt-parser",
-  name: "JWT 解码",
-  description: "解码 JWT Token，展示 Header 与 Payload",
-  category: "dev",
+  name: "tools.jwt_parser.name",
+  description: "tools.jwt_parser.description",
   icon: KeyOutlined,
   keywords: ["jwt", "token", "decode", "parse", "header", "payload"],
-  component: React.lazy(() => import("./jwt-parser")),
+  component: lazyWithRecovery(() => import("./jwt-parser")),
   widthMode: "default",
 });
 
 const textDiff = defineTool({
   id: "text-diff",
-  name: "Diff 对比",
-  description: "双栏文本对比，差异高亮",
-  category: "text",
+  name: "tools.text_diff.name",
+  description: "tools.text_diff.description",
   icon: DiffOutlined,
   keywords: ["diff", "compare", "text", "difference"],
-  component: React.lazy(() => import("./text-diff")),
+  component: lazyWithRecovery(() => import("./text-diff")),
   widthMode: "wide",
   createdAt: new Date("2025-09-01"),
 });
 
 const textStatistics = defineTool({
   id: "text-statistics",
-  name: "字数统计",
-  description: "统计字符数/单词数/行数/字节数",
-  category: "text",
+  name: "tools.text_statistics.name",
+  description: "tools.text_statistics.description",
   icon: FileTextOutlined,
   keywords: [
     "text",
@@ -172,72 +165,66 @@ const textStatistics = defineTool({
     "line",
     "byte",
   ],
-  component: React.lazy(() => import("./text-statistics")),
+  component: lazyWithRecovery(() => import("./text-statistics")),
   widthMode: "default",
 });
 
 const passwordGenerator = defineTool({
   id: "password-generator",
-  name: "密码生成器",
-  description: "生成安全密码并评估强度与破解耗时",
-  category: "daily",
+  name: "tools.password_generator.name",
+  description: "tools.password_generator.description",
   icon: SafetyCertificateOutlined,
   keywords: ["password", "generator", "strength", "entropy", "crack", "secure"],
-  component: React.lazy(() => import("./password-generator")),
+  component: lazyWithRecovery(() => import("./password-generator")),
   widthMode: "default",
   createdAt: new Date("2025-09-15"),
 });
 
 const qrcodeGenerator = defineTool({
   id: "qrcode-generator",
-  name: "二维码生成",
-  description: "文本/URL 生成二维码，支持颜色与容错等级",
-  category: "daily",
+  name: "tools.qrcode_generator.name",
+  description: "tools.qrcode_generator.description",
   icon: QrcodeOutlined,
   keywords: ["qrcode", "qr", "code", "generate", "url", "text"],
-  component: React.lazy(() => import("./qrcode-generator")),
+  component: lazyWithRecovery(() => import("./qrcode-generator")),
   widthMode: "default",
   createdAt: new Date("2025-09-15"),
 });
 
 const sqlFormatter = defineTool({
   id: "sql-formatter",
-  name: "SQL 格式化",
-  description: "SQL 格式化/压缩，支持多种方言",
-  category: "dev",
+  name: "tools.sql_formatter.name",
+  description: "tools.sql_formatter.description",
   icon: DatabaseOutlined,
   keywords: ["sql", "format", "prettify", "minify", "dialect", "query"],
-  component: React.lazy(() => import("./sql-formatter")),
+  component: lazyWithRecovery(() => import("./sql-formatter")),
   widthMode: "wide",
 });
 
 const cronParser = defineTool({
   id: "cron-parser",
-  name: "Cron 解析",
-  description: "Cron 表达式解析与下次执行时间",
-  category: "dev",
+  name: "tools.cron_parser.name",
+  description: "tools.cron_parser.description",
   icon: FieldTimeOutlined,
   keywords: ["cron", "crontab", "schedule", "parse", "timer"],
-  component: React.lazy(() => import("./cron-parser")),
+  component: lazyWithRecovery(() => import("./cron-parser")),
   widthMode: "default",
 });
 
 const calculator = defineTool({
   id: "calculator",
-  name: "计算器",
-  description: "数学表达式计算与历史记录",
-  category: "math",
+  name: "tools.calculator.name",
+  description: "tools.calculator.description",
   icon: CalculatorOutlined,
   keywords: ["calculator", "math", "evaluate", "expression", "compute"],
-  component: React.lazy(() => import("./calculator")),
+  component: lazyWithRecovery(() => import("./calculator")),
   widthMode: "default",
 });
 
 const unitConverter = defineTool({
   id: "unit-converter",
-  name: "单位换算",
-  description: "长度/重量/温度/面积/体积等互转",
-  category: "converter",
+  name: "tools.unit_converter.name",
+  description: "tools.unit_converter.description",
   icon: SwapRightOutlined,
   keywords: [
     "unit",
@@ -248,26 +235,24 @@ const unitConverter = defineTool({
     "area",
     "volume",
   ],
-  component: React.lazy(() => import("./unit-converter")),
+  component: lazyWithRecovery(() => import("./unit-converter")),
   widthMode: "default",
 });
 
 const ipInfo = defineTool({
   id: "ip-info",
-  name: "IP 查询",
-  description: "本机/指定 IP 地址信息查询与转换",
-  category: "web",
+  name: "tools.ip_info.name",
+  description: "tools.ip_info.description",
   icon: GlobalOutlined,
   keywords: ["ip", "address", "ipv4", "ipv6", "lookup", "geo"],
-  component: React.lazy(() => import("./ip-info")),
+  component: lazyWithRecovery(() => import("./ip-info")),
   widthMode: "default",
 });
 
 const imageCompressor = defineTool({
   id: "image-compressor",
-  name: "图片压缩",
-  description: "图片上传、质量/尺寸调整、压缩对比与下载",
-  category: "media",
+  name: "tools.image_compressor.name",
+  description: "tools.image_compressor.description",
   icon: PictureOutlined,
   keywords: [
     "image",
@@ -278,19 +263,36 @@ const imageCompressor = defineTool({
     "jpg",
     "png",
   ],
-  component: React.lazy(() => import("./image-compressor")),
+  component: lazyWithRecovery(() => import("./image-compressor")),
   widthMode: "full",
 });
 
 const svgPreview = defineTool({
   id: "svg-preview",
-  name: "SVG 预览",
-  description: "SVG 代码编辑、实时预览、优化与下载",
-  category: "media",
+  name: "tools.svg_preview.name",
+  description: "tools.svg_preview.description",
   icon: EditOutlined,
   keywords: ["svg", "preview", "edit", "optimize", "vector", "download"],
-  component: React.lazy(() => import("./svg-preview")),
+  component: lazyWithRecovery(() => import("./svg-preview")),
   widthMode: "full",
+});
+
+const fsLink = defineTool({
+  id: "fs-link",
+  name: "tools.fs_link.name",
+  description: "tools.fs_link.description",
+  icon: FolderOutlined,
+  keywords: [
+    "link",
+    "symlink",
+    "hardlink",
+    "junction",
+    "filesystem",
+    "path",
+    "shortcut",
+  ],
+  component: lazyWithRecovery(() => import("./fs-link")),
+  widthMode: "default",
 });
 
 export const tools: ToolDefinition[] = [
@@ -315,6 +317,7 @@ export const tools: ToolDefinition[] = [
   ipInfo,
   imageCompressor,
   svgPreview,
+  fsLink,
 ];
 
 export const toolsMap = Object.fromEntries(

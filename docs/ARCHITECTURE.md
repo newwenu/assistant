@@ -737,47 +737,37 @@ assistant/
 
 ### I7 — Context Compaction
 
-**交付：** 单会话内上下文自动压缩，长对话不溢出
+**交付：** 对话满即终止 + 交接摘要 + 新对话建议
 
-当 token 量接近上下文窗口 70-80% 时，异步启动 LLM 摘要替换早期消息，保留最近 N 条完整消息。
+当 token 量达到上下文窗口 80% 时，异步生成结构化交接摘要，标记对话为已满（只读），前端显示横幅 + [复制摘要] + [新建对话] 按钮。
 
 ```rust
-// 参考: OpenBitFun/compression_prefetch.rs
-const PREFETCH_LEAD_TOKENS: usize = 10_000;
-
-fn in_prefetch_window(pressure: usize, input_limit: usize) -> bool {
-    input_limit > PREFETCH_LEAD_TOKENS
-        && pressure >= input_limit - PREFETCH_LEAD_TOKENS
-        && pressure < input_limit
-}
-
-struct CompressionState {
-    last_compression_at: Option<SystemTime>,
-    compression_count: usize,
+fn should_terminate(prompt_tokens: u32, context_window: u32) -> bool {
+    prompt_tokens >= context_window * 80 / 100
 }
 ```
 
-- 触发：`pressure >= input_limit - 10_000`
-- 动作：LLM 摘要早期消息 → 替换为摘要块 + 保留最近 N 条
-- 预取：异步启动，不阻塞当前轮次
+- 触发：`prompt_tokens >= context_window * 80%`（流结束后检查）
+- 动作：生成交接摘要（目标/进展/待办/关键信息）→ 标记 `is_full=1` → 前端锁定对话
+- 摘要：结构化交接文档，用户复制粘贴到新对话后模型可直接继续工作
+- 检索：`search_history` 工具（待 tool-call 基础设施就绪后启用），新对话中模型按需检索旧消息
 
-> **长期记忆（跨会话 facet 提取 + 持久化 + 注入）暂不实现**，后续迭代按需加入。参考方案已验证：OpenHuman `summary_facets.rs` ParsedFacet + memory/tools。
+> **跨对话检索工具依赖 tool-call 执行循环**（当前项目未实现），I7 先实现终止 + 摘要 + 横幅，检索工具在 tool-call 就绪后接入。
 
 **参考：**
 
 | 功能点 | 参考项目 | 参考文件 | 借鉴内容 |
 |--------|---------|---------|---------|
-| 预取阈值 | OpenBitFun | compression_prefetch.rs L10-15 | `PREFETCH_LEAD_TOKENS=10000`，`in_prefetch_window`：pressure 在 `[limit-10k, limit)` 区间时触发 |
-| 异步预取 | OpenBitFun | compression_prefetch.rs L17-50 | `CompressionPrefetch::spawn`：tokio 异步任务 + CancellationToken，`claim` 非阻塞检查结果（Ready/Discarded/Waiting） |
-| 压缩状态 | OpenBitFun | session.rs L84-93 | `CompressionState { last_compression_at, compression_count }`，`increment_compression_count` 每次压缩后更新 |
-| 会话配置 | OpenBitFun | session.rs L179,193 | `auto_compact: bool`（默认 true）+ `enable_context_compression: bool`（默认 true），可按会话开关 |
+| 阈值判断 | OpenBitFun | compression_prefetch.rs L10-15 | `in_prefetch_window` 阈值公式（简化为百分比阈值） |
+| 压缩状态 | OpenBitFun | session.rs L84-93 | `CompressionState { last_compression_at, compression_count }` |
+| 会话配置 | OpenBitFun | session.rs L179,193 | `auto_compact: bool` 开关 |
 
-- [ ] Context Compaction（prefetch 阈值触发 + LLM 摘要替换）
-- [ ] CompressionState 持久化（SQLite compression_state 表）
-- [ ] 压缩状态 UI（对话中显示压缩次数）
-- [ ] 自动更新（Tauri Updater）
+- [ ] 对话满终止（阈值触发 + 交接摘要生成 + is_full 标记）
+- [ ] CompressionState 持久化（SQLite compression_state 表 + summary 列）
+- [ ] 对话满 UI（横幅 + 复制摘要 + 新建对话按钮 + 输入区禁用 + 侧边栏 `<LockOutlined />` 图标）
+- [ ] 跨对话检索工具（`search_history`，待 tool-call 就绪）
 
-**验收：** 长对话 token 接近窗口时自动压缩，对话不中断，压缩后 AI 可继续正常回复
+**验收：** 长对话 token 接近窗口 80% 时自动终止，摘要可复制粘贴到新对话，对话只读
 
 ---
 

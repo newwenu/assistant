@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    assistant_app::crash_dump::install();
+
     #[cfg(target_os = "windows")]
     {
         std::env::set_var(

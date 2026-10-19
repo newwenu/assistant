@@ -1,7 +1,9 @@
 import { useCallback } from "react";
 import { flushSync } from "react-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { orbService } from "../services/orbService";
 import { useOrbStore } from "../stores/orbStore";
+import { useSettingsStore } from "../stores/settingsStore";
+import { createLogger } from "@/services/logger";
 import {
   ORB_COLLAPSED_SIZE,
   ORB_EXPANDED_WIDTH,
@@ -15,9 +17,7 @@ import {
   physicalSizeToLogical,
 } from "./OrbCoord";
 
-const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
-const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
-const NEEDS_CLICK_THROUGH_TOGGLE = IS_MACOS || IS_WINDOWS;
+const log = createLogger("OrbExpand");
 
 function waitForPaint(): Promise<void> {
   return new Promise((resolve) => {
@@ -57,7 +57,6 @@ export function useOrbExpand(): UseOrbExpandReturn {
   const storeCollapse = useOrbStore((s) => s.collapse);
   const setExpandDirection = useOrbStore((s) => s.setExpandDirection);
   const setExpandVertical = useOrbStore((s) => s.setExpandVertical);
-  const setClickThrough = useOrbStore((s) => s.setClickThrough);
   const setBallVisible = useOrbStore((s) => s.setBallVisible);
 
   const expand = useCallback(async () => {
@@ -71,13 +70,11 @@ export function useOrbExpand(): UseOrbExpandReturn {
       const ballCenterX = ballX + ORB_COLLAPSED_SIZE / 2;
       const ballCenterY = ballY + ORB_COLLAPSED_SIZE / 2;
 
-      const { screen } = await invoke<{
-        screen: { x: number; y: number; width: number; height: number };
-      }>("get_screen_size", {
-        centerX: ballCenterX,
-        centerY: ballCenterY,
-        scaleFactor: window.devicePixelRatio || 1,
-      });
+      const { screen } = await orbService.getScreenSize(
+        ballCenterX,
+        ballCenterY,
+        window.devicePixelRatio || 1,
+      );
       const screenPos = physicalToLogical(screen.x, screen.y);
       const screenSize = physicalSizeToLogical(screen.width, screen.height);
       const currentDirection = useOrbStore.getState().expandDirection;
@@ -143,39 +140,58 @@ export function useOrbExpand(): UseOrbExpandReturn {
 
       setExpandDirection(direction);
       setExpandVertical(vertical);
-    } catch {
+    } catch (e) {
+      log.warn("Screen size detection failed, using defaults", e);
       setExpandDirection("right");
       setExpandVertical("down");
     }
 
     flushSync(() => setBallVisible(false));
-    await waitForPaint();
-    await invoke("expand_orb_panel", { horizontal: direction, vertical });
-    await storeExpand();
-    if (NEEDS_CLICK_THROUGH_TOGGLE) {
-      await invoke("set_orb_click_through", { enabled: false });
-      setClickThrough(false);
+    try {
+      await waitForPaint();
+      await orbService.expandOrbPanel(direction, vertical);
+      storeExpand();
+      const orbConf = useSettingsStore.getState().orbConf;
+      if (orbConf?.clickThrough) {
+        await orbService.setOrbClickThrough(false);
+      }
+    } catch (e) {
+      log.error("expand invoke failed", e);
     }
-  }, [
-    storeExpand,
-    setExpandDirection,
-    setExpandVertical,
-    setClickThrough,
-    setBallVisible,
-  ]);
+  }, [storeExpand, setExpandDirection, setExpandVertical, setBallVisible]);
 
   const collapse = useCallback(async () => {
     const direction = useOrbStore.getState().expandDirection;
     const vertical = useOrbStore.getState().expandVertical;
-    await storeCollapse();
-    await waitForPanelTransition();
-    await invoke("collapse_orb_panel", { horizontal: direction, vertical });
-    setBallVisible(true);
-    if (NEEDS_CLICK_THROUGH_TOGGLE) {
-      await invoke("set_orb_click_through", { enabled: true });
-      setClickThrough(true);
+    try {
+      storeCollapse();
+      await waitForPanelTransition();
+      await orbService.collapseOrbPanel(direction, vertical);
+      setBallVisible(true);
+      const orbConf = useSettingsStore.getState().orbConf;
+      if (orbConf?.clickThrough) {
+        await orbService.setOrbClickThrough(true);
+      }
+    } catch (e) {
+      log.error("collapse invoke failed", e);
     }
-  }, [storeCollapse, setClickThrough, setBallVisible]);
+  }, [storeCollapse, setBallVisible]);
 
   return { isExpanded, expand, collapse };
+}
+
+export async function collapseOrbOnInit(): Promise<void> {
+  const { expandDirection, expandVertical } = useOrbStore.getState();
+  try {
+    await orbService.collapseOrbPanel(expandDirection, expandVertical);
+    useOrbStore.getState().collapse();
+    useOrbStore.getState().setBallVisible(true);
+    await useSettingsStore.getState().loadOrbConf();
+    const orbConf = useSettingsStore.getState().orbConf;
+    if (orbConf?.clickThrough) {
+      await orbService.setOrbClickThrough(true);
+    }
+  } catch (e) {
+    log.error("collapseOrbOnInit failed", e);
+  }
 }

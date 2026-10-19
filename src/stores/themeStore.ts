@@ -1,8 +1,12 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { dispatchThemeChanged } from "../settings/settingsDispatcher";
+import { dispatchThemeChanged } from "../settings/core/settingsDispatcher";
+import { settingService } from "../services/settingService";
+import { createLogger } from "@/services/logger";
+import { UiEvent, type ThemeChangedPayload } from "@/types/events";
+
+const log = createLogger("themeStore");
 
 type ThemeMode = "system" | "light" | "dark";
 
@@ -16,8 +20,6 @@ interface ThemeState {
 
 const SYSTEM_THEME_CYCLE: ThemeMode[] = ["system", "light", "dark"];
 
-const THEME_EVENT = "theme-changed";
-
 function resolveTheme(mode: ThemeMode, systemTheme: string): "light" | "dark" {
   return mode === "system"
     ? (systemTheme as "light" | "dark") || "light"
@@ -29,7 +31,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   resolved: "light",
 
   setMode: (mode: ThemeMode) => {
-    dispatchThemeChanged(mode).catch(console.error);
+    dispatchThemeChanged(mode).catch((e) =>
+      log.warn("dispatchThemeChanged failed", e),
+    );
   },
 
   cycleMode: () => {
@@ -43,7 +47,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
   init: async () => {
     try {
-      const conf = await invoke<{ theme: string }>("get_app_conf");
+      const conf = await settingService.getAppConf();
       const mode = (
         ["system", "light", "dark"].includes(conf.theme) ? conf.theme : "system"
       ) as ThemeMode;
@@ -61,13 +65,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         }
       });
 
-      await listen<{ resolved: "light" | "dark" }>(
-        THEME_EVENT,
-        ({ payload }) => {
-          set({ resolved: payload.resolved });
-        },
-      );
-    } catch {
+      await listen<ThemeChangedPayload>(UiEvent.ThemeChanged, ({ payload }) => {
+        set({ resolved: payload.resolved });
+      });
+    } catch (e) {
+      log.warn("Theme init failed, using defaults", e);
       set({ mode: "system", resolved: "light" });
     }
   },

@@ -1,8 +1,9 @@
 // 参考: ChatGPT/src-tauri/src/main.rs — Builder 链式配置 + setup + invoke_handler
 // 参考: BongoCat/crates/bongocat-app/src/lib.rs — 模块化组织
 
-mod chat_tasks;
 mod cmd;
+pub mod crash_dump;
+pub mod protocol;
 mod setup;
 mod tray;
 mod window;
@@ -10,7 +11,8 @@ mod window;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
-use tauri::Emitter;
+
+use crate::protocol::events::{emit_broadcast, event_name};
 
 static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
 
@@ -22,7 +24,7 @@ pub fn request_exit() {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_sql::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             window::show_or_create_main(app);
@@ -36,11 +38,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             cmd::get_mouse_position,
             cmd::get_app_conf,
-            cmd::set_app_conf,
             cmd::get_orb_conf,
-            cmd::set_orb_conf,
+            cmd::get_mascot_conf,
+            cmd::patch_conf,
             cmd::set_theme,
             cmd::emit_theme_changed,
+            cmd::set_locale,
             cmd::toggle_orb_visibility,
             cmd::set_orb_click_through,
             cmd::get_screen_size,
@@ -68,7 +71,9 @@ pub fn run() {
             cmd::send_chat_message,
             cmd::cancel_chat,
             cmd::get_conversation_paginated,
+            cmd::get_conversation_all_messages,
             cmd::delete_message_persist,
+            cmd::get_message_subtree_size,
             cmd::search_conversations,
             cmd::export_conversation,
             cmd::record_tool_usage,
@@ -80,21 +85,30 @@ pub fn run() {
             cmd::duplicate_conversation,
             cmd::batch_delete_conversations,
             cmd::purge_conversations,
-            cmd::edit_message,
-            cmd::regenerate_message,
+            cmd::create_branch,
+            cmd::switch_branch,
+            cmd::get_message_siblings,
+            cmd::fork_to_new_conversation,
+            cmd::increment_generation,
             cmd::reload_shortcuts,
             cmd::get_app_version,
             cmd::get_rustc_version,
             cmd::set_launch_at_login,
+            cmd::open_main_window_and_navigate,
             cmd::list_agent_modes,
             cmd::save_agent_mode,
             cmd::delete_agent_mode,
             cmd::reset_builtin_mode,
             cmd::get_conversation_token_usage,
+            cmd::install_mascot_asset,
+            cmd::uninstall_mascot_asset,
+            cmd::manual_compact_conversation,
+            cmd::unlock_conversation,
+            cmd::os_tool_exec,
         ])
         .on_menu_event(|app, event| match event.id.as_ref() {
             "orb_new_chat" => {
-                let _ = app.emit("orb-new-conversation", ());
+                emit_broadcast(app, event_name::ORB_NEW_CONVERSATION, ());
             }
             "orb_open_main" => {
                 let _ = window::show_or_create(app, WINDOW_MAIN);
@@ -118,7 +132,8 @@ pub fn run() {
             }
             tauri::WindowEvent::Focused(false) => {
                 if window.label() == WINDOW_ORB {
-                    let _ = window.emit("orb-blur", ());
+                    use tauri::Emitter;
+                    let _ = window.emit(event_name::ORB_BLUR, ());
                 }
             }
             _ => {}

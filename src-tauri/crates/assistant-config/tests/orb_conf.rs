@@ -24,7 +24,7 @@ fn new_returns_valid_and_matches_default() {
 }
 
 #[test]
-fn validate_scale_bounds() {
+fn validate_bounds_boundary_values() {
     let mut conf = OrbConf::new();
     conf.scale_percent = 9;
     assert!(conf.validate().is_err());
@@ -34,40 +34,25 @@ fn validate_scale_bounds() {
     assert!(conf.validate().is_ok());
     conf.scale_percent = 301;
     assert!(conf.validate().is_err());
-}
 
-#[test]
-fn validate_opacity_bounds() {
     let mut conf = OrbConf::new();
     conf.opacity_percent = 9;
     assert!(conf.validate().is_err());
     conf.opacity_percent = 10;
     assert!(conf.validate().is_ok());
-    conf.opacity_percent = 100;
-    assert!(conf.validate().is_ok());
     conf.opacity_percent = 101;
     assert!(conf.validate().is_err());
-}
 
-#[test]
-fn validate_hover_delay_bounds() {
     let mut conf = OrbConf::new();
-    conf.hover_delay_ms = 0;
-    assert!(conf.validate().is_ok());
-    conf.hover_delay_ms = 5000;
-    assert!(conf.validate().is_ok());
     conf.hover_delay_ms = 5001;
     assert!(conf.validate().is_err());
-}
+    conf.hover_delay_ms = 5000;
+    assert!(conf.validate().is_ok());
 
-#[test]
-fn validate_idle_opacity_bounds() {
     let mut conf = OrbConf::new();
     conf.idle_opacity_percent = 9;
     assert!(conf.validate().is_err());
     conf.idle_opacity_percent = 10;
-    assert!(conf.validate().is_ok());
-    conf.idle_opacity_percent = 100;
     assert!(conf.validate().is_ok());
     conf.idle_opacity_percent = 101;
     assert!(conf.validate().is_err());
@@ -163,4 +148,87 @@ fn load_from_recovers_from_temp_file() {
     let loaded = OrbConf::load_from(&path).unwrap();
     assert_eq!(loaded.scale_percent, 200);
     assert!(!temp.exists());
+}
+
+#[test]
+fn amend_single_field() {
+    let conf = OrbConf::new();
+    let patch = serde_json::json!({ "scale_percent": 150 });
+    let merged = conf.amend(patch).unwrap();
+    assert_eq!(merged.scale_percent, 150);
+    assert_eq!(merged.opacity_percent, 100);
+    assert!(!merged.click_through);
+}
+
+#[test]
+fn amend_preserves_unpatched_fields() {
+    let mut conf = OrbConf::new();
+    conf.opacity_percent = 50;
+    conf.position_x = Some(100);
+    let patch = serde_json::json!({ "click_through": true });
+    let merged = conf.amend(patch).unwrap();
+    assert!(merged.click_through);
+    assert_eq!(merged.opacity_percent, 50);
+    assert_eq!(merged.position_x, Some(100));
+}
+
+#[test]
+fn amend_type_mismatch_returns_error() {
+    let conf = OrbConf::new();
+    let patch = serde_json::json!({ "scale_percent": "not_a_number" });
+    assert!(conf.amend(patch).is_err());
+}
+
+#[cfg(feature = "slow-tests")]
+mod property {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn validate_scale_bounds(scale in 0u16..400) {
+            let mut conf = OrbConf::new();
+            conf.scale_percent = scale;
+            assert_eq!(conf.validate().is_ok(), (10..=300).contains(&scale));
+        }
+
+        #[test]
+        fn validate_opacity_bounds(opacity in 0u8..120) {
+            let mut conf = OrbConf::new();
+            conf.opacity_percent = opacity;
+            assert_eq!(conf.validate().is_ok(), (10..=100).contains(&opacity));
+        }
+
+        #[test]
+        fn validate_hover_delay_bounds(delay in 0u64..6000) {
+            let mut conf = OrbConf::new();
+            conf.hover_delay_ms = delay;
+            assert_eq!(conf.validate().is_ok(), delay <= 5000);
+        }
+
+        #[test]
+        fn validate_idle_opacity_bounds(idle_opacity in 0u8..120) {
+            let mut conf = OrbConf::new();
+            conf.idle_opacity_percent = idle_opacity;
+            assert_eq!(conf.validate().is_ok(), (10..=100).contains(&idle_opacity));
+        }
+
+        #[test]
+        fn serde_roundtrip_preserves_validate(
+            scale in 10u16..300,
+            opacity in 10u8..100,
+            delay in 0u64..5000,
+            idle_opacity in 10u8..100,
+        ) {
+            let mut conf = OrbConf::new();
+            conf.scale_percent = scale;
+            conf.opacity_percent = opacity;
+            conf.hover_delay_ms = delay;
+            conf.idle_opacity_percent = idle_opacity;
+            let json = serde_json::to_string(&conf).unwrap();
+            let decoded: OrbConf = serde_json::from_str(&json).unwrap();
+            assert!(decoded.validate().is_ok());
+            assert_eq!(conf.validate().is_ok(), decoded.validate().is_ok());
+        }
+    }
 }

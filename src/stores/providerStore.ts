@@ -1,147 +1,94 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { providerService } from "../services/providerService";
+import { createLogger } from "@/services/logger";
 import {
   dispatchProviderSaved,
   dispatchProviderDeleted,
-} from "../settings/settingsDispatcher";
+} from "../settings/core/settingsDispatcher";
+import {
+  getAllProviderFormats,
+  getProviderFormat,
+  providerFormatNeedsApiKey,
+} from "../settings/core/provider/providerFormatRegistry";
+import {
+  getProviderPreset,
+  getAllProviderPresets,
+  getApiFormatByType as getApiFormatByTypeFromRegistry,
+} from "../settings/core/provider/providerPresetRegistry";
+import "../settings/core/provider/providerDefinitions";
+export type {
+  ModelConfig,
+  Provider,
+  ProviderInput,
+  ApiFormat,
+  ApiFormatInfo,
+  ProviderPreset,
+} from "@/settings/provider/types";
+import type {
+  ModelConfig,
+  Provider,
+  ProviderInput,
+  ApiFormat,
+  ApiFormatInfo,
+  ProviderPreset,
+} from "@/settings/provider/types";
 
-export interface ModelConfig {
-  id: string;
-  name: string;
-  owned_by: string;
-  context_window?: number;
-}
-
-export interface Provider {
-  id: string;
-  name: string;
-  type: string;
-  base_url: string;
-  api_key_masked: string;
-  models: string;
-  default_model: string;
-  updated_at: number;
-}
-
-export type ApiFormat = "openai" | "anthropic" | "local";
-
-export interface ApiFormatInfo {
-  format: ApiFormat;
-  label: string;
-  description: string;
-  needsApiKey: boolean;
-  keyPlaceholder?: string;
-}
-
-export const API_FORMATS: ApiFormatInfo[] = [
-  {
-    format: "openai",
-    label: "OpenAI 兼容",
-    description: "Chat Completions /v1 端点",
-    needsApiKey: true,
-    keyPlaceholder: "sk-...",
-  },
-  {
-    format: "anthropic",
-    label: "Anthropic 兼容",
-    description: "Messages /v1 端点",
-    needsApiKey: true,
-    keyPlaceholder: "sk-ant-...",
-  },
-  {
-    format: "local",
-    label: "本地运行时",
-    description: "Ollama / LM Studio 等本地服务",
-    needsApiKey: false,
-  },
-];
+export const API_FORMATS: ApiFormatInfo[] = getAllProviderFormats().map(
+  (f) => ({
+    format: f.id as ApiFormat,
+    label: f.label,
+    description: f.description,
+    needsApiKey: f.needsApiKey,
+    keyPlaceholder: f.keyPlaceholder,
+  }),
+);
 
 export const API_FORMAT_MAP = new Map<ApiFormat, ApiFormatInfo>(
   API_FORMATS.map((f) => [f.format, f]),
 );
 
-export interface ProviderPreset {
-  slug: string;
-  label: string;
-  format: ApiFormat;
-  defaultBaseUrl: string;
-}
-
-export const PROVIDER_PRESETS: ProviderPreset[] = [
-  {
-    slug: "openai",
-    label: "OpenAI",
-    format: "openai",
-    defaultBaseUrl: "https://api.openai.com/v1",
-  },
-  {
-    slug: "deepseek",
-    label: "DeepSeek",
-    format: "openai",
-    defaultBaseUrl: "https://api.deepseek.com/v1",
-  },
-  {
-    slug: "groq",
-    label: "Groq",
-    format: "openai",
-    defaultBaseUrl: "https://api.groq.com/openai/v1",
-  },
-  {
-    slug: "openrouter",
-    label: "OpenRouter",
-    format: "openai",
-    defaultBaseUrl: "https://openrouter.ai/api/v1",
-  },
-  {
-    slug: "mistral",
-    label: "Mistral",
-    format: "openai",
-    defaultBaseUrl: "https://api.mistral.ai/v1",
-  },
-  {
-    slug: "zhipu",
-    label: "智谱 GLM",
-    format: "openai",
-    defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
-  },
-  {
-    slug: "qwen",
-    label: "通义千问",
-    format: "openai",
-    defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  },
-  {
-    slug: "anthropic",
-    label: "Anthropic",
-    format: "anthropic",
-    defaultBaseUrl: "https://api.anthropic.com/v1",
-  },
-  {
-    slug: "ollama",
-    label: "Ollama",
-    format: "local",
-    defaultBaseUrl: "http://localhost:11434/v1",
-  },
-  {
-    slug: "lmstudio",
-    label: "LM Studio",
-    format: "local",
-    defaultBaseUrl: "http://localhost:1234/v1",
-  },
-];
+export const PROVIDER_PRESETS: ProviderPreset[] = getAllProviderPresets().map(
+  (p) => ({
+    slug: p.slug,
+    label: p.label,
+    format: p.format as ApiFormat,
+    defaultBaseUrl: p.defaultBaseUrl,
+  }),
+);
 
 export const PRESET_MAP = new Map<string, ProviderPreset>(
   PROVIDER_PRESETS.map((p) => [p.slug, p]),
 );
 
 export function getPresetByType(type: string): ProviderPreset | undefined {
-  return PRESET_MAP.get(type);
+  const def = getProviderPreset(type);
+  if (!def) return undefined;
+  return {
+    slug: def.slug,
+    label: def.label,
+    format: def.format as ApiFormat,
+    defaultBaseUrl: def.defaultBaseUrl,
+  };
 }
 
 export function getApiFormatByType(type: string): ApiFormat {
-  const preset = PRESET_MAP.get(type);
-  if (preset) return preset.format;
-  return "openai";
+  return getApiFormatByTypeFromRegistry(type) as ApiFormat;
+}
+
+export function getFormatInfo(format: ApiFormat): ApiFormatInfo | undefined {
+  const def = getProviderFormat(format);
+  if (!def) return undefined;
+  return {
+    format: def.id as ApiFormat,
+    label: def.label,
+    description: def.description,
+    needsApiKey: def.needsApiKey,
+    keyPlaceholder: def.keyPlaceholder,
+  };
+}
+
+export function formatNeedsApiKey(format: string): boolean {
+  return providerFormatNeedsApiKey(format);
 }
 
 interface ProviderState {
@@ -149,10 +96,12 @@ interface ProviderState {
   loading: boolean;
 
   loadProviders: () => Promise<void>;
-  saveProvider: (provider: Record<string, unknown>) => Promise<void>;
+  saveProvider: (provider: ProviderInput) => Promise<void>;
   deleteProvider: (id: string) => Promise<void>;
   fetchModels: (providerId: string) => Promise<ModelConfig[]>;
 }
+
+const log = createLogger("providerStore");
 
 export const useProviderStore = create<ProviderState>((set) => ({
   providers: [],
@@ -161,15 +110,15 @@ export const useProviderStore = create<ProviderState>((set) => ({
   loadProviders: async () => {
     set({ loading: true });
     try {
-      const result = await invoke("list_providers");
-      set({ providers: (result as Provider[]) || [], loading: false });
+      const providers = await providerService.listProviders();
+      set({ providers: providers || [], loading: false });
     } catch (e) {
-      console.error("Failed to load providers:", e);
+      log.error("Failed to load providers", e);
       set({ loading: false });
     }
   },
 
-  saveProvider: async (provider: Record<string, unknown>) => {
+  saveProvider: async (provider: ProviderInput) => {
     await dispatchProviderSaved(provider);
   },
 
@@ -178,7 +127,7 @@ export const useProviderStore = create<ProviderState>((set) => ({
   },
 
   fetchModels: async (providerId: string) => {
-    const result = await invoke("list_models_cmd", { providerId });
-    return (result as ModelConfig[]) || [];
+    const models = await providerService.listModels(providerId);
+    return models || [];
   },
 }));

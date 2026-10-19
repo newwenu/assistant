@@ -1,6 +1,7 @@
 import { Button, Tooltip } from "antd";
 import { DesktopOutlined, SunOutlined, MoonOutlined } from "@ant-design/icons";
 import { useThemeStore } from "@/stores/themeStore";
+import { useTranslation } from "react-i18next";
 
 const THEME_ICONS = {
   system: DesktopOutlined,
@@ -8,10 +9,10 @@ const THEME_ICONS = {
   dark: MoonOutlined,
 } as const;
 
-const THEME_LABELS = {
-  system: "跟随系统",
-  light: "亮色模式",
-  dark: "暗色模式",
+const THEME_KEYS = {
+  system: "common.theme.system",
+  light: "common.theme.light",
+  dark: "common.theme.dark",
 } as const;
 
 const NEXT_THEME = {
@@ -23,12 +24,16 @@ const NEXT_THEME = {
 export const ThemeToggle: React.FC = () => {
   const mode = useThemeStore((s) => s.mode);
   const cycleMode = useThemeStore((s) => s.cycleMode);
+  const { t } = useTranslation();
 
   const Icon = THEME_ICONS[mode];
-  const nextLabel = THEME_LABELS[NEXT_THEME[mode]];
+  const nextLabel = t(THEME_KEYS[NEXT_THEME[mode]]);
 
   return (
-    <Tooltip title={`切换到${nextLabel}`} mouseEnterDelay={0.5}>
+    <Tooltip
+      title={t("common.theme.switch_to", { label: nextLabel })}
+      mouseEnterDelay={0.5}
+    >
       <Button
         type="text"
         size="small"

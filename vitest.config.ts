@@ -1,8 +1,14 @@
 import { defineConfig } from "vitest/config";
+import { resolve } from "node:path";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@": resolve(import.meta.dirname, "src"),
+    },
+  },
   test: {
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-    exclude: ["src-tauri/**", "references/**", "node_modules/**"],
+    include: ["src/**/*.test.{ts,tsx}"],
+    setupFiles: ["src/testSetup.ts"],
   },
 });

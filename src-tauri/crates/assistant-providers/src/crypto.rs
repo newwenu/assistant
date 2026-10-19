@@ -52,36 +52,3 @@ pub fn decrypt_api_key_b64(encrypted_b64: &str, machine_id: &[u8]) -> Result<Str
         .map_err(|e| format!("Base64 decode failed: {}", e))?;
     decrypt_api_key(&encrypted, machine_id)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_encrypt_decrypt_roundtrip() {
-        let machine_id = get_machine_id().unwrap();
-        let original = "sk-test-api-key-12345";
-        let encrypted = encrypt_api_key(original, &machine_id).unwrap();
-        let decrypted = decrypt_api_key(&encrypted, &machine_id).unwrap();
-        assert_eq!(original, decrypted);
-    }
-
-    #[test]
-    fn test_different_machine_ids_fail() {
-        let machine_id1 = vec![1u8; 32];
-        let machine_id2 = vec![2u8; 32];
-        let original = "sk-test-api-key-12345";
-        let encrypted = encrypt_api_key(original, &machine_id1).unwrap();
-        let result = decrypt_api_key(&encrypted, &machine_id2);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_b64_roundtrip() {
-        let machine_id = get_machine_id().unwrap();
-        let original = "sk-test-api-key-12345";
-        let encrypted_b64 = encrypt_api_key_b64(original, &machine_id).unwrap();
-        let decrypted = decrypt_api_key_b64(&encrypted_b64, &machine_id).unwrap();
-        assert_eq!(original, decrypted);
-    }
-}

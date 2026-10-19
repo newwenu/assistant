@@ -15,6 +15,7 @@ log = { workspace = true }
 rusqlite = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+assistant-i18n = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
