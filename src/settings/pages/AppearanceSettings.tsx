@@ -5,7 +5,7 @@ import { OrbBallSection } from "../shared/sections/OrbBallSection";
 import { OrbPanelSection } from "../shared/sections/OrbPanelSection";
 import { SettingsSection } from "../shared/layout/SettingsSection";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
-import { SettingsGroup } from "../shared/layout/SettingsGroup";
+import { SettingsGroup } from "../shared/sections/SettingsGroup";
 import { THEME_SETTING } from "../core/field/fieldDefinitions";
 
 export const AppearanceSettings: React.FC = () => {

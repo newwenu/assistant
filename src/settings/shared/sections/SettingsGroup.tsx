@@ -13,7 +13,7 @@ import {
   CONF_KEY_MAP,
 } from "../../core/field/fieldRegistry";
 import { runSideEffects } from "../../core/sideEffectRegistry";
-import { SettingField } from "./SettingField";
+import { SettingField } from "../renderers/SettingField";
 import { toConfRecord } from "../../core/types/confUtils";
 import { optimisticConfUpdate } from "../../core/optimisticUpdate";
 import { useConfPatchHandlers } from "../../core/useConfPatchHandlers";

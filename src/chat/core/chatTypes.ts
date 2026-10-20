@@ -35,7 +35,7 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   isFull: boolean;
-  activeBranchId?: string | null;
+  activeBranchId: string | null;
 }
 
 export interface TokenUsage {
@@ -126,9 +126,9 @@ export enum ChatEvent {
   Delta = "chat-delta",
   MessagesChanged = "chat-messages-changed",
   ConversationListChanged = "conversation-list-changed",
-  ConversationTerminated = "conversation_terminated",
-  ConversationCompactFailed = "conversation_compact_failed",
-  ConversationUnlocked = "conversation_unlocked",
+  ConversationTerminated = "conversation-terminated",
+  ConversationCompactFailed = "conversation-compact-failed",
+  ConversationUnlocked = "conversation-unlocked",
 }
 
 export type MessageChangeKind =

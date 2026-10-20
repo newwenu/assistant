@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Form } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { SettingsGroup } from "../shared/layout/SettingsGroup";
+import { SettingsGroup } from "../shared/sections/SettingsGroup";
 import { SettingsSection } from "../shared/layout/SettingsSection";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
 import { APP_SETTINGS, COMPACT_SETTINGS } from "../core/field/fieldDefinitions";

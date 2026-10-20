@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { Form } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { SettingsGroup } from "../layout/SettingsGroup";
+import { SettingsGroup } from "./SettingsGroup";
 import {
   ORB_BALL_SETTINGS,
   MASCOT_RENDERER_SETTING,

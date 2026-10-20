@@ -7,10 +7,20 @@ import { SETTINGS_PAGE_MAP, isSettingsPageId } from "../../core/pageRegistry";
 
 interface SettingsPageShellProps {
   children: React.ReactNode;
+  extra?: React.ReactNode;
+  wide?: boolean | number;
+}
+
+function resolveWideStyle(wide: boolean | number): React.CSSProperties {
+  if (wide === true) return { padding: 24 };
+  if (wide === false) return { maxWidth: 700, margin: "0 auto", padding: 24 };
+  return { maxWidth: wide, margin: "0 auto", padding: 24 };
 }
 
 export const SettingsPageShell: React.FC<SettingsPageShellProps> = ({
   children,
+  extra,
+  wide = false,
 }) => {
   const navigate = useNavigate();
   const { pageId } = useParams<{ pageId: string }>();
@@ -21,10 +31,7 @@ export const SettingsPageShell: React.FC<SettingsPageShellProps> = ({
   const title = manifest ? translateKey(manifest.label) : undefined;
 
   return (
-    <div
-      className="settings-page-shell"
-      style={{ maxWidth: 700, margin: "0 auto", padding: 24 }}
-    >
+    <div className="settings-page-shell" style={resolveWideStyle(wide)}>
       {manifest && (
         <>
           <div
@@ -32,22 +39,26 @@ export const SettingsPageShell: React.FC<SettingsPageShellProps> = ({
             style={{
               display: "flex",
               alignItems: "center",
+              justifyContent: "space-between",
               gap: 8,
               marginBottom: 16,
             }}
           >
-            <Button
-              type="text"
-              size="small"
-              icon={<ArrowLeftOutlined />}
-              onClick={() => {
-                void navigate("/settings/overview");
-              }}
-              style={{ color: "var(--color-text-secondary)" }}
-            />
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              {title}
-            </Typography.Title>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Button
+                type="text"
+                size="small"
+                icon={<ArrowLeftOutlined />}
+                onClick={() => {
+                  void navigate("/settings/overview");
+                }}
+                style={{ color: "var(--color-text-secondary)" }}
+              />
+              <Typography.Title level={4} style={{ margin: 0 }}>
+                {title}
+              </Typography.Title>
+            </div>
+            {extra}
           </div>
           <Divider style={{ margin: "0 0 16px" }} />
         </>

@@ -15,11 +15,13 @@ import { translateKey } from "@/i18n";
 import { useAgentModeStore } from "@/stores/agentModeStore";
 import type { AgentMode } from "@/settings/agentMode/types";
 import type { FieldSchema } from "../core/types/fieldSchema";
-import { SettingField } from "../shared/layout/SettingField";
+import { SettingField } from "../shared/renderers/SettingField";
+import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
 import {
-  EntityListPageShell,
-  type EntityListSectionConfig,
-} from "../shared/layout/EntityListPageShell";
+  EntityListContent,
+  ListHeaderActions,
+  type SectionConfig,
+} from "../shared/EntityListContent";
 import {
   getAllAgentKinds,
   getAgentKindLabelKey,
@@ -341,7 +343,7 @@ export const AgentModeSettings: React.FC = () => {
     </div>
   );
 
-  const sections: EntityListSectionConfig<AgentMode>[] = [
+  const sections: SectionConfig<AgentMode>[] = [
     {
       label: t("settings.agent_mode.section.builtin"),
       items: filteredBuiltin,
@@ -358,16 +360,22 @@ export const AgentModeSettings: React.FC = () => {
     <>
       {messageContextHolder}
       {modalContextHolder}
-      <EntityListPageShell<AgentMode>
-        title={t("settings.agent_mode.title")}
-        items={store.modes}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        addLabel={t("settings.agent_mode.add")}
-        onAdd={handleAdd}
-        emptyDescription={t("settings.agent_mode.empty")}
-        sections={sections}
+      <SettingsPageShell
+        wide
+        extra={
+          <ListHeaderActions
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            addLabel={t("settings.agent_mode.add")}
+            onAdd={handleAdd}
+          />
+        }
       >
+        <EntityListContent
+          items={store.modes}
+          sections={sections}
+          emptyDescription={t("settings.agent_mode.empty")}
+        />
         <Drawer
           title={
             editingMode
@@ -435,7 +443,7 @@ export const AgentModeSettings: React.FC = () => {
             ))}
           </Form>
         </Drawer>
-      </EntityListPageShell>
+      </SettingsPageShell>
     </>
   );
 };

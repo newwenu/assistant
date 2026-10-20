@@ -393,9 +393,14 @@ Zustand store 部分仅占约 30 行。
 
 **✅ 已完成**：chat.rs 从 609 行 → ~340 行。提取结果：
 
-- `cmd/chat_utils.rs`（~50 行）— 4 个纯函数（`resolve_context_window`、`estimate_tokens`、`resolve_final_tokens`、`resolve_partial_tokens`）
+- `cmd/chat_utils.rs`（~38 行）— 3 个胶水函数（`resolve_context_window` 委托 `base::resolve_context_window_from_stored`、`resolve_final_tokens`、`resolve_partial_tokens`）
 - `cmd/chat_stream.rs`（~210 行）— 流式基础设施（`StreamEmitCtx`、`emit_delta`、`emit_stream_error`、`DbWriteMsg`、`DbSender`、`save_partial_on_error`、`spawn_db_writer`、`spawn_finish_listener`、`spawn_compaction_listener`）
 - `chat.rs` 仅保留 `send_chat_message` + `cancel_chat` + 从新模块 import
+
+进一步优化（见 3.2.4）：
+- `estimate_tokens` 上位到 `assistant-agent::chat_runtime`（纯领域逻辑，不属于胶水层）
+- `resolve_context_window` 核心逻辑上位到 `assistant-providers::base`（统一 DB→API→fallback 优先级链）
+- `chat_utils.rs` 中 `resolve_context_window` 改为薄包装，仅从 `ProviderRow` 取 `models_json` 委托
 
 ---
 
@@ -417,11 +422,15 @@ Zustand store 部分仅占约 30 行。
 
 **✅ 已完成**：conversation.rs 从 962 行 → ~530 行。提取结果：
 
-- `cmd/compaction.rs`（~270 行）— compact 相关逻辑（`manual_compact_conversation` command、`unlock_conversation` command、`execute_compaction`、`save_compaction_partial`、`estimate_compaction_tokens`）
-- `cmd/conversation_utils.rs`（~48 行）— 纯辅助函数（`messages_with_sibling_counts`、`resolve_context_window_for_conversation`）
+- `cmd/compaction.rs`（~270 行）— compact 相关逻辑（`manual_compact_conversation` command、`unlock_conversation` command、`execute_compaction`、`save_compaction_partial`）
+- `cmd/conversation_utils.rs`（~39 行）— 胶水函数（`messages_with_sibling_counts`、`resolve_context_window_for_conversation` 委托 `base::resolve_context_window_from_stored`）
 - `conversation.rs` 仅保留对话 CRUD + 分支操作 + 搜索/导出
 - `cmd/mod.rs` 新增 `mod compaction` + `pub use compaction::*` re-export，`lib.rs` invoke_handler 路径不变
 - `chat.rs` 中 `super::conversation::execute_compaction` → `super::compaction::execute_compaction`，`super::conversation::messages_with_sibling_counts` → `super::conversation_utils::messages_with_sibling_counts`
+
+进一步优化（见 3.2.4）：
+- `estimate_compaction_tokens` 删除，改用 `assistant_agent::chat_runtime::estimate_tokens`（消除与 `chat_utils` 的重复）
+- `resolve_context_window_for_conversation` 中 `models_json` 解析逻辑上位到 `assistant-providers::base::resolve_context_window_from_stored`
 
 ---
 
@@ -460,13 +469,29 @@ Zustand store 部分仅占约 30 行。
 
 ---
 
-#### 3.2.2 `protocol/dto.rs` 单文件过大（~600 行）
+#### 3.2.2 `protocol/dto.rs` 单文件过大（~852 行）
 
 **文件**：`src-tauri/src/protocol/dto.rs`
 
 **事实**：包含 Chat DTOs、Settings DTOs、Config DTOs、Orb DTOs、Branch DTOs 等所有数据传输对象。
 
-**建议**：按领域拆分为 `dto/chat.rs`、`dto/config.rs`、`dto/orb.rs`，`dto/mod.rs` 重新导出。
+**建议**：按领域拆分为 `dto/chat.rs`、`dto/settings.rs`、`dto/config.rs`、`dto/orb.rs`、`dto/branch.rs`，`dto/mod.rs` 重新导出。
+
+**✅ 已完成**：dto.rs（852 行）拆分为 5 个领域子文件 + mod.rs：
+
+- `dto/chat.rs`（~270 行）— 14 个 Chat DTO（ConversationDto、MessageDto、ConversationDetailDto、TokenUsageDto、TokenUsageSummaryDto、RetryNotificationDto、ProviderErrorPayloadDto、ChatDeltaPayloadDto、ChatStreamStartPayloadDto、ConversationTerminatedPayloadDto、ConversationCompactFailedPayloadDto、ConversationUnlockedPayloadDto、ConversationListChangedPayloadDto、ChatRegeneratePayloadDto）+ From impl
+- `dto/settings.rs`（~130 行）— 8 个 Settings DTO（AgentModeDto、AgentModeInputDto、ModelConfigDto、ProviderInputDto、ProviderListDto、SettingProviderChangedPayloadDto、ShortcutWarningPayloadDto、ThemeChangedPayloadDto）
+- `dto/config.rs`（~100 行）— 3 个 Config DTO（AppConfDto、OrbConfDto、MascotConfDto）+ From impl
+- `dto/orb.rs`（~30 行）— 3 个 Orb DTO（MousePositionDto、ScreenSizeDto、ScreenRectDto）
+- `dto/branch.rs`（~40 行）— 3 个 Branch DTO（SiblingInfoDto、ChatMessagesChangedPayloadDto、MaxSiblingsExceededErrorDto），跨领域依赖 `super::chat::MessageDto`
+- `dto/mod.rs` — `pub mod` + `pub use` 重新导出 + 集中 round-trip 测试（13 个）
+
+关键设计决策：
+1. `dto/mod.rs` 通过 `pub use chat::*; pub use settings::*; ...` 重新导出，所有消费方 `crate::protocol::XxxDto` 导入路径不变，**零破坏性**
+2. Branch → Chat 单向依赖（`ChatMessagesChangedPayloadDto.messages: Vec<MessageDto>`），无循环风险
+3. `TokenUsageSummaryDto` 归入 chat.rs（与 `TokenUsageDto` 同族，语义内聚）
+4. Round-trip 测试集中到 `dto/mod.rs`（横切关注点，验证整个 DTO 层 serde 协议一致性）
+5. 修复原测试遗漏：`MessageDto` 补齐 `sibling_index`/`sibling_count` 字段，`ConversationDto` 补齐 `active_branch_id` 字段，`ProviderErrorPayloadDto` 补齐 `http_status`/`provider`/`provider_code` 字段
 
 ---
 
@@ -480,6 +505,55 @@ Zustand store 部分仅占约 30 行。
 
 ---
 
+#### 3.2.4 跨 crate 逻辑上位：`resolve_context_window` 统一优先级链 + `estimate_tokens` 归位
+
+**问题**：拆分后 `cmd/chat_utils.rs` 和 `cmd/conversation_utils.rs` 中存在两个层面的越位：
+
+1. **`estimate_tokens`** 是纯领域逻辑（字符长度→token 估算），不依赖任何框架或跨 crate 类型，却放在 `cmd/` 胶水层。且 `cmd/compaction.rs` 中有完全相同的 `estimate_compaction_tokens`，两处重复。
+
+2. **`resolve_context_window`** 的核心逻辑（从 `models_json` 解析 `ModelConfig` → 查找匹配 → 覆盖硬编码默认值）在 `chat_utils` 和 `conversation_utils` 中各写一遍。而 `assistant-providers` 已有 `resolve_context_window(model_id, api_context)` 用于 discovery 阶段，两者语义不同但核心查表逻辑相同。
+
+**✅ 已完成**：
+
+**A. `resolve_context_window` 升级为三参数统一优先级链**
+
+`assistant-providers::types::config.rs`：
+
+```rust
+// 原：resolve_context_window(model_id, api_context)  — API → fallback
+// 新：resolve_context_window(model_id, stored, api_context)  — DB → API → fallback
+pub fn resolve_context_window(
+    model_id: &str,
+    stored: Option<u32>,      // DB 保存值
+    api_context: Option<u32>, // API 实时值
+) -> u32
+
+// 新增便捷函数：从 models_json 解析 stored 值
+pub fn resolve_context_window_from_stored(model_id: &str, models_json: &str) -> u32
+```
+
+调用方迁移：
+
+| 调用点 | 原调用 | 迁移后 |
+|--------|--------|--------|
+| openai/discovery.rs | `resolve_context_window(&id, api_ctx)` | `resolve_context_window(&id, None, api_ctx)` |
+| gemini/discovery.rs | `resolve_context_window(&id, api_ctx)` | `resolve_context_window(&id, None, api_ctx)` |
+| anthropic/discovery.rs | `resolve_context_window(&id, api_ctx)` | `resolve_context_window(&id, None, api_ctx)` |
+| cmd/chat_utils | 自行解析 `models_json` | `base::resolve_context_window_from_stored(model, &row.models_json)` |
+| cmd/conversation_utils | 自行解析 `models_json` | `base::resolve_context_window_from_stored(model_id, &row.models_json)` |
+
+**B. `estimate_tokens` 归位到 `assistant-agent::chat_runtime`**
+
+`assistant-agent::chat_runtime::estimate_tokens(content: &str) -> Option<i64>` 新增，`cmd/chat_utils.rs` 和 `cmd/compaction.rs` 中的本地重复定义删除，统一调用 `chat_runtime::estimate_tokens`。
+
+效果：
+- 消除 2 处 `estimate_tokens` / `estimate_compaction_tokens` 重复
+- 消除 2 处 `models_json` 解析逻辑重复
+- `resolve_context_window` 一个函数表达完整 `DB → API → fallback` 优先级链
+- 纯领域逻辑回归子 crate，cmd 层仅剩薄包装胶水
+
+---
+
 ## 4 跨前后端一致性问题
 
 ### 4.1 事件名命名不一致
@@ -487,16 +561,22 @@ Zustand store 部分仅占约 30 行。
 **事实**：后端 `event_name` 中：
 
 ```rust
-pub const CONVERSATION_TERMINATED: &str = "conversation_terminated";  // snake_case
-pub const CONVERSATION_UNLOCKED: &str = "conversation_unlocked";      // snake_case
-pub const CONVERSATION_LIST_CHANGED: &str = "conversation-list-changed"; // kebab-case
-pub const CHAT_MESSAGES_CHANGED: &str = "chat-messages-changed";       // kebab-case
-pub const CHAT_DELTA: &str = "chat-delta";                             // kebab-case
+pub const CONVERSATION_TERMINATED: &str = "conversation_terminated";      // snake_case
+pub const CONVERSATION_UNLOCKED: &str = "conversation_unlocked";          // snake_case
+pub const CONVERSATION_COMPACT_FAILED: &str = "conversation_compact_failed"; // snake_case
+pub const CONVERSATION_LIST_CHANGED: &str = "conversation-list-changed";  // kebab-case
+pub const CHAT_MESSAGES_CHANGED: &str = "chat-messages-changed";          // kebab-case
+pub const CHAT_DELTA: &str = "chat-delta";                                // kebab-case
 ```
 
-`conversation_terminated` 和 `conversation_unlocked` 使用 snake_case，其余使用 kebab-case。
+`conversation_terminated`、`conversation_unlocked`、`conversation_compact_failed` 使用 snake_case，其余使用 kebab-case。
 
-**建议**：统一为 kebab-case：`conversation-terminated`、`conversation-unlocked`。需同步修改前端监听。
+**✅ 已完成**：统一为 kebab-case，前后端同步修改：
+
+| 文件 | 修改 |
+|------|------|
+| `src-tauri/src/protocol/events.rs` | `conversation_terminated` → `conversation-terminated`，`conversation_unlocked` → `conversation-unlocked`，`conversation_compact_failed` → `conversation-compact-failed` |
+| `src/chat/core/chatTypes.ts` | `ChatEvent` 枚举对应 3 个值同步改为 kebab-case |
 
 ---
 
@@ -504,18 +584,23 @@ pub const CHAT_DELTA: &str = "chat-delta";                             // kebab-
 
 **事实**：
 - 后端 `ConversationDto.active_branch_id` 使用 `#[serde(default, skip_serializing_if = "Option::is_none")]`
-- 前端 `Conversation.activeBranchId` 在 `chatStore.ts` 中用 `?? null` 处理
+- 后端 `ChatMessagesChangedPayloadDto.active_branch_id` 无 `skip_serializing_if`，`None` 序列化为 `null` 而非省略字段
+- 前端 `Conversation.activeBranchId` 类型为 `string | null | undefined`（`?` 可选），而 Store 中为 `string | null`
+- 前端 `chatConversationSlice.ts` 中用 `?? null` 做了运行时归一化，但类型定义层面不一致
 
-两者语义一致，但后端 `ConversationRow` 的 `active_branch_id` 是 `Option<String>`，而前端有时用 `undefined` 有时用 `null`。
+**✅ 已完成**：
 
-**建议**：前端统一使用 `string | null`（与后端 `Option<String>` 对应），避免 `undefined` / `null` 混用。
+| 文件 | 修改 |
+|------|------|
+| `src/chat/core/chatTypes.ts` | `Conversation.activeBranchId?: string \| null` → `activeBranchId: string \| null`（去掉 `?`，与后端 `Option<String>` 对应） |
+| `src-tauri/src/protocol/dto/branch.rs` | `ChatMessagesChangedPayloadDto.active_branch_id` 加 `#[serde(default, skip_serializing_if = "Option::is_none")]`，与 `ConversationDto` 保持一致 |
 
 ---
 
 ## 5 提取优先级总表
 
 | 优先级 | 编号 | 问题 | 影响范围 | 工作量 | 风险 |
-|--------|------|------|---------|--------|------|
+|--------|------|------|---------|--------|------|-|
 | 🔴 P0 | 2.1.1 | historyService ↔ chatService 方法重复 | 消除 6 个重复方法 | 小 | 低 | ✅ 已完成 |
 | 🟢 P2 | 2.3.7 | historyEvents 3 个 debounce 合并为 1 个 | 减少重复刷新 | 极小 | 无 | ✅ 已完成 |
 | 🟡 P1 | 2.2.1 | settingsDispatcher 拆分 | 降低单文件复杂度 | 中 | 低 | ✅ 已完成 |
@@ -528,14 +613,16 @@ pub const CHAT_DELTA: &str = "chat-delta";                             // kebab-
 | 🟡 P1 | 3.1.3 | cmd/config.rs mascot 资产提取 | 职责分离 | 小 | 低 | ✅ 已完成 |
 | 🟢 P2 | 2.3.1 | tauriInvoke 统一/删除 | 代码卫生 | 小 | 低 | ✅ 已完成 |
 | 🟢 P2 | 2.3.2 | protocol.ts 空文件 | 代码卫生 | 极小 | 无 | ✅ 已完成 |
-| 🟢 P2 | 2.3.3 | chatError 展示逻辑分离 | 职责清晰 | 小 | 低 |
-| 🟢 P2 | 2.3.4 | OrbDrag 平台策略提取 | 可测试性 | 小 | 低 |
-| 🟢 P2 | 2.3.5 | applyLocaleChange 循环依赖 | 架构健康 | 小 | 低 |
+| 🟢 P2 | 2.3.3 | chatError 展示逻辑分离 | 职责清晰 | 小 | 低 | ✅ 已完成 |
+| 🟢 P2 | 2.3.4 | OrbDrag 平台策略提取 | 可测试性 | 小 | 低 | ⚠️ 暂缓（有 bug 风险） |
+| 🟢 P2 | 2.3.5 | applyLocaleChange 循环依赖 | 架构健康 | 小 | 低 | ✅ 已完成 |
 | 🟢 P2 | 2.3.6 | errorNotifier 目录归属 | 语义一致 | 极小 | 无 | ✅ 已完成 |
 | 🟢 P2 | 3.2.1 | tray.rs 重复代码 | 消除重复 | 小 | 低 |
-| 🟢 P2 | 3.2.2 | dto.rs 按领域拆分 | 可维护性 | 中 | 低 |
-| 🟢 P2 | 4.1 | 事件名命名不一致 | 一致性 | 小 | 中 |
-| 🟢 P2 | 4.2 | activeBranchId null/undefined 混用 | 类型安全 | 小 | 低 |
+| 🟢 P2 | 3.2.2 | dto.rs 按领域拆分 | 可维护性 | 中 | 低 | ✅ 已完成 |
+| 🟢 P2 | 3.2.3 | lib.rs invoke_handler 列表过长 | 可读性 | 极小 | 无 |
+| 🟢 P2 | 3.2.4 | 跨 crate 逻辑上位（resolve_context_window 统一优先级链 + estimate_tokens 归位） | 消除重复 + 内聚 | 中 | 低 | ✅ 已完成 |
+| 🟢 P2 | 4.1 | 事件名命名不一致 | 一致性 | 小 | 中 | ✅ 已完成 |
+| 🟢 P2 | 4.2 | activeBranchId null/undefined 混用 | 类型安全 | 小 | 低 | ✅ 已完成 |
 
 ---
 

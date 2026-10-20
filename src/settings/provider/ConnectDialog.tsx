@@ -17,7 +17,7 @@ import type {
 import { getProviderPreset } from "../core/provider/providerPresetRegistry";
 import { getProviderFormatLabel } from "../core/provider/providerFormatRegistry";
 import type { FieldSchema, FieldContext } from "../core/types/fieldSchema";
-import { SettingField } from "../shared/layout/SettingField";
+import { SettingField } from "../shared/renderers/SettingField";
 import { FormatTag } from "./FormatTag";
 
 interface ConnectDialogProps {

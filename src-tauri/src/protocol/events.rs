@@ -3,9 +3,9 @@ pub mod event_name {
     pub const CHAT_DELTA: &str = "chat-delta";
     pub const CHAT_STREAM_START: &str = "chat-stream-start";
     pub const CONVERSATION_LIST_CHANGED: &str = "conversation-list-changed";
-    pub const CONVERSATION_TERMINATED: &str = "conversation_terminated";
-    pub const CONVERSATION_UNLOCKED: &str = "conversation_unlocked";
-    pub const CONVERSATION_COMPACT_FAILED: &str = "conversation_compact_failed";
+    pub const CONVERSATION_TERMINATED: &str = "conversation-terminated";
+    pub const CONVERSATION_UNLOCKED: &str = "conversation-unlocked";
+    pub const CONVERSATION_COMPACT_FAILED: &str = "conversation-compact-failed";
     pub const ORB_NEW_CONVERSATION: &str = "orb-new-conversation";
     pub const ORB_BLUR: &str = "orb-blur";
     pub const NAVIGATE: &str = "navigate";

@@ -220,6 +220,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = React.memo(
         onTogglePin,
         onDuplicate,
         onToggleConversationSelection,
+        onSetFocusedIndex,
       ],
     );
 
