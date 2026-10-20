@@ -1,0 +1,29 @@
+.dropZone {
+  position: relative;
+}
+
+.dropActive {
+  outline: 2px dashed var(--ant-color-primary);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.dropOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--ant-color-bg-base) 35%, transparent);
+  border-radius: 6px;
+  pointer-events: none;
+  color: var(--ant-color-primary);
+  font-size: 14px;
+}
+
+.dropIcon {
+  font-size: 32px;
+}

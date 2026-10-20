@@ -2,57 +2,14 @@ import { useState, useEffect } from "react";
 import { Input, Typography, Button, Select, message } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
 import {
-  MD5,
-  SHA1,
-  SHA256,
-  SHA224,
-  SHA512,
-  SHA384,
-  SHA3,
-  RIPEMD160,
-  enc,
-  type lib,
-} from "crypto-js";
+  ALGO_NAMES,
+  ENCODING_OPTIONS,
+  hashWithAlgo,
+  type Encoding,
+} from "./hash-text.service";
 import styles from "./hash-text.module.css";
 
 const { TextArea } = Input;
-
-const ALGORITHMS = {
-  MD5,
-  SHA1,
-  SHA256,
-  SHA224,
-  SHA512,
-  SHA384,
-  SHA3,
-  RIPEMD160,
-} as const;
-
-type AlgoName = keyof typeof ALGORITHMS;
-type Encoding = "Hex" | "Base64" | "Base64url" | "Bin";
-const ALGO_NAMES = Object.keys(ALGORITHMS) as AlgoName[];
-
-const ENCODING_OPTIONS: { value: Encoding; label: string }[] = [
-  { value: "Hex", label: "十六进制 (Hex)" },
-  { value: "Base64", label: "Base64" },
-  { value: "Base64url", label: "Base64url" },
-  { value: "Bin", label: "二进制 (Binary)" },
-];
-
-function hexToBin(hex: string): string {
-  return hex
-    .trim()
-    .split("")
-    .map((byte) => Number.parseInt(byte, 16).toString(2).padStart(4, "0"))
-    .join("");
-}
-
-function formatOutput(words: lib.WordArray, encoding: Encoding): string {
-  if (encoding === "Bin") {
-    return hexToBin(words.toString(enc.Hex));
-  }
-  return words.toString(enc[encoding]);
-}
 
 export default function HashText() {
   const [text, setText] = useState("");
@@ -66,7 +23,7 @@ export default function HashText() {
     }
     const r: Record<string, string> = {};
     for (const algo of ALGO_NAMES) {
-      r[algo] = formatOutput(ALGORITHMS[algo](text), encoding);
+      r[algo] = hashWithAlgo(algo, text, encoding);
     }
     setResults(r);
   }, [text, encoding]);

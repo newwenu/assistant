@@ -6,6 +6,14 @@ export type { ToolCategoryMeta } from "./categories";
 
 export type WidthMode = "default" | "wide" | "full";
 
+export interface FileDropCapability {
+  accept: string;
+}
+
+export interface ToolCapabilities {
+  fileDrop?: FileDropCapability;
+}
+
 export interface ToolDefinition {
   id: string;
   name: string;
@@ -17,6 +25,7 @@ export interface ToolDefinition {
   isNew?: boolean;
   createdAt?: Date;
   widthMode?: WidthMode;
+  capabilities?: ToolCapabilities;
 }
 
 export interface ToolCategoryGroup {

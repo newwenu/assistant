@@ -1,18 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Input, Select, Button, Typography, ColorPicker, message } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
-import QRCode from "qrcode";
 import type { QRCodeErrorCorrectionLevel } from "qrcode";
+import { ERROR_LEVELS, generateQrDataUrl } from "./qrcode-generator.service";
 import styles from "./qrcode-generator.module.css";
 
 const { TextArea } = Input;
-
-const ERROR_LEVELS: { value: QRCodeErrorCorrectionLevel; label: string }[] = [
-  { value: "L", label: "低 (L ~7%)" },
-  { value: "M", label: "中 (M ~15%)" },
-  { value: "Q", label: "较高 (Q ~25%)" },
-  { value: "H", label: "高 (H ~30%)" },
-];
 
 export default function QRCodeGenerator() {
   const [text, setText] = useState("https://example.com");
@@ -26,15 +19,7 @@ export default function QRCodeGenerator() {
       setDataUrl("");
       return;
     }
-    QRCode.toDataURL(text.trim(), {
-      width: 512,
-      margin: 2,
-      color: {
-        dark: foreground,
-        light: background,
-      },
-      errorCorrectionLevel: errorLevel,
-    })
+    generateQrDataUrl(text, foreground, background, errorLevel)
       .then(setDataUrl)
       .catch(() => setDataUrl(""));
   }, [text, foreground, background, errorLevel]);

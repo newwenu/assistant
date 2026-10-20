@@ -1536,7 +1536,7 @@ src-tauri/
 - `assistant-tools` crate 骨架：Tool trait + ToolRegistry + ToolResult
 - `assistant-tools/sandbox/`：L0 沙箱工具桥接（注册现有 21 个前端工具）
 - `round_executor.rs`：消费 StreamOutcome.tool_calls → 执行 → 回填 → 继续对话
-- I2b 五态追踪：tool_calls 表 + 流式事件 + ToolCallBubble
+- Tool Call 五态追踪：tool_calls_json 扩展 + 流式事件 + ToolCallBubble（详见 I18 Step 9）
 - Agent 模式 `max_tool_tier: 'sandbox'` 生效
 
 ### Phase 2: Permission Policy Engine

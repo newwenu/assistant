@@ -1,110 +1,13 @@
 import { useState, useMemo } from "react";
 import { Input, Typography, Button, Select, message } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
-import styles from "./date-time-converter.module.css";
 import {
-  formatISO,
-  formatISO9075,
-  formatRFC3339,
-  formatRFC7231,
-  fromUnixTime,
-  getTime,
-  getUnixTime,
+  FORMATS,
+  formatDateSafe,
   isValid,
-  parseISO,
-} from "date-fns";
-
-interface DateFormat {
-  name: string;
-  fromDate: (date: Date) => string;
-  toDate: (value: string) => Date;
-  match: (value: string) => boolean;
-}
-
-function isUnixTimestamp(value: string): boolean {
-  return /^\d{10}$/.test(value.trim());
-}
-
-function isTimestamp(value: string): boolean {
-  return /^\d{13}$/.test(value.trim());
-}
-
-function isMongoObjectId(value: string): boolean {
-  return /^[0-9a-fA-F]{24}$/.test(value.trim());
-}
-
-function isExcelFormat(value: string): boolean {
-  const n = Number(value);
-  return !isNaN(n) && n > 0 && n < 2958466;
-}
-
-function dateToExcel(date: Date): string {
-  const epoch = new Date(1899, 11, 30);
-  return String((date.getTime() - epoch.getTime()) / 86400000);
-}
-
-function excelToDate(value: string): Date {
-  const epoch = new Date(1899, 11, 30);
-  return new Date(epoch.getTime() + Number(value) * 86400000);
-}
-
-const FORMATS: DateFormat[] = [
-  {
-    name: "ISO 8601",
-    fromDate: formatISO,
-    toDate: parseISO,
-    match: (v) => /^\d{4}-\d{2}-\d{2}T/.test(v),
-  },
-  {
-    name: "ISO 9075",
-    fromDate: formatISO9075,
-    toDate: parseISO,
-    match: (v) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(v),
-  },
-  {
-    name: "RFC 3339",
-    fromDate: formatRFC3339,
-    toDate: (v) => new Date(v),
-    match: (v) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v),
-  },
-  {
-    name: "RFC 7231",
-    fromDate: formatRFC7231,
-    toDate: (v) => new Date(v),
-    match: (v) => /^[A-Z][a-z]{2}, \d{2}/.test(v),
-  },
-  {
-    name: "Unix 时间戳 (秒)",
-    fromDate: (d) => String(getUnixTime(d)),
-    toDate: (v) => fromUnixTime(Number(v)),
-    match: isUnixTimestamp,
-  },
-  {
-    name: "时间戳 (毫秒)",
-    fromDate: (d) => String(getTime(d)),
-    toDate: (v) => new Date(Number(v)),
-    match: isTimestamp,
-  },
-  {
-    name: "UTC 格式",
-    fromDate: (d) => d.toUTCString(),
-    toDate: (v) => new Date(v),
-    match: (v) => /^[A-Z][a-z]{2}, /.test(v),
-  },
-  {
-    name: "Mongo ObjectID",
-    fromDate: (d) =>
-      `${Math.floor(d.getTime() / 1000).toString(16)}0000000000000000`,
-    toDate: (v) => new Date(Number.parseInt(v.substring(0, 8), 16) * 1000),
-    match: isMongoObjectId,
-  },
-  {
-    name: "Excel 日期",
-    fromDate: dateToExcel,
-    toDate: excelToDate,
-    match: isExcelFormat,
-  },
-];
+  type DateFormat,
+} from "./date-time-converter.service";
+import styles from "./date-time-converter.module.css";
 
 export default function DateTimeConverter() {
   const [inputDate, setInputDate] = useState("");
@@ -124,7 +27,7 @@ export default function DateTimeConverter() {
 
   const handleInputChange = (value: string) => {
     setInputDate(value);
-    const matchingIndex = FORMATS.findIndex((f) => f.match(value));
+    const matchingIndex = FORMATS.findIndex((f: DateFormat) => f.match(value));
     if (matchingIndex !== -1) {
       setFormatIndex(matchingIndex);
     }
@@ -140,15 +43,6 @@ export default function DateTimeConverter() {
     message.success("已复制");
   };
 
-  const formatDate = (format: DateFormat, date: Date | null) => {
-    if (!date) return "";
-    try {
-      return format.fromDate(date);
-    } catch {
-      return "";
-    }
-  };
-
   return (
     <div>
       <div className={styles.inputRow}>
@@ -162,7 +56,10 @@ export default function DateTimeConverter() {
         <Select
           value={formatIndex}
           onChange={setFormatIndex}
-          options={FORMATS.map((f, i) => ({ label: f.name, value: i }))}
+          options={FORMATS.map((f: DateFormat, i: number) => ({
+            label: f.name,
+            value: i,
+          }))}
           style={{ width: 180 }}
         />
         <Button size="small" onClick={setNow}>
@@ -174,8 +71,8 @@ export default function DateTimeConverter() {
           无效的日期格式
         </Typography.Text>
       )}
-      {FORMATS.map((format, idx) => {
-        const value = formatDate(format, normalizedDate);
+      {FORMATS.map((format: DateFormat, idx: number) => {
+        const value = formatDateSafe(format, normalizedDate);
         return (
           <div key={format.name} className={styles.resultRow}>
             <Typography.Text strong className={styles.resultLabel}>

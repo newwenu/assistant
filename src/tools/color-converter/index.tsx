@@ -1,54 +1,13 @@
 import { useState, useCallback } from "react";
 import { Input, Typography, Button, Slider, message } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
-import { colord, extend } from "colord";
-import cmykPlugin from "colord/plugins/cmyk";
-import hwbPlugin from "colord/plugins/hwb";
-import lchPlugin from "colord/plugins/lch";
-import namesPlugin from "colord/plugins/names";
+import {
+  colord,
+  FORMATS,
+  computeColorValues,
+  type ColordInstance,
+} from "./color-converter.service";
 import styles from "./color-converter.module.css";
-
-extend([cmykPlugin, hwbPlugin, lchPlugin, namesPlugin]);
-
-interface FormatDef {
-  label: string;
-  format: (c: ReturnType<typeof colord>) => string;
-  placeholder: string;
-}
-
-const FORMATS: FormatDef[] = [
-  { label: "HEX", format: (c) => c.toHex(), placeholder: "#ff0000" },
-  {
-    label: "RGB",
-    format: (c) => c.toRgbString(),
-    placeholder: "rgb(255, 0, 0)",
-  },
-  {
-    label: "HSL",
-    format: (c) => c.toHslString(),
-    placeholder: "hsl(0, 100%, 50%)",
-  },
-  {
-    label: "HWB",
-    format: (c) => c.toHwbString(),
-    placeholder: "hwb(0, 0%, 0%)",
-  },
-  {
-    label: "LCH",
-    format: (c) => c.toLchString(),
-    placeholder: "lch(53.24, 104.55, 40.85)",
-  },
-  {
-    label: "CMYK",
-    format: (c) => c.toCmykString(),
-    placeholder: "cmyk(0, 100%, 100%, 0)",
-  },
-  {
-    label: "Name",
-    format: (c) => c.toName({ closest: true }) ?? "Unknown",
-    placeholder: "red",
-  },
-];
 
 export default function ColorConverter() {
   const [hex, setHex] = useState("#1ea54c");
@@ -65,21 +24,9 @@ export default function ColorConverter() {
   const [pickerColor, setPickerColor] = useState("#1ea54c");
 
   const updateFromColor = useCallback(
-    (c: ReturnType<typeof colord>, omitLabel?: string) => {
+    (c: ColordInstance, omitLabel?: string) => {
       if (!c.isValid()) return;
-      const newValues: Record<string, string> = {};
-      for (const f of FORMATS) {
-        if (f.label !== omitLabel) {
-          newValues[f.label] = f.format(c);
-        }
-      }
-      if (omitLabel !== "RGBA") {
-        const rgb = c.toRgb();
-        newValues["RGBA"] = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
-      }
-      if (omitLabel !== "HEX") {
-        newValues["HEX"] = c.toHex();
-      }
+      const newValues = computeColorValues(c, alpha, omitLabel);
       setValues((prev) => ({ ...prev, ...newValues }));
       setHex(c.toHex());
       setPickerColor(c.toHex());

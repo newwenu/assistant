@@ -1,49 +1,25 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Input, Button, Typography, Space, message } from "antd";
 import { CopyOutlined, DownloadOutlined } from "@ant-design/icons";
+import {
+  DEFAULT_SVG,
+  optimizeSvg,
+  svgToDataUrl,
+  isValidSvg,
+} from "./svg-preview.service";
+import { useFileDropCapability } from "../capabilities";
 import styles from "./svg-preview.module.css";
 
 const { TextArea } = Input;
 
-const PARSERERROR_NS = "http://www.mozilla.org/newlayout/xml/parsererror.xml";
-
-const DEFAULT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
-  <circle cx="100" cy="100" r="80" fill="#4f46e5" opacity="0.8"/>
-  <circle cx="100" cy="100" r="50" fill="#818cf8" opacity="0.8"/>
-  <circle cx="100" cy="100" r="20" fill="#c7d2fe"/>
-</svg>`;
-
-function optimizeSvg(svg: string): string {
-  return svg
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/\s+/g, " ")
-    .replace(/>\s+</g, "><")
-    .replace(/\s+\/>/g, "/>")
-    .trim();
-}
-
-function svgToDataUrl(svg: string): string {
-  const bytes = new TextEncoder().encode(svg);
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  const encoded = btoa(binary);
-  return `data:image/svg+xml;base64,${encoded}`;
-}
-
-function isValidSvg(svg: string): boolean {
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svg, "image/svg+xml");
-    return (
-      doc.getElementsByTagNameNS(PARSERERROR_NS, "parsererror").length === 0
-    );
-  } catch {
-    return false;
-  }
+interface SavingsInfo {
+  from: number;
+  to: number;
 }
 
 export default function SvgPreview() {
   const [svgCode, setSvgCode] = useState(DEFAULT_SVG);
+  const [lastSavings, setLastSavings] = useState<SavingsInfo | null>(null);
 
   const isValid = useMemo(() => {
     if (!svgCode.trim()) return false;
@@ -100,11 +76,24 @@ export default function SvgPreview() {
   }, [svgDataUrl]);
 
   const useOptimized = useCallback(() => {
-    if (optimized) {
+    if (optimized && optimized !== svgCode) {
+      setLastSavings({ from: svgCode.length, to: optimized.length });
       setSvgCode(optimized);
       message.success("已应用优化");
     }
-  }, [optimized]);
+  }, [optimized, svgCode]);
+
+  const { droppedFiles } = useFileDropCapability();
+
+  useEffect(() => {
+    if (droppedFiles && droppedFiles.length > 0) {
+      void droppedFiles[0].text().then((text) => {
+        setSvgCode(text);
+        setLastSavings(null);
+        message.success("已加载 SVG 文件");
+      });
+    }
+  }, [droppedFiles]);
 
   return (
     <div className={styles.root}>
@@ -127,7 +116,10 @@ export default function SvgPreview() {
         </div>
         <TextArea
           value={svgCode}
-          onChange={(e) => setSvgCode(e.target.value)}
+          onChange={(e) => {
+            setSvgCode(e.target.value);
+            setLastSavings(null);
+          }}
           rows={20}
           className={styles.textArea}
           style={{ fontFamily: "monospace", fontSize: 12 }}
@@ -138,6 +130,14 @@ export default function SvgPreview() {
             <Typography.Text type="secondary">
               优化后: {svgCode.length} → {optimized.length} 字符（节省{" "}
               {Math.round((1 - optimized.length / svgCode.length) * 100)}%）
+            </Typography.Text>
+          </div>
+        )}
+        {lastSavings && optimized === svgCode && (
+          <div className={styles.optimizedInfo}>
+            <Typography.Text type="secondary">
+              已优化: {lastSavings.from} → {lastSavings.to} 字符（节省{" "}
+              {Math.round((1 - lastSavings.to / lastSavings.from) * 100)}%）
             </Typography.Text>
           </div>
         )}

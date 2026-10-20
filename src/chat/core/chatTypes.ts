@@ -14,6 +14,8 @@ export interface Message {
   siblingIndex: number;
   siblingCount?: number;
   isPinned?: boolean;
+  providerId?: string | null;
+  modelId?: string;
 }
 
 export interface ToolCall {

@@ -9,7 +9,7 @@ import {
   Space,
 } from "antd";
 import { CopyOutlined, CompressOutlined } from "@ant-design/icons";
-import JSON5 from "json5";
+import { formatJson, minifyJson } from "./json-viewer.service";
 import styles from "./json-viewer.module.css";
 
 const { TextArea } = Input;
@@ -19,34 +19,12 @@ export default function JsonViewer() {
   const [indentSize, setIndentSize] = useState(2);
   const [sortKeys, setSortKeys] = useState(true);
 
-  const formatted = useMemo(() => {
-    try {
-      const obj: unknown = JSON5.parse(rawJson);
-      const sortObj = (o: unknown): unknown => {
-        if (Array.isArray(o)) return o.map(sortObj);
-        if (o && typeof o === "object") {
-          const sorted: Record<string, unknown> = {};
-          const keys = Object.keys(o);
-          if (sortKeys) keys.sort();
-          for (const k of keys)
-            sorted[k] = sortObj((o as Record<string, unknown>)[k]);
-          return sorted;
-        }
-        return o;
-      };
-      return JSON.stringify(sortObj(obj), null, indentSize);
-    } catch {
-      return null;
-    }
-  }, [rawJson, indentSize, sortKeys]);
+  const formatted = useMemo(
+    () => formatJson(rawJson, indentSize, sortKeys),
+    [rawJson, indentSize, sortKeys],
+  );
 
-  const minified = useMemo(() => {
-    try {
-      return JSON.stringify(JSON5.parse(rawJson));
-    } catch {
-      return null;
-    }
-  }, [rawJson]);
+  const minified = useMemo(() => minifyJson(rawJson), [rawJson]);
 
   const isValid = formatted !== null;
 
