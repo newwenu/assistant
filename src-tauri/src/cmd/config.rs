@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{command, AppHandle, Manager};
 
-use crate::protocol::{AppConfDto, MascotConfDto, OrbConfDto, ThemeChangedPayloadDto};
 use crate::protocol::events::{emit_broadcast, event_name};
+use crate::protocol::{AppConfDto, MascotConfDto, OrbConfDto, ThemeChangedPayloadDto};
 use assistant_config::{
     app_conf::AppConf,
     atomic_write::atomic_write,

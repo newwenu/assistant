@@ -5,11 +5,11 @@ use log::{error, info};
 use tauri::{command, AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
+use crate::protocol::events::{emit_broadcast, emit_orb_only, event_name};
 use crate::protocol::{
     ChatDeltaPayloadDto, ChatStreamStartPayloadDto, ConversationCompactFailedPayloadDto,
     ProviderErrorPayloadDto,
 };
-use crate::protocol::events::{emit_broadcast, emit_orb_only, event_name};
 use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError, StreamOutcome};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::compaction;

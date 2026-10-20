@@ -66,7 +66,10 @@ export const HistoryMessageItem: React.FC<HistoryMessageItemProps> = React.memo(
 
     const branchBar = (
       <div
-        className={[css.branchBar, isUser ? css.branchBarRight : css.branchBarLeft].join(" ")}
+        className={[
+          css.branchBar,
+          isUser ? css.branchBarRight : css.branchBarLeft,
+        ].join(" ")}
         style={{ backgroundColor: branchColor }}
       />
     );

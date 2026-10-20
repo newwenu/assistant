@@ -499,7 +499,7 @@
     "conversation_deleted": "Conversation deleted",
     "renamed": "Renamed",
     "rename_failed": "Rename failed",
-    "export_success": "Exported successfully",
+    "export_success": "Saved to file",
     "export_failed": "Export failed",
     "operation_failed": "Operation failed",
     "duplicated": "Duplicated",

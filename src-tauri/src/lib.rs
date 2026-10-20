@@ -76,6 +76,7 @@ pub fn run() {
             cmd::get_message_subtree_size,
             cmd::search_conversations,
             cmd::export_conversation,
+            cmd::export_conversation_to_file,
             cmd::record_tool_usage,
             cmd::get_recent_tools,
             cmd::get_favorite_tools,

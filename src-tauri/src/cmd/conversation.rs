@@ -5,13 +5,13 @@ use chrono::Utc;
 use tauri::{command, AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
+use crate::protocol::events::{emit_broadcast, emit_orb_only, event_name};
 use crate::protocol::{
     ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto, ChatStreamStartPayloadDto,
     ConversationCompactFailedPayloadDto, ConversationDetailDto, ConversationDto,
     ConversationListChangedPayloadDto, ConversationTerminatedPayloadDto,
     ConversationUnlockedPayloadDto, MessageDto, ProviderErrorPayloadDto, TokenUsageSummaryDto,
 };
-use crate::protocol::events::{emit_broadcast, emit_orb_only, event_name};
 use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::prompt_builder;
@@ -321,6 +321,23 @@ pub fn export_conversation(app: AppHandle, id: String, format: String) -> Result
         "markdown" | "md" => conversations::export_conversation_markdown(&conn, &id),
         _ => conversations::export_conversation_markdown(&conn, &id),
     }
+}
+
+#[command]
+pub fn export_conversation_to_file(
+    app: AppHandle,
+    id: String,
+    format: String,
+    path: String,
+) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = super::get_db_conn(&state)?;
+    let content = match format.as_str() {
+        "json" => conversations::export_conversation_json(&conn, &id)?,
+        "markdown" | "md" => conversations::export_conversation_markdown(&conn, &id)?,
+        _ => conversations::export_conversation_markdown(&conn, &id)?,
+    };
+    std::fs::write(&path, &content).map_err(|e| e.to_string())
 }
 
 #[command]

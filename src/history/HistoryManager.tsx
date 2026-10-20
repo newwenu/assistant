@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { App } from "antd";
+import { save } from "@tauri-apps/plugin-dialog";
 import { historyService } from "../services/historyService";
 import { subscribeHistoryEvents } from "../services/historyEvents";
 import { useChatStore } from "../stores/chatStore";
@@ -138,20 +139,18 @@ export const HistoryManager: React.FC = () => {
 
   const exportConversation = useCallback(
     async (id: string, format: string = "markdown") => {
+      const ext = format === "json" ? "json" : "md";
+      const filterName = format === "json" ? "JSON" : "Markdown";
+      const filePath = await save({
+        defaultPath: `conversation.${ext}`,
+        filters: [
+          { name: filterName, extensions: [ext] },
+          { name: "All Files", extensions: ["*"] },
+        ],
+      });
+      if (!filePath) return;
       try {
-        const content = await historyService.exportConversation(id, format);
-        const ext = format === "json" ? "json" : "md";
-        const mime =
-          format === "json"
-            ? "application/json;charset=utf-8"
-            : "text/markdown;charset=utf-8";
-        const blob = new Blob([content], { type: mime });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `conversation-${id}.${ext}`;
-        a.click();
-        URL.revokeObjectURL(url);
+        await historyService.exportConversationToFile(id, format, filePath);
         message.success(t("history.export_success"));
       } catch (e) {
         log.error("Export failed", e);

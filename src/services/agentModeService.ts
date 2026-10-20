@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { tauriInvoke as invoke } from "./tauriInvoke";
 import type { AgentMode, AgentModeInput } from "../settings/agentMode/types";
 
 export const agentModeService = {

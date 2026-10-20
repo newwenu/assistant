@@ -486,7 +486,7 @@
     "conversation_deleted": "对话已删除",
     "renamed": "已重命名",
     "rename_failed": "重命名失败",
-    "export_success": "导出成功",
+    "export_success": "已保存到文件",
     "export_failed": "导出失败",
     "operation_failed": "操作失败",
     "duplicated": "已复制",

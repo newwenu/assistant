@@ -14,22 +14,14 @@ pub mod event_name {
     pub const SHORTCUT_WARNING: &str = "shortcut-warning";
 }
 
-pub fn emit_broadcast(
-    app: &tauri::AppHandle,
-    event: &str,
-    payload: impl serde::Serialize + Clone,
-) {
+pub fn emit_broadcast(app: &tauri::AppHandle, event: &str, payload: impl serde::Serialize + Clone) {
     use tauri::Emitter;
     if let Err(e) = app.emit(event, payload) {
         log::error!("Failed to emit broadcast '{}': {}", event, e);
     }
 }
 
-pub fn emit_orb_only(
-    app: &tauri::AppHandle,
-    event: &str,
-    payload: impl serde::Serialize + Clone,
-) {
+pub fn emit_orb_only(app: &tauri::AppHandle, event: &str, payload: impl serde::Serialize + Clone) {
     use tauri::Manager;
     if let Some(win) = app.get_webview_window(assistant_config::constant::WINDOW_ORB) {
         use tauri::Emitter;
