@@ -13,7 +13,7 @@ import { useChatStreamStore } from "../stores/chatStreamStore";
 import {
   CONTEXT_WARN_THRESHOLD,
   CONTEXT_DANGER_THRESHOLD,
-} from "../stores/chatStore";
+} from "../config/constants";
 import { useProviderStore } from "../stores/providerStore";
 import { MessageList } from "./message/MessageList";
 import { MessageInput } from "./message/MessageInput";

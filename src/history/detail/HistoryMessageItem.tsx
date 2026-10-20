@@ -1,6 +1,10 @@
 import React, { useCallback, useState } from "react";
 import { Typography, Tag } from "antd";
-import { DeleteOutlined, BranchesOutlined } from "@ant-design/icons";
+import {
+  DeleteOutlined,
+  BranchesOutlined,
+  WarningOutlined,
+} from "@ant-design/icons";
 import type { Message } from "../../chat/core/chatTypes";
 import { BranchPicker } from "../../chat/blocks/BranchPicker";
 import css from "./HistoryMessageItem.module.css";
@@ -27,10 +31,11 @@ export const HistoryMessageItem: React.FC<HistoryMessageItemProps> = React.memo(
   ({ siblings, activeIndex, branchLabel, onDelete }) => {
     const [localIndex, setLocalIndex] = useState(activeIndex);
 
-    const msg = siblings[localIndex] ?? siblings[0];
+    const msg = siblings[localIndex] ?? siblings[siblings.length - 1];
     const isUser = msg.role === "user";
     const isSystem = msg.role === "system";
     const siblingCount = siblings.length;
+    const isOrphan = branchLabel.startsWith("O");
     const handleSwitch = useCallback(
       (direction: "prev" | "next") => {
         if (direction === "next" && localIndex < siblingCount - 1) {
@@ -44,6 +49,7 @@ export const HistoryMessageItem: React.FC<HistoryMessageItemProps> = React.memo(
 
     const rootClass = [
       css.root,
+      isOrphan ? css.rootRoleAssistant : "",
       isUser ? "" : isSystem ? css.rootRoleSystem : css.rootRoleAssistant,
     ]
       .filter(Boolean)
@@ -61,7 +67,8 @@ export const HistoryMessageItem: React.FC<HistoryMessageItemProps> = React.memo(
       .join(" ");
 
     const colorIdx =
-      (parseInt(branchLabel.replace("B", ""), 10) - 1) % BRANCH_COLORS.length;
+      (parseInt(branchLabel.replace(/^[BO]/, ""), 10) - 1) %
+      BRANCH_COLORS.length;
     const branchColor = BRANCH_COLORS[colorIdx >= 0 ? colorIdx : 0];
 
     const branchBar = (
@@ -88,7 +95,7 @@ export const HistoryMessageItem: React.FC<HistoryMessageItemProps> = React.memo(
               </Tag>
               <Tag
                 className={css.branchTag}
-                icon={<BranchesOutlined />}
+                icon={isOrphan ? <WarningOutlined /> : <BranchesOutlined />}
                 style={{
                   color: branchColor,
                   borderColor: branchColor,

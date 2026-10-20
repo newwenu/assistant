@@ -371,3 +371,10 @@ where
         },
     }
 }
+
+pub fn estimate_tokens(content: &str) -> Option<i64> {
+    if content.is_empty() {
+        return None;
+    }
+    Some((content.len() as i64 + 3) / 4 + 4)
+}

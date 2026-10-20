@@ -11,13 +11,17 @@ import type {
   ContextUsage,
 } from "../chat/core/chatTypes";
 import type { RetryNotification } from "../chat/core/chatTypes";
-import { type ChatError, formatRetryAfter } from "../chat/core/chatErrors";
+import { type ChatError } from "../chat/core/chatErrors";
 import { chatService } from "../services/chatService";
 import { createChatOrchestrator } from "../services/chatOrchestrator";
 import { useChatStreamStore } from "./chatStreamStore";
 import { useAgentModeStore } from "./agentModeStore";
-import { useProviderStore } from "./providerStore";
 import { createLogger } from "@/services/logger";
+import {
+  mergeStreamingContent,
+  fetchTokenUsage,
+  type FetchTokenUsageDeps,
+} from "../chat/core/chatUtils";
 
 const log = createLogger("chatStorePorts");
 
@@ -42,63 +46,6 @@ interface EnvPortReadable {
   messages: Message[];
   conversations: Conversation[];
   pendingBranchPoint: string | null;
-}
-
-export function resolveContextWindowTokens(
-  modelId: string,
-  providerId: string | null,
-): number | undefined {
-  if (!providerId) return undefined;
-  const provider = useProviderStore
-    .getState()
-    .providers.find((p) => p.id === providerId);
-  if (!provider) return undefined;
-  const model = provider.models.find((m) => m.id === modelId);
-  if (model && model.contextWindow && model.contextWindow > 0) {
-    return model.contextWindow;
-  }
-  return undefined;
-}
-
-export interface FetchTokenUsageDeps {
-  isActiveConv: (convId: string) => boolean;
-  setContextUsage: (usage: ContextUsage) => void;
-}
-
-export function fetchTokenUsage(
-  convId: string,
-  modelId: string,
-  providerId: string | null,
-  deps: FetchTokenUsageDeps,
-) {
-  chatService
-    .getConversationTokenUsage(
-      convId,
-      resolveContextWindowTokens(modelId, providerId),
-    )
-    .then((summary) => {
-      if (summary && deps.isActiveConv(convId)) {
-        deps.setContextUsage({
-          usedTokens: summary.totalTokens,
-          maxTokens: summary.contextWindowTokens,
-          percentage: summary.percentage,
-        });
-      }
-    })
-    .catch(() => {});
-}
-
-export function mergeStreamingContent(
-  messages: Message[],
-  streamingMessageId: string | null,
-  streamingContent: string,
-): Message[] {
-  if (!streamingMessageId) return messages;
-  return messages.map((m) =>
-    m.id === streamingMessageId
-      ? { ...m, content: streamingContent || m.content }
-      : m,
-  );
 }
 
 export function createStatePort(
@@ -240,7 +187,10 @@ export function createStatePort(
       const state = get();
       const existing = state.messages.find((m) => m.id === messageId);
       if (!existing || existing.error) return;
-      const retryHint = formatRetryAfter(error.retryAfterMs);
+      const retryHint =
+        error.retryAfterMs != null && error.retryAfterMs > 0
+          ? `(retry after ${Math.ceil(error.retryAfterMs / 1000)}s)`
+          : "";
       const displayMessage = retryHint
         ? `${error.message ?? ""} ${retryHint}`
         : (error.message ?? error.code);
@@ -272,12 +222,15 @@ export function createStatePort(
         ),
       });
       useChatStreamStore.getState().cancelStreaming();
-      const retryHint = formatRetryAfter(error.retryAfterMs);
-      const displayMessage = retryHint
-        ? `${error.message ?? ""} ${retryHint}`
+      const retryHint2 =
+        error.retryAfterMs != null && error.retryAfterMs > 0
+          ? `(retry after ${Math.ceil(error.retryAfterMs / 1000)}s)`
+          : "";
+      const displayMessage2 = retryHint2
+        ? `${error.message ?? ""} ${retryHint2}`
         : (error.message ?? error.code);
       log.warn(
-        `chat-error code=${error.code} retryable=${error.retryable} message=${displayMessage}`,
+        `chat-error code=${error.code} retryable=${error.retryable} message=${displayMessage2}`,
       );
     },
     setRetryStatus: (retry: RetryNotification | null) => {

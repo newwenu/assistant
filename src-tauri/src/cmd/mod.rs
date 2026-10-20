@@ -1,8 +1,13 @@
 mod agent_mode;
 mod app;
 mod chat;
+mod chat_stream;
+mod chat_utils;
+mod compaction;
 mod config;
 mod conversation;
+mod conversation_utils;
+mod mascot_asset;
 mod orb;
 mod os_tool_exec;
 mod provider;
@@ -11,8 +16,11 @@ mod tool;
 pub use agent_mode::*;
 pub use app::*;
 pub use chat::*;
+pub use compaction::*;
 pub use config::*;
 pub use conversation::*;
+
+pub use mascot_asset::*;
 pub use orb::*;
 pub use os_tool_exec::*;
 pub use provider::*;

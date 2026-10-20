@@ -61,7 +61,8 @@ export function subscribeSettingEvents(): () => void {
         if (group === "app") {
           void store.loadAppConf().then(async () => {
             if ("language" in patch) {
-              const { applyLocaleChange } = await import("@/main");
+              const { applyLocaleChange } =
+                await import("@/i18n/localeApplier");
               const lang =
                 useSettingsStore.getState().appConf?.language ?? "zh-CN";
               await applyLocaleChange(lang);

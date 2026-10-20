@@ -21,7 +21,7 @@ export function initSettingSystem(): void {
   registerSideEffect("locale_change", async (_prev, next) => {
     const language = next.language as string;
     if (!language) return;
-    const { applyLocaleChange } = await import("@/main");
+    const { applyLocaleChange } = await import("@/i18n/localeApplier");
     await applyLocaleChange(language);
   });
 }

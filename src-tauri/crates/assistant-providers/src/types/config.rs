@@ -86,13 +86,34 @@ impl Default for SseLogConfig {
     }
 }
 
-pub fn resolve_context_window(model_id: &str, api_context: Option<u32>) -> u32 {
+pub fn resolve_context_window(
+    model_id: &str,
+    stored: Option<u32>,
+    api_context: Option<u32>,
+) -> u32 {
+    if let Some(ctx) = stored {
+        if ctx > 0 {
+            return ctx;
+        }
+    }
     if let Some(ctx) = api_context {
         if ctx > 0 {
             return ctx;
         }
     }
     get_context_window_tokens(model_id)
+}
+
+pub fn resolve_context_window_from_stored(model_id: &str, models_json: &str) -> u32 {
+    let stored = serde_json::from_str::<Vec<crate::base::ModelConfig>>(models_json)
+        .ok()
+        .and_then(|list| {
+            list.iter()
+                .find(|m| m.id == model_id)
+                .map(|mc| mc.context_window)
+        })
+        .filter(|&c| c > 0);
+    resolve_context_window(model_id, stored, None)
 }
 
 pub fn get_context_window_tokens(model_id: &str) -> u32 {

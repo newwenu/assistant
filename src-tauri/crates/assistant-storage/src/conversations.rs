@@ -498,7 +498,6 @@ pub fn toggle_pin(conn: &Connection, id: &str) -> Result<bool, String> {
         .map_err(|e| e.to_string())?;
 
     let new_pinned = !current;
-    let now = chrono::Utc::now().timestamp_millis();
     if new_pinned {
         let max_sort: i64 = conn
             .query_row(
@@ -508,13 +507,14 @@ pub fn toggle_pin(conn: &Connection, id: &str) -> Result<bool, String> {
             )
             .unwrap_or(0);
         conn.execute(
-            "UPDATE conversations SET is_pinned = 1, sort_order = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, max_sort + 1, now],
-        ).map_err(|e| e.to_string())?;
+            "UPDATE conversations SET is_pinned = 1, sort_order = ?2 WHERE id = ?1",
+            params![id, max_sort + 1],
+        )
+        .map_err(|e| e.to_string())?;
     } else {
         conn.execute(
-            "UPDATE conversations SET is_pinned = 0, sort_order = 0, updated_at = ?2 WHERE id = ?1",
-            params![id, now],
+            "UPDATE conversations SET is_pinned = 0, sort_order = 0 WHERE id = ?1",
+            params![id],
         )
         .map_err(|e| e.to_string())?;
     }

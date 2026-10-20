@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Input, Typography, Dropdown } from "antd";
+import { Input, Typography, Dropdown, Checkbox } from "antd";
 import {
   DeleteOutlined,
   EditOutlined,
@@ -18,12 +18,18 @@ import css from "./ConversationListItem.module.css";
 interface ConversationListItemProps {
   conversation: Conversation;
   selected: boolean;
+  multiSelectMode: boolean;
+  checked: boolean;
+  focused: boolean;
+  index: number;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onExport: (id: string, format: string) => void;
   onTogglePin: (id: string) => void;
   onDuplicate: (id: string) => void;
+  onToggleCheck: (id: string) => void;
+  onSetFocusedIndex: (index: number) => void;
 }
 
 export const ConversationListItem: React.FC<ConversationListItemProps> =
@@ -31,12 +37,18 @@ export const ConversationListItem: React.FC<ConversationListItemProps> =
     ({
       conversation,
       selected,
+      multiSelectMode,
+      checked,
+      focused,
       onSelect,
       onDelete,
       onRename,
       onExport,
       onTogglePin,
       onDuplicate,
+      onToggleCheck,
+      onSetFocusedIndex,
+      index,
     }) => {
       const { t } = useTranslation();
       const [editing, setEditing] = useState(false);
@@ -100,54 +112,79 @@ export const ConversationListItem: React.FC<ConversationListItemProps> =
         else if (key === "delete") onDelete(conversation.id);
       };
 
-      const rootClass = [css.root, selected ? css.rootSelected : ""]
+      const rootClass = [
+        css.root,
+        selected ? css.rootSelected : "",
+        checked ? css.rootChecked : "",
+        focused ? css.rootFocused : "",
+      ]
         .filter(Boolean)
         .join(" ");
+
+      const handleClick = () => {
+        onSetFocusedIndex(index);
+        if (multiSelectMode) {
+          onToggleCheck(conversation.id);
+        } else {
+          onSelect(conversation.id);
+        }
+      };
 
       return (
         <Dropdown
           menu={{ items: menuItems, onClick: handleMenuClick }}
-          trigger={["contextMenu"]}
+          trigger={multiSelectMode ? [] : ["contextMenu"]}
+          disabled={multiSelectMode}
         >
-          <div className={rootClass} onClick={() => onSelect(conversation.id)}>
-            {editing ? (
-              <Input
-                size="small"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                onPressEnter={confirmRename}
-                onBlur={confirmRename}
-                autoFocus
+          <div className={rootClass} onClick={handleClick}>
+            {multiSelectMode && (
+              <Checkbox
+                checked={checked}
+                className={css.checkbox}
                 onClick={(e) => e.stopPropagation()}
+                onChange={() => onToggleCheck(conversation.id)}
               />
-            ) : (
-              <>
-                <Typography.Text
-                  ellipsis
-                  className={css.title}
-                  style={{ display: "block" }}
-                >
-                  {conversation.isPinned && (
-                    <PushpinOutlined className={css.pinIcon} />
-                  )}
-                  {conversation.isFull && (
-                    <LockOutlined
-                      className={css.pinIcon}
-                      style={{ color: "var(--ant-color-warning)" }}
-                    />
-                  )}
-                  {conversation.title || t("history.new_conversation")}
-                </Typography.Text>
-                <Typography.Text
-                  type="secondary"
-                  className={css.time}
-                  style={{ display: "block" }}
-                >
-                  <ClockCircleOutlined className={css.timeIcon} />
-                  {formatRelativeTime(conversation.updatedAt)}
-                </Typography.Text>
-              </>
             )}
+            <div className={css.contentBody}>
+              {editing && !multiSelectMode ? (
+                <Input
+                  size="small"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  onPressEnter={confirmRename}
+                  onBlur={confirmRename}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <>
+                  <Typography.Text
+                    ellipsis
+                    className={css.title}
+                    style={{ display: "block" }}
+                  >
+                    {conversation.isPinned && (
+                      <PushpinOutlined className={css.pinIcon} />
+                    )}
+                    {conversation.isFull && (
+                      <LockOutlined
+                        className={css.pinIcon}
+                        style={{ color: "var(--ant-color-warning)" }}
+                      />
+                    )}
+                    {conversation.title || t("history.new_conversation")}
+                  </Typography.Text>
+                  <Typography.Text
+                    type="secondary"
+                    className={css.time}
+                    style={{ display: "block" }}
+                  >
+                    <ClockCircleOutlined className={css.timeIcon} />
+                    {formatRelativeTime(conversation.updatedAt)}
+                  </Typography.Text>
+                </>
+              )}
+            </div>
           </div>
         </Dropdown>
       );

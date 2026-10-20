@@ -3,7 +3,10 @@ import { Modal, Form, Button, Typography, message } from "antd";
 import { providerService } from "@/services/providerService";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
-import { getApiFormatByType, getFormatInfo } from "@/stores/providerStore";
+import {
+  getApiFormatByType,
+  getFormatInfo,
+} from "@/settings/core/provider/providerLookup";
 import type {
   Provider,
   ProviderInput,
@@ -232,6 +235,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
         apiKey: "",
         defaultModel: provider.defaultModel,
       });
+      setModels(provider.models ?? []);
     } else {
       form.setFieldsValue({
         name: isPreset && preset ? preset.label : "",
@@ -240,8 +244,8 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
         apiKey: "",
         defaultModel: undefined,
       });
+      setModels([]);
     }
-    setModels([]);
   };
 
   const shouldShowField = (schema: FieldSchema): boolean => {

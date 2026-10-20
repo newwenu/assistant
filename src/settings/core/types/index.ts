@@ -1,4 +1,5 @@
 export type { AppConf, OrbConf, MascotConf } from "./confTypes";
+export { toConfRecord } from "./confUtils";
 
 export type {
   SettingType,

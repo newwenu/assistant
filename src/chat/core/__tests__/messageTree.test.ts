@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { MessageTree } from "../messageTree";
-import type { Message } from "../../../stores/chatStore";
+import type { Message } from "../chatTypes";
 
 function makeMessage(
   id: string,

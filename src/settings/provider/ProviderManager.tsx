@@ -3,11 +3,11 @@ import { Button, Typography, Modal, Dropdown } from "antd";
 import { EditOutlined, DeleteOutlined, MoreOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
+import { useProviderStore } from "@/stores/providerStore";
 import {
-  useProviderStore,
   API_FORMATS,
   getApiFormatByType,
-} from "@/stores/providerStore";
+} from "@/settings/core/provider/providerLookup";
 import type {
   Provider,
   ProviderInput,

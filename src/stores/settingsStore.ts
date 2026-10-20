@@ -38,7 +38,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const conf = await settingService.getAppConf();
       set({ appConf: conf });
       if (conf.language && conf.language !== prevLang) {
-        const { applyLocaleChange } = await import("../main");
+        const { applyLocaleChange } = await import("../i18n/localeApplier");
         await applyLocaleChange(conf.language);
       }
     } catch (e) {

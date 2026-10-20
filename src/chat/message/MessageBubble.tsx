@@ -2,12 +2,12 @@ import React, { useCallback, useState } from "react";
 import { Typography } from "antd";
 import { CompressOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import type { Message, ToolCall } from "../../stores/chatStore";
+import type { Message, ToolCall } from "../../chat/core/chatTypes";
 import type { RetryNotification } from "../../chat/core/chatTypes";
 import { ErrorBlock } from "../blocks/ErrorBlock";
 import { RetryBanner } from "../blocks/RetryBanner";
-import { getErrorDisplay, ChatErrorCode } from "../core/chatErrors";
 import { getErrorPresentation } from "../core/chatErrorRecovery";
+import { translateKey } from "../../i18n";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
 import { ToolCallBlock } from "../blocks/ToolCallBlock";
 import { EditBlock } from "../blocks/EditBlock";
@@ -57,12 +57,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     const handleCopy = useCallback(() => {
       let text = message.content;
       if (message.error) {
-        const display =
-          getErrorDisplay(message.error.code) ??
-          getErrorDisplay(ChatErrorCode.InternalError);
+        const presentation = getErrorPresentation(message.error);
         const errorParts: string[] = [];
         if (text) errorParts.push(text);
-        errorParts.push(`[${display.title}]`);
+        errorParts.push(`[${translateKey(presentation.titleKey)}]`);
         if (message.error.message) errorParts.push(message.error.message);
         text = errorParts.join("\n");
       }

@@ -5,8 +5,16 @@
   gap: 6px;
 }
 
+.refreshBtn {
+  flex-shrink: 0;
+}
+
 .searchInput {
   flex: 1;
+}
+
+.moreBtn {
+  flex-shrink: 0;
 }
 
 .searchModeToggle {

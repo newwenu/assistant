@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { createLogger } from "./logger";
+import { createLogger } from "../services/logger";
 
 const log = createLogger("errorNotifier");
 

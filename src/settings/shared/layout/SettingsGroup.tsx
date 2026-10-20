@@ -14,10 +14,8 @@ import {
 } from "../../core/field/fieldRegistry";
 import { runSideEffects } from "../../core/sideEffectRegistry";
 import { SettingField } from "./SettingField";
-import {
-  toConfRecord,
-  optimisticConfUpdate,
-} from "../../core/settingsDispatcher";
+import { toConfRecord } from "../../core/types/confUtils";
+import { optimisticConfUpdate } from "../../core/optimisticUpdate";
 import { useConfPatchHandlers } from "../../core/useConfPatchHandlers";
 import { useSettingsStore } from "@/stores/settingsStore";
 

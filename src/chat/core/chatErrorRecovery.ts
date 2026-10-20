@@ -1,4 +1,36 @@
-import { ChatError, ChatErrorCategory } from "./chatErrors";
+import { ChatError, ChatErrorCode, ChatErrorCategory } from "./chatErrors";
+import { translateKey } from "../../i18n";
+import {
+  KeyOutlined,
+  LockOutlined,
+  FieldTimeOutlined,
+  SearchOutlined,
+  ColumnWidthOutlined,
+  GlobalOutlined,
+  ClockCircleOutlined,
+  ToolOutlined,
+  StopOutlined,
+  FileTextOutlined,
+  PauseCircleOutlined,
+  ApiOutlined,
+  WarningOutlined,
+} from "@ant-design/icons";
+
+const ERROR_ICONS: Record<ChatErrorCode, React.ComponentType> = {
+  [ChatErrorCode.ApiKeyMissing]: KeyOutlined,
+  [ChatErrorCode.AuthFailed]: LockOutlined,
+  [ChatErrorCode.RateLimited]: FieldTimeOutlined,
+  [ChatErrorCode.ModelNotFound]: SearchOutlined,
+  [ChatErrorCode.ContextOverflow]: ColumnWidthOutlined,
+  [ChatErrorCode.NetworkError]: GlobalOutlined,
+  [ChatErrorCode.Timeout]: ClockCircleOutlined,
+  [ChatErrorCode.ServerError]: ToolOutlined,
+  [ChatErrorCode.RequestRejected]: StopOutlined,
+  [ChatErrorCode.ParseError]: FileTextOutlined,
+  [ChatErrorCode.Cancelled]: PauseCircleOutlined,
+  [ChatErrorCode.StreamError]: ApiOutlined,
+  [ChatErrorCode.InternalError]: WarningOutlined,
+};
 
 export type RecoveryActionCode =
   | "retry"
@@ -15,6 +47,7 @@ export interface RecoveryAction {
 }
 
 export interface ChatErrorPresentation {
+  icon: React.ComponentType;
   category: ChatErrorCategory;
   titleKey: string;
   messageKey: string;
@@ -22,6 +55,15 @@ export interface ChatErrorPresentation {
   retryable: boolean;
   actions: RecoveryAction[];
   diagnostics: string;
+}
+
+export function formatRetryAfter(ms: number | null): string {
+  if (ms == null || ms <= 0) return "";
+  const secs = Math.ceil(ms / 1000);
+  if (secs < 90)
+    return translateKey("chat.error.retry_after_seconds", { count: secs });
+  const mins = Math.ceil(secs / 60);
+  return translateKey("chat.error.retry_after_minutes", { count: mins });
 }
 
 export interface RecoveryContext {
@@ -158,6 +200,7 @@ export function getErrorPresentation(error: ChatError): ChatErrorPresentation {
     .join(" | ");
 
   return {
+    icon: ERROR_ICONS[error.code] ?? ERROR_ICONS[ChatErrorCode.InternalError],
     category,
     titleKey: info.titleKey,
     messageKey: info.messageKey,

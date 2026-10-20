@@ -32,7 +32,7 @@ import {
 } from "./OrbCoord";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { orbService } from "../services/orbService";
-import { useErrorNotifyStore } from "../services/errorNotifier";
+import { useErrorNotifyStore } from "../stores/errorNotifyStore";
 import { translateKey } from "../i18n";
 
 export const OrbPanel: React.FC = () => {

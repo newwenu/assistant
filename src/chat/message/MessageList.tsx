@@ -8,7 +8,7 @@ import React, {
 import { DownOutlined, LoadingOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { MessageBubble, RoleContext } from "./MessageBubble";
-import type { Message } from "../../stores/chatStore";
+import type { Message } from "../../chat/core/chatTypes";
 import type { RetryNotification } from "../../chat/core/chatTypes";
 import css from "./MessageList.module.css";
 

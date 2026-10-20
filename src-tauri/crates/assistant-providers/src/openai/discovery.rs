@@ -13,7 +13,7 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                 Some(id) => id,
                 None => continue,
             };
-            let ctx = resolve_context_window(&id, m.resolved_context_window());
+            let ctx = resolve_context_window(&id, None, m.resolved_context_window());
             let name = {
                 let n = m.resolved_name();
                 if n.is_empty() {
@@ -39,7 +39,7 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                     Err(_) => continue,
                 };
                 let id = m.resolved_id().unwrap_or_else(|| key.clone());
-                let ctx = resolve_context_window(&id, m.resolved_context_window());
+                let ctx = resolve_context_window(&id, None, m.resolved_context_window());
                 let name = {
                     let n = m.resolved_name();
                     if n.is_empty() {

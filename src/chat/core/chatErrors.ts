@@ -43,41 +43,6 @@ export interface ChatError {
   details?: Record<string, unknown>;
 }
 
-const ERROR_ICONS: Record<ChatErrorCode, string> = {
-  [ChatErrorCode.ApiKeyMissing]: "🔑",
-  [ChatErrorCode.AuthFailed]: "🔐",
-  [ChatErrorCode.RateLimited]: "⏳",
-  [ChatErrorCode.ModelNotFound]: "🔍",
-  [ChatErrorCode.ContextOverflow]: "📏",
-  [ChatErrorCode.NetworkError]: "🌐",
-  [ChatErrorCode.Timeout]: "⏱️",
-  [ChatErrorCode.ServerError]: "🔧",
-  [ChatErrorCode.RequestRejected]: "🚫",
-  [ChatErrorCode.ParseError]: "📋",
-  [ChatErrorCode.Cancelled]: "✋",
-  [ChatErrorCode.StreamError]: "📡",
-  [ChatErrorCode.InternalError]: "⚠️",
-};
-
-export function getErrorDisplay(code: ChatErrorCode): {
-  icon: string;
-  title: string;
-} {
-  return {
-    icon: ERROR_ICONS[code],
-    title: translateKey(`chat.error.${code}`),
-  };
-}
-
-export function formatRetryAfter(ms: number | null): string {
-  if (ms == null || ms <= 0) return "";
-  const secs = Math.ceil(ms / 1000);
-  if (secs < 90)
-    return translateKey("chat.error.retry_after_seconds", { count: secs });
-  const mins = Math.ceil(secs / 60);
-  return translateKey("chat.error.retry_after_minutes", { count: mins });
-}
-
 export function isChatError(value: unknown): value is ChatError {
   if (typeof value !== "object" || value === null) return false;
   const obj = value as Record<string, unknown>;

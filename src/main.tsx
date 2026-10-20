@@ -14,6 +14,7 @@ import { initSettingSystem } from "@/settings/core/initSettingSystem";
 import { bootstrapLogger } from "@/services/logger";
 import { registerGlobalErrorHandlers } from "@/services/globalErrorHandler";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
+import { applyLocaleChange } from "@/i18n/localeApplier";
 import "@/i18n";
 import App from "./App";
 import "./assets/styles/fonts.css";
@@ -28,16 +29,6 @@ initSettingSystem();
 
 bootstrapLogger();
 registerGlobalErrorHandlers();
-
-export async function applyLocaleChange(language: string): Promise<void> {
-  const i18n = (await import("@/i18n")).default;
-  if (i18n.language !== language) {
-    await i18n.changeLanguage(language);
-  }
-  localStorage.setItem("i18nextLng", language);
-  const { useLocaleStore } = await import("@/stores/localeStore");
-  useLocaleStore.getState().setLocale(language);
-}
 
 async function bootstrap(): Promise<void> {
   const { useSettingsStore } = await import("@/stores/settingsStore");

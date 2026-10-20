@@ -61,7 +61,7 @@ pub(crate) fn list_models(adapter: &GeminiAdapter) -> Result<Vec<ModelConfig>, P
                     .strip_prefix("models/")
                     .unwrap_or(&model.name)
                     .to_string();
-                let ctx = resolve_context_window(&id, model.input_token_limit);
+                let ctx = resolve_context_window(&id, None, model.input_token_limit);
                 ModelConfig {
                     id: id.clone(),
                     name: model.display_name.unwrap_or(id),

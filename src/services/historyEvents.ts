@@ -54,14 +54,6 @@ export function subscribeHistoryEvents(): () => void {
     if (!disposed) void refreshConversationList();
   }, DEBOUNCE_MS);
 
-  const debouncedRefreshListForTerminated = debounce(() => {
-    if (!disposed) void refreshConversationList();
-  }, DEBOUNCE_MS);
-
-  const debouncedRefreshListForUnlocked = debounce(() => {
-    if (!disposed) void refreshConversationList();
-  }, DEBOUNCE_MS);
-
   track(
     listen<ConversationListChangedPayload>(
       ChatEvent.ConversationListChanged,
@@ -103,7 +95,7 @@ export function subscribeHistoryEvents(): () => void {
       ChatEvent.ConversationTerminated,
       () => {
         if (disposed) return;
-        debouncedRefreshListForTerminated();
+        debouncedRefreshList();
       },
     ),
   );
@@ -111,7 +103,7 @@ export function subscribeHistoryEvents(): () => void {
   track(
     listen<ConversationUnlockedPayload>(ChatEvent.ConversationUnlocked, () => {
       if (disposed) return;
-      debouncedRefreshListForUnlocked();
+      debouncedRefreshList();
     }),
   );
 

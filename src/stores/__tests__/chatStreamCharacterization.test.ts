@@ -40,7 +40,7 @@ vi.mock("../../services/logger", () => ({
   }),
 }));
 
-vi.mock("../../services/errorNotifier", () => ({
+vi.mock("../errorNotifyStore", () => ({
   notifyError: vi.fn(),
 }));
 

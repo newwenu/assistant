@@ -56,7 +56,7 @@ pub(crate) fn list_models(adapter: &AnthropicAdapter) -> Result<Vec<ModelConfig>
             .data
             .into_iter()
             .map(|m| {
-                let ctx = resolve_context_window(&m.id, m.resolved_context_window());
+                let ctx = resolve_context_window(&m.id, None, m.resolved_context_window());
                 ModelConfig {
                     id: m.id.clone(),
                     name: m.display_name.unwrap_or(m.id),
