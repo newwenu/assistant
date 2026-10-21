@@ -440,7 +440,10 @@
       "forkHint": "The original conversation is unaffected and remains available.",
       "forkAction": "Fork to new chat",
       "atLimitDisableEdit": "Cannot edit — branch limit reached. Fork instead.",
-      "atLimitDisableRegenerate": "Cannot regenerate — branch limit reached. Fork instead."
+      "atLimitDisableRegenerate": "Cannot regenerate — branch limit reached. Fork instead.",
+      "streamingDisableEdit": "Wait for the response to finish before editing",
+      "streamingDisableRegenerate": "Wait for the response to finish before regenerating",
+      "streamingDisableFork": "Wait for the response to finish before forking"
     },
     "provider": {
       "select_placeholder": "Select Provider"

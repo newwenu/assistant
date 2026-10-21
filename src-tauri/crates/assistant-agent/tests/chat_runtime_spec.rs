@@ -440,6 +440,8 @@ fn make_message_row(role: &str, content: &str) -> MessageRow {
         reasoning: None,
         tool_calls_json: None,
         sibling_index: 0,
+        provider_id: None,
+        model_id: None,
     }
 }
 

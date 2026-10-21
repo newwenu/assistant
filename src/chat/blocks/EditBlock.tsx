@@ -37,20 +37,20 @@ export const EditBlock: React.FC<EditBlockProps> = ({
       />
       <div className={css.actions}>
         <button
-          className={css.confirmBtn}
-          onClick={onConfirm}
-          title={t("common.actions.confirm")}
-          type="button"
-        >
-          <CheckOutlined style={{ fontSize: 12 }} />
-        </button>
-        <button
           className={css.cancelBtn}
           onClick={onCancel}
           title={t("common.actions.cancel")}
           type="button"
         >
-          <CloseOutlined style={{ fontSize: 12 }} />
+          <CloseOutlined style={{ fontSize: 14 }} />
+        </button>
+        <button
+          className={css.confirmBtn}
+          onClick={onConfirm}
+          title={t("common.actions.confirm")}
+          type="button"
+        >
+          <CheckOutlined style={{ fontSize: 14 }} />
         </button>
       </div>
     </div>

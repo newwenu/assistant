@@ -427,7 +427,10 @@
       "forkHint": "原对话不受影响，仍可继续使用。",
       "forkAction": "分叉到新对话",
       "atLimitDisableEdit": "无法编辑 — 已达分支上限，请改用分叉。",
-      "atLimitDisableRegenerate": "无法重新生成 — 已达分支上限，请改用分叉。"
+      "atLimitDisableRegenerate": "无法重新生成 — 已达分支上限，请改用分叉。",
+      "streamingDisableEdit": "回复生成中，请稍后编辑",
+      "streamingDisableRegenerate": "回复生成中，请稍后重新生成",
+      "streamingDisableFork": "回复生成中，请稍后分叉"
     },
     "provider": {
       "select_placeholder": "选择 Provider"

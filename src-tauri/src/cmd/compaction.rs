@@ -162,6 +162,8 @@ pub(crate) async fn execute_compaction(
                 reasoning: None,
                 tool_calls_json: None,
                 sibling_index: 0,
+                provider_id: None,
+                model_id: None,
             },
         )?;
     }

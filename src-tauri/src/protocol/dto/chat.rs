@@ -66,6 +66,10 @@ pub struct MessageDto {
     pub sibling_index: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sibling_count: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
 }
 
 impl From<MessageRow> for MessageDto {
@@ -83,6 +87,8 @@ impl From<MessageRow> for MessageDto {
             tool_calls_json: r.tool_calls_json,
             sibling_index: r.sibling_index,
             sibling_count: None,
+            provider_id: r.provider_id,
+            model_id: r.model_id,
         }
     }
 }

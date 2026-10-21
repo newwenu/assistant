@@ -52,7 +52,9 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             sibling_index INTEGER NOT NULL DEFAULT 0,
             is_pinned INTEGER NOT NULL DEFAULT 0,
             reasoning TEXT,
-            tool_calls_json TEXT
+            tool_calls_json TEXT,
+            provider_id TEXT,
+            model_id TEXT
         );
 
         CREATE TABLE IF NOT EXISTS tool_favorites (
@@ -107,6 +109,38 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
         .map_err(|e| e.to_string())?;
         info!("New database created with schema_version = 1");
     } else {
+        let has_provider_id: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'provider_id'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())?
+            > 0;
+        if !has_provider_id {
+            conn.execute_batch(
+                "ALTER TABLE messages ADD COLUMN provider_id TEXT;",
+            )
+            .map_err(|e| e.to_string())?;
+            info!("Added provider_id column to messages table");
+        }
+
+        let has_model_id: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'model_id'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())?
+            > 0;
+        if !has_model_id {
+            conn.execute_batch(
+                "ALTER TABLE messages ADD COLUMN model_id TEXT;",
+            )
+            .map_err(|e| e.to_string())?;
+            info!("Added model_id column to messages table");
+        }
+
         #[allow(unused)]
         {
             migrations::run_migrations(&conn)?;

@@ -54,6 +54,9 @@ pub fn send_chat_message(
     let detail_before = conversations::get_conversation_detail(&conn, &conversation_id)?
         .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
 
+    let msg_provider_id = detail_before.conversation.provider_id.clone();
+    let msg_model_id = Some(detail_before.conversation.model_id.clone());
+
     let (_user_msg_id, assistant_msg_id) = if let Some(bp_id) = &branch_point_message_id {
         let branch_point = conversations::get_message_by_id(&conn, bp_id)?
             .ok_or_else(|| format!("Branch point message {} not found", bp_id))?;
@@ -84,6 +87,8 @@ pub fn send_chat_message(
                     reasoning: None,
                     tool_calls_json: None,
                     sibling_index: user_sibling_index,
+                    provider_id: None,
+                    model_id: None,
                 },
             )?;
 
@@ -102,6 +107,8 @@ pub fn send_chat_message(
                     reasoning: None,
                     tool_calls_json: None,
                     sibling_index: 0,
+                    provider_id: msg_provider_id.clone(),
+                    model_id: msg_model_id.clone(),
                 },
             )?;
 
@@ -130,6 +137,8 @@ pub fn send_chat_message(
                     reasoning: None,
                     tool_calls_json: None,
                     sibling_index: assistant_sibling_index,
+                    provider_id: msg_provider_id.clone(),
+                    model_id: msg_model_id.clone(),
                 },
             )?;
 
@@ -156,6 +165,8 @@ pub fn send_chat_message(
                 reasoning: None,
                 tool_calls_json: None,
                 sibling_index: user_sibling_index,
+                provider_id: None,
+                model_id: None,
             },
         )?;
 
@@ -174,6 +185,8 @@ pub fn send_chat_message(
                 reasoning: None,
                 tool_calls_json: None,
                 sibling_index: 0,
+                provider_id: msg_provider_id.clone(),
+                model_id: msg_model_id.clone(),
             },
         )?;
 

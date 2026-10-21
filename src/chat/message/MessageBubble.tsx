@@ -109,6 +109,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
           : css.rootRoleAssistant,
       isGroupGap ? css.rootGroupGap : "",
       compact ? css.compact : "",
+      editing ? css.rootEditing : "",
     ]
       .filter(Boolean)
       .join(" ");

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at, is_full, active_branch_id";
 const MSG_SELECT: &str =
-    "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index";
+    "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index, provider_id, model_id";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConversationRow {
@@ -35,6 +35,8 @@ pub struct MessageRow {
     pub reasoning: Option<String>,
     pub tool_calls_json: Option<String>,
     pub sibling_index: i64,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -63,17 +65,19 @@ fn read_conv_row(row: &rusqlite::Row) -> rusqlite::Result<ConversationRow> {
 
 fn read_msg_row(row: &rusqlite::Row) -> rusqlite::Result<MessageRow> {
     Ok(MessageRow {
-        id: row.get(0)?,
-        conversation_id: row.get(1)?,
-        role: row.get(2)?,
-        content: row.get(3)?,
-        tokens: row.get(4)?,
-        timestamp: row.get(5)?,
-        parent_id: row.get(6)?,
-        is_pinned: row.get::<_, i64>(7)? != 0,
-        reasoning: row.get(8)?,
-        tool_calls_json: row.get(9)?,
-        sibling_index: row.get(10)?,
+        id: row.get("id")?,
+        conversation_id: row.get("conversation_id")?,
+        role: row.get("role")?,
+        content: row.get("content")?,
+        tokens: row.get("tokens")?,
+        timestamp: row.get("timestamp")?,
+        parent_id: row.get("parent_id")?,
+        is_pinned: row.get::<_, i64>("is_pinned")? != 0,
+        reasoning: row.get("reasoning")?,
+        tool_calls_json: row.get("tool_calls_json")?,
+        sibling_index: row.get("sibling_index")?,
+        provider_id: row.get("provider_id")?,
+        model_id: row.get("model_id")?,
     })
 }
 
@@ -183,7 +187,7 @@ pub fn delete_conversation(conn: &Connection, id: &str) -> Result<(), String> {
 pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String> {
     conn.execute(
         &format!(
-            "INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            "INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
             MSG_SELECT
         ),
         params![
@@ -197,7 +201,9 @@ pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String>
             row.is_pinned as i64,
             row.reasoning,
             row.tool_calls_json,
-            row.sibling_index
+            row.sibling_index,
+            row.provider_id,
+            row.model_id
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -561,6 +567,8 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Str
             reasoning: msg.reasoning.clone(),
             tool_calls_json: msg.tool_calls_json.clone(),
             sibling_index: msg.sibling_index,
+            provider_id: msg.provider_id.clone(),
+            model_id: msg.model_id.clone(),
         };
         insert_message(conn, &new_msg)?;
     }
@@ -854,9 +862,19 @@ pub fn create_branch(
     let new_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
 
+    let (provider_id, model_id): (Option<String>, Option<String>) = if new_role == "assistant" {
+        let conv = get_conversation_by_id(&tx, conversation_id)?;
+        match conv {
+            Some(c) => (c.provider_id.clone(), Some(c.model_id.clone())),
+            None => (None, None),
+        }
+    } else {
+        (None, None)
+    };
+
     tx.execute(
-        "INSERT INTO messages (id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index)
-         VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, 0, NULL, NULL, ?7)",
+        "INSERT INTO messages (id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index, provider_id, model_id)
+         VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, 0, NULL, NULL, ?7, ?8, ?9)",
         params![
             new_id,
             conversation_id,
@@ -865,6 +883,8 @@ pub fn create_branch(
             now,
             branch_point.parent_id,
             max_sibling_index + 1,
+            provider_id,
+            model_id,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -1106,6 +1126,8 @@ pub fn fork_to_new_conversation(
             reasoning: msg.reasoning.clone(),
             tool_calls_json: msg.tool_calls_json.clone(),
             sibling_index: 0,
+            provider_id: msg.provider_id.clone(),
+            model_id: msg.model_id.clone(),
         };
         insert_message(conn, &new_msg)?;
     }

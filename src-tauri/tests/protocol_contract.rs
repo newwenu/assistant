@@ -37,6 +37,8 @@ fn sample_message_row() -> MessageRow {
         reasoning: None,
         tool_calls_json: None,
         sibling_index: 0,
+        provider_id: None,
+        model_id: None,
     }
 }
 
@@ -57,6 +59,9 @@ fn sample_error_payload() -> ProviderErrorPayload {
         message: "rate limited".into(),
         retry_after_ms: Some(1000),
         retryable: true,
+        http_status: None,
+        provider: None,
+        provider_code: None,
     }
 }
 
@@ -66,6 +71,7 @@ fn sample_retry_notification() -> RetryNotification {
         max_attempts: 3,
         delay_ms: 500,
         message: "retrying".into(),
+        error_code: None,
     }
 }
 

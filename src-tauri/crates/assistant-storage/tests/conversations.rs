@@ -37,6 +37,8 @@ fn msg(id: &str, conv_id: &str, role: &str, content: &str, ts: i64) -> MessageRo
         reasoning: None,
         tool_calls_json: None,
         sibling_index: 0,
+        provider_id: None,
+        model_id: None,
     }
 }
 
@@ -317,6 +319,8 @@ mod property {
                     reasoning: None,
                     tool_calls_json: None,
                     sibling_index: 0,
+                    provider_id: None,
+                    model_id: None,
                 }).unwrap();
             }
             let count = conversations::get_message_count(&conn, "c1").unwrap();
@@ -358,6 +362,8 @@ mod property {
                 reasoning: None,
                 tool_calls_json: None,
                 sibling_index: 0,
+                provider_id: None,
+                model_id: None,
             }).unwrap();
 
             let all = conversations::get_conversations(&conn, None).unwrap();
@@ -388,6 +394,8 @@ fn msg_with_parent(
         reasoning: None,
         tool_calls_json: None,
         sibling_index,
+        provider_id: None,
+        model_id: None,
     }
 }
 
