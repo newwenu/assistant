@@ -118,10 +118,8 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             .map_err(|e| e.to_string())?
             > 0;
         if !has_provider_id {
-            conn.execute_batch(
-                "ALTER TABLE messages ADD COLUMN provider_id TEXT;",
-            )
-            .map_err(|e| e.to_string())?;
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN provider_id TEXT;")
+                .map_err(|e| e.to_string())?;
             info!("Added provider_id column to messages table");
         }
 
@@ -134,10 +132,8 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             .map_err(|e| e.to_string())?
             > 0;
         if !has_model_id {
-            conn.execute_batch(
-                "ALTER TABLE messages ADD COLUMN model_id TEXT;",
-            )
-            .map_err(|e| e.to_string())?;
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN model_id TEXT;")
+                .map_err(|e| e.to_string())?;
             info!("Added model_id column to messages table");
         }
 

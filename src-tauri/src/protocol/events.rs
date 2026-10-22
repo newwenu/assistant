@@ -12,6 +12,10 @@ pub mod event_name {
     pub const THEME_CHANGED: &str = "theme-changed";
     pub const SETTING_PROVIDER_CHANGED: &str = "setting:provider-changed";
     pub const SHORTCUT_WARNING: &str = "shortcut-warning";
+    pub const VAULT_LOCKED: &str = "vault:locked";
+    pub const VAULT_UNLOCKED: &str = "vault:unlocked";
+    pub const VAULT_REVEAL: &str = "vault:reveal";
+    pub const VAULT_REVEAL_RATE_LIMITED: &str = "vault:reveal-rate-limited";
 }
 
 pub fn emit_broadcast(app: &tauri::AppHandle, event: &str, payload: impl serde::Serialize + Clone) {

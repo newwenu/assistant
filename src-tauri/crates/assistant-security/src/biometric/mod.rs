@@ -1,0 +1,25 @@
+use crate::types::VaultError;
+
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "windows")]
+mod windows;
+
+pub trait BiometricKeyStore: Send + Sync {
+    fn is_available(&self) -> Result<bool, VaultError>;
+    fn set_key(&self, key_id: &str, data: &[u8]) -> Result<(), VaultError>;
+    fn get_key(&self, key_id: &str) -> Result<Vec<u8>, VaultError>;
+    fn delete_key(&self, key_id: &str) -> Result<(), VaultError>;
+    fn has_key(&self, key_id: &str) -> Result<bool, VaultError>;
+}
+
+pub fn create_key_store() -> Box<dyn BiometricKeyStore> {
+    #[cfg(target_os = "windows")]
+    return Box::new(windows::WindowsHelloKeyStore);
+    #[cfg(target_os = "macos")]
+    return Box::new(macos::TouchIdKeyStore);
+    #[cfg(target_os = "linux")]
+    return Box::new(linux::LibsecretKeyStore);
+}

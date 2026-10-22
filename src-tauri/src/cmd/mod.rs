@@ -12,6 +12,7 @@ mod orb;
 mod os_tool_exec;
 mod provider;
 mod tool;
+mod vault;
 
 pub use agent_mode::*;
 pub use app::*;
@@ -25,6 +26,7 @@ pub use orb::*;
 pub use os_tool_exec::*;
 pub use provider::*;
 pub use tool::*;
+pub use vault::*;
 
 pub(crate) fn get_db_conn<'a>(
     state: &'a tauri::State<'a, crate::setup::DbState>,

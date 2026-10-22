@@ -15,6 +15,10 @@ use assistant_config::{
     orb_conf::OrbConf,
 };
 use assistant_orb::placement;
+use assistant_security::clipboard_guard::ClipboardGuard;
+use assistant_security::reveal_guard::RevealGuard;
+use assistant_security::screen_lock::ScreenLockMonitor;
+use assistant_security::security_db::SecurityDbState;
 use assistant_storage::db;
 use assistant_tools::{os, ToolRegistry};
 
@@ -58,6 +62,38 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     handle.manage(assistant_agent::chat_tasks::ChatTasks::new());
+
+    {
+        let security_db_path = match handle.path().app_data_dir() {
+            Ok(data_dir) => data_dir.join("security").join("security.db"),
+            Err(_) => {
+                log::error!("Failed to resolve app data dir for security db");
+                std::path::PathBuf::from("security/security.db")
+            }
+        };
+        handle.manage(SecurityDbState::new(
+            security_db_path.to_str().unwrap_or("security/security.db"),
+        ));
+        handle.manage(RevealGuard::new());
+        handle.manage(ClipboardGuard::new());
+        log::info!("SecurityDbState + RevealGuard + ClipboardGuard initialized");
+    }
+
+    {
+        let monitor = ScreenLockMonitor::new();
+        let app_handle = handle.clone();
+        monitor.spawn_listener(move || {
+            let state = app_handle.state::<SecurityDbState>();
+            if let Err(e) = state.lock() {
+                log::error!("Screen lock triggered vault_lock but failed: {}", e);
+            } else {
+                log::info!("Screen lock triggered vault_lock");
+            }
+            let _ = emit_broadcast(&app_handle, event_name::VAULT_LOCKED, ());
+        });
+        handle.manage(monitor);
+        log::info!("ScreenLockMonitor initialized");
+    }
 
     {
         let registry = Arc::new(ToolRegistry::new());

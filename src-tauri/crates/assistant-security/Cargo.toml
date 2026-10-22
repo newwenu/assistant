@@ -1,0 +1,49 @@
+[package]
+name = "assistant-security"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+rusqlite = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+aes-gcm = { workspace = true }
+chacha20poly1305 = { workspace = true }
+argon2 = { workspace = true }
+hkdf = { workspace = true }
+zeroize = { workspace = true }
+subtle = { workspace = true }
+base64 = { workspace = true }
+data-encoding = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+machine-uid = { workspace = true }
+hex = { workspace = true }
+hmac = { workspace = true }
+sha1 = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+arboard = { workspace = true }
+zxcvbn = { workspace = true }
+keyring = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true }
+dirs = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+security-framework = "3.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libsecret = "0.1"
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = "3"

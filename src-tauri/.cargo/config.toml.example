@@ -1,0 +1,12 @@
+[source.crates-io]
+replace-with = "ustc"
+
+[source.tuna]
+registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
+
+[source.ustc]
+registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"
+
+[env]
+OPENSSL_DIR = "<vcpkg 安装树绝对路径>/installed/x64-windows-static"
+OPENSSL_STATIC = "1"

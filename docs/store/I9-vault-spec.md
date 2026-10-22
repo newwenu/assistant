@@ -1,5 +1,13 @@
 # I9 — 密码管理箱（Password Vault）规格说明
 
+> ⚠️ 本文档已拆分为 6 份子文档，请参阅：
+> 1. [I9-vault-spec-1-foundation.md](./I9-vault-spec-1-foundation.md) — 安全基础与总览（§1+§2+§3+§9）
+> 2. [I9-vault-spec-2-crud-and-ui.md](./I9-vault-spec-2-crud-and-ui.md) — 数据交互与前端（§4+§5）
+> 3. [I9-vault-spec-3-security-enhance.md](./I9-vault-spec-3-security-enhance.md) — 安全增强与运行时守护（§6+§7+§8）
+> 4. [I9-vault-spec-3a-biometric-platform.md](./I9-vault-spec-3a-biometric-platform.md) — 生物识别平台真实实现（§8a，P1-F 遗留）
+> 5. [I9-vault-spec-4-git-sync.md](./I9-vault-spec-4-git-sync.md) — Git 同步（§11，P2A）
+> 6. [I9-vault-spec-5-ssh-and-recovery.md](./I9-vault-spec-5-ssh-and-recovery.md) — SSH Agent + 恢复密钥（§12+§13，P2A'+P2A''）
+
 ## 1. 交付目标
 
 在现有工具箱体系中新增 **密码管理箱** 工具，提供本地加密存储 + 云同步能力。以独立 `assistant-security` crate 集中安全逻辑，独立 `security.db`（SQLCipher）隔离敏感数据，最小暴露 IPC API 防止 XSS 窃密。
@@ -25,12 +33,12 @@
 | **P2A** | Git 同步 + assistant-sync crate | prepare→操作→finalize + .enc 双写 + 冲突解决 | P1-F |
 | **P2A'** | SSH Agent 集成 | 解锁自动加载 + 锁定自动移除 | P2A |
 | **P2A''** | 恢复密钥 + 紧急访问 | 恢复密钥生成/使用 + 灾难恢复验证 | P2A |
-| **P2B** | WebDAV/S3 同步 + AutoType | SyncBackend trait + enigo 自动填充 | P2A |
-| **P3** | KDBX4 导入导出 + Passkey | rust-keepass 集成 + WebAuthn | P2B |
 
 ### 2.2 初始阶段范围（P1-A ~ P1-F）
 
-本规格文档覆盖 **P1-A 至 P1-F**，即本地密码箱的完整可用版本。P2A/P2B/P3 在后续规格文档中展开。
+本规格文档覆盖 **P1-A 至 P1-F**，即本地密码箱的完整可用版本。P2A/P2A'/P2A'' 已在后续规格文档中展开：[I9-vault-spec-4-git-sync.md](./I9-vault-spec-4-git-sync.md)（P2A）、[I9-vault-spec-5-ssh-and-recovery.md](./I9-vault-spec-5-ssh-and-recovery.md)（P2A'+P2A''）。
+
+> **已砍掉阶段**：~~P2B WebDAV/S3 同步 + AutoType~~（Git 同步已够用，浏览器扩展填充优于 AutoType）、~~P3 KDBX4 导入导出 + Passkey~~（CSV/JSON 导入已覆盖迁移，Passkey 与硬件绑定安全模型矛盾）。
 
 ---
 
@@ -343,15 +351,19 @@ src/tools/password-vault/
 
 ### 5.6 设置项扩展
 
-AppConf 新增字段（同步更新 Rust struct + `#[serde(default)]`）：
+AppConf 新增字段，**必须同步更新前端 interface + Rust struct + `#[serde(default)]`**（项目规则要求）：
 
-| 字段 | 类型 | 默认值 |
-|------|------|--------|
-| `vaultAutoLockMinutes` | `number` | 5 |
-| `vaultLockOnScreenLock` | `boolean` | true |
-| `vaultClipboardClearSeconds` | `number` | 30 |
-| `vaultCipherAlgorithm` | `"aes256Gcm" \| "chacha20Poly1305"` | `aes256Gcm` |
-| `vaultBiometricEnabled` | `boolean` | false |
+| 前端字段 (AppConf) | Rust 字段 (app_conf.rs) | 类型 | 默认值 |
+|---------------------|------------------------|------|--------|
+| `vaultAutoLockMinutes` | `vault_auto_lock_minutes` | `u32` / `number` | 5 |
+| `vaultLockOnScreenLock` | `vault_lock_on_screen_lock` | `bool` / `boolean` | true |
+| `vaultClipboardClearSeconds` | `vault_clipboard_clear_seconds` | `u32` / `number` | 30 |
+| `vaultCipherAlgorithm` | `vault_cipher_algorithm` | `CipherAlgorithm` / `"aes256Gcm" \| "chacha20Poly1305"` | `aes256Gcm` |
+| `vaultBiometricEnabled` | `vault_biometric_enabled` | `bool` / `boolean` | false |
+
+Rust struct 示例（`assistant-config/src/app_conf.rs`）：
+- 每个字段添加 `#[serde(default)]`，确保旧配置文件缺失新字段时不报错
+- `CipherAlgorithm` 实现 `Serialize`/`Deserialize`，序列化为 `"aes256Gcm"` / `"chacha20Poly1305"`
 
 ### 5.7 i18n
 
@@ -488,14 +500,16 @@ release 构建时禁用 DevTools（`cfg(not(debug_assertions))` 条件编译）�
 
 ### 8.2 BiometricKeyStore trait
 
-```rust
-pub trait BiometricKeyStore: Send + Sync {
-    fn is_available(&self) -> Result<bool>;
-    fn set_key(&self, key_id: &str, data: &[u8]) -> Result<()>;   // OS 弹生物识别确认
-    fn get_key(&self, key_id: &str) -> Result<Vec<u8>>;           // OS 弹生物识别提示 → 释放密钥
-    fn delete_key(&self, key_id: &str) -> Result<()>;
-}
-```
+平台抽象接口，约束：`Send + Sync`（Tauri State 跨线程要求）。四个方法：
+
+| 方法 | 输入 | 输出 | 副作用 |
+|------|------|------|--------|
+| `is_available()` | — | `Result<bool>` | 检测平台是否支持生物识别 |
+| `set_key(key_id, data)` | 密钥 ID + 待保护数据 | `Result<()>` | OS 弹生物识别确认 → 通过后将数据存入 OS 密钥管理器（受生物识别保护） |
+| `get_key(key_id)` | 密钥 ID | `Result<Vec<u8>>` | OS 弹生物识别提示 → 通过后释放受保护的数据 → 失败/取消返回 Error |
+| `delete_key(key_id)` | 密钥 ID | `Result<()>` | 从 OS 密钥管理器删除条目 |
+
+> **关键设计约束**（与设计文档 §3.5.1 一致）：`get_key()` 不是 `authenticate() → bool`。OS 密钥管理器中的数据受生物识别保护，读取时 OS 自动弹出提示，通过后才释放。任何进程无法绕过生物识别直接读取受保护数据。
 
 ### 8.3 平台实现
 
@@ -507,10 +521,13 @@ pub trait BiometricKeyStore: Send + Sync {
 
 ### 8.4 解锁流程
 
+与设计文档 §3.5.3 一致：
+
 1. 检测 `biometric_key_enc` 是否存在于 `vault_meta`
-2. 存在 → 调用平台 `getKey()`（OS 弹生物识别提示）
-3. 通过 → 释放随机密钥 → 解密 `biometric_key_enc` → 恢复 master_key → 解锁
+2. 存在 → 调用平台 `get_key()`（OS 弹生物识别提示：Touch ID / Windows Hello / Polkit）
+3. 通过 → OS 释放随机密钥 → 解密 `biometric_key_enc` → 恢复 master_key → 打开 security.db → 解锁
 4. 失败/取消 → 回退到主密码输入
+5. 不存在 → 直接要求主密码输入
 
 ### 8.5 Tauri Commands
 
@@ -530,12 +547,40 @@ pub trait BiometricKeyStore: Send + Sync {
 
 ## 9. 跨阶段约束
 
-### 9.1 类型安全
+### 9.1 与设计文档一致性
+
+本规格文档为设计文档 [VAULT-DESIGN.md](../VAULT-DESIGN.md) 的 P1-A~P1-F 实施约束。以下为关键对齐点：
+
+| 维度 | 设计文档 | 本 spec | 对齐状态 |
+|------|---------|---------|---------|
+| 密钥层级 | §2.2 Argon2id → HKDF → entry_key / sqlcipher_key | §3.3 VaultCrypto 方法表 | ✅ 一致 |
+| 数据模型 | §2.3 vault_entries + vault_meta + security_audit_log | §3.7 schema DDL | ✅ 一致 |
+| 安全类型 | §2.2 VaultPlaintext / MasterKey | §3.3 安全类型表 | ✅ 一致 |
+| Tauri Commands | §5 完整命令表（含 P2 同步/SSH/紧急访问） | §4.2 仅 P1-B 范围 | ✅ spec 为子集 |
+| 生物识别 | §3.5.2 平台实现表 | §8.3 平台实现表 | ✅ 一致 |
+| vaultStore | §6.2 含 syncStatus/conflicts/hibpResults | §5.4 含 hibpResults（syncStatus/conflicts 属 P2） | ✅ spec 为子集 |
+| 工具注册 | §6.1 defineTool | §5.2 属性表 | ✅ 一致（移除 createdAt 避免硬编码日期） |
+
+### 9.2 类型安全
 
 - `as unknown as` 仅允许 2 处（`confUtils.ts` + `i18n/index.ts`），vault 代码禁止
-- 新增设置项必须同步更新 `AppConf` interface + Rust struct
+- 新增设置项必须同步更新 `AppConf` interface + Rust struct（见 §5.6）
 
-### 9.2 安全不变式
+### 9.3 Tauri Command 错误映射
+
+所有 `vault_*` command 返回 `Result<T, String>`，Rust 侧 `VaultError` 枚举序列化为可读字符串：
+
+| VaultError 变体 | 前端处理 |
+|----------------|---------|
+| `Locked` | 提示解锁 / 自动跳转解锁界面 |
+| `InvalidMasterPassword` | 输入框标红 + "主密码错误" |
+| `EntryNotFound(id)` | 刷新列表 / 提示条目已删除 |
+| `RateLimited` | 显示"操作过于频繁，请稍后再试" + 倒计时 |
+| `CryptoError(msg)` | 通用错误弹窗 + msg |
+| `DbError(msg)` | 通用错误弹窗 + msg |
+| `IoError(msg)` | 通用错误弹窗 + msg |
+
+### 9.4 安全不变式
 
 | 不变式 | 验证方式 |
 |--------|---------|
@@ -545,8 +590,50 @@ pub trait BiometricKeyStore: Send + Sync {
 | MasterKey Drop zeroize | 单元测试：drop 后内存全零 |
 | CSP 生效 | 集成测试：eval() 抛错 |
 
-### 9.3 向后兼容
+### 9.5 向后兼容
 
 - `assistant.db` 零改动（SQLCipher 不设 key 时等同普通 SQLite）
-- `assistant-providers` 的 `encrypt_api_key` / `decrypt_api_key` 迁出后功能不变
+- `assistant-providers` 的 `encrypt_api_key` / `decrypt_api_key` 迁出后功能不变（re-export 保持公开 API）
 - 现有工具不受影响（密码箱为新增工具）
+
+---
+
+## 10. 现有代码与规格偏差
+
+### 10.1 已接受的偏差（功能等价或更优，无需修复）
+
+| # | 偏差项 | spec 要求 | 实际实现 | 评价 |
+|---|--------|----------|---------|------|
+| 1 | VaultPlaintext 内部类型 | `secrecy::Secret<Vec<u8>>` + mlock | 纯 `Vec<u8>` + Zeroize + Drop | 等价：Drop zeroize 语义相同；mlock 为深度防御非必需 |
+| 2 | VaultPlaintext 访问方法 | `expose_secret()` | `expose()` | 等价：方法名不同，只读访问语义相同 |
+| 3 | SecurityDbState 构造 | `locked()` 无参数 | `new(db_path)` 存 db_path | 等价：路径提前绑定 |
+| 4 | CRUD 逻辑位置 | `assistant-storage::vault` 模块 | `SecurityDbState` 内联 | 等价：更内聚，避免跨 crate 传递 MasterKey |
+| 5 | backup 实现 | `fs::copy` | `VACUUM INTO` | 更优：紧凑无碎片 |
+| 6 | init 即设 PRAGMA key | init 不加密，unlock 后生效 | init 即设 PRAGMA key | 更优：消除 init→unlock 明文窗口 |
+| 7 | salt 存储 | 外部文件 | 两阶段解锁，salt 在加密 DB 内 | 更优：消除单点故障 |
+| 8 | 密码强度算法 | `zxcvbn-rs` crate | 已用 `zxcvbn` 3.1.1 | 已修复：含 feedback/crack_times/score |
+| 9 | Cargo.toml 依赖 | `totp-rs` / `zxcvbn` | TOTP 自写；zxcvbn 已引入 | 等价：TOTP 自写功能等价 |
+| 10 | vault_copy_password | ClipboardGuard | 已用 ClipboardGuard | 已修复：超时恢复 + 条件恢复 + 退出钩子 |
+| 11 | RevealGuard 速率限制 | 滑动窗口 | 滑动窗口（`Vec<Instant>` + retain） | 已修复：从固定窗口改为滑动窗口 |
+| 12 | vault_change_master_password | 步骤含 disenroll_biometric | 已在末尾调用 `disenroll_biometric` | 已修复：旧 biometric_key_enc 自动清理 |
+| 13 | RevealGuard UI 通知 | 每次 reveal 显示 toast | emit `vault:reveal` / `vault:reveal-rate-limited` | 已修复：前端可监听显示 toast |
+| 14 | 解锁窗口已存在 | focus 而非新建 | `set_focus()` + return | 已修复：窗口被遮挡时前置显示 |
+| 15 | 解锁窗口 Tauri event | `vault:unlocked` 通知主窗口 | unlock 成功后 emit `vault:unlocked` | 已修复：主窗口可监听刷新 vaultStore |
+| 16 | vault_unlock 返回值 | `Result<(), VaultError>` | `Result<bool, String>` | 等价：前端处理方式不同，行为等价 |
+| 17 | VaultEntryDetail 返回 | 含明文字段 | 仅 has_* 布尔标记 | 更优：明文须通过 reveal 获取 |
+| 18 | revealedField 状态 | `{ value, expiresAt }` | `{ value, expiresAt, kind }` | 更优：kind 区分字段类型 |
+| 19 | 自动锁定事件 | visibilitychange | mousemove/keydown/visibilitychange | 更优：超集 |
+| 20 | 剪贴板守护方案 | 子进程 helper binary | 守护线程 + 退出钩子 | 等价：kill -9 差异已接受 |
+| 21 | AuditEvent 枚举 | 12 值 | 17 值 | 超集 |
+| 22 | VaultError 变体 | 7 | 15 | 超集 |
+| 23 | VaultCategory 枚举 | 5 值 | 6 值（+ Custom） | 超集 |
+| 24 | schema 索引 | 3 个 | 7 个 | 超集 |
+| 25 | HIBP SafePassword | 无特殊类型 | `SafePassword` + Drop zeroize | 更优 |
+| 26 | TOTP 算法 | SHA-1 默认 | SHA-1/256/512 + 6/8 位 + Steam | 超集 |
+| 27 | CSP / DevTools | spec 要求 | 已实现 | 已实现 |
+
+### 10.2 待修复的偏差（存在功能偏离）
+
+| # | 偏差项 | spec 要求 | 实际代码 | 优先级 |
+|---|--------|----------|---------|--------|
+| 1 | 生物识别全 stub | P1-F 完整实现 | 3 平台全返回 `BiometricUnavailable` | 🔴 P1-F 整体不可用 → [spec-3a](./I9-vault-spec-3a-biometric-platform.md) |

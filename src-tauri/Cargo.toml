@@ -15,6 +15,7 @@ members = [
     "crates/assistant-storage",
     "crates/assistant-i18n",
     "crates/assistant-tools",
+    "crates/assistant-security",
 ]
 
 [workspace.package]
@@ -38,15 +39,22 @@ tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 rustc_version_runtime = "0.3"
 mouse_position = "0.1"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled-sqlcipher"] }
 dirs = "6"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
 sha2 = "0.10"
 base64 = "0.22"
+data-encoding = "2"
 machine-uid = "0.2"
+hex = "0.4"
+argon2 = "0.5"
+hkdf = "0.12"
+zeroize = { version = "1", features = ["derive", "alloc"] }
+subtle = "2"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -72,6 +80,22 @@ assistant-agent = { path = "crates/assistant-agent" }
 assistant-storage = { path = "crates/assistant-storage" }
 assistant-i18n = { path = "crates/assistant-i18n" }
 assistant-tools = { path = "crates/assistant-tools" }
+assistant-security = { path = "crates/assistant-security" }
+arboard = "3"
+csv = "1"
+hmac = "0.12"
+sha1 = "0.10"
+zxcvbn = "3"
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+windows = { version = "0.58", features = [
+    "Foundation",
+    "Security_Credentials",
+    "Security_Cryptography",
+    "Security_Cryptography_DataProtection",
+    "Storage_Streams",
+    "Win32_Foundation",
+    "Win32_System_WinRT",
+] }
 
 [dependencies]
 serde = { workspace = true }
@@ -91,6 +115,8 @@ tokio = { workspace = true }
 futures = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+arboard = { workspace = true }
+csv = { workspace = true }
 
 assistant-config = { workspace = true }
 assistant-orb = { workspace = true }
@@ -99,6 +125,7 @@ assistant-agent = { workspace = true }
 assistant-storage = { workspace = true }
 assistant-i18n = { workspace = true }
 assistant-tools = { workspace = true }
+assistant-security = { workspace = true }
 rustc_version_runtime.workspace = true
 crash-handler = { workspace = true }
 minidump-writer = { workspace = true }

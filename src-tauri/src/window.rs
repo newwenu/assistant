@@ -116,6 +116,9 @@ pub fn show_or_create(app: &AppHandle, label: &str) -> Result<(), String> {
         builder = builder.min_inner_size(mw, mh);
     }
 
+    #[cfg(not(debug_assertions))]
+    let builder = builder.devtools(false);
+
     if let Err(e) = builder.build() {
         log::warn!("Failed to build window {}: {}", label, e);
         if let Some(window) = app.get_webview_window(label) {

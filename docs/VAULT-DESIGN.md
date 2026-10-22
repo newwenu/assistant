@@ -9,8 +9,8 @@
 | 目标 | 说明 |
 |------|------|
 | 安全存储 | 主密码 + Argon2id 派生密钥，AES-256-GCM / ChaCha20-Poly1305 条目级加密，内存 zeroize |
-| 云同步 | **Git 同步优先**（参考 prs 的 prepare→操作→finalize 模式），WebDAV/S3 备选 |
-| 渐进增强 | Phase 1 本地密码箱 + TOTP + HIBP + 生物识别 → Phase 2A Git 同步 + SSH Agent + 紧急访问 → Phase 2B WebDAV/S3 + AutoType → Phase 3 KDBX4 + Passkey |
+| 云同步 | **Git 同步**（参考 prs 的 prepare→操作→finalize 模式） |
+| 渐进增强 | Phase 1 本地密码箱 + TOTP + HIBP + 生物识别 → Phase 2A Git 同步 + SSH Agent + 紧急访问 |
 | 工具箱集成 | `defineTool()` 注册，复用密码生成器，归属 `security` 分类 |
 
 ### 1.2 参考项目
@@ -20,23 +20,23 @@
 | **prs** | — | 🥇 **Git 同步模式** — prepare→操作→finalize 自动同步、Readyness 状态机、智能推送优化、**整体 GPG 加密**（每条目一个 `.gpg` 文件，非逐字段 JSON 加密） | `lib/src/sync.rs`（Sync struct + prepare/finalize）、`lib/src/git.rs`（git CLI 封装）、`lib/src/types.rs`（Plaintext/Ciphertext 安全封装）、`cli/src/action/sync/`（init/commit/pull/push/status） |
 | **Vaultwarden** | 69K | Rust 零知识加密 + 条目级同步 API + WebSocket 推送 + 紧急访问 + Send 一次性分享 | `src/crypto.rs`（PBKDF2）、`src/api/core/ciphers.rs`（cipher CRUD）、`src/db/models/cipher.rs`（数据模型）、`src/api/notifications.rs`（WS 实时推送）、`src/api/emergency_access.rs`（紧急访问）、`src/db/models/send.rs`（一次性分享） |
 | **KeePassXC** | 29K | 文件级同步 + 合并策略 + TOTP + HIBP 泄露检测 + 生物识别快速解锁 + SSH Agent + AutoType + Passkey | `src/core/Merger.cpp`（合并算法）、`src/core/Totp.cpp`、`src/core/PasswordHealth.cpp`、`src/networking/HibpDownloader.cpp`（k-匿名泄露检测）、`src/quickunlock/`（Windows Hello/TouchID）、`src/sshagent/SSHAgent.cpp`（SSH Agent 集成）、`src/gui/entry/AutoTypeAssociationsModel.cpp` |
-| **rust-keepass** | 137 | 纯 Rust KDBX4 读写 | `src/kpdb/crypter.rs`（AES/ChaCha20 加解密 + SecureString 内存保护）、`src/kpdb/parser.rs` |
+| **rust-keepass** | 137 | ~~纯 Rust KDBX4 读写~~（已砍掉，CSV/JSON 导入已覆盖迁移需求） | `src/kpdb/crypter.rs`（AES/ChaCha20 加解密 + SecureString 内存保护）、`src/kpdb/parser.rs` |
 
 ### 1.3 同步方案决策
 
-| 维度 | Git 同步（prs 模式）✅ 首选 | WebDAV/S3 同步 备选 |
-|------|---------------------------|---------------------|
-| 实现复杂度 | 🥇 极低 — 调用 git CLI，prs 仅 ~670 行 | 中 — WebDAV PROPFIND/PUT/GET + etag 冲突 ~800+ 行 |
-| 冲突解决 | 🥇 Git 原生三路合并 + rebase，40 年工业验证 | 自定义合并算法（KeePassXC Merger） |
-| 历史追踪 | 🥇 Git 完整历史，可 `git log` / `git revert` 回滚 | 无历史，只有当前状态 |
-| 多设备 | 🥇 Git 天然分布式，多分支多设备 | etag 冲突检测，需手动解决 |
-| 离线支持 | 🥇 Git 离线可操作，上线后自动同步 | 需本地缓存 + 合并逻辑 |
-| 依赖 | 需系统安装 `git`（可 Tauri bundle） | 仅需 `reqwest`（项目已有） |
-| 国内可用性 | GitHub/GitLab 可能慢，可配自建 Gitea | 坚果云 WebDAV 国内最快 |
-| 文件粒度 | 🥇 每条目一个加密文件（整体打包），diff 友好 | 整个 vault.enc 一个文件 |
-| pass 生态兼容 | 🥇 完全兼容 `pass` 标准 | 不兼容 |
+| 维度 | Git 同步（prs 模式）✅ |
+|------|----------------------|
+| 实现复杂度 | 🥇 极低 — 调用 git CLI，prs 仅 ~670 行 |
+| 冲突解决 | 🥇 Git 原生三路合并 + rebase，40 年工业验证 |
+| 历史追踪 | 🥇 Git 完整历史，可 `git log` / `git revert` 回滚 |
+| 多设备 | 🥇 Git 天然分布式，多分支多设备 |
+| 离线支持 | 🥇 Git 离线可操作，上线后自动同步 |
+| 依赖 | 需系统安装 `git`（可 Tauri bundle） |
+| 国内可用性 | GitHub/GitLab 可能慢，可配自建 Gitea |
+| 文件粒度 | 🥇 每条目一个加密文件（整体打包），diff 友好 |
+| pass 生态兼容 | 🥇 完全兼容 `pass` 标准 |
 
-**决策**：Phase 2A 先实现 Git 同步（实现量小、冲突解决免费、历史追踪免费），Phase 2B 可选 WebDAV/S3（面向国内坚果云用户）。
+**决策**：仅实现 Git 同步（实现量小、冲突解决免费、历史追踪免费）。~~WebDAV/S3 同步~~已砍掉（Git 同步已够用，WebDAV/S3 面向非技术用户，个人项目不需要）。
 
 ---
 
@@ -54,8 +54,8 @@
 │  ├── VaultList.tsx          ← 条目列表 + 搜索/分类/标签筛选      │
 │  ├── VaultEntryForm.tsx     ← 新增/编辑条目                     │
 │  ├── VaultEntryDetail.tsx   ← 条目详情（复制/显示密码）          │
-│  ├── VaultSyncSettings.tsx  ← 同步配置（Git/WebDAV/S3）         │
-│  ├── VaultConflictResolve.tsx ← 同步冲突解决 UI（WebDAV 模式）  │
+│  ├── VaultSyncSettings.tsx  ← 同步配置（Git）                   │
+│  ├── VaultConflictResolve.tsx ← 同步冲突解决 UI（Git 模式）     │
 │  ├── vaultStore.ts          ← Zustand 状态（解锁/条目/同步）     │
 │  └── vault.service.ts       ← 前端服务层（invoke 封装）         │
 ├─────────────────────────────────────────────────────────────────┤
@@ -77,12 +77,8 @@
 │  ├── vault_meta/             ← vault_meta KV（主密码哈希/同步态）│
 │  assistant-providers/src/                                       │
 │  └── (crypto 已迁出)         ← API Key 加解密改调 assistant-security │
-│  assistant-sync/             ← 新 crate：云同步引擎              │
-│  ├── git_sync/               ← Git 同步（优先，参考 prs）       │
-│  ├── backend/                ← SyncBackend trait（WebDAV/S3 备选）│
-│  ├── webdav/                 ← WebDAV 实现                      │
-│  ├── s3/                     ← S3/R2 实现                       │
-│  ├── merge/                  ← 合并算法（WebDAV 模式，参考 Merger）│
+│  assistant-sync/             ← 新 crate：Git 同步引擎            │
+│  ├── git_sync/               ← Git 同步（参考 prs）             │
 │  ├── sync_engine/            ← 同步引擎（pull/push/sync）       │
 │  └── vault_file/             ← vault 文件序列化/反序列化        │
 │  src-tauri/src/cmd/                                             │
@@ -131,35 +127,13 @@
 
 prs 用 `secstr::SecVec<u8>` 封装明文/密文，从类型系统层面防止泄露。`secstr` 已停维，我们采用 `secrecy`（活跃维护，API 等价）：
 
-```rust
-use secrecy::{Secret, ExposeSecret};
-use zeroize::Zeroize;
+**VaultPlaintext 安全类型**（`vault_crypto/types.rs`）：
 
-/// 明文安全封装 — 内存保护，访问必须通过 expose()
-#[derive(Zeroize)]
-#[zeroize(drop)]
-pub struct VaultPlaintext(Secret<Vec<u8>>);
-
-impl From<Vec<u8>> for VaultPlaintext {
-    fn from(mut other: Vec<u8>) -> VaultPlaintext {
-        let into = VaultPlaintext(Secret::new(other.clone()));
-        other.zeroize();                  // 原始 buffer 立即清零
-        into
-    }
-}
-
-impl VaultPlaintext {
-    pub fn expose(&self) -> &[u8] { self.0.expose_secret() }
-    pub fn is_empty(&self) -> bool { self.expose().is_empty() }
-    pub fn from_str(s: &str) -> Self { s.as_bytes().to_vec().into() }
-}
-```
-
-- `expose()` 命名与 `secrecy::ExposeSecret` trait 语义一致，开发者不会无意中泄露
-- `From` 转换时**自动 zeroize 原始 buffer**，消除"忘记清零"的隐患
-- `SecVec` 底层用 `mlock()` 锁定内存页，防止被 swap 到磁盘
-- `#[zeroize(drop)]` 确保 Drop 时自动清零
-- **加密/解密 API 统一使用 `VaultPlaintext`**：`encrypt_field(plaintext: &VaultPlaintext, ...)` → `decrypt_field(...) → VaultPlaintext`，从类型系统层面防止明文泄露
+- 内部 `secrecy::Secret<Vec<u8>>`，访问必须通过 `expose_secret()`（`secrecy::ExposeSecret` trait），不实现 `Clone`/`Debug`（防止意外复制/打印）
+- `From<Vec<u8>>`：move 所有权到 `Secret::new(other)`，原始 buffer 随即 zeroize + drop
+- `#[zeroize(drop)]`：Drop 时自动清零，编译器保证调用
+- `Secret` 底层用 `mlock()` 锁定内存页，防止被 swap 到磁盘
+- **加密/解密 API 统一使用 `VaultPlaintext`**：`encrypt_field(plaintext: &VaultPlaintext, ...) → String` → `decrypt_field(...) → VaultPlaintext`，从类型系统层面防止明文泄露
 
 **与已有 crypto 的关系**：已有 `encrypt_api_key` / `decrypt_api_key` 使用 `machine_uid` 派生密钥，vault 新增 `vault_crypto` 使用 `Argon2id(master_password)` 派生密钥。两者共享 `aes-gcm` + `base64` + `rand` 依赖，新增 `argon2` + `hkdf` + `zeroize`。
 
@@ -184,14 +158,7 @@ app_data_dir/
 │   └── deletions/            ← deleted.json
 ```
 
-> **Rust 状态管理**：
-> ```rust
-> pub struct SecurityDbState {
->     conn: Mutex<Option<rusqlite::Connection>>,  // None = 锁定，Some = 已解锁
->     master_key: Mutex<Option<MasterKey>>,        // MasterKey: zeroize + Drop 自动清零
-> }
-> ```
-> 锁定时 `conn` 置 None → 关闭连接 → `security.db` 文件回退为 SQLCipher 密文 → 主库 `assistant.db` 不受影响。
+> **Rust 状态管理**：`SecurityDbState` 持有 `conn: Mutex<Option<Connection>>` + `master_key: Mutex<Option<MasterKey>>`。`None` = 锁定，`Some` = 已解锁。`MasterKey` 实现 `Zeroize` + `Drop` 自动清零，不实现 `Clone`/`Debug`。`rusqlite::Connection` 在 `bundled-sqlcipher` feature 下实现 `Send`，满足 Tauri `State<T>: Send + Sync` 约束。锁定时 `conn` 置 None → 关闭连接 → `security.db` 文件回退为 SQLCipher 密文 → 主库 `assistant.db` 不受影响。
 
 #### SQLite 表（均位于 security.db）
 
@@ -209,7 +176,7 @@ CREATE TABLE IF NOT EXISTS vault_entries (
   totp_digits INTEGER NOT NULL DEFAULT 6,
   totp_period INTEGER NOT NULL DEFAULT 30,
   tags TEXT NOT NULL DEFAULT '[]',
-  is_favorite INTEGER NOT NULL DEFAULT 0,
+  is_favorite INTEGER NOT NULL DEFAULT 0,  -- 0=false, 1=true
   revision INTEGER NOT NULL DEFAULT 1,
   deleted_at INTEGER,
   created_at INTEGER NOT NULL,
@@ -264,68 +231,31 @@ CREATE INDEX IF NOT EXISTS idx_vault_entries_updated
 
 #### Rust 数据结构
 
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultEntry {
-    pub id: String,
-    pub title: String,
-    pub username: Option<String>,
-    pub url: Option<String>,
-    pub category: VaultCategory,
-    pub encrypted_password: String,
-    pub encrypted_notes: Option<String>,
-    pub encrypted_custom_fields: Option<String>,
-    pub encrypted_totp_secret: Option<String>,
-    pub totp_digits: u32,
-    pub totp_period: u32,
-    pub tags: Vec<String>,
-    pub is_favorite: bool,
-    pub revision: u64,
-    pub deleted_at: Option<i64>,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
+**VaultEntry**（加密存储，`serde rename_all = "camelCase"`）：
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum VaultCategory {
-    Login,
-    Card,
-    Identity,
-    Note,
-    SshKey,
-}
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `String` | UUID |
+| `title` | `String` | 标题（明文，搜索必需） |
+| `username` | `Option<String>` | 用户名（明文，搜索必需） |
+| `url` | `Option<String>` | 网址（明文，搜索/AutoType 匹配必需） |
+| `category` | `VaultCategory` | 枚举：login / card / identity / note / sshKey（`serde rename_all = "lowercase"`） |
+| `encrypted_password` | `String` | base64 密文 |
+| `encrypted_notes` | `Option<String>` | base64 密文 |
+| `encrypted_custom_fields` | `Option<String>` | base64 密文（整体加密的 JSON 数组） |
+| `encrypted_totp_secret` | `Option<String>` | base64 密文 |
+| `totp_digits` | `u32` | 默认 6 |
+| `totp_period` | `u32` | 默认 30 |
+| `tags` | `Vec<String>` | JSON 数组字符串 |
+| `is_favorite` | `bool` | 收藏标记 |
+| `revision` | `u64` | 同步用单调递增版本号 |
+| `deleted_at` | `Option<i64>` | 软删除时间戳，None = 未删除 |
+| `created_at` | `i64` | 创建时间戳 |
+| `updated_at` | `i64` | 更新时间戳 |
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultEntryDecrypted {
-    pub id: String,
-    pub title: String,
-    pub username: Option<String>,
-    pub url: Option<String>,
-    pub category: VaultCategory,
-    pub password: VaultPlaintext,
-    pub notes: Option<VaultPlaintext>,
-    pub custom_fields: Option<Vec<CustomField>>,
-    pub totp_secret: Option<VaultPlaintext>,
-    pub totp_digits: Option<u32>,
-    pub totp_period: Option<u32>,
-    pub hibp_count: Option<i32>,
-    pub tags: Vec<String>,
-    pub is_favorite: bool,
-    pub revision: u64,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
+**VaultEntryDecrypted**（解密后，仅 Rust 端内部使用，不跨 IPC）：
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CustomField {
-    pub name: String,
-    pub value: VaultPlaintext,
-    pub is_secret: bool,
-}
-```
+与 `VaultEntry` 字段一一对应，但 `encrypted_*` 替换为 `VaultPlaintext` 明文类型。`custom_fields` 为 `Vec<CustomField>`，其中 `CustomField { name: String, value: VaultPlaintext, is_secret: bool }`。**注意**：`VaultPlaintext` 不实现 `Clone`，`VaultEntryDecrypted` 也不实现 `Clone`——需要副本时必须逐字段重新构造。
 
 #### 前端类型
 
@@ -359,124 +289,27 @@ interface VaultEntryDetail extends VaultEntrySummary {
 
 ### 3.1 vault_crypto 核心 API
 
-```rust
-use argon2::{Argon2, Algorithm, Version, Params};
-// assistant-security/src/vault_crypto/mod.rs
-use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Nonce};
-use chacha20poly1305::{ChaCha20Poly1305, Key as ChaChaKey};
-use hkdf::Hkdf;
-use sha2::Sha256;
-use zeroize::Zeroize;
+错误处理风格与项目一致：`Result<T, String>` + `.map_err(|e| format!(...))`。
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum CipherAlgorithm {
-    Aes256Gcm,
-    ChaCha20Poly1305,
-}
+**CipherAlgorithm** 枚举（`serde rename_all = "camelCase"`）：
 
-impl Default for CipherAlgorithm {
-    fn default() -> Self { CipherAlgorithm::Aes256Gcm }
-}
+| 变体 | discriminant | 说明 |
+|------|-------------|------|
+| `Aes256Gcm` | 0 | 默认算法 |
+| `ChaCha20Poly1305` | 1 | 可选，无侧信道风险 |
 
-pub struct VaultCrypto;
+显式标注 discriminant（`Aes256Gcm = 0, ChaCha20Poly1305 = 1`），保证密文格式跨版本兼容。
 
-impl VaultCrypto {
-    /// Argon2id 派生 master_key（安全数据库主密钥）
-    pub fn derive_master_key(password: &str, salt: &[u8; 32]) -> Result<[u8; 32], String> {
-        let params = Params::new(65536, 3, 4, Some(32))
-            .map_err(|e| format!("Argon2 params error: {}", e))?;
-        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-        let mut key = [0u8; 32];
-        argon2.hash_password_into(password.as_bytes(), salt, &mut key)
-            .map_err(|e| format!("Argon2 derivation failed: {}", e))?;
-        Ok(key)
-    }
+| 方法 | 签名 | 行为 |
+|------|------|------|
+| `derive_master_key` | `(password: &str, salt: &[u8; 32]) → Result<[u8; 32], String>` | Argon2id(m=65536, t=3, p=4, V0x13) 派生 32B master_key |
+| `verify_master_password` | `(password: &str, stored_hash: &[u8], hash_salt: &[u8; 32]) → Result<bool, String>` | 派生后 `subtle::ConstantTimeEq` 常量时间比较，**立即 zeroize 派生结果**（`[u8; 32]` 是 Copy 类型，必须 `mut derived; derived.zeroize()` 而非重新绑定） |
+| `derive_entry_key` | `(master_key: &[u8; 32], entry_id: &str) → [u8; 32]` | HKDF-SHA256(salt=None, info=entry_id) |
+| `derive_sqlcipher_key` | `(master_key: &[u8; 32]) → [u8; 32]` | HKDF-SHA256(salt=None, info="sqlcipher") |
+| `encrypt_field` | `(plaintext: &VaultPlaintext, entry_key: &[u8; 32], algo: CipherAlgorithm) → Result<String, String>` | 12B 随机 nonce → AEAD 加密 → base64(algo_byte ‖ nonce ‖ ciphertext ‖ tag) |
+| `decrypt_field` | `(encrypted_b64: &str, entry_key: &[u8; 32]) → Result<VaultPlaintext, String>` | base64 decode → 首字节识别算法 → AEAD 解密 → `VaultPlaintext::from(plaintext)`（Drop 自动 zeroize） |
 
-    /// 验证主密码
-    pub fn verify_master_password(
-        password: &str,
-        stored_hash: &[u8],
-        hash_salt: &[u8; 32],
-    ) -> Result<bool, String> {
-        let derived = Self::derive_master_key(password, hash_salt)?;
-        let valid = subtle::ConstantTimeEq::ct_eq(&derived, stored_hash).into();
-        // zeroize derived immediately
-        let mut d = derived;
-        d.zeroize();
-        Ok(valid)
-    }
-
-    /// HKDF 派生条目级密钥
-    pub fn derive_entry_key(master_key: &[u8; 32], entry_id: &str) -> [u8; 32] {
-        let hkdf = Hkdf::<Sha256>::new(None, master_key);
-        let mut key = [0u8; 32];
-        hkdf.expand(entry_id.as_bytes(), &mut key).expect("HKDF expand failed");
-        key
-    }
-
-    /// 加密条目字段（支持 AES-256-GCM / ChaCha20-Poly1305）
-    pub fn encrypt_field(plaintext: &VaultPlaintext, entry_key: &[u8; 32], algo: CipherAlgorithm) -> Result<String, String> {
-        let nonce_bytes: [u8; 12] = rand::thread_rng().gen();
-        let ciphertext = match algo {
-            CipherAlgorithm::Aes256Gcm => {
-                let cipher = Aes256Gcm::new_from_slice(entry_key)
-                    .map_err(|e| format!("Invalid key: {}", e))?;
-                let nonce = Nonce::from_slice(&nonce_bytes);
-                cipher.encrypt(nonce, plaintext.expose())
-                    .map_err(|e| format!("Encryption failed: {}", e))?
-            }
-            CipherAlgorithm::ChaCha20Poly1305 => {
-                let cipher = ChaCha20Poly1305::new_from_slice(entry_key)
-                    .map_err(|e| format!("Invalid key: {}", e))?;
-                let nonce = chacha20poly1305::Nonce::from_slice(&nonce_bytes);
-                cipher.encrypt(nonce, plaintext.expose())
-                    .map_err(|e| format!("Encryption failed: {}", e))?
-            }
-        };
-        let mut result = Vec::with_capacity(1 + 12 + ciphertext.len());
-        result.push(algo as u8);
-        result.extend_from_slice(&nonce_bytes);
-        result.extend_from_slice(&ciphertext);
-        Ok(base64::engine::general_purpose::STANDARD.encode(&result))
-    }
-
-    /// 解密条目字段（自动识别算法）→ 返回 VaultPlaintext
-    pub fn decrypt_field(encrypted_b64: &str, entry_key: &[u8; 32]) -> Result<VaultPlaintext, String> {
-        let data = base64::engine::general_purpose::STANDARD
-            .decode(encrypted_b64)
-            .map_err(|e| format!("Base64 decode failed: {}", e))?;
-        if data.len() < 13 { return Err("Data too short".into()); }
-        let algo = match data[0] {
-            0 => CipherAlgorithm::Aes256Gcm,
-            1 => CipherAlgorithm::ChaCha20Poly1305,
-            _ => return Err("Unknown cipher algorithm".into()),
-        };
-        let nonce_bytes = &data[1..13];
-        let plaintext = match algo {
-            CipherAlgorithm::Aes256Gcm => {
-                let cipher = Aes256Gcm::new_from_slice(entry_key)
-                    .map_err(|e| format!("Invalid key: {}", e))?;
-                let nonce = Nonce::from_slice(nonce_bytes);
-                cipher.decrypt(nonce, &data[13..])
-                    .map_err(|e| format!("Decryption failed: {}", e))?
-            }
-            CipherAlgorithm::ChaCha20Poly1305 => {
-                let cipher = ChaCha20Poly1305::new_from_slice(entry_key)
-                    .map_err(|e| format!("Invalid key: {}", e))?;
-                let nonce = chacha20poly1305::Nonce::from_slice(nonce_bytes);
-                cipher.decrypt(nonce, &data[13..])
-                    .map_err(|e| format!("Decryption failed: {}", e))?
-            }
-        };
-        Ok(VaultPlaintext::from(plaintext))
-    }
-}
-```
-
-> **类型安全闭环**：`encrypt_field(&VaultPlaintext, ...) → base64 String` → `decrypt_field(...) → VaultPlaintext`。
-> 调用方无法持有裸 `String` 明文——必须通过 `VaultPlaintext::expose()` 访问，且 Drop 自动 zeroize。
+> **类型安全闭环**：`encrypt_field(&VaultPlaintext, ...) → base64 String` → `decrypt_field(...) → VaultPlaintext`。调用方无法持有裸明文——必须通过 `VaultPlaintext::expose_secret()` 访问，且 Drop 自动 zeroize。
 
 ### 3.2 安全要点
 
@@ -708,19 +541,7 @@ getKey(dbUuid, data):
 
 ---
 
-## 3.8 AutoType 自动填充（Phase 2B，参考 KeePassXC `AutoType`）
-
-全局快捷键触发，根据当前活动窗口标题自动匹配条目，模拟键盘输入用户名 + Tab + 密码。
-
-### 3.8.1 方案
-
-全局快捷键触发（Tauri `GlobalShortcut` plugin），根据当前活动窗口标题自动匹配条目，模拟键盘输入。
-
-| 步骤 | 说明 |
-|------|------|
-| 匹配 | 获取活动窗口标题 → 遍历条目 `url` 字段做模糊匹配 → 返回候选列表 |
-| 输入 | `enigo` crate 模拟键盘：输入用户名 → Tab → 输入密码 → Enter |
-| 安全 | 每次触发重新解密，输入完成后立即 zeroize，不缓存密码 |
+> **已砍掉**：~~§3.8 AutoType 自动填充~~（浏览器扩展填充体验远优于模拟键盘，跨平台键盘模拟坑多，已过时）、~~§3.10 KDBX4 导入导出 + Passkey~~（CSV/JSON 导入已覆盖迁移需求，Passkey 与硬件绑定安全模型矛盾）。
 
 ---
 
@@ -744,8 +565,7 @@ getKey(dbUuid, data):
 
 | 方案 | 优先级 | 实现量 | 冲突解决 | 历史追踪 |
 |------|--------|--------|---------|---------|
-| **4.2 Git 同步** | ✅ 首选（Phase 2A） | ~670 行（参考 prs） | Git 原生三路合并 | ✅ 完整 Git 历史 |
-| **4.3 WebDAV/S3 同步** | 备选（Phase 2B） | ~800+ 行 | 自定义合并算法 | ❌ 无历史 |
+| **4.2 Git 同步** | ✅ 唯一方案（Phase 2A） | ~670 行（参考 prs） | Git 原生三路合并 | ✅ 完整 Git 历史 |
 
 ---
 
@@ -800,7 +620,7 @@ prs 的同步方案极其简洁优雅——**直接用 Git 作为同步后端**�
 > | vault_meta key | 排除理由 |
 > |---|---|
 > | `master_key_hash` | 🔴 **绝对禁止** — 主密码的 Argon2id 哈希，若与 `hashSalt` 同时泄露，攻击者可离线暴力破解主密码 |
-> | `sync_config` | 🔴 含认证凭据（WebDAV token / S3 access key），推入仓库即泄露 |
+> | `sync_config` | 🔴 含 Git 认证凭据，推入仓库即泄露 |
 > | `sync_remote_etag` / `sync_last_pull_at` | 设备绑定的同步状态，跨设备无意义 |
 > | `biometric_key_enc` | 设备绑定，灾难恢复不可用（见上） |
 > | `hibp:{entry_id}` | 外部审计缓存，可重新查询 |
@@ -914,207 +734,53 @@ sync.finalize("added: GitHub")?;  // → git add . + git commit + git push
 
 #### 4.2.5 GitSync 核心 API
 
-```rust
-// assistant-sync/src/git_sync.rs
+`assistant-sync/src/git_sync.rs`，错误处理风格与项目一致。
 
-pub struct GitSync {
-    repo_path: PathBuf,
-}
+**Readyness 就绪状态**（参考 prs）：
 
-/// Git 同步就绪状态（参考 prs Readyness）
-pub enum Readyness {
-    NoSync,                           // 未初始化 git
-    RepoState(RepositoryState),       // Git 异常状态（merge/rebase 中）
-    Dirty,                            // 有未提交变更
-    Ready,                            // 就绪，可操作
-}
+| 变体 | 说明 |
+|------|------|
+| `NoSync` | 未初始化 git |
+| `RepoState(RepositoryState)` | Git 异常状态（Merge / Rebase / RebaseInteractive / CherryPick / Unknown） |
+| `Dirty` | 有未提交变更 |
+| `Ready` | 就绪，可操作 |
 
-pub enum RepositoryState {
-    Merge,
-    Rebase,
-    RebaseInteractive,
-    CherryPick,
-    Unknown,
-}
+**核心方法**：
 
-impl GitSync {
-    pub fn new(repo_path: PathBuf) -> Self {
-        Self { repo_path }
-    }
+| 方法 | 行为 |
+|------|------|
+| `init()` | 若已初始化则跳过；`git init` + 空提交 |
+| `clone(url)` | `git clone url repo_path`，检查退出码 |
+| `prepare()` | 若已初始化且有 remote → `git pull -q` |
+| `finalize(msg)` | 若 dirty → `git add .` + `git commit -q -m msg`；若有 remote 且 `need_to_push()` → `git push -q` |
+| `readyness()` | 返回当前 Readyness 状态 |
+| `need_to_push()` | 智能推送优化：30s 内 pull 过且本地/远程 hash 相同 → 跳过 push。elapsed 不可得时保守返回 true（推送） |
 
-    /// 初始化 Git 仓库
-    pub fn init(&self) -> Result<()> {
-        if self.is_init() { return Ok(()); }
-        self.git(&["init"])?;
-        self.git(&["commit", "-q", "--allow-empty", "-m", "Initialize password vault"])?;
-        Ok(())
-    }
-
-    /// 从远程克隆
-    pub fn clone(&self, url: &str) -> Result<()> {
-        let parent = self.repo_path.parent().ok_or("No parent")?;
-        Command::new("git").args(["clone", url, &self.repo_path.to_string_lossy()])
-            .current_dir(parent).status()?;
-        Ok(())
-    }
-
-    /// 操作前：拉取远程变更
-    pub fn prepare(&self) -> Result<()> {
-        if !self.is_init() { return Ok(()); }
-        if !self.has_remote()? { return Ok(()); }
-        self.pull()?;
-        Ok(())
-    }
-
-    /// 操作后：提交并推送
-    pub fn finalize<M: AsRef<str>>(&self, msg: M) -> Result<()> {
-        if !self.is_init() { return Ok(()); }
-        if self.is_dirty()? {
-            self.commit_all(msg)?;
-        }
-        if self.has_remote()? && self.need_to_push()? {
-            self.push()?;
-        }
-        Ok(())
-    }
-
-    /// 拉取远程变更
-    pub fn pull(&self) -> Result<()> {
-        Command::new("git").args(["pull", "-q"])
-            .current_dir(&self.repo_path).status()?;
-        Ok(())
-    }
-
-    /// 推送本地变更
-    pub fn push(&self) -> Result<()> {
-        Command::new("git").args(["push", "-q"])
-            .current_dir(&self.repo_path).status()?;
-        Ok(())
-    }
-
-    /// 提交所有变更
-    pub fn commit_all<M: AsRef<str>>(&self, msg: M) -> Result<()> {
-        Command::new("git").args(["add", "."])
-            .current_dir(&self.repo_path).status()?;
-        Command::new("git").args(["commit", "-q", "-m", msg.as_ref()])
-            .current_dir(&self.repo_path).status()?;
-        Ok(())
-    }
-
-    /// 检查就绪状态
-    pub fn readyness(&self) -> Result<Readyness> {
-        if !self.is_init() { return Ok(Readyness::NoSync); }
-        if self.is_dirty()? { return Ok(Readyness::Dirty); }
-        if let Some(state) = self.repo_state()? {
-            return Ok(Readyness::RepoState(state));
-        }
-        Ok(Readyness::Ready)
-    }
-
-    /// 智能推送优化（参考 prs）
-    /// 30 秒内 pull 过，且本地和远程 hash 相同 → 跳过 push
-    fn need_to_push(&self) -> Result<bool> {
-        let last_pulled = self.git_last_pull_time()?;
-        if last_pulled.elapsed().unwrap_or_default() > Duration::from_secs(30) {
-            return Ok(true);
-        }
-        let branch = self.git_current_branch()?;
-        let upstream = self.git_branch_upstream(&branch)?;
-        Ok(self.git_ref_hash(&branch)? != self.git_ref_hash(&upstream)?)
-    }
-
-    pub fn is_init(&self) -> bool {
-        self.repo_path.join(".git").exists()
-    }
-
-    pub fn has_remote(&self) -> Result<bool> { ... }
-    pub fn add_remote_url(&self, remote: &str, url: &str) -> Result<()> { ... }
-    pub fn set_remote_url(&self, remote: &str, url: &str) -> Result<()> { ... }
-
-    fn git(&self, args: &[&str]) -> Result<Output> {
-        let output = Command::new("git").args(args)
-            .current_dir(&self.repo_path).output()?;
-        if !output.status.success() {
-            return Err(format!("git {} failed: {}", args.join(" "),
-                String::from_utf8_lossy(&output.stderr)).into());
-        }
-        Ok(output)
-    }
-}
-```
+> **关键**：所有 `git` 子命令调用统一通过 `git(args) → Result<Output>` 辅助方法，检查 `output.status.success()`，失败时返回 `format!("git {} failed: {}", args, stderr)`。**禁止**直接 `.status()?` 忽略退出码。
 
 #### 4.2.6 Vault 与 GitSync 集成
 
-```rust
-// 每次密码操作自动同步
-pub fn vault_create_entry(entry: &VaultEntryCreate, conn: &Connection, master_key: &[u8; 32]) -> Result<String> {
-    // 1. 同步准备
-    if let Some(sync) = get_git_sync() {
-        sync.prepare()?;
-    }
+每次密码操作自动同步（以 create 为例）：
 
-    // 2. 写入数据库（逐字段加密）
-    let id = vault::create_entry(conn, entry, master_key)?;
-
-    // 3. 导出条目到 .enc 文件（整体打包加密）
-    let entry_data = vault::get_entry_decrypted(conn, &id, master_key)?;
-    vault_file::export_entry(&entry_data, master_key, &get_vault_dir()?.join("entries"))?;
-
-    // 4. 同步完成
-    if let Some(sync) = get_git_sync() {
-        sync.finalize(format!("vault: added {}", entry.title))?;
-    }
-
-    Ok(id)
-}
-```
+1. `sync.prepare()?` — 拉取远程变更
+2. DB 事务内：写入 `vault_entries` + 导出 `.enc` 文件（步骤 2-5 原子性，任一失败则回滚）
+3. `sync.finalize("vault: added {title}")?` — 提交并推送
 
 #### vault_file 导出/导入
 
-```rust
-// 导出：SQLite 逐字段 → .enc 整体打包
-fn export_entry(entry: &VaultEntryDecrypted, master_key: &[u8; 32], dir: &Path) -> Result<()> {
-    let entry_key = VaultCrypto::derive_entry_key(master_key, &entry.id);
-    let blob = VaultBlob {
-        title: entry.title.clone(),
-        username: entry.username.clone(),
-        url: entry.url.clone(),
-        password: entry.password.expose().to_vec(),
-        notes: entry.notes.as_ref().map(|n| n.expose().to_vec()),
-        custom_fields: entry.custom_fields.clone(),
-        totp_secret: entry.totp_secret.as_ref().map(|s| s.expose().to_vec()),
-        totp_digits: entry.totp_digits,
-        totp_period: entry.totp_period,
-        tags: entry.tags.clone(),
-        is_favorite: entry.is_favorite,
-        created_at: entry.created_at,
-        updated_at: entry.updated_at,
-    };
-    let blob_json = serde_json::to_vec(&blob)?;
-    let plaintext = VaultPlaintext::from(blob_json);
-    let encrypted_blob = VaultCrypto::encrypt_field(&plaintext, &entry_key, CipherAlgorithm::Aes256Gcm)?;
+**导出**（SQLite 逐字段 → .enc 整体打包）：
 
-    let enc_file = EncFile {
-        id: entry.id.clone(),
-        category: entry.category,
-        revision: entry.revision,
-        encrypted_blob,
-    };
-    let path = dir.join(format!("{}.enc", entry.id));
-    fs::write(&path, serde_json::to_string_pretty(&enc_file)?)?;
-    Ok(())
-}
+1. `derive_entry_key(master_key, entry.id)` 派生条目级密钥
+2. 将 `VaultEntryDecrypted` 各字段通过 `expose_secret()` 读取，构造 `VaultBlob` 明文结构体
+3. `serde_json::to_vec(&blob)` 序列化 → `VaultPlaintext::from(json_bytes)` → `encrypt_field(&plaintext, &entry_key, Aes256Gcm)` → base64 密文
+4. 写入 `{id}.enc`：`{ id, category, revision, encrypted_blob }`
 
-// 导入：.enc 整体打包 → SQLite 逐字段
-fn import_entry(enc_path: &Path, master_key: &[u8; 32], conn: &Connection) -> Result<String> {
-    let enc_file: EncFile = serde_json::from_str(&fs::read_to_string(enc_path)?)?;
-    let entry_key = VaultCrypto::derive_entry_key(master_key, &enc_file.id);
-    let plaintext = VaultCrypto::decrypt_field(&enc_file.encrypted_blob, &entry_key)?;
-    let blob: VaultBlob = serde_json::from_slice(plaintext.expose())?;
-    // 逐字段写入 SQLite（各自独立加密）
-    vault::create_entry_from_blob(conn, &enc_file, &blob, master_key)
-}
-```
+**导入**（.enc 整体打包 → SQLite 逐字段）：
+
+1. 读取 `.enc` 文件 → 反序列化 `EncFile`
+2. `derive_entry_key(master_key, enc_file.id)` → `decrypt_field(&enc_file.encrypted_blob, &entry_key)` → `VaultPlaintext`
+3. `serde_json::from_slice(plaintext.expose_secret())` → `VaultBlob`
+4. 逐字段写入 SQLite（各自独立加密）
 
 #### 4.2.7 Git 冲突处理
 
@@ -1146,157 +812,14 @@ Git 同步的冲突由 Git 本身处理。由于 .enc 文件采用整体打包�
 
 每次 `prepare → pull` + `finalize → push` 涉及两次 SSH 握手（~4s）。prs 通过 SSH ControlMaster 持久连接将后续操作降至 ~0.1s：
 
-```rust
-const SSH_PERSIST_CMD: &str =
-    "ssh -o 'ControlMaster auto' \
-        -o 'ControlPath /tmp/.prs-session--%r@%h:%p' \
-        -o 'ControlPersist 1h' \
-        -o 'ConnectTimeout 10'";
-
-const SSH_PERSIST_HOST_WHITELIST: [&str; 2] = ["github.com", "gitlab.com"];
-
-fn cmd_git(args: &[&str], dir: &Path, connects_remote: bool) -> Command {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C").arg(dir).current_dir(dir);
-    if connects_remote && guess_ssh_persist_support(dir) {
-        cmd.env("GIT_SSH_COMMAND", SSH_PERSIST_CMD);
-    }
-    cmd.args(args);
-    cmd
-}
-```
-
+- 设置 `GIT_SSH_COMMAND` 环境变量：`ssh -o 'ControlMaster auto' -o 'ControlPath /tmp/.prs-session--%r@%h:%p' -o 'ControlPersist 1h' -o 'ConnectTimeout 10'`
 - 白名单机制：只对 `github.com` / `gitlab.com` 启用，避免不兼容服务出错
-- 进程级缓存：`lazy_static!` + `Mutex<HashMap<PathBuf, bool>>`，同一进程只判断一次
+- 进程级缓存：`std::sync::LazyLock<Mutex<HashMap<PathBuf, bool>>>`，同一进程只判断一次
 - Windows 上跳过（`cfg!(unix)` guard），仅 Unix 生效
 
 ---
 
-### 4.3 WebDAV/S3 同步（备选，Phase 2B）
-
-面向国内坚果云用户或无 Git 环境的场景。采用文件级同步：整个 vault 导出为一个加密文件，通过 WebDAV/S3 同步。
-
-#### 4.3.1 同步流程
-
-```
-本地 security.db
-  │
-  ├─▶ 导出: vault_entries → 序列化 → AES-256-GCM(master_key) → vault.enc 文件
-  │
-  ├─▶ 上传: PUT vault.enc 到远程（If-Match: etag 防覆盖）
-  │
-  ├─▶ 下载: GET vault.enc → 解密 → 与本地 merge → 写入 security.db
-  │
-  └─▶ 冲突: etag 不匹配 → 下载远程 → 两方 merge → 冲突条目标记供用户决策
-```
-
-#### 4.3.2 vault.enc 文件格式
-
-```json
-{
-  "version": 1,
-  "entries": [
-    {
-      "id": "uuid",
-      "title": "GitHub",
-      "username": "user@example.com",
-      "url": "https://github.com",
-      "category": "login",
-      "encryptedPassword": "base64...",
-      "encryptedNotes": "base64...",
-      "encryptedCustomFields": "base64...",
-      "tags": ["dev", "work"],
-      "isFavorite": true,
-      "revision": 3,
-      "createdAt": 1729468800,
-      "updatedAt": 1729555200
-    }
-  ],
-  "deletedIds": ["uuid-of-deleted-entry"],
-  "exportedAt": 1729555200
-}
-```
-
-> 注意：vault.enc 中的 `encryptedPassword` 等字段是**二次加密**的——条目级密钥加密后，导出时再用 master_key 做整体加密。这样即使 vault.enc 文件泄露，没有 master_password 也无法解密任何条目。
-
-#### 4.3.3 SyncBackend trait
-
-```rust
-#[async_trait]
-pub trait SyncBackend: Send + Sync {
-    async fn get(&self, path: &str) -> Result<(Vec<u8>, Etag), SyncError>;
-    async fn put(&self, path: &str, data: &[u8], if_match: Option<&Etag>) -> Result<Etag, SyncError>;
-    async fn delete(&self, path: &str) -> Result<(), SyncError>;
-    async fn test_connection(&self) -> Result<(), SyncError>;
-}
-
-pub struct Etag(pub String);
-
-pub enum SyncError {
-    Network(String),
-    Auth(String),
-    Conflict,
-    NotFound,
-    Io(String),
-}
-```
-
-### 4.3.4 WebDAV 实现
-
-`WebDavBackend` 实现 `SyncBackend` trait，核心要点：
-
-- `get`: `GET` + 解析响应 `etag` header，返回 `(data, etag)`
-- `put`: `PUT` + `If-Match` etag 乐观并发控制，`412 Precondition Failed` → `SyncError::Conflict`
-- 认证：HTTP Basic Auth（坚果云等标准 WebDAV 服务）
-
-### 4.3.5 合并算法（WebDAV 模式，参考 KeePassXC Merger.cpp）
-
-KeePassXC Merger 核心逻辑：
-
-1. **条目合并**：按 UUID 匹配，不存在则 Added，存在则比较 `updated_at` 取更新者
-2. **删除合并**：合并双方删除记录，已删除条目从目标中移除
-3. **冲突标记**：`updated_at` 相同但内容不同 → `MergeAction::Conflict`，交由用户决策
-
-```rust
-pub enum MergeAction {
-    KeepLocal,
-    KeepRemote,
-    MergeAuto(MergedEntry),    // updated_at 更大者自动胜出
-    Conflict(ConflictEntry),   // 同时间不同内容，需用户决策
-}
-```
-
-### 4.3.6 同步引擎（WebDAV 模式）
-
-`SyncEngine<B: SyncBackend>` 核心流程：
-
-| 操作 | 流程 |
-|------|------|
-| `push` | 导出所有条目 → `VaultFile` 序列化 → `backend.put(data, if_match=local_etag)` → 更新 etag |
-| `pull` | `backend.get()` → 解密 → `merge_entries(local, remote)` → 应用合并 → 更新 etag |
-| `sync` | 比较本地/远程 etag → 相同则 push → 不同则 pull + merge → 有冲突返回 `SyncResult::Conflict` |
-
-冲突策略：`PreferLocal` / `PreferRemote` / `AskUser`（默认）。
-
-### 4.3.7 Push 语义：追加提交，禁止强制覆盖
-
-**两种同步模式统一采用"追加提交"语义，绝不 force push/无条件覆盖远程：**
-
-| 模式 | push 行为 | 远程有新变更时 | 等价概念 |
-|------|----------|--------------|---------|
-| Git | `git push`（fast-forward only） | push 失败 → `pull --rebase` → 解决冲突 → 再 push | Git fast-forward |
-| WebDAV | `PUT` + `If-Match: <local_etag>` | 412 Precondition Failed → pull + merge → 再 push | 乐观并发控制 |
-
-如需"强制推送"（如确认远程数据已损坏），需通过显式 `vault_sync_force_push` command 并经用户二次确认。
-
-### 4.3.8 WebDAV 兼容云服务
-
-| 服务 | WebDAV 地址 | 特点 |
-|------|-----------|------|
-| **坚果云** | `https://dav.jianguoyun.com/dav/` | 国内最稳定，免费 1GB |
-| **Nextcloud** | 自部署 | 开源私有云，完全可控 |
-| **群晖 NAS** | `https://nas:port/webdav/` | 群晖自带 WebDAV |
-| **Koofr** | `https://app.koofr.net/dav/` | 欧洲，免费 10GB |
+> **已砍掉**：~~§4.3 WebDAV/S3 同步~~（Git 同步已够用，WebDAV/S3 面向非技术用户，个人项目不需要）、~~SyncBackend trait / WebDAV 实现 / 合并算法 / WebDAV 兼容云服务~~ 一并移除。
 
 ---
 
@@ -1333,7 +856,7 @@ pub enum MergeAction {
 | | `vault_totp_time_remaining` | `(period) → u32` | 倒计时 |
 | HIBP | `vault_hibp_check` | `(id) → u32` | 单条泄露检测 |
 | | `vault_hibp_audit` | `() → Vec<(id, count)>` | 全库审计 |
-| 生物识别 | `vault_unlock_biometric` | `() → Result<bool>` | 调用平台 getKey()（OS 弹生物识别）→ 成功则恢复 master_key 并打开 security.db |
+| 生物识别 | `vault_unlock_biometric` | `() → Result<(), String>` | 调用平台 getKey()（OS 弹生物识别）→ 成功则恢复 master_key 并打开 security.db，失败返回 Err |
 | | `vault_enroll_biometric` | `(master_password) → ()` | 启用生物识别 |
 | SSH | `vault_ssh_add/remove_from_agent` | `(id) → ()` | SSH Agent 管理 |
 | 紧急访问 | `vault_generate_recovery_key` | `() → String` | 生成恢复密钥 |
@@ -1498,35 +1021,12 @@ const passwordVault = defineTool({
 
 **Rust 线程守护**（替代前端 setTimeout，参考 prs `TempClip` 子进程模式）：
 
-```rust
-// assistant-security/src/clipboard_guard.rs
-pub struct ClipboardGuard {
-    thread: Option<JoinHandle<()>>,
-    original: Mutex<Option<String>>,
-}
+`ClipboardGuard`（`assistant-security/src/clipboard_guard.rs`）：
 
-impl ClipboardGuard {
-    pub fn copy_and_guard(&self, password: &str, timeout: Duration) -> Result<()> {
-        let original = clipboard::get()?;
-        clipboard::set(password)?;
-        *self.original.lock().unwrap() = Some(original.clone());
-        let pw = password.to_string();
-        self.thread = Some(thread::spawn(move || {
-            thread::sleep(timeout);
-            // 仅当剪贴板仍为密码时恢复（不覆盖用户新复制）
-            if clipboard::get().as_deref() == Some(pw.as_str()) {
-                let _ = clipboard::set(&original);
-            }
-        }));
-        Ok(())
-    }
-    pub fn force_clear(&self) {
-        if let Some(ref orig) = *self.original.lock().unwrap() {
-            let _ = clipboard::set(orig);
-        }
-    }
-}
-```
+- `thread: Mutex<Option<JoinHandle<()>>>` — 守护线程句柄（Mutex 包裹，满足 `&self` 方法内赋值）
+- `original: Mutex<Option<String>>` — 剪贴板原始内容
+- `copy_and_guard(&self, password: &str, timeout: Duration) → Result<(), String>`：读取当前剪贴板 → 写入密码 → 启动守护线程（sleep timeout → 校验剪贴板仍为密码 → 恢复原始内容）
+- `force_clear(&self)`：退出钩子，立即恢复原始内容
 
 | 场景 | 守护线程 | 退出钩子（`force_clear`） | prs 子进程 |
 |------|:-------:|:------------------------:|:---------:|
@@ -1573,44 +1073,15 @@ impl ClipboardGuard {
 | `connect-src` | `'self' https://ipinfo.io` | IP 查询工具 + Tauri IPC（`'self'` 覆盖 invoke） |
 | `object-src` | `'none'` | 禁止 `<object>`/`<embed>` 插件攻击面 |
 
-**DevTools 禁用**（release 构建）：
-
-```rust
-// src-tauri9/src/window.rs create_window()
-#[cfg(not(debug_assertions))]
-{
-    builder = builder.devtools(false);
-}
-```
+**DevTools 禁用**（release 构建）：`src-tauri/src/window.rs` 中 `#[cfg(not(debug_assertions))]` 条件下 `builder.devtools(false)`。
 
 **独立解锁窗口**（隔离 V8 isolate）：
 
-```rust
-let unlock_window = WebviewWindowBuilder::new(app, "vault-unlock", WebviewUrl::App("/vault-unlock".into()))
-    .title("解锁密码箱")
-    .inner_size(400, 200)
-    .center(true)
-    .resizable(false)
-    .decorations(true)
-    .devtools(false)  // 永远禁用
-    .build()?;
-```
+通过 `WebviewWindowBuilder::new(app, "vault-unlock", ...)` 创建，配置 `inner_size(400, 200)` / `center(true)` / `resizable(false)` / `decorations(true)` / `devtools(false)`（永远禁用）。
 
 解锁窗口是独立 WebView 上下文（Tauri 2 每个窗口独立 V8 isolate），有自己的严格 CSP，JS 代码极简（<50 行），无第三方依赖。主窗口的 XSS **无法读取解锁窗口的 JS 堆**。
 
-```html
-<!-- vault-unlock.html：极简页面 -->
-<input type="password" id="mp" autofocus />
-<button id="unlock">解锁</button>
-<script>
-  document.getElementById('unlock').onclick = async () => {
-    const pw = document.getElementById('mp').value;
-    document.getElementById('mp').value = '';  // 立即清除 DOM
-    const ok = await window.__TAURI_INTERNALS__.invoke('vault_unlock', { masterPassword: pw });
-    if (ok) window.close();
-  };
-</script>
-```
+解锁页面（`vault-unlock.html`）：`<input type="password">` + 解锁按钮，点击后读取密码 → 立即清空 DOM → `invoke('vault_unlock', { masterPassword })` → 成功则 `window.close()`。
 
 #### 6.7.3 减暴露层
 
@@ -1642,29 +1113,14 @@ let unlock_window = WebviewWindowBuilder::new(app, "vault-unlock", WebviewUrl::A
 | UI 通知 | 每次 reveal 显示 toast | 用户可感知异常 reveal |
 | 单条限制 | 同一时间只有一个 reveal 有效 | 防并行批量请求 |
 
-```rust
-pub struct RevealGuard {
-    last_reveal: Mutex<Instant>,
-    reveal_count: AtomicU32,
-}
+`RevealGuard`（`assistant-security/src/reveal_guard.rs`）：
 
-fn vault_reveal_password(id: &str, guard: &RevealGuard) -> Result<RevealResult> {
-    let elapsed = guard.last_reveal.lock().unwrap().elapsed();
-    if elapsed < Duration::from_secs(20) {
-        guard.reveal_count.fetch_add(1,?);
-        if guard.reveal_count.load(?) > 3 {
-            audit::log(AuditEvent::RevealRateLimited);
-            return Err(VaultError::RateLimited);
-        }
-    } else {
-        guard.reveal_count.store(1,?);
-    }
-    *guard.last_reveal.lock().unwrap() = Instant::now();
-    audit::log(AuditEvent::PasswordRevealed { entry_id: id });
-    let password = decrypt_password(id)?;
-    Ok(RevealResult { value: password, expires_at: Instant::now() + Duration::from_secs(30) })
-}
-```
+- `last_reveal: Mutex<Instant>` — 上次 reveal 时间
+- `reveal_count: AtomicU32` — 计数器，`Ordering::SeqCst`（速率限制需跨线程一致）
+- `vault_reveal_password(id, guard) → Result<RevealResult, String>`：
+  1. 若距上次 reveal < 20s：`reveal_count.fetch_add(1, SeqCst)`，若 `> 3` → 审计日志 + 返回 `Err("Rate limited")`
+  2. 否则：`reveal_count.store(1, SeqCst)` 重置计数
+  3. 更新 `last_reveal` → 审计日志 → 解密密码 → 返回 `{ value: VaultPlaintext, expires_at: now + 30s }`
 
 #### 6.7.4 限时间层
 
@@ -1701,8 +1157,6 @@ Tauri 天然优势：无 `nodeIntegration`、无 `remote` 模块、IPC 需显式
 | `vaultBiometricEnabled` | `boolean` | false | 生物识别快速解锁 |
 | `vaultHibpAutoAudit` | `boolean` | true | 自动 HIBP 审计 |
 | `vaultSshAutoAdd` | `boolean` | true | 解锁后自动加载 SSH 密钥 |
-| `vaultAutoTypeEnabled` | `boolean` | false | AutoType 自动填充 |
-| `vaultAutoTypeShortcut` | `string` | `"Ctrl+Shift+V"` | AutoType 全局快捷键 |
 
 Rust `AppConf` struct 同步添加对应字段，均标注 `#[serde(default = ...)]`。
 
@@ -1776,9 +1230,9 @@ assistant-security/
 
 ### 8.4 新 crate: assistant-sync
 
-workspace members 新增 `"crates/assistant-sync"`。依赖 `serde` / `serde_json` / `tokio` / `async-trait` / `base64` / `assistant-storage` / `assistant-security`。
+workspace members 新增 `"crates/assistant-sync"`。依赖 `serde` / `serde_json` / `tokio` / `base64` / `assistant-storage` / `assistant-security`。
 
-Features：`default = ["git"]`，`git = []`，`webdav = ["reqwest", "url"]`，`s3 = ["reqwest", "url", "aws-sdk-s3"]`。
+仅 Git 同步模式，无 WebDAV/S3 features。
 
 ### 8.3 安全相关 Crate 维护状态审计（2026-10-21）
 
@@ -1792,7 +1246,6 @@ Features：`default = ["git"]`，`git = []`，`webdav = ["reqwest", "url"]`，`s
 | `zeroize` | RustCrypto/utils | ❌ | 2026-10-19 | 684 | ✅ 活跃 |
 | `secrecy` | iqlusioninc/crates | ❌ | 2026-10-17 | 581 | ✅ 活跃 |
 | `totp-rs` | constantoine/totp-rs | ❌ | 2026-10-16 | 277 | ✅ 活跃 |
-| `enigo` | enigo-rs/enigo | ❌ | 2026-10-16 | 1800 | ✅ 活跃 |
 | `subtle` | dalek-cryptography/subtle | ❌ | 2024-08-03 | 311 | ⚠️ 低活跃（2年+未push，但issue讨论活跃，v3.0规划中；功能极稳定，RustCrypto全生态间接依赖） |
 | ~~`secstr`~~ | valpackett/secstr (Codeberg) | ❌ | 2024-12-03 | 3 | 🔴 事实停维（3星，2 open issue无响应，Unlicense许可）→ **已替换为 `secrecy`** |
 
@@ -1800,7 +1253,7 @@ Features：`default = ["git"]`，`git = []`，`webdav = ["reqwest", "url"]`，`s
 
 ## 9. i18n
 
-`zh-CN.json` 的 `tools.password_vault` 命名空间下新增约 50 个词条，覆盖：解锁/创建/锁定、条目 CRUD、分类名（登录/银行卡/身份/安全笔记/SSH密钥）、同步状态、Git 操作、冲突解决、密码生成/Diceware、TOTP、HIBP、生物识别、SSH Agent、紧急访问、AutoType、加密算法名。
+`zh-CN.json` 的 `tools.password_vault` 命名空间下新增约 50 个词条，覆盖：解锁/创建/锁定、条目 CRUD、分类名（登录/银行卡/身份/安全笔记/SSH密钥）、同步状态、Git 操作、冲突解决、密码生成/Diceware、TOTP、HIBP、生物识别、SSH Agent、紧急访问、加密算法名。
 
 ---
 
@@ -1818,8 +1271,8 @@ Features：`default = ["git"]`，`git = []`，`webdav = ["reqwest", "url"]`，`s
 | 8 | Argon2id 高参数防暴力 | ✅ m=64MB, t=3, p=4 |
 | 9 | 解锁失败延迟递增 | ✅ 3s 基础 × 失败次数 |
 | 10 | 剪贴板安全 | ✅ 超时后恢复原内容（非清空），防覆盖后续复制 |
-| 11 | 云端只存密文 | ✅ Git: .enc 整体打包加密（encryptedBlob）；WebDAV: vault.enc 整体加密 |
-| 12 | 同步冲突不静默丢数据 | ✅ Git: 原生 CONFLICT 标记；WebDAV: 冲突条目标记供用户决策 |
+| 11 | 云端只存密文 | ✅ Git: .enc 整体打包加密（encryptedBlob） |
+| 12 | 同步冲突不静默丢数据 | ✅ Git: 原生 CONFLICT 标记 |
 | 13 | Git 仓库不泄露明文 | ✅ .enc 仅含 encryptedBlob + id/category/revision（非敏感），.vault-meta 仅含 salt/密文，.gitignore 排除 security.db |
 | 14 | Git remote 传输加密 | ✅ HTTPS/SSH 协议层加密 |
 | 15 | Git 凭证安全 | ✅ 使用系统 credential helper / SSH key，不存储密码 |
@@ -1829,22 +1282,21 @@ Features：`default = ["git"]`，`git = []`，`webdav = ["reqwest", "url"]`，`s
 | 19 | 生物识别门控密钥释放 | ✅ macOS: Keychain kSecAccessControlBiometryCurrentSet；Windows: TPM RequestSignAsync → SHA256(sig) 派生加密密钥；Linux: libsecret（无门控，降级为 Polkit）；非 authenticate()→bool 模式 |
 | 20 | SSH Agent 生命周期管理 | ✅ vault 锁定时自动移除所有已加载密钥，防止锁定后密钥残留 |
 | 21 | 恢复密钥不存明文 | ✅ 仅存加密后的 master_key，恢复密钥由用户安全保管 |
-| 22 | AutoType 不缓存密码 | ✅ 每次触发重新解密，输入完成后立即 zeroize |
-| 23 | 灾难恢复完整性 | ✅ `.vault-meta` 含 salt + emergency.token，恢复密钥 + Git 仓库可独立还原 |
-| 24 | 安全数据库独立加密 | ✅ security.db 使用 SQLCipher 全库加密（PRAGMA key = sqlcipher_key），独立于 assistant.db，锁定时关闭连接回退为密文 |
-| 25 | .vault-meta 完整性保护 | ✅ HMAC-SHA256(master_key, content) 签名，Git pull 后验证，篡改拒绝应用 |
-| 26 | 安全数据库本地备份 | ✅ 每次锁定时自动备份至 security/backups/，保留最近 5 份，备份文件为加密副本 |
-| 27 | 安全审计日志加密存储 | ✅ security_audit_log 存入 security.db（SQLCipher 加密），泄露用户安全习惯的日志不暴露于明文 |
-| 28 | 主密码强度校验 | ✅ 初始化/变更时 zxcvbn 评估，拒绝弱主密码（参考 KeePassXC PasswordHealth） |
-| 29 | 主密码变更原子性 | ✅ 备份 → PRAGMA rekey（页面级原子重加密）→ 逐条重加密 .enc → 验证 → 失败回滚 |
-| 30 | OS 屏幕锁联动 | ✅ vaultLockOnScreenLock 设置，Rust 端监听 WTS_SESSION_LOCK / Darwin notification / DBus（参考 KeePassXC ScreenLockListener） |
-| 31 | SSH Agent 安全警告 | ✅ UI 展示警告：加载后本机任何进程可使用密钥 |
-| 32 | 数据导出/导入 | ✅ vault_export（CSV/JSON）+ vault_import，解密后写入用完 zeroize |
-| 33 | CSP 严格配置 | ✅ script-src 'self'（无 unsafe-eval/unsafe-inline），style-src 'unsafe-inline' 仅限 Ant Design 动态主题，object-src 'none' |
-| 34 | DevTools 生产禁用 | ✅ `#[cfg(not(debug_assertions))] builder.devtools(false)`，release 构建无法打开 DevTools |
-| 35 | 独立解锁窗口 | ✅ 隔离 V8 isolate，极简 JS（<50行），无第三方依赖，严格 CSP，主窗口 XSS 无法读取解锁窗口堆 |
-| 36 | 生物识别优先解锁 | ✅ master_key 不经 IPC（OS 原生门控释放密钥），主密码输入为回退 |
-| 37 | 最小暴露 API | ✅ vault_copy_password/vault_totp_generate 密码不进 JS 堆；vault_reveal_password 速率限制 3/分钟 + 审计 + UI 通知 |
-| 38 | 剪贴板 Rust 线程守护 | ✅ ClipboardGuard 守护线程 + force_clear 退出钩子，应用崩溃/关闭时恢复剪贴板 |
-| 39 | panic 时 master_key zeroize | ✅ SecurityDbState::lock() 用 catch_unwind 包裹，确保 panic unwind 前先 zeroize |
-| 40 | 密码历史追踪 | ✅ vault_entries 增加 encrypted_password_history，更新时自动追加旧密码+时间戳（参考 Vaultwarden cipher.password_history） |
+| 22 | 灾难恢复完整性 | ✅ `.vault-meta` 含 salt + emergency.token，恢复密钥 + Git 仓库可独立还原 |
+| 23 | 安全数据库独立加密 | ✅ security.db 使用 SQLCipher 全库加密（PRAGMA key = sqlcipher_key），独立于 assistant.db，锁定时关闭连接回退为密文 |
+| 24 | .vault-meta 完整性保护 | ✅ HMAC-SHA256(master_key, content) 签名，Git pull 后验证，篡改拒绝应用 |
+| 25 | 安全数据库本地备份 | ✅ 每次锁定时自动备份至 security/backups/，保留最近 5 份，备份文件为加密副本 |
+| 26 | 安全审计日志加密存储 | ✅ security_audit_log 存入 security.db（SQLCipher 加密），泄露用户安全习惯的日志不暴露于明文 |
+| 27 | 主密码强度校验 | ✅ 初始化/变更时 zxcvbn 评估，拒绝弱主密码（参考 KeePassXC PasswordHealth） |
+| 28 | 主密码变更原子性 | ✅ 备份 → PRAGMA rekey（页面级原子重加密）→ 逐条重加密 .enc → 验证 → 失败回滚 |
+| 29 | OS 屏幕锁联动 | ✅ vaultLockOnScreenLock 设置，Rust 端监听 WTS_SESSION_LOCK / Darwin notification / DBus（参考 KeePassXC ScreenLockListener） |
+| 30 | SSH Agent 安全警告 | ✅ UI 展示警告：加载后本机任何进程可使用密钥 |
+| 31 | 数据导出/导入 | ✅ vault_export（CSV/JSON）+ vault_import，解密后写入用完 zeroize |
+| 32 | CSP 严格配置 | ✅ script-src 'self'（无 unsafe-eval/unsafe-inline），style-src 'unsafe-inline' 仅限 Ant Design 动态主题，object-src 'none' |
+| 33 | DevTools 生产禁用 | ✅ `#[cfg(not(debug_assertions))] builder.devtools(false)`，release 构建无法打开 DevTools |
+| 34 | 独立解锁窗口 | ✅ 隔离 V8 isolate，极简 JS（<50行），无第三方依赖，严格 CSP，主窗口 XSS 无法读取解锁窗口堆 |
+| 35 | 生物识别优先解锁 | ✅ master_key 不经 IPC（OS 原生门控释放密钥），主密码输入为回退 |
+| 36 | 最小暴露 API | ✅ vault_copy_password/vault_totp_generate 密码不进 JS 堆；vault_reveal_password 速率限制 3/分钟 + 审计 + UI 通知 |
+| 37 | 剪贴板 Rust 线程守护 | ✅ ClipboardGuard 守护线程 + force_clear 退出钩子，应用崩溃/关闭时恢复剪贴板 |
+| 38 | panic 时 master_key zeroize | ✅ SecurityDbState::lock() 用 catch_unwind 包裹，确保 panic unwind 前先 zeroize |
+| 39 | 密码历史追踪 | ✅ vault_entries 增加 encrypted_password_history，更新时自动追加旧密码+时间戳（参考 Vaultwarden cipher.password_history） |

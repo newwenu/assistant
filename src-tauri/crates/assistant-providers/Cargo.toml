@@ -18,10 +18,7 @@ reqwest = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }
-aes-gcm = { workspace = true }
-sha2 = { workspace = true }
-base64 = { workspace = true }
-machine-uid = { workspace = true }
+assistant-security = { workspace = true }
 # tokio-stream 已移除：仅用 Stream trait re-export，已替换为 futures::Stream（同一 trait）
 async-stream = { workspace = true }
 rand = { workspace = true }
