@@ -1,3 +1,4 @@
+use log::{info, warn};
 use sha1::{Digest, Sha1};
 use zeroize::Zeroize;
 
@@ -31,18 +32,26 @@ impl HibpClient {
             .header("Add-Padding", "true")
             .send()
             .await
-            .map_err(|e| format!("HIBP request failed: {}", e))?;
+            .map_err(|e| {
+                warn!("HIBP request failed: {}", e);
+                format!("HIBP request failed: {}", e)
+            })?;
 
         if !response.status().is_success() {
+            warn!("HIBP API returned status {}", response.status());
             return Err(format!("HIBP API returned status {}", response.status()));
         }
 
-        let body = response
-            .text()
-            .await
-            .map_err(|e| format!("HIBP response read failed: {}", e))?;
+        let body = response.text().await.map_err(|e| {
+            warn!("HIBP response read failed: {}", e);
+            format!("HIBP response read failed: {}", e)
+        })?;
 
         let count = parse_hibp_response(&body, suffix);
+
+        if count > 0 {
+            info!("HIBP check: password found in {} breach(es)", count);
+        }
 
         Ok(count)
     }

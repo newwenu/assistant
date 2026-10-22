@@ -297,24 +297,6 @@ const fsLink = defineTool({
   widthMode: "default",
 });
 
-const passwordVault = defineTool({
-  id: "password-vault",
-  name: "tools.password_vault.name",
-  description: "tools.password_vault.description",
-  icon: SafetyCertificateOutlined,
-  keywords: [
-    "vault",
-    "password",
-    "manager",
-    "safe",
-    "credential",
-    "locker",
-    "keepass",
-  ],
-  component: lazyWithRecovery(() => import("./password-vault")),
-  widthMode: "wide",
-});
-
 export const tools: ToolDefinition[] = [
   hashText,
   uuidGenerator,
@@ -338,7 +320,6 @@ export const tools: ToolDefinition[] = [
   imageCompressor,
   svgPreview,
   fsLink,
-  passwordVault,
 ];
 
 export const toolsMap = Object.fromEntries(

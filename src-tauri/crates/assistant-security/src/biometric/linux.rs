@@ -1,6 +1,7 @@
 use crate::biometric::BiometricKeyStore;
 use crate::types::VaultError;
 
+use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
@@ -101,12 +102,15 @@ impl BiometricKeyStore for LibsecretKeyStore {
             let service = secret_service_get_sync(SECRET_SERVICE_NONE, ptr::null(), &mut error);
             if !error.is_null() {
                 g_free(error as *mut c_void);
+                debug!("libsecret: service not available (error)");
                 return Ok(false);
             }
             if service.is_null() {
+                debug!("libsecret: service not available (null)");
                 return Ok(false);
             }
             g_object_unref(service);
+            debug!("libsecret: service available");
             Ok(true)
         }
     }
@@ -139,6 +143,11 @@ impl BiometricKeyStore for LibsecretKeyStore {
             if !error.is_null() {
                 let msg = CString::from_raw((*error).message);
                 g_free(error as *mut c_void);
+                warn!(
+                    "libsecret: store failed for '{}': {}",
+                    key_id,
+                    msg.into_string().unwrap_or_else(|_| "unknown".into())
+                );
                 return Err(VaultError::BiometricFailed(
                     msg.into_string()
                         .unwrap_or_else(|_| "libsecret error".into()),
@@ -146,10 +155,15 @@ impl BiometricKeyStore for LibsecretKeyStore {
             }
 
             if result == 0 {
+                warn!(
+                    "libsecret: secret_password_store_sync failed for '{}'",
+                    key_id
+                );
                 return Err(VaultError::BiometricFailed(
                     "secret_password_store_sync failed".into(),
                 ));
             }
+            info!("libsecret: biometric key stored for '{}'", key_id);
             Ok(())
         }
     }
@@ -175,6 +189,11 @@ impl BiometricKeyStore for LibsecretKeyStore {
             if !error.is_null() {
                 let msg = CString::from_raw((*error).message);
                 g_free(error as *mut c_void);
+                warn!(
+                    "libsecret: lookup failed for '{}': {}",
+                    key_id,
+                    msg.into_string().unwrap_or_else(|_| "unknown".into())
+                );
                 return Err(VaultError::BiometricFailed(
                     msg.into_string()
                         .unwrap_or_else(|_| "libsecret error".into()),
@@ -187,6 +206,7 @@ impl BiometricKeyStore for LibsecretKeyStore {
 
             let c_str = CString::from_raw(result);
             let bytes = c_str.into_bytes();
+            info!("libsecret: biometric key retrieved for '{}'", key_id);
             Ok(bytes)
         }
     }
@@ -212,6 +232,7 @@ impl BiometricKeyStore for LibsecretKeyStore {
             if !error.is_null() {
                 g_free(error as *mut c_void);
             }
+            info!("libsecret: biometric key deleted for '{}'", key_id);
             Ok(())
         }
     }

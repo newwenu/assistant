@@ -5,8 +5,15 @@
 }
 
 .appHeader {
-  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--ant-color-border);
+}
+
+.headerTitle {
+  font-size: 15px;
 }
 
 .appBody {
@@ -49,7 +56,7 @@
 .listHeader {
   display: flex;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   align-items: center;
 }
 
@@ -57,12 +64,22 @@
   flex: 1;
 }
 
-.categorySelect {
-  width: 140px;
+.categoryBar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
 .spin {
   margin: 32px auto;
+}
+
+.emptyWrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .entryList {
@@ -99,6 +116,12 @@
   gap: 2px;
 }
 
+.entryTime {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  margin-left: auto;
+}
+
 .formContainer {
   max-width: 600px;
 }
@@ -124,10 +147,20 @@
 .syncBar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: 8px 0;
   border-top: 1px solid var(--ant-color-border);
   margin-top: 8px;
+}
+
+.syncBarLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.leakWarning {
+  color: var(--ant-color-error);
 }
 
 .totpContainer {
@@ -177,4 +210,31 @@
 .totpEditHint {
   font-size: 12px;
   margin-bottom: 4px;
+}
+
+.totpSecretStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--ant-color-success-bg);
+  border: 1px solid var(--ant-color-success-border);
+}
+
+.totpSecretBadge {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.totpUriSection {
+  width: 100%;
+}
+
+.totpUriInput {
+  font-family: monospace;
+}
+
+.totpSecretSection {
+  width: 100%;
 }

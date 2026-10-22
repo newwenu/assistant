@@ -274,16 +274,69 @@ fn compute_vault_meta_hmac(master_key: &[u8], meta: &VaultMetaContent) -> [u8; 3
 
 ### 13.5 灾难恢复流程
 
-用户在新设备上仅凭 Git 仓库 + 恢复密钥即可还原全部密码：
+灾难恢复是一个**独立的只读解密工具**，不修改任何本地数据库状态，仅从 Git 仓库解密数据并导出为 JSON 文件。用户可自行导入到任意密码库（本应用或其他密码管理器）。
 
-1. **克隆 Git 仓库**：`vault_git_clone(url)` → 获取所有 `.enc` 文件 + `.vault-meta`
-2. **恢复密钥解锁**：`vault_unlock_with_recovery_key(recoveryKey)` → 恢复 master_key
-3. **验证完整性**：检查 `.vault-meta` 的 HMAC 签名
-4. **导入全部条目**：遍历 `entries/*.enc` → 逐条 `import_entry` → 写入 SQLite
-5. **导入删除记录**：读取 `deletions/deleted.json` → 标记已删除条目
-6. **完成**：密码箱在新设备上完全可用
+**设计原则**：
+- **数据到手即成功**：灾难恢复的核心目标是把密码还给用户，不需要重建数据库
+- **只读无副作用**：不创建/修改/删除 `security.db`，不改变任何本地状态
+- **通用格式导出**：输出标准 JSON，与现有 `vault_export` 格式一致，可直接用 `vault_import` 导入
+- **不依赖本地状态**：无论 `security.db` 是否存在、是否损坏，都能工作
 
-> **与主密码解锁的区别**：主密码解锁假设 `security.db` 已存在（本地设备），恢复密钥解锁假设 `security.db` 不存在（新设备），需从 Git 仓库重建。
+**触发场景**（不仅限于新设备初始化）：
+
+| 场景 | 本地状态 | 说明 |
+|------|---------|------|
+| 新设备，什么都没有 | `!isInitialized` | 最常见的灾难恢复场景 |
+| 忘记主密码 | `isInitialized && isLocked` | 无法用主密码解锁 |
+| DB 文件损坏/误删 | `isInitialized` 但解锁报错 | 本地数据不可信 |
+| DB 存在但 SQLCipher 打不开 | 解锁返回 Database 错误 | DB 结构损坏 |
+| 改密中途崩溃 | 解锁失败 | DB 状态不一致 |
+
+**流程**（`vault_disaster_recovery_export`）：
+
+1. **Git 仓库准备**：
+   - 若提供 `gitUrl` → `clone_repo(url)` 克隆远程仓库
+   - 若未提供 → 使用本地已有仓库（`prepare()` + `pull()`）
+2. **读取 emergency data**：从 `.vault-meta` 读取 `emergency.token` + `emergency.salt`
+   - 若不存在 → 返回 `VaultError::RecoveryKeyNotSet`
+3. **恢复密钥解密**：
+   - Argon2id 派生 → AES-256-GCM 解密 → 得到 `master_key` + `bootstrap_key`
+   - 解密失败 → 返回 `VaultError::InvalidRecoveryKey`
+4. **验证完整性**：用 `master_key` 验证 `.vault-meta` 的 HMAC 签名
+   - 失败 → 警告但不阻止（记录日志）
+5. **解密全部条目**：遍历 `entries/*.enc` → `per_entry_key = HKDF(master_key, entry_id)` → AES-256-GCM 解密 → 组装为 `VaultEntryExport` 列表
+6. **导出 JSON**：序列化为 JSON 文件，写入 `exports/` 目录，5 分钟后自动清理
+7. **zeroize** `master_key` / `bootstrap_key` 副本
+8. **返回**：导出文件路径 + 条目数量
+
+**导出 JSON 格式**（与 `vault_export` 完全一致）：
+
+```json
+[
+  {
+    "category": "login",
+    "title": "Example",
+    "username": "user@example.com",
+    "url": "https://example.com",
+    "password": "decrypted_password",
+    "notes": "decrypted_notes",
+    "totpSecret": "base32_totp_secret",
+    "tags": ["tag1"],
+    "customFields": [],
+    "isFavorite": false,
+    "createdAt": 1697980800,
+    "updatedAt": 1697980800
+  }
+]
+```
+
+**用户后续操作**：
+
+1. 创建新密码库（`vault_init` + 新主密码）
+2. 导入 JSON（`vault_import`，路径为灾难恢复返回的文件路径）
+3. 灾难恢复完成 — 密码库在新设备上可用
+
+> **与原设计的区别**：原设计试图在灾难恢复流程中自动重建 `security.db`，需要扩展 `EmergencyData` 存储密码验证数据、实现密钥切换导入等复杂逻辑。新设计将灾难恢复定位为"只读解密 + 导出"工具，复用现有 `vault_export`/`vault_import` 格式，大幅降低实现复杂度，且用户可自由选择导入目标。
 
 ### 13.6 恢复密钥轮换
 
@@ -299,9 +352,18 @@ fn compute_vault_meta_hmac(master_key: &[u8], meta: &VaultMetaContent) -> [u8; 3
 | Command | 签名 | 说明 |
 |---------|------|------|
 | `vault_generate_recovery_key` | `() → String` | 生成恢复密钥（仅返回一次） |
-| `vault_unlock_with_recovery_key` | `(recoveryKey: String) → bool` | 恢复密钥解锁 |
+| `vault_unlock_with_recovery_key` | `(recoveryKey: String) → bool` | 恢复密钥解锁（需 `security.db` 存在） |
 | `vault_has_recovery_key` | `() → bool` | 检查是否已设置恢复密钥 |
 | `vault_verify_vault_meta_integrity` | `() → IntegrityResult` | 验证 .vault-meta 完整性 |
+| `vault_disaster_recovery_export` | `(gitUrl: Option\<String\>, recoveryKey: String) → DisasterRecoveryResult` | 灾难恢复：从 Git 仓库解密并导出 JSON |
+
+**DisasterRecoveryResult**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `filePath` | `String` | 导出 JSON 文件路径 |
+| `entryCount` | `u32` | 解密导出的条目数量 |
+| `integrityWarning` | `bool` | HMAC 验证是否失败（警告） |
 
 **IntegrityResult**：
 
@@ -317,6 +379,8 @@ fn compute_vault_meta_hmac(master_key: &[u8], meta: &VaultMetaContent) -> [u8; 3
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `hasRecoveryKey` | `boolean` | 是否已设置恢复密钥 |
+| `disasterRecoveryStep` | `1 \| 2 \| 3 \| null` | 灾难恢复当前步骤（null = 不在流程中） |
+| `disasterRecoveryResult` | `DisasterRecoveryResult \| null` | 灾难恢复导出结果 |
 
 **新增 actions**：
 
@@ -324,27 +388,45 @@ fn compute_vault_meta_hmac(master_key: &[u8], meta: &VaultMetaContent) -> [u8; 3
 |--------|------|------|
 | `generateRecoveryKey` | `() → Promise<string>` | 生成恢复密钥（返回明文，仅一次） |
 | `unlockWithRecoveryKey` | `(key) → Promise<boolean>` | 恢复密钥解锁 |
+| `disasterRecoveryExport` | `(gitUrl?, recoveryKey) → Promise<DisasterRecoveryResult>` | 灾难恢复导出 |
 | `checkRecoveryKey` | `() → Promise<void>` | 检查是否已设置恢复密钥 |
 
 #### 13.8.2 VaultUnlock 扩展
 
-在生物识别按钮下方新增恢复密钥入口：
+在生物识别按钮下方新增恢复密钥入口 + **始终显示**灾难恢复入口：
 
 ```
-┌──────────────────────────┐
-│      🔒 密码管理箱        │
-│                          │
-│  [  主密码输入框  ]       │
-│  [  解锁  ]              │
-│                          │
-│  ─── 或 ───              │
-│  [  🛂 生物识别解锁  ]   │  ← biometricAvailable && biometricEnrolled
-│  [  🔑 恢复密钥解锁  ]   │  ← hasRecoveryKey
-│                          │
-└──────────────────────────┘
+┌──────────────────────────────────┐
+│      🔒 密码管理箱                │
+│                                  │
+│  [  主密码输入框  ]               │
+│  [  解锁 / 创建密码箱  ]          │
+│                                  │
+│  ─── 或 ───                      │
+│  [  🛂 生物识别解锁  ]           │  ← biometricAvailable && biometricEnrolled
+│  [  🔑 恢复密钥解锁  ]           │  ← hasRecoveryKey && isInitialized
+│  [  🔄 从云端恢复   ]            │  ← 始终显示
+│                                  │
+└──────────────────────────────────┘
 ```
 
 点击"恢复密钥解锁" → 弹窗输入恢复密钥 → `unlockWithRecoveryKey(key)`
+
+点击"从云端恢复" → 在同一页面内切换为步骤式 UI：
+
+**步骤 1：连接 Git 仓库**
+- Git 仓库地址输入框（留空使用本地已有仓库）
+- "下一步"按钮
+
+**步骤 2：输入恢复密钥**
+- 恢复密钥输入框
+- "下一步"按钮
+
+**步骤 3：导出完成**
+- 显示导出结果：条目数量 + 文件路径
+- "打开文件位置"按钮
+- 提示用户：创建新密码库 → 导入 JSON 文件
+- "完成"按钮
 
 #### 13.8.3 VaultSettings 扩展
 
@@ -380,6 +462,8 @@ unlockWithRecoveryKey: (recoveryKey: string): Promise<boolean> =>
 hasRecoveryKey: (): Promise<boolean> => invoke("vault_has_recovery_key"),
 verifyVaultMetaIntegrity: (): Promise<IntegrityResult> =>
   invoke("vault_verify_vault_meta_integrity"),
+disasterRecoveryExport: (gitUrl?: string, recoveryKey: string): Promise<DisasterRecoveryResult> =>
+  invoke("vault_disaster_recovery_export", { gitUrl: gitUrl ?? null, recoveryKey }),
 ```
 
 ### 13.9 i18n

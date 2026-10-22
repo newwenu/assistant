@@ -7,6 +7,8 @@
       "providers": { "title": "Provider 管理" },
       "agents": { "title": "Agent 模式" },
       "about": { "title": "关于" },
+      "vault": "密码保险库",
+      "vault_settings": { "title": "密码保险库设置" },
       "chat_history": "消息历史",
       "settings": "设置"
     },
@@ -36,6 +38,9 @@
       "collapse": "折叠"
     },
     "or": "或",
+    "next": "下一步",
+    "done": "完成",
+    "back": "返回",
     "time": {
       "just_now": "刚刚",
       "minutes_ago": "{{count}} 分钟前",
@@ -330,6 +335,27 @@
       "license_value": "MIT",
       "app_name_value": "Assistant",
       "check_update": "检查更新（即将推出）"
+    },
+    "vault": {
+      "general": {
+        "title": "保险库设置"
+      },
+      "ssh": {
+        "title": "SSH Agent"
+      },
+      "auto_lock_minutes": { "label": "自动锁定时间（分钟）" },
+      "lock_on_screen_lock": { "label": "屏幕锁定时锁定保险库" },
+      "clipboard_clear_seconds": { "label": "剪贴板清除时间（秒）" },
+      "cipher_algorithm": { "label": "加密算法" },
+      "biometric_enabled": { "label": "生物识别解锁" },
+      "hibp_auto_audit": { "label": "HIBP 密码泄露审计" },
+      "ssh_auto_add": { "label": "解锁时自动添加 SSH 密钥到 Agent" },
+      "ssh_use_pageant": { "label": "使用 Pageant (PuTTY)" },
+      "ssh_use_openssh_agent": { "label": "使用 OpenSSH Agent" },
+      "ssh_auth_sock_override": {
+        "label": "SSH_AUTH_SOCK 路径覆盖",
+        "placeholder": "留空使用默认路径"
+      }
     }
   },
   "chat": {
@@ -667,6 +693,7 @@
       "search": "搜索",
       "filter_category": "筛选分类",
       "add_entry": "添加条目",
+      "edit_entry": "编辑条目",
       "no_entries": "暂无条目",
       "copy": "复制",
       "confirm_delete": "确定删除此条目？",
@@ -687,6 +714,8 @@
       "tags": "标签",
       "add_tag": "添加标签",
       "favorite": "收藏",
+      "unfavorite": "取消收藏",
+      "viewing_entry": "查看条目",
       "custom_fields": "自定义字段",
       "field_name": "字段名",
       "field_value": "字段值",
@@ -701,6 +730,7 @@
       "revision": "版本",
       "tab_vault": "保险库",
       "tab_settings": "设置",
+      "tab_tools": "工具",
       "lock": "锁定",
       "confirm_lock": "确定锁定保险库？",
       "settings_auto_lock": "自动锁定时间",
@@ -733,6 +763,17 @@
       "sync_push": "推送",
       "sync_now": "同步",
       "sync_force_push": "强制推送",
+      "sync_force_push_confirm_title": "确认强制推送",
+      "sync_force_push_confirm_desc": "强制推送将覆盖远程仓库的历史记录，此操作不可撤销。",
+      "sync_result_success": "同步成功",
+      "sync_result_up_to_date": "已是最新",
+      "sync_result_conflict": "同步冲突：{{count}} 个文件",
+      "sync_result_error": "同步失败：{{message}}",
+      "sync_err_not_init": "Git 仓库未初始化",
+      "sync_err_no_remote": "未配置远程仓库地址",
+      "danger_zone_title": "危险区域",
+      "danger_zone_desc": "以下操作具有破坏性且不可撤销，请谨慎执行。",
+      "danger_type_confirm": "请输入 {{code}} 以确认操作",
       "conflict_title": "解决同步冲突",
       "conflict_file": "冲突文件",
       "conflict_resolve": "解决",
@@ -776,9 +817,45 @@
       "totp_uri_invalid": "无效的 otpauth URI",
       "totp_edit_hint": "此条目已配置 TOTP，留空保持不变，输入新值则替换",
       "totp_placeholder_keep": "留空保持不变",
+      "totp_secret_set": "密钥已设置",
+      "totp_clear": "清除",
+      "totp_edit_secret": "编辑密钥",
+      "totp_manual_input": "手动输入密钥",
+      "totp_secret_placeholder": "输入 Base32 密钥",
       "entries_count": "个条目",
       "leaked": "个泄露",
-      "hibp_audit_all": "全库泄露审计"
+      "hibp_audit_all": "全库泄露审计",
+      "disaster_recovery": "从云端恢复",
+      "disaster_recovery_title": "灾难恢复",
+      "disaster_recovery_step_git": "连接 Git",
+      "disaster_recovery_step_key": "恢复密钥",
+      "disaster_recovery_step_done": "导出完成",
+      "disaster_recovery_git_hint": "输入 Git 仓库地址，留空则使用本地已有仓库",
+      "disaster_recovery_git_placeholder": "https://github.com/you/vault-backup.git",
+      "disaster_recovery_export": "解密并导出",
+      "disaster_recovery_success": "成功导出 {{count}} 个条目",
+      "disaster_recovery_integrity_warning": "HMAC 验证失败，数据可能被篡改",
+      "disaster_recovery_next_steps": "现在可以创建新密码库并导入此 JSON 文件来恢复密码。",
+      "disaster_recovery_open_file": "打开文件位置",
+      "tab_import_export": "导入 / 导出",
+      "export_title": "导出保险库",
+      "export_description": "将所有保险库条目导出为文件。文件将包含解密后的数据，5 分钟后自动删除。CSV 格式不含自定义字段，标签以逗号分隔。",
+      "export_format": "格式",
+      "export_format_json": "JSON",
+      "export_format_csv": "CSV",
+      "export_warning": "导出文件包含未加密的密码，导出不去重。为安全起见，文件将在 5 分钟后自动删除。",
+      "export_button": "导出",
+      "export_success": "已导出至：{{path}}",
+      "import_title": "导入保险库",
+      "import_description": "从之前导出的 JSON 或 CSV 文件导入条目。与现有条目完全相同的才会跳过（全字段匹配去重）。CSV 格式不支持自定义字段。",
+      "import_format": "格式",
+      "import_format_json": "JSON",
+      "import_format_csv": "CSV",
+      "import_file_path": "文件路径",
+      "import_file_placeholder": "选择或粘贴文件路径",
+      "import_button": "导入",
+      "import_success": "成功导入 {{count}} 个条目",
+      "import_no_entries": "未导入新条目（全部重复）"
     }
   }
 }

@@ -1,5 +1,5 @@
 use std::panic::catch_unwind;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 
 use base64::engine::general_purpose::STANDARD as B64;
@@ -445,7 +445,7 @@ impl SecurityDbState {
         self.with_conn_and_key(|conn, mk| {
             let id = uuid::Uuid::new_v4().to_string();
             let entry_key = VaultCrypto::derive_entry_key(mk, &id);
-            let now = chrono::Utc::now().timestamp();
+            let now = chrono::Utc::now().timestamp_millis();
 
             let encrypted_password = entry
                 .password
@@ -541,7 +541,7 @@ impl SecurityDbState {
     ) -> Result<(), VaultError> {
         self.with_conn_and_key(|conn, mk| {
             let entry_key = VaultCrypto::derive_entry_key(mk, id);
-            let now = chrono::Utc::now().timestamp();
+            let now = chrono::Utc::now().timestamp_millis();
 
             let encrypted_password = entry
                 .password
@@ -651,7 +651,7 @@ impl SecurityDbState {
         let conn_guard = self.conn.lock().unwrap();
         let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
 
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now().timestamp_millis();
         let affected = conn
             .execute(
                 "UPDATE vault_entries SET deleted_at = ?1 WHERE id = ?2 AND deleted_at IS NULL",
@@ -1228,44 +1228,33 @@ impl SecurityDbState {
         entries: Vec<VaultEntryCreate>,
         algo: CipherAlgorithm,
     ) -> Result<u32, VaultError> {
+        let existing = self.export_entries()?;
         let mut count = 0u32;
         for entry in entries {
+            let is_exact_dup = existing.iter().any(|e| {
+                e.category == entry.category
+                    && e.title == entry.title
+                    && e.username == entry.username
+                    && e.url == entry.url
+                    && e.password == entry.password
+                    && e.notes == entry.notes
+                    && e.totp_secret == entry.totp_secret
+                    && e.tags == entry.tags
+                    && e.is_favorite == entry.is_favorite
+                    && custom_fields_eq(&e.custom_fields, &entry.custom_fields)
+            });
+            if is_exact_dup {
+                log::warn!(
+                    "Skipping exact duplicate on import: {} ({})",
+                    entry.title,
+                    entry.category
+                );
+                continue;
+            }
             self.create_entry(entry, algo)?;
             count += 1;
         }
         Ok(count)
-    }
-
-    fn biometric_key_path(&self) -> PathBuf {
-        Path::new(&self.db_path)
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join("biometric-key.enc")
-    }
-
-    fn unlock_with_master_key(&self, master_key: MasterKey) -> Result<(), VaultError> {
-        let sqlcipher_key = VaultCrypto::derive_sqlcipher_key(&master_key);
-        let sqlcipher_key_hex = hex::encode(sqlcipher_key);
-
-        let path = Path::new(&self.db_path);
-        let conn = Connection::open(path).map_err(|e| VaultError::Database(e.to_string()))?;
-        conn.execute_batch(&format!("PRAGMA key = \"x'{}'\"", sqlcipher_key_hex))
-            .map_err(|e| VaultError::Database(format!("PRAGMA key set failed: {}", e)))?;
-        conn.execute_batch(SQLCIPHER_PRAGMAS)
-            .map_err(|e| VaultError::Database(format!("PRAGMA cipher settings failed: {}", e)))?;
-
-        {
-            let mut key_arr = sqlcipher_key;
-            key_arr.zeroize();
-        }
-
-        let _hash_salt = meta::get_salt(&conn, "hash_salt")?
-            .ok_or_else(|| VaultError::Database("hash_salt not found".to_string()))?;
-
-        *self.master_key.lock().unwrap() = Some(master_key);
-        *self.conn.lock().unwrap() = Some(conn);
-
-        Ok(())
     }
 
     pub fn is_biometric_available(
@@ -1291,6 +1280,9 @@ impl SecurityDbState {
         let mk_guard = self.master_key.lock().unwrap();
         let master_key = mk_guard.as_ref().ok_or(VaultError::Locked)?;
 
+        let bk_guard = self.bootstrap_key.lock().unwrap();
+        let bootstrap_key = bk_guard.as_ref().ok_or(VaultError::Locked)?;
+
         #[cfg(target_os = "macos")]
         {
             key_store.set_key("vault-master-key", master_key.expose())?;
@@ -1301,23 +1293,27 @@ impl SecurityDbState {
             let mut wrapping_key = [0u8; 32];
             rand::Rng::fill(&mut rand::thread_rng(), &mut wrapping_key);
 
+            let mut plaintext = Vec::with_capacity(64);
+            plaintext.extend_from_slice(bootstrap_key.expose());
+            plaintext.extend_from_slice(master_key.expose());
+
             let nonce: [u8; 12] = rand::thread_rng().gen();
-            let encrypted_master_key = VaultCrypto::encrypt_field(
-                &VaultPlaintext::from(master_key.expose().to_vec()),
+            let encrypted_keys = VaultCrypto::encrypt_field(
+                &VaultPlaintext::from(plaintext),
                 &wrapping_key,
                 CipherAlgorithm::Aes256Gcm,
             )
             .map_err(VaultError::Crypto)?;
 
-            let mut combined = Vec::with_capacity(12 + encrypted_master_key.len());
+            let mut combined = Vec::with_capacity(12 + encrypted_keys.len());
             combined.extend_from_slice(&nonce);
-            combined.extend_from_slice(encrypted_master_key.as_bytes());
+            combined.extend_from_slice(encrypted_keys.as_bytes());
             let biometric_key_enc = B64.encode(&combined);
 
-            key_store.set_key("vault-master-key", &wrapping_key)?;
-
-            let biometric_path = self.biometric_key_path();
-            std::fs::write(&biometric_path, &biometric_key_enc)?;
+            let mut blob = Vec::with_capacity(32 + biometric_key_enc.len());
+            blob.extend_from_slice(&wrapping_key);
+            blob.extend_from_slice(biometric_key_enc.as_bytes());
+            key_store.set_key("vault-master-key", &blob)?;
 
             wrapping_key.zeroize();
         }
@@ -1368,21 +1364,15 @@ impl SecurityDbState {
 
         #[cfg(not(target_os = "macos"))]
         {
-            let biometric_path = self.biometric_key_path();
-            if !biometric_path.exists() {
-                return Err(VaultError::NotFound("biometric_key_enc".to_string()));
-            }
-
-            let wrapping_key_vec = key_store.get_key("vault-master-key")?;
-            if wrapping_key_vec.len() != 32 {
+            let blob = key_store.get_key("vault-master-key")?;
+            if blob.len() < 33 {
                 return Err(VaultError::Crypto(
-                    "Invalid wrapping key length from biometric store".to_string(),
+                    "Invalid biometric blob length".to_string(),
                 ));
             }
             let mut wrapping_key = [0u8; 32];
-            wrapping_key.copy_from_slice(&wrapping_key_vec);
-
-            let biometric_key_enc = std::fs::read_to_string(&biometric_path)?;
+            wrapping_key.copy_from_slice(&blob[..32]);
+            let biometric_key_enc = String::from_utf8_lossy(&blob[32..]).to_string();
 
             let combined = B64.decode(&biometric_key_enc).map_err(|e| {
                 VaultError::Crypto(format!("Failed to decode biometric_key_enc: {}", e))
@@ -1394,24 +1384,45 @@ impl SecurityDbState {
                 ));
             }
 
-            let encrypted_mk_str = String::from_utf8_lossy(&combined[12..]).to_string();
+            let encrypted_keys_str = String::from_utf8_lossy(&combined[12..]).to_string();
 
-            let master_key_plaintext = VaultCrypto::decrypt_field(&encrypted_mk_str, &wrapping_key)
+            let keys_plaintext = VaultCrypto::decrypt_field(&encrypted_keys_str, &wrapping_key)
                 .map_err(|e| {
                     VaultError::Crypto(format!("Biometric key decryption failed: {}", e))
                 })?;
 
-            if master_key_plaintext.expose().len() != 32 {
+            if keys_plaintext.expose().len() != 64 {
                 return Err(VaultError::Crypto(
-                    "Invalid master key length from biometric decrypt".to_string(),
+                    "Invalid key length from biometric decrypt (expected 64 bytes)".to_string(),
                 ));
             }
 
-            let mut mk_arr = [0u8; 32];
-            mk_arr.copy_from_slice(master_key_plaintext.expose());
-            let master_key = MasterKey::new(mk_arr);
+            let mut bootstrap_arr = [0u8; 32];
+            let mut master_arr = [0u8; 32];
+            bootstrap_arr.copy_from_slice(&keys_plaintext.expose()[..32]);
+            master_arr.copy_from_slice(&keys_plaintext.expose()[32..]);
+            let bootstrap_key = MasterKey::new(bootstrap_arr);
+            let master_key = MasterKey::new(master_arr);
 
-            self.unlock_with_master_key(master_key)?;
+            let sqlcipher_key = VaultCrypto::derive_sqlcipher_key(&bootstrap_key);
+            let sqlcipher_key_hex = hex::encode(sqlcipher_key);
+
+            let path = std::path::Path::new(&self.db_path);
+            let conn = Connection::open(path).map_err(|e| VaultError::Database(e.to_string()))?;
+            conn.execute_batch(&format!("PRAGMA key = \"x'{}'\"", sqlcipher_key_hex))
+                .map_err(|e| VaultError::Database(format!("PRAGMA key set failed: {}", e)))?;
+            conn.execute_batch(SQLCIPHER_PRAGMAS).map_err(|e| {
+                VaultError::Database(format!("PRAGMA cipher settings failed: {}", e))
+            })?;
+
+            {
+                let mut sk = sqlcipher_key;
+                sk.zeroize();
+            }
+
+            *self.master_key.lock().unwrap() = Some(master_key);
+            *self.bootstrap_key.lock().unwrap() = Some(bootstrap_key);
+            *self.conn.lock().unwrap() = Some(conn);
 
             self.check_biometric_consistency(key_store)?;
 
@@ -1432,14 +1443,6 @@ impl SecurityDbState {
 
     pub fn disenroll_biometric(&self, key_store: &dyn BiometricKeyStore) -> Result<(), VaultError> {
         let _ = key_store.delete_key("vault-master-key");
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            let biometric_path = self.biometric_key_path();
-            if biometric_path.exists() {
-                let _ = std::fs::remove_file(&biometric_path);
-            }
-        }
 
         {
             let guard = self.conn.lock().unwrap();
@@ -1463,15 +1466,13 @@ impl SecurityDbState {
 
         #[cfg(not(target_os = "macos"))]
         {
-            let has_os_key = key_store.has_key("vault-master-key")?;
-            let has_enc_file = self.biometric_key_path().exists();
-            Ok(has_os_key && has_enc_file)
+            key_store.has_key("vault-master-key")
         }
     }
 
     pub fn check_biometric_consistency(
         &self,
-        key_store: &dyn BiometricKeyStore,
+        _key_store: &dyn BiometricKeyStore,
     ) -> Result<(), VaultError> {
         #[cfg(target_os = "macos")]
         {
@@ -1480,53 +1481,24 @@ impl SecurityDbState {
 
         #[cfg(not(target_os = "macos"))]
         {
-            let has_os_key = key_store.has_key("vault-master-key")?;
-            let has_enc_file = self.biometric_key_path().exists();
-
-            match (has_os_key, has_enc_file) {
-                (true, true) => {}
-                (true, false) => {
-                    let mk_guard = self.master_key.lock().unwrap();
-                    let master_key = mk_guard.as_ref().ok_or(VaultError::Locked)?;
-
-                    let mut wrapping_key_vec = key_store.get_key("vault-master-key")?;
-                    if wrapping_key_vec.len() != 32 {
-                        let _ = self.disenroll_biometric(key_store);
-                        return Ok(());
-                    }
-                    let mut wrapping_key = [0u8; 32];
-                    wrapping_key.copy_from_slice(&wrapping_key_vec);
-
-                    let nonce: [u8; 12] = rand::thread_rng().gen();
-                    let encrypted_master_key = VaultCrypto::encrypt_field(
-                        &VaultPlaintext::from(master_key.expose().to_vec()),
-                        &wrapping_key,
-                        CipherAlgorithm::Aes256Gcm,
-                    )
-                    .map_err(VaultError::Crypto)?;
-
-                    let mut combined = Vec::with_capacity(12 + encrypted_master_key.len());
-                    combined.extend_from_slice(&nonce);
-                    combined.extend_from_slice(encrypted_master_key.as_bytes());
-                    let biometric_key_enc = B64.encode(&combined);
-
-                    let biometric_path = self.biometric_key_path();
-                    std::fs::write(&biometric_path, &biometric_key_enc)?;
-
-                    wrapping_key.zeroize();
-                    wrapping_key_vec.zeroize();
-
-                    info!("Biometric self-healing: regenerated biometric-key.enc");
-                }
-                (false, true) => {
-                    let biometric_path = self.biometric_key_path();
-                    let _ = std::fs::remove_file(&biometric_path);
-                    info!("Biometric self-healing: removed orphaned biometric-key.enc");
-                }
-                (false, false) => {}
-            }
-
             Ok(())
         }
     }
+}
+
+fn custom_fields_eq(
+    a: &[crate::types::CustomFieldInput],
+    b: &[crate::types::CustomFieldInput],
+) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut a_sorted: Vec<_> = a.iter().collect();
+    let mut b_sorted: Vec<_> = b.iter().collect();
+    a_sorted.sort_by_key(|f| &f.name);
+    b_sorted.sort_by_key(|f| &f.name);
+    a_sorted
+        .iter()
+        .zip(b_sorted.iter())
+        .all(|(a, b)| a.name == b.name && a.value == b.value && a.is_protected == b.is_protected)
 }

@@ -7,6 +7,7 @@ use core_foundation::data::CFData;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
+use log::{debug, info, warn};
 use security_framework::item::{ItemClass, ItemSearchOptions, ReferenceClass, SearchResult};
 use security_framework::keychain_item::KeychainItem;
 
@@ -29,7 +30,9 @@ impl BiometricKeyStore for TouchIdKeyStore {
                 std::ptr::null_mut(),
             )
         };
-        Ok(!access_control.is_null())
+        let available = !access_control.is_null();
+        debug!("Touch ID available: {}", available);
+        Ok(available)
     }
 
     fn set_key(&self, key_id: &str, data: &[u8]) -> Result<(), VaultError> {
@@ -92,14 +95,18 @@ impl BiometricKeyStore for TouchIdKeyStore {
             let status = SecItemAdd(query.as_CFTypeRef() as *const c_void, std::ptr::null_mut());
 
             if status == errSecSuccess {
+                info!("Touch ID: biometric key stored for '{}'", key_id);
                 Ok(())
             } else if status == errSecUserCanceled {
+                warn!("Touch ID: biometric enrollment cancelled by user");
                 Err(VaultError::BiometricCancelled)
             } else if status == errSecDuplicateItem {
+                warn!("Touch ID: duplicate item after delete for '{}'", key_id);
                 Err(VaultError::BiometricFailed(
                     "duplicate item after delete".into(),
                 ))
             } else {
+                warn!("Touch ID: SecItemAdd failed with status {}", status);
                 Err(VaultError::BiometricFailed(format!("SecItemAdd: {status}")))
             }
         }
@@ -113,8 +120,12 @@ impl BiometricKeyStore for TouchIdKeyStore {
             .map_err(|e| map_search_error(&e, key_id))?;
 
         match results.first() {
-            Some(SearchResult::Data(data)) => Ok(data.to_vec()),
+            Some(SearchResult::Data(data)) => {
+                info!("Touch ID: biometric key retrieved for '{}'", key_id);
+                Ok(data.to_vec())
+            }
             Some(SearchResult::Ref(_)) => {
+                warn!("Touch ID: unexpected ref result for '{}'", key_id);
                 Err(VaultError::BiometricFailed("unexpected ref result".into()))
             }
             None => Err(VaultError::BiometricUnavailable),
@@ -125,7 +136,10 @@ impl BiometricKeyStore for TouchIdKeyStore {
         let result = item_search_options().account(key_id).delete();
 
         match result {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                info!("Touch ID: biometric key deleted for '{}'", key_id);
+                Ok(())
+            }
             Err(ref e) if is_item_not_found(e) => Ok(()),
             Err(e) => Err(map_security_error(&e)),
         }

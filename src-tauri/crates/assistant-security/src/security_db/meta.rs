@@ -1,5 +1,6 @@
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
+use log::warn;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::schema::SCHEMA_VERSION;
@@ -35,10 +36,16 @@ pub fn ensure_schema_version(conn: &Connection) -> Result<(), String> {
     let current: Option<String> = get_meta(conn, "schema_version")?;
     match current {
         Some(v) if v.parse::<u32>() == Ok(SCHEMA_VERSION) => Ok(()),
-        Some(v) => Err(format!(
-            "Unsupported vault schema version: {} (expected {})",
-            v, SCHEMA_VERSION
-        )),
+        Some(v) => {
+            warn!(
+                "Unsupported vault schema version: {} (expected {})",
+                v, SCHEMA_VERSION
+            );
+            Err(format!(
+                "Unsupported vault schema version: {} (expected {})",
+                v, SCHEMA_VERSION
+            ))
+        }
         None => {
             set_meta(conn, "schema_version", &SCHEMA_VERSION.to_string())?;
             Ok(())

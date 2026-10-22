@@ -15,11 +15,14 @@ import type {
   ConflictResolution,
   SshKeyInfo,
   IntegrityResult,
+  DisasterRecoveryResult,
 } from "./vault.service";
 import { vaultService } from "./vault.service";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 const log = createLogger("vaultStore");
+
+const BIOMETRIC_CACHE_TTL_MS = 5_000;
 
 interface RevealedField {
   value: string;
@@ -46,6 +49,9 @@ interface VaultState {
   hibpAuditing: boolean;
   biometricAvailable: boolean;
   biometricEnrolled: boolean;
+  _biometricAvailableAt: number;
+  _biometricEnrolledAt: number;
+  _recoveryKeySetAt: number;
   syncReadyness: Readyness | null;
   syncResult: SyncResult | null;
   syncConfig: SyncConfig | null;
@@ -54,6 +60,9 @@ interface VaultState {
   sshAgentRunning: boolean;
   recoveryKeySet: boolean;
   integrityResult: IntegrityResult | null;
+  disasterRecoveryStep: 1 | 2 | 3 | null;
+  disasterRecoveryResult: DisasterRecoveryResult | null;
+  exportFilePath: string | null;
 
   init: (masterPassword: string) => Promise<void>;
   unlock: (masterPassword: string) => Promise<boolean>;
@@ -125,6 +134,16 @@ interface VaultState {
   unlockWithRecoveryKey: (recoveryKey: string) => Promise<boolean>;
   checkRecoveryKeySet: () => Promise<void>;
   verifyIntegrity: () => Promise<IntegrityResult | null>;
+  startDisasterRecovery: () => void;
+  cancelDisasterRecovery: () => void;
+  setDisasterRecoveryStep: (step: 1 | 2 | 3) => void;
+  disasterRecoveryExport: (
+    gitUrl: string | null,
+    recoveryKey: string,
+    exportPath: string,
+  ) => Promise<DisasterRecoveryResult | null>;
+  exportVault: (format: "csv" | "json") => Promise<string | null>;
+  importVault: (path: string, format: "csv" | "json") => Promise<number | null>;
 }
 
 const DEFAULT_AUTO_LOCK_MINUTES = 5;
@@ -153,6 +172,9 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   hibpAuditing: false,
   biometricAvailable: false,
   biometricEnrolled: false,
+  _biometricAvailableAt: 0,
+  _biometricEnrolledAt: 0,
+  _recoveryKeySetAt: 0,
   syncReadyness: null,
   syncResult: null,
   syncConfig: null,
@@ -161,12 +183,21 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   sshAgentRunning: false,
   recoveryKeySet: false,
   integrityResult: null,
+  disasterRecoveryStep: null,
+  disasterRecoveryResult: null,
+  exportFilePath: null,
 
   init: async (masterPassword) => {
     set({ loading: true, error: null });
     try {
       await vaultService.init(masterPassword);
-      set({ isLocked: false, isInitialized: true, loading: false });
+      set({
+        isLocked: false,
+        isInitialized: true,
+        loading: false,
+        _biometricEnrolledAt: 0,
+        _recoveryKeySetAt: 0,
+      });
       get().resetAutoLockTimer();
     } catch (e) {
       log.error("init failed", e);
@@ -179,7 +210,12 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     try {
       const ok = await vaultService.unlock(masterPassword);
       if (ok) {
-        set({ isLocked: false, loading: false });
+        set({
+          isLocked: false,
+          loading: false,
+          _biometricEnrolledAt: 0,
+          _recoveryKeySetAt: 0,
+        });
         get().resetAutoLockTimer();
       } else {
         set({ error: "Invalid password", loading: false });
@@ -200,6 +236,8 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         entries: [],
         selectedEntry: null,
         revealedField: null,
+        _biometricEnrolledAt: 0,
+        _recoveryKeySetAt: 0,
       });
       const { autoLockTimerId } = get();
       if (autoLockTimerId) clearTimeout(autoLockTimerId);
@@ -467,22 +505,28 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   },
 
   checkBiometricAvailable: async () => {
+    const now = Date.now();
+    if (now - get()._biometricAvailableAt < BIOMETRIC_CACHE_TTL_MS) return;
     try {
       const available = await vaultService.isBiometricAvailable();
-      set({ biometricAvailable: available });
+      set({ biometricAvailable: available, _biometricAvailableAt: Date.now() });
+      log.debug(`Biometric available: ${available}`);
     } catch (e) {
       log.error("checkBiometricAvailable failed", e);
-      set({ biometricAvailable: false });
+      set({ biometricAvailable: false, _biometricAvailableAt: Date.now() });
     }
   },
 
   checkBiometricEnrolled: async () => {
+    const now = Date.now();
+    if (now - get()._biometricEnrolledAt < BIOMETRIC_CACHE_TTL_MS) return;
     try {
       const enrolled = await vaultService.isBiometricEnrolled();
-      set({ biometricEnrolled: enrolled });
+      set({ biometricEnrolled: enrolled, _biometricEnrolledAt: Date.now() });
+      log.debug(`Biometric enrolled: ${enrolled}`);
     } catch (e) {
       log.error("checkBiometricEnrolled failed", e);
-      set({ biometricEnrolled: false });
+      set({ biometricEnrolled: false, _biometricEnrolledAt: Date.now() });
     }
   },
 
@@ -491,10 +535,12 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     try {
       const ok = await vaultService.unlockBiometric();
       if (ok) {
-        set({ isLocked: false, loading: false });
+        set({ isLocked: false, loading: false, _biometricEnrolledAt: 0 });
         get().resetAutoLockTimer();
+        log.info("Vault unlocked via biometric");
       } else {
         set({ loading: false });
+        log.warn("Biometric unlock cancelled or failed");
       }
       return ok;
     } catch (e) {
@@ -502,7 +548,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       if (msg.includes("NotFound") || msg.includes("Crypto")) {
         try {
           await vaultService.disenrollBiometric();
-          set({ biometricEnrolled: false });
+          set({ biometricEnrolled: false, _biometricEnrolledAt: 0 });
         } catch {
           log.warn(
             "disenrollBiometric also failed during unlockBiometric cleanup",
@@ -519,7 +565,8 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       await vaultService.enrollBiometric(masterPassword);
-      set({ biometricEnrolled: true, loading: false });
+      set({ biometricEnrolled: true, loading: false, _biometricEnrolledAt: 0 });
+      log.info("Biometric enrolled successfully");
     } catch (e) {
       log.error("enrollBiometric failed", e);
       set({ error: String(e), loading: false });
@@ -529,7 +576,8 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   disenrollBiometric: async () => {
     try {
       await vaultService.disenrollBiometric();
-      set({ biometricEnrolled: false });
+      set({ biometricEnrolled: false, _biometricEnrolledAt: 0 });
+      log.info("Biometric disenrolled");
     } catch (e) {
       log.error("disenrollBiometric failed", e);
     }
@@ -733,7 +781,12 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     try {
       const ok = await vaultService.unlockWithRecoveryKey(recoveryKey);
       if (ok) {
-        set({ isLocked: false, loading: false });
+        set({
+          isLocked: false,
+          loading: false,
+          _biometricEnrolledAt: 0,
+          _recoveryKeySetAt: 0,
+        });
         get().resetAutoLockTimer();
       } else {
         set({ error: "Invalid recovery key", loading: false });
@@ -747,9 +800,11 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   },
 
   checkRecoveryKeySet: async () => {
+    const now = Date.now();
+    if (now - get()._recoveryKeySetAt < BIOMETRIC_CACHE_TTL_MS) return;
     try {
       const has = await vaultService.hasRecoveryKey();
-      set({ recoveryKeySet: has });
+      set({ recoveryKeySet: has, _recoveryKeySetAt: Date.now() });
     } catch (e) {
       log.error("checkRecoveryKeySet failed", e);
     }
@@ -763,6 +818,66 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     } catch (e) {
       log.error("verifyIntegrity failed", e);
       set({ error: String(e) });
+      return null;
+    }
+  },
+
+  startDisasterRecovery: () => {
+    set({ disasterRecoveryStep: 1, disasterRecoveryResult: null, error: null });
+  },
+
+  cancelDisasterRecovery: () => {
+    set({ disasterRecoveryStep: null, disasterRecoveryResult: null });
+  },
+
+  setDisasterRecoveryStep: (step) => {
+    set({ disasterRecoveryStep: step });
+  },
+
+  disasterRecoveryExport: async (gitUrl, recoveryKey, exportPath) => {
+    set({ loading: true, error: null });
+    try {
+      const result = await vaultService.disasterRecoveryExport(
+        gitUrl,
+        recoveryKey,
+        exportPath,
+      );
+      set({
+        disasterRecoveryStep: 3,
+        disasterRecoveryResult: result,
+        loading: false,
+      });
+      return result;
+    } catch (e) {
+      log.error("disasterRecoveryExport failed", e);
+      set({ error: String(e), loading: false });
+      return null;
+    }
+  },
+
+  exportVault: async (format) => {
+    set({ loading: true, error: null });
+    try {
+      const filePath = await vaultService.exportVault(format);
+      set({ exportFilePath: filePath, loading: false });
+      return filePath;
+    } catch (e) {
+      log.error("exportVault failed", e);
+      set({ error: String(e), loading: false });
+      return null;
+    }
+  },
+
+  importVault: async (path, format) => {
+    set({ loading: true, error: null });
+    try {
+      const count = await vaultService.importVault(path, format);
+      await get().loadEntries();
+      set({ loading: false });
+      return count;
+    } catch (e) {
+      log.error("importVault failed", e);
+      set({ error: String(e), loading: false });
       return null;
     }
   },

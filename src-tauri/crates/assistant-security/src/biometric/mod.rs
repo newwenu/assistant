@@ -17,9 +17,18 @@ pub trait BiometricKeyStore: Send + Sync {
 
 pub fn create_key_store() -> Box<dyn BiometricKeyStore> {
     #[cfg(target_os = "windows")]
-    return Box::new(windows::WindowsHelloKeyStore);
+    {
+        log::debug!("Biometric key store: Windows Hello");
+        return Box::new(windows::WindowsHelloKeyStore);
+    }
     #[cfg(target_os = "macos")]
-    return Box::new(macos::TouchIdKeyStore);
+    {
+        log::debug!("Biometric key store: Touch ID");
+        return Box::new(macos::TouchIdKeyStore);
+    }
     #[cfg(target_os = "linux")]
-    return Box::new(linux::LibsecretKeyStore);
+    {
+        log::debug!("Biometric key store: libsecret");
+        return Box::new(linux::LibsecretKeyStore);
+    }
 }

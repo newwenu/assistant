@@ -3,6 +3,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
+use log::warn;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
@@ -71,7 +72,56 @@ pub fn generate_recovery_key(
 
     raw_key.zeroize();
 
+    warn!("Recovery key generated");
     Ok((formatted, emergency))
+}
+
+pub fn decrypt_recovery_keys(
+    recovery_key: &str,
+    emergency: &EmergencyData,
+) -> Result<(MasterKey, MasterKey), VaultError> {
+    let _parsed = parse_recovery_key(recovery_key)?;
+
+    let salt_bytes = B64
+        .decode(&emergency.salt)
+        .map_err(|e| VaultError::Crypto(format!("Failed to decode emergency salt: {}", e)))?;
+    let salt: [u8; 16] = salt_bytes
+        .try_into()
+        .map_err(|_| VaultError::Crypto("Emergency salt must be 16 bytes".to_string()))?;
+
+    let recovery_derived_key = derive_recovery_key(recovery_key, &salt)?;
+
+    let token_bytes = B64
+        .decode(&emergency.token)
+        .map_err(|e| VaultError::Crypto(format!("Failed to decode emergency token: {}", e)))?;
+
+    if token_bytes.len() < NONCE_SIZE + 16 {
+        return Err(VaultError::InvalidRecoveryKey);
+    }
+
+    let nonce = Nonce::from_slice(&token_bytes[..NONCE_SIZE]);
+    let ciphertext = &token_bytes[NONCE_SIZE..];
+
+    let cipher = Aes256Gcm::new_from_slice(&recovery_derived_key)
+        .map_err(|e| VaultError::Crypto(format!("AES-256-GCM init failed: {}", e)))?;
+
+    let decrypted = cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| VaultError::InvalidRecoveryKey)?;
+
+    if decrypted.len() != 64 {
+        return Err(VaultError::InvalidRecoveryKey);
+    }
+
+    let mut bootstrap_arr = [0u8; 32];
+    let mut master_arr = [0u8; 32];
+    bootstrap_arr.copy_from_slice(&decrypted[..32]);
+    master_arr.copy_from_slice(&decrypted[32..]);
+
+    let bootstrap_key = MasterKey::new(bootstrap_arr);
+    let master_key = MasterKey::new(master_arr);
+
+    Ok((bootstrap_key, master_key))
 }
 
 pub fn unlock_with_recovery_key(
@@ -153,6 +203,7 @@ pub fn unlock_with_recovery_key(
 
     db_state.set_conn_and_key(conn, master_key, bootstrap_key);
 
+    warn!("Vault unlocked via recovery key");
     Ok(true)
 }
 

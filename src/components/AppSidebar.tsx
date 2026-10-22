@@ -8,6 +8,7 @@ import {
   SettingOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from "@/config/constants";
 import { SETTINGS_DETAIL_PAGES } from "@/settings/core/pageRegistry";
@@ -130,6 +131,11 @@ export const AppSidebar: React.FC = () => {
           items={[
             ...toolMenuItems,
             { type: "divider" as const },
+            {
+              key: "/vault",
+              label: t("common.navigation.vault"),
+              icon: <SafetyCertificateOutlined />,
+            },
             {
               key: "/history",
               label: t("common.navigation.chat_history"),

@@ -42,7 +42,9 @@ impl SyncEngine {
         let git = self.git_sync.lock().unwrap();
 
         if !git.is_init() {
-            return Ok(SyncResult::UpToDate);
+            return Ok(SyncResult::Error(
+                "Git repository not initialized".to_string(),
+            ));
         }
 
         match git.pull() {
@@ -63,11 +65,13 @@ impl SyncEngine {
         let git = self.git_sync.lock().unwrap();
 
         if !git.is_init() {
-            return Ok(SyncResult::UpToDate);
+            return Ok(SyncResult::Error(
+                "Git repository not initialized".to_string(),
+            ));
         }
 
         if !git.has_remote()? {
-            return Ok(SyncResult::UpToDate);
+            return Ok(SyncResult::Error("No remote configured".to_string()));
         }
 
         git.push(None, None)?;
@@ -79,6 +83,10 @@ impl SyncEngine {
 
         let pull_result = self.pull()?;
 
+        if let SyncResult::Error(_) = &pull_result {
+            return Ok(pull_result);
+        }
+
         if let SyncResult::Conflict(files) = &pull_result {
             if !files.is_empty() {
                 return Ok(pull_result);
@@ -89,6 +97,8 @@ impl SyncEngine {
         if git.has_remote()? {
             let msg = format!("Sync at {}", chrono::Utc::now().to_rfc3339());
             git.finalize(&msg)?;
+        } else {
+            return Ok(SyncResult::Error("No remote configured".to_string()));
         }
 
         Ok(SyncResult::Success)
@@ -96,6 +106,17 @@ impl SyncEngine {
 
     pub fn force_push(&self) -> Result<SyncResult, SyncError> {
         let git = self.git_sync.lock().unwrap();
+
+        if !git.is_init() {
+            return Ok(SyncResult::Error(
+                "Git repository not initialized".to_string(),
+            ));
+        }
+
+        if !git.has_remote()? {
+            return Ok(SyncResult::Error("No remote configured".to_string()));
+        }
+
         git.force_push()?;
         Ok(SyncResult::Success)
     }
@@ -127,11 +148,14 @@ impl SyncEngine {
 
     pub fn init(&self) -> Result<(), SyncError> {
         self.vault_file.ensure_structure()?;
+        self.vault_file.ensure_vault_meta_exists()?;
         self.git_sync.lock().unwrap().init()
     }
 
     pub fn clone_repo(&self, url: &str) -> Result<(), SyncError> {
-        self.git_sync.lock().unwrap().clone(url, true)
+        self.git_sync.lock().unwrap().clone(url, true)?;
+        self.vault_file.ensure_vault_meta_exists()?;
+        Ok(())
     }
 
     pub fn add_remote(&self, remote: &str, url: &str) -> Result<(), SyncError> {
@@ -180,6 +204,16 @@ impl SyncEngine {
             exported += 1;
         }
 
+        let emergency = self.vault_file.read_emergency_data()?;
+        self.vault_file.write_vault_meta(
+            master_key,
+            1,
+            "aes256Gcm",
+            exported,
+            None,
+            emergency.as_ref(),
+        )?;
+
         Ok(exported)
     }
 
@@ -209,5 +243,49 @@ impl SyncEngine {
         master_key: &assistant_security::vault_crypto::types::MasterKey,
     ) -> Result<IntegrityResult, SyncError> {
         self.vault_file.verify_vault_meta_integrity(master_key)
+    }
+
+    pub fn rewrite_vault_meta_with_new_key(
+        &self,
+        master_key: &assistant_security::vault_crypto::types::MasterKey,
+    ) -> Result<(), SyncError> {
+        self.vault_file.rewrite_vault_meta_with_new_key(master_key)
+    }
+
+    pub fn disaster_recovery_export(
+        &self,
+        master_key: &assistant_security::vault_crypto::types::MasterKey,
+    ) -> Result<Vec<assistant_security::types::VaultEntryExport>, SyncError> {
+        let entry_ids = self.vault_file.list_entry_files()?;
+        let mut exports = Vec::with_capacity(entry_ids.len());
+
+        for id in &entry_ids {
+            let blob = self.vault_file.import_entry(master_key, id)?;
+
+            let custom_fields: Vec<assistant_security::types::CustomFieldInput> = blob
+                .custom_fields
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+
+            exports.push(assistant_security::types::VaultEntryExport {
+                category: blob
+                    .category
+                    .parse()
+                    .unwrap_or(assistant_security::types::VaultCategory::Custom),
+                title: blob.title,
+                username: blob.username,
+                url: blob.url,
+                password: blob.password,
+                notes: blob.notes,
+                totp_secret: blob.totp_secret,
+                tags: blob.tags,
+                custom_fields,
+                is_favorite: blob.is_favorite,
+                created_at: blob.created_at,
+                updated_at: blob.updated_at,
+            });
+        }
+
+        Ok(exports)
     }
 }

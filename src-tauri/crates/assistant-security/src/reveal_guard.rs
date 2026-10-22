@@ -1,6 +1,8 @@
 use std::sync::Mutex;
 use std::time::Instant;
 
+use log::warn;
+
 const RATE_LIMIT_PER_MINUTE: usize = 3;
 const RATE_WINDOW_SECS: u64 = 60;
 
@@ -28,6 +30,11 @@ impl RevealGuard {
         timestamps.retain(|t| now.duration_since(*t).as_secs() < RATE_WINDOW_SECS);
 
         if timestamps.len() >= RATE_LIMIT_PER_MINUTE {
+            warn!(
+                "Vault reveal rate limited ({}/{})",
+                timestamps.len(),
+                RATE_LIMIT_PER_MINUTE
+            );
             return Err(crate::types::VaultError::RateLimited);
         }
 

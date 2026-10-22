@@ -1,18 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const mockInvokeMap = new Map<string, (...args: any[]) => any>();
+const mockInvokeMap = new Map<string, (...args: unknown[]) => unknown>();
 
 vi.mock("@/services/tauriInvoke", () => ({
-  tauriInvoke: (cmd: string, args?: any) => {
+  tauriInvoke: (cmd: string, args?: unknown): Promise<unknown> => {
     const fn = mockInvokeMap.get(cmd);
-    if (fn) return fn(args);
+    if (fn) return Promise.resolve(fn(args));
     return Promise.resolve(undefined);
   },
 }));
 
 import { useVaultStore } from "./vaultStore";
+import type { VaultEntryDetail } from "./vault.service";
 
-function mockCmd(cmd: string, impl: (...args: any[]) => any) {
+function mockCmd(cmd: string, impl: (...args: unknown[]) => unknown) {
   mockInvokeMap.set(cmd, impl);
 }
 
@@ -36,6 +37,9 @@ function resetStore() {
     hibpAuditing: false,
     biometricAvailable: false,
     biometricEnrolled: false,
+    _biometricAvailableAt: 0,
+    _biometricEnrolledAt: 0,
+    _recoveryKeySetAt: 0,
     syncReadyness: null,
     syncResult: null,
     syncConfig: null,
@@ -124,8 +128,28 @@ describe("vaultStore lifecycle", () => {
 
     useVaultStore.setState({
       isLocked: false,
-      entries: [{ id: "1", title: "Test", category: "login" } as any],
-      selectedEntry: { id: "1", title: "Test" } as any,
+      entries: [
+        {
+          id: "1",
+          title: "Test",
+          category: "login",
+          username: null,
+          url: null,
+          tags: [],
+          isFavorite: false,
+          updatedAt: 0,
+        },
+      ],
+      selectedEntry: {
+        id: "1",
+        title: "Test",
+        category: "login",
+        username: null,
+        url: null,
+        tags: [],
+        isFavorite: false,
+        updatedAt: 0,
+      } as unknown as VaultEntryDetail,
     });
 
     const store = useVaultStore.getState();
@@ -185,8 +209,28 @@ describe("vaultStore CRUD", () => {
 
   it("deleteEntry → removes from list and clears selection if same", async () => {
     useVaultStore.setState({
-      entries: [{ id: "1", title: "Test" } as any],
-      selectedEntry: { id: "1", title: "Test" } as any,
+      entries: [
+        {
+          id: "1",
+          title: "Test",
+          category: "login",
+          username: null,
+          url: null,
+          tags: [],
+          isFavorite: false,
+          updatedAt: 0,
+        },
+      ],
+      selectedEntry: {
+        id: "1",
+        title: "Test",
+        category: "login",
+        username: null,
+        url: null,
+        tags: [],
+        isFavorite: false,
+        updatedAt: 0,
+      } as unknown as VaultEntryDetail,
     });
 
     mockCmd("vault_delete_entry", () => Promise.resolve(undefined));
@@ -202,8 +246,38 @@ describe("vaultStore CRUD", () => {
 
   it("deleteEntry → keeps selection if different entry", async () => {
     useVaultStore.setState({
-      entries: [{ id: "1", title: "A" } as any, { id: "2", title: "B" } as any],
-      selectedEntry: { id: "2", title: "B" } as any,
+      entries: [
+        {
+          id: "1",
+          title: "A",
+          category: "login",
+          username: null,
+          url: null,
+          tags: [],
+          isFavorite: false,
+          updatedAt: 0,
+        },
+        {
+          id: "2",
+          title: "B",
+          category: "login",
+          username: null,
+          url: null,
+          tags: [],
+          isFavorite: false,
+          updatedAt: 0,
+        },
+      ],
+      selectedEntry: {
+        id: "2",
+        title: "B",
+        category: "login",
+        username: null,
+        url: null,
+        tags: [],
+        isFavorite: false,
+        updatedAt: 0,
+      } as unknown as VaultEntryDetail,
     });
 
     mockCmd("vault_delete_entry", () => Promise.resolve(undefined));
@@ -326,11 +400,11 @@ describe("vaultStore reveal & TOTP", () => {
     expect(state.totpTimeRemaining).toBe(25);
   });
 
-  it("stopTotpTimer → clears TOTP state", async () => {
+  it("stopTotpTimer → clears TOTP state", () => {
     useVaultStore.setState({
       totpCode: "123456",
       totpTimeRemaining: 15,
-      totpTimerId: setInterval(() => {}, 99999) as any,
+      totpTimerId: setInterval(() => {}, 99999),
     });
 
     const store = useVaultStore.getState();
@@ -486,7 +560,6 @@ describe("vaultStore sync", () => {
       remoteUrl: "git@github.com:user/vault.git",
       remoteName: "origin",
       branch: "main",
-      autoSyncIntervalSecs: 300,
       sshKeyPath: null,
     };
     mockCmd("vault_get_sync_config", () => Promise.resolve(config));

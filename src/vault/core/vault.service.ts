@@ -128,7 +128,6 @@ export interface SyncConfig {
   remoteUrl: string | null;
   remoteName: string;
   branch: string;
-  autoSyncIntervalSecs: number;
   sshKeyPath: string | null;
 }
 
@@ -146,6 +145,12 @@ export interface SshKeyInfo {
 export interface IntegrityResult {
   valid: boolean;
   message: string;
+}
+
+export interface DisasterRecoveryResult {
+  filePath: string;
+  entryCount: number;
+  integrityWarning: boolean;
 }
 
 export const vaultService = {
@@ -294,4 +299,15 @@ export const vaultService = {
 
   verifyVaultMetaIntegrity: (): Promise<IntegrityResult> =>
     invoke("vault_verify_vault_meta_integrity"),
+
+  disasterRecoveryExport: (
+    gitUrl: string | null,
+    recoveryKey: string,
+    exportPath: string,
+  ): Promise<DisasterRecoveryResult> =>
+    invoke("vault_disaster_recovery_export", {
+      gitUrl,
+      recoveryKey,
+      exportPath,
+    }),
 };

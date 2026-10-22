@@ -24,7 +24,7 @@
 
 **文件**：`assistant-sync/src/types/`
 
-- [ ] H2.1 `mod.rs`：`Readyness` 枚举（NoSync / RepoState(RepositoryState) / Dirty / Ready）+ `RepositoryState` 枚举（Merge / Rebase / RebaseInteractive / CherryPick / Unknown）+ `SyncResult` struct（pulled / pushed / conflicts / readyness）+ `SyncConfig` struct（remote_url / remote_name / auto_sync_interval_minutes）+ `Conflict` struct（entry_id / local_revision / remote_revision）+ `ConflictResolution` 枚举（UseLocal / UseRemote / MergeBoth / Skip）+ `IntegrityResult` struct（valid / message）
+- [x] H2.1 `mod.rs`：`Readyness` 枚举（NoSync / RepoState(RepositoryState) / Dirty / Ready）+ `RepositoryState` 枚举（Merge / Rebase / RebaseInteractive / CherryPick / Unknown）+ `SyncResult` struct（pulled / pushed / conflicts / readyness）+ `SyncConfig` struct（remote_url / remote_name）+ `Conflict` struct（entry_id / local_revision / remote_revision）+ `ConflictResolution` 枚举（UseLocal / UseRemote / MergeBoth / Skip）+ `IntegrityResult` struct（valid / message）
 - [ ] H2.2 `SyncConfig` 实现 `Serialize`/`Deserialize`，`remote_url` 为 `Option<String>`（未配置时为 None）
 - [ ] H2.3 `Readyness` / `RepositoryState` 实现 `Display` trait（错误消息友好显示）
 
@@ -179,8 +179,8 @@
 **文件**：`src/tools/password-vault/vaultStore.ts`
 
 - [ ] H13.1 新增状态字段：`syncStatus: "idle" | "syncing" | "conflict" | "error"` / `conflicts: Conflict[]` / `syncConfig: SyncConfig | null` / `readyness: Readyness | null`
-- [ ] H13.2 新增 actions：`syncNow` / `syncPull` / `syncPush` / `resolveConflict` / `loadSyncConfig` / `saveSyncConfig` / `initGitRepo` / `cloneGitRepo`
-- [ ] H13.3 自动同步计时器：`syncConfig.auto_sync_interval_minutes > 0` 时启动 setInterval → `syncNow()`
+- [x] H13.2 新增 actions：`syncNow` / `syncPull` / `syncPush` / `resolveConflict` / `loadSyncConfig` / `saveSyncConfig` / `initGitRepo` / `cloneGitRepo`
+- [x] ~~H13.3 自动同步计时器~~：已移除定时轮询，改为事件驱动（每次密码操作自动 prepare→finalize）+ 手动"立即同步"按钮
 
 **依赖**：H12
 
@@ -190,7 +190,7 @@
 
 **文件**：`src/tools/password-vault/VaultSyncSettings.tsx`
 
-- [ ] H14.1 远程仓库 URL 输入 + 自动同步间隔选择
+- [x] H14.1 远程仓库 URL 输入（已移除自动同步间隔选择）
 - [ ] H14.2 状态指示：就绪/同步中/冲突/错误 + 上次同步时间
 - [ ] H14.3 操作按钮：初始化仓库 / 克隆仓库 / 立即同步 / 强制推送
 - [ ] H14.4 VaultSettings.tsx 集成：新增"同步"标签页
@@ -238,8 +238,8 @@
 
 **文件**：`src-tauri/crates/assistant-config/src/app_conf.rs` + `src/tools/password-vault/vault.service.ts` + `src-tauri/crates/assistant-i18n/locales/`
 
-- [ ] H18.1 Rust `AppConf` struct 新增 `vault_auto_sync_interval_minutes: u32` + `#[serde(default = "default_five")]`
-- [ ] H18.2 前端 `AppConf` interface 新增 `vaultAutoSyncIntervalMinutes: number`
+- [x] ~~H18.1 Rust `AppConf` struct 新增 `vault_auto_sync_interval_minutes: u32`~~：已移除，不再需要自动同步间隔字段
+- [x] ~~H18.2 前端 `AppConf` interface 新增 `vaultAutoSyncIntervalMinutes: number`~~：已移除
 - [ ] H18.3 `AppConfDto` + `From<AppConf>` impl 同步更新
 - [ ] H18.4 `zh-CN.json` + `en-US.json` 新增同步相关约 30 词条
 
@@ -266,7 +266,7 @@
 - [ ] H19.15 SSH ControlMaster 复用（Unix only）：连续 push/pull 仅一次握手
 - [ ] H19.16 `GIT_TERMINAL_PROMPT=0` 生效：认证失败返回错误而非挂起
 - [ ] H19.17 前端同步状态正确显示（idle/syncing/conflict/error）
-- [ ] H19.18 自动同步计时器生效（间隔可配置）
+- [x] ~~H19.18 自动同步计时器生效（间隔可配置）~~：已移除定时轮询机制
 - [ ] H19.19 设置项四处同步：Rust AppConf + 前端 AppConf + AppConfDto + From<AppConf>
 
 **依赖**：H14, H15, H16, H17, H18
@@ -429,7 +429,11 @@
 **文件**：`assistant-sync/src/sync_engine/mod.rs`
 
 - [ ] J5.1 `disaster_recovery(git_url, recovery_key, db_path) → Result<()>` — clone Git 仓库 → 恢复密钥解锁 → 验证 .vault-meta 完整性 → import_all → 完成
+  - ⚠️ **缺陷 #11**：4 个关键缺失导致灾难恢复完全不可用（详见 I9-vault-issues.md #11）
+  - ⚠️ **缺陷 #12**：`.vault-meta` 缺少 `masterKeySalt` / `argon2Params` 字段，无法重建 security.db
+  - ⚠️ **缺陷 #13**：`EmergencyDataFile` 仅存 `token+salt`，缺少 `encrypted_bootstrap` / `master_key_hash` / `master_key_salt`
 - [ ] J5.2 前端 VaultUnlock：新设备"灾难恢复"入口 → 输入 Git URL + 恢复密钥 → 调用 disaster_recovery
+  - ⚠️ **缺陷 #11**：恢复密钥按钮仅在 `isInitialized=true` 时显示，新设备无法进入
 
 **依赖**：J4
 
@@ -521,7 +525,7 @@
 - [ ] K3.9 恢复密钥生成 → 锁定 → 恢复密钥解锁 → 条目可访问
 - [ ] K3.10 灾难恢复：新设备 clone + 恢复密钥解锁 → 全部条目可访问
 - [ ] K3.11 .vault-meta 完整性：正常操作后签名有效
-- [ ] K3.12 自动同步计时器生效（间隔可配置）
+- [x] ~~K3.12 自动同步计时器生效（间隔可配置）~~：已移除定时轮询机制
 - [ ] K3.13 前端同步状态正确显示（idle/syncing/conflict/error）
 - [ ] K3.14 VaultConflictResolve 组件正确显示 diff + 解决冲突
 

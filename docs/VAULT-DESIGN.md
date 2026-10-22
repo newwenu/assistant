@@ -1147,7 +1147,6 @@ Tauri 天然优势：无 `nodeIntegration`、无 `remote` 模块、IPC 需显式
 | `vaultAutoLockMinutes` | `number` | 5 | 自动锁定时间 |
 | `vaultLockOnScreenLock` | `boolean` | true | OS 屏幕锁/睡眠/用户切换时自动锁定（参考 KeePassXC ScreenLockListener） |
 | `vaultClipboardClearSeconds` | `number` | 30 | 剪贴板清零时间 |
-| `vaultAutoSyncIntervalMinutes` | `number` | 5 | 自动同步间隔（0=禁用） |
 | `vaultCipherAlgorithm` | `"aes256Gcm" \| "chacha20Poly1305"` | `aes256Gcm` | 加密算法 |
 | `vaultBiometricEnabled` | `boolean` | false | 生物识别快速解锁 |
 | `vaultHibpAutoAudit` | `boolean` | true | 自动 HIBP 审计 |

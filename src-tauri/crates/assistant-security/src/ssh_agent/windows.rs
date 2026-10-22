@@ -1,6 +1,8 @@
 use std::io::Write;
 use std::process::Stdio;
 
+use log::{debug, info, warn};
+
 use super::{run_ssh_add, SshAgentBridge, SshKeyInfo};
 use crate::types::VaultError;
 
@@ -88,24 +90,29 @@ fn add_key_via_ssh_add(private_key: &[u8], lifetime: Option<u32>) -> Result<(), 
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| VaultError::Other(format!("ssh-add spawn failed: {}", e)))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        warn!("ssh-add spawn failed: {}", e);
+        VaultError::Other(format!("ssh-add spawn failed: {}", e))
+    })?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(private_key)
-            .map_err(|e| VaultError::Other(format!("ssh-add stdin write failed: {}", e)))?;
+        stdin.write_all(private_key).map_err(|e| {
+            warn!("ssh-add stdin write failed: {}", e);
+            VaultError::Other(format!("ssh-add stdin write failed: {}", e))
+        })?;
         drop(stdin);
     }
 
-    let output = child
-        .wait_with_output()
-        .map_err(|e| VaultError::Other(format!("ssh-add wait failed: {}", e)))?;
+    let output = child.wait_with_output().map_err(|e| {
+        warn!("ssh-add wait failed: {}", e);
+        VaultError::Other(format!("ssh-add wait failed: {}", e))
+    })?;
     if output.status.success() {
+        info!("SSH key added to agent via ssh-add");
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        warn!("ssh-add failed: {}", stderr.trim());
         Err(VaultError::Other(format!(
             "ssh-add failed: {}",
             stderr.trim()
@@ -126,9 +133,14 @@ fn is_pageant_running() -> Result<bool, VaultError> {
     let output = std::process::Command::new("tasklist")
         .args(["/FI", "IMAGENAME eq Pageant.exe", "/NH"])
         .output()
-        .map_err(|e| VaultError::Other(format!("tasklist failed: {}", e)))?;
+        .map_err(|e| {
+            warn!("tasklist failed: {}", e);
+            VaultError::Other(format!("tasklist failed: {}", e))
+        })?;
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(stdout.contains("Pageant.exe"))
+    let running = stdout.contains("Pageant.exe");
+    debug!("Pageant running: {}", running);
+    Ok(running)
 }
 
 fn parse_ssh_add_list(output: &str) -> Vec<SshKeyInfo> {

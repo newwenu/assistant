@@ -2,6 +2,7 @@ use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
+use log::warn;
 use rand::Rng;
 use sha2::{Digest, Sha256};
 
@@ -29,15 +30,20 @@ pub fn encrypt_api_key(key: &str, machine_id: &[u8]) -> Result<Vec<u8>, String> 
 
 pub fn decrypt_api_key(encrypted: &[u8], machine_id: &[u8]) -> Result<String, String> {
     if encrypted.len() < 12 {
+        warn!(
+            "API key decrypt failed: encrypted data too short ({} bytes)",
+            encrypted.len()
+        );
         return Err("Encrypted data too short".to_string());
     }
     let cipher =
         Aes256Gcm::new_from_slice(machine_id).map_err(|e| format!("Invalid key length: {}", e))?;
     let nonce = Nonce::from_slice(&encrypted[..12]);
     let ciphertext = &encrypted[12..];
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|e| format!("Decryption failed: {}", e))?;
+    let plaintext = cipher.decrypt(nonce, ciphertext).map_err(|e| {
+        warn!("API key decryption failed: {}", e);
+        format!("Decryption failed: {}", e)
+    })?;
     String::from_utf8(plaintext).map_err(|e| format!("Invalid UTF-8: {}", e))
 }
 

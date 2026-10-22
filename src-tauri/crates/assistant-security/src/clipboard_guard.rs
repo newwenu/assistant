@@ -3,6 +3,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::types::VaultError;
+use log::{info, warn};
 
 pub struct ClipboardGuard {
     original: Arc<Mutex<Option<String>>>,
@@ -31,6 +32,10 @@ impl ClipboardGuard {
         let original_content = read_clipboard().ok();
 
         write_clipboard(password)?;
+        info!(
+            "Vault secret copied to clipboard (auto-clear in {}s)",
+            timeout_secs
+        );
 
         {
             let mut orig = self.original.lock().unwrap();
@@ -96,9 +101,13 @@ impl ClipboardGuard {
         if let Some(original) = original_content {
             write_clipboard(&original)?;
         } else {
-            clear_clipboard_internal().map_err(|e| VaultError::Clipboard(e.to_string()))?;
+            clear_clipboard_internal().map_err(|e| {
+                warn!("Clipboard clear failed: {}", e);
+                VaultError::Clipboard(e.to_string())
+            })?;
         }
 
+        info!("Clipboard force-cleared");
         Ok(())
     }
 }

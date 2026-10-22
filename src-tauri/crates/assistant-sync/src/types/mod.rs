@@ -89,7 +89,6 @@ pub struct SyncConfig {
     pub remote_url: Option<String>,
     pub remote_name: String,
     pub branch: String,
-    pub auto_sync_interval_secs: u32,
     pub ssh_key_path: Option<String>,
 }
 
@@ -99,7 +98,6 @@ impl Default for SyncConfig {
             remote_url: None,
             remote_name: "origin".to_string(),
             branch: "main".to_string(),
-            auto_sync_interval_secs: 300,
             ssh_key_path: None,
         }
     }

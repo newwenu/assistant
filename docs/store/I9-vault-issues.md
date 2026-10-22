@@ -21,6 +21,9 @@
 | 8 | vault:unlocked 事件 loading 残留 | 🟡 低 | UI 状态 | 低 | spec-2 §2.3 |
 | 9 | vault_export 明文文件无保护 | 🟡 中 | 安全隐患 | 中 | spec-2 §3.4 |
 | 10 | RevealResult 明文进 JS 堆 | ⚪ 已知 | 设计权衡 | — | spec-3 §2.1 |
+| 11 | 灾难恢复完全不可用（4 个关键缺失） | 🔴 严重 | 功能缺失 | 高 | spec-5 §13.5 |
+| 12 | .vault-meta 缺少 masterKeySalt/argon2Params 字段 | 🟡 中 | 数据缺失 | 中 | spec-5 §13.5 |
+| 13 | VaultMetaFile.emergency 仅存 token+salt，灾难恢复无法重建 security.db | 🔴 严重 | 设计缺陷 | 高 | spec-5 §13.2 |
 
 ---
 
@@ -941,3 +944,136 @@ vault_reveal_password (vault.rs:179)
 | E | E5.1–E5.8 | 屏幕锁自动锁定 / 5分钟无操作 / 剪贴板30s恢复 / 应用关闭恢复 / CSP 生效 / DevTools 禁用 / V8 isolate / 窗口 focus |
 | F | F3.1–F3.7 | Windows Hello / Touch ID / 回退主密码 / master_key 不经 IPC / disenroll 清理 / 改密后 disenroll / cargo check 三平台 |
 | G | G1.1–G4.6 | 编译验证 / 安全不变式 / 功能验证 / 跨阶段约束验证 |
+
+---
+
+## 🔴 问题 11：灾难恢复完全不可用（4 个关键缺失）
+
+### 严重度：严重
+
+### 关联 spec
+
+spec-5 §13.5 灾难恢复流程
+
+### 设计要求的流程
+
+1. 克隆 Git 仓库 → 获取 `.enc` 文件 + `.vault-meta`
+2. 恢复密钥解锁 → 恢复 master_key
+3. 验证 `.vault-meta` 的 HMAC 签名
+4. 导入全部条目 → 遍历 `entries/*.enc` → 逐条 `import_entry` → 写入 SQLite
+5. 导入删除记录 → 读取 `deletions/deleted.json` → 标记已删除条目
+6. 完成 → 密码箱在新设备上完全可用
+
+### 逐项检查
+
+| 步骤 | 状态 | 缺失内容 |
+|------|------|----------|
+| 1. 克隆 Git 仓库 | ✅ | `vault_git_clone` 已实现 |
+| 2. 恢复密钥解锁 | ❌ | `unlock_with_recovery_key` 要求 `security.db` 已存在，新设备没有则返回 `NotInitialized` |
+| 3. 验证完整性 | ✅ | `verify_vault_meta_integrity` 已实现 |
+| 4. 导入全部条目 | ❌ | `import_all` 方法不存在，仅有单条 `import_entry`；缺少 `SecurityDbState::create_entry_from_blob()` 桥接 |
+| 5. 导入删除记录 | ❌ | 无对应方法读取 `deleted.json` 并标记删除 |
+| 6. 前端入口 | ❌ | VaultUnlock 中恢复密钥按钮仅在 `isInitialized=true` 时显示，新设备无法进入 |
+
+### 关键代码位置
+
+- **后端阻塞点**：`recovery_key/mod.rs:133-135` — `if !path.exists() { return Err(VaultError::NotInitialized); }`
+- **前端阻塞点**：`VaultUnlock.tsx:232` — `{isInitialized && recoveryKeySet && !showRecoveryKey && (`
+- **缺失方法**：`sync_engine/mod.rs` — 无 `import_all_entries()` / `import_deleted_records()`
+- **缺失 command**：`cmd/vault.rs` — 无 `vault_disaster_recovery`
+
+### 修复方案
+
+1. `recovery_key/mod.rs` — 新增 `disaster_recovery_unlock()` 分支：当 `security.db` 不存在时，从 `.vault-meta` 解密 master_key 后**新建** security.db（init schema + 写入 salt/hash）
+2. `sync_engine/mod.rs` — 新增 `import_all_entries()`：`list_entry_files()` → 逐条 `import_entry()` → `SecurityDbState::create_entry_from_blob()` 写入 SQLite
+3. `sync_engine/mod.rs` — 新增 `import_deleted_records()`：读取 `deleted.json` → 标记删除
+4. `sync_engine/mod.rs` — 新增 `disaster_recovery(git_url, recovery_key, db_path)` 一体化函数
+5. `VaultUnlock.tsx` — 新设备时显示"灾难恢复"入口（Git URL + 恢复密钥输入）
+6. `cmd/vault.rs` — 新增 `vault_disaster_recovery` Tauri command
+
+---
+
+## 🟡 问题 12：.vault-meta 缺少 masterKeySalt / argon2Params 字段
+
+### 严重度：中
+
+### 关联 spec
+
+spec-5 §13.5 灾难恢复流程
+
+### 问题描述
+
+`VaultMetaFile` 结构体（`vault_file/types.rs:24-31`）当前字段：
+
+```rust
+pub struct VaultMetaFile {
+    pub version: u32,
+    pub cipher_algorithm: String,
+    pub entry_count: u32,
+    pub last_sync_at: Option<i64>,
+    pub emergency: Option<EmergencyDataFile>,
+    pub hmac: String,
+}
+```
+
+灾难恢复在新设备上需要从 `.vault-meta` 重建 `security.db`，这需要：
+- `masterKeySalt`：master_key 的 Argon2id 盐值（用于验证主密码）
+- `argon2Params`：Argon2id 参数（m/t/p），不同设备可能使用不同参数
+
+当前 `.vault-meta` 不包含这些信息，灾难恢复即使能解密 master_key，也无法重建 `security.db` 的 `master_key_hash` 验证字段。
+
+### 修复方案
+
+`VaultMetaFile` 新增字段（`#[serde(default)]` 兼容旧文件）：
+
+```rust
+pub struct VaultMetaFile {
+    // ...existing fields...
+    #[serde(default)]
+    pub master_key_salt: Option<String>,   // base64(argon2id_salt)
+    #[serde(default)]
+    pub argon2_params: Option<Argon2ParamsFile>,
+}
+
+pub struct Argon2ParamsFile {
+    pub memory_cost: u32,   // m
+    pub time_cost: u32,     // t
+    pub parallelism: u32,   // p
+}
+```
+
+`write_vault_meta()` 时从 `SecurityDbState` 读取 salt 和参数一并写入。
+
+---
+
+## 🔴 问题 13：VaultMetaFile.emergency 仅存 token+salt，灾难恢复无法重建 security.db
+
+### 严重度：严重
+
+### 关联 spec
+
+spec-5 §13.2 恢复密钥方案
+
+### 问题描述
+
+`EmergencyDataFile`（`vault_file/types.rs:35-38`）当前仅包含：
+
+```rust
+pub struct EmergencyDataFile {
+    pub token: String,   // base64(nonce‖encrypted_master_key‖tag)
+    pub salt: String,    // base64(argon2id_salt)
+}
+```
+
+恢复密钥解锁流程（`recovery_key/mod.rs`）：
+1. 从 `emergency.token` + `emergency.salt` 解密得到 `master_key` ✅
+2. 从 `master_key` 派生 `sqlcipher_key` ✅
+3. 用 `sqlcipher_key` 打开 `security.db` ✅（**但新设备没有 security.db**）
+
+### 修复方案（已更新）
+
+采用"只读解密 + JSON 导出"方案，不重建 `security.db`。
+
+灾难恢复定位为**独立的只读解密工具**：从 Git 仓库 + 恢复密钥解密全部条目，导出为 JSON 文件（与 `vault_export` 格式一致）。用户自行创建新密码库 + `vault_import` 导入。
+
+详见 spec-5 §13.5（2026-10-22 更新）。

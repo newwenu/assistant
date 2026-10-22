@@ -302,7 +302,6 @@ Git 同步的冲突由 Git 本身处理。由于 .enc 文件采用整体打包�
 |------|------|------|
 | `remote_url` | `Option<String>` | 远程仓库 URL |
 | `remote_name` | `String` | 远程名称（默认 `"origin"`） |
-| `auto_sync_interval_minutes` | `u32` | 自动同步间隔（0=禁用） |
 
 ### 11.14 支持的 Git 远程
 
@@ -368,7 +367,6 @@ Git 同步的冲突由 Git 本身处理。由于 .enc 文件采用整体打包�
 │  同步设置                                            │
 ├──────────────────────────────────────────────────────┤
 │  远程仓库:  [https://github.com/user/vault.git    ]  │
-│  自动同步:  [每 5 分钟 ▾]  (0=禁用)                  │
 │                                                      │
 │  状态:  ● 就绪  |  上次同步: 2 分钟前                 │
 │                                                      │
@@ -427,9 +425,7 @@ gitPush: (): Promise<void> => invoke("vault_git_push"),
 
 AppConf 新增字段：
 
-| 前端字段 (AppConf) | Rust 字段 (app_conf.rs) | 类型 | 默认值 |
-|---------------------|------------------------|------|--------|
-| `vaultAutoSyncIntervalMinutes` | `vault_auto_sync_interval_minutes` | `u32` / `number` | 5 |
+（同步相关设置项已移除自动同步间隔，同步采用事件驱动模式：每次密码操作自动 prepare→finalize，用户也可手动点击"立即同步"按钮。）
 
 Rust struct 添加 `#[serde(default)]`，`AppConfDto` 同步更新。
 

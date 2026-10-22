@@ -19,6 +19,45 @@ pub struct EncryptedEntryBlob {
     pub updated_at: i64,
 }
 
+#[derive(Debug, Clone)]
+pub struct DecryptedEntryBlob {
+    pub id: String,
+    pub category: String,
+    pub title: String,
+    pub username: Option<String>,
+    pub url: Option<String>,
+    pub password: Option<String>,
+    pub notes: Option<String>,
+    pub totp_secret: Option<String>,
+    pub custom_fields: Option<String>,
+    pub tags: Vec<String>,
+    pub is_favorite: bool,
+    pub revision: u64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl From<EncryptedEntryBlob> for DecryptedEntryBlob {
+    fn from(blob: EncryptedEntryBlob) -> Self {
+        Self {
+            id: blob.id,
+            category: blob.category,
+            title: blob.title,
+            username: blob.username,
+            url: blob.url,
+            password: blob.encrypted_password,
+            notes: blob.encrypted_notes,
+            totp_secret: blob.encrypted_totp_secret,
+            custom_fields: blob.encrypted_custom_fields,
+            tags: blob.tags,
+            is_favorite: blob.is_favorite,
+            revision: blob.revision,
+            created_at: blob.created_at,
+            updated_at: blob.updated_at,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultMetaFile {

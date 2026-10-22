@@ -3,6 +3,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaChaNonce};
 use hkdf::Hkdf;
+use log::warn;
 use rand::Rng;
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
@@ -117,6 +118,10 @@ impl VaultCrypto {
             .map_err(|e| format!("Base64 decode failed: {}", e))?;
 
         if combined.len() < 1 + NONCE_SIZE {
+            warn!(
+                "Vault decrypt failed: encrypted data too short ({} bytes)",
+                combined.len()
+            );
             return Err("Encrypted data too short".to_string());
         }
 
@@ -130,17 +135,19 @@ impl VaultCrypto {
                 let cipher = Aes256Gcm::new_from_slice(entry_key)
                     .map_err(|e| format!("AES-256-GCM init failed: {}", e))?;
                 let nonce = AesNonce::from_slice(nonce_bytes);
-                cipher
-                    .decrypt(nonce, ciphertext)
-                    .map_err(|e| format!("AES-256-GCM decrypt failed: {}", e))?
+                cipher.decrypt(nonce, ciphertext).map_err(|e| {
+                    warn!("AES-256-GCM decrypt failed: {}", e);
+                    format!("AES-256-GCM decrypt failed: {}", e)
+                })?
             }
             CipherAlgorithm::ChaCha20Poly1305 => {
                 let cipher = ChaCha20Poly1305::new_from_slice(entry_key)
                     .map_err(|e| format!("ChaCha20-Poly1305 init failed: {}", e))?;
                 let nonce = ChaChaNonce::from_slice(nonce_bytes);
-                cipher
-                    .decrypt(nonce, ciphertext)
-                    .map_err(|e| format!("ChaCha20-Poly1305 decrypt failed: {}", e))?
+                cipher.decrypt(nonce, ciphertext).map_err(|e| {
+                    warn!("ChaCha20-Poly1305 decrypt failed: {}", e);
+                    format!("ChaCha20-Poly1305 decrypt failed: {}", e)
+                })?
             }
         };
 

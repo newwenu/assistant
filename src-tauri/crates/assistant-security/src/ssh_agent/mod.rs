@@ -52,14 +52,17 @@ pub fn create_agent_bridge(
     {
         let _ = auth_sock_override;
         if use_pageant {
+            log::debug!("SSH agent bridge: Pageant");
             return Box::new(windows::PageantBridge);
         }
+        log::debug!("SSH agent bridge: OpenSSH Agent");
         Box::new(windows::OpenSshAgentBridge)
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let _ = use_pageant;
+        log::debug!("SSH agent bridge: Unix ssh-add");
         Box::new(unix::UnixSshAgentBridge { auth_sock_override })
     }
 }

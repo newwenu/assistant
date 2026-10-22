@@ -7,6 +7,8 @@
       "providers": { "title": "Provider Management" },
       "agents": { "title": "Agent Modes" },
       "about": { "title": "About" },
+      "vault": "Password Vault",
+      "vault_settings": { "title": "Vault Settings" },
       "chat_history": "Chat History",
       "settings": "Settings"
     },
@@ -36,6 +38,9 @@
       "collapse": "Collapse"
     },
     "or": "or",
+    "next": "Next",
+    "done": "Done",
+    "back": "Back",
     "time": {
       "just_now": "just now",
       "minutes_ago": "{{count}} min ago",
@@ -343,6 +348,27 @@
       "license_value": "MIT",
       "app_name_value": "Assistant",
       "check_update": "Check for Updates (Coming Soon)"
+    },
+    "vault": {
+      "general": {
+        "title": "Vault Settings"
+      },
+      "ssh": {
+        "title": "SSH Agent"
+      },
+      "auto_lock_minutes": { "label": "Auto Lock Time (minutes)" },
+      "lock_on_screen_lock": { "label": "Lock Vault on Screen Lock" },
+      "clipboard_clear_seconds": { "label": "Clipboard Clear Time (seconds)" },
+      "cipher_algorithm": { "label": "Cipher Algorithm" },
+      "biometric_enabled": { "label": "Biometric Unlock" },
+      "hibp_auto_audit": { "label": "HIBP Password Leak Audit" },
+      "ssh_auto_add": { "label": "Auto Add SSH Keys to Agent on Unlock" },
+      "ssh_use_pageant": { "label": "Use Pageant (PuTTY)" },
+      "ssh_use_openssh_agent": { "label": "Use OpenSSH Agent" },
+      "ssh_auth_sock_override": {
+        "label": "SSH_AUTH_SOCK Path Override",
+        "placeholder": "Leave empty for default"
+      }
     }
   },
   "chat": {
@@ -680,6 +706,7 @@
       "search": "Search",
       "filter_category": "Filter Category",
       "add_entry": "Add Entry",
+      "edit_entry": "Edit Entry",
       "no_entries": "No entries",
       "copy": "Copy",
       "confirm_delete": "Delete this entry?",
@@ -700,6 +727,8 @@
       "tags": "Tags",
       "add_tag": "Add Tag",
       "favorite": "Favorite",
+      "unfavorite": "Unfavorite",
+      "viewing_entry": "Viewing Entry",
       "custom_fields": "Custom Fields",
       "field_name": "Field Name",
       "field_value": "Field Value",
@@ -714,6 +743,7 @@
       "revision": "Revision",
       "tab_vault": "Vault",
       "tab_settings": "Settings",
+      "tab_tools": "Tools",
       "lock": "Lock",
       "confirm_lock": "Lock the vault?",
       "settings_auto_lock": "Auto-lock timeout",
@@ -746,6 +776,17 @@
       "sync_push": "Push",
       "sync_now": "Sync",
       "sync_force_push": "Force Push",
+      "sync_force_push_confirm_title": "Confirm Force Push",
+      "sync_force_push_confirm_desc": "Force push will overwrite the remote repository history. This action cannot be undone.",
+      "sync_result_success": "Sync succeeded",
+      "sync_result_up_to_date": "Already up to date",
+      "sync_result_conflict": "Sync conflict: {{count}} file(s)",
+      "sync_result_error": "Sync failed: {{message}}",
+      "sync_err_not_init": "Git repository not initialized",
+      "sync_err_no_remote": "No remote repository configured",
+      "danger_zone_title": "Danger Zone",
+      "danger_zone_desc": "The following actions are destructive and cannot be undone. Proceed with caution.",
+      "danger_type_confirm": "Type {{code}} to confirm",
       "conflict_title": "Resolve Sync Conflict",
       "conflict_file": "Conflict file",
       "conflict_resolve": "Resolve",
@@ -789,9 +830,45 @@
       "totp_uri_invalid": "Invalid otpauth URI",
       "totp_edit_hint": "TOTP is already configured. Leave empty to keep unchanged, or enter a new value to replace",
       "totp_placeholder_keep": "Leave empty to keep unchanged",
+      "totp_secret_set": "Secret key set",
+      "totp_clear": "Clear",
+      "totp_edit_secret": "Edit secret",
+      "totp_manual_input": "Enter secret manually",
+      "totp_secret_placeholder": "Enter Base32 secret key",
       "entries_count": "entries",
       "leaked": "leaked",
-      "hibp_audit_all": "Audit All"
+      "hibp_audit_all": "Audit All",
+      "disaster_recovery": "Recover from Cloud",
+      "disaster_recovery_title": "Disaster Recovery",
+      "disaster_recovery_step_git": "Connect Git",
+      "disaster_recovery_step_key": "Recovery Key",
+      "disaster_recovery_step_done": "Export Complete",
+      "disaster_recovery_git_hint": "Enter your Git repository URL. Leave empty to use the local repository.",
+      "disaster_recovery_git_placeholder": "https://github.com/you/vault-backup.git",
+      "disaster_recovery_export": "Decrypt & Export",
+      "disaster_recovery_success": "Successfully exported {{count}} entries",
+      "disaster_recovery_integrity_warning": "HMAC verification failed — data may be tampered",
+      "disaster_recovery_next_steps": "You can now create a new vault and import this JSON file to restore your passwords.",
+      "disaster_recovery_open_file": "Open File Location",
+      "tab_import_export": "Import / Export",
+      "export_title": "Export Vault",
+      "export_description": "Export all vault entries to a file. The file will contain decrypted data and will be automatically deleted after 5 minutes. CSV format does not include custom fields; tags are comma-separated.",
+      "export_format": "Format",
+      "export_format_json": "JSON",
+      "export_format_csv": "CSV",
+      "export_warning": "The exported file contains unencrypted passwords. Export does not deduplicate. It will be automatically deleted after 5 minutes for security.",
+      "export_button": "Export",
+      "export_success": "Exported to: {{path}}",
+      "import_title": "Import into Vault",
+      "import_description": "Import entries from a previously exported JSON or CSV file. Only entries identical to existing ones are skipped (full-field dedup). CSV format does not support custom fields.",
+      "import_format": "Format",
+      "import_format_json": "JSON",
+      "import_format_csv": "CSV",
+      "import_file_path": "File Path",
+      "import_file_placeholder": "Select or paste file path",
+      "import_button": "Import",
+      "import_success": "Successfully imported {{count}} entries",
+      "import_no_entries": "No new entries imported (all duplicates)"
     }
   }
 }

@@ -162,6 +162,7 @@ pub fn run() {
             cmd::vault_unlock_with_recovery_key,
             cmd::vault_has_recovery_key,
             cmd::vault_verify_vault_meta_integrity,
+            cmd::vault_disaster_recovery_export,
         ])
         .on_menu_event(|app, event| match event.id.as_ref() {
             "orb_new_chat" => {

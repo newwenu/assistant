@@ -1,6 +1,8 @@
 use std::io::Write;
 use std::process::Stdio;
 
+use log::{info, warn};
+
 use super::{run_ssh_add, SshAgentBridge, SshKeyInfo};
 use crate::types::VaultError;
 
@@ -41,13 +43,16 @@ impl SshAgentBridge for UnixSshAgentBridge {
             drop(stdin);
         }
 
-        let output = child
-            .wait_with_output()
-            .map_err(|e| VaultError::Other(format!("ssh-add wait failed: {}", e)))?;
+        let output = child.wait_with_output().map_err(|e| {
+            warn!("ssh-add wait failed: {}", e);
+            VaultError::Other(format!("ssh-add wait failed: {}", e))
+        })?;
         if output.status.success() {
+            info!("SSH key added to agent via ssh-add (unix)");
             Ok(())
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!("ssh-add failed: {}", stderr.trim());
             Err(VaultError::Other(format!(
                 "ssh-add failed: {}",
                 stderr.trim()
@@ -58,9 +63,11 @@ impl SshAgentBridge for UnixSshAgentBridge {
     fn remove_key(&self, fingerprint: &str) -> Result<(), VaultError> {
         let output = run_ssh_add(&["-d", fingerprint], self.auth_sock_override.as_deref())?;
         if output.status.success() {
+            info!("SSH key removed from agent: {}", fingerprint);
             Ok(())
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!("ssh-add -d failed: {}", stderr.trim());
             Err(VaultError::Other(format!(
                 "ssh-add -d failed: {}",
                 stderr.trim()

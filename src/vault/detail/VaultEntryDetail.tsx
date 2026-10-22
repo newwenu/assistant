@@ -5,7 +5,7 @@ import {
   Typography,
   Space,
   Tag,
-  message,
+  App,
   Spin,
   Tooltip,
 } from "antd";
@@ -17,10 +17,27 @@ import {
   EditOutlined,
   DeleteOutlined,
   CloudUploadOutlined,
+  ArrowLeftOutlined,
+  UserOutlined,
+  FileTextOutlined,
+  CreditCardOutlined,
+  IdcardOutlined,
+  CodeOutlined,
+  ToolOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "./vaultStore";
-import styles from "./password-vault.module.css";
+import { useVaultStore } from "../core/vaultStore";
+import type { VaultCategory } from "../core/vault.service";
+import styles from "../vault.module.css";
+
+const CATEGORY_ICONS: Record<VaultCategory, React.ReactNode> = {
+  login: <UserOutlined />,
+  note: <FileTextOutlined />,
+  card: <CreditCardOutlined />,
+  identity: <IdcardOutlined />,
+  sshKey: <CodeOutlined />,
+  custom: <ToolOutlined />,
+};
 
 interface VaultEntryDetailProps {
   entryId: string;
@@ -121,6 +138,7 @@ export default function VaultEntryDetail({
   onClose,
 }: VaultEntryDetailProps) {
   const { t } = useTranslation();
+  const { modal, message } = App.useApp();
   const {
     selectedEntry,
     revealedField,
@@ -133,6 +151,7 @@ export default function VaultEntryDetail({
     revealNotes,
     clearRevealedField,
     deleteEntry,
+    updateEntry,
     sshAddToAgent,
     generateTotp,
     copyTotp,
@@ -158,8 +177,33 @@ export default function VaultEntryDetail({
       void copyTotp(id);
       message.success(t("common.actions.copied"));
     },
-    [copyTotp, t],
+    [copyTotp, t, message],
   );
+
+  const handleToggleFavorite = useCallback(() => {
+    if (!selectedEntry) return;
+    const nextFav = !selectedEntry.isFavorite;
+    void updateEntry(entryId, {
+      category: selectedEntry.category,
+      title: selectedEntry.title,
+      isFavorite: nextFav,
+      tags: selectedEntry.tags,
+      customFields: selectedEntry.customFieldNames.map((name) => ({
+        name,
+        value: "",
+        isProtected: false,
+      })),
+    }).then(() => {
+      void selectEntry(entryId);
+      message.success(
+        t(
+          nextFav
+            ? "tools.password_vault.favorite"
+            : "tools.password_vault.unfavorite",
+        ),
+      );
+    });
+  }, [selectedEntry, entryId, updateEntry, selectEntry, t, message]);
 
   if (!selectedEntry) return <Spin />;
 
@@ -170,16 +214,15 @@ export default function VaultEntryDetail({
     }
   };
 
-  const handleCopyUrl = () => {
-    if (selectedEntry.url) {
-      void navigator.clipboard.writeText(selectedEntry.url);
-      message.success(t("common.actions.copied"));
-    }
-  };
-
   const handleDelete = () => {
-    void deleteEntry(entryId);
-    onClose();
+    modal.confirm({
+      title: t("tools.password_vault.confirm_delete"),
+      okType: "danger",
+      onOk: () => {
+        void deleteEntry(entryId);
+        onClose();
+      },
+    });
   };
 
   const handleCopyPassword = () => {
@@ -211,12 +254,38 @@ export default function VaultEntryDetail({
   return (
     <div className={styles.detailContainer}>
       <div className={styles.detailHeader}>
-        <Typography.Title level={4}>{selectedEntry.title}</Typography.Title>
-        <Space>
+        <Space align="center" size={8}>
           <Button
             type="text"
-            icon={selectedEntry.isFavorite ? <StarFilled /> : <StarOutlined />}
+            size="small"
+            icon={<ArrowLeftOutlined />}
+            onClick={onClose}
           />
+          {CATEGORY_ICONS[selectedEntry.category]}
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {selectedEntry.title}
+          </Typography.Title>
+        </Space>
+        <Space>
+          <Tooltip
+            title={
+              selectedEntry.isFavorite
+                ? t("tools.password_vault.unfavorite")
+                : t("tools.password_vault.favorite")
+            }
+          >
+            <Button
+              type="text"
+              icon={
+                selectedEntry.isFavorite ? (
+                  <StarFilled style={{ color: "#faad14" }} />
+                ) : (
+                  <StarOutlined />
+                )
+              }
+              onClick={handleToggleFavorite}
+            />
+          </Tooltip>
           <Button
             type="text"
             icon={<EditOutlined />}
@@ -278,15 +347,7 @@ export default function VaultEntryDetail({
 
         {selectedEntry.url && (
           <Descriptions.Item label={t("tools.password_vault.url")}>
-            <Space>
-              <Typography.Text copyable>{selectedEntry.url}</Typography.Text>
-              <Button
-                type="text"
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={handleCopyUrl}
-              />
-            </Space>
+            <Typography.Text copyable>{selectedEntry.url}</Typography.Text>
           </Descriptions.Item>
         )}
 

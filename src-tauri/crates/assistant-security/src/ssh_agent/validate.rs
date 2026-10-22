@@ -1,6 +1,7 @@
 use super::SshKeyMeta;
 use crate::types::VaultError;
 use base64::Engine;
+use log::{debug, warn};
 
 pub fn validate_private_key(key_data: &[u8]) -> Result<SshKeyMeta, VaultError> {
     if key_data.is_empty() {
@@ -116,13 +117,20 @@ fn extract_meta_via_ssh_keygen(key_str: &str) -> Result<SshKeyMeta, VaultError> 
         .map_err(|e| VaultError::Other(format!("ssh-keygen wait failed: {}", e)))?;
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        warn!("ssh-keygen could not parse key: {}", stderr.trim());
         return Err(VaultError::InvalidKeyFormat(
             "ssh-keygen could not parse the key".to_string(),
         ));
     }
 
     let fingerprint_line = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    parse_fingerprint_line(&fingerprint_line)
+    let meta = parse_fingerprint_line(&fingerprint_line)?;
+    debug!(
+        "SSH key validated: {} {} ({} bits)",
+        meta.key_type, meta.fingerprint, meta.bits
+    );
+    Ok(meta)
 }
 
 fn parse_fingerprint_line(line: &str) -> Result<SshKeyMeta, VaultError> {

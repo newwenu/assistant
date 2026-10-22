@@ -10,8 +10,8 @@ use assistant_security::password_strength::{self, StrengthResult};
 use assistant_security::reveal_guard::RevealGuard;
 use assistant_security::security_db::SecurityDbState;
 use assistant_security::types::{
-    RevealResult, VaultEntryCreate, VaultEntryDetail, VaultEntryExport, VaultEntrySummary,
-    VaultEntryUpdate, VaultError,
+    RevealResult, VaultEntryCreate, VaultEntryCsvRow, VaultEntryDetail, VaultEntryExport,
+    VaultEntrySummary, VaultEntryUpdate, VaultError,
 };
 use assistant_security::vault_crypto::hibp::{HibpClient, SafePassword};
 use assistant_security::vault_crypto::totp::{self, TotpParams, TotpResult};
@@ -108,7 +108,12 @@ fn get_clipboard_clear_secs(_app: &AppHandle) -> u64 {
 #[command]
 pub fn vault_init(app: AppHandle, master_password: String) -> Result<(), String> {
     let state = vault_state(&app)?;
-    state.init(&master_password).map_err(|e| e.to_string())
+    state.init(&master_password).map_err(|e| {
+        log::error!("Vault init failed: {}", e);
+        e.to_string()
+    })?;
+    log::info!("Vault initialized");
+    Ok(())
 }
 
 #[command]
@@ -124,7 +129,10 @@ pub fn vault_unlock(app: AppHandle, master_password: String) -> Result<bool, Str
             );
             Ok(true)
         }
-        Err(VaultError::InvalidPassword) => Ok(false),
+        Err(VaultError::InvalidPassword) => {
+            log::warn!("Vault unlock failed: invalid password");
+            Ok(false)
+        }
         Err(e) => Err(e.to_string()),
     }
 }
@@ -244,7 +252,7 @@ pub fn vault_reveal_password(app: AppHandle, id: String) -> Result<RevealResult,
     let state = vault_state(&app)?;
     let password = state.decrypt_password(&id).map_err(|e| e.to_string())?;
 
-    let expires_at = chrono::Utc::now().timestamp() + REVEAL_TTL_SECS as i64;
+    let expires_at = chrono::Utc::now().timestamp_millis() + (REVEAL_TTL_SECS as i64) * 1000;
 
     {
         let conn_guard = state.get_conn().map_err(|e| e.to_string())?;
@@ -287,7 +295,7 @@ pub fn vault_reveal_notes(app: AppHandle, id: String) -> Result<RevealResult, St
     let state = vault_state(&app)?;
     let notes = state.decrypt_notes(&id).map_err(|e| e.to_string())?;
 
-    let expires_at = chrono::Utc::now().timestamp() + REVEAL_TTL_SECS as i64;
+    let expires_at = chrono::Utc::now().timestamp_millis() + (REVEAL_TTL_SECS as i64) * 1000;
 
     {
         let conn_guard = state.get_conn().map_err(|e| e.to_string())?;
@@ -311,9 +319,11 @@ pub fn vault_reveal_notes(app: AppHandle, id: String) -> Result<RevealResult, St
 #[command]
 pub fn vault_create_entry(app: AppHandle, entry: VaultEntryCreate) -> Result<String, String> {
     let state = vault_state(&app)?;
-    state
+    let id = state
         .create_entry(entry, cipher_algo())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    log::info!("Vault entry created: {}", id);
+    Ok(id)
 }
 
 #[command]
@@ -325,13 +335,17 @@ pub fn vault_update_entry(
     let state = vault_state(&app)?;
     state
         .update_entry(&id, entry, cipher_algo())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    log::info!("Vault entry updated: {}", id);
+    Ok(())
 }
 
 #[command]
 pub fn vault_delete_entry(app: AppHandle, id: String) -> Result<(), String> {
     let state = vault_state(&app)?;
-    state.delete_entry(&id).map_err(|e| e.to_string())
+    state.delete_entry(&id).map_err(|e| e.to_string())?;
+    log::info!("Vault entry deleted: {}", id);
+    Ok(())
 }
 
 #[command]
@@ -347,9 +361,19 @@ pub fn vault_change_master_password(
 
     {
         let engine = sync_state(&app)?;
+        let master_key = state.get_master_key().map_err(|e| e.to_string())?;
+        let mk = master_key.as_ref().ok_or("Vault is locked")?;
+
         if let Err(e) = engine.clear_emergency_data() {
             log::warn!(
                 "Failed to clear emergency data after master password change: {}",
+                e
+            );
+        }
+
+        if let Err(e) = engine.rewrite_vault_meta_with_new_key(mk) {
+            log::warn!(
+                "Failed to rewrite vault-meta HMAC after master password change: {}",
                 e
             );
         }
@@ -362,6 +386,7 @@ pub fn vault_change_master_password(
         }
     }
 
+    log::info!("Vault master password changed");
     Ok(())
 }
 
@@ -369,6 +394,7 @@ pub fn vault_change_master_password(
 pub fn vault_export(app: AppHandle, format: String) -> Result<String, String> {
     let state = vault_state(&app)?;
     let entries: Vec<VaultEntryExport> = state.export_entries().map_err(|e| e.to_string())?;
+    log::info!("Vault export: {} entries as {}", entries.len(), format);
 
     let export_dir = match app.path().app_data_dir() {
         Ok(dir) => dir.join("security").join("exports"),
@@ -388,7 +414,8 @@ pub fn vault_export(app: AppHandle, format: String) -> Result<String, String> {
         "csv" => {
             let mut w = csv::Writer::from_writer(Vec::new());
             for e in &entries {
-                w.serialize(e).map_err(|e| e.to_string())?;
+                let row: VaultEntryCsvRow = e.clone().into();
+                w.serialize(&row).map_err(|e| e.to_string())?;
             }
             let bytes = w.into_inner().map_err(|e| e.to_string())?;
             (format!("vault_export_{}.csv", timestamp), bytes)
@@ -426,17 +453,24 @@ pub fn vault_import(app: AppHandle, path: String, format: String) -> Result<u32,
             let mut reader = csv::Reader::from_reader(data.as_bytes());
             let mut result = Vec::new();
             for record in reader.deserialize() {
-                let entry: VaultEntryCreate = record.map_err(|e| e.to_string())?;
-                result.push(entry);
+                let row: VaultEntryCsvRow = record.map_err(|e| e.to_string())?;
+                result.push(row.into());
             }
             result
         }
         _ => return Err(format!("Unsupported import format: {}", format)),
     };
 
-    state
+    let result = state
         .import_entries(entries, cipher_algo())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    log::info!(
+        "Vault import: {} entries from {} ({})",
+        result,
+        path,
+        format
+    );
+    Ok(result)
 }
 
 #[command]
@@ -557,12 +591,17 @@ pub async fn vault_hibp_check(app: AppHandle, id: String) -> Result<u32, String>
 
     let safe = SafePassword::new(SecureString::into_inner(password));
     let client = HibpClient::new();
-    let count = client
-        .check_password(&safe)
-        .await
-        .map_err(|e| e.to_string())?;
+    let count = client.check_password(&safe).await.map_err(|e| {
+        log::warn!("HIBP check failed for entry {}: {}", id, e);
+        e.to_string()
+    })?;
 
     if count > 0 {
+        log::warn!(
+            "HIBP: password for entry {} found in {} breaches",
+            id,
+            count
+        );
         let guard = state.get_conn().map_err(|e| e.to_string())?;
         if let Some(conn) = guard.as_ref() {
             let _ = audit_log(
@@ -571,6 +610,8 @@ pub async fn vault_hibp_check(app: AppHandle, id: String) -> Result<u32, String>
                 Some(&format!("{}:{}", id, count)),
             );
         }
+    } else {
+        log::debug!("HIBP: password for entry {} not found in breaches", id);
     }
 
     Ok(count)
@@ -628,6 +669,15 @@ pub async fn vault_hibp_audit(app: AppHandle) -> Result<Vec<(String, u32)>, Stri
         }
     }
 
+    if !results.is_empty() {
+        log::warn!(
+            "HIBP audit: {} entries with leaked passwords",
+            results.len()
+        );
+    } else {
+        log::info!("HIBP audit: no leaked passwords found");
+    }
+
     Ok(results)
 }
 
@@ -672,16 +722,32 @@ fn get_key_store() -> Box<dyn BiometricKeyStore> {
 #[command]
 pub fn vault_is_biometric_available() -> Result<bool, String> {
     let key_store = get_key_store();
-    key_store.is_available().map_err(|e| e.to_string())
+    match key_store.is_available() {
+        Ok(available) => {
+            log::info!("Biometric availability check: {}", available);
+            Ok(available)
+        }
+        Err(e) => {
+            log::error!("Biometric availability check failed: {}", e);
+            Err(e.to_string())
+        }
+    }
 }
 
 #[command]
 pub fn vault_is_biometric_enrolled(app: AppHandle) -> Result<bool, String> {
     let state = vault_state(&app)?;
     let key_store = get_key_store();
-    state
-        .is_biometric_enrolled(key_store.as_ref())
-        .map_err(|e| e.to_string())
+    match state.is_biometric_enrolled(key_store.as_ref()) {
+        Ok(enrolled) => {
+            log::debug!("Biometric enrolled check: {}", enrolled);
+            Ok(enrolled)
+        }
+        Err(e) => {
+            log::warn!("Biometric enrolled check failed: {}", e);
+            Err(e.to_string())
+        }
+    }
 }
 
 #[command]
@@ -698,7 +764,10 @@ pub fn vault_unlock_biometric(app: AppHandle) -> Result<bool, String> {
             );
             Ok(true)
         }
-        Err(VaultError::BiometricCancelled) => Ok(false),
+        Err(VaultError::BiometricCancelled) => {
+            log::warn!("Vault biometric unlock cancelled by user");
+            Ok(false)
+        }
         Err(e) => Err(e.to_string()),
     }
 }
@@ -717,7 +786,9 @@ pub fn vault_enroll_biometric(app: AppHandle, master_password: String) -> Result
     let key_store = get_key_store();
     state
         .enroll_biometric(key_store.as_ref())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    log::info!("Vault biometric enrolled");
+    Ok(())
 }
 
 #[command]
@@ -726,7 +797,9 @@ pub fn vault_disenroll_biometric(app: AppHandle) -> Result<(), String> {
     let key_store = get_key_store();
     state
         .disenroll_biometric(key_store.as_ref())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    log::info!("Vault biometric disenrolled");
+    Ok(())
 }
 
 fn sync_state(
@@ -740,25 +813,45 @@ fn sync_state(
 #[command]
 pub fn vault_sync_pull(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
     let engine = sync_state(&app)?;
-    engine.pull().map_err(|e| e.to_string())
+    let result = engine.pull().map_err(|e| {
+        log::warn!("Vault sync pull failed: {}", e);
+        e.to_string()
+    })?;
+    log::debug!("Vault sync pull completed");
+    Ok(result)
 }
 
 #[command]
 pub fn vault_sync_push(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
     let engine = sync_state(&app)?;
-    engine.push().map_err(|e| e.to_string())
+    let result = engine.push().map_err(|e| {
+        log::warn!("Vault sync push failed: {}", e);
+        e.to_string()
+    })?;
+    log::debug!("Vault sync push completed");
+    Ok(result)
 }
 
 #[command]
 pub fn vault_sync_now(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
     let engine = sync_state(&app)?;
-    engine.sync_now().map_err(|e| e.to_string())
+    let result = engine.sync_now().map_err(|e| {
+        log::warn!("Vault sync failed: {}", e);
+        e.to_string()
+    })?;
+    log::debug!("Vault sync completed");
+    Ok(result)
 }
 
 #[command]
 pub fn vault_sync_force_push(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
     let engine = sync_state(&app)?;
-    engine.force_push().map_err(|e| e.to_string())
+    let result = engine.force_push().map_err(|e| {
+        log::warn!("Vault sync force-push failed: {}", e);
+        e.to_string()
+    })?;
+    log::debug!("Vault sync force-push completed");
+    Ok(result)
 }
 
 #[command]
@@ -792,13 +885,23 @@ pub fn vault_resolve_conflict(
 #[command]
 pub fn vault_git_init(app: AppHandle) -> Result<(), String> {
     let engine = sync_state(&app)?;
-    engine.init().map_err(|e| e.to_string())
+    engine.init().map_err(|e| {
+        log::warn!("Vault git init failed: {}", e);
+        e.to_string()
+    })?;
+    log::info!("Vault git init completed");
+    Ok(())
 }
 
 #[command]
 pub fn vault_git_clone(app: AppHandle, url: String) -> Result<(), String> {
     let engine = sync_state(&app)?;
-    engine.clone_repo(&url).map_err(|e| e.to_string())
+    engine.clone_repo(&url).map_err(|e| {
+        log::warn!("Vault git clone failed: {}", e);
+        e.to_string()
+    })?;
+    log::info!("Vault git clone completed");
+    Ok(())
 }
 
 #[command]
@@ -863,6 +966,11 @@ pub fn vault_ssh_add_to_agent(
         }
     }
 
+    log::info!(
+        "SSH key added to agent: {} (entry: {})",
+        meta.fingerprint,
+        id
+    );
     Ok(meta.fingerprint)
 }
 
@@ -885,6 +993,7 @@ pub fn vault_ssh_remove_from_agent(app: AppHandle, fingerprint: String) -> Resul
         }
     }
 
+    log::info!("SSH key removed from agent: {}", fingerprint);
     Ok(())
 }
 
@@ -944,6 +1053,10 @@ pub fn vault_ssh_auto_add_all(app: AppHandle) -> Result<Vec<String>, String> {
         }
     }
 
+    if !added.is_empty() {
+        log::info!("SSH auto-add: {} keys added to agent", added.len());
+    }
+
     Ok(added)
 }
 
@@ -976,6 +1089,7 @@ pub fn vault_generate_recovery_key(app: AppHandle) -> Result<String, String> {
         }
     }
 
+    log::warn!("Recovery key generated and emergency data written");
     Ok(recovery_key)
 }
 
@@ -1003,7 +1117,10 @@ pub fn vault_unlock_with_recovery_key(
         &emergency_data,
         &state,
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| {
+        log::warn!("Vault unlock with recovery key failed: {}", e);
+        e.to_string()
+    })?;
 
     if result {
         ssh_auto_add_on_unlock(&app);
@@ -1012,6 +1129,7 @@ pub fn vault_unlock_with_recovery_key(
             crate::protocol::events::event_name::VAULT_UNLOCKED,
             (),
         );
+        log::warn!("Vault unlocked via recovery key");
     }
 
     Ok(result)
@@ -1036,4 +1154,86 @@ pub fn vault_verify_vault_meta_integrity(
     engine
         .verify_vault_meta_integrity(mk)
         .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisasterRecoveryResult {
+    pub file_path: String,
+    pub entry_count: u32,
+    pub integrity_warning: bool,
+}
+
+#[command]
+pub fn vault_disaster_recovery_export(
+    app: AppHandle,
+    git_url: Option<String>,
+    recovery_key: String,
+    export_path: String,
+) -> Result<DisasterRecoveryResult, String> {
+    let engine = sync_state(&app)?;
+
+    if let Some(url) = &git_url {
+        engine.clone_repo(url).map_err(|e| {
+            log::warn!("Disaster recovery: clone failed: {}", e);
+            e.to_string()
+        })?;
+    } else {
+        engine.prepare().map_err(|e| {
+            log::warn!("Disaster recovery: prepare failed: {}", e);
+            e.to_string()
+        })?;
+        let _ = engine.pull();
+    }
+
+    let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
+    let emergency = emergency.ok_or("Recovery key not set in .vault-meta")?;
+
+    let emergency_data = assistant_security::recovery_key::EmergencyData {
+        token: emergency.token,
+        salt: emergency.salt,
+    };
+
+    let (_bootstrap_key, master_key) =
+        assistant_security::recovery_key::decrypt_recovery_keys(&recovery_key, &emergency_data)
+            .map_err(|e| {
+                log::warn!("Disaster recovery: decrypt failed: {}", e);
+                e.to_string()
+            })?;
+
+    let mut integrity_warning = false;
+    match engine.verify_vault_meta_integrity(&master_key) {
+        Ok(result) => {
+            if !result.valid {
+                integrity_warning = true;
+                log::warn!("Disaster recovery: HMAC mismatch — {}", result.message);
+            }
+        }
+        Err(e) => {
+            integrity_warning = true;
+            log::warn!("Disaster recovery: integrity check error: {}", e);
+        }
+    }
+
+    let exports = engine.disaster_recovery_export(&master_key).map_err(|e| {
+        log::warn!("Disaster recovery: export failed: {}", e);
+        e.to_string()
+    })?;
+
+    let entry_count = exports.len() as u32;
+
+    let json = serde_json::to_string_pretty(&exports).map_err(|e| e.to_string())?;
+    std::fs::write(&export_path, &json).map_err(|e| e.to_string())?;
+
+    log::info!(
+        "Disaster recovery export: {} entries to {}",
+        entry_count,
+        export_path
+    );
+
+    Ok(DisasterRecoveryResult {
+        file_path: export_path,
+        entry_count,
+        integrity_warning,
+    })
 }

@@ -6,6 +6,7 @@ import { Titlebar } from "@/components/Titlebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
 import { HistoryManager } from "@/history";
+import { VaultApp } from "@/vault";
 import { ToolBox } from "@/tools/ToolBox";
 import { ToolPage } from "@/tools/ToolPage";
 import { CommandPalette } from "@/components/commandPalette/CommandPalette";
@@ -43,6 +44,14 @@ export const MainLayout: React.FC = () => {
             <Routes>
               <Route path="/" element={<ToolBox />} />
               <Route path="/tools/:id" element={<ToolPage />} />
+              <Route
+                path="/vault"
+                element={
+                  <FeatureErrorBoundary featureName="密码保险库">
+                    <VaultApp />
+                  </FeatureErrorBoundary>
+                }
+              />
               <Route
                 path="/history"
                 element={

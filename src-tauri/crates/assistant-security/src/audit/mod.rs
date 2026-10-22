@@ -1,5 +1,6 @@
 use std::fmt;
 
+use log::error;
 use rusqlite::{params, Connection};
 
 use crate::types::VaultError;
@@ -60,7 +61,10 @@ pub fn log(conn: &Connection, event: AuditEvent, detail: Option<&str>) -> Result
         "INSERT INTO security_audit_log (id, event_type, detail, timestamp) VALUES (?1, ?2, ?3, ?4)",
         params![id, event_type, detail, timestamp],
     )
-    .map_err(|e| VaultError::Database(e.to_string()))?;
+    .map_err(|e| {
+        error!("Audit log write failed for event '{}': {}", event_type, e);
+        VaultError::Database(e.to_string())
+    })?;
 
     Ok(())
 }

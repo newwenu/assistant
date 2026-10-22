@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Modal, Radio, Space, Button, Typography } from "antd";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "./vaultStore";
-import type { ConflictResolution } from "./vault.service";
+import { useVaultStore } from "../core/vaultStore";
+import type { ConflictResolution } from "../core/vault.service";
 
 const { Text } = Typography;
 
@@ -51,16 +51,16 @@ export default function VaultConflictResolve({
         </Button>,
       ]}
     >
-      <Space direction="vertical" style={{ width: "100%" }}>
+      <Space orientation="vertical" style={{ width: "100%" }}>
         <Text type="secondary">
           {t("tools.password_vault.conflict_file")}: {conflictPath}
         </Text>
 
         <Radio.Group
           value={resolution}
-          onChange={(e) => setResolution(e.target.value)}
+          onChange={(e) => setResolution(e.target.value as ConflictResolution)}
         >
-          <Space direction="vertical">
+          <Space orientation="vertical">
             <Radio value="useLocal">
               {t("tools.password_vault.conflict_use_local")}
             </Radio>

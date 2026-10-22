@@ -1,7 +1,7 @@
 import type { ComponentType, FC } from "react";
 import type { RecoverableLazyComponent } from "@/utils/lazyWithRecovery";
 
-export type SettingsCategoryId = "general" | "provider" | "about";
+export type SettingsCategoryId = "general" | "provider" | "vault" | "about";
 
 export type SettingsPageId =
   | "overview"
@@ -10,6 +10,7 @@ export type SettingsPageId =
   | "shortcuts"
   | "providers"
   | "agents"
+  | "vault"
   | "about";
 
 export interface SettingsPageManifest {

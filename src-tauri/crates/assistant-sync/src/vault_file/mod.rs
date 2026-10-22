@@ -13,7 +13,8 @@ use assistant_security::vault_crypto::VaultCrypto;
 
 use crate::types::{DeletedEntry, DeletedIndex, SyncError, VaultMeta};
 use types::{
-    DeletedEntryRecord, DeletedIndexFile, EmergencyDataFile, EncryptedEntryBlob, VaultMetaFile,
+    DecryptedEntryBlob, DeletedEntryRecord, DeletedIndexFile, EmergencyDataFile,
+    EncryptedEntryBlob, VaultMetaFile,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -39,6 +40,24 @@ impl VaultFileManager {
     pub fn ensure_structure(&self) -> Result<(), SyncError> {
         fs::create_dir_all(self.vault_dir.join(ENTRIES_DIR))?;
         fs::create_dir_all(self.vault_dir.join(DELETIONS_DIR))?;
+        Ok(())
+    }
+
+    pub fn ensure_vault_meta_exists(&self) -> Result<(), SyncError> {
+        let path = self.vault_dir.join(VAULT_META_FILE);
+        if !path.exists() {
+            let meta = VaultMetaFile {
+                version: 1,
+                cipher_algorithm: "aes256Gcm".to_string(),
+                entry_count: 0,
+                last_sync_at: None,
+                emergency: None,
+                hmac: String::new(),
+            };
+            let json =
+                serde_json::to_string_pretty(&meta).map_err(|e| SyncError::Other(e.to_string()))?;
+            fs::write(&path, json)?;
+        }
         Ok(())
     }
 
@@ -99,7 +118,7 @@ impl VaultFileManager {
         &self,
         master_key: &MasterKey,
         entry_id: &str,
-    ) -> Result<EncryptedEntryBlob, SyncError> {
+    ) -> Result<DecryptedEntryBlob, SyncError> {
         let file_path = self
             .vault_dir
             .join(ENTRIES_DIR)
@@ -121,7 +140,7 @@ impl VaultFileManager {
         let blob: EncryptedEntryBlob = serde_json::from_slice(plaintext.expose())
             .map_err(|e| SyncError::Other(e.to_string()))?;
 
-        Ok(blob)
+        Ok(DecryptedEntryBlob::from(blob))
     }
 
     pub fn remove_entry_file(&self, entry_id: &str) -> Result<(), SyncError> {
@@ -294,6 +313,22 @@ impl VaultFileManager {
         }
         meta.emergency = None;
         meta.hmac = String::new();
+        let json =
+            serde_json::to_string_pretty(&meta).map_err(|e| SyncError::Other(e.to_string()))?;
+        fs::write(&path, json)?;
+        Ok(())
+    }
+
+    pub fn rewrite_vault_meta_with_new_key(&self, master_key: &MasterKey) -> Result<(), SyncError> {
+        let path = self.vault_dir.join(VAULT_META_FILE);
+        if !path.exists() {
+            return Ok(());
+        }
+        let content = fs::read_to_string(&path)?;
+        let mut meta: VaultMetaFile =
+            serde_json::from_str(&content).map_err(|e| SyncError::Other(e.to_string()))?;
+        let hmac = compute_vault_meta_hmac(master_key, &meta);
+        meta.hmac = B64.encode(hmac);
         let json =
             serde_json::to_string_pretty(&meta).map_err(|e| SyncError::Other(e.to_string()))?;
         fs::write(&path, json)?;

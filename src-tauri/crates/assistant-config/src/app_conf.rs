@@ -30,10 +30,6 @@ fn default_vault_cipher_algorithm() -> String {
     "aes256Gcm".to_string()
 }
 
-fn default_vault_auto_sync_interval_secs() -> u32 {
-    300
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AppConf {
     pub theme: String,
@@ -66,8 +62,6 @@ pub struct AppConf {
     pub vault_biometric_enabled: bool,
     #[serde(default = "default_true")]
     pub vault_hibp_auto_audit: bool,
-    #[serde(default = "default_vault_auto_sync_interval_secs")]
-    pub vault_auto_sync_interval_secs: u32,
     #[serde(default)]
     pub vault_sync_remote_url: Option<String>,
     #[serde(default)]
@@ -105,7 +99,6 @@ impl AppConf {
             vault_cipher_algorithm: "aes256Gcm".to_string(),
             vault_biometric_enabled: false,
             vault_hibp_auto_audit: true,
-            vault_auto_sync_interval_secs: 300,
             vault_sync_remote_url: None,
             vault_ssh_auto_add: false,
             vault_ssh_use_pageant: true,
