@@ -16,6 +16,12 @@ export interface AppConf {
   vaultCipherAlgorithm: "aes256Gcm" | "chacha20Poly1305";
   vaultBiometricEnabled: boolean;
   vaultHibpAutoAudit: boolean;
+  vaultAutoSyncIntervalSecs: number;
+  vaultSyncRemoteUrl: string | null;
+  vaultSshAutoAdd: boolean;
+  vaultSshUsePageant: boolean;
+  vaultSshUseOpensshAgent: boolean;
+  vaultSshAuthSockOverride: string;
 }
 
 export interface OrbConf {

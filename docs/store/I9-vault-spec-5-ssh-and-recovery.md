@@ -11,7 +11,7 @@
 
 ### 12.1 交付目标
 
-实现 SSH Agent 集成，将 vault 中存储的 SSH 私钥加载到系统 SSH Agent（ssh-agent / Pageant / gnome-keyring），实现 Git 操作和远程服务器连接的无密码认证。
+实现 SSH Agent 集成，将 vault 中存储的 SSH 私钥加载到系统 SSH Agent（ssh-agent / Pageant），实现 Git 操作和远程服务器连接的无密码认证。
 
 > **前置依赖**：P1-A ~ P1-F + P2A 完成
 > **参考项目**：KeePassXC（`src/ssh/AgentSettings.cpp` + `ssh-agent.cpp`）、1Password（SSH Agent 服务）
@@ -37,9 +37,9 @@
 │         ▼                                           │
 │  ┌─────────────────────────────────────────────┐    │
 │  │ System SSH Agent                            │    │
-│  │  Windows: Pageant                           │    │
-│  │  macOS:   ssh-agent                         │    │
-│  │  Linux:   ssh-agent / gnome-keyring         │    │
+│  │  Windows: Pageant / OpenSSH Agent           │    │
+│  │  macOS:   ssh-agent (via SSH_AUTH_SOCK)     │    │
+│  │  Linux:   ssh-agent (via SSH_AUTH_SOCK)     │    │
 │  └─────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────┘
 ```
@@ -65,7 +65,12 @@ pub struct SshKeyInfo {
 
 pub fn create_agent_bridge() -> Box<dyn SshAgentBridge> {
     #[cfg(target_os = "windows")]
-    return Box::new(windows::PageantBridge);
+    {
+        if ssh_agent_config().use_pageant() {
+            return Box::new(windows::PageantBridge);
+        }
+        return Box::new(windows::OpenSshAgentBridge);
+    }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     return Box::new(unix::SshAgentBridge);
 }
@@ -75,11 +80,13 @@ pub fn create_agent_bridge() -> Box<dyn SshAgentBridge> {
 
 | 平台 | Agent | 通信方式 | 添加密钥 | 移除密钥 |
 |------|-------|---------|---------|---------|
-| **Windows** | Pageant | WM_COPYDATA 消息 | `ssh-add`（通过命名管道兼容层） | `ssh-add -d` |
+| **Windows** | Pageant / OpenSSH Agent | WM_COPYDATA 消息 / 命名管道 (`\\.\pipe\openssh-ssh-agent`) | `ssh-add` | `ssh-add -d` |
 | **macOS** | ssh-agent | Unix socket (`SSH_AUTH_SOCK`) | `ssh-add`（直接 socket 通信） | `ssh-add -d` |
-| **Linux** | ssh-agent / gnome-keyring | Unix socket (`SSH_AUTH_SOCK`) | `ssh-add` | `ssh-add -d` |
+| **Linux** | ssh-agent | Unix socket (`SSH_AUTH_SOCK`) | `ssh-add` | `ssh-add -d` |
 
 > **实现策略**：使用 `ssh-add` 命令行工具作为统一接口，避免直接实现 SSH Agent 协议（复杂且各平台差异大）。`ssh-add` 在所有平台均可用（Windows 通过 Git for Windows 自带的 `ssh-add.exe`）。
+
+> **Linux `SSH_AUTH_SOCK` 说明**：Linux 桌面环境下 `SSH_AUTH_SOCK` 可由 `gnome-keyring`、`kwallet` 或 OpenSSH `ssh-agent` 提供，三者均实现相同的 SSH Agent 协议，对调用方完全透明，无需区分。Windows 上 Pageant（WM_COPYDATA）与 OpenSSH Agent（命名管道）通信协议不同，需用户选择或同时支持（参照 KeePassXC `usePageant` / `useOpenSSH` 设置）。
 
 ### 12.5 SSH 密钥生命周期
 
@@ -164,16 +171,21 @@ pub fn create_agent_bridge() -> Box<dyn SshAgentBridge> {
 - 自动添加开关（`vaultSshAutoAdd`）
 - Agent 状态指示（运行/未运行）
 - 当前 Agent 密钥列表
+- Windows: Pageant / OpenSSH Agent 选择（`vaultSshUsePageant` / `vaultSshUseOpenSshAgent`，可同时启用）
+- Linux/macOS: `SSH_AUTH_SOCK` 路径覆盖（`vaultSshAuthSockOverride`，为空时使用环境变量）
 
 ### 12.10 设置项扩展
 
-| 前端字段 (AppConf) | Rust 字段 (app_conf.rs) | 类型 | 默认值 |
-|---------------------|------------------------|------|--------|
-| `vaultSshAutoAdd` | `vault_ssh_auto_add` | `bool` / `boolean` | false |
+| 前端字段 (AppConf) | Rust 字段 (app_conf.rs) | 类型 | 默认值 | 说明 |
+|---------------------|------------------------|------|--------|------|
+| `vaultSshAutoAdd` | `vault_ssh_auto_add` | `bool` / `boolean` | false | 自动添加 SSH 密钥到 Agent |
+| `vaultSshUsePageant` | `vault_ssh_use_pageant` | `bool` / `boolean` | true | Windows: 使用 Pageant（WM_COPYDATA） |
+| `vaultSshUseOpenSshAgent` | `vault_ssh_use_openssh_agent` | `bool` / `boolean` | true | Windows: 使用 OpenSSH Agent（命名管道） |
+| `vaultSshAuthSockOverride` | `vault_ssh_auth_sock_override` | `string` / `String` | `""` | Linux/macOS: 自定义 `SSH_AUTH_SOCK` 路径 |
 
 ### 12.11 i18n
 
-`tools.password_vault` 命名空间下新增约 15 个词条，覆盖：SSH Agent 状态、添加/移除操作、密钥类型、指纹、自动添加设置、确认对话框。
+`tools.password_vault` 命名空间下新增约 20 个词条，覆盖：SSH Agent 状态、添加/移除操作、密钥类型、指纹、自动添加设置、确认对话框、Windows Agent 类型选择、`SSH_AUTH_SOCK` 路径覆盖。
 
 ---
 

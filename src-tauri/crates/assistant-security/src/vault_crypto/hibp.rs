@@ -57,7 +57,7 @@ impl Default for HibpClient {
     }
 }
 
-fn parse_hibp_response(body: &str, target_suffix: &str) -> u32 {
+pub fn parse_hibp_response(body: &str, target_suffix: &str) -> u32 {
     for line in body.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_safe_password_zeroize() {
-        let mut safe = SafePassword::new("sensitive_password".to_string());
+        let safe = SafePassword::new("sensitive_password".to_string());
         assert_eq!(safe.as_str(), "sensitive_password");
         drop(safe);
     }

@@ -1,18 +1,13 @@
 use std::fmt;
 use zeroize::Zeroize;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[repr(u8)]
 pub enum CipherAlgorithm {
+    #[default]
     Aes256Gcm = 0,
     ChaCha20Poly1305 = 1,
-}
-
-impl Default for CipherAlgorithm {
-    fn default() -> Self {
-        Self::Aes256Gcm
-    }
 }
 
 impl CipherAlgorithm {
@@ -42,13 +37,20 @@ impl VaultPlaintext {
         self.inner.is_empty()
     }
 
-    pub fn from_str(s: &str) -> Self {
-        let bytes = s.as_bytes().to_vec();
-        Self::from(bytes)
+    pub fn new_str(s: &str) -> Self {
+        Self::from(s)
     }
 
     pub fn to_str(&self) -> Result<&str, std::str::Utf8Error> {
         std::str::from_utf8(self.expose())
+    }
+}
+
+impl From<&str> for VaultPlaintext {
+    fn from(s: &str) -> Self {
+        Self {
+            inner: s.as_bytes().to_vec(),
+        }
     }
 }
 

@@ -9,6 +9,12 @@ import type {
   VaultCategory,
   TotpResult,
   StrengthResult,
+  SyncResult,
+  SyncConfig,
+  Readyness,
+  ConflictResolution,
+  SshKeyInfo,
+  IntegrityResult,
 } from "./vault.service";
 import { vaultService } from "./vault.service";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -40,6 +46,14 @@ interface VaultState {
   hibpAuditing: boolean;
   biometricAvailable: boolean;
   biometricEnrolled: boolean;
+  syncReadyness: Readyness | null;
+  syncResult: SyncResult | null;
+  syncConfig: SyncConfig | null;
+  syncing: boolean;
+  sshAgentKeys: SshKeyInfo[];
+  sshAgentRunning: boolean;
+  recoveryKeySet: boolean;
+  integrityResult: IntegrityResult | null;
 
   init: (masterPassword: string) => Promise<void>;
   unlock: (masterPassword: string) => Promise<boolean>;
@@ -67,7 +81,16 @@ interface VaultState {
     digits?: number,
     algorithm?: string,
   ) => Promise<void>;
+  copyTotp: (
+    id: string,
+    period?: number,
+    digits?: number,
+    algorithm?: string,
+  ) => Promise<void>;
   stopTotpTimer: () => void;
+  totpParseUri: (
+    uri: string,
+  ) => Promise<import("./vault.service").ParsedOtpAuth>;
   hibpCheck: (id: string) => Promise<number>;
   hibpAudit: () => Promise<void>;
   checkMasterPasswordStrength: (
@@ -78,6 +101,30 @@ interface VaultState {
   unlockBiometric: () => Promise<boolean>;
   enrollBiometric: (masterPassword: string) => Promise<void>;
   disenrollBiometric: () => Promise<void>;
+  syncPull: () => Promise<void>;
+  syncPush: () => Promise<void>;
+  syncNow: () => Promise<void>;
+  syncForcePush: () => Promise<void>;
+  loadSyncConfig: () => Promise<void>;
+  saveSyncConfig: (config: SyncConfig) => Promise<void>;
+  loadSyncReadyness: () => Promise<void>;
+  resolveConflict: (
+    path: string,
+    resolution: ConflictResolution,
+  ) => Promise<void>;
+  gitInit: () => Promise<void>;
+  gitClone: (url: string) => Promise<void>;
+  gitAddRemote: (remote: string, url: string) => Promise<void>;
+  gitSetRemote: (remote: string, url: string) => Promise<void>;
+  sshAddToAgent: (id: string, lifetime?: number) => Promise<string | null>;
+  sshRemoveFromAgent: (fingerprint: string) => Promise<void>;
+  sshListAgent: () => Promise<void>;
+  sshAutoAddAll: () => Promise<string[]>;
+  sshCheckAgentRunning: () => Promise<void>;
+  generateRecoveryKey: () => Promise<string | null>;
+  unlockWithRecoveryKey: (recoveryKey: string) => Promise<boolean>;
+  checkRecoveryKeySet: () => Promise<void>;
+  verifyIntegrity: () => Promise<IntegrityResult | null>;
 }
 
 const DEFAULT_AUTO_LOCK_MINUTES = 5;
@@ -106,6 +153,14 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   hibpAuditing: false,
   biometricAvailable: false,
   biometricEnrolled: false,
+  syncReadyness: null,
+  syncResult: null,
+  syncConfig: null,
+  syncing: false,
+  sshAgentKeys: [],
+  sshAgentRunning: false,
+  recoveryKeySet: false,
+  integrityResult: null,
 
   init: async (masterPassword) => {
     set({ loading: true, error: null });
@@ -347,10 +402,31 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     }
   },
 
+  copyTotp: async (id, period, digits, algorithm) => {
+    try {
+      await vaultService.totpCopy(id, period, digits, algorithm);
+    } catch (e) {
+      log.error("copyTotp failed", e);
+      set({ error: String(e) });
+    }
+  },
+
   stopTotpTimer: () => {
     const { totpTimerId } = get();
     if (totpTimerId) clearInterval(totpTimerId);
     set({ totpCode: null, totpTimeRemaining: 0, totpTimerId: null });
+  },
+
+  totpParseUri: async (uri: string) => {
+    return vaultService.totpParseUri(uri);
+  },
+
+  queryAuditLog: async (limit?: number) => {
+    return vaultService.queryAuditLog(limit);
+  },
+
+  showUnlockWindow: async () => {
+    await vaultService.showUnlockWindow();
   },
 
   hibpCheck: async (id) => {
@@ -427,7 +503,11 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         try {
           await vaultService.disenrollBiometric();
           set({ biometricEnrolled: false });
-        } catch {}
+        } catch {
+          log.warn(
+            "disenrollBiometric also failed during unlockBiometric cleanup",
+          );
+        }
       }
       log.error("unlockBiometric failed", e);
       set({ error: msg, loading: false });
@@ -452,6 +532,238 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       set({ biometricEnrolled: false });
     } catch (e) {
       log.error("disenrollBiometric failed", e);
+    }
+  },
+
+  syncPull: async () => {
+    set({ syncing: true, error: null });
+    try {
+      const result = await vaultService.syncPull();
+      set({ syncResult: result, syncing: false });
+    } catch (e) {
+      log.error("syncPull failed", e);
+      set({ error: String(e), syncing: false });
+    }
+  },
+
+  syncPush: async () => {
+    set({ syncing: true, error: null });
+    try {
+      const result = await vaultService.syncPush();
+      set({ syncResult: result, syncing: false });
+    } catch (e) {
+      log.error("syncPush failed", e);
+      set({ error: String(e), syncing: false });
+    }
+  },
+
+  syncNow: async () => {
+    set({ syncing: true, error: null });
+    try {
+      const result = await vaultService.syncNow();
+      set({ syncResult: result, syncing: false });
+      await get().loadEntries();
+      await get().loadSyncReadyness();
+    } catch (e) {
+      log.error("syncNow failed", e);
+      set({ error: String(e), syncing: false });
+    }
+  },
+
+  syncForcePush: async () => {
+    set({ syncing: true, error: null });
+    try {
+      const result = await vaultService.syncForcePush();
+      set({ syncResult: result, syncing: false });
+    } catch (e) {
+      log.error("syncForcePush failed", e);
+      set({ error: String(e), syncing: false });
+    }
+  },
+
+  loadSyncConfig: async () => {
+    try {
+      const config = await vaultService.getSyncConfig();
+      set({ syncConfig: config });
+    } catch (e) {
+      log.error("loadSyncConfig failed", e);
+    }
+  },
+
+  saveSyncConfig: async (config) => {
+    try {
+      await vaultService.setSyncConfig(config);
+      set({ syncConfig: config });
+    } catch (e) {
+      log.error("saveSyncConfig failed", e);
+      set({ error: String(e) });
+    }
+  },
+
+  loadSyncReadyness: async () => {
+    try {
+      const readyness = await vaultService.syncReadyness();
+      set({ syncReadyness: readyness });
+    } catch (e) {
+      log.error("loadSyncReadyness failed", e);
+    }
+  },
+
+  resolveConflict: async (path, resolution) => {
+    try {
+      await vaultService.resolveConflict(path, resolution);
+      await get().loadSyncReadyness();
+    } catch (e) {
+      log.error("resolveConflict failed", e);
+      set({ error: String(e) });
+    }
+  },
+
+  gitInit: async () => {
+    set({ loading: true, error: null });
+    try {
+      await vaultService.gitInit();
+      await get().loadSyncReadyness();
+      set({ loading: false });
+    } catch (e) {
+      log.error("gitInit failed", e);
+      set({ error: String(e), loading: false });
+    }
+  },
+
+  gitClone: async (url) => {
+    set({ loading: true, error: null });
+    try {
+      await vaultService.gitClone(url);
+      await get().loadSyncReadyness();
+      set({ loading: false });
+    } catch (e) {
+      log.error("gitClone failed", e);
+      set({ error: String(e), loading: false });
+    }
+  },
+
+  gitAddRemote: async (remote, url) => {
+    try {
+      await vaultService.gitAddRemote(remote, url);
+      await get().loadSyncConfig();
+    } catch (e) {
+      log.error("gitAddRemote failed", e);
+      set({ error: String(e) });
+    }
+  },
+
+  gitSetRemote: async (remote, url) => {
+    try {
+      await vaultService.gitSetRemote(remote, url);
+      await get().loadSyncConfig();
+    } catch (e) {
+      log.error("gitSetRemote failed", e);
+      set({ error: String(e) });
+    }
+  },
+
+  sshAddToAgent: async (id, lifetime) => {
+    try {
+      const fingerprint = await vaultService.sshAddToAgent(id, lifetime);
+      await get().sshListAgent();
+      return fingerprint;
+    } catch (e) {
+      log.error("sshAddToAgent failed", e);
+      set({ error: String(e) });
+      return null;
+    }
+  },
+
+  sshRemoveFromAgent: async (fingerprint) => {
+    try {
+      await vaultService.sshRemoveFromAgent(fingerprint);
+      await get().sshListAgent();
+    } catch (e) {
+      log.error("sshRemoveFromAgent failed", e);
+      set({ error: String(e) });
+    }
+  },
+
+  sshListAgent: async () => {
+    try {
+      const keys = await vaultService.sshListAgent();
+      set({ sshAgentKeys: keys });
+    } catch (e) {
+      log.error("sshListAgent failed", e);
+    }
+  },
+
+  sshAutoAddAll: async () => {
+    try {
+      const added = await vaultService.sshAutoAddAll();
+      await get().sshListAgent();
+      return added;
+    } catch (e) {
+      log.error("sshAutoAddAll failed", e);
+      set({ error: String(e) });
+      return [];
+    }
+  },
+
+  sshCheckAgentRunning: async () => {
+    try {
+      const running = await vaultService.sshIsAgentRunning();
+      set({ sshAgentRunning: running });
+    } catch (e) {
+      log.error("sshCheckAgentRunning failed", e);
+    }
+  },
+
+  generateRecoveryKey: async () => {
+    set({ loading: true, error: null });
+    try {
+      const key = await vaultService.generateRecoveryKey();
+      set({ recoveryKeySet: true, loading: false });
+      return key;
+    } catch (e) {
+      log.error("generateRecoveryKey failed", e);
+      set({ error: String(e), loading: false });
+      return null;
+    }
+  },
+
+  unlockWithRecoveryKey: async (recoveryKey) => {
+    set({ loading: true, error: null });
+    try {
+      const ok = await vaultService.unlockWithRecoveryKey(recoveryKey);
+      if (ok) {
+        set({ isLocked: false, loading: false });
+        get().resetAutoLockTimer();
+      } else {
+        set({ error: "Invalid recovery key", loading: false });
+      }
+      return ok;
+    } catch (e) {
+      log.error("unlockWithRecoveryKey failed", e);
+      set({ error: String(e), loading: false });
+      return false;
+    }
+  },
+
+  checkRecoveryKeySet: async () => {
+    try {
+      const has = await vaultService.hasRecoveryKey();
+      set({ recoveryKeySet: has });
+    } catch (e) {
+      log.error("checkRecoveryKeySet failed", e);
+    }
+  },
+
+  verifyIntegrity: async () => {
+    try {
+      const result = await vaultService.verifyVaultMetaIntegrity();
+      set({ integrityResult: result });
+      return result;
+    } catch (e) {
+      log.error("verifyIntegrity failed", e);
+      set({ error: String(e) });
+      return null;
     }
   },
 }));

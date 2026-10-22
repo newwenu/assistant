@@ -16,7 +16,6 @@ rusqlite = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 assistant-i18n = { workspace = true }
-assistant-security = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

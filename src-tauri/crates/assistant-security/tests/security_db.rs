@@ -14,7 +14,7 @@ fn init_creates_database() {
     let path = temp_db_path();
     let _ = std::fs::remove_file(&path);
     let db = SecurityDbState::new(path.to_str().unwrap());
-    let result = db.init("test_master_password");
+    let result = db.init("Str0ng#P@ssw0rd!2025");
     assert!(result.is_ok(), "init should succeed: {:?}", result);
     let _ = std::fs::remove_file(&path);
 }
@@ -24,8 +24,8 @@ fn init_twice_fails() {
     let path = temp_db_path();
     let _ = std::fs::remove_file(&path);
     let db = SecurityDbState::new(path.to_str().unwrap());
-    db.init("password").unwrap();
-    let result = db.init("password");
+    db.init("Str0ng#P@ssw0rd!2025").unwrap();
+    let result = db.init("Str0ng#P@ssw0rd!2025");
     assert!(matches!(result, Err(VaultError::AlreadyExists)));
     let _ = std::fs::remove_file(&path);
 }
@@ -35,9 +35,9 @@ fn unlock_after_init_succeeds() {
     let path = temp_db_path();
     let _ = std::fs::remove_file(&path);
     let db = SecurityDbState::new(path.to_str().unwrap());
-    db.init("correct_password").unwrap();
+    db.init("Str0ng#P@ssw0rd!2025").unwrap();
     db.lock().unwrap();
-    let result = db.unlock("correct_password");
+    let result = db.unlock("Str0ng#P@ssw0rd!2025");
     assert!(result.is_ok(), "unlock should succeed: {:?}", result);
     let _ = std::fs::remove_file(&path);
 }
@@ -47,9 +47,9 @@ fn unlock_wrong_password_fails() {
     let path = temp_db_path();
     let _ = std::fs::remove_file(&path);
     let db = SecurityDbState::new(path.to_str().unwrap());
-    db.init("correct_password").unwrap();
+    db.init("Str0ng#P@ssw0rd!2025").unwrap();
     db.lock().unwrap();
-    let result = db.unlock("wrong_password");
+    let result = db.unlock("Wr0ng#P@ss!9999");
     assert!(matches!(result, Err(VaultError::InvalidPassword)));
     let _ = std::fs::remove_file(&path);
 }
@@ -62,13 +62,13 @@ fn is_locked_state_transitions() {
 
     assert!(db.is_locked(), "should start locked");
 
-    db.init("password").unwrap();
+    db.init("Str0ng#P@ssw0rd!2025").unwrap();
     assert!(!db.is_locked(), "should be unlocked after init");
 
     db.lock().unwrap();
     assert!(db.is_locked(), "should be locked after lock");
 
-    db.unlock("password").unwrap();
+    db.unlock("Str0ng#P@ssw0rd!2025").unwrap();
     assert!(!db.is_locked(), "should be unlocked after unlock");
 
     let _ = std::fs::remove_file(&path);
@@ -97,7 +97,7 @@ fn lock_is_idempotent() {
     let path = temp_db_path();
     let _ = std::fs::remove_file(&path);
     let db = SecurityDbState::new(path.to_str().unwrap());
-    db.init("password").unwrap();
+    db.init("Str0ng#P@ssw0rd!2025").unwrap();
     db.lock().unwrap();
     let result = db.lock();
     assert!(result.is_ok(), "lock on already-locked should be ok");
@@ -109,7 +109,7 @@ fn backup_creates_file() {
     let path = temp_db_path();
     let _ = std::fs::remove_file(&path);
     let db = SecurityDbState::new(path.to_str().unwrap());
-    db.init("password").unwrap();
+    db.init("Str0ng#P@ssw0rd!2025").unwrap();
 
     let backup_dir = std::env::temp_dir().join("assistant-security-test-backup");
     let _ = std::fs::create_dir_all(&backup_dir);

@@ -10,6 +10,12 @@ pub struct ClipboardGuard {
     guard_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
+impl Default for ClipboardGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClipboardGuard {
     pub fn new() -> Self {
         Self {

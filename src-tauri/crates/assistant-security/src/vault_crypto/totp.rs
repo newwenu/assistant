@@ -11,18 +11,13 @@ const DEFAULT_STEP: u32 = 30;
 const DEFAULT_DIGITS: u32 = 6;
 const MAX_DIGITS: u32 = 10;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TotpAlgorithm {
+    #[default]
     Sha1,
     Sha256,
     Sha512,
-}
-
-impl Default for TotpAlgorithm {
-    fn default() -> Self {
-        Self::Sha1
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -186,7 +181,7 @@ fn decode_base32(input: &str) -> Result<Vec<u8>, String> {
             .decode(upper.as_bytes())
             .map_err(|e| format!("Invalid Base32: {}", e))
     } else {
-        let padded_len = ((upper.len() + 7) / 8) * 8;
+        let padded_len = upper.len().div_ceil(8) * 8;
         let padding_count = padded_len - upper.len();
         let padded = upper + &"=".repeat(padding_count);
         BASE32

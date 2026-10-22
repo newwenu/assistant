@@ -8,6 +8,12 @@ pub struct RevealGuard {
     timestamps: Mutex<Vec<Instant>>,
 }
 
+impl Default for RevealGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RevealGuard {
     pub fn new() -> Self {
         Self {

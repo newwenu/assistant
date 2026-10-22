@@ -29,7 +29,7 @@ export default function VaultApp() {
     let unlistenLock: UnlistenFn | undefined;
 
     void listen("vault:unlocked", () => {
-      useVaultStore.setState({ isLocked: false });
+      useVaultStore.setState({ isLocked: false, loading: false, error: null });
       useVaultStore.getState().resetAutoLockTimer();
     }).then((fn) => {
       unlistenUnlock = fn;

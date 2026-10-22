@@ -16,6 +16,7 @@ members = [
     "crates/assistant-i18n",
     "crates/assistant-tools",
     "crates/assistant-security",
+    "crates/assistant-sync",
 ]
 
 [workspace.package]
@@ -81,6 +82,7 @@ assistant-storage = { path = "crates/assistant-storage" }
 assistant-i18n = { path = "crates/assistant-i18n" }
 assistant-tools = { path = "crates/assistant-tools" }
 assistant-security = { path = "crates/assistant-security" }
+assistant-sync = { path = "crates/assistant-sync" }
 arboard = "3"
 csv = "1"
 hmac = "0.12"
@@ -126,6 +128,7 @@ assistant-storage = { workspace = true }
 assistant-i18n = { workspace = true }
 assistant-tools = { workspace = true }
 assistant-security = { workspace = true }
+assistant-sync = { workspace = true }
 rustc_version_runtime.workspace = true
 crash-handler = { workspace = true }
 minidump-writer = { workspace = true }

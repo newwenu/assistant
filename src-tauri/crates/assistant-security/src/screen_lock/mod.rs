@@ -4,6 +4,12 @@ pub struct ScreenLockMonitor {
     locked: Arc<Mutex<bool>>,
 }
 
+impl Default for ScreenLockMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ScreenLockMonitor {
     pub fn new() -> Self {
         Self {
@@ -53,18 +59,18 @@ impl ScreenLockMonitor {
 fn windows_listen(locked: Arc<Mutex<bool>>, on_lock: impl Fn() + Send + Sync) {
     use std::ptr;
 
-    type HWND = *mut std::ffi::c_void;
+    type Hwnd = *mut std::ffi::c_void;
 
     #[link(name = "wtsapi32")]
     extern "system" {
-        fn WTSRegisterSessionNotification(hwnd: HWND, flags: u32) -> i32;
-        fn WTSUnRegisterSessionNotification(hwnd: HWND) -> i32;
+        fn WTSRegisterSessionNotification(hwnd: Hwnd, flags: u32) -> i32;
+        fn WTSUnRegisterSessionNotification(hwnd: Hwnd) -> i32;
     }
 
     #[link(name = "user32")]
     extern "system" {
-        fn GetForegroundWindow() -> HWND;
-        fn GetMessageW(lpmsg: *mut u8, hwnd: HWND, wmsgfiltermin: u32, wmsgfiltermax: u32) -> i32;
+        fn GetForegroundWindow() -> Hwnd;
+        fn GetMessageW(lpmsg: *mut u8, hwnd: Hwnd, wmsgfiltermin: u32, wmsgfiltermax: u32) -> i32;
     }
 
     const NOTIFY_FOR_THIS_SESSION: u32 = 0;
@@ -95,10 +101,9 @@ fn windows_listen(locked: Arc<Mutex<bool>>, on_lock: impl Fn() + Send + Sync) {
         let message = u32::from_ne_bytes(msg_buf[8..12].try_into().unwrap_or([0; 4]));
         let wparam = usize::from_ne_bytes(msg_buf[16..24].try_into().unwrap_or([0; 8]));
 
-        if message == WM_WTSSESSION_CHANGE && wparam as u32 == WTS_SESSION_LOCK {
-            *locked.lock().unwrap() = true;
-            on_lock();
-        } else if message == WM_POWERBROADCAST && wparam as u32 == PBT_APMSUSPEND {
+        let is_lock_event = (message == WM_WTSSESSION_CHANGE && wparam as u32 == WTS_SESSION_LOCK)
+            || (message == WM_POWERBROADCAST && wparam as u32 == PBT_APMSUSPEND);
+        if is_lock_event {
             *locked.lock().unwrap() = true;
             on_lock();
         }

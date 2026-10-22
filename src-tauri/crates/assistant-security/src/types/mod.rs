@@ -40,23 +40,28 @@ pub enum VaultError {
     BiometricCancelled,
     #[error("Biometric failed: {0}")]
     BiometricFailed(String),
+    #[error("Invalid SSH key format: {0}")]
+    InvalidKeyFormat(String),
+    #[error("Invalid recovery key")]
+    InvalidRecoveryKey,
+    #[error("Recovery key not set")]
+    RecoveryKeyNotSet,
+    #[error("Vault meta integrity check failed")]
+    VaultMetaIntegrityFailed,
+    #[error("{0}")]
+    Other(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum VaultCategory {
+    #[default]
     Login,
     Note,
     Card,
     Identity,
     SshKey,
     Custom,
-}
-
-impl Default for VaultCategory {
-    fn default() -> Self {
-        Self::Login
-    }
 }
 
 impl fmt::Display for VaultCategory {
@@ -73,15 +78,23 @@ impl fmt::Display for VaultCategory {
 }
 
 impl VaultCategory {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
+        s.parse().ok()
+    }
+}
+
+impl std::str::FromStr for VaultCategory {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "login" => Some(Self::Login),
-            "note" => Some(Self::Note),
-            "card" => Some(Self::Card),
-            "identity" => Some(Self::Identity),
-            "sshKey" => Some(Self::SshKey),
-            "custom" => Some(Self::Custom),
-            _ => None,
+            "login" => Ok(Self::Login),
+            "note" => Ok(Self::Note),
+            "card" => Ok(Self::Card),
+            "identity" => Ok(Self::Identity),
+            "sshKey" => Ok(Self::SshKey),
+            "custom" => Ok(Self::Custom),
+            _ => Err(format!("unknown VaultCategory: {}", s)),
         }
     }
 }

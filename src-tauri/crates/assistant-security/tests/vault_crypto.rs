@@ -75,7 +75,7 @@ fn derive_sqlcipher_key_deterministic() {
 #[test]
 fn encrypt_decrypt_aes256gcm_roundtrip() {
     let entry_key_bytes = [0x42u8; 32];
-    let plaintext = VaultPlaintext::from_str("hello world");
+    let plaintext = VaultPlaintext::new_str("hello world");
     let encrypted =
         VaultCrypto::encrypt_field(&plaintext, &entry_key_bytes, CipherAlgorithm::Aes256Gcm)
             .unwrap();
@@ -86,7 +86,7 @@ fn encrypt_decrypt_aes256gcm_roundtrip() {
 #[test]
 fn encrypt_decrypt_chacha20poly1305_roundtrip() {
     let entry_key_bytes = [0x42u8; 32];
-    let plaintext = VaultPlaintext::from_str("hello world");
+    let plaintext = VaultPlaintext::new_str("hello world");
     let encrypted = VaultCrypto::encrypt_field(
         &plaintext,
         &entry_key_bytes,
@@ -100,7 +100,7 @@ fn encrypt_decrypt_chacha20poly1305_roundtrip() {
 #[test]
 fn encrypt_field_algo_byte_in_output() {
     let entry_key_bytes = [0x42u8; 32];
-    let plaintext = VaultPlaintext::from_str("test");
+    let plaintext = VaultPlaintext::new_str("test");
     let encrypted_aes =
         VaultCrypto::encrypt_field(&plaintext, &entry_key_bytes, CipherAlgorithm::Aes256Gcm)
             .unwrap();
@@ -124,7 +124,7 @@ fn encrypt_field_algo_byte_in_output() {
 fn decrypt_wrong_key_fails() {
     let entry_key_bytes = [0x42u8; 32];
     let wrong_key_bytes = [0x43u8; 32];
-    let plaintext = VaultPlaintext::from_str("secret data");
+    let plaintext = VaultPlaintext::new_str("secret data");
     let encrypted =
         VaultCrypto::encrypt_field(&plaintext, &entry_key_bytes, CipherAlgorithm::Aes256Gcm)
             .unwrap();
@@ -134,21 +134,17 @@ fn decrypt_wrong_key_fails() {
 
 #[test]
 fn vault_plaintext_debug_redacted() {
-    let pt = VaultPlaintext::from_str("sensitive");
+    let pt = VaultPlaintext::new_str("sensitive");
     let debug_str = format!("{:?}", pt);
     assert!(debug_str.contains("REDACTED"));
     assert!(!debug_str.contains("sensitive"));
 }
 
 #[test]
-fn vault_plaintext_from_vec_zeroes_original() {
-    let original = vec![0xDEu8; 16];
-    let original_ptr = original.as_ptr();
-    let _pt = VaultPlaintext::from(original);
-    unsafe {
-        let slice = std::slice::from_raw_parts(original_ptr, 16);
-        assert!(slice.iter().all(|&b| b == 0));
-    }
+fn vault_plaintext_from_vec_preserves_data() {
+    let data = vec![0xDEu8; 16];
+    let pt = VaultPlaintext::from(data);
+    assert_eq!(pt.expose(), &[0xDEu8; 16]);
 }
 
 #[test]

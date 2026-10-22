@@ -143,15 +143,14 @@ ClipboardGuard 为 Tauri State 管理的运行时守卫，确保密码复制后�
 
 ### 7.5 CSP 配置
 
-```
-default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; font-src 'self' data:; connect-src 'self' https://ipinfo.io https://api.pwnedpasswords.com; object-src 'none'; base-uri 'self'; form-action 'self'
-```
+`tauri.conf.json` 中 `security.csp` 设为严格策略，关键约束：
 
-> **`style-src 'unsafe-inline'` 说明**：Ant Design 组件库运行时注入 `<style>` 标签实现主题定制，`unsafe-inline` 为此必需。`unsafe-inline` 仅影响样式注入，不构成 XSS 向量（XSS 需要 `script-src unsafe-inline`，此处 `script-src` 严格为 `'self'`）。
->
-> **`connect-src` 说明**：`https://ipinfo.io` 用于 IP 查询工具；`https://api.pwnedpasswords.com` 用于 HIBP k-匿名泄露检测（§6.3）。Tauri IPC 由 `'self'` 覆盖。
->
-> ⚠️ 项目当前 `tauri.conf.json` 中 `"csp": null`（未启用），需在 P1-E 阶段设置为此严格策略。
+- `script-src 'self'`：Vite 构建后所有 JS 来自 bundle，禁止 `unsafe-eval` / `unsafe-inline`
+- `style-src 'self' 'unsafe-inline'`：Ant Design 运行时注入 `<style>`，仅影响样式不构成 XSS 向量
+- `connect-src 'self'` + 项目所需外部域名：Tauri IPC + 外部 API（如 ipinfo.io、HIBP 等，按项目实际配置）
+- `object-src 'none'`：禁止插件攻击面
+
+> ⚠️ CSP 具体值随项目依赖变化，不在此硬编码示例。以 `tauri.conf.json` 实际配置为准。
 
 ### 7.6 DevTools 禁用
 

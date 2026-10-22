@@ -32,6 +32,7 @@ const SQLCIPHER_PRAGMAS: &str =
 pub struct SecurityDbState {
     conn: Mutex<Option<Connection>>,
     master_key: Mutex<Option<MasterKey>>,
+    bootstrap_key: Mutex<Option<MasterKey>>,
     db_path: String,
 }
 
@@ -40,6 +41,7 @@ impl SecurityDbState {
         Self {
             conn: Mutex::new(None),
             master_key: Mutex::new(None),
+            bootstrap_key: Mutex::new(None),
             db_path: db_path.to_string(),
         }
     }
@@ -100,6 +102,7 @@ impl SecurityDbState {
 
         let master_key = MasterKey::new(master_key_bytes);
         *self.master_key.lock().unwrap() = Some(master_key);
+        *self.bootstrap_key.lock().unwrap() = Some(bootstrap_key);
         *self.conn.lock().unwrap() = Some(conn);
 
         info!("Vault initialized successfully (SQLCipher encrypted, two-phase unlock)");
@@ -167,7 +170,9 @@ impl SecurityDbState {
         }
 
         let master_key = MasterKey::new(master_key_bytes);
+        let bootstrap_key = MasterKey::new(bootstrap_key_bytes);
         *self.master_key.lock().unwrap() = Some(master_key);
+        *self.bootstrap_key.lock().unwrap() = Some(bootstrap_key);
         *self.conn.lock().unwrap() = Some(conn);
 
         {
@@ -191,6 +196,7 @@ impl SecurityDbState {
 
         let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
             *self.master_key.lock().unwrap() = None;
+            *self.bootstrap_key.lock().unwrap() = None;
         }));
 
         match result {
@@ -248,6 +254,31 @@ impl SecurityDbState {
 
     pub fn is_initialized(&self) -> Result<bool, VaultError> {
         Ok(Path::new(&self.db_path).exists())
+    }
+
+    pub fn db_path(&self) -> &str {
+        &self.db_path
+    }
+
+    pub fn set_conn_and_key(
+        &self,
+        conn: Connection,
+        master_key: MasterKey,
+        bootstrap_key: MasterKey,
+    ) {
+        *self.conn.lock().unwrap() = Some(conn);
+        *self.master_key.lock().unwrap() = Some(master_key);
+        *self.bootstrap_key.lock().unwrap() = Some(bootstrap_key);
+    }
+
+    pub fn get_bootstrap_key(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, Option<MasterKey>>, VaultError> {
+        let guard = self.bootstrap_key.lock().unwrap();
+        if guard.is_none() {
+            return Err(VaultError::Locked);
+        }
+        Ok(guard)
     }
 
     fn with_conn_and_key<F, T>(&self, f: F) -> Result<T, VaultError>
@@ -321,7 +352,7 @@ impl SecurityDbState {
                 let tags_json: String = row.get("tags")?;
                 Ok(VaultEntrySummary {
                     id: row.get("id")?,
-                    category: VaultCategory::from_str(&category_str).unwrap_or_default(),
+                    category: VaultCategory::parse(&category_str).unwrap_or_default(),
                     title: row.get("title")?,
                     username: row.get("username")?,
                     url: row.get("url")?,
@@ -371,7 +402,7 @@ impl SecurityDbState {
 
                 Ok(VaultEntryDetail {
                     id: row.get("id")?,
-                    category: VaultCategory::from_str(&category_str).unwrap_or_default(),
+                    category: VaultCategory::parse(&category_str).unwrap_or_default(),
                     title: row.get("title")?,
                     username: row.get("username")?,
                     url: row.get("url")?,
@@ -405,7 +436,7 @@ impl SecurityDbState {
                 .password
                 .as_deref()
                 .map(|p| {
-                    VaultCrypto::encrypt_field(&VaultPlaintext::from_str(p), entry_key.expose(), CipherAlgorithm::Aes256Gcm)
+                    VaultCrypto::encrypt_field(&VaultPlaintext::new_str(p), entry_key.expose(), CipherAlgorithm::Aes256Gcm)
                 })
                 .transpose()
                 .map_err(VaultError::Crypto)?;
@@ -414,7 +445,7 @@ impl SecurityDbState {
                 .notes
                 .as_deref()
                 .map(|n| {
-                    VaultCrypto::encrypt_field(&VaultPlaintext::from_str(n), entry_key.expose(), CipherAlgorithm::Aes256Gcm)
+                    VaultCrypto::encrypt_field(&VaultPlaintext::new_str(n), entry_key.expose(), CipherAlgorithm::Aes256Gcm)
                 })
                 .transpose()
                 .map_err(VaultError::Crypto)?;
@@ -423,7 +454,7 @@ impl SecurityDbState {
                 .totp_secret
                 .as_deref()
                 .map(|t| {
-                    VaultCrypto::encrypt_field(&VaultPlaintext::from_str(t), entry_key.expose(), CipherAlgorithm::Aes256Gcm)
+                    VaultCrypto::encrypt_field(&VaultPlaintext::new_str(t), entry_key.expose(), CipherAlgorithm::Aes256Gcm)
                 })
                 .transpose()
                 .map_err(VaultError::Crypto)?;
@@ -434,7 +465,7 @@ impl SecurityDbState {
                 .map(|cf| {
                     if cf.is_protected {
                         let encrypted = VaultCrypto::encrypt_field(
-                            &VaultPlaintext::from_str(&cf.value),
+                            &VaultPlaintext::new_str(&cf.value),
                             entry_key.expose(),
                             CipherAlgorithm::Aes256Gcm,
                         )
@@ -497,7 +528,7 @@ impl SecurityDbState {
                 .as_deref()
                 .map(|p| {
                     VaultCrypto::encrypt_field(
-                        &VaultPlaintext::from_str(p),
+                        &VaultPlaintext::new_str(p),
                         entry_key.expose(),
                         CipherAlgorithm::Aes256Gcm,
                     )
@@ -510,7 +541,7 @@ impl SecurityDbState {
                 .as_deref()
                 .map(|n| {
                     VaultCrypto::encrypt_field(
-                        &VaultPlaintext::from_str(n),
+                        &VaultPlaintext::new_str(n),
                         entry_key.expose(),
                         CipherAlgorithm::Aes256Gcm,
                     )
@@ -523,7 +554,7 @@ impl SecurityDbState {
                 .as_deref()
                 .map(|t| {
                     VaultCrypto::encrypt_field(
-                        &VaultPlaintext::from_str(t),
+                        &VaultPlaintext::new_str(t),
                         entry_key.expose(),
                         CipherAlgorithm::Aes256Gcm,
                     )
@@ -537,7 +568,7 @@ impl SecurityDbState {
                 .map(|cf| {
                     if cf.is_protected {
                         let encrypted = VaultCrypto::encrypt_field(
-                            &VaultPlaintext::from_str(&cf.value),
+                            &VaultPlaintext::new_str(&cf.value),
                             entry_key.expose(),
                             CipherAlgorithm::Aes256Gcm,
                         )
@@ -721,6 +752,28 @@ impl SecurityDbState {
                     .map(String::from)
                     .ok_or_else(|| VaultError::Validation("Unprotected field has no value".to_string()))
             }
+        })
+    }
+
+    pub fn decrypt_ssh_private_key(
+        &self,
+        id: &str,
+    ) -> Result<crate::vault_crypto::types::VaultPlaintext, VaultError> {
+        self.with_conn_and_key(|conn, mk| {
+            let encrypted: String = conn
+                .query_row(
+                    "SELECT encrypted_password FROM vault_entries WHERE id = ?1 AND deleted_at IS NULL AND category = 'sshKey'",
+                    rusqlite::params![id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => VaultError::NotFound(id.to_string()),
+                    other => VaultError::Database(other.to_string()),
+                })?;
+
+            let entry_key = VaultCrypto::derive_entry_key(mk, id);
+            VaultCrypto::decrypt_field(&encrypted, entry_key.expose())
+                .map_err(VaultError::Crypto)
         })
     }
 
@@ -952,9 +1005,15 @@ impl SecurityDbState {
             let mut mk_guard = self.master_key.lock().unwrap();
             *mk_guard = Some(new_master_key);
         }
+        {
+            let mut bk_guard = self.bootstrap_key.lock().unwrap();
+            *bk_guard = Some(new_bootstrap_key);
+        }
 
         let _ = audit_log(conn, AuditEvent::MasterPasswordChange, None);
         info!("Master password changed successfully (PRAGMA rekey + entry re-encryption + custom_fields re-encryption)");
+
+        drop(conn_guard);
 
         let key_store = crate::biometric::create_key_store();
         let _ = self.disenroll_biometric(key_store.as_ref());
@@ -1084,7 +1143,7 @@ impl SecurityDbState {
                     .unwrap_or_default();
 
                 exports.push(VaultEntryExport {
-                    category: VaultCategory::from_str(&category_str).unwrap_or_default(),
+                    category: VaultCategory::parse(&category_str).unwrap_or_default(),
                     title,
                     username,
                     url,

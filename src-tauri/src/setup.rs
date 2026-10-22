@@ -27,6 +27,10 @@ use crate::protocol::ShortcutWarningPayloadDto;
 
 pub struct DbState(pub std::sync::Mutex<rusqlite::Connection>);
 
+pub struct SshAgentState {
+    pub added_fingerprints: std::sync::Mutex<std::collections::HashSet<String>>,
+}
+
 pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle();
 
@@ -76,7 +80,23 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         ));
         handle.manage(RevealGuard::new());
         handle.manage(ClipboardGuard::new());
-        log::info!("SecurityDbState + RevealGuard + ClipboardGuard initialized");
+        handle.manage(SshAgentState {
+            added_fingerprints: std::sync::Mutex::new(std::collections::HashSet::new()),
+        });
+        log::info!("SecurityDbState + RevealGuard + ClipboardGuard + SshAgentState initialized");
+    }
+
+    {
+        let vault_dir = match handle.path().app_data_dir() {
+            Ok(data_dir) => data_dir.join("security").join("vault"),
+            Err(_) => std::path::PathBuf::from("security/vault"),
+        };
+        let sync_config = assistant_sync::SyncConfig::default();
+        handle.manage(assistant_sync::sync_engine::SyncEngine::new(
+            vault_dir,
+            sync_config,
+        ));
+        log::info!("SyncEngine initialized");
     }
 
     {

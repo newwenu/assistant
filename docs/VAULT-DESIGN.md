@@ -1057,21 +1057,16 @@ const passwordVault = defineTool({
 
 #### 6.7.2 防入侵层
 
-**CSP 配置**（基于项目实际依赖：Ant Design v6 动态主题 + CSS Modules + ipinfo.io）：
+**CSP 配置**：`tauri.conf.json` 中 `security.csp` 设为严格策略，关键约束：
 
-```json
-"security": {
-  "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; font-src 'self' data:; connect-src 'self' https://ipinfo.io; object-src 'none'; base-uri 'self'; form-action 'self'"
-}
-```
-
-| 指令 | 值 | 理由 |
-|------|---|------|
-| `script-src` | `'self'` | **最关键防线**：Vite 构建后所有 JS 来自 bundle，不需要 `'unsafe-eval'` 或 `'unsafe-inline'`，内联 `<script>` 无法执行 |
+| 指令 | 约束 | 理由 |
+|------|------|------|
+| `script-src` | `'self'`（禁止 `unsafe-eval` / `unsafe-inline`） | **最关键防线**：Vite 构建后所有 JS 来自 bundle，内联 `<script>` 无法执行 |
 | `style-src` | `'self' 'unsafe-inline'` | Ant Design v6 动态主题运行时注入 `<style>`，仅允许内联 style，不影响 JS 执行 |
-| `img-src` | `'self' asset: data: blob:` | asset 协议（Tauri 自定义）+ data URI（KaTeX）+ blob（Rive WebGL） |
-| `connect-src` | `'self' https://ipinfo.io` | IP 查询工具 + Tauri IPC（`'self'` 覆盖 invoke） |
+| `connect-src` | `'self'` + 项目所需外部域名 | Tauri IPC（`'self'` 覆盖 invoke）+ 外部 API（如 ipinfo.io、HIBP 等，按项目实际配置） |
 | `object-src` | `'none'` | 禁止 `<object>`/`<embed>` 插件攻击面 |
+
+> ⚠️ CSP 具体值随项目依赖变化，不在此硬编码示例。以 `tauri.conf.json` 实际配置为准。
 
 **DevTools 禁用**（release 构建）：`src-tauri/src/window.rs` 中 `#[cfg(not(debug_assertions))]` 条件下 `builder.devtools(false)`。
 

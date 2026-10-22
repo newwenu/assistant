@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import {
   Descriptions,
   Button,
@@ -7,6 +7,7 @@ import {
   Tag,
   message,
   Spin,
+  Tooltip,
 } from "antd";
 import {
   CopyOutlined,
@@ -15,6 +16,7 @@ import {
   StarOutlined,
   EditOutlined,
   DeleteOutlined,
+  CloudUploadOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./vaultStore";
@@ -26,6 +28,93 @@ interface VaultEntryDetailProps {
   onClose: () => void;
 }
 
+function TotpDisplay({
+  entryId,
+  code,
+  timeRemaining,
+  period,
+  onCopy,
+}: {
+  entryId: string;
+  code: string | null;
+  timeRemaining: number;
+  period: number;
+  onCopy: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+
+  const radius = 18;
+  const circumference = 2 * Math.PI * radius;
+  const progress = period > 0 ? timeRemaining / period : 0;
+  const dashOffset = circumference * (1 - progress);
+
+  const formattedCode = code
+    ? code.length === 6
+      ? `${code.slice(0, 3)} ${code.slice(3)}`
+      : code.length === 8
+        ? `${code.slice(0, 4)} ${code.slice(4)}`
+        : code
+    : null;
+
+  const isUrgent = timeRemaining <= 5 && timeRemaining > 0;
+
+  return (
+    <Space size="middle" align="center" className={styles.totpContainer}>
+      <div className={styles.totpCountdownWrap}>
+        <svg
+          width={44}
+          height={44}
+          viewBox="0 0 44 44"
+          className={styles.totpSvg}
+        >
+          <circle
+            cx={22}
+            cy={22}
+            r={radius}
+            fill="none"
+            stroke="var(--ant-color-fill-secondary)"
+            strokeWidth={3}
+          />
+          <circle
+            cx={22}
+            cy={22}
+            r={radius}
+            fill="none"
+            stroke={
+              isUrgent ? "var(--ant-color-error)" : "var(--ant-color-primary)"
+            }
+            strokeWidth={3}
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            strokeLinecap="round"
+            transform={`rotate(-90 22 22)`}
+            className={styles.totpArc}
+          />
+        </svg>
+        <span className={styles.totpCountdownText}>{timeRemaining}</span>
+      </div>
+      {formattedCode ? (
+        <Typography.Text
+          code
+          className={`${styles.totpCode} ${isUrgent ? styles.totpCodeUrgent : ""}`}
+        >
+          {formattedCode}
+        </Typography.Text>
+      ) : (
+        <Typography.Text type="secondary">——</Typography.Text>
+      )}
+      <Tooltip title={t("tools.password_vault.totp_copy")}>
+        <Button
+          type="text"
+          size="small"
+          icon={<CopyOutlined />}
+          onClick={() => onCopy(entryId)}
+        />
+      </Tooltip>
+    </Space>
+  );
+}
+
 export default function VaultEntryDetail({
   entryId,
   onEdit,
@@ -35,6 +124,8 @@ export default function VaultEntryDetail({
   const {
     selectedEntry,
     revealedField,
+    totpCode,
+    totpTimeRemaining,
     selectEntry,
     copyPassword,
     copyField,
@@ -42,12 +133,33 @@ export default function VaultEntryDetail({
     revealNotes,
     clearRevealedField,
     deleteEntry,
+    sshAddToAgent,
+    generateTotp,
+    copyTotp,
+    stopTotpTimer,
   } = useVaultStore();
 
   useEffect(() => {
     void selectEntry(entryId);
-    return () => clearRevealedField();
-  }, [entryId, selectEntry, clearRevealedField]);
+    return () => {
+      clearRevealedField();
+      stopTotpTimer();
+    };
+  }, [entryId, selectEntry, clearRevealedField, stopTotpTimer]);
+
+  useEffect(() => {
+    if (selectedEntry?.hasTotp) {
+      void generateTotp(entryId);
+    }
+  }, [selectedEntry?.hasTotp, entryId, generateTotp]);
+
+  const handleCopyTotp = useCallback(
+    (id: string) => {
+      void copyTotp(id);
+      message.success(t("common.actions.copied"));
+    },
+    [copyTotp, t],
+  );
 
   if (!selectedEntry) return <Spin />;
 
@@ -84,6 +196,16 @@ export default function VaultEntryDetail({
 
   const handleCopyField = (name: string) => {
     void copyField(entryId, name);
+  };
+
+  const handleAddToSshAgent = () => {
+    void sshAddToAgent(entryId).then((fp) => {
+      if (fp) {
+        message.success(
+          t("tools.password_vault.ssh_added_to_agent", { fingerprint: fp }),
+        );
+      }
+    });
   };
 
   return (
@@ -192,9 +314,26 @@ export default function VaultEntryDetail({
 
         {selectedEntry.hasTotp && (
           <Descriptions.Item label="TOTP">
-            <Typography.Text type="secondary">
-              {t("tools.password_vault.totp_configured")}
-            </Typography.Text>
+            <TotpDisplay
+              entryId={entryId}
+              code={totpCode}
+              timeRemaining={totpTimeRemaining}
+              period={30}
+              onCopy={handleCopyTotp}
+            />
+          </Descriptions.Item>
+        )}
+
+        {selectedEntry.category === "sshKey" && (
+          <Descriptions.Item label={t("tools.password_vault.ssh_agent")}>
+            <Button
+              type="primary"
+              size="small"
+              icon={<CloudUploadOutlined />}
+              onClick={handleAddToSshAgent}
+            >
+              {t("tools.password_vault.ssh_add_to_agent")}
+            </Button>
           </Descriptions.Item>
         )}
 

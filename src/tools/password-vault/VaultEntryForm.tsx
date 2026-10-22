@@ -8,13 +8,29 @@ import {
   Space,
   Divider,
   Tag,
+  InputNumber,
   message,
+  Typography,
 } from "antd";
-import { PlusOutlined, MinusCircleOutlined } from "@ant-design/icons";
+import {
+  PlusOutlined,
+  MinusCircleOutlined,
+  LinkOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./vaultStore";
-import type { VaultCategory, CustomFieldInput } from "./vault.service";
+import type {
+  VaultCategory,
+  CustomFieldInput,
+  ParsedOtpAuth,
+} from "./vault.service";
+import {
+  generatePassword,
+  generatePassphrase,
+} from "../password-generator/password-generator.service";
 import styles from "./password-vault.module.css";
+
+type PasswordGenMode = "random" | "passphrase";
 
 const CATEGORY_OPTIONS: { value: VaultCategory; label: string }[] = [
   { value: "login", label: "Login" },
@@ -37,7 +53,8 @@ export default function VaultEntryForm({
   onSaved,
 }: VaultEntryFormProps) {
   const { t } = useTranslation();
-  const { selectedEntry, createEntry, updateEntry } = useVaultStore();
+  const { selectedEntry, createEntry, updateEntry, totpParseUri } =
+    useVaultStore();
 
   const [category, setCategory] = useState<VaultCategory>("login");
   const [title, setTitle] = useState("");
@@ -46,10 +63,19 @@ export default function VaultEntryForm({
   const [url, setUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
+  const [totpUriInput, setTotpUriInput] = useState("");
+  const [totpUriVisible, setTotpUriVisible] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [customFields, setCustomFields] = useState<CustomFieldInput[]>([]);
+  const [genMode, setGenMode] = useState<PasswordGenMode>("random");
+  const [genLength, setGenLength] = useState(16);
+  const [genWordCount, setGenWordCount] = useState(4);
+  const [genSeparator, setGenSeparator] = useState("-");
+  const [genCapitalize, setGenCapitalize] = useState(false);
+
+  const isEditingExistingTotp = !!(editId && selectedEntry?.hasTotp);
 
   useEffect(() => {
     if (editId && selectedEntry) {
@@ -61,6 +87,26 @@ export default function VaultEntryForm({
       setTags(selectedEntry.tags);
     }
   }, [editId, selectedEntry]);
+
+  const handleImportTotpUri = async () => {
+    const uri = totpUriInput.trim();
+    if (!uri) return;
+    try {
+      const parsed: ParsedOtpAuth = await totpParseUri(uri);
+      setTotpSecret(parsed.secret);
+      if (parsed.issuer && !title) {
+        setTitle(parsed.issuer);
+      }
+      if (parsed.account && !username) {
+        setUsername(parsed.account);
+      }
+      setTotpUriInput("");
+      setTotpUriVisible(false);
+      message.success(t("tools.password_vault.totp_uri_imported"));
+    } catch {
+      message.error(t("tools.password_vault.totp_uri_invalid"));
+    }
+  };
 
   const handleAddTag = () => {
     if (tagInput && !tags.includes(tagInput)) {
@@ -141,10 +187,83 @@ export default function VaultEntryForm({
 
         {(category === "login" || category === "card") && (
           <Form.Item label={t("tools.password_vault.password")}>
-            <Input.Password
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <Space orientation="vertical" style={{ width: "100%" }}>
+              <Input.Password
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <Space>
+                <Select
+                  value={genMode}
+                  onChange={setGenMode}
+                  size="small"
+                  style={{ width: 120 }}
+                  options={[
+                    {
+                      value: "random",
+                      label: t("tools.password_vault.gen_mode_random"),
+                    },
+                    {
+                      value: "passphrase",
+                      label: t("tools.password_vault.gen_mode_passphrase"),
+                    },
+                  ]}
+                />
+                {genMode === "random" && (
+                  <InputNumber
+                    min={8}
+                    max={64}
+                    value={genLength}
+                    onChange={(v) => setGenLength(v ?? 16)}
+                    size="small"
+                    style={{ width: 70 }}
+                  />
+                )}
+                {genMode === "passphrase" && (
+                  <>
+                    <InputNumber
+                      min={3}
+                      max={10}
+                      value={genWordCount}
+                      onChange={(v) => setGenWordCount(v ?? 4)}
+                      size="small"
+                      style={{ width: 70 }}
+                    />
+                    <Input
+                      value={genSeparator}
+                      onChange={(e) => setGenSeparator(e.target.value)}
+                      size="small"
+                      style={{ width: 50 }}
+                    />
+                    <Switch
+                      checked={genCapitalize}
+                      onChange={setGenCapitalize}
+                      size="small"
+                    />
+                  </>
+                )}
+                <Button
+                  size="small"
+                  onClick={() => {
+                    if (genMode === "random") {
+                      setPassword(
+                        generatePassword(genLength, true, true, true, true),
+                      );
+                    } else {
+                      setPassword(
+                        generatePassphrase(
+                          genWordCount,
+                          genSeparator,
+                          genCapitalize,
+                        ),
+                      );
+                    }
+                  }}
+                >
+                  {t("tools.password_vault.generate")}
+                </Button>
+              </Space>
+            </Space>
           </Form.Item>
         )}
 
@@ -164,10 +283,61 @@ export default function VaultEntryForm({
 
         {category === "login" && (
           <Form.Item label={t("tools.password_vault.totp_secret")}>
-            <Input.Password
-              value={totpSecret}
-              onChange={(e) => setTotpSecret(e.target.value)}
-            />
+            <Space orientation="vertical" style={{ width: "100%" }}>
+              {isEditingExistingTotp && !totpSecret && (
+                <Typography.Text
+                  type="secondary"
+                  className={styles.totpEditHint}
+                >
+                  {t("tools.password_vault.totp_edit_hint")}
+                </Typography.Text>
+              )}
+              <Input.Password
+                value={totpSecret}
+                onChange={(e) => setTotpSecret(e.target.value)}
+                placeholder={
+                  isEditingExistingTotp
+                    ? t("tools.password_vault.totp_placeholder_keep")
+                    : undefined
+                }
+              />
+              {!totpUriVisible ? (
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<LinkOutlined />}
+                  onClick={() => setTotpUriVisible(true)}
+                >
+                  {t("tools.password_vault.totp_import_uri")}
+                </Button>
+              ) : (
+                <Space.Compact style={{ width: "100%" }}>
+                  <Input
+                    value={totpUriInput}
+                    onChange={(e) => setTotpUriInput(e.target.value)}
+                    placeholder="otpauth://totp/..."
+                    onPressEnter={() => void handleImportTotpUri()}
+                    style={{ flex: 1 }}
+                  />
+                  <Button
+                    type="primary"
+                    size="small"
+                    onClick={() => void handleImportTotpUri()}
+                  >
+                    {t("tools.password_vault.totp_import")}
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setTotpUriVisible(false);
+                      setTotpUriInput("");
+                    }}
+                  >
+                    {t("common.actions.cancel")}
+                  </Button>
+                </Space.Compact>
+              )}
+            </Space>
           </Form.Item>
         )}
 

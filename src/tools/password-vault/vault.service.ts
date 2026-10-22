@@ -73,12 +73,79 @@ export interface TotpResult {
   timeRemaining: number;
 }
 
+export interface ParsedOtpAuth {
+  secret: string;
+  digits: number;
+  period: number;
+  algorithm: string;
+  issuer: string | null;
+  account: string | null;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  eventType: string;
+  detail: string | null;
+  timestamp: number;
+}
+
 export interface StrengthResult {
   score: number;
   entropyBits: number;
   crackTimeSeconds: number;
   crackTimeDisplay: string;
   warnings: string[];
+}
+
+export type Readyness =
+  "noSync" | { repoState: RepositoryState } | "dirty" | "ready";
+
+export type RepositoryState =
+  | "clean"
+  | "merge"
+  | "rebase"
+  | "rebaseInteractive"
+  | "rebaseMerge"
+  | "apply"
+  | "cherryPick"
+  | "revert"
+  | "bisect"
+  | "am"
+  | "mailbox"
+  | "stash"
+  | "unknown";
+
+export type SyncResult =
+  "success" | "upToDate" | { conflict: ConflictFile[] } | { error: string };
+
+export interface ConflictFile {
+  path: string;
+  localHash: string;
+  remoteHash: string;
+}
+
+export interface SyncConfig {
+  remoteUrl: string | null;
+  remoteName: string;
+  branch: string;
+  autoSyncIntervalSecs: number;
+  sshKeyPath: string | null;
+}
+
+export type ConflictResolution =
+  "useLocal" | "useRemote" | "mergeBoth" | "skip";
+
+export interface SshKeyInfo {
+  fingerprint: string;
+  keyType: string;
+  comment: string;
+  bits: number;
+  addedByVault: boolean;
+}
+
+export interface IntegrityResult {
+  valid: boolean;
+  message: string;
 }
 
 export const vaultService = {
@@ -142,8 +209,24 @@ export const vaultService = {
   ): Promise<TotpResult> =>
     invoke("vault_totp_generate", { id, period, digits, algorithm }),
 
+  totpCopy: (
+    id: string,
+    period?: number,
+    digits?: number,
+    algorithm?: string,
+  ): Promise<void> =>
+    invoke("vault_copy_totp", { id, period, digits, algorithm }),
+
   totpTimeRemaining: (period?: number): Promise<number> =>
     invoke("vault_totp_time_remaining", { period }),
+
+  totpParseUri: (uri: string): Promise<ParsedOtpAuth> =>
+    invoke("vault_totp_parse_uri", { uri }),
+
+  queryAuditLog: (limit?: number): Promise<AuditLogEntry[]> =>
+    invoke("vault_query_audit_log", { limit }),
+
+  showUnlockWindow: (): Promise<void> => invoke("vault_show_unlock_window"),
 
   hibpCheck: (id: string): Promise<number> =>
     invoke("vault_hibp_check", { id }),
@@ -165,4 +248,50 @@ export const vaultService = {
     invoke("vault_enroll_biometric", { masterPassword }),
 
   disenrollBiometric: (): Promise<void> => invoke("vault_disenroll_biometric"),
+
+  syncPull: (): Promise<SyncResult> => invoke("vault_sync_pull"),
+  syncPush: (): Promise<SyncResult> => invoke("vault_sync_push"),
+  syncNow: (): Promise<SyncResult> => invoke("vault_sync_now"),
+  syncForcePush: (): Promise<SyncResult> => invoke("vault_sync_force_push"),
+  getSyncConfig: (): Promise<SyncConfig> => invoke("vault_get_sync_config"),
+  setSyncConfig: (config: SyncConfig): Promise<void> =>
+    invoke("vault_set_sync_config", { config }),
+  resolveConflict: (
+    path: string,
+    resolution: ConflictResolution,
+  ): Promise<void> => invoke("vault_resolve_conflict", { path, resolution }),
+  gitInit: (): Promise<void> => invoke("vault_git_init"),
+  gitClone: (url: string): Promise<void> => invoke("vault_git_clone", { url }),
+  gitAddRemote: (remote: string, url: string): Promise<void> =>
+    invoke("vault_git_add_remote", { remote, url }),
+  gitSetRemote: (remote: string, url: string): Promise<void> =>
+    invoke("vault_git_set_remote", { remote, url }),
+  syncReadyness: (): Promise<Readyness> => invoke("vault_sync_readyness"),
+  syncPrepare: (): Promise<void> => invoke("vault_sync_prepare"),
+  syncFinalize: (message: string): Promise<void> =>
+    invoke("vault_sync_finalize", { message }),
+
+  sshAddToAgent: (id: string, lifetime?: number): Promise<string> =>
+    invoke("vault_ssh_add_to_agent", { id, lifetime }),
+
+  sshRemoveFromAgent: (fingerprint: string): Promise<void> =>
+    invoke("vault_ssh_remove_from_agent", { fingerprint }),
+
+  sshListAgent: (): Promise<SshKeyInfo[]> => invoke("vault_ssh_list_agent"),
+
+  sshAutoAddAll: (): Promise<string[]> => invoke("vault_ssh_auto_add_all"),
+
+  sshIsAgentRunning: (): Promise<boolean> =>
+    invoke("vault_ssh_is_agent_running"),
+
+  generateRecoveryKey: (): Promise<string> =>
+    invoke("vault_generate_recovery_key"),
+
+  unlockWithRecoveryKey: (recoveryKey: string): Promise<boolean> =>
+    invoke("vault_unlock_with_recovery_key", { recoveryKey }),
+
+  hasRecoveryKey: (): Promise<boolean> => invoke("vault_has_recovery_key"),
+
+  verifyVaultMetaIntegrity: (): Promise<IntegrityResult> =>
+    invoke("vault_verify_vault_meta_integrity"),
 };

@@ -1,8 +1,8 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use tauri::{command, AppHandle, Manager};
 
+use assistant_config::app_conf::AppConf;
 use assistant_security::audit::{log as audit_log, AuditEvent};
 use assistant_security::biometric::BiometricKeyStore;
 use assistant_security::clipboard_guard::ClipboardGuard;
@@ -17,7 +17,23 @@ use assistant_security::vault_crypto::hibp::HibpClient;
 use assistant_security::vault_crypto::totp::{self, TotpParams, TotpResult};
 
 static REVEAL_TTL_SECS: u64 = 30;
-static LAST_REVEAL_EXPIRY: AtomicU64 = AtomicU64::new(0);
+
+fn ssh_bridge_from_conf() -> Box<dyn assistant_security::ssh_agent::SshAgentBridge> {
+    let conf = AppConf::load().ok();
+    let use_pageant = conf
+        .as_ref()
+        .and_then(|c| Some(c.vault_ssh_use_pageant))
+        .unwrap_or(true);
+    let auth_sock_override = conf.as_ref().and_then(|c| {
+        let s = c.vault_ssh_auth_sock_override.clone();
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
+    });
+    assistant_security::ssh_agent::create_agent_bridge(use_pageant, auth_sock_override)
+}
 
 fn vault_state(app: &AppHandle) -> Result<tauri::State<'_, SecurityDbState>, String> {
     app.state::<SecurityDbState>()
@@ -99,7 +115,7 @@ pub fn vault_list_entries(
     tag: Option<String>,
 ) -> Result<Vec<VaultEntrySummary>, String> {
     let state = vault_state(&app)?;
-    let cat = category.and_then(|c| assistant_security::types::VaultCategory::from_str(&c));
+    let cat = category.and_then(|c| assistant_security::types::VaultCategory::parse(&c));
     state
         .list_entries(cat, search.as_deref(), tag.as_deref())
         .map_err(|e| e.to_string())
@@ -182,7 +198,6 @@ pub fn vault_reveal_password(app: AppHandle, id: String) -> Result<RevealResult,
     let password = state.decrypt_password(&id).map_err(|e| e.to_string())?;
 
     let expires_at = chrono::Utc::now().timestamp() + REVEAL_TTL_SECS as i64;
-    LAST_REVEAL_EXPIRY.store(expires_at as u64, Ordering::SeqCst);
 
     {
         let conn_guard = state.get_conn().map_err(|e| e.to_string())?;
@@ -226,7 +241,6 @@ pub fn vault_reveal_notes(app: AppHandle, id: String) -> Result<RevealResult, St
     let notes = state.decrypt_notes(&id).map_err(|e| e.to_string())?;
 
     let expires_at = chrono::Utc::now().timestamp() + REVEAL_TTL_SECS as i64;
-    LAST_REVEAL_EXPIRY.store(expires_at as u64, Ordering::SeqCst);
 
     {
         let conn_guard = state.get_conn().map_err(|e| e.to_string())?;
@@ -534,5 +548,313 @@ pub fn vault_disenroll_biometric(app: AppHandle) -> Result<(), String> {
     let key_store = get_key_store();
     state
         .disenroll_biometric(key_store.as_ref())
+        .map_err(|e| e.to_string())
+}
+
+fn sync_state(
+    app: &AppHandle,
+) -> Result<tauri::State<'_, assistant_sync::sync_engine::SyncEngine>, String> {
+    app.state::<assistant_sync::sync_engine::SyncEngine>()
+        .try_into()
+        .map_err(|_| "SyncEngine not managed".to_string())
+}
+
+#[command]
+pub fn vault_sync_pull(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
+    let engine = sync_state(&app)?;
+    engine.pull().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_sync_push(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
+    let engine = sync_state(&app)?;
+    engine.push().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_sync_now(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
+    let engine = sync_state(&app)?;
+    engine.sync_now().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_sync_force_push(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
+    let engine = sync_state(&app)?;
+    engine.force_push().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_get_sync_config(app: AppHandle) -> Result<assistant_sync::SyncConfig, String> {
+    let engine = sync_state(&app)?;
+    Ok(engine.get_config())
+}
+
+#[command]
+pub fn vault_set_sync_config(
+    app: AppHandle,
+    config: assistant_sync::SyncConfig,
+) -> Result<(), String> {
+    let engine = sync_state(&app)?;
+    engine.set_config(config);
+    Ok(())
+}
+
+#[command]
+pub fn vault_resolve_conflict(
+    app: AppHandle,
+    path: String,
+    resolution: assistant_sync::ConflictResolution,
+) -> Result<(), String> {
+    let engine = sync_state(&app)?;
+    engine
+        .resolve_conflict(&path, resolution)
+        .map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_git_init(app: AppHandle) -> Result<(), String> {
+    let engine = sync_state(&app)?;
+    engine.init().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_git_clone(app: AppHandle, url: String) -> Result<(), String> {
+    let engine = sync_state(&app)?;
+    engine.clone_repo(&url).map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_git_add_remote(app: AppHandle, remote: String, url: String) -> Result<(), String> {
+    let engine = sync_state(&app)?;
+    engine.add_remote(&remote, &url).map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_git_set_remote(app: AppHandle, remote: String, url: String) -> Result<(), String> {
+    let engine = sync_state(&app)?;
+    engine.set_remote(&remote, &url).map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_sync_readyness(app: AppHandle) -> Result<assistant_sync::Readyness, String> {
+    let engine = sync_state(&app)?;
+    engine.readyness().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_sync_prepare(app: AppHandle) -> Result<(), String> {
+    let engine = sync_state(&app)?;
+    engine.prepare().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_sync_finalize(app: AppHandle, message: String) -> Result<(), String> {
+    let engine = sync_state(&app)?;
+    engine.finalize(&message).map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_ssh_add_to_agent(
+    app: AppHandle,
+    id: String,
+    lifetime: Option<u32>,
+) -> Result<String, String> {
+    let state = vault_state(&app)?;
+    let private_key = state
+        .decrypt_ssh_private_key(&id)
+        .map_err(|e| e.to_string())?;
+
+    let meta = assistant_security::ssh_agent::validate::validate_private_key(private_key.expose())
+        .map_err(|e| e.to_string())?;
+
+    let bridge = ssh_bridge_from_conf();
+    bridge
+        .add_key(private_key.expose(), &meta.fingerprint, lifetime)
+        .map_err(|e| e.to_string())?;
+
+    {
+        let ssh_state = app.state::<crate::setup::SshAgentState>();
+        let mut fps = ssh_state.added_fingerprints.lock().unwrap();
+        fps.insert(meta.fingerprint.clone());
+    }
+
+    {
+        let guard = state.get_conn().map_err(|e| e.to_string())?;
+        if let Some(conn) = guard.as_ref() {
+            let _ = audit_log(conn, AuditEvent::SshKeyLoaded, Some(&id));
+        }
+    }
+
+    Ok(meta.fingerprint)
+}
+
+#[command]
+pub fn vault_ssh_remove_from_agent(app: AppHandle, fingerprint: String) -> Result<(), String> {
+    let bridge = ssh_bridge_from_conf();
+    bridge.remove_key(&fingerprint).map_err(|e| e.to_string())?;
+
+    {
+        let ssh_state = app.state::<crate::setup::SshAgentState>();
+        let mut fps = ssh_state.added_fingerprints.lock().unwrap();
+        fps.remove(&fingerprint);
+    }
+
+    {
+        let state = vault_state(&app)?;
+        let guard = state.get_conn().map_err(|e| e.to_string())?;
+        if let Some(conn) = guard.as_ref() {
+            let _ = audit_log(conn, AuditEvent::SshKeyRemoved, Some(&fingerprint));
+        }
+    }
+
+    Ok(())
+}
+
+#[command]
+pub fn vault_ssh_list_agent(
+    app: AppHandle,
+) -> Result<Vec<assistant_security::ssh_agent::SshKeyInfo>, String> {
+    let bridge = ssh_bridge_from_conf();
+    let mut keys = bridge.list_keys().map_err(|e| e.to_string())?;
+
+    let ssh_state = app.state::<crate::setup::SshAgentState>();
+    let vault_fps = ssh_state.added_fingerprints.lock().unwrap();
+    for key in &mut keys {
+        key.added_by_vault = vault_fps.contains(&key.fingerprint);
+    }
+
+    Ok(keys)
+}
+
+#[command]
+pub fn vault_ssh_auto_add_all(app: AppHandle) -> Result<Vec<String>, String> {
+    use assistant_config::app_conf::AppConf;
+    let conf = AppConf::load().map_err(|e| e.to_string())?;
+    if !conf.vault_ssh_auto_add {
+        return Ok(Vec::new());
+    }
+
+    let state = vault_state(&app)?;
+    let ssh_entries: Vec<VaultEntrySummary> = state
+        .list_entries(
+            Some(assistant_security::types::VaultCategory::SshKey),
+            None,
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+
+    let bridge = ssh_bridge_from_conf();
+    let mut added = Vec::new();
+
+    for entry in &ssh_entries {
+        if let Ok(private_key) = state.decrypt_ssh_private_key(&entry.id) {
+            if let Ok(meta) =
+                assistant_security::ssh_agent::validate::validate_private_key(private_key.expose())
+            {
+                if bridge
+                    .add_key(private_key.expose(), &meta.fingerprint, None)
+                    .is_ok()
+                {
+                    {
+                        let ssh_state = app.state::<crate::setup::SshAgentState>();
+                        let mut fps = ssh_state.added_fingerprints.lock().unwrap();
+                        fps.insert(meta.fingerprint.clone());
+                    }
+                    added.push(meta.fingerprint);
+                }
+            }
+        }
+    }
+
+    Ok(added)
+}
+
+#[command]
+pub fn vault_ssh_is_agent_running() -> Result<bool, String> {
+    let bridge = ssh_bridge_from_conf();
+    bridge.is_agent_running().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_generate_recovery_key(app: AppHandle) -> Result<String, String> {
+    let state = vault_state(&app)?;
+    let master_key = state.get_master_key().map_err(|e| e.to_string())?;
+    let mk = master_key.as_ref().ok_or("Vault is locked")?;
+    let bootstrap_key = state.get_bootstrap_key().map_err(|e| e.to_string())?;
+    let bk = bootstrap_key.as_ref().ok_or("Vault is locked")?;
+
+    let (recovery_key, emergency) = assistant_security::recovery_key::generate_recovery_key(mk, bk)
+        .map_err(|e| e.to_string())?;
+
+    let engine = sync_state(&app)?;
+    engine
+        .write_emergency_data(mk, &emergency)
+        .map_err(|e| e.to_string())?;
+
+    {
+        let guard = state.get_conn().map_err(|e| e.to_string())?;
+        if let Some(conn) = guard.as_ref() {
+            let _ = audit_log(conn, AuditEvent::RecoveryKeyGenerated, None);
+        }
+    }
+
+    Ok(recovery_key)
+}
+
+#[command]
+pub fn vault_unlock_with_recovery_key(
+    app: AppHandle,
+    recovery_key: String,
+) -> Result<bool, String> {
+    let state = vault_state(&app)?;
+    if !state.is_locked() {
+        return Err("Vault is already unlocked".to_string());
+    }
+
+    let engine = sync_state(&app)?;
+    let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
+    let emergency = emergency.ok_or("Recovery key not set")?;
+
+    let emergency_data = assistant_security::recovery_key::EmergencyData {
+        token: emergency.token,
+        salt: emergency.salt,
+    };
+
+    let result = assistant_security::recovery_key::unlock_with_recovery_key(
+        &recovery_key,
+        &emergency_data,
+        &state,
+    )
+    .map_err(|e| e.to_string())?;
+
+    if result {
+        crate::protocol::events::emit_broadcast(
+            &app,
+            crate::protocol::events::event_name::VAULT_UNLOCKED,
+            (),
+        );
+    }
+
+    Ok(result)
+}
+
+#[command]
+pub fn vault_has_recovery_key(app: AppHandle) -> Result<bool, String> {
+    let engine = sync_state(&app)?;
+    let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
+    Ok(emergency.is_some())
+}
+
+#[command]
+pub fn vault_verify_vault_meta_integrity(
+    app: AppHandle,
+) -> Result<assistant_sync::vault_file::IntegrityResult, String> {
+    let state = vault_state(&app)?;
+    let master_key = state.get_master_key().map_err(|e| e.to_string())?;
+    let mk = master_key.as_ref().ok_or("Vault is locked")?;
+
+    let engine = sync_state(&app)?;
+    engine
+        .verify_vault_meta_integrity(mk)
         .map_err(|e| e.to_string())
 }

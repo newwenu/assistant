@@ -5,5 +5,3 @@ pub mod migrations;
 pub mod providers;
 pub mod tool_favorites;
 pub mod tool_history;
-pub mod vault;
-pub mod vault_meta;

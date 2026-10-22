@@ -12,6 +12,7 @@ import {
   LockOutlined,
   UnlockOutlined,
   SafetyOutlined,
+  KeyOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./vaultStore";
@@ -42,6 +43,8 @@ export default function VaultUnlock() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [strength, setStrength] = useState<StrengthResult | null>(null);
+  const [showRecoveryKey, setShowRecoveryKey] = useState(false);
+  const [recoveryKey, setRecoveryKey] = useState("");
   const {
     isInitialized,
     init,
@@ -52,12 +55,15 @@ export default function VaultUnlock() {
     biometricAvailable,
     biometricEnrolled,
     unlockBiometric,
+    unlockWithRecoveryKey,
+    checkRecoveryKeySet,
+    recoveryKeySet,
   } = useVaultStore();
 
   useEffect(() => {
     if (!isInitialized && password.length > 0) {
       let cancelled = false;
-      vaultService.checkMasterPasswordStrength(password).then((result) => {
+      void vaultService.checkMasterPasswordStrength(password).then((result) => {
         if (!cancelled) setStrength(result);
       });
       return () => {
@@ -67,6 +73,12 @@ export default function VaultUnlock() {
       setStrength(null);
     }
   }, [password, isInitialized]);
+
+  useEffect(() => {
+    if (isInitialized) {
+      void checkRecoveryKeySet();
+    }
+  }, [isInitialized, checkRecoveryKeySet]);
 
   const handleSubmit = async () => {
     clearError();
@@ -91,6 +103,13 @@ export default function VaultUnlock() {
     setPassword("");
     setConfirmPassword("");
     setStrength(null);
+  };
+
+  const handleRecoveryKeySubmit = async () => {
+    clearError();
+    if (!recoveryKey) return;
+    await unlockWithRecoveryKey(recoveryKey);
+    setRecoveryKey("");
   };
 
   const canSubmit =
@@ -205,6 +224,53 @@ export default function VaultUnlock() {
                 onClick={() => void unlockBiometric()}
               >
                 {t("tools.password_vault.biometric_unlock")}
+              </Button>
+            </Form.Item>
+          </>
+        )}
+
+        {isInitialized && recoveryKeySet && !showRecoveryKey && (
+          <>
+            <Divider plain>{t("common.or")}</Divider>
+            <Form.Item>
+              <Button
+                size="large"
+                block
+                icon={<KeyOutlined />}
+                onClick={() => setShowRecoveryKey(true)}
+              >
+                {t("tools.password_vault.recovery_key_unlock")}
+              </Button>
+            </Form.Item>
+          </>
+        )}
+
+        {isInitialized && showRecoveryKey && (
+          <>
+            <Divider plain>
+              {t("tools.password_vault.recovery_key_divider")}
+            </Divider>
+            <Form.Item>
+              <Input
+                size="large"
+                placeholder={t("tools.password_vault.recovery_key_placeholder")}
+                value={recoveryKey}
+                onChange={(e) => setRecoveryKey(e.target.value)}
+                prefix={<KeyOutlined />}
+                autoFocus
+              />
+            </Form.Item>
+            <Form.Item>
+              <Button
+                type="primary"
+                size="large"
+                block
+                icon={<UnlockOutlined />}
+                loading={loading}
+                disabled={!recoveryKey}
+                onClick={() => void handleRecoveryKeySubmit()}
+              >
+                {t("tools.password_vault.unlock_with_recovery_key")}
               </Button>
             </Form.Item>
           </>

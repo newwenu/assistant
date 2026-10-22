@@ -8,6 +8,7 @@ import {
   Empty,
   Spin,
   Popconfirm,
+  Space,
 } from "antd";
 import {
   SearchOutlined,
@@ -18,6 +19,9 @@ import {
   EditOutlined,
   KeyOutlined,
   GlobalOutlined,
+  SyncOutlined,
+  CloudSyncOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./vaultStore";
@@ -56,6 +60,9 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
     searchQuery,
     categoryFilter,
     tagFilter,
+    hibpLeaks,
+    syncReadyness,
+    syncing,
     loadEntries,
     setSearchQuery,
     setCategoryFilter,
@@ -63,11 +70,16 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
     copyPassword,
     deleteEntry,
     resetAutoLockTimer,
+    syncNow,
+    loadSyncReadyness,
+    hibpAudit,
+    hibpAuditing,
   } = useVaultStore();
 
   useEffect(() => {
     void loadEntries();
-  }, [searchQuery, categoryFilter, tagFilter, loadEntries]);
+    void loadSyncReadyness();
+  }, [searchQuery, categoryFilter, tagFilter, loadEntries, loadSyncReadyness]);
 
   return (
     <div className={styles.listContainer}>
@@ -158,6 +170,11 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
                         style={{ color: "#faad14", marginRight: 4 }}
                       />
                     )}
+                    {hibpLeaks[entry.id] > 0 && (
+                      <WarningOutlined
+                        style={{ color: "#ff4d4f", marginLeft: 4 }}
+                      />
+                    )}
                     {entry.title}
                   </span>
                 }
@@ -195,6 +212,48 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
           )}
         />
       )}
+
+      <div className={styles.syncBar}>
+        <Space>
+          <span>
+            {entries.length} {t("tools.password_vault.entries_count")}
+          </span>
+          {Object.values(hibpLeaks).filter((c) => c > 0).length > 0 && (
+            <span style={{ color: "#ff4d4f" }}>
+              <WarningOutlined style={{ marginRight: 4 }} />
+              {Object.values(hibpLeaks).filter((c) => c > 0).length}{" "}
+              {t("tools.password_vault.leaked")}
+            </span>
+          )}
+          <Button
+            type="text"
+            size="small"
+            icon={<WarningOutlined />}
+            onClick={() => void hibpAudit()}
+            loading={hibpAuditing}
+          >
+            {t("tools.password_vault.hibp_audit_all")}
+          </Button>
+          {syncReadyness === "ready" && (
+            <CloudSyncOutlined style={{ color: "#52c41a" }} />
+          )}
+          {syncReadyness === "dirty" && (
+            <CloudSyncOutlined style={{ color: "#faad14" }} />
+          )}
+          {syncReadyness === "noSync" && (
+            <CloudSyncOutlined style={{ color: "#d9d9d9" }} />
+          )}
+          <Button
+            type="text"
+            size="small"
+            icon={<SyncOutlined spin={syncing} />}
+            onClick={() => void syncNow()}
+            disabled={syncing}
+          >
+            {t("tools.password_vault.sync_now")}
+          </Button>
+        </Space>
+      </div>
     </div>
   );
 }

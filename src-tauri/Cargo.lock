@@ -204,6 +204,7 @@ dependencies = [
  "assistant-providers",
  "assistant-security",
  "assistant-storage",
+ "assistant-sync",
  "assistant-tools",
  "chrono",
  "crash-handler",
@@ -329,7 +330,6 @@ name = "assistant-storage"
 version = "0.1.0"
 dependencies = [
  "assistant-i18n",
- "assistant-security",
  "chrono",
  "log",
  "proptest",
@@ -338,6 +338,26 @@ dependencies = [
  "serde_json",
  "tempfile",
  "uuid",
+]
+
+[[package]]
+name = "assistant-sync"
+version = "0.1.0"
+dependencies = [
+ "assistant-security",
+ "base64 0.22.1",
+ "chrono",
+ "hmac",
+ "lazy_static",
+ "log",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]

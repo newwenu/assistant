@@ -1,0 +1,415 @@
+use assistant_security::security_db::SecurityDbState;
+use assistant_security::types::{
+    CustomFieldInput, VaultCategory, VaultEntryCreate, VaultEntryUpdate, VaultError,
+};
+
+fn temp_db_path() -> String {
+    let dir = std::env::temp_dir().join("assistant-security-test-crud");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join(format!("test_vault_{}.db", uuid::Uuid::new_v4()))
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+fn cleanup(path: &str) {
+    let _ = std::fs::remove_file(path);
+    let backup_dir = std::path::Path::new(path).parent().unwrap().join("backups");
+    if backup_dir.exists() {
+        let _ = std::fs::remove_dir_all(&backup_dir);
+    }
+}
+
+fn init_vault(path: &str, password: &str) -> SecurityDbState {
+    let _ = std::fs::remove_file(path);
+    let db = SecurityDbState::new(path);
+    db.init(password).unwrap();
+    db
+}
+
+const STRONG_PW: &str = "Str0ng#P@ssw0rd!2025";
+
+#[test]
+fn full_crud_lifecycle() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+
+    let create = VaultEntryCreate {
+        category: VaultCategory::Login,
+        title: "GitHub".to_string(),
+        username: Some("octocat".to_string()),
+        url: Some("https://github.com".to_string()),
+        password: Some("ghp_supersecret123".to_string()),
+        notes: Some("Personal account".to_string()),
+        totp_secret: None,
+        tags: vec!["dev".to_string()],
+        custom_fields: vec![],
+        is_favorite: true,
+    };
+
+    let id = db.create_entry(create).unwrap();
+
+    let detail = db.get_entry(&id).unwrap();
+    assert_eq!(detail.title, "GitHub");
+    assert_eq!(detail.category, VaultCategory::Login);
+    assert!(detail.has_password);
+    assert!(detail.has_notes);
+    assert!(!detail.has_totp);
+    assert!(detail.is_favorite);
+
+    let password = db.decrypt_password(&id).unwrap();
+    assert_eq!(password, "ghp_supersecret123");
+
+    let notes = db.decrypt_notes(&id).unwrap();
+    assert_eq!(notes, "Personal account");
+
+    let update = VaultEntryUpdate {
+        category: VaultCategory::Login,
+        title: "GitHub Inc".to_string(),
+        username: Some("octocat".to_string()),
+        url: Some("https://github.com".to_string()),
+        password: Some("ghp_newsecret456".to_string()),
+        notes: Some("Updated notes".to_string()),
+        totp_secret: None,
+        tags: vec!["dev".to_string(), "work".to_string()],
+        custom_fields: vec![],
+        is_favorite: false,
+    };
+    db.update_entry(&id, update).unwrap();
+
+    let detail2 = db.get_entry(&id).unwrap();
+    assert_eq!(detail2.title, "GitHub Inc");
+    assert!(!detail2.is_favorite);
+    assert_eq!(detail2.revision, 2);
+
+    let new_pw = db.decrypt_password(&id).unwrap();
+    assert_eq!(new_pw, "ghp_newsecret456");
+
+    db.delete_entry(&id).unwrap();
+    assert!(matches!(db.get_entry(&id), Err(VaultError::NotFound(_))));
+
+    let entries = db.list_entries(None, None, None).unwrap();
+    assert!(entries.is_empty());
+
+    cleanup(&path);
+}
+
+#[test]
+fn create_entry_with_protected_custom_field() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+
+    let create = VaultEntryCreate {
+        category: VaultCategory::Login,
+        title: "AWS".to_string(),
+        username: Some("admin".to_string()),
+        url: None,
+        password: Some("aws_secret_key".to_string()),
+        notes: None,
+        totp_secret: None,
+        tags: vec![],
+        custom_fields: vec![
+            CustomFieldInput {
+                name: "accessKeyId".to_string(),
+                value: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                is_protected: false,
+            },
+            CustomFieldInput {
+                name: "secretAccessKey".to_string(),
+                value: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
+                is_protected: true,
+            },
+        ],
+        is_favorite: false,
+    };
+
+    let id = db.create_entry(create).unwrap();
+
+    let detail = db.get_entry(&id).unwrap();
+    assert_eq!(
+        detail.custom_field_names,
+        vec!["accessKeyId", "secretAccessKey"]
+    );
+
+    let unprotected = db.decrypt_field(&id, "accessKeyId").unwrap();
+    assert_eq!(unprotected, "AKIAIOSFODNN7EXAMPLE");
+
+    let protected = db.decrypt_field(&id, "secretAccessKey").unwrap();
+    assert_eq!(protected, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
+
+    cleanup(&path);
+}
+
+#[test]
+fn create_entry_with_totp() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+
+    let create = VaultEntryCreate {
+        category: VaultCategory::Login,
+        title: "Google".to_string(),
+        username: Some("user@gmail.com".to_string()),
+        url: Some("https://accounts.google.com".to_string()),
+        password: Some("google_pw".to_string()),
+        notes: None,
+        totp_secret: Some("JBSWY3DPEHPK3PXP".to_string()),
+        tags: vec![],
+        custom_fields: vec![],
+        is_favorite: false,
+    };
+
+    let id = db.create_entry(create).unwrap();
+    let detail = db.get_entry(&id).unwrap();
+    assert!(detail.has_totp);
+
+    let totp_secret = db.decrypt_totp_secret(&id).unwrap();
+    assert_eq!(totp_secret, "JBSWY3DPEHPK3PXP");
+
+    cleanup(&path);
+}
+
+#[test]
+fn list_entries_filter_by_category() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+
+    for (i, cat) in [
+        VaultCategory::Login,
+        VaultCategory::Note,
+        VaultCategory::Card,
+    ]
+    .iter()
+    .enumerate()
+    {
+        db.create_entry(VaultEntryCreate {
+            category: *cat,
+            title: format!("Entry {}", i),
+            username: None,
+            url: None,
+            password: None,
+            notes: None,
+            totp_secret: None,
+            tags: vec![],
+            custom_fields: vec![],
+            is_favorite: false,
+        })
+        .unwrap();
+    }
+
+    let all = db.list_entries(None, None, None).unwrap();
+    assert_eq!(all.len(), 3);
+
+    let logins = db
+        .list_entries(Some(VaultCategory::Login), None, None)
+        .unwrap();
+    assert_eq!(logins.len(), 1);
+    assert_eq!(logins[0].title, "Entry 0");
+
+    let notes = db
+        .list_entries(Some(VaultCategory::Note), None, None)
+        .unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].title, "Entry 1");
+
+    cleanup(&path);
+}
+
+#[test]
+fn list_entries_search_by_title() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+
+    for name in &["GitHub", "GitLab", "Bitbucket"] {
+        db.create_entry(VaultEntryCreate {
+            category: VaultCategory::Login,
+            title: name.to_string(),
+            username: None,
+            url: None,
+            password: None,
+            notes: None,
+            totp_secret: None,
+            tags: vec![],
+            custom_fields: vec![],
+            is_favorite: false,
+        })
+        .unwrap();
+    }
+
+    let git_results = db.list_entries(None, Some("Git"), None).unwrap();
+    assert_eq!(git_results.len(), 2);
+
+    let github = db.list_entries(None, Some("GitHub"), None).unwrap();
+    assert_eq!(github.len(), 1);
+
+    let no_match = db.list_entries(None, Some("Azure"), None).unwrap();
+    assert!(no_match.is_empty());
+
+    cleanup(&path);
+}
+
+#[test]
+fn delete_entry_is_soft_delete() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+
+    let id = db
+        .create_entry(VaultEntryCreate {
+            category: VaultCategory::Note,
+            title: "Temp note".to_string(),
+            username: None,
+            url: None,
+            password: None,
+            notes: Some("will be deleted".to_string()),
+            totp_secret: None,
+            tags: vec![],
+            custom_fields: vec![],
+            is_favorite: false,
+        })
+        .unwrap();
+
+    db.delete_entry(&id).unwrap();
+
+    assert!(matches!(db.get_entry(&id), Err(VaultError::NotFound(_))));
+
+    let entries = db.list_entries(None, None, None).unwrap();
+    assert!(entries.is_empty());
+
+    cleanup(&path);
+}
+
+#[test]
+fn operations_on_locked_vault_fail() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+    db.lock().unwrap();
+
+    let create = VaultEntryCreate {
+        category: VaultCategory::Login,
+        title: "Test".to_string(),
+        username: None,
+        url: None,
+        password: None,
+        notes: None,
+        totp_secret: None,
+        tags: vec![],
+        custom_fields: vec![],
+        is_favorite: false,
+    };
+
+    assert!(matches!(db.create_entry(create), Err(VaultError::Locked)));
+    assert!(matches!(
+        db.list_entries(None, None, None),
+        Err(VaultError::Locked)
+    ));
+    assert!(matches!(db.get_entry("any"), Err(VaultError::Locked)));
+    assert!(matches!(db.delete_entry("any"), Err(VaultError::Locked)));
+    assert!(matches!(
+        db.decrypt_password("any"),
+        Err(VaultError::Locked)
+    ));
+
+    cleanup(&path);
+}
+
+#[test]
+fn update_nonexistent_entry_fails() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+
+    let update = VaultEntryUpdate {
+        category: VaultCategory::Login,
+        title: "Ghost".to_string(),
+        username: None,
+        url: None,
+        password: None,
+        notes: None,
+        totp_secret: None,
+        tags: vec![],
+        custom_fields: vec![],
+        is_favorite: false,
+    };
+
+    assert!(matches!(
+        db.update_entry("nonexistent-id", update),
+        Err(VaultError::NotFound(_))
+    ));
+
+    cleanup(&path);
+}
+
+#[test]
+fn change_master_password_and_relock_unlock() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+
+    let id = db
+        .create_entry(VaultEntryCreate {
+            category: VaultCategory::Login,
+            title: "Test".to_string(),
+            username: Some("user".to_string()),
+            url: None,
+            password: Some("secret123".to_string()),
+            notes: None,
+            totp_secret: None,
+            tags: vec![],
+            custom_fields: vec![],
+            is_favorite: false,
+        })
+        .unwrap();
+
+    let new_password = "N3wStr0ng#P@ss!2026";
+    db.change_master_password(STRONG_PW, new_password).unwrap();
+
+    db.lock().unwrap();
+    assert!(db.is_locked());
+
+    assert!(matches!(
+        db.unlock(STRONG_PW),
+        Err(VaultError::InvalidPassword)
+    ));
+
+    db.unlock(new_password).unwrap();
+    assert!(!db.is_locked());
+
+    let pw = db.decrypt_password(&id).unwrap();
+    assert_eq!(pw, "secret123");
+
+    cleanup(&path);
+}
+
+#[test]
+fn change_master_password_rejects_weak_new_password() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+
+    let result = db.change_master_password(STRONG_PW, "123");
+    assert!(matches!(result, Err(VaultError::Validation(_))));
+
+    cleanup(&path);
+}
+
+#[test]
+fn change_master_password_rejects_wrong_current_password() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+
+    let result = db.change_master_password("wrong_password", "N3wStr0ng#P@ss!2026");
+    assert!(matches!(result, Err(VaultError::InvalidPassword)));
+
+    cleanup(&path);
+}
+
+#[test]
+fn init_rejects_weak_master_password() {
+    let path = temp_db_path();
+    let _ = std::fs::remove_file(&path);
+    let db = SecurityDbState::new(&path);
+
+    let result = db.init("123");
+    assert!(
+        matches!(result, Err(VaultError::Validation(_))),
+        "weak password should be rejected"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
