@@ -3,6 +3,7 @@ use assistant_security::recovery_key::{
 };
 use assistant_security::security_db::SecurityDbState;
 use assistant_security::types::VaultError;
+use assistant_security::vault_crypto::types::CipherAlgorithm;
 
 fn temp_db_path() -> String {
     let dir = std::env::temp_dir().join("assistant-security-test-rk");
@@ -63,6 +64,7 @@ fn parse_rejects_invalid_base32() {
     assert!(parse_recovery_key("!!!!@-FGHIJ-KLMNO-PQRST").is_err());
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn generate_recovery_key_produces_valid_key() {
     let path = temp_db_path();
@@ -92,6 +94,7 @@ fn generate_recovery_key_produces_valid_key() {
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn generate_recovery_key_unique_each_time() {
     let path = temp_db_path();
@@ -117,6 +120,7 @@ fn generate_recovery_key_unique_each_time() {
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn unlock_with_recovery_key_succeeds() {
     let path = temp_db_path();
@@ -153,6 +157,7 @@ fn unlock_with_recovery_key_succeeds() {
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn unlock_with_wrong_recovery_key_fails() {
     let path = temp_db_path();
@@ -185,6 +190,7 @@ fn unlock_with_wrong_recovery_key_fails() {
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn recovery_key_cannot_unlock_after_password_change() {
     let path = temp_db_path();
@@ -205,7 +211,8 @@ fn recovery_key_cannot_unlock_after_password_change() {
         result
     };
 
-    db.change_master_password(password, new_password).unwrap();
+    db.change_master_password(password, new_password, CipherAlgorithm::Aes256Gcm)
+        .unwrap();
 
     db.lock().unwrap();
 

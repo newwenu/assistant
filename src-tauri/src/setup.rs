@@ -103,6 +103,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let monitor = ScreenLockMonitor::new();
         let app_handle = handle.clone();
         monitor.spawn_listener(move || {
+            crate::cmd::ssh_remove_all_on_lock(&app_handle);
             let state = app_handle.state::<SecurityDbState>();
             if let Err(e) = state.lock() {
                 log::error!("Screen lock triggered vault_lock but failed: {}", e);
@@ -110,6 +111,9 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                 log::info!("Screen lock triggered vault_lock");
             }
             let _ = emit_broadcast(&app_handle, event_name::VAULT_LOCKED, ());
+            if let Err(e) = crate::cmd::vault_show_unlock_window(app_handle.clone()) {
+                log::warn!("Screen lock show_unlock_window failed: {}", e);
+            }
         });
         handle.manage(monitor);
         log::info!("ScreenLockMonitor initialized");

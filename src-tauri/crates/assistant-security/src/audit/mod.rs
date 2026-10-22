@@ -23,6 +23,7 @@ pub enum AuditEvent {
     BiometricEnrolled,
     SshKeyLoaded,
     SshKeyRemoved,
+    RecoveryKeyInvalidated,
 }
 
 impl fmt::Display for AuditEvent {
@@ -45,6 +46,7 @@ impl fmt::Display for AuditEvent {
             Self::BiometricEnrolled => write!(f, "biometric_enrolled"),
             Self::SshKeyLoaded => write!(f, "ssh_key_loaded"),
             Self::SshKeyRemoved => write!(f, "ssh_key_removed"),
+            Self::RecoveryKeyInvalidated => write!(f, "recovery_key_invalidated"),
         }
     }
 }
@@ -88,7 +90,7 @@ pub fn query_log(conn: &Connection, limit: i64) -> Result<Vec<AuditLogEntry>, Va
     Ok(entries)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct AuditLogEntry {
     pub id: String,
     pub event_type: String,

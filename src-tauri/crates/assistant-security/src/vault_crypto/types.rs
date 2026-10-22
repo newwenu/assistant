@@ -72,6 +72,39 @@ impl fmt::Debug for VaultPlaintext {
     }
 }
 
+pub struct SecureString {
+    inner: String,
+}
+
+impl SecureString {
+    pub fn new(s: String) -> Self {
+        Self { inner: s }
+    }
+
+    pub fn expose_str(&self) -> &str {
+        &self.inner
+    }
+
+    pub fn into_inner(mut s: Self) -> String {
+        let inner = std::mem::take(&mut s.inner);
+        std::mem::forget(s);
+        inner
+    }
+}
+
+impl Drop for SecureString {
+    fn drop(&mut self) {
+        let bytes = unsafe { self.inner.as_bytes_mut() };
+        bytes.zeroize();
+    }
+}
+
+impl fmt::Debug for SecureString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SecureString([REDACTED; {} chars])", self.inner.len())
+    }
+}
+
 pub struct MasterKey([u8; 32]);
 
 impl MasterKey {

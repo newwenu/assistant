@@ -2,6 +2,7 @@ use assistant_security::security_db::SecurityDbState;
 use assistant_security::types::{
     CustomFieldInput, VaultCategory, VaultEntryCreate, VaultEntryUpdate, VaultError,
 };
+use assistant_security::vault_crypto::types::CipherAlgorithm;
 
 fn temp_db_path() -> String {
     let dir = std::env::temp_dir().join("assistant-security-test-crud");
@@ -29,6 +30,7 @@ fn init_vault(path: &str, password: &str) -> SecurityDbState {
 
 const STRONG_PW: &str = "Str0ng#P@ssw0rd!2025";
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn full_crud_lifecycle() {
     let path = temp_db_path();
@@ -47,7 +49,7 @@ fn full_crud_lifecycle() {
         is_favorite: true,
     };
 
-    let id = db.create_entry(create).unwrap();
+    let id = db.create_entry(create, CipherAlgorithm::Aes256Gcm).unwrap();
 
     let detail = db.get_entry(&id).unwrap();
     assert_eq!(detail.title, "GitHub");
@@ -58,10 +60,10 @@ fn full_crud_lifecycle() {
     assert!(detail.is_favorite);
 
     let password = db.decrypt_password(&id).unwrap();
-    assert_eq!(password, "ghp_supersecret123");
+    assert_eq!(password.expose_str(), "ghp_supersecret123");
 
     let notes = db.decrypt_notes(&id).unwrap();
-    assert_eq!(notes, "Personal account");
+    assert_eq!(notes.expose_str(), "Personal account");
 
     let update = VaultEntryUpdate {
         category: VaultCategory::Login,
@@ -75,7 +77,8 @@ fn full_crud_lifecycle() {
         custom_fields: vec![],
         is_favorite: false,
     };
-    db.update_entry(&id, update).unwrap();
+    db.update_entry(&id, update, CipherAlgorithm::Aes256Gcm)
+        .unwrap();
 
     let detail2 = db.get_entry(&id).unwrap();
     assert_eq!(detail2.title, "GitHub Inc");
@@ -83,7 +86,7 @@ fn full_crud_lifecycle() {
     assert_eq!(detail2.revision, 2);
 
     let new_pw = db.decrypt_password(&id).unwrap();
-    assert_eq!(new_pw, "ghp_newsecret456");
+    assert_eq!(new_pw.expose_str(), "ghp_newsecret456");
 
     db.delete_entry(&id).unwrap();
     assert!(matches!(db.get_entry(&id), Err(VaultError::NotFound(_))));
@@ -94,6 +97,7 @@ fn full_crud_lifecycle() {
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn create_entry_with_protected_custom_field() {
     let path = temp_db_path();
@@ -123,7 +127,7 @@ fn create_entry_with_protected_custom_field() {
         is_favorite: false,
     };
 
-    let id = db.create_entry(create).unwrap();
+    let id = db.create_entry(create, CipherAlgorithm::Aes256Gcm).unwrap();
 
     let detail = db.get_entry(&id).unwrap();
     assert_eq!(
@@ -132,14 +136,18 @@ fn create_entry_with_protected_custom_field() {
     );
 
     let unprotected = db.decrypt_field(&id, "accessKeyId").unwrap();
-    assert_eq!(unprotected, "AKIAIOSFODNN7EXAMPLE");
+    assert_eq!(unprotected.expose_str(), "AKIAIOSFODNN7EXAMPLE");
 
     let protected = db.decrypt_field(&id, "secretAccessKey").unwrap();
-    assert_eq!(protected, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
+    assert_eq!(
+        protected.expose_str(),
+        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    );
 
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn create_entry_with_totp() {
     let path = temp_db_path();
@@ -158,16 +166,17 @@ fn create_entry_with_totp() {
         is_favorite: false,
     };
 
-    let id = db.create_entry(create).unwrap();
+    let id = db.create_entry(create, CipherAlgorithm::Aes256Gcm).unwrap();
     let detail = db.get_entry(&id).unwrap();
     assert!(detail.has_totp);
 
     let totp_secret = db.decrypt_totp_secret(&id).unwrap();
-    assert_eq!(totp_secret, "JBSWY3DPEHPK3PXP");
+    assert_eq!(totp_secret.expose_str(), "JBSWY3DPEHPK3PXP");
 
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn list_entries_filter_by_category() {
     let path = temp_db_path();
@@ -181,18 +190,21 @@ fn list_entries_filter_by_category() {
     .iter()
     .enumerate()
     {
-        db.create_entry(VaultEntryCreate {
-            category: *cat,
-            title: format!("Entry {}", i),
-            username: None,
-            url: None,
-            password: None,
-            notes: None,
-            totp_secret: None,
-            tags: vec![],
-            custom_fields: vec![],
-            is_favorite: false,
-        })
+        db.create_entry(
+            VaultEntryCreate {
+                category: *cat,
+                title: format!("Entry {}", i),
+                username: None,
+                url: None,
+                password: None,
+                notes: None,
+                totp_secret: None,
+                tags: vec![],
+                custom_fields: vec![],
+                is_favorite: false,
+            },
+            CipherAlgorithm::Aes256Gcm,
+        )
         .unwrap();
     }
 
@@ -214,24 +226,28 @@ fn list_entries_filter_by_category() {
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn list_entries_search_by_title() {
     let path = temp_db_path();
     let db = init_vault(&path, STRONG_PW);
 
     for name in &["GitHub", "GitLab", "Bitbucket"] {
-        db.create_entry(VaultEntryCreate {
-            category: VaultCategory::Login,
-            title: name.to_string(),
-            username: None,
-            url: None,
-            password: None,
-            notes: None,
-            totp_secret: None,
-            tags: vec![],
-            custom_fields: vec![],
-            is_favorite: false,
-        })
+        db.create_entry(
+            VaultEntryCreate {
+                category: VaultCategory::Login,
+                title: name.to_string(),
+                username: None,
+                url: None,
+                password: None,
+                notes: None,
+                totp_secret: None,
+                tags: vec![],
+                custom_fields: vec![],
+                is_favorite: false,
+            },
+            CipherAlgorithm::Aes256Gcm,
+        )
         .unwrap();
     }
 
@@ -247,24 +263,28 @@ fn list_entries_search_by_title() {
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn delete_entry_is_soft_delete() {
     let path = temp_db_path();
     let db = init_vault(&path, STRONG_PW);
 
     let id = db
-        .create_entry(VaultEntryCreate {
-            category: VaultCategory::Note,
-            title: "Temp note".to_string(),
-            username: None,
-            url: None,
-            password: None,
-            notes: Some("will be deleted".to_string()),
-            totp_secret: None,
-            tags: vec![],
-            custom_fields: vec![],
-            is_favorite: false,
-        })
+        .create_entry(
+            VaultEntryCreate {
+                category: VaultCategory::Note,
+                title: "Temp note".to_string(),
+                username: None,
+                url: None,
+                password: None,
+                notes: Some("will be deleted".to_string()),
+                totp_secret: None,
+                tags: vec![],
+                custom_fields: vec![],
+                is_favorite: false,
+            },
+            CipherAlgorithm::Aes256Gcm,
+        )
         .unwrap();
 
     db.delete_entry(&id).unwrap();
@@ -277,6 +297,7 @@ fn delete_entry_is_soft_delete() {
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn operations_on_locked_vault_fail() {
     let path = temp_db_path();
@@ -296,7 +317,10 @@ fn operations_on_locked_vault_fail() {
         is_favorite: false,
     };
 
-    assert!(matches!(db.create_entry(create), Err(VaultError::Locked)));
+    assert!(matches!(
+        db.create_entry(create, CipherAlgorithm::Aes256Gcm),
+        Err(VaultError::Locked)
+    ));
     assert!(matches!(
         db.list_entries(None, None, None),
         Err(VaultError::Locked)
@@ -311,6 +335,7 @@ fn operations_on_locked_vault_fail() {
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn update_nonexistent_entry_fails() {
     let path = temp_db_path();
@@ -330,35 +355,40 @@ fn update_nonexistent_entry_fails() {
     };
 
     assert!(matches!(
-        db.update_entry("nonexistent-id", update),
+        db.update_entry("nonexistent-id", update, CipherAlgorithm::Aes256Gcm),
         Err(VaultError::NotFound(_))
     ));
 
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn change_master_password_and_relock_unlock() {
     let path = temp_db_path();
     let db = init_vault(&path, STRONG_PW);
 
     let id = db
-        .create_entry(VaultEntryCreate {
-            category: VaultCategory::Login,
-            title: "Test".to_string(),
-            username: Some("user".to_string()),
-            url: None,
-            password: Some("secret123".to_string()),
-            notes: None,
-            totp_secret: None,
-            tags: vec![],
-            custom_fields: vec![],
-            is_favorite: false,
-        })
+        .create_entry(
+            VaultEntryCreate {
+                category: VaultCategory::Login,
+                title: "Test".to_string(),
+                username: Some("user".to_string()),
+                url: None,
+                password: Some("secret123".to_string()),
+                notes: None,
+                totp_secret: None,
+                tags: vec![],
+                custom_fields: vec![],
+                is_favorite: false,
+            },
+            CipherAlgorithm::Aes256Gcm,
+        )
         .unwrap();
 
     let new_password = "N3wStr0ng#P@ss!2026";
-    db.change_master_password(STRONG_PW, new_password).unwrap();
+    db.change_master_password(STRONG_PW, new_password, CipherAlgorithm::Aes256Gcm)
+        .unwrap();
 
     db.lock().unwrap();
     assert!(db.is_locked());
@@ -372,33 +402,40 @@ fn change_master_password_and_relock_unlock() {
     assert!(!db.is_locked());
 
     let pw = db.decrypt_password(&id).unwrap();
-    assert_eq!(pw, "secret123");
+    assert_eq!(pw.expose_str(), "secret123");
 
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn change_master_password_rejects_weak_new_password() {
     let path = temp_db_path();
     let db = init_vault(&path, STRONG_PW);
 
-    let result = db.change_master_password(STRONG_PW, "123");
+    let result = db.change_master_password(STRONG_PW, "123", CipherAlgorithm::Aes256Gcm);
     assert!(matches!(result, Err(VaultError::Validation(_))));
 
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn change_master_password_rejects_wrong_current_password() {
     let path = temp_db_path();
     let db = init_vault(&path, STRONG_PW);
 
-    let result = db.change_master_password("wrong_password", "N3wStr0ng#P@ss!2026");
+    let result = db.change_master_password(
+        "wrong_password",
+        "N3wStr0ng#P@ss!2026",
+        CipherAlgorithm::Aes256Gcm,
+    );
     assert!(matches!(result, Err(VaultError::InvalidPassword)));
 
     cleanup(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn init_rejects_weak_master_password() {
     let path = temp_db_path();

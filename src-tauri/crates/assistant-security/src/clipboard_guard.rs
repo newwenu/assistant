@@ -58,14 +58,19 @@ impl ClipboardGuard {
             };
 
             if should_clear {
-                let orig = original.lock().unwrap();
-                if let Some(ref original_text) = *orig {
-                    let _ = write_clipboard_internal(original_text);
+                let original_content = {
+                    let mut orig = original.lock().unwrap();
+                    orig.take()
+                };
+                if let Some(ref text) = original_content {
+                    let _ = write_clipboard_internal(text);
                 } else {
                     let _ = clear_clipboard_internal();
                 }
-                let mut cur = current_password.lock().unwrap();
-                *cur = None;
+                {
+                    let mut cur = current_password.lock().unwrap();
+                    *cur = None;
+                }
             }
         });
 

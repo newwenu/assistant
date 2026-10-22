@@ -1,23 +1,4 @@
-use assistant_security::vault_crypto::hibp::{parse_hibp_response, sha1_hex};
-
-#[test]
-fn sha1_hex_produces_uppercase() {
-    let hex = sha1_hex("test");
-    assert_eq!(hex, hex.to_uppercase());
-    assert_eq!(hex.len(), 40);
-}
-
-#[test]
-fn sha1_hex_deterministic() {
-    assert_eq!(sha1_hex("password"), sha1_hex("password"));
-    assert_ne!(sha1_hex("password"), sha1_hex("Password"));
-}
-
-#[test]
-fn sha1_hex_known_value() {
-    let hex = sha1_hex("password");
-    assert_eq!(&hex[..5], "5BAA6");
-}
+use assistant_security::vault_crypto::hibp::parse_hibp_response;
 
 #[test]
 fn parse_hibp_response_finds_match() {

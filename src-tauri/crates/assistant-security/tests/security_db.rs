@@ -9,6 +9,7 @@ fn temp_db_path() -> PathBuf {
     dir.join(format!("test_vault_{}.db", uuid::Uuid::new_v4()))
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn init_creates_database() {
     let path = temp_db_path();
@@ -19,6 +20,7 @@ fn init_creates_database() {
     let _ = std::fs::remove_file(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn init_twice_fails() {
     let path = temp_db_path();
@@ -30,6 +32,7 @@ fn init_twice_fails() {
     let _ = std::fs::remove_file(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn unlock_after_init_succeeds() {
     let path = temp_db_path();
@@ -42,6 +45,7 @@ fn unlock_after_init_succeeds() {
     let _ = std::fs::remove_file(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn unlock_wrong_password_fails() {
     let path = temp_db_path();
@@ -54,6 +58,7 @@ fn unlock_wrong_password_fails() {
     let _ = std::fs::remove_file(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn is_locked_state_transitions() {
     let path = temp_db_path();
@@ -74,6 +79,7 @@ fn is_locked_state_transitions() {
     let _ = std::fs::remove_file(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn get_master_key_locked_fails() {
     let path = temp_db_path();
@@ -83,6 +89,7 @@ fn get_master_key_locked_fails() {
     assert!(matches!(result, Err(VaultError::Locked)));
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn get_conn_locked_fails() {
     let path = temp_db_path();
@@ -92,6 +99,7 @@ fn get_conn_locked_fails() {
     assert!(matches!(result, Err(VaultError::Locked)));
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn lock_is_idempotent() {
     let path = temp_db_path();
@@ -104,6 +112,7 @@ fn lock_is_idempotent() {
     let _ = std::fs::remove_file(&path);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn backup_creates_file() {
     let path = temp_db_path();

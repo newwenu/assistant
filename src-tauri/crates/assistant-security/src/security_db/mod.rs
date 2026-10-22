@@ -15,7 +15,7 @@ use crate::types::{
     VaultCategory, VaultEntryCreate, VaultEntryDetail, VaultEntryExport, VaultEntrySummary,
     VaultEntryUpdate, VaultError,
 };
-use crate::vault_crypto::types::{CipherAlgorithm, MasterKey, VaultPlaintext};
+use crate::vault_crypto::types::{CipherAlgorithm, MasterKey, SecureString, VaultPlaintext};
 use crate::vault_crypto::VaultCrypto;
 
 pub mod meta;
@@ -239,6 +239,10 @@ impl SecurityDbState {
     pub fn backup(&self, backup_path: &Path) -> Result<(), VaultError> {
         let guard = self.conn.lock().unwrap();
         let conn = guard.as_ref().ok_or(VaultError::Locked)?;
+        Self::backup_conn(conn, backup_path)
+    }
+
+    fn backup_conn(conn: &rusqlite::Connection, backup_path: &Path) -> Result<(), VaultError> {
         conn.execute_batch(&format!(
             "VACUUM INTO '{}'",
             backup_path.to_str().ok_or_else(|| {
@@ -254,6 +258,13 @@ impl SecurityDbState {
 
     pub fn is_initialized(&self) -> Result<bool, VaultError> {
         Ok(Path::new(&self.db_path).exists())
+    }
+
+    pub fn cipher_algorithm_from_conf(conf_val: &str) -> CipherAlgorithm {
+        match conf_val {
+            "chacha20poly1305" => CipherAlgorithm::ChaCha20Poly1305,
+            _ => CipherAlgorithm::Aes256Gcm,
+        }
     }
 
     pub fn db_path(&self) -> &str {
@@ -426,7 +437,11 @@ impl SecurityDbState {
         }
     }
 
-    pub fn create_entry(&self, entry: VaultEntryCreate) -> Result<String, VaultError> {
+    pub fn create_entry(
+        &self,
+        entry: VaultEntryCreate,
+        algo: CipherAlgorithm,
+    ) -> Result<String, VaultError> {
         self.with_conn_and_key(|conn, mk| {
             let id = uuid::Uuid::new_v4().to_string();
             let entry_key = VaultCrypto::derive_entry_key(mk, &id);
@@ -436,7 +451,7 @@ impl SecurityDbState {
                 .password
                 .as_deref()
                 .map(|p| {
-                    VaultCrypto::encrypt_field(&VaultPlaintext::new_str(p), entry_key.expose(), CipherAlgorithm::Aes256Gcm)
+                    VaultCrypto::encrypt_field(&VaultPlaintext::new_str(p), entry_key.expose(), algo)
                 })
                 .transpose()
                 .map_err(VaultError::Crypto)?;
@@ -445,7 +460,7 @@ impl SecurityDbState {
                 .notes
                 .as_deref()
                 .map(|n| {
-                    VaultCrypto::encrypt_field(&VaultPlaintext::new_str(n), entry_key.expose(), CipherAlgorithm::Aes256Gcm)
+                    VaultCrypto::encrypt_field(&VaultPlaintext::new_str(n), entry_key.expose(), algo)
                 })
                 .transpose()
                 .map_err(VaultError::Crypto)?;
@@ -454,7 +469,7 @@ impl SecurityDbState {
                 .totp_secret
                 .as_deref()
                 .map(|t| {
-                    VaultCrypto::encrypt_field(&VaultPlaintext::new_str(t), entry_key.expose(), CipherAlgorithm::Aes256Gcm)
+                    VaultCrypto::encrypt_field(&VaultPlaintext::new_str(t), entry_key.expose(), algo)
                 })
                 .transpose()
                 .map_err(VaultError::Crypto)?;
@@ -467,7 +482,7 @@ impl SecurityDbState {
                         let encrypted = VaultCrypto::encrypt_field(
                             &VaultPlaintext::new_str(&cf.value),
                             entry_key.expose(),
-                            CipherAlgorithm::Aes256Gcm,
+                            algo,
                         )
                         .unwrap_or_default();
                         serde_json::json!({
@@ -518,7 +533,12 @@ impl SecurityDbState {
         })
     }
 
-    pub fn update_entry(&self, id: &str, entry: VaultEntryUpdate) -> Result<(), VaultError> {
+    pub fn update_entry(
+        &self,
+        id: &str,
+        entry: VaultEntryUpdate,
+        algo: CipherAlgorithm,
+    ) -> Result<(), VaultError> {
         self.with_conn_and_key(|conn, mk| {
             let entry_key = VaultCrypto::derive_entry_key(mk, id);
             let now = chrono::Utc::now().timestamp();
@@ -530,7 +550,7 @@ impl SecurityDbState {
                     VaultCrypto::encrypt_field(
                         &VaultPlaintext::new_str(p),
                         entry_key.expose(),
-                        CipherAlgorithm::Aes256Gcm,
+                        algo,
                     )
                 })
                 .transpose()
@@ -543,7 +563,7 @@ impl SecurityDbState {
                     VaultCrypto::encrypt_field(
                         &VaultPlaintext::new_str(n),
                         entry_key.expose(),
-                        CipherAlgorithm::Aes256Gcm,
+                        algo,
                     )
                 })
                 .transpose()
@@ -556,7 +576,7 @@ impl SecurityDbState {
                     VaultCrypto::encrypt_field(
                         &VaultPlaintext::new_str(t),
                         entry_key.expose(),
-                        CipherAlgorithm::Aes256Gcm,
+                        algo,
                     )
                 })
                 .transpose()
@@ -570,7 +590,7 @@ impl SecurityDbState {
                         let encrypted = VaultCrypto::encrypt_field(
                             &VaultPlaintext::new_str(&cf.value),
                             entry_key.expose(),
-                            CipherAlgorithm::Aes256Gcm,
+                            algo,
                         )
                         .unwrap_or_default();
                         serde_json::json!({
@@ -647,7 +667,7 @@ impl SecurityDbState {
         Ok(())
     }
 
-    pub fn decrypt_password(&self, id: &str) -> Result<String, VaultError> {
+    pub fn decrypt_password(&self, id: &str) -> Result<SecureString, VaultError> {
         self.with_conn_and_key(|conn, mk| {
             let encrypted: String = conn
                 .query_row(
@@ -663,13 +683,13 @@ impl SecurityDbState {
             let entry_key = VaultCrypto::derive_entry_key(mk, id);
             let plaintext = VaultCrypto::decrypt_field(&encrypted, entry_key.expose())
                 .map_err(VaultError::Crypto)?;
-            plaintext.to_str().map(String::from).map_err(|_| {
+            plaintext.to_str().map(|s| SecureString::new(s.to_string())).map_err(|_| {
                 VaultError::Crypto("Decrypted password is not valid UTF-8".to_string())
             })
         })
     }
 
-    pub fn decrypt_notes(&self, id: &str) -> Result<String, VaultError> {
+    pub fn decrypt_notes(&self, id: &str) -> Result<SecureString, VaultError> {
         self.with_conn_and_key(|conn, mk| {
             let encrypted: String = conn
                 .query_row(
@@ -685,13 +705,13 @@ impl SecurityDbState {
             let entry_key = VaultCrypto::derive_entry_key(mk, id);
             let plaintext = VaultCrypto::decrypt_field(&encrypted, entry_key.expose())
                 .map_err(VaultError::Crypto)?;
-            plaintext.to_str().map(String::from).map_err(|_| {
+            plaintext.to_str().map(|s| SecureString::new(s.to_string())).map_err(|_| {
                 VaultError::Crypto("Decrypted notes is not valid UTF-8".to_string())
             })
         })
     }
 
-    pub fn decrypt_totp_secret(&self, id: &str) -> Result<String, VaultError> {
+    pub fn decrypt_totp_secret(&self, id: &str) -> Result<SecureString, VaultError> {
         self.with_conn_and_key(|conn, mk| {
             let encrypted: String = conn
                 .query_row(
@@ -707,13 +727,13 @@ impl SecurityDbState {
             let entry_key = VaultCrypto::derive_entry_key(mk, id);
             let plaintext = VaultCrypto::decrypt_field(&encrypted, entry_key.expose())
                 .map_err(VaultError::Crypto)?;
-            plaintext.to_str().map(String::from).map_err(|_| {
+            plaintext.to_str().map(|s| SecureString::new(s.to_string())).map_err(|_| {
                 VaultError::Crypto("Decrypted TOTP secret is not valid UTF-8".to_string())
             })
         })
     }
 
-    pub fn decrypt_field(&self, id: &str, field_name: &str) -> Result<String, VaultError> {
+    pub fn decrypt_field(&self, id: &str, field_name: &str) -> Result<SecureString, VaultError> {
         self.with_conn_and_key(|conn, mk| {
             let custom_fields_json: String = conn
                 .query_row(
@@ -742,14 +762,14 @@ impl SecurityDbState {
                 let entry_key = VaultCrypto::derive_entry_key(mk, id);
                 let plaintext = VaultCrypto::decrypt_field(encrypted, entry_key.expose())
                     .map_err(VaultError::Crypto)?;
-                plaintext.to_str().map(String::from).map_err(|_| {
+                plaintext.to_str().map(|s| SecureString::new(s.to_string())).map_err(|_| {
                     VaultError::Crypto("Decrypted field is not valid UTF-8".to_string())
                 })
             } else {
                 field
                     .get("value")
                     .and_then(|v| v.as_str())
-                    .map(String::from)
+                    .map(|s| SecureString::new(s.to_string()))
                     .ok_or_else(|| VaultError::Validation("Unprotected field has no value".to_string()))
             }
         })
@@ -781,6 +801,7 @@ impl SecurityDbState {
         &self,
         current_password: &str,
         new_password: &str,
+        algo: CipherAlgorithm,
     ) -> Result<(), VaultError> {
         {
             let strength = crate::password_strength::estimate_strength(new_password);
@@ -812,16 +833,7 @@ impl SecurityDbState {
         std::fs::create_dir_all(&backup_dir)?;
         let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
         let backup_path = backup_dir.join(format!("security-{}.db.bak", timestamp));
-        conn.execute_batch(&format!(
-            "VACUUM INTO '{}'",
-            backup_path.to_str().ok_or_else(|| {
-                VaultError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "Invalid backup path",
-                ))
-            })?
-        ))
-        .map_err(|e| VaultError::Database(e.to_string()))?;
+        Self::backup_conn(conn, &backup_path)?;
 
         let new_master_key_salt: [u8; 32] = rand::thread_rng().gen();
         let new_hash_salt: [u8; 32] = rand::thread_rng().gen();
@@ -867,12 +879,9 @@ impl SecurityDbState {
                             Some(enc) => {
                                 let pt = VaultCrypto::decrypt_field(&enc, old_entry_key.expose())
                                     .map_err(VaultError::Crypto)?;
-                                let re_enc = VaultCrypto::encrypt_field(
-                                    &pt,
-                                    new_entry_key.expose(),
-                                    CipherAlgorithm::Aes256Gcm,
-                                )
-                                .map_err(VaultError::Crypto)?;
+                                let re_enc =
+                                    VaultCrypto::encrypt_field(&pt, new_entry_key.expose(), algo)
+                                        .map_err(VaultError::Crypto)?;
                                 Ok(Some(re_enc))
                             }
                             None => Ok(None),
@@ -912,7 +921,7 @@ impl SecurityDbState {
                                                         match VaultCrypto::encrypt_field(
                                                             &pt,
                                                             new_entry_key.expose(),
-                                                            CipherAlgorithm::Aes256Gcm,
+                                                            algo,
                                                         ) {
                                                             Ok(re_enc) => serde_json::json!({
                                                                 "name": f.get("name"),
@@ -1021,150 +1030,207 @@ impl SecurityDbState {
         Ok(())
     }
 
-    pub fn export_entries(&self) -> Result<Vec<VaultEntryExport>, VaultError> {
+    pub fn decrypt_entry(&self, id: &str) -> Result<crate::types::VaultEntryDecrypted, VaultError> {
         self.with_conn_and_key(|conn, mk| {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT id, title, username, url, category, encrypted_password, \
-                     encrypted_notes, encrypted_totp_secret, encrypted_custom_fields, \
-                     tags, is_favorite, created_at, updated_at \
-                     FROM vault_entries WHERE deleted_at IS NULL",
-                )
-                .map_err(|e| VaultError::Database(e.to_string()))?;
-
-            let rows = stmt
-                .query_map([], |row| {
+            let result: Result<
+                (
+                    String,
+                    String,
+                    Option<String>,
+                    Option<String>,
+                    String,
+                    Option<String>,
+                    Option<String>,
+                    Option<String>,
+                    Option<String>,
+                    String,
+                    i64,
+                    i64,
+                    i64,
+                    i64,
+                ),
+                rusqlite::Error,
+            > = conn.query_row(
+                "SELECT id, title, username, url, category, encrypted_password, \
+                 encrypted_notes, encrypted_totp_secret, encrypted_custom_fields, \
+                 tags, is_favorite, revision, created_at, updated_at \
+                 FROM vault_entries WHERE id = ?1 AND deleted_at IS NULL",
+                params![id],
+                |row| {
                     Ok((
-                        row.get::<_, String>("id")?,
-                        row.get::<_, String>("title")?,
-                        row.get::<_, Option<String>>("username")?,
-                        row.get::<_, Option<String>>("url")?,
-                        row.get::<_, String>("category")?,
-                        row.get::<_, Option<String>>("encrypted_password")?,
-                        row.get::<_, Option<String>>("encrypted_notes")?,
-                        row.get::<_, Option<String>>("encrypted_totp_secret")?,
-                        row.get::<_, Option<String>>("encrypted_custom_fields")?,
-                        row.get::<_, String>("tags")?,
-                        row.get::<_, i64>("is_favorite")?,
-                        row.get::<_, i64>("created_at")?,
-                        row.get::<_, i64>("updated_at")?,
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
+                        row.get(9)?,
+                        row.get(10)?,
+                        row.get(11)?,
+                        row.get(12)?,
+                        row.get(13)?,
                     ))
+                },
+            );
+
+            let (
+                eid,
+                title,
+                username,
+                url,
+                category_str,
+                enc_pw,
+                enc_notes,
+                enc_totp,
+                enc_cf,
+                tags_json,
+                is_fav,
+                revision,
+                created,
+                updated,
+            ) = match result {
+                Ok(r) => r,
+                Err(rusqlite::Error::QueryReturnedNoRows) => {
+                    return Err(VaultError::NotFound(id.to_string()))
+                }
+                Err(e) => return Err(VaultError::Database(e.to_string())),
+            };
+
+            let entry_key = VaultCrypto::derive_entry_key(mk, &eid);
+
+            let password = enc_pw
+                .map(|enc| VaultCrypto::decrypt_field(&enc, entry_key.expose()))
+                .transpose()
+                .map_err(VaultError::Crypto)?;
+
+            let notes = enc_notes
+                .map(|enc| VaultCrypto::decrypt_field(&enc, entry_key.expose()))
+                .transpose()
+                .map_err(VaultError::Crypto)?;
+
+            let totp_secret = enc_totp
+                .map(|enc| VaultCrypto::decrypt_field(&enc, entry_key.expose()))
+                .transpose()
+                .map_err(VaultError::Crypto)?;
+
+            let custom_fields: Vec<crate::types::DecryptedCustomField> = enc_cf
+                .and_then(|json| {
+                    let fields: Vec<serde_json::Value> = serde_json::from_str(&json).ok()?;
+                    Some(
+                        fields
+                            .iter()
+                            .filter_map(|f| {
+                                let name = f.get("name")?.as_str()?.to_string();
+                                if f.get("isProtected").and_then(|v| v.as_bool()) == Some(true) {
+                                    let enc = f.get("valueEncrypted")?.as_str()?;
+                                    let pt =
+                                        VaultCrypto::decrypt_field(enc, entry_key.expose()).ok()?;
+                                    Some(crate::types::DecryptedCustomField {
+                                        name,
+                                        value: pt,
+                                        is_protected: true,
+                                    })
+                                } else {
+                                    let val = f.get("value")?.as_str()?.to_string();
+                                    Some(crate::types::DecryptedCustomField {
+                                        name,
+                                        value: VaultPlaintext::new_str(&val),
+                                        is_protected: false,
+                                    })
+                                }
+                            })
+                            .collect(),
+                    )
                 })
-                .map_err(|e| VaultError::Database(e.to_string()))?;
+                .unwrap_or_default();
 
-            let mut exports = Vec::new();
-            for row in rows {
-                let (
-                    id,
-                    title,
-                    username,
-                    url,
-                    category_str,
-                    enc_pw,
-                    enc_notes,
-                    enc_totp,
-                    enc_cf,
-                    tags_json,
-                    is_fav,
-                    created,
-                    updated,
-                ) = row.map_err(|e| VaultError::Database(e.to_string()))?;
-
-                let entry_key = VaultCrypto::derive_entry_key(mk, &id);
-
-                let password = enc_pw
-                    .map(|enc| {
-                        VaultCrypto::decrypt_field(&enc, entry_key.expose()).and_then(|pt| {
-                            pt.to_str()
-                                .map(String::from)
-                                .map_err(|_| "UTF-8 error".to_string())
-                        })
-                    })
-                    .transpose()
-                    .ok()
-                    .flatten();
-
-                let notes = enc_notes
-                    .map(|enc| {
-                        VaultCrypto::decrypt_field(&enc, entry_key.expose()).and_then(|pt| {
-                            pt.to_str()
-                                .map(String::from)
-                                .map_err(|_| "UTF-8 error".to_string())
-                        })
-                    })
-                    .transpose()
-                    .ok()
-                    .flatten();
-
-                let totp_secret = enc_totp
-                    .map(|enc| {
-                        VaultCrypto::decrypt_field(&enc, entry_key.expose()).and_then(|pt| {
-                            pt.to_str()
-                                .map(String::from)
-                                .map_err(|_| "UTF-8 error".to_string())
-                        })
-                    })
-                    .transpose()
-                    .ok()
-                    .flatten();
-
-                let custom_fields: Vec<crate::types::CustomFieldInput> = enc_cf
-                    .and_then(|json| {
-                        let fields: Vec<serde_json::Value> = serde_json::from_str(&json).ok()?;
-                        Some(
-                            fields
-                                .iter()
-                                .filter_map(|f| {
-                                    let name = f.get("name")?.as_str()?.to_string();
-                                    if f.get("isProtected").and_then(|v| v.as_bool()) == Some(true)
-                                    {
-                                        let enc = f.get("valueEncrypted")?.as_str()?;
-                                        let pt =
-                                            VaultCrypto::decrypt_field(enc, entry_key.expose())
-                                                .ok()?;
-                                        let val = pt.to_str().ok()?.to_string();
-                                        Some(crate::types::CustomFieldInput {
-                                            name,
-                                            value: val,
-                                            is_protected: true,
-                                        })
-                                    } else {
-                                        let val = f.get("value")?.as_str()?.to_string();
-                                        Some(crate::types::CustomFieldInput {
-                                            name,
-                                            value: val,
-                                            is_protected: false,
-                                        })
-                                    }
-                                })
-                                .collect(),
-                        )
-                    })
-                    .unwrap_or_default();
-
-                exports.push(VaultEntryExport {
-                    category: VaultCategory::parse(&category_str).unwrap_or_default(),
-                    title,
-                    username,
-                    url,
-                    password,
-                    notes,
-                    totp_secret,
-                    tags: serde_json::from_str(&tags_json).unwrap_or_default(),
-                    custom_fields,
-                    is_favorite: is_fav != 0,
-                    created_at: created,
-                    updated_at: updated,
-                });
-            }
-            Ok(exports)
+            Ok(crate::types::VaultEntryDecrypted {
+                id: eid,
+                category: VaultCategory::parse(&category_str).unwrap_or_default(),
+                title,
+                username,
+                url,
+                password,
+                notes,
+                totp_secret,
+                custom_fields,
+                tags: serde_json::from_str(&tags_json).unwrap_or_default(),
+                is_favorite: is_fav != 0,
+                revision: revision as u64,
+                created_at: created,
+                updated_at: updated,
+            })
         })
     }
 
-    pub fn import_entries(&self, entries: Vec<VaultEntryCreate>) -> Result<u32, VaultError> {
+    pub fn export_entries(&self) -> Result<Vec<VaultEntryExport>, VaultError> {
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
+
+        let ids: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT id FROM vault_entries WHERE deleted_at IS NULL")
+                .map_err(|e| VaultError::Database(e.to_string()))?;
+            let rows = stmt
+                .query_map([], |row| row.get(0))
+                .map_err(|e| VaultError::Database(e.to_string()))?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
+        drop(conn_guard);
+
+        let mut exports = Vec::new();
+        for id in &ids {
+            let decrypted = self.decrypt_entry(id)?;
+            exports.push(VaultEntryExport {
+                category: decrypted.category,
+                title: decrypted.title,
+                username: decrypted.username,
+                url: decrypted.url,
+                password: decrypted
+                    .password
+                    .as_ref()
+                    .and_then(|pt| pt.to_str().ok())
+                    .map(String::from),
+                notes: decrypted
+                    .notes
+                    .as_ref()
+                    .and_then(|pt| pt.to_str().ok())
+                    .map(String::from),
+                totp_secret: decrypted
+                    .totp_secret
+                    .as_ref()
+                    .and_then(|pt| pt.to_str().ok())
+                    .map(String::from),
+                tags: decrypted.tags,
+                custom_fields: decrypted
+                    .custom_fields
+                    .iter()
+                    .map(|cf| crate::types::CustomFieldInput {
+                        name: cf.name.clone(),
+                        value: cf.value.to_str().ok().unwrap_or("").to_string(),
+                        is_protected: cf.is_protected,
+                    })
+                    .collect(),
+                is_favorite: decrypted.is_favorite,
+                created_at: decrypted.created_at,
+                updated_at: decrypted.updated_at,
+            });
+        }
+        Ok(exports)
+    }
+
+    pub fn import_entries(
+        &self,
+        entries: Vec<VaultEntryCreate>,
+        algo: CipherAlgorithm,
+    ) -> Result<u32, VaultError> {
         let mut count = 0u32;
         for entry in entries {
-            self.create_entry(entry)?;
+            self.create_entry(entry, algo)?;
             count += 1;
         }
         Ok(count)

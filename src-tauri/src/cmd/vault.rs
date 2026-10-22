@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use tauri::{command, AppHandle, Manager};
 
 use assistant_config::app_conf::AppConf;
-use assistant_security::audit::{log as audit_log, AuditEvent};
+use assistant_security::audit::{log as audit_log, AuditEvent, AuditLogEntry};
 use assistant_security::biometric::BiometricKeyStore;
 use assistant_security::clipboard_guard::ClipboardGuard;
 use assistant_security::password_strength::{self, StrengthResult};
@@ -13,8 +13,9 @@ use assistant_security::types::{
     RevealResult, VaultEntryCreate, VaultEntryDetail, VaultEntryExport, VaultEntrySummary,
     VaultEntryUpdate, VaultError,
 };
-use assistant_security::vault_crypto::hibp::HibpClient;
+use assistant_security::vault_crypto::hibp::{HibpClient, SafePassword};
 use assistant_security::vault_crypto::totp::{self, TotpParams, TotpResult};
+use assistant_security::vault_crypto::types::SecureString;
 
 static REVEAL_TTL_SECS: u64 = 30;
 
@@ -35,10 +36,54 @@ fn ssh_bridge_from_conf() -> Box<dyn assistant_security::ssh_agent::SshAgentBrid
     assistant_security::ssh_agent::create_agent_bridge(use_pageant, auth_sock_override)
 }
 
+pub(crate) fn ssh_remove_all_on_lock(app: &AppHandle) {
+    let ssh_state = app.state::<crate::setup::SshAgentState>();
+    let fingerprints: Vec<String> = {
+        let mut fps = ssh_state.added_fingerprints.lock().unwrap();
+        fps.drain().collect()
+    };
+    if fingerprints.is_empty() {
+        return;
+    }
+    let bridge = ssh_bridge_from_conf();
+    for fp in &fingerprints {
+        if let Err(e) = bridge.remove_key(fp) {
+            log::warn!("Failed to remove SSH key {} from agent: {}", fp, e);
+        }
+    }
+    log::info!(
+        "Removed {} SSH keys from agent on vault lock",
+        fingerprints.len()
+    );
+}
+
+fn ssh_auto_add_on_unlock(app: &AppHandle) {
+    use assistant_config::app_conf::AppConf;
+    let conf = match AppConf::load() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    if !conf.vault_ssh_auto_add {
+        return;
+    }
+    if let Err(e) = vault_ssh_auto_add_all(app.clone()) {
+        log::warn!("SSH auto-add on unlock failed: {}", e);
+    }
+}
+
 fn vault_state(app: &AppHandle) -> Result<tauri::State<'_, SecurityDbState>, String> {
     app.state::<SecurityDbState>()
         .try_into()
         .map_err(|_| "SecurityDbState not managed".to_string())
+}
+
+fn cipher_algo() -> assistant_security::vault_crypto::types::CipherAlgorithm {
+    let conf = AppConf::load().ok();
+    let val = conf
+        .as_ref()
+        .map(|c| c.vault_cipher_algorithm.as_str())
+        .unwrap_or("aes256Gcm");
+    SecurityDbState::cipher_algorithm_from_conf(val)
 }
 
 fn reveal_guard(app: &AppHandle) -> Result<tauri::State<'_, RevealGuard>, String> {
@@ -71,6 +116,7 @@ pub fn vault_unlock(app: AppHandle, master_password: String) -> Result<bool, Str
     let state = vault_state(&app)?;
     match state.unlock(&master_password) {
         Ok(()) => {
+            ssh_auto_add_on_unlock(&app);
             crate::protocol::events::emit_broadcast(
                 &app,
                 crate::protocol::events::event_name::VAULT_UNLOCKED,
@@ -97,6 +143,7 @@ pub fn vault_is_initialized(app: AppHandle) -> Result<bool, String> {
 
 #[command]
 pub fn vault_lock(app: AppHandle) -> Result<(), String> {
+    ssh_remove_all_on_lock(&app);
     let state = vault_state(&app)?;
     state.lock().map_err(|e| e.to_string())?;
     crate::protocol::events::emit_broadcast(
@@ -136,7 +183,7 @@ pub fn vault_copy_password(app: AppHandle, id: String) -> Result<(), String> {
         let guard = clipboard_guard(&app)?;
         let timeout = get_clipboard_clear_secs(&app);
         guard
-            .copy_and_guard(&password, timeout)
+            .copy_and_guard(password.expose_str(), timeout)
             .map_err(|e| e.to_string())?;
     }
 
@@ -161,7 +208,7 @@ pub fn vault_copy_field(app: AppHandle, id: String, field_name: String) -> Resul
         let guard = clipboard_guard(&app)?;
         let timeout = get_clipboard_clear_secs(&app);
         guard
-            .copy_and_guard(&value, timeout)
+            .copy_and_guard(value.expose_str(), timeout)
             .map_err(|e| e.to_string())?;
     }
 
@@ -213,7 +260,7 @@ pub fn vault_reveal_password(app: AppHandle, id: String) -> Result<RevealResult,
     );
 
     Ok(RevealResult {
-        value: password,
+        value: SecureString::into_inner(password),
         expires_at,
     })
 }
@@ -256,7 +303,7 @@ pub fn vault_reveal_notes(app: AppHandle, id: String) -> Result<RevealResult, St
     );
 
     Ok(RevealResult {
-        value: notes,
+        value: SecureString::into_inner(notes),
         expires_at,
     })
 }
@@ -264,7 +311,9 @@ pub fn vault_reveal_notes(app: AppHandle, id: String) -> Result<RevealResult, St
 #[command]
 pub fn vault_create_entry(app: AppHandle, entry: VaultEntryCreate) -> Result<String, String> {
     let state = vault_state(&app)?;
-    state.create_entry(entry).map_err(|e| e.to_string())
+    state
+        .create_entry(entry, cipher_algo())
+        .map_err(|e| e.to_string())
 }
 
 #[command]
@@ -274,7 +323,9 @@ pub fn vault_update_entry(
     entry: VaultEntryUpdate,
 ) -> Result<(), String> {
     let state = vault_state(&app)?;
-    state.update_entry(&id, entry).map_err(|e| e.to_string())
+    state
+        .update_entry(&id, entry, cipher_algo())
+        .map_err(|e| e.to_string())
 }
 
 #[command]
@@ -291,8 +342,27 @@ pub fn vault_change_master_password(
 ) -> Result<(), String> {
     let state = vault_state(&app)?;
     state
-        .change_master_password(&current, &new)
-        .map_err(|e| e.to_string())
+        .change_master_password(&current, &new, cipher_algo())
+        .map_err(|e| e.to_string())?;
+
+    {
+        let engine = sync_state(&app)?;
+        if let Err(e) = engine.clear_emergency_data() {
+            log::warn!(
+                "Failed to clear emergency data after master password change: {}",
+                e
+            );
+        }
+    }
+
+    {
+        let guard = state.get_conn().map_err(|e| e.to_string())?;
+        if let Some(conn) = guard.as_ref() {
+            let _ = audit_log(conn, AuditEvent::RecoveryKeyInvalidated, None);
+        }
+    }
+
+    Ok(())
 }
 
 #[command]
@@ -329,6 +399,18 @@ pub fn vault_export(app: AppHandle, format: String) -> Result<String, String> {
     let file_path = export_dir.join(&file_name);
     std::fs::write(&file_path, &content).map_err(|e| e.to_string())?;
 
+    {
+        let cleanup_path = file_path.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(300));
+            if let Err(e) = std::fs::remove_file(&cleanup_path) {
+                log::warn!("Failed to auto-clean export file: {}", e);
+            } else {
+                log::info!("Auto-cleaned export file: {:?}", cleanup_path);
+            }
+        });
+    }
+
     Ok(file_path.to_str().unwrap_or(&file_name).to_string())
 }
 
@@ -352,7 +434,9 @@ pub fn vault_import(app: AppHandle, path: String, format: String) -> Result<u32,
         _ => return Err(format!("Unsupported import format: {}", format)),
     };
 
-    state.import_entries(entries).map_err(|e| e.to_string())
+    state
+        .import_entries(entries, cipher_algo())
+        .map_err(|e| e.to_string())
 }
 
 #[command]
@@ -378,7 +462,8 @@ pub fn vault_totp_generate(
         algorithm: algo,
     };
 
-    let result = totp::generate_totp(&totp_secret, &params).map_err(|e| e.to_string())?;
+    let result =
+        totp::generate_totp(totp_secret.expose_str(), &params).map_err(|e| e.to_string())?;
 
     {
         let guard = state.get_conn().map_err(|e| e.to_string())?;
@@ -395,8 +480,74 @@ pub fn vault_totp_generate(
 }
 
 #[command]
+pub fn vault_copy_totp(
+    app: AppHandle,
+    id: String,
+    period: Option<u32>,
+    digits: Option<u32>,
+    algorithm: Option<String>,
+) -> Result<(), String> {
+    let state = vault_state(&app)?;
+    let totp_secret = state.decrypt_totp_secret(&id).map_err(|e| e.to_string())?;
+
+    let algo = match algorithm.as_deref() {
+        Some("SHA256") | Some("sha256") => totp::TotpAlgorithm::Sha256,
+        Some("SHA512") | Some("sha512") => totp::TotpAlgorithm::Sha512,
+        _ => totp::TotpAlgorithm::Sha1,
+    };
+
+    let params = TotpParams {
+        digits: digits.unwrap_or(6),
+        period: period.unwrap_or(30),
+        algorithm: algo,
+    };
+
+    let result =
+        totp::generate_totp(totp_secret.expose_str(), &params).map_err(|e| e.to_string())?;
+
+    {
+        let guard = clipboard_guard(&app)?;
+        let timeout = get_clipboard_clear_secs(&app);
+        guard
+            .copy_and_guard(&result.code, timeout)
+            .map_err(|e| e.to_string())?;
+    }
+
+    {
+        let guard = state.get_conn().map_err(|e| e.to_string())?;
+        if let Some(conn) = guard.as_ref() {
+            let _ = audit_log(
+                conn,
+                AuditEvent::VaultCopyField,
+                Some(&format!("totp:{}", id)),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[command]
 pub fn vault_totp_time_remaining(period: Option<u32>) -> Result<u32, String> {
     Ok(totp::time_remaining(period.unwrap_or(30)))
+}
+
+#[command]
+pub fn vault_totp_parse_uri(uri: String) -> Result<totp::ParsedOtpAuth, String> {
+    totp::from_otpauth_uri(&uri)
+}
+
+#[command]
+pub fn vault_query_audit_log(
+    app: AppHandle,
+    limit: Option<i64>,
+) -> Result<Vec<AuditLogEntry>, String> {
+    let state = vault_state(&app)?;
+    let guard = state.get_conn().map_err(|e| e.to_string())?;
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| "Vault not initialized".to_string())?;
+    assistant_security::audit::query_log(conn, limit.unwrap_or(100)).map_err(|e| e.to_string())
 }
 
 #[command]
@@ -404,9 +555,10 @@ pub async fn vault_hibp_check(app: AppHandle, id: String) -> Result<u32, String>
     let state = vault_state(&app)?;
     let password = state.decrypt_password(&id).map_err(|e| e.to_string())?;
 
+    let safe = SafePassword::new(SecureString::into_inner(password));
     let client = HibpClient::new();
     let count = client
-        .check_password(&password)
+        .check_password(&safe)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -426,23 +578,48 @@ pub async fn vault_hibp_check(app: AppHandle, id: String) -> Result<u32, String>
 
 #[command]
 pub async fn vault_hibp_audit(app: AppHandle) -> Result<Vec<(String, u32)>, String> {
+    use futures::stream::{self, StreamExt};
+    use std::sync::Arc;
+    use tokio::time::{sleep, Duration};
+
+    const HIBP_CONCURRENCY: usize = 2;
+    const HIBP_MIN_INTERVAL_MS: u64 = 1500;
+
     let state = vault_state(&app)?;
     let entries = state
         .list_entries(None, None, None)
         .map_err(|e| e.to_string())?;
 
-    let client = HibpClient::new();
-    let mut results = Vec::new();
+    let client = Arc::new(HibpClient::new());
+    let interval = Arc::new(tokio::sync::Semaphore::new(1));
 
-    for entry in &entries {
-        if let Ok(password) = state.decrypt_password(&entry.id) {
-            if let Ok(count) = client.check_password(&password).await {
-                if count > 0 {
-                    results.push((entry.id.clone(), count));
-                }
+    let checks: Vec<(String, String)> = entries
+        .iter()
+        .filter_map(|entry| {
+            state
+                .decrypt_password(&entry.id)
+                .ok()
+                .map(|p| (entry.id.clone(), SecureString::into_inner(p)))
+        })
+        .collect();
+
+    let results: Vec<(String, u32)> = stream::iter(checks)
+        .map(|(id, password)| {
+            let client = client.clone();
+            let interval = interval.clone();
+            async move {
+                let _permit = interval.acquire().await.unwrap();
+                let safe = SafePassword::new(password);
+                let count = client.check_password(&safe).await.unwrap_or(0);
+                sleep(Duration::from_millis(HIBP_MIN_INTERVAL_MS)).await;
+                drop(_permit);
+                (id, count)
             }
-        }
-    }
+        })
+        .buffer_unordered(HIBP_CONCURRENCY)
+        .filter(|(_, count)| futures::future::ready(*count > 0))
+        .collect()
+        .await;
 
     {
         let guard = state.get_conn().map_err(|e| e.to_string())?;
@@ -513,6 +690,7 @@ pub fn vault_unlock_biometric(app: AppHandle) -> Result<bool, String> {
     let key_store = get_key_store();
     match state.unlock_biometric(key_store.as_ref()) {
         Ok(()) => {
+            ssh_auto_add_on_unlock(&app);
             crate::protocol::events::emit_broadcast(
                 &app,
                 crate::protocol::events::event_name::VAULT_UNLOCKED,
@@ -828,6 +1006,7 @@ pub fn vault_unlock_with_recovery_key(
     .map_err(|e| e.to_string())?;
 
     if result {
+        ssh_auto_add_on_unlock(&app);
         crate::protocol::events::emit_broadcast(
             &app,
             crate::protocol::events::event_name::VAULT_UNLOCKED,

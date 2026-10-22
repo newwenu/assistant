@@ -281,6 +281,25 @@ impl VaultFileManager {
         Ok(())
     }
 
+    pub fn clear_emergency_data(&self) -> Result<(), SyncError> {
+        let path = self.vault_dir.join(VAULT_META_FILE);
+        if !path.exists() {
+            return Ok(());
+        }
+        let content = fs::read_to_string(&path)?;
+        let mut meta: VaultMetaFile =
+            serde_json::from_str(&content).map_err(|e| SyncError::Other(e.to_string()))?;
+        if meta.emergency.is_none() {
+            return Ok(());
+        }
+        meta.emergency = None;
+        meta.hmac = String::new();
+        let json =
+            serde_json::to_string_pretty(&meta).map_err(|e| SyncError::Other(e.to_string()))?;
+        fs::write(&path, json)?;
+        Ok(())
+    }
+
     pub fn write_deleted_index(&self, deleted: &DeletedIndex) -> Result<(), SyncError> {
         let file = DeletedIndexFile {
             entries: deleted

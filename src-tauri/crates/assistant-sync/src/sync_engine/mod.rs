@@ -200,6 +200,10 @@ impl SyncEngine {
         self.vault_file.read_emergency_data()
     }
 
+    pub fn clear_emergency_data(&self) -> Result<(), SyncError> {
+        self.vault_file.clear_emergency_data()
+    }
+
     pub fn verify_vault_meta_integrity(
         &self,
         master_key: &assistant_security::vault_crypto::types::MasterKey,

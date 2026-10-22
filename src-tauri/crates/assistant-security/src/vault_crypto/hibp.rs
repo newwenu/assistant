@@ -17,11 +17,8 @@ impl HibpClient {
         Self { http }
     }
 
-    pub async fn check_password(&self, password: &str) -> Result<u32, String> {
-        let mut hasher = Sha1::new();
-        hasher.update(password.as_bytes());
-        let hash_bytes = hasher.finalize();
-        let hash_hex = hex::encode_upper(hash_bytes);
+    pub async fn check_password(&self, password: &SafePassword) -> Result<u32, String> {
+        let hash_hex = sha1_hex(password.as_str());
 
         let prefix = &hash_hex[..5];
         let suffix = &hash_hex[5..];
@@ -76,7 +73,7 @@ pub fn parse_hibp_response(body: &str, target_suffix: &str) -> u32 {
     0
 }
 
-pub fn sha1_hex(password: &str) -> String {
+pub(crate) fn sha1_hex(password: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(password.as_bytes());
     let result = hasher.finalize();
@@ -125,6 +122,18 @@ mod tests {
         let hash = sha1_hex("test");
         assert_eq!(hash.len(), 40);
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_sha1_hex_deterministic() {
+        assert_eq!(sha1_hex("password"), sha1_hex("password"));
+        assert_ne!(sha1_hex("password"), sha1_hex("Password"));
+    }
+
+    #[test]
+    fn test_sha1_hex_known_value() {
+        let hex = sha1_hex("password");
+        assert_eq!(&hex[..5], "5BAA6");
     }
 
     #[test]
