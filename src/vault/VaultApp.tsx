@@ -82,7 +82,7 @@ export default function VaultApp() {
 
   const handleLock = () => {
     modal.confirm({
-      title: t("tools.password_vault.confirm_lock"),
+      title: t("vault.confirm_lock"),
       okType: "danger",
       onOk: () => {
         void lock();
@@ -98,8 +98,8 @@ export default function VaultApp() {
 
   const headerTitle =
     view === "detail"
-      ? t("tools.password_vault.viewing_entry")
-      : t("tools.password_vault.tab_vault");
+      ? t("vault.entry.viewing_entry")
+      : t("vault.tab.vault");
 
   return (
     <div className={styles.appContainer}>
@@ -114,7 +114,7 @@ export default function VaultApp() {
             icon={<ToolOutlined />}
             onClick={() => setSettingsOpen(true)}
           >
-            {t("tools.password_vault.tab_tools")}
+            {t("vault.tab.tools")}
           </Button>
           <Button
             type="text"
@@ -151,7 +151,7 @@ export default function VaultApp() {
       />
 
       <Drawer
-        title={t("tools.password_vault.tab_tools")}
+        title={t("vault.tab.tools")}
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         size="large"

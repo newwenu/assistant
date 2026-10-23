@@ -27,7 +27,7 @@ export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
   const handleChange = (checked: boolean) => {
     if (checked) {
       if (!biometricAvailable) {
-        message.warning(t("tools.password_vault.biometric_unavailable"));
+        message.warning(t("vault.biometric.unavailable"));
         return;
       }
       setEnrollModalOpen(true);
@@ -47,7 +47,7 @@ export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
       await settingService.patchConf("app", { vaultBiometricEnabled: true });
       onChange?.(true);
       setEnrollModalOpen(false);
-      message.success(t("tools.password_vault.biometric_enabled"));
+      message.success(t("vault.biometric.enabled"));
     } catch (e) {
       message.error(String(e));
     } finally {
@@ -60,14 +60,14 @@ export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
       <Switch checked={!!value} onChange={handleChange} />
       <Modal
         open={enrollModalOpen}
-        title={t("tools.password_vault.biometric_enroll_title")}
+        title={t("vault.biometric.enroll_title")}
         onOk={() => void handleEnrollConfirm()}
         onCancel={() => setEnrollModalOpen(false)}
         confirmLoading={enrollLoading}
         okButtonProps={{ disabled: !enrollPassword }}
       >
         <Input.Password
-          placeholder={t("tools.password_vault.master_password")}
+          placeholder={t("vault.unlock.master_password")}
           value={enrollPassword}
           onChange={(e) => setEnrollPassword(e.target.value)}
           autoFocus

@@ -112,11 +112,11 @@ export default function VaultUnlock() {
 
     if (!isInitialized) {
       if (password !== confirmPassword) {
-        message.error(t("tools.password_vault.password_mismatch"));
+        message.error(t("vault.unlock.password_mismatch"));
         return;
       }
       if (password.length < 8) {
-        message.error(t("tools.password_vault.password_too_short"));
+        message.error(t("vault.unlock.password_too_short"));
         return;
       }
     }
@@ -180,16 +180,16 @@ export default function VaultUnlock() {
 
   if (disasterRecoveryStep) {
     const stepLabels = [
-      t("tools.password_vault.disaster_recovery_step_git"),
-      t("tools.password_vault.disaster_recovery_step_key"),
-      t("tools.password_vault.disaster_recovery_step_done"),
+      t("vault.disaster_recovery.step_git"),
+      t("vault.disaster_recovery.step_key"),
+      t("vault.disaster_recovery.step_done"),
     ];
 
     return (
       <div className={styles.unlockContainer}>
         <SyncOutlined className={styles.lockIcon} spin={loading} />
         <Typography.Title level={4}>
-          {t("tools.password_vault.disaster_recovery_title")}
+          {t("vault.disaster_recovery.title")}
         </Typography.Title>
 
         <Steps
@@ -217,13 +217,13 @@ export default function VaultUnlock() {
               type="secondary"
               style={{ marginBottom: 8, display: "block" }}
             >
-              {t("tools.password_vault.disaster_recovery_git_hint")}
+              {t("vault.disaster_recovery.git_hint")}
             </Typography.Text>
             <Form.Item>
               <Input
                 size="large"
                 placeholder={t(
-                  "tools.password_vault.disaster_recovery_git_placeholder",
+                  "vault.disaster_recovery.git_placeholder",
                 )}
                 value={drGitUrl}
                 onChange={(e) => setDrGitUrl(e.target.value)}
@@ -253,7 +253,7 @@ export default function VaultUnlock() {
             <Form.Item>
               <Input
                 size="large"
-                placeholder={t("tools.password_vault.recovery_key_placeholder")}
+                placeholder={t("vault.unlock.recovery_key_placeholder")}
                 value={drRecoveryKey}
                 onChange={(e) => setDrRecoveryKey(e.target.value)}
                 prefix={<KeyOutlined />}
@@ -270,7 +270,7 @@ export default function VaultUnlock() {
                 disabled={!drRecoveryKey || loading}
                 loading={loading}
               >
-                {t("tools.password_vault.disaster_recovery_export")}
+                {t("vault.disaster_recovery.export")}
               </Button>
             </Form.Item>
           </Form>
@@ -282,7 +282,7 @@ export default function VaultUnlock() {
               <Alert
                 type="warning"
                 title={t(
-                  "tools.password_vault.disaster_recovery_integrity_warning",
+                  "vault.disaster_recovery.integrity_warning",
                 )}
                 showIcon
                 style={{ marginBottom: 16 }}
@@ -290,7 +290,7 @@ export default function VaultUnlock() {
             )}
             <Alert
               type="success"
-              title={t("tools.password_vault.disaster_recovery_success", {
+              title={t("vault.disaster_recovery.success", {
                 count: disasterRecoveryResult.entryCount,
               })}
               showIcon
@@ -300,7 +300,7 @@ export default function VaultUnlock() {
               type="secondary"
               style={{ display: "block", marginBottom: 8 }}
             >
-              {t("tools.password_vault.disaster_recovery_next_steps")}
+              {t("vault.disaster_recovery.next_steps")}
             </Typography.Text>
             <Button
               size="large"
@@ -313,7 +313,7 @@ export default function VaultUnlock() {
                 });
               }}
             >
-              {t("tools.password_vault.disaster_recovery_open_file")}
+              {t("vault.disaster_recovery.open_file")}
             </Button>
             <Button
               type="primary"
@@ -351,8 +351,8 @@ export default function VaultUnlock() {
       <Typography.Title level={4}>
         {t(
           isInitialized
-            ? "tools.password_vault.unlock_title"
-            : "tools.password_vault.create_title",
+            ? "vault.unlock.title"
+            : "vault.unlock.create_title",
         )}
       </Typography.Title>
 
@@ -360,7 +360,7 @@ export default function VaultUnlock() {
         <Form.Item>
           <Input.Password
             size="large"
-            placeholder={t("tools.password_vault.master_password")}
+            placeholder={t("vault.unlock.master_password")}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             prefix={<LockOutlined />}
@@ -388,7 +388,7 @@ export default function VaultUnlock() {
                 style={{ fontSize: 12 }}
               >
                 {t(
-                  `tools.password_vault.strength_${STRENGTH_SUFFIXES[strength.score] ?? "very_weak"}`,
+                  `vault.strength.${STRENGTH_SUFFIXES[strength.score] ?? "very_weak"}`,
                 )}
               </Typography.Text>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -397,7 +397,7 @@ export default function VaultUnlock() {
             </div>
             {strength.score < MIN_SCORE && (
               <Typography.Text type="danger" style={{ fontSize: 12 }}>
-                {t("tools.password_vault.strength_too_weak_hint")}
+                {t("vault.strength.too_weak_hint")}
               </Typography.Text>
             )}
           </div>
@@ -407,7 +407,7 @@ export default function VaultUnlock() {
           <Form.Item>
             <Input.Password
               size="large"
-              placeholder={t("tools.password_vault.confirm_password")}
+              placeholder={t("vault.unlock.confirm_password")}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               prefix={<LockOutlined />}
@@ -433,8 +433,8 @@ export default function VaultUnlock() {
           >
             {t(
               isInitialized
-                ? "tools.password_vault.unlock"
-                : "tools.password_vault.create_vault",
+                ? "vault.unlock.unlock"
+                : "vault.unlock.create_vault",
             )}
           </Button>
         </Form.Item>
@@ -451,7 +451,7 @@ export default function VaultUnlock() {
                 disabled={!!unlockMethod}
                 onClick={() => void handleBiometricUnlock()}
               >
-                {t("tools.password_vault.biometric_unlock")}
+                {t("vault.unlock.biometric_unlock")}
               </Button>
             </Form.Item>
           </>
@@ -468,7 +468,7 @@ export default function VaultUnlock() {
                 disabled={!!unlockMethod}
                 onClick={() => setShowRecoveryKey(true)}
               >
-                {t("tools.password_vault.recovery_key_unlock")}
+                {t("vault.unlock.recovery_key_unlock")}
               </Button>
             </Form.Item>
           </>
@@ -477,12 +477,12 @@ export default function VaultUnlock() {
         {isInitialized && showRecoveryKey && (
           <>
             <Divider plain>
-              {t("tools.password_vault.recovery_key_divider")}
+              {t("vault.unlock.recovery_key_divider")}
             </Divider>
             <Form.Item>
               <Input
                 size="large"
-                placeholder={t("tools.password_vault.recovery_key_placeholder")}
+                placeholder={t("vault.unlock.recovery_key_placeholder")}
                 value={recoveryKey}
                 onChange={(e) => setRecoveryKey(e.target.value)}
                 prefix={<KeyOutlined />}
@@ -499,7 +499,7 @@ export default function VaultUnlock() {
                 disabled={!recoveryKey || !!unlockMethod}
                 onClick={() => void handleRecoveryKeySubmit()}
               >
-                {t("tools.password_vault.unlock_with_recovery_key")}
+                {t("vault.unlock.unlock_with_recovery_key")}
               </Button>
             </Form.Item>
           </>
@@ -514,7 +514,7 @@ export default function VaultUnlock() {
             disabled={!!unlockMethod}
             onClick={startDisasterRecovery}
           >
-            {t("tools.password_vault.disaster_recovery")}
+            {t("vault.disaster_recovery.title")}
           </Button>
         </Form.Item>
       </Form>

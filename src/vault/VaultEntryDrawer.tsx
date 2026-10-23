@@ -125,9 +125,9 @@ export default function VaultEntryDrawer({
       setTotpUriInput("");
       setTotpUriVisible(false);
       setTotpSecretVisible(false);
-      message.success(t("tools.password_vault.totp_uri_imported"));
+      message.success(t("vault.totp.uri_imported"));
     } catch {
-      message.error(t("tools.password_vault.totp_uri_invalid"));
+      message.error(t("vault.totp.uri_invalid"));
     }
   };
 
@@ -151,7 +151,7 @@ export default function VaultEntryDrawer({
 
   const handleSave = async () => {
     if (!title.trim()) {
-      message.error(t("tools.password_vault.title_required"));
+      message.error(t("vault.entry.title_required"));
       return;
     }
 
@@ -178,7 +178,7 @@ export default function VaultEntryDrawer({
         onSaved(id);
       }
     } catch {
-      message.error(t("tools.password_vault.save_failed"));
+      message.error(t("vault.entry.save_failed"));
     } finally {
       setSaving(false);
     }
@@ -188,8 +188,8 @@ export default function VaultEntryDrawer({
     <Drawer
       title={
         isEditing
-          ? t("tools.password_vault.edit_entry")
-          : t("tools.password_vault.add_entry")
+          ? t("vault.entry.edit_entry")
+          : t("vault.entry.add_entry")
       }
       open={open}
       onClose={onClose}
@@ -206,23 +206,23 @@ export default function VaultEntryDrawer({
       }
     >
       <Form layout="vertical">
-        <Form.Item label={t("tools.password_vault.category")}>
+        <Form.Item label={t("vault.entry.category")}>
           <Select
             value={category}
             onChange={(v) => setCategory(v)}
             options={CATEGORY_OPTIONS.map((o) => ({
               ...o,
-              label: t(`tools.password_vault.category_${o.value}`),
+              label: t(`vault.entry.category_${o.value}`),
             }))}
           />
         </Form.Item>
 
-        <Form.Item label={t("tools.password_vault.title")} required>
+        <Form.Item label={t("vault.entry.title")} required>
           <Input value={title} onChange={(e) => setTitle(e.target.value)} />
         </Form.Item>
 
         {(category === "login" || category === "card") && (
-          <Form.Item label={t("tools.password_vault.username")}>
+          <Form.Item label={t("vault.entry.username")}>
             <Input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -231,7 +231,7 @@ export default function VaultEntryDrawer({
         )}
 
         {(category === "login" || category === "card") && (
-          <Form.Item label={t("tools.password_vault.password")}>
+          <Form.Item label={t("vault.entry.password")}>
             <Space orientation="vertical" style={{ width: "100%" }}>
               <Input.Password
                 value={password}
@@ -246,11 +246,11 @@ export default function VaultEntryDrawer({
                   options={[
                     {
                       value: "random",
-                      label: t("tools.password_vault.gen_mode_random"),
+                      label: t("vault.entry.gen_mode_random"),
                     },
                     {
                       value: "passphrase",
-                      label: t("tools.password_vault.gen_mode_passphrase"),
+                      label: t("vault.entry.gen_mode_passphrase"),
                     },
                   ]}
                 />
@@ -305,7 +305,7 @@ export default function VaultEntryDrawer({
                     }
                   }}
                 >
-                  {t("tools.password_vault.generate")}
+                  {t("vault.entry.generate")}
                 </Button>
               </Space>
             </Space>
@@ -313,12 +313,12 @@ export default function VaultEntryDrawer({
         )}
 
         {category === "login" && (
-          <Form.Item label={t("tools.password_vault.url")}>
+          <Form.Item label={t("vault.entry.url")}>
             <Input value={url} onChange={(e) => setUrl(e.target.value)} />
           </Form.Item>
         )}
 
-        <Form.Item label={t("tools.password_vault.notes")}>
+        <Form.Item label={t("vault.entry.notes")}>
           <Input.TextArea
             rows={3}
             value={notes}
@@ -327,11 +327,11 @@ export default function VaultEntryDrawer({
         </Form.Item>
 
         {category === "login" && (
-          <Form.Item label={t("tools.password_vault.totp_secret")}>
+          <Form.Item label={t("vault.entry.totp_secret")}>
             <Space orientation="vertical" style={{ width: "100%" }}>
               {isEditingExistingTotp && !totpSecret && (
                 <span className={styles.totpEditHint}>
-                  {t("tools.password_vault.totp_edit_hint")}
+                  {t("vault.totp.edit_hint")}
                 </span>
               )}
               {totpSecret && !totpSecretVisible && !totpUriVisible && (
@@ -340,7 +340,7 @@ export default function VaultEntryDrawer({
                     type="success"
                     className={styles.totpSecretBadge}
                   >
-                    ✓ {t("tools.password_vault.totp_secret_set")}
+                    ✓ {t("vault.totp.secret_set")}
                   </Typography.Text>
                   <Space size={4}>
                     <Button
@@ -351,14 +351,14 @@ export default function VaultEntryDrawer({
                         setTotpUriVisible(true);
                       }}
                     >
-                      {t("tools.password_vault.totp_clear")}
+                      {t("vault.totp.clear")}
                     </Button>
                     <Button
                       type="link"
                       size="small"
                       onClick={() => setTotpSecretVisible(true)}
                     >
-                      {t("tools.password_vault.totp_edit_secret")}
+                      {t("vault.totp.edit_secret")}
                     </Button>
                   </Space>
                 </div>
@@ -379,7 +379,7 @@ export default function VaultEntryDrawer({
                       size="small"
                       onClick={() => void handleImportTotpUri()}
                     >
-                      {t("tools.password_vault.totp_import")}
+                      {t("vault.totp.import")}
                     </Button>
                     <Button
                       type="link"
@@ -390,7 +390,7 @@ export default function VaultEntryDrawer({
                         setTotpSecretVisible(true);
                       }}
                     >
-                      {t("tools.password_vault.totp_manual_input")}
+                      {t("vault.totp.manual_input")}
                     </Button>
                   </Space>
                 </div>
@@ -402,8 +402,8 @@ export default function VaultEntryDrawer({
                     onChange={(e) => setTotpSecret(e.target.value)}
                     placeholder={
                       isEditingExistingTotp
-                        ? t("tools.password_vault.totp_placeholder_keep")
-                        : t("tools.password_vault.totp_secret_placeholder")
+                        ? t("vault.totp.placeholder_keep")
+                        : t("vault.totp.secret_placeholder")
                     }
                   />
                   <Space size={8} style={{ marginTop: 8 }}>
@@ -416,7 +416,7 @@ export default function VaultEntryDrawer({
                         setTotpUriVisible(true);
                       }}
                     >
-                      {t("tools.password_vault.totp_import_uri")}
+                      {t("vault.totp.import_uri")}
                     </Button>
                   </Space>
                 </div>
@@ -425,7 +425,7 @@ export default function VaultEntryDrawer({
           </Form.Item>
         )}
 
-        <Form.Item label={t("tools.password_vault.tags")}>
+        <Form.Item label={t("vault.entry.tags")}>
           <Space wrap>
             {tags.map((tag) => (
               <Tag key={tag} closable onClose={() => handleRemoveTag(tag)}>
@@ -437,7 +437,7 @@ export default function VaultEntryDrawer({
               value={tagInput}
               onChange={(e) => setTagInput(e.target.value)}
               onPressEnter={handleAddTag}
-              placeholder={t("tools.password_vault.add_tag")}
+              placeholder={t("vault.entry.add_tag")}
               style={{ width: 120 }}
               suffix={
                 <PlusOutlined
@@ -449,15 +449,15 @@ export default function VaultEntryDrawer({
           </Space>
         </Form.Item>
 
-        <Form.Item label={t("tools.password_vault.favorite")}>
+        <Form.Item label={t("vault.entry.favorite")}>
           <Switch checked={isFavorite} onChange={setIsFavorite} />
         </Form.Item>
 
-        <Divider>{t("tools.password_vault.custom_fields")}</Divider>
+        <Divider>{t("vault.entry.custom_fields")}</Divider>
         {customFields.map((cf, idx) => (
           <div key={idx} className={styles.customFieldRow}>
             <Input
-              placeholder={t("tools.password_vault.field_name")}
+              placeholder={t("vault.entry.field_name")}
               value={cf.name}
               onChange={(e) => {
                 const updated = [...customFields];
@@ -468,7 +468,7 @@ export default function VaultEntryDrawer({
             />
             {cf.isProtected ? (
               <Input.Password
-                placeholder={t("tools.password_vault.field_value")}
+                placeholder={t("vault.entry.field_value")}
                 value={cf.value}
                 onChange={(e) => {
                   const updated = [...customFields];
@@ -479,7 +479,7 @@ export default function VaultEntryDrawer({
               />
             ) : (
               <Input
-                placeholder={t("tools.password_vault.field_value")}
+                placeholder={t("vault.entry.field_value")}
                 value={cf.value}
                 onChange={(e) => {
                   const updated = [...customFields];
@@ -515,7 +515,7 @@ export default function VaultEntryDrawer({
           onClick={handleAddCustomField}
           block
         >
-          {t("tools.password_vault.add_custom_field")}
+          {t("vault.entry.add_custom_field")}
         </Button>
       </Form>
     </Drawer>

@@ -89,7 +89,7 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
 
   const handleDelete = (id: string) => {
     modal.confirm({
-      title: t("tools.password_vault.confirm_delete"),
+      title: t("vault.entry.confirm_delete"),
       okType: "danger",
       onOk: () => void deleteEntry(id),
     });
@@ -102,14 +102,14 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
       <div className={styles.listHeader}>
         <Input
           prefix={<SearchOutlined />}
-          placeholder={t("tools.password_vault.search")}
+          placeholder={t("vault.entry.search")}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           allowClear
           className={styles.searchInput}
         />
         <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
-          {t("tools.password_vault.add_entry")}
+          {t("vault.entry.add_entry")}
         </Button>
       </div>
 
@@ -122,7 +122,7 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
           >
             {CATEGORY_ICONS[o.value]}
             <span style={{ marginLeft: 4 }}>
-              {t(`tools.password_vault.category_${o.value}`)}
+              {t(`vault.entry.category_${o.value}`)}
             </span>
           </Tag.CheckableTag>
         ))}
@@ -132,9 +132,9 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
         <Spin className={styles.spin} />
       ) : entries.length === 0 ? (
         <div className={styles.emptyWrap}>
-          <Empty description={t("tools.password_vault.no_entries")}>
+          <Empty description={t("vault.entry.no_entries")}>
             <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
-              {t("tools.password_vault.add_entry")}
+              {t("vault.entry.add_entry")}
             </Button>
           </Empty>
         </div>
@@ -150,7 +150,7 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
                 onSelect(entry.id);
               }}
               actions={[
-                <Tooltip key="copy" title={t("tools.password_vault.copy")}>
+                <Tooltip key="copy" title={t("common.actions.copy")}>
                   <Button
                     type="text"
                     size="small"
@@ -244,17 +244,17 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
       <div className={styles.syncBar}>
         <div className={styles.syncBarLeft}>
           <span>
-            {entries.length} {t("tools.password_vault.entries_count")}
+            {entries.length} {t("vault.entry.entries_count")}
           </span>
           {leakCount > 0 && (
             <span className={styles.leakWarning}>
               <WarningOutlined style={{ marginRight: 4 }} />
-              {leakCount} {t("tools.password_vault.leaked")}
+              {leakCount} {t("vault.entry.leaked")}
             </span>
           )}
         </div>
         <Space size={4}>
-          <Tooltip title={t("tools.password_vault.hibp_audit_all")}>
+          <Tooltip title={t("vault.hibp.audit_all")}>
             <Button
               type="text"
               size="small"
@@ -272,7 +272,7 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
           {syncReadyness === "noSync" && (
             <CloudSyncOutlined style={{ color: "#d9d9d9" }} />
           )}
-          <Tooltip title={t("tools.password_vault.sync_now")}>
+          <Tooltip title={t("vault.sync.now")}>
             <Button
               type="text"
               size="small"

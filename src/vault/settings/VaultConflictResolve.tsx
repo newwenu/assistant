@@ -35,7 +35,7 @@ export default function VaultConflictResolve({
   return (
     <Modal
       open={open}
-      title={t("tools.password_vault.conflict_title")}
+      title={t("vault.conflict.title")}
       onCancel={onClose}
       footer={[
         <Button key="cancel" onClick={onClose}>
@@ -47,13 +47,13 @@ export default function VaultConflictResolve({
           loading={loading}
           onClick={() => void handleResolve()}
         >
-          {t("tools.password_vault.conflict_resolve")}
+          {t("vault.conflict.resolve")}
         </Button>,
       ]}
     >
       <Space orientation="vertical" style={{ width: "100%" }}>
         <Text type="secondary">
-          {t("tools.password_vault.conflict_file")}: {conflictPath}
+          {t("vault.conflict.file")}: {conflictPath}
         </Text>
 
         <Radio.Group
@@ -62,16 +62,16 @@ export default function VaultConflictResolve({
         >
           <Space orientation="vertical">
             <Radio value="useLocal">
-              {t("tools.password_vault.conflict_use_local")}
+              {t("vault.conflict.use_local")}
             </Radio>
             <Radio value="useRemote">
-              {t("tools.password_vault.conflict_use_remote")}
+              {t("vault.conflict.use_remote")}
             </Radio>
             <Radio value="mergeBoth">
-              {t("tools.password_vault.conflict_merge_both")}
+              {t("vault.conflict.merge_both")}
             </Radio>
             <Radio value="skip">
-              {t("tools.password_vault.conflict_skip")}
+              {t("vault.conflict.skip")}
             </Radio>
           </Space>
         </Radio.Group>

@@ -120,7 +120,7 @@ function TotpDisplay({
       ) : (
         <Typography.Text type="secondary">——</Typography.Text>
       )}
-      <Tooltip title={t("tools.password_vault.totp_copy")}>
+      <Tooltip title={t("vault.totp.copy")}>
         <Button
           type="text"
           size="small"
@@ -198,8 +198,8 @@ export default function VaultEntryDetail({
       message.success(
         t(
           nextFav
-            ? "tools.password_vault.favorite"
-            : "tools.password_vault.unfavorite",
+            ? "vault.entry.favorite"
+            : "vault.entry.unfavorite",
         ),
       );
     });
@@ -216,7 +216,7 @@ export default function VaultEntryDetail({
 
   const handleDelete = () => {
     modal.confirm({
-      title: t("tools.password_vault.confirm_delete"),
+      title: t("vault.entry.confirm_delete"),
       okType: "danger",
       onOk: () => {
         void deleteEntry(entryId);
@@ -245,7 +245,7 @@ export default function VaultEntryDetail({
     void sshAddToAgent(entryId).then((fp) => {
       if (fp) {
         message.success(
-          t("tools.password_vault.ssh_added_to_agent", { fingerprint: fp }),
+          t("vault.ssh.added_to_agent", { fingerprint: fp }),
         );
       }
     });
@@ -270,8 +270,8 @@ export default function VaultEntryDetail({
           <Tooltip
             title={
               selectedEntry.isFavorite
-                ? t("tools.password_vault.unfavorite")
-                : t("tools.password_vault.favorite")
+                ? t("vault.entry.unfavorite")
+                : t("vault.entry.favorite")
             }
           >
             <Button
@@ -301,12 +301,12 @@ export default function VaultEntryDetail({
       </div>
 
       <Descriptions column={1} bordered size="small">
-        <Descriptions.Item label={t("tools.password_vault.category")}>
-          {t(`tools.password_vault.category_${selectedEntry.category}`)}
+        <Descriptions.Item label={t("vault.entry.category")}>
+          {t(`vault.entry.category_${selectedEntry.category}`)}
         </Descriptions.Item>
 
         {selectedEntry.username && (
-          <Descriptions.Item label={t("tools.password_vault.username")}>
+          <Descriptions.Item label={t("vault.entry.username")}>
             <Space>
               <Typography.Text>{selectedEntry.username}</Typography.Text>
               <Button
@@ -320,7 +320,7 @@ export default function VaultEntryDetail({
         )}
 
         {selectedEntry.hasPassword && (
-          <Descriptions.Item label={t("tools.password_vault.password")}>
+          <Descriptions.Item label={t("vault.entry.password")}>
             <Space>
               {revealedField?.kind === "password" ? (
                 <Typography.Text code>{revealedField.value}</Typography.Text>
@@ -339,26 +339,26 @@ export default function VaultEntryDetail({
                 icon={<EyeOutlined />}
                 onClick={handleRevealPassword}
               >
-                {t("tools.password_vault.reveal")}
+                {t("vault.entry.reveal")}
               </Button>
             </Space>
           </Descriptions.Item>
         )}
 
         {selectedEntry.url && (
-          <Descriptions.Item label={t("tools.password_vault.url")}>
+          <Descriptions.Item label={t("vault.entry.url")}>
             <Typography.Text copyable>{selectedEntry.url}</Typography.Text>
           </Descriptions.Item>
         )}
 
         {selectedEntry.hasNotes && (
-          <Descriptions.Item label={t("tools.password_vault.notes")}>
+          <Descriptions.Item label={t("vault.entry.notes")}>
             <Space orientation="vertical">
               {revealedField?.kind === "notes" ? (
                 <Typography.Text>{revealedField.value}</Typography.Text>
               ) : (
                 <Typography.Text type="secondary">
-                  {t("tools.password_vault.encrypted")}
+                  {t("vault.entry.encrypted")}
                 </Typography.Text>
               )}
               <Button
@@ -367,7 +367,7 @@ export default function VaultEntryDetail({
                 icon={<EyeOutlined />}
                 onClick={handleRevealNotes}
               >
-                {t("tools.password_vault.reveal")}
+                {t("vault.entry.reveal")}
               </Button>
             </Space>
           </Descriptions.Item>
@@ -386,20 +386,20 @@ export default function VaultEntryDetail({
         )}
 
         {selectedEntry.category === "sshKey" && (
-          <Descriptions.Item label={t("tools.password_vault.ssh_agent")}>
+          <Descriptions.Item label={t("vault.ssh.agent")}>
             <Button
               type="primary"
               size="small"
               icon={<CloudUploadOutlined />}
               onClick={handleAddToSshAgent}
             >
-              {t("tools.password_vault.ssh_add_to_agent")}
+              {t("vault.ssh.add_to_agent")}
             </Button>
           </Descriptions.Item>
         )}
 
         {selectedEntry.tags.length > 0 && (
-          <Descriptions.Item label={t("tools.password_vault.tags")}>
+          <Descriptions.Item label={t("vault.entry.tags")}>
             {selectedEntry.tags.map((tag) => (
               <Tag key={tag}>{tag}</Tag>
             ))}
@@ -407,7 +407,7 @@ export default function VaultEntryDetail({
         )}
 
         {selectedEntry.customFieldNames.length > 0 && (
-          <Descriptions.Item label={t("tools.password_vault.custom_fields")}>
+          <Descriptions.Item label={t("vault.entry.custom_fields")}>
             <Space orientation="vertical">
               {selectedEntry.customFieldNames.map((name) => (
                 <Space key={name}>
@@ -424,7 +424,7 @@ export default function VaultEntryDetail({
           </Descriptions.Item>
         )}
 
-        <Descriptions.Item label={t("tools.password_vault.revision")}>
+        <Descriptions.Item label={t("vault.entry.revision")}>
           {selectedEntry.revision}
         </Descriptions.Item>
       </Descriptions>

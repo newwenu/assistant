@@ -24,8 +24,8 @@ import type { SyncConfig, SyncResult } from "../core/vault.service";
 import DangerZoneConfirm from "./DangerZoneConfirm";
 
 const RUST_ERROR_KEY_MAP: Record<string, string> = {
-  "Git repository not initialized": "tools.password_vault.sync_err_not_init",
-  "No remote configured": "tools.password_vault.sync_err_no_remote",
+  "Git repository not initialized": "vault.sync.err_not_init",
+  "No remote configured": "vault.sync.err_no_remote",
 };
 
 function getSyncResultInfo(
@@ -34,13 +34,13 @@ function getSyncResultInfo(
 ): { type: "success" | "info" | "warning" | "error"; message: string } | null {
   if (!result) return null;
   if (result === "success")
-    return { type: "success", message: t("tools.password_vault.sync_result_success") as string };
+    return { type: "success", message: t("vault.sync.result_success") as string };
   if (result === "upToDate")
-    return { type: "info", message: t("tools.password_vault.sync_result_up_to_date") as string };
+    return { type: "info", message: t("vault.sync.result_up_to_date") as string };
   if ("conflict" in result)
     return {
       type: "warning",
-      message: t("tools.password_vault.sync_result_conflict", {
+      message: t("vault.sync.result_conflict", {
         count: result.conflict.length,
       }) as string,
     };
@@ -48,7 +48,7 @@ function getSyncResultInfo(
     const i18nKey = RUST_ERROR_KEY_MAP[result.error];
     const message = i18nKey
       ? translateKey(i18nKey)
-      : translateKey("tools.password_vault.sync_result_error", { message: result.error });
+      : translateKey("vault.sync.result_error", { message: result.error });
     return { type: "error", message };
   }
   return null;
@@ -113,11 +113,11 @@ export default function VaultSyncSettings() {
   }, [syncForcePush]);
 
   const readynessText = () => {
-    if (isNoSync) return t("tools.password_vault.sync_status_no_sync");
+    if (isNoSync) return t("vault.sync.status_no_sync");
     if (syncReadyness === "dirty")
-      return t("tools.password_vault.sync_status_dirty");
-    if (isReady) return t("tools.password_vault.sync_status_ready");
-    return t("tools.password_vault.sync_status_unknown");
+      return t("vault.sync.status_dirty");
+    if (isReady) return t("vault.sync.status_ready");
+    return t("vault.sync.status_unknown");
   };
 
   const resultInfo = getSyncResultInfo(syncResult, t);
@@ -155,14 +155,14 @@ export default function VaultSyncSettings() {
             icon={<LinkOutlined />}
             onClick={() => void handleInit()}
           >
-            {t("tools.password_vault.sync_init")}
+            {t("vault.sync.init")}
           </Button>
         )}
 
         {!isNoSync && (
           <>
             <Form layout="vertical">
-              <Form.Item label={t("tools.password_vault.sync_remote_url")}>
+              <Form.Item label={t("vault.sync.remote_url")}>
                 <Input
                   value={remoteUrl}
                   onChange={(e) => setRemoteUrl(e.target.value)}
@@ -185,14 +185,14 @@ export default function VaultSyncSettings() {
                 onClick={() => void syncPull()}
                 loading={syncing}
               >
-                {t("tools.password_vault.sync_pull")}
+                {t("vault.sync.pull")}
               </Button>
               <Button
                 icon={<CloudUploadOutlined />}
                 onClick={() => void syncPush()}
                 loading={syncing}
               >
-                {t("tools.password_vault.sync_push")}
+                {t("vault.sync.push")}
               </Button>
               <Button
                 type="primary"
@@ -200,7 +200,7 @@ export default function VaultSyncSettings() {
                 onClick={() => void syncNow()}
                 loading={syncing}
               >
-                {t("tools.password_vault.sync_now")}
+                {t("vault.sync.now")}
               </Button>
             </Space>
 
@@ -221,17 +221,17 @@ export default function VaultSyncSettings() {
               >
                 <Typography.Text strong type="danger">
                   <ExclamationCircleOutlined style={{ marginRight: 6 }} />
-                  {t("tools.password_vault.danger_zone_title")}
+                  {t("vault.danger_zone.title")}
                 </Typography.Text>
                 <Typography.Text type="secondary">
-                  {t("tools.password_vault.danger_zone_desc")}
+                  {t("vault.danger_zone.desc")}
                 </Typography.Text>
                 <Button
                   danger
                   onClick={() => setForcePushOpen(true)}
                   loading={syncing}
                 >
-                  {t("tools.password_vault.sync_force_push")}
+                  {t("vault.sync.force_push")}
                 </Button>
               </Space>
             </div>
@@ -241,9 +241,9 @@ export default function VaultSyncSettings() {
 
       <DangerZoneConfirm
         open={forcePushOpen}
-        title={t("tools.password_vault.sync_force_push_confirm_title")}
-        description={t("tools.password_vault.sync_force_push_confirm_desc")}
-        confirmLabel={t("tools.password_vault.sync_force_push")}
+        title={t("vault.sync.force_push_confirm_title")}
+        description={t("vault.sync.force_push_confirm_desc")}
+        confirmLabel={t("vault.sync.force_push")}
         onConfirm={handleForcePush}
         onCancel={() => setForcePushOpen(false)}
         loading={syncing}

@@ -69,7 +69,7 @@ export default function DangerZoneConfirm({
       <Space orientation="vertical" style={{ width: "100%" }} size="middle">
         <Typography.Text>{description}</Typography.Text>
         <Typography.Text type="danger">
-          {t("tools.password_vault.danger_type_confirm", { code: challenge })}
+          {t("vault.danger_zone.type_confirm", { code: challenge })}
         </Typography.Text>
         <Input
           placeholder={challenge}

@@ -69,17 +69,17 @@ export default function VaultSettings() {
     const added = await sshAutoAddAll();
     if (added.length > 0) {
       message.success(
-        t("tools.password_vault.ssh_auto_added", { count: added.length }),
+        t("vault.ssh.auto_added", { count: added.length }),
       );
     } else {
-      message.info(t("tools.password_vault.ssh_no_keys_to_add"));
+      message.info(t("vault.ssh.no_keys_to_add"));
     }
   };
 
   const sshAgentTab = (
     <div>
       <Typography.Paragraph type="secondary">
-        {t("tools.password_vault.ssh_agent_description")}
+        {t("vault.ssh.agent_description")}
       </Typography.Paragraph>
 
       <Space style={{ marginBottom: 8 }}>
@@ -87,7 +87,7 @@ export default function VaultSettings() {
           icon={<CloudUploadOutlined />}
           onClick={() => void handleSshAutoAddAll()}
         >
-          {t("tools.password_vault.ssh_add_all_to_agent")}
+          {t("vault.ssh.add_all_to_agent")}
         </Button>
         <Button
           onClick={() => {
@@ -95,7 +95,7 @@ export default function VaultSettings() {
             void sshCheckAgentRunning();
           }}
         >
-          {t("tools.password_vault.ssh_refresh_agent_keys")}
+          {t("vault.ssh.refresh_agent_keys")}
         </Button>
       </Space>
 
@@ -104,8 +104,8 @@ export default function VaultSettings() {
         style={{ display: "block", marginBottom: 8 }}
       >
         {sshAgentRunning
-          ? t("tools.password_vault.ssh_agent_running")
-          : t("tools.password_vault.ssh_agent_not_running")}
+          ? t("vault.ssh.agent_running")
+          : t("vault.ssh.agent_not_running")}
       </Typography.Text>
 
       <List
@@ -140,7 +140,7 @@ export default function VaultSettings() {
   const recoveryTab = (
     <div>
       <Typography.Paragraph type="secondary">
-        {t("tools.password_vault.recovery_key_description")}
+        {t("vault.recovery.key_description")}
       </Typography.Paragraph>
 
       <Space orientation="vertical" style={{ width: "100%" }}>
@@ -151,15 +151,15 @@ export default function VaultSettings() {
           onClick={() => void handleGenerateRecoveryKey()}
         >
           {recoveryKeySet
-            ? t("tools.password_vault.recovery_key_regenerate")
-            : t("tools.password_vault.recovery_key_generate")}
+            ? t("vault.recovery.key_regenerate")
+            : t("vault.recovery.key_generate")}
         </Button>
 
         <Button
           icon={<SafetyCertificateOutlined />}
           onClick={() => void verifyIntegrity()}
         >
-          {t("tools.password_vault.verify_integrity")}
+          {t("vault.recovery.verify_integrity")}
         </Button>
 
         {integrityResult && (
@@ -175,22 +175,22 @@ export default function VaultSettings() {
     const filePath = await exportVault(exportFormat);
     if (filePath) {
       message.success(
-        t("tools.password_vault.export_success", { path: filePath }),
+        t("vault.import_export.export_success", { path: filePath }),
       );
     }
   };
 
   const handleImport = async () => {
     if (!importFilePath.trim()) {
-      message.warning(t("tools.password_vault.import_file_placeholder"));
+      message.warning(t("vault.import_export.import_file_placeholder"));
       return;
     }
     const count = await importVault(importFilePath.trim(), importFormat);
     if (count !== null) {
       if (count > 0) {
-        message.success(t("tools.password_vault.import_success", { count }));
+        message.success(t("vault.import_export.import_success", { count }));
       } else {
-        message.info(t("tools.password_vault.import_no_entries"));
+        message.info(t("vault.import_export.import_no_entries"));
       }
       setImportFilePath("");
     }
@@ -199,16 +199,16 @@ export default function VaultSettings() {
   const importExportTab = (
     <div>
       <Typography.Title level={5}>
-        {t("tools.password_vault.export_title")}
+        {t("vault.import_export.export_title")}
       </Typography.Title>
       <Typography.Paragraph type="secondary">
-        {t("tools.password_vault.export_description")}
+        {t("vault.import_export.export_description")}
       </Typography.Paragraph>
 
       <Alert
         type="warning"
         showIcon
-        title={t("tools.password_vault.export_warning")}
+        title={t("vault.import_export.export_warning")}
         style={{ marginBottom: 16 }}
       />
 
@@ -218,10 +218,10 @@ export default function VaultSettings() {
           onChange={(e) => setExportFormat(e.target.value as "json" | "csv")}
         >
           <Radio value="json">
-            {t("tools.password_vault.export_format_json")}
+            {t("vault.import_export.export_format_json")}
           </Radio>
           <Radio value="csv">
-            {t("tools.password_vault.export_format_csv")}
+            {t("vault.import_export.export_format_csv")}
           </Radio>
         </Radio.Group>
         <Button
@@ -230,15 +230,15 @@ export default function VaultSettings() {
           loading={loading}
           onClick={() => void handleExport()}
         >
-          {t("tools.password_vault.export_button")}
+          {t("vault.import_export.export_button")}
         </Button>
       </Space>
 
       <Typography.Title level={5} style={{ marginTop: 24 }}>
-        {t("tools.password_vault.import_title")}
+        {t("vault.import_export.import_title")}
       </Typography.Title>
       <Typography.Paragraph type="secondary">
-        {t("tools.password_vault.import_description")}
+        {t("vault.import_export.import_description")}
       </Typography.Paragraph>
 
       <Space orientation="vertical" style={{ width: "100%" }}>
@@ -247,16 +247,16 @@ export default function VaultSettings() {
           onChange={(e) => setImportFormat(e.target.value as "json" | "csv")}
         >
           <Radio value="json">
-            {t("tools.password_vault.import_format_json")}
+            {t("vault.import_export.import_format_json")}
           </Radio>
           <Radio value="csv">
-            {t("tools.password_vault.import_format_csv")}
+            {t("vault.import_export.import_format_csv")}
           </Radio>
         </Radio.Group>
         <Input
           value={importFilePath}
           onChange={(e) => setImportFilePath(e.target.value)}
-          placeholder={t("tools.password_vault.import_file_placeholder")}
+          placeholder={t("vault.import_export.import_file_placeholder")}
         />
         <Button
           type="primary"
@@ -265,7 +265,7 @@ export default function VaultSettings() {
           disabled={!importFilePath.trim()}
           onClick={() => void handleImport()}
         >
-          {t("tools.password_vault.import_button")}
+          {t("vault.import_export.import_button")}
         </Button>
       </Space>
     </div>
@@ -277,22 +277,22 @@ export default function VaultSettings() {
         items={[
           {
             key: "sync",
-            label: t("tools.password_vault.tab_sync"),
+            label: t("vault.tab.sync"),
             children: <VaultSyncSettings />,
           },
           {
             key: "ssh_agent",
-            label: t("tools.password_vault.tab_ssh_agent"),
+            label: t("vault.tab.ssh_agent"),
             children: sshAgentTab,
           },
           {
             key: "recovery",
-            label: t("tools.password_vault.tab_recovery"),
+            label: t("vault.tab.recovery"),
             children: recoveryTab,
           },
           {
             key: "import_export",
-            label: t("tools.password_vault.tab_import_export"),
+            label: t("vault.tab.import_export"),
             children: importExportTab,
           },
         ]}
@@ -300,7 +300,7 @@ export default function VaultSettings() {
 
       <Modal
         open={recoveryKeyModalOpen}
-        title={t("tools.password_vault.recovery_key_generated_title")}
+        title={t("vault.recovery.key_generated_title")}
         onCancel={() => {
           setRecoveryKeyModalOpen(false);
           setGeneratedRecoveryKey(null);
@@ -319,7 +319,7 @@ export default function VaultSettings() {
         ]}
       >
         <Typography.Paragraph type="warning">
-          {t("tools.password_vault.recovery_key_warning")}
+          {t("vault.recovery.key_warning")}
         </Typography.Paragraph>
         {generatedRecoveryKey && (
           <Input.TextArea
