@@ -1,7 +1,9 @@
-# I18 — Agent Tool 架构设计规格
+# I18 — Agent Tool 架构决策记录（ADR）
 
-> 统一 ToolCall 执行 + OS 工具能力 + MCP 外部工具的分层架构设计
-> 参考：OpenBitFun（Tool trait + Permission Engine + RoundExecutor）、OpenHuman（ToolPolicy trait + ToolDispatcher）
+> 本文档记录架构**决策**：为什么这样设计、参考了什么、做了什么取舍。
+> **实施规格**见 [I18-agent-tool-architecture-spec.md](./I18-agent-tool-architecture-spec.md)（Step 0-10）。
+> **Shell 安全子域**见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
+> **ToolBox 双入口桥接**见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
 
 ---
 
@@ -119,7 +121,7 @@ pub struct AllowAllToolPolicy;  // 默认全放行
 
 ---
 
-## 3. 架构设计
+## 3. 架构决策
 
 ### 3.1 总览
 
@@ -157,65 +159,54 @@ pub struct AllowAllToolPolicy;  // 默认全放行
      └─────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 统一 Tool Trait
+### 3.2 决策：三层信任模型（ToolTier）
 
-三层工具统一到一个 trait，这是分层设计的核心：
+**决策**：用 `ToolTier` 枚举（`Sandbox < Os < External`）显式分层，`PartialOrd` 语义让 `max_tool_tier` 一字段即可限制可用层级。
+
+**取舍**：
+- OpenBitFun 用 `ToolExposure`（Direct/Deferred）+ `is_readonly()` + `is_concurrency_safe(input)` 三元组实现等效分层，更灵活但更复杂
+- OpenHuman 用纯 `ToolPolicy` trait 的 `check()` 方法做工具级准入，无层级枚举，更简单但缺乏结构化分层
+- **选择 ToolTier**：显式枚举比隐式组合更直观，`PartialOrd` 让 Agent 模式配置只需一个字段
+
+**类型签名**（完整定义见 I18-spec Step 0.1）：
 
 ```rust
-/// 工具能力层级
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ToolTier {
-    /// L0: 前端沙箱，无 OS 访问（现有 ToolBox 工具）
-    Sandbox,
-    /// L1: Rust 后端，有 OS 访问（内置文件/Shell 工具）
-    Os,
-    /// L2: 外部进程通信（MCP server 工具）
-    External,
-}
+pub enum ToolTier { Sandbox, Os, External }
+```
 
-/// 三维安全标记
+### 3.3 决策：三维安全标记（BehaviorHints）
+
+**决策**：用 `BehaviorHints { read_only, destructive, open_world }` 静态描述工具对系统的潜在影响。
+
+**取舍**：
+- OpenBitFun 用 `is_readonly()` + `is_concurrency_safe(input)` 两个方法，`is_concurrency_safe` 默认等于 `is_readonly` 但可按 input 覆盖
+- **选择静态 BehaviorHints**：简化但够用——当前所有工具的安全标记不依赖 input。若未来需要动态判断（如 shell_exec 某些只读命令可并发），可扩展为 `fn behavior_hints(&self, input: &Value) -> BehaviorHints`
+
+**推导规则**（上层消费）：
+- `read_only = true` → Pipeline 可并发执行
+- `destructive = true` → Gateway 触发 Ask 审批
+- `open_world = true` → Gateway 触发 Ask 审批
+
+**类型签名**（完整定义见 I18-spec Step 0.2）：
+
+```rust
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct BehaviorHints {
-    pub read_only: bool,
-    pub destructive: bool,
-    pub open_world: bool,
-}
+pub struct BehaviorHints { pub read_only: bool, pub destructive: bool, pub open_world: bool }
+```
 
-/// 工具执行结果
-#[derive(Debug, Clone)]
-pub struct ToolResult {
-    pub output: String,
-    pub is_error: bool,
-    pub artifacts: Vec<ToolArtifact>,
-}
+### 3.4 决策：统一 Tool Trait
 
-#[derive(Debug, Clone)]
-pub struct ToolArtifact {
-    pub kind: String,       // "file" / "image" / "diff"
-    pub path: Option<String>,
-    pub content: String,
-}
+**决策**：三层工具统一到一个 trait，工具自描述权限需求（`permission_intents`），策略层决策是否放行——关注点分离。
 
-/// 工具执行上下文
-pub struct ToolUseContext {
-    pub session_id: String,
-    pub conversation_id: String,
-    pub workspace_root: Option<PathBuf>,
-    pub cancellation_token: CancellationToken,
-    pub iteration: u32,
-    pub source: ToolCallSource,
-}
+**取舍**：
+- OpenBitFun 的 Tool trait 含 `is_concurrency_safe(input)` 动态方法，我们简化为从 `behavior_hints().read_only` 推导
+- OpenHuman 无统一 Tool trait，策略是独立中间件
+- **选择统一 trait + 静态 hints**：实现一次两个入口可用（Agent / ToolBox），简化但保留核心关注点分离
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToolCallSource {
-    Session,
-    Bus,
-    Channel,
-    Cron,
-    Webhook,
-}
+**类型签名**（完整定义见 I18-spec Step 1）：
 
-/// 统一工具 trait
+```rust
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
@@ -223,1263 +214,141 @@ pub trait Tool: Send + Sync {
     fn input_schema(&self) -> Value;
     fn tier(&self) -> ToolTier;
     fn behavior_hints(&self) -> BehaviorHints;
-    fn is_readonly(&self) -> bool { self.behavior_hints().read_only }
-    fn is_concurrency_safe(&self) -> bool { self.behavior_hints().read_only }
-
-    /// 声明权限需求（不执行，只描述）
-    fn permission_intents(
-        &self,
-        input: &Value,
-        context: &ToolUseContext,
-    ) -> Result<Vec<PermissionIntent>>;
-
-    /// 执行工具
-    async fn execute(
-        &self,
-        input: &Value,
-        context: &ToolUseContext,
-    ) -> Result<ToolResult>;
+    fn permission_intents(&self, input: &Value, context: &ToolUseContext) -> Result<Vec<PermissionIntent>>;
+    async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult>;
 }
 ```
 
-**`ToolTier` 的 `PartialOrd` 语义**：`Sandbox < Os < External`。Agent 模式声明 `max_tier` 即可限制可用工具层级。
-
-### 3.3 Permission Policy Engine
-
-#### 3.3.1 核心类型
-
-```rust
-/// 权限效果：Allow / Ask(需审批) / Deny(硬拒绝)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PermissionEffect {
-    Allow,
-    Ask,
-    Deny,
-}
-
-impl PermissionEffect {
-    /// 组合两个独立策略决策，取更严格者
-    pub const fn most_restrictive(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Deny, _) | (_, Self::Deny) => Self::Deny,
-            (Self::Ask, _) | (_, Self::Ask) => Self::Ask,
-            (Self::Allow, Self::Allow) => Self::Allow,
-        }
-    }
-}
-```
-
-#### 3.3.2 权限意图
-
-```rust
-/// 工具声明的单个权限需求
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PermissionIntent {
-    pub action: String,
-    pub resources: Vec<String>,
-    pub save_resources: Vec<String>,
-    pub display_metadata: HashMap<String, Value>,
-}
-
-impl PermissionIntent {
-    pub fn new(action: impl Into<String>, resource: impl Into<String>) -> Self {
-        Self {
-            action: action.into(),
-            resources: vec![resource.into()],
-            save_resources: vec![],
-            display_metadata: HashMap::new(),
-        }
-    }
-
-    pub fn with_save_resources(mut self, resources: Vec<String>) -> Self {
-        self.save_resources = resources;
-        self
-    }
-
-    pub fn with_display_metadata(mut self, key: &str, value: Value) -> Self {
-        self.display_metadata.insert(key.to_string(), value);
-        self
-    }
-}
-```
-
-#### 3.3.3 权限规则
-
-```rust
-/// 单条权限规则
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PermissionRule {
-    pub action: String,       // "read" / "edit" / "delete" / "execute" / "network"
-    pub resource: String,     // 路径 glob / 命令名 / URL pattern / "*"
-    pub effect: PermissionEffect,
-}
-```
-
-规则匹配语义：
-- 同一规则集内，**后匹配优先**（last-match-wins）——允许前面的宽泛规则被后面的具体规则覆盖
-- 不同规则集之间，取 `most_restrictive`
-
-#### 3.3.4 多层策略
-
-```rust
-/// 独立约束层（项目级、Agent 模式级等）
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct PermissionConstraintLayer {
-    rules: Vec<PermissionRule>,
-}
-
-/// 已解析的完整策略 = 主规则 + 独立约束层
-#[derive(Debug, Clone, Default)]
-pub struct ResolvedPermissionPolicy {
-    rules: Vec<PermissionRule>,                          // 应用级主规则
-    constraint_layers: Vec<PermissionConstraintLayer>,    // 项目级 + Agent 模式级
-}
-
-impl ResolvedPermissionPolicy {
-    /// 评估一个权限请求的最终效果
-    pub fn evaluate(&self, action: &str, resource: &str) -> PermissionEffect {
-        let mut result = PermissionEffect::Allow;
-
-        // 主规则（last-match-wins）
-        if let Some(e) = self.eval_rules(&self.rules, action, resource) {
-            result = result.most_restrictive(e);
-        }
-
-        // 各约束层独立评估，取 most_restrictive
-        for layer in &self.constraint_layers {
-            if let Some(e) = self.eval_rules(layer.rules(), action, resource) {
-                result = result.most_restrictive(e);
-            }
-        }
-
-        result
-    }
-
-    fn eval_rules(&self, rules: &[PermissionRule], action: &str, resource: &str) -> Option<PermissionEffect> {
-        let mut last: Option<PermissionEffect> = None;
-        for rule in rules {
-            if self.matches_action(&rule.action, action) && self.matches_resource(&rule.resource, resource) {
-                last = Some(rule.effect);
-            }
-        }
-        last
-    }
-}
-```
-
-#### 3.3.5 运行时天花板（委托约束）
-
-```rust
-/// 子 Agent / 委托执行的权限天花板
-/// 禁止携带 Allow 规则——委托只能收紧不能放宽
-pub struct PermissionRuntimeCeiling {
-    rules: Vec<PermissionRule>,
-}
-
-impl PermissionRuntimeCeiling {
-    pub fn try_new(rules: Vec<PermissionRule>) -> Result<Self, CeilingValidationError> {
-        if let Some(rule) = rules.iter().find(|r| r.effect == PermissionEffect::Allow) {
-            return Err(CeilingValidationError { rule: rule.clone() });
-        }
-        Ok(Self { rules })
-    }
-}
-```
-
-#### 3.3.6 默认规则集
-
-应用级默认策略（最宽松基线）：
-
-```rust
-fn default_global_rules() -> Vec<PermissionRule> {
-    vec![
-        // 默认全部需审批（安全基线）
-        PermissionRule::new("*", "*", PermissionEffect::Ask),
-        // 文件读取：显式 Allow（最常见的只读操作）
-        PermissionRule::new("read", "*", PermissionEffect::Allow),
-        // 系统敏感路径读取：Deny 覆盖上面的 Allow（last-match-wins）
-        PermissionRule::new("read",  "/etc/shadow",       PermissionEffect::Deny),
-        PermissionRule::new("read",  "/etc/ssh/**",       PermissionEffect::Deny),
-        // 系统敏感路径编辑：硬拒绝
-        PermissionRule::new("edit",  "/etc/**",           PermissionEffect::Deny),
-        PermissionRule::new("edit",  "C:/Windows/**",     PermissionEffect::Deny),
-        PermissionRule::new("edit",  "C:/Program Files/**", PermissionEffect::Deny),
-    ]
-}
-```
-
-> 默认 Ask + 显式 Allow 模式：新增 action 类型默认需审批，避免意外放行。与 OpenBitFun 的 Ask 预设策略一致。
-
-### 3.4 Tool Gateway
-
-Tool Gateway 是 RoundExecutor 和工具执行之间的安全层：
-
-```rust
-pub struct ToolGateway {
-    policy_engine: Arc<PolicyEngine>,
-    approval_channel: ApprovalChannel,
-    grant_store: Arc<dyn PermissionGrantStore>,
-    audit_store: Arc<dyn PermissionAuditStore>,
-    event_queue: Arc<EventQueue>,
-}
-
-#[async_trait]
-pub trait PermissionGrantStore: Send + Sync {
-    async fn is_granted(&self, action: &str, resource: &str) -> bool;
-    async fn save_grant(&self, action: &str, resource: &str) -> Result<()>;
-}
-
-#[async_trait]
-pub trait PermissionAuditStore: Send + Sync {
-    async fn log_decision(&self, entry: AuditEntry) -> Result<()>;
-}
-
-pub struct AuditEntry {
-    pub tool_name: String,
-    pub action: String,
-    pub resource: String,
-    pub effect: PermissionEffect,
-    pub granted_by: Option<String>,
-    pub timestamp: Instant,
-}
-
-pub struct ApprovalChannel {
-    pending: TokioMutex<HashMap<String, ApprovalWaiter>>,
-    timeout: Duration,
-}
-
-pub struct ApprovalWaiter {
-    tx: tokio::sync::oneshot::Sender<ApprovalDecision>,
-    created_at: Instant,
-}
-
-#[derive(Debug, Clone)]
-pub enum ApprovalDecision {
-    Approve,
-    Deny { reason: Option<String> },
-    AlwaysApprove,
-}
-
-impl ToolGateway {
-    /// 评估工具调用的权限，返回是否允许执行
-    pub async fn evaluate(
-        &self,
-        tool: &dyn Tool,
-        input: &Value,
-        context: &ToolUseContext,
-        policy: &ResolvedPermissionPolicy,
-    ) -> Result<GatewayDecision> {
-        // 1. 收集权限意图
-        let intents = tool.permission_intents(input, context)?;
-
-        // 2. 逐条评估
-        let mut need_approval = Vec::new();
-        for intent in &intents {
-            for resource in &intent.resources {
-                // 2a. 查询 GrantStore（记忆授权）
-                if self.grant_store.is_granted(&intent.action, resource).await {
-                    self.audit_store.log_decision(AuditEntry {
-                        tool_name: tool.name().to_string(),
-                        action: intent.action.clone(),
-                        resource: resource.clone(),
-                        effect: PermissionEffect::Allow,
-                        granted_by: Some("grant_store".to_string()),
-                        timestamp: Instant::now(),
-                    }).await.ok();
-                    continue;
-                }
-                // 2b. 策略评估
-                match policy.evaluate(&intent.action, resource) {
-                    PermissionEffect::Allow => {
-                        self.audit_store.log_decision(AuditEntry {
-                            tool_name: tool.name().to_string(),
-                            action: intent.action.clone(),
-                            resource: resource.clone(),
-                            effect: PermissionEffect::Allow,
-                            granted_by: Some("policy".to_string()),
-                            timestamp: Instant::now(),
-                        }).await.ok();
-                    },
-                    PermissionEffect::Ask => {
-                        need_approval.push((intent.action.clone(), resource.clone()));
-                    },
-                    PermissionEffect::Deny => {
-                        self.audit_store.log_decision(AuditEntry {
-                            tool_name: tool.name().to_string(),
-                            action: intent.action.clone(),
-                            resource: resource.clone(),
-                            effect: PermissionEffect::Deny,
-                            granted_by: None,
-                            timestamp: Instant::now(),
-                        }).await.ok();
-                        return Ok(GatewayDecision::Denied {
-                            action: intent.action.clone(),
-                            resource: resource.clone(),
-                        });
-                    },
-                }
-            }
-        }
-
-        // 3. 需要审批的意图 → 请求用户
-        if !need_approval.is_empty() {
-            self.event_queue.emit(AgenticEvent::ToolAwaitingApproval {
-                tool_name: tool.name().to_string(),
-                arguments: input.clone(),
-                intents: need_approval.clone(),
-            });
-
-            let decision = self.approval_channel.wait_for_approval(
-                &tool.name(),
-                &need_approval,
-            ).await?;
-
-            match decision {
-                ApprovalDecision::Deny { reason } => {
-                    for (action, resource) in &need_approval {
-                        self.audit_store.log_decision(AuditEntry {
-                            tool_name: tool.name().to_string(),
-                            action: action.clone(),
-                            resource: resource.clone(),
-                            effect: PermissionEffect::Deny,
-                            granted_by: Some("user".to_string()),
-                            timestamp: Instant::now(),
-                        }).await.ok();
-                    }
-                    return Ok(GatewayDecision::RejectedByUser { reason });
-                },
-                ApprovalDecision::AlwaysApprove => {
-                    for (action, resource) in &need_approval {
-                        self.grant_store.save_grant(action, resource).await?;
-                        self.audit_store.log_decision(AuditEntry {
-                            tool_name: tool.name().to_string(),
-                            action: action.clone(),
-                            resource: resource.clone(),
-                            effect: PermissionEffect::Allow,
-                            granted_by: Some("user:always".to_string()),
-                            timestamp: Instant::now(),
-                        }).await.ok();
-                    }
-                },
-                ApprovalDecision::Approve => {
-                    for (action, resource) in &need_approval {
-                        self.audit_store.log_decision(AuditEntry {
-                            tool_name: tool.name().to_string(),
-                            action: action.clone(),
-                            resource: resource.clone(),
-                            effect: PermissionEffect::Allow,
-                            granted_by: Some("user:once".to_string()),
-                            timestamp: Instant::now(),
-                        }).await.ok();
-                    }
-                },
-            }
-        }
-
-        Ok(GatewayDecision::Allowed)
-    }
-}
-
-pub enum GatewayDecision {
-    Allowed,
-    Denied { action: String, resource: String },
-    RejectedByUser { reason: Option<String> },
-}
-```
-
-### 3.5 Tool Pipeline
-
-Tool Pipeline 编排完整的工具执行生命周期：
-
-```rust
-pub struct ToolPipeline {
-    registry: Arc<ToolRegistry>,
-    gateway: Arc<ToolGateway>,
-    result_storage: Arc<ToolResultStorage>,
-    default_timeout: Duration,
-}
-
-pub struct ToolRegistry {
-    tools: DashMap<String, Arc<dyn Tool>>,
-}
-
-impl ToolRegistry {
-    pub fn register(&self, tool: Arc<dyn Tool>) {
-        self.tools.insert(tool.name().to_string(), tool);
-    }
-
-    pub fn find(&self, name: &str) -> Option<Arc<dyn Tool>> {
-        self.tools.get(name).map(|t| Arc::clone(&*t))
-    }
-
-    /// 获取指定 tier 及以下的全部工具定义（供 LLM function calling）
-    pub fn tool_definitions_for_tier(&self, max_tier: ToolTier) -> Vec<ToolDefinition> {
-        self.tools.iter()
-            .filter(|entry| entry.value().tier() <= max_tier)
-            .map(|entry| {
-                let tool = entry.value();
-                ToolDefinition {
-                    r#type: "function".to_string(),
-                    function: FunctionDefinition {
-                        name: tool.name().to_string(),
-                        description: /* ... */,
-                        parameters: tool.input_schema(),
-                    },
-                }
-            })
-            .collect()
-    }
-}
-
-impl ToolPipeline {
-    pub async fn execute(
-        &self,
-        tool_calls: &[ToolCall],
-        context: &ToolExecutionContext,
-    ) -> Result<Vec<ToolResult>> {
-        let mut results = Vec::new();
-
-        for tool_call in tool_calls {
-            let start = Instant::now();
-
-            // 1. 查找工具
-            let tool = match self.registry.find(&tool_call.name) {
-                Some(t) => t,
-                None => {
-                    results.push(ToolResult::error(
-                        format!("Unknown tool: {}", tool_call.name)
-                    ));
-                    continue;
-                }
-            };
-
-            // 2. 权限网关评估
-            match self.gateway.evaluate(
-                tool.as_ref(),
-                &tool_call.arguments,
-                &context.use_context,
-                &context.policy,
-            ).await? {
-                GatewayDecision::Allowed => {},
-                GatewayDecision::Denied { action, resource } => {
-                    results.push(ToolResult::error(
-                        format!("Permission denied: {} on {}", action, resource)
-                    ));
-                    continue;
-                },
-                GatewayDecision::RejectedByUser { reason } => {
-                    results.push(ToolResult::error(
-                        format!("User rejected: {}", reason.unwrap_or_default())
-                    ));
-                    continue;
-                },
-            }
-
-            // 3. 执行（带超时 + 取消）
-            let result = match timeout(
-                self.default_timeout,
-                tool.execute(&tool_call.arguments, &context.use_context),
-            ).await {
-                Ok(Ok(r)) => r,
-                Ok(Err(e)) => ToolResult::error(format!("{e}")),
-                Err(_) => ToolResult::error("Tool execution timed out"),
-            };
-
-            // 4. 持久化
-            self.result_storage.persist(
-                &tool_call.id,
-                &context.use_context.conversation_id,
-                &tool_call.name,
-                &tool_call.arguments,
-                &result,
-                start.elapsed(),
-            ).await?;
-
-            // 5. 发射事件
-            self.gateway.event_queue.emit(AgenticEvent::ToolCompleted {
-                tool_call_id: tool_call.id.clone(),
-                tool_name: tool_call.name().to_string(),
-                result: result.clone(),
-                elapsed_ms: start.elapsed().as_millis() as u64,
-            });
-
-            results.push(result);
-        }
-
-        Ok(results)
-    }
-}
-```
-
-### 3.6 RoundExecutor（Agent Loop）
-
-```rust
-pub struct RoundExecutor {
-    ai_client: Arc<AIClient>,
-    tool_pipeline: Arc<ToolPipeline>,
-    stream_processor: Arc<StreamProcessor>,
-    event_queue: Arc<EventQueue>,
-    max_iterations: u32,
-}
-
-pub struct RoundContext {
-    pub messages: Vec<Message>,
-    pub tool_context: ToolExecutionContext,
-    pub agent_mode: AgentModeConfig,
-}
-
-pub struct AgentModeConfig {
-    pub max_tier: ToolTier,
-    pub policy: ResolvedPermissionPolicy,
-    pub tool_timeout: Duration,
-    pub max_iterations: u32,
-}
-
-impl RoundExecutor {
-    pub async fn execute_round(&self, context: &mut RoundContext) -> Result<RoundOutcome> {
-        for iteration in 0..context.agent_mode.max_iterations {
-            // 1. 构建请求（注入可用工具定义）
-            let tool_defs = self.tool_pipeline.registry()
-                .tool_definitions_for_tier(context.agent_mode.max_tier);
-
-            let request = ModelRequest {
-                messages: context.messages.clone(),
-                tools: tool_defs,
-                ..Default::default()
-            };
-
-            // 2. 调用 LLM（流式）
-            let stream_outcome = self.stream_processor
-                .process_stream(request, &self.ai_client)
-                .await?;
-
-            // 3. 提取 assistant message（含 text + tool_calls）
-            context.messages.push(stream_outcome.assistant_message.clone());
-
-            // 4. 无 tool_call → 对话结束
-            let tool_calls = match stream_outcome.tool_calls {
-                calls if !calls.is_empty() => calls,
-                _ => return Ok(RoundOutcome::Finished(stream_outcome)),
-            };
-
-            // 5. 发射 tool_call running 事件
-            for tc in &tool_calls {
-                self.event_queue.emit(AgenticEvent::ToolCallStarted {
-                    tool_call_id: tc.id.clone(),
-                    tool_name: tc.name.clone(),
-                    arguments: tc.arguments.clone(),
-                });
-            }
-
-            // 6. 执行工具
-            let tool_results = self.tool_pipeline
-                .execute(&tool_calls, &context.tool_context)
-                .await?;
-
-            // 7. 回填 tool_results 到消息历史
-            let results_message = Message::tool_results_message(
-                tool_calls.iter().zip(tool_results.iter())
-                    .map(|(tc, tr)| (tc.id.clone(), tr.output.clone(), tr.is_error))
-                    .collect(),
-            );
-            context.messages.push(results_message);
-
-            // 8. 继续循环（LLM 基于工具结果继续生成）
-        }
-
-        Ok(RoundOutcome::MaxIterationsReached)
-    }
-}
-```
+### 3.5 决策：多层策略取最严
+
+**决策**：`PermissionEffect { Allow, Ask, Deny }` + `most_restrictive` 组合。多层策略（应用默认 + 项目配置 + Agent 模式）叠加取最严。
+
+**取舍**：
+- OpenBitFun 同构：`PermissionEffect` + `most_restrictive` + `PermissionConstraintLayer`
+- OpenHuman 的 `PolicyDecision` 是 `Allow / Deny / RequireApproval` 三值，同构
+- **选择 last-match-wins 主规则 + constraint_layers 独立约束层**：与 OpenBitFun 一致，项目级和 Agent 模式级作为独立约束层，层间取 most_restrictive
+
+**关键不变量**：`PermissionRuntimeCeiling` 禁止携带 Allow 规则——委托只能收紧不能放宽，编译期可检查。
+
+> 完整类型定义、评估算法、默认规则集见 I18-spec Step 4。
+
+### 3.6 决策：双入口分流
+
+**决策**：Tool trait 实现共享，执行路径分流——Agent 经过 ToolPipeline 完整安全基础设施，ToolBox 直达执行。
+
+**理由**：
+
+| ToolPipeline 基础设施 | Agent 场景（LLM 自主调用） | ToolBox 场景（用户主动调用） |
+|---|---|---|
+| ToolGateway 审批流 | LLM 自主决策 → 需要人类审批 | 用户自己点的 → 审批自己无意义 |
+| Permission Policy 评估 | 防止 LLM 越权 | 用户就是权限主体 |
+| 审计日志 | 追踪 AI 自主行为 | 用户操作，不是 AI 行为 |
+| 超时保护 | 防止 LLM 发起的命令挂起 | UI 层自行处理 |
+| 结果回填消息历史 | Agent Loop 需要继续对话 | 结果直接返回组件渲染 |
+
+**安全约束不缺失**：路径校验等在 `Tool.execute()` 内部，两个入口均受保护。
+
+> ToolBox 桥接完整规格见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
+
+### 3.7 决策：Shell 执行层洋葱模型
+
+**决策**：Shell 命令经 SafetyBelt → AllowlistGate → ApprovalGate → BareExec 四层洋葱栈，层间契约保证单调性和短路语义。
+
+**取舍**：
+- 纯 argv 数组执行（`execvp` 语义）可提供更强确定性保证，但丧失管道、重定向、变量展开等 shell 能力，对开发工作流影响过大
+- **选择 shell 执行 + 纵深防御组合**：结构守卫 + 环境隔离 + 命令分类 + heredoc 处理，与 OpenHuman 的生产验证策略一致
+
+> 洋葱模型完整设计、层间契约、BareExec 纵深防御见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
+
+### 3.8 决策：MCP 工具安全标记推断
+
+**决策**：MCP 工具的三维安全标记从其 annotations 推断，保守默认——无 annotation 时 `destructive=true, open_world=true`。
+
+**原则**：MCP 自报只能升级（更严），不能降级（更宽松）。`read_only` 声明可采纳（降风险），但 `read_only` 工具仍经策略评估，不自动 Allow。
+
+**推断逻辑**：
+- `read_only`：采纳 MCP 声明
+- `destructive`：`declared_destructive || !declared_read_only`（声明非破坏性但非只读 → 不可信 → 视为破坏性）
+- `open_world`：同 destructive 逻辑
+
+### 3.9 决策：审批超时语义
+
+**决策**：审批请求带超时，超时后**自动 Deny**——用户未响应视为拒绝，而非无限挂起或默认放行。最安全的选择。
+
+### 3.10 决策：先安全框架再加能力
+
+**决策**：实施顺序为 Phase 1（Agent Loop 基础，无 OS 工具）→ Phase 2（Permission Policy Engine）→ Phase 3（L1 OS 工具）→ Phase 4（L2 MCP）。
+
+**理由**：如果先加 OS 工具再建安全框架，LLM 一旦调 `shell_exec("rm -rf /")` 就直接执行——没有任何拦截。
+
+### 3.11 决策：两级可用性配置 + deny-by-default
+
+**决策**：工具可用性由两级配置叠加，且默认拒绝（deny-by-default）。
+
+**两级层次**：
+
+| 层级 | 何时生效 | 持久化 | 典型场景 |
+|------|---------|--------|---------|
+| **AgentMode 预设** | 选择 Agent 模式时 | `agent_modes` 表 | 深度模式预设 fs_read+shell_exec |
+| **对话级配置** | 对话创建时继承 AgentMode 预设，之后可随时修改 | `conversations` 表 | 对话中关掉 shell_exec，只留只读工具 |
+
+**取舍**：不设轮次级临时开关——对话级配置已支持随时修改，"临时启用一次"是 UI 交互便利性（前端可提供"临时启用"开关 + 自动还原计时器），不需要数据模型独立承载。
+
+**deny-by-default 语义**：`tools: string[]` 是**白名单**——空数组 = 无可用工具，非空数组 = 仅这些工具可用。所有内置 Agent 模式默认 `tools: []`，用户必须显式启用工具。
+
+**取舍**：
+- "空=全部"（allow-by-default）更方便但违反最小权限——新工具自动对所有模式可用，可能意外暴露危险能力
+- **选择 deny-by-default**：新增工具不会自动对任何模式可用，必须显式添加到 `tools` 列表。与安全原则"最小权限"一致
+
+**AgentMode 预设是预填充模板**：对话创建时从 AgentMode 深拷贝到 `conversation.tool_config`，之后独立演化。AgentMode 修改不回溯影响已创建的对话。
+
+**可用性层与权限层正交**：
+
+| 层 | 问题 | 机制 | 时机 |
+|----|------|------|------|
+| **可用性层** | LLM **能否看到**这个工具？ | `resolveAvailableTools()` | 构建 LLM 请求时 |
+| **权限层** | LLM **能否执行**这个操作？ | `ToolGateway.evaluate()` | 执行 tool_call 时 |
+
+可用性层先过滤（不可用的工具不出现在 `tools` 参数中），权限层后评估（即使可用，操作仍可能被 Deny/Ask）。两者不冲突。
 
 ---
 
-## 4. 三层工具详细设计
+## 4. 三层工具设计决策
 
-### 4.1 L0: 沙箱工具（Sandbox Tools）
+### 4.1 L0: 沙箱工具
 
-**对应现有 `src/tools/` 的 21 个前端工具**。
-
-关键设计：沙箱工具**双入口**——
-- 主窗口独立使用（现有行为，不变）
-- Agent Loop 调用（新增，LLM 返回 `tool_call: {name: "json-viewer"}` → 前端执行 → 返回结果）
-
-```rust
-pub struct SandboxTool {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub input_schema: Value,
-    pub category: String,
-}
-
-impl Tool for SandboxTool {
-    fn tier(&self) -> ToolTier { ToolTier::Sandbox }
-    fn behavior_hints(&self) -> BehaviorHints {
-        BehaviorHints { read_only: true, destructive: false, open_world: false }
-    }
-    fn permission_intents(&self, ..) -> Result<Vec<PermissionIntent>> {
-        Ok(vec![])  // 沙箱工具无需权限
-    }
-    async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult> {
-        // 通过 Tauri event 发到前端执行，等待前端返回结果
-        let response = context.frontend_channel
-            .invoke("sandbox_tool_execute", json!({
-                "tool_id": self.id,
-                "input": input,
-            }))
-            .await?;
-        Ok(ToolResult { output: response, is_error: false, artifacts: vec![] })
-    }
-}
-```
+**决策**：沙箱工具双入口——主窗口独立使用（现有行为不变）+ Agent Loop 调用（新增）。`tier() = Sandbox`，`permission_intents() = []`（无需权限），`execute()` 通过 Tauri event 发到前端执行。
 
 ### 4.2 L1: OS 工具
 
-#### 4.2.1 工具清单与安全标记
+**决策**：11 个内置 OS 工具，从安全到危险排序实现。共享 `resolve_path()` + `validate_path()` 基础设施。
 
-| 工具名 | action | read_only | destructive | open_world | 说明 |
-|--------|--------|-----------|-------------|------------|------|
-| `fs_read` | read | ✅ | ❌ | ❌ | 读文件，支持行范围/tail |
-| `fs_write` | edit | ❌ | ❌ | ❌ | 写文件，路径白名单约束 |
-| `fs_delete` | delete | ❌ | ✅ | ❌ | 删除文件/目录，需审批 |
-| `fs_list` | read | ✅ | ❌ | ❌ | 列目录，限制深度和条目数 |
-| `fs_glob` | read | ✅ | ❌ | ❌ | glob 模式搜索文件 |
-| `fs_grep` | read | ✅ | ❌ | ❌ | ripgrep 内容搜索 |
-| `fs_mkdir` | edit | ❌ | ❌ | ❌ | 创建目录 |
-| `fs_move` | edit | ❌ | ❌ | ❌ | 移动/重命名文件 |
-| `shell_exec` | execute | ❌ | ✅ | ✅ | Shell 命令执行，需审批+超时 |
-| `ask_user` | — | ✅ | ❌ | ❌ | AI 主动问用户，暂停等待回答 |
-
-#### 4.2.2 fs_read 实现
-
-```rust
-pub struct FsReadTool;
-
-#[derive(Deserialize)]
-struct FsReadInput {
-    path: String,
-    offset: Option<u32>,
-    limit: Option<u32>,
-    tail: Option<u32>,
-}
-
-impl Tool for FsReadTool {
-    fn name(&self) -> &str { "fs_read" }
-    async fn description(&self) -> Result<String> {
-        Ok("Read file contents. Supports line range (offset+limit) and tail.".to_string())
-    }
-    fn input_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "path": { "type": "string", "description": "File path (absolute or relative to workspace)" },
-                "offset": { "type": "integer", "description": "Start line (1-based)" },
-                "limit": { "type": "integer", "description": "Max lines to read" },
-                "tail": { "type": "integer", "description": "Read last N lines" }
-            },
-            "required": ["path"]
-        })
-    }
-    fn tier(&self) -> ToolTier { ToolTier::Os }
-    fn behavior_hints(&self) -> BehaviorHints {
-        BehaviorHints { read_only: true, destructive: false, open_world: false }
-    }
-    fn permission_intents(&self, input: &Value, ctx: &ToolUseContext) -> Result<Vec<PermissionIntent>> {
-        let path = input["path"].as_str().unwrap_or("");
-        let resolved = resolve_path(path, ctx.workspace_root.as_deref())?;
-        Ok(vec![PermissionIntent::new("read", resolved.to_string_lossy())])
-    }
-    async fn execute(&self, input: &Value, ctx: &ToolUseContext) -> Result<ToolResult> {
-        let args: FsReadInput = serde_json::from_value(input.clone())?;
-        let path = resolve_path(&args.path, ctx.workspace_root.as_deref())?;
-
-        // 限制读取大小（最大 1MB）
-        let metadata = tokio::fs::metadata(&path).await?;
-        if metadata.len() > 1_048_576 {
-            return Ok(ToolResult::error("File too large (max 1MB)"));
-        }
-
-        let content = tokio::fs::read_to_string(&path).await?;
-        let lines: Vec<&str> = content.lines().collect();
-
-        let selected = match (args.offset, args.limit, args.tail) {
-            (_, _, Some(tail)) => lines.iter().rev().take(tail as usize).rev(),
-            (Some(off), Some(lim), _) => lines.iter().skip(off as usize - 1).take(lim as usize),
-            (Some(off), None, _) => lines.iter().skip(off as usize - 1),
-            _ => lines.iter(),
-        };
-
-        Ok(ToolResult {
-            output: selected.cloned().collect::<Vec<_>>().join("\n"),
-            is_error: false,
-            artifacts: vec![],
-        })
-    }
-}
-```
-
-#### 4.2.3 fs_write 实现
-
-```rust
-pub struct FsWriteTool;
-
-#[derive(Deserialize)]
-struct FsWriteInput {
-    path: String,
-    content: String,
-    append: Option<bool>,
-}
-
-impl Tool for FsWriteTool {
-    fn name(&self) -> &str { "fs_write" }
-    fn tier(&self) -> ToolTier { ToolTier::Os }
-    fn behavior_hints(&self) -> BehaviorHints {
-        BehaviorHints { read_only: false, destructive: false, open_world: false }
-    }
-    fn permission_intents(&self, input: &Value, ctx: &ToolUseContext) -> Result<Vec<PermissionIntent>> {
-        let path = input["path"].as_str().unwrap_or("");
-        let resolved = resolve_path(path, ctx.workspace_root.as_deref())?;
-        Ok(vec![PermissionIntent::new("edit", resolved.to_string_lossy())])
-    }
-    async fn execute(&self, input: &Value, ctx: &ToolUseContext) -> Result<ToolResult> {
-        let args: FsWriteInput = serde_json::from_value(input.clone())?;
-        let path = resolve_path(&args.path, ctx.workspace_root.as_deref())?;
-
-        // 确保父目录存在
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-
-        if args.append.unwrap_or(false) {
-            tokio::fs::OpenOptions::new()
-                .append(true).open(&path)
-                .await?
-                .write_all(args.content.as_bytes()).await?;
-        } else {
-            tokio::fs::write(&path, &args.content).await?;
-        }
-
-        Ok(ToolResult {
-            output: format!("Written {} bytes to {}", args.content.len(), path.display()),
-            is_error: false,
-            artifacts: vec![ToolArtifact {
-                kind: "file".to_string(),
-                path: Some(path.to_string_lossy().to_string()),
-                content: args.content.clone(),
-            }],
-        })
-    }
-}
-```
-
-#### 4.2.4 shell_exec 实现
-
-```rust
-pub struct ShellExecTool;
-
-#[derive(Deserialize)]
-struct ShellExecInput {
-    command: String,
-    cwd: Option<String>,
-    timeout_ms: Option<u64>,
-}
-
-impl Tool for ShellExecTool {
-    fn name(&self) -> &str { "shell_exec" }
-    fn tier(&self) -> ToolTier { ToolTier::Os }
-    fn behavior_hints(&self) -> BehaviorHints {
-        BehaviorHints { read_only: false, destructive: true, open_world: true }
-    }
-    fn permission_intents(&self, input: &Value, _ctx: &ToolUseContext) -> Result<Vec<PermissionIntent>> {
-        let command = input["command"].as_str().unwrap_or("");
-        Ok(vec![
-            PermissionIntent::new("execute", command.to_string()),
-            PermissionIntent::new("network", "*"),
-        ])
-    }
-    async fn execute(&self, input: &Value, ctx: &ToolUseContext) -> Result<ToolResult> {
-        let args: ShellExecInput = serde_json::from_value(input.clone())?;
-
-        let cwd = args.cwd
-            .map(|c| resolve_path(&c, ctx.workspace_root.as_deref()))
-            .transpose()?
-            .or_else(|| ctx.workspace_root.clone());
-
-        let timeout_duration = Duration::from_millis(
-            args.timeout_ms.unwrap_or(30_000)
-        );
-
-        let output = timeout(timeout_duration, async {
-            if has_hidden_execution(&args.command) {
-                return Err(ShellSecurityError::HiddenExecution.into());
-            }
-
-            let mut cmd = tokio::process::Command::new("cmd");
-            cmd.args(["/C", &args.command])
-                .env_clear()
-                .envs(safe_env_vars())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped());
-
-            if let Some(ref dir) = cwd {
-                cmd.current_dir(dir);
-            }
-
-            cmd.output().await
-        }).await??;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let is_error = !output.status.success();
-
-        let mut result_output = stdout;
-        if !stderr.is_empty() {
-            result_output.push_str("\n--- stderr ---\n");
-            result_output.push_str(&stderr);
-        }
-
-        Ok(ToolResult {
-            output: result_output,
-            is_error,
-            artifacts: vec![],
-        })
-    }
-}
-```
-
-#### 4.2.5 Shell 安全守卫
-
-Shell 执行使用 `cmd /C` / `bash -c`（保留管道、重定向等 shell 能力），配合纵深防御组合：
-
-```rust
-fn has_hidden_execution(command: &str) -> bool {
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let chars: Vec<char> = command.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        match chars[i] {
-            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
-            '"' if !in_single_quote => in_double_quote = !in_double_quote,
-            '$' if !in_single_quote && i + 1 < chars.len() && chars[i + 1] == '(' => return true,
-            '`' if !in_single_quote => return true,
-            '&' if !in_single_quote && !in_double_quote => return true,
-            _ => {}
-        }
-        i += 1;
-    }
-    false
-}
-
-fn is_command_executor(program: &str) -> bool {
-    matches!(program,
-        "bash" | "sh" | "zsh" | "dash" | "cmd" | "powershell" | "python" | "python3" | "node" | "ruby" | "perl"
-    )
-}
-
-fn strip_quoted_heredoc_body(command: &str) -> String {
-    // 移除单引号/双引号包裹的 heredoc body
-    // heredoc 内容是数据不是 shell，避免 prose 中的危险命令名误触发
-    // 实现略
-    command.to_string()
-}
-
-fn safe_env_vars() -> HashMap<&'static str, String> {
-    let mut vars = HashMap::new();
-    for key in &[
-        "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
-        "TERM", "USER", "SHELL", "TMPDIR",
-        // Windows 必需
-        "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT",
-        "TEMP", "TMP", "USERPROFILE", "APPDATA",
-        "LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432",
-    ] {
-        if let Ok(val) = std::env::var(key) {
-            vars.insert(key, val);
-        }
-    }
-    vars
-}
-
-enum CommandRiskLevel { Low, Medium, High }
-
-fn command_risk_level(command: &str) -> CommandRiskLevel {
-    let command = strip_quoted_heredoc_body(command);
-    for segment in split_unquoted_segments(&command) {
-        let words: Vec<&str> = segment.split_whitespace().collect();
-        let Some(base) = words.first() else { continue };
-        let base = normalized_command_name(base);
-        if is_command_executor(base) && words.len() > 1 {
-            // bash -c "rm -rf /" — 嵌套执行器中的隐藏命令
-            // 标记为 High 风险，由 SafetyBelt 决定是否拒绝
-        }
-        if matches!(base.as_str(),
-            "mkfs" | "dd" | "shutdown" | "reboot" | "halt" | "poweroff"
-            | "sudo" | "su" | "mount" | "umount"
-            | "iptables" | "ufw" | "firewall-cmd"
-            | "useradd" | "userdel" | "usermod" | "passwd"
-            | "format"
-        ) {
-            return CommandRiskLevel::High;
-        }
-    }
-    CommandRiskLevel::Medium
-}
-```
-
-> 与 OSCALLDESIGN.md §3.2 的 BareExec 执行模型对齐：shell 执行 + 纵深防御组合。`has_hidden_execution()` + `is_command_executor()` 对应结构守卫；`safe_env_vars()` 对应环境隔离；`command_risk_level()` 对应命令分类；`strip_quoted_heredoc_body()` 对应 heredoc 处理。
-
-#### 4.2.6 ask_user 实现
-
-```rust
-pub struct AskUserTool;
-
-#[derive(Deserialize)]
-struct AskUserInput {
-    question: String,
-    options: Option<Vec<String>>,
-}
-
-impl Tool for AskUserTool {
-    fn name(&self) -> &str { "ask_user" }
-    fn tier(&self) -> ToolTier { ToolTier::Os }
-    fn behavior_hints(&self) -> BehaviorHints {
-        BehaviorHints { read_only: true, destructive: false, open_world: false }
-    }
-    fn permission_intents(&self, ..) -> Result<Vec<PermissionIntent>> {
-        Ok(vec![])  // 问用户不需要权限审批
-    }
-    async fn execute(&self, input: &Value, ctx: &ToolUseContext) -> Result<ToolResult> {
-        let args: AskUserInput = serde_json::from_value(input.clone())?;
-
-        // 通过 Tauri event 请求前端展示问题 UI
-        let answer = ctx.frontend_channel
-            .invoke("ask_user_question", json!({
-                "question": args.question,
-                "options": args.options,
-            }))
-            .await?;
-
-        Ok(ToolResult {
-            output: answer,
-            is_error: false,
-            artifacts: vec![],
-        })
-    }
-}
-```
+> 工具清单、安全标记、每个工具的 JSON Schema 规格和实现见 I18-spec Step 2。
+> Shell 安全守卫（SafetyBelt / AllowlistGate / ApprovalGate / BareExec）见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
 
 ### 4.3 L2: MCP/外部工具
 
-```rust
-pub struct McpTool {
-    pub bridge_name: String,        // "mcp__{server}__{tool}" 命名规范
-    pub server_id: String,
-    pub tool_name: String,
-    pub description: String,
-    pub input_schema: Value,
-    pub behavior_hints: BehaviorHints,
-    pub client: Arc<McpClient>,
-}
+**决策**：MCP 工具通过 `McpTool` 桥接实现 Tool trait，命名规范 `mcp__{server}__{tool}`。`McpServerManager` 管理子进程生命周期，发现工具后动态注册到 ToolRegistry。
 
-impl Tool for McpTool {
-    fn name(&self) -> &str { &self.bridge_name }
-    fn tier(&self) -> ToolTier { ToolTier::External }
-    fn behavior_hints(&self) -> BehaviorHints { self.behavior_hints }
-    fn permission_intents(&self, input: &Value, _ctx: &ToolUseContext) -> Result<Vec<PermissionIntent>> {
-        let mut intents = vec![PermissionIntent::new("external", self.server_id.clone())];
-        if self.behavior_hints.open_world {
-            intents.push(PermissionIntent::new("network", "*"));
-        }
-        Ok(intents)
-    }
-    async fn execute(&self, input: &Value, _ctx: &ToolUseContext) -> Result<ToolResult> {
-        let response = self.client
-            .call_tool(&self.tool_name, input)
-            .await?;
-        Ok(ToolResult {
-            output: response.content,
-            is_error: response.is_error,
-            artifacts: vec![],
-        })
-    }
-}
-```
+**隔离边界声明**：MCP server 以独立子进程运行，但当前**不提供 cgroup / seccomp / namespace 级别的 OS 隔离**。权限策略对 External 层的作用是逻辑层控制（决定是否调用），不是执行层隔离（限制调用后的行为）。严格策略禁用某 MCP server 时，必须**拒绝调用**而非宣称"沙箱内安全执行"。
 
-MCP Server 进程管理：
-
-```rust
-pub struct McpServerManager {
-    servers: DashMap<String, McpServerProcess>,
-}
-
-pub struct McpServerProcess {
-    pub id: String,
-    pub config: McpServerConfig,
-    pub client: Arc<McpClient>,
-    pub process: Option<tokio::process::Child>,
-}
-
-#[derive(Deserialize)]
-pub struct McpServerConfig {
-    pub command: String,
-    pub args: Vec<String>,
-    pub env: HashMap<String, String>,
-    pub cwd: Option<String>,
-}
-
-impl McpServerManager {
-    /// 启动 MCP server 并注册其工具到 ToolRegistry
-    pub async fn start_server(
-        &self,
-        config: McpServerConfig,
-        registry: &ToolRegistry,
-    ) -> Result<String> {
-        let id = uuid::Uuid::new_v4().to_string();
-
-        // 启动子进程
-        let mut child = tokio::process::Command::new(&config.command)
-            .args(&config.args)
-            .envs(&config.env)
-            .stdout(std::process::Stdio::piped())
-            .stdin(std::process::Stdio::piped())
-            .spawn()?;
-
-        // 建立 MCP 连接
-        let client = McpClient::connect(/* stdio transport */).await?;
-
-        // 发现工具
-        let tools = client.list_tools().await?;
-
-        // 注册到 ToolRegistry
-        for tool_def in tools {
-            let bridge_name = format!("mcp__{}__{}", &id, &tool_def.name);
-            let mcp_tool = McpTool {
-                bridge_name,
-                server_id: id.clone(),
-                tool_name: tool_def.name,
-                description: tool_def.description,
-                input_schema: tool_def.input_schema,
-                behavior_hints: infer_behavior_hints(&tool_def),
-                client: client.clone(),
-            };
-            registry.register(Arc::new(mcp_tool));
-        }
-
-        self.servers.insert(id.clone(), McpServerProcess {
-            id: id.clone(),
-            config,
-            client,
-            process: Some(child),
-        });
-
-        Ok(id)
-    }
-}
-
-/// 从 MCP 工具元数据推断三维安全标记
-/// 保守默认：无 annotation 时 destructive=true, open_world=true
-/// MCP 自报只能升级（更严），不能降级（更宽松）
-/// read_only 声明可采纳（它是降风险声明，但 read_only 工具仍经策略评估，不自动 Allow）
-fn infer_behavior_hints(tool_def: &McpToolDefinition) -> BehaviorHints {
-    let declared_read_only = tool_def.annotations.as_ref()
-        .and_then(|a| a.read_only_hint)
-        .unwrap_or(false);
-    let declared_destructive = tool_def.annotations.as_ref()
-        .and_then(|a| a.destructive_hint)
-        .unwrap_or(false);
-    let declared_open_world = tool_def.annotations.as_ref()
-        .and_then(|a| a.open_world_hint)
-        .unwrap_or(false);
-
-    BehaviorHints {
-        // read_only: 采纳 MCP 声明（降风险，但仍经策略评估）
-        read_only: declared_read_only,
-        // destructive: 无声明时默认 true；有声明时取 max(declared, !read_only)
-        //   - MCP 声明 destructive=true → true
-        //   - MCP 声明 destructive=false + read_only=true → false（可信）
-        //   - MCP 声明 destructive=false + read_only=false → true（不可信）
-        destructive: declared_destructive || !declared_read_only,
-        // open_world: 同 destructive 逻辑
-        open_world: declared_open_world || !declared_read_only,
-    }
-}
-```
+> 详见 [OSCALLDESIGN.md](./OSCALLDESIGN.md) §1.2。
 
 ---
 
-## 5. 前端集成
+## 5. 前端集成与 Agent 模式
 
-### 5.1 流式事件扩展
+> ChatDelta 扩展、ToolCallBubble 五态渲染、审批交互流、AgentMode 扩展字段、内置预设、Policy 映射的完整规格见 I18-spec Step 9-10。
 
-```typescript
-interface ChatDeltaPayload {
-  conversation_id: string
-  message_id: string
-  delta_text?: string
-  delta_reasoning?: string
-  delta_tool_call_id?: string
-  delta_tool_call_name?: string
-  delta_tool_call_arguments?: string
-  tool_call_status?: ToolCallStatus
-  tool_call_result?: string
-  tool_call_started_at?: number
-  tool_call_finished_at?: number
-  tool_call_awaiting_approval?: ToolApprovalRequest
-  finish_reason?: string
-  usage?: TokenUsage
-  error?: string
-}
-
-type ToolCallStatus = 'running' | 'success' | 'error' | 'awaiting_user' | 'cancelled'
-
-interface ToolApprovalRequest {
-  tool_call_id: string
-  tool_name: string
-  arguments: Record<string, unknown>
-  intents: PermissionIntent[]
-}
-```
-
-### 5.2 ToolCallBubble 五态渲染
-
-```
-┌─ running ──────────────┐   ┌─ success ──────────────┐
-│ 🔄 fs_read             │   │ ✅ fs_read  (120ms)    │
-│ /src/main.ts           │   │ /src/main.ts           │
-└────────────────────────┘   │ ▼ [45 lines]           │
-                              └────────────────────────┘
-┌─ error ────────────────┐   ┌─ awaiting_user ────────┐
-│ ❌ shell_exec           │   │ ⚠️ shell_exec          │
-│ Permission denied:     │   │ rm -rf /tmp/cache      │
-│ execute on system dir  │   │ [✓ Approve] [✗ Deny]  │
-└────────────────────────┘   └────────────────────────┘
-┌─ cancelled ────────────┐
-│ ⊘ fs_delete            │
-│ User rejected          │
-└────────────────────────┘
-```
-
-### 5.3 审批交互流
-
-```
-RoundExecutor → ToolGateway evaluate → Ask
-  → emit AgenticEvent::ToolAwaitingApproval
-  → 前端 ChatDeltaPayload.tool_call_awaiting_approval
-  → ToolCallBubble 渲染 [Approve] [Deny] 按钮
-  → 用户点击 → Tauri command: approve_tool_call / deny_tool_call
-  → Rust ApprovalChannel 收到决策
-  → 继续执行或拒绝
-```
+**关键决策摘要**：
+- `ToolCallStatus` 五态：`running | success | error | awaiting_user | cancelled`
+- 审批交互：Ask → emit `AgenticEvent::ToolAwaitingApproval` → 前端审批 UI → approve/deny Tauri command → ApprovalChannel 收到决策
+- Agent 模式 `max_tool_tier` + `approval_level` 两字段控制工具能力和审批级别
+- 项目级 `.assistant/permissions.json` 声明规则，加载优先级：应用默认 → 项目配置 → Agent 模式配置，取 `most_restrictive`
 
 ---
 
-## 6. Agent 模式集成
-
-### 6.1 AgentMode 扩展
-
-```typescript
-interface AgentMode {
-  id: string
-  name: string
-  description: string
-  kind: 'default' | 'quick' | 'deep' | 'custom'
-  prompt: string
-  model: string | null
-  temperature: number | null
-  max_tokens: number | null
-  tools: string[]                    // 可用工具白名单（空=全部）
-  max_tool_tier: ToolTier           // 允许的最高工具层级
-  approval_level: ApprovalLevel     // 审批级别
-  presentation_rank: number
-  is_builtin: boolean
-  created_at: number
-  updated_at: number
-}
-
-type ToolTier = 'sandbox' | 'os' | 'external'
-
-type ApprovalLevel =
-  | 'none'              // 全部自动执行
-  | 'dangerous_only'    // 仅 destructive/open_world 需审批
-  | 'all_os_tools'      // 所有非 Sandbox 工具需审批
-```
-
-### 6.2 内置预设更新
-
-| 模式 | max_tool_tier | approval_level | tools |
-|------|---------------|----------------|-------|
-| 默认 | `sandbox` | `none` | [] |
-| 快速 | `sandbox` | `none` | [] |
-| 深度 | `os` | `dangerous_only` | ["fs_read","fs_list","fs_glob","fs_grep","fs_write","shell_exec","ask_user"] |
-| 翻译助手 | `sandbox` | `none` | [] |
-
-### 6.3 Agent 模式 → Policy 映射
-
-```rust
-fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
-    let mut global_rules = default_global_rules();
-
-    // approval_level 调整默认规则
-    match mode.approval_level {
-        ApprovalLevel::None => {
-            // 所有 Ask → Allow
-            global_rules.insert(0, PermissionRule::new("*", "*", PermissionEffect::Allow));
-        },
-        ApprovalLevel::DangerousOnly => {
-            // 保持默认（read=Allow, edit/execute=Ask）
-        },
-        ApprovalLevel::AllOsTools => {
-            // 所有非 Sandbox 操作需审批
-            global_rules.push(PermissionRule::new("read", "*", PermissionEffect::Ask));
-        },
-    }
-
-    // max_tier 限制：超过层级的工具直接 Deny
-    let tier_rules = match mode.max_tool_tier {
-        ToolTier::Sandbox => vec![
-            PermissionRule::new("*", "tier:os", PermissionEffect::Deny),
-            PermissionRule::new("*", "tier:external", PermissionEffect::Deny),
-        ],
-        ToolTier::Os => vec![
-            PermissionRule::new("*", "tier:external", PermissionEffect::Deny),
-        ],
-        ToolTier::External => vec![],
-    };
-
-    ResolvedPermissionPolicy::new(global_rules, vec![
-        PermissionConstraintLayer::new(tier_rules),
-    ])
-}
-```
-
----
-
-## 7. 项目级权限配置
-
-用户可在项目根目录创建 `.assistant/permissions.json` 声明项目级规则：
-
-```json
-{
-  "rules": [
-    { "action": "read",  "resource": "src/**",    "effect": "allow" },
-    { "action": "edit",  "resource": "src/**",    "effect": "allow" },
-    { "action": "edit",  "resource": "*.lock",    "effect": "deny"  },
-    { "action": "edit",  "resource": ".env",      "effect": "deny"  },
-    { "action": "edit",  "resource": ".env.*",    "effect": "deny"  },
-    { "action": "execute", "resource": "npm run *",  "effect": "allow" },
-    { "action": "execute", "resource": "git *",      "effect": "allow" },
-    { "action": "execute", "resource": "*",          "effect": "ask"   }
-  ]
-}
-```
-
-加载优先级：应用默认 → 项目配置 → Agent 模式配置，取 `most_restrictive`。
-
----
-
-## 8. Crate 组织
+## 6. Crate 组织
 
 ```
 src-tauri/
@@ -1527,7 +396,7 @@ src-tauri/
 
 ---
 
-## 9. 实施路径
+## 7. 实施路径
 
 ### Phase 1: Agent Loop 基础
 
@@ -1536,7 +405,7 @@ src-tauri/
 - `assistant-tools` crate 骨架：Tool trait + ToolRegistry + ToolResult
 - `assistant-tools/sandbox/`：L0 沙箱工具桥接（注册现有 21 个前端工具）
 - `round_executor.rs`：消费 StreamOutcome.tool_calls → 执行 → 回填 → 继续对话
-- Tool Call 五态追踪：tool_calls_json 扩展 + 流式事件 + ToolCallBubble（详见 I18 Step 9）
+- Tool Call 五态追踪：tool_calls_json 扩展 + 流式事件 + ToolCallBubble（详见 I18-spec Step 9）
 - Agent 模式 `max_tool_tier: 'sandbox'` 生效
 
 ### Phase 2: Permission Policy Engine
@@ -1572,7 +441,7 @@ src-tauri/
 
 ---
 
-## 10. 安全原则
+## 8. 安全原则
 
 1. **工具自描述权限，策略层决策**：工具通过 `permission_intents()` 声明"我需要什么"，ToolGateway 决定"允不允许"——关注点分离
 2. **多层策略取最严**：应用默认 + 项目配置 + Agent 模式三层叠加，`most_restrictive` 组合
@@ -1587,7 +456,7 @@ src-tauri/
 
 ---
 
-## 11. 参考来源
+## 9. 参考来源
 
 | 设计要素 | 参考项目 | 参考文件 | 借鉴内容 |
 |---------|---------|---------|---------|

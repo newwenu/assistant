@@ -713,7 +713,9 @@
       "recovery_key_unlock": "Unlock with Recovery Key",
       "recovery_key_divider": "Recovery Key",
       "recovery_key_placeholder": "XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX",
-      "unlock_with_recovery_key": "Unlock with Recovery Key"
+      "unlock_with_recovery_key": "Unlock with Recovery Key",
+      "use_password": "Use Password",
+      "password_divider": "Password"
     },
     "entry": {
       "search": "Search",
@@ -733,6 +735,8 @@
       "title_required": "Title is required",
       "username": "Username",
       "password": "Password",
+      "password_set_hint": "Password is set, enter new one to overwrite",
+      "notes_set_hint": "Notes are set, enter new content to overwrite",
       "url": "URL",
       "notes": "Notes",
       "totp_secret": "TOTP Secret",

@@ -1,6 +1,10 @@
 # I18b ToolBox OS 交互桥接规格
 
-> 设计 ToolBox 工具调用 Rust OS 能力的统一桥接，以 fs_link 为例展示注册式扩展流程。
+> **本文档职责**：ToolBox 双入口桥接的**权威源**——os_tool_exec 统一 Tauri command、os.ts 前端代理、新增 OS 工具标准 5 步流程、fs_link 完整设计。
+> **架构决策记录**见 [I18-agent-tool-architecture-design.md](./I18-agent-tool-architecture-design.md)（§3.6 双入口分流决策）。
+> **实施规格**见 [I18-agent-tool-architecture-spec.md](./I18-agent-tool-architecture-spec.md)（Step 8 Tauri 桥接）。
+> **Shell 安全架构**见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
+>
 > Agent 入口（RoundExecutor → ToolPipeline）已在 I18 中定义，本文档聚焦 ToolBox 侧桥接——用户主动调用的工具如何直达执行，与 Agent 入口共享 Tool trait 实现但分流执行路径。
 
 ---
@@ -155,7 +159,7 @@ const result = await os.fsLink.create({ original, link, linkType });
 
 ### 3.2 Rust 侧：Tool trait 实现
 
-在 `assistant-tools/os/` 下新增 `fs_link.rs`，实现 I18 §3.2 定义的 Tool trait：
+在 `assistant-tools/os/` 下新增 `fs_link.rs`，实现 I18-spec Step 1 定义的 Tool trait：
 
 - `name()` → `"fs_link"`
 - `description()` → 供 LLM 理解的描述
@@ -228,14 +232,14 @@ export const os = {
 
 | 校验项 | 规则 |
 |--------|------|
-| 路径校验 | original 和 link 均须通过 `validate_path()`（I18 §4.2） |
+| 路径校验 | original 和 link 均须通过 `validate_path()`（I18-spec Step 2） |
 | 类型校验 | symlink/hardlink 要求 original 必须存在；junction 要求 original 必须是目录 |
 | 冲突校验 | link 路径已存在 → 拒绝，不自动覆盖 |
 | 同文件系统 | hardlink 要求 original 和 link 在同一文件系统（由 OS 返回错误，不前置校验） |
 
 ### 4.5 Tool trait 声明
 
-遵循 I18 §3.2 统一 Tool trait：
+遵循 I18-spec Step 1 统一 Tool trait：
 
 - `name()` → `"fs_link"`
 - `tier()` → `ToolTier::Os`
@@ -293,7 +297,7 @@ export const os = {
 
 ## 5. Crate 组织变更
 
-在 I18 §8 的基础上新增。`os_tool_exec` Tauri command 位于应用命令层（`src-tauri/src/cmd/`），而非 `assistant-tools` 库 crate 内——库 crate 不依赖 Tauri runtime。
+在 I18-design §6 的基础上新增。`os_tool_exec` Tauri command 位于应用命令层（`src-tauri/src/cmd/`），而非 `assistant-tools` 库 crate 内——库 crate 不依赖 Tauri runtime。
 
 ```
 src-tauri/

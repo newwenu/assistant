@@ -1,9 +1,9 @@
 # I18 — Agent Tool 架构实施规格
 
-> 从底层到顶层、从后端到前端的搭建流程。每步讲清：建什么、为什么先建、建完能干什么、类型契约、行为约束。
-> 设计背景与参考项目分析见 [I18-agent-tool-architecture-design.md](./I18-agent-tool-architecture-design.md)。
-> Shell 执行层安全架构见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
-> ToolBox 双入口桥接见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
+> **本文档职责**：从底层到顶层的**实施规格**——每步讲清：建什么、为什么先建、建完能干什么、类型契约、行为约束。是类型定义、流程算法、接口签名的**唯一权威源**。
+> **架构决策记录**（为什么这样设计、参考了什么、做了什么取舍）见 [I18-agent-tool-architecture-design.md](./I18-agent-tool-architecture-design.md)。
+> **Shell 执行层安全架构**（洋葱模型、层间契约、委托约束）见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
+> **ToolBox 双入口桥接**（os_tool_exec、os.ts、新增工具 5 步流程）见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
 
 ---
 
@@ -834,29 +834,35 @@ pub struct RoundExecutor {
 execute_round(context) → RoundOutcome:
 
   for iteration in 0..max_iterations:
-    1. 构建请求
-       tool_defs = registry.tool_definitions_for_tier(max_tier)
+    1. 解析可用工具（两级可用性配置叠加）
+       available = resolve_available_tools(
+         registry,
+         context.conversation_tool_config,
+       )
+       tool_defs = available.map(|t| ToolDefinition::from_tool(t))
+
+    2. 构建请求
        request = ModelRequest { messages, tools: tool_defs }
 
-    2. 调用 LLM（流式）
+    3. 调用 LLM（流式）
        stream_outcome = stream_processor.process_stream(request, ai_client)
 
-    3. 提取 assistant message（含 text + tool_calls）
+    4. 提取 assistant message（含 text + tool_calls）
        messages.push(stream_outcome.assistant_message)
 
-    4. 无 tool_call → 对话结束
+    5. 无 tool_call → 对话结束
        return Finished(stream_outcome)
 
-    5. 发射 tool_call running 事件
+    6. 发射 tool_call running 事件
        emit AgenticEvent::ToolCallStarted { ... }
 
-    6. 执行工具
+    7. 执行工具
        tool_results = tool_pipeline.execute(tool_calls, context)
 
-    7. 回填 tool_results 到消息历史
+    8. 回填 tool_results 到消息历史
        messages.push(Message::tool_results_message(...))
 
-    8. 继续循环（LLM 基于工具结果继续生成）
+    9. 继续循环（LLM 基于工具结果继续生成）
 
   return MaxIterationsReached
 ```
@@ -1023,18 +1029,18 @@ RoundExecutor → ToolGateway evaluate → Ask
 
 ---
 
-## Step 10 — Agent 模式集成
+## Step 10 — Agent 模式集成 + 两级可用性配置
 
-> **建什么**：Agent 模式的 `max_tool_tier` + `approval_level` 配置，以及到 PermissionPolicy 的映射。
-> **为什么最后建**：Policy（Step 4）和前端（Step 9）都已就位，只需要把 Agent 模式配置接入 Policy 生成。
-> **建完能干什么**：不同 Agent 模式有不同的工具能力和审批级别——深度模式可以用 shell_exec，默认模式只能用沙箱工具。
+> **建什么**：两级可用性配置（AgentMode 预设 → 对话级）+ Agent 模式到 PermissionPolicy 的映射 + deny-by-default 语义。
+> **为什么最后建**：Policy（Step 4）和前端（Step 9）都已就位，只需要把 Agent 模式配置接入 Policy 生成 + 可用性配置接入 RoundExecutor。
+> **建完能干什么**：不同 Agent 模式有不同的工具能力和审批级别；用户可在对话中随时增删可用工具。
 
 ### 10.1 AgentMode 扩展字段
 
 ```typescript
 interface AgentMode {
   // ...现有字段...
-  tools: string[]                    // 可用工具白名单（空=全部）
+  tools: string[]                    // 工具白名单（空=无可用工具，deny-by-default）
   max_tool_tier: ToolTier           // 允许的最高工具层级
   approval_level: ApprovalLevel     // 审批级别
 }
@@ -1047,16 +1053,90 @@ type ApprovalLevel =
   | 'all_os_tools'      // 所有非 Sandbox 工具需审批
 ```
 
+**`tools` 语义**：白名单，deny-by-default。`tools: []` = 无可用工具，`tools: ["fs_read"]` = 仅 fs_read 可用。所有内置模式默认 `tools: []`，用户必须显式启用工具。
+
 ### 10.2 内置预设
 
-| 模式 | max_tool_tier | approval_level | tools |
-|------|---------------|----------------|-------|
-| 默认 | `sandbox` | `none` | [] |
-| 快速 | `sandbox` | `none` | [] |
-| 深度 | `os` | `dangerous_only` | ["fs_read","fs_list","fs_glob","fs_grep","fs_write","shell_exec","ask_user"] |
-| 翻译助手 | `sandbox` | `none` | [] |
+| 模式 | max_tool_tier | approval_level | tools | 说明 |
+|------|---------------|----------------|-------|------|
+| 默认 | `sandbox` | `none` | `[]` | 无可用工具，用户按需启用 |
+| 快速 | `sandbox` | `none` | `[]` | 同上 |
+| 深度 | `os` | `dangerous_only` | `[]` | 层级开放到 OS，但工具仍需显式启用 |
+| 翻译助手 | `sandbox` | `none` | `[]` | 同默认 |
 
-### 10.3 Agent 模式 → Policy 映射
+**设计理由**：deny-by-default 确保新增工具不会自动对任何模式可用，与最小权限原则一致。用户在 AgentMode 编辑表单或对话工具栏中显式勾选所需工具。
+
+### 10.3 ConversationToolConfig（对话级）
+
+对话创建时从 AgentMode 预设**深拷贝**，之后独立演化。AgentMode 修改不回溯影响已创建的对话。
+
+```typescript
+interface ConversationToolConfig {
+  maxToolTier: ToolTier              // 层级上限（硬上限，不可被 enabledTools 超越）
+  approvalLevel: ApprovalLevel       // 审批级别
+  enabledTools: string[]             // 显式启用的工具名列表
+  disabledTools: string[]            // 显式禁用的工具名列表（优先级高于 enabledTools）
+}
+```
+
+**不变量**：
+- `disabledTools` 优先级高于 `enabledTools`——同一工具同时出现在两个列表中，结果为禁用
+- `maxToolTier` 是硬上限——即使 `enabledTools` 包含 External 工具，`maxToolTier: Os` 时 External 工具仍不可用
+- 工具 `name` 是稳定标识符，不因 i18n 变化
+
+**预填充逻辑**：
+```
+conversation.tool_config = {
+  maxToolTier:     agentMode.max_tool_tier,
+  approvalLevel:   agentMode.approval_level,
+  enabledTools:    [...agentMode.tools],   // 深拷贝
+  disabledTools:   [],
+}
+```
+
+### 10.4 resolveAvailableTools() 解析算法
+
+两级配置叠加解析：
+
+```rust
+fn resolve_available_tools(
+    registry: &ToolRegistry,
+    config: &ConversationToolConfig,
+) -> Vec<Arc<dyn Tool>> {
+    // 1. 层级过滤（硬上限）
+    let tier_filtered: Vec<_> = registry.all_tools()
+        .filter(|t| t.tier() <= config.max_tool_tier)
+        .collect();
+
+    // 2. 白名单过滤（deny-by-default：空=无工具）
+    let candidates: Vec<_> = if config.enabled_tools.is_empty() {
+        vec![]  // deny-by-default：无显式启用 = 无可用工具
+    } else {
+        tier_filtered.into_iter()
+            .filter(|t| config.enabled_tools.contains(&t.name().to_string()))
+            .collect()
+    };
+
+    // 3. 排除禁用列表
+    candidates.into_iter()
+        .filter(|t| !config.disabled_tools.contains(&t.name().to_string()))
+        .collect()
+}
+```
+
+### 10.5 可用性层与权限层正交声明
+
+| 层 | 问题 | 机制 | 时机 |
+|----|------|------|------|
+| **可用性层** | LLM **能否看到**这个工具？ | `resolveAvailableTools()` | 构建 LLM 请求时 |
+| **权限层** | LLM **能否执行**这个操作？ | `ToolGateway.evaluate()` | 执行 tool_call 时 |
+
+**交互规则**：
+- 可用性层先过滤——不可用的工具不出现在 `tools` 参数中，LLM 不会生成对应 tool_call
+- 权限层后评估——即使工具可用，具体操作仍可能被 Policy Deny 或要求审批
+- 两者不冲突——可用性是"工具级开关"，权限是"操作级控制"
+
+### 10.6 Agent 模式 → Policy 映射
 
 ```rust
 fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
@@ -1091,9 +1171,55 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 }
 ```
 
-**参考**：OpenBitFun 通过 `agents.md` + `ToolExposure` override 实现——每个 Agent 定义可覆盖工具的默认暴露级别（Direct/Deferred）。openhuman 通过 `ToolPolicy` trait 的 `check()` 方法实现——`AllowAllToolPolicy` 是默认，可安装自定义策略。
+**参考**：OpenBitFun 通过 `agents.md` + `ToolExposure` override 实现——每个 Agent 定义可覆盖工具的默认暴露级别（Direct/Deferred）。OpenHuman 通过 `ToolPolicy` trait 的 `check()` 方法实现——`AllowAllToolPolicy` 是默认，可安装自定义策略。
 
-**实施状态**：❌ `max_tool_tier` / `approval_level` 未实现。需扩展 `agent_modes` 表 + `AgentModeRow` struct + 前端 AgentMode interface。
+### 10.7 数据模型扩展清单
+
+| 层 | 变更 | 说明 |
+|----|------|------|
+| **Rust 存储** | `AgentModeRow` 新增 `max_tool_tier: String`（`"sandbox"/"os"/"external"`）+ `approval_level: String`（`"none"/"dangerous_only"/"all_os_tools"`） | 当前仅有 `tools_json`，缺两个控制字段 |
+| **Rust 存储** | `ConversationDetail` / `ConversationRow` 新增 `tool_config_json: String` | 对话级工具配置 |
+| **SQLite** | `ALTER TABLE agent_modes ADD COLUMN max_tool_tier TEXT NOT NULL DEFAULT 'sandbox';` | 迁移 |
+| **SQLite** | `ALTER TABLE agent_modes ADD COLUMN approval_level TEXT NOT NULL DEFAULT 'none';` | 迁移 |
+| **SQLite** | `ALTER TABLE conversations ADD COLUMN tool_config_json TEXT NOT NULL DEFAULT '{}';` | 迁移 |
+| **前端类型** | `AgentMode` interface 新增 `maxToolTier` + `approvalLevel` | 对齐 Rust |
+| **前端类型** | 新增 `ConversationToolConfig` interface | 对话级配置 |
+
+### 10.8 前端交互规格
+
+| 交互点 | 位置 | 功能 |
+|--------|------|------|
+| **AgentMode 编辑表单** | 设置页 | 工具多选列表（按 tier 分组展示），deny-by-default 默认全不勾选 |
+| **对话工具栏** | 聊天输入区旁 | 当前对话的可用工具概览（图标列表），点击展开可增删 |
+| **工具可用性变更提示** | 聊天流中 | 当工具配置变更时，系统消息提示"已启用 shell_exec"等 |
+
+**AgentMode 编辑表单的工具选择器**：
+
+```
+┌─ 工具配置 ────────────────────────────────────────┐
+│                                                     │
+│  层级上限:  [Sandbox ▼]  (Sandbox / Os / External)  │
+│  审批级别:  [dangerous_only ▼]                      │
+│                                                     │
+│  ── Sandbox 工具 ──                                │
+│  ☐ json-viewer  ☐ color-picker  ☐ base64           │
+│                                                     │
+│  ── OS 工具 ──                                     │
+│  ☐ fs_read  ☐ fs_list  ☐ fs_glob  ☐ fs_grep       │
+│  ☐ fs_write  ☐ fs_delete  ☐ shell_exec             │
+│  ☐ ask_user                                         │
+│                                                     │
+│  ── External (MCP) ──                              │
+│  (无 MCP server 连接时显示"暂无外部工具")            │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+- 默认全不勾选（deny-by-default）
+- 层级上限切换时，下方工具列表自动展开/折叠对应分组
+- 内置 AgentMode（`isBuiltin: true`）的工具预设**可查看但不可修改**——用户需创建自定义模式
+
+**实施状态**：❌ `max_tool_tier` / `approval_level` / `ConversationToolConfig` / `resolveAvailableTools` 均未实现。需扩展 `agent_modes` 表 + `conversations` 表 + `AgentModeRow` struct + `ConversationRow` struct + 前端 interface + RoundExecutor 集成。
 
 ---
 
@@ -1162,7 +1288,7 @@ src-tauri/
 | 7 | RoundExecutor | ❌ 未实现 | 需新增 `round_executor.rs` |
 | 8 | Tauri 桥接 | ✅ 完成 | `os_tool_exec.rs` `os.ts` |
 | 9 | 前端集成 | ❌ 未实现 | ChatDelta 五态 + ToolCallBubble + 审批 UI |
-| 10 | Agent 模式集成 | ❌ 未实现 | max_tool_tier + approval_level + Policy 映射 |
+| 10 | Agent 模式+两级可用性 | ❌ 未实现 | max_tool_tier + approval_level + ConversationToolConfig + resolveAvailableTools + Policy 映射 |
 
 ---
 
@@ -1178,3 +1304,4 @@ src-tauri/
 8. **审计日志**：所有工具调用记录到 `tool_calls` 表
 9. **路径约束**：文件操作限制在工作区或用户授权路径内，系统敏感路径硬拒绝
 10. **双入口不破坏现有体验**：前端 ToolBox 独立使用不变，Agent Loop 调用是新增能力
+11. **deny-by-default**：工具白名单空=无可用工具，新增工具不自动对任何模式可用，必须显式启用

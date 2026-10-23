@@ -93,6 +93,10 @@ export function createEntriesSlice(
       try {
         await vaultService.updateEntry(id, entry);
         await get().loadEntries();
+        const { selectedEntry } = get();
+        if (selectedEntry?.id === id) {
+          await get().selectEntry(id);
+        }
         set({ loading: false });
       } catch (e) {
         log.error("updateEntry failed", e);

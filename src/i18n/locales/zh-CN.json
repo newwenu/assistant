@@ -700,7 +700,9 @@
       "recovery_key_unlock": "使用恢复密钥解锁",
       "recovery_key_divider": "恢复密钥",
       "recovery_key_placeholder": "XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX",
-      "unlock_with_recovery_key": "恢复密钥解锁"
+      "unlock_with_recovery_key": "恢复密钥解锁",
+      "use_password": "使用密码解锁",
+      "password_divider": "密码"
     },
     "entry": {
       "search": "搜索",
@@ -720,6 +722,8 @@
       "title_required": "标题不能为空",
       "username": "用户名",
       "password": "密码",
+      "password_set_hint": "密码已设置，输入新密码将覆盖",
+      "notes_set_hint": "笔记已设置，输入新内容将覆盖",
       "url": "网址",
       "notes": "备注",
       "totp_secret": "TOTP 密钥",

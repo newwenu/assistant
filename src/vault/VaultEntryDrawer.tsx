@@ -7,31 +7,24 @@ import {
   Switch,
   Button,
   Space,
-  Divider,
   Tag,
-  InputNumber,
   App,
-  Typography,
 } from "antd";
-import {
-  PlusOutlined,
-  MinusCircleOutlined,
-  LinkOutlined,
-} from "@ant-design/icons";
+import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./core/vaultStore";
+import { vaultService } from "./core/vault.service";
 import type {
   VaultCategory,
   CustomFieldInput,
   ParsedOtpAuth,
 } from "./core/vault.types";
-import {
-  generatePassword,
-  generatePassphrase,
-} from "@/tools/password-generator/password-generator.service";
-import styles from "./vault.module.css";
-
-type PasswordGenMode = "random" | "passphrase";
+import LoginFields from "./forms/LoginFields";
+import CardFields from "./forms/CardFields";
+import NoteFields from "./forms/NoteFields";
+import IdentityFields from "./forms/IdentityFields";
+import SshKeyFields from "./forms/SshKeyFields";
+import CustomFields from "./forms/CustomFields";
 
 const CATEGORY_OPTIONS: { value: VaultCategory; label: string }[] = [
   { value: "login", label: "Login" },
@@ -74,15 +67,26 @@ export default function VaultEntryDrawer({
   const [tagInput, setTagInput] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [customFields, setCustomFields] = useState<CustomFieldInput[]>([]);
-  const [genMode, setGenMode] = useState<PasswordGenMode>("random");
-  const [genLength, setGenLength] = useState(16);
-  const [genWordCount, setGenWordCount] = useState(4);
-  const [genSeparator, setGenSeparator] = useState("-");
-  const [genCapitalize, setGenCapitalize] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [passwordDirty, setPasswordDirty] = useState(false);
+  const [notesDirty, setNotesDirty] = useState(false);
+  const [totpDirty, setTotpDirty] = useState(false);
 
   const isEditing = !!editId;
   const isEditingExistingTotp = !!(editId && selectedEntry?.hasTotp);
+
+  const handlePasswordChange = (v: string) => {
+    setPassword(v);
+    setPasswordDirty(true);
+  };
+  const handleNotesChange = (v: string) => {
+    setNotes(v);
+    setNotesDirty(true);
+  };
+  const handleTotpSecretChange = (v: string) => {
+    setTotpSecret(v);
+    setTotpDirty(true);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -93,6 +97,19 @@ export default function VaultEntryDrawer({
       setUrl(selectedEntry.url ?? "");
       setIsFavorite(selectedEntry.isFavorite);
       setTags(selectedEntry.tags);
+      setPassword("");
+      setTotpSecret("");
+      setPasswordDirty(false);
+      setNotesDirty(false);
+      setTotpDirty(false);
+      if (selectedEntry.hasNotes) {
+        vaultService
+          .revealNotes(editId)
+          .then((result) => setNotes(result.value))
+          .catch(() => setNotes(""));
+      } else {
+        setNotes("");
+      }
     } else {
       setCategory("login");
       setTitle("");
@@ -107,6 +124,9 @@ export default function VaultEntryDrawer({
       setTags([]);
       setIsFavorite(false);
       setCustomFields([]);
+      setPasswordDirty(false);
+      setNotesDirty(false);
+      setTotpDirty(false);
     }
   }, [open, editId, selectedEntry]);
 
@@ -115,7 +135,7 @@ export default function VaultEntryDrawer({
     if (!uri) return;
     try {
       const parsed: ParsedOtpAuth = await totpParseUri(uri);
-      setTotpSecret(parsed.secret);
+      handleTotpSecretChange(parsed.secret);
       if (parsed.issuer && !title) {
         setTitle(parsed.issuer);
       }
@@ -142,13 +162,6 @@ export default function VaultEntryDrawer({
     setTags(tags.filter((v) => v !== tag));
   };
 
-  const handleAddCustomField = () => {
-    setCustomFields([
-      ...customFields,
-      { name: "", value: "", isProtected: false },
-    ]);
-  };
-
   const handleSave = async () => {
     if (!title.trim()) {
       message.error(t("vault.entry.title_required"));
@@ -159,10 +172,10 @@ export default function VaultEntryDrawer({
       category,
       title: title.trim(),
       username: username || undefined,
-      password: password || undefined,
+      password: isEditing && !passwordDirty ? undefined : password || undefined,
       url: url || undefined,
-      notes: notes || undefined,
-      totpSecret: totpSecret || undefined,
+      notes: isEditing && !notesDirty ? undefined : notes || undefined,
+      totpSecret: isEditing && !totpDirty ? undefined : totpSecret || undefined,
       tags,
       customFields,
       isFavorite,
@@ -219,209 +232,46 @@ export default function VaultEntryDrawer({
           <Input value={title} onChange={(e) => setTitle(e.target.value)} />
         </Form.Item>
 
-        {(category === "login" || category === "card") && (
-          <Form.Item label={t("vault.entry.username")}>
-            <Input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-          </Form.Item>
-        )}
-
-        {(category === "login" || category === "card") && (
-          <Form.Item label={t("vault.entry.password")}>
-            <Space orientation="vertical" style={{ width: "100%" }}>
-              <Input.Password
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <Space>
-                <Select
-                  value={genMode}
-                  onChange={setGenMode}
-                  size="small"
-                  style={{ width: 120 }}
-                  options={[
-                    {
-                      value: "random",
-                      label: t("vault.entry.gen_mode_random"),
-                    },
-                    {
-                      value: "passphrase",
-                      label: t("vault.entry.gen_mode_passphrase"),
-                    },
-                  ]}
-                />
-                {genMode === "random" && (
-                  <InputNumber
-                    min={8}
-                    max={64}
-                    value={genLength}
-                    onChange={(v) => setGenLength(v ?? 16)}
-                    size="small"
-                    style={{ width: 70 }}
-                  />
-                )}
-                {genMode === "passphrase" && (
-                  <>
-                    <InputNumber
-                      min={3}
-                      max={10}
-                      value={genWordCount}
-                      onChange={(v) => setGenWordCount(v ?? 4)}
-                      size="small"
-                      style={{ width: 70 }}
-                    />
-                    <Input
-                      value={genSeparator}
-                      onChange={(e) => setGenSeparator(e.target.value)}
-                      size="small"
-                      style={{ width: 50 }}
-                    />
-                    <Switch
-                      checked={genCapitalize}
-                      onChange={setGenCapitalize}
-                      size="small"
-                    />
-                  </>
-                )}
-                <Button
-                  size="small"
-                  onClick={() => {
-                    if (genMode === "random") {
-                      setPassword(
-                        generatePassword(genLength, true, true, true, true),
-                      );
-                    } else {
-                      setPassword(
-                        generatePassphrase(
-                          genWordCount,
-                          genSeparator,
-                          genCapitalize,
-                        ),
-                      );
-                    }
-                  }}
-                >
-                  {t("vault.entry.generate")}
-                </Button>
-              </Space>
-            </Space>
-          </Form.Item>
-        )}
-
         {category === "login" && (
-          <Form.Item label={t("vault.entry.url")}>
-            <Input value={url} onChange={(e) => setUrl(e.target.value)} />
-          </Form.Item>
-        )}
-
-        <Form.Item label={t("vault.entry.notes")}>
-          <Input.TextArea
-            rows={3}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+          <LoginFields
+            username={username}
+            onUsernameChange={setUsername}
+            password={password}
+            onPasswordChange={handlePasswordChange}
+            url={url}
+            onUrlChange={setUrl}
+            totpSecret={totpSecret}
+            onTotpSecretChange={handleTotpSecretChange}
+            totpUriInput={totpUriInput}
+            onTotpUriInputChange={setTotpUriInput}
+            totpUriVisible={totpUriVisible}
+            onTotpUriVisibleChange={setTotpUriVisible}
+            totpSecretVisible={totpSecretVisible}
+            onTotpSecretVisibleChange={setTotpSecretVisible}
+            isEditingExistingTotp={isEditingExistingTotp}
+            onImportTotpUri={handleImportTotpUri}
+            hasPassword={!!selectedEntry?.hasPassword}
           />
-        </Form.Item>
-
-        {category === "login" && (
-          <Form.Item label={t("vault.entry.totp_secret")}>
-            <Space orientation="vertical" style={{ width: "100%" }}>
-              {isEditingExistingTotp && !totpSecret && (
-                <span className={styles.totpEditHint}>
-                  {t("vault.totp.edit_hint")}
-                </span>
-              )}
-              {totpSecret && !totpSecretVisible && !totpUriVisible && (
-                <div className={styles.totpSecretStatus}>
-                  <Typography.Text
-                    type="success"
-                    className={styles.totpSecretBadge}
-                  >
-                    ✓ {t("vault.totp.secret_set")}
-                  </Typography.Text>
-                  <Space size={4}>
-                    <Button
-                      type="link"
-                      size="small"
-                      onClick={() => {
-                        setTotpSecret("");
-                        setTotpUriVisible(true);
-                      }}
-                    >
-                      {t("vault.totp.clear")}
-                    </Button>
-                    <Button
-                      type="link"
-                      size="small"
-                      onClick={() => setTotpSecretVisible(true)}
-                    >
-                      {t("vault.totp.edit_secret")}
-                    </Button>
-                  </Space>
-                </div>
-              )}
-              {totpUriVisible && (
-                <div className={styles.totpUriSection}>
-                  <Input
-                    value={totpUriInput}
-                    onChange={(e) => setTotpUriInput(e.target.value)}
-                    placeholder="otpauth://totp/..."
-                    onPressEnter={() => void handleImportTotpUri()}
-                    prefix={<LinkOutlined />}
-                    className={styles.totpUriInput}
-                  />
-                  <Space size={8} style={{ marginTop: 8 }}>
-                    <Button
-                      type="primary"
-                      size="small"
-                      onClick={() => void handleImportTotpUri()}
-                    >
-                      {t("vault.totp.import")}
-                    </Button>
-                    <Button
-                      type="link"
-                      size="small"
-                      onClick={() => {
-                        setTotpUriVisible(false);
-                        setTotpUriInput("");
-                        setTotpSecretVisible(true);
-                      }}
-                    >
-                      {t("vault.totp.manual_input")}
-                    </Button>
-                  </Space>
-                </div>
-              )}
-              {totpSecretVisible && (
-                <div className={styles.totpSecretSection}>
-                  <Input.Password
-                    value={totpSecret}
-                    onChange={(e) => setTotpSecret(e.target.value)}
-                    placeholder={
-                      isEditingExistingTotp
-                        ? t("vault.totp.placeholder_keep")
-                        : t("vault.totp.secret_placeholder")
-                    }
-                  />
-                  <Space size={8} style={{ marginTop: 8 }}>
-                    <Button
-                      type="link"
-                      size="small"
-                      icon={<LinkOutlined />}
-                      onClick={() => {
-                        setTotpSecretVisible(false);
-                        setTotpUriVisible(true);
-                      }}
-                    >
-                      {t("vault.totp.import_uri")}
-                    </Button>
-                  </Space>
-                </div>
-              )}
-            </Space>
-          </Form.Item>
         )}
+
+        {category === "card" && (
+          <CardFields
+            username={username}
+            onUsernameChange={setUsername}
+            password={password}
+            onPasswordChange={handlePasswordChange}
+            hasPassword={!!selectedEntry?.hasPassword}
+          />
+        )}
+
+        {category === "identity" && <IdentityFields />}
+        {category === "sshKey" && <SshKeyFields />}
+
+        <NoteFields
+          notes={notes}
+          onNotesChange={handleNotesChange}
+          hasNotes={!!selectedEntry?.hasNotes}
+        />
 
         <Form.Item label={t("vault.entry.tags")}>
           <Space wrap>
@@ -451,70 +301,10 @@ export default function VaultEntryDrawer({
           <Switch checked={isFavorite} onChange={setIsFavorite} />
         </Form.Item>
 
-        <Divider>{t("vault.entry.custom_fields")}</Divider>
-        {customFields.map((cf, idx) => (
-          <div key={idx} className={styles.customFieldRow}>
-            <Input
-              placeholder={t("vault.entry.field_name")}
-              value={cf.name}
-              onChange={(e) => {
-                const updated = [...customFields];
-                updated[idx] = { ...updated[idx], name: e.target.value };
-                setCustomFields(updated);
-              }}
-              style={{ flex: 1 }}
-            />
-            {cf.isProtected ? (
-              <Input.Password
-                placeholder={t("vault.entry.field_value")}
-                value={cf.value}
-                onChange={(e) => {
-                  const updated = [...customFields];
-                  updated[idx] = { ...updated[idx], value: e.target.value };
-                  setCustomFields(updated);
-                }}
-                style={{ flex: 1 }}
-              />
-            ) : (
-              <Input
-                placeholder={t("vault.entry.field_value")}
-                value={cf.value}
-                onChange={(e) => {
-                  const updated = [...customFields];
-                  updated[idx] = { ...updated[idx], value: e.target.value };
-                  setCustomFields(updated);
-                }}
-                style={{ flex: 1 }}
-              />
-            )}
-            <Switch
-              checked={cf.isProtected}
-              onChange={(v) => {
-                const updated = [...customFields];
-                updated[idx] = { ...updated[idx], isProtected: v };
-                setCustomFields(updated);
-              }}
-              checkedChildren="🔒"
-              unCheckedChildren="📝"
-            />
-            <Button
-              type="text"
-              danger
-              icon={<MinusCircleOutlined />}
-              onClick={() =>
-                setCustomFields(customFields.filter((_, i) => i !== idx))
-              }
-            />
-          </div>
-        ))}
-        <Button
-          type="dashed"
-          icon={<PlusOutlined />}
-          onClick={handleAddCustomField}
-          block
-        >
-          {t("vault.entry.add_custom_field")}
-        </Button>
+        <CustomFields
+          customFields={customFields}
+          onCustomFieldsChange={setCustomFields}
+        />
       </Form>
     </Drawer>
   );
