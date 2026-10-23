@@ -97,9 +97,7 @@ export default function VaultApp() {
   }
 
   const headerTitle =
-    view === "detail"
-      ? t("vault.entry.viewing_entry")
-      : t("vault.tab.vault");
+    view === "detail" ? t("vault.entry.viewing_entry") : t("vault.tab.vault");
 
   return (
     <div className={styles.appContainer}>

@@ -68,9 +68,7 @@ export default function VaultSettings() {
   const handleSshAutoAddAll = async () => {
     const added = await sshAutoAddAll();
     if (added.length > 0) {
-      message.success(
-        t("vault.ssh.auto_added", { count: added.length }),
-      );
+      message.success(t("vault.ssh.auto_added", { count: added.length }));
     } else {
       message.info(t("vault.ssh.no_keys_to_add"));
     }

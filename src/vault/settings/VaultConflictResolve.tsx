@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Modal, Radio, Space, Button, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "../core/vaultStore";
-import type { ConflictResolution } from "../core/vault.service";
+import type { ConflictResolution } from "../core/vault.types";
 
 const { Text } = Typography;
 
@@ -61,18 +61,10 @@ export default function VaultConflictResolve({
           onChange={(e) => setResolution(e.target.value as ConflictResolution)}
         >
           <Space orientation="vertical">
-            <Radio value="useLocal">
-              {t("vault.conflict.use_local")}
-            </Radio>
-            <Radio value="useRemote">
-              {t("vault.conflict.use_remote")}
-            </Radio>
-            <Radio value="mergeBoth">
-              {t("vault.conflict.merge_both")}
-            </Radio>
-            <Radio value="skip">
-              {t("vault.conflict.skip")}
-            </Radio>
+            <Radio value="useLocal">{t("vault.conflict.use_local")}</Radio>
+            <Radio value="useRemote">{t("vault.conflict.use_remote")}</Radio>
+            <Radio value="mergeBoth">{t("vault.conflict.merge_both")}</Radio>
+            <Radio value="skip">{t("vault.conflict.skip")}</Radio>
           </Space>
         </Radio.Group>
       </Space>

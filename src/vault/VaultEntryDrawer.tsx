@@ -24,7 +24,7 @@ import type {
   VaultCategory,
   CustomFieldInput,
   ParsedOtpAuth,
-} from "./core/vault.service";
+} from "./core/vault.types";
 import {
   generatePassword,
   generatePassphrase,
@@ -187,9 +187,7 @@ export default function VaultEntryDrawer({
   return (
     <Drawer
       title={
-        isEditing
-          ? t("vault.entry.edit_entry")
-          : t("vault.entry.add_entry")
+        isEditing ? t("vault.entry.edit_entry") : t("vault.entry.add_entry")
       }
       open={open}
       onClose={onClose}

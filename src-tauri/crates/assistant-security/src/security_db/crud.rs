@@ -251,44 +251,41 @@ impl SecurityDbState {
             let entry_key = VaultCrypto::derive_entry_key(mk, id);
             let now = chrono::Utc::now().timestamp_millis();
 
-            let encrypted_password = entry
-                .password
-                .as_deref()
-                .map(|p| {
+            let encrypted_password = match &entry.password {
+                Some(p) => Some(
                     VaultCrypto::encrypt_field(
                         &VaultPlaintext::new_str(p),
                         entry_key.expose(),
                         algo,
                     )
-                })
-                .transpose()
-                .map_err(VaultError::Crypto)?;
+                    .map_err(VaultError::Crypto)?,
+                ),
+                None => None,
+            };
 
-            let encrypted_notes = entry
-                .notes
-                .as_deref()
-                .map(|n| {
+            let encrypted_notes = match &entry.notes {
+                Some(n) => Some(
                     VaultCrypto::encrypt_field(
                         &VaultPlaintext::new_str(n),
                         entry_key.expose(),
                         algo,
                     )
-                })
-                .transpose()
-                .map_err(VaultError::Crypto)?;
+                    .map_err(VaultError::Crypto)?,
+                ),
+                None => None,
+            };
 
-            let encrypted_totp = entry
-                .totp_secret
-                .as_deref()
-                .map(|t| {
+            let encrypted_totp = match &entry.totp_secret {
+                Some(t) => Some(
                     VaultCrypto::encrypt_field(
                         &VaultPlaintext::new_str(t),
                         entry_key.expose(),
                         algo,
                     )
-                })
-                .transpose()
-                .map_err(VaultError::Crypto)?;
+                    .map_err(VaultError::Crypto)?,
+                ),
+                None => None,
+            };
 
             let custom_fields_to_encrypt: Vec<serde_json::Value> = entry
                 .custom_fields
@@ -321,29 +318,65 @@ impl SecurityDbState {
             let tags_json = serde_json::to_string(&entry.tags)
                 .map_err(|e| VaultError::Validation(e.to_string()))?;
 
+            let mut set_clauses = vec![
+                "title = ?1".to_string(),
+                "username = ?2".to_string(),
+                "url = ?3".to_string(),
+                "category = ?4".to_string(),
+                "encrypted_custom_fields = ?5".to_string(),
+                "tags = ?6".to_string(),
+                "is_favorite = ?7".to_string(),
+                "revision = revision + 1".to_string(),
+                "updated_at = ?8".to_string(),
+            ];
+            let mut param_idx = 9;
+
+            if encrypted_password.is_some() {
+                set_clauses.push(format!("encrypted_password = ?{}", param_idx));
+                param_idx += 1;
+            }
+            if encrypted_notes.is_some() {
+                set_clauses.push(format!("encrypted_notes = ?{}", param_idx));
+                param_idx += 1;
+            }
+            if encrypted_totp.is_some() {
+                set_clauses.push(format!("encrypted_totp_secret = ?{}", param_idx));
+                param_idx += 1;
+            }
+
+            let sql = format!(
+                "UPDATE vault_entries SET {} WHERE id = ?{} AND deleted_at IS NULL",
+                set_clauses.join(", "),
+                param_idx,
+            );
+
+            let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+                Box::new(entry.title.clone()),
+                Box::new(entry.username.clone()),
+                Box::new(entry.url.clone()),
+                Box::new(entry.category.to_string()),
+                Box::new(encrypted_custom_fields),
+                Box::new(tags_json),
+                Box::new(entry.is_favorite as i64),
+                Box::new(now),
+            ];
+
+            if let Some(ep) = encrypted_password {
+                params.push(Box::new(ep));
+            }
+            if let Some(en) = encrypted_notes {
+                params.push(Box::new(en));
+            }
+            if let Some(et) = encrypted_totp {
+                params.push(Box::new(et));
+            }
+            params.push(Box::new(id.to_string()));
+
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params.iter().map(|p| p.as_ref()).collect();
+
             let affected = conn
-                .execute(
-                    "UPDATE vault_entries SET \
-                     title = ?1, username = ?2, url = ?3, category = ?4, \
-                     encrypted_password = ?5, encrypted_notes = ?6, \
-                     encrypted_custom_fields = ?7, encrypted_totp_secret = ?8, \
-                     tags = ?9, is_favorite = ?10, revision = revision + 1, updated_at = ?11 \
-                     WHERE id = ?12 AND deleted_at IS NULL",
-                    params![
-                        entry.title,
-                        entry.username,
-                        entry.url,
-                        entry.category.to_string(),
-                        encrypted_password,
-                        encrypted_notes,
-                        encrypted_custom_fields,
-                        encrypted_totp,
-                        tags_json,
-                        entry.is_favorite as i64,
-                        now,
-                        id,
-                    ],
-                )
+                .execute(&sql, param_refs.as_slice())
                 .map_err(|e| VaultError::Database(e.to_string()))?;
 
             if affected == 0 {

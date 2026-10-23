@@ -27,7 +27,7 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "../core/vaultStore";
-import type { VaultCategory } from "../core/vault.service";
+import type { VaultCategory } from "../core/vault.types";
 import styles from "../vault.module.css";
 
 const CATEGORY_ICONS: Record<VaultCategory, React.ReactNode> = {
@@ -196,11 +196,7 @@ export default function VaultEntryDetail({
     }).then(() => {
       void selectEntry(entryId);
       message.success(
-        t(
-          nextFav
-            ? "vault.entry.favorite"
-            : "vault.entry.unfavorite",
-        ),
+        t(nextFav ? "vault.entry.favorite" : "vault.entry.unfavorite"),
       );
     });
   }, [selectedEntry, entryId, updateEntry, selectEntry, t, message]);
@@ -244,9 +240,7 @@ export default function VaultEntryDetail({
   const handleAddToSshAgent = () => {
     void sshAddToAgent(entryId).then((fp) => {
       if (fp) {
-        message.success(
-          t("vault.ssh.added_to_agent", { fingerprint: fp }),
-        );
+        message.success(t("vault.ssh.added_to_agent", { fingerprint: fp }));
       }
     });
   };

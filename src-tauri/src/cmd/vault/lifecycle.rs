@@ -49,6 +49,12 @@ pub fn vault_is_initialized(app: AppHandle) -> Result<bool, String> {
 #[command]
 pub fn vault_lock(app: AppHandle) -> Result<(), String> {
     super::ssh_remove_all_on_lock(&app);
+    {
+        let guard = super::clipboard_guard(&app)?;
+        if let Err(e) = guard.force_clear() {
+            log::warn!("Clipboard force_clear on vault_lock failed: {}", e);
+        }
+    }
     let state = super::vault_state(&app)?;
     state.lock().map_err(|e| e.to_string())?;
     crate::protocol::events::emit_broadcast(

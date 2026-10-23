@@ -8,7 +8,6 @@ use log::{info, warn};
 pub struct ClipboardGuard {
     original: Arc<Mutex<Option<String>>>,
     current_password: Arc<Mutex<Option<String>>>,
-    guard_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
 impl Default for ClipboardGuard {
@@ -22,14 +21,19 @@ impl ClipboardGuard {
         Self {
             original: Arc::new(Mutex::new(None)),
             current_password: Arc::new(Mutex::new(None)),
-            guard_thread: Arc::new(Mutex::new(None)),
         }
     }
 
     pub fn copy_and_guard(&self, password: &str, timeout_secs: u64) -> Result<(), VaultError> {
         self.force_clear()?;
 
-        let original_content = read_clipboard().ok();
+        let original_content = match read_clipboard() {
+            Ok(content) => content,
+            Err(e) => {
+                warn!("Failed to read clipboard before copy: {}", e);
+                None
+            }
+        };
 
         write_clipboard(password)?;
         info!(
@@ -51,7 +55,7 @@ impl ClipboardGuard {
         let password_owned = password.to_string();
         let timeout = Duration::from_secs(timeout_secs);
 
-        let handle = thread::spawn(move || {
+        let _ = thread::spawn(move || {
             thread::sleep(timeout);
 
             let should_clear = {
@@ -78,11 +82,6 @@ impl ClipboardGuard {
                 }
             }
         });
-
-        {
-            let mut guard = self.guard_thread.lock().unwrap();
-            *guard = Some(handle);
-        }
 
         Ok(())
     }
@@ -112,12 +111,14 @@ impl ClipboardGuard {
     }
 }
 
-fn read_clipboard() -> Result<String, VaultError> {
+fn read_clipboard() -> Result<Option<String>, VaultError> {
     let mut clipboard =
         arboard::Clipboard::new().map_err(|e| VaultError::Clipboard(e.to_string()))?;
-    clipboard
-        .get_text()
-        .map_err(|e| VaultError::Clipboard(e.to_string()))
+    match clipboard.get_text() {
+        Ok(text) => Ok(Some(text)),
+        Err(arboard::Error::ContentNotAvailable) => Ok(None),
+        Err(e) => Err(VaultError::Clipboard(e.to_string())),
+    }
 }
 
 fn write_clipboard(text: &str) -> Result<(), VaultError> {
@@ -126,12 +127,25 @@ fn write_clipboard(text: &str) -> Result<(), VaultError> {
 
 fn write_clipboard_internal(text: &str) -> Result<(), arboard::Error> {
     let mut clipboard = arboard::Clipboard::new()?;
-    clipboard.set_text(text)?;
+    #[cfg(target_os = "windows")]
+    {
+        use arboard::SetExtWindows;
+        clipboard.set().exclude_from_monitoring().text(text)?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use arboard::SetExtApple;
+        clipboard.set().exclude_from_history().text(text)?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        clipboard.set_text(text)?;
+    }
     Ok(())
 }
 
 fn clear_clipboard_internal() -> Result<(), arboard::Error> {
     let mut clipboard = arboard::Clipboard::new()?;
-    clipboard.set_text("")?;
+    clipboard.clear()?;
     Ok(())
 }

@@ -11,7 +11,7 @@ vi.mock("@/services/tauriInvoke", () => ({
 }));
 
 import { useVaultStore } from "./vaultStore";
-import type { VaultEntryDetail } from "./vault.service";
+import type { VaultEntryDetail } from "./vault.types";
 
 function mockCmd(cmd: string, impl: (...args: unknown[]) => unknown) {
   mockInvokeMap.set(cmd, impl);

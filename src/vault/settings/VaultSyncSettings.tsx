@@ -20,7 +20,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { translateKey } from "@/i18n";
 import { useVaultStore } from "../core/vaultStore";
-import type { SyncConfig, SyncResult } from "../core/vault.service";
+import type { SyncConfig, SyncResult } from "../core/vault.types";
 import DangerZoneConfirm from "./DangerZoneConfirm";
 
 const RUST_ERROR_KEY_MAP: Record<string, string> = {
@@ -34,15 +34,21 @@ function getSyncResultInfo(
 ): { type: "success" | "info" | "warning" | "error"; message: string } | null {
   if (!result) return null;
   if (result === "success")
-    return { type: "success", message: t("vault.sync.result_success") as string };
+    return {
+      type: "success",
+      message: t("vault.sync.result_success"),
+    };
   if (result === "upToDate")
-    return { type: "info", message: t("vault.sync.result_up_to_date") as string };
+    return {
+      type: "info",
+      message: t("vault.sync.result_up_to_date"),
+    };
   if ("conflict" in result)
     return {
       type: "warning",
       message: t("vault.sync.result_conflict", {
         count: result.conflict.length,
-      }) as string,
+      }),
     };
   if ("error" in result) {
     const i18nKey = RUST_ERROR_KEY_MAP[result.error];
@@ -114,8 +120,7 @@ export default function VaultSyncSettings() {
 
   const readynessText = () => {
     if (isNoSync) return t("vault.sync.status_no_sync");
-    if (syncReadyness === "dirty")
-      return t("vault.sync.status_dirty");
+    if (syncReadyness === "dirty") return t("vault.sync.status_dirty");
     if (isReady) return t("vault.sync.status_ready");
     return t("vault.sync.status_unknown");
   };
@@ -136,17 +141,14 @@ export default function VaultSyncSettings() {
             type="error"
             title={error}
             showIcon
-            closable
-            onClose={() => useVaultStore.getState().clearError()}
+            closable={{
+              onClose: () => useVaultStore.getState().clearError(),
+            }}
           />
         )}
 
         {resultInfo && (
-          <Alert
-            type={resultInfo.type}
-            title={resultInfo.message}
-            showIcon
-          />
+          <Alert type={resultInfo.type} title={resultInfo.message} showIcon />
         )}
 
         {isNoSync && (

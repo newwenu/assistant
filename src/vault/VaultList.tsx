@@ -29,7 +29,7 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./core/vaultStore";
-import type { VaultCategory } from "./core/vault.service";
+import type { VaultCategory } from "./core/vault.types";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import styles from "./vault.module.css";
 

@@ -24,7 +24,7 @@ import { useTranslation } from "react-i18next";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useVaultStore } from "./core/vaultStore";
 import { vaultService } from "./core/vault.service";
-import type { StrengthResult } from "./core/vault.service";
+import type { StrengthResult } from "./core/vault.types";
 import styles from "./vault.module.css";
 
 const SCORE_COLORS: Record<number, string> = {
@@ -222,9 +222,7 @@ export default function VaultUnlock() {
             <Form.Item>
               <Input
                 size="large"
-                placeholder={t(
-                  "vault.disaster_recovery.git_placeholder",
-                )}
+                placeholder={t("vault.disaster_recovery.git_placeholder")}
                 value={drGitUrl}
                 onChange={(e) => setDrGitUrl(e.target.value)}
                 autoFocus
@@ -281,9 +279,7 @@ export default function VaultUnlock() {
             {disasterRecoveryResult.integrityWarning && (
               <Alert
                 type="warning"
-                title={t(
-                  "vault.disaster_recovery.integrity_warning",
-                )}
+                title={t("vault.disaster_recovery.integrity_warning")}
                 showIcon
                 style={{ marginBottom: 16 }}
               />
@@ -349,11 +345,7 @@ export default function VaultUnlock() {
     <div className={styles.unlockContainer}>
       <LockOutlined className={styles.lockIcon} />
       <Typography.Title level={4}>
-        {t(
-          isInitialized
-            ? "vault.unlock.title"
-            : "vault.unlock.create_title",
-        )}
+        {t(isInitialized ? "vault.unlock.title" : "vault.unlock.create_title")}
       </Typography.Title>
 
       <Form onFinish={() => void handleSubmit()} className={styles.unlockForm}>
@@ -476,9 +468,7 @@ export default function VaultUnlock() {
 
         {isInitialized && showRecoveryKey && (
           <>
-            <Divider plain>
-              {t("vault.unlock.recovery_key_divider")}
-            </Divider>
+            <Divider plain>{t("vault.unlock.recovery_key_divider")}</Divider>
             <Form.Item>
               <Input
                 size="large"

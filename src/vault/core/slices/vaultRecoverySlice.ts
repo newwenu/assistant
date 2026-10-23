@@ -1,0 +1,179 @@
+import { createLogger } from "@/services/logger";
+import { vaultService } from "../vault.service";
+import type { IntegrityResult, DisasterRecoveryResult } from "../vault.types";
+
+const log = createLogger("vaultStore");
+
+const BIOMETRIC_CACHE_TTL_MS = 5_000;
+
+export interface VaultRecoverySlice {
+  _recoveryKeySetAt: number;
+  recoveryKeySet: boolean;
+  integrityResult: IntegrityResult | null;
+  disasterRecoveryStep: 1 | 2 | 3 | null;
+  disasterRecoveryResult: DisasterRecoveryResult | null;
+  exportFilePath: string | null;
+
+  generateRecoveryKey: () => Promise<string | null>;
+  unlockWithRecoveryKey: (recoveryKey: string) => Promise<boolean>;
+  checkRecoveryKeySet: () => Promise<void>;
+  verifyIntegrity: () => Promise<IntegrityResult | null>;
+  startDisasterRecovery: () => void;
+  cancelDisasterRecovery: () => void;
+  setDisasterRecoveryStep: (step: 1 | 2 | 3) => void;
+  disasterRecoveryExport: (
+    gitUrl: string | null,
+    recoveryKey: string,
+    exportPath: string,
+  ) => Promise<DisasterRecoveryResult | null>;
+  exportVault: (format: "csv" | "json") => Promise<string | null>;
+  importVault: (path: string, format: "csv" | "json") => Promise<number | null>;
+}
+
+type FullState = VaultRecoverySlice & {
+  isLocked: boolean;
+  loading: boolean;
+  error: string | null;
+  _biometricEnrolledAt: number;
+  resetAutoLockTimer: () => void;
+  loadEntries: () => Promise<void>;
+};
+
+export function createRecoverySlice(
+  set: (
+    partial: Partial<FullState> | ((state: FullState) => Partial<FullState>),
+  ) => void,
+  get: () => FullState,
+): VaultRecoverySlice {
+  return {
+    _recoveryKeySetAt: 0,
+    recoveryKeySet: false,
+    integrityResult: null,
+    disasterRecoveryStep: null,
+    disasterRecoveryResult: null,
+    exportFilePath: null,
+
+    generateRecoveryKey: async () => {
+      set({ loading: true, error: null });
+      try {
+        const key = await vaultService.generateRecoveryKey();
+        set({ recoveryKeySet: true, loading: false });
+        return key;
+      } catch (e) {
+        log.error("generateRecoveryKey failed", e);
+        set({ error: String(e), loading: false });
+        return null;
+      }
+    },
+
+    unlockWithRecoveryKey: async (recoveryKey) => {
+      set({ loading: true, error: null });
+      try {
+        const ok = await vaultService.unlockWithRecoveryKey(recoveryKey);
+        if (ok) {
+          set({
+            isLocked: false,
+            loading: false,
+            _biometricEnrolledAt: 0,
+            _recoveryKeySetAt: 0,
+          });
+          get().resetAutoLockTimer();
+        } else {
+          set({ error: "Invalid recovery key", loading: false });
+        }
+        return ok;
+      } catch (e) {
+        log.error("unlockWithRecoveryKey failed", e);
+        set({ error: String(e), loading: false });
+        return false;
+      }
+    },
+
+    checkRecoveryKeySet: async () => {
+      const now = Date.now();
+      if (now - get()._recoveryKeySetAt < BIOMETRIC_CACHE_TTL_MS) return;
+      try {
+        const has = await vaultService.hasRecoveryKey();
+        set({ recoveryKeySet: has, _recoveryKeySetAt: Date.now() });
+      } catch (e) {
+        log.error("checkRecoveryKeySet failed", e);
+      }
+    },
+
+    verifyIntegrity: async () => {
+      try {
+        const result = await vaultService.verifyVaultMetaIntegrity();
+        set({ integrityResult: result });
+        return result;
+      } catch (e) {
+        log.error("verifyIntegrity failed", e);
+        set({ error: String(e) });
+        return null;
+      }
+    },
+
+    startDisasterRecovery: () => {
+      set({
+        disasterRecoveryStep: 1,
+        disasterRecoveryResult: null,
+        error: null,
+      });
+    },
+
+    cancelDisasterRecovery: () => {
+      set({ disasterRecoveryStep: null, disasterRecoveryResult: null });
+    },
+
+    setDisasterRecoveryStep: (step) => {
+      set({ disasterRecoveryStep: step });
+    },
+
+    disasterRecoveryExport: async (gitUrl, recoveryKey, exportPath) => {
+      set({ loading: true, error: null });
+      try {
+        const result = await vaultService.disasterRecoveryExport(
+          gitUrl,
+          recoveryKey,
+          exportPath,
+        );
+        set({
+          disasterRecoveryStep: 3,
+          disasterRecoveryResult: result,
+          loading: false,
+        });
+        return result;
+      } catch (e) {
+        log.error("disasterRecoveryExport failed", e);
+        set({ error: String(e), loading: false });
+        return null;
+      }
+    },
+
+    exportVault: async (format) => {
+      set({ loading: true, error: null });
+      try {
+        const filePath = await vaultService.exportVault(format);
+        set({ exportFilePath: filePath, loading: false });
+        return filePath;
+      } catch (e) {
+        log.error("exportVault failed", e);
+        set({ error: String(e), loading: false });
+        return null;
+      }
+    },
+
+    importVault: async (path, format) => {
+      set({ loading: true, error: null });
+      try {
+        const count = await vaultService.importVault(path, format);
+        await get().loadEntries();
+        set({ loading: false });
+        return count;
+      } catch (e) {
+        log.error("importVault failed", e);
+        set({ error: String(e), loading: false });
+        return null;
+      }
+    },
+  };
+}

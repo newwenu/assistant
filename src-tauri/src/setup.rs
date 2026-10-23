@@ -102,19 +102,43 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     {
         let monitor = ScreenLockMonitor::new();
         let app_handle = handle.clone();
-        monitor.spawn_listener(move || {
-            crate::cmd::ssh_remove_all_on_lock(&app_handle);
-            let state = app_handle.state::<SecurityDbState>();
-            if let Err(e) = state.lock() {
-                log::error!("Screen lock triggered vault_lock but failed: {}", e);
-            } else {
-                log::info!("Screen lock triggered vault_lock");
+        let on_lock = {
+            let app_handle = app_handle.clone();
+            move || {
+                crate::cmd::ssh_remove_all_on_lock(&app_handle);
+                {
+                    let guard = app_handle.state::<ClipboardGuard>();
+                    if let Err(e) = guard.force_clear() {
+                        log::warn!("Clipboard force_clear on screen lock failed: {}", e);
+                    }
+                }
+                let lock_on_screen = AppConf::load()
+                    .map(|c| c.vault_lock_on_screen_lock)
+                    .unwrap_or(true);
+                if lock_on_screen {
+                    let state = app_handle.state::<SecurityDbState>();
+                    if let Err(e) = state.lock() {
+                        log::error!("Screen lock triggered vault_lock but failed: {}", e);
+                    } else {
+                        log::info!("Screen lock triggered vault_lock");
+                    }
+                    let _ = emit_broadcast(&app_handle, event_name::VAULT_LOCKED, ());
+                    if let Err(e) = crate::cmd::vault_show_unlock_window(app_handle.clone()) {
+                        log::warn!("Screen lock show_unlock_window failed: {}", e);
+                    }
+                } else {
+                    log::info!("Screen lock detected but vault_lock_on_screen_lock is disabled");
+                }
             }
-            let _ = emit_broadcast(&app_handle, event_name::VAULT_LOCKED, ());
-            if let Err(e) = crate::cmd::vault_show_unlock_window(app_handle.clone()) {
-                log::warn!("Screen lock show_unlock_window failed: {}", e);
+        };
+        let on_unlock = {
+            let app_handle = app_handle.clone();
+            move || {
+                log::info!("Screen unlocked");
+                let _ = emit_broadcast(&app_handle, event_name::VAULT_UNLOCKED, ());
             }
-        });
+        };
+        monitor.spawn_listener(on_lock, on_unlock);
         handle.manage(monitor);
         log::info!("ScreenLockMonitor initialized");
     }
