@@ -192,6 +192,26 @@ Rust 端 + 前端 i18n 文件
 
 依赖：A5
 
+### B8. content 语义适配（与 B2/B3 同因果链，必须同步）
+
+> **为什么必须与 B2/B3 同步**：B2 让 JSON content 写入 SQLite，此时以下 4 处现有功能**立即退化**——
+> - 分支选择器：`SUBSTR(content,1,100)` 截断 JSON → 显示 `{"blocks":[{"type":"text"...`
+> - 会话搜索：`content LIKE ?1` 匹配 JSON 结构字符 → 误命中
+> - 导出 Markdown：`format!("{}", msg.content)` → 输出原始 JSON
+> - 空值检查：`content.trim().is_empty()` 对纯图片消息语义错误
+>
+> 分开做意味着 B2→C7 之间有功能退化窗口。
+
+`src-tauri/crates/assistant-storage/src/conversations.rs` + `src-tauri/src/cmd/chat.rs`
+
+- [ ] B8.1 `chat.rs` L17 — `content.trim().is_empty()` → `is_content_empty(content)` 语义判断
+- [ ] B8.2 `conversations.rs` L776/L795 — `SUBSTR(content, 1, 100)` → Rust 端调用 `content_text_preview(content, 100)`
+- [ ] B8.3 `conversations.rs` L465 — `m.content LIKE %query%` → Rust 端 `content_plain_text().contains(query)` 过滤
+- [ ] B8.4 `conversations.rs` L481-484 — `format!("{}\n\n", msg.content)` → `format!("{}\n\n", msg.content_plain_text())`
+- [ ] B8.5 确认 `SiblingInfoDto.contentPreview` 返回可读纯文本预览（非 JSON 截断）
+
+依赖：A9, B2
+
 ---
 
 ## 阶段 C — 前端输入 + 渲染 + 端到端集成
@@ -272,7 +292,11 @@ Rust 端 + 前端 i18n 文件
 
 ---
 
-## 阶段 D — 分支适配 + content 消费者适配
+## 阶段 D — 前端分支适配 + 样式补充
+
+> **注意**：D2（分支选择器 SUBSTR 适配）和 D3.1-D3.3（搜索/导出/空值检查适配）已提前至 **B8**，
+> 因为它们与 B2/B3 是同一因果链——B2 让 JSON 进入 DB，B8 修复 JSON 进入 DB 后的副作用。
+> 此处仅保留前端侧适配。
 
 ### D1. editMessage 分支适配
 
@@ -282,29 +306,19 @@ Rust 端 + 前端 i18n 文件
 
 依赖：C5b
 
-### D2. content_preview 适配（分支选择器）
+### D2. chatOrchestrator 标题适配
 
-`src-tauri/crates/assistant-storage/src/conversations.rs`
+`src/services/chatOrchestrator.ts`
 
-- [ ] D2.1 `get_message_siblings` 中 `SUBSTR(content, 1, 100)` → Rust 端调用 `content_text_preview(content, 100)`
-- [ ] D2.2 确认 `SiblingInfoDto.contentPreview` 返回可读纯文本预览
+- [ ] D2.1 `fallbackTitleFromUserMessage(content)` → `fallbackTitleFromUserMessage(extractPlainText(content))`
 
-依赖：A9
+依赖：C5b
 
-### D3. 其他 content 消费者适配
-
-- [ ] D3.1 `chat.rs` L17 — `content.trim().is_empty()` → `is_content_empty(content)` 语义判断
-- [ ] D3.2 `conversations.rs` 搜索 — `m.content LIKE %query%` → Rust 端 `content_plain_text().contains(query)` 过滤
-- [ ] D3.3 `conversations.rs` 导出 markdown — `format!("{}\n\n", msg.content)` → `format!("{}\n\n", msg.content_plain_text())`
-- [ ] D3.4 `chatOrchestrator.ts` — `fallbackTitleFromUserMessage(content)` → `fallbackTitleFromUserMessage(extractPlainText(content))`
-
-依赖：A9, C5b
-
-### D4. MessageContent.module.css 样式补充
+### D3. MessageContent.module.css 样式补充
 
 `src/chat/message/MessageContent.module.css`
 
-- [ ] D4.1 新增 `.imageBlock` / `.fileBlock` 等样式规则（block 间距、图片容器）
+- [ ] D3.1 新增 `.imageBlock` / `.fileBlock` 等样式规则（block 间距、图片容器）
 
 依赖：C5
 
@@ -315,29 +329,31 @@ Rust 端 + 前端 i18n 文件
 ```
 A1 ─┬─→ A3 ─┬─→ C2 ─→ C6
 A2 ─┤       ├─→ C5
-    │       ├─→ C5b ─→ D1
+    │       ├─→ C5b ─→ D1, D2
     │       └─→ C6
 A4 ─┼─→ B3 ──→ C3
-A5 ─┼─→ B1 ─→ B2
+A5 ─┼─→ B1 ─→ B2 ─→ B8
     │      └─→ B3
     ├─→ A5b
-    └─→ A9 ─→ D2, D3
+    └─→ A9 ─→ B8
 A6 ─┼─→ B1
     │  └─→ B4
 A7 ─┘
-A8 ─（无依赖，可最先做）
+A8 ─→ B1（i18n key 供 t! 宏使用）
 
-B5, B6, B7 独立于 B1-B3（仅依赖 A5）
+B5, B6, B7 独立于 B1-B4（仅依赖 A5）
+B8 依赖 A9 + B2（与 B2 同因果链，必须同步）
 C1 → C2
-C3 → C5 → D4
+C3 → C5 → D3
 C4 → C5
 
-D1 依赖 C5b
-D2, D3 依赖 A9
-D4 依赖 C5
+D1, D2 依赖 C5b
+D3 依赖 C5
 ```
 
-**推荐顺序**：A8（i18n）→ A 全部（1-2d）→ B 全部（2-3d）→ C 全部（1-2d）→ D 全部（0.5-1d）= **5-8 天**
+**推荐顺序**：A8（i18n）→ A 全部（1-2d）→ B 全部含 B8（2-3d）→ C 全部（1-2d）→ D 全部（0.5-1d）= **5-8 天**
+
+> **关键约束**：B8 必须与 B2 在同一次提交中完成，否则 JSON content 进入 DB 后分支选择器/搜索/导出立即退化。
 
 ---
 
@@ -362,10 +378,10 @@ D4 依赖 C5
 - [ ] V17：`<img loading="lazy">` 懒加载生效
 - [ ] V18：骨架屏占位防 CLS + 加载失败显示错误+重试
 - [ ] V19：编辑含图片消息 → 图片保留、仅文本被修改 → 分支正确创建
-- [ ] V20：分支选择器中含图片消息 → content_preview 显示可读纯文本（非 JSON 截断）
-- [ ] V21：`content.trim().is_empty()` → `is_content_empty()` 语义判断正确（纯图片消息不误判为空）
-- [ ] V22：搜索含图片消息的对话 → 搜索匹配纯文本内容（不匹配 JSON 结构字符）
-- [ ] V23：导出含图片消息的对话为 Markdown → 输出纯文本（非 JSON）
+- [ ] V20：分支选择器中含图片消息 → content_preview 显示可读纯文本（非 JSON 截断）【B8 验收】
+- [ ] V21：`content.trim().is_empty()` → `is_content_empty()` 语义判断正确（纯图片消息不误判为空）【B8 验收】
+- [ ] V22：搜索含图片消息的对话 → 搜索匹配纯文本内容（不匹配 JSON 结构字符）【B8 验收】
+- [ ] V23：导出含图片消息的对话为 Markdown → 输出纯文本（非 JSON）【B8 验收】
 - [ ] V24：3× discovery.rs 编译通过（`ModelConfig` 含 `support_vision` 字段）
 - [ ] V25：`ModelConfigDto.support_vision` 前端可读取
 - [ ] V26：i18n key 全部存在（Rust `t!` 和前端 `t()` 不回退到裸 key）

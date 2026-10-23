@@ -4,6 +4,7 @@ import { ConfigProvider, App as AntApp } from "antd";
 import zhCNAntd from "antd/es/locale/zh_CN";
 import enUSAntd from "antd/es/locale/en_US";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { RuntimeLoader } from "@rive-app/webgl2";
 import { useThemeStore } from "@/stores/themeStore";
 import { useLocaleStore } from "@/stores/localeStore";
 import { useTheme } from "@/hooks/useTheme";
@@ -19,6 +20,9 @@ import "@/i18n";
 import App from "./App";
 import "./assets/styles/fonts.css";
 import "./assets/styles/global.css";
+
+RuntimeLoader.setWasmUrl("/rive.wasm");
+RuntimeLoader.setWasmFallbackUrl(null);
 
 const ANTD_LOCALE_MAP: Record<string, typeof zhCNAntd> = {
   "zh-CN": zhCNAntd,

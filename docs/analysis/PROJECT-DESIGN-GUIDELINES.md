@@ -424,7 +424,7 @@ ToolBox 不经 ToolPipeline：用户主动点击 = 权限主体，审批自己�
 | 目录 | 用途 | 性质 |
 |------|------|------|
 | `docs/achievement/` | I1-I12 已完成 | spec + tasklist |
-| `docs/achievement1/` | I13-I20 已完成 | spec + tasklist |
+| `docs/achievement1/` | I13-I19 部分已完成 | spec + tasklist |
 | `docs/store/` | 进行中/待实施 | spec + tasklist + issues + deadcode + responsibility-split |
 | `docs/analysis/` | **分析指导** | 跨阶段综合，非执行计划 |
 | `docs/designed/` | 顶层设计 | 架构级 |
