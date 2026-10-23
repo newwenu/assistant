@@ -96,9 +96,7 @@ pub(crate) fn reveal_guard(app: &AppHandle) -> Result<tauri::State<'_, RevealGua
         .map_err(|_| "RevealGuard not managed".to_string())
 }
 
-pub(crate) fn clipboard_guard(
-    app: &AppHandle,
-) -> Result<tauri::State<'_, ClipboardGuard>, String> {
+pub(crate) fn clipboard_guard(app: &AppHandle) -> Result<tauri::State<'_, ClipboardGuard>, String> {
     app.state::<ClipboardGuard>()
         .try_into()
         .map_err(|_| "ClipboardGuard not managed".to_string())

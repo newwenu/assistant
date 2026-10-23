@@ -18,11 +18,10 @@ fn convert_content_block(block: &ContentBlock) -> Value {
             "text": text
         }),
         ContentBlock::Image {
-            media_type,
+            attachment,
             cached_data,
-            ..
         } => {
-            let mt = media_type.as_deref().unwrap_or("image/png");
+            let mt = attachment.media_type.as_deref().unwrap_or("image/png");
             let data = cached_data.as_deref().unwrap_or("");
             json!({
                 "type": "image_url",
@@ -43,7 +42,9 @@ fn build_content(m: &ChatMessage) -> Value {
         }
     }
     if let Some(blocks) = parse_content(&m.content) {
-        let has_image = blocks.iter().any(|b| matches!(b, ContentBlock::Image { .. }));
+        let has_image = blocks
+            .iter()
+            .any(|b| matches!(b, ContentBlock::Image { .. }));
         if has_image {
             let parts: Vec<Value> = blocks.iter().map(convert_content_block).collect();
             return json!(parts);

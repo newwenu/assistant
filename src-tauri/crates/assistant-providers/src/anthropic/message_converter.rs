@@ -49,7 +49,9 @@ fn convert_user_message(msg: &ChatMessage) -> Value {
         .unwrap_or_else(|| parse_content(&msg.content));
 
     if let Some(blocks) = blocks {
-        let has_image = blocks.iter().any(|b| matches!(b, ContentBlock::Image { .. }));
+        let has_image = blocks
+            .iter()
+            .any(|b| matches!(b, ContentBlock::Image { .. }));
         if has_image {
             let content_parts: Vec<Value> = blocks
                 .iter()
@@ -59,11 +61,10 @@ fn convert_user_message(msg: &ChatMessage) -> Value {
                         "text": text
                     }),
                     ContentBlock::Image {
-                        media_type,
+                        attachment,
                         cached_data,
-                        ..
                     } => {
-                        let mt = media_type.as_deref().unwrap_or("image/png");
+                        let mt = attachment.media_type.as_deref().unwrap_or("image/png");
                         let data = cached_data.as_deref().unwrap_or("");
                         json!({
                             "type": "image",

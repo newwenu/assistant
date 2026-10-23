@@ -1,22 +1,21 @@
-use assistant_providers::types::{parse_content, ChatMessage, ContentBlock, MessageRole};
+use assistant_providers::types::{
+    parse_content, ChatMessage, ContentBlock, ImageAttachmentRef, MessageRole,
+};
 use assistant_storage::attachment_store::AttachmentStore;
 use base64::engine::general_purpose;
 use base64::Engine;
 use std::collections::HashMap;
 
-pub async fn admit_attachments(
-    content: &str,
-    store: &AttachmentStore,
-) -> Result<String, String> {
-    let mut blocks: Vec<ContentBlock> = serde_json::from_str(content)
-        .map_err(|e| format!("Invalid ContentBlock JSON: {}", e))?;
+pub async fn admit_attachments(content: &str, store: &AttachmentStore) -> Result<String, String> {
+    let mut blocks: Vec<ContentBlock> =
+        serde_json::from_str(content).map_err(|e| format!("Invalid ContentBlock JSON: {}", e))?;
 
     let image_count = blocks
         .iter()
         .filter(|b| {
             matches!(
                 b,
-                ContentBlock::Image { attachment_id, .. } if attachment_id.is_empty()
+                ContentBlock::Image { attachment, .. } if attachment.attachment_id.is_empty()
             )
         })
         .count();
@@ -28,19 +27,14 @@ pub async fn admit_attachments(
 
     for block in blocks.iter_mut() {
         let ContentBlock::Image {
-            ref attachment_id,
+            ref attachment,
             ref mut cached_data,
-            ref media_type,
-            width,
-            height,
-            ref name,
-            ..
         } = block
         else {
             continue;
         };
 
-        if !attachment_id.is_empty() {
+        if !attachment.attachment_id.is_empty() {
             continue;
         }
 
@@ -57,18 +51,24 @@ pub async fn admit_attachments(
             return Err(assistant_i18n::t_with_args("chat.image_too_large", &args));
         }
 
-        let mt = media_type
+        let mt = attachment
+            .media_type
             .clone()
             .unwrap_or_else(|| "image/png".to_string());
-        let ref_info = store.save_image(&data, &mt).await.map_err(|e| e.to_string())?;
+        let ref_info = store
+            .save_image(&data, &mt)
+            .await
+            .map_err(|e| e.to_string())?;
 
         *block = ContentBlock::Image {
-            attachment_id: ref_info.id,
-            media_type: Some(ref_info.media_type),
-            bytes: Some(ref_info.bytes),
-            width: *width,
-            height: *height,
-            name: name.clone(),
+            attachment: ImageAttachmentRef {
+                attachment_id: ref_info.id,
+                media_type: Some(ref_info.media_type),
+                bytes: Some(ref_info.bytes),
+                width: attachment.width,
+                height: attachment.height,
+                name: attachment.name.clone(),
+            },
             cached_data: None,
         };
     }
@@ -88,21 +88,24 @@ pub async fn rehydrate_images(messages: &mut [ChatMessage], store: &AttachmentSt
         let mut has_image = false;
         for block in blocks.iter_mut() {
             let ContentBlock::Image {
-                ref attachment_id,
+                ref attachment,
                 ref mut cached_data,
-                ..
             } = block
             else {
                 continue;
             };
 
-            match store.read(attachment_id).await {
+            match store.read(&attachment.attachment_id).await {
                 Ok(data) => {
                     *cached_data = Some(general_purpose::STANDARD.encode(&data));
                     has_image = true;
                 }
                 Err(e) => {
-                    log::warn!("Failed to rehydrate image {}: {}", attachment_id, e);
+                    log::warn!(
+                        "Failed to rehydrate image {}: {}",
+                        attachment.attachment_id,
+                        e
+                    );
                 }
             }
         }

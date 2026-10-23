@@ -27,10 +27,7 @@ pub fn vault_is_biometric_enrolled(app: AppHandle) -> Result<bool, String> {
     let state = super::vault_state(&app)?;
     let key_store = get_key_store();
     match state.is_biometric_enrolled(key_store.as_ref()) {
-        Ok(enrolled) => {
-            log::debug!("Biometric enrolled check: {}", enrolled);
-            Ok(enrolled)
-        }
+        Ok(enrolled) => Ok(enrolled),
         Err(e) => {
             log::warn!("Biometric enrolled check failed: {}", e);
             Err(e.to_string())

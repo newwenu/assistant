@@ -9,7 +9,8 @@ pub use config::{
     get_context_window_tokens, ChatOptions, RetryConfig, SseLogConfig, StreamTimeoutConfig,
 };
 pub use message::{
-    message_role_from_str, parse_content, ChatMessage, ContentBlock, ContentBlockType, MessageRole,
+    message_role_from_str, parse_content, ChatMessage, ContentBlock, ContentBlockType,
+    FileAttachmentRef, ImageAttachmentRef, MessageRole,
 };
 pub use tool::ToolCall;
 pub use unified::{

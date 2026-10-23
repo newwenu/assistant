@@ -74,11 +74,19 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                 return Err(Box::new(e));
             }
         };
-        std::fs::create_dir_all(&attachments_dir)
-            .expect("Failed to create attachments directory");
+        std::fs::create_dir_all(&attachments_dir).expect("Failed to create attachments directory");
         let store = AttachmentStore::new(attachments_dir);
         handle.manage(store);
         log::info!("AttachmentStore initialized");
+
+        {
+            let store = handle.state::<AttachmentStore>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = store.clean_tmp().await {
+                    log::warn!("Failed to clean tmp attachments: {}", e);
+                }
+            });
+        }
     }
 
     handle.manage(assistant_agent::chat_tasks::ChatTasks::new());

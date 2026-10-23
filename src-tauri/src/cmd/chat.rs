@@ -34,6 +34,8 @@ pub async fn send_chat_message(
     content: String,
     mode_id: Option<String>,
     branch_point_message_id: Option<String>,
+    provider_id: String,
+    model_id: String,
 ) -> Result<(), String> {
     if is_content_empty(&content) {
         return Err(assistant_i18n::t("chat.empty_content"));
@@ -63,8 +65,20 @@ pub async fn send_chat_message(
         let detail_before = conversations::get_conversation_detail(&conn, &conversation_id)?
             .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
 
-        let msg_provider_id = detail_before.conversation.provider_id.clone();
-        let msg_model_id = Some(detail_before.conversation.model_id.clone());
+        provider_store::get_provider_by_id(&conn, &provider_id)?
+            .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
+
+        {
+            let mut conv = conversations::get_conversation_by_id(&conn, &conversation_id)?
+                .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+            conv.provider_id = Some(provider_id.clone());
+            conv.model_id = model_id.clone();
+            conv.updated_at = now;
+            conversations::update_conversation(&conn, &conv)?;
+        }
+
+        let msg_provider_id = Some(provider_id.clone());
+        let msg_model_id = Some(model_id.clone());
 
         let (_user_msg_id, assistant_msg_id) = if let Some(bp_id) = &branch_point_message_id {
             let branch_point = conversations::get_message_by_id(&conn, bp_id)?
@@ -155,9 +169,12 @@ pub async fn send_chat_message(
             }
         } else {
             let user_parent_id = detail_before.messages.last().map(|m| m.id.clone());
-            let user_sibling_index =
-                conversations::get_sibling_count(&conn, &conversation_id, user_parent_id.as_deref())?
-                    .max(0);
+            let user_sibling_index = conversations::get_sibling_count(
+                &conn,
+                &conversation_id,
+                user_parent_id.as_deref(),
+            )?
+            .max(0);
 
             let uid = Uuid::new_v4().to_string();
             conversations::insert_message(
@@ -206,11 +223,6 @@ pub async fn send_chat_message(
 
         let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
             .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
-        let provider_id = detail
-            .conversation
-            .provider_id
-            .clone()
-            .ok_or_else(|| assistant_i18n::t("chat.provider_deleted"))?;
         let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
             .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
 
@@ -226,7 +238,7 @@ pub async fn send_chat_message(
                 serde_json::from_str(&provider_row.models_json).unwrap_or_default();
             models
                 .iter()
-                .find(|m| m.id == detail.conversation.model_id)
+                .find(|m| m.id == model_id)
                 .map(|m| m.support_vision)
                 .unwrap_or(false)
         };
@@ -239,7 +251,7 @@ pub async fn send_chat_message(
 
     let config = super::provider::build_provider_config(&provider_row);
     let adapter = base::create_provider_adapter(config);
-    let model = detail.conversation.model_id.clone();
+    let model = model_id.clone();
     let context_window_tokens = resolve_context_window(&model, &provider_row);
 
     let kind = mode

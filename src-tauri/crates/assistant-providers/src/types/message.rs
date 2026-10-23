@@ -46,30 +46,44 @@ pub enum ContentBlockType {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ImageAttachmentRef {
+    #[serde(rename = "attachmentId")]
+    pub attachment_id: String,
+    #[serde(rename = "mediaType", skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FileAttachmentRef {
+    #[serde(rename = "attachmentId")]
+    pub attachment_id: String,
+    pub name: String,
+    pub bytes: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
     Text {
         text: String,
     },
     Image {
-        attachment_id: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        media_type: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        bytes: Option<u64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        width: Option<u32>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        height: Option<u32>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        name: Option<String>,
+        #[serde(rename = "attachment")]
+        attachment: ImageAttachmentRef,
         #[serde(skip_serializing)]
         cached_data: Option<String>,
     },
     File {
-        attachment_id: String,
-        name: String,
-        bytes: u64,
+        #[serde(rename = "attachment")]
+        attachment: FileAttachmentRef,
     },
     Thinking {
         thinking: String,

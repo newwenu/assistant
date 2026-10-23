@@ -124,6 +124,7 @@ pub fn run() {
             cmd::vault_delete_entry,
             cmd::vault_change_master_password,
             cmd::vault_export,
+            cmd::vault_export_to_file,
             cmd::vault_import,
             cmd::vault_totp_generate,
             cmd::vault_copy_totp,

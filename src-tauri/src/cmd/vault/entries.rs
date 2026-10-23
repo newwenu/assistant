@@ -154,6 +154,35 @@ pub fn vault_export(app: AppHandle, format: String) -> Result<String, String> {
 }
 
 #[command]
+pub fn vault_export_to_file(app: AppHandle, format: String, path: String) -> Result<(), String> {
+    let state = super::vault_state(&app)?;
+    let entries: Vec<VaultEntryExport> = state.export_entries().map_err(|e| e.to_string())?;
+    log::info!(
+        "Vault export to file: {} entries as {} -> {}",
+        entries.len(),
+        format,
+        path
+    );
+
+    let content = match format.as_str() {
+        "json" => serde_json::to_string_pretty(&entries)
+            .map_err(|e| e.to_string())?
+            .into_bytes(),
+        "csv" => {
+            let mut w = csv::Writer::from_writer(Vec::new());
+            for e in &entries {
+                let row: VaultEntryCsvRow = e.clone().into();
+                w.serialize(&row).map_err(|e| e.to_string())?;
+            }
+            w.into_inner().map_err(|e| e.to_string())?
+        }
+        _ => return Err(format!("Unsupported export format: {}", format)),
+    };
+
+    std::fs::write(&path, &content).map_err(|e| e.to_string())
+}
+
+#[command]
 pub fn vault_import(app: AppHandle, path: String, format: String) -> Result<u32, String> {
     let state = super::vault_state(&app)?;
     let file_path = PathBuf::from(&path);

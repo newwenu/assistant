@@ -104,14 +104,14 @@ mod tests {
 
     #[test]
     fn test_content_blocks_image_only() {
-        let json = r#"[{"type":"image","attachment_id":"abc.png"}]"#;
+        let json = r#"[{"type":"image","attachment":{"attachmentId":"abc.png"}}]"#;
         assert!(is_content_empty(json));
         assert_eq!(content_plain_text(json), "");
     }
 
     #[test]
     fn test_content_blocks_mixed() {
-        let json = r#"[{"type":"text","text":"look at this"},{"type":"image","attachment_id":"abc.png"}]"#;
+        let json = r#"[{"type":"text","text":"look at this"},{"type":"image","attachment":{"attachmentId":"abc.png"}}]"#;
         assert!(!is_content_empty(json));
         assert_eq!(content_plain_text(json), "look at this");
     }

@@ -1,6 +1,6 @@
+use crate::content_codec;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use crate::content_codec;
 
 const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at, is_full, active_branch_id";
 const MSG_SELECT: &str =
@@ -486,7 +486,11 @@ pub fn search_conversations(
             .query_map(params![conv.id], |row| row.get::<_, String>(0))
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
-            .any(|c| content_codec::content_plain_text(&c).to_ascii_lowercase().contains(&lower_query));
+            .any(|c| {
+                content_codec::content_plain_text(&c)
+                    .to_ascii_lowercase()
+                    .contains(&lower_query)
+            });
         if content_match {
             results.push(conv);
         }
@@ -796,17 +800,20 @@ pub fn get_message_siblings(
     let siblings = if let Some(pid) = parent_id {
         let mut stmt = conn
             .prepare(
-                "SELECT id, sibling_index, SUBSTR(content, 1, 100) FROM messages
+                "SELECT id, sibling_index, content FROM messages
                  WHERE conversation_id = ?1 AND parent_id = ?2
                  ORDER BY sibling_index",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params![conv_id, pid], |row| {
+                let id: String = row.get(0)?;
+                let sibling_index: i64 = row.get(1)?;
+                let content: String = row.get(2)?;
                 Ok(SiblingInfo {
-                    id: row.get(0)?,
-                    sibling_index: row.get(1)?,
-                    content_preview: row.get(2)?,
+                    id,
+                    sibling_index,
+                    content_preview: content_codec::content_text_preview(&content, 100),
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -815,17 +822,20 @@ pub fn get_message_siblings(
     } else {
         let mut stmt = conn
             .prepare(
-                "SELECT id, sibling_index, SUBSTR(content, 1, 100) FROM messages
+                "SELECT id, sibling_index, content FROM messages
                  WHERE conversation_id = ?1 AND parent_id IS NULL
                  ORDER BY sibling_index",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params![conv_id], |row| {
+                let id: String = row.get(0)?;
+                let sibling_index: i64 = row.get(1)?;
+                let content: String = row.get(2)?;
                 Ok(SiblingInfo {
-                    id: row.get(0)?,
-                    sibling_index: row.get(1)?,
-                    content_preview: row.get(2)?,
+                    id,
+                    sibling_index,
+                    content_preview: content_codec::content_text_preview(&content, 100),
                 })
             })
             .map_err(|e| e.to_string())?;

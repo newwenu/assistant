@@ -1,12 +1,13 @@
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::Arc;
-use sha2::{Sha256, Digest};
 use tokio::fs;
 
 pub struct AttachmentStoreConfig {
     pub dir: PathBuf,
 }
 
+#[derive(Clone)]
 pub struct AttachmentStore {
     config: Arc<AttachmentStoreConfig>,
 }

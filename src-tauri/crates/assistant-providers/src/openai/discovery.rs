@@ -70,6 +70,7 @@ fn infer_support_vision(model_id: &str) -> bool {
         || lower.contains("gpt-4-turbo")
         || lower.contains("gpt-4o")
         || lower.contains("gpt-4.1")
+        || lower.contains("deepseek-v4.1")
 }
 
 pub(crate) fn list_models(adapter: &OpenAIAdapter) -> Result<Vec<ModelConfig>, ProviderError> {
