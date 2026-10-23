@@ -67,6 +67,7 @@ pub(crate) fn list_models(adapter: &GeminiAdapter) -> Result<Vec<ModelConfig>, P
                     name: model.display_name.unwrap_or(id),
                     owned_by: "google".to_string(),
                     context_window: ctx,
+                    support_vision: true,
                 }
             })
             .collect();

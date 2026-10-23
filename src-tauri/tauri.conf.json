@@ -41,7 +41,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["$APPDATA/mascot-assets/**"]
+          "allow": ["$APPDATA/mascot-assets/**", "$APPDATA/attachments/**"]
         }
       }
     },

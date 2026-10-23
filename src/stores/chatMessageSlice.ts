@@ -5,6 +5,7 @@ import { notifyError } from "./errorNotifyStore";
 import { MESSAGES_PAGE_SIZE } from "../config/constants";
 import type { PersistQueue } from "../utils/persistQueue";
 import type { ChatOrchestrator } from "../services/chatOrchestrator";
+import { rebuildContent } from "../chat/core/contentBlockUtils";
 
 const log = createLogger("chatMessageSlice");
 
@@ -100,8 +101,9 @@ export function createMessageSlice(
       if (!msg) return;
 
       if (msg.role === "user") {
+        const contentToSend = rebuildContent(msg.content, newContent);
         try {
-          await get().resendFrom(msg.timestamp, newContent, {
+          await get().resendFrom(msg.timestamp, contentToSend, {
             kind: "branch",
             branchPointMessageId: messageId,
           });

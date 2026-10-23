@@ -9,11 +9,13 @@ use crate::protocol::ChatStreamStartPayloadDto;
 use assistant_agent::chat_runtime::{self, StreamError};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::compaction;
+use assistant_agent::multimodal;
 use assistant_agent::prompt_builder;
 use assistant_config::constant::WINDOW_ORB;
 use assistant_providers::base::{self, ProviderError, ProviderErrorPayload};
 use assistant_storage::{
     agent_modes::{self, AgentModeRow},
+    attachment_store::AttachmentStore,
     conversations::{self, MessageRow},
     providers::{self as provider_store},
 };
@@ -26,51 +28,136 @@ use super::chat_stream::{
 use super::chat_utils::{resolve_context_window, resolve_final_tokens};
 
 #[command]
-pub fn send_chat_message(
+pub async fn send_chat_message(
     app: AppHandle,
     conversation_id: String,
     content: String,
     mode_id: Option<String>,
     branch_point_message_id: Option<String>,
 ) -> Result<(), String> {
-    if content.trim().is_empty() {
+    if is_content_empty(&content) {
         return Err(assistant_i18n::t("chat.empty_content"));
     }
     if compaction::is_terminating(&conversation_id) {
         return Err("Conversation is being terminated".to_string());
     }
-    let state = app.state::<crate::setup::DbState>();
-    let conn = super::get_db_conn(&state)?;
 
-    if conversations::is_conversation_full(&conn, &conversation_id)? {
-        return Err("Conversation is full, cannot send".to_string());
-    }
+    let attachment_store = app.state::<AttachmentStore>();
+    let content = multimodal::admit_attachments(&content, &attachment_store)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    let now = Utc::now().timestamp_millis();
-    let mode: Option<AgentModeRow> = mode_id
-        .as_ref()
-        .and_then(|id| agent_modes::get_by_id(&conn, id).ok().flatten());
+    let (mode, assistant_msg_id, detail, provider_row) = {
+        let state = app.state::<crate::setup::DbState>();
+        let conn = super::get_db_conn(&state)?;
 
-    let detail_before = conversations::get_conversation_detail(&conn, &conversation_id)?
-        .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+        if conversations::is_conversation_full(&conn, &conversation_id)? {
+            return Err("Conversation is full, cannot send".to_string());
+        }
 
-    let msg_provider_id = detail_before.conversation.provider_id.clone();
-    let msg_model_id = Some(detail_before.conversation.model_id.clone());
+        let now = Utc::now().timestamp_millis();
+        let mode: Option<AgentModeRow> = mode_id
+            .as_ref()
+            .and_then(|id| agent_modes::get_by_id(&conn, id).ok().flatten());
 
-    let (_user_msg_id, assistant_msg_id) = if let Some(bp_id) = &branch_point_message_id {
-        let branch_point = conversations::get_message_by_id(&conn, bp_id)?
-            .ok_or_else(|| format!("Branch point message {} not found", bp_id))?;
+        let detail_before = conversations::get_conversation_detail(&conn, &conversation_id)?
+            .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
 
-        let bp_parent_id = branch_point.parent_id.clone();
+        let msg_provider_id = detail_before.conversation.provider_id.clone();
+        let msg_model_id = Some(detail_before.conversation.model_id.clone());
 
-        if branch_point.role == "user" {
-            let user_parent_id = bp_parent_id.clone();
-            let user_sibling_index = conversations::get_sibling_count(
-                &conn,
-                &conversation_id,
-                user_parent_id.as_deref(),
-            )?
-            .max(0);
+        let (_user_msg_id, assistant_msg_id) = if let Some(bp_id) = &branch_point_message_id {
+            let branch_point = conversations::get_message_by_id(&conn, bp_id)?
+                .ok_or_else(|| format!("Branch point message {} not found", bp_id))?;
+
+            let bp_parent_id = branch_point.parent_id.clone();
+
+            if branch_point.role == "user" {
+                let user_parent_id = bp_parent_id.clone();
+                let user_sibling_index = conversations::get_sibling_count(
+                    &conn,
+                    &conversation_id,
+                    user_parent_id.as_deref(),
+                )?
+                .max(0);
+
+                let uid = Uuid::new_v4().to_string();
+                conversations::insert_message(
+                    &conn,
+                    &MessageRow {
+                        id: uid.clone(),
+                        conversation_id: conversation_id.clone(),
+                        role: "user".to_string(),
+                        content: content.clone(),
+                        tokens: None,
+                        timestamp: now,
+                        parent_id: user_parent_id,
+                        is_pinned: false,
+                        reasoning: None,
+                        tool_calls_json: None,
+                        sibling_index: user_sibling_index,
+                        provider_id: None,
+                        model_id: None,
+                    },
+                )?;
+
+                let aid = Uuid::new_v4().to_string();
+                conversations::insert_message(
+                    &conn,
+                    &MessageRow {
+                        id: aid.clone(),
+                        conversation_id: conversation_id.clone(),
+                        role: "assistant".to_string(),
+                        content: String::new(),
+                        tokens: None,
+                        timestamp: now + 1,
+                        parent_id: Some(uid.clone()),
+                        is_pinned: false,
+                        reasoning: None,
+                        tool_calls_json: None,
+                        sibling_index: 0,
+                        provider_id: msg_provider_id.clone(),
+                        model_id: msg_model_id.clone(),
+                    },
+                )?;
+
+                (uid, aid)
+            } else {
+                let assistant_parent_id = bp_parent_id.clone();
+                let assistant_sibling_index = conversations::get_sibling_count(
+                    &conn,
+                    &conversation_id,
+                    assistant_parent_id.as_deref(),
+                )?
+                .max(0);
+
+                let aid = Uuid::new_v4().to_string();
+                conversations::insert_message(
+                    &conn,
+                    &MessageRow {
+                        id: aid.clone(),
+                        conversation_id: conversation_id.clone(),
+                        role: "assistant".to_string(),
+                        content: String::new(),
+                        tokens: None,
+                        timestamp: now,
+                        parent_id: assistant_parent_id,
+                        is_pinned: false,
+                        reasoning: None,
+                        tool_calls_json: None,
+                        sibling_index: assistant_sibling_index,
+                        provider_id: msg_provider_id.clone(),
+                        model_id: msg_model_id.clone(),
+                    },
+                )?;
+
+                (String::new(), aid)
+            }
+        } else {
+            let user_parent_id = detail_before.messages.last().map(|m| m.id.clone());
+            let user_sibling_index =
+                conversations::get_sibling_count(&conn, &conversation_id, user_parent_id.as_deref())?
+                    .max(0);
 
             let uid = Uuid::new_v4().to_string();
             conversations::insert_message(
@@ -113,100 +200,42 @@ pub fn send_chat_message(
             )?;
 
             (uid, aid)
-        } else {
-            let assistant_parent_id = bp_parent_id.clone();
-            let assistant_sibling_index = conversations::get_sibling_count(
-                &conn,
-                &conversation_id,
-                assistant_parent_id.as_deref(),
-            )?
-            .max(0);
+        };
 
-            let aid = Uuid::new_v4().to_string();
-            conversations::insert_message(
-                &conn,
-                &MessageRow {
-                    id: aid.clone(),
-                    conversation_id: conversation_id.clone(),
-                    role: "assistant".to_string(),
-                    content: String::new(),
-                    tokens: None,
-                    timestamp: now,
-                    parent_id: assistant_parent_id,
-                    is_pinned: false,
-                    reasoning: None,
-                    tool_calls_json: None,
-                    sibling_index: assistant_sibling_index,
-                    provider_id: msg_provider_id.clone(),
-                    model_id: msg_model_id.clone(),
-                },
-            )?;
+        conversations::update_active_branch_id(&conn, &conversation_id, &assistant_msg_id)?;
 
-            (String::new(), aid)
-        }
-    } else {
-        let user_parent_id = detail_before.messages.last().map(|m| m.id.clone());
-        let user_sibling_index =
-            conversations::get_sibling_count(&conn, &conversation_id, user_parent_id.as_deref())?
-                .max(0);
+        let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
+            .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+        let provider_id = detail
+            .conversation
+            .provider_id
+            .clone()
+            .ok_or_else(|| assistant_i18n::t("chat.provider_deleted"))?;
+        let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
+            .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
 
-        let uid = Uuid::new_v4().to_string();
-        conversations::insert_message(
-            &conn,
-            &MessageRow {
-                id: uid.clone(),
-                conversation_id: conversation_id.clone(),
-                role: "user".to_string(),
-                content: content.clone(),
-                tokens: None,
-                timestamp: now,
-                parent_id: user_parent_id,
-                is_pinned: false,
-                reasoning: None,
-                tool_calls_json: None,
-                sibling_index: user_sibling_index,
-                provider_id: None,
-                model_id: None,
-            },
-        )?;
-
-        let aid = Uuid::new_v4().to_string();
-        conversations::insert_message(
-            &conn,
-            &MessageRow {
-                id: aid.clone(),
-                conversation_id: conversation_id.clone(),
-                role: "assistant".to_string(),
-                content: String::new(),
-                tokens: None,
-                timestamp: now + 1,
-                parent_id: Some(uid.clone()),
-                is_pinned: false,
-                reasoning: None,
-                tool_calls_json: None,
-                sibling_index: 0,
-                provider_id: msg_provider_id.clone(),
-                model_id: msg_model_id.clone(),
-            },
-        )?;
-
-        (uid, aid)
+        (mode, assistant_msg_id, detail, provider_row)
     };
 
-    conversations::update_active_branch_id(&conn, &conversation_id, &assistant_msg_id)?;
-
-    let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
-        .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
-    let provider_id = detail
-        .conversation
-        .provider_id
-        .clone()
-        .ok_or_else(|| assistant_i18n::t("chat.provider_deleted"))?;
-    let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
-        .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
-
     let system_prompt = mode.as_ref().map(|m| m.prompt.as_str()).unwrap_or("");
-    let chat_messages = prompt_builder::prepare_messages(&detail, system_prompt, None);
+    let mut chat_messages = prompt_builder::prepare_messages(&detail, system_prompt, None);
+
+    {
+        let support_vision = {
+            let models: Vec<assistant_providers::base::ModelConfig> =
+                serde_json::from_str(&provider_row.models_json).unwrap_or_default();
+            models
+                .iter()
+                .find(|m| m.id == detail.conversation.model_id)
+                .map(|m| m.support_vision)
+                .unwrap_or(false)
+        };
+        if support_vision {
+            multimodal::rehydrate_images(&mut chat_messages, &attachment_store).await;
+        } else {
+            multimodal::project_images_for_text_model(&mut chat_messages);
+        }
+    }
 
     let config = super::provider::build_provider_config(&provider_row);
     let adapter = base::create_provider_adapter(config);
@@ -367,4 +396,8 @@ pub fn cancel_chat(app: AppHandle, conversation_id: String) -> Result<(), String
     let chat_tasks: tauri::State<'_, ChatTasks> = app.state::<ChatTasks>();
     chat_tasks.cancel(&conversation_id);
     Ok(())
+}
+
+fn is_content_empty(content: &str) -> bool {
+    assistant_storage::content_codec::is_content_empty(content)
 }

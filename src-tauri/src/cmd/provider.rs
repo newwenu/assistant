@@ -174,6 +174,7 @@ pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelC
             name: m.name,
             owned_by: m.owned_by,
             context_window: m.context_window,
+            support_vision: m.support_vision,
         })
         .collect())
 }
@@ -202,6 +203,7 @@ pub fn preview_models_cmd(
             name: m.name,
             owned_by: m.owned_by,
             context_window: m.context_window,
+            support_vision: m.support_vision,
         })
         .collect())
 }

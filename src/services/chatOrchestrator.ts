@@ -8,6 +8,7 @@ import type {
   ChatDeltaPayload,
   RetryNotification,
 } from "../chat/core/chatTypes";
+import { extractPlainText } from "../chat/core/contentBlockUtils";
 import type { ChatError } from "../chat/core/chatErrors";
 import { ChatErrorCode, toChatError } from "../chat/core/chatErrors";
 import { CHAT_AUTO_TITLE_LENGTH } from "../config/constants";
@@ -47,6 +48,8 @@ export interface ChatEnvPort {
   getMessages: () => Message[];
   getConversations: () => Conversation[];
   getSelectedModeId: () => string | null;
+  getSelectedProviderId: () => string | null;
+  getSelectedModelId: () => string;
   getPendingBranchPoint: () => string | null;
   clearPendingBranchPoint: () => void;
 }
@@ -79,7 +82,8 @@ function fallbackTitleFromUserMessage(
   userMessage: string,
   maxLength = CHAT_AUTO_TITLE_LENGTH,
 ): string {
-  const firstLine = userMessage.split("\n").find((l) => l.trim()) || "";
+  const plainText = extractPlainText(userMessage);
+  const firstLine = plainText.split("\n").find((l) => l.trim()) || "";
   if (firstLine.length <= maxLength) return firstLine.trim();
   const puncts = ["。", "？", "！", ".", "?", "!", "；", ";", "，", ","];
   for (const p of puncts) {
@@ -285,11 +289,23 @@ export function createChatOrchestrator(
 
       try {
         const modeId = deps.env.getSelectedModeId();
+        const selectedProviderId = deps.env.getSelectedProviderId();
+        const selectedModelId = deps.env.getSelectedModelId();
+        if (!selectedProviderId) {
+          deps.state.errorStream({
+            code: ChatErrorCode.ApiKeyMissing,
+            retryAfterMs: null,
+            retryable: false,
+          });
+          return;
+        }
         await chatService.sendChatMessage(
           convId,
           content,
           modeId,
           pendingBranchPoint,
+          selectedProviderId,
+          selectedModelId,
         );
       } catch (e) {
         log.error("sendChatMessage failed", e);

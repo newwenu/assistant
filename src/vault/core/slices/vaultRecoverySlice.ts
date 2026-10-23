@@ -26,7 +26,7 @@ export interface VaultRecoverySlice {
     recoveryKey: string,
     exportPath: string,
   ) => Promise<DisasterRecoveryResult | null>;
-  exportVault: (format: "csv" | "json") => Promise<string | null>;
+  exportVault: (format: "csv" | "json", path: string) => Promise<string | null>;
   importVault: (path: string, format: "csv" | "json") => Promise<number | null>;
 }
 
@@ -149,12 +149,12 @@ export function createRecoverySlice(
       }
     },
 
-    exportVault: async (format) => {
+    exportVault: async (format, path) => {
       set({ loading: true, error: null });
       try {
-        const filePath = await vaultService.exportVault(format);
-        set({ exportFilePath: filePath, loading: false });
-        return filePath;
+        await vaultService.exportVaultToFile(format, path);
+        set({ exportFilePath: path, loading: false });
+        return path;
       } catch (e) {
         log.error("exportVault failed", e);
         set({ error: String(e), loading: false });

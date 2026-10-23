@@ -68,15 +68,7 @@ export function useVaultUnlock() {
     setPassword("");
     setConfirmPassword("");
     setStrength(null);
-  }, [
-    password,
-    confirmPassword,
-    isInitialized,
-    loading,
-    clearError,
-    init,
-    unlock,
-  ]);
+  }, [password, confirmPassword, isInitialized, clearError, init, unlock]);
 
   const handleBiometricUnlock = useCallback(async () => {
     clearError();

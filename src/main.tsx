@@ -22,7 +22,7 @@ import "./assets/styles/fonts.css";
 import "./assets/styles/global.css";
 
 RuntimeLoader.setWasmUrl("/rive.wasm");
-RuntimeLoader.setWasmFallbackUrl(null);
+RuntimeLoader.setWasmFallbackUrl("/rive_fallback.wasm");
 
 const ANTD_LOCALE_MAP: Record<string, typeof zhCNAntd> = {
   "zh-CN": zhCNAntd,

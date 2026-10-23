@@ -81,6 +81,8 @@ pub struct ModelConfigDto {
     pub owned_by: String,
     #[serde(default)]
     pub context_window: u32,
+    #[serde(default)]
+    pub support_vision: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

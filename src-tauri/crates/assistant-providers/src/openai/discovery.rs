@@ -27,6 +27,7 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                 name,
                 owned_by: m.owned_by.clone().unwrap_or_default(),
                 context_window: ctx,
+                support_vision: infer_support_vision(&id),
             });
         }
     }
@@ -53,12 +54,22 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                     name,
                     owned_by: m.owned_by.clone().unwrap_or_default(),
                     context_window: ctx,
+                    support_vision: infer_support_vision(&id),
                 });
             }
         }
     }
 
     configs
+}
+
+fn infer_support_vision(model_id: &str) -> bool {
+    let lower = model_id.to_ascii_lowercase();
+    lower.contains("vision")
+        || lower.contains("4o")
+        || lower.contains("gpt-4-turbo")
+        || lower.contains("gpt-4o")
+        || lower.contains("gpt-4.1")
 }
 
 pub(crate) fn list_models(adapter: &OpenAIAdapter) -> Result<Vec<ModelConfig>, ProviderError> {

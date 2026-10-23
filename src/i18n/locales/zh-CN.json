@@ -29,6 +29,7 @@
       "pin": "置顶",
       "unpin": "取消置顶",
       "duplicate": "复制",
+      "browse": "浏览",
       "close": "关闭",
       "minimize": "最小化",
       "maximize": "最大化",
@@ -355,6 +356,11 @@
       "ssh_auth_sock_override": {
         "label": "SSH_AUTH_SOCK 路径覆盖",
         "placeholder": "留空使用默认路径"
+      },
+      "not_initialized": {
+        "title": "保险库尚未创建",
+        "description": "请先创建保险库，然后即可在此配置保险库设置。",
+        "go_create": "前往创建保险库"
       }
     }
   },
@@ -422,7 +428,15 @@
       "placeholder_full": "对话已终止，请生成交接摘要或新建对话",
       "placeholder_streaming": "输入下一条消息，回车将在回复结束后发送...",
       "send": "发送消息",
-      "stop": "停止生成"
+      "stop": "停止生成",
+      "attach_image": "添加图片",
+      "model_no_vision": "当前模型不支持图片",
+      "too_many_images": "最多只能添加 {{max}} 张图片",
+      "image_too_large": "图片大小不能超过 {{max}} MB",
+      "invalid_image_type": "不支持的图片格式，仅支持 PNG、JPEG、WebP、GIF",
+      "image_load_failed": "图片加载失败",
+      "image_retry": "重试",
+      "image_offloaded": "图片已卸载"
     },
     "view": {
       "no_provider_title": "请先配置 AI Provider",
@@ -847,10 +861,10 @@
     },
     "import_export": {
       "export_title": "导出保险库",
-      "export_description": "将所有保险库条目导出为文件。文件将包含解密后的数据，5 分钟后自动删除。CSV 格式不含自定义字段，标签以逗号分隔。",
+      "export_description": "将所有保险库条目导出为文件。文件将包含解密后的数据，请妥善保管。CSV 格式不含自定义字段，标签以逗号分隔。",
       "export_format_json": "JSON",
       "export_format_csv": "CSV",
-      "export_warning": "导出文件包含未加密的密码，导出不去重。为安全起见，文件将在 5 分钟后自动删除。",
+      "export_warning": "导出文件包含未加密的密码，导出不去重，请及时删除或移至安全位置。",
       "export_button": "导出",
       "export_success": "已导出至：{{path}}",
       "import_title": "导入保险库",

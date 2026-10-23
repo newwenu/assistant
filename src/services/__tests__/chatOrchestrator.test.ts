@@ -58,6 +58,8 @@ function createMockDeps(): {
     getMessages: vi.fn(() => []),
     getConversations: vi.fn(() => []),
     getSelectedModeId: vi.fn(() => null),
+    getSelectedProviderId: vi.fn(() => "provider-1"),
+    getSelectedModelId: vi.fn(() => "model-1"),
     getPendingBranchPoint: vi.fn(() => null),
     clearPendingBranchPoint: vi.fn(),
   };

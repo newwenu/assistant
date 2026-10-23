@@ -67,14 +67,18 @@ export const chatService = {
   sendChatMessage: (
     conversationId: string,
     content: string,
-    modeId?: string | null,
-    branchPointMessageId?: string | null,
+    modeId: string | null | undefined,
+    branchPointMessageId: string | null | undefined,
+    providerId: string,
+    modelId: string,
   ): Promise<void> =>
     invoke("send_chat_message", {
       conversationId,
       content,
       modeId,
       branchPointMessageId,
+      providerId,
+      modelId,
     }),
 
   cancelChat: (conversationId: string): Promise<void> =>

@@ -62,6 +62,7 @@ pub(crate) fn list_models(adapter: &AnthropicAdapter) -> Result<Vec<ModelConfig>
                     name: m.display_name.unwrap_or(m.id),
                     owned_by: "anthropic".to_string(),
                     context_window: ctx,
+                    support_vision: true,
                 }
             })
             .collect();

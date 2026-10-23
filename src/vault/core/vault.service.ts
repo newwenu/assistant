@@ -92,6 +92,9 @@ export const vaultService = {
   exportVault: (format: "csv" | "json"): Promise<string> =>
     invoke("vault_export", { format }),
 
+  exportVaultToFile: (format: "csv" | "json", path: string): Promise<void> =>
+    invoke("vault_export_to_file", { format, path }),
+
   importVault: (path: string, format: "csv" | "json"): Promise<number> =>
     invoke("vault_import", { path, format }),
 

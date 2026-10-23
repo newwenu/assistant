@@ -1,5 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use crate::content_codec;
 
 const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at, is_full, active_branch_id";
 const MSG_SELECT: &str =
@@ -465,11 +466,32 @@ pub fn search_conversations(
          WHERE c.title LIKE ?1 OR m.content LIKE ?1 \
          ORDER BY c.is_pinned DESC, c.sort_order DESC, c.updated_at DESC";
     let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
-    let rows = stmt
+    let candidates: Vec<ConversationRow> = stmt
         .query_map(params![pattern], read_conv_row)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+
+    let lower_query = query.to_ascii_lowercase();
+    let mut results = Vec::new();
+    for conv in candidates {
+        let title_match = conv.title.to_ascii_lowercase().contains(&lower_query);
+        if title_match {
+            results.push(conv);
+            continue;
+        }
+        let msg_sql = "SELECT content FROM messages WHERE conversation_id = ?1";
+        let mut msg_stmt = conn.prepare(msg_sql).map_err(|e| e.to_string())?;
+        let content_match: bool = msg_stmt
+            .query_map(params![conv.id], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .any(|c| content_codec::content_plain_text(&c).to_ascii_lowercase().contains(&lower_query));
+        if content_match {
+            results.push(conv);
+        }
+    }
+    Ok(results)
 }
 
 pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<String, String> {
@@ -477,11 +499,12 @@ pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<Strin
         .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
     let mut md = format!("# {}\n\n", detail.conversation.title);
     for msg in &detail.messages {
+        let plain = content_codec::content_plain_text(&msg.content);
         match msg.role.as_str() {
-            "user" => md.push_str(&format!("## User\n\n{}\n\n", msg.content)),
-            "assistant" => md.push_str(&format!("## Assistant\n\n{}\n\n", msg.content)),
-            "system" => md.push_str(&format!("## System\n\n{}\n\n", msg.content)),
-            _ => md.push_str(&format!("## {}\n\n{}\n\n", msg.role, msg.content)),
+            "user" => md.push_str(&format!("## User\n\n{}\n\n", plain)),
+            "assistant" => md.push_str(&format!("## Assistant\n\n{}\n\n", plain)),
+            "system" => md.push_str(&format!("## System\n\n{}\n\n", plain)),
+            _ => md.push_str(&format!("## {}\n\n{}\n\n", msg.role, plain)),
         }
     }
     Ok(md)

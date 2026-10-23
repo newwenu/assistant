@@ -174,6 +174,7 @@ mod tests {
                 name: "GPT-4".into(),
                 owned_by: "openai".into(),
                 context_window: 128000,
+                support_vision: true,
             }],
             default_model: "gpt-4".into(),
             updated_at: 1000,

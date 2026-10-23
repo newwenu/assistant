@@ -634,6 +634,37 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   flex-shrink: 0;
 }
 
+.chat-input-dragging {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+}
+
+.chat-attach-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: color 0.15s;
+}
+
+.chat-attach-btn:hover {
+  color: var(--color-primary);
+}
+
+.chat-attach-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
 .chat-input .ant-input-textarea {
   flex: 1;
 }

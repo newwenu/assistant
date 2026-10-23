@@ -1,8 +1,15 @@
-import React, { useEffect, useState, useCallback, type RefObject } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  type RefObject,
+} from "react";
 import { Button, Modal, Typography, Progress, Tooltip } from "antd";
 import {
   PlusOutlined,
   SettingOutlined,
+  PaperClipOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
@@ -23,6 +30,14 @@ import { ProviderSelector } from "./selectors/ProviderSelector";
 import { CompactBanner } from "./compact/CompactBanner";
 import { CompactErrorBanner } from "./compact/CompactErrorBanner";
 import { useAgentModeStore } from "../stores/agentModeStore";
+import { useAttachmentStore } from "../stores/attachmentStore";
+import { AttachmentPreview } from "./message/AttachmentPreview";
+import { validateImageFile } from "./core/contentBlockUtils";
+import type { Attachment } from "./core/attachmentTypes";
+import {
+  ATTACHMENT_MAX_IMAGES,
+  ATTACHMENT_MAX_IMAGE_SIZE_BYTES,
+} from "./core/attachmentTypes";
 import { ForkDialog } from "./blocks/ForkDialog";
 import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
 import { createLogger } from "@/services/logger";
@@ -73,17 +88,69 @@ function ContextBar({
   );
 }
 
+const AttachmentPreviewBar: React.FC = () => {
+  const attachments = useAttachmentStore((s) => s.attachments);
+  const removeAttachment = useAttachmentStore((s) => s.removeAttachment);
+  return (
+    <AttachmentPreview attachments={attachments} onRemove={removeAttachment} />
+  );
+};
+
 export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   const chat = useChatStore();
   const stream = useChatStreamStore();
   const provider = useProviderStore();
   const [modal, modalContextHolder] = Modal.useModal();
   const { t } = useTranslation();
-  const [currentModelId, setCurrentModelId] = useState("");
-  const [currentProviderId, setCurrentProviderId] = useState<string | null>(
-    null,
+  const currentProviderId = useChatStore((s) => s.selectedProviderId);
+  const currentModelId = useChatStore((s) => s.selectedModelId);
+  const setSelectedProviderModel = useChatStore(
+    (s) => s.setSelectedProviderModel,
   );
   const [forkTarget, setForkTarget] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachments = useAttachmentStore((s) => s.attachments);
+  const addAttachment = useAttachmentStore((s) => s.addAttachment);
+  const setSupportVision = useAttachmentStore((s) => s.setSupportVision);
+
+  const supportVision = (() => {
+    const p = provider.providers.find((pr) => pr.id === currentProviderId);
+    return (
+      p?.models.find((m) => m.id === currentModelId)?.supportVision ?? false
+    );
+  })();
+
+  useEffect(() => {
+    setSupportVision(supportVision);
+  }, [supportVision, setSupportVision]);
+
+  const handleFileSelect = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      for (const file of files) {
+        if (attachments.length >= ATTACHMENT_MAX_IMAGES) break;
+        if (file.size > ATTACHMENT_MAX_IMAGE_SIZE_BYTES) continue;
+        const validation = validateImageFile(file);
+        if (!validation.ok) continue;
+        const previewUrl = URL.createObjectURL(file);
+        const att: Attachment = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          kind: "image",
+          file,
+          previewUrl,
+          mimeType: file.type as Attachment["mimeType"],
+          originalSizeBytes: file.size,
+        };
+        addAttachment(att);
+      }
+      e.target.value = "";
+    },
+    [attachments.length, addAttachment],
+  );
 
   useEffect(() => {
     void useProviderStore.getState().loadProviders();
@@ -123,25 +190,29 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       );
       if (conv) {
         const resolved = resolveProviderModel(conv.providerId, conv.modelId);
-        setCurrentProviderId(resolved.providerId);
-        setCurrentModelId(resolved.modelId);
+        setSelectedProviderModel(resolved.providerId, resolved.modelId);
       }
     }
-  }, [chat.currentConversationId, chat.conversations, resolveProviderModel]);
+  }, [
+    chat.currentConversationId,
+    chat.conversations,
+    resolveProviderModel,
+    setSelectedProviderModel,
+  ]);
 
   useEffect(() => {
     if (!currentProviderId) return;
     const exists = provider.providers.some((p) => p.id === currentProviderId);
     if (!exists) {
       const resolved = resolveProviderModel(null, currentModelId);
-      setCurrentProviderId(resolved.providerId);
-      setCurrentModelId(resolved.modelId);
+      setSelectedProviderModel(resolved.providerId, resolved.modelId);
     }
   }, [
     provider.providers,
     currentProviderId,
     currentModelId,
     resolveProviderModel,
+    setSelectedProviderModel,
   ]);
 
   const noProviders = provider.providers.length === 0;
@@ -166,11 +237,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
 
   const handleProviderChange = useCallback(
     (newProviderId: string) => {
-      setCurrentProviderId(newProviderId);
       const p = provider.providers.find((pr) => pr.id === newProviderId);
       let modelId = p?.defaultModel || "";
       if (p && p.models.length > 0 && !modelId) modelId = p.models[0].id;
-      setCurrentModelId(modelId);
+      setSelectedProviderModel(newProviderId, modelId);
       if (chat.currentConversationId) {
         chatService
           .updateConversationProvider(chat.currentConversationId, newProviderId)
@@ -178,7 +248,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
         void chat.updateModel(chat.currentConversationId, modelId);
       }
     },
-    [provider.providers, chat],
+    [provider.providers, chat, setSelectedProviderModel],
   );
 
   const handleNewConversation = useCallback(() => {
@@ -204,12 +274,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
 
   const handleModelChange = useCallback(
     (modelId: string) => {
-      setCurrentModelId(modelId);
+      setSelectedProviderModel(currentProviderId, modelId);
       if (chat.currentConversationId) {
         void chat.updateModel(chat.currentConversationId, modelId);
       }
     },
-    [chat],
+    [chat, currentProviderId, setSelectedProviderModel],
   );
 
   const handleOpenSettings = useCallback(() => {
@@ -225,8 +295,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       if (mode?.model) {
         for (const p of provider.providers) {
           if (p.models.some((m) => m.id === mode.model)) {
-            setCurrentProviderId(p.id);
-            setCurrentModelId(mode.model);
+            setSelectedProviderModel(p.id, mode.model);
             if (chat.currentConversationId) {
               chatService
                 .updateConversationProvider(chat.currentConversationId, p.id)
@@ -243,7 +312,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
         }
       }
     },
-    [provider.providers, chat],
+    [provider.providers, chat, setSelectedProviderModel],
   );
 
   const handleEditMessage = useCallback(
@@ -401,6 +470,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
               retryStatus={stream.retryStatus}
             />
           )}
+          <AttachmentPreviewBar />
           <div className="chat-tool-bar">
             <ModeSelector variant="chip" onModeChange={handleModeChange} />
             {!chat.isFull && (
@@ -419,6 +489,26 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
                   disabled={stream.isStreaming}
                 />
               </Tooltip>
+            )}
+            {supportVision && (
+              <>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<PaperClipOutlined />}
+                  onClick={handleFileSelect}
+                  disabled={stream.isStreaming}
+                  title={t("chat.input.attach_image")}
+                />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style={{ display: "none" }}
+                  onChange={handleFileInputChange}
+                />
+              </>
             )}
           </div>
           <MessageInput

@@ -19,6 +19,12 @@ type ChatState = ChatConversationSlice &
   ChatMessageSlice &
   ChatCompactSlice & {
     contextUsage: ContextUsage;
+    selectedProviderId: string | null;
+    selectedModelId: string;
+    setSelectedProviderModel: (
+      providerId: string | null,
+      modelId: string,
+    ) => void;
   };
 
 let _orchestrator: ChatOrchestrator | null = null;
@@ -30,7 +36,12 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     setContextUsage: (usage: ContextUsage) => set({ contextUsage: usage }),
   };
   const statePort = createStatePort(set, get, fetchTokenUsageDeps);
-  const envPort = createEnvPort(get, set);
+  const envPort = createEnvPort(
+    get,
+    set,
+    () => get().selectedProviderId,
+    () => get().selectedModelId,
+  );
   const orchestrator = createOrchestrator(statePort, envPort, {
     loadConversations: () => get().loadConversations(),
     switchConversation: (id: string) => get().switchConversation(id),
@@ -54,6 +65,10 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     ...messageSlice,
     ...compactSlice,
     contextUsage: { usedTokens: 0, maxTokens: 128_000, percentage: 0 },
+    selectedProviderId: null,
+    selectedModelId: "",
+    setSelectedProviderModel: (providerId, modelId) =>
+      set({ selectedProviderId: providerId, selectedModelId: modelId }),
   };
 });
 

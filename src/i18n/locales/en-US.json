@@ -29,6 +29,7 @@
       "pin": "Pin",
       "unpin": "Unpin",
       "duplicate": "Duplicate",
+      "browse": "Browse",
       "close": "Close",
       "minimize": "Minimize",
       "maximize": "Maximize",
@@ -368,6 +369,11 @@
       "ssh_auth_sock_override": {
         "label": "SSH_AUTH_SOCK Path Override",
         "placeholder": "Leave empty for default"
+      },
+      "not_initialized": {
+        "title": "Vault Not Created",
+        "description": "Please create a vault first, then you can configure vault settings here.",
+        "go_create": "Go to Create Vault"
       }
     }
   },
@@ -435,7 +441,15 @@
       "placeholder_full": "Conversation terminated — generate a handoff summary or start a new chat",
       "placeholder_streaming": "Type next message, Enter will send after reply finishes...",
       "send": "Send message",
-      "stop": "Stop generating"
+      "stop": "Stop generating",
+      "attach_image": "Attach image",
+      "model_no_vision": "Current model does not support images",
+      "too_many_images": "Maximum {{max}} images allowed",
+      "image_too_large": "Image size cannot exceed {{max}} MB",
+      "invalid_image_type": "Unsupported image format. Only PNG, JPEG, WebP, GIF are supported",
+      "image_load_failed": "Image failed to load",
+      "image_retry": "Retry",
+      "image_offloaded": "Image offloaded"
     },
     "view": {
       "no_provider_title": "Please configure an AI Provider first",
@@ -860,10 +874,10 @@
     },
     "import_export": {
       "export_title": "Export Vault",
-      "export_description": "Export all vault entries to a file. The file will contain decrypted data and will be automatically deleted after 5 minutes. CSV format does not include custom fields; tags are comma-separated.",
+      "export_description": "Export all vault entries to a file. The file will contain decrypted data — keep it safe. CSV format does not include custom fields; tags are comma-separated.",
       "export_format_json": "JSON",
       "export_format_csv": "CSV",
-      "export_warning": "The exported file contains unencrypted passwords. Export does not deduplicate. It will be automatically deleted after 5 minutes for security.",
+      "export_warning": "The exported file contains unencrypted passwords. Export does not deduplicate. Please delete or move the file to a secure location promptly.",
       "export_button": "Export",
       "export_success": "Exported to: {{path}}",
       "import_title": "Import into Vault",

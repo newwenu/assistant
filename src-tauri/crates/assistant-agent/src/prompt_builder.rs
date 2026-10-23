@@ -48,6 +48,7 @@ pub fn prepare_messages(
             name: None,
             is_error: false,
             thinking_signature: None,
+            content_blocks: None,
         })
         .collect();
 
@@ -62,6 +63,7 @@ pub fn prepare_messages(
                 name: None,
                 is_error: false,
                 thinking_signature: None,
+                content_blocks: None,
             },
         );
     }
@@ -76,6 +78,7 @@ pub fn prepare_messages(
                 name: None,
                 is_error: false,
                 thinking_signature: None,
+                content_blocks: None,
             });
         }
     }

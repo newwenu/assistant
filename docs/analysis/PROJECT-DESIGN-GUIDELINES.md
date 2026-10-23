@@ -12,13 +12,14 @@
 Service（IPC 协议）→ Orchestrator（业务编排）→ Store（纯状态）
 ```
 
-| 层 | 职责 | 禁止 |
-|---|------|------|
-| Service | `invoke` 封装 + 类型转换 | 业务逻辑、store 读取 |
-| Orchestrator | 流程编排、流式状态机、事件分发 | `invoke`、直接 set store（通过 Port 回调） |
-| Store | state shape + 简单 set/get | `invoke`、业务编排、跨 Store 读取 |
+**Store-Service 分级规则**（三零原则的细化执行标准）：
 
-**三零原则**：Orchestrator 零 store 依赖（Port 接口可独立单测）、Service 零业务逻辑、Store 零 invoke。
+| 级别 | 条件 | 要求 | 典型场景 |
+|------|------|------|---------|
+| **硬规则** | 有流式/异步状态机，或编排步数 >2，或有跨 Store 协调 | 必须走 Orchestrator + Port，Store 禁止直接调 Service | chat send/cancel/delta、流式工具执行 |
+| **软规则** | 编排步数 ≤2 且无跨 Store 依赖 | 允许 Store 直接调 Service，但编排逻辑应内聚在单个 action 内 | createConversation（load providers → create → switch）、resendMessage |
+| **豁免** | 单步 `await service.xxx() → set(...)` 纯 CRUD/加载 | Store 直接调 Service 合规，无需引入 Port | listConversations、loadAppConf、deleteConversation |
+
 
 ### 1.2 前端注册表三层（I5-Ext / I14 / I8）
 
@@ -76,8 +77,8 @@ pub struct XxxDto {
 
 - `deny_unknown_fields`：增删字段立即报错，强制前后端同步
 - `#[serde(default)]`：新字段前向兼容，旧版前端不崩溃
-- 禁止 `json!({})` 手动构造 event payload（22 处反面教材）
-- 禁止前端 `as` 强转 invoke 返回值（18 处反面教材），改用泛型 `invoke<T>`
+- 禁止 `json!({})` 手动构造 event payload
+- 禁止前端 `as` 强转 invoke 返回值，改用泛型 `invoke<T>`
 
 ### 3.2 Event 三分类（I20）
 
@@ -155,9 +156,9 @@ Rust `pub` 签名不变、前端 re-export 保留、类型从新位置 re-export
 
 | 类型 | 约束 |
 |------|------|
-| `VaultPlaintext` | `secrecy::Secret<Vec<u8>>` + `#[zeroize(drop)]` |
-| `MasterKey` | 包装 `[u8; 32]`，不实现 Clone/Debug |
-| `CipherAlgorithm` | 枚举，Default = Aes256Gcm，decrypt 首字节识别算法 |
+| `VaultPlaintext` | 手动 `Vec<u8>` + 手动 `impl Drop` 调 `zeroize()`，自定义 `Debug` 输出 `[REDACTED]` |
+| `MasterKey` | 包装 `[u8; 32]`，手动 `impl Zeroize + Drop`，不实现 Clone/Debug |
+| `CipherAlgorithm` | 枚举，Default = Aes256Gcm，discriminant 首字节识别算法 |
 
 **常见遗漏**：
 
@@ -176,7 +177,8 @@ Rust `pub` 签名不变、前端 re-export 保留、类型从新位置 re-export
 
 ```
 StreamAccumulator（累积状态）  — apply_delta() → ApplyDeltaOutcome；into_outcome(self) → StreamOutcome
-consume_stream（主循环）       — 纯 async，tokio::select! { cancel / next_item }，自身无业务逻辑
+consume_stream（主循环）       — 纯 async loop，cancel_token.is_cancelled() 检查，自身无业务逻辑
+provider SSE 层               — tokio::select! { cancel / next }，cancel 与流读取并发竞争
 ```
 
 - `into_outcome(self)` 消费 self：防半构造状态误用
@@ -196,7 +198,7 @@ consume_stream（主循环）       — 纯 async，tokio::select! { cancel / ne
 | 过滤 | 所有事件类型统一按 `attempt_id` 过滤 |
 | 兼容 | `attempt_id` optional，旧事件退化为不过滤 |
 
-**反面教材**（I16 共 18 个不对齐点，致命 6 个）：
+**反面教材**（致命问题）：
 - 前端 `temp-assistant-${Date.now()}` vs 后端 `Uuid::new_v4()` → 过滤永远失效
 - `finish_reason` 无过滤 → 旧请求 stale finish 提前结束新流
 - cancel 清 `streamingMessageId=null` 再 send → 时序窗口内所有事件被丢弃
@@ -424,7 +426,7 @@ ToolBox 不经 ToolPipeline：用户主动点击 = 权限主体，审批自己�
 | 目录 | 用途 | 性质 |
 |------|------|------|
 | `docs/achievement/` | I1-I12 已完成 | spec + tasklist |
-| `docs/achievement1/` | I13-I19 部分已完成 | spec + tasklist |
+| `docs/achievement1/` | I13-I19 已完成 | spec + tasklist |
 | `docs/store/` | 进行中/待实施 | spec + tasklist + issues + deadcode + responsibility-split |
 | `docs/analysis/` | **分析指导** | 跨阶段综合，非执行计划 |
 | `docs/designed/` | 顶层设计 | 架构级 |

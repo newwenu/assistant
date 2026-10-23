@@ -1,11 +1,16 @@
 import { useState } from "react";
 import { Button, Input, Typography, Space, Radio, Alert, App } from "antd";
-import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
+import {
+  DownloadOutlined,
+  UploadOutlined,
+  FolderOpenOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { save, open } from "@tauri-apps/plugin-dialog";
 
 interface ImportExportTabProps {
   loading: boolean;
-  exportVault: (format: "json" | "csv") => Promise<string | null>;
+  exportVault: (format: "json" | "csv", path: string) => Promise<string | null>;
   importVault: (path: string, format: "json" | "csv") => Promise<number | null>;
 }
 
@@ -21,11 +26,37 @@ export default function ImportExportTab({
   const [importFilePath, setImportFilePath] = useState("");
 
   const handleExport = async () => {
-    const filePath = await exportVault(exportFormat);
-    if (filePath) {
+    const ext = exportFormat === "json" ? "json" : "csv";
+    const filterName = exportFormat === "json" ? "JSON" : "CSV";
+    const filePath = await save({
+      defaultPath: `vault_export.${ext}`,
+      filters: [
+        { name: filterName, extensions: [ext] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+    if (!filePath) return;
+
+    const result = await exportVault(exportFormat, filePath);
+    if (result) {
       message.success(
-        t("vault.import_export.export_success", { path: filePath }),
+        t("vault.import_export.export_success", { path: result }),
       );
+    }
+  };
+
+  const handlePickImportFile = async () => {
+    const ext = importFormat === "json" ? "json" : "csv";
+    const filterName = importFormat === "json" ? "JSON" : "CSV";
+    const selected = await open({
+      multiple: false,
+      filters: [
+        { name: filterName, extensions: [ext] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+    if (selected && typeof selected === "string") {
+      setImportFilePath(selected);
     }
   };
 
@@ -102,11 +133,20 @@ export default function ImportExportTab({
             {t("vault.import_export.import_format_csv")}
           </Radio>
         </Radio.Group>
-        <Input
-          value={importFilePath}
-          onChange={(e) => setImportFilePath(e.target.value)}
-          placeholder={t("vault.import_export.import_file_placeholder")}
-        />
+        <Space.Compact style={{ width: "100%" }}>
+          <Input
+            value={importFilePath}
+            onChange={(e) => setImportFilePath(e.target.value)}
+            placeholder={t("vault.import_export.import_file_placeholder")}
+            readOnly
+          />
+          <Button
+            icon={<FolderOpenOutlined />}
+            onClick={() => void handlePickImportFile()}
+          >
+            {t("common.actions.browse")}
+          </Button>
+        </Space.Compact>
         <Button
           type="primary"
           icon={<UploadOutlined />}

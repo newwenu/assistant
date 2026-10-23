@@ -1,4 +1,5 @@
 use crate::base::{ChatMessage, MessageRole};
+use crate::types::{parse_content, ContentBlock};
 use serde_json::{json, Value};
 
 pub(crate) fn convert_messages(messages: &[ChatMessage]) -> (Option<Value>, Vec<Value>) {
@@ -41,17 +42,49 @@ pub(crate) fn convert_messages(messages: &[ChatMessage]) -> (Option<Value>, Vec<
 }
 
 fn convert_user_parts(msg: &ChatMessage) -> Vec<Value> {
-    let mut parts = Vec::new();
+    let blocks: Option<Vec<ContentBlock>> = msg
+        .content_blocks
+        .as_ref()
+        .map(|b| Some(b.clone()))
+        .unwrap_or_else(|| parse_content(&msg.content));
 
-    if !msg.content.is_empty() {
-        if let Some(image_part) = try_parse_inline_image(&msg.content) {
-            parts.push(json!({ "text": "Image attached" }));
-            parts.push(image_part);
-        } else {
-            parts.push(json!({ "text": msg.content }));
+    if let Some(blocks) = blocks {
+        let has_image = blocks.iter().any(|b| matches!(b, ContentBlock::Image { .. }));
+        if has_image {
+            return blocks
+                .iter()
+                .filter_map(|b| match b {
+                    ContentBlock::Text { text } if !text.is_empty() => {
+                        Some(json!({ "text": text }))
+                    }
+                    ContentBlock::Image {
+                        media_type,
+                        cached_data,
+                        ..
+                    } => {
+                        let mt = media_type.as_deref().unwrap_or("image/png");
+                        let data = cached_data.as_deref().unwrap_or("");
+                        if data.is_empty() {
+                            None
+                        } else {
+                            Some(json!({
+                                "inlineData": {
+                                    "mimeType": mt,
+                                    "data": data,
+                                }
+                            }))
+                        }
+                    }
+                    _ => None,
+                })
+                .collect();
         }
     }
 
+    let mut parts = Vec::new();
+    if !msg.content.is_empty() {
+        parts.push(json!({ "text": msg.content }));
+    }
     parts
 }
 
@@ -144,23 +177,6 @@ fn parse_tool_response(content: &str) -> Value {
         Ok(value) => json!({ "content": value }),
         Err(_) => json!({ "content": content }),
     }
-}
-
-fn try_parse_inline_image(content: &str) -> Option<Value> {
-    if !content.starts_with("data:") {
-        return None;
-    }
-    let rest = &content["data:".len()..];
-    let (mime_type, data) = rest.split_once(";base64,")?;
-    if mime_type.is_empty() || data.is_empty() {
-        return None;
-    }
-    Some(json!({
-        "inlineData": {
-            "mimeType": mime_type,
-            "data": data,
-        }
-    }))
 }
 
 fn push_content(contents: &mut Vec<Value>, role: &str, parts: Vec<Value>) {
@@ -278,6 +294,7 @@ mod tests {
             name: None,
             is_error: false,
             thinking_signature: None,
+            content_blocks: None,
         }];
         let (system, contents) = convert_messages(&messages);
         assert!(system.is_some());
@@ -296,6 +313,7 @@ mod tests {
             name: None,
             is_error: false,
             thinking_signature: None,
+            content_blocks: None,
         }];
         let (system, contents) = convert_messages(&messages);
         assert!(system.is_none());
@@ -314,6 +332,7 @@ mod tests {
             name: None,
             is_error: false,
             thinking_signature: None,
+            content_blocks: None,
         }];
         let (_, contents) = convert_messages(&messages);
         assert_eq!(contents[0]["role"], "model");
@@ -329,6 +348,7 @@ mod tests {
             name: Some("get_weather".to_string()),
             is_error: false,
             thinking_signature: None,
+            content_blocks: None,
         }];
         let (_, contents) = convert_messages(&messages);
         assert_eq!(contents[0]["role"], "user");
@@ -351,6 +371,7 @@ mod tests {
             name: None,
             is_error: false,
             thinking_signature: None,
+            content_blocks: None,
         }];
         let (_, contents) = convert_messages(&messages);
         let fc = &contents[0]["parts"][0]["functionCall"];
@@ -367,6 +388,7 @@ mod tests {
             name: None,
             is_error: false,
             thinking_signature: Some("sig_abc".to_string()),
+            content_blocks: None,
         }];
         let (_, contents) = convert_messages(&messages);
         let parts = contents[0]["parts"].as_array().unwrap();
@@ -386,6 +408,7 @@ mod tests {
                 name: None,
                 is_error: false,
                 thinking_signature: None,
+                content_blocks: None,
             },
             ChatMessage {
                 role: MessageRole::User,
@@ -395,6 +418,7 @@ mod tests {
                 name: None,
                 is_error: false,
                 thinking_signature: None,
+                content_blocks: None,
             },
         ];
         let (_, contents) = convert_messages(&messages);
@@ -413,6 +437,7 @@ mod tests {
             name: Some("search".to_string()),
             is_error: true,
             thinking_signature: None,
+            content_blocks: None,
         }];
         let (_, contents) = convert_messages(&messages);
         let fr = &contents[0]["parts"][0]["functionResponse"];

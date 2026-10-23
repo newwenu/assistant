@@ -172,6 +172,8 @@ pub struct ModelConfig {
     pub owned_by: String,
     #[serde(default)]
     pub context_window: u32,
+    #[serde(default)]
+    pub support_vision: bool,
 }
 
 pub type ChatStream = Pin<Box<dyn Stream<Item = Result<ChatDelta, ProviderError>> + Send>>;

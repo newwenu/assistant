@@ -3,6 +3,7 @@ export interface ModelConfig {
   name: string;
   ownedBy: string;
   contextWindow?: number;
+  supportVision?: boolean;
 }
 
 export interface Provider {

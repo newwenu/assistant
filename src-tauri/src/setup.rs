@@ -19,6 +19,7 @@ use assistant_security::clipboard_guard::ClipboardGuard;
 use assistant_security::reveal_guard::RevealGuard;
 use assistant_security::screen_lock::ScreenLockMonitor;
 use assistant_security::security_db::SecurityDbState;
+use assistant_storage::attachment_store::AttachmentStore;
 use assistant_storage::db;
 use assistant_tools::{os, ToolRegistry};
 
@@ -63,6 +64,21 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => {
             log::error!("Failed to resolve app data dir: {}", e);
         }
+    }
+
+    {
+        let attachments_dir = match handle.path().app_data_dir() {
+            Ok(data_dir) => data_dir.join("attachments"),
+            Err(e) => {
+                log::error!("Failed to resolve app data dir for attachments: {}", e);
+                return Err(Box::new(e));
+            }
+        };
+        std::fs::create_dir_all(&attachments_dir)
+            .expect("Failed to create attachments directory");
+        let store = AttachmentStore::new(attachments_dir);
+        handle.manage(store);
+        log::info!("AttachmentStore initialized");
     }
 
     handle.manage(assistant_agent::chat_tasks::ChatTasks::new());

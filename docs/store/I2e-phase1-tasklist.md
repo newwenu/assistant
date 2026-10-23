@@ -148,14 +148,14 @@ Rust 端 + 前端 i18n 文件
 
 依赖：B1, A4
 
-### B4. Tauri Command: read_attachment
+### ~~~B4. Tauri Command: read_attachment~~~
 
-`src-tauri/src/cmd/chat.rs`
+~~~`src-tauri/src/cmd/chat.rs`~~~
 
-- [ ] B4.1 `async fn read_attachment` — 仅内部/高级用途（前端渲染用 asset 协议）
-- [ ] B4.2 注册 command
+~~- [ ] B4.1 `async fn read_attachment` — 仅内部/高级用途（前端渲染用 asset 协议）~~
+~~- [ ] B4.2 注册 command~~
 
-依赖：A6
+~~依赖：A6~~
 
 ### B5. OpenAI 转换器
 

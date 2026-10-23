@@ -20,6 +20,9 @@
     "empty_content": "Message content cannot be empty",
     "provider_deleted": "The Provider for this conversation has been deleted. Please select a new Provider before sending",
     "new_conversation_title": "New Chat",
+    "too_many_images": "Too many images (max {{max}})",
+    "image_too_large": "Image too large (max {{max_mb}} MB)",
+    "image_projected_placeholder": "[Image omitted — current model does not support images]",
     "compaction": {
       "summary_truncated": "[Summary truncated. Use search_history for full details]",
       "default_summary_prompt": "Generate a handoff summary for the following conversation so that an AI in a new session can continue without reading the original.\n\nOutput format (strictly follow):\n\n## Handoff Summary\n\n**Goal**: The user's core objective, 1-2 sentences\n\n**Progress**:\n- Key completed steps, one per line, in chronological order\n\n**Todo**:\n- Outstanding items, if any\n\n**Key Information**:\n- File paths, config values, variable names, error codes, and other concrete values needed going forward\n- Each item must state the concrete value; avoid vague references like \"some file\" or \"some value\"\n\n**Tool Call Summary**:\n- Executed tool names and key results, one per line\n- E.g. `read_file → config.rs content read`, `run_command → compilation passed`\n\nRules:\n1. Self-contained: do not reference \"above\" or \"earlier\"; state all information directly\n2. Concrete: write full file paths, full variable names, raw error codes\n3. Concise: omit step-by-step details; keep only key decisions and milestones\n4. Actionable: pasting into a new conversation lets the AI continue immediately without follow-up questions\n5. Tool calls: keep tool name + result summary; omit full output"

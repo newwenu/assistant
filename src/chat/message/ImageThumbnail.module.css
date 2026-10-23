@@ -1,0 +1,84 @@
+.wrapper {
+  position: relative;
+  display: inline-block;
+  max-width: 320px;
+  max-height: 320px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--color-bg-layout);
+}
+
+.skeleton {
+  width: 100%;
+  min-height: 120px;
+  background: var(--color-bg-layout);
+  border-radius: var(--radius);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.img {
+  display: block;
+  max-width: 320px;
+  max-height: 320px;
+  border-radius: var(--radius);
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.imgLoaded {
+  opacity: 1;
+}
+
+.offloaded {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius);
+  background: var(--color-bg-layout);
+}
+
+.offloadedText {
+  font-size: 24px;
+}
+
+.error {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  border-radius: var(--radius);
+  background: var(--color-bg-layout);
+  gap: 4px;
+}
+
+.errorIcon {
+  font-size: 20px;
+}
+
+.retryBtn {
+  cursor: pointer;
+  font-size: 16px;
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.retryBtn:hover {
+  background: var(--color-bg-layout);
+}

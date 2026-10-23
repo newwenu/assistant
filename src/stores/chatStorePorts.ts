@@ -242,6 +242,8 @@ export function createStatePort(
 export function createEnvPort(
   get: () => EnvPortReadable,
   set: (partial: Partial<EnvPortWritable>) => void,
+  getSelectedProviderId: () => string | null,
+  getSelectedModelId: () => string,
 ): ChatEnvPort {
   return {
     getActiveConversationId: () => get().currentConversationId,
@@ -252,6 +254,8 @@ export function createEnvPort(
     getMessages: () => get().messages,
     getConversations: () => get().conversations,
     getSelectedModeId: () => useAgentModeStore.getState().selectedModeId,
+    getSelectedProviderId,
+    getSelectedModelId,
     getPendingBranchPoint: () => get().pendingBranchPoint,
     clearPendingBranchPoint: () => set({ pendingBranchPoint: null }),
   };
