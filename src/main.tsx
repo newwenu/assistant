@@ -20,6 +20,7 @@ import "@/i18n";
 import App from "./App";
 import "./assets/styles/fonts.css";
 import "./assets/styles/global.css";
+import "./settings/styles/settings.css";
 
 RuntimeLoader.setWasmUrl("/rive.wasm");
 RuntimeLoader.setWasmFallbackUrl("/rive_fallback.wasm");

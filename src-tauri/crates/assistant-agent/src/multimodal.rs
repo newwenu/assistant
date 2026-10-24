@@ -86,31 +86,33 @@ pub async fn rehydrate_images(messages: &mut [ChatMessage], store: &AttachmentSt
         };
 
         let mut has_image = false;
-        for block in blocks.iter_mut() {
+        let mut content_changed = false;
+        for i in 0..blocks.len() {
             let ContentBlock::Image {
                 ref attachment,
                 ref mut cached_data,
-            } = block
+            } = blocks[i]
             else {
                 continue;
             };
 
-            match store.read(&attachment.attachment_id).await {
+            let id = attachment.attachment_id.clone();
+            match store.read(&id).await {
                 Ok(data) => {
                     *cached_data = Some(general_purpose::STANDARD.encode(&data));
                     has_image = true;
                 }
                 Err(e) => {
-                    log::warn!(
-                        "Failed to rehydrate image {}: {}",
-                        attachment.attachment_id,
-                        e
-                    );
+                    log::warn!("Failed to rehydrate image {}: {}", id, e);
+                    blocks[i] = ContentBlock::Text {
+                        text: assistant_i18n::t("chat.image_not_found_placeholder"),
+                    };
+                    content_changed = true;
                 }
             }
         }
 
-        if has_image {
+        if has_image || content_changed {
             msg.content_blocks = Some(blocks);
         }
     }

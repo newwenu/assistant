@@ -3,12 +3,14 @@ pub mod chat;
 pub mod config;
 pub mod orb;
 pub mod settings;
+pub mod storage;
 
 pub use branch::*;
 pub use chat::*;
 pub use config::*;
 pub use orb::*;
 pub use settings::*;
+pub use storage::*;
 
 #[cfg(test)]
 mod tests {
@@ -62,6 +64,8 @@ mod tests {
             tool_calls_json: None,
             sibling_index: 0,
             sibling_count: None,
+            provider_id: None,
+            model_id: None,
         };
         roundtrip(&dto);
         let json = serde_json::to_string(&dto).unwrap();

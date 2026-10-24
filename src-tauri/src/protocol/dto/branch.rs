@@ -3,7 +3,7 @@ use assistant_storage::conversations::SiblingInfo;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SiblingInfoDto {
     pub id: String,
     pub sibling_index: i64,
@@ -21,7 +21,7 @@ impl From<SiblingInfo> for SiblingInfoDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChatMessagesChangedPayloadDto {
     pub conversation_id: String,
     pub change_kind: String,
@@ -33,7 +33,7 @@ pub struct ChatMessagesChangedPayloadDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MaxSiblingsExceededErrorDto {
     pub conversation_id: String,
     pub parent_id: Option<String>,

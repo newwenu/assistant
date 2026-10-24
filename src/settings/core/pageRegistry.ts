@@ -9,6 +9,7 @@ import {
   ThunderboltOutlined,
   ApiOutlined,
   RobotOutlined,
+  DatabaseOutlined,
   SafetyCertificateOutlined,
   InfoCircleOutlined,
 } from "@ant-design/icons";
@@ -109,6 +110,18 @@ const about = definePage({
     })),
 });
 
+const storage = definePage({
+  id: "storage",
+  categoryId: "general",
+  label: "common.navigation.storage.title",
+  keywords: ["storage", "attachment", "orphan", "disk", "存储", "附件", "孤儿"],
+  icon: DatabaseOutlined,
+  load: () =>
+    import("../pages/StorageSettings").then((m) => ({
+      default: m.StorageSettings,
+    })),
+});
+
 const vault = definePage({
   id: "vault",
   categoryId: "vault",
@@ -136,6 +149,7 @@ export const SETTINGS_PAGES: readonly SettingsPageManifest[] = [
   shortcuts,
   providers,
   agents,
+  storage,
   vault,
   about,
 ];
@@ -146,6 +160,7 @@ export const SETTINGS_DETAIL_PAGES: readonly SettingsPageManifest[] = [
   shortcuts,
   providers,
   agents,
+  storage,
   vault,
   about,
 ];

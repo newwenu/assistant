@@ -6,6 +6,7 @@
       "shortcuts": { "title": "Shortcuts" },
       "providers": { "title": "Provider Management" },
       "agents": { "title": "Agent Modes" },
+      "storage": { "title": "Storage Management" },
       "about": { "title": "About" },
       "vault": "Password Vault",
       "vault_settings": { "title": "Vault Settings" },
@@ -207,6 +208,20 @@
     },
     "entity_list": {
       "search_placeholder": "Search {{title}}"
+    },
+    "storage": {
+      "title": "Storage Management",
+      "summary": "{{count}} attachments, {{size}} total",
+      "orphan_group": "Unlinked Attachments",
+      "delete_selected": "Delete Selected",
+      "confirm_delete": {
+        "title": "Delete selected attachments?",
+        "content": "This action cannot be undone. Files will be permanently removed."
+      },
+      "deleted": "{{count}} attachments deleted ({{size}} freed)",
+      "empty": "No attachments",
+      "load_failed": "Failed to load storage data",
+      "refresh": "Refresh"
     },
     "agent_mode": {
       "title": "Agent Mode Management",
@@ -449,7 +464,8 @@
       "invalid_image_type": "Unsupported image format. Only PNG, JPEG, WebP, GIF are supported",
       "image_load_failed": "Image failed to load",
       "image_retry": "Retry",
-      "image_offloaded": "Image offloaded"
+      "image_offloaded": "Image offloaded",
+      "image_not_found": "Image not found"
     },
     "view": {
       "no_provider_title": "Please configure an AI Provider first",

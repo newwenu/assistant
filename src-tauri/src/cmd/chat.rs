@@ -15,7 +15,7 @@ use assistant_config::constant::WINDOW_ORB;
 use assistant_providers::base::{self, ProviderError, ProviderErrorPayload};
 use assistant_storage::{
     agent_modes::{self, AgentModeRow},
-    attachment_store::AttachmentStore,
+    attachment_store::{self, AttachmentStore},
     conversations::{self, MessageRow},
     providers::{self as provider_store},
 };
@@ -115,6 +115,18 @@ pub async fn send_chat_message(
                     },
                 )?;
 
+                {
+                    let attachment_ids = extract_attachment_ids(&content);
+                    if !attachment_ids.is_empty() {
+                        attachment_store::insert_attachment_refs(
+                            &conn,
+                            &attachment_ids,
+                            &conversation_id,
+                            &uid,
+                        )?;
+                    }
+                }
+
                 let aid = Uuid::new_v4().to_string();
                 conversations::insert_message(
                     &conn,
@@ -195,6 +207,18 @@ pub async fn send_chat_message(
                     model_id: None,
                 },
             )?;
+
+            {
+                let attachment_ids = extract_attachment_ids(&content);
+                if !attachment_ids.is_empty() {
+                    attachment_store::insert_attachment_refs(
+                        &conn,
+                        &attachment_ids,
+                        &conversation_id,
+                        &uid,
+                    )?;
+                }
+            }
 
             let aid = Uuid::new_v4().to_string();
             conversations::insert_message(
@@ -412,4 +436,30 @@ pub fn cancel_chat(app: AppHandle, conversation_id: String) -> Result<(), String
 
 fn is_content_empty(content: &str) -> bool {
     assistant_storage::content_codec::is_content_empty(content)
+}
+
+fn extract_attachment_ids(content: &str) -> Vec<String> {
+    let Some(blocks) = assistant_providers::types::parse_content(content) else {
+        return Vec::new();
+    };
+    blocks
+        .iter()
+        .filter_map(|block| match block {
+            assistant_providers::types::ContentBlock::Image { attachment, .. } => {
+                if attachment.attachment_id.is_empty() {
+                    None
+                } else {
+                    Some(attachment.attachment_id.clone())
+                }
+            }
+            assistant_providers::types::ContentBlock::File { attachment, .. } => {
+                if attachment.attachment_id.is_empty() {
+                    None
+                } else {
+                    Some(attachment.attachment_id.clone())
+                }
+            }
+            _ => None,
+        })
+        .collect()
 }

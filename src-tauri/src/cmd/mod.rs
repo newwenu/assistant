@@ -11,6 +11,7 @@ mod mascot_asset;
 mod orb;
 mod os_tool_exec;
 mod provider;
+mod storage;
 mod tool;
 mod vault;
 
@@ -25,6 +26,7 @@ pub use mascot_asset::*;
 pub use orb::*;
 pub use os_tool_exec::*;
 pub use provider::*;
+pub use storage::*;
 pub use tool::*;
 pub use vault::*;
 

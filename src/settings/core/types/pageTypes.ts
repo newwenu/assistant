@@ -10,6 +10,7 @@ export type SettingsPageId =
   | "shortcuts"
   | "providers"
   | "agents"
+  | "storage"
   | "vault"
   | "about";
 

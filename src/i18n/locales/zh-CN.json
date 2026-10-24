@@ -6,6 +6,7 @@
       "shortcuts": { "title": "快捷键" },
       "providers": { "title": "Provider 管理" },
       "agents": { "title": "Agent 模式" },
+      "storage": { "title": "存储管理" },
       "about": { "title": "关于" },
       "vault": "密码保险库",
       "vault_settings": { "title": "密码保险库设置" },
@@ -200,6 +201,20 @@
     },
     "entity_list": {
       "search_placeholder": "搜索{{title}}"
+    },
+    "storage": {
+      "title": "存储管理",
+      "summary": "共 {{count}} 个附件，占用 {{size}}",
+      "orphan_group": "无关联对话的附件",
+      "delete_selected": "删除选中",
+      "confirm_delete": {
+        "title": "删除选中的附件？",
+        "content": "此操作不可逆，文件将被永久删除。"
+      },
+      "deleted": "已删除 {{count}} 个附件，释放 {{size}}",
+      "empty": "暂无附件",
+      "load_failed": "加载存储数据失败",
+      "refresh": "刷新"
     },
     "agent_mode": {
       "title": "Agent 模式管理",
@@ -436,7 +451,8 @@
       "invalid_image_type": "不支持的图片格式，仅支持 PNG、JPEG、WebP、GIF",
       "image_load_failed": "图片加载失败",
       "image_retry": "重试",
-      "image_offloaded": "图片已卸载"
+      "image_offloaded": "图片已卸载",
+      "image_not_found": "图片找不到了"
     },
     "view": {
       "no_provider_title": "请先配置 AI Provider",

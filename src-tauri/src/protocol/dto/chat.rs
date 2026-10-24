@@ -147,7 +147,7 @@ impl From<TokenUsageSummary> for TokenUsageSummaryDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RetryNotificationDto {
     pub attempt: u32,
     pub max_attempts: u32,
@@ -170,7 +170,7 @@ impl From<RetryNotification> for RetryNotificationDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderErrorPayloadDto {
     pub code: ProviderErrorCode,
     pub message: String,

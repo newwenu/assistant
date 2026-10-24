@@ -78,7 +78,20 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_messages_conv_ts
-          ON messages(conversation_id, timestamp);",
+          ON messages(conversation_id, timestamp);
+
+        CREATE TABLE IF NOT EXISTS attachment_refs (
+            attachment_id   TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            message_id      TEXT NOT NULL,
+            PRIMARY KEY (attachment_id, conversation_id, message_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_attachment_refs_conv
+            ON attachment_refs(conversation_id);
+
+        CREATE INDEX IF NOT EXISTS idx_attachment_refs_att
+            ON attachment_refs(attachment_id);",
     )
     .map_err(|e| e.to_string())?;
 
