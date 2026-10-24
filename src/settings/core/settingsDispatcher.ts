@@ -55,7 +55,6 @@ export async function dispatchThemeChanged(mode: "system" | "light" | "dark") {
     resolved = sys;
   }
   useThemeStore.setState({ mode, resolved });
-  await settingService.emitThemeChanged(resolved);
   await emitSettingEventToPeers(SettingEvent.ThemeChanged, {
     action: SettingAction.ThemeChanged,
     value: resolved,

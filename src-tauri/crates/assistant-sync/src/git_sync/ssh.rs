@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 const GIT_ENV_SSH: &str = "GIT_SSH_COMMAND";
 
@@ -13,9 +13,8 @@ const SSH_PERSIST_CMD: &str =
 #[cfg(unix)]
 const SSH_PERSIST_HOST_WHITELIST: [&str; 2] = ["github.com", "gitlab.com"];
 
-lazy_static::lazy_static! {
-    static ref SSH_PERSIST_GUESS_CACHE: Mutex<HashMap<std::path::PathBuf, bool>> = Mutex::new(HashMap::new());
-}
+static SSH_PERSIST_GUESS_CACHE: LazyLock<Mutex<HashMap<std::path::PathBuf, bool>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub fn configure_ssh_persist(cmd: &mut Command) {
     #[cfg(unix)]

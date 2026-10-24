@@ -31,21 +31,21 @@ hex = { workspace = true }
 hmac = { workspace = true }
 sha1 = { workspace = true }
 reqwest = { workspace = true }
-tokio = { workspace = true }
 arboard = { workspace = true }
 zxcvbn = { workspace = true }
 keyring = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true }
+windows-future = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-core-foundation = "0.10"
-security-framework = "3.0"
+core-foundation = { workspace = true }
+security-framework = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libsecret = "0.1"
+libsecret = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-tempfile = "3"
+tempfile = { workspace = true }

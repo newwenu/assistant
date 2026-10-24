@@ -41,14 +41,14 @@ tauri-plugin-dialog = "2"
 rustc_version_runtime = "0.3"
 mouse_position = "0.1"
 rusqlite = { version = "0.31", features = ["bundled-sqlcipher"] }
-dirs = "6"
+dirs = "7"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 aes-gcm = "0.10"
 chacha20poly1305 = "0.10"
 sha2 = "0.10"
-base64 = "0.22"
+base64 = "0.23"
 data-encoding = "2"
 machine-uid = "0.2"
 hex = "0.4"
@@ -88,14 +88,16 @@ csv = "1"
 hmac = "0.12"
 sha1 = "0.10"
 zxcvbn = "3"
-keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
-windows = { version = "0.58", features = [
+keyring = { version = "4", features = ["v1"] }
+windows = { version = "0.62", features = [
     "Foundation",
     "Security_Credentials",
     "Security_Cryptography",
     "Security_Cryptography_DataProtection",
     "Storage_Streams",
     "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
     "Win32_System_WinRT",
     "Win32_System_LibraryLoader",
     "Win32_System_RemoteDesktop",
@@ -104,6 +106,12 @@ windows = { version = "0.58", features = [
     "Win32_Graphics_Gdi",
     "Win32_UI_WindowsAndMessaging",
 ] }
+eventsource-stream = "0.2"
+tempfile = "3"
+windows-future = "0.3"
+core-foundation = "0.10"
+security-framework = "3.0"
+libsecret = "0.1"
 
 [dependencies]
 serde = { workspace = true }

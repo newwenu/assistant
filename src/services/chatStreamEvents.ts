@@ -3,6 +3,7 @@ import type { ChatOrchestrator } from "./chatOrchestrator";
 import type {
   ChatDeltaPayload,
   ChatStreamStartPayload,
+  ChatUserMessageConfirmedPayload,
 } from "../chat/core/chatTypes";
 import { ChatEvent } from "../chat/core/chatTypes";
 import {
@@ -68,6 +69,26 @@ export function subscribeChatStreamEvents(): () => void {
         );
       }
     }),
+  );
+
+  track(
+    listen<ChatUserMessageConfirmedPayload>(
+      ChatEvent.UserMessageConfirmed,
+      (event) => {
+        if (disposed) return;
+        const payload = event.payload;
+        if (
+          orchestratorInstance &&
+          orchestratorInstance.getActiveConversationId() ===
+            payload.conversationId
+        ) {
+          orchestratorInstance.onUserMessageConfirmed(
+            payload.userMessageId,
+            payload.userMessageContent,
+          );
+        }
+      },
+    ),
   );
 
   const coalescer = createChatDeltaCoalescer<CoalescibleDelta>(

@@ -5,7 +5,7 @@ use tauri::{command, AppHandle, Manager};
 use uuid::Uuid;
 
 use crate::protocol::events::{emit_orb_only, event_name};
-use crate::protocol::ChatStreamStartPayloadDto;
+use crate::protocol::{ChatStreamStartPayloadDto, ChatUserMessageConfirmedPayloadDto};
 use assistant_agent::chat_runtime::{self, StreamError};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::compaction;
@@ -49,7 +49,7 @@ pub async fn send_chat_message(
         .await
         .map_err(|e| e.to_string())?;
 
-    let (mode, assistant_msg_id, detail, provider_row) = {
+    let (mode, assistant_msg_id, user_msg_id, detail, provider_row) = {
         let state = app.state::<crate::setup::DbState>();
         let conn = super::get_db_conn(&state)?;
 
@@ -80,14 +80,108 @@ pub async fn send_chat_message(
         let msg_provider_id = Some(provider_id.clone());
         let msg_model_id = Some(model_id.clone());
 
-        let (_user_msg_id, assistant_msg_id) = if let Some(bp_id) = &branch_point_message_id {
-            let branch_point = conversations::get_message_by_id(&conn, bp_id)?
-                .ok_or_else(|| format!("Branch point message {} not found", bp_id))?;
+        let (_user_msg_id, assistant_msg_id, user_msg_id) =
+            if let Some(bp_id) = &branch_point_message_id {
+                let branch_point = conversations::get_message_by_id(&conn, bp_id)?
+                    .ok_or_else(|| format!("Branch point message {} not found", bp_id))?;
 
-            let bp_parent_id = branch_point.parent_id.clone();
+                let bp_parent_id = branch_point.parent_id.clone();
 
-            if branch_point.role == "user" {
-                let user_parent_id = bp_parent_id.clone();
+                if branch_point.role == "user" {
+                    let user_parent_id = bp_parent_id.clone();
+                    let user_sibling_index = conversations::get_sibling_count(
+                        &conn,
+                        &conversation_id,
+                        user_parent_id.as_deref(),
+                    )?
+                    .max(0);
+
+                    let uid = Uuid::new_v4().to_string();
+                    conversations::insert_message(
+                        &conn,
+                        &MessageRow {
+                            id: uid.clone(),
+                            conversation_id: conversation_id.clone(),
+                            role: "user".to_string(),
+                            content: content.clone(),
+                            tokens: None,
+                            timestamp: now,
+                            parent_id: user_parent_id,
+                            is_pinned: false,
+                            reasoning: None,
+                            tool_calls_json: None,
+                            sibling_index: user_sibling_index,
+                            provider_id: None,
+                            model_id: None,
+                        },
+                    )?;
+
+                    {
+                        let attachment_ids = extract_attachment_ids(&content);
+                        if !attachment_ids.is_empty() {
+                            attachment_store::insert_attachment_refs(
+                                &conn,
+                                &attachment_ids,
+                                &conversation_id,
+                                &uid,
+                            )?;
+                        }
+                    }
+
+                    let aid = Uuid::new_v4().to_string();
+                    conversations::insert_message(
+                        &conn,
+                        &MessageRow {
+                            id: aid.clone(),
+                            conversation_id: conversation_id.clone(),
+                            role: "assistant".to_string(),
+                            content: String::new(),
+                            tokens: None,
+                            timestamp: now + 1,
+                            parent_id: Some(uid.clone()),
+                            is_pinned: false,
+                            reasoning: None,
+                            tool_calls_json: None,
+                            sibling_index: 0,
+                            provider_id: msg_provider_id.clone(),
+                            model_id: msg_model_id.clone(),
+                        },
+                    )?;
+
+                    (uid.clone(), aid, Some(uid))
+                } else {
+                    let assistant_parent_id = bp_parent_id.clone();
+                    let assistant_sibling_index = conversations::get_sibling_count(
+                        &conn,
+                        &conversation_id,
+                        assistant_parent_id.as_deref(),
+                    )?
+                    .max(0);
+
+                    let aid = Uuid::new_v4().to_string();
+                    conversations::insert_message(
+                        &conn,
+                        &MessageRow {
+                            id: aid.clone(),
+                            conversation_id: conversation_id.clone(),
+                            role: "assistant".to_string(),
+                            content: String::new(),
+                            tokens: None,
+                            timestamp: now,
+                            parent_id: assistant_parent_id,
+                            is_pinned: false,
+                            reasoning: None,
+                            tool_calls_json: None,
+                            sibling_index: assistant_sibling_index,
+                            provider_id: msg_provider_id.clone(),
+                            model_id: msg_model_id.clone(),
+                        },
+                    )?;
+
+                    (String::new(), aid, None)
+                }
+            } else {
+                let user_parent_id = detail_before.messages.last().map(|m| m.id.clone());
                 let user_sibling_index = conversations::get_sibling_count(
                     &conn,
                     &conversation_id,
@@ -147,101 +241,8 @@ pub async fn send_chat_message(
                     },
                 )?;
 
-                (uid, aid)
-            } else {
-                let assistant_parent_id = bp_parent_id.clone();
-                let assistant_sibling_index = conversations::get_sibling_count(
-                    &conn,
-                    &conversation_id,
-                    assistant_parent_id.as_deref(),
-                )?
-                .max(0);
-
-                let aid = Uuid::new_v4().to_string();
-                conversations::insert_message(
-                    &conn,
-                    &MessageRow {
-                        id: aid.clone(),
-                        conversation_id: conversation_id.clone(),
-                        role: "assistant".to_string(),
-                        content: String::new(),
-                        tokens: None,
-                        timestamp: now,
-                        parent_id: assistant_parent_id,
-                        is_pinned: false,
-                        reasoning: None,
-                        tool_calls_json: None,
-                        sibling_index: assistant_sibling_index,
-                        provider_id: msg_provider_id.clone(),
-                        model_id: msg_model_id.clone(),
-                    },
-                )?;
-
-                (String::new(), aid)
-            }
-        } else {
-            let user_parent_id = detail_before.messages.last().map(|m| m.id.clone());
-            let user_sibling_index = conversations::get_sibling_count(
-                &conn,
-                &conversation_id,
-                user_parent_id.as_deref(),
-            )?
-            .max(0);
-
-            let uid = Uuid::new_v4().to_string();
-            conversations::insert_message(
-                &conn,
-                &MessageRow {
-                    id: uid.clone(),
-                    conversation_id: conversation_id.clone(),
-                    role: "user".to_string(),
-                    content: content.clone(),
-                    tokens: None,
-                    timestamp: now,
-                    parent_id: user_parent_id,
-                    is_pinned: false,
-                    reasoning: None,
-                    tool_calls_json: None,
-                    sibling_index: user_sibling_index,
-                    provider_id: None,
-                    model_id: None,
-                },
-            )?;
-
-            {
-                let attachment_ids = extract_attachment_ids(&content);
-                if !attachment_ids.is_empty() {
-                    attachment_store::insert_attachment_refs(
-                        &conn,
-                        &attachment_ids,
-                        &conversation_id,
-                        &uid,
-                    )?;
-                }
-            }
-
-            let aid = Uuid::new_v4().to_string();
-            conversations::insert_message(
-                &conn,
-                &MessageRow {
-                    id: aid.clone(),
-                    conversation_id: conversation_id.clone(),
-                    role: "assistant".to_string(),
-                    content: String::new(),
-                    tokens: None,
-                    timestamp: now + 1,
-                    parent_id: Some(uid.clone()),
-                    is_pinned: false,
-                    reasoning: None,
-                    tool_calls_json: None,
-                    sibling_index: 0,
-                    provider_id: msg_provider_id.clone(),
-                    model_id: msg_model_id.clone(),
-                },
-            )?;
-
-            (uid, aid)
-        };
+                (uid.clone(), aid, Some(uid))
+            };
 
         conversations::update_active_branch_id(&conn, &conversation_id, &assistant_msg_id)?;
 
@@ -250,7 +251,7 @@ pub async fn send_chat_message(
         let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
             .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
 
-        (mode, assistant_msg_id, detail, provider_row)
+        (mode, assistant_msg_id, user_msg_id, detail, provider_row)
     };
 
     let system_prompt = mode.as_ref().map(|m| m.prompt.as_str()).unwrap_or("");
@@ -258,7 +259,7 @@ pub async fn send_chat_message(
 
     {
         let support_vision = {
-            let models: Vec<assistant_providers::base::ModelConfig> =
+            let models: Vec<crate::protocol::ModelConfigDto> =
                 serde_json::from_str(&provider_row.models_json).unwrap_or_default();
             models
                 .iter()
@@ -294,6 +295,19 @@ pub async fn send_chat_message(
     let orb_window = app
         .get_webview_window(WINDOW_ORB)
         .ok_or_else(|| assistant_i18n::t("error.orb_window_not_found"))?;
+
+    if let Some(ref uid) = user_msg_id {
+        emit_orb_only(
+            &app,
+            event_name::CHAT_USER_MESSAGE_CONFIRMED,
+            ChatUserMessageConfirmedPayloadDto {
+                conversation_id: conversation_id.clone(),
+                user_message_id: uid.clone(),
+                user_message_content: content.clone(),
+            },
+        );
+    }
+
     emit_orb_only(
         &app,
         event_name::CHAT_STREAM_START,

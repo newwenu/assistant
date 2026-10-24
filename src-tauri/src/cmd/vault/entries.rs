@@ -103,57 +103,6 @@ pub fn vault_change_master_password(
 }
 
 #[command]
-pub fn vault_export(app: AppHandle, format: String) -> Result<String, String> {
-    let state = super::vault_state(&app)?;
-    let entries: Vec<VaultEntryExport> = state.export_entries().map_err(|e| e.to_string())?;
-    log::info!("Vault export: {} entries as {}", entries.len(), format);
-
-    let export_dir = match app.path().app_data_dir() {
-        Ok(dir) => dir.join("security").join("exports"),
-        Err(e) => return Err(e.to_string()),
-    };
-    std::fs::create_dir_all(&export_dir).map_err(|e| e.to_string())?;
-
-    let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-    let (file_name, content) = match format.as_str() {
-        "json" => {
-            let json = serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())?;
-            (
-                format!("vault_export_{}.json", timestamp),
-                json.into_bytes(),
-            )
-        }
-        "csv" => {
-            let mut w = csv::Writer::from_writer(Vec::new());
-            for e in &entries {
-                let row: VaultEntryCsvRow = e.clone().into();
-                w.serialize(&row).map_err(|e| e.to_string())?;
-            }
-            let bytes = w.into_inner().map_err(|e| e.to_string())?;
-            (format!("vault_export_{}.csv", timestamp), bytes)
-        }
-        _ => return Err(format!("Unsupported export format: {}", format)),
-    };
-
-    let file_path = export_dir.join(&file_name);
-    std::fs::write(&file_path, &content).map_err(|e| e.to_string())?;
-
-    {
-        let cleanup_path = file_path.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(300));
-            if let Err(e) = std::fs::remove_file(&cleanup_path) {
-                log::warn!("Failed to auto-clean export file: {}", e);
-            } else {
-                log::info!("Auto-cleaned export file: {:?}", cleanup_path);
-            }
-        });
-    }
-
-    Ok(file_path.to_str().unwrap_or(&file_name).to_string())
-}
-
-#[command]
 pub fn vault_export_to_file(app: AppHandle, format: String, path: String) -> Result<(), String> {
     let state = super::vault_state(&app)?;
     let entries: Vec<VaultEntryExport> = state.export_entries().map_err(|e| e.to_string())?;

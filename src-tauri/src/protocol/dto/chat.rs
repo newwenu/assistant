@@ -6,6 +6,44 @@ use assistant_storage::{
 };
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+pub enum ProviderErrorCodeDto {
+    ApiKeyMissing,
+    AuthFailed,
+    RateLimited,
+    ModelNotFound,
+    ContextOverflow,
+    NetworkError,
+    Timeout,
+    ServerError,
+    RequestRejected,
+    ParseError,
+    Cancelled,
+    StreamError,
+    InternalError,
+}
+
+impl From<ProviderErrorCode> for ProviderErrorCodeDto {
+    fn from(code: ProviderErrorCode) -> Self {
+        match code {
+            ProviderErrorCode::ApiKeyMissing => Self::ApiKeyMissing,
+            ProviderErrorCode::AuthFailed => Self::AuthFailed,
+            ProviderErrorCode::RateLimited => Self::RateLimited,
+            ProviderErrorCode::ModelNotFound => Self::ModelNotFound,
+            ProviderErrorCode::ContextOverflow => Self::ContextOverflow,
+            ProviderErrorCode::NetworkError => Self::NetworkError,
+            ProviderErrorCode::Timeout => Self::Timeout,
+            ProviderErrorCode::ServerError => Self::ServerError,
+            ProviderErrorCode::RequestRejected => Self::RequestRejected,
+            ProviderErrorCode::ParseError => Self::ParseError,
+            ProviderErrorCode::Cancelled => Self::Cancelled,
+            ProviderErrorCode::StreamError => Self::StreamError,
+            ProviderErrorCode::InternalError => Self::InternalError,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationDto {
@@ -154,7 +192,7 @@ pub struct RetryNotificationDto {
     pub delay_ms: u64,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_code: Option<ProviderErrorCode>,
+    pub error_code: Option<ProviderErrorCodeDto>,
 }
 
 impl From<RetryNotification> for RetryNotificationDto {
@@ -164,7 +202,7 @@ impl From<RetryNotification> for RetryNotificationDto {
             max_attempts: r.max_attempts,
             delay_ms: r.delay_ms,
             message: r.message,
-            error_code: r.error_code,
+            error_code: r.error_code.map(ProviderErrorCodeDto::from),
         }
     }
 }
@@ -172,7 +210,7 @@ impl From<RetryNotification> for RetryNotificationDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderErrorPayloadDto {
-    pub code: ProviderErrorCode,
+    pub code: ProviderErrorCodeDto,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_after_ms: Option<u64>,
@@ -188,7 +226,7 @@ pub struct ProviderErrorPayloadDto {
 impl From<ProviderErrorPayload> for ProviderErrorPayloadDto {
     fn from(p: ProviderErrorPayload) -> Self {
         Self {
-            code: p.code,
+            code: ProviderErrorCodeDto::from(p.code),
             message: p.message,
             retry_after_ms: p.retry_after_ms,
             retryable: p.retryable,
@@ -236,6 +274,14 @@ pub struct ChatStreamStartPayloadDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChatUserMessageConfirmedPayloadDto {
+    pub conversation_id: String,
+    pub user_message_id: String,
+    pub user_message_content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationTerminatedPayloadDto {
     pub conversation_id: String,
     pub summary: String,
@@ -270,4 +316,108 @@ pub struct ConversationListChangedPayloadDto {
 pub struct ChatRegeneratePayloadDto {
     pub conversation_id: String,
     pub deleted_message_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ImageAttachmentRefDto {
+    pub attachment_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl From<assistant_providers::types::ImageAttachmentRef> for ImageAttachmentRefDto {
+    fn from(r: assistant_providers::types::ImageAttachmentRef) -> Self {
+        Self {
+            attachment_id: r.attachment_id,
+            media_type: r.media_type,
+            bytes: r.bytes,
+            width: r.width,
+            height: r.height,
+            name: r.name,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FileAttachmentRefDto {
+    pub attachment_id: String,
+    pub name: String,
+    pub bytes: u64,
+}
+
+impl From<assistant_providers::types::FileAttachmentRef> for FileAttachmentRefDto {
+    fn from(r: assistant_providers::types::FileAttachmentRef) -> Self {
+        Self {
+            attachment_id: r.attachment_id,
+            name: r.name,
+            bytes: r.bytes,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentBlockDto {
+    Text {
+        text: String,
+    },
+    Image {
+        attachment: ImageAttachmentRefDto,
+    },
+    File {
+        attachment: FileAttachmentRefDto,
+    },
+    Thinking {
+        thinking: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
+    },
+    ToolUse {
+        #[serde(rename = "tool_use_id")]
+        id: String,
+        name: String,
+        input: String,
+    },
+    ToolResult {
+        #[serde(rename = "tool_use_id")]
+        id: String,
+        output: String,
+    },
+}
+
+impl From<assistant_providers::types::ContentBlock> for ContentBlockDto {
+    fn from(b: assistant_providers::types::ContentBlock) -> Self {
+        match b {
+            assistant_providers::types::ContentBlock::Text { text } => Self::Text { text },
+            assistant_providers::types::ContentBlock::Image { attachment, .. } => Self::Image {
+                attachment: ImageAttachmentRefDto::from(attachment),
+            },
+            assistant_providers::types::ContentBlock::File { attachment } => Self::File {
+                attachment: FileAttachmentRefDto::from(attachment),
+            },
+            assistant_providers::types::ContentBlock::Thinking {
+                thinking,
+                signature,
+            } => Self::Thinking {
+                thinking,
+                signature,
+            },
+            assistant_providers::types::ContentBlock::ToolUse { id, name, input } => {
+                Self::ToolUse { id, name, input }
+            }
+            assistant_providers::types::ContentBlock::ToolResult { id, output } => {
+                Self::ToolResult { id, output }
+            }
+        }
+    }
 }

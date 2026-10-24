@@ -15,7 +15,6 @@ pub use storage::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assistant_providers::base::ProviderErrorCode;
     use serde::{Deserialize, Serialize};
 
     fn roundtrip<T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug>(
@@ -127,7 +126,7 @@ mod tests {
     #[test]
     fn test_provider_error_payload_dto_roundtrip() {
         let dto = ProviderErrorPayloadDto {
-            code: ProviderErrorCode::RateLimited,
+            code: ProviderErrorCodeDto::RateLimited,
             message: "rate limited".into(),
             retry_after_ms: Some(5000),
             retryable: true,

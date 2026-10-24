@@ -14,9 +14,8 @@ import {
 import { buildRendererConfig } from "../../mascot/core/mascotConfig";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useAttachmentStore } from "../../stores/attachmentStore";
-import { useFileDrop } from "../../hooks/useFileDrop";
 import {
-  buildContentBlocks,
+  buildContentBlocksAsync,
   serializeContent,
   validateImageFile,
 } from "../core/contentBlockUtils";
@@ -115,30 +114,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     [addImageFiles],
   );
 
-  const handleFileDrop = useCallback(
-    (files: File[]) => {
-      const imageFiles = files.filter((f) => f.type.startsWith("image/"));
-      if (imageFiles.length > 0) {
-        addImageFiles(imageFiles);
-      } else if (files.length > 0 && !supportVision) {
-        message.info(t("chat.input.model_no_vision"));
-      }
-    },
-    [addImageFiles, supportVision, t],
-  );
-
-  const { isDragging, dropHandlers } = useFileDrop({
-    accept: "image/*",
-    onDrop: handleFileDrop,
-  });
-
-  const doSend = useCallback(() => {
+  const doSend = useCallback(async () => {
     const hasText = value.trim().length > 0;
     const hasAttachments = attachments.length > 0;
     if (!hasText && !hasAttachments) return;
     if (disabled || isStreaming) return;
 
-    const content = serializeContent(buildContentBlocks(value, attachments));
+    const blocks = await buildContentBlocksAsync(value, attachments);
+    const content = serializeContent(blocks);
     onSend(content);
     setValue("");
     clearAttachments();
@@ -148,7 +131,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey && !disabled && !isStreaming) {
         e.preventDefault();
-        doSend();
+        void doSend();
       }
     },
     [disabled, isStreaming, doSend],
@@ -158,7 +141,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     if (isStreaming) {
       onCancel();
     } else {
-      doSend();
+      void doSend();
     }
   }, [isStreaming, onCancel, doSend]);
 
@@ -168,10 +151,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     (value.trim().length > 0 || attachments.length > 0);
 
   return (
-    <div
-      className={`chat-input${isDragging ? " chat-input-dragging" : ""}`}
-      {...dropHandlers}
-    >
+    <div className="chat-input">
       <Input.TextArea
         value={value}
         onChange={(e) => {

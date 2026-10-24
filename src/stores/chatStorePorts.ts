@@ -88,6 +88,20 @@ export function createStatePort(
     clearActiveAttemptId: () => {
       useChatStreamStore.getState().clearActiveAttemptId();
     },
+    confirmUserMessage: (userMessageId: string, userMessageContent: string) => {
+      const state = get();
+      const tempUserMsg = state.messages.find(
+        (m) => m.role === "user" && m.id.startsWith("temp-user-"),
+      );
+      if (!tempUserMsg) return;
+      set({
+        messages: state.messages.map((m) =>
+          m.id === tempUserMsg.id
+            ? { ...m, id: userMessageId, content: userMessageContent }
+            : m,
+        ),
+      });
+    },
     appendDelta: (delta: string) => {
       useChatStreamStore.getState().appendDelta(delta);
     },

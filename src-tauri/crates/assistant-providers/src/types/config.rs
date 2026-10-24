@@ -101,7 +101,7 @@ pub fn resolve_context_window(
             return ctx;
         }
     }
-    get_context_window_tokens(model_id)
+    crate::model_catalog::get_context_window_tokens(model_id)
 }
 
 pub fn resolve_context_window_from_stored(model_id: &str, models_json: &str) -> u32 {
@@ -114,60 +114,4 @@ pub fn resolve_context_window_from_stored(model_id: &str, models_json: &str) -> 
         })
         .filter(|&c| c > 0);
     resolve_context_window(model_id, stored, None)
-}
-
-pub fn get_context_window_tokens(model_id: &str) -> u32 {
-    let id = model_id.to_lowercase();
-    if id.contains("gpt-4o") || id.contains("gpt-4-turbo") {
-        128_000
-    } else if id.contains("gpt-4-32k") {
-        32_768
-    } else if id.contains("gpt-4") && !id.contains("turbo") {
-        8_192
-    } else if id.contains("gpt-3.5-turbo-16k") {
-        16_384
-    } else if id.contains("gpt-3.5") {
-        4_096
-    } else if id.contains("claude-3.5-sonnet")
-        || id.contains("claude-3-5-sonnet")
-        || id.contains("claude-3-opus")
-        || id.contains("claude-3-haiku")
-        || id.contains("claude-3-5-haiku")
-    {
-        200_000
-    } else if id.contains("deepseek-reasoner")
-        || id.contains("deepseek-r1")
-        || id.contains("deepseek")
-    {
-        64_000
-    } else if id.contains("gemini-1.5-pro")
-        || id.contains("gemini-2.0")
-        || id.contains("gemini-2.5")
-        || id.contains("gemini-1.5-flash")
-        || id.contains("gemini-2.0-flash")
-    {
-        1_000_000
-    } else if id.contains("gemini-pro") {
-        32_000
-    } else if id.contains("qwen-max") || id.contains("qwen-long") || id.contains("qwen-turbo") {
-        1_000_000
-    } else if id.contains("qwen-plus") {
-        131_072
-    } else if id.contains("glm-4")
-        || id.contains("llama-3.1-405b")
-        || id.contains("llama-3.1-70b")
-        || id.contains("llama-3.1-8b")
-    {
-        128_000
-    } else if id.contains("llama-3-70b") || id.contains("llama-3-8b") {
-        8_192
-    } else if id.contains("mistral-large")
-        || id.contains("mistral-medium")
-        || id.contains("mistral-7b")
-        || id.contains("mixtral")
-    {
-        32_000
-    } else {
-        128_000
-    }
 }

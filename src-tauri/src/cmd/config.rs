@@ -50,6 +50,17 @@ static APP_SIDE_EFFECTS: &[(&str, AppSideEffectFn)] = &[
         }
         Ok(())
     }),
+    ("theme", |app, prev, conf| {
+        if prev.theme != conf.theme {
+            let resolved = conf.theme.clone();
+            emit_broadcast(
+                app,
+                event_name::THEME_CHANGED,
+                ThemeChangedPayloadDto { resolved },
+            );
+        }
+        Ok(())
+    }),
 ];
 
 static ORB_SIDE_EFFECTS: &[(&str, OrbSideEffectFn)] = &[
@@ -115,30 +126,6 @@ pub fn get_orb_conf() -> Result<OrbConfDto, String> {
         error!("Failed to load orb config: {}", e);
         e.to_string()
     })
-}
-
-#[command]
-pub fn set_theme(theme: String) -> Result<(), String> {
-    let mut conf = AppConf::load().map_err(|e| e.to_string())?;
-    conf.theme = theme;
-    conf.save().map_err(|e| e.to_string())
-}
-
-#[command]
-pub fn emit_theme_changed(app: AppHandle, resolved: String) -> Result<(), String> {
-    emit_broadcast(
-        &app,
-        event_name::THEME_CHANGED,
-        ThemeChangedPayloadDto { resolved },
-    );
-    Ok(())
-}
-
-#[command]
-pub fn set_locale(app: AppHandle, locale: String) -> Result<(), String> {
-    assistant_i18n::set_locale(&locale);
-    crate::tray::rebuild_tray(&app);
-    Ok(())
 }
 
 #[command]

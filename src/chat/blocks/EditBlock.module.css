@@ -2,6 +2,48 @@
   position: relative;
 }
 
+.imageRail {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0 4px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.imageRail::-webkit-scrollbar {
+  display: none;
+}
+
+.imageItem {
+  position: relative;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.imageRemove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.imageItem:hover .imageRemove {
+  opacity: 1;
+}
+
 .textarea {
   width: 100%;
   min-height: 80px;

@@ -5,6 +5,17 @@ use assistant_storage::attachment_store::AttachmentStore;
 use base64::engine::general_purpose;
 use base64::Engine;
 use std::collections::HashMap;
+use std::path::Path;
+
+fn media_type_from_ext(ext: &str) -> Option<&'static str> {
+    match ext {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        _ => None,
+    }
+}
 
 pub async fn admit_attachments(content: &str, store: &AttachmentStore) -> Result<String, String> {
     let mut blocks: Vec<ContentBlock> =
@@ -29,6 +40,7 @@ pub async fn admit_attachments(content: &str, store: &AttachmentStore) -> Result
         let ContentBlock::Image {
             ref attachment,
             ref mut cached_data,
+            ref mut file_path,
         } = block
         else {
             continue;
@@ -38,12 +50,40 @@ pub async fn admit_attachments(content: &str, store: &AttachmentStore) -> Result
             continue;
         }
 
-        let data_b64 = cached_data
-            .take()
-            .ok_or("ImageBlock missing cached_data (base64 payload)".to_string())?;
-        let data = general_purpose::STANDARD
-            .decode(&data_b64)
-            .map_err(|e| format!("Invalid base64 in ImageBlock: {}", e))?;
+        let (data, mt): (Vec<u8>, String) = if let Some(fp) = file_path.take() {
+            let path = Path::new(&fp);
+            if !path.exists() {
+                return Err(format!("file not found: {}", fp));
+            }
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_lowercase())
+                .unwrap_or_default();
+            let mt = media_type_from_ext(&ext)
+                .map(|s| s.to_string())
+                .ok_or_else(|| {
+                    format!(
+                        "unsupported image extension: .{} (allowed: png, jpg, jpeg, gif, webp)",
+                        ext
+                    )
+                })?;
+            let data = tokio::fs::read(&fp)
+                .await
+                .map_err(|e| format!("read failed: {}", e))?;
+            (data, mt)
+        } else if let Some(data_b64) = cached_data.take() {
+            let data = general_purpose::STANDARD
+                .decode(&data_b64)
+                .map_err(|e| format!("Invalid base64 in ImageBlock: {}", e))?;
+            let mt = attachment
+                .media_type
+                .clone()
+                .unwrap_or_else(|| "image/png".to_string());
+            (data, mt)
+        } else {
+            return Err("ImageBlock needs either file_path or cached_data".to_string());
+        };
 
         if data.len() > 8 * 1024 * 1024 {
             let mut args = HashMap::new();
@@ -51,10 +91,6 @@ pub async fn admit_attachments(content: &str, store: &AttachmentStore) -> Result
             return Err(assistant_i18n::t_with_args("chat.image_too_large", &args));
         }
 
-        let mt = attachment
-            .media_type
-            .clone()
-            .unwrap_or_else(|| "image/png".to_string());
         let ref_info = store
             .save_image(&data, &mt)
             .await
@@ -70,6 +106,7 @@ pub async fn admit_attachments(content: &str, store: &AttachmentStore) -> Result
                 name: attachment.name.clone(),
             },
             cached_data: None,
+            file_path: None,
         };
     }
 
@@ -91,6 +128,7 @@ pub async fn rehydrate_images(messages: &mut [ChatMessage], store: &AttachmentSt
             let ContentBlock::Image {
                 ref attachment,
                 ref mut cached_data,
+                ..
             } = blocks[i]
             else {
                 continue;

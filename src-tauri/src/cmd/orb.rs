@@ -202,13 +202,3 @@ fn save_orb_position_sync(app: &AppHandle) -> Result<(), String> {
     conf.position_y = Some(pos.y);
     conf.save().map_err(|e| e.to_string())
 }
-
-#[command]
-pub fn save_orb_position(app: AppHandle) -> Result<(), String> {
-    let window = crate::window::get_or_error(&app, WINDOW_ORB)?;
-    let pos = window.outer_position().map_err(|e| e.to_string())?;
-    let mut conf = OrbConf::load().map_err(|e| e.to_string())?;
-    conf.position_x = Some(pos.x);
-    conf.position_y = Some(pos.y);
-    conf.save().map_err(|e| e.to_string())
-}

@@ -3,6 +3,7 @@ use super::types::ModelsResponse;
 use super::OpenAIAdapter;
 use crate::base::{resolve_context_window, ModelConfig, ProviderError};
 use crate::client::error::classify_http_error;
+use crate::vision::resolve_support_vision;
 
 fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
     let mut configs = Vec::new();
@@ -22,12 +23,13 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                     n
                 }
             };
+            let api_hint = m.resolved_support_vision();
             configs.push(ModelConfig {
                 id: id.clone(),
                 name,
                 owned_by: m.owned_by.clone().unwrap_or_default(),
                 context_window: ctx,
-                support_vision: infer_support_vision(&id),
+                support_vision: resolve_support_vision(&id, api_hint),
             });
         }
     }
@@ -49,28 +51,19 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                         n
                     }
                 };
+                let api_hint = m.resolved_support_vision();
                 configs.push(ModelConfig {
                     id: id.clone(),
                     name,
                     owned_by: m.owned_by.clone().unwrap_or_default(),
                     context_window: ctx,
-                    support_vision: infer_support_vision(&id),
+                    support_vision: resolve_support_vision(&id, api_hint),
                 });
             }
         }
     }
 
     configs
-}
-
-fn infer_support_vision(model_id: &str) -> bool {
-    let lower = model_id.to_ascii_lowercase();
-    lower.contains("vision")
-        || lower.contains("4o")
-        || lower.contains("gpt-4-turbo")
-        || lower.contains("gpt-4o")
-        || lower.contains("gpt-4.1")
-        || lower.contains("deepseek-v4.1")
 }
 
 pub(crate) fn list_models(adapter: &OpenAIAdapter) -> Result<Vec<ModelConfig>, ProviderError> {

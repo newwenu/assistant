@@ -6,6 +6,8 @@ export interface TextBlock {
 export interface ImageBlock {
   type: "image";
   attachment: ImageAttachmentRef;
+  cached_data?: string;
+  file_path?: string;
   offloaded?: true;
 }
 

@@ -37,6 +37,63 @@ export function buildContentBlocks(
   return blocks;
 }
 
+export async function buildContentBlocksAsync(
+  text: string,
+  attachments: Attachment[],
+): Promise<ContentBlock[]> {
+  const blocks: ContentBlock[] = [];
+
+  if (text.trim().length > 0) {
+    blocks.push({ type: "text", text: text.trim() } satisfies TextBlock);
+  }
+
+  for (const att of attachments) {
+    if (att.kind === "image") {
+      const ref: ImageAttachmentRef = {
+        attachmentId: att.attachmentId ?? "",
+        mediaType: att.mimeType,
+        bytes: att.originalSizeBytes,
+        width: att.width,
+        height: att.height,
+        name: att.file.name,
+      };
+      if (ref.attachmentId) {
+        blocks.push({ type: "image", attachment: ref } satisfies ImageBlock);
+      } else if (att.filePath) {
+        blocks.push({
+          type: "image",
+          attachment: ref,
+          file_path: att.filePath,
+        } satisfies ImageBlock);
+      } else {
+        const cached_data = await fileToBase64(att.file);
+        blocks.push({
+          type: "image",
+          attachment: ref,
+          cached_data,
+        } satisfies ImageBlock);
+      }
+    }
+  }
+
+  return blocks;
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(",")[1] ?? "";
+      resolve(base64);
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error("Failed to read file as base64"));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export function parseContent(content: string): ContentBlock[] | null {
   try {
     const parsed: unknown = JSON.parse(content);

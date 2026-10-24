@@ -19,6 +19,7 @@ export interface Attachment {
   width?: number;
   height?: number;
   attachmentId?: string;
+  filePath?: string;
 }
 
 export const ATTACHMENT_MAX_IMAGES = 4;

@@ -7,17 +7,14 @@ use base64::Engine;
 
 use windows::core::HRESULT;
 use windows::core::HSTRING;
-use windows::Foundation::{IAsyncAction, IAsyncOperation};
 use windows::Security::Credentials::{
     KeyCredentialCreationOption, KeyCredentialManager, KeyCredentialStatus,
 };
 use windows::Security::Cryptography::CryptographicBuffer;
 use windows::Storage::Streams::IBuffer;
 use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
-use windows::Win32::UI::WindowsAndMessaging::{
-    AllowSetForegroundWindow, DispatchMessageA, PeekMessageA, TranslateMessage, ASFW_ANY, MSG,
-    PM_REMOVE,
-};
+use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
+use windows_future::{IAsyncAction, IAsyncOperation};
 
 const RPC_E_CHANGED_MODE: HRESULT = HRESULT(0x80010106u32 as i32);
 
@@ -46,16 +43,6 @@ impl Drop for WinRtGuard {
     }
 }
 
-fn pump_messages() {
-    let mut msg = MSG::default();
-    unsafe {
-        while PeekMessageA(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
-            let _ = TranslateMessage(&msg);
-            DispatchMessageA(&msg);
-        }
-    }
-}
-
 fn allow_foreground_window() {
     unsafe {
         let _ = AllowSetForegroundWindow(ASFW_ANY);
@@ -66,29 +53,11 @@ fn wait_for_async<T>(async_op: IAsyncOperation<T>) -> windows::core::Result<T>
 where
     T: windows::core::RuntimeType,
 {
-    loop {
-        pump_messages();
-        match async_op.get() {
-            Ok(result) => return Ok(result),
-            Err(e) if e.code() == HRESULT(0x8000000A_u32 as i32) => {
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
-            Err(e) => return Err(e),
-        }
-    }
+    async_op.join()
 }
 
 fn wait_for_action(async_op: IAsyncAction) -> windows::core::Result<()> {
-    loop {
-        pump_messages();
-        match async_op.get() {
-            Ok(()) => return Ok(()),
-            Err(e) if e.code() == HRESULT(0x8000000A_u32 as i32) => {
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
-            Err(e) => return Err(e),
-        }
-    }
+    async_op.join()
 }
 
 fn bytes_to_buffer(data: &[u8]) -> windows::core::Result<IBuffer> {
@@ -144,7 +113,7 @@ impl BiometricKeyStore for WindowsHelloKeyStore {
 
         let open_result = KeyCredentialManager::OpenAsync(&name)
             .map_err(map_win_error)?
-            .get()
+            .join()
             .map_err(map_win_error)?;
 
         if get_credential_status(&open_result)? == KeyCredentialStatus::NotFound {
@@ -189,7 +158,7 @@ impl BiometricKeyStore for WindowsHelloKeyStore {
 
         let open_result = KeyCredentialManager::OpenAsync(&name)
             .map_err(map_win_error)?
-            .get()
+            .join()
             .map_err(map_win_error)?;
 
         if get_credential_status(&open_result)? != KeyCredentialStatus::Success {
@@ -258,7 +227,7 @@ impl BiometricKeyStore for WindowsHelloKeyStore {
 
         let open_result = KeyCredentialManager::OpenAsync(&name)
             .map_err(map_win_error)?
-            .get()
+            .join()
             .map_err(map_win_error)?;
 
         let has_tpm = get_credential_status(&open_result)? == KeyCredentialStatus::Success;

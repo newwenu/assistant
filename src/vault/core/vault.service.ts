@@ -89,9 +89,6 @@ export const vaultService = {
   changeMasterPassword: (current: string, newPassword: string): Promise<void> =>
     invoke("vault_change_master_password", { current, new: newPassword }),
 
-  exportVault: (format: "csv" | "json"): Promise<string> =>
-    invoke("vault_export", { format }),
-
   exportVaultToFile: (format: "csv" | "json", path: string): Promise<void> =>
     invoke("vault_export_to_file", { format, path }),
 

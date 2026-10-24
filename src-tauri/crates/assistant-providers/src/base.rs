@@ -4,10 +4,10 @@ use std::pin::Pin;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
+pub use crate::model_catalog::get_context_window_tokens;
 pub use crate::types::chat_delta::{ChatDelta, TokenUsage};
 pub use crate::types::config::{
-    get_context_window_tokens, resolve_context_window, resolve_context_window_from_stored,
-    ChatOptions, RetryConfig, SseLogConfig, StreamTimeoutConfig,
+    resolve_context_window, ChatOptions, RetryConfig, SseLogConfig, StreamTimeoutConfig,
 };
 pub use crate::types::message::{message_role_from_str, ChatMessage, MessageRole};
 pub use crate::types::tool::ToolCall;

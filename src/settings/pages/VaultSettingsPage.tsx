@@ -1,10 +1,11 @@
 import { useEffect } from "react";
-import { Form, Button, Typography } from "antd";
+import { Form, Button, Typography, Spin } from "antd";
 import { SafetyCertificateOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useVaultStore } from "@/vault/core/vaultStore";
+import { useVaultStatusReady } from "@/vault/core/useVaultStatusReady";
 import { SettingsGroup } from "../shared/sections/SettingsGroup";
 import { SettingsSection } from "../shared/layout/SettingsSection";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
@@ -19,11 +20,29 @@ export const VaultSettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);
   const isInitialized = useVaultStore((s) => s.isInitialized);
+  const statusReady = useVaultStatusReady();
   const { onPatch, onPatchComplete } = useConfPatchHandlers("app");
 
   useEffect(() => {
     void loadAppConf();
   }, [loadAppConf]);
+
+  if (!statusReady) {
+    return (
+      <SettingsPageShell>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: 240,
+          }}
+        >
+          <Spin />
+        </div>
+      </SettingsPageShell>
+    );
+  }
 
   if (!isInitialized) {
     return (

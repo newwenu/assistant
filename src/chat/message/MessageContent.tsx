@@ -74,6 +74,7 @@ export const MessageContent: React.FC<MessageContentProps> = ({
                 <div key={i} className={css.imageBlock}>
                   <ImageThumbnail
                     attachment={block.attachment}
+                    cachedData={block.cached_data}
                     offloaded={block.offloaded}
                   />
                 </div>

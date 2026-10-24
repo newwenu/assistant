@@ -12,6 +12,7 @@ import {
 } from "@/config/constants";
 import type { WidthMode } from "./types";
 import { ToolCapabilityWrapper } from "./ToolCapabilityWrapper";
+import "./tool-page.css";
 
 const WIDTH_MAP: Record<WidthMode, number> = {
   default: TOOL_DEFAULT_MAX_WIDTH,

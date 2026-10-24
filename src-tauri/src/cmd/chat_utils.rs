@@ -8,7 +8,16 @@ pub(crate) fn resolve_context_window(
     model: &str,
     provider_row: &provider_store::ProviderRow,
 ) -> u32 {
-    base::resolve_context_window_from_stored(model, &provider_row.models_json)
+    let stored: Option<u32> =
+        serde_json::from_str::<Vec<crate::protocol::ModelConfigDto>>(&provider_row.models_json)
+            .ok()
+            .and_then(|list| {
+                list.iter()
+                    .find(|m| m.id == model)
+                    .map(|mc| mc.context_window)
+            })
+            .filter(|&c| c > 0);
+    base::resolve_context_window(model, stored, None)
 }
 
 pub(crate) fn resolve_final_tokens(outcome: &StreamOutcome) -> Option<i64> {

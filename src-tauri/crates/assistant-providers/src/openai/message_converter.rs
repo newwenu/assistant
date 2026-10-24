@@ -20,6 +20,7 @@ fn convert_content_block(block: &ContentBlock) -> Value {
         ContentBlock::Image {
             attachment,
             cached_data,
+            ..
         } => {
             let mt = attachment.media_type.as_deref().unwrap_or("image/png");
             let data = cached_data.as_deref().unwrap_or("");

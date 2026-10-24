@@ -89,8 +89,8 @@ export const GifMascot: FC<MascotRendererProps> = ({
         data-mode="play"
         data-playing={playing}
         style={{
-          width: "100%",
-          height: "100%",
+          width: "97%",
+          height: "97%",
           objectFit: "cover",
           borderRadius: `${borderRadius}%`,
           pointerEvents: "none",

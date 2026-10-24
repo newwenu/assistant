@@ -1,10 +1,4 @@
-import React, {
-  useEffect,
-  useState,
-  useCallback,
-  useRef,
-  type RefObject,
-} from "react";
+import React, { useEffect, useState, useCallback, type RefObject } from "react";
 import { Button, Modal, Typography, Progress, Tooltip } from "antd";
 import {
   PlusOutlined,
@@ -13,6 +7,11 @@ import {
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import type { DragDropEvent } from "@tauri-apps/api/webview";
+import type { Event } from "@tauri-apps/api/event";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { chatService } from "../services/chatService";
 import { orbService } from "../services/orbService";
 import { useChatStore } from "../stores/chatStore";
@@ -32,12 +31,8 @@ import { CompactErrorBanner } from "./compact/CompactErrorBanner";
 import { useAgentModeStore } from "../stores/agentModeStore";
 import { useAttachmentStore } from "../stores/attachmentStore";
 import { AttachmentPreview } from "./message/AttachmentPreview";
-import { validateImageFile } from "./core/contentBlockUtils";
 import type { Attachment } from "./core/attachmentTypes";
-import {
-  ATTACHMENT_MAX_IMAGES,
-  ATTACHMENT_MAX_IMAGE_SIZE_BYTES,
-} from "./core/attachmentTypes";
+import { ATTACHMENT_MAX_IMAGES } from "./core/attachmentTypes";
 import { ForkDialog } from "./blocks/ForkDialog";
 import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
 import { createLogger } from "@/services/logger";
@@ -108,7 +103,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     (s) => s.setSelectedProviderModel,
   );
   const [forkTarget, setForkTarget] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const attachments = useAttachmentStore((s) => s.attachments);
   const addAttachment = useAttachmentStore((s) => s.addAttachment);
   const setSupportVision = useAttachmentStore((s) => s.setSupportVision);
@@ -124,33 +118,75 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     setSupportVision(supportVision);
   }, [supportVision, setSupportVision]);
 
-  const handleFileSelect = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
-  const handleFileInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files ?? []);
-      for (const file of files) {
-        if (attachments.length >= ATTACHMENT_MAX_IMAGES) break;
-        if (file.size > ATTACHMENT_MAX_IMAGE_SIZE_BYTES) continue;
-        const validation = validateImageFile(file);
-        if (!validation.ok) continue;
-        const previewUrl = URL.createObjectURL(file);
-        const att: Attachment = {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          kind: "image",
-          file,
-          previewUrl,
-          mimeType: file.type as Attachment["mimeType"],
-          originalSizeBytes: file.size,
-        };
-        addAttachment(att);
-      }
-      e.target.value = "";
+  const addImageFromPath = useCallback(
+    (filePath: string) => {
+      if (attachments.length >= ATTACHMENT_MAX_IMAGES) return;
+      const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+      const mimeType = (
+        {
+          png: "image/png",
+          jpg: "image/jpeg",
+          jpeg: "image/jpeg",
+          gif: "image/gif",
+          webp: "image/webp",
+        } as const
+      )[ext];
+      if (!mimeType) return;
+      const name = filePath.split(/[\\/]/).pop() ?? filePath;
+      const att: Attachment = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        kind: "image",
+        file: new File([], name, { type: mimeType }),
+        previewUrl: convertFileSrc(filePath),
+        mimeType,
+        originalSizeBytes: 0,
+        filePath,
+      };
+      addAttachment(att);
     },
     [attachments.length, addAttachment],
   );
+
+  const handleFileSelect = useCallback(async () => {
+    const selected = await open({
+      multiple: true,
+      filters: [
+        { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] },
+      ],
+    });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    for (const p of paths) {
+      addImageFromPath(p);
+    }
+  }, [addImageFromPath]);
+
+  useEffect(() => {
+    if (!supportVision) return;
+    const webview = getCurrentWebview();
+    let disposed = false;
+    const setup = async () => {
+      const unlisten = await webview.onDragDropEvent(
+        (event: Event<DragDropEvent>) => {
+          if (disposed) return;
+          if (event.payload.type === "drop") {
+            for (const p of event.payload.paths) {
+              addImageFromPath(p);
+            }
+          }
+        },
+      );
+      return unlisten;
+    };
+    let unlistenFn: (() => void) | undefined;
+    void setup().then((fn) => {
+      unlistenFn = fn;
+    });
+    return () => {
+      disposed = true;
+      unlistenFn?.();
+    };
+  }, [supportVision, addImageFromPath]);
 
   useEffect(() => {
     void useProviderStore.getState().loadProviders();
@@ -491,24 +527,16 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
               </Tooltip>
             )}
             {supportVision && (
-              <>
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<PaperClipOutlined />}
-                  onClick={handleFileSelect}
-                  disabled={stream.isStreaming}
-                  title={t("chat.input.attach_image")}
-                />
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  style={{ display: "none" }}
-                  onChange={handleFileInputChange}
-                />
-              </>
+              <Button
+                size="small"
+                type="text"
+                icon={<PaperClipOutlined />}
+                onClick={() => {
+                  void handleFileSelect();
+                }}
+                disabled={stream.isStreaming}
+                title={t("chat.input.attach_image")}
+              />
             )}
           </div>
           <MessageInput

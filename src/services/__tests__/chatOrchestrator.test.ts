@@ -39,6 +39,7 @@ function createMockDeps(): {
     cancelStreaming: vi.fn(),
     setActiveAttemptId: vi.fn(),
     clearActiveAttemptId: vi.fn(),
+    confirmUserMessage: vi.fn(),
     appendDelta: vi.fn(),
     setReasoningStreaming: vi.fn(),
     appendReasoningDelta: vi.fn(),

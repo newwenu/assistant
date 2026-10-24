@@ -247,7 +247,7 @@ fn windows_listen(
             0,
             None,
             None,
-            hinstance,
+            Some(hinstance),
             Some(state as *mut std::ffi::c_void),
         )
     } {
@@ -270,7 +270,7 @@ fn windows_listen(
 
     let power_notify = match unsafe {
         RegisterPowerSettingNotification(
-            hwnd,
+            hwnd.into(),
             &GUID_LIDSWITCH_STATE_CHANGE,
             DEVICE_NOTIFY_WINDOW_HANDLE,
         )

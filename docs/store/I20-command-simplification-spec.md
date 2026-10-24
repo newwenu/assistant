@@ -1,7 +1,7 @@
 # I20: 后端命令简化规约
 
 > 生成日期: 2026-10-24
-> 范围: `src-tauri/src/cmd/` 全部 Tauri 命令（约 121 个，含 `lib.rs` invoke_handler 注册的 cmd + window 命令）
+> 范围: `src-tauri/src/cmd/` + `window.rs` 全部 Tauri 命令（127 个，含 `lib.rs` invoke_handler 注册的 cmd + window 命令）
 > 原则: 安全优先、渐变迁移、patch 模式统一
 
 ---
@@ -25,14 +25,16 @@
 | MascotAsset | `mascot_asset.rs` | 2 | 吉祥物资源安装/卸载 |
 | OsTool | `os_tool_exec.rs` | 1 | 统一工具桥接 |
 | Vault Lifecycle | `vault/lifecycle.rs` | 6 | 初始化/解锁/锁定/状态 |
-| Vault Entries | `vault/entries.rs` | 9 | 条目 CRUD + 导出/导入 + 改密 |
+| Vault Entries | `vault/entries.rs` | 8 | 条目 CRUD + 导出/导入 + 改密 |
 | Vault Reveal | `vault/reveal.rs` | 4 | 密码/字段复制 + 明文揭示 |
 | Vault Audit | `vault/audit.rs` | 8 | TOTP + 审计日志 + HIBP + 密码强度 |
 | Vault Biometric | `vault/biometric.rs` | 5 | 生物识别可用/注册/解锁/注销 |
 | Vault Recovery | `vault/recovery.rs` | 5 | 恢复密钥生成/解锁/验证/灾难恢复 |
 | Vault SSH | `vault/ssh.rs` | 5 | SSH 密钥加载/移除/列表/自动添加 |
 | Vault Sync | `vault/sync.rs` | 14 | Git 同步 pull/push/forcePush + 配置 + 冲突 |
-| **合计** | | **~121** | |
+| Window | `window.rs` | 5 | 打开主窗口/设置/Orb 面板展开/折叠/上下文菜单 |
+| Storage | `storage.rs` | 2 | 存储占用统计 + 附件清理 |
+| **合计** | | **127** | |
 
 ### 1.2 设计模式识别
 
@@ -206,28 +208,29 @@ pub fn export_conversation(
 
 ---
 
-### 2.6 简化 6：`vault_export` 二合一
+### 2.6 简化 6：删除 `vault_export`（✅ 已完成）
 
-**现状**：与 conversation export 同构。
+**原状**：
 
-**目标**：
+| 命令 | 返回 | 实际行为 | 前端调用 |
+|---|---|---|---|
+| `vault_export(format)` | `String` | 写临时文件到 `app_data/security/exports/`，返回文件路径，5 分钟后自动清理 | ❌ 无消费 |
+| `vault_export_to_file(format, path)` | `()` | 写文件到指定 `path` | ✅ `vaultRecoverySlice` → `ImportExportTab` |
 
-```rust
-#[command]
-pub fn vault_export(
-    app: AppHandle,
-    format: String,
-    path: Option<String>,
-) -> Result<String, String>
-```
+**执行**：直接删除 `vault_export`（返回 String 版），保留 `vault_export_to_file`。
 
-**安全/渐变**：同简化 3。
+**理由**：
+- `vault_export` 前端零消费——service 层有 `vaultService.vaultExport()` 定义但无 slice/组件调用
+- `vault_export_to_file` 是前端唯一实际使用的导出命令
+- 合并为 `Option<String>` 参数虽可行，但引入 breaking change（返回值 `Result<(), String>` → `Result<String, String>`），收益不足以抵消迁移成本
+
+**已清理**：Rust `#[command]` + lib.rs 注册 + 前端 service 层 `vaultExport()` 方法定义。
 
 ---
 
 ### 2.7 简化 7：Vault Sync 域合并
 
-**现状**（13 个命令）：
+**现状**（14 个命令）：
 
 | 命令 | 合并目标 |
 |---|---|
@@ -310,9 +313,9 @@ pub fn vault_git_remote(
 | 3 | `export_conversation` 二合一 | -1 | 🟢 低 | `path: Option<String>` |
 | 4 | 删除 `set_theme` / `set_locale` / `emit_theme_changed` | -3 | 🟠 中高（需先新增 theme side_effect + 验证 locale 持久化差异） | 前端先迁移 |
 | 5 | 删除 `set_launch_at_login` | -1 | 🟡 中（同上） | 前端先迁移 |
-| 6 | `vault_export` 二合一 | -1 | 🟢 低 | `path: Option<String>` |
+| 6 | 删除 `vault_export`（返回 String 版） | -1 | 🟢 低（纯删除死代码） | ✅ 已完成 |
 | 7 | Sync 域合并 | -4 | 🟡 中低 | 旧命令 → wrapper |
-| **合计** | | **-14** | | **121 → ~107** |
+| **合计** | | **-13** | | **127 → ~114** |
 
 ---
 
@@ -323,7 +326,7 @@ pub fn vault_git_remote(
 - [ ] 新增 `ConversationQueryOpts` + 改造 `get_conversation` 支持 `opts`
 - [ ] 新增 `ConversationPatch` + 新增 `patch_conversation` 命令
 - [ ] 改造 `export_conversation` 支持 `path: Option<String>`
-- [ ] 改造 `vault_export` 支持 `path: Option<String>`
+- [x] 删除 `vault_export`（返回 String 版），保留 `vault_export_to_file` — ✅ 已完成
 - [ ] 新增 `SyncAction` enum + 新增 `vault_sync` 命令
 - [ ] 新增 `vault_git_init(url?)` + `vault_git_remote(remote, url, mode)`
 - [ ] 旧命令保留为 wrapper，标记 `#[deprecated]`
@@ -479,18 +482,18 @@ pub fn vault_git_remote(
 | `vault_lock` | U |
 | `vault_show_unlock_window` | - |
 
-### 6.14 Vault Entries 域（9 → 8）
+### 6.14 Vault Entries 域（8，不变）
 
-| 命令 | CRUD | 备注 |
-|---|---|---|
-| `vault_list_entries` | R | |
-| `vault_get_entry` | R | |
-| `vault_create_entry` | C | |
-| `vault_update_entry` | U | |
-| `vault_delete_entry` | D | |
-| `vault_change_master_password` | U | |
-| `vault_export` | R | 合并：支持 `path: Option<String>` |
-| `vault_import` | C | |
+| 命令 | CRUD |
+|---|---|
+| `vault_list_entries` | R |
+| `vault_get_entry` | R |
+| `vault_create_entry` | C |
+| `vault_update_entry` | U |
+| `vault_delete_entry` | D |
+| `vault_change_master_password` | U |
+| `vault_export_to_file` | R |
+| `vault_import` | C |
 
 ### 6.15 Vault Reveal 域（4，不变）
 
@@ -556,7 +559,24 @@ pub fn vault_git_remote(
 | `vault_resolve_conflict` | U | |
 | `vault_sync_readyness` | R | |
 | `vault_sync_prepare` | U | 两阶段提交 |
-| `vault_sync_finalize` | U | 两阶段提交 |
+| `vault_sync_finalize` | U | 两阶段提交（接受 `message: String` commit 消息） |
+
+### 6.21 Window 域（5，不变）
+
+| 命令 | CRUD |
+|---|---|
+| `open_main_window` | - |
+| `open_settings` | - |
+| `expand_orb_panel` | U |
+| `collapse_orb_panel` | U |
+| `show_orb_context_menu` | - |
+
+### 6.22 Storage 域（2，不变）
+
+| 命令 | CRUD |
+|---|---|
+| `get_storage_breakdown` | R |
+| `delete_attachments` | D |
 
 ---
 
@@ -586,10 +606,10 @@ pub fn vault_git_remote(
 
 | # | 位置 | 原文问题 | 修正 |
 |---|---|---|---|
-| 4 | §1.1 命令分布 | 合计 ~85，实际 `lib.rs` invoke_handler 注册 ~121 个命令 | 已按实际 `#[command]` 计数修正全表，合计改为 ~121 |
+| 4 | §1.1 命令分布 | 合计 ~85，实际 `lib.rs` invoke_handler 注册 ~121 个命令 | 已按实际 `#[command]` 计数修正全表，合计改为 ~121；**二次审校**：实际 127 个（遗漏 Window 域 5 + Storage 域 2），已补全 |
 | 5 | §6.1 | Conversation 域标注 "14 → 12"，漏列 `get_message_subtree_size`，实际原 20 个 | 改为 "20 → 15"，补列 `get_message_subtree_size` |
 | 6 | §6.7 | App 域标注 "6 → 4"，但仅删除 `set_launch_at_login`（-1），应为 5 | 改为 "6 → 5" |
-| 7 | §6.14 | Vault Entries 标注 "8 → 7"，实际原 9 个 | 改为 "9 → 8" |
+| 7 | §6.14 | Vault Entries 标注 "8 → 7"，实际原 9 个（含 `vault_export`，现已删除） | 改为 "8，不变"（`vault_export` 已删除） |
 | 8 | §6.15 | Vault Reveal 标注 "3，不变"，实际 4 个 | 改为 "4，不变" |
 | 9 | §6.16 | Vault Audit 标注 "7，不变"，实际 8 个 | 改为 "8，不变" |
 | 10 | §6.18 | Vault Recovery 标注 "4，不变"，实际 5 个 | 改为 "5，不变" |
@@ -604,6 +624,17 @@ pub fn vault_git_remote(
 | 14 | §2.3 | "前端调用签名几乎不变"，但 `export_conversation_to_file` 返回 `Result<(), String>` → 合并后 `Result<String, String>`，是 breaking change | 已补充说明前端 TypeScript 类型需同步更新 |
 | 15 | §2.1 | `get_conversation_paginated` 有隐含分支优先级：当 `active_branch_id` 存在时即使传 `limit`/`before_timestamp` 也走 trace 而非分页，`ConversationQueryOpts` 映射规则未提及 | 记录于此，实现时需保留此分支优先级行为 |
 | 16 | §2.2 | `update_conversation_model` / `update_conversation_provider` 显式设 `updated_at`，`rename_conversation` 调 DAL 层函数，`patch_conversation` 需统一保证任何字段变更刷新 `updated_at` | 记录于此，实现时需统一处理 |
+
+### 8.4 🟡 二次审校补充（2026-10-24 对照实际代码逐项验证）
+
+| # | 位置 | 原文问题 | 修正 |
+|---|---|---|---|
+| 17 | §1.1 | §1.1 命令分布表遗漏 Window 域（5 命令）和 Storage 域（2 命令），合计 ~121 应为 127 | 已补全 Window / Storage 行，合计改为 127 |
+| 18 | §2.6 | `vault_export` 原方案为"二合一"（合并 `vault_export` + `vault_export_to_file`），但 `vault_export` 前端零消费，合并引入 breaking change 收益不足 | 改为直接删除 `vault_export`，保留 `vault_export_to_file`；✅ 已执行 |
+| 19 | §2.7 | `vault_sync_finalize` 目标签名未包含 `message: String` 参数，但实际 Rust 签名为 `vault_sync_finalize(app, message)` | §6.20 补注 `vault_sync_finalize` 接受 `message: String` |
+| 20 | §4 | 简化效果总计 "121 → ~107" 基于旧合计数 | 改为 "127 → ~114" |
+| 21 | §9.6 | 审计汇总 "121 → ~112 → ~98" 基于旧合计数 | 改为 "127 → ~118 → ~105" |
+| 22 | §6 | §6 命令清单缺少 Window 域和 Storage 域 | 已补 §6.21 / §6.22 |
 
 ---
 
@@ -627,8 +658,8 @@ pub fn vault_git_remote(
 |---|---|---|---|---|
 | 1 | `reload_shortcuts` | App | 前端无 `invoke("reload_shortcuts")` | `patch_conf` side_effect `("keybindings", ...)` 已自动调用 `register_global_shortcuts(app)` |
 | 2 | `save_orb_position` | Orb | 前端无 `invoke("save_orb_position")` | `save_orb_position_sync()` 已在 `snap_orb_to_screen` / `snap_orb_to_edge` 内部自动调用 |
-| 3 | `set_theme` | Config | 前端无 `invoke("set_theme")` | 已迁移至 `patch_conf("app", { theme })`，见 §2.4 |
-| 4 | `set_locale` | Config | 前端无 `invoke("set_locale")` | 已迁移至 `patch_conf("app", { language })`，见 §2.4 |
+| 3 | `set_theme` | Config | 前端无 `invoke("set_theme")` | 已迁移至 `patch_conf("app", { theme })`，见 §2.4；⚠ 需先在 `APP_SIDE_EFFECTS` 新增 theme → emit `THEME_CHANGED` |
+| 4 | `set_locale` | Config | 前端无 `invoke("set_locale")` | 已迁移至 `patch_conf("app", { language })`，见 §2.4；⚠ `set_locale` 不持久化，`patch_conf` 会落盘——前端已走 `dispatchConfPatch` 故实际无遗漏 |
 
 ### 9.2.1 A' 类：前端零调用但有保留价值（替代机制仅限 Rust 内部事件，前端无法主动触发）
 
@@ -649,7 +680,7 @@ pub fn vault_git_remote(
 | 1 | `emit_theme_changed` | Config | `settingService.emitThemeChanged()` | 仅 `settingsDispatcher.ts` 调用，但该调用应在 `patch_conf` side_effect 中自动完成 | §2.4 简化 4：`patch_conf` side_effect 新增 theme → emit `THEME_CHANGED` |
 | 2 | `get_conversation`（非分页版） | Conversation | 无独立 service 方法 | 前端统一走 `getConversationPaginated` / `getAllMessages` | §2.1 简化 1：三合一后此为默认 `opts = None` 行为 |
 | 3 | `export_conversation`（返回 String 版） | Conversation | 无独立 service 方法 | 前端仅用 `exportConversationToFile` | §2.3 简化 3：二合一后此为 `path = None` 行为 |
-| 4 | `vault_export`（返回 String 版） | Vault Entries | `vaultService.vaultExport()` | service 有定义但无 slice/组件调用 | 前端仅用 `vaultExportToFile`，§2.6 简化 6 二合一 |
+| 4 | ~~`vault_export`（返回 String 版）~~ | Vault Entries | `vaultService.vaultExport()` | service 有定义但无 slice/组件调用 | ✅ §2.6 已删除 |
 | 5 | `set_launch_at_login` | Config | 无独立 service 方法 | 前端已迁移至 `patch_conf` | §2.5 简化 5 |
 
 ### 9.4 C 类：预留命令（Rust 完整实现 + 前端 service 定义 + 无 UI 消费）
@@ -705,10 +736,10 @@ StorageSettings.tsx:95  → storageService.deleteAttachments(ids)
 |---|---|---|
 | A. 可直接删除 | 4 | 移除 Rust 命令 + lib.rs 注册 |
 | A'. 零调用但需保留 | 3 | 保留命令，补前端 service 定义，作为前端主动触发的逃生舱 |
-| B. 功能已被覆盖 | 5 | 按简化方案执行，或直接移除 |
+| B. 功能已被覆盖 | 5 | 按简化方案执行，或直接移除（#4 `vault_export` 已删除） |
 | C. 预留未接入 UI | 4 | 标记 TODO，产品规划确认后决定 |
 | D. 简化方案已覆盖 | （见 §2） | 按 §5 渐变路线 |
-| **合计可清理** | **9** | 删除 A+B 后 121 → ~112，再执行 §2 简化 → ~98 |
+| **合计可清理** | **9** | 删除 A+B 后 127 → ~118，再执行 §2 简化 → ~105 |
 
 ### 9.7 建议执行顺序
 

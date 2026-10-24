@@ -1,5 +1,6 @@
 use crate::base::{resolve_context_window, ModelConfig, ProviderError};
 use crate::client::error::classify_http_error;
+use crate::vision::resolve_support_vision;
 
 use super::request::gemini_base_url;
 use super::types::GeminiModelsResponse;
@@ -64,10 +65,10 @@ pub(crate) fn list_models(adapter: &GeminiAdapter) -> Result<Vec<ModelConfig>, P
                 let ctx = resolve_context_window(&id, None, model.input_token_limit);
                 ModelConfig {
                     id: id.clone(),
-                    name: model.display_name.unwrap_or(id),
+                    name: model.display_name.unwrap_or(id.clone()),
                     owned_by: "google".to_string(),
                     context_window: ctx,
-                    support_vision: true,
+                    support_vision: resolve_support_vision(&id, None),
                 }
             })
             .collect();

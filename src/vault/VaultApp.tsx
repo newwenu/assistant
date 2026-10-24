@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Button, App, Drawer, Typography, Space } from "antd";
+import { Button, App, Drawer, Typography, Space, Spin } from "antd";
 import {
   LockOutlined,
   ToolOutlined,
@@ -7,6 +7,7 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./core/vaultStore";
+import { useVaultStatusReady } from "./core/useVaultStatusReady";
 import { useVaultEvents } from "./core/useVaultEvents";
 import { useVaultAutoLock } from "./core/useVaultAutoLock";
 import VaultUnlock from "./VaultUnlock";
@@ -21,9 +22,9 @@ type ViewMode = "list" | "detail";
 export default function VaultApp() {
   const { t } = useTranslation();
   const { modal } = App.useApp();
+  const statusReady = useVaultStatusReady();
   const {
     isLocked,
-    checkStatus,
     checkBiometricAvailable,
     checkBiometricEnrolled,
     lock,
@@ -36,10 +37,9 @@ export default function VaultApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
-    void checkStatus();
     void checkBiometricAvailable();
     void checkBiometricEnrolled();
-  }, [checkStatus, checkBiometricAvailable, checkBiometricEnrolled]);
+  }, [checkBiometricAvailable, checkBiometricEnrolled]);
 
   useVaultEvents();
   useVaultAutoLock();
@@ -91,6 +91,21 @@ export default function VaultApp() {
       },
     });
   };
+
+  if (!statusReady) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+        }}
+      >
+        <Spin size="large" />
+      </div>
+    );
+  }
 
   if (isLocked) {
     return <VaultUnlock />;

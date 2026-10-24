@@ -207,7 +207,7 @@ export const StorageSettings: React.FC = () => {
           <Button
             size="small"
             icon={<ReloadOutlined />}
-            onClick={loadBreakdown}
+            onClick={() => void loadBreakdown()}
             loading={loading}
           >
             {t("settings.storage.refresh")}

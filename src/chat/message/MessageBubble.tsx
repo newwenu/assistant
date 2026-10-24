@@ -4,9 +4,11 @@ import { CompressOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { Message, ToolCall } from "../../chat/core/chatTypes";
 import type { RetryNotification } from "../../chat/core/chatTypes";
+import type { ImageBlock, ContentBlock } from "../core/contentBlockTypes";
 import { ErrorBlock } from "../blocks/ErrorBlock";
 import { RetryBanner } from "../blocks/RetryBanner";
 import { getErrorPresentation } from "../core/chatErrorRecovery";
+import { extractPlainText, parseContent } from "../core/contentBlockUtils";
 import { translateKey } from "../../i18n";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
 import { ToolCallBlock } from "../blocks/ToolCallBlock";
@@ -53,6 +55,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
 
     const [editing, setEditing] = useState(false);
     const [editContent, setEditContent] = useState(message.content);
+    const [editImageBlocks, setEditImageBlocks] = useState<ImageBlock[]>([]);
 
     const handleCopy = useCallback(() => {
       let text = message.content;
@@ -72,21 +75,50 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     }, [onDelete, message.id]);
 
     const startEdit = useCallback(() => {
-      setEditContent(message.content);
+      setEditContent(extractPlainText(message.content));
+      const blocks = parseContent(message.content);
+      const images = blocks
+        ? blocks.filter((b): b is ImageBlock => b.type === "image")
+        : [];
+      setEditImageBlocks(images);
       setEditing(true);
     }, [message.content]);
 
     const confirmEdit = useCallback(() => {
-      if (editContent.trim() && editContent !== message.content) {
-        onEdit?.(message.id, editContent.trim());
+      const trimmed = editContent.trim();
+      if (!trimmed) {
+        setEditing(false);
+        return;
+      }
+
+      const hasImages = editImageBlocks.length > 0;
+      const originalBlocks = parseContent(message.content);
+      const isMultimodal = hasImages || originalBlocks !== null;
+
+      if (isMultimodal) {
+        const newBlocks: ContentBlock[] = [
+          { type: "text" as const, text: trimmed },
+          ...editImageBlocks,
+        ];
+        const finalContent = JSON.stringify(newBlocks);
+        onEdit?.(message.id, finalContent);
+      } else {
+        if (trimmed !== message.content) {
+          onEdit?.(message.id, trimmed);
+        }
       }
       setEditing(false);
-    }, [editContent, message.id, message.content, onEdit]);
+    }, [editContent, editImageBlocks, message.id, message.content, onEdit]);
 
     const cancelEdit = useCallback(() => {
       setEditing(false);
-      setEditContent(message.content);
+      setEditContent(extractPlainText(message.content));
+      setEditImageBlocks([]);
     }, [message.content]);
+
+    const handleRemoveEditImage = useCallback((index: number) => {
+      setEditImageBlocks((prev) => prev.filter((_, i) => i !== index));
+    }, []);
 
     const handleRegenerate = useCallback(() => {
       onRegenerate?.(message.id);
@@ -163,6 +195,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                 onChange={setEditContent}
                 onConfirm={confirmEdit}
                 onCancel={cancelEdit}
+                imageBlocks={editImageBlocks}
+                onRemoveImage={handleRemoveEditImage}
               />
             ) : (
               <>

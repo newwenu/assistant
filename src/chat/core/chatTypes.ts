@@ -97,6 +97,12 @@ export interface ChatStreamStartPayload {
   messageId: string;
 }
 
+export interface ChatUserMessageConfirmedPayload {
+  conversationId: string;
+  userMessageId: string;
+  userMessageContent: string;
+}
+
 export interface ConversationTerminatedPayload {
   conversationId: string;
   summary: string;
@@ -125,6 +131,7 @@ export interface SiblingInfo {
 
 export enum ChatEvent {
   StreamStart = "chat-stream-start",
+  UserMessageConfirmed = "chat-user-message-confirmed",
   Delta = "chat-delta",
   MessagesChanged = "chat-messages-changed",
   ConversationListChanged = "conversation-list-changed",

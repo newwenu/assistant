@@ -24,6 +24,10 @@ export interface ChatStatePort {
   cancelStreaming: () => void;
   setActiveAttemptId: (attemptId: string, realMessageId: string) => void;
   clearActiveAttemptId: () => void;
+  confirmUserMessage: (
+    userMessageId: string,
+    userMessageContent: string,
+  ) => void;
   appendDelta: (delta: string) => void;
   setReasoningStreaming: (streaming: boolean) => void;
   appendReasoningDelta: (messageId: string, delta: string) => void;
@@ -72,6 +76,10 @@ export interface ChatOrchestrator {
   handleDeltaEvent: (payload: ChatDeltaPayload) => void;
   onTextDelta: (delta: string) => void;
   onStreamStart: (attemptId: string, messageId: string) => void;
+  onUserMessageConfirmed: (
+    userMessageId: string,
+    userMessageContent: string,
+  ) => void;
   ensureIdle: () => Promise<void>;
   getSendInProgress: () => boolean;
   getPhase: () => ChatPhase;
@@ -424,12 +432,20 @@ export function createChatOrchestrator(
     deps.state.setActiveAttemptId(attemptId, messageId);
   }
 
+  function onUserMessageConfirmed(
+    userMessageId: string,
+    userMessageContent: string,
+  ) {
+    deps.state.confirmUserMessage(userMessageId, userMessageContent);
+  }
+
   return {
     send,
     cancel,
     handleDeltaEvent,
     onTextDelta,
     onStreamStart,
+    onUserMessageConfirmed,
     ensureIdle,
     getSendInProgress: () => sendInProgress,
     getPhase: () => phase,

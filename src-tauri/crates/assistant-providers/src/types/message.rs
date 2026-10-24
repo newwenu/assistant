@@ -80,6 +80,8 @@ pub enum ContentBlock {
         attachment: ImageAttachmentRef,
         #[serde(skip_serializing)]
         cached_data: Option<String>,
+        #[serde(skip_serializing)]
+        file_path: Option<String>,
     },
     File {
         #[serde(rename = "attachment")]

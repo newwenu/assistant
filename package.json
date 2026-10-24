@@ -13,7 +13,9 @@
     "format": "prettier --write src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "models-dev:update": "node scripts/update-models-dev-snapshot.mjs",
+    "models-dev:check": "node scripts/update-models-dev-snapshot.mjs --check"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",

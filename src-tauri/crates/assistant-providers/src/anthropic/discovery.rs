@@ -1,6 +1,7 @@
 use crate::base::{resolve_context_window, ModelConfig, ProviderError};
 use crate::client::error::classify_http_error;
 use crate::client::quirks::wants_bearer_auth;
+use crate::vision::resolve_support_vision;
 
 use super::types::AnthropicModelsResponse;
 use super::AnthropicAdapter;
@@ -59,10 +60,10 @@ pub(crate) fn list_models(adapter: &AnthropicAdapter) -> Result<Vec<ModelConfig>
                 let ctx = resolve_context_window(&m.id, None, m.resolved_context_window());
                 ModelConfig {
                     id: m.id.clone(),
-                    name: m.display_name.unwrap_or(m.id),
+                    name: m.display_name.unwrap_or(m.id.clone()),
                     owned_by: "anthropic".to_string(),
                     context_window: ctx,
-                    support_vision: true,
+                    support_vision: resolve_support_vision(&m.id, None),
                 }
             })
             .collect();
