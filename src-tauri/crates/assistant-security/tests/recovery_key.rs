@@ -1,26 +1,12 @@
+mod common;
+
 use assistant_security::recovery_key::{
     format_recovery_key, generate_recovery_key, parse_recovery_key, unlock_with_recovery_key,
 };
 use assistant_security::security_db::SecurityDbState;
 use assistant_security::types::VaultError;
 use assistant_security::vault_crypto::types::CipherAlgorithm;
-
-fn temp_db_path() -> String {
-    let dir = std::env::temp_dir().join("assistant-security-test-rk");
-    let _ = std::fs::create_dir_all(&dir);
-    dir.join(format!("test_vault_{}.db", uuid::Uuid::new_v4()))
-        .to_str()
-        .unwrap()
-        .to_string()
-}
-
-fn cleanup(path: &str) {
-    let _ = std::fs::remove_file(path);
-    let backup_dir = std::path::Path::new(path).parent().unwrap().join("backups");
-    if backup_dir.exists() {
-        let _ = std::fs::remove_dir_all(&backup_dir);
-    }
-}
+use common::{cleanup, init_vault, temp_db_path, STRONG_PW};
 
 #[test]
 fn format_recovery_key_has_four_groups_of_eight() {
@@ -68,8 +54,8 @@ fn parse_rejects_invalid_base32() {
 #[test]
 fn generate_recovery_key_produces_valid_key() {
     let path = temp_db_path();
-    let db = SecurityDbState::new(&path);
-    db.init("Str0ng#P@ssw0rd!2025").unwrap();
+    let db = SecurityDbState::new(path.to_str().unwrap());
+    db.init(STRONG_PW).unwrap();
 
     let (key, emergency) = {
         let mk_guard = db.get_master_key().unwrap();
@@ -98,8 +84,8 @@ fn generate_recovery_key_produces_valid_key() {
 #[test]
 fn generate_recovery_key_unique_each_time() {
     let path = temp_db_path();
-    let db = SecurityDbState::new(&path);
-    db.init("Str0ng#P@ssw0rd!2025").unwrap();
+    let db = SecurityDbState::new(path.to_str().unwrap());
+    db.init(STRONG_PW).unwrap();
 
     let ((key1, emergency1), (key2, emergency2)) = {
         let mk_guard = db.get_master_key().unwrap();
@@ -124,10 +110,9 @@ fn generate_recovery_key_unique_each_time() {
 #[test]
 fn unlock_with_recovery_key_succeeds() {
     let path = temp_db_path();
-    let db = SecurityDbState::new(&path);
-    let password = "Str0ng#P@ssw0rd!2025";
+    let db = SecurityDbState::new(path.to_str().unwrap());
 
-    db.init(password).unwrap();
+    db.init(STRONG_PW).unwrap();
 
     let (recovery_key, emergency) = {
         let mk_guard = db.get_master_key().unwrap();
@@ -161,10 +146,9 @@ fn unlock_with_recovery_key_succeeds() {
 #[test]
 fn unlock_with_wrong_recovery_key_fails() {
     let path = temp_db_path();
-    let db = SecurityDbState::new(&path);
-    let password = "Str0ng#P@ssw0rd!2025";
+    let db = SecurityDbState::new(path.to_str().unwrap());
 
-    db.init(password).unwrap();
+    db.init(STRONG_PW).unwrap();
 
     let (_real_key, emergency) = {
         let mk_guard = db.get_master_key().unwrap();
@@ -194,11 +178,10 @@ fn unlock_with_wrong_recovery_key_fails() {
 #[test]
 fn recovery_key_cannot_unlock_after_password_change() {
     let path = temp_db_path();
-    let db = SecurityDbState::new(&path);
-    let password = "Str0ng#P@ssw0rd!2025";
+    let db = SecurityDbState::new(path.to_str().unwrap());
     let new_password = "N3wStr0ng#P@ss!2026";
 
-    db.init(password).unwrap();
+    db.init(STRONG_PW).unwrap();
 
     let (recovery_key, emergency) = {
         let mk_guard = db.get_master_key().unwrap();
@@ -211,7 +194,7 @@ fn recovery_key_cannot_unlock_after_password_change() {
         result
     };
 
-    db.change_master_password(password, new_password, CipherAlgorithm::Aes256Gcm)
+    db.change_master_password(STRONG_PW, new_password, CipherAlgorithm::Aes256Gcm)
         .unwrap();
 
     db.lock().unwrap();

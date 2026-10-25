@@ -2,7 +2,7 @@
 
 > 本文档为 I9 密码管理箱规格的 **第 3b 部分**，修复生物识别实现的密码学绑定缺陷。
 > 前置文档：[I9-vault-spec-3a-biometric-platform.md](./I9-vault-spec-3a-biometric-platform.md)（平台 API 实现）
-> 参考项目：[KeePassXC quickunlock/](../../references/keepassxc/src/quickunlock/)、[watchkey-win/](../../references/watchkey-win/)
+> 参考项目：KeePassXC `quickunlock/`、watchkey-win
 > 修复范围：`biometric_ops.rs` + 三平台 `BiometricKeyStore` impl
 
 ---
@@ -90,7 +90,7 @@ let encoded = entry.get_password()?;     // ← 直接读取，无需密码学�
 
 ### 3.1 方案：HKDF 签名派生 + Keyring 持久化
 
-**参考**：[watchkey-win/crypto.rs](../../references/watchkey-win/src/crypto.rs) + [watchkey-win/auth.rs](../../references/watchkey-win/src/auth.rs)
+**参考**：watchkey-win `crypto.rs` + `auth.rs`
 
 #### 3.1.1 数据流
 
@@ -236,7 +236,7 @@ fn compute_signature_hash(signature: &[u8]) -> String {
 
 ### 4.1 方案：SecAccessControl 门控 + 分离存储
 
-**参考**：[KeePassXC TouchID.mm](../../references/keepassxc/src/quickunlock/TouchID.mm)
+**参考**：KeePassXC `TouchID.mm`
 
 #### 4.1.1 数据流
 
@@ -307,7 +307,7 @@ unlock_biometric:
 
 ### 5.1 方案：libsecret 分离存储
 
-**参考**：[KeePassXC Polkit.cpp](../../references/keepassxc/src/quickunlock/Polkit.cpp)
+**参考**：KeePassXC `Polkit.cpp`
 
 #### 5.1.1 数据流
 
@@ -802,12 +802,12 @@ fn try_unlock_legacy_format(
 
 | 项目 | 文件 | 关键函数/行号 | 用途 |
 |------|------|---------------|------|
-| watchkey-win | [crypto.rs:12-17](../../references/watchkey-win/src/crypto.rs#L12-L17) | `derive_key()` | HKDF 签名派生 |
-| watchkey-win | [auth.rs:161-164](../../references/watchkey-win/src/auth.rs#L161-L164) | `fixed_challenge()` | 固定 challenge |
-| watchkey-win | [auth.rs:272-276](../../references/watchkey-win/src/auth.rs#L272-L276) | `signature_hash()` | TPM 重置检测 |
-| watchkey-win | [main.rs:87-125](../../references/watchkey-win/src/main.rs#L87-L125) | `obtain_master_key()` | 完整注册/解锁流程 |
-| KeePassXC | [WindowsHello.cpp:51-69](../../references/keepassxc/src/quickunlock/WindowsHello.cpp#L51-L69) | `deriveEncryptionKey()` | SHA256 签名派生 |
-| KeePassXC | [WindowsHello.cpp:106-128](../../references/keepassxc/src/quickunlock/WindowsHello.cpp#L106-L128) | `setKey()` | Windows 注册流程 |
-| KeePassXC | [TouchID.mm:130-180](../../references/keepassxc/src/quickunlock/TouchID.mm#L130-L180) | `setKey()` | macOS 注册流程 |
-| KeePassXC | [TouchID.mm:230-280](../../references/keepassxc/src/quickunlock/TouchID.mm#L230-L280) | `getKey()` | macOS 解锁流程 |
-| KeePassXC | [Polkit.cpp:103-155](../../references/keepassxc/src/quickunlock/Polkit.cpp#L103-L155) | `setKey()` | Linux 注册流程 |
+| watchkey-win | `crypto.rs:12-17` | `derive_key()` | HKDF 签名派生 |
+| watchkey-win | `auth.rs:161-164` | `fixed_challenge()` | 固定 challenge |
+| watchkey-win | `auth.rs:272-276` | `signature_hash()` | TPM 重置检测 |
+| watchkey-win | `main.rs:87-125` | `obtain_master_key()` | 完整注册/解锁流程 |
+| KeePassXC | `WindowsHello.cpp:51-69` | `deriveEncryptionKey()` | SHA256 签名派生 |
+| KeePassXC | `WindowsHello.cpp:106-128` | `setKey()` | Windows 注册流程 |
+| KeePassXC | `TouchID.mm:130-180` | `setKey()` | macOS 注册流程 |
+| KeePassXC | `TouchID.mm:230-280` | `getKey()` | macOS 解锁流程 |
+| KeePassXC | `Polkit.cpp:103-155` | `setKey()` | Linux 注册流程 |

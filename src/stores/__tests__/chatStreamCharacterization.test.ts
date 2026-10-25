@@ -40,8 +40,18 @@ vi.mock("../../services/logger", () => ({
   }),
 }));
 
-vi.mock("../errorNotifyStore", () => ({
+vi.mock("../notifyStore", () => ({
   notifyError: vi.fn(),
+  notifyWarning: vi.fn(),
+  notifyInfo: vi.fn(),
+  useNotifyStore: {
+    getState: () => ({
+      pending: [],
+      notify: vi.fn(),
+      dequeue: vi.fn(() => undefined),
+    }),
+    subscribe: () => () => {},
+  },
 }));
 
 vi.mock("../agentModeStore", () => ({

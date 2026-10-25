@@ -17,6 +17,7 @@ pub mod event_name {
     pub const VAULT_UNLOCKED: &str = "vault:unlocked";
     pub const VAULT_REVEAL: &str = "vault:reveal";
     pub const VAULT_REVEAL_RATE_LIMITED: &str = "vault:reveal-rate-limited";
+    pub const BIOMETRIC_ENROLL_STEP: &str = "vault:biometric-enroll-step";
 }
 
 pub fn emit_broadcast(app: &tauri::AppHandle, event: &str, payload: impl serde::Serialize + Clone) {

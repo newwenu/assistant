@@ -2,7 +2,7 @@ import type { Message } from "../chat/core/chatTypes";
 import type { ChatError } from "../chat/core/chatErrors";
 import { chatService } from "../services/chatService";
 import { createLogger } from "@/services/logger";
-import { notifyError } from "./errorNotifyStore";
+import { notifyError } from "./notifyStore";
 import { useChatStreamStore } from "./chatStreamStore";
 
 const log = createLogger("chatCompactSlice");

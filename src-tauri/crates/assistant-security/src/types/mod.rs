@@ -40,6 +40,8 @@ pub enum VaultError {
     BiometricCancelled,
     #[error("Biometric failed: {0}")]
     BiometricFailed(String),
+    #[error("Biometric credential reset; re-enrollment required")]
+    BiometricReset,
     #[error("Invalid SSH key format: {0}")]
     InvalidKeyFormat(String),
     #[error("Invalid recovery key")]

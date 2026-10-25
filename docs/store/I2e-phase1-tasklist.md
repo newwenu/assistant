@@ -12,28 +12,28 @@
 
 `src/chat/core/contentBlockTypes.ts`（新建）
 
-- [ ] A1.1 `TextBlock` / `ImageBlock` / `FileBlock` 接口
-- [ ] A1.2 `ImageAttachmentRef`（`width?` / `height?` 可选）/ `FileAttachmentRef` 接口
-- [ ] A1.3 `ImageMediaType` 联合类型
-- [ ] A1.4 `ContentBlock` 联合类型（`TextBlock | ImageBlock | FileBlock`）
+- [x] A1.1 `TextBlock` / `ImageBlock` / `FileBlock` 接口
+- [x] A1.2 `ImageAttachmentRef`（`width?` / `height?` 可选）/ `FileAttachmentRef` 接口
+- [x] A1.3 `ImageMediaType` 联合类型
+- [x] A1.4 `ContentBlock` 联合类型（`TextBlock | ImageBlock | FileBlock`）
 
 ### A2. 附件类型与约束常量
 
 `src/chat/core/attachmentTypes.ts`（新建）
 
-- [ ] A2.1 `ALLOWED_IMAGE_MIME_TYPES` + `AllowedImageMimeType`
-- [ ] A2.2 `AttachmentKind` / `Attachment` 接口
-- [ ] A2.3 `ATTACHMENT_MAX_IMAGES` / `ATTACHMENT_MAX_FILES` / `ATTACHMENT_MAX_IMAGE_SIZE_BYTES` / `ATTACHMENT_MAX_FILE_SIZE_BYTES`
+- [x] A2.1 `ALLOWED_IMAGE_MIME_TYPES` + `AllowedImageMimeType`
+- [x] A2.2 `AttachmentKind` / `Attachment` 接口
+- [x] A2.3 `ATTACHMENT_MAX_IMAGES` / `ATTACHMENT_MAX_FILES` / `ATTACHMENT_MAX_IMAGE_SIZE_BYTES` / `ATTACHMENT_MAX_FILE_SIZE_BYTES`
 
 ### A3. ContentBlock 工具函数
 
 `src/chat/core/contentBlockUtils.ts`（新建）
 
-- [ ] A3.1 `buildContentBlocks(text, attachments) → ContentBlock[]`
-- [ ] A3.2 `parseContent(content) → ContentBlock[] | null` — 全元素 `type` 校验（非仅首元素）
-- [ ] A3.3 `serializeContent(blocks) → string`
-- [ ] A3.4 `validateImageFile(file) → { ok, error? }`
-- [ ] A3.5 单元测试：纯文本→null / 合法JSON→数组 / 非ContentBlock JSON→null
+- [x] A3.1 `buildContentBlocks(text, attachments) → ContentBlock[]`
+- [x] A3.2 `parseContent(content) → ContentBlock[] | null` — 全元素 `type` 校验（非仅首元素）
+- [x] A3.3 `serializeContent(blocks) → string`
+- [x] A3.4 `validateImageFile(file) → { ok, error? }`
+- [x] A3.5 单元测试：纯文本→null / 合法JSON→数组 / 非ContentBlock JSON→null
 
 依赖：A1, A2
 
@@ -41,53 +41,53 @@
 
 `src/settings/provider/types.ts` + `base.rs` + `dto/settings.rs` + `tauri.conf.json` + 3× `discovery.rs`
 
-- [ ] A4.1 前端 `ModelConfig.supportVision?: boolean`
-- [ ] A4.2 Rust `ModelConfig.support_vision: bool` + `#[serde(default)]`
-- [ ] A4.3 `ModelConfigDto` 新增 `support_vision: bool` + `#[serde(default)]`，`From<ModelConfig>` impl 同步
-- [ ] A4.4 `tauri.conf.json` asset scope 新增 `"$APPDATA/attachments/**"`
-- [ ] A4.5 `anthropic/discovery.rs` — `ModelConfig` 构造加 `support_vision: true`（Claude 系列均支持 Vision）
-- [ ] A4.6 `openai/discovery.rs` — `ModelConfig` 构造加 `support_vision`（从 model id 启发推断：含 `vision`/`4o`/`gpt-4-turbo` → true，其余 false）
-- [ ] A4.7 `gemini/discovery.rs` — `ModelConfig` 构造加 `support_vision: true`（Gemini 系列均支持 Vision）
+- [x] A4.1 前端 `ModelConfig.supportVision?: boolean`
+- [x] A4.2 Rust `ModelConfig.support_vision: bool` + `#[serde(default)]`
+- [x] A4.3 `ModelConfigDto` 新增 `support_vision: bool` + `#[serde(default)]`，`From<ModelConfig>` impl 同步
+- [x] A4.4 `tauri.conf.json` asset scope 新增 `"$APPDATA/attachments/**"`
+- [x] A4.5 `anthropic/discovery.rs` — `ModelConfig` 构造加 `support_vision: true`（Claude 系列均支持 Vision）
+- [x] A4.6 `openai/discovery.rs` — `ModelConfig` 构造加 `support_vision`（从 model id 启发推断：含 `vision`/`4o`/`gpt-4-turbo` → true，其余 false）
+- [x] A4.7 `gemini/discovery.rs` — `ModelConfig` 构造加 `support_vision: true`（Gemini 系列均支持 Vision）
 
 ### A5. Rust ContentBlock → 判别枚举
 
 `src-tauri/crates/assistant-providers/src/types/message.rs`
 
-- [ ] A5.1 重构为 `#[serde(tag = "type", rename_all = "snake_case")]` enum：`Text` / `Image` / `File` / `Thinking` / `ToolUse` / `ToolResult`
-- [ ] A5.2 `cached_data` 用 `#[serde(skip_serializing)]`（允许反序列化供 Ingress，禁止序列化防 DB 污染）
-- [ ] A5.3 `ChatMessage` 新增 `#[serde(skip)] content_blocks: Option<Vec<ContentBlock>>` 扩展字段（rehydrate 填充，Provider 转换器优先读取）
-- [ ] A5.4 `attachment_id` 为 `String`（非 Option），Ingress 前态填空字符串
-- [ ] A5.5 `width` / `height` → `Option<u32>`
-- [ ] A5.6 移除 `image_url` 字段
-- [ ] A5.7 `ContentBlockType` 补充 `File`，保留迁移期兼容
+- [x] A5.1 重构为 `#[serde(tag = "type", rename_all = "snake_case")]` enum：`Text` / `Image` / `File` / `Thinking` / `ToolUse` / `ToolResult`
+- [x] A5.2 `cached_data` 用 `#[serde(skip_serializing)]`（允许反序列化供 Ingress，禁止序列化防 DB 污染）
+- [x] A5.3 `ChatMessage` 新增 `#[serde(skip)] content_blocks: Option<Vec<ContentBlock>>` 扩展字段（rehydrate 填充，Provider 转换器优先读取）
+- [x] A5.4 `attachment_id` 为 `String`（非 Option），Ingress 前态填空字符串
+- [x] A5.5 `width` / `height` → `Option<u32>`
+- [x] A5.6 移除 `image_url` 字段
+- [x] A5.7 `ContentBlockType` 补充 `File`，保留迁移期兼容
 
 ### A5b. types/mod.rs re-export 更新
 
 `src-tauri/crates/assistant-providers/src/types/mod.rs`
 
-- [ ] A5b.1 `ContentBlock` 从 struct 变为 enum 后，re-export 需同步（移除或保留 `ContentBlockType`）
+- [x] A5b.1 `ContentBlock` 从 struct 变为 enum 后，re-export 需同步（移除或保留 `ContentBlockType`）
 
 ### A6. AttachmentStore 磁盘存储
 
 `src-tauri/crates/assistant-storage/src/attachment_store.rs`（新建）+ `lib.rs` + `Cargo.toml`
 
-- [ ] A6.1 `Cargo.toml` 新增 `sha2` / `tokio`
-- [ ] A6.2 `lib.rs` 新增 `pub mod attachment_store;`
-- [ ] A6.3 `AttachmentStoreConfig { dir }`（不可变）+ `AttachmentStore { config: Arc<Config> }`
-- [ ] A6.4 `new(dir)` 构造
-- [ ] A6.5 `save_image` → 完整 sha256 64 位 hex + 扩展名（`<hex>.png`）作文件名 → 原子写入 → `ImageAttachmentRef`
-- [ ] A6.6 `read(id)` → 直接 `dir.join(id)` 拼接路径
-- [ ] A6.7 `list_all()` → 列出所有附件（Phase 2 手动清理 UI 用）
-- [ ] A6.8 `delete(id)` → 删除指定附件（Phase 2 手动清理 UI 用）
-- [ ] A6.9 `clean_tmp()` → 清理 `*.tmp` 残留
+- [x] A6.1 `Cargo.toml` 新增 `sha2` / `tokio`
+- [x] A6.2 `lib.rs` 新增 `pub mod attachment_store;`
+- [x] A6.3 `AttachmentStoreConfig { dir }`（不可变）+ `AttachmentStore { config: Arc<Config> }`
+- [x] A6.4 `new(dir)` 构造
+- [x] A6.5 `save_image` → 完整 sha256 64 位 hex + 扩展名（`<hex>.png`）作文件名 → 原子写入 → `ImageAttachmentRef`
+- [x] A6.6 `read(id)` → 直接 `dir.join(id)` 拼接路径
+- [x] A6.7 `list_all()` → 列出所有附件（Phase 2 手动清理 UI 用）
+- [x] A6.8 `delete(id)` → 删除指定附件（Phase 2 手动清理 UI 用）
+- [x] A6.9 `clean_tmp()` → 清理 `*.tmp` 残留
 
 ### A7. setup.rs 初始化
 
 `src-tauri/src/setup.rs`
 
-- [ ] A7.1 DB 初始化后创建 `attachments` 目录
-- [ ] A7.2 `app.manage(store)`（直接 manage，无 Mutex wrapper）
-- [ ] A7.3 spawn `store.clean_tmp()`
+- [x] A7.1 DB 初始化后创建 `attachments` 目录
+- [x] A7.2 `app.manage(store)`（直接 manage，无 Mutex wrapper）
+- [x] A7.3 spawn `store.clean_tmp()`
 
 依赖：A6
 
@@ -95,10 +95,10 @@
 
 Rust 端 + 前端 i18n 文件
 
-- [ ] A8.1 Rust `zh-CN.json` — 新增 `chat.too_many_images` / `chat.image_too_large` / `chat.image_projected_placeholder`
-- [ ] A8.2 Rust `en-US.json` — 同上，英文文案
-- [ ] A8.3 前端 `zh-CN.json` — 新增"当前模型不支持图片"等附件 UI 文案
-- [ ] A8.4 前端 `en-US.json` — 同上，英文文案
+- [x] A8.1 Rust `zh-CN.json` — 新增 `chat.too_many_images` / `chat.image_too_large` / `chat.image_projected_placeholder`
+- [x] A8.2 Rust `en-US.json` — 同上，英文文案
+- [x] A8.3 前端 `zh-CN.json` — 新增"当前模型不支持图片"等附件 UI 文案
+- [x] A8.4 前端 `en-US.json` — 同上，英文文案
 
 依赖：无（可最先做）
 
@@ -106,9 +106,9 @@ Rust 端 + 前端 i18n 文件
 
 `src-tauri/crates/assistant-storage/src/conversations.rs`（或新建 `content_codec.rs`）
 
-- [ ] A9.1 `is_content_empty(&self) → bool` — 语义空判断（纯文本空 or ContentBlock[] 无有效 block）
-- [ ] A9.2 `content_text_preview(&self, max_len) → String` — 提取纯文本预览（用于 sibling preview）
-- [ ] A9.3 `content_plain_text(&self) → String` — 提取全文纯文本（用于搜索、导出 markdown）
+- [x] A9.1 `is_content_empty(&self) → bool` — 语义空判断（纯文本空 or ContentBlock[] 无有效 block）
+- [x] A9.2 `content_text_preview(&self, max_len) → String` — 提取纯文本预览（用于 sibling preview）
+- [x] A9.3 `content_plain_text(&self) → String` — 提取全文纯文本（用于搜索、导出 markdown）
 
 依赖：A5（需要 ContentBlock enum 定义）
 
@@ -120,13 +120,13 @@ Rust 端 + 前端 i18n 文件
 
 `src-tauri/crates/assistant-agent/src/multimodal.rs`（新建）+ `lib.rs` + `Cargo.toml`
 
-- [ ] B1.1 `Cargo.toml` 新增 `assistant-storage` / `base64`
-- [ ] B1.2 `lib.rs` 新增 `pub mod multimodal;`
-- [ ] B1.3 `admit_attachments` — 反序列化 `Vec<ContentBlock>`（非 Value）→ 遍历 Image 变体 → 校验 → save_image → 替换 ref
-- [ ] B1.4 `rehydrate_images` — 磁盘读回 → 注入 `cached_data` → 填充 `msg.content_blocks`（Provider 转换器优先读此字段）
-- [ ] B1.5 `project_images_for_text_model` — `Image → Text { t!("chat.image_projected_placeholder") }`（i18n）
-- [ ] B1.6 错误 i18n：`t!("chat.too_many_images")` / `t!("chat.image_too_large")`
-- [ ] B1.7 附件不存在 → 占位文本，不报错
+- [x] B1.1 `Cargo.toml` 新增 `assistant-storage` / `base64`
+- [x] B1.2 `lib.rs` 新增 `pub mod multimodal;`
+- [x] B1.3 `admit_attachments` — 反序列化 `Vec<ContentBlock>`（非 Value）→ 遍历 Image 变体 → 校验 → save_image → 替换 ref
+- [x] B1.4 `rehydrate_images` — 磁盘读回 → 注入 `cached_data` → 填充 `msg.content_blocks`（Provider 转换器优先读此字段）
+- [x] B1.5 `project_images_for_text_model` — `Image → Text { t!("chat.image_projected_placeholder") }`（i18n）
+- [x] B1.6 错误 i18n：`t!("chat.too_many_images")` / `t!("chat.image_too_large")`
+- [x] B1.7 附件不存在 → 占位文本，不报错
 
 依赖：A5, A6
 
@@ -134,8 +134,8 @@ Rust 端 + 前端 i18n 文件
 
 `src-tauri/src/cmd/chat.rs`
 
-- [ ] B2.1 插入 DB 前调用 `admit_attachments(&content)`
-- [ ] B2.2 失败 → 返回错误
+- [x] B2.1 插入 DB 前调用 `admit_attachments(&content)`
+- [x] B2.2 失败 → 返回错误
 
 依赖：B1
 
@@ -143,8 +143,8 @@ Rust 端 + 前端 i18n 文件
 
 `chat_runtime.rs`（或 chat_tasks.rs）
 
-- [ ] B3.1 dispatch 前按 `support_vision` 调用 rehydrate 或 project
-- [ ] B3.2 确认 `is_vision_model` 获取路径
+- [x] B3.1 dispatch 前按 `support_vision` 调用 rehydrate 或 project
+- [x] B3.2 确认 `is_vision_model` 获取路径
 
 依赖：B1, A4
 
@@ -161,11 +161,11 @@ Rust 端 + 前端 i18n 文件
 
 `openai/message_converter.rs`
 
-- [ ] B5.1 导入 `parse_content`
-- [ ] B5.2 拆分 `MessageRole::User` 独立分支
-- [ ] B5.3 `msg.content_blocks` 优先 → enum match 遍历：`Text → {"type":"text"}`, `Image { cached_data: Some } → {"type":"image_url"}`；fallback `parse_content(&msg.content)`
-- [ ] B5.4 `parse_content` 失败 → 降级纯文本
-- [ ] B5.5 其他分支不变
+- [x] B5.1 导入 `parse_content`
+- [x] B5.2 拆分 `MessageRole::User` 独立分支
+- [x] B5.3 `msg.content_blocks` 优先 → enum match 遍历：`Text → {"type":"text"}`, `Image { cached_data: Some } → {"type":"image_url"}`；fallback `parse_content(&msg.content)`
+- [x] B5.4 `parse_content` 失败 → 降级纯文本
+- [x] B5.5 其他分支不变
 
 依赖：A5
 
@@ -173,11 +173,11 @@ Rust 端 + 前端 i18n 文件
 
 `anthropic/message_converter.rs`
 
-- [ ] B6.1 `convert_user_message` 重写：`msg.content_blocks` 优先 → enum match 遍历；fallback `parse_content`
-- [ ] B6.2 `Text → {"type":"text"}`, `Image { cached_data: Some } → {"type":"image","source":{"type":"base64"}}`
-- [ ] B6.3 降级：`json!({"role":"user","content":[{"type":"text","text":msg.content}]})`
-- [ ] B6.4 **删除** `tool_call_id` hack + `parse_image_source`
-- [ ] B6.5 其他函数不变
+- [x] B6.1 `convert_user_message` 重写：`msg.content_blocks` 优先 → enum match 遍历；fallback `parse_content`
+- [x] B6.2 `Text → {"type":"text"}`, `Image { cached_data: Some } → {"type":"image","source":{"type":"base64"}}`
+- [x] B6.3 降级：`json!({"role":"user","content":[{"type":"text","text":msg.content}]})`
+- [x] B6.4 **删除** `tool_call_id` hack + `parse_image_source`
+- [x] B6.5 其他函数不变
 
 依赖：A5
 
@@ -185,10 +185,10 @@ Rust 端 + 前端 i18n 文件
 
 `gemini/message_converter.rs`
 
-- [ ] B7.1 `convert_user_parts` 重写：`parse_content` → enum match 遍历
-- [ ] B7.2 `Text → {"text":…}`, `Image { cached_data: Some } → {"inlineData":{…}}`
-- [ ] B7.3 降级：保留 `try_parse_inline_image` 兼容旧数据
-- [ ] B7.4 其他函数不变
+- [x] B7.1 `convert_user_parts` 重写：`parse_content` → enum match 遍历
+- [x] B7.2 `Text → {"text":…}`, `Image { cached_data: Some } → {"inlineData":{…}}`
+- [x] B7.3 降级：保留 `try_parse_inline_image` 兼容旧数据
+- [x] B7.4 其他函数不变
 
 依赖：A5
 
@@ -204,11 +204,11 @@ Rust 端 + 前端 i18n 文件
 
 `src-tauri/crates/assistant-storage/src/conversations.rs` + `src-tauri/src/cmd/chat.rs`
 
-- [ ] B8.1 `chat.rs` L17 — `content.trim().is_empty()` → `is_content_empty(content)` 语义判断
-- [ ] B8.2 `conversations.rs` L776/L795 — `SUBSTR(content, 1, 100)` → Rust 端调用 `content_text_preview(content, 100)`
-- [ ] B8.3 `conversations.rs` L465 — `m.content LIKE %query%` → Rust 端 `content_plain_text().contains(query)` 过滤
-- [ ] B8.4 `conversations.rs` L481-484 — `format!("{}\n\n", msg.content)` → `format!("{}\n\n", msg.content_plain_text())`
-- [ ] B8.5 确认 `SiblingInfoDto.contentPreview` 返回可读纯文本预览（非 JSON 截断）
+- [x] B8.1 `chat.rs` L17 — `content.trim().is_empty()` → `is_content_empty(content)` 语义判断
+- [x] B8.2 `conversations.rs` L776/L795 — `SUBSTR(content, 1, 100)` → Rust 端调用 `content_text_preview(content, 100)`
+- [x] B8.3 `conversations.rs` L465 — `m.content LIKE %query%` → Rust 端 `content_plain_text().contains(query)` 过滤
+- [x] B8.4 `conversations.rs` L481-484 — `format!("{}\n\n", msg.content)` → `format!("{}\n\n", msg.content_plain_text())`
+- [x] B8.5 确认 `SiblingInfoDto.contentPreview` 返回可读纯文本预览（非 JSON 截断）
 
 依赖：A9, B2
 
@@ -220,8 +220,8 @@ Rust 端 + 前端 i18n 文件
 
 `src/chat/message/AttachmentPreview.tsx`（新建）+ CSS Module
 
-- [ ] C1.1 渲染 `Attachment[]`：缩略图/文件名+大小+删除按钮
-- [ ] C1.2 数量/大小超限提示
+- [x] C1.1 渲染 `Attachment[]`：缩略图/文件名+大小+删除按钮
+- [x] C1.2 数量/大小超限提示
 
 依赖：A2
 
@@ -229,13 +229,13 @@ Rust 端 + 前端 i18n 文件
 
 `src/chat/message/MessageInput.tsx`
 
-- [ ] C2.1 `attachments: Attachment[]` 状态
-- [ ] C2.2 附件按钮 → 文件选择器 → 校验 → 加入
-- [ ] C2.3 粘贴图片：`onPaste` → 校验 → 加入
-- [ ] C2.4 拖拽图片：复用 `useFileDrop` hook（已有完整拖拽实现），仅加图片 MIME 校验
-- [ ] C2.5 集成 `<AttachmentPreview>`
-- [ ] C2.6 发送：`onSend(serializeContent(buildContentBlocks(text, attachments)))`，清空 attachments
-- [ ] C2.7 非 Vision 模型：隐藏附件按钮，粘贴/拖拽提示不支持
+- [x] C2.1 `attachments: Attachment[]` 状态
+- [x] C2.2 附件按钮 → 文件选择器 → 校验 → 加入
+- [x] C2.3 粘贴图片：`onPaste` → 校验 → 加入
+- [x] C2.4 拖拽图片：复用 `useFileDrop` hook（已有完整拖拽实现），仅加图片 MIME 校验
+- [x] C2.5 集成 `<AttachmentPreview>`
+- [x] C2.6 发送：`onSend(serializeContent(buildContentBlocks(text, attachments)))`，清空 attachments
+- [x] C2.7 非 Vision 模型：隐藏附件按钮，粘贴/拖拽提示不支持
 
 依赖：A2, A3, C1
 
@@ -243,12 +243,12 @@ Rust 端 + 前端 i18n 文件
 
 `src/chat/message/ImageThumbnail.tsx`（新建）+ CSS Module
 
-- [ ] C3.1 `convertFileSrc(attachments_dir/attachmentId)` → `asset:` 协议 URL（浏览器缓存，零 IPC）
-- [ ] C3.2 `<img src={assetUrl} loading="lazy">` — 原生懒加载
-- [ ] C3.3 骨架屏占位（`width/height` 算 `aspect-ratio`，防 CLS）
-- [ ] C3.4 `onLoad` / `onError` 状态切换
-- [ ] C3.5 点击放大预览
-- [ ] C3.6 offloaded → 占位文本
+- [x] C3.1 `convertFileSrc(attachments_dir/attachmentId)` → `asset:` 协议 URL（浏览器缓存，零 IPC）
+- [x] C3.2 `<img src={assetUrl} loading="lazy">` — 原生懒加载
+- [x] C3.3 骨架屏占位（`width/height` 算 `aspect-ratio`，防 CLS）
+- [x] C3.4 `onLoad` / `onError` 状态切换
+- [x] C3.5 点击放大预览
+- [x] C3.6 offloaded → 占位文本
 
 依赖：A4（asset scope）
 
@@ -256,7 +256,7 @@ Rust 端 + 前端 i18n 文件
 
 `src/chat/message/FileCard.tsx`（新建）+ CSS Module
 
-- [ ] C4.1 文件名 + 大小 + 图标（Phase 2 启用下载）
+- [x] C4.1 文件名 + 大小 + 图标（Phase 2 启用下载）
 
 依赖：A1
 
@@ -264,12 +264,12 @@ Rust 端 + 前端 i18n 文件
 
 `src/chat/message/MessageContent.tsx`
 
-- [ ] C5.1 `parseContent(content)` → 遍历 ContentBlock[] 按 type 渲染
-- [ ] C5.2 `TextBlock` → user `<p>` / assistant `<ReactMarkdown>`
-- [ ] C5.3 `ImageBlock` → `<ImageThumbnail>`
-- [ ] C5.4 `FileBlock` → `<FileCard>`
-- [ ] C5.5 unknown type → `null`
-- [ ] C5.6 `parseContent` 返回 null → 旧数据降级
+- [x] C5.1 `parseContent(content)` → 遍历 ContentBlock[] 按 type 渲染
+- [x] C5.2 `TextBlock` → user `<p>` / assistant `<ReactMarkdown>`
+- [x] C5.3 `ImageBlock` → `<ImageThumbnail>`
+- [x] C5.4 `FileBlock` → `<FileCard>`
+- [x] C5.5 unknown type → `null`
+- [x] C5.6 `parseContent` 返回 null → 旧数据降级
 
 依赖：A3, C3, C4
 
@@ -277,16 +277,16 @@ Rust 端 + 前端 i18n 文件
 
 `src/chat/core/contentBlockUtils.ts`
 
-- [ ] C5b.1 `extractPlainText(content) → string` — 从 content 中提取纯文本（用于标题、预览等非渲染场景）
-- [ ] C5b.2 `rebuildContent(originalContent, newText) → string` — 重组 content：替换 TextBlock 文本，保留 ImageBlock（用于 editMessage）
+- [x] C5b.1 `extractPlainText(content) → string` — 从 content 中提取纯文本（用于标题、预览等非渲染场景）
+- [x] C5b.2 `rebuildContent(originalContent, newText) → string` — 重组 content：替换 TextBlock 文本，保留 ImageBlock（用于 editMessage）
 
 依赖：A3
 
 ### C6. chatStore / chatOrchestrator 集成
 
-- [ ] C6.1 `sendMessage` 签名不变，content 已为 JSON
-- [ ] C6.2 确认全链路 content 为 JSON string
-- [ ] C6.3 确认乐观更新中 `Message.content` 正确存储 JSON
+- [x] C6.1 `sendMessage` 签名不变，content 已为 JSON
+- [x] C6.2 确认全链路 content 为 JSON string
+- [x] C6.3 确认乐观更新中 `Message.content` 正确存储 JSON
 
 依赖：A3
 
@@ -302,7 +302,7 @@ Rust 端 + 前端 i18n 文件
 
 `src/stores/chatMessageSlice.ts`
 
-- [ ] D1.1 `editMessage(id, newText)` — 从原消息 content 提取 ImageBlock，调用 `rebuildContent` 重组 ContentBlock[]，传给 `resendFrom`
+- [x] D1.1 `editMessage(id, newText)` — 从原消息 content 提取 ImageBlock，调用 `rebuildContent` 重组 ContentBlock[]，传给 `resendFrom`
 
 依赖：C5b
 
@@ -310,7 +310,7 @@ Rust 端 + 前端 i18n 文件
 
 `src/services/chatOrchestrator.ts`
 
-- [ ] D2.1 `fallbackTitleFromUserMessage(content)` → `fallbackTitleFromUserMessage(extractPlainText(content))`
+- [x] D2.1 `fallbackTitleFromUserMessage(content)` → `fallbackTitleFromUserMessage(extractPlainText(content))`
 
 依赖：C5b
 
@@ -318,7 +318,7 @@ Rust 端 + 前端 i18n 文件
 
 `src/chat/message/MessageContent.module.css`
 
-- [ ] D3.1 新增 `.imageBlock` / `.fileBlock` 等样式规则（block 间距、图片容器）
+- [x] D3.1 新增 `.imageBlock` / `.fileBlock` 等样式规则（block 间距、图片容器）
 
 依赖：C5
 
@@ -365,23 +365,23 @@ D3 依赖 C5
 - [ ] V4：≤4 张图片全部显示
 - [ ] V5：>4 张 → 提示超限
 - [ ] V6：>8MB → 提示超限
-- [ ] V7：非 Vision → 附件按钮隐藏
+- [x] V7：非 Vision → 附件按钮隐藏
 - [ ] V8：Vision → 图片正确发送到 Provider
-- [ ] V9：SQLite 中 ImageBlock 仅含 attachmentId（无 base64）
-- [ ] V10：磁盘文件名为 `<sha256_64hex>.<ext>`
-- [ ] V11：旧纯文本消息 → 正常渲染
+- [x] V9：SQLite 中 ImageBlock 仅含 attachmentId（无 base64）
+- [x] V10：磁盘文件名为 `<sha256_64hex>.<ext>`
+- [x] V11：旧纯文本消息 → 正常渲染
 - [ ] V12：历史图片 → asset 协议 + 浏览器缓存正确显示
-- [ ] V13：`parseContent` 非 JSON → null
-- [ ] V14：`parseContent` 合法 JSON → 数组
-- [ ] V15：`tool_call_id` hack + `parse_image_source` 已删除
-- [ ] V16：非 Vision → Provider 收到 i18n 占位文本
-- [ ] V17：`<img loading="lazy">` 懒加载生效
+- [x] V13：`parseContent` 非 JSON → null
+- [x] V14：`parseContent` 合法 JSON → 数组
+- [x] V15：`tool_call_id` hack + `parse_image_source` 已删除
+- [x] V16：非 Vision → Provider 收到 i18n 占位文本
+- [x] V17：`<img loading="lazy">` 懒加载生效
 - [ ] V18：骨架屏占位防 CLS + 加载失败显示错误+重试
-- [ ] V19：编辑含图片消息 → 图片保留、仅文本被修改 → 分支正确创建
-- [ ] V20：分支选择器中含图片消息 → content_preview 显示可读纯文本（非 JSON 截断）【B8 验收】
-- [ ] V21：`content.trim().is_empty()` → `is_content_empty()` 语义判断正确（纯图片消息不误判为空）【B8 验收】
-- [ ] V22：搜索含图片消息的对话 → 搜索匹配纯文本内容（不匹配 JSON 结构字符）【B8 验收】
-- [ ] V23：导出含图片消息的对话为 Markdown → 输出纯文本（非 JSON）【B8 验收】
-- [ ] V24：3× discovery.rs 编译通过（`ModelConfig` 含 `support_vision` 字段）
-- [ ] V25：`ModelConfigDto.support_vision` 前端可读取
-- [ ] V26：i18n key 全部存在（Rust `t!` 和前端 `t()` 不回退到裸 key）
+- [x] V19：编辑含图片消息 → 图片保留、仅文本被修改 → 分支正确创建
+- [x] V20：分支选择器中含图片消息 → content_preview 显示可读纯文本（非 JSON 截断）【B8 验收】
+- [x] V21：`content.trim().is_empty()` → `is_content_empty()` 语义判断正确（纯图片消息不误判为空）【B8 验收】
+- [x] V22：搜索含图片消息的对话 → 搜索匹配纯文本内容（不匹配 JSON 结构字符）【B8 验收】
+- [x] V23：导出含图片消息的对话为 Markdown → 输出纯文本（非 JSON）【B8 验收】
+- [x] V24：3× discovery.rs 编译通过（`ModelConfig` 含 `support_vision` 字段）
+- [x] V25：`ModelConfigDto.support_vision` 前端可读取
+- [x] V26：i18n key 全部存在（Rust `t!` 和前端 `t()` 不回退到裸 key）

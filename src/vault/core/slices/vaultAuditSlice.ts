@@ -28,7 +28,7 @@ export interface VaultAuditSlice {
   queryAuditLog: (
     limit?: number,
   ) => Promise<import("../vault.types").AuditLogEntry[]>;
-  showUnlockWindow: () => Promise<void>;
+  showUnlockWindow: () => Promise<boolean>;
   hibpCheck: (id: string) => Promise<number>;
   hibpAudit: () => Promise<void>;
   checkMasterPasswordStrength: (
@@ -105,7 +105,7 @@ export function createAuditSlice(
     },
 
     showUnlockWindow: async () => {
-      await vaultService.showUnlockWindow();
+      return vaultService.showUnlockWindow();
     },
 
     hibpCheck: async (id) => {

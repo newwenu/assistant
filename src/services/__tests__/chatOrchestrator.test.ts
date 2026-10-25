@@ -144,8 +144,6 @@ describe("chatOrchestrator", () => {
           promptTokens: 100,
           completionTokens: 50,
           totalTokens: 150,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
           contextWindowTokens: 1000,
         },
       });
@@ -167,8 +165,6 @@ describe("chatOrchestrator", () => {
           promptTokens: 100,
           completionTokens: 50,
           totalTokens: 150,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
           contextWindowTokens: 0,
         },
       });
@@ -176,8 +172,6 @@ describe("chatOrchestrator", () => {
         promptTokens: 100,
         completionTokens: 50,
         totalTokens: 150,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
         contextWindowTokens: 0,
       });
     });
@@ -202,8 +196,6 @@ describe("chatOrchestrator", () => {
           promptTokens: 100,
           completionTokens: 50,
           totalTokens: 150,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
           contextWindowTokens: 1000,
         },
       });
@@ -252,8 +244,6 @@ describe("chatOrchestrator", () => {
           promptTokens: 200,
           completionTokens: 80,
           totalTokens: 280,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
           contextWindowTokens: 2000,
         },
       });

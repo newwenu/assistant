@@ -20,7 +20,7 @@
 
 ### 2.1 it-tools（Vue 3 + Naive UI）— 工具箱 UI 典范
 
-**仓库**：references/it-tools | Stars: 40,750
+**仓库**：it-tools | Stars: 40,750
 
 #### 布局结构
 
@@ -48,10 +48,10 @@
 
 | 特性 | 实现方式 | 参考文件 |
 |------|---------|---------|
-| **可折叠分类菜单** | `CollapsibleToolMenu`：分类名左侧 `▶` 箭头，点击折叠/展开，折叠状态 localStorage 持久化 | [CollapsibleToolMenu.vue](../../references/it-tools/src/components/CollapsibleToolMenu.vue) |
-| **收藏工具置顶** | `favoriteTools` 数组作为独立分类插入 `toolsByCategory` 最前 | [base.layout.vue](../../references/it-tools/src/layouts/base.layout.vue) L29-32 |
-| **工具页统一布局** | `tool.layout.vue`：标题(h1, 40px, font-weight:400) + 收藏按钮 + 分隔线(200px宽, 2px高, 20%透明度) + 描述 + 内容(max-width:600px居中) | [tool.layout.vue](../../references/it-tools/src/layouts/tool.layout.vue) |
-| **命令面板** | Ctrl/Cmd+K 唤起模态框，工具+操作混合搜索，↑↓+Enter 键盘导航 | [command-palette.vue](../../references/it-tools/src/modules/command-palette/command-palette.vue) |
+| **可折叠分类菜单** | `CollapsibleToolMenu`：分类名左侧 `▶` 箭头，点击折叠/展开，折叠状态 localStorage 持久化 | it-tools `CollapsibleToolMenu.vue` |
+| **收藏工具置顶** | `favoriteTools` 数组作为独立分类插入 `toolsByCategory` 最前 | it-tools `base.layout.vue` L29-32 |
+| **工具页统一布局** | `tool.layout.vue`：标题(h1, 40px, font-weight:400) + 收藏按钮 + 分隔线(200px宽, 2px高, 20%透明度) + 描述 + 内容(max-width:600px居中) | it-tools `tool.layout.vue` |
+| **命令面板** | Ctrl/Cmd+K 唤起模态框，工具+操作混合搜索，↑↓+Enter 键盘导航 | it-tools `command-palette.vue` |
 | **Hero 渐变背景** | SVG 渐变 + 绝对定位文字叠加，侧边栏顶部装饰 | base.layout.vue L56-75 |
 | **侧边栏折叠** | `isMenuCollapsed` 状态控制，汉堡菜单切换 | base.layout.vue L93-100 |
 | **版本号页脚** | 侧边栏底部居中，链接到 GitHub commit | base.layout.vue L107-121 |
@@ -69,7 +69,7 @@
 
 ### 2.2 ChatGPT (lencx)（React + Tauri 2）— 标题栏 + 主题 + 多窗口
 
-**仓库**：references/ChatGPT | Stars: 54,585
+**仓库**：ChatGPT | Stars: 54,585
 
 #### 多窗口分流
 
@@ -86,7 +86,7 @@ export default function App() {
 }
 ```
 
-**参考文件**：[App.tsx](../../references/ChatGPT/src/App.tsx)
+**参考文件**：ChatGPT `App.tsx`
 
 #### 自定义标题栏
 
@@ -101,7 +101,7 @@ export default function App() {
 | **URL 显示** | hostname 胶囊标签 + 外链图标，点击 `open(url)` |
 | **导航控制** | 前进/后退/刷新按钮 |
 
-**参考文件**：[Titlebar.tsx](../../references/ChatGPT/src/view/Titlebar.tsx)
+**参考文件**：ChatGPT `Titlebar.tsx`
 
 #### 窗口控制按钮
 
@@ -112,7 +112,7 @@ const [isMax, setMax] = useState(false);
 // win?.toggleMaximize() / win?.minimize() / win?.close()
 ```
 
-**参考文件**：[WinTitlebar.tsx](../../references/ChatGPT/src/components/WinTitlebar.tsx)
+**参考文件**：ChatGPT `WinTitlebar.tsx`
 
 #### 主题系统
 
@@ -132,7 +132,7 @@ useEffect(() => {
 }, [])
 ```
 
-**参考文件**：[useTheme.tsx](../../references/ChatGPT/src/hooks/useTheme.tsx)
+**参考文件**：ChatGPT `useTheme.tsx`
 
 #### 借鉴方向
 
@@ -147,7 +147,7 @@ useEffect(() => {
 
 ### 2.3 OpenBitFun（React + Tauri + 自研 UI）— 设计系统 + 启动流程 + 桌面宠物
 
-**仓库**：references/OpenBitFun | Stars: 2,372
+**仓库**：OpenBitFun | Stars: 2,372
 
 #### 设计系统 Provider
 
@@ -174,7 +174,7 @@ data-contrast="standard" | "high"
 data-density="compact"
 ```
 
-**参考文件**：[OpenBitFunDesignSystemProvider.tsx](../../references/OpenBitFun/src/web-ui/src/infrastructure/design-system/OpenBitFunDesignSystemProvider.tsx)
+**参考文件**：OpenBitFun `OpenBitFunDesignSystemProvider.tsx`
 
 #### 启动流程
 
@@ -197,7 +197,7 @@ main.tsx
      )
 ```
 
-**参考文件**：[main.tsx](../../references/OpenBitFun/src/web-ui/src/main.tsx)
+**参考文件**：OpenBitFun `main.tsx`
 
 #### 桌面宠物情绪外观
 
@@ -219,7 +219,7 @@ main.tsx
 
 ### 2.4 openhuman（Next.js + Rive）— Mascot 视觉表现力
 
-**仓库**：references/openhuman | Stars: 40,468
+**仓库**：openhuman | Stars: 40,468
 
 #### Rive Mascot 组件
 
@@ -239,7 +239,7 @@ const { setValue: setPrimaryColor } = useViewModelInstanceColor('primaryColor', 
 const { setValue: setSecondaryColor } = useViewModelInstanceColor('secondaryColor', vmInstance);
 ```
 
-**参考文件**：[RiveMascot.tsx](../../references/openhuman/app/src/features/human/Mascot/RiveMascot.tsx)
+**参考文件**：openhuman `RiveMascot.tsx`
 
 #### 表情系统
 
@@ -250,9 +250,9 @@ const { setValue: setSecondaryColor } = useViewModelInstanceColor('secondaryColo
 - **Rive viseme 15 种**：Oculus 标准集 + 别名归一化（不同 TTS 大小写不一致）
 
 **参考文件**：
-- [Ghosty.tsx](../../references/openhuman/app/src/features/human/Mascot/Ghosty.tsx) — SVG 表情参数化（eyeScaleY/X, browTilt, browDy, blushOpacity）
-- [riveMaps.ts](../../references/openhuman/app/src/features/human/Mascot/riveMaps.ts) — 映射表 + 归一化
-- [visemes.ts](../../references/openhuman/app/src/features/human/Mascot/visemes.ts) — 口型插值 + SVG 路径生成
+- openhuman `Ghosty.tsx` — SVG 表情参数化（eyeScaleY/X, browTilt, browDy, blushOpacity）
+- openhuman `riveMaps.ts` — 映射表 + 归一化
+- openhuman `visemes.ts` — 口型插值 + SVG 路径生成
 
 #### 空闲动画轮转
 
@@ -276,7 +276,7 @@ idle 6~12s → 随机 ambient pose（thinking/bookreading/coffeedrink/...）
 
 ### 2.5 WindowPet（React + Mantine + Tauri 2）— 双窗口 + 宠物渲染
 
-**仓库**：references/WindowPet | Stars: 670
+**仓库**：WindowPet | Stars: 670
 
 #### 双窗口路由
 
@@ -296,7 +296,7 @@ idle 6~12s → 随机 ambient pose（thinking/bookreading/coffeedrink/...）
 </Router>
 ```
 
-**参考文件**：[App.tsx](../../references/WindowPet/src/App.tsx)
+**参考文件**：WindowPet `App.tsx`
 
 #### 入口配置
 
@@ -314,7 +314,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
 );
 ```
 
-**参考文件**：[main.tsx](../../references/WindowPet/src/main.tsx)
+**参考文件**：WindowPet `main.tsx`
 
 #### 借鉴方向
 

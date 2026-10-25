@@ -120,7 +120,7 @@ export const vaultService = {
   queryAuditLog: (limit?: number): Promise<AuditLogEntry[]> =>
     invoke("vault_query_audit_log", { limit }),
 
-  showUnlockWindow: (): Promise<void> => invoke("vault_show_unlock_window"),
+  showUnlockWindow: (): Promise<boolean> => invoke("vault_show_unlock_window"),
 
   hibpCheck: (id: string): Promise<number> =>
     invoke("vault_hibp_check", { id }),

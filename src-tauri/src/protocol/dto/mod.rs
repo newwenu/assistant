@@ -101,8 +101,9 @@ mod tests {
             prompt_tokens: 10,
             completion_tokens: 20,
             total_tokens: 30,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
+            reasoning_tokens: None,
             context_window_tokens: 128000,
         };
         roundtrip(&dto);
@@ -309,5 +310,32 @@ mod tests {
         let json = serde_json::to_string(&dto).unwrap();
         assert!(!json.contains("deltaText"), "None fields omitted: {}", json);
         assert!(!json.contains("usage"), "None fields omitted: {}", json);
+    }
+
+    #[test]
+    fn test_conversation_patch_dto_roundtrip() {
+        let dto = ConversationPatchDto {
+            title: Some("new title".into()),
+            title_source: Some("user".into()),
+            model_id: None,
+            provider_id: Some("p1".into()),
+        };
+        roundtrip(&dto);
+        let json = serde_json::to_string(&dto).unwrap();
+        assert!(json.contains("titleSource"), "camelCase: {}", json);
+        assert!(json.contains("providerId"), "camelCase: {}", json);
+        assert!(!json.contains("modelId"), "None omitted: {}", json);
+    }
+
+    #[test]
+    fn test_conversation_query_opts_dto_roundtrip() {
+        let dto = ConversationQueryOptsDto {
+            mode: "paginated".into(),
+            limit: 50,
+            before_timestamp: Some(1000),
+        };
+        roundtrip(&dto);
+        let json = serde_json::to_string(&dto).unwrap();
+        assert!(json.contains("beforeTimestamp"), "camelCase: {}", json);
     }
 }

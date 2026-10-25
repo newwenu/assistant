@@ -29,6 +29,12 @@
     "core:webview:default",
     "core:event:default",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$APPDATA/attachments/*" }
+      ]
+    },
     "dialog:default",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",

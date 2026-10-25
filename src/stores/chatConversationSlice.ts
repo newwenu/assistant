@@ -4,10 +4,11 @@ import type { Message, TruncationStrategy } from "../chat/core/chatTypes";
 import { chatService } from "../services/chatService";
 import { providerService } from "../services/providerService";
 import { createLogger } from "@/services/logger";
-import { notifyError } from "./errorNotifyStore";
+import { notifyError } from "./notifyStore";
 import { MESSAGES_PAGE_SIZE } from "../config/constants";
 import type { PersistQueue } from "../utils/persistQueue";
 import { useChatStreamStore } from "./chatStreamStore";
+import type { ChatOrchestrator } from "../services/chatOrchestrator";
 import {
   fetchTokenUsage,
   type FetchTokenUsageDeps,
@@ -64,6 +65,7 @@ export function createConversationSlice(
   get: () => FullState,
   fetchTokenUsageDeps: FetchTokenUsageDeps,
   persistQueue: PersistQueue,
+  getOrchestrator: () => ChatOrchestrator | null,
 ): ChatConversationSlice {
   return {
     conversations: [],
@@ -120,16 +122,21 @@ export function createConversationSlice(
     },
 
     switchConversation: async (id: string) => {
-      const prevConvId = get().currentConversationId;
       if (useChatStreamStore.getState().isStreaming) {
-        if (prevConvId) {
-          chatService
-            .cancelChat(prevConvId)
-            .catch((e) =>
-              log.warn("cancelChat failed in switchConversation", e),
-            );
+        const orchestrator = getOrchestrator();
+        if (orchestrator) {
+          await orchestrator.ensureIdle();
+        } else {
+          const prevConvId = get().currentConversationId;
+          if (prevConvId) {
+            await chatService
+              .cancelChat(prevConvId)
+              .catch((e) =>
+                log.warn("cancelChat failed in switchConversation", e),
+              );
+          }
+          useChatStreamStore.getState().resetStreaming();
         }
-        useChatStreamStore.getState().resetStreaming();
       }
       try {
         const detail = await chatService.getConversationPaginated(

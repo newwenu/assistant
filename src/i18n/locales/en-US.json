@@ -928,7 +928,9 @@
       "unavailable": "Biometrics not available on this device",
       "enabled": "Biometrics enabled",
       "enable": "Enable",
-      "disable": "Disable"
+      "disable": "Disable",
+      "unlock_failed": "Unlock failed",
+      "unlocking": "Unlocking…"
     },
     "hibp": {
       "audit_all": "Audit All"

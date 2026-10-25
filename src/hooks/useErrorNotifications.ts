@@ -3,24 +3,30 @@ import { notification } from "antd";
 import { listen } from "@tauri-apps/api/event";
 import { UiEvent, type ShortcutWarningPayload } from "@/types/events";
 import { translateKey } from "@/i18n";
-import { useErrorNotifyStore } from "@/stores/errorNotifyStore";
+import { useNotifyStore } from "@/stores/notifyStore";
 
 export function useErrorNotifications() {
   const [api, contextHolder] = notification.useNotification();
-  const errorNotifyPending = useErrorNotifyStore((s) => s.pending);
-  const errorNotifyDequeue = useErrorNotifyStore((s) => s.dequeue);
+  const notifyPending = useNotifyStore((s) => s.pending);
+  const notifyDequeue = useNotifyStore((s) => s.dequeue);
 
   useEffect(() => {
-    while (errorNotifyPending.length > 0) {
-      const item = errorNotifyDequeue();
+    while (notifyPending.length > 0) {
+      const item = notifyDequeue();
       if (!item) break;
-      api.error({
+      const method =
+        item.level === "warning"
+          ? api.warning
+          : item.level === "info"
+            ? api.info
+            : api.error;
+      method({
         message: translateKey(item.titleKey, item.options),
         description: translateKey(item.descriptionKey, item.options),
         placement: "topRight",
       });
     }
-  }, [errorNotifyPending, errorNotifyDequeue, api]);
+  }, [notifyPending, notifyDequeue, api]);
 
   useEffect(() => {
     const unlisten = listen<ShortcutWarningPayload>(

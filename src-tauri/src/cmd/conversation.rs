@@ -5,11 +5,12 @@ use uuid::Uuid;
 use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
     ChatMessagesChangedPayloadDto, ConversationDetailDto, ConversationDto,
-    ConversationListChangedPayloadDto, MessageDto, TokenUsageSummaryDto,
+    ConversationListChangedPayloadDto, ConversationPatchDto, ConversationQueryOptsDto, MessageDto,
+    TokenUsageSummaryDto,
 };
 use assistant_storage::{
     agent_modes,
-    conversations::{self, ConversationRow},
+    conversations::{self, ConversationRow, MessageRow},
     providers::{self as provider_store},
 };
 
@@ -88,29 +89,114 @@ pub fn list_conversations(
 pub fn get_conversation(
     app: AppHandle,
     id: String,
+    opts: Option<ConversationQueryOptsDto>,
 ) -> Result<Option<ConversationDetailDto>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    let detail = conversations::get_conversation_detail(&conn, &id)?;
+
+    let mode = opts.as_ref().map(|o| o.mode.as_str()).unwrap_or("detail");
+
+    match mode {
+        "all" => get_conversation_all_impl(&conn, &id),
+        "paginated" => {
+            let o = opts.as_ref();
+            let limit = o.map(|o| o.limit).unwrap_or(50);
+            let before_ts = o.and_then(|o| o.before_timestamp);
+            get_conversation_paginated_impl(&conn, &id, limit, before_ts)
+        }
+        _ => get_conversation_detail_impl(&conn, &id),
+    }
+}
+
+fn build_detail_dto(
+    conn: &rusqlite::Connection,
+    conv_id: &str,
+    conv: ConversationRow,
+    messages: Vec<MessageRow>,
+    total_count: i64,
+) -> Result<ConversationDetailDto, String> {
+    let msg_ids: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
+    let sibling_counts = conversations::get_sibling_counts_batch(conn, conv_id, &msg_ids)?;
+    let message_dtos: Vec<MessageDto> = messages
+        .into_iter()
+        .map(|m| {
+            let mut dto = MessageDto::from(m);
+            dto.sibling_count = sibling_counts.get(&dto.id).copied();
+            dto
+        })
+        .collect();
+    Ok(ConversationDetailDto {
+        conversation: conv.into(),
+        messages: message_dtos,
+        total_count,
+    })
+}
+
+fn get_conversation_detail_impl(
+    conn: &rusqlite::Connection,
+    id: &str,
+) -> Result<Option<ConversationDetailDto>, String> {
+    let detail = conversations::get_conversation_detail(conn, id)?;
     match detail {
         Some(d) => {
             let total_count = d.messages.len() as i64;
-            let msg_ids: Vec<String> = d.messages.iter().map(|m| m.id.clone()).collect();
-            let sibling_counts = conversations::get_sibling_counts_batch(&conn, &id, &msg_ids)?;
-            let messages: Vec<MessageDto> = d
-                .messages
-                .into_iter()
-                .map(|m| {
-                    let mut dto = MessageDto::from(m);
-                    dto.sibling_count = sibling_counts.get(&dto.id).copied();
-                    dto
-                })
-                .collect();
-            Ok(Some(ConversationDetailDto {
-                conversation: d.conversation.into(),
+            Ok(Some(build_detail_dto(
+                conn,
+                id,
+                d.conversation,
+                d.messages,
+                total_count,
+            )?))
+        }
+        None => Ok(None),
+    }
+}
+
+fn get_conversation_paginated_impl(
+    conn: &rusqlite::Connection,
+    id: &str,
+    limit: i64,
+    before_timestamp: Option<i64>,
+) -> Result<Option<ConversationDetailDto>, String> {
+    match conversations::get_conversation_by_id(conn, id)? {
+        Some(conv) => {
+            let (messages, total_count) = if let Some(ref leaf_id) = conv.active_branch_id {
+                let branch = conversations::trace_active_branch(conn, id, leaf_id)?;
+                let count = conversations::get_message_count(conn, id)?;
+                (branch, count)
+            } else {
+                let msgs =
+                    conversations::get_messages_paginated(conn, id, limit, before_timestamp)?;
+                let count = conversations::get_message_count(conn, id)?;
+                (msgs, count)
+            };
+            Ok(Some(build_detail_dto(
+                conn,
+                id,
+                conv,
                 messages,
                 total_count,
-            }))
+            )?))
+        }
+        None => Ok(None),
+    }
+}
+
+fn get_conversation_all_impl(
+    conn: &rusqlite::Connection,
+    id: &str,
+) -> Result<Option<ConversationDetailDto>, String> {
+    match conversations::get_conversation_by_id(conn, id)? {
+        Some(conv) => {
+            let messages = conversations::get_messages(conn, id)?;
+            let total_count = messages.len() as i64;
+            Ok(Some(build_detail_dto(
+                conn,
+                id,
+                conv,
+                messages,
+                total_count,
+            )?))
         }
         None => Ok(None),
     }
@@ -128,139 +214,44 @@ pub fn delete_conversation(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[command]
-pub fn rename_conversation(
+pub fn patch_conversation(
     app: AppHandle,
     id: String,
-    title: String,
-    title_source: Option<String>,
+    patch: ConversationPatchDto,
 ) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    let source = title_source.unwrap_or_else(|| "user".to_string());
-    conversations::rename_conversation(&conn, &id, &title, &source)?;
 
-    emit_list_changed(&app, "renamed", Some(id), None);
+    let mut changed_kinds: Vec<&str> = Vec::new();
 
-    Ok(())
-}
-
-#[command]
-pub fn update_conversation_model(
-    app: AppHandle,
-    id: String,
-    model_id: String,
-) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
-    let conn = super::get_db_conn(&state)?;
-    let now = Utc::now().timestamp_millis();
-    let mut conv = conversations::get_conversation_by_id(&conn, &id)?
-        .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
-    conv.model_id = model_id;
-    conv.updated_at = now;
-    conversations::update_conversation(&conn, &conv)?;
-
-    emit_list_changed(&app, "model_updated", Some(id), None);
-
-    Ok(())
-}
-
-#[command]
-pub fn update_conversation_provider(
-    app: AppHandle,
-    id: String,
-    provider_id: String,
-) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
-    let conn = super::get_db_conn(&state)?;
-    let now = Utc::now().timestamp_millis();
-    let mut conv = conversations::get_conversation_by_id(&conn, &id)?
-        .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
-    conv.provider_id = Some(provider_id);
-    conv.updated_at = now;
-    conversations::update_conversation(&conn, &conv)?;
-
-    emit_list_changed(&app, "provider_updated", Some(id), None);
-
-    Ok(())
-}
-
-#[command]
-pub fn get_conversation_paginated(
-    app: AppHandle,
-    id: String,
-    limit: Option<i64>,
-    before_timestamp: Option<i64>,
-) -> Result<Option<ConversationDetailDto>, String> {
-    let state = app.state::<crate::setup::DbState>();
-    let conn = super::get_db_conn(&state)?;
-
-    match conversations::get_conversation_by_id(&conn, &id)? {
-        Some(conv) => {
-            let page_limit = limit.unwrap_or(50);
-            let (messages, total_count) = if let Some(ref leaf_id) = conv.active_branch_id {
-                let branch = conversations::trace_active_branch(&conn, &id, leaf_id)?;
-                let count = conversations::get_message_count(&conn, &id)?;
-                (branch, count)
-            } else {
-                let msgs = conversations::get_messages_paginated(
-                    &conn,
-                    &id,
-                    page_limit,
-                    before_timestamp,
-                )?;
-                let count = conversations::get_message_count(&conn, &id)?;
-                (msgs, count)
-            };
-            let msg_ids: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
-            let sibling_counts = conversations::get_sibling_counts_batch(&conn, &id, &msg_ids)?;
-            let message_dtos: Vec<MessageDto> = messages
-                .into_iter()
-                .map(|m| {
-                    let mut dto = MessageDto::from(m);
-                    dto.sibling_count = sibling_counts.get(&dto.id).copied();
-                    dto
-                })
-                .collect();
-            Ok(Some(ConversationDetailDto {
-                conversation: conv.into(),
-                messages: message_dtos,
-                total_count,
-            }))
-        }
-        None => Ok(None),
+    if let Some(ref title) = patch.title {
+        let source = patch.title_source.as_deref().unwrap_or("user");
+        conversations::rename_conversation(&conn, &id, title, source)?;
+        changed_kinds.push("renamed");
     }
-}
 
-#[command]
-pub fn get_conversation_all_messages(
-    app: AppHandle,
-    id: String,
-) -> Result<Option<ConversationDetailDto>, String> {
-    let state = app.state::<crate::setup::DbState>();
-    let conn = super::get_db_conn(&state)?;
+    if patch.model_id.is_some() || patch.provider_id.is_some() {
+        let now = Utc::now().timestamp_millis();
+        let mut conv = conversations::get_conversation_by_id(&conn, &id)?
+            .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
 
-    match conversations::get_conversation_by_id(&conn, &id)? {
-        Some(conv) => {
-            let messages = conversations::get_messages(&conn, &id)?;
-            let total_count = messages.len() as i64;
-            let msg_ids: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
-            let sibling_counts = conversations::get_sibling_counts_batch(&conn, &id, &msg_ids)?;
-            let message_dtos: Vec<MessageDto> = messages
-                .into_iter()
-                .map(|m| {
-                    let mut dto = MessageDto::from(m);
-                    dto.sibling_count = sibling_counts.get(&dto.id).copied();
-                    dto
-                })
-                .collect();
-            Ok(Some(ConversationDetailDto {
-                conversation: conv.into(),
-                messages: message_dtos,
-                total_count,
-            }))
+        if let Some(ref model_id) = patch.model_id {
+            conv.model_id = model_id.clone();
+            changed_kinds.push("model_updated");
         }
-        None => Ok(None),
+        if let Some(ref provider_id) = patch.provider_id {
+            conv.provider_id = Some(provider_id.clone());
+            changed_kinds.push("provider_updated");
+        }
+        conv.updated_at = now;
+        conversations::update_conversation(&conn, &conv)?;
     }
+
+    for kind in changed_kinds {
+        emit_list_changed(&app, kind, Some(id.clone()), None);
+    }
+
+    Ok(())
 }
 
 #[command]
@@ -308,23 +299,12 @@ pub fn search_conversations(app: AppHandle, query: String) -> Result<Vec<Convers
 }
 
 #[command]
-pub fn export_conversation(app: AppHandle, id: String, format: String) -> Result<String, String> {
-    let state = app.state::<crate::setup::DbState>();
-    let conn = super::get_db_conn(&state)?;
-    match format.as_str() {
-        "json" => conversations::export_conversation_json(&conn, &id),
-        "markdown" | "md" => conversations::export_conversation_markdown(&conn, &id),
-        _ => conversations::export_conversation_markdown(&conn, &id),
-    }
-}
-
-#[command]
-pub fn export_conversation_to_file(
+pub fn export_conversation(
     app: AppHandle,
     id: String,
     format: String,
-    path: String,
-) -> Result<(), String> {
+    path: Option<String>,
+) -> Result<Option<String>, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let content = match format.as_str() {
@@ -332,7 +312,13 @@ pub fn export_conversation_to_file(
         "markdown" | "md" => conversations::export_conversation_markdown(&conn, &id)?,
         _ => conversations::export_conversation_markdown(&conn, &id)?,
     };
-    std::fs::write(&path, &content).map_err(|e| e.to_string())
+    match path {
+        Some(p) => {
+            std::fs::write(&p, &content).map_err(|e| e.to_string())?;
+            Ok(None)
+        }
+        None => Ok(Some(content)),
+    }
 }
 
 #[command]

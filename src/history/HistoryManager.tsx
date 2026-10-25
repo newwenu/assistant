@@ -9,7 +9,7 @@ import { useChatStore } from "../stores/chatStore";
 import { useHistoryStore } from "../stores/historyStore";
 import { PersistQueue } from "../utils/persistQueue";
 import { createLogger } from "@/services/logger";
-import { notifyError } from "@/stores/errorNotifyStore";
+import { notifyError } from "@/stores/notifyStore";
 import { HistorySidebar } from "./sidebar/HistorySidebar";
 import { MultiSelectBar } from "./sidebar/MultiSelectBar";
 import { HistoryDetail } from "./detail/HistoryDetail";

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Form, message } from "antd";
+import { Form } from "antd";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { translateKey } from "@/i18n";
 import { createLogger } from "@/services/logger";
@@ -18,6 +18,7 @@ import { toConfRecord } from "../../core/types/confUtils";
 import { optimisticConfUpdate } from "../../core/optimisticUpdate";
 import { useConfPatchHandlers } from "../../core/useConfPatchHandlers";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useSettingMessage } from "../useSettingMessage";
 
 const log = createLogger("SettingsGroup");
 
@@ -27,8 +28,6 @@ interface SettingsGroupProps {
   onPatch?: (patch: Record<string, unknown>) => Promise<void>;
   onPatchComplete?: (patch: Record<string, unknown>) => Promise<void>;
 }
-
-const DEFAULT_SAVE_MESSAGE_KEY = "common.actions.saved";
 
 function useConfByGroup(group: ConfGroup): Record<string, unknown> | null {
   const confKey = CONF_KEY_MAP[group];
@@ -64,7 +63,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
   const onPatch = externalOnPatch ?? internalOnPatch;
   const onPatchComplete = externalOnPatchComplete ?? internalOnPatchComplete;
 
-  const [messageApi, contextHolder] = message.useMessage();
+  const msg = useSettingMessage();
   const [searchParams] = useSearchParams();
   const focusKey = searchParams.get("focus");
   const location = useLocation();
@@ -114,9 +113,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
   const visibleDefs = defs.filter((d) => !d.visible || d.visible(conf));
 
   const showSaveMessage = (def: SettingDefinition) => {
-    if (def.saveMessage === false) return;
-    const msgKey = def.saveMessage || DEFAULT_SAVE_MESSAGE_KEY;
-    messageApi.success(translateKey(msgKey));
+    msg.showSaved(def.saveMessage);
   };
 
   const handleChange = async (def: SettingDefinition, value: unknown) => {
@@ -155,7 +152,6 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
   return (
     <>
       <div ref={containerRef} style={{ display: "contents" }}>
-        {contextHolder}
         {visibleDefs.map((d) => {
           const isIntermediate = INTERMEDIATE_TYPES.has(d.type);
           const translatedDescription =

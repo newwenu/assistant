@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
-import { Button, App, Space } from "antd";
+import { Button, Space } from "antd";
 import { useTranslation } from "react-i18next";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { useVaultStore } from "@/vault/core/vaultStore";
 import { vaultService } from "@/vault/core/vault.service";
 import type { FieldRenderProps } from "../../core/types/fieldSchema";
+import { useSettingMessage } from "../useSettingMessage";
 
 export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
   const { t } = useTranslation();
-  const { message } = App.useApp();
+  const msg = useSettingMessage();
   const {
     isLocked,
     biometricAvailable,
@@ -25,36 +26,47 @@ export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
   }, [checkBiometricAvailable, checkBiometricEnrolled]);
 
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    void listen("vault:biometric-enroll-step", () => {
-      message.info(t("settings.vault.biometric_enabled.enroll_step_hint"));
-    }).then((fn) => {
-      unlisten = fn;
+    const unlisten = listen("vault:biometric-enroll-step", () => {
+      msg.info("settings.vault.biometric_enabled.enroll_step_hint");
     });
     return () => {
-      unlisten?.();
+      void unlisten.then((fn) => fn());
     };
-  }, [message, t]);
+  }, [msg]);
 
   const handleEnable = useCallback(async () => {
     if (!biometricAvailable) {
-      message.warning(t("vault.biometric.unavailable"));
+      msg.warning("vault.biometric.unavailable");
       return;
     }
     if (isLocked) {
-      await vaultService.showUnlockWindow();
-      return;
+      setLoading(true);
+      const hide = msg.loading("vault.biometric.unlocking", 0);
+      try {
+        const ok = await vaultService.showUnlockWindow();
+        hide();
+        if (!ok) {
+          msg.error("vault.biometric.unlock_failed", undefined);
+          return;
+        }
+      } catch (e) {
+        hide();
+        msg.message.error(String(e));
+        return;
+      } finally {
+        setLoading(false);
+      }
     }
     setLoading(true);
     try {
       await enrollBiometric();
       onChange?.(true);
     } catch (e) {
-      message.error(String(e));
+      msg.message.error(String(e));
     } finally {
       setLoading(false);
     }
-  }, [biometricAvailable, isLocked, enrollBiometric, onChange, message, t]);
+  }, [biometricAvailable, isLocked, enrollBiometric, onChange, msg]);
 
   const handleDisable = useCallback(async () => {
     setLoading(true);
@@ -62,11 +74,11 @@ export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
       await disenrollBiometric();
       onChange?.(false);
     } catch (e) {
-      message.error(String(e));
+      msg.message.error(String(e));
     } finally {
       setLoading(false);
     }
-  }, [disenrollBiometric, onChange, message]);
+  }, [disenrollBiometric, onChange, msg]);
 
   if (value) {
     return (

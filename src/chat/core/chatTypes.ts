@@ -46,6 +46,7 @@ export interface TokenUsage {
   totalTokens: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+  reasoningTokens?: number;
   contextWindowTokens?: number;
 }
 

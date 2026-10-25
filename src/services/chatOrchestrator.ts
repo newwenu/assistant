@@ -326,6 +326,7 @@ export function createChatOrchestrator(
       }
     } finally {
       sendInProgress = false;
+      if (phase !== "idle") setPhase("idle");
     }
   }
 

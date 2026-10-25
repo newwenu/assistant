@@ -1,7 +1,7 @@
 import type { Message, TruncationStrategy } from "../chat/core/chatTypes";
 import { chatService } from "../services/chatService";
 import { createLogger } from "@/services/logger";
-import { notifyError } from "./errorNotifyStore";
+import { notifyError } from "./notifyStore";
 import { MESSAGES_PAGE_SIZE } from "../config/constants";
 import type { PersistQueue } from "../utils/persistQueue";
 import type { ChatOrchestrator } from "../services/chatOrchestrator";

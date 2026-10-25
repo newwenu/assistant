@@ -153,6 +153,69 @@ impl BiometricKeyStore for TouchIdKeyStore {
             Err(_) => Ok(false),
         }
     }
+
+    fn set_key_unprotected(&self, key_id: &str, data: &[u8]) -> Result<(), VaultError> {
+        let existing = item_search_options().account(key_id).load_data().search();
+        if let Ok(results) = existing {
+            for result in results {
+                if let SearchResult::Data(_) = result {
+                    let delete_result = item_search_options().account(key_id).delete();
+                    if let Err(e) = delete_result {
+                        return Err(map_security_error(&e));
+                    }
+                }
+            }
+        }
+
+        let cf_service = CFString::new(SERVICE_NAME);
+        let cf_account = CFString::new(key_id);
+        let cf_data = CFData::from_buffer(data);
+        let cf_synchronizable = CFBoolean::from(false);
+
+        let mut keys: Vec<*const c_void> = Vec::new();
+        let mut values: Vec<*const c_void> = Vec::new();
+
+        unsafe {
+            keys.push(kSecClass as *const c_void);
+            values.push(kSecClassGenericPassword as *const c_void);
+
+            keys.push(kSecAttrService as *const c_void);
+            values.push(cf_service.as_CFTypeRef() as *const c_void);
+
+            keys.push(kSecAttrAccount as *const c_void);
+            values.push(cf_account.as_CFTypeRef() as *const c_void);
+
+            keys.push(kSecValueData as *const c_void);
+            values.push(cf_data.as_CFTypeRef() as *const c_void);
+
+            keys.push(kSecAttrAccessible as *const c_void);
+            values.push(kSecAttrAccessibleWhenUnlockedThisDeviceOnly as *const c_void);
+
+            keys.push(kSecAttrSynchronizable as *const c_void);
+            values.push(cf_synchronizable.as_CFTypeRef() as *const c_void);
+
+            let query = CFDictionary::from_keys_and_values(
+                keys.as_ptr() as *const *const c_void,
+                values.as_ptr() as *const *const c_void,
+                keys.len() as isize,
+            );
+
+            let status = SecItemAdd(query.as_CFTypeRef() as *const c_void, std::ptr::null_mut());
+
+            if status == errSecSuccess {
+                info!("Touch ID: data stored (unprotected) for '{}'", key_id);
+                Ok(())
+            } else if status == errSecDuplicateItem {
+                warn!("Touch ID: duplicate item after delete for '{}'", key_id);
+                Err(VaultError::BiometricFailed(
+                    "duplicate item after delete".into(),
+                ))
+            } else {
+                warn!("Touch ID: SecItemAdd failed with status {}", status);
+                Err(VaultError::BiometricFailed(format!("SecItemAdd: {status}")))
+            }
+        }
+    }
 }
 
 fn map_security_error(e: &security_framework::Error) -> VaultError {
@@ -190,6 +253,7 @@ extern "C" {
     static kSecAttrAccount: *const c_void;
     static kSecValueData: *const c_void;
     static kSecAttrAccessControl: *const c_void;
+    static kSecAttrAccessible: *const c_void;
     static kSecAttrSynchronizable: *const c_void;
     static kSecAttrAccessibleWhenUnlockedThisDeviceOnly: *const c_void;
     static kSecAccessControlBiometryCurrentSet: u32;

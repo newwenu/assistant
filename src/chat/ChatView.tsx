@@ -7,11 +7,6 @@ import {
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { open } from "@tauri-apps/plugin-dialog";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import type { DragDropEvent } from "@tauri-apps/api/webview";
-import type { Event } from "@tauri-apps/api/event";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { chatService } from "../services/chatService";
 import { orbService } from "../services/orbService";
 import { useChatStore } from "../stores/chatStore";
@@ -31,11 +26,10 @@ import { CompactErrorBanner } from "./compact/CompactErrorBanner";
 import { useAgentModeStore } from "../stores/agentModeStore";
 import { useAttachmentStore } from "../stores/attachmentStore";
 import { AttachmentPreview } from "./message/AttachmentPreview";
-import type { Attachment } from "./core/attachmentTypes";
-import { ATTACHMENT_MAX_IMAGES } from "./core/attachmentTypes";
 import { ForkDialog } from "./blocks/ForkDialog";
 import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
 import { createLogger } from "@/services/logger";
+import { useNativeFileAttach } from "../hooks/useNativeFileAttach";
 
 const log = createLogger("ChatView");
 
@@ -103,8 +97,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     (s) => s.setSelectedProviderModel,
   );
   const [forkTarget, setForkTarget] = useState<string | null>(null);
-  const attachments = useAttachmentStore((s) => s.attachments);
-  const addAttachment = useAttachmentStore((s) => s.addAttachment);
   const setSupportVision = useAttachmentStore((s) => s.setSupportVision);
 
   const supportVision = (() => {
@@ -118,79 +110,14 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     setSupportVision(supportVision);
   }, [supportVision, setSupportVision]);
 
-  const addImageFromPath = useCallback(
-    (filePath: string) => {
-      if (attachments.length >= ATTACHMENT_MAX_IMAGES) return;
-      const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
-      const mimeType = (
-        {
-          png: "image/png",
-          jpg: "image/jpeg",
-          jpeg: "image/jpeg",
-          gif: "image/gif",
-          webp: "image/webp",
-        } as const
-      )[ext];
-      if (!mimeType) return;
-      const name = filePath.split(/[\\/]/).pop() ?? filePath;
-      const att: Attachment = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        kind: "image",
-        file: new File([], name, { type: mimeType }),
-        previewUrl: convertFileSrc(filePath),
-        mimeType,
-        originalSizeBytes: 0,
-        filePath,
-      };
-      addAttachment(att);
-    },
-    [attachments.length, addAttachment],
-  );
-
-  const handleFileSelect = useCallback(async () => {
-    const selected = await open({
-      multiple: true,
-      filters: [
-        { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] },
-      ],
-    });
-    if (!selected) return;
-    const paths = Array.isArray(selected) ? selected : [selected];
-    for (const p of paths) {
-      addImageFromPath(p);
-    }
-  }, [addImageFromPath]);
+  const { handleFileSelect } = useNativeFileAttach(supportVision);
 
   useEffect(() => {
-    if (!supportVision) return;
-    const webview = getCurrentWebview();
-    let disposed = false;
-    const setup = async () => {
-      const unlisten = await webview.onDragDropEvent(
-        (event: Event<DragDropEvent>) => {
-          if (disposed) return;
-          if (event.payload.type === "drop") {
-            for (const p of event.payload.paths) {
-              addImageFromPath(p);
-            }
-          }
-        },
-      );
-      return unlisten;
-    };
-    let unlistenFn: (() => void) | undefined;
-    void setup().then((fn) => {
-      unlistenFn = fn;
-    });
-    return () => {
-      disposed = true;
-      unlistenFn?.();
-    };
-  }, [supportVision, addImageFromPath]);
-
-  useEffect(() => {
-    void useProviderStore.getState().loadProviders();
-    void useChatStore.getState().loadConversations();
+    void useProviderStore
+      .getState()
+      .loadProviders()
+      .then(() => useChatStore.getState().loadConversations())
+      .catch(() => useChatStore.getState().loadConversations());
   }, []);
 
   const resolveProviderModel = useCallback(
@@ -278,10 +205,13 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       if (p && p.models.length > 0 && !modelId) modelId = p.models[0].id;
       setSelectedProviderModel(newProviderId, modelId);
       if (chat.currentConversationId) {
-        chatService
-          .updateConversationProvider(chat.currentConversationId, newProviderId)
-          .catch((e) => log.error("Failed to update provider", e));
-        void chat.updateModel(chat.currentConversationId, modelId);
+        void chatService
+          .updateConversationProviderAndModel(
+            chat.currentConversationId,
+            newProviderId,
+            modelId,
+          )
+          .catch((e) => log.error("Failed to update provider and model", e));
       }
     },
     [provider.providers, chat, setSelectedProviderModel],
@@ -333,15 +263,18 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
           if (p.models.some((m) => m.id === mode.model)) {
             setSelectedProviderModel(p.id, mode.model);
             if (chat.currentConversationId) {
-              chatService
-                .updateConversationProvider(chat.currentConversationId, p.id)
+              void chatService
+                .updateConversationProviderAndModel(
+                  chat.currentConversationId,
+                  p.id,
+                  mode.model,
+                )
                 .catch((e) =>
-                  log.warn(
-                    "updateConversationProvider failed in modeChange",
+                  log.error(
+                    "Failed to update provider and model in modeChange",
                     e,
                   ),
                 );
-              void chat.updateModel(chat.currentConversationId, mode.model);
             }
             break;
           }

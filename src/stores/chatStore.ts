@@ -56,6 +56,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     get,
     fetchTokenUsageDeps,
     persistQueue,
+    () => _orchestrator,
   );
   const messageSlice = createMessageSlice(set, get, orchestrator, persistQueue);
   const compactSlice = createCompactSlice(set, get);

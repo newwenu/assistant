@@ -20,6 +20,7 @@ import { createLogger } from "@/services/logger";
 import {
   mergeStreamingContent,
   fetchTokenUsage,
+  resolveContextWindowTokens,
   type FetchTokenUsageDeps,
 } from "../chat/core/chatUtils";
 
@@ -56,14 +57,23 @@ export function createStatePort(
   return {
     beginSend: (messages: Message[], assistantMsgId: string) => {
       useChatStreamStore.getState().beginStream(assistantMsgId);
+      const state = get();
+      const convId = state.currentConversationId;
+      const conv = convId
+        ? state.conversations.find((c) => c.id === convId)
+        : undefined;
+      const resolved = resolveContextWindowTokens(
+        conv?.modelId ?? "",
+        conv?.providerId ?? null,
+      );
+      const maxTokens = resolved ?? state.contextUsage.maxTokens ?? 128_000;
       set({
         messages,
-        contextUsage: { usedTokens: 0, maxTokens: 128_000, percentage: 0 },
+        contextUsage: { usedTokens: 0, maxTokens, percentage: 0 },
       });
     },
     cancelStreaming: () => {
       const stream = useChatStreamStore.getState();
-      useChatStreamStore.getState().cancelStreaming();
       set({
         messages: mergeStreamingContent(
           get().messages,
@@ -71,6 +81,7 @@ export function createStatePort(
           stream.streamingContent,
         ),
       });
+      useChatStreamStore.getState().cancelStreaming();
     },
     setActiveAttemptId: (attemptId: string, realMessageId: string) => {
       const state = get();
@@ -167,7 +178,6 @@ export function createStatePort(
         ? usage.promptTokens + usage.completionTokens
         : null;
 
-      useChatStreamStore.getState().cancelStreaming();
       set({
         contextUsage: newContextUsage,
         messages: mergeStreamingContent(
@@ -182,6 +192,7 @@ export function createStatePort(
             : m,
         ),
       });
+      useChatStreamStore.getState().cancelStreaming();
 
       if (convId) {
         chatService.incrementGeneration(convId).catch(() => {});

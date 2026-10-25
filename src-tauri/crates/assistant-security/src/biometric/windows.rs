@@ -4,6 +4,7 @@ use crate::types::VaultError;
 use log::{debug, info, warn};
 
 use base64::Engine;
+use sha2::{Digest, Sha256};
 
 use windows::core::HRESULT;
 use windows::core::HSTRING;
@@ -64,6 +65,13 @@ fn bytes_to_buffer(data: &[u8]) -> windows::core::Result<IBuffer> {
     CryptographicBuffer::CreateFromByteArray(data)
 }
 
+fn buffer_to_bytes(buffer: &IBuffer) -> windows::core::Result<Vec<u8>> {
+    let length = buffer.Length()? as usize;
+    let mut array = windows::core::Array::with_len(length);
+    CryptographicBuffer::CopyToByteArray(buffer, &mut array)?;
+    Ok(array.to_vec())
+}
+
 fn map_win_error(e: windows::core::Error) -> VaultError {
     VaultError::BiometricFailed(e.message().to_string())
 }
@@ -89,6 +97,12 @@ fn keyring_entry(key_id: &str) -> Result<keyring::Entry, VaultError> {
         .map_err(|e| VaultError::BiometricFailed(format!("keyring entry: {e}")))
 }
 
+fn biometric_challenge() -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"assistant-vault-biometric-v1");
+    hasher.finalize().to_vec()
+}
+
 impl BiometricKeyStore for WindowsHelloKeyStore {
     fn is_available(&self) -> Result<bool, VaultError> {
         let _guard = WinRtGuard::new()?;
@@ -109,91 +123,18 @@ impl BiometricKeyStore for WindowsHelloKeyStore {
 
     fn set_key(&self, key_id: &str, data: &[u8]) -> Result<(), VaultError> {
         let _guard = WinRtGuard::new()?;
-        let name = credential_name(key_id);
-
-        let open_result = KeyCredentialManager::OpenAsync(&name)
-            .map_err(map_win_error)?
-            .join()
-            .map_err(map_win_error)?;
-
-        if get_credential_status(&open_result)? == KeyCredentialStatus::NotFound {
-            allow_foreground_window();
-
-            let create_result = KeyCredentialManager::RequestCreateAsync(
-                &name,
-                KeyCredentialCreationOption::FailIfExists,
-            )
-            .map_err(map_win_error)?;
-
-            let create_result = wait_for_async(create_result).map_err(map_win_error)?;
-
-            match get_credential_status(&create_result)? {
-                KeyCredentialStatus::Success => {}
-                KeyCredentialStatus::CredentialAlreadyExists => {}
-                KeyCredentialStatus::UserCanceled => {
-                    warn!("Windows Hello: biometric enrollment cancelled by user");
-                    return Err(VaultError::BiometricCancelled);
-                }
-                status => {
-                    warn!("Windows Hello: KeyCredential creation failed: {:?}", status);
-                    return Err(VaultError::BiometricFailed(format!(
-                        "KeyCredential creation failed: {status:?}"
-                    )));
-                }
-            }
-        }
 
         let encoded = base64::engine::general_purpose::STANDARD.encode(data);
         let entry = keyring_entry(key_id)?;
         entry
             .set_password(&encoded)
             .map_err(|e| VaultError::BiometricFailed(format!("keyring set: {e}")))?;
-        info!("Windows Hello: biometric key stored for '{}'", key_id);
+        info!("Windows Hello: data stored for '{}'", key_id);
         Ok(())
     }
 
     fn get_key(&self, key_id: &str) -> Result<Vec<u8>, VaultError> {
         let _guard = WinRtGuard::new()?;
-        let name = credential_name(key_id);
-
-        let open_result = KeyCredentialManager::OpenAsync(&name)
-            .map_err(map_win_error)?
-            .join()
-            .map_err(map_win_error)?;
-
-        if get_credential_status(&open_result)? != KeyCredentialStatus::Success {
-            return Err(VaultError::BiometricUnavailable);
-        }
-
-        let credential = open_result.Credential().map_err(map_win_error)?;
-
-        let mut challenge = [0u8; 32];
-        use rand::RngCore;
-        rand::thread_rng().fill_bytes(&mut challenge);
-
-        let challenge_buffer = bytes_to_buffer(&challenge).map_err(map_win_error)?;
-
-        allow_foreground_window();
-
-        let sign_result = credential
-            .RequestSignAsync(&challenge_buffer)
-            .map_err(map_win_error)?;
-
-        let sign_result = wait_for_async(sign_result).map_err(map_win_error)?;
-
-        match get_operation_status(&sign_result)? {
-            KeyCredentialStatus::Success => {}
-            KeyCredentialStatus::UserCanceled => {
-                warn!("Windows Hello: biometric auth cancelled by user");
-                return Err(VaultError::BiometricCancelled);
-            }
-            status => {
-                warn!("Windows Hello: TPM sign failed: {:?}", status);
-                return Err(VaultError::BiometricFailed(format!(
-                    "TPM sign failed: {status:?}"
-                )));
-            }
-        }
 
         let entry = keyring_entry(key_id)?;
         let encoded = entry
@@ -202,7 +143,7 @@ impl BiometricKeyStore for WindowsHelloKeyStore {
         let data = base64::engine::general_purpose::STANDARD
             .decode(&encoded)
             .map_err(|e| VaultError::BiometricFailed(format!("base64 decode: {e}")))?;
-        info!("Windows Hello: biometric key retrieved for '{}'", key_id);
+        info!("Windows Hello: data retrieved for '{}'", key_id);
         Ok(data)
     }
 
@@ -241,5 +182,96 @@ impl BiometricKeyStore for WindowsHelloKeyStore {
             Err(keyring::Error::NoEntry) => Ok(false),
             Err(e) => Err(VaultError::BiometricFailed(format!("keyring check: {e}"))),
         }
+    }
+
+    fn ensure_credential(&self, key_id: &str) -> Result<(), VaultError> {
+        let _guard = WinRtGuard::new()?;
+        let name = credential_name(key_id);
+
+        let open_result = KeyCredentialManager::OpenAsync(&name)
+            .map_err(map_win_error)?
+            .join()
+            .map_err(map_win_error)?;
+
+        if get_credential_status(&open_result)? == KeyCredentialStatus::NotFound {
+            allow_foreground_window();
+
+            let create_result = KeyCredentialManager::RequestCreateAsync(
+                &name,
+                KeyCredentialCreationOption::FailIfExists,
+            )
+            .map_err(map_win_error)?;
+
+            let create_result = wait_for_async(create_result).map_err(map_win_error)?;
+
+            match get_credential_status(&create_result)? {
+                KeyCredentialStatus::Success => {}
+                KeyCredentialStatus::CredentialAlreadyExists => {}
+                KeyCredentialStatus::UserCanceled => {
+                    warn!("Windows Hello: biometric enrollment cancelled by user");
+                    return Err(VaultError::BiometricCancelled);
+                }
+                status => {
+                    warn!("Windows Hello: KeyCredential creation failed: {:?}", status);
+                    return Err(VaultError::BiometricFailed(format!(
+                        "KeyCredential creation failed: {status:?}"
+                    )));
+                }
+            }
+        }
+
+        debug!("Windows Hello: TPM credential ensured for '{}'", key_id);
+        Ok(())
+    }
+
+    fn request_signature(&self, key_id: &str) -> Result<Vec<u8>, VaultError> {
+        let _guard = WinRtGuard::new()?;
+        let name = credential_name(key_id);
+
+        let open_result = KeyCredentialManager::OpenAsync(&name)
+            .map_err(map_win_error)?
+            .join()
+            .map_err(map_win_error)?;
+
+        if get_credential_status(&open_result)? != KeyCredentialStatus::Success {
+            return Err(VaultError::BiometricUnavailable);
+        }
+
+        let credential = open_result.Credential().map_err(map_win_error)?;
+
+        let challenge = biometric_challenge();
+        let challenge_buffer = bytes_to_buffer(&challenge).map_err(map_win_error)?;
+
+        allow_foreground_window();
+
+        let sign_result = credential
+            .RequestSignAsync(&challenge_buffer)
+            .map_err(map_win_error)?;
+
+        let sign_result = wait_for_async(sign_result).map_err(map_win_error)?;
+
+        match get_operation_status(&sign_result)? {
+            KeyCredentialStatus::Success => {}
+            KeyCredentialStatus::UserCanceled => {
+                warn!("Windows Hello: biometric auth cancelled by user");
+                return Err(VaultError::BiometricCancelled);
+            }
+            status => {
+                warn!("Windows Hello: TPM sign failed: {:?}", status);
+                return Err(VaultError::BiometricFailed(format!(
+                    "TPM sign failed: {status:?}"
+                )));
+            }
+        }
+
+        let signature_buffer = sign_result.Result().map_err(map_win_error)?;
+        let signature = buffer_to_bytes(&signature_buffer).map_err(map_win_error)?;
+
+        debug!(
+            "Windows Hello: TPM signature obtained ({} bytes) for '{}'",
+            signature.len(),
+            key_id
+        );
+        Ok(signature)
     }
 }

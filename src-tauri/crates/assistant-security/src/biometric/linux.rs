@@ -1,15 +1,13 @@
 use crate::biometric::BiometricKeyStore;
 use crate::types::VaultError;
 
+use base64::Engine;
 use log::{debug, info, warn};
-use std::collections::HashMap;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr;
 
 pub struct LibsecretKeyStore;
-
-const SCHEMA_NAME: &str = "com.assistant.vault.biometric";
 
 #[repr(C)]
 struct SecretSchema {
@@ -17,6 +15,8 @@ struct SecretSchema {
     flags: c_int,
     attributes: [SecretSchemaAttribute; 32],
     reserved: [c_int; 2],
+    _name: CString,
+    _account: CString,
 }
 
 #[repr(C)]
@@ -72,27 +72,32 @@ struct GError {
     message: *mut c_char,
 }
 
-fn create_schema() -> Box<SecretSchema> {
-    let c_name = CString::new(SCHEMA_NAME).expect("valid schema name");
-    let c_account = CString::new("account").expect("valid attribute name");
+static SCHEMA_NAME_C: &str = "com.assistant.vault.biometric";
+static ATTR_ACCOUNT_C: &str = "account";
 
-    let mut schema = Box::new(SecretSchema {
-        name: c_name.as_ptr(),
-        flags: SECRET_SCHEMA_DONT_MATCH_NAME,
-        attributes: [SecretSchemaAttribute {
-            name: ptr::null(),
-            r#type: 0,
-        }; 32],
-        reserved: [0; 2],
-    });
-
-    schema.attributes[0].name = c_account.as_ptr();
-    schema.attributes[0].r#type = SECRET_SCHEMA_ATTRIBUTE_STRING;
-
-    std::mem::forget(c_name);
-    std::mem::forget(c_account);
-
-    schema
+fn get_schema() -> &'static SecretSchema {
+    use std::sync::OnceLock;
+    static SCHEMA: OnceLock<SecretSchema> = OnceLock::new();
+    SCHEMA.get_or_init(|| {
+        let c_name = CString::new(SCHEMA_NAME_C).expect("valid schema name");
+        let c_account = CString::new(ATTR_ACCOUNT_C).expect("valid attribute name");
+        SecretSchema {
+            name: c_name.as_ptr(),
+            flags: SECRET_SCHEMA_DONT_MATCH_NAME,
+            attributes: {
+                let mut attrs = [SecretSchemaAttribute {
+                    name: ptr::null(),
+                    r#type: 0,
+                }; 32];
+                attrs[0].name = c_account.as_ptr();
+                attrs[0].r#type = SECRET_SCHEMA_ATTRIBUTE_STRING;
+                attrs
+            },
+            reserved: [0; 2],
+            _name: c_name,
+            _account: c_account,
+        }
+    })
 }
 
 impl BiometricKeyStore for LibsecretKeyStore {
@@ -116,11 +121,12 @@ impl BiometricKeyStore for LibsecretKeyStore {
     }
 
     fn set_key(&self, key_id: &str, data: &[u8]) -> Result<(), VaultError> {
-        let schema = create_schema();
+        let schema = get_schema();
         let c_label = CString::new(key_id)
             .map_err(|_| VaultError::BiometricFailed("invalid key_id".into()))?;
-        let c_password = CString::new(data)
-            .map_err(|_| VaultError::BiometricFailed("data contains null byte".into()))?;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(data);
+        let c_password = CString::new(encoded)
+            .map_err(|_| VaultError::BiometricFailed("base64 encode failed".into()))?;
         let c_account_key = CString::new("account")
             .map_err(|_| VaultError::BiometricFailed("invalid attribute key".into()))?;
         let c_account_val = CString::new(key_id)
@@ -129,7 +135,7 @@ impl BiometricKeyStore for LibsecretKeyStore {
         unsafe {
             let mut error: *mut GError = ptr::null_mut();
             let result = secret_password_store_sync(
-                &*schema,
+                schema,
                 SECRET_COLLECTION_DEFAULT,
                 c_label.as_ptr(),
                 c_password.as_ptr(),
@@ -169,7 +175,7 @@ impl BiometricKeyStore for LibsecretKeyStore {
     }
 
     fn get_key(&self, key_id: &str) -> Result<Vec<u8>, VaultError> {
-        let schema = create_schema();
+        let schema = get_schema();
         let c_account_key = CString::new("account")
             .map_err(|_| VaultError::BiometricFailed("invalid attribute key".into()))?;
         let c_account_val = CString::new(key_id)
@@ -178,7 +184,7 @@ impl BiometricKeyStore for LibsecretKeyStore {
         unsafe {
             let mut error: *mut GError = ptr::null_mut();
             let result = secret_password_lookup_sync(
-                &*schema,
+                schema,
                 ptr::null(),
                 &mut error,
                 c_account_key.as_ptr(),
@@ -205,14 +211,19 @@ impl BiometricKeyStore for LibsecretKeyStore {
             }
 
             let c_str = CString::from_raw(result);
-            let bytes = c_str.into_bytes();
+            let encoded = c_str.into_string().map_err(|e| {
+                VaultError::BiometricFailed(format!("libsecret: non-utf8 value: {e}"))
+            })?;
+            let data = base64::engine::general_purpose::STANDARD
+                .decode(&encoded)
+                .map_err(|e| VaultError::BiometricFailed(format!("base64 decode: {e}")))?;
             info!("libsecret: biometric key retrieved for '{}'", key_id);
-            Ok(bytes)
+            Ok(data)
         }
     }
 
     fn delete_key(&self, key_id: &str) -> Result<(), VaultError> {
-        let schema = create_schema();
+        let schema = get_schema();
         let c_account_key = CString::new("account")
             .map_err(|_| VaultError::BiometricFailed("invalid attribute key".into()))?;
         let c_account_val = CString::new(key_id)
@@ -221,7 +232,7 @@ impl BiometricKeyStore for LibsecretKeyStore {
         unsafe {
             let mut error: *mut GError = ptr::null_mut();
             let _ = secret_password_clear_sync(
-                &*schema,
+                schema,
                 ptr::null(),
                 &mut error,
                 c_account_key.as_ptr(),
@@ -238,10 +249,34 @@ impl BiometricKeyStore for LibsecretKeyStore {
     }
 
     fn has_key(&self, key_id: &str) -> Result<bool, VaultError> {
-        match self.get_key(key_id) {
-            Ok(_) => Ok(true),
-            Err(VaultError::BiometricUnavailable) => Ok(false),
-            Err(e) => Err(e),
+        let schema = get_schema();
+        let c_account_key = CString::new("account")
+            .map_err(|_| VaultError::BiometricFailed("invalid attribute key".into()))?;
+        let c_account_val = CString::new(key_id)
+            .map_err(|_| VaultError::BiometricFailed("invalid key_id".into()))?;
+
+        unsafe {
+            let mut error: *mut GError = ptr::null_mut();
+            let result = secret_password_lookup_sync(
+                schema,
+                ptr::null(),
+                &mut error,
+                c_account_key.as_ptr(),
+                c_account_val.as_ptr(),
+                ptr::null(),
+            );
+
+            if !error.is_null() {
+                g_free(error as *mut c_void);
+                return Ok(false);
+            }
+
+            if result.is_null() {
+                return Ok(false);
+            }
+
+            g_free(result as *mut c_void);
+            Ok(true)
         }
     }
 }

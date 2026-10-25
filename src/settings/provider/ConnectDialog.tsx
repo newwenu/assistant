@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Modal, Form, Button, Typography, message } from "antd";
+import { Modal, Form, Button, Typography } from "antd";
 import { providerService } from "@/services/providerService";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
@@ -19,6 +19,7 @@ import { getProviderFormatLabel } from "../core/provider/providerFormatRegistry"
 import type { FieldSchema, FieldContext } from "../core/types/fieldSchema";
 import { SettingField } from "../shared/renderers/SettingField";
 import { FormatTag } from "./FormatTag";
+import { useSettingMessage } from "../shared/useSettingMessage";
 
 interface ConnectDialogProps {
   provider: Provider | null;
@@ -41,7 +42,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [models, setModels] = useState<ModelConfig[]>([]);
-  const [messageApi, contextHolder] = message.useMessage();
+  const msg = useSettingMessage();
 
   const isEdit = !!provider;
   const effectiveFormat = isEdit
@@ -131,9 +132,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
                   : "");
               const apiKey = (fv.apiKey as string) || "";
               if (!apiKey && !isLocal && ctx.mode === "add") {
-                messageApi.warning(
-                  t("settings.provider.field.api_key.required_first"),
-                );
+                msg.warning("settings.provider.field.api_key.required_first");
                 return;
               }
               try {
@@ -161,24 +160,18 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
                     value: m.id,
                   })),
                 );
-                messageApi.success(
-                  t("settings.provider.field.models_fetched", {
-                    count: modelList.length,
-                  }),
-                );
+                msg.success("settings.provider.field.models_fetched", {
+                  count: modelList.length,
+                });
               } catch (e) {
-                messageApi.error(
-                  t("settings.provider.field.models_fetch_failed", {
-                    error: e instanceof Error ? e.message : String(e),
-                  }),
-                );
+                msg.error("settings.provider.field.models_fetch_failed", e);
               }
             },
           },
         ],
       },
     ],
-    [t, showType, isLocal, isEdit, formatInfo, models, messageApi],
+    [t, showType, isLocal, isEdit, formatInfo, models, msg],
   );
 
   const getTitle = () => {
@@ -291,7 +284,6 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
       }
       width="var(--modal-width-form)"
     >
-      {contextHolder}
       <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
         <Typography.Paragraph
           type="secondary"

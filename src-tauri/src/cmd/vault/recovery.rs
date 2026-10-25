@@ -1,6 +1,7 @@
-use tauri::{command, AppHandle};
+use tauri::{command, AppHandle, Manager};
 
 use assistant_security::audit::{log as audit_log, AuditEvent};
+use assistant_sync::sync_engine::SyncEngine;
 
 #[command]
 pub fn vault_generate_recovery_key(app: AppHandle) -> Result<String, String> {
@@ -101,75 +102,79 @@ pub struct DisasterRecoveryResult {
 }
 
 #[command]
-pub fn vault_disaster_recovery_export(
+pub async fn vault_disaster_recovery_export(
     app: AppHandle,
     git_url: Option<String>,
     recovery_key: String,
     export_path: String,
 ) -> Result<DisasterRecoveryResult, String> {
-    let engine = super::sync_state(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = app.state::<SyncEngine>();
 
-    if let Some(url) = &git_url {
-        engine.clone_repo(url).map_err(|e| {
-            log::warn!("Disaster recovery: clone failed: {}", e);
-            e.to_string()
-        })?;
-    } else {
-        engine.prepare().map_err(|e| {
-            log::warn!("Disaster recovery: prepare failed: {}", e);
-            e.to_string()
-        })?;
-        let _ = engine.pull();
-    }
-
-    let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
-    let emergency = emergency.ok_or("Recovery key not set in .vault-meta")?;
-
-    let emergency_data = assistant_security::recovery_key::EmergencyData {
-        token: emergency.token,
-        salt: emergency.salt,
-    };
-
-    let (_bootstrap_key, master_key) =
-        assistant_security::recovery_key::decrypt_recovery_keys(&recovery_key, &emergency_data)
-            .map_err(|e| {
-                log::warn!("Disaster recovery: decrypt failed: {}", e);
+        if let Some(url) = &git_url {
+            engine.clone_repo(url).map_err(|e| {
+                log::warn!("Disaster recovery: clone failed: {}", e);
                 e.to_string()
             })?;
+        } else {
+            engine.prepare().map_err(|e| {
+                log::warn!("Disaster recovery: prepare failed: {}", e);
+                e.to_string()
+            })?;
+            let _ = engine.pull();
+        }
 
-    let mut integrity_warning = false;
-    match engine.verify_vault_meta_integrity(&master_key) {
-        Ok(result) => {
-            if !result.valid {
+        let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
+        let emergency = emergency.ok_or("Recovery key not set in .vault-meta")?;
+
+        let emergency_data = assistant_security::recovery_key::EmergencyData {
+            token: emergency.token,
+            salt: emergency.salt,
+        };
+
+        let (_bootstrap_key, master_key) =
+            assistant_security::recovery_key::decrypt_recovery_keys(&recovery_key, &emergency_data)
+                .map_err(|e| {
+                    log::warn!("Disaster recovery: decrypt failed: {}", e);
+                    e.to_string()
+                })?;
+
+        let mut integrity_warning = false;
+        match engine.verify_vault_meta_integrity(&master_key) {
+            Ok(result) => {
+                if !result.valid {
+                    integrity_warning = true;
+                    log::warn!("Disaster recovery: HMAC mismatch — {}", result.message);
+                }
+            }
+            Err(e) => {
                 integrity_warning = true;
-                log::warn!("Disaster recovery: HMAC mismatch — {}", result.message);
+                log::warn!("Disaster recovery: integrity check error: {}", e);
             }
         }
-        Err(e) => {
-            integrity_warning = true;
-            log::warn!("Disaster recovery: integrity check error: {}", e);
-        }
-    }
 
-    let exports = engine.disaster_recovery_export(&master_key).map_err(|e| {
-        log::warn!("Disaster recovery: export failed: {}", e);
-        e.to_string()
-    })?;
+        let exports = engine.disaster_recovery_export(&master_key).map_err(|e| {
+            log::warn!("Disaster recovery: export failed: {}", e);
+            e.to_string()
+        })?;
 
-    let entry_count = exports.len() as u32;
+        let entry_count = exports.len() as u32;
 
-    let json = serde_json::to_string_pretty(&exports).map_err(|e| e.to_string())?;
-    std::fs::write(&export_path, &json).map_err(|e| e.to_string())?;
+        let json = serde_json::to_string_pretty(&exports).map_err(|e| e.to_string())?;
+        std::fs::write(&export_path, &json).map_err(|e| e.to_string())?;
 
-    log::info!(
-        "Disaster recovery export: {} entries to {}",
-        entry_count,
-        export_path
-    );
+        log::info!(
+            "Disaster recovery export: {} entries to {}",
+            entry_count,
+            export_path
+        );
 
-    Ok(DisasterRecoveryResult {
-        file_path: export_path,
-        entry_count,
-        integrity_warning,
+        Ok(DisasterRecoveryResult {
+            file_path: export_path,
+            entry_count,
+            integrity_warning,
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }

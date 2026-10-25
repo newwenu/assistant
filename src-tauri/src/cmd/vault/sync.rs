@@ -1,47 +1,57 @@
-use tauri::{command, AppHandle};
+use tauri::{command, AppHandle, Manager};
+
+use assistant_sync::sync_engine::SyncEngine;
 
 #[command]
-pub fn vault_sync_pull(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
-    let engine = super::sync_state(&app)?;
-    let result = engine.pull().map_err(|e| {
-        log::warn!("Vault sync pull failed: {}", e);
-        e.to_string()
-    })?;
-    log::debug!("Vault sync pull completed");
-    Ok(result)
+pub async fn vault_sync_pull(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = app.state::<SyncEngine>();
+        engine.pull().map_err(|e| {
+            log::warn!("Vault sync pull failed: {}", e);
+            e.to_string()
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[command]
-pub fn vault_sync_push(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
-    let engine = super::sync_state(&app)?;
-    let result = engine.push().map_err(|e| {
-        log::warn!("Vault sync push failed: {}", e);
-        e.to_string()
-    })?;
-    log::debug!("Vault sync push completed");
-    Ok(result)
+pub async fn vault_sync_push(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = app.state::<SyncEngine>();
+        engine.push().map_err(|e| {
+            log::warn!("Vault sync push failed: {}", e);
+            e.to_string()
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[command]
-pub fn vault_sync_now(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
-    let engine = super::sync_state(&app)?;
-    let result = engine.sync_now().map_err(|e| {
-        log::warn!("Vault sync failed: {}", e);
-        e.to_string()
-    })?;
-    log::debug!("Vault sync completed");
-    Ok(result)
+pub async fn vault_sync_now(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = app.state::<SyncEngine>();
+        engine.sync_now().map_err(|e| {
+            log::warn!("Vault sync failed: {}", e);
+            e.to_string()
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[command]
-pub fn vault_sync_force_push(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
-    let engine = super::sync_state(&app)?;
-    let result = engine.force_push().map_err(|e| {
-        log::warn!("Vault sync force-push failed: {}", e);
-        e.to_string()
-    })?;
-    log::debug!("Vault sync force-push completed");
-    Ok(result)
+pub async fn vault_sync_force_push(app: AppHandle) -> Result<assistant_sync::SyncResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = app.state::<SyncEngine>();
+        engine.force_push().map_err(|e| {
+            log::warn!("Vault sync force-push failed: {}", e);
+            e.to_string()
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[command]
@@ -84,14 +94,16 @@ pub fn vault_git_init(app: AppHandle) -> Result<(), String> {
 }
 
 #[command]
-pub fn vault_git_clone(app: AppHandle, url: String) -> Result<(), String> {
-    let engine = super::sync_state(&app)?;
-    engine.clone_repo(&url).map_err(|e| {
-        log::warn!("Vault git clone failed: {}", e);
-        e.to_string()
-    })?;
-    log::info!("Vault git clone completed");
-    Ok(())
+pub async fn vault_git_clone(app: AppHandle, url: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = app.state::<SyncEngine>();
+        engine.clone_repo(&url).map_err(|e| {
+            log::warn!("Vault git clone failed: {}", e);
+            e.to_string()
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[command]

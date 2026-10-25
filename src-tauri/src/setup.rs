@@ -147,9 +147,6 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                         log::info!("Screen lock triggered vault_lock");
                     }
                     let _ = emit_broadcast(&app_handle, event_name::VAULT_LOCKED, ());
-                    if let Err(e) = crate::cmd::vault_show_unlock_window(app_handle.clone()) {
-                        log::warn!("Screen lock show_unlock_window failed: {}", e);
-                    }
                 } else {
                     log::info!("Screen lock detected but vault_lock_on_screen_lock is disabled");
                 }

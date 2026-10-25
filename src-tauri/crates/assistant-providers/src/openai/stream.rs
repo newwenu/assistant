@@ -291,6 +291,7 @@ mod tests {
                     cached_tokens: Some(30),
                 }),
                 prompt_cache_hit_tokens: None,
+                prompt_cache_miss_tokens: None,
             }),
         };
         let resp = into_unified_responses(chunk_standard);
@@ -309,6 +310,7 @@ mod tests {
                     cached_tokens: Some(20),
                 }),
                 prompt_cache_hit_tokens: Some(40),
+                prompt_cache_miss_tokens: None,
             }),
         };
         let resp = into_unified_responses(chunk_deepseek);
@@ -350,6 +352,7 @@ mod tests {
                 total_tokens: Some(15),
                 prompt_tokens_details: None,
                 prompt_cache_hit_tokens: None,
+                prompt_cache_miss_tokens: None,
             }),
         };
         let responses = into_unified_responses(chunk);

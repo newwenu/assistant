@@ -12,20 +12,20 @@
 
 | 域 | 文件 | 命令数 | 说明 |
 |---|---|---|---|
-| Conversation | `conversation.rs` | 20 | 会话 CRUD + 导出 + 分页 + 批量 + subtree_size + generation |
+| Conversation | `conversation.rs` | 15 | 会话 CRUD + 导出 + 分页 + 批量 + subtree_size + generation（简化1-3已执行：-5） |
 | Chat | `chat.rs` | 2 | 发送/取消流式消息 |
 | Branch | `conversation.rs` | 4 | 分支创建/切换/兄弟/fork |
-| Config | `config.rs` | 7 | 三组配置读写 + patch |
+| Config | `config.rs` | 4 | 三组配置读 + patch（简化4-5已执行：-3） |
 | Provider | `provider.rs` | 5 | Provider CRUD + 模型列表 |
 | Orb | `orb.rs` | 7 | 鼠标/屏幕/吸附/点击穿透 |
-| App | `app.rs` | 6 | 退出/版本/快捷键/自启动 |
+| App | `app.rs` | 5 | 退出/版本/快捷键（简化4-5已执行：-1） |
 | AgentMode | `agent_mode.rs` | 4 | Agent 模式 CRUD |
 | Tool | `tool.rs` | 5 | 工具历史/收藏 |
 | Compaction | `compaction.rs` | 2 | 手动压缩/解锁 |
 | MascotAsset | `mascot_asset.rs` | 2 | 吉祥物资源安装/卸载 |
 | OsTool | `os_tool_exec.rs` | 1 | 统一工具桥接 |
 | Vault Lifecycle | `vault/lifecycle.rs` | 6 | 初始化/解锁/锁定/状态 |
-| Vault Entries | `vault/entries.rs` | 8 | 条目 CRUD + 导出/导入 + 改密 |
+| Vault Entries | `vault/entries.rs` | 7 | 条目 CRUD + 导出/导入 + 改密（简化6已执行：-1） |
 | Vault Reveal | `vault/reveal.rs` | 4 | 密码/字段复制 + 明文揭示 |
 | Vault Audit | `vault/audit.rs` | 8 | TOTP + 审计日志 + HIBP + 密码强度 |
 | Vault Biometric | `vault/biometric.rs` | 5 | 生物识别可用/注册/解锁/注销 |
@@ -34,7 +34,7 @@
 | Vault Sync | `vault/sync.rs` | 14 | Git 同步 pull/push/forcePush + 配置 + 冲突 |
 | Window | `window.rs` | 5 | 打开主窗口/设置/Orb 面板展开/折叠/上下文菜单 |
 | Storage | `storage.rs` | 2 | 存储占用统计 + 附件清理 |
-| **合计** | | **127** | |
+| **合计** | | **117** | （简化1-6已执行：127→117，简化7待执行：→113） |
 
 ### 1.2 设计模式识别
 
@@ -306,49 +306,62 @@ pub fn vault_git_remote(
 
 ## 4. 简化效果
 
-| # | 简化方案 | 减少命令数 | 风险等级 | 渐变策略 |
-|---|---|---|---|---|
-| 1 | `get_conversation` 三合一 | -2 | 🟢 低（只读） | 旧命令 → wrapper |
-| 2 | `patch_conversation` 三合一 | -2 | 🟢 低（patch 模式） | 旧命令 → wrapper |
-| 3 | `export_conversation` 二合一 | -1 | 🟢 低 | `path: Option<String>` |
-| 4 | 删除 `set_theme` / `set_locale` / `emit_theme_changed` | -3 | 🟠 中高（需先新增 theme side_effect + 验证 locale 持久化差异） | 前端先迁移 |
-| 5 | 删除 `set_launch_at_login` | -1 | 🟡 中（同上） | 前端先迁移 |
-| 6 | 删除 `vault_export`（返回 String 版） | -1 | 🟢 低（纯删除死代码） | ✅ 已完成 |
-| 7 | Sync 域合并 | -4 | 🟡 中低 | 旧命令 → wrapper |
-| **合计** | | **-13** | | **127 → ~114** |
+| # | 简化方案 | 减少命令数 | 风险等级 | 渐变策略 | 状态 |
+|---|---|---|---|---|---|
+| 1 | `get_conversation` 三合一 | -2 | 🟢 低（只读） | 旧命令已删除 | ✅ 已完成 |
+| 2 | `patch_conversation` 三合一 | -2 | 🟢 低（patch 模式） | 旧命令已删除 | ✅ 已完成 |
+| 3 | `export_conversation` 二合一 | -1 | 🟢 低 | `path: Option<String>` | ✅ 已完成 |
+| 4 | 删除 `set_theme` / `set_locale` / `emit_theme_changed` | -3 | 🟠 中高（需先新增 theme side_effect + 验证 locale 持久化差异） | 前端先迁移 | ✅ 已完成 |
+| 5 | 删除 `set_launch_at_login` | -1 | 🟡 中（同上） | 前端先迁移 | ✅ 已完成 |
+| 6 | 删除 `vault_export`（返回 String 版） | -1 | 🟢 低（纯删除死代码） | 直接删除 | ✅ 已完成 |
+| 7 | Sync 域合并 | -4 | 🟡 中低 | 旧命令 → wrapper | ❌ 未开始 |
+| **合计** | | **-14** | | **127 → ~113** | **已完成 -10，剩余 -4** |
 
 ---
 
 ## 5. 渐变实施路线
 
+### Phase 0：A 类死代码删除（零风险）
+
+- [x] 删除 `reload_shortcuts` — ✅ 已完成
+- [x] 删除 `save_orb_position` — ✅ 已完成
+- [x] 删除 `set_theme` — ✅ 已完成
+- [x] 删除 `set_locale` — ✅ 已完成
+- [x] 在 `APP_SIDE_EFFECTS` 新增 theme → emit `THEME_CHANGED` — ✅ 已完成
+- [x] 删除 `set_launch_at_login` — ✅ 已完成
+- [x] 删除 `emit_theme_changed` — ✅ 已完成
+- [x] 删除 `vault_export`（返回 String 版） — ✅ 已完成
+
 ### Phase 1：新增合并命令（无破坏性）
 
-- [ ] 新增 `ConversationQueryOpts` + 改造 `get_conversation` 支持 `opts`
-- [ ] 新增 `ConversationPatch` + 新增 `patch_conversation` 命令
-- [ ] 改造 `export_conversation` 支持 `path: Option<String>`
-- [x] 删除 `vault_export`（返回 String 版），保留 `vault_export_to_file` — ✅ 已完成
+- [x] 新增 `ConversationQueryOptsDto` + 改造 `get_conversation` 支持 `opts` — ✅ 已完成
+- [x] 新增 `ConversationPatchDto` + 新增 `patch_conversation` 命令 — ✅ 已完成
+- [x] 改造 `export_conversation` 支持 `path: Option<String>` — ✅ 已完成
 - [ ] 新增 `SyncAction` enum + 新增 `vault_sync` 命令
 - [ ] 新增 `vault_git_init(url?)` + `vault_git_remote(remote, url, mode)`
-- [ ] 旧命令保留为 wrapper，标记 `#[deprecated]`
-- [ ] 在 `lib.rs` 的 `invoke_handler` 中注册新命令
+- [ ] 旧 sync 命令保留为 wrapper，标记 `#[deprecated]`
+- [ ] 在 `lib.rs` 的 `invoke_handler` 中注册新 sync 命令
 
 ### Phase 2：前端迁移
 
-- [ ] 前端 `historyService` / `chatService` 切换到新命令签名
-- [ ] 前端 `settingService` 中 `set_theme` / `set_locale` / `set_launch_at_login` 调用迁移到 `patch_conf`
-- [ ] 前端 `vault.service` 中 export/sync 调用迁移到新签名
-- [ ] 验证 `patch_conf` side_effect 完整覆盖 theme/locale/launchAtLogin
-- [ ] 在 `patch_conf` 的 `APP_SIDE_EFFECTS` 中新增 theme 变更时自动 emit `THEME_CHANGED`
+- [x] 前端 `chatService` 切换到 `get_conversation` + opts — ✅ 已完成
+- [x] 前端 `chatService` 切换到 `patch_conversation` — ✅ 已完成
+- [x] 前端 `historyService` 切换到 `export_conversation` + path — ✅ 已完成
+- [x] 前端 `settingService` 中 `set_theme` / `set_locale` / `set_launch_at_login` 调用迁移到 `patch_conf` — ✅ 已完成
+- [x] 验证 `patch_conf` side_effect 完整覆盖 theme/locale/launchAtLogin — ✅ 已完成
+- [x] 在 `patch_conf` 的 `APP_SIDE_EFFECTS` 中新增 theme 变更时自动 emit `THEME_CHANGED` — ✅ 已完成
+- [ ] 前端 `vault.service` 中 sync 调用迁移到新签名
 
 ### Phase 3：清理旧命令
 
-- [ ] 移除 `get_conversation_paginated` / `get_conversation_all_messages` wrapper
-- [ ] 移除 `rename_conversation` / `update_conversation_model` / `update_conversation_provider` wrapper
-- [ ] 移除 `export_conversation_to_file` / `vault_export_to_file`
-- [ ] 移除 `set_theme` / `set_locale` / `emit_theme_changed` / `set_launch_at_login`
+- [x] 移除 `get_conversation_paginated` / `get_conversation_all_messages` — ✅ 已完成（Rust 命令 + lib.rs 注册已删除）
+- [x] 移除 `rename_conversation` / `update_conversation_model` / `update_conversation_provider` — ✅ 已完成（Rust 命令 + lib.rs 注册已删除）
+- [x] 移除 `export_conversation_to_file` — ✅ 已完成（Rust 命令 + lib.rs 注册已删除）
+- [x] 移除 `set_theme` / `set_locale` / `emit_theme_changed` / `set_launch_at_login` — ✅ 已完成
+- [x] 移除前端死方法 `chatService.updateConversationProvider` / `historyService.exportConversation` — ✅ 已完成
 - [ ] 移除 `vault_sync_pull` / `vault_sync_push` / `vault_sync_now` / `vault_sync_force_push`
 - [ ] 移除 `vault_git_clone` / `vault_git_add_remote` / `vault_git_set_remote`
-- [ ] 从 `lib.rs` 的 `invoke_handler` 中移除旧命令注册
+- [ ] 从 `lib.rs` 的 `invoke_handler` 中移除旧 sync 命令注册
 - [ ] 全量回归测试
 
 ---
@@ -732,21 +745,22 @@ StorageSettings.tsx:95  → storageService.deleteAttachments(ids)
 
 ### 9.6 审计汇总
 
-| 分类 | 数量 | 处置 |
-|---|---|---|
-| A. 可直接删除 | 4 | 移除 Rust 命令 + lib.rs 注册 |
-| A'. 零调用但需保留 | 3 | 保留命令，补前端 service 定义，作为前端主动触发的逃生舱 |
-| B. 功能已被覆盖 | 5 | 按简化方案执行，或直接移除（#4 `vault_export` 已删除） |
-| C. 预留未接入 UI | 4 | 标记 TODO，产品规划确认后决定 |
-| D. 简化方案已覆盖 | （见 §2） | 按 §5 渐变路线 |
-| **合计可清理** | **9** | 删除 A+B 后 127 → ~118，再执行 §2 简化 → ~105 |
+| 分类 | 数量 | 处置 | 状态 |
+|---|---|---|---|
+| A. 可直接删除 | 4 | 移除 Rust 命令 + lib.rs 注册 | ✅ 全部已完成 |
+| A'. 零调用但需保留 | 3 | 保留命令，补前端 service 定义 | ❌ 未补 service |
+| B. 功能已被覆盖 | 5 | 按简化方案执行 | ✅ 4 已完成（#4 vault_export 已删除，#1-3 由简化1-3覆盖，#5 由简化5覆盖） |
+| C. 预留未接入 UI | 4 | 标记 TODO，产品规划确认后决定 | — 保留 |
+| D. 简化方案已覆盖 | （见 §2） | 按 §5 渐变路线 | ✅ 简化1-6已完成，简化7未开始 |
+| **当前状态** | | **127 → 117**（已删 10 个命令） | **剩余简化7可再减 4 → 113** |
 
 ### 9.7 建议执行顺序
 
-1. **Phase 0（零风险）**：删除 A 类 4 个命令——纯移除死代码，替代机制前端可达
-2. **Phase 0.5（补全 A' 类）**：为 A' 类 3 个命令补前端 service 定义，使其可被前端主动调用
-3. **Phase 1-3**：按 §5 渐变路线执行 B 类 + D 类简化
-4. **Phase 4（产品确认）**：C 类 4 个预留命令与产品团队确认是否接入 UI 或移除：
+1. ~~**Phase 0（零风险）**：删除 A 类 4 个命令~~ — ✅ 已完成
+2. **Phase 0.5（补全 A' 类）**：为 A' 类 3 个命令补前端 service 定义，使其可被前端主动调用 — ❌ 未完成
+3. ~~**Phase 1-3**：按 §5 渐变路线执行 B 类 + D 类简化（简化 1-6）~~ — ✅ 已完成
+4. **Phase 1-3（简化 7）**：Vault Sync 域合并 — ❌ 未开始
+5. **Phase 4（产品确认）**：C 类 4 个预留命令与产品团队确认是否接入 UI 或移除：
    - `create_branch`：分支对话是核心功能差异化，建议保留
    - `vault_sync_prepare` / `vault_sync_finalize`：两阶段提交是 sync 可靠性保障，建议保留
    - `vault_change_master_password`：安全敏感操作，建议保留并优先实现 UI

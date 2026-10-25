@@ -1,7 +1,9 @@
 use super::SshKeyMeta;
 use crate::types::VaultError;
-use base64::Engine;
-use log::{debug, warn};
+use log::debug;
+use rsa::pkcs1::DecodeRsaPrivateKey;
+use rsa::pkcs8::DecodePrivateKey;
+use ssh_key::PrivateKey;
 
 pub fn validate_private_key(key_data: &[u8]) -> Result<SshKeyMeta, VaultError> {
     if key_data.is_empty() {
@@ -16,17 +18,21 @@ pub fn validate_private_key(key_data: &[u8]) -> Result<SshKeyMeta, VaultError> {
 
     if trimmed.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----") {
         validate_openssh_key(trimmed)
-    } else if trimmed.starts_with("-----BEGIN RSA PRIVATE KEY-----")
-        || trimmed.starts_with("-----BEGIN EC PRIVATE KEY-----")
+    } else if trimmed.starts_with("-----BEGIN RSA PRIVATE KEY-----") {
+        validate_pkcs1_rsa_key(trimmed)
+    } else if trimmed.starts_with("-----BEGIN PRIVATE KEY-----") {
+        validate_pkcs8_key(trimmed)
+    } else if trimmed.starts_with("-----BEGIN EC PRIVATE KEY-----")
         || trimmed.starts_with("-----BEGIN DSA PRIVATE KEY-----")
-        || trimmed.starts_with("-----BEGIN PRIVATE KEY-----")
     {
-        validate_pem_key(trimmed)
+        Err(VaultError::InvalidKeyFormat(
+            "Legacy PEM format not supported. Please convert to OpenSSH format: ssh-keygen -p -f <key> -m RFC4716".to_string(),
+        ))
     } else if trimmed.starts_with("PuTTY-User-Key-File-") {
         validate_ppk_key(trimmed)
     } else {
         Err(VaultError::InvalidKeyFormat(
-            "Unrecognized key format. Expected OpenSSH, PEM, or PuTTY .ppk".to_string(),
+            "Unrecognized key format. Expected OpenSSH, PEM (RSA/PKCS8), or PuTTY .ppk".to_string(),
         ))
     }
 }
@@ -38,30 +44,46 @@ fn validate_openssh_key(key_str: &str) -> Result<SshKeyMeta, VaultError> {
         ));
     }
 
-    let body: String = key_str
-        .lines()
-        .filter(|line| !line.starts_with("-----"))
-        .collect();
-
-    base64::engine::general_purpose::STANDARD
-        .decode(&body)
-        .map_err(|_| {
-            VaultError::InvalidKeyFormat("OpenSSH key: invalid base64 encoding".to_string())
-        })?;
-
-    let meta = extract_meta_via_ssh_keygen(key_str)?;
-    Ok(meta)
+    let private_key = PrivateKey::from_openssh(key_str)
+        .map_err(|e| VaultError::InvalidKeyFormat(format!("Invalid OpenSSH key: {}", e)))?;
+    extract_meta(&private_key)
 }
 
-fn validate_pem_key(key_str: &str) -> Result<SshKeyMeta, VaultError> {
-    if !key_str.contains("-----END") {
+fn validate_pkcs1_rsa_key(key_str: &str) -> Result<SshKeyMeta, VaultError> {
+    if !key_str.contains("-----END RSA PRIVATE KEY-----") {
         return Err(VaultError::InvalidKeyFormat(
-            "Incomplete PEM key: missing END marker".to_string(),
+            "Incomplete PKCS#1 RSA key: missing END marker".to_string(),
         ));
     }
 
-    let meta = extract_meta_via_ssh_keygen(key_str)?;
-    Ok(meta)
+    let rsa_key = rsa::RsaPrivateKey::from_pkcs1_pem(key_str)
+        .map_err(|e| VaultError::InvalidKeyFormat(format!("Invalid PKCS#1 RSA key: {}", e)))?;
+    rsa_to_meta(&rsa_key)
+}
+
+fn validate_pkcs8_key(key_str: &str) -> Result<SshKeyMeta, VaultError> {
+    if !key_str.contains("-----END PRIVATE KEY-----") {
+        return Err(VaultError::InvalidKeyFormat(
+            "Incomplete PKCS#8 key: missing END marker".to_string(),
+        ));
+    }
+
+    match rsa::RsaPrivateKey::from_pkcs8_pem(key_str) {
+        Ok(rsa_key) => rsa_to_meta(&rsa_key),
+        Err(_) => Err(VaultError::InvalidKeyFormat(
+            "PKCS#8 EC/DSA key not supported. Please convert to OpenSSH format: ssh-keygen -p -f <key> -m RFC4716".to_string(),
+        )),
+    }
+}
+
+fn rsa_to_meta(rsa_key: &rsa::RsaPrivateKey) -> Result<SshKeyMeta, VaultError> {
+    let keypair = ssh_key::private::RsaKeypair::try_from(rsa_key)
+        .map_err(|e| VaultError::InvalidKeyFormat(format!("RSA key conversion failed: {}", e)))?;
+    let private_key =
+        PrivateKey::new(ssh_key::private::KeypairData::Rsa(keypair), "").map_err(|e| {
+            VaultError::InvalidKeyFormat(format!("PrivateKey construction failed: {}", e))
+        })?;
+    extract_meta(&private_key)
 }
 
 fn validate_ppk_key(key_str: &str) -> Result<SshKeyMeta, VaultError> {
@@ -85,116 +107,68 @@ fn validate_ppk_key(key_str: &str) -> Result<SshKeyMeta, VaultError> {
         })
         .unwrap_or_else(|| "ppk".to_string());
 
-    let meta = extract_meta_via_ssh_keygen(key_str).unwrap_or(SshKeyMeta {
+    Ok(SshKeyMeta {
         key_type,
         bits: 0,
         fingerprint: String::new(),
         comment: String::new(),
         public_key: String::new(),
-    });
-    Ok(meta)
+    })
 }
 
-fn extract_meta_via_ssh_keygen(key_str: &str) -> Result<SshKeyMeta, VaultError> {
-    let ssh_keygen = find_ssh_keygen_binary()?;
+fn extract_meta(private_key: &PrivateKey) -> Result<SshKeyMeta, VaultError> {
+    let public_key = private_key.public_key();
+    let fingerprint = public_key.fingerprint(ssh_key::HashAlg::Sha256).to_string();
+    let algorithm = public_key.algorithm();
+    let key_type_str = algorithm.as_str();
+    let key_type = simplify_key_type(key_type_str);
+    let bits = compute_bit_size(public_key);
+    let comment = private_key.comment().to_string();
 
-    let mut child = std::process::Command::new(&ssh_keygen)
-        .args(["-l", "-f", "-"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| VaultError::Other(format!("ssh-keygen spawn failed: {}", e)))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        use std::io::Write;
-        let _ = stdin.write_all(key_str.as_bytes());
-        drop(stdin);
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| VaultError::Other(format!("ssh-keygen wait failed: {}", e)))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        warn!("ssh-keygen could not parse key: {}", stderr.trim());
-        return Err(VaultError::InvalidKeyFormat(
-            "ssh-keygen could not parse the key".to_string(),
-        ));
-    }
-
-    let fingerprint_line = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let meta = parse_fingerprint_line(&fingerprint_line)?;
     debug!(
         "SSH key validated: {} {} ({} bits)",
-        meta.key_type, meta.fingerprint, meta.bits
+        key_type, fingerprint, bits
     );
-    Ok(meta)
-}
-
-fn parse_fingerprint_line(line: &str) -> Result<SshKeyMeta, VaultError> {
-    let parts: Vec<&str> = line.splitn(3, ' ').collect();
-    if parts.len() < 2 {
-        return Err(VaultError::InvalidKeyFormat(format!(
-            "Unexpected ssh-keygen output: {}",
-            line
-        )));
-    }
-
-    let bits: u32 = parts[0].parse().unwrap_or(0);
-    let fingerprint = parts[1].to_string();
-    let comment = if parts.len() > 2 {
-        parts[2]
-            .trim_start_matches('(')
-            .trim_end_matches(')')
-            .to_string()
-    } else {
-        String::new()
-    };
-
-    let key_type = if fingerprint.starts_with("SHA256:") {
-        if bits == 256 {
-            "ed25519".to_string()
-        } else if bits == 384 {
-            "ecdsa-sha2-nistp384".to_string()
-        } else if bits == 521 {
-            "ecdsa-sha2-nistp521".to_string()
-        } else if bits == 2048 || bits == 3072 || bits == 4096 || bits == 8192 {
-            "rsa".to_string()
-        } else {
-            "unknown".to_string()
-        }
-    } else {
-        "unknown".to_string()
-    };
 
     Ok(SshKeyMeta {
         key_type,
         bits,
         fingerprint,
         comment,
-        public_key: String::new(),
+        public_key: public_key.to_openssh().unwrap_or_default(),
     })
 }
 
-fn find_ssh_keygen_binary() -> Result<String, VaultError> {
-    if cfg!(target_os = "windows") {
-        let candidates = [
-            std::env::var("GIT_INSTALL_ROOT")
-                .map(|root| format!("{}\\usr\\bin\\ssh-keygen.exe", root)),
-            Ok("C:\\Program Files\\Git\\usr\\bin\\ssh-keygen.exe".to_string()),
-            Ok("C:\\Program Files (x86)\\Git\\usr\\bin\\ssh-keygen.exe".to_string()),
-        ];
-        for path in candidates.into_iter().flatten() {
-            if std::path::Path::new(&path).exists() {
-                return Ok(path);
-            }
+fn simplify_key_type(ssh_type: &str) -> String {
+    match ssh_type {
+        "ssh-ed25519" => "ed25519".to_string(),
+        "ssh-rsa" => "rsa".to_string(),
+        s => s.to_string(),
+    }
+}
+
+fn compute_bit_size(public_key: &ssh_key::PublicKey) -> u32 {
+    use ssh_key::public::KeyData;
+
+    match public_key.key_data() {
+        KeyData::Rsa(rsa) => {
+            let n_bytes = rsa.n.as_bytes();
+            let effective_len = if n_bytes.first() == Some(&0) && n_bytes.len() > 1 {
+                n_bytes.len() - 1
+            } else {
+                n_bytes.len()
+            };
+            effective_len as u32 * 8
         }
-        Err(VaultError::Other(
-            "ssh-keygen not found: install Git for Windows".to_string(),
-        ))
-    } else {
-        Ok("ssh-keygen".to_string())
+        KeyData::Ed25519(_) => 256,
+        KeyData::Ecdsa(ecdsa) => match ecdsa.curve() {
+            ssh_key::EcdsaCurve::NistP256 => 256,
+            ssh_key::EcdsaCurve::NistP384 => 384,
+            ssh_key::EcdsaCurve::NistP521 => 521,
+        },
+        KeyData::Dsa(_) => 1024,
+        KeyData::SkEcdsaSha2NistP256(_) => 256,
+        KeyData::SkEd25519(_) => 256,
+        KeyData::Other(_) | _ => 0,
     }
 }

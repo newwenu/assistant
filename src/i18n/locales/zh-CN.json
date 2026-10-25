@@ -915,7 +915,9 @@
       "unavailable": "当前设备不支持生物识别",
       "enabled": "生物识别已启用",
       "enable": "启用",
-      "disable": "禁用"
+      "disable": "禁用",
+      "unlock_failed": "解锁失败",
+      "unlocking": "正在解锁…"
     },
     "hibp": {
       "audit_all": "全库泄露审计"

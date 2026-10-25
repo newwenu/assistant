@@ -9,4 +9,5 @@ pub mod screen_lock;
 pub mod security_db;
 pub mod ssh_agent;
 pub mod types;
+pub mod unlock_dialog;
 pub mod vault_crypto;

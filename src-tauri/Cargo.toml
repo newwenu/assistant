@@ -100,11 +100,16 @@ windows = { version = "0.62", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_WinRT",
     "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
     "Win32_System_RemoteDesktop",
     "Win32_System_StationsAndDesktops",
     "Win32_System_Power",
+    "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
 ] }
 eventsource-stream = "0.2"
 tempfile = "3"
@@ -112,6 +117,8 @@ windows-future = "0.3"
 core-foundation = "0.10"
 security-framework = "3.0"
 libsecret = "0.1"
+ssh-key = { version = "0.6", features = ["encryption", "rsa", "ed25519"] }
+rsa = { version = "0.9", features = ["pem"] }
 
 [dependencies]
 serde = { workspace = true }

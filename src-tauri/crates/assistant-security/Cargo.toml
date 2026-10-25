@@ -34,6 +34,8 @@ reqwest = { workspace = true }
 arboard = { workspace = true }
 zxcvbn = { workspace = true }
 keyring = { workspace = true }
+ssh-key = { workspace = true }
+rsa = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true }

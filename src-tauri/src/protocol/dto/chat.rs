@@ -141,14 +141,44 @@ pub struct ConversationDetailDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ConversationPatchDto {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ConversationQueryOptsDto {
+    #[serde(default)]
+    pub mode: String,
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_timestamp: Option<i64>,
+}
+
+fn default_limit() -> i64 {
+    50
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TokenUsageDto {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
-    #[serde(default)]
-    pub cache_read_tokens: u32,
-    #[serde(default)]
-    pub cache_write_tokens: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_tokens: Option<u32>,
     #[serde(default)]
     pub context_window_tokens: u32,
 }
@@ -161,6 +191,7 @@ impl From<TokenUsage> for TokenUsageDto {
             total_tokens: u.total_tokens,
             cache_read_tokens: u.cache_read_tokens,
             cache_write_tokens: u.cache_write_tokens,
+            reasoning_tokens: u.reasoning_tokens,
             context_window_tokens: u.context_window_tokens,
         }
     }

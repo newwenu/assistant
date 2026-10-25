@@ -1,4 +1,3 @@
-use serde::Serialize;
 use tauri::{command, AppHandle, Manager};
 
 use crate::protocol::dto::{

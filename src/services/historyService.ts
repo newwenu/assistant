@@ -17,13 +17,9 @@ export const historyService = {
       (r) => r || [],
     ),
 
-  exportConversation: (id: string, format: string): Promise<string> =>
-    invoke<string>("export_conversation", { id, format }),
-
   exportConversationToFile: (
     id: string,
     format: string,
     path: string,
-  ): Promise<void> =>
-    invoke("export_conversation_to_file", { id, format, path }),
+  ): Promise<void> => invoke("export_conversation", { id, format, path }),
 };

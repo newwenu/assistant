@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { Input, message } from "antd";
+import { Input } from "antd";
 import { useTranslation } from "react-i18next";
 import {
   CHAT_INPUT_MIN_ROWS,
@@ -17,13 +17,8 @@ import { useAttachmentStore } from "../../stores/attachmentStore";
 import {
   buildContentBlocksAsync,
   serializeContent,
-  validateImageFile,
 } from "../core/contentBlockUtils";
-import type { Attachment } from "../core/attachmentTypes";
-import {
-  ATTACHMENT_MAX_IMAGES,
-  ATTACHMENT_MAX_IMAGE_SIZE_BYTES,
-} from "../core/attachmentTypes";
+import { usePasteAttach } from "../../hooks/usePasteAttach";
 
 interface MessageInputProps {
   onSend: (content: string) => void;
@@ -31,21 +26,6 @@ interface MessageInputProps {
   isStreaming: boolean;
   disabled: boolean;
   isFull?: boolean;
-}
-
-function createImageAttachment(file: File): Attachment | null {
-  const validation = validateImageFile(file);
-  if (!validation.ok) return null;
-
-  const previewUrl = URL.createObjectURL(file);
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    kind: "image",
-    file,
-    previewUrl,
-    mimeType: file.type as Attachment["mimeType"],
-    originalSizeBytes: file.size,
-  };
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
@@ -59,60 +39,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const mascotFace = useMascotStore((s) => s.face);
   const mascotConf = useSettingsStore((s) => s.mascotConf);
   const attachments = useAttachmentStore((s) => s.attachments);
-  const addAttachment = useAttachmentStore((s) => s.addAttachment);
   const clearAttachments = useAttachmentStore((s) => s.clearAttachments);
-  const supportVision = useAttachmentStore((s) => s.supportVision);
   const { t } = useTranslation();
-
-  const addImageFiles = useCallback(
-    (files: File[]) => {
-      if (!supportVision) {
-        message.info(t("chat.input.model_no_vision"));
-        return;
-      }
-      for (const file of files) {
-        if (attachments.length >= ATTACHMENT_MAX_IMAGES) {
-          message.warning(
-            t("chat.input.too_many_images", { max: ATTACHMENT_MAX_IMAGES }),
-          );
-          break;
-        }
-        if (file.size > ATTACHMENT_MAX_IMAGE_SIZE_BYTES) {
-          message.warning(
-            t("chat.input.image_too_large", {
-              max: ATTACHMENT_MAX_IMAGE_SIZE_BYTES / (1024 * 1024),
-            }),
-          );
-          continue;
-        }
-        const att = createImageAttachment(file);
-        if (att) {
-          addAttachment(att);
-        } else {
-          message.warning(t("chat.input.invalid_image_type"));
-        }
-      }
-    },
-    [supportVision, attachments.length, addAttachment, t],
-  );
-
-  const handlePaste = useCallback(
-    (e: React.ClipboardEvent) => {
-      const items = Array.from(e.clipboardData.items);
-      const imageFiles: File[] = [];
-      for (const item of items) {
-        if (item.type.startsWith("image/")) {
-          const file = item.getAsFile();
-          if (file) imageFiles.push(file);
-        }
-      }
-      if (imageFiles.length > 0) {
-        e.preventDefault();
-        addImageFiles(imageFiles);
-      }
-    },
-    [addImageFiles],
-  );
+  const { handlePaste } = usePasteAttach();
 
   const doSend = useCallback(async () => {
     const hasText = value.trim().length > 0;

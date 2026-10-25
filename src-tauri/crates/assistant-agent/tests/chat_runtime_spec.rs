@@ -28,8 +28,9 @@ fn usage_delta(prompt: u32, completion: u32) -> ChatDelta {
             prompt_tokens: prompt,
             completion_tokens: completion,
             total_tokens: prompt + completion,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
+            reasoning_tokens: None,
             context_window_tokens: 0,
         }),
         ..Default::default()

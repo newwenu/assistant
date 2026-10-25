@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Input, Button, Space, Typography, message } from "antd";
+import { Input, Button, Space, Typography } from "antd";
 import { SearchOutlined, UndoOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -12,6 +12,7 @@ import {
   DEFAULT_KEYBINDINGS,
   formatBinding,
 } from "../core/types/shortcutTypes";
+import { useSettingMessage } from "../shared/useSettingMessage";
 
 export const ShortcutSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -19,7 +20,7 @@ export const ShortcutSettings: React.FC = () => {
   const resetKeybindings = useSettingsStore((s) => s.resetKeybindings);
   const appConf = useSettingsStore((s) => s.appConf);
   const [searchQuery, setSearchQuery] = useState("");
-  const [messageApi, contextHolder] = message.useMessage();
+  const msg = useSettingMessage();
 
   useEffect(() => {
     void loadAppConf();
@@ -46,7 +47,7 @@ export const ShortcutSettings: React.FC = () => {
 
   const handleReset = async () => {
     await resetKeybindings();
-    messageApi.success(t("settings.shortcuts.reset_success"));
+    msg.success("settings.shortcuts.reset_success");
   };
 
   const groupedDefinitions = useMemo(() => {
@@ -63,7 +64,6 @@ export const ShortcutSettings: React.FC = () => {
 
   return (
     <>
-      {contextHolder}
       <SettingsPageShell
         wide={600}
         extra={

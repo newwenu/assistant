@@ -13,22 +13,33 @@ pub trait BiometricKeyStore: Send + Sync {
     fn get_key(&self, key_id: &str) -> Result<Vec<u8>, VaultError>;
     fn delete_key(&self, key_id: &str) -> Result<(), VaultError>;
     fn has_key(&self, key_id: &str) -> Result<bool, VaultError>;
+    fn ensure_credential(&self, key_id: &str) -> Result<(), VaultError> {
+        let _ = key_id;
+        Ok(())
+    }
+    fn request_signature(&self, key_id: &str) -> Result<Vec<u8>, VaultError> {
+        let _ = key_id;
+        Err(VaultError::BiometricUnavailable)
+    }
+    fn set_key_unprotected(&self, key_id: &str, data: &[u8]) -> Result<(), VaultError> {
+        self.set_key(key_id, data)
+    }
 }
 
 pub fn create_key_store() -> Box<dyn BiometricKeyStore> {
     #[cfg(target_os = "windows")]
     {
         log::debug!("Biometric key store: Windows Hello");
-        return Box::new(windows::WindowsHelloKeyStore);
+        Box::new(windows::WindowsHelloKeyStore)
     }
     #[cfg(target_os = "macos")]
     {
         log::debug!("Biometric key store: Touch ID");
-        return Box::new(macos::TouchIdKeyStore);
+        Box::new(macos::TouchIdKeyStore)
     }
     #[cfg(target_os = "linux")]
     {
         log::debug!("Biometric key store: libsecret");
-        return Box::new(linux::LibsecretKeyStore);
+        Box::new(linux::LibsecretKeyStore)
     }
 }

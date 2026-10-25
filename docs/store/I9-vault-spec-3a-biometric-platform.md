@@ -178,7 +178,7 @@ impl Drop for WinRtGuard {
 | Win32 `CryptProtectData` | 文档原始方案 | 手动内存管理（`LocalFree`）、需 `CRYPT_INTEGER_BLOB`、unsafe 代码多 |
 | WinRT `DataProtectionProvider` | 自动内存管理、API 简洁、与 `windows` crate 一致 | 需 `Security_Cryptography_DataProtection` feature |
 
-两者安全等价：均绑定当前用户凭据，均不支持 `CRYPTPROTECT_LOCAL_MACHINE`。WinRT 方案为参考项目 [watchkey-win](../../references/watchkey-win/) 验证过的实现。
+两者安全等价：均绑定当前用户凭据，均不支持 `CRYPTPROTECT_LOCAL_MACHINE`。WinRT 方案为参考项目 watchkey-win 验证过的实现。
 
 ---
 
