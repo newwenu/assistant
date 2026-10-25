@@ -402,7 +402,9 @@ export const VAULT_GENERAL_SETTINGS = [
     type: "boolean",
     default: false,
     label: "settings.vault.biometric_enabled.label",
+    description: "settings.vault.biometric_enabled.description",
     customRender: BiometricSwitchRender,
+    saveMessage: "settings.vault.biometric_enabled.save_message",
   }),
   defineSetting({
     key: "vaultHibpAutoAudit",

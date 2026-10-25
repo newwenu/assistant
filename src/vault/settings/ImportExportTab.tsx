@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Input, Typography, Space, Radio, Alert, App } from "antd";
+import { Button, Input, Typography, Space, Radio, App } from "antd";
 import {
   DownloadOutlined,
   UploadOutlined,
@@ -85,12 +85,9 @@ export default function ImportExportTab({
         {t("vault.import_export.export_description")}
       </Typography.Paragraph>
 
-      <Alert
-        type="warning"
-        showIcon
-        title={t("vault.import_export.export_warning")}
-        style={{ marginBottom: 16 }}
-      />
+      <Typography.Paragraph type="warning" style={{ marginBottom: 16 }}>
+        {t("vault.import_export.export_warning")}
+      </Typography.Paragraph>
 
       <Space orientation="vertical" style={{ width: "100%" }}>
         <Radio.Group

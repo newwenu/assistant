@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vault Unlock</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0e0e0;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden}
+.card{width:320px;text-align:center}
+.card h2{font-size:16px;font-weight:600;margin-bottom:16px;color:#fff}
+.card input{width:100%;padding:10px 12px;border:1px solid #3a3a5c;border-radius:6px;background:#16213e;color:#e0e0e0;font-size:14px;outline:none;margin-bottom:12px}
+.card input:focus{border-color:#4a9eff}
+.card button{width:100%;padding:10px;border:none;border-radius:6px;background:#4a9eff;color:#fff;font-size:14px;font-weight:500;cursor:pointer}
+.card button:disabled{opacity:.5;cursor:not-allowed}
+.card .err{color:#ff6b6b;font-size:12px;margin-top:8px;min-height:16px}
+.card .bio{background:transparent;border:1px solid #3a3a5c;margin-top:8px;color:#e0e0e0}
+.card .bio:hover{border-color:#4a9eff}
+</style>
+</head>
+<body>
+<div class="card">
+<h2 id="title">Unlock Vault</h2>
+<input type="password" id="pw" placeholder="Master password" autofocus>
+<button id="btn" onclick="unlock()">Unlock</button>
+<button class="bio" id="bioBtn" style="display:none" onclick="bioUnlock()">Biometric Unlock</button>
+<div class="err" id="err"></div>
+</div>
+<script>
+const {invoke}=window.__TAURI_INTERNALS__;
+const {listen}=window.__TAURI_INTERNALS__;
+const pw=document.getElementById('pw');
+const btn=document.getElementById('btn');
+const err=document.getElementById('err');
+const bioBtn=document.getElementById('bioBtn');
+
+async function unlock(){
+  const p=pw.value;
+  if(!p)return;
+  btn.disabled=true;err.textContent='';
+  pw.value='';
+  try{
+    const inited=await invoke('vault_is_initialized');
+    if(inited){await invoke('vault_unlock',{masterPassword:p})}
+    else{await invoke('vault_init',{masterPassword:p})}
+    window.close();
+  }catch(e){err.textContent=String(e);btn.disabled=false}
+}
+
+async function bioUnlock(){
+  bioBtn.disabled=true;err.textContent='';
+  try{
+    await invoke('vault_unlock_biometric');
+    window.close();
+  }catch(e){err.textContent=String(e);bioBtn.disabled=false}
+}
+
+pw.addEventListener('keydown',e=>{if(e.key==='Enter')unlock()});
+
+(async()=>{
+  try{
+    const inited=await invoke('vault_is_initialized');
+    if(!inited)document.getElementById('title').textContent='Create Vault';
+    const avail=await invoke('vault_is_biometric_available');
+    const enrolled=await invoke('vault_is_biometric_enrolled');
+    if(inited&&avail&&enrolled){bioBtn.style.display='block'}
+  }catch{}
+})();
+</script>
+</body>
+</html>

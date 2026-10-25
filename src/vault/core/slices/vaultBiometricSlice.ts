@@ -14,7 +14,7 @@ export interface VaultBiometricSlice {
   checkBiometricAvailable: () => Promise<void>;
   checkBiometricEnrolled: () => Promise<void>;
   unlockBiometric: () => Promise<boolean>;
-  enrollBiometric: (masterPassword: string) => Promise<void>;
+  enrollBiometric: () => Promise<void>;
   disenrollBiometric: () => Promise<void>;
 }
 
@@ -97,10 +97,10 @@ export function createBiometricSlice(
       }
     },
 
-    enrollBiometric: async (masterPassword) => {
+    enrollBiometric: async () => {
       set({ loading: true, error: null });
       try {
-        await vaultService.enrollBiometric(masterPassword);
+        await vaultService.enrollBiometric();
         set({
           biometricEnrolled: true,
           loading: false,
@@ -110,6 +110,7 @@ export function createBiometricSlice(
       } catch (e) {
         log.error("enrollBiometric failed", e);
         set({ error: String(e), loading: false });
+        throw e;
       }
     },
 

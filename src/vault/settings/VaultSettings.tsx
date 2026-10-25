@@ -5,6 +5,7 @@ import VaultSyncSettings from "./VaultSyncSettings";
 import SshAgentTab from "./SshAgentTab";
 import RecoveryTab from "./RecoveryTab";
 import ImportExportTab from "./ImportExportTab";
+import ChangePasswordTab from "./ChangePasswordTab";
 
 export default function VaultSettings() {
   const { t } = useTranslation();
@@ -59,6 +60,11 @@ export default function VaultSettings() {
               verifyIntegrity={verifyIntegrity}
             />
           ),
+        },
+        {
+          key: "change_password",
+          label: t("vault.tab.change_password"),
+          children: <ChangePasswordTab />,
         },
         {
           key: "import_export",

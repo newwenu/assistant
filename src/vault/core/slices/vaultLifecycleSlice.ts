@@ -26,6 +26,7 @@ export interface VaultLifecycleSlice {
   init: (masterPassword: string) => Promise<void>;
   unlock: (masterPassword: string) => Promise<boolean>;
   lock: () => Promise<void>;
+  changeMasterPassword: (current: string, newPassword: string) => Promise<void>;
   checkStatus: () => Promise<void>;
   clearError: () => void;
   resetAutoLockTimer: () => void;
@@ -108,6 +109,22 @@ export function createLifecycleSlice(
         if (autoLockTimerId) clearTimeout(autoLockTimerId);
       } catch (e) {
         log.error("lock failed", e);
+      }
+    },
+
+    changeMasterPassword: async (current, newPassword) => {
+      set({ loading: true, error: null });
+      try {
+        await vaultService.changeMasterPassword(current, newPassword);
+        set({
+          loading: false,
+          _biometricEnrolledAt: 0,
+          _recoveryKeySetAt: 0,
+        });
+      } catch (e) {
+        log.error("changeMasterPassword failed", e);
+        set({ error: String(e), loading: false });
+        throw e;
       }
     },
 

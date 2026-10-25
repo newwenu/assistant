@@ -376,7 +376,12 @@
       "lock_on_screen_lock": { "label": "Lock Vault on Screen Lock" },
       "clipboard_clear_seconds": { "label": "Clipboard Clear Time (seconds)" },
       "cipher_algorithm": { "label": "Cipher Algorithm" },
-      "biometric_enabled": { "label": "Biometric Unlock" },
+      "biometric_enabled": {
+        "label": "Biometric Unlock",
+        "description": "Enabling requires two authentications",
+        "enroll_step_hint": "Please verify again to complete enrollment",
+        "save_message": "Biometric status updated"
+      },
       "hibp_auto_audit": { "label": "HIBP Password Leak Audit" },
       "ssh_auto_add": { "label": "Auto Add SSH Keys to Agent on Unlock" },
       "ssh_use_pageant": { "label": "Use Pageant (PuTTY)" },
@@ -816,6 +821,7 @@
       "sync": "Sync",
       "ssh_agent": "SSH Agent",
       "recovery": "Recovery Key",
+      "change_password": "Change Password",
       "import_export": "Import / Export"
     },
     "confirm_lock": "Lock the vault?",
@@ -860,6 +866,18 @@
       "verify_integrity": "Verify Vault Integrity",
       "integrity_valid": "Vault integrity verified",
       "integrity_invalid": "Vault integrity check failed — data may be tampered"
+    },
+    "change_password": {
+      "description": "Change the master password used to encrypt and unlock the vault. After changing, biometric enrollment and recovery key will be invalidated — you will need to re-enable them.",
+      "current": "Current Password",
+      "new_password": "New Password",
+      "confirm_new": "Confirm New Password",
+      "submit": "Change Password",
+      "success": "Master password changed successfully. Please re-enable biometric unlock and regenerate recovery key if needed.",
+      "re_enroll_title": "Re-enable Biometric Unlock",
+      "re_enroll_desc": "Biometric unlock has been invalidated by the password change. Would you like to re-enable it now?",
+      "re_enroll_skip": "Skip",
+      "re_enroll_confirm": "Enable"
     },
     "danger_zone": {
       "title": "Danger Zone",
@@ -908,7 +926,9 @@
     "biometric": {
       "enroll_title": "Enable Biometrics",
       "unavailable": "Biometrics not available on this device",
-      "enabled": "Biometrics enabled"
+      "enabled": "Biometrics enabled",
+      "enable": "Enable",
+      "disable": "Disable"
     },
     "hibp": {
       "audit_all": "Audit All"

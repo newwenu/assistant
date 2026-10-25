@@ -363,7 +363,12 @@
       "lock_on_screen_lock": { "label": "屏幕锁定时锁定保险库" },
       "clipboard_clear_seconds": { "label": "剪贴板清除时间（秒）" },
       "cipher_algorithm": { "label": "加密算法" },
-      "biometric_enabled": { "label": "生物识别解锁" },
+      "biometric_enabled": {
+        "label": "生物识别解锁",
+        "description": "启用需要两次认证",
+        "enroll_step_hint": "请再次验证以完成注册",
+        "save_message": "生物识别状态已更新"
+      },
       "hibp_auto_audit": { "label": "HIBP 密码泄露审计" },
       "ssh_auto_add": { "label": "解锁时自动添加 SSH 密钥到 Agent" },
       "ssh_use_pageant": { "label": "使用 Pageant (PuTTY)" },
@@ -803,6 +808,7 @@
       "sync": "同步",
       "ssh_agent": "SSH Agent",
       "recovery": "恢复密钥",
+      "change_password": "修改主密码",
       "import_export": "导入 / 导出"
     },
     "confirm_lock": "确定锁定保险库？",
@@ -847,6 +853,18 @@
       "verify_integrity": "验证保险库完整性",
       "integrity_valid": "保险库完整性验证通过",
       "integrity_invalid": "保险库完整性验证失败，数据可能被篡改"
+    },
+    "change_password": {
+      "description": "修改用于加密和解锁保险库的主密码。修改后，生物识别和恢复密钥将失效，需要重新启用。",
+      "current": "当前密码",
+      "new_password": "新密码",
+      "confirm_new": "确认新密码",
+      "submit": "修改主密码",
+      "success": "主密码修改成功。如需使用生物识别解锁或恢复密钥，请重新启用。",
+      "re_enroll_title": "重新启用生物识别解锁",
+      "re_enroll_desc": "密码变更已使生物识别解锁失效。是否立即重新启用？",
+      "re_enroll_skip": "跳过",
+      "re_enroll_confirm": "启用"
     },
     "danger_zone": {
       "title": "危险区域",
@@ -895,7 +913,9 @@
     "biometric": {
       "enroll_title": "启用生物识别",
       "unavailable": "当前设备不支持生物识别",
-      "enabled": "生物识别已启用"
+      "enabled": "生物识别已启用",
+      "enable": "启用",
+      "disable": "禁用"
     },
     "hibp": {
       "audit_all": "全库泄露审计"

@@ -1,78 +1,95 @@
-import { useState, useEffect } from "react";
-import { Switch, Modal, Input, App } from "antd";
+import { useState, useEffect, useCallback } from "react";
+import { Button, App, Space } from "antd";
 import { useTranslation } from "react-i18next";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useVaultStore } from "@/vault/core/vaultStore";
-import { settingService } from "@/services/settingService";
+import { vaultService } from "@/vault/core/vault.service";
 import type { FieldRenderProps } from "../../core/types/fieldSchema";
 
 export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const {
+    isLocked,
     biometricAvailable,
     enrollBiometric,
     disenrollBiometric,
     checkBiometricAvailable,
     checkBiometricEnrolled,
   } = useVaultStore();
-  const [enrollModalOpen, setEnrollModalOpen] = useState(false);
-  const [enrollPassword, setEnrollPassword] = useState("");
-  const [enrollLoading, setEnrollLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     void checkBiometricAvailable();
     void checkBiometricEnrolled();
   }, [checkBiometricAvailable, checkBiometricEnrolled]);
 
-  const handleChange = (checked: boolean) => {
-    if (checked) {
-      if (!biometricAvailable) {
-        message.warning(t("vault.biometric.unavailable"));
-        return;
-      }
-      setEnrollModalOpen(true);
-      setEnrollPassword("");
-    } else {
-      void disenrollBiometric().then(() => {
-        onChange?.(false);
-      });
-    }
-  };
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    void listen("vault:biometric-enroll-step", () => {
+      message.info(t("settings.vault.biometric_enabled.enroll_step_hint"));
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, [message, t]);
 
-  const handleEnrollConfirm = async () => {
-    if (!enrollPassword) return;
-    setEnrollLoading(true);
+  const handleEnable = useCallback(async () => {
+    if (!biometricAvailable) {
+      message.warning(t("vault.biometric.unavailable"));
+      return;
+    }
+    if (isLocked) {
+      await vaultService.showUnlockWindow();
+      return;
+    }
+    setLoading(true);
     try {
-      await enrollBiometric(enrollPassword);
-      await settingService.patchConf("app", { vaultBiometricEnabled: true });
+      await enrollBiometric();
       onChange?.(true);
-      setEnrollModalOpen(false);
-      message.success(t("vault.biometric.enabled"));
     } catch (e) {
       message.error(String(e));
     } finally {
-      setEnrollLoading(false);
+      setLoading(false);
     }
-  };
+  }, [biometricAvailable, isLocked, enrollBiometric, onChange, message, t]);
+
+  const handleDisable = useCallback(async () => {
+    setLoading(true);
+    try {
+      await disenrollBiometric();
+      onChange?.(false);
+    } catch (e) {
+      message.error(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [disenrollBiometric, onChange, message]);
+
+  if (value) {
+    return (
+      <Button
+        type="primary"
+        danger
+        loading={loading}
+        onClick={() => void handleDisable()}
+      >
+        {t("vault.biometric.disable")}
+      </Button>
+    );
+  }
 
   return (
-    <>
-      <Switch checked={!!value} onChange={handleChange} />
-      <Modal
-        open={enrollModalOpen}
-        title={t("vault.biometric.enroll_title")}
-        onOk={() => void handleEnrollConfirm()}
-        onCancel={() => setEnrollModalOpen(false)}
-        confirmLoading={enrollLoading}
-        okButtonProps={{ disabled: !enrollPassword }}
+    <Space>
+      <Button
+        type="primary"
+        loading={loading}
+        onClick={() => void handleEnable()}
       >
-        <Input.Password
-          placeholder={t("vault.unlock.master_password")}
-          value={enrollPassword}
-          onChange={(e) => setEnrollPassword(e.target.value)}
-          autoFocus
-        />
-      </Modal>
-    </>
+        {t("vault.biometric.enable")}
+      </Button>
+    </Space>
   );
 }

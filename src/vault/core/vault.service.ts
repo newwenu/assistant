@@ -138,8 +138,7 @@ export const vaultService = {
 
   unlockBiometric: (): Promise<boolean> => invoke("vault_unlock_biometric"),
 
-  enrollBiometric: (masterPassword: string): Promise<void> =>
-    invoke("vault_enroll_biometric", { masterPassword }),
+  enrollBiometric: (): Promise<void> => invoke("vault_enroll_biometric"),
 
   disenrollBiometric: (): Promise<void> => invoke("vault_disenroll_biometric"),
 
