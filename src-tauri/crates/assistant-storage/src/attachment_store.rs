@@ -45,6 +45,20 @@ fn media_type_to_ext(mt: &str) -> &'static str {
         "image/jpeg" => "jpg",
         "image/gif" => "gif",
         "image/webp" => "webp",
+        "image/bmp" => "bmp",
+        "image/tiff" => "tiff",
+        "application/pdf" => "pdf",
+        "text/plain" => "txt",
+        "text/markdown" => "md",
+        "text/csv" => "csv",
+        "text/html" => "html",
+        "application/json" => "json",
+        "text/x-python" => "py",
+        "text/javascript" => "js",
+        "text/typescript" => "ts",
+        "text/css" => "css",
+        "text/yaml" => "yaml",
+        "text/xml" => "xml",
         _ => "bin",
     }
 }
@@ -56,7 +70,8 @@ impl AttachmentStore {
         }
     }
 
-    pub async fn save_image(
+    /// 内容寻址写入任意附件（图片、PDF、文本等），扩展名由 `media_type` 决定。
+    pub async fn save_attachment(
         &self,
         data: &[u8],
         media_type: &str,

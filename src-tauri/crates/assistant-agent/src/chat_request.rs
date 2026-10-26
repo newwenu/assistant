@@ -30,12 +30,20 @@ pub async fn build_chat_request(
     let mut chat_messages = prompt_builder::prepare_messages(detail, system_prompt, None);
 
     {
-        let support_vision = resolve_support_vision(provider_row, model_id);
+        let support_vision =
+            types::resolve_support_vision_from_stored(model_id, &provider_row.models_json);
+        let support_pdf =
+            types::resolve_support_pdf_from_stored(model_id, &provider_row.models_json);
+
         if support_vision {
             multimodal::rehydrate_images(&mut chat_messages, attachment_store).await;
         } else {
             multimodal::project_images_for_text_model(&mut chat_messages);
         }
+
+        // 是否 rehydrate、哪些文件原样发送统一由 support_pdf 决定
+        multimodal::rehydrate_files(&mut chat_messages, attachment_store, support_pdf).await;
+        multimodal::project_files(&mut chat_messages, support_pdf);
     }
 
     let config = build_provider_config(provider_row);
@@ -43,6 +51,7 @@ pub async fn build_chat_request(
     let model = model_id.to_string();
     let context_window_tokens =
         types::resolve_context_window_from_stored(model_id, &provider_row.models_json);
+    crate::request_projection::offload_if_over_budget(&mut chat_messages, context_window_tokens);
 
     let kind = mode
         .map(|m| prompt_builder::AgentKind::from_mode_kind(&m.kind))
@@ -61,8 +70,4 @@ pub async fn build_chat_request(
         context_window_tokens,
         kind,
     })
-}
-
-fn resolve_support_vision(provider_row: &ProviderRow, model_id: &str) -> bool {
-    types::resolve_support_vision_from_stored(model_id, &provider_row.models_json)
 }

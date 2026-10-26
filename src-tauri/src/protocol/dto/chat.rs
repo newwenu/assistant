@@ -433,7 +433,7 @@ impl From<assistant_providers::types::ContentBlock> for ContentBlockDto {
             assistant_providers::types::ContentBlock::Image { attachment, .. } => Self::Image {
                 attachment: ImageAttachmentRefDto::from(attachment),
             },
-            assistant_providers::types::ContentBlock::File { attachment } => Self::File {
+            assistant_providers::types::ContentBlock::File { attachment, .. } => Self::File {
                 attachment: FileAttachmentRefDto::from(attachment),
             },
             assistant_providers::types::ContentBlock::Thinking {

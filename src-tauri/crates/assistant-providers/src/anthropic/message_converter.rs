@@ -49,10 +49,10 @@ fn convert_user_message(msg: &ChatMessage) -> Value {
         .unwrap_or_else(|| parse_content(&msg.content));
 
     if let Some(blocks) = blocks {
-        let has_image = blocks
+        let has_media = blocks
             .iter()
-            .any(|b| matches!(b, ContentBlock::Image { .. }));
-        if has_image {
+            .any(|b| matches!(b, ContentBlock::Image { .. } | ContentBlock::File { .. }));
+        if has_media {
             let content_parts: Vec<Value> = blocks
                 .iter()
                 .map(|b| match b {
@@ -64,17 +64,45 @@ fn convert_user_message(msg: &ChatMessage) -> Value {
                         attachment,
                         cached_data,
                         ..
-                    } => {
-                        let mt = attachment.media_type.as_deref().unwrap_or("image/png");
-                        let data = cached_data.as_deref().unwrap_or("");
-                        json!({
+                    } => match cached_data.as_deref().filter(|d| !d.is_empty()) {
+                        Some(data) => json!({
                             "type": "image",
                             "source": {
                                 "type": "base64",
-                                "media_type": mt,
+                                "media_type": attachment.media_type.as_deref().unwrap_or("image/png"),
                                 "data": data
                             }
-                        })
+                        }),
+                        // 缺少 bytes 时降级为文本，避免提交空 base64 图片
+                        None => json!({
+                            "type": "text",
+                            "text": format!(
+                                "[image unavailable: {}]",
+                                attachment.name.as_deref().unwrap_or("unknown")
+                            )
+                        }),
+                    },
+                    ContentBlock::File {
+                        attachment,
+                        cached_data,
+                        ..
+                    } => {
+                        let data = cached_data.as_deref().unwrap_or("");
+                        if !data.is_empty() && attachment.name.to_lowercase().ends_with(".pdf") {
+                            json!({
+                                "type": "document",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "application/pdf",
+                                    "data": data
+                                }
+                            })
+                        } else {
+                            json!({
+                                "type": "text",
+                                "text": attachment.handle_text()
+                            })
+                        }
                     }
                     _ => json!({}),
                 })

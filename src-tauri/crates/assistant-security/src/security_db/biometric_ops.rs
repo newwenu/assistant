@@ -67,14 +67,17 @@ fn restore_keys_from_plaintext(
         sk.zeroize();
     }
 
-    *state.master_key.lock().unwrap() = Some(master_key);
-    *state.bootstrap_key.lock().unwrap() = Some(bootstrap_key);
-    *state.conn.lock().unwrap() = Some(conn);
+    *state.master_key.lock().unwrap_or_else(|e| e.into_inner()) = Some(master_key);
+    *state
+        .bootstrap_key
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = Some(bootstrap_key);
+    *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = Some(conn);
 
     state.check_biometric_consistency(key_store)?;
 
     {
-        let guard = state.conn.lock().unwrap();
+        let guard = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(c) = guard.as_ref() {
             let _ = audit_log(c, AuditEvent::VaultUnlock, Some("biometric"));
         }
@@ -112,10 +115,10 @@ impl SecurityDbState {
             self.disenroll_biometric(key_store)?;
         }
 
-        let mk_guard = self.master_key.lock().unwrap();
+        let mk_guard = self.master_key.lock().unwrap_or_else(|e| e.into_inner());
         let master_key = mk_guard.as_ref().ok_or(VaultError::Locked)?;
 
-        let bk_guard = self.bootstrap_key.lock().unwrap();
+        let bk_guard = self.bootstrap_key.lock().unwrap_or_else(|e| e.into_inner());
         let bootstrap_key = bk_guard.as_ref().ok_or(VaultError::Locked)?;
 
         {
@@ -138,7 +141,7 @@ impl SecurityDbState {
         }
 
         {
-            let guard = self.conn.lock().unwrap();
+            let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(conn) = guard.as_ref() {
                 let _ = audit_log(conn, AuditEvent::BiometricEnrolled, None);
             }
@@ -178,7 +181,7 @@ impl SecurityDbState {
         let _ = key_store.delete_key(KEY_ID_SIG_HASH);
 
         {
-            let guard = self.conn.lock().unwrap();
+            let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(conn) = guard.as_ref() {
                 let _ = audit_log(conn, AuditEvent::VaultLock, Some("biometric_disenrolled"));
             }

@@ -1,4 +1,3 @@
-use std::panic::catch_unwind;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -100,16 +99,21 @@ impl SecurityDbState {
         meta::set_master_key_hash(&conn, &master_key_hash)?;
 
         let master_key = MasterKey::new(master_key_bytes);
-        *self.master_key.lock().unwrap() = Some(master_key);
-        *self.bootstrap_key.lock().unwrap() = Some(bootstrap_key);
-        *self.conn.lock().unwrap() = Some(conn);
+        *self.master_key.lock().unwrap_or_else(|e| e.into_inner()) = Some(master_key);
+        *self.bootstrap_key.lock().unwrap_or_else(|e| e.into_inner()) = Some(bootstrap_key);
+        *self.conn.lock().unwrap_or_else(|e| e.into_inner()) = Some(conn);
 
         info!("Vault initialized successfully (SQLCipher encrypted, two-phase unlock)");
         Ok(())
     }
 
     pub fn unlock(&self, password: &str) -> Result<(), VaultError> {
-        if self.master_key.lock().unwrap().is_some() {
+        if self
+            .master_key
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
+        {
             return Err(VaultError::AlreadyUnlocked);
         }
 
@@ -170,12 +174,12 @@ impl SecurityDbState {
 
         let master_key = MasterKey::new(master_key_bytes);
         let bootstrap_key = MasterKey::new(bootstrap_key_bytes);
-        *self.master_key.lock().unwrap() = Some(master_key);
-        *self.bootstrap_key.lock().unwrap() = Some(bootstrap_key);
-        *self.conn.lock().unwrap() = Some(conn);
+        *self.master_key.lock().unwrap_or_else(|e| e.into_inner()) = Some(master_key);
+        *self.bootstrap_key.lock().unwrap_or_else(|e| e.into_inner()) = Some(bootstrap_key);
+        *self.conn.lock().unwrap_or_else(|e| e.into_inner()) = Some(conn);
 
         {
-            let guard = self.conn.lock().unwrap();
+            let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(c) = guard.as_ref() {
                 let _ = audit_log(c, AuditEvent::VaultUnlock, None);
             }
@@ -187,38 +191,38 @@ impl SecurityDbState {
 
     pub fn lock(&self) -> Result<(), VaultError> {
         {
-            let guard = self.conn.lock().unwrap();
+            let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(conn) = guard.as_ref() {
                 let _ = audit_log(conn, AuditEvent::VaultLock, None);
             }
         }
 
-        let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
-            *self.master_key.lock().unwrap() = None;
-            *self.bootstrap_key.lock().unwrap() = None;
-        }));
-
-        match result {
-            Ok(()) => {
-                *self.conn.lock().unwrap() = None;
-                info!("Vault locked");
-                Ok(())
-            }
-            Err(_) => {
-                *self.conn.lock().unwrap() = None;
-                Err(VaultError::Database(
-                    "Panic during vault lock — master_key zeroize may have failed".to_string(),
-                ))
-            }
+        {
+            let mut mk_guard = self.master_key.lock().unwrap_or_else(|e| e.into_inner());
+            *mk_guard = None;
         }
+        {
+            let mut bk_guard = self.bootstrap_key.lock().unwrap_or_else(|e| e.into_inner());
+            *bk_guard = None;
+        }
+        {
+            let mut conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+            *conn_guard = None;
+        }
+
+        info!("Vault locked");
+        Ok(())
     }
 
     pub fn is_locked(&self) -> bool {
-        self.master_key.lock().unwrap().is_none()
+        self.master_key
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_none()
     }
 
     pub fn get_conn(&self) -> Result<std::sync::MutexGuard<'_, Option<Connection>>, VaultError> {
-        let guard = self.conn.lock().unwrap();
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
             return Err(VaultError::Locked);
         }
@@ -228,7 +232,7 @@ impl SecurityDbState {
     pub fn get_master_key(
         &self,
     ) -> Result<std::sync::MutexGuard<'_, Option<MasterKey>>, VaultError> {
-        let guard = self.master_key.lock().unwrap();
+        let guard = self.master_key.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
             return Err(VaultError::Locked);
         }
@@ -236,7 +240,7 @@ impl SecurityDbState {
     }
 
     pub fn backup(&self, backup_path: &Path) -> Result<(), VaultError> {
-        let guard = self.conn.lock().unwrap();
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = guard.as_ref().ok_or(VaultError::Locked)?;
         Self::backup_conn(conn, backup_path)
     }
@@ -276,15 +280,15 @@ impl SecurityDbState {
         master_key: MasterKey,
         bootstrap_key: MasterKey,
     ) {
-        *self.conn.lock().unwrap() = Some(conn);
-        *self.master_key.lock().unwrap() = Some(master_key);
-        *self.bootstrap_key.lock().unwrap() = Some(bootstrap_key);
+        *self.conn.lock().unwrap_or_else(|e| e.into_inner()) = Some(conn);
+        *self.master_key.lock().unwrap_or_else(|e| e.into_inner()) = Some(master_key);
+        *self.bootstrap_key.lock().unwrap_or_else(|e| e.into_inner()) = Some(bootstrap_key);
     }
 
     pub fn get_bootstrap_key(
         &self,
     ) -> Result<std::sync::MutexGuard<'_, Option<MasterKey>>, VaultError> {
-        let guard = self.bootstrap_key.lock().unwrap();
+        let guard = self.bootstrap_key.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
             return Err(VaultError::Locked);
         }
@@ -295,9 +299,9 @@ impl SecurityDbState {
     where
         F: FnOnce(&Connection, &MasterKey) -> Result<T, VaultError>,
     {
-        let mk_guard = self.master_key.lock().unwrap();
+        let mk_guard = self.master_key.lock().unwrap_or_else(|e| e.into_inner());
         let mk = mk_guard.as_ref().ok_or(VaultError::Locked)?;
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
         f(conn, mk)
     }

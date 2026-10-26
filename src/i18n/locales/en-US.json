@@ -463,15 +463,18 @@
       "placeholder_streaming": "Type next message, Enter will send after reply finishes...",
       "send": "Send message",
       "stop": "Stop generating",
-      "attach_image": "Attach image",
+      "attach": "Attach",
       "model_no_vision": "Current model does not support images",
       "too_many_images": "Maximum {{max}} images allowed",
       "image_too_large": "Image size cannot exceed {{max}} MB",
-      "invalid_image_type": "Unsupported image format. Only PNG, JPEG, WebP, GIF are supported",
+      "invalid_image_type": "Unsupported image format. Only PNG, JPEG, WebP, GIF, BMP, TIFF are supported",
       "image_load_failed": "Image failed to load",
       "image_retry": "Retry",
       "image_offloaded": "Image offloaded",
-      "image_not_found": "Image not found"
+      "image_not_found": "Image not found",
+      "too_many_files": "Maximum {{max}} files allowed",
+      "file_too_large": "File size cannot exceed {{max}} MB",
+      "invalid_file_type": "Unsupported file type"
     },
     "view": {
       "no_provider_title": "Please configure an AI Provider first",

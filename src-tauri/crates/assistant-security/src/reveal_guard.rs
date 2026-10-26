@@ -24,7 +24,7 @@ impl RevealGuard {
     }
 
     pub fn check_and_record(&self) -> Result<(), crate::types::VaultError> {
-        let mut timestamps = self.timestamps.lock().unwrap();
+        let mut timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
 
         timestamps.retain(|t| now.duration_since(*t).as_secs() < RATE_WINDOW_SECS);

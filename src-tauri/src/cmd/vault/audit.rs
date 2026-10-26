@@ -182,7 +182,10 @@ pub async fn vault_hibp_audit(app: AppHandle) -> Result<Vec<(String, u32)>, Stri
             let client = client.clone();
             let interval = interval.clone();
             async move {
-                let _permit = interval.acquire().await.unwrap();
+                let _permit = match interval.acquire().await {
+                    Ok(p) => p,
+                    Err(_) => return (id, 0),
+                };
                 let safe = SafePassword::new(password);
                 let count = client.check_password(&safe).await.unwrap_or(0);
                 sleep(Duration::from_millis(HIBP_MIN_INTERVAL_MS)).await;

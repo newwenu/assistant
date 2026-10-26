@@ -27,19 +27,28 @@ impl SyncEngine {
     }
 
     pub fn readyness(&self) -> Result<Readyness, SyncError> {
-        self.git_sync.lock().unwrap().readyness()
+        self.git_sync
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .readyness()
     }
 
     pub fn prepare(&self) -> Result<(), SyncError> {
-        self.git_sync.lock().unwrap().prepare()
+        self.git_sync
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .prepare()
     }
 
     pub fn finalize(&self, msg: &str) -> Result<(), SyncError> {
-        self.git_sync.lock().unwrap().finalize(msg)
+        self.git_sync
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .finalize(msg)
     }
 
     pub fn pull(&self) -> Result<SyncResult, SyncError> {
-        let git = self.git_sync.lock().unwrap();
+        let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
 
         if !git.is_init() {
             return Ok(SyncResult::Error(
@@ -62,7 +71,7 @@ impl SyncEngine {
     }
 
     pub fn push(&self) -> Result<SyncResult, SyncError> {
-        let git = self.git_sync.lock().unwrap();
+        let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
 
         if !git.is_init() {
             return Ok(SyncResult::Error(
@@ -93,7 +102,7 @@ impl SyncEngine {
             }
         }
 
-        let git = self.git_sync.lock().unwrap();
+        let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
         if git.has_remote()? {
             let msg = format!("Sync at {}", chrono::Utc::now().to_rfc3339());
             git.finalize(&msg)?;
@@ -105,7 +114,7 @@ impl SyncEngine {
     }
 
     pub fn force_push(&self) -> Result<SyncResult, SyncError> {
-        let git = self.git_sync.lock().unwrap();
+        let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
 
         if !git.is_init() {
             return Ok(SyncResult::Error(
@@ -126,7 +135,7 @@ impl SyncEngine {
         path: &str,
         resolution: ConflictResolution,
     ) -> Result<(), SyncError> {
-        let git = self.git_sync.lock().unwrap();
+        let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
         match resolution {
             ConflictResolution::UseLocal => git.resolve_conflict_local(path),
             ConflictResolution::UseRemote => git.resolve_conflict_remote(path),
@@ -139,31 +148,46 @@ impl SyncEngine {
     }
 
     pub fn get_config(&self) -> SyncConfig {
-        self.config.lock().unwrap().clone()
+        self.config
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn set_config(&self, config: SyncConfig) {
-        *self.config.lock().unwrap() = config;
+        *self.config.lock().unwrap_or_else(|e| e.into_inner()) = config;
     }
 
     pub fn init(&self) -> Result<(), SyncError> {
         self.vault_file.ensure_structure()?;
         self.vault_file.ensure_vault_meta_exists()?;
-        self.git_sync.lock().unwrap().init()
+        self.git_sync
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .init()
     }
 
     pub fn clone_repo(&self, url: &str) -> Result<(), SyncError> {
-        self.git_sync.lock().unwrap().clone(url, true)?;
+        self.git_sync
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone(url, true)?;
         self.vault_file.ensure_vault_meta_exists()?;
         Ok(())
     }
 
     pub fn add_remote(&self, remote: &str, url: &str) -> Result<(), SyncError> {
-        self.git_sync.lock().unwrap().add_remote_url(remote, url)
+        self.git_sync
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .add_remote_url(remote, url)
     }
 
     pub fn set_remote(&self, remote: &str, url: &str) -> Result<(), SyncError> {
-        self.git_sync.lock().unwrap().set_remote_url(remote, url)
+        self.git_sync
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_remote_url(remote, url)
     }
 
     pub fn vault_file_manager(&self) -> &VaultFileManager {

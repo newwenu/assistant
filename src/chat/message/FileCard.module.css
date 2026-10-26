@@ -9,6 +9,14 @@
   overflow: hidden;
 }
 
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: var(--color-bg-secondary);
+}
+
 .icon {
   flex-shrink: 0;
   font-size: 11px;

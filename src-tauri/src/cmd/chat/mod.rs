@@ -90,7 +90,8 @@ async fn validate_and_preprocess(
     }
 
     let attachment_store = app.state::<AttachmentStore>();
-    let content = multimodal::admit_attachments(content, &attachment_store)
+    let config = multimodal::MultimodalConfig::trusted_channel_input();
+    let content = multimodal::admit_attachments(content, &attachment_store, &config)
         .await
         .map_err(|e| e.to_string())?;
 

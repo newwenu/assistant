@@ -24,7 +24,10 @@ pub fn vault_ssh_add_to_agent(
 
     {
         let ssh_state = app.state::<crate::setup::SshAgentState>();
-        let mut fps = ssh_state.added_fingerprints.lock().unwrap();
+        let mut fps = ssh_state
+            .added_fingerprints
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         fps.insert(meta.fingerprint.clone());
     }
 
@@ -50,7 +53,10 @@ pub fn vault_ssh_remove_from_agent(app: AppHandle, fingerprint: String) -> Resul
 
     {
         let ssh_state = app.state::<crate::setup::SshAgentState>();
-        let mut fps = ssh_state.added_fingerprints.lock().unwrap();
+        let mut fps = ssh_state
+            .added_fingerprints
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         fps.remove(&fingerprint);
     }
 
@@ -74,7 +80,10 @@ pub fn vault_ssh_list_agent(
     let mut keys = bridge.list_keys().map_err(|e| e.to_string())?;
 
     let ssh_state = app.state::<crate::setup::SshAgentState>();
-    let vault_fps = ssh_state.added_fingerprints.lock().unwrap();
+    let vault_fps = ssh_state
+        .added_fingerprints
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     for key in &mut keys {
         key.added_by_vault = vault_fps.contains(&key.fingerprint);
     }
@@ -113,7 +122,10 @@ pub fn vault_ssh_auto_add_all(app: AppHandle) -> Result<Vec<String>, String> {
                 {
                     {
                         let ssh_state = app.state::<crate::setup::SshAgentState>();
-                        let mut fps = ssh_state.added_fingerprints.lock().unwrap();
+                        let mut fps = ssh_state
+                            .added_fingerprints
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
                         fps.insert(meta.fingerprint.clone());
                     }
                     added.push(meta.fingerprint);

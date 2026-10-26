@@ -136,18 +136,36 @@ pub fn resolve_context_window_from_stored(model_id: &str, models_json: &str) -> 
 /// 视觉能力判定：`inputModalities` 为权威来源（非空时以其为准，
 /// 含 "image" 即支持）；存量数据无该字段时回退 `supportVision` 布尔。
 pub fn resolve_support_vision_from_stored(model_id: &str, models_json: &str) -> bool {
+    resolve_input_modalities_from_stored(model_id, models_json)
+        .iter()
+        .any(|m| m == "image")
+}
+
+/// 输入模态列表：`inputModalities` 非空时以其为准；
+/// 存量数据无该字段时由 `supportVision` 派生为 text/image。
+pub fn resolve_input_modalities_from_stored(model_id: &str, models_json: &str) -> Vec<String> {
     parse_stored_models(models_json)
         .iter()
         .find(|m| m.id == model_id)
-        .map(resolve_entry_vision)
-        .unwrap_or(false)
+        .map(resolve_entry_modalities)
+        .unwrap_or_else(|| vec!["text".to_string()])
 }
 
-fn resolve_entry_vision(m: &StoredModelEntry) -> bool {
+pub fn resolve_support_pdf_from_stored(model_id: &str, models_json: &str) -> bool {
+    resolve_input_modalities_from_stored(model_id, models_json)
+        .iter()
+        .any(|m| m == "pdf")
+}
+
+fn resolve_entry_modalities(m: &StoredModelEntry) -> Vec<String> {
     if !m.input_modalities.is_empty() {
-        return m.input_modalities.iter().any(|x| x == "image");
+        return m.input_modalities.clone();
     }
-    m.support_vision
+    if m.support_vision {
+        vec!["text".to_string(), "image".to_string()]
+    } else {
+        vec!["text".to_string()]
+    }
 }
 
 #[cfg(test)]

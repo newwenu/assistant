@@ -21,9 +21,14 @@
     "provider_deleted": "此对话的 Provider 已被删除，请重新选择 Provider 后再发送",
     "new_conversation_title": "新对话",
     "too_many_images": "图片数量超过限制（最多 {{max}} 张）",
+    "too_many_files": "文件数量超过限制（最多 {{max}} 个）",
+    "attachments_not_allowed": "该通道不允许发送附件",
+    "file_too_large": "文件大小超过限制（最大 {{max_mb}} MB）",
     "image_too_large": "图片大小超过限制（最大 {{max_mb}} MB）",
     "image_projected_placeholder": "[图片已省略，当前模型不支持图片]",
     "image_not_found_placeholder": "[图片找不到了]",
+    "image_offloaded_placeholder": "[图片已卸载 (ID: {{id}})]",
+    "file_not_found_placeholder": "[文件找不到了]",
     "compaction": {
       "summary_truncated": "[摘要已截断，完整信息请通过 search_history 检索]",
       "default_summary_prompt": "请为以下对话生成交接摘要，使新对话中的 AI 无需查阅原文即可继续工作。\n\n输出格式（严格遵循）：\n\n## 交接摘要\n\n**目标**：用户的核心目标，1-2 句话\n\n**进展**：\n- 已完成的关键步骤，每步一句，按时间顺序\n\n**待办**：\n- 未完成的事项，如有\n\n**关键信息**：\n- 文件路径、配置值、变量名、错误码等后续必需的具体值\n- 每条信息必须写具体值，禁止写\"某个文件\"\"某个值\"等模糊表述\n\n**工具调用摘要**：\n- 已执行的工具名称及关键结果，每条一行\n- 如：`read_file → config.rs 内容已读取`、`run_command → 编译通过`\n\n规则：\n1. 自包含：摘要中不引用\"上文\"\"之前\"等指代，所有信息直接给出\n2. 具体：文件路径写完整路径，变量名写全名，错误码写原始值\n3. 精炼：不记录每步操作细节，只保留关键节点和决策\n4. 可操作：粘贴到新对话后 AI 可立即继续，无需追问上下文\n5. 工具调用：保留工具名称 + 结果摘要，省略完整输出"

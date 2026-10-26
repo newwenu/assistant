@@ -28,7 +28,7 @@ impl SecurityDbState {
             }
         }
 
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
 
         let hash_salt = meta::get_salt(conn, "hash_salt")?
@@ -61,7 +61,7 @@ impl SecurityDbState {
 
         let entry_ids: Vec<String>;
         {
-            let mk_guard = self.master_key.lock().unwrap();
+            let mk_guard = self.master_key.lock().unwrap_or_else(|e| e.into_inner());
             let old_master_key = mk_guard.as_ref().ok_or(VaultError::Locked)?;
 
             entry_ids = {
@@ -226,11 +226,11 @@ impl SecurityDbState {
         }
 
         {
-            let mut mk_guard = self.master_key.lock().unwrap();
+            let mut mk_guard = self.master_key.lock().unwrap_or_else(|e| e.into_inner());
             *mk_guard = Some(new_master_key);
         }
         {
-            let mut bk_guard = self.bootstrap_key.lock().unwrap();
+            let mut bk_guard = self.bootstrap_key.lock().unwrap_or_else(|e| e.into_inner());
             *bk_guard = Some(new_bootstrap_key);
         }
 

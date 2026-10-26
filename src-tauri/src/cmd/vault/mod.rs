@@ -43,7 +43,10 @@ pub(crate) fn ssh_bridge_from_conf() -> Box<dyn assistant_security::ssh_agent::S
 pub(crate) fn ssh_remove_all_on_lock(app: &AppHandle) {
     let ssh_state = app.state::<crate::setup::SshAgentState>();
     let fingerprints: Vec<String> = {
-        let mut fps = ssh_state.added_fingerprints.lock().unwrap();
+        let mut fps = ssh_state
+            .added_fingerprints
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         fps.drain().collect()
     };
     if fingerprints.is_empty() {

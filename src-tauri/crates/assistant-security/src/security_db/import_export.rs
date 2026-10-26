@@ -5,7 +5,7 @@ use super::SecurityDbState;
 
 impl SecurityDbState {
     pub fn export_entries(&self) -> Result<Vec<VaultEntryExport>, VaultError> {
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
 
         let ids: Vec<String> = {

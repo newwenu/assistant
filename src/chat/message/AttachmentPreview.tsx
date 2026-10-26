@@ -1,5 +1,6 @@
 import React from "react";
 import { CloseOutlined } from "@ant-design/icons";
+import { formatBytes } from "@/utils/formatBytes";
 import type { Attachment } from "../core/attachmentTypes";
 import css from "./AttachmentPreview.module.css";
 
@@ -17,7 +18,10 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
   return (
     <div className={css.rail}>
       {attachments.map((att) => (
-        <div key={att.id} className={css.item}>
+        <div
+          key={att.id}
+          className={`${css.item}${att.kind === "file" ? ` ${css.fileItem}` : ""}`}
+        >
           {att.kind === "image" ? (
             <img
               className={css.thumb}
@@ -25,9 +29,19 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
               alt={att.file.name}
             />
           ) : (
-            <div className={css.fileIcon}>
-              {att.file.name.split(".").pop()?.toUpperCase().slice(0, 4) ??
-                "FILE"}
+            <div className={css.fileMeta}>
+              <div className={css.fileIcon}>
+                {att.file.name.split(".").pop()?.toUpperCase().slice(0, 4) ??
+                  "FILE"}
+              </div>
+              <span className={css.fileName} title={att.file.name}>
+                {att.file.name}
+              </span>
+              {att.originalSizeBytes > 0 && (
+                <span className={css.fileSize}>
+                  {formatBytes(att.originalSizeBytes)}
+                </span>
+              )}
             </div>
           )}
           <button

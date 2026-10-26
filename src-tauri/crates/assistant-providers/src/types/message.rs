@@ -69,6 +69,23 @@ pub struct FileAttachmentRef {
     pub bytes: u64,
 }
 
+impl FileAttachmentRef {
+    /// 降级为纯文本时使用的占位描述（Provider 转换器与投影共用）。
+    pub fn handle_text(&self) -> String {
+        format!("[file: {} ({})]", self.name, format_size(self.bytes))
+    }
+}
+
+fn format_size(bytes: u64) -> String {
+    if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
@@ -86,6 +103,10 @@ pub enum ContentBlock {
     File {
         #[serde(rename = "attachment")]
         attachment: FileAttachmentRef,
+        #[serde(skip_serializing)]
+        cached_data: Option<String>,
+        #[serde(skip_serializing)]
+        file_path: Option<String>,
     },
     Thinking {
         thinking: String,

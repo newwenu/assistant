@@ -1,22 +1,13 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { appDataDir, join } from "@tauri-apps/api/path";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { join } from "@tauri-apps/api/path";
 import { useTranslation } from "react-i18next";
-import { FileImageOutlined } from "@ant-design/icons";
+import { FileImageOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { ImageAttachmentRef } from "../core/contentBlockTypes";
+import { getAttachmentsDir, openAttachmentFile } from "../core/attachmentUtils";
 import css from "./ImageThumbnail.module.css";
 
 const ERROR_CONFIRM_DELAY_MS = 1500;
-
-let attachmentsDirCache: string | null = null;
-
-async function getAttachmentsDir(): Promise<string> {
-  if (!attachmentsDirCache) {
-    attachmentsDirCache = await join(await appDataDir(), "attachments");
-  }
-  return attachmentsDirCache;
-}
 
 interface ImageThumbnailProps {
   attachment: ImageAttachmentRef;
@@ -33,6 +24,7 @@ export const ImageThumbnail: React.FC<ImageThumbnailProps> = ({
   const [assetUrl, setAssetUrl] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasValidId = attachment.attachmentId.length > 0;
@@ -78,10 +70,8 @@ export const ImageThumbnail: React.FC<ImageThumbnailProps> = ({
 
   const handleOpenViewer = useCallback(async () => {
     if (!hasValidId) return;
-    const dir = await getAttachmentsDir();
-    const filePath = await join(dir, attachment.attachmentId);
     try {
-      await openPath(filePath);
+      await openAttachmentFile(attachment.attachmentId);
     } catch (e) {
       console.warn("Failed to open image viewer:", e);
     }
@@ -110,6 +100,24 @@ export const ImageThumbnail: React.FC<ImageThumbnailProps> = ({
     }, ERROR_CONFIRM_DELAY_MS);
   }, []);
 
+  const handleRetry = useCallback(() => {
+    if (errorTimerRef.current !== null) {
+      clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = null;
+    }
+    setError(false);
+    setLoaded(false);
+    // data: URL 无法通过换 URL 重试，只有文件型 URL 追加时间戳绕开缓存
+    setRetryTick((tick) => tick + 1);
+  }, []);
+
+  const displayUrl = useMemo(() => {
+    if (!assetUrl) return null;
+    if (assetUrl.startsWith("data:")) return assetUrl;
+    const sep = assetUrl.includes("?") ? "&" : "?";
+    return `${assetUrl}${sep}retry=${retryTick}`;
+  }, [assetUrl, retryTick]);
+
   if (offloaded) {
     return (
       <div className={css.offloaded} style={aspectStyle}>
@@ -123,16 +131,22 @@ export const ImageThumbnail: React.FC<ImageThumbnailProps> = ({
 
   if (error) {
     return (
-      <div className={css.offloaded} style={aspectStyle}>
-        <FileImageOutlined className={css.offloadedIcon} />
-        <span className={css.offloadedText}>
-          {t("chat.input.image_not_found")}
-        </span>
+      <div className={css.error} style={aspectStyle}>
+        <FileImageOutlined className={css.errorIcon} />
+        <span className={css.errorText}>{t("chat.input.image_not_found")}</span>
+        <button
+          type="button"
+          className={css.retryBtn}
+          onClick={handleRetry}
+          title={t("chat.input.image_retry")}
+        >
+          <ReloadOutlined />
+        </button>
       </div>
     );
   }
 
-  if (!assetUrl) {
+  if (!displayUrl) {
     return <div className={css.skeleton} style={aspectStyle} />;
   }
 
@@ -154,7 +168,7 @@ export const ImageThumbnail: React.FC<ImageThumbnailProps> = ({
       {!loaded && <div className={css.skeleton} />}
       <img
         className={`${css.img}${loaded ? ` ${css.imgLoaded}` : ""}`}
-        src={assetUrl}
+        src={displayUrl}
         loading="lazy"
         alt={attachment.name ?? "image"}
         onLoad={handleLoad}

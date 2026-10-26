@@ -102,9 +102,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   const supportVision = (() => {
     const p = provider.providers.find((pr) => pr.id === currentProviderId);
     const model = p?.models.find((m) => m.id === currentModelId);
-    return (
-      model?.supportVision ?? model?.inputModalities?.includes("image") ?? false
-    );
+    // inputModalities 为空视为存量数据，回退 supportVision，避免隐藏原有图片入口
+    const modalities = model?.inputModalities;
+    if (modalities && modalities.length > 0) {
+      return modalities.includes("image");
+    }
+    return model?.supportVision ?? false;
   })();
 
   useEffect(() => {
@@ -460,18 +463,16 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
                 />
               </Tooltip>
             )}
-            {supportVision && (
-              <Button
-                size="small"
-                type="text"
-                icon={<PaperClipOutlined />}
-                onClick={() => {
-                  void handleFileSelect();
-                }}
-                disabled={stream.isStreaming}
-                title={t("chat.input.attach_image")}
-              />
-            )}
+            <Button
+              size="small"
+              type="text"
+              icon={<PaperClipOutlined />}
+              onClick={() => {
+                void handleFileSelect();
+              }}
+              disabled={stream.isStreaming}
+              title={t("chat.input.attach")}
+            />
           </div>
           <MessageInput
             onSend={handleSend}

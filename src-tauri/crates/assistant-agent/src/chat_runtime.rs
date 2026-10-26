@@ -383,7 +383,7 @@ pub fn estimate_tokens(content: &str) -> Option<i64> {
 /// 流结束后解析 token 总数：优先 usage，缺失时按内容长度估算。
 pub fn resolve_final_tokens(outcome: &StreamOutcome) -> Option<i64> {
     if outcome.total_tokens.is_none() && !outcome.full_content.is_empty() {
-        let estimated = estimate_tokens(&outcome.full_content).unwrap();
+        let estimated = estimate_tokens(&outcome.full_content).unwrap_or(0);
         info!(
             "[chat-delta] stream finished: reason={:?} no_usage=>estimated={} (content_len={})",
             outcome.finish_reason,

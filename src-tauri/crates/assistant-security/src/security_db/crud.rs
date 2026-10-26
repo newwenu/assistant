@@ -17,7 +17,7 @@ impl SecurityDbState {
         search: Option<&str>,
         tag: Option<&str>,
     ) -> Result<Vec<VaultEntrySummary>, VaultError> {
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
 
         let mut sql = String::from(
@@ -90,7 +90,7 @@ impl SecurityDbState {
     }
 
     pub fn get_entry(&self, id: &str) -> Result<VaultEntryDetail, VaultError> {
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
 
         let result: Result<VaultEntryDetail, rusqlite::Error> = conn.query_row(
@@ -185,28 +185,29 @@ impl SecurityDbState {
             let custom_fields_to_encrypt: Vec<serde_json::Value> = entry
                 .custom_fields
                 .iter()
-                .map(|cf| {
+                .map(|cf| -> Result<serde_json::Value, VaultError> {
                     if cf.is_protected {
                         let encrypted = VaultCrypto::encrypt_field(
                             &VaultPlaintext::new_str(&cf.value),
                             entry_key.expose(),
                             algo,
                         )
-                        .unwrap_or_default();
-                        serde_json::json!({
+                        .map_err(VaultError::Crypto)?;
+                        Ok(serde_json::json!({
                             "name": cf.name,
                             "valueEncrypted": encrypted,
                             "isProtected": true
-                        })
+                        }))
                     } else {
-                        serde_json::json!({
+                        Ok(serde_json::json!({
                             "name": cf.name,
                             "value": cf.value,
                             "isProtected": false
-                        })
+                        }))
                     }
                 })
-                .collect();
+                .collect::<Result<Vec<_>, VaultError>>()?;
+
             let encrypted_custom_fields = serde_json::to_string(&custom_fields_to_encrypt)
                 .map_err(|e| VaultError::Validation(e.to_string()))?;
 
@@ -290,28 +291,28 @@ impl SecurityDbState {
             let custom_fields_to_encrypt: Vec<serde_json::Value> = entry
                 .custom_fields
                 .iter()
-                .map(|cf| {
+                .map(|cf| -> Result<serde_json::Value, VaultError> {
                     if cf.is_protected {
                         let encrypted = VaultCrypto::encrypt_field(
                             &VaultPlaintext::new_str(&cf.value),
                             entry_key.expose(),
                             algo,
                         )
-                        .unwrap_or_default();
-                        serde_json::json!({
+                        .map_err(VaultError::Crypto)?;
+                        Ok(serde_json::json!({
                             "name": cf.name,
                             "valueEncrypted": encrypted,
                             "isProtected": true
-                        })
+                        }))
                     } else {
-                        serde_json::json!({
+                        Ok(serde_json::json!({
                             "name": cf.name,
                             "value": cf.value,
                             "isProtected": false
-                        })
+                        }))
                     }
                 })
-                .collect();
+                .collect::<Result<Vec<_>, VaultError>>()?;
             let encrypted_custom_fields = serde_json::to_string(&custom_fields_to_encrypt)
                 .map_err(|e| VaultError::Validation(e.to_string()))?;
 
@@ -389,7 +390,7 @@ impl SecurityDbState {
     }
 
     pub fn delete_entry(&self, id: &str) -> Result<(), VaultError> {
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
 
         let now = chrono::Utc::now().timestamp_millis();

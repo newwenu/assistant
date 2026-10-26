@@ -18,7 +18,7 @@ impl ScreenLockMonitor {
     }
 
     pub fn is_locked(&self) -> bool {
-        *self.locked.lock().unwrap()
+        *self.locked.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn spawn_listener(
@@ -141,16 +141,28 @@ fn windows_listen(
                     let (locked, on_lock, on_unlock) = &*state_ptr;
                     match wparam.0 as u32 {
                         WTS_SESSION_LOCK | WTS_CONSOLE_DISCONNECT => {
-                            let was = *locked.lock().unwrap();
+                            let was = {
+                                let mut guard = locked.lock().unwrap_or_else(|e| e.into_inner());
+                                let was = *guard;
+                                if !was {
+                                    *guard = true;
+                                }
+                                was
+                            };
                             if !was {
-                                *locked.lock().unwrap() = true;
                                 on_lock();
                             }
                         }
                         WTS_SESSION_UNLOCK => {
-                            let was = *locked.lock().unwrap();
+                            let was = {
+                                let mut guard = locked.lock().unwrap_or_else(|e| e.into_inner());
+                                let was = *guard;
+                                if was {
+                                    *guard = false;
+                                }
+                                was
+                            };
                             if was {
-                                *locked.lock().unwrap() = false;
                                 on_unlock();
                             }
                         }
@@ -165,16 +177,28 @@ fn windows_listen(
                     let (locked, on_lock, on_unlock) = &*state_ptr;
                     match wparam.0 as u32 {
                         PBT_APMSUSPEND => {
-                            let was = *locked.lock().unwrap();
+                            let was = {
+                                let mut guard = locked.lock().unwrap_or_else(|e| e.into_inner());
+                                let was = *guard;
+                                if !was {
+                                    *guard = true;
+                                }
+                                was
+                            };
                             if !was {
-                                *locked.lock().unwrap() = true;
                                 on_lock();
                             }
                         }
                         PBT_APMRESUMEAUTOMATIC => {
-                            let was = *locked.lock().unwrap();
+                            let was = {
+                                let mut guard = locked.lock().unwrap_or_else(|e| e.into_inner());
+                                let was = *guard;
+                                if was {
+                                    *guard = false;
+                                }
+                                was
+                            };
                             if was {
-                                *locked.lock().unwrap() = false;
                                 on_unlock();
                             }
                         }
@@ -185,9 +209,16 @@ fn windows_listen(
                             {
                                 let lid_state = (*setting).Data.as_ptr() as *const u32;
                                 if !lid_state.is_null() && *lid_state == 0 {
-                                    let was = *locked.lock().unwrap();
+                                    let was = {
+                                        let mut guard =
+                                            locked.lock().unwrap_or_else(|e| e.into_inner());
+                                        let was = *guard;
+                                        if !was {
+                                            *guard = true;
+                                        }
+                                        was
+                                    };
                                     if !was {
-                                        *locked.lock().unwrap() = true;
                                         on_lock();
                                     }
                                 }
@@ -386,11 +417,11 @@ fn macos_listen(
         let now = is_screen_locked();
         if now != last {
             if now {
-                *locked.lock().unwrap() = true;
+                *locked.lock().unwrap_or_else(|e| e.into_inner()) = true;
                 on_lock();
                 log::info!("ScreenLockListener: screen locked");
             } else {
-                *locked.lock().unwrap() = false;
+                *locked.lock().unwrap_or_else(|e| e.into_inner()) = false;
                 on_unlock();
                 log::info!("ScreenLockListener: screen unlocked");
             }
@@ -425,11 +456,11 @@ fn linux_listen(
         let now = query_locked_hint();
         if now != last {
             if now {
-                *locked.lock().unwrap() = true;
+                *locked.lock().unwrap_or_else(|e| e.into_inner()) = true;
                 on_lock();
                 log::info!("ScreenLockListener: screen locked (LockedHint=yes)");
             } else {
-                *locked.lock().unwrap() = false;
+                *locked.lock().unwrap_or_else(|e| e.into_inner()) = false;
                 on_unlock();
                 log::info!("ScreenLockListener: screen unlocked (LockedHint=no)");
             }

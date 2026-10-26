@@ -49,10 +49,10 @@ fn convert_user_parts(msg: &ChatMessage) -> Vec<Value> {
         .unwrap_or_else(|| parse_content(&msg.content));
 
     if let Some(blocks) = blocks {
-        let has_image = blocks
+        let has_media = blocks
             .iter()
-            .any(|b| matches!(b, ContentBlock::Image { .. }));
-        if has_image {
+            .any(|b| matches!(b, ContentBlock::Image { .. } | ContentBlock::File { .. }));
+        if has_media {
             return blocks
                 .iter()
                 .filter_map(|b| match b {
@@ -67,11 +67,34 @@ fn convert_user_parts(msg: &ChatMessage) -> Vec<Value> {
                         let mt = attachment.media_type.as_deref().unwrap_or("image/png");
                         let data = cached_data.as_deref().unwrap_or("");
                         if data.is_empty() {
-                            None
+                            // 缺少 bytes 时降级为文本，避免静默丢图
+                            Some(json!({
+                                "text": format!(
+                                    "[image unavailable: {}]",
+                                    attachment.name.as_deref().unwrap_or("unknown")
+                                )
+                            }))
                         } else {
                             Some(json!({
                                 "inlineData": {
                                     "mimeType": mt,
+                                    "data": data,
+                                }
+                            }))
+                        }
+                    }
+                    ContentBlock::File {
+                        attachment,
+                        cached_data,
+                        ..
+                    } => {
+                        let data = cached_data.as_deref().unwrap_or("");
+                        if data.is_empty() || !attachment.name.to_lowercase().ends_with(".pdf") {
+                            Some(json!({ "text": attachment.handle_text() }))
+                        } else {
+                            Some(json!({
+                                "inlineData": {
+                                    "mimeType": "application/pdf",
                                     "data": data,
                                 }
                             }))

@@ -14,6 +14,8 @@ export interface ImageBlock {
 export interface FileBlock {
   type: "file";
   attachment: FileAttachmentRef;
+  cached_data?: string;
+  file_path?: string;
 }
 
 export interface ImageAttachmentRef {
@@ -32,6 +34,11 @@ export interface FileAttachmentRef {
 }
 
 export type ImageMediaType =
-  "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  | "image/png"
+  | "image/jpeg"
+  | "image/webp"
+  | "image/gif"
+  | "image/bmp"
+  | "image/tiff";
 
 export type ContentBlock = TextBlock | ImageBlock | FileBlock;

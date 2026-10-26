@@ -56,7 +56,12 @@ mod tests {
     /// modalities 输出与 vision 判定必须一致：含 image ⇔ 支持视觉
     #[test]
     fn modalities_and_vision_agree_when_no_hint() {
-        for id in ["gpt-4o", "gpt-3.5-turbo", "claude-sonnet-4-5", "unknown-model"] {
+        for id in [
+            "gpt-4o",
+            "gpt-3.5-turbo",
+            "claude-sonnet-4-5",
+            "unknown-model",
+        ] {
             let has_image = input_modalities_for(id).iter().any(|m| m == "image");
             assert_eq!(has_image, resolve_support_vision(id, None), "model: {id}");
         }

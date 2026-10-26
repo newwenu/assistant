@@ -20,8 +20,9 @@ export function usePasteAttach() {
         notifyAttachError("no_vision");
         return;
       }
+      let imageCount = attachments.filter((a) => a.kind === "image").length;
       for (const file of files) {
-        if (attachments.length >= ATTACHMENT_MAX_IMAGES) {
+        if (imageCount >= ATTACHMENT_MAX_IMAGES) {
           notifyAttachError("too_many");
           break;
         }
@@ -32,12 +33,13 @@ export function usePasteAttach() {
         const att = createAttachmentFromFile(file);
         if (att) {
           addAttachment(att);
+          imageCount += 1;
         } else {
           notifyAttachError("invalid_type");
         }
       }
     },
-    [supportVision, attachments.length, addAttachment],
+    [supportVision, attachments, addAttachment],
   );
 
   const handlePaste = useCallback(

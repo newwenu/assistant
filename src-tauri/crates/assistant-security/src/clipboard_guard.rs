@@ -42,11 +42,14 @@ impl ClipboardGuard {
         );
 
         {
-            let mut orig = self.original.lock().unwrap();
+            let mut orig = self.original.lock().unwrap_or_else(|e| e.into_inner());
             *orig = original_content;
         }
         {
-            let mut cur = self.current_password.lock().unwrap();
+            let mut cur = self
+                .current_password
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             *cur = Some(password.to_string());
         }
 
@@ -59,7 +62,7 @@ impl ClipboardGuard {
             thread::sleep(timeout);
 
             let should_clear = {
-                let cur = current_password.lock().unwrap();
+                let cur = current_password.lock().unwrap_or_else(|e| e.into_inner());
                 match cur.as_ref() {
                     Some(p) => p == &password_owned,
                     None => false,
@@ -68,7 +71,7 @@ impl ClipboardGuard {
 
             if should_clear {
                 let original_content = {
-                    let mut orig = original.lock().unwrap();
+                    let mut orig = original.lock().unwrap_or_else(|e| e.into_inner());
                     orig.take()
                 };
                 if let Some(ref text) = original_content {
@@ -77,7 +80,7 @@ impl ClipboardGuard {
                     let _ = clear_clipboard_internal();
                 }
                 {
-                    let mut cur = current_password.lock().unwrap();
+                    let mut cur = current_password.lock().unwrap_or_else(|e| e.into_inner());
                     *cur = None;
                 }
             }
@@ -88,12 +91,15 @@ impl ClipboardGuard {
 
     pub fn force_clear(&self) -> Result<(), VaultError> {
         {
-            let mut cur = self.current_password.lock().unwrap();
+            let mut cur = self
+                .current_password
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             *cur = None;
         }
 
         let original_content = {
-            let mut orig = self.original.lock().unwrap();
+            let mut orig = self.original.lock().unwrap_or_else(|e| e.into_inner());
             orig.take()
         };
 

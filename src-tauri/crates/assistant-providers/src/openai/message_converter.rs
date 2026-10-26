@@ -23,14 +23,27 @@ fn convert_content_block(block: &ContentBlock) -> Value {
             ..
         } => {
             let mt = attachment.media_type.as_deref().unwrap_or("image/png");
-            let data = cached_data.as_deref().unwrap_or("");
-            json!({
-                "type": "image_url",
-                "image_url": {
-                    "url": format!("data:{};base64,{}", mt, data)
-                }
-            })
+            match cached_data.as_deref().filter(|d| !d.is_empty()) {
+                Some(data) => json!({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": format!("data:{};base64,{}", mt, data)
+                    }
+                }),
+                // 缺少 bytes 时降级为文本，避免发出 `data:...;base64,` 空 URI 触发 API 报错
+                None => json!({
+                    "type": "text",
+                    "text": format!(
+                        "[image unavailable: {}]",
+                        attachment.name.as_deref().unwrap_or("unknown")
+                    )
+                }),
+            }
         }
+        ContentBlock::File { attachment, .. } => json!({
+            "type": "text",
+            "text": attachment.handle_text()
+        }),
         _ => json!({}),
     }
 }
@@ -43,10 +56,10 @@ fn build_content(m: &ChatMessage) -> Value {
         }
     }
     if let Some(blocks) = parse_content(&m.content) {
-        let has_image = blocks
+        let has_media = blocks
             .iter()
-            .any(|b| matches!(b, ContentBlock::Image { .. }));
-        if has_image {
+            .any(|b| matches!(b, ContentBlock::Image { .. } | ContentBlock::File { .. }));
+        if has_media {
             let parts: Vec<Value> = blocks.iter().map(convert_content_block).collect();
             return json!(parts);
         }
