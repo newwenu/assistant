@@ -142,10 +142,11 @@ export const vaultService = {
 
   disenrollBiometric: (): Promise<void> => invoke("vault_disenroll_biometric"),
 
-  syncPull: (): Promise<SyncResult> => invoke("vault_sync_pull"),
-  syncPush: (): Promise<SyncResult> => invoke("vault_sync_push"),
-  syncNow: (): Promise<SyncResult> => invoke("vault_sync_now"),
-  syncForcePush: (): Promise<SyncResult> => invoke("vault_sync_force_push"),
+  syncPull: (): Promise<SyncResult> => invoke("vault_sync", { action: "pull" }),
+  syncPush: (): Promise<SyncResult> => invoke("vault_sync", { action: "push" }),
+  syncNow: (): Promise<SyncResult> => invoke("vault_sync", { action: "sync" }),
+  syncForcePush: (): Promise<SyncResult> =>
+    invoke("vault_sync", { action: "forcePush" }),
   getSyncConfig: (): Promise<SyncConfig> => invoke("vault_get_sync_config"),
   setSyncConfig: (config: SyncConfig): Promise<void> =>
     invoke("vault_set_sync_config", { config }),
@@ -154,11 +155,12 @@ export const vaultService = {
     resolution: ConflictResolution,
   ): Promise<void> => invoke("vault_resolve_conflict", { path, resolution }),
   gitInit: (): Promise<void> => invoke("vault_git_init"),
-  gitClone: (url: string): Promise<void> => invoke("vault_git_clone", { url }),
+  gitClone: (url: string): Promise<void> =>
+    invoke("vault_git_init", { url }),
   gitAddRemote: (remote: string, url: string): Promise<void> =>
-    invoke("vault_git_add_remote", { remote, url }),
+    invoke("vault_git_remote", { remote, url, mode: "add" }),
   gitSetRemote: (remote: string, url: string): Promise<void> =>
-    invoke("vault_git_set_remote", { remote, url }),
+    invoke("vault_git_remote", { remote, url, mode: "set" }),
   syncReadyness: (): Promise<Readyness> => invoke("vault_sync_readyness"),
   syncPrepare: (): Promise<void> => invoke("vault_sync_prepare"),
   syncFinalize: (message: string): Promise<void> =>

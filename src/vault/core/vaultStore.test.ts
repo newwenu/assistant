@@ -536,7 +536,7 @@ describe("vaultStore sync", () => {
   });
 
   it("syncPull → sets syncResult", async () => {
-    mockCmd("vault_sync_pull", () => Promise.resolve("success"));
+    mockCmd("vault_sync", () => Promise.resolve("success"));
 
     const store = useVaultStore.getState();
     await store.syncPull();
@@ -546,7 +546,7 @@ describe("vaultStore sync", () => {
   });
 
   it("syncPush → sets syncResult", async () => {
-    mockCmd("vault_sync_push", () => Promise.resolve("upToDate"));
+    mockCmd("vault_sync", () => Promise.resolve("upToDate"));
 
     const store = useVaultStore.getState();
     await store.syncPush();

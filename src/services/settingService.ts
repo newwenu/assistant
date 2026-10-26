@@ -51,4 +51,6 @@ export const settingService = {
 
   patchConf: (group: string, patch: Record<string, unknown>): Promise<void> =>
     invoke("patch_conf", { group, patch: patchToSnakeCase(patch) }),
+
+  appQuit: (): Promise<void> => invoke("app_quit"),
 };

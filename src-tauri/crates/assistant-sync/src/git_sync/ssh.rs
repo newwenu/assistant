@@ -1,18 +1,25 @@
+#[cfg(unix)]
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 use std::process::Command;
+#[cfg(unix)]
 use std::sync::{LazyLock, Mutex};
 
 const GIT_ENV_SSH: &str = "GIT_SSH_COMMAND";
 
 #[cfg(unix)]
 const SSH_PERSIST_CMD: &str =
-    "ssh -o 'ControlMaster auto' -o 'ControlPath /tmp/.assistant-vault-session--%r@%h:%p' -o 'ControlPersist 1h' -o 'ConnectTimeout 10'";
+    "ssh -o 'ControlMaster auto' -o 'ControlPath /tmp/.assistant-vault-session--%r@%h:%p' -o 'ControlPersist 1h' -o 'ConnectTimeout 10' -o 'ServerAliveInterval 15' -o 'ServerAliveCountMax 4'";
+
+#[cfg(windows)]
+const SSH_TIMEOUT_CMD: &str =
+    "ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4";
 
 #[cfg(unix)]
 const SSH_PERSIST_HOST_WHITELIST: [&str; 2] = ["github.com", "gitlab.com"];
 
+#[cfg(unix)]
 static SSH_PERSIST_GUESS_CACHE: LazyLock<Mutex<HashMap<std::path::PathBuf, bool>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -21,7 +28,11 @@ pub fn configure_ssh_persist(cmd: &mut Command) {
     {
         cmd.env(GIT_ENV_SSH, SSH_PERSIST_CMD);
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        cmd.env(GIT_ENV_SSH, SSH_TIMEOUT_CMD);
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = cmd;
     }

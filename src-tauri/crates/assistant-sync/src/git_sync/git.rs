@@ -323,7 +323,7 @@ where
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-fn cmd_git<I, S>(args: I, dir: &Path, _connects_remote: bool) -> Command
+fn cmd_git<I, S>(args: I, dir: &Path, connects_remote: bool) -> Command
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -333,6 +333,14 @@ where
     cmd.arg(dir);
     cmd.current_dir(dir);
     cmd.env("GIT_TERMINAL_PROMPT", "0");
+
+    if connects_remote {
+        cmd.arg("-c").arg("http.timeout=30");
+        cmd.arg("-c").arg("http.lowSpeedLimit=1000");
+        cmd.arg("-c").arg("http.lowSpeedTime=60");
+        crate::git_sync::ssh::configure_ssh_persist(&mut cmd);
+    }
+
     cmd.args(args);
     cmd
 }

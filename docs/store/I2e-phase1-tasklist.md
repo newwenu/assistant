@@ -359,18 +359,18 @@ D3 依赖 C5
 
 ## 验收检查清单
 
-- [ ] V1：粘贴图片 → 预览 → 发送 → 显示
-- [ ] V2：拖拽图片 → 预览 → 发送 → 显示
-- [ ] V3：附件按钮 → 选择 → 预览 → 发送 → 显示
-- [ ] V4：≤4 张图片全部显示
-- [ ] V5：>4 张 → 提示超限
-- [ ] V6：>8MB → 提示超限
+- [x] V1：粘贴图片 → 预览 → 发送 → 显示
+- [x] V2：拖拽图片 → 预览 → 发送 → 显示
+- [x] V3：附件按钮 → 选择 → 预览 → 发送 → 显示
+- [x] V4：≤4 张图片全部显示
+- [x] V5：>4 张 → 提示超限
+- [x] V6：>8MB → 提示超限
 - [x] V7：非 Vision → 附件按钮隐藏
-- [ ] V8：Vision → 图片正确发送到 Provider
+- [x] V8：Vision → 图片正确发送到 Provider
 - [x] V9：SQLite 中 ImageBlock 仅含 attachmentId（无 base64）
 - [x] V10：磁盘文件名为 `<sha256_64hex>.<ext>`
 - [x] V11：旧纯文本消息 → 正常渲染
-- [ ] V12：历史图片 → asset 协议 + 浏览器缓存正确显示
+- [x] V12：历史图片 → asset 协议 + 浏览器缓存正确显示
 - [x] V13：`parseContent` 非 JSON → null
 - [x] V14：`parseContent` 合法 JSON → 数组
 - [x] V15：`tool_call_id` hack + `parse_image_source` 已删除

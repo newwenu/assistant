@@ -285,6 +285,7 @@ pub fn vault_git_remote(
 
 **安全**：`ForcePush` 仍需前端显式传参，安全语义不变。
 **渐变**：旧命令保留为 wrapper。
+**与 I9 联动**：`vault_sync(action)` 应直接用 `tokio::process::Command` + timeout + kill + 流式进度实现（I9 超时/进度方案），而非先合再用 `spawn_blocking` 再重构。`vault_git_init` / `vault_git_remote` 不涉及网络，独立实现。
 
 ---
 
@@ -337,10 +338,10 @@ pub fn vault_git_remote(
 - [x] 新增 `ConversationQueryOptsDto` + 改造 `get_conversation` 支持 `opts` — ✅ 已完成
 - [x] 新增 `ConversationPatchDto` + 新增 `patch_conversation` 命令 — ✅ 已完成
 - [x] 改造 `export_conversation` 支持 `path: Option<String>` — ✅ 已完成
-- [ ] 新增 `SyncAction` enum + 新增 `vault_sync` 命令
-- [ ] 新增 `vault_git_init(url?)` + `vault_git_remote(remote, url, mode)`
-- [ ] 旧 sync 命令保留为 wrapper，标记 `#[deprecated]`
-- [ ] 在 `lib.rs` 的 `invoke_handler` 中注册新 sync 命令
+- [x] 新增 `vault_git_init(url?)` + `vault_git_remote(remote, url, mode)`（不涉及网络，独立实现） — ✅ 已完成
+- [x] 新增 `SyncAction` enum + 新增 `vault_sync` 命令（内部仍用 `spawn_blocking`，I9 后续替换为 `tokio::process::Command` + timeout + kill + 流式进度） — ✅ 已完成
+- [x] 旧 sync 命令已删除，前端 service 层保持语义方法名内部路由到新命令 — ✅ 已完成
+- [x] 在 `lib.rs` 的 `invoke_handler` 中注册新 sync 命令 — ✅ 已完成
 
 ### Phase 2：前端迁移
 
@@ -350,7 +351,8 @@ pub fn vault_git_remote(
 - [x] 前端 `settingService` 中 `set_theme` / `set_locale` / `set_launch_at_login` 调用迁移到 `patch_conf` — ✅ 已完成
 - [x] 验证 `patch_conf` side_effect 完整覆盖 theme/locale/launchAtLogin — ✅ 已完成
 - [x] 在 `patch_conf` 的 `APP_SIDE_EFFECTS` 中新增 theme 变更时自动 emit `THEME_CHANGED` — ✅ 已完成
-- [ ] 前端 `vault.service` 中 sync 调用迁移到新签名
+- [x] 前端 `vault.service` 中 git 调用迁移到新后端命令（service 层保持语义方法名，内部路由到 `vault_git_init`/`vault_git_remote`） — ✅ 已完成
+- [x] 前端 `vault.service` 中 sync 调用迁移到新后端命令（service 层保持语义方法名，内部路由到 `vault_sync`） — ✅ 已完成
 
 ### Phase 3：清理旧命令
 
@@ -359,9 +361,9 @@ pub fn vault_git_remote(
 - [x] 移除 `export_conversation_to_file` — ✅ 已完成（Rust 命令 + lib.rs 注册已删除）
 - [x] 移除 `set_theme` / `set_locale` / `emit_theme_changed` / `set_launch_at_login` — ✅ 已完成
 - [x] 移除前端死方法 `chatService.updateConversationProvider` / `historyService.exportConversation` — ✅ 已完成
-- [ ] 移除 `vault_sync_pull` / `vault_sync_push` / `vault_sync_now` / `vault_sync_force_push`
-- [ ] 移除 `vault_git_clone` / `vault_git_add_remote` / `vault_git_set_remote`
-- [ ] 从 `lib.rs` 的 `invoke_handler` 中移除旧 sync 命令注册
+- [x] 移除 `vault_sync_pull` / `vault_sync_push` / `vault_sync_now` / `vault_sync_force_push` — ✅ 已完成（Rust 命令已删除，lib.rs 注册已移除，前端 service 层保持语义方法名内部路由到 `vault_sync`）
+- [x] 移除 `vault_git_clone` / `vault_git_add_remote` / `vault_git_set_remote` — ✅ 已完成（Rust 命令已删除，lib.rs 注册已移除，前端 service 层保持语义方法名内部路由到新命令）
+- [x] 从 `lib.rs` 的 `invoke_handler` 中移除旧 sync 命令注册 — ✅ 已完成
 - [ ] 全量回归测试
 
 ---
@@ -748,7 +750,7 @@ StorageSettings.tsx:95  → storageService.deleteAttachments(ids)
 | 分类 | 数量 | 处置 | 状态 |
 |---|---|---|---|
 | A. 可直接删除 | 4 | 移除 Rust 命令 + lib.rs 注册 | ✅ 全部已完成 |
-| A'. 零调用但需保留 | 3 | 保留命令，补前端 service 定义 | ❌ 未补 service |
+| A'. 零调用但需保留 | 3 | 保留命令，补前端 service 定义 | ✅ 已补 service |
 | B. 功能已被覆盖 | 5 | 按简化方案执行 | ✅ 4 已完成（#4 vault_export 已删除，#1-3 由简化1-3覆盖，#5 由简化5覆盖） |
 | C. 预留未接入 UI | 4 | 标记 TODO，产品规划确认后决定 | — 保留 |
 | D. 简化方案已覆盖 | （见 §2） | 按 §5 渐变路线 | ✅ 简化1-6已完成，简化7未开始 |
@@ -757,7 +759,7 @@ StorageSettings.tsx:95  → storageService.deleteAttachments(ids)
 ### 9.7 建议执行顺序
 
 1. ~~**Phase 0（零风险）**：删除 A 类 4 个命令~~ — ✅ 已完成
-2. **Phase 0.5（补全 A' 类）**：为 A' 类 3 个命令补前端 service 定义，使其可被前端主动调用 — ❌ 未完成
+2. **Phase 0.5（补全 A' 类）**：为 A' 类 3 个命令补前端 service 定义，使其可被前端主动调用 — ✅ 已完成
 3. ~~**Phase 1-3**：按 §5 渐变路线执行 B 类 + D 类简化（简化 1-6）~~ — ✅ 已完成
 4. **Phase 1-3（简化 7）**：Vault Sync 域合并 — ❌ 未开始
 5. **Phase 4（产品确认）**：C 类 4 个预留命令与产品团队确认是否接入 UI 或移除：
