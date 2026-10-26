@@ -36,6 +36,7 @@ pub struct ImageAttachmentRef {
 pub struct AttachmentEntry {
     pub id: String,
     pub bytes: u64,
+    pub created_at: u64,
 }
 
 fn media_type_to_ext(mt: &str) -> &'static str {
@@ -107,9 +108,16 @@ impl AttachmentStore {
                     .unwrap_or("")
                     .to_string();
                 let metadata = entry.metadata().await?;
+                let created_at = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
                 entries.push(AttachmentEntry {
                     id,
                     bytes: metadata.len(),
+                    created_at,
                 });
             }
         }

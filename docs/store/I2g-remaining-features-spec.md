@@ -963,13 +963,13 @@ fn format_size(bytes: u64) -> String {
 
 ---
 
-## 9. `created_at` 从磁盘 mtime 读取（#9）
+## 9. `created_at` 从磁盘 mtime 读取（#9）✅
 
 ### 9.1 现状
 
-- [storage.rs:58,75](file:///g:/codeversion/assistant1/src-tauri/src/cmd/storage.rs#L58) — `created_at: 0` 硬编码
-- [attachment_store.rs:36](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-storage/src/attachment_store.rs#L36) — `AttachmentEntry` 仅有 `id` + `bytes`，无 `created_at`
-- `list_all()` 中 `metadata()` 已获取但仅用 `len()`，未读 `modified()` / `created()`
+- ~~[storage.rs:58,75](file:///g:/codeversion/assistant1/src-tauri/src/cmd/storage.rs#L58) — `created_at: 0` 硬编码~~ → 已修复，填入 `entry.created_at as i64`
+- ~~[attachment_store.rs:36](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-storage/src/attachment_store.rs#L36) — `AttachmentEntry` 仅有 `id` + `bytes`，无 `created_at`~~ → 已添加 `created_at: u64`
+- ~~`list_all()` 中 `metadata()` 已获取但仅用 `len()`，未读 `modified()` / `created()`~~ → 已读取 `modified()` 时间戳
 
 ### 9.2 变更
 
@@ -1011,7 +1011,35 @@ AttachmentSummary {
 }
 ```
 
-**`src-tauri/src/protocol/dto/storage.rs`** — 确认 `AttachmentSummary.created_at` 字段类型为 `u64`（当前应为 `i64` 或 `u64`，需确认）。
+**`src-tauri/src/protocol/dto/storage.rs`** — 确认 `AttachmentSummary.created_at` 字段类型为 `i64`（当前已为 `i64`，`storage.rs` 中用 `entry.created_at as i64` 转换）。
+
+---
+
+## 9b. 存储总量告警提示 ✅
+
+### 9b.1 需求
+
+当附件总占用超过 500MB 时，在存储管理页面 summary-row 下方显示一行轻量警告，提示用户建议清理。
+
+### 9b.2 设计决策
+
+- **不使用 `Alert` 组件**：`Alert` 视觉冲击过强，适合阻断性警告（如灾难恢复），磁盘占用大只是建议性提示
+- **使用 `WarningOutlined` + `Typography.Text type="warning"`**：与项目风格一致（VaultSyncSettings danger zone 同此模式），行内轻量，不破坏页面布局
+
+### 9b.3 变更
+
+**`src/settings/pages/StorageSettings.tsx`**：
+
+- import 增加 `WarningOutlined`
+- summary-row 下方条件渲染告警行：`breakdown.totalBytes > 500 * 1024 * 1024`
+
+**`src/i18n/locales/zh-CN.json`** — 新增 key：
+
+- `settings.storage.size_warning` — `"附件占用较大，建议清理以释放磁盘空间"`
+
+**`src/i18n/locales/en-US.json`** — 新增 key：
+
+- `settings.storage.size_warning` — `"Attachments are using significant disk space. Consider cleaning up to free space."`
 
 ---
 
@@ -1058,6 +1086,9 @@ AttachmentSummary {
 | `src-tauri/crates/assistant-agent/Cargo.toml` | `image = "0.25"` | 7 |
 | `src-tauri/crates/assistant-i18n/locales/zh-CN.json` | `chat.image_offloaded_placeholder` | 8 |
 | `src-tauri/crates/assistant-i18n/locales/en-US.json` | 同上 | 8 |
+| `src/settings/pages/StorageSettings.tsx` | 总量告警提示（`WarningOutlined` + 条件渲染） | 9b |
+| `src/i18n/locales/zh-CN.json` | `settings.storage.size_warning` | 9b |
+| `src/i18n/locales/en-US.json` | 同上 | 9b |
 
 ---
 
@@ -1090,6 +1121,7 @@ AttachmentSummary {
 
 ### I2f 补丁验收
 
-| ID | 验收条件 | # |
-|----|---------|---|
-| Vf-1 | `StorageSettings` 页面中附件 `created_at` 显示为真实时间（非 0） | 9 |
+| ID | 验收条件 | # | 状态 |
+|----|---------|---|------|
+| Vf-1 | `StorageSettings` 页面中附件 `created_at` 显示为真实时间（非 0） | 9 | ✅ |
+| Vf-2 | 附件总占用 > 500MB 时，summary-row 下方显示 `WarningOutlined` + 警告文本 | 9b | ✅ |

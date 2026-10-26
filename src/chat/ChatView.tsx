@@ -101,8 +101,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
 
   const supportVision = (() => {
     const p = provider.providers.find((pr) => pr.id === currentProviderId);
+    const model = p?.models.find((m) => m.id === currentModelId);
     return (
-      p?.models.find((m) => m.id === currentModelId)?.supportVision ?? false
+      model?.supportVision ?? model?.inputModalities?.includes("image") ?? false
     );
   })();
 

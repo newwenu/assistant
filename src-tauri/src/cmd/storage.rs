@@ -55,7 +55,7 @@ pub async fn get_storage_breakdown(app: AppHandle) -> Result<StorageBreakdownDto
                 attachment_id: entry.id.clone(),
                 media_type: media_type_from_id(&entry.id),
                 bytes: entry.bytes,
-                created_at: 0,
+                created_at: entry.created_at as i64,
             })
         })
         .collect();
@@ -72,7 +72,7 @@ pub async fn get_storage_breakdown(app: AppHandle) -> Result<StorageBreakdownDto
                     attachment_id: entry.id.clone(),
                     media_type: media_type_from_id(&entry.id),
                     bytes: entry.bytes,
-                    created_at: 0,
+                    created_at: entry.created_at as i64,
                 });
         }
     }

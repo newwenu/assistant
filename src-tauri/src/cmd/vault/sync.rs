@@ -77,17 +77,15 @@ pub fn vault_resolve_conflict(
 #[command]
 pub async fn vault_git_init(app: AppHandle, url: Option<String>) -> Result<(), String> {
     match url {
-        Some(remote_url) => {
-            tauri::async_runtime::spawn_blocking(move || {
-                let engine = app.state::<SyncEngine>();
-                engine.clone_repo(&remote_url).map_err(|e| {
-                    log::warn!("Vault git clone failed: {}", e);
-                    e.to_string()
-                })
+        Some(remote_url) => tauri::async_runtime::spawn_blocking(move || {
+            let engine = app.state::<SyncEngine>();
+            engine.clone_repo(&remote_url).map_err(|e| {
+                log::warn!("Vault git clone failed: {}", e);
+                e.to_string()
             })
-            .await
-            .map_err(|e| e.to_string())?
-        }
+        })
+        .await
+        .map_err(|e| e.to_string())?,
         None => {
             let engine = super::sync_state(&app)?;
             engine.init().map_err(|e| {

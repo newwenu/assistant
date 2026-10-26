@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use assistant_providers::base::{ChatDelta, ProviderError, ToolCall};
 use futures::Stream;
+use log::info;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -377,4 +378,32 @@ pub fn estimate_tokens(content: &str) -> Option<i64> {
         return None;
     }
     Some((content.len() as i64 + 3) / 4 + 4)
+}
+
+/// 流结束后解析 token 总数：优先 usage，缺失时按内容长度估算。
+pub fn resolve_final_tokens(outcome: &StreamOutcome) -> Option<i64> {
+    if outcome.total_tokens.is_none() && !outcome.full_content.is_empty() {
+        let estimated = estimate_tokens(&outcome.full_content).unwrap();
+        info!(
+            "[chat-delta] stream finished: reason={:?} no_usage=>estimated={} (content_len={})",
+            outcome.finish_reason,
+            estimated,
+            outcome.full_content.len()
+        );
+        Some(estimated)
+    } else {
+        info!(
+            "[chat-delta] stream finished: reason={:?} total_tokens={:?}",
+            outcome.finish_reason, outcome.total_tokens
+        );
+        outcome.total_tokens.map(|t| t as i64)
+    }
+}
+
+/// 流中断时解析已产出内容的 token 数。
+pub fn resolve_partial_tokens(partial: &PartialOutcome) -> Option<i64> {
+    partial
+        .total_tokens
+        .map(|t| t as i64)
+        .or_else(|| estimate_tokens(&partial.full_content))
 }

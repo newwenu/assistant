@@ -1,8 +1,6 @@
 mod agent_mode;
 mod app;
 mod chat;
-mod chat_stream;
-mod chat_utils;
 mod compaction;
 mod config;
 mod conversation;

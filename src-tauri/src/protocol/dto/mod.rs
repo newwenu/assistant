@@ -179,6 +179,7 @@ mod tests {
                 owned_by: "openai".into(),
                 context_window: 128000,
                 support_vision: true,
+                input_modalities: vec!["text".into(), "image".into()],
             }],
             default_model: "gpt-4".into(),
             updated_at: 1000,
@@ -187,6 +188,7 @@ mod tests {
         let json = serde_json::to_string(&dto).unwrap();
         assert!(json.contains("baseUrl"), "camelCase: {}", json);
         assert!(json.contains("apiKeyMasked"), "camelCase: {}", json);
+        assert!(json.contains("inputModalities"), "camelCase: {}", json);
         assert!(json.contains("defaultModel"), "camelCase: {}", json);
     }
 

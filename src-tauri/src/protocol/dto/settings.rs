@@ -83,6 +83,10 @@ pub struct ModelConfigDto {
     pub context_window: u32,
     #[serde(default)]
     pub support_vision: bool,
+    /// 输入模态列表（"text"/"image"/"pdf"/"audio"/"video"）；
+    /// 存量 models_json 无此字段，default 空数组（回退 supportVision）。
+    #[serde(default)]
+    pub input_modalities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

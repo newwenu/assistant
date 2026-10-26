@@ -3,6 +3,7 @@
 > 生成日期: 2026-10-24
 > 范围: `src-tauri/` 下所有 Rust 源文件（排除 tests/examples/target）
 > 阈值: 仅收录 ≥ 500 行的文件
+> **实施状态（2026-10-26）**: Phase 1 已完成 —— `conversations.rs` 已按本方案拆分为 `conversations/` 子模块（mod 125 / crud 81 / msg_ops 183 / tree_ops 169 / ops 262 / compression 76 / branch 256 行），最长文件由 1,179 行降至 262 行。Phase 2（`responses_stream.rs`，686 行）尚未执行。I21 已完成 —— `chat.rs` 的 `send_chat_message` 上帝函数（479 行）已重构为 Pipeline 架构：`chat.rs` 275 行 + `chat_insert.rs` 226 行 + `chat_request.rs` 55 行，`send_chat_message` 本体由 ~430 行降至 ~42 行。I22 已完成 —— `chat/request.rs`（70 行）与 `chat/utils.rs`（47 行）下放 `assistant-agent`（`chat_request.rs` 68 行 + `chat_runtime.rs` 追加 tokens 解析 2 fn），`build_provider_config` 统一至 `assistant-agent::provider_config`（3 调用点收敛），models_json 解析收敛至 `assistant-providers::types` 单一入口（修复 `resolve_context_window_from_stored` 死代码的 snake_case 解析错误 + 新增 vision 入口 + 6 个契约测试），`cmd/conversation_utils.rs` 重复逻辑删除，`cmd/chat/` 由 918 行降至 798 行（-13%）。
 
 ---
 
@@ -10,16 +11,18 @@
 
 | Crate | 文件数 | 总行数 | 最长文件 | 平均行数 |
 |---|---|---|---|---|
-| assistant-providers | 41 | 7,997 | 686 | 195 |
-| src-tauri/src (cmd) | 38 | 5,529 | 475 | 145 |
-| assistant-security | 31 | 4,778 | 404 | 154 |
-| assistant-storage | 11 | 1,952 | **1,179** | 177 |
+| assistant-providers | 43 | 8,159 | 686 | 190 |
+| src-tauri/src (cmd) | 40+根 | ~5.4k | 462 | — |
+| assistant-security | 37 | ~6k | **953** | 162 |
+| assistant-storage | 16 | 2,133 | 284 | 133 |
 | assistant-sync | 8 | 1,444 | 357 | 180 |
 | assistant-tools | 8 | 697 | 448 | 87 |
 | assistant-agent | 6 | 660 | 338 | 110 |
 | assistant-config | 7 | 539 | 151 | 77 |
 | assistant-orb | 4 | 362 | 183 | 90 |
-| assistant-i18n | 2 | 97 | 83 | 48 |
+| assistant-i18n | 1 | 83 | 83 | 83 |
+
+> 说明：Phase 1 拆分后 `assistant-storage` 最长文件已由 1,179 降至 284。Phase 2 待拆的 `responses_stream.rs` 仍在 686 行；另发现末尾未收录的 `assistant-security/src/unlock_dialog/windows/mod.rs`（953 行）也超过 600 行阈值，建议纳入下一轮拆分。
 
 **拆分阈值参考**（Rust 社区惯例）:
 - ✅ < 500 行: 暂不拆分
@@ -37,7 +40,7 @@
 
 ### P0 — 必须拆分
 
-#### 2.1 `assistant-storage/src/conversations.rs` — 1,179 行 🚨
+#### 2.1 `assistant-storage/src/conversations.rs` — 1,179 行 🚨 ✅ 已完成
 
 **当前结构**（48 个公开/私有项）:
 
@@ -148,19 +151,19 @@ openai/
 
 ## 3. 执行计划
 
-### Phase 1 — 核心拆分（预计 1 天）
+### Phase 1 — 核心拆分 ✅ 已完成
 
 | 序号 | 文件 | 拆分后最大单文件 | 难度 |
 |---|---|---|---|
-| 1 | `conversations.rs` → 目录模块 | 220 行 (branch.rs) | ⭐⭐ |
+| 1 | `conversations.rs` → 目录模块 | 262 行 (ops.rs) | ⭐⭐ |
 
 **验证**: `cargo check` + `cargo test` + 确认所有 `conversations::X` 外部引用路径不变。
 
-### Phase 2 — 流逻辑拆分（预计 1–2 天，需验证方案）
+### Phase 2 — 流逻辑拆分（未执行）
 
 | 序号 | 文件 | 策略 | 难度 |
 |---|---|---|---|
-| 2 | `openai/responses_stream.rs` | 提取事件处理分支为纯函数 | ⭐⭐⭐ |
+| 2 | `openai/responses_stream.rs`（686 行） | 提取事件处理分支为纯函数 | ⭐⭐⭐ |
 
 **验证**: 先做小规模提取（如 `response.completed` 分支），确认 `async_stream::stream!` 内调用外部函数可行后再推广。
 

@@ -1,4 +1,5 @@
 use assistant_providers::base;
+use assistant_providers::types::resolve_context_window_from_stored;
 use assistant_storage::{
     conversations,
     providers::{self as provider_store},
@@ -32,21 +33,8 @@ pub(crate) fn resolve_context_window_for_conversation(
     let model_id = &conv.model_id;
     if let Some(ref provider_id) = conv.provider_id {
         if let Ok(Some(provider_row)) = provider_store::get_provider_by_id(conn, provider_id) {
-            return resolve_context_window_from_models_json(model_id, &provider_row.models_json);
+            return resolve_context_window_from_stored(model_id, &provider_row.models_json);
         }
     }
     base::get_context_window_tokens(model_id)
-}
-
-fn resolve_context_window_from_models_json(model_id: &str, models_json: &str) -> u32 {
-    let stored: Option<u32> =
-        serde_json::from_str::<Vec<crate::protocol::ModelConfigDto>>(models_json)
-            .ok()
-            .and_then(|list| {
-                list.iter()
-                    .find(|m| m.id == model_id)
-                    .map(|mc| mc.context_window)
-            })
-            .filter(|&c| c > 0);
-    base::resolve_context_window(model_id, stored, None)
 }

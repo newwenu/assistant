@@ -36,6 +36,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   isFull = false,
 }) => {
   const [value, setValue] = useState("");
+
   const mascotFace = useMascotStore((s) => s.face);
   const mascotConf = useSettingsStore((s) => s.mascotConf);
   const attachments = useAttachmentStore((s) => s.attachments);

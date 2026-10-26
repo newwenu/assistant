@@ -1,8 +1,6 @@
-use tauri::{command, AppHandle, Manager};
+use tauri::{command, AppHandle};
 
 use assistant_security::types::VaultError;
-
-use super::SecurityDbState;
 
 #[command]
 pub fn vault_init(app: AppHandle, master_password: String) -> Result<(), String> {

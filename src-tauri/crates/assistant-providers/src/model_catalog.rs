@@ -3,13 +3,15 @@ use std::sync::LazyLock;
 
 static BUNDLED_CATALOG_JSON: &str = include_str!("../assets/models-dev.json");
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ModelFacts {
     pub supports_vision: bool,
     pub context_limit: Option<u32>,
     pub output_limit: Option<u32>,
     pub reasoning: bool,
     pub tool_call: bool,
+    /// 输入模态列表（"text"/"image"/"pdf"/"audio"/"video"）
+    pub input_modalities: Vec<String>,
 }
 
 static MODEL_CATALOG: LazyLock<HashMap<String, ModelFacts>> = LazyLock::new(|| {
@@ -25,11 +27,18 @@ static MODEL_CATALOG: LazyLock<HashMap<String, ModelFacts>> = LazyLock::new(|| {
             continue;
         };
         for (model_id, model_val) in models {
-            let supports_vision = model_val
+            let input_modalities = model_val
                 .get("modalities")
                 .and_then(|m| m.get("input"))
                 .and_then(|i| i.as_array())
-                .map_or(false, |arr| arr.iter().any(|v| v.as_str() == Some("image")));
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<String>>()
+                })
+                .unwrap_or_default();
+
+            let supports_vision = input_modalities.iter().any(|m| m == "image");
 
             let context_limit = model_val
                 .get("limit")
@@ -61,6 +70,7 @@ static MODEL_CATALOG: LazyLock<HashMap<String, ModelFacts>> = LazyLock::new(|| {
                     output_limit,
                     reasoning,
                     tool_call,
+                    input_modalities,
                 },
             );
         }
@@ -69,7 +79,13 @@ static MODEL_CATALOG: LazyLock<HashMap<String, ModelFacts>> = LazyLock::new(|| {
 });
 
 pub fn catalog_model_facts(model_id: &str) -> Option<ModelFacts> {
-    MODEL_CATALOG.get(model_id).copied()
+    MODEL_CATALOG.get(model_id).cloned()
+}
+
+pub fn catalog_input_modalities(model_id: &str) -> Option<Vec<String>> {
+    MODEL_CATALOG
+        .get(model_id)
+        .map(|f| f.input_modalities.clone())
 }
 
 pub fn catalog_supports_vision(model_id: &str) -> Option<bool> {

@@ -5,6 +5,7 @@ import {
   DownOutlined,
   DeleteOutlined,
   ReloadOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
@@ -244,6 +245,15 @@ export const StorageSettings: React.FC = () => {
                 </Button>
               </Space>
             </div>
+
+            {breakdown.totalBytes > 500 * 1024 * 1024 && (
+              <div className="storage-summary-row" style={{ marginBottom: 0 }}>
+                <Typography.Text type="warning">
+                  <WarningOutlined style={{ marginRight: 6 }} />
+                  {t("settings.storage.size_warning")}
+                </Typography.Text>
+              </div>
+            )}
 
             {breakdown.totalCount === 0 ? (
               <Empty

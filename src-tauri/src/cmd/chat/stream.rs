@@ -87,7 +87,7 @@ pub(crate) fn save_partial_on_error(
     msg_id: &str,
     partial: &assistant_agent::chat_runtime::PartialOutcome,
 ) {
-    let tokens = super::chat_utils::resolve_partial_tokens(partial);
+    let tokens = assistant_agent::chat_runtime::resolve_partial_tokens(partial);
     let _ = db_tx.send(DbWriteMsg {
         msg_id: msg_id.to_string(),
         content: partial.full_content.clone(),
@@ -103,7 +103,7 @@ pub(crate) fn spawn_db_writer(app: &AppHandle) -> DbSender {
     tauri::async_runtime::spawn(async move {
         while let Some(msg) = db_rx.recv().await {
             let state = db_app.state::<crate::setup::DbState>();
-            match super::get_db_conn(&state) {
+            match super::super::get_db_conn(&state) {
                 Ok(conn) => {
                     if let Err(db_err) = conversations::update_message_content(
                         &conn,
@@ -138,13 +138,13 @@ pub(crate) fn spawn_finish_listener(app: &AppHandle) -> tokio::sync::mpsc::Unbou
 
             {
                 let state = finish_app.state::<crate::setup::DbState>();
-                match super::get_db_conn(&state) {
+                match super::super::get_db_conn(&state) {
                     Ok(conn) => {
                         if let Ok(Some(detail)) =
                             conversations::get_conversation_detail(&conn, &conv_id)
                         {
                             let messages =
-                                match super::conversation_utils::messages_with_sibling_counts(
+                                match super::super::conversation_utils::messages_with_sibling_counts(
                                     &conn,
                                     &conv_id,
                                     &detail.messages,
@@ -205,9 +205,13 @@ pub(crate) fn spawn_compaction_listener(
             compaction::set_terminating(&conv_id, true);
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) =
-                    super::compaction::execute_compaction(&app, &conv_id, &detail, &provider_row)
-                        .await
+                if let Err(e) = super::super::compaction::execute_compaction(
+                    &app,
+                    &conv_id,
+                    &detail,
+                    &provider_row,
+                )
+                .await
                 {
                     compaction::set_terminating(&conv_id, false);
                     emit_broadcast(

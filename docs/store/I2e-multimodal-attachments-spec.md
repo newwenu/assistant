@@ -41,7 +41,7 @@
 
 - **Ingress 管道** `stash_image_attachments()`：入库前解析 `[IMAGE:data:…]` 标记 → 计算 `sha256_prefix(data_uri)` 作为 ID → 将 `data:` URI 写入磁盘 `<workspace>/attachments/<id>` → 替换标记为 `[Image: image #att:<id>]` 占位符（~50 字节）
 - **Dispatch 管道** `rehydrate_image_placeholders()`：发给 Vision 模型前，从磁盘读回 `data:` URI → 替换占位符为 `[IMAGE:<data-uri>]` 完整标记；非 Vision 模型保持占位符不动
-- **AttachmentStash**：`ATTACHMENTS_MAX_BYTES = 256MB` 总量上限 + `ATTACHMENTS_TTL = 24h` 过期清扫 + 启动时 `sweep_stale_attachments()` + 写入后按 mtime 驱逐最旧文件至总量以下
+- **AttachmentStash**：`ATTACHMENTS_MAX_BYTES = 256MB` 总量上限 + `ATTACHMENTS_TTL = 24h` 过期清扫 + 启动时 `sweep_stale_attachments()` + 写入后按 mtime 驱逐最旧文件至总量以下（**本项目不采用此策略**，见 §3.3 注意）
 - **文件处理** `inline_file_attachments()`：PDF/文本提取后内联为文本块，非提取型文件（DOCX/XLSX/ZIP）仅保留引用存根
 - **安全**：不可信通道 `max_files: 0` 哨兵 + 路径遍历防护 + MIME 白名单 + 绝对路径拒绝
 
@@ -145,6 +145,8 @@
 - Linux: `~/.local/share/com.assistant.app/attachments/a1b2c3d4e5f6g7h8`
 
 ### 3.3 AttachmentStash 策略（参考 OpenHuman）
+
+> **注意**：以下为 OpenHuman 参考项目的做法。**本项目不采用 TTL + LRU 驱逐策略**，决策为全手动清理，详见 I2e-phase1-spec §3.4 及 I2f §3.2。
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
@@ -701,7 +703,7 @@ pub struct AttachmentStore {
 }
 
 impl AttachmentStore {
-    pub fn new(dir: PathBuf, max_bytes: u64, ttl: Duration) -> Self;
+    pub fn new(dir: PathBuf) -> Self;
 
     pub async fn save_image(&self, data: &[u8], media_type: &str) -> Result<ImageAttachmentRef>;
 
@@ -711,18 +713,11 @@ impl AttachmentStore {
 
     pub fn build_index(&self) -> HashMap<String, PathBuf>;
 
-    pub async fn sweep_stale(&self);
-
-    fn evict_oldest(&self);
+    // ~~sweep_stale / evict_oldest~~ → 已放弃（全手动清理，不设 TTL/LRU）
 }
 ```
 
-**常量**：
-
-```rust
-const ATTACHMENTS_MAX_BYTES: u64 = 256 * 1024 * 1024;
-const ATTACHMENTS_TTL: Duration = Duration::from_secs(24 * 60 * 60);
-```
+> **注意**：`max_bytes` / `ttl` 参数及 `sweep_stale()` / `evict_oldest()` 方法已从实际实现中移除。实际 `AttachmentStore::new(dir)` 仅接收目录路径，详见 I2e-phase1-spec §3.4。
 
 #### 4.6.2 Ingress 管道（新增 `assistant-agent/src/multimodal.rs`）
 
@@ -903,7 +898,7 @@ impl MultimodalFileConfig {
 | **1d** | `MessageContent.tsx` 结构化渲染：`parseContent` 成功遍历 blocks，失败降级 markdown | `src/chat/message/MessageContent.tsx` |
 | **1e** | 新增 `ImageThumbnail` + `FileCard` 渲染组件 | `src/chat/message/ImageThumbnail.tsx` (新), `src/chat/message/FileCard.tsx` (新) |
 | **1f** | 模型配置新增 `supportVision` 字段 | `src/stores/providerStore.ts`, Rust `ModelConfig` |
-| **1g** | 新增 `attachment_store.rs`（AttachmentStore：磁盘存储 + TTL 清扫 + 驱逐） | `src-tauri/crates/assistant-storage/src/attachment_store.rs` (新) |
+| **1g** | 新增 `attachment_store.rs`（AttachmentStore：磁盘存储，~~TTL 清扫 + 驱逐~~ → 已放弃） | `src-tauri/crates/assistant-storage/src/attachment_store.rs` (新) |
 | **1h** | 新增 `multimodal.rs`（admit_attachments + rehydrate + project） | `src-tauri/crates/assistant-agent/src/multimodal.rs` (新) |
 | **1i** | `setup.rs` 初始化 attachments 目录 | `src-tauri/src/setup.rs` |
 | **1j** | `send_chat_message` 中调用 `admit_attachments`（图片存磁盘，content 存引用） | `src-tauri/src/cmd/chat.rs` |
@@ -925,7 +920,7 @@ impl MultimodalFileConfig {
 | **2d** | `prompt_builder.rs` 修复 tool_calls 丢失 | `src-tauri/crates/assistant-agent/src/prompt_builder.rs` |
 | **2e** | 不可信通道 `max_files: 0` 哨兵 + 路径遍历防护 + MIME 白名单严格校验 | `src-tauri/crates/assistant-agent/src/multimodal.rs` |
 
-**Phase 2 验收**：可选择 PDF/文本文件 → 发送 → 模型可阅读文件内容；不可信通道拒绝文件附件；非 Vision 模型显示 `textOnlyImageText()` 占位符；24h 后启动清扫过期附件
+**Phase 2 验收**：可选择 PDF/文本文件 → 发送 → 模型可阅读文件内容；不可信通道拒绝文件附件；非 Vision 模型显示 `textOnlyImageText()` 占位符；~~24h 后启动清扫过期附件~~ → **已放弃**（全手动清理，见 I2e-phase1-spec §3.4）
 
 ### Phase 3：Offload 降级 + 图片规范化
 
@@ -971,9 +966,9 @@ impl MultimodalFileConfig {
 | V8 | Vision 模型 → 图片正确发送到 Provider，模型可"看到"图片 | 发送图片 + "描述这张图片" |
 | V9 | Phase 1：SQLite `messages.content` 中 ImageBlock 仅含 attachmentId 引用 | 查询数据库验证 |
 | V10 | Phase 1：磁盘 `<app_data_dir>/attachments/` 中有图片文件 | 检查文件系统 |
-| V11 | Phase 1：24h 后重启 → 过期附件被清扫 | 修改文件 mtime 为 25h 前，重启 |
+| V11 | ~~Phase 1：24h 后重启 → 过期附件被清扫~~ → **已放弃**（决策：全手动清理，不设 TTL，见 I2e-phase1-spec §3.4 及 I2f §3.2） | — |
 | V12 | 旧纯文本消息 → 正常 markdown 渲染，无报错 | 打开含旧消息的对话 |
-| V13 | Phase 2：附件总量超 256MB → 最旧文件被驱逐 | 写入大量附件 |
+| V13 | ~~Phase 2：附件总量超 256MB → 最旧文件被驱逐~~ → **已放弃**（决策：全手动清理，不设 LRU 驱逐，见 I2e-phase1-spec §3.4 及 I2f §3.2） | — |
 | V14 | Phase 3：PDF 文件 → 模型可阅读 PDF 内容 | 发送 PDF + "总结这个文件" |
 | V15 | Phase 3：不可信通道 → 文件附件被拒绝 | MCP/外部输入携带文件标记 |
 | V16 | 历史消息加载后图片仍正确显示 | 重启应用，打开有图片的对话 |

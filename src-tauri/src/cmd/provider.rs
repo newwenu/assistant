@@ -6,6 +6,7 @@ use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
     ModelConfigDto, ProviderInputDto, ProviderListDto, SettingProviderChangedPayloadDto,
 };
+use assistant_agent::provider_config::build_provider_config;
 use assistant_providers::{
     base::{self, ProviderConfig},
     crypto,
@@ -32,17 +33,6 @@ fn mask_api_key_encrypted(encrypted: &str) -> String {
             }
         }
         Err(_) => "••••".to_string(),
-    }
-}
-
-pub(crate) fn build_provider_config(row: &ProviderRow) -> ProviderConfig {
-    ProviderConfig {
-        kind: base::provider_kind_from_str(&row.type_, row.base_url.clone()),
-        api_key_encrypted: row.api_key_encrypted.clone(),
-        base_url: Some(row.base_url.clone()),
-        default_model: row.default_model.clone(),
-        max_tokens: 4096,
-        temperature: 0.7,
     }
 }
 
@@ -175,6 +165,7 @@ pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelC
             owned_by: m.owned_by,
             context_window: m.context_window,
             support_vision: m.support_vision,
+            input_modalities: m.input_modalities,
         })
         .collect())
 }
@@ -204,6 +195,7 @@ pub fn preview_models_cmd(
             owned_by: m.owned_by,
             context_window: m.context_window,
             support_vision: m.support_vision,
+            input_modalities: m.input_modalities,
         })
         .collect())
 }

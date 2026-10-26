@@ -174,6 +174,10 @@ pub struct ModelConfig {
     pub context_window: u32,
     #[serde(default)]
     pub support_vision: bool,
+    /// 输入模态列表（"text"/"image"/"pdf"/"audio"/"video"），权威能力来源；
+    /// support_vision 为便捷派生值（含 "image" 即 true）。
+    #[serde(default)]
+    pub input_modalities: Vec<String>,
 }
 
 pub type ChatStream = Pin<Box<dyn Stream<Item = Result<ChatDelta, ProviderError>> + Send>>;

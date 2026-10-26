@@ -155,8 +155,7 @@ export const vaultService = {
     resolution: ConflictResolution,
   ): Promise<void> => invoke("vault_resolve_conflict", { path, resolution }),
   gitInit: (): Promise<void> => invoke("vault_git_init"),
-  gitClone: (url: string): Promise<void> =>
-    invoke("vault_git_init", { url }),
+  gitClone: (url: string): Promise<void> => invoke("vault_git_init", { url }),
   gitAddRemote: (remote: string, url: string): Promise<void> =>
     invoke("vault_git_remote", { remote, url, mode: "add" }),
   gitSetRemote: (remote: string, url: string): Promise<void> =>

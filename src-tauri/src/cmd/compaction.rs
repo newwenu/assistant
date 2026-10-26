@@ -13,6 +13,7 @@ use crate::protocol::{
 use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::prompt_builder;
+use assistant_agent::provider_config::build_provider_config;
 use assistant_providers::base::{self, ProviderErrorPayload};
 use assistant_storage::{
     conversations,
@@ -120,7 +121,7 @@ pub(crate) async fn execute_compaction(
     let chat_messages =
         prompt_builder::prepare_messages(detail, &system_prompt, Some(summary_prompt));
 
-    let config = super::provider::build_provider_config(provider_row);
+    let config = build_provider_config(provider_row);
     let adapter = base::create_provider_adapter(config);
     let model = detail.conversation.model_id.clone();
 

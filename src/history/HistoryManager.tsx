@@ -124,6 +124,7 @@ export const HistoryManager: React.FC = () => {
         if (selectedId === id) {
           clearSelection();
         }
+        await loadConversations();
         message.success(t("history.conversation_deleted"));
       } catch (e) {
         log.error("Failed to delete conversation", e);
@@ -134,7 +135,7 @@ export const HistoryManager: React.FC = () => {
         message.error(t("history.operation_failed"));
       }
     },
-    [selectedId, t, message, clearSelection],
+    [selectedId, t, message, clearSelection, loadConversations],
   );
 
   const renameConversation = useCallback(
@@ -143,6 +144,7 @@ export const HistoryManager: React.FC = () => {
         await historyPersistQueue.enqueue(async () => {
           await historyService.renameConversation(id, title, "user");
         });
+        await loadConversations();
         message.success(t("history.renamed"));
       } catch (e) {
         log.error("Failed to rename", e);
@@ -153,7 +155,7 @@ export const HistoryManager: React.FC = () => {
         message.error(t("history.rename_failed"));
       }
     },
-    [t, message],
+    [t, message, loadConversations],
   );
 
   const exportConversation = useCallback(
@@ -189,12 +191,13 @@ export const HistoryManager: React.FC = () => {
         await historyPersistQueue.enqueue(async () => {
           await historyService.toggleConversationPin(id);
         });
+        await loadConversations();
       } catch (e) {
         log.error("Failed to toggle pin", e);
         message.error(t("history.operation_failed"));
       }
     },
-    [t, message],
+    [t, message, loadConversations],
   );
 
   const duplicateConversation = useCallback(
@@ -203,13 +206,14 @@ export const HistoryManager: React.FC = () => {
         await historyPersistQueue.enqueue(async () => {
           await historyService.duplicateConversation(id);
         });
+        await loadConversations();
         message.success(t("history.duplicated"));
       } catch (e) {
         log.error("Failed to duplicate", e);
         message.error(t("history.duplicate_failed"));
       }
     },
-    [t, message],
+    [t, message, loadConversations],
   );
 
   const batchDeleteConversations = useCallback(
@@ -223,13 +227,21 @@ export const HistoryManager: React.FC = () => {
           clearSelection();
         }
         exitMultiSelect();
+        await loadConversations();
         message.success(t("history.batch_deleted", { count: ids.length }));
       } catch (e) {
         log.error("Failed to batch delete", e);
         message.error(t("history.operation_failed"));
       }
     },
-    [selectedId, t, message, clearSelection, exitMultiSelect],
+    [
+      selectedId,
+      t,
+      message,
+      clearSelection,
+      exitMultiSelect,
+      loadConversations,
+    ],
   );
 
   const batchTogglePin = useCallback(
@@ -241,12 +253,13 @@ export const HistoryManager: React.FC = () => {
             await historyService.toggleConversationPin(id);
           });
         }
+        await loadConversations();
       } catch (e) {
         log.error("Failed to batch toggle pin", e);
         message.error(t("history.operation_failed"));
       }
     },
-    [t, message],
+    [t, message, loadConversations],
   );
 
   const batchExportConversations = useCallback(

@@ -214,7 +214,8 @@
       "deleted": "已删除 {{count}} 个附件，释放 {{size}}",
       "empty": "暂无附件",
       "load_failed": "加载存储数据失败",
-      "refresh": "刷新"
+      "refresh": "刷新",
+      "size_warning": "附件占用较大，建议清理以释放磁盘空间"
     },
     "agent_mode": {
       "title": "Agent 模式管理",
@@ -512,7 +513,6 @@
     },
     "compact": {
       "banner_title": "对话已达上下文上限",
-      "copy_summary": "复制摘要",
       "new_conversation": "新建对话",
       "unlock": "解锁对话",
       "unlock_confirm": "解锁后对话可能再次达到上限，是否继续？",

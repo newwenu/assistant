@@ -6,10 +6,12 @@
 
 | 模块 | 职责 | 交互方式 |
 |------|------|---------|
-| **Orb 悬浮球** | AI 对话、Agent 工具调用、Mascot 形象 | 桌面常驻，点击展开对话面板，失焦收起 |
-| **主窗口** | 工具箱、设置管理 | 从托盘/悬浮球菜单打开，标准窗口 |
+| **Orb 悬浮球** | AI 对话、Agent 模式切换、Mascot 形象、上下文压缩提示 | 桌面常驻，点击展开对话面板，失焦收起 |
+| **主窗口** | 工具箱、消息历史、密码保险库、设置入口 | 从托盘/悬浮球菜单打开，标准窗口 |
+| **设置窗口** | 通用 / 外观 / 快捷键 / Provider / Agent / 存储 / 保险库 / 关于 | 独立窗口 |
+| **保险库解锁窗口** | 主密码 / 生物识别解锁 | 独立窗口（`vault-unlock`） |
 
-> **主窗口不提供 AI 对话功能**，所有 AI 交互通过 Orb 完成。主窗口专注工具与配置。
+> **主窗口不提供 AI 对话功能**，所有 AI 交互通过 Orb 完成。主窗口专注工具、历史管理与配置。
 
 ---
 
@@ -129,53 +131,62 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 
 | 路由 | 页面 |
 |------|------|
-| `/` | 工具箱首页（分类导航 + 搜索 + 收藏） |
-| `/history` | 消息历史管理（对话列表 + 搜索 + 筛选 + 批量操作） |
+| `/` | 工具箱首页（分类导航 + 搜索 + 收藏 + 最近使用） |
 | `/tools/:id` | 具体工具界面 |
-| `/settings` | 设置首页（重定向到 `/settings/general`） |
-| `/settings/general` | 通用设置（语言/开机自启/关闭到托盘/置顶） |
-| `/settings/appearance` | 外观设置（主题 + Orb 外观） |
+| `/history` | 消息历史管理（对话列表 + 搜索 + 筛选 + 批量操作 + 详情/分支） |
+| `/vault` | 密码保险库（解锁后进入条目列表/详情） |
+| `/vault-unlock` | 独立解锁窗口（`vault-unlock` 窗口专用路由） |
+| `/settings` | 设置窗口入口（重定向到 `/settings/overview`） |
+| `/settings/overview` | 设置总览 |
+| `/settings/general` | 通用设置（语言/开机自启/关闭到托盘/置顶/压缩参数） |
+| `/settings/appearance` | 外观设置（主题 + Orb/Mascot 外观） |
 | `/settings/shortcuts` | 快捷键配置 |
 | `/settings/providers` | AI Provider 配置 |
-| `/settings/agents` | Agent 模式管理（合并原 Prompt 模板） |
-| `/settings/about` | 关于 |
+| `/settings/agents` | Agent 模式管理 |
+| `/settings/storage` | 存储管理（附件占用统计 + 孤儿附件清理） |
+| `/settings/vault` | 保险库设置（Git 同步/SSH/生物识别/恢复密钥） |
+| `/settings/about` | 关于（版本/构建信息；检查更新未实现） |
 
 ### 4.2 工具箱
 
 #### 工具接口
 
 ```typescript
+type ToolCategory = 'dev' | 'converter' | 'security' | 'media'
+
 interface ToolDefinition {
   id: string
-  name: string
-  category: 'crypto' | 'converter' | 'dev' | 'text' | 'math' | 'web' | 'daily' | 'media'
-  icon: string
+  name: string                 // i18n key，如 tools.uuid_generator.name
+  description: string          // i18n key
+  category: ToolCategory       // 由 keywords 经 classifyKeywords 自动判定
+  icon: ComponentType
   keywords: string[]
-  component: React.LazyExoticComponent<any>
+  component: RecoverableLazyComponent<ComponentType>
+  widthMode?: 'default' | 'wide' | 'full'
+  capabilities?: { fileDrop?: { accept: string } }
+  createdAt?: Date             // 两周内视为 NEW
 }
 ```
 
-#### 工具清单
+#### 工具清单（22 个）
 
 | 分类 | 工具 |
 |------|------|
-| 加密 | Hash 计算、UUID 生成、Base64 编解码 |
-| 转换器 | 颜色转换、时间戳转换、进制转换、URL 编解码、单位换算 |
-| 开发 | JSON 格式化、正则测试器、JWT 解码、SQL 格式化、Cron 解析 |
-| 文本 | Diff 对比、字数统计 |
-| 数学 | 计算器 |
-| 网络 | IP 查询 |
-| 日常 | 二维码生成、密码生成 |
-| 多媒体 | 图片压缩、SVG 预览 |
+| `dev` | UUID 生成、JSON 格式化、正则测试器、SQL 格式化、Cron 解析、文本 Diff、字数统计、计算器、IP 查询、文件系统链接 |
+| `converter` | Base64 编解码、颜色转换、时间戳转换、进制转换、URL 编解码、单位换算 |
+| `security` | Hash 计算、JWT 解码、密码生成器 |
+| `media` | 二维码生成、图片压缩、SVG 预览 |
 
 ### 4.3 设置
 
-- **通用设置**：语言（占位 zh-CN）/ 开机自启 / 关闭到托盘 / 置顶主窗口
-- **外观设置**：主题（亮/暗/跟随系统）+ Orb 悬浮球外观（透明度/缩放/圆角/鼠标穿透/悬停隐藏/悬停延迟）+ Orb 悬浮窗（始终置顶）
+- **通用设置**：语言（zh-CN / en-US）/ 开机自启 / 关闭到托盘 / 置顶主窗口 / 上下文压缩阈值与模型
+- **外观设置**：主题（亮/暗/跟随系统）+ Orb 悬浮球外观（透明度/缩放/圆角/鼠标穿透/悬停隐藏/悬停延迟）+ Orb 悬浮窗（始终置顶）+ Mascot 外观
 - **快捷键**：全局快捷键（toggle_orb / toggle_main / new_chat）+ 应用内快捷键（command_palette），分组展示 + 录制 + 冲突检测 + 重置
-- **Provider 管理**：添加/编辑/删除 AI Provider（名称 + API Key + Base URL + 模型列表）
+- **Provider 管理**：添加/编辑/删除 AI Provider（名称 + API Key + Base URL + 模型列表），密钥经后端加密存储
 - **Agent 模式**：内置（默认/快速/深度/翻译助手）+ 自定义模式，支持 system_prompt / temperature / max_tokens / model / tools 组合
-- **关于**：版本信息 + 构建信息 + 检查更新（预留）
+- **存储管理**：附件占用统计 + 孤儿附件清理
+- **保险库**：Git 同步（远程/分支/Rebase）/ SSH 密钥 / 生物识别解锁 / 恢复密钥导出
+- **关于**：版本信息 + 构建信息；检查更新目前为禁用占位（I8 未实施）
 
 > **设置保存统一链路**：所有设置变更通过 `settingsDispatcher` 统一入口 → `invoke()` 写后端 → `store.load()` 刷新缓存 → `emitSettingEvent()` 跨窗口广播 → 消费端 `listen()` 生效。
 
@@ -200,11 +211,18 @@ CREATE TABLE providers (
 CREATE TABLE conversations (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
+  title_source TEXT NOT NULL DEFAULT 'placeholder',
   provider_id TEXT,
   model_id TEXT NOT NULL,
   system_prompt TEXT,
+  is_pinned INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  generation INTEGER NOT NULL DEFAULT 0,
+  mode_id TEXT,
+  is_full INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  active_branch_id TEXT
 );
 
 CREATE TABLE messages (
@@ -213,7 +231,14 @@ CREATE TABLE messages (
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   tokens INTEGER,
-  timestamp INTEGER NOT NULL
+  timestamp INTEGER NOT NULL,
+  parent_id TEXT,
+  sibling_index INTEGER NOT NULL DEFAULT 0,
+  is_pinned INTEGER NOT NULL DEFAULT 0,
+  reasoning TEXT,
+  tool_calls_json TEXT,
+  provider_id TEXT,
+  model_id TEXT
 );
 
 CREATE TABLE agent_modes (
@@ -225,6 +250,8 @@ CREATE TABLE agent_modes (
   model TEXT,
   temperature REAL,
   max_tokens INTEGER,
+  reasoning_enabled INTEGER,
+  reasoning_effort TEXT,
   tools TEXT NOT NULL DEFAULT '[]',
   presentation_rank INTEGER NOT NULL DEFAULT 99,
   is_builtin INTEGER NOT NULL DEFAULT 0,
@@ -237,8 +264,7 @@ CREATE TABLE tool_favorites (
 );
 
 CREATE TABLE tool_history (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  tool_id TEXT NOT NULL,
+  tool_id TEXT PRIMARY KEY,
   used_at INTEGER NOT NULL
 );
 
@@ -249,21 +275,41 @@ CREATE TABLE compression_state (
 );
 
 CREATE TABLE app_settings (
-  key TEXT PRIMARY KEY,
+  key TEXT PRIMARY KEY,     -- 含 schema_version
   value TEXT NOT NULL
 );
+
+CREATE TABLE attachment_refs (
+  attachment_id   TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  message_id      TEXT NOT NULL,
+  PRIMARY KEY (attachment_id, conversation_id, message_id)
+);
+-- 索引：idx_messages_conv_ts / idx_messages_parent_id / idx_attachment_refs_conv / idx_attachment_refs_att
 ```
 
-> **I2-History Schema v2（规划中）**：conversations 新增 is_pinned / is_starred / color_mark / labels / draft_content / draft_updated_at / message_count / total_tokens / generation / sort_order 共 9 列；messages 新增 parent_id / source / feedback / is_pinned 共 4 列；新增 tool_calls 表（id / message_id / name / arguments / result / status / started_at / finished_at / is_error）+ 2 个索引。
+> **Schema 实况**：I2-History Schema v2 的会话/消息分支相关列已全部落地（conversations 的 `title_source` / `is_pinned` / `sort_order` / `generation` / `mode_id` / `is_full` / `active_branch_id`；messages 的 `parent_id` / `sibling_index` / `is_pinned` / `reasoning` / `tool_calls_json` / `provider_id` / `model_id`）。
+> 规划中但**尚未实施**：conversations 的 `is_starred` / `color_mark` / `labels` / `draft_content` / `draft_updated_at` / `message_count` / `total_tokens`；messages 的 `feedback` / `source`；独立 `tool_calls` 表。
+> 上下文压缩状态记录在 `compression_state`；压缩摘要以 `role = 'compact_summary'` 的消息写入 messages，前端通过 `CompactBanner` + “继续对话”消费。
 
 ### 5.2 文件结构
 
 ```
-~/.assistant/
-├── data/assistant.db     # SQLite
-├── config/app.json       # 应用配置
-└── cache/                # 缓存
+<app_data_dir>/           # Win: %APPDATA%\com.assistant / macOS: ~/Library/Application Support/com.assistant / Linux: ~/.local/share/com.assistant
+├── assistant.db          # SQLite（业务数据）
+├── attachments/          # 图片附件（asset 协议注册目录）
+├── mascot-assets/        # Mascot 资源
+└── security/
+    ├── security.db       # 安全模块 / 保险库元数据（SQLCipher）
+    └── vault/            # 保险库 Git 工作区（本地提交 / 远程同步）
+
+<config_dir>/             # Win: %APPDATA%\com.assistant / macOS: ~/Library/Application Support/com.assistant / Linux: ~/.config/com.assistant
+├── config.json           # AppConf
+├── orb-config.json       # OrbConf
+└── mascot-config.json    # MascotConf
 ```
+
+> 日志由 `tauri-plugin-log` 写入系统日志目录，开发环境同时输出到终端。
 
 ---
 
@@ -271,15 +317,22 @@ CREATE TABLE app_settings (
 
 ### 6.1 Provider 适配器
 
-```typescript
-abstract class BaseProviderAdapter {
-  abstract chat(req: ChatRequest): Promise<ChatResponse>
-  abstract chatStream(req: ChatRequest): AsyncGenerator<ChatResponse>
-  abstract listModels(): Promise<ModelConfig[]>
+```rust
+pub trait BaseProviderAdapter: Send + Sync {
+    fn kind(&self) -> &ProviderKind;
+    fn config(&self) -> &ProviderConfig;
+    fn chat_completion_stream(
+        &self,
+        messages: &[ChatMessage],
+        model: &str,
+        options: &ChatOptions,
+        cancel_token: CancellationToken,
+    ) -> Result<ChatStream, ProviderError>;
+    fn list_models(&self) -> Result<Vec<ModelConfig>, ProviderError>;
 }
 ```
 
-实现：`OpenAIAdapter`（兼容 Claude/Gemini/DeepSeek 等 OpenAI 格式）、`AnthropicAdapter`、`GeminiAdapter`、`CustomAdapter`
+实现（`assistant-providers` crate，按 `ProviderKind` 分派）：`OpenAIAdapter`（OpenAI Chat Completions / OpenAI Responses / 自定义 base_url 兼容端点）、`AnthropicAdapter`、`GeminiAdapter`（含 Gemini Code Assist）。模型元数据来自内嵌的 models.dev 快照。
 
 ### 6.2 流式渲染
 
@@ -311,155 +364,72 @@ retryable 错误支持指数退避重试（max 3 次，base 1s，max 30s）。
 
 ## 7. 项目目录
 
-> Rust 后端结构择优参考 BongoCat 的 workspace 多 crate 架构（编译隔离 + API 边界强制 + 独立测试），按我们的领域划分为 1 个根包 + 6 个 workspace crate，远少于 BongoCat 的 20 个。ChatGPT 的 core 模块组织（cmd/conf/constant/setup/window）融入 `assistant-app` 根包。Tauri 2 CLI 要求二进制包位于 `src-tauri/` 根目录（`Cargo.toml` 同时包含 `[package]` 和 `[workspace]`），因此 `assistant-app` 作为根包而非子 crate。
+> Rust 后端结构择优参考 BongoCat 的 workspace 多 crate 架构（编译隔离 + API 边界强制 + 独立测试），按我们的领域划分为 1 个根包 + 9 个 workspace crate，远少于 BongoCat 的 20 个。ChatGPT 的 core 模块组织（cmd/conf/constant/setup/window）融入 `assistant-app` 根包。Tauri 2 CLI 要求二进制包位于 `src-tauri/` 根目录（`Cargo.toml` 同时包含 `[package]` 和 `[workspace]`），因此 `assistant-app` 作为根包而非子 crate。
 
-> **实现状态**：Rust 后端 7 crate 骨架已在 I0 中实现；I1 完成 Orb 悬浮球全部功能；I2 完成 AI 对话全部功能（Provider 管理 + 流式输出 + 对话持久化 + ChatError 错误体系）；I3 完成工具箱全部功能（21 工具 + 命令面板 + 侧边栏）；I4 完成设置系统全部功能（通用/外观/快捷键/关于 + 全局快捷键注册 + 侧边栏重组 + 标题栏增强 + settingsDispatcher 统一链路）；I5 完成 Mascot 形象 + 表情联动（MascotFace 10 种 + FACE_TO_POSE 10→9 映射 + 颜色换肤 + buffer 加载 + listening 状态联动 + ack proud 增强）；I6 完成 Agent 自定义模式（agent_modes 表 + 内置预设 + 模式切换 + token 追踪 + Prompt 模板合并）。I2-History 进行中（Schema v2 迁移 + 高级 CRUD + 虚拟滚动 + 搜索导出等）。
+> **实现状态**：Rust 后端为根包 + 9 个 workspace crate；I0–I6 全部完成（Orb / AI 对话 / 22 个工具 / 设置系统 / Mascot / Agent 模式）；I7 上下文压缩已完成（`compression_state` + CompactBanner + 继续对话）；I2-History 已完成（Schema 实况见 §5.1，含分支/搜索/导出/批量操作）；I2e/I2f 图片附件与附件引用清理、I9 保险库已上线。尚未完成项见 §9 末尾“后续迭代”。
 
 ```
 assistant/
-├── src-tauri/                     # Rust 后端（Cargo workspace，根包为二进制 crate）
-│   ├── src/                       # assistant-app 根包（Tauri 集成层）
+├── src-tauri/                     # Rust 后端（Cargo workspace，根包 assistant-app + 9 个成员 crate）
+│   ├── src/                       # 根包（Tauri 集成层）
 │   │   ├── main.rs                # 入口（windows_subsystem → assistant_app::run()）
 │   │   ├── lib.rs                 # Builder + plugins + setup + invoke_handler
-│   │   ├── cmd.rs                 # Tauri commands（前端可调用，53 个）
-│   │   ├── chat_tasks.rs          # 流式聊天任务管理（cancel + retry）
-│   │   ├── sse_log.rs             # SSE 调试日志模块
+│   │   ├── cmd/                   # Tauri commands（110 个，按域拆分）
+│   │   │   ├── mod.rs
+│   │   │   ├── app.rs             # 应用级（窗口/配置/快捷键）
+│   │   │   ├── chat.rs            # 对话发送与流式任务
+│   │   │   ├── chat_stream.rs     # 流式事件消费
+│   │   │   ├── chat_utils.rs
+│   │   │   ├── compaction.rs      # 上下文压缩命令
+│   │   │   ├── conversation.rs    # 会话/消息 CRUD、搜索、导出
+│   │   │   ├── conversation_utils.rs
+│   │   │   ├── agent_mode.rs
+│   │   │   ├── provider.rs
+│   │   │   ├── storage.rs         # 附件统计 / 孤儿附件清理
+│   │   │   ├── mascot_asset.rs
+│   │   │   ├── orb.rs
+│   │   │   ├── os_tool_exec.rs
+│   │   │   ├── tool.rs
+│   │   │   ├── config.rs
+│   │   │   └── vault/             # 保险库命令（解锁/CRUD/同步/SSH/恢复密钥）
 │   │   ├── setup.rs               # 应用初始化（配置 + 数据库 + 窗口 + 托盘）
 │   │   ├── tray.rs                # 系统托盘
-│   │   └── window.rs              # 窗口管理（创建/展开/收起/设置）
+│   │   ├── window.rs              # 窗口管理（创建/展开/收起/设置）
+│   │   └── crash_dump.rs          # 崩溃转储
 │   ├── crates/
-│   │   ├── assistant-config/      # 配置 crate（独立于 Tauri，可纯测试）
-│   │   │   ├── src/
-│   │   │   │   ├── lib.rs
-│   │   │   │   ├── app_conf.rs    # AppConf（theme/language/hotkey/stay_on_top/launch_at_login/close_to_tray/keybindings）
-│   │   │   │   ├── orb_conf.rs    # OrbConf（click_through/opacity/hover/placement）
-│   │   │   │   └── constant.rs    # 常量（窗口标签/尺寸/阈值）
-│   │   │   └── Cargo.toml
-│   │   ├── assistant-orb/         # Orb 悬浮球逻辑 crate
-│   │   │   ├── src/
-│   │   │   │   ├── lib.rs
-│   │   │   │   ├── hover.rs       # 指针悬停隐藏（延迟 + 淡出，参考 BongoCat overlay/hover.rs）
-│   │   │   │   └── placement.rs   # 位置约束（多显示器 + 边缘吸附，参考 BongoCat overlay/placement.rs）
-│   │   │   └── Cargo.toml
-│   │   ├── assistant-providers/   # AI Provider 适配器 crate
-│   │   │   ├── src/
-│   │   │   │   ├── lib.rs
-│   │   │   │   ├── base.rs        # BaseProviderAdapter trait
-│   │   │   │   ├── openai.rs      # OpenAI 兼容格式
-│   │   │   │   └── crypto.rs      # API Key AES-256 加解密
-│   │   │   └── Cargo.toml
-│   │   ├── assistant-agent/       # Agent 运行时 crate
-│   │   │   ├── src/
-│   │   │   │   ├── lib.rs
-│   │   │   │   ├── modes.rs       # Quick/Standard/Deep
-│   │   │   │   └── compaction.rs  # Context Compaction（参考 OpenBitFun）
-│   │   │   └── Cargo.toml
-│   │   ├── assistant-storage/     # 数据层 crate
-│   │   │   ├── src/
-│   │   │   │   ├── lib.rs
-│   │   │   │   ├── db.rs          # SQLite 初始化 + 迁移
-│   │   │   │   ├── conversations.rs # 对话+消息 CRUD（含分页/搜索/导出）
-│   │   │   │   ├── providers.rs   # Provider CRUD
-│   │   │   │   ├── agent_modes.rs # Agent 模式 CRUD（合并原 Prompt 模板）
-│   │   │   └── Cargo.toml
-│   │   └── assistant-i18n/        # 国际化 crate（参考 BongoCat bongocat-i18n）
-│   │       ├── src/
-│   │       │   └── lib.rs
-│   │       ├── locales/
-│   │       │   ├── zh-CN.json
-│   │       │   └── en-US.json
-│   │       └── Cargo.toml
-│   ├── Cargo.toml                 # [package] 根包 + [workspace] 定义
+│   │   ├── assistant-config/      # AppConf / OrbConf / MascotConf + 原子写
+│   │   ├── assistant-orb/         # hover.rs（悬停隐藏）/ placement.rs（多屏约束）
+│   │   ├── assistant-providers/   # openai（Chat + Responses）/ anthropic / gemini（含 Code Assist）/ crypto
+│   │   ├── assistant-agent/       # chat_runtime / chat_tasks / compaction / prompt_builder / multimodal
+│   │   ├── assistant-storage/     # db / conversations / providers / agent_modes / attachments
+│   │   ├── assistant-i18n/        # 后端文案（zh-CN / en-US）
+│   │   ├── assistant-tools/       # 工具执行上下文与注册（Agent 侧）
+│   │   ├── assistant-security/    # vault / crypto / biometric / audit / ssh_agent / recovery_key / screen_lock / clipboard_guard
+│   │   └── assistant-sync/        # git_sync / sync_engine / vault_file
+│   ├── Cargo.toml                 # [package] 根包 + [workspace] members
 │   └── tauri.conf.json
 │
 ├── src/                           # React 前端
 │   ├── main.tsx                   # 入口（Provider 包裹 + 主题 + StrictMode）
 │   ├── App.tsx                    # 多窗口分流（webview.label → 组件映射）
-│   ├── config/                    # 配置（对应 Rust assistant-config crate）
-│   │   └── constants.ts           # 常量（窗口标签/尺寸/阈值/穿透防抖，与 Rust constant.rs 对齐）
-│   ├── orb/                       # Orb 悬浮球模块
-│   │   ├── OrbBall.tsx            # 悬浮球主体（hitbox + 视觉样式 + 拖拽/点击事件 + hover 轮询 + 穿透切换）
-│   │   ├── OrbPanel.tsx           # 展开后的对话面板（失焦收起 + Escape）
-│   │   ├── OrbDrag.tsx            # 拖拽逻辑（8px 阈值 + 平台分发 + 边缘吸附 + 位置保存）
-│   │   ├── OrbExpand.ts           # 展开/收起控制（方向自适应 + click-through 切换）
-│   │   ├── OrbCoord.ts            # 统一逻辑坐标系工具（物理↔逻辑转换 + 几何判断）
-│   │   ├── OrbContextMenu.tsx     # 右键菜单（Ant Design Dropdown）
-│   │   └── useOrbConfSync.ts      # Orb 配置实时同步（listen OrbConfChanged → CSS 变量 + 运行时生效）
-│   ├── mascot/                    # Mascot 形象
-│   │   ├── RiveMascot.tsx         # Rive 渲染（useRive + useViewModel）
-│   │   ├── faceStates.ts          # MascotFace 枚举
-│   │   ├── riveMaps.ts            # FACE_TO_POSE 映射 + viseme 映射 + ambient 轮转
-│   │   ├── useMascotChatSync.ts   # 对话事件 → 表情联动（流式输出→writing，完成→happy）
-│   │   ├── mascotStore.ts         # Zustand 状态（face/visemeCode/holdThenIdle/notifyListening）
-│   │   └── emotionEngine.ts       # jiwen 情感引擎集成
-│   ├── chat/                      # 对话组件（Orb 面板内使用）
-│   │   ├── ChatView.tsx
-│   │   ├── MessageList.tsx
-│   │   ├── MessageInput.tsx
-│   │   ├── ModelSelector.tsx
-│   │   ├── ModeSelector.tsx       # Agent 模式选择器（I6）
-│   │   ├── TokenUsageBar.tsx      # token 用量指示条（I6）
-│   │   ├── ProviderSelector.tsx   # 对话栏内嵌 Provider 切换
-│   │   ├── chatErrors.ts          # ChatError 13 种错误码 + retryable 标记
-│   │   └── streamCoalescer.ts     # 流式增量合并（rAF + setTimeout 双保险）
-│   ├── tools/                     # 工具箱（主窗口使用）
-│   │   ├── ToolBox.tsx            # 工具箱首页（分类 + 搜索 + 收藏）
-│   │   ├── ToolPage.tsx           # 工具页统一布局（标题+分隔线+描述+内容）
-│   │   ├── registry.ts            # 工具注册表（defineTool 工厂）
-│   │   └── [tool-name]/           # 各工具实现
-│   ├── components/                # 全局共享组件
-│   │   ├── CommandPalette.tsx     # 命令面板（Ctrl/Cmd+K，keywords+External+closeOnSelect）
-│   │   └── CommandPalette.module.css
-│   ├── settings/                  # 设置页面
-│   │   ├── GeneralSettings.tsx    # 通用设置（语言/开机自启/关闭到托盘/置顶）
-│   │   ├── AppearanceSettings.tsx # 外观设置（主题 + Orb 外观）
-│   │   ├── OrbBallSection.tsx     # Orb 悬浮球外观（透明度/缩放/圆角/穿透/悬停）
-│   │   ├── OrbPanelSection.tsx    # Orb 悬浮窗设置（始终置顶）
-│   │   ├── useDebouncedOrbSave.ts # Orb 配置防抖保存 hook
-│   │   ├── ShortcutSettings.tsx   # 快捷键配置页
-│   │   ├── ShortcutRecorder.tsx   # 快捷键录制组件
-│   │   ├── AboutPage.tsx          # 关于页
-│   │   ├── ProviderManager.tsx
-│   │   ├── AddProviderDialog.tsx  # 新增 Provider（预设选择）
-│   │   ├── ConnectDialog.tsx      # Provider 连接配置
-│   │   ├── ProviderSwatch.tsx     # Provider 格式标签
-│   │   ├── AgentModeManager.tsx   # Agent 模式管理
-│   │   ├── settingsDispatcher.ts  # 设置统一分发（dispatchAppConfChanged / dispatchOrbConfChanged / dispatchThemeChanged / dispatchProviderSaved）
-│   │   └── settingListeners.ts    # 设置变更监听
-│   ├── history/                   # 消息历史管理（I2-History）
-│   │   └── HistoryManager.tsx     # 对话列表 + 搜索 + 筛选 + 批量操作
-│   ├── components/                # 通用组件
-│   │   ├── Titlebar.tsx           # 自定义标题栏（含 PinToggle + SettingsEntry）
-│   │   ├── Sidebar.tsx            # 侧边栏（三区域布局：工具箱/导航/设置 + 底部版本号）
-│   │   ├── CollapsibleToolMenu.tsx # 可折叠分类菜单
-│   │   ├── ThemeToggle.tsx        # 主题三态切换
-│   │   ├── PinToggle.tsx          # 窗口置顶切换
-│   │   ├── SettingsEntry.tsx      # 设置入口按钮
-│   │   └── WindowControls.tsx     # 窗口控制按钮
-│   ├── stores/                    # Zustand
-│   │   ├── themeStore.ts          # 主题状态（Tauri 原生 API）
-│   │   ├── orbStore.ts            # Orb 状态（展开/收起/位置/穿透缓存/展开方向）
-│   │   ├── chatStore.ts           # 对话状态（含分页加载/搜索/错误处理/模式选择/token用量）
-│   │   ├── agentModeStore.ts      # Agent 模式状态
-│   │   ├── settingsStore.ts       # 设置状态（appConf / orbConf / load/save/updateKeybinding/resetKeybindings）
-│   │   ├── mascotStore.ts         # Mascot 表情状态
-│   │   ├── providerStore.ts       # Provider 配置
-│   │   └── toolStore.ts           # 工具状态（分类/收藏/搜索）
-│   ├── services/
-│   │   ├── providers/             # Provider 前端适配
-│   │   └── settingEvents.ts       # 设置事件消费端（listen SettingEvent → store.load）
+│   ├── config/constants.ts        # 窗口标签/尺寸/阈值（与 Rust constant.rs 对齐）
+│   ├── layouts/                   # 各窗口布局（主窗口 / 设置窗口 / 保险库窗口等）
+│   ├── orb/                       # OrbBall / OrbPanel / OrbDrag / OrbExpand / OrbCoord / OrbContextMenu / useOrbConfSync
+│   ├── mascot/                    # RiveMascot / faceStates / riveMaps / useMascotChatSync / mascotStore / emotionEngine
+│   ├── chat/                      # ChatView / MessageList / MessageInput / 选择器 / compact 横幅 / message 渲染
+│   ├── tools/                     # ToolBox / ToolPage / registry.ts + 22 个工具实现
+│   ├── vault/                     # 保险库页面（列表 / 详情 / 解锁）
+│   ├── history/                   # 历史管理（列表 / 详情 / 分支 / 批量操作 / 导出）
+│   ├── settings/                  # 设置（core 字段与页面注册 / pages 各设置页 / provider / agentMode / overview）
+│   ├── components/                # Titlebar / Sidebar / CommandPalette / 错误边界等共享组件
+│   ├── stores/                    # Zustand（theme/orb/chat/agentMode/settings/mascot/provider/tool）
+│   ├── services/                  # Provider 前端适配 / 设置事件消费
+│   ├── hooks/                     # 主题、附件、快捷键等 hooks
+│   ├── i18n/                      # i18next（zh-CN / en-US）
 │   ├── types/
-│   │   └── events.ts             # SettingEvent / SettingAction / SettingEventPayload 枚举
-│   ├── hooks/
-│   │   └── useTheme.ts            # Tauri 原生主题 hook
 │   ├── utils/
-│   └── assets/
-│       ├── icons/
-│       ├── styles/
-│       │   ├── global.css          # CSS 变量（亮/暗两套）
-│       │   └── theme.ts            # Ant Design 主题令牌配置
-│       │   # 注：各组件使用 CSS Modules（*.module.css）实现样式隔离
-│       └── mascot.riv              # Rive 动画资源
+│   ├── web-ui/                    # 主窗口 UI 入口
+│   └── assets/                    # icons / styles（global.css + theme.ts）/ mascot.riv
 │
 ├── package.json
 ├── tsconfig.json
@@ -470,9 +440,12 @@ assistant/
 
 ## 8. 安全设计
 
-- API Key AES-256 加密存储，密钥派生自机器唯一标识
-- Tauri 2 安全模型：前端通过 IPC 调用 Rust，所有命令需显式声明权限
-- Rust 后端处理所有敏感操作（API 请求、加密、数据库），前端零权限访问系统资源
+- API Key AES-256-GCM 加密存储，密钥派生自机器唯一标识 + HKDF
+- 保险库：主密码经 Argon2id 派生主密钥，条目密钥由 HKDF 按 entry_id 派生；条目内容 AES-256-GCM / ChaCha20-Poly1305 加密；元数据库 `security.db` 使用 SQLCipher
+- 保险库附加防护：TOTP 二次验证、HIBP 泄露检查、生物识别解锁（平台原生）、应用内锁屏 / 空闲锁定、剪贴板自动清除与防截屏、恢复密钥、SSH Agent
+- 同步：保险库以本地 Git 仓库工作区形式提交，支持远程仓库 / 分支 / Rebase（`assistant-sync`）
+- Tauri 2 安全模型：前端通过 IPC 调用 Rust，capabilities 中显式声明权限；asset 协议仅放行附件目录
+- Rust 后端处理所有敏感操作（API 请求、加密、数据库），前端不直接访问系统资源
 - 不收集用户数据，不发送遥测
 
 ---
@@ -486,12 +459,12 @@ assistant/
 **交付：** 可运行的 Tauri 2 空项目 + Cargo workspace + 开发环境
 
 - [x] Tauri 2 + React + Vite + TS 初始化
-- [x] Cargo workspace 根包 + 6 crate 结构（app 根包 + config/orb/providers/agent/storage/i18n）
+- [x] Cargo workspace 根包 + 6 crate 结构（后扩展为 1 根包 + 9 成员 crate）
 - [x] Rust 后端基础（workspace Cargo.toml、tauri.conf.json 权限配置、SQLite 启动初始化）
 - [x] ESLint + Prettier + TS 严格模式
 - [x] Zustand + React Router
 - [x] 主题系统（亮/暗/跟随系统）
-- [x] SQLite 初始化（rusqlite + tauri-plugin-sql）
+- [x] SQLite 初始化（rusqlite；`tauri-plugin-sql` 后续已移除以避免双份 SQLite）
 - [x] 系统托盘（右键：打开主窗口 / 退出）
 
 **踩坑与决策记录**：详见 [DEVLOG.md](./DEVLOG.md) I0 章节
@@ -576,36 +549,35 @@ assistant/
 
 ---
 
-### I2-History — 聊天消息历史管理（进行中）
+### I2-History — 聊天消息历史管理 ✅（代码高亮除外）
 
-**交付：** 分页加载、搜索、导出、置顶/收藏、消息编辑/重试、代码高亮
+**交付：** 分页加载、搜索、导出、置顶、消息编辑/重试、分支切换
 
-- [x] Schema 扩展（新字段写入 CREATE TABLE，删旧 DB 重建）+ 结构体扩展
-- [x] 对话高级操作 CRUD + Tauri Commands（置顶/收藏/复制/批量删除/搜索）
-- [x] 消息操作 CRUD + Tauri Commands（编辑/重试/删除）
+- [x] Schema 扩展（落地列见 §5.1）+ 结构体扩展
+- [x] 对话高级操作 CRUD + Tauri Commands（置顶/复制/分支/批量删除/搜索/导出 Markdown·JSON）
+- [x] 消息操作 CRUD + Tauri Commands（编辑/重试/删除/切换分支）
 - [x] chatStore 扩展（分页/搜索/导出/重试）+ UI 组件
-- [ ] 代码高亮（shiki）+ 数学公式（KaTeX）
+- [x] 数学公式（KaTeX）
+- [ ] 代码高亮（shiki）
+- [ ] 对话收藏（`is_starred`）及标签/草稿等 Schema v2 剩余列
 
-> **前置实现**：分页加载、搜索、导出、ChatError 13 种错误码已实现。ConversationSidebar 已删除（孤立组件），功能迁移至 HistoryManager。规格详见 [I2-history-spec.md](./store/I2-history-spec.md) / [I2-history-tasklist.md](./store/I2-history-tasklist.md)
+> **现状**：分页、搜索、导出、分支与 ChatError 13 种错误码均已实现；ConversationSidebar 已删除（孤立组件），功能迁移至 `src/history/`。未落地的 Schema 字段见 §5.1 注。
 
-**验收：** 分页加载流畅，搜索/导出可用，置顶/收藏可用，消息可编辑/重试
+**验收：** 分页加载流畅，搜索/导出可用，置顶/分支可用，消息可编辑/重试
 
 ---
 
 ### I3 — 主窗口工具箱 ✅
 
-**交付：** 完整工具箱，分类导航 + 搜索 + 收藏 + 21 工具
+**交付：** 完整工具箱，分类导航 + 搜索 + 收藏 + 22 工具
 
 - [x] 工具注册系统（ToolDefinition 接口 + defineTool 工厂）
 - [x] 工具箱首页（分类 + 搜索 + 收藏 + 最近使用 + 拖拽排序）
-- [x] 加密工具：Hash 计算、UUID 生成、Base64 编解码
-- [x] 转换器工具：颜色转换、时间戳转换、进制转换、URL 编解码、单位换算
-- [x] 开发工具：JSON 格式化、正则测试器、JWT 解码、SQL 格式化、Cron 解析
-- [x] 文本工具：Diff 对比、字数统计
-- [x] 数学工具：计算器
-- [x] 网络工具：IP 查询
-- [x] 日常工具：二维码、密码生成
-- [x] 多媒体工具：图片压缩、SVG 预览
+- [x] 工具分类（dev / converter / security / media，由 keywords 自动归类）
+- [x] dev：UUID 生成、JSON 格式化、正则测试器、SQL 格式化、Cron 解析、文本 Diff、字数统计、计算器、IP 查询、文件系统链接
+- [x] converter：Base64 编解码、颜色转换、时间戳转换、进制转换、URL 编解码、单位换算
+- [x] security：Hash 计算、JWT 解码、密码生成器
+- [x] media：二维码生成、图片压缩、SVG 预览
 - [x] 工具使用历史（SQLite tool_history）+ 收藏持久化（SQLite tool_favorites）
 - [x] 命令面板（Ctrl/Cmd+K）+ 模糊搜索（fuse.js）
 - [x] 侧边栏可折叠分类菜单（CollapsibleToolMenu）
@@ -613,7 +585,7 @@ assistant/
 
 > **原 I4（工具箱扩展）已合并入 I3**。I4 本质是 I3 的量变（仅新增工具组件，框架零改动），拆分两个迭代人为制造交付断层。合并后一次性交付完整工具箱，与参考项目 it-tools（60+ 工具一体交付）一致。
 
-**规格**：详见 [I3-spec.md](./store/I3-spec.md) / [I3-tasklist.md](./store/I3-tasklist.md)
+> **规格与任务清单**：详见 `docs/store/`；DEVLOG.md 保留全链路踩坑记录。I3 / I4 / I2-history 迭代详情已合并入已完成阶段说明，不再单独引用不存在的旧 spec/tasklist 文件名。
 
 **参考：**
 
@@ -653,7 +625,7 @@ assistant/
 - [x] 设置配置中间层（AppConf/OrbConf 收敛到 settingsDispatcher 标准路径 + CSS 变量消费链 + OrbConf 字段生效）
 - [x] 快捷键跨平台修复（parse_shortcut 键码大小写 + Meta/Control 平台映射）
 
-**规格**：详见 [I4-spec.md](./store/I4-spec.md) / [I4-tasklist.md](./store/I4-tasklist.md)
+> **规格与任务清单**：详见 `docs/store/`；I4 的落地细节见本迭代清单与 DEVLOG.md。
 
 **参考：**
 
@@ -672,7 +644,7 @@ assistant/
 
 ---
 
-### I5 — Mascot 形象 + 表情联动
+### I5 — Mascot 形象 + 表情联动 ✅
 
 **交付：** Rive 动画 Mascot，与对话状态联动
 
@@ -735,11 +707,11 @@ assistant/
 
 ---
 
-### I7 — Context Compaction
+### I7 — Context Compaction ✅
 
-**交付：** 对话满即终止 + 交接摘要 + 新对话建议
+**交付：** 对话满即终止 + 交接摘要 + 继续对话
 
-当 token 量达到上下文窗口 80% 时，异步生成结构化交接摘要，标记对话为已满（只读），前端显示横幅 + [复制摘要] + [新建对话] 按钮。
+当 token 量达到上下文窗口 80% 时，异步生成结构化交接摘要，标记对话为已满（只读），前端显示横幅 + [继续对话]（自动新建对话并注入摘要）+ [解锁] 按钮。
 
 ```rust
 fn should_terminate(prompt_tokens: u32, context_window: u32) -> bool {
@@ -749,10 +721,10 @@ fn should_terminate(prompt_tokens: u32, context_window: u32) -> bool {
 
 - 触发：`prompt_tokens >= context_window * 80%`（流结束后检查）
 - 动作：生成交接摘要（目标/进展/待办/关键信息）→ 标记 `is_full=1` → 前端锁定对话
-- 摘要：结构化交接文档，用户复制粘贴到新对话后模型可直接继续工作
-- 检索：`search_history` 工具（待 tool-call 基础设施就绪后启用），新对话中模型按需检索旧消息
+- 摘要：以 `role = 'compact_summary'` 的消息持久化，继续对话时注入上下文
+- 检索：`search_history` 工具仍待 tool-call 基础设施就绪
 
-> **跨对话检索工具依赖 tool-call 执行循环**（当前项目未实现），I7 先实现终止 + 摘要 + 横幅，检索工具在 tool-call 就绪后接入。
+> **跨对话检索工具依赖 tool-call 执行循环**（当前项目未实现），I7 已交付终止 + 摘要 + 横幅 + 继续对话；检索工具待 tool-call 就绪后接入。
 
 **参考：**
 
@@ -762,23 +734,26 @@ fn should_terminate(prompt_tokens: u32, context_window: u32) -> bool {
 | 压缩状态 | OpenBitFun | session.rs L84-93 | `CompressionState { last_compression_at, compression_count }` |
 | 会话配置 | OpenBitFun | session.rs L179,193 | `auto_compact: bool` 开关 |
 
-- [ ] 对话满终止（阈值触发 + 交接摘要生成 + is_full 标记）
-- [ ] CompressionState 持久化（SQLite compression_state 表 + summary 列）
-- [ ] 对话满 UI（横幅 + 复制摘要 + 新建对话按钮 + 输入区禁用 + 侧边栏 `<LockOutlined />` 图标）
+- [x] 对话满终止（阈值触发 + 交接摘要生成 + is_full 标记）
+- [x] CompressionState 持久化（SQLite compression_state 表）
+- [x] 对话满 UI（横幅 + 继续对话（新建对话 + 摘要注入）+ 解锁 + 输入区禁用 + 侧边栏锁图标）
 - [ ] 跨对话检索工具（`search_history`，待 tool-call 就绪）
 
-**验收：** 长对话 token 接近窗口 80% 时自动终止，摘要可复制粘贴到新对话，对话只读
+**验收：** 长对话 token 接近窗口 80% 时自动终止，"继续对话"按钮自动注入摘要到新对话，对话只读
 
 ---
 
-### I8 — 打包发布
+### I8 — 打包发布（未开始）
 
-**交付：** 三平台安装包
+**交付：** 三平台安装包 + 自动更新
 
 - [ ] Windows MSI / NSIS
 - [ ] macOS DMG（签名 + 公证）
 - [ ] Linux AppImage / deb / rpm
 - [ ] GitHub Release CI
+- [ ] 自动更新（tauri-plugin-updater + 关于页“检查更新”启用）
+
+> **现状**：`tauri.conf.json` 尚无 updater 配置，关于页“检查更新”为禁用占位；CI 目录不存在。
 
 **参考：**
 
@@ -797,16 +772,16 @@ fn should_terminate(prompt_tokens: u32, context_window: u32) -> bool {
 I0 脚手架 ✅
  └→ I1 悬浮球 ✅
      └→ I2 Orb AI 对话 ✅
-         ├→ I2-History 消息历史管理（进行中）
-         ├→ I3 工具箱 ✅（21 工具，8 分类）
+         ├→ I2-History 消息历史管理 ✅
+         ├→ I3 工具箱 ✅（22 工具，4 分类）
          └→ I4 设置 + 快捷键 + UI改造 ✅
-             └→ I5 Mascot 形象
+             └→ I5 Mascot 形象 ✅
                  └→ I6 Agent 自定义模式 ✅
-                     └→ I7 Context Compaction
-                         └→ I8 打包发布
+                     └→ I7 Context Compaction ✅
+                         └→ I8 打包发布（未开始）
 ```
 
-I2-History 依赖 I2；I3 和 I4 可并行（均依赖 I2）；I5 依赖 I2+I4；I6 依赖 I2+I5；I7 依赖 I6
+I2-History 依赖 I2；I3 和 I4 可并行（均依赖 I2）；I5 依赖 I2+I4；I6 依赖 I2+I5；I7 依赖 I6；I8 依赖全部功能稳定。保险库（I9）与图片附件（I2e/I2f）为并行支线，已完成。
 
 ---
 

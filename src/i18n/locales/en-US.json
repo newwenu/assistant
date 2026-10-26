@@ -221,7 +221,8 @@
       "deleted": "{{count}} attachments deleted ({{size}} freed)",
       "empty": "No attachments",
       "load_failed": "Failed to load storage data",
-      "refresh": "Refresh"
+      "refresh": "Refresh",
+      "size_warning": "Attachments are using significant disk space. Consider cleaning up to free space."
     },
     "agent_mode": {
       "title": "Agent Mode Management",
@@ -525,7 +526,6 @@
     },
     "compact": {
       "banner_title": "Conversation reached context limit",
-      "copy_summary": "Copy summary",
       "new_conversation": "New conversation",
       "unlock": "Unlock conversation",
       "unlock_confirm": "Unlocking may cause the conversation to reach the limit again. Continue?",

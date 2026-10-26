@@ -1,7 +1,7 @@
 use crate::base::{resolve_context_window, ModelConfig, ProviderError};
 use crate::client::error::classify_http_error;
 use crate::client::quirks::wants_bearer_auth;
-use crate::vision::resolve_support_vision;
+use crate::vision::{input_modalities_for, resolve_support_vision};
 
 use super::types::AnthropicModelsResponse;
 use super::AnthropicAdapter;
@@ -58,12 +58,14 @@ pub(crate) fn list_models(adapter: &AnthropicAdapter) -> Result<Vec<ModelConfig>
             .into_iter()
             .map(|m| {
                 let ctx = resolve_context_window(&m.id, None, m.resolved_context_window());
+                let input_modalities = input_modalities_for(&m.id);
                 ModelConfig {
                     id: m.id.clone(),
                     name: m.display_name.unwrap_or(m.id.clone()),
                     owned_by: "anthropic".to_string(),
                     context_window: ctx,
                     support_vision: resolve_support_vision(&m.id, None),
+                    input_modalities,
                 }
             })
             .collect();

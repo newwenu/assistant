@@ -86,9 +86,15 @@ fn convert_user_message(msg: &ChatMessage) -> Value {
         }
     }
 
+    // 纯文本消息统一输出 content blocks 数组格式：
+    // Anthropic messages API 支持数组 content，且统一格式后
+    // merge_consecutive_messages 才能合并连续 user 消息。
     json!({
         "role": "user",
-        "content": msg.content
+        "content": [{
+            "type": "text",
+            "text": msg.content
+        }]
     })
 }
 
