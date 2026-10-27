@@ -158,7 +158,6 @@ impl ProviderKind {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProviderConfig {
     pub kind: ProviderKind,
-    pub api_key_encrypted: String,
     pub base_url: Option<String>,
     pub default_model: String,
     pub max_tokens: u32,
@@ -187,12 +186,13 @@ pub trait BaseProviderAdapter: Send + Sync {
     fn config(&self) -> &ProviderConfig;
     fn chat_completion_stream(
         &self,
+        api_key: &str,
         messages: &[ChatMessage],
         model: &str,
         options: &ChatOptions,
         cancel_token: CancellationToken,
     ) -> Result<ChatStream, ProviderError>;
-    fn list_models(&self) -> Result<Vec<ModelConfig>, ProviderError>;
+    fn list_models(&self, api_key: &str) -> Result<Vec<ModelConfig>, ProviderError>;
 }
 
 pub fn provider_kind_from_str(type_str: &str, base_url: String) -> ProviderKind {

@@ -13,6 +13,7 @@ use crate::provider_config::build_provider_config;
 pub struct ChatRequest {
     pub chat_messages: Vec<types::ChatMessage>,
     pub adapter: Box<dyn base::BaseProviderAdapter>,
+    pub api_key: String,
     pub model: String,
     pub options: types::ChatOptions,
     pub context_window_tokens: u32,
@@ -25,6 +26,7 @@ pub async fn build_chat_request(
     provider_row: &ProviderRow,
     model_id: &str,
     attachment_store: &AttachmentStore,
+    api_key: String,
 ) -> Result<ChatRequest, String> {
     let system_prompt = mode.map(|m| m.prompt.as_str()).unwrap_or("");
     let mut chat_messages = prompt_builder::prepare_messages(detail, system_prompt, None);
@@ -65,6 +67,7 @@ pub async fn build_chat_request(
     Ok(ChatRequest {
         chat_messages,
         adapter,
+        api_key,
         model,
         options,
         context_window_tokens,

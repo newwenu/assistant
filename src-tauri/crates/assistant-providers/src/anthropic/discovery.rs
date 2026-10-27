@@ -6,11 +6,10 @@ use crate::vision::{input_modalities_for, resolve_support_vision};
 use super::types::AnthropicModelsResponse;
 use super::AnthropicAdapter;
 
-pub(crate) fn list_models(adapter: &AnthropicAdapter) -> Result<Vec<ModelConfig>, ProviderError> {
+pub(crate) fn list_models(adapter: &AnthropicAdapter, api_key: &str) -> Result<Vec<ModelConfig>, ProviderError> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| ProviderError::RequestFailed(format!("Create runtime: {}", e)))?;
     rt.block_on(async {
-        let api_key = adapter.decrypt_api_key()?;
         let url = resolve_models_url(adapter.base_url());
 
         let mut req_builder = adapter.client.get(&url);
@@ -22,7 +21,7 @@ pub(crate) fn list_models(adapter: &AnthropicAdapter) -> Result<Vec<ModelConfig>
             }
         } else {
             req_builder = req_builder
-                .header("x-api-key", &api_key)
+                .header("x-api-key", api_key)
                 .header("anthropic-version", "2023-06-01");
         }
 

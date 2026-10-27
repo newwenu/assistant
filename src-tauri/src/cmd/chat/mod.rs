@@ -14,6 +14,7 @@ use assistant_agent::compaction;
 use assistant_agent::multimodal;
 use assistant_config::constant::WINDOW_ORB;
 use assistant_providers::base::{ProviderError, ProviderErrorPayload};
+use assistant_security::crypto;
 use assistant_storage::attachment_store::AttachmentStore;
 use serde_json;
 
@@ -56,12 +57,16 @@ pub async fn send_chat_message(
     };
 
     let attachment_store = app.state::<AttachmentStore>();
+    let machine_id = crypto::get_machine_id().map_err(|e| e.to_string())?;
+    let api_key = crypto::decrypt_api_key_b64(&provider_row.api_key_encrypted, &machine_id)
+        .map_err(|e| e.to_string())?;
     let req = chat_request::build_chat_request(
         &detail,
         mode.as_ref(),
         &provider_row,
         &model_id,
         &attachment_store,
+        api_key,
     )
     .await?;
 
@@ -93,7 +98,7 @@ async fn validate_and_preprocess(
     let config = multimodal::MultimodalConfig::trusted_channel_input();
     let content = multimodal::admit_attachments(content, &attachment_store, &config)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(super::translate_agent_error)?;
 
     Ok(content)
 }
@@ -111,6 +116,7 @@ fn spawn_chat_stream(
     let ChatRequest {
         chat_messages,
         adapter,
+        api_key,
         model,
         options,
         context_window_tokens,
@@ -163,6 +169,7 @@ fn spawn_chat_stream(
 
     let stream_future = async move {
         let stream = match adapter.chat_completion_stream(
+            &api_key,
             &chat_messages,
             &model,
             &options,

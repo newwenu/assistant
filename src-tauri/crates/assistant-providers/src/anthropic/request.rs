@@ -25,12 +25,13 @@ use crate::client::error::{classify_http_error, classify_request_error};
 
 pub(crate) fn chat_completion_stream(
     adapter: &AnthropicAdapter,
+    api_key: &str,
     messages: &[ChatMessage],
     model: &str,
     options: &ChatOptions,
     cancel_token: CancellationToken,
 ) -> Result<ChatStream, ProviderError> {
-    let api_key = adapter.decrypt_api_key()?;
+    let api_key = api_key.to_string();
     let base_url = adapter.base_url().to_string();
     let (system, anthropic_messages) = message_converter::convert_messages(messages);
 

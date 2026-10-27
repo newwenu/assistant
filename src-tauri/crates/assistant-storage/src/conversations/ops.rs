@@ -5,6 +5,7 @@ use super::crud::{get_conversation_by_id, insert_conversation};
 use super::msg_ops::insert_message;
 use super::{read_conv_row, ConversationRow, MessageRow};
 use crate::attachment_store::duplicate_attachment_refs;
+use crate::error::StorageError;
 
 pub fn search_conversations(
     conn: &Connection,
@@ -49,9 +50,9 @@ pub fn search_conversations(
     Ok(results)
 }
 
-pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<String, String> {
+pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<String, StorageError> {
     let detail = super::get_conversation_detail(conn, id)?
-        .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
+        .ok_or(StorageError::ConversationNotFound)?;
     let mut md = format!("# {}\n\n", detail.conversation.title);
     for msg in &detail.messages {
         let plain = crate::content_codec::content_plain_text(&msg.content);
@@ -65,10 +66,10 @@ pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<Strin
     Ok(md)
 }
 
-pub fn export_conversation_json(conn: &Connection, id: &str) -> Result<String, String> {
+pub fn export_conversation_json(conn: &Connection, id: &str) -> Result<String, StorageError> {
     let detail = super::get_conversation_detail(conn, id)?
-        .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
-    serde_json::to_string_pretty(&detail).map_err(|e| e.to_string())
+        .ok_or(StorageError::ConversationNotFound)?;
+    serde_json::to_string_pretty(&detail).map_err(|e| StorageError::other(e.to_string()))
 }
 
 pub fn toggle_pin(conn: &Connection, id: &str) -> Result<bool, String> {
@@ -105,19 +106,15 @@ pub fn toggle_pin(conn: &Connection, id: &str) -> Result<bool, String> {
     Ok(new_pinned)
 }
 
-pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, String> {
+pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, StorageError> {
     let detail = super::get_conversation_detail(conn, id)?
-        .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
+        .ok_or(StorageError::ConversationNotFound)?;
 
     let new_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
     let new_conv = ConversationRow {
         id: new_id.clone(),
-        title: format!(
-            "{}{}",
-            detail.conversation.title,
-            assistant_i18n::t("conversation.copy_suffix")
-        ),
+        title: format!("{} (copy)", detail.conversation.title),
         title_source: "user".to_string(),
         provider_id: detail.conversation.provider_id.clone(),
         model_id: detail.conversation.model_id.clone(),
@@ -212,9 +209,9 @@ pub fn fork_to_new_conversation(
     conn: &Connection,
     source_conversation_id: &str,
     branch_leaf_message_id: &str,
-) -> Result<String, String> {
+) -> Result<String, StorageError> {
     let source_conv = get_conversation_by_id(conn, source_conversation_id)?
-        .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
+        .ok_or(StorageError::ConversationNotFound)?;
 
     let branch_messages =
         trace_active_branch(conn, source_conversation_id, branch_leaf_message_id)?;
@@ -224,11 +221,7 @@ pub fn fork_to_new_conversation(
 
     let new_conv = ConversationRow {
         id: new_id.clone(),
-        title: format!(
-            "{}{}",
-            source_conv.title,
-            assistant_i18n::t("conversation.copy_suffix")
-        ),
+        title: format!("{} (copy)", source_conv.title),
         title_source: "user".to_string(),
         provider_id: source_conv.provider_id.clone(),
         model_id: source_conv.model_id.clone(),

@@ -4,8 +4,9 @@ use assistant_providers::types::{
 use assistant_storage::attachment_store::AttachmentStore;
 use base64::engine::general_purpose;
 use base64::Engine;
-use std::collections::HashMap;
 use std::path::Path;
+
+use crate::error::AgentError;
 
 const MAX_IMAGES: usize = 4;
 const MAX_FILES: usize = 4;
@@ -157,9 +158,9 @@ pub async fn admit_attachments(
     content: &str,
     store: &AttachmentStore,
     config: &MultimodalConfig,
-) -> Result<String, String> {
+) -> Result<String, AgentError> {
     let mut blocks: Vec<ContentBlock> =
-        serde_json::from_str(content).map_err(|e| format!("Invalid ContentBlock JSON: {}", e))?;
+        serde_json::from_str(content).map_err(|e| AgentError::other(format!("Invalid ContentBlock JSON: {}", e)))?;
 
     // 上限按整条消息的附件总数计算，已有 attachment_id 的附件同样占用配额，
     // 避免“历史附件 + 新附件”绕过限制。
@@ -168,13 +169,10 @@ pub async fn admit_attachments(
         .filter(|b| matches!(b, ContentBlock::Image { .. }))
         .count();
     if image_count > 0 && config.max_images == 0 {
-        return Err(assistant_i18n::t("chat.attachments_not_allowed"));
+        return Err(AgentError::AttachmentsNotAllowed);
     }
     if image_count > config.max_images {
-        let max = config.max_images.to_string();
-        let mut args = HashMap::new();
-        args.insert("max", max.as_str());
-        return Err(assistant_i18n::t_with_args("chat.too_many_images", &args));
+        return Err(AgentError::TooManyImages { max: config.max_images });
     }
 
     let file_count = blocks
@@ -182,13 +180,10 @@ pub async fn admit_attachments(
         .filter(|b| matches!(b, ContentBlock::File { .. }))
         .count();
     if file_count > 0 && config.max_files == 0 {
-        return Err(assistant_i18n::t("chat.attachments_not_allowed"));
+        return Err(AgentError::AttachmentsNotAllowed);
     }
     if file_count > config.max_files {
-        let max = config.max_files.to_string();
-        let mut args = HashMap::new();
-        args.insert("max", max.as_str());
-        return Err(assistant_i18n::t_with_args("chat.too_many_files", &args));
+        return Err(AgentError::TooManyFiles { max: config.max_files });
     }
 
     for block in blocks.iter_mut() {
@@ -199,14 +194,14 @@ pub async fn admit_attachments(
         }
     }
 
-    serde_json::to_string(&blocks).map_err(|e| format!("Failed to serialize ContentBlocks: {}", e))
+    serde_json::to_string(&blocks).map_err(|e| AgentError::other(format!("Failed to serialize ContentBlocks: {}", e)))
 }
 
 async fn admit_image(
     block: &mut ContentBlock,
     store: &AttachmentStore,
     config: &MultimodalConfig,
-) -> Result<(), String> {
+) -> Result<(), AgentError> {
     let ContentBlock::Image {
         ref attachment,
         ref mut cached_data,
@@ -227,42 +222,40 @@ async fn admit_image(
     let (data, mt): (Vec<u8>, String) = if let Some(fp) = file_path.take() {
         let path = Path::new(&fp);
         if !path.exists() {
-            return Err(format!("file not found: {}", fp));
+            return Err(AgentError::other(format!("file not found: {}", fp)));
         }
         let mt = media_type_from_ext(&ext_of(&fp))
             .map(|s| s.to_string())
             .ok_or_else(|| {
-                format!(
+                AgentError::other(format!(
                     "unsupported image extension: .{} (allowed: png, jpg, jpeg, jfif, gif, webp, bmp, tif, tiff)",
                     ext_of(&fp)
-                )
+                ))
             })?;
         let data = tokio::fs::read(&fp)
             .await
-            .map_err(|e| format!("read failed: {}", e))?;
+            .map_err(|e| AgentError::other(format!("read failed: {}", e)))?;
         (data, mt)
     } else if let Some(data_b64) = cached_data.take() {
         let data = general_purpose::STANDARD
             .decode(&data_b64)
-            .map_err(|e| format!("Invalid base64 in ImageBlock: {}", e))?;
+            .map_err(|e| AgentError::other(format!("Invalid base64 in ImageBlock: {}", e)))?;
         let mt = attachment
             .media_type
             .clone()
             .unwrap_or_else(|| "image/png".to_string());
         (data, mt)
     } else {
-        return Err("ImageBlock needs either file_path or cached_data".to_string());
+        return Err(AgentError::other("ImageBlock needs either file_path or cached_data"));
     };
 
     if !config.allowed_image_media_types.iter().any(|m| m == &mt) {
-        return Err(format!("image media type not allowed: {}", mt));
+        return Err(AgentError::other(format!("image media type not allowed: {}", mt)));
     }
 
     if data.len() > config.max_image_bytes {
-        let max_mb = (config.max_image_bytes / (1024 * 1024)).to_string();
-        let mut args = HashMap::new();
-        args.insert("max_mb", max_mb.as_str());
-        return Err(assistant_i18n::t_with_args("chat.image_too_large", &args));
+        let max_mb = config.max_image_bytes / (1024 * 1024);
+        return Err(AgentError::ImageTooLarge { max_mb });
     }
 
     let normalized = crate::normalization::normalize_image(&data, &mt)?;
@@ -280,7 +273,7 @@ async fn admit_image(
     let ref_info = store
         .save_attachment(&normalized.data, &normalized.media_type)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| AgentError::other(e.to_string()))?;
 
     *block = ContentBlock::Image {
         attachment: ImageAttachmentRef {
@@ -301,7 +294,7 @@ async fn admit_file(
     block: &mut ContentBlock,
     store: &AttachmentStore,
     config: &MultimodalConfig,
-) -> Result<(), String> {
+) -> Result<(), AgentError> {
     let ContentBlock::File {
         ref attachment,
         ref mut cached_data,
@@ -319,21 +312,21 @@ async fn admit_file(
         validate_path(fp, config).await?;
         let ext = ext_of(&fp);
         if !config.allowed_file_extensions.iter().any(|e| e == &ext) {
-            return Err(format!("unsupported file extension: .{}", ext));
+            return Err(AgentError::other(format!("unsupported file extension: .{}", ext)));
         }
     }
 
     let (data, mt, name): (Vec<u8>, String, String) = if let Some(fp) = file_path.take() {
         let path = Path::new(&fp);
         if !path.exists() {
-            return Err(format!("file not found: {}", fp));
+            return Err(AgentError::other(format!("file not found: {}", fp)));
         }
         let mt = file_media_type_from_ext(&ext_of(&fp))
             .map(|s| s.to_string())
-            .ok_or_else(|| format!("unsupported file extension: .{}", ext_of(&fp)))?;
+            .ok_or_else(|| AgentError::other(format!("unsupported file extension: .{}", ext_of(&fp))))?;
         let data = tokio::fs::read(&fp)
             .await
-            .map_err(|e| format!("read failed: {}", e))?;
+            .map_err(|e| AgentError::other(format!("read failed: {}", e)))?;
         let name = if attachment.name.is_empty() {
             file_name_from_path(&fp)
         } else {
@@ -343,31 +336,29 @@ async fn admit_file(
     } else if let Some(data_b64) = cached_data.take() {
         let data = general_purpose::STANDARD
             .decode(&data_b64)
-            .map_err(|e| format!("Invalid base64 in FileBlock: {}", e))?;
+            .map_err(|e| AgentError::other(format!("Invalid base64 in FileBlock: {}", e)))?;
         // cached_data 路径同样必须过扩展名白名单，防止伪造 MIME 写入任意文件
         let ext = ext_of(&attachment.name);
         if !config.allowed_file_extensions.iter().any(|e| e == &ext) {
-            return Err(format!("unsupported file extension: .{}", ext));
+            return Err(AgentError::other(format!("unsupported file extension: .{}", ext)));
         }
         let mt = file_media_type_from_ext(&ext)
             .unwrap_or("application/octet-stream")
             .to_string();
         (data, mt, attachment.name.clone())
     } else {
-        return Err("FileBlock needs either file_path or cached_data".to_string());
+        return Err(AgentError::other("FileBlock needs either file_path or cached_data"));
     };
 
     if data.len() > config.max_file_bytes {
-        let max_mb = (config.max_file_bytes / (1024 * 1024)).to_string();
-        let mut args = HashMap::new();
-        args.insert("max_mb", max_mb.as_str());
-        return Err(assistant_i18n::t_with_args("chat.file_too_large", &args));
+        let max_mb = config.max_file_bytes / (1024 * 1024);
+        return Err(AgentError::FileTooLarge { max_mb });
     }
 
     let ref_info = store
         .save_attachment(&data, &mt)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| AgentError::other(e.to_string()))?;
 
     *block = ContentBlock::File {
         attachment: FileAttachmentRef {

@@ -11,7 +11,6 @@ use crate::base::{
     BaseProviderAdapter, ChatStream, ProviderConfig, ProviderError, ProviderKind, RetryConfig,
     SseLogConfig, StreamTimeoutConfig,
 };
-use crate::crypto;
 
 pub struct GeminiAdapter {
     pub(crate) config: ProviderConfig,
@@ -66,12 +65,6 @@ impl GeminiAdapter {
             .as_deref()
             .unwrap_or("https://generativelanguage.googleapis.com")
     }
-
-    pub(crate) fn decrypt_api_key(&self) -> Result<String, ProviderError> {
-        let machine_id = crypto::get_machine_id().map_err(ProviderError::ApiKeyMissing)?;
-        crypto::decrypt_api_key_b64(&self.config.api_key_encrypted, &machine_id)
-            .map_err(ProviderError::ApiKeyMissing)
-    }
 }
 
 impl BaseProviderAdapter for GeminiAdapter {
@@ -85,6 +78,7 @@ impl BaseProviderAdapter for GeminiAdapter {
 
     fn chat_completion_stream(
         &self,
+        api_key: &str,
         messages: &[crate::base::ChatMessage],
         model: &str,
         options: &crate::base::ChatOptions,
@@ -92,16 +86,16 @@ impl BaseProviderAdapter for GeminiAdapter {
     ) -> Result<ChatStream, ProviderError> {
         match self.config.kind {
             ProviderKind::GeminiCodeAssist => {
-                code_assist::code_assist_stream(self, messages, model, options, cancel_token)
+                code_assist::code_assist_stream(self, api_key, messages, model, options, cancel_token)
             }
-            _ => request::chat_completion_stream(self, messages, model, options, cancel_token),
+            _ => request::chat_completion_stream(self, api_key, messages, model, options, cancel_token),
         }
     }
 
-    fn list_models(&self) -> Result<Vec<crate::base::ModelConfig>, ProviderError> {
+    fn list_models(&self, api_key: &str) -> Result<Vec<crate::base::ModelConfig>, ProviderError> {
         match self.config.kind {
             ProviderKind::GeminiCodeAssist => Ok(code_assist::list_code_assist_models()),
-            _ => discovery::list_models(self),
+            _ => discovery::list_models(self, api_key),
         }
     }
 }

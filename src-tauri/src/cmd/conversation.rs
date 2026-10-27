@@ -308,9 +308,9 @@ pub fn export_conversation(
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
     let content = match format.as_str() {
-        "json" => conversations::export_conversation_json(&conn, &id)?,
-        "markdown" | "md" => conversations::export_conversation_markdown(&conn, &id)?,
-        _ => conversations::export_conversation_markdown(&conn, &id)?,
+        "json" => conversations::export_conversation_json(&conn, &id).map_err(super::translate_storage_error)?,
+        "markdown" | "md" => conversations::export_conversation_markdown(&conn, &id).map_err(super::translate_storage_error)?,
+        _ => conversations::export_conversation_markdown(&conn, &id).map_err(super::translate_storage_error)?,
     };
     match path {
         Some(p) => {
@@ -336,7 +336,7 @@ pub fn toggle_conversation_pin(app: AppHandle, id: String) -> Result<bool, Strin
 pub fn duplicate_conversation(app: AppHandle, id: String) -> Result<String, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    let new_id = conversations::duplicate_conversation(&conn, &id)?;
+    let new_id = conversations::duplicate_conversation(&conn, &id).map_err(super::translate_storage_error)?;
 
     emit_list_changed(&app, "duplicated", Some(new_id.clone()), None);
 
@@ -497,7 +497,7 @@ pub fn fork_to_new_conversation(
         &conn,
         &source_conversation_id,
         &branch_leaf_message_id,
-    )?;
+    ).map_err(super::translate_storage_error)?;
 
     let detail = conversations::get_conversation_detail(&conn, &source_conversation_id)?
         .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;

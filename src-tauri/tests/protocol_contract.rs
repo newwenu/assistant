@@ -307,11 +307,13 @@ fn token_usage_dto_serde_default_fields() {
     assert_eq!(usage.completion_tokens, 10);
     assert_eq!(usage.total_tokens, 15);
     assert_eq!(
-        usage.cache_read_tokens, 0,
+        usage.cache_read_tokens,
+        Some(0),
         "cacheReadTokens should default to 0"
     );
     assert_eq!(
-        usage.cache_write_tokens, 0,
+        usage.cache_write_tokens,
+        Some(0),
         "cacheWriteTokens should default to 0"
     );
     assert_eq!(

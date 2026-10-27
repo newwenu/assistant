@@ -15,6 +15,7 @@ use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::prompt_builder;
 use assistant_agent::provider_config::build_provider_config;
 use assistant_providers::base::{self, ProviderErrorPayload};
+use assistant_security::crypto;
 use assistant_storage::{
     conversations,
     providers::{self as provider_store},
@@ -125,6 +126,10 @@ pub(crate) async fn execute_compaction(
     let adapter = base::create_provider_adapter(config);
     let model = detail.conversation.model_id.clone();
 
+    let machine_id = crypto::get_machine_id().map_err(|e| e.to_string())?;
+    let api_key = crypto::decrypt_api_key_b64(&provider_row.api_key_encrypted, &machine_id)
+        .map_err(|e| e.to_string())?;
+
     let max_tokens = app_conf.compact_summary_max_tokens as u32;
 
     let options = ChatOptions {
@@ -140,7 +145,7 @@ pub(crate) async fn execute_compaction(
     let (cancel_token, attempt_id) = chat_tasks.start(conversation_id.to_string());
 
     let stream = adapter
-        .chat_completion_stream(&chat_messages, &model, &options, cancel_token.clone())
+        .chat_completion_stream(&api_key, &chat_messages, &model, &options, cancel_token.clone())
         .map_err(|e| e.to_string())?;
 
     let summary_msg_id = Uuid::new_v4().to_string();

@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    assistant_app::crash_dump::install();
+    assistant_crash::install();
 
     #[cfg(target_os = "windows")]
     {

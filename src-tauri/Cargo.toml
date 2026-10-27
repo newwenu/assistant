@@ -17,6 +17,7 @@ members = [
     "crates/assistant-tools",
     "crates/assistant-security",
     "crates/assistant-sync",
+    "crates/assistant-crash",
 ]
 
 [workspace.package]
@@ -51,7 +52,7 @@ sha2 = "0.10"
 base64 = "0.23"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "tiff"] }
 data-encoding = "2"
-machine-uid = "0.2"
+machine-uid = "0.6"
 hex = "0.4"
 argon2 = "0.5"
 hkdf = "0.12"
@@ -71,7 +72,6 @@ rand = "0.8"
 bytes = "1"
 urlencoding = "2"
 proptest = "1"
-rust-i18n = "4"
 crash-handler = "0.6"
 minidump-writer = "0.10"
 
@@ -84,17 +84,17 @@ assistant-i18n = { path = "crates/assistant-i18n" }
 assistant-tools = { path = "crates/assistant-tools" }
 assistant-security = { path = "crates/assistant-security" }
 assistant-sync = { path = "crates/assistant-sync" }
+assistant-crash = { path = "crates/assistant-crash" }
 arboard = "3"
 csv = "1"
 hmac = "0.12"
 sha1 = "0.10"
 zxcvbn = "3"
-keyring = { version = "4", features = ["v1"] }
+keyring = "4"
 windows = { version = "0.62", features = [
     "Foundation",
     "Security_Credentials",
     "Security_Cryptography",
-    "Security_Cryptography_DataProtection",
     "Storage_Streams",
     "Win32_Foundation",
     "Win32_Security",
@@ -103,7 +103,6 @@ windows = { version = "0.62", features = [
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
     "Win32_System_RemoteDesktop",
-    "Win32_System_StationsAndDesktops",
     "Win32_System_Power",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
@@ -134,12 +133,10 @@ tauri-plugin-autostart = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
 mouse_position = { workspace = true }
 rusqlite = { workspace = true }
-reqwest = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-arboard = { workspace = true }
 csv = { workspace = true }
 
 assistant-config = { workspace = true }
@@ -151,10 +148,8 @@ assistant-i18n = { workspace = true }
 assistant-tools = { workspace = true }
 assistant-security = { workspace = true }
 assistant-sync = { workspace = true }
+assistant-crash = { workspace = true }
 rustc_version_runtime.workspace = true
-crash-handler = { workspace = true }
-minidump-writer = { workspace = true }
-dirs = { workspace = true }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -168,5 +163,3 @@ strip = true
 
 [dev-dependencies]
 minidump = "0.27.0"
-pdb = "0.8"
-rustc-demangle = "0.1"

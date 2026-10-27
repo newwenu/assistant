@@ -1,6 +1,8 @@
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+use crate::error::StorageError;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompressionStateRow {
     pub conversation_id: String,
@@ -70,7 +72,7 @@ pub fn set_conversation_is_full(
     Ok(())
 }
 
-pub fn is_conversation_full(conn: &Connection, conversation_id: &str) -> Result<bool, String> {
+pub fn is_conversation_full(conn: &Connection, conversation_id: &str) -> Result<bool, StorageError> {
     let result: Option<bool> = conn
         .query_row(
             "SELECT is_full FROM conversations WHERE id = ?1",
@@ -78,5 +80,5 @@ pub fn is_conversation_full(conn: &Connection, conversation_id: &str) -> Result<
             |row| row.get(0),
         )
         .ok();
-    result.ok_or_else(|| assistant_i18n::t("conversation.not_found"))
+    result.ok_or(StorageError::ConversationNotFound)
 }

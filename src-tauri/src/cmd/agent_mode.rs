@@ -59,12 +59,12 @@ pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), St
 pub fn delete_agent_mode(app: AppHandle, id: String) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    agent_modes::delete_mode(&conn, &id)
+    agent_modes::delete_mode(&conn, &id).map_err(super::translate_storage_error)
 }
 
 #[command]
 pub fn reset_builtin_mode(app: AppHandle, id: String) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    agent_modes::reset_builtin_mode(&conn, &id)
+    agent_modes::reset_builtin_mode(&conn, &id).map_err(super::translate_storage_error)
 }

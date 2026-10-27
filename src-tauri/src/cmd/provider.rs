@@ -7,10 +7,8 @@ use crate::protocol::{
     ModelConfigDto, ProviderInputDto, ProviderListDto, SettingProviderChangedPayloadDto,
 };
 use assistant_agent::provider_config::build_provider_config;
-use assistant_providers::{
-    base::{self, ProviderConfig},
-    crypto,
-};
+use assistant_providers::base::{self, ProviderConfig};
+use assistant_security::crypto;
 use assistant_storage::providers::{self as provider_store, ProviderRow};
 
 fn mask_api_key_encrypted(encrypted: &str) -> String {
@@ -156,7 +154,10 @@ pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelC
 
     let config = build_provider_config(&row);
     let adapter = base::create_provider_adapter(config);
-    let models = adapter.list_models().map_err(|e| e.to_string())?;
+    let machine_id = crypto::get_machine_id().map_err(|e| e.to_string())?;
+    let api_key = crypto::decrypt_api_key_b64(&row.api_key_encrypted, &machine_id)
+        .map_err(|e| e.to_string())?;
+    let models = adapter.list_models(&api_key).map_err(|e| e.to_string())?;
     Ok(models
         .into_iter()
         .map(|m| ModelConfigDto {
@@ -176,17 +177,15 @@ pub fn preview_models_cmd(
     base_url: String,
     api_key: String,
 ) -> Result<Vec<ModelConfigDto>, String> {
-    let api_key_encrypted = crypto::encrypt_api_key_b64(&api_key, &crypto::get_machine_id()?)?;
     let config = ProviderConfig {
         kind: base::provider_kind_from_str(&provider_type, base_url.clone()),
-        api_key_encrypted,
         base_url: Some(base_url),
         default_model: String::new(),
         max_tokens: 4096,
         temperature: 0.7,
     };
     let adapter = base::create_provider_adapter(config);
-    let models = adapter.list_models().map_err(|e| e.to_string())?;
+    let models = adapter.list_models(&api_key).map_err(|e| e.to_string())?;
     Ok(models
         .into_iter()
         .map(|m| ModelConfigDto {

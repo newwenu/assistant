@@ -103,19 +103,19 @@ Cargo 的 feature 与依赖在 workspace 内统一解析，上述依赖大多同
 | `base64` | 0.22 / 0.23 | `reqwest`、`wry` / 本项目 + `tauri-codegen`、`hyper-util`、`plist`、`serde_with` | **不可消除**；上游分裂 |
 | `bitflags` | 1.3 / 2.13 | `globwalk`（i18n）、`png 0.17`（`ico 0.5`）、`jiff`（`defmt 1.1`） / Tauri 生态 | 移除 i18n + 升级 `ico` 后，仍由 `defmt` 保留 1.3 |
 | `darling` / `darling_core` / `darling_macro` | 0.20 / 0.24 | `derive_builder`（`zxcvbn`）/ `serde_with` | 上游 proc-macro 链，不处理 |
-| `getrandom` | 0.2 / 0.3 / 0.4 | `ring` / `tauri` / `chacha20poly1305`、`uuid` | 3 个版本并存，不处理 |
-| `hashbrown` | 0.12 / 0.14 / 0.17 | `indexmap 1.9` / `dashmap 6` + `hashlink` / `indexmap 2.14` | `rusqlite 0.41` 只把 `hashlink 0.9→0.12`，0.14 仍由 `dashmap` 保留 |
+| `getrandom` | 0.2 / 0.3 / 0.4 | `rand 0.8 → rand_core 0.6` / `tauri` / `uuid → getrandom 0.4` | 3 个版本并存，不处理 |
+| `hashbrown` | 0.12 / 0.14 / 0.17 | `schemars 0.8 → indexmap 1.9`（经 `tauri-build`）/ `dashmap 6` + `hashlink` / `indexmap 2.14` | `rusqlite 0.41` 只把 `hashlink 0.9→0.12`，0.14 仍由 `dashmap` 保留 |
 | `indexmap` | 1.9 / 2.14 | `schemars 0.8` + `serde_with` / 现代生态 | 上游，不处理 |
 | `itertools` | 0.11 / 0.14 | `rust-i18n-support` / 其他 | **移除 i18n 后消除** |
 | `keyboard-types` | 0.7 / 0.8 | `global-hotkey` / `muda` | Tauri 内部，不处理 |
-| `miniz_oxide` | 0.8 / 0.9 | `flate2` / `png 0.18`、`tauri-codegen` | 上游，不处理 |
-| `png` | 0.17 / 0.18 | `ico 0.5`（构建） / `image`、`muda`、`tray-icon`、`tauri-codegen` | **`cargo update` 后 `ico 0.6` 已消除 0.17** |
-| `schemars` | 0.8 / 0.9 / 1.2 | `tauri-utils` / `serde_with` | 上游，不处理 |
+| `miniz_oxide` | 0.8 / 0.9 | `image 0.25 → png 0.18` / `tauri-codegen` 等 | 上游，不处理 |
+| `png` | 0.17 / 0.18 | `tauri-codegen → ico 0.5`（构建） / `image`、`muda`、`tray-icon`、`tauri-codegen` | **`cargo update` 后 `ico 0.6` 已消除 0.17** |
+| `schemars` | 0.8 / 0.9 / 1.2 | `tauri-build`（`schemars 0.8`）/ `serde_with` / 上游 | 上游，不处理 |
 | `serde_spanned` / `toml` / `toml_datetime` / `winnow` | 0.6 / 1.x、0.8 / 1.1 | `rust-i18n-support`（Windows）/ Tauri 工具链 | **移除 i18n 后消除 0.6/0.8/0.7 这一代** |
 | `syn` | 2 / 3 | 两代 proc-macro 生态 | 不处理 |
-| `windows-sys` | 0.59 / 0.60 / 0.61 | Tauri 生态（`global-hotkey`、`rfd`、`embed-resource` 等） | 上游，不处理 |
+| `windows-sys` | 0.59 / 0.60 / 0.61 | `tauri-plugin-global-shortcut → global-hotkey` / 构建工具 / Tauri 生态 | 上游，不处理 |
 | `windows_x86_64_msvc` / `windows-targets` | 0.52 / 0.53 | 上述 `windows-sys` 代际 | 不处理 |
-| `winreg` | 0.55 / 0.6 | `embed-resource`（构建） / `machine-uid 0.2` | **`machine-uid 0.6` 后消除 0.6.2** |
+| `winreg` | 0.55 / 0.6 | `tauri-build → tauri-winres → embed-resource`（构建） / `machine-uid 0.2` | **`machine-uid 0.6` 后消除 0.6.2** |
 
 结论：执行 `cargo update` + `machine-uid 0.6` + 移除 `rust-i18n` 后，重复组从 22 降到 16；剩下 16 组全部来自 Tauri 生态、proc-macro 代际或不可避免的随机数/平台 API 版本分裂，强行 `cargo update -p` 锁版本收益极低且容易破坏上游兼容性，不建议处理。
 
@@ -145,6 +145,8 @@ rust_i18n::i18n!("locales", fallback = "zh-CN");
 ```
 
 以及 `crates/assistant-i18n/src/lib.rs:39` 的 `t!(key, locale = ...)`。`format_text`、缓存、全局 locale 都是项目自己实现的。
+
+**版本状态（2026-10-27 核查）**：`rust-i18n` / `rust-i18n-macro` / `rust-i18n-support` 的最新稳定版均为 **4.2.4**（上游无 5.x，仅 `4.0.0-preview0/1` 两个预发布），而项目 `Cargo.lock` 已锁定 **4.2.4**，即已是最新版本，不存在"等待上游升级以精简依赖"的空间。核查最新版 4.2.4 的清单确认其依赖结构未变：`rust-i18n-support` 仍以 `codegen` feature 可选依赖 `globwalk 0.8`、`itertools ^0.11`、`toml ^0.8`、`serde-saphyr`、`normpath`，`rust-i18n` 仍把 `globwalk ^0.8.1`、`regex ^1` 作为构建依赖。因此第 5.2 节的 28 包链只能通过自实现替换来消除，升级路线无效。
 
 ### 5.2 独占依赖链
 
@@ -274,7 +276,7 @@ winnow 0.7.15
 | 实验 | 变更 | 包数 | 重复组 | 结论 |
 |------|------|------|--------|------|
 | 基线 | — | 487 | 22 | — |
-| E1 | `cargo update`（保持所有版本约束） | 488 | 22 | `ico 0.6` 消除 `png 0.17`，但 `chacha20poly1305 0.10` 引入 `rand_core 0.10`，组数抵消；净增 1 包 |
+| E1 | `cargo update`（保持所有版本约束） | 488 | 22 | `ico 0.6` 消除 `png 0.17`，但 `uuid 1.29 → getrandom 0.4.3` 链上出现 `rand_core 0.10`，组数抵消；净增 1 包 |
 | E2 | E1 + `machine-uid 0.2 → 0.6` | 487 | 21 | **真正有效**：消除 `winreg 0.6` 与 `windows-registry`，净减 1 包 |
 | E3 | E2 + `base64 0.23 → 0.22` | 487 | 21 | **无效**：0.23 仍被 `tauri-codegen`、`hyper-util`、`plist`、`serde_with`、`serde-saphyr` 使用 |
 | E4 | E2 + `rusqlite 0.31 → 0.41` | 487 | 21 | 包数与重复组均不变；`hashlink 0.9→0.12`，`hashbrown 0.14` 仍由 `dashmap` 保留 |
@@ -284,7 +286,9 @@ winnow 0.7.15
 
 ### 8.2 逐项说明
 
-**`ico`（Tauri 构建依赖）**：`cargo update` 会把 `ico 0.5` 升到 `0.6`，后者改用 `png 0.18`，从而消除 `png 0.17` 重复。但同一次更新把 `chacha20poly1305` 升到 0.10，引入 `rand_core 0.10`（与 `rsa`/`rand 0.8` 的 `rand_core 0.6` 并存），重复组数量不变；同时 `ico 0.6` 自身新增 `windows-sys 0.60` 等构建依赖，整体包数 +1。属于“换一组重复、不减少包数”的收益，可随常规 `cargo update` 顺带获得。
+**`ico`（Tauri 构建依赖）**：`cargo update` 会把 `ico 0.5` 升到 `0.6`，后者改用 `png 0.18`，从而消除 `png 0.17` 重复。但同一次更新把 `uuid` 升到 1.29，其 `getrandom 0.4.3` 依赖上出现了 `rand_core 0.10`（与 `rand 0.8`、`rsa` 所用的 `rand_core 0.6` 并存），重复组数量不变；同时 `ico 0.6` 自身新增 `windows-sys 0.60` 等构建依赖，整体包数 +1。属于“换一组重复、不减少包数”的收益，可随常规 `cargo update` 顺带获得。
+
+> 依赖路径（普通/构建边，实测）：`assistant-providers → assistant-security → uuid 1.29 → getrandom 0.4.3 → rand_core 0.10.1`。基线中同一路径为 `uuid 1.27 → getrandom 0.4.3`，但 `getrandom` 的 `rand_core` feature 未启用，故无该节点；具体由哪个包开启该 feature 需用 `cargo tree -e features -i getrandom@0.4.3` 进一步确认（推测与 dev 依赖 `proptest 1.11→1.12` 引入的 `rand 0.10` 有关，Cargo 的 feature 在 workspace 内全局统一）。
 
 **`machine-uid 0.2 → 0.6`**：0.2 依赖 `winreg 0.6` + `windows-registry`；0.6 改用 `windows-sys 0.61`（Tauri 生态已有）。实测包数 488→487、重复组 22→21，是**唯一值得主动升级的直接依赖**。
 

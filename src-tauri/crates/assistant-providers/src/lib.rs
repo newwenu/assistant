@@ -1,7 +1,6 @@
 pub mod anthropic;
 pub mod base;
 pub mod client;
-pub mod crypto;
 pub mod diagnostics;
 pub mod gemini;
 pub mod model_catalog;

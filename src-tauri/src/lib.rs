@@ -2,7 +2,6 @@
 // 参考: BongoCat/crates/bongocat-app/src/lib.rs — 模块化组织
 
 mod cmd;
-pub mod crash_dump;
 pub mod protocol;
 mod setup;
 mod tray;
