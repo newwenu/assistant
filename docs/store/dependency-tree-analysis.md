@@ -1,23 +1,23 @@
 # 后端依赖树审查与优化分析
 
-> **审查日期**：2026-10-26
+> **审查日期**：2026-10-26（初版）、2026-10-27（升级验证）
 > **审查范围**：`src-tauri/` Cargo workspace（10 个成员：根 crate `assistant-app` + 9 个 `crates/*`）
 > **审查环境**：cargo 1.93.0 / rustc 1.93.0 / `x86_64-pc-windows-msvc`
-> **审查方法**：`cargo metadata --filter-platform`、`cargo tree --duplicates`、逐 crate 源码引用检索、可疑项人工复核
+> **审查方法**：`cargo metadata --filter-platform`、`cargo tree --duplicates`、逐 crate 源码引用检索、可疑项人工复核；升级验证在临时 workspace 副本中完成，未改动项目文件
 > **限制**：`cargo-machete` 因本机 registry 缓存目录权限限制无法安装，未使用工具自动扫描；未使用依赖结论来自“源码标识符检索 + 人工阅读”，删除后仍需 `cargo check` 验证
 
 ---
 
 ## 1. 结论摘要
 
-| # | 优先级 | 事项 | 预计收益 | 风险/成本 |
+| # | 优先级 | 事项 | 实测收益 | 风险/成本 |
 |---|--------|------|----------|-----------|
 | 1 | P0 | 删除 10 个未使用的普通依赖、7 个未使用的开发依赖 | 清单准确性；测试构建少量收益 | 低，删除后编译验证即可 |
-| 2 | P1 | `base64` 从 0.23 对齐到 0.22 | Windows 构建少 1 个包 | 低，API 用法兼容 |
-| 3 | P1（可选） | 用 `include_str!` + `serde_json` 替换 `rust-i18n` | 少 28 个包，消除 5~6 组重复依赖 | 中，需要重写翻译查找并验证回退行为 |
+| 2 | P1 | 执行 `cargo update` + `machine-uid` 升级到 0.6 | 487→488→487；重复组 22→21，`png 0.17`、`winreg 0.6` 消失（新增 `rand_core` 分裂） | 低，`machine-uid` 需改 1 行 API |
+| 3 | P1（可选） | 用 `include_str!` + `serde_json` 替换 `rust-i18n` | 487→459（−28 包），消除 5 组重复 | 中，需要重写翻译查找并验证回退行为 |
 | 4 | P2 | 精简 `windows` crate 特性 | 可能减少生成代码 | 中，需确认上游是否已启用 |
 | 5 | P2 | 删除 `keyring` 冗余的 `features = ["v1"]` | 可读性 | 无（v1 就是默认特性） |
-| — | 不建议 | 裁剪 `tokio` 的 `full`、强行统一上游重复版本、关闭 `reqwest` 默认特性 | 收益接近 0 或引入风险 | — |
+| — | 不建议 | `base64` 降到 0.22、`rand` 升到 0.10、`rusqlite` 升到 0.41、`minidump-writer` 升到 0.13、裁剪 `tokio full`、强行统一上游重复版本 | 实测无收益、净增包或引入风险 | — |
 
 ---
 
@@ -29,9 +29,13 @@
 |------|------|
 | 工作区成员 | 10 |
 | Windows 构建参与包（去重后 name+version，含 10 个工作区成员） | **487** |
+| 补充：临时副本执行 `cargo update` 后 | **488** |
+| 补充：再升级 `machine-uid` 0.6 后 | **487** |
+| 补充：再移除 `rust-i18n` 后 | **459** |
+| 完成建议项后的重复版本组 | **16**（当前 22） |
 | 加上 dev-dependencies 后的包数 | 509 |
 | `Cargo.lock` 全平台包数 | 758 |
-| Windows 构建中的重复版本组 | **22** |
+| Windows 构建中的重复版本组（当前锁文件） | **22** |
 
 > 说明：`cargo tree` 输出的是依赖树中的出现次数，不是唯一包数；上表以 `cargo metadata --filter-platform x86_64-pc-windows-msvc` 的去重结果为准。
 
@@ -81,37 +85,39 @@ Cargo 的 feature 与依赖在 workspace 内统一解析，上述依赖大多同
 
 ## 4. 重复依赖
 
-### 4.1 可操作项：`base64`
+### 4.1 `base64`：无法通过版本对齐消除
 
-| 版本 | 使用方 |
+| 版本 | 使用方（执行 `cargo update` 后） |
 |------|--------|
-| `0.22.1` | `reqwest 0.12`、`wry 0.57`、`tauri-codegen 2.7` |
-| `0.23.1` | 本项目 5 个 crate（`Cargo.toml:51` 声明） |
+| `0.22.1` | `reqwest 0.12`、`wry 0.57` |
+| `0.23.1` | 本项目 5 个 crate（`Cargo.toml:51` 声明）、`tauri-codegen 2.7.4`、`hyper-util 0.1.21`、`plist 1.10.3`、`serde_with 3.24`、`serde-saphyr 1.3`（仅 i18n） |
 
-源码只使用 `base64::engine::general_purpose::STANDARD` 与 `base64::Engine`，0.22 完全兼容。把工作区声明改为 `base64 = "0.22"` 后，Windows 构建可少一个包。
+初版结论“降到 0.22 可少一个包”经实测**不成立**：把工作区声明改为 `0.22` 后，`0.23.1` 仍被上述 6 个上游包使用，重复组保持不变；改为 `0.23` 也同样覆盖不到 `reqwest`/`wry`。只有等 `reqwest`/`wry` 升级到 `base64 0.23`，才会自然收敛。
 
-### 4.2 Windows 构建的 22 组重复版本
+源码只使用 `base64::engine::general_purpose::STANDARD` 与 `base64::Engine`，0.22/0.23 都可编译，**保持 0.23 即可，无需动作**。
 
-| 包 | 版本 | 来源 | 是否建议处理 |
-|----|------|------|--------------|
-| `base64` | 0.22 / 0.23 | 上游 + 本项目 | 建议对齐到 0.22 |
-| `bitflags` | 1.3 / 2.13 | `globwalk`（i18n）、`png 0.17`（`ico` 构建链） / Tauri 生态 | 不单独处理；移除 i18n 后仍可能被 `png 0.17` 保留 |
-| `darling` / `darling_core` / `darling_macro` | 0.20 / 0.24 | `derive_builder_core 0.20` / `serde_with_macros 3.24` | 上游 proc-macro 链，不处理 |
-| `getrandom` | 0.2 / 0.3 / 0.4 | `rand 0.8` + `ring` / `rand_core 0.9` + `tauri` / `uuid` + `tempfile` | 不处理 |
-| `hashbrown` | 0.12 / 0.14 / 0.17 | `indexmap 1.9` / `dashmap 6` + `hashlink 0.9` / `indexmap 2.14` | 不处理（`rusqlite` 依赖 `hashlink`） |
-| `indexmap` | 1.9 / 2.14 | `schemars 0.8` + `serde_with` / 现代生态 | 不处理 |
-| `itertools` | 0.11 / 0.14 | `rust-i18n-support` / 其他 | 替换 i18n 后可消除 0.11 |
+### 4.2 Windows 构建的重复版本与处理结论
+
+| 包 | 版本 | 来源 | 升级/替换后 |
+|----|------|------|-------------|
+| `base64` | 0.22 / 0.23 | `reqwest`、`wry` / 本项目 + `tauri-codegen`、`hyper-util`、`plist`、`serde_with` | **不可消除**；上游分裂 |
+| `bitflags` | 1.3 / 2.13 | `globwalk`（i18n）、`png 0.17`（`ico 0.5`）、`jiff`（`defmt 1.1`） / Tauri 生态 | 移除 i18n + 升级 `ico` 后，仍由 `defmt` 保留 1.3 |
+| `darling` / `darling_core` / `darling_macro` | 0.20 / 0.24 | `derive_builder`（`zxcvbn`）/ `serde_with` | 上游 proc-macro 链，不处理 |
+| `getrandom` | 0.2 / 0.3 / 0.4 | `ring` / `tauri` / `chacha20poly1305`、`uuid` | 3 个版本并存，不处理 |
+| `hashbrown` | 0.12 / 0.14 / 0.17 | `indexmap 1.9` / `dashmap 6` + `hashlink` / `indexmap 2.14` | `rusqlite 0.41` 只把 `hashlink 0.9→0.12`，0.14 仍由 `dashmap` 保留 |
+| `indexmap` | 1.9 / 2.14 | `schemars 0.8` + `serde_with` / 现代生态 | 上游，不处理 |
+| `itertools` | 0.11 / 0.14 | `rust-i18n-support` / 其他 | **移除 i18n 后消除** |
 | `keyboard-types` | 0.7 / 0.8 | `global-hotkey` / `muda` | Tauri 内部，不处理 |
-| `miniz_oxide` | 0.8 / 0.9 | `png 0.17/0.18` / `flate2` | 不处理 |
-| `png` | 0.17 / 0.18 | `ico`（构建） / `image`、`muda`、`tray-icon`、`tauri-codegen` | 版本约束不同，不处理 |
-| `schemars` | 0.8 / 0.9 / 1.2 | `tauri-utils 2.10` / `serde_with 3.24` | 构建链，不处理 |
-| `serde_spanned` / `toml` / `toml_datetime` / `winnow` | 0.6 / 1.x、0.8 / 1.1 | `rust-i18n-support`（Windows）；`system-deps`（Linux 构建） / Tauri 工具链 | 替换 i18n 后预计消除 0.8 这一代 |
-| `syn` | 2 / 3 | 两代 proc-macro 生态并存 | 不处理 |
-| `windows-sys` | 0.59 / 0.60 / 0.61 | `global-hotkey`、`winreg 0.55` / `rfd` / Tauri 生态 | 不处理 |
+| `miniz_oxide` | 0.8 / 0.9 | `flate2` / `png 0.18`、`tauri-codegen` | 上游，不处理 |
+| `png` | 0.17 / 0.18 | `ico 0.5`（构建） / `image`、`muda`、`tray-icon`、`tauri-codegen` | **`cargo update` 后 `ico 0.6` 已消除 0.17** |
+| `schemars` | 0.8 / 0.9 / 1.2 | `tauri-utils` / `serde_with` | 上游，不处理 |
+| `serde_spanned` / `toml` / `toml_datetime` / `winnow` | 0.6 / 1.x、0.8 / 1.1 | `rust-i18n-support`（Windows）/ Tauri 工具链 | **移除 i18n 后消除 0.6/0.8/0.7 这一代** |
+| `syn` | 2 / 3 | 两代 proc-macro 生态 | 不处理 |
+| `windows-sys` | 0.59 / 0.60 / 0.61 | Tauri 生态（`global-hotkey`、`rfd`、`embed-resource` 等） | 上游，不处理 |
 | `windows_x86_64_msvc` / `windows-targets` | 0.52 / 0.53 | 上述 `windows-sys` 代际 | 不处理 |
-| `winreg` | 0.55 / 0.6 | `embed-resource`（构建） / `machine-uid` | 不处理 |
+| `winreg` | 0.55 / 0.6 | `embed-resource`（构建） / `machine-uid 0.2` | **`machine-uid 0.6` 后消除 0.6.2** |
 
-结论：除 `base64` 与 `rust-i18n` 相关项外，其余重复都来自 Tauri 生态或构建工具的不同代际。强行 `cargo update -p` 锁版本容易破坏上游兼容性，收益仅为几十 KB 的编译产物，不建议处理。
+结论：执行 `cargo update` + `machine-uid 0.6` + 移除 `rust-i18n` 后，重复组从 22 降到 16；剩下 16 组全部来自 Tauri 生态、proc-macro 代际或不可避免的随机数/平台 API 版本分裂，强行 `cargo update -p` 锁版本收益极低且容易破坏上游兼容性，不建议处理。
 
 ### 4.3 平台专属重复（不影响 Windows）
 
@@ -142,18 +148,40 @@ rust_i18n::i18n!("locales", fallback = "zh-CN");
 
 ### 5.2 独占依赖链
 
-按 Windows 目标的普通+构建依赖计算，**只通过 `assistant-i18n` 才能到达的包共 28 个**（含 `rust-i18n` 本身）：
+按 Windows 目标的普通+构建依赖计算，**只通过 `assistant-i18n` 才能到达的包共 28 个**（含 `rust-i18n` 本身）。临时副本中移除该依赖后，Windows 构建包数从 **487 降到 459**，没有新增包：
 
 ```
-rust-i18n / rust-i18n-macro / rust-i18n-support
-globwalk / ignore / globset / crossbeam-deque / crossbeam-epoch
-bstr / encoding_rs_io
-itertools 0.11 / serde_spanned 0.6 / toml 0.8 / toml_datetime 0.6 / toml_edit 0.22 / toml_write / winnow 0.7
-arc-swap / base62 / triomphe / normpath / arraydeque / nohash-hasher
-serde-saphyr / granit-parser / annotate-snippets / anstyle / unicode-width
+annotate-snippets 0.12.17
+anstyle 1.0.14
+arc-swap 1.9.3
+arraydeque 0.5.1
+base62 2.2.6
+bstr 1.13.1
+crossbeam-deque 0.8.8
+crossbeam-epoch 0.9.21
+encoding_rs_io 0.1.8
+globset 0.4.20
+globwalk 0.8.1
+granit-parser 1.3.0
+ignore 0.4.33
+itertools 0.11.0
+nohash-hasher 0.2.0
+normpath 1.5.2
+rust-i18n 4.2.4
+rust-i18n-macro 4.2.4
+rust-i18n-support 4.2.4
+serde-saphyr 1.3.0
+serde_spanned 0.6.9
+toml 0.8.23
+toml_datetime 0.6.11
+toml_edit 0.22.27
+toml_write 0.1.2
+triomphe 0.1.17
+unicode-width 0.2.2
+winnow 0.7.15
 ```
 
-其中至少 5 组会直接退出重复版本表：`itertools`、`serde_spanned`、`toml`、`toml_datetime`、`winnow`。
+其中 5 组会直接退出重复版本表：`itertools`、`serde_spanned`、`toml`、`toml_datetime`、`winnow`。
 
 ### 5.3 替代方案
 
@@ -237,7 +265,46 @@ serde-saphyr / granit-parser / annotate-snippets / anstyle / unicode-width
 
 ---
 
-## 8. 建议实施顺序
+## 8. 较新版本的重合验证（实测）
+
+本节回答“升级到较新版本能否减少重复依赖”。方法：把 `src-tauri/` 复制到临时目录（排除 `target`），在副本中逐项修改 `Cargo.toml`/`Cargo.lock`，用 `cargo metadata --filter-platform x86_64-pc-windows-msvc` 对比包数与重复组；项目文件未改动。
+
+### 8.1 实验结果总览
+
+| 实验 | 变更 | 包数 | 重复组 | 结论 |
+|------|------|------|--------|------|
+| 基线 | — | 487 | 22 | — |
+| E1 | `cargo update`（保持所有版本约束） | 488 | 22 | `ico 0.6` 消除 `png 0.17`，但 `chacha20poly1305 0.10` 引入 `rand_core 0.10`，组数抵消；净增 1 包 |
+| E2 | E1 + `machine-uid 0.2 → 0.6` | 487 | 21 | **真正有效**：消除 `winreg 0.6` 与 `windows-registry`，净减 1 包 |
+| E3 | E2 + `base64 0.23 → 0.22` | 487 | 21 | **无效**：0.23 仍被 `tauri-codegen`、`hyper-util`、`plist`、`serde_with`、`serde-saphyr` 使用 |
+| E4 | E2 + `rusqlite 0.31 → 0.41` | 487 | 21 | 包数与重复组均不变；`hashlink 0.9→0.12`，`hashbrown 0.14` 仍由 `dashmap` 保留 |
+| E5 | E2 + `rand 0.8 → 0.10` | 490 | 24 | **净增 3 包、重复组 +3**：新增 `rand`、`chacha20`、`cpufeatures` 三组分裂 |
+| E6 | E2 + `minidump-writer 0.10 → 0.13` | 488 | 22 | **净增 1 包、重复组 +1**：新增 `crash-context 0.6/0.8` |
+| E7 | E2 + 移除 `rust-i18n` 依赖 | **459** | **16** | 最大收益：−28 包、消除 5 组重复 |
+
+### 8.2 逐项说明
+
+**`ico`（Tauri 构建依赖）**：`cargo update` 会把 `ico 0.5` 升到 `0.6`，后者改用 `png 0.18`，从而消除 `png 0.17` 重复。但同一次更新把 `chacha20poly1305` 升到 0.10，引入 `rand_core 0.10`（与 `rsa`/`rand 0.8` 的 `rand_core 0.6` 并存），重复组数量不变；同时 `ico 0.6` 自身新增 `windows-sys 0.60` 等构建依赖，整体包数 +1。属于“换一组重复、不减少包数”的收益，可随常规 `cargo update` 顺带获得。
+
+**`machine-uid 0.2 → 0.6`**：0.2 依赖 `winreg 0.6` + `windows-registry`；0.6 改用 `windows-sys 0.61`（Tauri 生态已有）。实测包数 488→487、重复组 22→21，是**唯一值得主动升级的直接依赖**。
+
+API 变化：0.2 的 `machine_uid::get() -> Result<String, Box<dyn Error>>`，0.6 的 `get()` 返回 `Result<String, MachineUidError>`；项目在 [machine_id.rs](file:///g:/codeversion/assistant/src-tauri/crates/assistant-security/src/machine_id.rs) 中只做“取字符串 + 错误映射”，改动约 1 行。**注意该值参与密钥派生，升级后必须验证同一台机器仍返回相同 ID**（尤其 Windows 注册表路径变化），否则会导致已存的加密数据无法解密。
+
+**`base64 0.23 → 0.22`**：本项目改到 0.22 后，0.23 仍被 `tauri-codegen`、`hyper-util`、`plist`、`serde_with`、`serde-saphyr` 等 6 个上游包使用；反之保持 0.23 也覆盖不到 `reqwest`/`wry`。结论：**不动**。这是对初版文档的修正。
+
+**`rusqlite 0.31 → 0.41`**：实测包数与重复组均不变（487/21）；主要变化只是 `hashlink 0.9 → 0.12`，而 `hashbrown 0.14` 仍被 `dashmap 6` 引用。升级本身还有 SQLCipher 链接脚本与 API 迁移成本，**不建议**。
+
+**`rand 0.8 → 0.10`**：项目 `rand` 只被 `assistant-security` 使用（`OsRng`/`CryptoRng`），而 `rsa` 仍强制 `rand_core 0.6`。升到 0.10 后实测包数 487→490、重复组 21→24，新增 `rand 0.8/0.10`、`chacha20 0.9/0.10`、`cpufeatures 0.2/0.3` 三组分裂，**明显负收益**。
+
+**`minidump-writer 0.10 → 0.13`**：实测包数 487→488、重复组 21→22，新增 `crash-context 0.6/0.8` 分裂。虽然 `defmt` 早已由 `jiff` 引入，不是本次升级的增量，但升级本身仍带来 +1 包 +1 组重复，**不建议**。
+
+### 8.3 是否需要执行 `cargo update`
+
+`cargo update` 本身会带来 Tauri 2.12.1→2.12.5 等补丁升级，属于常规维护，建议配合 `machine-uid` 升级一起做，并在升级后执行完整 `cargo test`。单独看依赖体积，`cargo update` 是 +1 包、0 组变化，不要指望它减包；真正的收益来自紧随其后的 `machine-uid 0.6`（−1 包、−1 组）。
+
+---
+
+## 9. 建议实施顺序
 
 ### Step 1（P0，低风险）
 
@@ -250,23 +317,30 @@ cargo test --workspace
 
 ### Step 2（P1，低风险）
 
-将 `base64` 工作区版本改为 `0.22`，再次执行 `cargo check --workspace --all-targets`，确认 0.23 从构建图中消失：
+执行常规 `cargo update` 并把 `machine-uid` 升到 0.6：
 
 ```powershell
-cargo tree --duplicates --format "{p}" | Select-String base64
+cargo update
+# 修改 src-tauri/Cargo.toml：machine-uid = "0.6"
+cargo check --workspace --all-targets
+cargo tree --duplicates
 ```
+
+预期：包数 487→488（`cargo update`）→487（`machine-uid 0.6`），重复组 22→22→21；`png 0.17`、`winreg 0.6` 消失，但新增 `rand_core 0.6/0.10` 分裂。
+
+**前置验证**（必须）：升级前后在同一台机器上分别打印 `machine_uid::get()`，确认值一致；该值参与密钥派生，变化会导致历史加密数据无法解密。
 
 ### Step 3（P1，可选重构）
 
-按第 5 节替换 `rust-i18n`，重点验证翻译回退、带参文案与语言切换。预期：
+按第 5 节替换 `rust-i18n`，重点验证翻译回退、带参文案与语言切换。实测预期：
 
-- Windows 构建包数减少约 28 个；
-- 重复版本组减少 5~6 组；
+- Windows 构建包数 **487 → 459**（−28）；
+- 重复版本组 21 → 16（消除 `itertools`、`serde_spanned`、`toml`、`toml_datetime`、`winnow`）；
 - `assistant-i18n` 的 `serde_json` 由 dev 依赖转为普通依赖。
 
 ### Step 4（P2，可选）
 
-尝试删除 `windows` 的 3 个零引用特性，必要时同时把 `keyring` 的 `v1` 显式声明去掉，执行全量 `cargo check`。
+尝试删除 `windows` 的 2 个零引用特性（`Security_Cryptography_DataProtection`、`Win32_System_StationsAndDesktops`），必要时同时把 `keyring` 的 `v1` 显式声明去掉，执行全量 `cargo check`。
 
 ---
 
@@ -287,12 +361,12 @@ cargo tree -e features -i tokio --depth 1
 cargo tree -e features -i windows@0.62.2 --depth 1
 ```
 
-## 附录 B：`assistant-i18n` 独占依赖（28 个）
+## 附录 B：`assistant-i18n` 独占依赖（28 个，`cargo update` 后实测）
 
 ```
-annotate-snippets 0.12.16
+annotate-snippets 0.12.17
 anstyle 1.0.14
-arc-swap 1.9.2
+arc-swap 1.9.3
 arraydeque 0.5.1
 base62 2.2.6
 bstr 1.13.1
@@ -309,8 +383,8 @@ normpath 1.5.2
 rust-i18n 4.2.4
 rust-i18n-macro 4.2.4
 rust-i18n-support 4.2.4
-serde_spanned 0.6.9
 serde-saphyr 1.3.0
+serde_spanned 0.6.9
 toml 0.8.23
 toml_datetime 0.6.11
 toml_edit 0.22.27
@@ -320,7 +394,7 @@ unicode-width 0.2.2
 winnow 0.7.15
 ```
 
-## 附录 C：Windows 构建重复版本组（22 组）
+## 附录 C：Windows 构建重复版本组（当前锁文件，22 组）
 
 ```
 base64 0.22.1, 0.23.1
@@ -345,4 +419,27 @@ windows-sys 0.59.0, 0.60.2, 0.61.2
 windows-targets 0.52.6, 0.53.5
 winnow 0.7.15, 1.0.4
 winreg 0.55.0, 0.6.2
+```
+
+## 附录 D：执行建议项后的重复版本组（16 组）
+
+条件：`cargo update` + `machine-uid 0.6` + 移除 `rust-i18n`（未升级 `rand`/`rusqlite`/`minidump-writer`）。
+
+```
+base64 0.22.1, 0.23.1
+bitflags 1.3.2, 2.13.2
+darling 0.20.11, 0.24.1
+darling_core 0.20.11, 0.24.1
+darling_macro 0.20.11, 0.24.1
+getrandom 0.2.17, 0.3.4, 0.4.3
+hashbrown 0.12.3, 0.14.5, 0.17.1
+indexmap 1.9.3, 2.14.2
+keyboard-types 0.7.0, 0.8.3
+miniz_oxide 0.8.9, 0.9.1
+rand_core 0.10.1, 0.6.4
+schemars 0.8.22, 0.9.0, 1.2.3
+syn 2.0.119, 3.0.9
+windows_x86_64_msvc 0.52.6, 0.53.1
+windows-sys 0.59.0, 0.60.2, 0.61.2
+windows-targets 0.52.6, 0.53.5
 ```

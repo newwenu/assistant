@@ -11,6 +11,7 @@ const MAX_IMAGES: usize = 4;
 const MAX_FILES: usize = 4;
 const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_TEXT_FILE_BYTES: usize = 512 * 1024;
 
 /// 附件准入策略：可信通道（用户主动输入）宽松，不可信通道（API / MCP 返回）严格。
 #[derive(Debug, Clone)]
@@ -409,7 +410,7 @@ pub async fn rehydrate_images(messages: &mut [ChatMessage], store: &AttachmentSt
                 Err(e) => {
                     log::warn!("Failed to rehydrate image {}: {}", id, e);
                     *block = ContentBlock::Text {
-                        text: assistant_i18n::t("chat.image_not_found_placeholder"),
+                        text: "[Image not found]".to_string(),
                     };
                     changed = true;
                 }
@@ -466,7 +467,7 @@ pub async fn rehydrate_files(
                         e
                     );
                     *block = ContentBlock::Text {
-                        text: assistant_i18n::t("chat.file_not_found_placeholder"),
+                        text: "[File not found]".to_string(),
                     };
                     changed = true;
                 }
@@ -502,7 +503,11 @@ pub fn project_images_for_text_model(messages: &mut [ChatMessage]) {
     }
 }
 
-pub fn project_files(messages: &mut [ChatMessage], support_pdf: bool) {
+pub async fn project_files(
+    messages: &mut [ChatMessage],
+    store: &AttachmentStore,
+    support_pdf: bool,
+) {
     for msg in messages.iter_mut() {
         if msg.role != MessageRole::User {
             continue;
@@ -511,22 +516,105 @@ pub fn project_files(messages: &mut [ChatMessage], support_pdf: bool) {
             continue;
         };
 
-        let projected: Vec<ContentBlock> = blocks
-            .into_iter()
-            .map(|block| match block {
+        let mut projected = Vec::with_capacity(blocks.len());
+        for block in blocks {
+            match block {
                 ContentBlock::File { ref attachment, .. }
-                    if !should_send_file_as_is(attachment, support_pdf) =>
+                    if should_send_file_as_is(attachment, support_pdf) =>
                 {
-                    ContentBlock::Text {
-                        text: file_handle_text(attachment),
-                    }
+                    projected.push(block);
                 }
-                other => other,
-            })
-            .collect();
+                ContentBlock::File { ref attachment, .. } => {
+                    projected.push(project_file_block(attachment, store).await);
+                }
+                other => projected.push(other),
+            }
+        }
 
         apply_blocks(msg, projected);
     }
+}
+
+async fn project_file_block(att: &FileAttachmentRef, store: &AttachmentStore) -> ContentBlock {
+    if is_text_file(&att.name) {
+        match store.read(&att.attachment_id).await {
+            Ok(data) => match read_as_text(&data, &att.name) {
+                Ok(text) => ContentBlock::Text { text },
+                Err(reason) => ContentBlock::Text {
+                    text: file_fallback_text(att, &reason),
+                },
+            },
+            Err(e) => {
+                log::warn!("Failed to read file {}: {}", att.attachment_id, e);
+                ContentBlock::Text {
+                    text: "[File not found]".to_string(),
+                }
+            }
+        }
+    } else {
+        ContentBlock::Text {
+            text: file_handle_text(att),
+        }
+    }
+}
+
+fn is_text_file(name: &str) -> bool {
+    let ext = ext_of(name);
+    matches!(
+        ext.as_str(),
+        "txt"
+            | "md"
+            | "csv"
+            | "html"
+            | "json"
+            | "py"
+            | "js"
+            | "ts"
+            | "tsx"
+            | "css"
+            | "yaml"
+            | "yml"
+            | "xml"
+    )
+}
+
+fn read_as_text(data: &[u8], name: &str) -> Result<String, String> {
+    let text = String::from_utf8(data.to_vec()).map_err(|_| "binary".to_string())?;
+
+    let invalid_ratio = text.chars().filter(|&c| c == '\u{FFFD}').count() as f64
+        / text.chars().count().max(1) as f64;
+    if invalid_ratio > 0.05 {
+        return Err("binary".to_string());
+    }
+
+    let ext = ext_of(name);
+    let lang = match ext.as_str() {
+        "md" => "markdown",
+        "csv" => "csv",
+        "html" => "html",
+        "json" => "json",
+        "py" => "python",
+        "js" => "javascript",
+        "ts" | "tsx" => "typescript",
+        "css" => "css",
+        "yaml" | "yml" => "yaml",
+        "xml" => "xml",
+        _ => "",
+    };
+
+    if data.len() > MAX_TEXT_FILE_BYTES {
+        let truncated: String = text.chars().take(MAX_TEXT_FILE_BYTES).collect();
+        Ok(format!(
+            "[file: {}]\n```{}\n{}\n```\n[truncated]",
+            name, lang, truncated
+        ))
+    } else {
+        Ok(format!("[file: {}]\n```{}\n{}\n```", name, lang, text))
+    }
+}
+
+fn file_fallback_text(att: &FileAttachmentRef, reason: &str) -> String {
+    format!("[file: {} — {}]", att.handle_text(), reason)
 }
 
 fn should_send_file_as_is(att: &FileAttachmentRef, support_pdf: bool) -> bool {
@@ -534,13 +622,11 @@ fn should_send_file_as_is(att: &FileAttachmentRef, support_pdf: bool) -> bool {
 }
 
 pub fn text_only_image_text() -> String {
-    assistant_i18n::t("chat.image_projected_placeholder")
+    "[Image omitted — model does not support images]".to_string()
 }
 
 pub fn offloaded_image_text(attachment_id: &str) -> String {
-    let mut args = HashMap::new();
-    args.insert("id", attachment_id);
-    assistant_i18n::t_with_args("chat.image_offloaded_placeholder", &args)
+    format!("[Image offloaded (ID: {})]", attachment_id)
 }
 
 pub fn file_handle_text(att: &FileAttachmentRef) -> String {

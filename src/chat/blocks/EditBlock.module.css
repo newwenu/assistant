@@ -44,6 +44,41 @@
   opacity: 1;
 }
 
+.fileRail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.fileItem {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.fileRemove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.fileItem:hover .fileRemove {
+  opacity: 1;
+}
+
 .textarea {
   width: 100%;
   min-height: 80px;

@@ -114,6 +114,16 @@
 - [ ] 图片输入格式扩展（重依赖部分）：
   - [ ] HEIC / HEIF：ISOBMFF 容器 + HEVC 帧，需 libheif（C/C++）或系统 API（Windows WIC / macOS ImageIO），涉及构建链、打包与专利成本
   - [ ] AVIF：ISOBMFF 容器 + AV1 帧，需额外 AV1 解码器，编译时间与二进制体积明显增加
+- [ ] PDF 降级（不支持 PDF 的模型仍需读取 PDF 内容）：
+  - [ ] 纯文本提取：引入 `lopdf` / `pdf-extract` crate，从 PDF 提取文本层，丢失排版但模型可读
+  - [ ] 图片渲染：调用外部工具（`pdftoppm` / Windows WIC）将 PDF 页转为图片，需 vision 能力
+  - [ ] 混合模式：文本层 + 关键页图片，最完整但复杂度高
+  - [ ] OpenAI message_converter 补充 PDF cached_data 分支（当前忽略 cached_data，即使 rehydrate 成功也走 handle_text 降级）
+- [ ] 长文本文件优化：
+  - [ ] 智能截断：当前硬截断 512KB 字符，改为按 token 预算截断，保留文件头尾（头保留结构/导入，尾保留最新内容）
+  - [ ] 分块摘要：超长文件先由小模型生成摘要，再注入上下文
+  - [ ] 多文件总量控制：当前仅单文件限制，多文件合计可能超 context_window，需在 project 阶段统筹预算
+  - [ ] 流式注入：超大文件不一次性注入消息，改为工具调用按需读取（类似 RAG）
 
 ## 已完成（复核确认）
 

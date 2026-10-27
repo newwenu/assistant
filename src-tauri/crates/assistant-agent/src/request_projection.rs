@@ -85,7 +85,13 @@ fn estimate_blocks_tokens(blocks: &[ContentBlock]) -> usize {
         .map(|block| match block {
             ContentBlock::Text { text } => text.len() / 4,
             ContentBlock::Image { .. } => IMAGE_TOKEN_ESTIMATE,
-            _ => 20,
+            ContentBlock::File { cached_data, .. } => match cached_data {
+                Some(data) => data.len() / 4,
+                None => 20,
+            },
+            ContentBlock::Thinking { thinking, .. } => thinking.len() / 4,
+            ContentBlock::ToolUse { input, .. } => input.len() / 4,
+            ContentBlock::ToolResult { output, .. } => output.len() / 4,
         })
         .sum()
 }

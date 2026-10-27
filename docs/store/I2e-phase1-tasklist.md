@@ -376,7 +376,7 @@ D3 依赖 C5
 - [x] V15：`tool_call_id` hack + `parse_image_source` 已删除
 - [x] V16：非 Vision → Provider 收到 i18n 占位文本
 - [x] V17：`<img loading="lazy">` 懒加载生效
-- [ ] V18：骨架屏占位防 CLS + 加载失败显示错误+重试
+- [x] V18：骨架屏占位防 CLS + 加载失败显示错误+重试
 - [x] V19：编辑含图片消息 → 图片保留、仅文本被修改 → 分支正确创建
 - [x] V20：分支选择器中含图片消息 → content_preview 显示可读纯文本（非 JSON 截断）【B8 验收】
 - [x] V21：`content.trim().is_empty()` → `is_content_empty()` 语义判断正确（纯图片消息不误判为空）【B8 验收】

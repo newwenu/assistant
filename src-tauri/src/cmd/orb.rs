@@ -8,8 +8,8 @@ use tauri::{command, AppHandle, PhysicalPosition};
 use crate::protocol::{MousePositionDto, ScreenRectDto, ScreenSizeDto};
 use assistant_config::{
     constant::{
-        ORB_CHROME_INSET, ORB_HITBOX_SIZE, ORB_SNAP_ANIMATION_MS, ORB_SNAP_BORDER_X,
-        WINDOW_EDGE_BUFFER, WINDOW_ORB,
+        ORB_CHROME_INSET, ORB_EXPANDED_WINDOW_HEIGHT, ORB_EXPANDED_WINDOW_WIDTH, ORB_HITBOX_SIZE,
+        ORB_SNAP_ANIMATION_MS, ORB_SNAP_BORDER_X, WINDOW_EDGE_BUFFER, WINDOW_ORB,
     },
     orb_conf::OrbConf,
 };
@@ -133,8 +133,13 @@ pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
     ORB_SNAP_CANCEL.store(true, Ordering::Release);
 
     let window = crate::window::get_or_error(&app, WINDOW_ORB)?;
-    let pos = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
+
+    if size.width >= ORB_EXPANDED_WINDOW_WIDTH || size.height >= ORB_EXPANDED_WINDOW_HEIGHT {
+        return Ok(());
+    }
+
+    let pos = window.outer_position().map_err(|e| e.to_string())?;
 
     let screens = placement::get_available_screens(&app);
     let bounds = placement::WindowBounds::new(pos.x, pos.y, size.width, size.height);

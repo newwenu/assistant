@@ -7,6 +7,7 @@
   background: var(--color-bg-layout);
   max-width: 280px;
   overflow: hidden;
+  transition: background 0.15s;
 }
 
 .clickable {
@@ -14,7 +15,7 @@
 }
 
 .clickable:hover {
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-elevated);
 }
 
 .icon {

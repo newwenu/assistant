@@ -43,7 +43,7 @@ pub async fn build_chat_request(
 
         // 是否 rehydrate、哪些文件原样发送统一由 support_pdf 决定
         multimodal::rehydrate_files(&mut chat_messages, attachment_store, support_pdf).await;
-        multimodal::project_files(&mut chat_messages, support_pdf);
+        multimodal::project_files(&mut chat_messages, attachment_store, support_pdf).await;
     }
 
     let config = build_provider_config(provider_row);
