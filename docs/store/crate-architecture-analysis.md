@@ -182,7 +182,7 @@ agent   → providers, storage  ← 已消除 i18n 依赖（结构化错误 + �
 
 **命名说明**：采用 **`assistant-crypto`**，而非 `assistant-vault-crypto`——它收容的是全应用级加密函数（Argon2/HKDF/AES-GCM/ChaCha20/TOTP/API Key），并非 vault 专属。
 
-**⚠️ `SecurityDbState` 的正确处理（不是 trait 注入）**：核实 [sync_engine/mod.rs:197-206](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-sync/src/sync_engine/mod.rs#L197-L206) 后发现，`export_all_entries(&SecurityDbState)` 实际调用了 `security_db.get_master_key()` 和 `security_db.list_entries(None, None, None)`——这是一个**读 Vault 数据库**的操作，本质属于 vault 领域，却被写在 sync 里。原文档及本人在上一轮提出的"trait 注入 `dyn VaultEntrySource`"是**错误方向**：它用一层抽象把"放错位置的职责"固化下来，属于与 §2.3 同类的"优化供给、不消除需求"。
+**⚠️ `SecurityDbState` 的正确处理（不是 trait 注入）**：核实 [sync_engine/mod.rs:197-206](../../src-tauri/crates/assistant-sync/src/sync_engine/mod.rs#L197-L206) 后发现，`export_all_entries(&SecurityDbState)` 实际调用了 `security_db.get_master_key()` 和 `security_db.list_entries(None, None, None)`——这是一个**读 Vault 数据库**的操作，本质属于 vault 领域，却被写在 sync 里。原文档及本人在上一轮提出的"trait 注入 `dyn VaultEntrySource`"是**错误方向**：它用一层抽象把"放错位置的职责"固化下来，属于与 §2.3 同类的"优化供给、不消除需求"。
 
 **正确做法**：把 `export_all_entries`（含 get_master_key/list_entries 调用）整体移到 `assistant-vault`，sync 只接收 `Vec<VaultEntryExport>` + `MasterKey` 作为**入参数据**。sync 从此无需知道 `SecurityDbState` 存在。这是"消除需求"而非"封装需求"。
 
@@ -259,7 +259,7 @@ DTO（主 app 内部，rename_all=camelCase + deny_unknown_fields）──┐ �
 
 **建设性方案（抽 crate 的前提条件）**：
 1. **补齐契约**：为 5 个直出类型建立 DTO（`SyncResultDto`/`SyncConfigDto`/`ReadinessDto`/`IntegrityResultDto`/`SshKeyInfoDto`），主 app 做 From 桥接 → wire 契约 100% 集中
-2. **代码生成**：引入 `ts-rs` 或 `typeshare` 从 Rust 生成 TS 类型。当前前端是手写镜像，且 [protocolContract.test.ts](file:///g:/codeversion/assistant1/src/chat/core/__tests__/protocolContract.test.ts) 只校验 TS 自身字段、**不校验 Rust 侧**，手写漂移无任何保护
+2. **代码生成**：引入 `ts-rs` 或 `typeshare` 从 Rust 生成 TS 类型。当前前端是手写镜像，且 [protocolContract.test.ts](../../src/chat/core/__tests__/protocolContract.test.ts) 只校验 TS 自身字段、**不校验 Rust 侧**，手写漂移无任何保护
 3. 只有 1+2 同时做，抽 crate 才有真实收益（编译器保证前后端契约一致）；**否则不抽**，保留在主 app 作为序列化适配层（P3）
 
 ### 3.2 🟡 可下放（需少量重构）
@@ -268,7 +268,7 @@ DTO（主 app 内部，rename_all=camelCase + deny_unknown_fields）──┐ �
 |---|---|---|---|---|
 | Chat 消息插入 | cmd/chat/insert.rs | 258 | assistant-agent | insert 是编排逻辑（协调会话查询、分支插入、provider 校验、active branch 更新），属于 agent 职责域；**前置条件**：① 5 处 `assistant_i18n::t()` 调用需改为结构化错误（与 §2.1/2.2 同模式）；② `extract_attachment_ids` 引用 `assistant_providers::types::parse_content`，agent 已依赖 providers，无需额外处理 |
 | API Key 掩码 | cmd/provider.rs | — | ❌ **留在主 app**（原建议已过时） | providers/src/crypto.rs 已删除（§2.3 消除）。当前 `mask_api_key_encrypted` 在 cmd/provider.rs 内直接调用 `assistant_security::crypto`（decrypt_api_key_b64 + get_machine_id），主 app 已依赖 security，搬运无收益 |
-| Vault 编排辅助 | cmd/vault/mod.rs | — | ❌ **不搬运**（原建议"→ assistant-security + 定义 VaultConfig trait"已撤回） | 核实 [mod.rs](file:///g:/codeversion/assistant1/src-tauri/src/cmd/vault/mod.rs#L1-L60)：`ssh_bridge_from_conf()` 读 `AppConf::load()`、`ssh_remove_all_on_lock(app: &AppHandle)` 用 `app.state::<SshAgentState>()`——是**配置读取 + tauri 状态 + 领域 API 调用的编排胶水**。搬入 security 需 security 依赖 config **和** tauri，并用 trait 解耦——这正是 §2.4 已否定的"用抽象固化放错位置的职责"。且 security 当前**零内部依赖、零 config 引用**，是完美叶节点，不应污染。命中 §4.3 ⑤，留在主 app |
+| Vault 编排辅助 | cmd/vault/mod.rs | — | ❌ **不搬运**（原建议"→ assistant-security + 定义 VaultConfig trait"已撤回） | 核实 [mod.rs](../../src-tauri/src/cmd/vault/mod.rs#L1-L60)：`ssh_bridge_from_conf()` 读 `AppConf::load()`、`ssh_remove_all_on_lock(app: &AppHandle)` 用 `app.state::<SshAgentState>()`——是**配置读取 + tauri 状态 + 领域 API 调用的编排胶水**。搬入 security 需 security 依赖 config **和** tauri，并用 trait 解耦——这正是 §2.4 已否定的"用抽象固化放错位置的职责"。且 security 当前**零内部依赖、零 config 引用**，是完美叶节点，不应污染。命中 §4.3 ⑤，留在主 app |
 
 ### 3.3 🟢 必须留在主 app
 
@@ -374,7 +374,7 @@ DTO（主 app 内部，rename_all=camelCase + deny_unknown_fields）──┐ �
 
 ### 5.3 windows crate feature 问题（⚠️ 收益有限，机制需更正）
 
-**现状（已核实 [Cargo.toml:94-112](file:///g:/codeversion/assistant1/src-tauri/Cargo.toml#L94-L112)）**：`[workspace.dependencies]` 中 `windows = { version = "0.62", features = [...] }` 声明了 **14 个 feature**。消费者仅 **2 个**：`assistant-tools`（`windows = { workspace = true }`）与 `assistant-security`（同上），主 app 不直接使用。
+**现状（已核实 [Cargo.toml:94-112](../../src-tauri/Cargo.toml#L94-L112)）**：`[workspace.dependencies]` 中 `windows = { version = "0.62", features = [...] }` 声明了 **14 个 feature**。消费者仅 **2 个**：`assistant-tools`（`windows = { workspace = true }`）与 `assistant-security`（同上），主 app 不直接使用。
 
 **⚠️ 更正原文档的机制描述**：「workspace 继承不支持 feature 叠加/覆盖」**前半句错误**。Cargo 实际规则是：
 - **叠加支持**：成员可写 `windows = { workspace = true, features = ["Win32_Foundation"] }`，features 与 workspace 声明的**取并集**
@@ -387,7 +387,7 @@ DTO（主 app 内部，rename_all=camelCase + deny_unknown_fields）──┐ �
 - 这样**既保住版本单点管理**（§5.2 的核心价值），又实现 feature 按需，无需把 windows 移出 workspace
 
 **各成员实际需要（已核实源码）**：
-- `assistant-tools`：`Win32_Foundation` + `Win32_Storage_FileSystem`（[fs_link.rs](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-tools/src/os/fs_link.rs) 的 HANDLE/CloseHandle/GetFinalPathNameByHandleW）
+- `assistant-tools`：`Win32_Foundation` + `Win32_Storage_FileSystem`（[fs_link.rs](../../src-tauri/crates/assistant-tools/src/os/fs_link.rs) 的 HANDLE/CloseHandle/GetFinalPathNameByHandleW）
 - `assistant-security`：`Win32_Foundation`、`System_Registry`、`Graphics_Gdi`、`UI_WindowsAndMessaging`、`UI_Controls`、`UI_HiDpi`、`System_WinRT`、`System_LibraryLoader` + `Security_Credentials`、`Security_Cryptography`、`Storage_Streams`（biometric 走 WinRT）、`UI_Input_KeyboardAndMouse`、`Graphics_Dwm`、`System_Power`、`System_RemoteDesktop`、`Win32_Security`、`Storage_FileSystem`（unlock_dialog/screen_lock/biometric 使用面广）
 
 **⚠️ 收益限定（与 §2.4/§6.6 同一标准）**：
@@ -432,9 +432,9 @@ DTO（主 app 内部，rename_all=camelCase + deny_unknown_fields）──┐ �
 
 **三处必须修正的拆分细节（否则收益不成立）**：
 
-1. **crypto crate 必须排除 `vault_crypto/hibp.rs`**：已核实 [hibp.rs:9](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-security/src/vault_crypto/hibp.rs#L9) 使用 `reqwest::Client` 调用 HIBP 密码泄露查询 API。若按原方案"vault_crypto/ **全部**"并入，sync 仍会拉入 **reqwest + 完整网络栈**，"sync 摆脱重依赖"的收益直接归零。hibp 应移入 security（与 password_strength 同属"密码强度/泄露检测"职责）。
-2. **crypto crate 不能收容 `security/src/types/`**：已核实该模块是 `VaultError` + `VaultCategory` + `VaultEntry*` DTO（[types/mod.rs:12-231](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-security/src/types/mod.rs#L12-L231)），属 **Vault 领域语义**；真正的加密类型在 `vault_crypto/types.rs`（MasterKey/PerEntryKey/CipherAlgorithm/VaultPlaintext/SecureString）。收进来会让"通用加密函数"crate 反向携带业务 DTO，破坏命名与实际职责的一致性。
-3. **biometric 必须移入 vault，不能留在 security**：已核实 [biometric_ops.rs:7](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-security/src/security_db/biometric_ops.rs#L7) 依赖 `biometric::BiometricKeyStore`。若 biometric 留在 security 而 vault 需要它，就形成 `vault → security`——**数据层反向依赖 OS 交互层，层次倒置**。biometric 本质是"主密钥的 OS 托管存储"，属 vault 领域，随 vault 走。
+1. **crypto crate 必须排除 `vault_crypto/hibp.rs`**：已核实 [hibp.rs:9](../../src-tauri/crates/assistant-security/src/vault_crypto/hibp.rs#L9) 使用 `reqwest::Client` 调用 HIBP 密码泄露查询 API。若按原方案"vault_crypto/ **全部**"并入，sync 仍会拉入 **reqwest + 完整网络栈**，"sync 摆脱重依赖"的收益直接归零。hibp 应移入 security（与 password_strength 同属"密码强度/泄露检测"职责）。
+2. **crypto crate 不能收容 `security/src/types/`**：已核实该模块是 `VaultError` + `VaultCategory` + `VaultEntry*` DTO（[types/mod.rs:12-231](../../src-tauri/crates/assistant-security/src/types/mod.rs#L12-L231)），属 **Vault 领域语义**；真正的加密类型在 `vault_crypto/types.rs`（MasterKey/PerEntryKey/CipherAlgorithm/VaultPlaintext/SecureString）。收进来会让"通用加密函数"crate 反向携带业务 DTO，破坏命名与实际职责的一致性。
+3. **biometric 必须移入 vault，不能留在 security**：已核实 [biometric_ops.rs:7](../../src-tauri/crates/assistant-security/src/security_db/biometric_ops.rs#L7) 依赖 `biometric::BiometricKeyStore`。若 biometric 留在 security 而 vault 需要它，就形成 `vault → security`——**数据层反向依赖 OS 交互层，层次倒置**。biometric 本质是"主密钥的 OS 托管存储"，属 vault 领域，随 vault 走。
 
 **api_key 并入 `assistant-crypto` 的代价（已量化）**：sync 现有依赖已含 base64/sha2/hmac，唯一新增是 `machine-uid`（→ `windows-registry` + `windows-sys`）。若在意这 ~1s，可把 `get_machine_id()` 置于 crate feature `machine-id`（仅主 app 启用），sync 用 `default-features = false` 关闭。**收益是消掉一个 59 行的独立 crate与一次跨 crate 拆分的 churn，代价可控**。
 
@@ -446,11 +446,11 @@ DTO（主 app 内部，rename_all=camelCase + deny_unknown_fields）──┐ �
 
 orb 是纯几何/位置计算，库 crate 依赖 GUI 框架不符合分层。**但"无法独立测试"是伪需求**（下文核实）。若要移除 tauri，在 orb 中定义纯 Rust 类型，由调用方做转换。
 
-**精确耦合点（已核实）**：仅 [placement.rs:16](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-orb/src/placement.rs#L16) 的 `get_available_screens(app: &AppHandle)` 一个函数使用 tauri。`geometry.rs`、`hover.rs` 完全是纯 Rust（无任何 tauri import）。
+**精确耦合点（已核实）**：仅 [placement.rs:16](../../src-tauri/crates/assistant-orb/src/placement.rs#L16) 的 `get_available_screens(app: &AppHandle)` 一个函数使用 tauri。`geometry.rs`、`hover.rs` 完全是纯 Rust（无任何 tauri import）。
 
 **最小改动方案**：将 `get_available_screens` 移出 orb（移到主 app 的 cmd/orb.rs），orb 只保留 `ScreenBounds` 输入参数 + 纯计算函数。orb Cargo.toml 删除 tauri 依赖即可。
 
-**⚠️ 原"无法独立测试"的理由不成立**：orb 已有 [tests/placement.rs](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-orb/tests/placement.rs) 与 [tests/hover.rs](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-orb/tests/hover.rs)，测试对象是纯计算函数（`ensure_orb_on_screen` 等），不触及 `get_available_screens`。所以"移除 tauri 才能测试"是伪需求。
+**⚠️ 原"无法独立测试"的理由不成立**：orb 已有 [tests/placement.rs](../../src-tauri/crates/assistant-orb/tests/placement.rs) 与 [tests/hover.rs](../../src-tauri/crates/assistant-orb/tests/hover.rs)，测试对象是纯计算函数（`ensure_orb_on_screen` 等），不触及 `get_available_screens`。所以"移除 tauri 才能测试"是伪需求。
 
 **真实收益评估**：①编译——orb 仅被主 app 使用，主 app 必带 tauri，**零编译收益**；②测试——测试已存在，**零收益**。唯一剩余价值是"库 crate 不应依赖 GUI 框架"的架构洁癖。**结论：降级为可选（P3），不做也无实质损失。**
 

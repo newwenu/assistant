@@ -159,8 +159,8 @@ pub async fn admit_attachments(
     store: &AttachmentStore,
     config: &MultimodalConfig,
 ) -> Result<String, AgentError> {
-    let mut blocks: Vec<ContentBlock> =
-        serde_json::from_str(content).map_err(|e| AgentError::other(format!("Invalid ContentBlock JSON: {}", e)))?;
+    let mut blocks: Vec<ContentBlock> = serde_json::from_str(content)
+        .map_err(|e| AgentError::other(format!("Invalid ContentBlock JSON: {}", e)))?;
 
     // 上限按整条消息的附件总数计算，已有 attachment_id 的附件同样占用配额，
     // 避免“历史附件 + 新附件”绕过限制。
@@ -172,7 +172,9 @@ pub async fn admit_attachments(
         return Err(AgentError::AttachmentsNotAllowed);
     }
     if image_count > config.max_images {
-        return Err(AgentError::TooManyImages { max: config.max_images });
+        return Err(AgentError::TooManyImages {
+            max: config.max_images,
+        });
     }
 
     let file_count = blocks
@@ -183,7 +185,9 @@ pub async fn admit_attachments(
         return Err(AgentError::AttachmentsNotAllowed);
     }
     if file_count > config.max_files {
-        return Err(AgentError::TooManyFiles { max: config.max_files });
+        return Err(AgentError::TooManyFiles {
+            max: config.max_files,
+        });
     }
 
     for block in blocks.iter_mut() {
@@ -194,7 +198,8 @@ pub async fn admit_attachments(
         }
     }
 
-    serde_json::to_string(&blocks).map_err(|e| AgentError::other(format!("Failed to serialize ContentBlocks: {}", e)))
+    serde_json::to_string(&blocks)
+        .map_err(|e| AgentError::other(format!("Failed to serialize ContentBlocks: {}", e)))
 }
 
 async fn admit_image(
@@ -246,11 +251,16 @@ async fn admit_image(
             .unwrap_or_else(|| "image/png".to_string());
         (data, mt)
     } else {
-        return Err(AgentError::other("ImageBlock needs either file_path or cached_data"));
+        return Err(AgentError::other(
+            "ImageBlock needs either file_path or cached_data",
+        ));
     };
 
     if !config.allowed_image_media_types.iter().any(|m| m == &mt) {
-        return Err(AgentError::other(format!("image media type not allowed: {}", mt)));
+        return Err(AgentError::other(format!(
+            "image media type not allowed: {}",
+            mt
+        )));
     }
 
     if data.len() > config.max_image_bytes {
@@ -312,7 +322,10 @@ async fn admit_file(
         validate_path(fp, config).await?;
         let ext = ext_of(&fp);
         if !config.allowed_file_extensions.iter().any(|e| e == &ext) {
-            return Err(AgentError::other(format!("unsupported file extension: .{}", ext)));
+            return Err(AgentError::other(format!(
+                "unsupported file extension: .{}",
+                ext
+            )));
         }
     }
 
@@ -323,7 +336,9 @@ async fn admit_file(
         }
         let mt = file_media_type_from_ext(&ext_of(&fp))
             .map(|s| s.to_string())
-            .ok_or_else(|| AgentError::other(format!("unsupported file extension: .{}", ext_of(&fp))))?;
+            .ok_or_else(|| {
+                AgentError::other(format!("unsupported file extension: .{}", ext_of(&fp)))
+            })?;
         let data = tokio::fs::read(&fp)
             .await
             .map_err(|e| AgentError::other(format!("read failed: {}", e)))?;
@@ -340,14 +355,19 @@ async fn admit_file(
         // cached_data 路径同样必须过扩展名白名单，防止伪造 MIME 写入任意文件
         let ext = ext_of(&attachment.name);
         if !config.allowed_file_extensions.iter().any(|e| e == &ext) {
-            return Err(AgentError::other(format!("unsupported file extension: .{}", ext)));
+            return Err(AgentError::other(format!(
+                "unsupported file extension: .{}",
+                ext
+            )));
         }
         let mt = file_media_type_from_ext(&ext)
             .unwrap_or("application/octet-stream")
             .to_string();
         (data, mt, attachment.name.clone())
     } else {
-        return Err(AgentError::other("FileBlock needs either file_path or cached_data"));
+        return Err(AgentError::other(
+            "FileBlock needs either file_path or cached_data",
+        ));
     };
 
     if data.len() > config.max_file_bytes {

@@ -25,7 +25,9 @@ pub(crate) fn insert_chat_messages(
     provider_id: &str,
     model_id: &str,
 ) -> Result<InsertedMessages, String> {
-    if conversations::is_conversation_full(conn, conversation_id).map_err(super::super::translate_storage_error)? {
+    if conversations::is_conversation_full(conn, conversation_id)
+        .map_err(super::super::translate_storage_error)?
+    {
         return Err("Conversation is full, cannot send".to_string());
     }
 

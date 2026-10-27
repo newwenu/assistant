@@ -128,27 +128,6 @@ impl VaultMeta {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DeletedEntry {
-    pub id: String,
-    pub deleted_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeletedIndex {
-    pub entries: Vec<DeletedEntry>,
-}
-
-impl Default for DeletedIndex {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct EncryptedEntryFile {
     pub id: String,
     pub encrypted_data: String,

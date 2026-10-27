@@ -51,8 +51,8 @@ pub fn search_conversations(
 }
 
 pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<String, StorageError> {
-    let detail = super::get_conversation_detail(conn, id)?
-        .ok_or(StorageError::ConversationNotFound)?;
+    let detail =
+        super::get_conversation_detail(conn, id)?.ok_or(StorageError::ConversationNotFound)?;
     let mut md = format!("# {}\n\n", detail.conversation.title);
     for msg in &detail.messages {
         let plain = crate::content_codec::content_plain_text(&msg.content);
@@ -67,8 +67,8 @@ pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<Strin
 }
 
 pub fn export_conversation_json(conn: &Connection, id: &str) -> Result<String, StorageError> {
-    let detail = super::get_conversation_detail(conn, id)?
-        .ok_or(StorageError::ConversationNotFound)?;
+    let detail =
+        super::get_conversation_detail(conn, id)?.ok_or(StorageError::ConversationNotFound)?;
     serde_json::to_string_pretty(&detail).map_err(|e| StorageError::other(e.to_string()))
 }
 
@@ -107,8 +107,8 @@ pub fn toggle_pin(conn: &Connection, id: &str) -> Result<bool, String> {
 }
 
 pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, StorageError> {
-    let detail = super::get_conversation_detail(conn, id)?
-        .ok_or(StorageError::ConversationNotFound)?;
+    let detail =
+        super::get_conversation_detail(conn, id)?.ok_or(StorageError::ConversationNotFound)?;
 
     let new_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();

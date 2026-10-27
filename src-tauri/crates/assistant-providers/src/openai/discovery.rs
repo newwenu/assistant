@@ -70,7 +70,10 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
     configs
 }
 
-pub(crate) fn list_models(adapter: &OpenAIAdapter, api_key: &str) -> Result<Vec<ModelConfig>, ProviderError> {
+pub(crate) fn list_models(
+    adapter: &OpenAIAdapter,
+    api_key: &str,
+) -> Result<Vec<ModelConfig>, ProviderError> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| ProviderError::RequestFailed(format!("Create runtime: {}", e)))?;
     rt.block_on(async {

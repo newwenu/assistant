@@ -75,24 +75,3 @@ pub struct EmergencyDataFile {
     pub token: String,
     pub salt: String,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeletedIndexFile {
-    pub entries: Vec<DeletedEntryRecord>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeletedEntryRecord {
-    pub id: String,
-    pub deleted_at: i64,
-}
-
-impl Default for DeletedIndexFile {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
-    }
-}

@@ -6,6 +6,8 @@
 > 涉及前端：vaultStore.ts、vault.service.ts、VaultEntryForm.tsx、VaultSettings.tsx
 > 关联文档：I9-vault-spec-1~5、I9-vault-issues.md
 > 第一批修复完成日期：2026-10-22（问题 1 + 问题 8 + 附带修复 `VaultCategory::from_str` → `parse`）
+> 复核日期：2026-10-27（逐条比对当前代码，勾选已落地验收项，汇总残留项；残留汇总见文末）
+> 第二批修复完成日期：2026-10-27（问题 9 大小写 bug + 问题 7 屏幕锁联动与死窗口清理 + 新发现 12 假解锁事件）
 
 ---
 
@@ -15,13 +17,13 @@
 |---|--------|--------|------|---------|------|------|
 | 1 | `assistant-storage::vault_meta` + `vault` | 🔴 高 | 偏差残留 | spec-1 §5.4 偏差 #4 | 删除 | ✅ 已修复 |
 | 2 | `SafePassword` + `sha1_hex` | 🔴 高 | 设计意图未落地 | spec 偏差 #25 "更优" | 重构使用 | ✅ 已修复 |
-| 3 | `VaultEntryDecrypted` | 🟡 中 | 设计意图未落地 | spec-1 §3.3 + DESIGN §2.3 + spec-4 §11 | 重构导出/同步使用 | ✅ 已修复 |
+| 3 | `VaultEntryDecrypted` | 🟡 中 | 设计意图未落地 | spec-1 §3.3 + DESIGN §2.3 + spec-4 §11 | 重构导出/同步使用 | 🟡 部分完成（导出已接，同步未接） |
 | 4 | `vault_totp_parse_uri` IPC 漏接 | 🟡 中 | 规格未完成 | spec-3 §6.2 | 补全 IPC 三层 | ✅ 已修复 |
-| 5 | `audit::query_log` 无 IPC | 🟢 低 | 超规格添加 | 无 | 保留，补 IPC 为增强 | ✅ 已修复 |
-| 6 | `backup()` 内联重复 | 🔴 高 | 实现偏差 | spec-1 §3.3 + 偏差 #5 | 重构调用 | ✅ 已修复 |
-| 7 | `vault_show_unlock_window` 前端未接 | 🟡 中 | 规格未完成 | spec-3 §7.7 + tasklist E4 | 补全前端 | ✅ 已修复 |
+| 5 | `audit::query_log` 无 IPC | 🟢 低 | 超规格添加 | 无 | 保留，补 IPC 为增强 | 🟡 部分完成（无 UI 消费方） |
+| 6 | `backup()` 内联重复 | 🔴 高 | 实现偏差 | spec-1 §3.3 + 偏差 #5 | 重构调用 | 🟡 部分完成（无 IPC / 无轮转） |
+| 7 | `vault_show_unlock_window` 前端未接 | 🟡 中 | 规格未完成 | spec-3 §7.7 + tasklist E4 | 补全前端 | ✅ 已修复（原生对话框 + 屏幕锁联动） |
 | 8 | `LAST_REVEAL_EXPIRY` 只写不读 | 🟢 低 | 代码自创冗余 | 无 | 删除 | ✅ 已修复 |
-| 9 | ChaCha20 硬编码 Aes | 🟡 中 | 实现偏差 | DESIGN §3.2 + spec-2 §5.6 | 修复读取设置 | ✅ 已修复 |
+| 9 | ChaCha20 硬编码 Aes | 🟡 中 | 实现偏差 | DESIGN §3.2 + spec-2 §5.6 | 修复读取设置 | ✅ 已修复（同步侧旁支另列 P4） |
 | 10 | `generatePassphrase` 未集成 | 🟡 中 | 规格未完成 | spec-3 §6.5 + tasklist D3.4 | UI 集成 | ✅ 已修复 |
 
 ---
@@ -127,9 +129,13 @@ let count = hibp.check_password(&safe).await?;
 
 ### 验收
 
-- [ ] `check_password` 接收 `&SafePassword` 而非 `&str`
-- [ ] `sha1_hex` 可见性为 `pub(crate)`
-- [ ] HIBP 审计后密码明文已 zeroize（`SafePassword` drop 验证）
+- [x] `check_password` 接收 `&SafePassword` 而非 `&str`
+- [x] `sha1_hex` 可见性为 `pub(crate)`
+- [x] HIBP 审计后密码明文已 zeroize（`SafePassword` drop 验证）
+
+### 复核结论（2026-10-27）
+
+全部落地：`hibp.rs:21` 签名为 `check_password(&self, password: &SafePassword)`；`sha1_hex` 为 `pub(crate)`；`SafePassword` 实现 `Drop` → `zeroize`；调用方 `cmd/vault/audit.rs:125,189` 均以 `SafePassword::new(...)` 包裹。
 
 ---
 
@@ -181,9 +187,16 @@ impl SecurityDbState {
 
 ### 验收
 
-- [ ] `export_entries` 通过 `decrypt_entry` 实现
-- [ ] `VaultEntryDecrypted` 不实现 `Clone`（编译验证）
-- [ ] `cargo test -p assistant-security` 通过
+- [x] `export_entries` 通过 `decrypt_entry` 实现
+- [x] `VaultEntryDecrypted` 不实现 `Clone`（编译验证）
+- [ ] `cargo test -p assistant-security` 通过（本次复核未执行测试）
+- [ ] 同步引擎（`assistant-sync`）的 vault_file 序列化改用 `decrypt_entry` — **未完成**
+
+### 复核结论（2026-10-27）
+
+- ✅ `crypto_ops.rs:140` 已实现 `decrypt_entry`，`import_export.rs:25` 的 `export_entries` 已改为调用它；`types/mod.rs:174` 的 `VaultEntryDecrypted` 无 `Clone` 实现。
+- ❌ 同步侧未接入：`assistant-sync/src/sync_engine/mod.rs:197` 的 `export_all_entries` 仍用 `list_entries` 摘要，且把 `encrypted_password/notes/totp/custom_fields` 全部传 `None`。
+- ❌ 更严重：`export_all_entries` **零调用者**，`prepare/pull/push/sync_now` 都不会写 `.enc` 文件，条目实际未进入 Git 仓库。该缺口归属 [tasklist-p2](./I9-vault-tasklist-p2.md) H5.2 / H7.1（仍未勾选），本文件只做指向，不重复跟踪。
 
 ---
 
@@ -228,8 +241,12 @@ impl SecurityDbState {
 
 ### 验收
 
-- [ ] 前端可通过 `vault_totp_parse_uri` 解析 `otpauth://totp/` URI
-- [ ] 解析结果包含 secret / digits / period / algorithm / issuer / account
+- [x] 前端可通过 `vault_totp_parse_uri` 解析 `otpauth://totp/` URI
+- [x] 解析结果包含 secret / digits / period / algorithm / issuer / account
+
+### 复核结论（2026-10-27）
+
+三层全部接通：`cmd/vault/audit.rs:103` 定义 command → `lib.rs:119` 注册 → `vault.service.ts:117` `totpParseUri` → `vaultAuditSlice.ts:99` → `VaultEntryDrawer.tsx:137` 实际调用。
 
 ---
 
@@ -273,8 +290,15 @@ impl SecurityDbState {
 
 ### 验收
 
-- [ ] 前端可在设置页查看最近 N 条审计日志
-- [ ] 日志条目含 event_type / detail / timestamp
+- [x] `vault_query_audit_log` command 已实现并注册
+- [x] `vault.service.ts` / `vaultAuditSlice.ts` 已接入
+- [ ] 前端可在设置页查看最近 N 条审计日志 — **未完成，无任何 UI 消费方**
+- [ ] 日志条目含 event_type / detail / timestamp — 类型已定义，但无展示
+
+### 复核结论（2026-10-27）
+
+- ✅ IPC 与前端服务层已通：`cmd/vault/audit.rs:108` command → `lib.rs:120` 注册 → `vault.service.ts:120` → `vaultAuditSlice.ts:103`。
+- ❌ `queryAuditLog` 全仓只出现在 service 与 slice，**没有任何组件调用**；i18n 也无审计日志词条（`zh-CN.json` 仅 `hibp_auto_audit` / `audit_all`）。属于"能调但看不到"的悬空接口。
 
 ---
 
@@ -314,9 +338,15 @@ impl SecurityDbState {
 
 ### 验收
 
-- [ ] `change_master_password` 调用 `self.backup()` 而非内联 VACUUM INTO
-- [ ] `vault_backup` command 可手动触发备份
-- [ ] 备份文件存在于 `backups/` 目录
+- [x] `change_master_password` 不再内联 VACUUM INTO，与 `backup()` 共用 `backup_conn`
+- [ ] `vault_backup` command 可手动触发备份 — **未完成，command 不存在**
+- [x] 备份文件存在于 `backups/` 目录（主密码变更路径已写入 `.bak`）
+- [ ] 备份保留最近 5 份的轮转清理 — **未实现**
+
+### 复核结论（2026-10-27）
+
+- ✅ 去重目标达成：`security_db/mod.rs:242` 的 `backup()` 与 `rekey.rs:51` 的 `change_master_password` 共用私有 `backup_conn()`。
+- ❌ `backup()` 除测试（`tests/security_db.rs:122`）外无调用者；无 `vault_backup` command；无 `backups/` 保留 5 份的清理逻辑（spec-1 §3.3 要求）。
 
 ---
 
@@ -358,10 +388,28 @@ command 已实现（创建 `vault-unlock` 窗口），但前端缺少 service �
 
 ### 验收
 
-- [ ] 屏幕锁后弹出独立解锁窗口
-- [ ] 解锁窗口与主窗口 V8 isolate 隔离
-- [ ] 解锁成功后窗口自动关闭，主窗口刷新状态
-- [ ] 窗口已存在时 focus 而非新建
+- [x] 屏幕锁后弹出解锁入口 — 2026-10-27 已接：`setup.rs` 的 `on_lock` 在 `lock()` 成功后，若 `is_initialized()` 为真则 spawn `vault_show_unlock_window`
+- [x] 解锁入口与主窗口 V8 isolate 隔离 — 已改用原生 Win32 对话框（无 JS 运行时），优于原 webview 方案
+- [x] 解锁成功后自动关闭，主窗口刷新状态 — `lifecycle.rs:69` 成功后 emit `VAULT_UNLOCKED`，前端 `useVaultEvents.ts` 监听刷新
+- [x] 窗口已存在时 focus 而非新建 — `state.is_locked()` 为 false 时直接返回 `Ok(true)`，不重复创建
+- [x] 死窗口清理 — `src/layouts/VaultUnlockWindow.tsx` 已删除，`WINDOW_VAULT_UNLOCK` 常量与 `App.tsx` viewMap 映射同步移除
+
+### 复核结论（2026-10-27）
+
+**方案已变更**：[I9-vault-spec-3c-native-unlock-dialog.md](./I9-vault-spec-3c-native-unlock-dialog.md) 将"Tauri webview 解锁窗口"改为"原生 Win32 解锁对话框"，`vault_show_unlock_window` 已走 `unlock_dialog`。
+
+- ✅ 更安全，安全目标（isolate 隔离）达成且更强。
+- ✅ 屏幕锁联动已补齐（本节原方案第 4 步）。
+- ✅ 遗留死代码已清理：`VaultUnlockWindow.tsx` / `WINDOW_VAULT_UNLOCK` / viewMap 映射全部删除，全仓零匹配（仅历史文档仍提及旧方案）。
+- 现状唯一调用方：`settings/shared/renderers/BiometricSwitchRender.tsx:46`。
+
+### 实施记录（2026-10-27）
+
+1. `setup.rs` `on_lock`：`state.lock()` 成功后判断 `state.is_initialized()`，为真则 `tauri::async_runtime::spawn` 调用 `crate::cmd::vault_show_unlock_window(app_for_dialog)`，失败仅 `log::warn!`，不影响锁屏主流程
+2. `setup.rs` `on_unlock`：移除 `emit_broadcast(VAULT_UNLOCKED)`，仅记录日志（详见新发现 12）
+3. 删除 `src/layouts/VaultUnlockWindow.tsx`
+4. `src/config/constants.ts` 移除 `WINDOW_VAULT_UNLOCK`
+5. `src/App.tsx` 移除 `VaultUnlockWindow` import 与 viewMap 映射
 
 ---
 
@@ -442,9 +490,16 @@ command 已实现（创建 `vault-unlock` 窗口），但前端缺少 service �
 
 ### 验收
 
-- [ ] 设置 `vaultCipherAlgorithm = "chacha20Poly1305"` 后新条目用 ChaCha20 加密
-- [ ] 旧 Aes256Gcm 条目仍可正常解密
-- [ ] 密文首字节 `algo_byte` 与实际算法一致
+- [x] 设置 `vaultCipherAlgorithm = "chacha20Poly1305"` 后新条目用 ChaCha20 加密 — 2026-10-27 已修大小写 bug
+- [x] 旧 Aes256Gcm 条目仍可正常解密（`decrypt_field` 按密文首字节选算法）
+- [x] 密文首字节 `algo_byte` 与实际算法一致（`encrypt_field` 写入 `algo.discriminant()`）
+- [x] 新增单测 `cipher_algorithm_from_conf_is_case_insensitive`（`tests/security_db.rs`），覆盖 `chacha20Poly1305` / `CHACHA20POLY1305` / `aes256Gcm` / 空串
+
+### 复核结论（2026-10-27）
+
+- ✅ 链路已接通：`cmd/vault/mod.rs:87` 的 `cipher_algo()` 读取 `AppConf.vault_cipher_algorithm`，`create/update/import/change_password` 均已传入；设置项与下拉已存在（`fieldDefinitions.ts:387`）。
+- ✅ **大小写 bug 已修**：`SecurityDbState::cipher_algorithm_from_conf`（`security_db/mod.rs:266-271`）改为 `match conf_val.to_ascii_lowercase().as_str()`，前端 `"chacha20Poly1305"` 现可正确命中 `ChaCha20Poly1305`。选择全小写或全大写同样兼容。
+- 🟡 旁支不一致（未修，见残留 P4）：`assistant-sync/src/vault_file/mod.rs:103` 的 `export_entry` 用 `Default::default()`（AES），`write_vault_meta` 硬编码 `"aes256Gcm"`，同步侧不跟随用户算法设置。
 
 ---
 
@@ -475,9 +530,13 @@ command 已实现（创建 `vault-unlock` 窗口），但前端缺少 service �
 
 ### 验收
 
-- [ ] VaultEntryForm 可切换"随机字符"和"密码短语"两种生成模式
-- [ ] 密码短语生成 4 词（EFF 大词表 7776 词）
-- [ ] 生成的密码短语填入密码字段
+- [x] VaultEntryForm 可切换"随机字符"和"密码短语"两种生成模式
+- [x] 密码短语生成 4 词（EFF 大词表 7776 词）
+- [x] 生成的密码短语填入密码字段
+
+### 复核结论（2026-10-27）
+
+已落地：`forms/LoginFields.tsx:97-101` 提供随机/短语模式切换，`:147` 调用 `generatePassphrase(...)`；`forms/CardFields.tsx:112` 同样已接。
 
 ---
 
@@ -494,23 +553,86 @@ command 已实现（创建 `vault-unlock` 窗口），但前端缺少 service �
 
 ### 第二批：重构消除重复（低风险，高收益）
 
-| # | 操作 | 风险 |
-|---|------|------|
-| 6 | `change_master_password` 改调 `backup()` | 低 — 功能等价 |
-| 2 | `check_password` 改用 `SafePassword` | 低 — 接口变更需更新调用方 |
+| # | 操作 | 风险 | 状态 |
+|---|------|------|------|
+| 6 | `change_master_password` 改调 `backup()` | 低 — 功能等价 | ✅ 已共用 `backup_conn` |
+| 2 | `check_password` 改用 `SafePassword` | 低 — 接口变更需更新调用方 | ✅ 已完成 |
 
 ### 第三批：补全规格未完成项（中等风险）
 
-| # | 操作 | 风险 |
-|---|------|------|
-| 4 | 补全 `vault_totp_parse_uri` IPC 三层 | 低 — 纯新增 |
-| 7 | 补全独立解锁窗口前端 | 中 — 需新建路由页面 |
-| 10 | VaultEntryForm 集成 Diceware | 低 — 纯 UI 新增 |
-| 9 | 修复 ChaCha20 算法选择 | 中 — 需测试双算法兼容 |
+| # | 操作 | 风险 | 状态 |
+|---|------|------|------|
+| 4 | 补全 `vault_totp_parse_uri` IPC 三层 | 低 — 纯新增 | ✅ 已完成 |
+| 7 | 补全独立解锁窗口前端 | 中 — 需新建路由页面 | ✅ 已完成（原生对话框 + 屏幕锁联动 + 死窗口清理） |
+| 10 | VaultEntryForm 集成 Diceware | 低 — 纯 UI 新增 | ✅ 已完成 |
+| 9 | 修复 ChaCha20 算法选择 | 中 — 需测试双算法兼容 | ✅ 已完成（大小写归一化 + 单测；同步侧旁支见 P4） |
 
 ### 第四批：重构架构（较高风险，延后）
 
-| # | 操作 | 风险 |
-|---|------|------|
-| 3 | `export_entries` 改用 `VaultEntryDecrypted` | 中 — 需重构导出+同步 |
-| 5 | 补全审计日志查询 IPC | 低 — 纯新增（增强） |
+| # | 操作 | 风险 | 状态 |
+|---|------|------|------|
+| 3 | `export_entries` 改用 `VaultEntryDecrypted` | 中 — 需重构导出+同步 | 🟡 导出侧完成，同步侧未接 |
+| 5 | 补全审计日志查询 IPC | 低 — 纯新增（增强） | 🟡 IPC 完成，UI 未做 |
+
+---
+
+## 残留汇总（2026-10-27 复核 + 第二批修复后）
+
+### 已完成（无需再动）
+
+| # | 项 | 验证点 |
+|---|----|--------|
+| 1 | `assistant-storage::vault_meta` + `vault` 删除 | 目录下已无 `vault.rs`/`vault_meta.rs`，`Cargo.toml` 已移除 `assistant-security` 依赖 |
+| 2 | `SafePassword` + `sha1_hex` | `check_password(&SafePassword)`、`sha1_hex` 为 `pub(crate)`、`Drop` zeroize |
+| 4 | `vault_totp_parse_uri` 三层 | command / `lib.rs` / service / slice / `VaultEntryDrawer` 全通 |
+| 7 | 屏幕锁解锁联动 + 死窗口清理 | `setup.rs` `on_lock` 已 spawn `vault_show_unlock_window`；`VaultUnlockWindow.tsx` / `WINDOW_VAULT_UNLOCK` 全仓零匹配 |
+| 8 | `LAST_REVEAL_EXPIRY` 删除 | 全仓零匹配 |
+| 9 | ChaCha20 算法选择 | `to_ascii_lowercase()` 归一化 + 单测通过 |
+| 10 | Diceware 集成 | `LoginFields` / `CardFields` 均有模式切换 |
+| 12 | 屏幕解锁假解锁事件 | `setup.rs` `on_unlock` 不再 emit `VAULT_UNLOCKED`，仅记日志 |
+
+### 残留项（按建议优先级）
+
+| 优先级 | 项 | 具体残留 | 建议动作 |
+|--------|----|---------|---------|
+| P1 | 3 / 11 | `export_all_entries` 零调用、字段全 `None`，同步不写 `.enc`，条目未进 Git 仓库；连带灾难恢复导出必然 0 条 | 接 `decrypt_entry` + 在 `prepare` 流程中调用；归口 [tasklist-p2](./I9-vault-tasklist-p2.md) H5.2 / H7.1 |
+| P3 | 6 | 无 `vault_backup` command；`backup()` 仅测试调用；无保留 5 份轮转 | 补 command + service + 轮转清理 |
+| P3 | 5 | `queryAuditLog` 无 UI 消费方，i18n 无词条 | 设置页加审计日志面板（增强项，非规格要求） |
+| P4 | 9 旁支 | 同步侧 `export_entry` 用 `Default::default()`、`write_vault_meta` 硬编码 `"aes256Gcm"` | 跟随用户算法设置 |
+| P4 | 13 | `VaultFileManager` 5 个零外部调用方法 | 随 P1 同步链路接通后自然消解，或按需删除 |
+
+### 核实记录（2026-10-27 逐项对照代码，全部确认存在）
+
+| 项 | 证据 |
+|----|------|
+| P1 / 3·11 | `sync_engine/mod.rs:197` 定义，全仓无调用；`prepare()`（同文件 :36）只调 git prepare，`sync_now` = prepare→pull→finalize，均不导出条目；`export_entry` 唯一调用点 :211 位于 `export_all_entries` 内部；:218-227 密码/备注/TOTP/自定义字段全传 `None`。`tasklist-p2` H5.2 / H7.1 仍为 `[ ]` |
+| P3 / 6 | `backup()`（`mod.rs:242`）仅 `tests/security_db.rs:122` 调用；`rekey.rs:51` 用的是 `backup_conn`；全仓无 `vault_backup` command；`rekey.rs:50` 只生成 `security-{timestamp}.db.bak`，无保留 5 份清理 |
+| P3 / 5 | `queryAuditLog` 仅出现在 `vault.service.ts:120` 与 `vaultAuditSlice.ts:28,103`，无组件调用；`zh-CN.json` 仅 :373 `hibp_auto_audit`、:926 `audit_all` 两条无关词条 |
+| P4 / 9 旁支 | `vault_file/mod.rs:51`、`:285` 硬编码 `"aes256Gcm"`；`:105` 用 `Default::default()` |
+| P4 / 13 | `remove_entry_file`(:146)、`read_vault_meta`(:205)、`add_deleted_entry`(:378)、`remove_deleted_entry`(:387)、`SyncEngine::vault_file_manager()`(:193) 全仓仅定义处匹配 |
+
+### 已修复（2026-10-27 第二批，原核实记录归档）
+
+| 原项 | 原证据 | 修复后 |
+|------|--------|--------|
+| P0 / 9 | `security_db/mod.rs:266-271` 仅 match `"chacha20poly1305"`，无 `to_ascii_lowercase`；`fieldDefinitions.ts:395` 选项值为 `"chacha20Poly1305"` | 已改为 `conf_val.to_ascii_lowercase().as_str()`；`cipher_algorithm_from_conf_is_case_insensitive` 单测通过 |
+| P2 / 7 | `setup.rs:127-153` 屏幕锁仅 `lock()` + emit `VAULT_LOCKED`；`VaultUnlockWindow.tsx` 仅被 `App.tsx:19` 引用，无任何创建者 | `on_lock` 已 spawn 原生解锁对话框；三处前端死代码已删除 |
+| 新 12 | `setup.rs:155-163` 的 `on_unlock` emit `VAULT_UNLOCKED`，前端据此置 `isLocked: false`，Rust 侧仍锁定 | `on_unlock` 仅记日志，不再发事件 |
+
+### 本轮新发现（原文档未覆盖）
+
+| 新# | 内容 | 严重度 | 证据 |
+|---|------|--------|------|
+| 11 | P1 不只是死代码，而是**用户可见流程失效**：`vault_disaster_recovery_export`（`recovery.rs:105`）→ `disaster_recovery_export`（`sync_engine/mod.rs:279`）读取 `.enc` 文件，但 `.enc` 从未生成 → 灾难恢复导出必然返回 0 条；前端 `VaultUnlock.tsx:101` → `unlock/DisasterRecovery.tsx` 已完整接线 | 🔴 高（未修，归 P1） | 见上 P1 证据 + `export_entry` 无其它调用者 |
+| 12 | 屏幕解锁误发 `VAULT_UNLOCKED`：`setup.rs:159` 在 `on_unlock` 中 emit `VAULT_UNLOCKED`，前端 `useVaultEvents.ts:10` 据此置 `isLocked: false`，而 Rust `SecurityDbState` 仍处于锁定 → UI 误判已解锁，后续命令报 "Vault locked" | ✅ 已修复（2026-10-27） | `setup.rs` `on_unlock` 现仅记录 `state.is_locked()` |
+| 13 | `VaultFileManager` 另有 5 个无外部调用者：`remove_entry_file`(:146)、`read_vault_meta`(:205)、`add_deleted_entry`(:378)、`remove_deleted_entry`(:387)、`SyncEngine::vault_file_manager()`(:193) | 🟢 低（未修，归 P4） | 全仓仅定义处匹配 |
+
+### 过时项（原文需更正，勿按旧路径操作）
+
+| 位置 | 过时内容 | 现状 |
+|------|---------|------|
+| 问题 4/5/6/7/9/10 的「代码位置」 | `src-tauri/src/cmd/vault.rs` | 已拆分为 `src-tauri/src/cmd/vault/*.rs`（audit.rs / lifecycle.rs / entries.rs / recovery.rs / sync.rs / mod.rs） |
+| 问题 4/5/7 的「代码位置」 | `src/tools/password-vault/vault.service.ts`、`VaultEntryForm.tsx` | 已迁移至 `src/vault/core/vault.service.ts`、`src/vault/forms/LoginFields.tsx` / `CardFields.tsx` |
+| 问题 5 的「代码位置」 | "缺少 `vault_query_audit_log` command" | 已存在：`cmd/vault/audit.rs:108`，`lib.rs:120` 注册 |
+| 问题 7 的「修复方案」 | Tauri webview 解锁窗口（`vault-unlock` 窗口 + `/vault-unlock` 路由） | 已被 [spec-3c 原生对话框](./I9-vault-spec-3c-native-unlock-dialog.md) 取代；方案作废，但"屏幕锁联动"目标仍有效 |
+| 问题 10 的「代码位置」 | `src/tools/password-generator/password-generator.service.ts:2164` | 路径仍有效 |

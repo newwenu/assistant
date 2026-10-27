@@ -176,6 +176,13 @@ impl SyncEngine {
         Ok(())
     }
 
+    pub fn clone_recovery_repo(&self, url: &str) -> Result<(), SyncError> {
+        self.git_sync
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone(url, true)
+    }
+
     pub fn add_remote(&self, remote: &str, url: &str) -> Result<(), SyncError> {
         self.git_sync
             .lock()

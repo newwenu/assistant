@@ -6,7 +6,10 @@ use crate::vision::{input_modalities_for, resolve_support_vision};
 use super::types::AnthropicModelsResponse;
 use super::AnthropicAdapter;
 
-pub(crate) fn list_models(adapter: &AnthropicAdapter, api_key: &str) -> Result<Vec<ModelConfig>, ProviderError> {
+pub(crate) fn list_models(
+    adapter: &AnthropicAdapter,
+    api_key: &str,
+) -> Result<Vec<ModelConfig>, ProviderError> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| ProviderError::RequestFailed(format!("Create runtime: {}", e)))?;
     rt.block_on(async {

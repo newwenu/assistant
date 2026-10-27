@@ -101,6 +101,81 @@ pub struct DisasterRecoveryResult {
     pub integrity_warning: bool,
 }
 
+const EMERGENCY_META_FILE: &str = ".vault-meta";
+
+fn emergency_repo_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
+    Ok(data_dir.join("security").join("recovery"))
+}
+
+fn prepare_emergency_repo(dir: &std::path::Path) -> Result<(), String> {
+    if dir.exists() {
+        std::fs::remove_dir_all(dir)
+            .map_err(|e| format!("Failed to clear emergency repo {}: {}", dir.display(), e))?;
+    }
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("Failed to create emergency repo {}: {}", dir.display(), e))
+}
+
+fn export_from_engine(
+    engine: &SyncEngine,
+    recovery_key: &str,
+    export_path: &str,
+) -> Result<DisasterRecoveryResult, String> {
+    let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
+    let emergency = emergency.ok_or("Recovery key not set in .vault-meta")?;
+
+    let emergency_data = assistant_security::recovery_key::EmergencyData {
+        token: emergency.token,
+        salt: emergency.salt,
+    };
+
+    let (_bootstrap_key, master_key) =
+        assistant_security::recovery_key::decrypt_recovery_keys(recovery_key, &emergency_data)
+            .map_err(|e| {
+                log::warn!("Disaster recovery: decrypt failed: {}", e);
+                e.to_string()
+            })?;
+
+    let mut integrity_warning = false;
+    match engine.verify_vault_meta_integrity(&master_key) {
+        Ok(result) => {
+            if !result.valid {
+                integrity_warning = true;
+                log::warn!("Disaster recovery: HMAC mismatch — {}", result.message);
+            }
+        }
+        Err(e) => {
+            integrity_warning = true;
+            log::warn!("Disaster recovery: integrity check error: {}", e);
+        }
+    }
+
+    let exports = engine.disaster_recovery_export(&master_key).map_err(|e| {
+        log::warn!("Disaster recovery: export failed: {}", e);
+        e.to_string()
+    })?;
+
+    let entry_count = exports.len() as u32;
+    let json = serde_json::to_string_pretty(&exports).map_err(|e| e.to_string())?;
+    std::fs::write(export_path, &json).map_err(|e| e.to_string())?;
+
+    log::info!(
+        "Disaster recovery export: {} entries to {}",
+        entry_count,
+        export_path
+    );
+
+    Ok(DisasterRecoveryResult {
+        file_path: export_path.to_string(),
+        entry_count,
+        integrity_warning,
+    })
+}
+
 #[command]
 pub async fn vault_disaster_recovery_export(
     app: AppHandle,
@@ -109,71 +184,51 @@ pub async fn vault_disaster_recovery_export(
     export_path: String,
 ) -> Result<DisasterRecoveryResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let engine = app.state::<SyncEngine>();
+        let url = git_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
 
-        if let Some(url) = &git_url {
-            engine.clone_repo(url).map_err(|e| {
-                log::warn!("Disaster recovery: clone failed: {}", e);
-                e.to_string()
-            })?;
-        } else {
-            engine.prepare().map_err(|e| {
-                log::warn!("Disaster recovery: prepare failed: {}", e);
-                e.to_string()
-            })?;
-            let _ = engine.pull();
-        }
+        match url {
+            Some(url) => {
+                let repo_dir = emergency_repo_dir(&app)?;
+                prepare_emergency_repo(&repo_dir)?;
+                log::info!(
+                    "Disaster recovery: cloning into emergency repo {}",
+                    repo_dir.display()
+                );
 
-        let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
-        let emergency = emergency.ok_or("Recovery key not set in .vault-meta")?;
+                let engine = SyncEngine::new(
+                    repo_dir.clone(),
+                    assistant_sync::SyncConfig {
+                        remote_url: Some(url.clone()),
+                        ..Default::default()
+                    },
+                );
 
-        let emergency_data = assistant_security::recovery_key::EmergencyData {
-            token: emergency.token,
-            salt: emergency.salt,
-        };
-
-        let (_bootstrap_key, master_key) =
-            assistant_security::recovery_key::decrypt_recovery_keys(&recovery_key, &emergency_data)
-                .map_err(|e| {
-                    log::warn!("Disaster recovery: decrypt failed: {}", e);
-                    e.to_string()
+                engine.clone_recovery_repo(&url).map_err(|e| {
+                    log::warn!("Disaster recovery: clone failed: {}", e);
+                    let _ = std::fs::remove_dir_all(&repo_dir);
+                    format!("Failed to clone vault repository: {}", e)
                 })?;
 
-        let mut integrity_warning = false;
-        match engine.verify_vault_meta_integrity(&master_key) {
-            Ok(result) => {
-                if !result.valid {
-                    integrity_warning = true;
-                    log::warn!("Disaster recovery: HMAC mismatch — {}", result.message);
+                if !repo_dir.join(EMERGENCY_META_FILE).exists() {
+                    let _ = std::fs::remove_dir_all(&repo_dir);
+                    return Err(
+                        "Cloned repository is not a vault repository: .vault-meta missing"
+                            .to_string(),
+                    );
                 }
+
+                export_from_engine(&engine, &recovery_key, &export_path)
             }
-            Err(e) => {
-                integrity_warning = true;
-                log::warn!("Disaster recovery: integrity check error: {}", e);
+            None => {
+                log::info!("Disaster recovery: reading local vault without git operations");
+                let engine = app.state::<SyncEngine>();
+                export_from_engine(&engine, &recovery_key, &export_path)
             }
         }
-
-        let exports = engine.disaster_recovery_export(&master_key).map_err(|e| {
-            log::warn!("Disaster recovery: export failed: {}", e);
-            e.to_string()
-        })?;
-
-        let entry_count = exports.len() as u32;
-
-        let json = serde_json::to_string_pretty(&exports).map_err(|e| e.to_string())?;
-        std::fs::write(&export_path, &json).map_err(|e| e.to_string())?;
-
-        log::info!(
-            "Disaster recovery export: {} entries to {}",
-            entry_count,
-            export_path
-        );
-
-        Ok(DisasterRecoveryResult {
-            file_path: export_path,
-            entry_count,
-            integrity_warning,
-        })
     })
     .await
     .map_err(|e| e.to_string())?

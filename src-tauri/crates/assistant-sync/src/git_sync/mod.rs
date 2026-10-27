@@ -132,6 +132,19 @@ impl GitSync {
             .repo_path
             .to_str()
             .ok_or_else(|| SyncError::Other("Invalid repo path".to_string()))?;
+
+        if self.repo_path.exists() {
+            let mut entries = std::fs::read_dir(&self.repo_path)?;
+            if entries.next().is_some() {
+                return Err(SyncError::Other(format!(
+                    "Clone target is not empty: {}",
+                    self.repo_path.display()
+                )));
+            }
+        } else {
+            std::fs::create_dir_all(&self.repo_path)?;
+        }
+
         git::git_clone(&self.repo_path, url, path, quiet)
     }
 

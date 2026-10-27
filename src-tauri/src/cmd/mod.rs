@@ -56,9 +56,7 @@ pub(crate) fn translate_storage_error(e: assistant_storage::error::StorageError)
 pub(crate) fn translate_agent_error(e: assistant_agent::error::AgentError) -> String {
     use assistant_agent::error::AgentError;
     match e {
-        AgentError::AttachmentsNotAllowed => {
-            assistant_i18n::t("chat.attachments_not_allowed")
-        }
+        AgentError::AttachmentsNotAllowed => assistant_i18n::t("chat.attachments_not_allowed"),
         AgentError::TooManyImages { max } => {
             let max_s = max.to_string();
             let mut args = std::collections::HashMap::new();

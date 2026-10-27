@@ -154,8 +154,7 @@ app_data_dir/
 │   │   恢复方式：复制 .db.bak → security.db → 用主密码解锁
 │   ├── .git/                 ← Git 同步仓库（vault 条目）
 │   ├── .vault-meta           ← 密钥元数据
-│   ├── entries/              ← .enc 加密文件
-│   └── deletions/            ← deleted.json
+│   └── entries/              ← .enc 加密文件
 ```
 
 > **Rust 状态管理**：`SecurityDbState` 持有 `conn: Mutex<Option<Connection>>` + `master_key: Mutex<Option<MasterKey>>`。`None` = 锁定，`Some` = 已解锁。`MasterKey` 实现 `Zeroize` + `Drop` 自动清零，不实现 `Clone`/`Debug`。`rusqlite::Connection` 在 `bundled-sqlcipher` feature 下实现 `Send`，满足 Tauri `State<T>: Send + Sync` 约束。锁定时 `conn` 置 None → 关闭连接 → `security.db` 文件回退为 SQLCipher 密文 → 主库 `assistant.db` 不受影响。
@@ -583,9 +582,9 @@ prs 的同步方案极其简洁优雅——**直接用 Git 作为同步后端**�
 │   ├── a1b2c3d4.enc              ← 单条目加密文件（文件名 = entry_id）
 │   ├── e5f6g7h8.enc
 │   └── ...
-└── deletions/
-    └── deleted.json              ← 已删除条目 ID 列表 + 删除时间
 ```
+
+> 早期设计的 `deletions/deleted.json` 墓碑索引已彻底移除（不写入、不读取）。删除状态由 `vault_entries.deleted_at`（本地）与 Git 自身的删除记录（远端）承载。
 
 #### .vault-meta 文件
 
@@ -721,14 +720,15 @@ sync.finalize("added: GitHub")?;  // → git add . + git commit + git push
 
 #### 4.2.4 软删除与 Git 同步的交互
 
-`vault_entries.deleted_at` 软删除与 `deletions/deleted.json` 的同步规则：
+`vault_entries.deleted_at` 软删除由「本地 DB 墓碑 + Git 自身的删除记录」承载，不再有 `deletions/deleted.json`：
 
 | 事件 | DB 行为 | Git 行为 |
 |------|---------|---------|
-| 删除条目 | `UPDATE vault_entries SET deleted_at = now() WHERE id = ?` | `deleted.json` 追加 `{id, deleted_at}`；.enc 文件**保留**（Git 需要历史） |
-| 拉取时发现远程删除 | `UPDATE vault_entries SET deleted_at = ...` | 从 `deleted.json` 读取 |
-| 拉取时远程有但本地已删除 | 跳过（本地删除优先） | — |
-| 永久清理（用户手动） | `DELETE FROM vault_entries WHERE deleted_at IS NOT NULL` | 删除 .enc 文件 + 从 `deleted.json` 移除 |
+| 删除条目 | `UPDATE vault_entries SET deleted_at = now() WHERE id = ?` | 下次导出时删除对应 `.enc`，`git add -A` 记录删除 |
+| 拉取时发现远程删除 | **不自动改库**；仅在同步结果中上报 `removedIds`，由用户决定是否删除 | 该 `.enc` 已被 Git 移除 |
+| 拉取时远程有但本地已删除 | 跳过导入（本地删除优先） | `.enc` 仍存在，下次 push 时删除 |
+| 恢复条目 | `UPDATE vault_entries SET deleted_at = NULL` | 下次导出重建 `.enc` |
+| 永久清理（用户手动） | `DELETE FROM vault_entries WHERE deleted_at IS NOT NULL` | 对应 `.enc` 已不存在，无额外操作 |
 
 > 软删除条目在前端列表中默认隐藏，可通过"回收站"查看和恢复。
 

@@ -145,7 +145,13 @@ pub(crate) async fn execute_compaction(
     let (cancel_token, attempt_id) = chat_tasks.start(conversation_id.to_string());
 
     let stream = adapter
-        .chat_completion_stream(&api_key, &chat_messages, &model, &options, cancel_token.clone())
+        .chat_completion_stream(
+            &api_key,
+            &chat_messages,
+            &model,
+            &options,
+            cancel_token.clone(),
+        )
         .map_err(|e| e.to_string())?;
 
     let summary_msg_id = Uuid::new_v4().to_string();

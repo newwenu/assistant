@@ -86,10 +86,17 @@ impl BaseProviderAdapter for OpenAIAdapter {
         cancel_token: tokio_util::sync::CancellationToken,
     ) -> Result<ChatStream, ProviderError> {
         match self.config.kind {
-            ProviderKind::OpenAIResponses => {
-                responses_stream::responses_stream(self, api_key, messages, model, options, cancel_token)
+            ProviderKind::OpenAIResponses => responses_stream::responses_stream(
+                self,
+                api_key,
+                messages,
+                model,
+                options,
+                cancel_token,
+            ),
+            _ => {
+                chat::chat_completion_stream(self, api_key, messages, model, options, cancel_token)
             }
-            _ => chat::chat_completion_stream(self, api_key, messages, model, options, cancel_token),
         }
     }
 

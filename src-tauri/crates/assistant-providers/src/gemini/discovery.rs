@@ -6,7 +6,10 @@ use super::request::gemini_base_url;
 use super::types::GeminiModelsResponse;
 use super::GeminiAdapter;
 
-pub(crate) fn list_models(adapter: &GeminiAdapter, api_key: &str) -> Result<Vec<ModelConfig>, ProviderError> {
+pub(crate) fn list_models(
+    adapter: &GeminiAdapter,
+    api_key: &str,
+) -> Result<Vec<ModelConfig>, ProviderError> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| ProviderError::RequestFailed(format!("Create runtime: {}", e)))?;
     rt.block_on(async {

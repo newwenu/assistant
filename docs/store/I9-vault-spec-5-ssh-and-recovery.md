@@ -265,7 +265,7 @@ fn compute_vault_meta_hmac(master_key: &[u8], meta: &VaultMetaContent) -> [u8; 3
 
 | 时机 | 行为 |
 |------|------|
-| Git pull 后 | 验证拉取的 `.vault-meta` 签名 → 失败则拒绝应用变更 + 提示用户 |
+| Git pull 后 | 验证拉取的 `.vault-meta` 签名 → 失败则中止本次同步（不 `import_all`、不写库、不 finalize/push）+ 提示用户；**该校验属于同步流程（`SyncEngine::pull`）职责**，恢复流程只消费结果 |
 | 恢复密钥解锁 | 验证本地 `.vault-meta` 签名 → 失败则警告"元数据可能被篡改" + 允许继续（用户确认） |
 | vault 初始化 | 生成初始 `.vault-meta` + 计算签名 |
 | vault_meta 变更 | 重新计算签名 + 写入 `.vault-meta` |
@@ -294,9 +294,11 @@ fn compute_vault_meta_hmac(master_key: &[u8], meta: &VaultMetaContent) -> [u8; 3
 
 **流程**（`vault_disaster_recovery_export`）：
 
-1. **Git 仓库准备**：
-   - 若提供 `gitUrl` → `clone_repo(url)` 克隆远程仓库
-   - 若未提供 → 使用本地已有仓库（`prepare()` + `pull()`）
+1. **Git 仓库准备**（隔离原则：绝不触碰正式仓库 `<app_data>/security/vault`）：
+   - 若提供 `gitUrl` → 先清空**紧急仓库** `<app_data>/security/recovery`，再用独立的 `SyncEngine::new(emergency_dir, ...)` 克隆到该目录（`clone_recovery_repo`），**不**写入伪造的 `.vault-meta`
+   - 克隆后校验紧急仓库内 `.vault-meta` 存在，缺失即视为"非 vault 仓库"，报错并清理紧急仓库
+   - 克隆失败 → 清理紧急仓库并显式返回错误，**不吞错、不继续导出**
+   - 若未提供 `gitUrl` → 仅以只读方式读取本地正式仓库的 `.vault-meta` 与 `entries/*.enc`，**不执行** `prepare()` / `pull()` / `merge` / `reset`，不改动工作区与配置
 2. **读取 emergency data**：从 `.vault-meta` 读取 `emergency.token` + `emergency.salt`
    - 若不存在 → 返回 `VaultError::RecoveryKeyNotSet`
 3. **恢复密钥解密**：

@@ -85,10 +85,22 @@ impl BaseProviderAdapter for GeminiAdapter {
         cancel_token: tokio_util::sync::CancellationToken,
     ) -> Result<ChatStream, ProviderError> {
         match self.config.kind {
-            ProviderKind::GeminiCodeAssist => {
-                code_assist::code_assist_stream(self, api_key, messages, model, options, cancel_token)
-            }
-            _ => request::chat_completion_stream(self, api_key, messages, model, options, cancel_token),
+            ProviderKind::GeminiCodeAssist => code_assist::code_assist_stream(
+                self,
+                api_key,
+                messages,
+                model,
+                options,
+                cancel_token,
+            ),
+            _ => request::chat_completion_stream(
+                self,
+                api_key,
+                messages,
+                model,
+                options,
+                cancel_token,
+            ),
         }
     }
 

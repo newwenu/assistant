@@ -145,6 +145,17 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                         log::error!("Screen lock triggered vault_lock but failed: {}", e);
                     } else {
                         log::info!("Screen lock triggered vault_lock");
+                        let initialized = state.is_initialized().unwrap_or(false);
+                        if initialized {
+                            let app_for_dialog = app_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Err(e) =
+                                    crate::cmd::vault_show_unlock_window(app_for_dialog).await
+                                {
+                                    log::warn!("Screen lock unlock dialog failed: {}", e);
+                                }
+                            });
+                        }
                     }
                     let _ = emit_broadcast(&app_handle, event_name::VAULT_LOCKED, ());
                 } else {
@@ -156,7 +167,11 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             let app_handle = app_handle.clone();
             move || {
                 log::info!("Screen unlocked");
-                let _ = emit_broadcast(&app_handle, event_name::VAULT_UNLOCKED, ());
+                let state = app_handle.state::<SecurityDbState>();
+                log::info!(
+                    "Screen unlocked, vault locked state: {}",
+                    state.is_locked()
+                );
             }
         };
         monitor.spawn_listener(on_lock, on_unlock);

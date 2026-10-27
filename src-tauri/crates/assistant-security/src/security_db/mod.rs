@@ -264,7 +264,7 @@ impl SecurityDbState {
     }
 
     pub fn cipher_algorithm_from_conf(conf_val: &str) -> CipherAlgorithm {
-        match conf_val {
+        match conf_val.to_ascii_lowercase().as_str() {
             "chacha20poly1305" => CipherAlgorithm::ChaCha20Poly1305,
             _ => CipherAlgorithm::Aes256Gcm,
         }

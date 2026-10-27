@@ -72,7 +72,10 @@ pub fn set_conversation_is_full(
     Ok(())
 }
 
-pub fn is_conversation_full(conn: &Connection, conversation_id: &str) -> Result<bool, StorageError> {
+pub fn is_conversation_full(
+    conn: &Connection,
+    conversation_id: &str,
+) -> Result<bool, StorageError> {
     let result: Option<bool> = conn
         .query_row(
             "SELECT is_full FROM conversations WHERE id = ?1",

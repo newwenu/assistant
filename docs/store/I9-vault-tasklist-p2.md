@@ -12,9 +12,9 @@
 
 **文件**：`src-tauri/crates/assistant-sync/`
 
-- [ ] H1.1 创建 `Cargo.toml`：package 元数据 + 依赖（`serde` / `serde_json` / `tokio` / `base64` / `assistant-security` / `assistant-storage`）
-- [ ] H1.2 创建 `src/lib.rs`：模块声明（git_sync / sync_engine / vault_file / types）
-- [ ] H1.3 workspace `Cargo.toml` members 新增 `"crates/assistant-sync"`，workspace.dependencies 新增 `assistant-sync = { path = "crates/assistant-sync" }`
+- [x] H1.1 创建 `Cargo.toml`：package 元数据 + 依赖（`serde` / `serde_json` / `tokio` / `base64` / `assistant-security` / `assistant-storage`）
+- [x] H1.2 创建 `src/lib.rs`：模块声明（git_sync / sync_engine / vault_file / types）
+- [x] H1.3 workspace `Cargo.toml` members 新增 `"crates/assistant-sync"`，workspace.dependencies 新增 `assistant-sync = { path = "crates/assistant-sync" }`
 
 **依赖**：G4
 
@@ -24,8 +24,8 @@
 
 **文件**：`assistant-sync/src/types/`
 
-- [x] H2.1 `mod.rs`：`Readyness` 枚举（NoSync / RepoState(RepositoryState) / Dirty / Ready）+ `RepositoryState` 枚举（Merge / Rebase / RebaseInteractive / CherryPick / Unknown）+ `SyncResult` struct（pulled / pushed / conflicts / readyness）+ `SyncConfig` struct（remote_url / remote_name）+ `Conflict` struct（entry_id / local_revision / remote_revision）+ `ConflictResolution` 枚举（UseLocal / UseRemote / MergeBoth / Skip）+ `IntegrityResult` struct（valid / message）
-- [ ] H2.2 `SyncConfig` 实现 `Serialize`/`Deserialize`，`remote_url` 为 `Option<String>`（未配置时为 None）
+- [x] H2.1 `mod.rs`：`Readyness` 枚举（NoSync / RepoState(RepositoryState) / Dirty / Ready）+ `RepositoryState` 枚举（Merge / Rebase / RebaseInteractive / CherryPick / Unknown）+ `SyncResult` struct（pulled / pushed / conflicts / readyness / imported / removedIds / integrityWarning）+ `SyncConfig` struct（remote_url / remote_name）+ `Conflict` struct（entry_id / local_revision / remote_revision）+ `ConflictResolution` 枚举（UseLocal / UseRemote / MergeBoth / Skip）+ `IntegrityResult` struct（valid / message）
+- [x] H2.2 `SyncConfig` 实现 `Serialize`/`Deserialize`，`remote_url` 为 `Option<String>`（未配置时为 None）
 - [ ] H2.3 `Readyness` / `RepositoryState` 实现 `Display` trait（错误消息友好显示）
 
 **依赖**：H1
@@ -36,8 +36,8 @@
 
 **文件**：`assistant-sync/src/git_sync/git.rs`
 
-- [ ] H3.1 `git(args, repo_path) → Result<Output>`：`Command::new("git")` + `.args(args)` + `.current_dir(repo_path)` + `.env("GIT_TERMINAL_PROMPT", "0")` + 检查 `output.status.success()` + 失败时返回 `format!("git {} failed: {}", args, stderr)`
-- [ ] H3.2 `git_with_ssh(args, repo_path, ssh_env) → Result<Output>`：额外注入 `GIT_SSH_COMMAND` 环境变量（SSH ControlMaster，Unix only）
+- [x] H3.1 `git(args, repo_path) → Result<Output>`：`Command::new("git")` + `.args(args)` + `.current_dir(repo_path)` + `.env("GIT_TERMINAL_PROMPT", "0")` + 检查 `output.status.success()` + 失败时返回 `format!("git {} failed: {}", args, stderr)`
+- [x] H3.2 `git_with_ssh(args, repo_path, ssh_env) → Result<Output>`：额外注入 `GIT_SSH_COMMAND` 环境变量（SSH ControlMaster，Unix only）
 
 **依赖**：H2
 
@@ -47,16 +47,16 @@
 
 **文件**：`assistant-sync/src/git_sync/mod.rs`
 
-- [ ] H4.1 `GitSync::init(repo_path)` — 若 `.git` 已存在则跳过；`git init` + 空提交（`git commit --allow-empty -m "vault init"`）
-- [ ] H4.2 `GitSync::clone(url, repo_path)` — `git clone url repo_path`，检查退出码
-- [ ] H4.3 `GitSync::prepare(repo_path)` — 若有 remote → `git pull -q`（SSH 连接复用 §H9）
-- [ ] H4.4 `GitSync::finalize(repo_path, msg)` — 若 dirty → `git add .` + `git commit -q -m msg`；若有 remote 且 `need_to_push()` → `git push -q`
-- [ ] H4.5 `GitSync::readyness(repo_path)` — 解析 `git status --porcelain=v2` + `git rev-parse --git-dir` + 检测 merge/rebase/cherry-pick 状态 → 返回 Readyness
-- [ ] H4.6 `GitSync::need_to_push(repo_path)` — 智能推送优化：30s 内 pull 过且本地/远程 hash 相同 → 跳过 push；elapsed 不可得时保守返回 true
-- [ ] H4.7 `GitSync::add_remote(repo_path, name, url)` — `git remote add name url`
-- [ ] H4.8 `GitSync::set_remote(repo_path, name, url)` — `git remote set-url name url`
-- [ ] H4.9 `GitSync::pull(repo_path)` — `git pull -q`
-- [ ] H4.10 `GitSync::push(repo_path)` — `git push -q`
+- [x] H4.1 `GitSync::init(repo_path)` — 若 `.git` 已存在则跳过；`git init` + 空提交（`git commit --allow-empty -m "vault init"`）
+- [x] H4.2 `GitSync::clone(url, repo_path)` — `git clone url repo_path`，检查退出码
+- [x] H4.3 `GitSync::prepare(repo_path)` — 若有 remote → `git pull -q`（SSH 连接复用 §H9）
+- [x] H4.4 `GitSync::finalize(repo_path, msg)` — 若 dirty → `git add .` + `git commit -q -m msg`；若有 remote 且 `need_to_push()` → `git push -q`
+- [x] H4.5 `GitSync::readyness(repo_path)` — 解析 `git status --porcelain=v2` + `git rev-parse --git-dir` + 检测 merge/rebase/cherry-pick 状态 → 返回 Readyness
+- [x] H4.6 `GitSync::need_to_push(repo_path)` — 智能推送优化：30s 内 pull 过且本地/远程 hash 相同 → 跳过 push；elapsed 不可得时保守返回 true
+- [x] H4.7 `GitSync::add_remote(repo_path, name, url)` — `git remote add name url`
+- [x] H4.8 `GitSync::set_remote(repo_path, name, url)` — `git remote set-url name url`
+- [x] H4.9 `GitSync::pull(repo_path)` — `git pull -q`
+- [x] H4.10 `GitSync::push(repo_path)` — `git push -q`
 
 **依赖**：H3
 
@@ -66,13 +66,13 @@
 
 **文件**：`assistant-sync/src/vault_file/`
 
-- [ ] H5.1 `types.rs`：`EncFile` struct（id / category / revision / encrypted_blob）+ `VaultBlob` struct（title / username / url / password / notes / custom_fields / totp_secret / totp_digits / totp_period / tags / is_favorite / created_at / updated_at）+ `VaultMetaFile` struct（version / exported_at / crypto / emergency / integrity）+ `DeletedJson` struct（entries: Vec<DeletedEntry>）+ `DeletedEntry` struct（id / deleted_at）
+- [ ] H5.1 `types.rs`：`EncFile` struct（id / category / revision / encrypted_blob）+ `VaultBlob` struct（title / username / url / password / notes / custom_fields / totp_secret / totp_digits / totp_period / tags / is_favorite / created_at / updated_at）+ `VaultMetaFile` struct（version / exported_at / crypto / emergency / integrity）
 - [ ] H5.2 `mod.rs`：`export_entry(conn, entry_id, master_key, repo_path) → Result<()>` — SQLite 逐字段读取 → 构造 VaultBlob → 整体打包加密 → 写入 `{id}.enc`
 - [ ] H5.3 `mod.rs`：`import_entry(enc_path, master_key, conn) → Result<()>` — 读取 .enc → 解密 VaultBlob → 逐字段写入 SQLite
-- [ ] H5.4 `mod.rs`：`export_all(conn, master_key, repo_path) → Result<u32>` — 遍历所有未删除条目 → 逐条 export_entry → 返回导出数量
-- [ ] H5.5 `mod.rs`：`import_all(repo_path, master_key, conn) → Result<(u32, u32)>` — 遍历 `entries/*.enc` → 逐条 import_entry → 读取 `deletions/deleted.json` → 标记删除 → 返回 (导入数, 删除数)
-- [ ] H5.6 `mod.rs`：`export_vault_meta(conn, master_key, repo_path) → Result<()>` — 从 vault_meta 读取非秘密字段 → 构造 VaultMetaFile → 计算 HMAC 签名 → 写入 `.vault-meta`
-- [ ] H5.7 `mod.rs`：`verify_vault_meta_integrity(master_key, repo_path) → Result<IntegrityResult>` — 读取 `.vault-meta` → 验证 HMAC 签名
+- [ ] H5.4 `mod.rs`：`export_all(conn, master_key, repo_path) → Result<u32>` — 遍历所有未删除条目 → 逐条 export_entry → 随后删除 `deleted_at IS NOT NULL` 条目对应的 `.enc`（让 Git 提交记录承载删除）→ 返回导出数量
+- [ ] H5.5 `mod.rs`：`import_all(repo_path, master_key, conn) → Result<(u32, u32)>` — 记录 pull 前 `entries/*.enc` 文件快照 → 遍历当前文件逐条 import_entry（新增或按 revision/updatedAt 覆盖）→ 文件集合对比得出被移除项，仅作为 `removedIds` 上报 → 返回 (导入数, 上报移除数)；**不读写 `deleted_at`，不擅自改库**；需含防误删护栏（空集合中止 / 冲突状态跳过导入）
+- [ ] H5.6 `mod.rs`：`export_vault_meta(conn, master_key, repo_path) → Result<()>` — 从 vault_meta 读取非秘密字段 → 构造 VaultMetaFile → 计算 HMAC 签名 → 写入 `.vault-meta`；首次初始化必须走此函数，**禁止写入 `integrity: ""` 的空壳 meta**（会导致所有设备 pull 时判定未签名而中止）
+- [ ] H5.7 `mod.rs`：`verify_vault_meta_integrity(master_key, repo_path) → Result<IntegrityResult>` — 读取 `.vault-meta` → 验证 HMAC 签名；**唯一调用点为同步 pull（H6.1）**，恢复流程只消费结果、不另行定义策略；`integrity` 为空/文件缺失视为未签名（`valid = false`）
 
 **依赖**：H4
 
@@ -82,10 +82,10 @@
 
 **文件**：`assistant-sync/src/sync_engine/mod.rs`
 
-- [ ] H6.1 `SyncEngine::pull(repo_path, conn, master_key) → Result<SyncResult>` — `git pull` → `import_all` → 返回 SyncResult
-- [ ] H6.2 `SyncEngine::push(repo_path) → Result<SyncResult>` — `git push` → 返回 SyncResult
-- [ ] H6.3 `SyncEngine::sync_now(repo_path, conn, master_key) → Result<SyncResult>` — `pull` + `push`
-- [ ] H6.4 `SyncEngine::force_push(repo_path) → Result<SyncResult>` — `git push --force`
+- [ ] H6.1 `SyncEngine::pull(repo_path, conn, master_key) → Result<SyncResult>` — `git pull` → **`verify_vault_meta_integrity(master_key)`（同步职责；失败则中止：不 `import_all`、不写库、不 finalize、不 push，返回 `VaultError::VaultMetaIntegrityFailed`）** → `import_all` → 返回 SyncResult
+- [x] H6.2 `SyncEngine::push(repo_path) → Result<SyncResult>` — `git push` → 返回 SyncResult
+- [ ] H6.3 `SyncEngine::sync_now(repo_path, conn, master_key) → Result<SyncResult>` — `pull` + `push`；pull 阶段完整性校验失败则不进入 push
+- [x] H6.4 `SyncEngine::force_push(repo_path) → Result<SyncResult>` — `git push --force`
 
 **依赖**：H5
 
@@ -97,7 +97,7 @@
 
 - [ ] H7.1 修改 `vault_create_entry`：在现有 CRUD 逻辑外层包裹 `sync.prepare()` + DB 事务（含 export_entry）+ `sync.finalize("vault: added {title}")`
 - [ ] H7.2 修改 `vault_update_entry`：同上模式
-- [ ] H7.3 修改 `vault_delete_entry`：软删除 + `deleted.json` 追加 + `sync.finalize("vault: deleted {id}")`
+- [ ] H7.3 修改 `vault_delete_entry`：DB 软删除（`deleted_at = now()`，该列**保留不删**）+ 删除对应 `.enc` 文件 + `sync.finalize("vault: deleted {id}")`
 - [ ] H7.4 修改 `vault_change_master_password`：全量重加密后 `export_all` + `sync.finalize("vault: master password changed")`
 - [ ] H7.5 双写一致性保证：export_entry 失败时 DB 事务回滚（步骤 2-5 在同一事务中）
 
@@ -109,9 +109,12 @@
 
 **文件**：`assistant-sync/src/vault_file/mod.rs`
 
-- [ ] H8.1 `update_deleted_json(repo_path, entry_id, deleted_at) → Result<()>` — 读取 `deletions/deleted.json` → 追加条目 → 写回
-- [ ] H8.2 `apply_remote_deletions(repo_path, conn) → Result<u32>` — 读取 `deletions/deleted.json` → 逐条标记本地 DB `deleted_at` → 返回标记数量
-- [ ] H8.3 `purge_deleted(conn, repo_path) → Result<u32>` — 永久清理：`DELETE FROM vault_entries WHERE deleted_at IS NOT NULL` + 删除 .enc 文件 + 从 deleted.json 移除
+> 前提：DB `vault_entries.deleted_at` 列**保留不删**，schema 不做迁移（`SCHEMA_VERSION` 保持 2）。删除状态由 DB 墓碑 + Git 删除记录承载，`deletions/deleted.json` 设计**已彻底移除**（不写入、不读取、不保留兼容代码）。同步流程**不擅自修改本地数据库**。
+
+- [ ] H8.1 ~~`read_deleted_index(repo_path)`~~ — **不实现**，`deletions/deleted.json` 读写能力已从代码中完全删除
+- [ ] H8.2 ~~`collect_legacy_deletions(repo_path)`~~ — **不实现**，不做旧仓库兼容解析
+- [ ] H8.3 `purge_deleted(conn, repo_path) → Result<u32>` — 永久清理（仅用户手动触发）：`DELETE FROM vault_entries WHERE deleted_at IS NOT NULL` + 确保对应 `.enc` 已不存在
+- [ ] H8.4 ~~`update_deleted_json`~~ — **不实现**，删除传播改由 §H5.4 / §H5.5 的文件集合对比完成
 
 **依赖**：H5
 
@@ -121,9 +124,9 @@
 
 **文件**：`assistant-sync/src/git_sync/ssh.rs`
 
-- [ ] H9.1 `build_ssh_command() → String`：构造 `GIT_SSH_COMMAND` 值（`ssh -o 'ControlMaster auto' -o 'ControlPath /tmp/.assistant-vault--%r@%h:%p' -o 'ControlPersist 1h' -o 'ConnectTimeout 10'`）
-- [ ] H9.2 `should_use_control_master(url) → bool`：白名单判断（`github.com` / `gitlab.com`），进程级缓存（`LazyLock<Mutex<HashMap<PathBuf, bool>>>`）
-- [ ] H9.3 `#[cfg(unix)]` 条件编译：Windows 上跳过，仅 Unix 生效
+- [x] H9.1 `build_ssh_command() → String`：构造 `GIT_SSH_COMMAND` 值（`ssh -o 'ControlMaster auto' -o 'ControlPath /tmp/.assistant-vault--%r@%h:%p' -o 'ControlPersist 1h' -o 'ConnectTimeout 10'`）
+- [x] H9.2 `should_use_control_master(url) → bool`：白名单判断（`github.com` / `gitlab.com`），进程级缓存（`LazyLock<Mutex<HashMap<PathBuf, bool>>>`）
+- [x] H9.3 `#[cfg(unix)]` 条件编译：Windows 上跳过，仅 Unix 生效
 
 **依赖**：H3
 
@@ -155,7 +158,7 @@
 - [ ] H11.8 `vault_git_clone(url) → void` — 调用 GitSync::clone
 - [ ] H11.9 `vault_git_add_remote(name, url) → void` — 调用 GitSync::add_remote
 - [ ] H11.10 `vault_git_set_remote(name, url) → void` — 调用 GitSync::set_remote
-- [ ] H11.11 `vault_git_readyness() → Readyness` — 调用 GitSync::readyness
+- [x] H11.11 `vault_git_readyness() → Readyness` — 调用 GitSync::readyness
 - [ ] H11.12 `vault_git_pull() → void` — 调用 GitSync::pull
 - [ ] H11.13 `vault_git_push() → void` — 调用 GitSync::push
 
@@ -168,7 +171,7 @@
 **文件**：`src-tauri/src/lib.rs` + `src-tauri/src/setup.rs`
 
 - [ ] H12.1 `setup.rs` 新增 `GitSync` + `SyncEngine` State 管理
-- [ ] H12.2 `lib.rs` invoke_handler 新增所有 `cmd::vault_sync_*` + `cmd::vault_git_*` 条目
+- [x] H12.2 `lib.rs` invoke_handler 新增所有 `cmd::vault_sync_*` + `cmd::vault_git_*` 条目
 
 **依赖**：H11
 
@@ -193,7 +196,7 @@
 - [x] H14.1 远程仓库 URL 输入（已移除自动同步间隔选择）
 - [ ] H14.2 状态指示：就绪/同步中/冲突/错误 + 上次同步时间
 - [ ] H14.3 操作按钮：初始化仓库 / 克隆仓库 / 立即同步 / 强制推送
-- [ ] H14.4 VaultSettings.tsx 集成：新增"同步"标签页
+- [x] H14.4 `VaultSettings.tsx` 集成：新增"同步"标签页
 
 **依赖**：H13
 
@@ -217,8 +220,8 @@
 **文件**：`src/tools/password-vault/VaultList.tsx`
 
 - [ ] H16.1 底部状态栏新增同步状态：条目数 · 上次同步时间 · 泄露数
-- [ ] H16.2 新增同步按钮（`↻`），点击调用 `syncNow()`
-- [ ] H16.3 `syncStatus === "syncing"` 时按钮旋转动画
+- [x] H16.2 新增同步按钮（`↻`），点击调用 `syncNow()`
+- [x] H16.3 `syncStatus === "syncing"` 时按钮旋转动画
 
 **依赖**：H13
 
@@ -228,7 +231,7 @@
 
 **文件**：`src/tools/password-vault/vault.service.ts`
 
-- [ ] H17.1 新增 invoke 封装：`syncPull` / `syncPush` / `syncNow` / `syncForcePush` / `getSyncConfig` / `setSyncConfig` / `resolveConflict` / `gitInit` / `gitClone` / `gitAddRemote` / `gitSetRemote` / `gitReadyness` / `gitPull` / `gitPush`
+- [x] H17.1 新增 invoke 封装：`syncPull` / `syncPush` / `syncNow` / `syncForcePush` / `getSyncConfig` / `setSyncConfig` / `resolveConflict` / `gitInit` / `gitClone` / `gitAddRemote` / `gitSetRemote` / `gitReadyness` / `gitPull` / `gitPush`
 
 **依赖**：H12
 
@@ -240,7 +243,7 @@
 
 - [x] ~~H18.1 Rust `AppConf` struct 新增 `vault_auto_sync_interval_minutes: u32`~~：已移除，不再需要自动同步间隔字段
 - [x] ~~H18.2 前端 `AppConf` interface 新增 `vaultAutoSyncIntervalMinutes: number`~~：已移除
-- [ ] H18.3 `AppConfDto` + `From<AppConf>` impl 同步更新
+- [x] H18.3 `AppConfDto` + `From<AppConf>` impl 同步更新
 - [ ] H18.4 `zh-CN.json` + `en-US.json` 新增同步相关约 30 词条
 
 **依赖**：H12
@@ -258,7 +261,7 @@
 - [ ] H19.7 need_to_push 智能优化：30s 内 pull 过且 hash 相同 → 返回 false
 - [ ] H19.8 vault_file export → import 往返一致（逐字段加密 → 整体打包 → 解密 → 逐字段还原）
 - [ ] H19.9 双写一致性：export_entry 失败时 DB 事务回滚
-- [ ] H19.10 软删除：deleted.json 追加 + pull 时标记本地删除
+- [ ] H19.10 软删除：本地删除 → DB `deleted_at` 标记 + `.enc` 移除；pull 时被移除文件仅上报 `removedIds`，不自动改库
 - [ ] H19.11 冲突检测：Readyness::RepoState(Merge) 正确识别
 - [ ] H19.12 冲突解决：UseLocal / UseRemote / MergeBoth 各选项行为正确
 - [ ] H19.13 .vault-meta HMAC 签名验证：篡改后验证失败
@@ -268,6 +271,7 @@
 - [ ] H19.17 前端同步状态正确显示（idle/syncing/conflict/error）
 - [x] ~~H19.18 自动同步计时器生效（间隔可配置）~~：已移除定时轮询机制
 - [ ] H19.19 设置项四处同步：Rust AppConf + 前端 AppConf + AppConfDto + From<AppConf>
+- [ ] H19.20 pull 完整性闸门：签名篡改 / `integrity` 为空时 `pull` 中止，且未执行任何 DB 写入
 
 **依赖**：H14, H15, H16, H17, H18
 
@@ -279,10 +283,10 @@
 
 **文件**：`assistant-security/src/ssh_agent/`
 
-- [ ] I1.1 `mod.rs`：`SshAgentBridge` trait（add_key / remove_key / list_keys / is_agent_running）+ `SshKeyInfo` struct（fingerprint / key_type / comment / bits）+ 工厂函数 `create_agent_bridge() → Box<dyn SshAgentBridge>`
-- [ ] I1.2 `unix.rs`：Unix socket 通信（`SSH_AUTH_SOCK`）+ `ssh-add` 命令封装
-- [ ] I1.3 `windows.rs`：Pageant 通信（命名管道兼容层）+ `ssh-add` 命令封装（Git for Windows 自带）
-- [ ] I1.4 `Cargo.toml` 条件编译依赖（无额外 crate，使用 `std::process::Command` 调用 `ssh-add`）
+- [x] I1.1 `mod.rs`：`SshAgentBridge` trait（add_key / remove_key / list_keys / is_agent_running）+ `SshKeyInfo` struct（fingerprint / key_type / comment / bits）+ 工厂函数 `create_agent_bridge() → Box<dyn SshAgentBridge>`
+- [x] I1.2 `unix.rs`：Unix socket 通信（`SSH_AUTH_SOCK`）+ `ssh-add` 命令封装
+- [x] I1.3 `windows.rs`：Pageant 通信（命名管道兼容层）+ `ssh-add` 命令封装（Git for Windows 自带）
+- [x] I1.4 `Cargo.toml` 条件编译依赖（无额外 crate，使用 `std::process::Command` 调用 `ssh-add`）
 
 **依赖**：H19
 
@@ -293,8 +297,8 @@
 **文件**：`src-tauri/src/cmd/vault.rs` + `src-tauri/src/setup.rs`
 
 - [ ] I2.1 `SshAgentState` struct：`added_fingerprints: Mutex<HashSet<String>>`（追踪由 vault 添加的密钥）+ `bridge: Box<dyn SshAgentBridge>`
-- [ ] I2.2 vault 解锁时：若 `vaultSshAutoAdd = true` → 遍历 `category = "ssh"` 条目 → 逐条 add_to_agent → 追踪 fingerprint
-- [ ] I2.3 vault 锁定时：遍历 `added_fingerprints` → 逐条 remove_from_agent → 清空 set
+- [x] I2.2 vault 解锁时：若 `vaultSshAutoAdd = true` → 遍历 `category = "ssh"` 条目 → 逐条 add_to_agent → 追踪 fingerprint
+- [x] I2.3 vault 锁定时：遍历 `added_fingerprints` → 逐条 remove_from_agent → 清空 set
 - [ ] I2.4 添加 SSH 条目时：若 vault 已解锁且 Agent 运行 → 自动添加
 - [ ] I2.5 删除 SSH 条目时：从 Agent 移除对应密钥
 
@@ -306,9 +310,9 @@
 
 **文件**：`assistant-security/src/ssh_agent/validate.rs`
 
-- [ ] I3.1 `validate_private_key(key_data: &[u8]) → Result<SshKeyMeta>` — 校验格式（OpenSSH / PEM / PuTTY .ppk）+ 提取元数据（key_type / bits / fingerprint / comment）
-- [ ] I3.2 `SshKeyMeta` struct：key_type / bits / fingerprint / comment / public_key
-- [ ] I3.3 `VaultError` 新增 `InvalidKeyFormat(String)` 变体
+- [x] I3.1 `validate_private_key(key_data: &[u8]) → Result<SshKeyMeta>` — 校验格式（OpenSSH / PEM / PuTTY .ppk）+ 提取元数据（key_type / bits / fingerprint / comment）
+- [x] I3.2 `SshKeyMeta` struct：key_type / bits / fingerprint / comment / public_key
+- [x] I3.3 `VaultError` 新增 `InvalidKeyFormat(String)` 变体
 
 **依赖**：I1
 
@@ -318,10 +322,10 @@
 
 **文件**：`src-tauri/src/cmd/vault.rs`
 
-- [ ] I4.1 `vault_ssh_add_to_agent(entry_id) → void` — 解密 SSH 私钥 → validate → add_to_agent → zeroize 明文 → 追踪 fingerprint
-- [ ] I4.2 `vault_ssh_remove_from_agent(entry_id) → void` — 从 Agent 移除 + 从 added_fingerprints 移除
-- [ ] I4.3 `vault_ssh_list_agent() → Vec<SshKeyInfo>` — 列出 Agent 中所有密钥（含 vault 添加标记）
-- [ ] I4.4 `vault_ssh_auto_add_all() → u32` — 自动添加所有 SSH 条目
+- [x] I4.1 `vault_ssh_add_to_agent(entry_id) → void` — 解密 SSH 私钥 → validate → add_to_agent → zeroize 明文 → 追踪 fingerprint
+- [x] I4.2 `vault_ssh_remove_from_agent(entry_id) → void` — 从 Agent 移除 + 从 added_fingerprints 移除
+- [x] I4.3 `vault_ssh_list_agent() → Vec<SshKeyInfo>` — 列出 Agent 中所有密钥（含 vault 添加标记）
+- [x] I4.4 `vault_ssh_auto_add_all() → u32` — 自动添加所有 SSH 条目
 
 **依赖**：I2, I3
 
@@ -334,7 +338,7 @@
 - [ ] I5.1 vaultStore 新增：`sshAgentKeys: SshKeyInfo[]` / `sshAutoAddEnabled: boolean` + actions：`addSshToAgent` / `removeSshFromAgent` / `loadSshAgentKeys`
 - [ ] I5.2 VaultEntryDetail 扩展：`category === "ssh"` 时显示密钥类型 + 位数 + 指纹 + 公钥 + [添加到 Agent] / [从 Agent 移除] 按钮
 - [ ] I5.3 VaultSettings 扩展：SSH Agent 设置区（自动添加开关 + Agent 状态 + 密钥列表）
-- [ ] I5.4 vault.service.ts 新增：`sshAddToAgent` / `sshRemoveFromAgent` / `sshListAgent` / `sshAutoAddAll`
+- [x] I5.4 vault.service.ts 新增：`sshAddToAgent` / `sshRemoveFromAgent` / `sshListAgent` / `sshAutoAddAll`
 
 **依赖**：I4
 
@@ -344,9 +348,9 @@
 
 **文件**：`src-tauri/crates/assistant-config/src/app_conf.rs` + `src-tauri/crates/assistant-i18n/locales/`
 
-- [ ] I6.1 Rust `AppConf` struct 新增 `vault_ssh_auto_add: bool` + `#[serde(default)]`
-- [ ] I6.2 前端 `AppConf` interface 新增 `vaultSshAutoAdd: boolean`
-- [ ] I6.3 `AppConfDto` + `From<AppConf>` impl 同步更新
+- [x] I6.1 Rust `AppConf` struct 新增 `vault_ssh_auto_add: bool` + `#[serde(default)]`
+- [x] I6.2 前端 `AppConf` interface 新增 `vaultSshAutoAdd: boolean`
+- [x] I6.3 `AppConfDto` + `From<AppConf>` impl 同步更新
 - [ ] I6.4 `zh-CN.json` + `en-US.json` 新增 SSH Agent 相关约 15 词条
 
 **依赖**：I4
@@ -377,10 +381,10 @@
 
 **文件**：`assistant-security/src/recovery_key/`
 
-- [ ] J1.1 `mod.rs`：`generate_recovery_key(master_key) → (String, EmergencyData)` — 20 字节随机 → Base32 编码 → 插入分隔符 → Argon2id 派生 → AES-256-GCM 加密 master_key → 构造 EmergencyData → zeroize 中间变量
-- [ ] J1.2 `EmergencyData` struct：token（base64 编码的 nonce‖encrypted_master_key‖tag）+ salt（Argon2id salt）
-- [ ] J1.3 `format_recovery_key(raw: &[u8]) → String` — Base32 编码 + XXXXX-XXXXX-XXXXX-XXXXX 分隔
-- [ ] J1.4 `parse_recovery_key(formatted: &str) → Result<Vec<u8>>` — 移除分隔符 + Base32 解码 + 长度校验
+- [x] J1.1 `mod.rs`：`generate_recovery_key(master_key) → (String, EmergencyData)` — 20 字节随机 → Base32 编码 → 插入分隔符 → Argon2id 派生 → AES-256-GCM 加密 master_key → 构造 EmergencyData → zeroize 中间变量
+- [x] J1.2 `EmergencyData` struct：token（base64 编码的 nonce‖encrypted_master_key‖tag）+ salt（Argon2id salt）
+- [x] J1.3 `format_recovery_key(raw: &[u8]) → String` — Base32 编码 + XXXXX-XXXXX-XXXXX-XXXXX 分隔
+- [x] J1.4 `parse_recovery_key(formatted: &str) → Result<Vec<u8>>` — 移除分隔符 + Base32 解码 + 长度校验
 
 **依赖**：I7
 
@@ -390,9 +394,9 @@
 
 **文件**：`assistant-security/src/recovery_key/`
 
-- [ ] J2.1 `unlock_with_recovery_key(recovery_key, emergency_data, db_path) → Result<SecurityDbState>` — parse → Argon2id 派生 → AES-256-GCM 解密 master_key → 派生 sqlcipher_key → 打开 security.db → 存入 SecurityDbState → zeroize 中间变量
-- [ ] J2.2 解密失败返回 `VaultError::InvalidRecoveryKey`
-- [ ] J2.3 `VaultError` 新增 `InvalidRecoveryKey` / `RecoveryKeyNotSet` 变体
+- [x] J2.1 `unlock_with_recovery_key(recovery_key, emergency_data, db_path) → Result<SecurityDbState>` — parse → Argon2id 派生 → AES-256-GCM 解密 master_key → 派生 sqlcipher_key → 打开 security.db → 存入 SecurityDbState → zeroize 中间变量
+- [x] J2.2 解密失败返回 `VaultError::InvalidRecoveryKey`
+- [x] J2.3 `VaultError` 新增 `InvalidRecoveryKey` / `RecoveryKeyNotSet` 变体
 
 **依赖**：J1
 
@@ -402,10 +406,10 @@
 
 **文件**：`assistant-sync/src/vault_file/mod.rs`
 
-- [ ] J3.1 `compute_vault_meta_hmac(master_key, meta_content) → [u8; 32]` — HMAC-SHA256(master_key, 序列化后的 meta 内容)
-- [ ] J3.2 `export_vault_meta` 更新：写入前计算 HMAC 签名 → 存入 integrity 字段
-- [ ] J3.3 Git pull 后验证：拉取 `.vault-meta` → 验证签名 → 失败则拒绝应用变更 + 返回 `VaultError::VaultMetaIntegrityFailed`
-- [ ] J3.4 恢复密钥解锁时验证：签名失败 → 警告"元数据可能被篡改" + 允许继续（用户确认）
+- [x] J3.1 `compute_vault_meta_hmac(master_key, meta_content) → [u8; 32]` — HMAC-SHA256(master_key, 序列化后的 meta 内容)
+- [x] J3.2 `export_vault_meta` 更新：写入前计算 HMAC 签名 → 存入 integrity 字段
+- [ ] J3.3 ~~Git pull 后验证~~ — **已归入同步职责**：实现位置为 H6.1（`pull` 内调用 H5.7 `verify_vault_meta_integrity`），J 侧不再单独实现
+- [ ] J3.4 恢复密钥解锁时验证：签名失败 → 警告"元数据可能被篡改" + 允许继续（用户确认）；复用 H5.7 校验函数，仅告警不阻断（本机库已存在，风险限于元数据展示）
 
 **依赖**：H5, J2
 
@@ -415,10 +419,10 @@
 
 **文件**：`src-tauri/src/cmd/vault.rs`
 
-- [ ] J4.1 `vault_generate_recovery_key() → String` — 生成恢复密钥 + 存入 .vault-meta emergency 字段 + 重新计算 HMAC 签名 + 审计日志（recovery_key_generated）+ **仅返回一次**
-- [ ] J4.2 `vault_unlock_with_recovery_key(recovery_key) → bool` — 恢复密钥解锁 + 审计日志（VaultUnlock("recovery_key")）+ master_key 不经 IPC
-- [ ] J4.3 `vault_has_recovery_key() → bool` — 检查 .vault-meta emergency 字段是否存在
-- [ ] J4.4 `vault_verify_vault_meta_integrity() → IntegrityResult` — 验证 .vault-meta HMAC 签名
+- [x] J4.1 `vault_generate_recovery_key() → String` — 生成恢复密钥 + 存入 .vault-meta emergency 字段 + 重新计算 HMAC 签名 + 审计日志（recovery_key_generated）+ **仅返回一次**
+- [x] J4.2 `vault_unlock_with_recovery_key(recovery_key) → bool` — 恢复密钥解锁 + 审计日志（VaultUnlock("recovery_key")）+ master_key 不经 IPC
+- [x] J4.3 `vault_has_recovery_key() → bool` — 检查 .vault-meta emergency 字段是否存在
+- [x] J4.4 `vault_verify_vault_meta_integrity() → IntegrityResult` — 验证 .vault-meta HMAC 签名
 
 **依赖**：J3
 
@@ -426,10 +430,9 @@
 
 ### J5. 灾难恢复流程
 
-**文件**：`assistant-sync/src/sync_engine/mod.rs`
-
-- [ ] J5.1 `disaster_recovery(git_url, recovery_key, db_path) → Result<()>` — clone Git 仓库 → 恢复密钥解锁 → 验证 .vault-meta 完整性 → import_all → 完成
-  - ⚠️ **缺陷 #11**：4 个关键缺失导致灾难恢复完全不可用（详见 I9-vault-issues.md #11）
+**文件**：`src-tauri/src/cmd/vault/recovery.rs`（命令与紧急仓库隔离）、`assistant-sync/src/sync_engine/mod.rs`（`clone_recovery_repo`）、`assistant-sync/src/git_sync/mod.rs`（clone 目标校验） — clone Git 仓库 → 恢复密钥解锁 → 验证 .vault-meta 完整性（复用 H5.7，失败标记 `integrityWarning` 但不阻断导出）→ import_all → 完成
+  - ✅ 已完成：**紧急仓库隔离** — 克隆目标改为 `<app_data>/security/recovery`，不再复用全局 `SyncEngine`（正式仓库 `<app_data>/security/vault`）；克隆前清空紧急仓库，克隆后校验 `.vault-meta` 存在，失败即清理并显式返回错误；`GitSync::clone` 拒绝非空目标目录；移除 `let _ = engine.pull()` 静默吞错；无 `gitUrl` 时只读本地仓库，不再 `prepare()` / `pull()`
+  - 未完成：导出仍依赖 `entries/*.enc`，而 H5.4 `export_all` 零调用 → 导出恒为 0 条
   - ⚠️ **缺陷 #12**：`.vault-meta` 缺少 `masterKeySalt` / `argon2Params` 字段，无法重建 security.db
   - ⚠️ **缺陷 #13**：`EmergencyDataFile` 仅存 `token+salt`，缺少 `encrypted_bootstrap` / `master_key_hash` / `master_key_salt`
 - [ ] J5.2 前端 VaultUnlock：新设备"灾难恢复"入口 → 输入 Git URL + 恢复密钥 → 调用 disaster_recovery
@@ -447,7 +450,7 @@
 - [ ] J6.2 VaultUnlock 扩展：恢复密钥解锁入口（输入框 + 解锁按钮）
 - [ ] J6.3 VaultSettings 扩展：恢复密钥设置区（生成按钮 + 轮换按钮 + 状态显示）
 - [ ] J6.4 恢复密钥显示弹窗：密钥明文 + 复制按钮 + "我已安全保存"按钮 + 安全提示
-- [ ] J6.5 vault.service.ts 新增：`generateRecoveryKey` / `unlockWithRecoveryKey` / `hasRecoveryKey` / `verifyVaultMetaIntegrity`
+- [x] J6.5 vault.service.ts 新增：`generateRecoveryKey` / `unlockWithRecoveryKey` / `hasRecoveryKey` / `verifyVaultMetaIntegrity`
 
 **依赖**：J4
 
@@ -473,7 +476,7 @@
 - [ ] J8.6 恢复密钥解锁后 master_key 不经 IPC（代码审查）
 - [ ] J8.7 .vault-meta HMAC 签名验证：正常时 valid=true，篡改后 valid=false
 - [ ] J8.8 .vault-meta 不含 master_key_hash（代码审查）
-- [ ] J8.9 Git pull 后 .vault-meta 签名验证：篡改拒绝应用变更
+- [ ] J8.9 Git pull 后 .vault-meta 签名验证（同步职责，见 H6.1）：篡改时中止同步且不写库
 - [ ] J8.10 灾难恢复流程：新设备 clone + 恢复密钥解锁 → 全部条目可访问
 - [ ] J8.11 恢复密钥轮换：旧密钥失效，新密钥可解锁
 - [ ] J8.12 审计日志：recovery_key_generated / VaultUnlock("recovery_key") 正确写入

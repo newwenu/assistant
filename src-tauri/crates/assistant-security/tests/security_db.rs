@@ -126,3 +126,25 @@ fn backup_creates_file() {
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(&backup_path);
 }
+
+#[test]
+fn cipher_algorithm_from_conf_is_case_insensitive() {
+    use assistant_security::vault_crypto::types::CipherAlgorithm;
+
+    assert_eq!(
+        SecurityDbState::cipher_algorithm_from_conf("chacha20Poly1305"),
+        CipherAlgorithm::ChaCha20Poly1305
+    );
+    assert_eq!(
+        SecurityDbState::cipher_algorithm_from_conf("CHACHA20POLY1305"),
+        CipherAlgorithm::ChaCha20Poly1305
+    );
+    assert_eq!(
+        SecurityDbState::cipher_algorithm_from_conf("aes256Gcm"),
+        CipherAlgorithm::Aes256Gcm
+    );
+    assert_eq!(
+        SecurityDbState::cipher_algorithm_from_conf(""),
+        CipherAlgorithm::Aes256Gcm
+    );
+}

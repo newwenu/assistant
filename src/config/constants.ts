@@ -1,7 +1,6 @@
 export const WINDOW_MAIN = "main";
 export const WINDOW_ORB = "orb";
 export const WINDOW_SETTINGS = "settings";
-export const WINDOW_VAULT_UNLOCK = "vault-unlock";
 
 export const ORB_COLLAPSED_SIZE = 84;
 export const ORB_EXPANDED_WIDTH = 420;

@@ -11,17 +11,12 @@ use sha2::Sha256;
 use assistant_security::vault_crypto::types::MasterKey;
 use assistant_security::vault_crypto::VaultCrypto;
 
-use crate::types::{DeletedEntry, DeletedIndex, SyncError, VaultMeta};
-use types::{
-    DecryptedEntryBlob, DeletedEntryRecord, DeletedIndexFile, EmergencyDataFile,
-    EncryptedEntryBlob, VaultMetaFile,
-};
+use crate::types::{SyncError, VaultMeta};
+use types::{DecryptedEntryBlob, EmergencyDataFile, EncryptedEntryBlob, VaultMetaFile};
 
 type HmacSha256 = Hmac<Sha256>;
 
 const ENTRIES_DIR: &str = "entries";
-const DELETIONS_DIR: &str = "deletions";
-const DELETED_JSON: &str = "deleted.json";
 const VAULT_META_FILE: &str = ".vault-meta";
 
 pub struct VaultFileManager {
@@ -39,7 +34,6 @@ impl VaultFileManager {
 
     pub fn ensure_structure(&self) -> Result<(), SyncError> {
         fs::create_dir_all(self.vault_dir.join(ENTRIES_DIR))?;
-        fs::create_dir_all(self.vault_dir.join(DELETIONS_DIR))?;
         Ok(())
     }
 
@@ -333,61 +327,6 @@ impl VaultFileManager {
             serde_json::to_string_pretty(&meta).map_err(|e| SyncError::Other(e.to_string()))?;
         fs::write(&path, json)?;
         Ok(())
-    }
-
-    pub fn write_deleted_index(&self, deleted: &DeletedIndex) -> Result<(), SyncError> {
-        let file = DeletedIndexFile {
-            entries: deleted
-                .entries
-                .iter()
-                .map(|d| DeletedEntryRecord {
-                    id: d.id.clone(),
-                    deleted_at: d.deleted_at,
-                })
-                .collect(),
-        };
-
-        let json =
-            serde_json::to_string_pretty(&file).map_err(|e| SyncError::Other(e.to_string()))?;
-        fs::write(self.vault_dir.join(DELETIONS_DIR).join(DELETED_JSON), json)?;
-        Ok(())
-    }
-
-    pub fn read_deleted_index(&self) -> Result<DeletedIndex, SyncError> {
-        let path = self.vault_dir.join(DELETIONS_DIR).join(DELETED_JSON);
-        if !path.exists() {
-            return Ok(DeletedIndex::default());
-        }
-
-        let content = fs::read_to_string(&path)?;
-        let file: DeletedIndexFile =
-            serde_json::from_str(&content).map_err(|e| SyncError::Other(e.to_string()))?;
-
-        Ok(DeletedIndex {
-            entries: file
-                .entries
-                .into_iter()
-                .map(|d| DeletedEntry {
-                    id: d.id,
-                    deleted_at: d.deleted_at,
-                })
-                .collect(),
-        })
-    }
-
-    pub fn add_deleted_entry(&self, id: &str, deleted_at: i64) -> Result<(), SyncError> {
-        let mut index = self.read_deleted_index()?;
-        index.entries.push(DeletedEntry {
-            id: id.to_string(),
-            deleted_at,
-        });
-        self.write_deleted_index(&index)
-    }
-
-    pub fn remove_deleted_entry(&self, id: &str) -> Result<(), SyncError> {
-        let mut index = self.read_deleted_index()?;
-        index.entries.retain(|e| e.id != id);
-        self.write_deleted_index(&index)
     }
 }
 
