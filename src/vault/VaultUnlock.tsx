@@ -50,6 +50,8 @@ export default function VaultUnlock() {
     setDrGitUrl,
     drRecoveryKey,
     setDrRecoveryKey,
+    drCommit,
+    setDrCommit,
   } = useVaultUnlock();
 
   useEffect(() => {
@@ -98,7 +100,12 @@ export default function VaultUnlock() {
         filters: [{ name: "JSON", extensions: ["json"] }],
       });
       if (!filePath) return;
-      await disasterRecoveryExport(drGitUrl || null, drRecoveryKey, filePath);
+      await disasterRecoveryExport(
+        drGitUrl || null,
+        drRecoveryKey,
+        filePath,
+        drCommit.trim() || null,
+      );
     }
   };
 
@@ -113,6 +120,8 @@ export default function VaultUnlock() {
         onDrGitUrlChange={setDrGitUrl}
         drRecoveryKey={drRecoveryKey}
         onDrRecoveryKeyChange={setDrRecoveryKey}
+        drCommit={drCommit}
+        onDrCommitChange={setDrCommit}
         onNext={handleDisasterRecoveryNext}
         onCancel={cancelDisasterRecovery}
         onSetStep={setDisasterRecoveryStep}

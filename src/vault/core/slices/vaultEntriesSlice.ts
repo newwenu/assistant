@@ -16,6 +16,7 @@ export interface VaultEntriesSlice {
   searchQuery: string;
   categoryFilter: VaultCategory | null;
   tagFilter: string | null;
+  deletedEntries: VaultEntrySummary[];
 
   loadEntries: () => Promise<void>;
   selectEntry: (id: string) => Promise<void>;
@@ -23,6 +24,9 @@ export interface VaultEntriesSlice {
   createEntry: (entry: VaultEntryCreate) => Promise<string>;
   updateEntry: (id: string, entry: VaultEntryUpdate) => Promise<void>;
   deleteEntry: (id: string) => Promise<void>;
+  loadDeletedEntries: () => Promise<void>;
+  restoreEntry: (id: string) => Promise<void>;
+  purgeDeleted: () => Promise<number>;
   setSearchQuery: (query: string) => void;
   setCategoryFilter: (category: VaultCategory | null) => void;
   setTagFilter: (tag: string | null) => void;
@@ -45,6 +49,7 @@ export function createEntriesSlice(
     searchQuery: "",
     categoryFilter: null,
     tagFilter: null,
+    deletedEntries: [],
 
     loadEntries: async () => {
       set({ loading: true, error: null });
@@ -115,6 +120,38 @@ export function createEntriesSlice(
       } catch (e) {
         log.error("deleteEntry failed", e);
         set({ error: String(e), loading: false });
+      }
+    },
+
+    loadDeletedEntries: async () => {
+      try {
+        const deletedEntries = await vaultService.listDeletedEntries();
+        set({ deletedEntries });
+      } catch (e) {
+        log.error("loadDeletedEntries failed", e);
+        set({ error: String(e) });
+      }
+    },
+
+    restoreEntry: async (id) => {
+      try {
+        await vaultService.restoreEntry(id);
+        await Promise.all([get().loadEntries(), get().loadDeletedEntries()]);
+      } catch (e) {
+        log.error("restoreEntry failed", e);
+        set({ error: String(e) });
+      }
+    },
+
+    purgeDeleted: async () => {
+      try {
+        const purged = await vaultService.purgeDeleted();
+        await get().loadDeletedEntries();
+        return purged;
+      } catch (e) {
+        log.error("purgeDeleted failed", e);
+        set({ error: String(e) });
+        return 0;
       }
     },
 

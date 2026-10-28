@@ -239,9 +239,6 @@ impl SecurityDbState {
 
         drop(conn_guard);
 
-        let key_store = crate::biometric::create_key_store();
-        let _ = self.disenroll_biometric(key_store.as_ref());
-
         Ok(())
     }
 }

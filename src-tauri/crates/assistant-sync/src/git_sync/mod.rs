@@ -4,7 +4,7 @@ pub mod ssh;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::types::{Readyness, RepositoryState, SyncConfig, SyncError};
+use crate::types::{ConflictFile, Readyness, RepositoryState, SyncConfig, SyncError};
 
 pub const STORE_GIT_DIR: &str = ".git/";
 pub const GIT_PULL_OUTDATED: Duration = Duration::from_secs(30);
@@ -181,6 +181,15 @@ impl GitSync {
         self.add_remote_url(remote, url)
     }
 
+    pub fn remove_remote(&self, remote: &str) -> Result<(), SyncError> {
+        git::git_remote_remove(&self.repo_path, remote)
+    }
+
+    pub fn ls_remote(&self, url: &str) -> Result<usize, SyncError> {
+        let out = git::git_ls_remote(&self.repo_path, url)?;
+        Ok(out.lines().filter(|l| !l.trim().is_empty()).count())
+    }
+
     pub fn has_remote(&self) -> Result<bool, SyncError> {
         if !self.is_init() {
             return Ok(false);
@@ -216,6 +225,36 @@ impl GitSync {
         git::git_reset_hard(path)
     }
 
+    pub fn abort_state(&self) -> Result<RepositoryState, SyncError> {
+        let state = git::git_state(&self.repo_path)?;
+        git::git_abort(&self.repo_path, state)?;
+        Ok(state)
+    }
+
+    pub fn log(
+        &self,
+        path: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<git::RawLogEntry>, SyncError> {
+        git::git_log(&self.repo_path, path, limit)
+    }
+
+    pub fn show_file(&self, commit: &str, path: &str) -> Result<String, SyncError> {
+        git::git_show_file(&self.repo_path, commit, path)
+    }
+
+    pub fn checkout_detached(&self, commit: &str) -> Result<(), SyncError> {
+        git::git_checkout_detached(&self.repo_path, commit)
+    }
+
+    pub fn last_commit_info(
+        &self,
+        reference: Option<&str>,
+        path: &str,
+    ) -> Result<(String, i64), SyncError> {
+        git::git_last_commit_info(&self.repo_path, reference, path)
+    }
+
     pub fn changed_files_raw(&self, short: bool) -> Result<String, SyncError> {
         let mut status = git::git_status(&self.repo_path, short)?;
         if status.trim().is_empty() {
@@ -232,6 +271,20 @@ impl GitSync {
     pub fn resolve_conflict_remote(&self, path: &str) -> Result<(), SyncError> {
         git::git_checkout_theirs(&self.repo_path, path)?;
         git::git_add(&self.repo_path, path)
+    }
+
+    pub fn detect_conflicts(&self) -> Result<Vec<ConflictFile>, SyncError> {
+        let mut conflicts = Vec::new();
+        for path in git::git_unmerged_paths(&self.repo_path)? {
+            let (local_hash, remote_hash) = git::git_conflict_stage_hashes(&self.repo_path, &path)?;
+            conflicts.push(ConflictFile {
+                path,
+                local_hash,
+                remote_hash,
+                title: None,
+            });
+        }
+        Ok(conflicts)
     }
 }
 

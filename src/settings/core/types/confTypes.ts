@@ -21,6 +21,8 @@ export interface AppConf {
   vaultSshUsePageant: boolean;
   vaultSshUseOpensshAgent: boolean;
   vaultSshAuthSockOverride: string;
+  vaultSyncLastAt: number | null;
+  vaultSyncSshHosts: string[];
 }
 
 export interface OrbConf {

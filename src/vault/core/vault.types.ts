@@ -113,24 +113,88 @@ export type RepositoryState =
   | "stash"
   | "unknown";
 
+export interface PendingRemovalEntry {
+  id: string;
+  title: string | null;
+}
+
+export interface PendingRemovals {
+  entries: PendingRemovalEntry[];
+  totalLocal: number;
+}
+
+export type UnreadableReason = "keyMismatch" | "corrupt";
+
+export interface UnreadableEntries {
+  ids: string[];
+  reason: UnreadableReason;
+}
+
 export type SyncResult =
-  "success" | "upToDate" | { conflict: ConflictFile[] } | { error: string };
+  | "success"
+  | "upToDate"
+  | { conflict: ConflictFile[] }
+  | { pendingRemovals: PendingRemovals }
+  | { unreadableEntries: UnreadableEntries }
+  | { error: string };
 
 export interface ConflictFile {
   path: string;
   localHash: string;
   remoteHash: string;
+  title: string | null;
 }
 
 export interface SyncConfig {
   remoteUrl: string | null;
   remoteName: string;
-  branch: string;
   sshKeyPath: string | null;
 }
 
 export type ConflictResolution =
   "useLocal" | "useRemote" | "mergeBoth" | "skip";
+
+export interface HistoryCommit {
+  hash: string;
+  timestamp: number;
+  message: string;
+  entryId: string | null;
+}
+
+export interface EntryPreviewField {
+  name: string;
+  value: string;
+  isSecret: boolean;
+}
+
+export interface EntryPreview {
+  id: string;
+  commit: string;
+  commitAuthor: string | null;
+  commitTime: number | null;
+  category: VaultCategory;
+  revision: number;
+  title: string;
+  username: string | null;
+  url: string | null;
+  password: string | null;
+  notes: string | null;
+  totpSecret: string | null;
+  customFields: EntryPreviewField[];
+  tags: string[];
+  isFavorite: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ConflictPreview {
+  entryId: string;
+  local: EntryPreview | null;
+  remote: EntryPreview | null;
+  localError: string | null;
+  remoteError: string | null;
+  diffFields: string[];
+}
 
 export interface SshKeyInfo {
   fingerprint: string;
@@ -138,6 +202,14 @@ export interface SshKeyInfo {
   comment: string;
   bits: number;
   addedByVault: boolean;
+}
+
+export interface SshKeyMeta {
+  keyType: string;
+  bits: number;
+  fingerprint: string;
+  comment: string;
+  publicKey: string;
 }
 
 export interface IntegrityResult {
@@ -149,6 +221,7 @@ export interface DisasterRecoveryResult {
   filePath: string;
   entryCount: number;
   integrityWarning: boolean;
+  skippedIds: string[];
 }
 
 export interface RevealedField {

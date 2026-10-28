@@ -28,6 +28,10 @@ const NONCE_SIZE: usize = 12;
 pub struct VaultCrypto;
 
 impl VaultCrypto {
+    pub fn argon2_params() -> (u32, u32, u32) {
+        (ARGON2_MEMORY, ARGON2_ITERATIONS, ARGON2_PARALLELISM)
+    }
+
     pub fn derive_master_key(password: &str, salt: &[u8; 32]) -> Result<[u8; 32], String> {
         let params = Params::new(
             ARGON2_MEMORY,

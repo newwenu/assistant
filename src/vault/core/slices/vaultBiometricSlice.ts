@@ -4,12 +4,16 @@ import { vaultService } from "../vault.service";
 const log = createLogger("vaultStore");
 
 const BIOMETRIC_CACHE_TTL_MS = 5_000;
+const BIOMETRIC_RETRY_MS = 3_000;
+const BIOMETRIC_MAX_RETRIES = 5;
 
 export interface VaultBiometricSlice {
   biometricAvailable: boolean;
   biometricEnrolled: boolean;
   _biometricAvailableAt: number;
   _biometricEnrolledAt: number;
+  _biometricRetryTimerId: ReturnType<typeof setTimeout> | null;
+  _biometricRetryCount: number;
 
   checkBiometricAvailable: () => Promise<void>;
   checkBiometricEnrolled: () => Promise<void>;
@@ -31,11 +35,28 @@ export function createBiometricSlice(
   ) => void,
   get: () => FullState,
 ): VaultBiometricSlice {
+  const scheduleRetry = (): void => {
+    const { _biometricRetryTimerId, _biometricRetryCount } = get();
+    if (_biometricRetryTimerId) return;
+    if (_biometricRetryCount >= BIOMETRIC_MAX_RETRIES) return;
+    const id = setTimeout(() => {
+      set({
+        _biometricRetryTimerId: null,
+        _biometricRetryCount: get()._biometricRetryCount + 1,
+      });
+      void get().checkBiometricAvailable();
+      void get().checkBiometricEnrolled();
+    }, BIOMETRIC_RETRY_MS);
+    set({ _biometricRetryTimerId: id });
+  };
+
   return {
     biometricAvailable: false,
     biometricEnrolled: false,
     _biometricAvailableAt: 0,
     _biometricEnrolledAt: 0,
+    _biometricRetryTimerId: null,
+    _biometricRetryCount: 0,
 
     checkBiometricAvailable: async () => {
       const now = Date.now();
@@ -45,11 +66,13 @@ export function createBiometricSlice(
         set({
           biometricAvailable: available,
           _biometricAvailableAt: Date.now(),
+          _biometricRetryCount: 0,
         });
         log.debug(`Biometric available: ${available}`);
       } catch (e) {
         log.error("checkBiometricAvailable failed", e);
-        set({ biometricAvailable: false, _biometricAvailableAt: Date.now() });
+        set({ biometricAvailable: false });
+        scheduleRetry();
       }
     },
 
@@ -58,11 +81,16 @@ export function createBiometricSlice(
       if (now - get()._biometricEnrolledAt < BIOMETRIC_CACHE_TTL_MS) return;
       try {
         const enrolled = await vaultService.isBiometricEnrolled();
-        set({ biometricEnrolled: enrolled, _biometricEnrolledAt: Date.now() });
+        set({
+          biometricEnrolled: enrolled,
+          _biometricEnrolledAt: Date.now(),
+          _biometricRetryCount: 0,
+        });
         log.debug(`Biometric enrolled: ${enrolled}`);
       } catch (e) {
         log.error("checkBiometricEnrolled failed", e);
-        set({ biometricEnrolled: false, _biometricEnrolledAt: Date.now() });
+        set({ biometricEnrolled: false });
+        scheduleRetry();
       }
     },
 

@@ -95,6 +95,8 @@ fn serialize_deserialize_roundtrip() {
         restored.vault_hibp_auto_audit
     );
     assert_eq!(original.vault_ssh_auto_add, restored.vault_ssh_auto_add);
+    assert_eq!(original.vault_sync_last_at, restored.vault_sync_last_at);
+    assert_eq!(original.vault_sync_ssh_hosts, restored.vault_sync_ssh_hosts);
 }
 
 #[test]
@@ -109,6 +111,8 @@ fn deserialize_missing_optional_fields_use_defaults() {
     assert!(conf.auto_compact);
     assert_eq!(conf.vault_auto_lock_minutes, 5);
     assert_eq!(conf.vault_cipher_algorithm, "aes256Gcm");
+    assert_eq!(conf.vault_sync_last_at, None);
+    assert!(conf.vault_sync_ssh_hosts.is_empty());
 }
 
 #[test]

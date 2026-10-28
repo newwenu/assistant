@@ -39,6 +39,8 @@ function resetStore() {
     biometricEnrolled: false,
     _biometricAvailableAt: 0,
     _biometricEnrolledAt: 0,
+    _biometricRetryTimerId: null,
+    _biometricRetryCount: 0,
     _recoveryKeySetAt: 0,
     syncReadyness: null,
     syncResult: null,
@@ -450,8 +452,10 @@ describe("vaultStore biometric", () => {
   });
 
   afterEach(() => {
-    const { autoLockTimerId } = useVaultStore.getState();
+    const { autoLockTimerId, _biometricRetryTimerId } =
+      useVaultStore.getState();
     if (autoLockTimerId) clearTimeout(autoLockTimerId);
+    if (_biometricRetryTimerId) clearTimeout(_biometricRetryTimerId);
   });
 
   it("checkBiometricAvailable → sets biometricAvailable", async () => {
@@ -461,6 +465,30 @@ describe("vaultStore biometric", () => {
     await store.checkBiometricAvailable();
 
     expect(useVaultStore.getState().biometricAvailable).toBe(true);
+  });
+
+  it("checkBiometricAvailable → failure does not stamp cache", async () => {
+    mockCmd("vault_is_biometric_available", () =>
+      Promise.reject(new Error("keyring unavailable")),
+    );
+
+    const store = useVaultStore.getState();
+    await store.checkBiometricAvailable();
+
+    expect(useVaultStore.getState().biometricAvailable).toBe(false);
+    expect(useVaultStore.getState()._biometricAvailableAt).toBe(0);
+  });
+
+  it("checkBiometricEnrolled → failure does not stamp cache", async () => {
+    mockCmd("vault_is_biometric_enrolled", () =>
+      Promise.reject(new Error("SecurityDbState not managed")),
+    );
+
+    const store = useVaultStore.getState();
+    await store.checkBiometricEnrolled();
+
+    expect(useVaultStore.getState().biometricEnrolled).toBe(false);
+    expect(useVaultStore.getState()._biometricEnrolledAt).toBe(0);
   });
 
   it("unlockBiometric → success unlocks vault", async () => {
@@ -559,7 +587,6 @@ describe("vaultStore sync", () => {
     const config = {
       remoteUrl: "git@github.com:user/vault.git",
       remoteName: "origin",
-      branch: "main",
       sshKeyPath: null,
     };
     mockCmd("vault_get_sync_config", () => Promise.resolve(config));

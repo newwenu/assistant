@@ -163,6 +163,11 @@
   color: var(--ant-color-error);
 }
 
+.syncLastAt {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
 .totpContainer {
   display: inline-flex;
   align-items: center;

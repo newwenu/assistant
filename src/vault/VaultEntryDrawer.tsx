@@ -265,7 +265,13 @@ export default function VaultEntryDrawer({
         )}
 
         {category === "identity" && <IdentityFields />}
-        {category === "sshKey" && <SshKeyFields />}
+        {category === "sshKey" && (
+          <SshKeyFields
+            privateKey={password}
+            onPrivateKeyChange={handlePasswordChange}
+            hasPrivateKey={isEditing && !!selectedEntry?.hasPassword}
+          />
+        )}
 
         <NoteFields
           notes={notes}

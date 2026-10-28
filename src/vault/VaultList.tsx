@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Input,
   Tag,
@@ -9,6 +9,8 @@ import {
   App,
   Space,
   Tooltip,
+  Alert,
+  Modal,
 } from "antd";
 import {
   SearchOutlined,
@@ -31,6 +33,8 @@ import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./core/vaultStore";
 import type { VaultCategory } from "./core/vault.types";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
+import TrashDrawer from "./TrashDrawer";
+import VaultConflictResolve from "./settings/VaultConflictResolve";
 import styles from "./vault.module.css";
 
 const CATEGORY_OPTIONS: { value: VaultCategory; label: string }[] = [
@@ -60,6 +64,10 @@ interface VaultListProps {
 export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
   const { t } = useTranslation();
   const { modal } = App.useApp();
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [conflictPickerOpen, setConflictPickerOpen] = useState(false);
+  const [conflictPath, setConflictPath] = useState<string | null>(null);
+  const [removalConfirmOpen, setRemovalConfirmOpen] = useState(false);
   const {
     entries,
     loading,
@@ -68,6 +76,9 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
     tagFilter,
     hibpLeaks,
     syncReadyness,
+    syncConflicts,
+    pendingRemovals,
+    syncLastAt,
     syncing,
     loadEntries,
     setSearchQuery,
@@ -78,6 +89,9 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
     resetAutoLockTimer,
     syncNow,
     loadSyncReadyness,
+    loadPendingRemovals,
+    loadSyncLastTime,
+    confirmRemovals,
     hibpAudit,
     hibpAuditing,
   } = useVaultStore();
@@ -85,7 +99,17 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
   useEffect(() => {
     void loadEntries();
     void loadSyncReadyness();
-  }, [searchQuery, categoryFilter, tagFilter, loadEntries, loadSyncReadyness]);
+    void loadPendingRemovals();
+    void loadSyncLastTime();
+  }, [
+    searchQuery,
+    categoryFilter,
+    tagFilter,
+    loadEntries,
+    loadSyncReadyness,
+    loadPendingRemovals,
+    loadSyncLastTime,
+  ]);
 
   const handleDelete = (id: string) => {
     modal.confirm({
@@ -95,10 +119,53 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
     });
   };
 
+  const handleConfirmRemovals = async () => {
+    if (pendingRemovals === null) return;
+    await confirmRemovals(pendingRemovals.entries.map((entry) => entry.id));
+    setRemovalConfirmOpen(false);
+  };
+
   const leakCount = Object.values(hibpLeaks).filter((c) => c > 0).length;
+  const repoState =
+    syncReadyness !== null && typeof syncReadyness === "object"
+      ? syncReadyness.repoState
+      : null;
 
   return (
     <div className={styles.listContainer}>
+      {pendingRemovals !== null && (
+        <Alert
+          type="warning"
+          showIcon
+          title={t("vault.sync.pending_removals_banner", {
+            count: pendingRemovals.entries.length,
+          })}
+          description={t("vault.sync.pending_removals_hint")}
+          action={
+            <Button size="small" onClick={() => setRemovalConfirmOpen(true)}>
+              {t("vault.sync.pending_removals_open")}
+            </Button>
+          }
+          style={{ marginBottom: 12 }}
+        />
+      )}
+      {repoState !== null && (
+        <Alert
+          type="warning"
+          showIcon
+          title={t("vault.conflict.detected")}
+          description={t("vault.conflict.detected_hint", {
+            state: repoState,
+            count: syncConflicts.length,
+          })}
+          action={
+            <Button size="small" onClick={() => setConflictPickerOpen(true)}>
+              {t("vault.conflict.open_resolver")}
+            </Button>
+          }
+          style={{ marginBottom: 12 }}
+        />
+      )}
       <div className={styles.listHeader}>
         <Input
           prefix={<SearchOutlined />}
@@ -111,6 +178,12 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
         <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
           {t("vault.entry.add_entry")}
         </Button>
+        <Tooltip title={t("vault.entry.trash")}>
+          <Button
+            icon={<DeleteOutlined />}
+            onClick={() => setTrashOpen(true)}
+          />
+        </Tooltip>
       </div>
 
       <div className={styles.categoryBar}>
@@ -254,6 +327,17 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
           )}
         </div>
         <Space size={4}>
+          {syncLastAt !== null && (
+            <Tooltip
+              title={t("vault.sync.last_sync", {
+                time: new Date(syncLastAt).toLocaleString(),
+              })}
+            >
+              <span className={styles.syncLastAt}>
+                {formatRelativeTime(syncLastAt)}
+              </span>
+            </Tooltip>
+          )}
           <Tooltip title={t("vault.hibp.audit_all")}>
             <Button
               type="text"
@@ -283,6 +367,94 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
           </Tooltip>
         </Space>
       </div>
+
+      <TrashDrawer open={trashOpen} onClose={() => setTrashOpen(false)} />
+
+      <Modal
+        open={conflictPickerOpen}
+        title={t("vault.conflict.title")}
+        footer={null}
+        onCancel={() => setConflictPickerOpen(false)}
+      >
+        {syncConflicts.length === 0 ? (
+          <Empty description={t("vault.conflict.no_files")} />
+        ) : (
+          <List
+            dataSource={syncConflicts}
+            renderItem={(file) => (
+              <List.Item
+                actions={[
+                  <Button
+                    key="open"
+                    type="link"
+                    onClick={() => {
+                      setConflictPath(file.path);
+                      setConflictPickerOpen(false);
+                    }}
+                  >
+                    {t("vault.conflict.resolve")}
+                  </Button>,
+                ]}
+              >
+                <span>{file.title ?? file.path}</span>
+              </List.Item>
+            )}
+          />
+        )}
+      </Modal>
+
+      <VaultConflictResolve
+        open={conflictPath !== null}
+        conflictPath={conflictPath ?? ""}
+        onClose={() => setConflictPath(null)}
+      />
+
+      <Modal
+        open={removalConfirmOpen && pendingRemovals !== null}
+        title={
+          pendingRemovals !== null &&
+          pendingRemovals.entries.length >= pendingRemovals.totalLocal
+            ? t("vault.sync.pending_removals_all_title", {
+                count: pendingRemovals.entries.length,
+              })
+            : t("vault.sync.pending_removals_title", {
+                count: pendingRemovals?.entries.length ?? 0,
+              })
+        }
+        okText={t("vault.sync.pending_removals_confirm")}
+        cancelText={t("vault.sync.pending_removals_cancel")}
+        okButtonProps={{ danger: true }}
+        cancelButtonProps={{
+          autoFocus:
+            pendingRemovals !== null &&
+            pendingRemovals.entries.length >= pendingRemovals.totalLocal,
+        }}
+        confirmLoading={syncing}
+        onOk={() => void handleConfirmRemovals()}
+        onCancel={() => setRemovalConfirmOpen(false)}
+      >
+        {pendingRemovals !== null && (
+          <>
+            {pendingRemovals.entries.length >= pendingRemovals.totalLocal && (
+              <Alert
+                type="error"
+                showIcon
+                title={t("vault.sync.pending_removals_all_warning")}
+                style={{ marginBottom: 12 }}
+              />
+            )}
+            <p>{t("vault.sync.pending_removals_desc")}</p>
+            <List
+              dataSource={pendingRemovals.entries}
+              renderItem={(entry) => (
+                <List.Item>
+                  <span>{entry.title ?? entry.id}</span>
+                </List.Item>
+              )}
+            />
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

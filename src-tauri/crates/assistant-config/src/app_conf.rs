@@ -72,6 +72,10 @@ pub struct AppConf {
     pub vault_ssh_use_openssh_agent: bool,
     #[serde(default)]
     pub vault_ssh_auth_sock_override: String,
+    #[serde(default)]
+    pub vault_sync_last_at: Option<i64>,
+    #[serde(default)]
+    pub vault_sync_ssh_hosts: Vec<String>,
 }
 
 impl AppConf {
@@ -104,6 +108,8 @@ impl AppConf {
             vault_ssh_use_pageant: true,
             vault_ssh_use_openssh_agent: true,
             vault_ssh_auth_sock_override: String::new(),
+            vault_sync_last_at: None,
+            vault_sync_ssh_hosts: Vec::new(),
         }
     }
 

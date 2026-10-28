@@ -20,10 +20,13 @@ pub struct AppConfDto {
     pub vault_cipher_algorithm: String,
     pub vault_biometric_enabled: bool,
     pub vault_hibp_auto_audit: bool,
+    pub vault_sync_remote_url: Option<String>,
     pub vault_ssh_auto_add: bool,
     pub vault_ssh_use_pageant: bool,
     pub vault_ssh_use_openssh_agent: bool,
     pub vault_ssh_auth_sock_override: String,
+    pub vault_sync_last_at: Option<i64>,
+    pub vault_sync_ssh_hosts: Vec<String>,
 }
 
 impl From<assistant_config::app_conf::AppConf> for AppConfDto {
@@ -46,10 +49,13 @@ impl From<assistant_config::app_conf::AppConf> for AppConfDto {
             vault_cipher_algorithm: c.vault_cipher_algorithm,
             vault_biometric_enabled: c.vault_biometric_enabled,
             vault_hibp_auto_audit: c.vault_hibp_auto_audit,
+            vault_sync_remote_url: c.vault_sync_remote_url,
             vault_ssh_auto_add: c.vault_ssh_auto_add,
             vault_ssh_use_pageant: c.vault_ssh_use_pageant,
             vault_ssh_use_openssh_agent: c.vault_ssh_use_openssh_agent,
             vault_ssh_auth_sock_override: c.vault_ssh_auth_sock_override,
+            vault_sync_last_at: c.vault_sync_last_at,
+            vault_sync_ssh_hosts: c.vault_sync_ssh_hosts,
         }
     }
 }

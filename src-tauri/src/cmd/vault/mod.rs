@@ -23,6 +23,43 @@ pub use reveal::*;
 pub use ssh::*;
 pub use sync::*;
 
+pub(crate) fn persist_sync_remote_url(url: Option<&str>) {
+    let mut conf = match AppConf::load() {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to load AppConf for sync remote url: {}", e);
+            return;
+        }
+    };
+    let next = url.map(|u| u.trim().to_string()).filter(|u| !u.is_empty());
+    if conf.vault_sync_remote_url == next {
+        return;
+    }
+    conf.vault_sync_remote_url = next;
+    if let Err(e) = conf.save() {
+        log::warn!("Failed to persist sync remote url: {}", e);
+    }
+}
+
+pub(crate) fn persist_sync_last_at() {
+    let mut conf = match AppConf::load() {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to load AppConf for sync last time: {}", e);
+            return;
+        }
+    };
+    let now = chrono::Utc::now().timestamp_millis();
+    conf.vault_sync_last_at = Some(now);
+    if let Err(e) = conf.save() {
+        log::warn!("Failed to persist sync last time: {}", e);
+    }
+}
+
+pub(crate) fn apply_ssh_persist_hosts(conf: &AppConf) {
+    assistant_sync::git_sync::ssh::set_ssh_persist_hosts(conf.vault_sync_ssh_hosts.clone());
+}
+
 pub(crate) fn ssh_bridge_from_conf() -> Box<dyn assistant_security::ssh_agent::SshAgentBridge> {
     let conf = AppConf::load().ok();
     let use_pageant = conf

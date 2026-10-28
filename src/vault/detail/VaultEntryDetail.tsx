@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import {
   Descriptions,
   Button,
@@ -23,12 +23,14 @@ import {
   IdcardOutlined,
   CodeOutlined,
   ToolOutlined,
+  HistoryOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "../core/vaultStore";
-import type { VaultCategory } from "../core/vault.types";
+import type { VaultCategory, SshKeyMeta } from "../core/vault.types";
 import TotpDisplay from "./TotpDisplay";
 import RevealFieldButton from "./RevealFieldButton";
+import VaultEntryHistory from "./VaultEntryHistory";
 import styles from "../vault.module.css";
 
 const CATEGORY_ICONS: Record<VaultCategory, React.ReactNode> = {
@@ -67,10 +69,20 @@ export default function VaultEntryDetail({
     deleteEntry,
     updateEntry,
     sshAddToAgent,
+    sshRemoveFromAgent,
+    sshAgentKeys,
+    sshListAgent,
+    sshKeyMeta,
     generateTotp,
     copyTotp,
     stopTotpTimer,
   } = useVaultStore();
+
+  const [sshMeta, setSshMeta] = useState<SshKeyMeta | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const inAgent =
+    !!sshMeta &&
+    sshAgentKeys.some((k) => k.fingerprint === sshMeta.fingerprint);
 
   useEffect(() => {
     void selectEntry(entryId);
@@ -79,6 +91,21 @@ export default function VaultEntryDetail({
       stopTotpTimer();
     };
   }, [entryId, selectEntry, clearRevealedField, stopTotpTimer]);
+
+  useEffect(() => {
+    if (selectedEntry?.category !== "sshKey") {
+      setSshMeta(null);
+      return;
+    }
+    let cancelled = false;
+    void sshKeyMeta(entryId).then((meta) => {
+      if (!cancelled) setSshMeta(meta);
+    });
+    void sshListAgent();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEntry?.category, entryId, sshKeyMeta, sshListAgent]);
 
   useEffect(() => {
     if (selectedEntry?.hasTotp) {
@@ -159,6 +186,13 @@ export default function VaultEntryDetail({
     });
   };
 
+  const handleRemoveFromSshAgent = () => {
+    if (!sshMeta) return;
+    void sshRemoveFromAgent(sshMeta.fingerprint).then(() => {
+      message.success(t("vault.ssh.removed_from_agent"));
+    });
+  };
+
   return (
     <div className={styles.detailContainer}>
       <div className={styles.detailHeader}>
@@ -199,6 +233,13 @@ export default function VaultEntryDetail({
             icon={<EditOutlined />}
             onClick={() => onEdit(entryId)}
           />
+          <Tooltip title={t("vault.history.open")}>
+            <Button
+              type="text"
+              icon={<HistoryOutlined />}
+              onClick={() => setHistoryOpen(true)}
+            />
+          </Tooltip>
           <Button
             type="text"
             danger
@@ -279,16 +320,60 @@ export default function VaultEntryDetail({
           </Descriptions.Item>
         )}
 
+        {selectedEntry.category === "sshKey" && sshMeta && (
+          <Descriptions.Item label={t("vault.ssh.meta_key_type")}>
+            {sshMeta.keyType}
+          </Descriptions.Item>
+        )}
+
+        {selectedEntry.category === "sshKey" && sshMeta && (
+          <Descriptions.Item label={t("vault.ssh.meta_bits")}>
+            {sshMeta.bits}
+          </Descriptions.Item>
+        )}
+
+        {selectedEntry.category === "sshKey" && sshMeta && (
+          <Descriptions.Item label={t("vault.ssh.meta_fingerprint")}>
+            <Typography.Text copyable>{sshMeta.fingerprint}</Typography.Text>
+          </Descriptions.Item>
+        )}
+
+        {selectedEntry.category === "sshKey" && sshMeta && (
+          <Descriptions.Item label={t("vault.ssh.meta_comment")}>
+            {sshMeta.comment || "-"}
+          </Descriptions.Item>
+        )}
+
+        {selectedEntry.category === "sshKey" && sshMeta && (
+          <Descriptions.Item label={t("vault.ssh.public_key")}>
+            <Typography.Text copyable code>
+              {sshMeta.publicKey}
+            </Typography.Text>
+          </Descriptions.Item>
+        )}
+
         {selectedEntry.category === "sshKey" && (
           <Descriptions.Item label={t("vault.ssh.agent")}>
-            <Button
-              type="primary"
-              size="small"
-              icon={<CloudUploadOutlined />}
-              onClick={handleAddToSshAgent}
-            >
-              {t("vault.ssh.add_to_agent")}
-            </Button>
+            <Space>
+              <Button
+                type="primary"
+                size="small"
+                icon={<CloudUploadOutlined />}
+                onClick={handleAddToSshAgent}
+              >
+                {t("vault.ssh.add_to_agent")}
+              </Button>
+              {sshMeta && inAgent && (
+                <Button
+                  danger
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  onClick={handleRemoveFromSshAgent}
+                >
+                  {t("vault.ssh.remove_from_agent")}
+                </Button>
+              )}
+            </Space>
           </Descriptions.Item>
         )}
 
@@ -322,6 +407,12 @@ export default function VaultEntryDetail({
           {selectedEntry.revision}
         </Descriptions.Item>
       </Descriptions>
+
+      <VaultEntryHistory
+        open={historyOpen}
+        entryId={entryId}
+        onClose={() => setHistoryOpen(false)}
+      />
     </div>
   );
 }

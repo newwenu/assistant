@@ -427,3 +427,40 @@ fn init_rejects_weak_master_password() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+#[cfg(feature = "slow-tests")]
+#[test]
+fn purge_deleted_removes_only_soft_deleted_entries() {
+    let path = temp_db_path();
+    let db = init_vault(&path, STRONG_PW);
+
+    let make = |title: &str| VaultEntryCreate {
+        category: VaultCategory::Login,
+        title: title.to_string(),
+        username: None,
+        url: None,
+        password: None,
+        notes: None,
+        totp_secret: None,
+        tags: vec![],
+        custom_fields: vec![],
+        is_favorite: false,
+    };
+
+    let keep = db
+        .create_entry(make("Keep"), CipherAlgorithm::Aes256Gcm)
+        .unwrap();
+    let removed = db
+        .create_entry(make("Drop"), CipherAlgorithm::Aes256Gcm)
+        .unwrap();
+    db.delete_entry(&removed).unwrap();
+
+    assert_eq!(db.list_deleted_entry_ids().unwrap(), vec![removed.clone()]);
+    assert_eq!(db.purge_deleted().unwrap(), 1);
+    assert!(db.list_deleted_entry_ids().unwrap().is_empty());
+    assert_eq!(db.list_entry_ids(false).unwrap(), vec![keep.clone()]);
+    assert_eq!(db.list_entry_ids(true).unwrap(), vec![keep]);
+    assert_eq!(db.purge_deleted().unwrap(), 0);
+
+    cleanup(&path);
+}

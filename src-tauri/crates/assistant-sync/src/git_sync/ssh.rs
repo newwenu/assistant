@@ -12,29 +12,81 @@ const GIT_ENV_SSH: &str = "GIT_SSH_COMMAND";
 const SSH_PERSIST_CMD: &str =
     "ssh -o 'ControlMaster auto' -o 'ControlPath /tmp/.assistant-vault-session--%r@%h:%p' -o 'ControlPersist 1h' -o 'ConnectTimeout 10' -o 'ServerAliveInterval 15' -o 'ServerAliveCountMax 4'";
 
-#[cfg(windows)]
 const SSH_TIMEOUT_CMD: &str =
     "ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4";
 
+const DEFAULT_SSH_PERSIST_HOSTS: [&str; 2] = ["github.com", "gitlab.com"];
+
 #[cfg(unix)]
-const SSH_PERSIST_HOST_WHITELIST: [&str; 2] = ["github.com", "gitlab.com"];
+static SSH_PERSIST_HOSTS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 
 #[cfg(unix)]
 static SSH_PERSIST_GUESS_CACHE: LazyLock<Mutex<HashMap<std::path::PathBuf, bool>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-pub fn configure_ssh_persist(cmd: &mut Command) {
+fn normalize_hosts(hosts: &[String]) -> Vec<String> {
+    hosts
+        .iter()
+        .map(|host| host.trim().to_lowercase())
+        .filter(|host| !host.is_empty())
+        .collect()
+}
+
+pub fn resolve_persist_hosts(configured: &[String]) -> Vec<String> {
+    let normalized = normalize_hosts(configured);
+    if normalized.is_empty() {
+        DEFAULT_SSH_PERSIST_HOSTS
+            .iter()
+            .map(|host| host.to_string())
+            .collect()
+    } else {
+        normalized
+    }
+}
+
+pub fn set_ssh_persist_hosts(hosts: Vec<String>) {
     #[cfg(unix)]
     {
-        cmd.env(GIT_ENV_SSH, SSH_PERSIST_CMD);
+        if let Ok(mut guard) = SSH_PERSIST_HOSTS.lock() {
+            *guard = normalize_hosts(&hosts);
+        }
+        if let Ok(mut guard) = SSH_PERSIST_GUESS_CACHE.lock() {
+            guard.clear();
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = hosts;
+    }
+}
+
+#[cfg(unix)]
+fn persist_hosts() -> Vec<String> {
+    let configured = SSH_PERSIST_HOSTS
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_default();
+    resolve_persist_hosts(&configured)
+}
+
+pub fn configure_ssh_persist(cmd: &mut Command, repo: &Path) {
+    #[cfg(unix)]
+    {
+        let command = if guess_ssh_persist_support(repo) {
+            SSH_PERSIST_CMD
+        } else {
+            SSH_TIMEOUT_CMD
+        };
+        cmd.env(GIT_ENV_SSH, command);
     }
     #[cfg(windows)]
     {
+        let _ = repo;
         cmd.env(GIT_ENV_SSH, SSH_TIMEOUT_CMD);
     }
     #[cfg(not(any(unix, windows)))]
     {
-        let _ = cmd;
+        let _ = (cmd, repo);
     }
 }
 
@@ -67,8 +119,9 @@ pub fn guess_ssh_persist_support(repo: &Path) -> bool {
             .filter(|uri| !remote_is_http(uri))
             .collect();
 
+        let hosts = persist_hosts();
         let supported = ssh_uris.iter().all(|uri| match ssh_uri_host(uri) {
-            Some(host) => SSH_PERSIST_HOST_WHITELIST.contains(&host.to_lowercase().as_str()),
+            Some(host) => hosts.contains(&host.to_lowercase()),
             None => false,
         });
 

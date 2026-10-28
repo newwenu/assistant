@@ -9,7 +9,32 @@ use assistant_security::types::{
 };
 
 use super::SecurityDbState;
+use assistant_security::types::{VaultEntrySnapshot, VaultError};
+use assistant_security::vault_crypto::types::MasterKey;
 use assistant_sync::sync_engine::SyncEngine;
+
+fn export_entry_to_sync(
+    engine: &SyncEngine,
+    master_key: &MasterKey,
+    snapshot: &VaultEntrySnapshot,
+) -> Result<(), VaultError> {
+    engine
+        .vault_file_manager()
+        .export_entry(master_key, snapshot, false)
+        .map_err(|e| VaultError::Other(e.to_string()))
+}
+
+fn prepare_sync(engine: &SyncEngine) {
+    if let Err(e) = engine.prepare() {
+        log::warn!("Vault sync prepare failed: {}", e);
+    }
+}
+
+fn finalize_sync(engine: &SyncEngine, msg: &str) {
+    if let Err(e) = engine.finalize(msg) {
+        log::warn!("Vault sync finalize failed ({}): {}", msg, e);
+    }
+}
 
 #[command]
 pub fn vault_list_entries(
@@ -34,11 +59,20 @@ pub fn vault_get_entry(app: AppHandle, id: String) -> Result<VaultEntryDetail, S
 #[command]
 pub fn vault_create_entry(app: AppHandle, entry: VaultEntryCreate) -> Result<String, String> {
     let state = super::vault_state(&app)?;
-    let id = state
-        .create_entry(entry, super::cipher_algo())
+    let engine = super::sync_state(&app)?;
+
+    prepare_sync(&engine);
+
+    let snapshot = state
+        .create_entry_tx(entry, super::cipher_algo(), |mk, snap| {
+            export_entry_to_sync(&engine, mk, snap)
+        })
         .map_err(|e| e.to_string())?;
-    log::info!("Vault entry created: {}", id);
-    Ok(id)
+
+    log::info!("Vault entry created: {}", snapshot.id);
+    super::ssh::auto_add_entry(&app, &snapshot.id);
+    finalize_sync(&engine, &format!("vault: create {}", snapshot.id));
+    Ok(snapshot.id)
 }
 
 #[command]
@@ -48,19 +82,91 @@ pub fn vault_update_entry(
     entry: VaultEntryUpdate,
 ) -> Result<(), String> {
     let state = super::vault_state(&app)?;
-    state
-        .update_entry(&id, entry, super::cipher_algo())
+    let engine = super::sync_state(&app)?;
+
+    prepare_sync(&engine);
+
+    let snapshot = state
+        .update_entry_tx(&id, entry, super::cipher_algo(), |mk, snap| {
+            export_entry_to_sync(&engine, mk, snap)
+        })
         .map_err(|e| e.to_string())?;
-    log::info!("Vault entry updated: {}", id);
+
+    log::info!("Vault entry updated: {}", snapshot.id);
+    finalize_sync(&engine, &format!("vault: update {}", snapshot.id));
     Ok(())
 }
 
 #[command]
 pub fn vault_delete_entry(app: AppHandle, id: String) -> Result<(), String> {
     let state = super::vault_state(&app)?;
-    state.delete_entry(&id).map_err(|e| e.to_string())?;
+    let engine = super::sync_state(&app)?;
+
+    prepare_sync(&engine);
+
+    let fingerprint = super::ssh::entry_fingerprint(&app, &id);
+
+    state
+        .delete_entry_tx(&id, |entry_id| {
+            engine
+                .vault_file_manager()
+                .remove_entry_file(entry_id)
+                .map_err(|e| VaultError::Other(e.to_string()))
+        })
+        .map_err(|e| e.to_string())?;
+
+    if let Some(fp) = fingerprint {
+        super::ssh::auto_remove_fingerprint(&app, &fp);
+    }
+
     log::info!("Vault entry deleted: {}", id);
+    finalize_sync(&engine, &format!("vault: delete {}", id));
     Ok(())
+}
+
+#[command]
+pub fn vault_list_deleted_entries(app: AppHandle) -> Result<Vec<VaultEntrySummary>, String> {
+    let state = super::vault_state(&app)?;
+    state.list_deleted_entries().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn vault_restore_entry(app: AppHandle, id: String) -> Result<(), String> {
+    let state = super::vault_state(&app)?;
+    let engine = super::sync_state(&app)?;
+
+    prepare_sync(&engine);
+
+    let snapshot = state
+        .restore_entry_tx(&id, |mk, snap| export_entry_to_sync(&engine, mk, snap))
+        .map_err(|e| e.to_string())?;
+
+    log::info!("Vault entry restored: {}", snapshot.id);
+    finalize_sync(&engine, &format!("vault: restore {}", snapshot.id));
+    Ok(())
+}
+
+#[command]
+pub fn vault_purge_deleted(app: AppHandle) -> Result<u32, String> {
+    let state = super::vault_state(&app)?;
+    let engine = super::sync_state(&app)?;
+
+    prepare_sync(&engine);
+
+    let ids = state.list_deleted_entry_ids().map_err(|e| e.to_string())?;
+    let purged = state.purge_deleted().map_err(|e| e.to_string())?;
+
+    for id in &ids {
+        if let Err(e) = engine.vault_file_manager().remove_entry_file(id) {
+            log::warn!("Failed to remove entry file {} while purging: {}", id, e);
+        }
+    }
+
+    log::info!("Vault purged {} deleted entries", purged);
+    if purged > 0 {
+        finalize_sync(&engine, &format!("vault: purge {} entries", purged));
+    }
+    Ok(purged)
 }
 
 #[command]
@@ -76,23 +182,37 @@ pub async fn vault_change_master_password(
             .map_err(|e| e.to_string())?;
 
         {
+            let key_store = super::biometric::get_key_store();
+            if state
+                .is_biometric_enrolled(key_store.as_ref())
+                .unwrap_or(false)
+            {
+                let _ = state.disenroll_biometric(key_store.as_ref());
+            }
+        }
+
+        {
             let engine = app.state::<SyncEngine>();
             let master_key = state.get_master_key().map_err(|e| e.to_string())?;
             let mk = master_key.as_ref().ok_or("Vault is locked")?;
 
-            if let Err(e) = engine.clear_emergency_data() {
+            if let Err(e) = engine.clear_emergency_data(mk) {
                 log::warn!(
                     "Failed to clear emergency data after master password change: {}",
                     e
                 );
             }
+        }
 
-            if let Err(e) = engine.rewrite_vault_meta_with_new_key(mk) {
+        {
+            let engine = app.state::<SyncEngine>();
+            if let Err(e) = engine.export_all_entries(&state, true, &[]) {
                 log::warn!(
-                    "Failed to rewrite vault-meta HMAC after master password change: {}",
+                    "Failed to re-export vault entries after master password change: {}",
                     e
                 );
             }
+            finalize_sync(&engine, "vault: master password changed");
         }
 
         {

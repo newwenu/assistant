@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Tabs } from "antd";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "../core/vaultStore";
@@ -25,14 +26,19 @@ export default function VaultSettings() {
     exportVault,
     importVault,
   } = useVaultStore();
+  const [activeKey, setActiveKey] = useState("sync");
 
   return (
     <Tabs
+      activeKey={activeKey}
+      onChange={setActiveKey}
       items={[
         {
           key: "sync",
           label: t("vault.tab.sync"),
-          children: <VaultSyncSettings />,
+          children: (
+            <VaultSyncSettings onGoRecovery={() => setActiveKey("recovery")} />
+          ),
         },
         {
           key: "ssh_agent",

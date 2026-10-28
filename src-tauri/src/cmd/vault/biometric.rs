@@ -5,7 +5,7 @@ use assistant_security::types::VaultError;
 
 use super::SecurityDbState;
 
-fn get_key_store() -> Box<dyn BiometricKeyStore> {
+pub(super) fn get_key_store() -> Box<dyn BiometricKeyStore> {
     assistant_security::biometric::create_key_store()
 }
 

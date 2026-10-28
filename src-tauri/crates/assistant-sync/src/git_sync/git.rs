@@ -14,16 +14,30 @@ const GIT_FETCH_HEAD_FILE: &str = ".git/FETCH_HEAD";
 const GIT_EXIT_STATUS_NOT_FOUND: i32 = 1;
 
 pub fn git_init(repo: &Path) -> Result<(), SyncError> {
-    git(repo, ["init", "-q"], false)
+    git(repo, ["init", "-q"], false)?;
+    disable_eol_conversion(repo)
 }
 
 pub fn git_clone(repo: &Path, url: &str, path: &str, quiet: bool) -> Result<(), SyncError> {
-    let mut args = vec!["clone", "-q"];
+    let mut args = vec![
+        "-c",
+        "core.autocrlf=false",
+        "-c",
+        "core.safecrlf=false",
+        "clone",
+        "-q",
+    ];
     if !quiet {
         args.push("--progress");
     }
     args.extend_from_slice(&[url, path]);
-    git(repo, &args, true)
+    git(repo, &args, true)?;
+    disable_eol_conversion(Path::new(path))
+}
+
+fn disable_eol_conversion(repo: &Path) -> Result<(), SyncError> {
+    git(repo, ["config", "core.autocrlf", "false"], false)?;
+    git(repo, ["config", "core.safecrlf", "false"], false)
 }
 
 pub fn git_add_all(repo: &Path) -> Result<(), SyncError> {
@@ -105,6 +119,22 @@ pub fn git_remote_add(repo: &Path, remote: &str, url: &str) -> Result<(), SyncEr
 
 pub fn git_remote_remove(repo: &Path, remote: &str) -> Result<(), SyncError> {
     git(repo, ["remote", "remove", remote], false)
+}
+
+pub fn git_ls_remote(repo: &Path, url: &str) -> Result<String, SyncError> {
+    let output = git_output(repo, ["ls-remote", "--heads", url], true)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(SyncError::GitCli(if stderr.is_empty() {
+            format!(
+                "ls-remote exited with status {}",
+                output.status.code().unwrap_or(-1)
+            )
+        } else {
+            stderr
+        }));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 pub fn git_current_branch(repo: &Path) -> Result<String, SyncError> {
@@ -205,13 +235,44 @@ pub fn git_branch_set_upstream(
 
 pub fn git_ref_hash(repo: &Path, reference: &str) -> Result<String, SyncError> {
     let hash = git_stdout_ok(repo, ["rev-parse", reference], false)?;
-    if hash.len() != 40 {
+    let valid_len = hash.len() == 40 || hash.len() == 64;
+    if !valid_len || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(SyncError::GitCli(format!(
             "git returned invalid hash: {}",
             hash
         )));
     }
     Ok(hash)
+}
+
+pub fn git_unmerged_paths(repo: &Path) -> Result<Vec<String>, SyncError> {
+    Ok(
+        git_stdout_ok(repo, ["diff", "--name-only", "--diff-filter=U"], false)?
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.to_string())
+            .collect(),
+    )
+}
+
+pub fn git_conflict_stage_hashes(repo: &Path, path: &str) -> Result<(String, String), SyncError> {
+    let output = git_stdout_ok(repo, ["ls-files", "-u", "--", path], false)?;
+    let mut local = String::new();
+    let mut remote = String::new();
+
+    for line in output.lines() {
+        let mut parts = line.split_whitespace();
+        let _mode = parts.next();
+        let hash = parts.next().unwrap_or_default();
+        let stage = parts.next().unwrap_or_default();
+        match stage {
+            "2" => local = hash.to_string(),
+            "3" => remote = hash.to_string(),
+            _ => {}
+        }
+    }
+
+    Ok((local, remote))
 }
 
 pub fn git_last_pull_time(repo: &Path) -> Result<SystemTime, SyncError> {
@@ -262,12 +323,137 @@ pub fn git_state(repo: &Path) -> Result<RepositoryState, SyncError> {
     Ok(RepositoryState::Clean)
 }
 
+pub fn git_abort(repo: &Path, state: RepositoryState) -> Result<(), SyncError> {
+    let sub = match state {
+        RepositoryState::Merge => "merge",
+        RepositoryState::Rebase
+        | RepositoryState::RebaseInteractive
+        | RepositoryState::RebaseMerge => "rebase",
+        RepositoryState::CherryPick => "cherry-pick",
+        RepositoryState::Revert => "revert",
+        RepositoryState::Apply | RepositoryState::Am => "am",
+        _ => {
+            return Err(SyncError::GitCli(
+                "Repository is not in an abortable state".to_string(),
+            ))
+        }
+    };
+    git(repo, [sub, "--abort"], false)
+}
+
 pub fn git_checkout_ours(repo: &Path, path: &str) -> Result<(), SyncError> {
     git(repo, ["checkout", "--ours", path], false)
 }
 
 pub fn git_checkout_theirs(repo: &Path, path: &str) -> Result<(), SyncError> {
     git(repo, ["checkout", "--theirs", path], false)
+}
+
+pub fn git_checkout_detached(repo: &Path, commit: &str) -> Result<(), SyncError> {
+    git(repo, ["checkout", "--detach", commit], false)
+}
+
+pub fn git_last_commit_info(
+    repo: &Path,
+    reference: Option<&str>,
+    path: &str,
+) -> Result<(String, i64), SyncError> {
+    let mut args = vec![
+        "log".to_string(),
+        "-1".to_string(),
+        "--format=%an%x1f%ct".to_string(),
+    ];
+    if let Some(reference) = reference {
+        args.push(reference.to_string());
+    }
+    args.push("--".to_string());
+    args.push(path.to_string());
+
+    let output = git_output(repo, &args, false)?;
+    if !output.status.success() {
+        return Err(SyncError::Other(format!(
+            "git log failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let line = text.lines().next().unwrap_or("").trim();
+    let mut parts = line.split('\u{1f}');
+    let author = parts.next().unwrap_or("").trim().to_string();
+    let timestamp = parts
+        .next()
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .unwrap_or(0);
+
+    if author.is_empty() {
+        return Err(SyncError::Other(format!(
+            "No commit history found for {}",
+            path
+        )));
+    }
+    Ok((author, timestamp))
+}
+
+pub struct RawLogEntry {
+    pub hash: String,
+    pub timestamp: i64,
+    pub message: String,
+    pub paths: Vec<String>,
+}
+
+pub fn git_log(
+    repo: &Path,
+    path: Option<&str>,
+    limit: usize,
+) -> Result<Vec<RawLogEntry>, SyncError> {
+    let mut args = vec![
+        "log".to_string(),
+        format!("-n{}", limit),
+        "--format=%H%x1f%ct%x1f%s".to_string(),
+        "--name-only".to_string(),
+    ];
+    if let Some(path) = path {
+        args.push("--".to_string());
+        args.push(path.to_string());
+    }
+
+    let output = git_output(repo, &args, false)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("does not have any commits") {
+            return Ok(Vec::new());
+        }
+        return Err(SyncError::GitStatus(output.status.code().unwrap_or(-1)));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut entries: Vec<RawLogEntry> = Vec::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.contains('\u{1f}') {
+            let mut parts = trimmed.split('\u{1f}');
+            let hash = parts.next().unwrap_or_default().to_string();
+            let timestamp = parts.next().unwrap_or("0").parse::<i64>().unwrap_or(0);
+            let message = parts.next().unwrap_or_default().to_string();
+            entries.push(RawLogEntry {
+                hash,
+                timestamp,
+                message,
+                paths: Vec::new(),
+            });
+        } else if let Some(last) = entries.last_mut() {
+            last.paths.push(trimmed.to_string());
+        }
+    }
+    Ok(entries)
+}
+
+pub fn git_show_file(repo: &Path, commit: &str, path: &str) -> Result<String, SyncError> {
+    git_stdout_ok(repo, ["show", &format!("{}:{}", commit, path)], false)
 }
 
 pub fn git_add(repo: &Path, path: &str) -> Result<(), SyncError> {
@@ -338,7 +524,7 @@ where
         cmd.arg("-c").arg("http.timeout=30");
         cmd.arg("-c").arg("http.lowSpeedLimit=1000");
         cmd.arg("-c").arg("http.lowSpeedTime=60");
-        crate::git_sync::ssh::configure_ssh_persist(&mut cmd);
+        crate::git_sync::ssh::configure_ssh_persist(&mut cmd, dir);
     }
 
     cmd.args(args);

@@ -8,16 +8,21 @@ use base64::Engine;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
-use assistant_security::vault_crypto::types::MasterKey;
+use assistant_security::types::{VaultCategory, VaultEntryImport, VaultEntrySnapshot};
+use assistant_security::vault_crypto::types::{CipherAlgorithm, MasterKey, VaultPlaintext};
 use assistant_security::vault_crypto::VaultCrypto;
 
-use crate::types::{SyncError, VaultMeta};
-use types::{DecryptedEntryBlob, EmergencyDataFile, EncryptedEntryBlob, VaultMetaFile};
+use crate::types::SyncError;
+use types::{
+    BlobCustomField, EmergencyDataFile, EntryBlob, EntryFile, ImportedEntry, VaultCryptoMeta,
+    VaultMetaFile,
+};
 
 type HmacSha256 = Hmac<Sha256>;
 
 const ENTRIES_DIR: &str = "entries";
 const VAULT_META_FILE: &str = ".vault-meta";
+const VAULT_META_VERSION: u32 = 1;
 
 pub struct VaultFileManager {
     vault_dir: PathBuf,
@@ -32,124 +37,147 @@ impl VaultFileManager {
         &self.vault_dir
     }
 
+    pub fn entries_dir(&self) -> PathBuf {
+        self.vault_dir.join(ENTRIES_DIR)
+    }
+
     pub fn ensure_structure(&self) -> Result<(), SyncError> {
-        fs::create_dir_all(self.vault_dir.join(ENTRIES_DIR))?;
+        fs::create_dir_all(self.entries_dir())?;
         Ok(())
     }
 
-    pub fn ensure_vault_meta_exists(&self) -> Result<(), SyncError> {
-        let path = self.vault_dir.join(VAULT_META_FILE);
-        if !path.exists() {
-            let meta = VaultMetaFile {
-                version: 1,
-                cipher_algorithm: "aes256Gcm".to_string(),
-                entry_count: 0,
-                last_sync_at: None,
-                emergency: None,
-                hmac: String::new(),
-            };
-            let json =
-                serde_json::to_string_pretty(&meta).map_err(|e| SyncError::Other(e.to_string()))?;
-            fs::write(&path, json)?;
-        }
-        Ok(())
+    pub fn entry_file_path(&self, entry_id: &str) -> PathBuf {
+        self.entries_dir().join(format!("{}.enc", entry_id))
     }
 
     pub fn export_entry(
         &self,
         master_key: &MasterKey,
-        entry_id: &str,
-        category: &str,
-        title: &str,
-        username: Option<&str>,
-        url: Option<&str>,
-        encrypted_password: Option<&str>,
-        encrypted_notes: Option<&str>,
-        encrypted_totp_secret: Option<&str>,
-        encrypted_custom_fields: Option<&str>,
-        tags: &[String],
-        is_favorite: bool,
-        revision: u64,
-        created_at: i64,
-        updated_at: i64,
+        snapshot: &VaultEntrySnapshot,
+        force: bool,
     ) -> Result<(), SyncError> {
-        let entry_key = VaultCrypto::derive_entry_key(master_key, entry_id);
+        self.ensure_structure()?;
 
-        let blob = EncryptedEntryBlob {
-            id: entry_id.to_string(),
-            category: category.to_string(),
-            title: title.to_string(),
-            username: username.map(|s| s.to_string()),
-            url: url.map(|s| s.to_string()),
-            encrypted_password: encrypted_password.map(|s| s.to_string()),
-            encrypted_notes: encrypted_notes.map(|s| s.to_string()),
-            encrypted_totp_secret: encrypted_totp_secret.map(|s| s.to_string()),
-            encrypted_custom_fields: encrypted_custom_fields.map(|s| s.to_string()),
-            tags: tags.to_vec(),
-            is_favorite,
-            revision,
-            created_at,
-            updated_at,
+        let path = self.entry_file_path(&snapshot.id);
+        if !force {
+            if let Some(existing) = read_entry_file(&path) {
+                if existing.revision == snapshot.revision {
+                    return Ok(());
+                }
+            }
+        }
+
+        let blob = EntryBlob {
+            title: snapshot.title.clone(),
+            username: snapshot.username.clone(),
+            url: snapshot.url.clone(),
+            password: snapshot.password.clone(),
+            notes: snapshot.notes.clone(),
+            custom_fields: snapshot
+                .custom_fields
+                .iter()
+                .map(|cf| BlobCustomField {
+                    name: cf.name.clone(),
+                    value: cf.value.clone(),
+                    is_secret: cf.is_protected,
+                })
+                .collect(),
+            totp_secret: snapshot.totp_secret.clone(),
+            totp_digits: snapshot.totp_digits,
+            totp_period: snapshot.totp_period,
+            tags: snapshot.tags.clone(),
+            is_favorite: snapshot.is_favorite,
+            created_at: snapshot.created_at,
+            updated_at: snapshot.updated_at,
         };
 
-        let json = serde_json::to_vec(&blob).map_err(|e| SyncError::Other(e.to_string()))?;
-
-        let plaintext = assistant_security::vault_crypto::types::VaultPlaintext::from(json);
+        let blob_json = serde_json::to_vec(&blob).map_err(|e| SyncError::Other(e.to_string()))?;
+        let plaintext = VaultPlaintext::from(blob_json);
+        let entry_key = VaultCrypto::derive_entry_key(master_key, &snapshot.id);
         let encrypted =
-            VaultCrypto::encrypt_field(&plaintext, entry_key.expose(), Default::default())
+            VaultCrypto::encrypt_field(&plaintext, entry_key.expose(), CipherAlgorithm::default())
                 .map_err(|e| SyncError::Other(e.to_string()))?;
 
-        let file_path = self
-            .vault_dir
-            .join(ENTRIES_DIR)
-            .join(format!("{}.enc", entry_id));
-        fs::write(&file_path, encrypted.as_bytes())?;
+        let file = EntryFile {
+            id: snapshot.id.clone(),
+            category: snapshot.category.to_string(),
+            revision: snapshot.revision,
+            encrypted_blob: encrypted,
+        };
 
-        Ok(())
+        let json =
+            serde_json::to_string_pretty(&file).map_err(|e| SyncError::Other(e.to_string()))?;
+        write_atomically(&path, json.as_bytes())
     }
 
     pub fn import_entry(
         &self,
         master_key: &MasterKey,
         entry_id: &str,
-    ) -> Result<DecryptedEntryBlob, SyncError> {
-        let file_path = self
-            .vault_dir
-            .join(ENTRIES_DIR)
-            .join(format!("{}.enc", entry_id));
-
-        if !file_path.exists() {
+    ) -> Result<ImportedEntry, SyncError> {
+        let path = self.entry_file_path(entry_id);
+        if !path.exists() {
             return Err(SyncError::Other(format!(
                 "Entry file not found: {}",
                 entry_id
             )));
         }
 
-        let encrypted = fs::read_to_string(&file_path)?;
-        let entry_key = VaultCrypto::derive_entry_key(master_key, entry_id);
+        let content = fs::read_to_string(&path)?;
+        self.decode_entry_file(master_key, &content)
+    }
 
-        let plaintext = VaultCrypto::decrypt_field(&encrypted, entry_key.expose())
+    pub fn decode_entry_file(
+        &self,
+        master_key: &MasterKey,
+        content: &str,
+    ) -> Result<ImportedEntry, SyncError> {
+        let file: EntryFile =
+            serde_json::from_str(content).map_err(|e| SyncError::Other(e.to_string()))?;
+
+        let entry_key = VaultCrypto::derive_entry_key(master_key, &file.id);
+        let plaintext = VaultCrypto::decrypt_field(&file.encrypted_blob, entry_key.expose())
+            .map_err(|e| SyncError::HistoryDecryptFailed(e.to_string()))?;
+        let blob: EntryBlob = serde_json::from_slice(plaintext.expose())
             .map_err(|e| SyncError::Other(e.to_string()))?;
 
-        let blob: EncryptedEntryBlob = serde_json::from_slice(plaintext.expose())
-            .map_err(|e| SyncError::Other(e.to_string()))?;
+        Ok(ImportedEntry {
+            id: file.id,
+            category: file.category,
+            revision: file.revision,
+            blob,
+        })
+    }
 
-        Ok(DecryptedEntryBlob::from(blob))
+    pub fn read_all_entries(
+        &self,
+        master_key: &MasterKey,
+    ) -> Result<(Vec<ImportedEntry>, Vec<String>), SyncError> {
+        let ids = self.list_entry_files()?;
+        let mut entries = Vec::with_capacity(ids.len());
+        let mut unreadable_ids = Vec::new();
+        for id in ids {
+            match self.import_entry(master_key, &id) {
+                Ok(entry) => entries.push(entry),
+                Err(e) => {
+                    log::warn!("Skipping unreadable vault entry file {}: {}", id, e);
+                    unreadable_ids.push(id);
+                }
+            }
+        }
+        Ok((entries, unreadable_ids))
     }
 
     pub fn remove_entry_file(&self, entry_id: &str) -> Result<(), SyncError> {
-        let file_path = self
-            .vault_dir
-            .join(ENTRIES_DIR)
-            .join(format!("{}.enc", entry_id));
-        if file_path.exists() {
-            fs::remove_file(&file_path)?;
+        let path = self.entry_file_path(entry_id);
+        if path.exists() {
+            fs::remove_file(&path)?;
         }
         Ok(())
     }
 
     pub fn list_entry_files(&self) -> Result<Vec<String>, SyncError> {
-        let entries_dir = self.vault_dir.join(ENTRIES_DIR);
+        let entries_dir = self.entries_dir();
         if !entries_dir.exists() {
             return Ok(Vec::new());
         }
@@ -163,60 +191,60 @@ impl VaultFileManager {
                 ids.push(id.to_string());
             }
         }
+        ids.sort();
         Ok(ids)
     }
 
-    pub fn write_vault_meta(
+    pub fn export_vault_meta(
         &self,
         master_key: &MasterKey,
-        version: u32,
-        cipher_algorithm: &str,
-        entry_count: u32,
-        last_sync_at: Option<i64>,
-        emergency: Option<&EmergencyDataFile>,
+        crypto: Option<VaultCryptoMeta>,
+        emergency: Option<EmergencyDataFile>,
     ) -> Result<(), SyncError> {
-        let meta = VaultMetaFile {
-            version,
-            cipher_algorithm: cipher_algorithm.to_string(),
-            entry_count,
-            last_sync_at,
-            emergency: emergency.cloned(),
-            hmac: String::new(),
-        };
+        let path = self.vault_dir.join(VAULT_META_FILE);
+        let existing = fs::read_to_string(&path).ok();
+        let existing_meta = existing
+            .as_deref()
+            .and_then(|content| serde_json::from_str::<VaultMetaFile>(content).ok());
 
-        let hmac = compute_vault_meta_hmac(master_key, &meta);
+        let exported_at = existing_meta
+            .as_ref()
+            .map(|meta| meta.exported_at)
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
-        let mut meta = meta;
-        meta.hmac = B64.encode(hmac);
+        let meta = sign_vault_meta(
+            master_key,
+            VaultMetaFile {
+                version: VAULT_META_VERSION,
+                exported_at,
+                crypto,
+                emergency,
+                integrity: String::new(),
+            },
+        );
 
         let json =
             serde_json::to_string_pretty(&meta).map_err(|e| SyncError::Other(e.to_string()))?;
-        fs::write(self.vault_dir.join(VAULT_META_FILE), json)?;
-
-        Ok(())
-    }
-
-    pub fn read_vault_meta(&self, master_key: &MasterKey) -> Result<VaultMeta, SyncError> {
-        let content = fs::read_to_string(self.vault_dir.join(VAULT_META_FILE))?;
-        let meta: VaultMetaFile =
-            serde_json::from_str(&content).map_err(|e| SyncError::Other(e.to_string()))?;
-
-        let expected_hmac = compute_vault_meta_hmac(master_key, &meta);
-        let actual_hmac = B64
-            .decode(&meta.hmac)
-            .map_err(|e| SyncError::Other(e.to_string()))?;
-
-        if expected_hmac != actual_hmac {
-            return Err(SyncError::HmacFailed);
+        if existing.as_deref() == Some(json.as_str()) {
+            return Ok(());
         }
 
-        Ok(VaultMeta {
-            version: meta.version,
-            cipher_algorithm: meta.cipher_algorithm,
-            entry_count: meta.entry_count,
-            last_sync_at: meta.last_sync_at,
-            hmac: meta.hmac,
-        })
+        let meta = sign_vault_meta(
+            master_key,
+            VaultMetaFile {
+                exported_at: chrono::Utc::now().timestamp(),
+                ..meta
+            },
+        );
+        let json =
+            serde_json::to_string_pretty(&meta).map_err(|e| SyncError::Other(e.to_string()))?;
+        fs::create_dir_all(&self.vault_dir)?;
+        write_atomically(&path, json.as_bytes())
+    }
+
+    pub fn read_vault_meta(&self) -> Result<VaultMetaFile, SyncError> {
+        let content = fs::read_to_string(self.vault_dir.join(VAULT_META_FILE))?;
+        serde_json::from_str(&content).map_err(|e| SyncError::Other(e.to_string()))
     }
 
     pub fn verify_vault_meta_integrity(
@@ -235,12 +263,25 @@ impl VaultFileManager {
         let meta: VaultMetaFile =
             serde_json::from_str(&content).map_err(|e| SyncError::Other(e.to_string()))?;
 
-        let expected_hmac = compute_vault_meta_hmac(master_key, &meta);
-        let actual_hmac = B64
-            .decode(&meta.hmac)
-            .map_err(|e| SyncError::Other(e.to_string()))?;
+        if meta.integrity.is_empty() {
+            return Ok(IntegrityResult {
+                valid: false,
+                message: ".vault-meta is unsigned (integrity field empty)".to_string(),
+            });
+        }
 
-        if expected_hmac == actual_hmac {
+        let expected = compute_vault_meta_hmac(master_key, &meta);
+        let actual = match B64.decode(&meta.integrity) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                return Ok(IntegrityResult {
+                    valid: false,
+                    message: format!(".vault-meta integrity field is not valid base64: {}", e),
+                })
+            }
+        };
+
+        if expected == actual {
             Ok(IntegrityResult {
                 valid: true,
                 message: "Integrity verified".to_string(),
@@ -258,10 +299,7 @@ impl VaultFileManager {
         if !path.exists() {
             return Ok(None);
         }
-        let content = fs::read_to_string(&path)?;
-        let meta: VaultMetaFile =
-            serde_json::from_str(&content).map_err(|e| SyncError::Other(e.to_string()))?;
-        Ok(meta.emergency)
+        Ok(self.read_vault_meta()?.emergency)
     }
 
     pub fn write_emergency_data(
@@ -269,48 +307,46 @@ impl VaultFileManager {
         master_key: &MasterKey,
         emergency: &EmergencyDataFile,
     ) -> Result<(), SyncError> {
-        let path = self.vault_dir.join(VAULT_META_FILE);
-        let mut meta = if path.exists() {
-            let content = fs::read_to_string(&path)?;
-            serde_json::from_str(&content).map_err(|e| SyncError::Other(e.to_string()))?
-        } else {
-            VaultMetaFile {
-                version: 1,
-                cipher_algorithm: "aes256Gcm".to_string(),
-                entry_count: 0,
-                last_sync_at: None,
-                emergency: None,
-                hmac: String::new(),
-            }
-        };
+        let existing = self.read_vault_meta().ok();
+        let crypto = existing.as_ref().and_then(|m| m.crypto.clone());
+        let version = existing
+            .as_ref()
+            .map(|m| m.version)
+            .unwrap_or(VAULT_META_VERSION);
 
-        meta.emergency = Some(emergency.clone());
+        let mut meta = VaultMetaFile {
+            version,
+            exported_at: chrono::Utc::now().timestamp(),
+            crypto,
+            emergency: Some(emergency.clone()),
+            integrity: String::new(),
+        };
         let hmac = compute_vault_meta_hmac(master_key, &meta);
-        meta.hmac = B64.encode(hmac);
+        meta.integrity = B64.encode(hmac);
 
         let json =
             serde_json::to_string_pretty(&meta).map_err(|e| SyncError::Other(e.to_string()))?;
-        fs::write(&path, json)?;
-        Ok(())
+        write_atomically(&self.vault_dir.join(VAULT_META_FILE), json.as_bytes())
     }
 
-    pub fn clear_emergency_data(&self) -> Result<(), SyncError> {
+    pub fn clear_emergency_data(&self, master_key: &MasterKey) -> Result<(), SyncError> {
         let path = self.vault_dir.join(VAULT_META_FILE);
         if !path.exists() {
             return Ok(());
         }
-        let content = fs::read_to_string(&path)?;
-        let mut meta: VaultMetaFile =
-            serde_json::from_str(&content).map_err(|e| SyncError::Other(e.to_string()))?;
+        let mut meta = self.read_vault_meta()?;
         if meta.emergency.is_none() {
             return Ok(());
         }
         meta.emergency = None;
-        meta.hmac = String::new();
+        meta.exported_at = chrono::Utc::now().timestamp();
+        meta.integrity = String::new();
+        let hmac = compute_vault_meta_hmac(master_key, &meta);
+        meta.integrity = B64.encode(hmac);
+
         let json =
             serde_json::to_string_pretty(&meta).map_err(|e| SyncError::Other(e.to_string()))?;
-        fs::write(&path, json)?;
-        Ok(())
+        write_atomically(&path, json.as_bytes())
     }
 
     pub fn rewrite_vault_meta_with_new_key(&self, master_key: &MasterKey) -> Result<(), SyncError> {
@@ -318,16 +354,65 @@ impl VaultFileManager {
         if !path.exists() {
             return Ok(());
         }
-        let content = fs::read_to_string(&path)?;
-        let mut meta: VaultMetaFile =
-            serde_json::from_str(&content).map_err(|e| SyncError::Other(e.to_string()))?;
+        let mut meta = self.read_vault_meta()?;
+        meta.integrity = String::new();
         let hmac = compute_vault_meta_hmac(master_key, &meta);
-        meta.hmac = B64.encode(hmac);
+        meta.integrity = B64.encode(hmac);
+
         let json =
             serde_json::to_string_pretty(&meta).map_err(|e| SyncError::Other(e.to_string()))?;
-        fs::write(&path, json)?;
-        Ok(())
+        write_atomically(&path, json.as_bytes())
     }
+}
+
+impl ImportedEntry {
+    pub fn into_import(self) -> VaultEntryImport {
+        VaultEntryImport {
+            id: self.id,
+            category: VaultCategory::parse(&self.category).unwrap_or_default(),
+            revision: self.revision,
+            title: self.blob.title,
+            username: self.blob.username,
+            url: self.blob.url,
+            password: self.blob.password,
+            notes: self.blob.notes,
+            totp_secret: self.blob.totp_secret,
+            totp_digits: self.blob.totp_digits,
+            totp_period: self.blob.totp_period,
+            custom_fields: self
+                .blob
+                .custom_fields
+                .into_iter()
+                .map(|cf| assistant_security::types::CustomFieldInput {
+                    name: cf.name,
+                    value: cf.value,
+                    is_protected: cf.is_secret,
+                })
+                .collect(),
+            tags: self.blob.tags,
+            is_favorite: self.blob.is_favorite,
+            created_at: self.blob.created_at,
+            updated_at: self.blob.updated_at,
+        }
+    }
+}
+
+fn write_atomically(path: &Path, contents: &[u8]) -> Result<(), SyncError> {
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, contents)?;
+    fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+fn read_entry_file(path: &Path) -> Option<EntryFile> {
+    let content = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn sign_vault_meta(master_key: &MasterKey, mut meta: VaultMetaFile) -> VaultMetaFile {
+    meta.integrity = String::new();
+    meta.integrity = B64.encode(compute_vault_meta_hmac(master_key, &meta));
+    meta
 }
 
 fn compute_hmac(key: &[u8; 32], data: &[u8]) -> Vec<u8> {
@@ -338,7 +423,7 @@ fn compute_hmac(key: &[u8; 32], data: &[u8]) -> Vec<u8> {
 
 fn compute_vault_meta_hmac(master_key: &MasterKey, meta: &VaultMetaFile) -> Vec<u8> {
     let mut meta_for_hmac = meta.clone();
-    meta_for_hmac.hmac = String::new();
+    meta_for_hmac.integrity = String::new();
     let content = serde_json::to_vec(&meta_for_hmac).unwrap_or_default();
     compute_hmac(master_key.expose(), &content)
 }

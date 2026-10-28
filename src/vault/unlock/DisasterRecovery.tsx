@@ -20,6 +20,8 @@ interface DisasterRecoveryProps {
   onDrGitUrlChange: (value: string) => void;
   drRecoveryKey: string;
   onDrRecoveryKeyChange: (value: string) => void;
+  drCommit: string;
+  onDrCommitChange: (value: string) => void;
   onNext: () => Promise<void>;
   onCancel: () => void;
   onSetStep: (step: 1 | 2) => void;
@@ -34,6 +36,8 @@ export default function DisasterRecovery({
   onDrGitUrlChange,
   drRecoveryKey,
   onDrRecoveryKeyChange,
+  drCommit,
+  onDrCommitChange,
   onNext,
   onCancel,
   onSetStep,
@@ -84,6 +88,14 @@ export default function DisasterRecovery({
               value={drGitUrl}
               onChange={(e) => onDrGitUrlChange(e.target.value)}
               autoFocus
+            />
+          </Form.Item>
+          <Form.Item>
+            <Input
+              size="large"
+              placeholder={t("vault.disaster_recovery.commit_placeholder")}
+              value={drCommit}
+              onChange={(e) => onDrCommitChange(e.target.value)}
             />
           </Form.Item>
           <Form.Item>
@@ -147,6 +159,17 @@ export default function DisasterRecovery({
             showIcon
             style={{ marginBottom: 16 }}
           />
+          {result.skippedIds.length > 0 && (
+            <Alert
+              type="warning"
+              title={t("vault.disaster_recovery.skipped_warning", {
+                count: result.skippedIds.length,
+                ids: result.skippedIds.join(", "),
+              })}
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          )}
           <Typography.Text
             type="secondary"
             style={{ display: "block", marginBottom: 8 }}

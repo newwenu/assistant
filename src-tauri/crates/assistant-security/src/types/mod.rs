@@ -2,6 +2,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::vault_crypto::types::CipherAlgorithm;
+
 impl From<String> for VaultError {
     fn from(s: String) -> Self {
         VaultError::Database(s)
@@ -137,6 +139,66 @@ pub struct VaultEntryUpdate {
     pub tags: Vec<String>,
     pub custom_fields: Vec<CustomFieldInput>,
     pub is_favorite: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct VaultEntrySnapshot {
+    pub id: String,
+    pub category: VaultCategory,
+    pub revision: u64,
+    pub title: String,
+    pub username: Option<String>,
+    pub url: Option<String>,
+    pub password: Option<String>,
+    pub notes: Option<String>,
+    pub totp_secret: Option<String>,
+    pub totp_digits: u32,
+    pub totp_period: u32,
+    pub custom_fields: Vec<CustomFieldInput>,
+    pub tags: Vec<String>,
+    pub is_favorite: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultEntryImport {
+    pub id: String,
+    pub category: VaultCategory,
+    pub revision: u64,
+    pub title: String,
+    pub username: Option<String>,
+    pub url: Option<String>,
+    pub password: Option<String>,
+    pub notes: Option<String>,
+    pub totp_secret: Option<String>,
+    pub totp_digits: u32,
+    pub totp_period: u32,
+    pub custom_fields: Vec<CustomFieldInput>,
+    pub tags: Vec<String>,
+    pub is_favorite: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportOutcome {
+    Inserted,
+    Updated,
+    SkippedLocallyDeleted,
+    SkippedStale,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultCryptoInfo {
+    pub master_key_salt: [u8; 32],
+    pub hash_salt: [u8; 32],
+    pub argon2_m: u32,
+    pub argon2_t: u32,
+    pub argon2_p: u32,
+    pub default_cipher: CipherAlgorithm,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

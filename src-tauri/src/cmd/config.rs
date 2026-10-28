@@ -61,6 +61,12 @@ static APP_SIDE_EFFECTS: &[(&str, AppSideEffectFn)] = &[
         }
         Ok(())
     }),
+    ("vault_sync_ssh_hosts", |_app, prev, conf| {
+        if prev.vault_sync_ssh_hosts != conf.vault_sync_ssh_hosts {
+            crate::cmd::vault::apply_ssh_persist_hosts(conf);
+        }
+        Ok(())
+    }),
 ];
 
 static ORB_SIDE_EFFECTS: &[(&str, OrbSideEffectFn)] = &[

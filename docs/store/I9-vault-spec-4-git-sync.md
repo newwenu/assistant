@@ -292,7 +292,7 @@ fn git(args: &[&str], repo_path: &Path) -> Result<Output> {
 | 恢复条目（本地用户操作） | `UPDATE vault_entries SET deleted_at = NULL` | 下次导出重建 `.enc` |
 | 永久清理（本地用户操作） | `DELETE FROM vault_entries WHERE deleted_at IS NOT NULL` | 对应 `.enc` 已不存在，无额外操作 |
 
-> 软删除条目在前端列表中默认隐藏，可通过"回收站"查看和恢复。
+> 软删除条目在前端列表中默认隐藏，可通过"回收站"查看和恢复。回收站与永久清理的完整设计见 §11.22.4（P2B 补充）。
 
 ### 11.11 Git 冲突处理
 
@@ -385,6 +385,8 @@ Git 同步的冲突由 Git 本身处理。由于 .enc 文件采用整体打包�
 
 **ConflictResolution 枚举**：`UseLocal` / `UseRemote` / `MergeBoth` / `Skip`
 
+> P2B 新增的运维类命令（`vault_git_remove_remote` / `vault_git_test_connection` / `vault_sync_abort` / `vault_sync_discard` / `vault_purge_deleted` / 回收站 / 历史还原）见 §11.22.3。
+
 ### 11.16 前端扩展
 
 #### 11.16.1 vaultStore 新增状态
@@ -420,8 +422,15 @@ Git 同步的冲突由 Git 本身处理。由于 .enc 文件采用整体打包�
 │  状态:  ● 就绪  |  上次同步: 2 分钟前                 │
 │                                                      │
 │  [初始化仓库]  [克隆仓库]  [立即同步]  [强制推送]     │
+│                                                      │
+│  ── 更多操作 ─────────────────────────────────────    │
+│  [测试连接]  [移除远程仓库]                           │
+│  ── 危险操作 ─────────────────────────────────────    │
+│  [中止同步]  [放弃本地改动]                           │
 └──────────────────────────────────────────────────────┘
 ```
+
+> P2B 补充：首次接入区需同时渲染 URL 输入与「初始化 / 克隆」按钮（当前实现两者互斥，见 §11.22.1）；`{ repoState }` 时显示「中止同步」，`reset --hard` 需二次确认（见 §11.22.2）。
 
 #### 11.16.3 VaultConflictResolve 组件
 
@@ -511,6 +520,7 @@ Rust struct 添加 `#[serde(default)]`，`AppConfDto` 同步更新。
 | SSH 连接复用 | §4.2.9 | §11.12 | ✅ 一致 |
 | Tauri Commands | §5 同步/Git 部分 | §11.15 | ✅ 一致 |
 | vaultStore 扩展 | §6.2 syncStatus/conflicts | §11.16.1 | ✅ 一致 |
+| 同步运维 / 回收站 / 历史还原 | §4.2.8 恢复与追溯 | §11.22 | 🆕 P2B 补充：单条目还原、禁止整仓回滚、还原提升 revision |
 
 **类型安全**：新增 SyncConfig / SyncResult / Readyness / ConflictResolution 类型，前端 TypeScript 类型与 Rust serde 序列化对齐。
 
@@ -524,3 +534,207 @@ Rust struct 添加 `#[serde(default)]`，`AppConfDto` 同步更新。
 | 未签名 meta 不被静默接受 | 单元测试：`integrity` 为空时 pull 中止并返回 `VaultMetaIntegrityFailed` |
 | Git 凭证不存入仓库 | 代码审查：sync_config 仅存 vault_meta |
 | 双写一致性 | 集成测试：.enc 导出失败时 DB 事务回滚 |
+
+### 11.22 同步运维与历史还原（P2B）
+
+> 补充设计。来源：P2A 落地后对账，发现「远程配置无写入通路」「冲突态无入口」「无恢复手段」「无回收站」「无历史还原」五类缺口。
+> 任务拆分见 `I9-vault-tasklist-p2.md` 阶段 L。
+
+#### 11.22.1 远程仓库配置闭环
+
+**问题**：`SyncConfig.remote_url` 与 Git 真实配置是两份数据，且前者不具备权威性。
+
+| 层 | 行为 | 权威性 |
+|----|------|--------|
+| `SyncEngine.config`（内存 `Mutex<SyncConfig>`） | `set_config` 仅替换内存值 | ❌ 不参与 push/pull 决策 |
+| Git 仓库 `remote.origin.url` | `has_remote()` / `git push` 实际读取 | ✅ 唯一权威来源 |
+
+因此 `vault_set_sync_config` **不能**作为配置 remote 的手段。当前后果：`push` / `forcePush` 返回 `No remote configured`，`pull` 直接返回 `UpToDate` 空转（无 remote 时按「无事可做」处理）。正确流程：
+
+| 场景 | 前置 | 操作序列 |
+|------|------|---------|
+| 本机已有保险库，首次启用同步 | 本地条目任意 | `git_init` → `git_add_remote` → `saveSyncConfig`（缓存）→ `sync_now` |
+| 新设备，远程已有仓库 | **本地条目数 = 0** | `git_clone(url)` → `saveSyncConfig`（缓存）→ `sync_now` |
+| 更换仓库 | 已有 remote | `git_remove_remote` → `git_add_remote(new)` → `saveSyncConfig` |
+| 彻底断开同步 | 已有 remote | `git_remove_remote` → `saveSyncConfig`（`remote_url = null`） |
+
+**克隆前置约束**：`GitSync::clone` 拒绝非空目标目录（`Clone target is not empty`），而本地任一条目都会在 vault 目录生成 `entries/*.enc`。因此克隆**仅适用于全新设备**；UI 需按 `entries.length > 0` 禁用并提示，或引导走灾难恢复路径（`clone_recovery_repo` 克隆到临时目录再合并）。
+
+**首次接入区 UI**（`isNoSync` 时同时渲染，不再与 URL 输入框互斥）：
+
+```
+┌──────────────────────────────────────────────────────┐
+│  远程仓库:  [https://github.com/user/vault.git    ]  │
+│  [测试连接]                                          │
+│                                                      │
+│  [初始化仓库]  [克隆仓库]                             │
+│   ⓘ 本地已有条目时不可克隆                            │
+└──────────────────────────────────────────────────────┘
+```
+
+#### 11.22.2 冲突态生命周期
+
+`Readyness` 只有 `ready` / `dirty` / `noSync` / `{ repoState }` 四支，而前端此前只处理前三支，导致冲突态「看得见状态、点不到入口」。
+
+```
+ready ──pull 冲突──▶ repoState(Merge)
+                        │
+          ┌─────────────┴─────────────┐
+          ▼                           ▼
+   resolve_conflict + commit      abort_repo_state
+   （逐条解决后收尾）              （git merge --abort）
+          │                           │
+          └──────────▶ ready ◀────────┘
+```
+
+| 操作 | 前置 | git 行为 | 命令 |
+|------|------|---------|------|
+| 打开冲突面板 | `repoState = merge/rebase/cherryPick` | 无 | 前端读取 `detect_conflicts` |
+| 解决单条 | 同上 | `checkout --ours/--theirs` + `add` | `vault_resolve_conflict(path, resolution)` |
+| 冲突收尾 | 全部冲突已解决 | `commit`（或交由 `sync_now` 的 `finalize`） | `vault_sync(action: "sync")` |
+| 中止同步 | 同上 | `merge --abort` / `rebase --abort` / `cherry-pick --abort` | `vault_sync_abort` |
+| 放弃本地改动 | 任意 | `add -A` + `reset --hard` | `vault_sync_discard`（二次确认） |
+
+#### 11.22.3 新增 Tauri Commands（运维类）
+
+| Command | 签名 | 说明 |
+|---------|------|------|
+| `vault_git_remove_remote` | `(remote: String) → void` | 移除远程仓库（解绑 / 迁移） |
+| `vault_git_test_connection` | `(url?: String) → ConnectionTest` | `git ls-remote`（`GIT_TERMINAL_PROMPT=0`），返回 `ok` / `stderr` 摘要 |
+| `vault_sync_abort` | `() → void` | 中止 merge / rebase / cherry-pick |
+| `vault_sync_discard` | `() → void` | 放弃本地改动（`reset --hard`） |
+| `vault_purge_deleted` | `() → u32` | 永久清理软删除条目 |
+| `vault_list_deleted` | `() → VaultEntrySummary[]` | 回收站列表 |
+| `vault_restore_deleted` | `(id: String) → void` | 从回收站恢复 |
+| `vault_history_list` | `(entryId?: String, limit?: u32) → HistoryCommit[]` | 历史版本列表 |
+| `vault_history_preview` | `(commit: String, entryId: String) → EntryPreview` | 历史版本预览（敏感字段遮蔽） |
+| `vault_history_restore` | `(commit: String, entryId: String) → void` | 单条目还原 |
+
+**HistoryCommit**：`hash` / `timestamp` / `message` / `entryId`（可为 `null`，表示跨条目提交）
+
+**EntryPreview**：`title` / `category` / `fields: { key, value, masked }[]` / `revision` / `updatedAt`
+
+#### 11.22.4 回收站与永久清理
+
+软删除（`deleted_at` 墓碑）与永久清理（`DELETE`）必须分开，因为两者在 Git 侧后果不同：
+
+| 操作 | DB | Git | 可恢复性 |
+|------|----|-----|---------|
+| 软删除 | `deleted_at = now()` | 下次导出移除 `.enc`，删除进入提交历史 | ✅ 回收站恢复 / Git 历史还原 |
+| 恢复 | `deleted_at = NULL`，`revision + 1` | 下次导出重建 `.enc` | — |
+| 永久清理 | `DELETE FROM vault_entries WHERE deleted_at IS NOT NULL` | 无额外操作（`.enc` 已不存在） | ❌ 墓碑消失后无法再定位历史版本 |
+
+**约束**：永久清理必须二次确认，且文案需明确「清理后无法再从 Git 历史还原」。同时存在「历史还原」能力时，purge 是唯一不可逆操作，需置于 danger zone。
+
+#### 11.22.5 历史浏览与单条目还原
+
+**能力现状**：`git.rs` 仅有 `init/clone/add_all/commit/reset_hard/status/push/pull/fetch/remote*/checkout_ours|theirs/ref_hash/unmerged_paths/conflict_stage_hashes/last_pull_time`，**无任何历史读取函数**，亦无 `abort` / `ls-remote` 封装。`git log` / `git show` / `git cat-file` 需先补齐。`GitSync` 层同样缺 `remove_remote` / `test_connection` / `abort_repo_state`，需包一层（底层 `git_remote_remove` 已存在）。
+
+**为什么按条目而非整仓**：
+
+- `.enc` 按条目分文件、逐条目独立密钥（`derive_entry_key(master_key, entry_id)`），单条目还原在密码学上天然可行
+- 整仓 `reset --hard <commit>` 会绕过 revision 语义、把所有条目一起倒退，且误操作代价极高
+- 删除操作的传播已由 Git 提交历史承担（`git log --diff-filter=D -- entries/`），定位能力已具备
+
+**还原数据流**（严格对齐双写模式 §11.9）：
+
+```
+history_restore(commit, entry_id)
+  ├─ 0. 校验 readyness ≠ repoState            → 否则拒绝（中间态会污染冲突流程）
+  ├─ 1. git show <commit>:entries/<id>.enc    → 取旧 EntryFile
+  ├─ 2. 当前 master_key 解密 → EntryBlob
+  │      └─ 失败 → 返回「该版本由旧主密码加密，无法还原」，不写任何数据
+  ├─ 3. 事务内 restore_entry_tx
+  │      ├─ revision   = 本地 revision + 1     ← 关键
+  │      ├─ updated_at = now
+  │      ├─ deleted_at = NULL
+  │      └─ export_entry（用当前密钥重新加密落盘）
+  ├─ 4. finalize("vault: restore {id}")        → commit + push
+  └─ 5. 审计日志（记录来源 commit）
+```
+
+**两条硬约束**：
+
+1. **禁止直接复制历史密文字节**。`upsert_imported_in` 的 revision 门禁是：
+
+   ```rust
+   if entry.revision < revision as u64
+       || (entry.revision == revision as u64 && entry.updated_at <= updated_at)
+   {
+       return Ok(ImportOutcome::SkippedStale);
+   }
+   ```
+
+   历史版本必然 revision 更低 → 走导入通道会被静默跳过；紧接着 `export_all_entries` 用 DB 当前版本覆盖工作区，还原被抹掉，而 `SyncResult` 仍返回 `Success`。因此还原必须走独立事务并提升 revision，其他设备看到 `N+1` 才会正确收敛到旧内容。
+
+2. **墓碑会挡住还原**。`Some((Some(_), _, _)) => Ok(ImportOutcome::SkippedLocallyDeleted)` 意味着本地 `deleted_at` 非空时任何导入都被跳过。还原已删除条目必须同事务完成「清墓碑 + 写内容 + 提升 revision」，不能依赖导入通道。
+
+**旧主密码边界**：改主密码（§11 全量重加密）后，旧 commit 的 `.enc` 由旧主密钥派生，当前 `master_key` 必然解不开。这是设计使然而非缺陷；UI 需给出明确文案，且**不触碰 `.vault-meta`**（旧 meta 的 HMAC 同样是旧 key 签名）。
+
+**预览接口复用**：`history_preview` 与冲突 diff（H15.2）本质相同——「取某个版本的 `EntryFile` → 解密 → 遮蔽敏感字段」。统一实现一份 `decrypt_entry_preview`，两处共用，避免重复造解密路径。
+
+#### 11.22.6 提交信息隐私
+
+现状 `finalize_sync(&engine, &format!("vault: create {}", snapshot.title))` 与 `vault: update {title}` 把**条目标题以明文写入 Git 提交信息**（`vault: delete {id}` 已是 id）。托管平台与任何有读权限者都能看到，历史面板还会成列展示。
+
+修正为只写 id：`vault: create {id}` / `vault: update {id}` / `vault: delete {id}`（不变）/ `vault: restore {id}`。追溯能力不受影响（id 稳定且与 `.enc` 文件名一致）。
+
+#### 11.22.7 P2B 约束与验证
+
+| 约束 | 说明 |
+|------|------|
+| 权威来源唯一 | remote 配置以 Git 配置为准，`SyncConfig` 仅为内存缓存 |
+| 克隆前置 | 目标目录必须为空，本地有条目时禁用克隆 |
+| 冲突可退出 | 任何 `repoState` 都必须有 `abort` 路径，不允许「只能命令行解决」 |
+| 还原提升 revision | 单条目还原 `revision + 1`，禁止复制历史密文 |
+| 还原拒绝中间态 | `repoState` 时拒绝还原 |
+| purge 不可逆 | 二次确认 + 明确「无法从历史还原」 |
+| 提交信息不含标题 | 仅 id / 操作类型 |
+
+**验证要点**：
+
+- 远程配置：新设备克隆后可同步；本地有条目时克隆被拦截
+- 冲突：双端改同一条目 → 提示条出现 → 解决后脱离 Merge 态
+- 恢复：`abort` 可退出 Merge；`discard` 有二次确认
+- 回收站：删除 → 恢复 → `.enc` 重建 → 另一设备可见
+- 历史还原：还原后 revision 递增，其他设备收敛（不触发 `SkippedStale`）
+- 历史还原边界：旧主密码 → 明确错误且不写库；`repoState` → 拒绝
+- 隐私：`git log` 抽查无标题明文
+
+#### 11.22.8 UI 参考（P2B 界面优化）
+
+P2B 的界面改动集中在「首次接入 / 冲突 / 历史 / 回收站 / 状态提示」五处。参考项目目录中已有可对照的实现，**无需新增仓库**。
+
+参考分两层：**A. Git 界面首选**（同栈 React/TS，可直接搬布局）；**B. 密码库语义**（哪些信息该展示、哪些操作不该给）。
+
+**A. Git 界面首选 —— `references/1-ai-agent/OpenBitFun`（React + TS，与本项目同栈）**
+
+| 界面 | 参考文件 | 可借鉴要点 |
+|------|---------|-----------|
+| 首次接入空态（L1.1） | `src/web-ui/src/app/scenes/git/GitScene.tsx`（`!isRepository` 分支） | 居中卡片：图标 + 标题 + 一句原因 + 单个主按钮 + 底部灰色 hint；装饰性连线表达「尚未建仓」。比纯按钮更清楚地说明「为什么现在是这个状态」 |
+| Git 场景信息架构 | `src/web-ui/src/app/scenes/git/GitNav.tsx` | 左栏 = 标题 + 仓库状态（分支 / ahead / behind）+ 导航项（变更 / 分支 / 图）；状态与导航同处一栏，不必另开面板 |
+| 设置页布局（L1 / L3） | `src/web-ui/src/tools/git/components/GitSettingsView/GitSettingsView.tsx` | 三 Tab（用户 / 仓库 / 高级）+ `section` 分块 + 顶部可关闭 status banner（error/success 各一条），保存按钮常驻 header |
+| 提交历史列表（L5.6） | `src/web-ui/src/tools/git/components/GitBranchHistoryView/GitBranchHistoryView.tsx` | 相对时间函数、作者下拉筛选、关键字搜索（消息/作者/hash）、多选集合、行内展开详情、点击复制 hash |
+| 分支图 / 提交图（L5） | `src/web-ui/src/tools/git/components/GitGraphView/GitGraphView.tsx` | 图形化提交关系 + 搜索命中定位（上一个/下一个） |
+| 差异视图（L5 预览） | `src/web-ui/src/tools/git/components/GitDiffView/`、`GitDiffEditor/` | 折叠/展开全部；空态区分「工作区无变更」「两提交间无差异」；接受/拒绝全部前有明确二次确认文案 |
+| 检出受阻对话框（L2 参考） | `src/web-ui/src/tools/git/components/BranchQuickSwitch.tsx` | 冲突态不弹裸错误：列出被覆盖文件 + 给出「提交并切换」这一条出路，失败后可重试 |
+| i18n 词条库（L7） | `src/web-ui/src/locales/zh-CN/panels/git.json` | 现成的中文文案：`relativeTime.*`、`confirm.*`（含「此操作不可恢复」句式）、`notifications.*`、`status.*`、`trust.*` |
+
+> **不可照抄**：`GitSettingsView` 在 `config.remote` 为空时**整段不渲染**（没有「添加远程」入口），与本项目 L1.1 同病；`GitService` 也没有 `clone` / `addRemote` / `testConnection`。L1 的「首次接入三分支」仍需自行设计。
+> **明确不采纳**：OpenBitFun 提供 `resetToCommit`（soft/mixed/hard），本项目按硬约束 1 禁止整仓回滚，不复用该入口。
+
+**B. 密码库语义 —— `references/3-vault-sync/keepassxc`、`references/4-vault-security/ripasso`**
+
+| 界面 | 参考文件 | 可借鉴要点 |
+|------|---------|-----------|
+| 历史版本面板（L5.6） | `keepassxc/src/gui/entry/EditEntryWidgetHistory.ui` | `QTreeView` 4 列：绝对时间 / 相对时间（`Current (5 分钟前)`）/ 修改说明 / 操作者；底部 `[Show] [Restore] [Delete] [Delete all]`，选中前全部 disabled |
+| 历史列表列语义 | `keepassxc/src/gui/entry/EntryHistoryModel.cpp` | 相对时间用 `humanReadableTimeDifference`；当前版本行标记为 `Current`，不与历史混排 |
+| 冲突解决（L2 / H15） | `keepassxc/src/gui/MergeDialog.ui` | 以表格逐行列出变更（而非整屏 diff），底部确认按钮；适合「多条冲突一次过」 |
+| 首次接入语义（L1） | `keepassxc/src/gui/DatabaseOpenWidget.ui`、`MainWindow.ui`（新建/打开/合并/导入四动作） | 「新建 / 打开 / 导入」并列呈现而非互斥隐藏，正是 L1.1 的方向；`actionDatabaseMerge` 与 `actionDatabaseImport` 分离，对应「克隆」与「导入」应分开 |
+| 状态提示条（H14.2） | `keepassxc/src/gui/MessageWidget.*`、`KMessageWidget.*` | 顶部可关闭的 inline 提示条，按 info/warning/error 分级，替代整块 `Alert` |
+| 维护 / 危险操作区（L4） | `keepassxc/src/gui/dbsettings/DatabaseSettingsWidgetMaintenance.ui` | 「维护」独立分组，破坏性操作与常规设置视觉分离 |
+| 回收站语义（L4） | `keepassxc/src/core/Group.cpp`、`Metadata.*`（`RecycleBin`） | 回收站是「特殊分组」而非独立表：删除即移入、恢复即移出，与本项目 `deleted_at` 语义可对齐 |
+| 条目版本信息 | `ripasso/crates/ripasso/src/git.rs`（`read_git_meta_data`）、`ripasso-gtk/src/window/mod.rs` | 用 `blame` 取「最后改动该文件的提交」→ 展示 `committed-by` 与 `updated` 标签，成本低且无需遍历全部历史 |
+
+> `prs` 是最贴近的 Git 同步实现，但为纯 CLI（`cli/src/action/sync/*`），只参考命令语义与 `Readyness` 状态机，不含界面。
+> 其余参考组与本任务无关：`vaultwarden` 为服务端、`rust-keepass` 无历史概念、`keyring-*` / `watchkey-win` 为系统凭据层、`2-desktop-orb/*` 与 `5-design-style/*` 无 Git 界面。

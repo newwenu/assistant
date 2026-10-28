@@ -115,7 +115,21 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             Ok(data_dir) => data_dir.join("security").join("vault"),
             Err(_) => std::path::PathBuf::from("security/vault"),
         };
-        let sync_config = assistant_sync::SyncConfig::default();
+        let sync_config = assistant_config::app_conf::AppConf::load()
+            .ok()
+            .map(|c| {
+                assistant_sync::git_sync::ssh::set_ssh_persist_hosts(
+                    c.vault_sync_ssh_hosts.clone(),
+                );
+                c.vault_sync_remote_url
+            })
+            .and_then(|url| {
+                url.map(|url| assistant_sync::SyncConfig {
+                    remote_url: Some(url),
+                    ..Default::default()
+                })
+            })
+            .unwrap_or_default();
         handle.manage(assistant_sync::sync_engine::SyncEngine::new(
             vault_dir,
             sync_config,
@@ -168,10 +182,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             move || {
                 log::info!("Screen unlocked");
                 let state = app_handle.state::<SecurityDbState>();
-                log::info!(
-                    "Screen unlocked, vault locked state: {}",
-                    state.is_locked()
-                );
+                log::info!("Screen unlocked, vault locked state: {}", state.is_locked());
             }
         };
         monitor.spawn_listener(on_lock, on_unlock);

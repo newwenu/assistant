@@ -25,6 +25,7 @@ export interface VaultRecoverySlice {
     gitUrl: string | null,
     recoveryKey: string,
     exportPath: string,
+    commit?: string | null,
   ) => Promise<DisasterRecoveryResult | null>;
   exportVault: (format: "csv" | "json", path: string) => Promise<string | null>;
   importVault: (path: string, format: "csv" | "json") => Promise<number | null>;
@@ -128,13 +129,14 @@ export function createRecoverySlice(
       set({ disasterRecoveryStep: step });
     },
 
-    disasterRecoveryExport: async (gitUrl, recoveryKey, exportPath) => {
+    disasterRecoveryExport: async (gitUrl, recoveryKey, exportPath, commit) => {
       set({ loading: true, error: null });
       try {
         const result = await vaultService.disasterRecoveryExport(
           gitUrl,
           recoveryKey,
           exportPath,
+          commit,
         );
         set({
           disasterRecoveryStep: 3,

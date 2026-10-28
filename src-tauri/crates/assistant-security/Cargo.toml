@@ -50,3 +50,6 @@ libsecret = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+ssh-key = { workspace = true }
+rsa = { workspace = true }
+rand = { workspace = true }

@@ -39,6 +39,7 @@ export function useVaultUnlock() {
   >(null);
   const [drGitUrl, setDrGitUrl] = useState("");
   const [drRecoveryKey, setDrRecoveryKey] = useState("");
+  const [drCommit, setDrCommit] = useState("");
 
   const canSubmit =
     !loading &&
@@ -142,5 +143,7 @@ export function useVaultUnlock() {
     setDrGitUrl,
     drRecoveryKey,
     setDrRecoveryKey,
+    drCommit,
+    setDrCommit,
   };
 }

@@ -60,6 +60,37 @@ pub fn vault_unlock_with_recovery_key(
     })?;
 
     if result {
+        let mut integrity_warning: Option<String> = None;
+        if let Ok(master_key) = state.get_master_key() {
+            if let Some(mk) = master_key.as_ref() {
+                match engine.verify_vault_meta_integrity(mk) {
+                    Ok(integrity) => {
+                        if !integrity.valid {
+                            log::warn!(
+                                "Recovery key unlock: vault meta integrity mismatch — {}",
+                                integrity.message
+                            );
+                            integrity_warning = Some(integrity.message);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Recovery key unlock: vault meta integrity check failed: {}",
+                            e
+                        );
+                        integrity_warning = Some(e.to_string());
+                    }
+                }
+            }
+        }
+        if let Some(message) = integrity_warning {
+            crate::protocol::events::emit_broadcast(
+                &app,
+                crate::protocol::events::event_name::VAULT_META_INTEGRITY_WARNING,
+                crate::protocol::events::VaultMetaIntegrityWarningPayload { message },
+            );
+        }
+
         super::ssh_auto_add_on_unlock(&app);
         crate::protocol::events::emit_broadcast(
             &app,
@@ -99,6 +130,7 @@ pub struct DisasterRecoveryResult {
     pub file_path: String,
     pub entry_count: u32,
     pub integrity_warning: bool,
+    pub skipped_ids: Vec<String>,
 }
 
 const EMERGENCY_META_FILE: &str = ".vault-meta";
@@ -154,7 +186,7 @@ fn export_from_engine(
         }
     }
 
-    let exports = engine.disaster_recovery_export(&master_key).map_err(|e| {
+    let (exports, skipped_ids) = engine.disaster_recovery_export(&master_key).map_err(|e| {
         log::warn!("Disaster recovery: export failed: {}", e);
         e.to_string()
     })?;
@@ -164,15 +196,17 @@ fn export_from_engine(
     std::fs::write(export_path, &json).map_err(|e| e.to_string())?;
 
     log::info!(
-        "Disaster recovery export: {} entries to {}",
+        "Disaster recovery export: {} entries to {} ({} skipped)",
         entry_count,
-        export_path
+        export_path,
+        skipped_ids.len()
     );
 
     Ok(DisasterRecoveryResult {
         file_path: export_path.to_string(),
         entry_count,
         integrity_warning,
+        skipped_ids,
     })
 }
 
@@ -182,9 +216,15 @@ pub async fn vault_disaster_recovery_export(
     git_url: Option<String>,
     recovery_key: String,
     export_path: String,
+    commit: Option<String>,
 ) -> Result<DisasterRecoveryResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let url = git_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let commit = commit
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -212,6 +252,14 @@ pub async fn vault_disaster_recovery_export(
                     let _ = std::fs::remove_dir_all(&repo_dir);
                     format!("Failed to clone vault repository: {}", e)
                 })?;
+
+                if let Some(commit) = commit.as_deref() {
+                    engine.checkout_recovery_repo(commit).map_err(|e| {
+                        log::warn!("Disaster recovery: checkout {} failed: {}", commit, e);
+                        let _ = std::fs::remove_dir_all(&repo_dir);
+                        format!("Failed to checkout commit {}: {}", commit, e)
+                    })?;
+                }
 
                 if !repo_dir.join(EMERGENCY_META_FILE).exists() {
                     let _ = std::fs::remove_dir_all(&repo_dir);
