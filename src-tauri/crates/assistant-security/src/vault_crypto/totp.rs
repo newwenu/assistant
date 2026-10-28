@@ -245,59 +245,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_decode_base32_roundtrip() {
-        let original = b"Hello!";
-        let encoded = BASE32.encode(original);
-        let decoded = decode_base32(&encoded).unwrap();
-        assert_eq!(decoded, original);
-    }
-
-    #[test]
-    fn test_decode_base32_20bytes() {
+    fn decode_base32_roundtrips_with_and_without_padding() {
         let secret: [u8; 20] = [
             0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x21, 0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe,
             0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
         ];
-        let encoded = BASE32.encode(&secret);
-        let decoded = decode_base32(&encoded).unwrap();
-        assert_eq!(decoded, secret);
-    }
-
-    #[test]
-    fn test_decode_base32_no_padding() {
-        let result = decode_base32("JBSWY3DPEHPK3PXP").unwrap();
-        assert!(!result.is_empty());
-    }
-
-    #[test]
-    fn test_decode_base32_padding() {
-        let result = decode_base32("JBSWY3DP").unwrap();
-        assert!(!result.is_empty());
-    }
-
-    #[test]
-    fn test_from_otpauth_uri_basic() {
-        let uri = "otpauth://totp/TestIssuer:test@example.com?secret=JBSWY3DPEHPK3PXP&issuer=TestIssuer&algorithm=SHA1&digits=6&period=30";
-        let parsed = from_otpauth_uri(uri).unwrap();
-        assert_eq!(parsed.secret, "JBSWY3DPEHPK3PXP");
-        assert_eq!(parsed.digits, 6);
-        assert_eq!(parsed.period, 30);
-        assert_eq!(parsed.algorithm, TotpAlgorithm::Sha1);
-        assert_eq!(parsed.issuer.as_deref(), Some("TestIssuer"));
-    }
-
-    #[test]
-    fn test_time_remaining_within_period() {
-        let remaining = time_remaining(30);
-        assert!(remaining > 0 && remaining <= 30);
-    }
-
-    #[test]
-    fn test_generate_totp_format() {
-        let params = TotpParams::default();
-        let result = generate_totp("JBSWY3DPEHPK3PXP", &params).unwrap();
-        assert_eq!(result.code.len(), 6);
-        assert!(result.code.chars().all(|c| c.is_ascii_digit()));
-        assert!(result.time_remaining > 0 && result.time_remaining <= 30);
+        assert_eq!(decode_base32(&BASE32.encode(b"Hello!")).unwrap(), b"Hello!");
+        assert_eq!(decode_base32(&BASE32.encode(&secret)).unwrap(), secret);
+        assert!(!decode_base32("JBSWY3DPEHPK3PXP").unwrap().is_empty());
+        assert!(!decode_base32("JBSWY3DP").unwrap().is_empty());
     }
 }

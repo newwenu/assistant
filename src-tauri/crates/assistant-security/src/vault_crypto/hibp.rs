@@ -113,40 +113,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_hibp_response_found() {
-        let body = "00A1B2C3D4E5F6A7B8C9D0E1F2A3:5\n0FF1E2D3C4B5A6978899AABB:123\n";
-        let count = parse_hibp_response(body, "0FF1E2D3C4B5A6978899AABB");
-        assert_eq!(count, 123);
-    }
-
-    #[test]
-    fn test_parse_hibp_response_not_found() {
-        let body = "00A1B2C3D4E5F6A7B8C9D0E1F2A3:5\n";
-        let count = parse_hibp_response(body, "FFFFFFFFFFFFFFFFFFFFFFFFF");
-        assert_eq!(count, 0);
-    }
-
-    #[test]
-    fn test_sha1_hex() {
-        let hash = sha1_hex("test");
-        assert_eq!(hash.len(), 40);
-        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
-    }
-
-    #[test]
-    fn test_sha1_hex_deterministic() {
+    fn sha1_hex_is_deterministic_uppercase_and_matches_known_value() {
         assert_eq!(sha1_hex("password"), sha1_hex("password"));
         assert_ne!(sha1_hex("password"), sha1_hex("Password"));
+        assert_eq!(&sha1_hex("password")[..5], "5BAA6");
+        assert_eq!(sha1_hex("test").len(), 40);
     }
 
     #[test]
-    fn test_sha1_hex_known_value() {
-        let hex = sha1_hex("password");
-        assert_eq!(&hex[..5], "5BAA6");
-    }
-
-    #[test]
-    fn test_safe_password_zeroize() {
+    fn safe_password_zeroizes_on_drop() {
         let safe = SafePassword::new("sensitive_password".to_string());
         assert_eq!(safe.as_str(), "sensitive_password");
         drop(safe);

@@ -307,18 +307,27 @@ fn token_usage_dto_serde_default_fields() {
     assert_eq!(usage.completion_tokens, 10);
     assert_eq!(usage.total_tokens, 15);
     assert_eq!(
-        usage.cache_read_tokens,
-        Some(0),
-        "cacheReadTokens should default to 0"
+        usage.cache_read_tokens, None,
+        "cacheReadTokens should default to None (provider did not report cache stats)"
     );
     assert_eq!(
-        usage.cache_write_tokens,
-        Some(0),
-        "cacheWriteTokens should default to 0"
+        usage.cache_write_tokens, None,
+        "cacheWriteTokens should default to None (provider did not report cache stats)"
     );
     assert_eq!(
         usage.context_window_tokens, 0,
         "contextWindowTokens should default to 0"
+    );
+    let serialized = serde_json::to_string(&usage).unwrap();
+    assert!(
+        !serialized.contains("cacheReadTokens"),
+        "cacheReadTokens must be omitted when not reported: {}",
+        serialized
+    );
+    assert!(
+        !serialized.contains("cacheWriteTokens"),
+        "cacheWriteTokens must be omitted when not reported: {}",
+        serialized
     );
 }
 
