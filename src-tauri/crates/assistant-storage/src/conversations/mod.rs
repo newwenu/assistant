@@ -129,6 +129,6 @@ pub use msg_ops::{
 pub use ops::{
     batch_delete, duplicate_conversation, export_conversation_json, export_conversation_markdown,
     fork_to_new_conversation, increment_generation, purge_all, rename_conversation,
-    search_conversations, toggle_pin,
+    search_conversations, toggle_pin, COPY_TITLE_SOURCE,
 };
 pub use tree_ops::{delete_subtree, get_subtree_size};

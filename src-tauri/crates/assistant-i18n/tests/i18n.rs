@@ -27,7 +27,6 @@ fn i18n_full_suite() {
     assert_eq!(t("agent_mode.builtin.quick.name"), "快速");
     assert_eq!(t("agent_mode.builtin.deep.name"), "深度");
     assert_eq!(t("agent_mode.builtin.translate.name"), "翻译助手");
-    assert_eq!(t("conversation.copy_suffix"), " (副本)");
     assert_eq!(
         t("chat.compaction.summary_truncated"),
         "[摘要已截断，完整信息请通过 search_history 检索]"
@@ -54,7 +53,6 @@ fn i18n_full_suite() {
     assert_eq!(t("agent_mode.builtin.quick.name"), "Quick");
     assert_eq!(t("agent_mode.builtin.deep.name"), "Deep");
     assert_eq!(t("agent_mode.builtin.translate.name"), "Translator");
-    assert_eq!(t("conversation.copy_suffix"), " (Copy)");
     assert_eq!(
         t("chat.compaction.summary_truncated"),
         "[Summary truncated. Use search_history for full details]"

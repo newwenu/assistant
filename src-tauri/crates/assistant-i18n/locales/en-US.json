@@ -35,7 +35,6 @@
     }
   },
   "conversation": {
-    "copy_suffix": " (Copy)",
     "not_found": "Conversation not found"
   },
   "window": {

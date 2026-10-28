@@ -7,6 +7,8 @@ use super::{read_conv_row, ConversationRow, MessageRow};
 use crate::attachment_store::duplicate_attachment_refs;
 use crate::error::StorageError;
 
+pub const COPY_TITLE_SOURCE: &str = "copy";
+
 pub fn search_conversations(
     conn: &Connection,
     query: &str,
@@ -114,8 +116,8 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Sto
     let now = chrono::Utc::now().timestamp_millis();
     let new_conv = ConversationRow {
         id: new_id.clone(),
-        title: format!("{} (copy)", detail.conversation.title),
-        title_source: "user".to_string(),
+        title: detail.conversation.title.clone(),
+        title_source: COPY_TITLE_SOURCE.to_string(),
         provider_id: detail.conversation.provider_id.clone(),
         model_id: detail.conversation.model_id.clone(),
         system_prompt: detail.conversation.system_prompt.clone(),
@@ -221,8 +223,8 @@ pub fn fork_to_new_conversation(
 
     let new_conv = ConversationRow {
         id: new_id.clone(),
-        title: format!("{} (copy)", source_conv.title),
-        title_source: "user".to_string(),
+        title: source_conv.title.clone(),
+        title_source: COPY_TITLE_SOURCE.to_string(),
         provider_id: source_conv.provider_id.clone(),
         model_id: source_conv.model_id.clone(),
         system_prompt: source_conv.system_prompt.clone(),

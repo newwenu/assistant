@@ -13,6 +13,7 @@ import {
   SCROLL_LOAD_THRESHOLD_PX,
 } from "../../config/constants";
 import { HistoryMessageItem } from "./HistoryMessageItem";
+import { formatConversationTitle } from "../../utils/formatConversationTitle";
 import css from "./HistoryDetail.module.css";
 
 interface BranchSlot {
@@ -216,7 +217,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
             className={css.headerTitle}
             style={{ display: "block" }}
           >
-            {selectedConv.title}
+            {formatConversationTitle(selectedConv)}
           </Typography.Text>
           <Tag>{t("history.message_count", { count: totalCount })}</Tag>
           <Button

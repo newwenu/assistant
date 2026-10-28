@@ -13,6 +13,7 @@ import {
 import type { MenuProps } from "antd";
 import type { Conversation } from "../../chat/core/chatTypes";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
+import { formatConversationTitle } from "../../utils/formatConversationTitle";
 import css from "./ConversationListItem.module.css";
 
 interface ConversationListItemProps {
@@ -172,7 +173,8 @@ export const ConversationListItem: React.FC<ConversationListItemProps> =
                         style={{ color: "var(--ant-color-warning)" }}
                       />
                     )}
-                    {conversation.title || t("history.new_conversation")}
+                    {formatConversationTitle(conversation) ||
+                      t("history.new_conversation")}
                   </Typography.Text>
                   <Typography.Text
                     type="secondary"

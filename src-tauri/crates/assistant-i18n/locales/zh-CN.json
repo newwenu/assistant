@@ -35,7 +35,6 @@
     }
   },
   "conversation": {
-    "copy_suffix": " (副本)",
     "not_found": "对话未找到"
   },
   "window": {

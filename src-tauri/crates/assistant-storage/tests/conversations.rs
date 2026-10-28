@@ -124,7 +124,14 @@ fn duplicate_creates_independent_copy() {
         1,
         "copy should survive original deletion"
     );
-    assert!(detail.conversation.title.contains("副本"));
+    assert_eq!(
+        detail.conversation.title, "test",
+        "title stays untouched; the copy suffix is rendered by the UI"
+    );
+    assert_eq!(
+        detail.conversation.title_source,
+        conversations::COPY_TITLE_SOURCE
+    );
 }
 
 #[test]
@@ -486,6 +493,11 @@ fn fork_to_new_conversation_copies_active_branch() {
     assert_eq!(new_detail.messages.len(), 4);
     assert_eq!(new_detail.messages[0].content, "hello");
     assert_eq!(new_detail.messages[3].content, "reply");
+    assert_eq!(new_detail.conversation.title, "test");
+    assert_eq!(
+        new_detail.conversation.title_source,
+        conversations::COPY_TITLE_SOURCE
+    );
 
     let orig_detail = conversations::get_conversation_detail(&conn, "c1")
         .unwrap()

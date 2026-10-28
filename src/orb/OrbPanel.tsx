@@ -16,6 +16,7 @@ import {
   ORB_HISTORY_LIST_LIMIT,
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
+import { formatConversationTitle } from "../utils/formatConversationTitle";
 import { useOrbExpand } from "./OrbExpand";
 import { ChatView } from "../chat/ChatView";
 import { useChatStore, getChatOrchestrator } from "../stores/chatStore";
@@ -185,7 +186,7 @@ export const OrbPanel: React.FC = () => {
               fontWeight: conv.id === chat.currentConversationId ? 600 : 400,
             }}
           >
-            {conv.title}
+            {formatConversationTitle(conv)}
           </span>
           <span
             style={{
