@@ -132,9 +132,9 @@
 
 ### F'8. 安全不变式验证
 
-- [ ] F'8.1 Windows: 私钥不离开 TPM（代码审查：仅 KeyCredentialManager API，无私钥导出）
-- [ ] F'8.2 Windows: DPAPI 加密文件绑定当前用户（代码审查：CryptProtectData 无 LOCAL_MACHINE 标志）
-- [ ] F'8.3 Windows: get_key 必须经过 TPM 签名门控（代码审查：先 RequestSignAsync 再读文件）
+- [ ] F'8.1 Windows: ~~私钥不离开 TPM（代码审查：仅 KeyCredentialManager API，无私钥导出）~~ — **口径需修正**：`KeyCredentialManager` 只提供 `RequestSignAsync` 签名能力，**不导出任何密钥材料**；vault 密钥密文另存于 `keyring`。代码审查项改为「无密钥导出接口调用、无明文落盘」，不再以"私钥在 TPM 内"表述（TPM 为可选后端，非唯一实现）
+- [ ] F'8.2 Windows: ~~DPAPI 加密文件绑定当前用户（代码审查：CryptProtectData 无 LOCAL_MACHINE 标志）~~ — **实现方式已变更**：`windows.rs` 无任何 `CryptProtectData` 调用、无自定义加密文件，改用 `keyring::Entry(KEYRING_SERVICE, key_id)` 存 `biometric_key_enc` / `sig_hash`（Windows 后端为凭据管理器，底层由 DPAPI 按当前用户保护）。审查项改为「无自定义 DPAPI 文件、密钥不落明文盘」
+- [ ] F'8.3 Windows: ~~get_key 必须经过 TPM 签名门控（代码审查：先 RequestSignAsync 再读文件）~~ — **门控位置已上移**：签名门控不在 `get_key` 内，而在 `biometric_ops::unlock_windows` —— 先 `request_signature`（触发 Windows Hello）→ 比对 `sig_hash`（不匹配即 `BiometricFailed`，要求重新登记）→ 才解密 keyring 中的密文。审查项改为「解密前必须完成签名比对」
 - [ ] F'8.4 macOS: Keychain 条目受 kSecAccessControlBiometryCurrentSet 保护（代码审查：set_key 指定 AccessControl）
 - [ ] F'8.5 macOS: 条目不同步到 iCloud（代码审查：kSecAttrSynchronizable = false）
 - [ ] F'8.6 Linux: 数据存入默认 keyring（代码审查：SECRET_COLLECTION_DEFAULT）

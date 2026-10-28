@@ -256,9 +256,9 @@
 **文件**：`src/tools/password-vault/VaultList.tsx`
 
 - [x] C4.1 搜索框 + 分类筛选 Tabs + 标签筛选
-- [ ] C4.2 条目卡片列表：标题 + 用户名 + 分类图标 + 收藏标记 + 泄露标记
+- [x] C4.2 条目卡片列表：标题 + 用户名 + 分类图标 + 收藏标记 + 泄露标记 — `VaultList.tsx`：`CATEGORY_ICONS[entry.category]` + `StarFilled`（`isFavorite`）+ `WarningOutlined`（`hibpLeaks[id] > 0`），另含 URL / 标签 / 相对更新时间
 - [x] C4.3 新增按钮 + 同步按钮（Phase 2A 启用）
-- [ ] C4.4 底部状态栏：条目数 + 泄露数
+- [x] C4.4 底部状态栏：条目数 + 泄露数 — `styles.syncBar` 内 `entries.length` + `leakCount`（含全库审计按钮与同步状态图标）
 
 **依赖**：C2
 
@@ -329,7 +329,7 @@
 - [ ] D1.1 `totp.rs`：`generate_totp(secret_b32, digits, period) → String` + `time_remaining(period) → u32` + `from_otpauth_uri(uri) → (secret, digits, period, algorithm)`；支持 SHA-1/SHA-256/SHA-512 算法（默认 SHA-1）+ 6/8 位数字 + Steam Guard 模式
 - [x] D1.2 `vault_totp_generate(id)` command：解密 totpSecret → 生成验证码 → totpSecret 不出 Rust
 - [x] D1.3 `vault_totp_time_remaining(period)` command
-- [ ] D1.4 前端 VaultEntryDetail：TOTP 圆形倒计时环 + 6 位数字 + 一键复制
+- [x] D1.4 前端 VaultEntryDetail：TOTP 圆形倒计时环 + 6 位数字 + 一键复制 — `detail/TotpDisplay.tsx`：基于 `period` 的 SVG 双 `circle` 进度环（`strokeDashoffset`）+ 验证码 + 复制按钮（`vault.totp.copy`）；位数按实际码长分组显示（6 位 `3+3`、8 位 `4+4`），**非固定 6 位**（口径修正）
 
 **依赖**：C8
 
@@ -342,7 +342,7 @@
 - [x] D2.1 `hibp.rs`：`check_password(password) → Result<u32>` — SHA1 → 前5位hex → GET /range/{prefix} → 本地匹配后缀 + `Add-Padding: true` header（k-匿名增强，服务端返回 100% 范围大小，防流量分析）+ User-Agent: `"Assistant-Security"` + 完整哈希不出 Rust（仅发送前 5 位，后缀本地比对）
 - [x] D2.2 `vault_hibp_check(id)` command：解密 password → check → zeroize → 写入 vault_meta hibp:{id}
 - [x] D2.3 `vault_hibp_audit()` command：逐条解密 → 检测 → 立即 zeroize → 返回 `Vec<(id, count)>`
-- [ ] D2.4 前端：条目泄露标记（⚠ hibp_count > 0）+ 全库审计按钮
+- [x] D2.4 前端：条目泄露标记（⚠ hibp_count > 0）+ 全库审计按钮 — `VaultList.tsx` 的 `hibpLeaks` 徽标 + `hibpAudit()` 审计按钮（`hibpAuditing` loading）
 
 **依赖**：C8
 
@@ -384,7 +384,7 @@
 - [x] E1.1 `ClipboardGuard` struct：`thread: Option<JoinHandle<()>>` + `original: Mutex<Option<String>>`
 - [x] E1.2 `copy_and_guard(password, timeout)` — 保存原剪贴板 → 写入密码 → spawn 守护线程（sleep timeout → **校验剪贴板仍为密码** → 仅当仍为密码时恢复原内容，防覆盖用户后续复制）
 - [x] E1.3 `force_clear()` — 立即恢复原剪贴板内容
-- [ ] E1.4 注册退出钩子：应用关闭时调用 force_clear
+- [x] E1.4 注册退出钩子：应用关闭时调用 force_clear — `lib.rs` 的 `.run()` 回调中 `RunEvent::Exit` 分支取 `ClipboardGuard::force_clear()`
 
 **依赖**：D4
 
@@ -419,9 +419,11 @@
 
 **文件**：`src-tauri/src/cmd/vault.rs` + `src/vault-unlock.html`
 
-- [x] E4.1 `vault_show_unlock_window()` command：WebviewWindowBuilder 创建 "vault-unlock" 窗口（400×200, center, resizable=false, devtools=false, 独立 CSP）；若窗口已存在则 **focus 而非新建**
-- [ ] E4.2 `vault-unlock.html`：极简页面（<50 行 JS），password input + unlock button + 立即清除 DOM
-- [ ] E4.3 解锁成功后通过 Tauri event `vault:unlocked` 通知主窗口 → 主窗口刷新 vaultStore → window.close()
+> 设计变更（仅说明，不改原条目）：`vault_show_unlock_window` 现实现于 `src-tauri/src/cmd/vault/lifecycle.rs`，内部调用 `assistant_security::unlock_dialog::create_unlock_dialog()` 弹出**原生模态对话框**，密码在原生控件内输入，不经 Webview。
+
+- [x] ~~E4.1 `vault_show_unlock_window()` command：WebviewWindowBuilder 创建 "vault-unlock" 窗口（400×200, center, resizable=false, devtools=false, 独立 CSP）；若窗口已存在则 **focus 而非新建**~~ — **划去（方案变更，非验收通过）**：实际为原生模态对话框（`create_unlock_dialog().show()` + `oneshot` 等待结果），无 WebviewWindow，故「窗口尺寸 / 独立 CSP / 窗口复用」三项前提均不成立
+- [x] ~~E4.2 `vault-unlock.html`：极简页面（<50 行 JS），password input + unlock button + 立即清除 DOM~~ — **划去（已弃用）**：`public/vault-unlock.html` 仍存在（含 password input + unlock button + 生物识别按钮），但全仓无任何引用，属遗留死文件；新方案不走该页面，建议随死代码清理一并删除
+- [x] ~~E4.3 解锁成功后通过 Tauri event `vault:unlocked` 通知主窗口 → 主窗口刷新 vaultStore → window.close()~~ — **划去（机制变更）**：事件广播为 `emit_broadcast(VAULT_UNLOCKED)`（主窗口监听刷新），无 `window.close()` 环节（无子窗口可关）
 
 **依赖**：E3
 
@@ -435,8 +437,8 @@
 - [ ] E5.4 应用关闭时剪贴板恢复
 - [ ] E5.5 CSP 生效（`script-src 'self'`，无 `unsafe-eval`；`eval()` / `new Function()` 抛错）
 - [ ] E5.6 release 构建无法打开 DevTools
-- [ ] E5.7 独立解锁窗口 V8 isolate 隔离
-- [ ] E5.8 独立解锁窗口已存在时 focus 而非新建
+- [x] ~~E5.7 独立解锁窗口 V8 isolate 隔离~~ — **划去（不适用）**：解锁已改为原生模态对话框，不存在 Webview 解锁窗口，无验收对象
+- [x] ~~E5.8 独立解锁窗口已存在时 focus 而非新建~~ — **划去（不适用）**：同上，无解锁子窗口，无窗口复用语义
 
 **依赖**：E1, E2, E3, E4
 
@@ -544,7 +546,7 @@
 ### G4. 跨阶段约束验证（spec-1 §4）
 
 - [ ] G4.1 类型安全：`as unknown as` 仅允许 2 处（`settings/core/types/confUtils.ts` + `i18n/index.ts`），vault 代码禁止使用
-- [ ] G4.2 Tauri Command 错误映射：VaultError 10 变体（Locked / InvalidMasterPassword / EntryNotFound / RateLimited / CryptoError / DbError / IoError / BiometricUnavailable / BiometricCancelled / BiometricFailed）均序列化为可读字符串，前端可区分处理
+- [ ] G4.2 Tauri Command 错误映射：~~VaultError 10 变体（Locked / InvalidMasterPassword / EntryNotFound / RateLimited / CryptoError / DbError / IoError / BiometricUnavailable / BiometricCancelled / BiometricFailed）~~ — 枚举已扩展为 21 变体，且命名以 `types/mod.rs` 为准：`Locked` / `AlreadyUnlocked` / `InvalidPassword` / `NotInitialized` / `AlreadyExists` / `RateLimited` / `Crypto` / `Database` / `NotFound` / `Validation` / `Clipboard` / `Io` / `BiometricUnavailable` / `BiometricCancelled` / `BiometricFailed` / `BiometricReset` / `InvalidKeyFormat` / `InvalidRecoveryKey` / `RecoveryKeyNotSet` / `VaultMetaIntegrityFailed` / `Other`；验收口径改为「全部变体均序列化为可读字符串，前端可区分处理」
 - [ ] G4.3 安全不变式 5 项完整验证（对应 spec-1 §4.4）：① master_key 不持久化 ② 密码不进 JS 堆 ③ reveal 速率限制 ④ MasterKey/VaultPlaintext Drop zeroize ⑤ CSP 生效
 - [ ] G4.4 向后兼容：`assistant.db` 零改动（security.db 为独立文件）+ providers crypto 迁出零破坏（re-export 签名不变）
 - [ ] G4.5 条件编译策略：三平台代码均编写完整（biometric: windows.rs + macos.rs + linux.rs; screen_lock: windows.rs + macos.rs + linux.rs），`cargo check` 通过
