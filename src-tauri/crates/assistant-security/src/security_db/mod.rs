@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use log::info;
@@ -26,6 +26,12 @@ const BOOTSTRAP_SALT: [u8; 32] = [
 
 const SQLCIPHER_PRAGMAS: &str =
     "PRAGMA cipher_page_size = 4096; PRAGMA kdf_iter = 256000; PRAGMA cipher_hmac_algorithm = HMAC_SHA512; PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;";
+
+const MAX_BACKUPS: usize = 5;
+
+const BACKUP_PREFIX: &str = "security-";
+
+const BACKUP_SUFFIX: &str = ".db.bak";
 
 pub struct SecurityDbState {
     conn: Mutex<Option<Connection>>,
@@ -239,13 +245,30 @@ impl SecurityDbState {
         Ok(guard)
     }
 
-    pub fn backup(&self, backup_path: &Path) -> Result<(), VaultError> {
+    pub fn backup(&self, db_path: &Path) -> Result<PathBuf, VaultError> {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = guard.as_ref().ok_or(VaultError::Locked)?;
-        Self::backup_conn(conn, backup_path)
+        Self::backup_conn(conn, db_path)
     }
 
-    fn backup_conn(conn: &rusqlite::Connection, backup_path: &Path) -> Result<(), VaultError> {
+    fn backup_conn(conn: &rusqlite::Connection, db_path: &Path) -> Result<PathBuf, VaultError> {
+        let backup_dir = db_path.parent().unwrap_or(Path::new(".")).join("backups");
+        std::fs::create_dir_all(&backup_dir)?;
+
+        let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f");
+        let mut seq = 0u32;
+        let mut backup_path = backup_dir.join(format!(
+            "{}{}-{:03}{}",
+            BACKUP_PREFIX, timestamp, seq, BACKUP_SUFFIX
+        ));
+        while backup_path.exists() {
+            seq += 1;
+            backup_path = backup_dir.join(format!(
+                "{}{}-{:03}{}",
+                BACKUP_PREFIX, timestamp, seq, BACKUP_SUFFIX
+            ));
+        }
+
         conn.execute_batch(&format!(
             "VACUUM INTO '{}'",
             backup_path.to_str().ok_or_else(|| {
@@ -256,6 +279,35 @@ impl SecurityDbState {
             })?
         ))
         .map_err(|e| VaultError::Database(e.to_string()))?;
+
+        Self::prune_backups(&backup_dir, MAX_BACKUPS)?;
+
+        Ok(backup_path)
+    }
+
+    fn prune_backups(dir: &Path, keep: usize) -> Result<(), VaultError> {
+        let mut files: Vec<PathBuf> = std::fs::read_dir(dir)?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.starts_with(BACKUP_PREFIX) && name.ends_with(BACKUP_SUFFIX))
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        if files.len() <= keep {
+            return Ok(());
+        }
+
+        files.sort();
+        let excess = files.len() - keep;
+        for path in files.into_iter().take(excess) {
+            if let Err(err) = std::fs::remove_file(&path) {
+                log::warn!("Failed to prune old backup {}: {}", path.display(), err);
+            }
+        }
         Ok(())
     }
 

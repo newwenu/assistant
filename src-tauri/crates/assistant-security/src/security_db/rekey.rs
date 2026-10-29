@@ -41,14 +41,7 @@ impl SecurityDbState {
             return Err(VaultError::InvalidPassword);
         }
 
-        let backup_dir = Path::new(&self.db_path)
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join("backups");
-        std::fs::create_dir_all(&backup_dir)?;
-        let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-        let backup_path = backup_dir.join(format!("security-{}.db.bak", timestamp));
-        Self::backup_conn(conn, &backup_path)?;
+        let backup_path = Self::backup_conn(conn, Path::new(&self.db_path))?;
 
         let new_master_key_salt: [u8; 32] = rand::thread_rng().gen();
         let new_hash_salt: [u8; 32] = rand::thread_rng().gen();

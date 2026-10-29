@@ -353,6 +353,10 @@ pub fn git_checkout_detached(repo: &Path, commit: &str) -> Result<(), SyncError>
     git(repo, ["checkout", "--detach", commit], false)
 }
 
+/// 返回 `(作者, 提交时间)`，其中提交时间为 **unix 毫秒**。
+///
+/// Git 的 `%ct` 只有秒精度，此处解析后统一 ×1000 对齐 crate 内的毫秒约定，
+/// 因此毫秒值低三位恒为 `000`。
 pub fn git_last_commit_info(
     repo: &Path,
     reference: Option<&str>,
@@ -392,11 +396,12 @@ pub fn git_last_commit_info(
             path
         )));
     }
-    Ok((author, timestamp))
+    Ok((author, timestamp * 1000))
 }
 
 pub struct RawLogEntry {
     pub hash: String,
+    /// unix 毫秒（由 Git `%ct` 秒值 ×1000，低三位恒为 `000`）
     pub timestamp: i64,
     pub message: String,
     pub paths: Vec<String>,
@@ -437,7 +442,7 @@ pub fn git_log(
         if trimmed.contains('\u{1f}') {
             let mut parts = trimmed.split('\u{1f}');
             let hash = parts.next().unwrap_or_default().to_string();
-            let timestamp = parts.next().unwrap_or("0").parse::<i64>().unwrap_or(0);
+            let timestamp = parts.next().unwrap_or("0").parse::<i64>().unwrap_or(0) * 1000;
             let message = parts.next().unwrap_or_default().to_string();
             entries.push(RawLogEntry {
                 hash,
@@ -519,6 +524,7 @@ where
     cmd.arg(dir);
     cmd.current_dir(dir);
     cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd.env("GCM_INTERACTIVE", "never");
 
     if connects_remote {
         cmd.arg("-c").arg("http.timeout=30");
@@ -536,4 +542,14 @@ fn cmd_assert_status(status: ExitStatus) -> Result<(), SyncError> {
         return Err(SyncError::GitStatus(status.code().unwrap_or(-1)));
     }
     Ok(())
+}
+
+#[cfg(feature = "git-tests")]
+#[doc(hidden)]
+pub fn cmd_git_for_test<I, S>(args: I, dir: &Path, connects_remote: bool) -> Command
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    cmd_git(args, dir, connects_remote)
 }

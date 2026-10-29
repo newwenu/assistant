@@ -2,7 +2,7 @@ mod common;
 
 use assistant_security::security_db::SecurityDbState;
 use assistant_security::types::VaultError;
-use common::{temp_db_path, STRONG_PW};
+use common::{cleanup, temp_db_path, STRONG_PW};
 
 #[cfg(feature = "slow-tests")]
 #[test]
@@ -115,16 +115,39 @@ fn backup_creates_file() {
     let db = SecurityDbState::new(path.to_str().unwrap());
     db.init(STRONG_PW).unwrap();
 
-    let backup_dir = std::env::temp_dir().join("assistant-security-test-backup");
-    let _ = std::fs::create_dir_all(&backup_dir);
-    let backup_path = backup_dir.join(format!("backup_{}.db", uuid::Uuid::new_v4()));
-
-    let result = db.backup(&backup_path);
+    let result = db.backup(&path);
     assert!(result.is_ok(), "backup should succeed: {:?}", result);
+    let backup_path = result.unwrap();
     assert!(backup_path.exists(), "backup file should exist");
+    assert!(
+        backup_path.to_string_lossy().contains("backups"),
+        "backup should live under backups/ directory"
+    );
 
-    let _ = std::fs::remove_file(&path);
-    let _ = std::fs::remove_file(&backup_path);
+    cleanup(&path);
+}
+
+#[cfg(feature = "slow-tests")]
+#[test]
+fn backup_keeps_latest_five() {
+    let dir = std::env::temp_dir().join(format!(
+        "assistant-security-test-rotation-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("vault.db");
+    let db = SecurityDbState::new(path.to_str().unwrap());
+    db.init(STRONG_PW).unwrap();
+
+    for _ in 0..7 {
+        db.backup(&path).unwrap();
+    }
+
+    let backup_dir = dir.join("backups");
+    let count = std::fs::read_dir(&backup_dir).unwrap().count();
+    assert_eq!(count, 5, "should keep exactly 5 backups, got {}", count);
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

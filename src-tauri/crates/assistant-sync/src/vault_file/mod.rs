@@ -173,6 +173,12 @@ impl VaultFileManager {
         if path.exists() {
             fs::remove_file(&path)?;
         }
+        if path.exists() {
+            return Err(SyncError::Other(format!(
+                "Entry file still present after removal: {}",
+                entry_id
+            )));
+        }
         Ok(())
     }
 

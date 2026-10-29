@@ -253,6 +253,43 @@ fn import_skips_entry_deleted_locally() {
 }
 
 #[test]
+fn purge_removes_entry_files_before_db_rows_so_entries_never_resurrect() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = temp_db_path();
+    let db = open_db(&db_path);
+    let engine = engine(dir.path());
+
+    write_remote(&engine, &db, &[snapshot("p1", "Purge me", 1, 1_000)]);
+    engine.import_from_repo(&db, &[]).unwrap();
+    assert_eq!(
+        engine.vault_file_manager().list_entry_files().unwrap(),
+        vec!["p1"]
+    );
+
+    db.delete_entry("p1").unwrap();
+    let ids = db.list_deleted_entry_ids().unwrap();
+    assert_eq!(ids, vec!["p1".to_string()]);
+
+    for id in &ids {
+        engine.vault_file_manager().remove_entry_file(id).unwrap();
+    }
+    assert_eq!(db.purge_deleted().unwrap(), 1);
+
+    assert!(!engine.vault_file_manager().entry_file_path("p1").exists());
+    assert!(engine
+        .vault_file_manager()
+        .list_entry_files()
+        .unwrap()
+        .is_empty());
+    assert!(db.list_entry_ids(true).unwrap().is_empty());
+
+    let summary = engine.import_from_repo(&db, &[]).unwrap();
+    assert_eq!(summary.summary.inserted, 0);
+    assert!(db.get_entry("p1").is_err());
+    cleanup(&db_path);
+}
+
+#[test]
 fn pull_stages_all_removals_then_cancel_keeps_db_and_confirm_soft_deletes() {
     common::git_env();
     let dir = tempfile::tempdir().unwrap();

@@ -154,13 +154,18 @@ pub fn vault_purge_deleted(app: AppHandle) -> Result<u32, String> {
     prepare_sync(&engine);
 
     let ids = state.list_deleted_entry_ids().map_err(|e| e.to_string())?;
-    let purged = state.purge_deleted().map_err(|e| e.to_string())?;
+    if ids.is_empty() {
+        return Ok(0);
+    }
 
     for id in &ids {
-        if let Err(e) = engine.vault_file_manager().remove_entry_file(id) {
-            log::warn!("Failed to remove entry file {} while purging: {}", id, e);
-        }
+        engine
+            .vault_file_manager()
+            .remove_entry_file(id)
+            .map_err(|e| format!("Failed to remove entry file {} while purging: {}", id, e))?;
     }
+
+    let purged = state.purge_deleted().map_err(|e| e.to_string())?;
 
     log::info!("Vault purged {} deleted entries", purged);
     if purged > 0 {
