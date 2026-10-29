@@ -10,8 +10,6 @@ mod window;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
-use assistant_security::clipboard_guard::ClipboardGuard;
-use tauri::Manager;
 
 use crate::protocol::events::{emit_broadcast, event_name};
 
@@ -145,8 +143,6 @@ pub fn run() {
             cmd::vault_sync_conflicts,
             cmd::vault_sync_pending_removals,
             cmd::vault_sync_confirm_removals,
-            cmd::vault_sync_prepare,
-            cmd::vault_sync_finalize,
             cmd::vault_history_list,
             cmd::vault_history_preview,
             cmd::vault_history_restore,
@@ -203,8 +199,7 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
-                let guard = app_handle.state::<ClipboardGuard>();
-                let _ = guard.force_clear();
+                cmd::cleanup_on_exit(app_handle);
             }
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 if !SHOULD_EXIT.load(Ordering::Relaxed) {

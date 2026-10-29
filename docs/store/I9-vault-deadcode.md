@@ -8,6 +8,7 @@
 > 第一批修复完成日期：2026-10-22（问题 1 + 问题 8 + 附带修复 `VaultCategory::from_str` → `parse`）
 > 复核日期：2026-10-27（逐条比对当前代码，勾选已落地验收项，汇总残留项；残留汇总见文末）
 > 第二批修复完成日期：2026-10-27（问题 9 大小写 bug + 问题 7 屏幕锁联动与死窗口清理 + 新发现 12 假解锁事件）
+> 第三批复核日期：2026-10-29（P1 同步链路修复后复查：问题 3 闭环、P4/13 消解；问题 6 轮转与接口语义已修复；问题 5 / 6 剩余部分 / 9 旁支仍残留，见文末「残留汇总（2026-10-29 复核）」）
 
 ---
 
@@ -17,10 +18,10 @@
 |---|--------|--------|------|---------|------|------|
 | 1 | `assistant-storage::vault_meta` + `vault` | 🔴 高 | 偏差残留 | spec-1 §5.4 偏差 #4 | 删除 | ✅ 已修复 |
 | 2 | `SafePassword` + `sha1_hex` | 🔴 高 | 设计意图未落地 | spec 偏差 #25 "更优" | 重构使用 | ✅ 已修复 |
-| 3 | `VaultEntryDecrypted` | 🟡 中 | 设计意图未落地 | spec-1 §3.3 + DESIGN §2.3 + spec-4 §11 | 重构导出/同步使用 | 🟡 部分完成（导出已接，同步未接） |
+| 3 | `VaultEntryDecrypted` | 🟡 中 | 设计意图未落地 | spec-1 §3.3 + DESIGN §2.3 + spec-4 §11 | 重构导出/同步使用 | ✅ 已修复（导出 + 同步双接，2026-10-29） |
 | 4 | `vault_totp_parse_uri` IPC 漏接 | 🟡 中 | 规格未完成 | spec-3 §6.2 | 补全 IPC 三层 | ✅ 已修复 |
 | 5 | `audit::query_log` 无 IPC | 🟢 低 | 超规格添加 | 无 | 保留，补 IPC 为增强 | 🟡 部分完成（无 UI 消费方） |
-| 6 | `backup()` 内联重复 | 🔴 高 | 实现偏差 | spec-1 §3.3 + 偏差 #5 | 重构调用 | 🟡 部分完成（无 IPC / 无轮转） |
+| 6 | `backup()` 内联重复 | 🔴 高 | 实现偏差 | spec-1 §3.3 + 偏差 #5 | 重构调用 | 🟡 轮转已补，仍缺 IPC / 触发时机 |
 | 7 | `vault_show_unlock_window` 前端未接 | 🟡 中 | 规格未完成 | spec-3 §7.7 + tasklist E4 | 补全前端 | ✅ 已修复（原生对话框 + 屏幕锁联动） |
 | 8 | `LAST_REVEAL_EXPIRY` 只写不读 | 🟢 低 | 代码自创冗余 | 无 | 删除 | ✅ 已修复 |
 | 9 | ChaCha20 硬编码 Aes | 🟡 中 | 实现偏差 | DESIGN §3.2 + spec-2 §5.6 | 修复读取设置 | ✅ 已修复（同步侧旁支另列 P4） |
@@ -189,14 +190,22 @@ impl SecurityDbState {
 
 - [x] `export_entries` 通过 `decrypt_entry` 实现
 - [x] `VaultEntryDecrypted` 不实现 `Clone`（编译验证）
-- [ ] `cargo test -p assistant-security` 通过（本次复核未执行测试）
-- [ ] 同步引擎（`assistant-sync`）的 vault_file 序列化改用 `decrypt_entry` — **未完成**
+- [x] `cargo test -p assistant-security` 通过（2026-10-29 复核：`--features slow-tests` 全绿）
+- [x] 同步引擎（`assistant-sync`）的 vault_file 序列化改用 `decrypt_entry` — 2026-10-29 已接通，`export_all_entries` 改走 `export_all_snapshots`
 
-### 复核结论（2026-10-27）
+### 复核结论（2026-10-27，已被下条覆盖）
 
 - ✅ `crypto_ops.rs:140` 已实现 `decrypt_entry`，`import_export.rs:25` 的 `export_entries` 已改为调用它；`types/mod.rs:174` 的 `VaultEntryDecrypted` 无 `Clone` 实现。
 - ❌ 同步侧未接入：`assistant-sync/src/sync_engine/mod.rs:197` 的 `export_all_entries` 仍用 `list_entries` 摘要，且把 `encrypted_password/notes/totp/custom_fields` 全部传 `None`。
 - ❌ 更严重：`export_all_entries` **零调用者**，`prepare/pull/push/sync_now` 都不会写 `.enc` 文件，条目实际未进入 Git 仓库。该缺口归属 [tasklist-p2](./I9-vault-tasklist-p2.md) H5.2 / H7.1（仍未勾选），本文件只做指向，不重复跟踪。
+
+### 复核结论（2026-10-29）
+
+- ✅ 同步侧已接通：`export_all_entries`（[sync_engine/mod.rs:L927-L971](../../src-tauri/crates/assistant-sync/src/sync_engine/mod.rs#L927-L971)）改为调用 `security_db.export_all_snapshots()`（[crud.rs:L294](../../src-tauri/crates/assistant-security/src/security_db/crud.rs#L294)），快照含 password / notes / totp_secret / custom_fields 明文，不再全传 `None`；同时按 `list_deleted_entry_ids()` 清理已删条目的 `.enc`，并写 `.vault-meta`。
+- ✅ 调用方已补齐 3 处：[confirm_removals:L142](../../src-tauri/crates/assistant-sync/src/sync_engine/mod.rs#L142)、[sync_now 无远端分支:L395](../../src-tauri/crates/assistant-sync/src/sync_engine/mod.rs#L395)、[sync_now 正常分支:L425](../../src-tauri/crates/assistant-sync/src/sync_engine/mod.rs#L425)，`.enc` 文件实际生成。
+- ✅ 连带修复新发现 11：灾难恢复导出不再必然 0 条（`disaster_recovery_export` 读取的 `.enc` 已存在）。
+- ✅ [tasklist-p2](./I9-vault-tasklist-p2.md) H5.2 / H7.1 均已勾选。
+- 🟡 未使用 `decrypt_entry` 而是 `export_all_snapshots`：两者都是「全字段解密快照」入口，语义等价且前者已覆盖导出路径，故不重复改；`VaultEntryDecrypted` 的「导出 + 同步统一入口」设计意图已达成。
 
 ---
 
@@ -300,6 +309,12 @@ impl SecurityDbState {
 - ✅ IPC 与前端服务层已通：`cmd/vault/audit.rs:108` command → `lib.rs:120` 注册 → `vault.service.ts:120` → `vaultAuditSlice.ts:103`。
 - ❌ `queryAuditLog` 全仓只出现在 service 与 slice，**没有任何组件调用**；i18n 也无审计日志词条（`zh-CN.json` 仅 `hibp_auto_audit` / `audit_all`）。属于"能调但看不到"的悬空接口。
 
+### 复核结论（2026-10-29）
+
+- 🟡 **状态未变，仍属死代码**：全仓 `queryAuditLog` 命中仍仅 3 处 —— [vault.service.ts:L137](../../src/vault/core/vault.service.ts#L137)、[vaultAuditSlice.ts:L28](../../src/vault/core/slices/vaultAuditSlice.ts#L28) 与 L103-104，无任何组件引用。
+- ✅ 后端 command 已存在且注册：`vault_query_audit_log`（`cmd/vault/audit.rs:108`，`lib.rs:123`），`AuditLogEntry` 序列化字段齐全。
+- 结论：纯前端 UI 缺口，后端无死代码；处理方式维持「保留，补 UI 为增强」（文档未要求审计面板，不阻塞 P1）。
+
 ---
 
 ## 🔴 问题 6：`backup()` 内联重复 — `change_master_password` 绕过 `backup()` 自行 VACUUM INTO
@@ -324,29 +339,63 @@ impl SecurityDbState {
 
 ### 修复方案
 
-1. 重构 `change_master_password` 调用 `self.backup(&backup_path)?` 替代内联 VACUUM INTO
-2. 补充 IPC command `vault_backup`（增强，文档未要求但符合 backup 触发时机设计）：
+1. ✅ 重构 `change_master_password` 不再内联 VACUUM INTO，改为调用共用入口（2026-10-27 已完成；2026-10-29 入口改为 `backup_conn(conn, db_path)` 并自带轮转）
+2. ⬜ 补充 IPC command `vault_backup`（增强，文档未要求但符合 backup 触发时机设计）：
    ```rust
    #[command]
    pub fn vault_backup(app: AppHandle) -> Result<String, String> {
        let state = vault_state(&app)?;
-       let backup_path = state.backup().map_err(|e| e.to_string())?;
+       let backup_path = state.backup(Path::new(&state.db_path())).map_err(|e| e.to_string())?;
        Ok(backup_path.to_string_lossy().to_string())
    }
    ```
-3. `vault.service.ts` 添加 `backup` 方法
+   注意：`backup()` 现接收 **db 路径**（不是备份文件路径），返回实际生成的备份路径；调用方需提供 `db_path`（`SecurityDbState` 目前未暴露该字段的 getter，实现 command 时需补一个只读访问器）。
+3. ⬜ `vault.service.ts` 添加 `backup` 方法
+4. ⬜ 接线「vault 锁定时 / 应用退出时」两个触发时机（spec-1 §3.3）
 
 ### 验收
 
 - [x] `change_master_password` 不再内联 VACUUM INTO，与 `backup()` 共用 `backup_conn`
 - [ ] `vault_backup` command 可手动触发备份 — **未完成，command 不存在**
 - [x] 备份文件存在于 `backups/` 目录（主密码变更路径已写入 `.bak`）
-- [ ] 备份保留最近 5 份的轮转清理 — **未实现**
+- [x] 备份保留最近 5 份的轮转清理 — 2026-10-29 已实现（`prune_backups` + `MAX_BACKUPS = 5`）
 
 ### 复核结论（2026-10-27）
 
 - ✅ 去重目标达成：`security_db/mod.rs:242` 的 `backup()` 与 `rekey.rs:51` 的 `change_master_password` 共用私有 `backup_conn()`。
 - ❌ `backup()` 除测试（`tests/security_db.rs:122`）外无调用者；无 `vault_backup` command；无 `backups/` 保留 5 份的清理逻辑（spec-1 §3.3 要求）。
+
+### 复核结论（2026-10-29 修复前，已被下条覆盖）
+
+- 🟡 **状态未变**：`backup()`（[mod.rs:L242](../../src-tauri/crates/assistant-security/src/security_db/mod.rs#L242)）唯一调用方仍是测试 [tests/security_db.rs:L122](../../src-tauri/crates/assistant-security/tests/security_db.rs#L122)。
+- ❌ 无 IPC：全仓无 `vault_backup` command，前端也无 `backupVault` / `createBackup`。
+- ❌ 无轮转：`rekey.rs:L50` 仅写单个 `security-{ts}.db.bak`，无 `read_dir` 枚举、无 `remove_file` 清理，未实现 spec-1 §3.3 的「保留最近 5 份」。
+- ❌ 触发时机缺失：spec-1 §3.3 要求的「vault 锁定时 / 应用退出时」两个时机均未接线，仅「主密码变更前」生效。
+- 影响评估：`change_master_password` 路径已能产出备份，风险可控；本条属「规格未完整落地」，不阻塞 P1 功能，但建议列为 P2 补全。
+
+### 修复记录（2026-10-29，轮转 + 接口语义）
+
+改动前核查结论：`assistant-security` 全 crate 无 `read_dir` / `fs::remove` / `retain` / `MAX_BACKUPS`，唯一 `remove_dir_all` 在 [tests/common/mod.rs:L14-L16](../../src-tauri/crates/assistant-security/tests/common/mod.rs#L14-L16)（测试清场），确认**轮转完全不存在**。
+
+已修复三点：
+
+| 问题 | 修复前 | 修复后 |
+|------|--------|--------|
+| 接口语义偏差 | `backup(&self, backup_path: &Path)` 由调用方指定完整文件路径，轮转责任被外推给调用方（唯一调用方 `rekey` 也没做） | 改为 spec-1 §3.3 语义 `backup(&self, db_path: &Path) -> Result<PathBuf, VaultError>`，内部负责「建 `backups/` 目录 + 命名 + 轮转」并返回实际路径 |
+| 无轮转 | 每次改密码追加一个 `.bak`，永不清理 | 新增 `prune_backups(dir, MAX_BACKUPS)`：`read_dir` 枚举 `security-*.db.bak`，按文件名排序（时间戳天然有序）删除超出 5 份的最旧文件 |
+| 秒级时间戳撞名 | `%Y%m%d-%H%M%S`，同秒二次 rekey 路径冲突，`VACUUM INTO` 对已存在目标会失败 | 改为毫秒级 `%Y%m%d-%H%M%S-%3f` + 三位序号 `-{:03}` 兜底（`while path.exists()` 递增），文件名仍严格字典序 = 时间序 |
+
+代码位置：
+- [mod.rs:L247-L322](../../src-tauri/crates/assistant-security/src/security_db/mod.rs#L247-L322) — `backup` / `backup_conn` / `prune_backups` + `MAX_BACKUPS` / `BACKUP_PREFIX` / `BACKUP_SUFFIX` 常量
+- [rekey.rs:L44](../../src-tauri/crates/assistant-security/src/security_db/rekey.rs#L44) — 内联的建目录/命名逻辑删除，改为 `Self::backup_conn(conn, Path::new(&self.db_path))?`
+- [tests/security_db.rs:L110-L150](../../src-tauri/crates/assistant-security/tests/security_db.rs#L110-L150) — `backup_creates_file` 改用新签名并断言落在 `backups/`；新增 `backup_keeps_latest_five`（连做 7 次备份，断言目录内恰剩 5 个）
+
+验证：`cargo test -p assistant-security --features slow-tests` 全绿；`cargo test -p assistant-security --features slow-tests --test security_db backup` → 2 passed（`backup_creates_file` / `backup_keeps_latest_five`）；`cargo clippy -p assistant-security --all-targets --features slow-tests` 在本次改动文件上无新增 warning。
+
+仍残留（不影响本次修复正确性）：
+- 无 `vault_backup` IPC command，前端无法手动触发。
+- 「vault 锁定时 / 应用退出时」两个触发时机仍未接线，实际只在改主密码时产生备份。
+- 残余安全面：轮转只保证「最多 5 份」，每份仍用**当时那版主密码**加密。若用户改过 5 次以上密码，最旧的 5 份之外已删除，但保留的 5 份里仍含旧密码可解的副本；如需彻底消除，应在 rekey 成功后删除全部旧备份或改用新密码重加密备份。
 
 ---
 
@@ -501,6 +550,12 @@ command 已实现（创建 `vault-unlock` 窗口），但前端缺少 service �
 - ✅ **大小写 bug 已修**：`SecurityDbState::cipher_algorithm_from_conf`（`security_db/mod.rs:266-271`）改为 `match conf_val.to_ascii_lowercase().as_str()`，前端 `"chacha20Poly1305"` 现可正确命中 `ChaCha20Poly1305`。选择全小写或全大写同样兼容。
 - 🟡 旁支不一致（未修，见残留 P4）：`assistant-sync/src/vault_file/mod.rs:103` 的 `export_entry` 用 `Default::default()`（AES），`write_vault_meta` 硬编码 `"aes256Gcm"`，同步侧不跟随用户算法设置。
 
+### 复核结论（2026-10-29）
+
+- ✅ 主链路仍正确：`cipher_algo()`（`cmd/vault/mod.rs:L124-L130`）读取 `AppConf.vault_cipher_algorithm` 并归一化，create / update / import / change_password 全部传入。
+- 🟡 **旁支仍未修**，硬编码位置全量确认：`assistant-sync/src/vault_file/mod.rs:L98`（`encrypt_field(..., CipherAlgorithm::default())`）、`sync_engine/mod.rs` L261 / L323 / L940 / L978、`security_db/crud.rs` L391 / L519 / L545。
+- 结论：用户切到 ChaCha20 后，主流程写入的条目为 ChaCha20，同步导出的 `.enc` 与批量导入路径仍为 AES；解密侧按密文首字节自适应，故不会解密失败，属「设置未全量生效」的一致性缺口，不阻塞 P1。
+
 ---
 
 ## 🟡 问题 10：`generatePassphrase` — 已实现但未集成到 VaultEntryForm
@@ -571,12 +626,12 @@ command 已实现（创建 `vault-unlock` 窗口），但前端缺少 service �
 
 | # | 操作 | 风险 | 状态 |
 |---|------|------|------|
-| 3 | `export_entries` 改用 `VaultEntryDecrypted` | 中 — 需重构导出+同步 | 🟡 导出侧完成，同步侧未接 |
+| 3 | `export_entries` 改用 `VaultEntryDecrypted` | 中 — 需重构导出+同步 | ✅ 已完成（2026-10-29：导出 + 同步双接） |
 | 5 | 补全审计日志查询 IPC | 低 — 纯新增（增强） | 🟡 IPC 完成，UI 未做 |
 
 ---
 
-## 残留汇总（2026-10-27 复核 + 第二批修复后）
+## 残留汇总（2026-10-27 复核 + 第二批修复后，已被下节覆盖）
 
 ### 已完成（无需再动）
 
@@ -595,21 +650,21 @@ command 已实现（创建 `vault-unlock` 窗口），但前端缺少 service �
 
 | 优先级 | 项 | 具体残留 | 建议动作 |
 |--------|----|---------|---------|
-| P1 | 3 / 11 | `export_all_entries` 零调用、字段全 `None`，同步不写 `.enc`，条目未进 Git 仓库；连带灾难恢复导出必然 0 条 | 接 `decrypt_entry` + 在 `prepare` 流程中调用；归口 [tasklist-p2](./I9-vault-tasklist-p2.md) H5.2 / H7.1 |
+| ~~P1~~ | ~~3 / 11~~ | ~~`export_all_entries` 零调用、字段全 `None`，同步不写 `.enc`，条目未进 Git 仓库；连带灾难恢复导出必然 0 条~~ | ✅ 已于 2026-10-29 修复，见下节 |
 | P3 | 6 | 无 `vault_backup` command；`backup()` 仅测试调用；无保留 5 份轮转 | 补 command + service + 轮转清理 |
 | P3 | 5 | `queryAuditLog` 无 UI 消费方，i18n 无词条 | 设置页加审计日志面板（增强项，非规格要求） |
 | P4 | 9 旁支 | 同步侧 `export_entry` 用 `Default::default()`、`write_vault_meta` 硬编码 `"aes256Gcm"` | 跟随用户算法设置 |
-| P4 | 13 | `VaultFileManager` 5 个零外部调用方法 | 随 P1 同步链路接通后自然消解，或按需删除 |
+| ~~P4~~ | ~~13~~ | ~~`VaultFileManager` 5 个零外部调用方法~~ | ✅ 已于 2026-10-29 消解，见下节 |
 
-### 核实记录（2026-10-27 逐项对照代码，全部确认存在）
+### 核实记录（2026-10-27 逐项对照代码，其中 P1/3·11 与 P4/13 两行已于 2026-10-29 过时）
 
 | 项 | 证据 |
 |----|------|
-| P1 / 3·11 | `sync_engine/mod.rs:197` 定义，全仓无调用；`prepare()`（同文件 :36）只调 git prepare，`sync_now` = prepare→pull→finalize，均不导出条目；`export_entry` 唯一调用点 :211 位于 `export_all_entries` 内部；:218-227 密码/备注/TOTP/自定义字段全传 `None`。`tasklist-p2` H5.2 / H7.1 仍为 `[ ]` |
-| P3 / 6 | `backup()`（`mod.rs:242`）仅 `tests/security_db.rs:122` 调用；`rekey.rs:51` 用的是 `backup_conn`；全仓无 `vault_backup` command；`rekey.rs:50` 只生成 `security-{timestamp}.db.bak`，无保留 5 份清理 |
+| ~~P1 / 3·11~~ | ~~`sync_engine/mod.rs:197` 定义，全仓无调用；`prepare()`（同文件 :36）只调 git prepare，`sync_now` = prepare→pull→finalize，均不导出条目；`export_entry` 唯一调用点 :211 位于 `export_all_entries` 内部；:218-227 密码/备注/TOTP/自定义字段全传 `None`。`tasklist-p2` H5.2 / H7.1 仍为 `[ ]`~~ → 2026-10-29 已修复，`export_all_entries` 现位于 :927-971 并有 3 处调用 |
+| ~~P3 / 6~~ | ~~`backup()`（`mod.rs:242`）仅 `tests/security_db.rs:122` 调用；`rekey.rs:51` 用的是 `backup_conn`；全仓无 `vault_backup` command；`rekey.rs:50` 只生成 `security-{timestamp}.db.bak`，无保留 5 份清理~~ → 2026-10-29 已补轮转；仍无 `vault_backup` command |
 | P3 / 5 | `queryAuditLog` 仅出现在 `vault.service.ts:120` 与 `vaultAuditSlice.ts:28,103`，无组件调用；`zh-CN.json` 仅 :373 `hibp_auto_audit`、:926 `audit_all` 两条无关词条 |
 | P4 / 9 旁支 | `vault_file/mod.rs:51`、`:285` 硬编码 `"aes256Gcm"`；`:105` 用 `Default::default()` |
-| P4 / 13 | `remove_entry_file`(:146)、`read_vault_meta`(:205)、`add_deleted_entry`(:378)、`remove_deleted_entry`(:387)、`SyncEngine::vault_file_manager()`(:193) 全仓仅定义处匹配 |
+| ~~P4 / 13~~ | ~~`remove_entry_file`(:146)、`read_vault_meta`(:205)、`add_deleted_entry`(:378)、`remove_deleted_entry`(:387)、`SyncEngine::vault_file_manager()`(:193) 全仓仅定义处匹配~~ → 2026-10-29 已消解：`vault_file_manager()` 有 3 个生产调用，两个 deleted-entry 方法已删 |
 
 ### 已修复（2026-10-27 第二批，原核实记录归档）
 
@@ -623,9 +678,9 @@ command 已实现（创建 `vault-unlock` 窗口），但前端缺少 service �
 
 | 新# | 内容 | 严重度 | 证据 |
 |---|------|--------|------|
-| 11 | P1 不只是死代码，而是**用户可见流程失效**：`vault_disaster_recovery_export`（`recovery.rs:105`）→ `disaster_recovery_export`（`sync_engine/mod.rs:279`）读取 `.enc` 文件，但 `.enc` 从未生成 → 灾难恢复导出必然返回 0 条；前端 `VaultUnlock.tsx:101` → `unlock/DisasterRecovery.tsx` 已完整接线 | 🔴 高（未修，归 P1） | 见上 P1 证据 + `export_entry` 无其它调用者 |
+| 11 | P1 不只是死代码，而是**用户可见流程失效**：`vault_disaster_recovery_export`（`recovery.rs:105`）→ `disaster_recovery_export`（`sync_engine/mod.rs:279`）读取 `.enc` 文件，但 `.enc` 从未生成 → 灾难恢复导出必然返回 0 条；前端 `VaultUnlock.tsx:101` → `unlock/DisasterRecovery.tsx` 已完整接线 | ✅ 已修复（2026-10-29，随 P1 同步链路） | 见下节 2026-10-29 复核 |
 | 12 | 屏幕解锁误发 `VAULT_UNLOCKED`：`setup.rs:159` 在 `on_unlock` 中 emit `VAULT_UNLOCKED`，前端 `useVaultEvents.ts:10` 据此置 `isLocked: false`，而 Rust `SecurityDbState` 仍处于锁定 → UI 误判已解锁，后续命令报 "Vault locked" | ✅ 已修复（2026-10-27） | `setup.rs` `on_unlock` 现仅记录 `state.is_locked()` |
-| 13 | `VaultFileManager` 另有 5 个无外部调用者：`remove_entry_file`(:146)、`read_vault_meta`(:205)、`add_deleted_entry`(:378)、`remove_deleted_entry`(:387)、`SyncEngine::vault_file_manager()`(:193) | 🟢 低（未修，归 P4） | 全仓仅定义处匹配 |
+| 13 | `VaultFileManager` 另有 5 个无外部调用者：`remove_entry_file`(:146)、`read_vault_meta`(:205)、`add_deleted_entry`(:378)、`remove_deleted_entry`(:387)、`SyncEngine::vault_file_manager()`(:193) | ✅ 已消解（2026-10-29） | 见下节 2026-10-29 复核 |
 
 ### 过时项（原文需更正，勿按旧路径操作）
 
@@ -636,3 +691,44 @@ command 已实现（创建 `vault-unlock` 窗口），但前端缺少 service �
 | 问题 5 的「代码位置」 | "缺少 `vault_query_audit_log` command" | 已存在：`cmd/vault/audit.rs:108`，`lib.rs:120` 注册 |
 | 问题 7 的「修复方案」 | Tauri webview 解锁窗口（`vault-unlock` 窗口 + `/vault-unlock` 路由） | 已被 [spec-3c 原生对话框](./I9-vault-spec-3c-native-unlock-dialog.md) 取代；方案作废，但"屏幕锁联动"目标仍有效 |
 | 问题 10 的「代码位置」 | `src/tools/password-generator/password-generator.service.ts:2164` | 路径仍有效 |
+
+---
+
+## 残留汇总（2026-10-29 复核，本文件最新状态）
+
+> 复核范围：10 条原始死代码 + 3 条新发现（11 / 12 / 13），逐条重跑全仓检索。
+> 结论：**原始 10 条中 7 条完全闭环、1 条主链闭环仅旁支残留（#9）、2 条残留（#5 / #6）**；新发现 11 / 12 / 13 全部消解。
+
+### 已闭环（原始 7 条 + 新发现 3 条）
+
+| # | 项 | 本轮验证点 |
+|---|----|-----------|
+| 1 | `assistant-storage::vault_meta` + `vault` | `assistant-storage/src` 无 `vault_meta` / `mod vault` |
+| 2 | `SafePassword` + `sha1_hex` | `check_password(&SafePassword)` 已接入，`sha1_hex` 为 `pub`，`Drop` zeroize |
+| 3 | `VaultEntryDecrypted` | 导出 `export_entries` 走 `decrypt_entry`；同步 `export_all_entries` 走 `export_all_snapshots`；类型无 `Clone` |
+| 4 | `vault_totp_parse_uri` 三层 | `audit.rs:L103` → `lib.rs:L122` → `vault.service.ts:L134` → `vaultAuditSlice.ts:L99` → `VaultEntryDrawer.tsx:L137` |
+| 7 | 屏幕锁解锁联动 + 死窗口清理 | `VaultUnlockWindow` / `WINDOW_VAULT_UNLOCK` 全仓零匹配；`setup.rs:L167` 改为 spawn 原生对话框 |
+| 8 | `LAST_REVEAL_EXPIRY` | 全仓零匹配 |
+| 10 | Diceware 集成 | `LoginFields.tsx:L147`、`CardFields.tsx:L112` 均有调用 |
+| 11 | 灾难恢复导出必然 0 条 | `.enc` 已由 `sync_now` 实际写出，导出有内容 |
+| 12 | 屏幕解锁假解锁事件 | `setup.rs` 无 `VAULT_UNLOCKED` 发射 |
+| 13 | `VaultFileManager` 零调用 | `vault_file_manager()` 有 3 个生产调用（`cmd/vault/entries.rs` L22 / L112 / L163）；`add_deleted_entry` / `remove_deleted_entry` 全仓零匹配（已删）；`remove_entry_file` 被 `sync_engine:L963` 使用 |
+
+### 仍残留（#5 / #6 / #9 旁支，均非 P1 阻塞）
+
+| 优先级 | 项 | 具体残留 | 建议动作 |
+|--------|----|---------|---------|
+| P3 | 6 | ~~无「保留最近 5 份」轮转~~（2026-10-29 已补）；仍缺：无 `vault_backup` command；「锁定时 / 退出时」触发时机未接 | 补 command + service + 退出钩子 |
+| P3 | 5 | `queryAuditLog` 无 UI 消费方，i18n 无词条 | 设置页加审计日志面板（增强项，非规格要求） |
+| P4 | 9 旁支 | 主链 `cipher_algo()` 已读配置；旁支仍硬编码 `CipherAlgorithm::default()`：`vault_file/mod.rs:L98`、`sync_engine/mod.rs` L261 / L323 / L940 / L978、`crud.rs` L391 / L519 / L545 | 统一改为传入用户算法设置 |
+
+### 状态变更记录
+
+| 项 | 2026-10-27 状态 | 2026-10-29 状态 | 变更原因 |
+|----|----------------|----------------|---------|
+| 3 | 🟡 导出已接，同步未接 | ✅ 已修复 | `export_all_entries` 重写为调用 `export_all_snapshots`，并补齐 3 处调用方 |
+| 11 | 🔴 未修 | ✅ 已修复 | 同上，`.enc` 实际生成 |
+| 13 | 🟢 未修 | ✅ 已消解 | `vault_file_manager()` 被 `cmd/vault/entries.rs` 三处调用；两个 deleted-entry 方法已删除 |
+| 5 | 🟡 无 UI | 🟡 无 UI | 未变 |
+| 6 | 🟡 无 IPC / 无轮转 | 🟡 轮转已补，仍缺 IPC / 触发时机 | 新增 `prune_backups` + `MAX_BACKUPS=5`；`backup()` 签名改为 `db_path` 语义；时间戳升到毫秒 + 序号兜底 |
+| 9 旁支 | 🟡 未修 | 🟡 未修 | 未变，补全硬编码位置清单 |

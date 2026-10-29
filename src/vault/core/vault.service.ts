@@ -192,9 +192,6 @@ export const vaultService = {
     invoke("vault_sync_pending_removals"),
   syncConfirmRemovals: (ids: string[]): Promise<number> =>
     invoke("vault_sync_confirm_removals", { ids }),
-  syncPrepare: (): Promise<void> => invoke("vault_sync_prepare"),
-  syncFinalize: (message: string): Promise<void> =>
-    invoke("vault_sync_finalize", { message }),
 
   historyList: (entryId?: string, limit?: number): Promise<HistoryCommit[]> =>
     invoke("vault_history_list", {

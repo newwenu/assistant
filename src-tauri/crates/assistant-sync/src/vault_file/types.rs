@@ -89,6 +89,8 @@ pub struct ImportedEntry {
 #[serde(rename_all = "camelCase")]
 pub struct VaultMetaFile {
     pub version: u32,
+    /// unix **秒**。对齐 spec-4 §11.6 与 VAULT-DESIGN 示例值，属跨设备文件契约，
+    /// 与本项目本地时间体系的毫秒约定不同，勿改。
     #[serde(default)]
     pub exported_at: i64,
     #[serde(default)]

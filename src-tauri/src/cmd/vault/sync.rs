@@ -265,18 +265,6 @@ pub fn vault_sync_conflicts(app: AppHandle) -> Result<Vec<assistant_sync::Confli
 }
 
 #[command]
-pub fn vault_sync_prepare(app: AppHandle) -> Result<(), String> {
-    let engine = super::sync_state(&app)?;
-    engine.prepare().map_err(|e| e.to_string())
-}
-
-#[command]
-pub fn vault_sync_finalize(app: AppHandle, message: String) -> Result<(), String> {
-    let engine = super::sync_state(&app)?;
-    engine.finalize(&message).map_err(|e| e.to_string())
-}
-
-#[command]
 pub fn vault_history_list(
     app: AppHandle,
     entry_id: Option<String>,

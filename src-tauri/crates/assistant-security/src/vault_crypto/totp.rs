@@ -167,7 +167,8 @@ fn urldecode(s: &str) -> String {
     String::from_utf8(buf).unwrap_or_else(|_| s.to_string())
 }
 
-fn decode_base32(input: &str) -> Result<Vec<u8>, String> {
+#[doc(hidden)]
+pub fn decode_base32(input: &str) -> Result<Vec<u8>, String> {
     let sanitized: String = input.chars().filter(|c| !c.is_whitespace()).collect();
 
     if sanitized.is_empty() {
@@ -238,21 +239,4 @@ fn compute_totp_code(secret: &[u8], params: &TotpParams) -> Result<String, Strin
 
 fn params_digits_clamped(digits: u32) -> u32 {
     digits.clamp(1, MAX_DIGITS)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn decode_base32_roundtrips_with_and_without_padding() {
-        let secret: [u8; 20] = [
-            0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x21, 0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe,
-            0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
-        ];
-        assert_eq!(decode_base32(&BASE32.encode(b"Hello!")).unwrap(), b"Hello!");
-        assert_eq!(decode_base32(&BASE32.encode(&secret)).unwrap(), secret);
-        assert!(!decode_base32("JBSWY3DPEHPK3PXP").unwrap().is_empty());
-        assert!(!decode_base32("JBSWY3DP").unwrap().is_empty());
-    }
 }

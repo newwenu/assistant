@@ -15,10 +15,6 @@ use assistant_config::{
     orb_conf::OrbConf,
 };
 use assistant_orb::placement;
-use assistant_security::clipboard_guard::ClipboardGuard;
-use assistant_security::reveal_guard::RevealGuard;
-use assistant_security::screen_lock::ScreenLockMonitor;
-use assistant_security::security_db::SecurityDbState;
 use assistant_storage::attachment_store::AttachmentStore;
 use assistant_storage::db;
 use assistant_tools::{os, ToolRegistry};
@@ -27,10 +23,6 @@ use super::tray;
 use crate::protocol::ShortcutWarningPayloadDto;
 
 pub struct DbState(pub std::sync::Mutex<rusqlite::Connection>);
-
-pub struct SshAgentState {
-    pub added_fingerprints: std::sync::Mutex<std::collections::HashSet<String>>,
-}
 
 pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle();
@@ -91,104 +83,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     handle.manage(assistant_agent::chat_tasks::ChatTasks::new());
 
-    {
-        let security_db_path = match handle.path().app_data_dir() {
-            Ok(data_dir) => data_dir.join("security").join("security.db"),
-            Err(_) => {
-                log::error!("Failed to resolve app data dir for security db");
-                std::path::PathBuf::from("security/security.db")
-            }
-        };
-        handle.manage(SecurityDbState::new(
-            security_db_path.to_str().unwrap_or("security/security.db"),
-        ));
-        handle.manage(RevealGuard::new());
-        handle.manage(ClipboardGuard::new());
-        handle.manage(SshAgentState {
-            added_fingerprints: std::sync::Mutex::new(std::collections::HashSet::new()),
-        });
-        log::info!("SecurityDbState + RevealGuard + ClipboardGuard + SshAgentState initialized");
-    }
-
-    {
-        let vault_dir = match handle.path().app_data_dir() {
-            Ok(data_dir) => data_dir.join("security").join("vault"),
-            Err(_) => std::path::PathBuf::from("security/vault"),
-        };
-        let sync_config = assistant_config::app_conf::AppConf::load()
-            .ok()
-            .map(|c| {
-                assistant_sync::git_sync::ssh::set_ssh_persist_hosts(
-                    c.vault_sync_ssh_hosts.clone(),
-                );
-                c.vault_sync_remote_url
-            })
-            .and_then(|url| {
-                url.map(|url| assistant_sync::SyncConfig {
-                    remote_url: Some(url),
-                    ..Default::default()
-                })
-            })
-            .unwrap_or_default();
-        handle.manage(assistant_sync::sync_engine::SyncEngine::new(
-            vault_dir,
-            sync_config,
-        ));
-        log::info!("SyncEngine initialized");
-    }
-
-    {
-        let monitor = ScreenLockMonitor::new();
-        let app_handle = handle.clone();
-        let on_lock = {
-            let app_handle = app_handle.clone();
-            move || {
-                crate::cmd::ssh_remove_all_on_lock(&app_handle);
-                {
-                    let guard = app_handle.state::<ClipboardGuard>();
-                    if let Err(e) = guard.force_clear() {
-                        log::warn!("Clipboard force_clear on screen lock failed: {}", e);
-                    }
-                }
-                let lock_on_screen = AppConf::load()
-                    .map(|c| c.vault_lock_on_screen_lock)
-                    .unwrap_or(true);
-                if lock_on_screen {
-                    let state = app_handle.state::<SecurityDbState>();
-                    if let Err(e) = state.lock() {
-                        log::error!("Screen lock triggered vault_lock but failed: {}", e);
-                    } else {
-                        log::info!("Screen lock triggered vault_lock");
-                        let initialized = state.is_initialized().unwrap_or(false);
-                        if initialized {
-                            let app_for_dialog = app_handle.clone();
-                            tauri::async_runtime::spawn(async move {
-                                if let Err(e) =
-                                    crate::cmd::vault_show_unlock_window(app_for_dialog).await
-                                {
-                                    log::warn!("Screen lock unlock dialog failed: {}", e);
-                                }
-                            });
-                        }
-                    }
-                    let _ = emit_broadcast(&app_handle, event_name::VAULT_LOCKED, ());
-                } else {
-                    log::info!("Screen lock detected but vault_lock_on_screen_lock is disabled");
-                }
-            }
-        };
-        let on_unlock = {
-            let app_handle = app_handle.clone();
-            move || {
-                log::info!("Screen unlocked");
-                let state = app_handle.state::<SecurityDbState>();
-                log::info!("Screen unlocked, vault locked state: {}", state.is_locked());
-            }
-        };
-        monitor.spawn_listener(on_lock, on_unlock);
-        handle.manage(monitor);
-        log::info!("ScreenLockMonitor initialized");
-    }
+    crate::cmd::setup(&handle);
 
     {
         let registry = Arc::new(ToolRegistry::new());

@@ -51,9 +51,14 @@ pub enum Readyness {
     Ready,
 }
 
-impl Readyness {
-    pub fn is_ready(&self) -> bool {
-        matches!(self, Self::Ready)
+impl std::fmt::Display for Readyness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoSync => f.write_str("no sync configured"),
+            Self::Dirty => f.write_str("uncommitted changes"),
+            Self::Ready => f.write_str("ready"),
+            Self::RepoState(state) => write!(f, "repository busy with {state}"),
+        }
     }
 }
 
@@ -73,6 +78,32 @@ pub enum RepositoryState {
     Mailbox,
     Stash,
     Unknown,
+}
+
+impl RepositoryState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Clean => "clean",
+            Self::Merge => "merge",
+            Self::Rebase => "rebase",
+            Self::RebaseInteractive => "rebase-interactive",
+            Self::RebaseMerge => "rebase-merge",
+            Self::Apply => "apply",
+            Self::CherryPick => "cherry-pick",
+            Self::Revert => "revert",
+            Self::Bisect => "bisect",
+            Self::Am => "am",
+            Self::Mailbox => "mailbox",
+            Self::Stash => "stash",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+impl std::fmt::Display for RepositoryState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,6 +200,7 @@ pub struct ImportReport {
 #[serde(rename_all = "camelCase")]
 pub struct HistoryCommit {
     pub hash: String,
+    /// unix 毫秒
     pub timestamp: i64,
     pub message: String,
     pub entry_id: Option<String>,
@@ -203,6 +235,7 @@ pub struct EntryPreview {
     pub commit: String,
     #[serde(default)]
     pub commit_author: Option<String>,
+    /// unix 毫秒（由 Git `%ct` 秒值 ×1000，低三位恒为 `000`）
     #[serde(default)]
     pub commit_time: Option<i64>,
     pub category: String,

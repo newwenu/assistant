@@ -26,12 +26,6 @@ pub fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<(), String>
     Ok(())
 }
 
-pub fn delete_meta(conn: &Connection, key: &str) -> Result<(), String> {
-    conn.execute("DELETE FROM vault_meta WHERE key = ?1", params![key])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 pub fn ensure_schema_version(conn: &Connection) -> Result<(), String> {
     let current: Option<String> = get_meta(conn, "schema_version")?;
     match current {
@@ -51,11 +45,6 @@ pub fn ensure_schema_version(conn: &Connection) -> Result<(), String> {
             Ok(())
         }
     }
-}
-
-pub fn is_vault_initialized(conn: &Connection) -> Result<bool, String> {
-    let hash = get_meta(conn, "master_key_hash")?;
-    Ok(hash.is_some())
 }
 
 pub fn get_master_key_hash(conn: &Connection) -> Result<Option<Vec<u8>>, String> {

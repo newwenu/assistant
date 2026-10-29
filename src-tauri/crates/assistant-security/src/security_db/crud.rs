@@ -283,14 +283,6 @@ impl SecurityDbState {
         })
     }
 
-    pub fn upsert_imported_entry(
-        &self,
-        entry: VaultEntryImport,
-        algo: CipherAlgorithm,
-    ) -> Result<ImportOutcome, VaultError> {
-        self.with_conn_and_key(|conn, mk| upsert_imported_in(conn, mk, entry, algo))
-    }
-
     pub fn export_all_snapshots(&self) -> Result<Vec<VaultEntrySnapshot>, VaultError> {
         self.with_conn_and_key(|conn, mk| {
             let ids = query_ids(

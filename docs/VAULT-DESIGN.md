@@ -610,6 +610,8 @@ prs 的同步方案极其简洁优雅——**直接用 Git 作为同步后端**�
 
 > **安全性**：即使攻击者获取整个 Git 仓库（含 `.vault-meta`），没有主密码或恢复密钥仍无法派生 master_key。Salt 是公开随机数，Argon2id 安全性不依赖 salt 保密；emergency.token 是加密后的密文，解密需要恢复密钥。
 
+> **时间戳单位（契约，勿改）**：`exportedAt` 一律为 **unix 秒**（10 位，如 `1729555200`），与本项目内部（DB 时间列、IPC 返回值、前端 `Date.now()`）统一使用的 **unix 毫秒**不同。`.vault-meta` 是跨设备 / 跨版本的对外文件格式，单位变更会让新旧设备写出相差 1000 倍的同名字段且不产生任何报错，属于最难排查的隐性不兼容。若要变更，必须升 `version` 并在读取时按版本归一化。
+
 > **完整性保护**：`integrity` 字段使用 HMAC-SHA256(master_key, 其余字段内容) 签名。Git pull 后验证签名——若 `.vault-meta` 被篡改（如修改 masterKeySalt 导致拒绝服务），签名验证失败，拒绝应用变更。签名密钥为 master_key，攻击者无法伪造。
 
 > **不含 biometric.keyEnc**：生物识别的 `keyEnc` 由 OS 密钥管理器（Windows Credential Manager / macOS Keychain）中的 device_key 加密，该 key 绑定在特定设备上。灾难恢复场景（换机器/重装系统）中 device_key 不存在，`keyEnc` 无法解密，存入仓库无意义。`keyEnc` 仅存于本地 SQLite `vault_meta` 表，供同设备生物识别解锁使用。

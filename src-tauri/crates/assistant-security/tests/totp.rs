@@ -1,5 +1,5 @@
 use assistant_security::vault_crypto::totp::{
-    from_otpauth_uri, generate_totp, time_remaining, TotpAlgorithm, TotpParams,
+    decode_base32, from_otpauth_uri, generate_totp, time_remaining, TotpAlgorithm, TotpParams,
 };
 
 #[test]
@@ -132,4 +132,16 @@ fn otpauth_uri_algorithm_variants() {
         let parsed = from_otpauth_uri(&uri).unwrap();
         assert_eq!(parsed.algorithm, expected);
     }
+}
+
+#[test]
+fn decode_base32_accepts_padded_and_unpadded_secrets() {
+    assert_eq!(decode_base32("JBSWY3DP").unwrap(), b"Hello");
+    assert_eq!(
+        decode_base32("JBSWY3DPEHPK3PXP").unwrap(),
+        b"Hello!\xde\xad\xbe\xef"
+    );
+    assert_eq!(decode_base32("ME======").unwrap(), b"a");
+    assert_eq!(decode_base32("ME").unwrap(), b"a");
+    assert!(decode_base32("   ").is_err());
 }

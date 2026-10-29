@@ -8,13 +8,13 @@ fn crash_dir() -> PathBuf {
 }
 
 fn timestamp_str() -> String {
-    let secs = SystemTime::now()
+    let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
-    chrono::DateTime::from_timestamp(secs as i64, 0)
-        .map(|dt| dt.format("%Y%m%d_%H%M%S").to_string())
-        .unwrap_or_else(|| format!("{}", secs))
+        .as_millis();
+    chrono::DateTime::from_timestamp_millis(millis as i64)
+        .map(|dt| dt.format("%Y%m%d_%H%M%S_%3f").to_string())
+        .unwrap_or_else(|| format!("{}", millis))
 }
 
 pub fn install() {

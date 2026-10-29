@@ -82,7 +82,8 @@ pub fn parse_hibp_response(body: &str, target_suffix: &str) -> u32 {
     0
 }
 
-pub(crate) fn sha1_hex(password: &str) -> String {
+#[doc(hidden)]
+pub fn sha1_hex(password: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(password.as_bytes());
     let result = hasher.finalize();
@@ -105,25 +106,5 @@ impl Drop for SafePassword {
     fn drop(&mut self) {
         let bytes = unsafe { self.0.as_bytes_mut() };
         bytes.zeroize();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sha1_hex_is_deterministic_uppercase_and_matches_known_value() {
-        assert_eq!(sha1_hex("password"), sha1_hex("password"));
-        assert_ne!(sha1_hex("password"), sha1_hex("Password"));
-        assert_eq!(&sha1_hex("password")[..5], "5BAA6");
-        assert_eq!(sha1_hex("test").len(), 40);
-    }
-
-    #[test]
-    fn safe_password_zeroizes_on_drop() {
-        let safe = SafePassword::new("sensitive_password".to_string());
-        assert_eq!(safe.as_str(), "sensitive_password");
-        drop(safe);
     }
 }

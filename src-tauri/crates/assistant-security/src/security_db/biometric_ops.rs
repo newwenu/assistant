@@ -87,17 +87,6 @@ fn restore_keys_from_plaintext(
 }
 
 impl SecurityDbState {
-    pub fn is_biometric_available(
-        &self,
-        key_store: &dyn BiometricKeyStore,
-    ) -> Result<bool, VaultError> {
-        key_store.is_available()
-    }
-
-    pub fn enroll_biometric(&self, key_store: &dyn BiometricKeyStore) -> Result<(), VaultError> {
-        self.enroll_biometric_with_hint(key_store, || {})
-    }
-
     pub fn enroll_biometric_with_hint(
         &self,
         key_store: &dyn BiometricKeyStore,

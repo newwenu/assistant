@@ -1,3 +1,7 @@
+/**
+ * 时间戳单位约定：本文件所有 `timestamp` / `*At` 字段均为 **unix 毫秒**，
+ * 唯一例外是 `.vault-meta` 文件内的 `exportedAt`（unix 秒，见 vault_file/types.rs）。
+ */
 export type VaultCategory =
   "login" | "note" | "card" | "identity" | "sshKey" | "custom";
 
@@ -84,6 +88,7 @@ export interface AuditLogEntry {
   id: string;
   eventType: string;
   detail: string | null;
+  /** unix 毫秒 */
   timestamp: number;
 }
 
@@ -156,6 +161,7 @@ export type ConflictResolution =
 
 export interface HistoryCommit {
   hash: string;
+  /** unix 毫秒 */
   timestamp: number;
   message: string;
   entryId: string | null;
@@ -171,6 +177,7 @@ export interface EntryPreview {
   id: string;
   commit: string;
   commitAuthor: string | null;
+  /** unix 毫秒（由 Git `%ct` 秒值 ×1000，低三位恒为 000） */
   commitTime: number | null;
   category: VaultCategory;
   revision: number;
@@ -183,7 +190,9 @@ export interface EntryPreview {
   customFields: EntryPreviewField[];
   tags: string[];
   isFavorite: boolean;
+  /** unix 毫秒 */
   createdAt: number;
+  /** unix 毫秒 */
   updatedAt: number;
 }
 

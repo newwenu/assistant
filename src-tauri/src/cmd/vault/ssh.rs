@@ -3,6 +3,8 @@ use tauri::{command, AppHandle, Manager};
 use assistant_security::audit::{log as audit_log, AuditEvent};
 use assistant_security::types::VaultEntrySummary;
 
+use super::SshAgentState;
+
 #[command]
 pub fn vault_ssh_add_to_agent(
     app: AppHandle,
@@ -23,7 +25,7 @@ pub fn vault_ssh_add_to_agent(
         .map_err(|e| e.to_string())?;
 
     {
-        let ssh_state = app.state::<crate::setup::SshAgentState>();
+        let ssh_state = app.state::<SshAgentState>();
         let mut fps = ssh_state
             .added_fingerprints
             .lock()
@@ -52,7 +54,7 @@ pub fn vault_ssh_remove_from_agent(app: AppHandle, fingerprint: String) -> Resul
     bridge.remove_key(&fingerprint).map_err(|e| e.to_string())?;
 
     {
-        let ssh_state = app.state::<crate::setup::SshAgentState>();
+        let ssh_state = app.state::<SshAgentState>();
         let mut fps = ssh_state
             .added_fingerprints
             .lock()
@@ -79,7 +81,7 @@ pub fn vault_ssh_list_agent(
     let bridge = super::ssh_bridge_from_conf();
     let mut keys = bridge.list_keys().map_err(|e| e.to_string())?;
 
-    let ssh_state = app.state::<crate::setup::SshAgentState>();
+    let ssh_state = app.state::<SshAgentState>();
     let vault_fps = ssh_state
         .added_fingerprints
         .lock()
@@ -121,7 +123,7 @@ pub fn vault_ssh_auto_add_all(app: AppHandle) -> Result<Vec<String>, String> {
                     .is_ok()
                 {
                     {
-                        let ssh_state = app.state::<crate::setup::SshAgentState>();
+                        let ssh_state = app.state::<SshAgentState>();
                         let mut fps = ssh_state
                             .added_fingerprints
                             .lock()
@@ -205,7 +207,7 @@ pub(super) fn auto_add_entry(app: &AppHandle, id: &str) {
         return;
     }
 
-    let ssh_state = app.state::<crate::setup::SshAgentState>();
+    let ssh_state = app.state::<SshAgentState>();
     ssh_state
         .added_fingerprints
         .lock()
@@ -226,7 +228,7 @@ pub(super) fn auto_remove_fingerprint(app: &AppHandle, fingerprint: &str) {
         return;
     }
 
-    let ssh_state = app.state::<crate::setup::SshAgentState>();
+    let ssh_state = app.state::<SshAgentState>();
     ssh_state
         .added_fingerprints
         .lock()

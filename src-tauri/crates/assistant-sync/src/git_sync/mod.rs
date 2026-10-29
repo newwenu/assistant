@@ -255,14 +255,6 @@ impl GitSync {
         git::git_last_commit_info(&self.repo_path, reference, path)
     }
 
-    pub fn changed_files_raw(&self, short: bool) -> Result<String, SyncError> {
-        let mut status = git::git_status(&self.repo_path, short)?;
-        if status.trim().is_empty() {
-            status.truncate(0);
-        }
-        Ok(status)
-    }
-
     pub fn resolve_conflict_local(&self, path: &str) -> Result<(), SyncError> {
         git::git_checkout_ours(&self.repo_path, path)?;
         git::git_add(&self.repo_path, path)

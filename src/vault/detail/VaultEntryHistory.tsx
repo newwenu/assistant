@@ -27,8 +27,8 @@ interface VaultEntryHistoryProps {
   onClose: () => void;
 }
 
-function formatTime(seconds: number): string {
-  return new Date(seconds * 1000).toLocaleString();
+function formatTime(millis: number): string {
+  return new Date(millis).toLocaleString();
 }
 
 function operationOf(message: string): string {
@@ -292,7 +292,7 @@ export default function VaultEntryHistory({
                   {preview.revision}
                 </Descriptions.Item>
                 <Descriptions.Item label={t("vault.history.time")}>
-                  {formatTime(preview.updatedAt / 1000)}
+                  {formatTime(preview.updatedAt)}
                 </Descriptions.Item>
               </Descriptions>
               <Text type="secondary" style={{ fontSize: 12 }}>

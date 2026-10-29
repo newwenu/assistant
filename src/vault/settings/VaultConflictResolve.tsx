@@ -361,12 +361,12 @@ export default function VaultConflictResolve({
       true,
       <Text>
         {local.commitTime !== null
-          ? formatTime(local.commitTime * 1000)
+          ? formatTime(local.commitTime)
           : t("vault.conflict.value_empty")}
       </Text>,
       <Text>
         {remote.commitTime !== null
-          ? formatTime(remote.commitTime * 1000)
+          ? formatTime(remote.commitTime)
           : t("vault.conflict.value_empty")}
       </Text>,
     );
@@ -448,7 +448,7 @@ export default function VaultConflictResolve({
           )}
           {version.commitTime !== null && (
             <Descriptions.Item label={t("vault.conflict.commit_time")}>
-              {formatTime(version.commitTime * 1000)}
+              {formatTime(version.commitTime)}
             </Descriptions.Item>
           )}
         </Descriptions>
