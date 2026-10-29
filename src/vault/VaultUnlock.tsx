@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Button, Divider, Form, Typography } from "antd";
+import { useEffect, useState } from "react";
+import { Button, Form, Typography, Spin } from "antd";
 import { LockOutlined, SyncOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -7,9 +7,10 @@ import { App } from "antd";
 import { useVaultUnlock } from "./core/useVaultUnlock";
 import PasswordForm from "./unlock/PasswordForm";
 import BiometricButton from "./unlock/BiometricButton";
-import RecoveryKeyForm from "./unlock/RecoveryKeyForm";
 import DisasterRecovery from "./unlock/DisasterRecovery";
 import styles from "./vault.module.css";
+
+const BIOMETRIC_PROBE_TIMEOUT_MS = 2_000;
 
 export default function VaultUnlock() {
   const { t } = useTranslation();
@@ -25,21 +26,14 @@ export default function VaultUnlock() {
     strength,
     setStrength,
     checkStrength,
-    recoveryKey,
-    setRecoveryKey,
-    showRecoveryKey,
-    setShowRecoveryKey,
     unlockMethod,
     canSubmit,
     biometricAvailable,
     biometricEnrolled,
-    recoveryKeySet,
     handlePasswordSubmit,
     handleBiometricUnlock,
-    handleRecoveryKeySubmit,
     checkBiometricAvailable,
     checkBiometricEnrolled,
-    checkRecoveryKeySet,
     disasterRecoveryStep,
     disasterRecoveryResult,
     startDisasterRecovery,
@@ -54,9 +48,26 @@ export default function VaultUnlock() {
     setDrCommit,
   } = useVaultUnlock();
 
+  const [biometricReady, setBiometricReady] = useState(false);
+
   useEffect(() => {
-    void checkBiometricAvailable();
-    void checkBiometricEnrolled();
+    let cancelled = false;
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) setBiometricReady(true);
+    }, BIOMETRIC_PROBE_TIMEOUT_MS);
+
+    void Promise.all([
+      checkBiometricAvailable(),
+      checkBiometricEnrolled(),
+    ]).finally(() => {
+      clearTimeout(timeoutId);
+      if (!cancelled) setBiometricReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [checkBiometricAvailable, checkBiometricEnrolled]);
 
   useEffect(() => {
@@ -66,12 +77,6 @@ export default function VaultUnlock() {
       setStrength(null);
     }
   }, [password, isInitialized, checkStrength, setStrength]);
-
-  useEffect(() => {
-    if (isInitialized) {
-      void checkRecoveryKeySet();
-    }
-  }, [isInitialized, checkRecoveryKeySet]);
 
   const handlePasswordSubmitInner = async () => {
     if (!isInitialized) {
@@ -131,84 +136,79 @@ export default function VaultUnlock() {
 
   return (
     <div className={styles.unlockContainer}>
-      <LockOutlined className={styles.lockIcon} />
-      <Typography.Title level={4}>
-        {t(isInitialized ? "vault.unlock.title" : "vault.unlock.create_title")}
-      </Typography.Title>
+      <div className={styles.unlockCard}>
+        <div className={styles.unlockIconWrap}>
+          <LockOutlined className={styles.unlockIcon} />
+        </div>
 
-      <Form
-        onFinish={() => void handlePasswordSubmitInner()}
-        className={styles.unlockForm}
-      >
-        {biometricDefault ? (
-          <BiometricButton
-            unlockMethod={unlockMethod}
-            onUnlock={() => void handleBiometricUnlock()}
-            primary
-          />
-        ) : (
-          <PasswordForm
-            isInitialized={isInitialized}
-            password={password}
-            onPasswordChange={setPassword}
-            confirmPassword={confirmPassword}
-            onConfirmPasswordChange={setConfirmPassword}
-            strength={strength}
-            error={error}
-            unlockMethod={unlockMethod}
-            canSubmit={canSubmit}
-          />
-        )}
+        <Typography.Title level={4} style={{ margin: 0, textAlign: "center" }}>
+          {t(
+            isInitialized ? "vault.unlock.title" : "vault.unlock.create_title",
+          )}
+        </Typography.Title>
+        <Typography.Text type="secondary" className={styles.unlockSubtitle}>
+          {t(
+            isInitialized
+              ? "vault.unlock.subtitle"
+              : "vault.unlock.create_subtitle",
+          )}
+        </Typography.Text>
 
-        {biometricDefault && (
-          <PasswordForm
-            isInitialized={isInitialized}
-            password={password}
-            onPasswordChange={setPassword}
-            confirmPassword={confirmPassword}
-            onConfirmPasswordChange={setConfirmPassword}
-            strength={strength}
-            error={error}
-            unlockMethod={unlockMethod}
-            canSubmit={canSubmit}
-            collapsed
-          />
-        )}
-
-        {!biometricDefault &&
-          isInitialized &&
-          biometricAvailable &&
-          biometricEnrolled && (
-            <BiometricButton
+        <Form
+          onFinish={() => void handlePasswordSubmitInner()}
+          className={styles.unlockForm}
+        >
+          {!biometricReady ? (
+            <div className={styles.unlockLoading}>
+              <Spin />
+            </div>
+          ) : biometricDefault ? (
+            <>
+              <BiometricButton
+                unlockMethod={unlockMethod}
+                onUnlock={() => void handleBiometricUnlock()}
+                primary
+              />
+              <PasswordForm
+                isInitialized={isInitialized}
+                password={password}
+                onPasswordChange={setPassword}
+                confirmPassword={confirmPassword}
+                onConfirmPasswordChange={setConfirmPassword}
+                strength={strength}
+                error={error}
+                unlockMethod={unlockMethod}
+                canSubmit={canSubmit}
+                collapsed
+              />
+            </>
+          ) : (
+            <PasswordForm
+              isInitialized={isInitialized}
+              password={password}
+              onPasswordChange={setPassword}
+              confirmPassword={confirmPassword}
+              onConfirmPasswordChange={setConfirmPassword}
+              strength={strength}
+              error={error}
               unlockMethod={unlockMethod}
-              onUnlock={() => void handleBiometricUnlock()}
+              canSubmit={canSubmit}
             />
           )}
 
-        {isInitialized && recoveryKeySet && (
-          <RecoveryKeyForm
-            recoveryKey={recoveryKey}
-            onRecoveryKeyChange={setRecoveryKey}
-            showRecoveryKey={showRecoveryKey}
-            onShowRecoveryKeyChange={setShowRecoveryKey}
-            unlockMethod={unlockMethod}
-            onSubmit={() => void handleRecoveryKeySubmit()}
-          />
-        )}
-
-        <Divider plain>{t("common.or")}</Divider>
-        <Form.Item>
-          <Button
-            size="large"
-            block
-            icon={<SyncOutlined />}
-            disabled={!!unlockMethod}
-            onClick={startDisasterRecovery}
-          >
-            {t("vault.disaster_recovery.title")}
-          </Button>
-        </Form.Item>
-      </Form>
+          <div className={styles.unlockFooter}>
+            <Button
+              type="link"
+              size="small"
+              icon={<SyncOutlined />}
+              disabled={!!unlockMethod}
+              onClick={startDisasterRecovery}
+            >
+              {t("vault.disaster_recovery.title")}
+            </Button>
+          </div>
+        </Form>
+      </div>
     </div>
   );
 }

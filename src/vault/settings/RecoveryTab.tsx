@@ -1,6 +1,10 @@
 import { useState } from "react";
-import { Button, Typography, Space, Modal, Input } from "antd";
-import { KeyOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
+import { Button, Typography, Space, Modal, Input, App } from "antd";
+import {
+  CopyOutlined,
+  KeyOutlined,
+  SafetyCertificateOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { IntegrityResult } from "../core/vault.types";
 
@@ -20,6 +24,7 @@ export default function RecoveryTab({
   verifyIntegrity,
 }: RecoveryTabProps) {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const [recoveryKeyModalOpen, setRecoveryKeyModalOpen] = useState(false);
   const [generatedRecoveryKey, setGeneratedRecoveryKey] = useState<
     string | null
@@ -38,6 +43,17 @@ export default function RecoveryTab({
     } finally {
       setRecoveryKeyLoading(false);
     }
+  };
+
+  const handleCopyRecoveryKey = () => {
+    if (!generatedRecoveryKey) return;
+    void navigator.clipboard.writeText(generatedRecoveryKey);
+    message.success(t("vault.recovery.key_copied"));
+  };
+
+  const handleConfirmSaved = () => {
+    setRecoveryKeyModalOpen(false);
+    setGeneratedRecoveryKey(null);
   };
 
   return (
@@ -79,20 +95,22 @@ export default function RecoveryTab({
       <Modal
         open={recoveryKeyModalOpen}
         title={t("vault.recovery.key_generated_title")}
+        mask={{ closable: false }}
         onCancel={() => {
           setRecoveryKeyModalOpen(false);
           setGeneratedRecoveryKey(null);
         }}
         footer={[
           <Button
-            key="close"
-            type="primary"
-            onClick={() => {
-              setRecoveryKeyModalOpen(false);
-              setGeneratedRecoveryKey(null);
-            }}
+            key="copy"
+            icon={<CopyOutlined />}
+            disabled={!generatedRecoveryKey}
+            onClick={handleCopyRecoveryKey}
           >
-            {t("common.actions.close")}
+            {t("vault.recovery.key_copy")}
+          </Button>,
+          <Button key="saved" type="primary" onClick={handleConfirmSaved}>
+            {t("vault.recovery.key_saved_confirm")}
           </Button>,
         ]}
       >

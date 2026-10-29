@@ -742,7 +742,9 @@
     "description": "Securely store and manage passwords, credentials and keys",
     "unlock": {
       "title": "Unlock Vault",
+      "subtitle": "Continue with biometrics or your master password",
       "create_title": "Create Vault",
+      "create_subtitle": "Set a strong master password to protect your data",
       "master_password": "Master Password",
       "confirm_password": "Confirm Password",
       "password_mismatch": "Passwords do not match",
@@ -806,7 +808,7 @@
       "restore_confirm": "Restore this entry?",
       "restored": "Entry restored",
       "purge": "Empty Trash",
-      "purge_confirm": "Permanently delete all entries in the trash? This cannot be undone.",
+      "purge_confirm": "Permanently delete all entries in the trash? Entries are removed from the sync repository, but older versions remain in Git history and can still be recovered via history restore.",
       "purged_count": "Permanently deleted {{count}} entries"
     },
     "totp": {
@@ -934,6 +936,9 @@
       "key_regenerate": "Regenerate Recovery Key",
       "key_generated_title": "Recovery Key Generated",
       "key_warning": "Save this recovery key to a secure location immediately! You will not be able to view it again after closing this window.",
+      "key_copy": "Copy Key",
+      "key_copied": "Recovery key copied to clipboard",
+      "key_saved_confirm": "I've Saved It Securely",
       "verify_integrity": "Verify Vault Integrity",
       "integrity_valid": "Vault integrity verified",
       "integrity_invalid": "Vault integrity check failed — data may be tampered"

@@ -729,7 +729,9 @@
     "description": "安全存储和管理密码、凭证与密钥",
     "unlock": {
       "title": "解锁保险库",
+      "subtitle": "使用生物识别或主密码继续",
       "create_title": "创建保险库",
+      "create_subtitle": "设置一个强主密码来保护你的数据",
       "master_password": "主密码",
       "confirm_password": "确认主密码",
       "password_mismatch": "两次输入的密码不一致",
@@ -793,7 +795,7 @@
       "restore_confirm": "确定恢复此条目？",
       "restored": "条目已恢复",
       "purge": "清空回收站",
-      "purge_confirm": "确定永久删除回收站中的全部条目？此操作不可撤销。",
+      "purge_confirm": "确定永久删除回收站中的全部条目？条目将从同步仓库移除，但 Git 历史提交中仍保留旧版本，可被历史还原找回。",
       "purged_count": "已永久删除 {{count}} 个条目"
     },
     "totp": {
@@ -921,6 +923,9 @@
       "key_regenerate": "重新生成恢复密钥",
       "key_generated_title": "恢复密钥已生成",
       "key_warning": "请立即将此恢复密钥保存到安全位置！关闭此窗口后将无法再次查看。",
+      "key_copy": "复制密钥",
+      "key_copied": "恢复密钥已复制到剪贴板",
+      "key_saved_confirm": "我已安全保存",
       "verify_integrity": "验证保险库完整性",
       "integrity_valid": "保险库完整性验证通过",
       "integrity_invalid": "保险库完整性验证失败，数据可能被篡改"

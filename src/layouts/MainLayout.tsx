@@ -6,7 +6,6 @@ import { Titlebar } from "@/components/Titlebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
 import { HistoryManager } from "@/history";
-import { VaultApp } from "@/vault";
 import { ToolBox } from "@/tools/ToolBox";
 import { ToolPage } from "@/tools/ToolPage";
 import { CommandPalette } from "@/components/commandPalette/CommandPalette";
@@ -14,6 +13,11 @@ import { SettingsContent } from "@/settings/SettingsContent";
 import { useAppInitialization } from "@/hooks/useAppInitialization";
 import { useErrorNotifications } from "@/hooks/useErrorNotifications";
 import { useNavigationListener } from "@/hooks/useNavigationListener";
+import { lazyWithRecovery } from "@/utils/lazyWithRecovery";
+
+const VaultApp = lazyWithRecovery(() =>
+  import("@/vault").then((m) => ({ default: m.VaultApp })),
+);
 
 export const MainLayout: React.FC = () => {
   const navigate = useNavigate();

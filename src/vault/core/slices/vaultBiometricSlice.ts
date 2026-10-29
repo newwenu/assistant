@@ -4,7 +4,8 @@ import { vaultService } from "../vault.service";
 const log = createLogger("vaultStore");
 
 const BIOMETRIC_CACHE_TTL_MS = 5_000;
-const BIOMETRIC_RETRY_MS = 3_000;
+const BIOMETRIC_RETRY_BASE_MS = 250;
+const BIOMETRIC_RETRY_MAX_MS = 4_000;
 const BIOMETRIC_MAX_RETRIES = 5;
 
 export interface VaultBiometricSlice {
@@ -13,7 +14,8 @@ export interface VaultBiometricSlice {
   _biometricAvailableAt: number;
   _biometricEnrolledAt: number;
   _biometricRetryTimerId: ReturnType<typeof setTimeout> | null;
-  _biometricRetryCount: number;
+  _biometricAvailRetryCount: number;
+  _biometricEnrolledRetryCount: number;
 
   checkBiometricAvailable: () => Promise<void>;
   checkBiometricEnrolled: () => Promise<void>;
@@ -36,17 +38,22 @@ export function createBiometricSlice(
   get: () => FullState,
 ): VaultBiometricSlice {
   const scheduleRetry = (): void => {
-    const { _biometricRetryTimerId, _biometricRetryCount } = get();
-    if (_biometricRetryTimerId) return;
-    if (_biometricRetryCount >= BIOMETRIC_MAX_RETRIES) return;
+    const state = get();
+    if (state._biometricRetryTimerId) return;
+    const attempts = Math.max(
+      state._biometricAvailRetryCount,
+      state._biometricEnrolledRetryCount,
+    );
+    if (attempts > BIOMETRIC_MAX_RETRIES) return;
+    const delay = Math.min(
+      BIOMETRIC_RETRY_BASE_MS * 2 ** (attempts - 1),
+      BIOMETRIC_RETRY_MAX_MS,
+    );
     const id = setTimeout(() => {
-      set({
-        _biometricRetryTimerId: null,
-        _biometricRetryCount: get()._biometricRetryCount + 1,
-      });
+      set({ _biometricRetryTimerId: null });
       void get().checkBiometricAvailable();
       void get().checkBiometricEnrolled();
-    }, BIOMETRIC_RETRY_MS);
+    }, delay);
     set({ _biometricRetryTimerId: id });
   };
 
@@ -56,7 +63,8 @@ export function createBiometricSlice(
     _biometricAvailableAt: 0,
     _biometricEnrolledAt: 0,
     _biometricRetryTimerId: null,
-    _biometricRetryCount: 0,
+    _biometricAvailRetryCount: 0,
+    _biometricEnrolledRetryCount: 0,
 
     checkBiometricAvailable: async () => {
       const now = Date.now();
@@ -66,12 +74,15 @@ export function createBiometricSlice(
         set({
           biometricAvailable: available,
           _biometricAvailableAt: Date.now(),
-          _biometricRetryCount: 0,
+          _biometricAvailRetryCount: 0,
         });
         log.debug(`Biometric available: ${available}`);
       } catch (e) {
         log.error("checkBiometricAvailable failed", e);
-        set({ biometricAvailable: false });
+        set({
+          biometricAvailable: false,
+          _biometricAvailRetryCount: get()._biometricAvailRetryCount + 1,
+        });
         scheduleRetry();
       }
     },
@@ -84,12 +95,15 @@ export function createBiometricSlice(
         set({
           biometricEnrolled: enrolled,
           _biometricEnrolledAt: Date.now(),
-          _biometricRetryCount: 0,
+          _biometricEnrolledRetryCount: 0,
         });
         log.debug(`Biometric enrolled: ${enrolled}`);
       } catch (e) {
         log.error("checkBiometricEnrolled failed", e);
-        set({ biometricEnrolled: false });
+        set({
+          biometricEnrolled: false,
+          _biometricEnrolledRetryCount: get()._biometricEnrolledRetryCount + 1,
+        });
         scheduleRetry();
       }
     },

@@ -40,7 +40,8 @@ function resetStore() {
     _biometricAvailableAt: 0,
     _biometricEnrolledAt: 0,
     _biometricRetryTimerId: null,
-    _biometricRetryCount: 0,
+    _biometricAvailRetryCount: 0,
+    _biometricEnrolledRetryCount: 0,
     _recoveryKeySetAt: 0,
     syncReadyness: null,
     syncResult: null,
@@ -489,6 +490,46 @@ describe("vaultStore biometric", () => {
 
     expect(useVaultStore.getState().biometricEnrolled).toBe(false);
     expect(useVaultStore.getState()._biometricEnrolledAt).toBe(0);
+  });
+
+  it("checkBiometricAvailable → failure schedules retry, enrolled success keeps own counter", async () => {
+    mockCmd("vault_is_biometric_available", () =>
+      Promise.reject(new Error("keyring unavailable")),
+    );
+    mockCmd("vault_is_biometric_enrolled", () => Promise.resolve(true));
+
+    const store = useVaultStore.getState();
+    await store.checkBiometricAvailable();
+    await store.checkBiometricEnrolled();
+
+    const state = useVaultStore.getState();
+    expect(state._biometricAvailRetryCount).toBe(1);
+    expect(state._biometricEnrolledRetryCount).toBe(0);
+    expect(state._biometricRetryTimerId).not.toBeNull();
+  });
+
+  it("retry uses exponential backoff starting at 250ms", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      mockCmd("vault_is_biometric_available", () => {
+        calls += 1;
+        return Promise.reject(new Error("keyring unavailable"));
+      });
+      mockCmd("vault_is_biometric_enrolled", () => Promise.resolve(true));
+
+      const store = useVaultStore.getState();
+      await store.checkBiometricAvailable();
+      expect(calls).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(249);
+      expect(calls).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(calls).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("unlockBiometric → success unlocks vault", async () => {

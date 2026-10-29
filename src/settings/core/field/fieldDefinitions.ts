@@ -2,16 +2,22 @@ import { defineSetting, defineSection } from "./fieldRegistry";
 import { ThemeRadioRender } from "../../shared/renderers/ThemeRadioRender";
 import { RendererSelectRender } from "../../shared/renderers/RendererSelectRender";
 import { MascotColorGroupRender } from "../../shared/renderers/MascotColorGroupRender";
-import { BiometricSwitchRender } from "../../shared/renderers/BiometricSwitchRender";
 import {
   SHORTCUT_DEFINITIONS,
   DEFAULT_KEYBINDINGS,
 } from "../types/shortcutTypes";
 import { createMascotCapabilityVisible } from "@/mascot";
+import { lazyWithRecovery } from "@/utils/lazyWithRecovery";
 import {
   COMPACTION_THRESHOLD_PERCENT,
   MAX_SUMMARY_REQUEST_TOKENS,
 } from "@/config/constants";
+
+const BiometricSwitchRender = lazyWithRecovery(() =>
+  import("../../shared/renderers/BiometricSwitchRender").then((m) => ({
+    default: m.BiometricSwitchRender,
+  })),
+);
 
 defineSection({
   id: "general-main",
