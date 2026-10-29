@@ -10,7 +10,6 @@ use crate::base::{
     BaseProviderAdapter, ChatStream, ProviderConfig, ProviderError, ProviderKind, RetryConfig,
     SseLogConfig, StreamTimeoutConfig,
 };
-use crate::crypto;
 
 pub struct AnthropicAdapter {
     pub(crate) config: ProviderConfig,
@@ -65,12 +64,6 @@ impl AnthropicAdapter {
             .as_deref()
             .unwrap_or("https://api.anthropic.com/v1")
     }
-
-    pub(crate) fn decrypt_api_key(&self) -> Result<String, ProviderError> {
-        let machine_id = crypto::get_machine_id().map_err(ProviderError::ApiKeyMissing)?;
-        crypto::decrypt_api_key_b64(&self.config.api_key_encrypted, &machine_id)
-            .map_err(ProviderError::ApiKeyMissing)
-    }
 }
 
 impl BaseProviderAdapter for AnthropicAdapter {
@@ -84,15 +77,16 @@ impl BaseProviderAdapter for AnthropicAdapter {
 
     fn chat_completion_stream(
         &self,
+        api_key: &str,
         messages: &[crate::base::ChatMessage],
         model: &str,
         options: &crate::base::ChatOptions,
         cancel_token: tokio_util::sync::CancellationToken,
     ) -> Result<ChatStream, ProviderError> {
-        request::chat_completion_stream(self, messages, model, options, cancel_token)
+        request::chat_completion_stream(self, api_key, messages, model, options, cancel_token)
     }
 
-    fn list_models(&self) -> Result<Vec<crate::base::ModelConfig>, ProviderError> {
-        discovery::list_models(self)
+    fn list_models(&self, api_key: &str) -> Result<Vec<crate::base::ModelConfig>, ProviderError> {
+        discovery::list_models(self, api_key)
     }
 }

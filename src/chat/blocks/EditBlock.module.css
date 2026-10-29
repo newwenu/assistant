@@ -1,19 +1,94 @@
 .root {
+  position: relative;
+}
+
+.imageRail {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  padding: 8px 0 4px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.imageRail::-webkit-scrollbar {
+  display: none;
+}
+
+.imageItem {
+  position: relative;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.imageRemove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.imageItem:hover .imageRemove {
+  opacity: 1;
+}
+
+.fileRail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.fileItem {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.fileRemove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.fileItem:hover .fileRemove {
+  opacity: 1;
 }
 
 .textarea {
   width: 100%;
-  min-height: 60px;
-  padding: 8px 10px;
+  min-height: 80px;
+  padding: 10px 12px 30px 12px;
   border: 1px solid var(--color-primary);
   border-radius: var(--radius);
   background: var(--color-bg-layout);
   color: var(--color-text);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.6;
   resize: vertical;
   font-family: inherit;
 }
@@ -25,20 +100,22 @@
 }
 
 .actions {
+  position: absolute;
+  bottom: 4px;
+  right: 6px;
   display: flex;
   align-items: center;
   gap: 4px;
-  justify-content: flex-end;
 }
 
 .confirmBtn,
 .cancelBtn {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--color-border-secondary);
-  border-radius: var(--radius);
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
   padding: 0;
   cursor: pointer;
   transition:
@@ -47,20 +124,19 @@
 }
 
 .confirmBtn {
-  background: var(--color-primary);
-  color: var(--color-text-on-primary, #fff);
-  border-color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb, 22, 119, 255), 0.08);
+  color: var(--color-primary);
 }
 
 .confirmBtn:hover {
-  opacity: 0.85;
+  background: rgba(var(--color-primary-rgb, 22, 119, 255), 0.18);
 }
 
 .cancelBtn {
-  background: transparent;
-  color: var(--color-text-secondary);
+  background: rgba(var(--color-error-rgb, 255, 77, 79), 0.06);
+  color: var(--color-error, #ff4d4f);
 }
 
 .cancelBtn:hover {
-  background: var(--color-border-secondary);
+  background: rgba(var(--color-error-rgb, 255, 77, 79), 0.14);
 }

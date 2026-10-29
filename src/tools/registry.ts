@@ -265,6 +265,7 @@ const imageCompressor = defineTool({
   ],
   component: lazyWithRecovery(() => import("./image-compressor")),
   widthMode: "full",
+  capabilities: { fileDrop: { accept: "image/*" } },
 });
 
 const svgPreview = defineTool({
@@ -275,6 +276,7 @@ const svgPreview = defineTool({
   keywords: ["svg", "preview", "edit", "optimize", "vector", "download"],
   component: lazyWithRecovery(() => import("./svg-preview")),
   widthMode: "full",
+  capabilities: { fileDrop: { accept: ".svg,image/svg+xml" } },
 });
 
 const fsLink = defineTool({

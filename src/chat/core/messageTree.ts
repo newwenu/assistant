@@ -1,4 +1,4 @@
-import type { Message } from "../../stores/chatStore";
+import type { Message } from "./chatTypes";
 
 export interface SiblingInfo {
   index: number;

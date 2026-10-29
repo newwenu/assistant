@@ -3,11 +3,11 @@ import { Button, Typography, Modal, Dropdown } from "antd";
 import { EditOutlined, DeleteOutlined, MoreOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
+import { useProviderStore } from "@/stores/providerStore";
 import {
-  useProviderStore,
   API_FORMATS,
   getApiFormatByType,
-} from "@/stores/providerStore";
+} from "@/settings/core/provider/providerLookup";
 import type {
   Provider,
   ProviderInput,
@@ -17,10 +17,12 @@ import type {
 import { FormatTag } from "./FormatTag";
 import { AddProviderDialog } from "./AddProviderDialog";
 import { ConnectDialog } from "./ConnectDialog";
+import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
 import {
-  EntityListPageShell,
-  type EntityListSectionConfig,
-} from "../shared/layout/EntityListPageShell";
+  EntityListContent,
+  ListHeaderActions,
+  type SectionConfig,
+} from "../shared/EntityListContent";
 import { getProviderFormatLabel } from "../core/provider/providerFormatRegistry";
 
 export const ProviderManager: React.FC = () => {
@@ -100,7 +102,7 @@ export const ProviderManager: React.FC = () => {
     return map;
   }, [providerStore.providers]);
 
-  const sections: EntityListSectionConfig<Provider>[] = useMemo(() => {
+  const sections: SectionConfig<Provider>[] = useMemo(() => {
     return API_FORMATS.filter(
       (fmt) => (providersByFormat.get(fmt.format)?.length ?? 0) > 0,
     ).map((fmt) => {
@@ -161,16 +163,23 @@ export const ProviderManager: React.FC = () => {
   return (
     <>
       {modalContextHolder}
-      <EntityListPageShell<Provider>
-        title={t("settings.provider.title")}
-        items={providerStore.providers}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        addLabel={t("settings.provider.add")}
-        onAdd={handleAdd}
-        emptyDescription={t("settings.provider.empty")}
-        sections={sections}
+      <SettingsPageShell
+        wide
+        extra={
+          <ListHeaderActions
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            addLabel={t("settings.provider.add")}
+            onAdd={handleAdd}
+          />
+        }
       >
+        <EntityListContent
+          items={providerStore.providers}
+          sections={sections}
+          emptyDescription={t("settings.provider.empty")}
+        />
+
         <AddProviderDialog
           open={addDialogOpen}
           onClose={() => setAddDialogOpen(false)}
@@ -191,7 +200,7 @@ export const ProviderManager: React.FC = () => {
           }}
           onSubmit={(input) => void handleConnect(input)}
         />
-      </EntityListPageShell>
+      </SettingsPageShell>
     </>
   );
 };

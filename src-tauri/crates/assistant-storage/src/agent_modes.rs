@@ -1,6 +1,8 @@
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+use crate::error::StorageError;
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct AgentModeRow {
     pub id: String,
@@ -150,15 +152,15 @@ pub fn update_mode(conn: &Connection, row: &AgentModeRow) -> Result<(), String> 
     Ok(())
 }
 
-pub fn delete_mode(conn: &Connection, id: &str) -> Result<(), String> {
+pub fn delete_mode(conn: &Connection, id: &str) -> Result<(), StorageError> {
     let mode = get_by_id(conn, id)?;
     if let Some(m) = &mode {
         if m.is_builtin {
-            return Err(assistant_i18n::t("agent_mode.builtin_cannot_delete"));
+            return Err(StorageError::BuiltinModeCannotDelete);
         }
     }
     conn.execute("DELETE FROM agent_modes WHERE id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| StorageError::other(e.to_string()))?;
     Ok(())
 }
 
@@ -243,13 +245,13 @@ pub fn seed_builtin_modes(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-pub fn reset_builtin_mode(conn: &Connection, id: &str) -> Result<(), String> {
+pub fn reset_builtin_mode(conn: &Connection, id: &str) -> Result<(), StorageError> {
     let now = chrono::Utc::now().timestamp_millis();
     let defaults = builtin_defaults(now);
     let default_mode = defaults
         .iter()
         .find(|m| m.id == id)
-        .ok_or_else(|| assistant_i18n::t("agent_mode.not_builtin_cannot_reset"))?;
+        .ok_or(StorageError::NotBuiltinModeCannotReset)?;
 
     conn.execute(
         "UPDATE agent_modes SET description=?2, prompt=?3, model=?4, temperature=?5, max_tokens=?6, reasoning_enabled=?7, reasoning_effort=?8, tools=?9, updated_at=?10 WHERE id=?1",
@@ -266,7 +268,7 @@ pub fn reset_builtin_mode(conn: &Connection, id: &str) -> Result<(), String> {
             now
         ],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| StorageError::Other(e.to_string()))?;
     Ok(())
 }
 

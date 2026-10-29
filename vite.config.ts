@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { viteStaticCopy } from "vite-plugin-static-copy";
 import { resolve } from "node:path";
 import process from "node:process";
 
@@ -7,7 +8,15 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-  plugins: [react()],
+  plugins: [
+    react(),
+    viteStaticCopy({
+      targets: [
+        { src: "node_modules/@rive-app/webgl2/rive.wasm", dest: "." },
+        { src: "node_modules/@rive-app/webgl2/rive_fallback.wasm", dest: "." },
+      ],
+    }),
+  ],
   resolve: {
     alias: {
       "@": resolve(import.meta.dirname, "src"),

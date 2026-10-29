@@ -5,46 +5,16 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { DragDropEvent } from "@tauri-apps/api/webview";
 import type { Event } from "@tauri-apps/api/event";
 import { os } from "../os";
+import {
+  LINK_KIND_OPTIONS,
+  KIND_DESCRIPTIONS,
+  type LinkKind,
+  type CheckResult,
+  type CreateResult,
+} from "./fs-link.service";
 import styles from "./fs-link.module.css";
 
 const { TextArea } = Input;
-
-type LinkKind = "symlink" | "hardlink" | "junction";
-
-const LINK_KIND_OPTIONS: { value: LinkKind; label: string }[] = [
-  { value: "symlink", label: "符号链接 (Symlink)" },
-  { value: "hardlink", label: "硬链接 (Hardlink)" },
-];
-
-if (navigator.platform.startsWith("Win")) {
-  LINK_KIND_OPTIONS.push({
-    value: "junction",
-    label: "目录联接 (Junction)",
-  });
-}
-
-const KIND_DESCRIPTIONS: Record<LinkKind, string> = {
-  symlink:
-    "符号链接：创建一个指向目标的引用路径，类似快捷方式。删除源链接不影响目标。",
-  hardlink:
-    "硬链接：为同一文件数据创建额外目录项。源和目标共享相同磁盘数据块，删除任一方不影响另一方数据。仅支持文件，不支持目录。",
-  junction:
-    "目录联接：将源目录映射到目标目录，使源路径下的内容等同于目标路径。仅支持目录，不需要开发者模式特权。",
-};
-
-interface CheckResult {
-  source: string;
-  isLink: boolean;
-  kind: string | null;
-  target: string | null;
-}
-
-interface CreateResult {
-  source: string;
-  target: string;
-  kind: string;
-  created: boolean;
-}
 
 export default function FsLink() {
   const [source, setSource] = useState("");

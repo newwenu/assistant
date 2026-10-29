@@ -4,6 +4,7 @@ import { useChatStreamStore } from "../stores/chatStreamStore";
 import { useMascotStore } from "./mascotStore";
 import type { MascotFace, ExpressionPolicy, AckRule } from "./core/types";
 import { DEFAULT_EXPRESSION_POLICY } from "./core/expressionPolicy";
+import type { Message } from "../chat/core/chatTypes";
 
 export type { ExpressionPolicy, AckRule } from "./core/types";
 export { DEFAULT_EXPRESSION_POLICY } from "./core/expressionPolicy";
@@ -25,6 +26,22 @@ function pickAckFace(
   return fallback;
 }
 
+function hadToolCallInRecentTurn(messages: Message[]): boolean {
+  const lastUserMsgIdx = [...messages]
+    .reverse()
+    .findIndex((m) => m.role === "user");
+  return (
+    lastUserMsgIdx >= 0 &&
+    messages
+      .slice(messages.length - 1 - lastUserMsgIdx)
+      .some(
+        (m) =>
+          m.role === "tool" ||
+          (m.role === "assistant" && (m.toolCalls?.length ?? 0) > 0),
+      )
+  );
+}
+
 export function useMascotChatSync(
   policy: ExpressionPolicy = DEFAULT_EXPRESSION_POLICY,
 ): void {
@@ -33,25 +50,15 @@ export function useMascotChatSync(
   const prevErrorRef = useRef(false);
 
   useEffect(() => {
-    const unsubscribeStream = useChatStreamStore.subscribe((streamState) => {
+    const unsubscribeChat = useChatStore.subscribe((chatState) => {
+      const messages = chatState.messages;
+      const streamState = useChatStreamStore.getState();
       const { isStreaming, isReasoningStreaming } = streamState;
-      const messages = useChatStore.getState().messages;
+
       const hasError = messages.some(
         (m) => m.error != null && m.role === "assistant",
       );
-
-      const lastUserMsgIdx = [...messages]
-        .reverse()
-        .findIndex((m) => m.role === "user");
-      const hadToolCall =
-        lastUserMsgIdx >= 0 &&
-        messages
-          .slice(messages.length - 1 - lastUserMsgIdx)
-          .some(
-            (m) =>
-              m.role === "tool" ||
-              (m.role === "assistant" && (m.toolCalls?.length ?? 0) > 0),
-          );
+      const toolCallDetected = hadToolCallInRecentTurn(messages);
 
       const justStartedStreaming = isStreaming && !prevStreamingRef.current;
       const justStoppedStreaming = !isStreaming && prevStreamingRef.current;
@@ -61,14 +68,14 @@ export function useMascotChatSync(
 
       if (justStartedStreaming && isReasoningStreaming) {
         useMascotStore.getState().setFace(chatFace.onStreamStart.reasoning);
-      } else if (justStartedStreaming && hadToolCall) {
+      } else if (justStartedStreaming && toolCallDetected) {
         useMascotStore.getState().setFace(chatFace.onStreamStart.toolCall);
       } else if (justStartedStreaming) {
         useMascotStore.getState().setFace(chatFace.onStreamStart.default);
       }
 
       if (justStoppedReasoning && isStreaming) {
-        if (hadToolCall) {
+        if (toolCallDetected) {
           useMascotStore.getState().setFace(chatFace.onReasoningEnd.toolCall);
         } else {
           useMascotStore.getState().setFace(chatFace.onReasoningEnd.default);
@@ -82,7 +89,7 @@ export function useMascotChatSync(
         const fullText = lastAssistantMsg?.content ?? "";
         const ackFace = pickAckFace(
           fullText,
-          hadToolCall,
+          toolCallDetected,
           ackRules,
           chatFace.onStreamEnd,
         );
@@ -98,24 +105,11 @@ export function useMascotChatSync(
       prevErrorRef.current = hasError;
     });
 
-    const unsubscribeChat = useChatStore.subscribe((chatState) => {
-      const { messages } = chatState;
-      const hasError = messages.some(
-        (m) => m.error != null && m.role === "assistant",
-      );
-
-      if (hasError && !prevErrorRef.current) {
-        useMascotStore.getState().holdThenIdle(policy.chatFace.onError);
-      }
-      prevErrorRef.current = hasError;
-    });
-
     const initialStream = useChatStreamStore.getState();
     prevStreamingRef.current = initialStream.isStreaming;
     prevReasoningRef.current = initialStream.isReasoningStreaming;
 
     return () => {
-      unsubscribeStream();
       unsubscribeChat();
     };
   }, [policy]);

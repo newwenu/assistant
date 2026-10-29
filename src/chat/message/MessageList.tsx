@@ -8,7 +8,7 @@ import React, {
 import { DownOutlined, LoadingOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { MessageBubble, RoleContext } from "./MessageBubble";
-import type { Message } from "../../stores/chatStore";
+import type { Message } from "../../chat/core/chatTypes";
 import type { RetryNotification } from "../../chat/core/chatTypes";
 import css from "./MessageList.module.css";
 
@@ -59,6 +59,8 @@ export const MessageList: React.FC<MessageListProps> = ({
   const seenMessageCountRef = useRef(messages.length);
   const rafIdRef = useRef<number | null>(null);
   const loadMoreTriggeredRef = useRef(false);
+  const programScrollRef = useRef(false);
+  const prevIsStreamingRef = useRef(isStreaming);
 
   const lastAssistantIndex = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -81,12 +83,28 @@ export const MessageList: React.FC<MessageListProps> = ({
     const newHeight = el.scrollHeight;
     if (newHeight !== lastScrollHeightRef.current) {
       lastScrollHeightRef.current = newHeight;
+      programScrollRef.current = true;
       el.scrollTo({
         top: newHeight,
         behavior: isStreaming ? "auto" : "smooth",
       });
     }
   }, [messages, isStreaming, streamingContent, userScrolledUp]);
+
+  useEffect(() => {
+    if (prevIsStreamingRef.current && !isStreaming) {
+      prevIsStreamingRef.current = isStreaming;
+      if (!scrollRef.current) return;
+      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      if (distanceFromBottom <= SCROLL_THRESHOLD) {
+        setUserScrolledUp(false);
+        setUnreadCount(0);
+      }
+    } else {
+      prevIsStreamingRef.current = isStreaming;
+    }
+  }, [isStreaming]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -96,6 +114,10 @@ export const MessageList: React.FC<MessageListProps> = ({
       rafIdRef.current = requestAnimationFrame(() => {
         rafIdRef.current = null;
         if (!scrollRef.current) return;
+        if (programScrollRef.current) {
+          programScrollRef.current = false;
+          return;
+        }
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
         const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
         const isUp = distanceFromBottom > SCROLL_THRESHOLD;
@@ -128,6 +150,7 @@ export const MessageList: React.FC<MessageListProps> = ({
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
+      programScrollRef.current = true;
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
         behavior: "smooth",

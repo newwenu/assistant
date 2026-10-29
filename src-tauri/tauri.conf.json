@@ -37,11 +37,11 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; font-src 'self' data:; connect-src 'self' https://ipinfo.io; object-src 'none'; base-uri 'self'; form-action 'self'",
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["$APPDATA/mascot-assets/**"]
+          "allow": ["$APPDATA/mascot-assets/**", "$APPDATA/attachments/**"]
         }
       }
     },

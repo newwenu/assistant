@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { ColorPicker, Button, Space, message } from "antd";
+import { ColorPicker, Button, Space } from "antd";
 import type { AggregationColor } from "antd/es/color-picker/color";
 import { useTranslation } from "react-i18next";
 import type { FieldRenderProps } from "../../core/types/fieldSchema";
 import { dispatchConfPatch } from "../../core/settingsDispatcher";
 import { getAllRendererMetas, asRendererId } from "@/mascot";
+import { useSettingMessage } from "../useSettingMessage";
 
 function toHex(
   color: AggregationColor | string | null | undefined,
@@ -50,7 +51,7 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
   );
   const [dirty, setDirty] = useState(false);
   const [applying, setApplying] = useState(false);
-  const [messageApi, contextHolder] = message.useMessage();
+  const msg = useSettingMessage();
 
   useEffect(() => {
     setPrimaryColor(confPrimary);
@@ -90,16 +91,13 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
         secondaryColor: secondaryColor,
       });
       setDirty(false);
-      messageApi.success(t("settings.mascot.color.applied"));
+      msg.success("settings.mascot.color.applied");
     } catch (e) {
-      const errMsg = e instanceof Error ? e.message : String(e);
-      messageApi.error(
-        t("settings.mascot.color.apply_failed", { error: errMsg }),
-      );
+      msg.error("settings.mascot.color.apply_failed", e);
     } finally {
       setApplying(false);
     }
-  }, [primaryColor, secondaryColor, messageApi, t]);
+  }, [primaryColor, secondaryColor, msg]);
 
   const handleReset = useCallback(() => {
     setPrimaryColor(null);
@@ -113,7 +111,6 @@ export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
 
   return (
     <>
-      {contextHolder}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
           <div>

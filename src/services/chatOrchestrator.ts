@@ -8,6 +8,7 @@ import type {
   ChatDeltaPayload,
   RetryNotification,
 } from "../chat/core/chatTypes";
+import { extractPlainText } from "../chat/core/contentBlockUtils";
 import type { ChatError } from "../chat/core/chatErrors";
 import { ChatErrorCode, toChatError } from "../chat/core/chatErrors";
 import { CHAT_AUTO_TITLE_LENGTH } from "../config/constants";
@@ -23,6 +24,10 @@ export interface ChatStatePort {
   cancelStreaming: () => void;
   setActiveAttemptId: (attemptId: string, realMessageId: string) => void;
   clearActiveAttemptId: () => void;
+  confirmUserMessage: (
+    userMessageId: string,
+    userMessageContent: string,
+  ) => void;
   appendDelta: (delta: string) => void;
   setReasoningStreaming: (streaming: boolean) => void;
   appendReasoningDelta: (messageId: string, delta: string) => void;
@@ -47,6 +52,8 @@ export interface ChatEnvPort {
   getMessages: () => Message[];
   getConversations: () => Conversation[];
   getSelectedModeId: () => string | null;
+  getSelectedProviderId: () => string | null;
+  getSelectedModelId: () => string;
   getPendingBranchPoint: () => string | null;
   clearPendingBranchPoint: () => void;
 }
@@ -69,6 +76,10 @@ export interface ChatOrchestrator {
   handleDeltaEvent: (payload: ChatDeltaPayload) => void;
   onTextDelta: (delta: string) => void;
   onStreamStart: (attemptId: string, messageId: string) => void;
+  onUserMessageConfirmed: (
+    userMessageId: string,
+    userMessageContent: string,
+  ) => void;
   ensureIdle: () => Promise<void>;
   getSendInProgress: () => boolean;
   getPhase: () => ChatPhase;
@@ -79,7 +90,8 @@ function fallbackTitleFromUserMessage(
   userMessage: string,
   maxLength = CHAT_AUTO_TITLE_LENGTH,
 ): string {
-  const firstLine = userMessage.split("\n").find((l) => l.trim()) || "";
+  const plainText = extractPlainText(userMessage);
+  const firstLine = plainText.split("\n").find((l) => l.trim()) || "";
   if (firstLine.length <= maxLength) return firstLine.trim();
   const puncts = ["。", "？", "！", ".", "?", "!", "；", ";", "，", ","];
   for (const p of puncts) {
@@ -285,11 +297,23 @@ export function createChatOrchestrator(
 
       try {
         const modeId = deps.env.getSelectedModeId();
+        const selectedProviderId = deps.env.getSelectedProviderId();
+        const selectedModelId = deps.env.getSelectedModelId();
+        if (!selectedProviderId) {
+          deps.state.errorStream({
+            code: ChatErrorCode.ApiKeyMissing,
+            retryAfterMs: null,
+            retryable: false,
+          });
+          return;
+        }
         await chatService.sendChatMessage(
           convId,
           content,
           modeId,
           pendingBranchPoint,
+          selectedProviderId,
+          selectedModelId,
         );
       } catch (e) {
         log.error("sendChatMessage failed", e);
@@ -302,6 +326,7 @@ export function createChatOrchestrator(
       }
     } finally {
       sendInProgress = false;
+      if (phase !== "idle") setPhase("idle");
     }
   }
 
@@ -408,12 +433,20 @@ export function createChatOrchestrator(
     deps.state.setActiveAttemptId(attemptId, messageId);
   }
 
+  function onUserMessageConfirmed(
+    userMessageId: string,
+    userMessageContent: string,
+  ) {
+    deps.state.confirmUserMessage(userMessageId, userMessageContent);
+  }
+
   return {
     send,
     cancel,
     handleDeltaEvent,
     onTextDelta,
     onStreamStart,
+    onUserMessageConfirmed,
     ensureIdle,
     getSendInProgress: () => sendInProgress,
     getPhase: () => phase,

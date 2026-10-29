@@ -29,12 +29,13 @@ const DEFAULT_CODE_ASSIST_MODELS: &[(&str, &str)] = &[
 
 pub(crate) fn code_assist_stream(
     adapter: &GeminiAdapter,
+    api_key: &str,
     messages: &[ChatMessage],
     model: &str,
     options: &ChatOptions,
     cancel_token: CancellationToken,
 ) -> Result<ChatStream, ProviderError> {
-    let api_key = adapter.decrypt_api_key()?;
+    let api_key = api_key.to_string();
     let base_url = adapter.base_url().to_string();
     let (system_instruction, contents) = message_converter::convert_messages(messages);
 
@@ -362,6 +363,8 @@ pub(crate) fn list_code_assist_models() -> Vec<crate::base::ModelConfig> {
             name: (*name).to_string(),
             owned_by: "google".to_string(),
             context_window: 1_000_000,
+            support_vision: true,
+            input_modalities: vec!["text".to_string(), "image".to_string()],
         })
         .collect()
 }

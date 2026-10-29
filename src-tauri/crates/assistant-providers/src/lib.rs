@@ -1,12 +1,13 @@
 pub mod anthropic;
 pub mod base;
 pub mod client;
-pub mod crypto;
 pub mod diagnostics;
 pub mod gemini;
+pub mod model_catalog;
 pub mod openai;
 pub mod sse_log;
 pub mod stream;
 pub mod tool_call_accumulator;
 pub mod trace;
 pub mod types;
+pub mod vision;

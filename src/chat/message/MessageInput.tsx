@@ -11,8 +11,14 @@ import {
   hexToArgb,
   useMascotStore,
 } from "../../mascot";
-import { buildRendererConfig } from "../../settings/core/settingsDispatcher";
+import { buildRendererConfig } from "../../mascot/core/mascotConfig";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useAttachmentStore } from "../../stores/attachmentStore";
+import {
+  buildContentBlocksAsync,
+  serializeContent,
+} from "../core/contentBlockUtils";
+import { usePasteAttach } from "../../hooks/usePasteAttach";
 
 interface MessageInputProps {
   onSend: (content: string) => void;
@@ -30,39 +36,49 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   isFull = false,
 }) => {
   const [value, setValue] = useState("");
+
   const mascotFace = useMascotStore((s) => s.face);
   const mascotConf = useSettingsStore((s) => s.mascotConf);
+  const attachments = useAttachmentStore((s) => s.attachments);
+  const clearAttachments = useAttachmentStore((s) => s.clearAttachments);
   const { t } = useTranslation();
+  const { handlePaste } = usePasteAttach();
+
+  const doSend = useCallback(async () => {
+    const hasText = value.trim().length > 0;
+    const hasAttachments = attachments.length > 0;
+    if (!hasText && !hasAttachments) return;
+    if (disabled || isStreaming) return;
+
+    const blocks = await buildContentBlocksAsync(value, attachments);
+    const content = serializeContent(blocks);
+    onSend(content);
+    setValue("");
+    clearAttachments();
+  }, [value, attachments, disabled, isStreaming, onSend, clearAttachments]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey && !disabled && !isStreaming) {
         e.preventDefault();
-        if (value.trim().length > 0) {
-          onSend(value.trim());
-          setValue("");
-        }
+        void doSend();
       }
     },
-    [value, disabled, isStreaming, onSend],
+    [disabled, isStreaming, doSend],
   );
-
-  const handleSend = useCallback(() => {
-    if (value.trim().length > 0 && !disabled && !isStreaming) {
-      onSend(value.trim());
-      setValue("");
-    }
-  }, [value, disabled, isStreaming, onSend]);
 
   const handleMascotClick = useCallback(() => {
     if (isStreaming) {
       onCancel();
     } else {
-      handleSend();
+      void doSend();
     }
-  }, [isStreaming, onCancel, handleSend]);
+  }, [isStreaming, onCancel, doSend]);
 
-  const canSend = !disabled && !isStreaming && value.trim().length > 0;
+  const canSend =
+    !disabled &&
+    !isStreaming &&
+    (value.trim().length > 0 || attachments.length > 0);
 
   return (
     <div className="chat-input">
@@ -73,6 +89,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           useMascotStore.getState().notifyListening();
         }}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         autoSize={{
           minRows: CHAT_INPUT_MIN_ROWS,
           maxRows: CHAT_INPUT_MAX_ROWS,

@@ -1,4 +1,6 @@
 .root {
+  display: flex;
+  align-items: center;
   padding: 6px 10px;
   border-radius: 6px;
   cursor: pointer;
@@ -19,6 +21,32 @@
 
 .rootSelected:hover {
   background: var(--color-bg-elevated);
+}
+
+.rootChecked {
+  background: var(--color-primary-bg);
+  border-left-color: var(--color-primary);
+}
+
+.rootChecked:hover {
+  background: var(--color-primary-bg);
+}
+
+.rootFocused {
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.checkbox {
+  margin-right: 6px;
+  flex-shrink: 0;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.contentBody {
+  flex: 1;
+  min-width: 0;
 }
 
 .title {

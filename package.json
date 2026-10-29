@@ -13,7 +13,9 @@
     "format": "prettier --write src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "models-dev:update": "node scripts/update-models-dev-snapshot.mjs",
+    "models-dev:check": "node scripts/update-models-dev-snapshot.mjs --check"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",
@@ -77,6 +79,7 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.0",
     "vite": "^8.0.16",
+    "vite-plugin-static-copy": "^4.1.1",
     "vitest": "^5.0.3"
   }
 }

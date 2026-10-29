@@ -13,6 +13,7 @@ import {
   SCROLL_LOAD_THRESHOLD_PX,
 } from "../../config/constants";
 import { HistoryMessageItem } from "./HistoryMessageItem";
+import { formatConversationTitle } from "../../utils/formatConversationTitle";
 import css from "./HistoryDetail.module.css";
 
 interface BranchSlot {
@@ -84,14 +85,36 @@ function buildBranchView(messages: Message[]): BranchSlot[] {
 
   const depths = Array.from(byDepth.keys()).sort((a, b) => a - b);
   const slots: BranchSlot[] = [];
+  let branchCounter = 1;
 
   for (const depth of depths) {
     const group = byDepth.get(depth)!;
-    slots.push({
-      siblings: group,
-      activeIndex: 0,
-      branchLabel: `B${depth + 1}`,
-    });
+
+    if (depth === 0) {
+      const userRoots = group.filter((m) => m.role === "user");
+      const orphanRoots = group.filter((m) => m.role !== "user");
+
+      if (userRoots.length > 0) {
+        slots.push({
+          siblings: userRoots,
+          activeIndex: userRoots.length - 1,
+          branchLabel: `B${branchCounter++}`,
+        });
+      }
+      if (orphanRoots.length > 0) {
+        slots.push({
+          siblings: orphanRoots,
+          activeIndex: orphanRoots.length - 1,
+          branchLabel: `O1`,
+        });
+      }
+    } else {
+      slots.push({
+        siblings: group,
+        activeIndex: group.length - 1,
+        branchLabel: `B${branchCounter++}`,
+      });
+    }
   }
 
   return slots;
@@ -194,7 +217,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
             className={css.headerTitle}
             style={{ display: "block" }}
           >
-            {selectedConv.title}
+            {formatConversationTitle(selectedConv)}
           </Typography.Text>
           <Tag>{t("history.message_count", { count: totalCount })}</Tag>
           <Button

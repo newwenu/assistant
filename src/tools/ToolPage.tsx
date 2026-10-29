@@ -11,6 +11,8 @@ import {
   TOOL_WIDE_MAX_WIDTH,
 } from "@/config/constants";
 import type { WidthMode } from "./types";
+import { ToolCapabilityWrapper } from "./ToolCapabilityWrapper";
+import "./tool-page.css";
 
 const WIDTH_MAP: Record<WidthMode, number> = {
   default: TOOL_DEFAULT_MAX_WIDTH,
@@ -115,7 +117,9 @@ export const ToolPage: React.FC = () => {
             </div>
           }
         >
-          <tool.component key={id} />
+          <ToolCapabilityWrapper capabilities={tool.capabilities}>
+            <tool.component key={id} />
+          </ToolCapabilityWrapper>
         </Suspense>
       </div>
     </div>

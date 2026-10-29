@@ -3,7 +3,6 @@ import { Button, Modal } from "antd";
 import { PlusOutlined, UnlockOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "../../stores/chatStore";
-import { useProviderStore } from "../../stores/providerStore";
 import css from "./CompactBanner.module.css";
 
 export const CompactBanner: React.FC = () => {
@@ -14,13 +13,13 @@ export const CompactBanner: React.FC = () => {
   if (!chat.isFull) return null;
 
   const handleNewConversation = () => {
-    const provider = useProviderStore.getState().providers;
-    if (provider.length === 0) return;
-    const pid = provider[0].id;
-    let modelId = provider[0].defaultModel || "";
-    if (provider[0].models.length > 0 && !modelId)
-      modelId = provider[0].models[0].id;
-    void chat.createConversation(pid, modelId);
+    const currentConv = chat.conversations.find(
+      (c) => c.id === chat.currentConversationId,
+    );
+    const providerId = currentConv?.providerId;
+    const modelId = currentConv?.modelId;
+    if (!providerId || !modelId) return;
+    void chat.createConversation(providerId, modelId);
   };
 
   const handleUnlock = () => {
@@ -37,6 +36,7 @@ export const CompactBanner: React.FC = () => {
       <div className={css.actions}>
         <Button
           size="small"
+          type="primary"
           icon={<PlusOutlined />}
           onClick={handleNewConversation}
         >

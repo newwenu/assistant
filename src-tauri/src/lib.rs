@@ -2,7 +2,6 @@
 // 参考: BongoCat/crates/bongocat-app/src/lib.rs — 模块化组织
 
 mod cmd;
-pub mod crash_dump;
 pub mod protocol;
 mod setup;
 mod tray;
@@ -41,15 +40,11 @@ pub fn run() {
             cmd::get_orb_conf,
             cmd::get_mascot_conf,
             cmd::patch_conf,
-            cmd::set_theme,
-            cmd::emit_theme_changed,
-            cmd::set_locale,
             cmd::toggle_orb_visibility,
             cmd::set_orb_click_through,
             cmd::get_screen_size,
             cmd::snap_orb_to_screen,
             cmd::snap_orb_to_edge,
-            cmd::save_orb_position,
             cmd::app_quit,
             window::open_main_window,
             window::open_settings,
@@ -65,13 +60,9 @@ pub fn run() {
             cmd::list_conversations,
             cmd::get_conversation,
             cmd::delete_conversation,
-            cmd::rename_conversation,
-            cmd::update_conversation_model,
-            cmd::update_conversation_provider,
+            cmd::patch_conversation,
             cmd::send_chat_message,
             cmd::cancel_chat,
-            cmd::get_conversation_paginated,
-            cmd::get_conversation_all_messages,
             cmd::delete_message_persist,
             cmd::get_message_subtree_size,
             cmd::search_conversations,
@@ -90,10 +81,8 @@ pub fn run() {
             cmd::get_message_siblings,
             cmd::fork_to_new_conversation,
             cmd::increment_generation,
-            cmd::reload_shortcuts,
             cmd::get_app_version,
             cmd::get_rustc_version,
-            cmd::set_launch_at_login,
             cmd::open_main_window_and_navigate,
             cmd::list_agent_modes,
             cmd::save_agent_mode,
@@ -105,6 +94,74 @@ pub fn run() {
             cmd::manual_compact_conversation,
             cmd::unlock_conversation,
             cmd::os_tool_exec,
+            cmd::vault_init,
+            cmd::vault_unlock,
+            cmd::vault_is_locked,
+            cmd::vault_is_initialized,
+            cmd::vault_lock,
+            cmd::vault_list_entries,
+            cmd::vault_get_entry,
+            cmd::vault_copy_password,
+            cmd::vault_copy_field,
+            cmd::vault_reveal_password,
+            cmd::vault_reveal_notes,
+            cmd::vault_create_entry,
+            cmd::vault_update_entry,
+            cmd::vault_delete_entry,
+            cmd::vault_list_deleted_entries,
+            cmd::vault_restore_entry,
+            cmd::vault_purge_deleted,
+            cmd::vault_change_master_password,
+            cmd::vault_export_to_file,
+            cmd::vault_import,
+            cmd::vault_totp_generate,
+            cmd::vault_copy_totp,
+            cmd::vault_totp_time_remaining,
+            cmd::vault_totp_parse_uri,
+            cmd::vault_query_audit_log,
+            cmd::vault_hibp_check,
+            cmd::vault_hibp_audit,
+            cmd::vault_check_master_password_strength,
+            cmd::vault_show_unlock_window,
+            cmd::vault_is_biometric_available,
+            cmd::vault_is_biometric_enrolled,
+            cmd::vault_unlock_biometric,
+            cmd::vault_enroll_biometric,
+            cmd::vault_disenroll_biometric,
+            cmd::vault_sync,
+            cmd::vault_sync_last_time,
+            cmd::vault_get_sync_config,
+            cmd::vault_set_sync_config,
+            cmd::vault_resolve_conflict,
+            cmd::vault_sync_abort,
+            cmd::vault_sync_discard,
+            cmd::vault_git_init,
+            cmd::vault_git_remove_remote,
+            cmd::vault_git_test_connection,
+            cmd::vault_git_remote,
+            cmd::vault_sync_readyness,
+            cmd::vault_sync_conflicts,
+            cmd::vault_sync_pending_removals,
+            cmd::vault_sync_confirm_removals,
+            cmd::vault_history_list,
+            cmd::vault_history_preview,
+            cmd::vault_history_restore,
+            cmd::vault_conflict_preview,
+            cmd::vault_conflict_reveal,
+            cmd::vault_ssh_add_to_agent,
+            cmd::vault_ssh_remove_from_agent,
+            cmd::vault_ssh_list_agent,
+            cmd::vault_ssh_auto_add_all,
+            cmd::vault_ssh_is_agent_running,
+            cmd::vault_ssh_parse_key,
+            cmd::vault_ssh_key_meta,
+            cmd::vault_generate_recovery_key,
+            cmd::vault_unlock_with_recovery_key,
+            cmd::vault_has_recovery_key,
+            cmd::vault_verify_vault_meta_integrity,
+            cmd::vault_disaster_recovery_export,
+            cmd::get_storage_breakdown,
+            cmd::delete_attachments,
         ])
         .on_menu_event(|app, event| match event.id.as_ref() {
             "orb_new_chat" => {
@@ -140,7 +197,10 @@ pub fn run() {
         })
         .build(tauri::generate_context!("tauri.conf.json"))
         .expect("error while building tauri application")
-        .run(|_app_handle, event| {
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                cmd::cleanup_on_exit(app_handle);
+            }
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 if !SHOULD_EXIT.load(Ordering::Relaxed) {
                     api.prevent_exit();

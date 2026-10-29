@@ -25,6 +25,19 @@
   margin-top: 12px;
 }
 
+.rootEditing {
+  align-items: stretch;
+}
+
+.rootEditing .stack {
+  max-width: 100%;
+}
+
+.rootEditing .bubbleUser {
+  border-radius: var(--radius);
+  white-space: normal;
+}
+
 .stack {
   display: flex;
   flex-direction: column;

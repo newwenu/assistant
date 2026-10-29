@@ -1,87 +1,40 @@
 import { useState, useMemo } from "react";
 import { Input, Select, Switch, Button, Typography, message } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
-import { format as formatSQL } from "sql-formatter";
+import {
+  DIALECT_OPTIONS,
+  KEYWORD_CASE_OPTIONS,
+  INDENT_STYLE_OPTIONS,
+  formatSql,
+  minifySql,
+  type SqlLanguage,
+  type KeywordCase,
+  type IndentStyle,
+} from "./sql-formatter.service";
 import styles from "./sql-formatter.module.css";
 
 const { TextArea } = Input;
-
-const DIALECT_OPTIONS = [
-  { label: "Standard SQL", value: "sql" },
-  { label: "MySQL", value: "mysql" },
-  { label: "PostgreSQL", value: "postgresql" },
-  { label: "MariaDB", value: "mariadb" },
-  { label: "SQLite", value: "sqlite" },
-  { label: "Oracle PL/SQL", value: "plsql" },
-  { label: "SQL Server T-SQL", value: "tsql" },
-  { label: "GCP BigQuery", value: "bigquery" },
-  { label: "IBM DB2", value: "db2" },
-  { label: "Apache Hive", value: "hive" },
-  { label: "Couchbase N1QL", value: "n1ql" },
-  { label: "Amazon Redshift", value: "redshift" },
-  { label: "Spark", value: "spark" },
-];
-
-const KEYWORD_CASE_OPTIONS = [
-  { label: "UPPERCASE", value: "upper" },
-  { label: "lowercase", value: "lower" },
-  { label: "Preserve", value: "preserve" },
-];
-
-const INDENT_STYLE_OPTIONS = [
-  { label: "Standard", value: "standard" },
-  { label: "Tabular Left", value: "tabularLeft" },
-  { label: "Tabular Right", value: "tabularRight" },
-];
 
 export default function SqlFormatter() {
   const [rawSQL, setRawSQL] = useState(
     "select field1,field2,field3 from my_table where my_condition;",
   );
-  const [language, setLanguage] = useState("sql");
-  const [keywordCase, setKeywordCase] = useState("upper");
-  const [indentStyle, setIndentStyle] = useState("standard");
+  const [language, setLanguage] = useState<SqlLanguage>("sql");
+  const [keywordCase, setKeywordCase] = useState<KeywordCase>("upper");
+  const [indentStyle, setIndentStyle] = useState<IndentStyle>("standard");
   const [tabulateAlias, setTabulateAlias] = useState(true);
 
-  const config = useMemo(
-    () => ({
-      keywordCase: keywordCase as "upper" | "lower" | "preserve",
-      useTabs: false,
-      language: language as
-        | "sql"
-        | "mysql"
-        | "postgresql"
-        | "mariadb"
-        | "sqlite"
-        | "plsql"
-        | "tsql"
-        | "bigquery"
-        | "db2"
-        | "hive"
-        | "n1ql"
-        | "redshift"
-        | "spark",
-      indentStyle: indentStyle as "standard" | "tabularLeft" | "tabularRight",
-      tabulateAlias,
-    }),
-    [keywordCase, language, indentStyle, tabulateAlias],
+  const formatted = useMemo(
+    () =>
+      formatSql(rawSQL, {
+        keywordCase,
+        language,
+        indentStyle,
+      }),
+    [rawSQL, keywordCase, language, indentStyle],
   );
 
-  const formatted = useMemo(() => {
-    try {
-      return formatSQL(rawSQL, config);
-    } catch {
-      return null;
-    }
-  }, [rawSQL, config]);
-
-  const minified = useMemo(() => {
-    try {
-      return rawSQL.replace(/\s+/g, " ").trim();
-    } catch {
-      return null;
-    }
-  }, [rawSQL]);
+  const minified = useMemo(() => minifySql(rawSQL), [rawSQL]);
 
   const copy = (text: string) => {
     void navigator.clipboard.writeText(text);
@@ -97,7 +50,7 @@ export default function SqlFormatter() {
           </Typography.Text>
           <Select
             value={language}
-            onChange={setLanguage}
+            onChange={(v) => setLanguage(v)}
             options={DIALECT_OPTIONS}
             style={{ flex: 1 }}
           />
@@ -108,7 +61,7 @@ export default function SqlFormatter() {
           </Typography.Text>
           <Select
             value={keywordCase}
-            onChange={setKeywordCase}
+            onChange={(v) => setKeywordCase(v)}
             options={KEYWORD_CASE_OPTIONS}
             style={{ flex: 1 }}
           />
@@ -119,7 +72,7 @@ export default function SqlFormatter() {
           </Typography.Text>
           <Select
             value={indentStyle}
-            onChange={setIndentStyle}
+            onChange={(v) => setIndentStyle(v)}
             options={INDENT_STYLE_OPTIONS}
             style={{ flex: 1 }}
           />

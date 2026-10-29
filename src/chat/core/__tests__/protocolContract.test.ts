@@ -154,15 +154,11 @@ describe("protocol DTO — camelCase contract", () => {
       promptTokens: 10,
       completionTokens: 20,
       totalTokens: 30,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
       contextWindowTokens: 0,
     };
     expect(usage).toHaveProperty("promptTokens");
     expect(usage).toHaveProperty("completionTokens");
     expect(usage).toHaveProperty("totalTokens");
-    expect(usage).toHaveProperty("cacheReadTokens");
-    expect(usage).toHaveProperty("cacheWriteTokens");
     expect(usage).toHaveProperty("contextWindowTokens");
     expect(usage).not.toHaveProperty("prompt_tokens");
     expect(usage).not.toHaveProperty("cache_read_tokens");

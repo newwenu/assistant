@@ -46,10 +46,6 @@ function buildFuseInstance(): Fuse<ToolDefinition> {
 
 let fuseInstance = buildFuseInstance();
 
-i18n.on("languageChanged", () => {
-  fuseInstance = buildFuseInstance();
-});
-
 export const useToolStore = create<ToolState>((set) => ({
   tools,
   toolsByCategory,
@@ -138,3 +134,8 @@ export const useToolStore = create<ToolState>((set) => ({
     set({ searchQuery: query, searchResults: results });
   },
 }));
+
+i18n.on("languageChanged", () => {
+  fuseInstance = buildFuseInstance();
+  useToolStore.setState({ fuse: fuseInstance });
+});

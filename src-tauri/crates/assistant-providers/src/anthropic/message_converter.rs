@@ -1,4 +1,5 @@
 use crate::base::{ChatMessage, MessageRole};
+use crate::types::{parse_content, ContentBlock};
 use serde_json::{json, Value};
 
 pub(crate) fn convert_messages(messages: &[ChatMessage]) -> (Option<Value>, Vec<Value>) {
@@ -41,29 +42,87 @@ pub(crate) fn convert_messages(messages: &[ChatMessage]) -> (Option<Value>, Vec<
 }
 
 fn convert_user_message(msg: &ChatMessage) -> Value {
-    let mut content_blocks: Vec<Value> = vec![json!({
-        "type": "text",
-        "text": msg.content
-    })];
+    let blocks: Option<Vec<ContentBlock>> = msg
+        .content_blocks
+        .as_ref()
+        .map(|b| Some(b.clone()))
+        .unwrap_or_else(|| parse_content(&msg.content));
 
-    if let Some(ref image_url) = msg.tool_call_id {
-        if image_url.starts_with("data:") || image_url.starts_with("http") {
-            if let Some((media_type, data)) = parse_image_source(image_url) {
-                content_blocks.push(json!({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": data
+    if let Some(blocks) = blocks {
+        let has_media = blocks
+            .iter()
+            .any(|b| matches!(b, ContentBlock::Image { .. } | ContentBlock::File { .. }));
+        if has_media {
+            let content_parts: Vec<Value> = blocks
+                .iter()
+                .map(|b| match b {
+                    ContentBlock::Text { text } => json!({
+                        "type": "text",
+                        "text": text
+                    }),
+                    ContentBlock::Image {
+                        attachment,
+                        cached_data,
+                        ..
+                    } => match cached_data.as_deref().filter(|d| !d.is_empty()) {
+                        Some(data) => json!({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": attachment.media_type.as_deref().unwrap_or("image/png"),
+                                "data": data
+                            }
+                        }),
+                        // 缺少 bytes 时降级为文本，避免提交空 base64 图片
+                        None => json!({
+                            "type": "text",
+                            "text": format!(
+                                "[image unavailable: {}]",
+                                attachment.name.as_deref().unwrap_or("unknown")
+                            )
+                        }),
+                    },
+                    ContentBlock::File {
+                        attachment,
+                        cached_data,
+                        ..
+                    } => {
+                        let data = cached_data.as_deref().unwrap_or("");
+                        if !data.is_empty() && attachment.name.to_lowercase().ends_with(".pdf") {
+                            json!({
+                                "type": "document",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "application/pdf",
+                                    "data": data
+                                }
+                            })
+                        } else {
+                            json!({
+                                "type": "text",
+                                "text": attachment.handle_text()
+                            })
+                        }
                     }
-                }));
-            }
+                    _ => json!({}),
+                })
+                .collect();
+            return json!({
+                "role": "user",
+                "content": content_parts
+            });
         }
     }
 
+    // 纯文本消息统一输出 content blocks 数组格式：
+    // Anthropic messages API 支持数组 content，且统一格式后
+    // merge_consecutive_messages 才能合并连续 user 消息。
     json!({
         "role": "user",
-        "content": content_blocks
+        "content": [{
+            "type": "text",
+            "text": msg.content
+        }]
     })
 }
 
@@ -130,19 +189,6 @@ fn convert_tool_result_message(msg: &ChatMessage) -> Value {
             "content": content
         }]
     })
-}
-
-fn parse_image_source(source: &str) -> Option<(String, String)> {
-    if let Some(rest) = source.strip_prefix("data:") {
-        if let Some(semicolon_pos) = rest.find(';') {
-            let media_type = &rest[..semicolon_pos];
-            let after_semicolon = &rest[semicolon_pos + 1..];
-            if let Some(data) = after_semicolon.strip_prefix("base64,") {
-                return Some((media_type.to_string(), data.to_string()));
-            }
-        }
-    }
-    None
 }
 
 fn merge_consecutive_messages(messages: Vec<Value>) -> Vec<Value> {
@@ -214,6 +260,7 @@ mod tests {
             name: None,
             is_error: false,
             thinking_signature: None,
+            content_blocks: None,
         }
     }
 
@@ -287,6 +334,7 @@ mod tests {
             name: Some("get_weather".to_string()),
             is_error: false,
             thinking_signature: None,
+            content_blocks: None,
         }];
         let (_, msgs) = convert_messages(&messages);
         assert_eq!(msgs[0]["role"], json!("user"));
@@ -305,6 +353,7 @@ mod tests {
             name: None,
             is_error: true,
             thinking_signature: None,
+            content_blocks: None,
         }];
         let (_, msgs) = convert_messages(&messages);
         let content = msgs[0]["content"].as_array().unwrap();
@@ -327,6 +376,7 @@ mod tests {
             name: None,
             is_error: false,
             thinking_signature: None,
+            content_blocks: None,
         }];
         let (_, msgs) = convert_messages(&messages);
         let content = msgs[0]["content"].as_array().unwrap();
@@ -345,6 +395,7 @@ mod tests {
             name: None,
             is_error: false,
             thinking_signature: Some("sig_abc".to_string()),
+            content_blocks: None,
         }];
         let (_, msgs) = convert_messages(&messages);
         let content = msgs[0]["content"].as_array().unwrap();

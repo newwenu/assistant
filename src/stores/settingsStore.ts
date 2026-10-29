@@ -12,6 +12,7 @@ import type {
   MascotConf,
 } from "@/settings/core/types/confTypes";
 import { settingService } from "../services/settingService";
+import { applyLocaleChange } from "@/i18n/localeApplier";
 
 const log = createLogger("settingsStore");
 
@@ -38,7 +39,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const conf = await settingService.getAppConf();
       set({ appConf: conf });
       if (conf.language && conf.language !== prevLang) {
-        const { applyLocaleChange } = await import("../main");
         await applyLocaleChange(conf.language);
       }
     } catch (e) {

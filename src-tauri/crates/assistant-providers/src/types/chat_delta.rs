@@ -114,10 +114,12 @@ pub struct TokenUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
-    #[serde(default)]
-    pub cache_read_tokens: u32,
-    #[serde(default)]
-    pub cache_write_tokens: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_tokens: Option<u32>,
     #[serde(default)]
     pub context_window_tokens: u32,
 }
@@ -223,8 +225,9 @@ fn unified_usage_to_token_usage(
         prompt_tokens: usage.prompt_token_count,
         completion_tokens: usage.candidates_token_count,
         total_tokens: usage.total_token_count,
-        cache_read_tokens: usage.cached_content_token_count.unwrap_or(0),
-        cache_write_tokens: usage.cache_creation_token_count.unwrap_or(0),
+        cache_read_tokens: usage.cached_content_token_count,
+        cache_write_tokens: usage.cache_creation_token_count,
+        reasoning_tokens: usage.reasoning_token_count,
         context_window_tokens,
     }
 }
@@ -296,8 +299,9 @@ mod tests {
         let usage = deltas[0].usage.as_ref().unwrap();
         assert_eq!(usage.prompt_tokens, 10);
         assert_eq!(usage.completion_tokens, 20);
-        assert_eq!(usage.cache_read_tokens, 5);
-        assert_eq!(usage.cache_write_tokens, 3);
+        assert_eq!(usage.cache_read_tokens, Some(5));
+        assert_eq!(usage.cache_write_tokens, Some(3));
+        assert_eq!(usage.reasoning_tokens, None);
         assert_eq!(usage.context_window_tokens, 128000);
     }
 

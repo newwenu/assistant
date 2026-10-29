@@ -3,6 +3,9 @@ export interface ModelConfig {
   name: string;
   ownedBy: string;
   contextWindow?: number;
+  supportVision?: boolean;
+  /** 输入模态列表（"text"/"image"/"pdf"/"audio"/"video"）；存量数据可能缺失 */
+  inputModalities?: string[];
 }
 
 export interface Provider {

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { tauriInvoke as invoke } from "./tauriInvoke";
 
 export interface MousePosition {
   clientX: number;
@@ -47,4 +47,8 @@ export const orbService = {
     invoke("open_main_window_and_navigate", { route }),
 
   openMainWindow: (): Promise<void> => invoke("open_main_window"),
+
+  toggleOrbVisibility: (): Promise<void> => invoke("toggle_orb_visibility"),
+
+  snapOrbToScreen: (): Promise<void> => invoke("snap_orb_to_screen"),
 };

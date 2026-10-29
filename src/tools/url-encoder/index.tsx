@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Input, Button, Typography, message } from "antd";
 import { CopyOutlined, SwapOutlined } from "@ant-design/icons";
+import { encodeUrl, decodeUrl, parseUrl } from "./url-encoder.service";
 import styles from "./url-encoder.module.css";
 
 const { TextArea } = Input;
@@ -13,9 +14,9 @@ export default function UrlEncoder() {
   const convert = () => {
     try {
       if (mode === "encode") {
-        setOutput(encodeURIComponent(input));
+        setOutput(encodeUrl(input));
       } else {
-        setOutput(decodeURIComponent(input));
+        setOutput(decodeUrl(input));
       }
     } catch {
       message.error(mode === "encode" ? "编码失败" : "解码失败");
@@ -34,21 +35,11 @@ export default function UrlEncoder() {
     message.success("已复制");
   };
 
-  const parseUrl = () => {
-    try {
-      const url = new URL(input);
-      const parts = [
-        `协议: ${url.protocol}`,
-        `主机: ${url.hostname}`,
-        url.port ? `端口: ${url.port}` : "",
-        `路径: ${url.pathname}`,
-        url.search ? `查询: ${url.search}` : "",
-        url.hash ? `片段: ${url.hash}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
-      setOutput(parts);
-    } catch {
+  const handleParseUrl = () => {
+    const result = parseUrl(input);
+    if (result) {
+      setOutput(result);
+    } else {
       message.error("无效 URL");
     }
   };
@@ -76,7 +67,7 @@ export default function UrlEncoder() {
         <Button type="primary" onClick={convert}>
           {mode === "encode" ? "编码" : "解码"}
         </Button>
-        <Button onClick={parseUrl}>解析 URL</Button>
+        <Button onClick={handleParseUrl}>解析 URL</Button>
       </div>
       <div className={styles.outputWrapper}>
         <TextArea

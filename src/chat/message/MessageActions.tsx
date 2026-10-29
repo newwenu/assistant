@@ -39,6 +39,18 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
   const timerRef = useRef<number | null>(null);
   const { t } = useTranslation();
 
+  const canEdit = !isStreaming && !isBranchAtLimit;
+  const canRegenerate = !isStreaming && !isBranchAtLimit;
+  const canFork = !isStreaming;
+
+  const editDisabledReason = isStreaming
+    ? t("chat.branch.streamingDisableEdit")
+    : t("chat.branch.atLimitDisableEdit");
+  const regenDisabledReason = isStreaming
+    ? t("chat.branch.streamingDisableRegenerate")
+    : t("chat.branch.atLimitDisableRegenerate");
+  const forkDisabledReason = t("chat.branch.streamingDisableFork");
+
   const handleCopy = useCallback(() => {
     onCopy?.();
     setCopied(true);
@@ -65,41 +77,36 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
           )}
         </button>
       )}
-      {isUser && onEdit && !isStreaming && (
+      {isUser && onEdit && (
         <button
-          className={isBranchAtLimit ? css.btnDisabled : css.btn}
-          onClick={isBranchAtLimit ? undefined : onEdit}
-          disabled={isBranchAtLimit}
-          title={
-            isBranchAtLimit
-              ? t("chat.branch.atLimitDisableEdit")
-              : t("chat.message.edit")
-          }
+          className={canEdit ? css.btn : css.btnDisabled}
+          onClick={canEdit ? onEdit : undefined}
+          disabled={!canEdit}
+          title={canEdit ? t("chat.message.edit") : editDisabledReason}
           type="button"
         >
           <EditOutlined style={{ fontSize: 12 }} />
         </button>
       )}
-      {isAssistant && onRegenerate && !isStreaming && (
+      {isAssistant && onRegenerate && (
         <button
-          className={isBranchAtLimit ? css.btnDisabled : css.btn}
-          onClick={isBranchAtLimit ? undefined : onRegenerate}
-          disabled={isBranchAtLimit}
+          className={canRegenerate ? css.btn : css.btnDisabled}
+          onClick={canRegenerate ? onRegenerate : undefined}
+          disabled={!canRegenerate}
           title={
-            isBranchAtLimit
-              ? t("chat.branch.atLimitDisableRegenerate")
-              : t("chat.message.regenerate")
+            canRegenerate ? t("chat.message.regenerate") : regenDisabledReason
           }
           type="button"
         >
           <RedoOutlined style={{ fontSize: 12 }} />
         </button>
       )}
-      {onFork && !isStreaming && (
+      {onFork && (
         <button
-          className={css.btn}
-          onClick={onFork}
-          title={t("chat.message.fork")}
+          className={canFork ? css.btn : css.btnDisabled}
+          onClick={canFork ? onFork : undefined}
+          disabled={!canFork}
+          title={canFork ? t("chat.message.fork") : forkDisabledReason}
           type="button"
         >
           <ForkOutlined style={{ fontSize: 12 }} />

@@ -118,6 +118,14 @@
   padding: 0.1em 0;
 }
 
+.imageBlock {
+  margin: 8px 0;
+}
+
+.fileBlock {
+  margin: 8px 0;
+}
+
 .root :global(p:has(.katex)) {
   line-height: 2.4;
   margin-top: 4px;

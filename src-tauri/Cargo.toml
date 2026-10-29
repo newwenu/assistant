@@ -15,6 +15,11 @@ members = [
     "crates/assistant-storage",
     "crates/assistant-i18n",
     "crates/assistant-tools",
+    "crates/assistant-crypto",
+    "crates/assistant-security",
+    "crates/assistant-sync",
+    "crates/assistant-vault",
+    "crates/assistant-crash",
 ]
 
 [workspace.package]
@@ -38,15 +43,23 @@ tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 rustc_version_runtime = "0.3"
 mouse_position = "0.1"
-rusqlite = { version = "0.31", features = ["bundled"] }
-dirs = "6"
+rusqlite = { version = "0.31", features = ["bundled-sqlcipher"] }
+dirs = "7"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
 sha2 = "0.10"
-base64 = "0.22"
-machine-uid = "0.2"
+base64 = "0.23"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "tiff"] }
+data-encoding = "2"
+machine-uid = "0.6"
+hex = "0.4"
+argon2 = "0.5"
+hkdf = "0.12"
+zeroize = { version = "1", features = ["derive", "alloc"] }
+subtle = "2"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -61,7 +74,6 @@ rand = "0.8"
 bytes = "1"
 urlencoding = "2"
 proptest = "1"
-rust-i18n = "4"
 crash-handler = "0.6"
 minidump-writer = "0.10"
 
@@ -72,6 +84,45 @@ assistant-agent = { path = "crates/assistant-agent" }
 assistant-storage = { path = "crates/assistant-storage" }
 assistant-i18n = { path = "crates/assistant-i18n" }
 assistant-tools = { path = "crates/assistant-tools" }
+assistant-crypto = { path = "crates/assistant-crypto" }
+assistant-security = { path = "crates/assistant-security" }
+assistant-sync = { path = "crates/assistant-sync" }
+assistant-vault = { path = "crates/assistant-vault" }
+assistant-crash = { path = "crates/assistant-crash" }
+arboard = "3"
+csv = "1"
+hmac = "0.12"
+sha1 = "0.10"
+zxcvbn = "3"
+keyring = "4"
+windows = { version = "0.62", features = [
+    "Foundation",
+    "Security_Credentials",
+    "Security_Cryptography",
+    "Storage_Streams",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_WinRT",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Power",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+] }
+eventsource-stream = "0.2"
+tempfile = "3"
+windows-future = "0.3"
+core-foundation = "0.10"
+security-framework = "3.0"
+libsecret = "0.1"
+ssh-key = { version = "0.6", features = ["encryption", "rsa", "ed25519"] }
+rsa = { version = "0.9", features = ["pem"] }
 
 [dependencies]
 serde = { workspace = true }
@@ -86,11 +137,11 @@ tauri-plugin-autostart = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
 mouse_position = { workspace = true }
 rusqlite = { workspace = true }
-reqwest = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+csv = { workspace = true }
 
 assistant-config = { workspace = true }
 assistant-orb = { workspace = true }
@@ -99,10 +150,12 @@ assistant-agent = { workspace = true }
 assistant-storage = { workspace = true }
 assistant-i18n = { workspace = true }
 assistant-tools = { workspace = true }
+assistant-crypto = { workspace = true }
+assistant-security = { workspace = true }
+assistant-sync = { workspace = true }
+assistant-vault = { workspace = true }
+assistant-crash = { workspace = true }
 rustc_version_runtime.workspace = true
-crash-handler = { workspace = true }
-minidump-writer = { workspace = true }
-dirs = { workspace = true }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -116,5 +169,3 @@ strip = true
 
 [dev-dependencies]
 minidump = "0.27.0"
-pdb = "0.8"
-rustc-demangle = "0.1"

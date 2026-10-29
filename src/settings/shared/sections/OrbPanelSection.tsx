@@ -1,5 +1,5 @@
 import { Form } from "antd";
-import { SettingsGroup } from "../layout/SettingsGroup";
+import { SettingsGroup } from "./SettingsGroup";
 import { ORB_PANEL_SETTINGS } from "../../core/field/fieldDefinitions";
 import { useConfPatchHandlers } from "../../core/useConfPatchHandlers";
 

@@ -1,14 +1,17 @@
 import React, { useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { App } from "antd";
+import { save } from "@tauri-apps/plugin-dialog";
 import { historyService } from "../services/historyService";
+import { chatService } from "../services/chatService";
 import { subscribeHistoryEvents } from "../services/historyEvents";
 import { useChatStore } from "../stores/chatStore";
 import { useHistoryStore } from "../stores/historyStore";
 import { PersistQueue } from "../utils/persistQueue";
 import { createLogger } from "@/services/logger";
-import { notifyError } from "@/services/errorNotifier";
+import { notifyError } from "@/stores/notifyStore";
 import { HistorySidebar } from "./sidebar/HistorySidebar";
+import { MultiSelectBar } from "./sidebar/MultiSelectBar";
 import { HistoryDetail } from "./detail/HistoryDetail";
 import { useHistorySearch } from "./core/useHistorySearch";
 import { useHistoryRefresh } from "./core/useHistoryRefresh";
@@ -30,12 +33,29 @@ export const HistoryManager: React.FC = () => {
   const loadingMore = useHistoryStore((s) => s.loadingMore);
   const loadingMessages = useHistoryStore((s) => s.loadingMessages);
   const collapsedGroups = useHistoryStore((s) => s.collapsedGroups);
+  const multiSelectMode = useHistoryStore((s) => s.multiSelectMode);
+  const selectedConversationIds = useHistoryStore(
+    (s) => s.selectedConversationIds,
+  );
+  const focusedIndex = useHistoryStore((s) => s.focusedIndex);
   const selectConversation = useHistoryStore((s) => s.selectConversation);
   const clearSelection = useHistoryStore((s) => s.clearSelection);
   const refreshMessages = useHistoryStore((s) => s.refreshMessages);
   const loadMoreMessages = useHistoryStore((s) => s.loadMoreMessages);
   const toggleGroup = useHistoryStore((s) => s.toggleGroup);
   const loadConversations = useHistoryStore((s) => s.loadConversations);
+  const enterMultiSelect = useHistoryStore((s) => s.enterMultiSelect);
+  const exitMultiSelect = useHistoryStore((s) => s.exitMultiSelect);
+  const toggleConversationSelection = useHistoryStore(
+    (s) => s.toggleConversationSelection,
+  );
+  const selectAllConversations = useHistoryStore(
+    (s) => s.selectAllConversations,
+  );
+  const clearConversationSelections = useHistoryStore(
+    (s) => s.clearConversationSelections,
+  );
+  const setFocusedIndex = useHistoryStore((s) => s.setFocusedIndex);
 
   const {
     searchQuery,
@@ -104,6 +124,7 @@ export const HistoryManager: React.FC = () => {
         if (selectedId === id) {
           clearSelection();
         }
+        await loadConversations();
         message.success(t("history.conversation_deleted"));
       } catch (e) {
         log.error("Failed to delete conversation", e);
@@ -114,7 +135,7 @@ export const HistoryManager: React.FC = () => {
         message.error(t("history.operation_failed"));
       }
     },
-    [selectedId, t, message, clearSelection],
+    [selectedId, t, message, clearSelection, loadConversations],
   );
 
   const renameConversation = useCallback(
@@ -123,6 +144,7 @@ export const HistoryManager: React.FC = () => {
         await historyPersistQueue.enqueue(async () => {
           await historyService.renameConversation(id, title, "user");
         });
+        await loadConversations();
         message.success(t("history.renamed"));
       } catch (e) {
         log.error("Failed to rename", e);
@@ -133,25 +155,23 @@ export const HistoryManager: React.FC = () => {
         message.error(t("history.rename_failed"));
       }
     },
-    [t, message],
+    [t, message, loadConversations],
   );
 
   const exportConversation = useCallback(
     async (id: string, format: string = "markdown") => {
+      const ext = format === "json" ? "json" : "md";
+      const filterName = format === "json" ? "JSON" : "Markdown";
+      const filePath = await save({
+        defaultPath: `conversation.${ext}`,
+        filters: [
+          { name: filterName, extensions: [ext] },
+          { name: "All Files", extensions: ["*"] },
+        ],
+      });
+      if (!filePath) return;
       try {
-        const content = await historyService.exportConversation(id, format);
-        const ext = format === "json" ? "json" : "md";
-        const mime =
-          format === "json"
-            ? "application/json;charset=utf-8"
-            : "text/markdown;charset=utf-8";
-        const blob = new Blob([content], { type: mime });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `conversation-${id}.${ext}`;
-        a.click();
-        URL.revokeObjectURL(url);
+        await historyService.exportConversationToFile(id, format, filePath);
         message.success(t("history.export_success"));
       } catch (e) {
         log.error("Export failed", e);
@@ -171,12 +191,13 @@ export const HistoryManager: React.FC = () => {
         await historyPersistQueue.enqueue(async () => {
           await historyService.toggleConversationPin(id);
         });
+        await loadConversations();
       } catch (e) {
         log.error("Failed to toggle pin", e);
         message.error(t("history.operation_failed"));
       }
     },
-    [t, message],
+    [t, message, loadConversations],
   );
 
   const duplicateConversation = useCallback(
@@ -185,10 +206,86 @@ export const HistoryManager: React.FC = () => {
         await historyPersistQueue.enqueue(async () => {
           await historyService.duplicateConversation(id);
         });
+        await loadConversations();
         message.success(t("history.duplicated"));
       } catch (e) {
         log.error("Failed to duplicate", e);
         message.error(t("history.duplicate_failed"));
+      }
+    },
+    [t, message, loadConversations],
+  );
+
+  const batchDeleteConversations = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return;
+      try {
+        await historyPersistQueue.enqueue(async () => {
+          await chatService.batchDeleteConversations(ids);
+        });
+        if (ids.includes(selectedId ?? "")) {
+          clearSelection();
+        }
+        exitMultiSelect();
+        await loadConversations();
+        message.success(t("history.batch_deleted", { count: ids.length }));
+      } catch (e) {
+        log.error("Failed to batch delete", e);
+        message.error(t("history.operation_failed"));
+      }
+    },
+    [
+      selectedId,
+      t,
+      message,
+      clearSelection,
+      exitMultiSelect,
+      loadConversations,
+    ],
+  );
+
+  const batchTogglePin = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return;
+      try {
+        for (const id of ids) {
+          await historyPersistQueue.enqueue(async () => {
+            await historyService.toggleConversationPin(id);
+          });
+        }
+        await loadConversations();
+      } catch (e) {
+        log.error("Failed to batch toggle pin", e);
+        message.error(t("history.operation_failed"));
+      }
+    },
+    [t, message, loadConversations],
+  );
+
+  const batchExportConversations = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return;
+      try {
+        for (const id of ids) {
+          const filePath = await save({
+            defaultPath: `conversation-${id}.md`,
+            filters: [
+              { name: "Markdown", extensions: ["md"] },
+              { name: "All Files", extensions: ["*"] },
+            ],
+          });
+          if (filePath) {
+            await historyService.exportConversationToFile(
+              id,
+              "markdown",
+              filePath,
+            );
+          }
+        }
+        message.success(t("history.batch_exported", { count: ids.length }));
+      } catch (e) {
+        log.error("Failed to batch export", e);
+        message.error(t("history.export_failed"));
       }
     },
     [t, message],
@@ -207,6 +304,9 @@ export const HistoryManager: React.FC = () => {
         searchFullText={searchFullText}
         refreshing={refreshing}
         collapsedGroups={collapsedGroups}
+        multiSelectMode={multiSelectMode}
+        selectedConversationIds={selectedConversationIds}
+        focusedIndex={focusedIndex}
         onSearch={handleSearch}
         onToggleFullText={() => setSearchFullText((prev) => !prev)}
         onRefresh={() => void handleRefresh()}
@@ -217,6 +317,10 @@ export const HistoryManager: React.FC = () => {
         onTogglePin={(id) => void togglePin(id)}
         onDuplicate={(id) => void duplicateConversation(id)}
         onToggleGroup={toggleGroup}
+        onEnterMultiSelect={enterMultiSelect}
+        onExitMultiSelect={exitMultiSelect}
+        onToggleConversationSelection={toggleConversationSelection}
+        onSetFocusedIndex={setFocusedIndex}
       />
       <HistoryDetail
         selectedId={selectedId}
@@ -233,6 +337,20 @@ export const HistoryManager: React.FC = () => {
           void loadMoreMessages();
         }}
       />
+      {multiSelectMode && (
+        <MultiSelectBar
+          selectedCount={selectedConversationIds.size}
+          totalCount={conversations.length}
+          allIds={conversations.map((c) => c.id)}
+          selectedIds={selectedConversationIds}
+          onBatchDelete={(ids) => void batchDeleteConversations(ids)}
+          onBatchTogglePin={(ids) => void batchTogglePin(ids)}
+          onBatchExport={(ids) => void batchExportConversations(ids)}
+          onSelectAll={selectAllConversations}
+          onClearSelections={clearConversationSelections}
+          onExit={exitMultiSelect}
+        />
+      )}
     </div>
   );
 };

@@ -3,6 +3,7 @@ use super::types::ModelsResponse;
 use super::OpenAIAdapter;
 use crate::base::{resolve_context_window, ModelConfig, ProviderError};
 use crate::client::error::classify_http_error;
+use crate::vision::{input_modalities_for, resolve_support_vision};
 
 fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
     let mut configs = Vec::new();
@@ -13,7 +14,7 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                 Some(id) => id,
                 None => continue,
             };
-            let ctx = resolve_context_window(&id, m.resolved_context_window());
+            let ctx = resolve_context_window(&id, None, m.resolved_context_window());
             let name = {
                 let n = m.resolved_name();
                 if n.is_empty() {
@@ -22,11 +23,15 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                     n
                 }
             };
+            let api_hint = m.resolved_support_vision();
+            let input_modalities = input_modalities_for(&id);
             configs.push(ModelConfig {
                 id: id.clone(),
                 name,
                 owned_by: m.owned_by.clone().unwrap_or_default(),
                 context_window: ctx,
+                support_vision: resolve_support_vision(&id, api_hint),
+                input_modalities,
             });
         }
     }
@@ -39,7 +44,7 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                     Err(_) => continue,
                 };
                 let id = m.resolved_id().unwrap_or_else(|| key.clone());
-                let ctx = resolve_context_window(&id, m.resolved_context_window());
+                let ctx = resolve_context_window(&id, None, m.resolved_context_window());
                 let name = {
                     let n = m.resolved_name();
                     if n.is_empty() {
@@ -48,11 +53,15 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                         n
                     }
                 };
+                let api_hint = m.resolved_support_vision();
+                let input_modalities = input_modalities_for(&id);
                 configs.push(ModelConfig {
                     id: id.clone(),
                     name,
                     owned_by: m.owned_by.clone().unwrap_or_default(),
                     context_window: ctx,
+                    support_vision: resolve_support_vision(&id, api_hint),
+                    input_modalities,
                 });
             }
         }
@@ -61,11 +70,13 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
     configs
 }
 
-pub(crate) fn list_models(adapter: &OpenAIAdapter) -> Result<Vec<ModelConfig>, ProviderError> {
+pub(crate) fn list_models(
+    adapter: &OpenAIAdapter,
+    api_key: &str,
+) -> Result<Vec<ModelConfig>, ProviderError> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| ProviderError::RequestFailed(format!("Create runtime: {}", e)))?;
     rt.block_on(async {
-        let api_key = adapter.decrypt_api_key()?;
         let url = format!("{}/models", adapter.base_url());
         let resp = adapter
             .client

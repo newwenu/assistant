@@ -1,6 +1,6 @@
 import React from "react";
 import { ToolOutlined } from "@ant-design/icons";
-import type { ToolCall } from "../../stores/chatStore";
+import type { ToolCall } from "../../chat/core/chatTypes";
 import css from "./ToolCallBlock.module.css";
 
 interface ToolCallBlockProps {

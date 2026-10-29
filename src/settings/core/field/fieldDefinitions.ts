@@ -7,10 +7,17 @@ import {
   DEFAULT_KEYBINDINGS,
 } from "../types/shortcutTypes";
 import { createMascotCapabilityVisible } from "@/mascot";
+import { lazyWithRecovery } from "@/utils/lazyWithRecovery";
 import {
   COMPACTION_THRESHOLD_PERCENT,
   MAX_SUMMARY_REQUEST_TOKENS,
 } from "@/config/constants";
+
+const BiometricSwitchRender = lazyWithRecovery(() =>
+  import("../../shared/renderers/BiometricSwitchRender").then((m) => ({
+    default: m.BiometricSwitchRender,
+  })),
+);
 
 defineSection({
   id: "general-main",
@@ -52,6 +59,31 @@ defineSection({
   pageId: "about",
   title: "settings.about.main.title",
   keywords: ["version", "版本"],
+});
+
+defineSection({
+  id: "vault-general",
+  pageId: "vault",
+  title: "settings.vault.general.title",
+  keywords: [
+    "auto",
+    "lock",
+    "clipboard",
+    "cipher",
+    "biometric",
+    "hibp",
+    "自动锁定",
+    "剪贴板",
+    "加密",
+    "生物识别",
+  ],
+});
+
+defineSection({
+  id: "vault-ssh",
+  pageId: "vault",
+  title: "settings.vault.ssh.title",
+  keywords: ["ssh", "agent", "pageant", "openssh", "密钥"],
 });
 
 export const APP_SETTINGS = [
@@ -327,3 +359,104 @@ defineSetting({
   label: "settings.about.field.license.label",
   readValue: () => "MIT",
 });
+
+export const VAULT_GENERAL_SETTINGS = [
+  defineSetting({
+    key: "vaultAutoLockMinutes",
+    group: "app",
+    section: "vault-general",
+    type: "number",
+    default: 5,
+    label: "settings.vault.auto_lock_minutes.label",
+    min: 1,
+    max: 60,
+  }),
+  defineSetting({
+    key: "vaultLockOnScreenLock",
+    group: "app",
+    section: "vault-general",
+    type: "boolean",
+    default: true,
+    label: "settings.vault.lock_on_screen_lock.label",
+  }),
+  defineSetting({
+    key: "vaultClipboardClearSeconds",
+    group: "app",
+    section: "vault-general",
+    type: "number",
+    default: 30,
+    label: "settings.vault.clipboard_clear_seconds.label",
+    min: 5,
+    max: 300,
+  }),
+  defineSetting({
+    key: "vaultCipherAlgorithm",
+    group: "app",
+    section: "vault-general",
+    type: "select",
+    default: "aes256Gcm",
+    label: "settings.vault.cipher_algorithm.label",
+    options: [
+      { label: "AES-256-GCM", value: "aes256Gcm" },
+      { label: "ChaCha20-Poly1305", value: "chacha20Poly1305" },
+    ],
+  }),
+  defineSetting({
+    key: "vaultBiometricEnabled",
+    group: "app",
+    section: "vault-general",
+    type: "boolean",
+    default: false,
+    label: "settings.vault.biometric_enabled.label",
+    description: "settings.vault.biometric_enabled.description",
+    customRender: BiometricSwitchRender,
+    saveMessage: "settings.vault.biometric_enabled.save_message",
+  }),
+  defineSetting({
+    key: "vaultHibpAutoAudit",
+    group: "app",
+    section: "vault-general",
+    type: "boolean",
+    default: true,
+    label: "settings.vault.hibp_auto_audit.label",
+  }),
+];
+
+export const VAULT_SSH_SETTINGS = [
+  defineSetting({
+    key: "vaultSshAutoAdd",
+    group: "app",
+    section: "vault-ssh",
+    type: "boolean",
+    default: false,
+    label: "settings.vault.ssh_auto_add.label",
+  }),
+  defineSetting({
+    key: "vaultSshUsePageant",
+    group: "app",
+    section: "vault-ssh",
+    type: "boolean",
+    default: true,
+    label: "settings.vault.ssh_use_pageant.label",
+    visible: () => navigator.platform.toLowerCase().includes("win"),
+  }),
+  defineSetting({
+    key: "vaultSshUseOpensshAgent",
+    group: "app",
+    section: "vault-ssh",
+    type: "boolean",
+    default: true,
+    label: "settings.vault.ssh_use_openssh_agent.label",
+    visible: () => navigator.platform.toLowerCase().includes("win"),
+  }),
+  defineSetting({
+    key: "vaultSshAuthSockOverride",
+    group: "app",
+    section: "vault-ssh",
+    type: "string",
+    default: "",
+    label: "settings.vault.ssh_auth_sock_override.label",
+    placeholder: "settings.vault.ssh_auth_sock_override.placeholder",
+    visible: () => !navigator.platform.toLowerCase().includes("win"),
+  }),
+];

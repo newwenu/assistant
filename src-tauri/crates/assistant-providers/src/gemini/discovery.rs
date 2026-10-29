@@ -1,21 +1,24 @@
 use crate::base::{resolve_context_window, ModelConfig, ProviderError};
 use crate::client::error::classify_http_error;
+use crate::vision::{input_modalities_for, resolve_support_vision};
 
 use super::request::gemini_base_url;
 use super::types::GeminiModelsResponse;
 use super::GeminiAdapter;
 
-pub(crate) fn list_models(adapter: &GeminiAdapter) -> Result<Vec<ModelConfig>, ProviderError> {
+pub(crate) fn list_models(
+    adapter: &GeminiAdapter,
+    api_key: &str,
+) -> Result<Vec<ModelConfig>, ProviderError> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| ProviderError::RequestFailed(format!("Create runtime: {}", e)))?;
     rt.block_on(async {
-        let api_key = adapter.decrypt_api_key()?;
         let url = resolve_models_url(adapter.base_url());
 
         let resp = adapter
             .client
             .get(&url)
-            .header("x-goog-api-key", &api_key)
+            .header("x-goog-api-key", api_key)
             .send()
             .await
             .map_err(|e| {
@@ -61,12 +64,15 @@ pub(crate) fn list_models(adapter: &GeminiAdapter) -> Result<Vec<ModelConfig>, P
                     .strip_prefix("models/")
                     .unwrap_or(&model.name)
                     .to_string();
-                let ctx = resolve_context_window(&id, model.input_token_limit);
+                let ctx = resolve_context_window(&id, None, model.input_token_limit);
+                let input_modalities = input_modalities_for(&id);
                 ModelConfig {
                     id: id.clone(),
-                    name: model.display_name.unwrap_or(id),
+                    name: model.display_name.unwrap_or(id.clone()),
                     owned_by: "google".to_string(),
                     context_window: ctx,
+                    support_vision: resolve_support_vision(&id, None),
+                    input_modalities,
                 }
             })
             .collect();

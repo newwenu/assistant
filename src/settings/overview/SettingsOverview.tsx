@@ -14,7 +14,7 @@ import {
   type ConfGroup,
   type SettingDefinition,
 } from "../core/field/fieldRegistry";
-import { toConfRecord } from "../core/settingsDispatcher";
+import { toConfRecord } from "../core/types/confUtils";
 
 function useConfByGroup(group: ConfGroup): Record<string, unknown> | null {
   const confKey = CONF_KEY_MAP[group];

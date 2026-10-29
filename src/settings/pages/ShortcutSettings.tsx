@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Input, Button, Typography, message } from "antd";
+import { Input, Button, Space, Typography } from "antd";
 import { SearchOutlined, UndoOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { SettingsGroup } from "../shared/layout/SettingsGroup";
-import { SettingsSection } from "../shared/layout/SettingsSection";
+import { SettingsGroup } from "../shared/sections/SettingsGroup";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
 import { SHORTCUT_SETTINGS } from "../core/field/fieldDefinitions";
 import {
@@ -13,6 +12,7 @@ import {
   DEFAULT_KEYBINDINGS,
   formatBinding,
 } from "../core/types/shortcutTypes";
+import { useSettingMessage } from "../shared/useSettingMessage";
 
 export const ShortcutSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -20,7 +20,7 @@ export const ShortcutSettings: React.FC = () => {
   const resetKeybindings = useSettingsStore((s) => s.resetKeybindings);
   const appConf = useSettingsStore((s) => s.appConf);
   const [searchQuery, setSearchQuery] = useState("");
-  const [messageApi, contextHolder] = message.useMessage();
+  const msg = useSettingMessage();
 
   useEffect(() => {
     void loadAppConf();
@@ -47,7 +47,7 @@ export const ShortcutSettings: React.FC = () => {
 
   const handleReset = async () => {
     await resetKeybindings();
-    messageApi.success(t("settings.shortcuts.reset_success"));
+    msg.success("settings.shortcuts.reset_success");
   };
 
   const groupedDefinitions = useMemo(() => {
@@ -64,26 +64,25 @@ export const ShortcutSettings: React.FC = () => {
 
   return (
     <>
-      {contextHolder}
-      <SettingsPageShell>
-        <SettingsSection
-          id="shortcuts-main"
-          style={{ marginTop: 0 }}
-          extra={
+      <SettingsPageShell
+        wide={600}
+        extra={
+          <Space>
+            <Input
+              placeholder={t("settings.shortcuts.search_placeholder")}
+              prefix={<SearchOutlined />}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              allowClear
+              style={{ width: 180 }}
+            />
             <Button icon={<UndoOutlined />} onClick={() => void handleReset()}>
               {t("settings.shortcuts.reset_default")}
             </Button>
-          }
-        >
-          <Input
-            placeholder={t("settings.shortcuts.search_placeholder")}
-            prefix={<SearchOutlined />}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ marginBottom: 16 }}
-            allowClear
-          />
-
+          </Space>
+        }
+      >
+        <div data-section-id="shortcuts-main">
           {SHORTCUT_GROUPS.map((group) => {
             const groupDefs = groupedDefinitions[group.key];
             if (!groupDefs || groupDefs.length === 0) return null;
@@ -99,7 +98,7 @@ export const ShortcutSettings: React.FC = () => {
               </div>
             );
           })}
-        </SettingsSection>
+        </div>
       </SettingsPageShell>
     </>
   );

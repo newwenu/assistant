@@ -1,0 +1,17 @@
+[package]
+name = "assistant-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+git-tests = []
+
+[dependencies]
+serde = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -9,6 +9,8 @@ import {
   ThunderboltOutlined,
   ApiOutlined,
   RobotOutlined,
+  DatabaseOutlined,
+  SafetyCertificateOutlined,
   InfoCircleOutlined,
 } from "@ant-design/icons";
 import { lazyWithRecovery } from "@/utils/lazyWithRecovery";
@@ -108,12 +110,47 @@ const about = definePage({
     })),
 });
 
+const storage = definePage({
+  id: "storage",
+  categoryId: "general",
+  label: "common.navigation.storage.title",
+  keywords: ["storage", "attachment", "orphan", "disk", "存储", "附件", "孤儿"],
+  icon: DatabaseOutlined,
+  load: () =>
+    import("../pages/StorageSettings").then((m) => ({
+      default: m.StorageSettings,
+    })),
+});
+
+const vault = definePage({
+  id: "vault",
+  categoryId: "vault",
+  label: "common.navigation.vault_settings.title",
+  keywords: [
+    "vault",
+    "password",
+    "ssh",
+    "biometric",
+    "cipher",
+    "密码",
+    "保险库",
+    "加密",
+  ],
+  icon: SafetyCertificateOutlined,
+  load: () =>
+    import("../pages/VaultSettingsPage").then((m) => ({
+      default: m.VaultSettingsPage,
+    })),
+});
+
 export const SETTINGS_PAGES: readonly SettingsPageManifest[] = [
   general,
   appearance,
   shortcuts,
   providers,
   agents,
+  storage,
+  vault,
   about,
 ];
 
@@ -123,6 +160,8 @@ export const SETTINGS_DETAIL_PAGES: readonly SettingsPageManifest[] = [
   shortcuts,
   providers,
   agents,
+  storage,
+  vault,
   about,
 ];
 
@@ -139,12 +178,14 @@ export interface SettingsCategory {
 const CATEGORY_ORDER: readonly SettingsCategoryId[] = [
   "general",
   "provider",
+  "vault",
   "about",
 ];
 
 const CATEGORY_LABELS: Record<SettingsCategoryId, string> = {
   general: "通用",
   provider: "服务",
+  vault: "安全",
   about: "关于",
 };
 

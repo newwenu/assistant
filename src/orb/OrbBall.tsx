@@ -15,7 +15,7 @@ import {
   hexToArgb,
   useMascotStore,
 } from "../mascot";
-import { buildRendererConfig } from "../settings/core/settingsDispatcher";
+import { buildRendererConfig } from "../mascot/core/mascotConfig";
 import { useSettingsStore } from "../stores/settingsStore";
 
 export const OrbBall: React.FC = () => {

@@ -1,44 +1,7 @@
-use assistant_storage::conversations::{self, ConversationRow, MessageRow};
-use assistant_storage::db;
+mod common;
 
-fn init_db() -> rusqlite::Connection {
-    let dir = tempfile::tempdir().unwrap();
-    db::init_db(&dir.path().join("test.db")).unwrap()
-}
-
-fn conv(id: &str) -> ConversationRow {
-    ConversationRow {
-        id: id.to_string(),
-        title: "test".to_string(),
-        title_source: "placeholder".to_string(),
-        provider_id: None,
-        model_id: "gpt-4".to_string(),
-        system_prompt: None,
-        is_pinned: false,
-        sort_order: 0,
-        generation: 0,
-        created_at: 1000,
-        updated_at: 1000,
-        is_full: false,
-        active_branch_id: None,
-    }
-}
-
-fn msg(id: &str, conv_id: &str, role: &str, content: &str, ts: i64) -> MessageRow {
-    MessageRow {
-        id: id.to_string(),
-        conversation_id: conv_id.to_string(),
-        role: role.to_string(),
-        content: content.to_string(),
-        tokens: None,
-        timestamp: ts,
-        parent_id: None,
-        is_pinned: false,
-        reasoning: None,
-        tool_calls_json: None,
-        sibling_index: 0,
-    }
-}
+use assistant_storage::conversations;
+use common::{conv, init_db, msg, msg_with_parent, provider};
 
 #[test]
 fn delete_conversation_removes_all_messages() {
@@ -161,7 +124,14 @@ fn duplicate_creates_independent_copy() {
         1,
         "copy should survive original deletion"
     );
-    assert!(detail.conversation.title.contains("副本"));
+    assert_eq!(
+        detail.conversation.title, "test",
+        "title stays untouched; the copy suffix is rendered by the UI"
+    );
+    assert_eq!(
+        detail.conversation.title_source,
+        conversations::COPY_TITLE_SOURCE
+    );
 }
 
 #[test]
@@ -251,20 +221,7 @@ fn export_json_roundtrip() {
 #[test]
 fn delete_provider_nullifies_conversation_provider_id() {
     let conn = init_db();
-    assistant_storage::providers::insert_provider(
-        &conn,
-        &assistant_storage::providers::ProviderRow {
-            id: "p1".to_string(),
-            name: "test".to_string(),
-            type_: "openai".to_string(),
-            base_url: "http://x".to_string(),
-            api_key_encrypted: String::new(),
-            models_json: "[]".to_string(),
-            default_model: "gpt-4".to_string(),
-            updated_at: 0,
-        },
-    )
-    .unwrap();
+    assistant_storage::providers::insert_provider(&conn, &provider("p1", 0)).unwrap();
     let mut c = conv("c1");
     c.provider_id = Some("p1".to_string());
     conversations::insert_conversation(&conn, &c).unwrap();
@@ -288,36 +245,13 @@ mod property {
         #[test]
         fn message_count_never_negative(n_msgs in 0usize..20) {
             let conn = init_db();
-            let conv = ConversationRow {
-                id: "c1".to_string(),
-                title: "t".to_string(),
-                title_source: "placeholder".to_string(),
-                provider_id: None,
-                model_id: "m".to_string(),
-                system_prompt: None,
-                is_pinned: false,
-                sort_order: 0,
-                generation: 0,
-                created_at: 0,
-                updated_at: 0,
-                is_full: false,
-                active_branch_id: None,
-            };
-            conversations::insert_conversation(&conn, &conv).unwrap();
+            let mut c = conv("c1");
+            c.created_at = 0;
+            c.updated_at = 0;
+            conversations::insert_conversation(&conn, &c).unwrap();
             for i in 0..n_msgs {
-                conversations::insert_message(&conn, &MessageRow {
-                    id: format!("m{}", i),
-                    conversation_id: "c1".to_string(),
-                    role: "user".to_string(),
-                    content: "x".to_string(),
-                    tokens: None,
-                    timestamp: i as i64,
-                    parent_id: None,
-                    is_pinned: false,
-                    reasoning: None,
-                    tool_calls_json: None,
-                    sibling_index: 0,
-                }).unwrap();
+                let mut m = msg(&format!("m{}", i), "c1", "user", "x", i as i64);
+                conversations::insert_message(&conn, &m).unwrap();
             }
             let count = conversations::get_message_count(&conn, "c1").unwrap();
             assert_eq!(count, n_msgs as i64);
@@ -330,64 +264,18 @@ mod property {
             query in "[a-z]{1,3}",
         ) {
             let conn = init_db();
-            let conv = ConversationRow {
-                id: "c1".to_string(),
-                title: title.clone(),
-                title_source: "placeholder".to_string(),
-                provider_id: None,
-                model_id: "m".to_string(),
-                system_prompt: None,
-                is_pinned: false,
-                sort_order: 0,
-                generation: 0,
-                created_at: 0,
-                updated_at: 0,
-                is_full: false,
-                active_branch_id: None,
-            };
-            conversations::insert_conversation(&conn, &conv).unwrap();
-            conversations::insert_message(&conn, &MessageRow {
-                id: "m1".to_string(),
-                conversation_id: "c1".to_string(),
-                role: "user".to_string(),
-                content: content.clone(),
-                tokens: None,
-                timestamp: 0,
-                parent_id: None,
-                is_pinned: false,
-                reasoning: None,
-                tool_calls_json: None,
-                sibling_index: 0,
-            }).unwrap();
+            let mut c = conv("c1");
+            c.title = title.clone();
+            c.created_at = 0;
+            c.updated_at = 0;
+            conversations::insert_conversation(&conn, &c).unwrap();
+            let m = msg("m1", "c1", "user", &content, 0);
+            conversations::insert_message(&conn, &m).unwrap();
 
             let all = conversations::get_conversations(&conn, None).unwrap();
             let found = conversations::search_conversations(&conn, &query).unwrap();
             assert!(found.len() <= all.len());
         }
-    }
-}
-
-fn msg_with_parent(
-    id: &str,
-    conv_id: &str,
-    role: &str,
-    content: &str,
-    ts: i64,
-    parent_id: Option<&str>,
-    sibling_index: i64,
-) -> MessageRow {
-    MessageRow {
-        id: id.to_string(),
-        conversation_id: conv_id.to_string(),
-        role: role.to_string(),
-        content: content.to_string(),
-        tokens: None,
-        timestamp: ts,
-        parent_id: parent_id.map(|s| s.to_string()),
-        is_pinned: false,
-        reasoning: None,
-        tool_calls_json: None,
-        sibling_index,
     }
 }
 
@@ -605,6 +493,11 @@ fn fork_to_new_conversation_copies_active_branch() {
     assert_eq!(new_detail.messages.len(), 4);
     assert_eq!(new_detail.messages[0].content, "hello");
     assert_eq!(new_detail.messages[3].content, "reply");
+    assert_eq!(new_detail.conversation.title, "test");
+    assert_eq!(
+        new_detail.conversation.title_source,
+        conversations::COPY_TITLE_SOURCE
+    );
 
     let orig_detail = conversations::get_conversation_detail(&conn, "c1")
         .unwrap()

@@ -5,15 +5,11 @@ import {
   SwapOutlined,
   CopyOutlined,
 } from "@ant-design/icons";
-import {
-  type ChatError,
-  ChatErrorCode,
-  getErrorDisplay,
-  formatRetryAfter,
-} from "../core/chatErrors";
+import { type ChatError } from "../core/chatErrors";
 import {
   type RecoveryActionCode,
   getErrorPresentation,
+  formatRetryAfter,
 } from "../core/chatErrorRecovery";
 import { translateKey } from "../../i18n";
 import css from "./ErrorBlock.module.css";
@@ -37,10 +33,8 @@ export const ErrorBlock: React.FC<ErrorBlockProps> = ({
   onRetry,
   onAction,
 }) => {
-  const display =
-    getErrorDisplay(error.code) ?? getErrorDisplay(ChatErrorCode.InternalError);
-  const retryHint = formatRetryAfter(error.retryAfterMs);
   const presentation = getErrorPresentation(error);
+  const retryHint = formatRetryAfter(error.retryAfterMs);
 
   const handleAction = (code: RecoveryActionCode) => {
     if (code === "retry" || code === "wait_and_retry") {
@@ -58,7 +52,9 @@ export const ErrorBlock: React.FC<ErrorBlockProps> = ({
   return (
     <div className={css.root}>
       <div className={headerClass}>
-        <span className={css.icon}>{display.icon}</span>
+        <span className={css.icon}>
+          {React.createElement(presentation.icon)}
+        </span>
         <span className={css.title}>{translateKey(presentation.titleKey)}</span>
       </div>
       <div className={css.suggestion}>

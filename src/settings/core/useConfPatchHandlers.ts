@@ -1,10 +1,7 @@
 import { useCallback } from "react";
 import type { ConfGroup } from "./field/fieldRegistry";
-import {
-  dispatchConfPatch,
-  optimisticConfUpdate,
-  type ConfOf,
-} from "./settingsDispatcher";
+import { dispatchConfPatch, type ConfOf } from "./settingsDispatcher";
+import { optimisticConfUpdate } from "./optimisticUpdate";
 
 export interface PatchHandlers<G extends ConfGroup = ConfGroup> {
   onPatch: (patch: Partial<ConfOf<G>>) => Promise<void>;

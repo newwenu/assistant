@@ -310,8 +310,8 @@ export const GhostyMascot: FC<MascotRendererProps> = ({
       data-face={face}
     >
       <svg
-        width="100%"
-        height="100%"
+        width="97%"
+        height="97%"
         viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
         style={{ overflow: "visible", display: "block" }}
       >

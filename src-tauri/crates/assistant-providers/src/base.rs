@@ -4,10 +4,10 @@ use std::pin::Pin;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
+pub use crate::model_catalog::get_context_window_tokens;
 pub use crate::types::chat_delta::{ChatDelta, TokenUsage};
 pub use crate::types::config::{
-    get_context_window_tokens, resolve_context_window, ChatOptions, RetryConfig, SseLogConfig,
-    StreamTimeoutConfig,
+    resolve_context_window, ChatOptions, RetryConfig, SseLogConfig, StreamTimeoutConfig,
 };
 pub use crate::types::message::{message_role_from_str, ChatMessage, MessageRole};
 pub use crate::types::tool::ToolCall;
@@ -158,7 +158,6 @@ impl ProviderKind {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProviderConfig {
     pub kind: ProviderKind,
-    pub api_key_encrypted: String,
     pub base_url: Option<String>,
     pub default_model: String,
     pub max_tokens: u32,
@@ -172,6 +171,12 @@ pub struct ModelConfig {
     pub owned_by: String,
     #[serde(default)]
     pub context_window: u32,
+    #[serde(default)]
+    pub support_vision: bool,
+    /// 输入模态列表（"text"/"image"/"pdf"/"audio"/"video"），权威能力来源；
+    /// support_vision 为便捷派生值（含 "image" 即 true）。
+    #[serde(default)]
+    pub input_modalities: Vec<String>,
 }
 
 pub type ChatStream = Pin<Box<dyn Stream<Item = Result<ChatDelta, ProviderError>> + Send>>;
@@ -181,12 +186,13 @@ pub trait BaseProviderAdapter: Send + Sync {
     fn config(&self) -> &ProviderConfig;
     fn chat_completion_stream(
         &self,
+        api_key: &str,
         messages: &[ChatMessage],
         model: &str,
         options: &ChatOptions,
         cancel_token: CancellationToken,
     ) -> Result<ChatStream, ProviderError>;
-    fn list_models(&self) -> Result<Vec<ModelConfig>, ProviderError>;
+    fn list_models(&self, api_key: &str) -> Result<Vec<ModelConfig>, ProviderError>;
 }
 
 pub fn provider_kind_from_str(type_str: &str, base_url: String) -> ProviderKind {

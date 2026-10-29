@@ -15,6 +15,7 @@ use assistant_config::{
     orb_conf::OrbConf,
 };
 use assistant_orb::placement;
+use assistant_storage::attachment_store::AttachmentStore;
 use assistant_storage::db;
 use assistant_tools::{os, ToolRegistry};
 
@@ -57,7 +58,32 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    {
+        let attachments_dir = match handle.path().app_data_dir() {
+            Ok(data_dir) => data_dir.join("attachments"),
+            Err(e) => {
+                log::error!("Failed to resolve app data dir for attachments: {}", e);
+                return Err(Box::new(e));
+            }
+        };
+        std::fs::create_dir_all(&attachments_dir).expect("Failed to create attachments directory");
+        let store = AttachmentStore::new(attachments_dir);
+        handle.manage(store);
+        log::info!("AttachmentStore initialized");
+
+        {
+            let store = handle.state::<AttachmentStore>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = store.clean_tmp().await {
+                    log::warn!("Failed to clean tmp attachments: {}", e);
+                }
+            });
+        }
+    }
+
     handle.manage(assistant_agent::chat_tasks::ChatTasks::new());
+
+    crate::cmd::setup(&handle);
 
     {
         let registry = Arc::new(ToolRegistry::new());

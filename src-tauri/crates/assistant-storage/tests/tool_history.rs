@@ -1,10 +1,7 @@
-use assistant_storage::db;
-use assistant_storage::tool_history;
+mod common;
 
-fn init_db() -> rusqlite::Connection {
-    let dir = tempfile::tempdir().unwrap();
-    db::init_db(&dir.path().join("test.db")).unwrap()
-}
+use assistant_storage::tool_history;
+use common::init_db;
 
 #[test]
 fn record_usage_deduplicates_by_tool_id() {

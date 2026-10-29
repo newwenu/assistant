@@ -2,14 +2,13 @@ use chrono::Utc;
 use tauri::{command, AppHandle, Manager};
 use uuid::Uuid;
 
+use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
     ModelConfigDto, ProviderInputDto, ProviderListDto, SettingProviderChangedPayloadDto,
 };
-use crate::protocol::events::{emit_broadcast, event_name};
-use assistant_providers::{
-    base::{self, ProviderConfig},
-    crypto,
-};
+use assistant_agent::provider_config::build_provider_config;
+use assistant_providers::base::{self, ProviderConfig};
+use assistant_security::crypto;
 use assistant_storage::providers::{self as provider_store, ProviderRow};
 
 fn mask_api_key_encrypted(encrypted: &str) -> String {
@@ -32,17 +31,6 @@ fn mask_api_key_encrypted(encrypted: &str) -> String {
             }
         }
         Err(_) => "••••".to_string(),
-    }
-}
-
-pub(crate) fn build_provider_config(row: &ProviderRow) -> ProviderConfig {
-    ProviderConfig {
-        kind: base::provider_kind_from_str(&row.type_, row.base_url.clone()),
-        api_key_encrypted: row.api_key_encrypted.clone(),
-        base_url: Some(row.base_url.clone()),
-        default_model: row.default_model.clone(),
-        max_tokens: 4096,
-        temperature: 0.7,
     }
 }
 
@@ -166,7 +154,10 @@ pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelC
 
     let config = build_provider_config(&row);
     let adapter = base::create_provider_adapter(config);
-    let models = adapter.list_models().map_err(|e| e.to_string())?;
+    let machine_id = crypto::get_machine_id().map_err(|e| e.to_string())?;
+    let api_key = crypto::decrypt_api_key_b64(&row.api_key_encrypted, &machine_id)
+        .map_err(|e| e.to_string())?;
+    let models = adapter.list_models(&api_key).map_err(|e| e.to_string())?;
     Ok(models
         .into_iter()
         .map(|m| ModelConfigDto {
@@ -174,6 +165,8 @@ pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelC
             name: m.name,
             owned_by: m.owned_by,
             context_window: m.context_window,
+            support_vision: m.support_vision,
+            input_modalities: m.input_modalities,
         })
         .collect())
 }
@@ -184,17 +177,15 @@ pub fn preview_models_cmd(
     base_url: String,
     api_key: String,
 ) -> Result<Vec<ModelConfigDto>, String> {
-    let api_key_encrypted = crypto::encrypt_api_key_b64(&api_key, &crypto::get_machine_id()?)?;
     let config = ProviderConfig {
         kind: base::provider_kind_from_str(&provider_type, base_url.clone()),
-        api_key_encrypted,
         base_url: Some(base_url),
         default_model: String::new(),
         max_tokens: 4096,
         temperature: 0.7,
     };
     let adapter = base::create_provider_adapter(config);
-    let models = adapter.list_models().map_err(|e| e.to_string())?;
+    let models = adapter.list_models(&api_key).map_err(|e| e.to_string())?;
     Ok(models
         .into_iter()
         .map(|m| ModelConfigDto {
@@ -202,6 +193,8 @@ pub fn preview_models_cmd(
             name: m.name,
             owned_by: m.owned_by,
             context_window: m.context_window,
+            support_vision: m.support_vision,
+            input_modalities: m.input_modalities,
         })
         .collect())
 }

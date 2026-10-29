@@ -15,8 +15,11 @@ log = { workspace = true }
 rusqlite = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-assistant-i18n = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["fs"] }
+thiserror = { workspace = true }
+base64 = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-tempfile = "3"
+tempfile = { workspace = true }

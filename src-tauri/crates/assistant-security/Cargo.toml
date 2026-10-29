@@ -1,0 +1,29 @@
+[package]
+name = "assistant-security"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+slow-tests = []
+
+[dependencies]
+assistant-crypto = { workspace = true }
+serde = { workspace = true }
+log = { workspace = true }
+zeroize = { workspace = true }
+hex = { workspace = true }
+sha1 = { workspace = true }
+reqwest = { workspace = true }
+arboard = { workspace = true }
+ssh-key = { workspace = true }
+rsa = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true }
+
+[dev-dependencies]
+ssh-key = { workspace = true }
+rsa = { workspace = true }
+rand = { workspace = true }

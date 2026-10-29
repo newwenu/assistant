@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { Input, Button, Typography, List, message } from "antd";
 import { CopyOutlined, DeleteOutlined } from "@ant-design/icons";
-import { evaluate } from "mathjs";
+import { safeEvaluate } from "./calculator.service";
 import styles from "./calculator.module.css";
 
 interface HistoryEntry {
@@ -13,14 +13,7 @@ export default function Calculator() {
   const [expression, setExpression] = useState("");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
-  const result = (() => {
-    try {
-      if (!expression.trim()) return "";
-      return String(evaluate(expression));
-    } catch {
-      return "";
-    }
-  })();
+  const result = safeEvaluate(expression);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

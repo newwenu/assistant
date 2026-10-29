@@ -2,12 +2,18 @@ import React, { useCallback, useState } from "react";
 import { Typography } from "antd";
 import { CompressOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import type { Message, ToolCall } from "../../stores/chatStore";
+import type { Message, ToolCall } from "../../chat/core/chatTypes";
 import type { RetryNotification } from "../../chat/core/chatTypes";
+import type {
+  ImageBlock,
+  FileBlock,
+  ContentBlock,
+} from "../core/contentBlockTypes";
 import { ErrorBlock } from "../blocks/ErrorBlock";
 import { RetryBanner } from "../blocks/RetryBanner";
-import { getErrorDisplay, ChatErrorCode } from "../core/chatErrors";
 import { getErrorPresentation } from "../core/chatErrorRecovery";
+import { extractPlainText, parseContent } from "../core/contentBlockUtils";
+import { translateKey } from "../../i18n";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
 import { ToolCallBlock } from "../blocks/ToolCallBlock";
 import { EditBlock } from "../blocks/EditBlock";
@@ -53,16 +59,16 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
 
     const [editing, setEditing] = useState(false);
     const [editContent, setEditContent] = useState(message.content);
+    const [editImageBlocks, setEditImageBlocks] = useState<ImageBlock[]>([]);
+    const [editFileBlocks, setEditFileBlocks] = useState<FileBlock[]>([]);
 
     const handleCopy = useCallback(() => {
       let text = message.content;
       if (message.error) {
-        const display =
-          getErrorDisplay(message.error.code) ??
-          getErrorDisplay(ChatErrorCode.InternalError);
+        const presentation = getErrorPresentation(message.error);
         const errorParts: string[] = [];
         if (text) errorParts.push(text);
-        errorParts.push(`[${display.title}]`);
+        errorParts.push(`[${translateKey(presentation.titleKey)}]`);
         if (message.error.message) errorParts.push(message.error.message);
         text = errorParts.join("\n");
       }
@@ -74,21 +80,68 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     }, [onDelete, message.id]);
 
     const startEdit = useCallback(() => {
-      setEditContent(message.content);
+      setEditContent(extractPlainText(message.content));
+      const blocks = parseContent(message.content);
+      const images = blocks
+        ? blocks.filter((b): b is ImageBlock => b.type === "image")
+        : [];
+      const files = blocks
+        ? blocks.filter((b): b is FileBlock => b.type === "file")
+        : [];
+      setEditImageBlocks(images);
+      setEditFileBlocks(files);
       setEditing(true);
     }, [message.content]);
 
     const confirmEdit = useCallback(() => {
-      if (editContent.trim() && editContent !== message.content) {
-        onEdit?.(message.id, editContent.trim());
+      const trimmed = editContent.trim();
+      if (!trimmed) {
+        setEditing(false);
+        return;
+      }
+
+      const hasAttachments =
+        editImageBlocks.length > 0 || editFileBlocks.length > 0;
+      const originalBlocks = parseContent(message.content);
+      const isMultimodal = hasAttachments || originalBlocks !== null;
+
+      if (isMultimodal) {
+        const newBlocks: ContentBlock[] = [
+          { type: "text" as const, text: trimmed },
+          ...editImageBlocks,
+          ...editFileBlocks,
+        ];
+        const finalContent = JSON.stringify(newBlocks);
+        onEdit?.(message.id, finalContent);
+      } else {
+        if (trimmed !== message.content) {
+          onEdit?.(message.id, trimmed);
+        }
       }
       setEditing(false);
-    }, [editContent, message.id, message.content, onEdit]);
+    }, [
+      editContent,
+      editImageBlocks,
+      editFileBlocks,
+      message.id,
+      message.content,
+      onEdit,
+    ]);
 
     const cancelEdit = useCallback(() => {
       setEditing(false);
-      setEditContent(message.content);
+      setEditContent(extractPlainText(message.content));
+      setEditImageBlocks([]);
+      setEditFileBlocks([]);
     }, [message.content]);
+
+    const handleRemoveEditImage = useCallback((index: number) => {
+      setEditImageBlocks((prev) => prev.filter((_, i) => i !== index));
+    }, []);
+
+    const handleRemoveEditFile = useCallback((index: number) => {
+      setEditFileBlocks((prev) => prev.filter((_, i) => i !== index));
+    }, []);
 
     const handleRegenerate = useCallback(() => {
       onRegenerate?.(message.id);
@@ -111,6 +164,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
           : css.rootRoleAssistant,
       isGroupGap ? css.rootGroupGap : "",
       compact ? css.compact : "",
+      editing ? css.rootEditing : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -164,6 +218,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                 onChange={setEditContent}
                 onConfirm={confirmEdit}
                 onCancel={cancelEdit}
+                imageBlocks={editImageBlocks}
+                fileBlocks={editFileBlocks}
+                onRemoveImage={handleRemoveEditImage}
+                onRemoveFile={handleRemoveEditFile}
               />
             ) : (
               <>

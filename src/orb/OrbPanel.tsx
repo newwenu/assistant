@@ -16,6 +16,7 @@ import {
   ORB_HISTORY_LIST_LIMIT,
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
+import { formatConversationTitle } from "../utils/formatConversationTitle";
 import { useOrbExpand } from "./OrbExpand";
 import { ChatView } from "../chat/ChatView";
 import { useChatStore, getChatOrchestrator } from "../stores/chatStore";
@@ -32,7 +33,7 @@ import {
 } from "./OrbCoord";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { orbService } from "../services/orbService";
-import { useErrorNotifyStore } from "../services/errorNotifier";
+import { useNotifyStore } from "../stores/notifyStore";
 import { translateKey } from "../i18n";
 
 export const OrbPanel: React.FC = () => {
@@ -45,19 +46,23 @@ export const OrbPanel: React.FC = () => {
   const [messageApi, messageContextHolder] = message.useMessage({
     getContainer: () => panelRef.current ?? document.body,
   });
-  const errorNotifyPending = useErrorNotifyStore((s) => s.pending);
-  const errorNotifyDequeue = useErrorNotifyStore((s) => s.dequeue);
+  const notifyPending = useNotifyStore((s) => s.pending);
+  const notifyDequeue = useNotifyStore((s) => s.dequeue);
 
   React.useEffect(() => {
-    while (errorNotifyPending.length > 0) {
-      const item = errorNotifyDequeue();
+    while (notifyPending.length > 0) {
+      const item = notifyDequeue();
       if (!item) break;
-      messageApi.error({
-        content: translateKey(item.titleKey, item.options),
-        duration: 3,
-      });
+      const content = translateKey(item.titleKey, item.options);
+      const method =
+        item.level === "warning"
+          ? messageApi.warning
+          : item.level === "info"
+            ? messageApi.info
+            : messageApi.error;
+      method({ content, duration: 3 });
     }
-  }, [errorNotifyPending, errorNotifyDequeue, messageApi]);
+  }, [notifyPending, notifyDequeue, messageApi]);
   const { t } = useTranslation();
   useMascotChatSync();
   const [search, setSearch] = useState("");
@@ -181,7 +186,7 @@ export const OrbPanel: React.FC = () => {
               fontWeight: conv.id === chat.currentConversationId ? 600 : 400,
             }}
           >
-            {conv.title}
+            {formatConversationTitle(conv)}
           </span>
           <span
             style={{

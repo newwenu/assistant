@@ -28,6 +28,7 @@ export {
 } from "./expressionPolicy";
 export { resolveVisemeCode, pickIdleFlourish, lerpViseme } from "./resolve";
 export type { VisemeShape } from "./resolve";
+export { buildRendererConfig, buildMascotPatch } from "./mascotConfig";
 export {
   registerRenderer,
   getRenderer,

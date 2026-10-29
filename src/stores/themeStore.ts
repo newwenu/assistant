@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { dispatchThemeChanged } from "../settings/core/settingsDispatcher";
+import { dispatchConfPatch } from "../settings/core/settingsDispatcher";
 import { settingService } from "../services/settingService";
 import { createLogger } from "@/services/logger";
 import { UiEvent, type ThemeChangedPayload } from "@/types/events";
@@ -31,6 +32,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   resolved: "light",
 
   setMode: (mode: ThemeMode) => {
+    dispatchConfPatch("app", { theme: mode }).catch((e) =>
+      log.warn("patchConf for theme failed", e),
+    );
     dispatchThemeChanged(mode).catch((e) =>
       log.warn("dispatchThemeChanged failed", e),
     );

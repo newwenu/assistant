@@ -1,123 +1,15 @@
 import { useState, useMemo } from "react";
 import { Input, Checkbox, Typography, Tag, Table, Tabs } from "antd";
+import {
+  PATTERN_LIBRARY,
+  matchRegex,
+  buildHighlightHtml,
+  buildFlags,
+  type MatchResult,
+} from "./regex-tester.service";
 import styles from "./regex-tester.module.css";
 
 const { TextArea } = Input;
-
-interface GroupCapture {
-  name: string;
-  value: string;
-  start: number;
-  end: number;
-}
-
-interface MatchResult {
-  match: string;
-  index: number;
-  length: number;
-  captures: GroupCapture[];
-  namedGroups: GroupCapture[];
-}
-
-const PATTERN_LIBRARY = [
-  {
-    name: "邮箱",
-    pattern: "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",
-    flags: "g",
-  },
-  { name: "手机号(CN)", pattern: "(?<!\\d)1[3-9]\\d{9}(?!\\d)", flags: "g" },
-  {
-    name: "URL",
-    pattern: "https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+",
-    flags: "gi",
-  },
-  {
-    name: "IPv4",
-    pattern:
-      "\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\b",
-    flags: "g",
-  },
-  {
-    name: "UUID",
-    pattern:
-      "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
-    flags: "gi",
-  },
-  { name: "十六进制色", pattern: "#(?:[0-9a-fA-F]{3}){1,2}\\b", flags: "g" },
-  {
-    name: "日期 YYYY-MM-DD",
-    pattern: "\\b(\\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])\\b",
-    flags: "g",
-  },
-  {
-    name: "Semver",
-    pattern:
-      "\\b\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?\\b",
-    flags: "g",
-  },
-];
-
-function matchRegex(
-  pattern: string,
-  text: string,
-  flags: string,
-  isGlobal: boolean,
-): { matches: MatchResult[]; error: string | null } {
-  try {
-    const regex = new RegExp(pattern, flags);
-    const results: MatchResult[] = [];
-    let m: RegExpExecArray | null;
-    let lastIndex = -1;
-
-    while ((m = regex.exec(text)) !== null) {
-      if (isGlobal && regex.lastIndex === lastIndex) break;
-
-      const captures: GroupCapture[] = [];
-      const namedGroups: GroupCapture[] = [];
-
-      for (let i = 1; i < m.length; i++) {
-        const val = m[i];
-        if (val !== undefined) {
-          captures.push({
-            name: `$${i}`,
-            value: val,
-            start: m.index + (i === 1 ? 0 : 0),
-            end: m.index + (i === 1 ? 0 : 0),
-          });
-        }
-      }
-
-      if (m.groups) {
-        for (const [groupName, groupValue] of Object.entries(m.groups)) {
-          if (groupValue !== undefined) {
-            namedGroups.push({
-              name: groupName,
-              value: groupValue,
-              start: 0,
-              end: 0,
-            });
-          }
-        }
-      }
-
-      results.push({
-        match: m[0],
-        index: m.index,
-        length: m[0].length,
-        captures,
-        namedGroups,
-      });
-
-      lastIndex = regex.lastIndex;
-      if (!isGlobal) break;
-      if (m[0].length === 0) regex.lastIndex++;
-    }
-
-    return { matches: results, error: null };
-  } catch (e: unknown) {
-    return { matches: [], error: (e as Error).message };
-  }
-}
 
 export default function RegexTester() {
   const [pattern, setPattern] = useState("");
@@ -139,13 +31,14 @@ export default function RegexTester() {
         replacedText: "",
       };
 
-    let flags = "d";
-    if (globalFlag) flags += "g";
-    if (ignoreCase) flags += "i";
-    if (multiline) flags += "m";
-    if (dotAll) flags += "s";
-    if (unicodeFlag) flags += "u";
-    if (unicodeSetsFlag) flags += "v";
+    const flags = buildFlags({
+      global: globalFlag,
+      ignoreCase,
+      multiline,
+      dotAll,
+      unicode: unicodeFlag,
+      unicodeSets: unicodeSetsFlag,
+    });
 
     const { matches: results, error: err } = matchRegex(
       pattern,
@@ -163,34 +56,8 @@ export default function RegexTester() {
       };
     }
 
-    let html = testText;
-    if (results.length > 0) {
-      const parts: { text: string; isMatch: boolean }[] = [];
-      let lastIdx = 0;
-      const sorted = [...results].sort((a, b) => a.index - b.index);
-      for (const r of sorted) {
-        if (r.index > lastIdx) {
-          parts.push({
-            text: testText.slice(lastIdx, r.index),
-            isMatch: false,
-          });
-        }
-        parts.push({ text: r.match, isMatch: true });
-        lastIdx = r.index + r.length;
-      }
-      if (lastIdx < testText.length) {
-        parts.push({ text: testText.slice(lastIdx), isMatch: false });
-      }
-      const esc = (s: string) =>
-        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      html = parts
-        .map((p) =>
-          p.isMatch
-            ? `<mark style="background:var(--mark-bg);padding:0 2px;border-radius:2px">${esc(p.text)}</mark>`
-            : esc(p.text),
-        )
-        .join("");
-    }
+    const html =
+      results.length > 0 ? buildHighlightHtml(testText, results) : testText;
 
     let replaced = "";
     if (replaceText && results.length > 0) {
@@ -237,7 +104,7 @@ export default function RegexTester() {
     { title: "命名组", dataIndex: "namedGroups", key: "namedGroups" },
   ];
 
-  const matchRows = matches.map((m, idx) => ({
+  const matchRows = matches.map((m: MatchResult, idx: number) => ({
     key: idx,
     idx: idx + 1,
     index: m.index,

@@ -8,6 +8,7 @@ import { useProviderStore } from "../stores/providerStore";
 import { useThemeStore } from "../stores/themeStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { createLogger } from "./logger";
+import { applyLocaleChange } from "@/i18n/localeApplier";
 
 const log = createLogger("setting-events");
 
@@ -61,7 +62,6 @@ export function subscribeSettingEvents(): () => void {
         if (group === "app") {
           void store.loadAppConf().then(async () => {
             if ("language" in patch) {
-              const { applyLocaleChange } = await import("@/main");
               const lang =
                 useSettingsStore.getState().appConf?.language ?? "zh-CN";
               await applyLocaleChange(lang);

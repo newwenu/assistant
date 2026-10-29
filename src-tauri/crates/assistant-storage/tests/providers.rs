@@ -1,23 +1,7 @@
-use assistant_storage::db;
-use assistant_storage::providers::{self, ProviderRow};
+mod common;
 
-fn init_db() -> rusqlite::Connection {
-    let dir = tempfile::tempdir().unwrap();
-    db::init_db(&dir.path().join("test.db")).unwrap()
-}
-
-fn provider(id: &str, ts: i64) -> ProviderRow {
-    ProviderRow {
-        id: id.to_string(),
-        name: format!("provider-{}", id),
-        type_: "openai".to_string(),
-        base_url: "https://api.openai.com/v1".to_string(),
-        api_key_encrypted: String::new(),
-        models_json: "[]".to_string(),
-        default_model: "gpt-4".to_string(),
-        updated_at: ts,
-    }
-}
+use assistant_storage::providers;
+use common::{init_db, provider};
 
 #[test]
 fn delete_provider_nullifies_all_referencing_conversations() {

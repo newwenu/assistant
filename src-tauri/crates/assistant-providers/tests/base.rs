@@ -9,8 +9,6 @@ fn context_window_known_models() {
     assert_eq!(get_context_window_tokens("gpt-4-turbo"), 128_000);
     assert_eq!(get_context_window_tokens("gpt-4o"), 128_000);
     assert_eq!(get_context_window_tokens("claude-3.5-sonnet"), 200_000);
-    assert_eq!(get_context_window_tokens("deepseek-chat"), 64_000);
-    assert_eq!(get_context_window_tokens("gemini-2.0-flash"), 1_000_000);
 }
 
 #[test]

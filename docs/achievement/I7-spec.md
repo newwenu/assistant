@@ -251,8 +251,7 @@ Rust `AppConf` + TS `AppConf` interface 同步新增。
 | i18n key | zh-CN | en-US |
 |----------|-------|-------|
 | `chat.compact.banner_title` | 对话已达上下文上限 | Conversation reached context limit |
-| `chat.compact.copy_summary` | 复制摘要 | Copy summary |
-| `chat.compact.new_conversation` | 新建对话 | New conversation |
+| `chat.compact.continue_conversation` | 继续对话 | Continue conversation |
 | `chat.compact.unlock` | 解锁对话 | Unlock conversation |
 | `chat.compact.unlock_confirm` | 解锁后对话可能再次达到上限，是否继续？ | Unlocking may cause the conversation to reach the limit again. Continue? |
 | `chat.compact.generate_summary` | 生成交接摘要 | Generate handoff summary |
@@ -265,7 +264,7 @@ Rust `AppConf` + TS `AppConf` interface 同步新增。
 
 | i18n key | zh-CN | en-US |
 |----------|-------|-------|
-| `chat.input.placeholder_full` | 对话已终止，请生成交接摘要或新建对话 | Conversation terminated — generate a handoff summary or start a new chat |
+| `chat.input.placeholder_full` | 对话已终止，请继续对话或解锁 | Conversation terminated — continue conversation or unlock |
 
 ---
 
@@ -274,10 +273,10 @@ Rust `AppConf` + TS `AppConf` interface 同步新增。
 ### 7.1 对话满横幅
 
 对话满时在输入区上方显示横幅，包含：
-- [新建对话] 按钮
+- [继续对话] 按钮：自动新建对话并将摘要注入首条 user 消息，用户直接在续接对话中输入
 - [解锁对话] 按钮（见 §7.6）
 
-摘要内容通过消息流中 `role: compact_summary` 的消息展示（MessageBubble 渲染为交接摘要样式），用户可直接查看和复制。
+摘要内容通过消息流中 `role: compact_summary` 的消息展示（MessageBubble 渲染为交接摘要样式），用户可直接查看。
 
 ### 7.2 摘要生成失败横幅
 

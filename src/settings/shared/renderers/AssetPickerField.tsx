@@ -1,10 +1,11 @@
 import { useState, useCallback } from "react";
-import { Button, Space, Input, message } from "antd";
+import { Button, Space, Input } from "antd";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import { settingService } from "../../../services/settingService";
 import type { SettingFieldProps } from "../../core/types/fieldSchema";
+import { useSettingMessage } from "../useSettingMessage";
 
 export function AssetPickerField({
   schema,
@@ -12,9 +13,9 @@ export function AssetPickerField({
   onChange,
 }: SettingFieldProps) {
   const { t } = useTranslation();
+  const msg = useSettingMessage();
   const config = schema.assetConfig;
   const [urlInput, setUrlInput] = useState<string>((value as string) ?? "");
-  const [messageApi, contextHolder] = message.useMessage();
 
   const handleFilePick = useCallback(async () => {
     if (!config) return;
@@ -31,19 +32,13 @@ export function AssetPickerField({
       const assetUrl = `${convertFileSrc(result.installedPath)}?v=${result.version}`;
       onChange(assetUrl);
       setUrlInput(assetUrl);
-      messageApi.success(
-        t("settings.asset_picker.installed", {
-          size: (result.bytes / 1024).toFixed(1),
-        }),
-      );
+      msg.success("settings.asset_picker.installed", {
+        size: (result.bytes / 1024).toFixed(1),
+      });
     } catch (e) {
-      messageApi.error(
-        t("settings.asset_picker.install_failed", {
-          error: e instanceof Error ? e.message : String(e),
-        }),
-      );
+      msg.error("settings.asset_picker.install_failed", e);
     }
-  }, [config, onChange, messageApi, t]);
+  }, [config, onChange, msg]);
 
   const handleReset = useCallback(async () => {
     if (!config) return;
@@ -51,15 +46,11 @@ export function AssetPickerField({
       await settingService.uninstallMascotAsset(config.assetType);
       onChange(null);
       setUrlInput("");
-      messageApi.success(t("settings.asset_picker.reset_success"));
+      msg.success("settings.asset_picker.reset_success");
     } catch (e) {
-      messageApi.error(
-        t("settings.asset_picker.reset_failed", {
-          error: e instanceof Error ? e.message : String(e),
-        }),
-      );
+      msg.error("settings.asset_picker.reset_failed", e);
     }
-  }, [config, onChange, messageApi, t]);
+  }, [config, onChange, msg]);
 
   const handleUrlSubmit = useCallback(() => {
     const trimmed = urlInput.trim();
@@ -71,7 +62,6 @@ export function AssetPickerField({
 
   return (
     <>
-      {contextHolder}
       <Space orientation="vertical" style={{ width: "100%" }}>
         <Space>
           <Button

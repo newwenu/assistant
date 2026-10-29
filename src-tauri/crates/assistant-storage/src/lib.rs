@@ -1,6 +1,9 @@
 pub mod agent_modes;
+pub mod attachment_store;
+pub mod content_codec;
 pub mod conversations;
 pub mod db;
+pub mod error;
 pub mod migrations;
 pub mod providers;
 pub mod tool_favorites;

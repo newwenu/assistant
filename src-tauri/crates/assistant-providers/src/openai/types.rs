@@ -84,6 +84,9 @@ pub(crate) struct ChatUsage {
     pub prompt_tokens_details: Option<ChatPromptTokensDetails>,
     #[serde(default)]
     pub prompt_cache_hit_tokens: Option<u32>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub prompt_cache_miss_tokens: Option<u32>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -98,6 +101,12 @@ pub(crate) struct ModelsResponse {
     pub data: Option<Vec<ModelItem>>,
     #[serde(default)]
     pub models: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub(crate) struct ModelArchitecture {
+    #[serde(default)]
+    pub modality: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -120,6 +129,8 @@ pub(crate) struct ModelItem {
     pub limit: Option<ModelLimit>,
     #[serde(default)]
     pub top_provider: Option<TopProvider>,
+    #[serde(default)]
+    pub architecture: Option<ModelArchitecture>,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -162,5 +173,13 @@ impl ModelItem {
             .or(self.display_name.as_deref())
             .unwrap_or("")
             .to_string()
+    }
+
+    pub(crate) fn resolved_support_vision(&self) -> Option<bool> {
+        self.architecture.as_ref().and_then(|arch| {
+            arch.modality
+                .as_ref()
+                .map(|m| m.to_ascii_lowercase().contains("image"))
+        })
     }
 }

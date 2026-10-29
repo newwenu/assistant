@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { tauriInvoke as invoke } from "./tauriInvoke";
 import type {
   AppConf,
   OrbConf,
@@ -49,9 +49,8 @@ export const settingService = {
   uninstallMascotAsset: (assetType: string): Promise<void> =>
     invoke("uninstall_mascot_asset", { assetType }),
 
-  emitThemeChanged: (resolved: string): Promise<void> =>
-    invoke("emit_theme_changed", { resolved }),
-
   patchConf: (group: string, patch: Record<string, unknown>): Promise<void> =>
     invoke("patch_conf", { group, patch: patchToSnakeCase(patch) }),
+
+  appQuit: (): Promise<void> => invoke("app_quit"),
 };

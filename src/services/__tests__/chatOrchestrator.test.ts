@@ -39,6 +39,7 @@ function createMockDeps(): {
     cancelStreaming: vi.fn(),
     setActiveAttemptId: vi.fn(),
     clearActiveAttemptId: vi.fn(),
+    confirmUserMessage: vi.fn(),
     appendDelta: vi.fn(),
     setReasoningStreaming: vi.fn(),
     appendReasoningDelta: vi.fn(),
@@ -58,6 +59,8 @@ function createMockDeps(): {
     getMessages: vi.fn(() => []),
     getConversations: vi.fn(() => []),
     getSelectedModeId: vi.fn(() => null),
+    getSelectedProviderId: vi.fn(() => "provider-1"),
+    getSelectedModelId: vi.fn(() => "model-1"),
     getPendingBranchPoint: vi.fn(() => null),
     clearPendingBranchPoint: vi.fn(),
   };
@@ -141,8 +144,6 @@ describe("chatOrchestrator", () => {
           promptTokens: 100,
           completionTokens: 50,
           totalTokens: 150,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
           contextWindowTokens: 1000,
         },
       });
@@ -164,8 +165,6 @@ describe("chatOrchestrator", () => {
           promptTokens: 100,
           completionTokens: 50,
           totalTokens: 150,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
           contextWindowTokens: 0,
         },
       });
@@ -173,8 +172,6 @@ describe("chatOrchestrator", () => {
         promptTokens: 100,
         completionTokens: 50,
         totalTokens: 150,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
         contextWindowTokens: 0,
       });
     });
@@ -199,8 +196,6 @@ describe("chatOrchestrator", () => {
           promptTokens: 100,
           completionTokens: 50,
           totalTokens: 150,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
           contextWindowTokens: 1000,
         },
       });
@@ -249,8 +244,6 @@ describe("chatOrchestrator", () => {
           promptTokens: 200,
           completionTokens: 80,
           totalTokens: 280,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
           contextWindowTokens: 2000,
         },
       });

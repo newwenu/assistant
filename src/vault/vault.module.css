@@ -1,0 +1,296 @@
+.appContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.appHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--ant-color-border);
+}
+
+.headerTitle {
+  font-size: 15px;
+}
+
+.appBody {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.unlockContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 32px;
+}
+
+.lockIcon {
+  font-size: 48px;
+  color: var(--ant-color-primary);
+  margin-bottom: 16px;
+}
+
+.unlockCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 400px;
+  padding: 32px 28px 20px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 16px;
+  background: var(--ant-color-bg-container);
+  box-shadow: 0 16px 40px -20px rgba(0, 0, 0, 0.35);
+}
+
+.unlockIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 16px;
+  border-radius: 50%;
+  background: var(--ant-color-primary-bg);
+}
+
+.unlockIcon {
+  font-size: 26px;
+  color: var(--ant-color-primary);
+}
+
+.unlockSubtitle {
+  margin-top: 4px;
+  margin-bottom: 24px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.unlockForm {
+  width: 100%;
+  max-width: 360px;
+}
+
+.unlockLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+}
+
+.unlockFooter {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--ant-color-border-secondary);
+}
+
+.errorText {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.listContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.listHeader {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.searchInput {
+  flex: 1;
+}
+
+.categoryBar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.spin {
+  margin: 32px auto;
+}
+
+.emptyWrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.entryList {
+  flex: 1;
+}
+
+.entryItem {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.entryItem:hover {
+  background-color: var(--ant-color-fill-quaternary);
+}
+
+.entryDescription {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.entryUsername {
+  color: var(--ant-color-text-secondary);
+}
+
+.entryUrl {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+}
+
+.entryTags {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.entryTime {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.formContainer {
+  max-width: 600px;
+}
+
+.customFieldRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.detailContainer {
+  max-width: 700px;
+}
+
+.detailHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.syncBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-top: 1px solid var(--ant-color-border);
+  margin-top: 8px;
+}
+
+.syncBarLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.leakWarning {
+  color: var(--ant-color-error);
+}
+
+.syncLastAt {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.totpContainer {
+  display: inline-flex;
+  align-items: center;
+}
+
+.totpCountdownWrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.totpSvg {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.totpArc {
+  transition: stroke-dashoffset 0.3s linear;
+}
+
+.totpCountdownText {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  line-height: 1;
+}
+
+.totpCode {
+  font-size: 20px !important;
+  font-weight: 600;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.totpCodeUrgent {
+  color: var(--ant-color-error) !important;
+}
+
+.totpEditHint {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.totpSecretStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--ant-color-success-bg);
+  border: 1px solid var(--ant-color-success-border);
+}
+
+.totpSecretBadge {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.totpUriSection {
+  width: 100%;
+}
+
+.totpUriInput {
+  font-family: monospace;
+}
+
+.totpSecretSection {
+  width: 100%;
+}

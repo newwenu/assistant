@@ -14,6 +14,8 @@ export interface Message {
   siblingIndex: number;
   siblingCount?: number;
   isPinned?: boolean;
+  providerId?: string | null;
+  modelId?: string;
 }
 
 export interface ToolCall {
@@ -35,7 +37,7 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   isFull: boolean;
-  activeBranchId?: string | null;
+  activeBranchId: string | null;
 }
 
 export interface TokenUsage {
@@ -44,6 +46,7 @@ export interface TokenUsage {
   totalTokens: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+  reasoningTokens?: number;
   contextWindowTokens?: number;
 }
 
@@ -95,6 +98,12 @@ export interface ChatStreamStartPayload {
   messageId: string;
 }
 
+export interface ChatUserMessageConfirmedPayload {
+  conversationId: string;
+  userMessageId: string;
+  userMessageContent: string;
+}
+
 export interface ConversationTerminatedPayload {
   conversationId: string;
   summary: string;
@@ -123,12 +132,13 @@ export interface SiblingInfo {
 
 export enum ChatEvent {
   StreamStart = "chat-stream-start",
+  UserMessageConfirmed = "chat-user-message-confirmed",
   Delta = "chat-delta",
   MessagesChanged = "chat-messages-changed",
   ConversationListChanged = "conversation-list-changed",
-  ConversationTerminated = "conversation_terminated",
-  ConversationCompactFailed = "conversation_compact_failed",
-  ConversationUnlocked = "conversation_unlocked",
+  ConversationTerminated = "conversation-terminated",
+  ConversationCompactFailed = "conversation-compact-failed",
+  ConversationUnlocked = "conversation-unlocked",
 }
 
 export type MessageChangeKind =

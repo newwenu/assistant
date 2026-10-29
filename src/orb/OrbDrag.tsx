@@ -23,6 +23,24 @@ export function useOrbDrag() {
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
   const hasDraggedRef = useRef(false);
   const dragStopRef = useRef<(() => void) | null>(null);
+  const snapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelSnap = useCallback(() => {
+    if (snapTimeoutRef.current !== null) {
+      clearTimeout(snapTimeoutRef.current);
+      snapTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleSnap = useCallback(() => {
+    cancelSnap();
+    snapTimeoutRef.current = setTimeout(() => {
+      snapTimeoutRef.current = null;
+      orbService
+        .snapOrbToEdge()
+        .catch((e) => log.warn("OrbDrag operation failed", e));
+    }, ORB_SNAP_DELAY_MS);
+  }, [cancelSnap]);
 
   const startWindowsDrag = useCallback(() => {
     const appWindow = getCurrentWindow();
@@ -81,6 +99,7 @@ export function useOrbDrag() {
       if (!hasDraggedRef.current) {
         hasDraggedRef.current = true;
         setDragging(true);
+        cancelSnap();
 
         const orbConf = useSettingsStore.getState().orbConf;
         if (orbConf?.clickThrough) {
@@ -99,11 +118,7 @@ export function useOrbDrag() {
           void appWindow.startDragging().finally(() => {
             setDragging(false);
             hasDraggedRef.current = false;
-            setTimeout(() => {
-              orbService
-                .snapOrbToEdge()
-                .catch((e) => log.warn("OrbDrag operation failed", e));
-            }, ORB_SNAP_DELAY_MS);
+            scheduleSnap();
           });
           return;
         }
@@ -113,15 +128,11 @@ export function useOrbDrag() {
           .finally(() => {
             setDragging(false);
             hasDraggedRef.current = false;
-            setTimeout(() => {
-              orbService
-                .snapOrbToEdge()
-                .catch((e) => log.warn("OrbDrag operation failed", e));
-            }, ORB_SNAP_DELAY_MS);
+            scheduleSnap();
           });
       }
     },
-    [setDragging, startWindowsDrag],
+    [setDragging, startWindowsDrag, scheduleSnap, cancelSnap],
   );
 
   const onPointerUp = useCallback(
@@ -145,11 +156,7 @@ export function useOrbDrag() {
               .catch((e) => log.warn("OrbDrag operation failed", e));
           }
         }
-        setTimeout(() => {
-          orbService
-            .snapOrbToEdge()
-            .catch((e) => log.warn("OrbDrag operation failed", e));
-        }, ORB_SNAP_DELAY_MS);
+        scheduleSnap();
       }
 
       try {
@@ -158,7 +165,7 @@ export function useOrbDrag() {
         // ignore
       }
     },
-    [setDragging],
+    [setDragging, scheduleSnap],
   );
 
   return { onPointerDown, onPointerMove, onPointerUp, hasDraggedRef };

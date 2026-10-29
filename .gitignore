@@ -28,6 +28,9 @@ for_generate/
 .trae/
 .vscode/
 
+# 本机 Cargo 环境配置（含 OPENSSL_DIR 等机器级绝对路径）
+src-tauri/.cargo/config.toml
+
 # 默认渲染为 SVG，不再随仓库分发的大型动画资产（本地按需放置）
 public/mascot.gif
 public/mascot.riv

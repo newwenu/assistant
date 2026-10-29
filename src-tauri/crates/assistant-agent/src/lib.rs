@@ -1,4 +1,10 @@
+pub mod chat_request;
 pub mod chat_runtime;
 pub mod chat_tasks;
 pub mod compaction;
+pub mod error;
+pub mod multimodal;
+pub mod normalization;
 pub mod prompt_builder;
+pub mod provider_config;
+pub mod request_projection;

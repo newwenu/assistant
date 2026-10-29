@@ -37,6 +37,8 @@ fn sample_message_row() -> MessageRow {
         reasoning: None,
         tool_calls_json: None,
         sibling_index: 0,
+        provider_id: None,
+        model_id: None,
     }
 }
 
@@ -45,8 +47,9 @@ fn sample_token_usage() -> TokenUsage {
         prompt_tokens: 10,
         completion_tokens: 20,
         total_tokens: 30,
-        cache_read_tokens: 0,
-        cache_write_tokens: 0,
+        cache_read_tokens: None,
+        cache_write_tokens: None,
+        reasoning_tokens: None,
         context_window_tokens: 0,
     }
 }
@@ -57,6 +60,9 @@ fn sample_error_payload() -> ProviderErrorPayload {
         message: "rate limited".into(),
         retry_after_ms: Some(1000),
         retryable: true,
+        http_status: None,
+        provider: None,
+        provider_code: None,
     }
 }
 
@@ -66,6 +72,7 @@ fn sample_retry_notification() -> RetryNotification {
         max_attempts: 3,
         delay_ms: 500,
         message: "retrying".into(),
+        error_code: None,
     }
 }
 
@@ -300,16 +307,27 @@ fn token_usage_dto_serde_default_fields() {
     assert_eq!(usage.completion_tokens, 10);
     assert_eq!(usage.total_tokens, 15);
     assert_eq!(
-        usage.cache_read_tokens, 0,
-        "cacheReadTokens should default to 0"
+        usage.cache_read_tokens, None,
+        "cacheReadTokens should default to None (provider did not report cache stats)"
     );
     assert_eq!(
-        usage.cache_write_tokens, 0,
-        "cacheWriteTokens should default to 0"
+        usage.cache_write_tokens, None,
+        "cacheWriteTokens should default to None (provider did not report cache stats)"
     );
     assert_eq!(
         usage.context_window_tokens, 0,
         "contextWindowTokens should default to 0"
+    );
+    let serialized = serde_json::to_string(&usage).unwrap();
+    assert!(
+        !serialized.contains("cacheReadTokens"),
+        "cacheReadTokens must be omitted when not reported: {}",
+        serialized
+    );
+    assert!(
+        !serialized.contains("cacheWriteTokens"),
+        "cacheWriteTokens must be omitted when not reported: {}",
+        serialized
     );
 }
 

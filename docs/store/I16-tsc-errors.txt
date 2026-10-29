@@ -1,8 +1,0 @@
-src/chat/core/__tests__/protocolContract.test.ts(14,8): error TS2306: File 'G:/codeversion/assistant/src/chat/core/protocol.ts' is not a module.
-src/chat/core/protocolAdapter.ts(17,8): error TS2306: File 'G:/codeversion/assistant/src/chat/core/protocol.ts' is not a module.
-src/chat/message/MessageBubble.tsx(6,43): error TS2306: File 'G:/codeversion/assistant/src/chat/core/protocol.ts' is not a module.
-src/chat/message/MessageList.tsx(6,43): error TS2306: File 'G:/codeversion/assistant/src/chat/core/protocol.ts' is not a module.
-src/services/chatDeltaEvents.ts(9,8): error TS2306: File 'G:/codeversion/assistant/src/chat/core/protocol.ts' is not a module.
-src/services/chatOrchestrator.ts(12,8): error TS2306: File 'G:/codeversion/assistant/src/chat/core/protocol.ts' is not a module.
-src/services/historyService.ts(3,38): error TS2306: File 'G:/codeversion/assistant/src/chat/core/protocol.ts' is not a module.
-src/stores/chatStore.ts(10,43): error TS2306: File 'G:/codeversion/assistant/src/chat/core/protocol.ts' is not a module.

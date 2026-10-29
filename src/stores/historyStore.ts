@@ -16,6 +16,9 @@ interface HistoryState {
   loadingMore: boolean;
   loadingMessages: boolean;
   collapsedGroups: Set<string>;
+  multiSelectMode: boolean;
+  selectedConversationIds: Set<string>;
+  focusedIndex: number;
 
   selectConversation: (id: string) => Promise<void>;
   clearSelection: () => void;
@@ -23,6 +26,12 @@ interface HistoryState {
   loadMoreMessages: () => Promise<void>;
   toggleGroup: (key: string) => void;
   loadConversations: () => Promise<void>;
+  enterMultiSelect: () => void;
+  exitMultiSelect: () => void;
+  toggleConversationSelection: (id: string) => void;
+  selectAllConversations: (ids: string[]) => void;
+  clearConversationSelections: () => void;
+  setFocusedIndex: (index: number) => void;
 }
 
 export const useHistoryStore = create<HistoryState>()((set, get) => ({
@@ -33,6 +42,9 @@ export const useHistoryStore = create<HistoryState>()((set, get) => ({
   loadingMore: false,
   loadingMessages: false,
   collapsedGroups: new Set(),
+  multiSelectMode: false,
+  selectedConversationIds: new Set(),
+  focusedIndex: -1,
 
   selectConversation: async (id: string) => {
     set({ selectedId: id, loadingMessages: true, messages: [] });
@@ -129,5 +141,34 @@ export const useHistoryStore = create<HistoryState>()((set, get) => ({
     } catch (e) {
       log.error("Failed to load conversations", e);
     }
+  },
+
+  enterMultiSelect: () => {
+    set({ multiSelectMode: true, selectedConversationIds: new Set() });
+  },
+
+  exitMultiSelect: () => {
+    set({ multiSelectMode: false, selectedConversationIds: new Set() });
+  },
+
+  toggleConversationSelection: (id: string) => {
+    set((s) => {
+      const next = new Set(s.selectedConversationIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { selectedConversationIds: next };
+    });
+  },
+
+  selectAllConversations: (ids: string[]) => {
+    set({ selectedConversationIds: new Set(ids) });
+  },
+
+  clearConversationSelections: () => {
+    set({ selectedConversationIds: new Set() });
+  },
+
+  setFocusedIndex: (index: number) => {
+    set({ focusedIndex: index });
   },
 }));

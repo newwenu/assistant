@@ -1,15 +1,18 @@
 use crate::base::{resolve_context_window, ModelConfig, ProviderError};
 use crate::client::error::classify_http_error;
 use crate::client::quirks::wants_bearer_auth;
+use crate::vision::{input_modalities_for, resolve_support_vision};
 
 use super::types::AnthropicModelsResponse;
 use super::AnthropicAdapter;
 
-pub(crate) fn list_models(adapter: &AnthropicAdapter) -> Result<Vec<ModelConfig>, ProviderError> {
+pub(crate) fn list_models(
+    adapter: &AnthropicAdapter,
+    api_key: &str,
+) -> Result<Vec<ModelConfig>, ProviderError> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| ProviderError::RequestFailed(format!("Create runtime: {}", e)))?;
     rt.block_on(async {
-        let api_key = adapter.decrypt_api_key()?;
         let url = resolve_models_url(adapter.base_url());
 
         let mut req_builder = adapter.client.get(&url);
@@ -21,7 +24,7 @@ pub(crate) fn list_models(adapter: &AnthropicAdapter) -> Result<Vec<ModelConfig>
             }
         } else {
             req_builder = req_builder
-                .header("x-api-key", &api_key)
+                .header("x-api-key", api_key)
                 .header("anthropic-version", "2023-06-01");
         }
 
@@ -56,12 +59,15 @@ pub(crate) fn list_models(adapter: &AnthropicAdapter) -> Result<Vec<ModelConfig>
             .data
             .into_iter()
             .map(|m| {
-                let ctx = resolve_context_window(&m.id, m.resolved_context_window());
+                let ctx = resolve_context_window(&m.id, None, m.resolved_context_window());
+                let input_modalities = input_modalities_for(&m.id);
                 ModelConfig {
                     id: m.id.clone(),
-                    name: m.display_name.unwrap_or(m.id),
+                    name: m.display_name.unwrap_or(m.id.clone()),
                     owned_by: "anthropic".to_string(),
                     context_window: ctx,
+                    support_vision: resolve_support_vision(&m.id, None),
+                    input_modalities,
                 }
             })
             .collect();

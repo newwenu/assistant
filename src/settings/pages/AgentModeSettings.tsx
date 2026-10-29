@@ -1,31 +1,25 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Button,
-  Typography,
-  Modal,
-  Drawer,
-  Form,
-  Tag,
-  Space,
-  message,
-} from "antd";
+import { Button, Typography, Drawer, Form, Tag, Space, App } from "antd";
 import { EditOutlined, DeleteOutlined, UndoOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
 import { useAgentModeStore } from "@/stores/agentModeStore";
 import type { AgentMode } from "@/settings/agentMode/types";
 import type { FieldSchema } from "../core/types/fieldSchema";
-import { SettingField } from "../shared/layout/SettingField";
+import { SettingField } from "../shared/renderers/SettingField";
+import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
 import {
-  EntityListPageShell,
-  type EntityListSectionConfig,
-} from "../shared/layout/EntityListPageShell";
+  EntityListContent,
+  ListHeaderActions,
+  type SectionConfig,
+} from "../shared/EntityListContent";
 import {
   getAllAgentKinds,
   getAgentKindLabelKey,
   getAgentKindColor,
 } from "../core/agentKind/agentModeRegistry";
 import "../core/agentKind/agentModeDefinitions";
+import { useSettingMessage } from "../shared/useSettingMessage";
 
 const REASONING_EFFORT_OPTIONS = [
   { value: "low", label: "Low" },
@@ -63,8 +57,8 @@ export const AgentModeSettings: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingMode, setEditingMode] = useState<AgentMode | null>(null);
   const [form] = Form.useForm<ModeFormData>();
-  const [messageApi, messageContextHolder] = message.useMessage();
-  const [modal, modalContextHolder] = Modal.useModal();
+  const msg = useSettingMessage();
+  const { modal } = App.useApp();
   const [searchQuery, setSearchQuery] = useState("");
 
   const formValues = Form.useWatch([], form);
@@ -207,13 +201,9 @@ export const AgentModeSettings: React.FC = () => {
       onOk: async () => {
         try {
           await store.deleteMode(id);
-          messageApi.success(t("settings.agent_mode.deleted"));
+          msg.success("settings.agent_mode.deleted");
         } catch (e) {
-          messageApi.error(
-            t("settings.agent_mode.delete_failed", {
-              error: e instanceof Error ? e.message : String(e),
-            }),
-          );
+          msg.error("settings.agent_mode.delete_failed", e);
         }
       },
     });
@@ -228,13 +218,9 @@ export const AgentModeSettings: React.FC = () => {
       onOk: async () => {
         try {
           await store.resetBuiltinMode(mode.id);
-          messageApi.success(t("settings.agent_mode.reset_success"));
+          msg.success("settings.agent_mode.reset_success");
         } catch (e) {
-          messageApi.error(
-            t("settings.agent_mode.reset_failed", {
-              error: e instanceof Error ? e.message : String(e),
-            }),
-          );
+          msg.error("settings.agent_mode.reset_failed", e);
         }
       },
     });
@@ -262,19 +248,15 @@ export const AgentModeSettings: React.FC = () => {
           isBuiltin: false,
         });
       }
-      messageApi.success(
+      msg.success(
         editingMode
-          ? t("settings.agent_mode.saved")
-          : t("settings.agent_mode.created"),
+          ? "settings.agent_mode.saved"
+          : "settings.agent_mode.created",
       );
       setDrawerOpen(false);
       setEditingMode(null);
     } catch (e) {
-      messageApi.error(
-        t("settings.agent_mode.save_failed", {
-          error: e instanceof Error ? e.message : String(e),
-        }),
-      );
+      msg.error("settings.agent_mode.save_failed", e);
     }
   };
 
@@ -341,7 +323,7 @@ export const AgentModeSettings: React.FC = () => {
     </div>
   );
 
-  const sections: EntityListSectionConfig<AgentMode>[] = [
+  const sections: SectionConfig<AgentMode>[] = [
     {
       label: t("settings.agent_mode.section.builtin"),
       items: filteredBuiltin,
@@ -356,18 +338,22 @@ export const AgentModeSettings: React.FC = () => {
 
   return (
     <>
-      {messageContextHolder}
-      {modalContextHolder}
-      <EntityListPageShell<AgentMode>
-        title={t("settings.agent_mode.title")}
-        items={store.modes}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        addLabel={t("settings.agent_mode.add")}
-        onAdd={handleAdd}
-        emptyDescription={t("settings.agent_mode.empty")}
-        sections={sections}
+      <SettingsPageShell
+        wide
+        extra={
+          <ListHeaderActions
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            addLabel={t("settings.agent_mode.add")}
+            onAdd={handleAdd}
+          />
+        }
       >
+        <EntityListContent
+          items={store.modes}
+          sections={sections}
+          emptyDescription={t("settings.agent_mode.empty")}
+        />
         <Drawer
           title={
             editingMode
@@ -435,7 +421,7 @@ export const AgentModeSettings: React.FC = () => {
             ))}
           </Form>
         </Drawer>
-      </EntityListPageShell>
+      </SettingsPageShell>
     </>
   );
 };

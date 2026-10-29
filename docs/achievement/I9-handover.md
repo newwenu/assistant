@@ -141,4 +141,4 @@ SSE chunk → EventSource → into_unified_responses() → Vec<UnifiedResponse>
 
 - 规格：`docs/store/I9-provider-multi-api-spec.md`（§6 依赖 + §7 差距已更新）
 - 任务：`docs/store/I9-provider-multi-api-tasklist.md`（A1-A4 + B1-B3 + D1-D3 已勾选 + 依赖/差距已追加）
-- 参考：`references/OpenBitFun/src/crates/`
+- 参考：OpenBitFun `src/crates/`

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { tauriInvoke as invoke } from "./tauriInvoke";
 import type {
   Conversation,
   ConversationDetail,
@@ -27,17 +27,17 @@ export const chatService = {
     limit: number,
     beforeTimestamp: number | null,
   ): Promise<ConversationDetail | null> =>
-    invoke<ConversationDetail | null>("get_conversation_paginated", {
+    invoke<ConversationDetail | null>("get_conversation", {
       id,
-      limit,
-      beforeTimestamp,
+      opts: { mode: "paginated", limit, beforeTimestamp },
     }).then((r) => r ?? null),
 
   getConversationAllMessages: (
     id: string,
   ): Promise<ConversationDetail | null> =>
-    invoke<ConversationDetail | null>("get_conversation_all_messages", {
+    invoke<ConversationDetail | null>("get_conversation", {
       id,
+      opts: { mode: "all" },
     }).then((r) => r ?? null),
 
   getConversationTokenUsage: (
@@ -52,29 +52,47 @@ export const chatService = {
   deleteConversation: (id: string): Promise<void> =>
     invoke("delete_conversation", { id }),
 
+  patchConversation: (
+    id: string,
+    patch: {
+      title?: string;
+      titleSource?: string;
+      modelId?: string;
+      providerId?: string;
+    },
+  ): Promise<void> => invoke("patch_conversation", { id, patch }),
+
   renameConversation: (
     id: string,
     title: string,
     titleSource: string,
-  ): Promise<void> => invoke("rename_conversation", { id, title, titleSource }),
+  ): Promise<void> => chatService.patchConversation(id, { title, titleSource }),
 
   updateConversationModel: (id: string, modelId: string): Promise<void> =>
-    invoke("update_conversation_model", { id, modelId }),
+    chatService.patchConversation(id, { modelId }),
 
-  updateConversationProvider: (id: string, providerId: string): Promise<void> =>
-    invoke("update_conversation_provider", { id, providerId }),
+  updateConversationProviderAndModel: (
+    id: string,
+    providerId: string,
+    modelId: string,
+  ): Promise<void> =>
+    chatService.patchConversation(id, { providerId, modelId }),
 
   sendChatMessage: (
     conversationId: string,
     content: string,
-    modeId?: string | null,
-    branchPointMessageId?: string | null,
+    modeId: string | null | undefined,
+    branchPointMessageId: string | null | undefined,
+    providerId: string,
+    modelId: string,
   ): Promise<void> =>
     invoke("send_chat_message", {
       conversationId,
       content,
       modeId,
       branchPointMessageId,
+      providerId,
+      modelId,
     }),
 
   cancelChat: (conversationId: string): Promise<void> =>

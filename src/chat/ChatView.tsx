@@ -3,6 +3,7 @@ import { Button, Modal, Typography, Progress, Tooltip } from "antd";
 import {
   PlusOutlined,
   SettingOutlined,
+  PaperClipOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
@@ -13,7 +14,7 @@ import { useChatStreamStore } from "../stores/chatStreamStore";
 import {
   CONTEXT_WARN_THRESHOLD,
   CONTEXT_DANGER_THRESHOLD,
-} from "../stores/chatStore";
+} from "../config/constants";
 import { useProviderStore } from "../stores/providerStore";
 import { MessageList } from "./message/MessageList";
 import { MessageInput } from "./message/MessageInput";
@@ -23,9 +24,12 @@ import { ProviderSelector } from "./selectors/ProviderSelector";
 import { CompactBanner } from "./compact/CompactBanner";
 import { CompactErrorBanner } from "./compact/CompactErrorBanner";
 import { useAgentModeStore } from "../stores/agentModeStore";
+import { useAttachmentStore } from "../stores/attachmentStore";
+import { AttachmentPreview } from "./message/AttachmentPreview";
 import { ForkDialog } from "./blocks/ForkDialog";
 import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
 import { createLogger } from "@/services/logger";
+import { useNativeFileAttach } from "../hooks/useNativeFileAttach";
 
 const log = createLogger("ChatView");
 
@@ -73,21 +77,51 @@ function ContextBar({
   );
 }
 
+const AttachmentPreviewBar: React.FC = () => {
+  const attachments = useAttachmentStore((s) => s.attachments);
+  const removeAttachment = useAttachmentStore((s) => s.removeAttachment);
+  return (
+    <AttachmentPreview attachments={attachments} onRemove={removeAttachment} />
+  );
+};
+
 export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
   const chat = useChatStore();
   const stream = useChatStreamStore();
   const provider = useProviderStore();
   const [modal, modalContextHolder] = Modal.useModal();
   const { t } = useTranslation();
-  const [currentModelId, setCurrentModelId] = useState("");
-  const [currentProviderId, setCurrentProviderId] = useState<string | null>(
-    null,
+  const currentProviderId = useChatStore((s) => s.selectedProviderId);
+  const currentModelId = useChatStore((s) => s.selectedModelId);
+  const setSelectedProviderModel = useChatStore(
+    (s) => s.setSelectedProviderModel,
   );
   const [forkTarget, setForkTarget] = useState<string | null>(null);
+  const setSupportVision = useAttachmentStore((s) => s.setSupportVision);
+
+  const supportVision = (() => {
+    const p = provider.providers.find((pr) => pr.id === currentProviderId);
+    const model = p?.models.find((m) => m.id === currentModelId);
+    // inputModalities 为空视为存量数据，回退 supportVision，避免隐藏原有图片入口
+    const modalities = model?.inputModalities;
+    if (modalities && modalities.length > 0) {
+      return modalities.includes("image");
+    }
+    return model?.supportVision ?? false;
+  })();
 
   useEffect(() => {
-    void useProviderStore.getState().loadProviders();
-    void useChatStore.getState().loadConversations();
+    setSupportVision(supportVision);
+  }, [supportVision, setSupportVision]);
+
+  const { handleFileSelect } = useNativeFileAttach(supportVision);
+
+  useEffect(() => {
+    void useProviderStore
+      .getState()
+      .loadProviders()
+      .then(() => useChatStore.getState().loadConversations())
+      .catch(() => useChatStore.getState().loadConversations());
   }, []);
 
   const resolveProviderModel = useCallback(
@@ -123,25 +157,29 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       );
       if (conv) {
         const resolved = resolveProviderModel(conv.providerId, conv.modelId);
-        setCurrentProviderId(resolved.providerId);
-        setCurrentModelId(resolved.modelId);
+        setSelectedProviderModel(resolved.providerId, resolved.modelId);
       }
     }
-  }, [chat.currentConversationId, chat.conversations, resolveProviderModel]);
+  }, [
+    chat.currentConversationId,
+    chat.conversations,
+    resolveProviderModel,
+    setSelectedProviderModel,
+  ]);
 
   useEffect(() => {
     if (!currentProviderId) return;
     const exists = provider.providers.some((p) => p.id === currentProviderId);
     if (!exists) {
       const resolved = resolveProviderModel(null, currentModelId);
-      setCurrentProviderId(resolved.providerId);
-      setCurrentModelId(resolved.modelId);
+      setSelectedProviderModel(resolved.providerId, resolved.modelId);
     }
   }, [
     provider.providers,
     currentProviderId,
     currentModelId,
     resolveProviderModel,
+    setSelectedProviderModel,
   ]);
 
   const noProviders = provider.providers.length === 0;
@@ -166,19 +204,21 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
 
   const handleProviderChange = useCallback(
     (newProviderId: string) => {
-      setCurrentProviderId(newProviderId);
       const p = provider.providers.find((pr) => pr.id === newProviderId);
       let modelId = p?.defaultModel || "";
       if (p && p.models.length > 0 && !modelId) modelId = p.models[0].id;
-      setCurrentModelId(modelId);
+      setSelectedProviderModel(newProviderId, modelId);
       if (chat.currentConversationId) {
-        chatService
-          .updateConversationProvider(chat.currentConversationId, newProviderId)
-          .catch((e) => log.error("Failed to update provider", e));
-        void chat.updateModel(chat.currentConversationId, modelId);
+        void chatService
+          .updateConversationProviderAndModel(
+            chat.currentConversationId,
+            newProviderId,
+            modelId,
+          )
+          .catch((e) => log.error("Failed to update provider and model", e));
       }
     },
-    [provider.providers, chat],
+    [provider.providers, chat, setSelectedProviderModel],
   );
 
   const handleNewConversation = useCallback(() => {
@@ -204,12 +244,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
 
   const handleModelChange = useCallback(
     (modelId: string) => {
-      setCurrentModelId(modelId);
+      setSelectedProviderModel(currentProviderId, modelId);
       if (chat.currentConversationId) {
         void chat.updateModel(chat.currentConversationId, modelId);
       }
     },
-    [chat],
+    [chat, currentProviderId, setSelectedProviderModel],
   );
 
   const handleOpenSettings = useCallback(() => {
@@ -225,25 +265,27 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       if (mode?.model) {
         for (const p of provider.providers) {
           if (p.models.some((m) => m.id === mode.model)) {
-            setCurrentProviderId(p.id);
-            setCurrentModelId(mode.model);
+            setSelectedProviderModel(p.id, mode.model);
             if (chat.currentConversationId) {
-              chatService
-                .updateConversationProvider(chat.currentConversationId, p.id)
+              void chatService
+                .updateConversationProviderAndModel(
+                  chat.currentConversationId,
+                  p.id,
+                  mode.model,
+                )
                 .catch((e) =>
-                  log.warn(
-                    "updateConversationProvider failed in modeChange",
+                  log.error(
+                    "Failed to update provider and model in modeChange",
                     e,
                   ),
                 );
-              void chat.updateModel(chat.currentConversationId, mode.model);
             }
             break;
           }
         }
       }
     },
-    [provider.providers, chat],
+    [provider.providers, chat, setSelectedProviderModel],
   );
 
   const handleEditMessage = useCallback(
@@ -401,6 +443,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
               retryStatus={stream.retryStatus}
             />
           )}
+          <AttachmentPreviewBar />
           <div className="chat-tool-bar">
             <ModeSelector variant="chip" onModeChange={handleModeChange} />
             {!chat.isFull && (
@@ -420,6 +463,16 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
                 />
               </Tooltip>
             )}
+            <Button
+              size="small"
+              type="text"
+              icon={<PaperClipOutlined />}
+              onClick={() => {
+                void handleFileSelect();
+              }}
+              disabled={stream.isStreaming}
+              title={t("chat.input.attach")}
+            />
           </div>
           <MessageInput
             onSend={handleSend}

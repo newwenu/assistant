@@ -8,19 +8,11 @@ publish = false
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-log = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true }
-tokio-util = { workspace = true }
 # async-trait 保留：Rust 原生 async fn in trait 不兼容 dyn Trait（无法构建 vtable），见 trait.rs
 async-trait = { workspace = true }
-dashmap = "6"
+dashmap = { workspace = true }
 chardetng = { workspace = true }
 encoding_rs = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = [
-    "Win32_Foundation",
-    "Win32_Security",
-    "Win32_Storage_FileSystem",
-] }
+windows = { workspace = true }

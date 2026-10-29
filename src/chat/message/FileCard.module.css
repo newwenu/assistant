@@ -1,0 +1,40 @@
+.card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  background: var(--color-bg-layout);
+  max-width: 280px;
+  overflow: hidden;
+  transition: background 0.15s;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: var(--color-bg-elevated);
+}
+
+.icon {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-primary);
+  letter-spacing: 0.5px;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.meta {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-text-tertiary, #999);
+}

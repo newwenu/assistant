@@ -1,6 +1,6 @@
 import React from "react";
 import { translateKey } from "@/i18n";
-import { getApiFormatByType } from "@/stores/providerStore";
+import { getApiFormatByType } from "@/settings/core/provider/providerLookup";
 import {
   getProviderFormatLabel,
   getProviderFormatColor,

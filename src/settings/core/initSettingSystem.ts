@@ -3,6 +3,7 @@ import { registerSideEffect } from "./sideEffectRegistry";
 import { AssetPickerField } from "../shared/renderers/AssetPickerField";
 import { KeybindingField } from "../shared/renderers/KeybindingField";
 import { dispatchThemeChanged } from "./settingsDispatcher";
+import { applyLocaleChange } from "@/i18n/localeApplier";
 
 export function initSettingSystem(): void {
   registerSettingType("asset-picker", {
@@ -21,7 +22,6 @@ export function initSettingSystem(): void {
   registerSideEffect("locale_change", async (_prev, next) => {
     const language = next.language as string;
     if (!language) return;
-    const { applyLocaleChange } = await import("@/main");
     await applyLocaleChange(language);
   });
 }
