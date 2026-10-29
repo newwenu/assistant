@@ -292,7 +292,7 @@ winnow 0.7.15
 
 **`machine-uid 0.2 → 0.6`**：0.2 依赖 `winreg 0.6` + `windows-registry`；0.6 改用 `windows-sys 0.61`（Tauri 生态已有）。实测包数 488→487、重复组 22→21，是**唯一值得主动升级的直接依赖**。
 
-API 变化：0.2 的 `machine_uid::get() -> Result<String, Box<dyn Error>>`，0.6 的 `get()` 返回 `Result<String, MachineUidError>`；项目在 [machine_id.rs](file:///g:/codeversion/assistant/src-tauri/crates/assistant-security/src/machine_id.rs) 中只做“取字符串 + 错误映射”，改动约 1 行。**注意该值参与密钥派生，升级后必须验证同一台机器仍返回相同 ID**（尤其 Windows 注册表路径变化），否则会导致已存的加密数据无法解密。
+API 变化：0.2 的 `machine_uid::get() -> Result<String, Box<dyn Error>>`，0.6 的 `get()` 返回 `Result<String, MachineUidError>`；项目在 [machine_id.rs](../../src-tauri/crates/assistant-security/src/machine_id.rs) 中只做“取字符串 + 错误映射”，改动约 1 行。**注意该值参与密钥派生，升级后必须验证同一台机器仍返回相同 ID**（尤其 Windows 注册表路径变化），否则会导致已存的加密数据无法解密。
 
 **`base64 0.23 → 0.22`**：本项目改到 0.22 后，0.23 仍被 `tauri-codegen`、`hyper-util`、`plist`、`serde_with`、`serde-saphyr` 等 6 个上游包使用；反之保持 0.23 也覆盖不到 `reqwest`/`wry`。结论：**不动**。这是对初版文档的修正。
 

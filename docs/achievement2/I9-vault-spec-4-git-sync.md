@@ -89,7 +89,8 @@ fn git(args: &[&str], repo_path: &Path) -> Result<Output> {
     Command::new("git")
         .args(args)
         .current_dir(repo_path)
-        .env("GIT_TERMINAL_PROMPT", "0")  // 禁用交互式认证提示
+        .env("GIT_TERMINAL_PROMPT", "0")  // 禁用交互式终端认证提示
+        .env("GCM_INTERACTIVE", "never") // 禁用 Git Credential Manager 的 GUI 弹窗
         .output()
         .map_err(|e| format!("git spawn failed: {}", e))
         .and_then(|o| {
@@ -100,7 +101,17 @@ fn git(args: &[&str], repo_path: &Path) -> Result<Output> {
 ```
 
 - `GIT_TERMINAL_PROMPT=0`：禁止 git 弹出交互式密码提示，认证失败直接返回错误
+- `GCM_INTERACTIVE=never`：**必需的第二道闸门**。git 的凭据来源有三条独立通道，`GIT_TERMINAL_PROMPT` 只管第一条：
+
+  | 通道 | 由谁触发 | 是否受 `GIT_TERMINAL_PROMPT` 约束 |
+  |------|---------|--------------------------------|
+  | 终端提示（`Username for 'https://...':`） | git 自身 | ✅ 受约束 |
+  | `credential.helper`（Windows 默认 `manager` = Git Credential Manager） | 独立 GUI 进程 | ❌ 不受约束，仍会弹窗 |
+  | `GIT_ASKPASS` / `core.askPass` | 外部 askpass 程序 | ❌ 不受约束，仍会弹窗 |
+
+  只设 `GIT_TERMINAL_PROMPT=0` 时，后台同步遇到需认证的 HTTPS 私有仓库仍会被 GCM 弹窗阻塞。`GCM_INTERACTIVE=never` 让 GCM 只使用已缓存凭据，缓存缺失立即失败 —— 保证同步流程永不弹出任何 GUI
 - 所有 git 调用均通过此函数，统一错误处理和日志
+- 回归用例：`tests/credential_prompt.rs::ls_remote_fails_fast_instead_of_prompting_for_credentials`（本地 401 服务 + `credential.helper=manager`，断言 20s 内失败且无 GUI）；单元测试 `tests/credential_prompt.rs::cmd_git_guards_interaction_and_remote_timeouts` 断言两条环境变量在「连远端 / 不连远端」两种路径下均注入
 
 ### 11.5 Git 仓库结构
 
@@ -137,6 +148,8 @@ fn git(args: &[&str], repo_path: &Path) -> Result<Output> {
   "integrity": "base64(HMAC-SHA256(master_key, version+crypto+emergency))"
 }
 ```
+
+**时间戳单位（契约，勿改）**：`.vault-meta` 的 `exportedAt` 一律为 **unix 秒**（10 位，如 `1729555200`），与本项目内部（DB 列、IPC 返回值、前端 `Date.now()`）统一使用的 **unix 毫秒**不同。原因是该文件是跨设备 / 跨版本的对外持久化格式，且存在「外部工具手改 `.enc`」的威胁模型，单位变更会让新旧设备写出相差 1000 倍的同名字段而不产生任何报错。代码侧对应 `VaultMetaFile::exported_at`（`assistant-sync/src/vault_file/types.rs`），其 doc 注释已标注「unix 秒」。禁止为「统一毫秒」而修改此字段单位；若必须变更，需将 `version` 升版并做读取期归一化。
 
 **完整性保护**：`integrity` 字段使用 HMAC-SHA256(master_key, 其余字段内容) 签名。签名密钥为 master_key，攻击者无法伪造。
 
@@ -612,7 +625,11 @@ ready ──pull 冲突──▶ repoState(Merge)
 
 **HistoryCommit**：`hash` / `timestamp` / `message` / `entryId`（可为 `null`，表示跨条目提交）
 
+> `timestamp` 为 **unix 毫秒**，由 Git `%ct`（unix 秒）在 `git_sync/git.rs` 出口处 ×1000 换算得到。Git 协议本身只存秒精度，故低三位恒为 `000` —— 换算只是量纲对齐，不提升精度。
+
 **EntryPreview**：`title` / `category` / `fields: { key, value, masked }[]` / `revision` / `updatedAt`
+
+> `updatedAt` 为 **unix 毫秒**（来自本地 DB）；历史预览中的提交时间同为毫秒，与本文件其余时间字段一致。
 
 #### 11.22.4 回收站与永久清理
 

@@ -69,6 +69,9 @@
 4. **改密不吊销旧口令**。旧口令 + 仓库历史仍可解出当前 `dek`。真吊销只有 `rotate_dek`。
 5. **单凭据**。本设计只有一个 password slot，不预留 YubiKey / 多口令扩展位（需要时再加 slot，结构已兼容）。
 6. **恢复通道只带得回条目，带不回本机基础设施**（审计、生物识别注册、设置、`revision`、`anchor`）。这不是本设计新引入的损失：v1 的 `unlock_with_recovery_key` 第一件事就是 `if !path.exists() { return Err(NotInitialized) }`（`recovery_key/mod.rs:185-190`），**换机器时 v1 的恢复密钥同样开不了库**，其灾难路径 `vault_disaster_recovery_export` 也只导出条目明文。换言之，在「机器丢了」这个唯一需要恢复的场景里，v1 与 v1.5 能带回的东西**完全相同**。这些数据本身也只在本机有效（`security.db` 不进 git），且用户对其丢失无感（§0.6 T3）。
+7. **不设防 OS 端点攻破**。本设计假设「用户会话与 OS 凭据可信」：同用户代码执行、内核 / 管理员权限、物理接触并攻破 OS 登录、攻破 TPM / keystore，**均不在威胁模型内**。理由：这些能力已足以读取解锁后的进程内存（`master_key` / `bootstrap_key` / `conn` 常驻 `Mutex`），攻破 keystore 不构成新增路径，边际风险为零。因此生物识别**不按「第二因素」定位**，而是「口令的等价替代凭据」。
+   - **推论（必须写入用户可见文案）**：开启生物识别后，保险箱强度 = **min(主密码强度, OS 登录强度)**。Windows Hello 在多数设备上退化为 4~6 位 PIN。这是产品承诺问题，不是密码学问题。
+   - **不属于本条的三件事**（它们不依赖任何攻击发生，属于本设计自身的语义 / 实现问题，见 §7.2 R8/R9 与 §9.2 I12）：`rotate_dek` 不吊销生物识别、生物识别路径无审计、`set_key_unprotected` 的默认回落。
 
 ---
 
@@ -625,7 +628,7 @@ impl RecoverySession {
 | **纸面** | 解密全部条目 | 能（且还能开库） | 能（**不能开库**） |
 | 纸面 + 仓库 | 解全部条目 | 能 | 能 |
 | 本机磁盘 + 口令 | 开库 | 能 | 能 |
-| OS keystore | 生物识别解锁 | 能 | 能 |
+| OS keystore | 生物识别解锁（等价于持有完整凭据：`dek` + `dbKey`） | 能 | 能 |
 | 仓库历史（旧 meta + 旧口令） | 解当前条目 | 能 | **仍能**（C-1，只能靠 `rotate_dek` 吊销） |
 
 按 §0.6 分档，这张表必须读成三句，而不是一句：
@@ -635,6 +638,8 @@ impl RecoverySession {
 3. **T2 上是净收益**。改密 O(n)→O(1)、不再产生 n 文件 commit、随身零文件。代价是每台设备改密后各需一次 `rekey` 或重建（§3.5）。
 
 **结论（据此修正旧表述）**：v1.5 不可替代的价值落在 **T2**——改密更便宜、更不容易让用户丢数据（纸面不会因改密而静默失效）。T1 上是等价交换，T3 上只是附带。**不要把它宣传成「更安全」**：在「旧口令 + 仓库历史」这个威胁上，它确实比 v1 更弱。
+
+本表**只列持有型威胁**，不展开端点攻破（keystore 读取、签名获取、内核 / 管理员权限、物理接触），理由见 §0.5-7。生物识别在本设计中是**口令的等价替代凭据**，不是第二因素；开启后强度 = min(主密码, OS 登录)。
 
 ### 7.2 风险与缓解
 
@@ -647,12 +652,17 @@ impl RecoverySession {
 | R5 | 多设备改密后本机库失配 | §3.5 两条修复路径（旧口令重包 / 重建缓存） |
 | R6 | 生物识别静默过期 | `fingerprint` 比对 → `BiometricReset` |
 | R7 | 全熵密钥上的 `kdf_iter=256000` 纯浪费 | 改 `1` |
+| R8 | **`rotate_dek` 不吊销生物识别**：wrapping key 由固定公开挑战的签名派生，是常量；`rotate_dek` 只换 payload 里的 `dek`，旧签名仍能解出新 payload。用户执行「轮换数据密钥」后会合理地认为旧凭据全部失效，实际没有 | `rotate_dek` 成功后**删除 Hello 凭据并强制重注册**（`delete_key` 已调用 `KeyCredentialManager::DeleteAsync`，路径现成）；若用户拒绝重注册，则视为「已停用生物识别」并显式告知 |
+| R9 | **`set_key_unprotected` 默认回落为 `set_key`**（`biometric/mod.rs:24-26`）：非 Windows 路径把 wrapping key 与密文存入同一 key store；若两者 ACL 相同，AES-GCM 只是「任何人拿到都能解」的壳，等价明文 | 逐平台确认：macOS 必须设 `kSecAccessControlUserPresence`；Linux 必须确认 secret service 绑定会话锁；不满足的平台**直接禁用生物识别**，而不是静默降级 |
+| R10 | 生物识别路径**完全不产生审计**（口令路径的 `VaultUnlockFailed` 不覆盖它） | 见 §7.3：成功 / 失败 / 签名变化全部写 JSONL |
 
 ### 7.3 可观测性
 
 - **审计双写**：`security_audit_log` 表 + 本机 JSONL（`.audit/*.jsonl`，不加密、不含密钥）。理由：恢复路径无法读库，若审计只在库里，则「用纸面导出全部条目」这件事不可审计。JSONL 让下次口令解锁时可以补录一条 `RecoveryExportUsed`。
 - **恢复密钥使用可审计**：`RecoverySession::export_all` 结束时写一条 `RecoveryExportUsed { entryCount, at }` 到 JSONL。
 - **改密/轮换必须留痕**：`MasterPasswordChange`、`DekRotated { from, to }`、`LocalDbRebuilt`、`AnchorRollbackRejected`。
+- **生物识别路径必须留痕**：`BiometricUnlocked`、`BiometricFailed { reason }`（含 `UserCanceled`）、`BiometricSignatureChanged`、`BiometricEnrolled` / `BiometricRevoked`。理由：这条路径绕过了口令与 slot，是唯一没有审计的解锁入口（R10）。
+- **审计位置**：`.audit/*.jsonl` 与 `security.db` 同级（本机数据目录），**不得落在 vault 目录内**（否则进 git，形成新的历史泄露面）；按大小 / 日期轮转，避免无限增长。
 
 ---
 
@@ -664,8 +674,8 @@ impl RecoverySession {
 | **P0-2** | 引入 `dek` + `.vault-meta` v2（单槽）+ 严格解析（`version=1` → `UnsupportedVaultVersion`）；`init`/`unlock`/`change_password` 走新路径 | 新库可用；旧库明确拒绝（§5） |
 | **P0-3** | 纸面编解码（Crockford + CRC32C + 归一化）+ `RecoverySession` + 删除 `unlock_with_recovery_key` | 恢复通道权限裁剪生效 |
 | **P1-1** | `manifest` + `anchor` | 补上删除/回滚检测 |
-| **P1-2** | 生物识别 payload 改 `dek‖dbKey` + `fingerprint` + 自动重包 | 修掉静默过期 |
-| **P1-3** | `rotate_dek` + 全量重加密 + `dekVersion` | 真吊销能力 |
+| **P1-2** | 生物识别 payload 改 `dek‖dbKey` + `fingerprint` + 自动重包 + **解锁验证读（探针）** | 修掉静默过期与「假解锁」 |
+| **P1-3** | `rotate_dek` + 全量重加密 + `dekVersion` + **删除 Hello 凭据强制重注册**（R8） | 真吊销能力 |
 
 依赖关系：P0-2 依赖 P0-1；P0-3 依赖 P0-2；P1-3 依赖 P1-1（manifest 需全量重算）。
 
@@ -703,6 +713,8 @@ impl RecoverySession {
 | I9 | 改密后生物识别重包失败 | 下次生物识别解锁 → `BiometricReset`，不返回错误密钥 |
 | I10 | 打开 `version=1` 的旧库 | `UnsupportedVaultVersion`；**不修改任何文件**（`.vault-meta` / `security.db` / `entries/` 的内容与 mtime 不变） |
 | I11 | 重置仓库后重新初始化 | 新库 `version=2`、`vaultId` 重新生成；无旧文件残留；`recoveryBackup` 为空 |
+| I12 | **生物识别解锁必须验证读**：`restore_keys_from_plaintext` 用 payload 的 `dbKey` 打开库后，**必须**执行探针查询（`SELECT value FROM vault_meta WHERE key='schema_version'`，与恢复码路径 `recovery_key/mod.rs:146-155` 一致） | 探针失败 → `BiometricReset`，**不得**进入已解锁状态。用例：用 A 设备的 `security.db` + B 设备的 keystore payload，断言返回 `BiometricReset` 而非「解锁成功、首次读条目才报错」 |
+| I13 | `rotate_dek` 后生物识别 | 旧 Hello 凭据已被删除；旧 payload 无法解出新 `dek`；用户被要求重新注册 |
 
 ### 9.3 手工验收
 

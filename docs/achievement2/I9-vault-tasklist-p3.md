@@ -29,9 +29,9 @@
 | N4 | `repoState` 文案落到 `status_unknown`（H14.2） | 补全 | P2 | `VaultSyncSettings.tsx` | `[x]` |
 | N5 | 冲突解决后不 push | 补全 | P2 | 已随 M1 一并 `finalize("vault: resolve conflict")` | `[x]` |
 | N6 | 冲突解决界面信息不足，用户只能盲选 | 补全 | P1 | 条目名 + 按需显示 + 差异高亮 + 分侧降级（D17） | `[x]` |
-| O1 | 单元/集成测试缺口 | 验证 | P1 | 本轮新增 5 项 `sync_engine` 用例；`ssh_validate` 4 项 / `recovery_key` 9 项为存量用例，核对后确认已覆盖对应缺口；剩 `need_to_push` / `GIT_TERMINAL_PROMPT` / D19 历史版本导出 3 项，见 §O1 | `[~]` |
+| O1 | 单元/集成测试缺口 | 验证 | P1 | 本轮新增 5 项 `sync_engine` 用例；`ssh_validate` 4 项 / `recovery_key` 9 项为存量用例，核对后确认已覆盖对应缺口；`GIT_TERMINAL_PROMPT` 缺口已补（`credential_prompt` 1 项 + `git` 单元测试 2 项）；剩 `need_to_push` / D19 历史版本导出 2 项，见 §O1 | `[~]` |
 | O2 | 手工验证清单（I7 / J8 / K / L7 残留） | 验证 | P2 | 见 §O2 | `[ ]` |
-| O3 | `clippy` / 全量 `cargo test` / `tsc` 复核 | 验证 | P1 | 已跑 `assistant-sync`（40 项）+ `assistant-security`（全绿）+ `fmt` / `check` + `lint` / `typecheck` / `vitest`；`clippy --workspace` 未重跑 | `[~]` |
+| O3 | `clippy` / 全量 `cargo test` / `tsc` 复核 | 验证 | P1 | 2026-10-29 复跑：`cargo clippy --workspace --all-targets` exit 0（无 error，仅存量 warning）、`cargo test --workspace` exit 0、`cargo test -p assistant-sync --features git-tests` 37 项全绿、`tsc --noEmit` exit 0 | `[x]` |
 | P1 | Git 完整性边界（H5.8） | 已定 | — | 不引入仓库级 HMAC（D11） | `[x]` |
 | P2 | `last_good_commit` 回滚检测（H5.9） | 已定 | — | 不纳入 P3（D12） | `[x]` |
 | P3 | SSH ControlMaster 复用验证 + 白名单（H19.15） | 补全 | P2 | `AppConf.vault_sync_ssh_hosts` 可配置 + 留空回退默认 | `[x]` |
@@ -257,8 +257,8 @@
 
 | 检查 | 结果 |
 |------|------|
-| `cargo test -p assistant-sync --features assistant-sync/git-tests` | 40 passed（`git_sync` 9 / `sync_engine` 18 / `vault_file` 13），O1 新增 5 项 |
-| `cargo test -p assistant-security --features assistant-security/slow-tests` | 全绿（`recovery_key` 9 / `vault_crud` 13 / `vault_crypto` 17 / `vault_sync_db` 7 / `security_db` 10 / `ssh_validate` 4 / `totp` 14 / `password_strength` 12 / `hibp` 5 / `api_key` 7 / `reveal_guard` 3） |
+| `cargo test -p assistant-sync --features assistant-sync/git-tests` | 39 passed（`git_sync` 9 / `sync_engine` 15 / `vault_file` 13 / `credential_prompt` 2），O1 新增 5 项 |
+| `cargo test -p assistant-security --features assistant-security/slow-tests` | 全绿（`recovery_key` 9 / `vault_crud` 13 / `vault_crypto` 17 / `vault_sync_db` 7 / `security_db` 10 / `ssh_validate` 4 / `totp` 15 / `password_strength` 12 / `hibp` 7 / `api_key` 7 / `reveal_guard` 3），`src` 内联单元测试已全部迁出 |
 | `cargo test -p assistant-config` | 55 passed（含 B5 新增的两处新字段断言） |
 | `cargo check -p assistant-app` / `cargo check --all-targets` | 通过（仅增量编译目录权限警告，与代码无关）；B5 / B6 / B7 / O1 后各复跑通过 |
 | `cargo fmt -p assistant-sync -p assistant-security -- --check` | 通过 |
@@ -279,7 +279,7 @@
 | **B5** | N2 上次同步时间 + D13 SSH ControlMaster 主机配置（`AppConf` 四处同步）+ P3 / P4 | **已完成**（2026-10-28） |
 | **B6** | N3 `VAULT_META_INTEGRITY_WARNING` 事件 + N4 `repoState` 文案（P4 已并入 B5） | **已完成**（2026-10-28） |
 | **B7** | M7 前端提示（D18-⑤）：`SyncResult` 携带 `unreadable_ids` + 归因，UI 显示「N 条条目无法解密」+ 「用恢复密钥导出数据」/「用本机数据覆盖对端」两个出路 | **已完成**（2026-10-28） |
-| **O1 ~ O3** | 补齐 §O1 用例、§O2 手工验证、`cargo clippy --workspace` | **O1 已补 12 项并全绿、O3 已执行**（2026-10-28）；剩 §O1 的 `need_to_push` / `GIT_TERMINAL_PROMPT` / D19 三项与 O2 手工验证 |
+| **O1 ~ O3** | 补齐 §O1 用例、§O2 手工验证、`cargo clippy --workspace` | **O1 已补 15 项并全绿、O3 已执行**（2026-10-29 复跑，`assistant-sync` 含 `git-tests` 共 39 项）；剩 §O1 的 `need_to_push` / D19 两项与 O2 手工验证 |
 
 ---
 
@@ -430,7 +430,7 @@
 
 ---
 
-### M7 `[~]` 无法解密的条目被静默跳过，且可能被本地导出覆盖（D18 / D19，P0）
+### M7 `[x]` 无法解密的条目被静默跳过，且可能被本地导出覆盖（D18 / D19，P0）
 
 **现状：三个层次都缺信息**
 
@@ -592,19 +592,19 @@
 
 ### O1 `[~]` 单元 / 集成测试缺口（P1）
 
-现有用例：`tests/git_sync.rs` 9 项、`tests/sync_engine.rs` 18 项、`tests/vault_file.rs` 13 项，合计 **40 项**（P2 文档记录的 21 项已过期）。B1 ~ B4 已补 5 项：`export_entry_skips_rewrite_when_revision_unchanged`、`export_entry_rewrites_when_revision_changes`、`export_vault_meta_skips_rewrite_when_content_unchanged`、`read_all_entries_reports_unreadable_ids`、`pull_stages_pending_removals_and_confirm_soft_deletes`。
+现有用例：`tests/git_sync.rs` 9 项、`tests/sync_engine.rs` 15 项、`tests/vault_file.rs` 13 项、`tests/credential_prompt.rs` 2 项，合计 **39 项**（P2 文档记录的 21 项已过期）。B1 ~ B4 已补 5 项：`export_entry_skips_rewrite_when_revision_unchanged`、`export_entry_rewrites_when_revision_changes`、`export_vault_meta_skips_rewrite_when_content_unchanged`、`read_all_entries_reports_unreadable_ids`、`pull_stages_pending_removals_and_confirm_soft_deletes`。
 
-O1 收尾又补 5 项（`tests/sync_engine.rs`）：`resolved_use_remote_does_not_regress_on_next_sync`、`resolved_merge_both_creates_remote_copy_entry`、`remote_deleting_every_entry_stages_all_removals_and_survives_cancel`、`conflict_preview_reports_only_the_undecryptable_side`、`force_export_rewrites_entries_after_master_password_change`；同时核对存量用例 `tests/ssh_validate.rs` 4 项与 `tests/recovery_key.rs` 9 项已覆盖下表的 SSH / 恢复密钥缺口。
+O1 收尾又补 5 项（`tests/sync_engine.rs`）：`resolved_use_remote_does_not_regress_on_next_sync`、`resolved_merge_both_creates_remote_copy_entry`、`remote_deleting_every_entry_stages_all_removals_and_survives_cancel`、`conflict_preview_reports_only_the_undecryptable_side`、`force_export_rewrites_entries_after_master_password_change`；同时核对存量用例 `tests/ssh_validate.rs` 4 项与 `tests/recovery_key.rs` 9 项已覆盖下表的 SSH / 恢复密钥缺口。凭证通道缺口另补 `tests/credential_prompt.rs` 2 项：行为用例 `ls_remote_fails_fast_instead_of_prompting_for_credentials` + 构造断言 `cmd_git_guards_interaction_and_remote_timeouts`（原先 `git.rs` 内联的 2 项单元测试已合并至此，经 `git-tests` 门控的 `cmd_git_for_test()` 访问私有 `cmd_git`，默认 `cargo test` 不编译）。
 
-测试结构：`assistant-sync/tests/common/mod.rs` 统一公共辅助（常量、模板库、快照构造、仓库构造、`serial_guard()` 串行锁），`Cargo.toml` 新增独立门控 `git-tests`，`sync_engine.rs` / `git_sync.rs` 头部加 `#![cfg(feature = "git-tests")]`；`assistant-security/tests/common/mod.rs` 提供 `init_vault` / `temp_db_path` / `cleanup`。
+测试结构：`assistant-sync/tests/common/mod.rs` 统一公共辅助（常量、模板库、快照构造、仓库构造、`serial_guard()` 串行锁），`Cargo.toml` 新增独立门控 `git-tests`，`sync_engine.rs` / `git_sync.rs` / `credential_prompt.rs` 头部加 `#![cfg(feature = "git-tests")]`，`src/` 下不再保留内联测试；`assistant-security/tests/common/mod.rs` 提供 `init_vault` / `temp_db_path` / `cleanup`。
 
 | 目标 | 对应 P2 项 | 现状 | 建议用例 | 状态 |
 |------|-----------|------|----------|------|
 | `need_to_push` 30s/hash 优化 | H19.7 | 代码已实现，**无测试** | 构造本地与 upstream 同 hash + 新鲜 `FETCH_HEAD`，断言 `false` | `[ ]` |
-| `GIT_TERMINAL_PROMPT=0` | H19.16 / K2.10 | 代码已注入环境变量，**无测试** | `ls_remote` 指向需认证 URL，断言快速失败不挂起（带超时断言） | `[ ]` |
+| `GIT_TERMINAL_PROMPT=0` | H19.16 / K2.10 | 已补 `tests/credential_prompt.rs::ls_remote_fails_fast_instead_of_prompting_for_credentials`（本地 401 服务 + `credential.helper=manager`，20s 超时断言，实测 0.95s 无 GUI）+ `tests/credential_prompt.rs::cmd_git_guards_interaction_and_remote_timeouts`（构造断言，覆盖「连远端 / 不连远端」两条路径 + `http.timeout` 仅远端注入；原 `git.rs` 内联用例已合并至此）；产品侧补 `GCM_INTERACTIVE=never`（`GIT_TERMINAL_PROMPT` 管不到 GCM / askpass） | `ls_remote` 指向需认证 URL，断言快速失败不挂起（带超时断言） | `[x]` |
 | SSH 密钥格式校验 | I7.7 / I7.8 | 已补 `tests/ssh_validate.rs` 4 项 | OpenSSH / PEM / PPK / 垃圾字节四组 | `[x]` |
 | 恢复密钥格式与错误密钥 | J8.2 / J8.4 | 已补 `tests/recovery_key.rs`（格式 4 组 8 位、长度 / Base32 拒绝、错误密钥 `InvalidRecoveryKey`、改密码后失效） | Base32 长度 + 分隔符格式；错误密钥返回 `InvalidRecoveryKey` | `[x]` |
-| 永久清理 | L7.7 | `purge_deleted_removes_only_soft_deleted_entries` 覆盖 DB 侧（墓碑清空、正常条目保留）；`.enc` 文件删除未断言 | 删除 → purge → DB 无墓碑行、`.enc` 不存在 | `[~]` |
+| 永久清理 | L7.7 | `purge_deleted_removes_only_soft_deleted_entries` 覆盖 DB 侧（墓碑清空、正常条目保留）；新增 `purge_removes_entry_files_before_db_rows_so_entries_never_resurrect` 覆盖「先删 `.enc` → 再清库」顺序、purge 后 `.enc` 不存在、再次 `import_from_repo` 不复活 | 删除 → purge → DB 无墓碑行、`.enc` 不存在 | `[x]` |
 | 冲突落库（M1） | H19.12 | 已补 `resolved_use_remote_does_not_regress_on_next_sync` | 双端冲突 → `useRemote` → 再 `sync_now` 内容不回退 | `[x]` |
 | 删除待确认（M2/D1） | K3.5 | `pull_stages_pending_removals_and_confirm_soft_deletes` | A 删 → B pull → 返回 `PendingRemovals` 且 DB 未变 → 确认 → 进回收站、无乒乓提交 | `[x]` |
 | 删除取消（M2/D1） | K3.5 | `remote_deleting_every_entry_stages_all_removals_and_survives_cancel` 覆盖取消后 DB 不变、`pending_removals` 内存态保留；push 被拒与前端横幅仍属 O2 手工项 | 取消 → DB 不变、push 被拒、内存态保留（D15）、横幅可见（D16） | `[~]` |
@@ -623,17 +623,29 @@ O1 收尾又补 5 项（`tests/sync_engine.rs`）：`resolved_use_remote_does_no
 
 ### O2 `[ ]` 手工验证清单（P2 文档未勾项）
 
-- **I7.2 ~ I7.11**：`ssh-add -l` 可见性、锁定后移除、解锁自动添加、zeroize / 不进 JS 堆（代码审查）、三种密钥格式、无效格式错误、`added_fingerprints` 仅移除自己添加的、前端元信息展示、设置项四处同步
-- **J8.3 / J8.5 ~ J8.12**：生成→锁定→恢复密钥解锁、仅返回一次、master key 不经 IPC、HMAC 校验、无 `master_key_hash`、pull 闸门、灾难恢复端到端、轮换、审计日志
-- **K1.2 ~ K1.4**：`cargo clippy` 无新增 warning、全量 `cargo test`、`tsc --noEmit`
-- **K2.4 / K2.6 ~ K2.10**：凭证不入库、SSH 明文生命周期、恢复密钥不外泄
-- **K3.1 ~ K3.11 / K3.13 / K3.14**：完整同步流程、双向同步、冲突各选项、智能推送、软删除同步（M2 的确认流程：确认 / 取消两条路径）、往返一致、SSH Agent、恢复密钥、灾难恢复、meta 完整性、前端状态、冲突 diff 组件
-- **K4.1 ~ K4.6**：类型对齐、错误映射、安全不变式、P1 兼容、条件编译、设置项四处一致
-- **L7.3 ~ L7.8**：远程配置闭环、冲突闭环、中止/放弃、回收站、purge、历史还原跨设备收敛
+> 2026-10-29 回填后，P2 剩余未勾项已收敛为「真机手工验证」一类；原清单中的测试/代码审查类条目已按实测证据回填勾选，此前的「真缺口」（H2.3 `Display`、J6.4 恢复密钥弹窗确认闭环、H19.16 / K2.10 凭证提示）均已落地，不再列入本清单。
+
+- **I7.2 / I7.3 / I7.4 / I7.9**（真机）：`ssh-add -l` 可见性、锁定后移除、解锁自动添加、`added_fingerprints` 仅移除自己添加的（不影响用户手动添加的密钥）
+  - 已回填：~~I7.1~~（cargo check）、~~I7.5 / I7.6~~（zeroize / 不进 JS 堆代码审查）、~~I7.7 / I7.8~~（格式分派与 `InvalidKeyFormat`）、~~I7.10~~（前端元信息展示）、~~I7.11~~（设置项四处同步）
+- **J8.5 / J8.7 ~ J8.9**：已回填（仅返回一次 / HMAC 校验 / 无 `master_key_hash` / pull 闸门）；**J8.12 部分完成**：`recovery_key_generated` 已写入，`VaultUnlock("recovery_key")` 未写入但随 v1.5 淘汰无需补
+  - **已随 v1.5 淘汰，无需再验证**：~~J8.3~~（恢复密钥无解锁语义）、~~J8.6~~、~~J8.10~~（随 J5.1 淘汰）、~~J8.11~~（轮换重定义为 `rotate_dek`，归 P1-3）
+- **K1.2 ~ K1.4**：已回填（`cargo clippy --workspace --all-targets` exit 0、`cargo test` 含 `git-tests` 全绿、`tsc --noEmit` exit 0）
+- **K2.4 / K2.6 ~ K2.8 / K2.10**：已回填（凭证不入库、SSH 明文生命周期、恢复密钥不外泄、`GCM_INTERACTIVE=never` + 超时断言测试）
+  - **已随 v1.5 淘汰**：~~K2.9~~（恢复密钥解锁后 master_key 不经 IPC，无解锁路径）
+- **K3.1 / K3.2 / K3.7 / K3.8 / K3.14**（真机）：完整同步流程、双向同步、SSH Agent 添加/移除、锁定后移除、冲突 diff 组件
+  - 已回填：~~K3.3~~（冲突各选项，M1/N1/N5 回归用例）、~~K3.4~~（智能推送，M3 幂等用例）、~~K3.5~~（软删除同步，M2 用例）、~~K3.6~~（往返一致）、~~K3.11~~（meta 完整性）
+  - **已随 v1.5 淘汰**：~~K3.9~~（恢复密钥解锁）、~~K3.10~~（灾难恢复 clone + 恢复密钥解锁）
+- **K4.3 / K4.4**：K4.3 已闭环 10/10（K2.10 已补测试）；K4.4 代码层面满足，剩余 P1 全功能手工回归
+  - 已回填：~~K4.1~~（类型对齐）、~~K4.2~~（错误映射）、~~K4.5~~（条件编译）、~~K4.6~~（设置项四处一致）
+- **H2.3**：`Readyness` / `RepositoryState` 的 `Display` trait 已实现（`types/mod.rs` L60 / L109，`RepositoryState::as_str` 提供 serde 一致的 camelCase 文本）
+- **H19.16 / K2.10**：已补 `tests/credential_prompt.rs` 超时断言 + 产品侧 `GCM_INTERACTIVE=never`
+- **J6.4**：恢复密钥弹窗已补「复制密钥」按钮 + 「我已安全保存」确认闭环（`maskClosable={false}`，`RecoveryTab.tsx` L48 / L98-L113）
+- **L7.3 ~ L7.8**（真机）：远程配置闭环、冲突闭环、中止/放弃、回收站、purge、历史还原跨设备收敛
+  - 已回填：~~L7.7~~（purge 先删 `.enc` 再清库 + 不复活用例）
 - **M7 / D18 / D19**：B 改主密码 push → A 用旧密码 pull → 提示「对端使用另一套主密钥」而非「可能被篡改」，且 A 未覆盖对端密文；A 用恢复密钥 + 改密码前的 commit 导出成功；人为破坏单个 `.enc` → 仅该条目报错、其余正常
 - **N6 / D17**：冲突列表显示条目名；密码默认掩码、点击才出明文且 30s 自动隐藏；差异行高亮；单侧解密失败时另一侧仍完整展示
 
-> 说明：P2 文档中 **J5.2 / J6.1 ~ J6.4 / J7.1 / H14.1 / H14.3 / L1.x / L2.x / L3.x** 实际已在代码落地（`RecoveryTab.tsx` / `RecoveryKeyForm.tsx` / `DisasterRecovery.tsx` / `vaultRecoverySlice.ts`；`VaultUnlock.tsx` 的灾难恢复入口已不再受 `isInitialized` 限制，**缺陷 #11 已修**），应回填勾选而非重复开发。
+> 说明：P2 文档中 **J5.2 / J6.1 ~ J6.3 / J7.1 / H14.1 / H14.3 / L1.x / L2.x / L3.x** 实际已在代码落地（`RecoveryTab.tsx` / `RecoveryKeyForm.tsx` / `DisasterRecovery.tsx` / `vaultRecoverySlice.ts`；`VaultUnlock.tsx` 的灾难恢复入口已不再受 `isInitialized` 限制，**缺陷 #11 已修**），已回填勾选而非重复开发。其中 **J5.1 / J5.2 的「写回本地库」路径与 J6.3 的「独立轮换按钮」已随 v1.5 设计划去**（恢复密钥无解锁语义、v1 生成即轮换），替代项见 `I9-vault-key-hierarchy-design.md` §8 的 P0-3 / P1-3。
 
 > 状态（2026-10-28）：**K3.1 ~ K3.11 / K3.13 / K3.14**（含 M2 确认 / 取消两条路径）、**N6 / D17**、**M7 / D19 的灾难恢复历史版本导出**、**M7 / D18 的 UI 提示（B7）**对应实现已就绪，可开始手工验证。
 
@@ -653,8 +665,8 @@ npx tsc --noEmit
 
 | 命令 | 结果 |
 |------|------|
-| `cargo test -p assistant-sync --features assistant-sync/git-tests` | 40 passed / 0 failed（`git_sync` 9、`sync_engine` 18、`vault_file` 13） |
-| `cargo test -p assistant-security --features assistant-security/slow-tests` | 全绿：`recovery_key` 9、`vault_crud` 13、`vault_crypto` 17、`vault_sync_db` 7、`security_db` 10、`ssh_validate` 4、`totp` 14、`password_strength` 12、`hibp` 5、`api_key` 7、`reveal_guard` 3 |
+| `cargo test -p assistant-sync --features assistant-sync/git-tests` | 39 passed / 0 failed（`git_sync` 9、`sync_engine` 15、`vault_file` 13、`credential_prompt` 2） |
+| `cargo test -p assistant-security --features assistant-security/slow-tests` | 全绿：`recovery_key` 9、`vault_crud` 13、`vault_crypto` 17、`vault_sync_db` 7、`security_db` 10、`ssh_validate` 4、`totp` 15、`password_strength` 12、`hibp` 7、`api_key` 7、`reveal_guard` 3 |
 | `cargo check -p assistant-app` | 通过 |
 | `cargo fmt -p assistant-sync -p assistant-security -- --check` | 通过 |
 | `cargo check --all-targets` | 通过 |

@@ -71,7 +71,7 @@ let support_audio  = input_modalities.contains(&"audio".to_string());
 
 ### 1.1 现状
 
-[ImageThumbnail.tsx:117-128](file:///g:/codeversion/assistant1/src/chat/message/ImageThumbnail.tsx#L117-L128) — `error` 状态渲染与 `offloaded` 完全相同的占位 UI（图标 + 文案），无重试交互。
+[ImageThumbnail.tsx:117-128](../../src/chat/message/ImageThumbnail.tsx#L117-L128) — `error` 状态渲染与 `offloaded` 完全相同的占位 UI（图标 + 文案），无重试交互。
 
 ### 1.2 变更
 
@@ -142,9 +142,9 @@ if (error) {
 
 ### 2.1 现状
 
-- [multimodal.rs](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-agent/src/multimodal.rs) 仅有 `project_images_for_text_model`，无 FileBlock 投影
+- multimodal.rs 仅有 `project_images_for_text_model`，无 FileBlock 投影
 - 3× Provider 转换器中 `ContentBlock::File` 分支均走 `_ => json!({})` / `_ => None`，**静默丢弃 FileBlock**
-- 前端 [FileCard.tsx](file:///g:/codeversion/assistant1/src/chat/message/FileCard.tsx) 已实现渲染骨架，但后端发送时 FileBlock 信息丢失
+- 前端 FileCard.tsx 已实现渲染骨架，但后端发送时 FileBlock 信息丢失
 
 ### 2.2 设计
 
@@ -267,7 +267,7 @@ pub async fn rehydrate_files(messages: &mut [ChatMessage], store: &AttachmentSto
 >
 > 采用**方案 A**。
 
-**`ContentBlock::File` 扩展**（[message.rs](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-providers/src/types/message.rs)）：
+**`ContentBlock::File` 扩展**（message.rs）：
 
 ```rust
 File {
@@ -308,7 +308,7 @@ multimodal::project_files(&mut chat_messages, support_pdf);
 
 当 `support_pdf=true` 且 `cached_data` 有值时，Provider 转换器将 PDF 转为 API 原生格式：
 
-**Anthropic**（[message_converter.rs](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-providers/src/anthropic/message_converter.rs)）— Claude 原生支持 PDF document：
+**Anthropic**（message_converter.rs）— Claude 原生支持 PDF document：
 
 ```rust
 ContentBlock::File { attachment, cached_data, .. } => {
@@ -331,7 +331,7 @@ ContentBlock::File { attachment, cached_data, .. } => {
 }
 ```
 
-**Gemini**（[message_converter.rs](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-providers/src/gemini/message_converter.rs)）— Gemini inlineData 支持 PDF：
+**Gemini**（message_converter.rs）— Gemini inlineData 支持 PDF：
 
 ```rust
 ContentBlock::File { attachment, cached_data, .. } => {
@@ -349,7 +349,7 @@ ContentBlock::File { attachment, cached_data, .. } => {
 }
 ```
 
-**OpenAI**（[message_converter.rs](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-providers/src/openai/message_converter.rs)）— GPT 不支持 PDF，始终投影为文本：
+**OpenAI**（[message_converter.rs](../../src-tauri/crates/assistant-providers/src/openai/message_converter.rs)）— GPT 不支持 PDF，始终投影为文本：
 
 ```rust
 ContentBlock::File { attachment, .. } => json!({
@@ -366,9 +366,9 @@ ContentBlock::File { attachment, .. } => json!({
 
 ### 3.1 现状
 
-- [useNativeFileAttach.ts:34](file:///g:/codeversion/assistant1/src/hooks/useNativeFileAttach.ts#L34) — `filters` 仅限图片：`{ name: "Images", extensions: ALLOWED_IMAGE_EXTENSIONS }`
-- [attachmentUtils.ts](file:///g:/codeversion/assistant1/src/chat/core/attachmentUtils.ts) — `EXT_TO_MIME` 仅含图片 MIME，`createAttachmentFromFile` 仅处理 `kind: 'image'`
-- [attachmentTypes.ts](file:///g:/codeversion/assistant1/src/chat/core/attachmentTypes.ts) — `ATTACHMENT_MAX_FILES` / `ATTACHMENT_MAX_FILE_SIZE_BYTES` 常量已定义但未使用
+- [useNativeFileAttach.ts:34](../../src/hooks/useNativeFileAttach.ts#L34) — `filters` 仅限图片：`{ name: "Images", extensions: ALLOWED_IMAGE_EXTENSIONS }`
+- [attachmentUtils.ts](../../src/chat/core/attachmentUtils.ts) — `EXT_TO_MIME` 仅含图片 MIME，`createAttachmentFromFile` 仅处理 `kind: 'image'`
+- [attachmentTypes.ts](../../src/chat/core/attachmentTypes.ts) — `ATTACHMENT_MAX_FILES` / `ATTACHMENT_MAX_FILE_SIZE_BYTES` 常量已定义但未使用
 
 ### 3.2 设计
 
@@ -561,9 +561,9 @@ fn media_type_to_ext(mt: &str) -> &'static str {
 
 ### 4.1 现状
 
-- Rust `ModelConfig.support_vision: bool`（[base.rs:184](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-providers/src/base.rs#L184)）
-- 前端 `ModelConfig.supportVision?: boolean`（[types.ts:7](file:///g:/codeversion/assistant1/src/settings/provider/types.ts#L7)）
-- `resolve_support_vision` 从 `model_catalog` + API hint 解析（[vision.rs](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-providers/src/vision.rs)）
+- Rust `ModelConfig.support_vision: bool`（[base.rs:184](../../src-tauri/crates/assistant-providers/src/base.rs#L184)）
+- 前端 `ModelConfig.supportVision?: boolean`（[types.ts:7](../../src/settings/provider/types.ts#L7)）
+- `resolve_support_vision` 从 `model_catalog` + API hint 解析（[vision.rs](../../src-tauri/crates/assistant-providers/src/vision.rs)）
 
 ### 4.2 设计
 
@@ -735,7 +735,7 @@ pub async fn admit_attachments(
 - 校验 `file_path` 通过 `validate_path`
 - 校验大小不超过 `max_image_bytes` / `max_file_bytes`
 
-**调用方适配**：[chat.rs](file:///g:/codeversion/assistant1/src-tauri/src/cmd/chat.rs) 中 `admit_attachments` 传入 `MultimodalConfig::trusted_channel_input()`。
+**调用方适配**：[chat.rs](../../src-tauri/src/cmd/chat.rs) 中 `admit_attachments` 传入 `MultimodalConfig::trusted_channel_input()`。
 
 ---
 
@@ -967,8 +967,8 @@ fn format_size(bytes: u64) -> String {
 
 ### 9.1 现状
 
-- ~~[storage.rs:58,75](file:///g:/codeversion/assistant1/src-tauri/src/cmd/storage.rs#L58) — `created_at: 0` 硬编码~~ → 已修复，填入 `entry.created_at as i64`
-- ~~[attachment_store.rs:36](file:///g:/codeversion/assistant1/src-tauri/crates/assistant-storage/src/attachment_store.rs#L36) — `AttachmentEntry` 仅有 `id` + `bytes`，无 `created_at`~~ → 已添加 `created_at: u64`
+- ~~[storage.rs:58,75](../../src-tauri/src/cmd/storage.rs#L58) — `created_at: 0` 硬编码~~ → 已修复，填入 `entry.created_at as i64`
+- ~~[attachment_store.rs:36](../../src-tauri/crates/assistant-storage/src/attachment_store.rs#L36) — `AttachmentEntry` 仅有 `id` + `bytes`，无 `created_at`~~ → 已添加 `created_at: u64`
 - ~~`list_all()` 中 `metadata()` 已获取但仅用 `len()`，未读 `modified()` / `created()`~~ → 已读取 `modified()` 时间戳
 
 ### 9.2 变更

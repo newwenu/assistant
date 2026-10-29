@@ -27,7 +27,7 @@
 
 - [x] H2.1 `mod.rs`：`Readyness` 枚举（NoSync / RepoState(RepositoryState) / Dirty / Ready）+ `RepositoryState` 枚举（Merge / Rebase / RebaseInteractive / CherryPick / Unknown）+ `SyncResult` struct（pulled / pushed / conflicts / readyness / imported / removedIds / integrityWarning）+ `SyncConfig` struct（remote_url / remote_name）+ `Conflict` struct（entry_id / local_revision / remote_revision）+ `ConflictResolution` 枚举（UseLocal / UseRemote / MergeBoth / Skip）+ `IntegrityResult` struct（valid / message）
 - [x] H2.2 `SyncConfig` 实现 `Serialize`/`Deserialize`，`remote_url` 为 `Option<String>`（未配置时为 None）
-- [ ] H2.3 `Readyness` / `RepositoryState` 实现 `Display` trait（错误消息友好显示）
+- [x] H2.3 `Readyness` / `RepositoryState` 实现 `Display` trait（错误消息友好显示） — `assistant-sync/src/types/mod.rs`：`Readyness` L60 输出 `no sync configured` / `uncommitted changes` / `ready` / `repository busy with {state}`；`RepositoryState` L109 委托 `as_str()`，与 serde camelCase 命名一致（`rebase-interactive` / `cherry-pick` 等）
 
 **依赖**：H1
 
@@ -120,7 +120,7 @@
 
 - [x] H8.1 ~~`read_deleted_index(repo_path)`~~ — **不实现**，`deletions/deleted.json` 读写能力已从代码中完全删除
 - [x] H8.2 ~~`collect_legacy_deletions(repo_path)`~~ — **不实现**，不做旧仓库兼容解析
-- [ ] H8.3 `purge_deleted(conn, repo_path) → Result<u32>` — 永久清理（仅用户手动触发）：`DELETE FROM vault_entries WHERE deleted_at IS NOT NULL` + 确保对应 `.enc` 已不存在 — **部分完成**：`SecurityDb::purge_deleted` 仅执行 DB 删除（含 `VaultEntryPurged` 审计），**不触碰 `.enc`**；`.enc` 的移除发生在软删除阶段（`delete_entry_tx` 的 export 回调），故"purge 后 `.enc` 不存在"是间接结论、代码中无显式校验。UI 侧 `TrashDrawer` 有 `modal.confirm` 二次确认 + 恢复入口，命令 `vault_purge_deleted` 已注册
+- [x] H8.3 `purge_deleted(conn, repo_path) → Result<u32>` — 永久清理（仅用户手动触发）：`DELETE FROM vault_entries WHERE deleted_at IS NOT NULL` + 确保对应 `.enc` 已不存在 — **已完成**：`SecurityDb::purge_deleted` 仅执行 DB 删除（含 `VaultEntryPurged` 审计）；命令层 `vault_purge_deleted` 改为「先按墓碑 id 快照逐个 `remove_entry_file`（失败即中止、DB 不删）→ 再清库」，`remove_entry_file` 增加删除后 post-condition 校验（文件仍存在则返回错误，不再静默 `log::warn`），避免残留 `.enc` 在下次 `sync_now` 被 `upsert_imported_in` 以 Inserted 复活。测试 `purge_removes_entry_files_before_db_rows_so_entries_never_resurrect` 断言 purge 后 `.enc` 不存在且再次导入不复活。UI 侧 `TrashDrawer` 有 `modal.confirm` 二次确认 + 恢复入口，`purge_confirm` 文案已补充 Git 历史语义，命令 `vault_purge_deleted` 已注册
 - [x] H8.4 ~~`update_deleted_json`~~ — **不实现**，删除传播改由 §H5.4 / §H5.5 的文件集合对比完成
 
 **依赖**：H5
@@ -147,7 +147,7 @@
   - 实现位置：`GitSync::detect_conflicts` + `git::git_unmerged_paths`（`diff --name-only --diff-filter=U`）+ `git::git_conflict_stage_hashes`（`ls-files -u` 解析 stage 2 / stage 3 对象哈希）
   - `pull` / `sync_now` 捕获 `GitStatus` 后改为返回真实冲突列表（此前恒为 `Vec::new()`）；枚举失败时降级为空列表并 `log::warn`，不掩盖「确有冲突」的事实
   - 测试：`detect_conflicts_reports_both_sides`（双 clone 改同一文件制造真实合并冲突，断言 path / 两侧哈希非空且不等）
-- [ ] H10.2 `resolve_conflict(repo_path, entry_id, resolution, conn, master_key) → Result<()>`：根据 ConflictResolution 执行对应 git 操作（UseLocal: `git checkout --ours` / UseRemote: `git checkout --theirs` / MergeBoth: 保留本地 + 远程作为新条目 / Skip: 标记待处理）— 现状：UseLocal / UseRemote / Skip 已实现；**MergeBoth 仅退化为 UseLocal**，未把远程版本另存为新条目（补全归入 P3 阶段 N1）；~~且解决后只 `checkout + add`，不自动完成 merge commit（仓库停留在 Merge 状态，需后续 `sync_now` / `finalize` 收尾）~~ — 该备注已失效：L2.3 已实现无剩余冲突时 `commit_all`；另冲突解决结果不落库属 P3 阶段 M1 缺陷
+- [x] H10.2 `resolve_conflict(repo_path, entry_id, resolution, conn, master_key) → Result<()>`：根据 ConflictResolution 执行对应 git 操作（UseLocal: `git checkout --ours` / UseRemote: `git checkout --theirs` / MergeBoth: 保留本地 + 远程作为新条目 / Skip: 标记待处理）— 四条路径全部落地：UseLocal / UseRemote / Skip 原有实现保留；**MergeBoth** 由 P3 N1 补齐（远程版本另存为新条目，`resolved_merge_both_creates_remote_copy_entry` 断言新条目生成）；解决结果落库由 P3 M1 补齐（`resolved_use_remote_does_not_regress_on_next_sync` 断言下次同步不被本地覆盖）；无剩余冲突时 `commit_all` 由 L2.3 实现，仓库脱离 Merge 态
 - [x] H10.3 `vault_resolve_conflict(entry_id, resolution)` Tauri command — 现签名为 `vault_resolve_conflict(path, resolution)`，按冲突文件路径而非条目 ID 解决
 
 **依赖**：H6
@@ -204,7 +204,7 @@
 **文件**：`src/vault/settings/VaultSyncSettings.tsx`（规格写作 `src/tools/password-vault/VaultSyncSettings.tsx`，实际路径已迁移）
 
 - [x] H14.1 远程仓库 URL 输入（已移除自动同步间隔选择）— 原缺口已修复：URL 输入框在 `VaultSyncSettings.tsx` 的 `<Form layout="vertical">` 内**无条件渲染**（不受 `isNoSync` 限制）；`handleInit` 调 `gitInit()` 后，若 URL 非空则 `saveSyncConfig(buildConfig())` → `vault_set_sync_config` → `engine.ensure_remote(...)`，确实写入 remote；保存按钮同样走该路径
-- [ ] H14.2 状态指示：就绪/同步中/冲突/错误 + 上次同步时间 — 就绪/同步中/结果提示已实现；**上次同步时间**与**冲突态**未实现（`readyness` 为 `{ repoState }` 时一律落到 `status_unknown`）— 补全登记于 P3 阶段 N2 / N4
+- [x] H14.2 状态指示：就绪/同步中/冲突/错误 + 上次同步时间 — 全部落地：就绪/同步中/结果提示已实现；**上次同步时间**由 P3 N2 补齐（`AppConf.vault_sync_last_at` + 命令 `vault_sync_last_time()` + `VaultSyncSettings` 状态行 `formatRelativeTime`）；**冲突态**由 P3 N4 补齐（`readynessText()` 命中 `{ repoState }` 时返回 `vault.sync.repo_state_blocked` 并传入 `{ state }`，与下方提示条文案一致）
 - [x] H14.3 操作按钮：初始化仓库 / 克隆仓库 / 立即同步 / 强制推送 — 四项均已实现：初始化 `handleInit`（`gitInit`）、克隆 `handleClone`（`gitClone`，本地已有条目时禁用并提示）、强制推送 `syncForcePush`（`forcePushOpen` 二次确认）；另补齐「测试连接」（`gitTestConnection`）与「移除远程」（`gitRemoveRemote`）
 - [x] H14.4 `VaultSettings.tsx` 集成：新增"同步"标签页
 
@@ -229,7 +229,7 @@
 
 **文件**：`src/vault/VaultList.tsx`（规格写作 `src/tools/password-vault/VaultList.tsx`）
 
-- [ ] H16.1 底部状态栏新增同步状态：条目数 · 上次同步时间 · 泄露数 — 条目数与泄露数已实现（`VaultList.tsx` 的 `entries.length` / `leakCount`）；**上次同步时间**未实现（无对应数据源，`vaultStore` 无 `lastSyncAt`，后端也未提供）— 补全登记于 P3 阶段 N2
+- [x] H16.1 底部状态栏新增同步状态：条目数 · 上次同步时间 · 泄露数 — 三项全部落地：条目数与泄露数由 `VaultList.tsx` 的 `entries.length` / `leakCount` 提供；**上次同步时间**由 P3 N2 补齐（`vaultSyncSlice.syncLastAt` + `vault_sync_last_time()`，底部状态栏 `formatRelativeTime` 展示，点击可看绝对时间）
 - [x] H16.2 新增同步按钮（`↻`），点击调用 `syncNow()`
 - [x] H16.3 `syncStatus === "syncing"` 时按钮旋转动画
 
@@ -273,14 +273,14 @@
 - [x] H19.9 双写一致性：export_entry 失败时 DB 事务回滚 — `create_tx_rolls_back_when_export_fails`、`delete_tx_rolls_back_when_export_fails`
 - [x] H19.10 软删除：本地删除 → DB `deleted_at` 标记 + `.enc` 移除；pull 时被移除文件仅上报 `removedIds`，不自动改库 — 软删除、`.enc` 移除与 `removedIds` 上报均已实现；回收站恢复 / 永久清理见 L4
 - [x] H19.11 冲突检测：Readyness::RepoState(Merge) 正确识别 — `detect_conflicts_reports_both_sides`（冲突文件枚举 + 两侧哈希）；`Readyness::RepoState` 的识别由 `readyness_is_no_sync_before_init_and_ready_after` 间接覆盖，未单独构造 rebase/cherry-pick 用例
-- [ ] H19.12 冲突解决：UseLocal / UseRemote / MergeBoth 各选项行为正确 — 复验前置条件：M1（解决结果落库）、N1（MergeBoth 真实现）、N5（解决后 push）修复后再验收
+- [x] H19.12 冲突解决：UseLocal / UseRemote / MergeBoth 各选项行为正确 — 前置缺陷全部修复：M1（解决结果落库）、N1（MergeBoth 真实现）、N5（解决后 push）均有回归用例（`resolved_use_remote_does_not_regress_on_next_sync` / `resolved_merge_both_creates_remote_copy_entry`），详见 H10.2 与 K3.3
 - [x] H19.13 .vault-meta HMAC 签名验证：篡改后验证失败 — `tampered_vault_meta_fails_verification`、`unsigned_vault_meta_fails_verification`、`missing_vault_meta_fails_verification`、`vault_meta_signed_by_other_key_fails_verification`
 - [x] H19.14 .vault-meta 不含 master_key_hash（代码审查） — `VaultCryptoMeta` 仅含 `master_key_salt` / `hash_salt` / argon2 参数 / 默认算法
 - [x] ~~H19.15 SSH ControlMaster 复用（Unix only）：连续 push/pull 仅一次握手~~ — **本条关闭（非验证通过）**：`ssh.rs` 仅在 Unix 注入 `ControlMaster` 且白名单限 `github.com` / `gitlab.com`，Windows 无复用；"仅一次握手"的手工验证与白名单是否扩展（自建 GitLab / Gitea / 内网）登记于 P3 阶段 P3，此处不再重复验收
-- [ ] H19.16 `GIT_TERMINAL_PROMPT=0` 生效：认证失败返回错误而非挂起 — 代码已注入（`git.rs` 的 `cmd.env("GIT_TERMINAL_PROMPT", "0")`），但**无带超时断言的测试**，未验证"不挂起"，测试缺口登记于 P3 阶段 O1
+- [x] H19.16 `GIT_TERMINAL_PROMPT=0` 生效：认证失败返回错误而非挂起 — 已闭环：`git.rs` 的 `cmd_git` 同时注入 `GIT_TERMINAL_PROMPT=0` 与 `GCM_INTERACTIVE=never`（后者用于压制 Git Credential Manager 的 GUI 弹窗，`GIT_TERMINAL_PROMPT` 只作用于终端提示、管不到 credential helper 与 askpass）；测试 `tests/credential_prompt.rs::ls_remote_fails_fast_instead_of_prompting_for_credentials` 用本地 401 服务 + `credential.helper=manager` 断言 20s 内快速失败且返回 `SyncError::GitCli`（实测 0.95s），单元测试 `tests/credential_prompt.rs::cmd_git_guards_interaction_and_remote_timeouts` 断言两条环境变量在「连远端 / 不连远端」两种路径下均注入（原 `git.rs` 内联用例已合并至此，`git-tests` 门控，默认 `cargo test` 不编译）
 - [x] ~~H19.17 前端同步状态正确显示（idle/syncing/conflict/error）~~ — **本条作废（模型变更）**：前端不存在 `syncStatus` 四态字段；实际表达为 `syncing`（loading）+ `syncResult`（`SyncResult` 变体，冲突判断走 `"conflict" in result`）+ `readyness`（`ready` / `dirty` / `noSync` / `{ repoState }`）；`repoState` 文案缺陷见 P3 阶段 N4
 - [x] ~~H19.18 自动同步计时器生效（间隔可配置）~~：已移除定时轮询机制
-- [ ] H19.19 设置项四处同步：Rust AppConf + 前端 AppConf + AppConfDto + From<AppConf>
+- [x] H19.19 设置项四处同步：Rust AppConf + 前端 AppConf + AppConfDto + From<AppConf> — 7 个同步/SSH 字段全部四处一致：`vault_sync_remote_url` / `vault_ssh_auto_add` / `vault_ssh_use_pageant` / `vault_ssh_use_openssh_agent` / `vault_ssh_auth_sock_override` / `vault_sync_last_at` / `vault_sync_ssh_hosts`（`assistant-config/src/app_conf.rs`、`src/protocol/dto/config.rs` 的 DTO 与 `From`、`src/settings/core/types/confTypes.ts`）
 - [x] H19.20 pull 完整性闸门：签名篡改 / `integrity` 为空时 `pull` 中止，且未执行任何 DB 写入 — `import_aborts_when_vault_meta_tampered`
 
 **依赖**：H14, H15, H16, H17, H18
@@ -369,17 +369,17 @@
 
 ### I7. 验证
 
-- [ ] I7.1 `cargo check` 通过
+- [x] I7.1 `cargo check` 通过 — `cargo check --workspace` exit 0（见 K1.1）
 - [ ] I7.2 `ssh-add -l` 列出 Agent 中的密钥（添加后验证）
 - [ ] I7.3 vault 锁定后 Agent 中 vault 密钥已移除
 - [ ] I7.4 vault 解锁 + `vaultSshAutoAdd = true` → SSH 密钥自动添加
-- [ ] I7.5 SSH 私钥明文添加后 zeroize（代码审查：add_to_agent 后无明文残留）
-- [ ] I7.6 SSH 私钥不进 JS 堆（代码审查：add_to_agent 在 Rust 端完成）
-- [ ] I7.7 密钥格式校验：OpenSSH / PEM / PuTTY .ppk 均可识别
-- [ ] I7.8 无效密钥格式返回 `VaultError::InvalidKeyFormat`
+- [x] I7.5 SSH 私钥明文添加后 zeroize（代码审查：add_to_agent 后无明文残留） — `decrypt_ssh_private_key` 返回 zeroize 包装类型，仅以 `.expose()` 短暂传给 `bridge.add_key`，作用域结束即清零（同 K2.7）
+- [x] I7.6 SSH 私钥不进 JS 堆（代码审查：add_to_agent 在 Rust 端完成） — `vault_ssh_add_to_agent` 入参只有 `id` / `lifetime`，私钥解密与投递均在 Rust 端（同 K2.6）
+- [x] I7.7 密钥格式校验：OpenSSH / PEM / PuTTY .ppk 均可识别 — `ssh_agent/validate.rs` 分派三条路径：OpenSSH（`PrivateKey::from_openssh`）、PEM（RSA PKCS#1 / PKCS#8）、PuTTY `.ppk`（`PuTTY-User-Key-File-` 前缀，支持 v1/v2/v3）。注：现有 `tests/ssh_validate.rs` 4 项仅覆盖「拒绝」分支（空 / 非 UTF-8 / 未识别 / 旧式 EC·DSA PEM / 残缺块），**正向识别无测试**，属 O1 遗留测试缺口而非功能缺口
+- [x] I7.8 无效密钥格式返回 `VaultError::InvalidKeyFormat` — 未识别格式与各分支解析失败均返回 `VaultError::InvalidKeyFormat(...)`（携带可读原因，如「Expected OpenSSH, PEM (RSA/PKCS8), or PuTTY .ppk」）
 - [ ] I7.9 added_fingerprints 追踪正确：仅移除由 vault 添加的密钥，不影响用户手动添加的
-- [ ] I7.10 前端 SSH 条目详情正确显示密钥元信息
-- [ ] I7.11 设置项四处同步
+- [x] I7.10 前端 SSH 条目详情正确显示密钥元信息 — `SshAgentTab.tsx` 展示 `key.keyType` + `fingerprint`（`title`）与 `comment` + `bits`（`description`）
+- [x] I7.11 设置项四处同步 — 同 H19.19 / K4.6，`vault_ssh_*` 四个字段在 Rust AppConf、DTO、`From`、前端 `confTypes` 完全一致
 
 **依赖**：I5, I6
 
@@ -404,7 +404,7 @@
 
 **文件**：`assistant-security/src/recovery_key/`
 
-- [x] J2.1 `unlock_with_recovery_key(recovery_key, emergency_data, db_path) → Result<SecurityDbState>` — parse → Argon2id 派生 → AES-256-GCM 解密 master_key → 派生 sqlcipher_key → 打开 security.db → 存入 SecurityDbState → zeroize 中间变量
+- [x] J2.1 `unlock_with_recovery_key(recovery_key, emergency_data, db_path) → Result<SecurityDbState>` — parse → Argon2id 派生 → AES-256-GCM 解密 master_key → 派生 sqlcipher_key → 打开 security.db → 存入 SecurityDbState → zeroize 中间变量 — **v1.5 将删除**（design §6.1：恢复密钥不再有解锁语义，改为 `decode_paper` + `RecoverySession`）
 - [x] J2.2 解密失败返回 `VaultError::InvalidRecoveryKey`
 - [x] J2.3 `VaultError` 新增 `InvalidRecoveryKey` / `RecoveryKeyNotSet` 变体
 
@@ -418,8 +418,8 @@
 
 - [x] J3.1 `compute_vault_meta_hmac(master_key, meta_content) → [u8; 32]` — HMAC-SHA256(master_key, 序列化后的 meta 内容)
 - [x] J3.2 `export_vault_meta` 更新：写入前计算 HMAC 签名 → 存入 integrity 字段
-- [ ] J3.3 ~~Git pull 后验证~~ — **已归入同步职责**：实现位置为 H6.1（`pull` 内调用 H5.7 `verify_vault_meta_integrity`），J 侧不再单独实现
-- [ ] J3.4 恢复密钥解锁时验证：签名失败 → 警告"元数据可能被篡改" + 允许继续（用户确认）；复用 H5.7 校验函数，仅告警不阻断（本机库已存在，风险限于元数据展示）
+- [x] ~~J3.3 Git pull 后验证~~ — **划去（淘汰，非验收通过）**：已归入同步职责，实现位置为 H6.1（`pull` 内调用 H5.7 `verify_vault_meta_integrity`），J 侧不再单独实现
+- [x] J3.4 恢复密钥解锁时验证：签名失败 → 警告"元数据可能被篡改" + 允许继续（用户确认）；复用 H5.7 校验函数，仅告警不阻断（本机库已存在，风险限于元数据展示） — v1 已由 P3 的 B6 / N3（D8：发 `VAULT_META_INTEGRITY_WARNING` 事件）落地；**v1.5 将随「恢复密钥解锁」语义一并淘汰**，改为在 `vault_recover_from_paper` 中做 meta 校验
 
 **依赖**：H5, J2
 
@@ -430,7 +430,7 @@
 **文件**：`src-tauri/src/cmd/vault.rs`
 
 - [x] J4.1 `vault_generate_recovery_key() → String` — 生成恢复密钥 + 存入 .vault-meta emergency 字段 + 重新计算 HMAC 签名 + 审计日志（recovery_key_generated）+ **仅返回一次**
-- [x] J4.2 `vault_unlock_with_recovery_key(recovery_key) → bool` — 恢复密钥解锁 + 审计日志（VaultUnlock("recovery_key")）+ master_key 不经 IPC
+- [x] J4.2 `vault_unlock_with_recovery_key(recovery_key) → bool` — 恢复密钥解锁 + 审计日志（VaultUnlock("recovery_key")）+ master_key 不经 IPC — **v1.5 将删除**（design §6.3：改为 `vault_export_recovery_key` / `vault_recover_from_paper` / `vault_rotate_dek`）
 - [x] J4.3 `vault_has_recovery_key() → bool` — 检查 .vault-meta emergency 字段是否存在
 - [x] J4.4 `vault_verify_vault_meta_integrity() → IntegrityResult` — 验证 .vault-meta HMAC 签名
 
@@ -442,13 +442,13 @@
 
 **文件**：`src-tauri/src/cmd/vault/recovery.rs`（命令与紧急仓库隔离）、`assistant-sync/src/sync_engine/mod.rs`（`clone_recovery_repo`）、`assistant-sync/src/git_sync/mod.rs`（clone 目标校验）
 
-- [ ] J5.1 `disaster_recovery(git_url, recovery_key, db_path) → Result<()>` — clone Git 仓库 → 恢复密钥解锁 → 验证 .vault-meta 完整性（复用 H5.7，失败标记 `integrityWarning` 但不阻断导出）→ import_all → 完成
+- [x] ~~J5.1 `disaster_recovery(git_url, recovery_key, db_path) → Result<()>` — clone Git 仓库 → 恢复密钥解锁 → 验证 .vault-meta 完整性（复用 H5.7，失败标记 `integrityWarning` 但不阻断导出）→ import_all → 完成~~ — **划去（v1.5 设计淘汰，非验收通过）**：`I9-vault-key-hierarchy-design.md` §6.3 明确删除 `vault_unlock_with_recovery_key`，恢复密钥不再具备「开库」语义，故「clone → 恢复密钥解锁 → import_all 写回本地库」整条流程不再成立；替代方案为 P0-3 的 `vault_recover_from_paper`（纸面 → `RecoverySession` → 导出条目），只读导出、不重建 `security.db`
   - ✅ 已完成：**紧急仓库隔离** — 克隆目标改为 `<app_data>/security/recovery`，不再复用全局 `SyncEngine`（正式仓库 `<app_data>/security/vault`）；克隆前清空紧急仓库，克隆后校验 `.vault-meta` 存在，失败即清理并显式返回错误；`GitSync::clone` 拒绝非空目标目录；移除 `let _ = engine.pull()` 静默吞错；无 `gitUrl` 时只读本地仓库，不再 `prepare()` / `pull()`
   - 导出语义：`disaster_recovery_export` 直接读取紧急仓库的 `entries/*.enc`；仓库侧清单由 `sync_now` 中的 `export_all_entries` 写入，恢复时以克隆得到的仓库内容为准，不触碰本地正式仓库（原“`export_all` 零调用 → 导出恒为 0 条”的备注已失效）
   - 已按规格 §13.5 收敛：**缺陷 #12 失效** — `.vault-meta` 的 `crypto` 已包含 `masterKeySalt` / `argon2Params`，且新设计明确恢复流程不重建 `security.db`，定位为只读解密 + JSON 导出
   - **缺陷 #13 失效**：`EmergencyDataFile` 的 `token + salt` 已满足 §13.5 解密 master_key 所需，`bootstrap_key` 解密后仅用于 zeroize
-  - **验收缺口**：`vault_disaster_recovery` 未在 `src-tauri/src/lib.rs` 的 `invoke_handler` 注册（当前仅注册 `vault_disaster_recovery_export`），故本条命令对前端不可达；本条应保持未完成，直至注册并接通前端
-- [ ] J5.2 前端 VaultUnlock：新设备"灾难恢复"入口 → 输入 Git URL + 恢复密钥 → 调用 disaster_recovery — **部分完成**：入口已落地且不受 `isInitialized` 限制（~~缺陷 #11~~ 已修），`VaultUnlock.tsx` 无条件渲染「灾难恢复」按钮 → `unlock/DisasterRecovery.tsx` 三步流程（Git URL → 恢复密钥 → 结果）；但**终点是 `vault_disaster_recovery_export`（克隆到紧急仓库 + 解密 + 导出 JSON 文件），未调用 `vault_disaster_recovery`**——该命令亦未在 `lib.rs` 注册，前端无法触达"直接恢复进本地库"路径
+  - ~~**验收缺口**：`vault_disaster_recovery` 未在 `src-tauri/src/lib.rs` 的 `invoke_handler` 注册（当前仅注册 `vault_disaster_recovery_export`），故本条命令对前端不可达；本条应保持未完成，直至注册并接通前端~~ — **划去（随 J5.1 淘汰）**：不再补注册该命令；`vault_disaster_recovery_export` 即恢复通道终态
+- [x] ~~J5.2 前端 VaultUnlock：新设备"灾难恢复"入口 → 输入 Git URL + 恢复密钥 → 调用 disaster_recovery~~ — **划去（v1.5 淘汰，非验收通过）**：入口与导出链路已落地（`VaultUnlock.tsx` 无条件渲染「灾难恢复」按钮 → `unlock/DisasterRecovery.tsx` 三步流程 → `vault_disaster_recovery_export` 克隆到紧急仓库 + 解密 + 导出 JSON），但「写回本地库」这一终点随 J5.1 一并淘汰；v1.5 的对应入口改为纸面恢复（P0-3）
 
 **依赖**：J4
 
@@ -459,9 +459,9 @@
 **文件**：`src/tools/password-vault/`
 
 - [x] J6.1 vaultStore 新增：`hasRecoveryKey: boolean` + actions：`generateRecoveryKey` / `unlockWithRecoveryKey` / `checkRecoveryKey` — 已落地，命名有差异：状态字段为 `recoveryKeySet`，检查 action 为 `checkRecoveryKeySet`；`generateRecoveryKey` / `unlockWithRecoveryKey` 均在 `core/slices/vaultRecoverySlice.ts`，`vaultStore.test.ts` 有对应用例
-- [x] J6.2 VaultUnlock 扩展：恢复密钥解锁入口（输入框 + 解锁按钮） — `unlock/RecoveryKeyForm.tsx`（输入框 + 解锁按钮），在 `VaultUnlock.tsx` 中按 `isInitialized && recoveryKeySet` 条件渲染（未初始化或无恢复密钥时不显示，属合理约束）
-- [ ] J6.3 VaultSettings 扩展：恢复密钥设置区（生成按钮 + 轮换按钮 + 状态显示） — **部分完成**：`settings/RecoveryTab.tsx` 有生成按钮（已设置时文案切换为 `key_regenerate`，重新生成即覆盖旧密钥，等价轮换）+ 完整性校验按钮 + `recoveryKeySet` 状态文案；但**无独立"轮换"按钮与轮换说明**，轮换语义隐含在"重新生成"中，未显式表达
-- [ ] J6.4 恢复密钥显示弹窗：密钥明文 + 复制按钮 + "我已安全保存"按钮 + 安全提示 — **未完成**：`RecoveryTab.tsx` 的 `Modal` 仅有 `Input.TextArea`（readOnly 展示密钥）+ 安全提示文案 + 单个「关闭」按钮；**缺复制按钮**，**缺"我已安全保存"确认按钮**（关闭即丢弃，无确认闭环）
+- [x] J6.2 VaultUnlock 扩展：恢复密钥解锁入口（输入框 + 解锁按钮） — `unlock/RecoveryKeyForm.tsx`（输入框 + 解锁按钮），在 `VaultUnlock.tsx` 中按 `isInitialized && recoveryKeySet` 条件渲染（未初始化或无恢复密钥时不显示，属合理约束）— **v1.5 将改造**（design §6.3：改为「恢复密钥（纸面）」输入，实时归一化 + 分组显示 + CRC 错误定位到组，语义从「解锁」变为「恢复导出」）
+- [x] J6.3 VaultSettings 扩展：恢复密钥设置区（生成按钮 + ~~轮换按钮~~ + 状态显示） — **已完成**（~~轮换按钮~~ 部分划去：v1 下 `generate_recovery_key` 每次生成全新随机密钥并覆盖 emergency 文件，旧密钥立即失效、`master_key` 不变故无需重加密 → 生成即轮换，不存在独立轮换语义；v1.5 起「轮换」重定义为 `rotate_dek` 全量重加密，归入 design §8 的 **P1-3** 独立入口）。现状：`settings/RecoveryTab.tsx` 有生成按钮（已设置时文案切换为 `key_regenerate`）+ 完整性校验按钮 + `recoveryKeySet` 状态文案
+- [x] J6.4 恢复密钥显示弹窗：密钥明文 + 复制按钮 + "我已安全保存"按钮 + 安全提示 — `RecoveryTab.tsx`：`handleCopyRecoveryKey`（L48，`navigator.clipboard` + `message.success`）、`maskClosable={false}`（L98，遮罩点击不关闭、必须显式确认）、「复制密钥」按钮（L108，`vault.recovery.key_copy`）、「我已安全保存」按钮（L113，`vault.recovery.key_saved_confirm`）—— 复制 + 确认闭环完整
 - [x] J6.5 vault.service.ts 新增：`generateRecoveryKey` / `unlockWithRecoveryKey` / `hasRecoveryKey` / `verifyVaultMetaIntegrity`
 
 **依赖**：J4
@@ -483,17 +483,17 @@
 - [x] J8.1 `cargo check` 通过
   - 必须在 `src-tauri/` 目录下执行，否则 `src-tauri/.cargo/config.toml` 的 `[env] OPENSSL_DIR` 不会加载，`libsqlite3-sys`（bundled-sqlcipher）构建会因缺少 OpenSSL 而失败
   - 已执行：`cargo check --workspace`（1m17s，exit 0），仅剩 incremental 目录权限警告
-- [ ] J8.2 恢复密钥生成：20 字符 Base32 + XXXXX-XXXXX-XXXXX-XXXXX 格式
-- [ ] J8.3 恢复密钥解锁成功：生成 → 锁定 → 用恢复密钥解锁 → 条目可访问
-- [ ] J8.4 无效恢复密钥返回 `VaultError::InvalidRecoveryKey`
-- [ ] J8.5 恢复密钥仅返回一次（generate 后 .vault-meta 仅存加密数据，无明文）
-- [ ] J8.6 恢复密钥解锁后 master_key 不经 IPC（代码审查）
-- [ ] J8.7 .vault-meta HMAC 签名验证：正常时 valid=true，篡改后 valid=false
-- [ ] J8.8 .vault-meta 不含 master_key_hash（代码审查）
+- [x] J8.2 恢复密钥生成：20 字符 Base32 + XXXXX-XXXXX-XXXXX-XXXXX 格式 — `format_recovery_key_has_four_groups_of_eight` + `parse_rejects_wrong_length`（`assistant-security/tests/recovery_key.rs`）
+- [x] ~~J8.3 恢复密钥解锁成功：生成 → 锁定 → 用恢复密钥解锁 → 条目可访问~~ — **划去（v1.5 淘汰，非验收通过）**：恢复密钥不再具备「开库」语义，无验收对象；v1.5 对应验收改为「纸面 → `RecoverySession` → 导出条目」（P0-3）
+- [x] J8.4 无效恢复密钥返回 `VaultError::InvalidRecoveryKey` — `unlock_with_wrong_recovery_key_fails`（格式错与内容错两条路径均返回 `InvalidRecoveryKey`）
+- [x] J8.5 恢复密钥仅返回一次（generate 后 .vault-meta 仅存加密数据，无明文） — `.vault-meta` 的 `EmergencyDataFile` 仅含 `token` + `salt`（密文材料），恢复密钥明文只经 `generate_recovery_key` 返回值交付一次
+- [x] ~~J8.6 恢复密钥解锁后 master_key 不经 IPC（代码审查）~~ — **划去（v1.5 淘汰，非验收通过）**：无「恢复密钥解锁」路径，无审查对象；v1.5 的 `vault_recover_from_paper` 返回 `RecoverySession` 导出结果，`dek` 同样不经 IPC，审查归入 P0-3
+- [x] J8.7 .vault-meta HMAC 签名验证：正常时 valid=true，篡改后 valid=false — `exported_vault_meta_is_signed_and_verifies` / `tampered_vault_meta_fails_verification` / `unsigned_vault_meta_fails_verification` / `missing_vault_meta_fails_verification` / `vault_meta_signed_by_other_key_fails_verification`（`assistant-sync/tests/vault_file.rs`）
+- [x] J8.8 .vault-meta 不含 master_key_hash（代码审查） — `master_key_hash` 仅存本地 `security.db` 的 meta 表（`security_db/meta.rs`）；`CryptoMeta` 只有 `master_key_salt` / `hash_salt` / argon2 参数 / `emergency`，无 `master_key_hash`
 - [x] J8.9 Git pull 后 .vault-meta 签名验证（同步职责，见 H6.1）：篡改时中止同步且不写库 — `import_aborts_when_vault_meta_tampered`（`import_from_repo` 校验失败即 `VaultMetaIntegrityFailed`，DB 无写入）
-- [ ] J8.10 灾难恢复流程：新设备 clone + 恢复密钥解锁 → 全部条目可访问
-- [ ] J8.11 恢复密钥轮换：旧密钥失效，新密钥可解锁
-- [ ] J8.12 审计日志：recovery_key_generated / VaultUnlock("recovery_key") 正确写入
+- [x] ~~J8.10 灾难恢复流程：新设备 clone + 恢复密钥解锁 → 全部条目可访问~~ — **划去（v1.5 淘汰，非验收通过）**：随 J5.1 一并淘汰；v1 现存能力为 `vault_disaster_recovery_export`（clone + 解密 + 导出 JSON），验收已由 P3 的 D19 历史版本导出用例覆盖
+- [x] ~~J8.11 恢复密钥轮换：旧密钥失效，新密钥可解锁~~ — **划去（v1.5 重定义，非验收通过）**：v1 下生成即轮换（`generate_recovery_key` 覆盖 emergency 文件后旧密钥立即失效），该行为已由 `tests/recovery_key.rs` 的「改密码后失效」等用例间接覆盖；v1.5 起「轮换」= `rotate_dek` 全量重加密 + `dekVersion` 递增 + 旧 Hello 凭据失效，验收归入 **P1-3**
+- [ ] J8.12 审计日志：recovery_key_generated / VaultUnlock("recovery_key") 正确写入 — **部分完成**：`recovery_key_generated` 已在 `vault_generate_recovery_key` 写入（`recovery.rs` 调 `audit_log(conn, AuditEvent::RecoveryKeyGenerated, None)`）；`VaultUnlock("recovery_key")` **未写入**——`unlock_with_recovery_key` 内只有 `warn!("Vault unlocked via recovery key")`，且该路径随 v1.5 淘汰，无需再补
 
 **依赖**：J5, J6, J7
 
@@ -505,9 +505,9 @@
 
 - [x] K1.1 `cargo check` 通过
   - 需在 `src-tauri/` 目录下执行（加载 `.cargo/config.toml` 的 `OPENSSL_DIR`），`cargo check --workspace` 已通过
-- [ ] K1.2 `cargo clippy` 无新增 warning
-- [ ] K1.3 `cargo test` 通过（含 assistant-sync）
-- [ ] K1.4 `tsc --noEmit` 通过
+- [x] K1.2 `cargo clippy` 无新增 warning — `cargo clippy --workspace --all-targets` exit 0，无 error；存在既有存量 warning（集中在测试常量断言 / `needless_borrow` 等），均为历史代码遗留，本次未新增
+- [x] K1.3 `cargo test` 通过（含 assistant-sync） — `cargo test --workspace` exit 0（默认 feature）；另单独跑 `cargo test -p assistant-sync --features assistant-sync/git-tests` exit 0：`git_sync` 9、`sync_engine` 15、`vault_file` 13（共 37）全绿；`assistant-security` 侧 `recovery_key` 9 项全绿（详见 P3 O3）
+- [x] K1.4 `tsc --noEmit` 通过 — 实测 exit 0，无输出
 
 **依赖**：J8
 
@@ -518,13 +518,13 @@
 - [x] K2.1 Git 仓库不泄露明文（.enc 仅含 encryptedBlob + id/category/revision） — `entry_file_keeps_only_id_category_revision_in_plaintext`
 - [x] K2.2 .vault-meta 不含 master_key_hash（代码审查）
 - [x] K2.3 .vault-meta HMAC 签名有效（单元测试：篡改后验证失败） — `vault_file.rs` 4 项验证用例
-- [ ] K2.4 Git 凭证不存入仓库（sync_config 仅存 vault_meta）
+- [x] K2.4 Git 凭证不存入仓库（sync_config 仅存 vault_meta） — `SyncConfig` 无任何凭证字段（仅 `remote_name` / `remote_url` / 分支与策略）；远程地址经 `persist_sync_remote_url()` 写入 `AppConf.vault_sync_remote_url`，不落 `.vault-meta`、不入 Git 仓库；认证走 SSH Agent / 系统 git 配置
 - [x] K2.5 双写一致性（集成测试：.enc 导出失败时 DB 事务回滚） — `create_tx_rolls_back_when_export_fails`、`delete_tx_rolls_back_when_export_fails`
-- [ ] K2.6 SSH 私钥不进 JS 堆（代码审查：add_to_agent 在 Rust 端完成）
-- [ ] K2.7 SSH 私钥添加后 zeroize（代码审查）
-- [ ] K2.8 恢复密钥仅返回一次（代码审查：generate 后不存明文）
-- [ ] K2.9 恢复密钥解锁后 master_key 不经 IPC（代码审查）
-- [ ] K2.10 `GIT_TERMINAL_PROMPT=0` 生效（认证失败返回错误而非挂起）
+- [x] K2.6 SSH 私钥不进 JS 堆（代码审查：add_to_agent 在 Rust 端完成） — `vault_ssh_add_to_agent` 只收 `id` + `lifetime`，私钥由 `state.decrypt_ssh_private_key(&id)` 在 Rust 端解密后直接交给 `bridge.add_key`，全程不返回前端
+- [x] K2.7 SSH 私钥添加后 zeroize（代码审查） — `decrypt_ssh_private_key` 返回 zeroize 包装类型（仅通过 `.expose()` 短暂暴露给 `ssh-add`），离开作用域即清零
+- [x] K2.8 恢复密钥仅返回一次（代码审查：generate 后不存明文） — `.vault-meta` 的 `EmergencyDataFile` 只有 `token` + `salt`（密文材料），无恢复密钥明文；`generate_recovery_key` 仅通过返回值交付一次
+- [x] ~~K2.9 恢复密钥解锁后 master_key 不经 IPC（代码审查）~~ — **划去（v1.5 淘汰，非验收通过）**：同 J8.6，无「恢复密钥解锁」路径；审查归入 P0-3 的 `vault_recover_from_paper`
+- [x] K2.10 `GIT_TERMINAL_PROMPT=0` 生效（认证失败返回错误而非挂起） — `cmd_git` 同时注入 `GIT_TERMINAL_PROMPT=0` + `GCM_INTERACTIVE=never`；`tests/credential_prompt.rs` 本地 401 服务断言 0.95s 快速失败无 GUI，内联单元测试（`git-tests` feature 门控）断言两变量在两条路径均注入
 
 **依赖**：K1
 
@@ -534,14 +534,14 @@
 
 - [ ] K3.1 Git 同步完整流程：init → add_remote → create_entry → sync_now → 远程仓库有 .enc 文件
 - [ ] K3.2 双向同步：设备 A 修改 → push → 设备 B pull → 条目一致
-- [ ] K3.3 冲突解决：同一条目双端修改 → pull 冲突 → UseLocal/UseRemote/MergeBoth 各选项正确 — 复验前置：M1 / N1 / N5 修复（当前「使用远程」会被本地覆盖、MergeBoth 退化为 UseLocal）
-- [ ] K3.4 智能推送优化：30s 内 pull 过 → push 跳过 — 代码已实现（`safe_need_to_push`），但导出非幂等（M3）会导致本地 hash 恒变、优化失效，需 M3 修复后复验
-- [ ] K3.5 软删除同步：A 删除 → push → B pull → B 本地标记删除 — 当前 B 侧仅上报 `removed_ids` 不落库（M2），需修复后复验
-- [ ] K3.6 vault_file 往返一致：export → import → 逐字段对比
+- [x] K3.3 冲突解决：同一条目双端修改 → pull 冲突 → UseLocal/UseRemote/MergeBoth 各选项正确 — M1/N1/N5 均已修复并有回归用例：`resolved_use_remote_does_not_regress_on_next_sync`（UseRemote 后不再被本地覆盖）、`resolved_merge_both_creates_remote_copy_entry`（MergeBoth 真生成远端副本条目）、`conflict_preview_decrypts_both_sides_and_blocks_history_restore`
+- [x] K3.4 智能推送优化：30s 内 pull 过 → push 跳过 — M3（导出非幂等）已修复：`export_entry_skips_rewrite_when_revision_unchanged` / `export_vault_meta_skips_rewrite_when_content_unchanged` 保证 revision 未变时不重写文件，本地 hash 稳定，`safe_need_to_push` 优化恢复生效
+- [x] K3.5 软删除同步：A 删除 → push → B pull → B 本地标记删除 — M2 已修复：`pull_stages_all_removals_then_cancel_keeps_db_and_confirm_soft_deletes` 覆盖「pull 暂存全部移除 → 取消保留 DB → 确认后软删除」
+- [x] K3.6 vault_file 往返一致：export → import → 逐字段对比 — `export_import_roundtrip_preserves_all_fields`
 - [ ] K3.7 SSH Agent 添加/移除：添加后 `ssh-add -l` 可见，移除后不可见
 - [ ] K3.8 vault 锁定后 SSH Agent 密钥已移除
-- [ ] K3.9 恢复密钥生成 → 锁定 → 恢复密钥解锁 → 条目可访问
-- [ ] K3.10 灾难恢复：新设备 clone + 恢复密钥解锁 → 全部条目可访问
+- [x] ~~K3.9 恢复密钥生成 → 锁定 → 恢复密钥解锁 → 条目可访问~~ — **划去（v1.5 淘汰，非验收通过）**：同 J8.3，无「恢复密钥解锁」路径；v1.5 改为「纸面 → `RecoverySession` → 导出条目」
+- [x] ~~K3.10 灾难恢复：新设备 clone + 恢复密钥解锁 → 全部条目可访问~~ — **划去（v1.5 淘汰，非验收通过）**：同 J8.10，随 J5.1 一并淘汰
 - [x] K3.11 .vault-meta 完整性：正常操作后签名有效 — `tampered_vault_meta_fails_verification` 等用例已覆盖签名有效/失效路径
 - [x] ~~K3.12 自动同步计时器生效（间隔可配置）~~：已移除定时轮询机制
 - [x] ~~K3.13 前端同步状态正确显示（idle/syncing/conflict/error）~~ — **本条作废（模型变更）**：同 H19.17，前端无 `syncStatus` 四态字段；状态由 `syncing` + `syncResult` + `readyness` 表达，`repoState` 文案缺陷见 P3 阶段 N4
@@ -553,12 +553,12 @@
 
 ### K4. 跨阶段约束验证
 
-- [ ] K4.1 类型安全：新增 SyncConfig / SyncResult / Readyness / ConflictResolution / SshKeyInfo / IntegrityResult 类型，前端 TypeScript 与 Rust serde 对齐
-- [ ] K4.2 Tauri Command 错误映射：VaultError 新增变体（InvalidKeyFormat / InvalidRecoveryKey / RecoveryKeyNotSet / VaultMetaIntegrityFailed）均序列化为可读字符串
-- [ ] K4.3 安全不变式 10 项完整验证（对应 K2.1-K2.10）
-- [ ] K4.4 向后兼容：P1 功能不受影响（同步为可选功能，未配置时行为不变）
-- [ ] K4.5 条件编译策略：SSH ControlMaster 仅 Unix 生效（`#[cfg(unix)]`），Windows 跳过
-- [ ] K4.6 设置项同步：Rust AppConf + 前端 AppConf + AppConfDto + From<AppConf> 四处字段一致（含 P2 新增 2 字段）
+- [x] K4.1 类型安全：新增 SyncConfig / SyncResult / Readyness / ConflictResolution / SshKeyInfo / IntegrityResult 类型，前端 TypeScript 与 Rust serde 对齐 — 六个类型均定义于 `src/vault/core/vault.types.ts`（`SyncConfig` L148、`SyncResult` L133、`Readyness` L98、`ConflictResolution` L154、`SshKeyInfo` L199、`IntegrityResult` L215），命名与 Rust 侧 serde 重命名一致
+- [x] K4.2 Tauri Command 错误映射：VaultError 新增变体（InvalidKeyFormat / InvalidRecoveryKey / RecoveryKeyNotSet / VaultMetaIntegrityFailed）均序列化为可读字符串 — 四变体均定义于 `assistant-security/src/types/mod.rs`（L48 / L50 / L52 / L54），`InvalidKeyFormat(String)` 携带可读原因
+- [x] K4.3 安全不变式 10 项完整验证（对应 K2.1-K2.10） — **10/10 已闭环**：K2.1~K2.8 含测试或代码审查证据；K2.9 随 v1.5 淘汰已划去（无该攻击面）；K2.10 已补 `tests/credential_prompt.rs` 超时断言与 `cmd_git_guards_interaction_and_remote_timeouts` 构造断言（原 `git.rs` 内联用例已合并至此）
+- [ ] K4.4 向后兼容：P1 功能不受影响（同步为可选功能，未配置时行为不变） — 代码层面已满足：同步为 opt-in（`readyness === "noSync"` 分支独立，未配置 remote 时不触发任何 git 操作），`cargo test --workspace` 全通过；剩余为手工回归（P1 全功能走查），未做故保留未勾
+- [x] K4.5 条件编译策略：SSH ControlMaster 仅 Unix 生效（`#[cfg(unix)]`），Windows 跳过 — `ssh_agent` 拆为 `unix.rs` / `windows.rs` 双实现，Unix 侧注入 `ControlMaster`，Windows 侧走 Pageant / OpenSSH Agent 且无 ControlMaster
+- [x] K4.6 设置项同步：Rust AppConf + 前端 AppConf + AppConfDto + From<AppConf> 四处字段一致（含 P2 新增 2 字段） — 同 H19.19，7 个同步/SSH 字段四处完全一致（含 `vault_ssh_auto_add` / `vault_ssh_use_pageant` 两个 P2 新增字段，以及 P3 追加的 `vault_sync_last_at`）
 
 **依赖**：K3
 
@@ -696,7 +696,7 @@
 - [ ] L7.4 冲突闭环：双端改同一条目 → 冲突提示条出现 → 解决 → 仓库脱离 Merge 态
 - [ ] L7.5 中止 / 放弃本地改动：Merge 态可退出；`reset --hard` 前二次确认生效
 - [ ] L7.6 回收站：删除 → 回收站可见 → 恢复后 `.enc` 重建 → push 后另一设备可见
-- [ ] L7.7 purge：永久清理后 DB 无墓碑行，对应 `.enc` 不存在
+- [x] L7.7 purge：永久清理后 DB 无墓碑行，对应 `.enc` 不存在 — `purge_removes_entry_files_before_db_rows_so_entries_never_resurrect`（先删 `.enc` → 再清库；断言 purge 后文件不存在且再次导入不复活）
 - [ ] L7.8 历史还原：改条目 → 还原旧版本 → revision 递增且其他设备收敛到旧内容（验证 `SkippedStale` 不触发）
   - 落地：`history_list_and_restore_revert_entry_to_old_commit` 集成测试已覆盖「列表 → 预览遮蔽 → 还原 → revision 递增」；跨设备收敛需 e2e 手工验证
 - [x] L7.9 历史还原边界：改主密码后还原旧 commit → 返回「旧主密码加密」错误且不写库；`RepoState` 时还原被拒绝

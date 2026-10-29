@@ -1,4 +1,4 @@
-assistant-security v0.1.0 (G:\codeversion\assistant\src-tauri\crates\assistant-security)
+assistant-security v0.1.0 (src-tauri/crates/assistant-security)
 ├── aes-gcm v0.10.3
 │   ├── aead v0.5.2
 │   │   ├── crypto-common v0.1.7
