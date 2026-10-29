@@ -6,90 +6,8 @@ use assistant_crypto::vault_crypto::types::CipherAlgorithm;
 
 pub use assistant_crypto::error::VaultError;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum VaultCategory {
-    #[default]
-    Login,
-    Note,
-    Card,
-    Identity,
-    SshKey,
-    Custom,
-}
-
-impl fmt::Display for VaultCategory {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Login => write!(f, "login"),
-            Self::Note => write!(f, "note"),
-            Self::Card => write!(f, "card"),
-            Self::Identity => write!(f, "identity"),
-            Self::SshKey => write!(f, "sshKey"),
-            Self::Custom => write!(f, "custom"),
-        }
-    }
-}
-
-impl VaultCategory {
-    pub fn parse(s: &str) -> Option<Self> {
-        s.parse().ok()
-    }
-}
-
-impl std::str::FromStr for VaultCategory {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "login" => Ok(Self::Login),
-            "note" => Ok(Self::Note),
-            "card" => Ok(Self::Card),
-            "identity" => Ok(Self::Identity),
-            "sshKey" => Ok(Self::SshKey),
-            "custom" => Ok(Self::Custom),
-            _ => Err(format!("unknown VaultCategory: {}", s)),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CustomFieldInput {
-    pub name: String,
-    pub value: String,
-    pub is_protected: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultEntryCreate {
-    pub category: VaultCategory,
-    pub title: String,
-    pub username: Option<String>,
-    pub url: Option<String>,
-    pub password: Option<String>,
-    pub notes: Option<String>,
-    pub totp_secret: Option<String>,
-    pub tags: Vec<String>,
-    pub custom_fields: Vec<CustomFieldInput>,
-    pub is_favorite: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultEntryUpdate {
-    pub category: VaultCategory,
-    pub title: String,
-    pub username: Option<String>,
-    pub url: Option<String>,
-    pub password: Option<String>,
-    pub notes: Option<String>,
-    pub totp_secret: Option<String>,
-    pub tags: Vec<String>,
-    pub custom_fields: Vec<CustomFieldInput>,
-    pub is_favorite: bool,
-}
+pub use crate::dto::*;
+pub use crate::shared::*;
 
 #[derive(Debug, Clone)]
 pub struct VaultEntrySnapshot {
@@ -151,38 +69,6 @@ pub struct VaultCryptoInfo {
     pub default_cipher: CipherAlgorithm,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultEntrySummary {
-    pub id: String,
-    pub category: VaultCategory,
-    pub title: String,
-    pub username: Option<String>,
-    pub url: Option<String>,
-    pub tags: Vec<String>,
-    pub is_favorite: bool,
-    pub updated_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultEntryDetail {
-    pub id: String,
-    pub category: VaultCategory,
-    pub title: String,
-    pub username: Option<String>,
-    pub url: Option<String>,
-    pub has_password: bool,
-    pub has_notes: bool,
-    pub has_totp: bool,
-    pub custom_field_names: Vec<String>,
-    pub tags: Vec<String>,
-    pub is_favorite: bool,
-    pub revision: u64,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-
 pub struct VaultEntryDecrypted {
     pub id: String,
     pub category: VaultCategory,
@@ -229,13 +115,6 @@ pub struct DecryptedCustomField {
     pub name: String,
     pub value: assistant_crypto::vault_crypto::types::VaultPlaintext,
     pub is_protected: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RevealResult {
-    pub value: String,
-    pub expires_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -309,7 +188,7 @@ impl From<VaultEntryExport> for VaultEntryCsvRow {
     }
 }
 
-impl From<VaultEntryCsvRow> for VaultEntryCreate {
+impl From<VaultEntryCsvRow> for crate::dto::VaultEntryCreate {
     fn from(r: VaultEntryCsvRow) -> Self {
         Self {
             category: r.category,

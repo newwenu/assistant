@@ -3,8 +3,7 @@ use std::fs;
 
 fn main() {
     let dump_path = std::env::args().nth(1).unwrap_or_else(|| {
-        r"C:\Users\<user>\AppData\Roaming\com.assistant\crashes\crash.dmp"
-            .to_string()
+        r"C:\Users\<user>\AppData\Roaming\com.assistant\crashes\crash.dmp".to_string()
     });
 
     let data = fs::read(&dump_path).expect("failed to read dump file");

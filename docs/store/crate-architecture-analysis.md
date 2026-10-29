@@ -192,7 +192,7 @@ security → crypto              ← 步 2 后仅剩 crypto
 
 **收益**：providers 变为叶 crate。`cargo build -p assistant-providers` 的依赖闭包缩减约 25s（§1.4）；**完整 workspace 构建零提速**（主 app 仍依赖 security）。架构上消除了"网络层依赖密钥管理层"的错误方向。已达成。
 
-### 2.4 sync → security（耦合集中于 `sync_engine` + `vault_file` 两个模块，必须整体迁移）
+### 2.4 ~~sync → security~~ ✅ 已消除（耦合集中于 `sync_engine` + `vault_file` 两个模块，必须整体迁移）
 
 **用途**：sync 在 4 个模块中引用 security，性质分四类——
 - 加密原语：`MasterKey` / `CipherAlgorithm` / `VaultPlaintext` / `VaultCrypto`
@@ -236,10 +236,20 @@ security → crypto              ← 步 2 后仅剩 crypto
 
 结论：**`vault_file` 与 `sync_engine` 同去同留**。这也说明 `assistant-sync` 的真实定位是「Git 传输基础设施」，Vault 文件格式本属 vault 领域。
 
-**迁移后 `assistant-sync` 的形态**：只剩 `git_sync/` + `types/`（~1100 行），**零内部 crate 依赖**，成为纯叶节点。主 app 侧仅剩 `set_ssh_persist_hosts` 一个调用点，无影响。
+**迁移后 `assistant-sync` 的形态**：只剩 `git_sync/` + `types/`（1137 行，`cargo tree -p assistant-sync` 实测仅 serde/log/thiserror 三个外部依赖），**零内部 crate 依赖**，成为纯叶节点。
+
+**⚠️ 主 app 调用点（2026-10-29 复核修正）**：原判断「仅剩 `set_ssh_persist_hosts` 一个调用点，无影响」**不成立**——实测主 app 对 `assistant_sync::` 共 **17 处引用、分布在 3 个文件**：
+
+| 文件 | 处数 | 引用内容 |
+|---|---|---|
+| `src/cmd/vault/sync.rs` | 13 | `SyncResult` / `SyncConfig` / `ConflictResolution` / `PendingRemovals` / `Readyness` / `ConflictFile` / `HistoryCommit` / `EntryPreview` / `ConflictPreview` |
+| `src/cmd/vault/mod.rs` | 3 | `git_sync::ssh::set_ssh_persist_hosts`（2 处）+ `SyncConfig` |
+| `src/cmd/vault/recovery.rs` | 1 | `SyncConfig` |
+
+影响范围虽大于预估，但**均为只读引用，迁移时零逻辑改写**（`vault_file` + `sync_engine` 已随步 2 迁入 vault，这 17 处只是 DTO 直出前端的签名）。这也印证 §3.1.1 指出的「子 crate 类型直出前端绕过 DTO」问题仍存在（实测 13 个去重类型，见 [dto-boundary-analysis.md](./dto-boundary-analysis.md) §4）。
 
 **收益（需区分构建场景）**：
-- **单独编译 `-p assistant-sync`**：闭包从 security 全量重依赖降为 8 个轻依赖（serde/chrono/base64/sha2/hmac/uuid/log/thiserror），实测减少约 20s（zxcvbn 9.7s + arboard 4.1s + ssh-key 3.6s + rsa 1.8s + rusqlite 3.2s + reqwest）。
+- **单独编译 `-p assistant-sync`**：闭包从 security 全量重依赖降为 **3 个轻依赖**（serde / log / thiserror，`cargo tree` 实测），实测减少约 20s（省去 zxcvbn 9.7s + arboard 4.1s + ssh-key 3.6s + rsa 1.8s + rusqlite 3.2s + reqwest）。
 - **完整 workspace 构建**：**无提速**（主 app 仍依赖全部 crate）。
 - 真正普适的收益是依赖归属清晰：`-p assistant-vault` 可独立编译（crypto + sync + SQLCipher + keyring，**无网络栈、无 OS-UI 栈**）。
 
@@ -261,13 +271,13 @@ security → crypto              ← 步 2 后仅剩 crypto
 
 ## 3. 主 app 职责分析：可下放至子 crate 的功能
 
-主 app 当前 6001 行（40 个 .rs 文件），其中约 1/3 是可下放的领域逻辑。
+主 app 当前 6553 行（2026-10-29 实测，与 §1.1 基线一致；原文 6001 为旧值），其中约 1/3 是可下放的领域逻辑。
 
 ### 3.1 🔴 强烈建议下放
 
 | 功能 | 当前位置 | 行数 | 目标 | 条件 |
 |---|---|---|---|---|
-| DTO/协议类型定义 | protocol/dto/*.rs | 1069 | 新 crate assistant-protocol（**⚠️ 有条件**，见 §3.1.1） | 需先断开对 storage/providers 的类型引用（见 §4.1）；**且必须同时补齐 5 个直出类型的 DTO + 引入 TS 代码生成，否则抽 crate 无真实收益，不如留在主 app** |
+| DTO/协议类型定义 | protocol/dto/*.rs | 1069 | 新 crate assistant-protocol（**⚠️ 有条件**，见 §3.1.1） | 需先断开对 storage/providers 的类型引用（见 §4.1）；**且必须同时补齐 13 个直出类型的 DTO + 引入 TS 代码生成，否则抽 crate 无真实收益，不如留在主 app** |
 | ~~崩溃转储~~ | ~~crash_dump.rs~~ | 87 | ~~新 crate assistant-crash~~ ✅ 已创建 | 完全独立，已落地（`crates/assistant-crash`） |
 | 存储分析逻辑 | cmd/storage.rs | 159 | assistant-storage | 需剥离 tauri AppHandle 胶水，核心逻辑纯 DB + attachment_store |
 | 会话工具函数 | cmd/conversation_utils.rs | 38 | assistant-storage | 纯 DB 查询，返回 storage 类型，主 app 做 DTO 转换 |
@@ -279,22 +289,24 @@ security → crypto              ← 步 2 后仅剩 crypto
 - 子 crate 内的内联 serde struct（`sync/vault_file/types.rs`、`security/types/mod.rs`、`storage/conversations/*`）是**各自领域类型**，非 DTO 镜像
 - 唯一名字重叠：providers 的 `ProviderErrorPayload` → DTO `ProviderErrorPayloadDto`（`From` 包装）
 
-**反方向的事实更重要**：5 个子 crate 类型**直接跨 IPC 到前端，完全绕过 DTO**：
+**反方向的事实更重要**：子 crate 类型**直接跨 IPC 到前端，完全绕过 DTO**（下表列 5 个代表，完整实测见注记）：
 
 | 命令 | 返回类型 | 有 DTO？ |
 |---|---|---|
 | `vault_sync` | `assistant_sync::SyncResult` | ❌ |
 | `vault_get_sync_config` | `assistant_sync::SyncConfig` | ❌ |
 | `vault_sync_readyness` | `assistant_sync::Readyness` | ❌ |
-| vault recovery | `assistant_sync::vault_file::IntegrityResult` | ❌ |
+| vault recovery | `assistant_sync::vault_file::IntegrityResult` | ✅ 已收敛进 `assistant-vault::dto` |
 | `vault_ssh_list` | `Vec<assistant_security::ssh_agent::SshKeyInfo>` | ❌ |
+
+> **修正（2026-10-29，原因：原条目未按 §0 要求给出代码证据，且漏记 crypto 侧类型）**：原记「5 个」，实测为 **13 个去重类型 / 14 处 `#[command]` 签名**。漏记 `assistant_sync` 的 `PendingRemovals` / `ConflictFile` / `HistoryCommit` / `EntryPreview` / `ConflictPreview`、`assistant_security::SshKeyMeta`、`assistant_crypto` 的 `TotpResult` / `ParsedOtpAuth`。完整清单、逐签名行号与 crypto 归属判定见 [dto-boundary-analysis.md](./dto-boundary-analysis.md) §4–§5。
 
 **真实架构状态**：
 ```
 前端 TS 类型（手写镜像，chatTypes.ts / vault.types.ts）
    ↑ camelCase 契约
 DTO（主 app 内部，rename_all=camelCase + deny_unknown_fields）──┐ 部分覆盖
-子 crate 领域类型 ─────────────────────────────────────────────┘ 5 个类型直出前端
+子 crate 领域类型 ─────────────────────────────────────────────┘ 13 个类型直出前端
 ```
 
 **因此 DTO 不是"共享契约层"，而是主 app 内部的序列化适配层，单消费者。** 它不可删除（承担 camelCase 塑形 + `deny_unknown_fields` 校验），但"协议定义中心"的说法不成立——只覆盖部分 wire 类型。
@@ -307,10 +319,10 @@ DTO（主 app 内部，rename_all=camelCase + deny_unknown_fields）──┐ �
 | 强制纯度约束 | ✅ 真实，但**只约束一部分**，契约仍分裂 |
 | 编译收益 | 0（主 app 仍依赖全部 crate） |
 
-**⚠️ 只按原方案抽取，会得到一个"半截契约 crate"**——禁止 DTO 依赖 storage/providers，但 sync/security 的 5 个 wire 类型仍在外直出，反而制造"契约已集中"的假象。
+**⚠️ 只按原方案抽取，会得到一个"半截契约 crate"**——禁止 DTO 依赖 storage/providers，但 sync/security/crypto 的 13 个 wire 类型仍在外直出，反而制造"契约已集中"的假象。
 
 **建设性方案（抽 crate 的前提条件）**：
-1. **补齐契约**：为 5 个直出类型建立 DTO（`SyncResultDto`/`SyncConfigDto`/`ReadinessDto`/`IntegrityResultDto`/`SshKeyInfoDto`），主 app 做 From 桥接 → wire 契约 100% 集中
+1. **补齐契约**：为 13 个直出类型建立 DTO（`SyncResultDto`/`SyncConfigDto`/`ReadinessDto`/`PendingRemovalsDto`/`ConflictFileDto`/`HistoryCommitDto`/`EntryPreviewDto`/`ConflictPreviewDto`/`SshKeyInfoDto`/`SshKeyMetaDto`/`IntegrityResultDto`/`TotpResultDto`/`ParsedOtpAuthDto`），主 app 做 From 桥接 → wire 契约 100% 集中（实测清单见 [dto-boundary-analysis.md](./dto-boundary-analysis.md) §4）
 2. **代码生成**：引入 `ts-rs` 或 `typeshare` 从 Rust 生成 TS 类型。当前前端是手写镜像，且 [protocolContract.test.ts](../../src/chat/core/__tests__/protocolContract.test.ts) 只校验 TS 自身字段、**不校验 Rust 侧**，手写漂移无任何保护
 3. 只有 1+2 同时做，抽 crate 才有真实收益（编译器保证前后端契约一致）；**否则不抽**，保留在主 app 作为序列化适配层（P3）
 
@@ -507,7 +519,9 @@ assistant-vault    (中层) ~5300 行
   sync_engine/   ← 自 sync 迁入    1012
   biometric/                       744
   vault_file/    ← 自 sync 迁入     503
-  types/（VaultEntry* DTO）          300
+  types/（domain + 持久化格式）       189
+  dto/（线格式：entry/audit/integrity）108
+  shared/（跨层词表）                  51
   recovery_key/                    198
   password_strength/ ← 自 security 迁入 149   ← ⚠️ 归属修正，见 §6.4
   audit/                            96
@@ -552,6 +566,8 @@ security → crypto
    | `VaultError` | `assistant-crypto` | 共享错误枚举，跨模块使用，非业务 DTO |
    | `VaultEntryCreate/Update/Snapshot/Summary/Detail/Decrypted/Export`、`VaultCategory`、`CustomFieldInput`、`ImportOutcome`、`VaultCryptoInfo`、`RevealResult` | `assistant-vault` | 真正的 Vault 领域 DTO |
 
+   **（执行期再修正）vault 内部按「是否跨 IPC」三拆**：`dto/`（`Create`/`Update`/`Summary`/`Detail`/`RevealResult`/`StrengthResult`/`AuditLogEntry`/`IntegrityResult`）、`shared/`（`VaultCategory`/`CustomFieldInput`）、`types/`（`Snapshot`/`Import`/`ImportOutcome`/`CryptoInfo`/`Decrypted` + 持久化格式 `Export`/`CsvRow`）。**判定标准：字段名会进 `.vault` 文件 / CSV / DB 列的，一律不进 `dto`。** 详见 [dto-boundary-analysis.md](./dto-boundary-analysis.md) §1.3。
+
 **为什么 security 不并入 vault**：拆分后 `assistant-security` 的 7 个模块只被 `cmd/vault/*` 调用（单消费者）。但若合并，vault 闭包将重新包含 `reqwest` + `arboard` + `zxcvbn` + `ssh-key` + `rsa`，`-p assistant-vault` 的独立编译价值丧失。**保留独立 crate 是为了把 OS/网络依赖隔离在 vault 之外**，不是为了多消费者。
 
 **遗留债务（须记录，不应默认正确）**：`VaultError` 放入 crypto 后，名称与所在 crate 语义不符（crypto 不含 Vault 概念）。建议后续更名为 `SecurityError`：crate 内 25 处 + 主 app 3 文件 10 处，成本可控。更名前文档与代码均按 `VaultError` 处理。
@@ -595,19 +611,35 @@ orb 是纯几何/位置计算，库 crate 依赖 GUI 框架不符合分层。**�
 
 `rusqlite` 使用 `bundled-sqlcipher`，SQLCipher 依赖 OpenSSL；`OPENSSL_STATIC` 使链接走 **vcpkg 的静态 libcrypto/libssl**。静态 OpenSSL 自身还依赖 Windows 系统库（`crypt32` 提供 `Cert*`、`user32` 提供 `GetProcessWindowStation`/`GetUserObjectInformationW`、`advapi32`、`ws2_32`），**必须由 crate 的 build.rs 显式声明**，否则最终链接报 `LNK2019 + LNK1120`。
 
-**现状（3 个 crate 各带一份，非 2 个）**：
+**现状（2026-10-29 修正后：2 个 crate 各带一份）**：
 
 | crate | build.rs 内容 | 是否需要 |
 |---|---|---|
-| `assistant-security` | OPENSSL_DIR 10 行 + Windows 4 库 | ❌ **拆分后已不需要**（rusqlite 已迁出，`OPENSSL_DIR` 由 `openssl-sys` 自行读取，这 10 行属冗余） |
+| `assistant-security` | ~~OPENSSL_DIR 10 行 + Windows 4 库~~ | ❌ **已删除**（见下方"迁移遗漏"） |
 | `assistant-storage` | Windows 4 库 | ✅ 需要（SQLCipher） |
-| `assistant-vault` | **缺失** | ✅ **必须新增**（`security_db/` 带 rusqlite） |
+| `assistant-vault` | Windows 4 库 | ✅ **已新增**（`security_db/` 带 rusqlite） |
 
 **⚠️ 这是步 2 的隐性硬约束**：`rusqlite(SQLCipher)` 迁入 vault 后，**系统库链接声明必须同步迁到 vault**。实测 `cargo test -p assistant-vault` 的 `link.exe exit code 1120` 正是此因——静态 `libcrypto.lib` 引用的 `Cert*` / `GetProcessWindowStation` 等符号无人提供（`cargo check` 不链接，故此前无报错，只有 `--all-targets` / `test` 才暴露）。
 
+**⚠️ 迁移遗漏（2026-10-29 修复）**：步 2 迁出 `security_db/` 时，只迁了 Rust 源码，**漏迁了 build.rs 的链接声明**，导致 security 保留了一份对自己已无意义的声明、vault 反而缺失。修复方式是把 security 的 4 行系统库声明移到 vault，并删除 security/build.rs。
+
+security 侧那份**为什么是错的而非"冗余保险"**（依赖闭包实测）：
+
+| 目标平台 | `cargo tree -p assistant-security` 命中 | 结论 |
+|---|---|---|
+| `x86_64-pc-windows-msvc` | 仅 `schannel`，**无 openssl / openssl-sys / libsqlite3-sys / rusqlite** | 本机不编译 OpenSSL |
+| `x86_64-unknown-linux-gnu` | `reqwest → native-tls → openssl → openssl-sys` | 真编 OpenSSL，但 `openssl-sys` 自己会 emit 链接指令 |
+
+- security 拆分后已无任何 DB 依赖，唯一的 native 网络依赖 `reqwest` 在 Windows 走系统原生 `schannel`，**闭包里没有 libcrypto**；
+- 因此 security/build.rs 里 `OPENSSL_DIR` 段（10 行）在 Windows 上是**空转**，还会额外对下游 emit `static=libcrypto` + `static=libssl`——主 app 链接行里平白多两个库，只因无对象引用而不被抽取，才没暴露问题；
+- Linux 下该段会与 `openssl-sys` 的探测结果**重复 emit**，且因 `OPENSSL_STATIC=1` 无条件强制 static，可能与其实际选择冲突；
+- 第 15-18 行的 4 个系统库**只为补静态 libcrypto 的符号缺口而存在**，没有 libcrypto 就无意义。
+
+**⚠️ 环境变量与 build.rs 的分工（勿混淆）**：`OPENSSL_DIR` 由 `.cargo/config.toml` 的 `[env]` 注入到**每个** build script 的进程环境（workspace 级，不依赖任何依赖边），真正的读取者是 `libsqlite3-sys`（Windows + `bundled-sqlcipher` 下读不到会直接 `panic!("Missing environment variable OPENSSL_DIR")`）；而 `cargo:rustc-link-lib` 只沿 `dependency → dependent` 单向传播，**必须每个直接依赖 SQLCipher 的 crate 自带**。故「vault 不依赖 security 却需要 `OPENSSL_DIR`」并不矛盾——两者是不同机制。
+
 **是否提取公共 build 脚本**：重复内容是 4 行 `rustc-link-lib`，且**与具体 crate 是否依赖 rusqlite 强绑定**（不是可以随意共享的通用逻辑）。提取需新建 build-support crate + build-dependency，复杂度大于收益。
 
-**结论**：不提取；按"**谁依赖 rusqlite(SQLCipher)，谁自带 build.rs**"的规则各自声明。security 侧那份可在拆分后删除。
+**结论**：不提取；按"**谁依赖 rusqlite(SQLCipher)，谁自带 build.rs**"的规则各自声明。security 侧那份已于 2026-10-29 删除。
 
 **⚠️ 另一处归属修正：`password_strength/` 归 vault，不归 security**（原 L483 判定有误）：
 
@@ -689,7 +721,8 @@ sync (叶)     ~1100 行
   零内部 crate 依赖
 
 vault → crypto, sync          ~5300 行
-  security_db + types(VaultEntry* DTO) + recovery_key + audit
+  security_db + shared(跨层词表) + dto(线格式) + types(domain/持久化)
+  + recovery_key + audit
   + biometric + vault_file(自 sync 迁入) + sync_engine(自 sync 迁入)
   + password_strength(自 security 迁入，⚠️ 见 §6.4 归属修正)
 
@@ -702,7 +735,7 @@ security → crypto             ~2600 行
 
 1. **`sync` 变为纯叶**：`vault_file` 与 `sync_engine` 必须**同批**迁入 vault（§2.4），否则 `vault → sync`（用 vault_file）与 `sync → vault`（用 DTO）成环。
 2. **`VaultError` 归 crypto 而非 vault**：它是 security 的共享错误枚举，`unlock_dialog`(9 处) / `ssh_agent`(4 处) / `reveal_guard`(2 处) / `clipboard_guard`(1 处) 都在用；归 vault 会让 security 反向依赖 vault。
-3. **`types/` 拆两半**：`VaultError` → crypto；`VaultEntry*` / `VaultCategory` / `CustomFieldInput` / `ImportOutcome` / `VaultCryptoInfo` → vault。
+3. **`types/` 拆两半**：`VaultError` → crypto；`VaultEntry*` / `VaultCategory` / `CustomFieldInput` / `ImportOutcome` / `VaultCryptoInfo` → vault。**（执行期再修正）vault 侧进一步三拆为 `shared/`（跨层词表）+ `dto/`（线格式）+ `types/`（domain + 持久化），且 `.vault` 文件格式与 JSON/CSV 导出格式**不进** `dto`，详见 [dto-boundary-analysis.md](./dto-boundary-analysis.md) §1。**
 4. **`biometric` 随 vault 走**：`security_db/biometric_ops.rs` 是其唯一调用方，留 security 会造成 `vault → security` 层次倒置。
 5. **`hibp` 移入 security**：它是 `vault_crypto/` 下唯一使用 `reqwest` 的成员，留在 crypto 会让叶 crate 变成网络 crate。
 6. **`password_strength` 随 vault 走**（⚠️ 本条为执行期修正）：`security_db/{mod,rekey}.rs` 用它卡主密码强度门槛，留 security 会造成 `vault → security` 并重新拉入 `reqwest/arboard/ssh-key/rsa`；代价是 vault 承担 `zxcvbn`（§6.4）。
@@ -734,13 +767,13 @@ security → crypto             ~2600 行
 |---|---|---|---|
 | ~~P0~~ | ~~消除 storage → i18n、agent → i18n~~ ✅ 已完成 | — | 2 条边消除，storage/agent 变叶；结构化错误枚举 + 主 app 翻译桥接 |
 | ~~P0~~ | ~~消除 providers → security~~ ✅ 已完成 | — | 1 条边消除，providers 变叶；`-p assistant-providers` 闭包减少 ~25s（全量构建零提速，见 §1.4） |
-| P1→**P3** | 新建 assistant-protocol（**降级，有条件**，见 §3.1.1） | 低 | **核查发现：子 crate 对 DTO 引用 0 处；5 个 sync/security 类型直出前端绕过 DTO；前端 TS 为手写镜像且契约测试不校验 Rust** → 单抽 crate = 半截契约 + 零复用 + 零编译收益。**仅在同时补齐 5 个 DTO + 引入 ts-rs/typeshare 时才值得做**，否则留在主 app |
+| P1→**P3** | 新建 assistant-protocol（**降级，有条件**，见 §3.1.1） | 低 | **核查发现：子 crate 对 DTO 引用 0 处；13 个去重类型（14 处签名）直出前端绕过 DTO，含 crypto 的 `TotpResult`/`ParsedOtpAuth`；前端 TS 为手写镜像且契约测试不校验 Rust** → 单抽 crate = 半截契约 + 零复用 + 零编译收益。**仅在同时补齐 13 个 DTO + 引入 ts-rs/typeshare 时才值得做**，否则留在主 app（清单见 [dto-boundary-analysis.md](./dto-boundary-analysis.md) §4） |
 | ~~P1~~ | ~~新建 assistant-crash~~ ✅ 已完成 | — | 主 app 精简 87 行，crash 变叶 crate，可 feature gate |
 | P1 | 存储分析 + 会话工具 → storage | 低（纯搬运，需剥离 tauri AppHandle 胶水） | 主 app 精简 197 行，领域逻辑归位 |
 | ~~P1~~ | ~~Mascot 资产管理 → 新 crate assistant-mascot~~ ❌ 不建议（见 §4.3） | — | 命中检查表 ⑤：tauri command 胶水 + 单消费者 + 轻依赖 + 138 行；独立反把 tauri 拉入新叶 crate |
 | P2 | Chat 消息插入 → agent | 低（前置：5 处 `assistant_i18n::t()` 改结构化错误；agent 已依赖 storage+providers） | 主 app 精简 258 行，storage 不变上帝 crate |
 | ~~P2~~ | **~~步 1：建 `assistant-crypto`（§6.1）~~** ✅ 已完成 | — | crypto 叶 crate（`vault_crypto/{mod,types,totp}` + `api_key` + `error::VaultError`），服务 vault / security / sync / 主 app；security 侧 `pub use` re-export 保留旧路径兼容；`hibp` 上提为 `assistant_security::hibp`；`-p assistant-crypto` 闭包无 rusqlite/reqwest/arboard/zxcvbn/ssh-key |
-| ~~P2~~ | **~~步 2：建 `assistant-vault`（§6.1 + §2.4）~~** ✅ 已完成 | — | 已迁入 `security_db` + `types` + `recovery_key` + `audit` + `biometric` + `password_strength` + `vault_file` + `sync_engine`（后两者同批）；`sync → security` 边已消除，`assistant-sync` 仅剩 `git_sync`+`types` 零内部依赖；主 app 4 文件调用点已改 `assistant_vault::`；`cargo check --workspace --all-targets` 通过。**遗留：`assistant-vault` 缺 build.rs（静态 OpenSSL 系统库未链接，`cargo test` 报 LNK1120），见 §6.4** |
+| ~~P2~~ | **~~步 2：建 `assistant-vault`（§6.1 + §2.4）~~** ✅ 已完成 | — | 已迁入 `security_db` + `types` + `recovery_key` + `audit` + `biometric` + `password_strength` + `vault_file` + `sync_engine`（后两者同批）；`sync → security` 边已消除，`assistant-sync` 仅剩 `git_sync`+`types` 零内部依赖；主 app 4 文件调用点已改 `assistant_vault::`；`cargo check --workspace --all-targets` 通过。**build.rs 迁移遗漏已于 2026-10-29 补正**：新增 `assistant-vault/build.rs`（Windows 4 库）、删除 `assistant-security/build.rs`；`cargo test -p assistant-vault -p assistant-security --no-run`、`cargo build -p assistant-vault --examples`、`cargo build -p assistant-app` 均通过，见 §6.4 |
 | P3 | ~~workspace.dependencies 精简（§5.2）~~ ⚠️ 降级 | 低 | 仅根文件可读性，有 churn 风险；**建议不做**，拆分副产品自然归位即可 |
 | P3 | orb 去耦合 tauri（§6.2） | 低（仅 placement.rs 的 `get_available_screens` 一个函数耦合） | 仅架构洁癖；**编译/测试均零收益**（测试已存在） |
 | ~~P3~~ | ~~build.rs 去重（§6.4）~~ ❌ 不建议 | — | 重复仅 4 行，提取需新建 crate，得不偿失 |
@@ -750,14 +783,14 @@ security → crypto             ~2600 行
 
 ```
 §6.1 步1（建 assistant-crypto：vault_crypto/{mod,types,totp} + crypto/api_key + VaultError）
-   └──> 步2（建 assistant-vault：security_db + types(VaultEntry* DTO) + recovery_key + audit
+   └──> 步2（建 assistant-vault：security_db + shared + dto + types + recovery_key + audit
              + biometric + vault_file + sync_engine【两者必须同批】）
         ══> §2.4 sync→security 彻底消除（sync 收缩为纯叶 crate）
    └──> 主 app 改为 assistant-vault::setup() 单入口（前端懒加载已完成）
    └──> 依赖自然落到新 crate（不必单独做 workspace 精简，见 §5.2）
 ```
 
-§4.1 protocol 断开 4 处类型引用 ──> §3.1.1 补齐 5 个直出类型 DTO + TS 代码生成 ──> §3.1 assistant-protocol 创建
+§4.1 protocol 断开 4 处类型引用 ──> §3.1.1 补齐 13 个直出类型 DTO + TS 代码生成 ──> §3.1 assistant-protocol 创建
 
 §5.3 windows feature 精确化（独立项，与 orb 无关；P3 可选）
 §6.2 orb 去 tauri（独立项；P3 可选）

@@ -12,6 +12,8 @@ use crate::types::{VaultCategory, VaultEntryImport, VaultEntrySnapshot};
 use assistant_crypto::vault_crypto::types::{CipherAlgorithm, MasterKey, VaultPlaintext};
 use assistant_crypto::vault_crypto::VaultCrypto;
 
+pub use crate::dto::integrity::IntegrityResult;
+
 use assistant_sync::types::SyncError;
 use types::{
     BlobCustomField, EmergencyDataFile, EntryBlob, EntryFile, ImportedEntry, VaultCryptoMeta,
@@ -432,11 +434,4 @@ fn compute_vault_meta_hmac(master_key: &MasterKey, meta: &VaultMetaFile) -> Vec<
     meta_for_hmac.integrity = String::new();
     let content = serde_json::to_vec(&meta_for_hmac).unwrap_or_default();
     compute_hmac(master_key.expose(), &content)
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IntegrityResult {
-    pub valid: bool,
-    pub message: String,
 }

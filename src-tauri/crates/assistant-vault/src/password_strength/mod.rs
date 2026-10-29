@@ -1,33 +1,10 @@
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use zxcvbn::zxcvbn;
 
+pub use crate::dto::audit::{StrengthResult, StrengthWarning};
+
 const MIN_LENGTH: usize = 8;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StrengthResult {
-    pub score: u8,
-    pub entropy_bits: f64,
-    pub crack_time_seconds: u64,
-    pub crack_time_display: String,
-    pub warnings: Vec<StrengthWarning>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum StrengthWarning {
-    TooShort,
-    NoUppercase,
-    NoLowercase,
-    NoDigits,
-    NoSpecialChars,
-    CommonPattern,
-    RepeatedChars,
-    SequentialChars,
-    DictionaryWord,
-}
 
 pub fn estimate_strength(password: &str) -> StrengthResult {
     let mut warnings = Vec::new();
