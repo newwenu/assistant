@@ -1,5 +1,5 @@
 use super::SshKeyMeta;
-use crate::types::VaultError;
+use assistant_crypto::error::VaultError;
 use log::debug;
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::pkcs8::DecodePrivateKey;

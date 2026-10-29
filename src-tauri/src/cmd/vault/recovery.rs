@@ -1,7 +1,7 @@
 use tauri::{command, AppHandle, Manager};
 
-use assistant_security::audit::{log as audit_log, AuditEvent};
-use assistant_sync::sync_engine::SyncEngine;
+use assistant_vault::audit::{log as audit_log, AuditEvent};
+use assistant_vault::sync_engine::SyncEngine;
 
 #[command]
 pub fn vault_generate_recovery_key(app: AppHandle) -> Result<String, String> {
@@ -11,8 +11,8 @@ pub fn vault_generate_recovery_key(app: AppHandle) -> Result<String, String> {
     let bootstrap_key = state.get_bootstrap_key().map_err(|e| e.to_string())?;
     let bk = bootstrap_key.as_ref().ok_or("Vault is locked")?;
 
-    let (recovery_key, emergency) = assistant_security::recovery_key::generate_recovery_key(mk, bk)
-        .map_err(|e| e.to_string())?;
+    let (recovery_key, emergency) =
+        assistant_vault::recovery_key::generate_recovery_key(mk, bk).map_err(|e| e.to_string())?;
 
     let engine = super::sync_state(&app)?;
     engine
@@ -44,12 +44,12 @@ pub fn vault_unlock_with_recovery_key(
     let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
     let emergency = emergency.ok_or("Recovery key not set")?;
 
-    let emergency_data = assistant_security::recovery_key::EmergencyData {
+    let emergency_data = assistant_vault::recovery_key::EmergencyData {
         token: emergency.token,
         salt: emergency.salt,
     };
 
-    let result = assistant_security::recovery_key::unlock_with_recovery_key(
+    let result = assistant_vault::recovery_key::unlock_with_recovery_key(
         &recovery_key,
         &emergency_data,
         &state,
@@ -113,7 +113,7 @@ pub fn vault_has_recovery_key(app: AppHandle) -> Result<bool, String> {
 #[command]
 pub fn vault_verify_vault_meta_integrity(
     app: AppHandle,
-) -> Result<assistant_sync::vault_file::IntegrityResult, String> {
+) -> Result<assistant_vault::vault_file::IntegrityResult, String> {
     let state = super::vault_state(&app)?;
     let master_key = state.get_master_key().map_err(|e| e.to_string())?;
     let mk = master_key.as_ref().ok_or("Vault is locked")?;
@@ -160,13 +160,13 @@ fn export_from_engine(
     let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
     let emergency = emergency.ok_or("Recovery key not set in .vault-meta")?;
 
-    let emergency_data = assistant_security::recovery_key::EmergencyData {
+    let emergency_data = assistant_vault::recovery_key::EmergencyData {
         token: emergency.token,
         salt: emergency.salt,
     };
 
     let (_bootstrap_key, master_key) =
-        assistant_security::recovery_key::decrypt_recovery_keys(recovery_key, &emergency_data)
+        assistant_vault::recovery_key::decrypt_recovery_keys(recovery_key, &emergency_data)
             .map_err(|e| {
                 log::warn!("Disaster recovery: decrypt failed: {}", e);
                 e.to_string()

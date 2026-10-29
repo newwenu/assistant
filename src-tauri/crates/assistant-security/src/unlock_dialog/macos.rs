@@ -10,7 +10,7 @@ unsafe impl Send for MacosUnlockDialog {}
 unsafe impl Sync for MacosUnlockDialog {}
 
 impl MacosUnlockDialog {
-    pub fn new() -> Result<Self, crate::types::VaultError> {
+    pub fn new() -> Result<Self, assistant_crypto::error::VaultError> {
         Ok(Self)
     }
 }
@@ -19,7 +19,7 @@ impl UnlockDialog for MacosUnlockDialog {
     fn show(
         &self,
         on_result: Box<dyn FnOnce(UnlockResult) + Send>,
-    ) -> Result<(), crate::types::VaultError> {
+    ) -> Result<(), assistant_crypto::error::VaultError> {
         std::thread::spawn(move || match run_osascript_dialog() {
             Ok(password) => {
                 info!("macOS unlock dialog: user confirmed");

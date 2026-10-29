@@ -1,5 +1,5 @@
+use assistant_crypto::error::VaultError;
 use assistant_security::reveal_guard::RevealGuard;
-use assistant_security::types::VaultError;
 
 #[test]
 fn reveal_guard_allows_up_to_rate_limit() {

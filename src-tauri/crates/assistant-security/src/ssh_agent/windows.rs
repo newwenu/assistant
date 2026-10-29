@@ -4,7 +4,7 @@ use std::process::Stdio;
 use log::{debug, info, warn};
 
 use super::{run_ssh_add, SshAgentBridge, SshKeyInfo};
-use crate::types::VaultError;
+use assistant_crypto::error::VaultError;
 
 pub struct PageantBridge;
 

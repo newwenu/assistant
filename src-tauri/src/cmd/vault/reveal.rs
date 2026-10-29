@@ -1,8 +1,8 @@
 use tauri::{command, AppHandle};
 
-use assistant_security::audit::{log as audit_log, AuditEvent};
-use assistant_security::types::RevealResult;
-use assistant_security::vault_crypto::types::SecureString;
+use assistant_crypto::vault_crypto::types::SecureString;
+use assistant_vault::audit::{log as audit_log, AuditEvent};
+use assistant_vault::types::RevealResult;
 
 static REVEAL_TTL_SECS: u64 = 30;
 

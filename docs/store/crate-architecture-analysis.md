@@ -1,8 +1,20 @@
 # 后端 Crate 架构依赖分析
 
-> 审查日期：2026-10-27
-> 审查范围：`src-tauri/crates/` 下 9 个子 crate + 主 bin 之间的内部依赖关系、职责分布、下放可行性
-> 审查方法：逐 crate Cargo.toml + 全量源码引用检索
+> 审查日期：2026-10-27（拆分执行与数据复核：2026-10-29）
+> 审查范围：`src-tauri/crates/` 下 11 个子 crate + 主 bin 之间的内部依赖关系、职责分布、下放可行性
+> 审查方法：逐 crate Cargo.toml + 全量源码引用检索 + `Measure-Object -Line` 实测行数
+
+## 0. 数据精度约定（全文强制）
+
+1. **行数一律精确到百行级别**（即 ±100 行以内，写作 `~2300`、`~5300` 形式）。禁止出现"看起来差不多"的估算。
+2. **行数口径**：`crates/<name>/src/**/*.rs` 的物理行数（含 `mod.rs`、`lib.rs`、平台分支文件）；`tests/` 单独统计，不计入 crate 规模。
+3. **依赖清单以 `Cargo.toml` 实测为准**，不按"模块可能需要什么"推测；迁移后必须复核并同步本文字段。
+4. **编译耗时**以 `cargo build --timings` 实测为唯一依据；推算值须显式标注"估算"。
+5. **归属判定必须给出代码证据**（调用方文件 + 行号）；无证据的判定视为待核实。
+6. **新增/修正条目须标注修正原因**，不得静默覆盖旧结论（用 `⚠️` 标记修正点）。
+
+> 复核基准（2026-10-29 实测，`src` 行数）：
+> crypto 596 / sync 1137 / vault 5335 / security 2583 / storage 2177 / providers 8431 / agent 1428 / tools 697 / config 545 / orb 362 / i18n 124 / crash 89 / 主 app 6553
 
 ---
 
@@ -15,32 +27,45 @@ config (叶)    i18n (叶)    orb (叶)    tools (叶)    crash (叶)
 providers (叶)  ← 已消除 security 依赖（凭证注入方案）
 storage (叶)    ← 已消除 i18n 依赖（结构化错误 + 主 app 翻译桥接）
 agent   → providers, storage  ← 已消除 i18n 依赖（结构化错误 + 主 app 翻译桥接）
-security (叶)   ← 零内部依赖，但持有 6 类互不相关的重依赖（见 §6.1）
-sync    → security
-主 app  → 全部 10 个 crate
+crypto  (叶)   ← 步 1 新建
+sync    (叶)   ← 步 2 后零内部依赖（vault_file + sync_engine 已迁出）
+vault   → crypto, sync         ← 步 2 新建
+security → crypto              ← 步 2 后仅剩 crypto
+主 app  → 全部 12 个 crate
 ```
 
-无循环依赖，DAG 结构清晰。共 3 条内部边。
+无循环依赖，DAG 结构清晰。共 **5 条**内部边（`agent → providers`、`agent → storage`、`vault → crypto`、`vault → sync`、`security → crypto`）。
 
-**但这张图掩盖了真正的问题**：`security` 看似叶节点，实际同时持有 `rusqlite`(SQLCipher)、`reqwest`、`arboard`、`zxcvbn`、`ssh-key`/`rsa`、`keyring` 六类互不相关的重依赖，**任何消费者都必须全付**。`sync` 只用其中几个加密原语，却被拖入全部重依赖。这是 §6.1 要解决的核心，与"边数多少"无关。
+**拆分前后对比（⚠️ 原图记录的是拆分前状态，以下为实测现状）**：
 
-### 1.2 各 crate 源码规模
+| 阶段 | 内部边数 | 关键变化 |
+|---|---|---|
+| 拆分前（2026-10-27） | 3 | `sync → security` 存在，sync 被迫承担 security 全部 6 类重依赖 |
+| 拆分后（2026-10-29） | 5 | `sync → security` 已消除，sync 变纯叶（仅 3 个依赖）；新增 crypto 叶 crate 作为共享加密层 |
+
+**边数增加不是退步**：拆分的目的是**缩小每个 crate 的依赖闭包**，让轻消费者不再被迫拉入六类重依赖；主 app 闭包不变（本就依赖全部 crate）。原"`security` 一 crate 独扛 6 类重依赖"的问题已由 §6.1 两步拆分解决。
+
+### 1.2 各 crate 源码规模（2026-10-29 实测，`src/**/*.rs` 物理行数）
 
 | Crate | 行数 | 说明 |
 |---|---|---|
 | assistant-providers | ~8400 | 最大，含 3 个 Provider 适配 + 流处理 + 模型目录 |
-| assistant-security | ~7000 | 6 个领域混合（见 §6.1） |
-| assistant-sync | ~2700 | Vault 文件格式 + 同步编排 + Git 传输（职责混杂，见 §2.4） |
+| assistant-vault | ~5300 | 新建（步 2），`security_db` + `sync_engine` + `biometric` + `vault_file` + `types` + `recovery_key` + `password_strength` + `audit` |
+| assistant-security | ~2600 | 拆分后仅剩 `unlock_dialog` + `ssh_agent` + `screen_lock` + `clipboard_guard` + `hibp` + `reveal_guard` |
 | assistant-storage | ~2200 | 会话/消息/Provider/附件 SQLite |
 | assistant-agent | ~1400 | 聊天编排 + 请求构建 + 压缩 |
+| assistant-sync | ~1100 | 拆分后仅 `git_sync` + `types` |
 | assistant-tools | ~700 | OS 工具注册与执行 |
+| assistant-crypto | ~600 | 新建（步 1），`vault_crypto` + `api_key` + `error` |
 | assistant-config | ~500 | JSON 配置读写 |
 | assistant-orb | ~400 | 悬浮球几何/位置计算 |
 | assistant-i18n | ~100 | 国际化翻译查找 |
 | assistant-crash | ~100 | 崩溃转储 |
 | **主 app** | **~6600** | 含 protocol/dto ~1100 行 + cmd 逻辑 |
 
-### 1.3 各 crate 职责与外部依赖量
+> 拆分前规模（供对照）：security ~7000、sync ~2700，两者共 ~9700 → 拆分后 security ~2600 + sync ~1100 + vault ~5300 + crypto ~600 = ~9600，总量基本守恒（差额为重复 `mod.rs` 与新增 `lib.rs`）。
+
+### 1.3 各 crate 职责与外部依赖量（依赖数按 `Cargo.toml` 实测）
 
 | Crate | 职责 | 外部依赖数 | 评价 |
 |---|---|---|---|
@@ -48,34 +73,41 @@ sync    → security
 | assistant-i18n | 国际化翻译查找 | 2 | 🟢 轻 |
 | assistant-orb | 悬浮球几何/位置计算 | 2 | 🟢 轻（tauri 依赖见 §6.2，收益已降级） |
 | assistant-tools | OS 工具注册与执行 | 6+平台 | 🟢 轻 |
-| assistant-security | 加密、安全数据库、剪贴板守卫、生物识别、SSH、密码强度 | 27+平台 | 🔴 过重（6 类重依赖叠于一身，见 §6.1） |
+| assistant-sync | 仅 Git 传输基础设施（`git_sync` + `types`） | **3**（serde/log/thiserror） | 🟢 轻（步 2 后变纯叶） |
+| assistant-crypto | 全应用加密原语 + API Key 加解密 + `VaultError` | 16 | 🟢 轻（无 rusqlite/reqwest/arboard/zxcvbn/ssh-key） |
+| assistant-security | 解锁 UI、屏幕锁、SSH、剪贴板、HIBP、揭示守卫 | 10+平台 | 🟡 中等（已无 rusqlite/keyring/zxcvbn） |
 | assistant-storage | 会话/消息/Provider/附件 SQLite 存储 | 10 | 🟡 中等 |
-| assistant-sync | Vault 文件格式 + 同步编排 + Git 传输 | 8 | 🟡 中等（编排误置于此，见 §2.4） |
+| assistant-vault | Vault 数据层 + 同步编排 + 文件格式 + 生物识别 | **20+平台** | 🟡 中等（无网络栈/OS-UI 栈，但含 zxcvbn） |
 | assistant-providers | LLM Provider 流式调用（已无 API Key 加解密，见 §2.3） | 12 | 🟡 中等 |
 | assistant-agent | 聊天编排、请求构建、压缩 | 8 | 🟡 中等 |
 
 ### 1.4 编译时间基准（dev profile, 20 并发, x86_64-pc-windows-msvc）
 
 > 数据来源：`cargo build --timings`，2026-10-27，总耗时 171.5s，617 个编译单元
+> ⚠️ 该组数据采集于**拆分前**，crate 归属列已按拆分后位置重新标注（耗时未重测，仍为原值）
 
-| 编译目标 | 耗时 | codegen | 说明 |
+| 编译目标 | 耗时 | codegen | 说明（⚠️ 归属已按拆分后修正） |
 |---|---|---|---|
 | assistant-app (lib) | 33.5s | 25.1s (75%) | 🔴 最慢，主 app 体积大 |
 | assistant-storage | 11.2s | 9.1s (81%) | rusqlite + 大量泛型 mono |
 | assistant-providers | 10.7s | 5.4s (50%) | 3 个 Provider 适配 + 流 |
-| zxcvbn（security 传递） | 9.7s | 8.7s (90%) | 🔴 纯 codegen 爆炸，security 专有 |
+| zxcvbn（**vault** 传递） | 9.7s | 8.7s (90%) | 🔴 纯 codegen 爆炸，现归 vault |
 | assistant-config | 5.1s | 4.4s (87%) | |
-| arboard（security 传递） | 4.1s | 0.8s (19%) | security 专有 |
+| arboard（**security** 传递） | 4.1s | 0.8s (19%) | security 专有 |
 | assistant-i18n | 3.2s | 2.6s (82%) | |
-| rusqlite | 3.2s | 1.6s (49%) | security + storage 共享 |
-| ssh-key（security 传递） | 3.6s | 2.2s (62%) | security 专有 |
-| assistant-security | 3.0s | 1.2s (39%) | crate 本体反而不慢 |
-| assistant-sync | 1.5s | 0.4s (25%) | |
+| rusqlite | 3.2s | 1.6s (49%) | **vault** + storage 共享 |
+| ssh-key（**security** 传递） | 3.6s | 2.2s (62%) | security 专有 |
+| assistant-security | 3.0s | 1.2s (39%) | crate 本体反而不慢（拆分后体量降至 ~2600 行） |
+| assistant-sync | 1.5s | 0.4s (25%) | 拆分后仅 ~1100 行 |
 | assistant-agent | 1.3s | 0.7s (50%) | |
 | assistant-orb | 1.3s | 0.7s (56%) | |
 | assistant-tools | 0.7s | 0.3s (43%) | |
+| assistant-crypto | — | — | 拆分后新增，未单独测量 |
+| assistant-vault | — | — | 拆分后新增，未单独测量（含 zxcvbn 9.7s + rusqlite 3.2s + keyring 0.3s） |
 
-**security 传递依赖编译时间**：zxcvbn(9.7s) + arboard(4.1s) + ssh-key(3.6s) + rsa(1.8s) + argon2(1.0s) + aes-gcm(1.0s) + chacha20poly1305(0.4s) + keyring(0.3s) + rusqlite(3.2s) ≈ **25.1s**（**这是各单元编译耗时之和，不是关键路径墙钟时间**；rusqlite 与 storage 共享，属重复计入）。
+**原 security 传递依赖编译时间（拆分前口径）**：zxcvbn(9.7s) + arboard(4.1s) + ssh-key(3.6s) + rsa(1.8s) + argon2(1.0s) + aes-gcm(1.0s) + chacha20poly1305(0.4s) + keyring(0.3s) + rusqlite(3.2s) ≈ **25.1s**（**这是各单元编译耗时之和，不是关键路径墙钟时间**；rusqlite 与 storage 共享，属重复计入）。
+
+**拆分后闭包重分配（⚠️ 修正）**：上述 25.1s 一分为二——`zxcvbn + rusqlite + keyring ≈ 13.2s` 随 vault；`arboard + ssh-key + rsa ≈ 9.5s` 留 security；加密原语（argon2/aes-gcm/chacha20poly1305 ≈ 2.4s）下沉 crypto 后被两者共享。
 
 **~~providers → security 传递影响~~**：providers 曾因 re-export security，其消费者被迫等待上述依赖编译完成。**已消除**（§2.3 凭证注入）。
 
@@ -168,15 +200,15 @@ sync    → security
 - 共享错误枚举：`VaultError`（按 §6.1 判定归 `assistant-crypto`，拆分后 sync 直接依赖 crypto 即可）
 - **数据库状态**：`SecurityDbState`（含 `recovery_key::EmergencyData`）
 
-**实测分布（百行精度）**：
+**实测分布（2026-10-29 实测，模块现均已迁入 vault）**：
 
-| 模块 | 行数 | 引用 security | 性质 |
-|---|---|---|---|
-| `vault_file/` | ~500 | 加密原语 + Vault DTO | 文件格式与加解密 |
-| `sync_engine/` | ~1000 | 加密原语 + Vault DTO + **`SecurityDbState`** | 同步编排，**17 处 DB 调用** |
-| `git_sync/` | ~900 | ❌ 零引用 | 纯 Git 传输 + SSH |
-| `types/` | ~200 | ❌ 零引用 | 自有 DTO |
-| 合计 | ~2700 | — | — |
+| 模块 | 行数 | 引用 security（拆分前） | 性质 | 现归属 |
+|---|---|---|---|---|
+| `vault_file/` | 503 | 加密原语 + Vault DTO | 文件格式与加解密 | vault |
+| `sync_engine/` | 1012 | 加密原语 + Vault DTO + **`SecurityDbState`** | 同步编排，**17 处 DB 调用** | vault |
+| `git_sync/` | 911 | ❌ 零引用 | 纯 Git 传输 + SSH | sync |
+| `types/` | 223 | ❌ 零引用 | 自有 DTO | sync |
+| 合计 | 2650 | — | — | — |
 
 **关键事实（上一版本严重低估）**：`SecurityDbState` 在 `sync_engine/mod.rs` 中作为函数参数出现 **23 处**，对 db 的实际调用 **17 处**：
 
@@ -419,72 +451,78 @@ DTO（主 app 内部，rename_all=camelCase + deny_unknown_fields）──┐ �
 
 ## 6. 其他问题
 
-### 6.1 assistant-security 职责过重（~7000 行 / 27 依赖 / 6 领域）
+### 6.1 assistant-security 职责过重（拆分前 ~7000 行 / 27 依赖 / 6 领域 → 拆分后 ~2600 行）
 
-**现状**：一个 crate 同时持有 6 类互不相关的重依赖，消费者无法按需取用：
+> ⚠️ 本节记录**拆分前的问题诊断**（2026-10-27），保留作为决策依据；拆分已于 2026-10-29 完成，当前规模见 §1.2。
 
-| 重依赖 | 承载模块 | 编译耗时 |
-|---|---|---|
-| `rusqlite`（SQLCipher） | `security_db/`（~2300 行） | 3.2s |
-| `reqwest` | `vault_crypto/hibp.rs`（~100 行） | ~5s（含网络栈） |
-| `arboard` | `clipboard_guard.rs`（~100 行） | 4.1s |
-| `zxcvbn` | `password_strength/`（~150 行） | 9.7s |
-| `ssh-key` + `rsa` | `ssh_agent/`（~500 行） | 5.4s |
-| `keyring` | `biometric/`（~700 行） | 0.3s |
+**问题（拆分前）**：一个 crate 同时持有 6 类互不相关的重依赖，消费者无法按需取用：
 
-**模块体量（百行精度）**：
+| 重依赖 | 承载模块 | 编译耗时 | 拆分后归属 |
+|---|---|---|---|
+| `rusqlite`（SQLCipher） | `security_db/`（2325 行） | 3.2s | → **vault** |
+| `reqwest` | `vault_crypto/hibp.rs`（91 行） | ~5s（含网络栈） | 留在 **security**（`hibp/` 91 行） |
+| `arboard` | `clipboard_guard.rs`（~100 行） | 4.1s | 留在 **security** |
+| `zxcvbn` | `password_strength/`（149 行） | 9.7s | → **vault**（⚠️ 归属修正，见 §6.4） |
+| `ssh-key` + `rsa` | `ssh_agent/`（520 行） | 5.4s | 留在 **security** |
+| `keyring` | `biometric/`（744 行） | 0.3s | → **vault** |
 
-| 模块 | 行数 | 外部依赖特征 |
-|---|---|---|
-| `security_db/` | ~2300 | rusqlite(SQLCipher) |
-| `unlock_dialog/` | ~1400 | 平台 UI（windows/macos/linux） |
-| `biometric/` | ~700 | keyring + 平台 API |
-| `vault_crypto/` | ~600 | 纯加密原语（`hibp.rs` 除外） |
-| `ssh_agent/` | ~500 | ssh-key + rsa |
-| `screen_lock/` | ~400 | 平台 API |
-| `types/` | ~350 | 仅 serde |
-| `recovery_key/` | ~200 | 依赖 security_db |
-| `password_strength/` | ~150 | zxcvbn |
-| `clipboard_guard.rs` | ~100 | arboard |
-| `audit/` | ~100 | rusqlite |
-| `reveal_guard.rs` | ~50 | 零依赖 |
-| `crypto/` | ~100 | aes-gcm + machine-uid |
+**模块体量（百行精度，2026-10-29 实测）**：
+
+| 模块 | 实测行数 | 外部依赖特征 | 迁移后归属 |
+|---|---|---|---|
+| `security_db/` | 2325 | rusqlite(SQLCipher) | vault |
+| `unlock_dialog/` | 1356 | 平台 UI（windows/macos/linux） | security |
+| `sync_engine/` | 1012 | rusqlite + 加密原语 | vault（自 sync 迁入） |
+| `biometric/` | 744 | keyring + 平台 API | vault |
+| `ssh_agent/` | 520 | ssh-key + rsa | security |
+| `vault_file/` | 503 | 加密原语 + Vault DTO | vault（自 sync 迁入） |
+| `screen_lock/` | 435 | 平台 API | security |
+| `types/` | 300 | 仅 serde | vault（`VaultError` 除外，归 crypto） |
+| `recovery_key/` | 198 | 依赖 security_db | vault |
+| `password_strength/` | 149 | zxcvbn | vault（⚠️ 修正） |
+| `audit/` | 96 | rusqlite | vault |
+| `hibp/` | 91 | reqwest + sha1 | security（自 vault_crypto 迁入） |
+| `clipboard_guard.rs` | ~100 | arboard | security |
+| `reveal_guard.rs` | ~50 | 零依赖 | security |
+| `crypto/` + `vault_crypto/` | 各 1（re-export 桩） | — | security（`pub use assistant_crypto::*`） |
 
 **拆分设计：2 个新 crate、1 个缩小、0 个取消**
 
 ```
-assistant-crypto   (叶)   ~700 行
-  vault_crypto/{mod,types,totp}    ~500   Argon2/HKDF/AES-GCM/ChaCha20/TOTP
+assistant-crypto   (叶)   ~600 行
+  vault_crypto/{mod,types,totp}    488   Argon2/HKDF/AES-GCM/ChaCha20/TOTP
   crypto/api_key                   ~100   API Key 加解密（machine-id 绑定）
   error.rs                         ~100   VaultError（见下方归属判定 3/4）
   deps: aes-gcm chacha20poly1305 argon2 hkdf sha2 hmac sha1
         base64 data-encoding zeroize subtle rand machine-uid hex thiserror
 
 assistant-sync     (叶)  ~1100 行
-  git_sync/                        ~900
-  types/                           ~200
-  deps: serde serde_json log thiserror chrono base64 sha2 hmac uuid
+  git_sync/                        911
+  types/                           223
+  deps: serde log thiserror            ← 实测仅 3 个（chrono/base64/sha2/hmac/uuid 随 vault_file/sync_engine 迁出）
   ← vault_file + sync_engine 已迁出（§2.4），零内部 crate 依赖
 
-assistant-vault    (中层) ~5100 行
-  security_db/                     ~2300
-  sync_engine/   ← 自 sync 迁入     ~1000
-  biometric/                       ~700
-  vault_file/    ← 自 sync 迁入     ~500
-  types/（VaultEntry* DTO）          ~250
-  recovery_key/                    ~200
-  audit/                           ~100
-  deps: crypto, sync, rusqlite(SQLCipher), keyring, uuid, chrono, serde, log
+assistant-vault    (中层) ~5300 行
+  security_db/                    2325
+  sync_engine/   ← 自 sync 迁入    1012
+  biometric/                       744
+  vault_file/    ← 自 sync 迁入     503
+  types/（VaultEntry* DTO）          300
+  recovery_key/                    198
+  password_strength/ ← 自 security 迁入 149   ← ⚠️ 归属修正，见 §6.4
+  audit/                            96
+  deps: crypto, sync, rusqlite(SQLCipher), keyring, zxcvbn, uuid, chrono,
+        serde, serde_json, log, zeroize, base64, data-encoding, rand,
+        sha2, hex, hmac, aes-gcm, argon2, hkdf + 三平台依赖（见 §6.4）
 
-assistant-security (中层) ~2700 行
-  unlock_dialog/                   ~1400
-  ssh_agent/                        ~500
-  screen_lock/                      ~400
-  password_strength/                ~150
-  clipboard_guard.rs                ~100
-  hibp/  ← 自 vault_crypto 迁入       ~100
-  reveal_guard.rs                    ~50
-  deps: crypto, arboard, zxcvbn, ssh-key, rsa, reqwest
+assistant-security (中层) ~2600 行
+  unlock_dialog/                  1356
+  ssh_agent/                       520
+  screen_lock/                     435
+  clipboard_guard.rs               ~100
+  hibp/  ← 自 vault_crypto 迁入       91
+  reveal_guard.rs                   ~50
+  deps: crypto, arboard, ssh-key, rsa, reqwest    ← 无 zxcvbn / rusqlite / keyring
 ```
 
 **目标依赖图（无环）**：
@@ -518,10 +556,10 @@ security → crypto
 
 **遗留债务（须记录，不应默认正确）**：`VaultError` 放入 crypto 后，名称与所在 crate 语义不符（crypto 不含 Vault 概念）。建议后续更名为 `SecurityError`：crate 内 25 处 + 主 app 3 文件 10 处，成本可控。更名前文档与代码均按 `VaultError` 处理。
 
-**收益（须限定场景）**：
-- `-p assistant-sync`：闭包从 security 全量重依赖 → 8 个轻依赖，约 -20s（详见 §2.4）
-- `-p assistant-vault`：crypto + sync + SQLCipher + keyring，**无 reqwest/arboard/zxcvbn/ssh-key**，约 -20s
-- `-p assistant-security`：crypto + reqwest + arboard + zxcvbn + ssh-key/rsa，**无 SQLCipher/keyring**
+**收益（须限定场景，⚠️ 数字已按实测依赖修正）**：
+- `-p assistant-sync`：闭包从 security 全量重依赖 → **3 个依赖**（serde/log/thiserror），约 -20s（详见 §2.4）
+- `-p assistant-vault`：crypto + sync + SQLCipher + keyring，**无 reqwest/arboard/ssh-key/rsa**，但**含 zxcvbn（9.7s）**；净收益 ≈ -(arboard 4.1s + ssh-key 3.6s + rsa 1.8s + reqwest)，**不是"约 -20s"**
+- `-p assistant-security`：crypto + reqwest + arboard + ssh-key/rsa，**无 SQLCipher/keyring/zxcvbn**
 - **完整 workspace 构建：零提速**（主 app 仍依赖全部 crate；且各单元耗时之和 ≠ 墙钟缩短）
 
 ### 6.2 assistant-orb 不应依赖 tauri（⚠️ 收益已修正）
@@ -540,26 +578,57 @@ orb 是纯几何/位置计算，库 crate 依赖 GUI 框架不符合分层。**�
 
 写的是 `publish = false`，其他 crate 用 `publish.workspace = true`。应统一。
 
-### 6.4 build.rs 重复 ❌ 不建议提取
+### 6.4 build.rs 与 OPENSSL 环境变量（⚠️ 结论已修正：build.rs 必须随 rusqlite 迁移）
 
-assistant-security/build.rs 和 assistant-storage/build.rs 做了相同的 Windows 系统库链接（crypt32 / ws2_32 / advapi32 / user32，各 4 行）。security 额外有 OPENSSL_DIR 处理（10 行，仅 security 需要）。
+**环境变量（机器级前置）**：`src-tauri/.cargo/config.toml` 的 `[env]` 段声明了两个变量（此处不记录具体取值，以免泄露本机目录结构）：
 
-**实际重复仅 4 行**。提取公共 build 脚本需新建一个 build-support crate 并加为 build-dependency，引入的复杂度大于收益。且这 4 个 dylib 链接本质是 rusqlite/SQLCipher 原生库的链接需求，正确做法应是让 libsqlite3-sys 自行声明，而非人工重复。
+| 变量 | 作用 | 取值说明 |
+|---|---|---|
+| `OPENSSL_DIR` | 指向 vcpkg 安装树 | 本机绝对路径，**不入文档、不入版本库**，由开发者本地 `config.toml` 提供 |
+| `OPENSSL_STATIC` | 强制静态链接 OpenSSL | 本项目为静态（`1`） |
 
-**结论**：保持现状，或排查是否可完全移除（若 libsqlite3-sys 已自动链接）。不值得新建 crate。
+**版本库策略（2026-10-29 已落地）**：
+
+- `src-tauri/.cargo/config.toml` 已加入 `.gitignore` 并从 git 索引移除（`git rm --cached`），仅保留在开发者本机；
+- 仓库内提供 `src-tauri/.cargo/config.toml.example`（镜像源 + `OPENSSL_DIR` 占位符），新环境执行 `Copy-Item config.toml.example config.toml` 后按本机 vcpkg 路径填写；
+- 因 `config.toml` 已被忽略，**cargo 命令必须在 `src-tauri/` 目录下执行**，否则 `[env]` 不生效，`libsqlite3-sys`（bundled-sqlcipher）构建会因缺 OpenSSL 而失败。
+
+`rusqlite` 使用 `bundled-sqlcipher`，SQLCipher 依赖 OpenSSL；`OPENSSL_STATIC` 使链接走 **vcpkg 的静态 libcrypto/libssl**。静态 OpenSSL 自身还依赖 Windows 系统库（`crypt32` 提供 `Cert*`、`user32` 提供 `GetProcessWindowStation`/`GetUserObjectInformationW`、`advapi32`、`ws2_32`），**必须由 crate 的 build.rs 显式声明**，否则最终链接报 `LNK2019 + LNK1120`。
+
+**现状（3 个 crate 各带一份，非 2 个）**：
+
+| crate | build.rs 内容 | 是否需要 |
+|---|---|---|
+| `assistant-security` | OPENSSL_DIR 10 行 + Windows 4 库 | ❌ **拆分后已不需要**（rusqlite 已迁出，`OPENSSL_DIR` 由 `openssl-sys` 自行读取，这 10 行属冗余） |
+| `assistant-storage` | Windows 4 库 | ✅ 需要（SQLCipher） |
+| `assistant-vault` | **缺失** | ✅ **必须新增**（`security_db/` 带 rusqlite） |
+
+**⚠️ 这是步 2 的隐性硬约束**：`rusqlite(SQLCipher)` 迁入 vault 后，**系统库链接声明必须同步迁到 vault**。实测 `cargo test -p assistant-vault` 的 `link.exe exit code 1120` 正是此因——静态 `libcrypto.lib` 引用的 `Cert*` / `GetProcessWindowStation` 等符号无人提供（`cargo check` 不链接，故此前无报错，只有 `--all-targets` / `test` 才暴露）。
+
+**是否提取公共 build 脚本**：重复内容是 4 行 `rustc-link-lib`，且**与具体 crate 是否依赖 rusqlite 强绑定**（不是可以随意共享的通用逻辑）。提取需新建 build-support crate + build-dependency，复杂度大于收益。
+
+**结论**：不提取；按"**谁依赖 rusqlite(SQLCipher)，谁自带 build.rs**"的规则各自声明。security 侧那份可在拆分后删除。
+
+**⚠️ 另一处归属修正：`password_strength/` 归 vault，不归 security**（原 L483 判定有误）：
+
+- `security_db/mod.rs` 与 `security_db/rekey.rs` 两处调用 `estimate_strength()` 用 `score < 2` 卡主密码门槛；
+- `security_db/` 归 vault，若 `password_strength/` 留 security 则形成 `vault → security`，vault 闭包重新拉入 `reqwest`+`arboard`+`ssh-key`+`rsa`；
+- security 剩余模块（`unlock_dialog`/`ssh_agent`/`screen_lock`/`clipboard_guard`/`reveal_guard`/`hibp`）**零引用** `password_strength`，迁移无反向依赖；
+- 代价：`-p assistant-vault` 必须承担 `zxcvbn`（9.7s），§6.5 的"zxcvbn 可 feature gate"因此**转移到 vault crate**。
 
 ### 6.5 缺少 feature flag 控制重依赖
 
-image（agent）、zxcvbn（security）、keyring + 平台特定（security）、ssh-key + rsa（security）等依赖始终参与编译，应添加 feature gate 允许开发时跳过。
+image（agent）、zxcvbn（vault，⚠️ 拆分后已迁入 vault）、keyring + 平台特定（vault）、ssh-key + rsa（security）等依赖始终参与编译，应添加 feature gate 允许开发时跳过。
 
-**已核实的依赖归属**（均只被单一模块使用，天然适合 feature gate）：
-| 依赖 | 编译耗时 | 唯一使用者 | 可 gate |
-|---|---|---|---|
-| zxcvbn | 9.7s | `security/password_strength/mod.rs` | ✅ |
-| arboard | 4.1s | `security/clipboard_guard.rs` | ✅ |
-| ssh-key | 3.6s | `security/ssh_agent/validate.rs` | ✅ |
-| rsa | 1.8s | security（ssh 相关） | ✅ |
-| image | — | `agent`（图片处理） | ✅ |
+**已核实的依赖归属**（均只被单一模块使用，天然适合 feature gate；⚠️ 路径为拆分后位置）：
+| 依赖 | 编译耗时 | 唯一使用者（拆分后） | 所属 crate | 可 gate |
+|---|---|---|---|---|
+| zxcvbn | 9.7s | `vault/password_strength/mod.rs`（149 行） | vault | ✅ |
+| arboard | 4.1s | `security/clipboard_guard.rs` | security | ✅ |
+| ssh-key | 3.6s | `security/ssh_agent/validate.rs` | security | ✅ |
+| rsa | 1.8s | security（ssh 相关） | security | ✅ |
+| keyring | 0.3s | `vault/biometric/`（744 行） | vault | ✅ |
+| image | — | `agent`（图片处理） | agent | ✅ |
 
 **现实约束**：
 1. 这些依赖在**生产构建中全部需要**，feature gate 只能加速**开发期**构建（`cargo check` 跳过 Vault/图片功能）。
@@ -568,7 +637,7 @@ image（agent）、zxcvbn（security）、keyring + 平台特定（security）�
 
 **建议**：若目标仅为缩短 CI 冷构建时间，可对 zxcvbn（9.7s，占比最大）单独做 feature gate；arboard/ssh-key/rsa 收益较小（合计 ~9.5s）且 stub 成本高，优先级低。
 
-**更优替代**：直接执行 §6.1 拆分后，`assistant-vault`（含 crypto + sync + SQLCipher + keyring）与 `assistant-security`（含 zxcvbn/arboard/ssh-key/rsa/reqwest）各自持有重依赖，主 app 通过 feature 选择性启用，比在单个 security crate 内做 cfg 门控更清晰。**该方案依赖 §6.1 两步拆分落地（P2 必做项）**；若尚未拆分，本节的 feature gate 仍是唯一手段。
+**更优替代**：直接执行 §6.1 拆分后，`assistant-vault`（含 crypto + sync + SQLCipher + keyring + zxcvbn）与 `assistant-security`（含 arboard/ssh-key/rsa/reqwest）各自持有重依赖，主 app 通过 feature 选择性启用，比在单个 security crate 内做 cfg 门控更清晰。**该方案依赖 §6.1 两步拆分落地（P2 必做项）**；若尚未拆分，本节的 feature gate 仍是唯一手段。⚠️ 按 §6.4 归属修正，`zxcvbn` 已随 `password_strength/` 迁入 **vault**，feature gate 应加在 vault 而非 security。
 
 ### 6.6 ~~rusqlite 双消费者~~ ❌ 不建议统一
 
@@ -608,7 +677,7 @@ protocol (叶)         ← ⚠️ 有条件（P3），见 §3.1.1
 ### 7.1.1 拆分后的完整形态
 
 ```
-crypto (叶)   ~700 行
+crypto (叶)   ~600 行
   vault_crypto/{mod,types,totp} + crypto/api_key + error.rs(VaultError)
   MasterKey / PerEntryKey / CipherAlgorithm / VaultPlaintext / SecureString
   VaultCrypto / TOTP / API Key 加解密 / VaultError
@@ -619,37 +688,39 @@ sync (叶)     ~1100 行
   git_sync/ + types/
   零内部 crate 依赖
 
-vault → crypto, sync          ~5100 行
+vault → crypto, sync          ~5300 行
   security_db + types(VaultEntry* DTO) + recovery_key + audit
   + biometric + vault_file(自 sync 迁入) + sync_engine(自 sync 迁入)
+  + password_strength(自 security 迁入，⚠️ 见 §6.4 归属修正)
 
-security → crypto             ~2700 行
+security → crypto             ~2600 行
   unlock_dialog + screen_lock + ssh_agent + clipboard_guard
-  + reveal_guard + password_strength + hibp(自 vault_crypto 迁入)
+  + reveal_guard + hibp(自 vault_crypto 迁入)
 ```
 
-**关键点（相对上一版的 5 处修正）**：
+**关键点（相对上一版的 6 处修正）**：
 
 1. **`sync` 变为纯叶**：`vault_file` 与 `sync_engine` 必须**同批**迁入 vault（§2.4），否则 `vault → sync`（用 vault_file）与 `sync → vault`（用 DTO）成环。
 2. **`VaultError` 归 crypto 而非 vault**：它是 security 的共享错误枚举，`unlock_dialog`(9 处) / `ssh_agent`(4 处) / `reveal_guard`(2 处) / `clipboard_guard`(1 处) 都在用；归 vault 会让 security 反向依赖 vault。
 3. **`types/` 拆两半**：`VaultError` → crypto；`VaultEntry*` / `VaultCategory` / `CustomFieldInput` / `ImportOutcome` / `VaultCryptoInfo` → vault。
 4. **`biometric` 随 vault 走**：`security_db/biometric_ops.rs` 是其唯一调用方，留 security 会造成 `vault → security` 层次倒置。
 5. **`hibp` 移入 security**：它是 `vault_crypto/` 下唯一使用 `reqwest` 的成员，留在 crypto 会让叶 crate 变成网络 crate。
+6. **`password_strength` 随 vault 走**（⚠️ 本条为执行期修正）：`security_db/{mod,rekey}.rs` 用它卡主密码强度门槛，留 security 会造成 `vault → security` 并重新拉入 `reqwest/arboard/ssh-key/rsa`；代价是 vault 承担 `zxcvbn`（§6.4）。
 
 **crate 规模变化**：
 
-| Crate | 现状 | 拆分后 | 变化 |
+| Crate | 拆分前 | 拆分后（实测） | 变化 |
 |---|---|---|---|
-| assistant-security | ~7000 | ~2700 | 缩小 |
+| assistant-security | ~7000 | ~2600 | 缩小 |
 | assistant-sync | ~2700 | ~1100 | 缩小 |
-| assistant-crypto | — | ~700 | 新建 |
-| assistant-vault | — | ~5100 | 新建 |
+| assistant-crypto | — | ~600 | 新建 |
+| assistant-vault | — | ~5300 | 新建 |
 
 **新 crate 数量：2 个**（`assistant-crypto`、`assistant-vault`）。取消的独立 crate：`assistant-api-crypto`（并入 crypto）、`assistant-audit`（并入 vault）。
 
-**收益（须限定场景）**：①`-p assistant-sync` 闭包缩减约 20s；②`-p assistant-vault` 可独立编译（无网络栈、无 OS-UI 栈）；③`-p assistant-security` 不再拉 SQLCipher/keyring；④**完整 workspace 构建零提速**。
+**收益（须限定场景，⚠️ 已按实测修正）**：①`-p assistant-sync` 闭包从 security 全量重依赖降为 3 个轻依赖，缩减约 20s；②`-p assistant-vault` 可独立编译（无网络栈、无 OS-UI 栈），但**含 zxcvbn 9.7s**，且依赖 `.cargo/config.toml` 的 `OPENSSL_DIR`/`OPENSSL_STATIC` 与自带 build.rs（§6.4）；③`-p assistant-security` 不再拉 SQLCipher/keyring/zxcvbn；④**完整 workspace 构建零提速**。
 
-**⚠️ 拆分对依赖边的真实影响**：内部边从 1 条增至 3 条，与 P0"减少边数"方向相反。拆分目的不是减少边数，而是**缩小每个 crate 的依赖闭包**——让轻消费者不再被迫拉入六类重依赖。主 app 闭包不变（本就依赖全部 crate）。
+**⚠️ 拆分对依赖边的真实影响**：内部边从 3 条（拆分前）增至 5 条（拆分后，见 §1.1），与 P0"减少边数"方向相反。拆分目的不是减少边数，而是**缩小每个 crate 的依赖闭包**——让轻消费者不再被迫拉入六类重依赖。主 app 闭包不变（本就依赖全部 crate）。
 
 ### 7.2 主 app 精简后
 
@@ -668,8 +739,8 @@ security → crypto             ~2700 行
 | P1 | 存储分析 + 会话工具 → storage | 低（纯搬运，需剥离 tauri AppHandle 胶水） | 主 app 精简 197 行，领域逻辑归位 |
 | ~~P1~~ | ~~Mascot 资产管理 → 新 crate assistant-mascot~~ ❌ 不建议（见 §4.3） | — | 命中检查表 ⑤：tauri command 胶水 + 单消费者 + 轻依赖 + 138 行；独立反把 tauri 拉入新叶 crate |
 | P2 | Chat 消息插入 → agent | 低（前置：5 处 `assistant_i18n::t()` 改结构化错误；agent 已依赖 storage+providers） | 主 app 精简 258 行，storage 不变上帝 crate |
-| P2 | **步 1：建 `assistant-crypto`（§6.1）** | 中（~60 处 import 机械替换；`VaultError` 从 `types/` 抽到 `error.rs`） | crypto 叶 crate ~700 行，服务 vault / security / 主 app；`-p assistant-crypto` 闭包无 rusqlite/reqwest/arboard/zxcvbn/ssh-key |
-| P2 | **步 2：建 `assistant-vault`（§6.1 + §2.4）** | **高**（~5100 行迁移；`vault_file` + `sync_engine` **必须同批**迁入，否则成环；23 个签名 + 主 app 4 文件调用点） | 真正消除 `sync → security`；`-p assistant-vault` 独立编译（无网络栈/OS-UI 栈）；`-p assistant-sync` 闭包 -20s |
+| ~~P2~~ | **~~步 1：建 `assistant-crypto`（§6.1）~~** ✅ 已完成 | — | crypto 叶 crate（`vault_crypto/{mod,types,totp}` + `api_key` + `error::VaultError`），服务 vault / security / sync / 主 app；security 侧 `pub use` re-export 保留旧路径兼容；`hibp` 上提为 `assistant_security::hibp`；`-p assistant-crypto` 闭包无 rusqlite/reqwest/arboard/zxcvbn/ssh-key |
+| ~~P2~~ | **~~步 2：建 `assistant-vault`（§6.1 + §2.4）~~** ✅ 已完成 | — | 已迁入 `security_db` + `types` + `recovery_key` + `audit` + `biometric` + `password_strength` + `vault_file` + `sync_engine`（后两者同批）；`sync → security` 边已消除，`assistant-sync` 仅剩 `git_sync`+`types` 零内部依赖；主 app 4 文件调用点已改 `assistant_vault::`；`cargo check --workspace --all-targets` 通过。**遗留：`assistant-vault` 缺 build.rs（静态 OpenSSL 系统库未链接，`cargo test` 报 LNK1120），见 §6.4** |
 | P3 | ~~workspace.dependencies 精简（§5.2）~~ ⚠️ 降级 | 低 | 仅根文件可读性，有 churn 风险；**建议不做**，拆分副产品自然归位即可 |
 | P3 | orb 去耦合 tauri（§6.2） | 低（仅 placement.rs 的 `get_available_screens` 一个函数耦合） | 仅架构洁癖；**编译/测试均零收益**（测试已存在） |
 | ~~P3~~ | ~~build.rs 去重（§6.4）~~ ❌ 不建议 | — | 重复仅 4 行，提取需新建 crate，得不偿失 |

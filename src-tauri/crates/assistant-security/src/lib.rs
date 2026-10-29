@@ -1,13 +1,8 @@
-pub mod audit;
-pub mod biometric;
 pub mod clipboard_guard;
 pub mod crypto;
-pub mod password_strength;
-pub mod recovery_key;
+pub mod hibp;
 pub mod reveal_guard;
 pub mod screen_lock;
-pub mod security_db;
 pub mod ssh_agent;
-pub mod types;
 pub mod unlock_dialog;
 pub mod vault_crypto;

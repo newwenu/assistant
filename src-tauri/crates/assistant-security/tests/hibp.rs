@@ -1,4 +1,4 @@
-use assistant_security::vault_crypto::hibp::{parse_hibp_response, sha1_hex, SafePassword};
+use assistant_security::hibp::{parse_hibp_response, sha1_hex, SafePassword};
 
 #[test]
 fn parse_hibp_response_finds_match() {

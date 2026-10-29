@@ -189,6 +189,7 @@ dependencies = [
  "assistant-agent",
  "assistant-config",
  "assistant-crash",
+ "assistant-crypto",
  "assistant-i18n",
  "assistant-orb",
  "assistant-providers",
@@ -196,6 +197,7 @@ dependencies = [
  "assistant-storage",
  "assistant-sync",
  "assistant-tools",
+ "assistant-vault",
  "chrono",
  "csv",
  "futures",
@@ -241,6 +243,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "assistant-crypto"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "base64 0.23.1",
+ "chacha20poly1305",
+ "data-encoding",
+ "hkdf 0.12.4",
+ "hmac 0.12.1",
+ "log",
+ "machine-uid",
+ "proptest",
+ "rand 0.8.8",
+ "serde",
+ "sha1",
+ "sha2 0.10.9",
+ "subtle",
+ "thiserror 2.0.21",
+ "zeroize",
+]
+
+[[package]]
 name = "assistant-i18n"
 version = "0.1.0"
 dependencies = [
@@ -280,39 +305,18 @@ dependencies = [
 name = "assistant-security"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
  "arboard",
- "argon2",
- "base64 0.23.1",
- "chacha20poly1305",
- "chrono",
- "core-foundation 0.10.1",
- "data-encoding",
+ "assistant-crypto",
  "hex",
- "hkdf 0.12.4",
- "hmac 0.12.1",
- "keyring",
- "libsecret",
  "log",
- "machine-uid",
- "proptest",
  "rand 0.8.8",
  "reqwest 0.12.28",
  "rsa",
- "rusqlite",
- "security-framework",
  "serde",
- "serde_json",
  "sha1",
- "sha2 0.10.9",
  "ssh-key",
- "subtle",
- "thiserror 2.0.21",
- "uuid",
  "windows",
- "windows-future",
  "zeroize",
- "zxcvbn",
 ]
 
 [[package]]
@@ -337,17 +341,10 @@ dependencies = [
 name = "assistant-sync"
 version = "0.1.0"
 dependencies = [
- "assistant-security",
- "base64 0.23.1",
- "chrono",
- "hmac 0.12.1",
  "log",
  "serde",
- "serde_json",
- "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
- "uuid",
 ]
 
 [[package]]
@@ -361,6 +358,38 @@ dependencies = [
  "serde",
  "serde_json",
  "windows",
+]
+
+[[package]]
+name = "assistant-vault"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "assistant-crypto",
+ "assistant-sync",
+ "base64 0.23.1",
+ "chrono",
+ "core-foundation 0.10.1",
+ "data-encoding",
+ "hex",
+ "hkdf 0.12.4",
+ "hmac 0.12.1",
+ "keyring",
+ "libsecret",
+ "log",
+ "rand 0.8.8",
+ "rusqlite",
+ "security-framework",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "uuid",
+ "windows",
+ "windows-future",
+ "zeroize",
+ "zxcvbn",
 ]
 
 [[package]]

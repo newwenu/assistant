@@ -2,16 +2,16 @@ use std::path::PathBuf;
 
 use tauri::{command, AppHandle, Manager};
 
-use assistant_security::audit::{log as audit_log, AuditEvent};
-use assistant_security::types::{
+use assistant_vault::audit::{log as audit_log, AuditEvent};
+use assistant_vault::types::{
     VaultEntryCreate, VaultEntryCsvRow, VaultEntryDetail, VaultEntryExport, VaultEntrySummary,
     VaultEntryUpdate,
 };
 
 use super::SecurityDbState;
-use assistant_security::types::{VaultEntrySnapshot, VaultError};
-use assistant_security::vault_crypto::types::MasterKey;
-use assistant_sync::sync_engine::SyncEngine;
+use assistant_crypto::vault_crypto::types::MasterKey;
+use assistant_vault::sync_engine::SyncEngine;
+use assistant_vault::types::{VaultEntrySnapshot, VaultError};
 
 fn export_entry_to_sync(
     engine: &SyncEngine,
@@ -44,7 +44,7 @@ pub fn vault_list_entries(
     tag: Option<String>,
 ) -> Result<Vec<VaultEntrySummary>, String> {
     let state = super::vault_state(&app)?;
-    let cat = category.and_then(|c| assistant_security::types::VaultCategory::parse(&c));
+    let cat = category.and_then(|c| assistant_vault::types::VaultCategory::parse(&c));
     state
         .list_entries(cat, search.as_deref(), tag.as_deref())
         .map_err(|e| e.to_string())

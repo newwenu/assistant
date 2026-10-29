@@ -23,7 +23,7 @@ impl RevealGuard {
         }
     }
 
-    pub fn check_and_record(&self) -> Result<(), crate::types::VaultError> {
+    pub fn check_and_record(&self) -> Result<(), assistant_crypto::error::VaultError> {
         let mut timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
 
@@ -35,7 +35,7 @@ impl RevealGuard {
                 timestamps.len(),
                 RATE_LIMIT_PER_MINUTE
             );
-            return Err(crate::types::VaultError::RateLimited);
+            return Err(assistant_crypto::error::VaultError::RateLimited);
         }
 
         timestamps.push(now);

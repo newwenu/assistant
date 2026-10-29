@@ -1,12 +1,12 @@
 use tauri::{command, AppHandle, Manager};
 
-use assistant_security::biometric::BiometricKeyStore;
-use assistant_security::types::VaultError;
+use assistant_vault::biometric::BiometricKeyStore;
+use assistant_vault::types::VaultError;
 
 use super::SecurityDbState;
 
 pub(super) fn get_key_store() -> Box<dyn BiometricKeyStore> {
-    assistant_security::biometric::create_key_store()
+    assistant_vault::biometric::create_key_store()
 }
 
 #[command]

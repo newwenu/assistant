@@ -4,8 +4,8 @@ use assistant_config::app_conf::AppConf;
 use assistant_security::clipboard_guard::ClipboardGuard;
 use assistant_security::reveal_guard::RevealGuard;
 use assistant_security::screen_lock::ScreenLockMonitor;
-use assistant_security::security_db::SecurityDbState;
-use assistant_sync::sync_engine::SyncEngine;
+use assistant_vault::security_db::SecurityDbState;
+use assistant_vault::sync_engine::SyncEngine;
 
 use crate::protocol::events::{emit_broadcast, event_name};
 
@@ -129,7 +129,7 @@ pub(crate) fn vault_state(app: &AppHandle) -> Result<tauri::State<'_, SecurityDb
         .map_err(|_| "SecurityDbState not managed".to_string())
 }
 
-pub(crate) fn cipher_algo() -> assistant_security::vault_crypto::types::CipherAlgorithm {
+pub(crate) fn cipher_algo() -> assistant_crypto::vault_crypto::types::CipherAlgorithm {
     let conf = AppConf::load().ok();
     let val = conf
         .as_ref()

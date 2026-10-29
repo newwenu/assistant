@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use tauri::{command, AppHandle, Manager};
 
-use assistant_sync::sync_engine::SyncEngine;
+use assistant_vault::sync_engine::SyncEngine;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,7 +26,7 @@ pub async fn vault_sync(
 ) -> Result<assistant_sync::SyncResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let engine = app.state::<SyncEngine>();
-        let db = app.state::<assistant_security::security_db::SecurityDbState>();
+        let db = app.state::<assistant_vault::security_db::SecurityDbState>();
         let result = match action {
             SyncAction::Pull => engine.pull(&db),
             SyncAction::Push => engine.push(),
@@ -105,7 +105,7 @@ pub async fn vault_resolve_conflict(
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let engine = app.state::<SyncEngine>();
-        let db = app.state::<assistant_security::security_db::SecurityDbState>();
+        let db = app.state::<assistant_vault::security_db::SecurityDbState>();
         engine
             .resolve_conflict(&db, &path, resolution, remote_copy_suffix.as_deref())
             .map_err(|e| e.to_string())
@@ -126,7 +126,7 @@ pub fn vault_sync_pending_removals(
 pub async fn vault_sync_confirm_removals(app: AppHandle, ids: Vec<String>) -> Result<u32, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let engine = app.state::<SyncEngine>();
-        let db = app.state::<assistant_security::security_db::SecurityDbState>();
+        let db = app.state::<assistant_vault::security_db::SecurityDbState>();
         engine
             .confirm_removals(&db, &ids)
             .map(|count| {

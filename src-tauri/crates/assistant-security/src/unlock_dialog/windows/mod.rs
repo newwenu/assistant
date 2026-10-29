@@ -132,9 +132,10 @@ unsafe impl Send for Win32UnlockDialog {}
 unsafe impl Sync for Win32UnlockDialog {}
 
 impl Win32UnlockDialog {
-    pub fn new() -> Result<Self, crate::types::VaultError> {
-        let instance = unsafe { GetModuleHandleW(None) }
-            .map_err(|e| crate::types::VaultError::Other(format!("GetModuleHandleW: {e}")))?;
+    pub fn new() -> Result<Self, assistant_crypto::error::VaultError> {
+        let instance = unsafe { GetModuleHandleW(None) }.map_err(|e| {
+            assistant_crypto::error::VaultError::Other(format!("GetModuleHandleW: {e}"))
+        })?;
         Ok(Self {
             hinstance: instance.0 as usize,
         })
@@ -145,7 +146,7 @@ impl UnlockDialog for Win32UnlockDialog {
     fn show(
         &self,
         on_result: Box<dyn FnOnce(UnlockResult) + Send>,
-    ) -> Result<(), crate::types::VaultError> {
+    ) -> Result<(), assistant_crypto::error::VaultError> {
         let hinstance_val = self.hinstance;
 
         let hinstance = windows::Win32::Foundation::HINSTANCE(hinstance_val as *mut c_void);

@@ -1,7 +1,7 @@
 use tauri::{command, AppHandle, Manager};
 
-use assistant_security::audit::{log as audit_log, AuditEvent};
-use assistant_security::types::VaultEntrySummary;
+use assistant_vault::audit::{log as audit_log, AuditEvent};
+use assistant_vault::types::VaultEntrySummary;
 
 use super::SshAgentState;
 
@@ -104,7 +104,7 @@ pub fn vault_ssh_auto_add_all(app: AppHandle) -> Result<Vec<String>, String> {
     let state = super::vault_state(&app)?;
     let ssh_entries: Vec<VaultEntrySummary> = state
         .list_entries(
-            Some(assistant_security::types::VaultCategory::SshKey),
+            Some(assistant_vault::types::VaultCategory::SshKey),
             None,
             None,
         )

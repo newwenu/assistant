@@ -15,8 +15,10 @@ members = [
     "crates/assistant-storage",
     "crates/assistant-i18n",
     "crates/assistant-tools",
+    "crates/assistant-crypto",
     "crates/assistant-security",
     "crates/assistant-sync",
+    "crates/assistant-vault",
     "crates/assistant-crash",
 ]
 
@@ -82,8 +84,10 @@ assistant-agent = { path = "crates/assistant-agent" }
 assistant-storage = { path = "crates/assistant-storage" }
 assistant-i18n = { path = "crates/assistant-i18n" }
 assistant-tools = { path = "crates/assistant-tools" }
+assistant-crypto = { path = "crates/assistant-crypto" }
 assistant-security = { path = "crates/assistant-security" }
 assistant-sync = { path = "crates/assistant-sync" }
+assistant-vault = { path = "crates/assistant-vault" }
 assistant-crash = { path = "crates/assistant-crash" }
 arboard = "3"
 csv = "1"
@@ -146,8 +150,10 @@ assistant-agent = { workspace = true }
 assistant-storage = { workspace = true }
 assistant-i18n = { workspace = true }
 assistant-tools = { workspace = true }
+assistant-crypto = { workspace = true }
 assistant-security = { workspace = true }
 assistant-sync = { workspace = true }
+assistant-vault = { workspace = true }
 assistant-crash = { workspace = true }
 rustc_version_runtime.workspace = true
 

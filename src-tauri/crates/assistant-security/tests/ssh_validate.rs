@@ -1,5 +1,5 @@
+use assistant_crypto::error::VaultError;
 use assistant_security::ssh_agent::validate::validate_private_key;
-use assistant_security::types::VaultError;
 use rsa::pkcs1::EncodeRsaPrivateKey;
 use rsa::pkcs8::EncodePrivateKey;
 

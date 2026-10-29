@@ -1,10 +1,10 @@
 use tauri::{command, AppHandle};
 
-use assistant_security::audit::{log as audit_log, AuditEvent, AuditLogEntry};
-use assistant_security::password_strength::{self, StrengthResult};
-use assistant_security::vault_crypto::hibp::{HibpClient, SafePassword};
-use assistant_security::vault_crypto::totp::{self, TotpParams, TotpResult};
-use assistant_security::vault_crypto::types::SecureString;
+use assistant_crypto::vault_crypto::totp::{self, TotpParams, TotpResult};
+use assistant_crypto::vault_crypto::types::SecureString;
+use assistant_security::hibp::{HibpClient, SafePassword};
+use assistant_vault::audit::{log as audit_log, AuditEvent, AuditLogEntry};
+use assistant_vault::password_strength::{self, StrengthResult};
 
 #[command]
 pub fn vault_totp_generate(
@@ -114,7 +114,7 @@ pub fn vault_query_audit_log(
     let conn = guard
         .as_ref()
         .ok_or_else(|| "Vault not initialized".to_string())?;
-    assistant_security::audit::query_log(conn, limit.unwrap_or(100)).map_err(|e| e.to_string())
+    assistant_vault::audit::query_log(conn, limit.unwrap_or(100)).map_err(|e| e.to_string())
 }
 
 #[command]

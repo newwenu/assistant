@@ -17,7 +17,7 @@ unsafe impl Send for LinuxUnlockDialog {}
 unsafe impl Sync for LinuxUnlockDialog {}
 
 impl LinuxUnlockDialog {
-    pub fn new() -> Result<Self, crate::types::VaultError> {
+    pub fn new() -> Result<Self, assistant_crypto::error::VaultError> {
         let backend = if is_zenity_available() {
             info!("Linux unlock dialog: using zenity backend");
             LinuxBackend::Zenity
@@ -25,7 +25,7 @@ impl LinuxUnlockDialog {
             info!("Linux unlock dialog: using kdialog backend");
             LinuxBackend::Kdialog
         } else {
-            return Err(crate::types::VaultError::Other(
+            return Err(assistant_crypto::error::VaultError::Other(
                 "No native dialog backend available (need zenity or kdialog)".into(),
             ));
         };
@@ -37,7 +37,7 @@ impl UnlockDialog for LinuxUnlockDialog {
     fn show(
         &self,
         on_result: Box<dyn FnOnce(UnlockResult) + Send>,
-    ) -> Result<(), crate::types::VaultError> {
+    ) -> Result<(), assistant_crypto::error::VaultError> {
         let backend = self.backend;
         std::thread::spawn(move || match backend {
             LinuxBackend::Zenity => match run_zenity_dialog() {

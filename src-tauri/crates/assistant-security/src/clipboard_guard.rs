@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::types::VaultError;
+use assistant_crypto::error::VaultError;
 use log::{info, warn};
 
 pub struct ClipboardGuard {

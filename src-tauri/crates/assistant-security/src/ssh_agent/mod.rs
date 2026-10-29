@@ -9,7 +9,7 @@ mod windows;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::types::VaultError;
+use assistant_crypto::error::VaultError;
 
 pub trait SshAgentBridge: Send + Sync {
     fn add_key(

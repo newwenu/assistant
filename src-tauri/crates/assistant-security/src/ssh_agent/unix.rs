@@ -4,7 +4,7 @@ use std::process::Stdio;
 use log::{info, warn};
 
 use super::{run_ssh_add, SshAgentBridge, SshKeyInfo};
-use crate::types::VaultError;
+use assistant_crypto::error::VaultError;
 
 pub struct UnixSshAgentBridge {
     pub auth_sock_override: Option<String>,
