@@ -306,7 +306,8 @@ CREATE TABLE attachment_refs (
 <config_dir>/             # Win: %APPDATA%\com.assistant / macOS: ~/Library/Application Support/com.assistant / Linux: ~/.config/com.assistant
 ├── config.json           # AppConf
 ├── orb-config.json       # OrbConf
-└── mascot-config.json    # MascotConf
+├── mascot-config.json    # MascotConf
+└── vault-config.json     # VaultConf（保险库设置，禁止落在 vault 仓库目录）
 ```
 
 > 日志由 `tauri-plugin-log` 写入系统日志目录，开发环境同时输出到终端。
