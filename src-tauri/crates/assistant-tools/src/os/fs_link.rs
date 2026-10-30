@@ -49,6 +49,12 @@ impl FsLinkTool {
     }
 }
 
+impl Default for FsLinkTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl Tool for FsLinkTool {
     fn name(&self) -> &str {

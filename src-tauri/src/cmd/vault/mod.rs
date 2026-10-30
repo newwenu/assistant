@@ -73,7 +73,7 @@ pub(crate) fn ssh_bridge_from_conf() -> Box<dyn assistant_security::ssh_agent::S
     let conf = VaultConf::load().ok();
     let use_pageant = conf
         .as_ref()
-        .and_then(|c| Some(c.vault_ssh_use_pageant))
+        .map(|c| c.vault_ssh_use_pageant)
         .unwrap_or(true);
     let auth_sock_override = conf.as_ref().and_then(|c| {
         let s = c.vault_ssh_auth_sock_override.clone();
@@ -136,9 +136,7 @@ pub(crate) fn validation_error(message: impl Into<String>) -> VaultErrorDto {
 pub(crate) fn vault_state(
     app: &AppHandle,
 ) -> Result<tauri::State<'_, SecurityDbState>, VaultErrorDto> {
-    app.state::<SecurityDbState>()
-        .try_into()
-        .map_err(|_| internal_error("SecurityDbState not managed"))
+    Ok(app.state::<SecurityDbState>())
 }
 
 pub(crate) fn with_unlocked<T>(
@@ -175,17 +173,13 @@ pub(crate) fn cipher_algo() -> assistant_crypto::vault_crypto::types::CipherAlgo
 pub(crate) fn reveal_guard(
     app: &AppHandle,
 ) -> Result<tauri::State<'_, RevealGuard>, VaultErrorDto> {
-    app.state::<RevealGuard>()
-        .try_into()
-        .map_err(|_| internal_error("RevealGuard not managed"))
+    Ok(app.state::<RevealGuard>())
 }
 
 pub(crate) fn clipboard_guard(
     app: &AppHandle,
 ) -> Result<tauri::State<'_, ClipboardGuard>, VaultErrorDto> {
-    app.state::<ClipboardGuard>()
-        .try_into()
-        .map_err(|_| internal_error("ClipboardGuard not managed"))
+    Ok(app.state::<ClipboardGuard>())
 }
 
 pub(crate) fn get_clipboard_clear_secs(_app: &AppHandle) -> u64 {
@@ -195,9 +189,7 @@ pub(crate) fn get_clipboard_clear_secs(_app: &AppHandle) -> u64 {
 }
 
 pub(crate) fn sync_state(app: &AppHandle) -> Result<tauri::State<'_, SyncEngine>, VaultErrorDto> {
-    app.state::<SyncEngine>()
-        .try_into()
-        .map_err(|_| internal_error("SyncEngine not managed"))
+    Ok(app.state::<SyncEngine>())
 }
 
 pub fn setup(handle: &AppHandle) {

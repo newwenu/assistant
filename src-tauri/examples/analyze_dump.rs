@@ -62,7 +62,7 @@ fn main() {
         if exc_addr != 0 {
             for module in &mods {
                 let base = module.base_address();
-                let end = base + module.size() as u64;
+                let end = base + module.size();
                 if exc_addr >= base && exc_addr < end {
                     let short_name = std::path::Path::new(&*module.code_file())
                         .file_name()

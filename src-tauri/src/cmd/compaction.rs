@@ -185,7 +185,7 @@ pub(crate) async fn execute_compaction(
         .ok_or_else(|| "Orb window not found".to_string())?;
 
     emit_orb_only(
-        &app,
+        app,
         event_name::CHAT_STREAM_START,
         ChatStreamStartPayloadDto {
             conversation_id: conversation_id.to_string(),
@@ -195,7 +195,7 @@ pub(crate) async fn execute_compaction(
     );
 
     emit_orb_only(
-        &app,
+        app,
         event_name::CHAT_DELTA,
         ChatDeltaPayloadDto {
             conversation_id: conversation_id.to_string(),
@@ -288,7 +288,7 @@ pub(crate) async fn execute_compaction(
             set_terminating(conversation_id, false);
 
             emit_broadcast(
-                &app,
+                app,
                 event_name::CONVERSATION_TERMINATED,
                 ConversationTerminatedPayloadDto {
                     conversation_id: conversation_id.to_string(),
@@ -309,7 +309,7 @@ pub(crate) async fn execute_compaction(
                         &detail.messages,
                     )?;
                     emit_broadcast(
-                        &app,
+                        app,
                         event_name::CHAT_MESSAGES_CHANGED,
                         ChatMessagesChangedPayloadDto {
                             conversation_id: conversation_id.to_string(),

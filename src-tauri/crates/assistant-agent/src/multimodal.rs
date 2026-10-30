@@ -320,7 +320,7 @@ async fn admit_file(
 
     if let Some(fp) = file_path.as_deref() {
         validate_path(fp, config).await?;
-        let ext = ext_of(&fp);
+        let ext = ext_of(fp);
         if !config.allowed_file_extensions.iter().any(|e| e == &ext) {
             return Err(AgentError::other(format!(
                 "unsupported file extension: .{}",

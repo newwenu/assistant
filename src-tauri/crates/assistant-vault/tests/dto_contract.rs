@@ -131,7 +131,7 @@ fn readyness_dto_is_one_to_one() {
         let dto = ReadynessDto::from(state);
         assert_eq!(
             to_value(state).unwrap(),
-            to_value(&dto).unwrap(),
+            to_value(dto).unwrap(),
             "ReadynessDto must not change the wire format for {state}"
         );
     }

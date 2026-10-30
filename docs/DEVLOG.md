@@ -1054,3 +1054,28 @@ mount → orb-settling (opacity:0, transition:none, animation:none)
 | `src/orb/OrbBall.tsx` | `initGuardRef` + `confReadyRef` 守卫；`settled`/`settledIn` 双状态；`orb-settled-in` class |
 | `src/orb/useOrbConfSync.ts` | 返回 `{ ready: Promise<void> }`；`readyRef` 暴露首次 apply promise |
 | `src/assets/styles/global.css` | 新增 `.orb-hitbox.orb-settled-in { transition: none !important }` |
+
+### 2026-10-30 清理无引用常量与死代码，归档过期阶段文档
+
+#### 删除文件
+
+| 文件 | 删除方式 | 原因 |
+|------|---------|------|
+| `docs/store/I16-protocol-type-misplacement-audit.md` | 移至 `docs/achievement2/` 同名文件，内容逐字节一致 | 阶段已结束，`docs/store/` 只保留活跃规格 |
+| `docs/store/I21-send-chat-message-refactor-design.md` | 同上 | 同上 |
+| `docs/store/I2e-phase1-spec.md` | 同上 | 同上 |
+| `docs/store/I2e-phase1-tasklist.md` | 同上 | 同上 |
+| `docs/store/I2f-attachment-refs-orphan-management.md` | 同上 | 同上 |
+| `docs/store/dependency-tree-analysis.md` | 同上 | 同上 |
+| `src-tauri/crates/assistant-config/tests/constant.rs` | 整文件删除（53 行，3 个测试） | 被测常量（`CHAT_INPUT_MIN_ROWS` / `CHAT_INPUT_MAX_ROWS` 等）已移除，测试失去断言对象 |
+| `src-tauri/crates/assistant-vault/src/contract/mod.rs` | 整文件删除（`Precondition` 枚举），并移除 `lib.rs` 的 `pub mod contract;` | 全仓库零引用（grep 命中 0），模块只剩一个未被使用的枚举 |
+
+#### 连带改动
+
+- `assistant-config/src/constant.rs` 删除 12 个无引用常量：`HOVER_FADE_DURATION_MS`、`PLACEMENT_SETTLE_DELAY_MS`、`PET_DRAG_THRESHOLD_PX`、`ORB_BLUR_COLLAPSE_DELAY_MS`、`ORB_SNAP_DELAY_MS`、`DRAG_POLL_INTERVAL_MS`、`CHAT_PANEL_HEADER_HEIGHT`、`CHAT_INPUT_MIN_ROWS`、`CHAT_INPUT_MAX_ROWS`、`CHAT_AUTO_TITLE_LENGTH`、`CHAT_SIDEBAR_WIDTH`、`STREAM_COALESCE_TIMER_MS`
+- `src/config/constants.ts` 同步删除 19 个常量定义，前后端常量表保持对齐
+- `assistant-vault/Cargo.toml` 补登 `git-tests` feature，使已跟踪的 `tests/sync_engine.rs` 顶部 `#![cfg(feature = "git-tests")]` 门控正式生效
+
+#### 踩坑
+
+- 常量与集成测试存在硬绑定：删除后端常量后 `tests/constant.rs` 直接编译失败，只能整文件删除，保留半数断言没有意义。清理常量时应先确认对应测试文件的断言是否会被连带击穿。

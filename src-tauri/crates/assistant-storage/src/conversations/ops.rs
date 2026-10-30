@@ -154,7 +154,7 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Sto
         insert_message(conn, &new_msg)?;
     }
 
-    duplicate_attachment_refs(conn, &id, &new_id, &message_id_map)?;
+    duplicate_attachment_refs(conn, id, &new_id, &message_id_map)?;
 
     Ok(new_id)
 }

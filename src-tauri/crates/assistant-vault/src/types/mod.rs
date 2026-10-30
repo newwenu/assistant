@@ -153,7 +153,7 @@ pub struct VaultEntryCsvRow {
     pub updated_at: i64,
 }
 
-fn serialize_tags_csv<S: serde::Serializer>(tags: &Vec<String>, s: S) -> Result<S::Ok, S::Error> {
+fn serialize_tags_csv<S: serde::Serializer>(tags: &[String], s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(&tags.join(","))
 }
 

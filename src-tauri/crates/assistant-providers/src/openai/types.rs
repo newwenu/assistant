@@ -160,7 +160,7 @@ impl ModelItem {
     }
 
     pub(crate) fn resolved_id(&self) -> Option<String> {
-        if !self.id.as_ref().map_or(false, |s| s.is_empty()) {
+        if !self.id.as_ref().is_some_and(|s| s.is_empty()) {
             self.id.clone()
         } else {
             None

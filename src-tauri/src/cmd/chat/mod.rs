@@ -16,7 +16,6 @@ use assistant_config::constant::WINDOW_ORB;
 use assistant_providers::base::{ProviderError, ProviderErrorPayload};
 use assistant_security::crypto;
 use assistant_storage::attachment_store::AttachmentStore;
-use serde_json;
 
 use insert::InsertedMessages;
 use stream::{
@@ -103,6 +102,7 @@ async fn validate_and_preprocess(
     Ok(content)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_chat_stream(
     app: &AppHandle,
     conversation_id: &str,

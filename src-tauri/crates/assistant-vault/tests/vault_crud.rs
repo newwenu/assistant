@@ -1,3 +1,5 @@
+#![cfg(feature = "slow-tests")]
+
 mod common;
 
 use assistant_crypto::vault_crypto::types::CipherAlgorithm;

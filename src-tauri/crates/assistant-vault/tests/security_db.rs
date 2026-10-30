@@ -1,7 +1,9 @@
 mod common;
 
 use assistant_vault::security_db::SecurityDbState;
+#[cfg(feature = "slow-tests")]
 use assistant_vault::types::VaultError;
+#[cfg(feature = "slow-tests")]
 use common::{cleanup, temp_db_path, STRONG_PW};
 
 #[cfg(feature = "slow-tests")]

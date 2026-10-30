@@ -139,7 +139,7 @@ impl StreamAccumulator {
             || delta
                 .delta_tool_call_id
                 .as_deref()
-                .map_or(false, |id| !id.is_empty())
+                .is_some_and(|id| !id.is_empty())
         {
             self.has_effective_output = true;
         }
@@ -200,6 +200,18 @@ impl StreamAccumulator {
 
     pub fn prompt_tokens(&self) -> Option<u32> {
         self.prompt_tokens
+    }
+}
+
+impl Default for StreamAccumulator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Default for ToolCallAccumulator {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

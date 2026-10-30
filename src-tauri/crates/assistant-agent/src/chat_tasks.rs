@@ -9,6 +9,12 @@ pub struct ChatTaskEntry {
 
 pub struct ChatTasks(pub Mutex<HashMap<String, ChatTaskEntry>>);
 
+impl Default for ChatTasks {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChatTasks {
     pub fn new() -> Self {
         Self(Mutex::new(HashMap::new()))

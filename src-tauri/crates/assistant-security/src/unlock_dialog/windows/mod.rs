@@ -392,7 +392,7 @@ unsafe fn get_parent_dialog(hwnd: HWND) -> HWND {
             return parent;
         }
         let style = GetWindowLongPtrW(parent, GWL_STYLE) as u32;
-        let has_caption = (style & (WS_CAPTION.0 as u32)) != 0;
+        let has_caption = (style & WS_CAPTION.0) != 0;
         if has_caption {
             return parent;
         }
@@ -799,7 +799,7 @@ unsafe extern "system" fn wnd_proc(
             }
             LRESULT(0)
         }
-        DM_GETDEFID => LRESULT(((DC_HASDEFID as u32) << 16 | ID_BTN_UNLOCK as u32) as isize),
+        DM_GETDEFID => LRESULT((DC_HASDEFID << 16 | ID_BTN_UNLOCK as u32) as isize),
         WM_KEYDOWN => {
             let vk = VIRTUAL_KEY(wparam.0 as u16);
             if vk == VK_RETURN {
