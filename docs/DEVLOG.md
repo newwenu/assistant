@@ -1079,3 +1079,56 @@ mount → orb-settling (opacity:0, transition:none, animation:none)
 #### 踩坑
 
 - 常量与集成测试存在硬绑定：删除后端常量后 `tests/constant.rs` 直接编译失败，只能整文件删除，保留半数断言没有意义。清理常量时应先确认对应测试文件的断言是否会被连带击穿。
+
+### 2026-10-30 特性清单改动态装载，静态 import 无法做到 chunk 零残留
+
+#### 问题
+
+`vault-optional-build.md` 原设计（6.8.2）用「静态 import + `__VAULT_ENABLED__` 三元折叠」做特性清单：
+
+```ts
+import { vaultModule } from "./vault/module";
+const features = aggregate(__VAULT_ENABLED__ ? [vaultModule] : []);
+```
+
+关闭 vault 后，产物里仍残留 7 个 vault 相关 chunk（`module-*`、`vault-*`、`vaultStore-*`、`useVaultStatusReady-*`、`VaultSettingsPage-*`、`BiometricSwitchRender-*`、`vault-*.css`），入口 chunk 里也仍含 `vaultAutoLockMinutes` 等字段字面量。
+
+#### 根因
+
+编译期常量折叠只删「引用」，不删「import 语句」。`import { vaultModule } from "./vault/module"` 在折叠后退化为副作用 import（`import "./vault/module"`），该模块顶层数据被保留，其中 `load: () => import("@/vault")`、`customRenderLoad: () => import(".../BiometricSwitchRender")` 等箭头函数里藏着 `import()`，打包器据此照常物化异步 chunk。
+
+关键对照实验：**同一个静态 import，只要源码里没人引用 `vaultModule`（写 `aggregate([])`），产物就是 0 chunk**。说明模块本身无副作用问题，问题在「三元折叠留下 import 语句」。
+
+#### 决策
+
+清单改为**运行时动态装载 + 编译期守卫**：
+
+```ts
+let features: AggregatedFeatures = aggregate([]);
+export function getFeatures(): AggregatedFeatures { return features; }
+export async function loadFeatures(): Promise<void> {
+  if (!__VAULT_ENABLED__) return;
+  const { vaultModule } = await import("./vault/module");
+  features = aggregate([vaultModule]);
+}
+```
+
+`main.tsx` 的 `bootstrap()` 首行 `await loadFeatures()`。守卫折叠成 `if (true) return;` 后，其后的 `await import()` 整段不可达被删除，chunk 边根本不存在。
+
+#### 实测对照（`VAULT_ENABLED=0`，vite build）
+
+| 写法 | 产物文件数 | vault chunk | 入口含 vault 字段 |
+|---|---|---|---|
+| 静态 import + 三元折叠 | 172 | 7 | 是 |
+| 静态 import + 无条件展开 | 172 | 7 | 是 |
+| 静态 import + 完全不引用（`aggregate([])`，import 残留） | 158 | 0 | 否 |
+| **动态 import + 守卫早退** | **158** | **0** | **否** |
+
+`VAULT_ENABLED=1`：175 文件 / 7 chunk，功能与改造前一致。
+
+#### 踩坑
+
+- 曾试图用 `generateBundle` 阶段插件删不可达 chunk 补救，`output.importers` 在 Rolldown 下**不存在**（chunk 级只有 `imports` / `dynamicImports`，`importers` 仅在模块级 `ModuleInfo`），插件直接抛错；且这属于「过度特化的补丁」，每次特性变更都要维护，已放弃。
+- 消费方若保留静态常量导出（`export const SETTINGS_PAGES = ...`），模块初始化即触发 `getFeatures()`，动态装载结果会在模块求值期被固化。所有派生必须改为「导出函数 + 内部缓存」，缓存以 `derived.features === features` 引用相等失效。
+- 装载时序必须在 bootstrap 最前：`initSettingSystem()` 只注册渲染器与副作用、不读特性，因此 `await loadFeatures()` 早于 `useSettingsStore` 加载即可，无需额外重排。
+- 验收不能只看「字段字面量消失」，还要数 chunk：静态 import 方案字段能删净、chunk 却留着，只有文件名探针才暴露。
