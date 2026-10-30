@@ -11,7 +11,13 @@
       "vault": "Password Vault",
       "vault_settings": { "title": "Vault Settings" },
       "chat_history": "Chat History",
-      "settings": "Settings"
+      "settings": "Settings",
+      "category": {
+        "general": "General",
+        "provider": "Provider",
+        "vault": "Security",
+        "about": "About"
+      }
     },
     "actions": {
       "saved": "Saved",

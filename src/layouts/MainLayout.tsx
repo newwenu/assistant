@@ -13,11 +13,7 @@ import { SettingsContent } from "@/settings/SettingsContent";
 import { useAppInitialization } from "@/hooks/useAppInitialization";
 import { useErrorNotifications } from "@/hooks/useErrorNotifications";
 import { useNavigationListener } from "@/hooks/useNavigationListener";
-import { lazyWithRecovery } from "@/utils/lazyWithRecovery";
-
-const VaultApp = lazyWithRecovery(() =>
-  import("@/vault").then((m) => ({ default: m.VaultApp })),
-);
+import { getFeatures } from "@/features/registry";
 
 export const MainLayout: React.FC = () => {
   const navigate = useNavigate();
@@ -48,14 +44,17 @@ export const MainLayout: React.FC = () => {
             <Routes>
               <Route path="/" element={<ToolBox />} />
               <Route path="/tools/:id" element={<ToolPage />} />
-              <Route
-                path="/vault"
-                element={
-                  <FeatureErrorBoundary featureName="密码保险库">
-                    <VaultApp />
-                  </FeatureErrorBoundary>
-                }
-              />
+              {getFeatures().routes.map((route) => (
+                <Route
+                  key={route.path}
+                  path={route.path}
+                  element={
+                    <FeatureErrorBoundary featureName={route.boundary}>
+                      <route.element />
+                    </FeatureErrorBoundary>
+                  }
+                />
+              ))}
               <Route
                 path="/history"
                 element={

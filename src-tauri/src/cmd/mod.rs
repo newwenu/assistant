@@ -11,6 +11,7 @@ mod os_tool_exec;
 mod provider;
 mod storage;
 mod tool;
+#[cfg(feature = "vault")]
 mod vault;
 
 pub use agent_mode::*;
@@ -26,6 +27,7 @@ pub use os_tool_exec::*;
 pub use provider::*;
 pub use storage::*;
 pub use tool::*;
+#[cfg(feature = "vault")]
 pub use vault::*;
 
 pub(crate) fn get_db_conn<'a>(

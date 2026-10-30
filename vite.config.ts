@@ -24,6 +24,7 @@ export default defineConfig(() => ({
   },
   define: {
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+    __VAULT_ENABLED__: JSON.stringify(process.env.VAULT_ENABLED !== "0"),
   },
 
   optimizeDeps: {

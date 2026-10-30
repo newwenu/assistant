@@ -93,9 +93,13 @@ fn apply_app_side_effects(app: &AppHandle, prev: &AppConf, conf: &AppConf) {
     }
 }
 
+#[cfg(feature = "vault")]
 fn apply_vault_side_effects(prev: &VaultConf, conf: &VaultConf) {
     crate::cmd::vault::on_vault_conf_changed(prev, conf);
 }
+
+#[cfg(not(feature = "vault"))]
+fn apply_vault_side_effects(_prev: &VaultConf, _conf: &VaultConf) {}
 
 fn apply_orb_side_effects(app: &AppHandle, prev: &OrbConf, conf: &OrbConf) {
     for (name, handler) in ORB_SIDE_EFFECTS.iter() {

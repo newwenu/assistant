@@ -1,18 +1,9 @@
 import type { ComponentType, FC } from "react";
 import type { RecoverableLazyComponent } from "@/utils/lazyWithRecovery";
 
-export type SettingsCategoryId = "general" | "provider" | "vault" | "about";
+export type SettingsCategoryId = string & {};
 
-export type SettingsPageId =
-  | "overview"
-  | "general"
-  | "appearance"
-  | "shortcuts"
-  | "providers"
-  | "agents"
-  | "storage"
-  | "vault"
-  | "about";
+export type SettingsPageId = string & {};
 
 export interface SettingsPageManifest {
   id: SettingsPageId;
@@ -20,5 +11,10 @@ export interface SettingsPageManifest {
   label: string;
   keywords: string[];
   icon: FC;
+  order: number;
   component: RecoverableLazyComponent<ComponentType>;
 }
+
+export type SettingsPageDefinition = Omit<SettingsPageManifest, "component"> & {
+  load: () => Promise<{ default: ComponentType }>;
+};

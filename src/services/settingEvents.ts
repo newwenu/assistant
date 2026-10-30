@@ -9,6 +9,7 @@ import { useThemeStore } from "../stores/themeStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { createLogger } from "./logger";
 import { applyLocaleChange } from "@/i18n/localeApplier";
+import { VAULT_ENABLED } from "@/features/vault";
 
 const log = createLogger("setting-events");
 
@@ -69,7 +70,7 @@ export function subscribeSettingEvents(): () => void {
           });
         } else if (group === "orb") void store.loadOrbConf();
         else if (group === "mascot") void store.loadMascotConf();
-        else if (group === "vault") void store.loadVaultConf();
+        else if (group === "vault" && VAULT_ENABLED) void store.loadVaultConf();
       }
     }),
   );

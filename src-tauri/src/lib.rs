@@ -95,70 +95,135 @@ pub fn run() {
             cmd::manual_compact_conversation,
             cmd::unlock_conversation,
             cmd::os_tool_exec,
+            #[cfg(feature = "vault")]
             cmd::vault_init,
+            #[cfg(feature = "vault")]
             cmd::vault_unlock,
+            #[cfg(feature = "vault")]
             cmd::vault_is_locked,
+            #[cfg(feature = "vault")]
             cmd::vault_is_initialized,
+            #[cfg(feature = "vault")]
             cmd::vault_lock,
+            #[cfg(feature = "vault")]
             cmd::vault_list_entries,
+            #[cfg(feature = "vault")]
             cmd::vault_get_entry,
+            #[cfg(feature = "vault")]
             cmd::vault_copy_password,
+            #[cfg(feature = "vault")]
             cmd::vault_copy_field,
+            #[cfg(feature = "vault")]
             cmd::vault_reveal_password,
+            #[cfg(feature = "vault")]
             cmd::vault_reveal_notes,
+            #[cfg(feature = "vault")]
             cmd::vault_create_entry,
+            #[cfg(feature = "vault")]
             cmd::vault_update_entry,
+            #[cfg(feature = "vault")]
             cmd::vault_delete_entry,
+            #[cfg(feature = "vault")]
             cmd::vault_list_deleted_entries,
+            #[cfg(feature = "vault")]
             cmd::vault_restore_entry,
+            #[cfg(feature = "vault")]
             cmd::vault_purge_deleted,
+            #[cfg(feature = "vault")]
             cmd::vault_change_master_password,
+            #[cfg(feature = "vault")]
             cmd::vault_export_to_file,
+            #[cfg(feature = "vault")]
             cmd::vault_import,
+            #[cfg(feature = "vault")]
             cmd::vault_totp_generate,
+            #[cfg(feature = "vault")]
             cmd::vault_copy_totp,
+            #[cfg(feature = "vault")]
             cmd::vault_totp_time_remaining,
+            #[cfg(feature = "vault")]
             cmd::vault_totp_parse_uri,
+            #[cfg(feature = "vault")]
             cmd::vault_query_audit_log,
+            #[cfg(feature = "vault")]
             cmd::vault_hibp_check,
+            #[cfg(feature = "vault")]
             cmd::vault_hibp_audit,
+            #[cfg(feature = "vault")]
             cmd::vault_check_master_password_strength,
+            #[cfg(feature = "vault")]
             cmd::vault_show_unlock_window,
+            #[cfg(feature = "vault")]
             cmd::vault_is_biometric_available,
+            #[cfg(feature = "vault")]
             cmd::vault_is_biometric_enrolled,
+            #[cfg(feature = "vault")]
             cmd::vault_unlock_biometric,
+            #[cfg(feature = "vault")]
             cmd::vault_enroll_biometric,
+            #[cfg(feature = "vault")]
             cmd::vault_disenroll_biometric,
+            #[cfg(feature = "vault")]
             cmd::vault_sync,
+            #[cfg(feature = "vault")]
             cmd::vault_sync_last_time,
+            #[cfg(feature = "vault")]
             cmd::vault_get_sync_config,
+            #[cfg(feature = "vault")]
             cmd::vault_set_sync_config,
+            #[cfg(feature = "vault")]
             cmd::vault_resolve_conflict,
+            #[cfg(feature = "vault")]
             cmd::vault_sync_abort,
+            #[cfg(feature = "vault")]
             cmd::vault_sync_discard,
+            #[cfg(feature = "vault")]
             cmd::vault_git_init,
+            #[cfg(feature = "vault")]
             cmd::vault_git_remove_remote,
+            #[cfg(feature = "vault")]
             cmd::vault_git_test_connection,
+            #[cfg(feature = "vault")]
             cmd::vault_git_remote,
+            #[cfg(feature = "vault")]
             cmd::vault_sync_readyness,
+            #[cfg(feature = "vault")]
             cmd::vault_sync_conflicts,
+            #[cfg(feature = "vault")]
             cmd::vault_sync_pending_removals,
+            #[cfg(feature = "vault")]
             cmd::vault_sync_confirm_removals,
+            #[cfg(feature = "vault")]
             cmd::vault_history_list,
+            #[cfg(feature = "vault")]
             cmd::vault_history_preview,
+            #[cfg(feature = "vault")]
             cmd::vault_history_restore,
+            #[cfg(feature = "vault")]
             cmd::vault_conflict_preview,
+            #[cfg(feature = "vault")]
             cmd::vault_conflict_reveal,
+            #[cfg(feature = "vault")]
             cmd::vault_ssh_add_to_agent,
+            #[cfg(feature = "vault")]
             cmd::vault_ssh_remove_from_agent,
+            #[cfg(feature = "vault")]
             cmd::vault_ssh_list_agent,
+            #[cfg(feature = "vault")]
             cmd::vault_ssh_auto_add_all,
+            #[cfg(feature = "vault")]
             cmd::vault_ssh_is_agent_running,
+            #[cfg(feature = "vault")]
             cmd::vault_ssh_parse_key,
+            #[cfg(feature = "vault")]
             cmd::vault_ssh_key_meta,
+            #[cfg(feature = "vault")]
             cmd::vault_generate_recovery_key,
+            #[cfg(feature = "vault")]
             cmd::vault_has_recovery_key,
+            #[cfg(feature = "vault")]
             cmd::vault_verify_vault_meta_integrity,
+            #[cfg(feature = "vault")]
             cmd::vault_disaster_recovery_export,
             cmd::get_storage_breakdown,
             cmd::delete_attachments,
@@ -199,7 +264,10 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
-                cmd::cleanup_on_exit(app_handle);
+                #[cfg(feature = "vault")]
+                cmd::vault_cleanup_on_exit(app_handle);
+                #[cfg(not(feature = "vault"))]
+                let _ = app_handle;
             }
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 if !SHOULD_EXIT.load(Ordering::Relaxed) {

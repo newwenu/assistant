@@ -124,6 +124,14 @@ libsecret = "0.1"
 ssh-key = { version = "0.6", features = ["encryption", "rsa", "ed25519"] }
 rsa = { version = "0.9", features = ["pem"] }
 
+[features]
+default = ["vault"]
+vault = [
+    "dep:assistant-vault",
+    "dep:assistant-sync",
+    "dep:assistant-security",
+]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -151,9 +159,9 @@ assistant-storage = { workspace = true }
 assistant-i18n = { workspace = true }
 assistant-tools = { workspace = true }
 assistant-crypto = { workspace = true }
-assistant-security = { workspace = true }
-assistant-sync = { workspace = true }
-assistant-vault = { workspace = true }
+assistant-security = { workspace = true, optional = true }
+assistant-sync = { workspace = true, optional = true }
+assistant-vault = { workspace = true, optional = true }
 assistant-crash = { workspace = true }
 rustc_version_runtime.workspace = true
 

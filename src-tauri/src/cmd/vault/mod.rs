@@ -192,7 +192,7 @@ pub(crate) fn sync_state(app: &AppHandle) -> Result<tauri::State<'_, SyncEngine>
     Ok(app.state::<SyncEngine>())
 }
 
-pub fn setup(handle: &AppHandle) {
+pub fn vault_setup(handle: &AppHandle) {
     let security_db_path = match handle.path().app_data_dir() {
         Ok(data_dir) => data_dir.join("security").join("security.db"),
         Err(e) => {
@@ -287,7 +287,7 @@ fn spawn_screen_lock_watcher(handle: &AppHandle) {
     log::info!("ScreenLockMonitor initialized");
 }
 
-pub fn cleanup_on_exit(app: &AppHandle) {
+pub fn vault_cleanup_on_exit(app: &AppHandle) {
     let guard = app.state::<ClipboardGuard>();
     let _ = guard.force_clear();
 }

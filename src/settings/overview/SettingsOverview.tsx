@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { SETTINGS_DETAIL_PAGES } from "../core/pageRegistry";
+import { getSettingsDetailPages } from "../core/pageRegistry";
 import type { SettingsPageManifest } from "../core/types/pageTypes";
 import {
   getSectionsByPage,
@@ -253,7 +253,7 @@ export const SettingsOverview: React.FC = () => {
       </div>
 
       <div className="settings-overview-panels">
-        {SETTINGS_DETAIL_PAGES.map((page) =>
+        {getSettingsDetailPages().map((page) =>
           getSectionsByPage(page.id).length > 0 ? (
             <FieldDrivenSummary key={page.id} page={page} />
           ) : (

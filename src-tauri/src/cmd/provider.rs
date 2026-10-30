@@ -7,8 +7,8 @@ use crate::protocol::{
     ModelConfigDto, ProviderInputDto, ProviderListDto, SettingProviderChangedPayloadDto,
 };
 use assistant_agent::provider_config::build_provider_config;
+use assistant_crypto::api_key as crypto;
 use assistant_providers::base::{self, ProviderConfig};
-use assistant_security::crypto;
 use assistant_storage::providers::{self as provider_store, ProviderRow};
 
 fn mask_api_key_encrypted(encrypted: &str) -> String {

@@ -1,19 +1,56 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { translateKey } from "@/i18n";
 import { Button, Layout, Menu } from "antd";
+import type { MenuProps } from "antd";
 import {
   HistoryOutlined,
   SettingOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from "@/config/constants";
-import { SETTINGS_DETAIL_PAGES } from "@/settings/core/pageRegistry";
+import { getSettingsDetailPages } from "@/settings/core/pageRegistry";
 import { useToolMenuItems } from "@/tools/CollapsibleToolMenu";
 import { toolsMap } from "@/tools/registry";
+import { getFeatures } from "@/features/registry";
+import type { PreparedSidebarEntry } from "@/features/aggregate";
+import type { SidebarSlot } from "@/features/types";
+
+type SidebarItem = NonNullable<MenuProps["items"]>[number];
+
+function toFeatureMenuItem(entry: PreparedSidebarEntry): SidebarItem {
+  return {
+    key: entry.key,
+    label: translateKey(entry.label),
+    icon: React.createElement(entry.icon),
+  };
+}
+
+function nextOpenKeys(prev: string[], pathname: string): string[] {
+  const next = new Set(prev);
+  let changed = false;
+
+  if (pathname.startsWith("/tools/")) {
+    const tool = toolsMap[pathname.replace("/tools/", "")];
+    if (tool) {
+      for (const key of ["toolbox", `tool-cat-${tool.category}`]) {
+        if (!next.has(key)) {
+          next.add(key);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  if (pathname.startsWith("/settings/") && !next.has("settings-sub")) {
+    next.add("settings-sub");
+    changed = true;
+  }
+
+  return changed ? [...next] : prev;
+}
 
 export const AppSidebar: React.FC = () => {
   const { t } = useTranslation();
@@ -31,30 +68,55 @@ export const AppSidebar: React.FC = () => {
   const titleClickNavRef = useRef(false);
 
   useEffect(() => {
-    if (location.pathname.startsWith("/tools/")) {
-      const toolId = location.pathname.replace("/tools/", "");
-      const tool = toolsMap[toolId];
-      if (tool) {
-        setOpenKeys((prev) => {
-          const next = new Set(prev);
-          next.add("toolbox");
-          next.add(`tool-cat-${tool.category}`);
-          return [...next];
-        });
-      }
+    if (
+      location.pathname.startsWith("/settings/") &&
+      titleClickNavRef.current
+    ) {
+      titleClickNavRef.current = false;
+      return;
     }
-    if (location.pathname.startsWith("/settings/")) {
-      if (titleClickNavRef.current) {
-        titleClickNavRef.current = false;
-        return;
-      }
-      setOpenKeys((prev) => {
-        const next = new Set(prev);
-        next.add("settings-sub");
-        return [...next];
-      });
-    }
+    setOpenKeys((prev) => nextOpenKeys(prev, location.pathname));
   }, [location.pathname]);
+
+  const selectedKeys = useMemo(() => {
+    if (location.pathname === "/") return ["toolbox"];
+    if (location.pathname === "/settings/overview") return ["settings-sub"];
+    return [location.pathname];
+  }, [location.pathname]);
+
+  const menuItems = useMemo<NonNullable<MenuProps["items"]>>(() => {
+    const features = getFeatures();
+    const bySlot = (slot: SidebarSlot) =>
+      features.sidebar
+        .filter((entry) => entry.slot === slot)
+        .map(toFeatureMenuItem);
+
+    return [
+      ...toolMenuItems,
+      { type: "divider" as const },
+      ...bySlot("after-tools"),
+      {
+        key: "/history",
+        label: t("common.navigation.chat_history"),
+        icon: <HistoryOutlined />,
+      },
+      ...bySlot("before-settings"),
+      { type: "divider" as const },
+      {
+        key: "settings-sub",
+        label: t("common.navigation.settings"),
+        icon: <SettingOutlined />,
+        onTitleClick: () => {
+          titleClickNavRef.current = true;
+          void navigate(`/settings/overview`);
+        },
+        children: getSettingsDetailPages().map((page) => ({
+          key: `/settings/${page.id}`,
+          label: translateKey(page.label),
+        })),
+      },
+    ];
+  }, [toolMenuItems, t, navigate]);
 
   return (
     <Layout.Sider
@@ -118,44 +180,11 @@ export const AppSidebar: React.FC = () => {
         <Menu
           mode="inline"
           inlineCollapsed={sidebarCollapsed}
-          selectedKeys={[
-            location.pathname === "/"
-              ? "toolbox"
-              : location.pathname === "/settings/overview"
-                ? "settings-sub"
-                : location.pathname,
-          ]}
+          selectedKeys={selectedKeys}
           openKeys={sidebarCollapsed ? [] : openKeys}
           onOpenChange={(keys) => setOpenKeys(keys)}
           style={{ background: "transparent", border: "none" }}
-          items={[
-            ...toolMenuItems,
-            { type: "divider" as const },
-            {
-              key: "/vault",
-              label: t("common.navigation.vault"),
-              icon: <SafetyCertificateOutlined />,
-            },
-            {
-              key: "/history",
-              label: t("common.navigation.chat_history"),
-              icon: <HistoryOutlined />,
-            },
-            { type: "divider" as const },
-            {
-              key: "settings-sub",
-              label: t("common.navigation.settings"),
-              icon: <SettingOutlined />,
-              onTitleClick: () => {
-                titleClickNavRef.current = true;
-                void navigate(`/settings/overview`);
-              },
-              children: SETTINGS_DETAIL_PAGES.map((page) => ({
-                key: `/settings/${page.id}`,
-                label: translateKey(page.label),
-              })),
-            },
-          ]}
+          items={menuItems}
           onClick={({ key }) => {
             void navigate(key);
           }}

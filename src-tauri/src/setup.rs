@@ -87,7 +87,8 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     handle.manage(assistant_agent::chat_tasks::ChatTasks::new());
 
-    crate::cmd::setup(handle);
+    #[cfg(feature = "vault")]
+    crate::cmd::vault_setup(handle);
 
     {
         let registry = Arc::new(ToolRegistry::new());

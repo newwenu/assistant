@@ -11,6 +11,7 @@ import type {
   FieldAction,
   FieldActionCallbacks,
 } from "../types/fieldSchema";
+import { getFeatures } from "@/features/registry";
 
 export type {
   SettingType,
@@ -93,29 +94,61 @@ export function defineSection(sec: SettingSectionDef): SettingSectionDef {
 }
 
 export function getDefinitionsByGroup(group: ConfGroup): SettingDefinition[] {
-  return definitions.filter((d) => d.group === group);
+  return getAllDefinitions().filter((d) => d.group === group);
 }
 
 export function getDefinitionsBySection(
   sectionId: string,
 ): SettingDefinition[] {
-  return definitions.filter((d) => d.section === sectionId);
+  return getAllDefinitions().filter((d) => d.section === sectionId);
+}
+
+let validatedSignature = "";
+
+function assertUniqueDefinitions(): void {
+  if (!import.meta.env.DEV) return;
+
+  const signature = [
+    definitions.length,
+    getFeatures().fields.length,
+    sections.length,
+    getFeatures().sections.length,
+  ].join(":");
+  if (signature === validatedSignature) return;
+  validatedSignature = signature;
+
+  const fieldKeys = new Set<string>();
+  for (const def of [...definitions, ...getFeatures().fields]) {
+    if (fieldKeys.has(def.key)) {
+      throw new Error(`[settings] duplicate setting key: ${def.key}`);
+    }
+    fieldKeys.add(def.key);
+  }
+
+  const sectionIds = new Set<string>();
+  for (const sec of [...sections, ...getFeatures().sections]) {
+    if (sectionIds.has(sec.id)) {
+      throw new Error(`[settings] duplicate section id: ${sec.id}`);
+    }
+    sectionIds.add(sec.id);
+  }
 }
 
 export function getAllDefinitions(): readonly SettingDefinition[] {
-  return definitions;
+  assertUniqueDefinitions();
+  return [...definitions, ...getFeatures().fields];
 }
 
 export function getSectionsByPage(pageId: string): SettingSectionDef[] {
-  return sections.filter((s) => s.pageId === pageId);
+  return getAllSections().filter((s) => s.pageId === pageId);
 }
 
 export function getSectionById(id: string): SettingSectionDef | undefined {
-  return sections.find((s) => s.id === id);
+  return getAllSections().find((s) => s.id === id);
 }
 
 export function getAllSections(): readonly SettingSectionDef[] {
-  return sections;
+  return [...sections, ...getFeatures().sections];
 }
 
 export function registerSettingType(

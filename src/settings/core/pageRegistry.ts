@@ -10,21 +10,11 @@ import {
   ApiOutlined,
   RobotOutlined,
   DatabaseOutlined,
-  SafetyCertificateOutlined,
   InfoCircleOutlined,
 } from "@ant-design/icons";
-import { lazyWithRecovery } from "@/utils/lazyWithRecovery";
-
-type SettingsPageDefinition = Omit<SettingsPageManifest, "component"> & {
-  load: () => Promise<{ default: import("react").ComponentType }>;
-};
-
-export function definePage(
-  definition: SettingsPageDefinition,
-): SettingsPageManifest {
-  const component = lazyWithRecovery(definition.load);
-  return { ...definition, component };
-}
+import { definePage } from "./definePage";
+import { getFeatures } from "@/features/registry";
+import type { AggregatedFeatures } from "@/features/aggregate";
 
 const overview = definePage({
   id: "overview",
@@ -32,6 +22,7 @@ const overview = definePage({
   label: "common.navigation.settings",
   keywords: ["overview", "dashboard", "总览", "仪表盘"],
   icon: SettingOutlined,
+  order: 0,
   load: () =>
     import("../overview/SettingsOverview").then((m) => ({
       default: m.SettingsOverview,
@@ -44,6 +35,7 @@ const general = definePage({
   label: "common.navigation.general.title",
   keywords: ["language", "launch", "tray", "top", "startup"],
   icon: SettingOutlined,
+  order: 10,
   load: () =>
     import("../pages/GeneralSettings").then((m) => ({
       default: m.GeneralSettings,
@@ -56,6 +48,7 @@ const appearance = definePage({
   label: "common.navigation.appearance.title",
   keywords: ["mascot", "渲染", "颜色"],
   icon: FormatPainterOutlined,
+  order: 20,
   load: () =>
     import("../pages/AppearanceSettings").then((m) => ({
       default: m.AppearanceSettings,
@@ -68,6 +61,7 @@ const shortcuts = definePage({
   label: "common.navigation.shortcuts.title",
   keywords: ["keyboard", "shortcut", "keybinding", "hotkey"],
   icon: ThunderboltOutlined,
+  order: 30,
   load: () =>
     import("../pages/ShortcutSettings").then((m) => ({
       default: m.ShortcutSettings,
@@ -80,6 +74,7 @@ const providers = definePage({
   label: "common.navigation.providers.title",
   keywords: ["provider", "api", "model", "openai", "preset"],
   icon: ApiOutlined,
+  order: 40,
   load: () =>
     import("../provider/ProviderManager").then((m) => ({
       default: m.ProviderManager,
@@ -92,6 +87,7 @@ const agents = definePage({
   label: "common.navigation.agents.title",
   keywords: ["agent", "mode", "kind", "quick", "deep"],
   icon: RobotOutlined,
+  order: 50,
   load: () =>
     import("../pages/AgentModeSettings").then((m) => ({
       default: m.AgentModeSettings,
@@ -104,6 +100,7 @@ const about = definePage({
   label: "common.navigation.about.title",
   keywords: ["version", "rustc", "build", "about"],
   icon: InfoCircleOutlined,
+  order: 70,
   load: () =>
     import("../pages/AboutSettings").then((m) => ({
       default: m.AboutSettings,
@@ -116,58 +113,22 @@ const storage = definePage({
   label: "common.navigation.storage.title",
   keywords: ["storage", "attachment", "orphan", "disk", "存储", "附件", "孤儿"],
   icon: DatabaseOutlined,
+  order: 60,
   load: () =>
     import("../pages/StorageSettings").then((m) => ({
       default: m.StorageSettings,
     })),
 });
 
-const vault = definePage({
-  id: "vault",
-  categoryId: "vault",
-  label: "common.navigation.vault_settings.title",
-  keywords: [
-    "vault",
-    "password",
-    "ssh",
-    "biometric",
-    "cipher",
-    "密码",
-    "保险库",
-    "加密",
-  ],
-  icon: SafetyCertificateOutlined,
-  load: () =>
-    import("../pages/VaultSettingsPage").then((m) => ({
-      default: m.VaultSettingsPage,
-    })),
-});
-
-export const SETTINGS_PAGES: readonly SettingsPageManifest[] = [
+const CORE_PAGES: readonly SettingsPageManifest[] = [
   general,
   appearance,
   shortcuts,
   providers,
   agents,
   storage,
-  vault,
   about,
 ];
-
-export const SETTINGS_DETAIL_PAGES: readonly SettingsPageManifest[] = [
-  general,
-  appearance,
-  shortcuts,
-  providers,
-  agents,
-  storage,
-  vault,
-  about,
-];
-
-export const SETTINGS_PAGE_MAP = new Map<SettingsPageId, SettingsPageManifest>(
-  [overview, ...SETTINGS_PAGES].map((p) => [p.id, p]),
-);
 
 export interface SettingsCategory {
   id: SettingsCategoryId;
@@ -175,38 +136,80 @@ export interface SettingsCategory {
   pages: readonly SettingsPageManifest[];
 }
 
-const CATEGORY_ORDER: readonly SettingsCategoryId[] = [
-  "general",
-  "provider",
-  "vault",
-  "about",
+interface CategoryDefinition {
+  id: SettingsCategoryId;
+  label: string;
+  order: number;
+}
+
+const CORE_CATEGORIES: readonly CategoryDefinition[] = [
+  { id: "general", label: "common.navigation.category.general", order: 0 },
+  { id: "provider", label: "common.navigation.category.provider", order: 10 },
+  { id: "about", label: "common.navigation.category.about", order: 30 },
 ];
 
-const CATEGORY_LABELS: Record<SettingsCategoryId, string> = {
-  general: "通用",
-  provider: "服务",
-  vault: "安全",
-  about: "关于",
-};
-
-export const SETTINGS_CATEGORIES: readonly SettingsCategory[] =
-  CATEGORY_ORDER.map((id) => ({
-    id,
-    label: CATEGORY_LABELS[id],
-    pages: SETTINGS_PAGES.filter((p) => p.categoryId === id),
-  }));
-
 export const DEFAULT_SETTINGS_PAGE_ID: SettingsPageId = "overview";
+
+interface DerivedRegistry {
+  features: AggregatedFeatures;
+  pages: readonly SettingsPageManifest[];
+  pageMap: Map<SettingsPageId, SettingsPageManifest>;
+  categories: readonly SettingsCategory[];
+}
+
+let derived: DerivedRegistry | null = null;
+
+function derive(): DerivedRegistry {
+  const features = getFeatures();
+  if (derived && derived.features === features) return derived;
+
+  const pages = [...CORE_PAGES, ...features.pages].sort(
+    (a, b) => a.order - b.order,
+  );
+
+  const pageMap = new Map<SettingsPageId, SettingsPageManifest>(
+    [overview, ...pages].map((p) => [p.id, p]),
+  );
+
+  const categories = [...CORE_CATEGORIES, ...features.categories]
+    .sort((a, b) => a.order - b.order)
+    .map((category) => ({
+      id: category.id,
+      label: category.label,
+      pages: pages.filter((p) => p.categoryId === category.id),
+    }))
+    .filter((c) => c.pages.length > 0);
+
+  derived = { features, pages, pageMap, categories };
+  return derived;
+}
+
+export function getSettingsPages(): readonly SettingsPageManifest[] {
+  return derive().pages;
+}
+
+export function getSettingsDetailPages(): readonly SettingsPageManifest[] {
+  return derive().pages;
+}
+
+export function getSettingsCategories(): readonly SettingsCategory[] {
+  return derive().categories;
+}
+
+export function getSettingsPageMap(): ReadonlyMap<
+  SettingsPageId,
+  SettingsPageManifest
+> {
+  return derive().pageMap;
+}
 
 export function getSettingsPageManifest(
   pageId: SettingsPageId,
 ): SettingsPageManifest {
-  return (
-    SETTINGS_PAGE_MAP.get(pageId) ??
-    SETTINGS_PAGE_MAP.get(DEFAULT_SETTINGS_PAGE_ID)!
-  );
+  const map = derive().pageMap;
+  return map.get(pageId) ?? map.get(DEFAULT_SETTINGS_PAGE_ID)!;
 }
 
 export function isSettingsPageId(value: string): value is SettingsPageId {
-  return SETTINGS_PAGE_MAP.has(value as SettingsPageId);
+  return derive().pageMap.has(value);
 }

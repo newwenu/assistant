@@ -16,6 +16,8 @@ import { bootstrapLogger } from "@/services/logger";
 import { registerGlobalErrorHandlers } from "@/services/globalErrorHandler";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { applyLocaleChange } from "@/i18n/localeApplier";
+import { VAULT_ENABLED } from "@/features/vault";
+import { loadFeatures } from "@/features/registry";
 import "@/i18n";
 import App from "./App";
 import "./assets/styles/fonts.css";
@@ -36,12 +38,13 @@ bootstrapLogger();
 registerGlobalErrorHandlers();
 
 async function bootstrap(): Promise<void> {
+  await loadFeatures();
   const { useSettingsStore } = await import("@/stores/settingsStore");
   const store = useSettingsStore.getState();
   await store.loadAppConf();
   await store.loadOrbConf();
   await store.loadMascotConf();
-  await store.loadVaultConf();
+  if (VAULT_ENABLED) await store.loadVaultConf();
 
   const lang = useSettingsStore.getState().appConf?.language ?? "zh-CN";
   await applyLocaleChange(lang);

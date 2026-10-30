@@ -13,8 +13,8 @@ use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::compaction;
 use assistant_agent::multimodal;
 use assistant_config::constant::WINDOW_ORB;
+use assistant_crypto::api_key as crypto;
 use assistant_providers::base::{ProviderError, ProviderErrorPayload};
-use assistant_security::crypto;
 use assistant_storage::attachment_store::AttachmentStore;
 
 use insert::InsertedMessages;

@@ -9,10 +9,7 @@ import { useVaultStatusReady } from "@/vault/core/useVaultStatusReady";
 import { SettingsGroup } from "../shared/sections/SettingsGroup";
 import { SettingsSection } from "../shared/layout/SettingsSection";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
-import {
-  VAULT_GENERAL_SETTINGS,
-  VAULT_SSH_SETTINGS,
-} from "../core/field/fieldDefinitions";
+import { getDefinitionsBySection } from "../core/field/fieldRegistry";
 import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
 
 export const VaultSettingsPage: React.FC = () => {
@@ -91,7 +88,7 @@ export const VaultSettingsPage: React.FC = () => {
         <Form layout="vertical">
           <SettingsGroup
             group="vault"
-            definitions={VAULT_GENERAL_SETTINGS}
+            definitions={getDefinitionsBySection("vault-general")}
             onPatch={onPatch}
             onPatchComplete={onPatchComplete}
           />
@@ -102,7 +99,7 @@ export const VaultSettingsPage: React.FC = () => {
         <Form layout="vertical">
           <SettingsGroup
             group="vault"
-            definitions={VAULT_SSH_SETTINGS}
+            definitions={getDefinitionsBySection("vault-ssh")}
             onPatch={onPatch}
             onPatchComplete={onPatchComplete}
           />

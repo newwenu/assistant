@@ -11,7 +11,13 @@
       "vault": "密码保险库",
       "vault_settings": { "title": "密码保险库设置" },
       "chat_history": "消息历史",
-      "settings": "设置"
+      "settings": "设置",
+      "category": {
+        "general": "通用",
+        "provider": "服务",
+        "vault": "安全",
+        "about": "关于"
+      }
     },
     "actions": {
       "saved": "已保存",

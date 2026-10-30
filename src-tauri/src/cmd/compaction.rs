@@ -14,8 +14,8 @@ use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::prompt_builder;
 use assistant_agent::provider_config::build_provider_config;
+use assistant_crypto::api_key as crypto;
 use assistant_providers::base::{self, ProviderErrorPayload};
-use assistant_security::crypto;
 use assistant_storage::{
     conversations,
     providers::{self as provider_store},

@@ -11,8 +11,8 @@ import {
 import type { NavigateFunction } from "react-router-dom";
 import { tools } from "@/tools/registry";
 import {
-  SETTINGS_PAGES,
-  SETTINGS_CATEGORIES,
+  getSettingsPages,
+  getSettingsCategories,
 } from "@/settings/core/pageRegistry";
 import {
   getAllDefinitions,
@@ -66,9 +66,11 @@ const GROUP_TO_PAGE: Record<ConfGroup, string> = {
 };
 
 function registerSettingsCommands(navigate: NavigateFunction): void {
-  for (const page of SETTINGS_PAGES) {
+  const pages = getSettingsPages();
+  const categories = getSettingsCategories();
+  for (const page of pages) {
     const catLabel =
-      SETTINGS_CATEGORIES.find((c) => c.id === page.categoryId)?.label ?? "";
+      categories.find((c) => c.id === page.categoryId)?.label ?? "";
     const translatedLabel = translateKey(page.label);
     const keywords = mergeKeywords(
       [
@@ -97,8 +99,9 @@ function registerSettingsCommands(navigate: NavigateFunction): void {
 
 function registerSettingSectionCommands(navigate: NavigateFunction): void {
   const allSections = getAllSections();
+  const pages = getSettingsPages();
   for (const sec of allSections) {
-    const page = SETTINGS_PAGES.find((p) => p.id === sec.pageId);
+    const page = pages.find((p) => p.id === sec.pageId);
     if (!page) continue;
     const translatedTitle = translateKey(sec.title);
     const autoSources: string[] = [translatedTitle, sec.id, sec.pageId];
