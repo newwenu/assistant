@@ -177,6 +177,7 @@ pub async fn vault_disaster_recovery_export(
                         remote_url: Some(url.clone()),
                         ..Default::default()
                     },
+                    Box::new(super::cipher_algo),
                 );
 
                 engine.clone_recovery_repo(&url).map_err(|e| {

@@ -371,6 +371,7 @@ impl SecurityDbState {
     pub fn restore_from_history_tx<F>(
         &self,
         entry: VaultEntryImport,
+        algo: CipherAlgorithm,
         source: &str,
         export: F,
     ) -> Result<VaultEntrySnapshot, VaultError>
@@ -380,7 +381,6 @@ impl SecurityDbState {
         self.with_transaction(|conn, mk| {
             let now = chrono::Utc::now().timestamp_millis();
             let entry_key = VaultCrypto::derive_entry_key(mk, &entry.id);
-            let algo = CipherAlgorithm::default();
 
             let encrypted_password =
                 encrypt_opt(entry.password.as_deref(), entry_key.expose(), algo)?;
@@ -488,6 +488,7 @@ impl SecurityDbState {
     pub fn force_import_entry_tx<F>(
         &self,
         entry: VaultEntryImport,
+        algo: CipherAlgorithm,
         export: F,
     ) -> Result<VaultEntrySnapshot, VaultError>
     where
@@ -508,7 +509,7 @@ impl SecurityDbState {
                 None => entry.revision + 1,
             };
 
-            write_imported_entry_in(conn, mk, &entry, revision, CipherAlgorithm::default())?;
+            write_imported_entry_in(conn, mk, &entry, revision, algo)?;
             let snapshot = read_snapshot(conn, mk, &entry.id)?;
             export(mk, &snapshot)?;
             let _ = audit_log(conn, AuditEvent::VaultEntryUpdated, Some(&entry.id));
@@ -519,6 +520,7 @@ impl SecurityDbState {
     pub fn create_remote_copy_tx<F>(
         &self,
         entry: VaultEntryImport,
+        algo: CipherAlgorithm,
         export: F,
     ) -> Result<VaultEntrySnapshot, VaultError>
     where
@@ -534,7 +536,7 @@ impl SecurityDbState {
                 .map_err(|e| VaultError::Database(e.to_string()))?;
             let revision = max_revision.max(entry.revision as i64) as u64 + 1;
 
-            write_imported_entry_in(conn, mk, &entry, revision, CipherAlgorithm::default())?;
+            write_imported_entry_in(conn, mk, &entry, revision, algo)?;
             let snapshot = read_snapshot(conn, mk, &entry.id)?;
             export(mk, &snapshot)?;
             let _ = audit_log(conn, AuditEvent::VaultEntryCreated, Some(&entry.id));

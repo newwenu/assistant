@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use assistant_crypto::vault_crypto::types::MasterKey;
+use assistant_crypto::vault_crypto::types::{CipherAlgorithm, MasterKey};
 use assistant_sync::git_sync::GitSync;
 use assistant_sync::types::SyncConfig;
 use assistant_vault::security_db::SecurityDbState;
@@ -156,7 +156,10 @@ pub fn local_entry(title: &str) -> assistant_vault::dto::VaultEntryCreate {
 
 pub fn vault_manager() -> (tempfile::TempDir, VaultFileManager) {
     let dir = tempfile::tempdir().unwrap();
-    let mgr = VaultFileManager::new(dir.path().join("vault"));
+    let mgr = VaultFileManager::new(
+        dir.path().join("vault"),
+        Box::new(|| CipherAlgorithm::Aes256Gcm),
+    );
     (dir, mgr)
 }
 
@@ -173,7 +176,11 @@ pub fn write_meta(vault_dir: &Path, meta: &VaultMetaFile) {
 }
 
 pub fn engine(dir: &Path) -> SyncEngine {
-    SyncEngine::new(dir.join("vault"), SyncConfig::default())
+    SyncEngine::new(
+        dir.join("vault"),
+        SyncConfig::default(),
+        Box::new(|| CipherAlgorithm::Aes256Gcm),
+    )
 }
 
 pub fn git_repo(path: PathBuf) -> GitSync {

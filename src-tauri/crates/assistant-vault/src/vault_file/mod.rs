@@ -26,13 +26,20 @@ const ENTRIES_DIR: &str = "entries";
 const VAULT_META_FILE: &str = ".vault-meta";
 const VAULT_META_VERSION: u32 = 1;
 
+pub type CipherProvider = Box<dyn Fn() -> CipherAlgorithm + Send + Sync>;
+
 pub struct VaultFileManager {
     vault_dir: PathBuf,
+    cipher: CipherProvider,
 }
 
 impl VaultFileManager {
-    pub fn new(vault_dir: PathBuf) -> Self {
-        Self { vault_dir }
+    pub fn new(vault_dir: PathBuf, cipher: CipherProvider) -> Self {
+        Self { vault_dir, cipher }
+    }
+
+    pub(crate) fn cipher_algorithm(&self) -> CipherAlgorithm {
+        (self.cipher)()
     }
 
     pub fn vault_dir(&self) -> &Path {
@@ -97,7 +104,7 @@ impl VaultFileManager {
         let plaintext = VaultPlaintext::from(blob_json);
         let entry_key = VaultCrypto::derive_entry_key(master_key, &snapshot.id);
         let encrypted =
-            VaultCrypto::encrypt_field(&plaintext, entry_key.expose(), CipherAlgorithm::default())
+            VaultCrypto::encrypt_field(&plaintext, entry_key.expose(), self.cipher_algorithm())
                 .map_err(|e| SyncError::Other(e.to_string()))?;
 
         let file = EntryFile {

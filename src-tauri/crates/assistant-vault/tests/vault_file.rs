@@ -2,7 +2,11 @@ mod sync_common;
 
 use std::fs;
 
+use assistant_crypto::vault_crypto::types::CipherAlgorithm;
 use assistant_vault::vault_file::types::{EntryFile, VaultMetaFile};
+use assistant_vault::vault_file::VaultFileManager;
+use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine;
 use sync_common::{
     entry_snapshot as snapshot, master_key, meta_path, other_key, vault_manager as manager,
     write_meta,
@@ -208,4 +212,25 @@ fn read_all_entries_reports_unreadable_ids() {
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].id, "ok");
     assert_eq!(unreadable, vec!["bad"]);
+}
+
+#[test]
+fn export_entry_uses_configured_cipher_algorithm() {
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = VaultFileManager::new(
+        dir.path().join("vault"),
+        Box::new(|| CipherAlgorithm::ChaCha20Poly1305),
+    );
+    let key = master_key();
+
+    mgr.export_entry(&key, &snapshot("a1b2c3d4"), false)
+        .unwrap();
+
+    let raw = fs::read_to_string(mgr.entry_file_path("a1b2c3d4")).unwrap();
+    let file: EntryFile = serde_json::from_str(&raw).unwrap();
+    let blob = B64.decode(&file.encrypted_blob).unwrap();
+    assert_eq!(blob[0], CipherAlgorithm::ChaCha20Poly1305.discriminant());
+
+    let imported = mgr.import_entry(&key, "a1b2c3d4").unwrap();
+    assert_eq!(imported.blob.title, "GitHub");
 }

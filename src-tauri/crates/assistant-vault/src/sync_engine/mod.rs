@@ -12,7 +12,7 @@ use crate::vault_file::types::{
     Argon2Params, EmergencyDataFile, EntryBlob, ImportedEntry, VaultCryptoMeta,
 };
 use crate::vault_file::IntegrityResult;
-use crate::vault_file::VaultFileManager;
+use crate::vault_file::{CipherProvider, VaultFileManager};
 use assistant_sync::git_sync::GitSync;
 use assistant_sync::types::{
     ConflictFile, ConflictPreview, ConflictResolution, EntryPreview, EntryPreviewField,
@@ -81,9 +81,9 @@ pub struct SyncEngine {
 }
 
 impl SyncEngine {
-    pub fn new(vault_dir: PathBuf, config: SyncConfig) -> Self {
+    pub fn new(vault_dir: PathBuf, config: SyncConfig, cipher: CipherProvider) -> Self {
         let git_sync = GitSync::new(vault_dir.clone(), config.clone());
-        let vault_file = VaultFileManager::new(vault_dir);
+        let vault_file = VaultFileManager::new(vault_dir, cipher);
         Self {
             git_sync: Mutex::new(git_sync),
             vault_file,
@@ -254,7 +254,7 @@ impl SyncEngine {
         let total = entries.len() as u32;
 
         let outcomes = security_db
-            .upsert_imported_entries(entries, CipherAlgorithm::default())
+            .upsert_imported_entries(entries, self.vault_file.cipher_algorithm())
             .map_err(|e| SyncError::Other(e.to_string()))?;
 
         let mut summary = ImportSummary {
@@ -316,7 +316,7 @@ impl SyncEngine {
         };
 
         let local = security_db
-            .vault_crypto_info(CipherAlgorithm::default())
+            .vault_crypto_info(self.vault_file.cipher_algorithm())
             .map_err(|e| SyncError::Other(e.to_string()))?;
 
         Ok(remote_salt.trim() != B64.encode(local.master_key_salt))
@@ -548,7 +548,7 @@ impl SyncEngine {
         let vault_file = &self.vault_file;
 
         security_db
-            .force_import_entry_tx(entry, |mk, snapshot| {
+            .force_import_entry_tx(entry, self.vault_file.cipher_algorithm(), |mk, snapshot| {
                 vault_file
                     .export_entry(mk, snapshot, false)
                     .map_err(|e| assistant_crypto::error::VaultError::Other(e.to_string()))
@@ -575,7 +575,7 @@ impl SyncEngine {
 
         let vault_file = &self.vault_file;
         security_db
-            .create_remote_copy_tx(entry, |mk, snapshot| {
+            .create_remote_copy_tx(entry, self.vault_file.cipher_algorithm(), |mk, snapshot| {
                 vault_file
                     .export_entry(mk, snapshot, false)
                     .map_err(|e| assistant_crypto::error::VaultError::Other(e.to_string()))
@@ -878,11 +878,16 @@ impl SyncEngine {
 
         let vault_file = &self.vault_file;
         let snapshot = security_db
-            .restore_from_history_tx(entry, commit, |mk, snap| {
-                vault_file
-                    .export_entry(mk, snap, false)
-                    .map_err(|e| assistant_crypto::error::VaultError::Other(e.to_string()))
-            })
+            .restore_from_history_tx(
+                entry,
+                self.vault_file.cipher_algorithm(),
+                commit,
+                |mk, snap| {
+                    vault_file
+                        .export_entry(mk, snap, false)
+                        .map_err(|e| assistant_crypto::error::VaultError::Other(e.to_string()))
+                },
+            )
             .map_err(|e| SyncError::Other(e.to_string()))?;
 
         self.finalize(&format!("vault: restore {}", snapshot.id))?;
@@ -927,7 +932,7 @@ impl SyncEngine {
             .list_deleted_entry_ids()
             .map_err(|e| SyncError::Other(e.to_string()))?;
         let crypto_info = security_db
-            .vault_crypto_info(CipherAlgorithm::default())
+            .vault_crypto_info(self.vault_file.cipher_algorithm())
             .map_err(|e| SyncError::Other(e.to_string()))?;
 
         self.vault_file.ensure_structure()?;
@@ -965,7 +970,7 @@ impl SyncEngine {
 
     fn write_signed_vault_meta(&self, security_db: &SecurityDbState) -> Result<(), SyncError> {
         let crypto_info = security_db
-            .vault_crypto_info(CipherAlgorithm::default())
+            .vault_crypto_info(self.vault_file.cipher_algorithm())
             .map_err(|e| SyncError::Other(e.to_string()))?;
         let mk_guard = security_db
             .get_master_key()

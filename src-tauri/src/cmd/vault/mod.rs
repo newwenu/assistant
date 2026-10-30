@@ -235,7 +235,11 @@ pub fn setup(handle: &AppHandle) {
             })
         })
         .unwrap_or_default();
-    handle.manage(SyncEngine::new(vault_dir, sync_config));
+    handle.manage(SyncEngine::new(
+        vault_dir,
+        sync_config,
+        Box::new(cipher_algo),
+    ));
     log::info!("SyncEngine initialized");
 
     spawn_screen_lock_watcher(handle);
