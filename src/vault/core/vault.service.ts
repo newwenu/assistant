@@ -236,9 +236,6 @@ export const vaultService = {
   generateRecoveryKey: (): Promise<string> =>
     invoke("vault_generate_recovery_key"),
 
-  unlockWithRecoveryKey: (recoveryKey: string): Promise<boolean> =>
-    invoke("vault_unlock_with_recovery_key", { recoveryKey }),
-
   hasRecoveryKey: (): Promise<boolean> => invoke("vault_has_recovery_key"),
 
   verifyVaultMetaIntegrity: (): Promise<IntegrityResult> =>

@@ -156,7 +156,6 @@ pub fn run() {
             cmd::vault_ssh_parse_key,
             cmd::vault_ssh_key_meta,
             cmd::vault_generate_recovery_key,
-            cmd::vault_unlock_with_recovery_key,
             cmd::vault_has_recovery_key,
             cmd::vault_verify_vault_meta_integrity,
             cmd::vault_disaster_recovery_export,

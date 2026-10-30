@@ -15,7 +15,6 @@ export interface VaultRecoverySlice {
   exportFilePath: string | null;
 
   generateRecoveryKey: () => Promise<string | null>;
-  unlockWithRecoveryKey: (recoveryKey: string) => Promise<boolean>;
   checkRecoveryKeySet: () => Promise<void>;
   verifyIntegrity: () => Promise<IntegrityResult | null>;
   startDisasterRecovery: () => void;
@@ -64,29 +63,6 @@ export function createRecoverySlice(
         log.error("generateRecoveryKey failed", e);
         set({ error: String(e), loading: false });
         return null;
-      }
-    },
-
-    unlockWithRecoveryKey: async (recoveryKey) => {
-      set({ loading: true, error: null });
-      try {
-        const ok = await vaultService.unlockWithRecoveryKey(recoveryKey);
-        if (ok) {
-          set({
-            isLocked: false,
-            loading: false,
-            _biometricEnrolledAt: 0,
-            _recoveryKeySetAt: 0,
-          });
-          get().resetAutoLockTimer();
-        } else {
-          set({ error: "Invalid recovery key", loading: false });
-        }
-        return ok;
-      } catch (e) {
-        log.error("unlockWithRecoveryKey failed", e);
-        set({ error: String(e), loading: false });
-        return false;
       }
     },
 

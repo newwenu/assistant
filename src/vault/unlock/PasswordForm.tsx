@@ -31,7 +31,7 @@ interface PasswordFormProps {
   onConfirmPasswordChange: (value: string) => void;
   strength: StrengthResult | null;
   error: string | null;
-  unlockMethod: "password" | "biometric" | "recoveryKey" | null;
+  unlockMethod: "password" | "biometric" | null;
   canSubmit: boolean;
   collapsed?: boolean;
 }

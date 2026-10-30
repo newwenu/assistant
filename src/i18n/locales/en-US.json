@@ -752,10 +752,7 @@
       "unlock": "Unlock",
       "create_vault": "Create Vault",
       "biometric_unlock": "Unlock with Biometrics",
-      "recovery_key_unlock": "Unlock with Recovery Key",
-      "recovery_key_divider": "Recovery Key",
       "recovery_key_placeholder": "XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX",
-      "unlock_with_recovery_key": "Unlock with Recovery Key",
       "use_password": "Use Password",
       "password_divider": "Password"
     },

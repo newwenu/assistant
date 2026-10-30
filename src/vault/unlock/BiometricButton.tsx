@@ -3,7 +3,7 @@ import { SafetyOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 interface BiometricButtonProps {
-  unlockMethod: "password" | "biometric" | "recoveryKey" | null;
+  unlockMethod: "password" | "biometric" | null;
   onUnlock: () => void;
   primary?: boolean;
 }

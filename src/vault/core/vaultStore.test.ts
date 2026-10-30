@@ -575,27 +575,6 @@ describe("vaultStore recovery key", () => {
     expect(key).toBe("ABCDEFGH-IJKLMNOP-QRSTUVWX-YZ234567");
     expect(useVaultStore.getState().recoveryKeySet).toBe(true);
   });
-
-  it("unlockWithRecoveryKey → success unlocks vault", async () => {
-    mockCmd("vault_unlock_with_recovery_key", () => Promise.resolve(true));
-
-    const store = useVaultStore.getState();
-    const ok = await store.unlockWithRecoveryKey("AAAA-BBBB-CCCC-DDDD");
-
-    expect(ok).toBe(true);
-    expect(useVaultStore.getState().isLocked).toBe(false);
-  });
-
-  it("unlockWithRecoveryKey → failure keeps locked", async () => {
-    mockCmd("vault_unlock_with_recovery_key", () => Promise.resolve(false));
-
-    const store = useVaultStore.getState();
-    const ok = await store.unlockWithRecoveryKey("wrong-key");
-
-    expect(ok).toBe(false);
-    expect(useVaultStore.getState().isLocked).toBe(true);
-    expect(useVaultStore.getState().error).toBe("Invalid recovery key");
-  });
 });
 
 describe("vaultStore sync", () => {

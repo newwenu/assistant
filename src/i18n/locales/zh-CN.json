@@ -739,10 +739,7 @@
       "unlock": "解锁",
       "create_vault": "创建保险库",
       "biometric_unlock": "生物识别解锁",
-      "recovery_key_unlock": "使用恢复密钥解锁",
-      "recovery_key_divider": "恢复密钥",
       "recovery_key_placeholder": "XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX",
-      "unlock_with_recovery_key": "恢复密钥解锁",
       "use_password": "使用密码解锁",
       "password_divider": "密码"
     },
