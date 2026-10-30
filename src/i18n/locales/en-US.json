@@ -840,10 +840,6 @@
       "import_export": "Import / Export"
     },
     "confirm_lock": "Lock the vault?",
-    "meta": {
-      "integrity_warning_title": "Vault metadata integrity check failed",
-      "integrity_warning_desc": "The vault was unlocked with the recovery key, but the repository metadata (.vault-meta) does not match the master key. Contents may have been modified externally; export a backup and verify the remote repository before syncing again."
-    },
     "sync": {
       "status_no_sync": "Sync not initialized",
       "status_dirty": "Uncommitted changes",

@@ -827,10 +827,6 @@
       "import_export": "导入 / 导出"
     },
     "confirm_lock": "确定锁定保险库？",
-    "meta": {
-      "integrity_warning_title": "保险库元数据校验失败",
-      "integrity_warning_desc": "恢复密钥解锁成功，但仓库的元数据（.vault-meta）与主密钥不匹配。内容可能被外部修改，建议先导出备份并核对远端仓库后再继续同步。"
-    },
     "sync": {
       "status_no_sync": "同步未初始化",
       "status_dirty": "有未提交的更改",

@@ -15,15 +15,7 @@ pub mod event_name {
     pub const SHORTCUT_WARNING: &str = "shortcut-warning";
     pub const VAULT_LOCKED: &str = "vault:locked";
     pub const VAULT_UNLOCKED: &str = "vault:unlocked";
-    pub const VAULT_REVEAL: &str = "vault:reveal";
-    pub const VAULT_REVEAL_RATE_LIMITED: &str = "vault:reveal-rate-limited";
-    pub const VAULT_META_INTEGRITY_WARNING: &str = "vault:meta-integrity-warning";
     pub const BIOMETRIC_ENROLL_STEP: &str = "vault:biometric-enroll-step";
-}
-
-#[derive(Clone, serde::Serialize)]
-pub struct VaultMetaIntegrityWarningPayload {
-    pub message: String,
 }
 
 pub fn emit_broadcast(app: &tauri::AppHandle, event: &str, payload: impl serde::Serialize + Clone) {

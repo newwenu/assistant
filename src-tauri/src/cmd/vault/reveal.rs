@@ -64,17 +64,10 @@ pub fn vault_reveal_password(app: AppHandle, id: String) -> Result<RevealResult,
     super::with_unlocked(&app, |state| {
         let guard = super::reveal_guard(&app)?;
         if let Err(e) = guard.check_and_record() {
-            {
-                let conn_guard = state.get_conn().map_err(VaultErrorDto::from)?;
-                if let Some(conn) = conn_guard.as_ref() {
-                    let _ = audit_log(conn, AuditEvent::VaultRevealRateLimited, Some(&id));
-                }
+            let conn_guard = state.get_conn().map_err(VaultErrorDto::from)?;
+            if let Some(conn) = conn_guard.as_ref() {
+                let _ = audit_log(conn, AuditEvent::VaultRevealRateLimited, Some(&id));
             }
-            crate::protocol::events::emit_broadcast(
-                &app,
-                crate::protocol::events::event_name::VAULT_REVEAL_RATE_LIMITED,
-                &id,
-            );
             return Err(VaultErrorDto::from(e));
         }
 
@@ -89,12 +82,6 @@ pub fn vault_reveal_password(app: AppHandle, id: String) -> Result<RevealResult,
             }
         }
 
-        crate::protocol::events::emit_broadcast(
-            &app,
-            crate::protocol::events::event_name::VAULT_REVEAL,
-            &id,
-        );
-
         Ok(RevealResult {
             value: SecureString::into_inner(password),
             expires_at,
@@ -108,17 +95,10 @@ pub fn vault_reveal_notes(app: AppHandle, id: String) -> Result<RevealResult, Va
     super::with_unlocked(&app, |state| {
         let guard = super::reveal_guard(&app)?;
         if let Err(e) = guard.check_and_record() {
-            {
-                let conn_guard = state.get_conn().map_err(VaultErrorDto::from)?;
-                if let Some(conn) = conn_guard.as_ref() {
-                    let _ = audit_log(conn, AuditEvent::VaultRevealRateLimited, Some(&id));
-                }
+            let conn_guard = state.get_conn().map_err(VaultErrorDto::from)?;
+            if let Some(conn) = conn_guard.as_ref() {
+                let _ = audit_log(conn, AuditEvent::VaultRevealRateLimited, Some(&id));
             }
-            crate::protocol::events::emit_broadcast(
-                &app,
-                crate::protocol::events::event_name::VAULT_REVEAL_RATE_LIMITED,
-                &id,
-            );
             return Err(VaultErrorDto::from(e));
         }
 
@@ -132,12 +112,6 @@ pub fn vault_reveal_notes(app: AppHandle, id: String) -> Result<RevealResult, Va
                 let _ = audit_log(conn, AuditEvent::VaultReveal, Some(&id));
             }
         }
-
-        crate::protocol::events::emit_broadcast(
-            &app,
-            crate::protocol::events::event_name::VAULT_REVEAL,
-            &id,
-        );
 
         Ok(RevealResult {
             value: SecureString::into_inner(notes),
