@@ -1,10 +1,12 @@
 import { createLogger } from "@/services/logger";
 import { vaultService } from "../vault.service";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
 import type {
   VaultEntrySummary,
   VaultEntryDetail,
   RevealedField,
+  VaultErrorCode,
 } from "../vault.types";
 
 const log = createLogger("vaultStore");
@@ -12,7 +14,7 @@ const log = createLogger("vaultStore");
 const DEFAULT_AUTO_LOCK_MINUTES = 5;
 
 function getAutoLockMs(): number {
-  const minutes = useSettingsStore.getState().appConf?.vaultAutoLockMinutes;
+  const minutes = useSettingsStore.getState().vaultConf?.vaultAutoLockMinutes;
   return (minutes ?? DEFAULT_AUTO_LOCK_MINUTES) * 60 * 1000;
 }
 
@@ -21,10 +23,11 @@ export interface VaultLifecycleSlice {
   isInitialized: boolean;
   loading: boolean;
   error: string | null;
+  errorCode: VaultErrorCode | null;
   autoLockTimerId: ReturnType<typeof setTimeout> | null;
 
   init: (masterPassword: string) => Promise<void>;
-  unlock: (masterPassword: string) => Promise<boolean>;
+  unlock: (masterPassword: string) => Promise<void>;
   lock: () => Promise<void>;
   changeMasterPassword: (current: string, newPassword: string) => Promise<void>;
   checkStatus: () => Promise<void>;
@@ -51,6 +54,7 @@ export function createLifecycleSlice(
     isInitialized: false,
     loading: false,
     error: null,
+    errorCode: null,
     autoLockTimerId: null,
 
     init: async (masterPassword) => {
@@ -67,30 +71,32 @@ export function createLifecycleSlice(
         get().resetAutoLockTimer();
       } catch (e) {
         log.error("init failed", e);
-        set({ error: String(e), loading: false });
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
       }
     },
 
     unlock: async (masterPassword) => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
-        const ok = await vaultService.unlock(masterPassword);
-        if (ok) {
-          set({
-            isLocked: false,
-            loading: false,
-            _biometricEnrolledAt: 0,
-            _recoveryKeySetAt: 0,
-          });
-          get().resetAutoLockTimer();
-        } else {
-          set({ error: "Invalid password", loading: false });
-        }
-        return ok;
+        await vaultService.unlock(masterPassword);
+        set({
+          isLocked: false,
+          loading: false,
+          _biometricEnrolledAt: 0,
+          _recoveryKeySetAt: 0,
+        });
+        get().resetAutoLockTimer();
       } catch (e) {
         log.error("unlock failed", e);
-        set({ error: String(e), loading: false });
-        return false;
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
       }
     },
 
@@ -123,7 +129,11 @@ export function createLifecycleSlice(
         });
       } catch (e) {
         log.error("changeMasterPassword failed", e);
-        set({ error: String(e), loading: false });
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
         throw e;
       }
     },
@@ -141,7 +151,7 @@ export function createLifecycleSlice(
       }
     },
 
-    clearError: () => set({ error: null }),
+    clearError: () => set({ error: null, errorCode: null }),
 
     resetAutoLockTimer: () => {
       const { autoLockTimerId } = get();

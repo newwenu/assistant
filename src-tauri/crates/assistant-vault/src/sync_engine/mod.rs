@@ -179,9 +179,7 @@ impl SyncEngine {
             let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
 
             if !git.is_init() {
-                return Ok(SyncResult::Error(
-                    "Git repository not initialized".to_string(),
-                ));
+                return Err(SyncError::NotInitialized);
             }
 
             if !git.has_remote()? {
@@ -357,13 +355,11 @@ impl SyncEngine {
         let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
 
         if !git.is_init() {
-            return Ok(SyncResult::Error(
-                "Git repository not initialized".to_string(),
-            ));
+            return Err(SyncError::NotInitialized);
         }
 
         if !git.has_remote()? {
-            return Ok(SyncResult::Error("No remote configured".to_string()));
+            return Err(SyncError::NoRemoteConfigured);
         }
 
         git.push(None, None)?;
@@ -381,9 +377,7 @@ impl SyncEngine {
             let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
 
             if !git.is_init() {
-                return Ok(SyncResult::Error(
-                    "Git repository not initialized".to_string(),
-                ));
+                return Err(SyncError::NotInitialized);
             }
 
             git.has_remote()?
@@ -438,13 +432,11 @@ impl SyncEngine {
         let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
 
         if !git.is_init() {
-            return Ok(SyncResult::Error(
-                "Git repository not initialized".to_string(),
-            ));
+            return Err(SyncError::NotInitialized);
         }
 
         if !git.has_remote()? {
-            return Ok(SyncResult::Error("No remote configured".to_string()));
+            return Err(SyncError::NoRemoteConfigured);
         }
 
         git.force_push()?;

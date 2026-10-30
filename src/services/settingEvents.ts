@@ -69,6 +69,7 @@ export function subscribeSettingEvents(): () => void {
           });
         } else if (group === "orb") void store.loadOrbConf();
         else if (group === "mascot") void store.loadMascotConf();
+        else if (group === "vault") void store.loadVaultConf();
       }
     }),
   );

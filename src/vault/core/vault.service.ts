@@ -11,6 +11,8 @@ import type {
   StrengthResult,
   SyncResult,
   SyncConfig,
+  SyncAction,
+  RemoteMode,
   Readyness,
   ConflictResolution,
   ConflictFile,
@@ -21,11 +23,14 @@ import type {
   SshKeyInfo,
   SshKeyMeta,
   IntegrityResult,
+  HibpAuditEntry,
   DisasterRecoveryResult,
 } from "./vault.types";
 
 export type {
   VaultCategory,
+  VaultErrorCode,
+  VaultErrorDto,
   VaultEntrySummary,
   VaultEntryDetail,
   RevealResult,
@@ -44,6 +49,8 @@ export type {
   EntryPreview,
   ConflictPreview,
   SyncConfig,
+  SyncAction,
+  RemoteMode,
   ConflictResolution,
   SshKeyInfo,
   IntegrityResult,
@@ -55,7 +62,7 @@ export const vaultService = {
   init: (masterPassword: string): Promise<void> =>
     invoke("vault_init", { masterPassword }),
 
-  unlock: (masterPassword: string): Promise<boolean> =>
+  unlock: (masterPassword: string): Promise<void> =>
     invoke("vault_unlock", { masterPassword }),
 
   isLocked: (): Promise<boolean> => invoke("vault_is_locked"),
@@ -137,12 +144,12 @@ export const vaultService = {
   queryAuditLog: (limit?: number): Promise<AuditLogEntry[]> =>
     invoke("vault_query_audit_log", { limit }),
 
-  showUnlockWindow: (): Promise<boolean> => invoke("vault_show_unlock_window"),
+  showUnlockWindow: (): Promise<void> => invoke("vault_show_unlock_window"),
 
   hibpCheck: (id: string): Promise<number> =>
     invoke("vault_hibp_check", { id }),
 
-  hibpAudit: (): Promise<[string, number][]> => invoke("vault_hibp_audit"),
+  hibpAudit: (): Promise<HibpAuditEntry[]> => invoke("vault_hibp_audit"),
 
   checkMasterPasswordStrength: (password: string): Promise<StrengthResult> =>
     invoke("vault_check_master_password_strength", { password }),
@@ -153,17 +160,20 @@ export const vaultService = {
   isBiometricEnrolled: (): Promise<boolean> =>
     invoke("vault_is_biometric_enrolled"),
 
-  unlockBiometric: (): Promise<boolean> => invoke("vault_unlock_biometric"),
+  unlockBiometric: (): Promise<void> => invoke("vault_unlock_biometric"),
 
   enrollBiometric: (): Promise<void> => invoke("vault_enroll_biometric"),
 
   disenrollBiometric: (): Promise<void> => invoke("vault_disenroll_biometric"),
 
-  syncPull: (): Promise<SyncResult> => invoke("vault_sync", { action: "pull" }),
-  syncPush: (): Promise<SyncResult> => invoke("vault_sync", { action: "push" }),
-  syncNow: (): Promise<SyncResult> => invoke("vault_sync", { action: "sync" }),
+  syncPull: (): Promise<SyncResult> =>
+    invoke("vault_sync", { action: "pull" satisfies SyncAction }),
+  syncPush: (): Promise<SyncResult> =>
+    invoke("vault_sync", { action: "push" satisfies SyncAction }),
+  syncNow: (): Promise<SyncResult> =>
+    invoke("vault_sync", { action: "sync" satisfies SyncAction }),
   syncForcePush: (): Promise<SyncResult> =>
-    invoke("vault_sync", { action: "forcePush" }),
+    invoke("vault_sync", { action: "forcePush" satisfies SyncAction }),
   syncLastTime: (): Promise<number | null> => invoke("vault_sync_last_time"),
   getSyncConfig: (): Promise<SyncConfig> => invoke("vault_get_sync_config"),
   setSyncConfig: (config: SyncConfig): Promise<void> =>
@@ -177,9 +187,17 @@ export const vaultService = {
   gitInit: (): Promise<void> => invoke("vault_git_init"),
   gitClone: (url: string): Promise<void> => invoke("vault_git_init", { url }),
   gitAddRemote: (remote: string, url: string): Promise<void> =>
-    invoke("vault_git_remote", { remote, url, mode: "add" }),
+    invoke("vault_git_remote", {
+      remote,
+      url,
+      mode: "add" satisfies RemoteMode,
+    }),
   gitSetRemote: (remote: string, url: string): Promise<void> =>
-    invoke("vault_git_remote", { remote, url, mode: "set" }),
+    invoke("vault_git_remote", {
+      remote,
+      url,
+      mode: "set" satisfies RemoteMode,
+    }),
   gitRemoveRemote: (remote: string): Promise<void> =>
     invoke("vault_git_remove_remote", { remote }),
   gitTestConnection: (url?: string): Promise<number> =>

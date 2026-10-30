@@ -1,4 +1,5 @@
-use crate::types::{VaultEntryCreate, VaultEntryExport, VaultError};
+use crate::dto::VaultEntryCreate;
+use crate::types::{VaultEntryExport, VaultError};
 use assistant_crypto::vault_crypto::types::CipherAlgorithm;
 
 use super::SecurityDbState;

@@ -1,10 +1,9 @@
 mod common;
 
 use assistant_crypto::vault_crypto::types::CipherAlgorithm;
+use assistant_vault::dto::{VaultEntryCreate, VaultEntryUpdate};
 use assistant_vault::security_db::SecurityDbState;
-use assistant_vault::types::{
-    CustomFieldInput, VaultCategory, VaultEntryCreate, VaultEntryUpdate, VaultError,
-};
+use assistant_vault::types::{CustomFieldInput, VaultCategory, VaultError};
 use common::{cleanup, init_vault, temp_db_path, STRONG_PW};
 
 #[cfg(feature = "slow-tests")]

@@ -17,6 +17,10 @@ function mockCmd(cmd: string, impl: (...args: unknown[]) => unknown) {
   mockInvokeMap.set(cmd, impl);
 }
 
+function vaultError(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code, retryable: false });
+}
+
 function resetStore() {
   const store = useVaultStore.getState();
   store.clearError();
@@ -25,6 +29,7 @@ function resetStore() {
     isInitialized: false,
     loading: false,
     error: null,
+    errorCode: null,
     entries: [],
     selectedEntry: null,
     searchQuery: "",
@@ -95,35 +100,38 @@ describe("vaultStore lifecycle", () => {
   });
 
   it("unlock → correct password unlocks", async () => {
-    mockCmd("vault_unlock", () => Promise.resolve(true));
+    mockCmd("vault_unlock", () => Promise.resolve(undefined));
 
     const store = useVaultStore.getState();
-    const ok = await store.unlock("correct_password");
+    await store.unlock("correct_password");
 
-    expect(ok).toBe(true);
     expect(useVaultStore.getState().isLocked).toBe(false);
+    expect(useVaultStore.getState().errorCode).toBeNull();
   });
 
-  it("unlock → wrong password stays locked", async () => {
-    mockCmd("vault_unlock", () => Promise.resolve(false));
+  it("unlock → invalid password stays locked and records code", async () => {
+    mockCmd("vault_unlock", () =>
+      Promise.reject(vaultError("invalidPassword", "Invalid master password")),
+    );
 
     const store = useVaultStore.getState();
-    const ok = await store.unlock("wrong_password");
+    await store.unlock("wrong_password");
 
-    expect(ok).toBe(false);
-    expect(useVaultStore.getState().isLocked).toBe(true);
-    expect(useVaultStore.getState().error).toBe("Invalid password");
+    const state = useVaultStore.getState();
+    expect(state.isLocked).toBe(true);
+    expect(state.errorCode).toBe("invalidPassword");
+    expect(state.error).toBe("Invalid master password");
   });
 
   it("unlock → invoke throws error stays locked", async () => {
     mockCmd("vault_unlock", () => Promise.reject(new Error("network error")));
 
     const store = useVaultStore.getState();
-    const ok = await store.unlock("any");
+    await store.unlock("any");
 
-    expect(ok).toBe(false);
-    expect(useVaultStore.getState().isLocked).toBe(true);
-    expect(useVaultStore.getState().error).toBeTruthy();
+    const state = useVaultStore.getState();
+    expect(state.isLocked).toBe(true);
+    expect(state.error).toBeTruthy();
   });
 
   it("lock → clears entries and selectedEntry", async () => {
@@ -533,23 +541,45 @@ describe("vaultStore biometric", () => {
   });
 
   it("unlockBiometric → success unlocks vault", async () => {
-    mockCmd("vault_unlock_biometric", () => Promise.resolve(true));
+    mockCmd("vault_unlock_biometric", () => Promise.resolve(undefined));
 
     const store = useVaultStore.getState();
-    const ok = await store.unlockBiometric();
+    await store.unlockBiometric();
 
-    expect(ok).toBe(true);
     expect(useVaultStore.getState().isLocked).toBe(false);
   });
 
-  it("unlockBiometric → failure keeps vault locked", async () => {
-    mockCmd("vault_unlock_biometric", () => Promise.resolve(false));
+  it("unlockBiometric → cancelled keeps vault locked and records code", async () => {
+    mockCmd("vault_unlock_biometric", () =>
+      Promise.reject(vaultError("biometricCancelled", "Biometric cancelled")),
+    );
 
     const store = useVaultStore.getState();
-    const ok = await store.unlockBiometric();
+    await store.unlockBiometric();
 
-    expect(ok).toBe(false);
-    expect(useVaultStore.getState().isLocked).toBe(true);
+    const state = useVaultStore.getState();
+    expect(state.isLocked).toBe(true);
+    expect(state.errorCode).toBe("biometricCancelled");
+    expect(state.error).toBe("Biometric cancelled");
+  });
+
+  it("unlockBiometric → crypto failure disenrolls credential", async () => {
+    useVaultStore.setState({
+      biometricEnrolled: true,
+      _biometricEnrolledAt: 1,
+    });
+    mockCmd("vault_unlock_biometric", () =>
+      Promise.reject(vaultError("crypto", "Crypto error")),
+    );
+    mockCmd("vault_disenroll_biometric", () => Promise.resolve(undefined));
+
+    const store = useVaultStore.getState();
+    await store.unlockBiometric();
+
+    const state = useVaultStore.getState();
+    expect(state.isLocked).toBe(true);
+    expect(state.errorCode).toBe("crypto");
+    expect(state.biometricEnrolled).toBe(false);
   });
 });
 

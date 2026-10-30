@@ -29,6 +29,7 @@ argon2 = { workspace = true }
 hkdf = { workspace = true }
 keyring = { workspace = true }
 zxcvbn = { workspace = true }
+ts-rs = "12"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true }

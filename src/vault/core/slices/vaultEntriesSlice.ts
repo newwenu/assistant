@@ -1,11 +1,13 @@
 import { createLogger } from "@/services/logger";
 import { vaultService } from "../vault.service";
+import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
 import type {
   VaultEntrySummary,
   VaultEntryDetail,
   VaultEntryCreate,
   VaultEntryUpdate,
   VaultCategory,
+  VaultErrorCode,
 } from "../vault.types";
 
 const log = createLogger("vaultStore");
@@ -35,6 +37,7 @@ export interface VaultEntriesSlice {
 type FullState = VaultEntriesSlice & {
   loading: boolean;
   error: string | null;
+  errorCode: VaultErrorCode | null;
 };
 
 export function createEntriesSlice(
@@ -52,7 +55,7 @@ export function createEntriesSlice(
     deletedEntries: [],
 
     loadEntries: async () => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
         const { categoryFilter, searchQuery, tagFilter } = get();
         const entries = await vaultService.listEntries(
@@ -63,7 +66,11 @@ export function createEntriesSlice(
         set({ entries, loading: false });
       } catch (e) {
         log.error("loadEntries failed", e);
-        set({ error: String(e), loading: false });
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
       }
     },
 
@@ -73,14 +80,14 @@ export function createEntriesSlice(
         set({ selectedEntry: detail });
       } catch (e) {
         log.error("selectEntry failed", e);
-        set({ error: String(e) });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
       }
     },
 
     clearSelectedEntry: () => set({ selectedEntry: null }),
 
     createEntry: async (entry) => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
         const id = await vaultService.createEntry(entry);
         await get().loadEntries();
@@ -88,13 +95,17 @@ export function createEntriesSlice(
         return id;
       } catch (e) {
         log.error("createEntry failed", e);
-        set({ error: String(e), loading: false });
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
         throw e;
       }
     },
 
     updateEntry: async (id, entry) => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
         await vaultService.updateEntry(id, entry);
         await get().loadEntries();
@@ -105,12 +116,16 @@ export function createEntriesSlice(
         set({ loading: false });
       } catch (e) {
         log.error("updateEntry failed", e);
-        set({ error: String(e), loading: false });
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
       }
     },
 
     deleteEntry: async (id) => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
         await vaultService.deleteEntry(id);
         const { selectedEntry } = get();
@@ -119,7 +134,11 @@ export function createEntriesSlice(
         set({ loading: false });
       } catch (e) {
         log.error("deleteEntry failed", e);
-        set({ error: String(e), loading: false });
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
       }
     },
 
@@ -129,7 +148,7 @@ export function createEntriesSlice(
         set({ deletedEntries });
       } catch (e) {
         log.error("loadDeletedEntries failed", e);
-        set({ error: String(e) });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
       }
     },
 
@@ -139,7 +158,7 @@ export function createEntriesSlice(
         await Promise.all([get().loadEntries(), get().loadDeletedEntries()]);
       } catch (e) {
         log.error("restoreEntry failed", e);
-        set({ error: String(e) });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
       }
     },
 
@@ -150,7 +169,7 @@ export function createEntriesSlice(
         return purged;
       } catch (e) {
         log.error("purgeDeleted failed", e);
-        set({ error: String(e) });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
         return 0;
       }
     },

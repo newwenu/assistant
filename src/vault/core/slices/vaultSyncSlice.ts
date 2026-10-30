@@ -1,5 +1,6 @@
 import { createLogger } from "@/services/logger";
 import { vaultService } from "../vault.service";
+import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
 import type {
   SyncResult,
   SyncConfig,
@@ -9,6 +10,7 @@ import type {
   PendingRemovals,
   SshKeyInfo,
   SshKeyMeta,
+  VaultErrorCode,
 } from "../vault.types";
 
 const log = createLogger("vaultStore");
@@ -60,6 +62,7 @@ export interface VaultSyncSlice {
 type FullState = VaultSyncSlice & {
   loading: boolean;
   error: string | null;
+  errorCode: VaultErrorCode | null;
   loadEntries: () => Promise<void>;
 };
 
@@ -69,6 +72,14 @@ export function createSyncSlice(
   ) => void,
   get: () => FullState,
 ): VaultSyncSlice {
+  const failWith = (e: unknown, extra: Partial<FullState> = {}): void => {
+    set({
+      error: vaultErrorMessage(e),
+      errorCode: vaultErrorCode(e),
+      ...extra,
+    });
+  };
+
   const applySyncResult = (result: SyncResult) => {
     const pendingRemovals =
       typeof result === "object" &&
@@ -91,7 +102,7 @@ export function createSyncSlice(
     sshAgentRunning: false,
 
     syncPull: async () => {
-      set({ syncing: true, error: null });
+      set({ syncing: true, error: null, errorCode: null });
       try {
         const result = await vaultService.syncPull();
         applySyncResult(result);
@@ -101,12 +112,12 @@ export function createSyncSlice(
         await get().loadSyncLastTime();
       } catch (e) {
         log.error("syncPull failed", e);
-        set({ error: String(e), syncing: false });
+        failWith(e, { syncing: false });
       }
     },
 
     syncPush: async () => {
-      set({ syncing: true, error: null });
+      set({ syncing: true, error: null, errorCode: null });
       try {
         const result = await vaultService.syncPush();
         applySyncResult(result);
@@ -116,12 +127,12 @@ export function createSyncSlice(
         await get().loadSyncLastTime();
       } catch (e) {
         log.error("syncPush failed", e);
-        set({ error: String(e), syncing: false });
+        failWith(e, { syncing: false });
       }
     },
 
     syncNow: async () => {
-      set({ syncing: true, error: null });
+      set({ syncing: true, error: null, errorCode: null });
       try {
         const result = await vaultService.syncNow();
         applySyncResult(result);
@@ -131,12 +142,12 @@ export function createSyncSlice(
         await get().loadSyncLastTime();
       } catch (e) {
         log.error("syncNow failed", e);
-        set({ error: String(e), syncing: false });
+        failWith(e, { syncing: false });
       }
     },
 
     syncForcePush: async () => {
-      set({ syncing: true, error: null });
+      set({ syncing: true, error: null, errorCode: null });
       try {
         const result = await vaultService.syncForcePush();
         applySyncResult(result);
@@ -144,7 +155,7 @@ export function createSyncSlice(
         await get().loadSyncLastTime();
       } catch (e) {
         log.error("syncForcePush failed", e);
-        set({ error: String(e), syncing: false });
+        failWith(e, { syncing: false });
       }
     },
 
@@ -165,7 +176,7 @@ export function createSyncSlice(
         await get().loadSyncReadyness();
       } catch (e) {
         log.error("saveSyncConfig failed", e);
-        set({ error: String(e) });
+        failWith(e);
       }
     },
 
@@ -212,7 +223,7 @@ export function createSyncSlice(
     },
 
     confirmRemovals: async (ids) => {
-      set({ syncing: true, error: null });
+      set({ syncing: true, error: null, errorCode: null });
       try {
         await vaultService.syncConfirmRemovals(ids);
         set({ pendingRemovals: null, syncResult: "success" });
@@ -222,7 +233,7 @@ export function createSyncSlice(
         set({ syncing: false });
       } catch (e) {
         log.error("confirmRemovals failed", e);
-        set({ error: String(e), syncing: false });
+        failWith(e, { syncing: false });
       }
     },
 
@@ -235,12 +246,12 @@ export function createSyncSlice(
         await get().loadSyncLastTime();
       } catch (e) {
         log.error("resolveConflict failed", e);
-        set({ error: String(e) });
+        failWith(e);
       }
     },
 
     gitInit: async () => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
         await vaultService.gitInit();
         await get().loadSyncReadyness();
@@ -248,12 +259,12 @@ export function createSyncSlice(
         set({ loading: false });
       } catch (e) {
         log.error("gitInit failed", e);
-        set({ error: String(e), loading: false });
+        failWith(e, { loading: false });
       }
     },
 
     gitClone: async (url) => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
         await vaultService.gitClone(url);
         await get().loadSyncReadyness();
@@ -261,7 +272,7 @@ export function createSyncSlice(
         set({ loading: false });
       } catch (e) {
         log.error("gitClone failed", e);
-        set({ error: String(e), loading: false });
+        failWith(e, { loading: false });
       }
     },
 
@@ -271,7 +282,7 @@ export function createSyncSlice(
         await get().loadSyncConfig();
       } catch (e) {
         log.error("gitAddRemote failed", e);
-        set({ error: String(e) });
+        failWith(e);
       }
     },
 
@@ -281,7 +292,7 @@ export function createSyncSlice(
         await get().loadSyncConfig();
       } catch (e) {
         log.error("gitSetRemote failed", e);
-        set({ error: String(e) });
+        failWith(e);
       }
     },
 
@@ -292,7 +303,7 @@ export function createSyncSlice(
         await get().loadSyncReadyness();
       } catch (e) {
         log.error("gitRemoveRemote failed", e);
-        set({ error: String(e) });
+        failWith(e);
       }
     },
 
@@ -302,32 +313,32 @@ export function createSyncSlice(
         return count;
       } catch (e) {
         log.error("gitTestConnection failed", e);
-        set({ error: String(e) });
+        failWith(e);
         return null;
       }
     },
 
     syncAbort: async () => {
-      set({ syncing: true, error: null });
+      set({ syncing: true, error: null, errorCode: null });
       try {
         await vaultService.syncAbort();
         await get().loadSyncReadyness();
         set({ syncing: false });
       } catch (e) {
         log.error("syncAbort failed", e);
-        set({ error: String(e), syncing: false });
+        failWith(e, { syncing: false });
       }
     },
 
     syncDiscard: async () => {
-      set({ syncing: true, error: null });
+      set({ syncing: true, error: null, errorCode: null });
       try {
         await vaultService.syncDiscard();
         await get().loadSyncReadyness();
         set({ syncing: false });
       } catch (e) {
         log.error("syncDiscard failed", e);
-        set({ error: String(e), syncing: false });
+        failWith(e, { syncing: false });
       }
     },
 
@@ -338,7 +349,7 @@ export function createSyncSlice(
         return fingerprint;
       } catch (e) {
         log.error("sshAddToAgent failed", e);
-        set({ error: String(e) });
+        failWith(e);
         return null;
       }
     },
@@ -349,7 +360,7 @@ export function createSyncSlice(
         await get().sshListAgent();
       } catch (e) {
         log.error("sshRemoveFromAgent failed", e);
-        set({ error: String(e) });
+        failWith(e);
       }
     },
 
@@ -369,7 +380,7 @@ export function createSyncSlice(
         return added;
       } catch (e) {
         log.error("sshAutoAddAll failed", e);
-        set({ error: String(e) });
+        failWith(e);
         return [];
       }
     },

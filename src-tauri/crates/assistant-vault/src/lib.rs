@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod biometric;
+pub mod contract;
 pub mod dto;
 pub mod password_strength;
 pub mod recovery_key;

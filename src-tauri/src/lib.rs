@@ -39,6 +39,7 @@ pub fn run() {
             cmd::get_app_conf,
             cmd::get_orb_conf,
             cmd::get_mascot_conf,
+            cmd::get_vault_conf,
             cmd::patch_conf,
             cmd::toggle_orb_visibility,
             cmd::set_orb_click_through,

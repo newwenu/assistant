@@ -14,12 +14,12 @@ import {
 } from "antd";
 import { useTranslation } from "react-i18next";
 import { vaultService } from "../core/vault.service";
+import { vaultCategoryLabel } from "../core/vaultCategory";
+import { vaultErrorCode, vaultErrorMessage } from "../core/vaultError";
 import { useVaultStore } from "../core/vaultStore";
 import type { EntryPreview, HistoryCommit } from "../core/vault.types";
 
 const { Text } = Typography;
-
-const OLD_KEY_MARKER = "cannot be decrypted with the current master key";
 
 interface VaultEntryHistoryProps {
   open: boolean;
@@ -64,7 +64,7 @@ export default function VaultEntryHistory({
       .historyList(entryId, 50)
       .then((list) => setCommits(list))
       .catch((e: unknown) => {
-        message.error(String(e));
+        message.error(vaultErrorMessage(e));
       })
       .finally(() => setLoadingList(false));
   }, [open, entryId, message]);
@@ -79,9 +79,10 @@ export default function VaultEntryHistory({
         const result = await vaultService.historyPreview(commit, entryId);
         setPreview(result);
       } catch (e: unknown) {
-        const text = String(e);
         setPreviewError(
-          text.includes(OLD_KEY_MARKER) ? t("vault.history.old_key") : text,
+          vaultErrorCode(e) === "historyDecryptFailed"
+            ? t("vault.history.old_key")
+            : vaultErrorMessage(e),
         );
       } finally {
         setLoadingPreview(false);
@@ -132,9 +133,10 @@ export default function VaultEntryHistory({
           message.success(t("vault.history.restored"));
           onClose();
         } catch (e: unknown) {
-          const text = String(e);
           message.error(
-            text.includes(OLD_KEY_MARKER) ? t("vault.history.old_key") : text,
+            vaultErrorCode(e) === "historyDecryptFailed"
+              ? t("vault.history.old_key")
+              : vaultErrorMessage(e),
           );
         } finally {
           setRestoring(false);
@@ -243,7 +245,7 @@ export default function VaultEntryHistory({
                   {preview.title}
                 </Descriptions.Item>
                 <Descriptions.Item label={t("vault.entry.category")}>
-                  {t(`vault.entry.category_${preview.category}`)}
+                  {vaultCategoryLabel(t, preview.category)}
                 </Descriptions.Item>
                 {preview.username && (
                   <Descriptions.Item label={t("vault.entry.username")}>

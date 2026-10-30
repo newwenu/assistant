@@ -3,12 +3,15 @@ use std::sync::Mutex;
 use tauri::{command, AppHandle, Manager};
 
 use crate::protocol::events::{emit_broadcast, event_name};
-use crate::protocol::{AppConfDto, MascotConfDto, OrbConfDto, ThemeChangedPayloadDto};
+use crate::protocol::{
+    AppConfDto, MascotConfDto, OrbConfDto, ThemeChangedPayloadDto, VaultConfDto,
+};
 use assistant_config::{
     app_conf::AppConf,
     constant::{WINDOW_MAIN, WINDOW_ORB},
     mascot_conf::MascotConf,
     orb_conf::OrbConf,
+    vault_conf::VaultConf,
 };
 
 static CONF_LOCK: Mutex<()> = Mutex::new(());
@@ -88,7 +91,10 @@ fn apply_app_side_effects(app: &AppHandle, prev: &AppConf, conf: &AppConf) {
             log::error!("[side_effect:app:{}] {}", name, e);
         }
     }
-    crate::cmd::vault::on_app_conf_changed(prev, conf);
+}
+
+fn apply_vault_side_effects(prev: &VaultConf, conf: &VaultConf) {
+    crate::cmd::vault::on_vault_conf_changed(prev, conf);
 }
 
 fn apply_orb_side_effects(app: &AppHandle, prev: &OrbConf, conf: &OrbConf) {
@@ -138,6 +144,14 @@ pub fn get_mascot_conf() -> Result<MascotConfDto, String> {
 }
 
 #[command]
+pub fn get_vault_conf() -> Result<VaultConfDto, String> {
+    VaultConf::load().map(VaultConfDto::from).map_err(|e| {
+        error!("Failed to load vault config: {}", e);
+        e.to_string()
+    })
+}
+
+#[command]
 pub fn patch_conf(app: AppHandle, group: String, patch: serde_json::Value) -> Result<(), String> {
     let _guard = CONF_LOCK.lock().map_err(|e| e.to_string())?;
 
@@ -149,6 +163,14 @@ pub fn patch_conf(app: AppHandle, group: String, patch: serde_json::Value) -> Re
             merged.validate()?;
             merged.save().map_err(|e| e.to_string())?;
             apply_app_side_effects(&app, &prev, &merged);
+        }
+        "vault" => {
+            let conf = VaultConf::load().map_err(|e| e.to_string())?;
+            let prev = conf.clone();
+            let merged = conf.amend(patch)?;
+            merged.validate()?;
+            merged.save().map_err(|e| e.to_string())?;
+            apply_vault_side_effects(&prev, &merged);
         }
         "orb" => {
             let conf = OrbConf::load().map_err(|e| e.to_string())?;

@@ -11,6 +11,7 @@ import type {
   AppConf,
   OrbConf,
   MascotConf,
+  VaultConf,
 } from "@/settings/core/types/confTypes";
 import type { ProviderInput } from "@/settings/provider/types";
 import { CONF_LOAD_KEY_MAP, type ConfGroup } from "./field/fieldRegistry";
@@ -24,7 +25,9 @@ export type ConfOf<G extends ConfGroup> = G extends "app"
     ? OrbConf
     : G extends "mascot"
       ? MascotConf
-      : never;
+      : G extends "vault"
+        ? VaultConf
+        : never;
 
 export async function dispatchProviderSaved(provider: ProviderInput) {
   await providerService.saveProvider(provider);

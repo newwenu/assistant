@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { useVaultStore } from "@/vault/core/vaultStore";
 import { vaultService } from "@/vault/core/vault.service";
+import { vaultErrorMessage } from "@/vault/core/vaultError";
 import type { FieldRenderProps } from "../../core/types/fieldSchema";
 import { useSettingMessage } from "../useSettingMessage";
 
@@ -43,15 +44,11 @@ export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
       setLoading(true);
       const hide = msg.loading("vault.biometric.unlocking", 0);
       try {
-        const ok = await vaultService.showUnlockWindow();
+        await vaultService.showUnlockWindow();
         hide();
-        if (!ok) {
-          msg.error("vault.biometric.unlock_failed", undefined);
-          return;
-        }
       } catch (e) {
         hide();
-        msg.message.error(String(e));
+        msg.message.error(vaultErrorMessage(e));
         return;
       } finally {
         setLoading(false);
@@ -62,7 +59,7 @@ export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
       await enrollBiometric();
       onChange?.(true);
     } catch (e) {
-      msg.message.error(String(e));
+      msg.message.error(vaultErrorMessage(e));
     } finally {
       setLoading(false);
     }

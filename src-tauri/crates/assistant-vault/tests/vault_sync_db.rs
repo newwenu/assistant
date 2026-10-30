@@ -1,10 +1,9 @@
 mod common;
 
 use assistant_crypto::vault_crypto::types::CipherAlgorithm;
+use assistant_vault::dto::VaultEntryCreate;
 use assistant_vault::security_db::SecurityDbState;
-use assistant_vault::types::{
-    ImportOutcome, VaultCategory, VaultEntryCreate, VaultEntryImport, VaultError,
-};
+use assistant_vault::types::{ImportOutcome, VaultCategory, VaultEntryImport, VaultError};
 use common::{cleanup, init_vault, temp_db_path, STRONG_PW};
 
 const ALGO: CipherAlgorithm = CipherAlgorithm::Aes256Gcm;

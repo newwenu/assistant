@@ -41,6 +41,7 @@ async function bootstrap(): Promise<void> {
   await store.loadAppConf();
   await store.loadOrbConf();
   await store.loadMascotConf();
+  await store.loadVaultConf();
 
   const lang = useSettingsStore.getState().appConf?.language ?? "zh-CN";
   await applyLocaleChange(lang);

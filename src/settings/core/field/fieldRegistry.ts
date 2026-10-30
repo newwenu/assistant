@@ -29,12 +29,14 @@ export const CONF_KEY_MAP = {
   app: "appConf",
   orb: "orbConf",
   mascot: "mascotConf",
+  vault: "vaultConf",
 } as const;
 
 export const CONF_LOAD_KEY_MAP = {
   app: "loadAppConf",
   orb: "loadOrbConf",
   mascot: "loadMascotConf",
+  vault: "loadVaultConf",
 } as const;
 
 export type ConfGroup = keyof typeof CONF_KEY_MAP;

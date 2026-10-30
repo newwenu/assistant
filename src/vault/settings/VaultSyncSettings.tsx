@@ -27,15 +27,24 @@ import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
 import { useVaultStore } from "../core/vaultStore";
-import type { SyncConfig, SyncResult } from "../core/vault.types";
+import type {
+  SyncConfig,
+  SyncResult,
+  VaultErrorCode,
+} from "../core/vault.types";
 import DangerZoneConfirm from "./DangerZoneConfirm";
 
-const RUST_ERROR_KEY_MAP: Record<string, string> = {
-  "Git repository not initialized": "vault.sync.err_not_init",
-  "No remote configured": "vault.sync.err_no_remote",
+const SYNC_ERROR_KEY_MAP: Partial<Record<VaultErrorCode, string>> = {
+  repoNotInitialized: "vault.sync.err_not_init",
+  noRemoteConfigured: "vault.sync.err_no_remote",
 };
 
-const KEY_MISMATCH_MARKER = "different master key";
+function syncErrorText(code: VaultErrorCode | null, message: string): string {
+  const i18nKey = code ? SYNC_ERROR_KEY_MAP[code] : undefined;
+  return i18nKey
+    ? translateKey(i18nKey)
+    : translateKey("vault.sync.result_error", { message });
+}
 
 function getSyncResultInfo(
   result: SyncResult | null,
@@ -73,13 +82,6 @@ function getSyncResultInfo(
         count: result.unreadableEntries.ids.length,
       }),
     };
-  if ("error" in result) {
-    const i18nKey = RUST_ERROR_KEY_MAP[result.error];
-    const message = i18nKey
-      ? translateKey(i18nKey)
-      : translateKey("vault.sync.result_error", { message: result.error });
-    return { type: "error", message };
-  }
   return null;
 }
 
@@ -98,6 +100,7 @@ export default function VaultSyncSettings({
     syncLastAt,
     pendingRemovals,
     error,
+    errorCode,
     entries,
     syncNow,
     syncPull,
@@ -118,7 +121,7 @@ export default function VaultSyncSettings({
     syncDiscard,
   } = useVaultStore();
 
-  const appConf = useSettingsStore((s) => s.appConf);
+  const vaultConf = useSettingsStore((s) => s.vaultConf);
   const sshHostsVisible = !navigator.platform.toLowerCase().includes("win");
   const [remoteUrl, setRemoteUrl] = useState("");
   const [sshHosts, setSshHosts] = useState("");
@@ -146,10 +149,10 @@ export default function VaultSyncSettings({
   }, [syncConfig]);
 
   useEffect(() => {
-    if (appConf) {
-      setSshHosts((appConf.vaultSyncSshHosts ?? []).join(", "));
+    if (vaultConf) {
+      setSshHosts((vaultConf.vaultSyncSshHosts ?? []).join(", "));
     }
-  }, [appConf]);
+  }, [vaultConf]);
 
   const isReady = syncReadyness === "ready";
   const isNoSync = syncReadyness === "noSync";
@@ -188,7 +191,7 @@ export default function VaultSyncSettings({
       .split(",")
       .map((host) => host.trim().toLowerCase())
       .filter((host) => host.length > 0);
-    await dispatchConfPatch("app", { vaultSyncSshHosts: hosts });
+    await dispatchConfPatch("vault", { vaultSyncSshHosts: hosts });
   };
 
   const handleTestConnection = async () => {
@@ -289,7 +292,7 @@ export default function VaultSyncSettings({
     "unreadableEntries" in syncResult
       ? syncResult.unreadableEntries
       : null;
-  const keyMismatchError = Boolean(error?.includes(KEY_MISMATCH_MARKER));
+  const keyMismatchError = errorCode === "keyMismatch";
   const unreadableView = unreadable
     ? unreadable
     : keyMismatchError
@@ -324,7 +327,7 @@ export default function VaultSyncSettings({
         {error && !keyMismatchError && (
           <Alert
             type="error"
-            title={error}
+            title={syncErrorText(errorCode, error)}
             showIcon
             closable={{
               onClose: () => useVaultStore.getState().clearError(),

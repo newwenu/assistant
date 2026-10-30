@@ -6,7 +6,6 @@ use assistant_crypto::vault_crypto::types::CipherAlgorithm;
 
 pub use assistant_crypto::error::VaultError;
 
-pub use crate::dto::*;
 pub use crate::shared::*;
 
 #[derive(Debug, Clone)]

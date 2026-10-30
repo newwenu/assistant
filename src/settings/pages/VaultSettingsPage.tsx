@@ -18,14 +18,14 @@ import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
 export const VaultSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const loadAppConf = useSettingsStore((s) => s.loadAppConf);
+  const loadVaultConf = useSettingsStore((s) => s.loadVaultConf);
   const isInitialized = useVaultStore((s) => s.isInitialized);
   const statusReady = useVaultStatusReady();
-  const { onPatch, onPatchComplete } = useConfPatchHandlers("app");
+  const { onPatch, onPatchComplete } = useConfPatchHandlers("vault");
 
   useEffect(() => {
-    void loadAppConf();
-  }, [loadAppConf]);
+    void loadVaultConf();
+  }, [loadVaultConf]);
 
   if (!statusReady) {
     return (
@@ -90,7 +90,7 @@ export const VaultSettingsPage: React.FC = () => {
       <SettingsSection id="vault-general" style={{ marginTop: 0 }}>
         <Form layout="vertical">
           <SettingsGroup
-            group="app"
+            group="vault"
             definitions={VAULT_GENERAL_SETTINGS}
             onPatch={onPatch}
             onPatchComplete={onPatchComplete}
@@ -101,7 +101,7 @@ export const VaultSettingsPage: React.FC = () => {
       <SettingsSection id="vault-ssh">
         <Form layout="vertical">
           <SettingsGroup
-            group="app"
+            group="vault"
             definitions={VAULT_SSH_SETTINGS}
             onPatch={onPatch}
             onPatchComplete={onPatchComplete}

@@ -18,18 +18,6 @@ fn default_max_summary_tokens() -> u16 {
     super::constant::MAX_SUMMARY_REQUEST_TOKENS as u16
 }
 
-fn default_vault_auto_lock_minutes() -> u16 {
-    5
-}
-
-fn default_vault_clipboard_clear_seconds() -> u16 {
-    30
-}
-
-fn default_vault_cipher_algorithm() -> String {
-    "aes256Gcm".to_string()
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AppConf {
     pub theme: String,
@@ -50,32 +38,6 @@ pub struct AppConf {
     pub compact_summary_prompt: Option<String>,
     #[serde(default = "default_max_summary_tokens")]
     pub compact_summary_max_tokens: u16,
-    #[serde(default = "default_vault_auto_lock_minutes")]
-    pub vault_auto_lock_minutes: u16,
-    #[serde(default = "default_true")]
-    pub vault_lock_on_screen_lock: bool,
-    #[serde(default = "default_vault_clipboard_clear_seconds")]
-    pub vault_clipboard_clear_seconds: u16,
-    #[serde(default = "default_vault_cipher_algorithm")]
-    pub vault_cipher_algorithm: String,
-    #[serde(default)]
-    pub vault_biometric_enabled: bool,
-    #[serde(default = "default_true")]
-    pub vault_hibp_auto_audit: bool,
-    #[serde(default)]
-    pub vault_sync_remote_url: Option<String>,
-    #[serde(default)]
-    pub vault_ssh_auto_add: bool,
-    #[serde(default = "default_true")]
-    pub vault_ssh_use_pageant: bool,
-    #[serde(default = "default_true")]
-    pub vault_ssh_use_openssh_agent: bool,
-    #[serde(default)]
-    pub vault_ssh_auth_sock_override: String,
-    #[serde(default)]
-    pub vault_sync_last_at: Option<i64>,
-    #[serde(default)]
-    pub vault_sync_ssh_hosts: Vec<String>,
 }
 
 impl AppConf {
@@ -97,19 +59,6 @@ impl AppConf {
             compact_threshold_percent: super::constant::COMPACTION_THRESHOLD_PERCENT,
             compact_summary_prompt: None,
             compact_summary_max_tokens: super::constant::MAX_SUMMARY_REQUEST_TOKENS as u16,
-            vault_auto_lock_minutes: 5,
-            vault_lock_on_screen_lock: true,
-            vault_clipboard_clear_seconds: 30,
-            vault_cipher_algorithm: "aes256Gcm".to_string(),
-            vault_biometric_enabled: false,
-            vault_hibp_auto_audit: true,
-            vault_sync_remote_url: None,
-            vault_ssh_auto_add: false,
-            vault_ssh_use_pageant: true,
-            vault_ssh_use_openssh_agent: true,
-            vault_ssh_auth_sock_override: String::new(),
-            vault_sync_last_at: None,
-            vault_sync_ssh_hosts: Vec::new(),
         }
     }
 

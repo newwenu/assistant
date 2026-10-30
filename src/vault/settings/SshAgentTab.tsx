@@ -25,12 +25,12 @@ export default function SshAgentTab({
   const { t } = useTranslation();
   const { message } = App.useApp();
   const sshAutoAddEnabled = useSettingsStore(
-    (s) => s.appConf?.vaultSshAutoAdd ?? false,
+    (s) => s.vaultConf?.vaultSshAutoAdd ?? false,
   );
 
   const handleToggleAutoAdd = async (checked: boolean) => {
     try {
-      await dispatchConfPatch("app", { vaultSshAutoAdd: checked });
+      await dispatchConfPatch("vault", { vaultSshAutoAdd: checked });
       message.success(t("common.actions.saved"));
     } catch {
       message.error(t("vault.entry.save_failed"));

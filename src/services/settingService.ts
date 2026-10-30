@@ -3,6 +3,7 @@ import type {
   AppConf,
   OrbConf,
   MascotConf,
+  VaultConf,
 } from "../settings/core/types/confTypes";
 
 function toSnakeCaseKey(key: string): string {
@@ -32,6 +33,8 @@ export const settingService = {
 
   getMascotConf: (): Promise<MascotConf> =>
     invoke<MascotConf>("get_mascot_conf"),
+
+  getVaultConf: (): Promise<VaultConf> => invoke<VaultConf>("get_vault_conf"),
 
   getAppVersion: (): Promise<string> => invoke<string>("get_app_version"),
 

@@ -363,7 +363,7 @@ defineSetting({
 export const VAULT_GENERAL_SETTINGS = [
   defineSetting({
     key: "vaultAutoLockMinutes",
-    group: "app",
+    group: "vault",
     section: "vault-general",
     type: "number",
     default: 5,
@@ -373,7 +373,7 @@ export const VAULT_GENERAL_SETTINGS = [
   }),
   defineSetting({
     key: "vaultLockOnScreenLock",
-    group: "app",
+    group: "vault",
     section: "vault-general",
     type: "boolean",
     default: true,
@@ -381,7 +381,7 @@ export const VAULT_GENERAL_SETTINGS = [
   }),
   defineSetting({
     key: "vaultClipboardClearSeconds",
-    group: "app",
+    group: "vault",
     section: "vault-general",
     type: "number",
     default: 30,
@@ -391,7 +391,7 @@ export const VAULT_GENERAL_SETTINGS = [
   }),
   defineSetting({
     key: "vaultCipherAlgorithm",
-    group: "app",
+    group: "vault",
     section: "vault-general",
     type: "select",
     default: "aes256Gcm",
@@ -403,7 +403,7 @@ export const VAULT_GENERAL_SETTINGS = [
   }),
   defineSetting({
     key: "vaultBiometricEnabled",
-    group: "app",
+    group: "vault",
     section: "vault-general",
     type: "boolean",
     default: false,
@@ -414,7 +414,7 @@ export const VAULT_GENERAL_SETTINGS = [
   }),
   defineSetting({
     key: "vaultHibpAutoAudit",
-    group: "app",
+    group: "vault",
     section: "vault-general",
     type: "boolean",
     default: true,
@@ -425,7 +425,7 @@ export const VAULT_GENERAL_SETTINGS = [
 export const VAULT_SSH_SETTINGS = [
   defineSetting({
     key: "vaultSshAutoAdd",
-    group: "app",
+    group: "vault",
     section: "vault-ssh",
     type: "boolean",
     default: false,
@@ -433,7 +433,7 @@ export const VAULT_SSH_SETTINGS = [
   }),
   defineSetting({
     key: "vaultSshUsePageant",
-    group: "app",
+    group: "vault",
     section: "vault-ssh",
     type: "boolean",
     default: true,
@@ -442,7 +442,7 @@ export const VAULT_SSH_SETTINGS = [
   }),
   defineSetting({
     key: "vaultSshUseOpensshAgent",
-    group: "app",
+    group: "vault",
     section: "vault-ssh",
     type: "boolean",
     default: true,
@@ -451,7 +451,7 @@ export const VAULT_SSH_SETTINGS = [
   }),
   defineSetting({
     key: "vaultSshAuthSockOverride",
-    group: "app",
+    group: "vault",
     section: "vault-ssh",
     type: "string",
     default: "",

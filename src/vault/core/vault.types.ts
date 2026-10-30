@@ -5,6 +5,38 @@
 export type VaultCategory =
   "login" | "note" | "card" | "identity" | "sshKey" | "custom";
 
+export type VaultErrorCode =
+  | "locked"
+  | "invalidPassword"
+  | "notInitialized"
+  | "alreadyExists"
+  | "rateLimited"
+  | "crypto"
+  | "notFound"
+  | "validation"
+  | "biometricUnavailable"
+  | "biometricCancelled"
+  | "biometricFailed"
+  | "biometricReset"
+  | "invalidKeyFormat"
+  | "invalidRecoveryKey"
+  | "recoveryKeyNotSet"
+  | "vaultMetaIntegrityFailed"
+  | "cancelled"
+  | "repoNotInitialized"
+  | "noRemoteConfigured"
+  | "syncConflict"
+  | "gitUnavailable"
+  | "keyMismatch"
+  | "historyDecryptFailed"
+  | "internal";
+
+export interface VaultErrorDto {
+  code: VaultErrorCode;
+  message: string;
+  retryable: boolean;
+}
+
 export interface VaultEntrySummary {
   id: string;
   category: VaultCategory;
@@ -140,8 +172,7 @@ export type SyncResult =
   | "upToDate"
   | { conflict: ConflictFile[] }
   | { pendingRemovals: PendingRemovals }
-  | { unreadableEntries: UnreadableEntries }
-  | { error: string };
+  | { unreadableEntries: UnreadableEntries };
 
 export interface ConflictFile {
   path: string;
@@ -149,6 +180,10 @@ export interface ConflictFile {
   remoteHash: string;
   title: string | null;
 }
+
+export type SyncAction = "pull" | "push" | "sync" | "forcePush";
+
+export type RemoteMode = "add" | "set";
 
 export interface SyncConfig {
   remoteUrl: string | null;
@@ -179,7 +214,8 @@ export interface EntryPreview {
   commitAuthor: string | null;
   /** unix 毫秒（由 Git `%ct` 秒值 ×1000，低三位恒为 000） */
   commitTime: number | null;
-  category: VaultCategory;
+  /** 后端透传原值，枚举外值不会被窄化为 VaultCategory（见 I23 S1-C.3.4） */
+  category: string;
   revision: number;
   title: string;
   username: string | null;
@@ -224,6 +260,11 @@ export interface SshKeyMeta {
 export interface IntegrityResult {
   valid: boolean;
   message: string;
+}
+
+export interface HibpAuditEntry {
+  entryId: string;
+  matchCount: number;
 }
 
 export interface DisasterRecoveryResult {

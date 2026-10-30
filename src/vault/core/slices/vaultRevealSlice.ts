@@ -1,6 +1,11 @@
 import { createLogger } from "@/services/logger";
 import { vaultService } from "../vault.service";
-import type { RevealResult, RevealedField } from "../vault.types";
+import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
+import type {
+  RevealResult,
+  RevealedField,
+  VaultErrorCode,
+} from "../vault.types";
 
 const log = createLogger("vaultStore");
 
@@ -16,6 +21,7 @@ export interface VaultRevealSlice {
 
 type FullState = VaultRevealSlice & {
   error: string | null;
+  errorCode: VaultErrorCode | null;
 };
 
 export function createRevealSlice(
@@ -32,7 +38,7 @@ export function createRevealSlice(
         await vaultService.copyPassword(id);
       } catch (e) {
         log.error("copyPassword failed", e);
-        set({ error: String(e) });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
       }
     },
 
@@ -41,7 +47,7 @@ export function createRevealSlice(
         await vaultService.copyField(id, fieldName);
       } catch (e) {
         log.error("copyField failed", e);
-        set({ error: String(e) });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
       }
     },
 
@@ -62,7 +68,7 @@ export function createRevealSlice(
         }, delay);
       } catch (e) {
         log.error("revealPassword failed", e);
-        set({ error: String(e) });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
       }
     },
 
@@ -83,7 +89,7 @@ export function createRevealSlice(
         }, delay);
       } catch (e) {
         log.error("revealNotes failed", e);
-        set({ error: String(e) });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
       }
     },
 

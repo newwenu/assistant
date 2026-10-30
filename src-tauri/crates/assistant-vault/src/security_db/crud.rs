@@ -1,10 +1,10 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::audit::{log as audit_log, AuditEvent};
+use crate::dto::{VaultEntryCreate, VaultEntryDetail, VaultEntrySummary, VaultEntryUpdate};
 use crate::types::{
-    CustomFieldInput, ImportOutcome, VaultCategory, VaultCryptoInfo, VaultEntryCreate,
-    VaultEntryDetail, VaultEntryImport, VaultEntrySnapshot, VaultEntrySummary, VaultEntryUpdate,
-    VaultError,
+    CustomFieldInput, ImportOutcome, VaultCategory, VaultCryptoInfo, VaultEntryImport,
+    VaultEntrySnapshot, VaultError,
 };
 use assistant_crypto::vault_crypto::types::{CipherAlgorithm, MasterKey, VaultPlaintext};
 use assistant_crypto::vault_crypto::VaultCrypto;

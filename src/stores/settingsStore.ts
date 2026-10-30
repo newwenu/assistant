@@ -5,11 +5,13 @@ export type {
   AppConf,
   OrbConf,
   MascotConf,
+  VaultConf,
 } from "@/settings/core/types/confTypes";
 import type {
   AppConf,
   OrbConf,
   MascotConf,
+  VaultConf,
 } from "@/settings/core/types/confTypes";
 import { settingService } from "../services/settingService";
 import { applyLocaleChange } from "@/i18n/localeApplier";
@@ -20,10 +22,12 @@ export interface SettingsState {
   appConf: AppConf | null;
   orbConf: OrbConf | null;
   mascotConf: MascotConf | null;
+  vaultConf: VaultConf | null;
 
   loadAppConf: () => Promise<void>;
   loadOrbConf: () => Promise<void>;
   loadMascotConf: () => Promise<void>;
+  loadVaultConf: () => Promise<void>;
   updateKeybinding: (id: string, binding: string) => Promise<void>;
   resetKeybindings: () => Promise<void>;
 }
@@ -32,6 +36,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   appConf: null,
   orbConf: null,
   mascotConf: null,
+  vaultConf: null,
 
   loadAppConf: async () => {
     try {
@@ -61,6 +66,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set({ mascotConf: conf });
     } catch (e) {
       log.error("loadMascotConf failed", e);
+    }
+  },
+
+  loadVaultConf: async () => {
+    try {
+      const conf = await settingService.getVaultConf();
+      set({ vaultConf: conf });
+    } catch (e) {
+      log.error("loadVaultConf failed", e);
     }
   },
 

@@ -125,22 +125,26 @@ const FieldDrivenSummary: React.FC<{ page: SettingsPageManifest }> = ({
   const loadAppConf = useSettingsStore((s) => s.loadAppConf);
   const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
   const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
+  const loadVaultConf = useSettingsStore((s) => s.loadVaultConf);
 
   useEffect(() => {
     if (allGroups.has("app")) void loadAppConf();
     if (allGroups.has("orb")) void loadOrbConf();
     if (allGroups.has("mascot")) void loadMascotConf();
-  }, [allGroups, loadAppConf, loadOrbConf, loadMascotConf]);
+    if (allGroups.has("vault")) void loadVaultConf();
+  }, [allGroups, loadAppConf, loadOrbConf, loadMascotConf, loadVaultConf]);
 
   const appConf = useConfByGroup("app");
   const orbConf = useConfByGroup("orb");
   const mascotConf = useConfByGroup("mascot");
+  const vaultConf = useConfByGroup("vault");
 
   const items = useMemo(() => {
     const confMap: Record<ConfGroup, Record<string, unknown> | null> = {
       app: appConf,
       orb: orbConf,
       mascot: mascotConf,
+      vault: vaultConf,
     };
     const result: { key: string; label: string; value: string }[] = [];
     for (const sec of sections) {
@@ -159,7 +163,7 @@ const FieldDrivenSummary: React.FC<{ page: SettingsPageManifest }> = ({
       }
     }
     return result;
-  }, [sections, appConf, orbConf, mascotConf]);
+  }, [sections, appConf, orbConf, mascotConf, vaultConf]);
 
   if (items.length === 0) return null;
 

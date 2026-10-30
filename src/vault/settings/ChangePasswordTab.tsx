@@ -4,6 +4,7 @@ import { LockOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "../core/vaultStore";
 import { vaultService } from "../core/vault.service";
+import { vaultErrorMessage } from "../core/vaultError";
 import type { StrengthResult } from "../core/vault.types";
 
 const SCORE_COLORS: Record<number, string> = {
@@ -92,7 +93,7 @@ export default function ChangePasswordTab() {
         setReEnrollOpen(true);
       }
     } catch (e) {
-      message.error(String(e));
+      message.error(vaultErrorMessage(e));
     }
   };
 
@@ -104,7 +105,7 @@ export default function ChangePasswordTab() {
       message.success(t("vault.biometric.enabled"));
       setReEnrollOpen(false);
     } catch (e) {
-      message.error(String(e));
+      message.error(vaultErrorMessage(e));
     } finally {
       setReEnrollLoading(false);
     }

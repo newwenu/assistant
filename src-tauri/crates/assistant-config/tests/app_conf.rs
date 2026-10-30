@@ -13,22 +13,12 @@ fn new_returns_valid_and_matches_default() {
     assert!(conf.close_to_tray);
     assert_eq!(conf.keybindings.len(), 3);
     assert!(conf.auto_compact);
-    assert_eq!(conf.vault_auto_lock_minutes, 5);
-    assert!(conf.vault_lock_on_screen_lock);
-    assert_eq!(conf.vault_clipboard_clear_seconds, 30);
-    assert_eq!(conf.vault_cipher_algorithm, "aes256Gcm");
-    assert!(!conf.vault_biometric_enabled);
-    assert!(conf.vault_hibp_auto_audit);
     assert!(conf.validate().is_ok());
 
     let default = AppConf::default();
     assert_eq!(conf.theme, default.theme);
     assert_eq!(conf.keybindings, default.keybindings);
     assert_eq!(conf.auto_compact, default.auto_compact);
-    assert_eq!(
-        conf.vault_auto_lock_minutes,
-        default.vault_auto_lock_minutes
-    );
 }
 
 #[test]
@@ -70,33 +60,6 @@ fn serialize_deserialize_roundtrip() {
         original.compact_summary_max_tokens,
         restored.compact_summary_max_tokens
     );
-    assert_eq!(
-        original.vault_auto_lock_minutes,
-        restored.vault_auto_lock_minutes
-    );
-    assert_eq!(
-        original.vault_lock_on_screen_lock,
-        restored.vault_lock_on_screen_lock
-    );
-    assert_eq!(
-        original.vault_clipboard_clear_seconds,
-        restored.vault_clipboard_clear_seconds
-    );
-    assert_eq!(
-        original.vault_cipher_algorithm,
-        restored.vault_cipher_algorithm
-    );
-    assert_eq!(
-        original.vault_biometric_enabled,
-        restored.vault_biometric_enabled
-    );
-    assert_eq!(
-        original.vault_hibp_auto_audit,
-        restored.vault_hibp_auto_audit
-    );
-    assert_eq!(original.vault_ssh_auto_add, restored.vault_ssh_auto_add);
-    assert_eq!(original.vault_sync_last_at, restored.vault_sync_last_at);
-    assert_eq!(original.vault_sync_ssh_hosts, restored.vault_sync_ssh_hosts);
 }
 
 #[test]
@@ -109,10 +72,6 @@ fn deserialize_missing_optional_fields_use_defaults() {
     assert!(!conf.close_to_tray);
     assert!(conf.keybindings.is_empty());
     assert!(conf.auto_compact);
-    assert_eq!(conf.vault_auto_lock_minutes, 5);
-    assert_eq!(conf.vault_cipher_algorithm, "aes256Gcm");
-    assert_eq!(conf.vault_sync_last_at, None);
-    assert!(conf.vault_sync_ssh_hosts.is_empty());
 }
 
 #[test]
@@ -238,22 +197,6 @@ fn amend_keybindings() {
     let patch = serde_json::json!({ "keybindings": { "toggle_orb": "Ctrl+O" } });
     let merged = conf.amend(patch).unwrap();
     assert_eq!(merged.keybindings.get("toggle_orb").unwrap(), "Ctrl+O");
-}
-
-#[test]
-fn amend_vault_fields() {
-    let conf = AppConf::new();
-    let patch = serde_json::json!({
-        "vault_auto_lock_minutes": 10,
-        "vault_biometric_enabled": true,
-        "vault_hibp_auto_audit": false,
-        "vault_ssh_auto_add": true
-    });
-    let merged = conf.amend(patch).unwrap();
-    assert_eq!(merged.vault_auto_lock_minutes, 10);
-    assert!(merged.vault_biometric_enabled);
-    assert!(!merged.vault_hibp_auto_audit);
-    assert!(merged.vault_ssh_auto_add);
 }
 
 #[test]

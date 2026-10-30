@@ -1,73 +1,68 @@
-use serde::Deserialize;
-use tauri::{command, AppHandle, Manager};
+use tauri::{command, AppHandle};
 
-use assistant_vault::sync_engine::SyncEngine;
+use assistant_sync::types::{ConflictResolution, SyncConfig};
+use assistant_vault::dto::{
+    ConflictFileDto, ConflictPreviewDto, ConflictResolutionDto, EntryPreviewDto, HistoryCommitDto,
+    PendingRemovalsDto, ReadynessDto, RemoteModeDto, SyncActionDto, SyncConfigDto, SyncResultDto,
+    VaultErrorDto,
+};
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SyncAction {
-    Pull,
-    Push,
-    Sync,
-    ForcePush,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum RemoteMode {
-    Add,
-    Set,
-}
-
+// precondition: Unlocked
 #[command]
 pub async fn vault_sync(
     app: AppHandle,
-    action: SyncAction,
-) -> Result<assistant_sync::SyncResult, String> {
+    action: SyncActionDto,
+) -> Result<SyncResultDto, VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
-        let engine = app.state::<SyncEngine>();
-        let db = app.state::<assistant_vault::security_db::SecurityDbState>();
-        let result = match action {
-            SyncAction::Pull => engine.pull(&db),
-            SyncAction::Push => engine.push(),
-            SyncAction::Sync => engine.sync_now(&db),
-            SyncAction::ForcePush => engine.force_push(),
-        };
-        result
-            .map(|result| {
-                if matches!(
-                    result,
-                    assistant_sync::SyncResult::Success
-                        | assistant_sync::SyncResult::UpToDate
-                        | assistant_sync::SyncResult::UnreadableEntries { .. }
-                ) {
-                    super::persist_sync_last_at();
+        super::with_unlocked(&app, |db| {
+            let engine = super::sync_state(&app)?;
+            let result = match action {
+                SyncActionDto::Pull => engine.pull(db),
+                SyncActionDto::Push => engine.push(),
+                SyncActionDto::Sync => engine.sync_now(db),
+                SyncActionDto::ForcePush => engine.force_push(),
+            };
+            match result {
+                Ok(result) => {
+                    if matches!(
+                        result,
+                        assistant_sync::SyncResult::Success
+                            | assistant_sync::SyncResult::UpToDate
+                            | assistant_sync::SyncResult::UnreadableEntries { .. }
+                    ) {
+                        super::persist_sync_last_at();
+                    }
+                    SyncResultDto::try_from(result)
                 }
-                result
-            })
-            .map_err(|e| {
-                match action {
-                    SyncAction::Pull => log::warn!("Vault sync pull failed: {}", e),
-                    SyncAction::Push => log::warn!("Vault sync push failed: {}", e),
-                    SyncAction::Sync => log::warn!("Vault sync failed: {}", e),
-                    SyncAction::ForcePush => log::warn!("Vault sync force-push failed: {}", e),
+                Err(e) => {
+                    match action {
+                        SyncActionDto::Pull => log::warn!("Vault sync pull failed: {}", e),
+                        SyncActionDto::Push => log::warn!("Vault sync push failed: {}", e),
+                        SyncActionDto::Sync => log::warn!("Vault sync failed: {}", e),
+                        SyncActionDto::ForcePush => {
+                            log::warn!("Vault sync force-push failed: {}", e)
+                        }
+                    }
+                    Err(VaultErrorDto::from(e))
                 }
-                e.to_string()
-            })
+            }
+        })
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| super::internal_error(format!("Vault sync task join failed: {}", e)))?
 }
 
+// precondition: None
 #[command]
-pub fn vault_sync_last_time() -> Option<i64> {
-    assistant_config::app_conf::AppConf::load()
-        .ok()
-        .and_then(|c| c.vault_sync_last_at)
+pub fn vault_sync_last_time() -> Result<Option<i64>, VaultErrorDto> {
+    let conf = assistant_config::vault_conf::VaultConf::load()
+        .map_err(|e| super::internal_error(format!("Failed to load vault config: {}", e)))?;
+    Ok(conf.vault_sync_last_at)
 }
 
+// precondition: AnyState
 #[command]
-pub fn vault_get_sync_config(app: AppHandle) -> Result<assistant_sync::SyncConfig, String> {
+pub fn vault_get_sync_config(app: AppHandle) -> Result<SyncConfigDto, VaultErrorDto> {
     let engine = super::sync_state(&app)?;
     let mut config = engine.get_config();
     if config.remote_url.is_none() {
@@ -75,99 +70,112 @@ pub fn vault_get_sync_config(app: AppHandle) -> Result<assistant_sync::SyncConfi
             config.remote_url = Some(url);
         }
     }
-    Ok(config)
+    Ok(SyncConfigDto::from(config))
 }
 
+// precondition: AnyState
 #[command]
-pub fn vault_set_sync_config(
-    app: AppHandle,
-    config: assistant_sync::SyncConfig,
-) -> Result<(), String> {
+pub fn vault_set_sync_config(app: AppHandle, config: SyncConfigDto) -> Result<(), VaultErrorDto> {
     let engine = super::sync_state(&app)?;
     if let Some(url) = config.remote_url.as_deref() {
         if !url.trim().is_empty() {
             engine
                 .ensure_remote(&config.remote_name, url)
-                .map_err(|e| e.to_string())?;
+                .map_err(VaultErrorDto::from)?;
         }
     }
     super::persist_sync_remote_url(config.remote_url.as_deref());
-    engine.set_config(config);
+    engine.set_config(SyncConfig::from(config));
     Ok(())
 }
 
+// precondition: Unlocked
 #[command]
 pub async fn vault_resolve_conflict(
     app: AppHandle,
     path: String,
-    resolution: assistant_sync::ConflictResolution,
+    resolution: ConflictResolutionDto,
     remote_copy_suffix: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
-        let engine = app.state::<SyncEngine>();
-        let db = app.state::<assistant_vault::security_db::SecurityDbState>();
-        engine
-            .resolve_conflict(&db, &path, resolution, remote_copy_suffix.as_deref())
-            .map_err(|e| e.to_string())
+        super::with_unlocked(&app, |db| {
+            let engine = super::sync_state(&app)?;
+            engine
+                .resolve_conflict(
+                    db,
+                    &path,
+                    ConflictResolution::from(resolution),
+                    remote_copy_suffix.as_deref(),
+                )
+                .map_err(VaultErrorDto::from)
+        })
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| super::internal_error(format!("Vault conflict resolve task join failed: {}", e)))?
 }
 
+// precondition: AnyState
 #[command]
 pub fn vault_sync_pending_removals(
     app: AppHandle,
-) -> Result<Option<assistant_sync::PendingRemovals>, String> {
+) -> Result<Option<PendingRemovalsDto>, VaultErrorDto> {
     let engine = super::sync_state(&app)?;
-    Ok(engine.pending_removals())
+    Ok(engine.pending_removals().map(PendingRemovalsDto::from))
 }
 
+// precondition: Unlocked
 #[command]
-pub async fn vault_sync_confirm_removals(app: AppHandle, ids: Vec<String>) -> Result<u32, String> {
+pub async fn vault_sync_confirm_removals(
+    app: AppHandle,
+    ids: Vec<String>,
+) -> Result<u32, VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
-        let engine = app.state::<SyncEngine>();
-        let db = app.state::<assistant_vault::security_db::SecurityDbState>();
-        engine
-            .confirm_removals(&db, &ids)
-            .map(|count| {
-                if count > 0 {
-                    super::persist_sync_last_at();
-                }
-                count
-            })
-            .map_err(|e| {
-                log::warn!("Vault sync confirm removals failed: {}", e);
-                e.to_string()
-            })
+        super::with_unlocked(&app, |db| {
+            let engine = super::sync_state(&app)?;
+            engine
+                .confirm_removals(db, &ids)
+                .inspect(|count| {
+                    if *count > 0 {
+                        super::persist_sync_last_at();
+                    }
+                })
+                .map_err(|e| {
+                    log::warn!("Vault sync confirm removals failed: {}", e);
+                    VaultErrorDto::from(e)
+                })
+        })
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| super::internal_error(format!("Vault confirm removals task join failed: {}", e)))?
 }
 
+// precondition: AnyState
 #[command]
-pub fn vault_sync_abort(app: AppHandle) -> Result<(), String> {
+pub fn vault_sync_abort(app: AppHandle) -> Result<(), VaultErrorDto> {
     let engine = super::sync_state(&app)?;
     engine.abort_repo_state().map(|_| ()).map_err(|e| {
         log::warn!("Vault sync abort failed: {}", e);
-        e.to_string()
+        VaultErrorDto::from(e)
     })
 }
 
+// precondition: AnyState
 #[command]
-pub fn vault_sync_discard(app: AppHandle) -> Result<(), String> {
+pub fn vault_sync_discard(app: AppHandle) -> Result<(), VaultErrorDto> {
     let engine = super::sync_state(&app)?;
     engine.discard_local_changes().map_err(|e| {
         log::warn!("Vault sync discard local changes failed: {}", e);
-        e.to_string()
+        VaultErrorDto::from(e)
     })
 }
 
+// precondition: AnyState
 #[command]
-pub fn vault_git_remove_remote(app: AppHandle, remote: String) -> Result<(), String> {
+pub fn vault_git_remove_remote(app: AppHandle, remote: String) -> Result<(), VaultErrorDto> {
     let engine = super::sync_state(&app)?;
     engine.remove_remote(&remote).map_err(|e| {
         log::warn!("Vault git remote remove failed: {}", e);
-        e.to_string()
+        VaultErrorDto::from(e)
     })?;
     super::persist_sync_remote_url(None);
     let mut config = engine.get_config();
@@ -178,179 +186,208 @@ pub fn vault_git_remove_remote(app: AppHandle, remote: String) -> Result<(), Str
     Ok(())
 }
 
+// precondition: AnyState
 #[command]
 pub async fn vault_git_test_connection(
     app: AppHandle,
     url: Option<String>,
-) -> Result<usize, String> {
+) -> Result<usize, VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
-        let engine = app.state::<SyncEngine>();
+        let engine = super::sync_state(&app)?;
         engine.test_connection(url.as_deref()).map_err(|e| {
             log::warn!("Vault git test connection failed: {}", e);
-            e.to_string()
+            VaultErrorDto::from(e)
         })
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| {
+        super::internal_error(format!("Vault git test connection task join failed: {}", e))
+    })?
 }
 
+// precondition: Unlocked
 #[command]
-pub async fn vault_git_init(app: AppHandle, url: Option<String>) -> Result<(), String> {
+pub async fn vault_git_init(app: AppHandle, url: Option<String>) -> Result<(), VaultErrorDto> {
     match url {
         Some(remote_url) => {
             let persisted_url = remote_url.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                let engine = app.state::<SyncEngine>();
+                let engine = super::sync_state(&app)?;
                 engine.clone_repo(&remote_url).map_err(|e| {
                     log::warn!("Vault git clone failed: {}", e);
-                    e.to_string()
+                    VaultErrorDto::from(e)
                 })
             })
             .await
-            .map_err(|e| e.to_string())??;
+            .map_err(|e| {
+                super::internal_error(format!("Vault git clone task join failed: {}", e))
+            })??;
             super::persist_sync_remote_url(Some(&persisted_url));
             Ok(())
         }
-        None => {
+        None => super::with_unlocked(&app, |db| {
             let engine = super::sync_state(&app)?;
-            let db = super::vault_state(&app)?;
-            engine.init(&db).map_err(|e| {
+            engine.init(db).map_err(|e| {
                 log::warn!("Vault git init failed: {}", e);
-                e.to_string()
+                VaultErrorDto::from(e)
             })?;
             let config = engine.get_config();
             if let Some(remote_url) = config.remote_url.as_deref() {
                 engine
                     .ensure_remote(&config.remote_name, remote_url)
-                    .map_err(|e| e.to_string())?;
+                    .map_err(VaultErrorDto::from)?;
                 super::persist_sync_remote_url(Some(remote_url));
             }
             log::info!("Vault git init completed");
             Ok(())
-        }
+        }),
     }
 }
 
+// precondition: AnyState
 #[command]
 pub fn vault_git_remote(
     app: AppHandle,
     remote: String,
     url: String,
-    mode: RemoteMode,
-) -> Result<(), String> {
+    mode: RemoteModeDto,
+) -> Result<(), VaultErrorDto> {
     let engine = super::sync_state(&app)?;
     match mode {
-        RemoteMode::Add => engine
+        RemoteModeDto::Add => engine
             .add_remote(&remote, &url)
-            .map_err(|e| e.to_string())?,
-        RemoteMode::Set => engine
+            .map_err(VaultErrorDto::from)?,
+        RemoteModeDto::Set => engine
             .set_remote(&remote, &url)
-            .map_err(|e| e.to_string())?,
+            .map_err(VaultErrorDto::from)?,
     }
     super::persist_sync_remote_url(Some(&url));
     Ok(())
 }
 
+// precondition: AnyState
 #[command]
-pub fn vault_sync_readyness(app: AppHandle) -> Result<assistant_sync::Readyness, String> {
+pub fn vault_sync_readyness(app: AppHandle) -> Result<ReadynessDto, VaultErrorDto> {
     let engine = super::sync_state(&app)?;
-    engine.readyness().map_err(|e| e.to_string())
+    engine
+        .readyness()
+        .map(ReadynessDto::from)
+        .map_err(VaultErrorDto::from)
 }
 
+// precondition: Unlocked
 #[command]
-pub fn vault_sync_conflicts(app: AppHandle) -> Result<Vec<assistant_sync::ConflictFile>, String> {
-    let engine = super::sync_state(&app)?;
-    let db = super::vault_state(&app)?;
-    engine.conflicts(&db).map_err(|e| e.to_string())
+pub fn vault_sync_conflicts(app: AppHandle) -> Result<Vec<ConflictFileDto>, VaultErrorDto> {
+    super::with_unlocked(&app, |db| {
+        let engine = super::sync_state(&app)?;
+        engine
+            .conflicts(db)
+            .map(|files| files.into_iter().map(ConflictFileDto::from).collect())
+            .map_err(VaultErrorDto::from)
+    })
 }
 
+// precondition: AnyState
 #[command]
 pub fn vault_history_list(
     app: AppHandle,
     entry_id: Option<String>,
     limit: Option<usize>,
-) -> Result<Vec<assistant_sync::HistoryCommit>, String> {
+) -> Result<Vec<HistoryCommitDto>, VaultErrorDto> {
     let engine = super::sync_state(&app)?;
     engine
         .history_list(entry_id.as_deref(), limit.unwrap_or(50))
-        .map_err(|e| e.to_string())
+        .map(|commits| commits.into_iter().map(HistoryCommitDto::from).collect())
+        .map_err(VaultErrorDto::from)
 }
 
+// precondition: Unlocked
 #[command]
 pub fn vault_history_preview(
     app: AppHandle,
     commit: String,
     entry_id: String,
-) -> Result<assistant_sync::EntryPreview, String> {
-    let engine = super::sync_state(&app)?;
-    let db = super::vault_state(&app)?;
-    engine
-        .history_preview(&db, &commit, &entry_id)
-        .map_err(|e| {
-            log::warn!(
-                "Vault history preview failed for {}@{}: {}",
-                entry_id,
-                commit,
-                e
-            );
-            e.to_string()
-        })
+) -> Result<EntryPreviewDto, VaultErrorDto> {
+    super::with_unlocked(&app, |db| {
+        let engine = super::sync_state(&app)?;
+        engine
+            .history_preview(db, &commit, &entry_id)
+            .map(EntryPreviewDto::from)
+            .map_err(|e| {
+                log::warn!(
+                    "Vault history preview failed for {}@{}: {}",
+                    entry_id,
+                    commit,
+                    e
+                );
+                VaultErrorDto::from(e)
+            })
+    })
 }
 
+// precondition: Unlocked
 #[command]
 pub fn vault_history_restore(
     app: AppHandle,
     commit: String,
     entry_id: String,
-) -> Result<String, String> {
-    let engine = super::sync_state(&app)?;
-    let db = super::vault_state(&app)?;
-    let snapshot = engine
-        .history_restore(&db, &commit, &entry_id)
-        .map_err(|e| {
-            log::warn!(
-                "Vault history restore failed for {}@{}: {}",
-                entry_id,
-                commit,
-                e
-            );
-            e.to_string()
-        })?;
-    log::info!("Vault entry restored from history: {}@{}", entry_id, commit);
-    Ok(snapshot.id)
+) -> Result<String, VaultErrorDto> {
+    super::with_unlocked(&app, |db| {
+        let engine = super::sync_state(&app)?;
+        let snapshot = engine
+            .history_restore(db, &commit, &entry_id)
+            .map_err(|e| {
+                log::warn!(
+                    "Vault history restore failed for {}@{}: {}",
+                    entry_id,
+                    commit,
+                    e
+                );
+                VaultErrorDto::from(e)
+            })?;
+        log::info!("Vault entry restored from history: {}@{}", entry_id, commit);
+        Ok(snapshot.id)
+    })
 }
 
+// precondition: Unlocked
 #[command]
 pub fn vault_conflict_preview(
     app: AppHandle,
     path: String,
-) -> Result<assistant_sync::ConflictPreview, String> {
-    let engine = super::sync_state(&app)?;
-    let db = super::vault_state(&app)?;
-    engine.conflict_preview(&db, &path).map_err(|e| {
-        log::warn!("Vault conflict preview failed for {}: {}", path, e);
-        e.to_string()
+) -> Result<ConflictPreviewDto, VaultErrorDto> {
+    super::with_unlocked(&app, |db| {
+        let engine = super::sync_state(&app)?;
+        engine
+            .conflict_preview(db, &path)
+            .map(ConflictPreviewDto::from)
+            .map_err(|e| {
+                log::warn!("Vault conflict preview failed for {}: {}", path, e);
+                VaultErrorDto::from(e)
+            })
     })
 }
 
+// precondition: Unlocked
 #[command]
 pub fn vault_conflict_reveal(
     app: AppHandle,
     path: String,
     side: String,
     field: String,
-) -> Result<String, String> {
-    let engine = super::sync_state(&app)?;
-    let db = super::vault_state(&app)?;
-    engine
-        .reveal_conflict_field(&db, &path, &side, &field)
-        .map_err(|e| {
-            log::warn!(
-                "Vault conflict reveal failed for {} ({}): {}",
-                path,
-                side,
-                e
-            );
-            e.to_string()
-        })
+) -> Result<String, VaultErrorDto> {
+    super::with_unlocked(&app, |db| {
+        let engine = super::sync_state(&app)?;
+        engine
+            .reveal_conflict_field(db, &path, &side, &field)
+            .map_err(|e| {
+                log::warn!(
+                    "Vault conflict reveal failed for {} ({}): {}",
+                    path,
+                    side,
+                    e
+                );
+                VaultErrorDto::from(e)
+            })
+    })
 }

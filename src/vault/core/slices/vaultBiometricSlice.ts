@@ -1,5 +1,7 @@
 import { createLogger } from "@/services/logger";
 import { vaultService } from "../vault.service";
+import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
+import type { VaultErrorCode } from "../vault.types";
 
 const log = createLogger("vaultStore");
 
@@ -19,7 +21,7 @@ export interface VaultBiometricSlice {
 
   checkBiometricAvailable: () => Promise<void>;
   checkBiometricEnrolled: () => Promise<void>;
-  unlockBiometric: () => Promise<boolean>;
+  unlockBiometric: () => Promise<void>;
   enrollBiometric: () => Promise<void>;
   disenrollBiometric: () => Promise<void>;
 }
@@ -28,6 +30,7 @@ type FullState = VaultBiometricSlice & {
   isLocked: boolean;
   loading: boolean;
   error: string | null;
+  errorCode: VaultErrorCode | null;
   resetAutoLockTimer: () => void;
 };
 
@@ -109,21 +112,15 @@ export function createBiometricSlice(
     },
 
     unlockBiometric: async () => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
-        const ok = await vaultService.unlockBiometric();
-        if (ok) {
-          set({ isLocked: false, loading: false, _biometricEnrolledAt: 0 });
-          get().resetAutoLockTimer();
-          log.info("Vault unlocked via biometric");
-        } else {
-          set({ loading: false });
-          log.warn("Biometric unlock cancelled or failed");
-        }
-        return ok;
+        await vaultService.unlockBiometric();
+        set({ isLocked: false, loading: false, _biometricEnrolledAt: 0 });
+        get().resetAutoLockTimer();
+        log.info("Vault unlocked via biometric");
       } catch (e) {
-        const msg = String(e);
-        if (msg.includes("NotFound") || msg.includes("Crypto")) {
+        const code = vaultErrorCode(e);
+        if (code === "crypto" || code === "notFound") {
           try {
             await vaultService.disenrollBiometric();
             set({ biometricEnrolled: false, _biometricEnrolledAt: 0 });
@@ -134,13 +131,16 @@ export function createBiometricSlice(
           }
         }
         log.error("unlockBiometric failed", e);
-        set({ error: msg, loading: false });
-        return false;
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: code,
+          loading: false,
+        });
       }
     },
 
     enrollBiometric: async () => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
         await vaultService.enrollBiometric();
         set({
@@ -151,7 +151,11 @@ export function createBiometricSlice(
         log.info("Biometric enrolled successfully");
       } catch (e) {
         log.error("enrollBiometric failed", e);
-        set({ error: String(e), loading: false });
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
         throw e;
       }
     },

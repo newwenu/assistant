@@ -1,6 +1,11 @@
 import { createLogger } from "@/services/logger";
 import { vaultService } from "../vault.service";
-import type { IntegrityResult, DisasterRecoveryResult } from "../vault.types";
+import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
+import type {
+  IntegrityResult,
+  DisasterRecoveryResult,
+  VaultErrorCode,
+} from "../vault.types";
 
 const log = createLogger("vaultStore");
 
@@ -34,6 +39,7 @@ type FullState = VaultRecoverySlice & {
   isLocked: boolean;
   loading: boolean;
   error: string | null;
+  errorCode: VaultErrorCode | null;
   _biometricEnrolledAt: number;
   resetAutoLockTimer: () => void;
   loadEntries: () => Promise<void>;
@@ -54,14 +60,18 @@ export function createRecoverySlice(
     exportFilePath: null,
 
     generateRecoveryKey: async () => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
         const key = await vaultService.generateRecoveryKey();
         set({ recoveryKeySet: true, loading: false });
         return key;
       } catch (e) {
         log.error("generateRecoveryKey failed", e);
-        set({ error: String(e), loading: false });
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
         return null;
       }
     },
@@ -84,7 +94,7 @@ export function createRecoverySlice(
         return result;
       } catch (e) {
         log.error("verifyIntegrity failed", e);
-        set({ error: String(e) });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
         return null;
       }
     },
@@ -94,6 +104,7 @@ export function createRecoverySlice(
         disasterRecoveryStep: 1,
         disasterRecoveryResult: null,
         error: null,
+        errorCode: null,
       });
     },
 
@@ -106,7 +117,7 @@ export function createRecoverySlice(
     },
 
     disasterRecoveryExport: async (gitUrl, recoveryKey, exportPath, commit) => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
         const result = await vaultService.disasterRecoveryExport(
           gitUrl,
@@ -122,26 +133,34 @@ export function createRecoverySlice(
         return result;
       } catch (e) {
         log.error("disasterRecoveryExport failed", e);
-        set({ error: String(e), loading: false });
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
         return null;
       }
     },
 
     exportVault: async (format, path) => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
         await vaultService.exportVaultToFile(format, path);
         set({ exportFilePath: path, loading: false });
         return path;
       } catch (e) {
         log.error("exportVault failed", e);
-        set({ error: String(e), loading: false });
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
         return null;
       }
     },
 
     importVault: async (path, format) => {
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, errorCode: null });
       try {
         const count = await vaultService.importVault(path, format);
         await get().loadEntries();
@@ -149,7 +168,11 @@ export function createRecoverySlice(
         return count;
       } catch (e) {
         log.error("importVault failed", e);
-        set({ error: String(e), loading: false });
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
         return null;
       }
     },

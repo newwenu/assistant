@@ -14,6 +14,9 @@ pub enum SyncError {
     #[error("Sync not initialized")]
     NotInitialized,
 
+    #[error("No remote configured")]
+    NoRemoteConfigured,
+
     #[error("Vault is locked")]
     VaultLocked,
 

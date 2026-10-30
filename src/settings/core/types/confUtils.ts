@@ -1,6 +1,6 @@
-import type { AppConf, OrbConf, MascotConf } from "./confTypes";
+import type { AppConf, OrbConf, MascotConf, VaultConf } from "./confTypes";
 
-type ConfUnion = AppConf | OrbConf | MascotConf;
+type ConfUnion = AppConf | OrbConf | MascotConf | VaultConf;
 
 export function toConfRecord(
   conf: ConfUnion | null,

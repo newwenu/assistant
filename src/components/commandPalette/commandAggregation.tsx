@@ -62,6 +62,7 @@ const GROUP_TO_PAGE: Record<ConfGroup, string> = {
   app: "general",
   orb: "appearance",
   mascot: "appearance",
+  vault: "vault",
 };
 
 function registerSettingsCommands(navigate: NavigateFunction): void {

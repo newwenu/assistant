@@ -14,19 +14,6 @@ pub struct AppConfDto {
     pub compact_threshold_percent: u8,
     pub compact_summary_prompt: Option<String>,
     pub compact_summary_max_tokens: u16,
-    pub vault_auto_lock_minutes: u16,
-    pub vault_lock_on_screen_lock: bool,
-    pub vault_clipboard_clear_seconds: u16,
-    pub vault_cipher_algorithm: String,
-    pub vault_biometric_enabled: bool,
-    pub vault_hibp_auto_audit: bool,
-    pub vault_sync_remote_url: Option<String>,
-    pub vault_ssh_auto_add: bool,
-    pub vault_ssh_use_pageant: bool,
-    pub vault_ssh_use_openssh_agent: bool,
-    pub vault_ssh_auth_sock_override: String,
-    pub vault_sync_last_at: Option<i64>,
-    pub vault_sync_ssh_hosts: Vec<String>,
 }
 
 impl From<assistant_config::app_conf::AppConf> for AppConfDto {
@@ -43,6 +30,31 @@ impl From<assistant_config::app_conf::AppConf> for AppConfDto {
             compact_threshold_percent: c.compact_threshold_percent,
             compact_summary_prompt: c.compact_summary_prompt,
             compact_summary_max_tokens: c.compact_summary_max_tokens,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VaultConfDto {
+    pub vault_auto_lock_minutes: u16,
+    pub vault_lock_on_screen_lock: bool,
+    pub vault_clipboard_clear_seconds: u16,
+    pub vault_cipher_algorithm: String,
+    pub vault_biometric_enabled: bool,
+    pub vault_hibp_auto_audit: bool,
+    pub vault_sync_remote_url: Option<String>,
+    pub vault_ssh_auto_add: bool,
+    pub vault_ssh_use_pageant: bool,
+    pub vault_ssh_use_openssh_agent: bool,
+    pub vault_ssh_auth_sock_override: String,
+    pub vault_sync_last_at: Option<i64>,
+    pub vault_sync_ssh_hosts: Vec<String>,
+}
+
+impl From<assistant_config::vault_conf::VaultConf> for VaultConfDto {
+    fn from(c: assistant_config::vault_conf::VaultConf) -> Self {
+        Self {
             vault_auto_lock_minutes: c.vault_auto_lock_minutes,
             vault_lock_on_screen_lock: c.vault_lock_on_screen_lock,
             vault_clipboard_clear_seconds: c.vault_clipboard_clear_seconds,

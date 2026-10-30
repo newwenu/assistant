@@ -139,8 +139,8 @@ pub fn remote_snapshot(
     }
 }
 
-pub fn local_entry(title: &str) -> assistant_vault::types::VaultEntryCreate {
-    assistant_vault::types::VaultEntryCreate {
+pub fn local_entry(title: &str) -> assistant_vault::dto::VaultEntryCreate {
+    assistant_vault::dto::VaultEntryCreate {
         category: VaultCategory::Login,
         title: title.to_string(),
         username: None,

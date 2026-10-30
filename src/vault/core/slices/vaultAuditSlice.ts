@@ -1,6 +1,12 @@
 import { createLogger } from "@/services/logger";
 import { vaultService } from "../vault.service";
-import type { TotpResult, ParsedOtpAuth, StrengthResult } from "../vault.types";
+import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
+import type {
+  TotpResult,
+  ParsedOtpAuth,
+  StrengthResult,
+  VaultErrorCode,
+} from "../vault.types";
 
 const log = createLogger("vaultStore");
 
@@ -28,7 +34,7 @@ export interface VaultAuditSlice {
   queryAuditLog: (
     limit?: number,
   ) => Promise<import("../vault.types").AuditLogEntry[]>;
-  showUnlockWindow: () => Promise<boolean>;
+  showUnlockWindow: () => Promise<void>;
   hibpCheck: (id: string) => Promise<number>;
   hibpAudit: () => Promise<void>;
   checkMasterPasswordStrength: (
@@ -38,6 +44,7 @@ export interface VaultAuditSlice {
 
 type FullState = VaultAuditSlice & {
   error: string | null;
+  errorCode: VaultErrorCode | null;
 };
 
 export function createAuditSlice(
@@ -86,7 +93,7 @@ export function createAuditSlice(
         await vaultService.totpCopy(id, period, digits, algorithm);
       } catch (e) {
         log.error("copyTotp failed", e);
-        set({ error: String(e) });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
       }
     },
 
@@ -126,8 +133,8 @@ export function createAuditSlice(
       try {
         const leaks = await vaultService.hibpAudit();
         const leakMap: Record<string, number> = {};
-        for (const [id, count] of leaks) {
-          leakMap[id] = count;
+        for (const { entryId, matchCount } of leaks) {
+          leakMap[entryId] = matchCount;
         }
         set({ hibpLeaks: leakMap, hibpAuditing: false });
       } catch (e) {

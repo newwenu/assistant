@@ -10,6 +10,9 @@ export interface AppConf {
   compactThresholdPercent: number;
   compactSummaryPrompt: string | null;
   compactSummaryMaxTokens: number;
+}
+
+export interface VaultConf {
   vaultAutoLockMinutes: number;
   vaultLockOnScreenLock: boolean;
   vaultClipboardClearSeconds: number;
