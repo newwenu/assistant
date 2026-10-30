@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 pub mod audit;
 mod convert;
@@ -25,38 +26,51 @@ pub use sync::{
 };
 pub use totp::{ParsedOtpAuthDto, TotpAlgorithmDto, TotpResultDto};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct VaultEntryCreate {
     pub category: VaultCategory,
     pub title: String,
+    #[ts(optional = nullable)]
     pub username: Option<String>,
+    #[ts(optional = nullable)]
     pub url: Option<String>,
+    #[ts(optional = nullable)]
     pub password: Option<String>,
+    #[ts(optional = nullable)]
     pub notes: Option<String>,
+    #[ts(optional = nullable)]
     pub totp_secret: Option<String>,
     pub tags: Vec<String>,
     pub custom_fields: Vec<CustomFieldInput>,
     pub is_favorite: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct VaultEntryUpdate {
     pub category: VaultCategory,
     pub title: String,
+    #[ts(optional = nullable)]
     pub username: Option<String>,
+    #[ts(optional = nullable)]
     pub url: Option<String>,
+    #[ts(optional = nullable)]
     pub password: Option<String>,
+    #[ts(optional = nullable)]
     pub notes: Option<String>,
+    #[ts(optional = nullable)]
     pub totp_secret: Option<String>,
     pub tags: Vec<String>,
     pub custom_fields: Vec<CustomFieldInput>,
     pub is_favorite: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct VaultEntrySummary {
     pub id: String,
     pub category: VaultCategory,
@@ -68,8 +82,9 @@ pub struct VaultEntrySummary {
     pub updated_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct VaultEntryDetail {
     pub id: String,
     pub category: VaultCategory,
@@ -87,8 +102,9 @@ pub struct VaultEntryDetail {
     pub updated_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct RevealResult {
     pub value: String,
     pub expires_at: i64,

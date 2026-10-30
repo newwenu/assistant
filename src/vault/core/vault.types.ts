@@ -1,278 +1,47 @@
 /**
  * 时间戳单位约定：本文件所有 `timestamp` / `*At` 字段均为 **unix 毫秒**，
  * 唯一例外是 `.vault-meta` 文件内的 `exportedAt`（unix 秒，见 vault_file/types.rs）。
+ *
+ * 本文件为 barrel：除 `RevealedField`（纯前端类型）外，全部类型来自
+ * `./contract/vault.contract`（由 ts-rs 从 Rust dto 生成，勿手改）。
  */
-export type VaultCategory =
-  "login" | "note" | "card" | "identity" | "sshKey" | "custom";
+export type {
+  AuditLogEntry,
+  CustomFieldInput,
+  IntegrityResult,
+  RevealResult,
+  StrengthResult,
+  VaultCategory,
+  VaultEntryCreate,
+  VaultEntryDetail,
+  VaultEntrySummary,
+  VaultEntryUpdate,
+  VaultErrorCode,
+  VaultErrorDto,
+} from "./contract/vault.contract";
 
-export type VaultErrorCode =
-  | "locked"
-  | "invalidPassword"
-  | "notInitialized"
-  | "alreadyExists"
-  | "rateLimited"
-  | "crypto"
-  | "notFound"
-  | "validation"
-  | "biometricUnavailable"
-  | "biometricCancelled"
-  | "biometricFailed"
-  | "biometricReset"
-  | "invalidKeyFormat"
-  | "invalidRecoveryKey"
-  | "recoveryKeyNotSet"
-  | "vaultMetaIntegrityFailed"
-  | "cancelled"
-  | "repoNotInitialized"
-  | "noRemoteConfigured"
-  | "syncConflict"
-  | "gitUnavailable"
-  | "keyMismatch"
-  | "historyDecryptFailed"
-  | "internal";
-
-export interface VaultErrorDto {
-  code: VaultErrorCode;
-  message: string;
-  retryable: boolean;
-}
-
-export interface VaultEntrySummary {
-  id: string;
-  category: VaultCategory;
-  title: string;
-  username: string | null;
-  url: string | null;
-  tags: string[];
-  isFavorite: boolean;
-  updatedAt: number;
-}
-
-export interface VaultEntryDetail {
-  id: string;
-  category: VaultCategory;
-  title: string;
-  username: string | null;
-  url: string | null;
-  hasPassword: boolean;
-  hasNotes: boolean;
-  hasTotp: boolean;
-  customFieldNames: string[];
-  tags: string[];
-  isFavorite: boolean;
-  revision: number;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface RevealResult {
-  value: string;
-  expiresAt: number;
-}
-
-export interface CustomFieldInput {
-  name: string;
-  value: string;
-  isProtected: boolean;
-}
-
-export interface VaultEntryCreate {
-  category: VaultCategory;
-  title: string;
-  username?: string;
-  url?: string;
-  password?: string;
-  notes?: string;
-  totpSecret?: string;
-  tags: string[];
-  customFields: CustomFieldInput[];
-  isFavorite: boolean;
-}
-
-export interface VaultEntryUpdate {
-  category: VaultCategory;
-  title: string;
-  username?: string;
-  url?: string;
-  password?: string;
-  notes?: string;
-  totpSecret?: string;
-  tags: string[];
-  customFields: CustomFieldInput[];
-  isFavorite: boolean;
-}
-
-export interface TotpResult {
-  code: string;
-  timeRemaining: number;
-}
-
-export interface ParsedOtpAuth {
-  secret: string;
-  digits: number;
-  period: number;
-  algorithm: string;
-  issuer: string | null;
-  account: string | null;
-}
-
-export interface AuditLogEntry {
-  id: string;
-  eventType: string;
-  detail: string | null;
-  /** unix 毫秒 */
-  timestamp: number;
-}
-
-export interface StrengthResult {
-  score: number;
-  entropyBits: number;
-  crackTimeSeconds: number;
-  crackTimeDisplay: string;
-  warnings: string[];
-}
-
-export type Readyness =
-  "noSync" | { repoState: RepositoryState } | "dirty" | "ready";
-
-export type RepositoryState =
-  | "clean"
-  | "merge"
-  | "rebase"
-  | "rebaseInteractive"
-  | "rebaseMerge"
-  | "apply"
-  | "cherryPick"
-  | "revert"
-  | "bisect"
-  | "am"
-  | "mailbox"
-  | "stash"
-  | "unknown";
-
-export interface PendingRemovalEntry {
-  id: string;
-  title: string | null;
-}
-
-export interface PendingRemovals {
-  entries: PendingRemovalEntry[];
-  totalLocal: number;
-}
-
-export type UnreadableReason = "keyMismatch" | "corrupt";
-
-export interface UnreadableEntries {
-  ids: string[];
-  reason: UnreadableReason;
-}
-
-export type SyncResult =
-  | "success"
-  | "upToDate"
-  | { conflict: ConflictFile[] }
-  | { pendingRemovals: PendingRemovals }
-  | { unreadableEntries: UnreadableEntries };
-
-export interface ConflictFile {
-  path: string;
-  localHash: string;
-  remoteHash: string;
-  title: string | null;
-}
-
-export type SyncAction = "pull" | "push" | "sync" | "forcePush";
-
-export type RemoteMode = "add" | "set";
-
-export interface SyncConfig {
-  remoteUrl: string | null;
-  remoteName: string;
-  sshKeyPath: string | null;
-}
-
-export type ConflictResolution =
-  "useLocal" | "useRemote" | "mergeBoth" | "skip";
-
-export interface HistoryCommit {
-  hash: string;
-  /** unix 毫秒 */
-  timestamp: number;
-  message: string;
-  entryId: string | null;
-}
-
-export interface EntryPreviewField {
-  name: string;
-  value: string;
-  isSecret: boolean;
-}
-
-export interface EntryPreview {
-  id: string;
-  commit: string;
-  commitAuthor: string | null;
-  /** unix 毫秒（由 Git `%ct` 秒值 ×1000，低三位恒为 000） */
-  commitTime: number | null;
-  /** 后端透传原值，枚举外值不会被窄化为 VaultCategory（见 I23 S1-C.3.4） */
-  category: string;
-  revision: number;
-  title: string;
-  username: string | null;
-  url: string | null;
-  password: string | null;
-  notes: string | null;
-  totpSecret: string | null;
-  customFields: EntryPreviewField[];
-  tags: string[];
-  isFavorite: boolean;
-  /** unix 毫秒 */
-  createdAt: number;
-  /** unix 毫秒 */
-  updatedAt: number;
-}
-
-export interface ConflictPreview {
-  entryId: string;
-  local: EntryPreview | null;
-  remote: EntryPreview | null;
-  localError: string | null;
-  remoteError: string | null;
-  diffFields: string[];
-}
-
-export interface SshKeyInfo {
-  fingerprint: string;
-  keyType: string;
-  comment: string;
-  bits: number;
-  addedByVault: boolean;
-}
-
-export interface SshKeyMeta {
-  keyType: string;
-  bits: number;
-  fingerprint: string;
-  comment: string;
-  publicKey: string;
-}
-
-export interface IntegrityResult {
-  valid: boolean;
-  message: string;
-}
-
-export interface HibpAuditEntry {
-  entryId: string;
-  matchCount: number;
-}
-
-export interface DisasterRecoveryResult {
-  filePath: string;
-  entryCount: number;
-  integrityWarning: boolean;
-  skippedIds: string[];
-}
+export type { ConflictFileDto as ConflictFile } from "./contract/vault.contract";
+export type { ConflictPreviewDto as ConflictPreview } from "./contract/vault.contract";
+export type { ConflictResolutionDto as ConflictResolution } from "./contract/vault.contract";
+export type { DisasterRecoveryResultDto as DisasterRecoveryResult } from "./contract/vault.contract";
+export type { EntryPreviewDto as EntryPreview } from "./contract/vault.contract";
+export type { EntryPreviewFieldDto as EntryPreviewField } from "./contract/vault.contract";
+export type { HibpAuditEntryDto as HibpAuditEntry } from "./contract/vault.contract";
+export type { HistoryCommitDto as HistoryCommit } from "./contract/vault.contract";
+export type { ParsedOtpAuthDto as ParsedOtpAuth } from "./contract/vault.contract";
+export type { PendingRemovalEntryDto as PendingRemovalEntry } from "./contract/vault.contract";
+export type { PendingRemovalsDto as PendingRemovals } from "./contract/vault.contract";
+export type { ReadynessDto as Readyness } from "./contract/vault.contract";
+export type { RemoteModeDto as RemoteMode } from "./contract/vault.contract";
+export type { RepositoryStateDto as RepositoryState } from "./contract/vault.contract";
+export type { SshKeyInfoDto as SshKeyInfo } from "./contract/vault.contract";
+export type { SshKeyMetaDto as SshKeyMeta } from "./contract/vault.contract";
+export type { SyncActionDto as SyncAction } from "./contract/vault.contract";
+export type { SyncConfigDto as SyncConfig } from "./contract/vault.contract";
+export type { SyncResultDto as SyncResult } from "./contract/vault.contract";
+export type { TotpResultDto as TotpResult } from "./contract/vault.contract";
+export type { UnreadableEntriesDto as UnreadableEntries } from "./contract/vault.contract";
+export type { UnreadableReasonDto as UnreadableReason } from "./contract/vault.contract";
 
 export interface RevealedField {
   value: string;

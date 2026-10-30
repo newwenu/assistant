@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct StrengthResult {
     pub score: u8,
     pub entropy_bits: f64,
@@ -10,8 +12,9 @@ pub struct StrengthResult {
     pub warnings: Vec<StrengthWarning>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub enum StrengthWarning {
     TooShort,
     NoUppercase,
@@ -24,8 +27,9 @@ pub enum StrengthWarning {
     DictionaryWord,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct AuditLogEntry {
     pub id: String,
     pub event_type: String,

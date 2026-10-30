@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub enum SyncActionDto {
     Pull,
     Push,
@@ -10,8 +11,9 @@ pub enum SyncActionDto {
     ForcePush,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub enum RemoteModeDto {
     Add,
     Set,
@@ -19,7 +21,7 @@ pub enum RemoteModeDto {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[ts(export, export_to = "vault.contract.ts")]
 pub enum RepositoryStateDto {
     Clean,
     Merge,
@@ -38,7 +40,7 @@ pub enum RepositoryStateDto {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[ts(export, export_to = "vault.contract.ts")]
 pub enum ReadynessDto {
     NoSync,
     RepoState(RepositoryStateDto),
@@ -48,35 +50,39 @@ pub enum ReadynessDto {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct PendingRemovalEntryDto {
     pub id: String,
     pub title: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct PendingRemovalsDto {
     pub entries: Vec<PendingRemovalEntryDto>,
     pub total_local: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub enum UnreadableReasonDto {
     KeyMismatch,
     Corrupt,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct UnreadableEntriesDto {
     pub ids: Vec<String>,
     pub reason: UnreadableReasonDto,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub enum SyncResultDto {
     Success,
     UpToDate,
@@ -85,8 +91,9 @@ pub enum SyncResultDto {
     UnreadableEntries(UnreadableEntriesDto),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct ConflictFileDto {
     pub path: String,
     pub local_hash: String,
@@ -94,16 +101,18 @@ pub struct ConflictFileDto {
     pub title: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct SyncConfigDto {
     pub remote_url: Option<String>,
     pub remote_name: String,
     pub ssh_key_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub enum ConflictResolutionDto {
     UseLocal,
     UseRemote,
@@ -111,8 +120,9 @@ pub enum ConflictResolutionDto {
     Skip,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct HistoryCommitDto {
     pub hash: String,
     pub timestamp: i64,
@@ -120,16 +130,18 @@ pub struct HistoryCommitDto {
     pub entry_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct EntryPreviewFieldDto {
     pub name: String,
     pub value: String,
     pub is_secret: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct EntryPreviewDto {
     pub id: String,
     pub commit: String,
@@ -150,8 +162,9 @@ pub struct EntryPreviewDto {
     pub updated_at: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct ConflictPreviewDto {
     pub entry_id: String,
     pub local: Option<EntryPreviewDto>,

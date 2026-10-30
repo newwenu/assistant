@@ -6,7 +6,7 @@ import prettierConfig from "eslint-config-prettier";
 import { defineConfig } from "eslint/config";
 
 export default defineConfig(
-  { ignores: ["dist", "src-tauri"] },
+  { ignores: ["dist", "src-tauri", "src/vault/core/contract"] },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   prettierConfig,

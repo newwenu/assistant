@@ -1,7 +1,9 @@
 use serde::Serialize;
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub enum VaultErrorCode {
     Locked,
     InvalidPassword,
@@ -35,8 +37,9 @@ impl VaultErrorCode {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
 pub struct VaultErrorDto {
     pub code: VaultErrorCode,
     pub message: String,

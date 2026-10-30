@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "contract:gen": "cd src-tauri && cargo test -p assistant-vault --lib export_bindings",
     "models-dev:update": "node scripts/update-models-dev-snapshot.mjs",
     "models-dev:check": "node scripts/update-models-dev-snapshot.mjs --check"
   },
