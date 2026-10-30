@@ -166,24 +166,25 @@
 
 ---
 
-## S4 — 生成 + 漂移检查
+## S4 — 生成
 
 两个阻塞已定案（规格 §6 D8 / D9 / D10），按下列执行。
 
-- [ ] S4.1 `dto/` 与 `shared/` 的全部 wire 类型加 `#[derive(TS)]` + `#[ts(export)]`；输入类 `VaultEntryCreate` / `VaultEntryUpdate` 的每个 `Option` 字段加 `#[ts(optional = nullable)]`，**不动 serde**（规格 D9）
-- [ ] S4.1.1 先只加 `optional = nullable` 跑一次导出，确认产出可选键；不是则按 D9 回退方案 A（输入类保留手写）
-- [ ] S4.2 `#[ts(export_to = "../../../src/vault/core/contract/")]`，`cargo test -p assistant-vault --lib export_bindings` 产出每类型一文件；删除 S4-0 的 `src-tauri/crates/assistant-vault/bindings/`
-- [ ] S4.3 `vault.types.ts` 退化为纯 barrel（同名直出 + `XDto as X` 别名）；`RevealedField` 等仅前端组合类型保留手写；`ParsedOtpAuth.algorithm` / `StrengthResult.warnings` 改引生成物，收紧为 `TotpAlgorithmDto` / `StrengthWarning[]`
-- [ ] S4.4 `scripts/check-vault-contract.mjs` + `package.json` 的 `contract:check`：跑 `export_bindings` 后断言 `git status --porcelain -- src/vault/core/contract` 为空
-- [ ] S4.5 `eslint.config.ts` 的 `ignores` 与新增 `.prettierignore` 排除生成目录；`npm run typecheck` + `npm run test` + `npm run lint`
+- [x] S4.1 `dto/` 与 `shared/` 的全部 wire 类型加 `#[derive(TS)]` + `#[ts(export)]`；输入类 `VaultEntryCreate` / `VaultEntryUpdate` 的每个 `Option` 字段加 `#[ts(optional = nullable)]`，**不动 serde**（规格 D9）—— `dto/mod.rs` / `sync.rs` / `totp.rs` / `ssh.rs` / `recovery.rs` / `integrity.rs` / `hibp.rs` / `audit.rs` / `error.rs` 与 `shared/mod.rs` 全部加派生；`error.rs` 保持原「仅 `Serialize`」不引入 `Deserialize`
+- [x] S4.1.1 先只加 `optional = nullable` 跑一次导出，确认产出可选键；不是则按 D9 回退方案 A（输入类保留手写）—— 实测产出 `username?: string | null` 等 5 个可选键，D9 方案 D 成立，无需回退
+- [x] S4.2 全部 wire 类型共用 `#[ts(export_to = "vault.contract.ts")]`，`cargo test -p assistant-vault --lib export_bindings` 产出**单文件**（多类型追加、一个 header）；类型增多后再按 `dto/*.rs` 模块分组、互相引用的类型同组；删除 S4-0 的 `src-tauri/crates/assistant-vault/bindings/`。导出基准目录由仓库根 `.cargo/config.toml` 的 `TS_RS_EXPORT_DIR = { value = "src/vault/core/contract", relative = true }` 提供，故 `export_to` 只写文件名、不再四级 `..`；同一文件内 `i64` / `u64` 由 `TS_RS_LARGE_INT = "number"` 渲染为 `number`（与 `serde_json` 实际输出一致，`bigint` 会与运行时契约不符）（§6 D10 附注）—— 产物 36 类型 / 5317 字节 / 单 header / 无跨文件 import，`bindings/` 已删除且重跑不再生成
+- [x] S4.2.1 执行 cargo 命令时 cwd 固定为 `src-tauri`；从仓库根（`--manifest-path`）调用会落到 `CARGO_HOME` 的另一镜像源、本地缓存不匹配，`--offline` 直接报 `failed to download`（§6 D8 / D10 附注实测）—— `contract:gen` 脚本内以 `cd src-tauri` 固定
+- [x] S4.3 `vault.types.ts` 退化为纯 barrel（同名直出 + `XDto as X` 别名）；`RevealedField` 等仅前端组合类型保留手写；`ParsedOtpAuth.algorithm` / `StrengthResult.warnings` 改引生成物，收紧为 `TotpAlgorithmDto` / `StrengthWarning[]`—— barrel 从 311 行降到 50 行，仅 `RevealedField` 为手写；两处宽类型随生成物自动收紧（`algorithm: TotpAlgorithmDto`、`warnings: Array<StrengthWarning>`），`npm run typecheck` 零错误
+- [x] S4.4 `package.json` 新增生成入口 `contract:gen` = `cd src-tauri && cargo test -p assistant-vault --lib export_bindings`（cwd 必须是 `src-tauri`，见 D10 附注）。**不建漂移检查脚本、不做 `git status` / `git diff` 比对**：比对基线是 HEAD / 索引区而非生成器产出，暂存态与未跟踪文件都会误报，「重新生成后提交」是否通过取决于是否 commit，属版本控制状态混入生成正确性判定（规格 D8）—— 实测 `npm run contract:gen` 36 passed
+- [x] S4.5 `eslint.config.ts` 的 `ignores` 与新增 `.prettierignore` 排除生成目录；`npm run typecheck` + `npm run test` + `npm run lint`—— 两项排除均已就位，三项检查全绿
 
 ---
 
 ## S5 — 事件遗留清理（D11）
 
-- [ ] S5.1 删 `src-tauri/src/cmd/vault/reveal.rs` 的 4 处 `emit_broadcast`（password / notes 各一正常分支 + 一限流分支），及 `event_name::VAULT_REVEAL` / `VAULT_REVEAL_RATE_LIMITED` 常量
-- [ ] S5.2 删 `event_name::VAULT_META_INTEGRITY_WARNING` 常量、`VaultMetaIntegrityWarningPayload`、`useVaultEvents.ts` 的监听
-- [ ] S5.3 全仓剩余 `emit_broadcast` 均有 `listen()` 消费者；`cargo clippy` + `npm run typecheck` 通过
+- [x] S5.1 删 `src-tauri/src/cmd/vault/reveal.rs` 的 4 处 `emit_broadcast`（password / notes 各一正常分支 + 一限流分支），及 `event_name::VAULT_REVEAL` / `VAULT_REVEAL_RATE_LIMITED` 常量—— 4 处已删；两常量已删，全仓引用命中 0（限流结果已由 `Err(rateLimited)` 同步返回，广播无消费者）
+- [x] S5.2 删 `event_name::VAULT_META_INTEGRITY_WARNING` 常量、`VaultMetaIntegrityWarningPayload`、`useVaultEvents.ts` 的监听—— 三件套已删；连带清理 `useVaultEvents.ts` 的 `notifyWarning` 导入与 `unlistenMetaWarning`，及 i18n 两语言 `vault.meta` 组（仅这两条文案、已无消费者）
+- [x] S5.3 全仓剩余 `emit_broadcast` 均有 `listen()` 消费者；`cargo clippy` + `npm run typecheck` 通过—— 剩余 28 处分布在 tray / setup / lib / lifecycle / biometric / provider / conversation / config / compaction / chat-stream / app，事件名均在 `event_name` 内且有前端监听；`cargo clippy --all-targets` 通过（仅既有 `unused` 与增量编译目录权限告警）
 
 ---
 
@@ -203,6 +204,6 @@
 - [x] V12：`AppConf` 无 `vault_*` 字段（仅 `vault_enabled`）；`vault-config.json` 不在 vault 仓库目录【S3】—— `vault_enabled` 零消费者未保留，实际为 0 个字段；`vault-config.json` 落 `dirs::config_dir()/APP_IDENTIFIER/`
 - [x] V13：仓库目录内只有 `.vault-meta` 与 `entries/*.enc`（规格 §3.5 ② 白名单）【S3】—— `vault_file` 仅写这两类；`sync_engine` 导出路径同白名单；`.git` 属仓库自身，不计入
 - [x] V14：已剔除——原「宿主三处硬编码消失」随 S3.3 一并取消（规格 D4）；`vault-unlock` 路由核对已完成（无该路由）【S3】
-- [ ] V15：`npm run contract:check` 通过（生成物与 `src/vault/core/contract/` 逐文件一致，含未跟踪新增文件），且 S4-0 结论已回填规格 D3 附注【S4】—— S4-0 结论已回填；漂移检查已定案为 D8，待 S4 落地
-- [x] V16：`cargo fmt --check` + `cargo clippy` + `npm run lint` + `npm run typecheck` + `npm run test` 全绿【各阶段】—— 2026-10-30 实测：`cargo fmt --check` 0 diff；`cargo clippy -p assistant-vault -p assistant-config --all-targets` 仅既有测试文件 `unused` 警告（非本次新增）；`cargo check --all-targets` 通过；`cargo test -p assistant-config` 64 passed；`cargo test -p assistant-vault` 66 passed（含 S4-0 后 3 条 `export_bindings`）；`npm run lint` / `npm run typecheck` 零错误；`npm run test` 184 passed（10 files）。**S4 全量生成未开工，本条按 S1–S3 + S4-0 已交付范围验收**
-- [ ] V17：`vault.types.ts` 无实体类型定义（仅 barrel 导出与 `RevealedField` 仅前端组合类型）；生成目录无手改痕迹、未被 prettier / eslint 改写【S4】
+- [x] V15：`npm run contract:gen` 重新生成成功，且 `src/vault/core/contract/vault.contract.ts` 存在并带 ts-rs 生成头（路径失效时会静默落回 `bindings/`，须人工确认）；不含工作区比对【S4】—— 2026-10-30 实测：`contract:gen` 36 passed；产物单文件带 ts-rs header，`src-tauri/crates/assistant-vault/bindings/` 未再生成任何文件（已删除）
+- [x] V16：`cargo fmt --check` + `cargo clippy` + `npm run lint` + `npm run typecheck` + `npm run test` 全绿【各阶段】—— 2026-10-30 实测：`cargo fmt --check` 0 diff；`cargo clippy -p assistant-vault -p assistant-config --all-targets` 仅既有测试文件 `unused` 警告（非本次新增）；`cargo check --all-targets` 通过；`cargo test -p assistant-config` 64 passed；`cargo test -p assistant-vault` 66 passed（含 S4-0 后 3 条 `export_bindings`）；`npm run lint` / `npm run typecheck` 零错误；`npm run test` 184 passed（10 files）。**S4 / S5 落地后复验**：`cargo fmt --check` 0 diff；`cargo clippy --all-targets` 通过；`cargo test -p assistant-vault` 全绿（含 36 条 `export_bindings`）；`npm run lint` / `npm run typecheck` 零错误；`npm run test` 184 passed（10 files）
+- [x] V17：`vault.types.ts` 无实体类型定义（仅 barrel 导出与 `RevealedField` 仅前端组合类型）；生成目录无手改痕迹、未被 prettier / eslint 改写【S4】—— `vault.types.ts` 50 行，实体类型 0（仅 `RevealedField` 一个前端组合类型）；生成目录已进 `.prettierignore` 与 `eslint.config.ts` 的 `ignores`，`npm run lint` / `npm run format` 均不触达

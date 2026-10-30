@@ -204,11 +204,11 @@ C 的数据源不是声明而是真实读取点：扫描 `cmd/vault/*.rs` 的 `.
 
 `RepositoryState` 的 wire 形态只用 serde（`rebaseInteractive`），`as_str()` 的 `rebase-interactive` 不外发。等价断言两边同走 serde，天然一致。
 
-生成：`ts-rs` 每类型一文件产出到 `src/vault/core/contract/`（§6 D10），漂移检查为 `npm run contract:check`（§6 D8：跑 `export_bindings` 后断言 `git status --porcelain -- src/vault/core/contract` 为空）。前置条件三条：值形态与错误通道收编完成、手写类型拆分完成（`kind` 不进生成）、窄类型问题已排期。
+生成：`ts-rs` 把 dto 层 wire 类型导出到 **单文件** `src/vault/core/contract/vault.contract.ts`（§6 D10）；多个类型共用同一 `export_to` 时**追加进同一文件、只保留一个 header**（S4-0 延伸实测）。类型数量膨胀后再按 `dto/*.rs` 模块分组（`sync` / `ssh` / `totp` / `audit` / `error` / `entries`），每组一文件，**互相引用的类型必须同组**。导出基准目录由仓库根 `.cargo/config.toml` 的 `TS_RS_EXPORT_DIR` 提供，`export_to` 只写文件名；同文件内 `i64` / `u64` 由 `TS_RS_LARGE_INT = "number"` 渲染为 `number`（§6 D10 附注）。生成入口为 `npm run contract:gen`（§6 D8：以 `src-tauri` 为 cwd 跑 `export_bindings`，**不设漂移检查脚本、不做工作区比对**）。前置条件三条：值形态与错误通道收编完成、手写类型拆分完成（`kind` 不进生成）、窄类型问题已排期。
 
-`ts-rs` 是本次唯一新增第三方依赖。**拉取已确认**：USTC sparse 镜像可解析 `ts-rs v12.0.1`（默认启用 `serde-compat`），`Cargo.lock` 已收录。混合变体（`Readyness`）与 `Option` 载荷的产出形态已由 S4-0 spike 用真实输出验证，结论见 §6 D3 附注。
+`ts-rs` 是本次唯一新增第三方依赖。**拉取已确认**：S4-0 经 USTC sparse 镜像拉取并编译了 `ts-rs v12.0.1`（默认启用 `serde-compat`），`Cargo.lock` 已收录。镜像与 `OPENSSL_DIR` 等机器级变量由本机私有的 `src-tauri/.cargo/config.toml` 提供（已 gitignore，仅 `config.toml.example` 入库），故 **cargo 命令必须以 `src-tauri` 为工作目录**：从仓库根调用会落到 `CARGO_HOME` 的另一镜像源，本地缓存不匹配而必须联网，`--offline` 直接失败（实测见 §6 D10 附注）。满足该前提且不改 `Cargo.toml` / `Cargo.lock` 时 `cargo test --offline` 即可。混合变体（`Readyness`）与 `Option` 载荷的产出形态已由 S4-0 spike 用真实输出验证；单文件追加、`export_to` 基准目录、跨文件 import 三条由 S4-0 延伸实测确认，结论见 §6 D3 附注。
 
-**S4 开工前的两个新增阻塞**（S4-0 实测后暴露，非原规格预判）——**已全部定案（§6 D8 / D9）**：
+**S4 开工前的两个新增阻塞**（S4-0 实测后暴露，非原规格预判）——**已全部定案（§6 D8 / D9）**。另有一条由根级配置实测得出的硬约束已并入 D8：**cargo 命令必须以 `src-tauri` 为工作目录**，否则离线构建直接失败（D10 附注）。
 
 1. **仓库无 CI**。`docs/ARCHITECTURE.md` 已记录「CI 目录不存在」，`.github/workflows` 为空。`git diff --exit-code` 无挂载点，须先定漂移检查的执行位置（三条备选见 §7.6，已定案 D8）。
 2. **输入类 DTO 的可选键与生成物语义冲突**。`VaultEntryCreate` / `VaultEntryUpdate` 的 `Option<String>` 在 serde 默认形态下输出 `null`，ts-rs 生成必填键 `username: string | null`；前端手写为可选键 `username?: string`。§3.1 第 7 项「一律输出 `null`」只约束输出方向，输入方向未定。直接全量替换会让所有构造 entry 的调用点被迫显式写 `null`。三条备选取舍见 §7.6，已定案 D9（新增方案 D）。
@@ -225,8 +225,8 @@ C 的数据源不是声明而是真实读取点：扫描 `cmd/vault/*.rs` 的 `.
 | S2 | 门禁收敛为 `with_unlocked` + `on_locked`；就地声明 `precondition`；启用校验 D | 校验 D 可被破坏；`on_locked` 为唯一锁定入口 |
 | S3 | `vault_*` 配置外置为 `VaultConf`；启用校验 C。**前端注册收敛（原 S3.3）已剔除**（§6 D4） | `AppConf` 零 `vault_*` 字段（`vault_enabled` 无消费者未保留）；校验 C 全绿 |
 | S4-0 | `ts-rs` spike：仅导出 `Readyness` / 带 `Option` 载荷的 DTO / `RepositoryState`，人工比对真实产出 | 结论回填 §6 D3 附注；三个类型均可用 | ✅ 2026-10-30 |
-| S4 | `ts-rs` 生成 + 漂移检查 | `npm run contract:check` 通过（生成物与 `src/vault/core/contract/` 逐文件一致） | 待开工，阻塞已定案（§6 D8 / D9 / D10） |
-| S5 | 事件遗留清理：删 reveal 广播与 meta-integrity 三件套（§6 D11） | 剩余 `emit_broadcast` 均有 `listen()` 消费者 | 无依赖，可与 S4 并行 |
+| S4 | `ts-rs` 生成 | `npm run contract:gen` 重新生成成功，产物存在且带生成头（无脚本、无工作区比对） | ✅ 2026-10-30（36 类型单文件） |
+| S5 | 事件遗留清理：删 reveal 广播与 meta-integrity 三件套（§6 D11） | 剩余 `emit_broadcast` 均有 `listen()` 消费者 | ✅ 2026-10-30 |
 
 S1 拆三段是因为「设计 DTO」与「替换签名」压在一个窗口时，字段形态写错要等签名和前端全改完才暴露。S1-A / S1-B 不动运行行为。
 
@@ -249,12 +249,12 @@ S1-C 内部顺序：错误通道 → HIBP 元组结构化 → cmd 层本地类�
 | D5 | S2.2 `with_unlocked` 全量替换与 S2.4 `on_locked` 收敛**同一 diff 提交** | 分开发布会短暂存在两套锁定清理路径，正是 S2 要消灭的形态 |
 | D6 | S3 可与 S2 并行，且不阻塞 S4 | S3 只迁配置读取点、不改签名；两者在 `cmd/vault/mod.rs` / `sync.rs` 有文件重叠，并行时按文件划分，冲突则 S3 让位 S2 |
 | D7 | SSH 两个 DTO（`SshKeyInfoDto` / `SshKeyMetaDto`）的转换放 **`cmd/vault/ssh.rs`**，用**自由函数**（`fn ssh_key_info_dto(…) -> …`），**不写 `impl From`**；`assistant-vault` **不加** `assistant-security` 依赖边 | ① `assistant-security` 传递依赖 `reqwest` / `arboard` / `ssh-key` / `rsa` / `windows`，vault 业务代码零处调用它，为两条 `From` 让整个 crate 继承这套依赖不划算；② 写在 `cmd` 层则 `impl From<assistant_security::X> for assistant_vault::dto::XDto` 三者皆外部，**孤儿规则拒绝编译**，只能用自由函数或本地 trait；③ cmd 层本就同时看得见两端，穷尽解构的编译期护栏不丢 |
-| D8 | 阻塞 1 定案：漂移检查挂 **`npm run contract:check`**（`scripts/check-vault-contract.mjs`：先跑 `cargo test -p assistant-vault --lib export_bindings`，再断言 `git status --porcelain -- src/vault/core/contract` 为空） | 沿用 `scripts/update-models-dev-snapshot.mjs --check` 既有「生成 + 比对」模式，零新增基础设施。**不用 `git diff --exit-code`**：ts-rs 每类型一文件，新增 DTO 会产出未跟踪文件，`git diff` 对未跟踪文件恒为空，`git status --porcelain` 才同时覆盖改动 / 新增 / 删除。不挂 `.git/hooks`（不入库，换机即失效），不新增 workflow（项目无 CI 基建，为单条检查引入整套 setup 成本远高于收益；将来若有 CI，直接挂该脚本即可） |
+| D8 | 阻塞 1 定案：**不设漂移检查脚本**，只保留生成入口 `npm run contract:gen`（= `cd src-tauri && cargo test -p assistant-vault --lib export_bindings`） | **cwd 必须是 `src-tauri`**：镜像与 `OPENSSL_DIR` 在本机私有的 `src-tauri/.cargo/config.toml`，cargo 按工作目录向上找配置，从仓库根调用会落到另一镜像源、本地缓存不匹配，`--offline` 直接失败（D10 附注实测）。**为什么不做比对**：`git status` / `git diff` 的基线是 HEAD / 索引区，不是生成器产出——①「改了协议并重新生成后提交」是正常开发动作，却会因比对时机不同而红绿不定；② 暂存中间态与未跟踪文件都会误报（单文件下新增类型改的是已跟踪文件，分组或每类型一文件时新增文件未跟踪）；③ 生成正确性不该依赖版本控制的瞬时状态。生成入口保持单一职责：跑导出、覆盖产物。**路径失效的防线**改为人工确认：产物不存在或落回 `src-tauri/bindings/` 时，前端 `import` 会直接报错，`npm run typecheck` 即失败，无需脚本额外断言。不挂 `.git/hooks`（不入库，换机即失效），不新增 workflow（项目无 CI 基建） |
 | D9 | 阻塞 2 定案：**方案 D（新增）**——输入类 `VaultEntryCreate` / `VaultEntryUpdate` 的每个 `Option` 字段加 `#[ts(optional = nullable)]`，生成可选键 `username?: string \| null`；**不动 serde**，不保留手写输入类型 | ① 该形态即 wire 真实语义：字段缺失与 `null` 反序列化都落 `None`，生成物不再比实际更严；② 前端 `\|\| undefined` 构造点零改动（`tsconfig` 未开 `exactOptionalPropertyTypes`，`undefined` 可赋给可选键）；③ 不违反 §9「dto 不加 `skip_serializing_if`」，也不触碰 §3.1 第 7 项的输出侧约定；④ 优于 A：A 会让两个**最易加字段**的输入类型永久留在手写侧，与 D3 附注「S4 无需保留任何手写 DTO 类型」自相矛盾。**回退条件**：`optional = nullable` 是 ts-rs 专属属性，v12 是否产出可选键未在本机源码验证——S4.1 先只加该属性跑一次导出，产出不是可选键即退方案 A（输入类保留手写 + `vault.types.ts` 分区注释） |
-| D10 | 生成物落位与前端命名：产物落 **`src/vault/core/contract/`**（每类型一文件，`#[ts(export_to = "../../../src/vault/core/contract/")]` 相对 crate 根）；`vault.types.ts` 退化为**纯 barrel**（同名直出 + `XDto as X` 别名），前端调用点零改动；生成目录进 `eslint.config.ts` 的 `ignores`，并新增 `.prettierignore` | ① ts-rs 只能每类型一文件（S4-0 实测），§4.3 与任务清单 S4.2 原写的「单文件 `vault.contract.gen.ts`」作废；② 产物必须落在 `src/` 下才被 `tsconfig` 的 `include` 与 Vite 覆盖，落 crate 内 `bindings/` 会越出 `include`，且 eslint `projectService` 找不到项目；③ 生成物不符合仓库 prettier 风格，不加 ignore 会让 `lint`（`prettier/prettier: error`）与 `npm run format` 反复改写生成物，直接打爆漂移检查；④ 选别名而非改调用点：前端类型名与生成物只差 `Dto` 后缀，映射收敛在 barrel 一处，不必为纯命名差异改遍 vault 前端 |
+| D10 | 生成物落位与前端命名：产物落 **`src/vault/core/contract/`**，默认**单文件** `vault.contract.ts`（所有 dto 类型共用 `#[ts(export_to = "vault.contract.ts")]`，多类型追加进同一文件）；类型膨胀后可按 `dto/*.rs` 模块分组，每组一文件，**互相引用的类型必须同组**。`vault.types.ts` 退化为**纯 barrel**（同名直出 + `XDto as X` 别名），前端调用点零改动；生成目录进 `eslint.config.ts` 的 `ignores`，并新增 `.prettierignore`。**导出基准目录由仓库根 `.cargo/config.toml` 提供**：`TS_RS_EXPORT_DIR = { value = "src/vault/core/contract", relative = true }` + `TS_RS_LARGE_INT = "number"`（理由见附注） | ① **单文件可行**（S4-0 延伸实测）：两个类型指向同一 `export_to` 时追加进同一文件、只有一个 header；原 D10 的「ts-rs 只能每类型一文件」是错误外推，已推翻，§4.3 与任务清单 S4.2 原写的「单文件作废」一并撤销；② **根级 `TS_RS_EXPORT_DIR` 已采用**（原「四级 `..`」写法作废）：`export_to` 的相对基准是 crate 内默认产物目录 `bindings/`，实测 `../../../src/…` 落到 `src-tauri/src/…`（差一级）、`../../../../src/…` 才到仓库根 `src/…`，四级嵌套易错且改目录即崩；根级配置把基准一次定死，`export_to` 只写文件名。`relative = true` 使基准相对仓库根而非 `src-tauri`，与 `src-tauri/.cargo/config.toml`（镜像 / `OPENSSL_DIR`）沿 cwd 向上合并、不冲突。**假绿风险已消解**：原顾虑是「配置失效时产物静默落回 `bindings/`」，但该风险在四级 `..` 写法下同样存在，且产物缺失会让前端 `import` 直接失败、`npm run typecheck` 报错，无需脚本断言；③ 产物必须落在 `src/` 下才被 `tsconfig` 的 `include` 与 Vite 覆盖，落 crate 内 `bindings/` 会越出 `include`，且 eslint `projectService` 找不到项目；④ 生成物不符合仓库 prettier 风格，不加 ignore 会让 `lint`（`prettier/prettier: error`）与 `npm run format` 反复改写生成物；⑤ 选别名而非改调用点：前端类型名与生成物只差 `Dto` 后缀，映射收敛在 barrel 一处，不必为纯命名差异改遍 vault 前端；⑥ **`TS_RS_LARGE_INT = "number"`**：ts-rs 默认把 `i64` / `u64` 渲染成 `bigint`，而 `serde_json` 实际输出 JSON number、前端 `JSON.parse` 得到 `number`，默认值会产出与运行时不符的契约（实测 36 个类型中时间戳 / 计数全部受影响），故显式改为 `number` |
 | D11 | 事件遗留定案：**三处一并删除**（原候选二）——删 `reveal.rs` 的 4 处 `emit_broadcast` 与 `event_name::VAULT_REVEAL` / `VAULT_REVEAL_RATE_LIMITED` 常量；删 `event_name::VAULT_META_INTEGRITY_WARNING` 常量 + `VaultMetaIntegrityWarningPayload` + `useVaultEvents.ts` 监听 | reveal 结果已由命令返回值同步送达、限流已走 `Err(rateLimited)`，vault 单窗口、无跨窗口消费者，广播没有存在理由；meta-integrity 的触发点随 v1.5 淘汰，常量 / payload / 监听三件套无生产者。与 §2.2「wire 面必须有消费者」同一条判据。代价：I9 规格第 13 条「前端可监听显示 toast」被取代——该条只在存档目录 `docs/achievement2/` 内，不回溯修改 |
 
-**D3 附注（S4-0 已回填，2026-10-30）**：spike 用 `ts-rs` v12.0.1（`cargo add` 经 USTC 镜像可解析）导出三个真实类型，产出**全部可用**：
+**D3 附注（S4-0 已回填，2026-10-30）**：spike 用 `ts-rs` v12.0.1（`cargo add` 经 `src-tauri/.cargo/config.toml` 配置的 USTC 镜像可解析）导出三个真实类型，产出**全部可用**：
 
 | 类型 | 生成产出 | 结论 |
 |---|---|---|
@@ -264,9 +264,19 @@ S1-C 内部顺序：错误通道 → HIBP 元组结构化 → cmd 层本地类�
 
 附带确认：`#[ts(export)]` 自动生成 `export_bindings_<类型名小写>` 单测，`cargo test -p assistant-vault --lib export_bindings` 即触发写盘；默认输出目录为 crate 根 `bindings/`，可用 `#[ts(export_to = "...")]` 改路径。三个类型均未退回手写，**S4 无需保留任何手写 DTO 类型**。
 
+**S4-0 延伸实测（单文件与路径，2026-10-30）**：复用同一 spike 的三个类型验证 `export_to`，临时探针文件测完即删，确认三件事：
+
+| 验证项 | 做法 | 结果 |
+|---|---|---|
+| 单文件追加 | `ReadynessDto` 与 `RepositoryStateDto` 共用同一 `export_to` 指向一个 `.ts` 文件 | 两个类型都写入同一文件、仅一个 ts-rs header，**追加不覆盖**；文件内顺序为类型名字典序，与测试打印顺序不一致，倾向 ts-rs 全局注册表统一 flush |
+| 路径基准 | 同一类型分别用 `../../../`、`../../../../`、无 `..` 三种前缀 | 基准是 crate 内默认产物目录 `bindings/`：`../../../` → `src-tauri/src/…`（差一级），`../../../../` → 仓库根 `src/…`（正确），无 `..` → `bindings/src/…` |
+| 跨文件 import | 两个类型分落两个文件 | ts-rs 自动生成指向另一文件的相对 import，路径正确；分组时把互相引用的类型放同组可完全避免 import |
+
+**延伸实测未覆盖、仍待验**：① `#[ts(optional = nullable)]` 是否产出可选键（D9 回退条件），按 S4.1.1 单独验证；② 多条 `export_bindings_*` 测试默认并行写同一文件是否稳定——本次顺序为字典序、未见抖动，S4 全量后须复验一次；若不稳定，固定 `--test-threads=1` 或改为单条聚合导出。
+
 spike 导出的是 **dto 层类型**（`ReadynessDto` 等），非领域类型（`Readyness`）。这是正确对象：前端消费的是 wire 形态，领域类型的 `as_str()` 等方法不外发。原规格 D3 行写的 `Readyness` / `RepositoryState` 是简写，实际落点为 dto 同名类型。
 
-**S4 全量开工前的 2 个阻塞已定案（2026-10-30，§6 D8 / D9）**：仓库无 CI 挂载点 → `npm run contract:check`（D8）；输入类 DTO 可选键与生成物冲突 → 新增方案 D（D9）。S4 可开工；若 D9 的 `optional = nullable` 验证失败而退方案 A，则输入两类保留手写，`ts-rs` 依赖仍用于输出侧，不整体回退。
+**S4 全量开工前的 2 个阻塞已定案（2026-10-30，§6 D8 / D9）**：仓库无 CI 挂载点 → **不设漂移检查脚本**，只保留 `npm run contract:gen` 生成入口（D8）；输入类 DTO 可选键与生成物冲突 → 新增方案 D（D9）。S4 可开工；若 D9 的 `optional = nullable` 验证失败而退方案 A，则输入两类保留手写，`ts-rs` 依赖仍用于输出侧，不整体回退。
 
 **文档勘误**：§3.2 曾写「收编 `assistant_security` 的类型需给 `assistant-vault` 新增该依赖边」。该表述已被 D7 取代——SSH 两类不走 `convert.rs`，故无依赖边。
 
@@ -286,12 +296,12 @@ spike 导出的是 **dto 层类型**（`ReadynessDto` 等），非领域类型�
 | **S2** | 门禁收敛 + 就地声明 `precondition` + 校验 D | 校验 D 可被破坏；`on_locked` 为唯一锁定入口 | S1-C |
 | **S3** | 配置外置 + 校验 C（前端注册收敛已剔除，D4） | `AppConf` 零 `vault_*` 字段；校验 C 全绿 | S1-C（可与 S2 并行，D6） |
 | **S4-0** | `ts-rs` spike：验证混合变体 / `Option` 载荷 / 枚举产出 | 结论回填 D3 附注；三个类型均可用 | S1-C |
-| **S4** | `ts-rs` 生成 + 漂移检查（D8 / D9 / D10） | `npm run contract:check` 通过 | S4-0 |
+| **S4** | `ts-rs` 生成（D8 / D9 / D10） | `npm run contract:gen` 重新生成成功，产物存在且带生成头 | S4-0 |
 | **S5** | 事件遗留清理（D11） | 剩余 `emit_broadcast` 均有 `listen()` 消费者 | 无（可与 S4 并行） |
 
 阶段依赖链：S1-A → S1-B → S1-C → {S2, S3, S4-0} → S4；S5 独立。S1 拆三段的原因见 §5；S3 剔除前端注册收敛的理由见 D4。
 
-**S4-0 完成记录（2026-10-30）**：USTC 镜像可拉取 `ts-rs v12.0.1`，三个高风险类型产出全部符合预期，结论已回填 D3 附注。依赖已引入（`crates/assistant-vault/Cargo.toml` 的 `ts-rs = "12"`），产物落 `crates/assistant-vault/bindings/`（每类型一文件），S4 迁出至 `src/vault/core/contract/`（D10）。S4 全量开工前的 2 个阻塞已定案（§6 D8 / D9）；若 D9 回退条件触发，须回退该依赖与三个 `#[derive(TS)]`，不保留未使用依赖。
+**S4-0 完成记录（2026-10-30）**：经 `src-tauri/.cargo/config.toml` 配置的 USTC 镜像可拉取 `ts-rs v12.0.1`，三个高风险类型产出全部符合预期，结论已回填 D3 附注。依赖已引入（`crates/assistant-vault/Cargo.toml` 的 `ts-rs = "12"`），默认产物落 `crates/assistant-vault/bindings/`（每类型一文件，仅 spike 默认行为）。同日延伸实测确认**单文件追加可行**、`export_to` 基准为 `bindings/`，S4 改为导出到 `src/vault/core/contract/vault.contract.ts`；并实测根级 `TS_RS_EXPORT_DIR` 可消除 `..` 嵌套但已否决（D10 附注），同时得出「cargo 必须以 `src-tauri` 为 cwd」的硬约束（D8）。S4 全量开工前的 2 个阻塞已定案（§6 D8 / D9）；若 D9 回退条件触发，须回退该依赖与三个 `#[derive(TS)]`，不保留未使用依赖。
 
 ### 7.2 S1-A 确认结论
 
@@ -333,11 +343,11 @@ D5 已定：`with_unlocked` 全量替换与 `on_locked` 收敛必须同一 diff 
 
 **阻塞 1：仓库无 CI，`git diff --exit-code` 无挂载点**
 
-`docs/ARCHITECTURE.md` 记录「CI 目录不存在」，`.github/workflows` 为空。原 S4.4 的写法无落点。三条备选（保留以备追溯，结论见下方「定案」）：
+`docs/ARCHITECTURE.md` 记录「CI 目录不存在」，`.github/workflows` 为空。原 S4.4 的写法无落点。三条备选（保留以备追溯，结论见下方「定案」——**A 的比对部分已否决，只保留生成**）：
 
 | 方案 | 做法 | 取舍 |
 |---|---|---|
-| A（推荐） | 照 `package.json` 已有 `models-dev:check` 先例，加 `npm run contract:check` = `cargo test -p assistant-vault --lib export_bindings && git diff --exit-code -- src/vault/core` | 与项目既有「生成 + 比对」模式一致，零新增基础设施；靠人工 / 本地 hook 触发，非自动拦截 |
+| A（推荐，比对部分已否决） | 照 `package.json` 已有 `models-dev:check` 先例，加 `npm run contract:check` = `cargo test -p assistant-vault --lib export_bindings && git diff --exit-code -- src/vault/core` | 与项目既有「生成 + 比对」模式一致，零新增基础设施；靠人工 / 本地 hook 触发，非自动拦截。**否决理由**：`git diff` / `git status` 的基线是 HEAD / 索引区而非生成器产出，「改协议 + 重新生成 + 提交」这类正常动作红绿取决于是否 commit，且暂存中间态、未跟踪新增文件都会误报（§6 D8） |
 | B | 新增 `.github/workflows/contract.yml` | 能自动拦截，但项目当前无 CI 基建，为单条检查引入整套 workflow 成本高 |
 | C | 挂 `.git/hooks/pre-commit` | 本地强制，但 hook 不入库，换机器即失效 |
 
@@ -355,11 +365,11 @@ D5 已定：`with_unlocked` 全量替换与 `on_locked` 收敛必须同一 diff 
 
 | 阻塞 | 结论 | 依据 |
 |---|---|---|
-| 阻塞 1 | 采用 A，但比对命令改为 `git status --porcelain -- src/vault/core/contract`，脚本落 `scripts/check-vault-contract.mjs`，入口 `npm run contract:check` | 见 §6 D8。`git diff` 对未跟踪文件恒为空，ts-rs 每类型一文件，新增 DTO 必然产生未跟踪文件，用 `diff` 会漏报。不选 B（项目无 CI 基建），不选 C（hook 不入库） |
+| 阻塞 1 | **A / B / C 全不选，改为「只生成不比对」**：保留入口 `npm run contract:gen`（= `cd src-tauri && cargo test -p assistant-vault --lib export_bindings`），**不建脚本、不做 `git status` / `git diff` 比对** | 见 §6 D8。比对基线是 HEAD / 索引区而非生成器产出：`git diff` 对未跟踪文件恒为空，`git status` 又会把「改协议 + 重新生成 + 提交」判红、把暂存中间态与未跟踪新增文件误报为漂移，属版本控制瞬时状态混入生成正确性判定。cwd 固定 `src-tauri` 一条仍保留（cargo 按 cwd 向上找配置，从仓库根调用离线即失败）。产物落回 `bindings/` 的失效场景由 `npm run typecheck` 兜底——前端 `import` 直接失败，无需脚本断言。不选 B（项目无 CI 基建），不选 C（hook 不入库） |
 | 阻塞 2 | **A / B / C 全不选，新增方案 D**：输入类每个 `Option` 字段加 `#[ts(optional = nullable)]`，生成 `username?: string \| null`，serde 不动 | 见 §6 D9。该形态即 wire 真实语义（缺字段与 `null` 都落 `None`），前端 `\|\| undefined` 构造点零改动，且不让两个最易加字段的输入类型永久留在手写侧。**落地前须先验证**：v12 是否真把 `optional = nullable` 渲染为可选键；若不是，退方案 A |
 | 事件遗留 | 采用「三处一并删除」 | 见 §6 D11。reveal 结果同步返回、限流走 `Err`，vault 单窗口无跨窗口消费者；meta-integrity 触发点已淘汰，常量 / payload / 监听三件套无生产者 |
 
-三条结论均已回填 §6 决策表与任务清单 S4 / S5 步骤，S4 可开工。
+三条结论均已回填 §6 决策表与任务清单 S4 / S5 步骤；S4 与 S5 已于 2026-10-30 落地。
 
 ---
 
