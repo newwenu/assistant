@@ -5,6 +5,8 @@ export type SettingsCategoryId = string & {};
 
 export type SettingsPageId = string & {};
 
+export type PageVisibility = "sidebar" | "deepLinkOnly";
+
 export interface SettingsPageManifest {
   id: SettingsPageId;
   categoryId: SettingsCategoryId;
@@ -12,9 +14,17 @@ export interface SettingsPageManifest {
   keywords: string[];
   icon: FC;
   order: number;
+  navParent?: string;
+  visibility: PageVisibility;
+  emptyPage: boolean;
   component: RecoverableLazyComponent<ComponentType>;
 }
 
-export type SettingsPageDefinition = Omit<SettingsPageManifest, "component"> & {
+export type SettingsPageDefinition = Omit<
+  SettingsPageManifest,
+  "component" | "visibility" | "emptyPage"
+> & {
   load: () => Promise<{ default: ComponentType }>;
+  visibility?: PageVisibility;
+  emptyPage?: boolean;
 };

@@ -1,7 +1,7 @@
 import { Button, Typography, Space, App, Switch } from "antd";
 import { CloudUploadOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useConfGroup } from "@/settings/core/useConfGroup";
 import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
 import type { SshKeyInfo } from "../core/vault.types";
 import styles from "../vault.module.css";
@@ -25,9 +25,7 @@ export default function SshAgentTab({
 }: SshAgentTabProps) {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  const sshAutoAddEnabled = useSettingsStore(
-    (s) => s.vaultConf?.vaultSshAutoAdd ?? false,
-  );
+  const sshAutoAddEnabled = useConfGroup("vault")?.vaultSshAutoAdd ?? false;
 
   const handleToggleAutoAdd = async (checked: boolean) => {
     try {

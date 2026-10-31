@@ -80,6 +80,11 @@
     }
   },
   "settings": {
+    "not_found": {
+      "title": "Page Not Found",
+      "description": "Settings page \"{{pageId}}\" was not found; it may belong to a disabled feature.",
+      "back": "Back to Settings Overview"
+    },
     "overview": {
       "title": "Settings Overview",
       "subtitle": "View current configuration, click to open detailed settings",
@@ -553,7 +558,9 @@
       "conversation_list": "Conversation list",
       "search_conversation": "Search conversations",
       "view_all_in_main": "View all conversations in main window",
-      "search_more_in_main": "Search more results in main window"
+      "search_more_in_main": "Search more results in main window",
+      "keep_expanded": "Keep expanded",
+      "stop_keep_expanded": "Stop keeping expanded"
     }
   },
   "history": {

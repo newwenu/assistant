@@ -8,5 +8,10 @@ export function definePage(
   definition: SettingsPageDefinition,
 ): SettingsPageManifest {
   const component = lazyWithRecovery(definition.load);
-  return { ...definition, component };
+  return {
+    ...definition,
+    visibility: definition.visibility ?? "sidebar",
+    emptyPage: definition.emptyPage ?? false,
+    component,
+  };
 }

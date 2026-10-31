@@ -3,36 +3,27 @@ import { Form } from "antd";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { translateKey } from "@/i18n";
 import { createLogger } from "@/services/logger";
-import type {
-  SettingDefinition,
-  ConfGroup,
-} from "../../core/field/fieldRegistry";
+import type { SettingDefinition } from "../../core/field/fieldRegistry";
+import type { ConfGroup } from "../../core/types/confRegistry";
 import {
   getDefinitionsByGroup,
   INTERMEDIATE_TYPES,
-  CONF_KEY_MAP,
 } from "../../core/field/fieldRegistry";
 import { runSideEffects } from "../../core/sideEffectRegistry";
 import { SettingField } from "../renderers/SettingField";
 import { toConfRecord } from "../../core/types/confUtils";
+import { useConfGroup } from "../../core/useConfGroup";
 import { optimisticConfUpdate } from "../../core/optimisticUpdate";
 import { useConfPatchHandlers } from "../../core/useConfPatchHandlers";
-import { useSettingsStore } from "@/stores/settingsStore";
 import { useSettingMessage } from "../useSettingMessage";
 
 const log = createLogger("SettingsGroup");
 
 interface SettingsGroupProps {
   group: ConfGroup;
-  definitions?: SettingDefinition[];
+  definitions?: readonly SettingDefinition[];
   onPatch?: (patch: Record<string, unknown>) => Promise<void>;
   onPatchComplete?: (patch: Record<string, unknown>) => Promise<void>;
-}
-
-function useConfByGroup(group: ConfGroup): Record<string, unknown> | null {
-  const confKey = CONF_KEY_MAP[group];
-  const conf = useSettingsStore((s) => s[confKey]);
-  return toConfRecord(conf);
 }
 
 function readFieldValue(
@@ -57,7 +48,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
   onPatchComplete: externalOnPatchComplete,
 }) => {
   const defs = definitions ?? getDefinitionsByGroup(group);
-  const conf = useConfByGroup(group);
+  const conf = toConfRecord(useConfGroup(group));
   const { onPatch: internalOnPatch, onPatchComplete: internalOnPatchComplete } =
     useConfPatchHandlers(group);
   const onPatch = externalOnPatch ?? internalOnPatch;

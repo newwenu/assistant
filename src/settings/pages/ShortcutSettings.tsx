@@ -3,6 +3,7 @@ import { Input, Button, Space, Typography } from "antd";
 import { SearchOutlined, UndoOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useConfGroup } from "@/settings/core/useConfGroup";
 import { dispatchKeybindingsReset } from "@/settings/core/settingsDispatcher";
 import { SettingsGroup } from "../shared/sections/SettingsGroup";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
@@ -17,14 +18,14 @@ import { useSettingMessage } from "../shared/useSettingMessage";
 
 export const ShortcutSettings: React.FC = () => {
   const { t } = useTranslation();
-  const loadAppConf = useSettingsStore((s) => s.loadAppConf);
-  const appConf = useSettingsStore((s) => s.appConf);
+  const loadConf = useSettingsStore((s) => s.loadConf);
+  const appConf = useConfGroup("app");
   const [searchQuery, setSearchQuery] = useState("");
   const msg = useSettingMessage();
 
   useEffect(() => {
-    void loadAppConf();
-  }, [loadAppConf]);
+    void loadConf("app");
+  }, [loadConf]);
 
   const keybindings = appConf?.keybindings ?? DEFAULT_KEYBINDINGS;
 

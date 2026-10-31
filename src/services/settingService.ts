@@ -1,10 +1,4 @@
 import { tauriInvoke as invoke } from "./tauriInvoke";
-import type {
-  AppConf,
-  OrbConf,
-  MascotConf,
-  VaultConf,
-} from "../settings/core/types/confTypes";
 
 function toSnakeCaseKey(key: string): string {
   return key.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);
@@ -27,15 +21,6 @@ export interface InstallAssetResult {
 }
 
 export const settingService = {
-  getAppConf: (): Promise<AppConf> => invoke<AppConf>("get_app_conf"),
-
-  getOrbConf: (): Promise<OrbConf> => invoke<OrbConf>("get_orb_conf"),
-
-  getMascotConf: (): Promise<MascotConf> =>
-    invoke<MascotConf>("get_mascot_conf"),
-
-  getVaultConf: (): Promise<VaultConf> => invoke<VaultConf>("get_vault_conf"),
-
   getAppVersion: (): Promise<string> => invoke<string>("get_app_version"),
 
   getRustcVersion: (): Promise<string> => invoke<string>("get_rustc_version"),

@@ -1,77 +1,42 @@
 import { create } from "zustand";
 import { createLogger } from "@/services/logger";
+import type { ConfGroup, ConfStore } from "@/settings/core/types/confRegistry";
+import { fetchConf, getConfSlot } from "@/settings/core/confRuntime";
+import { applyLocaleChange } from "@/i18n/localeApplier";
+
 export type {
   AppConf,
   OrbConf,
   MascotConf,
-  VaultConf,
 } from "@/settings/core/types/confTypes";
-import type {
-  AppConf,
-  OrbConf,
-  MascotConf,
-  VaultConf,
-} from "@/settings/core/types/confTypes";
-import { settingService } from "../services/settingService";
-import { applyLocaleChange } from "@/i18n/localeApplier";
 
 const log = createLogger("settingsStore");
 
 export interface SettingsState {
-  appConf: AppConf | null;
-  orbConf: OrbConf | null;
-  mascotConf: MascotConf | null;
-  vaultConf: VaultConf | null;
+  confs: ConfStore;
 
-  loadAppConf: () => Promise<void>;
-  loadOrbConf: () => Promise<void>;
-  loadMascotConf: () => Promise<void>;
-  loadVaultConf: () => Promise<void>;
+  loadConf: <G extends ConfGroup>(group: G) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  appConf: null,
-  orbConf: null,
-  mascotConf: null,
-  vaultConf: null,
+  confs: {},
 
-  loadAppConf: async () => {
+  loadConf: async (group) => {
+    if (!getConfSlot(group)) return;
+    const prevLang = group === "app" ? get().confs.app?.language : undefined;
     try {
-      const prevLang = get().appConf?.language;
-      const conf = await settingService.getAppConf();
-      set({ appConf: conf });
-      if (conf.language && conf.language !== prevLang) {
-        await applyLocaleChange(conf.language);
+      const conf = await fetchConf(group);
+      const next: ConfStore = { ...get().confs };
+      next[group] = conf;
+      set({ confs: next });
+      if (group === "app") {
+        const lang = get().confs.app?.language;
+        if (lang && lang !== prevLang) {
+          await applyLocaleChange(lang);
+        }
       }
     } catch (e) {
-      log.error("loadAppConf failed", e);
-    }
-  },
-
-  loadOrbConf: async () => {
-    try {
-      const conf = await settingService.getOrbConf();
-      set({ orbConf: conf });
-    } catch (e) {
-      log.error("loadOrbConf failed", e);
-    }
-  },
-
-  loadMascotConf: async () => {
-    try {
-      const conf = await settingService.getMascotConf();
-      set({ mascotConf: conf });
-    } catch (e) {
-      log.error("loadMascotConf failed", e);
-    }
-  },
-
-  loadVaultConf: async () => {
-    try {
-      const conf = await settingService.getVaultConf();
-      set({ vaultConf: conf });
-    } catch (e) {
-      log.error("loadVaultConf failed", e);
+      log.error(`loadConf(${group}) failed`, e);
     }
   },
 }));

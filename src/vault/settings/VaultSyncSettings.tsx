@@ -23,7 +23,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { translateKey } from "@/i18n";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useConfGroup } from "@/settings/core/useConfGroup";
 import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
 import { useVaultStore } from "../core/vaultStore";
 import type {
@@ -118,7 +118,7 @@ export default function VaultSyncSettings({
     syncAbort,
   } = useVaultStore();
 
-  const vaultConf = useSettingsStore((s) => s.vaultConf);
+  const vaultConf = useConfGroup("vault");
   const sshHostsVisible = !navigator.platform.toLowerCase().includes("win");
   const [remoteUrl, setRemoteUrl] = useState("");
   const [sshHosts, setSshHosts] = useState("");

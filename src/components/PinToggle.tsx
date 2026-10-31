@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Button, Tooltip } from "antd";
 import { PushpinOutlined, PushpinFilled } from "@ant-design/icons";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useConfGroup } from "@/settings/core/useConfGroup";
 import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
 import { useTranslation } from "react-i18next";
 
 export const PinToggle: React.FC = () => {
-  const appConf = useSettingsStore((s) => s.appConf);
+  const appConf = useConfGroup("app");
   const [pinned, setPinned] = useState(appConf?.stayOnTop ?? false);
   const { t } = useTranslation();
 

@@ -16,7 +16,7 @@ import {
   useMascotStore,
 } from "../mascot";
 import { buildRendererConfig } from "../mascot/core/mascotConfig";
-import { useSettingsStore } from "../stores/settingsStore";
+import { useConfGroup } from "@/settings/core/useConfGroup";
 
 export const OrbBall: React.FC = () => {
   const { ready: confReady } = useOrbConfSync();
@@ -28,7 +28,7 @@ export const OrbBall: React.FC = () => {
   const expandVertical = useOrbStore((s) => s.expandVertical);
   const setHovering = useOrbStore((s) => s.setHovering);
   const mascotFace = useMascotStore((s) => s.face);
-  const mascotConf = useSettingsStore((s) => s.mascotConf);
+  const mascotConf = useConfGroup("mascot");
   const { expand } = useOrbExpand();
   const { onPointerDown, onPointerMove, onPointerUp, hasDraggedRef } =
     useOrbDrag();

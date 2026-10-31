@@ -13,8 +13,7 @@ import { useConfPatchHandlers } from "../../core/useConfPatchHandlers";
 const MASCOT_FIXED_SETTINGS = [MASCOT_RENDERER_SETTING, MASCOT_COLOR_SETTING];
 
 export const OrbBallSection: React.FC = () => {
-  const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
-  const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
+  const loadConf = useSettingsStore((s) => s.loadConf);
   const { onPatch, onPatchComplete } = useConfPatchHandlers("orb");
 
   const mascotAllSettings = useMemo(() => {
@@ -25,9 +24,9 @@ export const OrbBallSection: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    void loadOrbConf();
-    void loadMascotConf();
-  }, [loadOrbConf, loadMascotConf]);
+    void loadConf("orb");
+    void loadConf("mascot");
+  }, [loadConf]);
 
   return (
     <Form layout="vertical">

@@ -1,6 +1,6 @@
 import { useCallback } from "react";
-import type { ConfGroup } from "./field/fieldRegistry";
-import { dispatchConfPatch, type ConfOf } from "./settingsDispatcher";
+import type { ConfGroup, ConfOf } from "./types/confRegistry";
+import { dispatchConfPatch } from "./settingsDispatcher";
 import { optimisticConfUpdate } from "./optimisticUpdate";
 
 export interface PatchHandlers<G extends ConfGroup = ConfGroup> {

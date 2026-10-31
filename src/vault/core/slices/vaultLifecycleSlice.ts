@@ -1,6 +1,6 @@
 import { createLogger } from "@/services/logger";
 import { vaultService } from "../vault.service";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { getConfValue } from "@/settings/core/useConfGroup";
 import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
 import type {
   VaultEntrySummary,
@@ -14,7 +14,7 @@ const log = createLogger("vaultStore");
 const DEFAULT_AUTO_LOCK_MINUTES = 5;
 
 function getAutoLockMs(): number {
-  const minutes = useSettingsStore.getState().vaultConf?.vaultAutoLockMinutes;
+  const minutes = getConfValue("vault")?.vaultAutoLockMinutes;
   return (minutes ?? DEFAULT_AUTO_LOCK_MINUTES) * 60 * 1000;
 }
 

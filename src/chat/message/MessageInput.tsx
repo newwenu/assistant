@@ -12,7 +12,7 @@ import {
   useMascotStore,
 } from "../../mascot";
 import { buildRendererConfig } from "../../mascot/core/mascotConfig";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { useConfGroup } from "@/settings/core/useConfGroup";
 import { useAttachmentStore } from "../../stores/attachmentStore";
 import {
   buildContentBlocksAsync,
@@ -38,7 +38,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [value, setValue] = useState("");
 
   const mascotFace = useMascotStore((s) => s.face);
-  const mascotConf = useSettingsStore((s) => s.mascotConf);
+  const mascotConf = useConfGroup("mascot");
   const attachments = useAttachmentStore((s) => s.attachments);
   const clearAttachments = useAttachmentStore((s) => s.clearAttachments);
   const { t } = useTranslation();

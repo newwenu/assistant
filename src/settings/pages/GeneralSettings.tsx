@@ -8,12 +8,12 @@ import { APP_SETTINGS, COMPACT_SETTINGS } from "../core/field/fieldDefinitions";
 import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
 
 export const GeneralSettings: React.FC = () => {
-  const loadAppConf = useSettingsStore((s) => s.loadAppConf);
+  const loadConf = useSettingsStore((s) => s.loadConf);
   const { onPatch, onPatchComplete } = useConfPatchHandlers("app");
 
   useEffect(() => {
-    void loadAppConf();
-  }, [loadAppConf]);
+    void loadConf("app");
+  }, [loadConf]);
 
   return (
     <SettingsPageShell>

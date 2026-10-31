@@ -80,6 +80,11 @@
     }
   },
   "settings": {
+    "not_found": {
+      "title": "页面不存在",
+      "description": "找不到设置页面「{{pageId}}」，它可能属于未启用的特性。",
+      "back": "返回设置总览"
+    },
     "overview": {
       "title": "设置总览",
       "subtitle": "查看当前配置状态，点击进入详细设置",
@@ -540,7 +545,9 @@
       "conversation_list": "对话列表",
       "search_conversation": "搜索对话",
       "view_all_in_main": "在主窗口查看全部对话",
-      "search_more_in_main": "在主窗口搜索更多结果"
+      "search_more_in_main": "在主窗口搜索更多结果",
+      "keep_expanded": "保持展开",
+      "stop_keep_expanded": "取消保持展开"
     }
   },
   "history": {

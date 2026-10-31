@@ -12,22 +12,6 @@ export interface AppConf {
   compactSummaryMaxTokens: number;
 }
 
-export interface VaultConf {
-  vaultAutoLockMinutes: number;
-  vaultLockOnScreenLock: boolean;
-  vaultClipboardClearSeconds: number;
-  vaultCipherAlgorithm: "aes256Gcm" | "chacha20Poly1305";
-  vaultBiometricEnabled: boolean;
-  vaultHibpAutoAudit: boolean;
-  vaultSyncRemoteUrl: string | null;
-  vaultSshAutoAdd: boolean;
-  vaultSshUsePageant: boolean;
-  vaultSshUseOpensshAgent: boolean;
-  vaultSshAuthSockOverride: string;
-  vaultSyncLastAt: number | null;
-  vaultSyncSshHosts: string[];
-}
-
 export interface OrbConf {
   clickThrough: boolean;
   alwaysOnTop: boolean;

@@ -1,0 +1,177 @@
+{
+  "pages": [
+    {
+      "id": "vault",
+      "categoryId": "vault",
+      "label": "common.navigation.vault_settings.title",
+      "order": 65,
+      "keywords": [
+        "vault",
+        "password",
+        "ssh",
+        "biometric",
+        "cipher",
+        "密码",
+        "保险库",
+        "加密"
+      ],
+      "navParent": null,
+      "visibility": "sidebar",
+      "emptyPage": false
+    }
+  ],
+  "categories": [
+    {
+      "id": "vault",
+      "label": "common.navigation.category.vault",
+      "order": 20,
+      "pages": [
+        "vault"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "vault-general",
+      "pageId": "vault",
+      "title": "settings.vault.general.title",
+      "description": null,
+      "keywords": [
+        "auto",
+        "lock",
+        "clipboard",
+        "cipher",
+        "biometric",
+        "hibp",
+        "自动锁定",
+        "剪贴板",
+        "加密",
+        "生物识别"
+      ]
+    },
+    {
+      "id": "vault-ssh",
+      "pageId": "vault",
+      "title": "settings.vault.ssh.title",
+      "description": null,
+      "keywords": [
+        "ssh",
+        "agent",
+        "pageant",
+        "openssh",
+        "密钥"
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "vaultAutoLockMinutes",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "number",
+      "default": 5,
+      "label": "settings.vault.auto_lock_minutes.label"
+    },
+    {
+      "key": "vaultLockOnScreenLock",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "boolean",
+      "default": true,
+      "label": "settings.vault.lock_on_screen_lock.label"
+    },
+    {
+      "key": "vaultClipboardClearSeconds",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "number",
+      "default": 30,
+      "label": "settings.vault.clipboard_clear_seconds.label"
+    },
+    {
+      "key": "vaultCipherAlgorithm",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "select",
+      "default": "aes256Gcm",
+      "label": "settings.vault.cipher_algorithm.label"
+    },
+    {
+      "key": "vaultBiometricEnabled",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "boolean",
+      "default": false,
+      "label": "settings.vault.biometric_enabled.label"
+    },
+    {
+      "key": "vaultHibpAutoAudit",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "boolean",
+      "default": true,
+      "label": "settings.vault.hibp_auto_audit.label"
+    },
+    {
+      "key": "vaultSshAutoAdd",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "boolean",
+      "default": false,
+      "label": "settings.vault.ssh_auto_add.label"
+    },
+    {
+      "key": "vaultSshUsePageant",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "boolean",
+      "default": true,
+      "label": "settings.vault.ssh_use_pageant.label"
+    },
+    {
+      "key": "vaultSshUseOpensshAgent",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "boolean",
+      "default": true,
+      "label": "settings.vault.ssh_use_openssh_agent.label"
+    },
+    {
+      "key": "vaultSshAuthSockOverride",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "string",
+      "default": "",
+      "label": "settings.vault.ssh_auth_sock_override.label"
+    }
+  ],
+  "routes": [
+    {
+      "path": "/vault",
+      "boundary": "密码保险库",
+      "order": 0,
+      "navParent": "vault",
+      "visibility": "sidebar",
+      "keywords": [
+        "vault",
+        "password",
+        "密码",
+        "保险库"
+      ]
+    }
+  ],
+  "sidebar": [
+    {
+      "key": "vault",
+      "label": "common.navigation.vault",
+      "slot": "after-tools",
+      "order": 0
+    }
+  ],
+  "confPageMap": [
+    [
+      "vault",
+      "vault"
+    ]
+  ]
+}

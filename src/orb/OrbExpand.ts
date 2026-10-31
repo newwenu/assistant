@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { orbService } from "../services/orbService";
 import { useOrbStore } from "../stores/orbStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { getConfValue } from "@/settings/core/useConfGroup";
 import { createLogger } from "@/services/logger";
 import {
   ORB_COLLAPSED_SIZE,
@@ -151,7 +152,7 @@ export function useOrbExpand(): UseOrbExpandReturn {
       await waitForPaint();
       await orbService.expandOrbPanel(direction, vertical);
       storeExpand();
-      const orbConf = useSettingsStore.getState().orbConf;
+      const orbConf = getConfValue("orb");
       if (orbConf?.clickThrough) {
         await orbService.setOrbClickThrough(false);
       }
@@ -168,7 +169,7 @@ export function useOrbExpand(): UseOrbExpandReturn {
       await waitForPanelTransition();
       await orbService.collapseOrbPanel(direction, vertical);
       setBallVisible(true);
-      const orbConf = useSettingsStore.getState().orbConf;
+      const orbConf = getConfValue("orb");
       if (orbConf?.clickThrough) {
         await orbService.setOrbClickThrough(true);
       }
@@ -186,8 +187,8 @@ export async function collapseOrbOnInit(): Promise<void> {
     await orbService.collapseOrbPanel(expandDirection, expandVertical);
     useOrbStore.getState().collapse();
     useOrbStore.getState().setBallVisible(true);
-    await useSettingsStore.getState().loadOrbConf();
-    const orbConf = useSettingsStore.getState().orbConf;
+    await useSettingsStore.getState().loadConf("orb");
+    const orbConf = getConfValue("orb");
     if (orbConf?.clickThrough) {
       await orbService.setOrbClickThrough(true);
     }

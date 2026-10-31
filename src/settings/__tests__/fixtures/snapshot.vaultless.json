@@ -1,0 +1,477 @@
+{
+  "pages": [
+    {
+      "id": "general",
+      "categoryId": "general",
+      "label": "common.navigation.general.title",
+      "order": 10,
+      "keywords": [
+        "language",
+        "launch",
+        "tray",
+        "top",
+        "startup"
+      ],
+      "navParent": null,
+      "visibility": "sidebar",
+      "emptyPage": false
+    },
+    {
+      "id": "appearance",
+      "categoryId": "general",
+      "label": "common.navigation.appearance.title",
+      "order": 20,
+      "keywords": [
+        "mascot",
+        "渲染",
+        "颜色"
+      ],
+      "navParent": null,
+      "visibility": "sidebar",
+      "emptyPage": false
+    },
+    {
+      "id": "shortcuts",
+      "categoryId": "general",
+      "label": "common.navigation.shortcuts.title",
+      "order": 30,
+      "keywords": [
+        "keyboard",
+        "shortcut",
+        "keybinding",
+        "hotkey"
+      ],
+      "navParent": null,
+      "visibility": "sidebar",
+      "emptyPage": false
+    },
+    {
+      "id": "providers",
+      "categoryId": "provider",
+      "label": "common.navigation.providers.title",
+      "order": 40,
+      "keywords": [
+        "provider",
+        "api",
+        "model",
+        "openai",
+        "preset"
+      ],
+      "navParent": null,
+      "visibility": "sidebar",
+      "emptyPage": true
+    },
+    {
+      "id": "agents",
+      "categoryId": "provider",
+      "label": "common.navigation.agents.title",
+      "order": 50,
+      "keywords": [
+        "agent",
+        "mode",
+        "kind",
+        "quick",
+        "deep"
+      ],
+      "navParent": null,
+      "visibility": "sidebar",
+      "emptyPage": true
+    },
+    {
+      "id": "storage",
+      "categoryId": "general",
+      "label": "common.navigation.storage.title",
+      "order": 60,
+      "keywords": [
+        "storage",
+        "attachment",
+        "orphan",
+        "disk",
+        "存储",
+        "附件",
+        "孤儿"
+      ],
+      "navParent": null,
+      "visibility": "sidebar",
+      "emptyPage": true
+    },
+    {
+      "id": "about",
+      "categoryId": "about",
+      "label": "common.navigation.about.title",
+      "order": 70,
+      "keywords": [
+        "version",
+        "rustc",
+        "build",
+        "about"
+      ],
+      "navParent": null,
+      "visibility": "sidebar",
+      "emptyPage": false
+    }
+  ],
+  "categories": [
+    {
+      "id": "general",
+      "label": "common.navigation.category.general",
+      "order": 0,
+      "pages": [
+        "general",
+        "appearance",
+        "shortcuts",
+        "storage"
+      ]
+    },
+    {
+      "id": "provider",
+      "label": "common.navigation.category.provider",
+      "order": 10,
+      "pages": [
+        "providers",
+        "agents"
+      ]
+    },
+    {
+      "id": "about",
+      "label": "common.navigation.category.about",
+      "order": 30,
+      "pages": [
+        "about"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "general-main",
+      "pageId": "general",
+      "title": "settings.general.main.title",
+      "description": null,
+      "keywords": null
+    },
+    {
+      "id": "theme",
+      "pageId": "appearance",
+      "title": "settings.appearance.theme.title",
+      "description": null,
+      "keywords": [
+        "dark",
+        "light",
+        "system",
+        "暗色",
+        "亮色"
+      ]
+    },
+    {
+      "id": "orb-ball",
+      "pageId": "appearance",
+      "title": "settings.appearance.orb_ball.title",
+      "description": "settings.appearance.orb_ball.description",
+      "keywords": [
+        "orb",
+        "ball",
+        "透明度",
+        "缩放",
+        "吉祥物",
+        "助手形象"
+      ]
+    },
+    {
+      "id": "orb-panel",
+      "pageId": "appearance",
+      "title": "settings.appearance.orb_panel.title",
+      "description": null,
+      "keywords": [
+        "panel",
+        "置顶"
+      ]
+    },
+    {
+      "id": "shortcuts-main",
+      "pageId": "shortcuts",
+      "title": "settings.shortcuts.main.title",
+      "description": null,
+      "keywords": [
+        "keyboard",
+        "hotkey",
+        "热键"
+      ]
+    },
+    {
+      "id": "about-main",
+      "pageId": "about",
+      "title": "settings.about.main.title",
+      "description": null,
+      "keywords": [
+        "version",
+        "版本"
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "riveIdlePoseRotation",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "boolean",
+      "default": false,
+      "label": "settings.mascot.renderer.rive.idle_pose_rotation"
+    },
+    {
+      "key": "riveSrc",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "asset-picker",
+      "default": null,
+      "label": "settings.mascot.renderer.rive.custom_rive.label"
+    },
+    {
+      "key": "svgAnimated",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "boolean",
+      "default": true,
+      "label": "settings.mascot.renderer.svg.animated"
+    },
+    {
+      "key": "gifBorderRadius",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "slider",
+      "default": 50,
+      "label": "settings.mascot.renderer.gif.border_radius.label"
+    },
+    {
+      "key": "gifSrc",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "asset-picker",
+      "default": null,
+      "label": "settings.mascot.renderer.gif.gif_src.label"
+    },
+    {
+      "key": "language",
+      "group": "app",
+      "section": "general-main",
+      "type": "select",
+      "default": "zh-CN",
+      "label": "settings.general.language.label"
+    },
+    {
+      "key": "launchAtLogin",
+      "group": "app",
+      "section": "general-main",
+      "type": "boolean",
+      "default": false,
+      "label": "settings.general.launch_at_login.label"
+    },
+    {
+      "key": "closeToTray",
+      "group": "app",
+      "section": "general-main",
+      "type": "boolean",
+      "default": true,
+      "label": "settings.general.close_to_tray.label"
+    },
+    {
+      "key": "stayOnTop",
+      "group": "app",
+      "section": "general-main",
+      "type": "boolean",
+      "default": false,
+      "label": "settings.general.stay_on_top.label"
+    },
+    {
+      "key": "theme",
+      "group": "app",
+      "section": "theme",
+      "type": "select",
+      "default": "system",
+      "label": "settings.appearance.theme.label"
+    },
+    {
+      "key": "opacityPercent",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "slider",
+      "default": 100,
+      "label": "settings.orb.opacity_percent.label"
+    },
+    {
+      "key": "idleOpacityPercent",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "slider",
+      "default": 85,
+      "label": "settings.orb.idle_opacity_percent.label"
+    },
+    {
+      "key": "scalePercent",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "slider",
+      "default": 100,
+      "label": "settings.orb.scale_percent.label"
+    },
+    {
+      "key": "clickThrough",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "boolean",
+      "default": false,
+      "label": "settings.orb.click_through.label"
+    },
+    {
+      "key": "hideOnPointerHover",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "boolean",
+      "default": false,
+      "label": "settings.orb.hide_on_pointer_hover.label"
+    },
+    {
+      "key": "hoverDelayMs",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "slider",
+      "default": 0,
+      "label": "settings.orb.hover_delay_ms.label"
+    },
+    {
+      "key": "alwaysOnTop",
+      "group": "orb",
+      "section": "orb-panel",
+      "type": "boolean",
+      "default": true,
+      "label": "settings.orb.always_on_top.label"
+    },
+    {
+      "key": "primaryColor",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "color",
+      "default": null,
+      "label": ""
+    },
+    {
+      "key": "renderer",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "select",
+      "default": "rive",
+      "label": "settings.mascot.renderer.label"
+    },
+    {
+      "key": "keybindings.toggle_orb",
+      "group": "app",
+      "section": "shortcuts-main",
+      "type": "keybinding",
+      "default": "Control+Shift+O",
+      "label": "settings.shortcuts.toggle_orb"
+    },
+    {
+      "key": "keybindings.toggle_main",
+      "group": "app",
+      "section": "shortcuts-main",
+      "type": "keybinding",
+      "default": "Control+Shift+M",
+      "label": "settings.shortcuts.toggle_main"
+    },
+    {
+      "key": "keybindings.new_chat",
+      "group": "app",
+      "section": "shortcuts-main",
+      "type": "keybinding",
+      "default": "Control+Shift+N",
+      "label": "settings.shortcuts.new_chat"
+    },
+    {
+      "key": "keybindings.commandPalette",
+      "group": "app",
+      "section": "shortcuts-main",
+      "type": "keybinding",
+      "default": "Control+K",
+      "label": "settings.shortcuts.command_palette"
+    },
+    {
+      "key": "autoCompact",
+      "group": "app",
+      "section": "general-main",
+      "type": "boolean",
+      "default": true,
+      "label": "settings.general.compact.auto_compact.label"
+    },
+    {
+      "key": "compactThresholdPercent",
+      "group": "app",
+      "section": "general-main",
+      "type": "slider",
+      "default": 80,
+      "label": "settings.general.compact.compact_threshold_percent.label"
+    },
+    {
+      "key": "compactSummaryPrompt",
+      "group": "app",
+      "section": "general-main",
+      "type": "textarea",
+      "default": null,
+      "label": "settings.general.compact.compact_summary_prompt.label"
+    },
+    {
+      "key": "compactSummaryMaxTokens",
+      "group": "app",
+      "section": "general-main",
+      "type": "number",
+      "default": 4096,
+      "label": "settings.general.compact.compact_summary_max_tokens.label"
+    },
+    {
+      "key": "app_name",
+      "group": "app",
+      "section": "about-main",
+      "type": "readonly",
+      "default": "",
+      "label": "settings.about.field.app_name.label"
+    },
+    {
+      "key": "build_date",
+      "group": "app",
+      "section": "about-main",
+      "type": "readonly",
+      "default": "",
+      "label": "settings.about.field.build_date.label"
+    },
+    {
+      "key": "tech_stack",
+      "group": "app",
+      "section": "about-main",
+      "type": "readonly",
+      "default": "",
+      "label": "settings.about.field.tech_stack.label"
+    },
+    {
+      "key": "license",
+      "group": "app",
+      "section": "about-main",
+      "type": "readonly",
+      "default": "",
+      "label": "settings.about.field.license.label"
+    }
+  ],
+  "routes": [],
+  "sidebar": [],
+  "confPageMap": [
+    [
+      "app",
+      "general"
+    ],
+    [
+      "mascot",
+      "appearance"
+    ],
+    [
+      "orb",
+      "appearance"
+    ]
+  ]
+}
