@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/copy-rive-wasm.mjs",
     "build": "tsc && vite build",
+    "sync:rive-wasm": "node scripts/copy-rive-wasm.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "eslint src",
@@ -80,7 +82,6 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.0",
     "vite": "^8.0.16",
-    "vite-plugin-static-copy": "^4.1.1",
     "vitest": "^5.0.3"
   }
 }
