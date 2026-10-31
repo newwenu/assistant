@@ -258,7 +258,7 @@ fn spawn_screen_lock_watcher(handle: &AppHandle) {
                         let app_for_dialog = app_handle.clone();
                         tauri::async_runtime::spawn(async move {
                             if let Err(e) =
-                                crate::cmd::vault_show_unlock_window(app_for_dialog).await
+                                crate::cmd::vault::vault_show_unlock_window(app_for_dialog).await
                             {
                                 log::warn!(
                                     "Screen lock unlock dialog failed: [{:?}] {}",
@@ -292,8 +292,18 @@ pub fn vault_cleanup_on_exit(app: &AppHandle) {
     let _ = guard.force_clear();
 }
 
-pub fn on_vault_conf_changed(prev: &VaultConf, conf: &VaultConf) {
+pub fn apply_vault_side_effects(prev: &VaultConf, conf: &VaultConf) {
     if prev.vault_sync_ssh_hosts != conf.vault_sync_ssh_hosts {
         apply_ssh_persist_hosts(conf);
     }
+}
+
+pub fn apply_conf(_app: &tauri::AppHandle, patch: serde_json::Value) -> Result<(), String> {
+    let conf = VaultConf::load().map_err(|e| e.to_string())?;
+    let prev = conf.clone();
+    let merged = conf.amend(patch)?;
+    merged.validate()?;
+    merged.save().map_err(|e| e.to_string())?;
+    apply_vault_side_effects(&prev, &merged);
+    Ok(())
 }

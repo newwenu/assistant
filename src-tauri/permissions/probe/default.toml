@@ -1,0 +1,6 @@
+[default]
+description = "Default permission set for the probe plugin"
+permissions = [
+  "allow-get-probe-conf",
+  "allow-probe-echo",
+]

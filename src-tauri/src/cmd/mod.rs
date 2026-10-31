@@ -12,7 +12,7 @@ mod provider;
 mod storage;
 mod tool;
 #[cfg(feature = "vault")]
-mod vault;
+pub(crate) mod vault;
 
 pub use agent_mode::*;
 pub use app::*;
@@ -28,7 +28,32 @@ pub use provider::*;
 pub use storage::*;
 pub use tool::*;
 #[cfg(feature = "vault")]
-pub use vault::*;
+pub use vault::vault_cleanup_on_exit;
+
+#[cfg(not(feature = "vault"))]
+pub fn vault_cleanup_on_exit(_app: &tauri::AppHandle) {}
+
+pub(crate) type ConfApplier = fn(&tauri::AppHandle, serde_json::Value) -> Result<(), String>;
+
+static CONF_APPLIERS: std::sync::Mutex<Vec<(&'static str, ConfApplier)>> =
+    std::sync::Mutex::new(Vec::new());
+
+static CORE_CONF_APPLIERS_SEEDED: std::sync::Once = std::sync::Once::new();
+
+pub(crate) fn register_conf_applier(group: &'static str, applier: ConfApplier) {
+    let mut registry = CONF_APPLIERS.lock().unwrap_or_else(|e| e.into_inner());
+    registry.push((group, applier));
+}
+
+pub(crate) fn conf_side_effects() -> Vec<(&'static str, ConfApplier)> {
+    CORE_CONF_APPLIERS_SEEDED.call_once(|| {
+        register_conf_applier("app", config::apply_app_conf as ConfApplier);
+        register_conf_applier("orb", config::apply_orb_conf as ConfApplier);
+        register_conf_applier("mascot", config::apply_mascot_conf as ConfApplier);
+    });
+    let registry = CONF_APPLIERS.lock().unwrap_or_else(|e| e.into_inner());
+    registry.clone()
+}
 
 pub(crate) fn get_db_conn<'a>(
     state: &'a tauri::State<'a, crate::setup::DbState>,

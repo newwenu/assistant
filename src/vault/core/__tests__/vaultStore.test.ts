@@ -10,11 +10,11 @@ vi.mock("@/services/tauriInvoke", () => ({
   },
 }));
 
-import { useVaultStore } from "./vaultStore";
-import type { VaultEntryDetail } from "./vault.types";
+import { useVaultStore } from "../vaultStore";
+import type { VaultEntryDetail } from "../vault.types";
 
 function mockCmd(cmd: string, impl: (...args: unknown[]) => unknown) {
-  mockInvokeMap.set(cmd, impl);
+  mockInvokeMap.set(`plugin:vault|${cmd}`, impl);
 }
 
 function vaultError(code: string, message: string): Error {

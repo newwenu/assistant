@@ -18,6 +18,8 @@ use assistant_config::constant::{
     WINDOW_MAIN, WINDOW_ORB, WINDOW_SETTINGS,
 };
 
+use crate::protocol::events::event_name;
+
 pub struct WindowSpec {
     pub label: &'static str,
     pub url: &'static str,
@@ -325,4 +327,27 @@ pub fn show_orb_context_menu(app: AppHandle, x: f64, y: f64) -> Result<(), Strin
         .map_err(|e: tauri::Error| e.to_string())?;
 
     Ok(())
+}
+
+pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    match event {
+        tauri::WindowEvent::CloseRequested { api, .. } => {
+            if window.label() == WINDOW_MAIN {
+                let close_to_tray = assistant_config::app_conf::AppConf::load()
+                    .map(|c| c.close_to_tray)
+                    .unwrap_or(true);
+                if close_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        }
+        tauri::WindowEvent::Focused(false) => {
+            if window.label() == WINDOW_ORB {
+                use tauri::Emitter;
+                let _ = window.emit(event_name::ORB_BLUR, ());
+            }
+        }
+        _ => {}
+    }
 }

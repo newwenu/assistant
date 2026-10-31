@@ -1,4 +1,5 @@
-import { tauriInvoke as invoke } from "@/services/tauriInvoke";
+import { featureInvoke } from "@/services/featureIpc";
+import { vaultModule } from "@/features/vault/module";
 import type {
   VaultEntrySummary,
   VaultEntryDetail,
@@ -57,6 +58,8 @@ export type {
   DisasterRecoveryResult,
   RevealedField,
 } from "./vault.types";
+
+const invoke = featureInvoke(vaultModule);
 
 export const vaultService = {
   init: (masterPassword: string): Promise<void> =>

@@ -93,20 +93,40 @@ fn apply_app_side_effects(app: &AppHandle, prev: &AppConf, conf: &AppConf) {
     }
 }
 
-#[cfg(feature = "vault")]
-fn apply_vault_side_effects(prev: &VaultConf, conf: &VaultConf) {
-    crate::cmd::vault::on_vault_conf_changed(prev, conf);
-}
-
-#[cfg(not(feature = "vault"))]
-fn apply_vault_side_effects(_prev: &VaultConf, _conf: &VaultConf) {}
-
 fn apply_orb_side_effects(app: &AppHandle, prev: &OrbConf, conf: &OrbConf) {
     for (name, handler) in ORB_SIDE_EFFECTS.iter() {
         if let Err(e) = handler(app, prev, conf) {
             log::error!("[side_effect:orb:{}] {}", name, e);
         }
     }
+}
+
+pub(crate) fn apply_app_conf(app: &AppHandle, patch: serde_json::Value) -> Result<(), String> {
+    let conf = AppConf::load().map_err(|e| e.to_string())?;
+    let prev = conf.clone();
+    let merged = conf.amend(patch)?;
+    merged.validate()?;
+    merged.save().map_err(|e| e.to_string())?;
+    apply_app_side_effects(app, &prev, &merged);
+    Ok(())
+}
+
+pub(crate) fn apply_orb_conf(app: &AppHandle, patch: serde_json::Value) -> Result<(), String> {
+    let conf = OrbConf::load().map_err(|e| e.to_string())?;
+    let prev = conf.clone();
+    let merged = conf.amend(patch)?;
+    merged.validate()?;
+    merged.save().map_err(|e| e.to_string())?;
+    apply_orb_side_effects(app, &prev, &merged);
+    Ok(())
+}
+
+pub(crate) fn apply_mascot_conf(_app: &AppHandle, patch: serde_json::Value) -> Result<(), String> {
+    let conf = MascotConf::load().map_err(|e| e.to_string())?;
+    let merged = conf.amend(patch)?;
+    merged.validate()?;
+    merged.save().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn apply_autostart(app: &AppHandle, enable: bool) -> Result<(), String> {
@@ -159,39 +179,10 @@ pub fn get_vault_conf() -> Result<VaultConfDto, String> {
 pub fn patch_conf(app: AppHandle, group: String, patch: serde_json::Value) -> Result<(), String> {
     let _guard = CONF_LOCK.lock().map_err(|e| e.to_string())?;
 
-    match group.as_str() {
-        "app" => {
-            let conf = AppConf::load().map_err(|e| e.to_string())?;
-            let prev = conf.clone();
-            let merged = conf.amend(patch)?;
-            merged.validate()?;
-            merged.save().map_err(|e| e.to_string())?;
-            apply_app_side_effects(&app, &prev, &merged);
-        }
-        "vault" => {
-            let conf = VaultConf::load().map_err(|e| e.to_string())?;
-            let prev = conf.clone();
-            let merged = conf.amend(patch)?;
-            merged.validate()?;
-            merged.save().map_err(|e| e.to_string())?;
-            apply_vault_side_effects(&prev, &merged);
-        }
-        "orb" => {
-            let conf = OrbConf::load().map_err(|e| e.to_string())?;
-            let prev = conf.clone();
-            let merged = conf.amend(patch)?;
-            merged.validate()?;
-            merged.save().map_err(|e| e.to_string())?;
-            apply_orb_side_effects(&app, &prev, &merged);
-        }
-        "mascot" => {
-            let conf = MascotConf::load().map_err(|e| e.to_string())?;
-            let merged = conf.amend(patch)?;
-            merged.validate()?;
-            merged.save().map_err(|e| e.to_string())?;
-        }
-        _ => return Err(format!("unknown config group: {}", group)),
-    }
+    let (_, apply) = super::conf_side_effects()
+        .into_iter()
+        .find(|(name, _)| *name == group.as_str())
+        .ok_or_else(|| format!("unknown config group: {}", group))?;
 
-    Ok(())
+    apply(&app, patch)
 }

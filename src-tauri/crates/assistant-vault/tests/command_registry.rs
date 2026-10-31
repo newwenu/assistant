@@ -6,7 +6,6 @@ const VAULT_PREFIX: &str = "vault_";
 const COMMAND_ATTRIBUTE: &str = "#[command]";
 const TAURI_COMMAND_ATTRIBUTE: &str = "#[tauri::command]";
 const REGISTRATION_OPEN: &str = "generate_handler![";
-const REGISTRATION_CLOSE: &str = "])";
 const DEFINITION_LOOKAHEAD: usize = 8;
 
 fn src_root() -> PathBuf {
@@ -68,28 +67,131 @@ fn declared_commands() -> Vec<String> {
     names
 }
 
-fn registered_commands() -> Vec<String> {
-    let text = fs::read_to_string(src_root().join("lib.rs")).expect("lib.rs is readable");
-    let open = text
-        .find(REGISTRATION_OPEN)
-        .expect("lib.rs declares an invoke handler");
-    let body_start = open + REGISTRATION_OPEN.len();
-    let close = text[body_start..]
-        .find(REGISTRATION_CLOSE)
-        .expect("invoke handler block is closed");
-    let body = &text[body_start..body_start + close];
-    let mut names = Vec::new();
-    let mut cursor = 0;
-    while let Some(offset) = body[cursor..].find("cmd::") {
-        let tail = &body[cursor + offset + "cmd::".len()..];
-        let name: String = tail
-            .chars()
-            .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
-            .collect();
-        if name.starts_with(VAULT_PREFIX) {
-            names.push(name);
+fn strip_rust_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '/' {
+            match chars.peek() {
+                Some('/') => {
+                    for c in chars.by_ref() {
+                        if c == '\n' {
+                            out.push('\n');
+                            break;
+                        }
+                    }
+                    continue;
+                }
+                Some('*') => {
+                    chars.next();
+                    let mut prev = '\0';
+                    for c in chars.by_ref() {
+                        if prev == '*' && c == '/' {
+                            break;
+                        }
+                        prev = c;
+                    }
+                    out.push(' ');
+                    continue;
+                }
+                _ => {}
+            }
         }
-        cursor += offset + "cmd::".len();
+        out.push(ch);
+    }
+    out
+}
+
+fn strip_attributes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '#' && chars.peek() == Some(&'[') {
+            chars.next();
+            let mut depth = 1usize;
+            for c in chars.by_ref() {
+                match c {
+                    '[' => depth += 1,
+                    ']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            out.push(' ');
+            continue;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn registration_bodies(text: &str) -> Vec<String> {
+    let mut bodies = Vec::new();
+    let mut cursor = 0;
+    while let Some(offset) = text[cursor..].find(REGISTRATION_OPEN) {
+        let start = cursor + offset + REGISTRATION_OPEN.len();
+        let mut depth = 1usize;
+        let mut close = None;
+        for (index, ch) in text[start..].char_indices() {
+            match ch {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(start + index);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let end = close.unwrap_or(text.len());
+        bodies.push(text[start..end].to_string());
+        if end >= text.len() {
+            break;
+        }
+        cursor = end + 1;
+    }
+    bodies
+}
+
+fn entry_name(entry: &str) -> Option<String> {
+    let trimmed = entry.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let segment = trimmed.rsplit("::").next().unwrap_or(trimmed);
+    let valid = !segment.is_empty()
+        && segment
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+    if valid {
+        Some(segment.to_string())
+    } else {
+        None
+    }
+}
+
+fn registered_commands() -> Vec<String> {
+    let mut files = Vec::new();
+    collect_rs_files(&src_root(), &mut files);
+    let mut names = Vec::new();
+    for file in files {
+        let text = fs::read_to_string(&file).expect("registration source file is readable");
+        for body in registration_bodies(&text) {
+            let cleaned = strip_attributes(&strip_rust_comments(&body));
+            for entry in cleaned.split(',') {
+                if let Some(name) = entry_name(entry) {
+                    if name.starts_with(VAULT_PREFIX) {
+                        names.push(name);
+                    }
+                }
+            }
+        }
     }
     names
 }
@@ -116,7 +218,7 @@ fn vault_commands_and_registrations_match_both_ways() {
     );
     assert!(
         registered.len() > 1,
-        "vault command registrations are discoverable from lib.rs"
+        "vault command registrations are discoverable from generate_handler! blocks"
     );
     assert_eq!(
         absent_from(&declared, &registered),

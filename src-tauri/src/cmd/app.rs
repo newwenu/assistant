@@ -23,7 +23,7 @@ pub fn perform_exit(app: &AppHandle) {
             }
         }
     }
-    crate::request_exit();
+    crate::lifecycle::request_exit();
     crate::window::destroy_all(app, &[WINDOW_ORB, WINDOW_MAIN]);
     app.exit(0);
 }

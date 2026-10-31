@@ -87,9 +87,6 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     handle.manage(assistant_agent::chat_tasks::ChatTasks::new());
 
-    #[cfg(feature = "vault")]
-    crate::cmd::vault_setup(handle);
-
     {
         let registry = Arc::new(ToolRegistry::new());
         os::register_os_tools(&registry);
@@ -240,7 +237,7 @@ fn position_orb_window(handle: &tauri::AppHandle) {
 fn spawn_screen_inspection(handle: tauri::AppHandle) {
     std::thread::spawn(move || loop {
         std::thread::sleep(placement::PLACEMENT_INSPECTION_INTERVAL);
-        if crate::SHOULD_EXIT.load(std::sync::atomic::Ordering::Relaxed) {
+        if crate::lifecycle::should_exit() {
             break;
         }
         let Some(window) = handle.get_webview_window(WINDOW_ORB) else {
