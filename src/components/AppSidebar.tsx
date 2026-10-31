@@ -12,8 +12,13 @@ import {
 } from "@ant-design/icons";
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from "@/config/constants";
 import { getSettingsDetailPages } from "@/settings/core/pageRegistry";
-import { useToolMenuItems } from "@/tools/CollapsibleToolMenu";
+import {
+  favoriteMenuKey,
+  resolveMenuKey,
+  useToolMenuItems,
+} from "@/tools/CollapsibleToolMenu";
 import { toolsMap } from "@/tools/registry";
+import { useToolStore } from "@/stores/toolStore";
 import { getFeatures } from "@/features/registry";
 import type { PreparedSidebarEntry } from "@/features/aggregate";
 import type { SidebarSlot } from "@/features/types";
@@ -28,14 +33,21 @@ function toFeatureMenuItem(entry: PreparedSidebarEntry): SidebarItem {
   };
 }
 
-function nextOpenKeys(prev: string[], pathname: string): string[] {
+function nextOpenKeys(
+  prev: string[],
+  pathname: string,
+  favoriteToolIds: string[],
+): string[] {
   const next = new Set(prev);
   let changed = false;
 
   if (pathname.startsWith("/tools/")) {
-    const tool = toolsMap[pathname.replace("/tools/", "")];
+    const toolId = pathname.replace("/tools/", "");
+    const tool = toolsMap[toolId];
     if (tool) {
-      for (const key of ["toolbox", `tool-cat-${tool.category}`]) {
+      const keys = ["toolbox", `tool-cat-${tool.category}`];
+      if (favoriteToolIds.includes(toolId)) keys.push("tool-favorites");
+      for (const key of keys) {
         if (!next.has(key)) {
           next.add(key);
           changed = true;
@@ -56,6 +68,7 @@ export const AppSidebar: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const favoriteToolIds = useToolStore((s) => s.favoriteToolIds);
   const toolMenuItems = useToolMenuItems(() => {
     void navigate("/");
   });
@@ -75,14 +88,22 @@ export const AppSidebar: React.FC = () => {
       titleClickNavRef.current = false;
       return;
     }
-    setOpenKeys((prev) => nextOpenKeys(prev, location.pathname));
-  }, [location.pathname]);
+    setOpenKeys((prev) =>
+      nextOpenKeys(prev, location.pathname, favoriteToolIds),
+    );
+  }, [location.pathname, favoriteToolIds]);
 
   const selectedKeys = useMemo(() => {
     if (location.pathname === "/") return ["toolbox"];
     if (location.pathname === "/settings/overview") return ["settings-sub"];
+    if (location.pathname.startsWith("/tools/")) {
+      const toolId = location.pathname.replace("/tools/", "");
+      if (favoriteToolIds.includes(toolId)) {
+        return [location.pathname, favoriteMenuKey(toolId)];
+      }
+    }
     return [location.pathname];
-  }, [location.pathname]);
+  }, [location.pathname, favoriteToolIds]);
 
   const menuItems = useMemo<NonNullable<MenuProps["items"]>>(() => {
     const features = getFeatures();
@@ -186,7 +207,7 @@ export const AppSidebar: React.FC = () => {
           style={{ background: "transparent", border: "none" }}
           items={menuItems}
           onClick={({ key }) => {
-            void navigate(key);
+            void navigate(resolveMenuKey(key));
           }}
         />
       </div>

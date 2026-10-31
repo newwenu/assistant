@@ -8,6 +8,18 @@ import { CATEGORY_MAP } from "./categories";
 
 type MenuItem = NonNullable<MenuProps["items"]>[number];
 
+const FAVORITE_MENU_KEY_PREFIX = "favorite:";
+
+export function favoriteMenuKey(toolId: string): string {
+  return `${FAVORITE_MENU_KEY_PREFIX}/tools/${toolId}`;
+}
+
+export function resolveMenuKey(key: string): string {
+  return key.startsWith(FAVORITE_MENU_KEY_PREFIX)
+    ? key.slice(FAVORITE_MENU_KEY_PREFIX.length)
+    : key;
+}
+
 export function useToolMenuItems(onToolboxTitleClick?: () => void): MenuItem[] {
   const favoriteToolIds = useToolStore((s) => s.favoriteToolIds);
 
@@ -24,7 +36,7 @@ export function useToolMenuItems(onToolboxTitleClick?: () => void): MenuItem[] {
         icon: <HeartFilled style={{ color: "var(--color-error)" }} />,
         label: translateKey("tools.favorites"),
         children: favoriteTools.map((t) => ({
-          key: `/tools/${t.id}`,
+          key: favoriteMenuKey(t.id),
           label: translateKey(t.name),
         })),
       });

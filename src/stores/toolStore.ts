@@ -26,6 +26,11 @@ interface ToolState {
   search: (query: string) => void;
 }
 
+function normalizeFavoriteIds(ids: unknown): string[] {
+  if (!Array.isArray(ids)) return [];
+  return [...new Set(ids.filter((id): id is string => typeof id === "string"))];
+}
+
 function buildFuseInstance(): Fuse<ToolDefinition> {
   return new Fuse(
     tools.map((t) => ({
@@ -58,15 +63,13 @@ export const useToolStore = create<ToolState>((set) => ({
   loadFavorites: async () => {
     try {
       const ids = await toolService.getFavoriteTools();
-      set({ favoriteToolIds: ids });
+      set({ favoriteToolIds: normalizeFavoriteIds(ids) });
     } catch (e) {
       log.debug("loadFavorites failed, trying localStorage fallback", e);
       const stored = localStorage.getItem("favoriteToolIds");
       if (stored) {
         try {
-          const parsed: unknown = JSON.parse(stored);
-          if (Array.isArray(parsed))
-            set({ favoriteToolIds: parsed as string[] });
+          set({ favoriteToolIds: normalizeFavoriteIds(JSON.parse(stored)) });
         } catch {
           /* corrupted localStorage, ignore */
         }
@@ -79,7 +82,9 @@ export const useToolStore = create<ToolState>((set) => ({
       const isFav = await toolService.toggleFavorite(toolId);
       set((s) => ({
         favoriteToolIds: isFav
-          ? [...s.favoriteToolIds, toolId]
+          ? s.favoriteToolIds.includes(toolId)
+            ? s.favoriteToolIds
+            : [...s.favoriteToolIds, toolId]
           : s.favoriteToolIds.filter((id) => id !== toolId),
       }));
     } catch (e) {
@@ -96,12 +101,13 @@ export const useToolStore = create<ToolState>((set) => ({
   },
 
   reorderFavorites: async (toolIds: string[]) => {
-    set({ favoriteToolIds: toolIds });
+    const ids = normalizeFavoriteIds(toolIds);
+    set({ favoriteToolIds: ids });
     try {
-      await toolService.reorderFavorites(toolIds);
+      await toolService.reorderFavorites(ids);
     } catch (e) {
       log.debug("reorderFavorites failed, saving to localStorage", e);
-      localStorage.setItem("favoriteToolIds", JSON.stringify(toolIds));
+      localStorage.setItem("favoriteToolIds", JSON.stringify(ids));
     }
   },
 
