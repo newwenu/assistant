@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Input, Button, Typography, List, message } from "antd";
+import { Input, Button, Typography, message } from "antd";
 import { CopyOutlined, DeleteOutlined } from "@ant-design/icons";
 import { safeEvaluate } from "./calculator.service";
 import styles from "./calculator.module.css";
@@ -70,35 +70,27 @@ export default function Calculator() {
               清空
             </Button>
           </div>
-          <List
-            size="small"
-            dataSource={history}
-            renderItem={(item) => (
-              <List.Item
-                className={styles.historyItem}
-                extra={
-                  <div className={styles.historyResult}>
-                    <span style={{ fontFamily: "monospace" }}>
-                      {item.result}
-                    </span>
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<CopyOutlined />}
-                      onClick={() => copy(item.result)}
-                    />
-                  </div>
-                }
-              >
+          <div className={styles.historyList}>
+            {history.map((item, index) => (
+              <div key={index} className={styles.historyItem}>
                 <span
                   className={styles.historyExpr}
                   style={{ fontFamily: "monospace" }}
                 >
                   {item.expression}
                 </span>
-              </List.Item>
-            )}
-          />
+                <div className={styles.historyResult}>
+                  <span style={{ fontFamily: "monospace" }}>{item.result}</span>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CopyOutlined />}
+                    onClick={() => copy(item.result)}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
