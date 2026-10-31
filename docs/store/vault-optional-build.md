@@ -311,9 +311,11 @@ quote::quote!(move |#invoke| {
 // vite.config.ts
 define: {
   __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
-  __VAULT_ENABLED__: JSON.stringify(process.env.VAULT_ENABLED !== "0"),
+  ...featureDefines(),
 },
 ```
+
+> **v2.5 修订（I24 E4）**：`__VAULT_ENABLED__` 不再手写在 `define` 里，改由手写清单 `config/features.json` 派生——`featureDefines()` 遍历清单，按每项的 `env` 生成 `__<ENV>__`；`process.env[env]` 有值时以环境变量为准（`-Without vault` 走这条），无值时取清单的 `default`。原写法 `JSON.stringify(process.env.VAULT_ENABLED !== "0")` 的问题是「环境变量缺省即开启」，默认值散落在配置里、与后端 `Cargo.toml [features] default` 无任何约束关系；改为清单后，默认值只有一处，并由 `scripts/feature-build.ps1` 启动断言与 cargo 双向对齐。
 
 ```ts
 // src/vite-env.d.ts

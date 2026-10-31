@@ -309,7 +309,7 @@ ToolBox 不经 ToolPipeline：用户主动点击 = 权限主体，审批自己�
 | slice 接口 `ModuleDomainSlice` | 对齐 `ChatCompactSlice` 先例 |
 | 子组件不加父名中缀 | `unlock/PasswordForm.tsx` 非 `PasswordUnlockForm.tsx` |
 | CSS Module 共享 | 同模块子组件共享同一 CSS 文件 |
-| 测试与源同目录 | `vaultStore.test.ts` 放 `vault/core/` |
+| 测试放 `__tests__/` 子目录 | `vault/core/__tests__/vaultStore.test.ts`，与源目录并列但不混放 |
 | `as unknown as` 仅 2 处 | `confUtils.ts` + `i18n/index.ts`，其余禁止 |
 | 新增设置项同步接口 | `AppConf`/`OrbConf`/`MascotConf` + Rust struct + `#[serde(default)]` |
 

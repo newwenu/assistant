@@ -64,7 +64,7 @@ C1–C9 构成一个事实：**「带配置项的可选特性」当前无法只�
 |---|---|---|---|
 | I1 | `SettingsPageId` / `SettingsCategoryId` 放宽为 `string & {}` | `src/settings/core/types/pageTypes.ts` | 编译期不再校验 id 合法性 |
 | I2 | 分类由 `pages.filter(p => p.categoryId === id)` 生成 | `src/settings/core/pageRegistry.ts` 的 `derive()` | 扩展声明 page 忘了声明 category → **页面静默消失** |
-| I3 | `getSettingsPageManifest` 找不到时回落到 overview | 同上 | `/settings/vault` 在排除构建下渲染成总览而非 404 |
+| I3 | `getSettingsPageManifest` 找不到时回落到 overview | 同上 | `/settings/vault` 在排除构建下渲染成总览而非未找到提示 |
 | I4 | `getSectionById` / `getDefinitionsBySection` 只 filter | `src/settings/core/field/fieldRegistry.ts` | section 的 `pageId`、field 的 `section` 指向不存在的东西 → 静默为空 |
 | I5 | 去重两套语义：内置 `defineSetting` **静默丢弃**重复；扩展 `aggregate` **直接 push**，靠 DEV 断言拦 | `fieldRegistry.ts` 的 `defineSetting` vs `aggregate.ts` | 同一个错误（key 重复）在两条通道表现不同（丢弃 vs 覆盖） |
 | I6 | `assertUnique` 只在 `import.meta.env.DEV` 跑 | `src/features/aggregate.ts` | release 构建零校验 |
@@ -80,7 +80,7 @@ C1–C9 构成一个事实：**「带配置项的可选特性」当前无法只�
 | S4 | 前端开关读 `process.env.VAULT_ENABLED`，后端读 cargo feature，`tauri.conf.json` 的 `beforeBuildCommand` 是裸 `npm run build` | `vite.config.ts`、`src-tauri/tauri.conf.json` |
 | S5 | `features/registry.ts` 把 vault 写成字面量，无生成物、无清单 | `src/features/registry.ts` |
 
-### 1.5 资产未 colocate
+### 1.5 资产未 colocate（E8 已解决）
 
 | # | 事实 | 位置 |
 |---|---|---|
@@ -88,6 +88,8 @@ C1–C9 构成一个事实：**「带配置项的可选特性」当前无法只�
 | A2 | `BiometricSwitchRender` 在 `src/settings/shared/renderers/`，同样 import `@/vault/core/*` | `src/settings/shared/renderers/BiometricSwitchRender.tsx` |
 
 后果：`src/settings/**` 不依赖 vault 这条不变式在文件系统层面已不成立，任何「按目录审计排除面」的手段失效，只能 grep。
+
+E8 落地后：两个文件迁入 `src/features/vault/settings/`，`src/settings/**` 对 `@/vault` 的引用归零，不变式恢复为文件系统事实；`src/settings/**` 仅剩 `@/features/vault/module` 一处，位于快照黄金测试（聚合模块是测试输入，非生产依赖）。
 
 ### 1.6 后端（L1 已实施，遗留七项结构缺陷）
 
@@ -187,7 +189,7 @@ export interface FeatureRoute {
 }
 ```
 
-`SettingsPageDefinition` 同步新增 `navParent?: string` / `visibility?` / `emptyPage?: boolean`（v2.4 复核：`navOnly` 在当前代码中不存在，三者均为新增字段）。侧栏选中态由「当前 route → 对应 page → `navParent`」推导，推导失败时回落到 page id，**不再依赖 `routes[0]` 这类隐式规则**。
+`SettingsPageDefinition` 同步新增 `navParent?: string` / `visibility?` / `emptyPage?: boolean`（v2.4 复核：`navOnly` 在当前代码中不存在，三者均为新增字段）。侧栏选中态由「当前 route → 对应 page → `navParent`」推导，推导失败时回落到 page id，**不再依赖 `routes[0]` 这类隐式规则**。反向同理：点击侧栏条目时由 `key` 解析落地路径——优先命中 `navParent === key` 的 route，其次命中同条件的 page（落到 `/settings/<id>`），两者都没有时才把 `key` 本身当路径（兼容旧写法）。
 
 ### 3.2 配置面：类型层用声明合并，运行时用槽位
 
@@ -227,28 +229,25 @@ declare module "@/settings/core/types/confRegistry" {
 ```ts
 // src/settings/core/types/confSlot.ts
 // G 默认取 ConfGroup（槽位注册表按 group 索引，值类型退化为联合是合理的）；
-// 具体槽位必须写成 FeatureConfSlot<"vault">，group 与值类型因此编译期绑定，不再有 `T = unknown` 的擦除。
-export interface FeatureConfSlot<G extends ConfGroup = ConfGroup> {
+// 具体槽位必须写成 ConfSlot<"vault">，group 与值类型因此编译期绑定，不再有 `T = unknown` 的擦除。
+export interface ConfSlot<G extends ConfGroup = ConfGroup> {
   group: G;
-  storeKey: string;                                   // 例："vaultConf"
   invoke: string;                                     // 例："get_vault_conf"：core 命令，不带命名空间
   pageId?: SettingsPageId;                            // 该 conf 的编辑页（显式声明，见 3.5）
-  // 用方法签名而非属性签名：方法参数是双变的，FeatureConfSlot<"vault"> 才能直接赋给
-  // FeatureConfSlot<ConfGroup>（否则 strictFunctionTypes 下需要一次断言才能入表）
-  toRecord(value: ConfTypeRegistry[G] | null): Record<string, unknown> | null;
 }
 ```
 
+> **v2.5 偏离说明（实现收敛，主目的优先）**
+> 1. **删除 `storeKey`**：`confs` 以 `group` 为键，一个 group 对应且仅对应一份配置，`storeKey`（如 `"vaultConf"`）只是「group → store 字段名」的冗余映射层，每新增一个 group 就要多维护一条字符串，且它与 `group` 一旦不同名就会产生第二种真源。改为 `confs[group]` 直接寻址，`CONF_KEY_MAP` / `CONF_LOAD_KEY_MAP` 随之整体消失（E2.12/E2.13）。
+> 2. **删除 `toRecord` 成员**：它唯一的作用是把配置转成 `Record<string, unknown>` 交给字段渲染器，而这件事已经由 `confUtils.toConfRecord()` 在访问边界统一完成。放在槽位上意味着**每个特性都要重复实现一遍**，等于把唯一的信任边界拆成 N 份。改为槽位只描述「怎么取」（`invoke`）与「在哪编辑」（`pageId`），转换统一走 `toConfRecord()`。
+> 3. 类型名统一为 `ConfSlot`（不再有 `FeatureConfSlot` 别名），内置槽位与扩展槽位共用同一类型、同一注册通道（见 3.2 的 `builtinRegistry` 说明）。
+
 ```ts
 // src/features/vault/conf.ts（续）
-import { toConfRecord } from "@/settings/core/types/confUtils";
-
-export const vaultConf: FeatureConfSlot<"vault"> = {
+export const VAULT_CONF_SLOT: ConfSlot<"vault"> = {
   group: "vault",
-  storeKey: "vaultConf",
   invoke: "get_vault_conf",
   pageId: "vault",
-  toRecord: toConfRecord,        // 方法签名位置允许用函数赋值，语义相同
 };
 ```
 
@@ -342,19 +341,19 @@ export async function fetchConf<G extends ConfGroup>(group: G): Promise<ConfOf<G
 }
 ```
 
-core 的三个槽位（app / orb / mascot）在 `initSettingSystem()` 里静态注册，**这是 core 唯一保留的硬编码点，且它属于内置通道，本就不该被排除**。
+core 的三个槽位（app / orb / mascot）在 `builtinRegistry.ts` 以数据形式声明（`defineConfSlot`），由 `initSettingSystem()` 在启动时注册进运行时表。**声明是唯一真源，快照与运行时都从它派生**——这是 core 唯一保留的硬编码点，且它属于内置通道，本就不该被排除。v2.5 修正：内置槽位不再散落在 `initSettingSystem()` 的注册代码里，否则快照（`normalize()`）在不跑启动流程的测试环境下拿不到内置槽位，会与运行时表分叉；这也是「vault 槽位只从扩展通道收集、内置槽位只从注册代码产生」这一双通道问题的根因。
 
 配置面改造后，各闭合点各自变成一次查表（C1–C9 全覆盖，漏掉 C8 会让跨窗口同步继续按 group 硬编码）：
 
 | 闭合点 | 改造后 |
 |---|---|
-| C1 `CONF_KEY_MAP` / `CONF_LOAD_KEY_MAP` | 删除，改由 `getConfSlot(group).storeKey` 与 `loadConf(group)` |
+| C1 `CONF_KEY_MAP` / `CONF_LOAD_KEY_MAP` | 删除，改由 `confs[group]`（以 group 为键）与 `loadConf(group)` |
 | C2 `ConfOf<G>` 条件类型 | 改为 `ConfTypeRegistry[G]` 索引 |
 | C3 四个具名槽 | 改为 `confs: ConfStore` 映射（逐键可选 + 可用性判定，见上） |
 | C4 `settingService.getVaultConf` | 删除，改由 `fetchConf("vault")` |
 | C5 `SettingsOverview` 的 `confMap` | 改为 `getConfGroups()` 动态构造 |
 | C6 `GROUP_TO_PAGE` | 删除，改为 `snapshot.confPageMap`（由 `confSlot.pageId` 显式声明，见 3.5） |
-| C7 `optimisticUpdate` | 改为 `slots.get(group).storeKey` |
+| C7 `optimisticUpdate` | 改为 `confs[group]`（以 group 为键，无需 storeKey 映射） |
 | C8 `settingEvents` 的 group 分支 | 改为 `if (isConfGroupAvailable(group)) store.loadConf(group)`；`VAULT_ENABLED` 引用随之消失 |
 | C9 两份 `useConfByGroup` | 合并为 `settings/core/useConfGroup.ts`，内部走 `getConfValue` |
 
@@ -475,8 +474,8 @@ export async function loadFeatures(): Promise<void> {
 
 三条策略变更：
 
-1. **去重统一为「插入即查重，命中即抛」**。`defineSetting` 不再静默丢弃（修 I5），两条通道共用同一个 `insertUnique()`。
-2. **页面缺失改 404，且要改两条回落路径**。`SettingsContent.tsx` 现有两处回落：L12 的 `isSettingsPageId(pageId)` 守卫失败即在 L13 直接 Navigate 到 `/settings/${DEFAULT_SETTINGS_PAGE_ID}`，L18 再调 `getSettingsPageManifest`，而它内部（`pageRegistry.ts` L210）又 `?? map.get(DEFAULT_SETTINGS_PAGE_ID)!`。**只改后者无效**（守卫先跳转，后者根本走不到）。改法：守卫内渲染 404 面板、删除 `getSettingsPageManifest` 的 `??` 回落并让返回类型变 `| null`，使回落点唯一（修 I3）。
+1. **去重统一为「插入即查重，命中即抛」**。`defineSetting` 不再静默丢弃（修 I5），两条通道共用同一个 `insertUnique()`（落 `core/insertUnique.ts`：DEV 抛错，生产 `log.error` + 跳过该条目）。
+2. **页面缺失改「未找到」面板，且要改两条回落路径**。`SettingsContent.tsx` 现有两处回落：L12 的 `isSettingsPageId(pageId)` 守卫失败即在 L13 直接 Navigate 到 `/settings/${DEFAULT_SETTINGS_PAGE_ID}`，L18 再调 `getSettingsPageManifest`，而它内部（`pageRegistry.ts` L210）又 `?? map.get(DEFAULT_SETTINGS_PAGE_ID)!`。**只改后者无效**（守卫先跳转，后者根本走不到）。改法：守卫内渲染未找到面板、删除 `getSettingsPageManifest` 的 `??` 回落并让返回类型变 `| null`，使回落点唯一（修 I3）。面板用 antd `Empty` 空态（与 `VaultList` / `VaultApp` 一致），**不渲染 HTTP 404 数字插画**——桌面端是前端内存路由，无 HTTP 语义（v2.5 改动）。
 3. **校验分两档：构建 / 测试期抛错，生产降级**（v2.1 改动）。`buildSnapshot` 在非生产环境 throw；生产环境 `log.error` + **丢弃该条目**（页面级 / 字段级隔离），不让整页白屏。理由：错误声明是静态代码缺陷，6.2 的 5 类不变式测试与 6.1 的三份黄金快照已能在 CI 覆盖，生产再抛错换来的不是更早发现，而是可用性下降（原 R3「刻意白屏」的论证不成立）。
 
 **校验批量收集，不 fail-fast**（v2.2 改动）。`validate()` 的返回类型改为 `Violation[]`（`{ rule, target, message }`），DEV / 测试期一次性抛出全部违规（`AggregateError` 或逐行拼接的消息），生产期逐条 `log.error` 并丢弃对应条目。理由：扩展作者一次写错 5 处时，fail-fast 需要 5 轮才能全绿；批量收集的成本与 fail-fast 相同（同为 O(n) 单次遍历），而参考项目（OpenBitFun 的 `ConfigValidationResult` 收集 errors + warnings，warning 还带 `field` / `code`）已验证这一策略在扩展场景下更好用。`Violation.rule` 直接复用上表的「不变式」列，便于测试按规则名断言。
@@ -507,7 +506,7 @@ for (const slot of slots) {
 | 排序 | 单一 `order` + 模块 `base + i` 下传 | 每个集合独立命名空间（`page.order` / `route.order` / `entry.order`），模块 `order` 不下传；page 支持 `after: SettingsPageId` 锚点，构建期解析并检测环 |
 | 插槽 | 2 值 | 4 值：`"after-tools"` / `"before-history"` / `"after-history"` / `"before-settings"`；每个插槽内部按 `order` → `key` 字典序稳定排序 |
 | 侧栏 key 与归属 | 缺省取 `routes[0].path`，侧栏与页面被隐式锁成 1:1 | `sidebar.key` **必填且全局唯一**（自证标识，与 route path 解耦）；页面用 `navParent` 反向声明归属，多页可共享一个侧栏条目；`selectedKeys` 由「当前 route → page → `navParent`」推导，无隐式规则 |
-| 可见性 | 当前无可见性字段（`SettingsPageDefinition` 只有 `id` / `categoryId` / `label` / `keywords` / `icon` / `order` / `load`；v2.4 复核无 `navOnly`） | 新增两个正交字段：`emptyPage`（无 section 是否合法）+ `visibility: "sidebar" \| "deepLinkOnly"`（缺省 `sidebar`，v2.3 从三值收敛为两值）；`deepLinkOnly` 页面仍参与路由与 404 判定，只是不进侧栏 / 命令面板 |
+| 可见性 | 当前无可见性字段（`SettingsPageDefinition` 只有 `id` / `categoryId` / `label` / `keywords` / `icon` / `order` / `load`；v2.4 复核无 `navOnly`） | 新增两个正交字段：`emptyPage`（无 section 是否合法）+ `visibility: "sidebar" \| "deepLinkOnly"`（缺省 `sidebar`，v2.3 从三值收敛为两值）；`deepLinkOnly` 页面仍参与路由与未找到判定，只是不进侧栏 / 命令面板 |
 | 命令面板匹配词 | 由 label / id / path / category 拼接推导 | `page.keywords` / `route.keywords` 声明式参与（`SettingsPageManifest.keywords` 已存在，`FeatureRoute` 补齐同名字段）；不再从 title 反推 |
 | 页面分类 | 分类存在性靠 filter 结果 | 分类必须被声明；声明了但无页面 → 构建期抛错（比静默剪枝更早暴露） |
 
@@ -515,7 +514,7 @@ for (const slot of slots) {
 
 ### 3.7 构建开关单源
 
-新建仓库级清单 `config/features.json`：
+新建仓库级清单 `config/features.json`（**手写**，不生成任何中间产物）：
 
 ```json
 {
@@ -527,28 +526,16 @@ for (const slot of slots) {
 }
 ```
 
-> **v2.4 复核（E4 启动前必读）**：仓库已落地 `scripts/feature-build.ps1`，它把 `src-tauri/Cargo.toml` 的 `[features]`（`default = ["vault"]`）当作**唯一真源**，按 `<FEATURE>_ENABLED`（`vault` → `VAULT_ENABLED`）注入环境变量，并处理 tauri 的三段式参数（`--features` 与 `-- --no-default-features`）。若再新建 `config/features.json`，同一事实会有两个源，与本节「单源」目标自相矛盾。执行 E4 前必须二选一：
-> **(a) 保留 Cargo.toml 为源（推荐，改动最小）**——`gen-features.mjs` 改为解析 `[features]` 段生成前端 manifest，`feature-build.mjs` 的职责并入现有 `.ps1`，不再新建 `config/features.json`；
-> **(b) 保留 `features.json` 为源**——`feature-build.ps1` 改为读该文件，并补「`features.json` 的 `default` ↔ Cargo.toml `[features] default`」的双向断言。
-> 未定之前 E4 不启动，其余阶段（E0–E3、E5–E8）不受影响。
+> **v2.5 决策（D1 已定）**：清单手写，**取消代码生成**。曾计划 `gen-features.mjs` 输出 `src/features/generated/manifest.ts`，但那会新增「生成器 ↔ 生成物」漂移这一失败模式（原 R5），而本阶段只有 1 个特性、2 个消费点，生成的收益为负。代价是新增特性时要在 `features/registry.ts` 补一段编译期守卫 + 动态 import（每特性约 4 行），这比维护一个生成器便宜。
+> 同时保留 `src-tauri/Cargo.toml` 的 `[features]` 段——cargo 强制要求特性在此声明，无法省略；两处因此是「一份清单 + 一份 cargo 声明」，用启动期断言消除漂移，而不是靠人工记忆。
 
-三个生成/校验环节：
+三个消费/校验环节：
 
-1. **生成前端清单**（`scripts/gen-features.mjs`，输出 `src/features/generated/manifest.ts`，提交入库）：
+1. **前端开关**（`vite.config.ts`）：直接读清单，按每项的 `env` 生成 `__<ENV>__` 常量（`vault` → `__VAULT_ENABLED__`），不再手写。`process.env[env]` 有值时以环境变量为准（`-Without vault` 走这条），无值时取清单的 `default`——「清单描述常态，命令行描述本次构建」。
+2. **构建脚本**（`scripts/feature-build.ps1`）：读**同一份**清单，按 `env` 注入 `1` / `0`，按 `cargoFeature` 拼 `--features`。`tauri.conf.json` 的 `beforeBuildCommand`（`npm run build`）继承该环境变量，前端与后端在**同一次进程调用**里拿到同一份开关，混合态不可能出现。
+3. **一致性断言**（构建脚本启动即跑）：`config/features.json` ↔ `Cargo.toml [features]` 双向——`cargoFeature` 必须已声明、两侧无孤儿条目、默认启用集合必须相等；不一致直接中止。已实测：把 `default` 改成 `false` 后脚本在跑 npm 之前以退出码 1 拦下。`cargoFeature` ↔ `FeatureModule.ipc.namespace` 的断言推迟至 E7（`FeatureModule` 当前无 `ipc` 成员）。
 
-   ```ts
-   export const ENABLED_FEATURES = [
-     { id: "vault", load: () => import("../vault/module").then((m) => m.vaultModule) },
-   ] as const;
-   ```
-   关闭时该文件只有 `export const ENABLED_FEATURES = [] as const;`——**禁用特性的 `import()` 在源码里根本不存在**，chunk 归零由生成物保证，而不是靠 DCE 推断。
-2. **生成 vite define**：`vite.config.ts` 由 `features.json` 生成 `__FEATURE_<ID>__` 常量，不再手写。
-3. **构建脚本**（`scripts/feature-build.mjs`）：
-   ```powershell
-   node scripts/feature-build.mjs --without vault --target build
-   ```
-   该脚本一次设置 `VAULT_ENABLED=0` 与 cargo 参数，并 spawn `npm run tauri build -- --no-default-features`。`tauri.conf.json` 的 `beforeBuildCommand` 会继承父进程环境变量，因此前端与后端在**同一次进程调用**里拿到同一份开关。
-4. **一致性断言**（CI）：脚本比对 `features.json` 的 `default` 与 cargo `[features] default`、`cargoFeature` 与 `FeatureModule.ipc.namespace`（见 3.2.1 的反向不变量）、生成的 manifest 与当前 env，任一处不一致即失败。混合态（前端开/后端关）在构建期直接红。
+关闭特性的 chunk 归零仍由「编译期常量守卫 + 动态 import」保证（`features/registry.ts` 的 `if (!__VAULT_ENABLED__) return;` 折叠后整段不可达），与清单是否手写无关。实测：`VAULT_ENABLED=0` 时产物 vault chunk = 0、`vaultAutoLockMinutes` 命中 = 0；默认（清单 `default: true`）时 vault chunk = 5。
 
 ### 3.8 后端收敛：从「条目级 cfg」到「模块边界」
 
@@ -576,8 +563,8 @@ for (const slot of slots) {
 | G1 | `src-tauri/src/**` 中 `#[cfg(feature = "vault")]` / `#[cfg(not(...))]` 行数 | **73**（`lib.rs` 68 + `setup.rs` 1 + `cmd/mod.rs` 2 + `cmd/config.rs` 2） | **≤ 8**，且只允许位于 `vault_plugin.rs` / `cmd/mod.rs` / `setup.rs` 三个白名单文件；setup 钩子下沉到插件后 `setup.rs` 归零，上限收紧到 **≤ 6** |
 | G2 | 注册表文件内 `#[cfg]` 出现次数 | **66** | **0** |
 | G3 | `lib.rs` 行数 | 280 | **≤ 40** |
-| G4 | 新增一个可选特性的后端边际成本 | +132 行 | **+1 个插件文件 + 1 对 cfg + 1 组 ACL 声明**（权限面口径见 3.8.3a；若走 `default` 权限集则 ACL 为 1 个文件，若逐条声明则 66 项） |
-| G5 | 新增一条命令的注册成本 | 2 行（cfg + 条目） | **1 行条目 + 1 项 ACL**（同上：走 default 权限集时 ACL 成本摊到特性级，不随命令数增长） |
+| G4 | 新增一个可选特性的后端边际成本 | +132 行 | **+1 个插件文件 + 1 对 cfg + 1 个 `permissions/<plugin>/default.toml` + capability 1 行**（3.8.3a spike 已实测确认） |
+| G5 | 新增一条命令的注册成本 | 2 行（cfg + 条目） | **1 行条目**；ACL 摊到特性级（`default` 权限集自动覆盖全部命令），不随命令数增长 |
 | G6 | 装配层（`lib.rs` / `plugins.rs` / `lifecycle.rs`）内 `#[cfg]` | 2 处（`Exit` 双分支） | **0** |
 
 G1 的上限为什么是 8 而不是 6：v2.0 的 ≤6 在算术上不可达。即便 `setup.rs` 归零，`cmd/mod.rs` 仍需 `mod vault`(1) + 显式重导出(1) + `conf_side_effects` 注册(1) + `vault_cleanup_on_exit` 桩(2)，加上 `vault_plugin.rs` 的 1 对(2) 共 7 行。若把 3.8.4 做到「彻底不重导出、`vault_plugin` 直接引用 `crate::cmd::vault::*`」，可降到 6——因此 ≤6 保留为**进阶目标**，≤8 是本阶段验收线。
@@ -682,7 +669,28 @@ v2.1 把插件化的成本写成「后端 +1 个插件文件 + 1 对 cfg」，�
 
 spike 用 **1 条命令 + 1 个窗口**即可，半天量级。它决定 G4/G5 的最终口径：走 (a)+(a) 时新增特性 ≈ 1 文件 + 1 对 cfg + 1 个 `default.toml` + capability 1 行；走 (a)+(b) 时 capability 有 66 行，G5 的「1 行条目」不再成立。
 
+**spike 实测结论（已完成）**：采用路线 **(b) 内联插件 + (a) 权限集**，ACL 边际成本降为 1 个 `permissions/<plugin>/default.toml` + capability 1 行。
+
+| # | 结论 | 证据 |
+|---|---|---|
+| S1 | 成立：`build.rs` 的 `Attributes::plugin("spike", InlinedPlugin::new().commands(&["echo"]))` 免新 crate，前端 `plugin:spike\|echo` 同窗口调用成功 | 运行期返回 `S1-OK`，后端日志 `SPIKE_ECHO_INVOKED` |
+| S2 | 最小声明形态 = `permissions/<plugin>/default.toml` 的 `[default]` 表 + capability 1 条 `<plugin>:default`，逐条 `allow-*` 不需要 | `acl-manifests.json` 中 spike 与 `autostart`/`dialog`/`log`/`opener` 形态一致（`default_permission=default`、`permission_sets=[]`） |
+| S3 | 失败面分两段：ACL **声明**错误在构建期暴露；ACL **授权**缺失在运行期暴露 | 三条实测见下 |
+
+S3 实测细节：
+
+1. capability 引用不存在的权限 → 构建期失败：`failed to run tauri-build: Permission spike:does-not-exist not found expected one of ...`
+2. `build.rs` 未声明插件但 capability 仍引用其权限 → 构建期失败：`Permission spike:default not found ...`
+3. 插件与权限均存在、capability 未授 → 构建通过、运行期被拒：`log.log not allowed. Permissions associated with this command: log:allow-log, log:default`
+
+两条由此固化的实现约束：
+
+- **`[default]` 而非 `[[set]] identifier = "default"`**。后者只进 manifest 的 `permission_sets`，`default_permission` 仍为 `null`，capability 写 `<plugin>:default` 会被运行期拒绝，而报错信息仍把该标识列为可用权限，极难排查。
+- **ACL 声明不受 feature 影响**。`build.rs` 的 `plugin(...)` 与 `permissions/<plugin>/default.toml` 恒存在，可选性只体现在「运行期命令是否存在」；否则关闭特性时 capability 的 `<plugin>:default` 会直接让构建期失败。
+
 **在 spike 结论落地前，G4/G5 只作为方向性指标，不作为验收线。** 若 spike 显示 ACL 成本不可接受，备选路线是「桩化」——命令恒注册、主体按 cfg 切换，用 no-op stub 表达可选性（OpenBitFun 的做法：400+ 命令的注册块 0 处 cfg）。桩化的代价是禁用构建仍暴露 66 条惰性命令，收益是**完全不碰 IPC 契约与 ACL**；它不满足「编译期不存在」的强约束，因此只作为 Plan B，不替代 3.8.3。
+
+spike 结论落地后，ACL 成本已降到 1 行，**Plan B 不触发**，3.8.3 按插件边界主路径执行。
 
 #### 3.8.3 cfg 归零：vault 走插件边界（需先完成 3.8.3a）
 
@@ -785,6 +793,35 @@ for (group, effect) in conf_side_effects() { ... }
 
 **桩签名一致性**为什么必须是门禁而不是约定：`#[cfg(not(feature = "vault"))] pub fn vault_cleanup_on_exit(_app: &AppHandle) {}` 与真实现 `pub fn vault_cleanup_on_exit(app: &AppHandle)` 是两个**互不相关的函数**，真实现加一个参数时桩不会报错（桩自己编译得过），只有禁用构建下调用点才炸。参考项目把这套规则做成脚本（`normalizeConditionalSignature` 把 `_app:` 归一化为 `app:` 后要求两种实现签名集合大小为 1），本文照抄该做法，但放在 Rust 侧（`assembly_contract.rs` 解析两个 `#[cfg]` 分支的函数签名并比对）。
 
+**落地偏差（v2.3）**：上面的 `SideEffect` 草图只承载「副作用」，落地时把注册表项升级为「整段 apply」，类型命名为 `ConfApplier`：
+
+```rust
+pub(crate) type ConfApplier = fn(&tauri::AppHandle, serde_json::Value) -> Result<(), String>;
+
+pub(crate) fn conf_side_effects() -> Vec<(&'static str, ConfApplier)> {
+    let effects: Vec<(&'static str, ConfApplier)> = vec![
+        ("app", config::apply_app_conf),
+        ("orb", config::apply_orb_conf),
+        ("mascot", config::apply_mascot_conf),
+    ];
+    #[cfg(feature = "vault")]
+    let effects = effects
+        .into_iter()
+        .chain(std::iter::once(("vault", vault::apply_conf as ConfApplier)))
+        .collect();
+    effects
+}
+```
+
+两条理由：
+
+1. **`patch_conf` 必须零 group 分支**。若注册表只给副作用，`patch_conf` 仍需 `match group` 做 load/amend/validate/save，group 字面量就会在 `config.rs` 里出现两次，直接违反上面那条 grep 门禁。把整段 apply 收进注册表后，`patch_conf` 退化为「查表 → 调用」，`config.rs` 内 group 字面量计数为 **0**（实测 `grep '"app"|"orb"|"mascot"|"vault"'` 无命中）。
+2. **弱签名是刻意的**。四个 group 的配置 struct 类型互不相同，强签名（`&AppConf` / `&VaultConf` / ...）无法放进同一个 `Vec`，只能给每个 group 再套一层 `Value → T` 的适配器，`cmd/mod.rs` 就从「注册一项」退化为「逐 group 代码」；A6 的签名归一化也会失去「天然同形」这个前提（归一化后集合大小不再是 1）。弱签名把「类型差异」下沉到各 group 自己的 applier 内部。
+
+因此分层是：`apply_app_conf` / `apply_orb_conf` / `apply_mascot_conf` 留在 core（`cmd/config.rs`），内部仍是强类型链路（`AppConf::load → amend → validate → save → 既有副作用表`），编译期约束没有丢；`vault::apply_conf` 留在 `cmd/vault/mod.rs`，`cmd/mod.rs` 只认识一个函数路径，不知道 `VaultConf` 的存在——这才符合「注册一项」。
+
+同时，`pub use vault::*` 通配重导出已取消：`vault_plugin.rs` 的命令表直接用 `crate::cmd::vault::<cmd>` 路径引用，`cmd/mod.rs` 的重导出只剩 `vault_cleanup_on_exit` 一项（与桩配对）。全后端 vault 相关 `#[cfg]` 实测共 6 行（`cmd/mod.rs` 4 + `vault_plugin.rs` 2），落在 3.8.5 的 A2 上限内。
+
 #### 3.8.5 门禁：把可计数约束变成集合断言
 
 新增 `src-tauri/tests/assembly_contract.rs`，六条断言，任何回退直接红：
@@ -880,7 +917,7 @@ A4/A5/A6 的解析器细节（照抄参考项目，避免重复踩坑）：**先
 | `settings/overview/SettingsOverview.tsx` 与 `settings/shared/sections/SettingsGroup.tsx` 两份 `useConfByGroup` | 合并为一份 | `settings/core/useConfGroup.ts` |
 | `services/settingEvents.ts` 的 group 硬编码分支 | 改为 `isConfGroupAvailable(group)` 判定 | 同文件 |
 | 各特性 service 内的 `plugin:xxx\|` 字面量 | 收敛到一处 | `services/featureIpc.ts` 的 `featureInvoke()` |
-| `features/registry.ts` | 改为读生成清单 | `features/generated/manifest.ts` |
+| `features/registry.ts` | 每特性一段编译期守卫 + 动态 import（清单手写，不生成 manifest） | 同文件 |
 | `settings/pages/VaultSettingsPage.tsx` | 迁移 | `features/vault/settings/VaultSettingsPage.tsx` |
 | `settings/shared/renderers/BiometricSwitchRender.tsx` | 迁移 | `features/vault/settings/BiometricSwitchRender.tsx` |
 | `src-tauri/src/cmd/config.rs` 的 `apply_vault_side_effects` 双函数 | 删除 | `cmd/mod.rs` 的 `conf_side_effects()` |
@@ -906,13 +943,13 @@ A4/A5/A6 的解析器细节（照抄参考项目，避免重复踩坑）：**先
 | **E0** 快照与索引 | 新增 `types/snapshot.ts`、`snapshot.ts`、`query.ts`；core 查询改读快照；内置容器加版本号 | `settings/core/**` | 行为零变化：黄金快照测试 diff 为空；`getAllDefinitions()` 连续两次调用返回同一引用 |
 | **E1** 依赖方向拉直 | `fieldRegistry` / `pageRegistry` 删除 `@/features/registry` import；`loadFeatures()` 内 `bindExtensionInput()` | `settings/core/**`、`features/registry.ts`、`main.tsx` | `settings/**` 下 grep 不到 `@/features`；应用启动正常、设置页可打开 |
 | **E2** 配置面通用化 | `confRegistry.ts` + `confSlot.ts` + `confRuntime.ts`；store 改 `confs: ConfStore`（逐键可选 + `isConfGroupAvailable`）；删除 C1–C9 九处闭合点；两份 `useConfByGroup` 合并为 `useConfGroup`；`settingEvents` 改槽位判定；`featureIpc.ts` 收敛 `plugin:` 字面量 | 见第 4 章前 10 行 | vault 配置读写、乐观更新、跨窗口同步、命令面板跳转全部行为不变；`ConfGroup` 仍覆盖 app/orb/mascot/vault；`getConfValue("vault")` 的返回类型收窄为 `VaultConf \| null \| undefined`（`tsc` 即可验证 `ConfStore` 生效，不依赖 lint） |
-| **E3** 校验与引用完整性 | `validate()` 进快照构建（DEV 抛错 / 生产丢弃）；`validate()` 返回 `Violation[]` 批量收集；`insertUnique()` 统一两条通道；页面缺失改 404（守卫与 `getSettingsPageManifest` 两处都要改） | `snapshot.ts`、`builtinRegistry.ts`、`SettingsContent.tsx` | 构造 5 类错误声明（漏 category / 漏 section / 漏 group / 重复 key / `navParent` 指向不存在的 `sidebar.key`）**一次性全部抛出**；`/settings/vault` 在无 vault 构建下显示 404 而非跳总览 |
-| **E4** 构建开关单源 | `config/features.json` + `gen-features.mjs` + `feature-build.mjs` + 一致性断言 | `config/`、`scripts/`、`vite.config.ts`、`package.json` | 一条命令产出无 vault 构建；vault chunk 数为 0、产物无 `vaultAutoLockMinutes`；前后端开关不一致时构建失败 |
+| **E3** 校验与引用完整性 | `validate()` 进快照构建（DEV 抛错 / 生产丢弃）；`validate()` 返回 `Violation[]` 批量收集；`insertUnique()` 统一两条通道（落 `core/insertUnique.ts`，内置容器与 `aggregate` 共用）；页面缺失改「未找到」面板（守卫与 `getSettingsPageManifest` 两处都要改） | `snapshot.ts`、`builtinRegistry.ts`、`insertUnique.ts`、`aggregate.ts`、`SettingsContent.tsx` | 构造错误声明（漏 category / 漏 section / 重复 key 等**当前可表达**的规则）**一次性全部抛出**；`/settings/vault` 在无 vault 构建下显示未找到面板而非跳总览。**两条规则随字段落地推迟**：`field.group` 槽位校验 → E2（槽位动态化后才可校验），`navParent` / `sidebar.key` 悬空 → E5（字段在 E5.4 新增） |
+| **E4** 构建开关单源 | 手写 `config/features.json` 为单源（**不生成 manifest**）；`vite.config.ts` 直接读清单派生 define；`feature-build.ps1` 读同一清单并断言与 `Cargo.toml [features]` 一致 | `config/`、`scripts/`、`vite.config.ts` | 一条命令产出无 vault 构建；vault chunk 数为 0、产物无 `vaultAutoLockMinutes`；清单与 cargo 不一致时脚本启动即中止 |
 | **E5** 排序 / 插槽 / key 契约 | `order` 分命名空间；slot 扩到 4 值；`sidebar.key` 必填 + 全局唯一；新增 `page.navParent` / `visibility` / `emptyPage`（均为新增字段，当前无 `navOnly`）；`FeatureRoute` 补 `keywords` | `features/types.ts`、`aggregate.ts`、`AppSidebar.tsx`、`pageTypes.ts` | 打乱 vault `routes` 数组顺序后侧栏 key 与高亮不变；四个插槽各放一个探针条目位置正确；「两页共享一个侧栏条目」的用例高亮正确；`deepLinkOnly` 页面不出现在侧栏与命令面板但深链可达 |
 | **E6** 后端装配拆分（零行为变化） | `lib.rs` 只留装配；`plugins.rs` / `ipc.rs` / `menu.rs` / `lifecycle.rs` 抽出；`window::on_window_event` 入 `window.rs`；`SHOULD_EXIT` 改 `lifecycle::should_exit()`；`cmd/mod.rs` 加 `vault_cleanup_on_exit` 双实现桩；扫描测试改多块解析 | `src-tauri/src/**`、`crates/assistant-vault/tests/command_registry.rs` | `lib.rs` ≤ 40 行；`cargo check`（开/关 feature 两种）通过；扫描测试双向断言通过；前端行为零变化 |
 | **E6a** ACL spike（v2.2 新增，半天量级） | 1 条命令 + 1 个窗口验证插件命令可调用；对比「独立 crate + `permissions/default.toml`」与「`build.rs` 内联插件 + 逐条 `allow-*`」两条路线的 capability 成本 | `src-tauri/build.rs`、`capabilities/default.json`、临时 `spike_plugin.rs` | 三条结论落表（S1/S2/S3，见 3.8.3a）：插件命令可用 / 最小 capability 形态 / 关闭特性时的报错阶段；据此确认或下调 G4/G5 口径。**spike 未通过时 E7 改走 Plan B（桩化）** |
 | **E7** 后端 cfg 归零（插件化） | 新增 `vault_plugin.rs`（含 `.setup()` 钩子，接住 `cmd::vault::vault_setup`）；`plugins.rs` 无条件注册；`ipc.rs` 只留 core 57 条；`setup.rs` cfg 归零；按 E6a 结论落地 capability / `permissions/default.toml`；前端 `vault.service.ts` 改 `featureInvoke(vaultModule)`；新增 `assembly_contract.rs` 门禁；`conf_side_effects()` 注册表 | `src-tauri/src/**`、`src-tauri/capabilities/**`、`src/vault/core/vault.service.ts`、`src/services/featureIpc.ts` | G1 ≤ 8（本阶段验收）/ ≤ 6（进阶，取决于重导出收敛；`setup.rs` 归零是收紧前提）、G2 = 0、G4 = 1 对 cfg + 1 组 ACL（按 E6a 结论）；`assembly_contract.rs` **六条**断言通过（含 A4 双向差集 / A5 解析器下限 / A6 三态）；前端 ↔ 后端命令名集合比对通过；vault 全部 70 个调用点无改动即可工作（密码读写 / TOTP / 同步 / SSH / 生物识别全链路回归） |
-| **E8** 资产 colocate | vault 设置页与渲染器迁入 `features/vault/settings/` | `features/vault/**`、`src/settings/**` | `src/settings/**` 下 grep 不到 `@/vault` |
+| **E8** 资产 colocate | vault 设置页与渲染器迁入 `features/vault/settings/` | `features/vault/**`、`src/settings/**` | `src/settings/**` 下 grep 不到 `@/vault`。**落地**：两文件迁入 `features/vault/settings/`，跨目录引用统一改 `@/settings/**` 别名，`module.ts` 两处动态导入改相对路径 `./settings/*`；实测 `src/settings/**` 命中 0 |
 
 依赖顺序：**E0 → E1 → E3 → E2 → E4 → E5 → E6 → E6a → E7 → E8**。E0/E1 是纯结构重构，先做且必须行为零变化；E3 依赖 E0 的快照构建点；E2 依赖 E1 的绑定方向；E4/E5/E8 相互独立，可并行；E7 必须在 E6 之后（E6 是它的文件前提），且必须在 E6a 之后（ACL 口径决定 E7 的验收线）。
 
@@ -970,7 +1007,7 @@ v2.2 追加两类「注册表被绕过」的回归测试（这类缺陷比声明
 - 开启该特性后设置页出现探针页并可读写配置；关闭后产物中无该特性代码；
 - 探针的 `conf` 命令走 core 裸名（`get_probe_conf`），后端 mock 命令走 `featureInvoke(probeModule)` 拼 `plugin:probe|`——这条同时验证 3.2.1 的两种 invoke 形态。
 
-演练通过后删除 `_probe`，并把「新增特性需要改动的 core 文件数 = 0」写成 CI 断言：对比改动路径白名单（白名单含 `config/features.json`、`plugins.rs`、`capabilities/*.json`、`permissions/**` 四类装配点，它们都是「每特性一行」而非「每命令一行」）。
+演练通过后删除 `_probe`，并把「新增特性不触碰 core」写成 CI 断言：对比改动路径白名单（白名单含 `config/features.json`、`features/registry.ts`、`plugins.rs`、`capabilities/*.json`、`permissions/**` 五类装配点，每类都是「每特性一行 / 一段」，而非「每命令一行」）。**`settings/**` 与 `src-tauri/src/{ipc,setup,menu,window,lifecycle}.rs` 必须零改动**——这是本阶段真正要守住的口径；`features/registry.ts` 因清单手写、无生成物，需要每特性约 4 行守卫 + 动态 import，它属于「特性装配点」而非 core。
 
 ### 6.4 现有门禁保持不变
 
@@ -984,13 +1021,13 @@ v2.2 追加两类「注册表被绕过」的回归测试（这类缺陷比声明
 
 | # | 风险 | 影响 | 对策 |
 |---|---|---|---|
-| R1 | 声明合并让 `ConfGroup` 在 typecheck 期恒为完整集合 | 类型层不反映「无 vault 构建」，`confs` 若声明为全量必填则「类型说谎」 | **有意设计**，但必须配套三条约束（3.2）：`confs` 用逐键可选的映射类型 `ConfStore`、提供 `isConfGroupAvailable`、读值只走访问器。运行时正确性由 E4 的生成清单与一致性断言保证，两条口径各管一段 |
+| R1 | 声明合并让 `ConfGroup` 在 typecheck 期恒为完整集合 | 类型层不反映「无 vault 构建」，`confs` 若声明为全量必填则「类型说谎」 | **有意设计**，但必须配套三条约束（3.2）：`confs` 用逐键可选的映射类型 `ConfStore`、提供 `isConfGroupAvailable`、读值只走访问器。运行时正确性由 E4 的清单与一致性断言保证，两条口径各管一段 |
 | R2 | 快照缓存引入状态，调试时可能看到「旧快照」 | 排查困难 | 快照带 `version` 与 `extensionId`，DEV 下暴露 `__settingsSnapshotMeta()`；单测覆盖双键失效；相位契约（3.3）禁止「先查询后绑定」 |
 | R3 | 校验策略影响可用性 | 抛错太严导致白屏，太松导致静默缺失 | 已定档：DEV / 测试抛错，生产 `log.error` + 丢弃条目（3.5 策略 3）。**不再讨论**「生产也白屏」——静态声明错误由 6.1/6.2 在 CI 兜住 |
 | R4 | store 从四个具名槽改为 `confs` 映射，触及约 10 个消费方 | 迁移面较宽、易漏 | 分两步：先加 `confs` 与旧槽并存（旧槽改为 getter 代理），全部消费方切换后删除旧槽；用 lint 规则禁止新增旧槽访问 |
-| R5 | 生成物 `manifest.ts` 提交入库，可能手改 | 清单与生成器漂移 | CI 跑 `gen-features.mjs --check`，不一致即失败 |
+| R5 | 清单手写，`config/features.json` 与 `Cargo.toml [features]` 是两处独立手写的事实 | 默认集合 / 特性名漂移，前端开而后端关 | 已消除「生成物被手改」这一类；剩下的漂移由 `feature-build.ps1` 启动断言双向拦截（cargoFeature 已声明、无孤儿条目、默认集合相等），不一致即中止。绕过脚本直接 `npm run tauri build` 时前端按清单默认、后端按 cargo 默认，两者本就同值，断言失配才需要人介入 |
 | R6 | 拆分或插件化后，有人图省事把 cfg 条目又加回注册表 | 132 行噪声回归 | 不是「接受风险」，而是**禁止**：`assembly_contract.rs` 断言注册表内 `#[cfg]` 计数为 0、全后端 cfg 只出现在白名单文件（`vault_plugin.rs` / `cmd/mod.rs`，`setup.rs` 必须为 0），违反即 CI 红（3.8.5） |
-| R7 | 页面 404 行为变化影响现有深链 | 用户书签失效 | 仅影响「访问不存在页面」，现有页面均存在；发布说明中记录 |
+| R7 | 页面未找到行为变化影响现有深链 | 用户书签失效 | 仅影响「访问不存在页面」，现有页面均存在；发布说明中记录 |
 | R8 | 插件命令的 ACL 成本未经验证（v2.2 新增） | 若需逐条 66 项 capability，G4/G5 的「边际成本」口径失效，插件化收益被摊薄 | **先做 E6a spike 再定验收线**；spike 不过或成本过高则改走 Plan B（桩化：命令恒注册 + no-op stub），它不碰 IPC 契约与 ACL，但放弃「编译期不存在」的强约束 |
 | R9 | 前端命令名与后端注册名漂移（v2.2 新增） | 拼错前缀/名字只在用户操作时报 command not found，测试环境若无覆盖则漏到线上 | 3.8.3 不做前缀裁剪 + 6.2「命令名一致」双向差集；`plugin:` 字面量收敛到 `featureIpc.ts` 一处并由 lint 限制 |
 | R10 | `sidebar.key` / `navParent` 模型改动波及侧栏与路由选中态 | E5 触及 `AppSidebar.tsx`、`aggregate.ts`，高亮回归风险 | E5 验收含「两页共享一个侧栏条目」与「打乱 routes 顺序」两个用例；`selectedKeys` 推导函数单测覆盖「navParent 命中 / 回落到 page id」两条分支 |
@@ -1029,3 +1066,43 @@ v2.2 追加两类「注册表被绕过」的回归测试（这类缺陷比声明
 | 注册表自证 | `assembly_contract.rs` A4 双向差集为空、A5 解析器下限成立、A6 三态分类恰好命中；前端槽位键集合 == `getConfGroups()`（6.2） |
 | 命令名一致 | 前端 `invoke` 字面量集合 == 后端注册集合（双向差集，6.2） |
 | 侧栏模型 | 无「`sidebar.key` 必须等于 route path」约束；`navParent` 命中或回落可推导；`deepLinkOnly` 页面不进侧栏与命令面板（E5） |
+
+---
+
+## 10. 探针演练实测（v2.3 修订）
+
+6.3 的白名单是在探针落地前写下的；P.1 实测后需补齐三类此前漏记的装配点，并记下演练暴露的设计缺口。逐项改动与校验结果见 `docs/store/I24-tasklist.md`「探针演练执行记录」。
+
+### 10.1 白名单修订
+
+6.3 原文白名单为「`features/_probe/**`、`probe_plugin.rs`、`plugins.rs` 一行、`config/features.json`、capability 一行、`permissions/**`、`features/registry.ts`」。实测还必然触及以下三处，且各自都是「每特性一行 / 一段」，与命令条数无关：
+
+| 文件 | 为何躲不开 | 形态 |
+|---|---|---|
+| `src-tauri/build.rs` | Tauri v2 内联插件必须在构建期声明命令清单，否则运行期 ACL 查不到该命令 | 每特性 1 段 `InlinedPlugin::new().commands([...])` |
+| `src-tauri/commands.json` | A4 双向差集的 `declared` 侧唯一事实源 | 每特性 1 个 `groups.<name>` 数组 |
+| `src-tauri/Cargo.toml` | cargo 特性名与默认集合 | 每特性 1 行 `[features]` 条目 + default 集合增 1 项 |
+
+结论：**「新增特性改动 core 文件数 = 0」的正确口径是「core 逻辑零改动」，不是「文件零改动」**。装配点随特性数线性增长，实测每特性需触碰 **11 个装配点文件**，另有 2 处特性本体新建：
+
+| 组 | 文件 | 每特性改动量 |
+|---|---|---|
+| 后端（6） | `lib.rs` / `plugins.rs` / `cmd/mod.rs` / `build.rs` / `commands.json` / `Cargo.toml` | 各 1 行或 1 段 |
+| ACL（2） | `capabilities/default.json` / `permissions/<name>/default.toml` | 1 行 / 新建 |
+| 前端（3） | `config/features.json` / `features/registry.ts` / `vite-env.d.ts` | 1 条 / 1 段 / 1 行 |
+| 本体（2） | `features/_probe/**` / `probe_plugin.rs` | 新建 |
+
+P.4 的 CI 断言应断言「除上述 13 条路径外无改动」，并把 `settings/**`、`src-tauri/src/{ipc,setup,menu,window,lifecycle}.rs`、`features/{types,aggregate,nav}.ts` 列为禁区。`cmd/mod.rs` 的 conf applier 段已由 F2 移入各插件 `init()` 自注册，装配点降为 10（后端 5 + ACL 2 + 前端 3）。
+
+### 10.2 演练暴露的缺口
+
+| # | 缺口 | 现状 | 归属 |
+|---|---|---|---|
+| F1 | 前端 id 引用完整性无断言 | `navParent`→`sidebar.key`、`fields.group`→`confs.group`、`section.pageId`→`pages.id` 三组引用写错只在运行期静默失效；`assembly_contract.rs` 只覆盖后端 | **已完成**：`src/features/__tests__/featureModuleRefs.test.ts` 覆盖 `navParent`/`categoryId`/`pageId`/`section`/`group` 6 类跨槽位引用，含 7 类反例自检，4 例全绿 |
+| F2 | `conf_side_effects()` 仍是 core 内唯一按特性增长的 cfg 点 | `cmd/mod.rs` 每特性 1 段 cfg 重绑定；多特性叠加时链式 `collect()` 触发 `E0282`，须显式标注 `Vec<(&'static str, ConfApplier)>` | **已完成**：`cmd/mod.rs` 改为 `CONF_APPLIERS` 注册表（core 三组首次消费时惰性播种）+ `register_conf_applier()`；`vault_plugin.rs` / `probe_plugin.rs` 在各自 `#[cfg(feature)] init()` 内自注册，core 侧特性 cfg 归零 |
+| F3 | 读写前缀不对称 | 读走 `plugin:probe\|get_probe_conf`，写走 core `patch_conf`，同一 group 两条前缀 | 记录项：`patch_conf` 是否插件化留待后续阶段决定 |
+| F4 | 前端重复字面量 | `conf.ts` 与 `ipc.ts` 各写一份 `{ ipc: { namespace: "probe" } }` | 小清理：由 `ipc.ts` 导出 `probeIpc` 常量，其余引用它 |
+| F5 | 运行时 ACL 无静态门禁 | A1–A6 只读源码文本，不校验 `capabilities/*.json` / `permissions/**` / `build.rs` 三方命令名求交；错位时静态全绿、运行期报 `Command ... not allowed`。**一次性冒烟已通过**（P.2），但下次改 ACL 仍无回归保护 | 门禁补强：P.4 后加「三方命令名集合求交」断言，冒烟只作一次性验证 |
+| F6 | A2 的 cfg 断言写死了 vault | `cfg_line_count()` 只统计含 `vault` 的 `#[cfg]` 行、白名单也只为 vault 定义；probe 在 `cmd/mod.rs` 的 1 行 cfg 对 A2 不可见，任何新特性往 core 塞 cfg 都能静默通过 | **已完成**：A2 改 `cfg_feature_names()` + `cfg_location_allowed()`，按特性名分组计数（vault 行数上限 6 保留） |
+
+F1 / F2 / F6 属本阶段应补齐项，F3 属记录项，F4 属小清理，F5 属门禁补强。

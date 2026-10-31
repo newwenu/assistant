@@ -1,6 +1,8 @@
 # Token Usage 获取机制分析报告
 
 > 对比本应用与参考项目（OpenBitFun、deepseek-harness-orb）的 token usage 获取、归一化、持久化与展示机制，明确当前实现的差距与优先级。
+>
+> **更新日期**: 2026-10-31（标记 Phase 1/2 完成状态，移除内联代码以降低时效性风险）
 
 ## 1 数据流架构
 
@@ -12,29 +14,23 @@ Provider API 原始字段 → Provider Usage 结构 → UnifiedTokenUsage → �
 
 | 层次 | 本应用 | OpenBitFun | deepseek-harness-orb |
 |------|--------|------------|---------------------|
-| Provider 解析 | `openai/types.rs` `anthropic/types.rs` `gemini/types.rs` | 同结构，同路径 | N/A（TypeScript SDK） |
-| 归一化 | `types/unified.rs` `UnifiedTokenUsage` | `agent-stream/unified.rs`（re-export） | `TokenUsage` interface |
-| 前端传输 | `types/chat_delta.rs` `TokenUsage` → `protocol/dto/chat.rs` `TokenUsageDto` | 直接序列化 `UnifiedTokenUsage` | `TurnTokenUsage` 跨 attempt 聚合 |
+| Provider 解析 | `assistant-providers/src/{openai,anthropic,gemini}/` 对应文件 | 同结构，同路径 | N/A（TypeScript SDK） |
+| 归一化 | `assistant-providers/src/types/unified.rs` `UnifiedTokenUsage` | `agent-stream/unified.rs`（re-export） | `TokenUsage` interface |
+| 前端传输 | `TokenUsage`（chat_delta.rs）→ `TokenUsageDto`（protocol/dto/chat.rs） | 直接序列化 `UnifiedTokenUsage` | `TurnTokenUsage` 跨 attempt 聚合 |
 | UI 展示 | `ChatView.tsx` ContextBar（仅 used/max/percentage） | 桌面端 token 面板 | `ContextPressureProjection` |
 
 ## 2 UnifiedTokenUsage 结构对比
 
-本应用与 OpenBitFun 的 `UnifiedTokenUsage` **完全对齐**：
+本应用与 OpenBitFun 的 `UnifiedTokenUsage` **完全对齐**，均包含以下 6 个字段（详见 `assistant-providers/src/types/unified.rs`）：
 
-```rust
-pub struct UnifiedTokenUsage {
-    pub prompt_token_count: u32,
-    pub candidates_token_count: u32,
-    pub total_token_count: u32,
-    pub reasoning_token_count: Option<u32>,       // ✅ 对齐
-    pub cached_content_token_count: Option<u32>,   // ✅ 对齐，仅含 cache read
-    pub cache_creation_token_count: Option<u32>,   // ✅ 对齐，仅含 cache write
-}
-```
-
-OpenBitFun 的字段语义注释（本应用缺少但语义一致）：
-- `cached_content_token_count`：Cache READ tokens（从缓存命中），hit rate 的分子，`prompt_token_count` 为分母
-- `cache_creation_token_count`：Cache WRITE tokens（仅 Anthropic 报告），与 read 互斥分离，**不计入** hit rate 分子
+| 字段 | 类型 | 语义 |
+|------|------|------|
+| `prompt_token_count` | `u32` | 输入 token 总数 |
+| `candidates_token_count` | `u32` | 输出 token 总数 |
+| `total_token_count` | `u32` | prompt + candidates |
+| `reasoning_token_count` | `Option<u32>` | 思维链/thinking token（仅 Gemini 报告） |
+| `cached_content_token_count` | `Option<u32>` | Cache READ tokens，hit rate 的分子，`prompt_token_count` 为分母 |
+| `cache_creation_token_count` | `Option<u32>` | Cache WRITE tokens（仅 Anthropic / OpenAI Responses 报告），与 read 互斥分离，**不计入** hit rate 分子 |
 
 ## 3 各 Provider 字段映射
 
@@ -48,7 +44,7 @@ OpenBitFun 的字段语义注释（本应用缺少但语义一致）：
 | cache_read | `prompt_cache_hit_tokens` ∨ `prompt_tokens_details.cached_tokens` | ✅ DeepSeek 优先 | ✅ 同策略 | 无 |
 | cache_write | — | ❌ 不支持 | ❌ 不支持 | 无（OpenAI 不报告） |
 | reasoning | — | ❌ 不提取 | ❌ 不提取 | ⚠️ OpenAI 不报告，但 `reasoning_token_count` 字段已预留 |
-| `prompt_cache_miss_tokens` | DeepSeek 扩展 | ✅ 反序列化（`#[allow(dead_code)]`） | ❌ 未声明 | ⚠️ 含此字段的 payload 可能导致 serde 拒绝 |
+| `prompt_cache_miss_tokens` | DeepSeek 扩展 | ✅ 反序列化（`#[allow(dead_code)]`） | ✅ 已声明 | 无 |
 
 **核心策略一致**：`prompt_cache_hit_tokens`（DeepSeek 原生）优先于 `prompt_tokens_details.cached_tokens`（OpenAI 标准），两者都存在时取 DeepSeek 值。
 
@@ -90,60 +86,29 @@ OpenBitFun 的字段语义注释（本应用缺少但语义一致）：
 
 ### 3.5 Provider 映射总结
 
-**本应用的 Provider → UnifiedTokenUsage 转换逻辑已与 OpenBitFun 完全对齐**，无功能性差距。唯一微小差异是 OpenAI 的 `prompt_cache_miss_tokens` 字段未声明。
+**本应用的 Provider → UnifiedTokenUsage 转换逻辑已与 OpenBitFun 完全对齐**，无功能性差距。
 
 ## 4 前端 TokenUsage 结构对比
 
 ### 4.1 本应用当前结构
 
-**Rust 层** (`chat_delta.rs`):
+三层 TokenUsage 已对齐（详见对应源文件）：
 
-```rust
-pub struct TokenUsage {
-    pub prompt_tokens: u32,
-    pub completion_tokens: u32,
-    pub total_tokens: u32,
-    pub cache_read_tokens: u32,       // 非 Option，默认 0
-    pub cache_write_tokens: u32,      // 非 Option，默认 0
-    pub context_window_tokens: u32,
-}
-```
+- **Rust 中间层** `assistant-providers/src/types/chat_delta.rs`：`TokenUsage` 含 `prompt_tokens` / `completion_tokens` / `total_tokens` / `cache_read_tokens` / `cache_write_tokens` / `reasoning_tokens` / `context_window_tokens`，其中 cache 和 reasoning 均为 `Option<u32>`
+- **Rust DTO 层** `src-tauri/src/protocol/dto/chat.rs`：`TokenUsageDto` 字段与中间层一一对应
+- **TypeScript 层** `src/chat/core/chatTypes.ts`：`TokenUsage` 接口含 `promptTokens` / `completionTokens` / `totalTokens` / `cacheReadTokens?` / `cacheWriteTokens?` / `reasoningTokens?` / `contextWindowTokens?`
 
-**TypeScript 层** (`chatTypes.ts`):
+转换函数 `unified_usage_to_token_usage()` 将 `UnifiedTokenUsage` 的 Option 字段**直接透传**（不再 `unwrap_or(0)`），`reasoning_token_count` 也一并传递。
 
-```typescript
-export interface TokenUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  cacheReadTokens?: number;      // optional，但 Rust 侧始终为 0
-  cacheWriteTokens?: number;     // optional，但 Rust 侧始终为 0
-  contextWindowTokens?: number;
-}
-```
+### 4.2 已解决的差距
 
-**转换函数** (`chat_delta.rs`):
+以下 3 项在 Phase 1/2 中已完成（参见 §8）：
 
-```rust
-fn unified_usage_to_token_usage(usage: &UnifiedTokenUsage, context_window_tokens: u32) -> TokenUsage {
-    TokenUsage {
-        prompt_tokens: usage.prompt_token_count,
-        completion_tokens: usage.candidates_token_count,
-        total_tokens: usage.total_token_count,
-        cache_read_tokens: usage.cached_content_token_count.unwrap_or(0),   // Option → u32
-        cache_write_tokens: usage.cache_creation_token_count.unwrap_or(0),   // Option → u32
-        context_window_tokens,
-    }
-}
-```
-
-### 4.2 关键差距
-
-| 差距 | 说明 | 影响 |
-|------|------|------|
-| ❌ 缺少 `reasoning_tokens` | `UnifiedTokenUsage.reasoning_token_count` 在转换时被丢弃 | 前端无法显示 reasoning token 占比；Gemini 的 thinking token、DeepSeek 的 reasoning token 信息丢失 |
-| ⚠️ cache 字段 `u32` vs `Option<u32>` | `unwrap_or(0)` 将"provider 不报告"和"cache = 0"混为一谈 | 无法区分两种语义，cache hit ratio 计算分母失真 |
-| ❌ 缺少 `reasoning_tokens` 在 DTO | `TokenUsageDto` 也无此字段 | 前端协议层无法传递 |
+| 原差距 | 当前状态 |
+|--------|----------|
+| ~~缺少 `reasoning_tokens`~~ | ✅ 三层均已补齐 |
+| ~~cache 字段 `u32` vs `Option<u32>`~~ | ✅ 已改为 `Option<u32>`，直接透传 |
+| ~~DTO 缺少 `reasoning_tokens`~~ | ✅ `TokenUsageDto` 已包含 |
 
 ### 4.3 OpenBitFun 的做法
 
@@ -151,36 +116,19 @@ OpenBitFun 直接序列化 `UnifiedTokenUsage`（所有字段均为 `Option` 或
 
 ### 4.4 deepseek-harness-orb 的做法
 
-`TurnTokenUsage` 采用**保守聚合策略**：
-
-```typescript
-interface TurnTokenUsage {
-  uncachedInputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  cacheReadTokens?: number;    // 仅当所有 attempt 都报告时才为 Some
-  cacheWriteTokens?: number;   // 仅当所有 attempt 都报告时才为 Some
-  reasoningTokens?: number;    // 仅当所有 attempt 都报告时才为 Some
-}
-```
-
-`cacheReadTokens` / `cacheWriteTokens` / `reasoningTokens` 仅在**所有 attempt 都报告了该字段**时才存在，否则为 `undefined`。这避免了部分 attempt 无 cache 报告时的统计失真。
+`TurnTokenUsage` 采用**保守聚合策略**：`cacheReadTokens` / `cacheWriteTokens` / `reasoningTokens` 仅在**所有 attempt 都报告了该字段**时才存在，否则为 `undefined`。这避免了部分 attempt 无 cache 报告时的统计失真。
 
 ## 5 Token 估算与持久化
 
 ### 5.1 本应用当前实现
 
-**估算公式**（`agent_modes.rs`）：
-
-```sql
-COALESCE(SUM(COALESCE(tokens, (LENGTH(content) + 3) / 4 + 4)), 0)
-```
+**估算与聚合**（`assistant-storage/src/agent_modes.rs`）：
 
 - 每条消息有 `tokens` 字段（来自 provider 报告或估算）
 - 若 `tokens` 为 NULL，回退到字符级估算：`(LENGTH(content) + 3) / 4 + 4`
-- 按 conversation 聚合，与 `context_window_tokens` 比较
+- 按 conversation 聚合所有消息的 tokens 总和，与 `context_window_tokens` 比较得出百分比
 
-**持久化**：仅 `messages.tokens`（INTEGER，单值），无按 model/session 的聚合统计。
+**持久化**：仅 `messages.tokens`（INTEGER，单值），无按 model/session 的聚合统计。无 per-request 的 prompt/completion/cache/reasoning 拆分记录。
 
 ### 5.2 OpenBitFun 的 Token 持久化统计
 
@@ -208,28 +156,11 @@ COALESCE(SUM(COALESCE(tokens, (LENGTH(content) + 3) / 4 + 4)), 0)
 
 **Context Pressure 投影**（`projection.ts`）：
 
-```typescript
-interface ContextPressureProjection {
-  pressureTokens?: number;    // 最近一次请求的 provider 报告值（锚点）
-  projectedTokens?: number;   // pressureTokens + 自上次报告以来的 surface delta
-  contextWindow?: number;     // 当前模型的上下文窗口
-}
-```
-
-**核心思想**：compaction 不产生 usage 事件，但 `projectedTokens` 通过 **provider 锚点 + heuristic delta** 重定价，使 compaction 后的 context 占用显示不会断层。
+核心思想：compaction 不产生 usage 事件，但 `projectedTokens` 通过 **provider 锚点 + heuristic delta** 重定价，使 compaction 后的 context 占用显示不会断层。结构含 `pressureTokens`（最近一次 provider 报告值）、`projectedTokens`（锚点 + surface delta）、`contextWindow`（当前模型窗口）。
 
 **Token 四桶分离**（`TokenUsageProjection`）：
 
-```typescript
-interface TokenUsageProjection {
-  uncachedInputTokens: number;   // 未命中 cache 的输入
-  outputTokens: number;          // 输出（含 reasoning）
-  cacheReadTokens: number;       // cache 命中
-  cacheWriteTokens: number;      // cache 写入
-}
-```
-
-四个桶互斥分离，reasoning 已包含在 `outputTokens` 中不重复计算。
+四个桶互斥分离：`uncachedInputTokens`（未命中 cache）、`outputTokens`（输出，含 reasoning）、`cacheReadTokens`（cache 命中）、`cacheWriteTokens`（cache 写入），reasoning 已包含在 output 中不重复计算。
 
 ## 6 前端展示对比
 
@@ -237,15 +168,9 @@ interface TokenUsageProjection {
 
 `ChatView.tsx` 的 `ContextBar` 组件：
 
-```tsx
-<ContextBar usage={chat.contextUsage} />
-// contextUsage = { usedTokens, maxTokens, percentage }
-// 显示：usedTokens / maxTokens + Progress Bar
-```
-
-- 仅展示 `usedTokens / maxTokens` 和进度条
-- `usedTokens` 来自 `usage.promptTokens`（流式实时更新）
-- **不展示** cache hit、cache write、reasoning tokens
+- 仅展示 `usedTokens / maxTokens` 加进度条和百分比
+- 有三级阈值颜色：正常（<68%）、警告黄色（68%-90%）、危险红色（>90%）
+- **不展示** cache hit、cache write、reasoning tokens 等细分信息
 
 ### 6.2 OpenBitFun
 
@@ -263,33 +188,35 @@ interface TokenUsageProjection {
 
 ## 7 缺失项与优先级
 
-| 优先级 | 缺失项 | 来源参考 | 影响 | 建议方案 |
-|--------|--------|----------|------|----------|
-| **P0** | `TokenUsage` / `TokenUsageDto` 缺少 `reasoning_tokens` | OpenBitFun `UnifiedTokenUsage.reasoning_token_count` | 前端无法显示 reasoning token 占比；Gemini thinking token、DeepSeek reasoning token 被吞掉 | 在 `TokenUsage` / `TokenUsageDto` / `chatTypes.ts` 中添加 `reasoning_tokens: Option<u32>` / `reasoningTokens?: number` |
-| **P1** | cache 字段 `u32` vs `Option<u32>` | deepseek-harness-orb `TurnTokenUsage` 保守聚合 | 无法区分"provider 不报告"和"cache = 0"，cache hit ratio 分母失真 | `TokenUsage` 中 `cache_read_tokens` / `cache_write_tokens` 改为 `Option<u32>`，前端对应 `number \| undefined` |
-| **P1** | 缺少 `TokenUsageRecord` / `ModelTokenStats` 持久化 | OpenBitFun `services-core/token_usage` | 无法按 model/session 聚合 token 用量，无法计算 cache hit ratio | 新增 `token_usage` 表 + `ModelTokenStats` / `SessionTokenStats` 聚合查询 |
-| **P2** | 缺少 `ContextPressureProjection` | deepseek-harness-orb `token-meter/projection` | compaction 后 context 占用显示断层 | 实现 provider 锚点 + heuristic delta 重定价 |
-| **P2** | 缺少跨 attempt 的 `TurnTokenUsage` 聚合 | deepseek-harness-orb `token-meter/turn-usage` | 重试/continuation 场景下 token 统计不完整 | 在 `StreamStats` 中累积多 attempt usage |
-| **P2** | 前端不展示 cache / reasoning 信息 | OpenBitFun 桌面端 token 面板 | 用户无法感知 cache 命中率和 reasoning 开销 | ContextBar 扩展或新增 TokenDetail 面板 |
-| **P3** | OpenAI 缺少 `prompt_cache_miss_tokens` 反序列化 | OpenBitFun `openai.rs` | 含此字段的 DeepSeek payload 可能导致 serde 拒绝 | 在 `ChatUsage` 中添加 `#[serde(default)] prompt_cache_miss_tokens: Option<u32>` |
-| **P3** | Token 估算公式粗糙 | deepseek-harness-orb `estimate.ts` | `(LENGTH + 3) / 4 + 4` 对 CJK 文本严重低估 | 实现 ASCII/非ASCII 双系数估算 |
+> ✅ = 已完成  ❌ = 待实施
+
+| 优先级 | 缺失项 | 来源参考 | 影响 | 建议方案 | 状态 |
+|--------|--------|----------|------|----------|------|
+| **P0** | `TokenUsage` / `TokenUsageDto` 缺少 `reasoning_tokens` | OpenBitFun `UnifiedTokenUsage.reasoning_token_count` | 前端无法显示 reasoning token 占比；Gemini thinking token、DeepSeek reasoning token 被吞掉 | 在 `TokenUsage` / `TokenUsageDto` / `chatTypes.ts` 中添加 `reasoning_tokens: Option<u32>` / `reasoningTokens?: number` | ✅ |
+| **P1** | cache 字段 `u32` vs `Option<u32>` | deepseek-harness-orb `TurnTokenUsage` 保守聚合 | 无法区分"provider 不报告"和"cache = 0"，cache hit ratio 分母失真 | `TokenUsage` 中 `cache_read_tokens` / `cache_write_tokens` 改为 `Option<u32>`，前端对应 `number \| undefined` | ✅ |
+| **P1** | 缺少 `TokenUsageRecord` / `ModelTokenStats` 持久化 | OpenBitFun `services-core/token_usage` | 无法按 model/session 聚合 token 用量，无法计算 cache hit ratio | 新增 `token_usage` 表 + `ModelTokenStats` / `SessionTokenStats` 聚合查询 | ❌ |
+| **P2** | 缺少 `ContextPressureProjection` | deepseek-harness-orb `token-meter/projection` | compaction 后 context 占用显示断层 | 实现 provider 锚点 + heuristic delta 重定价 | ❌ |
+| **P2** | 缺少跨 attempt 的 `TurnTokenUsage` 聚合 | deepseek-harness-orb `token-meter/turn-usage` | 重试/continuation 场景下 token 统计不完整 | 在 `StreamStats` 中累积多 attempt usage | ❌ |
+| **P2** | 前端不展示 cache / reasoning 信息 | OpenBitFun 桌面端 token 面板 | 用户无法感知 cache 命中率和 reasoning 开销 | ContextBar 扩展或新增 TokenDetail 面板 | ❌ |
+| **P3** | OpenAI 缺少 `prompt_cache_miss_tokens` 反序列化 | OpenBitFun `openai.rs` | 含此字段的 DeepSeek payload 可能导致 serde 拒绝 | 在 `ChatUsage` 中添加 `#[serde(default)] prompt_cache_miss_tokens: Option<u32>` | ✅ |
+| **P3** | Token 估算公式粗糙 | deepseek-harness-orb `estimate.ts` | `(LENGTH + 3) / 4 + 4` 对 CJK 文本严重低估 | 实现 ASCII/非ASCII 双系数估算 | ❌ |
 
 ## 8 实施路线建议
 
-### Phase 1：补齐字段（P0）
+### Phase 1：补齐字段（P0） ✅ 已完成
 
-1. `TokenUsage` 添加 `reasoning_tokens: Option<u32>`
-2. `TokenUsageDto` 添加 `reasoning_tokens: Option<u32>`
-3. `chatTypes.ts` 添加 `reasoningTokens?: number`
-4. `unified_usage_to_token_usage` 传递 `reasoning_token_count`
-5. `ChatUsage` 添加 `prompt_cache_miss_tokens`（P3 顺手做）
+1. `TokenUsage` 添加 `reasoning_tokens: Option<u32>` ✅
+2. `TokenUsageDto` 添加 `reasoning_tokens: Option<u32>` ✅
+3. `chatTypes.ts` 添加 `reasoningTokens?: number` ✅
+4. `unified_usage_to_token_usage` 传递 `reasoning_token_count` ✅
+5. `ChatUsage` 添加 `prompt_cache_miss_tokens`（P3 顺手做） ✅
 
-### Phase 2：cache 语义精确化（P1）
+### Phase 2：cache 语义精确化（P1） ✅ 已完成
 
-1. `TokenUsage` 的 `cache_read_tokens` / `cache_write_tokens` 改为 `Option<u32>`
-2. `TokenUsageDto` 同步修改
-3. `chatTypes.ts` 已是 `number | undefined`，无需改
-4. `unified_usage_to_token_usage` 直接传递而非 `unwrap_or(0)`
+1. `TokenUsage` 的 `cache_read_tokens` / `cache_write_tokens` 改为 `Option<u32>` ✅
+2. `TokenUsageDto` 同步修改 ✅
+3. `chatTypes.ts` 已是 `number | undefined`，无需改 ✅
+4. `unified_usage_to_token_usage` 直接传递而非 `unwrap_or(0)` ✅
 
 ### Phase 3：持久化统计（P1）
 
@@ -341,3 +268,9 @@ interface TokenUsageProjection {
 | `src/chat/core/chatTypes.ts` | 前端 TokenUsage interface |
 | `src/chat/ChatView.tsx` | ContextBar 展示组件 |
 | `src/services/chatOrchestrator.ts` | usage → contextUsage 转换 |
+
+## 附录 C：相关 spec
+
+| 文档 | 说明 |
+|------|------|
+| `token-usage-ui-spec.md` | Token Usage 持久化与 UI 优化完整 spec（DB messages 表扩展 + StreamOutcome → DbWriteMsg → 分段着色 UI） |
