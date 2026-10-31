@@ -18,14 +18,15 @@ import {
   getAllDefinitions,
   getAllSections,
 } from "@/settings/core/field/fieldRegistry";
-import type { ConfGroup } from "@/settings/core/field/fieldRegistry";
+import { getSettingsSnapshot } from "@/settings/core/snapshot";
 import "@/settings/core/field/fieldDefinitions";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { getConfValue } from "@/settings/core/useConfGroup";
 import {
   dispatchConfPatch,
   dispatchThemeChanged,
 } from "@/settings/core/settingsDispatcher";
 import { defineCommand, clearCommands } from "./commandRegistry";
+import { getFeatures } from "@/features/registry";
 import { translateKey } from "@/i18n";
 
 function tokenize(text: string): string[] {
@@ -58,15 +59,10 @@ const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
   about: <InfoCircleOutlined />,
 };
 
-const GROUP_TO_PAGE: Record<ConfGroup, string> = {
-  app: "general",
-  orb: "appearance",
-  mascot: "appearance",
-  vault: "vault",
-};
-
 function registerSettingsCommands(navigate: NavigateFunction): void {
-  const pages = getSettingsPages();
+  const pages = getSettingsPages().filter(
+    (page) => page.visibility !== "deepLinkOnly",
+  );
   const categories = getSettingsCategories();
   for (const page of pages) {
     const catLabel =
@@ -102,7 +98,7 @@ function registerSettingSectionCommands(navigate: NavigateFunction): void {
   const pages = getSettingsPages();
   for (const sec of allSections) {
     const page = pages.find((p) => p.id === sec.pageId);
-    if (!page) continue;
+    if (!page || page.visibility === "deepLinkOnly") continue;
     const translatedTitle = translateKey(sec.title);
     const autoSources: string[] = [translatedTitle, sec.id, sec.pageId];
     if (sec.description) autoSources.push(translateKey(sec.description));
@@ -121,9 +117,13 @@ function registerSettingSectionCommands(navigate: NavigateFunction): void {
 
 function registerSettingFieldCommands(navigate: NavigateFunction): void {
   const allDefs = getAllDefinitions();
+  const pages = getSettingsPages();
   for (const def of allDefs) {
-    const pageId = def.pageId ?? GROUP_TO_PAGE[def.group];
+    const pageId =
+      def.pageId ?? getSettingsSnapshot().confPageMap.get(def.group);
     if (!pageId) continue;
+    const page = pages.find((p) => p.id === pageId);
+    if (!page || page.visibility === "deepLinkOnly") continue;
     const translatedLabel = translateKey(def.label);
     const autoSources: string[] = [translatedLabel, def.key, def.group];
     if (def.description && typeof def.description === "string")
@@ -142,6 +142,28 @@ function registerSettingFieldCommands(navigate: NavigateFunction): void {
       keywords,
       category: "navigation",
       action: () => navigate(`/settings/${pageId}?focus=${def.key}`),
+    });
+  }
+}
+
+function registerFeatureRouteCommands(navigate: NavigateFunction): void {
+  const features = getFeatures();
+  for (const route of features.routes) {
+    if (route.visibility === "deepLinkOnly") continue;
+    const parent = route.navParent
+      ? features.sidebar.find((entry) => entry.key === route.navParent)
+      : undefined;
+    const name = parent ? translateKey(parent.label) : route.boundary;
+    const keywords = mergeKeywords(
+      [name, route.path, route.boundary],
+      [...route.keywords],
+    );
+    defineCommand({
+      id: `nav:feature-route:${route.path}`,
+      name,
+      keywords,
+      category: "navigation",
+      action: () => navigate(route.path),
     });
   }
 }
@@ -178,7 +200,7 @@ function registerManualCommands(): void {
     icon: <SkinOutlined />,
     closeOnSelect: false,
     action: async () => {
-      const appConf = useSettingsStore.getState().appConf;
+      const appConf = getConfValue("app");
       if (!appConf) return;
       const order: Array<"system" | "light" | "dark"> = [
         "system",
@@ -259,6 +281,7 @@ export function aggregateCommands(navigate: NavigateFunction): void {
   registerSettingsCommands(navigate);
   registerSettingSectionCommands(navigate);
   registerSettingFieldCommands(navigate);
+  registerFeatureRouteCommands(navigate);
   registerToolCommands(navigate);
   registerManualCommands();
 }

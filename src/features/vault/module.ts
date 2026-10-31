@@ -1,4 +1,5 @@
 import { SafetyCertificateOutlined } from "@ant-design/icons";
+import { vaultConfSlot } from "./conf";
 import type { FeatureModule } from "../types";
 import type { SettingSectionDef } from "@/settings/core/field/fieldRegistry";
 import type { ExtensionSettingDefinition } from "@/settings/core/types/extension";
@@ -53,7 +54,7 @@ const VAULT_GENERAL_SETTINGS: ExtensionSettingDefinition[] = [
     label: "settings.vault.biometric_enabled.label",
     description: "settings.vault.biometric_enabled.description",
     customRenderLoad: () =>
-      import("@/settings/shared/renderers/BiometricSwitchRender").then((m) => ({
+      import("./settings/BiometricSwitchRender").then((m) => ({
         default: m.BiometricSwitchRender,
       })),
     saveMessage: "settings.vault.biometric_enabled.save_message",
@@ -136,15 +137,19 @@ const VAULT_SECTIONS: SettingSectionDef[] = [
 export const vaultModule: FeatureModule = {
   id: "vault",
   order: 65,
+  ipc: { namespace: "vault" },
   routes: [
     {
       path: "/vault",
       load: () => import("@/vault").then((m) => ({ default: m.VaultApp })),
       boundary: "密码保险库",
+      navParent: "vault",
+      keywords: ["vault", "password", "密码", "保险库"],
     },
   ],
   sidebar: [
     {
+      key: "vault",
       label: "common.navigation.vault",
       icon: SafetyCertificateOutlined,
       slot: "after-tools",
@@ -172,7 +177,7 @@ export const vaultModule: FeatureModule = {
         icon: SafetyCertificateOutlined,
         order: 65,
         load: () =>
-          import("@/settings/pages/VaultSettingsPage").then((m) => ({
+          import("./settings/VaultSettingsPage").then((m) => ({
             default: m.VaultSettingsPage,
           })),
       },
@@ -180,4 +185,5 @@ export const vaultModule: FeatureModule = {
     sections: VAULT_SECTIONS,
     fields: [...VAULT_GENERAL_SETTINGS, ...VAULT_SSH_SETTINGS],
   },
+  confs: [vaultConfSlot],
 };

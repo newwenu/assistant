@@ -6,23 +6,23 @@ import { useNavigate } from "react-router-dom";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useVaultStore } from "@/vault/core/vaultStore";
 import { useVaultStatusReady } from "@/vault/core/useVaultStatusReady";
-import { SettingsGroup } from "../shared/sections/SettingsGroup";
-import { SettingsSection } from "../shared/layout/SettingsSection";
-import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
-import { getDefinitionsBySection } from "../core/field/fieldRegistry";
-import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
+import { SettingsGroup } from "@/settings/shared/sections/SettingsGroup";
+import { SettingsSection } from "@/settings/shared/layout/SettingsSection";
+import { SettingsPageShell } from "@/settings/shared/layout/SettingsPageShell";
+import { getDefinitionsBySection } from "@/settings/core/field/fieldRegistry";
+import { useConfPatchHandlers } from "@/settings/core/useConfPatchHandlers";
 
 export const VaultSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const loadVaultConf = useSettingsStore((s) => s.loadVaultConf);
+  const loadConf = useSettingsStore((s) => s.loadConf);
   const isInitialized = useVaultStore((s) => s.isInitialized);
   const statusReady = useVaultStatusReady();
   const { onPatch, onPatchComplete } = useConfPatchHandlers("vault");
 
   useEffect(() => {
-    void loadVaultConf();
-  }, [loadVaultConf]);
+    void loadConf("vault");
+  }, [loadConf]);
 
   if (!statusReady) {
     return (

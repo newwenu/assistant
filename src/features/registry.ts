@@ -1,14 +1,30 @@
 import { aggregate } from "./aggregate";
 import type { AggregatedFeatures } from "./aggregate";
+import type { FeatureModule } from "./types";
+import { bindExtensionInput } from "@/settings/core/snapshot";
+import { EMPTY_EXTENSION_INPUT } from "@/settings/core/types/snapshot";
+import { registerConfSlot } from "@/settings/core/confRuntime";
 
 let features: AggregatedFeatures = aggregate([]);
+
+bindExtensionInput(EMPTY_EXTENSION_INPUT);
 
 export function getFeatures(): AggregatedFeatures {
   return features;
 }
 
 export async function loadFeatures(): Promise<void> {
-  if (!__VAULT_ENABLED__) return;
-  const { vaultModule } = await import("./vault/module");
-  features = aggregate([vaultModule]);
+  const modules: FeatureModule[] = [];
+  if (__VAULT_ENABLED__) {
+    const { vaultModule } = await import("./vault/module");
+    modules.push(vaultModule);
+  }
+  if (__PROBE_ENABLED__) {
+    const { probeModule } = await import("./_probe/module");
+    modules.push(probeModule);
+  }
+  if (modules.length === 0) return;
+  features = aggregate(modules);
+  for (const slot of features.confs) registerConfSlot(slot);
+  bindExtensionInput({ id: modules.map((m) => m.id).join("+"), ...features });
 }

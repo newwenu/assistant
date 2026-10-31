@@ -1,0 +1,12 @@
+{
+  "probe": {
+    "default": true,
+    "cargoFeature": "probe",
+    "env": "PROBE_ENABLED"
+  },
+  "vault": {
+    "default": true,
+    "cargoFeature": "vault",
+    "env": "VAULT_ENABLED"
+  }
+}

@@ -1,9 +1,30 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import process from "node:process";
 
 const host = process.env.TAURI_DEV_HOST;
+
+interface FeatureSpec {
+  default: boolean;
+  cargoFeature: string;
+  env: string;
+}
+
+const featureManifest = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "config/features.json"), "utf8"),
+) as Record<string, FeatureSpec>;
+
+function featureDefines(): Record<string, string> {
+  const defines: Record<string, string> = {};
+  for (const spec of Object.values(featureManifest)) {
+    const override = process.env[spec.env];
+    const enabled = override === undefined ? spec.default : override !== "0";
+    defines[`__${spec.env}__`] = JSON.stringify(enabled);
+  }
+  return defines;
+}
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
@@ -15,7 +36,7 @@ export default defineConfig(() => ({
   },
   define: {
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
-    __VAULT_ENABLED__: JSON.stringify(process.env.VAULT_ENABLED !== "0"),
+    ...featureDefines(),
   },
 
   optimizeDeps: {

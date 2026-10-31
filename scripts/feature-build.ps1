@@ -9,11 +9,13 @@
         避免 PowerShell / npm / cargo 混排输出时中文乱码。
 
     环境变量
-        特性清单直接读 src-tauri/Cargo.toml 的 [features] 段（唯一真源），
-        default = [...] 决定默认启用集合；每个特性写 <FEATURE>_ENABLED=1 或 0
+        特性清单读仓库级 config/features.json（手写、唯一真源），每项声明
+        default / cargoFeature / env；脚本按 env 注入 <ENV>=1 或 0
         （vault → VAULT_ENABLED，与 vite.config.ts 的 define 完全一致）。
-        前端 vite define 与后端 cargo feature 在同一次进程调用里取到同一份开关，
-        因此不存在「前端开 / 后端关」的混合态。
+        vite.config.ts 也直接读同一份清单，因此前端 vite define 与后端 cargo feature
+        在同一次进程调用里取到同一份开关，不存在「前端开 / 后端关」的混合态。
+        启动时校验清单与 src-tauri/Cargo.toml 的 [features] 段：cargoFeature 必须
+        存在、默认启用集合必须一致、两侧不得有孤儿条目，不一致即中止。
 
     cargo 配置的加载方式
         cargo 按「当前工作目录 → 各级父目录」查找 .cargo/config.toml，与 --manifest-path
@@ -99,6 +101,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $SrcTauri = Join-Path $RepoRoot 'src-tauri'
 $ManifestPath = Join-Path $SrcTauri 'Cargo.toml'
+$FeatureManifestPath = Join-Path $RepoRoot 'config/features.json'
 $CargoConfigPath = Join-Path $SrcTauri '.cargo/config.toml'
 $CargoConfigExamplePath = Join-Path $SrcTauri '.cargo/config.toml.example'
 
@@ -215,7 +218,7 @@ function Set-Utf8Console {
     try { & chcp.com 65001 *> $null } catch { }
 }
 
-function Get-FeatureTable {
+function Get-CargoFeatures {
     $lines = Get-Content -LiteralPath $ManifestPath -Encoding UTF8
     $blockLines = @()
     $inFeatures = $false
@@ -249,18 +252,73 @@ function Get-FeatureTable {
     $defaults = @()
     if ($declared.ContainsKey('default')) { $defaults = $declared['default'] }
 
+    return [pscustomobject]@{
+        Declared = $declared
+        Defaults = $defaults
+    }
+}
+
+function Get-FeatureTable {
+    if (-not (Test-Path -LiteralPath $FeatureManifestPath)) {
+        throw "找不到特性清单 $FeatureManifestPath"
+    }
+
+    $manifest = Get-Content -LiteralPath $FeatureManifestPath -Encoding UTF8 -Raw | ConvertFrom-Json
     $table = @()
-    foreach ($name in $declared.Keys) {
-        if ($name -eq 'default') { continue }
-        $envName = ($name.ToUpperInvariant() -replace '-', '_') + '_ENABLED'
+
+    foreach ($property in $manifest.PSObject.Properties) {
+        $id = $property.Name
+        $spec = $property.Value
+
+        if (-not $spec.cargoFeature) { throw "特性 '$id' 缺少 cargoFeature" }
+        if (-not $spec.env) { throw "特性 '$id' 缺少 env" }
+        if ($spec.env -notmatch '^[A-Z][A-Z0-9_]*$') {
+            throw "特性 '$id' 的 env '$($spec.env)' 必须是大写字母/数字/下划线"
+        }
+
         $table += [pscustomobject]@{
-            Id           = $name
-            Default      = ($defaults -contains $name)
-            CargoFeature = $name
-            Env          = $envName
+            Id           = $id
+            Default      = [bool]$spec.default
+            CargoFeature = [string]$spec.cargoFeature
+            Env          = [string]$spec.env
         }
     }
+
+    if ($table.Count -eq 0) { throw "$FeatureManifestPath 未声明任何特性" }
+
     return @($table | Sort-Object -Property Id)
+}
+
+function Assert-FeatureConsistency {
+    param($Table)
+
+    $cargo = Get-CargoFeatures
+    $problems = @()
+
+    foreach ($feature in $Table) {
+        if (-not $cargo.Declared.ContainsKey($feature.CargoFeature)) {
+            $problems += ("清单特性 '{0}' 的 cargoFeature '{1}' 在 Cargo.toml [features] 中未声明" -f $feature.Id, $feature.CargoFeature)
+        }
+    }
+
+    foreach ($name in $cargo.Declared.Keys) {
+        if ($name -eq 'default') { continue }
+        if (-not ($Table | Where-Object { $_.CargoFeature -eq $name })) {
+            $problems += ("Cargo.toml [features] 中的 '{0}' 未出现在 {1} 中" -f $name, $FeatureManifestPath)
+        }
+    }
+
+    $manifestDefaults = @($Table | Where-Object { $_.Default } | ForEach-Object { $_.CargoFeature } | Sort-Object)
+    $cargoDefaults = @($cargo.Defaults | Sort-Object)
+    if (($manifestDefaults -join ',') -ne ($cargoDefaults -join ',')) {
+        $problems += ("默认启用集合不一致：清单 = [{0}]，Cargo.toml default = [{1}]" -f ($manifestDefaults -join ','), ($cargoDefaults -join ','))
+    }
+
+    if ($problems.Count -gt 0) {
+        Write-Host '!! 特性清单与 Cargo.toml 不一致' -ForegroundColor Red
+        foreach ($problem in $problems) { Write-Host "   - $problem" -ForegroundColor Yellow }
+        throw '特性清单校验失败（config/features.json ↔ src-tauri/Cargo.toml）'
+    }
 }
 
 function Split-List {
@@ -406,6 +464,7 @@ if ($needsRust -and -not (Assert-CargoConfigPresent)) {
 }
 
 $table = Get-FeatureTable
+Assert-FeatureConsistency -Table $table
 
 if ($interactive) {
     Set-TerminalTitle (Get-TerminalTitle -Choices $TaskChoices -Task $Task -Enabled @('选择特性…'))

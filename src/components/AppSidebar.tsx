@@ -11,7 +11,10 @@ import {
   MenuUnfoldOutlined,
 } from "@ant-design/icons";
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from "@/config/constants";
-import { getSettingsDetailPages } from "@/settings/core/pageRegistry";
+import {
+  getSettingsDetailPages,
+  getSettingsPages,
+} from "@/settings/core/pageRegistry";
 import {
   favoriteMenuKey,
   resolveMenuKey,
@@ -20,6 +23,7 @@ import {
 import { toolsMap } from "@/tools/registry";
 import { useToolStore } from "@/stores/toolStore";
 import { getFeatures } from "@/features/registry";
+import { resolveSidebarKeys, resolveSidebarTarget } from "@/features/nav";
 import type { PreparedSidebarEntry } from "@/features/aggregate";
 import type { SidebarSlot } from "@/features/types";
 
@@ -101,8 +105,13 @@ export const AppSidebar: React.FC = () => {
       if (favoriteToolIds.includes(toolId)) {
         return [location.pathname, favoriteMenuKey(toolId)];
       }
+      return [location.pathname];
     }
-    return [location.pathname];
+    return resolveSidebarKeys(
+      location.pathname,
+      getFeatures().routes,
+      getSettingsPages(),
+    );
   }, [location.pathname, favoriteToolIds]);
 
   const menuItems = useMemo<NonNullable<MenuProps["items"]>>(() => {
@@ -116,11 +125,13 @@ export const AppSidebar: React.FC = () => {
       ...toolMenuItems,
       { type: "divider" as const },
       ...bySlot("after-tools"),
+      ...bySlot("before-history"),
       {
         key: "/history",
         label: t("common.navigation.chat_history"),
         icon: <HistoryOutlined />,
       },
+      ...bySlot("after-history"),
       ...bySlot("before-settings"),
       { type: "divider" as const },
       {
@@ -207,7 +218,11 @@ export const AppSidebar: React.FC = () => {
           style={{ background: "transparent", border: "none" }}
           items={menuItems}
           onClick={({ key }) => {
-            void navigate(resolveMenuKey(key));
+            const features = getFeatures();
+            const target = features.sidebar.some((entry) => entry.key === key)
+              ? resolveSidebarTarget(key, features.routes, getSettingsPages())
+              : resolveMenuKey(key);
+            void navigate(target);
           }}
         />
       </div>

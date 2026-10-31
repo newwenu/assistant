@@ -5,8 +5,8 @@ import { listen } from "@tauri-apps/api/event";
 import { useVaultStore } from "@/vault/core/vaultStore";
 import { vaultService } from "@/vault/core/vault.service";
 import { vaultErrorMessage } from "@/vault/core/vaultError";
-import type { FieldRenderProps } from "../../core/types/fieldSchema";
-import { useSettingMessage } from "../useSettingMessage";
+import type { FieldRenderProps } from "@/settings/core/types/fieldSchema";
+import { useSettingMessage } from "@/settings/shared/useSettingMessage";
 
 export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
   const { t } = useTranslation();
