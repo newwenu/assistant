@@ -1055,80 +1055,24 @@ mount → orb-settling (opacity:0, transition:none, animation:none)
 | `src/orb/useOrbConfSync.ts` | 返回 `{ ready: Promise<void> }`；`readyRef` 暴露首次 apply promise |
 | `src/assets/styles/global.css` | 新增 `.orb-hitbox.orb-settled-in { transition: none !important }` |
 
-### 2026-10-30 清理无引用常量与死代码，归档过期阶段文档
+### 2026-10-30 死代码清理 + 特性清单动态装载
 
-#### 删除文件
+**清理**：`docs/store/` 6 份过期规格移入 `docs/achievement2/`（逐字节一致，该目录只留活跃规格）；删除零引用的 `assistant-vault/src/contract/mod.rs`（仅含未使用的 `Precondition` 枚举）及 `assistant-config/tests/constant.rs`；后端 `constant.rs` 删 12 个、前端 `constants.ts` 删 19 个无引用常量；`assistant-vault/Cargo.toml` 补登 `git-tests` feature，使 `tests/sync_engine.rs` 顶部的 feature 门控真正生效。
 
-| 文件 | 删除方式 | 原因 |
-|------|---------|------|
-| `docs/store/I16-protocol-type-misplacement-audit.md` | 移至 `docs/achievement2/` 同名文件，内容逐字节一致 | 阶段已结束，`docs/store/` 只保留活跃规格 |
-| `docs/store/I21-send-chat-message-refactor-design.md` | 同上 | 同上 |
-| `docs/store/I2e-phase1-spec.md` | 同上 | 同上 |
-| `docs/store/I2e-phase1-tasklist.md` | 同上 | 同上 |
-| `docs/store/I2f-attachment-refs-orphan-management.md` | 同上 | 同上 |
-| `docs/store/dependency-tree-analysis.md` | 同上 | 同上 |
-| `src-tauri/crates/assistant-config/tests/constant.rs` | 整文件删除（53 行，3 个测试） | 被测常量（`CHAT_INPUT_MIN_ROWS` / `CHAT_INPUT_MAX_ROWS` 等）已移除，测试失去断言对象 |
-| `src-tauri/crates/assistant-vault/src/contract/mod.rs` | 整文件删除（`Precondition` 枚举），并移除 `lib.rs` 的 `pub mod contract;` | 全仓库零引用（grep 命中 0），模块只剩一个未被使用的枚举 |
+**特性清单**：`__VAULT_ENABLED__ ? [vaultModule] : aggregate([])` 静态三元折叠在 `VAULT_ENABLED=0` 下仍残留 7 个 vault chunk 与入口字段字面量。根因是折叠只删引用不删 import，`import { vaultModule } from "./vault/module"` 退化为副作用 import，模块内 `load: () => import("@/vault")` 等箭头函数里的 `import()` 照常被物化。对照实验：同一 import 只要源码完全不引用（`aggregate([])`），产物即 0 chunk，证明模块本身无副作用。
 
-#### 连带改动
+改为运行时动态装载 + 编译期守卫：`loadFeatures()` 内 `if (!__VAULT_ENABLED__) return;` 早退后才 `await import("./vault/module")`，`main.tsx` bootstrap 首行 `await loadFeatures()`。守卫折叠成 `if (true) return;` 后整段不可达被删，chunk 边不存在。
 
-- `assistant-config/src/constant.rs` 删除 12 个无引用常量：`HOVER_FADE_DURATION_MS`、`PLACEMENT_SETTLE_DELAY_MS`、`PET_DRAG_THRESHOLD_PX`、`ORB_BLUR_COLLAPSE_DELAY_MS`、`ORB_SNAP_DELAY_MS`、`DRAG_POLL_INTERVAL_MS`、`CHAT_PANEL_HEADER_HEIGHT`、`CHAT_INPUT_MIN_ROWS`、`CHAT_INPUT_MAX_ROWS`、`CHAT_AUTO_TITLE_LENGTH`、`CHAT_SIDEBAR_WIDTH`、`STREAM_COALESCE_TIMER_MS`
-- `src/config/constants.ts` 同步删除 19 个常量定义，前后端常量表保持对齐
-- `assistant-vault/Cargo.toml` 补登 `git-tests` feature，使已跟踪的 `tests/sync_engine.rs` 顶部 `#![cfg(feature = "git-tests")]` 门控正式生效
+| 写法（`VAULT_ENABLED=0`） | 文件数 | vault chunk |
+|---|---|---|
+| 静态 import + 三元折叠 | 172 | 7 |
+| 动态 import + 守卫早退 | 158 | 0 |
 
-#### 踩坑
+`VAULT_ENABLED=1`：175 文件 / 7 chunk，行为不变。
 
-- 常量与集成测试存在硬绑定：删除后端常量后 `tests/constant.rs` 直接编译失败，只能整文件删除，保留半数断言没有意义。清理常量时应先确认对应测试文件的断言是否会被连带击穿。
+**踩坑**：
 
-### 2026-10-30 特性清单改动态装载，静态 import 无法做到 chunk 零残留
-
-#### 问题
-
-`vault-optional-build.md` 原设计（6.8.2）用「静态 import + `__VAULT_ENABLED__` 三元折叠」做特性清单：
-
-```ts
-import { vaultModule } from "./vault/module";
-const features = aggregate(__VAULT_ENABLED__ ? [vaultModule] : []);
-```
-
-关闭 vault 后，产物里仍残留 7 个 vault 相关 chunk（`module-*`、`vault-*`、`vaultStore-*`、`useVaultStatusReady-*`、`VaultSettingsPage-*`、`BiometricSwitchRender-*`、`vault-*.css`），入口 chunk 里也仍含 `vaultAutoLockMinutes` 等字段字面量。
-
-#### 根因
-
-编译期常量折叠只删「引用」，不删「import 语句」。`import { vaultModule } from "./vault/module"` 在折叠后退化为副作用 import（`import "./vault/module"`），该模块顶层数据被保留，其中 `load: () => import("@/vault")`、`customRenderLoad: () => import(".../BiometricSwitchRender")` 等箭头函数里藏着 `import()`，打包器据此照常物化异步 chunk。
-
-关键对照实验：**同一个静态 import，只要源码里没人引用 `vaultModule`（写 `aggregate([])`），产物就是 0 chunk**。说明模块本身无副作用问题，问题在「三元折叠留下 import 语句」。
-
-#### 决策
-
-清单改为**运行时动态装载 + 编译期守卫**：
-
-```ts
-let features: AggregatedFeatures = aggregate([]);
-export function getFeatures(): AggregatedFeatures { return features; }
-export async function loadFeatures(): Promise<void> {
-  if (!__VAULT_ENABLED__) return;
-  const { vaultModule } = await import("./vault/module");
-  features = aggregate([vaultModule]);
-}
-```
-
-`main.tsx` 的 `bootstrap()` 首行 `await loadFeatures()`。守卫折叠成 `if (true) return;` 后，其后的 `await import()` 整段不可达被删除，chunk 边根本不存在。
-
-#### 实测对照（`VAULT_ENABLED=0`，vite build）
-
-| 写法 | 产物文件数 | vault chunk | 入口含 vault 字段 |
-|---|---|---|---|
-| 静态 import + 三元折叠 | 172 | 7 | 是 |
-| 静态 import + 无条件展开 | 172 | 7 | 是 |
-| 静态 import + 完全不引用（`aggregate([])`，import 残留） | 158 | 0 | 否 |
-| **动态 import + 守卫早退** | **158** | **0** | **否** |
-
-`VAULT_ENABLED=1`：175 文件 / 7 chunk，功能与改造前一致。
-
-#### 踩坑
-
-- 曾试图用 `generateBundle` 阶段插件删不可达 chunk 补救，`output.importers` 在 Rolldown 下**不存在**（chunk 级只有 `imports` / `dynamicImports`，`importers` 仅在模块级 `ModuleInfo`），插件直接抛错；且这属于「过度特化的补丁」，每次特性变更都要维护，已放弃。
-- 消费方若保留静态常量导出（`export const SETTINGS_PAGES = ...`），模块初始化即触发 `getFeatures()`，动态装载结果会在模块求值期被固化。所有派生必须改为「导出函数 + 内部缓存」，缓存以 `derived.features === features` 引用相等失效。
-- 装载时序必须在 bootstrap 最前：`initSettingSystem()` 只注册渲染器与副作用、不读特性，因此 `await loadFeatures()` 早于 `useSettingsStore` 加载即可，无需额外重排。
-- 验收不能只看「字段字面量消失」，还要数 chunk：静态 import 方案字段能删净、chunk 却留着，只有文件名探针才暴露。
+- 常量与集成测试硬绑定：删后端常量直接击穿 `tests/constant.rs` 编译，保留半数断言无意义，只能整文件删。清理常量前先确认对应测试是否被连带。
+- 别用 `generateBundle` 插件删不可达 chunk 补救：Rolldown 下 `output.importers` 不存在（仅模块级 `ModuleInfo` 有），插件会直接抛错；且属过度特化补丁，已放弃。
+- 消费方若保留 `export const SETTINGS_PAGES = getFeatures()...` 这类静态导出，模块求值期就固化动态装载结果。派生必须改为「导出函数 + 内部缓存」，缓存以 `derived.features === features` 引用相等失效。
+- 验收不能只看字段字面量消失，必须数 chunk：静态方案字段删净、chunk 却留着。
