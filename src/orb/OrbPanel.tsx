@@ -39,8 +39,8 @@ import { translateKey } from "../i18n";
 export const OrbPanel: React.FC = () => {
   const { expand, collapse } = useOrbExpand();
   const expandDirection = useOrbStore((s) => s.expandDirection);
-  const isPinned = useOrbStore((s) => s.isPinned);
-  const setPinned = useOrbStore((s) => s.setPinned);
+  const keepExpanded = useOrbStore((s) => s.keepExpanded);
+  const setKeepExpanded = useOrbStore((s) => s.setKeepExpanded);
   const chat = useChatStore();
   const panelRef = useRef<HTMLDivElement>(null);
   const [messageApi, messageContextHolder] = message.useMessage({
@@ -79,7 +79,7 @@ export const OrbPanel: React.FC = () => {
     let timer: number | null = null;
     const unlistenBlur = listen(UiEvent.OrbBlur, () => {
       closeAllMenus();
-      if (useOrbStore.getState().isPinned) return;
+      if (useOrbStore.getState().keepExpanded) return;
       if (timer !== null) clearTimeout(timer);
       timer = window.setTimeout(() => {
         void (async () => {
@@ -262,15 +262,19 @@ export const OrbPanel: React.FC = () => {
         </Dropdown>
         <div className="orb-chrome-center" />
         <Tooltip
-          title={isPinned ? t("common.actions.unpin") : t("common.actions.pin")}
+          title={
+            keepExpanded
+              ? t("chat.orb.stop_keep_expanded")
+              : t("chat.orb.keep_expanded")
+          }
           mouseEnterDelay={0.5}
         >
           <Button
             type="text"
             size="small"
             className="orb-chrome-btn"
-            icon={isPinned ? <PushpinFilled /> : <PushpinOutlined />}
-            onClick={() => setPinned(!isPinned)}
+            icon={keepExpanded ? <PushpinFilled /> : <PushpinOutlined />}
+            onClick={() => setKeepExpanded(!keepExpanded)}
           />
         </Tooltip>
         <Tooltip title={t("common.actions.collapse")} mouseEnterDelay={0.5}>
