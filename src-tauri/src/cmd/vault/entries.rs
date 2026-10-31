@@ -63,7 +63,7 @@ pub fn vault_get_entry(app: AppHandle, id: String) -> Result<VaultEntryDetail, V
 pub fn vault_create_entry(
     app: AppHandle,
     entry: VaultEntryCreate,
-) -> Result<String, VaultErrorDto> {
+) -> Result<VaultEntryDetail, VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         let engine = super::sync_state(&app)?;
 
@@ -78,7 +78,7 @@ pub fn vault_create_entry(
         log::info!("Vault entry created: {}", snapshot.id);
         super::ssh::auto_add_entry(&app, &snapshot.id);
         finalize_sync(&engine, &format!("vault: create {}", snapshot.id));
-        Ok(snapshot.id)
+        Ok(VaultEntryDetail::from(&snapshot))
     })
 }
 
@@ -88,7 +88,7 @@ pub fn vault_update_entry(
     app: AppHandle,
     id: String,
     entry: VaultEntryUpdate,
-) -> Result<(), VaultErrorDto> {
+) -> Result<VaultEntryDetail, VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         let engine = super::sync_state(&app)?;
 
@@ -102,7 +102,35 @@ pub fn vault_update_entry(
 
         log::info!("Vault entry updated: {}", snapshot.id);
         finalize_sync(&engine, &format!("vault: update {}", snapshot.id));
-        Ok(())
+        Ok(VaultEntryDetail::from(&snapshot))
+    })
+}
+
+// precondition: Unlocked
+#[command]
+pub fn vault_set_favorite(
+    app: AppHandle,
+    id: String,
+    is_favorite: bool,
+) -> Result<VaultEntryDetail, VaultErrorDto> {
+    super::with_unlocked(&app, |state| {
+        let engine = super::sync_state(&app)?;
+
+        prepare_sync(&engine);
+
+        let snapshot = state
+            .set_favorite_tx(&id, is_favorite, |mk, snap| {
+                export_entry_to_sync(&engine, mk, snap)
+            })
+            .map_err(VaultErrorDto::from)?;
+
+        log::info!(
+            "Vault entry favorite set: {} -> {}",
+            snapshot.id,
+            is_favorite
+        );
+        finalize_sync(&engine, &format!("vault: favorite {}", snapshot.id));
+        Ok(VaultEntryDetail::from(&snapshot))
     })
 }
 

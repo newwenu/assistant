@@ -122,6 +122,8 @@ pub fn run() {
             #[cfg(feature = "vault")]
             cmd::vault_update_entry,
             #[cfg(feature = "vault")]
+            cmd::vault_set_favorite,
+            #[cfg(feature = "vault")]
             cmd::vault_delete_entry,
             #[cfg(feature = "vault")]
             cmd::vault_list_deleted_entries,

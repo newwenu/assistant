@@ -19,8 +19,8 @@ export function useVaultEvents() {
         isLocked: true,
         entries: [],
         selectedEntry: null,
-        revealedField: null,
       });
+      useVaultStore.getState().clearRevealedField();
     }).then((fn) => {
       unlistenLock = fn;
     });

@@ -48,7 +48,7 @@ export type SyncActionDto = "pull" | "push" | "sync" | "forcePush";
 
 export type SyncConfigDto = { remoteUrl: string | null, remoteName: string, sshKeyPath: string | null, };
 
-export type SyncResultDto = "success" | "upToDate" | { "conflict": Array<ConflictFileDto> } | { "pendingRemovals": PendingRemovalsDto } | { "unreadableEntries": UnreadableEntriesDto };
+export type SyncResultDto = "success" | "noRemote" | { "conflict": Array<ConflictFileDto> } | { "pendingRemovals": PendingRemovalsDto } | { "unreadableEntries": UnreadableEntriesDto };
 
 export type TotpAlgorithmDto = "sha1" | "sha256" | "sha512";
 

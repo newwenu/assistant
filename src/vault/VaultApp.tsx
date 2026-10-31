@@ -1,5 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
-import { Button, App, Drawer, Typography, Space, Spin } from "antd";
+import {
+  Button,
+  App,
+  Drawer,
+  Typography,
+  Space,
+  Spin,
+  Tooltip,
+  Empty,
+  Grid,
+} from "antd";
 import {
   LockOutlined,
   ToolOutlined,
@@ -12,12 +22,11 @@ import { useVaultEvents } from "./core/useVaultEvents";
 import { useVaultAutoLock } from "./core/useVaultAutoLock";
 import VaultUnlock from "./VaultUnlock";
 import VaultList from "./VaultList";
+import VaultStatusBar from "./VaultStatusBar";
 import VaultEntryDrawer from "./VaultEntryDrawer";
 import VaultEntryDetail from "./detail/VaultEntryDetail";
 import VaultSettings from "./settings/VaultSettings";
 import styles from "./vault.module.css";
-
-type ViewMode = "list" | "detail";
 
 export default function VaultApp() {
   const { t } = useTranslation();
@@ -25,16 +34,19 @@ export default function VaultApp() {
   const statusReady = useVaultStatusReady();
   const {
     isLocked,
+    entries,
     checkBiometricAvailable,
     checkBiometricEnrolled,
     lock,
     selectEntry,
   } = useVaultStore();
-  const [view, setView] = useState<ViewMode>("list");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const screens = Grid.useBreakpoint();
+  const isWide = screens.lg === true;
+  const isDetail = !isWide && selectedId !== null;
 
   useEffect(() => {
     void checkBiometricAvailable();
@@ -49,23 +61,21 @@ export default function VaultApp() {
     setDrawerOpen(true);
   }, []);
 
-  const handleEdit = useCallback(
+  const handleEdit = useCallback((id: string) => {
+    setEditingId(id);
+    setDrawerOpen(true);
+  }, []);
+
+  const handleSelect = useCallback(
     (id: string) => {
+      setSelectedId(id);
       void selectEntry(id);
-      setEditingId(id);
-      setDrawerOpen(true);
     },
     [selectEntry],
   );
 
-  const handleSelect = useCallback((id: string) => {
-    setSelectedId(id);
-    setView("detail");
-  }, []);
-
   const handleSaved = useCallback((id: string) => {
     setSelectedId(id);
-    setView("detail");
     setDrawerOpen(false);
     setEditingId(null);
   }, []);
@@ -75,9 +85,12 @@ export default function VaultApp() {
     setEditingId(null);
   }, []);
 
-  const handleBackToList = useCallback(() => {
+  const handleClearSelection = useCallback(() => {
     setSelectedId(null);
-    setView("list");
+  }, []);
+
+  const handleDeleted = useCallback((id: string) => {
+    setSelectedId((current) => (current === id ? null : current));
   }, []);
 
   const handleLock = () => {
@@ -86,7 +99,6 @@ export default function VaultApp() {
       okType: "danger",
       onOk: () => {
         void lock();
-        setView("list");
         setSelectedId(null);
       },
     });
@@ -111,8 +123,9 @@ export default function VaultApp() {
     return <VaultUnlock />;
   }
 
-  const headerTitle =
-    view === "detail" ? t("vault.entry.viewing_entry") : t("vault.tab.vault");
+  const headerTitle = isDetail
+    ? t("vault.entry.viewing_entry")
+    : t("vault.tab.vault");
 
   return (
     <div className={styles.appContainer}>
@@ -121,38 +134,62 @@ export default function VaultApp() {
           <SafetyCertificateOutlined style={{ marginRight: 6 }} />
           {headerTitle}
         </Typography.Text>
-        <Space size={4}>
-          <Button
-            size="small"
-            icon={<ToolOutlined />}
-            onClick={() => setSettingsOpen(true)}
-          >
+        <Space size={8}>
+          <Button icon={<ToolOutlined />} onClick={() => setSettingsOpen(true)}>
             {t("vault.tab.tools")}
           </Button>
-          <Button
-            type="text"
-            size="small"
-            icon={<LockOutlined />}
-            onClick={handleLock}
-          />
+          <Tooltip title={t("vault.confirm_lock")}>
+            <Button icon={<LockOutlined />} onClick={handleLock} />
+          </Tooltip>
         </Space>
       </div>
 
-      <div className={styles.appBody}>
-        {view === "list" && (
-          <VaultList
-            onAdd={handleAdd}
-            onEdit={handleEdit}
-            onSelect={handleSelect}
-          />
+      <div className={styles.appBody} data-wide={isWide ? "true" : "false"}>
+        {(isWide || !isDetail) && (
+          <div
+            className={styles.listPane}
+            data-wide={isWide ? "true" : "false"}
+          >
+            <VaultList
+              onAdd={handleAdd}
+              onEdit={handleEdit}
+              onSelect={handleSelect}
+              onDeleted={handleDeleted}
+              selectedId={selectedId}
+            />
+            <VaultStatusBar entryCount={entries.length} />
+          </div>
         )}
 
-        {view === "detail" && selectedId && (
-          <VaultEntryDetail
-            entryId={selectedId}
-            onEdit={handleEdit}
-            onClose={handleBackToList}
-          />
+        {isWide ? (
+          <div className={styles.detailPane} data-wide="true">
+            {selectedId ? (
+              <VaultEntryDetail
+                entryId={selectedId}
+                onEdit={handleEdit}
+                onClose={handleClearSelection}
+                showBack={false}
+              />
+            ) : (
+              <div className={styles.detailEmpty}>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={t("vault.entry.select_hint")}
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          isDetail &&
+          selectedId && (
+            <div className={styles.detailPane} data-wide="false">
+              <VaultEntryDetail
+                entryId={selectedId}
+                onEdit={handleEdit}
+                onClose={handleClearSelection}
+              />
+            </div>
+          )
         )}
       </div>
 

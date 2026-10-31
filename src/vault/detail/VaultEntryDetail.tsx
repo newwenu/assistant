@@ -17,41 +17,30 @@ import {
   DeleteOutlined,
   CloudUploadOutlined,
   ArrowLeftOutlined,
-  UserOutlined,
-  FileTextOutlined,
-  CreditCardOutlined,
-  IdcardOutlined,
-  CodeOutlined,
-  ToolOutlined,
   HistoryOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "../core/vaultStore";
-import type { VaultCategory, SshKeyMeta } from "../core/vault.types";
+import type { SshKeyMeta, VaultErrorCode } from "../core/vault.types";
+import { vaultCategoryIcon } from "../core/vaultCategory";
+import { VAULT_TONES } from "../core/vaultColors";
 import TotpDisplay from "./TotpDisplay";
 import RevealFieldButton from "./RevealFieldButton";
 import VaultEntryHistory from "./VaultEntryHistory";
 import styles from "../vault.module.css";
 
-const CATEGORY_ICONS: Record<VaultCategory, React.ReactNode> = {
-  login: <UserOutlined />,
-  note: <FileTextOutlined />,
-  card: <CreditCardOutlined />,
-  identity: <IdcardOutlined />,
-  sshKey: <CodeOutlined />,
-  custom: <ToolOutlined />,
-};
-
 interface VaultEntryDetailProps {
   entryId: string;
   onEdit: (id: string) => void;
   onClose: () => void;
+  showBack?: boolean;
 }
 
 export default function VaultEntryDetail({
   entryId,
   onEdit,
   onClose,
+  showBack = true,
 }: VaultEntryDetailProps) {
   const { t } = useTranslation();
   const { modal, message } = App.useApp();
@@ -65,9 +54,10 @@ export default function VaultEntryDetail({
     copyField,
     revealPassword,
     revealNotes,
+    hideRevealedField,
     clearRevealedField,
     deleteEntry,
-    updateEntry,
+    setFavorite,
     sshAddToAgent,
     sshRemoveFromAgent,
     sshAgentKeys,
@@ -85,12 +75,17 @@ export default function VaultEntryDetail({
     sshAgentKeys.some((k) => k.fingerprint === sshMeta.fingerprint);
 
   useEffect(() => {
-    void selectEntry(entryId);
     return () => {
       clearRevealedField();
       stopTotpTimer();
     };
-  }, [entryId, selectEntry, clearRevealedField, stopTotpTimer]);
+  }, [clearRevealedField, stopTotpTimer]);
+
+  const entryReady = selectedEntry?.id === entryId;
+
+  useEffect(() => {
+    if (!entryReady) void selectEntry(entryId);
+  }, [entryReady, entryId, selectEntry]);
 
   useEffect(() => {
     if (selectedEntry?.category !== "sshKey") {
@@ -124,25 +119,41 @@ export default function VaultEntryDetail({
   const handleToggleFavorite = useCallback(() => {
     if (!selectedEntry) return;
     const nextFav = !selectedEntry.isFavorite;
-    void updateEntry(entryId, {
-      category: selectedEntry.category,
-      title: selectedEntry.title,
-      isFavorite: nextFav,
-      tags: selectedEntry.tags,
-      customFields: selectedEntry.customFieldNames.map((name) => ({
-        name,
-        value: "",
-        isProtected: false,
-      })),
-    }).then(() => {
-      void selectEntry(entryId);
+    void setFavorite(entryId, nextFav).then(() => {
       message.success(
         t(nextFav ? "vault.entry.favorite" : "vault.entry.unfavorite"),
       );
     });
-  }, [selectedEntry, entryId, updateEntry, selectEntry, t, message]);
+  }, [selectedEntry, entryId, setFavorite, t, message]);
 
-  if (!selectedEntry) return <Spin />;
+  const revealErrorText = useCallback(
+    (code: VaultErrorCode | null) =>
+      code === "rateLimited"
+        ? t("vault.entry.reveal_rate_limited")
+        : t("vault.entry.reveal_failed"),
+    [t],
+  );
+
+  const handleRevealPassword = useCallback(async () => {
+    const code = await revealPassword(entryId);
+    if (code) message.error(revealErrorText(code));
+  }, [entryId, revealPassword, message, revealErrorText]);
+
+  const handleRevealNotes = useCallback(async () => {
+    const code = await revealNotes(entryId);
+    if (code) message.error(revealErrorText(code));
+  }, [entryId, revealNotes, message, revealErrorText]);
+
+  if (!selectedEntry || !entryReady) return <Spin />;
+
+  const passwordRevealed =
+    revealedField?.kind === "password" &&
+    revealedField.visible &&
+    revealedField.entryId === entryId;
+  const notesRevealed =
+    revealedField?.kind === "notes" &&
+    revealedField.visible &&
+    revealedField.entryId === entryId;
 
   const handleCopyUsername = () => {
     if (selectedEntry.username) {
@@ -164,14 +175,6 @@ export default function VaultEntryDetail({
 
   const handleCopyPassword = () => {
     void copyPassword(entryId);
-  };
-
-  const handleRevealPassword = () => {
-    void revealPassword(entryId);
-  };
-
-  const handleRevealNotes = () => {
-    void revealNotes(entryId);
   };
 
   const handleCopyField = (name: string) => {
@@ -197,18 +200,19 @@ export default function VaultEntryDetail({
     <div className={styles.detailContainer}>
       <div className={styles.detailHeader}>
         <Space align="center" size={8}>
-          <Button
-            type="text"
-            size="small"
-            icon={<ArrowLeftOutlined />}
-            onClick={onClose}
-          />
-          {CATEGORY_ICONS[selectedEntry.category]}
+          {showBack && (
+            <Button
+              type="text"
+              icon={<ArrowLeftOutlined />}
+              onClick={onClose}
+            />
+          )}
+          {vaultCategoryIcon(selectedEntry.category)}
           <Typography.Title level={4} style={{ margin: 0 }}>
             {selectedEntry.title}
           </Typography.Title>
         </Space>
-        <Space>
+        <Space size={4}>
           <Tooltip
             title={
               selectedEntry.isFavorite
@@ -220,7 +224,7 @@ export default function VaultEntryDetail({
               type="text"
               icon={
                 selectedEntry.isFavorite ? (
-                  <StarFilled style={{ color: "#faad14" }} />
+                  <StarFilled style={{ color: VAULT_TONES.favorite }} />
                 ) : (
                   <StarOutlined />
                 )
@@ -228,11 +232,13 @@ export default function VaultEntryDetail({
               onClick={handleToggleFavorite}
             />
           </Tooltip>
-          <Button
-            type="text"
-            icon={<EditOutlined />}
-            onClick={() => onEdit(entryId)}
-          />
+          <Tooltip title={t("common.actions.edit")}>
+            <Button
+              type="text"
+              icon={<EditOutlined />}
+              onClick={() => onEdit(entryId)}
+            />
+          </Tooltip>
           <Tooltip title={t("vault.history.open")}>
             <Button
               type="text"
@@ -240,27 +246,45 @@ export default function VaultEntryDetail({
               onClick={() => setHistoryOpen(true)}
             />
           </Tooltip>
-          <Button
-            type="text"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={handleDelete}
-          />
+          <span className={styles.headerActionDivider} />
+          <Tooltip title={t("common.actions.delete")}>
+            <Button
+              type="text"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={handleDelete}
+            />
+          </Tooltip>
         </Space>
       </div>
 
-      <Descriptions column={1} bordered size="small">
-        <Descriptions.Item label={t("vault.entry.category")}>
-          {t(`vault.entry.category_${selectedEntry.category}`)}
-        </Descriptions.Item>
+      {selectedEntry.hasTotp && (
+        <div className={styles.totpCard}>
+          <Typography.Text type="secondary" className={styles.totpLabel}>
+            {t("vault.totp.copy")}
+          </Typography.Text>
+          <TotpDisplay
+            entryId={entryId}
+            code={totpCode}
+            timeRemaining={totpTimeRemaining}
+            period={30}
+            onCopy={handleCopyTotp}
+          />
+        </div>
+      )}
 
+      <Descriptions
+        column={1}
+        size="small"
+        bordered
+        className={styles.detailFields}
+      >
         {selectedEntry.username && (
           <Descriptions.Item label={t("vault.entry.username")}>
             <Space>
               <Typography.Text>{selectedEntry.username}</Typography.Text>
               <Button
                 type="text"
-                size="small"
                 icon={<CopyOutlined />}
                 onClick={handleCopyUsername}
               />
@@ -271,18 +295,21 @@ export default function VaultEntryDetail({
         {selectedEntry.hasPassword && (
           <Descriptions.Item label={t("vault.entry.password")}>
             <Space>
-              {revealedField?.kind === "password" ? (
-                <Typography.Text code>{revealedField.value}</Typography.Text>
+              {passwordRevealed ? (
+                <Typography.Text code>{revealedField?.value}</Typography.Text>
               ) : (
                 <Typography.Text type="secondary">••••••••</Typography.Text>
               )}
               <Button
                 type="text"
-                size="small"
                 icon={<CopyOutlined />}
                 onClick={handleCopyPassword}
               />
-              <RevealFieldButton onClick={handleRevealPassword} />
+              <RevealFieldButton
+                revealed={passwordRevealed}
+                onReveal={handleRevealPassword}
+                onHide={hideRevealedField}
+              />
             </Space>
           </Descriptions.Item>
         )}
@@ -296,83 +323,18 @@ export default function VaultEntryDetail({
         {selectedEntry.hasNotes && (
           <Descriptions.Item label={t("vault.entry.notes")}>
             <Space orientation="vertical">
-              {revealedField?.kind === "notes" ? (
-                <Typography.Text>{revealedField.value}</Typography.Text>
+              {notesRevealed ? (
+                <Typography.Text>{revealedField?.value}</Typography.Text>
               ) : (
                 <Typography.Text type="secondary">
                   {t("vault.entry.encrypted")}
                 </Typography.Text>
               )}
-              <RevealFieldButton onClick={handleRevealNotes} />
-            </Space>
-          </Descriptions.Item>
-        )}
-
-        {selectedEntry.hasTotp && (
-          <Descriptions.Item label="TOTP">
-            <TotpDisplay
-              entryId={entryId}
-              code={totpCode}
-              timeRemaining={totpTimeRemaining}
-              period={30}
-              onCopy={handleCopyTotp}
-            />
-          </Descriptions.Item>
-        )}
-
-        {selectedEntry.category === "sshKey" && sshMeta && (
-          <Descriptions.Item label={t("vault.ssh.meta_key_type")}>
-            {sshMeta.keyType}
-          </Descriptions.Item>
-        )}
-
-        {selectedEntry.category === "sshKey" && sshMeta && (
-          <Descriptions.Item label={t("vault.ssh.meta_bits")}>
-            {sshMeta.bits}
-          </Descriptions.Item>
-        )}
-
-        {selectedEntry.category === "sshKey" && sshMeta && (
-          <Descriptions.Item label={t("vault.ssh.meta_fingerprint")}>
-            <Typography.Text copyable>{sshMeta.fingerprint}</Typography.Text>
-          </Descriptions.Item>
-        )}
-
-        {selectedEntry.category === "sshKey" && sshMeta && (
-          <Descriptions.Item label={t("vault.ssh.meta_comment")}>
-            {sshMeta.comment || "-"}
-          </Descriptions.Item>
-        )}
-
-        {selectedEntry.category === "sshKey" && sshMeta && (
-          <Descriptions.Item label={t("vault.ssh.public_key")}>
-            <Typography.Text copyable code>
-              {sshMeta.publicKey}
-            </Typography.Text>
-          </Descriptions.Item>
-        )}
-
-        {selectedEntry.category === "sshKey" && (
-          <Descriptions.Item label={t("vault.ssh.agent")}>
-            <Space>
-              <Button
-                type="primary"
-                size="small"
-                icon={<CloudUploadOutlined />}
-                onClick={handleAddToSshAgent}
-              >
-                {t("vault.ssh.add_to_agent")}
-              </Button>
-              {sshMeta && inAgent && (
-                <Button
-                  danger
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  onClick={handleRemoveFromSshAgent}
-                >
-                  {t("vault.ssh.remove_from_agent")}
-                </Button>
-              )}
+              <RevealFieldButton
+                revealed={notesRevealed}
+                onReveal={handleRevealNotes}
+                onHide={hideRevealedField}
+              />
             </Space>
           </Descriptions.Item>
         )}
@@ -393,7 +355,6 @@ export default function VaultEntryDetail({
                   <Typography.Text strong>{name}</Typography.Text>
                   <Button
                     type="text"
-                    size="small"
                     icon={<CopyOutlined />}
                     onClick={() => handleCopyField(name)}
                   />
@@ -402,11 +363,69 @@ export default function VaultEntryDetail({
             </Space>
           </Descriptions.Item>
         )}
-
-        <Descriptions.Item label={t("vault.entry.revision")}>
-          {selectedEntry.revision}
-        </Descriptions.Item>
       </Descriptions>
+
+      {selectedEntry.category === "sshKey" && (
+        <div className={styles.detailSection}>
+          <Typography.Text strong className={styles.sectionTitle}>
+            {t("vault.ssh.public_key")}
+          </Typography.Text>
+          {sshMeta && (
+            <Descriptions
+              column={2}
+              size="small"
+              className={styles.detailFields}
+            >
+              <Descriptions.Item label={t("vault.ssh.meta_key_type")}>
+                {sshMeta.keyType}
+              </Descriptions.Item>
+              <Descriptions.Item label={t("vault.ssh.meta_bits")}>
+                {sshMeta.bits}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("vault.ssh.meta_fingerprint")}
+                span={2}
+              >
+                <Typography.Text copyable code>
+                  {sshMeta.fingerprint}
+                </Typography.Text>
+              </Descriptions.Item>
+              <Descriptions.Item label={t("vault.ssh.meta_comment")} span={2}>
+                {sshMeta.comment || "-"}
+              </Descriptions.Item>
+              <Descriptions.Item label={t("vault.ssh.public_key")} span={2}>
+                <Typography.Text copyable code>
+                  {sshMeta.publicKey}
+                </Typography.Text>
+              </Descriptions.Item>
+            </Descriptions>
+          )}
+          <Space>
+            <Button
+              type="primary"
+              icon={<CloudUploadOutlined />}
+              onClick={handleAddToSshAgent}
+            >
+              {t("vault.ssh.add_to_agent")}
+            </Button>
+            {sshMeta && inAgent && (
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                onClick={handleRemoveFromSshAgent}
+              >
+                {t("vault.ssh.remove_from_agent")}
+              </Button>
+            )}
+          </Space>
+        </div>
+      )}
+
+      <div className={styles.detailMeta}>
+        <span>
+          {t("vault.entry.revision")} {selectedEntry.revision}
+        </span>
+      </div>
 
       <VaultEntryHistory
         open={historyOpen}

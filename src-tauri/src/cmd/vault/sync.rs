@@ -27,7 +27,6 @@ pub async fn vault_sync(
                     if matches!(
                         result,
                         assistant_sync::SyncResult::Success
-                            | assistant_sync::SyncResult::UpToDate
                             | assistant_sync::SyncResult::UnreadableEntries { .. }
                     ) {
                         super::persist_sync_last_at();

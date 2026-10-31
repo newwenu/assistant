@@ -756,6 +756,7 @@
       "no_entries": "暂无条目",
       "confirm_delete": "确定删除此条目？",
       "viewing_entry": "查看条目",
+      "select_hint": "从左侧选择条目查看详情",
       "category": "分类",
       "category_login": "登录",
       "category_note": "笔记",
@@ -763,6 +764,7 @@
       "category_identity": "身份",
       "category_sshKey": "SSH 密钥",
       "category_custom": "自定义",
+      "category_all": "全部",
       "title": "标题",
       "title_required": "标题不能为空",
       "username": "用户名",
@@ -787,10 +789,17 @@
       "gen_mode_random": "随机字符",
       "gen_mode_passphrase": "密码短语",
       "reveal": "显示",
+      "hold_to_reveal": "按住显示",
+      "release_to_hide": "松开隐藏",
+      "reveal_failed": "显示失败",
+      "reveal_rate_limited": "显示过于频繁，请稍后再试",
       "encrypted": "已加密",
       "revision": "版本",
       "entries_count": "个条目",
       "leaked": "个泄露",
+      "sort_recent": "最近更新",
+      "sort_title": "标题",
+      "sort_favorite": "收藏优先",
       "trash": "回收站",
       "trash_empty": "回收站为空",
       "trash_hint": "已删除的条目会保留在此处，可恢复或永久删除",
@@ -830,7 +839,8 @@
       "ssh_agent": "SSH Agent",
       "recovery": "恢复密钥",
       "change_password": "修改主密码",
-      "import_export": "导入 / 导出"
+      "import_export": "导入 / 导出",
+      "danger_zone": "危险操作"
     },
     "confirm_lock": "确定锁定保险库？",
     "sync": {
@@ -846,6 +856,12 @@
       "ssh_hosts_hint": "逗号分隔。留空时仅对 github.com / gitlab.com 启用 SSH 连接复用。",
       "last_sync": "上次同步：{{time}}",
       "last_sync_never": "尚未同步过",
+      "state_ready": "已同步",
+      "state_dirty": "有未推送改动",
+      "state_off": "未启用同步",
+      "state_conflict": "存在同步冲突",
+      "state_failed": "同步失败",
+      "state_failed_tip": "{{message}}（点击关闭提示）",
       "pull": "拉取",
       "push": "推送",
       "now": "同步",
@@ -853,7 +869,7 @@
       "force_push_confirm_title": "确认强制推送",
       "force_push_confirm_desc": "强制推送将覆盖远程仓库的历史记录，此操作不可撤销。",
       "result_success": "同步成功",
-      "result_up_to_date": "已是最新",
+      "result_no_remote": "未配置远程仓库，本地改动已写入仓库但未提交",
       "result_conflict": "同步冲突：{{count}} 个文件",
       "result_error": "同步失败：{{message}}",
       "result_unreadable": "同步完成，但有 {{count}} 个条目无法解密",
@@ -944,7 +960,23 @@
     "danger_zone": {
       "title": "危险区域",
       "desc": "以下操作具有破坏性且不可撤销，请谨慎执行。",
-      "type_confirm": "请输入 {{code}} 以确认操作"
+      "type_confirm": "请输入 {{code}} 以确认操作",
+      "tab_desc": "这里是所有破坏性操作的集中入口。每一项都需要输入确认码才会执行。",
+      "sync_hint": "强制推送、放弃本地改动、解绑远程仓库等破坏性操作已移至「危险操作」页签。",
+      "unreadable_overwrite_hint": "如需用本机数据覆盖对端，请前往「危险操作」页签执行强制推送。",
+      "open": "前往危险操作",
+      "discard": {
+        "title": "放弃本地改动",
+        "desc": "丢弃所有未提交的本地改动并重置到最近一次提交，此操作不可撤销。"
+      },
+      "force_push": {
+        "title": "强制推送覆盖远程",
+        "desc": "用本机仓库覆盖远程仓库的历史记录，对端提交将丢失，此操作不可撤销。"
+      },
+      "remove_remote": {
+        "title": "解绑远程仓库",
+        "desc": "解除与远程仓库的绑定。本地提交仍保留，但将无法再推送或拉取。"
+      }
     },
     "conflict": {
       "title": "解决同步冲突",

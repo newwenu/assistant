@@ -187,6 +187,17 @@ impl SecurityDbState {
         self.with_conn_and_key(|conn, mk| update_entry_in(conn, mk, id, entry, algo))
     }
 
+    pub fn set_favorite(
+        &self,
+        id: &str,
+        is_favorite: bool,
+    ) -> Result<VaultEntrySnapshot, VaultError> {
+        self.with_conn_and_key(|conn, mk| {
+            set_favorite_in(conn, id, is_favorite)?;
+            read_snapshot(conn, mk, id)
+        })
+    }
+
     pub fn delete_entry(&self, id: &str) -> Result<(), VaultError> {
         let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
@@ -266,6 +277,23 @@ impl SecurityDbState {
     {
         self.with_transaction(|conn, mk| {
             update_entry_in(conn, mk, id, entry, algo)?;
+            let snapshot = read_snapshot(conn, mk, id)?;
+            export(mk, &snapshot)?;
+            Ok(snapshot)
+        })
+    }
+
+    pub fn set_favorite_tx<F>(
+        &self,
+        id: &str,
+        is_favorite: bool,
+        export: F,
+    ) -> Result<VaultEntrySnapshot, VaultError>
+    where
+        F: FnOnce(&MasterKey, &VaultEntrySnapshot) -> Result<(), VaultError>,
+    {
+        self.with_transaction(|conn, mk| {
+            set_favorite_in(conn, id, is_favorite)?;
             let snapshot = read_snapshot(conn, mk, id)?;
             export(mk, &snapshot)?;
             Ok(snapshot)
@@ -741,6 +769,28 @@ pub(crate) fn update_entry_in(
 
     let affected = conn
         .execute(&sql, param_refs.as_slice())
+        .map_err(|e| VaultError::Database(e.to_string()))?;
+
+    if affected == 0 {
+        return Err(VaultError::NotFound(id.to_string()));
+    }
+
+    let _ = audit_log(conn, AuditEvent::VaultEntryUpdated, Some(id));
+    Ok(())
+}
+
+pub(crate) fn set_favorite_in(
+    conn: &Connection,
+    id: &str,
+    is_favorite: bool,
+) -> Result<(), VaultError> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let affected = conn
+        .execute(
+            "UPDATE vault_entries SET is_favorite = ?1, revision = revision + 1, updated_at = ?2 \
+             WHERE id = ?3 AND deleted_at IS NULL",
+            params![is_favorite as i64, now, id],
+        )
         .map_err(|e| VaultError::Database(e.to_string()))?;
 
     if affected == 0 {

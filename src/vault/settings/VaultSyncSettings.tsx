@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import {
   Form,
   Input,
@@ -17,7 +17,6 @@ import {
   CloudDownloadOutlined,
   LinkOutlined,
   ExclamationCircleOutlined,
-  DisconnectOutlined,
   MoreOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
@@ -32,7 +31,6 @@ import type {
   SyncResult,
   VaultErrorCode,
 } from "../core/vault.types";
-import DangerZoneConfirm from "./DangerZoneConfirm";
 
 const SYNC_ERROR_KEY_MAP: Partial<Record<VaultErrorCode, string>> = {
   repoNotInitialized: "vault.sync.err_not_init",
@@ -56,10 +54,10 @@ function getSyncResultInfo(
       type: "success",
       message: t("vault.sync.result_success"),
     };
-  if (result === "upToDate")
+  if (result === "noRemote")
     return {
       type: "info",
-      message: t("vault.sync.result_up_to_date"),
+      message: t("vault.sync.result_no_remote"),
     };
   if ("conflict" in result)
     return {
@@ -87,8 +85,10 @@ function getSyncResultInfo(
 
 export default function VaultSyncSettings({
   onGoRecovery,
+  onGoDangerZone,
 }: {
   onGoRecovery?: () => void;
+  onGoDangerZone?: () => void;
 } = {}) {
   const { t } = useTranslation();
   const { message, modal } = App.useApp();
@@ -105,7 +105,6 @@ export default function VaultSyncSettings({
     syncNow,
     syncPull,
     syncPush,
-    syncForcePush,
     loadSyncConfig,
     saveSyncConfig,
     loadSyncReadyness,
@@ -115,17 +114,14 @@ export default function VaultSyncSettings({
     loadEntries,
     gitInit,
     gitClone,
-    gitRemoveRemote,
     gitTestConnection,
     syncAbort,
-    syncDiscard,
   } = useVaultStore();
 
   const vaultConf = useSettingsStore((s) => s.vaultConf);
   const sshHostsVisible = !navigator.platform.toLowerCase().includes("win");
   const [remoteUrl, setRemoteUrl] = useState("");
   const [sshHosts, setSshHosts] = useState("");
-  const [forcePushOpen, setForcePushOpen] = useState(false);
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
@@ -160,7 +156,6 @@ export default function VaultSyncSettings({
     typeof syncReadyness === "object" && syncReadyness !== null
       ? syncReadyness.repoState
       : null;
-  const hasRemote = !isNoSync && Boolean(syncConfig?.remoteUrl);
   const cloneBlocked = entries.length > 0;
 
   const buildConfig = (): SyncConfig => ({
@@ -203,19 +198,6 @@ export default function VaultSyncSettings({
     }
   };
 
-  const handleRemoveRemote = () => {
-    modal.confirm({
-      title: t("vault.sync.remove_remote_confirm_title"),
-      content: t("vault.sync.remove_remote_confirm_desc"),
-      okType: "danger",
-      onOk: async () => {
-        await gitRemoveRemote(syncConfig?.remoteName ?? "origin");
-        setRemoteUrl("");
-        message.success(t("vault.sync.removed_remote"));
-      },
-    });
-  };
-
   const handleAbort = () => {
     modal.confirm({
       title: t("vault.sync.abort_confirm_title"),
@@ -227,30 +209,9 @@ export default function VaultSyncSettings({
     });
   };
 
-  const handleDiscard = () => {
-    modal.confirm({
-      title: t("vault.sync.discard_confirm_title"),
-      content: t("vault.sync.discard_confirm_desc"),
-      okType: "danger",
-      onOk: async () => {
-        await syncDiscard();
-        message.success(t("vault.sync.discarded"));
-      },
-    });
-  };
-
-  const handleForcePush = useCallback(() => {
-    setForcePushOpen(false);
-    void syncForcePush();
-  }, [syncForcePush]);
-
   const handleGoRecovery = () => {
     message.info(t("vault.sync.unreadable_export_hint"));
     onGoRecovery?.();
-  };
-
-  const handleOverwriteRemote = () => {
-    setForcePushOpen(true);
   };
 
   const handleReviewPendingRemovals = () => {
@@ -330,7 +291,10 @@ export default function VaultSyncSettings({
             title={syncErrorText(errorCode, error)}
             showIcon
             closable={{
-              onClose: () => useVaultStore.getState().clearError(),
+              onClose: () => {
+                useVaultStore.getState().clearError();
+                useVaultStore.getState().clearSyncError();
+              },
             }}
           />
         )}
@@ -365,14 +329,12 @@ export default function VaultSyncSettings({
                   <Button size="small" onClick={handleGoRecovery}>
                     {t("vault.sync.unreadable_export")}
                   </Button>
-                  <Button
-                    size="small"
-                    danger
-                    disabled={!hasRemote}
-                    onClick={handleOverwriteRemote}
+                  <Typography.Text
+                    type="secondary"
+                    style={{ fontSize: 12, alignSelf: "center" }}
                   >
-                    {t("vault.sync.unreadable_overwrite")}
-                  </Button>
+                    {t("vault.danger_zone.unreadable_overwrite_hint")}
+                  </Typography.Text>
                 </Space>
               </Space>
             }
@@ -427,20 +389,9 @@ export default function VaultSyncSettings({
 
           {!isNoSync && (
             <Form.Item>
-              <Space>
-                <Button type="primary" onClick={() => void handleSaveConfig()}>
-                  {t("common.actions.save")}
-                </Button>
-                {hasRemote && (
-                  <Button
-                    danger
-                    icon={<DisconnectOutlined />}
-                    onClick={handleRemoveRemote}
-                  >
-                    {t("vault.sync.remove_remote")}
-                  </Button>
-                )}
-              </Space>
+              <Button type="primary" onClick={() => void handleSaveConfig()}>
+                {t("common.actions.save")}
+              </Button>
             </Form.Item>
           )}
         </Form>
@@ -534,53 +485,27 @@ export default function VaultSyncSettings({
 
             <Divider />
 
-            <div
-              style={{
-                border: "1px solid var(--ant-color-error-border)",
-                borderRadius: 8,
-                padding: "16px 24px",
-                background: "var(--ant-color-error-bg)",
-              }}
+            <Space
+              orientation="vertical"
+              style={{ width: "100%" }}
+              size="small"
             >
-              <Space
-                orientation="vertical"
-                style={{ width: "100%" }}
-                size="small"
-              >
-                <Typography.Text strong type="danger">
-                  <ExclamationCircleOutlined style={{ marginRight: 6 }} />
-                  {t("vault.danger_zone.title")}
-                </Typography.Text>
-                <Typography.Text type="secondary">
-                  {t("vault.danger_zone.desc")}
-                </Typography.Text>
-                <Space wrap>
-                  <Button
-                    danger
-                    onClick={() => setForcePushOpen(true)}
-                    loading={syncing}
-                  >
-                    {t("vault.sync.force_push")}
-                  </Button>
-                  <Button danger onClick={handleDiscard} loading={syncing}>
-                    {t("vault.sync.discard")}
-                  </Button>
-                </Space>
-              </Space>
-            </div>
+              <Typography.Text strong type="danger">
+                <ExclamationCircleOutlined style={{ marginRight: 6 }} />
+                {t("vault.danger_zone.title")}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("vault.danger_zone.sync_hint")}
+              </Typography.Text>
+              {onGoDangerZone && (
+                <Button size="small" danger onClick={onGoDangerZone}>
+                  {t("vault.danger_zone.open")}
+                </Button>
+              )}
+            </Space>
           </>
         )}
       </Space>
-
-      <DangerZoneConfirm
-        open={forcePushOpen}
-        title={t("vault.sync.force_push_confirm_title")}
-        description={t("vault.sync.force_push_confirm_desc")}
-        confirmLabel={t("vault.sync.force_push")}
-        onConfirm={handleForcePush}
-        onCancel={() => setForcePushOpen(false)}
-        loading={syncing}
-      />
     </Spin>
   );
 }

@@ -1,9 +1,10 @@
-import { Button, Typography, Space, List, App, Switch } from "antd";
+import { Button, Typography, Space, App, Switch } from "antd";
 import { CloudUploadOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
 import type { SshKeyInfo } from "../core/vault.types";
+import styles from "../vault.module.css";
 
 interface SshAgentTabProps {
   sshAgentKeys: SshKeyInfo[];
@@ -86,32 +87,29 @@ export default function SshAgentTab({
           : t("vault.ssh.agent_not_running")}
       </Typography.Text>
 
-      <List
-        size="small"
-        bordered
-        dataSource={sshAgentKeys}
-        renderItem={(key) => (
-          <List.Item
-            actions={[
-              key.addedByVault && (
-                <Button
-                  key="remove"
-                  type="text"
-                  danger
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  onClick={() => void sshRemoveFromAgent(key.fingerprint)}
-                />
-              ),
-            ].filter(Boolean)}
-          >
-            <List.Item.Meta
-              title={`${key.keyType} ${key.fingerprint}`}
-              description={`${key.comment} (${key.bits} bits)`}
-            />
-          </List.Item>
-        )}
-      />
+      <div className={styles.borderedList}>
+        {sshAgentKeys.map((key) => (
+          <div key={key.fingerprint} className={styles.borderedListItem}>
+            <div className={styles.listItemMeta}>
+              <div className={styles.listItemMetaTitle}>
+                {`${key.keyType} ${key.fingerprint}`}
+              </div>
+              <div className={styles.listItemMetaDescription}>
+                {`${key.comment} (${key.bits} bits)`}
+              </div>
+            </div>
+            {key.addedByVault && (
+              <Button
+                type="text"
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+                onClick={() => void sshRemoveFromAgent(key.fingerprint)}
+              />
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -3,15 +3,8 @@ import { Form, Input, Button, Progress, Typography, Divider } from "antd";
 import { LockOutlined, UnlockOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { StrengthResult } from "../core/vault.types";
+import { STRENGTH_COLORS, STRENGTH_FALLBACK_COLOR } from "../core/vaultColors";
 import styles from "../vault.module.css";
-
-const SCORE_COLORS: Record<number, string> = {
-  0: "#ff4d4f",
-  1: "#ff7a45",
-  2: "#faad14",
-  3: "#52c41a",
-  4: "#13c8a8",
-};
 
 const STRENGTH_SUFFIXES = [
   "very_weak",
@@ -88,7 +81,9 @@ export default function PasswordForm({
         <div style={{ marginBottom: 16 }}>
           <Progress
             percent={(strength.score / 4) * 100}
-            strokeColor={SCORE_COLORS[strength.score] ?? "#d9d9d9"}
+            strokeColor={
+              STRENGTH_COLORS[strength.score] ?? STRENGTH_FALLBACK_COLOR
+            }
             showInfo={false}
             size="small"
           />

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Drawer, List, Button, Empty, Typography, Tooltip, App } from "antd";
+import { Drawer, Button, Empty, Typography, Tooltip, App } from "antd";
 import { UndoOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./core/vaultStore";
@@ -67,41 +67,35 @@ export default function TrashDrawer({ open, onClose }: TrashDrawerProps) {
       {deletedEntries.length === 0 ? (
         <Empty description={t("vault.entry.trash_empty")} />
       ) : (
-        <List
-          dataSource={deletedEntries}
-          className={styles.entryList}
-          renderItem={(entry) => (
-            <List.Item
-              className={styles.entryItem}
-              actions={[
-                <Tooltip key="restore" title={t("vault.entry.restore")}>
+        <div className={styles.entryList}>
+          {deletedEntries.map((entry) => (
+            <div key={entry.id} className={styles.entryItem}>
+              <div className={styles.entryMain}>
+                <div className={styles.entryTitle}>{entry.title}</div>
+                <span className={styles.entryDescription}>
+                  {entry.username && (
+                    <span className={styles.entryUsername}>
+                      {entry.username}
+                    </span>
+                  )}
+                  <span className={styles.entryTime}>
+                    {formatRelativeTime(entry.updatedAt)}
+                  </span>
+                </span>
+              </div>
+              <div className={styles.entryTrailing}>
+                <Tooltip title={t("vault.entry.restore")}>
                   <Button
                     type="text"
                     size="small"
                     icon={<UndoOutlined />}
                     onClick={() => handleRestore(entry.id)}
                   />
-                </Tooltip>,
-              ]}
-            >
-              <List.Item.Meta
-                title={entry.title}
-                description={
-                  <span className={styles.entryDescription}>
-                    {entry.username && (
-                      <span className={styles.entryUsername}>
-                        {entry.username}
-                      </span>
-                    )}
-                    <span className={styles.entryTime}>
-                      {formatRelativeTime(entry.updatedAt)}
-                    </span>
-                  </span>
-                }
-              />
-            </List.Item>
-          )}
-        />
+                </Tooltip>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </Drawer>
   );

@@ -85,7 +85,7 @@ pub struct UnreadableEntriesDto {
 #[ts(export, export_to = "vault.contract.ts")]
 pub enum SyncResultDto {
     Success,
-    UpToDate,
+    NoRemote,
     Conflict(Vec<ConflictFileDto>),
     PendingRemovals(PendingRemovalsDto),
     UnreadableEntries(UnreadableEntriesDto),

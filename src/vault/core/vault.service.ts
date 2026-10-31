@@ -93,11 +93,16 @@ export const vaultService = {
   revealNotes: (id: string): Promise<RevealResult> =>
     invoke("vault_reveal_notes", { id }),
 
-  createEntry: (entry: VaultEntryCreate): Promise<string> =>
+  createEntry: (entry: VaultEntryCreate): Promise<VaultEntryDetail> =>
     invoke("vault_create_entry", { entry }),
 
-  updateEntry: (id: string, entry: VaultEntryUpdate): Promise<void> =>
-    invoke("vault_update_entry", { id, entry }),
+  updateEntry: (
+    id: string,
+    entry: VaultEntryUpdate,
+  ): Promise<VaultEntryDetail> => invoke("vault_update_entry", { id, entry }),
+
+  setFavorite: (id: string, isFavorite: boolean): Promise<VaultEntryDetail> =>
+    invoke("vault_set_favorite", { id, isFavorite }),
 
   deleteEntry: (id: string): Promise<void> =>
     invoke("vault_delete_entry", { id }),

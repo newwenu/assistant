@@ -14,6 +14,7 @@ import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./core/vaultStore";
 import { vaultService } from "./core/vault.service";
+import { vaultCategoryOptions } from "./core/vaultCategory";
 import type {
   VaultCategory,
   CustomFieldInput,
@@ -25,15 +26,6 @@ import NoteFields from "./forms/NoteFields";
 import IdentityFields from "./forms/IdentityFields";
 import SshKeyFields from "./forms/SshKeyFields";
 import CustomFields from "./forms/CustomFields";
-
-const CATEGORY_OPTIONS: { value: VaultCategory; label: string }[] = [
-  { value: "login", label: "Login" },
-  { value: "note", label: "Note" },
-  { value: "card", label: "Card" },
-  { value: "identity", label: "Identity" },
-  { value: "sshKey", label: "SSH Key" },
-  { value: "custom", label: "Custom" },
-];
 
 interface VaultEntryDrawerProps {
   open: boolean;
@@ -187,8 +179,8 @@ export default function VaultEntryDrawer({
         await updateEntry(editId, entryData);
         onSaved(editId);
       } else {
-        const id = await createEntry(entryData);
-        onSaved(id);
+        const detail = await createEntry(entryData);
+        onSaved(detail.id);
       }
     } catch {
       message.error(t("vault.entry.save_failed"));
@@ -221,10 +213,7 @@ export default function VaultEntryDrawer({
           <Select
             value={category}
             onChange={(v) => setCategory(v)}
-            options={CATEGORY_OPTIONS.map((o) => ({
-              ...o,
-              label: t(`vault.entry.category_${o.value}`),
-            }))}
+            options={vaultCategoryOptions(t)}
           />
         </Form.Item>
 

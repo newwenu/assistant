@@ -135,7 +135,7 @@ pub enum UnreadableReason {
 #[serde(rename_all = "camelCase")]
 pub enum SyncResult {
     Success,
-    UpToDate,
+    NoRemote,
     Conflict(Vec<ConflictFile>),
     PendingRemovals(PendingRemovals),
     UnreadableEntries {

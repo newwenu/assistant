@@ -769,6 +769,7 @@
       "no_entries": "No entries",
       "confirm_delete": "Delete this entry?",
       "viewing_entry": "Viewing Entry",
+      "select_hint": "Select an entry from the list to view details",
       "category": "Category",
       "category_login": "Login",
       "category_note": "Note",
@@ -776,6 +777,7 @@
       "category_identity": "Identity",
       "category_sshKey": "SSH Key",
       "category_custom": "Custom",
+      "category_all": "All",
       "title": "Title",
       "title_required": "Title is required",
       "username": "Username",
@@ -800,10 +802,17 @@
       "gen_mode_random": "Random",
       "gen_mode_passphrase": "Passphrase",
       "reveal": "Reveal",
+      "hold_to_reveal": "Hold to reveal",
+      "release_to_hide": "Release to hide",
+      "reveal_failed": "Reveal failed",
+      "reveal_rate_limited": "Too many reveals, please try again later",
       "encrypted": "Encrypted",
       "revision": "Revision",
       "entries_count": "entries",
       "leaked": "leaked",
+      "sort_recent": "Recently updated",
+      "sort_title": "Title",
+      "sort_favorite": "Favorites first",
       "trash": "Trash",
       "trash_empty": "Trash is empty",
       "trash_hint": "Deleted entries are kept here until restored or purged",
@@ -843,7 +852,8 @@
       "ssh_agent": "SSH Agent",
       "recovery": "Recovery Key",
       "change_password": "Change Password",
-      "import_export": "Import / Export"
+      "import_export": "Import / Export",
+      "danger_zone": "Danger Zone"
     },
     "confirm_lock": "Lock the vault?",
     "sync": {
@@ -857,8 +867,14 @@
       "remote_url": "Remote Repository URL",
       "ssh_hosts": "SSH Connection Reuse Hosts",
       "ssh_hosts_hint": "Comma separated. Leave empty to reuse SSH connections only for github.com / gitlab.com.",
-      "last_sync": "Last sync: {{time}}",
+      "last_sync": "Last synced: {{time}}",
       "last_sync_never": "Never synced",
+      "state_ready": "Synced",
+      "state_dirty": "Unpushed changes",
+      "state_off": "Sync disabled",
+      "state_conflict": "Sync conflict",
+      "state_failed": "Sync failed",
+      "state_failed_tip": "{{message}} (click to dismiss)",
       "pull": "Pull",
       "push": "Push",
       "now": "Sync",
@@ -866,7 +882,7 @@
       "force_push_confirm_title": "Confirm Force Push",
       "force_push_confirm_desc": "Force push will overwrite the remote repository history. This action cannot be undone.",
       "result_success": "Sync succeeded",
-      "result_up_to_date": "Already up to date",
+      "result_no_remote": "No remote configured. Local changes were written to the repository but not committed.",
       "result_conflict": "Sync conflict: {{count}} file(s)",
       "result_error": "Sync failed: {{message}}",
       "result_unreadable": "Sync finished, but {{count}} entry(ies) could not be decrypted",
@@ -957,7 +973,23 @@
     "danger_zone": {
       "title": "Danger Zone",
       "desc": "The following actions are destructive and cannot be undone. Proceed with caution.",
-      "type_confirm": "Type {{code}} to confirm"
+      "type_confirm": "Type {{code}} to confirm",
+      "tab_desc": "All destructive actions live here. Each one requires typing a confirmation code before it runs.",
+      "sync_hint": "Force push, discarding local changes and removing the remote have moved to the Danger Zone tab.",
+      "unreadable_overwrite_hint": "To overwrite the remote with this device, run force push from the Danger Zone tab.",
+      "open": "Open Danger Zone",
+      "discard": {
+        "title": "Discard local changes",
+        "desc": "Discards all uncommitted local changes and resets to the last commit. This cannot be undone."
+      },
+      "force_push": {
+        "title": "Force push overwriting remote",
+        "desc": "Overwrites the remote repository history with this device. Commits on the other side will be lost. This cannot be undone."
+      },
+      "remove_remote": {
+        "title": "Remove remote repository",
+        "desc": "Unbinds the remote repository. Local commits are kept, but pushing and pulling will stop working."
+      }
     },
     "conflict": {
       "title": "Resolve Sync Conflict",

@@ -183,7 +183,7 @@ impl SyncEngine {
             }
 
             if !git.has_remote()? {
-                return Ok(SyncResult::UpToDate);
+                return Ok(SyncResult::NoRemote);
             }
 
             match git.pull() {
@@ -385,7 +385,7 @@ impl SyncEngine {
 
         if !has_remote {
             self.export_all_entries(security_db, false, &[])?;
-            return Ok(SyncResult::UpToDate);
+            return Ok(SyncResult::NoRemote);
         }
 
         if let Err(e) = self.prepare() {

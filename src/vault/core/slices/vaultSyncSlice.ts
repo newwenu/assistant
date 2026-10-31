@@ -18,6 +18,7 @@ const log = createLogger("vaultStore");
 export interface VaultSyncSlice {
   syncReadyness: Readyness | null;
   syncResult: SyncResult | null;
+  syncError: string | null;
   syncConfig: SyncConfig | null;
   syncConflicts: ConflictFile[];
   pendingRemovals: PendingRemovals | null;
@@ -50,6 +51,7 @@ export interface VaultSyncSlice {
   gitTestConnection: (url?: string) => Promise<number | null>;
   syncAbort: () => Promise<void>;
   syncDiscard: () => Promise<void>;
+  clearSyncError: () => void;
   sshAddToAgent: (id: string, lifetime?: number) => Promise<string | null>;
   sshRemoveFromAgent: (fingerprint: string) => Promise<void>;
   sshListAgent: () => Promise<void>;
@@ -87,12 +89,19 @@ export function createSyncSlice(
       "pendingRemovals" in result
         ? result.pendingRemovals
         : null;
-    set({ syncResult: result, pendingRemovals });
+    set({ syncResult: result, pendingRemovals, syncError: null });
+  };
+
+  const failSync = async (e: unknown): Promise<void> => {
+    failWith(e, { syncing: false, syncError: vaultErrorMessage(e) });
+    await get().loadSyncReadyness();
+    await get().loadSyncLastTime();
   };
 
   return {
     syncReadyness: null,
     syncResult: null,
+    syncError: null,
     syncConfig: null,
     syncConflicts: [],
     pendingRemovals: null,
@@ -102,7 +111,7 @@ export function createSyncSlice(
     sshAgentRunning: false,
 
     syncPull: async () => {
-      set({ syncing: true, error: null, errorCode: null });
+      set({ syncing: true, syncResult: null, error: null, errorCode: null });
       try {
         const result = await vaultService.syncPull();
         applySyncResult(result);
@@ -112,12 +121,12 @@ export function createSyncSlice(
         await get().loadSyncLastTime();
       } catch (e) {
         log.error("syncPull failed", e);
-        failWith(e, { syncing: false });
+        await failSync(e);
       }
     },
 
     syncPush: async () => {
-      set({ syncing: true, error: null, errorCode: null });
+      set({ syncing: true, syncResult: null, error: null, errorCode: null });
       try {
         const result = await vaultService.syncPush();
         applySyncResult(result);
@@ -127,12 +136,12 @@ export function createSyncSlice(
         await get().loadSyncLastTime();
       } catch (e) {
         log.error("syncPush failed", e);
-        failWith(e, { syncing: false });
+        await failSync(e);
       }
     },
 
     syncNow: async () => {
-      set({ syncing: true, error: null, errorCode: null });
+      set({ syncing: true, syncResult: null, error: null, errorCode: null });
       try {
         const result = await vaultService.syncNow();
         applySyncResult(result);
@@ -142,20 +151,21 @@ export function createSyncSlice(
         await get().loadSyncLastTime();
       } catch (e) {
         log.error("syncNow failed", e);
-        failWith(e, { syncing: false });
+        await failSync(e);
       }
     },
 
     syncForcePush: async () => {
-      set({ syncing: true, error: null, errorCode: null });
+      set({ syncing: true, syncResult: null, error: null, errorCode: null });
       try {
         const result = await vaultService.syncForcePush();
         applySyncResult(result);
         set({ syncing: false });
+        await get().loadSyncReadyness();
         await get().loadSyncLastTime();
       } catch (e) {
         log.error("syncForcePush failed", e);
-        failWith(e, { syncing: false });
+        await failSync(e);
       }
     },
 
@@ -223,21 +233,22 @@ export function createSyncSlice(
     },
 
     confirmRemovals: async (ids) => {
-      set({ syncing: true, error: null, errorCode: null });
+      set({ syncing: true, syncResult: null, error: null, errorCode: null });
       try {
         await vaultService.syncConfirmRemovals(ids);
-        set({ pendingRemovals: null, syncResult: "success" });
+        set({ pendingRemovals: null, syncResult: "success", syncError: null });
         await get().loadEntries();
         await get().loadSyncReadyness();
         await get().loadSyncLastTime();
         set({ syncing: false });
       } catch (e) {
         log.error("confirmRemovals failed", e);
-        failWith(e, { syncing: false });
+        await failSync(e);
       }
     },
 
     resolveConflict: async (path, resolution, remoteCopySuffix) => {
+      set({ error: null, errorCode: null });
       try {
         await vaultService.resolveConflict(path, resolution, remoteCopySuffix);
         await get().loadSyncReadyness();
@@ -246,12 +257,19 @@ export function createSyncSlice(
         await get().loadSyncLastTime();
       } catch (e) {
         log.error("resolveConflict failed", e);
-        failWith(e);
+        failWith(e, { syncError: vaultErrorMessage(e) });
+        await get().loadSyncReadyness();
+        await get().loadSyncConflicts();
       }
     },
 
     gitInit: async () => {
-      set({ loading: true, error: null, errorCode: null });
+      set({
+        loading: true,
+        syncResult: null,
+        error: null,
+        errorCode: null,
+      });
       try {
         await vaultService.gitInit();
         await get().loadSyncReadyness();
@@ -260,11 +278,17 @@ export function createSyncSlice(
       } catch (e) {
         log.error("gitInit failed", e);
         failWith(e, { loading: false });
+        await get().loadSyncReadyness();
       }
     },
 
     gitClone: async (url) => {
-      set({ loading: true, error: null, errorCode: null });
+      set({
+        loading: true,
+        syncResult: null,
+        error: null,
+        errorCode: null,
+      });
       try {
         await vaultService.gitClone(url);
         await get().loadSyncReadyness();
@@ -273,30 +297,38 @@ export function createSyncSlice(
       } catch (e) {
         log.error("gitClone failed", e);
         failWith(e, { loading: false });
+        await get().loadSyncReadyness();
       }
     },
 
     gitAddRemote: async (remote, url) => {
+      set({ error: null, errorCode: null });
       try {
         await vaultService.gitAddRemote(remote, url);
         await get().loadSyncConfig();
+        await get().loadSyncReadyness();
       } catch (e) {
         log.error("gitAddRemote failed", e);
         failWith(e);
+        await get().loadSyncReadyness();
       }
     },
 
     gitSetRemote: async (remote, url) => {
+      set({ error: null, errorCode: null });
       try {
         await vaultService.gitSetRemote(remote, url);
         await get().loadSyncConfig();
+        await get().loadSyncReadyness();
       } catch (e) {
         log.error("gitSetRemote failed", e);
         failWith(e);
+        await get().loadSyncReadyness();
       }
     },
 
     gitRemoveRemote: async (remote) => {
+      set({ error: null, errorCode: null });
       try {
         await vaultService.gitRemoveRemote(remote);
         await get().loadSyncConfig();
@@ -304,10 +336,12 @@ export function createSyncSlice(
       } catch (e) {
         log.error("gitRemoveRemote failed", e);
         failWith(e);
+        await get().loadSyncReadyness();
       }
     },
 
     gitTestConnection: async (url) => {
+      set({ error: null, errorCode: null });
       try {
         const count = await vaultService.gitTestConnection(url);
         return count;
@@ -319,28 +353,32 @@ export function createSyncSlice(
     },
 
     syncAbort: async () => {
-      set({ syncing: true, error: null, errorCode: null });
+      set({ syncing: true, syncResult: null, error: null, errorCode: null });
       try {
         await vaultService.syncAbort();
         await get().loadSyncReadyness();
-        set({ syncing: false });
+        set({ syncing: false, syncError: null });
       } catch (e) {
         log.error("syncAbort failed", e);
-        failWith(e, { syncing: false });
+        failWith(e, { syncing: false, syncError: vaultErrorMessage(e) });
+        await get().loadSyncReadyness();
       }
     },
 
     syncDiscard: async () => {
-      set({ syncing: true, error: null, errorCode: null });
+      set({ syncing: true, syncResult: null, error: null, errorCode: null });
       try {
         await vaultService.syncDiscard();
         await get().loadSyncReadyness();
-        set({ syncing: false });
+        set({ syncing: false, syncError: null });
       } catch (e) {
         log.error("syncDiscard failed", e);
-        failWith(e, { syncing: false });
+        failWith(e, { syncing: false, syncError: vaultErrorMessage(e) });
+        await get().loadSyncReadyness();
       }
     },
+
+    clearSyncError: () => set({ syncError: null }),
 
     sshAddToAgent: async (id, lifetime) => {
       try {

@@ -15,6 +15,8 @@ use super::sync::{
     UnreadableReasonDto,
 };
 use super::totp::{ParsedOtpAuthDto, TotpAlgorithmDto, TotpResultDto};
+use super::{VaultEntryDetail, VaultEntrySummary};
+use crate::types::VaultEntrySnapshot;
 
 impl From<RepositoryState> for RepositoryStateDto {
     fn from(v: RepositoryState) -> Self {
@@ -85,7 +87,7 @@ impl TryFrom<SyncResult> for SyncResultDto {
     fn try_from(v: SyncResult) -> Result<Self, Self::Error> {
         Ok(match v {
             SyncResult::Success => Self::Success,
-            SyncResult::UpToDate => Self::UpToDate,
+            SyncResult::NoRemote => Self::NoRemote,
             SyncResult::Conflict(files) => {
                 Self::Conflict(files.into_iter().map(ConflictFileDto::from).collect())
             }
@@ -378,6 +380,46 @@ impl From<(String, u32)> for HibpAuditEntryDto {
         Self {
             entry_id,
             match_count,
+        }
+    }
+}
+
+impl From<&VaultEntrySnapshot> for VaultEntryDetail {
+    fn from(v: &VaultEntrySnapshot) -> Self {
+        Self {
+            id: v.id.clone(),
+            category: v.category,
+            title: v.title.clone(),
+            username: v.username.clone(),
+            url: v.url.clone(),
+            has_password: v.password.is_some(),
+            has_notes: v.notes.is_some(),
+            has_totp: v.totp_secret.is_some(),
+            custom_field_names: v
+                .custom_fields
+                .iter()
+                .map(|field| field.name.clone())
+                .collect(),
+            tags: v.tags.clone(),
+            is_favorite: v.is_favorite,
+            revision: v.revision,
+            created_at: v.created_at,
+            updated_at: v.updated_at,
+        }
+    }
+}
+
+impl From<&VaultEntrySnapshot> for VaultEntrySummary {
+    fn from(v: &VaultEntrySnapshot) -> Self {
+        Self {
+            id: v.id.clone(),
+            category: v.category,
+            title: v.title.clone(),
+            username: v.username.clone(),
+            url: v.url.clone(),
+            tags: v.tags.clone(),
+            is_favorite: v.is_favorite,
+            updated_at: v.updated_at,
         }
     }
 }

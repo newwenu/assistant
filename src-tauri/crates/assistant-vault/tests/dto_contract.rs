@@ -209,8 +209,8 @@ fn hibp_audit_entry_dto_wire_is_structured() {
 fn sync_result_dto_has_exactly_five_variants() {
     assert_eq!(to_value(SyncResultDto::Success).unwrap(), json!("success"));
     assert_eq!(
-        to_value(SyncResultDto::UpToDate).unwrap(),
-        json!("upToDate")
+        to_value(SyncResultDto::NoRemote).unwrap(),
+        json!("noRemote")
     );
     assert_eq!(
         to_value(SyncResultDto::Conflict(Vec::<ConflictFileDto>::new())).unwrap(),

@@ -20,11 +20,15 @@ export interface VaultEntriesSlice {
   tagFilter: string | null;
   deletedEntries: VaultEntrySummary[];
 
-  loadEntries: () => Promise<void>;
+  loadEntries: (options?: { silent?: boolean }) => Promise<void>;
   selectEntry: (id: string) => Promise<void>;
   clearSelectedEntry: () => void;
-  createEntry: (entry: VaultEntryCreate) => Promise<string>;
-  updateEntry: (id: string, entry: VaultEntryUpdate) => Promise<void>;
+  createEntry: (entry: VaultEntryCreate) => Promise<VaultEntryDetail>;
+  updateEntry: (
+    id: string,
+    entry: VaultEntryUpdate,
+  ) => Promise<VaultEntryDetail>;
+  setFavorite: (id: string, isFavorite: boolean) => Promise<VaultEntryDetail>;
   deleteEntry: (id: string) => Promise<void>;
   loadDeletedEntries: () => Promise<void>;
   restoreEntry: (id: string) => Promise<void>;
@@ -46,6 +50,8 @@ export function createEntriesSlice(
   ) => void,
   get: () => FullState,
 ): VaultEntriesSlice {
+  let selectSeq = 0;
+
   return {
     entries: [],
     selectedEntry: null,
@@ -54,8 +60,9 @@ export function createEntriesSlice(
     tagFilter: null,
     deletedEntries: [],
 
-    loadEntries: async () => {
-      set({ loading: true, error: null, errorCode: null });
+    loadEntries: async (options) => {
+      const silent = options?.silent ?? false;
+      if (!silent) set({ loading: true, error: null, errorCode: null });
       try {
         const { categoryFilter, searchQuery, tagFilter } = get();
         const entries = await vaultService.listEntries(
@@ -75,10 +82,13 @@ export function createEntriesSlice(
     },
 
     selectEntry: async (id) => {
+      const seq = ++selectSeq;
       try {
         const detail = await vaultService.getEntry(id);
+        if (seq !== selectSeq) return;
         set({ selectedEntry: detail });
       } catch (e) {
+        if (seq !== selectSeq) return;
         log.error("selectEntry failed", e);
         set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
       }
@@ -87,58 +97,58 @@ export function createEntriesSlice(
     clearSelectedEntry: () => set({ selectedEntry: null }),
 
     createEntry: async (entry) => {
-      set({ loading: true, error: null, errorCode: null });
+      set({ error: null, errorCode: null });
       try {
-        const id = await vaultService.createEntry(entry);
-        await get().loadEntries();
-        set({ loading: false });
-        return id;
+        const detail = await vaultService.createEntry(entry);
+        await get().loadEntries({ silent: true });
+        return detail;
       } catch (e) {
         log.error("createEntry failed", e);
-        set({
-          error: vaultErrorMessage(e),
-          errorCode: vaultErrorCode(e),
-          loading: false,
-        });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
         throw e;
       }
     },
 
     updateEntry: async (id, entry) => {
-      set({ loading: true, error: null, errorCode: null });
+      set({ error: null, errorCode: null });
       try {
-        await vaultService.updateEntry(id, entry);
-        await get().loadEntries();
-        const { selectedEntry } = get();
-        if (selectedEntry?.id === id) {
-          await get().selectEntry(id);
-        }
-        set({ loading: false });
+        const detail = await vaultService.updateEntry(id, entry);
+        if (get().selectedEntry?.id === id) set({ selectedEntry: detail });
+        await get().loadEntries({ silent: true });
+        return detail;
       } catch (e) {
         log.error("updateEntry failed", e);
-        set({
-          error: vaultErrorMessage(e),
-          errorCode: vaultErrorCode(e),
-          loading: false,
-        });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
+        throw e;
+      }
+    },
+
+    setFavorite: async (id, isFavorite) => {
+      try {
+        const detail = await vaultService.setFavorite(id, isFavorite);
+        if (get().selectedEntry?.id === id) set({ selectedEntry: detail });
+        await get().loadEntries({ silent: true });
+        return detail;
+      } catch (e) {
+        log.error("setFavorite failed", e);
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
+        throw e;
       }
     },
 
     deleteEntry: async (id) => {
-      set({ loading: true, error: null, errorCode: null });
+      set({ error: null, errorCode: null });
       try {
         await vaultService.deleteEntry(id);
-        const { selectedEntry } = get();
-        if (selectedEntry?.id === id) set({ selectedEntry: null });
-        await get().loadEntries();
-        set({ loading: false });
+        const { selectedEntry, entries } = get();
+        set({
+          entries: entries.filter((entry) => entry.id !== id),
+          selectedEntry: selectedEntry?.id === id ? null : selectedEntry,
+        });
+        await get().loadEntries({ silent: true });
       } catch (e) {
         log.error("deleteEntry failed", e);
-        set({
-          error: vaultErrorMessage(e),
-          errorCode: vaultErrorCode(e),
-          loading: false,
-        });
+        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
       }
     },
 
@@ -155,7 +165,10 @@ export function createEntriesSlice(
     restoreEntry: async (id) => {
       try {
         await vaultService.restoreEntry(id);
-        await Promise.all([get().loadEntries(), get().loadDeletedEntries()]);
+        await Promise.all([
+          get().loadEntries({ silent: true }),
+          get().loadDeletedEntries(),
+        ]);
       } catch (e) {
         log.error("restoreEntry failed", e);
         set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });

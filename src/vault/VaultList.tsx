@@ -1,16 +1,15 @@
-import { useEffect, useState } from "react";
+import { useMemo, useEffect, useState, useRef } from "react";
 import {
   Input,
   Tag,
-  List,
   Button,
   Empty,
   Spin,
   App,
-  Space,
   Tooltip,
   Alert,
   Modal,
+  Select,
 } from "antd";
 import {
   SearchOutlined,
@@ -19,55 +18,46 @@ import {
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
-  UserOutlined,
-  FileTextOutlined,
-  CreditCardOutlined,
-  IdcardOutlined,
-  CodeOutlined,
-  ToolOutlined,
+  SafetyOutlined,
   SyncOutlined,
-  CloudSyncOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./core/vaultStore";
-import type { VaultCategory } from "./core/vault.types";
+import { vaultCategoryIcon, vaultCategoryOptions } from "./core/vaultCategory";
+import { VAULT_TONES } from "./core/vaultColors";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import TrashDrawer from "./TrashDrawer";
 import VaultConflictResolve from "./settings/VaultConflictResolve";
 import styles from "./vault.module.css";
 
-const CATEGORY_OPTIONS: { value: VaultCategory; label: string }[] = [
-  { value: "login", label: "Login" },
-  { value: "note", label: "Note" },
-  { value: "card", label: "Card" },
-  { value: "identity", label: "Identity" },
-  { value: "sshKey", label: "SSH Key" },
-  { value: "custom", label: "Custom" },
-];
+type VaultSortBy = "recent" | "title" | "favorite";
 
-const CATEGORY_ICONS: Record<VaultCategory, React.ReactNode> = {
-  login: <UserOutlined />,
-  note: <FileTextOutlined />,
-  card: <CreditCardOutlined />,
-  identity: <IdcardOutlined />,
-  sshKey: <CodeOutlined />,
-  custom: <ToolOutlined />,
-};
+const SEARCH_DEBOUNCE_MS = 250;
 
 interface VaultListProps {
   onAdd: () => void;
   onEdit: (id: string) => void;
   onSelect: (id: string) => void;
+  onDeleted?: (id: string) => void;
+  selectedId?: string | null;
 }
 
-export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
+export default function VaultList({
+  onAdd,
+  onEdit,
+  onSelect,
+  onDeleted,
+  selectedId,
+}: VaultListProps) {
   const { t } = useTranslation();
   const { modal } = App.useApp();
   const [trashOpen, setTrashOpen] = useState(false);
   const [conflictPickerOpen, setConflictPickerOpen] = useState(false);
   const [conflictPath, setConflictPath] = useState<string | null>(null);
   const [removalConfirmOpen, setRemovalConfirmOpen] = useState(false);
+  const [onlyLeaked, setOnlyLeaked] = useState(false);
+  const [sortBy, setSortBy] = useState<VaultSortBy>("recent");
   const {
     entries,
     loading,
@@ -78,7 +68,6 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
     syncReadyness,
     syncConflicts,
     pendingRemovals,
-    syncLastAt,
     syncing,
     loadEntries,
     setSearchQuery,
@@ -96,26 +85,33 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
     hibpAuditing,
   } = useVaultStore();
 
+  const initialLoadDone = useRef(false);
+
   useEffect(() => {
-    void loadEntries();
     void loadSyncReadyness();
     void loadPendingRemovals();
     void loadSyncLastTime();
-  }, [
-    searchQuery,
-    categoryFilter,
-    tagFilter,
-    loadEntries,
-    loadSyncReadyness,
-    loadPendingRemovals,
-    loadSyncLastTime,
-  ]);
+  }, [loadSyncReadyness, loadPendingRemovals, loadSyncLastTime]);
+
+  useEffect(() => {
+    const silent = initialLoadDone.current;
+    const timer = setTimeout(
+      () => {
+        initialLoadDone.current = true;
+        void loadEntries({ silent });
+      },
+      silent ? SEARCH_DEBOUNCE_MS : 0,
+    );
+    return () => clearTimeout(timer);
+  }, [searchQuery, categoryFilter, tagFilter, loadEntries]);
 
   const handleDelete = (id: string) => {
     modal.confirm({
       title: t("vault.entry.confirm_delete"),
       okType: "danger",
-      onOk: () => void deleteEntry(id),
+      onOk: () => {
+        void deleteEntry(id).then(() => onDeleted?.(id));
+      },
     });
   };
 
@@ -125,11 +121,27 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
     setRemovalConfirmOpen(false);
   };
 
-  const leakCount = Object.values(hibpLeaks).filter((c) => c > 0).length;
   const repoState =
     syncReadyness !== null && typeof syncReadyness === "object"
       ? syncReadyness.repoState
       : null;
+  const leakCount = Object.values(hibpLeaks).filter((c) => c > 0).length;
+
+  const visibleEntries = useMemo(() => {
+    const filtered = onlyLeaked
+      ? entries.filter((entry) => (hibpLeaks[entry.id] ?? 0) > 0)
+      : entries;
+    if (sortBy === "title") {
+      return [...filtered].sort((a, b) => a.title.localeCompare(b.title));
+    }
+    if (sortBy === "favorite") {
+      return [...filtered].sort((a, b) => {
+        if (a.isFavorite === b.isFavorite) return b.updatedAt - a.updatedAt;
+        return a.isFavorite ? -1 : 1;
+      });
+    }
+    return [...filtered].sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [entries, onlyLeaked, sortBy, hibpLeaks]);
 
   return (
     <div className={styles.listContainer}>
@@ -178,6 +190,29 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
         <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
           {t("vault.entry.add_entry")}
         </Button>
+        <Tooltip title={t("vault.hibp.audit_all")}>
+          <Button
+            type="text"
+            icon={<SafetyOutlined />}
+            onClick={() => void hibpAudit()}
+            loading={hibpAuditing}
+          />
+        </Tooltip>
+        <Tooltip
+          title={
+            repoState !== null
+              ? t("vault.conflict.detected")
+              : t("vault.sync.now")
+          }
+        >
+          <Button
+            type="text"
+            danger={repoState !== null}
+            icon={<SyncOutlined spin={syncing} />}
+            onClick={() => void syncNow()}
+            disabled={syncing}
+          />
+        </Tooltip>
         <Tooltip title={t("vault.entry.trash")}>
           <Button
             icon={<DeleteOutlined />}
@@ -187,23 +222,54 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
       </div>
 
       <div className={styles.categoryBar}>
-        {CATEGORY_OPTIONS.map((o) => (
+        <div className={styles.categoryOptions}>
           <Tag.CheckableTag
-            key={o.value}
-            checked={categoryFilter === o.value}
-            onChange={(checked) => setCategoryFilter(checked ? o.value : null)}
+            checked={categoryFilter === null}
+            onChange={() => setCategoryFilter(null)}
           >
-            {CATEGORY_ICONS[o.value]}
-            <span style={{ marginLeft: 4 }}>
-              {t(`vault.entry.category_${o.value}`)}
-            </span>
+            {t("vault.entry.category_all")}
           </Tag.CheckableTag>
-        ))}
+          {vaultCategoryOptions(t).map((o) => (
+            <Tag.CheckableTag
+              key={o.value}
+              checked={categoryFilter === o.value}
+              onChange={(checked) =>
+                setCategoryFilter(checked ? o.value : null)
+              }
+            >
+              {vaultCategoryIcon(o.value)}
+              <span style={{ marginLeft: 4 }}>{o.label}</span>
+            </Tag.CheckableTag>
+          ))}
+          {leakCount > 0 && (
+            <Tag.CheckableTag
+              checked={onlyLeaked}
+              onChange={setOnlyLeaked}
+              style={{ color: onlyLeaked ? undefined : VAULT_TONES.leak }}
+            >
+              <WarningOutlined style={{ marginRight: 4 }} />
+              {leakCount} {t("vault.entry.leaked")}
+            </Tag.CheckableTag>
+          )}
+        </div>
+        <Select
+          value={sortBy}
+          onChange={setSortBy}
+          size="small"
+          variant="borderless"
+          className={styles.sortSelect}
+          popupMatchSelectWidth={false}
+          options={[
+            { value: "recent", label: t("vault.entry.sort_recent") },
+            { value: "title", label: t("vault.entry.sort_title") },
+            { value: "favorite", label: t("vault.entry.sort_favorite") },
+          ]}
+        />
       </div>
 
       {loading ? (
         <Spin className={styles.spin} />
-      ) : entries.length === 0 ? (
+      ) : visibleEntries.length === 0 ? (
         <div className={styles.emptyWrap}>
           <Empty description={t("vault.entry.no_entries")}>
             <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
@@ -212,161 +278,109 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
           </Empty>
         </div>
       ) : (
-        <List
-          dataSource={entries}
-          className={styles.entryList}
-          renderItem={(entry) => (
-            <List.Item
-              className={styles.entryItem}
+        <div className={styles.entryList}>
+          {visibleEntries.map((entry) => (
+            <div
+              key={entry.id}
+              className={`${styles.entryItem} ${
+                selectedId === entry.id ? styles.entryItemActive : ""
+              }`}
               onClick={() => {
                 resetAutoLockTimer();
                 onSelect(entry.id);
               }}
-              actions={[
-                <Tooltip key="copy" title={t("common.actions.copy")}>
+            >
+              <span className={styles.entryAvatar}>
+                {vaultCategoryIcon(entry.category)}
+              </span>
+              <div className={styles.entryMain}>
+                <div className={styles.entryTitle}>
+                  {entry.isFavorite && (
+                    <StarFilled
+                      style={{ color: VAULT_TONES.favorite, marginRight: 4 }}
+                    />
+                  )}
+                  {hibpLeaks[entry.id] > 0 && (
+                    <WarningOutlined
+                      style={{ color: VAULT_TONES.leak, marginLeft: 4 }}
+                    />
+                  )}
+                  {entry.title}
+                </div>
+                <span className={styles.entryDescription}>
+                  {entry.username && (
+                    <span className={styles.entryUsername}>
+                      {entry.username}
+                    </span>
+                  )}
+                  {entry.url && (
+                    <span className={styles.entryUrl}>{entry.url}</span>
+                  )}
+                  {entry.tags.length > 0 && (
+                    <span className={styles.entryTags}>
+                      {entry.tags.map((tag) => (
+                        <Tag
+                          key={tag}
+                          color={tagFilter === tag ? "blue" : undefined}
+                          style={{ cursor: "pointer" }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTagFilter(tagFilter === tag ? null : tag);
+                          }}
+                        >
+                          {tag}
+                        </Tag>
+                      ))}
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className={styles.entryActions}>
+                <span className={styles.entryTime}>
+                  {formatRelativeTime(entry.updatedAt)}
+                </span>
+                <Tooltip title={t("common.actions.copy")}>
                   <Button
                     type="text"
                     size="small"
+                    className={styles.entryActionButton}
                     icon={<CopyOutlined />}
                     onClick={(e) => {
                       e.stopPropagation();
                       void copyPassword(entry.id);
                     }}
                   />
-                </Tooltip>,
-                <Tooltip key="edit" title={t("common.actions.edit")}>
+                </Tooltip>
+                <Tooltip title={t("common.actions.edit")}>
                   <Button
                     type="text"
                     size="small"
+                    className={styles.entryActionButton}
                     icon={<EditOutlined />}
                     onClick={(e) => {
                       e.stopPropagation();
                       onEdit(entry.id);
                     }}
                   />
-                </Tooltip>,
-                <Tooltip key="delete" title={t("common.actions.delete")}>
+                </Tooltip>
+                <Tooltip title={t("common.actions.delete")}>
                   <Button
                     type="text"
                     size="small"
                     danger
+                    className={styles.entryActionButton}
                     icon={<DeleteOutlined />}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDelete(entry.id);
                     }}
                   />
-                </Tooltip>,
-              ]}
-            >
-              <List.Item.Meta
-                avatar={CATEGORY_ICONS[entry.category]}
-                title={
-                  <span>
-                    {entry.isFavorite && (
-                      <StarFilled
-                        style={{ color: "#faad14", marginRight: 4 }}
-                      />
-                    )}
-                    {hibpLeaks[entry.id] > 0 && (
-                      <WarningOutlined
-                        style={{ color: "#ff4d4f", marginLeft: 4 }}
-                      />
-                    )}
-                    {entry.title}
-                  </span>
-                }
-                description={
-                  <span className={styles.entryDescription}>
-                    {entry.username && (
-                      <span className={styles.entryUsername}>
-                        {entry.username}
-                      </span>
-                    )}
-                    {entry.url && (
-                      <span className={styles.entryUrl}>{entry.url}</span>
-                    )}
-                    {entry.tags.length > 0 && (
-                      <span className={styles.entryTags}>
-                        {entry.tags.map((tag) => (
-                          <Tag
-                            key={tag}
-                            color={tagFilter === tag ? "blue" : undefined}
-                            style={{ cursor: "pointer" }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setTagFilter(tagFilter === tag ? null : tag);
-                            }}
-                          >
-                            {tag}
-                          </Tag>
-                        ))}
-                      </span>
-                    )}
-                    <span className={styles.entryTime}>
-                      {formatRelativeTime(entry.updatedAt)}
-                    </span>
-                  </span>
-                }
-              />
-            </List.Item>
-          )}
-        />
-      )}
-
-      <div className={styles.syncBar}>
-        <div className={styles.syncBarLeft}>
-          <span>
-            {entries.length} {t("vault.entry.entries_count")}
-          </span>
-          {leakCount > 0 && (
-            <span className={styles.leakWarning}>
-              <WarningOutlined style={{ marginRight: 4 }} />
-              {leakCount} {t("vault.entry.leaked")}
-            </span>
-          )}
+                </Tooltip>
+              </div>
+            </div>
+          ))}
         </div>
-        <Space size={4}>
-          {syncLastAt !== null && (
-            <Tooltip
-              title={t("vault.sync.last_sync", {
-                time: new Date(syncLastAt).toLocaleString(),
-              })}
-            >
-              <span className={styles.syncLastAt}>
-                {formatRelativeTime(syncLastAt)}
-              </span>
-            </Tooltip>
-          )}
-          <Tooltip title={t("vault.hibp.audit_all")}>
-            <Button
-              type="text"
-              size="small"
-              icon={<WarningOutlined />}
-              onClick={() => void hibpAudit()}
-              loading={hibpAuditing}
-            />
-          </Tooltip>
-          {syncReadyness === "ready" && (
-            <CloudSyncOutlined style={{ color: "#52c41a" }} />
-          )}
-          {syncReadyness === "dirty" && (
-            <CloudSyncOutlined style={{ color: "#faad14" }} />
-          )}
-          {syncReadyness === "noSync" && (
-            <CloudSyncOutlined style={{ color: "#d9d9d9" }} />
-          )}
-          <Tooltip title={t("vault.sync.now")}>
-            <Button
-              type="text"
-              size="small"
-              icon={<SyncOutlined spin={syncing} />}
-              onClick={() => void syncNow()}
-              disabled={syncing}
-            />
-          </Tooltip>
-        </Space>
-      </div>
+      )}
 
       <TrashDrawer open={trashOpen} onClose={() => setTrashOpen(false)} />
 
@@ -379,27 +393,22 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
         {syncConflicts.length === 0 ? (
           <Empty description={t("vault.conflict.no_files")} />
         ) : (
-          <List
-            dataSource={syncConflicts}
-            renderItem={(file) => (
-              <List.Item
-                actions={[
-                  <Button
-                    key="open"
-                    type="link"
-                    onClick={() => {
-                      setConflictPath(file.path);
-                      setConflictPickerOpen(false);
-                    }}
-                  >
-                    {t("vault.conflict.resolve")}
-                  </Button>,
-                ]}
-              >
+          <div className={styles.simpleList}>
+            {syncConflicts.map((file) => (
+              <div key={file.path} className={styles.simpleListItem}>
                 <span>{file.title ?? file.path}</span>
-              </List.Item>
-            )}
-          />
+                <Button
+                  type="link"
+                  onClick={() => {
+                    setConflictPath(file.path);
+                    setConflictPickerOpen(false);
+                  }}
+                >
+                  {t("vault.conflict.resolve")}
+                </Button>
+              </div>
+            ))}
+          </div>
         )}
       </Modal>
 
@@ -444,14 +453,13 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
               />
             )}
             <p>{t("vault.sync.pending_removals_desc")}</p>
-            <List
-              dataSource={pendingRemovals.entries}
-              renderItem={(entry) => (
-                <List.Item>
+            <div className={styles.simpleList}>
+              {pendingRemovals.entries.map((entry) => (
+                <div key={entry.id} className={styles.simpleListItem}>
                   <span>{entry.title ?? entry.id}</span>
-                </List.Item>
-              )}
-            />
+                </div>
+              ))}
+            </div>
           </>
         )}
       </Modal>

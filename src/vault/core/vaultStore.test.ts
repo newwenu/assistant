@@ -36,6 +36,7 @@ function resetStore() {
     categoryFilter: null,
     tagFilter: null,
     revealedField: null,
+    revealTimerId: null,
     totpCode: null,
     totpTimeRemaining: 0,
     hibpLeaks: {},
@@ -50,6 +51,7 @@ function resetStore() {
     _recoveryKeySetAt: 0,
     syncReadyness: null,
     syncResult: null,
+    syncError: null,
     syncConfig: null,
     syncing: false,
     sshAgentKeys: [],
@@ -198,14 +200,16 @@ describe("vaultStore CRUD", () => {
     if (autoLockTimerId) clearTimeout(autoLockTimerId);
   });
 
-  it("createEntry → reloads entries after creation", async () => {
-    mockCmd("vault_create_entry", () => Promise.resolve("new-id"));
+  it("createEntry → returns detail and reloads entries", async () => {
+    mockCmd("vault_create_entry", () =>
+      Promise.resolve({ id: "new-id", title: "GitHub", category: "login" }),
+    );
     mockCmd("vault_list_entries", () =>
       Promise.resolve([{ id: "new-id", title: "GitHub", category: "login" }]),
     );
 
     const store = useVaultStore.getState();
-    const id = await store.createEntry({
+    const detail = await store.createEntry({
       category: "login",
       title: "GitHub",
       username: "octocat",
@@ -214,7 +218,7 @@ describe("vaultStore CRUD", () => {
       isFavorite: false,
     });
 
-    expect(id).toBe("new-id");
+    expect(detail.id).toBe("new-id");
     expect(useVaultStore.getState().entries).toHaveLength(1);
   });
 
@@ -302,11 +306,39 @@ describe("vaultStore CRUD", () => {
     expect(useVaultStore.getState().selectedEntry).not.toBeNull();
   });
 
-  it("updateEntry → reloads entries after update", async () => {
-    mockCmd("vault_update_entry", () => Promise.resolve(undefined));
+  it("updateEntry → applies returned detail and reloads entries", async () => {
+    useVaultStore.setState({
+      selectedEntry: { id: "1", title: "Old", category: "login" } as never,
+    });
+    mockCmd("vault_update_entry", () =>
+      Promise.resolve({ id: "1", title: "Updated", category: "login" }),
+    );
     mockCmd("vault_list_entries", () =>
       Promise.resolve([{ id: "1", title: "Updated", category: "login" }]),
     );
+
+    const store = useVaultStore.getState();
+    const detail = await store.updateEntry("1", {
+      category: "login",
+      title: "Updated",
+      tags: [],
+      customFields: [],
+      isFavorite: false,
+    });
+
+    expect(detail.title).toBe("Updated");
+    expect(useVaultStore.getState().selectedEntry?.title).toBe("Updated");
+    expect(useVaultStore.getState().entries[0].title).toBe("Updated");
+  });
+
+  it("updateEntry → leaves selection untouched for another entry", async () => {
+    useVaultStore.setState({
+      selectedEntry: { id: "2", title: "B", category: "login" } as never,
+    });
+    mockCmd("vault_update_entry", () =>
+      Promise.resolve({ id: "1", title: "Updated", category: "login" }),
+    );
+    mockCmd("vault_list_entries", () => Promise.resolve([]));
 
     const store = useVaultStore.getState();
     await store.updateEntry("1", {
@@ -317,7 +349,35 @@ describe("vaultStore CRUD", () => {
       isFavorite: false,
     });
 
-    expect(useVaultStore.getState().entries[0].title).toBe("Updated");
+    expect(useVaultStore.getState().selectedEntry?.id).toBe("2");
+  });
+
+  it("setFavorite → calls dedicated command and reloads entries", async () => {
+    useVaultStore.setState({
+      selectedEntry: { id: "1", title: "A", category: "login" } as never,
+    });
+    const calls: unknown[] = [];
+    mockCmd("vault_set_favorite", (args) => {
+      calls.push(args);
+      return Promise.resolve({
+        id: "1",
+        title: "A",
+        category: "login",
+        isFavorite: true,
+      });
+    });
+    mockCmd("vault_list_entries", () =>
+      Promise.resolve([
+        { id: "1", title: "A", category: "login", isFavorite: true },
+      ]),
+    );
+
+    const store = useVaultStore.getState();
+    await store.setFavorite("1", true);
+
+    expect(calls).toEqual([{ id: "1", isFavorite: true }]);
+    expect(useVaultStore.getState().selectedEntry?.isFavorite).toBe(true);
+    expect(useVaultStore.getState().entries[0].isFavorite).toBe(true);
   });
 });
 
@@ -353,8 +413,9 @@ describe("vaultStore reveal & TOTP", () => {
   });
 
   afterEach(() => {
-    const { totpTimerId } = useVaultStore.getState();
+    const { totpTimerId, revealTimerId } = useVaultStore.getState();
     if (totpTimerId) clearInterval(totpTimerId);
+    if (revealTimerId) clearTimeout(revealTimerId);
   });
 
   it("revealPassword → sets revealedField with expiry", async () => {
@@ -371,6 +432,66 @@ describe("vaultStore reveal & TOTP", () => {
     expect(field!.value).toBe("secret123");
     expect(field!.kind).toBe("password");
     expect(field!.expiresAt).toBe(expiresAt);
+    expect(field!.visible).toBe(true);
+  });
+
+  it("revealPassword → reuses cached value within ttl", async () => {
+    let calls = 0;
+    const expiresAt = Date.now() + 5000;
+    mockCmd("vault_reveal_password", () => {
+      calls += 1;
+      return Promise.resolve({ value: "secret123", expiresAt });
+    });
+
+    const store = useVaultStore.getState();
+    await store.revealPassword("entry-1");
+    store.hideRevealedField();
+    expect(useVaultStore.getState().revealedField?.visible).toBe(false);
+
+    const code = await store.revealPassword("entry-1");
+    expect(code).toBeNull();
+    expect(calls).toBe(1);
+    expect(useVaultStore.getState().revealedField?.visible).toBe(true);
+  });
+
+  it("revealPassword → refetches when ttl expired", async () => {
+    let calls = 0;
+    mockCmd("vault_reveal_password", () => {
+      calls += 1;
+      return Promise.resolve({
+        value: `secret-${calls}`,
+        expiresAt: Date.now() + 5000,
+      });
+    });
+
+    const store = useVaultStore.getState();
+    await store.revealPassword("entry-1");
+    useVaultStore.setState({
+      revealedField: {
+        entryId: "entry-1",
+        value: "stale",
+        expiresAt: Date.now() - 1,
+        kind: "password",
+        visible: false,
+      },
+    });
+
+    await store.revealPassword("entry-1");
+    expect(calls).toBe(2);
+    expect(useVaultStore.getState().revealedField?.value).toBe("secret-2");
+  });
+
+  it("revealPassword → returns rateLimited code on backend rejection", async () => {
+    mockCmd("vault_reveal_password", () =>
+      Promise.reject(vaultError("rateLimited", "rate limited")),
+    );
+
+    const store = useVaultStore.getState();
+    const code = await store.revealPassword("entry-1");
+
+    expect(code).toBe("rateLimited");
+    expect(useVaultStore.getState().errorCode).toBe("rateLimited");
+    expect(useVaultStore.getState().revealedField).toBeNull();
   });
 
   it("revealNotes → sets revealedField with kind=notes", async () => {
@@ -387,15 +508,40 @@ describe("vaultStore reveal & TOTP", () => {
     expect(field!.kind).toBe("notes");
   });
 
-  it("clearRevealedField → nulls revealedField", () => {
+  it("hideRevealedField → hides but keeps cached value", () => {
     useVaultStore.setState({
-      revealedField: { value: "x", expiresAt: 0, kind: "password" },
+      revealedField: {
+        entryId: "entry-1",
+        value: "x",
+        expiresAt: Date.now() + 5000,
+        kind: "password",
+        visible: true,
+      },
+    });
+
+    useVaultStore.getState().hideRevealedField();
+
+    const field = useVaultStore.getState().revealedField;
+    expect(field?.visible).toBe(false);
+    expect(field?.value).toBe("x");
+  });
+
+  it("clearRevealedField → nulls revealedField and clears timer", () => {
+    useVaultStore.setState({
+      revealedField: {
+        entryId: "entry-1",
+        value: "x",
+        expiresAt: 0,
+        kind: "password",
+        visible: true,
+      },
     });
 
     const store = useVaultStore.getState();
     store.clearRevealedField();
 
     expect(useVaultStore.getState().revealedField).toBeNull();
+    expect(useVaultStore.getState().revealTimerId).toBeNull();
   });
 
   it("generateTotp → sets totpCode and totpTimeRemaining", async () => {
@@ -624,12 +770,25 @@ describe("vaultStore sync", () => {
   });
 
   it("syncPush → sets syncResult", async () => {
-    mockCmd("vault_sync", () => Promise.resolve("upToDate"));
+    mockCmd("vault_sync", () => Promise.resolve("noRemote"));
 
     const store = useVaultStore.getState();
     await store.syncPush();
 
-    expect(useVaultStore.getState().syncResult).toBe("upToDate");
+    expect(useVaultStore.getState().syncResult).toBe("noRemote");
+    expect(useVaultStore.getState().syncing).toBe(false);
+  });
+
+  it("syncNow failure → records syncError and clears syncing", async () => {
+    mockCmd("vault_sync", () =>
+      Promise.reject(vaultError("gitUnavailable", "git failed")),
+    );
+
+    const store = useVaultStore.getState();
+    await store.syncNow();
+
+    expect(useVaultStore.getState().syncError).toBe("git failed");
+    expect(useVaultStore.getState().errorCode).toBe("gitUnavailable");
     expect(useVaultStore.getState().syncing).toBe(false);
   });
 

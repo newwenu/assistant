@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Modal,
-  List,
   Typography,
   Space,
   Button,
@@ -18,6 +17,7 @@ import { vaultCategoryLabel } from "../core/vaultCategory";
 import { vaultErrorCode, vaultErrorMessage } from "../core/vaultError";
 import { useVaultStore } from "../core/vaultStore";
 import type { EntryPreview, HistoryCommit } from "../core/vault.types";
+import styles from "../vault.module.css";
 
 const { Text } = Typography;
 
@@ -176,55 +176,42 @@ export default function VaultEntryHistory({
           ) : commits.length === 0 ? (
             <Empty description={t("vault.history.empty")} />
           ) : (
-            <List
-              size="small"
-              dataSource={commits}
-              style={{ maxHeight: 360, overflowY: "auto" }}
-              renderItem={(item, index) => (
-                <List.Item
+            <div className={styles.commitList}>
+              {commits.map((item, index) => (
+                <div
+                  key={item.hash}
+                  className={`${styles.commitItem} ${
+                    selected === item.hash ? styles.commitItemActive : ""
+                  }`}
                   onClick={() => void loadPreview(item.hash)}
-                  style={{
-                    cursor: "pointer",
-                    background:
-                      selected === item.hash
-                        ? "rgba(22, 119, 255, 0.1)"
-                        : undefined,
-                    paddingInline: 8,
-                  }}
                 >
-                  <List.Item.Meta
-                    title={
-                      <Space size={6}>
-                        <Text style={{ fontSize: 13 }}>
-                          {formatTime(item.timestamp)}
-                        </Text>
-                        <Tag
-                          color={operationColor(item.message)}
-                          style={{ marginInlineEnd: 0 }}
-                        >
-                          {operationLabel(item.message)}
-                        </Tag>
-                        {index === 0 && (
-                          <Tag style={{ marginInlineEnd: 0 }}>
-                            {t("vault.history.current")}
-                          </Tag>
-                        )}
-                      </Space>
-                    }
-                    description={
-                      <Space orientation="vertical" size={0}>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {item.message}
-                        </Text>
-                        <Text code style={{ fontSize: 11 }}>
-                          {item.hash.slice(0, 8)}
-                        </Text>
-                      </Space>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
+                  <Space size={6} wrap>
+                    <Text style={{ fontSize: 13 }}>
+                      {formatTime(item.timestamp)}
+                    </Text>
+                    <Tag
+                      color={operationColor(item.message)}
+                      style={{ marginInlineEnd: 0 }}
+                    >
+                      {operationLabel(item.message)}
+                    </Tag>
+                    {index === 0 && (
+                      <Tag style={{ marginInlineEnd: 0 }}>
+                        {t("vault.history.current")}
+                      </Tag>
+                    )}
+                  </Space>
+                  <Space orientation="vertical" size={0}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {item.message}
+                    </Text>
+                    <Text code style={{ fontSize: 11 }}>
+                      {item.hash.slice(0, 8)}
+                    </Text>
+                  </Space>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 

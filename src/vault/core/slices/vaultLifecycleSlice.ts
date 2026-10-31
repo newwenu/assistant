@@ -39,6 +39,8 @@ type FullState = VaultLifecycleSlice & {
   entries: VaultEntrySummary[];
   selectedEntry: VaultEntryDetail | null;
   revealedField: RevealedField | null;
+  revealTimerId: ReturnType<typeof setTimeout> | null;
+  clearRevealedField: () => void;
   _biometricEnrolledAt: number;
   _recoveryKeySetAt: number;
 };
@@ -107,10 +109,10 @@ export function createLifecycleSlice(
           isLocked: true,
           entries: [],
           selectedEntry: null,
-          revealedField: null,
           _biometricEnrolledAt: 0,
           _recoveryKeySetAt: 0,
         });
+        get().clearRevealedField();
         const { autoLockTimerId } = get();
         if (autoLockTimerId) clearTimeout(autoLockTimerId);
       } catch (e) {

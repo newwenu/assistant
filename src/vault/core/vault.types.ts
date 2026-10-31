@@ -44,7 +44,9 @@ export type { UnreadableEntriesDto as UnreadableEntries } from "./contract/vault
 export type { UnreadableReasonDto as UnreadableReason } from "./contract/vault.contract";
 
 export interface RevealedField {
+  entryId: string;
   value: string;
   expiresAt: number;
   kind: "password" | "notes";
+  visible: boolean;
 }

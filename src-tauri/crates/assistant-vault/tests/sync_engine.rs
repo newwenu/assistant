@@ -526,7 +526,7 @@ fn resolved_use_remote_does_not_regress_on_next_sync() {
 
     assert!(matches!(
         source.sync_now(&db).unwrap(),
-        SyncResult::Success | SyncResult::UpToDate
+        SyncResult::Success | SyncResult::NoRemote
     ));
     assert_eq!(db.get_entry("e1").unwrap().title, "Remote side");
 

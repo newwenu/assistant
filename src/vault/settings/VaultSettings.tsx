@@ -7,6 +7,7 @@ import SshAgentTab from "./SshAgentTab";
 import RecoveryTab from "./RecoveryTab";
 import ImportExportTab from "./ImportExportTab";
 import ChangePasswordTab from "./ChangePasswordTab";
+import DangerZoneTab from "./DangerZoneTab";
 
 export default function VaultSettings() {
   const { t } = useTranslation();
@@ -37,7 +38,10 @@ export default function VaultSettings() {
           key: "sync",
           label: t("vault.tab.sync"),
           children: (
-            <VaultSyncSettings onGoRecovery={() => setActiveKey("recovery")} />
+            <VaultSyncSettings
+              onGoRecovery={() => setActiveKey("recovery")}
+              onGoDangerZone={() => setActiveKey("danger_zone")}
+            />
           ),
         },
         {
@@ -82,6 +86,15 @@ export default function VaultSettings() {
               importVault={importVault}
             />
           ),
+        },
+        {
+          key: "danger_zone",
+          label: (
+            <span style={{ color: "var(--ant-color-error)" }}>
+              {t("vault.tab.danger_zone")}
+            </span>
+          ),
+          children: <DangerZoneTab />,
         },
       ]}
     />
