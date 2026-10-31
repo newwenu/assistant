@@ -7,6 +7,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { RuntimeLoader } from "@rive-app/webgl2";
 import { useThemeStore } from "@/stores/themeStore";
 import { useLocaleStore } from "@/stores/localeStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useTheme } from "@/hooks/useTheme";
 import { lightTheme, darkTheme } from "@/assets/styles/theme";
 import { WINDOW_ORB } from "@/config/constants";
@@ -39,7 +40,6 @@ registerGlobalErrorHandlers();
 
 async function bootstrap(): Promise<void> {
   await loadFeatures();
-  const { useSettingsStore } = await import("@/stores/settingsStore");
   const store = useSettingsStore.getState();
   await store.loadAppConf();
   await store.loadOrbConf();

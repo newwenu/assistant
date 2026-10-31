@@ -15,6 +15,7 @@ import type {
 } from "@/settings/core/types/confTypes";
 import type { ProviderInput } from "@/settings/provider/types";
 import { CONF_LOAD_KEY_MAP, type ConfGroup } from "./field/fieldRegistry";
+import { DEFAULT_KEYBINDINGS } from "./types/shortcutTypes";
 import { emitSettingEventToPeers } from "@/services/crossWindowEvent";
 
 const log = createLogger("settingsDispatcher");
@@ -62,6 +63,10 @@ export async function dispatchThemeChanged(mode: "system" | "light" | "dark") {
     action: SettingAction.ThemeChanged,
     value: resolved,
   });
+}
+
+export async function dispatchKeybindingsReset() {
+  await dispatchConfPatch("app", { keybindings: { ...DEFAULT_KEYBINDINGS } });
 }
 
 export async function dispatchConfPatch<G extends ConfGroup>(

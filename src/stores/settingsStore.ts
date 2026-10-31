@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { DEFAULT_KEYBINDINGS } from "@/settings/core/types/shortcutTypes";
 import { createLogger } from "@/services/logger";
 export type {
   AppConf,
@@ -28,8 +27,6 @@ export interface SettingsState {
   loadOrbConf: () => Promise<void>;
   loadMascotConf: () => Promise<void>;
   loadVaultConf: () => Promise<void>;
-  updateKeybinding: (id: string, binding: string) => Promise<void>;
-  resetKeybindings: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -76,20 +73,5 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } catch (e) {
       log.error("loadVaultConf failed", e);
     }
-  },
-
-  updateKeybinding: async (id: string, binding: string) => {
-    const { appConf } = get();
-    if (!appConf) return;
-    const newKeybindings = { ...appConf.keybindings, [id]: binding };
-    const { dispatchConfPatch } =
-      await import("../settings/core/settingsDispatcher");
-    await dispatchConfPatch("app", { keybindings: newKeybindings });
-  },
-
-  resetKeybindings: async () => {
-    const { dispatchConfPatch } =
-      await import("../settings/core/settingsDispatcher");
-    await dispatchConfPatch("app", { keybindings: { ...DEFAULT_KEYBINDINGS } });
   },
 }));
