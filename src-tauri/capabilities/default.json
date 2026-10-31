@@ -40,7 +40,6 @@
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-is-registered",
     "autostart:default",
-    "vault:default",
-    "probe:default"
+    "vault:default"
   ]
 }

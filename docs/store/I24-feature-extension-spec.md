@@ -1094,15 +1094,17 @@ v2.2 追加两类「注册表被绕过」的回归测试（这类缺陷比声明
 
 P.4 的 CI 断言应断言「除上述 13 条路径外无改动」，并把 `settings/**`、`src-tauri/src/{ipc,setup,menu,window,lifecycle}.rs`、`features/{types,aggregate,nav}.ts` 列为禁区。`cmd/mod.rs` 的 conf applier 段已由 F2 移入各插件 `init()` 自注册，装配点降为 10（后端 5 + ACL 2 + 前端 3）。
 
+P.4 已落地为 `src/features/__tests__/coreBoundary.test.ts`，口径修正为「足迹冻结」：`src/settings` + `src/features` + `src-tauri/src` 中（排除测试产物、特性本体、10 条装配点）出现特性名的 core 文件集合必须与 `FEATURE_FOOTPRINT_ALLOWLIST` 逐字相等。**新增特性无白名单条目 → 期望空集**，这才是「改动 core 文件数 = 0」的可执行形式；vault 作为历史存量保留 7 个白名单文件（`cmd/config.rs`、`cmd/mod.rs`、`ipc.rs`、`lifecycle.rs`、`protocol/dto/config.rs`、`protocol/events.rs`、`setup.rs`），它们不是新特性可复制的先例。同时补两条集合断言：装配点齐备（每特性 10 条 + 本体 2 处）与双向一致（`commands.json` 分组 / `*_plugin.rs` / `permissions/*` 三集合 = 声明特性集合，保留组 `core` 与 `hostOnly` 除外）。
+
 ### 10.2 演练暴露的缺口
 
 | # | 缺口 | 现状 | 归属 |
 |---|---|---|---|
-| F1 | 前端 id 引用完整性无断言 | `navParent`→`sidebar.key`、`fields.group`→`confs.group`、`section.pageId`→`pages.id` 三组引用写错只在运行期静默失效；`assembly_contract.rs` 只覆盖后端 | **已完成**：`src/features/__tests__/featureModuleRefs.test.ts` 覆盖 `navParent`/`categoryId`/`pageId`/`section`/`group` 6 类跨槽位引用，含 7 类反例自检，4 例全绿 |
-| F2 | `conf_side_effects()` 仍是 core 内唯一按特性增长的 cfg 点 | `cmd/mod.rs` 每特性 1 段 cfg 重绑定；多特性叠加时链式 `collect()` 触发 `E0282`，须显式标注 `Vec<(&'static str, ConfApplier)>` | **已完成**：`cmd/mod.rs` 改为 `CONF_APPLIERS` 注册表（core 三组首次消费时惰性播种）+ `register_conf_applier()`；`vault_plugin.rs` / `probe_plugin.rs` 在各自 `#[cfg(feature)] init()` 内自注册，core 侧特性 cfg 归零 |
+| F1 | 前端 id 引用完整性无断言 | `navParent`→`sidebar.key`、`fields.group`→`confs.group`、`section.pageId`→`pages.id` 三组引用写错只在运行期静默失效；`assembly_contract.rs` 只覆盖后端 | **已完成**：`src/features/__tests__/featureModuleRefs.test.ts` 覆盖 `navParent`/`categoryId`/`pageId`/`section`/`group` 6 类跨槽位引用，含 7 类反例自检，3 例全绿（P.4 删探针后：vault 模块遍历 + 合成八槽位模块 + 反例） |
+| F2 | `conf_side_effects()` 仍是 core 内唯一按特性增长的 cfg 点 | `cmd/mod.rs` 每特性 1 段 cfg 重绑定；多特性叠加时链式 `collect()` 触发 `E0282`，须显式标注 `Vec<(&'static str, ConfApplier)>` | **已完成**：`cmd/mod.rs` 改为 `CONF_APPLIERS` 注册表（core 三组首次消费时惰性播种）+ `register_conf_applier()`；`vault_plugin.rs` 在自身 `#[cfg(feature)] init()` 内自注册（原 `probe_plugin.rs` 同款实现，已于 P.4 删除），core 侧特性 cfg 归零 |
 | F3 | 读写前缀不对称 | 读走 `plugin:probe\|get_probe_conf`，写走 core `patch_conf`，同一 group 两条前缀 | 记录项：`patch_conf` 是否插件化留待后续阶段决定 |
 | F4 | 前端重复字面量 | `conf.ts` 与 `ipc.ts` 各写一份 `{ ipc: { namespace: "probe" } }` | 小清理：由 `ipc.ts` 导出 `probeIpc` 常量，其余引用它 |
-| F5 | 运行时 ACL 无静态门禁 | A1–A6 只读源码文本，不校验 `capabilities/*.json` / `permissions/**` / `build.rs` 三方命令名求交；错位时静态全绿、运行期报 `Command ... not allowed`。**一次性冒烟已通过**（P.2），但下次改 ACL 仍无回归保护 | 门禁补强：P.4 后加「三方命令名集合求交」断言，冒烟只作一次性验证 |
+| F5 | 运行时 ACL 无静态门禁 | A1–A6 只读源码文本，不校验 `capabilities/*.json` / `permissions/**` / `build.rs` 三方命令名求交；错位时静态全绿、运行期报 `Command ... not allowed`。**一次性冒烟已通过**（P.2），但下次改 ACL 仍无回归保护 | 门禁补强：P.4 已加「装配点存在 + 三集合相等」断言（`coreBoundary.test.ts`），**逐命令求交仍待补**（`build.rs` 的 `InlinedPlugin::commands` vs `commands.json` 分组 vs `permissions/<name>/default.toml` 的 `allow-<name>-<cmd>`）；冒烟只作一次性验证 |
 | F6 | A2 的 cfg 断言写死了 vault | `cfg_line_count()` 只统计含 `vault` 的 `#[cfg]` 行、白名单也只为 vault 定义；probe 在 `cmd/mod.rs` 的 1 行 cfg 对 A2 不可见，任何新特性往 core 塞 cfg 都能静默通过 | **已完成**：A2 改 `cfg_feature_names()` + `cfg_location_allowed()`，按特性名分组计数（vault 行数上限 6 保留） |
 
 F1 / F2 / F6 属本阶段应补齐项，F3 属记录项，F4 属小清理，F5 属门禁补强。

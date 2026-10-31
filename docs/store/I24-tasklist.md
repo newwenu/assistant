@@ -239,10 +239,17 @@ S3 三条实测：
 - [x] P.3 白名单核对：除 11 个装配点文件 + 2 处本体新建（后端 6：`lib.rs` / `plugins.rs` / `cmd/mod.rs` / `build.rs` / `commands.json` / `Cargo.toml`；ACL 2：`capabilities/default.json` / `permissions/probe/default.toml`；前端 3：`config/features.json` / `features/registry.ts` / `vite-env.d.ts`；本体 2：`_probe/**` / `probe_plugin.rs`）外零改动；`settings/**` 与后端 `{ipc,setup,menu,window,lifecycle}.rs` 必须零改动（见 spec §10.1）
   - 禁区实测零命中：`src/settings/**`、`src/features/{types,aggregate,nav}.ts`、`src-tauri/src/{ipc,setup,menu,window,lifecycle}.rs` 全部 CLEAN
   - 后端 `#[cfg(feature)]` 分布实测（F2 后）：`probe_plugin.rs` 10（含 1 行 `not` 分支）、`vault_plugin.rs` 2、`cmd/mod.rs` 3（vault 3 + probe 0），其余文件 0
-- [ ] P.4 删 `_probe`，「新增特性改动 core 文件数 = 0」写成 CI 断言
-  - 口径已修订为「core 逻辑零改动」而非「文件零改动」：断言应校验「除 13 条路径外无改动」，并显式声明禁区目录；F2 已完成（`cmd/mod.rs` 的 conf applier cfg 已归零），装配点降为 10
-  - 删除清单：`src/features/_probe/**`（含 `ProbePage.tsx` 的「调试导航」面板，该面板为 E3.7 手测临时提供，用于绕过侧栏直接跳 `/settings/vault` 等未注册路由）、`src-tauri/src/probe_plugin.rs`、`permissions/probe/`、`commands.json` 的 `groups.probe`、`capabilities/default.json` 的 `probe:default`、`Cargo.toml` 的 `probe` 特性、`config/features.json` 与 `vite-env.d.ts` 的 `probe` 条目、`registry.ts` 的探针分支
-  - 删除后需同步收敛：`featureModuleRefs.test.ts` 目前遍历 vault + probe 两模块，删探针后要么只跑 vault、要么把反例模块保留为独立合成用例
+- [x] P.4 删 `_probe`，「新增特性改动 core 文件数 = 0」写成 CI 断言
+  - 口径已修订为「core 逻辑零改动」而非「文件零改动」：断言校验「除 10 条装配点 + 2 处本体外无改动」，并显式声明禁区目录；F2 已完成（`cmd/mod.rs` 的 conf applier cfg 已归零），装配点降为 10（后端 5 + ACL 2 + 前端 3）
+  - 删除清单已执行（删除前备份至 `temp-backup/probe-removed/`）：`src/features/_probe/**`（含 `ProbePage.tsx` 的「调试导航」面板，该面板为 E3.7 手测临时提供，用于绕过侧栏直接跳 `/settings/vault` 等未注册路由）、`src-tauri/src/probe_plugin.rs`、`src-tauri/permissions/probe/`（含删文件后残留的空目录）、`commands.json` 的 `groups.probe`、`capabilities/default.json` 的 `probe:default`、`Cargo.toml` 的 `probe` 特性与 default 集合条目、`config/features.json` 与 `vite-env.d.ts` 的 `probe` 条目、`registry.ts` 的 `__PROBE_ENABLED__` 分支、`lib.rs` / `plugins.rs` / `build.rs` 的探针装配行
+  - 前端测试收敛：`featureModuleRefs.test.ts` 改为仅遍历 `vaultModule`；原「探针覆盖八类槽位」改为合成模块 `FULL_SLOT_MODULE`（八类槽位齐全且自身引用自洽，同样过 `checkModule()`），「故意写错的引用会被逐条报出」反例用例保留
+  - 新增 CI 断言 `src/features/__tests__/coreBoundary.test.ts`（3 条，全绿）：
+    - **装配点齐备**：每个声明特性必须在前端 3 处（`config/features.json` 的 `<NAME>_ENABLED`、`vite-env.d.ts` 声明、`registry.ts` 消费）+ 后端 5 处（`Cargo.toml [features]` 与 default 集合、`build.rs` 内联插件、`commands.json groups.<name>`、`lib.rs` 的 `mod <name>_plugin`、`plugins.rs` 的 `<name>_plugin::init()`）+ ACL 2 处（`capabilities/default.json` 的 `<name>:default`、`permissions/<name>/default.toml`）齐备；本体侧校验 `src/features/<name>/module.ts` 存在、`src-tauri/src/<name>_plugin.rs` 用同名 `#[cfg]` 包住自身
+    - **双向一致**：`commands.json` 分组（排除保留组 `core` / `hostOnly`）、`src-tauri/src/*_plugin.rs`、`src-tauri/permissions/*` 三个集合与 `config/features.json` 声明集合完全相等，覆盖「删了本体忘拆装配点」与「残留空目录」两类回归
+    - **足迹冻结**：扫描 `src/settings` + `src/features` + `src-tauri/src`（排除测试产物、特性本体、10 条装配点），特性名出现的 core 文件集合须与白名单逐字相等；新增特性无白名单条目 → 期望 `[]`，即「改动 core 文件数 = 0」
+  - vault 白名单实测 7 个 core 文件（历史存量，新特性不可触碰）：`cmd/config.rs`（`get_vault_conf` 核心命令）、`cmd/mod.rs`（`vault_cleanup_on_exit` 三态桩）、`ipc.rs`、`lifecycle.rs`、`protocol/dto/config.rs`、`protocol/events.rs`、`setup.rs`；新特性白名单为空
+  - 全量校验：`npm run typecheck` / `npm run lint` / `npx vitest run`（18 files / 242 tests）/ `cargo test`（lib 15 + assembly_contract 6 + protocol_contract 9）全绿
+  - 遗留：§10.2 的 F5（`build.rs` / `commands.json` / `permissions` 三方命令名求交）仍待补，本次断言只覆盖「装配点存在 + 集合相等」，不覆盖逐命令 ACL 对齐
 
 ## 待决项
 
@@ -266,6 +273,7 @@ S3 三条实测：
 9. `refactor(I24): E7 后端 cfg 归零`
 10. `refactor(I24): E8 资产 colocate`
 11. `test(I24): P 探针演练（P.1 骨架 + 契约断言泛化）`
+12. `chore(I24): P.4 删除探针 + core 足迹冻结断言`
 
 ---
 

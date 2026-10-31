@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { SettingOutlined } from "@ant-design/icons";
-import { probeModule } from "@/features/_probe/module";
 import { vaultModule } from "@/features/vault/module";
 import type { FeatureModule } from "@/features/types";
 
-const modules: readonly FeatureModule[] = [vaultModule, probeModule];
+const modules: readonly FeatureModule[] = [vaultModule];
 
 function checkModule(module: FeatureModule): string[] {
   const problems: string[] = [];
@@ -77,6 +76,56 @@ function checkModule(module: FeatureModule): string[] {
   return problems;
 }
 
+const FULL_SLOT_MODULE: FeatureModule = {
+  id: "full-slot",
+  ipc: { namespace: "full-slot" },
+  routes: [
+    {
+      path: "/full-slot",
+      load: () => Promise.resolve({ default: () => null }),
+      boundary: "full-slot",
+      navParent: "full-slot-nav",
+    },
+  ],
+  sidebar: [
+    {
+      key: "full-slot-nav",
+      label: "full-slot",
+      icon: SettingOutlined,
+      slot: "after-tools",
+    },
+  ],
+  categories: [{ id: "full-slot-category", label: "full-slot", order: 1 }],
+  settings: {
+    pages: [
+      {
+        id: "full-slot",
+        categoryId: "full-slot-category",
+        navParent: "full-slot-nav",
+        label: "full-slot",
+        keywords: [],
+        icon: SettingOutlined,
+        order: 1,
+        load: () => Promise.resolve({ default: () => null }),
+      },
+    ],
+    sections: [
+      { id: "full-slot-section", pageId: "full-slot", title: "full-slot" },
+    ],
+    fields: [
+      {
+        key: "fullSlotFlag",
+        group: "orb",
+        section: "full-slot-section",
+        type: "boolean",
+        default: false,
+        label: "full-slot",
+      },
+    ],
+  },
+  confs: [{ group: "orb", invoke: "get_orb_conf", pageId: "full-slot" }],
+};
+
 describe("特性模块 id 引用完整性", () => {
   modules.forEach((module) => {
     it(`"${module.id}" 的跨槽位引用全部命中`, () => {
@@ -84,15 +133,16 @@ describe("特性模块 id 引用完整性", () => {
     });
   });
 
-  it("探针模块覆盖全部八类槽位", () => {
-    expect(probeModule.routes).toHaveLength(1);
-    expect(probeModule.sidebar).toHaveLength(1);
-    expect(probeModule.categories).toHaveLength(1);
-    expect(probeModule.settings?.pages).toHaveLength(1);
-    expect(probeModule.settings?.sections).toHaveLength(1);
-    expect(probeModule.settings?.fields).toHaveLength(2);
-    expect(probeModule.confs).toHaveLength(1);
-    expect(probeModule.ipc?.namespace).toBe("probe");
+  it("合成模块覆盖全部八类槽位且自洽", () => {
+    expect(FULL_SLOT_MODULE.routes).toHaveLength(1);
+    expect(FULL_SLOT_MODULE.sidebar).toHaveLength(1);
+    expect(FULL_SLOT_MODULE.categories).toHaveLength(1);
+    expect(FULL_SLOT_MODULE.settings?.pages).toHaveLength(1);
+    expect(FULL_SLOT_MODULE.settings?.sections).toHaveLength(1);
+    expect(FULL_SLOT_MODULE.settings?.fields).toHaveLength(1);
+    expect(FULL_SLOT_MODULE.confs).toHaveLength(1);
+    expect(FULL_SLOT_MODULE.ipc?.namespace).toBe("full-slot");
+    expect(checkModule(FULL_SLOT_MODULE)).toEqual([]);
   });
 
   it("故意写错的引用会被逐条报出", () => {

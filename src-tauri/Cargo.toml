@@ -125,8 +125,7 @@ ssh-key = { version = "0.6", features = ["encryption", "rsa", "ed25519"] }
 rsa = { version = "0.9", features = ["pem"] }
 
 [features]
-default = ["vault", "probe"]
-probe = []
+default = ["vault"]
 vault = [
     "dep:assistant-vault",
     "dep:assistant-sync",

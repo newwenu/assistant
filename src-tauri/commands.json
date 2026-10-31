@@ -133,10 +133,6 @@
       "vault_verify_vault_meta_integrity",
       "vault_disaster_recovery_export"
     ],
-    "probe": [
-      "get_probe_conf",
-      "probe_echo"
-    ],
     "hostOnly": []
   }
 }

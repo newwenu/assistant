@@ -6,7 +6,6 @@ mod ipc;
 mod lifecycle;
 mod menu;
 mod plugins;
-mod probe_plugin;
 pub mod protocol;
 mod setup;
 mod tray;

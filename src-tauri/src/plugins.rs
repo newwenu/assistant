@@ -14,5 +14,4 @@ pub fn attach(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry>
             None,
         ))
         .plugin(crate::vault_plugin::init())
-        .plugin(crate::probe_plugin::init())
 }

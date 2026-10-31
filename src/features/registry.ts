@@ -19,10 +19,6 @@ export async function loadFeatures(): Promise<void> {
     const { vaultModule } = await import("./vault/module");
     modules.push(vaultModule);
   }
-  if (__PROBE_ENABLED__) {
-    const { probeModule } = await import("./_probe/module");
-    modules.push(probeModule);
-  }
   if (modules.length === 0) return;
   features = aggregate(modules);
   for (const slot of features.confs) registerConfSlot(slot);
