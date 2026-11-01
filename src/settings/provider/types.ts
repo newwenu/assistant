@@ -1,3 +1,9 @@
+/** 目录声明的推理可选项；缺失表示目录没有可用信息 */
+export interface ReasoningLevels {
+  toggle: boolean;
+  efforts: string[];
+}
+
 export interface ModelConfig {
   id: string;
   name: string;
@@ -6,6 +12,8 @@ export interface ModelConfig {
   supportVision?: boolean;
   /** 输入模态列表（"text"/"image"/"pdf"/"audio"/"video"）；存量数据可能缺失 */
   inputModalities?: string[];
+  /** 推理档位；存量数据可能缺失 */
+  reasoningLevels?: ReasoningLevels;
 }
 
 export interface Provider {

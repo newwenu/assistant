@@ -16,6 +16,10 @@ import { chatService } from "../services/chatService";
 import { createChatOrchestrator } from "../services/chatOrchestrator";
 import { useChatStreamStore } from "./chatStreamStore";
 import { useAgentModeStore } from "./agentModeStore";
+import {
+  resolveReasoningChoice,
+  type ReasoningChoice,
+} from "../chat/core/reasoning";
 import { createLogger } from "@/services/logger";
 import {
   mergeStreamingContent,
@@ -47,6 +51,7 @@ interface EnvPortReadable {
   messages: Message[];
   conversations: Conversation[];
   pendingBranchPoint: string | null;
+  reasoningChoice: ReasoningChoice;
 }
 
 export function createStatePort(
@@ -279,6 +284,13 @@ export function createEnvPort(
     getMessages: () => get().messages,
     getConversations: () => get().conversations,
     getSelectedModeId: () => useAgentModeStore.getState().selectedModeId,
+    getReasoningChoice: () => {
+      const { modes, selectedModeId } = useAgentModeStore.getState();
+      return resolveReasoningChoice(
+        get().reasoningChoice,
+        modes.find((m) => m.id === selectedModeId),
+      );
+    },
     getSelectedProviderId,
     getSelectedModelId,
     getPendingBranchPoint: () => get().pendingBranchPoint,

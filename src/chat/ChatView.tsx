@@ -20,6 +20,7 @@ import { MessageList } from "./message/MessageList";
 import { MessageInput } from "./message/MessageInput";
 import { ModelSelector } from "./selectors/ModelSelector";
 import { ModeSelector } from "./selectors/ModeSelector";
+import { ReasoningSelector } from "./selectors/ReasoningSelector";
 import { ProviderSelector } from "./selectors/ProviderSelector";
 import { CompactBanner } from "./compact/CompactBanner";
 import { CompactErrorBanner } from "./compact/CompactErrorBanner";
@@ -260,6 +261,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
 
   const handleModeChange = useCallback(
     (modeId: string) => {
+      chat.setReasoningChoice("inherit");
       const modes = useAgentModeStore.getState().modes;
       const mode = modes.find((m) => m.id === modeId);
       if (mode?.model) {
@@ -446,6 +448,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
           <AttachmentPreviewBar />
           <div className="chat-tool-bar">
             <ModeSelector variant="chip" onModeChange={handleModeChange} />
+            <ReasoningSelector variant="chip" />
             {!chat.isFull && (
               <Tooltip title={t("chat.compact.generate_summary")}>
                 <Button

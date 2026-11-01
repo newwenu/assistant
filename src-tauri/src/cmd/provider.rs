@@ -4,7 +4,8 @@ use uuid::Uuid;
 
 use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
-    ModelConfigDto, ProviderInputDto, ProviderListDto, SettingProviderChangedPayloadDto,
+    ModelConfigDto, ProviderInputDto, ProviderListDto, ReasoningLevelsDto,
+    SettingProviderChangedPayloadDto,
 };
 use assistant_agent::provider_config::build_provider_config;
 use assistant_crypto::api_key as crypto;
@@ -145,6 +146,25 @@ pub fn delete_provider(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
+fn model_config_dto(m: base::ModelConfig) -> ModelConfigDto {
+    let reasoning_levels =
+        assistant_providers::model_catalog::catalog_reasoning_levels(&m.id).map(|levels| {
+            ReasoningLevelsDto {
+                toggle: levels.toggle,
+                efforts: levels.efforts,
+            }
+        });
+    ModelConfigDto {
+        id: m.id,
+        name: m.name,
+        owned_by: m.owned_by,
+        context_window: m.context_window,
+        support_vision: m.support_vision,
+        input_modalities: m.input_modalities,
+        reasoning_levels,
+    }
+}
+
 #[command]
 pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelConfigDto>, String> {
     let state = app.state::<crate::setup::DbState>();
@@ -158,17 +178,7 @@ pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelC
     let api_key = crypto::decrypt_api_key_b64(&row.api_key_encrypted, &machine_id)
         .map_err(|e| e.to_string())?;
     let models = adapter.list_models(&api_key).map_err(|e| e.to_string())?;
-    Ok(models
-        .into_iter()
-        .map(|m| ModelConfigDto {
-            id: m.id,
-            name: m.name,
-            owned_by: m.owned_by,
-            context_window: m.context_window,
-            support_vision: m.support_vision,
-            input_modalities: m.input_modalities,
-        })
-        .collect())
+    Ok(models.into_iter().map(model_config_dto).collect())
 }
 
 #[command]
@@ -186,15 +196,5 @@ pub fn preview_models_cmd(
     };
     let adapter = base::create_provider_adapter(config);
     let models = adapter.list_models(&api_key).map_err(|e| e.to_string())?;
-    Ok(models
-        .into_iter()
-        .map(|m| ModelConfigDto {
-            id: m.id,
-            name: m.name,
-            owned_by: m.owned_by,
-            context_window: m.context_window,
-            support_vision: m.support_vision,
-            input_modalities: m.input_modalities,
-        })
-        .collect())
+    Ok(models.into_iter().map(model_config_dto).collect())
 }

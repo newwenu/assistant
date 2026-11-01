@@ -1,3 +1,4 @@
+pub mod chat_options;
 pub mod chat_request;
 pub mod chat_runtime;
 pub mod chat_tasks;

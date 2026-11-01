@@ -6,6 +6,7 @@ use assistant_storage::{
 
 use assistant_providers::base;
 
+use crate::chat_options::{build_chat_options, ReasoningOverride};
 use crate::multimodal;
 use crate::prompt_builder;
 use crate::provider_config::build_provider_config;
@@ -27,6 +28,7 @@ pub async fn build_chat_request(
     model_id: &str,
     attachment_store: &AttachmentStore,
     api_key: String,
+    reasoning: &ReasoningOverride,
 ) -> Result<ChatRequest, String> {
     let system_prompt = mode.map(|m| m.prompt.as_str()).unwrap_or("");
     let mut chat_messages = prompt_builder::prepare_messages(detail, system_prompt, None);
@@ -58,10 +60,11 @@ pub async fn build_chat_request(
     let kind = mode
         .map(|m| prompt_builder::AgentKind::from_mode_kind(&m.kind))
         .unwrap_or_default();
-    let options = prompt_builder::build_chat_options(
+    let options = build_chat_options(
         &kind,
         mode.unwrap_or(&AgentModeRow::default()),
         context_window_tokens,
+        reasoning,
     );
 
     Ok(ChatRequest {

@@ -259,7 +259,12 @@
         "reasoning_enabled": { "label": "推理" },
         "reasoning_effort": {
           "label": "推理强度",
-          "placeholder": "选择推理强度"
+          "placeholder": "选择推理强度",
+          "options": {
+            "low": "低",
+            "medium": "中",
+            "high": "高"
+          }
         }
       },
       "confirm_delete": {
@@ -525,6 +530,20 @@
       "expand": "展开思考",
       "collapse": "收起思考",
       "thinking": "思考中…"
+    },
+    "reasoning_depth": {
+      "label": "思考深度",
+      "default": "默认",
+      "off": "关闭",
+      "on": "开启",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "minimal": "极低",
+      "xhigh": "极高",
+      "max": "最高",
+      "from_mode": "当前来自模式：{{value}}",
+      "overridden": "本次会话已覆盖"
     },
     "compact": {
       "banner_title": "对话已达上下文上限",

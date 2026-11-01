@@ -269,7 +269,12 @@
         "reasoning_enabled": { "label": "Reasoning" },
         "reasoning_effort": {
           "label": "Reasoning Effort",
-          "placeholder": "Select reasoning effort"
+          "placeholder": "Select reasoning effort",
+          "options": {
+            "low": "Low",
+            "medium": "Medium",
+            "high": "High"
+          }
         }
       },
       "confirm_delete": {
@@ -538,6 +543,20 @@
       "expand": "Show thinking",
       "collapse": "Hide thinking",
       "thinking": "Thinking…"
+    },
+    "reasoning_depth": {
+      "label": "Thinking depth",
+      "default": "Default",
+      "off": "Off",
+      "on": "On",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "minimal": "Minimal",
+      "xhigh": "Extra high",
+      "max": "Max",
+      "from_mode": "From mode: {{value}}",
+      "overridden": "Overridden for this conversation"
     },
     "compact": {
       "banner_title": "Conversation reached context limit",

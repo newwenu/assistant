@@ -85,6 +85,7 @@ export const chatService = {
     branchPointMessageId: string | null | undefined,
     providerId: string,
     modelId: string,
+    reasoningLevel: string | null = null,
   ): Promise<void> =>
     invoke("send_chat_message", {
       conversationId,
@@ -93,6 +94,7 @@ export const chatService = {
       branchPointMessageId,
       providerId,
       modelId,
+      reasoningLevel,
     }),
 
   cancelChat: (conversationId: string): Promise<void> =>

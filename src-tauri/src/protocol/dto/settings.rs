@@ -73,6 +73,18 @@ pub struct AgentModeInputDto {
     pub created_at: i64,
 }
 
+/// 目录声明的推理可选项投影；`None`（外层 `Option`）表示目录没有可用信息。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReasoningLevelsDto {
+    /// 模型提供开启/关闭开关
+    #[serde(default)]
+    pub toggle: bool,
+    /// 可选的 effort 档位，保持目录顺序
+    #[serde(default)]
+    pub efforts: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ModelConfigDto {
@@ -87,6 +99,9 @@ pub struct ModelConfigDto {
     /// 存量 models_json 无此字段，default 空数组（回退 supportVision）。
     #[serde(default)]
     pub input_modalities: Vec<String>,
+    /// 目录声明的档位；存量 models_json 无此字段，缺省即 None（走未知模型策略）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_levels: Option<ReasoningLevelsDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

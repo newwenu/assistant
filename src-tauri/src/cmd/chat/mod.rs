@@ -7,6 +7,7 @@ use tauri::{command, AppHandle, Manager};
 
 use crate::protocol::events::{emit_orb_only, event_name};
 use crate::protocol::{ChatStreamStartPayloadDto, ChatUserMessageConfirmedPayloadDto};
+use assistant_agent::chat_options;
 use assistant_agent::chat_request::{self, ChatRequest};
 use assistant_agent::chat_runtime::{self, resolve_final_tokens, StreamError};
 use assistant_agent::chat_tasks::ChatTasks;
@@ -32,6 +33,7 @@ pub async fn send_chat_message(
     branch_point_message_id: Option<String>,
     provider_id: String,
     model_id: String,
+    reasoning_level: Option<String>,
 ) -> Result<(), String> {
     let content = validate_and_preprocess(&app, &content, &conversation_id).await?;
 
@@ -59,6 +61,9 @@ pub async fn send_chat_message(
     let machine_id = crypto::get_machine_id().map_err(|e| e.to_string())?;
     let api_key = crypto::decrypt_api_key_b64(&provider_row.api_key_encrypted, &machine_id)
         .map_err(|e| e.to_string())?;
+    let reasoning = chat_options::ReasoningOverride {
+        level: reasoning_level,
+    };
     let req = chat_request::build_chat_request(
         &detail,
         mode.as_ref(),
@@ -66,6 +71,7 @@ pub async fn send_chat_message(
         &model_id,
         &attachment_store,
         api_key,
+        &reasoning,
     )
     .await?;
 

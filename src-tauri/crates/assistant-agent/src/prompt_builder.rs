@@ -1,5 +1,4 @@
-use assistant_providers::base::{self, ChatMessage, ChatOptions};
-use assistant_storage::agent_modes::AgentModeRow;
+use assistant_providers::base::{self, ChatMessage};
 use assistant_storage::conversations::ConversationDetail;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -84,26 +83,4 @@ pub fn prepare_messages(
     }
 
     chat_messages
-}
-
-pub fn build_chat_options(
-    kind: &AgentKind,
-    mode: &AgentModeRow,
-    context_window_tokens: u32,
-) -> ChatOptions {
-    let temperature = match kind {
-        AgentKind::Deep => mode.temperature.unwrap_or(0.3),
-        _ => mode.temperature.unwrap_or(0.7),
-    };
-
-    let max_tokens = mode.max_tokens.unwrap_or(4096);
-
-    ChatOptions {
-        temperature,
-        max_tokens,
-        stream: true,
-        context_window_tokens,
-        reasoning_enabled: mode.reasoning_enabled,
-        reasoning_effort: mode.reasoning_effort.clone(),
-    }
 }

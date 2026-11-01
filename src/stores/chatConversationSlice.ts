@@ -13,6 +13,8 @@ import {
   fetchTokenUsage,
   type FetchTokenUsageDeps,
 } from "../chat/core/chatUtils";
+import { DEFAULT_REASONING_CHOICE } from "../chat/core/reasoning";
+import type { ReasoningChoice } from "../chat/core/reasoning";
 
 const log = createLogger("chatConversationSlice");
 
@@ -30,6 +32,7 @@ type FullState = ChatConversationSlice & {
     strategy?: TruncationStrategy,
   ) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
+  reasoningChoice: ReasoningChoice;
 };
 
 export interface ChatConversationSlice {
@@ -161,6 +164,7 @@ export function createConversationSlice(
             isFull: detail.conversation?.isFull ?? false,
             compactSummary: null,
             compactError: null,
+            reasoningChoice: DEFAULT_REASONING_CHOICE,
           });
           fetchTokenUsage(
             id,

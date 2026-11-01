@@ -9,6 +9,7 @@ import type {
   RetryNotification,
 } from "../chat/core/chatTypes";
 import { extractPlainText } from "../chat/core/contentBlockUtils";
+import { toReasoningLevel, type ReasoningChoice } from "../chat/core/reasoning";
 import type { ChatError } from "../chat/core/chatErrors";
 import { ChatErrorCode, toChatError } from "../chat/core/chatErrors";
 import { CHAT_AUTO_TITLE_LENGTH } from "../config/constants";
@@ -52,6 +53,7 @@ export interface ChatEnvPort {
   getMessages: () => Message[];
   getConversations: () => Conversation[];
   getSelectedModeId: () => string | null;
+  getReasoningChoice: () => ReasoningChoice;
   getSelectedProviderId: () => string | null;
   getSelectedModelId: () => string;
   getPendingBranchPoint: () => string | null;
@@ -307,6 +309,7 @@ export function createChatOrchestrator(
           });
           return;
         }
+        const reasoningLevel = toReasoningLevel(deps.env.getReasoningChoice());
         await chatService.sendChatMessage(
           convId,
           content,
@@ -314,6 +317,7 @@ export function createChatOrchestrator(
           pendingBranchPoint,
           selectedProviderId,
           selectedModelId,
+          reasoningLevel,
         );
       } catch (e) {
         log.error("sendChatMessage failed", e);

@@ -107,7 +107,7 @@ build_chat_request()
 ├── base::create_provider_adapter()             ← assistant-providers
 ├── resolve_context_window()                    ← utils.rs（同步下放）
 ├── AgentKind::from_mode_kind()                 ← assistant-agent
-└── prompt_builder::build_chat_options()        ← assistant-agent
+└── chat_options::build_chat_options()          ← assistant-agent
 ```
 
 #### 阻碍 A：`tauri::State<'_, AttachmentStore>`

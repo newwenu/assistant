@@ -14,6 +14,10 @@ import {
 import { createMessageSlice, type ChatMessageSlice } from "./chatMessageSlice";
 import { createCompactSlice, type ChatCompactSlice } from "./chatCompactSlice";
 import { PersistQueue } from "../utils/persistQueue";
+import {
+  DEFAULT_REASONING_CHOICE,
+  type ReasoningChoice,
+} from "../chat/core/reasoning";
 
 type ChatState = ChatConversationSlice &
   ChatMessageSlice &
@@ -25,6 +29,8 @@ type ChatState = ChatConversationSlice &
       providerId: string | null,
       modelId: string,
     ) => void;
+    reasoningChoice: ReasoningChoice;
+    setReasoningChoice: (choice: ReasoningChoice) => void;
   };
 
 let _orchestrator: ChatOrchestrator | null = null;
@@ -70,6 +76,8 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     selectedModelId: "",
     setSelectedProviderModel: (providerId, modelId) =>
       set({ selectedProviderId: providerId, selectedModelId: modelId }),
+    reasoningChoice: DEFAULT_REASONING_CHOICE,
+    setReasoningChoice: (choice) => set({ reasoningChoice: choice }),
   };
 });
 

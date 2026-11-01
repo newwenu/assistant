@@ -180,6 +180,10 @@ mod tests {
                 context_window: 128000,
                 support_vision: true,
                 input_modalities: vec!["text".into(), "image".into()],
+                reasoning_levels: Some(ReasoningLevelsDto {
+                    toggle: false,
+                    efforts: vec!["low".into(), "medium".into(), "high".into()],
+                }),
             }],
             default_model: "gpt-4".into(),
             updated_at: 1000,
@@ -190,6 +194,16 @@ mod tests {
         assert!(json.contains("apiKeyMasked"), "camelCase: {}", json);
         assert!(json.contains("inputModalities"), "camelCase: {}", json);
         assert!(json.contains("defaultModel"), "camelCase: {}", json);
+        assert!(json.contains("reasoningLevels"), "camelCase: {}", json);
+    }
+
+    #[test]
+    fn test_model_config_dto_accepts_legacy_models_json() {
+        // 存量 models_json 无 reasoningLevels 键，必须仍能反序列化（否则 list_providers 会吞成空列表）
+        let legacy = r#"[{"id":"gpt-4","name":"GPT-4","ownedBy":"openai","contextWindow":128000,"supportVision":true,"inputModalities":["text","image"]}]"#;
+        let models: Vec<ModelConfigDto> = serde_json::from_str(legacy).unwrap();
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].reasoning_levels, None);
     }
 
     #[test]

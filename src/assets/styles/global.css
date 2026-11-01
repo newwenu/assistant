@@ -462,7 +462,8 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   line-height: 26px;
 }
 
-.orb-mode-chip {
+.orb-mode-chip,
+.orb-reasoning-chip {
   min-width: 0;
   max-width: 100px;
   height: 28px !important;
@@ -475,11 +476,13 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   cursor: pointer;
 }
 
-.orb-mode-chip:hover {
+.orb-mode-chip:hover,
+.orb-reasoning-chip:hover {
   background: var(--color-border) !important;
 }
 
-.orb-mode-chip .ant-select-selector {
+.orb-mode-chip .ant-select-selector,
+.orb-reasoning-chip .ant-select-selector {
   border: none !important;
   border-radius: 999px !important;
   background: transparent !important;
@@ -488,11 +491,13 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   cursor: pointer;
 }
 
-.orb-mode-chip:hover .ant-select-selector {
+.orb-mode-chip:hover .ant-select-selector,
+.orb-reasoning-chip:hover .ant-select-selector {
   background: transparent !important;
 }
 
-.orb-mode-chip .ant-select-selection-item {
+.orb-mode-chip .ant-select-selection-item,
+.orb-reasoning-chip .ant-select-selection-item {
   font-size: 12px;
   line-height: 26px;
 }

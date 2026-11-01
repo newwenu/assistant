@@ -20,12 +20,7 @@ import {
 } from "../core/agentKind/agentModeRegistry";
 import "../core/agentKind/agentModeDefinitions";
 import { useSettingMessage } from "../shared/useSettingMessage";
-
-const REASONING_EFFORT_OPTIONS = [
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-];
+import { REASONING_EFFORTS, type ReasoningEffort } from "@/chat/core/reasoning";
 
 interface ModeFormData {
   name: string;
@@ -73,6 +68,18 @@ export const AgentModeSettings: React.FC = () => {
       })),
     [],
   );
+
+  const reasoningEffortOptions = useMemo(() => {
+    const labels: Record<ReasoningEffort, string> = {
+      low: t("settings.agent_mode.field.reasoning_effort.options.low"),
+      medium: t("settings.agent_mode.field.reasoning_effort.options.medium"),
+      high: t("settings.agent_mode.field.reasoning_effort.options.high"),
+    };
+    return REASONING_EFFORTS.map((value) => ({
+      value,
+      label: labels[value],
+    }));
+  }, [t]);
 
   const fieldSchemas = useMemo<FieldSchema[]>(
     () => [
@@ -137,7 +144,7 @@ export const AgentModeSettings: React.FC = () => {
         key: "reasoningEffort",
         type: "select",
         label: t("settings.agent_mode.field.reasoning_effort.label"),
-        options: REASONING_EFFORT_OPTIONS,
+        options: reasoningEffortOptions,
         allowClear: true,
         placeholder: t(
           "settings.agent_mode.field.reasoning_effort.placeholder",
@@ -145,7 +152,7 @@ export const AgentModeSettings: React.FC = () => {
         visible: (fv) => fv.reasoningEnabled === true,
       },
     ],
-    [t, kindOptions],
+    [t, kindOptions, reasoningEffortOptions],
   );
 
   useEffect(() => {

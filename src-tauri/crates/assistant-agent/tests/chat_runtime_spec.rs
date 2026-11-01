@@ -1,3 +1,4 @@
+use assistant_agent::chat_options;
 use assistant_agent::chat_runtime::{
     self, ApplyDeltaOutcome, StreamAccumulator, StreamError, ToolCallAccumulator,
 };
@@ -546,7 +547,12 @@ fn d5_build_chat_options_default_no_temperature() {
     let kind = AgentKind::Default;
     let mode = make_mode("default", None, None);
 
-    let opts = prompt_builder::build_chat_options(&kind, &mode, 128000);
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride::default(),
+    );
 
     assert_eq!(opts.temperature, 0.7);
     assert_eq!(opts.max_tokens, 4096);
@@ -559,7 +565,12 @@ fn d5_build_chat_options_default_with_temperature() {
     let kind = AgentKind::Default;
     let mode = make_mode("default", Some(0.5), Some(2048));
 
-    let opts = prompt_builder::build_chat_options(&kind, &mode, 128000);
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride::default(),
+    );
 
     assert_eq!(opts.temperature, 0.5);
     assert_eq!(opts.max_tokens, 2048);
@@ -570,7 +581,12 @@ fn d5_build_chat_options_quick() {
     let kind = AgentKind::Quick;
     let mode = make_mode("quick", Some(0.3), Some(1024));
 
-    let opts = prompt_builder::build_chat_options(&kind, &mode, 128000);
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride::default(),
+    );
 
     assert_eq!(opts.temperature, 0.3);
     assert_eq!(opts.max_tokens, 1024);
@@ -581,7 +597,12 @@ fn d5_build_chat_options_deep_with_temperature() {
     let kind = AgentKind::Deep;
     let mode = make_mode("deep", Some(0.7), Some(8192));
 
-    let opts = prompt_builder::build_chat_options(&kind, &mode, 128000);
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride::default(),
+    );
 
     assert_eq!(opts.temperature, 0.7);
     assert_eq!(opts.max_tokens, 8192);
@@ -592,7 +613,12 @@ fn d5_build_chat_options_deep_no_temperature_fallback() {
     let kind = AgentKind::Deep;
     let mode = make_mode("deep", None, None);
 
-    let opts = prompt_builder::build_chat_options(&kind, &mode, 128000);
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride::default(),
+    );
 
     assert_eq!(opts.temperature, 0.3);
     assert_eq!(opts.max_tokens, 4096);
@@ -603,7 +629,12 @@ fn d5_build_chat_options_custom() {
     let kind = AgentKind::Custom;
     let mode = make_mode("custom", Some(0.8), Some(6000));
 
-    let opts = prompt_builder::build_chat_options(&kind, &mode, 128000);
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride::default(),
+    );
 
     assert_eq!(opts.temperature, 0.8);
     assert_eq!(opts.max_tokens, 6000);
@@ -616,10 +647,115 @@ fn d5_build_chat_options_reasoning() {
     mode.reasoning_enabled = Some(true);
     mode.reasoning_effort = Some("high".to_string());
 
-    let opts = prompt_builder::build_chat_options(&kind, &mode, 128000);
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride {
+            level: Some("high".to_string()),
+        },
+    );
 
     assert_eq!(opts.reasoning_enabled, Some(true));
     assert_eq!(opts.reasoning_effort.as_deref(), Some("high"));
+}
+
+#[test]
+fn d5_build_chat_options_reasoning_default_level_ignores_mode() {
+    let kind = AgentKind::Deep;
+    let mut mode = make_mode("deep", Some(0.7), Some(8192));
+    mode.reasoning_enabled = Some(true);
+    mode.reasoning_effort = Some("high".to_string());
+
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride {
+            level: Some("default".to_string()),
+        },
+    );
+
+    assert_eq!(opts.reasoning_enabled, None);
+    assert_eq!(opts.reasoning_effort, None);
+}
+
+#[test]
+fn d5_build_chat_options_reasoning_absent_level_equals_default() {
+    let kind = AgentKind::Deep;
+    let mut mode = make_mode("deep", Some(0.7), Some(8192));
+    mode.reasoning_enabled = Some(true);
+    mode.reasoning_effort = Some("high".to_string());
+
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride::default(),
+    );
+
+    assert_eq!(opts.reasoning_enabled, None);
+    assert_eq!(opts.reasoning_effort, None);
+}
+
+#[test]
+fn d5_build_chat_options_reasoning_override_off_wins() {
+    let kind = AgentKind::Deep;
+    let mut mode = make_mode("deep", Some(0.7), Some(8192));
+    mode.reasoning_enabled = Some(true);
+    mode.reasoning_effort = Some("high".to_string());
+
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride {
+            level: Some("off".to_string()),
+        },
+    );
+
+    assert_eq!(opts.reasoning_enabled, Some(false));
+    assert_eq!(opts.reasoning_effort, None);
+}
+
+#[test]
+fn d5_build_chat_options_reasoning_override_effort_wins() {
+    let kind = AgentKind::Deep;
+    let mut mode = make_mode("deep", Some(0.7), Some(8192));
+    mode.reasoning_enabled = Some(true);
+    mode.reasoning_effort = Some("high".to_string());
+
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride {
+            level: Some("low".to_string()),
+        },
+    );
+
+    assert_eq!(opts.reasoning_enabled, Some(true));
+    assert_eq!(opts.reasoning_effort.as_deref(), Some("low"));
+}
+
+#[test]
+fn d5_build_chat_options_reasoning_override_enables_without_effort() {
+    let kind = AgentKind::Deep;
+    let mut mode = make_mode("deep", Some(0.7), Some(8192));
+    mode.reasoning_enabled = None;
+    mode.reasoning_effort = None;
+
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        128000,
+        &chat_options::ReasoningOverride {
+            level: Some("on".to_string()),
+        },
+    );
+
+    assert_eq!(opts.reasoning_enabled, Some(true));
+    assert_eq!(opts.reasoning_effort, None);
 }
 
 // ─── D6: AgentKind 映射验证 ───

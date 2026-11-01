@@ -8,6 +8,7 @@ import type {
 } from "../chatOrchestrator";
 import type { ChatError } from "../../chat/core/chatErrors";
 import { ChatErrorCode } from "../../chat/core/chatErrors";
+import type { ReasoningChoice } from "../../chat/core/reasoning";
 
 function makeError(message: string): ChatError {
   return {
@@ -59,6 +60,7 @@ function createMockDeps(): {
     getMessages: vi.fn(() => []),
     getConversations: vi.fn(() => []),
     getSelectedModeId: vi.fn(() => null),
+    getReasoningChoice: vi.fn<() => ReasoningChoice>(() => "inherit"),
     getSelectedProviderId: vi.fn(() => "provider-1"),
     getSelectedModelId: vi.fn(() => "model-1"),
     getPendingBranchPoint: vi.fn(() => null),
