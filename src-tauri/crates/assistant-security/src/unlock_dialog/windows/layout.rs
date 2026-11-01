@@ -72,18 +72,6 @@ pub(super) fn calc_window_rect(dpi: u32) -> RECT {
     rect
 }
 
-pub(super) fn create_icon_font(dpi: u32) -> HFONT {
-    let mut lf = LOGFONTW {
-        lfHeight: -scale(14, dpi_factor(dpi)),
-        lfWeight: 400,
-        ..Default::default()
-    };
-    let face: Vec<u16> = "Segoe UI Emoji\0".encode_utf16().collect();
-    let copy_len = face.len().min(LF_FACESIZE as usize);
-    lf.lfFaceName[..copy_len].copy_from_slice(&face[..copy_len]);
-    unsafe { CreateFontIndirectW(&lf) }
-}
-
 pub(super) fn create_default_font(dpi: u32) -> HFONT {
     let mut lf = LOGFONTW {
         lfHeight: -scale(12, dpi_factor(dpi)),
