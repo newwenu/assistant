@@ -1,301 +1,429 @@
-# 时钟与便签工具参考项目分析
+# 时钟与便签：工具化可行性分析
 
-> 日期：2026-10-31｜性质：**选型分析**｜结论：两者均按现有工具箱机制落地；悬浮形态统一走 **mini 模式**，不新增窗口
-> 关联：[MAIN-WINDOW-MINI-MODE.md](./MAIN-WINDOW-MINI-MODE.md)（mini 形态定义与窗口层改造）· `docs/ARCHITECTURE.md` · `docs/FRONTEND.md`
+> 日期：2026-10-31｜关联：[MAIN-WINDOW-MINI-MODE.md](./MAIN-WINDOW-MINI-MODE.md) · `docs/ARCHITECTURE.md` · `docs/FRONTEND.md`
 
 ---
 
-## 1 结论速览
+## 1 两个工具的本质差异
 
-| 项 | 时钟工具 | 便签工具 |
+时钟与便签在 UI 上都只是一个工具页，但数据性质相反，这是后文所有判断的分叉点。
+
+### 1.1 时钟：状态可重算
+
+时钟需要保留的全部信息是几个标量：`startedAt` / `endAt` / 阶段 / 轮次。剩余时间 = f(now, 起点)。内存丢了可以重建，中途少跳几次不影响正确性，唯一不可替代的是起点本身。
+
+### 1.2 便签：数据不可重算
+
+便签里是用户敲进去的文字，**它是唯一副本**，没有任何函数能从别的信息推回来。
+
+### 1.3 分叉
+
+| 维度 | 时钟 | 便签 |
 |---|---|---|
-| 是否需改框架 | 否 | 否，但需新增存储层 |
-| 建议分类 | 新增 `productivity` | 新增 `productivity` |
-| 数据存储 | localStorage（配置 + 运行态快照） | SQLite（业务数据） |
-| 完整形态 | 工具页（`default` 宽） | 工具页（`full` 宽，列表 + 编辑双栏） |
-| 悬浮形态 | **mini 模式**（复用 main 窗口） | **mini 模式**（复用 main 窗口） |
-| 主要参考 | it-tools `chronometer`、Pomatez | airi notebook、notes / memos |
-| 落地成本 | 低（纯前端） | 中（前端 + Rust + 表结构 + 测试） |
-
-一句话：**时钟是"纯前端工具页"，便签是"第一个带业务数据的工具"**；两者的"悬浮"都由 [MAIN-WINDOW-MINI-MODE.md](./MAIN-WINDOW-MINI-MODE.md) 提供的 mini 形态承载，因此**不需要新增窗口、不需要跨窗口同步**。
+| 状态性质 | 派生量（可由起点重算） | 原始量（不可重建） |
+| 丢失后果 | 丢一个计时，可重开 | 永久丢失用户内容 |
+| 持久化动机 | 跨重启续算 | 不可丢 |
+| 存储层 | 前端（localStorage） | SQLite（业务数据） |
+| 是否需要 Rust | 否 | 是（表 + 命令 + 测试） |
+| 运行态归属 | service 单例 | store（草稿）+ 库（已保存） |
 
 ---
 
-## 2 项目现状（与本需求相关的机制）
+## 2 判断一：两者都做成工具，不做新模块
 
-| 机制 | 现状 | 位置 |
+### 2.1 复用什么
+
+`src/tools/registry.ts` 的 `defineTool()` 承担注册、归类、"新"标记；`src/tools/ToolPage.tsx` 承担标题、返回、收藏、宽度约束、懒加载恢复。接入这套机制可直接获得分类页与搜索（`ToolBox` + Fuse）、收藏与最近使用（`src/stores/toolStore.ts`）、历史记录（`tool_history`）、i18n 类型化 key、懒加载失败恢复（`lazyWithRecovery`）。
+
+做成"新模块"则这些都要重写，且与既有工具的入口割裂。
+
+### 2.2 代价：工具无权改外壳
+
+`ToolPage` 把这些值写死在组件内：`padding: "24px 32px"`、标题 `fontSize: 28`、分割线 `width: 200`、内容区 `maxWidth` 来自 `WIDTH_MAP`。工具组件拿不到，也无法覆盖。
+
+所以**紧凑布局不能由工具自己做**。若每个工具各自把间距改小：间距常量会复制 N 份，mini 与 normal 的间距随工具漂移；且外壳层的标题/分割线仍是完整窗口尺寸，工具内改了也没用。
+
+分工是：**外壳层读 mode 决定密度，工具层只对容器宽度做断点反应**（mini 文档 §8.3）。工具不需要知道"为什么窄"。
+
+### 2.3 `maxWidth` 在窄容器下自然失效
+
+`src/tools/ToolPage.tsx` 的 `WIDTH_MAP` 与 `src/config/constants.ts`：
+
+| `widthMode` | `maxWidth` | 窄窗口下实际效果 |
 |---|---|---|
-| 工具注册 | `defineTool()` 按 keywords 自动归类，`createdAt` 决定"新"标记 | `src/tools/registry.ts` |
-| 工具契约 | `id/name/description/icon/keywords/component/widthMode/capabilities` | `src/tools/types.ts` |
-| 分类 | 固定 4 类：`dev`、`converter`、`security`、`media` | `src/tools/categories.ts` |
-| 工具页容器 | 统一标题、收藏、宽度模式；以 `<tool.component key={id} />` 渲染，**不传 props** | `src/tools/ToolPage.tsx` |
-| 工具状态 | 收藏、最近使用、Fuse 模糊搜索 | `src/stores/toolStore.ts` |
-| 存储 | SQLite 已有 `tool_favorites`、`tool_history`，尚无业务数据表 | `src-tauri/crates/assistant-storage/src/db.rs` |
-| 主窗口 | `decorations: false`，最小 300×200，运行时仅一种呈现 | `src-tauri/tauri.conf.json`、`src-tauri/crates/assistant-config/src/constant.rs` |
-| 多窗口 | 按 webview label 固定映射；窗口由 `WindowSpec + show_or_create` 创建 | `src/App.tsx`、`src-tauri/src/window.rs` |
-| 悬浮能力 | Orb 已有位置持久化、多屏校正、跨窗口广播 | `src-tauri/crates/assistant-orb/src/placement.rs`、`src-tauri/src/protocol/events.rs` |
-| mini 模式 | **分析完成，尚未实现**（`normal / mini` 运行时状态、外壳分叉、几何持久化） | [MAIN-WINDOW-MINI-MODE.md](./MAIN-WINDOW-MINI-MODE.md) |
-| 快捷键 | 已有全局快捷键插件与默认绑定，配置为 `Record` | `src-tauri/src/setup.rs`、`src/settings/core/types/shortcutTypes.ts` |
-| 通知 | 未接入 `tauri-plugin-notification` | `src-tauri/Cargo.toml` |
-| i18n | 中英双语、类型化 key，新增工具须同步两个 JSON | `src/i18n/locales/*.json` |
+| `default` | 640 | 元素宽 = min(可用宽, 640) = 可用宽；`margin: 0 auto` 无效果 |
+| `wide` | 960 | 同上 |
+| `full` | 0 → `maxWidth \|\| "100%"` 取到 `"100%"` | 无约束 |
 
-两个约束需要提前注意：
-
-1. **分类由关键词打分决定**：分数相同时取数组靠前的分类。现有 `dev` 已含 `timer`、`cron`，`converter` 已含 `date`、`time`、`timezone`。新增 `productivity` 时，其签名关键词不能与这两类重叠，否则工具会被错误归类。
-2. **mini 是唯一悬浮形态**：mini 文档把"不新增窗口"定为硬前提，且 `D8` 明确不允许"完整窗口 + 小窗并存"。因此时钟/便签**不做独立悬浮窗口**，也不存在"两个 WebView 同时编辑便签"的一致性问题。
+`maxWidth` 不需要为 mini 加分支。真正吃宽度的是 `padding: "24px 32px"`：380 宽窗口内容区只剩 316。mini 下要改的是 `padding` 与标题字号。
 
 ---
 
-## 3 需求拆解
+## 3 判断二：悬浮复用 main，不新增窗口
 
-### 3.1 时钟
+### 3.1 mini 提供的四项
 
-| 功能 | 实现要点 | 风险 |
+| 能力 | 对时钟 | 对便签 |
 |---|---|---|
-| 世界时钟 | `Intl.DateTimeFormat` + IANA 时区，夏令时由浏览器处理 | 不要手算时区偏移 |
-| 秒表 / 倒计时 | 保存 `startedAt`/`endAt` 绝对时间，tick 时用 `Date.now()` 重算 | 递减计数在窗口隐藏时被节流，累积漂移 |
-| 番茄钟 | 阶段状态机：专注 → 短休 → 长休，按轮次自动流转 | 状态机需可快照，崩溃/隐藏后可恢复 |
-| 提醒 | 应用内提示 + 声音；后台通知需通知插件 | 插件是新增依赖，需评估权限与体积 |
-| 悬浮时钟 | **mini 模式**：恒置顶 + 大字号计时 + 极简控制 | 不要做点击穿透，否则无法拖动/操作 |
+| 复用 `main` 的同一 webview | 计时状态天然保留 | 草稿天然保留 |
+| `effective_on_top = mode == mini \|\| stay_on_top` | 悬浮时钟开箱可用 | 桌面便签开箱可用 |
+| 两套几何 + 工作区收敛 | 工具不参与窗口定位 | 同左 |
+| 外壳密度降级 | 不重复处理外层间距 | 同左 |
 
-**隐藏态的特殊处理**：`close_to_tray` 生效时窗口 `hide()`，WebView 的 `setInterval` 会被系统节流。因此时钟必须做到：
+第一条最关键：若新开窗口，状态同步是必须解决的问题；复用 webview 则让它不存在。
 
-1. 运行态（`startedAt`/`endAt`/阶段/轮次）落 localStorage 快照，不只存在内存；
-2. 每次 tick 与每次窗口 `show`/`focus` 都用 `Date.now()` 重算剩余时间；
-3. 首版"倒计时结束"只在窗口可见时弹应用内提示；需要"隐藏时也提醒"再加 Rust 侧定时器 + 通知插件。
+### 3.2 独立悬浮窗口的四项成本
 
-### 3.2 便签
-
-| 功能 | 实现要点 | 风险 |
-|---|---|---|
-| 列表 / 编辑 | 完整形态：左列表 + 右编辑（`widthMode: "full"`） | 无 |
-| Markdown | 依赖中已有 `react-markdown` + `remark-gfm`，做"编辑/预览"切换即可 | 无需引入富文本编辑器 |
-| 自动保存 | 防抖 + 串行写入（参考 `src/utils/persistQueue.ts` 思路） | 并发写覆盖 |
-| 悬浮便签 | **mini 模式**：单便签编辑器 + 顶部便签切换 | 双栏布局在 380 宽下无法压缩 |
-| 提醒 | 可选，参考任务模型的 `dueAt`/`nextNotifyAt` | 依赖通知能力 |
-| 回收站 | `deleted_at` 软删除 | 避免物理删除 |
-
-**存储判断**：便签首版就用 SQLite。理由不是"多窗口同步"（mini 下只有一个 WebView），而是业务数据需要持久、可导出、可被 AI 上下文复用，且与 `tool_favorites` / `tool_history` 的既有分层一致。若只做一次性草稿，localStorage 也能跑，但后续迁移成本更高。
-
-**布局分支判断**：便签是同一个工具在两种宽度下呈现两种结构（双栏 / 单栏），不是两个工具。用 `useWindowMode()` 在组件内分支即可，**不要把双栏和单栏拆成两个组件再各存一份草稿**。
-
----
-
-## 4 参考项目选型
-
-### 4.1 现有 `references/` 内可直接借鉴
-
-`references/` 当前 5 个分组：`1-ai-agent`、`2-desktop-orb`、`3-vault-sync`、`4-vault-security`、`5-design-style`。
-
-| 项目 | 借鉴点 | 位置 | 用途 |
-|---|---|---|---|
-| airi | `NotebookEntry`（kind/text/tags/metadata/createdAt）、`ScheduledTask`（priority/status/dueAt/lastNotifiedAt/nextNotifyAt） | `references/2-desktop-orb/airi/packages/stage-ui/src/stores/character/notebook.ts` | 便签字段与可选提醒字段设计 |
-| onepoint | 全局唤起、即用即走、本地存储与导出、历史列表 | `references/2-desktop-orb/onepoint/README-CN.md` | 便签"快速记录"的产品定位 |
-| BongoCat | 悬浮窗位置防抖写入、关闭前 flush、坐标范围校验 | `references/2-desktop-orb/BongoCat/crates/bongocat-app/src/overlay_placement.rs`、`crates/bongocat-config/src/window_state.rs` | **供 mini 模式几何持久化参考**；工具本身不涉及窗口 |
-| WindowPet | 透明、置顶、跳过任务栏、多窗口创建参数组合 | `references/2-desktop-orb/WindowPet/src-tauri/src/app/utils.rs` | 仅供 mini 的置顶/跳过任务栏行为参考（旧 Tauri API） |
-| awesome-design-md | 卡片、悬浮层、间距与配色规范 | `references/5-design-style/awesome-design-md/` | 时钟卡片与便签视觉 |
-| OpenBitFun | 内置 miniapp 静态嵌入、安装标记、内容哈希 | `references/1-ai-agent/OpenBitFun/src/crates/contracts/product-domains/src/miniapp/builtin.rs` | 仅当便签要做成可安装迷你应用时参考，不建议 |
-
-**明确不采纳**：WindowPet 的全局点击穿透（时钟/便签需可拖动可点击）、透明窗口（mini 文档 §8.1 已定 `transparent` 不可运行期切换且建议保持不透明）、OpenBitFun 的 miniapp 运行时（对一个工具页过重）。
-
-### 4.2 建议补充的外部参考
-
-`references/` 目录体量已较大，建议只补 3 个，统一放 `references/6-productivity/`，克隆时用 `--depth 1`：
-
-| 项目 | 技术栈 | 借鉴内容 | 优先级 |
-|---|---|---|---|
-| `roldanjr/pomatez` | Electron + React | 番茄钟状态机、阶段流转、托盘倒计时、通知、主题 | 高（时钟最贴合） |
-| `nuttyartist/notes` | Qt / C++ | 桌面便签的文件夹/标签/回收站/Markdown、贴纸交互 | 高（便签产品形态最贴合） |
-| `usememos/memos` | Go + React | 快速记录、标签、极简列表的信息架构 | 中（便签结构参考） |
-
-暂不引入：`notesnook` / `joplin`（加密与同步需求未定，体量大且 copyleft）、`TrafficMonitor`（桌面悬浮已由 mini 覆盖，不再需要）。外部项目一律以各自 `LICENSE` 为准，GPL/AGPL 只借鉴设计不复制代码。
-
-### 4.3 推荐组合
-
-- 时钟完整形态 = it-tools `chronometer` 交互 + Pomatez 状态机 + 现有 AntD / i18n
-- 时钟 mini 形态 = Pomatez 的"单一计时焦点 + 极简控制" + mini 外壳（无侧栏、恒置顶）
-- 便签完整形态 = airi 字段模型 + notes/memos 的列表-编辑结构 + SQLite
-- 便签 mini 形态 = onepoint 的"快速记录"交互 + 单便签编辑器
-
----
-
-## 5 与 mini 模式的对接（核心）
-
-### 5.1 mini 模式已经提供了什么
-
-| 能力 | 对两个工具的意义 |
+| 成本 | 具体表现 |
 |---|---|
-| 复用 main 窗口、不新建 webview | 工具输入状态天然保留，切换形态不丢内容 |
-| `normal / mini` 运行时状态（Rust `Mutex<Mode>` + 前端 `windowModeStore`） | 工具可以读模式做布局分支 |
-| 恒置顶（`effective_on_top = mode == mini \|\| stay_on_top`） | 时钟"悬浮时钟"、便签"桌面便签"开箱可用 |
-| 两套几何 + 工作区收敛 | 小窗位置由窗口层负责，工具不参与 |
-| `ToolPage` 密度降级（padding / 标题 / 描述 / 分割线） | 工具内部不用重复处理外层间距 |
-| 小窗首页"启动器"（搜索 + 收藏/最近 chip + 记住上次工具） | 时钟/便签可被快速唤出，无需额外入口 |
+| 新 JS 上下文 | 计时状态、便签草稿要在两个 webview 间同步（`BroadcastChannel` 或 Rust 广播） |
+| 授权面 | `capabilities` 新增条目 |
+| 一致性 | 同一份便签在两个编辑器里，需要冲突合并策略 |
+| 路由 | 新窗口要复刻 `/tools/:id` 的取参、i18n、懒加载 |
 
-### 5.2 两个工具需要 mini 提供的三件事
+### 3.3 不做点击穿透
 
-| # | 需求 | 建议实现 | 备注 |
-|---|---|---|---|
-| N1 | **`miniFriendly` 元数据** | `ToolDefinition` 增加 `miniFriendly?: boolean`；`true` 表示"可在小窗中使用，工具自带紧凑布局" | mini 文档 §8.4 已提出，目前列为 P2；**建议提前到 P1**，两个新工具成为首批使用者 |
-| N2 | **工具侧读取模式** | `useWindowMode()`（读 `windowModeStore`，只读），工具组件内使用 | `ToolPage` 以 `<tool.component key={id} />` 渲染且不传 props，因此只能走 store hook |
-| N3 | **直达某工具的 mini 入口** | 托盘 / Orb 菜单 / 快捷键 → `set_main_window_mode("mini")` + `navigate("/tools/<id>")` | 依赖 mini 文档 P2；工具侧只需保证 id 与路由稳定 |
+Orb 用 `set_ignore_cursor_events` 是因为它装饰性，用户不需要点它。工具是交互性的：时钟要拖动、按暂停，便签要选中、输入，穿透会让这些全部失效。
 
-### 5.3 `widthMode` 与 `miniFriendly` 的优先级（必须定死）
+判据：**穿透适用于"看"的窗口，不适用于"用"的窗口**。
 
-mini 文档 `D5` 的默认策略是"`wide`/`full` 工具自动展开 + 可撤销提示"。若直接按此执行，**便签（`widthMode: "full"`）永远无法在 mini 中打开**，与本次需求冲突。
+### 3.4 代价：两种形态互斥
 
-建议把判定顺序改为：
+"完整窗口与小窗不能并存"（mini 文档 §2.3）意味着用户无法一边在完整窗口跑 SQL、一边在角落挂番茄钟。
 
-```
-1. tool.miniFriendly === true  → 留在 mini，工具渲染紧凑布局
-2. widthMode === "wide"/"full" → 自动展开（D5 原策略）+ 可撤销提示
-3. 其余                        → 留在 mini
-```
+由此推出：**提醒不该依赖"另一个窗口存在"**。
 
-对应结论：
-
-| 工具 | `widthMode` | `miniFriendly` | mini 行为 |
-|---|---|---|---|
-| 时钟 | `default` | `true` | 留在 mini，大字号计时布局 |
-| 便签 | `full` | `true` | 留在 mini，单栏编辑布局 |
-
-这条优先级规则需要回写到 mini 文档 `D5` 与 `§5.5`，否则实现阶段会按 `widthMode` 直接自动展开，便签的 mini 形态直接失效。
-
-### 5.4 工具内的模式分支：运行态必须外置
-
-`ToolPage` 用 `<tool.component key={id} />` 渲染，`key` 只在工具 id 变化时改变，因此 **normal ↔ mini 切换不会重挂载工具组件**。但工具内部若按模式渲染不同子树，子树会卸载重建。由此得出硬性要求：
-
-| 工具 | 运行态存放位置 | 原因 |
-|---|---|---|
-| 时钟 | `clock.service.ts` 模块级单例 + `useSyncExternalStore`（或轻量 store） | 若把 `setInterval`/剩余时间放 `useState`，布局分支切换会重置计时 |
-| 便签 | `noteStore`（Zustand，草稿与当前便签 id 都在 store） | 双栏↔单栏分支切换不能丢未保存草稿 |
-
-这条与项目既有的 `Service → Orchestrator → Store` 分层一致：计时状态机属于 service，草稿与列表属于 store，组件只做渲染。
-
-### 5.5 两种形态的逐项对齐
-
-| 关注点 | 时钟 normal | 时钟 mini | 便签 normal | 便签 mini |
-|---|---|---|---|---|
-| 主结构 | 世界时钟网格 + 秒表/倒计时/番茄钟分区 | 单一大字号计时 + 底部控制条 | 左列表 + 右编辑器 | 单便签编辑器 + 顶部便签切换 |
-| 次要操作 | 城市增删、主题、音效 | 折叠为图标按钮 | 标签、颜色、置顶、回收站 | 折叠为紧凑工具条 |
-| 外层间距 | `24px 32px`（由 `ToolPage` 提供） | `10px 14px`（由 `ToolPage` 提供） | 同左 | 同左 |
-| 宽度约束 | `maxWidth: 640` | 跳过 `maxWidth`，占满窗口 | `maxWidth: 0`（`full`） | 跳过 `maxWidth` |
-| 数据 | localStorage（配置 + 快照） | 同左（同一份） | SQLite | 同左（同一份） |
-| 持久化触发 | 配置变更、计时状态变更 | 同左 | 防抖自动保存 + 失焦/切换工具时 flush | 同左 |
-
-### 5.6 需要回写 mini 文档的三处调整
-
-| 位置 | 现状 | 建议调整 |
-|---|---|---|
-| `D5` / `§5.5` | `wide`/`full` 一律自动展开 | 改为"`miniFriendly` 优先，`widthMode` 兜底"（见 5.3） |
-| `§8.4` | `miniFriendly` 列为 P2 中期项 | 提前到 P1，与两个新工具同批落地 |
-| `§5.3` | `ToolPage` 统一密度降级 | 补充"工具可自带紧凑布局，`ToolPage` 只负责外层密度与 `maxWidth` 跳过" |
-
-### 5.7 mini 层的既有决策对工具的影响
-
-| mini 决策 | 对时钟 | 对便签 |
-|---|---|---|
-| `transparent` 保持 `false`（§8.1） | 不能做半透明时钟；用背景色 + 系统圆角 | 便签"贴纸感"靠背景色/阴影，不靠透明 |
-| `skip_taskbar` 先不启用（D6） | 悬浮时钟会占一个任务栏图标，后续实测再定 | 无影响 |
-| `X` = 隐藏到托盘（D2） | 隐藏后计时靠快照 + 重算恢复 | 关闭前需 flush 草稿 |
-| 进入 `/settings` `/history` `/vault` 强制展开（D4） | 无影响 | 无影响 |
-| 不允许"完整窗口 + 小窗并存"（D8） | 无影响 | 单 WebView，无跨窗口一致性问题 |
-| Orb 层级避让（§7.5） | 悬浮时钟与 Orb 会争 z-order，进入 mini 时应收起 Orb 面板 | 同左 |
+- 番茄钟完成提示走 Orb 或 Mascot —— 独立窗口，常驻；
+- 便签的快速记录走全局快捷键 → 切到 mini 新建，而不是"从任何状态弹一个小窗"。
 
 ---
 
-## 6 落地路径
+## 4 判断三：存储分层由数据能否重建决定
 
-### Phase 1：两个工具页
+### 4.1 时钟 → 前端
 
-时钟（纯前端）：
-
-```
-src/tools/clock/
-├── index.tsx               工具组件（默认导出，无 props）
-├── clock.service.ts        计时状态机 / 时区格式化 / 快照
-└── clock.module.css
-```
-
-便签（前端 + 后端）：
-
-```
-src/tools/sticky-notes/
-├── index.tsx
-├── sticky-notes.service.ts
-└── sticky-notes.module.css
-
-src/services/noteService.ts        invoke 封装
-src/stores/noteStore.ts            状态 + 防抖自动保存
-src-tauri/crates/assistant-storage/src/notes.rs
-src-tauri/src/cmd/notes.rs
-```
-
-公共改动：
-
-- `src/tools/registry.ts` 注册两条，带 `createdAt` 获得"新"标记，`miniFriendly: true`
-- `src/tools/categories.ts` 新增 `productivity` 分类、图标、`order`、签名关键词
-- `src/i18n/locales/zh-CN.json`、`en-US.json` 同步新增 key（mini 标题栏直接展示 `tool.name`，缺 key 会显示原始 key）
-- `src-tauri/crates/assistant-storage/src/db.rs` 新增 `notes` 表（`CREATE TABLE IF NOT EXISTS`，老库可安全升级）
-- `src-tauri/src/cmd/mod.rs`、`src-tauri/src/lib.rs` 注册 handler
-- `src-tauri/crates/assistant-storage/tests/notes.rs` 参照 `tool_favorites.rs` 的内存库测试
-
-建议的 `notes` 表最小字段：
-
-```sql
-id TEXT PRIMARY KEY,
-title TEXT NOT NULL DEFAULT '',
-content TEXT NOT NULL DEFAULT '',
-color TEXT NOT NULL DEFAULT 'default',
-pinned INTEGER NOT NULL DEFAULT 0,
-tags TEXT NOT NULL DEFAULT '[]',
-sort_order INTEGER NOT NULL DEFAULT 0,
-created_at INTEGER NOT NULL,
-updated_at INTEGER NOT NULL,
-deleted_at INTEGER
-```
-
-### Phase 2：mini 对接（依赖 mini 文档 P0/P1）
-
-前置：`windowModeStore` + `set_main_window_mode` + 外壳分叉 + `ToolPage` 密度降级已落地。
-
-1. `ToolDefinition` 增加 `miniFriendly?: boolean`，两个工具置 `true`
-2. `ToolPage` 的 `widthMode` 判定改为"`miniFriendly` 优先"
-3. 两个工具组件接入 `useWindowMode()`，实现 5.5 的紧凑布局
-4. 时钟运行态外置到 `clock.service.ts`，便签草稿外置到 `noteStore`
-5. 便签在 `mode` 变化与工具切换时 flush 草稿
-6. 进入 mini 时若 Orb 展开，先 `collapse_orb_panel`
-
-### Phase 3：联动
-
-- `quick_note` 全局快捷键：`shortcutTypes.ts` + Rust 配置默认值 + `setup.rs` 注册 + i18n；行为 = 进入 mini + 新建便签
-- 可选 `toggle_clock_mini` 或复用 `toggle_main_mini`，在 mini 中直达时钟
-- 番茄钟完成通过 Orb / Mascot 提醒，而非立即引入通知插件
-- 便签内容接入 AI 上下文（可选）
-
----
-
-## 7 待确认决策
-
-1. **时钟范围**：世界时钟 / 秒表 / 倒计时 / 番茄钟选哪几个？（全部纳入会让 mini 布局拥挤，建议 mini 只保留"当前计时 + 控制"）
-2. **便签内容**：纯文本还是 Markdown？是否需要提醒字段？
-3. **存储**：便签直接上 SQLite（建议是），还是首版 localStorage。
-4. **分类**：新增 `productivity`（建议），还是分别塞进 `converter` 与 `dev`。
-5. **`miniFriendly` 是否提前**：建议提前到 P1 并由两个新工具首批使用；否则便签无法在 mini 中使用。
-6. **通知**：先用应用内提示，还是直接接入系统通知插件（影响"隐藏态番茄钟提醒"）。
-7. **外部参考**：是否将 `pomatez` / `notes` / `memos` 克隆到 `references/6-productivity/`。
-
----
-
-## 8 主要风险清单
-
-| 风险 | 说明 | 对策 |
+| 数据 | 内容 | 落盘动机 |
 |---|---|---|
-| 分类误判 | `timer`/`date`/`time` 已被现有分类占用 | 新分类签名词避开重叠，并补分类单测 |
-| 计时漂移 | 递减计数在窗口隐藏时被节流 | 绝对时间戳重算 + `visibilitychange`/`focus` 重算 + localStorage 快照 |
-| 布局分支重置状态 | normal ↔ mini 切换会卸载工具内子树 | 计时状态放 service、草稿放 store，组件不持有运行态 |
-| 便签无法进 mini | `D5` 按 `widthMode` 自动展开，便签是 `full` | 引入 `miniFriendly` 并设为最高优先级（5.3） |
-| 便签双栏压不进小窗 | 380 宽下列表 + 编辑器不可用 | mini 走单栏布局，列表收进顶部切换器 |
-| 隐藏时无提醒 | 未接入通知插件 | 首版仅可见时提示，后续 Rust 定时器 + 插件 |
-| 半透明不可行 | `transparent` 仅创建期可设 | 用背景色 + 系统圆角，不做透明 |
-| 依赖膨胀 | 富文本编辑器 / 通知插件 | 复用已有 `react-markdown`，通知按需引入 |
+| 配置 | 城市列表、音效、显示偏好 | 用户显式设置 |
+| 运行态快照 | `startedAt` / 阶段 / 轮次 | 应用重启后能续算 |
+
+运行态快照的动机不是防丢失而是跨重启续算：窗口 `hide()` 后 JS 仍在运行（被节流），内存状态没丢；真正会丢的是进程退出。
+
+### 4.2 便签 → SQLite
+
+"两个窗口要同步便签"不是理由——mini 方案下只有一个 webview。真正理由三条：
+
+1. 数据不可重建（1.2）；
+2. 需要可查询能力：标签过滤、全文搜索、时间排序、回收站恢复。localStorage 只能整体反序列化，这些能力要么全量遍历要么手写索引；
+3. 与既有分层一致：`tool_favorites` / `tool_history` 都在 SQLite（`src-tauri/crates/assistant-storage/src/db.rs`），业务数据混到 localStorage 会让"数据在哪"失去统一答案。
+
+"先 localStorage 后迁移成本高"是弱理由：便签量级几十到几百条，迁移是一次性脚本。真正的代价是可查询能力缺失。
+
+### 4.3 草稿与已保存是两层
+
+| 状态 | 存放位置 | 生命周期 |
+|---|---|---|
+| 已保存 | SQLite | 永久 |
+| 草稿（有未落库改动） | store（内存） | 会话内 |
+| 编辑中选区/光标 | 组件 | 分支切换即失 |
+
+草稿层存在的意义是**避免每次按键都写库**，正确性要求与持久层不同。"已入库所以草稿丢了无所谓"是错误推论。
+
+---
+
+## 5 判断四：分类是关键词打分产物
+
+### 5.1 机制
+
+`src/tools/categories.ts` 的 `classifyKeywords()`：把工具 `keywords` 转小写集合，对 `CATEGORY_SIGNATURES` 每个分类统计命中数，最高者胜。`bestScore` 从 `-1` 起，遍历顺序 `dev → converter → security → media`，严格 `>` 才替换。
+
+两条硬规则：
+
+1. **平局归靠前分类**；
+2. **全 0 分归 `dev`**。
+
+`ToolInput` 把 `category` 置为 `never`，分类无法显式声明，只能被推断。
+
+### 5.2 两个工具的关键词都已被占用
+
+| 工具 | 自然关键词 | 现有归属 |
+|---|---|---|
+| 时钟 | `time` / `date` / `timestamp` / `timezone` | `converter` 已占（`date`、`time`、`timestamp`、`unix`、`epoch`、`datetime`、`calendar`、`iso8601`、`timezone`） |
+| 时钟 | `timer` / `cron` / `schedule` | `dev` 已占 |
+| 便签 | `note` / `memo` / `sticky` / `todo` | 四张签名表都没有 |
+
+时钟无论怎么配关键词都会错类：
+
+| 关键词组合 | 得分 | 落点 |
+|---|---|---|
+| `time` + `timer` | dev 1 / converter 1 | 平局 → `dev` |
+| `time` + `timezone` | dev 0 / converter 2 | `converter` |
+| `countdown` + `pomodoro`（全为独占词） | 全 0 | `dev` |
+
+便签四个自然词全部 0 分，静默落进 `dev`，不报错、不告警。
+
+### 5.3 不能塞进已有分类
+
+| 方案 | 问题 |
+|---|---|
+| 便签塞 `converter` | 语义无关，分类信息位失效 |
+| 便签塞 `dev` | 会把 `dev` 变成杂物间 |
+| 时钟塞 `converter` | 番茄钟/倒计时不是换算，且会与进制转换并列 |
+| 时钟塞 `dev` | 勉强成立，但 `dev` 已是条目最多的一组（22 个工具中大部分在此），新工具会被淹没 |
+
+塞错等于没有分类，比多一个分类更糟。
+
+### 5.4 新增 `productivity` 的代价
+
+需同步四处：
+
+| 位置 | 改动 |
+|---|---|
+| `CATEGORY_KEYS` | 加一项（顺序影响平局归属，见 5.5） |
+| `CATEGORY_SIGNATURES` | 加一组签名词 |
+| `TOOL_CATEGORIES` | 加 `label` / `icon` / `order` |
+| `src/i18n/locales/*.json` | 加 `tools.category.productivity`，两个语言都要 |
+
+`ToolBox` 按 `TOOL_CATEGORIES` 遍历分段渲染，自动适配。
+
+### 5.5 签名词必须独占
+
+因为平局归靠前分类，新分类即使声明了签名词，只要与 `dev`/`converter` 重叠，平分时仍然输。
+
+- `productivity` 的签名词必须是 `dev`/`converter` 里没有的词（如 `pomodoro`、`sticky-note`、`memo`、`note`、`todo`）；
+- 工具 `keywords` 不能同时命中两个分类。时钟若同时带 `timer`（dev）与 `time`（converter），各 1 分，`dev` 靠前胜出。
+
+这里有个设计张力：`keywords` 同时服务 Fuse 搜索（越全越好，用户可能搜 `time`）与分类（越独占越好），两者目标相反，而现状是同一份数组兼任两职。约束只能由工具作者自行保证，没有任何测试会拦住。
+
+---
+
+## 6 与 mini 的接口面
+
+### 6.1 三件事
+
+| # | 需求 | 性质 |
+|---|---|---|
+| N1 | `miniFriendly` 元数据 | 新增字段，表达"能否在窄容器中工作" |
+| N2 | 工具读模式的通道 | 只读 `windowModeStore` |
+| N3 | 直达某工具的 mini 入口 | 托盘 / Orb 菜单 / 快捷键 |
+
+### 6.2 只能走 store hook
+
+`ToolPage` 以 `<tool.component key={id} />` 渲染，**不传任何 props**，工具组件无法从外部拿到 mode，只能通过 store hook（与 Orb 前端读 `click_through` 同构：Rust 持真值，前端只读镜像）。
+
+这也解释了 2.2：工具拿不到外部参数，就不该承担外壳职责——能读到的只有"窄不窄"，读不到"为什么窄"。
+
+### 6.3 `widthMode` 与 `miniFriendly` 语义错配
+
+mini 文档 §8.4 的策略是"`wide`/`full` 自动展开 + 可撤销提示"。按此执行，便签（`widthMode: "full"`）永远无法在 mini 中打开。
+
+根因是字段语义错配，不是策略选错：
+
+| 字段 | 回答的问题 | 例子 |
+|---|---|---|
+| `widthMode` | 完整窗口下内容该多宽 | 便签要双栏 → `full` |
+| `miniFriendly` | 窄容器下还能不能用 | 便签能改单栏 → `true` |
+
+一个工具可以同时"完整窗口下需要很宽"且"窄容器下可用"，`widthMode` 表达不了后者。这正是 mini 文档 §10.4 提出 `miniFriendly` 的原因。
+
+但要防第二真值：`miniFriendly` 必须严格是布尔能力声明，不能理解成"另一种宽度声明"，否则 `full` + `miniFriendly: false` 与 `wide` + `miniFriendly: true` 语义重叠，两个字段会漂移。
+
+### 6.4 必须与 mini §4.4 边界一一致
+
+mini 记住 lastTool（= `recentTools[0]`）。若恢复的是 `full` 工具，而规则是"进 mini 遇 `full` 自动展开"，会形成抖动：
+
+```
+启动进 mini → 恢复 lastTool(便签, full) → 自动展开 → 变 normal
+→ 退出 mini 后下次启动仍是 mini → 再展开 ……
+```
+
+两条规则必须同时成立：
+
+1. **恢复不展开，新选才展开**（mini 文档 §4.4 边界一）；
+2. **`miniFriendly` 优先于 `widthMode`**。
+
+组合后四种情形：
+
+| 情形 | `miniFriendly` | 结果 |
+|---|---|---|
+| 恢复 lastTool | `true` | 留在 mini，紧凑布局 |
+| 恢复 lastTool | `false` 且 `wide/full` | 留在 mini（不展开），内容降级 |
+| 新选工具 | `true` | 留在 mini |
+| 新选工具 | `false` 且 `wide/full` | 自动展开 + 可撤销提示 |
+
+只落一条会出现"每次启动都被弹回完整窗口"或"便签永远进不了小窗"。
+
+### 6.5 两文档需对齐的三处
+
+| 位置 | 现状 | 需补充的判断 |
+|---|---|---|
+| `§8.4` | `wide`/`full` 一律自动展开 | `miniFriendly` 优先，`widthMode` 兜底；恢复与新选分开 |
+| `§10.4` | `miniFriendly` 列为中期元数据 | 它是"能否压缩"的能力声明，与 `widthMode` 不能互相推断 |
+| `§8.3` | `ToolPage` 统一密度降级 | 工具可自带紧凑布局，`ToolPage` 只负责外层密度 |
+
+---
+
+## 7 运行态必须外置
+
+### 7.1 `key={id}` 的边界
+
+`ToolPage` 用 `<tool.component key={id} />`，`key` 只在工具 id 变化时改变：
+
+- normal ↔ mini 切换**不会**重挂载工具组件；
+- 但工具内部若按 mode 渲染不同子树（双栏 / 单栏），**子树会卸载重建**，`useState` 全部归零。
+
+"不重挂载"不等于"状态安全"。
+
+### 7.2 两个工具的后果
+
+| 工具 | 若运行态放在组件 `useState` | 后果 |
+|---|---|---|
+| 时钟 | `setInterval` 与剩余时间 | 布局分支切换 → 计时归零或从错误值继续，易被误判成第 8 章的漂移问题 |
+| 便签 | 草稿 | 分支切换即丢未保存内容；数据不可重建（1.2），后果比时钟严重 |
+
+### 7.3 归属
+
+| 工具 | 运行态归属 | 理由 |
+|---|---|---|
+| 时钟 | service 模块级单例（`useSyncExternalStore` 或轻量 store） | 计时状态机属于 service，不属于组件 |
+| 便签 | store（草稿 + 当前 id） | 草稿是跨组件生命周期的会话数据 |
+
+与既有的 `Service → Orchestrator → Store` 分层一致：组件只做渲染。
+
+---
+
+## 8 隐藏态计时：漂移是结构性的
+
+### 8.1 节流是平台行为
+
+`close_to_tray` 生效时窗口 `hide()`，WebView 的 `setInterval` 会被系统降频甚至暂停。这是所有桌面 WebView 的共性行为，无法通过写法绕开。
+
+### 8.2 递减计数 vs 绝对时间戳
+
+| 表示 | 节流期间表现 | 可自愈？ |
+|---|---|---|
+| `remaining -= 1` 每次 tick | 少跳几次 → 剩余时间永久偏大 | **否**，只能重开 |
+| 存 `endAt`，每次 tick 用 `now` 重算 | 只影响刷新频率，不影响剩余量 | **是**，窗口一显示即校正 |
+
+与 mini 文档 §3.5 的"记错能否一次操作自愈"是同一把标尺：偏差不可自愈的表示必须换成可重算的表示。推论：时钟里不该出现任何累加/累减状态，只该出现"起点 + 当前时间"。
+
+### 8.3 隐藏时提醒是依赖问题
+
+系统通知需要 `tauri-plugin-notification`，`src-tauri/Cargo.toml` 目前未引入。所以"倒计时结束在隐藏状态也提醒"不是加个开关：
+
+| 路径 | 代价 |
+|---|---|
+| 引入通知插件 + Rust 侧定时器 | 新依赖、新权限面、体积 |
+| 走 Orb / Mascot 提示 | 无新依赖，但要求 Orb 可见（独立窗口，不随 `main` 隐藏） |
+| 仅窗口可见时提示 | 零成本，功能残缺 |
+
+这个取舍决定首版时钟的能力边界。
+
+### 8.4 番茄钟必须可快照
+
+阶段（专注/短休/长休）、轮次、剩余时间构成一个状态机。任一不可序列化，进程重启后只能从头开始，而番茄钟的价值恰在"跨小时的连续节奏"。
+
+与 4.1 的运行态快照同理：快照让可重算的状态在进程边界上仍然可重算。
+
+---
+
+## 9 形态取舍
+
+### 9.1 双栏与单栏是一个工具
+
+判断：**一个工具**。数据同一份、id 同一份、收藏与历史同一份。拆成两个组件会强制两份草稿状态，反而制造出"两个编辑器同步"的问题——而这个问题在 mini 方案里本来已被消除（3.2）。
+
+代价：组件内部必须有分支，第 7 章的运行态外置因此从优化项变成硬约束。
+
+### 9.2 宽度：normal 锁、mini 放开
+
+`maxWidth`（`default` 640 / `wide` 960）表达的是"内容舒适宽度"假设，前提是窗口足够宽。normal 下成立，锁住是对的；mini 下窗口本身窄，再锁无意义（2.3）。便签用 `full` 是例外：`maxWidth` 为 0 → `"100%"`，本就不锁。
+
+### 9.3 半透明不可行
+
+`transparent` 是创建期参数，无运行时 setter（mini 文档 §10.1）。便签的"贴纸感"不能靠窗口透明，只能靠背景色、阴影、圆角。
+
+想要半透明小窗必须创建时就 `transparent: true`，代价是完整窗口也失去系统阴影与圆角。为一个工具的视觉收益付这个全局代价不划算。
+
+### 9.4 双栏在窄容器下不可能
+
+列表最小可用宽度 + 编辑器最小可用宽度 > 小窗内容区宽度（扣掉 `padding` 后更小）。单栏是唯一可行方案，列表必须收进切换器（下拉/抽屉）。切换器属于工具内部，不是外壳职责（2.2）。
+
+---
+
+## 10 参考物取舍
+
+### 10.1 现有 `references/` 各项目
+
+`references/` 现有 5 组（见 `references/0_INDEX/INDEX.md`）。逐个问"能否回答本文某个判断"：
+
+| 项目 | 值得看的那一层 | 不值得看的部分 |
+|---|---|---|
+| airi | `NotebookEntry` 字段模型（kind/text/tags/metadata）与 `ScheduledTask` 提醒字段（`dueAt`/`lastNotifiedAt`/`nextNotifyAt`） | 运行时（pinia + 角色系统） |
+| onepoint | 产品定位：全局唤起、即用即走、本地存储与导出 | 代码层面价值低，只读 README |
+| BongoCat | 几何持久化的防抖、关闭前 flush、坐标范围校验 | **归属是 mini，不是本需求**——工具不碰窗口 |
+| WindowPet | 创建期参数组合（置顶/跳过任务栏/透明） | 旧 Tauri API，运行时切换语义已过时 |
+| awesome-design-md | 卡片、悬浮层、间距与配色规范 | 无 |
+| OpenBitFun | miniapp 的静态嵌入与内容哈希 | 整体不采纳，见 10.2 |
+
+BongoCat 有价值的是窗口几何，而几何归 mini 管。把它当成"便签的参考"会让人以为便签要自己管位置。
+
+### 10.2 不采纳的三项
+
+| 来源 | 内容 | 理由 |
+|---|---|---|
+| WindowPet | 全局点击穿透 | 时钟/便签是"用"的窗口，不是"看"的窗口（3.3） |
+| WindowPet | 透明窗口 | `transparent` 不可运行期切换，且与省资源目标冲突（9.3） |
+| OpenBitFun | miniapp 运行时 | 需要安装标记、内容哈希、沙箱生命周期，对一个工具页收益为零 |
+
+### 10.3 外部参考只补少数
+
+补新项目的判据是"能否回答本文某个尚未定论的判断"，不是"这个领域有没有名项目"。按此只有三个空缺：
+
+| 候选 | 填补什么 |
+|---|---|
+| `roldanjr/pomatez` | 番茄钟状态机阶段流转 + 托盘计时 + 完成通知的组织方式 |
+| `nuttyartist/notes` | 桌面便签的文件夹/标签/回收站/贴纸交互产品形态 |
+| `usememos/memos` | 极简记录的信息架构（列表密度、标签导航） |
+
+不补的理由：`notesnook` / `joplin` 核心是加密与同步，而本需求两者都未定（12 章），体量大且 copyleft 限制代码借鉴；`TrafficMonitor` 的桌面悬浮诉求已由 mini 承载，只剩"读系统指标"，与时钟/便签无关。
+
+### 10.4 许可证边界
+
+外部项目一律以其 `LICENSE` 为准。GPL/AGPL 只借鉴设计思路，不复制代码——工具页是会被分发的产品代码。
+
+---
+
+## 11 结论
+
+1. **两者都是工具，不改框架**。差异在数据层：时钟是派生状态，便签是原始数据（第 1 章）。
+2. **悬浮 = mini 模式，不新增窗口**。代价是两种形态互斥，因此提醒类能力不能依赖"另一个窗口存在"（3.4）。
+3. **存储分层由"能否重建"决定**：时钟 localStorage、便签 SQLite。"多窗口同步"不是理由（4.2）。
+4. **分类必须新增 `productivity`**，且新签名词必须独占——平局归靠前分类，重叠词永远抢不过（5.5）。
+5. **便签进 mini 依赖 `miniFriendly`，且优先级高于 `widthMode`**。与 mini 文档 §8.4、§4.4 边界一必须同时成立，只落一条会抖动或永久失效（6.4）。
+6. **运行态外置是硬约束**：`key={id}` 不重挂载组件，但模式分支会重建子树（第 7 章）。
+7. **隐藏态提醒是依赖问题**（通知插件），不是配置问题；Orb/Mascot 是无依赖的中间态（8.3）。
+8. **紧凑布局归外壳，工具只对宽度做断点反应**；`maxWidth` 在窄容器下自然失效，真正要改的是 `padding`（2.2、2.3）。
+
+---
+
+## 12 未定取舍与未验证前提
+
+### 12.1 尚未定论
+
+| 待定 | 为什么没定 | 影响面 |
+|---|---|---|
+| 时钟范围：世界时钟 / 秒表 / 倒计时 / 番茄钟全上还是子集 | 全上会让 mini 主视图拥挤；只留"当前计时 + 控制"又砍掉世界时钟 | mini 时钟布局与 service 复杂度 |
+| 便签：纯文本 / Markdown / 是否带提醒字段 | Markdown 已有 `react-markdown` + `remark-gfm`（`package.json`）；提醒字段依赖通知能力（8.3） | 字段模型与 mini 编辑器形态 |
+| 通知：应用内 / 系统通知 | 系统通知需新插件 | "隐藏态番茄钟"能否成立 |
+| 是否补 3 个外部参考 | 取决于上面三项定论后还缺多少信息（10.3） | 只影响设计输入 |
+
+### 12.2 未验证前提
+
+| 结论 | 依赖的前提 | 验证方式 |
+|---|---|---|
+| 便签双栏在 mini 下不可行（9.4） | 列表与编辑器的最小可用宽度之和超过小窗内容宽度 | 用最小可用宽度实测；若可压缩则双栏可保留 |
+| 隐藏后 `setInterval` 会失真（8.1） | WebView2 在窗口 `hide()` 后确实降频 | 后台跑 10 分钟倒计时，对比 `now` 与 tick 次数 |
+| Orb 可作为番茄钟提醒载体（3.4、8.3） | Orb 生命周期独立于 `main` | 关闭 `main` 到托盘，观察 Orb 是否仍显示 |
+| 切换形态时工具子树会重建（7.1） | 按 mode 渲染不同子树会触发卸载 | 加日志验证 `useEffect` 的 mount/unmount 次数 |
+| 便签 SQLite 的查询能力确实必要（4.2） | 用户规模足以产生"需要标签/搜索"的量 | 若长期只有几十条，localStorage 也够 |
