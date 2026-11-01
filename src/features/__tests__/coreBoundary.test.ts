@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { commandGroups } from "@/test-utils/rustCommands";
 
 const SRC_ROOT = path.resolve(import.meta.dirname, "../..");
 const REPO_ROOT = path.resolve(SRC_ROOT, "..");
@@ -12,7 +13,6 @@ const ASSEMBLY_POINTS = [
   "src/features/registry.ts",
   "src-tauri/Cargo.toml",
   "src-tauri/build.rs",
-  "src-tauri/commands.json",
   "src-tauri/capabilities/default.json",
   "src-tauri/src/lib.rs",
   "src-tauri/src/plugins.rs",
@@ -21,7 +21,7 @@ const ASSEMBLY_POINTS = [
 const CORE_SCAN_ROOTS = ["src/settings", "src/features", "src-tauri/src"];
 const CORE_EXTENSIONS = /\.(ts|tsx|rs|json|toml)$/;
 
-const RESERVED_COMMAND_GROUPS = ["core", "hostOnly"];
+const RESERVED_COMMAND_GROUPS = ["core"];
 
 const FEATURE_FOOTPRINT_ALLOWLIST: Record<string, string[]> = {
   vault: [
@@ -117,8 +117,7 @@ function cargoFeatureSection(): string {
 }
 
 function declaredGroups(): Record<string, string[]> {
-  const raw = read("src-tauri/commands.json");
-  return (JSON.parse(raw) as { groups: Record<string, string[]> }).groups;
+  return commandGroups();
 }
 
 describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => {
@@ -172,15 +171,20 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
         problems.push(`${name}: plugins.rs 未挂载 ${name}_plugin::init()`);
       }
       if ((groups[name] ?? []).length === 0) {
-        problems.push(`${name}: commands.json 缺少 groups.${name} 或为空`);
+        problems.push(`${name}: 插件 ${name}_plugin.rs 未注册任何命令`);
       }
       if (!capabilities.includes(`"${name}:default"`)) {
         problems.push(
           `${name}: capabilities/default.json 缺少 ${name}:default`,
         );
       }
-      if (!exists(`src-tauri/permissions/${name}/default.toml`)) {
-        problems.push(`${name}: 缺少 permissions/${name}/default.toml`);
+      if (
+        !exists(`src-tauri/permissions/${name}/default.toml`) &&
+        !buildRs.includes(".default_permission(")
+      ) {
+        problems.push(
+          `${name}: 既无 permissions/${name}/default.toml，build.rs 也未生成默认权限`,
+        );
       }
       const plugin = `src-tauri/src/${name}_plugin.rs`;
       if (!exists(plugin)) {
@@ -201,7 +205,7 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
       .sort();
     if (groupNames.join("|") !== names.join("|")) {
       problems.push(
-        `commands.json 分组 ${groupNames.join(", ")} ≠ 声明特性 ${names.join(", ")}`,
+        `插件注册分组 ${groupNames.join(", ")} ≠ 声明特性 ${names.join(", ")}`,
       );
     }
 
@@ -216,16 +220,21 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
       );
     }
 
-    const permissionDirs = fs
-      .readdirSync(path.join(TAURI_ROOT, "permissions"))
-      .filter((entry) =>
-        fs.statSync(path.join(TAURI_ROOT, "permissions", entry)).isDirectory(),
-      )
-      .sort();
-    if (permissionDirs.join("|") !== names.join("|")) {
-      problems.push(
-        `ACL 目录 ${permissionDirs.join(", ")} ≠ 声明特性 ${names.join(", ")}`,
-      );
+    const permissionsRoot = path.join(TAURI_ROOT, "permissions");
+    const permissionDirs = exists("src-tauri/permissions")
+      ? fs
+          .readdirSync(permissionsRoot)
+          .filter((entry) =>
+            fs.statSync(path.join(permissionsRoot, entry)).isDirectory(),
+          )
+          .sort()
+      : [];
+    for (const dir of permissionDirs) {
+      if (!names.includes(dir)) {
+        problems.push(`ACL 目录 ${dir} 不对应任何声明特性（残留目录）`);
+      } else if (!exists(`src-tauri/permissions/${dir}/default.toml`)) {
+        problems.push(`ACL 目录 ${dir} 为空目录且无 default.toml`);
+      }
     }
 
     expect(problems).toEqual([]);

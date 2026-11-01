@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { commandGroups } from "@/test-utils/rustCommands";
 
 const SRC_ROOT = path.resolve(import.meta.dirname, "../..");
-const COMMANDS_JSON = path.resolve(SRC_ROOT, "../src-tauri/commands.json");
 const INVOKE_LITERAL =
   /(?:^|[^A-Za-z0-9_$])(?:invoke|tauriInvoke)(?:<[^>]*>)?\(\s*"([^"]+)"/g;
 
@@ -37,12 +37,6 @@ function literalInvokes(files: string[]): Map<string, string[]> {
   return found;
 }
 
-function declaredGroups(): Record<string, string[]> {
-  const raw = fs.readFileSync(COMMANDS_JSON, "utf8");
-  const parsed = JSON.parse(raw) as { groups: Record<string, string[]> };
-  return parsed.groups;
-}
-
 function sortedUnique(values: string[]): string[] {
   return Array.from(new Set(values)).sort();
 }
@@ -55,7 +49,7 @@ function difference(a: string[], b: string[]): string[] {
 describe("前后端命令名双向差集", () => {
   const files = collectSourceFiles(SRC_ROOT);
   const invokes = literalInvokes(files);
-  const groups = declaredGroups();
+  const groups = commandGroups();
   const declared = sortedUnique(Object.values(groups).flat());
 
   it("前端字面量命令全部在声明清单内", () => {

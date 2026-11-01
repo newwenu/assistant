@@ -12,6 +12,12 @@ const PARSER_FLOOR: usize = 120;
 const VAULT_CFG_LIMIT: usize = 6;
 const LIB_RS_LINE_LIMIT: usize = 40;
 const CLEANUP_FN: &str = "fn vault_cleanup_on_exit";
+const BUILD_PLUGIN_SOURCE_PREFIX: &str = "src/";
+const BUILD_PLUGIN_SOURCE_SUFFIX: &str = "_plugin.rs";
+const ACL_ALLOW_PREFIX: &str = "allow-";
+const ACL_PARSER_FLOOR: usize = 60;
+const CONF_APPLIER_OPEN: &str = "register_conf_applier(";
+const CONFIG_CONF_MODULE_SUFFIX: &str = "_conf";
 
 fn manifest_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
@@ -164,31 +170,142 @@ fn registered_names(text: &str) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
-fn declared_names() -> BTreeSet<String> {
-    let raw = fs::read_to_string(manifest_dir().join("commands.json"))
-        .expect("commands.json is readable");
-    let value: serde_json::Value = serde_json::from_str(&raw).expect("commands.json is valid json");
-    let groups = value
-        .get("groups")
+fn string_literals(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '"' {
+            continue;
+        }
+        let mut literal = String::new();
+        for c in chars.by_ref() {
+            if c == '"' {
+                break;
+            }
+            literal.push(c);
+        }
+        out.push(literal);
+    }
+    out
+}
+
+fn command_to_permission(name: &str) -> String {
+    format!("{}{}", ACL_ALLOW_PREFIX, name.replace('_', "-"))
+}
+
+fn permission_to_command(permission: &str) -> Option<String> {
+    permission
+        .strip_prefix(ACL_ALLOW_PREFIX)
+        .map(|rest| rest.replace('-', "_"))
+}
+
+fn build_rs_plugin_sources() -> Vec<String> {
+    let path = manifest_dir().join("build.rs");
+    let text = fs::read_to_string(&path).expect("build.rs is readable");
+    string_literals(&strip_rust_comments(&text))
+        .into_iter()
+        .filter(|literal| {
+            literal.starts_with(BUILD_PLUGIN_SOURCE_PREFIX)
+                && literal.ends_with(BUILD_PLUGIN_SOURCE_SUFFIX)
+        })
+        .collect()
+}
+
+fn plugin_feature_names() -> Vec<String> {
+    let mut names: Vec<String> = plugin_registry_files()
+        .iter()
+        .filter_map(|file| {
+            file.file_stem()
+                .and_then(|stem| stem.to_str())
+                .and_then(|stem| stem.strip_suffix("_plugin"))
+                .map(|name| name.to_string())
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+fn acl_command_names(feature: &str) -> Result<BTreeSet<String>, String> {
+    let path = manifest_dir()
+        .join("gen")
+        .join("schemas")
+        .join("acl-manifests.json");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "{} 不可读（先执行一次构建以生成 ACL）: {}",
+            path.display(),
+            e
+        )
+    });
+    let value: serde_json::Value =
+        serde_json::from_str(&text).expect("acl-manifests.json 是合法 JSON");
+    let permissions = value
+        .get(feature)
+        .and_then(|v| v.get("permissions"))
         .and_then(|v| v.as_object())
-        .expect("commands.json has groups object");
+        .ok_or_else(|| format!("acl-manifests.json 缺少 {} 的 permissions 对象", feature))?;
+
     let mut names = BTreeSet::new();
-    for (group, list) in groups {
-        let list = list
-            .as_array()
-            .unwrap_or_else(|| panic!("commands.json group {} is an array", group));
-        for item in list {
-            let name = item
-                .as_str()
-                .unwrap_or_else(|| panic!("commands.json group {} holds strings", group));
-            assert!(
-                names.insert(name.to_string()),
-                "commands.json 中命令 {} 重复声明",
-                name
-            );
+    for key in permissions.keys() {
+        let Some(command) = permission_to_command(key) else {
+            continue;
+        };
+        names.insert(command);
+    }
+    if names.is_empty() {
+        return Err(format!(
+            "acl-manifests.json 的 {} 未包含任何 {}* 权限",
+            feature, ACL_ALLOW_PREFIX
+        ));
+    }
+    Ok(names)
+}
+
+fn conf_applier_groups() -> Vec<String> {
+    let mut files = vec![src_root().join("cmd").join("mod.rs")];
+    files.extend(plugin_registry_files());
+    let mut groups = Vec::new();
+    for file in files {
+        let text = fs::read_to_string(&file)
+            .unwrap_or_else(|e| panic!("{} is readable: {}", file.display(), e));
+        let cleaned = strip_rust_comments(&text);
+        let mut cursor = 0;
+        while let Some(offset) = cleaned[cursor..].find(CONF_APPLIER_OPEN) {
+            let after = cursor + offset + CONF_APPLIER_OPEN.len();
+            let rest = cleaned[after..].trim_start();
+            cursor = after;
+            let Some(quoted) = rest.strip_prefix('"') else {
+                continue;
+            };
+            let end = quoted.find('"').unwrap_or_else(|| {
+                panic!(
+                    "{} 的 register_conf_applier 分组字面量未闭合",
+                    file.display()
+                )
+            });
+            groups.push(quoted[..end].to_string());
         }
     }
-    names
+    groups
+}
+
+fn config_conf_groups() -> Vec<String> {
+    let path = manifest_dir()
+        .join("crates")
+        .join("assistant-config")
+        .join("src")
+        .join("lib.rs");
+    let text = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{} is readable: {}", path.display(), e));
+    text.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let module = trimmed.strip_prefix("pub mod ")?.strip_suffix(';')?;
+            module
+                .strip_suffix(CONFIG_CONF_MODULE_SUFFIX)
+                .map(|group| group.to_string())
+        })
+        .collect()
 }
 
 fn shorten_paths(text: &str) -> String {
@@ -359,24 +476,39 @@ fn a3_lib_rs_is_assembly_only() {
 }
 
 #[test]
-fn a4_registered_and_declared_sets_match_both_ways() {
-    let registered: BTreeSet<String> = registered_all()
-        .expect("注册表可解析")
+fn a4_plugin_registry_and_acl_grants_match_both_ways() {
+    let mut acl_all = BTreeSet::new();
+    let mut cross_feature = Vec::new();
+    for feature in plugin_feature_names() {
+        let acl = acl_command_names(&feature).unwrap_or_else(|e| panic!("{}", e));
+        let repeated: Vec<String> = acl_all.intersection(&acl).cloned().collect();
+        if !repeated.is_empty() {
+            cross_feature.push(format!("{} 与其它特性重复: {:?}", feature, repeated));
+        }
+        acl_all.extend(acl);
+    }
+
+    let plugin: BTreeSet<String> = plugin_registry_names()
+        .expect("插件注册表可解析")
         .into_iter()
         .collect();
-    let declared = declared_names();
 
-    let missing_declaration: Vec<&String> = registered.difference(&declared).collect();
-    let missing_registration: Vec<&String> = declared.difference(&registered).collect();
+    let missing_grant: Vec<&String> = plugin.difference(&acl_all).collect();
+    let missing_registration: Vec<&String> = acl_all.difference(&plugin).collect();
 
     assert!(
-        missing_declaration.is_empty(),
-        "已注册但未在 commands.json 声明: {:?}",
-        missing_declaration
+        cross_feature.is_empty(),
+        "同一命令被多个插件声明: {:?}",
+        cross_feature
+    );
+    assert!(
+        missing_grant.is_empty(),
+        "已注册但未获得 ACL 授权: {:?}",
+        missing_grant
     );
     assert!(
         missing_registration.is_empty(),
-        "已在 commands.json 声明但未注册: {:?}",
+        "已获得 ACL 授权但未注册: {:?}",
         missing_registration
     );
 }
@@ -393,37 +525,18 @@ fn a5_parser_floor() {
 }
 
 #[test]
-fn a6_three_state_classification_and_stub_signature() {
+fn a6_registration_partition_and_stub_signature() {
     let core = registered_names(&read("ipc.rs")).expect("ipc.rs 注册表可解析");
     let plugin = plugin_registry_names().expect("插件注册表可解析");
-    let declared = declared_names();
 
     let core_set: BTreeSet<&str> = core.iter().map(String::as_str).collect();
     let plugin_set: BTreeSet<&str> = plugin.iter().map(String::as_str).collect();
-    let host_only: BTreeSet<&str> = declared
-        .iter()
-        .filter(|name| !core_set.contains(name.as_str()) && !plugin_set.contains(name.as_str()))
-        .map(String::as_str)
-        .collect();
 
-    let mut stray = Vec::new();
-    for name in &declared {
-        let hits = [
-            core_set.contains(name.as_str()),
-            plugin_set.contains(name.as_str()),
-            host_only.contains(name.as_str()),
-        ]
-        .into_iter()
-        .filter(|hit| *hit)
-        .count();
-        if hits != 1 {
-            stray.push(format!("{} (命中 {} 态)", name, hits));
-        }
-    }
+    let overlap: Vec<&&str> = core_set.intersection(&plugin_set).collect();
     assert!(
-        stray.is_empty(),
-        "每条命令必须恰好命中 core / plugin / hostOnly 之一: {:?}",
-        stray
+        overlap.is_empty(),
+        "同一命令不得同时在宿主与插件注册: {:?}",
+        overlap
     );
 
     let stub = normalized_signature(&read("cmd/mod.rs"), "cmd/mod.rs");
@@ -431,5 +544,122 @@ fn a6_three_state_classification_and_stub_signature() {
     assert_eq!(
         stub, real,
         "vault_cleanup_on_exit 的桩与真实现签名归一化后必须一致"
+    );
+}
+
+#[test]
+fn a7_plugin_command_list_matches_build_acl() {
+    assert_eq!(
+        command_to_permission("vault_init"),
+        "allow-vault-init",
+        "命令名到权限标识符的派生规则必须是 allow- + 蛇形转短横线"
+    );
+    assert_eq!(
+        permission_to_command("allow-vault-init").as_deref(),
+        Some("vault_init"),
+        "权限标识符必须能逆向还原为命令名"
+    );
+
+    let features = plugin_feature_names();
+    assert!(
+        !features.is_empty(),
+        "未发现任何 *_plugin.rs，解析器可能已失效"
+    );
+
+    let build_sources = build_rs_plugin_sources();
+    assert!(
+        !build_sources.is_empty(),
+        "build.rs 未引用任何 *_plugin.rs 真源，派生逻辑可能已失效"
+    );
+
+    let mut problems = Vec::new();
+    let mut registered_total = 0usize;
+    for feature in &features {
+        let plugin_file = format!("{}_plugin.rs", feature.replace('-', "_"));
+        let expected_source = format!("{}{}", BUILD_PLUGIN_SOURCE_PREFIX, plugin_file);
+        if !build_sources
+            .iter()
+            .any(|source| source == &expected_source)
+        {
+            problems.push(format!(
+                "{}: build.rs 未引用真源 {}，ACL schema 可能由陈旧副本派生",
+                feature, expected_source
+            ));
+        }
+
+        let registered: BTreeSet<String> = registered_names(&read(&plugin_file))
+            .unwrap_or_else(|e| panic!("{} 注册表可解析: {}", plugin_file, e))
+            .into_iter()
+            .collect();
+        registered_total += registered.len();
+        let acl = acl_command_names(feature).unwrap_or_else(|e| panic!("{}", e));
+
+        for (label, set) in [("注册表", &registered), ("ACL", &acl)] {
+            if set.is_empty() {
+                problems.push(format!("{}: {} 集合为空", feature, label));
+            }
+        }
+
+        let only_left: Vec<&String> = registered.difference(&acl).collect();
+        let only_right: Vec<&String> = acl.difference(&registered).collect();
+        if !only_left.is_empty() {
+            problems.push(format!("{}: 注册表有但 ACL 无 {:?}", feature, only_left));
+        }
+        if !only_right.is_empty() {
+            problems.push(format!("{}: ACL 有但注册表无 {:?}", feature, only_right));
+        }
+    }
+
+    assert!(
+        registered_total >= ACL_PARSER_FLOOR,
+        "插件注册表仅解析到 {} 条命令，低于下限 {}，解析器可能已失效",
+        registered_total,
+        ACL_PARSER_FLOOR
+    );
+    assert!(
+        problems.is_empty(),
+        "插件注册表与 ACL 不一致: {:?}",
+        problems
+    );
+}
+
+#[test]
+fn a8_conf_applier_groups_match_config_structs() {
+    let expected = config_conf_groups();
+    assert!(
+        !expected.is_empty(),
+        "assistant-config 未解析到任何 *_conf 模块，解析器可能已失效"
+    );
+
+    let expected_set: BTreeSet<&str> = expected.iter().map(String::as_str).collect();
+
+    let actual = conf_applier_groups();
+    let actual_set: BTreeSet<&str> = actual.iter().map(String::as_str).collect();
+
+    let mut duplicates = Vec::new();
+    for group in &actual_set {
+        let count = actual.iter().filter(|item| *item == *group).count();
+        if count > 1 {
+            duplicates.push(format!("{} 注册 {} 次", group, count));
+        }
+    }
+
+    let missing_applier: Vec<&&str> = expected_set.difference(&actual_set).collect();
+    let unknown_group: Vec<&&str> = actual_set.difference(&expected_set).collect();
+
+    assert!(
+        duplicates.is_empty(),
+        "conf applier 分组重复注册: {:?}",
+        duplicates
+    );
+    assert!(
+        missing_applier.is_empty(),
+        "assistant-config 有结构体但无对应 applier: {:?}",
+        missing_applier
+    );
+    assert!(
+        unknown_group.is_empty(),
+        "存在无对应 assistant-config 结构体的 applier 分组: {:?}",
+        unknown_group
     );
 }
