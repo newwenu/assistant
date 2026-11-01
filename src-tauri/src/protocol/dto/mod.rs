@@ -354,4 +354,32 @@ mod tests {
         let json = serde_json::to_string(&dto).unwrap();
         assert!(json.contains("beforeTimestamp"), "camelCase: {}", json);
     }
+
+    #[test]
+    fn test_send_chat_message_args_dto_minimal() {
+        let args: SendChatMessageArgsDto =
+            serde_json::from_str(r#"{"content":"x","providerId":"p","modelId":"m"}"#).unwrap();
+        assert!(args.mode_id.is_none());
+        assert!(args.branch_point_message_id.is_none());
+        assert!(args.reasoning_level.is_none());
+    }
+
+    #[test]
+    fn test_send_chat_message_args_dto_missing_required() {
+        let err =
+            serde_json::from_str::<SendChatMessageArgsDto>(r#"{"content":"x","modelId":"m"}"#)
+                .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("missing field"), "{}", msg);
+        assert!(msg.contains("providerId"), "{}", msg);
+    }
+
+    #[test]
+    fn test_send_chat_message_args_dto_unknown_optional_is_ignored() {
+        let args: SendChatMessageArgsDto = serde_json::from_str(
+            r#"{"content":"x","providerId":"p","modelId":"m","branchPointMsgId":"b"}"#,
+        )
+        .unwrap();
+        assert!(args.branch_point_message_id.is_none());
+    }
 }

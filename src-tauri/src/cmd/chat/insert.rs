@@ -16,15 +16,28 @@ pub(crate) struct InsertedMessages {
     pub provider_row: provider_store::ProviderRow,
 }
 
+pub(crate) struct InsertChatInput<'a> {
+    pub conversation_id: &'a str,
+    pub content: &'a str,
+    pub mode_id: Option<&'a str>,
+    pub branch_point_message_id: Option<&'a str>,
+    pub provider_id: &'a str,
+    pub model_id: &'a str,
+}
+
 pub(crate) fn insert_chat_messages(
     conn: &rusqlite::Connection,
-    conversation_id: &str,
-    content: &str,
-    mode_id: Option<&str>,
-    branch_point_message_id: Option<&str>,
-    provider_id: &str,
-    model_id: &str,
+    input: InsertChatInput<'_>,
 ) -> Result<InsertedMessages, String> {
+    let InsertChatInput {
+        conversation_id,
+        content,
+        mode_id,
+        branch_point_message_id,
+        provider_id,
+        model_id,
+    } = input;
+
     if conversations::is_conversation_full(conn, conversation_id)
         .map_err(super::super::translate_storage_error)?
     {

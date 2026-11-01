@@ -177,3 +177,12 @@ export interface ConversationListChangedPayload {
   conversationId: string | null;
   affectedIds?: string[];
 }
+
+export interface SendChatMessageArgs {
+  content: string;
+  modeId?: string | null;
+  branchPointMessageId?: string | null;
+  providerId: string;
+  modelId: string;
+  reasoningLevel?: string | null;
+}

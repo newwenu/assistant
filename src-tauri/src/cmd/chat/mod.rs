@@ -6,7 +6,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use tauri::{command, AppHandle, Manager};
 
 use crate::protocol::events::{emit_orb_only, event_name};
-use crate::protocol::{ChatStreamStartPayloadDto, ChatUserMessageConfirmedPayloadDto};
+use crate::protocol::{
+    ChatStreamStartPayloadDto, ChatUserMessageConfirmedPayloadDto, SendChatMessageArgsDto,
+};
 use assistant_agent::chat_options;
 use assistant_agent::chat_request::{self, ChatRequest};
 use assistant_agent::chat_runtime::{self, resolve_final_tokens, StreamError};
@@ -28,13 +30,17 @@ use stream::{
 pub async fn send_chat_message(
     app: AppHandle,
     conversation_id: String,
-    content: String,
-    mode_id: Option<String>,
-    branch_point_message_id: Option<String>,
-    provider_id: String,
-    model_id: String,
-    reasoning_level: Option<String>,
+    args: SendChatMessageArgsDto,
 ) -> Result<(), String> {
+    let SendChatMessageArgsDto {
+        content,
+        mode_id,
+        branch_point_message_id,
+        provider_id,
+        model_id,
+        reasoning_level,
+    } = args;
+
     let content = validate_and_preprocess(&app, &content, &conversation_id).await?;
 
     let InsertedMessages {
@@ -48,12 +54,14 @@ pub async fn send_chat_message(
         let conn = super::get_db_conn(&state)?;
         insert::insert_chat_messages(
             &conn,
-            &conversation_id,
-            &content,
-            mode_id.as_deref(),
-            branch_point_message_id.as_deref(),
-            &provider_id,
-            &model_id,
+            insert::InsertChatInput {
+                conversation_id: &conversation_id,
+                content: &content,
+                mode_id: mode_id.as_deref(),
+                branch_point_message_id: branch_point_message_id.as_deref(),
+                provider_id: &provider_id,
+                model_id: &model_id,
+            },
         )?
     };
 
@@ -75,16 +83,16 @@ pub async fn send_chat_message(
     )
     .await?;
 
-    spawn_chat_stream(
-        &app,
-        &conversation_id,
-        &assistant_msg_id,
-        user_msg_id.as_deref(),
-        &content,
-        req,
+    spawn_chat_stream(ChatStreamSpawn {
+        app: &app,
+        conversation_id: &conversation_id,
+        assistant_msg_id: &assistant_msg_id,
+        user_msg_id: user_msg_id.as_deref(),
+        content: &content,
+        request: req,
         detail,
         provider_row,
-    )
+    })
 }
 
 async fn validate_and_preprocess(
@@ -108,17 +116,29 @@ async fn validate_and_preprocess(
     Ok(content)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn spawn_chat_stream(
-    app: &AppHandle,
-    conversation_id: &str,
-    assistant_msg_id: &str,
-    user_msg_id: Option<&str>,
-    content: &str,
+struct ChatStreamSpawn<'a> {
+    app: &'a AppHandle,
+    conversation_id: &'a str,
+    assistant_msg_id: &'a str,
+    user_msg_id: Option<&'a str>,
+    content: &'a str,
     request: ChatRequest,
     detail: assistant_storage::conversations::ConversationDetail,
     provider_row: assistant_storage::providers::ProviderRow,
-) -> Result<(), String> {
+}
+
+fn spawn_chat_stream(spawn: ChatStreamSpawn<'_>) -> Result<(), String> {
+    let ChatStreamSpawn {
+        app,
+        conversation_id,
+        assistant_msg_id,
+        user_msg_id,
+        content,
+        request,
+        detail,
+        provider_row,
+    } = spawn;
+
     let ChatRequest {
         chat_messages,
         adapter,

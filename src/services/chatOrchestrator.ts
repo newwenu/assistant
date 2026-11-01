@@ -310,15 +310,14 @@ export function createChatOrchestrator(
           return;
         }
         const reasoningLevel = toReasoningLevel(deps.env.getReasoningChoice());
-        await chatService.sendChatMessage(
-          convId,
+        await chatService.sendChatMessage(convId, {
           content,
           modeId,
-          pendingBranchPoint,
-          selectedProviderId,
-          selectedModelId,
+          branchPointMessageId: pendingBranchPoint,
+          providerId: selectedProviderId,
+          modelId: selectedModelId,
           reasoningLevel,
-        );
+        });
       } catch (e) {
         log.error("sendChatMessage failed", e);
         deps.state.errorStream(

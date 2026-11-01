@@ -3,6 +3,7 @@ import type {
   Conversation,
   ConversationDetail,
   Message,
+  SendChatMessageArgs,
   SiblingInfo,
   TokenUsageSummary,
 } from "../chat/core/chatTypes";
@@ -80,22 +81,8 @@ export const chatService = {
 
   sendChatMessage: (
     conversationId: string,
-    content: string,
-    modeId: string | null | undefined,
-    branchPointMessageId: string | null | undefined,
-    providerId: string,
-    modelId: string,
-    reasoningLevel: string | null = null,
-  ): Promise<void> =>
-    invoke("send_chat_message", {
-      conversationId,
-      content,
-      modeId,
-      branchPointMessageId,
-      providerId,
-      modelId,
-      reasoningLevel,
-    }),
+    args: SendChatMessageArgs,
+  ): Promise<void> => invoke("send_chat_message", { conversationId, args }),
 
   cancelChat: (conversationId: string): Promise<void> =>
     invoke("cancel_chat", { conversationId }),

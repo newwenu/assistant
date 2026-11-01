@@ -167,6 +167,17 @@ fn default_limit() -> i64 {
     50
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendChatMessageArgsDto {
+    pub content: String,
+    pub mode_id: Option<String>,
+    pub branch_point_message_id: Option<String>,
+    pub provider_id: String,
+    pub model_id: String,
+    pub reasoning_level: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TokenUsageDto {
