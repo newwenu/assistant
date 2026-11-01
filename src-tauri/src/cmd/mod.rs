@@ -42,6 +42,10 @@ static CORE_CONF_APPLIERS_SEEDED: std::sync::Once = std::sync::Once::new();
 
 pub(crate) fn register_conf_applier(group: &'static str, applier: ConfApplier) {
     let mut registry = CONF_APPLIERS.lock().unwrap_or_else(|e| e.into_inner());
+    if registry.iter().any(|(existing, _)| *existing == group) {
+        log::error!("conf applier group {} 被重复注册，已忽略后一次", group);
+        return;
+    }
     registry.push((group, applier));
 }
 
