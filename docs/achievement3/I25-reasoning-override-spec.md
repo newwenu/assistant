@@ -1,7 +1,7 @@
 # I25 — 思考深度工具栏覆盖（Agent 模式作为默认）
 
 > 阶段号：I25（I24 之后的下一个活跃阶段；子阶段 S1 / S2 / S3）
-> 状态：S1、S3 已实施并验证（lint / typecheck / vitest / cargo test 全通过）；S3.5 档位单通道重构已落地；S2（会话级落盘）**明确不做**
+> 状态：S1、S3 已实施并验证（lint / typecheck / vitest / cargo test 全通过）；S3.5 档位单通道重构已落地；**A6–A8、C3–C7 手测项已于 2026-11-01 真机实测通过**；S2（会话级落盘）**明确不做**。唯一残留为组件级测试（见 §9）
 > 范围：`src/chat/**`、`src/stores/**`、`src/services/**`、`src/i18n/**`、`src-tauri/src/cmd/chat/**`、`src-tauri/crates/assistant-agent/**`、`src-tauri/crates/assistant-storage/**`
 > 基线口径：本文所有结论以**当前仓库代码**为准，行号为写作时实测值，实施时以符号名为准
 > 一句话：把「思考深度」从「只在设置页改 Agent 模式」变成「聊天工具栏可即时改，Agent 模式值作为默认」
@@ -49,7 +49,7 @@
 | F2.4 | `ChatView` 同时被主窗口与 Orb 面板复用 | `src/orb/OrbPanel.tsx` L294 |
 | F2.5 | 工具栏 chip 样式复用 `orb-mode-chip`（`max-width: 100px`、`height: 28px`） | `src/assets/styles/global.css` L465–L498 |
 
-F2.5 的 `max-width: 100px` 是新增第四个 chip 的直接约束：主窗口尚可，Orb 面板（`chat-view-compact`）需要实测是否换行或挤压。
+F2.5 的 `max-width: 100px` 是新增第四个 chip 的直接约束：主窗口尚可，Orb 面板（`chat-view-compact`）已手测确认不换行、不挤压（2026-11-01，对应 A8）。
 
 ### F3 后端协议已经是 `Option` 三态
 
@@ -676,7 +676,7 @@ S3.4 渲染时再由 `toggle` / `efforts` 组合出选项：
 | `src/services/chatOrchestrator.ts` | `ChatEnvPort` 加方法；`send` 取档位值并 `toReasoningLevel` 兜底 | 中（唯一出口，需跑测试） |
 | `src/services/chatService.ts` | `sendChatMessage` 加 1 个 `reasoningLevel` 参 | 低 |
 | `src/chat/ChatView.tsx` | 插入控件 + 模式切换重置 | 低 |
-| `src/assets/styles/global.css` | `.orb-reasoning-chip` | 低（Orb 窄布局需实测） |
+| `src/assets/styles/global.css` | `.orb-reasoning-chip` | 低（Orb 窄布局已手测通过，2026-11-01） |
 | `src/i18n/locales/{zh-CN,en-US}.json` | 新增 `chat.reasoning_depth`；新增 `settings.agent_mode.field.reasoning_effort.options.*` | 低 |
 | `src/settings/pages/AgentModeSettings.tsx` | 档位选项改由 `REASONING_EFFORTS` 生成，label 走 i18n | 低 |
 | `src-tauri/src/cmd/chat/mod.rs` | 命令加 1 个 `reasoning_level: Option<String>` 参 | 低 |
@@ -732,7 +732,7 @@ S1 实际验证结果（2026-10-31 首轮，2026-11-01 S3.5 重构后复验）�
 | A2 / A3 | 由 `reasoning.test.ts` + `chatOrchestrator.test.ts` 覆盖到「档位值」层，Provider 报文层未单独断言（OpenAI/Anthropic 报文构造属既有测试面，未新增） |
 | A9 | 通过（前端定向 31 条：reasoning 17 + orchestrator 14） |
 | A10 | 通过（assistant-agent `chat_runtime_spec` 46 条） |
-| A6 / A7 / A8 | **未验证**：均为手测项，需在真机跑一遍模式切换、重新生成、Orb 窄栏 |
+| A6 / A7 / A8 | **已手测通过**（2026-11-01 真机）：模式切换后覆盖回到 `inherit`、重新生成 / 重试 / 编辑重发均带当前档位、Orb 窄栏工具栏不溢出。A6 的「组件测试」部分仍未补，见 §9 |
 
 ### S2（明确不做）
 
@@ -744,11 +744,11 @@ S1 实际验证结果（2026-10-31 首轮，2026-11-01 S3.5 重构后复验）�
 |---|---|---|
 | C1 | `catalog_reasoning_levels` 对四类目录声明给出预期结果 | 单测（已通过，S3.1/S3.2） |
 | C2 | `ModelConfigDto` round-trip 含 `reasoningLevels`，camelCase 正确 | 单测（已通过，`test_provider_list_dto_roundtrip`） |
-| C3 | 存量 `models_json`（无 `reasoningLevels` 键）反序列化成功，模型数量不变 | 单测已通过（`test_model_config_dto_accepts_legacy_models_json`）；旧库启动仍待手测 |
-| C4 | 支持 `xhigh`/`max` 的模型在工具栏能选到对应档位 | 手测（`reasoningChoices` 组合已单测） |
-| C5 | 目录只声明 `toggle` 的模型不出现强度档位，只显示开关 | 手测（`toggle=true` / `efforts=[]` → `default/off/on` 已单测） |
-| C6 | 目录外模型显示保守集合 `default + off + low/medium/high` | 手测（`levels=undefined` → 保守集合已单测） |
-| C7 | 已选档位不在新模型集合内时，状态回落 `inherit`、显示回落 `default`，不残留旧值 | 组件内 `useEffect` 重置；单测覆盖集合判定，组件测试待补 |
+| C3 | 存量 `models_json`（无 `reasoningLevels` 键）反序列化成功，模型数量不变 | 单测已通过（`test_model_config_dto_accepts_legacy_models_json`）；**旧库启动已手测通过**（2026-11-01） |
+| C4 | 支持 `xhigh`/`max` 的模型在工具栏能选到对应档位 | **已手测通过**（2026-11-01；`reasoningChoices` 组合已单测） |
+| C5 | 目录只声明 `toggle` 的模型不出现强度档位，只显示开关 | **已手测通过**（2026-11-01；`toggle=true` / `efforts=[]` → `default/off/on` 已单测） |
+| C6 | 目录外模型显示保守集合 `default + off + low/medium/high` | **已手测通过**（2026-11-01；`levels=undefined` → 保守集合已单测） |
+| C7 | 已选档位不在新模型集合内时，状态回落 `inherit`、显示回落 `default`，不残留旧值 | **已手测通过**（2026-11-01）；组件内 `useEffect` 重置 + 单测覆盖集合判定，**组件测试仍未补**（见 §9） |
 | C8 | `cargo test -p assistant-providers --features internal-tests` / `npm run test` 通过 | CI |
 
 ---
@@ -776,7 +776,7 @@ S1 实际验证结果（2026-10-31 首轮，2026-11-01 S3.5 重构后复验）�
 | R4 | `enabled=false` 但仍带 effort | `resolve_reasoning_level()` 的 `off` 分支结构上只产出 `(Some(false), None)`，不可能同时带 effort |
 | R5 | GLM/DeepSeek 归一化让「中」看起来像「高」 | S1 只暴露 `low/medium/high`，与设置页一致；不在 UI 承诺精确强度。S3 放开 `xhigh/max` 后，归一化差异改为由「档位集合按模型生成」吸收（见 3.4） |
 | R6 | 切换会话覆盖丢失，用户以为坏了 | S2 明确不做落盘；Tooltip 明示「本次会话已覆盖」，切会话即回到模式推导值（这是设计而非缺陷） |
-| R7 | Orb 窄布局第四个 chip 挤压 | 新增 `.orb-reasoning-chip` 与 `.orb-mode-chip` 共用同一组尺寸规则（`max-width: 100px`）；实测后可把 label 缩写 |
+| R7 | Orb 窄布局第四个 chip 挤压 | 新增 `.orb-reasoning-chip` 与 `.orb-mode-chip` 共用同一组尺寸规则（`max-width: 100px`）；**已手测（2026-11-01）确认不溢出、不换行**，无需缩写 label |
 | R8 | 未来若重启 S2，迁移非幂等 → 重复加列报错 | 沿用 `pragma_table_info` 判存在再 `ALTER` 的既有模式（当前不涉及） |
 | R9 | 未来若重启 S2，`ConversationRow` 无 `Default`，漏改编译期即报错 | 这是优点：编译器强制覆盖全部构造点（当前不涉及） |
 | R10 | S3.3 只改前端类型 → `models_json` 带新字段，`deny_unknown_fields` + `unwrap_or_default()` 让模型列表变空且无提示 | 四个改动点（DTO / 两处构造 / 前端类型 / 契约测试）同批落地；`reasoning_levels` 必须带 `#[serde(default)]`（见 3.4.5） |
@@ -793,4 +793,16 @@ S1 实际验证结果（2026-10-31 首轮，2026-11-01 S3.5 重构后复验）�
 | N3 | S1 阶段暴露 `max` / `xhigh` 等扩展档位 | 与 Provider 归一化冲突（F7）：通用路径会静默丢弃。S3 改为按模型 `reasoning_options` 生成档位后才放开（见 3.4） |
 | N4 | 覆盖影响历史消息或触发重新生成 | 覆盖只作用于「下一次请求」，不改已生成内容 |
 | N5 | 把思考深度纳入压缩 / 摘要等内部调用 | 内部调用走独立路径，不读会话覆盖 |
-| N6 | **S2 会话级落盘（`conversations` 加列）** | **用户明确不做**。档位是「当前会话的显示态」，切会话 / 重启后回到模式推导值是预期行为；不落盘也避免了迁移与 `ConversationRow` 全构造点改动的风险（R8 / R9） |
+| N6 | **S2 会话级落盘（`conversations` 加列）** | **用户明确不做**。档位是「当前会话的显示态」，切会话 / 重启后回到模式推导值；不落盘也避免了迁移与 `ConversationRow` 全构造点改动的风险（R8 / R9） |
+
+---
+
+## 9. 已知残留（归档时状态）
+
+| # | 项 | 现状 | 处置 |
+|---|---|---|---|
+| U1 | `ReasoningSelector` 组件级测试缺失 | `src/chat/selectors/` 下无 `*.test.tsx`；组件行为（选项裁剪渲染、覆盖写入 `chatStore`、切模型时的 `useEffect` 重置）仅由纯函数单测 + 手测覆盖 | 记为技术债，需要时补 `ReasoningSelector.test.tsx`；A6 / C7 的「组件测试」判定因此降级为「手测通过」 |
+| U2 | Provider 报文层未单独断言 | A2 / A3 只断言到「档位值」层，OpenAI / Anthropic 的报文构造属既有测试面 | 记录项，不新增断言 |
+| U3 | 手测项无自动化回归 | A6–A8、C3–C7 的结论来自 2026-11-01 真机手测，后续改动无 CI 拦截 | 由 U1 的组件测试部分覆盖；其余属交互 / 布局面，依赖手测 |
+
+验证口径说明：上表 U1 是本阶段**唯一**的自动化缺口；其余验收项（A1–A5、A9–A12、C1、C2、C8）均为 CI 单测，S3.5 重构后已复验通过。

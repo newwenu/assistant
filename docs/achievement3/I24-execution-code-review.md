@@ -175,7 +175,7 @@ P2：
 
 ## 8. 善后清单（简易执行版）
 
-图例：`[x]` 已在文档中落地；`[ ]` 待代码改动或待决策。
+图例：`[x]` 已完成（文档落地或代码/断言落地，括号内注明轮次）；`[ ]` 仍开放（技术债，需要时再排期）。
 
 ### 8.1 文档部分（本轮已完成）
 
@@ -195,7 +195,7 @@ P2：
 | 12 | 新增「已知残留与技术债」表（T1–T6） | 规格 §12 | [x] |
 | 13 | 修正证据路径笔误（`ViolationRule` 在 `types/snapshot.ts`） | 本文 §7 | [x] |
 
-### 8.2 代码部分（未实施）
+### 8.2 代码部分（按排期落地）
 
 | # | 动作 | 触发条件 | 状态 |
 |---|---|---|---|
@@ -203,10 +203,10 @@ P2：
 | C1b | 配置收敛（S2 治本）：`build.rs` 从 `vault_plugin.rs` 派生、`default.toml` 改为生成物、删除 `commands.json` | 1–2 天；须在 C1a 之后；方案见 §9 | [x] 已落地（偏差见 §9.6）：③ 未生成 toml，改用 `DefaultPermissionRule::AllowAllCommands` 让框架直接烘焙 `default` 权限集，`permissions/vault/default.toml` 与整个 `permissions/` 目录删除；④ `commands.json` 删除 |
 | C2 | 后端 `conf_side_effects()` group 集合 == `assistant-config` struct 集合 | 当前完全缺失，验收表曾虚报 | [x] 已由 A8 承接：`config_conf_groups()` 解析 `assistant-config/src/lib.rs` 的 `pub mod *_conf`，与 `register_conf_applier("...")` 字面量双向求差，两侧为空集才算通过 |
 | C3 | 删除 `src/features/vault.ts` 死代码（顺带消除同名文件/目录共存） | 无依赖，随时可删 | [x] 已删除；全仓无 `VAULT_ENABLED` 消费点，同名文件/目录共存的过渡形态一并消除 |
-| C4 | 空分类静默剪枝：改代码抛错 或 改文档承认剪枝 | **需决策**，两者互斥 | [ ] |
+| C4 | 空分类静默剪枝：改代码抛错 或 改文档承认剪枝 | **需决策**，两者互斥 | [x] 已定档（v2.8）：选择「改文档承认剪枝」——空分类不进快照是有意行为，原「无页面 → 抛错」目标撤销；理由（分步开发的中间态必然违规、后果仅为设置页少一个分组标题）见规格 §3.6「页面分类」行 |
 | C5 | 后端 `register_conf_applier()` 重复 group 检测 | 出现同 group 双注册场景前可暂缓 | [x] 已由 A8 承接：同一 group 注册多次即报 `conf applier 分组重复注册` |
 | C6 | `after` 锚点 / page 归属推导 / `__settingsSnapshotMeta` | 当前无用例，按需排期 | [ ] |
-| C7 | 前端「槽位键集合 == `getConfGroups()`」断言替换为有鉴别力的形式 | 当前同义反复，可与 C2 同批处理 | [ ] |
+| C7 | 前端「槽位键集合 == `getConfGroups()`」断言替换为有鉴别力的形式 | 当前同义反复，可与 C2 同批处理 | [x] 已由 `src/settings/__tests__/confSlotContract.test.ts` 承接：内置槽位 / 特性槽位 / 全局唯一性三条断言均解析真实 Rust 注册表（`src/test-utils/rustCommands.ts`），不再是同一 `Map` 的两个读法；全仓已无 `getConfGroups()` 同义反复用例 |
 
 ---
 

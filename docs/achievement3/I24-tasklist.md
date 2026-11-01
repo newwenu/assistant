@@ -240,7 +240,7 @@ S3 三条实测：
   - 禁区实测零命中：`src/settings/**`、`src/features/{types,aggregate,nav}.ts`、`src-tauri/src/{ipc,setup,menu,window,lifecycle}.rs` 全部 CLEAN
   - 后端 `#[cfg(feature)]` 分布实测（F2 后）：`probe_plugin.rs` 10（含 1 行 `not` 分支）、`vault_plugin.rs` 2、`cmd/mod.rs` 3（vault 3 + probe 0），其余文件 0
 - [x] P.4 删 `_probe`，「新增特性改动 core 文件数 = 0」写成 CI 断言
-  - 口径已修订为「core 逻辑零改动」而非「文件零改动」：断言校验「除 10 条装配点 + 2 处本体外无改动」，并显式声明禁区目录；F2 已完成（`cmd/mod.rs` 的 conf applier cfg 已归零），装配点降为 10（后端 5 + ACL 2 + 前端 3）
+  - 口径已修订为「core 逻辑零改动」而非「文件零改动」：断言校验「除 10 条装配点 + 2 处本体外无改动」，并显式声明禁区目录；F2 已完成（`cmd/mod.rs` 的 conf applier cfg 已归零），装配点降为 10（后端 5 + ACL 2 + 前端 3）；v2.7 配置收敛后进一步降为 **8**（后端 4 / ACL 1 / 前端 3，见 spec §10.1）
   - 删除清单已执行（删除前备份至 `temp-backup/probe-removed/`）：`src/features/_probe/**`（含 `ProbePage.tsx` 的「调试导航」面板，该面板为 E3.7 手测临时提供，用于绕过侧栏直接跳 `/settings/vault` 等未注册路由）、`src-tauri/src/probe_plugin.rs`、`src-tauri/permissions/probe/`（含删文件后残留的空目录）、`commands.json` 的 `groups.probe`、`capabilities/default.json` 的 `probe:default`、`Cargo.toml` 的 `probe` 特性与 default 集合条目、`config/features.json` 与 `vite-env.d.ts` 的 `probe` 条目、`registry.ts` 的 `__PROBE_ENABLED__` 分支、`lib.rs` / `plugins.rs` / `build.rs` 的探针装配行
   - 前端测试收敛：`featureModuleRefs.test.ts` 改为仅遍历 `vaultModule`；原「探针覆盖八类槽位」改为合成模块 `FULL_SLOT_MODULE`（八类槽位齐全且自身引用自洽，同样过 `checkModule()`），「故意写错的引用会被逐条报出」反例用例保留
   - 新增 CI 断言 `src/features/__tests__/coreBoundary.test.ts`（3 条，全绿）：
@@ -249,7 +249,7 @@ S3 三条实测：
     - **足迹冻结**：扫描 `src/settings` + `src/features` + `src-tauri/src`（排除测试产物、特性本体、10 条装配点），特性名出现的 core 文件集合须与白名单逐字相等；新增特性无白名单条目 → 期望 `[]`，即「改动 core 文件数 = 0」
   - vault 白名单实测 7 个 core 文件（历史存量，新特性不可触碰）：`cmd/config.rs`（`get_vault_conf` 核心命令）、`cmd/mod.rs`（`vault_cleanup_on_exit` 三态桩）、`ipc.rs`、`lifecycle.rs`、`protocol/dto/config.rs`、`protocol/events.rs`、`setup.rs`；新特性白名单为空
   - 全量校验：`npm run typecheck` / `npm run lint` / `npx vitest run`（18 files / 242 tests）/ `cargo test`（lib 15 + assembly_contract 6 + protocol_contract 9）全绿
-  - 遗留：§10.2 的 F5（`build.rs` / `commands.json` / `permissions` 三方命令名求交）仍待补，本次断言只覆盖「装配点存在 + 集合相等」，不覆盖逐命令 ACL 对齐
+  - ~~遗留：§10.2 的 F5（`build.rs` / `commands.json` / `permissions` 三方命令名求交）仍待补，本次断言只覆盖「装配点存在 + 集合相等」，不覆盖逐命令 ACL 对齐~~ **已关闭（v2.7）**：A7 覆盖「插件注册表 ↔ 构建期 ACL」逐命令求交 + 派生规则正反向用例；`commands.json` 与 `permissions/` 已删除，三方求交退化为单点求交。详见 spec §11.2 与审查记录 §9.6
 
 ## 待决项
 
@@ -354,3 +354,20 @@ F1–F5 见 `docs/store/I24-feature-extension-spec.md` §10.2。其中 F2 已在
 - 审查记录 C1 拆为 `C1a`（S1）与 `C1b`（S2），两者状态均保持 `[ ]`；
 - 规格 §10.2 F5、§12 T4 的处置口径同步改为「配置收敛」；
 - 明确 S2 开工前必须确认的两点：生成物落盘位置（`OUT_DIR` 还是入库）、派生逻辑是否按多特性通用化。
+
+---
+
+## 阶段收尾：配置收敛实施（v2.7，代码已落地）
+
+依据 `docs/store/I24-feature-extension-spec.md` §11.2 与 `docs/store/I24-execution-code-review.md` §9.6，S1 + S2 全部落地：
+
+- 命令清单收敛为「**1 份手写真源 + 0 份手写副本**」：`build.rs` 的 `plugin_commands()` 从 `vault_plugin.rs` 的 `generate_handler![` 块派生（补 `cargo:rerun-if-changed`，空集合直接 panic）；`permissions/vault/default.toml` 与整个 `permissions/` 目录删除，改由 `DefaultPermissionRule::AllowAllCommands` 烘焙 `default` 权限集；`commands.json` 删除；
+- `assembly_contract.rs` 扩为 **A1–A8**（A4 / A6 重写，A7 逐命令求交 + 派生规则正反向用例 + `ACL_PARSER_FLOOR = 60`，A8 conf applier 闭合 + 重复注册检测）；
+- 前端新增 `src/test-utils/rustCommands.ts` 统一解析 Rust 注册表，`commandNames.test.ts` / `confSlotContract.test.ts` / `coreBoundary.test.ts` 共用同一份实现；
+- `coreBoundary.test.ts` 装配点由 10 条降为 **8 条**（后端 4 / ACL 1 / 前端 3）；
+- 验收：A1–A8 全绿 + 前端 9 条命令/边界/配置槽位用例全绿；反证（临时删 `vault_init` 条目后断言立即报缺失）已执行；`tsc --noEmit` / `eslint` / `prettier` / `cargo fmt` 通过。
+
+## 归档前标记关闭（v2.8，仅文档）
+
+- 关闭 `C4`（空分类剪枝定档为「承认剪枝」）、`C7`（前端槽位断言替换为有鉴别力的形式）、`T1` / `T2`（`src/features/vault.ts` 已删除）、`T5`、`F5`（已由 A7 覆盖）；
+- 仍开放：`C6` / `T6`（`__settingsSnapshotMeta` / `after` 锚点 / page 归属推导），登记为技术债，需要时再排期。

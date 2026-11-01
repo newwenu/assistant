@@ -1,7 +1,7 @@
 # I24 — 特性扩展通道通用化（Feature Extension v2）
 
 > 阶段号：I24（I23 之后的下一个活跃阶段；子阶段 E0–E8，按第 5 章依赖顺序执行）
-> 状态：设计稿 v2.6，**E0–E8 与 P.1–P.4 已全部实施**（2026-10-31）。探针 `_probe` 已删除，其验证能力改由 CI 断言 `src/features/__tests__/coreBoundary.test.ts` 承担。逐项状态见下方「实施状态」
+> 状态：设计稿 v2.8，**E0–E8 与 P.1–P.4 已全部实施**（2026-10-31）。探针 `_probe` 已删除，其验证能力改由 CI 断言 `src/features/__tests__/coreBoundary.test.ts` 承担。逐项状态见下方「实施状态」
 > 前置文档：`docs/store/vault-optional-build.md`（后端 L1 与前端 L2.5 已在代码中落地）
 > 基线口径：本文所有结论以**当前仓库代码**为准，不引用文档中的旧描述
 > 工作流说明：本文含两条**可独立评审、独立落地**的工作流——前端扩展面（3.1–3.7 + E0–E5 + E8）与后端装配（3.8 + E6–E7，含 E6a 的 ACL spike）。若要拆成两份文档，以 3.8 为界；两者之间只有 3.2 的 IPC 命名空间一处耦合（见 3.2.1）
@@ -12,6 +12,7 @@
 > v2.5 修订（2026-10-31，**仅文档善后**，不改代码）：①首部补「实施状态」表与 §11「安全取舍登记」，消除「首部写未实施、§10 写已完成」的时间错位；②§6.3 标注为历史施工图（探针已删，勿再创建）；③回写可计数口径——core 命令 62 / vault 66 / 合计 128、A5 下限 120（余量 8）、A2 改为「按特性名分组，vault ≤ 6，非 vault 暂无上限」、A3 门禁 40 行对应实测 25 行；④统一命名——`conf` → `confs`、`FeatureConfSlot` → `ConfSlot`、`CONF_SIDE_EFFECTS` → `CONF_APPLIERS`、`VAULT_CONF_SLOT` → `vaultConfSlot`；⑤对「文档有、代码无」的 6 条逐条标注 `TODO(未实现)`，不再以「已具备」语气存在；⑥§9 边际成本改为实测 10 个装配点（后端 5 / 前端 3 / ACL 2）；⑦§10.1 装配点三处互斥口径（4–5 / 11 / 10）统一为 10 + 本体 2；⑧新增 §12「已知残留与技术债」表；⑨对应善后清单登记在 `docs/store/I24-execution-code-review.md` §8（文档项 `[x]`、代码项 `[ ]`）
 > v2.6 修订（2026-10-31，**策略调整，仅文档**）：①§11.2 由「4 份副本登记」改为「配置收敛策略」——先判定 4 处各自的必然性（1 处宏硬约束 / 1 处本项目自建测试夹具 / 2 处可由构建期生成），再给出 S1 止血（逐命令求交断言）+ S2 治本（收敛为「1 份手写真源 + 2 份生成物 + 0 份冗余」）两步方案与风险回退；②§10.2 F5、§12 T4 的处置口径由「补求交断言」同步改为「配置收敛」；③执行步骤拆解登记在 `docs/store/I24-execution-code-review.md` §9；④本轮仍不改代码，代码侧 `C1a` / `C1b` 状态保持 `[ ]`
 > v2.7 修订（2026-11-01，**配置收敛已实施**）：①S1 + S2 全部落地，命令清单最终为「**1 份手写真源 + 0 份手写副本**」——`build.rs` 从 `vault_plugin.rs` 派生命令名，`permissions/vault/default.toml` 不再手写（改由 `DefaultPermissionRule::AllowAllCommands` 在构建期烘焙 `default` 权限集，该文件与整个 `permissions/` 目录删除），`commands.json` 删除；②`assembly_contract.rs` 由 A1–A6 扩为 **A1–A8**（A4/A6 重写、A7 逐命令求交、A8 conf applier 闭合 + 重复检测）；③前端新增 `src/test-utils/rustCommands.ts` 统一解析 Rust 注册表，三个测试文件不再各自实现；④装配点由 10 条降为 **8 条**；⑤实施偏差与反证记录在 `docs/store/I24-execution-code-review.md` §9.6
+> v2.8 修订（2026-11-01，**归档前标记关闭，仅文档**）：①关闭 §12 的 T1 / T2（`src/features/vault.ts` 已删除、同名文件与目录共存消失）与 T5（空分类静默剪枝定档为「承认剪枝」，§3.6「页面分类」行同步改写）；②关闭 §6.2 / §9 中「前端槽位断言是同义反复」的 `TODO(未实现)`（已由 `src/settings/__tests__/confSlotContract.test.ts` 替换为有鉴别力的形式）；③装配点口径统一为 v2.7 的 8 条；④剩余未实现项收敛为 §12 T6 三项（`__settingsSnapshotMeta` / `after` 锚点 / page 归属推导），登记为技术债，需要时再排期
 
 ## 实施状态
 
@@ -30,6 +31,7 @@
 | P.1–P.3 探针演练 | 已完成 | 八类槽位全覆盖（route / sidebar / category / page / section / field / conf / ipc）；运行时 ACL 冒烟通过 |
 | P.4 删探针 + CI 断言 | 已完成 | `_probe/**`、`probe_plugin.rs`、`permissions/probe/` 已删除；`src/features/__tests__/coreBoundary.test.ts` 断言「新增特性改动 core 文件数 = 0」 |
 | C1a + C1b 配置收敛 | 已完成（v2.7） | 命令清单回到「1 份手写真源 + 0 份手写副本」：`build.rs` 从 `vault_plugin.rs` 派生、`AllowAllCommands` 烘焙 `default` 权限集、`commands.json` 与 `permissions/` 删除；装配点 10 → 8，见 §11.2 |
+| C4 / T5 空分类剪枝 | 已定档（v2.8） | 空分类不进快照是**有意行为**，原「无页面 → 抛错」目标撤销；见 §3.6「页面分类」行与 §12 T5 |
 
 > 阅读提示：§1「现状事实」与 §2「基线」保留的是**实施前**的代码快照（C1–C9 硬编码点、`lib.rs` 280 行等），用于说明改造动因；当前实际状态以本表与 §10 为准。
 
@@ -532,7 +534,7 @@ for (const slot of slots) {
 | 侧栏 key 与归属 | 缺省取 `routes[0].path`，侧栏与页面被隐式锁成 1:1 | `sidebar.key` **必填且全局唯一**（自证标识，与 route path 解耦）；页面用 `navParent` 反向声明归属，多页可共享一个侧栏条目；`selectedKeys` 由「当前 route → page → `navParent`」推导，无隐式规则 |
 | 可见性 | 当前无可见性字段（`SettingsPageDefinition` 只有 `id` / `categoryId` / `label` / `keywords` / `icon` / `order` / `load`；v2.4 复核无 `navOnly`） | 新增两个正交字段：`emptyPage`（无 section 是否合法）+ `visibility: "sidebar" \| "deepLinkOnly"`（缺省 `sidebar`，v2.3 从三值收敛为两值）；`deepLinkOnly` 页面仍参与路由与未找到判定，只是不进侧栏 / 命令面板 |
 | 命令面板匹配词 | 由 label / id / path / category 拼接推导 | `page.keywords` / `route.keywords` 声明式参与（`SettingsPageManifest.keywords` 已存在，`FeatureRoute` 补齐同名字段）；不再从 title 反推 |
-| 页面分类 | 分类存在性靠 filter 结果 | **`TODO(未实现)`**：分类必须被声明；声明了但无页面 → 构建期抛错。**当前实现仍是静默剪枝**（`snapshot.ts` 的 `.filter((category) => category.pages.length > 0)`），与本行目标及 3.5「不做静默剪枝」的自我承诺相反 |
+| 页面分类 | 分类由 `pages.filter(p => p.categoryId === id)` 生成 | **已定档（v2.8）：承认静默剪枝**——分类必须被声明；声明了但无页面时，该分类不进快照（`snapshot.ts` 的 `.filter((category) => category.pages.length > 0)`）。原目标「无页面 → 构建期抛错」**撤销**：分步开发（先声明分类、后挂页面）会让中间态必然违规，抛错把正常工序变成红灯；空分类的可见后果仅为设置页少一个分组标题，且 `page.categoryId` 指向空分类仍会被 §3.5 第一条拦下。代价：声明分类后忘挂页面不会报错，只能靠 review |
 
 **为什么放弃「`sidebar.key` 必须等于某条 route path」**（v2.2 改动）：这条约束把「侧栏条目 ↔ 页面」锁成 1:1，一旦某个特性需要「一个侧栏入口 + 多个子页面（tab / 深链）」，就只能新增侧栏条目或伪造 route，两者都会污染导航。参考项目（openhuman）的做法是侧栏条目持有独立 `id`、页面用 `navParent` 指回条目，导航顺序与路由路径因此完全解耦——这与本文「单一事实源」的目标一致，且校验规则更少（只需两条：`navParent` 命中、`key` 被引用）。
 
@@ -1023,7 +1025,7 @@ v2.2 追加两类「注册表被绕过」的回归测试（这类缺陷比声明
 
 | 类 | 断言 | 失败形态 |
 |---|---|---|
-| 注册表闭合 | **`TODO(未实现)`**：后端 `conf_side_effects()` 的 group 集合 == `assistant-config` 中存在的 struct 集合——**当前无该测试**，验收表不得按「已有」计为通过。前端那条（`registerConfSlot` 键集合 == `getConfGroups()`）已存在但**是同义反复**：二者读同一 `Map`，断言恒真、无鉴别力 | 新 group 注册后不被遍历 / 配置页不出现，但无报错 |
+| 注册表闭合 | **已完成（v2.7）**：后端由 `assembly_contract.rs` A8 承接——`register_conf_applier("<group>", ...)` 字面量集合与 `assistant-config` 的 `pub mod *_conf` 双向求差，同一 group 重复注册即失败；前端原「`registerConfSlot` 键集合 == `getConfGroups()`」的同义反复已替换为 `src/settings/__tests__/confSlotContract.test.ts`（内置槽位 / 特性槽位 / 全局唯一性三条，解析真实 Rust 注册表） | 新 group 注册后不被遍历 / 配置页不出现，但无报错 |
 | 命令名一致 | `vault.service.ts` 内 `invoke("...")` 字面量集合 == `vault_plugin.rs` 注册集合（双向差集）。**局限**：只比对字面量 invoke，不覆盖经 `featureCommand()` 拼接后的动态名，因此对 `plugin:` 前缀错拼无拦截力 | 前端拼错命令名，只在用户操作时报 command not found |
 
 ### 6.3 扩展面演练（E8 收尾的硬门槛）
@@ -1095,7 +1097,7 @@ v2.2 追加两类「注册表被绕过」的回归测试（这类缺陷比声明
 | 资产内聚 | `src/settings/**` 无 `@/vault` 引用 |
 | 装配可计数 | `lib.rs` ≤ 40 行；注册表内 `#[cfg]` = 0；全后端 `#[cfg(feature = "vault")]` ≤ 8（本阶段）/ ≤ 6（进阶），且仅在 `vault_plugin.rs` / `cmd/mod.rs`（3.8.5 断言） |
 | 可选性表达 | 新增可选特性的边际成本 = **实测 8 个装配点**（后端 4 / 前端 3 / ACL 1，见 §10.1；v2.7 配置收敛后由 10 降为 8），本体只占 `features/<name>/**` + `<name>_plugin.rs`。P.4 已固化为 CI 断言 `src/features/__tests__/coreBoundary.test.ts`（装配点齐备 / 双向一致 / 足迹冻结） |
-| 注册表自证 | `assembly_contract.rs` A4 注册表 ↔ 构建期 ACL 双向差集为空、A5 解析器下限成立、A6 宿主/插件注册分区互斥 + 桩签名同形、A7 逐命令求交与派生规则自证、A8 conf applier 分组闭合（`assistant-config` struct 集合）且无重复注册。**`TODO(未实现)`**：前端「槽位键集合 == `getConfGroups()`」为同义反复（6.2），不计入有效验收 |
+| 注册表自证 | `assembly_contract.rs` A4 注册表 ↔ 构建期 ACL 双向差集为空、A5 解析器下限成立、A6 宿主/插件注册分区互斥 + 桩签名同形、A7 逐命令求交与派生规则自证、A8 conf applier 分组闭合（`assistant-config` struct 集合）且无重复注册。前端槽位契约由 `src/settings/__tests__/confSlotContract.test.ts` 承接（v2.7 已替换原同义反复形式，见 6.2） |
 | 命令名一致 | 前端 `invoke` 字面量集合 == 后端注册集合（双向差集，6.2） |
 | 侧栏模型 | 无「`sidebar.key` 必须等于 route path」约束；`navParent` 命中或回落可推导；`deepLinkOnly` 页面不进侧栏与命令面板（E5） |
 
@@ -1230,9 +1232,9 @@ S2 完成后 S1 的求交断言可降级为「生成物与真源一致」的单�
 
 | # | 项 | 现状 | 处置 |
 |---|---|---|---|
-| T1 | `src/features/vault.ts` 死代码 | 仅一行 `export const VAULT_ENABLED: boolean = __VAULT_ENABLED__;`，全仓无 import；`features/registry.ts` 已直接消费 `__VAULT_ENABLED__` 并 `import("./vault/module")` | 待清理；清理时同步删除 §10.1 迁移表里「`features/registry.ts` 消费 `VAULT_ENABLED`」的旧表述 |
-| T2 | 同名文件与目录共存 | `src/features/vault.ts` 与 `src/features/vault/` 同名，模块解析靠后缀优先级区分 | 随 T1 一并消除 |
+| T1 | ~~`src/features/vault.ts` 死代码~~ | **已关闭（v2.8）**：文件已删除，全仓无 `VAULT_ENABLED` 消费点（`features/registry.ts` 直接消费 `__VAULT_ENABLED__` 并 `import("./vault/module")`） | 已清理（原审查记录 C3） |
+| T2 | ~~同名文件与目录共存~~ | **已关闭（v2.8）**：随 T1 一并消除，`src/features/` 下不再有同名文件与目录的解析歧义 | 已清理 |
 | T3 | ~~后端注册表闭合断言缺失~~ | **v2.7 已关闭**：A8 断言 `register_conf_applier` group 集合 == `assistant-config` 的 `pub mod *_conf` 集合，且无重复注册 | 已落地，见 §6.2 / §11.3 的 v2.7 补充 |
 | T4 | ~~命令清单 4 处副本、逐命令求交缺失~~ | **v2.7 已关闭**：副本 4 → 1，`commands.json` 与 `permissions/` 删除，`default` 权限集由 `build.rs` 烘焙；逐命令求交由 A7 覆盖 | 已落地，实施结果见 `docs/store/I24-execution-code-review.md` §9.6 |
-| T5 | 空分类静默剪枝 | 见 §3.6「页面分类」行 | 二选一：改代码抛错，或改文档承认剪枝 |
+| T5 | ~~空分类静默剪枝~~ | **已关闭（v2.8）**：选择「改文档承认剪枝」，空分类不进快照是**有意行为**；原「无页面 → 抛错」目标撤销，理由见 §3.6「页面分类」行 | 已定档，不再排期 |
 | T6 | `after` 锚点 / 归属推导 / `__settingsSnapshotMeta` 未实现 | 见 §3.6 / §3.5 / R2 的 `TODO(未实现)` | 需要时再排期，当前不影响扩展面 |
