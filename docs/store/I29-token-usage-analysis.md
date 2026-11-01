@@ -1,7 +1,7 @@
 # Token Usage 语义分析
 
 > 只回答三件事：现状哪里失真、为什么失真、代码落在哪。
-> 术语定义与计算式不在本文展开，一律引用 `docs/store/token-usage-semantics.md`；契约与展示见 `docs/store/token-usage-ui-spec.md`。
+> 术语定义与计算式不在本文展开，一律引用 `docs/store/I29-token-usage-semantics-spec.md`；契约与展示见 `docs/store/I29-token-usage-ui-spec.md`。
 > 不含实施方案、改造步骤与优先级排期。
 
 ---
@@ -16,7 +16,7 @@
 
 ## 1 术语：九个量的索引
 
-完整定义、四维坐标与反义见 `token-usage-semantics.md` §1。本节只保留与本仓库代码落点的对应关系，避免两份文档重复定义。
+完整定义、四维坐标与反义见 `I29-token-usage-semantics-spec.md` §1。本节只保留与本仓库代码落点的对应关系，避免两份文档重复定义。
 
 前六个是彼此独立的口径，后三个是「已包含在别的量里」的子集量，不能与前者相加。
 
@@ -34,24 +34,25 @@
 
 ### 1.1 三个口径的区分与本仓库现状
 
-窗口（分母，模型属性）、占用（分子，能否继续塞）、累计（账单，与窗口无关）三者必须在 UI 分开呈现。定义见 `token-usage-semantics.md` §1 的坐标表，各量「不是什么」见该文档 §1.1。
+窗口（分母，模型属性）、占用（分子，能否继续塞）、累计（账单，与窗口无关）三者必须在 UI 分开呈现。定义见 `I29-token-usage-semantics-spec.md` §1 的坐标表，各量「不是什么」见该文档 §1.1。
 
 本仓库现状是三者只落在一个字段：`contextUsage.usedTokens` 同时承载「本次 prompt」与「会话累计」（见 §5 A1）。
 
 ### 1.2 中文短语的三重歧义
 
-「上下文窗口总 token 花费」在不同语境下指窗口 / 占用 / 累计三者之一，量级相差一个数量级。判别方式与数值对照见 `token-usage-semantics.md` §1.2。
+「上下文窗口总 token 花费」在不同语境下指窗口 / 占用 / 累计三者之一，量级相差一个数量级。判别方式与数值对照见 `I29-token-usage-semantics-spec.md` §1.2。
 
 对代码的直接后果：凡以该短语命名的字段或文案，都无法从名字判断它属于哪个口径，必须回查写入点。
 
 ### 1.3 `context_window_tokens` 不是 provider 返回值
 
-`TokenUsage.context_window_tokens` 由本地 `ChatOptions.context_window_tokens` 注入（`build_chat_request` 从模型配置解析），provider 响应里没有该字段。它是本地账务字段，缺省值 `128_000` 在前端 6 处、后端 4 处各自独立硬编码：
+`TokenUsage.context_window_tokens` 由本地 `ChatOptions.context_window_tokens` 注入（`build_chat_request` 从模型配置解析），provider 响应里没有该字段。它是本地账务字段，缺省值 `128_000` 在前端 6 处、后端 3 处（另 1 处仅在测试夹具内）各自独立硬编码：
 
 | 侧 | 位置 |
 | --- | --- |
 | 前端 6 处 | `stores/chatStorePorts.ts`（3 处）、`stores/chatStore.ts`、`stores/chatConversationSlice.ts`、`services/chatOrchestrator.ts` |
-| 后端 4 处 | `cmd/conversation_utils.rs`、`assistant-storage/src/agent_modes.rs`、`assistant-providers/src/types/config.rs`、`assistant-providers/src/model_catalog.rs` |
+| 后端 3 处 | `cmd/conversation_utils.rs`、`assistant-storage/src/agent_modes.rs`、`assistant-providers/src/model_catalog.rs` |
+| 后端 1 处（测试内） | `assistant-providers/src/types/config.rs` 的取值位于 `#[cfg(test)]` 模块内，不进运行时 |
 
 （`settings/pages/AgentModeSettings.tsx` 的 `max: 128_000` 是滑块上限，非窗口缺省；`protocol/dto/mod.rs` 与各 `tests/` 中的取值是测试夹具，均不计入。）
 
@@ -80,7 +81,7 @@
 
 128k 窗口下：真实占用 7,000（5.5%），累计 20,000。轮次越多差距越大（平方级），`A / O ≈ n/2`。
 
-注意末列「累计 / 窗口 = 15.6%」是**错误用法会看到的数字**，不是任何合法口径——`A` 与 `W` 之间没有可解释的比值。完整推导与 1/5/10/20 轮的对照表见 `token-usage-semantics.md` §3.2。
+注意末列「累计 / 窗口 = 15.6%」是**错误用法会看到的数字**，不是任何合法口径——`A` 与 `W` 之间没有可解释的比值。完整推导与 1/5/10/20 轮的对照表见 `I29-token-usage-semantics-spec.md` §3.2。
 
 **结论**：`SUM` 作为计费累计是正确的，作为上下文占用是错的。这不是聚合函数写错，而是口径被换掉了。
 
@@ -88,11 +89,11 @@
 
 ## 3 对话里哪些 token 进入上下文
 
-本节说明构成，公式与估算误差的量化见 `token-usage-semantics.md` §3.1、§3.5。
+本节说明构成，公式与估算误差的量化见 `I29-token-usage-semantics-spec.md` §3.1、§3.5。
 
 ### 3.1 组成公式
 
-公式与各项的语义定义见 `token-usage-semantics.md` §3.1。本仓库的差异只有一处：`provider 自身开销`（role 包装、分隔符）完全无法本地复现，因此本地任何求和都必然低于真实 `P`，这也是「占用只能取上报值」的代码依据。逐项的实际进出情况见 §3.2。
+公式与各项的语义定义见 `I29-token-usage-semantics-spec.md` §3.1。本仓库的差异只有一处：`provider 自身开销`（role 包装、分隔符）完全无法本地复现，因此本地任何求和都必然低于真实 `P`，这也是「占用只能取上报值」的代码依据。逐项的实际进出情况见 §3.2。
 
 ### 3.2 逐项清单
 
@@ -135,13 +136,33 @@
 | 会话状态 | `is_full = 1`，输入框禁用 |
 | 摘要复用 | 不进入任何后续 prompt；新建会话也不携带 |
 
-因此压缩前的出站构成 ≈ 压缩后的出站构成：摘要消息虽进入分支，但在组装时被过滤，出站集合与压缩前完全相同，`O` 不变。压缩不是「上下文缩减」，而是「停机 + 存档」——唯一变化的 `is_full = 1` 是停机标记，不是容量变化。
+因此压缩前的出站构成 ≈ 压缩后的出站构成：摘要消息虽进入分支，但在组装时被过滤，出站集合与压缩前完全相同，`O` 不变。压缩的实际效果是「停机 + 存档」——唯一变化的 `is_full = 1` 是停机标记，不是容量变化。`compact_summary` 的用途是存档与展示（`MessageBubble` 渲染成交接摘要样式），不参与出站组装，详见 §3.5。
+
+### 3.5 「停机 + 存档」是当前已接受的行为
+
+I7 的原始设计是「停机 + 存档 + 续接」：`ARCHITECTURE.md` §I7 与 `I7-spec.md` §7.1 都写明「[继续对话] 自动新建对话并将摘要注入首条 user 消息」。**当前交付范围只到「停机 + 存档」**，续接不纳入计划。代码现状：
+
+| 环节 | 设计意图 | 现状 | 位置 |
+| --- | --- | --- | --- |
+| 横幅按钮 | 新建会话 + 注入摘要 | 只建**空会话**，摘要不带 | `chat/compact/CompactBanner.tsx` 的 `handleNewConversation` → `createConversation(providerId, modelId)` |
+| 后端入口 | 建会话时接受初始消息 | `create_conversation` 只有 `provider_id` / `model_id` / `mode_id`；`fork_to_new_conversation` 只复制分支、无注入 | `cmd/conversation.rs` |
+| 摘要消费 | 新会话首条 user 消息 | 只用于**存档与展示**：`MessageBubble` 以 `role === "compact_summary"` 渲染成交接摘要样式，符合 I7-spec「摘要可见」 | `chat/message/MessageBubble.tsx`、`services/chatLifecycleEvents.ts` |
+| 文案键 | `chat.compact.continue_conversation` | 该键不存在，只有 `chat.compact.new_conversation`（「新建对话」） | `i18n/locales/{zh-CN,en-US}.json` |
+
+**`prompt_builder` 过滤 `compact_summary` 是长期设计，不计划改动**：`compact_summary` 不是合法的 provider role，原会话又已 `is_full` 锁定、本就不该再发送，过滤是必要的防御。摘要的正确消费路径是「新会话首条 `user` 消息」，与 `prepare_messages` 的 role 过滤无关——`prepare_messages` 只做三件事（过滤 `compact_summary`、插 system、可选追加 user），对 user 消息一视同仁，**因此即使将来实现续接也无需修改该文件**。
+
+两个语境的差别：
+
+- **原会话**：已锁定、不再发送，`O` 停在压缩前的值。压缩在这里确实不缩减任何东西——这是当前已接受的行为。
+- **续接会话**：出站是「摘要 + 新消息」，历史被摘要替换，`O` 应从续接会话首次请求的 `P` 重新锚定。当前未实现。
+
+在当前范围内只存在第一种语境，`O` 不变成立。
 
 ---
 
 ## 4 Provider 归一化差异如何影响上述语义
 
-各 provider 对「`P` 是否含缓存、`C` 是否含推理、`total` 该取哪个」的语义结论见 `token-usage-semantics.md` §4。本节只记本仓库适配层**实际解析了哪些字段**，作为该文档结论的代码依据。
+各 provider 对「`P` 是否含缓存、`C` 是否含推理、`total` 该取哪个」的语义结论见 `I29-token-usage-semantics-spec.md` §4。本节只记本仓库适配层**实际解析了哪些字段**，作为该文档结论的代码依据。
 
 | Provider | 适配层写入 `cache_read_tokens` 的字段 | 适配层写入 `cache_write_tokens` 的字段 | 推理字段 | 适配层 `total_token_count` 来源 |
 | --- | --- | --- | --- | --- |
@@ -150,7 +171,7 @@
 | OpenAI Responses | `input_tokens_details.cached_tokens` | `input_tokens_details.cache_write_tokens` | 未提取，恒 `None` | `usage.total_tokens` |
 | Gemini | `cached_content_token_count` | `cache_creation_token_count`（无 provider 写入路径，恒 `None`） | `thoughts_token_count` 已并入 `candidates_token_count`，单列值上报 | `usage.total_token_count` |
 
-跨 provider 统一不变量（`cacheRead ⊆ prompt`、`cacheWrite ⊆ prompt`、`reasoning ⊆ completion`、`uncached = prompt - cacheRead - cacheWrite`、`total = prompt + completion`）与推导见 `token-usage-semantics.md` §2.1、§4。
+跨 provider 统一不变量（`cacheRead ⊆ prompt`、`cacheWrite ⊆ prompt`、`reasoning ⊆ completion`、`uncached = prompt - cacheRead - cacheWrite`、`total = prompt + completion`）与推导见 `I29-token-usage-semantics-spec.md` §2.1、§4。
 
 上表的 `total_token_count` 是**适配层**产出的值，到不了持久化层：`chat_runtime` 的累加器自己算 `total = prompt + completion`，provider 返回的 `total_tokens` 被丢弃；`StreamOutcome` 只保留 `total_tokens` 与 `prompt_tokens`，`UnifiedTokenUsage` 的其余字段在运行时就已丢失。
 
@@ -158,7 +179,7 @@
 
 ## 5 现状失真清单
 
-计算层的错误算法另见 `token-usage-semantics.md` §6（M1–M10），本节只记现象与代码根因。编号与 ui-spec 的 P/W/Q/F 映射见 `token-usage-semantics.md` §8.1。
+计算层的错误算法另见 `I29-token-usage-semantics-spec.md` §6（M1–M15），本节只记现象与代码根因。编号与 ui-spec 的 P/W/Q/F 映射见 `I29-token-usage-semantics-spec.md` §8.1。
 
 | 编号 | 现象 | 根因 | 影响 |
 | --- | --- | --- | --- |
@@ -170,17 +191,23 @@
 | A6 | 窗口缺省值 `128_000` 多处硬编码 | 前后端各自 fallback | 未知模型永远显示 128k，压缩阈值也按 128k 算 |
 | A7 | 发送瞬间进度条先归零再跳升 | `beginSend` 重置 `usedTokens: 0` | 视觉抖动，且与「已占用」事实矛盾 |
 | A8 | 切会话时 `maxTokens` 先写 128k 再被覆盖 | `switchConversation` 重置 + 异步 `fetchTokenUsage` | 短暂显示错误分母 |
-| A9 | 压缩不改变出站构成 | 见 §3.4 | 压缩按钮 / 自动压缩给了「能省上下文」的错误预期 |
-| A10 | 7 个 usage 字段只有 1 个被消费 | `ContextBar` 只读 `usedTokens/maxTokens/percentage` | 缓存命中、推理 token 完全不可见 |
+| A9 | 压缩不改变原会话的出站构成，且续接未实现 | 见 §3.4、§3.5 | 压缩按钮 / 自动压缩给了「能省上下文」的错误预期；摘要仅用于存档与展示 |
+| A10 | 7 个 usage 字段只有 3 个被消费 | `ContextBar` 只读 `usedTokens/maxTokens/percentage`；前端实际取值仅 `promptTokens` / `completionTokens` / `contextWindowTokens`，`cacheReadTokens` / `cacheWriteTokens` / `reasoningTokens` 在 `src/` 内无任何读取点（仅类型声明），`TokenUsage.totalTokens` 亦无消费方 | 缓存命中、缓存写入、推理 token 与 provider total 全部不可见 |
 | A11 | 多次 attempt 的 usage 被覆盖而非累加 | 累加器每次 `usage` 直接覆盖 | 失败重试的消耗不计入任何统计 |
 | A12 | 压缩请求自身的消耗完全不记录 | `cmd/compaction.rs` 丢弃 `outcome.total_tokens`，摘要消息写入 `tokens: None` | 一次压缩可能花掉整个窗口的输入 token，账面上为零 |
-| A13 | 窗口未知在类型上无法表达 | `TokenUsage.context_window_tokens` 与 `TokenUsageDto` 同名字段均为 `u32`（`#[serde(default)]` 且无 `skip_serializing_if`），未知只能传 `0` | 「未知」与「窗口是 0」被压成同一个值，违反 `token-usage-semantics.md` §1.3；即使上层已改成 `Option`，序列化边界仍会退回 `0` |
+| A13 | 窗口未知在类型上无法表达 | `TokenUsage.context_window_tokens` 与 `TokenUsageDto` 同名字段均为 `u32`（`#[serde(default)]` 且无 `skip_serializing_if`），未知只能传 `0` | 「未知」与「窗口是 0」被压成同一个值，违反 `I29-token-usage-semantics-spec.md` §1.3；即使上层已改成 `Option`，序列化边界仍会退回 `0` |
+| A14 | 占用锚点不区分分支 | 消息层已按 `active_branch_id` 追踪（`get_conversation_detail` → `trace_active_branch`），但占用锚点取「该会话最新一条 chat 请求」，不区分该请求属于哪条分支 | 切到旧分支后，进度条仍显示被弃用分支的 `P`，与即将发送的历史不一致。（累计值不按分支过滤是正确的：花掉的钱不分分支） |
+| A15 | OpenAI 的推理与缓存写入口径恒为「未上报」 | `openai/types.rs` 的 `ChatUsage` 未建模 `completion_tokens_details`，`openai/stream.rs` 的 `From<ChatUsage>` 里 `reasoning_token_count: None`、`cache_creation_token_count: None` 为硬编码；`prompt_cache_miss_tokens` 虽已反序列化但标 `#[allow(dead_code)]` 未使用 | 推理口径对 OpenAI 永远缺失，Tooltip 恒显示「未上报」；这与「provider 确实没报」无法区分 |
+| A16 | 窗口未知时压缩与降级判定静默失效 | `compaction::should_terminate` 在 `context_window_tokens == 0` 时直接返回 `false`；offload 预算同样依赖该窗口 | 未声明窗口的模型既不自动压缩也不降级，直到 provider 报超窗错误为止——「不判定」被当成「不超限」 |
+| A17 | 超窗错误没有处理路径 | `context_length_exceeded` 仅出现在 `client/error.rs` 的测试夹具里，没有匹配分支与降级动作 | 一旦超窗直接失败，既不提示「先压缩」也不自动重试，用户只能手动操作 |
+| A18 | `is_full` 名为「窗口已满」，实为「已压缩锁定」 | 只由压缩成功路径置 `true`（`cmd/compaction.rs`）、由 `unlock_conversation` 置 `false`，与窗口占用无关 | 字段名易被读成容量状态，而它表达的是「该会话已存档、不再发送」 |
+| A19 | 记录排序无二级键 | 记录表 `created_at` 为毫秒时间戳，占用查询 `ORDER BY created_at DESC LIMIT 1` 在同毫秒内无确定次序（重试的两次请求可能同毫秒） | 「最新一条」可能取到同毫秒内的前一次请求，占用分子抖动 |
 
 ---
 
 ## 6 估算公式的偏差
 
-本仓库三个估算式的定义见 `token-usage-semantics.md` §3.4（E1/E2/E3），误差方向与量级见 §3.5。本节只讨论各参考项目对这条偏差的处理策略差异。
+本仓库三个估算式的定义见 `I29-token-usage-semantics-spec.md` §3.4（E1/E2/E3），误差方向与量级见 §3.5。本节只讨论各参考项目对这条偏差的处理策略差异。
 
 `len / 4` 隐含「4 字节 ≈ 1 token」，对英文近似成立，对中文明显偏低：
 
@@ -189,7 +216,7 @@
 
 纯中文会话的估算值会系统性低估约 30% ~ 50%，用于 offload 预算与「无 usage 时的占用回退」都偏乐观。
 
-各项目采用的估算密度与分母单位汇总在 `token-usage-semantics.md` §3.5 的表；本节只记「策略取向」的差异——修正、规避、还是让偏差进入用户可见的分子。
+各项目采用的估算密度与分母单位汇总在 `I29-token-usage-semantics-spec.md` §3.5 的表；本节只记「策略取向」的差异——修正、规避、还是让偏差进入用户可见的分子。
 
 - **OpenBitFun**（修正）：`util/token_counter.rs` 按字符类别给权重，ASCII 字符 `+0.3` token、非 ASCII 字符 `+0.6` token（英文约 3.3 字符/token、中文约 1.7 字符/token），再加结构开销（每条消息 `+4`、每个 tool_call `+10`、消息数组 `+3`、每个工具定义 `+15`，工具非空再 `+10`）。这是唯一主动给 CJK 加权的实现。
 - **deepseek-harness-orb**（规避）：`token-meter/estimate.ts` 固定 `CHARS_PER_TOKEN = 4`，`projection.ts` 的注释明确承认「the estimator systematically underprices CJK text and JSON schemas」，因此把估算值限定在 `contextBreakdown`（只回答「由什么构成」），占用一律锚定 provider 上报的 `projectedTokens`，两者**不允许相加**。
@@ -202,7 +229,7 @@
 
 ## 7 四个参考项目怎么建模同一件事
 
-四个项目形态不同：OpenBitFun 是 Rust 桌面端，deepseek-harness-orb 是 TS 事件溯源内核，codex 是 Rust CLI，openhuman 是 Rust RPC 服务。它们回答的是同一组问题，但切分方式各不相同。以下逐项目列出真实结构与字段，再与 `token-usage-semantics.md` §1 的九个量对齐。
+四个项目形态不同：OpenBitFun 是 Rust 桌面端，deepseek-harness-orb 是 TS 事件溯源内核，codex 是 Rust CLI，openhuman 是 Rust RPC 服务。它们回答的是同一组问题，但切分方式各不相同。以下逐项目列出真实结构与字段，再与 `I29-token-usage-semantics-spec.md` §1 的九个量对齐。
 
 ### 7.1 OpenBitFun：账单与占用是两套持久化
 
@@ -242,7 +269,7 @@ turn_id / input_tokens / output_tokens / total_tokens / timestamp
 source: ModelRequest | ContextCompression
 ```
 
-关键在 `source` 枚举：占用有两个合法来源，`ModelRequest` 是 provider 上报的请求用量，`ContextCompression` 是压缩后的 `tokens_after`。也就是说**压缩结果会作为新的占用锚点写入同一投影**，而账单侧完全不受影响。本仓库的压缩既不更新占用（§3.4），又把压缩请求的 usage 丢弃（A12）——两侧都没落。
+关键在 `source` 枚举：占用有两个合法来源，`ModelRequest` 是 provider 上报的请求用量，`ContextCompression` 是压缩后的 `tokens_after`。也就是说**压缩结果会作为新的占用锚点写入同一投影**，而账单侧完全不受影响。本仓库的压缩既不更新占用（§3.4、§3.5），又把压缩请求的 usage 丢弃（A12）——两侧都没落。
 
 **压力预算 —— `compression_trigger_budget`**（`agentic/execution/execution_engine.rs`）
 
@@ -364,7 +391,7 @@ UI 侧的选择也一致：`status/card.rs` 取 `info.last_token_usage` 作进�
 
 ### 7.6 窗口未知时怎么处理
 
-`W` 未知（模型配置没填、provider 未声明）时，四家分成两派：**让未知保持未知**（codex、orb）与**必须有个分母**（openhuman、OpenBitFun）。语义分类见 `token-usage-semantics.md` §1.3、取舍理由见 §5.1，本节只记代码路径。
+`W` 未知（模型配置没填、provider 未声明）时，四家分成两派：**让未知保持未知**（codex、orb）与**必须有个分母**（openhuman、OpenBitFun）。语义分类见 `I29-token-usage-semantics-spec.md` §1.3、取舍理由见 §5.1，本节只记代码路径。
 
 | 项目 | 关键代码 | 未知时的实际行为 |
 | --- | --- | --- |
@@ -388,7 +415,7 @@ UI 侧的选择也一致：`status/card.rs` 取 `info.last_token_usage` 作进�
 - system prompt 的单独占用（无法从 prompt 中拆分，只能靠上报总量推断）
 - 单轮 `uncached` 输入与缓存命中的成本差异（只有 token 数，没有计价）
 - 失败 attempt 的消耗（见 A11）
-- 工具定义 token（当前未发送，无需度量；若未来启用需纳入 `token-usage-semantics.md` §3.1 的构成公式）
+- 工具定义 token（当前未发送，无需度量；若未来启用需纳入 `I29-token-usage-semantics-spec.md` §3.1 的构成公式）
 - 输出侧预留（`max_tokens`）与窗口余量关系（offload 未扣除）
 - 窗口的第三方来源：provider `/models` 响应可能带 `context_length` / `context_window`，本仓库未解析，因此「未知窗口」只能靠本地配置补齐（见 §7.6）
 

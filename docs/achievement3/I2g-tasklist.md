@@ -1,7 +1,8 @@
-# I2g — 任务清单
+# I2g — 任务清单（已归档）
 
 > 规格：[I2g-remaining-features-spec.md](./I2g-remaining-features-spec.md)
 > 前置：I2e Phase 1 ✅ + I2f ✅
+> 归档：2026-11-01。主体链路（P0–P5 + 质量审查修复）代码已落地并通过 `cargo fmt` / `check` / 单测 / 前端用例；未执行的联调验收与残留项见文末「归档时状态」。
 > 说明：代码复核后对规格做了两处修正——#4 数据层已落地，仅剩运行时接线；#5 的绝对路径校验仅适用于不可信通道。
 
 ---
@@ -43,7 +44,7 @@
 - [x] P1.3.1 `admit_attachments` 处理 `ContentBlock::File`（file_path / cached_data）
 - [x] P1.3.2 文件数量上限 4、单文件上限 16MB、扩展名白名单
 - [x] P1.3.3 `media_type_to_ext` 扩展 pdf / 文本类 MIME
-- [x] P1.3.4 文件复用内容寻址存储（`save_image` 按 MIME 决定落盘扩展名）
+- [x] P1.3.4 文件复用内容寻址存储（`save_attachment` 按 MIME 决定落盘扩展名）
 
 ## P2 — 能力感知投影（#2 + #8 + #4 运行时）
 
@@ -104,26 +105,12 @@
 - [x] P5.3 卸载文本走 `offloaded_image_text`
 - [x] P5.4 仅作用于出站请求，不修改持久化消息
 
-## 待办（本轮未做）
+## 图片输入格式扩展（安全部分）
 
-- [x] 图片输入格式扩展（安全部分）：
-  - [x] JFIF：扩展名映射为 `image/jpeg`，零依赖
-  - [x] BMP / TIFF：开启 `image` crate 的 `bmp` / `tiff` feature（纯 Rust），准入时解码转 PNG
-  - [x] 前端 MIME 白名单、扩展名映射、`ImageMediaType` 同步扩展
-  - [x] 部分平台不返回 MIME 时回退按扩展名判定
-- [ ] 图片输入格式扩展（重依赖部分）：
-  - [ ] HEIC / HEIF：ISOBMFF 容器 + HEVC 帧，需 libheif（C/C++）或系统 API（Windows WIC / macOS ImageIO），涉及构建链、打包与专利成本
-  - [ ] AVIF：ISOBMFF 容器 + AV1 帧，需额外 AV1 解码器，编译时间与二进制体积明显增加
-- [ ] PDF 降级（不支持 PDF 的模型仍需读取 PDF 内容）：
-  - [ ] 纯文本提取：引入 `lopdf` / `pdf-extract` crate，从 PDF 提取文本层，丢失排版但模型可读
-  - [ ] 图片渲染：调用外部工具（`pdftoppm` / Windows WIC）将 PDF 页转为图片，需 vision 能力
-  - [ ] 混合模式：文本层 + 关键页图片，最完整但复杂度高
-  - [ ] OpenAI message_converter 补充 PDF cached_data 分支（当前忽略 cached_data，即使 rehydrate 成功也走 handle_text 降级）
-- [ ] 长文本文件优化：
-  - [ ] 智能截断：当前硬截断 512KB 字符，改为按 token 预算截断，保留文件头尾（头保留结构/导入，尾保留最新内容）
-  - [ ] 分块摘要：超长文件先由小模型生成摘要，再注入上下文
-  - [ ] 多文件总量控制：当前仅单文件限制，多文件合计可能超 context_window，需在 project 阶段统筹预算
-  - [ ] 流式注入：超大文件不一次性注入消息，改为工具调用按需读取（类似 RAG）
+- [x] JFIF：扩展名映射为 `image/jpeg`，零依赖
+- [x] BMP / TIFF：开启 `image` crate 的 `bmp` / `tiff` feature（纯 Rust），准入时解码转 PNG
+- [x] 前端 MIME 白名单、扩展名映射、`ImageMediaType` 同步扩展
+- [x] 部分平台不返回 MIME 时回退按扩展名判定
 
 ## 已完成（复核确认）
 
@@ -148,11 +135,46 @@
 - [x] 补充：`normalize_image` 用实际字节校验格式，防止伪造 MIME
 - 结论：#1 `resize` 不成立——`DynamicImage::resize` 本身保持宽高比
 
-## 验收
+---
 
-- [ ] V2-1 ~ V2-11（见规格第 11 节，需实际模型联调）
-- [ ] V3-1 ~ V3-4（见规格第 11 节）
-- [x] `cargo fmt` / `cargo check --all-targets`（agent / providers / storage 通过）
-- [x] Rust 单测：`assistant-agent`、`assistant-storage` 全部通过；`assistant-providers` 1 个既有失败（`context_window_known_models`，与本次改动无关）
-- [x] 前端 `tsc` / lint / 181 个单测通过
-- 备注：`assistant-app` 的 `protocol_contract` 测试存在既有编译错误（`cache_read_tokens` / `cache_write_tokens` 期望 `Option<u32>`），与本功能无关
+## 归档时状态（2026-11-01）
+
+### 未执行验收
+
+`V2-1 ~ V2-11`、`V3-1 ~ V3-4`（规格第 11 节）**全部未执行**——均需真实模型联调，代码审查不能替代。其中可脱离模型验证的断言已改为单测覆盖，迁入 `docs/store/I2h-attachment-budget-tasklist.md`：
+
+| 验收 ID | 断言 | 处理 |
+|---------|------|------|
+| V2-3 / V2-5 | 非 PDF 或不支持 PDF 的模型投影为 `file_handle_text` | 迁 I2h，单测覆盖 |
+| V2-10 / V2-11 | 不可信通道拒绝附件 / 拒绝 `..` 与绝对路径 | 迁 I2h，单测覆盖 |
+| V3-1 | 超预算时 ImageBlock 被卸载 | 迁 I2h，单测覆盖 |
+| V2-4 / V2-7 / V2-8 / V2-9 | 原生 PDF 发送、`cached_data` 填充、模态读取与派生 | 保留待联调 |
+| V2-1 / V2-2 / V2-6 / V3-2 / V3-3 / V3-4 | UI 交互与规范化尺寸/质量 | 保留待联调 |
+
+联调前需先确认既有失败基线，避免把历史问题误判为本功能回归：
+
+- `assistant-providers`：`context_window_known_models` 失败
+- `assistant-app`：`protocol_contract` 编译错误（`cache_read_tokens` / `cache_write_tokens` 期望 `Option<u32>`）
+
+### 已迁出为活跃条目
+
+见 [I2h-attachment-budget-tasklist.md](../store/I2h-attachment-budget-tasklist.md)：
+
+- 长文本预算治理：多文件合计预算、按 token 头尾截断、offload 覆盖文本块
+- OpenAI `message_converter` 补 PDF `cached_data` 分支
+- PDF 文本层抽取（准入时抽侧车文件，失败回退 `file_handle_text`）
+
+### 明确不做（含理由）
+
+- **HEIC / HEIF、AVIF**：需 libheif（C/C++）或系统 API（Windows WIC / macOS ImageIO），涉及构建链、打包与专利成本；且前端白名单本就未收录这两种格式，选了也进不来。当前策略是按 magic bytes 识别后提示用户转 JPEG/PNG，而非堆解码器。
+- **PDF 转图片渲染**：依赖外部 `pdftoppm` 或 WIC，且要求模型具备 vision，跨平台与打包成本高；文本抽取已覆盖主要场景（扫描件除外）。
+- **混合模式（文本层 + 关键页图片）**：本质是客户端二次模型预处理，复杂度与收益不匹配。
+
+### 移交其他议题
+
+- **流式注入（按需工具读取，类似 RAG）**：属工具系统架构演进，应并入 I18 工具架构规划，不留在附件链路。
+
+### 已知残留（归档时）
+
+- i18n：`assistant-i18n` 的 `chat.image_offloaded_placeholder` / `file_not_found_placeholder` 等键已添加，但 `assistant-agent` 未引用（降级文本是发给模型的，用户不可见，硬编码英文可接受）。这些键当前为死代码，是否启用待定。
+- 文本文件 token 估算使用 `len() / 4`，对中文（UTF-8 3 字节/字）系统性低估，已并入 I2h 首项。
