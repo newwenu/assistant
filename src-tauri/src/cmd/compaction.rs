@@ -136,7 +136,7 @@ pub(crate) async fn execute_compaction(
         temperature: 0.3,
         max_tokens,
         stream: true,
-        context_window_tokens: 0,
+        context_window_tokens: None,
         reasoning_enabled: None,
         reasoning_effort: None,
     };
@@ -238,9 +238,34 @@ pub(crate) async fn execute_compaction(
 
     chat_tasks.finish(conversation_id);
 
+    let usage_ctx = crate::cmd::token_usage_record::UsageRecordCtx {
+        conv_id: conversation_id,
+        msg_id: &summary_msg_id,
+        attempt_id: &attempt_id,
+        branch_leaf_id: detail.conversation.active_branch_id.as_deref(),
+        kind: "compaction",
+        provider_id: Some(provider_row.id.as_str()),
+        model_id: Some(model.as_str()),
+        cache_capable: crate::cmd::token_usage_record::cache_capable_of(provider_row),
+    };
+
     match result {
         Ok(outcome) => {
             let mut summary = outcome.full_content;
+
+            log::info!(
+                "[compaction-usage] conversation={} prompt={:?} completion={:?} total={:?} estimated={} attempts={}",
+                conversation_id,
+                outcome.prompt_tokens,
+                outcome.completion_tokens,
+                outcome.total_tokens,
+                outcome.estimated,
+                outcome.attempt_usages.len()
+            );
+            let usage_records = crate::cmd::token_usage_record::build_usage_records(
+                &outcome.attempt_usages,
+                &usage_ctx,
+            );
 
             let max_summary_chars =
                 (assistant_config::constant::MAX_SUMMARY_OUTPUT_TOKENS as usize) * 4;
@@ -281,6 +306,10 @@ pub(crate) async fn execute_compaction(
                     compression_count: new_count,
                 };
                 conversations::upsert_compression_state(&tx, &state_row)?;
+
+                for record in &usage_records {
+                    assistant_storage::token_usage::insert_record(&tx, record)?;
+                }
 
                 tx.commit().map_err(|e| e.to_string())?;
             }
@@ -331,7 +360,11 @@ pub(crate) async fn execute_compaction(
             Ok(())
         }
         Err(StreamError::Cancelled(partial)) => {
-            save_compaction_partial(app, &summary_msg_id, &partial);
+            let usage_records = crate::cmd::token_usage_record::build_usage_records(
+                &partial.attempt_usages,
+                &usage_ctx,
+            );
+            save_compaction_partial(app, &summary_msg_id, &partial, &usage_records);
             set_terminating(conversation_id, false);
             emit_orb_only(
                 app,
@@ -350,7 +383,11 @@ pub(crate) async fn execute_compaction(
             Err("Compaction cancelled".to_string())
         }
         Err(StreamError::Provider(e, partial)) => {
-            save_compaction_partial(app, &summary_msg_id, &partial);
+            let usage_records = crate::cmd::token_usage_record::build_usage_records(
+                &partial.attempt_usages,
+                &usage_ctx,
+            );
+            save_compaction_partial(app, &summary_msg_id, &partial, &usage_records);
             set_terminating(conversation_id, false);
             emit_orb_only(
                 app,
@@ -369,7 +406,11 @@ pub(crate) async fn execute_compaction(
             Err(e.to_string())
         }
         Err(StreamError::Timeout(partial)) => {
-            save_compaction_partial(app, &summary_msg_id, &partial);
+            let usage_records = crate::cmd::token_usage_record::build_usage_records(
+                &partial.attempt_usages,
+                &usage_ctx,
+            );
+            save_compaction_partial(app, &summary_msg_id, &partial, &usage_records);
             set_terminating(conversation_id, false);
             emit_orb_only(
                 app,
@@ -390,23 +431,31 @@ pub(crate) async fn execute_compaction(
     }
 }
 
-fn save_compaction_partial(app: &AppHandle, msg_id: &str, partial: &PartialOutcome) {
-    if !partial.has_effective_output {
-        return;
-    }
+fn save_compaction_partial(
+    app: &AppHandle,
+    msg_id: &str,
+    partial: &PartialOutcome,
+    usage_records: &[assistant_storage::token_usage::TokenUsageRecord],
+) {
     let state = app.state::<crate::setup::DbState>();
     let Ok(conn) = super::get_db_conn(&state) else {
         return;
     };
-    let tokens = partial
-        .total_tokens
-        .map(|t| t as i64)
-        .or_else(|| chat_runtime::estimate_tokens(&partial.full_content));
+    // 失败也落 usage：累计口径包含中断请求
+    for record in usage_records {
+        if let Err(e) = assistant_storage::token_usage::insert_record(&conn, record) {
+            log::error!("Failed to save compaction token usage: {}", e);
+        }
+    }
+    if !partial.has_effective_output {
+        return;
+    }
+    // 摘要消息的 tokens 保持 NULL：压缩产出的 usage 只进累计口径，不写估算值
     let _ = conversations::update_message_content(
         &conn,
         msg_id,
         &partial.full_content,
-        tokens,
+        None,
         None,
         None,
     );

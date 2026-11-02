@@ -9,6 +9,7 @@ import type {
   RetryNotification,
 } from "../chat/core/chatTypes";
 import { extractPlainText } from "../chat/core/contentBlockUtils";
+import { contextUsageFromTokenUsage } from "../chat/core/chatUtils";
 import { toReasoningLevel, type ReasoningChoice } from "../chat/core/reasoning";
 import type { ChatError } from "../chat/core/chatErrors";
 import { ChatErrorCode, toChatError } from "../chat/core/chatErrors";
@@ -404,16 +405,7 @@ export function createChatOrchestrator(
     }
 
     if (payload.usage) {
-      const usage = payload.usage;
-      const ctx =
-        usage.contextWindowTokens && usage.contextWindowTokens > 0
-          ? usage.contextWindowTokens
-          : 128_000;
-      deps.state.updateContextUsage({
-        usedTokens: usage.promptTokens,
-        maxTokens: ctx,
-        percentage: usage.promptTokens / ctx,
-      });
+      deps.state.updateContextUsage(contextUsageFromTokenUsage(payload.usage));
     }
 
     if (payload.finishReason) {

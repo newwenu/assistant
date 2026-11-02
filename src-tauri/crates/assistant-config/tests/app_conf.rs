@@ -53,8 +53,8 @@ fn serialize_deserialize_roundtrip() {
     assert_eq!(original.keybindings, restored.keybindings);
     assert_eq!(original.auto_compact, restored.auto_compact);
     assert_eq!(
-        original.compact_threshold_percent,
-        restored.compact_threshold_percent
+        original.compact_threshold_percent_of_budget,
+        restored.compact_threshold_percent_of_budget
     );
     assert_eq!(
         original.compact_summary_max_tokens,
@@ -143,6 +143,31 @@ fn load_from_recovers_from_temp_file() {
 }
 
 #[test]
+fn legacy_threshold_key_is_migrated() {
+    let path = conf_path("config.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut json = serde_json::to_value(AppConf::new()).unwrap();
+    json["compact_threshold_percent"] = serde_json::json!(50);
+    std::fs::write(&path, json.to_string()).unwrap();
+
+    let loaded = AppConf::load_from(&path).unwrap();
+    assert_eq!(loaded.compact_threshold_percent_of_budget, 50);
+}
+
+#[test]
+fn explicit_new_threshold_wins_over_legacy_key() {
+    let path = conf_path("config.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut json = serde_json::to_value(AppConf::new()).unwrap();
+    json["compact_threshold_percent"] = serde_json::json!(50);
+    json["compact_threshold_percent_of_budget"] = serde_json::json!(65);
+    std::fs::write(&path, json.to_string()).unwrap();
+
+    let loaded = AppConf::load_from(&path).unwrap();
+    assert_eq!(loaded.compact_threshold_percent_of_budget, 65);
+}
+
+#[test]
 fn amend_single_field() {
     let conf = AppConf::new();
     let patch = serde_json::json!({ "theme": "dark" });
@@ -204,12 +229,12 @@ fn amend_compact_fields() {
     let conf = AppConf::new();
     let patch = serde_json::json!({
         "auto_compact": false,
-        "compact_threshold_percent": 50,
+        "compact_threshold_percent_of_budget": 50,
         "compact_summary_prompt": "Summarize briefly"
     });
     let merged = conf.amend(patch).unwrap();
     assert!(!merged.auto_compact);
-    assert_eq!(merged.compact_threshold_percent, 50);
+    assert_eq!(merged.compact_threshold_percent_of_budget, 50);
     assert_eq!(
         merged.compact_summary_prompt.as_deref(),
         Some("Summarize briefly")

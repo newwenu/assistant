@@ -106,7 +106,7 @@ mod tests {
             cache_read_tokens: None,
             cache_write_tokens: None,
             reasoning_tokens: None,
-            context_window_tokens: 128000,
+            context_window_tokens: Some(128000),
         };
         roundtrip(&dto);
     }
@@ -179,7 +179,7 @@ mod tests {
                 id: "gpt-4".into(),
                 name: "GPT-4".into(),
                 owned_by: "openai".into(),
-                context_window: 128000,
+                context_window: Some(128000),
                 support_vision: true,
                 input_modalities: vec!["text".into(), "image".into()],
                 reasoning_levels: Some(ReasoningLevelsDto {

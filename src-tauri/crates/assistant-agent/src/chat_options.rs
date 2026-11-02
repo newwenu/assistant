@@ -36,7 +36,7 @@ fn resolve_reasoning_level(level: Option<&str>) -> (Option<bool>, Option<String>
 pub fn build_chat_options(
     kind: &AgentKind,
     mode: &AgentModeRow,
-    context_window_tokens: u32,
+    context_window_tokens: Option<u32>,
     reasoning: &ReasoningOverride,
 ) -> ChatOptions {
     let temperature = match kind {

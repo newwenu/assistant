@@ -179,7 +179,7 @@ I7 的原始设计是「停机 + 存档 + 续接」：`ARCHITECTURE.md` §I7 与
 
 ## 5 现状失真清单
 
-计算层的错误算法另见 `I29-token-usage-semantics-spec.md` §6（M1–M15），本节只记现象与代码根因。编号与 ui-spec 的 P/W/Q/F 映射见 `I29-token-usage-semantics-spec.md` §8.1。
+计算层的错误算法另见 `I29-token-usage-semantics-spec.md` §6（M1–M16），本节只记现象与代码根因。编号与 ui-spec 的 P/W/Q/F 映射见 `I29-token-usage-semantics-spec.md` §8.1。
 
 | 编号 | 现象 | 根因 | 影响 |
 | --- | --- | --- | --- |
@@ -202,6 +202,7 @@ I7 的原始设计是「停机 + 存档 + 续接」：`ARCHITECTURE.md` §I7 与
 | A17 | 超窗错误没有处理路径 | `context_length_exceeded` 仅出现在 `client/error.rs` 的测试夹具里，没有匹配分支与降级动作 | 一旦超窗直接失败，既不提示「先压缩」也不自动重试，用户只能手动操作 |
 | A18 | `is_full` 名为「窗口已满」，实为「已压缩锁定」 | 只由压缩成功路径置 `true`（`cmd/compaction.rs`）、由 `unlock_conversation` 置 `false`，与窗口占用无关 | 字段名易被读成容量状态，而它表达的是「该会话已存档、不再发送」 |
 | A19 | 记录排序无二级键 | 记录表 `created_at` 为毫秒时间戳，占用查询 `ORDER BY created_at DESC LIMIT 1` 在同毫秒内无确定次序（重试的两次请求可能同毫秒） | 「最新一条」可能取到同毫秒内的前一次请求，占用分子抖动 |
+| A20 | provider 不报 usage 时，有内容的会话永远看不到占用 | 记录表只接受 provider 上报值，`flush_attempt` 在 `UsageSnapshot::is_empty()` 时直接返回、不入队（`chat_runtime.rs`），因此该会话零记录；占用查询无结果 → `hasUsage = false` → 显示「—」 | 「分支无内容」与「有内容但无上报」被渲染成同一个「—」，用户无法判断距窗口还有多远；压缩判定同样失明 |
 
 ---
 
@@ -214,7 +215,9 @@ I7 的原始设计是「停机 + 存档 + 续接」：`ARCHITECTURE.md` §I7 与
 - 中文 UTF-8 每字 3 字节 → `3 / 4 = 0.75` token/字
 - 实际分词通常 1 ~ 1.5 token/字
 
-纯中文会话的估算值会系统性低估约 30% ~ 50%，用于 offload 预算与「无 usage 时的占用回退」都偏乐观。
+纯中文会话的估算值会系统性低估约 30% ~ 50%，用于 offload 预算与「零记录时的占用展示兜底」都偏乐观。
+
+> T5.3 已把本仓库的估算口径换成 E1 字符加权（CJK 记 1 token/字），偏差从「低估 30%~50%」收窄到「低估至多约 33%」，且估算已退出记账侧；下文对旧口径的描述保留为演进记录。
 
 各项目采用的估算密度与分母单位汇总在 `I29-token-usage-semantics-spec.md` §3.5 的表；本节只记「策略取向」的差异——修正、规避、还是让偏差进入用户可见的分子。
 
@@ -223,7 +226,7 @@ I7 的原始设计是「停机 + 存档 + 续接」：`ARCHITECTURE.md` §I7 与
 - **openhuman**（隔离）：`prompt_size.rs` 以字节为记账单位，`EST_BYTES_PER_TOKEN = 4` 只用于渲染人类可读的 `~N tok` 列，源码注释直言「is a divisor, not a tokenizer」。估算值不进入任何判定。
 - **codex**（不用估算）：不做字符估算，改为用 `BASELINE_TOKENS = 12_000` 直接修正窗口，把 tokenizer 差异转成固定余量。
 
-本仓库不属于以上四种：既不修正权重，又不隔离，还把估算值直接混进占用与聚合（见 A3），于是偏差进入了用户可见的分子。
+本仓库原本不属于以上四种：既不修正权重，又不隔离，还把估算值直接混进占用与聚合（见 A3），于是偏差进入了用户可见的分子。T5.3 修正了权重（对齐第一种做法），并停止把估算写入记账；P8 让估算只在「零记录时的展示兜底」出现，且强制标 `~`（对齐第二种的隔离取向，但保留请求发出前的决策能力）。
 
 ---
 
@@ -417,7 +420,7 @@ UI 侧的选择也一致：`status/card.rs` 取 `info.last_token_usage` 作进�
 - 失败 attempt 的消耗（见 A11）
 - 工具定义 token（当前未发送，无需度量；若未来启用需纳入 `I29-token-usage-semantics-spec.md` §3.1 的构成公式）
 - 输出侧预留（`max_tokens`）与窗口余量关系（offload 未扣除）
-- 窗口的第三方来源：provider `/models` 响应可能带 `context_length` / `context_window`，本仓库未解析，因此「未知窗口」只能靠本地配置补齐（见 §7.6）
+- 窗口的第三方来源：provider `/models` 响应带的 `context_length` / `context_window` / `max_input_tokens` / `limit.context` / `top_provider.context_length`（OpenAI 兼容）、`context_window` / `max_input_tokens`（Anthropic）、`inputTokenLimit`（Gemini）已由发现层解析（T5.4），随 `models_json` 持久化；只有三个 provider 都未声明时才为 `NULL`，此时「未知窗口」只能靠本地配置补齐（见 §7.6）
 
 ---
 
@@ -461,7 +464,7 @@ UI 侧的选择也一致：`status/card.rs` 取 `info.last_token_usage` 作进�
 | | `src-tauri/crates/assistant-providers/src/stream/stats.rs` | `StreamStats`（仅日志，无持久化） |
 | 请求组装 | `src-tauri/crates/assistant-agent/src/chat_request.rs` | system prompt 来源、附件投影、offload 调用 |
 | | `src-tauri/crates/assistant-agent/src/prompt_builder.rs` | 历史消息过滤与组装 |
-| | `src-tauri/crates/assistant-agent/src/request_projection.rs` | 估算常量、超预算降级 |
+| | `src-tauri/crates/assistant-agent/src/request_projection.rs` | 估算常量、`estimate_total_tokens`（E2 投影估算）、超预算降级 |
 | | `src-tauri/crates/assistant-agent/src/chat_options.rs` | 窗口注入、`max_tokens` 缺省 4096 |
 | 运行时 | `src-tauri/crates/assistant-agent/src/chat_runtime.rs` | `StreamAccumulator` / `StreamOutcome` / `PartialOutcome` |
 | | `src-tauri/crates/assistant-agent/src/compaction.rs` | 80% 阈值、摘要提示词、窗口解析 |

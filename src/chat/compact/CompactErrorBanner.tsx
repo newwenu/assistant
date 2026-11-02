@@ -17,6 +17,13 @@ export const CompactErrorBanner: React.FC = () => {
         onRetry={() => {
           void chat.manualCompact();
         }}
+        onAction={(code) => {
+          if (code === "compress_context") {
+            void chat.manualCompact();
+          } else if (code === "start_new_chat") {
+            window.dispatchEvent(new Event("chat-new-conversation"));
+          }
+        }}
       />
       <Button
         size="small"

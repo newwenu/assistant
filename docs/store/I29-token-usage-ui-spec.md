@@ -12,7 +12,7 @@
 | # | 契约 |
 | --- | --- |
 | 1 | 三个口径必须独立建模：**上下文窗口**（分母）、**上下文占用**（分子）、**累计消耗**（账单）。禁止用累计值填占用位 |
-| 2 | **上下文占用**的唯一可信来源是「最近一次聊天请求的 `prompt_tokens`」，不是任何本地求和 |
+| 2 | **上下文占用的可信来源是「最近一次聊天请求的 `prompt_tokens`」**；仅当该分支零记录时，才允许用分支出站投影估算兜底并标 `~`（只读、不落库）。禁止用历史消息 `tokens` 求和冒充占用 |
 | 3 | 持久化单元是**请求级记录**（一次 API 调用一条），而不是把 breakdown 塞进 `messages` 行 |
 | 4 | `cacheRead` / `cacheWrite` / `reasoning` 必须区分「未上报」与「上报为 0」，用 `NULL` / `undefined` 表达未上报 |
 | 5 | 进度条只画**输入口径的占用**（命中 / 写入 / 未缓存三段，和恒等于 `usedTokens`）；输出、推理、累计消耗一律放 Tooltip / 详情层 |
@@ -26,7 +26,7 @@
 | 口径 | 字段名 | 定义 | 分母/来源 | 用途 |
 | --- | --- | --- | --- | --- |
 | 上下文窗口 | `contextWindowTokens` | 模型单次请求可容纳的输入+输出上限 | 模型配置 `models_json.contextWindow`，本地注入 | 进度条分母、压缩阈值基准 |
-| 上下文占用 | `usedTokens` | 下一次请求将发送的输入 token 数，以「最近一次 `kind = chat` 请求的 `prompt_tokens`」为代理值（两者构成相同） | 最近一次 `kind = chat` 请求的 `prompt_tokens` | 进度条分子、`percentage` |
+| 上下文占用 | `usedTokens` | 下一次请求将发送的输入 token 数，以「最近一次 `kind = chat` 请求的 `prompt_tokens`」为代理值（两者构成相同）；该分支零记录时退回分支出站投影估算（标 `~`，见 §3.4） | 最近一次 `kind = chat` 请求的 `prompt_tokens`；零记录时为投影估算 | 进度条分子、`percentage` |
 | 累计消耗 | `cumulativeTokens` | 本会话所有请求 `prompt + completion` 之和 | 请求记录表聚合 | Tooltip / 详情，计费参考 |
 
 `percentage = usedTokens / contextWindowTokens`，clamp 到 `[0, 1]`。
@@ -76,7 +76,7 @@
 
 ## 2 现状基线
 
-本节编号（P / W / Q / F）与 `I29-token-usage-analysis.md` 的 A1–A19 描述的是同一批代码事实的两组切面，映射表见 `I29-token-usage-semantics-spec.md` §8.1。同一事实两处出现时以本节的结构性事实为准，现象描述以 analysis 为准。
+本节编号（P / W / Q / F）与 `I29-token-usage-analysis.md` 的 A1–A20 描述的是同一批代码事实的两组切面，映射表见 `I29-token-usage-semantics-spec.md` §8.1。同一事实两处出现时以本节的结构性事实为准，现象描述以 analysis 为准。
 
 ### 2.1 持久化层：只存了 1 个数字
 
@@ -203,9 +203,11 @@ WHERE conversation_id = ?1
 ORDER BY created_at DESC, id DESC
 LIMIT 1;
 -- 上一步无结果时，去掉 `estimated = 0` 重跑同一条查询，取最近一条估算记录（UI 加 `~`）
+-- 前两步都无结果时，由 app 层按分支出站投影估算兜底（第三步：不查表、不落库，见 §3.4 第 4 级）
 
 -- 累计消耗：所有请求之和（含压缩与重试，不按分支过滤）
-SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0)
+-- 必须同时取 COUNT(*)：零记录时返回 NULL / None（UI 显示「—」），不得用 0 冒充「没花过」（M4 / M16）
+SELECT SUM(prompt_tokens + completion_tokens) AS total, COUNT(*) AS n
 FROM token_usage_records WHERE conversation_id = ?1;
 
 -- 缓存命中率：分母只含「具备缓存能力且至少上报了一项缓存字段」的请求
@@ -225,7 +227,7 @@ WHERE conversation_id = ?1
 
 1. **占用必须按分支过滤，累计不得按分支过滤。** 占用回答「即将发送多少」，只能看当前分支；累计是账单，切分支不退款（A14）。`branch_leaf_id IS ?2` 在 `?2` 为 `NULL` 时退化为「无分支的请求」，不会误纳其他分支的记录。
 2. **排序必须有二级键。** `created_at` 是毫秒，重试的两次请求可能同毫秒；只按 `created_at DESC` 时「最新一条」不确定（A19），因此补 `id DESC`（自增主键即写入序）。
-3. **估算记录不参与占用分子。** 查询优先取 `estimated = 0` 的记录；仅当该分支上不存在任何非估算记录时，才退回最近一条估算记录，并由 UI 加 `~` 前缀（M3）。实现上等价于「先查 `estimated = 0`，无结果再查全量」，不能用一条 `LIMIT 1` 混查。
+3. **估算记录的优先级低于上报记录。** 查询优先取 `estimated = 0` 的记录；仅当该分支上不存在任何非估算记录时，才退回最近一条估算记录，并由 UI 加 `~` 前缀（M3）。实现上等价于「先查 `estimated = 0`，无结果再查全量」，不能用一条 `LIMIT 1` 混查。两类都取不到时，才进入 §3.4 第 4 级的投影兜底。
 
 ### 3.4 回退顺序
 
@@ -233,13 +235,15 @@ WHERE conversation_id = ?1
 
 1. provider 上报的 `prompt_tokens`
 2. `total_tokens - completion_tokens`（若 total 有值）
-3. 字符估算：ASCII 按 4 字节 ≈ 1 token，非 ASCII 按 3 字节 ≈ 1 token（即 1 字符 ≈ 1 token），再加消息级结构开销
+3. 字符估算（E1，`assistant-agent/src/token_estimate.rs` 的 `estimate_text_tokens`）：**不是**记录表的 `prompt_tokens` 来源（记录回退只走 1–2）；它只作为决策档（offload 预算）与第 4 级投影的文本分量口径
+4. **分支出站投影估算（无任何记录时）**：该分支没有任何 `chat` 记录时，取当前分支经请求构造投影后的 `chat_messages`（`prepare_messages` 的 system prompt + 历史消息，再经图片 / 文件投影），按 E2 的 `estimate_total_tokens` 求和，作为占用兜底。该口径与 offload 预算共用；工具定义当前不随请求发送，故不在该口径内（若未来启用工具，需同步纳入，见 analysis §8）
+5. **分支无消息** → 占用确定为 `0`（无历史输入可计），窗口已知时展示 `0 / 窗口（0%）`，窗口未知时展示「—」（`hasUsage = false`）
 
-第 3 条是契约目标值；现状 E1 对全部字符统一按 `ceil(len/4) + 4`（字节），不区分字符集。
+1–2 用于**落库**（记录表字段回退；回退得到的值不是上报值，必须置 `estimated = 1`）；3 是 2 与 4 共用的一套 E1/E2 口径，本身不单独产生记录；4 用于**展示兜底**，只读不写——**不写入 `token_usage_records`**、**不写入 `messages.tokens`**、**不进入累计 `A`**，每次查询重算。三者共用同一套估算口径，但只有 1–2 能进入记录表。
 
-非 ASCII 系数取中文实测密度的下限（1~1.5 token/字），因此即使按契约目标值仍属**低估**；该偏差是单向的，对 offload 预算会导致漏判、对聚合会导致百分比偏低。取值依据与各参考项目的对照见 `I29-token-usage-semantics-spec.md` §3.5。
+非 ASCII 系数取中文实测密度的下限（1~1.5 token/字），因此即使按契约目标值仍属**低估**；该偏差是单向的，对 offload 预算会导致漏判、对展示兜底会导致百分比偏低。取值依据与各参考项目的对照见 `I29-token-usage-semantics-spec.md` §3.5。
 
-估算值必须可辨识：记录时置 `estimated = 1`，UI 对估算值加 `~` 前缀，聚合时可单独统计「含估算的记录占比」。
+估算值必须可辨识：落库时置 `estimated = 1`，展示时加 `~` 前缀并标明来源（「本地估算」），累计 `A` 只统计上报值、不含任何估算。
 
 ---
 
@@ -275,14 +279,16 @@ WHERE conversation_id = ?1
 | 字段 | 类型 | 语义 | 可空 |
 | --- | --- | --- | --- |
 | `usedTokens` | `number` | 占用 `O`，输入口径 = 最新 chat 请求的 `P`。它同时就是 Tooltip 的「本次输入」，因此不再另设 `promptTokens` 字段 | 否 |
-| `hasUsage` | `boolean` | 记录表在该分支上是否存在可用记录；`false` 时占用显示「—」，`usedTokens` 不参与展示与百分比计算 | 否 |
+| `hasUsage` | `boolean` | 占用是否有可用取值。`true` 表示存在上报值、估算记录或分支投影估算；`false` 仅当该分支无消息（占用确定为 `0`）。窗口已知时 `false` 仍展示 `0 / 窗口（0%）`，窗口未知时才显示「—」，`usedTokens` 不参与百分比计算。不变式：`estimated = true` 时 `hasUsage` 必为 `true` | 否 |
+| `estimated` | `boolean` | 该 `usedTokens` 是否为估算。`true` 有两种来源：记录表里 `estimated = 1` 的请求（provider 未上报输入 token，由 `total - completion` 回退），或该分支零记录时的出站投影。两种来源都必须加 `~` 并标明来源 | 否 |
+| `estimatedSource` | `'record' \| 'projection' \| undefined` | 估算来源，仅在 `estimated = true` 时有值：`record` = 记录表估算记录；`projection` = 分支出站投影。用于区分 Tooltip 的来源文案（前者是「未上报输入 token」，后者是「未上报 usage」） | 是 |
 | `maxTokens` | `number \| undefined` | 窗口 `W`；窗口未知时不得填缺省值，置 `undefined` | 是 |
 | `percentage` | `number \| undefined` | `clamp(usedTokens / maxTokens, 0, 1)`；`maxTokens` 为 `undefined` 时同为 `undefined` | 是 |
 | `completionTokens` | `number` | 最近一次请求的输出 `C`，仅 Tooltip 使用 | 是 |
 | `cacheReadTokens` | `number` | `CR` | 是，未上报为 `undefined` |
 | `cacheWriteTokens` | `number` | `CW` | 是，未上报为 `undefined` |
 | `reasoningTokens` | `number` | `RT` | 是，未上报为 `undefined` |
-| `cumulativeTokens` | `number` | 累计 `A` | 是 |
+| `cumulativeTokens` | `number` | 累计 `A`；该会话零记录时为 `undefined`（显示「—」），不得用 `0` 冒充「没花过」 | 是 |
 
 ### 4.4 窗口解析
 
@@ -311,11 +317,24 @@ WHERE conversation_id = ?1
 | 层 | 内容 | 数据源 |
 | --- | --- | --- |
 | 常驻行（ContextBar） | `占用 / 窗口` + 进度条 + 百分比 | `usedTokens` / `maxTokens` |
-| 常驻行（窗口未知） | 只显示 `占用` 绝对 token 数，不画进度条、不显示百分比 | `usedTokens` |
-| Tooltip（hover） | 本次输入 / 输出 / 缓存命中 / 缓存写入 / 推理 + 累计消耗 | `usedTokens` / `completionTokens` / `cacheReadTokens` / `cacheWriteTokens` / `reasoningTokens` / `cumulativeTokens` |
+| 常驻行（占用为估算） | `~占用 / 窗口` + 进度条 + 百分比；`~` 只标在被估算的分子上，百分比不重复加 `~` | `usedTokens` + `estimated` |
+| 常驻行（窗口未知） | 只显示 `占用` 绝对 token 数（估算时同样带 `~`），不画进度条、不显示百分比 | `usedTokens` / `estimated` |
+| 常驻行（无内容） | 窗口已知：`0 / 窗口` + 空进度条 + `0%`；窗口未知：「—」 | `hasUsage = false` + `maxTokens` |
+| Tooltip（hover） | 本次输入 / 输出 / 缓存命中 / 缓存写入 / 推理 + 累计消耗 + 占用来源 | `usedTokens` / `completionTokens` / `cacheReadTokens` / `cacheWriteTokens` / `reasoningTokens` / `cumulativeTokens` / `estimated` |
 | 详情面板（可选展开） | 按请求逐条记录、按 model 聚合 | 记录表查询 |
 
 进度条只表达占用，不表达累计。累计值不得画进同一根进度条。
+
+占用来源行是估算值的配套要求，按 `estimated` / `estimatedSource` / `hasUsage` 三选一：
+
+| `estimated` | `estimatedSource` | `hasUsage` | 来源行文案 |
+| --- | --- | --- | --- |
+| `false` | `undefined` | `true` | 「provider 上报」 |
+| `true` | `record` | `true` | 「本地估算（provider 未上报输入 token）」 |
+| `true` | `projection` | `true` | 「本地估算（provider 未上报 usage）」 |
+| `false` | `undefined` | `false` | 「尚无消息」（占用 `0` 的确定值，不是估算） |
+
+累计为零记录时累计行显示「—」，不显示 `0`。
 
 ### 5.2 进度条分段
 
@@ -345,17 +364,21 @@ WHERE conversation_id = ?1
 
 阈值判定只用 `percentage`（占用口径），与累计值无关。
 
-两条配套规则：
+三条配套规则：
 
 1. **窗口未知时三档不生效，也不许用兜底窗口补出判定。** `percentage` 为 `undefined` 时状态恒为 normal（只有绝对数可展示），压缩与降级判定同样返回「不可判定」，不得把「不判定」当成「不超限」而静默跳过（A16 / M13）。此路径下的唯一处置来源是 provider 的超窗错误反馈（见 §6）。
 2. **`threshold_percent` 的含义随公式改变，必须同步改名。** 当前实现是「占**完整窗口**的百分比」（`P >= W * 80%`，`assistant-config/src/constant.rs` 的 `COMPACTION_THRESHOLD_PERCENT = 80`，前端 `config/constants.ts` 同值）。改造后阈值改按**可用预算**（`W - max_tokens - 安全裕度`）计算，同名配置项的数值含义随之漂移（M15 / C2），因此必须同步改名（如 `compact_threshold_percent_of_budget`）或直接改为绝对 token 预算；不得保留旧名承载新语义。
+3. **估算占用同样参与三档着色，但数值必须带 `~`。** 估算百分比只用于视觉提示，不触发自动压缩（压缩只用 provider 上报的 `P`）。这样「provider 不报 usage」的会话仍能看到黄 / 红提示，而不是在快满时毫无反馈。
 
 ### 5.4 文案规范
 
 | 场景 | 正确文案 | 禁止文案 |
 | --- | --- | --- |
 | 进度条 | 「上下文占用 12.3k / 128k（9.6%）」 | 「上下文窗口总 token 花费」 |
+| 进度条（估算） | 「上下文占用 ~12.3k / 128k（9.6%）」 | 「上下文占用 12.3k / 128k」（缺 `~`，冒充上报值） |
+| Tooltip 占用来源行 | 「provider 上报」/「本地估算（provider 未上报输入 token）」/「本地估算（provider 未上报 usage）」 | 只写「约 12.3k」而不说明来源；两种估算混用同一句文案 |
 | Tooltip 累计行 | 「本会话累计消耗 45.6k」 | 「已用 45.6k」（与占用混淆） |
+| Tooltip 累计行（零记录） | 「本会话累计消耗 —」 | 「本会话累计消耗 0」（把「未上报」说成「没花过」） |
 | 压缩完成 | 「已存档，会话已终止」 | 「已压缩，上下文已释放」 |
 
 压缩后原会话已 `is_full` 锁定、不再发送，占用不下降，文案不得暗示释放（分析文档 §3.4、§3.5）。
@@ -368,21 +391,24 @@ WHERE conversation_id = ?1
 
 | 场景 | 行为 |
 | --- | --- |
-| 会话无任何记录（存量数据） | 显示「—」，`hasUsage = false`，不回填估算（任务 T2.5）。有记录时一律用上报值，估算不得覆盖上报值（见 `I29-token-usage-semantics-spec.md` §6 M3） |
+| 会话无任何记录，但分支有消息（存量数据 / provider 不报 usage） | 按分支出站投影估算显示 `~N`（`estimated = true`），**不回填记录表、不写 `messages.tokens`**（M16 / A20）。有上报值时一律用上报值，估算不得覆盖上报值（M3） |
+| 会话无任何记录，且分支无消息（新会话） | 占用确定为 `0`：窗口已知时显示 `0 / 窗口（0%）`（空进度条、`hasUsage = false`），窗口未知时显示「—」；累计仍显示「—」 |
 | 窗口未知 | `maxTokens` / `percentage` 置 `undefined`，占用显示为绝对 token 数、不画进度条；不得用 128k 冒充分母（见 §4.4）。切换模型 / 会话后若新上下文未声明窗口，必须清空旧窗口而非沿用（M11） |
-| provider 不报 usage | 整条链路走估算，`estimated = 1` |
+| provider 不报 usage | 占用按分支投影估算显示 `~N`，Tooltip 标明「本地估算」；`messages.tokens` 与记录表保持空，累计显示「—」；压缩判定仍为「不可判定」，唯一处置来源是 provider 超窗错误（M13 / A20） |
+| 估算值随消息变化 | 每次查询重算，不做缓存；同一分支新增 / 删除消息后占用随之变化，不残留上一次的估算值 |
 | `cacheReadTokens` 未上报 | 不画命中段，Tooltip 不显示命中行；未缓存段宽度改为 `usedTokens - cacheWriteTokens` |
 | `cacheWriteTokens` 未上报 | 不画写入段，未缓存段宽度改为 `usedTokens - cacheReadTokens` |
 | `reasoningTokens` 未上报 | Tooltip 不显示推理行 |
 | 流式中（usage 尚未到达） | 保持上一次占用值，不归零 |
 | 发送瞬间 | 不清空 `usedTokens`，只把状态切到 sending |
-| 切换会话 | 先按记录表取占用；取不到时显示「—」，不得先写缺省窗口再异步覆盖 |
+| 切换会话 | 先按记录表取占用；取不到时按分支投影估算显示 `~N`；分支无消息时窗口已知显示 `0 / 窗口`、窗口未知显示「—」，不得先写缺省窗口再异步覆盖 |
 | 压缩完成后 | 占用锚点不重置（会话已锁定、不再发送），仅 `is_full` 置位 |
 | 续接会话（暂不生效） | 续接未纳入计划，当前不会出现。若未来实现：首次请求前占用显示「—」（不得用摘要估算值充当占用），首次请求后按其 `prompt_tokens` 锚定，不沿用原会话的 `O`（M6） |
-| provider 报超窗错误（`context_length_exceeded` 等） | 当前无处理路径（A17）。契约要求：捕获该错误并给出可操作提示（「上下文超限，请先压缩」），窗口已知时不自动重试、窗口未知时不猜测窗口大小；不得静默当作普通失败 |
+| provider 报超窗错误（`context_length_exceeded` 等） | 捕获该错误并给出可操作提示（「上下文超限，请先压缩 / 新建对话 / 换更大窗口模型」）；窗口已知时不自动重试、窗口未知时不猜测窗口大小，不得静默当作普通失败（A17，T5.6 已落地） |
 | `is_full` | 只表示「已压缩锁定、不再发送」，与窗口占用无关（A18）。命名与文案不得使用容量措辞；`unlock_conversation` 解锁后回到压缩前状态，占用锚点随之回退到该分支最新一条 chat 记录 |
 | 同一毫秒多条记录 | 占用取 `created_at DESC, id DESC` 的第一条，`id` 作为写入序的稳定二级键（A19） |
-| 已存在更晚的估算记录 | 占用仍优先取最近的**非估算** chat 记录；只有该分支上不存在任何非估算记录时才退回估算值并标 `~`（M3） |
+| 已存在更晚的估算记录 | 占用按四级来源取值：最近的**非估算** chat 记录 → 最近的估算记录（标 `~`）→ 分支投影估算（标 `~`）→ 无内容（显示「—」）。前一级有结果时不得使用后一级（M3） |
+| 累计为零记录 | 累计显示「—」（`cumulativeTokens = undefined`），不得显示 `0`（M4 / M16） |
 | 重试 attempt | 每次带 usage 的请求都落记录；占用取最新一条，累计全量相加 |
 
 ---
@@ -401,7 +427,7 @@ WHERE conversation_id = ?1
 5. 一次成功聊天产生 1 条 `kind = 'chat'` 记录；一次重试产生 2 条（同一 `attempt_id` 前缀不同）；一次压缩产生 1 条 `kind = 'compaction'` 记录。
 6. 压缩请求的 token 计入累计，不计入占用。
 7. `messages.tokens` 与记录表中的对应请求 total 一致（若保留该列）；无 usage 时该列为 `NULL` 而非估算值。
-8. 存量数据库升级后新表为空，旧会话显示「—」（`hasUsage = false`），不报错、不回填估算。
+8. 存量数据库升级后新表为空：有消息的旧会话按分支投影估算显示 `~N`（`estimated = true`）；空会话窗口已知时显示 `0 / 窗口`（`hasUsage = false`），窗口未知时显示「—」；不报错、不回填记录表。
 
 展示层：
 
@@ -412,6 +438,9 @@ WHERE conversation_id = ?1
 13. 同一毫秒内两次 attempt 各落一条记录时，占用取 `id` 更大的那条（写入序稳定，不依赖时间戳精度）。
 14. 窗口未知时不触发自动压缩与降级（判定为「不可判定」）；provider 返回超窗错误时给出可操作提示，而不是静默失败。
 15. `threshold_percent` 改名或改为绝对预算后，旧配置文件能被迁移或明确报错，不出现「同名不同义」的静默漂移。
+16. provider 完全不报 usage 时，占用显示 `~N` 且 Tooltip 来源为「本地估算」；`messages.tokens` 仍为 `NULL`、记录表仍为空、累计显示「—」。
+17. 上报值与估算值共存时，占用取上报值且不带 `~`；估算值不得覆盖上报值。
+18. 同一分支新增 / 删除消息后，未落记录的占用随之变化（每次查询重算，不残留上一次的估算值）。
 
 ---
 
@@ -420,5 +449,6 @@ WHERE conversation_id = ?1
 - 不把 breakdown 塞进 `messages` 表（见 §3.1 判据）
 - 不实现货币计价与成本估算
 - 不实现「预测占用」（按当前编辑中的输入预估下一轮）——deepseek-harness-orb 用 `projectedTokens = pressureTokens + surfaceTokens - sampledSurfaceTokens` 提供该能力，OpenBitFun 用 `TokenAnchor` 的尾部估算等价实现；两者都依赖事件级的 surface 变更记录，本仓库无此基础设施，故不纳入本文契约
+- §3.4 第 4 级的「分支投影估算」不属于上述「预测占用」：它只对**已落库的分支消息**求投影和（即「下一次请求会带上什么」），不含尚未发送的草稿；两者数据源不同，不得合并实现
 - 不实现「继续对话」的摘要注入（I7 续接未纳入当前范围，见任务清单 deferred 段）；§5.4 与 §6 已为该语境预留标注为「暂不生效」的条目，续接上线后无需改契约
 - 不改 `TokenUsageDto` 的既有 7 字段结构

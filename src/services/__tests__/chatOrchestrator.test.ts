@@ -151,8 +151,13 @@ describe("chatOrchestrator", () => {
       });
       expect(mockDeps.state.updateContextUsage).toHaveBeenCalledWith({
         usedTokens: 100,
+        hasUsage: true,
         maxTokens: 1000,
         percentage: 0.1,
+        completionTokens: 50,
+        cacheReadTokens: undefined,
+        cacheWriteTokens: undefined,
+        reasoningTokens: undefined,
       });
     });
 
@@ -167,14 +172,12 @@ describe("chatOrchestrator", () => {
           promptTokens: 100,
           completionTokens: 50,
           totalTokens: 150,
-          contextWindowTokens: 0,
         },
       });
       expect(mockDeps.state.finishStream).toHaveBeenCalledWith({
         promptTokens: 100,
         completionTokens: 50,
         totalTokens: 150,
-        contextWindowTokens: 0,
       });
     });
   });
@@ -251,8 +254,13 @@ describe("chatOrchestrator", () => {
       });
       expect(mockDeps.state.updateContextUsage).toHaveBeenCalledWith({
         usedTokens: 200,
+        hasUsage: true,
         maxTokens: 2000,
         percentage: 0.1,
+        completionTokens: 80,
+        cacheReadTokens: undefined,
+        cacheWriteTokens: undefined,
+        reasoningTokens: undefined,
       });
     });
 

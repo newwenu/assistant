@@ -11,7 +11,7 @@ pub struct AppConfDto {
     pub close_to_tray: bool,
     pub keybindings: std::collections::HashMap<String, String>,
     pub auto_compact: bool,
-    pub compact_threshold_percent: u8,
+    pub compact_threshold_percent_of_budget: u8,
     pub compact_summary_prompt: Option<String>,
     pub compact_summary_max_tokens: u16,
 }
@@ -27,7 +27,7 @@ impl From<assistant_config::app_conf::AppConf> for AppConfDto {
             close_to_tray: c.close_to_tray,
             keybindings: c.keybindings,
             auto_compact: c.auto_compact,
-            compact_threshold_percent: c.compact_threshold_percent,
+            compact_threshold_percent_of_budget: c.compact_threshold_percent_of_budget,
             compact_summary_prompt: c.compact_summary_prompt,
             compact_summary_max_tokens: c.compact_summary_max_tokens,
         }

@@ -43,7 +43,7 @@ export const chatService = {
 
   getConversationTokenUsage: (
     conversationId: string,
-    contextWindowTokens: number | undefined,
+    contextWindowTokens?: number,
   ): Promise<TokenUsageSummary | null> =>
     invoke<TokenUsageSummary | null>("get_conversation_token_usage", {
       conversationId,

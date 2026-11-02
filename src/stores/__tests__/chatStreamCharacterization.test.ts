@@ -89,7 +89,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
     });
     useChatStore.setState({
       messages: [],
-      contextUsage: { usedTokens: 0, maxTokens: 128_000, percentage: 0 },
+      contextUsage: { usedTokens: 0, hasUsage: false },
     });
   });
 

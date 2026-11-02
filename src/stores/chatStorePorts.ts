@@ -24,7 +24,7 @@ import { createLogger } from "@/services/logger";
 import {
   mergeStreamingContent,
   fetchTokenUsage,
-  resolveContextWindowTokens,
+  contextUsageFromTokenUsage,
   type FetchTokenUsageDeps,
 } from "../chat/core/chatUtils";
 
@@ -62,20 +62,8 @@ export function createStatePort(
   return {
     beginSend: (messages: Message[], assistantMsgId: string) => {
       useChatStreamStore.getState().beginStream(assistantMsgId);
-      const state = get();
-      const convId = state.currentConversationId;
-      const conv = convId
-        ? state.conversations.find((c) => c.id === convId)
-        : undefined;
-      const resolved = resolveContextWindowTokens(
-        conv?.modelId ?? "",
-        conv?.providerId ?? null,
-      );
-      const maxTokens = resolved ?? state.contextUsage.maxTokens ?? 128_000;
-      set({
-        messages,
-        contextUsage: { usedTokens: 0, maxTokens, percentage: 0 },
-      });
+      // 发送不清零占用：占用反映最近一次请求，与本次发送无关
+      set({ messages });
     },
     cancelStreaming: () => {
       const stream = useChatStreamStore.getState();
@@ -170,12 +158,8 @@ export function createStatePort(
       const convId = state.currentConversationId;
       const newContextUsage = usage
         ? {
-            usedTokens: usage.promptTokens,
-            maxTokens: usage.contextWindowTokens || 128_000,
-            percentage:
-              usage.contextWindowTokens && usage.contextWindowTokens > 0
-                ? usage.promptTokens / usage.contextWindowTokens
-                : usage.promptTokens / 128_000,
+            ...contextUsageFromTokenUsage(usage),
+            cumulativeTokens: state.contextUsage.cumulativeTokens,
           }
         : state.contextUsage;
 
@@ -204,13 +188,7 @@ export function createStatePort(
       }
 
       if (convId && !usage) {
-        const conv = state.conversations.find((c) => c.id === convId);
-        fetchTokenUsage(
-          convId,
-          conv?.modelId ?? "",
-          conv?.providerId ?? null,
-          fetchTokenUsageDeps,
-        );
+        fetchTokenUsage(convId, fetchTokenUsageDeps);
       }
     },
     setErrorOnMessage: (messageId: string, error: ChatError) => {

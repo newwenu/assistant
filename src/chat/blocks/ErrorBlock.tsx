@@ -39,9 +39,13 @@ export const ErrorBlock: React.FC<ErrorBlockProps> = ({
   const handleAction = (code: RecoveryActionCode) => {
     if (code === "retry" || code === "wait_and_retry") {
       onRetry?.();
-    } else {
-      onAction?.(code);
+      return;
     }
+    if (code === "copy_diagnostics") {
+      void navigator.clipboard.writeText(presentation.diagnostics);
+      return;
+    }
+    onAction?.(code);
   };
 
   const headerClass =

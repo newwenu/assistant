@@ -32,8 +32,16 @@ pub struct AppConf {
     pub keybindings: HashMap<String, String>,
     #[serde(default = "default_true")]
     pub auto_compact: bool,
+    /// 可用预算（窗口扣除输出预留与安全裕度）的使用比例，不是占完整窗口的比例
     #[serde(default = "default_compaction_threshold")]
-    pub compact_threshold_percent: u8,
+    pub compact_threshold_percent_of_budget: u8,
+    /// 旧版配置键，仅用于迁移读取，不再写出
+    #[serde(
+        default,
+        rename = "compact_threshold_percent",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub legacy_compact_threshold_percent: Option<u8>,
     #[serde(default)]
     pub compact_summary_prompt: Option<String>,
     #[serde(default = "default_max_summary_tokens")]
@@ -56,7 +64,8 @@ impl AppConf {
             close_to_tray: true,
             keybindings,
             auto_compact: true,
-            compact_threshold_percent: super::constant::COMPACTION_THRESHOLD_PERCENT,
+            compact_threshold_percent_of_budget: super::constant::COMPACTION_THRESHOLD_PERCENT,
+            legacy_compact_threshold_percent: None,
             compact_summary_prompt: None,
             compact_summary_max_tokens: super::constant::MAX_SUMMARY_REQUEST_TOKENS as u16,
         }
@@ -78,7 +87,25 @@ impl AppConf {
         load_json_config_with_migrate(path, Self::new, Self::migrate, "AppConf")
     }
 
-    fn migrate(config: Self) -> Self {
+    fn migrate(mut config: Self) -> Self {
+        // 旧键 `compact_threshold_percent` 指「占完整窗口的百分比」，新键指「占可用预算的百分比」。
+        // 两者分母不同，直接沿用数值属于同名不同义，因此迁移时显式告警并提示重新确认取值。
+        if let Some(legacy) = config.legacy_compact_threshold_percent.take() {
+            // 仅当新键未显式设置（仍为默认值）时才沿用旧值，避免旧键覆盖用户已确认的新取值
+            if config.compact_threshold_percent_of_budget == default_compaction_threshold() {
+                log::warn!(
+                    "config key `compact_threshold_percent` ({}) 已废弃，语义由「占完整窗口」改为「占可用预算」；旧值已迁移到 compact_threshold_percent_of_budget，实际阈值可能变化，请在设置中确认。",
+                    legacy
+                );
+                config.compact_threshold_percent_of_budget = legacy;
+            } else {
+                log::warn!(
+                    "config key `compact_threshold_percent` ({}) 已废弃并忽略：`compact_threshold_percent_of_budget` 已显式设置为 {}。",
+                    legacy,
+                    config.compact_threshold_percent_of_budget
+                );
+            }
+        }
         config
     }
 

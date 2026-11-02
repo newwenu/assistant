@@ -35,7 +35,10 @@ pub(crate) fn emit_delta(ectx: &StreamEmitCtx, seq: u32, delta: &base::ChatDelta
             usage.prompt_tokens,
             usage.completion_tokens,
             usage.total_tokens,
-            usage.context_window_tokens
+            usage
+                .context_window_tokens
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "unknown".to_string())
         );
     }
     let payload = ChatDeltaPayloadDto {
@@ -78,6 +81,7 @@ pub(crate) struct DbWriteMsg {
     pub tokens: Option<i64>,
     pub reasoning: Option<String>,
     pub tool_calls_json: Option<String>,
+    pub usage_records: Vec<assistant_storage::token_usage::TokenUsageRecord>,
 }
 
 pub(crate) type DbSender = tokio::sync::mpsc::UnboundedSender<DbWriteMsg>;
@@ -86,6 +90,7 @@ pub(crate) fn save_partial_on_error(
     db_tx: &DbSender,
     msg_id: &str,
     partial: &assistant_agent::chat_runtime::PartialOutcome,
+    usage_records: Vec<assistant_storage::token_usage::TokenUsageRecord>,
 ) {
     let tokens = assistant_agent::chat_runtime::resolve_partial_tokens(partial);
     let _ = db_tx.send(DbWriteMsg {
@@ -94,6 +99,7 @@ pub(crate) fn save_partial_on_error(
         tokens,
         reasoning: None,
         tool_calls_json: None,
+        usage_records,
     });
 }
 
@@ -114,6 +120,13 @@ pub(crate) fn spawn_db_writer(app: &AppHandle) -> DbSender {
                         msg.tool_calls_json.as_deref(),
                     ) {
                         error!("Failed to save content: {}", db_err);
+                    }
+                    for record in &msg.usage_records {
+                        if let Err(db_err) =
+                            assistant_storage::token_usage::insert_record(&conn, record)
+                        {
+                            error!("Failed to save token usage record: {}", db_err);
+                        }
                     }
                 }
                 Err(_) => {

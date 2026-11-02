@@ -1,17 +1,83 @@
 use std::time::Duration;
 
-use assistant_providers::base::{ChatDelta, ProviderError, ToolCall};
+use assistant_providers::base::{ChatDelta, ProviderError, TokenUsage, ToolCall};
 use futures::Stream;
 use log::info;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
+/// 单次请求（attempt）的完整 token 快照。
+///
+/// 未知一律用 `None` 表达，不用 `0`；`estimated` 表示 `total_tokens` 是本地推导值
+/// 而非 provider 上报值（`total < P + C` 或 provider 未上报 total）。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct UsageSnapshot {
+    pub prompt_tokens: Option<u32>,
+    pub completion_tokens: Option<u32>,
+    pub cache_read_tokens: Option<u32>,
+    pub cache_write_tokens: Option<u32>,
+    pub reasoning_tokens: Option<u32>,
+    pub total_tokens: Option<u32>,
+    pub estimated: bool,
+    pub context_window_tokens: Option<u32>,
+}
+
+impl UsageSnapshot {
+    pub fn is_empty(&self) -> bool {
+        self.prompt_tokens.is_none()
+            && self.completion_tokens.is_none()
+            && self.total_tokens.is_none()
+            && self.cache_read_tokens.is_none()
+            && self.cache_write_tokens.is_none()
+            && self.reasoning_tokens.is_none()
+    }
+
+    /// 合并一次 provider usage 上报：上报值优先，`total` 冲突时按 §4 / M12 裁决。
+    fn apply(&mut self, usage: &TokenUsage) {
+        if usage.prompt_tokens > 0 {
+            self.prompt_tokens = Some(usage.prompt_tokens);
+        }
+        if usage.completion_tokens > 0 {
+            self.completion_tokens = Some(usage.completion_tokens);
+        }
+        if usage.cache_read_tokens.is_some() {
+            self.cache_read_tokens = usage.cache_read_tokens;
+        }
+        if usage.cache_write_tokens.is_some() {
+            self.cache_write_tokens = usage.cache_write_tokens;
+        }
+        if usage.reasoning_tokens.is_some() {
+            self.reasoning_tokens = usage.reasoning_tokens;
+        }
+        if usage.context_window_tokens.is_some() {
+            self.context_window_tokens = usage.context_window_tokens;
+        }
+
+        let p_plus_c = usage.prompt_tokens.saturating_add(usage.completion_tokens);
+        if usage.total_tokens > 0 && usage.total_tokens >= p_plus_c {
+            self.total_tokens = Some(usage.total_tokens);
+            self.estimated = false;
+        } else if p_plus_c > 0 {
+            self.total_tokens = Some(p_plus_c);
+            self.estimated = true;
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct StreamOutcome {
     pub full_content: String,
     pub full_reasoning: String,
-    pub total_tokens: Option<u32>,
     pub prompt_tokens: Option<u32>,
+    pub completion_tokens: Option<u32>,
+    pub cache_read_tokens: Option<u32>,
+    pub cache_write_tokens: Option<u32>,
+    pub reasoning_tokens: Option<u32>,
+    pub total_tokens: Option<u32>,
+    pub estimated: bool,
+    pub context_window_tokens: Option<u32>,
+    /// 每个 attempt 一条快照（重试时各产一条，不覆盖）；最后一条即最终 attempt。
+    pub attempt_usages: Vec<UsageSnapshot>,
     pub finish_reason: Option<String>,
     pub tool_calls: Option<Vec<ToolCall>>,
     pub has_effective_output: bool,
@@ -22,8 +88,15 @@ pub struct StreamOutcome {
 pub struct PartialOutcome {
     pub full_content: String,
     pub full_reasoning: String,
-    pub total_tokens: Option<u32>,
     pub prompt_tokens: Option<u32>,
+    pub completion_tokens: Option<u32>,
+    pub cache_read_tokens: Option<u32>,
+    pub cache_write_tokens: Option<u32>,
+    pub reasoning_tokens: Option<u32>,
+    pub total_tokens: Option<u32>,
+    pub estimated: bool,
+    pub context_window_tokens: Option<u32>,
+    pub attempt_usages: Vec<UsageSnapshot>,
     pub has_effective_output: bool,
 }
 
@@ -78,8 +151,8 @@ pub enum ToolCallAccumulateError {
 pub struct StreamAccumulator {
     full_content: String,
     full_reasoning: String,
-    total_tokens: Option<u32>,
-    prompt_tokens: Option<u32>,
+    current_usage: UsageSnapshot,
+    attempt_usages: Vec<UsageSnapshot>,
     finish_reason: Option<String>,
     tool_calls: ToolCallAccumulator,
     has_effective_output: bool,
@@ -96,15 +169,28 @@ impl StreamAccumulator {
         Self {
             full_content: String::new(),
             full_reasoning: String::new(),
-            total_tokens: None,
-            prompt_tokens: None,
+            current_usage: UsageSnapshot::default(),
+            attempt_usages: Vec::new(),
             finish_reason: None,
             tool_calls: ToolCallAccumulator::new(),
             has_effective_output: false,
         }
     }
 
+    /// 一次 attempt 结束（重试 / 流终止）时把当前快照归档，后续上报归入新 attempt。
+    fn flush_attempt(&mut self) {
+        if self.current_usage.is_empty() {
+            return;
+        }
+        self.attempt_usages
+            .push(std::mem::take(&mut self.current_usage));
+    }
+
     pub fn apply_delta(&mut self, delta: &ChatDelta) -> ApplyDeltaOutcome {
+        if delta.delta_retry.is_some() {
+            self.flush_attempt();
+        }
+
         if let Some(text) = &delta.delta_text {
             if !text.is_empty() {
                 self.full_content.push_str(text);
@@ -119,13 +205,7 @@ impl StreamAccumulator {
         }
 
         if let Some(ref usage) = delta.usage {
-            let total = usage.prompt_tokens + usage.completion_tokens;
-            if total > 0 {
-                self.total_tokens = Some(total);
-            }
-            if usage.prompt_tokens > 0 {
-                self.prompt_tokens = Some(usage.prompt_tokens);
-            }
+            self.current_usage.apply(usage);
         }
 
         if delta.finish_reason.is_some() {
@@ -150,7 +230,10 @@ impl StreamAccumulator {
         }
     }
 
-    pub fn into_outcome(self) -> StreamOutcome {
+    pub fn into_outcome(mut self) -> StreamOutcome {
+        self.flush_attempt();
+        let usage = self.attempt_usages.last().cloned().unwrap_or_default();
+
         let tool_calls_result = self.tool_calls.finish();
         let tool_calls = match tool_calls_result {
             Ok(calls) => {
@@ -167,8 +250,15 @@ impl StreamAccumulator {
         StreamOutcome {
             full_content: self.full_content,
             full_reasoning: self.full_reasoning,
-            total_tokens: self.total_tokens,
-            prompt_tokens: self.prompt_tokens,
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            cache_read_tokens: usage.cache_read_tokens,
+            cache_write_tokens: usage.cache_write_tokens,
+            reasoning_tokens: usage.reasoning_tokens,
+            total_tokens: usage.total_tokens,
+            estimated: usage.estimated,
+            context_window_tokens: usage.context_window_tokens,
+            attempt_usages: self.attempt_usages,
             finish_reason: self.finish_reason,
             tool_calls,
             has_effective_output: self.has_effective_output,
@@ -176,12 +266,22 @@ impl StreamAccumulator {
         }
     }
 
-    pub fn into_partial(self) -> PartialOutcome {
+    pub fn into_partial(mut self) -> PartialOutcome {
+        self.flush_attempt();
+        let usage = self.attempt_usages.last().cloned().unwrap_or_default();
+
         PartialOutcome {
             full_content: self.full_content,
             full_reasoning: self.full_reasoning,
-            total_tokens: self.total_tokens,
-            prompt_tokens: self.prompt_tokens,
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            cache_read_tokens: usage.cache_read_tokens,
+            cache_write_tokens: usage.cache_write_tokens,
+            reasoning_tokens: usage.reasoning_tokens,
+            total_tokens: usage.total_tokens,
+            estimated: usage.estimated,
+            context_window_tokens: usage.context_window_tokens,
+            attempt_usages: self.attempt_usages,
             has_effective_output: self.has_effective_output,
         }
     }
@@ -195,11 +295,11 @@ impl StreamAccumulator {
     }
 
     pub fn total_tokens(&self) -> Option<u32> {
-        self.total_tokens
+        self.current_usage.total_tokens
     }
 
     pub fn prompt_tokens(&self) -> Option<u32> {
-        self.prompt_tokens
+        self.current_usage.prompt_tokens
     }
 }
 
@@ -385,37 +485,21 @@ where
     }
 }
 
-pub fn estimate_tokens(content: &str) -> Option<i64> {
-    if content.is_empty() {
-        return None;
-    }
-    Some((content.len() as i64 + 3) / 4 + 4)
-}
+pub use crate::token_estimate::estimate_text_tokens;
 
-/// 流结束后解析 token 总数：优先 usage，缺失时按内容长度估算。
+/// 流结束后解析 `messages.tokens`：只接受 provider 上报的 `total_tokens`。
+///
+/// 契约 §7-7 要求无 usage 时该列为 `NULL` 而非估算值；估算只用于占用兜底，
+/// 不得冒充账单口径写入消息行。
 pub fn resolve_final_tokens(outcome: &StreamOutcome) -> Option<i64> {
-    if outcome.total_tokens.is_none() && !outcome.full_content.is_empty() {
-        let estimated = estimate_tokens(&outcome.full_content).unwrap_or(0);
-        info!(
-            "[chat-delta] stream finished: reason={:?} no_usage=>estimated={} (content_len={})",
-            outcome.finish_reason,
-            estimated,
-            outcome.full_content.len()
-        );
-        Some(estimated)
-    } else {
-        info!(
-            "[chat-delta] stream finished: reason={:?} total_tokens={:?}",
-            outcome.finish_reason, outcome.total_tokens
-        );
-        outcome.total_tokens.map(|t| t as i64)
-    }
+    info!(
+        "[chat-delta] stream finished: reason={:?} total_tokens={:?}",
+        outcome.finish_reason, outcome.total_tokens
+    );
+    outcome.total_tokens.map(|t| t as i64)
 }
 
-/// 流中断时解析已产出内容的 token 数。
+/// 流中断时解析 `messages.tokens`：同样只接受 provider 上报值，无 usage 时为 `NULL`。
 pub fn resolve_partial_tokens(partial: &PartialOutcome) -> Option<i64> {
-    partial
-        .total_tokens
-        .map(|t| t as i64)
-        .or_else(|| estimate_tokens(&partial.full_content))
+    partial.total_tokens.map(|t| t as i64)
 }

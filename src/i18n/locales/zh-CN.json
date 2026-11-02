@@ -112,7 +112,7 @@
       },
       "compact": {
         "auto_compact": { "label": "上下文上限自动终止" },
-        "compact_threshold_percent": { "label": "终止阈值" },
+        "compact_threshold_percent_of_budget": { "label": "可用预算终止阈值" },
         "compact_summary_prompt": {
           "label": "自定义摘要提示词",
           "placeholder": "留空使用默认模板"
@@ -423,7 +423,7 @@
       "category_network_message": "无法连接到服务，请检查网络后重试",
       "category_auth_message": "API Key 无效或已过期，请在设置中检查配置",
       "category_rate_limit_message": "请求过于频繁，请稍后重试",
-      "category_context_overflow_message": "对话内容超出模型上下文窗口限制",
+      "category_context_overflow_message": "对话内容已超出模型上下文窗口。请压缩上下文、新建对话，或切换到上下文窗口更大的模型后重试。",
       "category_timeout_message": "服务响应时间过长，请稍后重试",
       "category_provider_quota_message": "Provider 账户配额已用尽，请检查账户或切换 Provider",
       "category_provider_unavailable_message": "Provider 服务暂时不可用，请稍后重试",
@@ -437,6 +437,19 @@
       "action_compress_context": "压缩上下文",
       "action_start_new_chat": "新建对话",
       "action_copy_diagnostics": "复制诊断信息"
+    },
+    "context": {
+      "used": "本次输入",
+      "output": "输出",
+      "cache_read": "缓存命中",
+      "cache_write": "缓存写入",
+      "reasoning": "推理",
+      "cumulative": "累计消耗",
+      "source": "来源",
+      "source_provider": "provider 上报",
+      "source_estimate_record": "本地估算（provider 未上报输入 token）",
+      "source_estimate_projection": "本地估算（provider 未上报 usage）",
+      "no_messages": "尚无消息"
     },
     "errors": {
       "renameFailed": {

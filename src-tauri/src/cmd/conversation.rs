@@ -6,10 +6,11 @@ use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
     ChatMessagesChangedPayloadDto, ConversationDetailDto, ConversationDto,
     ConversationListChangedPayloadDto, ConversationPatchDto, ConversationQueryOptsDto, MessageDto,
-    TokenUsageSummaryDto,
+    TokenUsageEstimatedSourceDto, TokenUsageSummaryDto,
 };
+use assistant_agent::chat_request;
 use assistant_storage::{
-    agent_modes,
+    attachment_store::AttachmentStore,
     conversations::{self, ConversationRow, MessageRow},
     providers::{self as provider_store},
 };
@@ -374,20 +375,61 @@ pub fn purge_conversations(app: AppHandle) -> Result<(), String> {
 }
 
 #[command]
-pub fn get_conversation_token_usage(
+pub async fn get_conversation_token_usage(
     app: AppHandle,
     conversation_id: String,
     context_window_tokens: Option<u32>,
 ) -> Result<TokenUsageSummaryDto, String> {
-    let state = app.state::<crate::setup::DbState>();
-    let conn = super::get_db_conn(&state)?;
-    let ctx = if let Some(c) = context_window_tokens {
-        c
-    } else {
-        super::conversation_utils::resolve_context_window_for_conversation(&conn, &conversation_id)
+    let (summary, detail, provider_row, window) = {
+        let state = app.state::<crate::setup::DbState>();
+        let conn = super::get_db_conn(&state)?;
+        let window = context_window_tokens.filter(|&c| c > 0).or_else(|| {
+            super::conversation_utils::resolve_context_window_for_conversation(
+                &conn,
+                &conversation_id,
+            )
+        });
+        let conversation = conversations::get_conversation_by_id(&conn, &conversation_id)?
+            .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+        let summary = assistant_storage::token_usage::get_summary(
+            &conn,
+            &conversation_id,
+            conversation.active_branch_id.as_deref(),
+            window,
+        )?;
+        let detail = conversations::get_conversation_detail(&conn, &conversation_id)?;
+        let provider_row = conversation
+            .provider_id
+            .as_deref()
+            .and_then(|id| provider_store::get_provider_by_id(&conn, id).ok().flatten());
+        (summary, detail, provider_row, window)
     };
-    let summary = agent_modes::get_conversation_token_usage(&conn, &conversation_id, ctx)?;
-    Ok(summary.into())
+
+    let mut dto: TokenUsageSummaryDto = summary.into();
+
+    // 记录表在该分支零记录时，按分支出站投影估算兜底；只读，不写记录表、不写 messages.tokens
+    if dto.occupancy.used_tokens.is_none() {
+        if let (Some(detail), Some(provider_row)) = (detail, provider_row) {
+            if !detail.messages.is_empty() {
+                let attachment_store = app.state::<AttachmentStore>();
+                let estimated =
+                    chat_request::estimate_branch_tokens(&detail, &provider_row, &attachment_store)
+                        .await;
+                if estimated > 0 {
+                    let estimated = estimated as i64;
+                    let window = window.filter(|&w| w > 0);
+                    dto.occupancy.used_tokens = Some(estimated);
+                    dto.occupancy.estimated = true;
+                    dto.occupancy.estimated_source = Some(TokenUsageEstimatedSourceDto::Projection);
+                    dto.occupancy.context_window_tokens = window;
+                    dto.occupancy.percentage =
+                        window.map(|w| (estimated as f32 / w as f32).clamp(0.0, 1.0));
+                }
+            }
+        }
+    }
+
+    Ok(dto)
 }
 
 #[command]

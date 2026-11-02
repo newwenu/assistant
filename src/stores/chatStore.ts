@@ -31,6 +31,7 @@ type ChatState = ChatConversationSlice &
     ) => void;
     reasoningChoice: ReasoningChoice;
     setReasoningChoice: (choice: ReasoningChoice) => void;
+    resetContextWindow: () => void;
   };
 
 let _orchestrator: ChatOrchestrator | null = null;
@@ -71,13 +72,22 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     ...conversationSlice,
     ...messageSlice,
     ...compactSlice,
-    contextUsage: { usedTokens: 0, maxTokens: 128_000, percentage: 0 },
+    contextUsage: { usedTokens: 0, hasUsage: false },
     selectedProviderId: null,
     selectedModelId: "",
     setSelectedProviderModel: (providerId, modelId) =>
       set({ selectedProviderId: providerId, selectedModelId: modelId }),
     reasoningChoice: DEFAULT_REASONING_CHOICE,
     setReasoningChoice: (choice) => set({ reasoningChoice: choice }),
+    resetContextWindow: () => {
+      const usage = get().contextUsage;
+      set({
+        contextUsage: {
+          usedTokens: usage.usedTokens,
+          hasUsage: usage.hasUsage,
+        },
+      });
+    },
   };
 });
 

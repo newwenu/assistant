@@ -91,7 +91,30 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             ON attachment_refs(conversation_id);
 
         CREATE INDEX IF NOT EXISTS idx_attachment_refs_att
-            ON attachment_refs(attachment_id);",
+            ON attachment_refs(attachment_id);
+
+        CREATE TABLE IF NOT EXISTS token_usage_records (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id       TEXT    NOT NULL,
+            message_id            TEXT,
+            attempt_id            TEXT,
+            branch_leaf_id        TEXT,
+            kind                  TEXT    NOT NULL,
+            provider_id           TEXT,
+            model_id              TEXT,
+            prompt_tokens         INTEGER NOT NULL,
+            completion_tokens     INTEGER NOT NULL,
+            cache_read_tokens     INTEGER,
+            cache_write_tokens    INTEGER,
+            reasoning_tokens      INTEGER,
+            cache_capable         INTEGER NOT NULL DEFAULT 0,
+            context_window_tokens INTEGER,
+            estimated             INTEGER NOT NULL DEFAULT 0,
+            created_at            INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_token_usage_conv
+            ON token_usage_records (conversation_id, branch_leaf_id, created_at DESC, id DESC);",
     )
     .map_err(|e| e.to_string())?;
 

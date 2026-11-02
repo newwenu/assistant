@@ -9,3 +9,4 @@ pub mod normalization;
 pub mod prompt_builder;
 pub mod provider_config;
 pub mod request_projection;
+pub mod token_estimate;

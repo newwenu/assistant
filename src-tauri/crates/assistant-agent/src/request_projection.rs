@@ -1,6 +1,7 @@
 use assistant_providers::types::{parse_content, ChatMessage, ContentBlock, MessageRole};
 
 use crate::multimodal;
+use crate::token_estimate::estimate_text_tokens;
 
 /// 单张图片的 token 估算（768×768 / 0.75 ≈ 765）。
 const IMAGE_TOKEN_ESTIMATE: usize = 765;
@@ -8,11 +9,10 @@ const IMAGE_TOKEN_ESTIMATE: usize = 765;
 /// 请求总量超预算时，把图片降级为占位文本，避免超出上下文窗口。
 ///
 /// 仅作用于出站请求，不修改持久化消息。
-pub fn offload_if_over_budget(messages: &mut [ChatMessage], context_limit: u32) {
-    let budget = context_limit as usize;
-    if budget == 0 {
+pub fn offload_if_over_budget(messages: &mut [ChatMessage], context_limit: Option<u32>) {
+    let Some(budget) = context_limit.map(|v| v as usize).filter(|&v| v > 0) else {
         return;
-    }
+    };
     let mut total = estimate_total_tokens(messages);
     if total <= budget {
         return;
@@ -46,7 +46,7 @@ pub fn offload_if_over_budget(messages: &mut [ChatMessage], context_limit: u32) 
                 ContentBlock::Image { attachment, .. } => {
                     delta -= IMAGE_TOKEN_ESTIMATE as isize;
                     let text = multimodal::offloaded_image_text(&attachment.attachment_id);
-                    delta += (text.len() / 4) as isize;
+                    delta += estimate_text_tokens(&text) as isize;
                     ContentBlock::Text { text }
                 }
                 other => other,
@@ -65,7 +65,10 @@ pub fn offload_if_over_budget(messages: &mut [ChatMessage], context_limit: u32) 
     }
 }
 
-fn estimate_total_tokens(messages: &[ChatMessage]) -> usize {
+/// 出站消息的 token 估算总和，与 offload 预算共用同一口径。
+///
+/// 供展示兜底（分支零记录时的占用投影）复用，调用方不得另写一套求和逻辑。
+pub fn estimate_total_tokens(messages: &[ChatMessage]) -> usize {
     let mut total = 0;
     for msg in messages {
         if let Some(blocks) = &msg.content_blocks {
@@ -73,7 +76,7 @@ fn estimate_total_tokens(messages: &[ChatMessage]) -> usize {
         } else if let Some(blocks) = parse_content(&msg.content) {
             total += estimate_blocks_tokens(&blocks);
         } else {
-            total += msg.content.len() / 4;
+            total += estimate_text_tokens(&msg.content);
         }
     }
     total
@@ -83,15 +86,15 @@ fn estimate_blocks_tokens(blocks: &[ContentBlock]) -> usize {
     blocks
         .iter()
         .map(|block| match block {
-            ContentBlock::Text { text } => text.len() / 4,
+            ContentBlock::Text { text } => estimate_text_tokens(text),
             ContentBlock::Image { .. } => IMAGE_TOKEN_ESTIMATE,
             ContentBlock::File { cached_data, .. } => match cached_data {
-                Some(data) => data.len() / 4,
+                Some(data) => estimate_text_tokens(data),
                 None => 20,
             },
-            ContentBlock::Thinking { thinking, .. } => thinking.len() / 4,
-            ContentBlock::ToolUse { input, .. } => input.len() / 4,
-            ContentBlock::ToolResult { output, .. } => output.len() / 4,
+            ContentBlock::Thinking { thinking, .. } => estimate_text_tokens(thinking),
+            ContentBlock::ToolUse { input, .. } => estimate_text_tokens(input),
+            ContentBlock::ToolResult { output, .. } => estimate_text_tokens(output),
         })
         .sum()
 }

@@ -7,7 +7,7 @@ export interface AppConf {
   closeToTray: boolean;
   keybindings: Record<string, string>;
   autoCompact: boolean;
-  compactThresholdPercent: number;
+  compactThresholdPercentOfBudget: number;
   compactSummaryPrompt: string | null;
   compactSummaryMaxTokens: number;
 }

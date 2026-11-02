@@ -32,7 +32,7 @@ fn usage_delta(prompt: u32, completion: u32) -> ChatDelta {
             cache_read_tokens: None,
             cache_write_tokens: None,
             reasoning_tokens: None,
-            context_window_tokens: 0,
+            context_window_tokens: None,
         }),
         ..Default::default()
     }
@@ -109,6 +109,67 @@ fn b7_stream_accumulator_usage_overwrite() {
 
     assert_eq!(accum.total_tokens(), Some(150));
     assert_eq!(accum.prompt_tokens(), Some(100));
+}
+
+#[test]
+fn b7_accumulator_prefers_provider_total_when_consistent() {
+    let mut accum = StreamAccumulator::new();
+    let delta = ChatDelta {
+        usage: Some(TokenUsage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 130,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    accum.apply_delta(&delta);
+    let outcome = accum.into_outcome();
+
+    assert_eq!(outcome.total_tokens, Some(130), "provider total wins");
+    assert!(!outcome.estimated);
+}
+
+#[test]
+fn b7_accumulator_falls_back_when_total_below_sum() {
+    let mut accum = StreamAccumulator::new();
+    let delta = ChatDelta {
+        usage: Some(TokenUsage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 90,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    accum.apply_delta(&delta);
+    let outcome = accum.into_outcome();
+
+    assert_eq!(outcome.total_tokens, Some(120), "P + C wins over bad total");
+    assert!(outcome.estimated);
+}
+
+#[test]
+fn b7_accumulator_retry_splits_attempt_usages() {
+    let mut accum = StreamAccumulator::new();
+    let retry = ChatDelta::retry_notification(1, 3, 0, "retry");
+
+    accum.apply_delta(&usage_delta(100, 10));
+    accum.apply_delta(&retry);
+    accum.apply_delta(&usage_delta(200, 20));
+
+    let outcome = accum.into_outcome();
+
+    assert_eq!(outcome.attempt_usages.len(), 2, "retry keeps both attempts");
+    assert_eq!(outcome.attempt_usages[0].prompt_tokens, Some(100));
+    assert_eq!(outcome.attempt_usages[1].prompt_tokens, Some(200));
+    assert_eq!(
+        outcome.prompt_tokens,
+        Some(200),
+        "latest attempt drives the outcome"
+    );
 }
 
 #[test]
@@ -550,14 +611,14 @@ fn d5_build_chat_options_default_no_temperature() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride::default(),
     );
 
     assert_eq!(opts.temperature, 0.7);
     assert_eq!(opts.max_tokens, 4096);
     assert!(opts.stream);
-    assert_eq!(opts.context_window_tokens, 128000);
+    assert_eq!(opts.context_window_tokens, Some(128000));
 }
 
 #[test]
@@ -568,7 +629,7 @@ fn d5_build_chat_options_default_with_temperature() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride::default(),
     );
 
@@ -584,12 +645,27 @@ fn d5_build_chat_options_quick() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride::default(),
     );
 
     assert_eq!(opts.temperature, 0.3);
     assert_eq!(opts.max_tokens, 1024);
+}
+
+#[test]
+fn d5_build_chat_options_unknown_window_stays_none() {
+    let kind = AgentKind::Default;
+    let mode = make_mode("default", None, None);
+
+    let opts = chat_options::build_chat_options(
+        &kind,
+        &mode,
+        None,
+        &chat_options::ReasoningOverride::default(),
+    );
+
+    assert_eq!(opts.context_window_tokens, None);
 }
 
 #[test]
@@ -600,7 +676,7 @@ fn d5_build_chat_options_deep_with_temperature() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride::default(),
     );
 
@@ -616,7 +692,7 @@ fn d5_build_chat_options_deep_no_temperature_fallback() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride::default(),
     );
 
@@ -632,7 +708,7 @@ fn d5_build_chat_options_custom() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride::default(),
     );
 
@@ -650,7 +726,7 @@ fn d5_build_chat_options_reasoning() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride {
             level: Some("high".to_string()),
         },
@@ -670,7 +746,7 @@ fn d5_build_chat_options_reasoning_default_level_ignores_mode() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride {
             level: Some("default".to_string()),
         },
@@ -690,7 +766,7 @@ fn d5_build_chat_options_reasoning_absent_level_equals_default() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride::default(),
     );
 
@@ -708,7 +784,7 @@ fn d5_build_chat_options_reasoning_override_off_wins() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride {
             level: Some("off".to_string()),
         },
@@ -728,7 +804,7 @@ fn d5_build_chat_options_reasoning_override_effort_wins() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride {
             level: Some("low".to_string()),
         },
@@ -748,7 +824,7 @@ fn d5_build_chat_options_reasoning_override_enables_without_effort() {
     let opts = chat_options::build_chat_options(
         &kind,
         &mode,
-        128000,
+        Some(128000),
         &chat_options::ReasoningOverride {
             level: Some("on".to_string()),
         },
@@ -1035,4 +1111,25 @@ fn chat_tasks_cancel_and_finish() {
 
     tasks.finish("conv-1");
     assert!(!tasks.is_running("conv-1"));
+}
+
+// ─── 估算：CJK 加权 ───
+
+#[test]
+fn estimate_ascii_four_bytes_per_token() {
+    let text = "a".repeat(1000);
+    assert_eq!(chat_runtime::estimate_text_tokens(&text), 250);
+}
+
+#[test]
+fn estimate_cjk_one_token_per_char() {
+    let text = "上下文占用".repeat(20);
+    assert_eq!(text.chars().count(), 100);
+    assert_eq!(chat_runtime::estimate_text_tokens(&text), 100);
+    assert!(chat_runtime::estimate_text_tokens(&text) > text.len() / 4);
+}
+
+#[test]
+fn estimate_mixed_text() {
+    assert_eq!(chat_runtime::estimate_text_tokens("abcdefgh中文测试"), 6);
 }

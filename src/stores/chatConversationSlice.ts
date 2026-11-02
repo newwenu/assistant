@@ -58,6 +58,7 @@ export interface ChatConversationSlice {
   batchDelete: (ids: string[]) => Promise<void>;
   purgeAll: () => Promise<void>;
   switchBranch: (messageId: string) => Promise<void>;
+  refreshTokenUsage: () => void;
   updateConversations: (convs: Conversation[]) => void;
 }
 
@@ -158,20 +159,14 @@ export function createConversationSlice(
             totalMessageCount: detail.totalCount,
             contextUsage: {
               usedTokens: 0,
-              maxTokens: 128_000,
-              percentage: 0,
+              hasUsage: false,
             },
             isFull: detail.conversation?.isFull ?? false,
             compactSummary: null,
             compactError: null,
             reasoningChoice: DEFAULT_REASONING_CHOICE,
           });
-          fetchTokenUsage(
-            id,
-            detail.conversation.modelId,
-            detail.conversation.providerId,
-            fetchTokenUsageDeps,
-          );
+          fetchTokenUsage(id, fetchTokenUsageDeps);
         }
       } catch (e) {
         log.error("Failed to switch conversation", e);
@@ -218,6 +213,13 @@ export function createConversationSlice(
       try {
         await persistQueue.enqueue(async () => {
           await chatService.updateConversationModel(id, modelId);
+        });
+        const usage = get().contextUsage;
+        set({
+          contextUsage: {
+            usedTokens: usage.usedTokens,
+            hasUsage: usage.hasUsage,
+          },
         });
       } catch (e) {
         log.error("updateModel failed", e);
@@ -286,6 +288,12 @@ export function createConversationSlice(
           "chat.errors.switchBranchFailed.description",
         );
       }
+    },
+
+    refreshTokenUsage: () => {
+      const convId = get().currentConversationId;
+      if (!convId) return;
+      fetchTokenUsage(convId, fetchTokenUsageDeps);
     },
 
     updateConversations: (convs: Conversation[]) => {

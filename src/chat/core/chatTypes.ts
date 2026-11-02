@@ -51,9 +51,25 @@ export interface TokenUsage {
 }
 
 export interface ContextUsage {
+  /** 占用 O：最新一次 chat 请求的输入 P；`hasUsage` 为 false 时不参与展示与百分比计算 */
   usedTokens: number;
-  maxTokens: number;
-  percentage: number;
+  /** 该分支上是否存在可用记录；false 时占用显示「—」 */
+  hasUsage: boolean;
+  /** 窗口 W；未知时必须为 undefined，不得填缺省值 */
+  maxTokens?: number;
+  /** 与绝对数互斥：`maxTokens` 为 undefined 时同为 undefined */
+  percentage?: number;
+  /** 最近一次请求的输出 C，仅 Tooltip 使用 */
+  completionTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+  /** 累计 A，独立于占用，不得复用 usedTokens；零记录时为 undefined */
+  cumulativeTokens?: number;
+  /** 含估算值，UI 加 `~` 前缀 */
+  estimated?: boolean;
+  /** 估算来源；`estimated` 为 true 时必有值 */
+  estimatedSource?: "record" | "projection";
 }
 
 export interface RetryNotification {
@@ -70,10 +86,36 @@ export interface ConversationDetail {
   totalCount: number;
 }
 
-export interface TokenUsageSummary {
+export interface TokenUsageOccupancySummary {
+  usedTokens?: number;
+  completionTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+  contextWindowTokens?: number;
+  percentage?: number;
+  estimated?: boolean;
+  /** 估算来源：记录表估算 / 分支零记录时的出站投影 */
+  estimatedSource?: "record" | "projection";
+}
+
+export interface TokenUsageCumulativeSummary {
   totalTokens: number;
-  contextWindowTokens: number;
-  percentage: number;
+  promptTokens: number;
+  completionTokens: number;
+}
+
+export interface TokenUsageCacheSummary {
+  hitTokens: number;
+  denominatorTokens: number;
+  hitRate?: number;
+}
+
+export interface TokenUsageSummary {
+  occupancy: TokenUsageOccupancySummary;
+  /** 该会话零记录时缺省，UI 显示「—」 */
+  cumulative?: TokenUsageCumulativeSummary;
+  cache?: TokenUsageCacheSummary;
 }
 
 export interface ChatDeltaPayload {

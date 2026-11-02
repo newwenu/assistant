@@ -61,19 +61,32 @@ describe("chatService", () => {
   });
 
   describe("getConversationTokenUsage", () => {
-    it("returns business type with totalTokens/contextWindowTokens", async () => {
+    it("returns occupancy/cumulative/cache groups unchanged", async () => {
       const row = {
-        totalTokens: 100,
-        contextWindowTokens: 128000,
-        percentage: 0.00078,
+        occupancy: {
+          usedTokens: 100,
+          completionTokens: 50,
+          contextWindowTokens: 128000,
+          percentage: 0.00078,
+          estimated: false,
+        },
+        cumulative: {
+          totalTokens: 150,
+          promptTokens: 100,
+          completionTokens: 50,
+        },
+        cache: { hitTokens: 20, denominatorTokens: 100, hitRate: 0.2 },
       };
       mockInvoke.mockResolvedValue(row);
-      const result = await chatService.getConversationTokenUsage("c1", 128000);
-      expect(result).toEqual({
-        totalTokens: 100,
-        contextWindowTokens: 128000,
-        percentage: 0.00078,
-      });
+      const result = await chatService.getConversationTokenUsage("c1");
+      expect(result).toEqual(row);
+    });
+
+    it("keeps unknown window and empty groups absent", async () => {
+      const row = { occupancy: { usedTokens: 100 } };
+      mockInvoke.mockResolvedValue(row);
+      const result = await chatService.getConversationTokenUsage("c1");
+      expect(result).toEqual(row);
     });
   });
 });

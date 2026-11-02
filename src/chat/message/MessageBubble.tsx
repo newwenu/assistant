@@ -12,6 +12,7 @@ import type {
 import { ErrorBlock } from "../blocks/ErrorBlock";
 import { RetryBanner } from "../blocks/RetryBanner";
 import { getErrorPresentation } from "../core/chatErrorRecovery";
+import type { RecoveryActionCode } from "../core/chatErrorRecovery";
 import { extractPlainText, parseContent } from "../core/contentBlockUtils";
 import { translateKey } from "../../i18n";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
@@ -34,6 +35,7 @@ interface MessageBubbleProps {
   onRetry?: () => void;
   onSwitchBranch?: (messageId: string, direction: "prev" | "next") => void;
   onFork?: (messageId: string) => void;
+  onErrorAction?: (code: RecoveryActionCode) => void;
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
@@ -49,6 +51,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     onRetry,
     onSwitchBranch,
     onFork,
+    onErrorAction,
   }) => {
     const { t } = useTranslation();
     const isUser = message.role === "user";
@@ -186,7 +189,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
               .join(" ")}
           >
             {hasError && message.error && (
-              <ErrorBlock error={message.error} onRetry={onRetry} />
+              <ErrorBlock
+                error={message.error}
+                onRetry={onRetry}
+                onAction={onErrorAction}
+              />
             )}
             {retryStatus && isStreaming && (
               <RetryBanner

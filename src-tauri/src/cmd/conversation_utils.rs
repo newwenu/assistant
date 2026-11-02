@@ -25,11 +25,10 @@ pub(crate) fn messages_with_sibling_counts(
 pub(crate) fn resolve_context_window_for_conversation(
     conn: &rusqlite::Connection,
     conversation_id: &str,
-) -> u32 {
-    let conv = match conversations::get_conversation_by_id(conn, conversation_id) {
-        Ok(Some(c)) => c,
-        _ => return 128_000,
-    };
+) -> Option<u32> {
+    let conv = conversations::get_conversation_by_id(conn, conversation_id)
+        .ok()
+        .flatten()?;
     let model_id = &conv.model_id;
     if let Some(ref provider_id) = conv.provider_id {
         if let Ok(Some(provider_row)) = provider_store::get_provider_by_id(conn, provider_id) {

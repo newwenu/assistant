@@ -112,7 +112,9 @@
       },
       "compact": {
         "auto_compact": { "label": "Auto-terminate on context limit" },
-        "compact_threshold_percent": { "label": "Termination threshold" },
+        "compact_threshold_percent_of_budget": {
+          "label": "Termination threshold (of usable budget)"
+        },
         "compact_summary_prompt": {
           "label": "Custom summary prompt",
           "placeholder": "Leave empty to use default template"
@@ -436,7 +438,7 @@
       "category_network_message": "Unable to connect to the service. Please check your network and retry",
       "category_auth_message": "API Key is invalid or expired. Please check your settings",
       "category_rate_limit_message": "Too many requests. Please retry after a short wait",
-      "category_context_overflow_message": "Conversation exceeds the model's context window limit",
+      "category_context_overflow_message": "The conversation exceeds the model's context window. Compress the context, start a new chat, or switch to a model with a larger context window, then retry.",
       "category_timeout_message": "Service is taking too long to respond. Please retry",
       "category_provider_quota_message": "Provider account quota is exhausted. Check your account or switch provider",
       "category_provider_unavailable_message": "Provider service is temporarily unavailable. Please retry later",
@@ -450,6 +452,19 @@
       "action_compress_context": "Compress Context",
       "action_start_new_chat": "New Chat",
       "action_copy_diagnostics": "Copy Diagnostics"
+    },
+    "context": {
+      "used": "Input",
+      "output": "Output",
+      "cache_read": "Cache Hit",
+      "cache_write": "Cache Write",
+      "reasoning": "Reasoning",
+      "cumulative": "Cumulative",
+      "source": "Source",
+      "source_provider": "Reported by provider",
+      "source_estimate_record": "Local estimate (provider did not report input tokens)",
+      "source_estimate_projection": "Local estimate (provider did not report usage)",
+      "no_messages": "No messages yet"
     },
     "errors": {
       "renameFailed": {

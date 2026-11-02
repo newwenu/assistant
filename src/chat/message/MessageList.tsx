@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { MessageBubble, RoleContext } from "./MessageBubble";
 import type { Message } from "../../chat/core/chatTypes";
 import type { RetryNotification } from "../../chat/core/chatTypes";
+import type { RecoveryActionCode } from "../core/chatErrorRecovery";
 import css from "./MessageList.module.css";
 
 const SCROLL_THRESHOLD = 100;
@@ -30,6 +31,7 @@ interface MessageListProps {
   onRetryMessage?: (messageId: string) => void;
   onSwitchBranch?: (messageId: string, direction: "prev" | "next") => void;
   onFork?: (messageId: string) => void;
+  onErrorAction?: (code: RecoveryActionCode) => void;
   retryStatus?: RetryNotification | null;
 }
 
@@ -49,6 +51,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   onRetryMessage,
   onSwitchBranch,
   onFork,
+  onErrorAction,
   retryStatus,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -229,6 +232,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                 }
                 onSwitchBranch={onSwitchBranch}
                 onFork={onFork}
+                onErrorAction={onErrorAction}
               />
             </RoleContext.Provider>
           );

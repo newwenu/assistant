@@ -91,8 +91,8 @@ pub struct ModelConfigDto {
     pub id: String,
     pub name: String,
     pub owned_by: String,
-    #[serde(default)]
-    pub context_window: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u32>,
     #[serde(default)]
     pub support_vision: bool,
     /// 输入模态列表（"text"/"image"/"pdf"/"audio"/"video"）；

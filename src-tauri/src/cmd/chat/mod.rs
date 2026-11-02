@@ -20,6 +20,7 @@ use assistant_crypto::api_key as crypto;
 use assistant_providers::base::{ProviderError, ProviderErrorPayload};
 use assistant_storage::attachment_store::AttachmentStore;
 
+use crate::cmd::token_usage_record::{build_usage_records, cache_capable_of, UsageRecordCtx};
 use insert::InsertedMessages;
 use stream::{
     emit_delta, emit_stream_error, save_partial_on_error, spawn_compaction_listener,
@@ -178,12 +179,14 @@ fn spawn_chat_stream(spawn: ChatStreamSpawn<'_>) -> Result<(), String> {
         },
     );
 
-    let (auto_compact, compact_threshold_percent) = assistant_config::app_conf::AppConf::load()
-        .map(|c| (c.auto_compact, c.compact_threshold_percent))
-        .unwrap_or((
-            true,
-            assistant_config::constant::COMPACTION_THRESHOLD_PERCENT,
-        ));
+    let (auto_compact, compact_threshold_percent_of_budget) =
+        assistant_config::app_conf::AppConf::load()
+            .map(|c| (c.auto_compact, c.compact_threshold_percent_of_budget))
+            .unwrap_or((
+                true,
+                assistant_config::constant::COMPACTION_THRESHOLD_PERCENT,
+            ));
+    let reserved_output_tokens = options.max_tokens;
 
     let db_tx = spawn_db_writer(app);
     let finish_tx = spawn_finish_listener(app);
@@ -192,6 +195,8 @@ fn spawn_chat_stream(spawn: ChatStreamSpawn<'_>) -> Result<(), String> {
     let conv_id = conversation_id.to_string();
     let msg_id = assistant_msg_id.to_string();
     let attempt_id_clone = attempt_id.clone();
+    let branch_leaf_id = detail.conversation.active_branch_id.clone();
+    let cache_capable = cache_capable_of(&provider_row);
 
     let stream_future = async move {
         let stream = match adapter.chat_completion_stream(
@@ -239,6 +244,17 @@ fn spawn_chat_stream(spawn: ChatStreamSpawn<'_>) -> Result<(), String> {
 
         match result {
             Ok(outcome) => {
+                let usage_ctx = UsageRecordCtx {
+                    conv_id: &conv_id,
+                    msg_id: &msg_id,
+                    attempt_id: &attempt_id_clone,
+                    branch_leaf_id: branch_leaf_id.as_deref(),
+                    kind: "chat",
+                    provider_id: Some(provider_row.id.as_str()),
+                    model_id: Some(model.as_str()),
+                    cache_capable,
+                };
+                let usage_records = build_usage_records(&outcome.attempt_usages, &usage_ctx);
                 let tokens = resolve_final_tokens(&outcome);
                 let reasoning = if kind.persists_reasoning() && !outcome.full_reasoning.is_empty() {
                     Some(outcome.full_reasoning)
@@ -256,21 +272,44 @@ fn spawn_chat_stream(spawn: ChatStreamSpawn<'_>) -> Result<(), String> {
                     tokens,
                     reasoning,
                     tool_calls_json,
+                    usage_records,
                 });
                 if let Some(pt) = outcome.prompt_tokens {
-                    if compaction::should_terminate(
+                    match compaction::evaluate_compaction(
                         pt,
                         context_window_tokens,
                         auto_compact,
-                        compact_threshold_percent,
+                        compact_threshold_percent_of_budget,
+                        reserved_output_tokens,
                     ) {
-                        let _ = compact_tx.send((conv_id.clone(), detail, provider_row));
+                        compaction::CompactDecision::Terminate => {
+                            let _ = compact_tx.send((conv_id.clone(), detail, provider_row));
+                        }
+                        compaction::CompactDecision::Undetermined => {
+                            log::warn!(
+                                "[compact-decision] conversation={} 窗口未知，无法判定是否超限；不触发自动终止（P={}）",
+                                conv_id,
+                                pt
+                            );
+                        }
+                        compaction::CompactDecision::NotNeeded => {}
                     }
                 }
                 let _ = finish_tx.send(conv_id);
             }
             Err(StreamError::Cancelled(partial)) => {
-                save_partial_on_error(&db_tx, &msg_id, &partial);
+                let usage_ctx = UsageRecordCtx {
+                    conv_id: &conv_id,
+                    msg_id: &msg_id,
+                    attempt_id: &attempt_id_clone,
+                    branch_leaf_id: branch_leaf_id.as_deref(),
+                    kind: "chat",
+                    provider_id: Some(provider_row.id.as_str()),
+                    model_id: Some(model.as_str()),
+                    cache_capable,
+                };
+                let usage_records = build_usage_records(&partial.attempt_usages, &usage_ctx);
+                save_partial_on_error(&db_tx, &msg_id, &partial, usage_records);
                 emit_stream_error(
                     &ectx,
                     seq_val,
@@ -279,12 +318,34 @@ fn spawn_chat_stream(spawn: ChatStreamSpawn<'_>) -> Result<(), String> {
                 let _ = finish_tx.send(conv_id);
             }
             Err(StreamError::Provider(e, partial)) => {
-                save_partial_on_error(&db_tx, &msg_id, &partial);
+                let usage_ctx = UsageRecordCtx {
+                    conv_id: &conv_id,
+                    msg_id: &msg_id,
+                    attempt_id: &attempt_id_clone,
+                    branch_leaf_id: branch_leaf_id.as_deref(),
+                    kind: "chat",
+                    provider_id: Some(provider_row.id.as_str()),
+                    model_id: Some(model.as_str()),
+                    cache_capable,
+                };
+                let usage_records = build_usage_records(&partial.attempt_usages, &usage_ctx);
+                save_partial_on_error(&db_tx, &msg_id, &partial, usage_records);
                 emit_stream_error(&ectx, seq_val, &ProviderErrorPayload::from(&e));
                 let _ = finish_tx.send(conv_id);
             }
             Err(StreamError::Timeout(partial)) => {
-                save_partial_on_error(&db_tx, &msg_id, &partial);
+                let usage_ctx = UsageRecordCtx {
+                    conv_id: &conv_id,
+                    msg_id: &msg_id,
+                    attempt_id: &attempt_id_clone,
+                    branch_leaf_id: branch_leaf_id.as_deref(),
+                    kind: "chat",
+                    provider_id: Some(provider_row.id.as_str()),
+                    model_id: Some(model.as_str()),
+                    cache_capable,
+                };
+                let usage_records = build_usage_records(&partial.attempt_usages, &usage_ctx);
+                save_partial_on_error(&db_tx, &msg_id, &partial, usage_records);
                 emit_stream_error(
                     &ectx,
                     seq_val,

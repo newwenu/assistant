@@ -170,21 +170,21 @@ pub fn catalog_reasoning_levels(model_id: &str) -> Option<ReasoningLevels> {
         .and_then(|f| f.reasoning_levels.clone())
 }
 
-const DEFAULT_CONTEXT_WINDOW: u32 = 128_000;
-
-fn fallback_context_window(model_id: &str) -> u32 {
+fn fallback_context_window(model_id: &str) -> Option<u32> {
     let id = model_id.to_lowercase();
     if id.contains("gpt-4-32k") {
-        32_768
+        Some(32_768)
     } else if id.contains("gpt-3.5-turbo-16k") {
-        16_384
+        Some(16_384)
     } else {
-        DEFAULT_CONTEXT_WINDOW
+        None
     }
 }
 
-pub fn get_context_window_tokens(model_id: &str) -> u32 {
-    catalog_context_limit(model_id).unwrap_or_else(|| fallback_context_window(model_id))
+/// 窗口未知时返回 `None`，由调用方决定如何呈现未知，不得回退到硬编码常量。
+pub fn get_context_window_tokens(model_id: &str) -> Option<u32> {
+    let normalized = model_id.to_lowercase();
+    catalog_context_limit(&normalized).or_else(|| fallback_context_window(&normalized))
 }
 
 #[cfg(all(test, feature = "internal-tests"))]

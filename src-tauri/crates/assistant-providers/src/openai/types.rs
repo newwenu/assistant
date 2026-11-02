@@ -83,6 +83,8 @@ pub(crate) struct ChatUsage {
     #[serde(default)]
     pub prompt_tokens_details: Option<ChatPromptTokensDetails>,
     #[serde(default)]
+    pub completion_tokens_details: Option<ChatCompletionTokensDetails>,
+    #[serde(default)]
     pub prompt_cache_hit_tokens: Option<u32>,
     #[serde(default)]
     #[allow(dead_code)]
@@ -93,6 +95,12 @@ pub(crate) struct ChatUsage {
 pub(crate) struct ChatPromptTokensDetails {
     #[serde(default)]
     pub cached_tokens: Option<u32>,
+}
+
+#[derive(Deserialize, Debug)]
+pub(crate) struct ChatCompletionTokensDetails {
+    #[serde(default)]
+    pub reasoning_tokens: Option<u32>,
 }
 
 #[derive(Deserialize, Debug)]

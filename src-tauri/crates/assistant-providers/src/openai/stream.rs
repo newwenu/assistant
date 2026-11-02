@@ -17,12 +17,15 @@ impl From<ChatUsage> for UnifiedTokenUsage {
     fn from(usage: ChatUsage) -> Self {
         let standard_cached = usage.prompt_tokens_details.and_then(|d| d.cached_tokens);
         let cache_read = usage.prompt_cache_hit_tokens.or(standard_cached);
+        let reasoning = usage
+            .completion_tokens_details
+            .and_then(|d| d.reasoning_tokens);
 
         Self {
             prompt_token_count: usage.prompt_tokens.unwrap_or(0),
             candidates_token_count: usage.completion_tokens.unwrap_or(0),
             total_token_count: usage.total_tokens.unwrap_or(0),
-            reasoning_token_count: None,
+            reasoning_token_count: reasoning,
             cached_content_token_count: cache_read,
             cache_creation_token_count: None,
         }
@@ -290,6 +293,7 @@ mod tests {
                 prompt_tokens_details: Some(ChatPromptTokensDetails {
                     cached_tokens: Some(30),
                 }),
+                completion_tokens_details: None,
                 prompt_cache_hit_tokens: None,
                 prompt_cache_miss_tokens: None,
             }),
@@ -298,6 +302,7 @@ mod tests {
         let u = resp[0].usage.as_ref().unwrap();
         assert_eq!(u.prompt_token_count, 100);
         assert_eq!(u.cached_content_token_count, Some(30));
+        assert_eq!(u.reasoning_token_count, None);
 
         let chunk_deepseek = ChatResponseChunk {
             object: Some("chat.completion.chunk".to_string()),
@@ -309,6 +314,7 @@ mod tests {
                 prompt_tokens_details: Some(ChatPromptTokensDetails {
                     cached_tokens: Some(20),
                 }),
+                completion_tokens_details: None,
                 prompt_cache_hit_tokens: Some(40),
                 prompt_cache_miss_tokens: None,
             }),
@@ -316,6 +322,28 @@ mod tests {
         let resp = into_unified_responses(chunk_deepseek);
         let u = resp[0].usage.as_ref().unwrap();
         assert_eq!(u.cached_content_token_count, Some(40));
+    }
+
+    #[test]
+    fn usage_reasoning_tokens_mapping() {
+        let chunk = ChatResponseChunk {
+            object: Some("chat.completion.chunk".to_string()),
+            choices: None,
+            usage: Some(ChatUsage {
+                prompt_tokens: Some(100),
+                completion_tokens: Some(80),
+                total_tokens: Some(180),
+                prompt_tokens_details: None,
+                completion_tokens_details: Some(ChatCompletionTokensDetails {
+                    reasoning_tokens: Some(60),
+                }),
+                prompt_cache_hit_tokens: None,
+                prompt_cache_miss_tokens: None,
+            }),
+        };
+        let resp = into_unified_responses(chunk);
+        let u = resp[0].usage.as_ref().unwrap();
+        assert_eq!(u.reasoning_token_count, Some(60));
     }
 
     #[test]
@@ -351,6 +379,7 @@ mod tests {
                 completion_tokens: Some(5),
                 total_tokens: Some(15),
                 prompt_tokens_details: None,
+                completion_tokens_details: None,
                 prompt_cache_hit_tokens: None,
                 prompt_cache_miss_tokens: None,
             }),

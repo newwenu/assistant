@@ -50,7 +50,7 @@ fn sample_token_usage() -> TokenUsage {
         cache_read_tokens: None,
         cache_write_tokens: None,
         reasoning_tokens: None,
-        context_window_tokens: 0,
+        context_window_tokens: None,
     }
 }
 
@@ -315,8 +315,8 @@ fn token_usage_dto_serde_default_fields() {
         "cacheWriteTokens should default to None (provider did not report cache stats)"
     );
     assert_eq!(
-        usage.context_window_tokens, 0,
-        "contextWindowTokens should default to 0"
+        usage.context_window_tokens, None,
+        "contextWindowTokens should default to None (window unknown)"
     );
     let serialized = serde_json::to_string(&usage).unwrap();
     assert!(

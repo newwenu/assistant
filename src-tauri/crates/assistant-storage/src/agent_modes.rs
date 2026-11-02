@@ -22,13 +22,6 @@ pub struct AgentModeRow {
     pub updated_at: i64,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TokenUsageSummary {
-    pub total_tokens: i64,
-    pub context_window_tokens: u32,
-    pub percentage: f32,
-}
-
 const MODE_SELECT: &str = "id, name, description, kind, prompt, model, temperature, max_tokens, reasoning_enabled, reasoning_effort, tools, presentation_rank, is_builtin, created_at, updated_at";
 
 fn read_mode_row(row: &rusqlite::Row) -> rusqlite::Result<AgentModeRow> {
@@ -270,36 +263,4 @@ pub fn reset_builtin_mode(conn: &Connection, id: &str) -> Result<(), StorageErro
     )
     .map_err(|e| StorageError::Other(e.to_string()))?;
     Ok(())
-}
-
-pub fn get_conversation_token_usage(
-    conn: &Connection,
-    conv_id: &str,
-    context_window_tokens: u32,
-) -> Result<TokenUsageSummary, String> {
-    let total_tokens: i64 = conn
-        .query_row(
-            "SELECT COALESCE(SUM(COALESCE(tokens, (LENGTH(content) + 3) / 4 + 4)), 0) FROM messages WHERE conversation_id = ?1",
-            params![conv_id],
-            |row| row.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-
-    let ctx = if context_window_tokens > 0 {
-        context_window_tokens
-    } else {
-        128_000
-    };
-
-    let percentage = if ctx > 0 {
-        total_tokens as f32 / ctx as f32
-    } else {
-        0.0
-    };
-
-    Ok(TokenUsageSummary {
-        total_tokens,
-        context_window_tokens: ctx,
-        percentage,
-    })
 }

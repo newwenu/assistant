@@ -6,5 +6,6 @@ pub mod db;
 pub mod error;
 pub mod migrations;
 pub mod providers;
+pub mod token_usage;
 pub mod tool_favorites;
 pub mod tool_history;

@@ -676,6 +676,21 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   min-width: 24px;
 }
 
+.chat-context-segments {
+  display: flex;
+  width: 48px;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--color-border-secondary);
+  flex-shrink: 0;
+}
+
+.chat-context-segment {
+  height: 100%;
+  transition: width 0.2s ease;
+}
+
 .chat-send-btn {
   flex-shrink: 0;
 }

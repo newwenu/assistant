@@ -460,12 +460,12 @@
       "label": "settings.general.compact.auto_compact.label"
     },
     {
-      "key": "compactThresholdPercent",
+      "key": "compactThresholdPercentOfBudget",
       "group": "app",
       "section": "general-main",
       "type": "slider",
       "default": 80,
-      "label": "settings.general.compact.compact_threshold_percent.label"
+      "label": "settings.general.compact.compact_threshold_percent_of_budget.label"
     },
     {
       "key": "compactSummaryPrompt",

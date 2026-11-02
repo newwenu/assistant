@@ -1,5 +1,10 @@
 import React, { useEffect, useState, useCallback, type RefObject } from "react";
-import { Button, Modal, Typography, Progress, Tooltip } from "antd";
+import { Button, Modal, Typography, Tooltip } from "antd";
+import { ContextBar } from "./context/ContextBar";
+import {
+  resolveDefaultModel,
+  resolveProviderModel,
+} from "./core/providerModel";
 import {
   PlusOutlined,
   SettingOutlined,
@@ -11,10 +16,6 @@ import { chatService } from "../services/chatService";
 import { orbService } from "../services/orbService";
 import { useChatStore } from "../stores/chatStore";
 import { useChatStreamStore } from "../stores/chatStreamStore";
-import {
-  CONTEXT_WARN_THRESHOLD,
-  CONTEXT_DANGER_THRESHOLD,
-} from "../config/constants";
 import { useProviderStore } from "../stores/providerStore";
 import { MessageList } from "./message/MessageList";
 import { MessageInput } from "./message/MessageInput";
@@ -24,6 +25,7 @@ import { ReasoningSelector } from "./selectors/ReasoningSelector";
 import { ProviderSelector } from "./selectors/ProviderSelector";
 import { CompactBanner } from "./compact/CompactBanner";
 import { CompactErrorBanner } from "./compact/CompactErrorBanner";
+import type { RecoveryActionCode } from "./core/chatErrorRecovery";
 import { useAgentModeStore } from "../stores/agentModeStore";
 import { useAttachmentStore } from "../stores/attachmentStore";
 import { AttachmentPreview } from "./message/AttachmentPreview";
@@ -36,46 +38,6 @@ const log = createLogger("ChatView");
 
 interface ChatViewProps {
   modelOpenRef?: RefObject<boolean>;
-}
-
-function ContextBar({
-  usage,
-}: {
-  usage: { usedTokens: number; maxTokens: number; percentage: number };
-}) {
-  const pct = Math.min(usage.percentage * 100, 100);
-  let status: "normal" | "exception" | "active" = "normal";
-  if (pct >= CONTEXT_DANGER_THRESHOLD * 100) status = "exception";
-  else if (pct >= CONTEXT_WARN_THRESHOLD * 100) status = "active";
-  const formatK = (n: number) =>
-    n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-  return (
-    <Tooltip
-      title={`${Math.round(usage.usedTokens).toLocaleString()} / ${Math.round(usage.maxTokens).toLocaleString()} tokens (${pct.toFixed(1)}%)`}
-    >
-      <div className="chat-context-bar">
-        <span className="chat-context-bar-text">
-          {formatK(Math.round(usage.usedTokens))}/
-          {formatK(Math.round(usage.maxTokens))}
-        </span>
-        <Progress
-          percent={pct}
-          size="small"
-          status={status}
-          showInfo={false}
-          style={{ width: 48, margin: 0 }}
-          strokeColor={
-            status === "exception"
-              ? "#ff4d4f"
-              : status === "active"
-                ? "#faad14"
-                : undefined
-          }
-        />
-        <span className="chat-context-bar-text">{pct.toFixed(0)}%</span>
-      </div>
-    </Tooltip>
-  );
 }
 
 const AttachmentPreviewBar: React.FC = () => {
@@ -125,46 +87,24 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       .catch(() => useChatStore.getState().loadConversations());
   }, []);
 
-  const resolveProviderModel = useCallback(
-    (providerId: string | null, modelId: string) => {
-      const availableProviders = provider.providers;
-      if (availableProviders.length === 0) {
-        return { providerId: null, modelId: "" };
-      }
-      const p = availableProviders.find((pr) => pr.id === providerId);
-      if (!p) {
-        const fallback = availableProviders[0];
-        let fallbackModel = fallback.defaultModel || "";
-        if (fallback.models.length > 0 && !fallbackModel)
-          fallbackModel = fallback.models[0].id;
-        return { providerId: fallback.id, modelId: fallbackModel };
-      }
-      const models = p.models;
-      const modelExists = models.some((m) => m.id === modelId);
-      if (!modelExists) {
-        let fallbackModel = p.defaultModel || "";
-        if (models.length > 0 && !fallbackModel) fallbackModel = models[0].id;
-        return { providerId: p.id, modelId: fallbackModel };
-      }
-      return { providerId: p.id, modelId };
-    },
-    [provider.providers],
-  );
-
   useEffect(() => {
     if (chat.currentConversationId && chat.conversations.length > 0) {
       const conv = chat.conversations.find(
         (c) => c.id === chat.currentConversationId,
       );
       if (conv) {
-        const resolved = resolveProviderModel(conv.providerId, conv.modelId);
+        const resolved = resolveProviderModel(
+          provider.providers,
+          conv.providerId,
+          conv.modelId,
+        );
         setSelectedProviderModel(resolved.providerId, resolved.modelId);
       }
     }
   }, [
     chat.currentConversationId,
     chat.conversations,
-    resolveProviderModel,
+    provider.providers,
     setSelectedProviderModel,
   ]);
 
@@ -172,14 +112,17 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     if (!currentProviderId) return;
     const exists = provider.providers.some((p) => p.id === currentProviderId);
     if (!exists) {
-      const resolved = resolveProviderModel(null, currentModelId);
+      const resolved = resolveProviderModel(
+        provider.providers,
+        null,
+        currentModelId,
+      );
       setSelectedProviderModel(resolved.providerId, resolved.modelId);
     }
   }, [
     provider.providers,
     currentProviderId,
     currentModelId,
-    resolveProviderModel,
     setSelectedProviderModel,
   ]);
 
@@ -203,12 +146,16 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     [chat],
   );
 
+  const clearContextWindow = useCallback(() => {
+    chat.resetContextWindow();
+  }, [chat]);
+
   const handleProviderChange = useCallback(
     (newProviderId: string) => {
       const p = provider.providers.find((pr) => pr.id === newProviderId);
-      let modelId = p?.defaultModel || "";
-      if (p && p.models.length > 0 && !modelId) modelId = p.models[0].id;
+      const modelId = p ? resolveDefaultModel(p) : "";
       setSelectedProviderModel(newProviderId, modelId);
+      clearContextWindow();
       if (chat.currentConversationId) {
         void chatService
           .updateConversationProviderAndModel(
@@ -219,7 +166,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
           .catch((e) => log.error("Failed to update provider and model", e));
       }
     },
-    [provider.providers, chat, setSelectedProviderModel],
+    [provider.providers, chat, setSelectedProviderModel, clearContextWindow],
   );
 
   const handleNewConversation = useCallback(() => {
@@ -232,8 +179,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     }
     const pid = currentProviderId || provider.providers[0].id;
     const p = provider.providers.find((pr) => pr.id === pid);
-    let modelId = p?.defaultModel || "";
-    if (p && p.models.length > 0 && !modelId) modelId = p.models[0].id;
+    const modelId = p ? resolveDefaultModel(p) : "";
     void chat.createConversation(pid, modelId);
   }, [provider.providers, currentProviderId, chat, modal, t]);
 
@@ -259,6 +205,26 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
       .catch((e) => log.warn("Failed to open main window", e));
   }, []);
 
+  const handleErrorAction = useCallback(
+    (code: RecoveryActionCode) => {
+      switch (code) {
+        case "compress_context":
+          void chat.manualCompact();
+          break;
+        case "start_new_chat":
+          handleNewConversation();
+          break;
+        case "open_model_settings":
+          handleOpenSettings();
+          break;
+        default:
+          log.warn("Unhandled error recovery action", { code });
+          break;
+      }
+    },
+    [chat, handleNewConversation, handleOpenSettings],
+  );
+
   const handleModeChange = useCallback(
     (modeId: string) => {
       chat.setReasoningChoice("inherit");
@@ -268,6 +234,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
         for (const p of provider.providers) {
           if (p.models.some((m) => m.id === mode.model)) {
             setSelectedProviderModel(p.id, mode.model);
+            clearContextWindow();
             if (chat.currentConversationId) {
               void chatService
                 .updateConversationProviderAndModel(
@@ -287,7 +254,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
         }
       }
     },
-    [provider.providers, chat, setSelectedProviderModel],
+    [provider.providers, chat, setSelectedProviderModel, clearContextWindow],
   );
 
   const handleEditMessage = useCallback(
@@ -442,6 +409,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
               onRetryMessage={handleRetry}
               onSwitchBranch={handleSwitchBranch}
               onFork={handleFork}
+              onErrorAction={handleErrorAction}
               retryStatus={stream.retryStatus}
             />
           )}

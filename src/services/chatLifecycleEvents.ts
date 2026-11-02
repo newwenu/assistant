@@ -153,6 +153,9 @@ export function subscribeChatLifecycleEvents(): () => void {
           ),
           activeBranchId: payload.activeBranchId,
         });
+        if (payload.changeKind !== "stream_finished") {
+          useChatStore.getState().refreshTokenUsage();
+        }
       }
     }),
   );

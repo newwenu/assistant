@@ -10,6 +10,7 @@ mod orb;
 mod os_tool_exec;
 mod provider;
 mod storage;
+mod token_usage_record;
 mod tool;
 #[cfg(feature = "vault")]
 pub(crate) mod vault;
