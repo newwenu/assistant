@@ -33,6 +33,8 @@ export type { PendingRemovalEntryDto as PendingRemovalEntry } from "./contract/v
 export type { PendingRemovalsDto as PendingRemovals } from "./contract/vault.contract";
 export type { ReadynessDto as Readyness } from "./contract/vault.contract";
 export type { RemoteModeDto as RemoteMode } from "./contract/vault.contract";
+export type { RemoteStatusDto as RemoteStatus } from "./contract/vault.contract";
+export type { RemoteStatusErrorKindDto as RemoteStatusErrorKind } from "./contract/vault.contract";
 export type { RepositoryStateDto as RepositoryState } from "./contract/vault.contract";
 export type { SshKeyInfoDto as SshKeyInfo } from "./contract/vault.contract";
 export type { SshKeyMetaDto as SshKeyMeta } from "./contract/vault.contract";

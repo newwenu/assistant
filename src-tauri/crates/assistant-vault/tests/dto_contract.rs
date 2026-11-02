@@ -1,13 +1,14 @@
 use assistant_crypto::error::VaultError;
 use assistant_crypto::vault_crypto::totp::TotpResult;
 use assistant_sync::types::{
-    EntryPreview, EntryPreviewField, Readyness, RepositoryState, SyncConfig, SyncError, SyncResult,
+    EntryPreview, EntryPreviewField, Readyness, RemoteStatus, RemoteStatusErrorKind,
+    RepositoryState, SyncConfig, SyncError, SyncResult,
 };
 use assistant_vault::dto::{
     ConflictFileDto, DisasterRecoveryResultDto, EntryPreviewDto, HibpAuditEntryDto,
-    PendingRemovalsDto, ReadynessDto, RemoteModeDto, RepositoryStateDto, SshKeyInfoDto,
-    SshKeyMetaDto, SyncActionDto, SyncConfigDto, SyncResultDto, TotpResultDto,
-    UnreadableEntriesDto, UnreadableReasonDto, VaultErrorCode, VaultErrorDto,
+    PendingRemovalsDto, ReadynessDto, RemoteModeDto, RemoteStatusDto, RemoteStatusErrorKindDto,
+    RepositoryStateDto, SshKeyInfoDto, SshKeyMetaDto, SyncActionDto, SyncConfigDto, SyncResultDto,
+    TotpResultDto, UnreadableEntriesDto, UnreadableReasonDto, VaultErrorCode, VaultErrorDto,
 };
 use serde_json::{json, to_value};
 
@@ -124,6 +125,7 @@ fn totp_result_dto_is_one_to_one() {
 fn readyness_dto_is_one_to_one() {
     for state in [
         Readyness::NoSync,
+        Readyness::NoRemote,
         Readyness::Dirty,
         Readyness::Ready,
         Readyness::RepoState(RepositoryState::RebaseInteractive),
@@ -135,6 +137,62 @@ fn readyness_dto_is_one_to_one() {
             "ReadynessDto must not change the wire format for {state}"
         );
     }
+}
+
+#[test]
+fn remote_status_dto_serializes_camel_case() {
+    let domain = RemoteStatus {
+        upstream: Some("origin/main".into()),
+        ahead: Some(2),
+        behind: Some(3),
+        fetched: true,
+        checked_at: 1_700_000_000_000,
+        error_kind: Some(RemoteStatusErrorKind::FetchFailed),
+        error_detail: Some("sanitized detail".into()),
+    };
+    let dto = RemoteStatusDto::from(domain.clone());
+    assert_eq!(
+        to_value(&domain).unwrap(),
+        to_value(&dto).unwrap(),
+        "RemoteStatusDto must not change the wire format"
+    );
+    let value = to_value(&dto).unwrap();
+    assert_eq!(value["checkedAt"], json!(1_700_000_000_000i64));
+    assert_eq!(value["errorKind"], json!("fetchFailed"));
+}
+
+#[test]
+fn remote_status_error_kind_wire_is_frozen() {
+    assert_eq!(
+        to_value(RemoteStatusErrorKindDto::NoRemote).unwrap(),
+        json!("noRemote")
+    );
+    assert_eq!(
+        to_value(RemoteStatusErrorKindDto::NoUpstream).unwrap(),
+        json!("noUpstream")
+    );
+    assert_eq!(
+        to_value(RemoteStatusErrorKindDto::FetchFailed).unwrap(),
+        json!("fetchFailed")
+    );
+    assert_eq!(
+        to_value(RemoteStatusErrorKindDto::CompareFailed).unwrap(),
+        json!("compareFailed")
+    );
+}
+
+#[test]
+fn git_errors_map_to_expected_codes() {
+    let dto = VaultErrorDto::from(SyncError::GitFailed {
+        code: 128,
+        stderr: "synthetic".into(),
+    });
+    assert_eq!(dto.code, VaultErrorCode::GitUnavailable);
+    assert!(dto.retryable);
+
+    let dto = VaultErrorDto::from(SyncError::NoUpstreamConfigured);
+    assert_eq!(dto.code, VaultErrorCode::NoUpstream);
+    assert!(!dto.retryable);
 }
 
 #[test]
@@ -268,6 +326,7 @@ fn vault_error_code_strings_are_frozen() {
         (VaultErrorCode::Cancelled, "cancelled"),
         (VaultErrorCode::RepoNotInitialized, "repoNotInitialized"),
         (VaultErrorCode::NoRemoteConfigured, "noRemoteConfigured"),
+        (VaultErrorCode::NoUpstream, "noUpstream"),
         (VaultErrorCode::SyncConflict, "syncConflict"),
         (VaultErrorCode::GitUnavailable, "gitUnavailable"),
         (VaultErrorCode::KeyMismatch, "keyMismatch"),

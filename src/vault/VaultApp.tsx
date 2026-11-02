@@ -157,7 +157,10 @@ export default function VaultApp() {
               onDeleted={handleDeleted}
               selectedId={selectedId}
             />
-            <VaultStatusBar entryCount={entries.length} />
+            <VaultStatusBar
+              entryCount={entries.length}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
           </div>
         )}
 

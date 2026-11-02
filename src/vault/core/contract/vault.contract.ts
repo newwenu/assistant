@@ -28,9 +28,13 @@ export type PendingRemovalEntryDto = { id: string, title: string | null, };
 
 export type PendingRemovalsDto = { entries: Array<PendingRemovalEntryDto>, totalLocal: number, };
 
-export type ReadynessDto = "noSync" | { "repoState": RepositoryStateDto } | "dirty" | "ready";
+export type ReadynessDto = "noSync" | { "repoState": RepositoryStateDto } | "noRemote" | "dirty" | "ready";
 
 export type RemoteModeDto = "add" | "set";
+
+export type RemoteStatusDto = { upstream: string | null, ahead: number | null, behind: number | null, fetched: boolean, checkedAt: number, errorKind: RemoteStatusErrorKindDto | null, errorDetail: string | null, };
+
+export type RemoteStatusErrorKindDto = "noRemote" | "noUpstream" | "fetchFailed" | "compareFailed";
 
 export type RepositoryStateDto = "clean" | "merge" | "rebase" | "rebaseInteractive" | "rebaseMerge" | "apply" | "cherryPick" | "revert" | "bisect" | "am" | "mailbox" | "stash" | "unknown";
 
@@ -68,6 +72,6 @@ export type VaultEntrySummary = { id: string, category: VaultCategory, title: st
 
 export type VaultEntryUpdate = { category: VaultCategory, title: string, username?: string | null, url?: string | null, password?: string | null, notes?: string | null, totpSecret?: string | null, tags: Array<string>, customFields: Array<CustomFieldInput>, isFavorite: boolean, };
 
-export type VaultErrorCode = "locked" | "invalidPassword" | "notInitialized" | "alreadyExists" | "rateLimited" | "crypto" | "notFound" | "validation" | "biometricUnavailable" | "biometricCancelled" | "biometricFailed" | "biometricReset" | "invalidKeyFormat" | "invalidRecoveryKey" | "recoveryKeyNotSet" | "vaultMetaIntegrityFailed" | "cancelled" | "repoNotInitialized" | "noRemoteConfigured" | "syncConflict" | "gitUnavailable" | "keyMismatch" | "historyDecryptFailed" | "internal";
+export type VaultErrorCode = "locked" | "invalidPassword" | "notInitialized" | "alreadyExists" | "rateLimited" | "crypto" | "notFound" | "validation" | "biometricUnavailable" | "biometricCancelled" | "biometricFailed" | "biometricReset" | "invalidKeyFormat" | "invalidRecoveryKey" | "recoveryKeyNotSet" | "vaultMetaIntegrityFailed" | "cancelled" | "repoNotInitialized" | "noRemoteConfigured" | "noUpstream" | "syncConflict" | "gitUnavailable" | "keyMismatch" | "historyDecryptFailed" | "internal";
 
 export type VaultErrorDto = { code: VaultErrorCode, message: string, retryable: boolean, };

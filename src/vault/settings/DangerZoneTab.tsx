@@ -25,7 +25,7 @@ export default function DangerZoneTab() {
   }, [loadSyncConfig, loadSyncReadyness]);
 
   const isNoSync = syncReadyness === "noSync";
-  const hasRemote = !isNoSync && Boolean(syncConfig?.remoteUrl);
+  const hasRemote = Boolean(syncConfig?.remoteUrl);
   const remoteName = syncConfig?.remoteName ?? "origin";
 
   const handleDiscard = async () => {

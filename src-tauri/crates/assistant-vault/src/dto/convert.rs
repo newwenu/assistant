@@ -2,8 +2,8 @@ use assistant_crypto::error::VaultError;
 use assistant_crypto::vault_crypto::totp::{ParsedOtpAuth, TotpAlgorithm, TotpResult};
 use assistant_sync::types::{
     ConflictFile, ConflictPreview, ConflictResolution, EntryPreview, EntryPreviewField,
-    HistoryCommit, PendingRemovalEntry, PendingRemovals, Readyness, RepositoryState, SyncConfig,
-    SyncError, SyncResult, UnreadableReason,
+    HistoryCommit, PendingRemovalEntry, PendingRemovals, Readyness, RemoteStatus,
+    RemoteStatusErrorKind, RepositoryState, SyncConfig, SyncError, SyncResult, UnreadableReason,
 };
 
 use super::error::{VaultErrorCode, VaultErrorDto};
@@ -11,8 +11,8 @@ use super::hibp::HibpAuditEntryDto;
 use super::sync::{
     ConflictFileDto, ConflictPreviewDto, ConflictResolutionDto, EntryPreviewDto,
     EntryPreviewFieldDto, HistoryCommitDto, PendingRemovalEntryDto, PendingRemovalsDto,
-    ReadynessDto, RepositoryStateDto, SyncConfigDto, SyncResultDto, UnreadableEntriesDto,
-    UnreadableReasonDto,
+    ReadynessDto, RemoteStatusDto, RemoteStatusErrorKindDto, RepositoryStateDto, SyncConfigDto,
+    SyncResultDto, UnreadableEntriesDto, UnreadableReasonDto,
 };
 use super::totp::{ParsedOtpAuthDto, TotpAlgorithmDto, TotpResultDto};
 use super::{VaultEntryDetail, VaultEntrySummary};
@@ -43,8 +43,43 @@ impl From<Readyness> for ReadynessDto {
         match v {
             Readyness::NoSync => Self::NoSync,
             Readyness::RepoState(state) => Self::RepoState(RepositoryStateDto::from(state)),
+            Readyness::NoRemote => Self::NoRemote,
             Readyness::Dirty => Self::Dirty,
             Readyness::Ready => Self::Ready,
+        }
+    }
+}
+
+impl From<RemoteStatusErrorKind> for RemoteStatusErrorKindDto {
+    fn from(v: RemoteStatusErrorKind) -> Self {
+        match v {
+            RemoteStatusErrorKind::NoRemote => Self::NoRemote,
+            RemoteStatusErrorKind::NoUpstream => Self::NoUpstream,
+            RemoteStatusErrorKind::FetchFailed => Self::FetchFailed,
+            RemoteStatusErrorKind::CompareFailed => Self::CompareFailed,
+        }
+    }
+}
+
+impl From<RemoteStatus> for RemoteStatusDto {
+    fn from(v: RemoteStatus) -> Self {
+        let RemoteStatus {
+            upstream,
+            ahead,
+            behind,
+            fetched,
+            checked_at,
+            error_kind,
+            error_detail,
+        } = v;
+        Self {
+            upstream,
+            ahead,
+            behind,
+            fetched,
+            checked_at,
+            error_kind: error_kind.map(RemoteStatusErrorKindDto::from),
+            error_detail,
         }
     }
 }
@@ -359,9 +394,10 @@ impl From<SyncError> for VaultErrorDto {
         let code = match &v {
             SyncError::Io(_) => VaultErrorCode::Internal,
             SyncError::GitCli(_) => VaultErrorCode::GitUnavailable,
-            SyncError::GitStatus(_) => VaultErrorCode::GitUnavailable,
+            SyncError::GitFailed { .. } => VaultErrorCode::GitUnavailable,
             SyncError::NotInitialized => VaultErrorCode::RepoNotInitialized,
             SyncError::NoRemoteConfigured => VaultErrorCode::NoRemoteConfigured,
+            SyncError::NoUpstreamConfigured => VaultErrorCode::NoUpstream,
             SyncError::VaultLocked => VaultErrorCode::Locked,
             SyncError::Conflict(_) => VaultErrorCode::SyncConflict,
             SyncError::HmacFailed => VaultErrorCode::VaultMetaIntegrityFailed,

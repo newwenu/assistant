@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import type { ReactNode } from "react";
+import type { InputRef } from "antd";
 import {
   Form,
   Input,
@@ -9,10 +11,12 @@ import {
   Divider,
   Typography,
   Dropdown,
+  Tooltip,
   App,
 } from "antd";
 import {
   SyncOutlined,
+  CloudSyncOutlined,
   CloudUploadOutlined,
   CloudDownloadOutlined,
   LinkOutlined,
@@ -26,6 +30,7 @@ import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import { useConfGroup } from "@/settings/core/useConfGroup";
 import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
 import { useVaultStore } from "../core/vaultStore";
+import { deriveSyncDisplay, remoteErrorText } from "../core/syncDisplay";
 import type {
   SyncConfig,
   SyncResult,
@@ -94,9 +99,12 @@ export default function VaultSyncSettings({
   const { message, modal } = App.useApp();
   const {
     syncReadyness,
+    remoteStatus,
+    remoteChecking,
     syncConfig,
     syncing,
     syncResult,
+    syncError,
     syncLastAt,
     pendingRemovals,
     error,
@@ -108,6 +116,7 @@ export default function VaultSyncSettings({
     loadSyncConfig,
     saveSyncConfig,
     loadSyncReadyness,
+    loadRemoteStatus,
     loadPendingRemovals,
     loadSyncLastTime,
     confirmRemovals,
@@ -123,6 +132,7 @@ export default function VaultSyncSettings({
   const [remoteUrl, setRemoteUrl] = useState("");
   const [sshHosts, setSshHosts] = useState("");
   const [testing, setTesting] = useState(false);
+  const remoteUrlRef = useRef<InputRef>(null);
 
   useEffect(() => {
     void loadSyncConfig();
@@ -150,13 +160,15 @@ export default function VaultSyncSettings({
     }
   }, [vaultConf]);
 
-  const isReady = syncReadyness === "ready";
   const isNoSync = syncReadyness === "noSync";
-  const repoState =
-    typeof syncReadyness === "object" && syncReadyness !== null
-      ? syncReadyness.repoState
-      : null;
+  const isNoRemote = syncReadyness === "noRemote";
   const cloneBlocked = entries.length > 0;
+  const display = deriveSyncDisplay({
+    readyness: syncReadyness,
+    remoteStatus,
+    syncError,
+  });
+  const hasRemote = !isNoSync && !isNoRemote && Boolean(syncConfig?.remoteUrl);
 
   const buildConfig = (): SyncConfig => ({
     remoteUrl: remoteUrl.trim() || null,
@@ -235,16 +247,6 @@ export default function VaultSyncSettings({
     });
   };
 
-  const readynessText = () => {
-    if (isNoSync) return t("vault.sync.status_no_sync");
-    if (syncReadyness === "dirty") return t("vault.sync.status_dirty");
-    if (isReady) return t("vault.sync.status_ready");
-    if (repoState) {
-      return t("vault.sync.repo_state_blocked", { state: repoState });
-    }
-    return t("vault.sync.status_unknown");
-  };
-
   const resultInfo = getSyncResultInfo(syncResult, t);
 
   const unreadable =
@@ -260,12 +262,115 @@ export default function VaultSyncSettings({
       ? { ids: [] as string[], reason: "keyMismatch" as const }
       : null;
 
+  const checkRemoteAction: ReactNode = hasRemote ? (
+    <Button
+      size="small"
+      icon={<CloudSyncOutlined />}
+      loading={remoteChecking}
+      onClick={() => void loadRemoteStatus(true)}
+    >
+      {remoteChecking
+        ? t("vault.sync.remote_checking")
+        : t("vault.sync.remote_check")}
+    </Button>
+  ) : undefined;
+
+  const syncAlert = ((): {
+    type: "success" | "info" | "warning" | "error";
+    title: ReactNode;
+    description?: ReactNode;
+    action?: ReactNode;
+  } => {
+    switch (display.kind) {
+      case "unknown":
+        return { type: "info", title: t("vault.sync.status_unknown") };
+      case "failed":
+        return {
+          type: "error",
+          title: syncErrorText(errorCode, display.message),
+        };
+      case "repoState":
+        return {
+          type: "warning",
+          title: t("vault.sync.repo_state_blocked", { state: display.state }),
+          action: (
+            <Button size="small" onClick={handleAbort}>
+              {t("vault.sync.abort")}
+            </Button>
+          ),
+        };
+      case "noSync":
+        return { type: "info", title: t("vault.sync.status_no_sync") };
+      case "noRemote":
+        return {
+          type: "warning",
+          title: t("vault.sync.status_no_remote"),
+          description: t("vault.sync.remote_not_bound_tip"),
+          action: (
+            <Button size="small" onClick={() => remoteUrlRef.current?.focus()}>
+              {t("vault.sync.remote_not_bound_cta")}
+            </Button>
+          ),
+        };
+      case "dirty":
+        return {
+          type: "warning",
+          title: t("vault.sync.status_dirty"),
+          action: checkRemoteAction,
+        };
+      case "ahead":
+        return {
+          type: "warning",
+          title: t("vault.sync.state_ahead", { count: display.ahead }),
+          action: checkRemoteAction,
+        };
+      case "behind":
+        return {
+          type: "warning",
+          title: t("vault.sync.state_behind", { count: display.behind }),
+          action: checkRemoteAction,
+        };
+      case "diverged":
+        return {
+          type: "warning",
+          title: t("vault.sync.state_diverged", {
+            ahead: display.ahead,
+            behind: display.behind,
+          }),
+          action: checkRemoteAction,
+        };
+      case "inSync": {
+        const time = new Date(display.checkedAt).toLocaleString();
+        return {
+          type: "success",
+          title: t("vault.sync.state_in_sync"),
+          description: display.fetched
+            ? t("vault.sync.remote_checked_at", { time })
+            : t("vault.sync.remote_checked_stale", { time }),
+          action: checkRemoteAction,
+        };
+      }
+      case "readyUnchecked":
+        return {
+          type: "info",
+          title: t("vault.sync.status_ready"),
+          description:
+            display.reason === "checkFailed" && remoteStatus !== null
+              ? remoteErrorText(remoteStatus, t)
+              : t("vault.sync.remote_check_hint"),
+          action: checkRemoteAction,
+        };
+    }
+  })();
+
   return (
     <Spin spinning={syncing}>
       <Space orientation="vertical" style={{ width: "100%" }} size="middle">
         <Alert
-          type={isReady ? "success" : isNoSync ? "info" : "warning"}
-          title={readynessText()}
+          type={syncAlert.type}
+          title={syncAlert.title}
+          description={syncAlert.description}
+          action={syncAlert.action}
           showIcon
         />
 
@@ -359,6 +464,7 @@ export default function VaultSyncSettings({
           <Form.Item label={t("vault.sync.remote_url")}>
             <Space.Compact style={{ width: "100%" }}>
               <Input
+                ref={remoteUrlRef}
                 value={remoteUrl}
                 onChange={(e) => setRemoteUrl(e.target.value)}
                 placeholder="git@github.com:user/vault.git"
@@ -433,21 +539,6 @@ export default function VaultSyncSettings({
           <>
             <Divider />
 
-            {repoState && (
-              <Alert
-                type="warning"
-                showIcon
-                title={t("vault.sync.repo_state_blocked", {
-                  state: repoState,
-                })}
-                action={
-                  <Button size="small" onClick={handleAbort}>
-                    {t("vault.sync.abort")}
-                  </Button>
-                }
-              />
-            )}
-
             <Space>
               <Button
                 type="primary"
@@ -470,7 +561,14 @@ export default function VaultSyncSettings({
                     {
                       key: "push",
                       icon: <CloudUploadOutlined />,
-                      label: t("vault.sync.push"),
+                      label: (
+                        <Tooltip
+                          title={t("vault.sync.push_hint_commits_first")}
+                          placement="left"
+                        >
+                          <span>{t("vault.sync.push")}</span>
+                        </Tooltip>
+                      ),
                       disabled: pendingRemovals !== null,
                       onClick: () => void syncPush(),
                     },

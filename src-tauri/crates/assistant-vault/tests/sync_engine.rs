@@ -5,11 +5,14 @@ mod sync_common;
 use std::path::Path;
 
 use assistant_crypto::vault_crypto::types::CipherAlgorithm;
-use assistant_sync::types::{ConflictResolution, SyncError, SyncResult, UnreadableReason};
+use assistant_sync::types::{
+    ConflictResolution, Readyness, SyncError, SyncResult, UnreadableReason,
+};
+use assistant_vault::dto::{VaultErrorCode, VaultErrorDto};
 use assistant_vault::security_db::SecurityDbState;
 use assistant_vault::sync_engine::SyncEngine;
 use sync_common::{
-    bare_repo, cleanup, commit_repo, engine, local_entry, open_db, open_db_with_password,
+    bare_repo, cleanup, commit_repo, engine, git_repo, local_entry, open_db, open_db_with_password,
     remote_snapshot as snapshot, temp_db_path, write_remote, OTHER_PASSWORD, PASSWORD,
 };
 
@@ -311,7 +314,9 @@ fn pull_stages_all_removals_then_cancel_keeps_db_and_confirm_soft_deletes() {
         .ensure_remote("origin", remote.to_str().unwrap())
         .unwrap();
     source.finalize("vault: base").unwrap();
-    source.push().unwrap();
+    git_repo(source.vault_file_manager().vault_dir().to_path_buf())
+        .push(None, None)
+        .unwrap();
 
     let target = engine(&dir.path().join("target"));
     target.clone_repo(remote.to_str().unwrap()).unwrap();
@@ -321,7 +326,9 @@ fn pull_stages_all_removals_then_cancel_keeps_db_and_confirm_soft_deletes() {
     source.vault_file_manager().remove_entry_file("e1").unwrap();
     source.vault_file_manager().remove_entry_file("e2").unwrap();
     commit_repo(&source, "vault: delete all");
-    source.push().unwrap();
+    git_repo(source.vault_file_manager().vault_dir().to_path_buf())
+        .push(None, None)
+        .unwrap();
 
     let pending = match target.pull(&db).unwrap() {
         SyncResult::PendingRemovals(pending) => pending,
@@ -398,7 +405,9 @@ fn unreadable_entry_reported_by_pull_and_sync_now_without_overwriting() {
         .ensure_remote("origin", remote.to_str().unwrap())
         .unwrap();
     source.finalize("vault: base").unwrap();
-    source.push().unwrap();
+    git_repo(source.vault_file_manager().vault_dir().to_path_buf())
+        .push(None, None)
+        .unwrap();
 
     let target = engine(&dir.path().join("target"));
     target.clone_repo(remote.to_str().unwrap()).unwrap();
@@ -465,7 +474,9 @@ fn pull_reports_key_mismatch_and_keeps_remote_ciphertext() {
         .ensure_remote("origin", remote.to_str().unwrap())
         .unwrap();
     source.finalize("vault: base").unwrap();
-    source.push().unwrap();
+    git_repo(source.vault_file_manager().vault_dir().to_path_buf())
+        .push(None, None)
+        .unwrap();
 
     let target = engine(&dir.path().join("target"));
     target.clone_repo(remote.to_str().unwrap()).unwrap();
@@ -668,5 +679,102 @@ fn force_export_rewrites_entries_after_master_password_change() {
         before,
         "force export must rewrite ciphertext with the new master key"
     );
+    cleanup(&db_path);
+}
+
+#[test]
+fn push_bootstraps_upstream_and_commits_dirty_changes() {
+    sync_common::git_env();
+    let dir = tempfile::tempdir().unwrap();
+    let remote = bare_repo(dir.path());
+    let db_path = temp_db_path();
+    let db = open_db(&db_path);
+    let source = engine(&dir.path().join("source"));
+
+    let created = db
+        .create_entry_tx(local_entry("Pushed"), CipherAlgorithm::Aes256Gcm, |_, _| {
+            Ok(())
+        })
+        .unwrap();
+
+    source.init(&db).unwrap();
+    source
+        .ensure_remote("origin", remote.to_str().unwrap())
+        .unwrap();
+
+    assert!(matches!(source.push(&db).unwrap(), SyncResult::Success));
+
+    let upstream = assistant_sync::git_sync::git::git_branch_upstream(
+        source.vault_file_manager().vault_dir(),
+        "HEAD",
+    )
+    .unwrap();
+    assert!(
+        upstream.is_some(),
+        "push must bootstrap the upstream branch on first use"
+    );
+
+    let target = engine(&dir.path().join("target"));
+    target.clone_repo(remote.to_str().unwrap()).unwrap();
+    assert_eq!(
+        target.vault_file_manager().list_entry_files().unwrap(),
+        vec![created.id.clone()],
+        "push must export and commit local DB entries before pushing"
+    );
+    cleanup(&db_path);
+}
+
+#[test]
+fn sync_now_without_remote_commits_local_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = temp_db_path();
+    let db = open_db(&db_path);
+    let engine = engine(dir.path());
+
+    let created = db
+        .create_entry_tx(
+            local_entry("Local only"),
+            CipherAlgorithm::Aes256Gcm,
+            |_, _| Ok(()),
+        )
+        .unwrap();
+
+    engine.init(&db).unwrap();
+    assert!(matches!(
+        engine.sync_now(&db).unwrap(),
+        SyncResult::NoRemote
+    ));
+    assert_eq!(engine.readyness().unwrap(), Readyness::NoRemote);
+    assert!(
+        engine
+            .vault_file_manager()
+            .entry_file_path(&created.id)
+            .exists(),
+        "sync without a remote must still export and commit local changes"
+    );
+    cleanup(&db_path);
+}
+
+#[test]
+fn pull_failure_is_not_conflict() {
+    sync_common::git_env();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = temp_db_path();
+    let db = open_db(&db_path);
+    let engine = engine(dir.path());
+    engine.init(&db).unwrap();
+
+    let missing = dir.path().join("missing.git");
+    engine
+        .ensure_remote("origin", missing.to_str().unwrap())
+        .unwrap();
+
+    let err = engine.pull(&db).unwrap_err();
+    assert!(
+        matches!(err, SyncError::GitFailed { .. }),
+        "network/credential failures must not be reported as conflicts, got {err:?}"
+    );
+    let dto = VaultErrorDto::from(err);
+    assert_eq!(dto.code, VaultErrorCode::GitUnavailable);
     cleanup(&db_path);
 }

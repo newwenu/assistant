@@ -44,6 +44,7 @@ pub enum RepositoryStateDto {
 pub enum ReadynessDto {
     NoSync,
     RepoState(RepositoryStateDto),
+    NoRemote,
     Dirty,
     Ready,
 }
@@ -160,6 +161,29 @@ pub struct EntryPreviewDto {
     pub is_favorite: bool,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
+pub enum RemoteStatusErrorKindDto {
+    NoRemote,
+    NoUpstream,
+    FetchFailed,
+    CompareFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "vault.contract.ts")]
+pub struct RemoteStatusDto {
+    pub upstream: Option<String>,
+    pub ahead: Option<u32>,
+    pub behind: Option<u32>,
+    pub fetched: bool,
+    pub checked_at: i64,
+    pub error_kind: Option<RemoteStatusErrorKindDto>,
+    pub error_detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

@@ -1,4 +1,4 @@
-use assistant_sync::types::{RepositoryState, SyncConfig, SyncError};
+use assistant_sync::types::{RemoteStatus, RepositoryState, SyncConfig, SyncError};
 
 use super::SyncEngine;
 
@@ -109,6 +109,13 @@ impl SyncEngine {
         } else {
             git.add_remote_url(remote, url)
         }
+    }
+
+    pub fn remote_status(&self, fetch: bool) -> Result<RemoteStatus, SyncError> {
+        self.git_sync
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remote_status(fetch)
     }
 
     pub fn remote_url(&self, remote: &str) -> Result<Option<String>, SyncError> {

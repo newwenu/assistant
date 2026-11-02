@@ -21,8 +21,8 @@ pub use ssh::{SshKeyInfoDto, SshKeyMetaDto};
 pub use sync::{
     ConflictFileDto, ConflictPreviewDto, ConflictResolutionDto, EntryPreviewDto,
     EntryPreviewFieldDto, HistoryCommitDto, PendingRemovalEntryDto, PendingRemovalsDto,
-    ReadynessDto, RemoteModeDto, RepositoryStateDto, SyncActionDto, SyncConfigDto, SyncResultDto,
-    UnreadableEntriesDto, UnreadableReasonDto,
+    ReadynessDto, RemoteModeDto, RemoteStatusDto, RemoteStatusErrorKindDto, RepositoryStateDto,
+    SyncActionDto, SyncConfigDto, SyncResultDto, UnreadableEntriesDto, UnreadableReasonDto,
 };
 pub use totp::{ParsedOtpAuthDto, TotpAlgorithmDto, TotpResultDto};
 

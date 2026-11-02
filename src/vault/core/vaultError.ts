@@ -20,6 +20,7 @@ const VAULT_ERROR_CODES: readonly VaultErrorCode[] = [
   "cancelled",
   "repoNotInitialized",
   "noRemoteConfigured",
+  "noUpstream",
   "syncConflict",
   "gitUnavailable",
   "keyMismatch",

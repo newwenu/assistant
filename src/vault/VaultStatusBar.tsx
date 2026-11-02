@@ -2,43 +2,25 @@ import { Tooltip } from "antd";
 import { WarningOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultStore } from "./core/vaultStore";
-import type { Readyness, RepositoryState } from "./core/vault.types";
+import { deriveSyncDisplay, remoteErrorText } from "./core/syncDisplay";
 import { VAULT_TONES } from "./core/vaultColors";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import styles from "./vault.module.css";
 
-type SyncStatusKey =
-  | "vault.sync.state_conflict"
-  | "vault.sync.state_dirty"
-  | "vault.sync.state_ready"
-  | "vault.sync.state_off";
-
-function getSyncStatus(
-  readyness: Readyness | null,
-  repoState: RepositoryState | null,
-): { label: SyncStatusKey; color: string } | null {
-  if (readyness === null) return null;
-  if (repoState !== null) {
-    return { label: "vault.sync.state_conflict", color: VAULT_TONES.leak };
-  }
-  if (readyness === "dirty") {
-    return { label: "vault.sync.state_dirty", color: VAULT_TONES.syncDirty };
-  }
-  if (readyness === "ready") {
-    return { label: "vault.sync.state_ready", color: VAULT_TONES.syncReady };
-  }
-  return { label: "vault.sync.state_off", color: VAULT_TONES.syncOff };
-}
-
 interface VaultStatusBarProps {
   entryCount: number;
+  onOpenSettings?: () => void;
 }
 
-export default function VaultStatusBar({ entryCount }: VaultStatusBarProps) {
+export default function VaultStatusBar({
+  entryCount,
+  onOpenSettings,
+}: VaultStatusBarProps) {
   const { t } = useTranslation();
   const {
     hibpLeaks,
     syncReadyness,
+    remoteStatus,
     syncLastAt,
     syncing,
     syncError,
@@ -47,11 +29,141 @@ export default function VaultStatusBar({ entryCount }: VaultStatusBarProps) {
   } = useVaultStore();
 
   const leakCount = Object.values(hibpLeaks).filter((c) => c > 0).length;
-  const repoState =
-    syncReadyness !== null && typeof syncReadyness === "object"
-      ? syncReadyness.repoState
-      : null;
-  const syncStatus = getSyncStatus(syncReadyness, repoState);
+  const display = deriveSyncDisplay({
+    readyness: syncReadyness,
+    remoteStatus,
+    syncError: syncing ? null : syncError,
+  });
+
+  const dot = (color: string) => (
+    <span className={styles.syncDot} style={{ backgroundColor: color }} />
+  );
+
+  const renderState = () => {
+    switch (display.kind) {
+      case "unknown":
+        return null;
+      case "failed":
+        return (
+          <Tooltip
+            title={t("vault.sync.state_failed_tip", {
+              message: display.message,
+            })}
+          >
+            <button
+              type="button"
+              className={styles.syncFailed}
+              onClick={() => {
+                clearSyncError();
+                clearError();
+              }}
+            >
+              {dot(VAULT_TONES.syncFailed)}
+              {t("vault.sync.state_failed")}
+            </button>
+          </Tooltip>
+        );
+      case "repoState":
+        return (
+          <Tooltip
+            title={t("vault.sync.repo_state_blocked", {
+              state: display.state,
+            })}
+          >
+            <span className={styles.syncState}>
+              {dot(VAULT_TONES.leak)}
+              {t("vault.sync.state_conflict")}
+            </span>
+          </Tooltip>
+        );
+      case "noSync":
+        return (
+          <span className={styles.syncState}>
+            {dot(VAULT_TONES.syncOff)}
+            {t("vault.sync.state_off")}
+          </span>
+        );
+      case "noRemote":
+        return (
+          <Tooltip title={t("vault.sync.remote_not_bound_tip")}>
+            <button
+              type="button"
+              className={styles.syncState}
+              style={{
+                border: "none",
+                background: "none",
+                padding: 0,
+                font: "inherit",
+                cursor: onOpenSettings ? "pointer" : "default",
+              }}
+              onClick={onOpenSettings}
+            >
+              {dot(VAULT_TONES.syncOff)}
+              {t("vault.sync.state_no_remote")}
+            </button>
+          </Tooltip>
+        );
+      case "dirty":
+        return (
+          <span className={styles.syncState}>
+            {dot(VAULT_TONES.syncDirty)}
+            {t("vault.sync.state_dirty")}
+          </span>
+        );
+      case "ahead":
+        return (
+          <span className={styles.syncState}>
+            {dot(VAULT_TONES.syncDirty)}
+            {t("vault.sync.state_ahead", { count: display.ahead })}
+          </span>
+        );
+      case "behind":
+        return (
+          <span className={styles.syncState}>
+            {dot(VAULT_TONES.syncDirty)}
+            {t("vault.sync.state_behind", { count: display.behind })}
+          </span>
+        );
+      case "diverged":
+        return (
+          <span className={styles.syncState}>
+            {dot(VAULT_TONES.leak)}
+            {t("vault.sync.state_diverged", {
+              ahead: display.ahead,
+              behind: display.behind,
+            })}
+          </span>
+        );
+      case "inSync": {
+        const time = new Date(display.checkedAt).toLocaleString();
+        const tip = display.fetched
+          ? t("vault.sync.remote_checked_at", { time })
+          : t("vault.sync.remote_checked_stale", { time });
+        return (
+          <Tooltip title={tip}>
+            <span className={styles.syncState}>
+              {dot(VAULT_TONES.syncReady)}
+              {t("vault.sync.state_in_sync")}
+            </span>
+          </Tooltip>
+        );
+      }
+      case "readyUnchecked": {
+        const tip =
+          display.reason === "checkFailed" && remoteStatus !== null
+            ? remoteErrorText(remoteStatus, t)
+            : t("vault.sync.remote_check_hint");
+        return (
+          <Tooltip title={tip}>
+            <span className={styles.syncState}>
+              {dot(VAULT_TONES.syncOff)}
+              {t("vault.sync.state_ready")}
+            </span>
+          </Tooltip>
+        );
+      }
+    }
+  };
 
   return (
     <div className={styles.syncBar}>
@@ -67,36 +179,7 @@ export default function VaultStatusBar({ entryCount }: VaultStatusBarProps) {
         )}
       </div>
       <div className={styles.syncBarRight}>
-        {syncError !== null && !syncing ? (
-          <Tooltip
-            title={t("vault.sync.state_failed_tip", { message: syncError })}
-          >
-            <button
-              type="button"
-              className={styles.syncFailed}
-              onClick={() => {
-                clearSyncError();
-                clearError();
-              }}
-            >
-              <span
-                className={styles.syncDot}
-                style={{ backgroundColor: VAULT_TONES.syncFailed }}
-              />
-              {t("vault.sync.state_failed")}
-            </button>
-          </Tooltip>
-        ) : (
-          syncStatus !== null && (
-            <span className={styles.syncState}>
-              <span
-                className={styles.syncDot}
-                style={{ backgroundColor: syncStatus.color }}
-              />
-              {t(syncStatus.label)}
-            </span>
-          )
-        )}
+        {renderState()}
         {syncLastAt !== null && (
           <Tooltip
             title={t("vault.sync.last_sync", {

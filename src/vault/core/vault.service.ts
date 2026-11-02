@@ -14,6 +14,7 @@ import type {
   SyncConfig,
   SyncAction,
   RemoteMode,
+  RemoteStatus,
   Readyness,
   ConflictResolution,
   ConflictFile,
@@ -52,6 +53,8 @@ export type {
   SyncConfig,
   SyncAction,
   RemoteMode,
+  RemoteStatus,
+  RemoteStatusErrorKind,
   ConflictResolution,
   SshKeyInfo,
   IntegrityResult,
@@ -213,6 +216,8 @@ export const vaultService = {
   syncAbort: (): Promise<void> => invoke("vault_sync_abort"),
   syncDiscard: (): Promise<void> => invoke("vault_sync_discard"),
   syncReadyness: (): Promise<Readyness> => invoke("vault_sync_readyness"),
+  syncRemoteStatus: (fetch = false): Promise<RemoteStatus> =>
+    invoke("vault_sync_remote_status", { fetch }),
   syncConflicts: (): Promise<ConflictFile[]> => invoke("vault_sync_conflicts"),
   syncPendingRemovals: (): Promise<PendingRemovals | null> =>
     invoke("vault_sync_pending_removals"),

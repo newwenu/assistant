@@ -50,6 +50,8 @@ function resetStore() {
     _biometricEnrolledRetryCount: 0,
     _recoveryKeySetAt: 0,
     syncReadyness: null,
+    remoteStatus: null,
+    remoteChecking: false,
     syncResult: null,
     syncError: null,
     syncConfig: null,
@@ -790,6 +792,32 @@ describe("vaultStore sync", () => {
     expect(useVaultStore.getState().syncError).toBe("git failed");
     expect(useVaultStore.getState().errorCode).toBe("gitUnavailable");
     expect(useVaultStore.getState().syncing).toBe(false);
+  });
+
+  it("syncPush success → refreshes remote status with fetch=false", async () => {
+    const statusCalls: unknown[] = [];
+    mockCmd("vault_sync", () => Promise.resolve("success"));
+    mockCmd("vault_sync_remote_status", (args) => {
+      statusCalls.push(args);
+      return Promise.resolve({
+        upstream: "origin/main",
+        ahead: 0,
+        behind: 0,
+        fetched: false,
+        checkedAt: 1_700_000_000_000,
+        errorKind: null,
+        errorDetail: null,
+      });
+    });
+    mockCmd("vault_list_entries", () => Promise.resolve([]));
+    mockCmd("vault_sync_readyness", () => Promise.resolve("ready"));
+    mockCmd("vault_sync_last_time", () => Promise.resolve(null));
+
+    const store = useVaultStore.getState();
+    await store.syncPush();
+
+    expect(statusCalls).toEqual([{ fetch: false }]);
+    expect(useVaultStore.getState().remoteStatus?.upstream).toBe("origin/main");
   });
 
   it("loadSyncConfig → sets syncConfig", async () => {

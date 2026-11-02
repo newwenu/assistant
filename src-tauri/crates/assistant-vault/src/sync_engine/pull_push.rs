@@ -2,8 +2,8 @@ use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 
 use assistant_sync::types::{
-    ImportReport, ImportSummary, PendingRemovalEntry, PendingRemovals, SyncError, SyncResult,
-    UnreadableReason,
+    ImportReport, ImportSummary, PendingRemovalEntry, PendingRemovals, RepositoryState, SyncError,
+    SyncResult, UnreadableReason,
 };
 
 use crate::security_db::SecurityDbState;
@@ -85,14 +85,20 @@ impl SyncEngine {
                 return Ok(SyncResult::NoRemote);
             }
 
+            git.ensure_upstream()?;
+
             match git.pull() {
                 Ok(()) => {}
-                Err(SyncError::GitStatus(_)) => {
+                Err(e) => {
                     let mut conflicts = collect_conflicts(&git);
+                    let blocked =
+                        !conflicts.is_empty() || !matches!(git.state()?, RepositoryState::Clean);
+                    if !blocked {
+                        return Err(e);
+                    }
                     attach_conflict_titles(security_db, &mut conflicts);
                     return Ok(SyncResult::Conflict(conflicts));
                 }
-                Err(e) => return Err(e),
             }
         }
 
@@ -246,22 +252,25 @@ impl SyncEngine {
         }
     }
 
-    pub fn push(&self) -> Result<SyncResult, SyncError> {
+    pub fn push(&self, security_db: &SecurityDbState) -> Result<SyncResult, SyncError> {
         if let Some(pending) = self.pending_removals() {
             return Ok(SyncResult::PendingRemovals(pending));
         }
 
-        let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
+        {
+            let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
 
-        if !git.is_init() {
-            return Err(SyncError::NotInitialized);
+            if !git.is_init() {
+                return Err(SyncError::NotInitialized);
+            }
+
+            if !git.has_remote()? {
+                return Err(SyncError::NoRemoteConfigured);
+            }
         }
 
-        if !git.has_remote()? {
-            return Err(SyncError::NoRemoteConfigured);
-        }
-
-        git.push(None, None)?;
+        self.export_all_entries(security_db, false, &[])?;
+        self.finalize("vault: sync")?;
         Ok(SyncResult::Success)
     }
 
@@ -284,21 +293,23 @@ impl SyncEngine {
 
         if !has_remote {
             self.export_all_entries(security_db, false, &[])?;
+            self.finalize("vault: sync")?;
             return Ok(SyncResult::NoRemote);
         }
 
         if let Err(e) = self.prepare() {
-            match e {
-                SyncError::GitStatus(_) => {
-                    let mut conflicts = {
-                        let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
-                        collect_conflicts(&git)
-                    };
-                    attach_conflict_titles(security_db, &mut conflicts);
-                    return Ok(SyncResult::Conflict(conflicts));
-                }
-                other => return Err(other),
+            let (mut conflicts, blocked) = {
+                let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
+                let conflicts = collect_conflicts(&git);
+                let blocked =
+                    !conflicts.is_empty() || !matches!(git.state()?, RepositoryState::Clean);
+                (conflicts, blocked)
+            };
+            if !blocked {
+                return Err(e);
             }
+            attach_conflict_titles(security_db, &mut conflicts);
+            return Ok(SyncResult::Conflict(conflicts));
         }
 
         let report = self.import_from_repo(security_db, &before)?;
@@ -327,18 +338,21 @@ impl SyncEngine {
         Ok(SyncResult::Success)
     }
 
-    pub fn force_push(&self) -> Result<SyncResult, SyncError> {
-        let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
+    pub fn force_push(&self, security_db: &SecurityDbState) -> Result<SyncResult, SyncError> {
+        {
+            let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
 
-        if !git.is_init() {
-            return Err(SyncError::NotInitialized);
+            if !git.is_init() {
+                return Err(SyncError::NotInitialized);
+            }
+
+            if !git.has_remote()? {
+                return Err(SyncError::NoRemoteConfigured);
+            }
         }
 
-        if !git.has_remote()? {
-            return Err(SyncError::NoRemoteConfigured);
-        }
-
-        git.force_push()?;
+        self.export_all_entries(security_db, false, &[])?;
+        self.finalize_force("vault: sync")?;
         Ok(SyncResult::Success)
     }
 }

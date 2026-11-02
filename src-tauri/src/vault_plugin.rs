@@ -61,6 +61,7 @@ pub fn init() -> TauriPlugin<tauri::Wry> {
             crate::cmd::vault::vault_git_test_connection,
             crate::cmd::vault::vault_git_remote,
             crate::cmd::vault::vault_sync_readyness,
+            crate::cmd::vault::vault_sync_remote_status,
             crate::cmd::vault::vault_sync_conflicts,
             crate::cmd::vault::vault_sync_pending_removals,
             crate::cmd::vault::vault_sync_confirm_removals,

@@ -5,6 +5,7 @@ import type {
   SyncResult,
   SyncConfig,
   Readyness,
+  RemoteStatus,
   ConflictFile,
   ConflictResolution,
   PendingRemovals,
@@ -17,6 +18,8 @@ const log = createLogger("vaultStore");
 
 export interface VaultSyncSlice {
   syncReadyness: Readyness | null;
+  remoteStatus: RemoteStatus | null;
+  remoteChecking: boolean;
   syncResult: SyncResult | null;
   syncError: string | null;
   syncConfig: SyncConfig | null;
@@ -34,6 +37,7 @@ export interface VaultSyncSlice {
   loadSyncConfig: () => Promise<void>;
   saveSyncConfig: (config: SyncConfig) => Promise<void>;
   loadSyncReadyness: () => Promise<void>;
+  loadRemoteStatus: (fetch?: boolean) => Promise<void>;
   loadSyncConflicts: () => Promise<void>;
   loadPendingRemovals: () => Promise<void>;
   loadSyncLastTime: () => Promise<void>;
@@ -100,6 +104,8 @@ export function createSyncSlice(
 
   return {
     syncReadyness: null,
+    remoteStatus: null,
+    remoteChecking: false,
     syncResult: null,
     syncError: null,
     syncConfig: null,
@@ -111,7 +117,13 @@ export function createSyncSlice(
     sshAgentRunning: false,
 
     syncPull: async () => {
-      set({ syncing: true, syncResult: null, error: null, errorCode: null });
+      set({
+        syncing: true,
+        syncResult: null,
+        syncError: null,
+        error: null,
+        errorCode: null,
+      });
       try {
         const result = await vaultService.syncPull();
         applySyncResult(result);
@@ -119,6 +131,7 @@ export function createSyncSlice(
         await get().loadEntries();
         await get().loadSyncReadyness();
         await get().loadSyncLastTime();
+        await get().loadRemoteStatus(false);
       } catch (e) {
         log.error("syncPull failed", e);
         await failSync(e);
@@ -126,7 +139,13 @@ export function createSyncSlice(
     },
 
     syncPush: async () => {
-      set({ syncing: true, syncResult: null, error: null, errorCode: null });
+      set({
+        syncing: true,
+        syncResult: null,
+        syncError: null,
+        error: null,
+        errorCode: null,
+      });
       try {
         const result = await vaultService.syncPush();
         applySyncResult(result);
@@ -134,6 +153,7 @@ export function createSyncSlice(
         await get().loadEntries();
         await get().loadSyncReadyness();
         await get().loadSyncLastTime();
+        await get().loadRemoteStatus(false);
       } catch (e) {
         log.error("syncPush failed", e);
         await failSync(e);
@@ -141,7 +161,13 @@ export function createSyncSlice(
     },
 
     syncNow: async () => {
-      set({ syncing: true, syncResult: null, error: null, errorCode: null });
+      set({
+        syncing: true,
+        syncResult: null,
+        syncError: null,
+        error: null,
+        errorCode: null,
+      });
       try {
         const result = await vaultService.syncNow();
         applySyncResult(result);
@@ -149,6 +175,7 @@ export function createSyncSlice(
         await get().loadEntries();
         await get().loadSyncReadyness();
         await get().loadSyncLastTime();
+        await get().loadRemoteStatus(false);
       } catch (e) {
         log.error("syncNow failed", e);
         await failSync(e);
@@ -156,13 +183,20 @@ export function createSyncSlice(
     },
 
     syncForcePush: async () => {
-      set({ syncing: true, syncResult: null, error: null, errorCode: null });
+      set({
+        syncing: true,
+        syncResult: null,
+        syncError: null,
+        error: null,
+        errorCode: null,
+      });
       try {
         const result = await vaultService.syncForcePush();
         applySyncResult(result);
         set({ syncing: false });
         await get().loadSyncReadyness();
         await get().loadSyncLastTime();
+        await get().loadRemoteStatus(false);
       } catch (e) {
         log.error("syncForcePush failed", e);
         await failSync(e);
@@ -184,9 +218,23 @@ export function createSyncSlice(
         const saved = await vaultService.getSyncConfig();
         set({ syncConfig: saved });
         await get().loadSyncReadyness();
+        await get().loadRemoteStatus(false);
       } catch (e) {
         log.error("saveSyncConfig failed", e);
         failWith(e);
+      }
+    },
+
+    loadRemoteStatus: async (fetch = false) => {
+      set({ remoteChecking: true });
+      try {
+        const remoteStatus = await vaultService.syncRemoteStatus(fetch);
+        set({ remoteStatus });
+      } catch (e) {
+        log.error("loadRemoteStatus failed", e);
+        set({ remoteStatus: null });
+      } finally {
+        set({ remoteChecking: false });
       }
     },
 
@@ -233,13 +281,20 @@ export function createSyncSlice(
     },
 
     confirmRemovals: async (ids) => {
-      set({ syncing: true, syncResult: null, error: null, errorCode: null });
+      set({
+        syncing: true,
+        syncResult: null,
+        syncError: null,
+        error: null,
+        errorCode: null,
+      });
       try {
         await vaultService.syncConfirmRemovals(ids);
         set({ pendingRemovals: null, syncResult: "success", syncError: null });
         await get().loadEntries();
         await get().loadSyncReadyness();
         await get().loadSyncLastTime();
+        await get().loadRemoteStatus(false);
         set({ syncing: false });
       } catch (e) {
         log.error("confirmRemovals failed", e);
@@ -274,6 +329,7 @@ export function createSyncSlice(
         await vaultService.gitInit();
         await get().loadSyncReadyness();
         await get().loadSyncConfig();
+        await get().loadRemoteStatus(false);
         set({ loading: false });
       } catch (e) {
         log.error("gitInit failed", e);
@@ -293,6 +349,7 @@ export function createSyncSlice(
         await vaultService.gitClone(url);
         await get().loadSyncReadyness();
         await get().loadSyncConfig();
+        await get().loadRemoteStatus(false);
         set({ loading: false });
       } catch (e) {
         log.error("gitClone failed", e);
@@ -307,6 +364,7 @@ export function createSyncSlice(
         await vaultService.gitAddRemote(remote, url);
         await get().loadSyncConfig();
         await get().loadSyncReadyness();
+        await get().loadRemoteStatus(false);
       } catch (e) {
         log.error("gitAddRemote failed", e);
         failWith(e);
@@ -320,6 +378,7 @@ export function createSyncSlice(
         await vaultService.gitSetRemote(remote, url);
         await get().loadSyncConfig();
         await get().loadSyncReadyness();
+        await get().loadRemoteStatus(false);
       } catch (e) {
         log.error("gitSetRemote failed", e);
         failWith(e);
@@ -333,6 +392,7 @@ export function createSyncSlice(
         await vaultService.gitRemoveRemote(remote);
         await get().loadSyncConfig();
         await get().loadSyncReadyness();
+        await get().loadRemoteStatus(false);
       } catch (e) {
         log.error("gitRemoveRemote failed", e);
         failWith(e);
@@ -353,7 +413,13 @@ export function createSyncSlice(
     },
 
     syncAbort: async () => {
-      set({ syncing: true, syncResult: null, error: null, errorCode: null });
+      set({
+        syncing: true,
+        syncResult: null,
+        syncError: null,
+        error: null,
+        errorCode: null,
+      });
       try {
         await vaultService.syncAbort();
         await get().loadSyncReadyness();
@@ -366,7 +432,13 @@ export function createSyncSlice(
     },
 
     syncDiscard: async () => {
-      set({ syncing: true, syncResult: null, error: null, errorCode: null });
+      set({
+        syncing: true,
+        syncResult: null,
+        syncError: null,
+        error: null,
+        errorCode: null,
+      });
       try {
         await vaultService.syncDiscard();
         await get().loadSyncReadyness();

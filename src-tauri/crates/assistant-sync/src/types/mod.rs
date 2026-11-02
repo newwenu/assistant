@@ -8,14 +8,17 @@ pub enum SyncError {
     #[error("Git CLI error: {0}")]
     GitCli(String),
 
-    #[error("Git operation exited with non-zero status code: {0}")]
-    GitStatus(i32),
+    #[error("Git operation failed (exit {code}): {stderr}")]
+    GitFailed { code: i32, stderr: String },
 
     #[error("Sync not initialized")]
     NotInitialized,
 
     #[error("No remote configured")]
     NoRemoteConfigured,
+
+    #[error("No upstream branch configured")]
+    NoUpstreamConfigured,
 
     #[error("Vault is locked")]
     VaultLocked,
@@ -50,6 +53,7 @@ impl From<std::io::Error> for SyncError {
 pub enum Readyness {
     NoSync,
     RepoState(RepositoryState),
+    NoRemote,
     Dirty,
     Ready,
 }
@@ -58,11 +62,33 @@ impl std::fmt::Display for Readyness {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoSync => f.write_str("no sync configured"),
+            Self::NoRemote => f.write_str("no remote configured"),
             Self::Dirty => f.write_str("uncommitted changes"),
             Self::Ready => f.write_str("ready"),
             Self::RepoState(state) => write!(f, "repository busy with {state}"),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RemoteStatusErrorKind {
+    NoRemote,
+    NoUpstream,
+    FetchFailed,
+    CompareFailed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteStatus {
+    pub upstream: Option<String>,
+    pub ahead: Option<u32>,
+    pub behind: Option<u32>,
+    pub fetched: bool,
+    pub checked_at: i64,
+    pub error_kind: Option<RemoteStatusErrorKind>,
+    pub error_detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

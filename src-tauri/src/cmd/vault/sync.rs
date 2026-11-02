@@ -3,8 +3,8 @@ use tauri::{command, AppHandle};
 use assistant_sync::types::{ConflictResolution, SyncConfig};
 use assistant_vault::dto::{
     ConflictFileDto, ConflictPreviewDto, ConflictResolutionDto, EntryPreviewDto, HistoryCommitDto,
-    PendingRemovalsDto, ReadynessDto, RemoteModeDto, SyncActionDto, SyncConfigDto, SyncResultDto,
-    VaultErrorDto,
+    PendingRemovalsDto, ReadynessDto, RemoteModeDto, RemoteStatusDto, SyncActionDto, SyncConfigDto,
+    SyncResultDto, VaultErrorDto,
 };
 
 // precondition: Unlocked
@@ -18,9 +18,9 @@ pub async fn vault_sync(
             let engine = super::sync_state(&app)?;
             let result = match action {
                 SyncActionDto::Pull => engine.pull(db),
-                SyncActionDto::Push => engine.push(),
+                SyncActionDto::Push => engine.push(db),
                 SyncActionDto::Sync => engine.sync_now(db),
-                SyncActionDto::ForcePush => engine.force_push(),
+                SyncActionDto::ForcePush => engine.force_push(db),
             };
             match result {
                 Ok(result) => {
@@ -262,6 +262,23 @@ pub fn vault_git_remote(
     }
     super::persist_sync_remote_url(Some(&url));
     Ok(())
+}
+
+// precondition: AnyState
+#[command]
+pub async fn vault_sync_remote_status(
+    app: AppHandle,
+    fetch: Option<bool>,
+) -> Result<RemoteStatusDto, VaultErrorDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = super::sync_state(&app)?;
+        let status = engine
+            .remote_status(fetch.unwrap_or(false))
+            .map_err(VaultErrorDto::from)?;
+        Ok(RemoteStatusDto::from(status))
+    })
+    .await
+    .map_err(|e| super::internal_error(format!("Vault remote status task join failed: {}", e)))?
 }
 
 // precondition: AnyState

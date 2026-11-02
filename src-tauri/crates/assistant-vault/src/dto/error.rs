@@ -24,6 +24,7 @@ pub enum VaultErrorCode {
     Cancelled,
     RepoNotInitialized,
     NoRemoteConfigured,
+    NoUpstream,
     SyncConflict,
     GitUnavailable,
     KeyMismatch,
