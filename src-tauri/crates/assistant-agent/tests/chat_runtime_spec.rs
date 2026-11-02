@@ -1,7 +1,5 @@
 use assistant_agent::chat_options;
-use assistant_agent::chat_runtime::{
-    self, ApplyDeltaOutcome, StreamAccumulator, StreamError, ToolCallAccumulator,
-};
+use assistant_agent::chat_runtime::{self, StreamAccumulator, StreamError};
 use assistant_agent::prompt_builder::{self, AgentKind};
 use assistant_providers::base::{self, ChatDelta, ProviderError, TokenUsage};
 use assistant_storage::agent_modes::AgentModeRow;
@@ -82,7 +80,6 @@ fn b7_stream_accumulator_text_only() {
     assert_eq!(outcome.prompt_tokens, Some(100));
     assert_eq!(outcome.finish_reason.as_deref(), Some("stop"));
     assert!(outcome.has_effective_output);
-    assert!(outcome.tool_calls.is_none());
 }
 
 #[test]
@@ -181,90 +178,6 @@ fn b7_stream_accumulator_empty_delta_no_effective_output() {
 
     accum.apply_delta(&usage_delta(100, 50));
     assert!(!accum.has_effective_output());
-}
-
-#[test]
-fn b8_tool_call_single() {
-    let mut accum = ToolCallAccumulator::new();
-
-    accum.apply_delta(&tool_call_id_delta("tc_1"));
-    accum.apply_delta(&tool_call_name_delta("read_file"));
-    accum.apply_delta(&tool_call_args_delta("{\"path\":"));
-    accum.apply_delta(&tool_call_args_delta("\"/tmp/x\"}"));
-
-    let calls = accum.finish().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].id, "tc_1");
-    assert_eq!(calls[0].name, "read_file");
-    assert_eq!(calls[0].arguments, "{\"path\":\"/tmp/x\"}");
-}
-
-#[test]
-fn b8_tool_call_multiple_finalizes_previous() {
-    let mut accum = ToolCallAccumulator::new();
-
-    let outcome1 = accum.apply_delta(&tool_call_id_delta("tc_1"));
-    assert!(outcome1.finalized_previous.is_none());
-
-    accum.apply_delta(&tool_call_name_delta("read_file"));
-    accum.apply_delta(&tool_call_args_delta("{}"));
-
-    let outcome2 = accum.apply_delta(&tool_call_id_delta("tc_2"));
-    assert!(outcome2.finalized_previous.is_some());
-    let finalized = outcome2.finalized_previous.unwrap();
-    assert_eq!(finalized.id, "tc_1");
-    assert_eq!(finalized.name, "read_file");
-    assert_eq!(finalized.arguments, "{}");
-
-    accum.apply_delta(&tool_call_name_delta("write_file"));
-    accum.apply_delta(&tool_call_args_delta("{\"path\":\"a\"}"));
-
-    let calls = accum.finish().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].id, "tc_2");
-    assert_eq!(calls[0].name, "write_file");
-}
-
-#[test]
-fn b8_tool_call_invalid_json() {
-    let mut accum = ToolCallAccumulator::new();
-
-    accum.apply_delta(&tool_call_id_delta("tc_1"));
-    accum.apply_delta(&tool_call_name_delta("bad_call"));
-    accum.apply_delta(&tool_call_args_delta("not json"));
-
-    let result = accum.finish();
-    assert!(result.is_err());
-}
-
-#[test]
-fn b8_tool_call_params_partial_signal() {
-    let mut accum = ToolCallAccumulator::new();
-
-    accum.apply_delta(&tool_call_id_delta("tc_1"));
-    let outcome = accum.apply_delta(&tool_call_args_delta("{\"a\":1}"));
-
-    assert!(outcome.params_partial.is_some());
-    let chunk = outcome.params_partial.unwrap();
-    assert_eq!(chunk.index, 0);
-    assert_eq!(chunk.chunk, "{\"a\":1}");
-}
-
-#[test]
-fn b7_accumulator_apply_delta_returns_outcome() {
-    let mut accum = StreamAccumulator::new();
-
-    let outcome: ApplyDeltaOutcome = accum.apply_delta(&text_delta("hi"));
-    assert!(outcome.finalized_previous.is_none());
-    assert!(outcome.params_partial.is_none());
-}
-
-#[test]
-fn b7_accumulator_tool_call_sets_effective_output() {
-    let mut accum = StreamAccumulator::new();
-
-    accum.apply_delta(&tool_call_id_delta("tc_1"));
-    assert!(accum.has_effective_output());
 }
 
 // ─── C8: consume_stream 等价性验证 ───

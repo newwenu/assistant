@@ -44,7 +44,6 @@ function createMockDeps(): {
     appendDelta: vi.fn(),
     setReasoningStreaming: vi.fn(),
     appendReasoningDelta: vi.fn(),
-    appendToolCallDelta: vi.fn(),
     updateContextUsage: vi.fn(),
     finishStream: vi.fn(),
     errorStream: vi.fn(),

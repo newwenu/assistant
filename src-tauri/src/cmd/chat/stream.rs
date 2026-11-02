@@ -48,9 +48,6 @@ pub(crate) fn emit_delta(ectx: &StreamEmitCtx, seq: u32, delta: &base::ChatDelta
         seq,
         delta_text: delta.delta_text.clone(),
         delta_reasoning: delta.delta_reasoning.clone(),
-        delta_tool_call_id: delta.delta_tool_call_id.clone(),
-        delta_tool_call_name: delta.delta_tool_call_name.clone(),
-        delta_tool_call_arguments: delta.delta_tool_call_arguments.clone(),
         finish_reason: delta.finish_reason.clone(),
         usage: delta.usage.clone().map(Into::into),
         delta_retry: delta.delta_retry.clone().map(Into::into),
@@ -80,7 +77,6 @@ pub(crate) struct DbWriteMsg {
     pub content: String,
     pub tokens: Option<i64>,
     pub reasoning: Option<String>,
-    pub tool_calls_json: Option<String>,
     pub usage_records: Vec<assistant_storage::token_usage::TokenUsageRecord>,
 }
 
@@ -98,7 +94,6 @@ pub(crate) fn save_partial_on_error(
         content: partial.full_content.clone(),
         tokens,
         reasoning: None,
-        tool_calls_json: None,
         usage_records,
     });
 }
@@ -117,7 +112,6 @@ pub(crate) fn spawn_db_writer(app: &AppHandle) -> DbSender {
                         &msg.content,
                         msg.tokens,
                         msg.reasoning.as_deref(),
-                        msg.tool_calls_json.as_deref(),
                     ) {
                         error!("Failed to save content: {}", db_err);
                     }

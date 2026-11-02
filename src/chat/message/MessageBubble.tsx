@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { Typography } from "antd";
 import { CompressOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import type { Message, ToolCall } from "../../chat/core/chatTypes";
+import type { Message } from "../../chat/core/chatTypes";
 import type { RetryNotification } from "../../chat/core/chatTypes";
 import type {
   ImageBlock,
@@ -16,7 +16,6 @@ import type { RecoveryActionCode } from "../core/chatErrorRecovery";
 import { extractPlainText, parseContent } from "../core/contentBlockUtils";
 import { translateKey } from "../../i18n";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
-import { ToolCallBlock } from "../blocks/ToolCallBlock";
 import { EditBlock } from "../blocks/EditBlock";
 import { BranchPicker } from "../blocks/BranchPicker";
 import { MessageContent } from "./MessageContent";
@@ -58,7 +57,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     const isCompactSummary = message.role === "compact_summary";
     const hasError = message.error != null;
     const hasReasoning = !!message.reasoning;
-    const hasToolCalls = !!message.toolCalls && message.toolCalls.length > 0;
 
     const [editing, setEditing] = useState(false);
     const [editContent, setEditContent] = useState(message.content);
@@ -215,10 +213,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                 isStreaming={isReasoningStreaming}
               />
             )}
-            {hasToolCalls &&
-              message.toolCalls!.map((tc: ToolCall) => (
-                <ToolCallBlock key={tc.id} toolCall={tc} />
-              ))}
             {editing ? (
               <EditBlock
                 value={editContent}
@@ -290,19 +284,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     if (prev.onFork !== next.onFork) return false;
     if (prev.message.siblingIndex !== next.message.siblingIndex) return false;
     if (prev.message.siblingCount !== next.message.siblingCount) return false;
-    const prevTc = prev.message.toolCalls;
-    const nextTc = next.message.toolCalls;
-    if (prevTc !== nextTc) {
-      if (!prevTc || !nextTc || prevTc.length !== nextTc.length) return false;
-      for (let i = 0; i < prevTc.length; i++) {
-        if (
-          prevTc[i].id !== nextTc[i].id ||
-          prevTc[i].name !== nextTc[i].name ||
-          prevTc[i].arguments !== nextTc[i].arguments
-        )
-          return false;
-      }
-    }
     return true;
   },
 );

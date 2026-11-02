@@ -122,32 +122,6 @@ export function createStatePort(
         ),
       });
     },
-    appendToolCallDelta: (
-      messageId: string,
-      toolCallId: string | undefined,
-      toolCallName: string | undefined,
-      toolCallArguments: string | undefined,
-    ) => {
-      const state = get();
-      set({
-        messages: state.messages.map((m) => {
-          if (m.id !== messageId) return m;
-          const toolCalls = [...(m.toolCalls || [])];
-          if (toolCallId) {
-            toolCalls.push({
-              id: toolCallId,
-              name: toolCallName || "",
-              arguments: toolCallArguments || "",
-            });
-          } else if (toolCalls.length > 0) {
-            const last = toolCalls[toolCalls.length - 1];
-            if (toolCallName) last.name += toolCallName;
-            if (toolCallArguments) last.arguments += toolCallArguments;
-          }
-          return { ...m, toolCalls };
-        }),
-      });
-    },
     updateContextUsage: (usage: ContextUsage) => {
       set({ contextUsage: usage });
     },

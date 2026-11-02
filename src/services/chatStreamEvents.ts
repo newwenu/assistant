@@ -150,9 +150,6 @@ export function subscribeChatStreamEvents(): () => void {
 
       if (
         payload.deltaReasoning ||
-        payload.deltaToolCallId ||
-        payload.deltaToolCallName ||
-        payload.deltaToolCallArguments ||
         payload.usage ||
         payload.finishReason ||
         payload.error ||
@@ -165,9 +162,6 @@ export function subscribeChatStreamEvents(): () => void {
           messageId: payload.messageId,
           seq: payload.seq,
           deltaReasoning: payload.deltaReasoning,
-          deltaToolCallId: payload.deltaToolCallId,
-          deltaToolCallName: payload.deltaToolCallName,
-          deltaToolCallArguments: payload.deltaToolCallArguments,
           usage: payload.usage,
           finishReason: payload.finishReason,
           error: payload.error,

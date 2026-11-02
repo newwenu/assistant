@@ -261,17 +261,11 @@ fn spawn_chat_stream(spawn: ChatStreamSpawn<'_>) -> Result<(), String> {
                 } else {
                     None
                 };
-                let tool_calls_json = outcome
-                    .tool_calls
-                    .as_ref()
-                    .filter(|tc| !tc.is_empty())
-                    .and_then(|tc| serde_json::to_string(tc).ok());
                 let _ = db_tx.send(DbWriteMsg {
                     msg_id: msg_id.clone(),
                     content: outcome.full_content.clone(),
                     tokens,
                     reasoning,
-                    tool_calls_json,
                     usage_records,
                 });
                 if let Some(pt) = outcome.prompt_tokens {

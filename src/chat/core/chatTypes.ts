@@ -6,7 +6,6 @@ export interface Message {
   role: string;
   content: string;
   reasoning?: string;
-  toolCalls?: ToolCall[];
   tokens: number | null;
   timestamp: number;
   error?: ChatError | null;
@@ -16,12 +15,6 @@ export interface Message {
   isPinned?: boolean;
   providerId?: string | null;
   modelId?: string;
-}
-
-export interface ToolCall {
-  id: string;
-  name: string;
-  arguments: string;
 }
 
 export interface Conversation {
@@ -125,9 +118,6 @@ export interface ChatDeltaPayload {
   seq: number;
   deltaText?: string;
   deltaReasoning?: string;
-  deltaToolCallId?: string;
-  deltaToolCallName?: string;
-  deltaToolCallArguments?: string;
   finishReason?: string;
   usage?: TokenUsage;
   error?: ChatError;

@@ -27,7 +27,6 @@ const sampleMessage: Message = {
   siblingIndex: 0,
   isPinned: false,
   reasoning: undefined,
-  toolCalls: undefined,
 };
 
 const sampleConversation: Conversation = {
@@ -58,11 +57,9 @@ describe("protocol DTO — camelCase contract", () => {
     expect(msg).toHaveProperty("conversationId");
     expect(msg).toHaveProperty("parentId");
     expect(msg).toHaveProperty("isPinned");
-    expect(msg).toHaveProperty("toolCalls");
     expect(msg).not.toHaveProperty("conversation_id");
     expect(msg).not.toHaveProperty("parent_id");
     expect(msg).not.toHaveProperty("is_pinned");
-    expect(msg).not.toHaveProperty("tool_calls");
   });
 
   it("Conversation uses camelCase fields", () => {
@@ -89,9 +86,6 @@ describe("protocol DTO — camelCase contract", () => {
       seq: 0,
       deltaText: "hi",
       deltaReasoning: undefined,
-      deltaToolCallId: undefined,
-      deltaToolCallName: undefined,
-      deltaToolCallArguments: undefined,
       finishReason: undefined,
       usage: undefined,
       error: undefined,
@@ -102,9 +96,6 @@ describe("protocol DTO — camelCase contract", () => {
     expect(payload).toHaveProperty("messageId");
     expect(payload).toHaveProperty("deltaText");
     expect(payload).toHaveProperty("deltaReasoning");
-    expect(payload).toHaveProperty("deltaToolCallId");
-    expect(payload).toHaveProperty("deltaToolCallName");
-    expect(payload).toHaveProperty("deltaToolCallArguments");
     expect(payload).toHaveProperty("finishReason");
     expect(payload).not.toHaveProperty("conversation_id");
     expect(payload).not.toHaveProperty("delta_text");

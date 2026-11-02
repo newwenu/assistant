@@ -33,12 +33,6 @@ export interface ChatStatePort {
   appendDelta: (delta: string) => void;
   setReasoningStreaming: (streaming: boolean) => void;
   appendReasoningDelta: (messageId: string, delta: string) => void;
-  appendToolCallDelta: (
-    messageId: string,
-    toolCallId: string | undefined,
-    toolCallName: string | undefined,
-    toolCallArguments: string | undefined,
-  ) => void;
   updateContextUsage: (usage: ContextUsage) => void;
   finishStream: (usage?: TokenUsage) => void;
   errorStream: (error: ChatError) => void;
@@ -384,23 +378,6 @@ export function createChatOrchestrator(
         if (phase === "sending") setPhase("streaming");
         deps.state.setReasoningStreaming(true);
         deps.state.appendReasoningDelta(messageId, payload.deltaReasoning);
-      }
-    }
-
-    if (
-      payload.deltaToolCallId ||
-      payload.deltaToolCallName ||
-      payload.deltaToolCallArguments
-    ) {
-      const messageId = deps.env.getStreamingMessageId();
-      if (messageId) {
-        if (phase === "sending") setPhase("streaming");
-        deps.state.appendToolCallDelta(
-          messageId,
-          payload.deltaToolCallId,
-          payload.deltaToolCallName,
-          payload.deltaToolCallArguments,
-        );
       }
     }
 

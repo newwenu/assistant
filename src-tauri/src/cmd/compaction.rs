@@ -283,14 +283,7 @@ pub(crate) async fn execute_compaction(
 
                 let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
 
-                conversations::update_message_content(
-                    &tx,
-                    &summary_msg_id,
-                    &summary,
-                    None,
-                    None,
-                    None,
-                )?;
+                conversations::update_message_content(&tx, &summary_msg_id, &summary, None, None)?;
                 conversations::set_conversation_is_full(&tx, conversation_id, true)?;
                 conversations::update_active_branch_id(&tx, conversation_id, &summary_msg_id)?;
 
@@ -451,12 +444,5 @@ fn save_compaction_partial(
         return;
     }
     // 摘要消息的 tokens 保持 NULL：压缩产出的 usage 只进累计口径，不写估算值
-    let _ = conversations::update_message_content(
-        &conn,
-        msg_id,
-        &partial.full_content,
-        None,
-        None,
-        None,
-    );
+    let _ = conversations::update_message_content(&conn, msg_id, &partial.full_content, None, None);
 }

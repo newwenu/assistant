@@ -47,11 +47,10 @@ pub fn update_message_content(
     content: &str,
     tokens: Option<i64>,
     reasoning: Option<&str>,
-    tool_calls_json: Option<&str>,
 ) -> Result<(), String> {
     conn.execute(
-        "UPDATE messages SET content = ?2, tokens = ?3, reasoning = ?4, tool_calls_json = ?5 WHERE id = ?1",
-        params![id, content, tokens, reasoning, tool_calls_json],
+        "UPDATE messages SET content = ?2, tokens = ?3, reasoning = ?4 WHERE id = ?1",
+        params![id, content, tokens, reasoning],
     )
     .map_err(|e| e.to_string())?;
     Ok(())

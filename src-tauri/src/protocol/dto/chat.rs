@@ -95,8 +95,6 @@ pub struct MessageDto {
     pub is_pinned: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls_json: Option<String>,
     #[serde(default)]
     pub sibling_index: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -119,7 +117,6 @@ impl From<MessageRow> for MessageDto {
             parent_id: r.parent_id,
             is_pinned: r.is_pinned,
             reasoning: r.reasoning,
-            tool_calls_json: r.tool_calls_json,
             sibling_index: r.sibling_index,
             sibling_count: None,
             provider_id: r.provider_id,
@@ -382,12 +379,6 @@ pub struct ChatDeltaPayloadDto {
     pub delta_text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delta_reasoning: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delta_tool_call_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delta_tool_call_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delta_tool_call_arguments: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
