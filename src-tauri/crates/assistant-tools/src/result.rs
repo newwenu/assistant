@@ -27,4 +27,9 @@ impl ToolResult {
             error: Some(error.into()),
         }
     }
+
+    /// `Err` 通道归一化：统一前缀工具名，便于日志检索与模型纠错。
+    pub fn from_exec_error(tool: &str, error: impl Into<String>) -> Self {
+        Self::err(format!("tool '{}': {}", tool, error.into()))
+    }
 }

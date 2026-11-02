@@ -19,6 +19,39 @@ pub struct BehaviorHints {
     pub open_world: bool,
 }
 
+/// 工具的暴露受众。两个维度独立：`agent` 决定是否进入 LLM 的 `tools` 列表，
+/// `toolbox` 决定是否允许 ToolBox 桥接入口（`os_tool_exec`）按名调用。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolAudience {
+    pub agent: bool,
+    pub toolbox: bool,
+}
+
+impl ToolAudience {
+    pub const BOTH: Self = Self {
+        agent: true,
+        toolbox: true,
+    };
+    pub const TOOLBOX_ONLY: Self = Self {
+        agent: false,
+        toolbox: true,
+    };
+    pub const AGENT_ONLY: Self = Self {
+        agent: true,
+        toolbox: false,
+    };
+    pub const NONE: Self = Self {
+        agent: false,
+        toolbox: false,
+    };
+}
+
+impl Default for ToolAudience {
+    fn default() -> Self {
+        Self::BOTH
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionIntent {
@@ -35,6 +68,11 @@ impl PermissionIntent {
     }
 }
 
+/// 工具执行结果的错误通道分两层：
+/// - `ToolResult { ok: false }`：工具正常执行，业务失败（路径不存在、权限不足、参数缺失、未知 action），
+///   结果回填给模型，模型可自行纠正。
+/// - `Err(String)`：工具无法完成本次调用（内部缺陷、无法构造结果），
+///   由 `exec::invoke` 归一化为 `ToolResult::err`，对上游不可见。
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
@@ -44,6 +82,10 @@ pub trait Tool: Send + Sync {
     fn input_schema(&self) -> Value;
 
     fn tier(&self) -> ToolTier;
+
+    fn audience(&self) -> ToolAudience {
+        ToolAudience::BOTH
+    }
 
     fn behavior_hints(&self) -> BehaviorHints {
         BehaviorHints::default()

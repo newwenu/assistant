@@ -8,6 +8,8 @@ publish = false
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
 # async-trait 保留：Rust 原生 async fn in trait 不兼容 dyn Trait（无法构建 vtable），见 trait.rs
 async-trait = { workspace = true }
 dashmap = { workspace = true }
@@ -16,3 +18,7 @@ encoding_rs = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = { workspace = true }

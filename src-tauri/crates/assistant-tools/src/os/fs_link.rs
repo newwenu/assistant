@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 use crate::context::ToolUseContext;
-use crate::r#trait::{BehaviorHints, PermissionIntent, Tool, ToolTier};
+use crate::r#trait::{BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier};
 use crate::result::ToolResult;
 
 const TOOL_NAME: &str = "fs_link";
@@ -99,6 +99,10 @@ impl Tool for FsLinkTool {
 
     fn tier(&self) -> ToolTier {
         ToolTier::Os
+    }
+
+    fn audience(&self) -> ToolAudience {
+        ToolAudience::TOOLBOX_ONLY
     }
 
     fn behavior_hints(&self) -> BehaviorHints {

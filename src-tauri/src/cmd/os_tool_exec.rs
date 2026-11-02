@@ -1,5 +1,5 @@
 use crate::protocol::{OsToolExecRequestDto, OsToolResultDto};
-use assistant_tools::{ToolRegistry, ToolUseContext};
+use assistant_tools::{invoke, ToolRegistry, ToolUseContext, DEFAULT_TOOL_TIMEOUT};
 use serde_json::Value;
 use std::sync::Arc;
 use tauri::State;
@@ -10,7 +10,7 @@ pub async fn os_tool_exec(
     request: OsToolExecRequestDto,
 ) -> Result<OsToolResultDto, String> {
     let tool = registry
-        .find(&request.tool)
+        .find_for_toolbox(&request.tool)
         .ok_or_else(|| format!("tool '{}' not found in registry", request.tool))?;
 
     let mut input = request.params;
@@ -22,10 +22,7 @@ pub async fn os_tool_exec(
 
     let context = ToolUseContext::for_toolbox(None);
 
-    let result = tool
-        .execute(&input, &context)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = invoke(tool.as_ref(), &input, &context, DEFAULT_TOOL_TIMEOUT).await;
 
     Ok(OsToolResultDto::from(result))
 }
