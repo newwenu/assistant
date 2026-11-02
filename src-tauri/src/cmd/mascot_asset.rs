@@ -1,8 +1,8 @@
-use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
 use tauri::{command, AppHandle, Manager};
 
+use crate::protocol::InstallMascotAssetResultDto;
 use assistant_config::atomic_write::atomic_write;
 
 const MAX_ASSET_BYTES: u64 = 2 * 1024 * 1024;
@@ -69,19 +69,12 @@ fn validate_mime(data: &[u8], asset_type: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Serialize)]
-pub struct InstallMascotAssetResult {
-    pub installed_path: String,
-    pub bytes: u64,
-    pub version: u64,
-}
-
 #[command]
 pub async fn install_mascot_asset(
     app: AppHandle,
     asset_type: String,
     file_path: String,
-) -> Result<InstallMascotAssetResult, String> {
+) -> Result<InstallMascotAssetResultDto, String> {
     let spec = get_asset_spec(&asset_type)?;
 
     let src_path = PathBuf::from(&file_path);
@@ -129,7 +122,7 @@ pub async fn install_mascot_asset(
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
 
-    Ok(InstallMascotAssetResult {
+    Ok(InstallMascotAssetResultDto {
         installed_path: target_path.to_string_lossy().to_string(),
         bytes: data.len() as u64,
         version,

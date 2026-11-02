@@ -1,23 +1,14 @@
-use assistant_tools::{OsToolResult, ToolRegistry, ToolUseContext};
-use serde::{Deserialize, Serialize};
+use crate::protocol::{OsToolExecRequestDto, OsToolResultDto};
+use assistant_tools::{ToolRegistry, ToolUseContext};
 use serde_json::Value;
 use std::sync::Arc;
 use tauri::State;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OsToolExecRequest {
-    pub tool: String,
-    pub action: String,
-    #[serde(default)]
-    pub params: Value,
-}
-
 #[tauri::command]
 pub async fn os_tool_exec(
     registry: State<'_, Arc<ToolRegistry>>,
-    request: OsToolExecRequest,
-) -> Result<OsToolResult, String> {
+    request: OsToolExecRequestDto,
+) -> Result<OsToolResultDto, String> {
     let tool = registry
         .find(&request.tool)
         .ok_or_else(|| format!("tool '{}' not found in registry", request.tool))?;
@@ -36,5 +27,5 @@ pub async fn os_tool_exec(
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(OsToolResult::from(result))
+    Ok(OsToolResultDto::from(result))
 }

@@ -105,7 +105,7 @@ pub struct ToolResult {
 - `ToolResult::ok(data)` → `{ ok: true, data: Some(data), error: None }`
 - `ToolResult::err(msg)` → `{ ok: false, data: None, error: Some(msg) }`
 
-**OsToolResult**：Tauri command 返回类型，与 ToolResult 同构，`From<ToolResult>` 转换。存在原因：Tauri command 需要独立序列化类型。
+**OsToolResultDto**：Tauri command 返回类型，与 ToolResult 同构，`From<ToolResult>` 转换。存在原因：Tauri command 需要独立序列化类型。归属 `src-tauri/src/protocol/dto/os_tool.rs`——wire 类型必须落在 `protocol/dto`，`assistant-tools` 不持有 Tauri 契约类型。
 
 **参考**：OpenBitFun 的 `ToolResult` 更丰富——含 `output`(Value) + `is_error`(bool) + `artifacts`(Vec) + `presentation`(String)。artifacts 支持持久化大结果到文件（>50KB 自动落盘），presentation 控制前端渲染。我们的简化版暂不含 artifacts/presentation，后续 Step 6 Pipeline 可扩展。
 
@@ -920,21 +920,56 @@ execute_round(context) → RoundOutcome:
 
 ### 8.3 os_tool_exec Tauri command
 
+请求 / 返回的 wire 类型定义在 `src-tauri/src/protocol/dto/os_tool.rs`（全仓唯一 DTO 落点，`*Dto` 后缀 + `rename_all = "camelCase"`）：
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OsToolExecRequestDto {
+    pub tool: String,
+    pub action: String,
+    #[serde(default)]
+    pub params: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OsToolResultDto {
+    pub ok: bool,
+    pub data: Option<Value>,
+    pub error: Option<String>,
+}
+
+impl From<assistant_tools::ToolResult> for OsToolResultDto { /* 逐字段搬运 */ }
+```
+
+命令本体：
+
 ```rust
 #[tauri::command]
 pub async fn os_tool_exec(
     registry: State<'_, Arc<ToolRegistry>>,
-    request: OsToolExecRequest,
-) -> Result<OsToolResult, String> {
+    request: OsToolExecRequestDto,
+) -> Result<OsToolResultDto, String> {
     let tool = registry.find(&request.tool)
-        .ok_or_else(|| format!("tool '{}' not found", request.tool))?;
+        .ok_or_else(|| format!("tool '{}' not found in registry", request.tool))?;
+
+    let mut input = request.params;
+    if let Some(obj) = input.as_object_mut() {
+        obj.insert("action".to_string(), Value::String(request.action));
+    } else {
+        input = serde_json::json!({ "action": request.action });
+    }
+
     let context = ToolUseContext::for_toolbox(None);
     let result = tool.execute(&input, &context).await.map_err(|e| e.to_string())?;
-    Ok(OsToolResult::from(result))
+    Ok(OsToolResultDto::from(result))
 }
 ```
 
-**约束**：`os_tool_exec` 是**唯一**的 Tauri command 入口，禁止为单个 OS 工具新增独立 Tauri command。
+**约束**：`os_tool_exec` 是**唯一**的 Tauri command 入口，禁止为单个 OS 工具新增独立 Tauri command。新增 OS 工具**不新增 request DTO**——复用上面的通用 `OsToolExecRequestDto`，参数差异只体现在 `params` 内容与工具自身的 `input_schema()`。
+
+**已知待修**：`ToolUseContext::for_toolbox(None)` 使 `workspace_root` 恒为 `None`，相对路径工具在 ToolBox 入口下不可用，需补工作区来源（见 8.2）。
 
 ### 8.4 前端 os.ts 代理对象
 
@@ -1239,7 +1274,7 @@ src-tauri/
 │   │       ├── lib.rs             # 现有
 │   │       ├── trait.rs           # 现有：Tool trait + ToolTier + BehaviorHints
 │   │       ├── registry.rs        # 现有：ToolRegistry
-│   │       ├── result.rs          # 现有：ToolResult + OsToolResult
+│   │       ├── result.rs          # 现有：ToolResult
 │   │       ├── context.rs         # 现有：ToolUseContext
 │   │       ├── policy.rs          # 新增：PermissionEffect + PermissionRule + ResolvedPermissionPolicy
 │   │       ├── gateway.rs         # 新增：ToolGateway + ApprovalChannel
@@ -1286,7 +1321,7 @@ src-tauri/
 | 5 | Tool Gateway | ❌ 未实现 | 需新增 `gateway.rs` |
 | 6 | Tool Pipeline | ❌ 未实现 | 需新增 `pipeline.rs` |
 | 7 | RoundExecutor | ❌ 未实现 | 需新增 `round_executor.rs` |
-| 8 | Tauri 桥接 | ✅ 完成 | `os_tool_exec.rs` `os.ts` |
+| 8 | Tauri 桥接 | ⚠️ 部分完成 | `os_tool_exec.rs` `os.ts`；DTO 已归位 `protocol/dto/os_tool.rs`。待补：workspace_root 来源、超时、错误通道统一 |
 | 9 | 前端集成 | ❌ 未实现 | ChatDelta 五态 + ToolCallBubble + 审批 UI |
 | 10 | Agent 模式+两级可用性 | ❌ 未实现 | max_tool_tier + approval_level + ConversationToolConfig + resolveAvailableTools + Policy 映射 |
 

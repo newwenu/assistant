@@ -154,3 +154,11 @@ pub struct ShortcutWarningPayloadDto {
 pub struct ThemeChangedPayloadDto {
     pub resolved: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InstallMascotAssetResultDto {
+    pub installed_path: String,
+    pub bytes: u64,
+    pub version: u64,
+}

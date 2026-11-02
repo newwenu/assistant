@@ -2,6 +2,7 @@ pub mod branch;
 pub mod chat;
 pub mod config;
 pub mod orb;
+pub mod os_tool;
 pub mod settings;
 pub mod storage;
 
@@ -9,6 +10,7 @@ pub use branch::*;
 pub use chat::*;
 pub use config::*;
 pub use orb::*;
+pub use os_tool::*;
 pub use settings::*;
 pub use storage::*;
 
@@ -304,6 +306,53 @@ mod tests {
             },
         };
         roundtrip(&screen);
+    }
+
+    #[test]
+    fn test_os_tool_dtos_roundtrip() {
+        let request = OsToolExecRequestDto {
+            tool: "fs_link".into(),
+            action: "create".into(),
+            params: serde_json::json!({ "source": "a", "target": "b", "kind": "symlink" }),
+        };
+        roundtrip(&request);
+
+        let ok = OsToolResultDto {
+            ok: true,
+            data: Some(serde_json::json!({ "created": true })),
+            error: None,
+        };
+        roundtrip(&ok);
+        let json = serde_json::to_string(&ok).unwrap();
+        assert!(!json.contains("error"), "None fields omitted: {}", json);
+
+        let failed = OsToolResultDto {
+            ok: false,
+            data: None,
+            error: Some("boom".into()),
+        };
+        roundtrip(&failed);
+    }
+
+    #[test]
+    fn test_os_tool_exec_request_rejects_unknown_fields() {
+        let err = serde_json::from_str::<OsToolExecRequestDto>(
+            r#"{"tool":"fs_link","action":"create","params":{},"extra":1}"#,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown field"), "{}", err);
+    }
+
+    #[test]
+    fn test_install_mascot_asset_result_dto_roundtrip() {
+        let dto = InstallMascotAssetResultDto {
+            installed_path: "mascot/rive/custom.riv".into(),
+            bytes: 1024,
+            version: 1700000000000,
+        };
+        roundtrip(&dto);
+        let json = serde_json::to_string(&dto).unwrap();
+        assert!(json.contains("installedPath"), "camelCase: {}", json);
     }
 
     #[test]

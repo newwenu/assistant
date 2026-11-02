@@ -78,45 +78,55 @@ ToolBox 入口需要一条**直达路径**：前端组件 → Tauri command → 
 
 ### 2.3 `os_tool_exec` Tauri command 实现
 
+请求 / 返回的 wire 类型定义在 `src-tauri/src/protocol/dto/os_tool.rs`（全仓唯一 DTO 落点，`*Dto` 后缀 + `rename_all = "camelCase"`）：
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OsToolExecRequestDto {
+    pub tool: String,
+    pub action: String,
+    #[serde(default)]
+    pub params: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OsToolResultDto {
+    pub ok: bool,
+    pub data: Option<Value>,
+    pub error: Option<String>,
+}
+```
+
+命令本体：
+
 ```rust
 #[tauri::command]
-async fn os_tool_exec(
-    tool: String,
-    action: String,
-    params: Value,
+pub async fn os_tool_exec(
     registry: State<'_, Arc<ToolRegistry>>,
-    workspace_root: State<'_, Option<PathBuf>>,
-) -> Result<OsToolResult, String> {
-    let tool_impl = registry
-        .find(&tool)
-        .ok_or_else(|| format!("Unknown tool: {}", tool))?;
+    request: OsToolExecRequestDto,
+) -> Result<OsToolResultDto, String> {
+    let tool = registry
+        .find(&request.tool)
+        .ok_or_else(|| format!("tool '{}' not found in registry", request.tool))?;
 
-    let input = json!({ "action": action, ..params });
-    let context = ToolUseContext {
-        session_id: String::new(),
-        conversation_id: String::new(),
-        workspace_root: workspace_root.0.clone(),
-        cancellation_token: CancellationToken::new(),
-        iteration: 0,
-        source: ToolCallSource::Session,
-    };
-
-    match tool_impl.execute(&input, &context).await {
-        Ok(result) => Ok(OsToolResult {
-            ok: !result.is_error,
-            data: if !result.is_error { Some(result.output) } else { None },
-            error: if result.is_error { Some(result.output) } else { None },
-        }),
-        Err(e) => Ok(OsToolResult {
-            ok: false,
-            data: None,
-            error: Some(e.to_string()),
-        }),
+    let mut input = request.params;
+    if let Some(obj) = input.as_object_mut() {
+        obj.insert("action".to_string(), Value::String(request.action));
+    } else {
+        input = serde_json::json!({ "action": request.action });
     }
+
+    let context = ToolUseContext::for_toolbox(None);
+    let result = tool.execute(&input, &context).await.map_err(|e| e.to_string())?;
+    Ok(OsToolResultDto::from(result))
 }
 ```
 
 关键：`os_tool_exec` 直接调 `Tool.execute()`，不经过 ToolPipeline。路径校验等安全约束由 Tool.execute() 内部保证，与 Agent 入口调同一个 execute() 时行为一致。
+
+**已知待修**：`ToolUseContext::for_toolbox(None)` 使 `workspace_root` 恒为 `None`，相对路径工具在 ToolBox 入口下不可用，需补工作区来源（见 I18 spec 8.2）。
 
 ### 2.4 前端 `os` 代理对象
 

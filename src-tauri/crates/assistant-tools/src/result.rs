@@ -28,23 +28,3 @@ impl ToolResult {
         }
     }
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OsToolResult {
-    pub ok: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-impl From<ToolResult> for OsToolResult {
-    fn from(result: ToolResult) -> Self {
-        Self {
-            ok: result.ok,
-            data: result.data,
-            error: result.error,
-        }
-    }
-}
