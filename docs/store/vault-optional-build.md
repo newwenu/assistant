@@ -808,7 +808,7 @@ export const vaultExtension: SettingsExtension = {
   id: "vault",
   fields: [
     {
-      key: "vaultBiometricEnabled",
+      key: "vaultBiometricUnlock",
       // ...
       customRenderLoad: () => import("@/settings/shared/renderers/BiometricSwitchRender"),
     },

@@ -46,7 +46,7 @@ const VAULT_GENERAL_SETTINGS: ExtensionSettingDefinition[] = [
     ],
   },
   {
-    key: "vaultBiometricEnabled",
+    key: "vaultBiometricUnlock",
     group: "vault",
     section: "vault-general",
     type: "boolean",
@@ -57,7 +57,6 @@ const VAULT_GENERAL_SETTINGS: ExtensionSettingDefinition[] = [
       import("./settings/BiometricSwitchRender").then((m) => ({
         default: m.BiometricSwitchRender,
       })),
-    saveMessage: "settings.vault.biometric_enabled.save_message",
   },
   {
     key: "vaultHibpAutoAudit",

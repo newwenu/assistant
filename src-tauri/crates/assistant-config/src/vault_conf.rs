@@ -30,8 +30,6 @@ pub struct VaultConf {
     pub vault_clipboard_clear_seconds: u16,
     #[serde(default = "default_vault_cipher_algorithm")]
     pub vault_cipher_algorithm: String,
-    #[serde(default)]
-    pub vault_biometric_enabled: bool,
     #[serde(default = "default_true")]
     pub vault_hibp_auto_audit: bool,
     #[serde(default)]
@@ -57,7 +55,6 @@ impl VaultConf {
             vault_lock_on_screen_lock: true,
             vault_clipboard_clear_seconds: 30,
             vault_cipher_algorithm: "aes256Gcm".to_string(),
-            vault_biometric_enabled: false,
             vault_hibp_auto_audit: true,
             vault_sync_remote_url: None,
             vault_ssh_auto_add: false,

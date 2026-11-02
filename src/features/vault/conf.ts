@@ -5,7 +5,6 @@ export interface VaultConf {
   vaultLockOnScreenLock: boolean;
   vaultClipboardClearSeconds: number;
   vaultCipherAlgorithm: "aes256Gcm" | "chacha20Poly1305";
-  vaultBiometricEnabled: boolean;
   vaultHibpAutoAudit: boolean;
   vaultSyncRemoteUrl: string | null;
   vaultSshAutoAdd: boolean;

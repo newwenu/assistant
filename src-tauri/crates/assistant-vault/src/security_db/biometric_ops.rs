@@ -164,20 +164,35 @@ impl SecurityDbState {
     }
 
     pub fn disenroll_biometric(&self, key_store: &dyn BiometricKeyStore) -> Result<(), VaultError> {
-        let _ = key_store.delete_key(KEY_ID_MASTER);
-        let _ = key_store.delete_key(KEY_ID_AES_KEY);
-        let _ = key_store.delete_key(KEY_ID_CIPHERTEXT);
-        let _ = key_store.delete_key(KEY_ID_SIG_HASH);
+        let mut first_error: Option<VaultError> = None;
+        for key_id in [
+            KEY_ID_MASTER,
+            KEY_ID_AES_KEY,
+            KEY_ID_CIPHERTEXT,
+            KEY_ID_SIG_HASH,
+        ] {
+            if let Err(e) = key_store.delete_key(key_id) {
+                log::warn!("Failed to delete biometric key '{}': {}", key_id, e);
+                if first_error.is_none() {
+                    first_error = Some(e);
+                }
+            }
+        }
 
-        {
+        if first_error.is_none() {
             let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(conn) = guard.as_ref() {
                 let _ = audit_log(conn, AuditEvent::VaultLock, Some("biometric_disenrolled"));
             }
         }
 
-        log::info!("Biometric disenrolled");
-        Ok(())
+        match first_error {
+            Some(e) => Err(e),
+            None => {
+                log::info!("Biometric disenrolled");
+                Ok(())
+            }
+        }
     }
 
     pub fn is_biometric_enrolled(

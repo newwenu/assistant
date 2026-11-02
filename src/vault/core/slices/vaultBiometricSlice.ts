@@ -167,6 +167,7 @@ export function createBiometricSlice(
         log.info("Biometric disenrolled");
       } catch (e) {
         log.error("disenrollBiometric failed", e);
+        throw e;
       }
     },
   };

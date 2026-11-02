@@ -10,7 +10,6 @@ fn new_returns_defaults() {
     assert!(conf.vault_lock_on_screen_lock);
     assert_eq!(conf.vault_clipboard_clear_seconds, 30);
     assert_eq!(conf.vault_cipher_algorithm, "aes256Gcm");
-    assert!(!conf.vault_biometric_enabled);
     assert!(conf.vault_hibp_auto_audit);
     assert_eq!(conf.vault_sync_remote_url, None);
     assert!(!conf.vault_ssh_auto_add);
@@ -45,13 +44,11 @@ fn amend_single_and_multiple_fields() {
     let conf = VaultConf::new();
     let patch = serde_json::json!({
         "vault_auto_lock_minutes": 10,
-        "vault_biometric_enabled": true,
         "vault_hibp_auto_audit": false,
         "vault_ssh_auto_add": true
     });
     let merged = conf.amend(patch).unwrap();
     assert_eq!(merged.vault_auto_lock_minutes, 10);
-    assert!(merged.vault_biometric_enabled);
     assert!(!merged.vault_hibp_auto_audit);
     assert!(merged.vault_ssh_auto_add);
     assert_eq!(merged.vault_cipher_algorithm, "aes256Gcm");

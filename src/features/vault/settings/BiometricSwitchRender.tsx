@@ -5,25 +5,34 @@ import { listen } from "@tauri-apps/api/event";
 import { useVaultStore } from "@/vault/core/vaultStore";
 import { vaultService } from "@/vault/core/vault.service";
 import { vaultErrorMessage } from "@/vault/core/vaultError";
-import type { FieldRenderProps } from "@/settings/core/types/fieldSchema";
 import { useSettingMessage } from "@/settings/shared/useSettingMessage";
 
-export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
+export function BiometricSwitchRender() {
   const { t } = useTranslation();
   const msg = useSettingMessage();
   const {
     isLocked,
     biometricAvailable,
+    biometricEnrolled,
     enrollBiometric,
     disenrollBiometric,
     checkBiometricAvailable,
     checkBiometricEnrolled,
   } = useVaultStore();
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    void checkBiometricAvailable();
-    void checkBiometricEnrolled();
+    let cancelled = false;
+    void Promise.all([
+      checkBiometricAvailable(),
+      checkBiometricEnrolled(),
+    ]).finally(() => {
+      if (!cancelled) setChecking(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [checkBiometricAvailable, checkBiometricEnrolled]);
 
   useEffect(() => {
@@ -57,32 +66,45 @@ export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
     setLoading(true);
     try {
       await enrollBiometric();
-      onChange?.(true);
+      await checkBiometricEnrolled();
     } catch (e) {
       msg.message.error(vaultErrorMessage(e));
     } finally {
       setLoading(false);
     }
-  }, [biometricAvailable, isLocked, enrollBiometric, onChange, msg]);
+  }, [
+    biometricAvailable,
+    isLocked,
+    enrollBiometric,
+    checkBiometricEnrolled,
+    msg,
+  ]);
 
   const handleDisable = useCallback(async () => {
+    if (isLocked) {
+      msg.warning("vault.biometric.disable_requires_unlock");
+      return;
+    }
     setLoading(true);
     try {
       await disenrollBiometric();
-      onChange?.(false);
+      await checkBiometricEnrolled();
     } catch (e) {
-      msg.message.error(String(e));
+      msg.message.error(vaultErrorMessage(e));
     } finally {
       setLoading(false);
     }
-  }, [disenrollBiometric, onChange, msg]);
+  }, [isLocked, disenrollBiometric, checkBiometricEnrolled, msg]);
 
-  if (value) {
+  const busy = loading || checking;
+
+  if (biometricEnrolled) {
     return (
       <Button
         type="primary"
         danger
-        loading={loading}
+        loading={busy}
+        disabled={checking}
         onClick={() => void handleDisable()}
       >
         {t("vault.biometric.disable")}
@@ -94,7 +116,8 @@ export function BiometricSwitchRender({ value, onChange }: FieldRenderProps) {
     <Space>
       <Button
         type="primary"
-        loading={loading}
+        loading={busy}
+        disabled={checking}
         onClick={() => void handleEnable()}
       >
         {t("vault.biometric.enable")}

@@ -548,7 +548,7 @@
       "label": "settings.vault.cipher_algorithm.label"
     },
     {
-      "key": "vaultBiometricEnabled",
+      "key": "vaultBiometricUnlock",
       "group": "vault",
       "section": "vault-general",
       "type": "boolean",
