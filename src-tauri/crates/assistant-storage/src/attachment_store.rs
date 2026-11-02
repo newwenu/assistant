@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
 
@@ -39,6 +39,12 @@ pub struct AttachmentEntry {
     pub created_at: u64,
 }
 
+/// 派生文件（PDF 文本层等）的独立子目录：与附件根目录分开，
+/// 避免 `list_all` / 孤儿清理把派生文件误判为附件。
+const DERIVED_DIR: &str = "derived";
+/// 抽取器版本：算法变更后旧侧车不会被读到。
+const EXTRACTOR_VERSION: &str = "extract-v1";
+
 fn media_type_to_ext(mt: &str) -> &'static str {
     match mt {
         "image/png" => "png",
@@ -59,6 +65,15 @@ fn media_type_to_ext(mt: &str) -> &'static str {
         "text/css" => "css",
         "text/yaml" => "yaml",
         "text/xml" => "xml",
+        "text/x-rust" => "rs",
+        "text/x-toml" => "toml",
+        "text/x-java" => "java",
+        "text/x-go" => "go",
+        "text/x-c" => "c",
+        "text/x-cpp" => "cpp",
+        "text/x-shellscript" => "sh",
+        "text/x-powershell" => "ps1",
+        "application/sql" => "sql",
         _ => "bin",
     }
 }
@@ -111,6 +126,52 @@ impl AttachmentStore {
         Ok(fs::read(&path).await?)
     }
 
+    /// 附件原文件的绝对路径，供 PDF 抽取等只读派生流程使用。
+    pub fn file_path(&self, id: &str) -> PathBuf {
+        self.config.dir.join(id)
+    }
+
+    /// PDF 文本层侧车路径：`derived/{sha}.extract-v1.txt`。
+    pub fn derived_path(&self, id: &str) -> PathBuf {
+        let stem = Path::new(id)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(id);
+        self.config
+            .dir
+            .join(DERIVED_DIR)
+            .join(format!("{}.{}.txt", stem, EXTRACTOR_VERSION))
+    }
+
+    /// 读取侧车文本；不存在或读取失败都返回 `None`，由调用方回退。
+    pub async fn read_derived_text(&self, id: &str) -> Option<String> {
+        let path = self.derived_path(id);
+        match fs::read_to_string(&path).await {
+            Ok(text) if !text.trim().is_empty() => Some(text),
+            _ => None,
+        }
+    }
+
+    /// 写入侧车文本；已存在时直接返回，避免并发重复写。
+    pub async fn write_derived_text(&self, id: &str, text: &str) -> Result<(), AttachmentError> {
+        let path = self.derived_path(id);
+        if path.exists() {
+            return Ok(());
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+        let tmp = path.with_extension("txt.tmp");
+        fs::write(&tmp, text.as_bytes()).await?;
+        fs::rename(&tmp, &path).await?;
+        Ok(())
+    }
+
+    pub async fn delete_derived_text(&self, id: &str) {
+        let path = self.derived_path(id);
+        let _ = fs::remove_file(&path).await;
+    }
+
     pub async fn list_all(&self) -> Result<Vec<AttachmentEntry>, AttachmentError> {
         let mut entries = Vec::new();
         let mut dir = fs::read_dir(&self.config.dir).await?;
@@ -140,6 +201,7 @@ impl AttachmentStore {
     }
 
     pub async fn delete(&self, id: &str) -> Result<(), AttachmentError> {
+        self.delete_derived_text(id).await;
         let path = self.config.dir.join(id);
         Ok(fs::remove_file(&path).await?)
     }

@@ -6,6 +6,7 @@ pub mod compaction;
 pub mod error;
 pub mod multimodal;
 pub mod normalization;
+pub mod pdf_text;
 pub mod prompt_builder;
 pub mod provider_config;
 pub mod request_projection;

@@ -4,15 +4,39 @@ use assistant_providers::types::{
 use assistant_storage::attachment_store::AttachmentStore;
 use base64::engine::general_purpose;
 use base64::Engine;
+use std::cmp::Reverse;
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::error::AgentError;
+use crate::token_estimate::{
+    estimate_text_tokens, is_pdf_name, truncate_to_tokens, PDF_NATIVE_TOKENS,
+};
 
 const MAX_IMAGES: usize = 4;
 const MAX_FILES: usize = 4;
 const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
-const MAX_TEXT_FILE_BYTES: usize = 512 * 1024;
+
+/// 单文件最低配额：低于该值时不再截断正文，直接降级为占位文本。
+const MIN_FILE_QUOTA_TOKENS: usize = 2_000;
+/// 窗口未知时所有文件合计的投影上限（不是每文件上限）。
+pub const MAX_UNKNOWN_WINDOW_FILE_TOKENS: usize = 32_000;
+/// 头尾截断时头部占比。
+const TRUNCATE_HEAD_PERCENT: u8 = 60;
+
+/// 投影用途：发送路径允许记录「窗口未知」等告警，展示兜底路径不应刷日志。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectionPurpose {
+    Send,
+    Estimate,
+}
+
+impl ProjectionPurpose {
+    pub(crate) fn warns(self) -> bool {
+        matches!(self, Self::Send)
+    }
+}
 
 /// 附件准入策略：可信通道（用户主动输入）宽松，不可信通道（API / MCP 返回）严格。
 #[derive(Debug, Clone)]
@@ -58,6 +82,17 @@ impl MultimodalConfig {
                 "yaml".into(),
                 "yml".into(),
                 "xml".into(),
+                "rs".into(),
+                "toml".into(),
+                "java".into(),
+                "go".into(),
+                "c".into(),
+                "h".into(),
+                "cpp".into(),
+                "sh".into(),
+                "ps1".into(),
+                "sql".into(),
+                "log".into(),
             ],
             allow_absolute_paths: true,
         }
@@ -110,7 +145,7 @@ fn media_type_from_ext(ext: &str) -> Option<&'static str> {
 fn file_media_type_from_ext(ext: &str) -> Option<&'static str> {
     match ext {
         "pdf" => Some("application/pdf"),
-        "txt" => Some("text/plain"),
+        "txt" | "log" => Some("text/plain"),
         "md" => Some("text/markdown"),
         "csv" => Some("text/csv"),
         "html" => Some("text/html"),
@@ -121,6 +156,15 @@ fn file_media_type_from_ext(ext: &str) -> Option<&'static str> {
         "css" => Some("text/css"),
         "yaml" | "yml" => Some("text/yaml"),
         "xml" => Some("text/xml"),
+        "rs" => Some("text/x-rust"),
+        "toml" => Some("text/x-toml"),
+        "java" => Some("text/x-java"),
+        "go" => Some("text/x-go"),
+        "c" | "h" => Some("text/x-c"),
+        "cpp" => Some("text/x-cpp"),
+        "sh" => Some("text/x-shellscript"),
+        "ps1" => Some("text/x-powershell"),
+        "sql" => Some("application/sql"),
         _ => None,
     }
 }
@@ -434,63 +478,6 @@ pub async fn rehydrate_images(messages: &mut [ChatMessage], store: &AttachmentSt
     }
 }
 
-/// 只为 PDF 填充 bytes：其余文件类型始终走 `file_handle_text` 文本投影，
-/// 因为当前 Provider 均不支持把非 PDF 文件作为原生附件发送。
-pub async fn rehydrate_files(
-    messages: &mut [ChatMessage],
-    store: &AttachmentStore,
-    support_pdf: bool,
-) {
-    if !support_pdf {
-        return;
-    }
-    for msg in messages.iter_mut() {
-        if msg.role != MessageRole::User {
-            continue;
-        }
-        let Some(mut blocks) = blocks_of(msg) else {
-            continue;
-        };
-
-        let mut changed = false;
-        for block in blocks.iter_mut() {
-            let ContentBlock::File {
-                ref attachment,
-                ref mut cached_data,
-                ..
-            } = block
-            else {
-                continue;
-            };
-            if !attachment.name.to_lowercase().ends_with(".pdf") {
-                continue;
-            }
-
-            match store.read(&attachment.attachment_id).await {
-                Ok(data) => {
-                    *cached_data = Some(general_purpose::STANDARD.encode(&data));
-                    changed = true;
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Failed to rehydrate file {}: {}",
-                        attachment.attachment_id,
-                        e
-                    );
-                    *block = ContentBlock::Text {
-                        text: "[File not found]".to_string(),
-                    };
-                    changed = true;
-                }
-            }
-        }
-
-        if changed {
-            apply_blocks(msg, blocks);
-        }
-    }
-}
-
 pub fn project_images_for_text_model(messages: &mut [ChatMessage]) {
     for msg in messages.iter_mut() {
         if msg.role != MessageRole::User {
@@ -514,58 +501,245 @@ pub fn project_images_for_text_model(messages: &mut [ChatMessage]) {
     }
 }
 
+/// 文件投影：在预算内把文件正文转成文本 / 保留原生 PDF / 降级占位。
+///
+/// `file_budget_tokens = None` 表示窗口未知（不可判定），按所有文件合计上限投影；
+/// `Some(0)` 表示没有文件预算，全部降级。预算由调用方按「输入预算 - 非文件估算」算出。
 pub async fn project_files(
     messages: &mut [ChatMessage],
     store: &AttachmentStore,
     support_pdf: bool,
+    file_budget_tokens: Option<usize>,
+    purpose: ProjectionPurpose,
 ) {
-    for msg in messages.iter_mut() {
+    let mut occurrences: Vec<(usize, usize, FileAttachmentRef)> = Vec::new();
+    for (mi, msg) in messages.iter().enumerate() {
         if msg.role != MessageRole::User {
             continue;
         }
         let Some(blocks) = blocks_of(msg) else {
             continue;
         };
-
-        let mut projected = Vec::with_capacity(blocks.len());
-        for block in blocks {
-            match block {
-                ContentBlock::File { ref attachment, .. }
-                    if should_send_file_as_is(attachment, support_pdf) =>
-                {
-                    projected.push(block);
-                }
-                ContentBlock::File { ref attachment, .. } => {
-                    projected.push(project_file_block(attachment, store).await);
-                }
-                other => projected.push(other),
+        for (bi, block) in blocks.iter().enumerate() {
+            if let ContentBlock::File { attachment, .. } = block {
+                occurrences.push((mi, bi, attachment.clone()));
             }
         }
+    }
+    if occurrences.is_empty() {
+        return;
+    }
 
-        apply_blocks(msg, projected);
+    let mut remaining = match file_budget_tokens {
+        Some(v) => v,
+        None => {
+            if purpose.warns() {
+                log::warn!(
+                    "[attachment-budget] 窗口未知，按文件总额上限 {} tokens 投影",
+                    MAX_UNKNOWN_WINDOW_FILE_TOKENS
+                );
+            }
+            MAX_UNKNOWN_WINDOW_FILE_TOKENS
+        }
+    };
+    // 单文件上限：只有一个文件时可用全部预算；两个及以上时每个最多一半，
+    // 避免最新一个文件吞掉全部配额后其余文件直接降级。
+    let per_file_cap = remaining / occurrences.len().clamp(1, 2);
+
+    // 新消息优先：消息索引从大到小；同一消息内保持原顺序。
+    let mut ordered = occurrences.clone();
+    ordered.sort_by_key(|(mi, bi, _)| (Reverse(*mi), *bi));
+
+    let mut projected: HashMap<(usize, usize), ContentBlock> = HashMap::new();
+    for (mi, bi, att) in ordered {
+        let quota = remaining.min(per_file_cap);
+        let (block, used) = project_one_file(&att, store, support_pdf, quota, purpose).await;
+        remaining = remaining.saturating_sub(used);
+        projected.insert((mi, bi), block);
+    }
+
+    for (mi, bi, _) in occurrences {
+        let Some(mut blocks) = blocks_of(&messages[mi]) else {
+            continue;
+        };
+        if let Some(block) = projected.remove(&(mi, bi)) {
+            if bi < blocks.len() {
+                blocks[bi] = block;
+            }
+        }
+        apply_blocks(&mut messages[mi], blocks);
     }
 }
 
-async fn project_file_block(att: &FileAttachmentRef, store: &AttachmentStore) -> ContentBlock {
-    if is_text_file(&att.name) {
-        match store.read(&att.attachment_id).await {
-            Ok(data) => match read_as_text(&data, &att.name) {
-                Ok(text) => ContentBlock::Text { text },
-                Err(reason) => ContentBlock::Text {
-                    text: file_fallback_text(att, &reason),
-                },
-            },
-            Err(e) => {
-                log::warn!("Failed to read file {}: {}", att.attachment_id, e);
-                ContentBlock::Text {
-                    text: "[File not found]".to_string(),
+async fn project_one_file(
+    att: &FileAttachmentRef,
+    store: &AttachmentStore,
+    support_pdf: bool,
+    quota: usize,
+    purpose: ProjectionPurpose,
+) -> (ContentBlock, usize) {
+    if quota == 0 {
+        return (placeholder_block(att), placeholder_tokens(att));
+    }
+
+    if is_pdf_name(&att.name) {
+        // 原生优先：预算足够时保留 PDF 原样发送；不足时回退侧车文本。
+        if support_pdf && quota >= PDF_NATIVE_TOKENS {
+            match store.read(&att.attachment_id).await {
+                Ok(data) => {
+                    return (
+                        ContentBlock::File {
+                            attachment: att.clone(),
+                            cached_data: Some(general_purpose::STANDARD.encode(&data)),
+                            file_path: None,
+                        },
+                        PDF_NATIVE_TOKENS,
+                    );
+                }
+                Err(e) => {
+                    log::warn!("Failed to rehydrate file {}: {}", att.attachment_id, e);
+                    return (file_not_found_block(), 0);
                 }
             }
         }
-    } else {
-        ContentBlock::Text {
-            text: file_handle_text(att),
+
+        if let Some(text) = crate::pdf_text::extract_or_load(store, att).await {
+            return project_text_body(att, &text, quota);
         }
+
+        if purpose.warns() {
+            log::warn!(
+                "[attachment-budget] PDF 无可用文本层，降级为占位文本: {}",
+                att.name
+            );
+        }
+        return (placeholder_block(att), placeholder_tokens(att));
+    }
+
+    if is_text_file(&att.name) {
+        return match store.read(&att.attachment_id).await {
+            Ok(data) => match project_text_file(att, &data, quota) {
+                Ok((block, used)) => (block, used),
+                Err(reason) => (fallback_block(att, &reason), placeholder_tokens(att)),
+            },
+            Err(e) => {
+                log::warn!("Failed to read file {}: {}", att.attachment_id, e);
+                (file_not_found_block(), 0)
+            }
+        };
+    }
+
+    (placeholder_block(att), placeholder_tokens(att))
+}
+
+fn project_text_file(
+    att: &FileAttachmentRef,
+    data: &[u8],
+    quota: usize,
+) -> Result<(ContentBlock, usize), String> {
+    let text = decode_text(data).ok_or_else(|| "binary".to_string())?;
+    let lang = lang_for(&att.name);
+    let total = estimate_text_tokens(&text);
+
+    if total <= quota {
+        let block = ContentBlock::Text {
+            text: render_text_file(&att.name, lang, &text, None),
+        };
+        let used = estimate_text_tokens(&block_text(&block));
+        return Ok((block, used));
+    }
+
+    if quota < MIN_FILE_QUOTA_TOKENS {
+        return Ok((placeholder_block(att), placeholder_tokens(att)));
+    }
+
+    let truncated = truncate_to_tokens(&text, quota, TRUNCATE_HEAD_PERCENT);
+    let body = format!("{}\n...\n{}", truncated.head, truncated.tail);
+    let header = format!(
+        "[file: {} — truncated, kept head {} + tail {} tokens of {}]",
+        att.name, truncated.head_tokens, truncated.tail_tokens, truncated.original_tokens
+    );
+    let block = ContentBlock::Text {
+        text: render_text_file(&att.name, lang, &body, Some(header)),
+    };
+    let used = estimate_text_tokens(&block_text(&block));
+    Ok((block, used))
+}
+
+fn project_text_body(att: &FileAttachmentRef, text: &str, quota: usize) -> (ContentBlock, usize) {
+    let lang = lang_for(&att.name);
+    let total = estimate_text_tokens(text);
+    if total <= quota {
+        let block = ContentBlock::Text {
+            text: render_text_file(&att.name, lang, text, None),
+        };
+        let used = estimate_text_tokens(&block_text(&block));
+        return (block, used);
+    }
+    if quota < MIN_FILE_QUOTA_TOKENS {
+        return (placeholder_block(att), placeholder_tokens(att));
+    }
+    let truncated = truncate_to_tokens(text, quota, TRUNCATE_HEAD_PERCENT);
+    let body = format!("{}\n...\n{}", truncated.head, truncated.tail);
+    let header = format!(
+        "[file: {} — truncated, kept head {} + tail {} tokens of {}]",
+        att.name, truncated.head_tokens, truncated.tail_tokens, truncated.original_tokens
+    );
+    let block = ContentBlock::Text {
+        text: render_text_file(&att.name, lang, &body, Some(header)),
+    };
+    let used = estimate_text_tokens(&block_text(&block));
+    (block, used)
+}
+
+fn block_text(block: &ContentBlock) -> String {
+    match block {
+        ContentBlock::Text { text } => text.clone(),
+        _ => String::new(),
+    }
+}
+
+fn decode_text(data: &[u8]) -> Option<String> {
+    let text = if let Ok(text) = std::str::from_utf8(data) {
+        text.to_string()
+    } else {
+        let mut detector = chardetng::EncodingDetector::new();
+        detector.feed(data, true);
+        let encoding = detector.guess(None, true);
+        let (text, _, _) = encoding.decode(data);
+        text.into_owned()
+    };
+
+    // 扩展名白名单是唯一的「看起来像文本」信号；再用控制字符比例兜底，
+    // 避免二进制文件改名 `.txt` 后被整段当成正文注入。
+    let total = text.chars().count().max(1);
+    let control = text
+        .chars()
+        .filter(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+        .count();
+    if control as f64 / total as f64 > 0.05 {
+        return None;
+    }
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+fn has_fence(text: &str) -> bool {
+    text.lines()
+        .any(|line| line.trim_start().starts_with("```"))
+}
+
+/// 文件正文渲染：原文已含围栏时不再外包一层，避免嵌套围栏；
+/// 否则用代码围栏包住并标注语言。
+fn render_text_file(name: &str, lang: &str, body: &str, header: Option<String>) -> String {
+    let header = header.unwrap_or_else(|| format!("[file: {}]", name));
+    if has_fence(body) {
+        format!("{}\n{}", header, body)
+    } else {
+        format!("{}\n```{}\n{}\n```", header, lang, body)
     }
 }
 
@@ -586,20 +760,22 @@ fn is_text_file(name: &str) -> bool {
             | "yaml"
             | "yml"
             | "xml"
+            | "rs"
+            | "toml"
+            | "java"
+            | "go"
+            | "c"
+            | "h"
+            | "cpp"
+            | "sh"
+            | "ps1"
+            | "sql"
+            | "log"
     )
 }
 
-fn read_as_text(data: &[u8], name: &str) -> Result<String, String> {
-    let text = String::from_utf8(data.to_vec()).map_err(|_| "binary".to_string())?;
-
-    let invalid_ratio = text.chars().filter(|&c| c == '\u{FFFD}').count() as f64
-        / text.chars().count().max(1) as f64;
-    if invalid_ratio > 0.05 {
-        return Err("binary".to_string());
-    }
-
-    let ext = ext_of(name);
-    let lang = match ext.as_str() {
+fn lang_for(name: &str) -> &'static str {
+    match ext_of(name).as_str() {
         "md" => "markdown",
         "csv" => "csv",
         "html" => "html",
@@ -610,26 +786,39 @@ fn read_as_text(data: &[u8], name: &str) -> Result<String, String> {
         "css" => "css",
         "yaml" | "yml" => "yaml",
         "xml" => "xml",
+        "rs" => "rust",
+        "toml" => "toml",
+        "java" => "java",
+        "go" => "go",
+        "c" | "h" => "c",
+        "cpp" => "cpp",
+        "sh" => "bash",
+        "ps1" => "powershell",
+        "sql" => "sql",
         _ => "",
-    };
-
-    if data.len() > MAX_TEXT_FILE_BYTES {
-        let truncated: String = text.chars().take(MAX_TEXT_FILE_BYTES).collect();
-        Ok(format!(
-            "[file: {}]\n```{}\n{}\n```\n[truncated]",
-            name, lang, truncated
-        ))
-    } else {
-        Ok(format!("[file: {}]\n```{}\n{}\n```", name, lang, text))
     }
 }
 
-fn file_fallback_text(att: &FileAttachmentRef, reason: &str) -> String {
-    format!("[file: {} — {}]", att.handle_text(), reason)
+fn fallback_block(att: &FileAttachmentRef, reason: &str) -> ContentBlock {
+    ContentBlock::Text {
+        text: format!("[file: {} — {}]", att.handle_text(), reason),
+    }
 }
 
-fn should_send_file_as_is(att: &FileAttachmentRef, support_pdf: bool) -> bool {
-    support_pdf && att.name.to_lowercase().ends_with(".pdf")
+fn file_not_found_block() -> ContentBlock {
+    ContentBlock::Text {
+        text: "[File not found]".to_string(),
+    }
+}
+
+fn placeholder_block(att: &FileAttachmentRef) -> ContentBlock {
+    ContentBlock::Text {
+        text: att.handle_text(),
+    }
+}
+
+fn placeholder_tokens(att: &FileAttachmentRef) -> usize {
+    estimate_text_tokens(&att.handle_text())
 }
 
 pub fn text_only_image_text() -> String {

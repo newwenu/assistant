@@ -34,7 +34,10 @@ pub(crate) fn chat_completion_stream(
 ) -> Result<ChatStream, ProviderError> {
     let api_key = api_key.to_string();
     let base_url = adapter.base_url().to_string();
-    let req_messages = message_converter::convert_messages(messages);
+    let req_messages = message_converter::convert_messages(
+        messages,
+        message_converter::OpenAiTarget::ChatCompletions,
+    );
     let req_body = ChatRequest {
         model: model.to_string(),
         messages: req_messages,

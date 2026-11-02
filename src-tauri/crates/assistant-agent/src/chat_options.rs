@@ -10,6 +10,9 @@ pub const REASONING_LEVEL_OFF: &str = "off";
 /// 内置档位值：显式开启但不指定强度
 pub const REASONING_LEVEL_ON: &str = "on";
 
+/// 未配置 `max_tokens` 时的默认输出预留。
+pub const DEFAULT_MAX_TOKENS: u32 = 4_096;
+
 #[derive(Debug, Clone, Default)]
 pub struct ReasoningOverride {
     /// 前端下发的档位值。后端不认 `inherit`；`None` 等价于 `default`
@@ -44,7 +47,7 @@ pub fn build_chat_options(
         _ => mode.temperature.unwrap_or(0.7),
     };
 
-    let max_tokens = mode.max_tokens.unwrap_or(4096);
+    let max_tokens = mode.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
 
     let (reasoning_enabled, reasoning_effort) = resolve_reasoning_level(reasoning.level.as_deref());
 

@@ -88,3 +88,52 @@ pub fn normalize_image(data: &[u8], media_type: &str) -> Result<NormalizedImage,
         height,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{ImageFormat, Rgba, RgbaImage};
+
+    fn encode(image: &RgbaImage, format: ImageFormat) -> Vec<u8> {
+        let mut out = Vec::new();
+        image
+            .write_to(&mut Cursor::new(&mut out), format)
+            .expect("encode");
+        out
+    }
+
+    fn solid(width: u32, height: u32) -> RgbaImage {
+        RgbaImage::from_pixel(width, height, Rgba([200, 10, 10, 255]))
+    }
+
+    #[test]
+    fn long_edge_is_scaled_down() {
+        let data = encode(&solid(3000, 1000), ImageFormat::Png);
+        let normalized = normalize_image(&data, "image/png").expect("normalize");
+        assert_eq!(normalized.width, MAX_LONG_EDGE);
+        assert!(normalized.height >= 682 && normalized.height <= 684);
+        assert_eq!(normalized.media_type, "image/png");
+    }
+
+    #[test]
+    fn bmp_is_transcoded_to_png() {
+        let data = encode(&solid(40, 20), ImageFormat::Bmp);
+        let normalized = normalize_image(&data, "image/bmp").expect("normalize");
+        assert_eq!(normalized.media_type, "image/png");
+        assert_eq!((normalized.width, normalized.height), (40, 20));
+    }
+
+    #[test]
+    fn mime_mismatch_is_rejected() {
+        let data = encode(&solid(10, 10), ImageFormat::Png);
+        assert!(normalize_image(&data, "image/jpeg").is_err());
+    }
+
+    #[test]
+    fn gif_and_webp_are_passed_through() {
+        let data = vec![1, 2, 3];
+        let normalized = normalize_image(&data, "image/gif").expect("normalize");
+        assert_eq!(normalized.data, data);
+        assert_eq!((normalized.width, normalized.height), (0, 0));
+    }
+}
