@@ -2,7 +2,7 @@
 
 > **本文档职责**：从底层到顶层的**实施规格**——每步讲清：建什么、为什么先建、建完能干什么、类型契约、行为约束。是类型定义、流程算法、接口签名的**唯一权威源**。
 > **架构决策记录**（为什么这样设计、参考了什么、做了什么取舍）见 [I18-agent-tool-architecture-design.md](./I18-agent-tool-architecture-design.md)。
-> **Shell 执行层安全架构**（洋葱模型、层间契约、委托约束）见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
+> **Shell 执行层安全架构**（洋葱模型、层间契约、委托约束）见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
 > **ToolBox 双入口桥接**（os_tool_exec、os.ts、新增工具 5 步流程）见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
 
 ---
@@ -12,7 +12,7 @@
 ```
 Step 0  值类型              ToolTier · BehaviorHints · ToolResult · PermissionIntent · ToolUseContext
 Step 1  Tool Trait          统一工具抽象接口
-Step 2  工具实现            L1 OS 工具 (fs_read → fs_list → fs_glob → fs_grep → fs_write → fs_mkdir → fs_move → fs_link → fs_delete → shell_exec → ask_user)
+Step 2  工具实现            L1 OS 工具 (fs_read → fs_list → fs_glob → fs_grep → fs_write → fs_mkdir → fs_move → fs_link → fs_delete → shell_exec → ask_user)  ⚠️ 阶段一暂缓，仅 fs_link 已实现
 Step 3  ToolRegistry        注册 · 查找 · 层级过滤
 Step 4  Permission Policy   PermissionEffect · PermissionRule · ResolvedPermissionPolicy · Ceiling
 Step 5  Tool Gateway        策略评估 · 记忆授权 · 用户审批 · 审计日志
@@ -163,6 +163,7 @@ pub trait Tool: Send + Sync {
     async fn description(&self) -> Result<String, String>;
     fn input_schema(&self) -> Value;
     fn tier(&self) -> ToolTier;
+    fn audience(&self) -> ToolAudience { ToolAudience::BOTH }
     fn behavior_hints(&self) -> BehaviorHints { BehaviorHints::default() }
     fn is_readonly(&self) -> bool { self.behavior_hints().read_only }
     fn permission_intents(&self, _input: &Value, _context: &ToolUseContext) -> Result<Vec<PermissionIntent>, String> { Ok(vec![]) }
@@ -205,6 +206,8 @@ pub trait Tool: Send + Sync {
 > **为什么现在建**：没有工具实现，Registry 是空壳，Pipeline 执行什么？RoundExecutor 驱动什么？
 > **建完能干什么**：有了具体工具，可以注册到 Registry、通过 os_tool_exec 调用、验证端到端。
 
+> **实施时序说明（2026-11-02）**：本节工具实现**暂缓**，不在阶段一落地。阶段一只交付工具**框架**（`ToolDefinition`、`invoke` 错误归一化、`os/path.rs` 共享路径安全），详见 `docs/store/I31-phase1-tool-framework-spec.md`。理由是：`ChatOptions` 尚无 `tools` 字段，工具实现后无任何消费方；且 Step 4/5 控制层未就绪前，破坏性工具不应存在。本节保留为 Step 2 的完整目标，等 Step 3-7 稳定后按下方顺序逐个补齐。
+
 ### 搭建顺序：从安全到危险
 
 先搭只读工具（最安全），再搭修改工具，再搭破坏性工具，最后搭最复杂的 shell_exec。
@@ -236,6 +239,14 @@ ask_user                                        特殊：AI 主动问用户
 | `shell_exec` | execute | ❌ | ✅ | ✅ | Shell 命令执行，需审批+超时+洋葱守卫 |
 | `ask_user` | — | ✅ | ❌ | ❌ | AI 主动问用户，暂停等待回答 |
 
+> **关于 `fs_link`**：它不在上述「典型 Agent 工具集」之列——参考项目内置工具为 Read / Write / Delete / LS / Glob / Bash / AskUser，不含 Link；建链在主流的 Agent 工具集里归入 shell（`ln -s`、`mklink`）。本仓库的 `fs_link` 是**为验证桥接链路**而先落地的 ToolBox 用户侧工具（服务「人点按钮」），不是给模型的能力。
+>
+> **受众区分已落地**：`Tool` trait 提供 `audience() -> ToolAudience`（默认 `BOTH`），含两个独立维度——`agent` 决定是否进入 LLM 的 `tools` 列表，`toolbox` 决定是否允许 `os_tool_exec` 按名调用。`fs_link` 声明为 `TOOLBOX_ONLY`，因此 Step 7 的注入链路建成后它**不会**出现在模型的工具列表，同时 ToolBox 入口不受影响。详见 I31 §4.2.1（原 O1 已解决）。
+>
+> **新增工具的硬约束**：实现 `Tool` 时必须显式声明受众，不得依赖默认值。典型 Agent 工具（`fs_read` … `shell_exec`）为 `BOTH`；仅服务 ToolBox 的为 `TOOLBOX_ONLY`；仅服务 Agent Loop、不应从前端透传入口暴露的为 `AGENT_ONLY`。默认值只是为存量工具提供零破坏迁移，不是新工具的推荐写法。
+>
+> **注册暴露约束**：`os_tool_exec` 是按名字透传的通用入口，任何 `toolbox == true` 的工具注册后都会立刻获得一个可从 Webview 控制台调用的入口，**与是否存在前端组件无关**。因此：Step 4/5 就绪前不得把 `shell_exec` 加入生产注册表；`fs_delete` 等破坏性工具须与前端组件同期上线；新增工具时 `os/mod.rs` 应提供分组注册（只读 / 修改 / 危险），`setup.rs` 只注册已确认可暴露的分组。
+
 ### 每个工具的内部结构
 
 每个 OS 工具遵循统一模式（以 fs_read 为例）：
@@ -249,6 +260,7 @@ impl Tool for FsReadTool {
     async fn description(&self) -> Result<String, String> { Ok("Read file contents".into()) }
     fn input_schema(&self) -> Value { /* JSON Schema */ }
     fn tier(&self) -> ToolTier { ToolTier::Os }
+    fn audience(&self) -> ToolAudience { ToolAudience::BOTH }
     fn behavior_hints(&self) -> BehaviorHints {
         BehaviorHints { read_only: true, destructive: false, open_world: false }
     }
@@ -275,6 +287,8 @@ impl Tool for FsReadTool {
 **`validate_path(path)`**：两层校验——
 1. `..` 遍历检测：任何 Component::ParentDir 拒绝
 2. 系统目录保护：`/etc` `/usr` `/bin` `/sbin` `/System` `/Library` `C:\Windows` `C:\Program Files` 等拒绝
+
+> **实施要求**：上述两个函数必须落在共享模块 `assistant-tools/src/os/path.rs`，不得内联进任一工具。`fs_link` 当前的私有实现存在规范化降级缺陷（目标不存在时 `canonicalize` 失败并回退原路径），具体算法与 Windows 前缀比较规则见 `docs/store/I31-phase1-tool-framework-spec.md` §5.1。**在实现第二个文件系统工具之前必须先完成共享化**。
 
 ### fs_read 规格
 
@@ -399,7 +413,7 @@ impl Tool for FsReadTool {
 }
 ```
 
-**行为**：`destructive = true, open_world = true`，必须经审批 + 洋葱守卫。详见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
+**行为**：`destructive = true, open_world = true`，必须经审批 + 洋葱守卫。详见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
 
 **Shell 洋葱栈**（由内到外）：
 
@@ -455,6 +469,8 @@ impl Tool for FsReadTool {
 - Junction 用 `cmd /c mklink /J` 子进程而非 Win32 API `CreateSymbolicLinkW`（有进程开销但功能正确）
 - 无特权检测+自动降级（Windows 无特权时直接报错，不自动降级为 Junction）
 - `behavior_hints.open_world = true`（规格为 false，实际更保守）
+- `permission_intents` 仍产出 `fs_link_create` / `fs_link_target`，未使用 design §2.1 的 `read` / `edit` 词汇（由 I31 T3 修正）
+- `input_schema` 中 `source` 的描述与实现语义相反（`target` 才是必须存在的一侧），待 T3 修正
 - hardlink 检测用 Win32 `GetFileInformationByHandle` 查 `nNumberOfLinks`
 - junction 目标读取用 Win32 `GetFinalPathNameByHandleW`
 
@@ -482,17 +498,18 @@ pub struct ToolRegistry {
 |------|------|------|
 | `new()` | `→ ToolRegistry` | 创建空 Registry |
 | `register()` | `(Arc<dyn Tool>) → ()` | 以 `tool.name()` 为 key 插入；同名覆盖 |
-| `find()` | `(&str) → Option<Arc<dyn Tool>>` | 按 name 精确查找 |
-| `tool_names()` | `() → Vec<String>` | 返回所有已注册工具名 |
-| `tool_definitions_for_tier()` | `(ToolTier) → Vec<Value>` | 返回 **tier ≤ 参数** 的工具定义列表 |
+| `find()` | `(&str) → Option<Arc<dyn Tool>>` | 按 name 精确查找，**全量视图**（管理/诊断用） |
+| `find_for_toolbox()` | `(&str) → Option<Arc<dyn Tool>>` | 按 name 查找，仅返回 `audience().toolbox == true` 的工具（`os_tool_exec` 使用） |
+| `tool_names()` | `() → Vec<String>` | 返回所有已注册工具名，**全量视图**（当前未排序，仅诊断用） |
+| `tool_definitions_for_tier()` | `(ToolTier) → Vec<ToolDefinition>` | 返回 **tier ≤ 参数 且 `audience().agent == true`** 的工具定义列表，按 name 字典序排序 |
 
 ### tool_definitions_for_tier 修正
 
-**当前实现**：`filter(|entry| entry.value().tier() == tier)` — 仅返回精确匹配层级。
+**改造前实现**：`filter(|entry| entry.value().tier() == tier)` — 仅返回精确匹配层级。
 
-**规格要求**：`filter(|entry| entry.value().tier() <= max_tier)` — 返回指定层级及以下所有工具。
+**规格要求**：`filter(|entry| entry.value().tier() <= max_tier && entry.value().audience().agent)` — 返回指定层级及以下、且对 Agent 可见的所有工具。
 
-**理由**：Agent 模式声明 `max_tool_tier: Os` 时，应同时获得 Sandbox 工具。Sandbox < Os，Sandbox 工具更安全，没有理由排除。
+**理由**：Agent 模式声明 `max_tool_tier: Os` 时，应同时获得 Sandbox 工具。Sandbox < Os，Sandbox 工具更安全，没有理由排除。`audience().agent` 过滤则保证 `TOOLBOX_ONLY` 工具（如 `fs_link`）不会因为注册而进入模型上下文。
 
 **参考**：OpenBitFun 通过 `ToolExposure`（Direct / Deferred）+ `GetToolSpec` / `CallDeferredTool` 机制实现延迟加载——Deferred 工具不在初始 manifest 中，LLM 需先调 `GetToolSpec` 获取定义再调 `CallDeferredTool` 执行。我们的 tier 过滤更简单直接。
 
@@ -506,7 +523,7 @@ os::register_os_tools(&registry);  // L1 OS 工具
 handle.manage(registry);
 ```
 
-**实施状态**：⚠️ 部分实现，`assistant-tools/src/registry.rs`。`tool_definitions_for_tier` 过滤条件需修正为 `<=`。
+**实施状态**：✅ 完成，`assistant-tools/src/registry.rs`。`<=` 语义、按名排序、`description()` 降级、`audience` 过滤（`agent` / `toolbox`）均已落地并有单测。
 
 ---
 
@@ -871,9 +888,13 @@ execute_round(context) → RoundOutcome:
 
 当前 `StreamAccumulator`（`chat_runtime.rs`）已能累积 `tool_calls`，`StreamOutcome.tool_calls` 已有数据。但 **tool_call 到此为止**——没有执行、没有回填、没有继续循环。RoundExecutor 是补全 Agent Loop 的关键缺失。
 
+> **注**：上述累积能力属「错位现状」。按 I30 阶段一剥离计划，`StreamAccumulator` / `StreamOutcome` 中的 tool call 字段将被移除，该能力迁入 `agent_loop/tool_call.rs`。RoundExecutor 应基于迁移后的实现，而非 `chat_runtime`。
+
 **参考**：OpenBitFun 的 `agent-runtime` crate 包含完整的 turn loop——`AgentSession` 管理消息历史 + tool 执行 + 子 Agent 委托 + 代际守卫。openhuman 的 `agent_turn_loop` 在 `tinyagents` harness 中实现，含 middleware 链（policy → output capture → compaction）。
 
 **实施状态**：❌ 未实现。需新增 `assistant-agent/src/round_executor.rs`。
+
+**前置依赖**：tool call 的累积能力必须先落到独立的 `assistant-agent/src/agent_loop/`，并从 chat 构建路径中剥离。剥离范围、类型契约与验收标准见 [I30-phase1-toolcall-separation-spec.md](./I30-phase1-toolcall-separation-spec.md)。Step 7 落地时直接复用 `agent_loop/tool_call.rs`，**不得**另起第三套累积器。
 
 ---
 
@@ -951,7 +972,7 @@ pub async fn os_tool_exec(
     registry: State<'_, Arc<ToolRegistry>>,
     request: OsToolExecRequestDto,
 ) -> Result<OsToolResultDto, String> {
-    let tool = registry.find(&request.tool)
+    let tool = registry.find_for_toolbox(&request.tool)
         .ok_or_else(|| format!("tool '{}' not found in registry", request.tool))?;
 
     let mut input = request.params;
@@ -1272,10 +1293,12 @@ src-tauri/
 │   ├── assistant-tools/
 │   │   └── src/
 │   │       ├── lib.rs             # 现有
-│   │       ├── trait.rs           # 现有：Tool trait + ToolTier + BehaviorHints
+│   │       ├── trait.rs           # 现有：Tool trait + ToolTier + BehaviorHints + ToolAudience
+│   │       ├── definition.rs      # 现有：ToolDefinition（工具定义唯一内部形状）
 │   │       ├── registry.rs        # 现有：ToolRegistry
 │   │       ├── result.rs          # 现有：ToolResult
 │   │       ├── context.rs         # 现有：ToolUseContext
+│   │       ├── exec.rs            # 新增：invoke() 统一执行入口 + 超时（I31 T2）
 │   │       ├── policy.rs          # 新增：PermissionEffect + PermissionRule + ResolvedPermissionPolicy
 │   │       ├── gateway.rs         # 新增：ToolGateway + ApprovalChannel
 │   │       ├── pipeline.rs        # 新增：ToolPipeline
@@ -1313,10 +1336,10 @@ src-tauri/
 | Step | 模块 | 状态 | 关键文件 |
 |------|------|------|---------|
 | 0 | 值类型 | ✅ 完成 | `trait.rs` `result.rs` `context.rs` |
-| 1 | Tool Trait | ✅ 完成 | `trait.rs` |
-| 2 | L1 OS: fs_link | ✅ 完成 | `os/fs_link.rs` |
+| 1 | Tool Trait | ✅ 完成 | `trait.rs`（含 `audience()` / `ToolAudience`） |
+| 2 | L1 OS: fs_link | ✅ 完成 | `os/fs_link.rs`（`TOOLBOX_ONLY`） |
 | 2 | L1 OS: 其他 | ❌ 未实现 | 需新增 fs_read/write/delete/list/glob/grep/mkdir/move/shell_exec/ask_user |
-| 3 | ToolRegistry | ⚠️ 部分完成 | `registry.rs`（`tool_definitions_for_tier` 需修正为 `<=`） |
+| 3 | ToolRegistry | ✅ 完成 | `registry.rs`（`<=`、排序、`audience` 过滤） |
 | 4 | Permission Policy | ❌ 未实现 | 需新增 `policy.rs` |
 | 5 | Tool Gateway | ❌ 未实现 | 需新增 `gateway.rs` |
 | 6 | Tool Pipeline | ❌ 未实现 | 需新增 `pipeline.rs` |

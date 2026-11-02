@@ -2,7 +2,7 @@
 
 > 本文档记录架构**决策**：为什么这样设计、参考了什么、做了什么取舍。
 > **实施规格**见 [I18-agent-tool-architecture-spec.md](./I18-agent-tool-architecture-spec.md)（Step 0-10）。
-> **Shell 安全子域**见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
+> **Shell 安全子域**见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
 > **ToolBox 双入口桥接**见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
 
 ---
@@ -243,12 +243,32 @@ pub trait Tool: Send + Sync {
 | ToolGateway 审批流 | LLM 自主决策 → 需要人类审批 | 用户自己点的 → 审批自己无意义 |
 | Permission Policy 评估 | 防止 LLM 越权 | 用户就是权限主体 |
 | 审计日志 | 追踪 AI 自主行为 | 用户操作，不是 AI 行为 |
-| 超时保护 | 防止 LLM 发起的命令挂起 | UI 层自行处理 |
+| 超时保护 | 防止 LLM 发起的命令挂起 | 由 Rust `invoke()` 统一兜底（I31 §4.3，已取代「UI 层自行处理」） |
 | 结果回填消息历史 | Agent Loop 需要继续对话 | 结果直接返回组件渲染 |
 
 **安全约束不缺失**：路径校验等在 `Tool.execute()` 内部，两个入口均受保护。
 
 > ToolBox 桥接完整规格见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
+
+### 3.6.1 决策：受众维度与双入口分离
+
+**决策**：`Tool` trait 增加 `audience() -> ToolAudience { agent, toolbox }`，默认 `BOTH`；两个维度各自在查询侧过滤，而不是拆成两个 registry。
+
+**理由**：
+
+| 备选方案 | 问题 |
+|---|---|
+| 拆「ToolBox registry」与「Agent registry」 | 同一实现要注册两次，`setup.rs` 维护两份清单；共享 trait 的好处被容器拆分抵消 |
+| 单一 `exposed_to_agent: bool` | 只能表达「给不给 LLM」，无法表达「只给 Agent、不给前端透传入口」；将来仍要改契约 |
+| **双布尔受众（采纳）** | 两个入口各有明确执行点（`tool_definitions_for_tier` / `find_for_toolbox`），一次表达完整；默认 `BOTH` 使存量工具零改动 |
+
+**取舍**：
+
+- 受众决定「能否被某个入口看到」，**不决定「是否启用」**。启用仍由 `conversation.tool_config.tools` 白名单（§3.8 deny-by-default）控制，两者正交。
+- `fs_link` 是第一个非 `BOTH` 工具，声明 `TOOLBOX_ONLY`。它存在的意义是验证桥接链路，不是给模型的能力；受众维度让这个定位第一次可以被代码表达，而不是靠文档口头约定。
+- 默认值 `BOTH` 是**迁移便利**，不是推荐写法：新增工具必须显式声明受众（见 I18 spec Step 2 硬约束）。
+
+> 规格落地见 [I31-phase1-tool-framework-spec.md](./I31-phase1-tool-framework-spec.md) §4.2.1。
 
 ### 3.7 决策：Shell 执行层洋葱模型
 
@@ -258,7 +278,7 @@ pub trait Tool: Send + Sync {
 - 纯 argv 数组执行（`execvp` 语义）可提供更强确定性保证，但丧失管道、重定向、变量展开等 shell 能力，对开发工作流影响过大
 - **选择 shell 执行 + 纵深防御组合**：结构守卫 + 环境隔离 + 命令分类 + heredoc 处理，与 OpenHuman 的生产验证策略一致
 
-> 洋葱模型完整设计、层间契约、BareExec 纵深防御见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
+> 洋葱模型完整设计、层间契约、BareExec 纵深防御见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
 
 ### 3.8 决策：MCP 工具安全标记推断
 
@@ -324,7 +344,7 @@ pub trait Tool: Send + Sync {
 **决策**：11 个内置 OS 工具，从安全到危险排序实现。共享 `resolve_path()` + `validate_path()` 基础设施。
 
 > 工具清单、安全标记、每个工具的 JSON Schema 规格和实现见 I18-spec Step 2。
-> Shell 安全守卫（SafetyBelt / AllowlistGate / ApprovalGate / BareExec）见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
+> Shell 安全守卫（SafetyBelt / AllowlistGate / ApprovalGate / BareExec）见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
 
 ### 4.3 L2: MCP/外部工具
 
@@ -332,7 +352,7 @@ pub trait Tool: Send + Sync {
 
 **隔离边界声明**：MCP server 以独立子进程运行，但当前**不提供 cgroup / seccomp / namespace 级别的 OS 隔离**。权限策略对 External 层的作用是逻辑层控制（决定是否调用），不是执行层隔离（限制调用后的行为）。严格策略禁用某 MCP server 时，必须**拒绝调用**而非宣称"沙箱内安全执行"。
 
-> 详见 [OSCALLDESIGN.md](./OSCALLDESIGN.md) §1.2。
+> 详见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §1.2。
 
 ---
 
