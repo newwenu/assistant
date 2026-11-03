@@ -6,6 +6,9 @@ pub mod os_tool;
 pub mod settings;
 pub mod storage;
 
+/// Unix **毫秒**时间戳。wire 上为 JSON number，最大可精确表示值为 2^53-1。
+pub type Millis = i64;
+
 pub use branch::*;
 pub use chat::*;
 pub use config::*;
@@ -144,7 +147,7 @@ mod tests {
             id: "mode1".into(),
             name: "Quick".into(),
             description: "quick mode".into(),
-            kind: "quick".into(),
+            kind: AgentModeKindDto::Quick,
             prompt: "prompt".into(),
             model: None,
             temperature: None,
@@ -265,7 +268,7 @@ mod tests {
     #[test]
     fn test_setting_dtos_roundtrip() {
         let provider_changed = SettingProviderChangedPayloadDto {
-            action: "saved".into(),
+            action: SettingProviderChangedActionDto::ProviderSaved,
             id: None,
         };
         roundtrip(&provider_changed);
@@ -320,7 +323,11 @@ mod tests {
         };
         roundtrip(&ok);
         let json = serde_json::to_string(&ok).unwrap();
-        assert!(!json.contains("error"), "None fields omitted: {}", json);
+        assert!(
+            json.contains("\"error\":null"),
+            "None fields present: {}",
+            json
+        );
 
         let failed = OsToolResultDto {
             ok: false,
@@ -352,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn test_skip_serializing_if_none() {
+    fn test_output_optional_fields_are_present_as_null() {
         let dto = ChatDeltaPayloadDto {
             conversation_id: "c1".into(),
             attempt_id: "a1".into(),
@@ -366,8 +373,16 @@ mod tests {
             error: None,
         };
         let json = serde_json::to_string(&dto).unwrap();
-        assert!(!json.contains("deltaText"), "None fields omitted: {}", json);
-        assert!(!json.contains("usage"), "None fields omitted: {}", json);
+        assert!(
+            json.contains("\"deltaText\":null"),
+            "None fields present: {}",
+            json
+        );
+        assert!(
+            json.contains("\"usage\":null"),
+            "None fields present: {}",
+            json
+        );
     }
 
     #[test]
@@ -382,13 +397,13 @@ mod tests {
         let json = serde_json::to_string(&dto).unwrap();
         assert!(json.contains("titleSource"), "camelCase: {}", json);
         assert!(json.contains("providerId"), "camelCase: {}", json);
-        assert!(!json.contains("modelId"), "None omitted: {}", json);
+        assert!(json.contains("\"modelId\":null"), "None present: {}", json);
     }
 
     #[test]
     fn test_conversation_query_opts_dto_roundtrip() {
         let dto = ConversationQueryOptsDto {
-            mode: "paginated".into(),
+            mode: ConversationQueryModeDto::Paginated,
             limit: 50,
             before_timestamp: Some(1000),
         };
@@ -417,11 +432,11 @@ mod tests {
     }
 
     #[test]
-    fn test_send_chat_message_args_dto_unknown_optional_is_ignored() {
-        let args: SendChatMessageArgsDto = serde_json::from_str(
+    fn test_send_chat_message_args_dto_rejects_unknown_fields() {
+        let err = serde_json::from_str::<SendChatMessageArgsDto>(
             r#"{"content":"x","providerId":"p","modelId":"m","branchPointMsgId":"b"}"#,
         )
-        .unwrap();
-        assert!(args.branch_point_message_id.is_none());
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown field"), "{}", err);
     }
 }

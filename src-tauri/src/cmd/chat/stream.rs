@@ -4,7 +4,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
-    ChatDeltaPayloadDto, ConversationCompactFailedPayloadDto, ProviderErrorPayloadDto,
+    ChatDeltaPayloadDto, ConversationCompactFailedPayloadDto, ConversationListChangeKindDto,
+    MessageChangeKindDto, ProviderErrorPayloadDto,
 };
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::compaction;
@@ -167,17 +168,17 @@ pub(crate) fn spawn_finish_listener(app: &AppHandle) -> tokio::sync::mpsc::Unbou
                                 event_name::CHAT_MESSAGES_CHANGED,
                                 crate::protocol::ChatMessagesChangedPayloadDto {
                                     conversation_id: conv_id.clone(),
-                                    change_kind: "stream_finished".to_string(),
+                                    change_kind: MessageChangeKindDto::StreamFinished,
                                     messages,
                                     active_branch_id: detail.conversation.active_branch_id.clone(),
-                                    _seq: None,
+                                    seq: None,
                                 },
                             );
                             emit_broadcast(
                                 &finish_app,
                                 event_name::CONVERSATION_LIST_CHANGED,
                                 crate::protocol::ConversationListChangedPayloadDto {
-                                    change_kind: "stream_finished".to_string(),
+                                    change_kind: ConversationListChangeKindDto::StreamFinished,
                                     conversation_id: Some(conv_id.clone()),
                                     affected_ids: None,
                                 },

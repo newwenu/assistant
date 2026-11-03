@@ -1,22 +1,25 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OsToolExecRequestDto {
     pub tool: String,
     pub action: String,
     #[serde(default)]
+    #[ts(type = "unknown")]
     pub params: Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct OsToolResultDto {
     pub ok: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    #[ts(type = "unknown")]
     pub data: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub error: Option<String>,
 }
 

@@ -6,16 +6,52 @@ import type {
   ChatOrchestratorDeps,
   ChatOrchestrator,
 } from "../chatOrchestrator";
-import type { ChatError } from "../../chat/core/chatErrors";
-import { ChatErrorCode } from "../../chat/core/chatErrors";
 import type { ReasoningChoice } from "../../chat/core/reasoning";
+import type { ChatDeltaPayload, TokenUsage } from "../../chat/core/chatTypes";
+import type { ProviderErrorPayloadDto } from "../../types/protocol.contract";
 
-function makeError(message: string): ChatError {
+function makeProviderError(message: string): ProviderErrorPayloadDto {
   return {
-    code: ChatErrorCode.StreamError,
+    code: "StreamError",
     message,
     retryAfterMs: null,
     retryable: false,
+    httpStatus: null,
+    provider: null,
+    providerCode: null,
+  };
+}
+
+function makeUsage(partial: Partial<TokenUsage>): TokenUsage {
+  return {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    reasoningTokens: null,
+    contextWindowTokens: null,
+    ...partial,
+  };
+}
+
+type DeltaInput = Partial<Omit<ChatDeltaPayload, "usage">> & {
+  usage?: Partial<TokenUsage> | null;
+};
+
+function makeDelta(input: DeltaInput = {}): ChatDeltaPayload {
+  return {
+    conversationId: "conv-1",
+    attemptId: "conv-1:1",
+    messageId: "msg-1",
+    seq: 1,
+    deltaText: null,
+    deltaReasoning: null,
+    finishReason: null,
+    error: null,
+    deltaRetry: null,
+    ...input,
+    usage: input.usage ? makeUsage(input.usage) : null,
   };
 }
 
@@ -122,13 +158,15 @@ describe("chatOrchestrator", () => {
 
   describe("handleDeltaEvent — routing", () => {
     it("routes deltaReasoning → appendReasoningDelta", () => {
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: "conv-1:1",
-        messageId: "msg-1",
-        seq: 1,
-        deltaReasoning: "thinking...",
-      });
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: "conv-1:1",
+          messageId: "msg-1",
+          seq: 1,
+          deltaReasoning: "thinking...",
+        }),
+      );
       expect(mockDeps.state.appendReasoningDelta).toHaveBeenCalledWith(
         "msg-assistant",
         "thinking...",
@@ -136,18 +174,20 @@ describe("chatOrchestrator", () => {
     });
 
     it("routes usage → updateContextUsage (DTO→business conversion)", () => {
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: "conv-1:1",
-        messageId: "msg-1",
-        seq: 1,
-        usage: {
-          promptTokens: 100,
-          completionTokens: 50,
-          totalTokens: 150,
-          contextWindowTokens: 1000,
-        },
-      });
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: "conv-1:1",
+          messageId: "msg-1",
+          seq: 1,
+          usage: {
+            promptTokens: 100,
+            completionTokens: 50,
+            totalTokens: 150,
+            contextWindowTokens: 1000,
+          },
+        }),
+      );
       expect(mockDeps.state.updateContextUsage).toHaveBeenCalledWith({
         usedTokens: 100,
         hasUsage: true,
@@ -161,22 +201,28 @@ describe("chatOrchestrator", () => {
     });
 
     it("routes finishReason → finishStream with business TokenUsage", () => {
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: "conv-1:1",
-        messageId: "msg-assistant",
-        seq: 1,
-        finishReason: "stop",
-        usage: {
-          promptTokens: 100,
-          completionTokens: 50,
-          totalTokens: 150,
-        },
-      });
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: "conv-1:1",
+          messageId: "msg-assistant",
+          seq: 1,
+          finishReason: "stop",
+          usage: {
+            promptTokens: 100,
+            completionTokens: 50,
+            totalTokens: 150,
+          },
+        }),
+      );
       expect(mockDeps.state.finishStream).toHaveBeenCalledWith({
         promptTokens: 100,
         completionTokens: 50,
         totalTokens: 150,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        reasoningTokens: null,
+        contextWindowTokens: null,
       });
     });
   });
@@ -184,39 +230,47 @@ describe("chatOrchestrator", () => {
   describe("handleDeltaEvent — stale attemptId filtering", () => {
     it("ignores all event types from stale attemptId", () => {
       const staleId = "conv-1:0";
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: staleId,
-        messageId: "msg-1",
-        seq: 1,
-        deltaReasoning: "stale",
-      });
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: staleId,
-        messageId: "msg-1",
-        seq: 1,
-        usage: {
-          promptTokens: 100,
-          completionTokens: 50,
-          totalTokens: 150,
-          contextWindowTokens: 1000,
-        },
-      });
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: staleId,
-        messageId: "msg-1",
-        seq: 1,
-        error: makeError("stale error"),
-      });
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: staleId,
-        messageId: "msg-1",
-        seq: 1,
-        finishReason: "stop",
-      });
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: staleId,
+          messageId: "msg-1",
+          seq: 1,
+          deltaReasoning: "stale",
+        }),
+      );
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: staleId,
+          messageId: "msg-1",
+          seq: 1,
+          usage: {
+            promptTokens: 100,
+            completionTokens: 50,
+            totalTokens: 150,
+            contextWindowTokens: 1000,
+          },
+        }),
+      );
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: staleId,
+          messageId: "msg-1",
+          seq: 1,
+          error: makeProviderError("stale error"),
+        }),
+      );
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: staleId,
+          messageId: "msg-1",
+          seq: 1,
+          finishReason: "stop",
+        }),
+      );
       expect(mockDeps.state.appendReasoningDelta).not.toHaveBeenCalled();
       expect(mockDeps.state.updateContextUsage).not.toHaveBeenCalled();
       expect(mockDeps.state.errorStream).not.toHaveBeenCalled();
@@ -227,30 +281,34 @@ describe("chatOrchestrator", () => {
       const currentId = "conv-1:2";
       vi.mocked(mockDeps.env.getActiveAttemptId).mockReturnValue(currentId);
 
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: currentId,
-        messageId: "msg-new",
-        seq: 1,
-        deltaReasoning: "fresh reasoning",
-      });
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: currentId,
+          messageId: "msg-new",
+          seq: 1,
+          deltaReasoning: "fresh reasoning",
+        }),
+      );
       expect(mockDeps.state.appendReasoningDelta).toHaveBeenCalledWith(
         "msg-assistant",
         "fresh reasoning",
       );
 
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: currentId,
-        messageId: "msg-new",
-        seq: 1,
-        usage: {
-          promptTokens: 200,
-          completionTokens: 80,
-          totalTokens: 280,
-          contextWindowTokens: 2000,
-        },
-      });
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: currentId,
+          messageId: "msg-new",
+          seq: 1,
+          usage: {
+            promptTokens: 200,
+            completionTokens: 80,
+            totalTokens: 280,
+            contextWindowTokens: 2000,
+          },
+        }),
+      );
       expect(mockDeps.state.updateContextUsage).toHaveBeenCalledWith({
         usedTokens: 200,
         hasUsage: true,
@@ -265,13 +323,15 @@ describe("chatOrchestrator", () => {
 
     it("filters events when activeAttemptId is null", () => {
       vi.mocked(mockDeps.env.getActiveAttemptId).mockReturnValue(null);
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: "conv-1:1",
-        messageId: "msg-1",
-        seq: 1,
-        error: makeError("cancelled"),
-      });
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: "conv-1:1",
+          messageId: "msg-1",
+          seq: 1,
+          error: makeProviderError("cancelled"),
+        }),
+      );
       expect(mockDeps.state.errorStream).not.toHaveBeenCalled();
     });
   });
@@ -283,24 +343,28 @@ describe("chatOrchestrator", () => {
       expect(orchestrator.getPhase()).toBe("sending");
       await sendPromise;
 
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: "conv-1:1",
-        messageId: "msg-assistant",
-        seq: 1,
-        error: makeError("fail"),
-      });
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: "conv-1:1",
+          messageId: "msg-assistant",
+          seq: 1,
+          error: makeProviderError("fail"),
+        }),
+      );
       expect(orchestrator.getPhase()).toBe("error");
     });
 
     it("transitions to idle on finish", () => {
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: "conv-1:1",
-        messageId: "msg-assistant",
-        seq: 1,
-        finishReason: "stop",
-      });
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: "conv-1:1",
+          messageId: "msg-assistant",
+          seq: 1,
+          finishReason: "stop",
+        }),
+      );
       expect(orchestrator.getPhase()).toBe("idle");
     });
   });
@@ -312,30 +376,36 @@ describe("chatOrchestrator", () => {
         secondAttemptId,
       );
 
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: "conv-1:1",
-        messageId: "msg-1",
-        seq: 1,
-        finishReason: "stop",
-      });
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: "conv-1:1",
-        messageId: "msg-1",
-        seq: 1,
-        error: makeError("old error"),
-      });
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: "conv-1:1",
+          messageId: "msg-1",
+          seq: 1,
+          finishReason: "stop",
+        }),
+      );
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: "conv-1:1",
+          messageId: "msg-1",
+          seq: 1,
+          error: makeProviderError("old error"),
+        }),
+      );
       expect(mockDeps.state.finishStream).not.toHaveBeenCalled();
       expect(mockDeps.state.errorStream).not.toHaveBeenCalled();
 
-      orchestrator.handleDeltaEvent({
-        conversationId: "conv-1",
-        attemptId: secondAttemptId,
-        messageId: "msg-2",
-        seq: 1,
-        finishReason: "stop",
-      });
+      orchestrator.handleDeltaEvent(
+        makeDelta({
+          conversationId: "conv-1",
+          attemptId: secondAttemptId,
+          messageId: "msg-2",
+          seq: 1,
+          finishReason: "stop",
+        }),
+      );
       expect(mockDeps.state.finishStream).toHaveBeenCalled();
     });
   });

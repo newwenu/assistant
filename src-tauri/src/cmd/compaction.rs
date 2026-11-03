@@ -8,7 +8,7 @@ use crate::protocol::events::{emit_broadcast, emit_orb_only, event_name};
 use crate::protocol::{
     ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto, ChatStreamStartPayloadDto,
     ConversationCompactFailedPayloadDto, ConversationTerminatedPayloadDto,
-    ConversationUnlockedPayloadDto, ProviderErrorPayloadDto,
+    ConversationUnlockedPayloadDto, MessageChangeKindDto, ProviderErrorPayloadDto,
 };
 use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError};
 use assistant_agent::chat_tasks::ChatTasks;
@@ -335,10 +335,10 @@ pub(crate) async fn execute_compaction(
                         event_name::CHAT_MESSAGES_CHANGED,
                         ChatMessagesChangedPayloadDto {
                             conversation_id: conversation_id.to_string(),
-                            change_kind: "messages_compacted".to_string(),
+                            change_kind: MessageChangeKindDto::MessagesCompacted,
                             messages,
                             active_branch_id: detail.conversation.active_branch_id.clone(),
-                            _seq: None,
+                            seq: None,
                         },
                     );
                 }

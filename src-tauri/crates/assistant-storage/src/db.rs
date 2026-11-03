@@ -41,6 +41,8 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             active_branch_id TEXT
         );
 
+        -- `tool_calls_json` 为 agentloop 预留列（当前写入恒 NULL），禁止 DROP；
+        -- 后续接入时必须使用结构化线格式，不得把该列的 JSON 文本直接搬进 DTO。
         CREATE TABLE IF NOT EXISTS messages (
             id TEXT PRIMARY KEY,
             conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,

@@ -17,6 +17,9 @@ function makeMessage(
     siblingIndex: overrides.siblingIndex ?? 0,
     siblingCount: overrides.siblingCount ?? 1,
     isPinned: false,
+    reasoning: null,
+    providerId: null,
+    modelId: null,
     ...overrides,
   };
 }

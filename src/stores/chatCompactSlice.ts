@@ -44,7 +44,13 @@ export function createCompactSlice(
         content: "",
         tokens: null,
         timestamp: Date.now(),
+        parentId: null,
+        isPinned: false,
+        reasoning: null,
         siblingIndex: 0,
+        siblingCount: null,
+        providerId: null,
+        modelId: null,
       };
       useChatStreamStore.getState().beginStream(summaryMsgId);
       set({

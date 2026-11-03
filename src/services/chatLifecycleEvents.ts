@@ -139,12 +139,12 @@ export function subscribeChatLifecycleEvents(): () => void {
       const payload = event.payload;
       const store = useChatStore.getState();
       if (store.currentConversationId === payload.conversationId) {
-        if (payload._seq !== undefined && payload._seq <= lastProcessedSeq) {
+        if (payload.seq !== null && payload.seq <= lastProcessedSeq) {
           void store.switchConversation(payload.conversationId);
           return;
         }
-        if (payload._seq !== undefined) {
-          lastProcessedSeq = payload._seq;
+        if (payload.seq !== null) {
+          lastProcessedSeq = payload.seq;
         }
         useChatStore.setState({
           messages: mergeMessagesPreservingFrontendState(

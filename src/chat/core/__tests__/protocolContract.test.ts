@@ -6,6 +6,7 @@ import type {
   TokenUsage,
   RetryNotification,
   ChatDeltaPayload,
+  ChatMessagesChangedPayload,
   ChatStreamStartPayload,
   ConversationTerminatedPayload,
   ConversationCompactFailedPayload,
@@ -25,8 +26,11 @@ const sampleMessage: Message = {
   timestamp: 1000,
   parentId: null,
   siblingIndex: 0,
+  siblingCount: null,
   isPinned: false,
-  reasoning: undefined,
+  reasoning: null,
+  providerId: null,
+  modelId: null,
 };
 
 const sampleConversation: Conversation = {
@@ -85,11 +89,11 @@ describe("protocol DTO — camelCase contract", () => {
       messageId: "m",
       seq: 0,
       deltaText: "hi",
-      deltaReasoning: undefined,
-      finishReason: undefined,
-      usage: undefined,
-      error: undefined,
-      deltaRetry: undefined,
+      deltaReasoning: null,
+      finishReason: null,
+      usage: null,
+      error: null,
+      deltaRetry: null,
     };
     expect(payload).toHaveProperty("conversationId");
     expect(payload).toHaveProperty("attemptId");
@@ -145,6 +149,9 @@ describe("protocol DTO — camelCase contract", () => {
       promptTokens: 10,
       completionTokens: 20,
       totalTokens: 30,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      reasoningTokens: null,
       contextWindowTokens: 0,
     };
     expect(usage).toHaveProperty("promptTokens");
@@ -161,6 +168,7 @@ describe("protocol DTO — camelCase contract", () => {
       maxAttempts: 3,
       delayMs: 500,
       message: "retrying",
+      errorCode: null,
     };
     expect(retry).toHaveProperty("delayMs");
     expect(retry).toHaveProperty("maxAttempts");
@@ -193,6 +201,9 @@ describe("protocol DTO — camelCase contract", () => {
           name: "GPT-4",
           ownedBy: "openai",
           contextWindow: 8192,
+          supportVision: false,
+          inputModalities: [],
+          reasoningLevels: null,
         },
       ],
       defaultModel: "gpt-4",
@@ -231,10 +242,10 @@ describe("business type — field preservation", () => {
     expect(msg.isPinned).toBe(false);
   });
 
-  it("Message handles null/undefined for optional fields", () => {
+  it("Message uses null for absent optional fields", () => {
     const msg = sampleMessage;
     expect(msg.parentId).toBeNull();
-    expect(msg.reasoning).toBeUndefined();
+    expect(msg.reasoning).toBeNull();
   });
 
   it("Conversation preserves all fields", () => {
@@ -253,5 +264,12 @@ describe("business type — field preservation", () => {
     expect(detail.messages).toHaveLength(1);
     expect(detail.messages[0].id).toBe("msg-1");
     expect(detail.totalCount).toBe(1);
+  });
+
+  it("ChatMessagesChangedPayload reads seq from the wire payload", () => {
+    const payload = JSON.parse(
+      '{"conversationId":"c","changeKind":"branch_switched","messages":[],"activeBranchId":null,"seq":1}',
+    ) as ChatMessagesChangedPayload;
+    expect(payload.seq).toBe(1);
   });
 });

@@ -15,8 +15,25 @@ vi.mock("@/services/chatService", () => ({
 
 function summary(
   partial: Partial<TokenUsageSummary["occupancy"]>,
+  rest: Partial<TokenUsageSummary> = {},
 ): TokenUsageSummary {
-  return { occupancy: partial };
+  return {
+    occupancy: {
+      usedTokens: null,
+      completionTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      reasoningTokens: null,
+      contextWindowTokens: null,
+      percentage: null,
+      estimated: false,
+      estimatedSource: null,
+      ...partial,
+    },
+    cumulative: null,
+    cache: null,
+    ...rest,
+  };
 }
 
 describe("contextUsageFromSummary", () => {
@@ -60,14 +77,18 @@ describe("contextUsageFromSummary", () => {
   });
 
   it("keeps cumulative separate from occupancy", () => {
-    const usage = contextUsageFromSummary({
-      occupancy: { usedTokens: 1_000 },
-      cumulative: {
-        totalTokens: 9_000,
-        promptTokens: 5_000,
-        completionTokens: 4_000,
-      },
-    });
+    const usage = contextUsageFromSummary(
+      summary(
+        { usedTokens: 1_000 },
+        {
+          cumulative: {
+            totalTokens: 9_000,
+            promptTokens: 5_000,
+            completionTokens: 4_000,
+          },
+        },
+      ),
+    );
     expect(usage.usedTokens).toBe(1_000);
     expect(usage.cumulativeTokens).toBe(9_000);
   });
@@ -120,6 +141,9 @@ describe("contextUsageFromTokenUsage", () => {
       promptTokens: 500,
       completionTokens: 20,
       totalTokens: 520,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      reasoningTokens: null,
       contextWindowTokens: 0,
     });
     expect(usage.maxTokens).toBeUndefined();

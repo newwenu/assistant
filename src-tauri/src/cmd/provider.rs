@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
     ModelConfigDto, ProviderInputDto, ProviderListDto, ReasoningLevelsDto,
-    SettingProviderChangedPayloadDto,
+    SettingProviderChangedActionDto, SettingProviderChangedPayloadDto,
 };
 use assistant_agent::provider_config::build_provider_config;
 use assistant_crypto::api_key as crypto;
@@ -67,12 +67,8 @@ pub fn save_provider(app: AppHandle, provider: ProviderInputDto) -> Result<(), S
     let type_ = provider.type_;
     let base_url = provider.base_url;
     let api_key_plain = provider.api_key;
-    let api_key_changed = provider.api_key_changed;
-    let models_json = if provider.models.is_empty() {
-        "[]".to_string()
-    } else {
-        provider.models
-    };
+    let api_key_changed = provider.api_key_changed.unwrap_or(false);
+    let models_json = serde_json::to_string(&provider.models).map_err(|e| e.to_string())?;
     let default_model = provider.default_model;
 
     let machine_id = crypto::get_machine_id()?;
@@ -123,7 +119,7 @@ pub fn save_provider(app: AppHandle, provider: ProviderInputDto) -> Result<(), S
         &app,
         event_name::SETTING_PROVIDER_CHANGED,
         SettingProviderChangedPayloadDto {
-            action: "provider-saved".to_string(),
+            action: SettingProviderChangedActionDto::ProviderSaved,
             id: None,
         },
     );
@@ -139,7 +135,7 @@ pub fn delete_provider(app: AppHandle, id: String) -> Result<(), String> {
         &app,
         event_name::SETTING_PROVIDER_CHANGED,
         SettingProviderChangedPayloadDto {
-            action: "provider-deleted".to_string(),
+            action: SettingProviderChangedActionDto::ProviderDeleted,
             id: Some(id),
         },
     );

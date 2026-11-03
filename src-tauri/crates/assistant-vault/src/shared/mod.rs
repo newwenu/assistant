@@ -56,7 +56,7 @@ impl std::str::FromStr for VaultCategory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export, export_to = "vault.contract.ts")]
 pub struct CustomFieldInput {
     pub name: String,

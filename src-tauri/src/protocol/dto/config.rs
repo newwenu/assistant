@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AppConfDto {
     pub theme: String,
@@ -34,13 +35,32 @@ impl From<assistant_config::app_conf::AppConf> for AppConfDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// 保险库加密算法（封闭集合，线格式与前端联合一致）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum VaultCipherAlgorithmDto {
+    Aes256Gcm,
+    Chacha20Poly1305,
+}
+
+impl From<assistant_config::vault_conf::VaultCipherAlgorithm> for VaultCipherAlgorithmDto {
+    fn from(value: assistant_config::vault_conf::VaultCipherAlgorithm) -> Self {
+        match value {
+            assistant_config::vault_conf::VaultCipherAlgorithm::Aes256Gcm => Self::Aes256Gcm,
+            assistant_config::vault_conf::VaultCipherAlgorithm::Chacha20Poly1305 => {
+                Self::Chacha20Poly1305
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VaultConfDto {
     pub vault_auto_lock_minutes: u16,
     pub vault_lock_on_screen_lock: bool,
     pub vault_clipboard_clear_seconds: u16,
-    pub vault_cipher_algorithm: String,
+    pub vault_cipher_algorithm: VaultCipherAlgorithmDto,
     pub vault_hibp_auto_audit: bool,
     pub vault_sync_remote_url: Option<String>,
     pub vault_ssh_auto_add: bool,
@@ -57,7 +77,7 @@ impl From<assistant_config::vault_conf::VaultConf> for VaultConfDto {
             vault_auto_lock_minutes: c.vault_auto_lock_minutes,
             vault_lock_on_screen_lock: c.vault_lock_on_screen_lock,
             vault_clipboard_clear_seconds: c.vault_clipboard_clear_seconds,
-            vault_cipher_algorithm: c.vault_cipher_algorithm,
+            vault_cipher_algorithm: c.vault_cipher_algorithm.into(),
             vault_hibp_auto_audit: c.vault_hibp_auto_audit,
             vault_sync_remote_url: c.vault_sync_remote_url,
             vault_ssh_auto_add: c.vault_ssh_auto_add,
@@ -70,7 +90,7 @@ impl From<assistant_config::vault_conf::VaultConf> for VaultConfDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OrbConfDto {
     pub click_through: bool,
@@ -100,7 +120,7 @@ impl From<assistant_config::orb_conf::OrbConf> for OrbConfDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MascotConfDto {
     pub renderer: String,

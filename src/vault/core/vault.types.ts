@@ -5,20 +5,7 @@
  * 本文件为 barrel：除 `RevealedField`（纯前端类型）外，全部类型来自
  * `./contract/vault.contract`（由 ts-rs 从 Rust dto 生成，勿手改）。
  */
-export type {
-  AuditLogEntry,
-  CustomFieldInput,
-  IntegrityResult,
-  RevealResult,
-  StrengthResult,
-  VaultCategory,
-  VaultEntryCreate,
-  VaultEntryDetail,
-  VaultEntrySummary,
-  VaultEntryUpdate,
-  VaultErrorCode,
-  VaultErrorDto,
-} from "./contract/vault.contract";
+export * from "./contract/vault.contract";
 
 export type { ConflictFileDto as ConflictFile } from "./contract/vault.contract";
 export type { ConflictPreviewDto as ConflictPreview } from "./contract/vault.contract";

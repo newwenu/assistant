@@ -33,7 +33,7 @@ pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), St
         },
         name: mode.name,
         description: mode.description,
-        kind: mode.kind,
+        kind: mode.kind.as_str().to_string(),
         prompt: mode.prompt,
         model: mode.model,
         temperature: mode.temperature,

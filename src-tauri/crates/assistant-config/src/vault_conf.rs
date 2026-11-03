@@ -16,8 +16,28 @@ fn default_vault_clipboard_clear_seconds() -> u16 {
     30
 }
 
-fn default_vault_cipher_algorithm() -> String {
-    "aes256Gcm".to_string()
+/// 保险库加密算法（封闭集合）。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VaultCipherAlgorithm {
+    #[serde(rename = "aes256Gcm")]
+    Aes256Gcm,
+    #[serde(rename = "chacha20Poly1305")]
+    Chacha20Poly1305,
+}
+
+impl VaultCipherAlgorithm {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Aes256Gcm => "aes256Gcm",
+            Self::Chacha20Poly1305 => "chacha20Poly1305",
+        }
+    }
+}
+
+impl Default for VaultCipherAlgorithm {
+    fn default() -> Self {
+        Self::Aes256Gcm
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -28,8 +48,8 @@ pub struct VaultConf {
     pub vault_lock_on_screen_lock: bool,
     #[serde(default = "default_vault_clipboard_clear_seconds")]
     pub vault_clipboard_clear_seconds: u16,
-    #[serde(default = "default_vault_cipher_algorithm")]
-    pub vault_cipher_algorithm: String,
+    #[serde(default)]
+    pub vault_cipher_algorithm: VaultCipherAlgorithm,
     #[serde(default = "default_true")]
     pub vault_hibp_auto_audit: bool,
     #[serde(default)]
@@ -54,7 +74,7 @@ impl VaultConf {
             vault_auto_lock_minutes: 5,
             vault_lock_on_screen_lock: true,
             vault_clipboard_clear_seconds: 30,
-            vault_cipher_algorithm: "aes256Gcm".to_string(),
+            vault_cipher_algorithm: VaultCipherAlgorithm::Aes256Gcm,
             vault_hibp_auto_audit: true,
             vault_sync_remote_url: None,
             vault_ssh_auto_add: false,
@@ -108,13 +128,7 @@ impl VaultConf {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        let valid_ciphers = ["aes256Gcm", "chacha20Poly1305"];
-        if !valid_ciphers.contains(&self.vault_cipher_algorithm.as_str()) {
-            return Err(format!(
-                "vault_cipher_algorithm must be aes256Gcm/chacha20Poly1305, got {}",
-                self.vault_cipher_algorithm
-            ));
-        }
+        // 加密算法已是封闭枚举，非法值会在反序列化阶段被拒绝。
         Ok(())
     }
 

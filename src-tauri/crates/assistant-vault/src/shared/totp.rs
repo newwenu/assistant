@@ -118,7 +118,10 @@ mod tests {
     #[test]
     fn broken_payload_is_invalid() {
         assert!(TotpConfig::from_stored("{not json").is_none());
-        assert!(TotpConfig::from_stored(r#"{"secret":"","digits":6,"period":30,"algorithm":"sha1"}"#).is_none());
+        assert!(TotpConfig::from_stored(
+            r#"{"secret":"","digits":6,"period":30,"algorithm":"sha1"}"#
+        )
+        .is_none());
     }
 
     #[test]

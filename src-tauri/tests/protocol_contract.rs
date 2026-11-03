@@ -1,6 +1,6 @@
 use assistant_app::protocol::{
-    ChatDeltaPayloadDto, ConversationDetailDto, ConversationDto, MessageDto,
-    ProviderErrorPayloadDto, RetryNotificationDto, TokenUsageDto,
+    ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto, ConversationDetailDto, ConversationDto,
+    MessageChangeKindDto, MessageDto, ProviderErrorPayloadDto, RetryNotificationDto, TokenUsageDto,
 };
 use assistant_providers::base::{ProviderErrorCode, ProviderErrorPayload};
 use assistant_providers::types::chat_delta::{RetryNotification, TokenUsage};
@@ -92,21 +92,15 @@ fn sample_chat_delta_dto() -> ChatDeltaPayloadDto {
 }
 
 #[test]
-fn chat_delta_payload_dto_skip_serializing_none() {
+fn chat_delta_payload_dto_keeps_null_optional_fields() {
     let payload = ChatDeltaPayloadDto {
         ..sample_chat_delta_dto()
     };
     let v = serde_json::to_value(&payload).unwrap();
     let obj = v.as_object().unwrap();
 
-    assert!(
-        !obj.contains_key("error"),
-        "error should be skipped when None"
-    );
-    assert!(
-        !obj.contains_key("deltaRetry"),
-        "deltaRetry should be skipped when None"
-    );
+    assert_eq!(obj["error"], serde_json::Value::Null);
+    assert_eq!(obj["deltaRetry"], serde_json::Value::Null);
 }
 
 #[test]
@@ -255,6 +249,20 @@ fn conversation_detail_dto_wire_format() {
 }
 
 #[test]
+fn chat_messages_changed_payload_uses_seq_key() {
+    let payload = ChatMessagesChangedPayloadDto {
+        conversation_id: "conv-1".into(),
+        change_kind: MessageChangeKindDto::BranchSwitched,
+        messages: vec![],
+        active_branch_id: None,
+        seq: Some(1),
+    };
+    let v = serde_json::to_value(&payload).unwrap();
+    assert_eq!(v["seq"], 1, "seq must survive camelCase renaming");
+    assert!(v.get("_seq").is_none(), "wire key must be seq, not _seq");
+}
+
+#[test]
 fn provider_error_code_serializes_to_pascal_case() {
     let v = serde_json::to_value(&ProviderErrorCode::RateLimited).unwrap();
     assert_eq!(
@@ -314,13 +322,13 @@ fn token_usage_dto_serde_default_fields() {
     );
     let serialized = serde_json::to_string(&usage).unwrap();
     assert!(
-        !serialized.contains("cacheReadTokens"),
-        "cacheReadTokens must be omitted when not reported: {}",
+        serialized.contains("\"cacheReadTokens\":null"),
+        "cacheReadTokens must be present as null: {}",
         serialized
     );
     assert!(
-        !serialized.contains("cacheWriteTokens"),
-        "cacheWriteTokens must be omitted when not reported: {}",
+        serialized.contains("\"cacheWriteTokens\":null"),
+        "cacheWriteTokens must be present as null: {}",
         serialized
     );
 }

@@ -34,6 +34,7 @@ describe("chatStreamStore", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
         streamingContent: "leftover",
@@ -114,6 +115,7 @@ describe("chatStreamStore", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });
@@ -142,6 +144,7 @@ describe("chatStreamStore", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });
@@ -170,6 +173,7 @@ describe("chatStreamStore", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         } as RetryNotification,
       };
@@ -222,6 +226,7 @@ describe("chatStreamStore", () => {
         attempt: 2,
         maxAttempts: 5,
         delayMs: 2000,
+        errorCode: null,
         message: "rate limited",
       };
       useChatStreamStore.getState().setRetryStatus(retry);
@@ -234,6 +239,7 @@ describe("chatStreamStore", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });

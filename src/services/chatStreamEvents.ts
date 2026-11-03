@@ -161,6 +161,7 @@ export function subscribeChatStreamEvents(): () => void {
           attemptId: payload.attemptId,
           messageId: payload.messageId,
           seq: payload.seq,
+          deltaText: null,
           deltaReasoning: payload.deltaReasoning,
           usage: payload.usage,
           finishReason: payload.finishReason,

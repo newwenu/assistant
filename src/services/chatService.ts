@@ -118,22 +118,22 @@ export const chatService = {
     branchPointMessageId: string,
     newRole: string,
     newContent: string,
-    _seq?: number,
+    seq?: number,
   ): Promise<Message> =>
     invoke<Message>("create_branch", {
       conversationId,
       branchPointMessageId,
       newRole,
       newContent,
-      _seq,
+      seq,
     }),
 
   switchBranch: (
     conversationId: string,
     targetMessageId: string,
-    _seq?: number,
+    seq?: number,
   ): Promise<void> =>
-    invoke("switch_branch", { conversationId, targetMessageId, _seq }),
+    invoke("switch_branch", { conversationId, targetMessageId, seq }),
 
   getMessageSiblings: (messageId: string): Promise<SiblingInfo[]> =>
     invoke<SiblingInfo[]>("get_message_siblings", { messageId }),

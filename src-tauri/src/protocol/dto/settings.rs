@@ -1,23 +1,51 @@
 use assistant_storage::agent_modes::AgentModeRow;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// 模式类型（封闭集合）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentModeKindDto {
+    Default,
+    Quick,
+    Deep,
+    Custom,
+}
+
+impl AgentModeKindDto {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Quick => "quick",
+            Self::Deep => "deep",
+            Self::Custom => "custom",
+        }
+    }
+}
+
+impl From<&str> for AgentModeKindDto {
+    fn from(value: &str) -> Self {
+        match value {
+            "default" => Self::Default,
+            "quick" => Self::Quick,
+            "deep" => Self::Deep,
+            _ => Self::Custom,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentModeDto {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub kind: String,
+    pub kind: AgentModeKindDto,
     pub prompt: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_enabled: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
     pub tools: Vec<String>,
     pub presentation_rank: u32,
@@ -33,7 +61,7 @@ impl AgentModeDto {
             id: row.id.clone(),
             name: row.name.clone(),
             description: row.description.clone(),
-            kind: row.kind.clone(),
+            kind: AgentModeKindDto::from(row.kind.as_str()),
             prompt: row.prompt.clone(),
             model: row.model.clone(),
             temperature: row.temperature,
@@ -49,23 +77,23 @@ impl AgentModeDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentModeInputDto {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub kind: String,
+    pub kind: AgentModeKindDto,
     pub prompt: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub model: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub temperature: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub max_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub reasoning_enabled: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub reasoning_effort: Option<String>,
     pub tools: Vec<String>,
     pub presentation_rank: u32,
@@ -74,7 +102,7 @@ pub struct AgentModeInputDto {
 }
 
 /// 目录声明的推理可选项投影；`None`（外层 `Option`）表示目录没有可用信息。
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReasoningLevelsDto {
     /// 模型提供开启/关闭开关
@@ -85,13 +113,13 @@ pub struct ReasoningLevelsDto {
     pub efforts: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ModelConfigDto {
     pub id: String,
     pub name: String,
     pub owned_by: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub context_window: Option<u32>,
     #[serde(default)]
     pub support_vision: bool,
@@ -100,11 +128,11 @@ pub struct ModelConfigDto {
     #[serde(default)]
     pub input_modalities: Vec<String>,
     /// 目录声明的档位；存量 models_json 无此字段，缺省即 None（走未知模型策略）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub reasoning_levels: Option<ReasoningLevelsDto>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderInputDto {
     pub id: String,
@@ -114,12 +142,13 @@ pub struct ProviderInputDto {
     pub base_url: String,
     pub api_key: String,
     #[serde(default)]
-    pub api_key_changed: bool,
-    pub models: String,
+    #[ts(optional = nullable)]
+    pub api_key_changed: Option<bool>,
+    pub models: Vec<ModelConfigDto>,
     pub default_model: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderListDto {
     pub id: String,
@@ -133,15 +162,22 @@ pub struct ProviderListDto {
     pub updated_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// provider 变更事件的动作（封闭集合）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum SettingProviderChangedActionDto {
+    ProviderSaved,
+    ProviderDeleted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingProviderChangedPayloadDto {
-    pub action: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: SettingProviderChangedActionDto,
     pub id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShortcutWarningPayloadDto {
     pub id: String,
@@ -149,13 +185,13 @@ pub struct ShortcutWarningPayloadDto {
     pub error: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ThemeChangedPayloadDto {
     pub resolved: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InstallMascotAssetResultDto {
     pub installed_path: String,

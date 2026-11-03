@@ -55,7 +55,7 @@ export const ReasoningSelector: React.FC<ReasoningSelectorProps> = ({
   }, [providers, selectedProviderId, selectedModelId]);
 
   const choices = useMemo(
-    () => reasoningChoices(reasoningLevels),
+    () => reasoningChoices(reasoningLevels ?? undefined),
     [reasoningLevels],
   );
 

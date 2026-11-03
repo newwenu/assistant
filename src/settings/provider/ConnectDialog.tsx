@@ -210,7 +210,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
           values.baseUrl || (isPreset && preset ? preset.defaultBaseUrl : ""),
         apiKey: values.apiKey || "",
         apiKeyChanged: !isEdit || !!values.apiKey,
-        models: JSON.stringify(models),
+        models,
         defaultModel: values.defaultModel || "",
       };
       onSubmit(input);

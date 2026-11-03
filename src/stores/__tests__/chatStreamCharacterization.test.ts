@@ -113,6 +113,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
         streamingContent: "leftover",
@@ -193,6 +194,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });
@@ -221,6 +223,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });
@@ -257,6 +260,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
         attempt: 2,
         maxAttempts: 5,
         delayMs: 2000,
+        errorCode: null,
         message: "rate limited",
       };
       useChatStreamStore.getState().setRetryStatus(retry);
@@ -269,6 +273,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });

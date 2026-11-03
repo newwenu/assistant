@@ -174,7 +174,13 @@ export function createChatOrchestrator(
             content,
             tokens: null,
             timestamp: Date.now(),
+            parentId: null,
+            isPinned: false,
+            reasoning: null,
             siblingIndex: 0,
+            siblingCount: null,
+            providerId: null,
+            modelId: null,
           };
           const assistantMsgId = `temp-assistant-${Date.now()}`;
           const assistantMsg: Message = {
@@ -184,7 +190,13 @@ export function createChatOrchestrator(
             content: "",
             tokens: null,
             timestamp: Date.now() + 1,
+            parentId: null,
+            isPinned: false,
+            reasoning: null,
             siblingIndex: 0,
+            siblingCount: null,
+            providerId: null,
+            modelId: null,
           };
           deps.state.beginSend([userMsg, assistantMsg], assistantMsgId);
           deps.state.errorStream({
@@ -255,7 +267,12 @@ export function createChatOrchestrator(
           tokens: null,
           timestamp: Date.now(),
           parentId: userParentId,
+          isPinned: false,
+          reasoning: null,
           siblingIndex: 0,
+          siblingCount: null,
+          providerId: null,
+          modelId: null,
         };
         optimisticMessages.push(assistantMsg);
         deps.state.beginSend(optimisticMessages, assistantMsgId);
@@ -268,7 +285,12 @@ export function createChatOrchestrator(
           tokens: null,
           timestamp: Date.now(),
           parentId: userParentId,
+          isPinned: false,
+          reasoning: null,
           siblingIndex: 0,
+          siblingCount: null,
+          providerId: null,
+          modelId: null,
         };
         const assistantMsgId = `temp-assistant-${Date.now()}`;
         const assistantMsg: Message = {
@@ -279,7 +301,12 @@ export function createChatOrchestrator(
           tokens: null,
           timestamp: Date.now() + 1,
           parentId: userMsg.id,
+          isPinned: false,
+          reasoning: null,
           siblingIndex: 0,
+          siblingCount: null,
+          providerId: null,
+          modelId: null,
         };
         optimisticMessages.push(userMsg, assistantMsg);
         deps.state.beginSend(optimisticMessages, assistantMsgId);

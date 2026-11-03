@@ -1,19 +1,7 @@
 import type { ConfSlot } from "@/settings/core/types/confSlot";
+import type { VaultConfDto } from "@/types/protocol.contract";
 
-export interface VaultConf {
-  vaultAutoLockMinutes: number;
-  vaultLockOnScreenLock: boolean;
-  vaultClipboardClearSeconds: number;
-  vaultCipherAlgorithm: "aes256Gcm" | "chacha20Poly1305";
-  vaultHibpAutoAudit: boolean;
-  vaultSyncRemoteUrl: string | null;
-  vaultSshAutoAdd: boolean;
-  vaultSshUsePageant: boolean;
-  vaultSshUseOpensshAgent: boolean;
-  vaultSshAuthSockOverride: string;
-  vaultSyncLastAt: number | null;
-  vaultSyncSshHosts: string[];
-}
+export type VaultConf = VaultConfDto;
 
 declare module "@/settings/core/types/confRegistry" {
   interface ConfTypeRegistry {

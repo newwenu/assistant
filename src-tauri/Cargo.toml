@@ -135,6 +135,8 @@ vault = [
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+# 协议 DTO 的 TS 契约生成；serde-json-impl 用于 OsTool 的 serde_json::Value 字段
+ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
 log = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }

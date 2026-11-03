@@ -1,4 +1,36 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import type {
+  TokenUsageCacheSummary,
+  TokenUsageCumulativeSummary,
+  TokenUsageOccupancySummary,
+  TokenUsageSummary,
+} from "../../chat/core/chatTypes";
+
+type SummaryInput = {
+  occupancy?: Partial<TokenUsageOccupancySummary>;
+  cumulative?: TokenUsageCumulativeSummary | null;
+  cache?: TokenUsageCacheSummary | null;
+};
+
+function summary(input: SummaryInput = {}): TokenUsageSummary {
+  return {
+    cumulative: null,
+    cache: null,
+    ...input,
+    occupancy: {
+      usedTokens: null,
+      completionTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      reasoningTokens: null,
+      contextWindowTokens: null,
+      percentage: null,
+      estimated: false,
+      estimatedSource: null,
+      ...input.occupancy,
+    },
+  };
+}
 
 vi.mock("../../services/chatService", () => ({
   chatService: {
@@ -115,18 +147,20 @@ describe("context usage across conversation switches", () => {
     vi.mocked(chatService.getConversationPaginated).mockResolvedValue(
       detail("c1") as never,
     );
-    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue({
-      occupancy: {
-        usedTokens: 12_000,
-        contextWindowTokens: 128_000,
-        percentage: 12_000 / 128_000,
-      },
-      cumulative: {
-        totalTokens: 30_000,
-        promptTokens: 20_000,
-        completionTokens: 10_000,
-      },
-    });
+    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue(
+      summary({
+        occupancy: {
+          usedTokens: 12_000,
+          contextWindowTokens: 128_000,
+          percentage: 12_000 / 128_000,
+        },
+        cumulative: {
+          totalTokens: 30_000,
+          promptTokens: 20_000,
+          completionTokens: 10_000,
+        },
+      }),
+    );
 
     await useChatStore.getState().switchConversation("c1");
     await flush();
@@ -141,18 +175,20 @@ describe("context usage across conversation switches", () => {
     vi.mocked(chatService.getConversationPaginated).mockResolvedValue(
       detail("c1") as never,
     );
-    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue({
-      occupancy: {
-        usedTokens: 12_000,
-        contextWindowTokens: 128_000,
-        percentage: 12_000 / 128_000,
-      },
-      cumulative: {
-        totalTokens: 30_000,
-        promptTokens: 20_000,
-        completionTokens: 10_000,
-      },
-    });
+    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue(
+      summary({
+        occupancy: {
+          usedTokens: 12_000,
+          contextWindowTokens: 128_000,
+          percentage: 12_000 / 128_000,
+        },
+        cumulative: {
+          totalTokens: 30_000,
+          promptTokens: 20_000,
+          completionTokens: 10_000,
+        },
+      }),
+    );
 
     await useChatStore.getState().switchConversation("c1");
     await flush();
@@ -167,27 +203,31 @@ describe("context usage across conversation switches", () => {
     vi.mocked(chatService.getConversationPaginated).mockResolvedValue(
       detail("c1") as never,
     );
-    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue({
-      occupancy: { usedTokens: 12_000, contextWindowTokens: 128_000 },
-      cumulative: {
-        totalTokens: 30_000,
-        promptTokens: 20_000,
-        completionTokens: 10_000,
-      },
-    });
+    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue(
+      summary({
+        occupancy: { usedTokens: 12_000, contextWindowTokens: 128_000 },
+        cumulative: {
+          totalTokens: 30_000,
+          promptTokens: 20_000,
+          completionTokens: 10_000,
+        },
+      }),
+    );
 
     await useChatStore.getState().switchConversation("c1");
     await flush();
     expect(useChatStore.getState().contextUsage.usedTokens).toBe(12_000);
 
-    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue({
-      occupancy: { usedTokens: 7_000, contextWindowTokens: 128_000 },
-      cumulative: {
-        totalTokens: 30_000,
-        promptTokens: 20_000,
-        completionTokens: 10_000,
-      },
-    });
+    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue(
+      summary({
+        occupancy: { usedTokens: 7_000, contextWindowTokens: 128_000 },
+        cumulative: {
+          totalTokens: 30_000,
+          promptTokens: 20_000,
+          completionTokens: 10_000,
+        },
+      }),
+    );
 
     useChatStore.getState().refreshTokenUsage();
     await flush();
@@ -201,14 +241,16 @@ describe("context usage across conversation switches", () => {
     vi.mocked(chatService.getConversationPaginated).mockResolvedValue(
       detail("c1") as never,
     );
-    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue({
-      occupancy: { usedTokens: 12_000 },
-      cumulative: {
-        totalTokens: 30_000,
-        promptTokens: 20_000,
-        completionTokens: 10_000,
-      },
-    });
+    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue(
+      summary({
+        occupancy: { usedTokens: 12_000 },
+        cumulative: {
+          totalTokens: 30_000,
+          promptTokens: 20_000,
+          completionTokens: 10_000,
+        },
+      }),
+    );
 
     await useChatStore.getState().switchConversation("c1");
     await flush();
@@ -223,9 +265,11 @@ describe("context usage across conversation switches", () => {
     vi.mocked(chatService.getConversationPaginated).mockResolvedValue(
       detail("c1") as never,
     );
-    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue({
-      occupancy: {},
-    });
+    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue(
+      summary({
+        occupancy: {},
+      }),
+    );
 
     await useChatStore.getState().switchConversation("c1");
     await flush();
@@ -240,9 +284,11 @@ describe("context usage across conversation switches", () => {
     vi.mocked(chatService.getConversationPaginated).mockResolvedValue(
       detail("c1") as never,
     );
-    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue({
-      occupancy: { contextWindowTokens: 128_000, percentage: 0 },
-    });
+    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue(
+      summary({
+        occupancy: { contextWindowTokens: 128_000, percentage: 0 },
+      }),
+    );
 
     await useChatStore.getState().switchConversation("c1");
     await flush();
@@ -258,15 +304,17 @@ describe("context usage across conversation switches", () => {
     vi.mocked(chatService.getConversationPaginated).mockResolvedValue(
       detail("c1") as never,
     );
-    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue({
-      occupancy: {
-        usedTokens: 6_000,
-        contextWindowTokens: 128_000,
-        percentage: 6_000 / 128_000,
-        estimated: true,
-        estimatedSource: "projection",
-      },
-    });
+    vi.mocked(chatService.getConversationTokenUsage).mockResolvedValue(
+      summary({
+        occupancy: {
+          usedTokens: 6_000,
+          contextWindowTokens: 128_000,
+          percentage: 6_000 / 128_000,
+          estimated: true,
+          estimatedSource: "projection",
+        },
+      }),
+    );
 
     await useChatStore.getState().switchConversation("c1");
     await flush();
@@ -346,6 +394,9 @@ describe("finishStream without usage", () => {
       promptTokens: 6_000,
       completionTokens: 300,
       totalTokens: 6_300,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      reasoningTokens: null,
       contextWindowTokens: 128_000,
     });
     await flush();

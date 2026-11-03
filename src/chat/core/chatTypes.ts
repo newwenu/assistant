@@ -1,47 +1,35 @@
 import { type ChatError } from "./chatErrors";
+import type {
+  ChatDeltaPayloadDto,
+  ChatMessagesChangedPayloadDto,
+  ChatRegeneratePayloadDto,
+  ChatStreamStartPayloadDto,
+  ChatUserMessageConfirmedPayloadDto,
+  ConversationCompactFailedPayloadDto,
+  ConversationDetailDto,
+  ConversationDto,
+  ConversationListChangeKindDto,
+  ConversationListChangedPayloadDto,
+  ConversationTerminatedPayloadDto,
+  ConversationUnlockedPayloadDto,
+  MessageChangeKindDto,
+  MessageDto,
+  RetryNotificationDto,
+  SendChatMessageArgsDto,
+  SiblingInfoDto,
+  TokenUsageCacheDto,
+  TokenUsageCumulativeDto,
+  TokenUsageDto,
+  TokenUsageOccupancyDto,
+  TokenUsageSummaryDto,
+} from "../../types/protocol.contract";
 
-export interface Message {
-  id: string;
-  conversationId: string;
-  role: string;
-  content: string;
-  reasoning?: string;
-  tokens: number | null;
-  timestamp: number;
-  error?: ChatError | null;
-  parentId?: string | null;
-  siblingIndex: number;
-  siblingCount?: number;
-  isPinned?: boolean;
-  providerId?: string | null;
-  modelId?: string;
-}
+/** 线格式 Message；`error` 是前端本地状态，不属于后端 DTO。 */
+export type Message = MessageDto & { error?: ChatError | null };
 
-export interface Conversation {
-  id: string;
-  title: string;
-  titleSource: string;
-  providerId: string | null;
-  modelId: string;
-  systemPrompt: string | null;
-  isPinned: boolean;
-  sortOrder: number;
-  generation: number;
-  createdAt: number;
-  updatedAt: number;
-  isFull: boolean;
-  activeBranchId: string | null;
-}
+export type Conversation = ConversationDto;
 
-export interface TokenUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-  reasoningTokens?: number;
-  contextWindowTokens?: number;
-}
+export type TokenUsage = TokenUsageDto;
 
 export interface ContextUsage {
   /** 占用 O：最新一次 chat 请求的输入 P；`hasUsage` 为 false 时不参与展示与百分比计算 */
@@ -65,102 +53,29 @@ export interface ContextUsage {
   estimatedSource?: "record" | "projection";
 }
 
-export interface RetryNotification {
-  attempt: number;
-  maxAttempts: number;
-  delayMs: number;
-  message: string;
-  errorCode?: string;
-}
+export type RetryNotification = RetryNotificationDto;
 
-export interface ConversationDetail {
-  conversation: Conversation;
+export type ConversationDetail = Omit<ConversationDetailDto, "messages"> & {
   messages: Message[];
-  totalCount: number;
-}
+};
 
-export interface TokenUsageOccupancySummary {
-  usedTokens?: number;
-  completionTokens?: number;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-  reasoningTokens?: number;
-  contextWindowTokens?: number;
-  percentage?: number;
-  estimated?: boolean;
-  /** 估算来源：记录表估算 / 分支零记录时的出站投影 */
-  estimatedSource?: "record" | "projection";
-}
+export type TokenUsageOccupancySummary = TokenUsageOccupancyDto;
+export type TokenUsageCumulativeSummary = TokenUsageCumulativeDto;
+export type TokenUsageCacheSummary = TokenUsageCacheDto;
+export type TokenUsageSummary = TokenUsageSummaryDto;
 
-export interface TokenUsageCumulativeSummary {
-  totalTokens: number;
-  promptTokens: number;
-  completionTokens: number;
-}
+export type ChatDeltaPayload = ChatDeltaPayloadDto;
 
-export interface TokenUsageCacheSummary {
-  hitTokens: number;
-  denominatorTokens: number;
-  hitRate?: number;
-}
+export type ChatStreamStartPayload = ChatStreamStartPayloadDto;
+export type ChatUserMessageConfirmedPayload =
+  ChatUserMessageConfirmedPayloadDto;
+export type ConversationTerminatedPayload = ConversationTerminatedPayloadDto;
+export type ConversationCompactFailedPayload =
+  ConversationCompactFailedPayloadDto;
+export type ConversationUnlockedPayload = ConversationUnlockedPayloadDto;
+export type ChatRegeneratePayload = ChatRegeneratePayloadDto;
 
-export interface TokenUsageSummary {
-  occupancy: TokenUsageOccupancySummary;
-  /** 该会话零记录时缺省，UI 显示「—」 */
-  cumulative?: TokenUsageCumulativeSummary;
-  cache?: TokenUsageCacheSummary;
-}
-
-export interface ChatDeltaPayload {
-  conversationId: string;
-  attemptId: string;
-  messageId: string;
-  seq: number;
-  deltaText?: string;
-  deltaReasoning?: string;
-  finishReason?: string;
-  usage?: TokenUsage;
-  error?: ChatError;
-  deltaRetry?: RetryNotification;
-}
-
-export interface ChatStreamStartPayload {
-  conversationId: string;
-  attemptId: string;
-  messageId: string;
-}
-
-export interface ChatUserMessageConfirmedPayload {
-  conversationId: string;
-  userMessageId: string;
-  userMessageContent: string;
-}
-
-export interface ConversationTerminatedPayload {
-  conversationId: string;
-  summary: string;
-  isFull: boolean;
-}
-
-export interface ConversationCompactFailedPayload {
-  conversationId: string;
-  error: string;
-}
-
-export interface ConversationUnlockedPayload {
-  conversationId: string;
-}
-
-export interface ChatRegeneratePayload {
-  conversationId: string;
-  deletedMessageId: string;
-}
-
-export interface SiblingInfo {
-  id: string;
-  siblingIndex: number;
-  contentPreview: string;
-}
+export type SiblingInfo = SiblingInfoDto;
 
 export enum ChatEvent {
   StreamStart = "chat-stream-start",
@@ -173,48 +88,18 @@ export enum ChatEvent {
   ConversationUnlocked = "conversation-unlocked",
 }
 
-export type MessageChangeKind =
-  | "branch_created"
-  | "branch_switched"
-  | "branch_forked"
-  | "message_deleted"
-  | "messages_compacted"
-  | "stream_finished";
+export type MessageChangeKind = MessageChangeKindDto;
 
-export interface ChatMessagesChangedPayload {
-  conversationId: string;
-  changeKind: MessageChangeKind;
-  messages: Message[];
-  activeBranchId: string | null;
-  _seq?: number;
-}
+export type ChatMessagesChangedPayload = Omit<
+  ChatMessagesChangedPayloadDto,
+  "messages"
+> & { messages: Message[] };
 
 export type TruncationStrategy =
   { kind: "truncate" } | { kind: "branch"; branchPointMessageId: string };
 
-export type ConversationListChangeKind =
-  | "renamed"
-  | "deleted"
-  | "pin_toggled"
-  | "duplicated"
-  | "model_updated"
-  | "provider_updated"
-  | "batch_deleted"
-  | "purged"
-  | "created"
-  | "stream_finished";
+export type ConversationListChangeKind = ConversationListChangeKindDto;
 
-export interface ConversationListChangedPayload {
-  changeKind: ConversationListChangeKind;
-  conversationId: string | null;
-  affectedIds?: string[];
-}
+export type ConversationListChangedPayload = ConversationListChangedPayloadDto;
 
-export interface SendChatMessageArgs {
-  content: string;
-  modeId?: string | null;
-  branchPointMessageId?: string | null;
-  providerId: string;
-  modelId: string;
-  reasoningLevel?: string | null;
-}
+export type SendChatMessageArgs = SendChatMessageArgsDto;

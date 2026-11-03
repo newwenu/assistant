@@ -1,6 +1,6 @@
 mod common;
 
-use assistant_config::vault_conf::VaultConf;
+use assistant_config::vault_conf::{VaultCipherAlgorithm, VaultConf};
 use common::conf_path;
 
 #[test]
@@ -9,7 +9,7 @@ fn new_returns_defaults() {
     assert_eq!(conf.vault_auto_lock_minutes, 5);
     assert!(conf.vault_lock_on_screen_lock);
     assert_eq!(conf.vault_clipboard_clear_seconds, 30);
-    assert_eq!(conf.vault_cipher_algorithm, "aes256Gcm");
+    assert_eq!(conf.vault_cipher_algorithm, VaultCipherAlgorithm::Aes256Gcm);
     assert!(conf.vault_hibp_auto_audit);
     assert_eq!(conf.vault_sync_remote_url, None);
     assert!(!conf.vault_ssh_auto_add);
@@ -34,7 +34,7 @@ fn deserialize_missing_fields_use_defaults() {
     let json = r#"{"vault_auto_lock_minutes":10}"#;
     let conf: VaultConf = serde_json::from_str(json).unwrap();
     assert_eq!(conf.vault_auto_lock_minutes, 10);
-    assert_eq!(conf.vault_cipher_algorithm, "aes256Gcm");
+    assert_eq!(conf.vault_cipher_algorithm, VaultCipherAlgorithm::Aes256Gcm);
     assert_eq!(conf.vault_clipboard_clear_seconds, 30);
     assert!(conf.vault_lock_on_screen_lock);
 }
@@ -51,7 +51,10 @@ fn amend_single_and_multiple_fields() {
     assert_eq!(merged.vault_auto_lock_minutes, 10);
     assert!(!merged.vault_hibp_auto_audit);
     assert!(merged.vault_ssh_auto_add);
-    assert_eq!(merged.vault_cipher_algorithm, "aes256Gcm");
+    assert_eq!(
+        merged.vault_cipher_algorithm,
+        VaultCipherAlgorithm::Aes256Gcm
+    );
 }
 
 #[test]
@@ -63,14 +66,9 @@ fn amend_unknown_key_ignored() {
 }
 
 #[test]
-fn validate_rejects_unknown_cipher() {
-    let mut conf = VaultConf::new();
-    conf.vault_cipher_algorithm = "aes256Gcm".to_string();
-    assert!(conf.validate().is_ok());
-    conf.vault_cipher_algorithm = "chacha20Poly1305".to_string();
-    assert!(conf.validate().is_ok());
-    conf.vault_cipher_algorithm = "des".to_string();
-    assert!(conf.validate().is_err());
+fn deserialize_rejects_unknown_cipher() {
+    let json = r#"{"vault_cipher_algorithm":"des"}"#;
+    assert!(serde_json::from_str::<VaultConf>(json).is_err());
 }
 
 #[test]
@@ -117,7 +115,10 @@ fn load_from_migrates_legacy_app_conf() {
     let vault_path = legacy.parent().unwrap().join("vault-config.json");
     let conf = VaultConf::load_from(&vault_path).unwrap();
     assert_eq!(conf.vault_auto_lock_minutes, 10);
-    assert_eq!(conf.vault_cipher_algorithm, "chacha20Poly1305");
+    assert_eq!(
+        conf.vault_cipher_algorithm,
+        VaultCipherAlgorithm::Chacha20Poly1305
+    );
     assert!(conf.vault_ssh_auto_add);
     assert!(vault_path.exists());
 }

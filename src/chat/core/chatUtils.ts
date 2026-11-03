@@ -24,9 +24,9 @@ export function contextUsageFromTokenUsage(usage: TokenUsage): ContextUsage {
       ? Math.min(usage.promptTokens / maxTokens, 1)
       : undefined,
     completionTokens: usage.completionTokens,
-    cacheReadTokens: usage.cacheReadTokens,
-    cacheWriteTokens: usage.cacheWriteTokens,
-    reasoningTokens: usage.reasoningTokens,
+    cacheReadTokens: usage.cacheReadTokens ?? undefined,
+    cacheWriteTokens: usage.cacheWriteTokens ?? undefined,
+    reasoningTokens: usage.reasoningTokens ?? undefined,
   };
 }
 
@@ -38,15 +38,15 @@ export function contextUsageFromSummary(
   return {
     usedTokens: o.usedTokens ?? 0,
     hasUsage: typeof o.usedTokens === "number",
-    maxTokens: o.contextWindowTokens,
-    percentage: o.contextWindowTokens ? o.percentage : undefined,
-    completionTokens: o.completionTokens,
-    cacheReadTokens: o.cacheReadTokens,
-    cacheWriteTokens: o.cacheWriteTokens,
-    reasoningTokens: o.reasoningTokens,
+    maxTokens: o.contextWindowTokens ?? undefined,
+    percentage: o.contextWindowTokens ? (o.percentage ?? undefined) : undefined,
+    completionTokens: o.completionTokens ?? undefined,
+    cacheReadTokens: o.cacheReadTokens ?? undefined,
+    cacheWriteTokens: o.cacheWriteTokens ?? undefined,
+    reasoningTokens: o.reasoningTokens ?? undefined,
     cumulativeTokens: summary.cumulative?.totalTokens,
-    estimated: o.estimated,
-    estimatedSource: o.estimatedSource,
+    estimated: o.estimated || undefined,
+    estimatedSource: o.estimatedSource ?? undefined,
   };
 }
 

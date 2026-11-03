@@ -2,8 +2,9 @@ use assistant_providers::base::{ProviderErrorCode, ProviderErrorPayload};
 use assistant_providers::types::chat_delta::{RetryNotification, TokenUsage};
 use assistant_storage::conversations::{ConversationRow, MessageRow};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub enum ProviderErrorCodeDto {
     ApiKeyMissing,
@@ -41,7 +42,7 @@ impl From<ProviderErrorCode> for ProviderErrorCodeDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationDto {
     pub id: String,
@@ -56,7 +57,7 @@ pub struct ConversationDto {
     pub created_at: i64,
     pub updated_at: i64,
     pub is_full: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub active_branch_id: Option<String>,
 }
 
@@ -80,28 +81,23 @@ impl From<ConversationRow> for ConversationDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MessageDto {
     pub id: String,
     pub conversation_id: String,
     pub role: String,
     pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tokens: Option<i64>,
     pub timestamp: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<String>,
     pub is_pinned: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
     #[serde(default)]
     pub sibling_index: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub sibling_count: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
 }
 
@@ -125,7 +121,7 @@ impl From<MessageRow> for MessageDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationDetailDto {
     pub conversation: ConversationDto,
@@ -133,27 +129,45 @@ pub struct ConversationDetailDto {
     pub total_count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationPatchDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub title_source: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub model_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub provider_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// 会话详情查询模式（封闭集合）。
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum ConversationQueryModeDto {
+    #[default]
+    Paginated,
+    All,
+}
+
+impl ConversationQueryModeDto {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Paginated => "paginated",
+            Self::All => "all",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationQueryOptsDto {
     #[serde(default)]
-    pub mode: String,
+    pub mode: ConversationQueryModeDto,
     #[serde(default = "default_limit")]
     pub limit: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub before_timestamp: Option<i64>,
 }
 
@@ -161,30 +175,33 @@ fn default_limit() -> i64 {
     50
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SendChatMessageArgsDto {
     pub content: String,
+    #[ts(optional = nullable)]
     pub mode_id: Option<String>,
+    #[ts(optional = nullable)]
     pub branch_point_message_id: Option<String>,
     pub provider_id: String,
     pub model_id: String,
+    #[ts(optional = nullable)]
     pub reasoning_level: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TokenUsageDto {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub cache_read_tokens: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub cache_write_tokens: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub reasoning_tokens: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub context_window_tokens: Option<u32>,
 }
 
@@ -202,34 +219,34 @@ impl From<TokenUsage> for TokenUsageDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TokenUsageOccupancyDto {
     /// `None` = 该分支无记录，UI 显示「—」
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub used_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub completion_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub cache_read_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub cache_write_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub reasoning_tokens: Option<i64>,
     /// 窗口未知时必须缺省，不得填 0 或硬编码常量
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub context_window_tokens: Option<u32>,
     /// 与绝对数互斥：窗口未知时缺省
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub percentage: Option<f32>,
     #[serde(default)]
     pub estimated: bool,
     /// `estimated = true` 时标明来源；`false` 时缺省
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub estimated_source: Option<TokenUsageEstimatedSourceDto>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TokenUsageCumulativeDto {
     pub total_tokens: i64,
@@ -238,7 +255,7 @@ pub struct TokenUsageCumulativeDto {
 }
 
 /// 估算来源：区分「记录表的估算记录」与「分支零记录时的出站投影」
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum TokenUsageEstimatedSourceDto {
     /// provider 未上报输入 token，由 `total - completion` 回退后落库
@@ -247,25 +264,25 @@ pub enum TokenUsageEstimatedSourceDto {
     Projection,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TokenUsageCacheDto {
     pub hit_tokens: i64,
     pub denominator_tokens: i64,
     /// 分母为 0 时不可判定，缺省而不是 0
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub hit_rate: Option<f32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TokenUsageSummaryDto {
     pub occupancy: TokenUsageOccupancyDto,
     /// 该会话零记录时缺省（UI 显示「—」），不得用 0 冒充「没花过」
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub cumulative: Option<TokenUsageCumulativeDto>,
     /// 无「具备缓存能力且上报缓存字段」的请求时缺省
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub cache: Option<TokenUsageCacheDto>,
 }
 
@@ -315,14 +332,14 @@ impl From<assistant_storage::token_usage::TokenUsageSummary> for TokenUsageSumma
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RetryNotificationDto {
     pub attempt: u32,
     pub max_attempts: u32,
     pub delay_ms: u64,
     pub message: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub error_code: Option<ProviderErrorCodeDto>,
 }
 
@@ -338,19 +355,19 @@ impl From<RetryNotification> for RetryNotificationDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderErrorPayloadDto {
     pub code: ProviderErrorCodeDto,
     pub message: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub retry_after_ms: Option<u64>,
     pub retryable: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub http_status: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub provider: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub provider_code: Option<String>,
 }
 
@@ -368,28 +385,22 @@ impl From<ProviderErrorPayload> for ProviderErrorPayloadDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChatDeltaPayloadDto {
     pub conversation_id: String,
     pub attempt_id: String,
     pub message_id: String,
     pub seq: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub delta_text: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub delta_reasoning: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<TokenUsageDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub delta_retry: Option<RetryNotificationDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ProviderErrorPayloadDto>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChatStreamStartPayloadDto {
     pub conversation_id: String,
@@ -397,7 +408,7 @@ pub struct ChatStreamStartPayloadDto {
     pub message_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChatUserMessageConfirmedPayloadDto {
     pub conversation_id: String,
@@ -405,7 +416,7 @@ pub struct ChatUserMessageConfirmedPayloadDto {
     pub user_message_content: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationTerminatedPayloadDto {
     pub conversation_id: String,
@@ -413,49 +424,58 @@ pub struct ConversationTerminatedPayloadDto {
     pub is_full: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationCompactFailedPayloadDto {
     pub conversation_id: String,
     pub error: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationUnlockedPayloadDto {
     pub conversation_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// `conversation-list-changed` 事件的变更原因（封闭集合）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversationListChangeKindDto {
+    Renamed,
+    Deleted,
+    PinToggled,
+    Duplicated,
+    ModelUpdated,
+    ProviderUpdated,
+    BatchDeleted,
+    Purged,
+    Created,
+    StreamFinished,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationListChangedPayloadDto {
-    pub change_kind: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_kind: ConversationListChangeKindDto,
     pub conversation_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub affected_ids: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChatRegeneratePayloadDto {
     pub conversation_id: String,
     pub deleted_message_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImageAttachmentRefDto {
     pub attachment_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub media_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub bytes: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub height: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 
@@ -472,7 +492,7 @@ impl From<assistant_providers::types::ImageAttachmentRef> for ImageAttachmentRef
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FileAttachmentRefDto {
     pub attachment_id: String,
@@ -490,7 +510,7 @@ impl From<assistant_providers::types::FileAttachmentRef> for FileAttachmentRefDt
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlockDto {
     Text {
@@ -504,7 +524,6 @@ pub enum ContentBlockDto {
     },
     Thinking {
         thinking: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
         signature: Option<String>,
     },
     ToolUse {
