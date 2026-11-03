@@ -3,11 +3,10 @@ import {
   buildContentBlocks,
   parseContent,
   serializeContent,
-  validateImageFile,
   extractPlainText,
   rebuildContent,
 } from "../contentBlockUtils";
-import type { Attachment } from "../attachmentTypes";
+import type { Attachment } from "../../attachment/types";
 
 describe("parseContent", () => {
   it("returns null for plain text", () => {
@@ -103,21 +102,6 @@ describe("buildContentBlocks", () => {
     expect(blocks.length).toBe(2);
     expect(blocks[0].type).toBe("text");
     expect(blocks[1].type).toBe("image");
-  });
-});
-
-describe("validateImageFile", () => {
-  it("rejects non-image MIME type", () => {
-    const file = new File([], "test.pdf", { type: "application/pdf" });
-    const result = validateImageFile(file);
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe("invalid_image_type");
-  });
-
-  it("accepts valid image MIME type", () => {
-    const file = new File([], "test.png", { type: "image/png" });
-    const result = validateImageFile(file);
-    expect(result.ok).toBe(true);
   });
 });
 

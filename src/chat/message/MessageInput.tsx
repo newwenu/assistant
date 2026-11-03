@@ -18,11 +18,11 @@ import {
   buildContentBlocksAsync,
   serializeContent,
 } from "../core/contentBlockUtils";
-import { usePasteAttach } from "../../hooks/usePasteAttach";
 
 interface MessageInputProps {
   onSend: (content: string) => void;
   onCancel: () => void;
+  onPaste: (e: React.ClipboardEvent) => void;
   isStreaming: boolean;
   disabled: boolean;
   isFull?: boolean;
@@ -31,6 +31,7 @@ interface MessageInputProps {
 export const MessageInput: React.FC<MessageInputProps> = ({
   onSend,
   onCancel,
+  onPaste,
   isStreaming,
   disabled,
   isFull = false,
@@ -42,7 +43,6 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const attachments = useAttachmentStore((s) => s.attachments);
   const clearAttachments = useAttachmentStore((s) => s.clearAttachments);
   const { t } = useTranslation();
-  const { handlePaste } = usePasteAttach();
 
   const doSend = useCallback(async () => {
     const hasText = value.trim().length > 0;
@@ -89,7 +89,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           useMascotStore.getState().notifyListening();
         }}
         onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
+        onPaste={onPaste}
         autoSize={{
           minRows: CHAT_INPUT_MIN_ROWS,
           maxRows: CHAT_INPUT_MAX_ROWS,

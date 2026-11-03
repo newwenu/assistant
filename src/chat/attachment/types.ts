@@ -21,6 +21,8 @@ export const IMAGE_EXT_TO_MIME: Record<string, AllowedImageMimeType> = {
   tiff: "image/tiff",
 };
 
+export const ALLOWED_IMAGE_EXTENSIONS = Object.keys(IMAGE_EXT_TO_MIME);
+
 export const ALLOWED_FILE_MIME_TYPES = [
   "application/pdf",
   "text/plain",
@@ -37,6 +39,23 @@ export const ALLOWED_FILE_MIME_TYPES = [
 ] as const;
 
 export type AllowedFileMimeType = (typeof ALLOWED_FILE_MIME_TYPES)[number];
+
+export const FILE_EXT_TO_MIME: Record<string, AllowedFileMimeType> = {
+  pdf: "application/pdf",
+  txt: "text/plain",
+  md: "text/markdown",
+  csv: "text/csv",
+  html: "text/html",
+  json: "application/json",
+  py: "text/x-python",
+  js: "text/javascript",
+  ts: "text/typescript",
+  tsx: "text/typescript",
+  css: "text/css",
+  yaml: "text/yaml",
+  yml: "text/yaml",
+  xml: "text/xml",
+};
 
 export const ALLOWED_FILE_EXTENSIONS = [
   "pdf",
@@ -86,3 +105,12 @@ export const ATTACHMENT_MAX_IMAGES = 4;
 export const ATTACHMENT_MAX_FILES = 4;
 export const ATTACHMENT_MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
 export const ATTACHMENT_MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
+
+export type AdmitError =
+  | "too_many"
+  | "too_large"
+  | "invalid_type"
+  | "no_vision"
+  | "too_many_files"
+  | "file_too_large"
+  | "invalid_file_type";

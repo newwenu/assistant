@@ -1,23 +1,31 @@
 import { create } from "zustand";
-import type { Attachment } from "../chat/core/attachmentTypes";
+import type { AdmitError, Attachment } from "../chat/attachment/types";
+import { admitAttachment } from "../chat/attachment/admit";
 
 interface AttachmentState {
   attachments: Attachment[];
   supportVision: boolean;
   setSupportVision: (v: boolean) => void;
-  addAttachment: (att: Attachment) => void;
+  addAttachment: (att: Attachment) => AdmitError | null;
   removeAttachment: (id: string) => void;
   clearAttachments: () => void;
 }
 
-export const useAttachmentStore = create<AttachmentState>((set) => ({
+export const useAttachmentStore = create<AttachmentState>((set, get) => ({
   attachments: [],
   supportVision: false,
 
   setSupportVision: (v: boolean) => set({ supportVision: v }),
 
-  addAttachment: (att: Attachment) =>
-    set((s) => ({ attachments: [...s.attachments, att] })),
+  addAttachment: (att: Attachment): AdmitError | null => {
+    const error = admitAttachment(att, {
+      attachments: get().attachments,
+      supportVision: get().supportVision,
+    });
+    if (error) return error;
+    set((s) => ({ attachments: [...s.attachments, att] }));
+    return null;
+  },
 
   removeAttachment: (id: string) =>
     set((s) => {

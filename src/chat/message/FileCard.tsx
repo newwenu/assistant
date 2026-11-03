@@ -1,6 +1,6 @@
 import React, { useCallback } from "react";
 import type { FileAttachmentRef } from "../core/contentBlockTypes";
-import { openAttachmentFile } from "../core/attachmentUtils";
+import { openAttachmentFile } from "../attachment/paths";
 import { formatBytes } from "@/utils/formatBytes";
 import css from "./FileCard.module.css";
 

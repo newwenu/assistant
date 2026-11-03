@@ -32,7 +32,7 @@ import { AttachmentPreview } from "./message/AttachmentPreview";
 import { ForkDialog } from "./blocks/ForkDialog";
 import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
 import { createLogger } from "@/services/logger";
-import { useNativeFileAttach } from "../hooks/useNativeFileAttach";
+import { useAttachmentIntake } from "./attachment";
 
 const log = createLogger("ChatView");
 
@@ -77,7 +77,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
     setSupportVision(supportVision);
   }, [supportVision, setSupportVision]);
 
-  const { handleFileSelect } = useNativeFileAttach(supportVision);
+  const { handlePaste, handleFileSelect } = useAttachmentIntake();
 
   useEffect(() => {
     void useProviderStore
@@ -448,6 +448,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
           <MessageInput
             onSend={handleSend}
             onCancel={handleCancel}
+            onPaste={handlePaste}
             isStreaming={stream.isStreaming}
             disabled={chat.isFull || noProviders}
             isFull={chat.isFull}

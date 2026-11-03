@@ -4,7 +4,7 @@ import { join } from "@tauri-apps/api/path";
 import { useTranslation } from "react-i18next";
 import { FileImageOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { ImageAttachmentRef } from "../core/contentBlockTypes";
-import { getAttachmentsDir, openAttachmentFile } from "../core/attachmentUtils";
+import { getAttachmentsDir, openAttachmentFile } from "../attachment/paths";
 import css from "./ImageThumbnail.module.css";
 
 const ERROR_CONFIRM_DELAY_MS = 1500;
