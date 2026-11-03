@@ -1,8 +1,17 @@
 # I20: 后端命令简化规约
 
 > 生成日期: 2026-10-24
+> 归档日期: 2026-11-02
 > 范围: `src-tauri/src/cmd/` + `window.rs` 全部 Tauri 命令（127 个，含 `lib.rs` invoke_handler 注册的 cmd + window 命令）
 > 原则: 安全优先、渐变迁移、patch 模式统一
+
+> **归档说明**
+>
+> - 简化 1-7 全部已落地（原文档 §4 / §9.6 的「简化7 未开始」为过期状态，已在本次归档时修正）。
+> - 命令注册边界已变化：Vault 命令迁入插件 `src-tauri/src/vault_plugin.rs`，宿主命令集中到 `src-tauri/src/ipc.rs`（原文档通篇按 `lib.rs` 单点注册描述，属历史写法）。
+> - 归档时实测注册命令 **131 个** = 宿主 `ipc.rs` 62 + Vault 插件 69。较规约预期的 113 增加 18 个，增量全部来自后续新功能（`vault_history_*`、`vault_conflict_*`、`vault_sync_abort/discard/remote_status/conflicts/pending_removals/confirm_removals`、`vault_ssh_parse_key/key_meta`、`vault_count_entries` 等），不属于本规约范围。
+> - **现状以代码为准**：命令清单看 [ipc.rs](../src-tauri/src/ipc.rs) 与 [vault_plugin.rs](../src-tauri/src/vault_plugin.rs)，本文 §6 为归档时核对后的最终快照。
+> - §1、§2、§3、§5 保留规约生成时的历史叙述，用于追溯决策过程，数字不代表当前状态。
 
 ---
 
@@ -35,6 +44,8 @@
 | Window | `window.rs` | 5 | 打开主窗口/设置/Orb 面板展开/折叠/上下文菜单 |
 | Storage | `storage.rs` | 2 | 存储占用统计 + 附件清理 |
 | **合计** | | **117** | （简化1-6已执行：127→117，简化7待执行：→113） |
+
+> 注：上表为 2026-10-24 规约生成时的历史快照，Vault 命令尚未迁入插件、`lib.rs` 仍为单点注册。最终命令分布见 §6。
 
 ### 1.2 设计模式识别
 
@@ -315,8 +326,10 @@ pub fn vault_git_remote(
 | 4 | 删除 `set_theme` / `set_locale` / `emit_theme_changed` | -3 | 🟠 中高（需先新增 theme side_effect + 验证 locale 持久化差异） | 前端先迁移 | ✅ 已完成 |
 | 5 | 删除 `set_launch_at_login` | -1 | 🟡 中（同上） | 前端先迁移 | ✅ 已完成 |
 | 6 | 删除 `vault_export`（返回 String 版） | -1 | 🟢 低（纯删除死代码） | 直接删除 | ✅ 已完成 |
-| 7 | Sync 域合并 | -4 | 🟡 中低 | 旧命令 → wrapper | ❌ 未开始 |
-| **合计** | | **-14** | | **127 → ~113** | **已完成 -10，剩余 -4** |
+| 7 | Sync 域合并 | -4 | 🟡 中低 | 旧命令已删除 | ✅ 已完成 |
+| **合计** | | **-14** | | **127 → 113**（归档时实测 131，增量见归档说明） | **全部完成** |
+
+> 归档核对（2026-11-02）：`vault_sync(action: SyncActionDto)`、`vault_git_init(url?)`、`vault_git_remote(mode: RemoteModeDto)` 均已实现并注册；`vault_sync_pull/push/now/force_push`、`vault_git_clone/add_remote/set_remote` 已从 Rust 端与注册表移除，前端 service 层保留语义方法名并在内部路由到新命令。
 
 ---
 
@@ -364,11 +377,16 @@ pub fn vault_git_remote(
 - [x] 移除 `vault_sync_pull` / `vault_sync_push` / `vault_sync_now` / `vault_sync_force_push` — ✅ 已完成（Rust 命令已删除，lib.rs 注册已移除，前端 service 层保持语义方法名内部路由到 `vault_sync`）
 - [x] 移除 `vault_git_clone` / `vault_git_add_remote` / `vault_git_set_remote` — ✅ 已完成（Rust 命令已删除，lib.rs 注册已移除，前端 service 层保持语义方法名内部路由到新命令）
 - [x] 从 `lib.rs` 的 `invoke_handler` 中移除旧 sync 命令注册 — ✅ 已完成
-- [ ] 全量回归测试
+- [ ] 全量回归测试 — 归档时未执行，作为历史遗留流程项保留（代码交付已完成，功能验证由后续迭代覆盖）
+
+> 归档核对（2026-11-02）：Phase 0-3 的代码项全部落地，命令注册表（`ipc.rs` + `vault_plugin.rs`）中已不存在任何被本规约删除的旧命令。唯一未勾选项为流程性质的「全量回归测试」。
 
 ---
 
-## 6. 命令清单（简化后）
+## 6. 命令清单（归档最终快照，2026-11-02 核对）
+
+> 本节已按归档时实际注册表（`src-tauri/src/ipc.rs` 62 个 + `src-tauri/src/vault_plugin.rs` 69 个 = **131 个**）逐项校正。
+> 原始规约生成时的清单（117 → 113）与代码存在偏差，已修正；后续新增功能命令一并补入。
 
 ### 6.1 Conversation 域（20 → 15）
 
@@ -406,13 +424,14 @@ pub fn vault_git_remote(
 | `send_chat_message` | C |
 | `cancel_chat` | U |
 
-### 6.4 Config 域（7 → 4）
+### 6.4 Config 域（8 → 5）
 
 | 命令 | CRUD | 备注 |
 |---|---|---|
 | `get_app_conf` | R | |
 | `get_orb_conf` | R | |
 | `get_mascot_conf` | R | |
+| `get_vault_conf` | R | 后续新增：Vault 配置读 |
 | `patch_conf` | U | 统一 patch，覆盖 theme/locale/launchAtLogin |
 
 ### 6.5 Provider 域（5，不变）
@@ -425,27 +444,29 @@ pub fn vault_git_remote(
 | `list_models_cmd` | R |
 | `preview_models_cmd` | R |
 
-### 6.6 Orb 域（7，不变）
+### 6.6 Orb 域（7 → 6）
 
-| 命令 | CRUD |
-|---|---|
-| `get_mouse_position` | R |
-| `toggle_orb_visibility` | U |
-| `set_orb_click_through` | U |
-| `get_screen_size` | R |
-| `snap_orb_to_screen` | U |
-| `snap_orb_to_edge` | U |
-| `save_orb_position` | U |
+| 命令 | CRUD | 备注 |
+|---|---|---|
+| `get_mouse_position` | R | |
+| `toggle_orb_visibility` | U | |
+| `set_orb_click_through` | U | |
+| `get_screen_size` | R | |
+| `snap_orb_to_screen` | U | |
+| `snap_orb_to_edge` | U | |
 
-### 6.7 App 域（6 → 5）
+> `save_orb_position` 已删除（内部函数 `save_orb_position_sync` 由吸附命令自动调用），原文保留该行为历史错误，归档时移除。
+
+### 6.7 App 域（6 → 4）
 
 | 命令 | CRUD | 备注 |
 |---|---|---|
 | `app_quit` | - | |
-| `reload_shortcuts` | U | |
 | `get_app_version` | R | |
 | `get_rustc_version` | R | |
 | `open_main_window_and_navigate` | - | |
+
+> `reload_shortcuts` 已删除（由 `patch_conf` 的 keybindings side_effect 覆盖），原文保留该行为历史错误，归档时移除。
 
 ### 6.8 AgentMode 域（4，不变）
 
@@ -497,18 +518,23 @@ pub fn vault_git_remote(
 | `vault_lock` | U |
 | `vault_show_unlock_window` | - |
 
-### 6.14 Vault Entries 域（8，不变）
+### 6.14 Vault Entries 域（13，不变）
 
-| 命令 | CRUD |
-|---|---|
-| `vault_list_entries` | R |
-| `vault_get_entry` | R |
-| `vault_create_entry` | C |
-| `vault_update_entry` | U |
-| `vault_delete_entry` | D |
-| `vault_change_master_password` | U |
-| `vault_export_to_file` | R |
-| `vault_import` | C |
+| 命令 | CRUD | 备注 |
+|---|---|---|
+| `vault_list_entries` | R | |
+| `vault_count_entries` | R | 后续新增：条目计数 |
+| `vault_get_entry` | R | |
+| `vault_create_entry` | C | |
+| `vault_update_entry` | U | |
+| `vault_set_favorite` | U | 后续新增：收藏切换 |
+| `vault_delete_entry` | D | |
+| `vault_list_deleted_entries` | R | 后续新增：回收站列表 |
+| `vault_restore_entry` | U | 后续新增：回收站恢复 |
+| `vault_purge_deleted` | D | 后续新增：回收站彻底删除 |
+| `vault_change_master_password` | U | |
+| `vault_export_to_file` | R | |
+| `vault_import` | C | |
 
 ### 6.15 Vault Reveal 域（4，不变）
 
@@ -519,18 +545,19 @@ pub fn vault_git_remote(
 | `vault_reveal_password` | R |
 | `vault_reveal_notes` | R |
 
-### 6.16 Vault Audit 域（8，不变）
+### 6.16 Vault Audit 域（9，不变）
 
-| 命令 | CRUD |
-|---|---|
-| `vault_totp_generate` | R |
-| `vault_copy_totp` | R |
-| `vault_totp_time_remaining` | R |
-| `vault_totp_parse_uri` | R |
-| `vault_query_audit_log` | R |
-| `vault_hibp_check` | R |
-| `vault_hibp_audit` | R |
-| `vault_check_master_password_strength` | R |
+| 命令 | CRUD | 备注 |
+|---|---|---|
+| `vault_totp_generate` | R | |
+| `vault_copy_totp` | R | |
+| `vault_totp_time_remaining` | R | |
+| `vault_totp_parse_uri` | R | |
+| `vault_query_audit_log` | R | |
+| `vault_hibp_check` | R | |
+| `vault_hibp_audit` | R | |
+| `vault_hibp_audit_cancel` | U | 后续新增：取消批量审计 |
+| `vault_check_master_password_strength` | R | |
 
 ### 6.17 Vault Biometric 域（5，不变）
 
@@ -542,39 +569,51 @@ pub fn vault_git_remote(
 | `vault_enroll_biometric` | U |
 | `vault_disenroll_biometric` | U |
 
-### 6.18 Vault Recovery 域（5，不变）
+### 6.18 Vault Recovery 域（5 → 4）
 
-| 命令 | CRUD |
-|---|---|
-| `vault_generate_recovery_key` | C |
-| `vault_unlock_with_recovery_key` | U |
-| `vault_has_recovery_key` | R |
-| `vault_verify_vault_meta_integrity` | R |
-| `vault_disaster_recovery_export` | R |
+| 命令 | CRUD | 备注 |
+|---|---|---|
+| `vault_generate_recovery_key` | C | |
+| `vault_has_recovery_key` | R | |
+| `vault_verify_vault_meta_integrity` | R | |
+| `vault_disaster_recovery_export` | R | |
 
-### 6.19 Vault SSH 域（5，不变）
+> `vault_unlock_with_recovery_key` 已删除：恢复密钥解锁流程改为内部函数（`cmd/vault/recovery.rs` 中的解密辅助函数）+ 原生解锁窗口，不再暴露独立命令。原文保留该行为历史错误，归档时移除。
 
-| 命令 | CRUD |
-|---|---|
-| `vault_ssh_add_to_agent` | U |
-| `vault_ssh_remove_from_agent` | U |
-| `vault_ssh_list_agent` | R |
-| `vault_ssh_auto_add_all` | U |
-| `vault_ssh_is_agent_running` | R |
+### 6.19 Vault SSH 域（7，不变）
 
-### 6.20 Vault Sync 域（14 → 10）
+| 命令 | CRUD | 备注 |
+|---|---|---|
+| `vault_ssh_add_to_agent` | U | |
+| `vault_ssh_remove_from_agent` | U | |
+| `vault_ssh_list_agent` | R | |
+| `vault_ssh_auto_add_all` | U | |
+| `vault_ssh_is_agent_running` | R | |
+| `vault_ssh_parse_key` | R | 后续新增：解析密钥元信息 |
+| `vault_ssh_key_meta` | R | 后续新增：密钥元信息查询 |
+
+### 6.20 Vault Sync 域（14 → 16）
 
 | 命令 | CRUD | 备注 |
 |---|---|---|
 | `vault_sync` | U | **新增**：action ∈ {pull, push, sync, forcePush} |
+| `vault_sync_last_time` | R | 后续新增：上次同步时间 |
 | `vault_git_init` | C | 合并：`url: Option<String>`，有 url 则 clone |
-| `vault_git_remote` | U | **新增**：mode ∈ {Add, Set}（`RemoteMode` enum） |
+| `vault_git_remote` | U | **新增**：mode ∈ {Add, Set}（`RemoteModeDto` enum） |
+| `vault_git_remove_remote` | D | 后续新增：移除远端 |
+| `vault_git_test_connection` | R | 后续新增：连接测试 |
 | `vault_get_sync_config` | R | |
 | `vault_set_sync_config` | U | |
 | `vault_resolve_conflict` | U | |
 | `vault_sync_readyness` | R | |
-| `vault_sync_prepare` | U | 两阶段提交 |
-| `vault_sync_finalize` | U | 两阶段提交（接受 `message: String` commit 消息） |
+| `vault_sync_remote_status` | R | 后续新增：远端状态 |
+| `vault_sync_conflicts` | R | 后续新增：冲突列表 |
+| `vault_sync_pending_removals` | R | 后续新增：待确认删除项 |
+| `vault_sync_confirm_removals` | U | 后续新增：确认删除项 |
+| `vault_sync_abort` | U | 后续新增：中止同步 |
+| `vault_sync_discard` | U | 后续新增：丢弃同步中间态 |
+
+> 两阶段提交命令 `vault_sync_prepare` / `vault_sync_finalize` 已删除：`prepare` / `finalize` / `finalize_force` 收归引擎内部（`assistant-vault::sync_engine::lifecycle`），由 `pull` / `push` / `sync_now` / `force_push` 内部调用，不再作为独立命令暴露。
 
 ### 6.21 Window 域（5，不变）
 
@@ -592,6 +631,32 @@ pub fn vault_git_remote(
 |---|---|
 | `get_storage_breakdown` | R |
 | `delete_attachments` | D |
+
+### 6.23 Vault History 域（3，后续新增）
+
+| 命令 | CRUD | 备注 |
+|---|---|---|
+| `vault_history_list` | R | 历史快照列表 |
+| `vault_history_preview` | R | 快照预览 |
+| `vault_history_restore` | U | 快照恢复 |
+
+### 6.24 Vault Conflict 域（2，后续新增）
+
+| 命令 | CRUD | 备注 |
+|---|---|---|
+| `vault_conflict_preview` | R | 冲突内容预览 |
+| `vault_conflict_reveal` | R | 冲突明文揭示（受 RevealGuard 限速） |
+
+### 6.25 归档总计
+
+| 分组 | 域数 | 命令数 |
+|---|---|---|
+| 宿主（`src-tauri/src/ipc.rs`） | 14 | 62 |
+| Vault 插件（`src-tauri/src/vault_plugin.rs`） | 10 | 69 |
+| **合计** | **24** | **131** |
+
+> 宿主 62 = Conversation 15 + Branch 4 + Chat 2 + Config 5 + Provider 5 + Orb 6 + App 4 + AgentMode 4 + Tool 5 + Compaction 2 + MascotAsset 2 + OsTool 1 + Window 5 + Storage 2
+> Vault 69 = Lifecycle 6 + Entries 13 + Reveal 4 + Audit 9 + Biometric 5 + Sync 16 + SSH 7 + Recovery 4 + History 3 + Conflict 2
 
 ---
 
@@ -698,17 +763,17 @@ pub fn vault_git_remote(
 | 4 | ~~`vault_export`（返回 String 版）~~ | Vault Entries | `vaultService.vaultExport()` | service 有定义但无 slice/组件调用 | ✅ §2.6 已删除 |
 | 5 | `set_launch_at_login` | Config | 无独立 service 方法 | 前端已迁移至 `patch_conf` | §2.5 简化 5 |
 
-### 9.4 C 类：预留命令（Rust 完整实现 + 前端 service 定义 + 无 UI 消费）
+### 9.4 C 类：预留命令（归档时状态）
 
 > 深入验证：Rust 端全部有完整实现（无 `todo!()` / `unimplemented!()` 桩代码），前端 service 层有 `invoke()` 调用，
 > 但无 slice/组件消费——属于"后端已就绪、前端 UI 未接入"的预留状态。
 
-| # | 命令 | 域 | Rust 实现 | 前端 service | 消费方 | 预留原因 | 建议 |
-|---|---|---|---|---|---|---|---|
-| 1 | `create_branch` | Branch | `conversations::create_branch()` 完整实现，含广播 `CHAT_MESSAGES_CHANGED` | `chatService.createBranch()` | 无组件调用 | 🔵 分支创建 UI（BranchCreatePanel）未实现 | 保留，标记 `// TODO: 接入 BranchCreatePanel` |
-| 2 | `vault_sync_prepare` | Vault Sync | `git_sync::prepare()` — fetch + 设置 upstream + pull，完整两阶段提交 prepare | `vaultService.syncPrepare()` | 无 slice/组件调用 | 🔵 两阶段提交 prepare 阶段，当前 sync 流程仅用 `syncNow`（pull+push 一步完成），prepare/finalize 拆分流程未接入 | 保留，标记 `// TODO: 接入两阶段 sync 流程` |
-| 3 | `vault_sync_finalize` | Vault Sync | `git_sync::finalize()` — commit all + push，完整两阶段提交 finalize | `vaultService.syncFinalize()` | 无 slice/组件调用 | 🔵 同上，与 `vault_sync_prepare` 配对使用 | 保留，与 #2 配对 |
-| 4 | `vault_change_master_password` | Vault Entries | `vault::change_master_password()` 完整实现 | `vaultService.changeMasterPassword()` | 无 slice/组件调用 | 🔵 改密 UI 未实现（安全敏感操作，需独立确认流程） | 保留，标记 `// TODO: 接入 VaultChangePasswordDialog` |
+| # | 命令 | 域 | Rust 实现 | 前端 service | 消费方 | 归档时状态 |
+|---|---|---|---|---|---|---|
+| 1 | `create_branch` | Branch | `conversations::create_branch()` 完整实现，含广播 `CHAT_MESSAGES_CHANGED` | `chatService.createBranch()` | 无组件调用 | 仍为预留（BranchCreatePanel 未实现），建议保留 |
+| 2 | ~~`vault_sync_prepare`~~ | Vault Sync | `git_sync::prepare()` | 已移除 | — | ✅ 命令已删除，`prepare` 收归引擎内部，由 `pull`/`sync_now` 调用 |
+| 3 | ~~`vault_sync_finalize`~~ | Vault Sync | `git_sync::finalize()` | 已移除 | — | ✅ 命令已删除，`finalize`/`finalize_force` 收归引擎内部 |
+| 4 | `vault_change_master_password` | Vault Entries | `vault::change_master_password()` 完整实现 | `vaultService.changeMasterPassword()` | ✅ `ChangePasswordTab.tsx` | ✅ 已接入 UI，不再是预留 |
 
 ### 9.5 勘误
 
@@ -749,20 +814,22 @@ StorageSettings.tsx:95  → storageService.deleteAttachments(ids)
 
 | 分类 | 数量 | 处置 | 状态 |
 |---|---|---|---|
-| A. 可直接删除 | 4 | 移除 Rust 命令 + lib.rs 注册 | ✅ 全部已完成 |
+| A. 可直接删除 | 4 | 移除 Rust 命令 + 注册 | ✅ 全部已完成 |
 | A'. 零调用但需保留 | 3 | 保留命令，补前端 service 定义 | ✅ 已补 service |
-| B. 功能已被覆盖 | 5 | 按简化方案执行 | ✅ 4 已完成（#4 vault_export 已删除，#1-3 由简化1-3覆盖，#5 由简化5覆盖） |
-| C. 预留未接入 UI | 4 | 标记 TODO，产品规划确认后决定 | — 保留 |
-| D. 简化方案已覆盖 | （见 §2） | 按 §5 渐变路线 | ✅ 简化1-6已完成，简化7未开始 |
-| **当前状态** | | **127 → 117**（已删 10 个命令） | **剩余简化7可再减 4 → 113** |
+| B. 功能已被覆盖 | 5 | 按简化方案执行 | ✅ 全部已完成（#4 `vault_export` 已删除，#1-3 由简化 1-3 覆盖，#5 由简化 5 覆盖） |
+| C. 预留未接入 UI | 4 | 标记 TODO，产品规划确认后决定 | ✅ 已收敛：#2/#3 命令删除并入引擎内部，#4 已接入 UI，#1 `create_branch` 仍预留 |
+| D. 简化方案已覆盖 | （见 §2） | 按 §5 渐变路线 | ✅ 简化 1-7 全部完成 |
+| **当前状态** | | **127 → 113**（本规约删除 14 个命令） | **归档时实测注册 131 个**（+18 为后续新增功能，见归档说明） |
 
-### 9.7 建议执行顺序
+### 9.7 执行顺序与归档结论
 
 1. ~~**Phase 0（零风险）**：删除 A 类 4 个命令~~ — ✅ 已完成
-2. **Phase 0.5（补全 A' 类）**：为 A' 类 3 个命令补前端 service 定义，使其可被前端主动调用 — ✅ 已完成
+2. ~~**Phase 0.5（补全 A' 类）**：为 A' 类 3 个命令补前端 service 定义~~ — ✅ 已完成
 3. ~~**Phase 1-3**：按 §5 渐变路线执行 B 类 + D 类简化（简化 1-6）~~ — ✅ 已完成
-4. **Phase 1-3（简化 7）**：Vault Sync 域合并 — ❌ 未开始
-5. **Phase 4（产品确认）**：C 类 4 个预留命令与产品团队确认是否接入 UI 或移除：
-   - `create_branch`：分支对话是核心功能差异化，建议保留
-   - `vault_sync_prepare` / `vault_sync_finalize`：两阶段提交是 sync 可靠性保障，建议保留
-   - `vault_change_master_password`：安全敏感操作，建议保留并优先实现 UI
+4. ~~**Phase 1-3（简化 7）**：Vault Sync 域合并~~ — ✅ 已完成
+5. **Phase 4（产品确认）**：C 类预留命令收敛结果：
+   - `create_branch`：仍为预留（分支创建 UI 未实现），建议保留 — 待产品规划
+   - ~~`vault_sync_prepare` / `vault_sync_finalize`~~：已删除命令，两阶段提交收归引擎内部，由 `pull` / `sync_now` 自动调用 — ✅ 已收敛
+   - ~~`vault_change_master_password`~~：已接入 `ChangePasswordTab` UI — ✅ 已收敛
+
+> **归档结论**：本规约的简化目标（127 → 113）已全部达成，所有被删除命令均已从注册表移除。归档时注册命令 131 个，超出部分（18 个）全部来自规约生成后的新功能，非本规约遗留项。后续命令增删请直接以 `ipc.rs` / `vault_plugin.rs` 为准。

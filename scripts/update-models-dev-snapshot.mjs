@@ -17,11 +17,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -189,10 +185,7 @@ function validateProvenance(provenance, snapshotText, licenseText) {
 
 function checkAssets() {
   for (const path of [SNAPSHOT_PATH, LICENSE_PATH]) {
-    assert(
-      existsSync(path),
-      `required models.dev asset is missing: ${path}`,
-    );
+    assert(existsSync(path), `required models.dev asset is missing: ${path}`);
   }
 
   const snapshotText = readFileSync(SNAPSHOT_PATH, "utf8");
@@ -294,14 +287,10 @@ async function updateAssets(args) {
         console.warn(
           "Upstream models.dev license changed. Review and update manually if needed.",
         );
-        console.warn(
-          "Keeping local license. Use --license-file to override.",
-        );
+        console.warn("Keeping local license. Use --license-file to override.");
       }
     } catch {
-      console.warn(
-        "Could not fetch upstream license; keeping local copy.",
-      );
+      console.warn("Could not fetch upstream license; keeping local copy.");
     }
   } else {
     const fetched = await fetchBytes(

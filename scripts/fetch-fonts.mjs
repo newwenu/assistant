@@ -32,15 +32,11 @@ const FAMILIES = [
 ];
 
 const FONT_DIR = new URL("../public/fonts/", import.meta.url);
-const OUT_CSS = new URL(
-  "../src/assets/styles/fonts.css",
-  import.meta.url,
-);
+const OUT_CSS = new URL("../src/assets/styles/fonts.css", import.meta.url);
 
 function parseFaces(css, family) {
   const faces = [];
-  const re =
-    /\/\*\s*([a-z0-9-]+)\s*\*\/\s*@font-face\s*\{([^}]+)\}/gi;
+  const re = /\/\*\s*([a-z0-9-]+)\s*\*\/\s*@font-face\s*\{([^}]+)\}/gi;
   let match;
   while ((match = re.exec(css)) !== null) {
     const [, subset, body] = match;
@@ -62,8 +58,7 @@ function parseFaces(css, family) {
 async function main() {
   await mkdir(FONT_DIR, { recursive: true });
   for (const existing of await readdir(FONT_DIR).catch(() => [])) {
-    if (existing.endsWith(".woff2"))
-      await rm(new URL(existing, FONT_DIR));
+    if (existing.endsWith(".woff2")) await rm(new URL(existing, FONT_DIR));
   }
 
   const chunks = [
@@ -73,8 +68,7 @@ async function main() {
   for (const { family, slug, weights } of FAMILIES) {
     const href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replace(/%20/g, "+")}:wght@${weights.join(";")}&display=swap`;
     const res = await fetch(href, { headers: { "User-Agent": UA } });
-    if (!res.ok)
-      throw new Error(`${family}: ${res.status} ${res.statusText}`);
+    if (!res.ok) throw new Error(`${family}: ${res.status} ${res.statusText}`);
     const css = await res.text();
 
     const faces = parseFaces(css, family);
@@ -129,9 +123,7 @@ async function main() {
   }
 
   await writeFile(OUT_CSS, chunks.join("\n"));
-  console.log(
-    `wrote ${join("src", "assets", "styles", "fonts.css")}`,
-  );
+  console.log(`wrote ${join("src", "assets", "styles", "fonts.css")}`);
 }
 
 main().catch((error) => {

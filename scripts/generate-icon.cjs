@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
 const SIZE = 1024;
 const CX = SIZE / 2;
@@ -9,7 +9,7 @@ const INNER_R = 280;
 const NUM_POINTS = 17;
 const OUTER_CORNER_R = 42;
 const INNER_CORNER_R = 16;
-const FILL = '#00d992';
+const FILL = "#00d992";
 
 function starPoints(cx, cy, outerR, innerR, n) {
   const points = [];
@@ -79,7 +79,7 @@ function roundedStarPath(points, outerCornerR, innerCornerR) {
     d += ` L ${next.t1x.toFixed(2)} ${next.t1y.toFixed(2)}`;
   }
 
-  d += ' Z';
+  d += " Z";
   return d;
 }
 
@@ -101,6 +101,6 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${S
   >A</text>
 </svg>`;
 
-const outPath = path.join(__dirname, 'app-icon.svg');
-fs.writeFileSync(outPath, svg, 'utf8');
+const outPath = path.join(__dirname, "app-icon.svg");
+fs.writeFileSync(outPath, svg, "utf8");
 console.log(`Generated: ${outPath}`);
