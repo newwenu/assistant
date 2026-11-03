@@ -1,5 +1,3 @@
-use rusqlite::params;
-
 use assistant_crypto::vault_crypto::types::CipherAlgorithm;
 use assistant_crypto::vault_crypto::VaultCrypto;
 
@@ -86,60 +84,24 @@ impl SecurityDbState {
         Ok(entries)
     }
 
-    pub fn get_entry(&self, id: &str) -> Result<VaultEntryDetail, VaultError> {
+    pub fn count_entries(&self) -> Result<u32, VaultError> {
         let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
 
-        let result: Result<VaultEntryDetail, rusqlite::Error> = conn.query_row(
-            "SELECT id, title, username, url, category, encrypted_password, encrypted_notes, \
-             encrypted_totp_secret, encrypted_custom_fields, tags, is_favorite, revision, \
-             created_at, updated_at \
-             FROM vault_entries WHERE id = ?1 AND deleted_at IS NULL",
-            params![id],
-            |row| {
-                let category_str: String = row.get("category")?;
-                let tags_json: String = row.get("tags")?;
-                let encrypted_password: Option<String> = row.get("encrypted_password")?;
-                let encrypted_notes: Option<String> = row.get("encrypted_notes")?;
-                let encrypted_totp: Option<String> = row.get("encrypted_totp_secret")?;
-                let custom_fields_json: Option<String> = row.get("encrypted_custom_fields")?;
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM vault_entries WHERE deleted_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| VaultError::Database(e.to_string()))?;
 
-                let custom_field_names: Vec<String> = custom_fields_json
-                    .and_then(|json| {
-                        let fields: Vec<serde_json::Value> = serde_json::from_str(&json).ok()?;
-                        Some(
-                            fields
-                                .iter()
-                                .filter_map(|f| f.get("name")?.as_str().map(String::from))
-                                .collect(),
-                        )
-                    })
-                    .unwrap_or_default();
+        Ok(count as u32)
+    }
 
-                Ok(VaultEntryDetail {
-                    id: row.get("id")?,
-                    category: VaultCategory::parse(&category_str).unwrap_or_default(),
-                    title: row.get("title")?,
-                    username: row.get("username")?,
-                    url: row.get("url")?,
-                    has_password: encrypted_password.is_some(),
-                    has_notes: encrypted_notes.is_some(),
-                    has_totp: encrypted_totp.is_some(),
-                    custom_field_names,
-                    tags: serde_json::from_str(&tags_json).unwrap_or_default(),
-                    is_favorite: row.get::<_, i64>("is_favorite")? != 0,
-                    revision: row.get::<_, i64>("revision")? as u64,
-                    created_at: row.get("created_at")?,
-                    updated_at: row.get("updated_at")?,
-                })
-            },
-        );
-
-        match result {
-            Ok(detail) => Ok(detail),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Err(VaultError::NotFound(id.to_string())),
-            Err(e) => Err(VaultError::Database(e.to_string())),
-        }
+    pub fn get_entry(&self, id: &str) -> Result<VaultEntryDetail, VaultError> {
+        let snapshot = self.snapshot(id)?;
+        Ok(VaultEntryDetail::from(&snapshot))
     }
 
     pub fn list_entry_ids(&self, include_deleted: bool) -> Result<Vec<String>, VaultError> {

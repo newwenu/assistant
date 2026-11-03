@@ -1,5 +1,4 @@
 use assistant_crypto::error::VaultError;
-use assistant_crypto::vault_crypto::totp::TotpResult;
 use assistant_sync::types::{
     EntryPreview, EntryPreviewField, Readyness, RemoteStatus, RemoteStatusErrorKind,
     RepositoryState, SyncConfig, SyncError, SyncResult,
@@ -8,7 +7,7 @@ use assistant_vault::dto::{
     ConflictFileDto, DisasterRecoveryResultDto, EntryPreviewDto, HibpAuditEntryDto,
     PendingRemovalsDto, ReadynessDto, RemoteModeDto, RemoteStatusDto, RemoteStatusErrorKindDto,
     RepositoryStateDto, SshKeyInfoDto, SshKeyMetaDto, SyncActionDto, SyncConfigDto, SyncResultDto,
-    TotpResultDto, UnreadableEntriesDto, UnreadableReasonDto, VaultErrorCode, VaultErrorDto,
+    TotpCodeDto, UnreadableEntriesDto, UnreadableReasonDto, VaultErrorCode, VaultErrorDto,
 };
 use serde_json::{json, to_value};
 
@@ -17,13 +16,6 @@ fn sample_sync_config() -> SyncConfig {
         remote_url: Some("https://example.invalid/synthetic-vault.git".into()),
         remote_name: "origin".into(),
         ssh_key_path: Some("synthetic/ssh/key".into()),
-    }
-}
-
-fn sample_totp_result() -> TotpResult {
-    TotpResult {
-        code: "000000".into(),
-        time_remaining: 12,
     }
 }
 
@@ -111,14 +103,16 @@ fn ssh_key_meta_dto_wire_is_frozen() {
 }
 
 #[test]
-fn totp_result_dto_is_one_to_one() {
-    let domain = sample_totp_result();
-    let dto = TotpResultDto::from(domain.clone());
-    assert_eq!(
-        to_value(&domain).unwrap(),
-        to_value(&dto).unwrap(),
-        "TotpResultDto must not change the wire format"
-    );
+fn totp_code_dto_wire_format() {
+    let dto = TotpCodeDto {
+        code: "000000".into(),
+        time_remaining: 12,
+        period: 30,
+    };
+    let value = to_value(&dto).unwrap();
+    assert_eq!(value["code"], "000000");
+    assert_eq!(value["timeRemaining"], 12);
+    assert_eq!(value["period"], 30);
 }
 
 #[test]

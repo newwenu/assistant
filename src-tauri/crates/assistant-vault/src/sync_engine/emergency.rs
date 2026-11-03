@@ -42,6 +42,10 @@ impl SyncEngine {
             .into_iter()
             .map(|entry| {
                 let imported = entry.into_import();
+                let totp = imported
+                    .totp_secret
+                    .as_deref()
+                    .and_then(crate::shared::totp::TotpConfig::from_stored);
                 VaultEntryExport {
                     category: imported.category,
                     title: imported.title,
@@ -49,7 +53,16 @@ impl SyncEngine {
                     url: imported.url,
                     password: imported.password,
                     notes: imported.notes,
-                    totp_secret: imported.totp_secret,
+                    totp_secret: totp
+                        .as_ref()
+                        .and_then(|config| config.secret().to_str().ok())
+                        .map(String::from),
+                    totp_digits: totp.as_ref().map(|config| config.digits()).unwrap_or(6),
+                    totp_period: totp.as_ref().map(|config| config.period()).unwrap_or(30),
+                    totp_algorithm: totp
+                        .as_ref()
+                        .map(|config| config.algorithm().as_str().to_string())
+                        .unwrap_or_else(|| "sha1".to_string()),
                     tags: imported.tags,
                     custom_fields: imported.custom_fields,
                     is_favorite: imported.is_favorite,

@@ -104,6 +104,9 @@ export const VaultSettingsPage: React.FC = () => {
             onPatchComplete={onPatchComplete}
           />
         </Form>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          {t("settings.vault.ssh.agent_location_hint")}
+        </Typography.Paragraph>
       </SettingsSection>
     </SettingsPageShell>
   );

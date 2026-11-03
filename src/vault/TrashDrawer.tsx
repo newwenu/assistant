@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Drawer, Button, Empty, Typography, Tooltip, App } from "antd";
 import { UndoOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "./core/vaultStore";
+import { useVaultShallow } from "./core/vaultStore";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import styles from "./vault.module.css";
 
@@ -15,7 +15,12 @@ export default function TrashDrawer({ open, onClose }: TrashDrawerProps) {
   const { t } = useTranslation();
   const { modal, message } = App.useApp();
   const { deletedEntries, loadDeletedEntries, restoreEntry, purgeDeleted } =
-    useVaultStore();
+    useVaultShallow((s) => ({
+      deletedEntries: s.deletedEntries,
+      loadDeletedEntries: s.loadDeletedEntries,
+      restoreEntry: s.restoreEntry,
+      purgeDeleted: s.purgeDeleted,
+    }));
 
   useEffect(() => {
     if (open) void loadDeletedEntries();

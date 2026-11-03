@@ -10,20 +10,28 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
+  padding: 8px 4px 8px 16px;
   border-bottom: 1px solid var(--ant-color-border);
 }
 
 .headerTitle {
+  flex: 1;
+  margin: 0 !important;
   font-size: 15px;
 }
 
+.autoLockHint {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .appBody {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
-  padding: 16px;
+  padding: 12px 16px 16px;
 }
 
 .appBody[data-wide="true"] {
@@ -40,8 +48,7 @@
 }
 
 .listPane[data-wide="true"] {
-  padding-right: 16px;
-  border-right: 1px solid var(--ant-color-border);
+  padding-right: 0;
 }
 
 .detailPane {
@@ -54,6 +61,23 @@
 
 .detailPane[data-wide="true"] {
   padding-left: 16px;
+  border-left: 1px solid var(--ant-color-border);
+}
+
+.listArea {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.detailOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--ant-color-bg-container);
 }
 
 .detailEmpty {
@@ -141,6 +165,15 @@
   min-width: 0;
 }
 
+.alertStack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
 .listHeader {
   display: flex;
   gap: 8px;
@@ -163,10 +196,30 @@
 .categoryOptions {
   display: flex;
   gap: 4px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   flex: 1;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.categoryOptions::-webkit-scrollbar {
+  display: none;
+}
+
+.activeFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.hibpProgress {
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .sortSelect {
@@ -244,7 +297,9 @@
 .entryTags {
   display: inline-flex;
   gap: 2px;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .entryTime {
@@ -262,6 +317,18 @@
   gap: 6px;
   flex-shrink: 0;
   min-width: 118px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.entryItem:hover .entryActions,
+.entryItem:focus-within .entryActions {
+  opacity: 1;
+}
+
+.entryItem:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
 }
 
 .entryActionButton {
@@ -470,6 +537,23 @@
   gap: 6px;
   font-size: 12px;
   color: var(--ant-color-text-secondary);
+}
+
+.syncStateButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  cursor: pointer;
+}
+
+.syncStateButton:hover {
+  text-decoration: underline;
 }
 
 .syncDot {

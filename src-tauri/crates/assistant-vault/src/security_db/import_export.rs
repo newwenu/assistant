@@ -24,6 +24,11 @@ impl SecurityDbState {
         let mut exports = Vec::new();
         for id in &ids {
             let decrypted = self.decrypt_entry(id)?;
+            let totp = decrypted
+                .totp_secret
+                .as_ref()
+                .and_then(|payload| payload.to_str().ok())
+                .and_then(crate::shared::totp::TotpConfig::from_stored);
             exports.push(VaultEntryExport {
                 category: decrypted.category,
                 title: decrypted.title,
@@ -39,11 +44,16 @@ impl SecurityDbState {
                     .as_ref()
                     .and_then(|pt| pt.to_str().ok())
                     .map(String::from),
-                totp_secret: decrypted
-                    .totp_secret
+                totp_secret: totp
                     .as_ref()
-                    .and_then(|pt| pt.to_str().ok())
+                    .and_then(|config| config.secret().to_str().ok())
                     .map(String::from),
+                totp_digits: totp.as_ref().map(|config| config.digits()).unwrap_or(6),
+                totp_period: totp.as_ref().map(|config| config.period()).unwrap_or(30),
+                totp_algorithm: totp
+                    .as_ref()
+                    .map(|config| config.algorithm().as_str().to_string())
+                    .unwrap_or_else(|| "sha1".to_string()),
                 tags: decrypted.tags,
                 custom_fields: decrypted
                     .custom_fields
@@ -77,7 +87,13 @@ impl SecurityDbState {
                     && e.url == entry.url
                     && e.password == entry.password
                     && e.notes == entry.notes
-                    && e.totp_secret == entry.totp_secret
+                    && e.totp_secret.as_deref()
+                        == entry
+                            .totp
+                            .as_ref()
+                            .and_then(|totp| totp.secret.as_deref())
+                            .map(str::trim)
+                            .filter(|secret| !secret.is_empty())
                     && e.tags == entry.tags
                     && e.is_favorite == entry.is_favorite
                     && custom_fields_eq(&e.custom_fields, &entry.custom_fields)

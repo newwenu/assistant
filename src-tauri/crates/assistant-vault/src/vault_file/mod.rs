@@ -92,8 +92,8 @@ impl VaultFileManager {
                 })
                 .collect(),
             totp_secret: snapshot.totp_secret.clone(),
-            totp_digits: snapshot.totp_digits,
-            totp_period: snapshot.totp_period,
+            totp_digits: 6,
+            totp_period: 30,
             tags: snapshot.tags.clone(),
             is_favorite: snapshot.is_favorite,
             created_at: snapshot.created_at,
@@ -392,8 +392,6 @@ impl ImportedEntry {
             password: self.blob.password,
             notes: self.blob.notes,
             totp_secret: self.blob.totp_secret,
-            totp_digits: self.blob.totp_digits,
-            totp_period: self.blob.totp_period,
             custom_fields: self
                 .blob
                 .custom_fields

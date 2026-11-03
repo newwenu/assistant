@@ -31,16 +31,23 @@ function resetStore() {
     error: null,
     errorCode: null,
     entries: [],
+    totalEntryCount: 0,
     selectedEntry: null,
     searchQuery: "",
     categoryFilter: null,
     tagFilter: null,
+    onlyLeaked: false,
+    sortBy: "recent",
+    autoLockDeadline: null,
     revealedField: null,
     revealTimerId: null,
     totpCode: null,
     totpTimeRemaining: 0,
+    totpPeriod: 0,
     hibpLeaks: {},
     hibpAuditing: false,
+    hibpProgress: null,
+    hibpCancelRequested: false,
     biometricAvailable: false,
     biometricEnrolled: false,
     _biometricAvailableAt: 0,
@@ -74,8 +81,8 @@ describe("vaultStore lifecycle", () => {
   });
 
   afterEach(() => {
-    const { autoLockTimerId, totpTimerId } = useVaultStore.getState();
-    if (autoLockTimerId) clearTimeout(autoLockTimerId);
+    useVaultStore.getState().clearAutoLockTimer();
+    const { totpTimerId } = useVaultStore.getState();
     if (totpTimerId) clearInterval(totpTimerId);
   });
 
@@ -198,8 +205,7 @@ describe("vaultStore CRUD", () => {
   });
 
   afterEach(() => {
-    const { autoLockTimerId } = useVaultStore.getState();
-    if (autoLockTimerId) clearTimeout(autoLockTimerId);
+    useVaultStore.getState().clearAutoLockTimer();
   });
 
   it("createEntry → returns detail and reloads entries", async () => {
@@ -548,7 +554,7 @@ describe("vaultStore reveal & TOTP", () => {
 
   it("generateTotp → sets totpCode and totpTimeRemaining", async () => {
     mockCmd("vault_totp_generate", () =>
-      Promise.resolve({ code: "123456", timeRemaining: 25 }),
+      Promise.resolve({ code: "123456", timeRemaining: 25, period: 30 }),
     );
 
     const store = useVaultStore.getState();
@@ -557,12 +563,14 @@ describe("vaultStore reveal & TOTP", () => {
     const state = useVaultStore.getState();
     expect(state.totpCode).toBe("123456");
     expect(state.totpTimeRemaining).toBe(25);
+    expect(state.totpPeriod).toBe(30);
   });
 
   it("stopTotpTimer → clears TOTP state", () => {
     useVaultStore.setState({
       totpCode: "123456",
       totpTimeRemaining: 15,
+      totpPeriod: 30,
       totpTimerId: setInterval(() => {}, 99999),
     });
 
@@ -572,6 +580,7 @@ describe("vaultStore reveal & TOTP", () => {
     const state = useVaultStore.getState();
     expect(state.totpCode).toBeNull();
     expect(state.totpTimeRemaining).toBe(0);
+    expect(state.totpPeriod).toBe(0);
     expect(state.totpTimerId).toBeNull();
   });
 });
@@ -609,9 +618,8 @@ describe("vaultStore biometric", () => {
   });
 
   afterEach(() => {
-    const { autoLockTimerId, _biometricRetryTimerId } =
-      useVaultStore.getState();
-    if (autoLockTimerId) clearTimeout(autoLockTimerId);
+    useVaultStore.getState().clearAutoLockTimer();
+    const { _biometricRetryTimerId } = useVaultStore.getState();
     if (_biometricRetryTimerId) clearTimeout(_biometricRetryTimerId);
   });
 
@@ -738,8 +746,7 @@ describe("vaultStore recovery key", () => {
   });
 
   afterEach(() => {
-    const { autoLockTimerId } = useVaultStore.getState();
-    if (autoLockTimerId) clearTimeout(autoLockTimerId);
+    useVaultStore.getState().clearAutoLockTimer();
   });
 
   it("generateRecoveryKey → returns key and sets recoveryKeySet", async () => {

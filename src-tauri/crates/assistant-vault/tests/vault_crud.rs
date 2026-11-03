@@ -21,7 +21,7 @@ fn full_crud_lifecycle() {
         url: Some("https://github.com".to_string()),
         password: Some("ghp_supersecret123".to_string()),
         notes: Some("Personal account".to_string()),
-        totp_secret: None,
+        totp: None,
         tags: vec!["dev".to_string()],
         custom_fields: vec![],
         is_favorite: true,
@@ -50,7 +50,7 @@ fn full_crud_lifecycle() {
         url: Some("https://github.com".to_string()),
         password: Some("ghp_newsecret456".to_string()),
         notes: Some("Updated notes".to_string()),
-        totp_secret: None,
+        totp: None,
         tags: vec!["dev".to_string(), "work".to_string()],
         custom_fields: vec![],
         is_favorite: false,
@@ -88,7 +88,7 @@ fn create_entry_with_protected_custom_field() {
         url: None,
         password: Some("aws_secret_key".to_string()),
         notes: None,
-        totp_secret: None,
+        totp: None,
         tags: vec![],
         custom_fields: vec![
             CustomFieldInput {
@@ -138,7 +138,12 @@ fn create_entry_with_totp() {
         url: Some("https://accounts.google.com".to_string()),
         password: Some("google_pw".to_string()),
         notes: None,
-        totp_secret: Some("JBSWY3DPEHPK3PXP".to_string()),
+        totp: Some(assistant_vault::dto::TotpInputDto {
+            secret: Some("JBSWY3DPEHPK3PXP".to_string()),
+            digits: 6,
+            period: 30,
+            algorithm: assistant_vault::dto::TotpAlgorithmDto::Sha1,
+        }),
         tags: vec![],
         custom_fields: vec![],
         is_favorite: false,
@@ -148,8 +153,9 @@ fn create_entry_with_totp() {
     let detail = db.get_entry(&id).unwrap();
     assert!(detail.has_totp);
 
-    let totp_secret = db.decrypt_totp_secret(&id).unwrap();
-    assert_eq!(totp_secret.expose_str(), "JBSWY3DPEHPK3PXP");
+    let totp = db.snapshot(&id).unwrap().totp_secret.unwrap();
+    let config = assistant_vault::shared::TotpConfig::from_stored(&totp).unwrap();
+    assert_eq!(config.secret().to_str().unwrap(), "JBSWY3DPEHPK3PXP");
 
     cleanup(&path);
 }
@@ -176,7 +182,7 @@ fn list_entries_filter_by_category() {
                 url: None,
                 password: None,
                 notes: None,
-                totp_secret: None,
+                totp: None,
                 tags: vec![],
                 custom_fields: vec![],
                 is_favorite: false,
@@ -219,7 +225,7 @@ fn list_entries_search_by_title() {
                 url: None,
                 password: None,
                 notes: None,
-                totp_secret: None,
+                totp: None,
                 tags: vec![],
                 custom_fields: vec![],
                 is_favorite: false,
@@ -256,7 +262,7 @@ fn delete_entry_is_soft_delete() {
                 url: None,
                 password: None,
                 notes: Some("will be deleted".to_string()),
-                totp_secret: None,
+                totp: None,
                 tags: vec![],
                 custom_fields: vec![],
                 is_favorite: false,
@@ -289,7 +295,7 @@ fn operations_on_locked_vault_fail() {
         url: None,
         password: None,
         notes: None,
-        totp_secret: None,
+        totp: None,
         tags: vec![],
         custom_fields: vec![],
         is_favorite: false,
@@ -326,7 +332,7 @@ fn update_nonexistent_entry_fails() {
         url: None,
         password: None,
         notes: None,
-        totp_secret: None,
+        totp: None,
         tags: vec![],
         custom_fields: vec![],
         is_favorite: false,
@@ -355,7 +361,7 @@ fn change_master_password_and_relock_unlock() {
                 url: None,
                 password: Some("secret123".to_string()),
                 notes: None,
-                totp_secret: None,
+                totp: None,
                 tags: vec![],
                 custom_fields: vec![],
                 is_favorite: false,
@@ -442,7 +448,7 @@ fn purge_deleted_removes_only_soft_deleted_entries() {
         url: None,
         password: None,
         notes: None,
-        totp_secret: None,
+        totp: None,
         tags: vec![],
         custom_fields: vec![],
         is_favorite: false,

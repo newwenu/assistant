@@ -122,9 +122,9 @@ fn write_imported_entry_in(
         conn.execute(
             "UPDATE vault_entries SET title = ?1, username = ?2, url = ?3, category = ?4, \
              encrypted_password = ?5, encrypted_notes = ?6, encrypted_custom_fields = ?7, \
-             encrypted_totp_secret = ?8, totp_digits = ?9, totp_period = ?10, tags = ?11, \
-             is_favorite = ?12, revision = ?13, updated_at = ?14, deleted_at = NULL \
-             WHERE id = ?15",
+             encrypted_totp_secret = ?8, tags = ?9, \
+             is_favorite = ?10, revision = ?11, updated_at = ?12, deleted_at = NULL \
+             WHERE id = ?13",
             params![
                 entry.title,
                 entry.username,
@@ -134,8 +134,6 @@ fn write_imported_entry_in(
                 encrypted_notes,
                 encrypted_custom_fields,
                 encrypted_totp,
-                entry.totp_digits as i64,
-                entry.totp_period as i64,
                 tags_json,
                 entry.is_favorite as i64,
                 revision as i64,
@@ -153,9 +151,9 @@ fn write_imported_entry_in(
         conn.execute(
             "INSERT INTO vault_entries \
              (id, title, username, url, category, encrypted_password, encrypted_notes, \
-              encrypted_custom_fields, encrypted_totp_secret, totp_digits, totp_period, tags, \
+              encrypted_custom_fields, encrypted_totp_secret, tags, \
               is_favorite, revision, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 entry.id,
                 entry.title,
@@ -166,8 +164,6 @@ fn write_imported_entry_in(
                 encrypted_notes,
                 encrypted_custom_fields,
                 encrypted_totp,
-                entry.totp_digits as i64,
-                entry.totp_period as i64,
                 tags_json,
                 entry.is_favorite as i64,
                 revision as i64,
@@ -217,9 +213,9 @@ fn upsert_imported_in(
             conn.execute(
                 "UPDATE vault_entries SET title = ?1, username = ?2, url = ?3, category = ?4, \
                  encrypted_password = ?5, encrypted_notes = ?6, encrypted_custom_fields = ?7, \
-                 encrypted_totp_secret = ?8, totp_digits = ?9, totp_period = ?10, tags = ?11, \
-                 is_favorite = ?12, revision = ?13, updated_at = ?14 \
-                 WHERE id = ?15 AND deleted_at IS NULL",
+                 encrypted_totp_secret = ?8, tags = ?9, \
+                 is_favorite = ?10, revision = ?11, updated_at = ?12 \
+                 WHERE id = ?13 AND deleted_at IS NULL",
                 params![
                     entry.title,
                     entry.username,
@@ -229,8 +225,6 @@ fn upsert_imported_in(
                     encrypted_notes,
                     encrypted_custom_fields,
                     encrypted_totp,
-                    entry.totp_digits as i64,
-                    entry.totp_period as i64,
                     tags_json,
                     entry.is_favorite as i64,
                     entry.revision as i64,
@@ -258,9 +252,9 @@ fn upsert_imported_in(
             conn.execute(
                 "INSERT INTO vault_entries \
                  (id, title, username, url, category, encrypted_password, encrypted_notes, \
-                  encrypted_custom_fields, encrypted_totp_secret, totp_digits, totp_period, tags, \
+                  encrypted_custom_fields, encrypted_totp_secret, tags, \
                   is_favorite, revision, created_at, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     entry.id,
                     entry.title,
@@ -271,8 +265,6 @@ fn upsert_imported_in(
                     encrypted_notes,
                     encrypted_custom_fields,
                     encrypted_totp,
-                    entry.totp_digits as i64,
-                    entry.totp_period as i64,
                     tags_json,
                     entry.is_favorite as i64,
                     entry.revision as i64,

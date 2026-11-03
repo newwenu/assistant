@@ -29,7 +29,7 @@ import { translateKey } from "@/i18n";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import { useConfGroup } from "@/settings/core/useConfGroup";
 import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
-import { useVaultStore } from "../core/vaultStore";
+import { useVaultShallow, useVaultStore } from "../core/vaultStore";
 import { deriveSyncDisplay, remoteErrorText } from "../core/syncDisplay";
 import type {
   SyncConfig,
@@ -125,7 +125,35 @@ export default function VaultSyncSettings({
     gitClone,
     gitTestConnection,
     syncAbort,
-  } = useVaultStore();
+  } = useVaultShallow((s) => ({
+    syncReadyness: s.syncReadyness,
+    remoteStatus: s.remoteStatus,
+    remoteChecking: s.remoteChecking,
+    syncConfig: s.syncConfig,
+    syncing: s.syncing,
+    syncResult: s.syncResult,
+    syncError: s.syncError,
+    syncLastAt: s.syncLastAt,
+    pendingRemovals: s.pendingRemovals,
+    error: s.error,
+    errorCode: s.errorCode,
+    entries: s.entries,
+    syncNow: s.syncNow,
+    syncPull: s.syncPull,
+    syncPush: s.syncPush,
+    loadSyncConfig: s.loadSyncConfig,
+    saveSyncConfig: s.saveSyncConfig,
+    loadSyncReadyness: s.loadSyncReadyness,
+    loadRemoteStatus: s.loadRemoteStatus,
+    loadPendingRemovals: s.loadPendingRemovals,
+    loadSyncLastTime: s.loadSyncLastTime,
+    confirmRemovals: s.confirmRemovals,
+    loadEntries: s.loadEntries,
+    gitInit: s.gitInit,
+    gitClone: s.gitClone,
+    gitTestConnection: s.gitTestConnection,
+    syncAbort: s.syncAbort,
+  }));
 
   const vaultConf = useConfGroup("vault");
   const sshHostsVisible = !navigator.platform.toLowerCase().includes("win");

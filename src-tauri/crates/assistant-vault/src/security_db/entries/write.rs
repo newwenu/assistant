@@ -4,6 +4,7 @@ use assistant_crypto::vault_crypto::types::{CipherAlgorithm, MasterKey};
 use assistant_crypto::vault_crypto::VaultCrypto;
 
 use crate::audit::{log as audit_log, AuditEvent};
+use crate::dto::totp::payload_from_input;
 use crate::dto::{VaultEntryCreate, VaultEntryUpdate};
 use crate::security_db::SecurityDbState;
 use crate::types::{VaultEntrySnapshot, VaultError};
@@ -147,9 +148,10 @@ fn create_entry_in(
     let entry_key = VaultCrypto::derive_entry_key(mk, &id);
     let now = chrono::Utc::now().timestamp_millis();
 
+    let totp_payload = payload_from_input(entry.totp.as_ref());
     let encrypted_password = encrypt_opt(entry.password.as_deref(), entry_key.expose(), algo)?;
     let encrypted_notes = encrypt_opt(entry.notes.as_deref(), entry_key.expose(), algo)?;
-    let encrypted_totp = encrypt_opt(entry.totp_secret.as_deref(), entry_key.expose(), algo)?;
+    let encrypted_totp = encrypt_opt(totp_payload.as_deref(), entry_key.expose(), algo)?;
     let encrypted_custom_fields =
         encrypt_custom_fields(&entry.custom_fields, entry_key.expose(), algo)?;
     let tags_json =
@@ -194,7 +196,18 @@ fn update_entry_in(
 
     let encrypted_password = encrypt_opt(entry.password.as_deref(), entry_key.expose(), algo)?;
     let encrypted_notes = encrypt_opt(entry.notes.as_deref(), entry_key.expose(), algo)?;
-    let encrypted_totp = encrypt_opt(entry.totp_secret.as_deref(), entry_key.expose(), algo)?;
+    // None = 保持不变；Some(None) = 清除；Some(Some(_)) = 整体替换
+    let encrypted_totp: Option<Option<String>> = match entry.totp.as_ref() {
+        None => None,
+        Some(input) => match payload_from_input(Some(input)) {
+            Some(payload) => Some(encrypt_opt(
+                Some(payload.as_str()),
+                entry_key.expose(),
+                algo,
+            )?),
+            None => Some(None),
+        },
+    };
     let encrypted_custom_fields =
         encrypt_custom_fields(&entry.custom_fields, entry_key.expose(), algo)?;
 
@@ -222,9 +235,13 @@ fn update_entry_in(
         set_clauses.push(format!("encrypted_notes = ?{}", param_idx));
         param_idx += 1;
     }
-    if encrypted_totp.is_some() {
-        set_clauses.push(format!("encrypted_totp_secret = ?{}", param_idx));
-        param_idx += 1;
+    match &encrypted_totp {
+        None => {}
+        Some(None) => set_clauses.push("encrypted_totp_secret = NULL".to_string()),
+        Some(Some(_)) => {
+            set_clauses.push(format!("encrypted_totp_secret = ?{}", param_idx));
+            param_idx += 1;
+        }
     }
 
     let sql = format!(
@@ -250,7 +267,7 @@ fn update_entry_in(
     if let Some(en) = encrypted_notes {
         params.push(Box::new(en));
     }
-    if let Some(et) = encrypted_totp {
+    if let Some(Some(et)) = encrypted_totp {
         params.push(Box::new(et));
     }
     params.push(Box::new(id.to_string()));

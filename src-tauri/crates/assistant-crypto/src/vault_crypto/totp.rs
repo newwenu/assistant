@@ -1,7 +1,11 @@
+use std::str::FromStr;
+
 use data_encoding::BASE32;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use sha2::{Sha256, Sha512};
+
+use crate::error::VaultError;
 
 type HmacSha1 = Hmac<Sha1>;
 type HmacSha256 = Hmac<Sha256>;
@@ -11,8 +15,7 @@ const DEFAULT_STEP: u32 = 30;
 const DEFAULT_DIGITS: u32 = 6;
 const MAX_DIGITS: u32 = 10;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TotpAlgorithm {
     #[default]
     Sha1,
@@ -20,15 +23,47 @@ pub enum TotpAlgorithm {
     Sha512,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TotpParams {
+impl TotpAlgorithm {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Sha1 => "sha1",
+            Self::Sha256 => "sha256",
+            Self::Sha512 => "sha512",
+        }
+    }
+}
+
+impl FromStr for TotpAlgorithm {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "SHA1" | "SHA-1" => Ok(Self::Sha1),
+            "SHA256" | "SHA-256" => Ok(Self::Sha256),
+            "SHA512" | "SHA-512" => Ok(Self::Sha512),
+            other => Err(format!("unknown TOTP algorithm: {}", other)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TotpSpec {
     pub digits: u32,
     pub period: u32,
     pub algorithm: TotpAlgorithm,
 }
 
-impl Default for TotpParams {
+impl TotpSpec {
+    pub fn new(digits: u32, period: u32, algorithm: TotpAlgorithm) -> Self {
+        Self {
+            digits: digits.clamp(1, MAX_DIGITS),
+            period: period.max(1),
+            algorithm,
+        }
+    }
+}
+
+impl Default for TotpSpec {
     fn default() -> Self {
         Self {
             digits: DEFAULT_DIGITS,
@@ -38,36 +73,14 @@ impl Default for TotpParams {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TotpResult {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TotpCode {
     pub code: String,
     pub time_remaining: u32,
 }
 
-pub fn generate_totp(secret_b32: &str, params: &TotpParams) -> Result<TotpResult, String> {
-    let secret = decode_base32(secret_b32)?;
-    let code = compute_totp_code(&secret, params)?;
-    let time_remaining = time_remaining(params.period);
-    Ok(TotpResult {
-        code,
-        time_remaining,
-    })
-}
-
-pub fn time_remaining(period: u32) -> u32 {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let period = period as u64;
-    let remaining = period - (now % period);
-    remaining as u32
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ParsedOtpAuth {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedOtpAuthSpec {
     pub secret: String,
     pub digits: u32,
     pub period: u32,
@@ -76,9 +89,24 @@ pub struct ParsedOtpAuth {
     pub account: Option<String>,
 }
 
-pub fn from_otpauth_uri(uri: &str) -> Result<ParsedOtpAuth, String> {
+pub fn generate_at(secret: &[u8], spec: &TotpSpec, unix_time: u64) -> Result<TotpCode, VaultError> {
+    let code = compute_totp_code(secret, spec, unix_time)?;
+    Ok(TotpCode {
+        code,
+        time_remaining: time_remaining_at(unix_time, spec.period),
+    })
+}
+
+pub fn time_remaining_at(unix_time: u64, period: u32) -> u32 {
+    let period = period.max(1) as u64;
+    (period - (unix_time % period)) as u32
+}
+
+pub fn parse_otpauth(uri: &str) -> Result<ParsedOtpAuthSpec, VaultError> {
     if !uri.starts_with("otpauth://totp/") {
-        return Err("Invalid otpauth URI: must start with otpauth://totp/".to_string());
+        return Err(VaultError::Validation(
+            "Invalid otpauth URI: must start with otpauth://totp/".to_string(),
+        ));
     }
 
     let without_scheme = &uri["otpauth://totp/".len()..];
@@ -124,11 +152,7 @@ pub fn from_otpauth_uri(uri: &str) -> Result<ParsedOtpAuth, String> {
                 }
             }
             "algorithm" => {
-                algorithm = match value.to_uppercase().as_str() {
-                    "SHA256" | "SHA-256" => TotpAlgorithm::Sha256,
-                    "SHA512" | "SHA-512" => TotpAlgorithm::Sha512,
-                    _ => TotpAlgorithm::Sha1,
-                };
+                algorithm = TotpAlgorithm::from_str(value).unwrap_or_default();
             }
             "issuer" => issuer = Some(urldecode(value)),
             _ => {}
@@ -136,10 +160,12 @@ pub fn from_otpauth_uri(uri: &str) -> Result<ParsedOtpAuth, String> {
     }
 
     if secret.is_empty() {
-        return Err("otpauth URI missing secret parameter".to_string());
+        return Err(VaultError::Validation(
+            "otpauth URI missing secret parameter".to_string(),
+        ));
     }
 
-    Ok(ParsedOtpAuth {
+    Ok(ParsedOtpAuthSpec {
         secret,
         digits,
         period,
@@ -167,62 +193,61 @@ fn urldecode(s: &str) -> String {
     String::from_utf8(buf).unwrap_or_else(|_| s.to_string())
 }
 
-#[doc(hidden)]
-pub fn decode_base32(input: &str) -> Result<Vec<u8>, String> {
+pub fn decode_base32(input: &str) -> Result<Vec<u8>, VaultError> {
     let sanitized: String = input.chars().filter(|c| !c.is_whitespace()).collect();
 
     if sanitized.is_empty() {
-        return Err("Empty Base32 secret".to_string());
+        return Err(VaultError::Validation("Empty Base32 secret".to_string()));
     }
 
     let upper = sanitized.to_uppercase();
 
-    if upper.contains('=') {
-        BASE32
-            .decode(upper.as_bytes())
-            .map_err(|e| format!("Invalid Base32: {}", e))
+    let decoded = if upper.contains('=') {
+        BASE32.decode(upper.as_bytes())
     } else {
         let padded_len = upper.len().div_ceil(8) * 8;
         let padding_count = padded_len - upper.len();
-        let padded = upper + &"=".repeat(padding_count);
-        BASE32
-            .decode(padded.as_bytes())
-            .map_err(|e| format!("Invalid Base32: {}", e))
-    }
+        let padded = format!("{}{}", upper, "=".repeat(padding_count));
+        BASE32.decode(padded.as_bytes())
+    };
+
+    decoded.map_err(|e| VaultError::Validation(format!("Invalid Base32: {}", e)))
 }
 
-fn compute_totp_code(secret: &[u8], params: &TotpParams) -> Result<String, String> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let counter = now / (params.period as u64);
+fn compute_totp_code(secret: &[u8], spec: &TotpSpec, unix_time: u64) -> Result<String, VaultError> {
+    let period = spec.period.max(1) as u64;
+    let counter = unix_time / period;
     let counter_bytes = counter.to_be_bytes();
 
-    let hmac_result = match params.algorithm {
+    let hmac_result = match spec.algorithm {
         TotpAlgorithm::Sha1 => {
             let mut mac = HmacSha1::new_from_slice(secret)
-                .map_err(|e| format!("HMAC-SHA1 init failed: {}", e))?;
+                .map_err(|e| VaultError::Crypto(format!("HMAC-SHA1 init failed: {}", e)))?;
             mac.update(&counter_bytes);
             mac.finalize().into_bytes().to_vec()
         }
         TotpAlgorithm::Sha256 => {
             let mut mac = HmacSha256::new_from_slice(secret)
-                .map_err(|e| format!("HMAC-SHA256 init failed: {}", e))?;
+                .map_err(|e| VaultError::Crypto(format!("HMAC-SHA256 init failed: {}", e)))?;
             mac.update(&counter_bytes);
             mac.finalize().into_bytes().to_vec()
         }
         TotpAlgorithm::Sha512 => {
             let mut mac = HmacSha512::new_from_slice(secret)
-                .map_err(|e| format!("HMAC-SHA512 init failed: {}", e))?;
+                .map_err(|e| VaultError::Crypto(format!("HMAC-SHA512 init failed: {}", e)))?;
             mac.update(&counter_bytes);
             mac.finalize().into_bytes().to_vec()
         }
     };
 
-    let offset = (hmac_result.last().ok_or("HMAC result empty")? & 0x0f) as usize;
+    let offset = (hmac_result
+        .last()
+        .ok_or_else(|| VaultError::Crypto("HMAC result empty".to_string()))?
+        & 0x0f) as usize;
     if offset + 3 >= hmac_result.len() {
-        return Err("HMAC result too short for offset".to_string());
+        return Err(VaultError::Crypto(
+            "HMAC result too short for offset".to_string(),
+        ));
     }
 
     let binary: u32 = ((hmac_result[offset] as u32 & 0x7f) << 24)
@@ -230,13 +255,9 @@ fn compute_totp_code(secret: &[u8], params: &TotpParams) -> Result<String, Strin
         | ((hmac_result[offset + 2] as u32 & 0xff) << 8)
         | (hmac_result[offset + 3] as u32 & 0xff);
 
-    let digits = params_digits_clamped(params.digits);
+    let digits = spec.digits.clamp(1, MAX_DIGITS);
     let power = 10u64.pow(digits);
     let otp = (binary as u64) % power;
 
     Ok(format!("{:0width$}", otp, width = digits as usize))
-}
-
-fn params_digits_clamped(digits: u32) -> u32 {
-    digits.clamp(1, MAX_DIGITS)
 }

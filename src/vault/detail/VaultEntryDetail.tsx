@@ -20,7 +20,7 @@ import {
   HistoryOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "../core/vaultStore";
+import { useVaultShallow } from "../core/vaultStore";
 import type { SshKeyMeta, VaultErrorCode } from "../core/vault.types";
 import { vaultCategoryIcon } from "../core/vaultCategory";
 import { VAULT_TONES } from "../core/vaultColors";
@@ -49,6 +49,7 @@ export default function VaultEntryDetail({
     revealedField,
     totpCode,
     totpTimeRemaining,
+    totpPeriod,
     selectEntry,
     copyPassword,
     copyField,
@@ -66,7 +67,30 @@ export default function VaultEntryDetail({
     generateTotp,
     copyTotp,
     stopTotpTimer,
-  } = useVaultStore();
+  } = useVaultShallow((s) => ({
+    selectedEntry: s.selectedEntry,
+    revealedField: s.revealedField,
+    totpCode: s.totpCode,
+    totpTimeRemaining: s.totpTimeRemaining,
+    totpPeriod: s.totpPeriod,
+    selectEntry: s.selectEntry,
+    copyPassword: s.copyPassword,
+    copyField: s.copyField,
+    revealPassword: s.revealPassword,
+    revealNotes: s.revealNotes,
+    hideRevealedField: s.hideRevealedField,
+    clearRevealedField: s.clearRevealedField,
+    deleteEntry: s.deleteEntry,
+    setFavorite: s.setFavorite,
+    sshAddToAgent: s.sshAddToAgent,
+    sshRemoveFromAgent: s.sshRemoveFromAgent,
+    sshAgentKeys: s.sshAgentKeys,
+    sshListAgent: s.sshListAgent,
+    sshKeyMeta: s.sshKeyMeta,
+    generateTotp: s.generateTotp,
+    copyTotp: s.copyTotp,
+    stopTotpTimer: s.stopTotpTimer,
+  }));
 
   const [sshMeta, setSshMeta] = useState<SshKeyMeta | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -166,10 +190,10 @@ export default function VaultEntryDetail({
     modal.confirm({
       title: t("vault.entry.confirm_delete"),
       okType: "danger",
-      onOk: () => {
-        void deleteEntry(entryId);
-        onClose();
-      },
+      onOk: () =>
+        deleteEntry(entryId)
+          .then(() => onClose())
+          .catch(() => message.error(t("vault.entry.delete_failed"))),
     });
   };
 
@@ -267,7 +291,7 @@ export default function VaultEntryDetail({
             entryId={entryId}
             code={totpCode}
             timeRemaining={totpTimeRemaining}
-            period={30}
+            period={totpPeriod || selectedEntry.totpPeriod}
             onCopy={handleCopyTotp}
           />
         </div>

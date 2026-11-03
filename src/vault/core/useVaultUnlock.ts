@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useVaultStore } from "./vaultStore";
+import { useVaultShallow } from "./vaultStore";
 import { vaultService } from "./vault.service";
 import type { StrengthResult } from "./vault.types";
 
@@ -26,7 +26,27 @@ export function useVaultUnlock() {
     cancelDisasterRecovery,
     setDisasterRecoveryStep,
     disasterRecoveryExport,
-  } = useVaultStore();
+  } = useVaultShallow((s) => ({
+    isInitialized: s.isInitialized,
+    init: s.init,
+    unlock: s.unlock,
+    loading: s.loading,
+    error: s.error,
+    clearError: s.clearError,
+    unlockBiometric: s.unlockBiometric,
+    checkRecoveryKeySet: s.checkRecoveryKeySet,
+    checkBiometricAvailable: s.checkBiometricAvailable,
+    checkBiometricEnrolled: s.checkBiometricEnrolled,
+    biometricAvailable: s.biometricAvailable,
+    biometricEnrolled: s.biometricEnrolled,
+    recoveryKeySet: s.recoveryKeySet,
+    disasterRecoveryStep: s.disasterRecoveryStep,
+    disasterRecoveryResult: s.disasterRecoveryResult,
+    startDisasterRecovery: s.startDisasterRecovery,
+    cancelDisasterRecovery: s.cancelDisasterRecovery,
+    setDisasterRecoveryStep: s.setDisasterRecoveryStep,
+    disasterRecoveryExport: s.disasterRecoveryExport,
+  }));
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");

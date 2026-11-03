@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button, Space } from "antd";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
-import { useVaultStore } from "@/vault/core/vaultStore";
+import { useVaultShallow } from "@/vault/core/vaultStore";
 import { vaultService } from "@/vault/core/vault.service";
 import { vaultErrorMessage } from "@/vault/core/vaultError";
 import { useSettingMessage } from "@/settings/shared/useSettingMessage";
@@ -18,7 +18,15 @@ export function BiometricSwitchRender() {
     disenrollBiometric,
     checkBiometricAvailable,
     checkBiometricEnrolled,
-  } = useVaultStore();
+  } = useVaultShallow((s) => ({
+    isLocked: s.isLocked,
+    biometricAvailable: s.biometricAvailable,
+    biometricEnrolled: s.biometricEnrolled,
+    enrollBiometric: s.enrollBiometric,
+    disenrollBiometric: s.disenrollBiometric,
+    checkBiometricAvailable: s.checkBiometricAvailable,
+    checkBiometricEnrolled: s.checkBiometricEnrolled,
+  }));
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
 

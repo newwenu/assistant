@@ -12,6 +12,10 @@ import type {
 const log = createLogger("vaultStore");
 
 const DEFAULT_AUTO_LOCK_MINUTES = 5;
+const AUTO_LOCK_RESET_THROTTLE_MS = 500;
+
+let autoLockTimer: ReturnType<typeof setTimeout> | null = null;
+let lastAutoLockResetAt = 0;
 
 function getAutoLockMs(): number {
   const minutes = getConfValue("vault")?.vaultAutoLockMinutes;
@@ -24,7 +28,8 @@ export interface VaultLifecycleSlice {
   loading: boolean;
   error: string | null;
   errorCode: VaultErrorCode | null;
-  autoLockTimerId: ReturnType<typeof setTimeout> | null;
+  /** 自动锁定截止时间（unix 毫秒）；null 表示未计时或已锁定。 */
+  autoLockDeadline: number | null;
 
   init: (masterPassword: string) => Promise<void>;
   unlock: (masterPassword: string) => Promise<void>;
@@ -32,15 +37,23 @@ export interface VaultLifecycleSlice {
   changeMasterPassword: (current: string, newPassword: string) => Promise<void>;
   checkStatus: () => Promise<void>;
   clearError: () => void;
-  resetAutoLockTimer: () => void;
+  resetAutoLockTimer: (force?: boolean) => void;
+  clearAutoLockTimer: () => void;
 }
 
 type FullState = VaultLifecycleSlice & {
   entries: VaultEntrySummary[];
+  totalEntryCount: number;
   selectedEntry: VaultEntryDetail | null;
   revealedField: RevealedField | null;
   revealTimerId: ReturnType<typeof setTimeout> | null;
   clearRevealedField: () => void;
+  searchQuery: string;
+  categoryFilter: import("../vault.types").VaultCategory | null;
+  tagFilter: string | null;
+  onlyLeaked: boolean;
+  sortBy: import("./vaultEntriesSlice").VaultSortBy;
+  hibpLeaks: Record<string, number>;
   _biometricEnrolledAt: number;
   _recoveryKeySetAt: number;
 };
@@ -57,7 +70,7 @@ export function createLifecycleSlice(
     loading: false,
     error: null,
     errorCode: null,
-    autoLockTimerId: null,
+    autoLockDeadline: null,
 
     init: async (masterPassword) => {
       set({ loading: true, error: null });
@@ -70,7 +83,7 @@ export function createLifecycleSlice(
           _biometricEnrolledAt: 0,
           _recoveryKeySetAt: 0,
         });
-        get().resetAutoLockTimer();
+        get().resetAutoLockTimer(true);
       } catch (e) {
         log.error("init failed", e);
         set({
@@ -91,7 +104,7 @@ export function createLifecycleSlice(
           _biometricEnrolledAt: 0,
           _recoveryKeySetAt: 0,
         });
-        get().resetAutoLockTimer();
+        get().resetAutoLockTimer(true);
       } catch (e) {
         log.error("unlock failed", e);
         set({
@@ -103,20 +116,32 @@ export function createLifecycleSlice(
     },
 
     lock: async () => {
+      get().clearAutoLockTimer();
       try {
         await vaultService.lock();
         set({
           isLocked: true,
           entries: [],
+          totalEntryCount: 0,
           selectedEntry: null,
+          searchQuery: "",
+          categoryFilter: null,
+          tagFilter: null,
+          onlyLeaked: false,
+          sortBy: "recent",
+          hibpLeaks: {},
           _biometricEnrolledAt: 0,
           _recoveryKeySetAt: 0,
         });
         get().clearRevealedField();
-        const { autoLockTimerId } = get();
-        if (autoLockTimerId) clearTimeout(autoLockTimerId);
       } catch (e) {
         log.error("lock failed", e);
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+        });
+        get().resetAutoLockTimer(true);
+        throw e;
       }
     },
 
@@ -147,7 +172,7 @@ export function createLifecycleSlice(
           vaultService.isInitialized(),
         ]);
         set({ isLocked: locked, isInitialized: initialized });
-        if (!locked) get().resetAutoLockTimer();
+        if (!locked) get().resetAutoLockTimer(true);
       } catch (e) {
         log.error("checkStatus failed", e);
       }
@@ -155,13 +180,31 @@ export function createLifecycleSlice(
 
     clearError: () => set({ error: null, errorCode: null }),
 
-    resetAutoLockTimer: () => {
-      const { autoLockTimerId } = get();
-      if (autoLockTimerId) clearTimeout(autoLockTimerId);
-      const id = setTimeout(() => {
-        void get().lock();
-      }, getAutoLockMs());
-      set({ autoLockTimerId: id });
+    clearAutoLockTimer: () => {
+      if (autoLockTimer) {
+        clearTimeout(autoLockTimer);
+        autoLockTimer = null;
+      }
+      lastAutoLockResetAt = 0;
+      set({ autoLockDeadline: null });
+    },
+
+    resetAutoLockTimer: (force = false) => {
+      if (get().isLocked) return;
+      const now = Date.now();
+      if (!force && now - lastAutoLockResetAt < AUTO_LOCK_RESET_THROTTLE_MS) {
+        return;
+      }
+      lastAutoLockResetAt = now;
+      if (autoLockTimer) clearTimeout(autoLockTimer);
+      const deadline = now + getAutoLockMs();
+      autoLockTimer = setTimeout(() => {
+        autoLockTimer = null;
+        void get()
+          .lock()
+          .catch(() => {});
+      }, deadline - now);
+      set({ autoLockDeadline: deadline });
     },
   };
 }

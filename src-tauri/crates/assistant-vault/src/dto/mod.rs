@@ -24,7 +24,7 @@ pub use sync::{
     ReadynessDto, RemoteModeDto, RemoteStatusDto, RemoteStatusErrorKindDto, RepositoryStateDto,
     SyncActionDto, SyncConfigDto, SyncResultDto, UnreadableEntriesDto, UnreadableReasonDto,
 };
-pub use totp::{ParsedOtpAuthDto, TotpAlgorithmDto, TotpResultDto};
+pub use totp::{ParsedOtpAuthDto, TotpAlgorithmDto, TotpCodeDto, TotpInputDto};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -41,7 +41,7 @@ pub struct VaultEntryCreate {
     #[ts(optional = nullable)]
     pub notes: Option<String>,
     #[ts(optional = nullable)]
-    pub totp_secret: Option<String>,
+    pub totp: Option<TotpInputDto>,
     pub tags: Vec<String>,
     pub custom_fields: Vec<CustomFieldInput>,
     pub is_favorite: bool,
@@ -62,7 +62,7 @@ pub struct VaultEntryUpdate {
     #[ts(optional = nullable)]
     pub notes: Option<String>,
     #[ts(optional = nullable)]
-    pub totp_secret: Option<String>,
+    pub totp: Option<TotpInputDto>,
     pub tags: Vec<String>,
     pub custom_fields: Vec<CustomFieldInput>,
     pub is_favorite: bool,
@@ -94,6 +94,9 @@ pub struct VaultEntryDetail {
     pub has_password: bool,
     pub has_notes: bool,
     pub has_totp: bool,
+    pub totp_digits: u32,
+    pub totp_period: u32,
+    pub totp_algorithm: TotpAlgorithmDto,
     pub custom_field_names: Vec<String>,
     pub tags: Vec<String>,
     pub is_favorite: bool,

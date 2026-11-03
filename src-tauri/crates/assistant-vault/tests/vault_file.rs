@@ -30,8 +30,8 @@ fn export_import_roundtrip_preserves_all_fields() {
     assert_eq!(imported.blob.password, original.password);
     assert_eq!(imported.blob.notes, original.notes);
     assert_eq!(imported.blob.totp_secret, original.totp_secret);
-    assert_eq!(imported.blob.totp_digits, original.totp_digits);
-    assert_eq!(imported.blob.totp_period, original.totp_period);
+    assert_eq!(imported.blob.totp_digits, 6);
+    assert_eq!(imported.blob.totp_period, 30);
     assert_eq!(imported.blob.tags, original.tags);
     assert_eq!(imported.blob.is_favorite, original.is_favorite);
     assert_eq!(imported.blob.created_at, original.created_at);

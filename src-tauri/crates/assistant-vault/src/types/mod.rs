@@ -19,8 +19,6 @@ pub struct VaultEntrySnapshot {
     pub password: Option<String>,
     pub notes: Option<String>,
     pub totp_secret: Option<String>,
-    pub totp_digits: u32,
-    pub totp_period: u32,
     pub custom_fields: Vec<CustomFieldInput>,
     pub tags: Vec<String>,
     pub is_favorite: bool,
@@ -40,8 +38,6 @@ pub struct VaultEntryImport {
     pub password: Option<String>,
     pub notes: Option<String>,
     pub totp_secret: Option<String>,
-    pub totp_digits: u32,
-    pub totp_period: u32,
     pub custom_fields: Vec<CustomFieldInput>,
     pub tags: Vec<String>,
     pub is_favorite: bool,
@@ -126,6 +122,9 @@ pub struct VaultEntryExport {
     pub password: Option<String>,
     pub notes: Option<String>,
     pub totp_secret: Option<String>,
+    pub totp_digits: u32,
+    pub totp_period: u32,
+    pub totp_algorithm: String,
     pub tags: Vec<String>,
     pub custom_fields: Vec<CustomFieldInput>,
     pub is_favorite: bool,
@@ -142,6 +141,12 @@ pub struct VaultEntryCsvRow {
     pub password: Option<String>,
     pub notes: Option<String>,
     pub totp_secret: Option<String>,
+    #[serde(default = "default_totp_digits")]
+    pub totp_digits: u32,
+    #[serde(default = "default_totp_period")]
+    pub totp_period: u32,
+    #[serde(default = "default_totp_algorithm")]
+    pub totp_algorithm: String,
     #[serde(
         serialize_with = "serialize_tags_csv",
         deserialize_with = "deserialize_tags_csv",
@@ -151,6 +156,18 @@ pub struct VaultEntryCsvRow {
     pub is_favorite: bool,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+fn default_totp_digits() -> u32 {
+    6
+}
+
+fn default_totp_period() -> u32 {
+    30
+}
+
+fn default_totp_algorithm() -> String {
+    "sha1".to_string()
 }
 
 fn serialize_tags_csv<S: serde::Serializer>(tags: &[String], s: S) -> Result<S::Ok, S::Error> {
@@ -179,6 +196,9 @@ impl From<VaultEntryExport> for VaultEntryCsvRow {
             password: e.password,
             notes: e.notes,
             totp_secret: e.totp_secret,
+            totp_digits: e.totp_digits,
+            totp_period: e.totp_period,
+            totp_algorithm: e.totp_algorithm,
             tags: e.tags,
             is_favorite: e.is_favorite,
             created_at: e.created_at,
@@ -189,6 +209,15 @@ impl From<VaultEntryExport> for VaultEntryCsvRow {
 
 impl From<VaultEntryCsvRow> for crate::dto::VaultEntryCreate {
     fn from(r: VaultEntryCsvRow) -> Self {
+        let totp = r
+            .totp_secret
+            .as_ref()
+            .map(|secret| crate::dto::TotpInputDto {
+                secret: Some(secret.clone()),
+                digits: r.totp_digits,
+                period: r.totp_period,
+                algorithm: crate::dto::totp::algorithm_dto_from_str(&r.totp_algorithm),
+            });
         Self {
             category: r.category,
             title: r.title,
@@ -196,7 +225,7 @@ impl From<VaultEntryCsvRow> for crate::dto::VaultEntryCreate {
             url: r.url,
             password: r.password,
             notes: r.notes,
-            totp_secret: r.totp_secret,
+            totp,
             tags: r.tags,
             custom_fields: Vec::new(),
             is_favorite: r.is_favorite,

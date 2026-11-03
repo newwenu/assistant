@@ -6,7 +6,7 @@ import type {
   RevealResult,
   VaultEntryCreate,
   VaultEntryUpdate,
-  TotpResult,
+  TotpCode,
   ParsedOtpAuth,
   AuditLogEntry,
   StrengthResult,
@@ -39,7 +39,7 @@ export type {
   CustomFieldInput,
   VaultEntryCreate,
   VaultEntryUpdate,
-  TotpResult,
+  TotpCode,
   ParsedOtpAuth,
   AuditLogEntry,
   StrengthResult,
@@ -83,6 +83,8 @@ export const vaultService = {
     tag?: string,
   ): Promise<VaultEntrySummary[]> =>
     invoke("vault_list_entries", { category, search, tag }),
+
+  countEntries: (): Promise<number> => invoke("vault_count_entries"),
 
   getEntry: (id: string): Promise<VaultEntryDetail> =>
     invoke("vault_get_entry", { id }),
@@ -130,24 +132,10 @@ export const vaultService = {
   importVault: (path: string, format: "csv" | "json"): Promise<number> =>
     invoke("vault_import", { path, format }),
 
-  totpGenerate: (
-    id: string,
-    period?: number,
-    digits?: number,
-    algorithm?: string,
-  ): Promise<TotpResult> =>
-    invoke("vault_totp_generate", { id, period, digits, algorithm }),
+  totpGenerate: (id: string): Promise<TotpCode> =>
+    invoke("vault_totp_generate", { id }),
 
-  totpCopy: (
-    id: string,
-    period?: number,
-    digits?: number,
-    algorithm?: string,
-  ): Promise<void> =>
-    invoke("vault_copy_totp", { id, period, digits, algorithm }),
-
-  totpTimeRemaining: (period?: number): Promise<number> =>
-    invoke("vault_totp_time_remaining", { period }),
+  totpCopy: (id: string): Promise<void> => invoke("vault_copy_totp", { id }),
 
   totpParseUri: (uri: string): Promise<ParsedOtpAuth> =>
     invoke("vault_totp_parse_uri", { uri }),
@@ -161,6 +149,8 @@ export const vaultService = {
     invoke("vault_hibp_check", { id }),
 
   hibpAudit: (): Promise<HibpAuditEntry[]> => invoke("vault_hibp_audit"),
+
+  hibpAuditCancel: (): Promise<void> => invoke("vault_hibp_audit_cancel"),
 
   checkMasterPasswordStrength: (password: string): Promise<StrengthResult> =>
     invoke("vault_check_master_password_strength", { password }),

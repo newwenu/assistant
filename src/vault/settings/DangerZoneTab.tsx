@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Space, Typography, App } from "antd";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "../core/vaultStore";
+import { useVaultShallow, useVaultStore } from "../core/vaultStore";
 import DangerZone, { type DangerZoneAction } from "./DangerZone";
 
 export default function DangerZoneTab() {
@@ -17,7 +17,17 @@ export default function DangerZoneTab() {
     syncDiscard,
     gitRemoveRemote,
     loadEntries,
-  } = useVaultStore();
+  } = useVaultShallow((s) => ({
+    syncReadyness: s.syncReadyness,
+    syncConfig: s.syncConfig,
+    syncing: s.syncing,
+    loadSyncConfig: s.loadSyncConfig,
+    loadSyncReadyness: s.loadSyncReadyness,
+    syncForcePush: s.syncForcePush,
+    syncDiscard: s.syncDiscard,
+    gitRemoveRemote: s.gitRemoveRemote,
+    loadEntries: s.loadEntries,
+  }));
 
   useEffect(() => {
     void loadSyncConfig();

@@ -70,6 +70,7 @@ type FullState = VaultSyncSlice & {
   error: string | null;
   errorCode: VaultErrorCode | null;
   loadEntries: () => Promise<void>;
+  loadTotalEntryCount: () => Promise<void>;
 };
 
 export function createSyncSlice(
@@ -129,6 +130,7 @@ export function createSyncSlice(
         applySyncResult(result);
         set({ syncing: false });
         await get().loadEntries();
+        void get().loadTotalEntryCount();
         await get().loadSyncReadyness();
         await get().loadSyncLastTime();
         await get().loadRemoteStatus(false);
@@ -173,6 +175,7 @@ export function createSyncSlice(
         applySyncResult(result);
         set({ syncing: false });
         await get().loadEntries();
+        void get().loadTotalEntryCount();
         await get().loadSyncReadyness();
         await get().loadSyncLastTime();
         await get().loadRemoteStatus(false);
@@ -292,6 +295,7 @@ export function createSyncSlice(
         await vaultService.syncConfirmRemovals(ids);
         set({ pendingRemovals: null, syncResult: "success", syncError: null });
         await get().loadEntries();
+        void get().loadTotalEntryCount();
         await get().loadSyncReadyness();
         await get().loadSyncLastTime();
         await get().loadRemoteStatus(false);
@@ -309,10 +313,11 @@ export function createSyncSlice(
         await get().loadSyncReadyness();
         await get().loadSyncConflicts();
         await get().loadEntries();
+        void get().loadTotalEntryCount();
         await get().loadSyncLastTime();
       } catch (e) {
         log.error("resolveConflict failed", e);
-        failWith(e, { syncError: vaultErrorMessage(e) });
+        failWith(e);
         await get().loadSyncReadyness();
         await get().loadSyncConflicts();
       }

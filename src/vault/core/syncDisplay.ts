@@ -37,14 +37,14 @@ export function deriveSyncDisplay(input: {
 }): SyncDisplay {
   const { readyness, remoteStatus, syncError } = input;
 
+  if (readyness !== null && typeof readyness === "object") {
+    return { kind: "repoState", state: readyness.repoState };
+  }
   if (syncError !== null) {
     return { kind: "failed", message: syncError };
   }
   if (readyness === null) {
     return { kind: "unknown" };
-  }
-  if (typeof readyness === "object") {
-    return { kind: "repoState", state: readyness.repoState };
   }
   if (readyness === "noSync") {
     return { kind: "noSync" };

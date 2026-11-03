@@ -1,44 +1,55 @@
-use tauri::{command, AppHandle};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Arc;
 
-use assistant_crypto::vault_crypto::totp::{self, TotpParams};
+use serde::Serialize;
+use tauri::{command, AppHandle, Emitter};
+
+use assistant_crypto::vault_crypto::totp;
 use assistant_crypto::vault_crypto::types::SecureString;
 use assistant_security::hibp::{HibpClient, SafePassword};
 use assistant_vault::audit::{log as audit_log, AuditEvent};
 use assistant_vault::dto::{
-    AuditLogEntry, HibpAuditEntryDto, ParsedOtpAuthDto, StrengthResult, TotpResultDto,
-    VaultErrorDto,
+    AuditLogEntry, HibpAuditEntryDto, ParsedOtpAuthDto, StrengthResult, TotpCodeDto, VaultErrorDto,
 };
 use assistant_vault::password_strength;
+use assistant_vault::security_db::SecurityDbState;
+use assistant_vault::shared::TotpConfig;
 use assistant_vault::types::VaultError;
+
+static HIBP_AUDIT_CANCEL: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Serialize)]
+struct HibpProgress {
+    done: u32,
+    total: u32,
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn load_totp_config(state: &SecurityDbState, id: &str) -> Result<TotpConfig, VaultErrorDto> {
+    let snapshot = state.snapshot(id).map_err(VaultErrorDto::from)?;
+    snapshot
+        .totp_secret
+        .as_deref()
+        .and_then(TotpConfig::from_stored)
+        .ok_or_else(|| {
+            VaultErrorDto::from(VaultError::Validation(
+                "TOTP is not configured for this entry".to_string(),
+            ))
+        })
+}
 
 // precondition: Unlocked
 #[command]
-pub fn vault_totp_generate(
-    app: AppHandle,
-    id: String,
-    period: Option<u32>,
-    digits: Option<u32>,
-    algorithm: Option<String>,
-) -> Result<TotpResultDto, VaultErrorDto> {
+pub fn vault_totp_generate(app: AppHandle, id: String) -> Result<TotpCodeDto, VaultErrorDto> {
     super::with_unlocked(&app, |state| {
-        let totp_secret = state
-            .decrypt_totp_secret(&id)
-            .map_err(VaultErrorDto::from)?;
-
-        let algo = match algorithm.as_deref() {
-            Some("SHA256") | Some("sha256") => totp::TotpAlgorithm::Sha256,
-            Some("SHA512") | Some("sha512") => totp::TotpAlgorithm::Sha512,
-            _ => totp::TotpAlgorithm::Sha1,
-        };
-
-        let params = TotpParams {
-            digits: digits.unwrap_or(6),
-            period: period.unwrap_or(30),
-            algorithm: algo,
-        };
-
-        let result = totp::generate_totp(totp_secret.expose_str(), &params)
-            .map_err(super::validation_error)?;
+        let config = load_totp_config(state, &id)?;
+        let code = config.code_at(unix_now()).map_err(VaultErrorDto::from)?;
 
         let guard = state.get_conn().map_err(VaultErrorDto::from)?;
         if let Some(conn) = guard.as_ref() {
@@ -49,44 +60,26 @@ pub fn vault_totp_generate(
             );
         }
 
-        Ok(TotpResultDto::from(result))
+        Ok(TotpCodeDto {
+            code: code.code,
+            time_remaining: code.time_remaining,
+            period: config.period(),
+        })
     })
 }
 
 // precondition: Unlocked
 #[command]
-pub fn vault_copy_totp(
-    app: AppHandle,
-    id: String,
-    period: Option<u32>,
-    digits: Option<u32>,
-    algorithm: Option<String>,
-) -> Result<(), VaultErrorDto> {
+pub fn vault_copy_totp(app: AppHandle, id: String) -> Result<(), VaultErrorDto> {
     super::with_unlocked(&app, |state| {
-        let totp_secret = state
-            .decrypt_totp_secret(&id)
-            .map_err(VaultErrorDto::from)?;
-
-        let algo = match algorithm.as_deref() {
-            Some("SHA256") | Some("sha256") => totp::TotpAlgorithm::Sha256,
-            Some("SHA512") | Some("sha512") => totp::TotpAlgorithm::Sha512,
-            _ => totp::TotpAlgorithm::Sha1,
-        };
-
-        let params = TotpParams {
-            digits: digits.unwrap_or(6),
-            period: period.unwrap_or(30),
-            algorithm: algo,
-        };
-
-        let result = totp::generate_totp(totp_secret.expose_str(), &params)
-            .map_err(super::validation_error)?;
+        let config = load_totp_config(state, &id)?;
+        let code = config.code_at(unix_now()).map_err(VaultErrorDto::from)?;
 
         {
             let guard = super::clipboard_guard(&app)?;
             let timeout = super::get_clipboard_clear_secs(&app);
             guard
-                .copy_and_guard(&result.code, timeout)
+                .copy_and_guard(&code.code, timeout)
                 .map_err(VaultErrorDto::from)?;
         }
 
@@ -105,16 +98,10 @@ pub fn vault_copy_totp(
 
 // precondition: None
 #[command]
-pub fn vault_totp_time_remaining(period: Option<u32>) -> Result<u32, VaultErrorDto> {
-    Ok(totp::time_remaining(period.unwrap_or(30)))
-}
-
-// precondition: None
-#[command]
 pub fn vault_totp_parse_uri(uri: String) -> Result<ParsedOtpAuthDto, VaultErrorDto> {
-    totp::from_otpauth_uri(&uri)
+    totp::parse_otpauth(&uri)
         .map(ParsedOtpAuthDto::from)
-        .map_err(super::validation_error)
+        .map_err(VaultErrorDto::from)
 }
 
 // precondition: Unlocked
@@ -170,12 +157,19 @@ pub async fn vault_hibp_check(app: AppHandle, id: String) -> Result<u32, VaultEr
     Ok(count)
 }
 
+// precondition: None
+#[command]
+pub fn vault_hibp_audit_cancel() {
+    HIBP_AUDIT_CANCEL.store(true, Ordering::SeqCst);
+}
+
 // precondition: Unlocked
 #[command]
 pub async fn vault_hibp_audit(app: AppHandle) -> Result<Vec<HibpAuditEntryDto>, VaultErrorDto> {
     use futures::stream::{self, StreamExt};
-    use std::sync::Arc;
     use tokio::time::{sleep, Duration};
+
+    HIBP_AUDIT_CANCEL.store(false, Ordering::SeqCst);
 
     const HIBP_CONCURRENCY: usize = 2;
     const HIBP_MIN_INTERVAL_MS: u64 = 1500;
@@ -195,14 +189,22 @@ pub async fn vault_hibp_audit(app: AppHandle) -> Result<Vec<HibpAuditEntryDto>, 
             .collect())
     })?;
 
+    let total = checks.len() as u32;
     let client = Arc::new(HibpClient::new());
     let interval = Arc::new(tokio::sync::Semaphore::new(1));
+    let done = Arc::new(AtomicU32::new(0));
+    let progress_app = app.clone();
 
     let results: Vec<(String, u32)> = stream::iter(checks)
-        .map(|(id, password)| {
+        .map(move |(id, password)| {
             let client = client.clone();
             let interval = interval.clone();
+            let done = done.clone();
+            let progress_app = progress_app.clone();
             async move {
+                if HIBP_AUDIT_CANCEL.load(Ordering::SeqCst) {
+                    return (id, 0);
+                }
                 let _permit = match interval.acquire().await {
                     Ok(p) => p,
                     Err(_) => return (id, 0),
@@ -211,6 +213,14 @@ pub async fn vault_hibp_audit(app: AppHandle) -> Result<Vec<HibpAuditEntryDto>, 
                 let count = client.check_password(&safe).await.unwrap_or(0);
                 sleep(Duration::from_millis(HIBP_MIN_INTERVAL_MS)).await;
                 drop(_permit);
+                let finished = done.fetch_add(1, Ordering::SeqCst) + 1;
+                let _ = progress_app.emit(
+                    "vault:hibp-progress",
+                    HibpProgress {
+                        done: finished,
+                        total,
+                    },
+                );
                 (id, count)
             }
         })

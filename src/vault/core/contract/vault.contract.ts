@@ -56,7 +56,9 @@ export type SyncResultDto = "success" | "noRemote" | { "conflict": Array<Conflic
 
 export type TotpAlgorithmDto = "sha1" | "sha256" | "sha512";
 
-export type TotpResultDto = { code: string, timeRemaining: number, };
+export type TotpCodeDto = { code: string, timeRemaining: number, period: number, };
+
+export type TotpInputDto = { secret?: string | null, digits: number, period: number, algorithm: TotpAlgorithmDto, };
 
 export type UnreadableEntriesDto = { ids: Array<string>, reason: UnreadableReasonDto, };
 
@@ -64,13 +66,13 @@ export type UnreadableReasonDto = "keyMismatch" | "corrupt";
 
 export type VaultCategory = "login" | "note" | "card" | "identity" | "sshKey" | "custom";
 
-export type VaultEntryCreate = { category: VaultCategory, title: string, username?: string | null, url?: string | null, password?: string | null, notes?: string | null, totpSecret?: string | null, tags: Array<string>, customFields: Array<CustomFieldInput>, isFavorite: boolean, };
+export type VaultEntryCreate = { category: VaultCategory, title: string, username?: string | null, url?: string | null, password?: string | null, notes?: string | null, totp?: TotpInputDto | null, tags: Array<string>, customFields: Array<CustomFieldInput>, isFavorite: boolean, };
 
-export type VaultEntryDetail = { id: string, category: VaultCategory, title: string, username: string | null, url: string | null, hasPassword: boolean, hasNotes: boolean, hasTotp: boolean, customFieldNames: Array<string>, tags: Array<string>, isFavorite: boolean, revision: number, createdAt: number, updatedAt: number, };
+export type VaultEntryDetail = { id: string, category: VaultCategory, title: string, username: string | null, url: string | null, hasPassword: boolean, hasNotes: boolean, hasTotp: boolean, totpDigits: number, totpPeriod: number, totpAlgorithm: TotpAlgorithmDto, customFieldNames: Array<string>, tags: Array<string>, isFavorite: boolean, revision: number, createdAt: number, updatedAt: number, };
 
 export type VaultEntrySummary = { id: string, category: VaultCategory, title: string, username: string | null, url: string | null, tags: Array<string>, isFavorite: boolean, updatedAt: number, };
 
-export type VaultEntryUpdate = { category: VaultCategory, title: string, username?: string | null, url?: string | null, password?: string | null, notes?: string | null, totpSecret?: string | null, tags: Array<string>, customFields: Array<CustomFieldInput>, isFavorite: boolean, };
+export type VaultEntryUpdate = { category: VaultCategory, title: string, username?: string | null, url?: string | null, password?: string | null, notes?: string | null, totp?: TotpInputDto | null, tags: Array<string>, customFields: Array<CustomFieldInput>, isFavorite: boolean, };
 
 export type VaultErrorCode = "locked" | "invalidPassword" | "notInitialized" | "alreadyExists" | "rateLimited" | "crypto" | "notFound" | "validation" | "biometricUnavailable" | "biometricCancelled" | "biometricFailed" | "biometricReset" | "invalidKeyFormat" | "invalidRecoveryKey" | "recoveryKeyNotSet" | "vaultMetaIntegrityFailed" | "cancelled" | "repoNotInitialized" | "noRemoteConfigured" | "noUpstream" | "syncConflict" | "gitUnavailable" | "keyMismatch" | "historyDecryptFailed" | "internal";
 

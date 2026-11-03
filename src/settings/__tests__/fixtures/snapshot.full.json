@@ -1,269 +1,129 @@
 {
+  "counts": {
+    "pages": 8,
+    "categories": 4,
+    "sections": 8,
+    "fields": 40,
+    "routes": 1,
+    "sidebar": 1,
+    "confPageMap": 4
+  },
   "pages": [
     {
       "id": "general",
       "categoryId": "general",
-      "label": "common.navigation.general.title",
       "order": 10,
-      "keywords": [
-        "language",
-        "launch",
-        "tray",
-        "top",
-        "startup"
-      ],
-      "navParent": null,
       "visibility": "sidebar",
+      "navParent": null,
       "emptyPage": false
     },
     {
       "id": "appearance",
       "categoryId": "general",
-      "label": "common.navigation.appearance.title",
       "order": 20,
-      "keywords": [
-        "mascot",
-        "渲染",
-        "颜色"
-      ],
-      "navParent": null,
       "visibility": "sidebar",
+      "navParent": null,
       "emptyPage": false
     },
     {
       "id": "shortcuts",
       "categoryId": "general",
-      "label": "common.navigation.shortcuts.title",
       "order": 30,
-      "keywords": [
-        "keyboard",
-        "shortcut",
-        "keybinding",
-        "hotkey"
-      ],
-      "navParent": null,
       "visibility": "sidebar",
+      "navParent": null,
       "emptyPage": false
     },
     {
       "id": "providers",
       "categoryId": "provider",
-      "label": "common.navigation.providers.title",
       "order": 40,
-      "keywords": [
-        "provider",
-        "api",
-        "model",
-        "openai",
-        "preset"
-      ],
-      "navParent": null,
       "visibility": "sidebar",
+      "navParent": null,
       "emptyPage": true
     },
     {
       "id": "agents",
       "categoryId": "provider",
-      "label": "common.navigation.agents.title",
       "order": 50,
-      "keywords": [
-        "agent",
-        "mode",
-        "kind",
-        "quick",
-        "deep"
-      ],
-      "navParent": null,
       "visibility": "sidebar",
+      "navParent": null,
       "emptyPage": true
     },
     {
       "id": "storage",
       "categoryId": "general",
-      "label": "common.navigation.storage.title",
       "order": 60,
-      "keywords": [
-        "storage",
-        "attachment",
-        "orphan",
-        "disk",
-        "存储",
-        "附件",
-        "孤儿"
-      ],
-      "navParent": null,
       "visibility": "sidebar",
+      "navParent": null,
       "emptyPage": true
     },
     {
       "id": "vault",
       "categoryId": "vault",
-      "label": "common.navigation.vault_settings.title",
       "order": 65,
-      "keywords": [
-        "vault",
-        "password",
-        "ssh",
-        "biometric",
-        "cipher",
-        "密码",
-        "保险库",
-        "加密"
-      ],
-      "navParent": null,
       "visibility": "sidebar",
+      "navParent": null,
       "emptyPage": false
     },
     {
       "id": "about",
       "categoryId": "about",
-      "label": "common.navigation.about.title",
       "order": 70,
-      "keywords": [
-        "version",
-        "rustc",
-        "build",
-        "about"
-      ],
-      "navParent": null,
       "visibility": "sidebar",
+      "navParent": null,
       "emptyPage": false
     }
   ],
   "categories": [
     {
       "id": "general",
-      "label": "common.navigation.category.general",
-      "order": 0,
-      "pages": [
-        "general",
-        "appearance",
-        "shortcuts",
-        "storage"
-      ]
+      "order": 0
     },
     {
       "id": "provider",
-      "label": "common.navigation.category.provider",
-      "order": 10,
-      "pages": [
-        "providers",
-        "agents"
-      ]
+      "order": 10
     },
     {
       "id": "vault",
-      "label": "common.navigation.category.vault",
-      "order": 20,
-      "pages": [
-        "vault"
-      ]
+      "order": 20
     },
     {
       "id": "about",
-      "label": "common.navigation.category.about",
-      "order": 30,
-      "pages": [
-        "about"
-      ]
+      "order": 30
     }
   ],
   "sections": [
     {
       "id": "general-main",
-      "pageId": "general",
-      "title": "settings.general.main.title",
-      "description": null,
-      "keywords": null
+      "pageId": "general"
     },
     {
       "id": "theme",
-      "pageId": "appearance",
-      "title": "settings.appearance.theme.title",
-      "description": null,
-      "keywords": [
-        "dark",
-        "light",
-        "system",
-        "暗色",
-        "亮色"
-      ]
+      "pageId": "appearance"
     },
     {
       "id": "orb-ball",
-      "pageId": "appearance",
-      "title": "settings.appearance.orb_ball.title",
-      "description": "settings.appearance.orb_ball.description",
-      "keywords": [
-        "orb",
-        "ball",
-        "透明度",
-        "缩放",
-        "吉祥物",
-        "助手形象"
-      ]
+      "pageId": "appearance"
     },
     {
       "id": "orb-panel",
-      "pageId": "appearance",
-      "title": "settings.appearance.orb_panel.title",
-      "description": null,
-      "keywords": [
-        "panel",
-        "置顶"
-      ]
+      "pageId": "appearance"
     },
     {
       "id": "shortcuts-main",
-      "pageId": "shortcuts",
-      "title": "settings.shortcuts.main.title",
-      "description": null,
-      "keywords": [
-        "keyboard",
-        "hotkey",
-        "热键"
-      ]
+      "pageId": "shortcuts"
     },
     {
       "id": "about-main",
-      "pageId": "about",
-      "title": "settings.about.main.title",
-      "description": null,
-      "keywords": [
-        "version",
-        "版本"
-      ]
+      "pageId": "about"
     },
     {
       "id": "vault-general",
-      "pageId": "vault",
-      "title": "settings.vault.general.title",
-      "description": null,
-      "keywords": [
-        "auto",
-        "lock",
-        "clipboard",
-        "cipher",
-        "biometric",
-        "hibp",
-        "自动锁定",
-        "剪贴板",
-        "加密",
-        "生物识别"
-      ]
+      "pageId": "vault"
     },
     {
       "id": "vault-ssh",
-      "pageId": "vault",
-      "title": "settings.vault.ssh.title",
-      "description": null,
-      "keywords": [
-        "ssh",
-        "agent",
-        "pageant",
-        "openssh",
-        "密钥"
-      ]
+      "pageId": "vault"
     }
   ],
   "fields": [
@@ -271,329 +131,241 @@
       "key": "riveIdlePoseRotation",
       "group": "mascot",
       "section": "orb-ball",
-      "type": "boolean",
-      "default": false,
-      "label": "settings.mascot.renderer.rive.idle_pose_rotation"
+      "type": "boolean"
     },
     {
       "key": "riveSrc",
       "group": "mascot",
       "section": "orb-ball",
-      "type": "asset-picker",
-      "default": null,
-      "label": "settings.mascot.renderer.rive.custom_rive.label"
+      "type": "asset-picker"
     },
     {
       "key": "svgAnimated",
       "group": "mascot",
       "section": "orb-ball",
-      "type": "boolean",
-      "default": true,
-      "label": "settings.mascot.renderer.svg.animated"
+      "type": "boolean"
     },
     {
       "key": "gifBorderRadius",
       "group": "mascot",
       "section": "orb-ball",
-      "type": "slider",
-      "default": 50,
-      "label": "settings.mascot.renderer.gif.border_radius.label"
+      "type": "slider"
     },
     {
       "key": "gifSrc",
       "group": "mascot",
       "section": "orb-ball",
-      "type": "asset-picker",
-      "default": null,
-      "label": "settings.mascot.renderer.gif.gif_src.label"
+      "type": "asset-picker"
     },
     {
       "key": "language",
       "group": "app",
       "section": "general-main",
-      "type": "select",
-      "default": "zh-CN",
-      "label": "settings.general.language.label"
+      "type": "select"
     },
     {
       "key": "launchAtLogin",
       "group": "app",
       "section": "general-main",
-      "type": "boolean",
-      "default": false,
-      "label": "settings.general.launch_at_login.label"
+      "type": "boolean"
     },
     {
       "key": "closeToTray",
       "group": "app",
       "section": "general-main",
-      "type": "boolean",
-      "default": true,
-      "label": "settings.general.close_to_tray.label"
+      "type": "boolean"
     },
     {
       "key": "stayOnTop",
       "group": "app",
       "section": "general-main",
-      "type": "boolean",
-      "default": false,
-      "label": "settings.general.stay_on_top.label"
+      "type": "boolean"
     },
     {
       "key": "theme",
       "group": "app",
       "section": "theme",
-      "type": "select",
-      "default": "system",
-      "label": "settings.appearance.theme.label"
+      "type": "select"
     },
     {
       "key": "opacityPercent",
       "group": "orb",
       "section": "orb-ball",
-      "type": "slider",
-      "default": 100,
-      "label": "settings.orb.opacity_percent.label"
+      "type": "slider"
     },
     {
       "key": "idleOpacityPercent",
       "group": "orb",
       "section": "orb-ball",
-      "type": "slider",
-      "default": 85,
-      "label": "settings.orb.idle_opacity_percent.label"
+      "type": "slider"
     },
     {
       "key": "scalePercent",
       "group": "orb",
       "section": "orb-ball",
-      "type": "slider",
-      "default": 100,
-      "label": "settings.orb.scale_percent.label"
+      "type": "slider"
     },
     {
       "key": "clickThrough",
       "group": "orb",
       "section": "orb-ball",
-      "type": "boolean",
-      "default": false,
-      "label": "settings.orb.click_through.label"
+      "type": "boolean"
     },
     {
       "key": "hideOnPointerHover",
       "group": "orb",
       "section": "orb-ball",
-      "type": "boolean",
-      "default": false,
-      "label": "settings.orb.hide_on_pointer_hover.label"
+      "type": "boolean"
     },
     {
       "key": "hoverDelayMs",
       "group": "orb",
       "section": "orb-ball",
-      "type": "slider",
-      "default": 0,
-      "label": "settings.orb.hover_delay_ms.label"
+      "type": "slider"
     },
     {
       "key": "alwaysOnTop",
       "group": "orb",
       "section": "orb-panel",
-      "type": "boolean",
-      "default": true,
-      "label": "settings.orb.always_on_top.label"
+      "type": "boolean"
     },
     {
       "key": "primaryColor",
       "group": "mascot",
       "section": "orb-ball",
-      "type": "color",
-      "default": null,
-      "label": ""
+      "type": "color"
     },
     {
       "key": "renderer",
       "group": "mascot",
       "section": "orb-ball",
-      "type": "select",
-      "default": "rive",
-      "label": "settings.mascot.renderer.label"
+      "type": "select"
     },
     {
       "key": "keybindings.toggle_orb",
       "group": "app",
       "section": "shortcuts-main",
-      "type": "keybinding",
-      "default": "Control+Shift+O",
-      "label": "settings.shortcuts.toggle_orb"
+      "type": "keybinding"
     },
     {
       "key": "keybindings.toggle_main",
       "group": "app",
       "section": "shortcuts-main",
-      "type": "keybinding",
-      "default": "Control+Shift+M",
-      "label": "settings.shortcuts.toggle_main"
+      "type": "keybinding"
     },
     {
       "key": "keybindings.new_chat",
       "group": "app",
       "section": "shortcuts-main",
-      "type": "keybinding",
-      "default": "Control+Shift+N",
-      "label": "settings.shortcuts.new_chat"
+      "type": "keybinding"
     },
     {
       "key": "keybindings.commandPalette",
       "group": "app",
       "section": "shortcuts-main",
-      "type": "keybinding",
-      "default": "Control+K",
-      "label": "settings.shortcuts.command_palette"
+      "type": "keybinding"
     },
     {
       "key": "autoCompact",
       "group": "app",
       "section": "general-main",
-      "type": "boolean",
-      "default": true,
-      "label": "settings.general.compact.auto_compact.label"
+      "type": "boolean"
     },
     {
       "key": "compactThresholdPercentOfBudget",
       "group": "app",
       "section": "general-main",
-      "type": "slider",
-      "default": 80,
-      "label": "settings.general.compact.compact_threshold_percent_of_budget.label"
+      "type": "slider"
     },
     {
       "key": "compactSummaryPrompt",
       "group": "app",
       "section": "general-main",
-      "type": "textarea",
-      "default": null,
-      "label": "settings.general.compact.compact_summary_prompt.label"
+      "type": "textarea"
     },
     {
       "key": "compactSummaryMaxTokens",
       "group": "app",
       "section": "general-main",
-      "type": "number",
-      "default": 4096,
-      "label": "settings.general.compact.compact_summary_max_tokens.label"
+      "type": "number"
     },
     {
       "key": "app_name",
       "group": "app",
       "section": "about-main",
-      "type": "readonly",
-      "default": "",
-      "label": "settings.about.field.app_name.label"
+      "type": "readonly"
     },
     {
       "key": "build_date",
       "group": "app",
       "section": "about-main",
-      "type": "readonly",
-      "default": "",
-      "label": "settings.about.field.build_date.label"
+      "type": "readonly"
     },
     {
       "key": "tech_stack",
       "group": "app",
       "section": "about-main",
-      "type": "readonly",
-      "default": "",
-      "label": "settings.about.field.tech_stack.label"
+      "type": "readonly"
     },
     {
       "key": "license",
       "group": "app",
       "section": "about-main",
-      "type": "readonly",
-      "default": "",
-      "label": "settings.about.field.license.label"
+      "type": "readonly"
     },
     {
       "key": "vaultAutoLockMinutes",
       "group": "vault",
       "section": "vault-general",
-      "type": "number",
-      "default": 5,
-      "label": "settings.vault.auto_lock_minutes.label"
+      "type": "number"
     },
     {
       "key": "vaultLockOnScreenLock",
       "group": "vault",
       "section": "vault-general",
-      "type": "boolean",
-      "default": true,
-      "label": "settings.vault.lock_on_screen_lock.label"
+      "type": "boolean"
     },
     {
       "key": "vaultClipboardClearSeconds",
       "group": "vault",
       "section": "vault-general",
-      "type": "number",
-      "default": 30,
-      "label": "settings.vault.clipboard_clear_seconds.label"
+      "type": "number"
     },
     {
       "key": "vaultCipherAlgorithm",
       "group": "vault",
       "section": "vault-general",
-      "type": "select",
-      "default": "aes256Gcm",
-      "label": "settings.vault.cipher_algorithm.label"
+      "type": "select"
     },
     {
       "key": "vaultBiometricUnlock",
       "group": "vault",
       "section": "vault-general",
-      "type": "boolean",
-      "default": false,
-      "label": "settings.vault.biometric_enabled.label"
-    },
-    {
-      "key": "vaultHibpAutoAudit",
-      "group": "vault",
-      "section": "vault-general",
-      "type": "boolean",
-      "default": true,
-      "label": "settings.vault.hibp_auto_audit.label"
+      "type": "boolean"
     },
     {
       "key": "vaultSshAutoAdd",
       "group": "vault",
       "section": "vault-ssh",
-      "type": "boolean",
-      "default": false,
-      "label": "settings.vault.ssh_auto_add.label"
+      "type": "boolean"
     },
     {
       "key": "vaultSshUsePageant",
       "group": "vault",
       "section": "vault-ssh",
-      "type": "boolean",
-      "default": true,
-      "label": "settings.vault.ssh_use_pageant.label"
+      "type": "boolean"
     },
     {
       "key": "vaultSshUseOpensshAgent",
       "group": "vault",
       "section": "vault-ssh",
-      "type": "boolean",
-      "default": true,
-      "label": "settings.vault.ssh_use_openssh_agent.label"
+      "type": "boolean"
     },
     {
       "key": "vaultSshAuthSockOverride",
       "group": "vault",
       "section": "vault-ssh",
-      "type": "string",
-      "default": "",
-      "label": "settings.vault.ssh_auth_sock_override.label"
+      "type": "string"
     }
   ],
   "routes": [
@@ -601,20 +373,13 @@
       "path": "/vault",
       "boundary": "密码保险库",
       "order": 0,
-      "navParent": "vault",
       "visibility": "sidebar",
-      "keywords": [
-        "vault",
-        "password",
-        "密码",
-        "保险库"
-      ]
+      "navParent": "vault"
     }
   ],
   "sidebar": [
     {
       "key": "vault",
-      "label": "common.navigation.vault",
       "slot": "after-tools",
       "order": 0
     }

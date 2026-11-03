@@ -15,7 +15,7 @@ import { useTranslation } from "react-i18next";
 import { vaultService } from "../core/vault.service";
 import { vaultCategoryLabel } from "../core/vaultCategory";
 import { vaultErrorCode, vaultErrorMessage } from "../core/vaultError";
-import { useVaultStore } from "../core/vaultStore";
+import { useVaultShallow } from "../core/vaultStore";
 import type { EntryPreview, HistoryCommit } from "../core/vault.types";
 import styles from "../vault.module.css";
 
@@ -43,7 +43,9 @@ export default function VaultEntryHistory({
 }: VaultEntryHistoryProps) {
   const { t } = useTranslation();
   const { message, modal } = App.useApp();
-  const { loadEntries } = useVaultStore();
+  const { loadEntries } = useVaultShallow((s) => ({
+    loadEntries: s.loadEntries,
+  }));
 
   const [commits, setCommits] = useState<HistoryCommit[]>([]);
   const [selected, setSelected] = useState<string | null>(null);

@@ -1,8 +1,8 @@
-import { Button, Typography, Space, App, Switch } from "antd";
+import { Button, Typography, Space, App, Tag } from "antd";
 import { CloudUploadOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { useConfGroup } from "@/settings/core/useConfGroup";
-import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
 import type { SshKeyInfo } from "../core/vault.types";
 import styles from "../vault.module.css";
 
@@ -25,16 +25,8 @@ export default function SshAgentTab({
 }: SshAgentTabProps) {
   const { t } = useTranslation();
   const { message } = App.useApp();
+  const navigate = useNavigate();
   const sshAutoAddEnabled = useConfGroup("vault")?.vaultSshAutoAdd ?? false;
-
-  const handleToggleAutoAdd = async (checked: boolean) => {
-    try {
-      await dispatchConfPatch("vault", { vaultSshAutoAdd: checked });
-      message.success(t("common.actions.saved"));
-    } catch {
-      message.error(t("vault.entry.save_failed"));
-    }
-  };
 
   const handleAutoAddAll = async () => {
     const added = await sshAutoAddAll();
@@ -51,13 +43,25 @@ export default function SshAgentTab({
         {t("vault.ssh.agent_description")}
       </Typography.Paragraph>
 
-      <Space style={{ marginBottom: 12 }}>
-        <Switch
-          checked={sshAutoAddEnabled}
-          onChange={(checked) => void handleToggleAutoAdd(checked)}
-        />
-        <Typography.Text>{t("vault.ssh.auto_add_on_unlock")}</Typography.Text>
-      </Space>
+      <Typography.Paragraph type="secondary">
+        {t("vault.ssh.auto_add_on_unlock")}
+        <Tag
+          style={{ marginInline: 8 }}
+          color={sshAutoAddEnabled ? "green" : undefined}
+        >
+          {sshAutoAddEnabled ? t("vault.ssh.on") : t("vault.ssh.off")}
+        </Tag>
+        <Button
+          type="link"
+          size="small"
+          style={{ paddingInline: 0 }}
+          onClick={() => {
+            void navigate("/settings/vault");
+          }}
+        >
+          {t("vault.ssh.auto_add_in_settings")}
+        </Button>
+      </Typography.Paragraph>
 
       <Space style={{ marginBottom: 8 }}>
         <Button

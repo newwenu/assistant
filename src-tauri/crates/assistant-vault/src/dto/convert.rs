@@ -1,5 +1,5 @@
 use assistant_crypto::error::VaultError;
-use assistant_crypto::vault_crypto::totp::{ParsedOtpAuth, TotpAlgorithm, TotpResult};
+use assistant_crypto::vault_crypto::totp::{ParsedOtpAuthSpec, TotpAlgorithm};
 use assistant_sync::types::{
     ConflictFile, ConflictPreview, ConflictResolution, EntryPreview, EntryPreviewField,
     HistoryCommit, PendingRemovalEntry, PendingRemovals, Readyness, RemoteStatus,
@@ -14,7 +14,7 @@ use super::sync::{
     ReadynessDto, RemoteStatusDto, RemoteStatusErrorKindDto, RepositoryStateDto, SyncConfigDto,
     SyncResultDto, UnreadableEntriesDto, UnreadableReasonDto,
 };
-use super::totp::{ParsedOtpAuthDto, TotpAlgorithmDto, TotpResultDto};
+use super::totp::{ParsedOtpAuthDto, TotpAlgorithmDto};
 use super::{VaultEntryDetail, VaultEntrySummary};
 use crate::types::VaultEntrySnapshot;
 
@@ -320,22 +320,9 @@ impl From<TotpAlgorithm> for TotpAlgorithmDto {
     }
 }
 
-impl From<TotpResult> for TotpResultDto {
-    fn from(v: TotpResult) -> Self {
-        let TotpResult {
-            code,
-            time_remaining,
-        } = v;
-        Self {
-            code,
-            time_remaining,
-        }
-    }
-}
-
-impl From<ParsedOtpAuth> for ParsedOtpAuthDto {
-    fn from(v: ParsedOtpAuth) -> Self {
-        let ParsedOtpAuth {
+impl From<ParsedOtpAuthSpec> for ParsedOtpAuthDto {
+    fn from(v: ParsedOtpAuthSpec) -> Self {
+        let ParsedOtpAuthSpec {
             secret,
             digits,
             period,
@@ -422,6 +409,15 @@ impl From<(String, u32)> for HibpAuditEntryDto {
 
 impl From<&VaultEntrySnapshot> for VaultEntryDetail {
     fn from(v: &VaultEntrySnapshot) -> Self {
+        let totp = v
+            .totp_secret
+            .as_deref()
+            .and_then(crate::shared::totp::TotpConfig::from_stored);
+        let totp_algorithm = TotpAlgorithmDto::from(
+            totp.as_ref()
+                .map(|config| config.algorithm())
+                .unwrap_or_default(),
+        );
         Self {
             id: v.id.clone(),
             category: v.category,
@@ -430,7 +426,10 @@ impl From<&VaultEntrySnapshot> for VaultEntryDetail {
             url: v.url.clone(),
             has_password: v.password.is_some(),
             has_notes: v.notes.is_some(),
-            has_totp: v.totp_secret.is_some(),
+            has_totp: totp.is_some(),
+            totp_digits: totp.as_ref().map(|config| config.digits()).unwrap_or(6),
+            totp_period: totp.as_ref().map(|config| config.period()).unwrap_or(30),
+            totp_algorithm,
             custom_field_names: v
                 .custom_fields
                 .iter()

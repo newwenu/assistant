@@ -24,7 +24,7 @@ import { useTranslation } from "react-i18next";
 import { vaultService } from "../core/vault.service";
 import { vaultCategoryLabel } from "../core/vaultCategory";
 import { vaultErrorMessage } from "../core/vaultError";
-import { useVaultStore } from "../core/vaultStore";
+import { useVaultShallow } from "../core/vaultStore";
 import type {
   ConflictPreview,
   ConflictResolution,
@@ -64,7 +64,9 @@ export default function VaultConflictResolve({
 }: VaultConflictResolveProps) {
   const { t } = useTranslation();
   const { message, modal } = App.useApp();
-  const { resolveConflict } = useVaultStore();
+  const { resolveConflict } = useVaultShallow((s) => ({
+    resolveConflict: s.resolveConflict,
+  }));
   const [resolution, setResolution] = useState<ConflictResolution>("useLocal");
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<ConflictPreview | null>(null);

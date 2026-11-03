@@ -13,6 +13,10 @@ export const VAULT_TONES = {
   leak: "var(--ant-color-error)",
   syncReady: "var(--ant-color-success)",
   syncDirty: "var(--ant-color-warning)",
+  syncAhead: "var(--ant-color-warning)",
+  syncBehind: "var(--ant-color-info)",
+  syncDiverged: "var(--ant-color-error)",
   syncOff: "var(--ant-color-text-quaternary)",
+  syncNoRemote: "var(--ant-color-text-tertiary)",
   syncFailed: "var(--ant-color-error)",
 } as const;

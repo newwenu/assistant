@@ -41,7 +41,9 @@ export type { SshKeyMetaDto as SshKeyMeta } from "./contract/vault.contract";
 export type { SyncActionDto as SyncAction } from "./contract/vault.contract";
 export type { SyncConfigDto as SyncConfig } from "./contract/vault.contract";
 export type { SyncResultDto as SyncResult } from "./contract/vault.contract";
-export type { TotpResultDto as TotpResult } from "./contract/vault.contract";
+export type { TotpAlgorithmDto as TotpAlgorithm } from "./contract/vault.contract";
+export type { TotpCodeDto as TotpCode } from "./contract/vault.contract";
+export type { TotpInputDto as TotpInput } from "./contract/vault.contract";
 export type { UnreadableEntriesDto as UnreadableEntries } from "./contract/vault.contract";
 export type { UnreadableReasonDto as UnreadableReason } from "./contract/vault.contract";
 

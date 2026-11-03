@@ -375,7 +375,8 @@
         "title": "保险库设置"
       },
       "ssh": {
-        "title": "SSH Agent"
+        "title": "SSH Agent 偏好",
+        "agent_location_hint": "密钥列表与运行时状态在保险库内「管理 → SSH Agent」查看。"
       },
       "auto_lock_minutes": { "label": "自动锁定时间（分钟）" },
       "lock_on_screen_lock": { "label": "屏幕锁定时锁定保险库" },
@@ -387,7 +388,6 @@
         "enroll_step_hint": "请再次验证以完成注册",
         "save_message": "生物识别状态已更新"
       },
-      "hibp_auto_audit": { "label": "HIBP 密码泄露审计" },
       "ssh_auto_add": { "label": "解锁时自动添加 SSH 密钥到 Agent" },
       "ssh_use_pageant": { "label": "使用 Pageant (PuTTY)" },
       "ssh_use_openssh_agent": { "label": "使用 OpenSSH Agent" },
@@ -835,6 +835,17 @@
       "encrypted": "已加密",
       "revision": "版本",
       "entries_count": "个条目",
+      "entries_count_filtered": "{{visible}} / {{total}} 个条目",
+      "no_matching_entries": "没有匹配的条目",
+      "current_filters": "当前筛选：",
+      "filter_search": "搜索：{{query}}",
+      "filter_category": "分类：{{category}}",
+      "filter_tag": "标签：{{tag}}",
+      "filter_leaked": "仅泄露（{{count}}）",
+      "show_leaked_only": "只看泄露条目",
+      "clear_filters": "清除筛选",
+      "import_or_clone": "从「管理」导入或克隆保险库",
+      "delete_failed": "删除失败",
       "leaked": "个泄露",
       "sort_recent": "最近更新",
       "sort_title": "标题",
@@ -873,8 +884,8 @@
     },
     "tab": {
       "vault": "保险库",
-      "tools": "工具",
-      "sync": "同步",
+      "manage": "管理",
+      "sync": "同步与远程",
       "ssh_agent": "SSH Agent",
       "recovery": "恢复密钥",
       "change_password": "修改主密码",
@@ -882,6 +893,13 @@
       "danger_zone": "危险操作"
     },
     "confirm_lock": "确定锁定保险库？",
+    "lock": "锁定保险库",
+    "lock_failed": "锁定失败",
+    "auto_lock_remaining": "{{time}} 后自动锁定",
+    "alert": {
+      "more": "还有 {{count}} 条提示",
+      "collapse": "收起提示"
+    },
     "sync": {
       "status_no_sync": "同步未初始化",
       "status_no_remote": "已初始化，但未绑定远程仓库",
@@ -988,7 +1006,10 @@
       "meta_fingerprint": "指纹",
       "meta_comment": "备注",
       "public_key": "公钥",
-      "auto_add_on_unlock": "解锁时自动添加到 Agent"
+      "auto_add_on_unlock": "解锁时自动添加到 Agent",
+      "on": "已开启",
+      "off": "已关闭",
+      "auto_add_in_settings": "在设置中修改"
     },
     "recovery": {
       "key_description": "恢复密钥可用于在忘记主密码时解锁保险库。生成后请妥善保存，此密钥仅显示一次。",
@@ -1141,7 +1162,9 @@
       "unlocking": "正在解锁…"
     },
     "hibp": {
-      "audit_all": "全库泄露审计"
+      "audit_all": "全库泄露审计",
+      "progress": "正在审计 {{done}} / {{total}}",
+      "cancel": "取消审计"
     }
   }
 }

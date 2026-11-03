@@ -58,14 +58,6 @@ const VAULT_GENERAL_SETTINGS: ExtensionSettingDefinition[] = [
         default: m.BiometricSwitchRender,
       })),
   },
-  {
-    key: "vaultHibpAutoAudit",
-    group: "vault",
-    section: "vault-general",
-    type: "boolean",
-    default: true,
-    label: "settings.vault.hibp_auto_audit.label",
-  },
 ];
 
 const VAULT_SSH_SETTINGS: ExtensionSettingDefinition[] = [

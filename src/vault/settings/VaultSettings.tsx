@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Tabs } from "antd";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "../core/vaultStore";
+import { useVaultShallow } from "../core/vaultStore";
 import VaultSyncSettings from "./VaultSyncSettings";
 import SshAgentTab from "./SshAgentTab";
 import RecoveryTab from "./RecoveryTab";
@@ -26,7 +26,22 @@ export default function VaultSettings() {
     verifyIntegrity,
     exportVault,
     importVault,
-  } = useVaultStore();
+  } = useVaultShallow((s) => ({
+    sshAgentKeys: s.sshAgentKeys,
+    sshAgentRunning: s.sshAgentRunning,
+    recoveryKeySet: s.recoveryKeySet,
+    integrityResult: s.integrityResult,
+    loading: s.loading,
+    sshListAgent: s.sshListAgent,
+    sshCheckAgentRunning: s.sshCheckAgentRunning,
+    sshRemoveFromAgent: s.sshRemoveFromAgent,
+    sshAutoAddAll: s.sshAutoAddAll,
+    generateRecoveryKey: s.generateRecoveryKey,
+    checkRecoveryKeySet: s.checkRecoveryKeySet,
+    verifyIntegrity: s.verifyIntegrity,
+    exportVault: s.exportVault,
+    importVault: s.importVault,
+  }));
   const [activeKey, setActiveKey] = useState("sync");
 
   return (

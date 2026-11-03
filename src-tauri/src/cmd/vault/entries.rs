@@ -52,6 +52,14 @@ pub fn vault_list_entries(
 
 // precondition: Unlocked
 #[command]
+pub fn vault_count_entries(app: AppHandle) -> Result<u32, VaultErrorDto> {
+    super::with_unlocked(&app, |state| {
+        state.count_entries().map_err(VaultErrorDto::from)
+    })
+}
+
+// precondition: Unlocked
+#[command]
 pub fn vault_get_entry(app: AppHandle, id: String) -> Result<VaultEntryDetail, VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         state.get_entry(&id).map_err(VaultErrorDto::from)

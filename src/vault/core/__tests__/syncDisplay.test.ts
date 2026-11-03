@@ -16,7 +16,17 @@ function remoteStatus(overrides: Partial<RemoteStatus> = {}): RemoteStatus {
 }
 
 describe("deriveSyncDisplay", () => {
-  it("syncError wins over everything", () => {
+  it("repository state wins over syncError", () => {
+    expect(
+      deriveSyncDisplay({
+        readyness: { repoState: "merge" },
+        remoteStatus: null,
+        syncError: "boom",
+      }),
+    ).toEqual({ kind: "repoState", state: "merge" });
+  });
+
+  it("syncError wins over plain readyness", () => {
     expect(
       deriveSyncDisplay({
         readyness: "noRemote",

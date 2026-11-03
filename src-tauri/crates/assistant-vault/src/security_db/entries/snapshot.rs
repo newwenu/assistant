@@ -35,8 +35,8 @@ pub(super) fn read_snapshot(
     let row = conn
         .query_row(
             "SELECT id, title, username, url, category, encrypted_password, encrypted_notes, \
-             encrypted_totp_secret, encrypted_custom_fields, totp_digits, totp_period, tags, \
-             is_favorite, revision, created_at, updated_at \
+             encrypted_totp_secret, encrypted_custom_fields, tags, is_favorite, revision, \
+             created_at, updated_at \
              FROM vault_entries WHERE id = ?1 AND deleted_at IS NULL",
             params![id],
             |row| {
@@ -50,13 +50,11 @@ pub(super) fn read_snapshot(
                     row.get::<_, Option<String>>(6)?,
                     row.get::<_, Option<String>>(7)?,
                     row.get::<_, Option<String>>(8)?,
-                    row.get::<_, i64>(9)?,
+                    row.get::<_, String>(9)?,
                     row.get::<_, i64>(10)?,
-                    row.get::<_, String>(11)?,
+                    row.get::<_, i64>(11)?,
                     row.get::<_, i64>(12)?,
                     row.get::<_, i64>(13)?,
-                    row.get::<_, i64>(14)?,
-                    row.get::<_, i64>(15)?,
                 ))
             },
         )
@@ -73,8 +71,6 @@ pub(super) fn read_snapshot(
         enc_notes,
         enc_totp,
         enc_custom_fields,
-        totp_digits,
-        totp_period,
         tags_json,
         is_favorite,
         revision,
@@ -94,8 +90,6 @@ pub(super) fn read_snapshot(
         password: decrypt_opt(enc_password.as_deref(), entry_key.expose())?,
         notes: decrypt_opt(enc_notes.as_deref(), entry_key.expose())?,
         totp_secret: decrypt_opt(enc_totp.as_deref(), entry_key.expose())?,
-        totp_digits: totp_digits as u32,
-        totp_period: totp_period as u32,
         custom_fields: decrypt_custom_fields(enc_custom_fields.as_deref(), entry_key.expose())?,
         tags: serde_json::from_str(&tags_json).unwrap_or_default(),
         is_favorite: is_favorite != 0,

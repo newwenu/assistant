@@ -12,15 +12,21 @@ import type {
 
 const log = createLogger("vaultStore");
 
+export type VaultSortBy = "recent" | "title" | "favorite";
+
 export interface VaultEntriesSlice {
   entries: VaultEntrySummary[];
+  totalEntryCount: number;
   selectedEntry: VaultEntryDetail | null;
   searchQuery: string;
   categoryFilter: VaultCategory | null;
   tagFilter: string | null;
+  onlyLeaked: boolean;
+  sortBy: VaultSortBy;
   deletedEntries: VaultEntrySummary[];
 
   loadEntries: (options?: { silent?: boolean }) => Promise<void>;
+  loadTotalEntryCount: () => Promise<void>;
   selectEntry: (id: string) => Promise<void>;
   clearSelectedEntry: () => void;
   createEntry: (entry: VaultEntryCreate) => Promise<VaultEntryDetail>;
@@ -36,13 +42,20 @@ export interface VaultEntriesSlice {
   setSearchQuery: (query: string) => void;
   setCategoryFilter: (category: VaultCategory | null) => void;
   setTagFilter: (tag: string | null) => void;
+  setOnlyLeaked: (value: boolean) => void;
+  setSortBy: (sortBy: VaultSortBy) => void;
 }
 
 type FullState = VaultEntriesSlice & {
   loading: boolean;
   error: string | null;
   errorCode: VaultErrorCode | null;
+  hibpLeaks: Record<string, number>;
+  loadSyncReadyness: () => Promise<void>;
+  loadRemoteStatus: (fetch?: boolean) => Promise<void>;
 };
+
+let selectInFlightId: string | null = null;
 
 export function createEntriesSlice(
   set: (
@@ -52,12 +65,22 @@ export function createEntriesSlice(
 ): VaultEntriesSlice {
   let selectSeq = 0;
 
+  const refreshSyncMeta = () => {
+    void Promise.allSettled([
+      get().loadSyncReadyness(),
+      get().loadRemoteStatus(false),
+    ]);
+  };
+
   return {
     entries: [],
+    totalEntryCount: 0,
     selectedEntry: null,
     searchQuery: "",
     categoryFilter: null,
     tagFilter: null,
+    onlyLeaked: false,
+    sortBy: "recent",
     deletedEntries: [],
 
     loadEntries: async (options) => {
@@ -81,7 +104,18 @@ export function createEntriesSlice(
       }
     },
 
+    loadTotalEntryCount: async () => {
+      try {
+        const totalEntryCount = await vaultService.countEntries();
+        set({ totalEntryCount });
+      } catch (e) {
+        log.error("loadTotalEntryCount failed", e);
+      }
+    },
+
     selectEntry: async (id) => {
+      if (selectInFlightId === id) return;
+      selectInFlightId = id;
       const seq = ++selectSeq;
       try {
         const detail = await vaultService.getEntry(id);
@@ -91,6 +125,8 @@ export function createEntriesSlice(
         if (seq !== selectSeq) return;
         log.error("selectEntry failed", e);
         set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
+      } finally {
+        if (selectInFlightId === id) selectInFlightId = null;
       }
     },
 
@@ -101,6 +137,8 @@ export function createEntriesSlice(
       try {
         const detail = await vaultService.createEntry(entry);
         await get().loadEntries({ silent: true });
+        void get().loadTotalEntryCount();
+        refreshSyncMeta();
         return detail;
       } catch (e) {
         log.error("createEntry failed", e);
@@ -115,6 +153,7 @@ export function createEntriesSlice(
         const detail = await vaultService.updateEntry(id, entry);
         if (get().selectedEntry?.id === id) set({ selectedEntry: detail });
         await get().loadEntries({ silent: true });
+        refreshSyncMeta();
         return detail;
       } catch (e) {
         log.error("updateEntry failed", e);
@@ -128,6 +167,7 @@ export function createEntriesSlice(
         const detail = await vaultService.setFavorite(id, isFavorite);
         if (get().selectedEntry?.id === id) set({ selectedEntry: detail });
         await get().loadEntries({ silent: true });
+        refreshSyncMeta();
         return detail;
       } catch (e) {
         log.error("setFavorite failed", e);
@@ -140,15 +180,23 @@ export function createEntriesSlice(
       set({ error: null, errorCode: null });
       try {
         await vaultService.deleteEntry(id);
-        const { selectedEntry, entries } = get();
-        set({
-          entries: entries.filter((entry) => entry.id !== id),
-          selectedEntry: selectedEntry?.id === id ? null : selectedEntry,
+        set((state) => {
+          const hibpLeaks = { ...state.hibpLeaks };
+          delete hibpLeaks[id];
+          return {
+            entries: state.entries.filter((entry) => entry.id !== id),
+            selectedEntry:
+              state.selectedEntry?.id === id ? null : state.selectedEntry,
+            hibpLeaks,
+          };
         });
         await get().loadEntries({ silent: true });
+        void get().loadTotalEntryCount();
+        refreshSyncMeta();
       } catch (e) {
         log.error("deleteEntry failed", e);
         set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
+        throw e;
       }
     },
 
@@ -169,6 +217,8 @@ export function createEntriesSlice(
           get().loadEntries({ silent: true }),
           get().loadDeletedEntries(),
         ]);
+        void get().loadTotalEntryCount();
+        refreshSyncMeta();
       } catch (e) {
         log.error("restoreEntry failed", e);
         set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
@@ -179,6 +229,9 @@ export function createEntriesSlice(
       try {
         const purged = await vaultService.purgeDeleted();
         await get().loadDeletedEntries();
+        set({ hibpLeaks: {} });
+        void get().loadTotalEntryCount();
+        refreshSyncMeta();
         return purged;
       } catch (e) {
         log.error("purgeDeleted failed", e);
@@ -197,6 +250,14 @@ export function createEntriesSlice(
 
     setTagFilter: (tag) => {
       set({ tagFilter: tag });
+    },
+
+    setOnlyLeaked: (onlyLeaked) => {
+      set({ onlyLeaked });
+    },
+
+    setSortBy: (sortBy) => {
+      set({ sortBy });
     },
   };
 }

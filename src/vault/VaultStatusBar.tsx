@@ -1,7 +1,7 @@
 import { Tooltip } from "antd";
 import { WarningOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "./core/vaultStore";
+import { useVaultShallow } from "./core/vaultStore";
 import { deriveSyncDisplay, remoteErrorText } from "./core/syncDisplay";
 import { VAULT_TONES } from "./core/vaultColors";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
@@ -9,11 +9,13 @@ import styles from "./vault.module.css";
 
 interface VaultStatusBarProps {
   entryCount: number;
+  totalCount: number;
   onOpenSettings?: () => void;
 }
 
 export default function VaultStatusBar({
   entryCount,
+  totalCount,
   onOpenSettings,
 }: VaultStatusBarProps) {
   const { t } = useTranslation();
@@ -26,9 +28,22 @@ export default function VaultStatusBar({
     syncError,
     clearError,
     clearSyncError,
-  } = useVaultStore();
+    setOnlyLeaked,
+  } = useVaultShallow((s) => ({
+    hibpLeaks: s.hibpLeaks,
+    syncReadyness: s.syncReadyness,
+    remoteStatus: s.remoteStatus,
+    syncLastAt: s.syncLastAt,
+    syncing: s.syncing,
+    syncError: s.syncError,
+    clearError: s.clearError,
+    clearSyncError: s.clearSyncError,
+    setOnlyLeaked: s.setOnlyLeaked,
+  }));
 
-  const leakCount = Object.values(hibpLeaks).filter((c) => c > 0).length;
+  const leakCount = Object.values(hibpLeaks).filter(
+    (count) => count > 0,
+  ).length;
   const display = deriveSyncDisplay({
     readyness: syncReadyness,
     remoteStatus,
@@ -71,7 +86,7 @@ export default function VaultStatusBar({
             })}
           >
             <span className={styles.syncState}>
-              {dot(VAULT_TONES.leak)}
+              {dot(VAULT_TONES.syncDiverged)}
               {t("vault.sync.state_conflict")}
             </span>
           </Tooltip>
@@ -88,17 +103,10 @@ export default function VaultStatusBar({
           <Tooltip title={t("vault.sync.remote_not_bound_tip")}>
             <button
               type="button"
-              className={styles.syncState}
-              style={{
-                border: "none",
-                background: "none",
-                padding: 0,
-                font: "inherit",
-                cursor: onOpenSettings ? "pointer" : "default",
-              }}
+              className={styles.syncStateButton}
               onClick={onOpenSettings}
             >
-              {dot(VAULT_TONES.syncOff)}
+              {dot(VAULT_TONES.syncNoRemote)}
               {t("vault.sync.state_no_remote")}
             </button>
           </Tooltip>
@@ -113,21 +121,21 @@ export default function VaultStatusBar({
       case "ahead":
         return (
           <span className={styles.syncState}>
-            {dot(VAULT_TONES.syncDirty)}
+            {dot(VAULT_TONES.syncAhead)}
             {t("vault.sync.state_ahead", { count: display.ahead })}
           </span>
         );
       case "behind":
         return (
           <span className={styles.syncState}>
-            {dot(VAULT_TONES.syncDirty)}
+            {dot(VAULT_TONES.syncBehind)}
             {t("vault.sync.state_behind", { count: display.behind })}
           </span>
         );
       case "diverged":
         return (
           <span className={styles.syncState}>
-            {dot(VAULT_TONES.leak)}
+            {dot(VAULT_TONES.syncDiverged)}
             {t("vault.sync.state_diverged", {
               ahead: display.ahead,
               behind: display.behind,
@@ -165,17 +173,28 @@ export default function VaultStatusBar({
     }
   };
 
+  const countText =
+    entryCount !== totalCount
+      ? t("vault.entry.entries_count_filtered", {
+          visible: entryCount,
+          total: totalCount,
+        })
+      : `${totalCount} ${t("vault.entry.entries_count")}`;
+
   return (
     <div className={styles.syncBar}>
       <div className={styles.syncBarLeft}>
-        <span>
-          {entryCount} {t("vault.entry.entries_count")}
-        </span>
+        <span>{countText}</span>
         {leakCount > 0 && (
-          <span className={styles.leakWarning}>
+          <button
+            type="button"
+            className={styles.leakWarning}
+            aria-label={t("vault.entry.show_leaked_only")}
+            onClick={() => setOnlyLeaked(true)}
+          >
             <WarningOutlined style={{ marginRight: 4 }} />
             {leakCount} {t("vault.entry.leaked")}
-          </span>
+          </button>
         )}
       </div>
       <div className={styles.syncBarRight}>

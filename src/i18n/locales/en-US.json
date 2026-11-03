@@ -390,7 +390,8 @@
         "title": "Vault Settings"
       },
       "ssh": {
-        "title": "SSH Agent"
+        "title": "SSH Agent Preferences",
+        "agent_location_hint": "Key list and runtime status are available in the vault under \"Manage → SSH Agent\"."
       },
       "auto_lock_minutes": { "label": "Auto Lock Time (minutes)" },
       "lock_on_screen_lock": { "label": "Lock Vault on Screen Lock" },
@@ -402,7 +403,6 @@
         "enroll_step_hint": "Please verify again to complete enrollment",
         "save_message": "Biometric status updated"
       },
-      "hibp_auto_audit": { "label": "HIBP Password Leak Audit" },
       "ssh_auto_add": { "label": "Auto Add SSH Keys to Agent on Unlock" },
       "ssh_use_pageant": { "label": "Use Pageant (PuTTY)" },
       "ssh_use_openssh_agent": { "label": "Use OpenSSH Agent" },
@@ -850,6 +850,17 @@
       "encrypted": "Encrypted",
       "revision": "Revision",
       "entries_count": "entries",
+      "entries_count_filtered": "{{visible}} / {{total}} entries",
+      "no_matching_entries": "No matching entries",
+      "current_filters": "Filters:",
+      "filter_search": "Search: {{query}}",
+      "filter_category": "Category: {{category}}",
+      "filter_tag": "Tag: {{tag}}",
+      "filter_leaked": "Leaked only ({{count}})",
+      "show_leaked_only": "Show leaked entries only",
+      "clear_filters": "Clear filters",
+      "import_or_clone": "Import or clone a vault from \"Manage\"",
+      "delete_failed": "Failed to delete",
       "leaked": "leaked",
       "sort_recent": "Recently updated",
       "sort_title": "Title",
@@ -888,8 +899,8 @@
     },
     "tab": {
       "vault": "Vault",
-      "tools": "Tools",
-      "sync": "Sync",
+      "manage": "Manage",
+      "sync": "Sync & Remote",
       "ssh_agent": "SSH Agent",
       "recovery": "Recovery Key",
       "change_password": "Change Password",
@@ -897,6 +908,13 @@
       "danger_zone": "Danger Zone"
     },
     "confirm_lock": "Lock the vault?",
+    "lock": "Lock vault",
+    "lock_failed": "Failed to lock the vault",
+    "auto_lock_remaining": "Auto-lock in {{time}}",
+    "alert": {
+      "more": "{{count}} more alert(s)",
+      "collapse": "Collapse alerts"
+    },
     "sync": {
       "status_no_sync": "Sync not initialized",
       "status_no_remote": "Initialized, but no remote is bound",
@@ -1003,7 +1021,10 @@
       "meta_fingerprint": "Fingerprint",
       "meta_comment": "Comment",
       "public_key": "Public Key",
-      "auto_add_on_unlock": "Auto-add to Agent on unlock"
+      "auto_add_on_unlock": "Auto-add to Agent on unlock",
+      "on": "On",
+      "off": "Off",
+      "auto_add_in_settings": "Change in Settings"
     },
     "recovery": {
       "key_description": "A recovery key can unlock the vault if you forget your master password. Save it securely — it will only be shown once.",
@@ -1156,7 +1177,9 @@
       "unlocking": "Unlocking…"
     },
     "hibp": {
-      "audit_all": "Audit All"
+      "audit_all": "Audit All",
+      "progress": "Auditing {{done}} / {{total}}",
+      "cancel": "Cancel audit"
     }
   }
 }

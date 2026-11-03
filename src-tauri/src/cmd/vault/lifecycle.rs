@@ -5,36 +5,44 @@ use assistant_vault::types::VaultError;
 
 // precondition: AnyState
 #[command]
-pub fn vault_init(app: AppHandle, master_password: String) -> Result<(), VaultErrorDto> {
-    let state = super::vault_state(&app)?;
-    state.init(&master_password).map_err(|e| {
-        log::error!("Vault init failed: {}", e);
-        VaultErrorDto::from(e)
-    })?;
-    log::info!("Vault initialized");
-    Ok(())
+pub async fn vault_init(app: AppHandle, master_password: String) -> Result<(), VaultErrorDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = super::vault_state(&app)?;
+        state.init(&master_password).map_err(|e| {
+            log::error!("Vault init failed: {}", e);
+            VaultErrorDto::from(e)
+        })?;
+        log::info!("Vault initialized");
+        Ok(())
+    })
+    .await
+    .map_err(|e| super::internal_error(format!("vault_init task failed: {}", e)))?
 }
 
 // precondition: AnyState
 #[command]
-pub fn vault_unlock(app: AppHandle, master_password: String) -> Result<(), VaultErrorDto> {
-    let state = super::vault_state(&app)?;
-    match state.unlock(&master_password) {
-        Ok(()) => {
-            super::ssh_auto_add_on_unlock(&app);
-            crate::protocol::events::emit_broadcast(
-                &app,
-                crate::protocol::events::event_name::VAULT_UNLOCKED,
-                (),
-            );
-            Ok(())
+pub async fn vault_unlock(app: AppHandle, master_password: String) -> Result<(), VaultErrorDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = super::vault_state(&app)?;
+        match state.unlock(&master_password) {
+            Ok(()) => {
+                super::ssh_auto_add_on_unlock(&app);
+                crate::protocol::events::emit_broadcast(
+                    &app,
+                    crate::protocol::events::event_name::VAULT_UNLOCKED,
+                    (),
+                );
+                Ok(())
+            }
+            Err(VaultError::InvalidPassword) => {
+                log::warn!("Vault unlock failed: invalid password");
+                Err(VaultErrorDto::from(VaultError::InvalidPassword))
+            }
+            Err(e) => Err(VaultErrorDto::from(e)),
         }
-        Err(VaultError::InvalidPassword) => {
-            log::warn!("Vault unlock failed: invalid password");
-            Err(VaultErrorDto::from(VaultError::InvalidPassword))
-        }
-        Err(e) => Err(VaultErrorDto::from(e)),
-    }
+    })
+    .await
+    .map_err(|e| super::internal_error(format!("vault_unlock task failed: {}", e)))?
 }
 
 // precondition: AnyState
@@ -53,11 +61,15 @@ pub fn vault_is_initialized(app: AppHandle) -> Result<bool, VaultErrorDto> {
 
 // precondition: AnyState
 #[command]
-pub fn vault_lock(app: AppHandle) -> Result<(), VaultErrorDto> {
-    let state = super::vault_state(&app)?;
-    state.lock().map_err(VaultErrorDto::from)?;
-    super::on_locked(&app);
-    Ok(())
+pub async fn vault_lock(app: AppHandle) -> Result<(), VaultErrorDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = super::vault_state(&app)?;
+        state.lock().map_err(VaultErrorDto::from)?;
+        super::on_locked(&app);
+        Ok(())
+    })
+    .await
+    .map_err(|e| super::internal_error(format!("vault_lock task failed: {}", e)))?
 }
 
 // precondition: AnyState

@@ -18,101 +18,93 @@ import {
 } from "@/settings/core/query";
 import { defineSection } from "@/settings/core/builtinRegistry";
 
-interface ProjectedSnapshot {
+interface ProjectedCollections {
   pages: {
     id: string;
     categoryId: string;
-    label: string;
     order: number;
-    keywords: string[];
-    navParent: string | null;
     visibility: string;
+    navParent: string | null;
     emptyPage: boolean;
   }[];
-  categories: {
-    id: string;
-    label: string;
-    order: number;
-    pages: string[];
-  }[];
-  sections: {
-    id: string;
-    pageId: string;
-    title: string;
-    description: string | null;
-    keywords: string[] | null;
-  }[];
+  categories: { id: string; order: number }[];
+  sections: { id: string; pageId: string }[];
   fields: {
     key: string;
     group: string;
     section: string | null;
     type: string;
-    default: unknown;
-    label: string | null;
   }[];
   routes: {
     path: string;
     boundary: string;
     order: number;
-    navParent: string | null;
     visibility: string;
-    keywords: string[];
+    navParent: string | null;
   }[];
-  sidebar: { key: string; label: string; slot: string; order: number }[];
+  sidebar: { key: string; slot: string; order: number }[];
   confPageMap: [string, string][];
 }
 
-function project(snapshot: SettingsSnapshot): ProjectedSnapshot {
+interface ProjectedSnapshot extends ProjectedCollections {
+  counts: Record<keyof ProjectedCollections, number>;
+}
+
+function withCounts(collections: ProjectedCollections): ProjectedSnapshot {
   return {
+    counts: {
+      pages: collections.pages.length,
+      categories: collections.categories.length,
+      sections: collections.sections.length,
+      fields: collections.fields.length,
+      routes: collections.routes.length,
+      sidebar: collections.sidebar.length,
+      confPageMap: collections.confPageMap.length,
+    },
+    ...collections,
+  };
+}
+
+function project(snapshot: SettingsSnapshot): ProjectedSnapshot {
+  return withCounts({
     pages: snapshot.pages.map((page) => ({
       id: page.id,
       categoryId: page.categoryId,
-      label: page.label,
       order: page.order,
-      keywords: [...page.keywords],
-      navParent: page.navParent ?? null,
       visibility: page.visibility,
+      navParent: page.navParent ?? null,
       emptyPage: page.emptyPage,
     })),
     categories: snapshot.categories.map((category) => ({
       id: category.id,
-      label: category.label,
       order: category.order,
-      pages: category.pages.map((page) => page.id),
     })),
     sections: snapshot.sections.map((section) => ({
       id: section.id,
       pageId: section.pageId,
-      title: section.title,
-      description: section.description ?? null,
-      keywords: section.keywords ? [...section.keywords] : null,
     })),
     fields: snapshot.fields.map((field) => ({
       key: field.key,
       group: field.group,
       section: field.section ?? null,
       type: field.type,
-      default: field.default ?? null,
-      label: field.label ?? null,
     })),
     routes: snapshot.routes.map((route) => ({
       path: route.path,
       boundary: route.boundary,
       order: route.order,
-      navParent: route.navParent ?? null,
       visibility: route.visibility,
-      keywords: [...route.keywords],
+      navParent: route.navParent ?? null,
     })),
     sidebar: snapshot.sidebar.map((entry) => ({
       key: entry.key,
-      label: entry.label,
       slot: entry.slot,
       order: entry.order,
     })),
     confPageMap: [...snapshot.confPageMap].sort((a, b) =>
       a[0].localeCompare(b[0]),
     ),
-  };
+  });
 }
 
 function difference<T>(
@@ -128,7 +120,7 @@ function diffProjection(
   full: ProjectedSnapshot,
   base: ProjectedSnapshot,
 ): ProjectedSnapshot {
-  return {
+  return withCounts({
     pages: difference(full.pages, base.pages, (page) => page.id),
     categories: difference(
       full.categories,
@@ -144,7 +136,7 @@ function diffProjection(
       base.confPageMap,
       (entry) => entry[0],
     ),
-  };
+  });
 }
 
 function serialize(value: unknown): string {

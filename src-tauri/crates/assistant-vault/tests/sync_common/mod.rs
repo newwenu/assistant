@@ -94,9 +94,10 @@ pub fn entry_snapshot(id: &str) -> VaultEntrySnapshot {
         url: Some("https://github.com".to_string()),
         password: Some("s3cret!".to_string()),
         notes: Some("Personal account".to_string()),
-        totp_secret: Some("JBSWY3DPEHPK3PXP".to_string()),
-        totp_digits: 6,
-        totp_period: 30,
+        totp_secret: Some(
+            r#"{"secret":"JBSWY3DPEHPK3PXP","digits":6,"period":30,"algorithm":"sha1"}"#
+                .to_string(),
+        ),
         custom_fields: vec![CustomFieldInput {
             name: "API Key".to_string(),
             value: "cf-value".to_string(),
@@ -125,8 +126,6 @@ pub fn remote_snapshot(
         password: Some("remote-pw".to_string()),
         notes: None,
         totp_secret: None,
-        totp_digits: 6,
-        totp_period: 30,
         custom_fields: vec![CustomFieldInput {
             name: "PIN".to_string(),
             value: "1234".to_string(),
@@ -147,7 +146,7 @@ pub fn local_entry(title: &str) -> assistant_vault::dto::VaultEntryCreate {
         url: None,
         password: None,
         notes: None,
-        totp_secret: None,
+        totp: None,
         tags: vec![],
         custom_fields: vec![],
         is_favorite: false,

@@ -2,7 +2,7 @@ import { createLogger } from "@/services/logger";
 import { vaultService } from "../vault.service";
 import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
 import type {
-  TotpResult,
+  TotpCode,
   ParsedOtpAuth,
   StrengthResult,
   VaultErrorCode,
@@ -13,22 +13,15 @@ const log = createLogger("vaultStore");
 export interface VaultAuditSlice {
   totpCode: string | null;
   totpTimeRemaining: number;
+  totpPeriod: number;
   totpTimerId: ReturnType<typeof setInterval> | null;
   hibpLeaks: Record<string, number>;
   hibpAuditing: boolean;
+  hibpProgress: { done: number; total: number } | null;
+  hibpCancelRequested: boolean;
 
-  generateTotp: (
-    id: string,
-    period?: number,
-    digits?: number,
-    algorithm?: string,
-  ) => Promise<void>;
-  copyTotp: (
-    id: string,
-    period?: number,
-    digits?: number,
-    algorithm?: string,
-  ) => Promise<void>;
+  generateTotp: (id: string) => Promise<void>;
+  copyTotp: (id: string) => Promise<void>;
   stopTotpTimer: () => void;
   totpParseUri: (uri: string) => Promise<ParsedOtpAuth>;
   queryAuditLog: (
@@ -37,6 +30,7 @@ export interface VaultAuditSlice {
   showUnlockWindow: () => Promise<void>;
   hibpCheck: (id: string) => Promise<number>;
   hibpAudit: () => Promise<void>;
+  hibpAuditCancel: () => Promise<void>;
   checkMasterPasswordStrength: (
     password: string,
   ) => Promise<StrengthResult | null>;
@@ -56,19 +50,21 @@ export function createAuditSlice(
   return {
     totpCode: null,
     totpTimeRemaining: 0,
+    totpPeriod: 0,
     totpTimerId: null,
     hibpLeaks: {},
     hibpAuditing: false,
+    hibpProgress: null,
+    hibpCancelRequested: false,
 
-    generateTotp: async (id, period, digits, algorithm) => {
+    generateTotp: async (id) => {
       try {
-        const result: TotpResult = await vaultService.totpGenerate(
-          id,
-          period,
-          digits,
-          algorithm,
-        );
-        set({ totpCode: result.code, totpTimeRemaining: result.timeRemaining });
+        const result: TotpCode = await vaultService.totpGenerate(id);
+        set({
+          totpCode: result.code,
+          totpTimeRemaining: result.timeRemaining,
+          totpPeriod: result.period,
+        });
 
         const { totpTimerId } = get();
         if (totpTimerId) clearInterval(totpTimerId);
@@ -76,7 +72,7 @@ export function createAuditSlice(
         const timerId = setInterval(() => {
           const remaining = get().totpTimeRemaining - 1;
           if (remaining <= 0) {
-            void get().generateTotp(id, period, digits, algorithm);
+            void get().generateTotp(id);
           } else {
             set({ totpTimeRemaining: remaining });
           }
@@ -84,13 +80,13 @@ export function createAuditSlice(
         set({ totpTimerId: timerId });
       } catch (e) {
         log.error("generateTotp failed", e);
-        set({ totpCode: null, totpTimeRemaining: 0 });
+        set({ totpCode: null, totpTimeRemaining: 0, totpPeriod: 0 });
       }
     },
 
-    copyTotp: async (id, period, digits, algorithm) => {
+    copyTotp: async (id) => {
       try {
-        await vaultService.totpCopy(id, period, digits, algorithm);
+        await vaultService.totpCopy(id);
       } catch (e) {
         log.error("copyTotp failed", e);
         set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
@@ -100,7 +96,12 @@ export function createAuditSlice(
     stopTotpTimer: () => {
       const { totpTimerId } = get();
       if (totpTimerId) clearInterval(totpTimerId);
-      set({ totpCode: null, totpTimeRemaining: 0, totpTimerId: null });
+      set({
+        totpCode: null,
+        totpTimeRemaining: 0,
+        totpPeriod: 0,
+        totpTimerId: null,
+      });
     },
 
     totpParseUri: async (uri: string) => {
@@ -129,17 +130,42 @@ export function createAuditSlice(
     },
 
     hibpAudit: async () => {
-      set({ hibpAuditing: true });
+      set({
+        hibpAuditing: true,
+        hibpProgress: { done: 0, total: 0 },
+        hibpCancelRequested: false,
+      });
       try {
         const leaks = await vaultService.hibpAudit();
+        if (get().hibpCancelRequested) {
+          set({
+            hibpAuditing: false,
+            hibpProgress: null,
+            hibpCancelRequested: false,
+          });
+          return;
+        }
         const leakMap: Record<string, number> = {};
         for (const { entryId, matchCount } of leaks) {
           leakMap[entryId] = matchCount;
         }
-        set({ hibpLeaks: leakMap, hibpAuditing: false });
+        set({ hibpLeaks: leakMap, hibpAuditing: false, hibpProgress: null });
       } catch (e) {
         log.error("hibpAudit failed", e);
-        set({ hibpAuditing: false });
+        set({
+          hibpAuditing: false,
+          hibpProgress: null,
+          hibpCancelRequested: false,
+        });
+      }
+    },
+
+    hibpAuditCancel: async () => {
+      set({ hibpCancelRequested: true });
+      try {
+        await vaultService.hibpAuditCancel();
+      } catch (e) {
+        log.error("hibpAuditCancel failed", e);
       }
     },
 

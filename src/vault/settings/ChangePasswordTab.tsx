@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { Form, Input, Button, Progress, Typography, Modal, App } from "antd";
 import { LockOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "../core/vaultStore";
+import { useVaultShallow } from "../core/vaultStore";
 import { vaultService } from "../core/vault.service";
 import { vaultErrorMessage } from "../core/vaultError";
 import type { StrengthResult } from "../core/vault.types";
@@ -27,7 +27,13 @@ export default function ChangePasswordTab() {
     biometricAvailable,
     enrollBiometric,
     checkBiometricEnrolled,
-  } = useVaultStore();
+  } = useVaultShallow((s) => ({
+    changeMasterPassword: s.changeMasterPassword,
+    loading: s.loading,
+    biometricAvailable: s.biometricAvailable,
+    enrollBiometric: s.enrollBiometric,
+    checkBiometricEnrolled: s.checkBiometricEnrolled,
+  }));
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
