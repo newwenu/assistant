@@ -27,7 +27,7 @@ pub use sync::{
 pub use totp::{ParsedOtpAuthDto, TotpAlgorithmDto, TotpCodeDto, TotpInputDto};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export, export_to = "vault.contract.ts")]
 pub struct VaultEntryCreate {
     pub category: VaultCategory,
@@ -48,7 +48,7 @@ pub struct VaultEntryCreate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export, export_to = "vault.contract.ts")]
 pub struct VaultEntryUpdate {
     pub category: VaultCategory,
@@ -100,7 +100,7 @@ pub struct VaultEntryDetail {
     pub custom_field_names: Vec<String>,
     pub tags: Vec<String>,
     pub is_favorite: bool,
-    pub revision: u64,
+    pub revision: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }

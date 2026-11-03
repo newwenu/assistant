@@ -268,7 +268,7 @@ pub struct EntryPreview {
     #[serde(default)]
     pub commit_time: Option<i64>,
     pub category: String,
-    pub revision: u64,
+    pub revision: i64,
     pub title: String,
     pub username: Option<String>,
     pub url: Option<String>,

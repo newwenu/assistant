@@ -10,7 +10,7 @@ pub(super) fn mask_entry_preview(
     commit: &str,
     id: String,
     category: String,
-    revision: u64,
+    revision: i64,
     blob: EntryBlob,
 ) -> EntryPreview {
     EntryPreview {

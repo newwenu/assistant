@@ -113,7 +113,7 @@ pub fn entry_snapshot(id: &str) -> VaultEntrySnapshot {
 pub fn remote_snapshot(
     id: &str,
     title: &str,
-    revision: u64,
+    revision: i64,
     updated_at: i64,
 ) -> VaultEntrySnapshot {
     VaultEntrySnapshot {

@@ -83,7 +83,7 @@ pub(super) fn read_snapshot(
     Ok(VaultEntrySnapshot {
         id,
         category: VaultCategory::parse(&category).unwrap_or_default(),
-        revision: revision as u64,
+        revision,
         title,
         username,
         url,

@@ -31,7 +31,7 @@ impl SecurityDbState {
                 .map_err(|e| VaultError::Database(e.to_string()))?;
 
             let revision = match local_revision {
-                Some(local) => (local as u64).max(entry.revision) + 1,
+                Some(local) => local.max(entry.revision) + 1,
                 None => entry.revision + 1,
             };
 
@@ -60,7 +60,7 @@ impl SecurityDbState {
                     |row| row.get(0),
                 )
                 .map_err(|e| VaultError::Database(e.to_string()))?;
-            let revision = max_revision.max(entry.revision as i64) as u64 + 1;
+            let revision = max_revision.max(entry.revision) + 1;
 
             write_imported_entry_in(conn, mk, &entry, revision, algo)?;
             let snapshot = read_snapshot(conn, mk, &entry.id)?;
@@ -94,7 +94,7 @@ fn write_imported_entry_in(
     conn: &Connection,
     mk: &MasterKey,
     entry: &VaultEntryImport,
-    revision: u64,
+    revision: i64,
     algo: CipherAlgorithm,
 ) -> Result<(), VaultError> {
     let entry_key = VaultCrypto::derive_entry_key(mk, &entry.id);
@@ -106,7 +106,7 @@ fn write_imported_entry_in(
     let tags_json =
         serde_json::to_string(&entry.tags).map_err(|e| VaultError::Validation(e.to_string()))?;
 
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = crate::types::now_millis();
 
     let exists: bool = conn
         .query_row(
@@ -135,8 +135,8 @@ fn write_imported_entry_in(
                 encrypted_custom_fields,
                 encrypted_totp,
                 tags_json,
-                entry.is_favorite as i64,
-                revision as i64,
+                i64::from(entry.is_favorite),
+                revision,
                 now,
                 entry.id,
             ],
@@ -165,8 +165,8 @@ fn write_imported_entry_in(
                 encrypted_custom_fields,
                 encrypted_totp,
                 tags_json,
-                entry.is_favorite as i64,
-                revision as i64,
+                i64::from(entry.is_favorite),
+                revision,
                 created_at,
                 now,
             ],
@@ -204,8 +204,8 @@ fn upsert_imported_in(
     match existing {
         Some((Some(_), _, _)) => Ok(ImportOutcome::SkippedLocallyDeleted),
         Some((None, revision, updated_at)) => {
-            if entry.revision < revision as u64
-                || (entry.revision == revision as u64 && entry.updated_at <= updated_at)
+            if entry.revision < revision
+                || (entry.revision == revision && entry.updated_at <= updated_at)
             {
                 return Ok(ImportOutcome::SkippedStale);
             }
@@ -226,8 +226,8 @@ fn upsert_imported_in(
                     encrypted_custom_fields,
                     encrypted_totp,
                     tags_json,
-                    entry.is_favorite as i64,
-                    entry.revision as i64,
+                    i64::from(entry.is_favorite),
+                    entry.revision,
                     entry.updated_at,
                     entry.id,
                 ],
@@ -237,7 +237,7 @@ fn upsert_imported_in(
             Ok(ImportOutcome::Updated)
         }
         None => {
-            let now = chrono::Utc::now().timestamp_millis();
+            let now = crate::types::now_millis();
             let created_at = if entry.created_at > 0 {
                 entry.created_at
             } else {
@@ -266,8 +266,8 @@ fn upsert_imported_in(
                     encrypted_custom_fields,
                     encrypted_totp,
                     tags_json,
-                    entry.is_favorite as i64,
-                    entry.revision as i64,
+                    i64::from(entry.is_favorite),
+                    entry.revision,
                     created_at,
                     updated_at,
                 ],

@@ -44,7 +44,7 @@ export type SshKeyInfoDto = { fingerprint: string, keyType: string, comment: str
 
 export type SshKeyMetaDto = { keyType: string, bits: number, fingerprint: string, comment: string, publicKey: string, };
 
-export type StrengthResult = { score: number, entropyBits: number, crackTimeSeconds: number, crackTimeDisplay: string, warnings: Array<StrengthWarning>, };
+export type StrengthResult = { score: number, entropyBits: number, crackTimeDisplay: string, warnings: Array<StrengthWarning>, };
 
 export type StrengthWarning = "tooShort" | "noUppercase" | "noLowercase" | "noDigits" | "noSpecialChars" | "commonPattern" | "repeatedChars" | "sequentialChars" | "dictionaryWord";
 

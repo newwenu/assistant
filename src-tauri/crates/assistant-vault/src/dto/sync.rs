@@ -103,7 +103,7 @@ pub struct ConflictFileDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export, export_to = "vault.contract.ts")]
 pub struct SyncConfigDto {
     pub remote_url: Option<String>,
@@ -149,7 +149,7 @@ pub struct EntryPreviewDto {
     pub commit_author: Option<String>,
     pub commit_time: Option<i64>,
     pub category: String,
-    pub revision: u64,
+    pub revision: i64,
     pub title: String,
     pub username: Option<String>,
     pub url: Option<String>,

@@ -265,7 +265,7 @@ impl SecurityDbState {
                 custom_fields,
                 tags: serde_json::from_str(&tags_json).unwrap_or_default(),
                 is_favorite: is_fav != 0,
-                revision: revision as u64,
+                revision,
                 created_at: created,
                 updated_at: updated,
             })

@@ -62,7 +62,7 @@ impl SecurityDbState {
         F: FnOnce(&MasterKey, &VaultEntrySnapshot) -> Result<(), VaultError>,
     {
         self.with_transaction(|conn, mk| {
-            let now = chrono::Utc::now().timestamp_millis();
+            let now = crate::types::now_millis();
             let affected = conn
                 .execute(
                     "UPDATE vault_entries SET deleted_at = NULL, revision = revision + 1, \
@@ -93,7 +93,7 @@ impl SecurityDbState {
         F: FnOnce(&MasterKey, &VaultEntrySnapshot) -> Result<(), VaultError>,
     {
         self.with_transaction(|conn, mk| {
-            let now = chrono::Utc::now().timestamp_millis();
+            let now = crate::types::now_millis();
             let entry_key = VaultCrypto::derive_entry_key(mk, &entry.id);
 
             let encrypted_password =
@@ -116,7 +116,7 @@ impl SecurityDbState {
                 .map_err(|e| VaultError::Database(e.to_string()))?;
 
             let revision = match existing {
-                Some(r) => r as u64 + 1,
+                Some(r) => r + 1,
                 None => {
                     let max_revision: i64 = conn
                         .query_row(
@@ -125,7 +125,7 @@ impl SecurityDbState {
                             |row| row.get(0),
                         )
                         .map_err(|e| VaultError::Database(e.to_string()))?;
-                    max_revision.max(entry.revision as i64) as u64 + 1
+                    max_revision.max(entry.revision) + 1
                 }
             };
 
@@ -146,8 +146,8 @@ impl SecurityDbState {
                         encrypted_custom_fields,
                         encrypted_totp,
                         tags_json,
-                        entry.is_favorite as i64,
-                        revision as i64,
+                        i64::from(entry.is_favorite),
+                        revision,
                         now,
                         entry.id,
                     ],
@@ -176,8 +176,8 @@ impl SecurityDbState {
                         encrypted_custom_fields,
                         encrypted_totp,
                         tags_json,
-                        entry.is_favorite as i64,
-                        revision as i64,
+                        i64::from(entry.is_favorite),
+                        revision,
                         created_at,
                         now,
                     ],
@@ -208,7 +208,8 @@ impl SecurityDbState {
                     Some(&purged.to_string()),
                 );
             }
-            Ok(purged as u32)
+            u32::try_from(purged)
+                .map_err(|_| VaultError::Validation("purged entry count exceeds u32".to_string()))
         })
     }
 }

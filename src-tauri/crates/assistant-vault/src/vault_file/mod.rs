@@ -144,6 +144,13 @@ impl VaultFileManager {
         let file: EntryFile =
             serde_json::from_str(content).map_err(|e| SyncError::Other(e.to_string()))?;
 
+        if file.revision < 0 {
+            return Err(SyncError::Other(format!(
+                "Invalid negative revision {} in entry file {}",
+                file.revision, file.id
+            )));
+        }
+
         let entry_key = VaultCrypto::derive_entry_key(master_key, &file.id);
         let plaintext = VaultCrypto::decrypt_field(&file.encrypted_blob, entry_key.expose())
             .map_err(|e| SyncError::HistoryDecryptFailed(e.to_string()))?;

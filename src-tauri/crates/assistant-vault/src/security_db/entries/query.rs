@@ -96,7 +96,8 @@ impl SecurityDbState {
             )
             .map_err(|e| VaultError::Database(e.to_string()))?;
 
-        Ok(count as u32)
+        u32::try_from(count)
+            .map_err(|_| VaultError::Validation("entry count exceeds u32".to_string()))
     }
 
     pub fn get_entry(&self, id: &str) -> Result<VaultEntryDetail, VaultError> {

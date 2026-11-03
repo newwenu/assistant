@@ -23,7 +23,7 @@ fn create(title: &str) -> VaultEntryCreate {
     }
 }
 
-fn import(id: &str, revision: u64, title: &str, updated_at: i64) -> VaultEntryImport {
+fn import(id: &str, revision: i64, title: &str, updated_at: i64) -> VaultEntryImport {
     VaultEntryImport {
         id: id.to_string(),
         category: VaultCategory::Login,

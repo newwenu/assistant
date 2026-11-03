@@ -53,7 +53,7 @@ impl SecurityDbState {
         detail: Option<&str>,
     ) -> Result<usize, VaultError> {
         self.with_transaction(|conn, _mk| {
-            let now = chrono::Utc::now().timestamp_millis();
+            let now = crate::types::now_millis();
             let mut deleted = 0usize;
             for id in ids {
                 let affected = conn
@@ -146,7 +146,7 @@ fn create_entry_in(
 ) -> Result<VaultEntrySnapshot, VaultError> {
     let id = uuid::Uuid::new_v4().to_string();
     let entry_key = VaultCrypto::derive_entry_key(mk, &id);
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = crate::types::now_millis();
 
     let totp_payload = payload_from_input(entry.totp.as_ref());
     let encrypted_password = encrypt_opt(entry.password.as_deref(), entry_key.expose(), algo)?;
@@ -173,7 +173,7 @@ fn create_entry_in(
             encrypted_custom_fields,
             encrypted_totp,
             tags_json,
-            entry.is_favorite as i64,
+            i64::from(entry.is_favorite),
             now,
             now,
         ],
@@ -192,7 +192,7 @@ fn update_entry_in(
     algo: CipherAlgorithm,
 ) -> Result<(), VaultError> {
     let entry_key = VaultCrypto::derive_entry_key(mk, id);
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = crate::types::now_millis();
 
     let encrypted_password = encrypt_opt(entry.password.as_deref(), entry_key.expose(), algo)?;
     let encrypted_notes = encrypt_opt(entry.notes.as_deref(), entry_key.expose(), algo)?;
@@ -257,7 +257,7 @@ fn update_entry_in(
         Box::new(entry.category.to_string()),
         Box::new(encrypted_custom_fields),
         Box::new(tags_json),
-        Box::new(entry.is_favorite as i64),
+        Box::new(i64::from(entry.is_favorite)),
         Box::new(now),
     ];
 
@@ -287,12 +287,12 @@ fn update_entry_in(
 }
 
 fn set_favorite_in(conn: &Connection, id: &str, is_favorite: bool) -> Result<(), VaultError> {
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = crate::types::now_millis();
     let affected = conn
         .execute(
             "UPDATE vault_entries SET is_favorite = ?1, revision = revision + 1, updated_at = ?2 \
              WHERE id = ?3 AND deleted_at IS NULL",
-            params![is_favorite as i64, now, id],
+            params![i64::from(is_favorite), now, id],
         )
         .map_err(|e| VaultError::Database(e.to_string()))?;
 
@@ -305,7 +305,7 @@ fn set_favorite_in(conn: &Connection, id: &str, is_favorite: bool) -> Result<(),
 }
 
 fn delete_entry_in(conn: &Connection, id: &str) -> Result<(), VaultError> {
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = crate::types::now_millis();
     let affected = conn
         .execute(
             "UPDATE vault_entries SET deleted_at = ?1 WHERE id = ?2 AND deleted_at IS NULL",

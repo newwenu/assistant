@@ -7,7 +7,6 @@ use ts_rs::TS;
 pub struct StrengthResult {
     pub score: u8,
     pub entropy_bits: f64,
-    pub crack_time_seconds: u64,
     pub crack_time_display: String,
     pub warnings: Vec<StrengthWarning>,
 }

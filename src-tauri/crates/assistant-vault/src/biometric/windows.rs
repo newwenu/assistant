@@ -17,6 +17,8 @@ use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTIT
 use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
 use windows_future::{IAsyncAction, IAsyncOperation};
 
+// HRESULT 以无符号位模式书写，转 `i32` 是有意的符号位解释。
+#[allow(clippy::cast_sign_loss)]
 const RPC_E_CHANGED_MODE: HRESULT = HRESULT(0x80010106u32 as i32);
 
 pub struct WindowsHelloKeyStore;
@@ -72,7 +74,10 @@ fn buffer_to_bytes(buffer: &IBuffer) -> windows::core::Result<Vec<u8>> {
     Ok(array.to_vec())
 }
 
+// HRESULT 以无符号位模式书写，转 `i32` 是有意的符号位解释。
+#[allow(clippy::cast_sign_loss)]
 const ERROR_NOT_FOUND: HRESULT = HRESULT(0x80070490u32 as i32);
+#[allow(clippy::cast_sign_loss)]
 const ERROR_FILE_NOT_FOUND: HRESULT = HRESULT(0x80070002u32 as i32);
 
 fn map_win_error(e: windows::core::Error) -> VaultError {

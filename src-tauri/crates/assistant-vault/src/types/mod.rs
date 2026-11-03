@@ -8,11 +8,27 @@ pub use assistant_crypto::error::VaultError;
 
 pub use crate::shared::*;
 
+/// Unix **毫秒**时间戳别名。wire 上为 JSON number，最大可精确表示值为 2^53-1。
+pub type Millis = i64;
+
+/// JSON number 可精确表示的整数上限（2^53-1）。
+pub const MAX_SAFE_JSON_MILLIS: i64 = (1 << 53) - 1;
+
+/// 取当前 Unix 毫秒时间戳，并在构造处校验 JSON number 值域。
+pub fn now_millis() -> Millis {
+    let value = chrono::Utc::now().timestamp_millis();
+    debug_assert!(
+        (0..=MAX_SAFE_JSON_MILLIS).contains(&value),
+        "timestamp {value} is outside the JSON safe integer range"
+    );
+    value
+}
+
 #[derive(Debug, Clone)]
 pub struct VaultEntrySnapshot {
     pub id: String,
     pub category: VaultCategory,
-    pub revision: u64,
+    pub revision: i64,
     pub title: String,
     pub username: Option<String>,
     pub url: Option<String>,
@@ -31,7 +47,7 @@ pub struct VaultEntrySnapshot {
 pub struct VaultEntryImport {
     pub id: String,
     pub category: VaultCategory,
-    pub revision: u64,
+    pub revision: i64,
     pub title: String,
     pub username: Option<String>,
     pub url: Option<String>,
@@ -76,7 +92,7 @@ pub struct VaultEntryDecrypted {
     pub custom_fields: Vec<DecryptedCustomField>,
     pub tags: Vec<String>,
     pub is_favorite: bool,
-    pub revision: u64,
+    pub revision: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }

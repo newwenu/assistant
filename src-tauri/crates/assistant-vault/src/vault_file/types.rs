@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct EntryFile {
     pub id: String,
     pub category: String,
-    pub revision: u64,
+    pub revision: i64,
     pub encrypted_blob: String,
 }
 
@@ -81,7 +81,7 @@ pub struct BlobCustomField {
 pub struct ImportedEntry {
     pub id: String,
     pub category: String,
-    pub revision: u64,
+    pub revision: i64,
     pub blob: EntryBlob,
 }
 

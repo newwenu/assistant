@@ -69,7 +69,8 @@ impl SyncEngine {
             deleted,
             ids.join(", ")
         );
-        Ok(deleted as u32)
+        u32::try_from(deleted)
+            .map_err(|_| SyncError::Other("deleted entry count exceeds u32".to_string()))
     }
 
     pub fn pull(&self, security_db: &SecurityDbState) -> Result<SyncResult, SyncError> {
@@ -156,7 +157,8 @@ impl SyncEngine {
 
         let entries: Vec<VaultEntryImport> =
             imported.into_iter().map(|e| e.into_import()).collect();
-        let total = entries.len() as u32;
+        let total = u32::try_from(entries.len())
+            .map_err(|_| SyncError::Other("entry count exceeds u32".to_string()))?;
 
         let outcomes = security_db
             .upsert_imported_entries(entries, self.vault_file.cipher_algorithm())

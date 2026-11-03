@@ -1,3 +1,5 @@
+#![deny(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+
 pub mod audit;
 pub mod biometric;
 pub mod dto;

@@ -52,19 +52,18 @@ pub fn estimate_strength(password: &str) -> StrengthResult {
 
     let score: u8 = entropy_result.score().into();
     let entropy_bits = entropy_result.guesses_log10() * 10.0_f64.log2();
-    let crack_time_seconds: u64 = Duration::from(
+    let crack_seconds: u64 = Duration::from(
         entropy_result
             .crack_times()
             .offline_slow_hashing_1e4_per_second(),
     )
     .as_secs();
 
-    let crack_time_display = format_crack_time(crack_time_seconds);
+    let crack_time_display = format_crack_time(crack_seconds);
 
     StrengthResult {
         score,
         entropy_bits,
-        crack_time_seconds,
         crack_time_display,
         warnings,
     }
@@ -83,13 +82,13 @@ fn has_repeated_chars(password: &str) -> bool {
 fn has_sequential_chars(password: &str) -> bool {
     let chars: Vec<char> = password.chars().collect();
     for i in 0..chars.len().saturating_sub(2) {
-        let a = chars[i] as i32;
-        let b = chars[i + 1] as i32;
-        let c = chars[i + 2] as i32;
-        if b - a == 1 && c - b == 1 {
+        let a = u32::from(chars[i]);
+        let b = u32::from(chars[i + 1]);
+        let c = u32::from(chars[i + 2]);
+        if b == a + 1 && c == b + 1 {
             return true;
         }
-        if a - b == 1 && b - c == 1 {
+        if a == b + 1 && b == c + 1 {
             return true;
         }
     }
