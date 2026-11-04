@@ -48,13 +48,34 @@ pub struct AppConf {
     pub compact_summary_max_tokens: u16,
 }
 
+/// 平台主修饰键：macOS 用 Command，其余用 Control。
+pub fn primary_modifier() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Meta"
+    } else {
+        "Control"
+    }
+}
+
+/// 默认快捷键的唯一来源（Rust 注册与前端默认值必须保持一致）。
+///
+/// 统一使用四键组合，避开浏览器、编辑器和系统的高频占用：
+/// `Ctrl+Shift+N`（浏览器无痕/新建窗口）、`Ctrl+Shift+O`（编辑器跳转符号）、
+/// `Ctrl+Shift+M`（部分 IDE 重构）等都不再作为默认值。
+pub fn default_keybindings() -> HashMap<String, String> {
+    let primary = primary_modifier();
+    let mut keybindings = HashMap::new();
+    keybindings.insert("toggle_orb".to_string(), format!("{}+Shift+Alt+O", primary));
+    keybindings.insert(
+        "toggle_main".to_string(),
+        format!("{}+Shift+Alt+M", primary),
+    );
+    keybindings.insert("new_chat".to_string(), format!("{}+Shift+Alt+N", primary));
+    keybindings
+}
+
 impl AppConf {
     pub fn new() -> Self {
-        let mut keybindings = HashMap::new();
-        keybindings.insert("toggle_orb".to_string(), "Meta+Shift+O".to_string());
-        keybindings.insert("toggle_main".to_string(), "Meta+Shift+M".to_string());
-        keybindings.insert("new_chat".to_string(), "Meta+Shift+N".to_string());
-
         Self {
             theme: "system".to_string(),
             language: "zh-CN".to_string(),
@@ -62,7 +83,7 @@ impl AppConf {
             stay_on_top: false,
             launch_at_login: false,
             close_to_tray: true,
-            keybindings,
+            keybindings: default_keybindings(),
             auto_compact: true,
             compact_threshold_percent_of_budget: super::constant::COMPACTION_THRESHOLD_PERCENT,
             legacy_compact_threshold_percent: None,
