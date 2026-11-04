@@ -73,10 +73,17 @@ ToolBox 入口需要一条**直达路径**：前端组件 → Tauri command → 
 | ToolGateway 审批流 | LLM 自主决策 → 需要人类审批 | 用户自己点的 → 审批自己无意义 |
 | Permission Policy 评估 | 防止 LLM 越权 | 用户就是权限主体，无需策略评估 |
 | 审计日志 (ResultStorage) | 追踪 AI 自主行为 | 用户操作，不是 AI 行为 |
-| 超时保护 | 防止 LLM 发起的命令挂起 | UI 层自行处理加载/超时状态 |
+| 超时保护 | 防止 LLM 发起的命令挂起 | 共享 Rust 侧 `DEFAULT_TOOL_TIMEOUT` 兜底（`exec::invoke`），前端只维护加载态 |
 | 结果回填消息历史 | Agent Loop 需要继续对话 | 结果直接返回组件渲染 |
+| 输入校验（`validate_input`） | Pipeline 的校验阶段，区分可修正错误与不可改写不变量 | 不经过 Pipeline，无校验阶段；不变量由 `execute()` 内部判定 |
 
 路径校验（`validate_path()`）等安全约束是 Tool.execute() 内部逻辑，不依赖 ToolPipeline，两个入口均受保护。
+
+**`shell_exec` 同理，且更严格**：它的 SafetyBelt、结构守卫、环境隔离、命令分类全部位于 `execute()` 内部（执行层不变量），ToolBox 直接调用也照样受保护；只有 AllowlistGate / ApprovalGate 这层审批留在 Pipeline，ToolBox 不经过。守卫分层归属见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §3.3–§3.4。
+
+**ToolBox 永远不涉及审批**：用户点击即执行意图的表达，不存在「谁来批准」的问题。Pipeline 的 `validate_input` 阶段服务于 Agent 入口——它要在弹审批框之前先排除非法输入；ToolBox 没有审批框，因此不需要这个阶段。两者的共同底线是「不变量不可绕过」，但这条底线由 `execute()` 内部的 `validate_path()` 等函数保证，而不是靠 Pipeline 关卡。
+
+> 因此 `validate_input` 与 `execute()` 内部的路径校验必须**复用同一套判定函数**，避免 Agent 入口和 ToolBox 入口对同一条路径得出不同结论。详见 [I18-spec](I18-agent-tool-architecture-spec.md) Step 6.2.1。
 
 ### 2.3 `os_tool_exec` Tauri command 实现
 
@@ -126,7 +133,7 @@ pub async fn os_tool_exec(
 }
 ```
 
-关键：`os_tool_exec` 直接调 `Tool.execute()`，不经过 ToolPipeline。路径校验等安全约束由 Tool.execute() 内部保证，与 Agent 入口调同一个 execute() 时行为一致。
+关键：`os_tool_exec` 直接调 `Tool.execute()`，不经过 ToolPipeline。路径校验等安全约束由 Tool.execute() 内部保证，与 Agent 入口调同一个 execute() 时行为一致。`shell_exec` 的 SafetyBelt 与纵深防御也在 `execute()` 内，因此 ToolBox 调用它同样受保护——缺的只是 AllowlistGate / ApprovalGate 这层审批。
 
 **已知待修**：`ToolUseContext::for_toolbox(None)` 使 `workspace_root` 恒为 `None`，相对路径工具在 ToolBox 入口下不可用，需补工作区来源（见 I18 spec 8.2）。
 
@@ -362,7 +369,7 @@ src/tools/
 | ToolPipeline | ✓ 定义 | 不经过——ToolBox 是用户主动调用，无需审批/审计/策略评估 |
 | ToolGateway（权限网关） | ✓ 定义 | 不经过——用户就是权限主体 |
 | RoundExecutor | ✓ 定义 | 不涉及（Agent 专用入口） |
-| Tool.execute() 内部安全约束 | ✓ 定义 | **共享**——路径校验等在 execute() 内部，两个入口均受保护 |
+| Tool.execute() 内部安全约束 | ✓ 定义 | **共享**——路径校验、Shell 执行层守卫（SafetyBelt 等）在 execute() 内部，两个入口均受保护 |
 | ToolBox ↔ Rust 桥接 | ✗ | ✓ 本文档核心 |
 | os_tool_exec Tauri command | ✗ | ✓ 本文档核心（直达执行） |
 | os.ts 代理对象 | ✗ | ✓ 本文档核心 |

@@ -96,20 +96,38 @@ pub struct BehaviorHints {
 #[serde(rename_all = "camelCase")]
 pub struct ToolResult {
     pub ok: bool,
-    pub data: Option<Value>,    // ok=true 时有值
-    pub error: Option<String>,  // ok=false 时有值
+    pub data: Option<Value>,                 // 前端渲染用结构化数据，ok=true 时有值
+    pub result_for_assistant: Option<String>,// 回填给模型的精简文本（可缺省，缺省时由 data 推导）
+    pub error: Option<String>,               // ok=false 时有值
+    pub error_kind: Option<ToolErrorKind>,   // ok=false 时的错误类别
 }
+
+pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 ```
 
 **构造器契约**：
-- `ToolResult::ok(data)` → `{ ok: true, data: Some(data), error: None }`
-- `ToolResult::err(msg)` → `{ ok: false, data: None, error: Some(msg) }`
+- `ToolResult::ok(data)` → `{ ok: true, data: Some(data), result_for_assistant: None, error: None, error_kind: None }`
+- `ToolResult::ok_with_assistant(data, text)` → 同上，但 `result_for_assistant: Some(text)`
+- `ToolResult::err(msg)` → `{ ok: false, data: None, result_for_assistant: None, error: Some(msg), error_kind: Some(Business) }`
+- `ToolResult::err_kind(kind, msg)` → 指定错误类别，由 `exec::invoke` 在超时/取消/内部错误场景使用
 
-**OsToolResultDto**：Tauri command 返回类型，与 ToolResult 同构，`From<ToolResult>` 转换。存在原因：Tauri command 需要独立序列化类型。归属 `src-tauri/src/protocol/dto/os_tool.rs`——wire 类型必须落在 `protocol/dto`，`assistant-tools` 不持有 Tauri 契约类型。
+**双通道语义**：`data` 给前端渲染（行号、覆盖率、诊断、diff 等完整结构），`result_for_assistant` 给模型（精简文本）。缺省时 Pipeline 用 `data` 的紧凑序列化兜底，因此存量工具无需改动即可工作。
 
-**参考**：OpenBitFun 的 `ToolResult` 更丰富——含 `output`(Value) + `is_error`(bool) + `artifacts`(Vec) + `presentation`(String)。artifacts 支持持久化大结果到文件（>50KB 自动落盘），presentation 控制前端渲染。我们的简化版暂不含 artifacts/presentation，后续 Step 6 Pipeline 可扩展。
+**错误类别语义**：
 
-**实施状态**：✅ 已实现，`assistant-tools/src/result.rs`。
+| `error_kind` | 产生位置 | 模型应有的反应 |
+|---|---|---|
+| `Business` | 工具内部业务失败（路径不存在、参数缺失、未知 action） | 可改参数重试 |
+| `Timeout` | `exec::invoke` 超时兜底 | 可重试，但缩小范围或显式提高 timeout |
+| `Cancelled` | 用户取消 / 代际切换 | 不重试 |
+| `Internal` | 工具返回 `Err` 后被 `invoke` 归一化 | 不重试，向用户报告 |
+| `Denied` | Gateway 拒绝或审批拒绝 | 不重试，换方案 |
+
+**OsToolResultDto**：Tauri command 返回类型，与 ToolResult 同构，`From<ToolResult>` 转换。存在原因：Tauri command 需要独立序列化类型。归属 `src-tauri/src/protocol/dto/os_tool.rs`——wire 类型必须落在 `protocol/dto`，`assistant-tools` 不持有 Tauri 契约类型。新增 `resultForAssistant` / `errorKind` 两个字段按 DTO 规则处理：键恒在、值为 `null`，前端声明为 `T | null`，不加 `skip_serializing_if`。
+
+**参考**：OpenBitFun 的 `ToolResult` 更丰富——含 `output`(Value) + `is_error`(bool) + `artifacts`(Vec) + `presentation`(String)，且 `ToolResult::Result { data, result_for_assistant, image_attachments }` 显式分离「给 UI」与「给模型」两条通道。artifacts 支持持久化大结果到文件（>50KB 自动落盘，见 Step 6.4），presentation 控制前端渲染。我们不采纳 `image_attachments`（当前无多模态工具结果）与 `Progress`/`StreamChunk` 流式（见设计 §3.12 取舍）。
+
+**实施状态**：⚠️ 部分实现——`assistant-tools/src/result.rs` 当前只有 `ok/data/error`；`result_for_assistant` 与 `error_kind` 随 Step 6 Pipeline 一并扩展，届时 `exec::invoke` 需按错误来源打标。
 
 ### 0.4 PermissionIntent
 
@@ -166,6 +184,8 @@ pub trait Tool: Send + Sync {
     fn audience(&self) -> ToolAudience { ToolAudience::BOTH }
     fn behavior_hints(&self) -> BehaviorHints { BehaviorHints::default() }
     fn is_readonly(&self) -> bool { self.behavior_hints().read_only }
+    fn is_concurrency_safe(&self, _input: Option<&Value>) -> bool { self.is_readonly() }
+    fn validate_input(&self, _input: &Value, _context: &ToolUseContext) -> ValidationResult { ValidationResult::ok() }
     fn permission_intents(&self, _input: &Value, _context: &ToolUseContext) -> Result<Vec<PermissionIntent>, String> { Ok(vec![]) }
     async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult, String>;
 }
@@ -181,6 +201,8 @@ pub trait Tool: Send + Sync {
 | `tier()` | 层级过滤 | 无 | 返回 ToolTier |
 | `behavior_hints()` | 安全评估 | 无 | 三维安全标记，默认全 false |
 | `is_readonly()` | 并发决策 | 无 | 默认从 behavior_hints 推导 |
+| `is_concurrency_safe(input)` | 并发分批 | 无 | 默认 `is_readonly()`；工具可按 input 覆写（见 6.3） |
+| `validate_input(input, context)` | Pipeline 校验阶段 | 无 | 默认通过；不变量违规须标 `blocks_input_rewrite`（见 6.2.1） |
 | `permission_intents()` | ToolGateway 评估 | 无 | 声明权限需求，**纯声明不执行 IO**；默认无需求 |
 | `execute()` | Pipeline / os_tool_exec | **有** | 唯一有副作用的方法，内含路径校验等安全约束 |
 
@@ -215,7 +237,7 @@ pub trait Tool: Send + Sync {
 ```
 fs_read ──→ fs_list ──→ fs_glob ──→ fs_grep     只读，可并发，无审批需求
     │
-fs_write ──→ fs_mkdir ──→ fs_move ──→ fs_link    修改，需审批
+fs_write ──→ fs_edit ──→ fs_mkdir ──→ fs_move ──→ fs_link    修改，需审批
     │
 fs_delete                                       破坏性，需审批
     │
@@ -231,7 +253,8 @@ ask_user                                        特殊：AI 主动问用户
 | `fs_list` | read | ✅ | ❌ | ❌ | 列目录，限制深度和条目数 |
 | `fs_glob` | read | ✅ | ❌ | ❌ | glob 模式搜索文件 |
 | `fs_grep` | read | ✅ | ❌ | ❌ | ripgrep 内容搜索 |
-| `fs_write` | edit | ❌ | ❌ | ❌ | 写文件，路径白名单约束 |
+| `fs_write` | edit | ❌ | ❌ | ❌ | 写文件（新建/整文件覆盖），路径白名单约束 |
+| `fs_edit` | edit | ❌ | ❌ | ❌ | 唯一匹配替换（`old_string`→`new_string`），审批卡片展示 diff |
 | `fs_mkdir` | edit | ❌ | ❌ | ❌ | 创建目录（含 parents） |
 | `fs_move` | edit | ❌ | ❌ | ❌ | 移动/重命名文件 |
 | `fs_link` | edit | ❌ | ❌ | ❌ | 创建/检查链接（symlink/hardlink/junction） |
@@ -244,6 +267,8 @@ ask_user                                        特殊：AI 主动问用户
 > **受众区分已落地**：`Tool` trait 提供 `audience() -> ToolAudience`（默认 `BOTH`），含两个独立维度——`agent` 决定是否进入 LLM 的 `tools` 列表，`toolbox` 决定是否允许 `os_tool_exec` 按名调用。`fs_link` 声明为 `TOOLBOX_ONLY`，因此 Step 7 的注入链路建成后它**不会**出现在模型的工具列表，同时 ToolBox 入口不受影响。详见 I31 §4.2.1（原 O1 已解决）。
 >
 > **新增工具的硬约束**：实现 `Tool` 时必须显式声明受众，不得依赖默认值。典型 Agent 工具（`fs_read` … `shell_exec`）为 `BOTH`；仅服务 ToolBox 的为 `TOOLBOX_ONLY`；仅服务 Agent Loop、不应从前端透传入口暴露的为 `AGENT_ONLY`。默认值只是为存量工具提供零破坏迁移，不是新工具的推荐写法。
+>
+> **`shell_exec` 受众为 `BOTH` 的前提**：它的 SafetyBelt 与全部纵深防御必须在 `execute()` 内部（见 shell_exec 规格的「实现不变量」），而不是依赖 Pipeline。只有满足这一点，ToolBox 直接调用才与 Agent 入口同等级受保护；否则应改为 `AGENT_ONLY`。
 >
 > **注册暴露约束**：`os_tool_exec` 是按名字透传的通用入口，任何 `toolbox == true` 的工具注册后都会立刻获得一个可从 Webview 控制台调用的入口，**与是否存在前端组件无关**。因此：Step 4/5 就绪前不得把 `shell_exec` 加入生产注册表；`fs_delete` 等破坏性工具须与前端组件同期上线；新增工具时 `os/mod.rs` 应提供分组注册（只读 / 修改 / 危险），`setup.rs` 只注册已确认可暴露的分组。
 
@@ -382,6 +407,40 @@ impl Tool for FsReadTool {
 
 **参考**：OpenBitFun `FileWriteTool` 支持 diff-based 写入（`+++ path` / `---` 分隔的多文件写入），支持 plan artifact 诊断。
 
+### fs_edit 规格
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": { "type": "string" },
+    "old_string": { "type": "string", "description": "必须与文件中唯一一段内容完全匹配（含缩进）" },
+    "new_string": { "type": "string", "description": "替换后的内容，可为空以删除该段" },
+    "replace_all": { "type": "boolean", "description": "允许替换全部匹配（默认 false）" }
+  },
+  "required": ["path", "old_string", "new_string"]
+}
+```
+
+**行为**：读取文件 → 精确匹配 `old_string`（含缩进与换行）→ 校验匹配次数 → 替换写回。
+
+**匹配约束**：
+
+| 情况 | 行为 |
+|---|---|
+| 0 匹配 | 失败，`error_kind = Business`，错误信息回传「未找到匹配，建议先 `fs_read` 确认内容」 |
+| 1 匹配 | 替换并写回，返回替换位置（起始行）与改动前后 diff |
+| 多匹配且 `replace_all = false` | 失败，回传匹配次数与首个匹配行号，提示扩大上下文或显式 `replace_all` |
+| 多匹配且 `replace_all = true` | 全部替换，返回替换次数 |
+
+**为什么不做整文件覆盖式编辑**：整文件覆盖要求模型重述全文——长文件易截断、易误删未读部分，且审批卡片无法展示「改了什么」。唯一匹配替换只要求最小上下文，天然产出 diff。
+
+**与 `fs_write` 的分工**：`fs_write` 用于新建文件或确实需要整文件重写；`fs_edit` 是默认编辑手段。
+
+**参考**：codex `apply_patch`（自定义 patch 语法 + `FileChange` 预览 + 审批）与本工具目标相同——让模型表达「最小改动」而非「重述全文」；我们不用 patch 语法，避免额外解析器与格式教学成本。OpenBitFun `file_edit` 的 `old_string`/`new_string` 唯一匹配语义与本工具一致。
+
+**审批展示**：`fs_edit` 的 `permission_intents()` 生成 `edit` + 目标路径，审批卡片必须展示 diff（新增/删除行数 + 片段），而不是只展示路径。
+
 ### fs_delete 规格
 
 ```json
@@ -413,28 +472,36 @@ impl Tool for FsReadTool {
 }
 ```
 
-**行为**：`destructive = true, open_world = true`，必须经审批 + 洋葱守卫。详见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
+**行为**：`destructive = true, open_world = true`。守卫按归属拆两层：**执行层**（SafetyBelt + 结构守卫 + 环境隔离 + 命令分类 + BareExec）落在 `execute()` 内部、两入口共享；**审批层**（AllowlistGate + ApprovalGate）在 Pipeline 内、仅 Agent 入口。详见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §3.3–§3.4。
 
-**Shell 洋葱栈**（由内到外）：
+**Shell 守卫分层**：
 
 ```
-┌─ ApprovalGate ────────────────────────┐
+执行层（execute() 内部，ToolBox 与 Agent 都经过）
+┌─ SafetyBelt ──────────────────────────┐
+│  ┌─ 结构守卫 / 环境隔离 / 命令分类 ──┐  │
+│  │  ┌─ BareExec ────────────────┐  │  │
+│  │  │  tokio::process::Command   │  │  │
+│  │  └────────────────────────────┘  │  │
+│  └──────────────────────────────────┘  │
+└───────────────────────────────────────┘
+
+审批层（Pipeline 内，仅 Agent 入口）
+┌─ ApprovalGate ─────────────────────────┐
 │  ┌─ AllowlistGate ──────────────────┐  │
-│  │  ┌─ SafetyBelt ────────────────┐  │  │
-│  │  │  ┌─ BareExec ────────────┐  │  │  │
-│  │  │  │  tokio::process::Command │  │  │  │
-│  │  │  └──────────────────────┘  │  │  │
-│  │  └───────────────────────────┘  │  │
-│  └────────────────────────────────┘  │
-└──────────────────────────────────────┘
+│  └───────────────────────────────────┘  │
+└────────────────────────────────────────┘
 ```
 
-| 层 | 职责 | 可配置 | 失败行为 |
-|----|------|--------|---------|
-| SafetyBelt | 致命命令硬拒绝 | 编译期固定 | Deny |
-| AllowlistGate | 常用命令免审批 | 用户可配置 | Pass → 下一层 |
-| ApprovalGate | 未白名单命令需用户确认 | 用户可配置 | Approve/Deny |
-| BareExec | 实际执行 | 无 | 执行结果 |
+| 层 | 归属 | 职责 | 可配置 | 失败行为 |
+|----|------|------|--------|---------|
+| SafetyBelt | 执行层 | 致命命令硬拒绝 | 编译期固定 | Deny |
+| 结构守卫 / 环境隔离 / 命令分类 | 执行层 | 见下表 | 编译期固定 | Deny |
+| AllowlistGate | 审批层 | 常用命令免审批（自动 Approve，不跳过审批） | 用户可配置 | Pass → 下一层 |
+| ApprovalGate | 审批层 | 未白名单命令需用户确认 | 用户可配置 | Approve/Deny |
+| BareExec | 执行层 | 实际执行 | 无 | 执行结果 |
+
+**实现不变量**：`execute()` 内部必须包含 SafetyBelt 与全部纵深防御，不得假设「Pipeline 会拦」。`validate_input()` 的命令判定必须复用 SafetyBelt 的判定函数，命中时返回 `blocks_input_rewrite = true`。
 
 **BareExec 纵深防御**：
 
@@ -741,6 +808,40 @@ pub trait PermissionAuditStore: Send + Sync {
 }
 ```
 
+### 5.4.1 ApprovalKey — 审批键规范化
+
+`GrantStore` 的匹配不能以「工具名」为键，否则批准一次 `fs_write` 会放行所有路径写入。键必须是**规范化后的操作指纹**：
+
+```rust
+pub struct ApprovalKey {
+    pub tool: String,
+    pub scope: ApprovalScope,
+}
+
+pub enum ApprovalScope {
+    Path { canonical: String },                                  // canonicalize + 分隔符/大小写归一
+    Command { argv: Vec<String>, cwd: String, sandbox_tier: ToolTier }, // 完整 argv，非前缀
+    Endpoint { host: String, method: String },                   // 规范化 host/URL pattern
+    Opaque { fingerprint: String },                              // 工具自定义
+}
+```
+
+**规则**：
+
+| 规则 | 说明 |
+|---|---|
+| 路径归一 | `canonicalize` 后再比较；符号链接必须解析到真实目标，避免经链接绕过已批准路径 |
+| 命令归一 | 分词为完整 argv，`cwd` 与沙箱档位一起入键；**不做命令前缀匹配** |
+| 空键不命中 | 无法生成键（如命令解析失败）时直接走审批，不允许命中缓存 |
+| 会话级 | 缓存生命周期 = 会话，会话结束即失效；跨会话记忆走 `AlwaysApprove` 持久化 |
+| 委托 | 子 Agent 可读父 `GrantStore`，新增批准不写入父库 |
+
+**为什么不做前缀匹配**：批准 `cargo test` 后按前缀命中会顺带放行 `cargo publish`。前缀匹配只能由工具显式声明（如 `ApprovalScope::Opaque`），不能作为默认。
+
+**参考**：codex `with_cached_approval(keys: Vec<K>, fetch)`——`keys` 为空时直接调用审批函数（防误命中）；`ApplyPatchApprovalKey { environment_id, path }`、`UnifiedExecApprovalKey { environment_id, executable, command, cwd, tty, sandbox_permissions }` 把「可执行文件 + 完整命令 + cwd + 沙箱档位」一并入键。
+
+**实施状态**：❌ 未实现，随 Step 5 Gateway 一并落地。
+
 ### 5.5 GatewayDecision
 
 ```rust
@@ -780,24 +881,61 @@ execute(tool_calls, context) → Vec<ToolResult>:
   for tool_call in tool_calls:
     1. 查找工具
        tool = registry.find(tool_call.name)
-       未找到 → ToolResult::err("Unknown tool")
+       未找到 → ToolResult::err_kind(Internal, "Unknown tool")
 
-    2. 权限网关评估
+    2. 输入校验（见 6.2.1）
+       validation = tool.validate_input(input, context)
+       不变量违规 → ToolResult::err_kind(Business, message)，禁止改写重试
+       格式错误   → ToolResult::err_kind(Business, message)，允许修正重试
+
+    3. 权限网关评估
        decision = gateway.evaluate(tool, input, context, policy)
-       Denied/RejectedByUser → ToolResult::err(reason)
+       Denied/RejectedByUser → ToolResult::err_kind(Denied, reason)
 
-    3. 执行（带超时 + 取消）
+    4. 执行（带超时 + 取消）
        result = timeout(default_timeout, tool.execute(input, context))
-       超时 → ToolResult::err("Tool execution timed out")
+       超时       → ToolResult::err_kind(Timeout, "Tool execution timed out")
+       内部 Err   → ToolResult::err_kind(Internal, msg)
 
-    4. 持久化
+    5. 持久化（见 6.4）
        result_storage.persist(tool_call_id, conversation_id, ...)
 
-    5. 发射事件
+    6. 发射事件
        event_queue.emit(AgenticEvent::ToolCompleted { ... })
 
-    6. 收集结果
+    7. 收集结果
+       UI 取 data；回填模型取 result_for_assistant（缺省时用 data 紧凑序列化兜底）
 ```
+
+### 6.2.1 输入校验：可修正错误与不可改写不变量
+
+`Tool` trait 增加可选方法，默认实现为「通过」（存量工具无需改动）：
+
+```rust
+pub struct ValidationResult {
+    pub ok: bool,
+    pub message: Option<String>,
+    pub error_code: Option<String>,
+    pub blocks_input_rewrite: bool,   // true = 安全不变量违规，禁止任何上游改写后重试
+}
+
+fn validate_input(&self, input: &Value, context: &ToolUseContext) -> ValidationResult {
+    ValidationResult::ok()
+}
+```
+
+| 类别 | 例子 | `blocks_input_rewrite` | Pipeline 行为 |
+|---|---|---|---|
+| 可修正输入错误 | schema 不匹配、枚举值非法、必填字段缺失 | `false` | 返回错误，允许模型改参数或上游钩子修正后重试 |
+| 不可改写不变量 | 路径越出工作区、目标为受保护目录、tier 越界、沙箱档位不足 | `true` | 直接拒绝，且任何自动改写输入都不得绕过 |
+
+**为什么校验要先于权限评估**：明显非法的输入（如缺必填参数）不应弹出审批框——否则用户会为一个根本执行不了的操作做决策。
+
+**仅适用于 Agent 入口**：`validate_input` 是 Pipeline 阶段，ToolBox 入口不经过 Pipeline，因此没有这个阶段。ToolBox 的不变量保护由 `execute()` 内部的 `validate_path()` 等函数保证。两者必须复用同一套判定函数，否则同一条路径在两个入口可能得出不同结论（详见 [I18b](I18b-tool-unified-bridge-spec.md) §2.2）。
+
+**参考**：OpenBitFun `ValidationResult { result, message, error_code, meta }` + `blocks_input_rewrite()`——不变量违规打标后，PreToolUse 钩子不得改写输入，只能终止本次调用。
+
+**实施状态**：❌ 未实现，随 Step 6 Pipeline 落地；`Tool` trait 的新增方法需给默认实现，避免破坏已有工具。
 
 ### 6.3 并发编排
 
@@ -810,6 +948,16 @@ execute(tool_calls, context) → Vec<ToolResult>:
 [shell_exec_1]          ← 串行
 ```
 
+**并发安全判定**：默认由 `behavior_hints().read_only` 推导，同时保留可覆写点——工具可按 input 动态判定（如 `shell_exec` 的 `ls` 可并发、`rm` 不可）：
+
+```rust
+fn is_concurrency_safe(&self, _input: Option<&Value>) -> bool {
+    self.behavior_hints().read_only
+}
+```
+
+未覆写者行为与静态标记完全一致；覆写者按 input 判定。集中默认值在 trait 层，避免每个工具各写一份。
+
 **参考**：OpenBitFun `partition_tool_batches()` 将工具按 `is_concurrency_safe` 分组——连续的并发安全工具合并为一个 batch 用 `join_all` 执行，遇到非安全工具切分。测试验证：`[read_1, read_2, write_1, grep_1, grep_2, bash_1]` → 4 个 batch（2 并发 + 2 串行）。
 
 ### 6.4 结果持久化策略
@@ -821,7 +969,19 @@ ToolResult (小) → 直接嵌入消息历史
 ToolResult (大) → 写入文件 → 消息历史中放 <persisted-output> 引用 + 前 2000 字符预览
 ```
 
-**参考**：OpenBitFun `ToolResultStoragePolicy` 含 `per_tool_limit_chars`(50K) / `per_round_limit_chars`(200K) / `preview_chars`(2K)。`select_tool_result_indices_for_persistence()` 按大小降序选择需持久化的结果，直到总字符数低于限制。
+**三层上限**：
+
+| 参数 | 取值 | 作用 |
+|---|---|---|
+| `per_tool_limit_chars` | 50K | 单个工具结果超过即落盘 |
+| `per_round_limit_chars` | 200K | 单轮所有工具结果的总预算 |
+| `preview_chars` | 2K | 落盘后回填的预览长度 |
+
+**选择算法**：不是「超阈值就全落盘」。按序列化字符数**降序**排序，依次累加，累计超过 `per_round_limit_chars` 的结果才落盘——优先牺牲最大的几个，保留尽可能多的完整小结果。
+
+**跨轮去重**：同一会话内对同一路径、同一行范围且文件修订号未变的重复读取，返回「已在上文返回」语义（不回传内容，只提示复用上文）；文件修订号变化则回执失效，必须重读。
+
+**参考**：OpenBitFun `ToolResultStoragePolicy` 含 `per_tool_limit_chars`(50K) / `per_round_limit_chars`(200K) / `preview_chars`(2K)。`select_tool_result_indices_for_persistence()` 按大小降序选择需持久化的结果，直到总字符数低于限制。`file_read_tool` 用 `already_served` + `file_revision` 实现读取回执与失效。
 
 **实施状态**：❌ 未实现。需新增 `assistant-tools/src/pipeline.rs`。
 
@@ -934,10 +1094,10 @@ execute_round(context) → RoundOutcome:
 | ToolGateway 审批流 | LLM 自主决策 → 需要人类审批 | 用户自己点的 → 审批自己无意义 |
 | Permission Policy 评估 | 防止 LLM 越权 | 用户就是权限主体 |
 | 审计日志 | 追踪 AI 自主行为 | 用户操作，不是 AI 行为 |
-| 超时保护 | 防止 LLM 发起的命令挂起 | UI 层自行处理 |
+| 超时保护 | 防止 LLM 发起的命令挂起 | 共享 Rust 侧 `DEFAULT_TOOL_TIMEOUT` 兜底（`exec::invoke`），前端只维护加载态 |
 | 结果回填消息历史 | Agent Loop 需要继续对话 | 结果直接返回组件渲染 |
 
-**安全约束不缺失**：路径校验等在 `Tool.execute()` 内部，两个入口均受保护。
+**安全约束不缺失**：路径校验等在 `Tool.execute()` 内部，两个入口均受保护；`shell_exec` 的 SafetyBelt 与纵深防御同样在 `execute()` 内，只有 AllowlistGate / ApprovalGate 这层审批留在 Pipeline（见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §3.3–§3.4）。
 
 ### 8.3 os_tool_exec Tauri command
 
@@ -1338,15 +1498,17 @@ src-tauri/
 | 0 | 值类型 | ✅ 完成 | `trait.rs` `result.rs` `context.rs` |
 | 1 | Tool Trait | ✅ 完成 | `trait.rs`（含 `audience()` / `ToolAudience`） |
 | 2 | L1 OS: fs_link | ✅ 完成 | `os/fs_link.rs`（`TOOLBOX_ONLY`） |
-| 2 | L1 OS: 其他 | ❌ 未实现 | 需新增 fs_read/write/delete/list/glob/grep/mkdir/move/shell_exec/ask_user |
+| 2 | L1 OS: 其他 | ❌ 未实现 | 需新增 fs_read/write/edit/delete/list/glob/grep/mkdir/move/shell_exec/ask_user |
 | 3 | ToolRegistry | ✅ 完成 | `registry.rs`（`<=`、排序、`audience` 过滤） |
 | 4 | Permission Policy | ❌ 未实现 | 需新增 `policy.rs` |
 | 5 | Tool Gateway | ❌ 未实现 | 需新增 `gateway.rs` |
 | 6 | Tool Pipeline | ❌ 未实现 | 需新增 `pipeline.rs` |
 | 7 | RoundExecutor | ❌ 未实现 | 需新增 `round_executor.rs` |
-| 8 | Tauri 桥接 | ⚠️ 部分完成 | `os_tool_exec.rs` `os.ts`；DTO 已归位 `protocol/dto/os_tool.rs`。待补：workspace_root 来源、超时、错误通道统一 |
+| 8 | Tauri 桥接 | ⚠️ 部分完成 | `os_tool_exec.rs` `os.ts`；DTO 已归位 `protocol/dto/os_tool.rs`。待补：workspace_root 来源、错误通道统一（超时已由 `exec::invoke` 统一兜底） |
 | 9 | 前端集成 | ❌ 未实现 | ChatDelta 五态 + ToolCallBubble + 审批 UI |
 | 10 | Agent 模式+两级可用性 | ❌ 未实现 | max_tool_tier + approval_level + ConversationToolConfig + resolveAvailableTools + Policy 映射 |
+
+> **本表之外的规格新增**（来自参考项目对比，均为规格先行、代码未落地）：`ToolResult` 双通道与 `error_kind`（0.3）、`ApprovalKey` 规范化（5.4.1）、`validate_input` 校验阶段（6.2.1）、动态并发安全（6.3）、持久化选择算法与读取去重（6.4）、`fs_edit`（Step 2）。设计理由见 [I18-design](I18-agent-tool-architecture-design.md) §3.12–§3.15、§4.2.1。
 
 ---
 
