@@ -47,8 +47,10 @@ impl ToolAudience {
 }
 
 impl Default for ToolAudience {
+    /// 默认不可见（fail-closed）：新增工具必须显式声明受众，
+    /// 忘记声明时不会被任一入口暴露。
     fn default() -> Self {
-        Self::BOTH
+        Self::NONE
     }
 }
 
@@ -83,8 +85,10 @@ pub trait Tool: Send + Sync {
 
     fn tier(&self) -> ToolTier;
 
+    /// 默认不可见（fail-closed）。新增工具必须显式声明受众：
+    /// 面向模型用 `BOTH` / `AGENT_ONLY`，仅 ToolBox 用 `TOOLBOX_ONLY`。
     fn audience(&self) -> ToolAudience {
-        ToolAudience::BOTH
+        ToolAudience::NONE
     }
 
     fn behavior_hints(&self) -> BehaviorHints {

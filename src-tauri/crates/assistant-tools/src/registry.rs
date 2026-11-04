@@ -247,10 +247,14 @@ mod tests {
     }
 
     #[test]
-    fn default_audience_is_visible_to_both() {
+    fn default_audience_is_fail_closed() {
         use crate::r#trait::ToolAudience;
 
-        assert_eq!(ToolAudience::default(), ToolAudience::BOTH);
+        assert_eq!(ToolAudience::default(), ToolAudience::NONE);
+        assert_eq!(
+            (ToolAudience::NONE.agent, ToolAudience::NONE.toolbox),
+            (false, false)
+        );
         assert_eq!(
             (ToolAudience::BOTH.agent, ToolAudience::BOTH.toolbox),
             (true, true)
