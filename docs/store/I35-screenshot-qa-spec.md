@@ -46,7 +46,7 @@
 | 失焦会把 Orb 折叠 | Rust 在截图期间跳过 `ORB_BLUR`；`OrbPanel` 的 blur 处理再加一层 store 判断 |
 | 前端 `toPhysical` 与 Rust 重复换算 | 前端只发归一化选区（0..1），Rust 按原图尺寸换算一次；跨 DPI 不再依赖 `scale_factor` |
 | 契约 5 个 DTO / 57 → 62 | rev3 只需 3 个 DTO（会话、裁剪参数、裁剪结果），57 → 60 |
-| 快捷键注册写死数组 + `match` | 改为 `ShortcutSpec` 表 + 纯函数解析；空配置=禁用、重复/非法绑定统一告警 |
+| 快捷键注册写死数组 + `match` | 改为 `SHORTCUT_SPECS` 元组表 + 上游 crate 纯函数解析；空配置=禁用、重复/非法绑定统一告警 |
 | 默认 `Ctrl+Shift+N` 冲突多 | 三条默认改为四键组合（见 §7.5）；前端同步默认值，外部冲突以注册失败为准 |
 
 ---
@@ -85,7 +85,7 @@
 | F1 | `tauri.conf.json` 的 `app.windows` 静态声明 `main` 与 `orb`；`settings` 是运行时创建 | `src-tauri/tauri.conf.json`、`src-tauri/src/window.rs` `WINDOW_SPECS` | rev3 不新增窗口；`screenshot` 覆盖层直接复用 `orb` |
 | F2 | 前端按 webview label 选布局，未匹配 label 回退 `MainLayout` | `src/App.tsx` `viewMap` | 不新增 label，因此不需要改 `viewMap` |
 | F3 | `capabilities/default.json` 的 `windows` 只有 `main` / `orb` / `settings` | `src-tauri/capabilities/default.json` | 不新增窗口，因此不需要改 capabilities |
-| F4 | 全局快捷键在 `register_global_shortcuts()` 中由**定长数组**驱动，且 `match id` 重复分派 | `src-tauri/src/setup.rs` | rev3 改为 `ShortcutSpec` 表 + 纯函数解析 |
+| F4 | 全局快捷键在 `register_global_shortcuts()` 中由**定长数组**驱动，且 `match id` 重复分派 | `src-tauri/src/setup.rs` | rev3 改为 `SHORTCUT_SPECS` 元组表 + 上游 crate 纯函数解析 |
 | F5 | 快捷键字符串解析支持 `Meta/Super/Cmd/Win/Windows`、`Ctrl/Control`、`Shift`、`Alt/Option`；单字母回退 `KeyX`，数字回退 `DigitX` | `src-tauri/src/setup.rs` `parse_shortcut` | 四键组合可直接用，无需改解析器 |
 | F6 | 快捷键配置变更会触发重新注册（`keybindings` 字段比对） | `src-tauri/src/cmd/config.rs` `APP_SIDE_EFFECTS` | 新增/修改快捷键自动获得「设置页改键即时生效」 |
 | F7 | 前端快捷键定义表含 `id/group/label/defaultBinding/kind`，`DEFAULT_KEYBINDINGS` 由该表派生 | `src/settings/core/types/shortcutTypes.ts` | 默认值必须与 Rust `default_keybindings()` 同步 |
@@ -379,32 +379,32 @@ pub const SCREENSHOT_ERROR: &str = "screenshot-error";
 当前是「定长数组 + `match id`」；新增一条要同时改数组长度、数组项、`match` 分支，且无法表达「用户主动清空」与「重复绑定」。rev3 改为：
 
 ```rust
-struct ShortcutSpec {
-    id: &'static str,
-    action: fn(&tauri::AppHandle),
-}
+type ShortcutAction = fn(&tauri::AppHandle);
 
-static SHORTCUT_SPECS: &[ShortcutSpec] = &[
-    ShortcutSpec { id: "toggle_orb", action: toggle_orb_action },
-    ShortcutSpec { id: "toggle_main", action: toggle_main_action },
-    ShortcutSpec { id: "new_chat", action: new_chat_action },
+static SHORTCUT_SPECS: &[(&str, ShortcutAction)] = &[
+    ("toggle_orb", toggle_orb_action),
+    ("toggle_main", toggle_main_action),
+    ("new_chat", new_chat_action),
 ];
 ```
 
-解析与注册拆成纯函数 + 副作用：
+解析与注册拆成「纯策略 + 副作用」两层：策略落在 `assistant-config::shortcut`（不依赖任何 UI 框架，可单测），快捷键文本的解析由调用方以 `parse` 回调注入：
 
 ```rust
-fn resolve_shortcut_bindings(
+// assistant-config::shortcut
+pub fn resolve_bindings<A: Copy, S>(
+    specs: &[(&str, A)],
     configured: &HashMap<String, String>,
     defaults: &HashMap<String, String>,
-) -> (Vec<ResolvedShortcut>, Vec<ShortcutIssue>);
+    parse: impl Fn(&str) -> Option<S>,
+) -> (Vec<ResolvedBinding<A, S>>, Vec<BindingIssue>);
 ```
 
 规则：
 
 - 配置缺失 → 使用 `default_keybindings()`；
 - 配置显式空字符串 → 视为用户禁用，不回落默认值；
-- 解析失败、重复绑定 → 生成 `ShortcutIssue`，不注册该条，并通过 `SHORTCUT_WARNING` 事件告知前端；
+- 解析失败、重复绑定 → 生成 `BindingIssue`，不注册该条，并通过 `SHORTCUT_WARNING` 事件告知前端；
 - 先解析、后 `unregister_all`，避免一个坏配置把其他快捷键全部清掉；
 - 新增快捷键只需要在 `SHORTCUT_SPECS` 加一项 + 前端 `SHORTCUT_DEFINITIONS` 加一项。
 
@@ -625,7 +625,7 @@ if snapshot.focused { window.set_focus()?; }
 - `Phase` 状态机脱离 Tauri 测试：忙时 `start` 忽略、`cancel` 幂等、裁剪期间取消。
 - TTL 判断注入 `now`，避免测试 sleep。
 - `AttachmentStore` 临时路径判断/清扫用 `tempfile` 单测。
-- `setup.rs` 的 `resolve_shortcut_bindings` 纯函数单测：默认、覆盖、显式清空、非法、重复。
+- `setup.rs` 的快捷键解析：逻辑已下沉到 `assistant-config::shortcut::resolve_bindings`（无 tauri 依赖），由 `crates/assistant-config/tests/shortcut.rs` 覆盖默认、覆盖、显式清空、非法、重复、缺默认六类场景；`setup.rs` 只保留副作用（`parse_shortcut` 回调 + 注册 + 告警广播）。
 
 ---
 
@@ -891,7 +891,7 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 | 状态机 | 忙时 `start` 忽略；`cancel` 幂等；裁剪期间取消丢弃产物 |
 | `attachment_store` | `is_screenshot_tmp_path` 只认子目录内路径；`sweep` 只删超阈值文件；`remove` 幂等 |
 | `admit_attachments` | 带 screenshot-tmp `file_path` 的图片准入成功后源文件被删；普通路径不被删；准入失败不删 |
-| `setup.rs` | `resolve_shortcut_bindings`：默认、覆盖、显式清空、非法、重复 |
+| `setup.rs` | 快捷键解析：默认、覆盖、显式清空、非法、重复、缺默认 —— 逻辑下沉到 `assistant-config::shortcut::resolve_bindings`，由 `crates/assistant-config/tests/shortcut.rs` 覆盖 |
 
 ### 11.2 契约与快照
 
@@ -1001,7 +1001,7 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 | §7.2 | 5 个 DTO，57 → 62 | 3 个 DTO（会话/裁剪参数/裁剪结果），57 → 60 |
 | §7.3 | `start_screenshot` 返回会话；`get_screenshot_session` 常规路径 | `start_screenshot` 返回 `()` + `screenshot-session` 事件；`get_screenshot_session` 仅兜底 |
 | §7.4 | `screenshot-captured` + `screenshot-cancelled` | `screenshot-session` + `screenshot-error`；结果走 invoke 返回值 |
-| §7.5 | 默认 `Ctrl+Shift+A`；固定数组注册 | 四键默认；`ShortcutSpec` 表 + 纯函数解析 + 清空/重复/非法诊断 |
+| §7.5 | 默认 `Ctrl+Shift+A`；固定数组注册 | 四键默认；`SHORTCUT_SPECS` 元组表 + 上游 crate 纯函数解析 + 清空/重复/非法诊断 |
 | §8 | 覆盖窗口构建/关闭 | Orb 全屏/恢复快照 + 巡检/失焦/穿透守卫 |
 | §9 | 新布局、跨窗口事件、`useScreenshotResult` | `OrbWindow` 条件渲染、`screenshotStore`、直接 ingest、chat 只隐藏不卸载 |
 | §9.7 | 无冲突检测边界说明 | 明确只检测内部重复；外部冲突以 OS 注册失败为准，不维护静态表 |

@@ -4,4 +4,5 @@ pub mod constant;
 pub mod json_config;
 pub mod mascot_conf;
 pub mod orb_conf;
+pub mod shortcut;
 pub mod vault_conf;

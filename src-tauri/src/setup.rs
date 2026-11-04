@@ -1,6 +1,5 @@
 // 参考: ChatGPT/src-tauri/src/core/setup.rs — setup 中初始化配置和窗口
 
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use tauri::{App, Manager};
@@ -8,6 +7,7 @@ use tauri::{App, Manager};
 use crate::protocol::events::{emit_broadcast, event_name};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+use assistant_config::shortcut::{resolve_bindings, BindingIssue};
 use assistant_config::{
     app_conf::AppConf,
     constant::{
@@ -138,25 +138,14 @@ fn parse_shortcut(s: &str) -> Option<Shortcut> {
     code.map(|c| Shortcut::new(Some(modifiers), c))
 }
 
-/// 一条全局快捷键的静态定义：id 用于配置查找，action 是按下时执行的函数。
-struct ShortcutSpec {
-    id: &'static str,
-    action: fn(&tauri::AppHandle),
-}
+/// 按下快捷键时执行的回调
+type ShortcutAction = fn(&tauri::AppHandle);
 
-static SHORTCUT_SPECS: &[ShortcutSpec] = &[
-    ShortcutSpec {
-        id: "toggle_orb",
-        action: toggle_orb_action,
-    },
-    ShortcutSpec {
-        id: "toggle_main",
-        action: toggle_main_action,
-    },
-    ShortcutSpec {
-        id: "new_chat",
-        action: new_chat_action,
-    },
+/// 全局快捷键的静态定义：id 用于配置查找，第二项是按下时执行的回调。
+static SHORTCUT_SPECS: &[(&str, ShortcutAction)] = &[
+    ("toggle_orb", toggle_orb_action),
+    ("toggle_main", toggle_main_action),
+    ("new_chat", new_chat_action),
 ];
 
 fn toggle_orb_action(app: &tauri::AppHandle) {
@@ -171,83 +160,7 @@ fn new_chat_action(app: &tauri::AppHandle) {
     emit_broadcast(app, event_name::ORB_NEW_CONVERSATION, ());
 }
 
-struct ResolvedShortcut {
-    id: &'static str,
-    binding: String,
-    shortcut: Shortcut,
-    action: fn(&tauri::AppHandle),
-}
-
-struct ShortcutIssue {
-    id: &'static str,
-    binding: String,
-    error: String,
-}
-
-/// 把配置与默认值解析成可注册项。纯函数，便于单测。
-///
-/// 规则：
-/// - 配置里显式清空（空字符串）表示用户主动禁用，不回落默认值；
-/// - 配置缺失时使用默认值；
-/// - 解析失败、重复绑定都记录为 issue，不注册该条；
-/// - 重复判定使用归一化后的字符串，后出现的条目让位给先出现的。
-fn resolve_shortcut_bindings(
-    configured: &HashMap<String, String>,
-    defaults: &HashMap<String, String>,
-) -> (Vec<ResolvedShortcut>, Vec<ShortcutIssue>) {
-    let mut resolved = Vec::new();
-    let mut issues = Vec::new();
-    let mut seen: HashMap<String, &'static str> = HashMap::new();
-
-    for spec in SHORTCUT_SPECS {
-        let binding = match configured.get(spec.id) {
-            Some(raw) if raw.trim().is_empty() => continue,
-            Some(raw) => raw.trim().to_string(),
-            None => match defaults.get(spec.id) {
-                Some(default) => default.clone(),
-                None => {
-                    issues.push(ShortcutIssue {
-                        id: spec.id,
-                        binding: String::new(),
-                        error: "no default binding".to_string(),
-                    });
-                    continue;
-                }
-            },
-        };
-
-        let Some(shortcut) = parse_shortcut(&binding) else {
-            issues.push(ShortcutIssue {
-                id: spec.id,
-                binding,
-                error: "invalid binding".to_string(),
-            });
-            continue;
-        };
-
-        let normalized = binding.to_lowercase().replace(' ', "");
-        if let Some(existing) = seen.get(&normalized) {
-            issues.push(ShortcutIssue {
-                id: spec.id,
-                binding,
-                error: format!("duplicate of {}", existing),
-            });
-            continue;
-        }
-
-        seen.insert(normalized, spec.id);
-        resolved.push(ResolvedShortcut {
-            id: spec.id,
-            binding,
-            shortcut,
-            action: spec.action,
-        });
-    }
-
-    (resolved, issues)
-}
-
-fn emit_shortcut_warning(handle: &tauri::AppHandle, issue: &ShortcutIssue) {
+fn emit_shortcut_warning(handle: &tauri::AppHandle, issue: &BindingIssue) {
     log::warn!(
         "Shortcut {} ({}) unavailable: {}",
         issue.id,
@@ -272,7 +185,8 @@ pub fn register_global_shortcuts(handle: &tauri::AppHandle) {
     };
 
     let defaults = assistant_config::app_conf::default_keybindings();
-    let (resolved, issues) = resolve_shortcut_bindings(&conf.keybindings, &defaults);
+    let (resolved, issues) =
+        resolve_bindings(SHORTCUT_SPECS, &conf.keybindings, &defaults, parse_shortcut);
     for issue in &issues {
         emit_shortcut_warning(handle, issue);
     }
@@ -292,7 +206,7 @@ pub fn register_global_shortcuts(handle: &tauri::AppHandle) {
         }) {
             emit_shortcut_warning(
                 handle,
-                &ShortcutIssue {
+                &BindingIssue {
                     id,
                     binding,
                     error: e.to_string(),
@@ -373,56 +287,4 @@ fn spawn_screen_inspection(handle: tauri::AppHandle) {
             let _ = conf.save();
         }
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn defaults() -> HashMap<String, String> {
-        assistant_config::app_conf::default_keybindings()
-    }
-
-    #[test]
-    fn default_bindings_resolve() {
-        let (resolved, issues) = resolve_shortcut_bindings(&HashMap::new(), &defaults());
-        assert_eq!(resolved.len(), SHORTCUT_SPECS.len());
-        assert!(issues.is_empty());
-    }
-
-    #[test]
-    fn explicitly_cleared_binding_is_disabled() {
-        let mut configured = defaults();
-        configured.insert("new_chat".to_string(), "   ".to_string());
-        let (resolved, issues) = resolve_shortcut_bindings(&configured, &defaults());
-        assert_eq!(resolved.len(), SHORTCUT_SPECS.len() - 1);
-        assert!(issues.is_empty());
-        assert!(!resolved.iter().any(|item| item.id == "new_chat"));
-    }
-
-    #[test]
-    fn invalid_binding_is_reported() {
-        let mut configured = defaults();
-        configured.insert("new_chat".to_string(), "NotAKey".to_string());
-        let (resolved, issues) = resolve_shortcut_bindings(&configured, &defaults());
-        assert_eq!(resolved.len(), SHORTCUT_SPECS.len() - 1);
-        assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].id, "new_chat");
-        assert_eq!(issues[0].error, "invalid binding");
-    }
-
-    #[test]
-    fn duplicate_binding_is_rejected() {
-        let mut configured = defaults();
-        let orb_binding = configured
-            .get("toggle_orb")
-            .cloned()
-            .expect("toggle_orb default");
-        configured.insert("new_chat".to_string(), orb_binding);
-        let (resolved, issues) = resolve_shortcut_bindings(&configured, &defaults());
-        assert_eq!(resolved.len(), SHORTCUT_SPECS.len() - 1);
-        assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].id, "new_chat");
-        assert!(issues[0].error.starts_with("duplicate of toggle_orb"));
-    }
 }
