@@ -1,4 +1,5 @@
 pub mod fs_link;
+pub mod path;
 pub mod process_output;
 
 use std::sync::Arc;

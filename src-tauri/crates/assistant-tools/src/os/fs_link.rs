@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use serde_json::Value;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::context::ToolUseContext;
 use crate::r#trait::{BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier};
@@ -134,8 +134,8 @@ impl Tool for FsLinkTool {
             .unwrap_or("<unknown>");
 
         Ok(vec![
-            PermissionIntent::new("fs_link_create", source),
-            PermissionIntent::new("fs_link_target", target),
+            PermissionIntent::new("edit", source),
+            PermissionIntent::new("edit", target),
         ])
     }
 
@@ -154,25 +154,6 @@ impl Tool for FsLinkTool {
 }
 
 impl FsLinkTool {
-    fn resolve_path(path_str: &str, context: &ToolUseContext) -> Result<PathBuf, String> {
-        let path = PathBuf::from(path_str);
-        if path.is_absolute() {
-            validate_path(&path)?;
-            return Ok(path);
-        }
-
-        if let Some(root) = &context.workspace_root {
-            let resolved = PathBuf::from(root).join(&path);
-            validate_path(&resolved)?;
-            return Ok(resolved);
-        }
-
-        Err(format!(
-            "relative path '{}' requires workspace_root in context",
-            path_str
-        ))
-    }
-
     async fn exec_create(
         &self,
         input: &Value,
@@ -191,14 +172,27 @@ impl FsLinkTool {
             .and_then(Value::as_str)
             .ok_or_else(|| "missing 'kind' field".to_string())?;
 
-        let source = Self::resolve_path(source_str, context)?;
-        let target = Self::resolve_path(target_str, context)?;
+        let source = super::path::resolve_leaf_preserving(source_str, context)?;
+        let target = super::path::resolve_leaf_preserving(target_str, context)?;
         let kind = LinkKind::from_str(kind_str)?;
 
         if !target.exists() {
             return Ok(ToolResult::err(format!(
                 "target '{}' does not exist",
                 target.display()
+            )));
+        }
+
+        let Some(source_parent) = source.parent() else {
+            return Ok(ToolResult::err(format!(
+                "source '{}' has no parent directory",
+                source.display()
+            )));
+        };
+        if !source_parent.exists() {
+            return Ok(ToolResult::err(format!(
+                "parent directory '{}' of source does not exist",
+                source_parent.display()
             )));
         }
 
@@ -222,7 +216,7 @@ impl FsLinkTool {
             .and_then(Value::as_str)
             .ok_or_else(|| "missing 'source' field".to_string())?;
 
-        let source = Self::resolve_path(source_str, context)?;
+        let source = super::path::resolve_leaf_preserving(source_str, context)?;
 
         let info = check_link(&source)?;
 
@@ -239,51 +233,6 @@ struct LinkInfo {
     is_link: bool,
     kind: Option<String>,
     target: Option<String>,
-}
-
-fn validate_path(path: &Path) -> Result<(), String> {
-    if path
-        .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return Err(format!(
-            "path '{}' contains '..' traversal, use a canonical path instead",
-            path.display()
-        ));
-    }
-
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-
-    let forbidden_unix: &[&str] = &["/etc", "/usr", "/bin", "/sbin", "/System", "/Library"];
-    for prefix in forbidden_unix {
-        if canonical.starts_with(prefix) {
-            return Err(format!(
-                "path '{}' is inside a protected system directory",
-                path.display()
-            ));
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        let forbidden_win: &[&str] = &[
-            r"C:\Windows",
-            r"C:\Program Files",
-            r"C:\Program Files (x86)",
-            r"C:\ProgramData",
-        ];
-        let path_str = canonical.to_string_lossy();
-        for prefix in forbidden_win {
-            if path_str.starts_with(prefix) {
-                return Err(format!(
-                    "path '{}' is inside a protected system directory",
-                    path.display()
-                ));
-            }
-        }
-    }
-
-    Ok(())
 }
 
 fn create_link(source: &Path, target: &Path, kind: LinkKind) -> Result<(), String> {
@@ -519,4 +468,395 @@ unsafe fn read_final_path(handle: windows::Win32::Foundation::HANDLE) -> Option<
 
     let path_str = String::from_utf16(&buffer[..written]).ok()?;
     Some(path_str.trim_start_matches(r"\\?\").to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::path::PathBuf;
+
+    fn context_with_root(root: &Path) -> ToolUseContext {
+        ToolUseContext::for_toolbox(Some(root.display().to_string()))
+    }
+
+    async fn run_create(
+        source: &Path,
+        target: &Path,
+        kind: &str,
+        context: &ToolUseContext,
+    ) -> Result<ToolResult, String> {
+        FsLinkTool
+            .execute(
+                &json!({
+                    "action": "create",
+                    "source": source.display().to_string(),
+                    "target": target.display().to_string(),
+                    "kind": kind,
+                }),
+                context,
+            )
+            .await
+    }
+
+    async fn run_check(source: &Path, context: &ToolUseContext) -> Result<ToolResult, String> {
+        FsLinkTool
+            .execute(
+                &json!({
+                    "action": "check",
+                    "source": source.display().to_string(),
+                }),
+                context,
+            )
+            .await
+    }
+
+    fn try_create_file_symlink(link: &Path, target: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(target, link).is_ok()
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (link, target);
+            false
+        }
+    }
+
+    fn try_create_dir_link(link: &Path, target: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            create_junction(link, target).is_ok()
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (link, target);
+            false
+        }
+    }
+
+    fn protected_root_for_test() -> Option<PathBuf> {
+        #[cfg(windows)]
+        {
+            std::env::var_os("SystemRoot").map(PathBuf::from)
+        }
+        #[cfg(unix)]
+        {
+            Some(PathBuf::from("/etc"))
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            None
+        }
+    }
+
+    #[test]
+    fn permission_intents_use_edit_vocabulary() {
+        let intents = FsLinkTool
+            .permission_intents(
+                &json!({"action": "create", "source": "a.txt", "target": "b.txt"}),
+                &ToolUseContext::default(),
+            )
+            .expect("permission intents");
+        assert_eq!(intents.len(), 2);
+        for intent in &intents {
+            assert_eq!(intent.action, "edit");
+        }
+        assert_eq!(intents[0].resources, vec!["a.txt".to_string()]);
+        assert_eq!(intents[1].resources, vec!["b.txt".to_string()]);
+    }
+
+    #[test]
+    fn permission_intents_are_empty_for_check() {
+        let intents = FsLinkTool
+            .permission_intents(
+                &json!({"action": "check", "source": "a.txt"}),
+                &ToolUseContext::default(),
+            )
+            .expect("permission intents");
+        assert!(intents.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn check_reports_regular_file_as_not_link() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("plain.txt");
+        std::fs::write(&file, b"data").expect("write file");
+        let context = context_with_root(dir.path());
+
+        let result = run_check(&file, &context).await.expect("check");
+        assert!(result.ok, "check must succeed: {:?}", result.error);
+        let data = result.data.expect("data");
+        assert_eq!(data["isLink"], json!(false));
+        assert_eq!(data["kind"], json!(null));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn create_reports_missing_target() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = context_with_root(dir.path());
+        let source = dir.path().join("link.txt");
+        let target = dir.path().join("missing.txt");
+
+        let result = run_create(&source, &target, "symlink", &context)
+            .await
+            .expect("create call");
+        assert!(!result.ok, "missing target must fail");
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("does not exist"),
+            "unexpected error: {:?}",
+            result.error
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn create_reports_missing_source_parent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = context_with_root(dir.path());
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, b"data").expect("write target");
+        let source = dir.path().join("missing_dir").join("link.txt");
+
+        let result = run_create(&source, &target, "symlink", &context)
+            .await
+            .expect("create call");
+        assert!(!result.ok, "missing source parent must fail");
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("parent directory"),
+            "unexpected error: {:?}",
+            result.error
+        );
+        assert!(!dir.path().join("missing_dir").exists());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn create_rejects_path_outside_workspace() {
+        let root_dir = tempfile::tempdir().expect("tempdir");
+        let other_dir = tempfile::tempdir().expect("tempdir");
+        let context = context_with_root(root_dir.path());
+        let target = root_dir.path().join("target.txt");
+        std::fs::write(&target, b"data").expect("write target");
+        let source = other_dir.path().join("link.txt");
+
+        let error = run_create(&source, &target, "symlink", &context)
+            .await
+            .expect_err("outside path must be rejected");
+        assert!(
+            error.contains("outside workspace root"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn create_rejects_parent_dir_traversal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = context_with_root(dir.path());
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, b"data").expect("write target");
+        let source = dir.path().join("sub").join("..").join("link.txt");
+
+        let error = run_create(&source, &target, "symlink", &context)
+            .await
+            .expect_err("'..' must be rejected");
+        assert!(error.contains(".."), "unexpected error: {error}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn create_rejects_escape_through_symlinked_directory() {
+        let root_dir = tempfile::tempdir().expect("tempdir");
+        let outside_dir = tempfile::tempdir().expect("tempdir");
+        let escape = root_dir.path().join("escape");
+        if !try_create_dir_link(&escape, outside_dir.path()) {
+            return;
+        }
+        let context = context_with_root(root_dir.path());
+        let target = root_dir.path().join("target.txt");
+        std::fs::write(&target, b"data").expect("write target");
+        let source = escape.join("link.txt");
+
+        let error = run_create(&source, &target, "symlink", &context)
+            .await
+            .expect_err("escape through symlinked dir must be rejected");
+        assert!(
+            error.contains("outside workspace root"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            !outside_dir.path().join("link.txt").exists(),
+            "nothing may be written outside the workspace"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn create_never_writes_through_existing_source_symlink() {
+        let root_dir = tempfile::tempdir().expect("tempdir");
+        let outside_dir = tempfile::tempdir().expect("tempdir");
+        let outside_file = outside_dir.path().join("outside.txt");
+        std::fs::write(&outside_file, b"data").expect("write outside file");
+        let source = root_dir.path().join("escape.txt");
+        if !try_create_file_symlink(&source, &outside_file) {
+            return;
+        }
+        let context = context_with_root(root_dir.path());
+        let target = root_dir.path().join("target.txt");
+        std::fs::write(&target, b"data").expect("write target");
+
+        let result = run_create(&source, &target, "symlink", &context).await;
+        assert!(
+            result.is_err() || !result.expect("result").ok,
+            "existing source symlink must not be replaced silently"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn check_does_not_follow_source_symlink() {
+        let root_dir = tempfile::tempdir().expect("tempdir");
+        let outside_dir = tempfile::tempdir().expect("tempdir");
+        let outside_file = outside_dir.path().join("outside.txt");
+        std::fs::write(&outside_file, b"data").expect("write outside file");
+        let source = root_dir.path().join("link.txt");
+        if !try_create_file_symlink(&source, &outside_file) {
+            return;
+        }
+        let context = context_with_root(root_dir.path());
+
+        let result = run_check(&source, &context).await.expect("check");
+        assert!(result.ok, "check must succeed: {:?}", result.error);
+        let data = result.data.expect("data");
+        assert_eq!(data["isLink"], json!(true));
+        assert_eq!(data["kind"], json!("symlink"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn create_symlink_and_check_reports_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = context_with_root(dir.path());
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, b"data").expect("write target");
+        let source = dir.path().join("link.txt");
+
+        let result = run_create(&source, &target, "symlink", &context)
+            .await
+            .expect("create call");
+        assert!(result.ok, "symlink create must succeed: {:?}", result.error);
+        assert!(source
+            .symlink_metadata()
+            .expect("metadata")
+            .file_type()
+            .is_symlink());
+
+        let checked = run_check(&source, &context).await.expect("check");
+        assert_eq!(checked.data.expect("data")["isLink"], json!(true));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn create_rejects_protected_workspace_root() {
+        let Some(protected) = protected_root_for_test() else {
+            return;
+        };
+        let context = context_with_root(&protected);
+        let source = protected.join("link.txt");
+        let target = protected.join("target.txt");
+
+        let error = run_create(&source, &target, "symlink", &context)
+            .await
+            .expect_err("protected workspace root must be rejected");
+        assert!(
+            error.contains("protected system directory"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn create_junction_and_check_reports_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = context_with_root(dir.path());
+        let target = dir.path().join("target_dir");
+        std::fs::create_dir(&target).expect("create target dir");
+        let source = dir.path().join("junction");
+
+        let result = run_create(&source, &target, "junction", &context)
+            .await
+            .expect("create call");
+        assert!(
+            result.ok,
+            "junction create must succeed: {:?}",
+            result.error
+        );
+
+        let checked = run_check(&source, &context).await.expect("check");
+        let data = checked.data.expect("data");
+        assert_eq!(data["isLink"], json!(true));
+        let reported = data["target"].as_str().unwrap_or_default();
+        assert!(
+            reported.ends_with("target_dir"),
+            "reported target must point at the junction destination: {reported}"
+        );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn create_junction_reports_missing_target_parent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = context_with_root(dir.path());
+        let target = dir.path().join("missing_dir").join("target_dir");
+        let source = dir.path().join("junction");
+
+        let result = run_create(&source, &target, "junction", &context)
+            .await
+            .expect("create call");
+        assert!(!result.ok, "missing target parent must fail");
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("does not exist"),
+            "unexpected error: {:?}",
+            result.error
+        );
+        assert!(!source.exists(), "junction must not be created");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn create_rejects_source_on_nonexistent_drive() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = context_with_root(dir.path());
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, b"data").expect("write target");
+        let drive = ('D'..='Z')
+            .map(|letter| format!("{}:\\", letter))
+            .find(|candidate| !Path::new(candidate).exists());
+        let Some(drive) = drive else {
+            return;
+        };
+        let source = PathBuf::from(drive).join("link.txt");
+
+        let error = run_create(&source, &target, "symlink", &context)
+            .await
+            .expect_err("nonexistent drive must be rejected");
+        assert!(
+            error.contains("no existing ancestor"),
+            "unexpected error: {error}"
+        );
+    }
 }

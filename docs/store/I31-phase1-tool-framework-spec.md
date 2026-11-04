@@ -2,12 +2,14 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | Draft（T1/T2 已落地，T3 待实施） |
-| 日期 | 2026-11-02 |
+| 状态 | Draft（T1/T2/T3 已落地，P1 收口完成） |
+| 日期 | 2026-11-04 |
 | 关联 | [I38 roadmap](./I38-agent-roadmap.md)（P0/P1）、[I18 design](./I18-agent-tool-architecture-design.md)、[I18 spec](./I18-agent-tool-architecture-spec.md)（Step 0-3 / 8）、[I30](./I30-phase1-toolcall-separation-spec.md)、[I18b](./I18b-tool-unified-bridge-spec.md)、[I38c](./I38c-os-tools-spec.md)（工具能力去向） |
 | 影响范围 | `src-tauri/crates/assistant-tools` 单 crate |
 
-> **实施进度**（2026-11-02 复核）：T1、T2 已完成并合入——`definition.rs` 新建；`registry.rs` 的 `<=` 语义 / 按名排序 / `description()` 降级 / `audience` 过滤均有单测；`fs_link` 已声明 `TOOLBOX_ONLY`；`os_tool_exec` 已改用 `find_for_toolbox()` 并改走 `exec::invoke`（`Err` 通道不再外泄，超时 30s 兜底）。T3（`os/path.rs` + `fs_link` 迁移）**尚未开始**。§2 的事实表已按下述状态标注，§11 的实施顺序同步更新。
+> 执行清单：[I31-phase1-tool-framework-tasklist.md](./I31-phase1-tool-framework-tasklist.md)（T3 逐项勾选与验收映射）。
+
+> **实施进度**（2026-11-04 复核）：T1、T2、T3 已完成——`definition.rs` 新建；`registry.rs` 的 `<=` 语义 / 按名排序 / `description()` 降级 / `audience` 过滤均有单测；`fs_link` 已声明 `TOOLBOX_ONLY`；`os_tool_exec` 已改用 `find_for_toolbox()` 并改走 `exec::invoke`（`Err` 通道不再外泄，超时 30s 兜底）；`os/path.rs` 落地五个路径安全函数，`fs_link` 已迁移并修正 `permission_intents` 词汇。§2 的事实表已按下述状态标注，§11 的实施顺序同步更新。
 
 本文定义阶段一「工具框架」的交付内容：**类型契约、执行边界、共享路径安全、验收标准**。
 
@@ -80,12 +82,12 @@
 | F1 | **改造前**：`Tool::description()` 为 `async fn`，但唯一潜在调用方 `tool_definitions_for_tier` 是同步函数且硬编码 `"description": ""`，该方法**零调用者** | `trait.rs`、`registry.rs` | 已修复（T1） |
 | F2 | **改造前**：`tool_definitions_for_tier` 用 `==` 精确匹配 tier，而非「不超过」。`ToolTier` 已 `derive(Ord)` 却未使用 | `registry.rs` | 已修复（T1） |
 | F3 | **改造前**：`tool_definitions_for_tier` 返回手写 `serde_json::json!`，与 `Tool::input_schema()` / `description()` 契约重复；`inputSchema` 键名靠字面量维护 | `registry.rs` | 已修复（T1） |
-| F4 | `resolve_path` / `validate_path` 是 `fs_link.rs` 的私有函数与关联函数。**任何后续工具都无法复用** | `os/fs_link.rs` | 待修（T3） |
-| F5 | `validate_path` 用 `canonicalize().unwrap_or_else(\|_\| path.to_path_buf())`：目标不存在时（新建文件、新建链接的 source）规范化**必然失败**，回退为原路径，仅剩 `ParentDir` 一道检查 | `os/fs_link.rs` | 待修（T3） |
-| F6 | Windows 保护目录用字符串前缀比较（`starts_with("C:\\Windows")`）。大小写敏感（`c:\windows` 绕过）、无分隔符边界（`C:\Windows.old` 误拒）、写死 `C:` 盘符 | `os/fs_link.rs` | 待修（T3） |
-| F7 | `permission_intents` 产出 `fs_link_create` / `fs_link_target`，与 design §2.1 的 `read` / `edit` / `delete` / `execute` 词汇表冲突 | `os/fs_link.rs` vs design §2.1 | 待修（T3） |
+| F4 | `resolve_path` / `validate_path` 是 `fs_link.rs` 的私有函数与关联函数。**任何后续工具都无法复用** | `os/fs_link.rs` | 已修复（T3：私有实现删除，统一走 `os::path`） |
+| F5 | `validate_path` 用 `canonicalize().unwrap_or_else(\|_\| path.to_path_buf())`：目标不存在时（新建文件、新建链接的 source）规范化**必然失败**，回退为原路径，仅剩 `ParentDir` 一道检查 | `os/fs_link.rs` | 已修复（T3：`canonicalize_lenient` 向上找存在祖先，失败即 `Err`） |
+| F6 | Windows 保护目录用字符串前缀比较（`starts_with("C:\\Windows")`）。大小写敏感（`c:\windows` 绕过）、无分隔符边界（`C:\Windows.old` 误拒）、写死 `C:` 盘符 | `os/fs_link.rs` | 已修复（T3：组件级比较 + 大小写不敏感 + 环境变量取值） |
+| F7 | `permission_intents` 产出 `fs_link_create` / `fs_link_target`，与 design §2.1 的 `read` / `edit` / `delete` / `execute` 词汇表冲突 | `os/fs_link.rs` vs design §2.1 | 已修复（T3：统一为 `edit`） |
 | F8 | **改造前**：`execute()` 的错误双通道：`Err(String)` 与 `ToolResult::err` 并存，无归一化层 | `trait.rs`、`cmd/os_tool_exec.rs` | 已修复（T2：`exec::invoke` + `ToolResult::from_exec_error`） |
-| F9 | 除 `process_output` 外**无任何单测**；`os/mod.rs` 只注册 `fs_link` | crate 全局 | 已改善（T1/T2 新增 13 个单测，共 15 个） |
+| F9 | 除 `process_output` 外**无任何单测**；`os/mod.rs` 只注册 `fs_link` | crate 全局 | 已修复（T1/T2/T3 共 50 个单测） |
 | F10 | **改造前**：`assistant-tools` 未声明 `tokio`，无法实现超时；`tempfile` 仅作为传递依赖存在于 `Cargo.lock` | `Cargo.toml` | 已修复（T2：`tokio` 升为正式依赖，`tempfile` 进入 `dev-dependencies`） |
 | F11 | `os_tool_exec` 是**通用透传**：按 `request.tool` 查表即执行。任何注册进 `ToolRegistry` 的工具都会立即获得一个前端可达入口 | `src-tauri/src/cmd/os_tool_exec.rs` | 部分缓解（`find_for_toolbox` 已过滤 `toolbox == false`；`toolbox == true` 的工具仍注册即可达） |
 
@@ -105,10 +107,10 @@ src-tauri/crates/assistant-tools/src/
 ├── exec.rs         (已建) invoke() 统一入口 + 超时
 ├── registry.rs     (已改) <= 语义 + 确定性排序 + description() 降级 + audience 过滤
 └── os/
-    ├── mod.rs            (不改) 仍只注册 fs_link
-    ├── path.rs           (待建) 共享路径安全
+    ├── mod.rs            (已改) 仍只注册 fs_link；新增 `pub mod path`
+    ├── path.rs           (已建) 共享路径安全
     ├── process_output.rs (不改) 编码检测，保留
-    └── fs_link.rs        (待改) 迁移到 path.rs，修正 permission 词汇（受众声明已完成）
+    └── fs_link.rs        (已改) 迁移到 path.rs，修正 permission 词汇（受众声明已完成）
 ```
 
 **不新增**：`os/output.rs`、任何 `fs_*.rs`、`shell_exec.rs`。
@@ -476,6 +478,7 @@ pub fn ensure_within_root(path: &Path, root: &Path) -> Result<(), String>;
 ```toml
 [dependencies]
 tokio = { workspace = true }
+dunce = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
@@ -486,6 +489,7 @@ tempfile = { workspace = true }
 |---|---|---|
 | `tokio` | `time::timeout` | workspace 已声明 `features = ["full"]`；T2 已将其升为**正式依赖**，同时保留 `dev-dependencies` 声明供单测使用 `macros` / `rt-multi-thread` |
 | `tempfile` | 路径测试临时目录 | 根 `Cargo.toml` 已声明 `tempfile = "3"`，按项目惯例写 `{ workspace = true }`；T2 已加入 `dev-dependencies`，T3 的 `path.rs` 单测直接使用 |
+| `dunce` | 剥离 Windows `\\?\` 前缀（§5.2） | T3 新增：根 `Cargo.toml` 声明 `dunce = "1"`，crate 以 `{ workspace = true }` 引入；仅在 `cfg(windows)` 分支实际调用 |
 
 **不引入**：`glob` / `ignore` / `grep`（无工具使用）、`thiserror`（契约是 `Result<ToolResult, String>`，类型化错误会连带改动 `invoke`、`os_tool_exec`、将来的 Pipeline 三处，留到 Step 6）。
 
@@ -495,16 +499,16 @@ tempfile = { workspace = true }
 
 | # | 标准 | 状态 |
 |---|---|---|
-| A1 | `cargo test -p assistant-tools` 全绿 | 当前通过（15 个单测） |
+| A1 | `cargo test -p assistant-tools` 全绿 | 已达成（T3：50 个单测） |
 | A2 | `cargo clippy -p assistant-tools -- -D warnings` 无告警 | 当前通过 |
 | A3 | `cargo fmt --all --check` 通过 | 当前通过 |
-| A4 | `os/path.rs` 单测覆盖：`..` 拒绝、不存在路径的宽松规范化、`C:\Windows.old` 不被误拒、`c:\windows\system32` 被拒（大小写不敏感）、`\\?\` 前缀剥离、盘符相对路径 `C:foo` 被明确拒绝、UNC 路径（`\\server\share` 与 `\\?\UNC\`）可解析、workspace 越界拒绝、`root` 自身允许、`root` 为符号链接时比较正确、`workspace_root=None` 时相对路径报出明确错误 | 待 T3 |
+| A4 | `os/path.rs` 单测覆盖：`..` 拒绝、不存在路径的宽松规范化、`C:\Windows.old` 不被误拒、`c:\windows\system32` 被拒（大小写不敏感）、`\\?\` 前缀剥离、盘符相对路径 `C:foo` 被明确拒绝、UNC 路径（`\\server\share` 与 `\\?\UNC\`）可解析、workspace 越界拒绝、`root` 自身允许、`root` 为符号链接时比较正确、`workspace_root=None` 时相对路径报出明确错误 | 已达成（T3，`path.rs` 20 个单测） |
 | A5 | `registry` 单测覆盖：`<=` 语义（`Os` 查询返回 `Sandbox + Os`）、按名排序、`description()` 失败降级为空串、`audience().agent == false` 的工具不进入 `tool_definitions_for_tier`、`find_for_toolbox` 拒绝 `toolbox == false` 的工具、默认受众为 `NONE` | 已达成（T1，默认值已收紧） |
 | A6 | `exec::invoke` 单测覆盖：非 object 输入、`Err` 归一化、超时归一化、超时对同步阻塞调用只保证「调用方返回」而不中断工作（用 `spawn_blocking` 构造） | 已达成（T2，5 个单测） |
-| A7 | `fs_link` 迁移后回归：source 不存在时可创建、`source` 父目录不存在时错误信息明确、junction 用例在 Windows 通过（无特权/CI 环境允许 `#[ignore]` 或跳过，不得因此判 A1 失败）、`check` 对真实符号链接仍返回 `isLink = true`（叶子不被跟随）、`workspace_root` 位于受保护目录时被明确拒绝 | 待 T3 |
-| A8 | `permission_intents` 只产出 `read` / `edit` / `delete` / `execute` 四类 action（全 crate grep 校验） | 待 T3（当前仍为 `fs_link_create` / `fs_link_target`） |
+| A7 | `fs_link` 迁移后回归：source 不存在时可创建、`source` 父目录不存在时错误信息明确、junction 用例在 Windows 通过（无特权/CI 环境允许 `#[ignore]` 或跳过，不得因此判 A1 失败）、`check` 对真实符号链接仍返回 `isLink = true`（叶子不被跟随）、`workspace_root` 位于受保护目录时被明确拒绝 | 已达成（T3，`fs_link` 10 个回归单测） |
+| A8 | `permission_intents` 只产出 `read` / `edit` / `delete` / `execute` 四类 action（全 crate grep 校验） | 已达成（T3：仅 `edit`，无 `fs_link_create` / `fs_link_target`） |
 | A9 | 生产 `ToolRegistry` 中工具数仍为 1（`fs_link`），无新增注册；`fs_link.audience()` 为 `TOOLBOX_ONLY`，故 `tool_definitions_for_tier()` 返回空列表 | 已达成（T1） |
-| A10 | crate 内不存在 `unwrap_or_else(\|_\| path.to_path_buf())` 形式的规范化降级 | 待 T3 |
+| A10 | crate 内不存在 `unwrap_or_else(\|_\| path.to_path_buf())` 形式的规范化降级 | 已达成（T3，grep 校验无匹配） |
 
 ---
 
@@ -514,7 +518,7 @@ tempfile = { workspace = true }
 |---|---|---|---|
 | T1 | `definition.rs` + `registry.rs` 改造（F1/F2/F3）+ `trait.rs::ToolAudience`（O1）+ 单测 | 无 | ✅ 已完成 |
 | T2 | `exec.rs` + `result.rs::from_exec_error`（F8）+ 单测 | T1 | ✅ 已完成 |
-| T3 | `os/path.rs`（F4/F5/F6）+ 单测；`fs_link` 迁移并修 `permission_intents`（F7）+ 受众声明 | T2 | ❌ 未开始 |
+| T3 | `os/path.rs`（F4/F5/F6）+ 单测；`fs_link` 迁移并修 `permission_intents`（F7）+ 受众声明 | T2 | ✅ 已完成 |
 
 T1 与 T2 不触碰任何工具，可独立提交、独立回滚。T3 是本阶段唯一的存量改动，涉及已上线能力，需单独回归。
 
@@ -523,6 +527,8 @@ T1 与 T2 不触碰任何工具，可独立提交、独立回滚。T3 是本阶�
 > **T1 实际交付内容**（与计划一致，另有两处计划外补强）：`registry.rs` 的 `tool_names()` 未排序（仅诊断用）；`ToolAudience::NONE` 无使用点，保留常量但不做运行时校验。`tool_names()` 排序仍未处理，留待后续需要确定性诊断输出时补。
 
 > **T2 实际交付内容**：`exec.rs`（`invoke` + `DEFAULT_TOOL_TIMEOUT = 30s` + 5 个单测）、`result.rs::from_exec_error`、`lib.rs` 导出 `exec`、`Cargo.toml` 依赖调整。另有一处存量改动：`os_tool_exec` 由直接调 `execute()` 改为调 `invoke()`，因此 `execute` 的 `Err` 不再变成 Tauri `Err`，而是归一化为 `ToolResult { ok: false }` 返回给前端。**前端行为变化**：错误从 `invoke()` reject 变为 resolve 出 `OsResult { ok: false, error }`，`os.ts` 已按 `OsResult` 消费，无需改动。
+
+> **T3 实际交付内容**（2026-11-04）：新建 `os/path.rs`（`resolve` / `resolve_leaf_preserving` / `canonicalize_lenient` / `reject_system_dirs` / `ensure_within_root`，20 个单测），`os/mod.rs` 导出 `pub mod path`；workspace `Cargo.toml` 新增 `dunce = "1"`，`assistant-tools` 以 workspace 依赖引入。`fs_link.rs` 删除私有 `resolve_path` / `validate_path`，`create` / `check` 的 `source` / `target` 全部改走 `resolve_leaf_preserving`，`permission_intents` 由 `fs_link_create` / `fs_link_target` 改为 `edit`（10 个回归单测，含 junction 与越界/受保护目录用例）。两处计划外补强：`\\?\UNC\` 在 `dunce::simplified()` 之上再归一到 `\\`（`dunce` 只处理 `VerbatimDisk`）；`workspace_root` 非绝对路径或不存在时给出明确错误（§4.4 语义约束的落实）。验收：`cargo test -p assistant-tools` 50 项全绿、`clippy --all-targets -D warnings` 无告警、`cargo fmt --all --check` 通过、`cargo test --workspace --no-run` 全量编译通过（`assistant-app` lib 测试二进制在本机启动即 `STATUS_ENTRYPOINT_NOT_FOUND`，属已记录的机器级限制，与本阶段改动无关）。
 
 ---
 

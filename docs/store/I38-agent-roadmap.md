@@ -27,7 +27,7 @@
 | 阶段 | 目标 | 权威 spec | 状态（2026-11-04） | 前置 |
 |---|---|---|---|---|
 | **P0 基线** | toolcall 从 chat 剥离；工具词汇层、Registry、`exec::invoke`、ToolBox 桥接 | I30 A 段、I31 T1/T2、I18b | ✅ 已完成 | — |
-| **P1 框架收口** | 共享路径安全 `os/path.rs`；`fs_link` 迁移与权限词汇修正 | I31 T3 | ❌ 未完成 | P0 |
+| **P1 框架收口** | 共享路径安全 `os/path.rs`；`fs_link` 迁移与权限词汇修正 | I31 T3 | ✅ 已完成（2026-11-04） | P0 |
 | **P2 工具控制层** | Policy / Gateway / Pipeline / 审批键 / 校验 / 并发 / 结果持久化 | I38a | ❌ 未开始 | P1 |
 | **P3 运行时内核** | `turn/` 共用内核、端口、状态机、取消代际、双层超时、chat 等价迁移 | I36 spec | ❌ 未开始 | P0 |
 | **P4 Agent Loop 闭环** | RoundExecutor 多迭代循环；tool call 累积器；`ChatOptions.tools` 注入 | I38b | ❌ 未开始 | P2、P3；I30 B 段决策 |

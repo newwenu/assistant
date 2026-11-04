@@ -369,6 +369,7 @@ dependencies = [
  "async-trait",
  "chardetng",
  "dashmap",
+ "dunce",
  "encoding_rs",
  "log",
  "serde",
