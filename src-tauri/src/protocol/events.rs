@@ -13,6 +13,8 @@ pub mod event_name {
     pub const THEME_CHANGED: &str = "theme-changed";
     pub const SETTING_PROVIDER_CHANGED: &str = "setting:provider-changed";
     pub const SHORTCUT_WARNING: &str = "shortcut-warning";
+    pub const WINDOW_MODE_CHANGED: &str = "ui:window-mode-changed";
+    pub const CLOCK_FINISHED: &str = "clock:finished";
     pub const VAULT_LOCKED: &str = "vault:locked";
     pub const VAULT_UNLOCKED: &str = "vault:unlocked";
     pub const BIOMETRIC_ENROLL_STEP: &str = "vault:biometric-enroll-step";

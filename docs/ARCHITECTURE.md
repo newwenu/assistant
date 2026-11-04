@@ -367,7 +367,7 @@ retryable 错误支持指数退避重试（max 3 次，base 1s，max 30s）。
 
 > Rust 后端结构择优参考 BongoCat 的 workspace 多 crate 架构（编译隔离 + API 边界强制 + 独立测试），按我们的领域划分为 1 个根包 + 9 个 workspace crate，远少于 BongoCat 的 20 个。ChatGPT 的 core 模块组织（cmd/conf/constant/setup/window）融入 `assistant-app` 根包。Tauri 2 CLI 要求二进制包位于 `src-tauri/` 根目录（`Cargo.toml` 同时包含 `[package]` 和 `[workspace]`），因此 `assistant-app` 作为根包而非子 crate。
 
-> **实现状态**：Rust 后端为根包 + 9 个 workspace crate；I0–I6 全部完成（Orb / AI 对话 / 22 个工具 / 设置系统 / Mascot / Agent 模式）；I7 上下文压缩已完成（`compression_state` + CompactBanner + 继续对话）；I2-History 已完成（Schema 实况见 §5.1，含分支/搜索/导出/批量操作）；I2e/I2f 图片附件与附件引用清理、I9 保险库已上线。尚未完成项见 §9 末尾“后续迭代”。
+> **实现状态**：Rust 后端为根包 + 9 个 workspace crate；I0–I6 全部完成（Orb / AI 对话 / 23 个工具 / 设置系统 / Mascot / Agent 模式）；I7 上下文压缩已完成（`compression_state` + CompactBanner + 继续对话）；I2-History 已完成（Schema 实况见 §5.1，含分支/搜索/导出/批量操作）；I2e/I2f 图片附件与附件引用清理、I9 保险库、I26 mini 模式与 clock 倒计时已上线。尚未完成项见 §9 末尾“后续迭代”。
 
 ```
 assistant/
@@ -418,7 +418,7 @@ assistant/
 │   ├── orb/                       # OrbBall / OrbPanel / OrbDrag / OrbExpand / OrbCoord / OrbContextMenu / useOrbConfSync
 │   ├── mascot/                    # RiveMascot / faceStates / riveMaps / useMascotChatSync / mascotStore / emotionEngine
 │   ├── chat/                      # ChatView / MessageList / MessageInput / 选择器 / compact 横幅 / message 渲染
-│   ├── tools/                     # ToolBox / ToolPage / registry.ts + 22 个工具实现
+│   ├── tools/                     # ToolBox / MiniToolBox / ToolPage / registry.ts + 23 个工具实现
 │   ├── vault/                     # 保险库页面（列表 / 详情 / 解锁）
 │   ├── history/                   # 历史管理（列表 / 详情 / 分支 / 批量操作 / 导出）
 │   ├── settings/                  # 设置（core 字段与页面注册 / pages 各设置页 / provider / agentMode / overview）
@@ -570,15 +570,16 @@ assistant/
 
 ### I3 — 主窗口工具箱 ✅
 
-**交付：** 完整工具箱，分类导航 + 搜索 + 收藏 + 22 工具
+**交付：** 完整工具箱，分类导航 + 搜索 + 收藏 + 23 工具
 
 - [x] 工具注册系统（ToolDefinition 接口 + defineTool 工厂）
 - [x] 工具箱首页（分类 + 搜索 + 收藏 + 最近使用 + 拖拽排序）
-- [x] 工具分类（dev / converter / security / media，由 keywords 自动归类）
+- [x] 工具分类（dev / converter / security / media / productivity，由 keywords 自动归类）
 - [x] dev：UUID 生成、JSON 格式化、正则测试器、SQL 格式化、Cron 解析、文本 Diff、字数统计、计算器、IP 查询、文件系统链接
 - [x] converter：Base64 编解码、颜色转换、时间戳转换、进制转换、URL 编解码、单位换算
 - [x] security：Hash 计算、JWT 解码、密码生成器
 - [x] media：二维码生成、图片压缩、SVG 预览
+- [x] productivity：倒计时（clock，支持 mini 紧凑形态）
 - [x] 工具使用历史（SQLite tool_history）+ 收藏持久化（SQLite tool_favorites）
 - [x] 命令面板（Ctrl/Cmd+K）+ 模糊搜索（fuse.js）
 - [x] 侧边栏可折叠分类菜单（CollapsibleToolMenu）

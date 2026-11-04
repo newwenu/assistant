@@ -34,7 +34,7 @@ static APP_SIDE_EFFECTS: &[(&str, AppSideEffectFn)] = &[
         if prev.stay_on_top != conf.stay_on_top {
             if let Some(window) = _app.get_webview_window(WINDOW_MAIN) {
                 window
-                    .set_always_on_top(conf.stay_on_top)
+                    .set_always_on_top(crate::window::effective_on_top(conf.stay_on_top))
                     .map_err(|e| e.to_string())?;
             }
         }
@@ -109,6 +109,12 @@ pub(crate) fn apply_app_conf(app: &AppHandle, patch: serde_json::Value) -> Resul
     merged.save().map_err(|e| e.to_string())?;
     apply_app_side_effects(app, &prev, &merged);
     Ok(())
+}
+
+/// 与 `patch_conf` 共用同一把配置锁，供窗口几何等非命令入口写入配置。
+pub(crate) fn update_app_conf(app: &AppHandle, patch: serde_json::Value) -> Result<(), String> {
+    let _guard = CONF_LOCK.lock().map_err(|e| e.to_string())?;
+    apply_app_conf(app, patch)
 }
 
 pub(crate) fn apply_orb_conf(app: &AppHandle, patch: serde_json::Value) -> Result<(), String> {

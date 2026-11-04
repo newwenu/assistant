@@ -1,6 +1,8 @@
 // 参考: ChatGPT/src-tauri/src/main.rs — Builder 链式配置 + setup + invoke_handler
 // 参考: BongoCat/crates/bongocat-app/src/lib.rs — 模块化组织
 
+#[doc(hidden)]
+pub mod clock;
 mod cmd;
 mod ipc;
 mod lifecycle;

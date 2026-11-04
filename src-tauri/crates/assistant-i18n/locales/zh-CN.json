@@ -36,6 +36,10 @@
     "title_settings": "设置",
     "unknown_label": "未知窗口标签: %{label}"
   },
+  "clock": {
+    "notification_title": "计时结束",
+    "notification_body": "倒计时已完成。"
+  },
   "error": {
     "conversation_not_found": "对话未找到",
     "provider_not_found": "Provider 未找到",

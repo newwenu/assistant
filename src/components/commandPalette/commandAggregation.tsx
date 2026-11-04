@@ -27,6 +27,7 @@ import {
 } from "@/settings/core/settingsDispatcher";
 import { defineCommand, clearCommands } from "./commandRegistry";
 import { getFeatures } from "@/features/registry";
+import { navigateInCurrentMode, openTool } from "@/tools/miniNavigate";
 import { translateKey } from "@/i18n";
 
 function tokenize(text: string): string[] {
@@ -88,7 +89,7 @@ function registerSettingsCommands(navigate: NavigateFunction): void {
       keywords,
       category: "navigation",
       icon: CATEGORY_ICON_MAP[page.categoryId] ?? <SettingOutlined />,
-      action: () => navigate(`/settings/${page.id}`),
+      action: () => navigateInCurrentMode(navigate, `/settings/${page.id}`),
     });
   }
 }
@@ -110,7 +111,11 @@ function registerSettingSectionCommands(navigate: NavigateFunction): void {
       keywords,
       category: "navigation",
       icon: CATEGORY_ICON_MAP[page.categoryId] ?? <SettingOutlined />,
-      action: () => navigate(`/settings/${sec.pageId}?focus=section:${sec.id}`),
+      action: () =>
+        navigateInCurrentMode(
+          navigate,
+          `/settings/${sec.pageId}?focus=section:${sec.id}`,
+        ),
     });
   }
 }
@@ -141,7 +146,8 @@ function registerSettingFieldCommands(navigate: NavigateFunction): void {
       }),
       keywords,
       category: "navigation",
-      action: () => navigate(`/settings/${pageId}?focus=${def.key}`),
+      action: () =>
+        navigateInCurrentMode(navigate, `/settings/${pageId}?focus=${def.key}`),
     });
   }
 }
@@ -163,7 +169,7 @@ function registerFeatureRouteCommands(navigate: NavigateFunction): void {
       name,
       keywords,
       category: "navigation",
-      action: () => navigate(route.path),
+      action: () => navigateInCurrentMode(navigate, route.path),
     });
   }
 }
@@ -182,12 +188,12 @@ function registerToolCommands(navigate: NavigateFunction): void {
       keywords,
       category: "tools",
       icon: React.createElement(IconComp),
-      action: () => navigate(`/tools/${tool.id}`),
+      action: () => openTool(navigate, tool.id),
     });
   }
 }
 
-function registerManualCommands(): void {
+function registerManualCommands(navigate: NavigateFunction): void {
   defineCommand({
     id: "action:toggle-theme",
     name: translateKey("command.action.toggle_theme"),
@@ -226,7 +232,7 @@ function registerManualCommands(): void {
     icon: <ReloadOutlined />,
     action: () => {
       const t = tools[Math.floor(Math.random() * tools.length)];
-      window.location.hash = `#/tools/${t.id}`;
+      return openTool(navigate, t.id);
     },
   });
 
@@ -270,9 +276,7 @@ function registerManualCommands(): void {
     ),
     category: "navigation",
     icon: <HistoryOutlined />,
-    action: () => {
-      window.location.hash = "#/history";
-    },
+    action: () => navigateInCurrentMode(navigate, "/history"),
   });
 }
 
@@ -283,5 +287,5 @@ export function aggregateCommands(navigate: NavigateFunction): void {
   registerSettingFieldCommands(navigate);
   registerFeatureRouteCommands(navigate);
   registerToolCommands(navigate);
-  registerManualCommands();
+  registerManualCommands(navigate);
 }

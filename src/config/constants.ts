@@ -9,8 +9,13 @@ export const ORB_CHROME_INSET = 2;
 export const ORB_HITBOX_SIZE = ORB_COLLAPSED_SIZE + 2 * ORB_CHROME_INSET;
 
 export const TITLEBAR_HEIGHT = 38;
+export const MINI_TITLEBAR_HEIGHT = 32;
 export const MACOS_TRAFFIC_LIGHT_OFFSET = 80;
 export const TITLEBAR_PADDING_LEFT = 12;
+
+export const MINI_WINDOW_WIDTH = 280;
+export const MINI_WINDOW_HEIGHT = 420;
+export const MINI_DENSITY_BREAKPOINT = 320;
 
 export const SIDEBAR_WIDTH = 240;
 export const SIDEBAR_COLLAPSED_WIDTH = 64;

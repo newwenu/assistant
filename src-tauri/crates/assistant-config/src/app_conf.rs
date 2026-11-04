@@ -46,6 +46,21 @@ pub struct AppConf {
     pub compact_summary_prompt: Option<String>,
     #[serde(default = "default_max_summary_tokens")]
     pub compact_summary_max_tokens: u16,
+    /// normal 形态的窗口位置（物理像素）
+    #[serde(default)]
+    pub main_window_x: Option<i32>,
+    #[serde(default)]
+    pub main_window_y: Option<i32>,
+    /// normal 形态的窗口尺寸（逻辑像素）
+    #[serde(default)]
+    pub main_window_width: Option<u32>,
+    #[serde(default)]
+    pub main_window_height: Option<u32>,
+    /// mini 形态的窗口位置（物理像素）；mini 尺寸固定，不存宽高
+    #[serde(default)]
+    pub mini_window_x: Option<i32>,
+    #[serde(default)]
+    pub mini_window_y: Option<i32>,
 }
 
 /// 平台主修饰键：macOS 用 Command，其余用 Control。
@@ -89,6 +104,12 @@ impl AppConf {
             legacy_compact_threshold_percent: None,
             compact_summary_prompt: None,
             compact_summary_max_tokens: super::constant::MAX_SUMMARY_REQUEST_TOKENS as u16,
+            main_window_x: None,
+            main_window_y: None,
+            main_window_width: None,
+            main_window_height: None,
+            mini_window_x: None,
+            mini_window_y: None,
         }
     }
 

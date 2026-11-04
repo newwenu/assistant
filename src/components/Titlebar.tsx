@@ -1,19 +1,31 @@
 import { useMemo } from "react";
+import { Button, Tooltip } from "antd";
+import { ShrinkOutlined, ArrowsAltOutlined } from "@ant-design/icons";
 import { ThemeToggle } from "./ThemeToggle";
 import { WindowControls } from "./WindowControls";
 import { PinToggle } from "./PinToggle";
 import { SettingsEntry } from "./SettingsEntry";
+import { translateKey } from "@/i18n";
+import type { WindowMode } from "@/stores/windowModeStore";
 import {
   TITLEBAR_HEIGHT,
+  MINI_TITLEBAR_HEIGHT,
   MACOS_TRAFFIC_LIGHT_OFFSET,
   TITLEBAR_PADDING_LEFT,
 } from "@/config/constants";
 
 interface TitlebarProps {
   title?: string;
+  mode?: WindowMode;
+  onToggleMode?: () => void;
 }
 
-export const Titlebar: React.FC<TitlebarProps> = ({ title = "Assistant" }) => {
+export const Titlebar: React.FC<TitlebarProps> = ({
+  title = "Assistant",
+  mode = "normal",
+  onToggleMode,
+}) => {
+  const isMini = mode === "mini";
   const isMacOS = useMemo(
     () => navigator.platform.toUpperCase().startsWith("MAC"),
     [],
@@ -27,7 +39,7 @@ export const Titlebar: React.FC<TitlebarProps> = ({ title = "Assistant" }) => {
       data-tauri-drag-region
       style={
         {
-          height: TITLEBAR_HEIGHT,
+          height: isMini ? MINI_TITLEBAR_HEIGHT : TITLEBAR_HEIGHT,
           flexShrink: 0,
           display: "flex",
           alignItems: "center",
@@ -72,9 +84,25 @@ export const Titlebar: React.FC<TitlebarProps> = ({ title = "Assistant" }) => {
           } as React.CSSProperties
         }
       >
-        <PinToggle />
-        <SettingsEntry />
-        <ThemeToggle />
+        {onToggleMode && (
+          <Tooltip
+            title={translateKey(
+              isMini ? "mini.toggle_to_normal" : "mini.toggle_to_mini",
+            )}
+            mouseEnterDelay={0.5}
+          >
+            <Button
+              type="text"
+              size="small"
+              icon={isMini ? <ArrowsAltOutlined /> : <ShrinkOutlined />}
+              onClick={onToggleMode}
+              style={{ width: 32, height: 28 }}
+            />
+          </Tooltip>
+        )}
+        {!isMini && <PinToggle />}
+        {!isMini && <SettingsEntry />}
+        {!isMini && <ThemeToggle />}
         <WindowControls />
       </div>
     </div>

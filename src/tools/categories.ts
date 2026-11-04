@@ -4,9 +4,16 @@ import {
   SwapOutlined,
   CodeOutlined,
   PictureOutlined,
+  ClockCircleOutlined,
 } from "@ant-design/icons";
 
-export const CATEGORY_KEYS = ["dev", "converter", "security", "media"] as const;
+export const CATEGORY_KEYS = [
+  "dev",
+  "converter",
+  "security",
+  "media",
+  "productivity",
+] as const;
 
 export type ToolCategory = (typeof CATEGORY_KEYS)[number];
 
@@ -181,6 +188,28 @@ const CATEGORY_SIGNATURES: Record<ToolCategory, readonly string[]> = {
     "path",
     "xml",
   ],
+  productivity: [
+    "pomodoro",
+    "focus",
+    "countdown",
+    "stopwatch",
+    "session",
+    "break",
+    "note",
+    "notes",
+    "memo",
+    "scratchpad",
+    "sticky",
+    "todo",
+    "checklist",
+    "journal",
+    "diary",
+    "productivity",
+    "reminder",
+    "deadline",
+    "task",
+    "routine",
+  ],
 };
 
 export function classifyKeywords(keywords: readonly string[]): ToolCategory {
@@ -221,6 +250,12 @@ export const TOOL_CATEGORIES: ToolCategoryMeta[] = [
     label: "tools.category.media",
     icon: PictureOutlined,
     order: 3,
+  },
+  {
+    key: "productivity",
+    label: "tools.category.productivity",
+    icon: ClockCircleOutlined,
+    order: 4,
   },
 ];
 

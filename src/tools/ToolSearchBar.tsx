@@ -6,10 +6,12 @@ import { useToolStore } from "@/stores/toolStore";
 
 interface ToolSearchBarProps {
   placeholder?: string;
+  size?: "small" | "middle" | "large";
 }
 
 export const ToolSearchBar: React.FC<ToolSearchBarProps> = ({
   placeholder = translateKey("tools.search_placeholder"),
+  size = "large",
 }) => {
   const searchQuery = useToolStore((s) => s.searchQuery);
   const search = useToolStore((s) => s.search);
@@ -21,7 +23,7 @@ export const ToolSearchBar: React.FC<ToolSearchBarProps> = ({
       value={searchQuery}
       onChange={(e) => search(e.target.value)}
       allowClear
-      size="large"
+      size={size}
       style={{ marginBottom: 16 }}
     />
   );

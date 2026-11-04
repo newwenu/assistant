@@ -37,4 +37,6 @@ export enum UiEvent {
   ThemeChanged = "theme-changed",
   OrbNewConversation = "orb-new-conversation",
   OrbBlur = "orb-blur",
+  WindowModeChanged = "ui:window-mode-changed",
+  ClockFinished = "clock:finished",
 }

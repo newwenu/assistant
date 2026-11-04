@@ -19,6 +19,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { ToolSearchBar } from "./ToolSearchBar";
 import { ToolCard } from "./ToolCard";
+import { MiniToolBox } from "./MiniToolBox";
+import { useWindowModeStore } from "@/stores/windowModeStore";
 import { useToolStore } from "@/stores/toolStore";
 import { toolsMap } from "./registry";
 import type { ToolDefinition } from "./types";
@@ -51,7 +53,7 @@ const SortableToolCard: React.FC<SortableToolCardProps> = ({ tool }) => {
   );
 };
 
-export const ToolBox: React.FC = () => {
+const NormalToolBox: React.FC = () => {
   const navigate = useNavigate();
   const allTools = useToolStore((s) => s.tools);
   const toolsByCategory = useToolStore((s) => s.toolsByCategory);
@@ -234,4 +236,9 @@ export const ToolBox: React.FC = () => {
       )}
     </div>
   );
+};
+
+export const ToolBox: React.FC = () => {
+  const mode = useWindowModeStore((s) => s.mode);
+  return mode === "mini" ? <MiniToolBox /> : <NormalToolBox />;
 };

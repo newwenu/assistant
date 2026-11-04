@@ -87,6 +87,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     handle.manage(assistant_agent::chat_tasks::ChatTasks::new());
+    handle.manage(std::sync::Arc::new(crate::clock::ClockRuntime::new()));
 
     {
         let registry = Arc::new(ToolRegistry::new());
@@ -98,6 +99,9 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     tray::create_tray(handle);
 
     position_orb_window(handle);
+    if let Err(e) = crate::window::restore_main_window(handle) {
+        log::warn!("Failed to restore main window geometry: {}", e);
+    }
 
     spawn_screen_inspection(handle.clone());
 

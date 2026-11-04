@@ -1,6 +1,7 @@
 mod agent_mode;
 mod app;
 mod chat;
+mod clock;
 mod compaction;
 mod config;
 mod conversation;
@@ -18,6 +19,7 @@ pub(crate) mod vault;
 pub use agent_mode::*;
 pub use app::*;
 pub use chat::*;
+pub use clock::*;
 pub use compaction::*;
 pub use config::*;
 pub use conversation::*;

@@ -41,6 +41,7 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 rustc_version_runtime = "0.3"
 mouse_position = "0.1"
 rusqlite = { version = "0.31", features = ["bundled-sqlcipher"] }
@@ -145,6 +146,7 @@ tauri-plugin-log = { workspace = true }
 tauri-plugin-global-shortcut = { workspace = true }
 tauri-plugin-autostart = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
+tauri-plugin-notification = { workspace = true }
 mouse_position = { workspace = true }
 rusqlite = { workspace = true }
 tokio = { workspace = true }

@@ -14,6 +14,7 @@ pub fn app_quit(app: AppHandle) -> Result<(), String> {
 }
 
 pub fn perform_exit(app: &AppHandle) {
+    let _ = crate::window::persist_main_geometry(app);
     if let Ok(w) = crate::window::get_or_error(app, WINDOW_ORB) {
         if let Ok(pos) = w.outer_position() {
             if let Ok(mut conf) = OrbConf::load() {

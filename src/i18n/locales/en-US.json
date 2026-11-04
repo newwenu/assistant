@@ -678,7 +678,8 @@
       "dev": "Development",
       "converter": "Converter",
       "security": "Security",
-      "media": "Media"
+      "media": "Media",
+      "productivity": "Productivity"
     },
     "search_placeholder": "Search tools...",
     "no_match": "No matching tools found",
@@ -755,6 +756,26 @@
       "name": "Cron Parser",
       "description": "Parse Cron expressions and show next execution times"
     },
+    "clock": {
+      "name": "Timer",
+      "description": "Countdown and stopwatch with presets and custom durations",
+      "start": "Start",
+      "pause": "Pause",
+      "resume": "Resume",
+      "reset": "Reset",
+      "finished": "Finished",
+      "finished_hint": "This round has ended. You can start again.",
+      "status_idle": "Ready",
+      "status_running": "Running",
+      "status_paused": "Paused",
+      "minutes": "min",
+      "custom_minutes": "Custom minutes",
+      "error": "Timer action failed",
+      "mode_countdown": "Countdown",
+      "mode_stopwatch": "Stopwatch",
+      "mode_switch_running": "Pause the timer before switching modes",
+      "stopwatch_hint": "The stopwatch does not stop automatically"
+    },
     "calculator": {
       "name": "Calculator",
       "description": "Evaluate math expressions with history"
@@ -783,6 +804,12 @@
       "name": "Password Vault",
       "description": "Securely store and manage passwords, credentials and keys"
     }
+  },
+  "mini": {
+    "toggle_to_mini": "Switch to mini window",
+    "toggle_to_normal": "Expand to full window",
+    "page_unsupported": "This page does not support mini mode",
+    "page_unsupported_desc": "This page needs the full window width; the current mode is kept."
   },
   "vault": {
     "name": "Password Vault",

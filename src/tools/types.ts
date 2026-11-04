@@ -25,6 +25,8 @@ export interface ToolDefinition {
   isNew?: boolean;
   createdAt?: Date;
   widthMode?: WidthMode;
+  /** 窄容器（mini / 容器宽 ≤ MINI_DENSITY_BREAKPOINT）下仍可用 */
+  miniFriendly?: boolean;
   capabilities?: ToolCapabilities;
 }
 

@@ -36,6 +36,10 @@
     "title_settings": "Settings",
     "unknown_label": "Unknown window label: %{label}"
   },
+  "clock": {
+    "notification_title": "Timer finished",
+    "notification_body": "Your countdown has completed."
+  },
   "error": {
     "conversation_not_found": "Conversation not found",
     "provider_not_found": "Provider not found",

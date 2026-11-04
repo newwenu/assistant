@@ -5,19 +5,20 @@ use assistant_app::protocol::{
     AgentModeDto, AgentModeInputDto, AgentModeKindDto, AppConfDto, AttachmentDeleteResultDto,
     AttachmentSummary, ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto,
     ChatRegeneratePayloadDto, ChatStreamStartPayloadDto, ChatUserMessageConfirmedPayloadDto,
-    ContentBlockDto, ConversationAttachmentSummary, ConversationCompactFailedPayloadDto,
-    ConversationDetailDto, ConversationDto, ConversationListChangeKindDto,
-    ConversationListChangedPayloadDto, ConversationPatchDto, ConversationQueryModeDto,
-    ConversationQueryOptsDto, ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto,
-    FileAttachmentRefDto, ImageAttachmentRefDto, InstallMascotAssetResultDto, MascotConfDto,
-    MessageChangeKindDto, MessageDto, ModelConfigDto, MousePositionDto, OrbConfDto,
-    OsToolExecRequestDto, OsToolResultDto, ProviderErrorCodeDto, ProviderErrorPayloadDto,
-    ProviderInputDto, ProviderListDto, ReasoningLevelsDto, RetryNotificationDto, ScreenRectDto,
-    ScreenSizeDto, SendChatMessageArgsDto, SettingProviderChangedActionDto,
-    SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto, SiblingInfoDto,
-    StorageBreakdownDto, ThemeChangedPayloadDto, TokenUsageCacheDto, TokenUsageCumulativeDto,
-    TokenUsageDto, TokenUsageEstimatedSourceDto, TokenUsageOccupancyDto, TokenUsageSummaryDto,
-    VaultCipherAlgorithmDto, VaultConfDto,
+    ClockModeDto, ClockSnapshotDto, ClockStatusDto, ContentBlockDto, ConversationAttachmentSummary,
+    ConversationCompactFailedPayloadDto, ConversationDetailDto, ConversationDto,
+    ConversationListChangeKindDto, ConversationListChangedPayloadDto, ConversationPatchDto,
+    ConversationQueryModeDto, ConversationQueryOptsDto, ConversationTerminatedPayloadDto,
+    ConversationUnlockedPayloadDto, FileAttachmentRefDto, ImageAttachmentRefDto,
+    InstallMascotAssetResultDto, MascotConfDto, MessageChangeKindDto, MessageDto, ModelConfigDto,
+    MousePositionDto, OrbConfDto, OsToolExecRequestDto, OsToolResultDto, ProviderErrorCodeDto,
+    ProviderErrorPayloadDto, ProviderInputDto, ProviderListDto, ReasoningLevelsDto,
+    RetryNotificationDto, ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto,
+    SettingProviderChangedActionDto, SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto,
+    SiblingInfoDto, StorageBreakdownDto, ThemeChangedPayloadDto, TokenUsageCacheDto,
+    TokenUsageCumulativeDto, TokenUsageDto, TokenUsageEstimatedSourceDto, TokenUsageOccupancyDto,
+    TokenUsageSummaryDto, VaultCipherAlgorithmDto, VaultConfDto, WindowModeChangedPayloadDto,
+    WindowModeDto,
 };
 use ts_rs::{Config, TS};
 
@@ -37,6 +38,9 @@ fn export_protocol_contract() {
         ChatRegeneratePayloadDto::decl(&cfg),
         ChatStreamStartPayloadDto::decl(&cfg),
         ChatUserMessageConfirmedPayloadDto::decl(&cfg),
+        ClockModeDto::decl(&cfg),
+        ClockSnapshotDto::decl(&cfg),
+        ClockStatusDto::decl(&cfg),
         ContentBlockDto::decl(&cfg),
         ConversationAttachmentSummary::decl(&cfg),
         ConversationCompactFailedPayloadDto::decl(&cfg),
@@ -83,6 +87,8 @@ fn export_protocol_contract() {
         TokenUsageSummaryDto::decl(&cfg),
         VaultCipherAlgorithmDto::decl(&cfg),
         VaultConfDto::decl(&cfg),
+        WindowModeChangedPayloadDto::decl(&cfg),
+        WindowModeDto::decl(&cfg),
     ];
 
     let mut output = String::from(
@@ -100,8 +106,8 @@ fn export_protocol_contract() {
     }
     assert_eq!(
         output.matches("export type ").count(),
-        57,
-        "protocol contract must cover all 57 DTOs"
+        62,
+        "protocol contract must cover all 62 DTOs"
     );
     fs::write(&out_path, output).expect("write protocol contract");
 }

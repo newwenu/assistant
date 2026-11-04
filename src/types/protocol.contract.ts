@@ -3,7 +3,7 @@
 export type AgentModeDto = { id: string, name: string, description: string, kind: AgentModeKindDto, prompt: string, model: string | null, temperature: number | null, maxTokens: number | null, reasoningEnabled: boolean | null, reasoningEffort: string | null, tools: Array<string>, presentationRank: number, isBuiltin: boolean, createdAt: number, updatedAt: number, };
 export type AgentModeInputDto = { id: string, name: string, description: string, kind: AgentModeKindDto, prompt: string, model?: string | null, temperature?: number | null, maxTokens?: number | null, reasoningEnabled?: boolean | null, reasoningEffort?: string | null, tools: Array<string>, presentationRank: number, isBuiltin: boolean, createdAt: number, };
 export type AgentModeKindDto = "default" | "quick" | "deep" | "custom";
-export type AppConfDto = { theme: string, language: string, hotkey: string, stayOnTop: boolean, launchAtLogin: boolean, closeToTray: boolean, keybindings: { [key in string]: string }, autoCompact: boolean, compactThresholdPercentOfBudget: number, compactSummaryPrompt: string | null, compactSummaryMaxTokens: number, };
+export type AppConfDto = { theme: string, language: string, hotkey: string, stayOnTop: boolean, launchAtLogin: boolean, closeToTray: boolean, keybindings: { [key in string]: string }, autoCompact: boolean, compactThresholdPercentOfBudget: number, compactSummaryPrompt: string | null, compactSummaryMaxTokens: number, mainWindowX: number | null, mainWindowY: number | null, mainWindowWidth: number | null, mainWindowHeight: number | null, miniWindowX: number | null, miniWindowY: number | null, };
 export type AttachmentDeleteResultDto = { removedCount: number, 
 /**
  * 本次删除释放的字节数。未找到目录配额常量，无法论证更窄上限，故保留 `u64`。
@@ -15,6 +15,25 @@ export type ChatMessagesChangedPayloadDto = { conversationId: string, changeKind
 export type ChatRegeneratePayloadDto = { conversationId: string, deletedMessageId: string, };
 export type ChatStreamStartPayloadDto = { conversationId: string, attemptId: string, messageId: string, };
 export type ChatUserMessageConfirmedPayloadDto = { conversationId: string, userMessageId: string, userMessageContent: string, };
+export type ClockModeDto = "countdown" | "stopwatch";
+export type ClockSnapshotDto = { mode: ClockModeDto, status: ClockStatusDto, 
+/**
+ * 倒计时配置时长；普通计时模式下保留上一次倒计时时长
+ */
+durationMs: number, 
+/**
+ * 仅倒计时有值；普通计时为 null
+ */
+remainingMs: number | null, 
+/**
+ * 两种模式都有值；倒计时下等于 duration_ms - remaining_ms
+ */
+elapsedMs: number, 
+/**
+ * 当前运行段的墙钟起点；非 Running 时为 null，前端据此本地续算
+ */
+startedAtMs: number | null, elapsedBeforeMs: number, };
+export type ClockStatusDto = "idle" | "running" | "paused" | "finished";
 export type ContentBlockDto = { "type": "text", text: string, } | { "type": "image", attachment: ImageAttachmentRefDto, } | { "type": "file", attachment: FileAttachmentRefDto, } | { "type": "thinking", thinking: string, signature: string | null, } | { "type": "tool_use", tool_use_id: string, name: string, input: string, } | { "type": "tool_result", tool_use_id: string, output: string, };
 export type ConversationAttachmentSummary = { conversationId: string, title: string, attachments: Array<AttachmentSummary>, totalBytes: number, updatedAt: number, };
 export type ConversationCompactFailedPayloadDto = { conversationId: string, error: string, };
@@ -110,3 +129,5 @@ cumulative: TokenUsageCumulativeDto | null,
 cache: TokenUsageCacheDto | null, };
 export type VaultCipherAlgorithmDto = "aes256Gcm" | "chacha20Poly1305";
 export type VaultConfDto = { vaultAutoLockMinutes: number, vaultLockOnScreenLock: boolean, vaultClipboardClearSeconds: number, vaultCipherAlgorithm: VaultCipherAlgorithmDto, vaultHibpAutoAudit: boolean, vaultSyncRemoteUrl: string | null, vaultSshAutoAdd: boolean, vaultSshUsePageant: boolean, vaultSshUseOpensshAgent: boolean, vaultSshAuthSockOverride: string, vaultSyncLastAt: number | null, vaultSyncSshHosts: Array<string>, };
+export type WindowModeChangedPayloadDto = { mode: WindowModeDto, };
+export type WindowModeDto = "normal" | "mini";

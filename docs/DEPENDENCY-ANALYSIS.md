@@ -35,6 +35,7 @@
 | tauri-plugin-global-shortcut | 2 | — | 全局快捷键注册 |
 | tauri-plugin-autostart | 2 | — | 开机自启动 |
 | tauri-plugin-dialog | 2 | — | 原生文件选择/消息对话框 |
+| tauri-plugin-notification | 2 | — | 系统通知（clock 到点提醒，Rust 侧发起） |
 
 > `tauri-plugin-sql` 已移除（原前端未使用 JS 绑定，Rust 端统一用 rusqlite，避免双份 SQLite 编译）。
 

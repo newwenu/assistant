@@ -15,6 +15,12 @@ pub struct AppConfDto {
     pub compact_threshold_percent_of_budget: u8,
     pub compact_summary_prompt: Option<String>,
     pub compact_summary_max_tokens: u16,
+    pub main_window_x: Option<i32>,
+    pub main_window_y: Option<i32>,
+    pub main_window_width: Option<u32>,
+    pub main_window_height: Option<u32>,
+    pub mini_window_x: Option<i32>,
+    pub mini_window_y: Option<i32>,
 }
 
 impl From<assistant_config::app_conf::AppConf> for AppConfDto {
@@ -31,6 +37,12 @@ impl From<assistant_config::app_conf::AppConf> for AppConfDto {
             compact_threshold_percent_of_budget: c.compact_threshold_percent_of_budget,
             compact_summary_prompt: c.compact_summary_prompt,
             compact_summary_max_tokens: c.compact_summary_max_tokens,
+            main_window_x: c.main_window_x,
+            main_window_y: c.main_window_y,
+            main_window_width: c.main_window_width,
+            main_window_height: c.main_window_height,
+            mini_window_x: c.mini_window_x,
+            mini_window_y: c.mini_window_y,
         }
     }
 }
