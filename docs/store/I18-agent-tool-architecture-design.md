@@ -1,7 +1,9 @@
 # I18 — Agent Tool 架构决策记录（ADR）
 
 > 本文档记录架构**决策**：为什么这样设计、参考了什么、做了什么取舍。
-> **实施规格**见 [I18-agent-tool-architecture-spec.md](./I18-agent-tool-architecture-spec.md)（Step 0-10）。
+> **阶段、状态与门禁**见 [I38-agent-roadmap.md](./I38-agent-roadmap.md)（唯一阶段入口）。
+> **框架层实施规格**（Step 0-3、8）见 [I18-agent-tool-architecture-spec.md](./I18-agent-tool-architecture-spec.md)。
+> **控制层**见 [I38a](./I38a-tool-control-layer-spec.md)；**Agent Loop** 见 [I38b](./I38b-agent-loop-spec.md)；**OS 工具**见 [I38c](./I38c-os-tools-spec.md)；**前端与模式**见 [I38d](./I38d-agent-frontend-modes-spec.md)；**MCP** 见 [I38e](./I38e-mcp-tools-spec.md)。
 > **Shell 安全子域**见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
 > **ToolBox 双入口桥接**见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
 
@@ -252,7 +254,7 @@ pub trait Tool: Send + Sync {
 
 **关键不变量**：`PermissionRuntimeCeiling` 禁止携带 Allow 规则——委托只能收紧不能放宽，编译期可检查。
 
-> 完整类型定义、评估算法、默认规则集见 I18-spec Step 4。
+> 完整类型定义、评估算法、默认规则集见 [I38a](./I38a-tool-control-layer-spec.md) §2-§4。
 
 ### 3.6 决策：双入口分流
 
@@ -274,7 +276,7 @@ pub trait Tool: Send + Sync {
 
 ### 3.6.1 决策：受众维度与双入口分离
 
-**决策**：`Tool` trait 增加 `audience() -> ToolAudience { agent, toolbox }`，默认 `BOTH`；两个维度各自在查询侧过滤，而不是拆成两个 registry。
+**决策**：`Tool` trait 增加 `audience() -> ToolAudience { agent, toolbox }`，默认 `NONE`（fail-closed）；两个维度各自在查询侧过滤，而不是拆成两个 registry。
 
 **理由**：
 
@@ -282,13 +284,13 @@ pub trait Tool: Send + Sync {
 |---|---|
 | 拆「ToolBox registry」与「Agent registry」 | 同一实现要注册两次，`setup.rs` 维护两份清单；共享 trait 的好处被容器拆分抵消 |
 | 单一 `exposed_to_agent: bool` | 只能表达「给不给 LLM」，无法表达「只给 Agent、不给前端透传入口」；将来仍要改契约 |
-| **双布尔受众（采纳）** | 两个入口各有明确执行点（`tool_definitions_for_tier` / `find_for_toolbox`），一次表达完整；默认 `BOTH` 使存量工具零改动 |
+| **双布尔受众（采纳）** | 两个入口各有明确执行点（`tool_definitions_for_tier` / `find_for_toolbox`），一次表达完整；默认 `NONE` 使遗漏声明时不可见（fail-closed） |
 
 **取舍**：
 
 - 受众决定「能否被某个入口看到」，**不决定「是否启用」**。启用仍由 `conversation.tool_config.tools` 白名单（§3.8 deny-by-default）控制，两者正交。
 - `fs_link` 是第一个非 `BOTH` 工具，声明 `TOOLBOX_ONLY`。它存在的意义是验证桥接链路，不是给模型的能力；受众维度让这个定位第一次可以被代码表达，而不是靠文档口头约定。
-- 默认值 `BOTH` 是**迁移便利**，不是推荐写法：新增工具必须显式声明受众（见 I18 spec Step 2 硬约束）。
+- 默认值 `NONE` 是**安全默认**：新增工具必须显式声明受众。迁移期曾用 `BOTH` 保证存量零改动，但唯一存量工具 `fs_link` 已显式声明 `TOOLBOX_ONLY`，因此收紧为 `NONE` 不改变现有行为（见 I38c §2 硬约束）。
 
 > 规格落地见 [I31-phase1-tool-framework-spec.md](./I31-phase1-tool-framework-spec.md) §4.2.1。
 
@@ -337,7 +339,7 @@ pub trait Tool: Send + Sync {
 
 ### 3.10 决策：先安全框架再加能力
 
-**决策**：实施顺序为 Phase 1（Agent Loop 基础，无 OS 工具）→ Phase 2（Permission Policy Engine）→ Phase 3（L1 OS 工具）→ Phase 4（L2 MCP）。
+**决策**：实施顺序为「框架 → 安全网关 → OS 工具 → MCP」，对应 [I38 roadmap](./I38-agent-roadmap.md) 的 P0/P1 → P2 → P5 → P7；Agent Loop（P4）在框架与内核之后接入。
 
 **理由**：如果先加 OS 工具再建安全框架，LLM 一旦调 `shell_exec("rm -rf /")` 就直接执行——没有任何拦截。
 
@@ -395,7 +397,7 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 **取舍**：
 - OpenBitFun 用 `ToolResult` 枚举（`Result` / `Progress` / `StreamChunk`）同时承载双通道与流式；我们用扁平结构 + 可选字段——枚举会改变序列化形态与前端匹配逻辑，而流式当前不采纳
 - 不采纳 `image_attachments`（多模态工具结果）：当前无工具需要回传图像
-- 不采纳 `Progress` / `StreamChunk` 流式输出：需要事件通道 + 前端增量渲染；长任务先用超时兜底 + 最终结果，出现构建/测试类长任务后再补（与 I18-spec Step 9.1 的 ChatDelta 扩展对齐）
+- 不采纳 `Progress` / `StreamChunk` 流式输出：需要事件通道 + 前端增量渲染；长任务先用超时兜底 + 最终结果，出现构建/测试类长任务后再补（与 I38d 的 `agent-tool-call` 事件对齐；chat delta 不承载工具字段）
 
 **wire 约束**：`ToolResult` 经 `protocol/dto` 转出时，新增 `Option` 字段按 DTO 规则处理——键恒在、值为 `null`，前端声明为 `T | null`；不得在 DTO 层静默丢弃。
 
@@ -437,7 +439,7 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 - 规范化过度（如按命令前缀匹配）→ 批准 `cargo test` 顺带放行 `cargo publish`
 - **选择全 argv 精确 + cwd 作为默认**：前缀匹配只能由工具显式声明，不得作为默认策略
 
-**委托**：子 Agent 可读父 `GrantStore` 的记忆，但其新增批准不写入父库——与 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §4.3 一致。
+**委托**：子 Agent 可读父 `GrantStore` 的记忆，但其新增批准不写入父库——与 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §4.3 一致。完整的权限继承与作用域规则见 §3.16。
 
 **参考**：codex `with_cached_approval(keys, fetch)`（空 keys 直接走审批，防误命中）+ `ApplyPatchApprovalKey { environment_id, path }` + `UnifiedExecApprovalKey { environment_id, executable, command, cwd, tty, sandbox_permissions }`。
 
@@ -457,6 +459,25 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 **顺序**：`find → validate → gateway → execute → persist`。校验先于权限评估，避免为明显非法的输入弹审批框。
 
 **只作用于 Agent 入口**：ToolBox 是用户主动调用，不经过 Pipeline，因此没有 validate 阶段，也不存在审批。它的不变量保护在 `execute()` 内部（`validate_path()` 等）。两个入口必须复用同一套判定函数，否则同一条路径可能在 Agent 侧被拒、在 ToolBox 侧放行。详见 [I18b](I18b-tool-unified-bridge-spec.md) §2.2。
+
+### 3.16 决策：子 Agent 权限继承与会话作用域（P8 前置）
+
+**决策**：把 §3.14 的「子 Agent 可读父 `GrantStore`、新增批准不写父库」升级为可验收规则：
+
+| 规则 | 要求 |
+|---|---|
+| 授权读取 | 子 agent 只读父作用域已批准的键；不得枚举或修改父库 |
+| 新增批准 | 写入子 agent 自己的作用域；父 turn 结束后随该作用域清理 |
+| Ceiling | 子 ceiling = 父 ceiling ∩ 子声明；只允许收紧，出现 `Allow` 规则即校验失败 |
+| ApprovalKey | 键必须包含 agent / session 作用域；父的批准不得自动放行子 agent 的相似键 |
+| 工具集 | 子 agent 的 `ToolCatalog` 必须是父的子集；不得通过改名或 MCP 桥接扩大 |
+| 数量与深度 | `max_depth` 默认 1、并发上限可配；超限 spawn 直接拒绝，不排队 |
+
+**理由**：审批键若只由路径/命令构成，父 agent 的一次批准会被子 agent 复用，等同于扩大授权；ceiling 若允许子 agent 重新声明 `Allow`，委托就成为绕过审批的通道。参考项目都在 spawn 时收窄工具与权限：DSH 的 `toolFilter` / `depthLimit`、OpenHuman 的 `subagents` allowlist、Codex 的 `fork_turns`。
+
+**取舍**：P2/P4 只实现父作用域内的审批与 ceiling，**不实现**子 agent；本节在 P8.1 落地时验收。不得为了「以后可能用到」在 P2 把 agent 作用域做成 `ApprovalKey` 的必填字段——以可选字段落地，缺省即当前会话，存量行为不变。
+
+**参考**：DSH `SubagentCapabilities`；OpenHuman `allowed_subagent_ids`；本文 §3.14 与 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §4.3。
 
 ---
 
@@ -481,7 +502,7 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 - `fs_edit` 标记 `read_only = false, destructive = false`；审批卡片必须展示 diff
 - 不采纳 codex `apply_patch` 的自定义 patch 语法——需额外解析器与格式教学成本，收益仅在批量多文件编辑场景
 
-> 工具清单、安全标记、每个工具的 JSON Schema 规格和实现见 I18-spec Step 2。
+> 工具清单、安全标记、每个工具的 JSON Schema 规格和实现见 [I38c](./I38c-os-tools-spec.md)。
 > Shell 安全守卫（SafetyBelt / AllowlistGate / ApprovalGate / BareExec）见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
 
 ### 4.3 L2: MCP/外部工具
@@ -496,7 +517,8 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 
 ## 5. 前端集成与 Agent 模式
 
-> ChatDelta 扩展、ToolCallBubble 五态渲染、审批交互流、AgentMode 扩展字段、内置预设、Policy 映射的完整规格见 I18-spec Step 9-10。
+> ChatDelta 扩展、ToolCallBubble 五态渲染、审批交互流、AgentMode 扩展字段、内置预设、Policy 映射的完整规格见 [I38d](./I38d-agent-frontend-modes-spec.md)。
+> **注意**：P0 已从 `ChatDeltaPayloadDto` 删除 tool 三字段，工具事件走独立的 `agent-tool-call`，不得恢复 chat delta 工具通道。
 
 **关键决策摘要**：
 - `ToolCallStatus` 五态：`running | success | error | awaiting_user | cancelled`
@@ -513,11 +535,14 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 ```
 src-tauri/
 ├── crates/
-│   ├── assistant-agent/           # 现有：chat_runtime, chat_tasks
+│   ├── assistant-agent/           # 共用 turn 内核 + agent 抽象
 │   │   └── src/
-│   │       ├── chat_runtime.rs    # 现有：StreamAccumulator
-│   │       ├── chat_tasks.rs      # 现有：任务管理+取消
-│   │       ├── round_executor.rs  # 新增：Agent Loop
+│   │       ├── turn/              # I36：共用内核（chat 与 agent 都是 client）
+│   │       ├── agent/
+│   │       │   ├── tool_call.rs       # 唯一 tool call 累积器（P4）
+│   │       │   └── round_executor.rs  # RoundExecutor trait + RoundOutcome（仅抽象）
+│   │       ├── chat_runtime.rs    # 退场中（P3 迁入 turn/stream.rs）
+│   │       ├── chat_tasks.rs      # 退场中（P3 迁入 turn/tasks.rs）
 │   │       └── ...
 │   ├── assistant-tools/           # 新增 crate
 │   │   └── src/
@@ -556,59 +581,48 @@ src-tauri/
 │   │           ├── bridge.rs      # McpTool + 命名规范
 │   │           ├── client.rs      # MCP 协议客户端
 │   │           └── server_manager.rs  # 进程管理
-│   └── assistant-providers/       # 现有：provider 适配+流式
+│   └── assistant-providers/       # provider 适配 + 流式（无状态）
 │       └── src/
-│           ├── tool_call_accumulator.rs  # 现有：流式累积
-│           └── types/tool.rs            # 现有：ToolCall 数据结构
+│           ├── types/tool.rs            # ToolSpec（ChatOptions.tools 形状）
+│           └── types/chat_delta.rs      # tool 片段（含快照标记）
+│
+└── src/
+    ├── agent/
+    │   └── round_executor.rs      # RoundExecutor 实现（装配 ToolPipeline 与 provider）
+    ├── adapters/                  # I36：端口生产实现
+    │   ├── event_sink.rs
+    │   ├── message_store.rs
+    │   └── input_source.rs
+    └── cmd/
+        └── os_tool_exec.rs        # ToolBox 唯一入口
 ```
+
+> **依赖方向**：`assistant-agent/src/agent/` 只持有累积器与 RoundExecutor **抽象**，不得依赖 `assistant-tools`；
+> RoundExecutor 的**实现**放 `src-tauri/src/agent/`，由宿主装配 Pipeline 后注入 `TurnRunner`（见 I38b §2.2）。
 
 ---
 
 ## 7. 实施路径
 
-> 本节只记录**阶段划分与顺序决策**（为什么这个先建），不记录完成情况；进度见 [I18-spec](I18-agent-tool-architecture-spec.md) 的「实施状态总览」。
+> 阶段划分、状态与门禁已统一到 [I38 roadmap](./I38-agent-roadmap.md)，本节只保留**顺序决策**（为什么这个先建），不记录进度。
 
-### Phase 1: Agent Loop 基础
+**顺序决策**：
 
-> 无 OS 工具，先让 tool_call 能执行+回填
+1. **先框架后能力**：Tool trait / Registry / `exec::invoke` / 路径安全先稳定，再逐个加工具。理由：先加 OS 工具再建安全框架，模型一旦调 `shell_exec("rm -rf /")` 就没有任何拦截（design §3.10）。
+2. **先安全网关再破坏性工具**：Policy → Gateway → Pipeline 先于 `fs_delete` / `shell_exec`。理由：审批与策略是破坏性能力的前置条件（I38a）。
+3. **先共用内核再 Agent Loop**：TurnRunner / 端口 / 状态机先于 RoundExecutor。理由：多迭代循环需要一个能继续的落点，否则压缩续跑、取消、落库都无处安放（I36 design §3.9）。
+4. **前端最后接**：五态 UI 与模式配置依赖真实的工具事件与白名单解析，提前做只能对着假数据开发（I38d）。
 
-- `assistant-tools` crate 骨架：Tool trait + ToolRegistry + ToolResult
-- `assistant-tools/sandbox/`：L0 沙箱工具桥接（注册现有 21 个前端工具）
-- `round_executor.rs`：消费 StreamOutcome.tool_calls → 执行 → 回填 → 继续对话
-- Tool Call 五态追踪：tool_calls_json 扩展 + 流式事件 + ToolCallBubble（详见 I18-spec Step 9）
-- Agent 模式 `max_tool_tier: 'sandbox'` 生效
+**阶段映射**（详情与状态见 roadmap §2）：
 
-### Phase 2: Permission Policy Engine
+| 旧 Phase | 新阶段 |
+|---|---|
+| Phase 1：Agent Loop 基础 | P0（框架基线）+ P1（收口）+ P4（Loop） |
+| Phase 2：Permission Policy Engine | P2 |
+| Phase 3：L1 OS 工具 | P5 |
+| Phase 4：L2 MCP | P7 |
 
-> 安全网关先行，OS 工具还没加但框架就位
-
-- `policy.rs`：PermissionEffect + PermissionRule + ResolvedPermissionPolicy + most_restrictive
-- `gateway.rs`：ToolGateway + ApprovalChannel
-- `pipeline.rs`：ToolPipeline (权限评估 → 用户审批 → 执行编排)
-- Agent 模式 `approval_level` 生效
-- 项目级 `.assistant/permissions.json` 加载
-
-### Phase 3: L1 OS 工具
-
-> 安全网关已就位，可以安全地加 OS 能力
-
-- `os/` 模块：fs_read / fs_list / fs_glob / fs_grep (ReadOnly)
-- fs_write / fs_edit / fs_mkdir / fs_move (ConstrainedWrite + 路径白名单)
-- fs_delete (destructive + 审批)
-- `os/shell/` 执行层守卫（SafetyBelt / 结构守卫 / 环境隔离 / 命令分类 / BareExec），先于 `shell_exec.rs` 落地——守卫必须在 `execute()` 内部，不能等 Pipeline 兜底（见 §3.7.1）
-- shell_exec (destructive + open_world + 审批 + 超时)
-- ask_user (AI 主动问用户)
-- Agent 模式 `max_tool_tier: 'os'` + `tools` 白名单生效
-
-### Phase 4: L2 MCP 客户端
-
-> 最外层，依赖前三层
-
-- `mcp/` 模块：McpTool + bridge 命名规范 + 三维安全标记推断
-- `mcp/client.rs`：MCP 协议客户端（stdio transport）
-- `mcp/server_manager.rs`：进程管理（启动/连接/重连/关闭）
-- MCP 工具动态注册到 ToolRegistry
-- Agent 模式 `max_tool_tier: 'external'` 生效
+> 旧 Phase 1 把「框架、Loop、五态 UI」合并在一起，实际落地时被拆成 P0/P1/P4/P6；旧编号不再作为实施单位使用。
 
 ---
 
@@ -618,10 +632,10 @@ src-tauri/
 2. **多层策略取最严**：应用默认 + 项目配置 + Agent 模式三层叠加，`most_restrictive` 组合
 3. **委托只能收紧不能放宽**：`PermissionRuntimeCeiling` 禁止携带 `Allow` 规则
 4. **审批流统一**：`Ask` 效果 → `awaiting_user` 状态 → 前端审批 UI → approve/reject
-5. **先建框架再加能力**：Phase 1 无 OS 工具只建执行框架，Phase 2 安全网关先行，Phase 3 才加 OS 能力
+5. **先建框架再加能力**：P0/P1 只建执行框架，P2 安全网关先行，P5 才加 OS 能力（阶段定义见 [I38 roadmap](./I38-agent-roadmap.md)）
 6. **最小权限**：工具默认声明最高限制，Agent 模式按需放宽
 7. **超时隔离**：所有工具执行带超时，Shell 执行默认 30s，防止命令挂起
-8. **审计日志**：所有工具调用记录到 `tool_calls` 表，含完整参数和结果
+8. **审计日志**：工具调用决策经 `PermissionAuditStore` 端口记录；是否新建 `tool_calls` 表在 P4 定稿（P2 不建表）
 9. **路径约束**：文件操作限制在工作区或用户授权路径内，系统敏感路径硬拒绝
 10. **L0 双入口不破坏现有体验**：前端 ToolBox 独立使用不变，Agent Loop 调用是新增能力
 11. **审批按操作指纹而非工具名**：批准一次只对同一规范化操作生效，不因同类工具自动继承（见 §3.14）

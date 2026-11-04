@@ -2,9 +2,10 @@
 
 > **本文档职责**：Shell 执行层安全架构的**权威源**——信任模型、洋葱模型、层间契约、委托约束。
 > **架构决策记录**见 [I18-agent-tool-architecture-design.md](../store/I18-agent-tool-architecture-design.md)（§3.7 洋葱模型决策、§3.7.1 守卫分层归属、§3.8 MCP 隔离边界）。
-> **实施规格**见 [I18-agent-tool-architecture-spec.md](../store/I18-agent-tool-architecture-spec.md)（Step 2 shell_exec 规格、Step 4 Policy Engine、Step 5 Gateway）。
+> **实施规格**见 [I38c](../store/I38c-os-tools-spec.md)（§7.2 shell_exec）、[I38a](../store/I38a-tool-control-layer-spec.md)（Policy / Gateway）。
 > **ToolBox 桥接**见 [I18b-tool-unified-bridge-spec.md](../store/I18b-tool-unified-bridge-spec.md)。
-> **Tool Call 状态追踪**见 I18-spec Step 9。
+> **Tool Call 状态追踪**见 [I38d](../store/I38d-agent-frontend-modes-spec.md)。
+> **阶段与门禁**见 [I38-roadmap](../store/I38-agent-roadmap.md)。
 
 ---
 
@@ -14,9 +15,9 @@
 
 | 层级 | 含义 | 信任模型 | 隔离保证 | 详细设计 |
 |------|------|---------|---------|---------|
-| Sandbox | 前端沙箱（现有 ToolBox 工具） | 完全信任，浏览器环境 | 浏览器沙箱，无 OS 访问 | I18-design §4.1, I18-spec Step 1 |
-| Os | Rust 后端 OS 工具 | 信任实现，需输入校验与安全控制 | 同进程，依赖执行层守卫拦截（见 §3.4） | I18-design §4.2, I18-spec Step 2 |
-| External | MCP 外部工具 | 不信任外部进程，需权限策略 | **无 OS 级隔离**（见 §1.2） | I18-design §4.3, I18-spec Step 2 |
+| Sandbox | 前端沙箱（现有 ToolBox 工具） | 完全信任，浏览器环境 | 浏览器沙箱，无 OS 访问 | I18-design §4.1, I18 spec Step 1 |
+| Os | Rust 后端 OS 工具 | 信任实现，需输入校验与安全控制 | 同进程，依赖执行层守卫拦截（见 §3.4） | I18-design §4.2, I38c §7.2 |
+| External | MCP 外部工具 | 不信任外部进程，需权限策略 | **无 OS 级隔离**（见 §1.2） | I18-design §4.3, I38e |
 
 ### 1.2 External 层隔离边界声明
 
@@ -30,7 +31,7 @@ MCP server 以独立子进程运行，但当前**不提供 cgroup / seccomp / na
 
 ### 1.3 安全模型
 
-所有层工具通过 `permission_intents()` 声明权限需求，Agent 入口由 ToolPipeline 统一收集并交由 PolicyEngine 决策（ToolBox 入口无审批，见 §2）。详见 I18-spec Step 4-5。
+所有层工具通过 `permission_intents()` 声明权限需求，Agent 入口由 ToolPipeline 统一收集并交由 PolicyEngine 决策（ToolBox 入口无审批，见 §2）。详见 [I38a](../store/I38a-tool-control-layer-spec.md) §2 / §4。
 
 ---
 
@@ -65,7 +66,7 @@ ToolBox（os_tool_exec）
 
 > 这条分界线决定了洋葱栈不能整体留在 Pipeline：若整体留在 Pipeline，ToolBox 调用 shell 就会完全绕过 SafetyBelt。守卫分层归属见 §3.4。
 
-> RoundExecutor 完整循环、代际守卫、并发编排等实现规格见 I18-spec Step 6-7。
+> RoundExecutor 完整循环、代际守卫、并发编排等实现规格见 [I38b](../store/I38b-agent-loop-spec.md) 与 [I38a](../store/I38a-tool-control-layer-spec.md) §4-C5。
 
 ---
 
@@ -104,7 +105,7 @@ Shell 命令的 `open_world` 属性使其可做任何事，是 Os 层最复杂�
 | ApprovalGate | 审批层 | 未白名单命令需用户确认 | 用户可配置审批级别 | Approve/Deny |
 | BareExec | 执行层 | 实际执行 | 无 | 执行结果 |
 
-> Shell 分层栈完整实现规格见 I18-spec Step 2 (shell_exec)，分层归属理由见 §3.4。
+> Shell 分层栈完整实现规格见 [I38c](../store/I38c-os-tools-spec.md) §7.2，分层归属理由见 §3.4。
 
 ### 3.2 层间契约
 
@@ -136,10 +137,10 @@ ApprovalGate    → Approve    → 进入执行层
 
 | 防御层 | 归属 | 作用 | 详见 |
 |--------|------|------|------|
-| 结构守卫 | 执行层 | 阻止隐藏执行构造（`$(...)` / `` `...` `` / `&` / `bash -c "..."`），防止审批时用户看到的命令与实际执行的不一致 | I18-spec Step 2 (shell_exec) |
-| 环境隔离 | 执行层 | `env_clear()` + `SAFE_ENV_VARS` 白名单，防止 API key / secret 泄漏到子进程 | I18-spec Step 2 (shell_exec) |
-| 命令分类 | 执行层 | 分词 + 基名提取 → 风险分级（High/Medium/Low），High 风险硬拒绝 | I18-spec Step 2 (shell_exec) |
-| heredoc 处理 | 执行层 | 剥离引号包裹的 heredoc body，避免 prose 中的危险命令名误触发 | I18-spec Step 2 (shell_exec) |
+| 结构守卫 | 执行层 | 阻止隐藏执行构造（`$(...)` / `` `...` `` / `&` / `bash -c "..."`），防止审批时用户看到的命令与实际执行的不一致 | I38c §7.2 |
+| 环境隔离 | 执行层 | `env_clear()` + `SAFE_ENV_VARS` 白名单，防止 API key / secret 泄漏到子进程 | I38c §7.2 |
+| 命令分类 | 执行层 | 分词 + 基名提取 → 风险分级（High/Medium/Low），High 风险硬拒绝 | I38c §7.2 |
+| heredoc 处理 | 执行层 | 剥离引号包裹的 heredoc body，避免 prose 中的危险命令名误触发 | I38c §7.2 |
 
 > 纯 argv 数组执行（`execvp` 语义）可提供更强的确定性保证，但会丧失管道、重定向、变量展开等 shell 能力，对开发工作流影响过大。当前选择 shell 执行 + 纵深防御组合，与 openhuman 的生产验证策略一致。若未来引入 OS 级沙箱（如 dsh 的 Landlock 方案），可重新评估此选择。
 
@@ -215,7 +216,7 @@ ApprovalGate 通过审批通道与用户交互，其架构属性如下：
 | 空键不命中 | 无法生成指纹（如命令解析失败）时直接走审批，不允许命中缓存 |
 | 审计记录 | 所有审批决策（含 Allow 自动放行）写入 AuditStore，只追加不可修改 |
 
-> GrantStore / AuditStore 接口规格与 `ApprovalKey` 归一规则见 I18-spec Step 5 与 Step 5.4.1；设计理由见 [I18-design](../store/I18-agent-tool-architecture-design.md) §3.14。
+> GrantStore / AuditStore 接口规格与 `ApprovalKey` 归一规则见 [I38a](../store/I38a-tool-control-layer-spec.md) §2.6 / §2.9；设计理由见 [I18-design](../store/I18-agent-tool-architecture-design.md) §3.14。
 
 ### 4.2 超时语义
 
@@ -245,4 +246,4 @@ ApprovalGate 通过审批通道与用户交互，其架构属性如下：
 
 子 Agent 的 `max_tool_tier` 不可超过父 Agent。若父 Agent 为 Os 层，子 Agent 不可升级到 External 层。
 
-> 委托策略的完整解析与评估规格见 I18-spec Step 4。
+> 委托策略的完整解析与评估规格见 [I38a](../store/I38a-tool-control-layer-spec.md) §2.3 / §2.4。

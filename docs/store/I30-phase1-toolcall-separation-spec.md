@@ -1,22 +1,22 @@
-# I30 — 阶段一：ToolCall 从 Chat 构建剥离（设计部分推迟）
+# I30 — 阶段一：ToolCall 从 Chat 构建剥离（已归档）
 
 | 项 | 值 |
 |---|---|
-| 状态 | Draft（修订 2） |
-| 日期 | 2026-11-02 |
-| 关联 | `docs/store/I18-agent-tool-architecture-spec.md`、`docs/store/I18b-tool-unified-bridge-spec.md`、`docs/store/I31-phase1-tool-framework-spec.md`、`docs/store/dto-frontend-backend-sync-audit.md` |
+| 状态 | A 段已完成；B 段已迁出 |
+| 日期 | 2026-11-02（2026-11-04 归档修订） |
+| 关联 | [I38 roadmap](./I38-agent-roadmap.md)（P0/P4）、[I38b](./I38b-agent-loop-spec.md)（B 段去向）、[I18 spec](./I18-agent-tool-architecture-spec.md)、[I18b](./I18b-tool-unified-bridge-spec.md)、[I31](./I31-phase1-tool-framework-spec.md) |
 | 影响范围 | `assistant-agent`、`assistant-providers`、`assistant-storage`、`src-tauri/src/cmd/chat`、`src-tauri/src/protocol`、前端 chat 域 |
 
 本文拆为两段，**执行节奏不同**：
 
 | 段 | 内容 | 状态 | 可否独立执行 |
 |---|---|---|---|
-| **A 剥离** | 把 tool call 从 chat 构建路径删干净（§5） | 可执行 | 是，零行为变化 |
-| **B 设计** | 新建 `agent_loop` 落点与累积器契约（§6） | **推迟** | 否，无调用方 |
+| **A 剥离** | 把 tool call 从 chat 构建路径删干净（§5） | ✅ 已完成 | 是，零行为变化 |
+| **B 设计** | 新建 `agent/` 落点与累积器契约 | → [I38b](./I38b-agent-loop-spec.md) | P4 开工时执行 |
 
-**推迟理由**（与 §6.1 自身判据一致）：`agent_loop/tool_call.rs` 写完没有任何调用方，`cargo test` 只能验证它自己——这正是项目已有的死代码审计反例。契约的唯一真实检验者是 I18 Step 7 的 RoundExecutor，在它开工前定稿等于把未经验证的形态固化成事实。B 段内容不丢失：两套存量实现删除后仍在 git 历史中，Step 7 可随时取回参考。
+**B 段去向**：原 §6 的 D1-D10 决策表已迁入 [I38b §3.2](./I38b-agent-loop-spec.md)，落点统一为 `assistant-agent/src/agent/tool_call.rs`。B 段推迟的原始理由（无调用方、契约未定型、删除后仍可从 git 历史取回）保留在 git 历史中，不再作为实施依据。
 
-本文**不实施**控制层（I18 Step 4-7），**不注入**工具给 LLM。
+本文**不实施**控制层（I38a），**不注入**工具给 LLM；Agent Loop 的落点与契约见 I38b（B 段）。
 
 ---
 
@@ -28,10 +28,11 @@
 
 不在本文范围：
 
-- 控制层实现（Permission Policy / Gateway / Pipeline / RoundExecutor）→ I18 Step 4-7
-- OS 工具逐个实现与共享路径层 → I18 Step 2 / I31
+- 控制层实现（Permission Policy / Gateway / Pipeline）→ I38a（P2）
+- RoundExecutor 与多迭代闭环 → I38b（P4）
+- OS 工具逐个实现与共享路径层 → I38c / I31
 - ToolBox 桥接补全（`workspace_root` 来源、超时、错误通道）→ I18b
-- 前端 ToolCallBubble 五态与审批 UI → I18 Step 9
+- 前端 ToolCallBubble 五态与审批 UI → I38d（P6）
 
 ---
 
@@ -40,7 +41,7 @@
 | 术语 | 定义 |
 |---|---|
 | chat 路径 | `send_chat_message` → provider adapter 流 → `chat_runtime::consume_stream` → `cmd/chat` 落库与发事件 → 前端 `MessageBubble` 渲染 |
-| agentloop 路径 | 「LLM 返回 tool_call → 执行 → 回填 → 继续生成」的闭环，即 I18 Step 7 的 RoundExecutor |
+| agentloop 路径 | 「LLM 返回 tool_call → 执行 → 回填 → 继续生成」的闭环，即 I38b（P4）的 RoundExecutor |
 | tool call 四件套 | 产生（adapter 解析）、累积（流式拼装）、落库（消息持久化）、渲染（前端卡片） |
 | chat 线格式 | `ChatDeltaPayloadDto` / `MessageDto` 等跨进程传输的 DTO |
 | 落盘格式 | `MessageRow` 与 `messages` 表列形状（storage 层） |
@@ -75,7 +76,7 @@
 | agent 侧 `ToolCallAccumulator` | chat 构建内的有状态累积 | 否 | 与 providers 重复 → 删 |
 | providers 侧 `ToolCallAccumulator` | provider 内部（越界但唯一实现） | 否 | 唯一正确实现 → **暂留**（P5） |
 
-**推论**：`ChatDelta` 的 tool 三字段是 provider 表达「看到了 tool 片段」的唯一通道，删掉等于切断 agentloop 的输入源。**「能力」与「污染」的区分标准是：删掉之后，Step 7 是否需要重写底层**——需要，就说明删的是能力。
+**推论**：`ChatDelta` 的 tool 三字段是 provider 表达「看到了 tool 片段」的唯一通道，删掉等于切断 agentloop 的输入源。**「能力」与「污染」的区分标准是：删掉之后，P4 是否需要重写底层**——需要，就说明删的是能力。
 
 ### 3.2 provider 层职责边界
 
@@ -138,7 +139,7 @@
 | F13 | `gemini/message_converter.rs::convert_tools` 零调用方（现存死代码，不在本文范围） | `src-tauri/crates/assistant-providers/src/gemini/message_converter.rs` |
 | F14 | mascot 的 `hadToolCallInRecentTurn` 依赖 `m.toolCalls`；删掉后只剩 `m.role === "tool"`，而 chat 路径从不产生 `tool` 角色消息，该判定将恒为 false，`expressionPolicy` 中两条 `requiresToolCall` 规则转为休眠 | `src/mascot/useMascotChatSync.ts`、`src/mascot/core/expressionPolicy.ts` |
 
-**结论**：删除是**零行为变化**的（整条链路是 dead path），但结构本身是错的——它把半套 agent 能力焊在了 chat 上，并且已经产生了重复实现（F1）。这不会随时间自愈，只会随 Step 7 落地变成第三套累积器。
+**结论**：删除是**零行为变化**的（整条链路是 dead path），但结构本身是错的——它把半套 agent 能力焊在了 chat 上，并且已经产生了重复实现（F1）。这不会随时间自愈，只会随 P4 落地变成第三套累积器。
 
 ---
 
@@ -175,7 +176,7 @@
 初稿曾计划删除 `ChatDelta` tool 三字段、Gemini 累积逻辑与 `tool_call_accumulator.rs`。经 §3.1 层级判据复核，该方案错误——它删的是**能力**而非**污染**：
 
 1. `ChatDelta` 是 provider **内部流类型**，不跨进程，不属于 chat 线格式；
-2. providers 侧累积器是**唯一正确实现**（index 键 + 快照语义 + `repair_truncated_json`），删掉后 Step 7 必然重写；
+2. providers 侧累积器是**唯一正确实现**（index 键 + 快照语义 + `repair_truncated_json`），删掉后 P4 必然重写；
 3. 删掉后 `ChatStream` 无任何 tool 表达力，agentloop 拿不到输入，必须改 trait——那是 B 段的大改。
 
 因此 §5.2 由「删除清单」改为「预留清单」：
@@ -212,7 +213,7 @@
 | `conversations/msg_ops.rs` | `update_message_content` 的 `tool_calls_json: Option<&str>` 参数与 SQL 赋值 | 删除参数，SQL 不再写该列 |
 | `conversations/msg_ops.rs` | `insert_message` 中 `row.tool_calls_json` 传参 | **保留**（DB 行形状） |
 
-**数据库列 `tool_calls_json TEXT` 保留不动**。理由：主库迁移规则只允许 `ADD COLUMN`，禁止 `DROP` / `RENAME` / 数据重写。该列转为**预留列**，由 Step 7 的 agentloop 落库时复用（见 R2）。
+**数据库列 `tool_calls_json TEXT` 保留不动**。理由：主库迁移规则只允许 `ADD COLUMN`，禁止 `DROP` / `RENAME` / 数据重写。该列转为**预留列**，由 P4 的 agentloop 落库时复用（见 R2）。
 
 > R2 的执行方式修正：SQLite 没有列注释，无法通过 `ALTER` 加注释。预留说明只能写在 `assistant-storage/src/db.rs` 建表语句旁的代码注释中，并在本文登记。
 
@@ -243,7 +244,7 @@
 | `src/chat/core/__tests__/protocolContract.test.ts` | `toolCalls: undefined` 样本字段与 `toHaveProperty("toolCalls")` 断言 | 删除 |
 | `src/services/__tests__/chatOrchestrator.test.ts` | `appendToolCallDelta: vi.fn()` mock（初稿遗漏） | 删除 |
 
-> F14 的处理选择：保留 `hadToolCallInRecentTurn` 与 `requiresToolCall` 规则，只是其输入恒为 false。这样 Step 9 恢复 tool 消息时无需重建策略；代价是两条表情规则在阶段一到 Step 9 之间不会触发。若选择连规则一起删，需同步修改 `src/mascot/core/types.ts` 与 `expressionPolicy.ts`，属扩大改动面，不推荐。
+> F14 的处理选择：保留 `hadToolCallInRecentTurn` 与 `requiresToolCall` 规则，只是其输入恒为 false。这样 P6 恢复 tool 消息时无需重建策略；代价是两条表情规则在 P0 到 P6 之间不会触发。若选择连规则一起删，需同步修改 `src/mascot/core/types.ts` 与 `expressionPolicy.ts`，属扩大改动面，不推荐。
 
 ### 5.6 必须保留的白名单
 
@@ -276,37 +277,16 @@ A2 的检索会命中以下符号，它们**不在删除范围**：
 
 ---
 
-## 6 B 段：设计（Deferred）
+## 6 B 段：已迁出
 
-### 6.1 为什么推迟
+B 段（累积器落点与 D1-D10 决策）已迁移到 [I38b §3](./I38b-agent-loop-spec.md)，作为 P4 的权威规格：
 
-1. **无调用方**：§6.1（初稿）已经用「没有调用方 → 写了就是死代码」排除 `loop.rs`，同一条判据同样适用于 `tool_call.rs` / `event.rs`——它们零调用方。
-2. **契约未定型**：初稿 §6.2 声称「把 providers 的 API 原样迁到 agent 侧」，但与源码实测存在 7 处差异（见 6.2 决策表 D1-D4），说明契约尚未想清楚。在想清楚前写代码，等于把错误固化。
-3. **信息不丢失**：两套实现删除后仍在 git 历史中，Step 7 开工时可取回参考。先删后写比「先写一份错的再改」成本低。
+- 落点：`assistant-agent/src/agent/tool_call.rs`（唯一累积器）。
+- 决策：D1-D10 已在 I38b §3.2 定稿；provider 侧 `tool_call_accumulator.rs` 在 D8 完成后删除。
+- 落库：复用预留列 `tool_calls_json`；事件走 `agent-tool-call`（I38d）。
+- 解冻条件已由 P4 阶段门禁替代（见 [I38 roadmap](./I38-agent-roadmap.md) §6）。
 
-### 6.2 待定决策清单
-
-以下为**必须由 Step 7 设计评审拍板**的事项，本阶段只登记，不实现：
-
-| # | 决策点 | 候选 | 备注 |
-|---|---|---|---|
-| D1 | 流式键策略 | 仅 `Indexed/Unindexed`（providers 现状）；`Index` + `Id` 双键；仅 id | 两套存量实现的分歧核心：agent 侧无 index 靠 id，providers 侧靠 index。需先确认 Anthropic adapter 是否提供 index |
-| D2 | 边界枚举是否保留 `NewTool` | 保留（providers 有，用于流式提前终结上一个工具）；只留 `FinishReason/StreamEnd` | 初稿提案丢了 `NewTool`，会让 `finalized_previous` 语义失效 |
-| D3 | 截断语义 | `Truncated` 错误（agent 现状）；`repair_truncated_json` + `is_error`（providers 现状）；两者并存 | 建议并存：修复后可用则降级，修复失败再上报截断 |
-| D4 | 是否保留 `apply_unified_response` 入口 | 保留（直接吃 `UnifiedResponse`，贴合 agentloop）；只保留底层 `apply_delta` | agentloop 的输入天然是 `UnifiedResponse` |
-| D5 | `AgenticEvent` 字段是否够用 | 初稿四事件（Started / ArgsDelta / Finished / Failed）；待补 `iteration` / `call_id` | 发射依赖 EventQueue，属 Step 6/7 |
-| D6 | 模块落点 | `assistant-agent/src/agent_loop/`（依赖方向合法：agent → providers）；落在 `src-tauri/src` | 取决于 RoundExecutor 最终归属 crate |
-| D7 | 测试覆盖口径 | 跨 chunk 累积 / 快照模式 / 双键 / 边界 / 截断 / 非法 JSON | 与实现同批交付，不提前 |
-| D8 | Gemini 累积是否上移到 agentloop | 上移（provider 回归无状态，Gemini 只透传快照片段并标 `arguments_is_snapshot: true`）；保持现状（provider 继续累积） | 推荐上移。这是 F15/F16 的根治点，也是「provider 输出片段」原则的落地 |
-| D9 | tool 片段语义的承载方式 | ① 保留 `ChatDelta` 三字段 + 新增 `delta_tool_call_arguments_is_snapshot`；② 新增 unified 流出口，`ChatDelta` 三字段降为过渡；③ 维持现状（无快照标记） | 与 D8 联动：若 D8 上移，则必须选 ① 或 ②；选 ③ 会让下游无法区分快照/增量（F17） |
-| D10 | `ChatOptions.tools` 与三 adapter 的 tools 注入 | 阶段二统一新增（F18）；按 adapter 分批 | 是 Step 7 能真正发起工具调用的前置条件 |
-
-### 6.3 解冻条件
-
-- **触发**：I18 Step 7 RoundExecutor 设计评审启动。
-- **前置**：先产出 D1-D10 结论，再写代码；不得先写实现再补决策。
-- **交付形态**：`agent_loop/tool_call.rs`（唯一累积器）+ `event.rs`（纯类型），**不建** `loop.rs` / `run_agent_loop()`。
-- **复用约定**：落库复用预留列 `tool_calls_json`；事件走 `AgenticEvent`；provider 侧 `tool_call_accumulator.rs` 在 D8 定稿后迁入 agentloop 并删除原文件。
+本节不再维护决策表；原文保存在 git 历史中。
 
 ---
 
@@ -330,9 +310,9 @@ A2 的检索会命中以下符号，它们**不在删除范围**：
 
 ## 8 与 I18 的关系
 
-阶段一 = I18 Step 0-3 + Step 8，外加本文 A 段定义的「剥离」这一**前置动作**。
+阶段一 P0 = I18 Step 0-3 + Step 8，外加本文 A 段定义的「剥离」这一**前置动作**。
 
-唯一差异在 Step 7：`RoundExecutor` 落地时按 §6.2 决策表定稿累积器，直接复用，不再另起第三套；其事件走 `AgenticEvent`，落库复用预留列 `tool_calls_json`。
+B 段去向：`RoundExecutor` 与累积器在 P4（I38b）落地，直接复用预留列 `tool_calls_json` 与 `agent-tool-call` 事件，不再另起第三套。
 
 ---
 
@@ -342,9 +322,9 @@ A2 的检索会命中以下符号，它们**不在删除范围**：
 - 不改 DB schema（只停写，不删列）
 - **不动 `assistant-providers` 任何一行**（§5.2 零改动，含 `ChatDelta` tool 三字段、Gemini 累积、`tool_call_accumulator.rs`）
 - 不动 `UnifiedResponse.tool_call` / `UnifiedToolCall`（provider 解析能力保留）
-- 不新建 `agent_loop` 模块、不实现 `run_agent_loop()` 入口
-- 不做 Step 9 前端 ToolCallBubble、五态、审批 UI
-- 不修 provider 越界（F15/F16）、不补快照标记（F17）、不建 tools 通道（F18）——全部移入 B 段
+- 不新建 `agent/` 模块、不实现 `run_agent_loop()` 入口（B 段已移至 I38b，P4 执行）
+- 不做前端 ToolCallBubble、五态、审批 UI（I38d / P6）
+- 不修 provider 越界（F15/F16）、不补快照标记（F17）、不建 tools 通道（F18）——全部移入 I38b（P4）
 - 不处理 `convert_tools` 死代码（F13，另记）
 
 ---
@@ -358,9 +338,9 @@ A2 的检索会命中以下符号，它们**不在删除范围**：
 | R3 | tool delta 无人消费 | 删掉 agent 侧累积器后，providers 仍可能产出 tool `ChatDelta`，`consume_stream` 会忽略 | 属预期。当前请求不带 `tools`，模型不会返回 tool call，无现网影响 |
 | R4 | 前端历史消息 | `MessageDto → Message` 本就不映射 `toolCallsJson` | 删除后历史渲染与现状完全一致 |
 | R5 | 未来误加回 chat | 有人为了「顺手支持工具」又把字段塞回 chat 路径 | §3 判据写入本文；code review 以此为准 |
-| R6 | 推迟导致 Step 7 重造累积器 | 决策表被忽略，直接照抄旧实现 | §6.2 决策表（含 D8/D9）+ §6.3 前置约束；providers 侧实现保留在原处可直接参考 |
-| R7 | mascot 表情规则休眠 | F14：两条 `requiresToolCall` 规则在阶段一到 Step 9 间不触发 | 明确记录为预期行为，Step 9 恢复 |
-| R8 | 快照/增量语义仍混乱 | F17：`ChatDelta` 无快照标记，Gemini 又用错 `arguments_is_snapshot` | 阶段一不修（零调用方，无现网影响）；D8/D9 在 Step 7 前定稿 |
+| R6 | P4 重造累积器 | D1-D10 被忽略，直接照抄旧实现 | I38b §3.2 决策表 + P4 门禁；providers 侧实现保留在原处可直接参考 |
+| R7 | mascot 表情规则休眠 | F14：两条 `requiresToolCall` 规则在 P0 到 P6 间不触发 | 明确记录为预期行为，P6（I38d）恢复 |
+| R8 | 快照/增量语义仍混乱 | F17：`ChatDelta` 无快照标记，Gemini 又用错 `arguments_is_snapshot` | 阶段一不修（零调用方，无现网影响）；D8/D9 已在 I38b §3.2 定稿 |
 
 ---
 

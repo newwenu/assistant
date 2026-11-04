@@ -4,14 +4,14 @@
 |---|---|
 | 状态 | Draft（T1/T2 已落地，T3 待实施） |
 | 日期 | 2026-11-02 |
-| 关联 | `docs/store/I18-agent-tool-architecture-design.md`、`docs/store/I18-agent-tool-architecture-spec.md`（Step 0-3）、`docs/store/I30-phase1-toolcall-separation-spec.md`、`docs/store/I18b-tool-unified-bridge-spec.md` |
+| 关联 | [I38 roadmap](./I38-agent-roadmap.md)（P0/P1）、[I18 design](./I18-agent-tool-architecture-design.md)、[I18 spec](./I18-agent-tool-architecture-spec.md)（Step 0-3 / 8）、[I30](./I30-phase1-toolcall-separation-spec.md)、[I18b](./I18b-tool-unified-bridge-spec.md)、[I38c](./I38c-os-tools-spec.md)（工具能力去向） |
 | 影响范围 | `src-tauri/crates/assistant-tools` 单 crate |
 
 > **实施进度**（2026-11-02 复核）：T1、T2 已完成并合入——`definition.rs` 新建；`registry.rs` 的 `<=` 语义 / 按名排序 / `description()` 降级 / `audience` 过滤均有单测；`fs_link` 已声明 `TOOLBOX_ONLY`；`os_tool_exec` 已改用 `find_for_toolbox()` 并改走 `exec::invoke`（`Err` 通道不再外泄，超时 30s 兜底）。T3（`os/path.rs` + `fs_link` 迁移）**尚未开始**。§2 的事实表已按下述状态标注，§11 的实施顺序同步更新。
 
 本文定义阶段一「工具框架」的交付内容：**类型契约、执行边界、共享路径安全、验收标准**。
 
-**本阶段不实现任何新工具能力**——不新增 `fs_read` / `fs_list` / `fs_glob` / `fs_grep` / `fs_write` / `fs_mkdir` / `fs_move` / `fs_delete` / `shell_exec`。工具能力属 I18 Step 2 / design Phase 3，等控制层与桥接语义稳定后再做。本阶段只保证「工具插进来时，框架是对的」。
+**本阶段不实现任何新工具能力**——不新增 `fs_read` / `fs_list` / `fs_glob` / `fs_grep` / `fs_write` / `fs_mkdir` / `fs_move` / `fs_delete` / `shell_exec`。工具能力属 P5（[I38c](./I38c-os-tools-spec.md)），等控制层与桥接语义稳定后再做。本阶段只保证「工具插进来时，框架是对的」。
 
 ---
 
@@ -31,13 +31,14 @@
 
 | 项 | 归属 |
 |---|---|
-| 9 个新 OS 工具实现 | I18 Step 2 / design Phase 3，见 §6 |
-| 控制层（Policy / Gateway / Pipeline / RoundExecutor） | I18 Step 4-7 |
-| Tauri 桥接（`os_tool_exec` 语义、`workspace_root` 来源、DTO） | I18b / I18 Step 8 |
-| 前端 ToolBox 组件、`os.ts`、审批 UI | I18 Step 8-9 |
-| tool call 流式累积器与 chat 剥离 | I30 |
-| `ask_user` | 依赖前端输入框，见 §7.1 |
-| `ChatOptions.tools` 注入 | I18 Step 7 |
+| 9 个新 OS 工具实现 | P5 / [I38c](./I38c-os-tools-spec.md)，见 §6 |
+| 控制层（Policy / Gateway / Pipeline） | P2 / [I38a](./I38a-tool-control-layer-spec.md) |
+| RoundExecutor 与累积器 | P4 / [I38b](./I38b-agent-loop-spec.md) |
+| Tauri 桥接（`os_tool_exec` 语义、`workspace_root` 来源、DTO） | I18b / I18 spec Step 8 |
+| 前端 ToolBox 组件、`os.ts`、审批 UI | P6 / [I38d](./I38d-agent-frontend-modes-spec.md) |
+| tool call 流式累积器与 chat 剥离 | I30（A 段已完成） |
+| `ask_user` | 依赖前端输入框，见 [I38c §9](./I38c-os-tools-spec.md) |
+| `ChatOptions.tools` 注入 | P4 / [I38b](./I38b-agent-loop-spec.md) §4 |
 
 **一句话判据**：本阶段交付物必须是「能在 `cargo test` 里被直接调用的纯 Rust 能力」，且**不扩大工具能力集合**。任何需要 `tauri::State`、`invoke`、React 组件才能验证的东西，都不属于本阶段。
 
@@ -59,9 +60,9 @@
 | `agent` | `tool_definitions_for_tier()` 过滤 | 是否进入 LLM 的 `tools` 列表 |
 | `toolbox` | `find_for_toolbox()` 过滤（`os_tool_exec` 使用） | 是否允许 ToolBox 桥接入口按名调用 |
 
-默认值为 `ToolAudience::BOTH`，因此**所有存量工具行为不变**（新增方法带默认实现，不破坏既有实现）。`fs_link` 覆盖为 `ToolAudience::TOOLBOX_ONLY`：
+默认值为 `ToolAudience::NONE`（fail-closed）：未显式声明的工具对两个入口都不可见。`fs_link` 显式声明为 `ToolAudience::TOOLBOX_ONLY`，因此存量行为不变：
 
-- `agent = false` → Step 7 注入链路建成后，它**不会**出现在 LLM 的 `tools` 列表；
+- `agent = false` → P4 注入链路建成后，它**不会**出现在 LLM 的 `tools` 列表；
 - `toolbox = true` → `os_tool_exec` 仍可调用，ToolBox 能力不受影响。
 
 这取代了原先「拆两个 registry」的方案：不新增容器、不改 `ToolRegistry` 的存储模型，只在查询侧加过滤条件，成本更低且语义更明确。
@@ -99,7 +100,7 @@ src-tauri/crates/assistant-tools/src/
 ├── lib.rs          (已改) 导出 definition / exec
 ├── context.rs      (待改) 补充 workspace_root 语义约束的文档注释
 ├── result.rs       (已改) 增加 ToolResult::from_exec_error
-├── trait.rs        (已改) 新增 ToolAudience + audience()（默认 BOTH），补充错误语义分层注释
+├── trait.rs        (已改) 新增 ToolAudience + audience()（默认 NONE，fail-closed），补充错误语义分层注释
 ├── definition.rs   (已建) ToolDefinition
 ├── exec.rs         (已建) invoke() 统一入口 + 超时
 ├── registry.rs     (已改) <= 语义 + 确定性排序 + description() 降级 + audience 过滤
@@ -136,7 +137,7 @@ pub struct ToolDefinition {
 2. `camelCase` 序列化产出 `inputSchema`，与既有 `json!` 字面量一致。
 3. 这是全仓**唯一的工具定义内部形状**，`registry.rs` 不再手写 `json!`（修 F3）。
 4. 与 I18 spec Step 3 的 `Vec<Value>` 相比这是**收窄**（从裸 `Value` 变为具名类型），语义与序列化结果不变。
-5. **它是内部形状，不是 provider wire 形状**。OpenAI 需要 `{"type":"function","function":{...}}` 包壳，Gemini 需要 schema 方言转换，Anthropic 需要 `input_schema` 直传。本阶段没有 provider 消费方，因此**不实现转换层**；Step 7 接入时由 provider adapter 从 `ToolDefinition` 转换，禁止让 `ToolDefinition` 自身承担多协议适配职责。
+5. **它是内部形状，不是 provider wire 形状**。OpenAI 需要 `{"type":"function","function":{...}}` 包壳，Gemini 需要 schema 方言转换，Anthropic 需要 `input_schema` 直传。本阶段没有 provider 消费方，因此**不实现转换层**；P4 接入时由 provider adapter 从 `ToolDefinition` 转换，禁止让 `ToolDefinition` 自身承担多协议适配职责。
 
 ### 4.2 ToolRegistry（修 F1/F2/F3）
 
@@ -160,9 +161,9 @@ impl ToolRegistry {
 
 > **为什么改 registry 而不改 trait**：I18 定义 `description()` 为 async，是为将来动态描述留口子。改 trait 会破坏 I18 契约；改 registry 只影响一个尚无调用方的函数。
 >
-> **例外**：§4.2.1 的 `audience()` 是新增方法，**带默认实现**（`ToolAudience::BOTH`），因此不构成对既有实现的破坏，也不属于「改 trait 签名」。这是它与上述理由不冲突的原因。
+> **例外**：§4.2.1 的 `audience()` 是新增方法，**带默认实现**（`ToolAudience::NONE`），因此不需要改动存量实现；唯一存量工具 `fs_link` 已显式声明 `TOOLBOX_ONLY`，收紧默认值不改变其行为。
 
-**关于「尚无调用方」**：`tool_definitions_for_tier` 在 Step 7 之前不会有生产调用者。本阶段交付它 + 单测，是为了让框架在 Step 7 可直接被消费，不是提前写死代码。该定位以 A5 固化（必须有测试覆盖，否则视为未交付）。
+**关于「尚无调用方」**：`tool_definitions_for_tier` 在 P4 之前不会有生产调用者。本阶段交付它 + 单测，是为了让框架在 P4 可直接被消费，不是提前写死代码。该定位以 A5 固化（必须有测试覆盖，否则视为未交付）。
 
 ### 4.2.1 ToolAudience（新增到 `trait.rs`）
 
@@ -181,21 +182,23 @@ impl ToolAudience {
 }
 
 impl Default for ToolAudience {
-    fn default() -> Self { Self::BOTH }
+    fn default() -> Self { Self::NONE }
 }
 
 // Tool trait 新增
-fn audience(&self) -> ToolAudience { ToolAudience::BOTH }
+fn audience(&self) -> ToolAudience { ToolAudience::NONE }
 ```
 
 | 常量 | `agent` | `toolbox` | 典型用途 |
 |---|---|---|---|
-| `BOTH`（默认） | ✓ | ✓ | 通用工具，两个入口都该能用 |
-| `TOOLBOX_ONLY` | ✗ | ✓ | `fs_link`：用户点按钮可用，模型自主调用不该有 |
-| `AGENT_ONLY` | ✓ | ✗ | 只服务 Agent Loop、不应从前端透传入口暴露的工具 |
-| `NONE` | ✗ | ✗ | 仅内部占位/禁用，不应注册 |
+| `BOTH` | 是 | 是 | 通用工具，两个入口都该能用 |
+| `TOOLBOX_ONLY` | 否 | 是 | `fs_link`：用户点按钮可用，模型自主调用不该有 |
+| `AGENT_ONLY` | 是 | 否 | 只服务 Agent Loop、不应从前端透传入口暴露的工具 |
+| `NONE`（默认） | 否 | 否 | fail-closed：未显式声明受众的新工具不可见 |
 
-**为什么用两个布尔而非单一 `exposed_to_agent`**：「LLM 可见」与「桥接可达」是两个不同执行点的判断。若只用一个标记，`AGENT_ONLY` 这类需求将来仍要再改一次契约。两个维度一次性表达完整，且默认值保证存量零影响。
+**为什么用两个布尔而非单一 `exposed_to_agent`**：「LLM 可见」与「桥接可达」是两个不同执行点的判断。若只用一个标记，`AGENT_ONLY` 这类需求将来仍要再改一次契约。两个维度一次性表达完整。
+
+**为什么默认 `NONE`**：新增工具必须显式声明受众，遗漏时宁可不可见（fail-closed），也不能静默暴露给 LLM 或前端桥接。存量工具只有 `fs_link` 一个且已显式声明 `TOOLBOX_ONLY`，因此收紧默认值不改变现有行为。
 
 **与 deny-by-default 的关系**：`audience` 只决定「工具能否被某个入口看到」，不决定「是否启用」。工具是否启用仍由 `conversation.tool_config.tools` 白名单控制（design §3.8）。两者正交：一个 `BOTH` 工具若不在白名单，模型依然看不到它。
 
@@ -436,15 +439,15 @@ pub fn ensure_within_root(path: &Path, root: &Path) -> Result<(), String>;
 
 ### 7.1 ask_user
 
-排除。其行为是「暂停 Agent Loop，等待前端输入」，依赖 `AgenticEvent::ToolAwaitingUserInput` + 前端输入框 + `ApprovalChannel`。归入 I18 Step 5/9。
+排除。其行为是「暂停 Agent Loop，等待前端输入」，依赖审批端口 + 前端输入框。归入 I38a（审批端口）与 I38d（输入 UI），最终在 I38c §9 落地。
 
 ### 7.2 ChatOptions.tools
 
-排除。`assistant-providers` 的 `ChatOptions` **没有 `tools` 字段**，工具定义无法进入请求。补齐属 Step 7 的注入链路。本阶段只保证类型与构建能力就绪。
+排除。`assistant-providers` 的 `ChatOptions` **没有 `tools` 字段**，工具定义无法进入请求。补齐属 P4（I38b §4）的注入链路。本阶段只保证类型与构建能力就绪。
 
 ### 7.3 接入层替换（记录为 Step 8 待办）
 
-`os_tool_exec` 目前直接调用 `tool.execute(...)` 并 `.map_err(|e| e.to_string())?`，仍走双通道。切换到 `exec::invoke(...)` 是一次调用替换、零语义变更。**本阶段不改**，但必须作为 Step 8 的显式待办，否则双通道会长期存在。
+~~`os_tool_exec` 直接调用 `tool.execute(...)` 并 `.map_err(|e| e.to_string())?`，仍走双通道。~~ **已由 T2 修复**：`os_tool_exec` 已改走 `exec::invoke(...)`，`Err` 通道在 `invoke` 内归一化，前端从 reject 变为 `OsResult { ok: false }`。本待办关闭。
 
 ---
 
@@ -456,7 +459,7 @@ pub fn ensure_within_root(path: &Path, root: &Path) -> Result<(), String>;
 
 「无前端组件」只意味着**没有 UI 入口**，不意味着**不可调用**。
 
-由此产生的硬约束（同步写入 I18 Step 2 与 Step 8）：
+由此产生的硬约束（同步写入 I38c 与 I18 spec Step 8）：
 
 1. **Step 4/5 就绪前，不得把 `shell_exec` 加入生产注册表**。
 2. `fs_delete` 等破坏性工具与前端组件同期上线，不得先行注册。
@@ -496,7 +499,7 @@ tempfile = { workspace = true }
 | A2 | `cargo clippy -p assistant-tools -- -D warnings` 无告警 | 当前通过 |
 | A3 | `cargo fmt --all --check` 通过 | 当前通过 |
 | A4 | `os/path.rs` 单测覆盖：`..` 拒绝、不存在路径的宽松规范化、`C:\Windows.old` 不被误拒、`c:\windows\system32` 被拒（大小写不敏感）、`\\?\` 前缀剥离、盘符相对路径 `C:foo` 被明确拒绝、UNC 路径（`\\server\share` 与 `\\?\UNC\`）可解析、workspace 越界拒绝、`root` 自身允许、`root` 为符号链接时比较正确、`workspace_root=None` 时相对路径报出明确错误 | 待 T3 |
-| A5 | `registry` 单测覆盖：`<=` 语义（`Os` 查询返回 `Sandbox + Os`）、按名排序、`description()` 失败降级为空串、`audience().agent == false` 的工具不进入 `tool_definitions_for_tier`、`find_for_toolbox` 拒绝 `toolbox == false` 的工具、默认受众为 `BOTH` | 已达成（T1） |
+| A5 | `registry` 单测覆盖：`<=` 语义（`Os` 查询返回 `Sandbox + Os`）、按名排序、`description()` 失败降级为空串、`audience().agent == false` 的工具不进入 `tool_definitions_for_tier`、`find_for_toolbox` 拒绝 `toolbox == false` 的工具、默认受众为 `NONE` | 已达成（T1，默认值已收紧） |
 | A6 | `exec::invoke` 单测覆盖：非 object 输入、`Err` 归一化、超时归一化、超时对同步阻塞调用只保证「调用方返回」而不中断工作（用 `spawn_blocking` 构造） | 已达成（T2，5 个单测） |
 | A7 | `fs_link` 迁移后回归：source 不存在时可创建、`source` 父目录不存在时错误信息明确、junction 用例在 Windows 通过（无特权/CI 环境允许 `#[ignore]` 或跳过，不得因此判 A1 失败）、`check` 对真实符号链接仍返回 `isLink = true`（叶子不被跟随）、`workspace_root` 位于受保护目录时被明确拒绝 | 待 T3 |
 | A8 | `permission_intents` 只产出 `read` / `edit` / `delete` / `execute` 四类 action（全 crate grep 校验） | 待 T3（当前仍为 `fs_link_create` / `fs_link_target`） |
@@ -540,12 +543,12 @@ T1 与 T2 不触碰任何工具，可独立提交、独立回滚。T3 是本阶�
 
 | # | 风险 | 缓解 |
 |---|---|---|
-| R1 | `ToolDefinition` 与 `tool_definitions_for_tier` 在 Step 7 前无生产调用方 | 以 A5 强制测试覆盖；文档明确其「框架就绪」定位，不视为死代码 |
+| R1 | `ToolDefinition` 与 `tool_definitions_for_tier` 在 P4 前无生产调用方 | 以 A5 强制测试覆盖；文档明确其「框架就绪」定位，不视为死代码 |
 | R2 | `tokio::time::timeout` 需要运行时，且**只在 `await` 点生效** | 测试统一 `#[tokio::test(flavor = "multi_thread")]`；同步 IO 必须 `spawn_blocking`（见 §4.3），不得假设超时能中断线程 |
 | R3 | `canonicalize` 在 Windows 返回 `\\?\` 前缀，影响 `mklink` | §5.2 强制简化；`fs_link` 迁移后回归 junction |
 | R4 | `fs_link` 迁移属存量改动，可能引入回归 | T3 单独提交；A7 覆盖 source 不存在 / 父目录不存在两类 |
-| R5 | 框架就绪后，后续工具可能绕过 `path.rs` 自行实现 | 在 I18 Step 2 写入「必须 import `os::path`」的硬约束，A10 以 grep 校验 |
+| R5 | 框架就绪后，后续工具可能绕过 `path.rs` 自行实现 | 在 I38c 写入「必须 import `os::path`」的硬约束，A10 以 grep 校验 |
 | R6 | `DashMap` guard 跨 `await` 死锁 | §4.2 明确「先收集再 await」，列为 code review 检查项 |
-| R7 | `audience()` 默认 `BOTH`，新工具若忘记覆盖会静默暴露给 LLM；trait 无法区分「未实现用默认值」与「显式声明 BOTH」 | 文档约束之外增加代码防护：`setup.rs` 注册后断言每个工具的受众与显式清单一致，或在 CI 校验「新增工具清单 vs 显式 audience 清单」 |
-| R8 | `invoke` 的超时对子进程无效（`shell_exec` 将来会踩） | §4.3 明确「子进程必须进程级超时 + kill」；Step 2 实现 `shell_exec` 时以进程组/Job Object 收口，禁止复用 `tokio::timeout` 了事 |
+| R7 | 默认值已收紧为 `NONE`（fail-closed），忘记声明不会再静默暴露；剩余风险是新工具漏声明后「功能不可见」而非「安全暴露」 | 文档约束新增工具必须显式声明；`setup.rs` 或 CI 校验「新增工具清单 vs 显式 audience 清单」，避免功能静默失效 |
+| R8 | `invoke` 的超时对子进程无效（`shell_exec` 将来会踩） | §4.3 明确「子进程必须进程级超时 + kill」；P5 实现 `shell_exec` 时以进程组/Job Object 收口，禁止复用 `tokio::timeout` 了事 |
 | R9 | A7 的 junction 用例依赖本机环境（开发者模式/权限策略） | 允许 `#[ignore]` 或运行时跳过，不因此判 A1 失败；symlink 用例同理 |

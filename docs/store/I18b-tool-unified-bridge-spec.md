@@ -1,13 +1,14 @@
 # I18b ToolBox OS 交互桥接规格
 
 > **本文档职责**：ToolBox 双入口桥接的**权威源**——os_tool_exec 统一 Tauri command、os.ts 前端代理、新增 OS 工具标准 5 步流程、fs_link 完整设计。
+> **阶段与状态**见 [I38-agent-roadmap.md](./I38-agent-roadmap.md)（P0/P1/P6）。
 > **架构决策记录**见 [I18-agent-tool-architecture-design.md](./I18-agent-tool-architecture-design.md)（§3.6 双入口分流决策）。
-> **实施规格**见 [I18-agent-tool-architecture-spec.md](./I18-agent-tool-architecture-spec.md)（Step 8 Tauri 桥接）。
+> **框架规格**见 [I18-agent-tool-architecture-spec.md](./I18-agent-tool-architecture-spec.md) Step 8；**工具能力**见 [I38c](./I38c-os-tools-spec.md)。
 > **Shell 安全架构**见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
 >
-> Agent 入口（RoundExecutor → ToolPipeline）已在 I18 中定义，本文档聚焦 ToolBox 侧桥接——用户主动调用的工具如何直达执行，与 Agent 入口共享 Tool trait 实现但分流执行路径。
+> Agent 入口（RoundExecutor → ToolPipeline）见 [I38b](./I38b-agent-loop-spec.md) 与 [I38a](./I38a-tool-control-layer-spec.md)，本文档聚焦 ToolBox 侧桥接——用户主动调用的工具如何直达执行，与 Agent 入口共享 Tool trait 实现但分流执行路径。
 
-> **实施状态**（2026-11-02 复核）：桥接已落地——`os_tool_exec` 使用 `find_for_toolbox()`，`os.ts` 与 `fs-link` 组件已存在，`fs_link` 已声明 `TOOLBOX_ONLY`。本文中 §2.3 / §2.4 / §3.2 / §4.1-4.6 已按**实际代码**校正；早期草稿的 `find()`、`original/link/linkType/targetType`、`open_world=false`、`CreateSymbolicLinkW` 均未落地，勿按旧内容实现。`fs_link` 的路径安全与 permission 词汇修正待 I31 T3。
+> **实施状态**（2026-11-04 复核）：桥接已落地——`os_tool_exec` 使用 `find_for_toolbox()` 并走 `exec::invoke`（`DEFAULT_TOOL_TIMEOUT = 30s`），`os.ts` 与 `fs-link` 组件已存在，`fs_link` 已声明 `TOOLBOX_ONLY`。本文中 §2.4 / §3.2 / §4.1-4.6 已按**实际代码**校正；早期草稿的 `find()`、`original/link/linkType/targetType`、`open_world=false`、`CreateSymbolicLinkW` 均未落地，勿按旧内容实现。`fs_link` 的路径安全与 permission 词汇修正待 I31 T3（P1）。
 
 ---
 
@@ -83,7 +84,7 @@ ToolBox 入口需要一条**直达路径**：前端组件 → Tauri command → 
 
 **ToolBox 永远不涉及审批**：用户点击即执行意图的表达，不存在「谁来批准」的问题。Pipeline 的 `validate_input` 阶段服务于 Agent 入口——它要在弹审批框之前先排除非法输入；ToolBox 没有审批框，因此不需要这个阶段。两者的共同底线是「不变量不可绕过」，但这条底线由 `execute()` 内部的 `validate_path()` 等函数保证，而不是靠 Pipeline 关卡。
 
-> 因此 `validate_input` 与 `execute()` 内部的路径校验必须**复用同一套判定函数**，避免 Agent 入口和 ToolBox 入口对同一条路径得出不同结论。详见 [I18-spec](I18-agent-tool-architecture-spec.md) Step 6.2.1。
+> 因此 `validate_input` 与 `execute()` 内部的路径校验必须**复用同一套判定函数**，避免 Agent 入口和 ToolBox 入口对同一条路径得出不同结论。详见 [I38a](I38a-tool-control-layer-spec.md) §3.1。
 
 ### 2.3 `os_tool_exec` Tauri command 实现
 
@@ -111,6 +112,8 @@ pub struct OsToolResultDto {
 命令本体：
 
 ```rust
+use assistant_tools::{invoke, ToolRegistry, ToolUseContext, DEFAULT_TOOL_TIMEOUT};
+
 #[tauri::command]
 pub async fn os_tool_exec(
     registry: State<'_, Arc<ToolRegistry>>,
@@ -128,12 +131,12 @@ pub async fn os_tool_exec(
     }
 
     let context = ToolUseContext::for_toolbox(None);
-    let result = tool.execute(&input, &context).await.map_err(|e| e.to_string())?;
+    let result = invoke(tool.as_ref(), &input, &context, DEFAULT_TOOL_TIMEOUT).await;
     Ok(OsToolResultDto::from(result))
 }
 ```
 
-关键：`os_tool_exec` 直接调 `Tool.execute()`，不经过 ToolPipeline。路径校验等安全约束由 Tool.execute() 内部保证，与 Agent 入口调同一个 execute() 时行为一致。`shell_exec` 的 SafetyBelt 与纵深防御也在 `execute()` 内，因此 ToolBox 调用它同样受保护——缺的只是 AllowlistGate / ApprovalGate 这层审批。
+关键：`os_tool_exec` 通过 `exec::invoke` 调 `Tool.execute()`，不经过 ToolPipeline。`invoke` 负责超时（`DEFAULT_TOOL_TIMEOUT = 30s`）与 `Err` 通道归一化；路径校验等安全约束仍由 `execute()` 内部保证，与 Agent 入口调同一个 `execute()` 时行为一致。`shell_exec` 的 SafetyBelt 与纵深防御也在 `execute()` 内，因此 ToolBox 调用它同样受保护——缺的只是 AllowlistGate / ApprovalGate 这层审批。
 
 **已知待修**：`ToolUseContext::for_toolbox(None)` 使 `workspace_root` 恒为 `None`，相对路径工具在 ToolBox 入口下不可用，需补工作区来源（见 I18 spec 8.2）。
 
@@ -188,7 +191,7 @@ const result = await os.fsLink.create({ source, target, kind });
 - `description()` → 供 LLM 理解的描述
 - `input_schema()` → JSON Schema，定义 create / check 两个 action 的参数结构
 - `tier()` → `ToolTier::Os`
-- `audience()` → `ToolAudience::TOOLBOX_ONLY`（本工具服务「人点按钮」，不进 LLM 的 `tools` 列表；新增 Agent 工具时应为 `BOTH`，不得依赖默认值）
+- `audience()` → `ToolAudience::TOOLBOX_ONLY`（本工具服务「人点按钮」，不进 LLM 的 `tools` 列表；新增 Agent 工具时应显式声明 `BOTH` / `AGENT_ONLY`，默认值为 `NONE`）
 - `behavior_hints()` → 实际实现为 `BehaviorHints { read_only: false, destructive: false, open_world: true }`（创建链接会触及工作区外路径，故 `open_world = true`；早期草稿写 `false` 与实现不符，以代码为准）
 - `permission_intents(input, context)` → **当前实际词汇**为 create action 的 `fs_link_create` / `fs_link_target`；与 I18 design §2.1 的 `read` / `edit` / `delete` / `execute` 不一致，属已知偏差，由 I31 T3 统一改为 `read`(target) + `edit`(source)
 - `execute(input, context)` → 根据 input 中的 action 字段分发到 create / check 内部方法（内部包含 `validate_path()` 路径校验，两个入口均受保护）

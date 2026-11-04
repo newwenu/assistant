@@ -1,7 +1,8 @@
 # I36 — Agent 运行时架构决策记录（ADR）
 
 > 本文记录运行时**决策**：为什么这样分层、参考了什么、取舍是什么。**不记录进度**。
-> 实施规格与实施状态见 [I36-agent-runtime-spec.md](./I36-agent-runtime-spec.md)。
+> 阶段、状态与门禁见 [I38-agent-roadmap.md](./I38-agent-roadmap.md)（唯一阶段入口）。
+> 实施规格见 [I36-agent-runtime-spec.md](./I36-agent-runtime-spec.md)；Agent Loop 见 [I38b](./I38b-agent-loop-spec.md)。
 > 工具框架见 [I18-agent-tool-architecture-design.md](./I18-agent-tool-architecture-design.md)；
 > ToolBox 桥接见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)；
 > chat 构建剥离见 [I30-phase1-toolcall-separation-spec.md](./I30-phase1-toolcall-separation-spec.md)。
@@ -40,7 +41,7 @@
 |---|---|---|
 | 无 turn 概念 | 一次输入只能触发一次模型调用，工具结果无法回填 | 运行时 |
 | 无状态机 | chat 链路只有一个布尔 `is_running`，前端分不清「思考 / 流式 / 调工具 / 等审批」 | 运行时 |
-| 无轮内循环 | LLM 返回 tool_call 后到此为止（I18 Step 7 未落地） | RoundExecutor |
+| 无轮内循环 | LLM 返回 tool_call 后到此为止（P4 / I38b 未落地） | RoundExecutor |
 | 无停止钩子 | 只能在事后取消，不能在两次调用之间刹车 | 运行时 |
 | 只有一层上下文降级 | 压缩是「终止本轮」，不是「轮内续跑」 | 运行时 |
 | 无终态持久化 | 进程崩溃后消息仍是 `streaming` 形状，UI 无从判断 | 运行时 |
@@ -51,7 +52,7 @@
 | 层 | 职责 | 权威文档 |
 |---|---|---|
 | **AgentRuntime**（turn 编排） | turn 生命周期、会话状态机、预算、停止钩子、事件投影 | 本文 |
-| **RoundExecutor**（iteration 循环） | 模型调用 → 工具执行 → 回填 → 下一迭代 | I18 Step 7 |
+| **RoundExecutor**（iteration 循环） | 模型调用 → 工具执行 → 回填 → 下一迭代 | I38b（P4） |
 | **Provider 流式**（单次请求） | 请求投影、流式累积、部分结果、单次超时 | 本文 Step 3 |
 
 **分层判据（唯一）**：
@@ -260,7 +261,7 @@ pub enum StopDecision { Continue, Stop { reason: String } }
 | 会话状态机 + phase + `recoverable` | OpenBitFun | 采纳 |
 | 状态与 turn_id 绑定 | OpenBitFun | 采纳 |
 | turn 级取消令牌 store | OpenBitFun | 采纳（内核 `turn_tasks`，格式与 `attempt_id` 兼容） |
-| 投机预取压缩 + 三态认领 | OpenBitFun | 暂不采纳（§3.16） |
+| 投机预取压缩 + 三态认领 | OpenBitFun | 暂不采纳（§3.19） |
 | 压缩作为 turn item + pre/post hook | Codex | 采纳 |
 | `CompactionTrigger{Manual,Auto}` | Codex | 采纳 |
 | 保留输出整条保留或整条丢弃 | Codex | 采纳 |
@@ -272,9 +273,9 @@ pub enum StopDecision { Continue, Stop { reason: String } }
 | `max_tool_calls` 嵌套取 min | OpenHuman | 采纳 |
 | 重试只在一层 | OpenHuman | 采纳（保持在 provider 层） |
 | `hit_cap` / `wrap_up` 分开 | OpenHuman | 采纳 |
-| 排队输入 | OpenHuman | 暂不采纳（§3.16） |
-| 持久事件 journal | OpenHuman / OpenBitFun | 暂不采纳（§3.16） |
-| 子代理 / `max_depth` | OpenHuman / OpenBitFun | 暂不采纳（§3.16） |
+| 排队输入 | OpenHuman | 暂不采纳（§3.19） |
+| 持久事件 journal | OpenHuman / OpenBitFun | 暂不采纳（§3.19） |
+| 子代理 / `max_depth` | OpenHuman / OpenBitFun | 暂不采纳（§3.19）；P4 只预留契约（D16-D18） |
 
 ---
 
@@ -302,7 +303,7 @@ pub enum SessionState {
 
 `phase ∈ Starting | Compacting | Thinking | Streaming | ToolCalling | AwaitingApproval | Finalizing`。前端只做投影，**不自行推导**任何 phase。
 
-**理由**：多窗口共享同一会话（I20 跨窗口同步）。若每个窗口各自从 delta 流推导 phase，必然漂移出「A 窗口显示正在调工具、B 窗口显示正在思考」。且 phase 是工具卡片五态（I18 Step 9）的上游，必须有唯一来源。
+**理由**：多窗口共享同一会话（I20 跨窗口同步）。若每个窗口各自从 delta 流推导 phase，必然漂移出「A 窗口显示正在调工具、B 窗口显示正在思考」。且 phase 是工具卡片五态（I38d）的上游，必须有唯一来源。
 
 **取舍**：新增一个低频离散事件 `session-state-changed`，不塞进 `chat-delta`——delta 是高频流式语义，phase 是低频状态语义，混在一起会让前端要做「delta 里哪些是状态」的分流。同时 `chat-stream-start` 与终止事件**冗余携带**当前 phase，保证晚订阅窗口能立刻对齐而不必等下一次状态变化。
 
@@ -419,7 +420,9 @@ pub enum SessionState {
 - 现有 `send_chat_message` 在 orb 窗口缺失时直接报错，等于「关掉窗口就不能用 agent」。agent 要跑几十次模型调用、几十次工具执行，中途用户关窗是常态。
 - 前端 `ensureIdle()` 的 5 s 轮询本质是**前端在替后端做生命周期等待**。后端有了状态机（D2），这个等待应该由 `begin_turn` 的返回值表达，而不是前端定时器。
 
-**取舍**：不做「应用退出后继续跑」。进程退出即 turn 中断，启动清扫（D11）负责把残留 `Processing` 收敛为终态。**不**引入独立后台进程或系统服务——收益（跨进程存活）与成本（IPC、密钥、单实例、升级）不成比例。
+**取舍（D13a，现行）**：不做「应用退出后继续跑」。进程退出即 turn 中断，启动清扫（D11）负责把残留 `Processing` 收敛为终态。**不**引入独立后台进程或系统服务——收益（跨进程存活）与成本（IPC、密钥、单实例、升级）不成比例。
+
+**边界（D13b，P8+ 候选）**：上述取舍是**当前实现边界**，不是对「持久化运行」的永久否决。Super-agent 的 persistence（重启恢复、Watchdog、事件唤醒）若进入范围，必须单独出 ADR，并满足 D16-D18 的会话谱系与委派契约；不得在 D13a 下直接叠加后台进程。前置条件：会话谱系可落库、事件可重放、授权与取消树可按 agent 作用域裁决。
 
 ### 3.14 D14 — 抽共用内核，而不是两套最小实现
 
@@ -448,13 +451,62 @@ pub enum SessionState {
 
 **取舍**：不取消意味着切走后输入框可能显示「另一会话正在运行」，需要 UI 明确指示（`session-state-changed` 已足够）。同时要保证**同一会话同一时刻只有一个 turn**（否则后台跑两个 turn 会互相覆盖写库）。
 
-### 3.16 暂不采纳清单
+### 3.16 D16 — 会话谱系与 agent 身份（P8 前置）
+
+**决策**：turn 的内存结构与事件载荷新增三个**可选、默认根 agent** 的身份字段：`agent_id`、`parent_turn_id`、`delegation_depth`。根 agent 取 `agent_id = conversation_id`、`parent_turn_id = None`、`delegation_depth = 0`。
+
+**语义**：
+
+| 字段 | 根 turn | 子 agent turn |
+|---|---|---|
+| `agent_id` | conversation 的根 agent | 子会话/子 agent 的稳定 id |
+| `parent_turn_id` | `None` | 发起委派的父 turn |
+| `delegation_depth` | `0` | 父深度 + 1，受上限约束 |
+
+**理由**：D12 的 `seq` 以 turn 为序，现有事件只靠 `turn_id` 区分来源；一旦出现 worker，前端无法从扁平事件流还原「哪个任务属于哪个 agent」。这三个字段在 P4 恒为根 agent，**零行为变化**；若等到 P8 再加，事件 DTO、前端过滤与落库投影都要重做。
+
+**取舍**：不落库完整会话树（沿用 D10），只保证身份可表达、可过滤。父子关系以 `parent_turn_id` 表达，不新增 turn 表；需要跨重启恢复时由 P9 单独迁移。
+
+**参考**：DSH `subagentCatalog` 的 child id/创建时间/模式；OpenBitFun `sessionLineage` / `subagentProjection`；Codex `sender_thread_id` / `receiver_thread_ids`。
+
+### 3.17 D17 — 委派边界与权限继承（P8 前置）
+
+**决策**：子代理**作为工具**（`spawn_agent`）经 `ToolPipeline` 进入，不在 `RoundExecutor` 内部写 `if is_subagent` 分叉。默认约束：
+
+| 约束 | 默认 | 说明 |
+|---|---|---|
+| `max_depth` | 1 | 父可显式放宽，但不得超过全局上限 |
+| 并发子 agent | 可配置，必须有显式上限 | 与 turn 的并发上限同源，不允许无界 spawn |
+| 工具集 | 父显式收窄 | 子 agent 只能看到父授予的子集，不可扩大 |
+| 权限 | 读父 `GrantStore`，新批准写子作用域 | `PermissionRuntimeCeiling` 只紧不松 |
+| 回传 | 摘要或引用 | 不把子 agent 完整 transcript 内联回父上下文 |
+
+**理由**：参考项目的共同做法是「委派是工具/能力 seam，不是循环分叉」——DSH 的 `ctx.subagents`、OpenHuman 的 `delegate_*`、Codex 的 collaboration tools 都如此。权限上若允许子 agent 扩大父授权，审批键与 ceiling 会失效；上下文上若内联完整 transcript，token 成本随并发线性膨胀。
+
+**取舍**：P4 只定义契约与可选字段，**不实现** spawn；子 agent 的 persona、output schema、工具过滤等高级能力留到 P8 按消费方逐个加，避免一次性设计过多无人使用的选项。
+
+**参考**：DSH `SubagentCapabilities`（`depthLimit` / `toolFilter` / `persona` / `outputSchema`）；OpenHuman orchestrator 的 `subagents` allowlist 与 `delegate_*` 工具；Goose `max_concurrency`；Codex `fork_turns`。
+
+### 3.18 D18 — 取消树与结果回收（P8 前置）
+
+**决策**：取消令牌按父子关系组成**取消树**：父 turn 取消时向下传播到子 agent；子 agent 取消**不**反向取消父 turn。子结果通过 `MessageStore` 或摘要引用回父，父 turn 写终态前仍按 D3 校验 `turn_id` 代际，非当前代际的完成结果丢弃。
+
+**理由**：D3 的协作式取消与 D12 的单向有序流在单 agent 下成立；多 agent 下若没有树形传播，父 turn 结束后子 agent 会变成孤儿任务，继续消耗模型调用并写库。反向取消则会让「子任务失败」误伤父任务。
+
+**取舍**：P8 之前不实现后台 worker 的持久化存活；子 agent 生命周期与父 turn 同进程。跨重启的孤儿收敛归 P9（见 D13b）。
+
+**参考**：DSH continuable subagent 的 activation/`interrupt` 与 child-first disposal；Goose `SubagentOutcome::Cancelled`；OpenBitFun 后台子代理活动投影。
+
+### 3.19 暂不采纳清单
 
 | 要素 | 来源 | 不采纳理由 | 解冻条件 |
 |---|---|---|---|
 | 投机预取压缩 | OpenBitFun | 当前轮规模下收益不明显，且要求压缩任务可取消、可丢弃的完整生命周期 | 单轮出现 ≥2 次压缩 |
 | 排队输入（turn 进行中入队） | OpenHuman | 当前 UI 流式期间禁用发送，无消费方 | 前端支持「流式期间继续输入」 |
-| 子代理 / `max_depth` | OpenHuman / OpenBitFun | 无多 agent 需求 | 引入任务委派 |
+| 子代理 / `max_depth` | DeepSeek Harness / OpenHuman / OpenBitFun | 当前无消费方；P4 只预留身份与委派契约（D16-D18），不实现 spawn | 单轮出现可并行的独立子任务，或用户同时推进多个任务 |
+| Router / Worker 跨会话编排（Super-agent） | DeepSeek Harness | 当前只有 conversation 级 turn，无会话之上的调度与跨会话记忆 | P8 立项，且 D16-D18 已落地 |
+| skill / 按需工具暴露 | DeepSeek Harness / OpenHuman | 当前工具数量少，静态工具 schema 成本可控 | 每轮工具 schema 超过预算阈值，或引入 skill 目录 |
+| 持久化运行 / Watchdog | DeepSeek Harness | 见 D13b，需要单独 ADR | P9 立项 |
 | USD 成本上限 | OpenHuman | 无价格目录 | 引入模型价格表 |
 | 持久事件 journal | OpenHuman / OpenBitFun | 见 D12 | 需要离线回放轮时间线 |
 | 工具结果语义摘要（payload summarizer） | OpenHuman | 先用确定性清空（③）拿到稳定收益 | ③ 仍不够用 |
@@ -514,7 +566,7 @@ src-tauri/src/
 
 - `turn` → `request_projection` / `compaction`（判定）/ `token_estimate` / `multimodal` / `pdf_text` / `chat_options` / `normalization`：允许（无状态纯函数）。
 - `turn` / `agent` → `tauri` / `AppHandle` / `Window` / `cmd/*`：**禁止**（§1.4、§1.6）。
-- `agent` → `assistant-tools`：**禁止**。只依赖 `RoundExecutor` 抽象（I18 Step 7 落地时注入）。
+- `agent` → `assistant-tools`：**禁止**。只依赖 `RoundExecutor` 抽象（P4 / I38b 落地时由宿主注入）。
 - `chat_runtime` / `chat_tasks` / `chat_request` / `prompt_builder`：**迁出后删除**，不作为长期依赖。
 
 ---
@@ -523,7 +575,7 @@ src-tauri/src/
 
 | 文档 | 关系 |
 |---|---|
-| I18 design / spec | 工具框架与 RoundExecutor。本文**编排** RoundExecutor，不重复定义工具生命周期 |
+| I18 design / spec | 工具框架与工具生命周期。RoundExecutor 循环契约见 I38b；本文只定义 turn 生命周期与端口 |
 | I18b | ToolBox 双入口。ToolBox **不进入**运行时（无 turn、无状态机、无审批），运行时只服务 Agent 入口 |
 | I30 | tool call 从 chat 构建剥离。本文的内核抽取**吸收**了 I30 的剥离目标：`turn/stream.rs` 只留文本/推理/usage，tool 通道归 `agent/` |
 | I15 / I16 | 流式累积与 attempt 身份。D1 升级 `attempt_id` 语义，需与 I16 的过期事件丢弃规则保持一致 |
@@ -540,8 +592,8 @@ src-tauri/src/
 6. **agent 宿主**（`cmd/agent` + `adapters/*`）：`OnBusy::Reject`、`route = Broadcast`，单迭代形态即可上线，用于验证「无窗口可跑」。
 7. **中间件链 + 上下文阶梯**（①②③⑤ 先挂，② 压缩接入）。
 8. **停止钩子 + 收尾调用**。
-9. **RoundExecutor 接入，多迭代闭环**（I18 Step 7）。
-10. **压缩从「终止式」切到「续跑式」**（D9 第二步）。
+9. **RoundExecutor 接入，多迭代闭环**（P4 / I38b）：TurnRunner 的单迭代循环替换为 `RoundExecutor::run_iterations`。
+10. **压缩从「终止式」切到「续跑式」**（D9 第二步，P4 完成后单独提交）。
 
 第 3 步是最大风险点：chat 的对外行为必须不变。因此第 3 步的验收方式是**对比测试**——同一组请求在旧路径与新路径下，事件序列、`seq`、落库内容、错误文案完全一致（用 `EventSink` 测试实现收集后逐条比对）。
 

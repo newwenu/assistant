@@ -4,7 +4,7 @@
 |---|---|
 | 状态 | Draft |
 | 日期 | 2026-11-03 |
-| 关联 | [I36-agent-runtime-design.md](./I36-agent-runtime-design.md)（决策依据）、[I18-agent-tool-architecture-spec.md](./I18-agent-tool-architecture-spec.md) Step 7、[I30-phase1-toolcall-separation-spec.md](./I30-phase1-toolcall-separation-spec.md)、[I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md) |
+| 关联 | [I36-agent-runtime-design.md](./I36-agent-runtime-design.md)（决策依据）、[I38-agent-roadmap.md](./I38-agent-roadmap.md)（阶段 P3）、[I38b-agent-loop-spec.md](./I38b-agent-loop-spec.md)（P4 多迭代闭环）、[I30-phase1-toolcall-separation-spec.md](./I30-phase1-toolcall-separation-spec.md)、[I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md) |
 | 影响范围 | `assistant-agent`（新增 `turn/` 共用内核、`agent/` 多迭代能力）、`assistant-config`、`assistant-storage`、`src-tauri/src/cmd/agent`（新增）、`src-tauri/src/adapters`（新增，端口实现）、`src-tauri/src/protocol`、前端 chat 域。**chat 链路对外行为不变**：`cmd/chat`、`chat_runtime`、`chat_tasks`、`chat_request`、`prompt_builder` 在 Step 3 内改调内核，Step 3.4 删除旧实现 |
 
 本文只写**怎么做**。为什么这样分层、参考了什么、取舍是什么，见 design 文档，本文不重复论证。
@@ -47,7 +47,7 @@
 
 **在范围内**：turn 生命周期、会话状态机、取消与代际、双层超时、停止钩子、中间件链、上下文阶梯、压缩生命周期、终态持久化与启动清扫、轮级观测、**端口化与共用内核抽取**（design §1.5 / §1.6）、**后台可运行**（design §3.13）。
 
-**不在范围内**：工具生命周期（I18 Step 2-6）、RoundExecutor 的循环体（I18 Step 7）、ToolBox 桥接（I18b）、前端 UI 组件（I18 Step 9）、**进程退出后继续运行**（design D13 取舍）。
+**不在范围内**：工具生命周期（I38a / I38c）、RoundExecutor 的循环体（I38b）、ToolBox 桥接（I18b）、前端 UI 组件（I38d）、**进程退出后继续运行**（design D13 取舍）。
 
 **前置条件**：
 
@@ -391,7 +391,7 @@ turn token（TurnTasks 持有）
 1. 所有长 await 必须写成 `tokio::select! { biased; _ = child.cancelled() => ..., r = fut => r }`。
 2. 取消**只置位**，禁止 `JoinHandle::abort()`。
 3. 模型流被取消时，`turn/stream.rs` 的 `consume` 返回 `StreamError::Cancelled(PartialOutcome)`，运行时必须落库部分内容（语义对齐 chat 链路已有的 `save_partial_on_error`，实现统一在 `turn/persist.rs`）。
-4. 工具被取消时，工具返回 `ToolErrorKind::Cancelled`（I18 §3.12），回填给模型时写成「已取消」，不当作失败。
+4. 工具被取消时，工具返回 `ToolErrorKind::Cancelled`（I38a §2 / §3.2），回填给模型时写成「已取消」，不当作失败。
 
 ### 2.2 代际守卫落点
 
@@ -410,6 +410,7 @@ turn token（TurnTasks 持有）
 ## Step 3 — TurnRunner（单迭代可用形态）
 
 > 本步骤完成时，`turn/turn_runner.rs` 的外部行为与 chat 链路**等价**：一次用户输入 → 一次模型调用 → 结束。chat 链路在 Step 3 内改调内核，Step 4 才删除旧实现，故本步骤结束后两条链路共用同一内核。
+> **过渡边界**：本步骤的循环写在 TurnRunner 内，是 P3 的单迭代形态；P4（I38b）把「模型调用 → 工具执行 → 回填 → 下一迭代」整体迁入 `RoundExecutor::run_iterations`，TurnRunner 只保留 turn 生命周期、状态机、预算、落库与事件。
 
 ### 3.1 结构
 
@@ -424,7 +425,7 @@ pub struct TurnRunner {
     clock: Arc<dyn Clock>,
     middlewares: MiddlewareChain,
     stop_hooks: Vec<Arc<dyn StopHook>>,
-    // RoundExecutor 在 I18 Step 7 就位后注入，此处为 Option
+    // P4（I38b）接入多迭代循环后注入；P3 为 None，由 TurnRunner 跑单迭代过渡循环
     round_executor: Option<Arc<dyn RoundExecutor>>,
 }
 ```
@@ -577,7 +578,7 @@ pub enum MiddlewareOutcome { Continue, StopTurn { reason: String } }
 | 3 | `MicrocompactMiddleware` | `before_model` | 阶梯 ③：清空较旧工具结果体 |
 | 4 | `WrapUpRestoreMiddleware` | `before_model` | 阶梯 ④：capped turn 结论调用还原 |
 | 5 | `HardTrimMiddleware` | `before_model` | 阶梯 ⑤：整条淘汰最旧消息 |
-| 6 | `ToolOutputCapMiddleware` | `after_tool` | 单条工具结果字节上限（I18 §3.13） |
+| 6 | `ToolOutputCapMiddleware` | `after_tool` | 单条工具结果字节上限（I38a §4-C6） |
 | 7 | `ToolOutcomeCaptureMiddleware` | `after_tool` | 捕获 `success` / `call_id` / 原始参数，供 `TurnOutcome` 汇总 |
 | 8 | `RepeatedFailureMiddleware` | `after_iteration` | 连续失败熔断（同工具同参数失败 N 次 → StopTurn） |
 
@@ -694,7 +695,7 @@ restore_phase(previous)
 
 ### 6.3 过渡期语义
 
-本规格落地时保持**终止式**（`CompactDecision::Terminate` → 压缩完成后另起），轮内续跑等 I18 Step 7 就位后再切（design §3.9 第二步）。切换时只改 `run_summarize` 之后的分支，不改生命周期与事件。
+本规格落地时保持**终止式**（`CompactDecision::Terminate` → 压缩完成后另起），轮内续跑等 P4（I38b）就位后再切（design §3.9 第二步）。切换时只改 `run_summarize` 之后的分支，不改生命周期与事件。
 
 ---
 
@@ -707,7 +708,7 @@ restore_phase(previous)
 | `chat-stream-start`（已有名） | `begin_turn` 后 | `conversation_id` / `attempt_id`(=turn_id) / `message_id` / **新增 `phase`** |
 | `session-state-changed`（新增） | 任意 phase 或 Idle/Error 迁移 | `conversation_id` / `turn_id` / `state` |
 | `chat-delta`（已有名） | 流式增量 | 追加 `iteration`（u32） |
-| `agent-tool-call`（I18 Step 9 定义） | 工具开始/结束/等审批 | `turn_id` / `iteration` / `call_id` |
+| `agent-tool-call`（I38d §2.1 定义） | 工具开始/结束/等审批 | `turn_id` / `iteration` / `call_id` |
 | `compaction-started` / `compaction-completed`（新增） | 压缩 | `turn_id` / `trigger` / 前后 token |
 | `chat-stream-end` / 终止类（已有名） | 终态 | `turn_id` / `status` / `outcome 摘要` |
 
@@ -781,11 +782,11 @@ ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 
 ### 9.2 TTFT
 
-在 `turn/stream.rs` 的 `consume` 首次回调处记录 `now - request_started`，写入 `TurnOutcome` 与上述日志。**不**引入 TTFM（design §3.16）。
+在 `turn/stream.rs` 的 `consume` 首次回调处记录 `now - request_started`，写入 `TurnOutcome` 与上述日志。**不**引入 TTFM（design §3.19）。
 
 ### 9.3 上下文占用
 
-沿用 provider usage（`UsageSnapshot.context_window_tokens`，内核侧同名独立类型），不做 system/tools/history 三段拆分（design §3.16 暂不采纳）。
+沿用 provider usage（`UsageSnapshot.context_window_tokens`，内核侧同名独立类型），不做 system/tools/history 三段拆分（design §3.19 暂不采纳）。
 
 ---
 
@@ -850,6 +851,6 @@ ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 
 **开放问题**（待 RoundExecutor 就位后定）：
 
-1. 工具审批等待期间，`turn_wall_clock` 是否继续计时？当前倾向「继续计时」，因为用户可能长时间不响应；需与审批超时（I18 §3.9）合并考虑。
+1. 工具审批等待期间，`turn_wall_clock` 是否继续计时？当前倾向「继续计时」，因为用户可能长时间不响应；需与审批超时（I38a §2.8）合并考虑。
 2. 收尾调用是否需要读取被微压缩清空的工具结果？当前倾向「需要」（阶梯 ④），但会推高收尾调用的输入量。
 3. 压缩完成后是否重置 `iteration` 计数？当前倾向「不重置」，压缩不改变「这一轮已经用掉几次模型调用」的事实。
