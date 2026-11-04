@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use assistant_providers::base::{ChatDelta, ProviderError, TokenUsage};
+use assistant_storage::token_usage::TokenUsageRecord;
 use futures::Stream;
 use log::info;
 use thiserror::Error;
@@ -30,6 +31,24 @@ impl UsageSnapshot {
             && self.cache_read_tokens.is_none()
             && self.cache_write_tokens.is_none()
             && self.reasoning_tokens.is_none()
+    }
+
+    /// 落库用的 `(prompt, completion, estimated)`。
+    ///
+    /// `prompt_tokens` 未上报时按 `total - completion` 回退；回退值不是 provider 上报值，
+    /// 因此置 `estimated`，否则它会以「精确值」身份抢占占用锚点（M3）。
+    pub fn record_tokens(&self) -> (u32, u32, bool) {
+        let completion = self.completion_tokens.unwrap_or(0);
+        match self.prompt_tokens {
+            Some(prompt) => (prompt, completion, self.estimated),
+            None => {
+                let derived = self
+                    .total_tokens
+                    .map(|total| total.saturating_sub(completion))
+                    .unwrap_or(0);
+                (derived, completion, true)
+            }
+        }
     }
 
     /// 合并一次 provider usage 上报：上报值优先，`total` 冲突时按 §4 / M12 裁决。
@@ -62,6 +81,51 @@ impl UsageSnapshot {
             self.estimated = true;
         }
     }
+}
+
+/// 写入 `token_usage_records` 所需的请求级上下文。
+pub struct UsageRecordCtx<'a> {
+    pub conv_id: &'a str,
+    pub msg_id: &'a str,
+    pub attempt_id: &'a str,
+    pub branch_leaf_id: Option<&'a str>,
+    /// `chat` | `compaction`
+    pub kind: &'a str,
+    pub provider_id: Option<&'a str>,
+    pub model_id: Option<&'a str>,
+    pub cache_capable: bool,
+}
+
+/// 每次带 usage 的 attempt 各落一条记录，重试不覆盖。
+pub fn build_usage_records(
+    snapshots: &[UsageSnapshot],
+    ctx: &UsageRecordCtx<'_>,
+) -> Vec<TokenUsageRecord> {
+    let now = chrono::Utc::now().timestamp_millis();
+    snapshots
+        .iter()
+        .map(|u| {
+            let (prompt_tokens, completion_tokens, estimated) = u.record_tokens();
+            TokenUsageRecord {
+                conversation_id: ctx.conv_id.to_string(),
+                message_id: Some(ctx.msg_id.to_string()),
+                attempt_id: Some(ctx.attempt_id.to_string()),
+                branch_leaf_id: ctx.branch_leaf_id.map(str::to_string),
+                kind: ctx.kind.to_string(),
+                provider_id: ctx.provider_id.map(str::to_string),
+                model_id: ctx.model_id.map(str::to_string),
+                prompt_tokens,
+                completion_tokens,
+                cache_read_tokens: u.cache_read_tokens,
+                cache_write_tokens: u.cache_write_tokens,
+                reasoning_tokens: u.reasoning_tokens,
+                cache_capable: ctx.cache_capable,
+                context_window_tokens: u.context_window_tokens,
+                estimated,
+                created_at: now,
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone)]

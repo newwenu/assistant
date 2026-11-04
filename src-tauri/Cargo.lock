@@ -182,6 +182,7 @@ dependencies = [
  "assistant-storage",
  "base64 0.23.1",
  "chardetng",
+ "chrono",
  "encoding_rs",
  "futures",
  "image",

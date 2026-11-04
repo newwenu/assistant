@@ -10,7 +10,9 @@ use crate::protocol::{
     ConversationCompactFailedPayloadDto, ConversationTerminatedPayloadDto,
     ConversationUnlockedPayloadDto, MessageChangeKindDto, ProviderErrorPayloadDto,
 };
-use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError};
+use assistant_agent::chat_runtime::{
+    self, build_usage_records, PartialOutcome, StreamError, UsageRecordCtx,
+};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::prompt_builder;
 use assistant_agent::provider_config::build_provider_config;
@@ -238,7 +240,7 @@ pub(crate) async fn execute_compaction(
 
     chat_tasks.finish(conversation_id);
 
-    let usage_ctx = crate::cmd::token_usage_record::UsageRecordCtx {
+    let usage_ctx = UsageRecordCtx {
         conv_id: conversation_id,
         msg_id: &summary_msg_id,
         attempt_id: &attempt_id,
@@ -262,10 +264,7 @@ pub(crate) async fn execute_compaction(
                 outcome.estimated,
                 outcome.attempt_usages.len()
             );
-            let usage_records = crate::cmd::token_usage_record::build_usage_records(
-                &outcome.attempt_usages,
-                &usage_ctx,
-            );
+            let usage_records = build_usage_records(&outcome.attempt_usages, &usage_ctx);
 
             let max_summary_chars =
                 (assistant_config::constant::MAX_SUMMARY_OUTPUT_TOKENS as usize) * 4;
@@ -353,10 +352,7 @@ pub(crate) async fn execute_compaction(
             Ok(())
         }
         Err(StreamError::Cancelled(partial)) => {
-            let usage_records = crate::cmd::token_usage_record::build_usage_records(
-                &partial.attempt_usages,
-                &usage_ctx,
-            );
+            let usage_records = build_usage_records(&partial.attempt_usages, &usage_ctx);
             save_compaction_partial(app, &summary_msg_id, &partial, &usage_records);
             set_terminating(conversation_id, false);
             emit_orb_only(
@@ -376,10 +372,7 @@ pub(crate) async fn execute_compaction(
             Err("Compaction cancelled".to_string())
         }
         Err(StreamError::Provider(e, partial)) => {
-            let usage_records = crate::cmd::token_usage_record::build_usage_records(
-                &partial.attempt_usages,
-                &usage_ctx,
-            );
+            let usage_records = build_usage_records(&partial.attempt_usages, &usage_ctx);
             save_compaction_partial(app, &summary_msg_id, &partial, &usage_records);
             set_terminating(conversation_id, false);
             emit_orb_only(
@@ -399,10 +392,7 @@ pub(crate) async fn execute_compaction(
             Err(e.to_string())
         }
         Err(StreamError::Timeout(partial)) => {
-            let usage_records = crate::cmd::token_usage_record::build_usage_records(
-                &partial.attempt_usages,
-                &usage_ctx,
-            );
+            let usage_records = build_usage_records(&partial.attempt_usages, &usage_ctx);
             save_compaction_partial(app, &summary_msg_id, &partial, &usage_records);
             set_terminating(conversation_id, false);
             emit_orb_only(

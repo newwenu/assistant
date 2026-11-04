@@ -11,7 +11,9 @@ use crate::protocol::{
 };
 use assistant_agent::chat_options;
 use assistant_agent::chat_request::{self, ChatRequest};
-use assistant_agent::chat_runtime::{self, resolve_final_tokens, StreamError};
+use assistant_agent::chat_runtime::{
+    self, build_usage_records, resolve_final_tokens, StreamError, UsageRecordCtx,
+};
 use assistant_agent::chat_tasks::ChatTasks;
 use assistant_agent::compaction;
 use assistant_agent::multimodal;
@@ -20,7 +22,7 @@ use assistant_crypto::api_key as crypto;
 use assistant_providers::base::{ProviderError, ProviderErrorPayload};
 use assistant_storage::attachment_store::AttachmentStore;
 
-use crate::cmd::token_usage_record::{build_usage_records, cache_capable_of, UsageRecordCtx};
+use crate::cmd::token_usage_record::cache_capable_of;
 use insert::InsertedMessages;
 use stream::{
     emit_delta, emit_stream_error, save_partial_on_error, spawn_compaction_listener,
