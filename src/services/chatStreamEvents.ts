@@ -4,6 +4,8 @@ import type {
   ChatDeltaPayload,
   ChatStreamStartPayload,
   ChatUserMessageConfirmedPayload,
+  SessionState,
+  SessionStateChangedPayload,
 } from "../chat/core/chatTypes";
 import { ChatEvent } from "../chat/core/chatTypes";
 import {
@@ -27,6 +29,14 @@ interface StreamStartIds {
   conversationId: string;
   attemptId: string;
   messageId: string;
+}
+
+function describeSessionState(state: SessionState): string {
+  if (state === "idle") return "idle";
+  if ("processing" in state) {
+    return `processing(${state.processing.phase},turn=${state.processing.turnId})`;
+  }
+  return `error(${state.error.message},recoverable=${state.error.recoverable})`;
 }
 
 export function subscribeChatStreamEvents(): () => void {
@@ -87,6 +97,26 @@ export function subscribeChatStreamEvents(): () => void {
             payload.userMessageContent,
           );
         }
+      },
+    ),
+  );
+
+  track(
+    listen<SessionStateChangedPayload>(
+      ChatEvent.SessionStateChanged,
+      (event) => {
+        if (disposed) return;
+        const payload = event.payload;
+        if (
+          orchestratorInstance &&
+          orchestratorInstance.getActiveConversationId() !==
+            payload.conversationId
+        ) {
+          return;
+        }
+        log.debug(
+          `session-state turn=${payload.turnId} state=${describeSessionState(payload.state)}`,
+        );
       },
     ),
   );
@@ -161,6 +191,7 @@ export function subscribeChatStreamEvents(): () => void {
           attemptId: payload.attemptId,
           messageId: payload.messageId,
           seq: payload.seq,
+          iteration: payload.iteration,
           deltaText: null,
           deltaReasoning: payload.deltaReasoning,
           usage: payload.usage,

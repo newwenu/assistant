@@ -45,6 +45,7 @@ function makeDelta(input: DeltaInput = {}): ChatDeltaPayload {
     attemptId: "conv-1:1",
     messageId: "msg-1",
     seq: 1,
+    iteration: 1,
     deltaText: null,
     deltaReasoning: null,
     finishReason: null,

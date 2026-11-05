@@ -1,11 +1,12 @@
+mod agent;
 mod agent_mode;
 mod app;
-mod chat;
+pub(crate) mod chat;
 mod clock;
 mod compaction;
 mod config;
 mod conversation;
-mod conversation_utils;
+pub(crate) mod conversation_utils;
 mod mascot_asset;
 mod orb;
 mod os_tool_exec;
@@ -16,6 +17,7 @@ mod tool;
 #[cfg(feature = "vault")]
 pub(crate) mod vault;
 
+pub use agent::*;
 pub use agent_mode::*;
 pub use app::*;
 pub use chat::*;

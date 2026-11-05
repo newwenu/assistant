@@ -18,6 +18,7 @@
   },
   "chat": {
     "empty_content": "Message content cannot be empty",
+    "session_busy": "The conversation is busy, please try again later",
     "new_conversation_title": "New Chat",
     "too_many_images": "Too many images (max {{max}})",
     "too_many_files": "Too many files (max {{max}})",

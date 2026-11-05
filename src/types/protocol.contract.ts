@@ -10,10 +10,18 @@ export type AttachmentDeleteResultDto = { removedCount: number,
  */
 removedBytes: number, };
 export type AttachmentSummary = { attachmentId: string, mediaType: string, bytes: number, createdAt: number, };
-export type ChatDeltaPayloadDto = { conversationId: string, attemptId: string, messageId: string, seq: number, deltaText: string | null, deltaReasoning: string | null, finishReason: string | null, usage: TokenUsageDto | null, deltaRetry: RetryNotificationDto | null, error: ProviderErrorPayloadDto | null, };
+export type ChatDeltaPayloadDto = { conversationId: string, attemptId: string, messageId: string, seq: number, 
+/**
+ * 轮内迭代序号，从 1 起；provider 重试不递增。chat 链路恒为 1。
+ */
+iteration: number, deltaText: string | null, deltaReasoning: string | null, finishReason: string | null, usage: TokenUsageDto | null, deltaRetry: RetryNotificationDto | null, error: ProviderErrorPayloadDto | null, };
 export type ChatMessagesChangedPayloadDto = { conversationId: string, changeKind: MessageChangeKindDto, messages: Array<MessageDto>, activeBranchId: string | null, seq: number | null, };
 export type ChatRegeneratePayloadDto = { conversationId: string, deletedMessageId: string, };
-export type ChatStreamStartPayloadDto = { conversationId: string, attemptId: string, messageId: string, };
+export type ChatStreamStartPayloadDto = { conversationId: string, attemptId: string, messageId: string, 
+/**
+ * 起始 phase；缺省为 `starting`，与内核 `TurnEvent::StreamStart` 同源。
+ */
+phase: TurnPhaseDto, };
 export type ChatUserMessageConfirmedPayloadDto = { conversationId: string, userMessageId: string, userMessageContent: string, };
 export type ClockModeDto = "countdown" | "stopwatch";
 export type ClockSnapshotDto = { mode: ClockModeDto, status: ClockStatusDto, 
@@ -83,6 +91,8 @@ export type RetryNotificationDto = { attempt: number, maxAttempts: number, delay
 export type ScreenRectDto = { x: number, y: number, width: number, height: number, };
 export type ScreenSizeDto = { screen: ScreenRectDto, };
 export type SendChatMessageArgsDto = { content: string, modeId?: string | null, branchPointMessageId?: string | null, providerId: string, modelId: string, reasoningLevel?: string | null, };
+export type SessionStateChangedPayloadDto = { conversationId: string, turnId: string, state: SessionStateDto, };
+export type SessionStateDto = "idle" | { "processing": { turnId: string, phase: TurnPhaseDto, } } | { "error": { message: string, recoverable: boolean, } };
 export type SettingProviderChangedActionDto = "provider-saved" | "provider-deleted";
 export type SettingProviderChangedPayloadDto = { action: SettingProviderChangedActionDto, id: string | null, };
 export type ShortcutWarningPayloadDto = { id: string, binding: string, error: string, };
@@ -127,6 +137,7 @@ cumulative: TokenUsageCumulativeDto | null,
  * 无「具备缓存能力且上报缓存字段」的请求时缺省
  */
 cache: TokenUsageCacheDto | null, };
+export type TurnPhaseDto = "starting" | "compacting" | "thinking" | "streaming" | "toolCalling" | "awaitingApproval" | "finalizing";
 export type VaultCipherAlgorithmDto = "aes256Gcm" | "chacha20Poly1305";
 export type VaultConfDto = { vaultAutoLockMinutes: number, vaultLockOnScreenLock: boolean, vaultClipboardClearSeconds: number, vaultCipherAlgorithm: VaultCipherAlgorithmDto, vaultHibpAutoAudit: boolean, vaultSyncRemoteUrl: string | null, vaultSshAutoAdd: boolean, vaultSshUsePageant: boolean, vaultSshUseOpensshAgent: boolean, vaultSshAuthSockOverride: string, vaultSyncLastAt: number | null, vaultSyncSshHosts: Array<string>, };
 export type WindowModeChangedPayloadDto = { mode: WindowModeDto, };

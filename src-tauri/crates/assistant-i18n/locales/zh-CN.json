@@ -18,6 +18,7 @@
   },
   "chat": {
     "empty_content": "消息内容不能为空",
+    "session_busy": "会话正在处理中，请稍后再试",
     "new_conversation_title": "新对话",
     "too_many_images": "图片数量超过限制（最多 {{max}} 张）",
     "too_many_files": "文件数量超过限制（最多 {{max}} 个）",

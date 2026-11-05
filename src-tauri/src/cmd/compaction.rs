@@ -8,12 +8,12 @@ use crate::protocol::events::{emit_broadcast, emit_orb_only, event_name};
 use crate::protocol::{
     ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto, ChatStreamStartPayloadDto,
     ConversationCompactFailedPayloadDto, ConversationTerminatedPayloadDto,
-    ConversationUnlockedPayloadDto, MessageChangeKindDto, ProviderErrorPayloadDto,
+    ConversationUnlockedPayloadDto, MessageChangeKindDto, ProviderErrorPayloadDto, TurnPhaseDto,
 };
 use assistant_agent::chat_runtime::{
     self, build_usage_records, PartialOutcome, StreamError, UsageRecordCtx,
 };
-use assistant_agent::chat_tasks::ChatTasks;
+use assistant_agent::kernel::{OnBusy, TurnTasks};
 use assistant_agent::prompt_builder;
 use assistant_agent::provider_config::build_provider_config;
 use assistant_crypto::api_key as crypto;
@@ -47,8 +47,8 @@ pub fn manual_compact_conversation(app: AppHandle, conversation_id: String) -> R
     let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
         .ok_or_else(|| "Provider not found".to_string())?;
 
-    let chat_tasks: tauri::State<'_, ChatTasks> = app.state::<ChatTasks>();
-    if chat_tasks.is_running(&conversation_id) {
+    let tasks = app.state::<std::sync::Arc<TurnTasks>>().inner().clone();
+    if tasks.current(&conversation_id).is_some() {
         return Err("Cannot compact while stream is running".to_string());
     }
 
@@ -143,8 +143,10 @@ pub(crate) async fn execute_compaction(
         reasoning_effort: None,
     };
 
-    let chat_tasks = app.state::<ChatTasks>();
-    let (cancel_token, attempt_id) = chat_tasks.start(conversation_id.to_string());
+    let tasks = app.state::<std::sync::Arc<TurnTasks>>().inner().clone();
+    let (attempt_id, cancel_token) = tasks
+        .begin(conversation_id, OnBusy::Replace)
+        .map_err(|_| "Conversation is busy".to_string())?;
 
     let stream = adapter
         .chat_completion_stream(
@@ -193,6 +195,7 @@ pub(crate) async fn execute_compaction(
             conversation_id: conversation_id.to_string(),
             attempt_id: attempt_id.to_string(),
             message_id: summary_msg_id.to_string(),
+            phase: TurnPhaseDto::Streaming,
         },
     );
 
@@ -238,7 +241,7 @@ pub(crate) async fn execute_compaction(
 
     let seq_val = last_seq.load(Ordering::Relaxed);
 
-    chat_tasks.finish(conversation_id);
+    tasks.finish(conversation_id, &attempt_id);
 
     let usage_ctx = UsageRecordCtx {
         conv_id: conversation_id,

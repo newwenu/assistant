@@ -1,6 +1,7 @@
 use assistant_app::protocol::{
     ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto, ConversationDetailDto, ConversationDto,
-    MessageChangeKindDto, MessageDto, ProviderErrorPayloadDto, RetryNotificationDto, TokenUsageDto,
+    MessageChangeKindDto, MessageDto, ProviderErrorPayloadDto, RetryNotificationDto,
+    SessionStateChangedPayloadDto, SessionStateDto, TokenUsageDto, TurnPhaseDto,
 };
 use assistant_providers::base::{ProviderErrorCode, ProviderErrorPayload};
 use assistant_providers::types::chat_delta::{RetryNotification, TokenUsage};
@@ -82,6 +83,7 @@ fn sample_chat_delta_dto() -> ChatDeltaPayloadDto {
         attempt_id: "a".into(),
         message_id: "m".into(),
         seq: 0,
+        iteration: 0,
         delta_text: None,
         delta_reasoning: None,
         finish_reason: None,
@@ -184,6 +186,7 @@ fn chat_delta_payload_dto_round_trip() {
         attempt_id: "a".into(),
         message_id: "m".into(),
         seq: 42,
+        iteration: 2,
         delta_text: Some("hello".into()),
         delta_reasoning: Some("thinking".into()),
         finish_reason: Some("stop".into()),
@@ -198,6 +201,7 @@ fn chat_delta_payload_dto_round_trip() {
     assert_eq!(restored["attemptId"], "a");
     assert_eq!(restored["messageId"], "m");
     assert_eq!(restored["seq"], 42);
+    assert_eq!(restored["iteration"], 2);
     assert_eq!(restored["deltaText"], "hello");
     assert_eq!(restored["deltaReasoning"], "thinking");
     assert_eq!(restored["finishReason"], "stop");
@@ -344,4 +348,87 @@ fn token_usage_dto_round_trip() {
     assert_eq!(usage.cache_read_tokens, restored.cache_read_tokens);
     assert_eq!(usage.cache_write_tokens, restored.cache_write_tokens);
     assert_eq!(usage.context_window_tokens, restored.context_window_tokens);
+}
+
+#[test]
+fn turn_phase_dto_serializes_identically_to_kernel_turn_phase() {
+    use assistant_agent::kernel::TurnPhase;
+
+    let pairs = [
+        (TurnPhase::Starting, TurnPhaseDto::Starting),
+        (TurnPhase::Compacting, TurnPhaseDto::Compacting),
+        (TurnPhase::Thinking, TurnPhaseDto::Thinking),
+        (TurnPhase::Streaming, TurnPhaseDto::Streaming),
+        (TurnPhase::ToolCalling, TurnPhaseDto::ToolCalling),
+        (TurnPhase::AwaitingApproval, TurnPhaseDto::AwaitingApproval),
+        (TurnPhase::Finalizing, TurnPhaseDto::Finalizing),
+    ];
+
+    for (kernel, dto) in pairs {
+        assert_eq!(
+            serde_json::to_value(kernel).unwrap(),
+            serde_json::to_value(dto).unwrap(),
+            "wire value drifted from kernel for {kernel:?}"
+        );
+        assert_eq!(TurnPhaseDto::from(kernel), dto, "From mapping drifted");
+    }
+}
+
+#[test]
+fn session_state_changed_payload_wire_shape() {
+    let processing = SessionStateChangedPayloadDto {
+        conversation_id: "c1".into(),
+        turn_id: "t1".into(),
+        state: SessionStateDto::Processing {
+            turn_id: "t1".into(),
+            phase: TurnPhaseDto::ToolCalling,
+        },
+    };
+    let v = serde_json::to_value(&processing).unwrap();
+
+    assert_eq!(v["conversationId"], "c1");
+    assert_eq!(v["turnId"], "t1");
+    assert_eq!(v["state"]["processing"]["turnId"], "t1");
+    assert_eq!(v["state"]["processing"]["phase"], "toolCalling");
+    assert!(
+        v.get("seq").is_none(),
+        "session-state-changed is a snapshot, not a stream fragment: {v}"
+    );
+
+    let idle = serde_json::to_value(SessionStateDto::Idle).unwrap();
+    assert_eq!(idle, "idle", "unit variant must serialize as bare string");
+
+    let error = serde_json::to_value(SessionStateDto::Error {
+        message: "boom".into(),
+        recoverable: true,
+    })
+    .unwrap();
+    assert_eq!(error["error"]["message"], "boom");
+    assert_eq!(error["error"]["recoverable"], true);
+}
+
+#[test]
+fn session_state_dto_round_trips_through_json() {
+    let states = [
+        SessionStateDto::Idle,
+        SessionStateDto::Processing {
+            turn_id: "t1".into(),
+            phase: TurnPhaseDto::Finalizing,
+        },
+        SessionStateDto::Error {
+            message: "boom".into(),
+            recoverable: false,
+        },
+    ];
+
+    for state in states {
+        let payload = SessionStateChangedPayloadDto {
+            conversation_id: "c1".into(),
+            turn_id: "t1".into(),
+            state,
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        let restored: SessionStateChangedPayloadDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, payload, "round-trip failed for {json}");
+    }
 }

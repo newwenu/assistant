@@ -42,6 +42,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         cmd::patch_conversation,
         cmd::send_chat_message,
         cmd::cancel_chat,
+        cmd::send_agent_message,
+        cmd::cancel_agent,
         cmd::delete_message_persist,
         cmd::get_message_subtree_size,
         cmd::search_conversations,

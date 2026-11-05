@@ -392,6 +392,9 @@ pub struct ChatDeltaPayloadDto {
     pub attempt_id: String,
     pub message_id: String,
     pub seq: u32,
+    /// 轮内迭代序号，从 1 起；provider 重试不递增。chat 链路恒为 1。
+    #[serde(default)]
+    pub iteration: u32,
     pub delta_text: Option<String>,
     pub delta_reasoning: Option<String>,
     pub finish_reason: Option<String>,
@@ -406,6 +409,82 @@ pub struct ChatStreamStartPayloadDto {
     pub conversation_id: String,
     pub attempt_id: String,
     pub message_id: String,
+    /// 起始 phase；缺省为 `starting`，与内核 `TurnEvent::StreamStart` 同源。
+    #[serde(default)]
+    pub phase: TurnPhaseDto,
+}
+
+/// 与内核 `TurnPhase` 同源：`From` 用穷尽 `match`，内核新增 phase 时此处编译失败。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum TurnPhaseDto {
+    #[default]
+    Starting,
+    Compacting,
+    Thinking,
+    Streaming,
+    ToolCalling,
+    AwaitingApproval,
+    Finalizing,
+}
+
+impl From<assistant_agent::kernel::TurnPhase> for TurnPhaseDto {
+    fn from(phase: assistant_agent::kernel::TurnPhase) -> Self {
+        use assistant_agent::kernel::TurnPhase;
+        match phase {
+            TurnPhase::Starting => Self::Starting,
+            TurnPhase::Compacting => Self::Compacting,
+            TurnPhase::Thinking => Self::Thinking,
+            TurnPhase::Streaming => Self::Streaming,
+            TurnPhase::ToolCalling => Self::ToolCalling,
+            TurnPhase::AwaitingApproval => Self::AwaitingApproval,
+            TurnPhase::Finalizing => Self::Finalizing,
+        }
+    }
+}
+
+/// 与内核 `SessionState` 同源（封闭集合）；同样用穷尽 `match` 保证不漏变体。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum SessionStateDto {
+    Idle,
+    Processing {
+        turn_id: String,
+        phase: TurnPhaseDto,
+    },
+    Error {
+        message: String,
+        recoverable: bool,
+    },
+}
+
+impl From<assistant_agent::kernel::SessionState> for SessionStateDto {
+    fn from(state: assistant_agent::kernel::SessionState) -> Self {
+        use assistant_agent::kernel::SessionState;
+        match state {
+            SessionState::Idle => Self::Idle,
+            SessionState::Processing { turn_id, phase } => Self::Processing {
+                turn_id,
+                phase: phase.into(),
+            },
+            SessionState::Error {
+                message,
+                recoverable,
+            } => Self::Error {
+                message,
+                recoverable,
+            },
+        }
+    }
+}
+
+/// 状态快照载荷：不带 `seq`（它不是流片段）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionStateChangedPayloadDto {
+    pub conversation_id: String,
+    pub turn_id: String,
+    pub state: SessionStateDto,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]

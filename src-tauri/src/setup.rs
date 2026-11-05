@@ -51,6 +51,17 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             let db_path = data_dir.join("assistant.db");
             match db::init_db(&db_path) {
                 Ok(conn) => {
+                    match assistant_storage::conversations::mark_streaming_messages_interrupted(
+                        &conn,
+                    ) {
+                        Ok(0) => {}
+                        Ok(count) => {
+                            log::warn!("startup sweep: {count} streaming messages -> interrupted");
+                        }
+                        Err(e) => {
+                            log::warn!("startup sweep failed: {e}");
+                        }
+                    }
                     handle.manage(DbState(std::sync::Mutex::new(conn)));
                 }
                 Err(e) => {
@@ -86,7 +97,8 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    handle.manage(assistant_agent::chat_tasks::ChatTasks::new());
+    handle.manage(Arc::new(assistant_agent::kernel::TurnTasks::new()));
+    handle.manage(Arc::new(assistant_agent::kernel::SessionStates::new()));
     handle.manage(std::sync::Arc::new(crate::clock::ClockRuntime::new()));
 
     {

@@ -16,12 +16,15 @@ import type {
   MessageDto,
   RetryNotificationDto,
   SendChatMessageArgsDto,
+  SessionStateChangedPayloadDto,
+  SessionStateDto,
   SiblingInfoDto,
   TokenUsageCacheDto,
   TokenUsageCumulativeDto,
   TokenUsageDto,
   TokenUsageOccupancyDto,
   TokenUsageSummaryDto,
+  TurnPhaseDto,
 } from "../../types/protocol.contract";
 
 /** 线格式 Message；`error` 是前端本地状态，不属于后端 DTO。 */
@@ -77,6 +80,10 @@ export type ChatRegeneratePayload = ChatRegeneratePayloadDto;
 
 export type SiblingInfo = SiblingInfoDto;
 
+export type TurnPhase = TurnPhaseDto;
+export type SessionState = SessionStateDto;
+export type SessionStateChangedPayload = SessionStateChangedPayloadDto;
+
 export enum ChatEvent {
   StreamStart = "chat-stream-start",
   UserMessageConfirmed = "chat-user-message-confirmed",
@@ -86,6 +93,7 @@ export enum ChatEvent {
   ConversationTerminated = "conversation-terminated",
   ConversationCompactFailed = "conversation-compact-failed",
   ConversationUnlocked = "conversation-unlocked",
+  SessionStateChanged = "session-state-changed",
 }
 
 export type MessageChangeKind = MessageChangeKindDto;

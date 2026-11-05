@@ -2,6 +2,7 @@ pub mod event_name {
     pub const CHAT_MESSAGES_CHANGED: &str = "chat-messages-changed";
     pub const CHAT_DELTA: &str = "chat-delta";
     pub const CHAT_STREAM_START: &str = "chat-stream-start";
+    pub const SESSION_STATE_CHANGED: &str = "session-state-changed";
     pub const CHAT_USER_MESSAGE_CONFIRMED: &str = "chat-user-message-confirmed";
     pub const CONVERSATION_LIST_CHANGED: &str = "conversation-list-changed";
     pub const CONVERSATION_TERMINATED: &str = "conversation-terminated";

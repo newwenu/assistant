@@ -214,6 +214,7 @@ dependencies = [
  "assistant-sync",
  "assistant-tools",
  "assistant-vault",
+ "async-trait",
  "chrono",
  "csv",
  "futures",

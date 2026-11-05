@@ -88,6 +88,7 @@ describe("protocol DTO — camelCase contract", () => {
       attemptId: "a",
       messageId: "m",
       seq: 0,
+      iteration: 1,
       deltaText: "hi",
       deltaReasoning: null,
       finishReason: null,
@@ -111,6 +112,7 @@ describe("protocol DTO — camelCase contract", () => {
       conversationId: "c",
       attemptId: "a",
       messageId: "m",
+      phase: "starting",
     };
     expect(payload).toHaveProperty("conversationId");
     expect(payload).toHaveProperty("attemptId");
