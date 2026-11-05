@@ -56,6 +56,35 @@ pub fn update_message_content(
     Ok(())
 }
 
+/// 写 `messages.status`；取值由调用方给出（`streaming` / `completed` / `interrupted` / `failed`）。
+pub fn update_message_status(conn: &Connection, id: &str, status: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE messages SET status = ?2 WHERE id = ?1",
+        params![id, status],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 启动清扫：上一进程未收尾的流式消息一律标记为 `interrupted`，返回受影响行数。
+pub fn mark_streaming_messages_interrupted(conn: &Connection) -> Result<usize, String> {
+    conn.execute(
+        "UPDATE messages SET status = 'interrupted' WHERE status = 'streaming'",
+        [],
+    )
+    .map_err(|e| e.to_string())
+}
+
+pub fn get_message_status(conn: &Connection, id: &str) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT status FROM messages WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
 pub fn get_messages_paginated(
     conn: &Connection,
     conversation_id: &str,

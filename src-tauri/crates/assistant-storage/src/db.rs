@@ -56,7 +56,8 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             reasoning TEXT,
             tool_calls_json TEXT,
             provider_id TEXT,
-            model_id TEXT
+            model_id TEXT,
+            status TEXT NOT NULL DEFAULT 'completed'
         );
 
         CREATE TABLE IF NOT EXISTS tool_favorites (
@@ -173,6 +174,22 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             conn.execute_batch("ALTER TABLE messages ADD COLUMN model_id TEXT;")
                 .map_err(|e| e.to_string())?;
             info!("Added model_id column to messages table");
+        }
+
+        let has_status: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'status'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())?
+            > 0;
+        if !has_status {
+            conn.execute_batch(
+                "ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';",
+            )
+            .map_err(|e| e.to_string())?;
+            info!("Added status column to messages table");
         }
 
         #[allow(unused)]

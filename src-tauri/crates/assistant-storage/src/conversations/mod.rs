@@ -122,9 +122,10 @@ pub use crud::{
     update_conversation,
 };
 pub use msg_ops::{
-    get_conversation_id_by_message, get_message_by_id, get_message_count, get_messages,
-    get_messages_paginated, get_sibling_count, get_sibling_counts_batch, insert_message,
-    update_message_content,
+    get_conversation_id_by_message, get_message_by_id, get_message_count, get_message_status,
+    get_messages, get_messages_paginated, get_sibling_count, get_sibling_counts_batch,
+    insert_message, mark_streaming_messages_interrupted, update_message_content,
+    update_message_status,
 };
 pub use ops::{
     batch_delete, duplicate_conversation, export_conversation_json, export_conversation_markdown,

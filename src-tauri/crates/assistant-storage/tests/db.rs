@@ -109,3 +109,98 @@ fn init_db_cascade_deletes_messages() {
         "CASCADE should delete messages when conversation is deleted"
     );
 }
+
+#[test]
+fn init_db_creates_messages_status_column() {
+    let (conn, _dir) = init_temp_db();
+    let has_status: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'status'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(has_status, 1, "fresh db must have messages.status");
+}
+
+#[test]
+fn init_db_adds_status_column_to_legacy_messages_table() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("legacy.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO app_settings (key, value) VALUES ('schema_version', '1');
+             CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tokens INTEGER,
+                timestamp INTEGER NOT NULL,
+                parent_id TEXT,
+                sibling_index INTEGER NOT NULL DEFAULT 0,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                reasoning TEXT,
+                tool_calls_json TEXT,
+                provider_id TEXT,
+                model_id TEXT
+             );
+             INSERT INTO messages (id, conversation_id, role, content, timestamp)
+                 VALUES ('m1','c1','assistant','hello',0);",
+        )
+        .unwrap();
+    }
+
+    let conn = db::init_db(&db_path).unwrap();
+    let has_status: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'status'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(has_status, 1, "legacy db must gain messages.status");
+
+    let status: String = conn
+        .query_row("SELECT status FROM messages WHERE id = 'm1'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(status, "completed", "existing rows default to completed");
+}
+
+#[test]
+fn restart_sweep_marks_streaming_message_interrupted() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("restart.db");
+    {
+        let conn = db::init_db(&db_path).unwrap();
+        conn.execute(
+            "INSERT INTO conversations (id,title,title_source,model_id,created_at,updated_at)
+             VALUES ('c1','t','placeholder','m',0,0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO messages (id,conversation_id,role,content,timestamp)
+             VALUES ('m1','c1','assistant','partial',0)",
+            [],
+        )
+        .unwrap();
+        assistant_storage::conversations::update_message_status(&conn, "m1", "streaming").unwrap();
+    }
+
+    let conn = db::init_db(&db_path).unwrap();
+    let swept =
+        assistant_storage::conversations::mark_streaming_messages_interrupted(&conn).unwrap();
+    assert_eq!(swept, 1, "重启后必须清扫残留的 streaming 消息");
+
+    let status: String = conn
+        .query_row("SELECT status FROM messages WHERE id = 'm1'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(status, "interrupted");
+}

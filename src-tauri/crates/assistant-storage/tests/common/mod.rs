@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use assistant_storage::conversations::{ConversationRow, MessageRow};
 use assistant_storage::db;
 use assistant_storage::providers::ProviderRow;

@@ -510,6 +510,90 @@ fn fork_to_new_conversation_copies_active_branch() {
 }
 
 #[test]
+fn inserted_messages_default_to_completed_status() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("m1", "c1", "user", "hi", 100)).unwrap();
+
+    assert_eq!(
+        conversations::get_message_status(&conn, "m1").unwrap(),
+        Some("completed".to_string())
+    );
+}
+
+#[test]
+fn update_message_status_roundtrips_all_values() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("m1", "c1", "assistant", "", 100)).unwrap();
+
+    for status in ["streaming", "interrupted", "failed", "completed"] {
+        conversations::update_message_status(&conn, "m1", status).unwrap();
+        assert_eq!(
+            conversations::get_message_status(&conn, "m1").unwrap(),
+            Some(status.to_string())
+        );
+    }
+}
+
+#[test]
+fn update_message_status_unknown_id_is_noop() {
+    let conn = init_db();
+    conversations::update_message_status(&conn, "missing", "failed").unwrap();
+    assert_eq!(
+        conversations::get_message_status(&conn, "missing").unwrap(),
+        None
+    );
+}
+
+#[test]
+fn startup_sweep_marks_only_streaming_messages_interrupted() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("m1", "c1", "user", "hi", 100)).unwrap();
+    conversations::insert_message(&conn, &msg("m2", "c1", "assistant", "", 200)).unwrap();
+    conversations::insert_message(&conn, &msg("m3", "c1", "assistant", "done", 300)).unwrap();
+    conversations::update_message_status(&conn, "m2", "streaming").unwrap();
+
+    let swept = conversations::mark_streaming_messages_interrupted(&conn).unwrap();
+
+    assert_eq!(swept, 1);
+    assert_eq!(
+        conversations::get_message_status(&conn, "m2").unwrap(),
+        Some("interrupted".to_string())
+    );
+    assert_eq!(
+        conversations::get_message_status(&conn, "m1").unwrap(),
+        Some("completed".to_string())
+    );
+    assert_eq!(
+        conversations::get_message_status(&conn, "m3").unwrap(),
+        Some("completed".to_string())
+    );
+}
+
+#[test]
+fn startup_sweep_is_idempotent() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("m1", "c1", "assistant", "", 100)).unwrap();
+    conversations::update_message_status(&conn, "m1", "streaming").unwrap();
+
+    assert_eq!(
+        conversations::mark_streaming_messages_interrupted(&conn).unwrap(),
+        1
+    );
+    assert_eq!(
+        conversations::mark_streaming_messages_interrupted(&conn).unwrap(),
+        0
+    );
+    assert_eq!(
+        conversations::get_message_status(&conn, "m1").unwrap(),
+        Some("interrupted".to_string())
+    );
+}
+
+#[test]
 fn fork_preserves_parent_chain_in_new_conversation() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();
