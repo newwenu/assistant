@@ -37,7 +37,7 @@ fn agent_spec_field_values() {
     let spec = TurnSpec::agent();
     assert_eq!(spec.on_busy, OnBusy::Reject);
     assert_eq!(spec.max_iterations, 12);
-    assert!(spec.tools.is_some());
+    assert!(spec.tools.is_none());
     assert_eq!(spec.ladder, LadderPolicy::Full);
     assert!(spec.stop_hooks.is_empty());
     assert!(spec.wrap_up);

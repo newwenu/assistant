@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
+use crate::agent::tool_event::ToolEvent;
+
 use super::ids::TurnId;
 use super::outcome::TurnStatus;
 use super::phase::TurnPhase;
@@ -93,20 +95,8 @@ impl TurnEmitter {
         self.seq.load(Ordering::SeqCst)
     }
 
-    pub fn tool_started(&self, call_id: impl Into<String>, name: impl Into<String>) {
-        self.dispatch(TurnEvent::ToolStarted {
-            turn_id: self.turn_id.clone(),
-            call_id: call_id.into(),
-            name: name.into(),
-        });
-    }
-
-    pub fn tool_finished(&self, call_id: impl Into<String>, ok: bool) {
-        self.dispatch(TurnEvent::ToolFinished {
-            turn_id: self.turn_id.clone(),
-            call_id: call_id.into(),
-            ok,
-        });
+    pub fn tool_event(&self, event: ToolEvent) {
+        self.dispatch(TurnEvent::Tool(event));
     }
 
     pub fn compaction_started(&self) {

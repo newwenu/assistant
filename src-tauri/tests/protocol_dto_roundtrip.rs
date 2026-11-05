@@ -1,14 +1,14 @@
 use assistant_app::protocol::{
     AgentModeDto, AgentModeKindDto, ChatDeltaPayloadDto, ChatRegeneratePayloadDto,
-    ChatStreamStartPayloadDto, ConversationCompactFailedPayloadDto, ConversationDetailDto,
-    ConversationDto, ConversationPatchDto, ConversationQueryModeDto, ConversationQueryOptsDto,
-    ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto, InstallMascotAssetResultDto,
-    MessageDto, ModelConfigDto, MousePositionDto, OsToolExecRequestDto, OsToolResultDto,
-    ProviderErrorCodeDto, ProviderErrorPayloadDto, ProviderListDto, ReasoningLevelsDto,
-    RetryNotificationDto, ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto,
-    SessionStateChangedPayloadDto, SessionStateDto, SettingProviderChangedActionDto,
-    SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto, ThemeChangedPayloadDto,
-    TokenUsageDto, ToolErrorKindDto, TurnPhaseDto,
+    ChatStreamStartPayloadDto, ConversationDetailDto, ConversationDto, ConversationPatchDto,
+    ConversationQueryModeDto, ConversationQueryOptsDto, ConversationTerminatedPayloadDto,
+    ConversationUnlockedPayloadDto, InstallMascotAssetResultDto, MessageDto, ModelConfigDto,
+    MousePositionDto, OsToolExecRequestDto, OsToolResultDto, ProviderErrorCodeDto,
+    ProviderErrorPayloadDto, ProviderListDto, ReasoningLevelsDto, RetryNotificationDto,
+    ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto, SessionStateChangedPayloadDto,
+    SessionStateDto, SettingProviderChangedActionDto, SettingProviderChangedPayloadDto,
+    ShortcutWarningPayloadDto, ThemeChangedPayloadDto, TokenUsageDto, ToolErrorKindDto,
+    TurnPhaseDto,
 };
 use serde::{Deserialize, Serialize};
 
@@ -209,16 +209,9 @@ fn event_payload_dtos_roundtrip() {
 
     let terminated = ConversationTerminatedPayloadDto {
         conversation_id: "c1".into(),
-        summary: "summary".into(),
         is_full: true,
     };
     roundtrip(&terminated);
-
-    let compact_failed = ConversationCompactFailedPayloadDto {
-        conversation_id: "c1".into(),
-        error: "err".into(),
-    };
-    roundtrip(&compact_failed);
 
     let unlocked = ConversationUnlockedPayloadDto {
         conversation_id: "c1".into(),

@@ -5,7 +5,6 @@ import type {
   ChatRegeneratePayloadDto,
   ChatStreamStartPayloadDto,
   ChatUserMessageConfirmedPayloadDto,
-  ConversationCompactFailedPayloadDto,
   ConversationDetailDto,
   ConversationDto,
   ConversationListChangeKindDto,
@@ -73,8 +72,6 @@ export type ChatStreamStartPayload = ChatStreamStartPayloadDto;
 export type ChatUserMessageConfirmedPayload =
   ChatUserMessageConfirmedPayloadDto;
 export type ConversationTerminatedPayload = ConversationTerminatedPayloadDto;
-export type ConversationCompactFailedPayload =
-  ConversationCompactFailedPayloadDto;
 export type ConversationUnlockedPayload = ConversationUnlockedPayloadDto;
 export type ChatRegeneratePayload = ChatRegeneratePayloadDto;
 
@@ -91,7 +88,6 @@ export enum ChatEvent {
   MessagesChanged = "chat-messages-changed",
   ConversationListChanged = "conversation-list-changed",
   ConversationTerminated = "conversation-terminated",
-  ConversationCompactFailed = "conversation-compact-failed",
   ConversationUnlocked = "conversation-unlocked",
   SessionStateChanged = "session-state-changed",
 }

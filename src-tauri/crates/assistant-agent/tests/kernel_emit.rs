@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use assistant_agent::agent::tool_event::ToolEvent;
 use assistant_agent::kernel::ports::test_doubles::{
     FixedClock, FixtureSource, InMemoryStore, RecordingSink, ScriptedAdapter, ScriptedResponse,
 };
@@ -42,6 +43,8 @@ fn fixture_input(conversation_id: &str, adapter: Arc<dyn BaseProviderAdapter>) -
         sibling_index: 0,
         provider_id: None,
         model_id: None,
+        tool_call_id: None,
+        is_error: false,
     }];
     let provider = assistant_agent::kernel::ProviderCredential {
         row: ProviderRow {
@@ -108,8 +111,7 @@ fn event_turn_id(event: &TurnEvent) -> Option<&str> {
         TurnEvent::StreamStart { turn_id, .. }
         | TurnEvent::Delta { turn_id, .. }
         | TurnEvent::PhaseChanged { turn_id, .. }
-        | TurnEvent::ToolStarted { turn_id, .. }
-        | TurnEvent::ToolFinished { turn_id, .. }
+        | TurnEvent::Tool(ToolEvent { turn_id, .. })
         | TurnEvent::CompactionStarted { turn_id }
         | TurnEvent::CompactionFinished { turn_id, .. }
         | TurnEvent::Terminated { turn_id, .. } => Some(turn_id),

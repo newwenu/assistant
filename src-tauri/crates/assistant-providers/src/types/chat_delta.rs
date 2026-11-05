@@ -20,6 +20,12 @@ pub struct ChatDelta {
     pub delta_tool_call_id: Option<String>,
     pub delta_tool_call_name: Option<String>,
     pub delta_tool_call_arguments: Option<String>,
+    /// 流内分组序号；缺失时累积器视作单槽。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta_tool_call_index: Option<usize>,
+    /// `delta_tool_call_arguments` 是否为完整快照（Gemini 语义）而非增量片段。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub delta_tool_call_arguments_is_snapshot: bool,
     pub finish_reason: Option<String>,
     pub usage: Option<TokenUsage>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -157,6 +163,8 @@ fn unified_response_into_chat_deltas(
             delta_tool_call_id: None,
             delta_tool_call_name: None,
             delta_tool_call_arguments: None,
+            delta_tool_call_index: None,
+            delta_tool_call_arguments_is_snapshot: false,
             finish_reason: None,
             usage,
             delta_retry: None,
@@ -179,6 +187,8 @@ fn unified_response_into_chat_deltas(
             delta_tool_call_id: tc.id,
             delta_tool_call_name: tc.name,
             delta_tool_call_arguments: tc.arguments,
+            delta_tool_call_index: tc.tool_call_index,
+            delta_tool_call_arguments_is_snapshot: tc.arguments_is_snapshot,
             finish_reason: None,
             usage,
             delta_retry: None,
@@ -204,6 +214,8 @@ fn unified_response_into_chat_deltas(
                 delta_tool_call_id: None,
                 delta_tool_call_name: None,
                 delta_tool_call_arguments: None,
+                delta_tool_call_index: None,
+                delta_tool_call_arguments_is_snapshot: false,
                 finish_reason: response.finish_reason,
                 usage: response
                     .usage

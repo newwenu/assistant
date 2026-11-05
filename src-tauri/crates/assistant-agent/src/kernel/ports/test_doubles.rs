@@ -5,15 +5,22 @@ use assistant_providers::base::{
     BaseProviderAdapter, ChatDelta, ChatMessage, ChatOptions, ChatStream, ModelConfig,
     ProviderConfig, ProviderError, ProviderKind,
 };
+use assistant_providers::types::ToolSpec;
 use assistant_storage::attachment_store::AttachmentStore;
 use assistant_storage::conversations::{ConversationDetail, ConversationRow, MessageRow};
 use assistant_storage::providers::ProviderRow;
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
+use crate::agent::round_executor::{
+    ToolErrorClass, ToolExecCtx, ToolExecResult, ToolExecutionPort, ToolStage,
+};
+use crate::agent::tool_call::FinalizedToolCall;
+
 use super::{
-    Clock, CreateAssistantReq, EventSink, InputError, MessageStatus, MessageStore,
-    ProviderCredential, StoreError, TurnEvent, TurnInput, TurnInputSource, UsageRecord,
+    AppendToolMessageReq, Clock, CreateAssistantReq, EventSink, InputError, MessageStatus,
+    MessageStore, ProviderCredential, StoreError, ToolCatalog, TurnEvent, TurnInput,
+    TurnInputSource, UsageRecord,
 };
 
 #[derive(Default)]
@@ -75,11 +82,26 @@ pub enum StoreCall {
     Save(String),
     Finalize(String, MessageStatus),
     Usage(usize),
+    SaveToolCalls(String, String),
+    AppendTool(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayMessage {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub parent_id: Option<String>,
+    pub tool_calls_json: Option<String>,
+    pub tool_call_id: Option<String>,
+    pub is_error: bool,
+    pub timestamp: i64,
 }
 
 #[derive(Default)]
 pub struct InMemoryStore {
     calls: Mutex<Vec<StoreCall>>,
+    messages: Mutex<Vec<ReplayMessage>>,
     /// 注入后所有写操作立即失败。
     fail: bool,
     next_id: Mutex<u32>,
@@ -101,11 +123,32 @@ impl InMemoryStore {
         self.lock_calls().clone()
     }
 
+    /// 已写入的行，按写入顺序；用于「写入 → 读回 → 重建 wire 形状」断言。
+    pub fn replay_messages(&self) -> Vec<ReplayMessage> {
+        self.lock_messages().clone()
+    }
+
     fn lock_calls(&self) -> std::sync::MutexGuard<'_, Vec<StoreCall>> {
         match self.calls.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         }
+    }
+
+    fn lock_messages(&self) -> std::sync::MutexGuard<'_, Vec<ReplayMessage>> {
+        match self.messages.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    fn next_id(&self) -> u32 {
+        let mut next = match self.next_id.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *next += 1;
+        *next
     }
 
     fn push(&self, call: StoreCall) -> Result<(), StoreError> {
@@ -124,25 +167,60 @@ impl MessageStore for InMemoryStore {
         &self,
         req: CreateAssistantReq,
     ) -> Result<String, StoreError> {
-        let mut next = match self.next_id.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        *next += 1;
-        let id = format!("{}:assistant:{}", req.conversation_id, *next);
-        drop(next);
+        let id = format!("{}:assistant:{}", req.conversation_id, self.next_id());
         self.push(StoreCall::Create(id.clone()))?;
+        self.lock_messages().push(ReplayMessage {
+            id: id.clone(),
+            role: "assistant".to_string(),
+            content: String::new(),
+            parent_id: req.parent_id.clone(),
+            tool_calls_json: None,
+            tool_call_id: None,
+            is_error: false,
+            timestamp: 0,
+        });
         Ok(id)
     }
 
     async fn save_content(
         &self,
         msg_id: &str,
-        _content: &str,
+        content: &str,
         _tokens: Option<u32>,
         _reasoning: Option<&str>,
     ) -> Result<(), StoreError> {
-        self.push(StoreCall::Save(msg_id.to_string()))
+        self.push(StoreCall::Save(msg_id.to_string()))?;
+        if let Some(msg) = self.lock_messages().iter_mut().find(|msg| msg.id == msg_id) {
+            msg.content = content.to_string();
+        }
+        Ok(())
+    }
+
+    async fn save_tool_calls(&self, msg_id: &str, tool_calls_json: &str) -> Result<(), StoreError> {
+        self.push(StoreCall::SaveToolCalls(
+            msg_id.to_string(),
+            tool_calls_json.to_string(),
+        ))?;
+        if let Some(msg) = self.lock_messages().iter_mut().find(|msg| msg.id == msg_id) {
+            msg.tool_calls_json = Some(tool_calls_json.to_string());
+        }
+        Ok(())
+    }
+
+    async fn append_tool_message(&self, req: AppendToolMessageReq) -> Result<String, StoreError> {
+        let id = format!("{}:tool:{}", req.conversation_id, self.next_id());
+        self.push(StoreCall::AppendTool(id.clone()))?;
+        self.lock_messages().push(ReplayMessage {
+            id: id.clone(),
+            role: "tool".to_string(),
+            content: req.content,
+            parent_id: Some(req.parent_id),
+            tool_calls_json: None,
+            tool_call_id: Some(req.tool_call_id),
+            is_error: req.is_error,
+            timestamp: req.timestamp,
+        });
+        Ok(id)
     }
 
     async fn finalize(&self, msg_id: &str, status: MessageStatus) -> Result<(), StoreError> {
@@ -151,6 +229,103 @@ impl MessageStore for InMemoryStore {
 
     async fn record_usage(&self, records: &[UsageRecord]) -> Result<(), StoreError> {
         self.push(StoreCall::Usage(records.len()))
+    }
+}
+
+pub struct StaticToolCatalog {
+    tools: Vec<ToolSpec>,
+}
+
+impl StaticToolCatalog {
+    pub fn new(tools: Vec<ToolSpec>) -> Self {
+        Self { tools }
+    }
+
+    pub fn empty() -> Self {
+        Self { tools: Vec::new() }
+    }
+}
+
+#[async_trait]
+impl ToolCatalog for StaticToolCatalog {
+    async fn agent_tools(&self) -> Vec<ToolSpec> {
+        self.tools.clone()
+    }
+}
+
+pub struct ScriptedToolExec {
+    results: Mutex<Vec<ToolExecResult>>,
+    calls: Mutex<Vec<FinalizedToolCall>>,
+    deny_all: bool,
+}
+
+impl ScriptedToolExec {
+    pub fn new(results: Vec<ToolExecResult>) -> Self {
+        Self {
+            results: Mutex::new(results),
+            calls: Mutex::new(Vec::new()),
+            deny_all: false,
+        }
+    }
+
+    pub fn denied() -> Self {
+        Self {
+            deny_all: true,
+            ..Self::new(Vec::new())
+        }
+    }
+
+    pub fn recorded_calls(&self) -> Vec<FinalizedToolCall> {
+        match self.calls.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+}
+
+#[async_trait]
+impl ToolExecutionPort for ScriptedToolExec {
+    async fn execute(
+        &self,
+        calls: Vec<FinalizedToolCall>,
+        _ctx: &ToolExecCtx<'_>,
+    ) -> Vec<ToolExecResult> {
+        match self.calls.lock() {
+            Ok(mut guard) => guard.extend(calls.iter().cloned()),
+            Err(poisoned) => poisoned.into_inner().extend(calls.iter().cloned()),
+        }
+        let mut scripted = match self.results.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        calls
+            .into_iter()
+            .map(|call| {
+                if !scripted.is_empty() {
+                    return scripted.remove(0);
+                }
+                if self.deny_all {
+                    return ToolExecResult {
+                        call_id: call.tool_id,
+                        tool_name: call.tool_name,
+                        content: "denied".to_string(),
+                        is_error: true,
+                        stage: ToolStage::Gateway,
+                        error_kind: Some(ToolErrorClass::Denied),
+                        confirmation_wait_ms: None,
+                    };
+                }
+                ToolExecResult {
+                    call_id: call.tool_id,
+                    tool_name: call.tool_name,
+                    content: String::new(),
+                    is_error: false,
+                    stage: ToolStage::Execute,
+                    error_kind: None,
+                    confirmation_wait_ms: None,
+                }
+            })
+            .collect()
     }
 }
 

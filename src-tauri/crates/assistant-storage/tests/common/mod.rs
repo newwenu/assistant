@@ -48,6 +48,8 @@ pub fn msg(id: &str, conv_id: &str, role: &str, content: &str, ts: i64) -> Messa
         sibling_index: 0,
         provider_id: None,
         model_id: None,
+        tool_call_id: None,
+        is_error: false,
     }
 }
 
@@ -74,6 +76,8 @@ pub fn msg_with_parent(
         sibling_index,
         provider_id: None,
         model_id: None,
+        tool_call_id: None,
+        is_error: false,
     }
 }
 

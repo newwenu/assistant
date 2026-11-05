@@ -12,6 +12,8 @@ pub struct ChatOptions {
     pub reasoning_enabled: Option<bool>,
     #[serde(default)]
     pub reasoning_effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<super::tool::ToolSpec>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

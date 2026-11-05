@@ -57,7 +57,9 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             tool_calls_json TEXT,
             provider_id TEXT,
             model_id TEXT,
-            status TEXT NOT NULL DEFAULT 'completed'
+            status TEXT NOT NULL DEFAULT 'completed',
+            tool_call_id TEXT,
+            is_error INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS tool_favorites (
@@ -190,6 +192,36 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             )
             .map_err(|e| e.to_string())?;
             info!("Added status column to messages table");
+        }
+
+        let has_tool_call_id: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'tool_call_id'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())?
+            > 0;
+        if !has_tool_call_id {
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN tool_call_id TEXT;")
+                .map_err(|e| e.to_string())?;
+            info!("Added tool_call_id column to messages table");
+        }
+
+        let has_is_error: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'is_error'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())?
+            > 0;
+        if !has_is_error {
+            conn.execute_batch(
+                "ALTER TABLE messages ADD COLUMN is_error INTEGER NOT NULL DEFAULT 0;",
+            )
+            .map_err(|e| e.to_string())?;
+            info!("Added is_error column to messages table");
         }
 
         #[allow(unused)]

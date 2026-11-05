@@ -1,9 +1,12 @@
-use log::{error, warn};
-use serde_json::Value;
 use std::collections::BTreeMap;
 
-use crate::types::unified::UnifiedResponse;
+use assistant_providers::types::unified::UnifiedResponse;
+use log::{error, warn};
+use serde_json::Value;
 
+use assistant_providers::base::ChatDelta;
+
+/// 触发终结的边界，只用于日志与测试断言。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolCallBoundary {
     NewTool,
@@ -11,7 +14,8 @@ pub enum ToolCallBoundary {
     StreamEnd,
 }
 
-#[derive(Debug, Clone, Default)]
+/// 累积完成的工具调用。`arguments` 已解析，`raw_arguments` 保留原始文本。
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct FinalizedToolCall {
     pub tool_id: String,
     pub tool_name: String,
@@ -21,6 +25,7 @@ pub struct FinalizedToolCall {
     pub parse_error: Option<String>,
 }
 
+/// 流内分组键：有 index 用 index，无 index 视作单槽。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ToolCallStreamKey {
     Indexed(usize),
@@ -126,7 +131,8 @@ impl PendingToolCall {
     }
 }
 
-fn repair_truncated_json(raw: &str) -> Option<String> {
+/// 对截断 JSON 做最小补全（补齐未闭合字符串与括号）。
+pub fn repair_truncated_json(raw: &str) -> Option<String> {
     let mut in_string = false;
     let mut escape = false;
     let mut stack: Vec<u8> = Vec::new();
@@ -216,6 +222,7 @@ pub struct ToolCallParamsChunk {
     pub params_chunk: String,
 }
 
+/// 跨 chunk 累积工具调用参数。provider 只负责透传片段与快照标记，分组与拼接在此完成。
 #[derive(Debug, Clone, Default)]
 pub struct ToolCallAccumulator {
     pending: BTreeMap<ToolCallStreamKey, PendingToolCall>,
@@ -226,17 +233,36 @@ impl ToolCallAccumulator {
         Self::default()
     }
 
+    /// 从 provider 中立流片段累积。缺 `delta_tool_call_id` 的快照片段按 index 合成 id。
+    pub fn apply_chat_delta(&mut self, delta: &ChatDelta) -> ToolCallDeltaOutcome {
+        if delta.delta_tool_call_id.is_none()
+            && delta.delta_tool_call_name.is_none()
+            && delta.delta_tool_call_arguments.is_none()
+        {
+            return ToolCallDeltaOutcome::default();
+        }
+
+        self.apply_delta(
+            ToolCallStreamKey::from(delta.delta_tool_call_index),
+            delta.delta_tool_call_id.clone(),
+            delta.delta_tool_call_name.clone(),
+            delta.delta_tool_call_arguments.clone(),
+            delta.delta_tool_call_arguments_is_snapshot,
+        )
+    }
+
     pub fn apply_unified_response(&mut self, response: &UnifiedResponse) -> ToolCallDeltaOutcome {
         let Some(tc) = &response.tool_call else {
             return ToolCallDeltaOutcome::default();
         };
 
-        let key = ToolCallStreamKey::from(tc.tool_call_index);
-        let tool_id = tc.id.clone();
-        let tool_name = tc.name.clone();
-        let arguments = tc.arguments.clone();
-
-        self.apply_delta(key, tool_id, tool_name, arguments, false)
+        self.apply_delta(
+            ToolCallStreamKey::from(tc.tool_call_index),
+            tc.id.clone(),
+            tc.name.clone(),
+            tc.arguments.clone(),
+            tc.arguments_is_snapshot,
+        )
     }
 
     pub fn apply_delta(
@@ -251,11 +277,21 @@ impl ToolCallAccumulator {
 
         let has_tool_id = tool_id.as_ref().is_some_and(|id| !id.is_empty());
         if !self.pending.contains_key(&key) {
-            if has_tool_id {
-                self.pending.insert(key.clone(), PendingToolCall::default());
+            let start_id = if has_tool_id {
+                tool_id.clone().filter(|id| !id.is_empty())
+            } else if arguments_is_snapshot
+                && tool_name.as_ref().is_some_and(|name| !name.is_empty())
+            {
+                Some(synthetic_tool_id(&key))
             } else {
+                None
+            };
+            let Some(start_id) = start_id else {
                 return outcome;
-            }
+            };
+            let mut pending = PendingToolCall::default();
+            pending.start_new(start_id, tool_name.clone());
+            self.pending.insert(key.clone(), pending);
         }
 
         let Some(pending) = self.pending.get_mut(&key) else {
@@ -281,14 +317,11 @@ impl ToolCallAccumulator {
                 } else {
                     pending.append_arguments(&arguments);
                 }
-                let tool_name = pending.tool_name.clone();
-                if !arguments.is_empty() {
-                    outcome.params_partial = Some(ToolCallParamsChunk {
-                        tool_id: pending.tool_id.clone(),
-                        tool_name,
-                        params_chunk: arguments,
-                    });
-                }
+                outcome.params_partial = Some(ToolCallParamsChunk {
+                    tool_id: pending.tool_id.clone(),
+                    tool_name: pending.tool_name.clone(),
+                    params_chunk: arguments,
+                });
             }
         }
 
@@ -316,140 +349,10 @@ impl ToolCallAccumulator {
     }
 }
 
-#[cfg(all(test, feature = "internal-tests"))]
-mod tests {
-    use super::*;
-    use crate::types::unified::UnifiedToolCall;
-
-    #[test]
-    fn accumulates_tool_call_across_chunks() {
-        let mut acc = ToolCallAccumulator::new();
-
-        acc.apply_delta(
-            ToolCallStreamKey::Indexed(0),
-            Some("call_1".to_string()),
-            Some("search".to_string()),
-            Some("{\"q\":".to_string()),
-            false,
-        );
-        acc.apply_delta(
-            ToolCallStreamKey::Indexed(0),
-            None,
-            None,
-            Some("\"test\"}".to_string()),
-            false,
-        );
-
-        let finalized = acc.finalize_all(ToolCallBoundary::FinishReason);
-        assert_eq!(finalized.len(), 1);
-        assert_eq!(finalized[0].tool_id, "call_1");
-        assert_eq!(finalized[0].tool_name, "search");
-        assert_eq!(finalized[0].arguments, serde_json::json!({"q": "test"}));
-        assert!(!finalized[0].is_error);
-    }
-
-    #[test]
-    fn invalid_json_becomes_error() {
-        let mut acc = ToolCallAccumulator::new();
-
-        acc.apply_delta(
-            ToolCallStreamKey::Indexed(0),
-            Some("call_1".to_string()),
-            Some("tool_a".to_string()),
-            Some("{\"a\":".to_string()),
-            false,
-        );
-
-        let finalized = acc.finalize_all(ToolCallBoundary::StreamEnd);
-        assert_eq!(finalized.len(), 1);
-        assert!(finalized[0].is_error);
-        assert_eq!(finalized[0].raw_arguments, "{\"a\":");
-    }
-
-    #[test]
-    fn new_tool_finalizes_previous() {
-        let mut acc = ToolCallAccumulator::new();
-
-        acc.apply_delta(
-            ToolCallStreamKey::Indexed(0),
-            Some("call_1".to_string()),
-            Some("tool_a".to_string()),
-            Some("{\"x\":1}".to_string()),
-            false,
-        );
-
-        let outcome = acc.apply_delta(
-            ToolCallStreamKey::Indexed(0),
-            Some("call_2".to_string()),
-            Some("tool_b".to_string()),
-            None,
-            false,
-        );
-
-        let finalized = outcome.finalized_previous.unwrap();
-        assert_eq!(finalized.tool_id, "call_1");
-        assert_eq!(finalized.tool_name, "tool_a");
-    }
-
-    #[test]
-    fn apply_unified_response() {
-        let mut acc = ToolCallAccumulator::new();
-
-        let response = UnifiedResponse {
-            tool_call: Some(UnifiedToolCall {
-                tool_call_index: Some(0),
-                id: Some("tc_1".to_string()),
-                name: Some("search".to_string()),
-                arguments: Some("{\"q\":\"hello\"}".to_string()),
-                arguments_is_snapshot: false,
-            }),
-            ..Default::default()
-        };
-
-        acc.apply_unified_response(&response);
-
-        let finalized = acc.finalize_all(ToolCallBoundary::FinishReason);
-        assert_eq!(finalized.len(), 1);
-        assert_eq!(finalized[0].tool_id, "tc_1");
-    }
-
-    #[test]
-    fn repair_truncated_json_cases() {
-        assert_eq!(
-            repair_truncated_json("{\"a\":1"),
-            Some("{\"a\":1}".to_string())
-        );
-        assert_eq!(
-            repair_truncated_json("{\"a\":[1,2"),
-            Some("{\"a\":[1,2]}".to_string())
-        );
-        assert_eq!(
-            repair_truncated_json("{\"a\":\"hello"),
-            Some("{\"a\":\"hello\"}".to_string())
-        );
-        assert_eq!(repair_truncated_json("{\"a\":"), None);
-    }
-
-    #[test]
-    fn snapshot_replaces_arguments() {
-        let mut acc = ToolCallAccumulator::new();
-
-        acc.apply_delta(
-            ToolCallStreamKey::Indexed(0),
-            Some("call_1".to_string()),
-            Some("tool_a".to_string()),
-            Some("{\"partial\"".to_string()),
-            false,
-        );
-        acc.apply_delta(
-            ToolCallStreamKey::Indexed(0),
-            None,
-            None,
-            Some("{\"full\":true}".to_string()),
-            true,
-        );
-
-        let finalized = acc.finalize_all(ToolCallBoundary::FinishReason);
-        assert_eq!(finalized[0].raw_arguments, "{\"full\":true}");
+/// 无 id 的快照流（Gemini）按分组键合成稳定 id，保证同一轮内唯一。
+fn synthetic_tool_id(key: &ToolCallStreamKey) -> String {
+    match key {
+        ToolCallStreamKey::Indexed(index) => format!("call_{index}"),
+        ToolCallStreamKey::Unindexed => "call_0".to_string(),
     }
 }

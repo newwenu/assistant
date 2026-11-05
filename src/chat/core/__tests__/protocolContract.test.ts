@@ -9,7 +9,6 @@ import type {
   ChatMessagesChangedPayload,
   ChatStreamStartPayload,
   ConversationTerminatedPayload,
-  ConversationCompactFailedPayload,
   ConversationUnlockedPayload,
   ChatRegeneratePayload,
 } from "../chatTypes";
@@ -122,20 +121,11 @@ describe("protocol DTO — camelCase contract", () => {
   it("ConversationTerminatedPayload uses camelCase fields", () => {
     const payload: ConversationTerminatedPayload = {
       conversationId: "c",
-      summary: "done",
       isFull: false,
     };
     expect(payload).toHaveProperty("conversationId");
     expect(payload).toHaveProperty("isFull");
     expect(payload).not.toHaveProperty("is_full");
-  });
-
-  it("ConversationCompactFailedPayload uses camelCase fields", () => {
-    const payload: ConversationCompactFailedPayload = {
-      conversationId: "c",
-      error: "oom",
-    };
-    expect(payload).toHaveProperty("conversationId");
   });
 
   it("ConversationUnlockedPayload uses camelCase fields", () => {

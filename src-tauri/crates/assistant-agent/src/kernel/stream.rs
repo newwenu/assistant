@@ -75,19 +75,10 @@ impl UsageSnapshot {
     }
 }
 
-/// provider 中立工具调用片段；P3 只累积不执行。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ToolCallAccum {
-    pub id: String,
-    pub name: String,
-    pub arguments: String,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct StreamOutcome {
     pub full_content: String,
     pub full_reasoning: String,
-    pub tool_calls: Vec<ToolCallAccum>,
     pub prompt_tokens: Option<u32>,
     pub completion_tokens: Option<u32>,
     pub cache_read_tokens: Option<u32>,
@@ -108,7 +99,6 @@ pub struct StreamOutcome {
 pub struct PartialOutcome {
     pub full_content: String,
     pub full_reasoning: String,
-    pub tool_calls: Vec<ToolCallAccum>,
     pub attempt_usages: Vec<UsageSnapshot>,
     pub ttft_ms: Option<u64>,
     pub has_effective_output: bool,
@@ -137,7 +127,6 @@ pub enum StreamError {
 pub struct StreamAccumulator {
     full_content: String,
     full_reasoning: String,
-    tool_calls: Vec<ToolCallAccum>,
     current_usage: UsageSnapshot,
     attempt_usages: Vec<UsageSnapshot>,
     ttft_ms: Option<u64>,
@@ -183,8 +172,6 @@ impl StreamAccumulator {
             }
         }
 
-        self.apply_tool_call(delta);
-
         if let Some(ref usage) = delta.usage {
             self.current_usage.apply(usage);
         }
@@ -194,38 +181,6 @@ impl StreamAccumulator {
         }
     }
 
-    fn apply_tool_call(&mut self, delta: &ChatDelta) {
-        let Some(id) = delta.delta_tool_call_id.clone() else {
-            if let Some(name) = &delta.delta_tool_call_name {
-                if let Some(last) = self.tool_calls.last_mut() {
-                    last.name.push_str(name);
-                }
-            }
-            if let Some(args) = &delta.delta_tool_call_arguments {
-                if let Some(last) = self.tool_calls.last_mut() {
-                    last.arguments.push_str(args);
-                }
-            }
-            return;
-        };
-
-        if let Some(existing) = self.tool_calls.iter_mut().find(|call| call.id == id) {
-            if let Some(name) = &delta.delta_tool_call_name {
-                existing.name.push_str(name);
-            }
-            if let Some(args) = &delta.delta_tool_call_arguments {
-                existing.arguments.push_str(args);
-            }
-            return;
-        }
-
-        self.tool_calls.push(ToolCallAccum {
-            id,
-            name: delta.delta_tool_call_name.clone().unwrap_or_default(),
-            arguments: delta.delta_tool_call_arguments.clone().unwrap_or_default(),
-        });
-    }
-
     pub fn into_outcome(mut self) -> StreamOutcome {
         self.flush_attempt();
         let usage = self.attempt_usages.last().cloned().unwrap_or_default();
@@ -233,7 +188,6 @@ impl StreamAccumulator {
         StreamOutcome {
             full_content: self.full_content,
             full_reasoning: self.full_reasoning,
-            tool_calls: self.tool_calls,
             prompt_tokens: usage.prompt_tokens,
             completion_tokens: usage.completion_tokens,
             cache_read_tokens: usage.cache_read_tokens,
@@ -254,7 +208,6 @@ impl StreamAccumulator {
         PartialOutcome {
             full_content: self.full_content,
             full_reasoning: self.full_reasoning,
-            tool_calls: self.tool_calls,
             attempt_usages: self.attempt_usages,
             ttft_ms: self.ttft_ms,
             has_effective_output: self.has_effective_output,

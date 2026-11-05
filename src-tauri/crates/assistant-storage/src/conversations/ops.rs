@@ -150,6 +150,8 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Sto
             sibling_index: msg.sibling_index,
             provider_id: msg.provider_id.clone(),
             model_id: msg.model_id.clone(),
+            tool_call_id: msg.tool_call_id.clone(),
+            is_error: msg.is_error,
         };
         insert_message(conn, &new_msg)?;
     }
@@ -261,6 +263,8 @@ pub fn fork_to_new_conversation(
             sibling_index: 0,
             provider_id: msg.provider_id.clone(),
             model_id: msg.model_id.clone(),
+            tool_call_id: msg.tool_call_id.clone(),
+            is_error: msg.is_error,
         };
         insert_message(conn, &new_msg)?;
     }

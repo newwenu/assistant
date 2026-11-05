@@ -9,6 +9,7 @@ use assistant_storage::token_usage::TokenUsageRecord;
 use async_trait::async_trait;
 use serde::Serialize;
 
+use crate::agent::tool_event::ToolEvent;
 use crate::chat_options::ReasoningOverride;
 
 use super::outcome::TurnStatus;
@@ -42,16 +43,7 @@ pub enum TurnEvent {
         turn_id: String,
         phase: TurnPhase,
     },
-    ToolStarted {
-        turn_id: String,
-        call_id: String,
-        name: String,
-    },
-    ToolFinished {
-        turn_id: String,
-        call_id: String,
-        ok: bool,
-    },
+    Tool(ToolEvent),
     CompactionStarted {
         turn_id: String,
     },
@@ -126,6 +118,16 @@ impl std::error::Error for StoreError {}
 /// 落库用的 usage 记录，复用 storage 已定义的字段结构。
 pub type UsageRecord = TokenUsageRecord;
 
+#[derive(Debug, Clone)]
+pub struct AppendToolMessageReq {
+    pub conversation_id: String,
+    pub parent_id: String,
+    pub tool_call_id: String,
+    pub content: String,
+    pub is_error: bool,
+    pub timestamp: i64,
+}
+
 #[async_trait]
 pub trait MessageStore: Send + Sync {
     async fn create_assistant_message(&self, req: CreateAssistantReq)
@@ -138,6 +140,10 @@ pub trait MessageStore: Send + Sync {
         tokens: Option<u32>,
         reasoning: Option<&str>,
     ) -> Result<(), StoreError>;
+
+    async fn save_tool_calls(&self, msg_id: &str, tool_calls_json: &str) -> Result<(), StoreError>;
+
+    async fn append_tool_message(&self, req: AppendToolMessageReq) -> Result<String, StoreError>;
 
     async fn finalize(&self, msg_id: &str, status: MessageStatus) -> Result<(), StoreError>;
 
@@ -203,6 +209,18 @@ pub trait Clock: Send + Sync {
 #[async_trait]
 pub trait CompactionSink: Send + Sync {
     async fn terminate(&self, conversation_id: &str);
+}
+
+/// 工具目录端口。P4 只返回全集，tier / audience 过滤由适配器完成。
+/// 实现放在 `src-tauri/src/adapters/`，内核不得 import `assistant-tools`。
+#[async_trait]
+pub trait ToolCatalog: Send + Sync {
+    async fn agent_tools(&self) -> Vec<assistant_providers::types::ToolSpec>;
+}
+
+/// 停止钩子。P4 由执行器按三维预算判定，`check` 必须同步且禁止 IO。
+pub trait StopHook: Send + Sync {
+    fn name(&self) -> &'static str;
 }
 
 #[cfg(any(test, feature = "test-doubles"))]

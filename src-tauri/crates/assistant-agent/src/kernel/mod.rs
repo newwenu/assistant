@@ -20,44 +20,15 @@ pub use outcome::{TurnError, TurnOutcome, TurnStatus};
 pub use persist::{PersistCtx, TurnPersister};
 pub use phase::{SessionState, TurnPhase};
 pub use ports::{
-    ChatError, Clock, CompactionSink, CreateAssistantReq, EventSink, InputError, MessageStatus,
-    MessageStore, ProviderCredential, ProviderDelta, StoreError, TurnEvent, TurnInput,
-    TurnInputSource, UsageRecord,
+    AppendToolMessageReq, ChatError, Clock, CompactionSink, CreateAssistantReq, EventSink,
+    InputError, MessageStatus, MessageStore, ProviderCredential, ProviderDelta, StopHook,
+    StoreError, ToolCatalog, TurnEvent, TurnInput, TurnInputSource, UsageRecord,
 };
 pub use request::ChatRequest;
 pub use runner::{CompactionConfig, TurnRunner};
 pub use state::{SessionStates, StateError};
 pub use stream::{PartialOutcome, StreamError, StreamOutcome, UsageSnapshot};
 pub use tasks::{Busy, TurnEntry, TurnTasks};
-
-/// 工具轮执行端口。P3 恒为 `None`，P4 由宿主注入真实实现；
-/// 内核不得 `use` 工具类型，因此这里只保留最小签名。
-#[async_trait::async_trait]
-pub trait RoundExecutor: Send + Sync {
-    async fn run_iterations(&self, ctx: &TurnContext, iteration: u32) -> RoundOutcome;
-}
-
-/// 一次工具轮的结果。P4 细化字段，P3 只用于占位。
-#[derive(Debug, Clone, Default)]
-pub struct RoundOutcome {
-    pub tool_calls: u32,
-    pub executed: bool,
-}
-
-/// 工具目录端口。P3 只做占位，P4（I38b §4.1）以 `ToolSpec` 填充签名，
-/// 实现放在 `src-tauri/src/adapters/`，内核不得 import `assistant-tools`。
-pub trait ToolCatalog: Send + Sync {}
-
-/// 停止钩子。P3 只做占位，P4（I36 Step 5）实现 `check`，`check` 必须是同步且禁止 IO。
-pub trait StopHook: Send + Sync {
-    fn name(&self) -> &'static str;
-}
-
-/// P3 占位实现：空目录。P4 由适配层注入真实 `ToolCatalog`。
-#[derive(Debug, Clone, Copy, Default)]
-pub struct EmptyToolCatalog;
-
-impl ToolCatalog for EmptyToolCatalog {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnBusy {
@@ -114,12 +85,12 @@ impl TurnSpec {
         }
     }
 
-    /// agent 链路：拒绝、12 迭代、带工具、全阶梯、广播路由。
+    /// agent 链路：拒绝、12 迭代、工具目录由宿主注入、全阶梯、广播路由。
     pub fn agent() -> Self {
         Self {
             on_busy: OnBusy::Reject,
             max_iterations: limits::DEFAULT_MAX_ITERATIONS,
-            tools: Some(Arc::new(EmptyToolCatalog)),
+            tools: None,
             ladder: LadderPolicy::Full,
             stop_hooks: Vec::new(),
             wrap_up: true,

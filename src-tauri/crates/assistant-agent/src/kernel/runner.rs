@@ -5,6 +5,8 @@ use assistant_providers::base::{ProviderError, ProviderErrorPayload};
 
 use crate::compaction::{self, CompactDecision};
 
+use crate::agent::round_executor::{RoundExecutor, TurnBudget, TurnRunCtx};
+
 use super::emit::TurnEmitter;
 use super::ids::TurnContext;
 use super::outcome::{TurnError, TurnOutcome, TurnStatus};
@@ -15,7 +17,7 @@ use super::request::{self, ChatRequest};
 use super::state::SessionStates;
 use super::stream::{self, PartialOutcome, StreamError, StreamOutcome};
 use super::tasks::TurnTasks;
-use super::{EventRoute, RoundExecutor, TurnSpec};
+use super::{EventRoute, TurnSpec};
 
 /// 终止式压缩的触发配置；`None` 表示该链路不做压缩判断。
 #[derive(Clone)]
@@ -249,7 +251,7 @@ impl TurnRunner {
             // 2. 阶梯：P3 只有投影 + 终止式压缩，构建即完成
             // 3. 单次调用
             let request_started = self.clock.now();
-            let request = match request::build(&input, iteration).await {
+            let request = match request::build(&input, iteration, spec.tools.as_ref()).await {
                 Ok(request) => request,
                 Err(err) => {
                     outcome.status = TurnStatus::Failed;
@@ -282,18 +284,28 @@ impl TurnRunner {
             outcome.model_calls += 1;
 
             let timeout = self.effective_model_call_timeout(started_at, &spec.limits);
+            let mut tool_acc = crate::agent::tool_call::ToolCallAccumulator::new();
+            let mut tool_calls: Vec<crate::agent::tool_call::FinalizedToolCall> = Vec::new();
             let result = stream::consume(
                 stream,
                 child.clone(),
                 timeout,
                 self.clock.as_ref(),
                 request_started,
-                |_seq, delta| emit_delta(emitter, delta),
+                |_seq, delta| {
+                    if let Some(previous) = tool_acc.apply_chat_delta(delta).finalized_previous {
+                        tool_calls.push(previous);
+                    }
+                    emit_delta(emitter, delta)
+                },
             )
             .await;
 
             match result {
                 Ok(stream_outcome) => {
+                    tool_calls.extend(
+                        tool_acc.finalize_all(crate::agent::tool_call::ToolCallBoundary::StreamEnd),
+                    );
                     apply_usage(&mut outcome, &stream_outcome);
                     outcome.text = stream_outcome.full_content.clone();
                     outcome.reasoning = stream_outcome.full_reasoning.clone();
@@ -317,7 +329,7 @@ impl TurnRunner {
                     }
 
                     // 5. 无工具结束
-                    if stream_outcome.tool_calls.is_empty() || spec.tools.is_none() {
+                    if tool_calls.is_empty() || spec.tools.is_none() {
                         outcome.status = TurnStatus::Completed;
                         *compaction_decision =
                             self.decide_compaction(&request, &outcome, conversation_id);
@@ -334,8 +346,29 @@ impl TurnRunner {
                                 &ctx.turn_id,
                                 TurnPhase::ToolCalling,
                             );
+                            let round_ctx = TurnRunCtx {
+                                turn_id: &ctx.turn_id,
+                                conversation_id,
+                                iteration,
+                                remaining_turn_budget: TurnBudget {
+                                    remaining_tool_calls: spec.limits.max_tool_calls,
+                                    turn_deadline: None,
+                                },
+                                child_token: &child,
+                                tools: spec.tools.as_deref(),
+                                tool_exec: None,
+                                sink: self.sink.as_ref(),
+                                store: self.store.as_ref(),
+                                input: self.input.as_ref(),
+                                clock: self.clock.as_ref(),
+                                limits: &spec.limits,
+                                spec,
+                                agent_id: "root",
+                                parent_turn_id: None,
+                                delegation_depth: 0,
+                            };
                             let round =
-                                cancellable(&child, executor.run_iterations(ctx, iteration)).await;
+                                cancellable(&child, executor.run_iterations(round_ctx)).await;
                             let Some(round) = round else {
                                 outcome.status = TurnStatus::Cancelled;
                                 *terminal_error =
@@ -343,7 +376,7 @@ impl TurnRunner {
                                 break;
                             };
                             outcome.tool_calls += round.tool_calls;
-                            if round.executed {
+                            if !round.hit_cap {
                                 continue;
                             }
                             outcome.hit_cap = true;
@@ -354,7 +387,7 @@ impl TurnRunner {
                             log::warn!(
                                 "turn {} requested {} tool calls but no executor is wired",
                                 ctx.turn_id,
-                                stream_outcome.tool_calls.len()
+                                tool_calls.len()
                             );
                             outcome.hit_cap = true;
                             outcome.status = TurnStatus::Completed;

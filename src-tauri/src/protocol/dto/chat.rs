@@ -499,15 +499,7 @@ pub struct ChatUserMessageConfirmedPayloadDto {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationTerminatedPayloadDto {
     pub conversation_id: String,
-    pub summary: String,
     pub is_full: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ConversationCompactFailedPayloadDto {
-    pub conversation_id: String,
-    pub error: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]

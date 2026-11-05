@@ -3,6 +3,8 @@ use std::time::Duration;
 pub const DEFAULT_MAX_ITERATIONS: u32 = 12;
 pub const DEFAULT_TURN_WALL_CLOCK: Duration = Duration::from_secs(30 * 60);
 pub const DEFAULT_MODEL_CALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+/// 压缩链路：摘要生成单次调用 30s 硬上限（沿用旧口径，不引入配置面）。
+pub const DEFAULT_COMPACTION_MODEL_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 pub const DEFAULT_EMPTY_RESPONSE_RETRIES: u32 = 1;
 pub const DEFAULT_MICROCOMPACT_KEEP_RECENT: usize = 6;
 pub const TOOL_CALLS_PER_ITERATION: u32 = 8;
@@ -36,7 +38,7 @@ pub struct TurnLimits {
 
 impl TurnLimits {
     /// chat 链路：无 turn 墙钟、无单调用上限（流超时由 provider 层 ttft/idle/total 负责），
-    /// 空响应不重试、不做微压缩——与现状 `chat_runtime` 行为一致。
+    /// 空响应不重试、不做微压缩——与 chat 链路既有行为一致。
     pub fn chat() -> Self {
         Self {
             max_iterations: 1,

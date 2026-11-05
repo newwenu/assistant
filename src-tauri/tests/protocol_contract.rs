@@ -40,6 +40,8 @@ fn sample_message_row() -> MessageRow {
         sibling_index: 0,
         provider_id: None,
         model_id: None,
+        tool_call_id: None,
+        is_error: false,
     }
 }
 

@@ -1,5 +1,4 @@
 import type { Conversation, ContextUsage } from "../chat/core/chatTypes";
-import type { ChatError } from "../chat/core/chatErrors";
 import type { Message, TruncationStrategy } from "../chat/core/chatTypes";
 import { chatService } from "../services/chatService";
 import { providerService } from "../services/providerService";
@@ -24,8 +23,6 @@ type FullState = ChatConversationSlice & {
   totalMessageCount: number;
   hasMoreMessages: boolean;
   isFull: boolean;
-  compactSummary: string | null;
-  compactError: ChatError | null;
   resendFrom: (
     pivotTimestamp: number,
     contentToSend: string,
@@ -162,8 +159,6 @@ export function createConversationSlice(
               hasUsage: false,
             },
             isFull: detail.conversation?.isFull ?? false,
-            compactSummary: null,
-            compactError: null,
             reasoningChoice: DEFAULT_REASONING_CHOICE,
           });
           fetchTokenUsage(id, fetchTokenUsageDeps);

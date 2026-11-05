@@ -44,7 +44,6 @@ startedAtMs: number | null, elapsedBeforeMs: number, };
 export type ClockStatusDto = "idle" | "running" | "paused" | "finished";
 export type ContentBlockDto = { "type": "text", text: string, } | { "type": "image", attachment: ImageAttachmentRefDto, } | { "type": "file", attachment: FileAttachmentRefDto, } | { "type": "thinking", thinking: string, signature: string | null, } | { "type": "tool_use", tool_use_id: string, name: string, input: string, } | { "type": "tool_result", tool_use_id: string, output: string, };
 export type ConversationAttachmentSummary = { conversationId: string, title: string, attachments: Array<AttachmentSummary>, totalBytes: number, updatedAt: number, };
-export type ConversationCompactFailedPayloadDto = { conversationId: string, error: string, };
 export type ConversationDetailDto = { conversation: ConversationDto, messages: Array<MessageDto>, totalCount: number, };
 export type ConversationDto = { id: string, title: string, titleSource: string, providerId: string | null, modelId: string, systemPrompt: string | null, isPinned: boolean, sortOrder: number, generation: number, createdAt: number, updatedAt: number, isFull: boolean, activeBranchId: string | null, };
 export type ConversationListChangeKindDto = "renamed" | "deleted" | "pin_toggled" | "duplicated" | "model_updated" | "provider_updated" | "batch_deleted" | "purged" | "created" | "stream_finished";
@@ -52,7 +51,7 @@ export type ConversationListChangedPayloadDto = { changeKind: ConversationListCh
 export type ConversationPatchDto = { title?: string | null, titleSource?: string | null, modelId?: string | null, providerId?: string | null, };
 export type ConversationQueryModeDto = "paginated" | "all";
 export type ConversationQueryOptsDto = { mode: ConversationQueryModeDto, limit: number, beforeTimestamp?: number | null, };
-export type ConversationTerminatedPayloadDto = { conversationId: string, summary: string, isFull: boolean, };
+export type ConversationTerminatedPayloadDto = { conversationId: string, isFull: boolean, };
 export type ConversationUnlockedPayloadDto = { conversationId: string, };
 export type FileAttachmentRefDto = { attachmentId: string, name: string, bytes: number, };
 export type ImageAttachmentRefDto = { attachmentId: string, mediaType: string | null, bytes: number | null, width: number | null, height: number | null, name: string | null, };

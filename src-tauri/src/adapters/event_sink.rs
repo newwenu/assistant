@@ -16,6 +16,8 @@ pub struct TauriEventSink {
     conversation_id: String,
     message_id: String,
     user_message_content: Option<String>,
+    /// 终态刷新的 `change_kind`：chat / agent 为 `StreamFinished`，压缩为 `MessagesCompacted`。
+    finished_change_kind: MessageChangeKindDto,
 }
 
 impl TauriEventSink {
@@ -31,11 +33,19 @@ impl TauriEventSink {
             conversation_id: conversation_id.into(),
             message_id: message_id.into(),
             user_message_content: None,
+            finished_change_kind: MessageChangeKindDto::StreamFinished,
         }
     }
 
     pub fn with_user_message_content(mut self, content: impl Into<String>) -> Self {
         self.user_message_content = Some(content.into());
+        self
+    }
+
+    /// 覆盖终态刷新的 `change_kind`。压缩成功必须用 `MessagesCompacted`：
+    /// 前端对 `StreamFinished` 跳过 token 用量刷新，而压缩后占用需要按新分支重算。
+    pub fn with_finished_change_kind(mut self, kind: MessageChangeKindDto) -> Self {
+        self.finished_change_kind = kind;
         self
     }
 
@@ -58,7 +68,10 @@ impl TauriEventSink {
     }
 
     /// 终态后的消息列表刷新：广播给所有窗口，等价于原 `finish` 监听器。
-    fn emit_stream_finished(&self) {
+    ///
+    /// `change_kind` 由调用方给出：chat / agent 用 `StreamFinished`，
+    /// 压缩成功用 `MessagesCompacted`（前端据此决定是否刷新 token 用量）。
+    pub(crate) fn emit_stream_finished(&self, change_kind: MessageChangeKindDto) {
         let state = self.app.state::<crate::setup::DbState>();
         let conn = match crate::cmd::get_db_conn(&state) {
             Ok(conn) => conn,
@@ -98,7 +111,7 @@ impl TauriEventSink {
             event_name::CHAT_MESSAGES_CHANGED,
             ChatMessagesChangedPayloadDto {
                 conversation_id: self.conversation_id.clone(),
-                change_kind: MessageChangeKindDto::StreamFinished,
+                change_kind,
                 messages,
                 active_branch_id: detail.conversation.active_branch_id.clone(),
                 seq: None,
@@ -168,24 +181,13 @@ impl EventSink for TauriEventSink {
                     },
                 );
             }
-            TurnEvent::ToolStarted {
-                turn_id,
-                call_id,
-                name,
-            } => {
+            TurnEvent::Tool(event) => {
                 log::debug!(
-                    "tool started turn={} call={} name={}",
-                    turn_id,
-                    call_id,
-                    name
+                    "tool event turn={} call={} name={}",
+                    event.turn_id,
+                    event.call_id,
+                    event.name
                 );
-            }
-            TurnEvent::ToolFinished {
-                turn_id,
-                call_id,
-                ok,
-            } => {
-                log::debug!("tool finished turn={} call={} ok={}", turn_id, call_id, ok);
             }
             TurnEvent::CompactionStarted { turn_id } => {
                 log::debug!("compaction started turn={}", turn_id);
@@ -211,7 +213,7 @@ impl EventSink for TauriEventSink {
                     };
                     self.emit_wire(event_name::CHAT_DELTA, payload);
                 }
-                self.emit_stream_finished();
+                self.emit_stream_finished(self.finished_change_kind);
                 let state = match status {
                     TurnStatus::Completed | TurnStatus::Cancelled | TurnStatus::Interrupted => {
                         SessionState::Idle

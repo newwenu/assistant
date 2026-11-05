@@ -24,7 +24,6 @@ import { ModeSelector } from "./selectors/ModeSelector";
 import { ReasoningSelector } from "./selectors/ReasoningSelector";
 import { ProviderSelector } from "./selectors/ProviderSelector";
 import { CompactBanner } from "./compact/CompactBanner";
-import { CompactErrorBanner } from "./compact/CompactErrorBanner";
 import type { RecoveryActionCode } from "./core/chatErrorRecovery";
 import { useAgentModeStore } from "../stores/agentModeStore";
 import { useAttachmentStore } from "../stores/attachmentStore";
@@ -454,7 +453,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ modelOpenRef }) => {
             isFull={chat.isFull}
           />
           <CompactBanner />
-          <CompactErrorBanner />
           <ContextBar usage={chat.contextUsage} />
         </div>
       </div>

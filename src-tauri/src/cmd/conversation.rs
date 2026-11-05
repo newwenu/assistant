@@ -9,7 +9,7 @@ use crate::protocol::{
     ConversationQueryOptsDto, MessageChangeKindDto, MessageDto, TokenUsageEstimatedSourceDto,
     TokenUsageSummaryDto,
 };
-use assistant_agent::chat_request;
+use assistant_agent::kernel::request;
 use assistant_storage::{
     attachment_store::AttachmentStore,
     conversations::{self, ConversationRow, MessageRow},
@@ -434,7 +434,7 @@ pub async fn get_conversation_token_usage(
             if !detail.messages.is_empty() {
                 let attachment_store = app.state::<AttachmentStore>();
                 let estimated =
-                    chat_request::estimate_branch_tokens(&detail, &provider_row, &attachment_store)
+                    request::estimate_branch_tokens(&detail, &provider_row, &attachment_store)
                         .await;
                 if estimated > 0 {
                     let estimated = estimated as i64;

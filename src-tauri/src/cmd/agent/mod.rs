@@ -3,14 +3,14 @@ use std::sync::Arc;
 use tauri::{command, AppHandle, Manager};
 
 use assistant_agent::chat_options::ReasoningOverride;
-use assistant_agent::compaction;
 use assistant_agent::kernel::{
     EventSink, TurnContext, TurnEvent, TurnInputSource, TurnSpec, TurnTasks,
 };
 use assistant_agent::multimodal;
 use assistant_storage::attachment_store::AttachmentStore;
+use assistant_tools::ToolRegistry;
 
-use crate::adapters::{build_turn_runner, TauriEventSink, TauriInputSource};
+use crate::adapters::{build_turn_runner, RegistryToolCatalog, TauriEventSink, TauriInputSource};
 use crate::protocol::SendChatMessageArgsDto;
 
 #[command]
@@ -19,7 +19,10 @@ pub async fn send_agent_message(
     conversation_id: String,
     args: SendChatMessageArgsDto,
 ) -> Result<(), String> {
-    start_turn(&app, &conversation_id, args, TurnSpec::agent()).await
+    let registry = app.state::<Arc<ToolRegistry>>().inner().clone();
+    let mut spec = TurnSpec::agent();
+    spec.tools = Some(Arc::new(RegistryToolCatalog::new(registry)));
+    start_turn(&app, &conversation_id, args, spec).await
 }
 
 #[command]
@@ -46,7 +49,7 @@ pub(crate) async fn start_turn(
         reasoning_level,
     } = args;
 
-    let content = validate_and_preprocess(app, &content, conversation_id).await?;
+    let content = validate_and_preprocess(app, &content).await?;
 
     // `begin` 先于建消息：`Reject` 链路被拒时不得在库里留下孤儿消息。
     let tasks = app.state::<Arc<TurnTasks>>().inner().clone();
@@ -119,16 +122,9 @@ pub(crate) async fn start_turn(
     Ok(())
 }
 
-async fn validate_and_preprocess(
-    app: &AppHandle,
-    content: &str,
-    conversation_id: &str,
-) -> Result<String, String> {
+async fn validate_and_preprocess(app: &AppHandle, content: &str) -> Result<String, String> {
     if super::chat::insert::is_content_empty(content) {
         return Err(assistant_i18n::t("chat.empty_content"));
-    }
-    if compaction::is_terminating(conversation_id) {
-        return Err("Conversation is being terminated".to_string());
     }
 
     let attachment_store = app.state::<AttachmentStore>();

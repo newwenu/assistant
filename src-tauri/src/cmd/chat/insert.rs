@@ -212,6 +212,8 @@ fn insert_user_message_with_attachments(
             sibling_index,
             provider_id: None,
             model_id: None,
+            tool_call_id: None,
+            is_error: false,
         },
     )?;
 
@@ -251,6 +253,8 @@ fn insert_placeholder_assistant_message(
             sibling_index,
             provider_id: provider_id.map(|s| s.to_string()),
             model_id: model_id.map(|s| s.to_string()),
+            tool_call_id: None,
+            is_error: false,
         },
     )?;
     conversations::update_message_status(conn, &aid, "streaming")?;

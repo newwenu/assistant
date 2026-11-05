@@ -1,4 +1,5 @@
-use assistant_agent::chat_runtime::{build_usage_records, UsageRecordCtx, UsageSnapshot};
+use assistant_agent::kernel::persist::build_usage_records;
+use assistant_agent::kernel::{PersistCtx, UsageSnapshot};
 
 fn snapshot(prompt: Option<u32>, completion: Option<u32>, total: Option<u32>) -> UsageSnapshot {
     UsageSnapshot {
@@ -9,16 +10,17 @@ fn snapshot(prompt: Option<u32>, completion: Option<u32>, total: Option<u32>) ->
     }
 }
 
-fn ctx(kind: &'static str) -> UsageRecordCtx<'static> {
-    UsageRecordCtx {
-        conv_id: "c1",
-        msg_id: "m1",
-        attempt_id: "c1:1",
-        branch_leaf_id: Some("b1"),
-        kind,
-        provider_id: Some("p1"),
-        model_id: Some("gpt-4"),
+fn ctx(kind: &str) -> PersistCtx {
+    PersistCtx {
+        conversation_id: "c1".to_string(),
+        turn_id: "c1:1".to_string(),
+        message_id: "m1".to_string(),
+        branch_leaf_id: Some("b1".to_string()),
+        kind: kind.to_string(),
+        provider_id: Some("p1".to_string()),
+        model_id: Some("gpt-4".to_string()),
         cache_capable: true,
+        created_at_ms: 1_700_000_000_000,
     }
 }
 
@@ -102,4 +104,10 @@ fn record_carries_all_snapshot_fields() {
     assert_eq!(r.context_window_tokens, Some(128_000));
     assert!(r.cache_capable);
     assert!(!r.estimated);
+}
+
+#[test]
+fn record_uses_injected_timestamp() {
+    let records = build_usage_records(&[snapshot(Some(10), Some(2), Some(12))], &ctx("chat"));
+    assert_eq!(records[0].created_at, 1_700_000_000_000);
 }

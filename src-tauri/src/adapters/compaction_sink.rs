@@ -1,4 +1,3 @@
-use assistant_agent::compaction;
 use assistant_agent::kernel::CompactionSink;
 use assistant_storage::{conversations, providers};
 use async_trait::async_trait;
@@ -56,20 +55,10 @@ impl CompactionSink for TauriCompactionSink {
         let (detail, provider_row) = loaded;
         let app = self.app.clone();
         let conv_id = conversation_id.to_string();
-        compaction::set_terminating(&conv_id, true);
         tauri::async_runtime::spawn(async move {
             if let Err(err) =
                 crate::cmd::execute_compaction(&app, &conv_id, &detail, &provider_row).await
             {
-                compaction::set_terminating(&conv_id, false);
-                crate::protocol::events::emit_broadcast(
-                    &app,
-                    crate::protocol::events::event_name::CONVERSATION_COMPACT_FAILED,
-                    crate::protocol::ConversationCompactFailedPayloadDto {
-                        conversation_id: conv_id.clone(),
-                        error: err.clone(),
-                    },
-                );
                 log::error!("Auto compaction failed for {}: {}", conv_id, err);
             }
         });

@@ -1,5 +1,5 @@
 use assistant_agent::kernel::{
-    CreateAssistantReq, MessageStatus, MessageStore, StoreError, UsageRecord,
+    AppendToolMessageReq, CreateAssistantReq, MessageStatus, MessageStore, StoreError, UsageRecord,
 };
 use assistant_storage::conversations::{self, MessageRow};
 use assistant_storage::token_usage;
@@ -57,6 +57,8 @@ impl MessageStore for DbMessageStore {
                     sibling_index,
                     provider_id: req.provider_id.clone(),
                     model_id: req.model_id.clone(),
+                    tool_call_id: None,
+                    is_error: false,
                 },
             )?;
             conversations::update_message_status(conn, &id, MessageStatus::Streaming.as_db_str())?;
@@ -79,6 +81,40 @@ impl MessageStore for DbMessageStore {
                 tokens.map(i64::from),
                 reasoning,
             )
+        })
+    }
+
+    async fn save_tool_calls(&self, msg_id: &str, tool_calls_json: &str) -> Result<(), StoreError> {
+        self.with_conn(|conn| {
+            conversations::update_message_tool_calls(conn, msg_id, tool_calls_json)
+        })
+    }
+
+    async fn append_tool_message(&self, req: AppendToolMessageReq) -> Result<String, StoreError> {
+        self.with_conn(|conn| {
+            let id = uuid::Uuid::new_v4().to_string();
+            conversations::insert_message(
+                conn,
+                &MessageRow {
+                    id: id.clone(),
+                    conversation_id: req.conversation_id.clone(),
+                    role: "tool".to_string(),
+                    content: req.content.clone(),
+                    tokens: None,
+                    timestamp: req.timestamp,
+                    parent_id: Some(req.parent_id.clone()),
+                    is_pinned: false,
+                    reasoning: None,
+                    tool_calls_json: None,
+                    sibling_index: 0,
+                    provider_id: None,
+                    model_id: None,
+                    tool_call_id: Some(req.tool_call_id.clone()),
+                    is_error: req.is_error,
+                },
+            )?;
+            conversations::update_message_status(conn, &id, MessageStatus::Completed.as_db_str())?;
+            Ok(id)
         })
     }
 

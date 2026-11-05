@@ -7,7 +7,6 @@ pub mod event_name {
     pub const CONVERSATION_LIST_CHANGED: &str = "conversation-list-changed";
     pub const CONVERSATION_TERMINATED: &str = "conversation-terminated";
     pub const CONVERSATION_UNLOCKED: &str = "conversation-unlocked";
-    pub const CONVERSATION_COMPACT_FAILED: &str = "conversation-compact-failed";
     pub const ORB_NEW_CONVERSATION: &str = "orb-new-conversation";
     pub const ORB_BLUR: &str = "orb-blur";
     pub const NAVIGATE: &str = "navigate";

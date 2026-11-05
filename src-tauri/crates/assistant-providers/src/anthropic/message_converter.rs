@@ -1,6 +1,19 @@
 use crate::base::{ChatMessage, MessageRole};
-use crate::types::{parse_content, ContentBlock};
+use crate::types::{parse_content, ContentBlock, ToolSpec};
 use serde_json::{json, Value};
+
+pub(crate) fn convert_tools(tools: &[ToolSpec]) -> Vec<Value> {
+    tools
+        .iter()
+        .map(|tool| {
+            json!({
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema
+            })
+        })
+        .collect()
+}
 
 pub(crate) fn convert_messages(messages: &[ChatMessage]) -> (Option<Value>, Vec<Value>) {
     let mut system_parts: Vec<Value> = Vec::new();
@@ -152,7 +165,7 @@ fn convert_assistant_message(msg: &ChatMessage) -> Option<Value> {
                 "type": "tool_use",
                 "id": tc.id,
                 "name": tc.name,
-                "input": tc.arguments
+                "input": parse_tool_input(&tc.arguments)
             }));
         }
     }
@@ -165,6 +178,16 @@ fn convert_assistant_message(msg: &ChatMessage) -> Option<Value> {
         "role": "assistant",
         "content": content_blocks
     }))
+}
+
+fn parse_tool_input(arguments: &str) -> Value {
+    if arguments.trim().is_empty() {
+        return json!({});
+    }
+    match serde_json::from_str::<Value>(arguments) {
+        Ok(Value::Object(map)) => Value::Object(map),
+        _ => json!({}),
+    }
 }
 
 fn convert_tool_result_message(msg: &ChatMessage) -> Value {
@@ -262,6 +285,66 @@ mod tests {
             thinking_signature: None,
             content_blocks: None,
         }
+    }
+
+    #[test]
+    fn tool_input_is_json_object_and_invalid_args_fall_back_to_empty() {
+        let mut valid = make_message(MessageRole::Assistant, "");
+        valid.tool_calls = Some(vec![ToolCall {
+            id: "tool_1".to_string(),
+            name: "search".to_string(),
+            arguments: r#"{"q":"rust"}"#.to_string(),
+        }]);
+        let (_, msgs) = convert_messages(&[valid]);
+        assert_eq!(msgs[0]["content"][0]["input"], json!({ "q": "rust" }));
+
+        let mut invalid = make_message(MessageRole::Assistant, "");
+        invalid.tool_calls = Some(vec![ToolCall {
+            id: "tool_1".to_string(),
+            name: "search".to_string(),
+            arguments: "{not json".to_string(),
+        }]);
+        let (_, msgs) = convert_messages(&[invalid]);
+        assert_eq!(msgs[0]["content"][0]["input"], json!({}));
+    }
+
+    #[test]
+    fn second_round_tool_history_is_well_formed() {
+        let mut assistant = make_message(MessageRole::Assistant, "");
+        assistant.tool_calls = Some(vec![ToolCall {
+            id: "tool_1".to_string(),
+            name: "read_file".to_string(),
+            arguments: r#"{"path":"a.txt"}"#.to_string(),
+        }]);
+        let mut tool_result = make_message(MessageRole::Tool, "file body");
+        tool_result.tool_call_id = Some("tool_1".to_string());
+        tool_result.name = Some("read_file".to_string());
+
+        let (_, msgs) = convert_messages(&[assistant, tool_result]);
+        assert_eq!(msgs[0]["content"][0]["type"], json!("tool_use"));
+        assert_eq!(msgs[0]["content"][0]["id"], json!("tool_1"));
+        assert_eq!(msgs[0]["content"][0]["input"], json!({ "path": "a.txt" }));
+        assert_eq!(msgs[1]["content"][0]["type"], json!("tool_result"));
+        assert_eq!(msgs[1]["content"][0]["tool_use_id"], json!("tool_1"));
+    }
+
+    #[test]
+    fn convert_tools_uses_input_schema_without_parameters_wrapper() {
+        let tools = vec![ToolSpec {
+            name: "search".to_string(),
+            description: "search the web".to_string(),
+            input_schema: json!({ "type": "object", "properties": { "q": { "type": "string" } } }),
+        }];
+        let converted = convert_tools(&tools);
+        assert_eq!(converted.len(), 1);
+        assert_eq!(converted[0]["name"], json!("search"));
+        assert_eq!(converted[0]["description"], json!("search the web"));
+        assert_eq!(
+            converted[0]["input_schema"]["properties"]["q"]["type"],
+            json!("string")
+        );
+        assert!(converted[0].get("parameters").is_none());
+        assert!(converted[0].get("type").is_none());
     }
 
     #[test]
@@ -382,7 +465,7 @@ mod tests {
         let content = msgs[0]["content"].as_array().unwrap();
         assert_eq!(content[0]["type"], json!("tool_use"));
         assert_eq!(content[0]["name"], json!("search"));
-        assert_eq!(content[0]["input"], json!("{\"q\": \"rust\"}"));
+        assert_eq!(content[0]["input"], json!({ "q": "rust" }));
     }
 
     #[test]

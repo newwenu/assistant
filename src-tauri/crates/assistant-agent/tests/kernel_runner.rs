@@ -71,6 +71,8 @@ fn fixture_input(conversation_id: &str, adapter: Arc<dyn BaseProviderAdapter>) -
         sibling_index: 0,
         provider_id: None,
         model_id: None,
+        tool_call_id: None,
+        is_error: false,
     }];
     let provider = assistant_agent::kernel::ProviderCredential {
         row: ProviderRow {

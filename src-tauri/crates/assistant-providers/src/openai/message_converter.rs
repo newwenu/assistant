@@ -1,5 +1,5 @@
 use crate::base::{ChatMessage, MessageRole};
-use crate::types::{parse_content, ContentBlock};
+use crate::types::{parse_content, ContentBlock, ToolSpec};
 use serde_json::{json, Value};
 
 /// 目标端点：两条端点共用 `convert_messages`，但原生附件 part 形状不同。
@@ -112,6 +112,22 @@ fn build_content(m: &ChatMessage, target: OpenAiTarget) -> Value {
         }
     }
     json!(m.content)
+}
+
+pub(crate) fn convert_tools(tools: &[ToolSpec]) -> Vec<Value> {
+    tools
+        .iter()
+        .map(|tool| {
+            json!({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.input_schema
+                }
+            })
+        })
+        .collect()
 }
 
 pub(crate) fn convert_messages(messages: &[ChatMessage], target: OpenAiTarget) -> Vec<Value> {
@@ -288,5 +304,66 @@ mod tests {
         let parts = out[0]["content"].as_array().unwrap();
         assert_eq!(parts.len(), 1);
         assert_eq!(parts[0]["type"], json!("text"));
+    }
+
+    #[test]
+    fn second_round_tool_history_is_well_formed() {
+        let assistant = ChatMessage {
+            role: MessageRole::Assistant,
+            content: String::new(),
+            tool_calls: Some(vec![crate::base::ToolCall {
+                id: "call_1".to_string(),
+                name: "read_file".to_string(),
+                arguments: r#"{"path":"a.txt"}"#.to_string(),
+            }]),
+            tool_call_id: None,
+            name: None,
+            is_error: false,
+            thinking_signature: None,
+            content_blocks: None,
+        };
+        let tool_result = ChatMessage {
+            role: MessageRole::Tool,
+            content: "file body".to_string(),
+            tool_calls: None,
+            tool_call_id: Some("call_1".to_string()),
+            name: Some("read_file".to_string()),
+            is_error: false,
+            thinking_signature: None,
+            content_blocks: None,
+        };
+        let out = convert_messages(&[assistant, tool_result], OpenAiTarget::ChatCompletions);
+        assert_eq!(out[0]["role"], json!("assistant"));
+        assert_eq!(out[0]["tool_calls"][0]["id"], json!("call_1"));
+        assert_eq!(out[0]["tool_calls"][0]["type"], json!("function"));
+        assert_eq!(
+            out[0]["tool_calls"][0]["function"]["arguments"],
+            json!(r#"{"path":"a.txt"}"#)
+        );
+        assert_eq!(out[1]["role"], json!("tool"));
+        assert_eq!(out[1]["tool_call_id"], json!("call_1"));
+        assert_eq!(out[1]["content"], json!("file body"));
+    }
+
+    #[test]
+    fn convert_tools_wraps_spec_into_function_shape() {
+        let tools = vec![ToolSpec {
+            name: "search".to_string(),
+            description: "search the web".to_string(),
+            input_schema: json!({ "type": "object", "properties": { "q": { "type": "string" } } }),
+        }];
+        let converted = convert_tools(&tools);
+        assert_eq!(converted.len(), 1);
+        assert_eq!(converted[0]["type"], json!("function"));
+        assert_eq!(converted[0]["function"]["name"], json!("search"));
+        assert_eq!(
+            converted[0]["function"]["description"],
+            json!("search the web")
+        );
+        assert_eq!(
+            converted[0]["function"]["parameters"]["properties"]["q"]["type"],
+            json!("string")
+        );
+        assert!(converted[0].get("name").is_none());
     }
 }

@@ -8,7 +8,9 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use assistant_agent::kernel::ports::test_doubles::{FixedClock, ManualClock};
-use assistant_agent::kernel::stream::{consume as consume_with_clock, StreamError, StreamOutcome};
+use assistant_agent::kernel::stream::{
+    consume as consume_with_clock, StreamAccumulator, StreamError, StreamOutcome,
+};
 use assistant_agent::kernel::Clock;
 use assistant_providers::base::{ChatDelta, ProviderError, TokenUsage};
 use common::PacedStream;
@@ -199,7 +201,7 @@ async fn provider_error_returns_partial_outcome() {
 }
 
 #[tokio::test]
-async fn tool_call_fragments_accumulate_into_single_call() {
+async fn tool_call_fragments_are_forwarded_to_callback_untouched() {
     let deltas = vec![
         Ok(ChatDelta {
             delta_tool_call_id: Some("call_1".to_string()),
@@ -217,19 +219,26 @@ async fn tool_call_fragments_accumulate_into_single_call() {
         Ok(ChatDelta::finish("tool_calls")),
     ];
 
+    let mut seen = Vec::new();
     let outcome = consume(
         stream::iter(deltas),
         CancellationToken::new(),
         None,
-        |_seq, _delta| {},
+        |_seq, delta| seen.push(delta.clone()),
     )
     .await
     .expect("stream completes");
 
-    assert_eq!(outcome.tool_calls.len(), 1);
-    assert_eq!(outcome.tool_calls[0].id, "call_1");
-    assert_eq!(outcome.tool_calls[0].name, "read");
-    assert_eq!(outcome.tool_calls[0].arguments, "{\"path\":\"a.txt\"}");
+    assert_eq!(seen.len(), 4, "raw fragments reach the caller");
+    assert_eq!(seen[0].delta_tool_call_id.as_deref(), Some("call_1"));
+    assert_eq!(
+        seen[1].delta_tool_call_arguments.as_deref(),
+        Some("{\"path\":")
+    );
+    assert_eq!(
+        seen[2].delta_tool_call_arguments.as_deref(),
+        Some("\"a.txt\"}")
+    );
     assert!(!outcome.has_effective_output);
 }
 
@@ -307,6 +316,302 @@ async fn timeout_caps_whole_call_even_when_chunks_keep_arriving() {
         }
         other => panic!(
             "expected Timeout (整段封顶), got {:?}",
+            other.map(|o| o.full_content)
+        ),
+    }
+}
+
+#[tokio::test]
+async fn empty_stream_completes_without_output() {
+    let deltas: Vec<Result<ChatDelta, ProviderError>> = vec![];
+
+    let outcome = consume(
+        stream::iter(deltas),
+        CancellationToken::new(),
+        None,
+        |_seq, _delta| {},
+    )
+    .await
+    .expect("stream completes");
+
+    assert_eq!(outcome.full_content, "");
+    assert!(!outcome.has_effective_output);
+    assert!(outcome.attempt_usages.is_empty());
+}
+
+// ─── StreamAccumulator 单测（迁自旧 chat 链路测试 b7） ───
+
+#[test]
+fn accumulator_text_only_collects_content_and_usage() {
+    let mut accum = StreamAccumulator::new();
+
+    accum.apply_delta(&text_delta("Hello"));
+    accum.apply_delta(&text_delta(" world"));
+    accum.apply_delta(&usage_delta(100, 50, 150));
+    accum.apply_delta(&ChatDelta::finish("stop"));
+
+    let outcome = accum.into_outcome();
+    assert_eq!(outcome.full_content, "Hello world");
+    assert_eq!(outcome.full_reasoning, "");
+    assert_eq!(outcome.total_tokens, Some(150));
+    assert_eq!(outcome.prompt_tokens, Some(100));
+    assert_eq!(outcome.finish_reason.as_deref(), Some("stop"));
+    assert!(outcome.has_effective_output);
+}
+
+#[test]
+fn accumulator_reasoning_is_kept_separate_from_content() {
+    let mut accum = StreamAccumulator::new();
+
+    accum.apply_delta(&reasoning_delta("Let me think"));
+    accum.apply_delta(&reasoning_delta("..."));
+    accum.apply_delta(&text_delta("Answer"));
+    accum.apply_delta(&ChatDelta::finish("stop"));
+
+    let outcome = accum.into_outcome();
+    assert_eq!(outcome.full_content, "Answer");
+    assert_eq!(outcome.full_reasoning, "Let me think...");
+    assert!(outcome.has_effective_output);
+}
+
+#[test]
+fn accumulator_usage_overwrite_keeps_latest() {
+    let mut accum = StreamAccumulator::new();
+
+    accum.apply_delta(&usage_delta(100, 20, 120));
+    accum.apply_delta(&usage_delta(100, 50, 150));
+
+    let outcome = accum.into_outcome();
+    assert_eq!(outcome.total_tokens, Some(150));
+    assert_eq!(outcome.prompt_tokens, Some(100));
+}
+
+#[test]
+fn accumulator_prefers_provider_total_when_consistent() {
+    let mut accum = StreamAccumulator::new();
+    let delta = ChatDelta {
+        usage: Some(TokenUsage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 130,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    accum.apply_delta(&delta);
+    let outcome = accum.into_outcome();
+
+    assert_eq!(outcome.total_tokens, Some(130), "provider total wins");
+    assert!(!outcome.estimated);
+}
+
+#[test]
+fn accumulator_falls_back_when_total_below_sum() {
+    let mut accum = StreamAccumulator::new();
+    let delta = ChatDelta {
+        usage: Some(TokenUsage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 90,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    accum.apply_delta(&delta);
+    let outcome = accum.into_outcome();
+
+    assert_eq!(outcome.total_tokens, Some(120), "P + C wins over bad total");
+    assert!(outcome.estimated);
+}
+
+#[test]
+fn accumulator_retry_splits_attempt_usages() {
+    let mut accum = StreamAccumulator::new();
+
+    accum.apply_delta(&usage_delta(100, 10, 110));
+    accum.apply_delta(&ChatDelta::retry_notification(1, 3, 0, "retry"));
+    accum.apply_delta(&usage_delta(200, 20, 220));
+
+    let outcome = accum.into_outcome();
+
+    assert_eq!(outcome.attempt_usages.len(), 2, "retry keeps both attempts");
+    assert_eq!(outcome.attempt_usages[0].prompt_tokens, Some(100));
+    assert_eq!(outcome.attempt_usages[1].prompt_tokens, Some(200));
+    assert_eq!(
+        outcome.prompt_tokens,
+        Some(200),
+        "latest attempt drives the outcome"
+    );
+}
+
+#[test]
+fn accumulator_empty_delta_has_no_effective_output() {
+    let mut accum = StreamAccumulator::new();
+
+    accum.apply_delta(&ChatDelta::default());
+    assert!(!accum.has_effective_output());
+
+    accum.apply_delta(&usage_delta(100, 50, 150));
+    assert!(!accum.has_effective_output());
+}
+
+// ─── 压缩链路（迁自旧 chat 链路测试 g4 / g6 / g7） ───
+
+#[tokio::test]
+async fn compaction_stream_forwards_text_and_finish_fragments() {
+    let deltas = vec![
+        Ok(reasoning_delta("thinking")),
+        Ok(ChatDelta {
+            delta_tool_call_id: Some("tc_1".to_string()),
+            ..Default::default()
+        }),
+        Ok(ChatDelta {
+            delta_tool_call_name: Some("search".to_string()),
+            ..Default::default()
+        }),
+        Ok(ChatDelta {
+            delta_tool_call_arguments: Some("{}".to_string()),
+            ..Default::default()
+        }),
+        Ok(text_delta("Summary text")),
+        Ok(ChatDelta::finish("stop")),
+    ];
+
+    let emitted_text: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let emitted_finish: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let et = emitted_text.clone();
+    let ef = emitted_finish.clone();
+
+    let outcome = consume(
+        stream::iter(deltas),
+        CancellationToken::new(),
+        Some(Duration::from_secs(30)),
+        move |_seq, delta| {
+            if let Some(text) = delta.delta_text.as_ref().filter(|t| !t.is_empty()) {
+                et.lock().unwrap().push(text.clone());
+            }
+            if let Some(reason) = &delta.finish_reason {
+                ef.lock().unwrap().push(reason.clone());
+            }
+        },
+    )
+    .await
+    .expect("stream completes");
+
+    assert_eq!(outcome.full_content, "Summary text");
+    assert_eq!(outcome.full_reasoning, "thinking");
+    assert_eq!(
+        *emitted_text.lock().unwrap(),
+        vec!["Summary text".to_string()]
+    );
+    assert_eq!(*emitted_finish.lock().unwrap(), vec!["stop".to_string()]);
+}
+
+#[tokio::test]
+async fn compaction_summary_is_outcome_full_content() {
+    let deltas = vec![
+        Ok(text_delta("The user asked about ")),
+        Ok(text_delta("Rust async patterns. ")),
+        Ok(text_delta("Key points: tokio::select!")),
+        Ok(ChatDelta::finish("stop")),
+    ];
+
+    let outcome = consume(
+        stream::iter(deltas),
+        CancellationToken::new(),
+        Some(Duration::from_secs(30)),
+        |_seq, _delta| {},
+    )
+    .await
+    .expect("stream completes");
+
+    assert_eq!(
+        outcome.full_content,
+        "The user asked about Rust async patterns. Key points: tokio::select!"
+    );
+    assert!(outcome.has_effective_output);
+    assert_eq!(outcome.finish_reason.as_deref(), Some("stop"));
+}
+
+#[tokio::test]
+async fn compaction_cancel_returns_partial_summary() {
+    let deltas = vec![
+        Ok(text_delta("Partial summary")),
+        Ok(text_delta(" content")),
+    ];
+    let token = CancellationToken::new();
+    let handle = token.clone();
+
+    let result = consume(
+        stream::iter(deltas),
+        token,
+        Some(Duration::from_secs(30)),
+        move |seq, _delta| {
+            if seq == 1 {
+                handle.cancel();
+            }
+        },
+    )
+    .await;
+
+    match result {
+        Err(StreamError::Cancelled(partial)) => {
+            assert!(partial.has_effective_output);
+            assert_eq!(partial.full_content, "Partial summary");
+        }
+        other => panic!(
+            "expected Cancelled with partial, got {:?}",
+            other.map(|o| o.full_content)
+        ),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn compaction_timeout_returns_partial_summary() {
+    let result = consume(
+        StallingStream::new(vec![text_delta("Partial")]),
+        CancellationToken::new(),
+        Some(Duration::from_secs(30)),
+        |_seq, _delta| {},
+    )
+    .await;
+
+    match result {
+        Err(StreamError::Timeout(partial)) => {
+            assert!(partial.has_effective_output);
+            assert_eq!(partial.full_content, "Partial");
+        }
+        other => panic!(
+            "expected Timeout with partial, got {:?}",
+            other.map(|o| o.full_content)
+        ),
+    }
+}
+
+#[tokio::test]
+async fn compaction_provider_error_returns_partial_summary() {
+    let deltas = vec![
+        Ok(text_delta("Partial summary before error")),
+        Err(ProviderError::StreamError("provider failed".to_string())),
+    ];
+
+    let result = consume(
+        stream::iter(deltas),
+        CancellationToken::new(),
+        Some(Duration::from_secs(30)),
+        |_seq, _delta| {},
+    )
+    .await;
+
+    match result {
+        Err(StreamError::Provider(_, partial)) => {
+            assert!(partial.has_effective_output);
+            assert_eq!(partial.full_content, "Partial summary before error");
+        }
+        other => panic!(
+            "expected Provider error with partial, got {:?}",
             other.map(|o| o.full_content)
         ),
     }

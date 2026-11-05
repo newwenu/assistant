@@ -41,6 +41,7 @@ pub fn build_chat_options(
     mode: &AgentModeRow,
     context_window_tokens: Option<u32>,
     reasoning: &ReasoningOverride,
+    tools: Option<Vec<assistant_providers::types::ToolSpec>>,
 ) -> ChatOptions {
     let temperature = match kind {
         AgentKind::Deep => mode.temperature.unwrap_or(0.3),
@@ -58,5 +59,6 @@ pub fn build_chat_options(
         context_window_tokens,
         reasoning_enabled,
         reasoning_effort,
+        tools,
     }
 }

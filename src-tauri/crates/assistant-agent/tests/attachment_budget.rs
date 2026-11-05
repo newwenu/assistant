@@ -1,4 +1,4 @@
-use assistant_agent::chat_request;
+use assistant_agent::kernel::request;
 use assistant_agent::multimodal::{self, MultimodalConfig, ProjectionPurpose};
 use assistant_agent::request_projection::{estimate_total_tokens, offload_if_over_budget};
 use assistant_agent::token_estimate::estimate_text_tokens;
@@ -512,6 +512,8 @@ fn detail_with_file(model: &str, file_content: &str) -> ConversationDetail {
             sibling_index: 0,
             provider_id: Some("p1".to_string()),
             model_id: Some(model.to_string()),
+            tool_call_id: None,
+            is_error: false,
         }],
     }
 }
@@ -535,7 +537,7 @@ async fn display_and_send_use_the_same_budget() {
     .unwrap();
 
     let send_budget = 8192usize - assistant_agent::chat_options::DEFAULT_MAX_TOKENS as usize;
-    let sent = chat_request::project_chat_messages(
+    let sent = request::project_chat_messages(
         &detail,
         "sys",
         &row,
@@ -543,8 +545,9 @@ async fn display_and_send_use_the_same_budget() {
         &store,
         Some(send_budget),
         ProjectionPurpose::Send,
+        None,
     )
     .await;
-    let shown = chat_request::estimate_branch_tokens(&detail, &row, &store).await;
+    let shown = request::estimate_branch_tokens(&detail, &row, &store).await;
     assert_eq!(estimate_total_tokens(&sent), shown);
 }

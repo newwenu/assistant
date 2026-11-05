@@ -5,7 +5,7 @@ use super::{read_msg_row, MessageRow, MSG_SELECT};
 pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String> {
     conn.execute(
         &format!(
-            "INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+            "INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
             MSG_SELECT
         ),
         params![
@@ -21,7 +21,9 @@ pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String>
             row.tool_calls_json,
             row.sibling_index,
             row.provider_id,
-            row.model_id
+            row.model_id,
+            row.tool_call_id,
+            row.is_error as i64
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -51,6 +53,20 @@ pub fn update_message_content(
     conn.execute(
         "UPDATE messages SET content = ?2, tokens = ?3, reasoning = ?4 WHERE id = ?1",
         params![id, content, tokens, reasoning],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 写 `messages.tool_calls_json`；在 assistant 行 `finalize` 之前调用。
+pub fn update_message_tool_calls(
+    conn: &Connection,
+    id: &str,
+    tool_calls_json: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE messages SET tool_calls_json = ?2 WHERE id = ?1",
+        params![id, tool_calls_json],
     )
     .map_err(|e| e.to_string())?;
     Ok(())

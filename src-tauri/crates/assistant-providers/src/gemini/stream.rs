@@ -72,7 +72,7 @@ pub(crate) fn gemini_response_to_unified(response: GeminiStreamResponse) -> Vec<
                         id: None,
                         name: function_call.name,
                         arguments: serde_json::to_string(&arguments).ok(),
-                        arguments_is_snapshot: false,
+                        arguments_is_snapshot: true,
                     }),
                     usage: usage.take(),
                     tool_call_completion: None,

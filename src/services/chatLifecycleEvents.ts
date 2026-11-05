@@ -2,13 +2,11 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   ConversationListChangedPayload,
   ConversationTerminatedPayload,
-  ConversationCompactFailedPayload,
   ConversationUnlockedPayload,
   ChatMessagesChangedPayload,
   Message,
 } from "../chat/core/chatTypes";
 import { ChatEvent } from "../chat/core/chatTypes";
-import { toChatError } from "../chat/core/chatErrors";
 import { useChatStore } from "../stores/chatStore";
 import { createLogger } from "@/services/logger";
 
@@ -87,27 +85,9 @@ export function subscribeChatLifecycleEvents(): () => void {
         const payload = event.payload;
         const store = useChatStore.getState();
         if (store.currentConversationId === payload.conversationId) {
-          useChatStore.setState({
-            isFull: payload.isFull,
-            compactSummary: payload.summary,
-            compactError: null,
-          });
+          useChatStore.setState({ isFull: payload.isFull });
         }
         void useChatStore.getState().loadConversations(true);
-      },
-    ),
-  );
-
-  track(
-    listen<ConversationCompactFailedPayload>(
-      ChatEvent.ConversationCompactFailed,
-      (event) => {
-        if (disposed) return;
-        const payload = event.payload;
-        const store = useChatStore.getState();
-        if (store.currentConversationId === payload.conversationId) {
-          useChatStore.setState({ compactError: toChatError(payload.error) });
-        }
       },
     ),
   );
@@ -120,11 +100,7 @@ export function subscribeChatLifecycleEvents(): () => void {
         const payload = event.payload;
         const store = useChatStore.getState();
         if (store.currentConversationId === payload.conversationId) {
-          useChatStore.setState({
-            isFull: false,
-            compactSummary: null,
-            compactError: null,
-          });
+          useChatStore.setState({ isFull: false });
         }
         void useChatStore.getState().loadConversations(true);
       },

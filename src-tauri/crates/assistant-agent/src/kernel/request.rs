@@ -12,7 +12,7 @@ use crate::multimodal::{self, ProjectionPurpose};
 use crate::prompt_builder::{self, AgentKind};
 use crate::request_projection;
 
-use super::ports::TurnInput;
+use super::ports::{ToolCatalog, TurnInput};
 
 /// provider 中立流类型，仅在此模块内用于收敛 `stream()` 的返回签名。
 type ProviderStream = std::pin::Pin<
@@ -46,10 +46,15 @@ impl ChatRequest {
     }
 }
 
-/// 顺序固定：投影 → 多模态 → 提示词 → tools（P3 无 tools，由 `spec.tools` 决定是否注入）。
+/// 顺序固定：投影 → 多模态 → 提示词 → tools 注入。
 ///
-/// `iteration` 只影响 tool 结果注入（P4），P3 不改变投影结果。
-pub async fn build(input: &TurnInput, iteration: u32) -> Result<ChatRequest, String> {
+/// tools 只在 `AgentKind::supports_tool_call()` 为真且目录非空时注入；
+/// 空目录视为无工具，循环退化为单次调用。
+pub async fn build(
+    input: &TurnInput,
+    iteration: u32,
+    catalog: Option<&Arc<dyn ToolCatalog>>,
+) -> Result<ChatRequest, String> {
     let _ = iteration;
 
     let detail = &input.detail;
@@ -63,11 +68,16 @@ pub async fn build(input: &TurnInput, iteration: u32) -> Result<ChatRequest, Str
         .unwrap_or_default();
     let context_window_tokens =
         types::resolve_context_window_from_stored(&model_id, &provider_row.models_json);
+    let tools = match catalog {
+        Some(catalog) if kind.supports_tool_call() => resolve_tools(&catalog.agent_tools().await),
+        _ => None,
+    };
     let options = build_chat_options(
         &kind,
         mode.unwrap_or(&AgentModeRow::default()),
         context_window_tokens,
         &input.reasoning,
+        tools,
     );
 
     let offload_budget = offload_budget_of(context_window_tokens, options.max_tokens);
@@ -79,6 +89,7 @@ pub async fn build(input: &TurnInput, iteration: u32) -> Result<ChatRequest, Str
         &input.attachments,
         offload_budget,
         ProjectionPurpose::Send,
+        None,
     )
     .await;
 
@@ -93,6 +104,17 @@ pub async fn build(input: &TurnInput, iteration: u32) -> Result<ChatRequest, Str
         context_window_tokens,
         kind,
     })
+}
+
+/// 空目录视为无工具：`tools = None`，循环退化为单次调用。
+fn resolve_tools(
+    tools: &[assistant_providers::types::ToolSpec],
+) -> Option<Vec<assistant_providers::types::ToolSpec>> {
+    if tools.is_empty() {
+        None
+    } else {
+        Some(tools.to_vec())
+    }
 }
 
 /// offload 预算 = 窗口扣除输出预留；窗口未知时预算不可判定，不做裁剪。
@@ -114,8 +136,10 @@ pub async fn project_chat_messages(
     attachment_store: &AttachmentStore,
     offload_budget: Option<usize>,
     purpose: ProjectionPurpose,
+    append_user_prompt: Option<&str>,
 ) -> Vec<types::ChatMessage> {
-    let mut chat_messages = prompt_builder::prepare_messages(detail, system_prompt, None);
+    let mut chat_messages =
+        prompt_builder::prepare_messages(detail, system_prompt, append_user_prompt);
 
     let support_vision =
         types::resolve_support_vision_from_stored(model_id, &provider_row.models_json);
@@ -181,6 +205,7 @@ pub async fn estimate_branch_tokens(
         attachment_store,
         offload_budget,
         ProjectionPurpose::Estimate,
+        None,
     )
     .await;
     request_projection::estimate_total_tokens(&messages)
