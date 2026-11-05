@@ -29,8 +29,8 @@
 | **P0 基线** | toolcall 从 chat 剥离；工具词汇层、Registry、`exec::invoke`、ToolBox 桥接 | I30 A 段、I31 T1/T2、I18b | ✅ 已完成 | — |
 | **P1 框架收口** | 共享路径安全 `os/path.rs`；`fs_link` 迁移与权限词汇修正 | I31 T3 | ✅ 已完成（2026-11-04） | P0 |
 | **P2 工具控制层** | Policy / Gateway / Pipeline / 审批键 / 校验 / 并发 / 结果持久化 | I38a | ✅ 已完成（2026-11-05） | P1 |
-| **P3 运行时内核** | `kernel/` 共用内核、端口、状态机、取消代际、双层超时、chat 等价迁移 | I36 spec | ❌ 未开始 | P0 |
-| **P4 Agent Loop 闭环** | RoundExecutor 多迭代循环；tool call 累积器；`ChatOptions.tools` 注入 | I38b | ❌ 未开始 | P2、P3；I30 B 段决策 |
+| **P3 运行时内核** | `kernel/` 共用内核、端口、状态机、取消代际、双层超时、chat 等价迁移 | I36 spec、[I36a](./I36a-agent-kernel-baseline.md) | 部分完成：C1–C9 已落地（chat / agent 两条链路均已改调内核）；C11 一致性收口进行中（H2 时间单源、H3 落库时间戳已落地；H1、H4–H9 待做）（2026-11-05） | P0 |
+| **P4 Agent Loop 闭环** | RoundExecutor 多迭代循环；tool call 累积器；`ChatOptions.tools` 注入 | I38b | 规格定稿（2026-11-05），待 P3 完成 | P2、P3；I30 B 段决策 |
 | **P5 OS 工具能力** | `fs_*`、`shell_exec`、`ask_user` 逐个落地 | I38c | ❌ 未开始 | P1、P2 |
 | **P6 前端与模式** | 五态 ToolCallBubble、审批 UI、AgentMode / 对话级工具配置 | I38d | ❌ 未开始 | P4、P5 |
 | **P7 MCP 外部工具** | MCP 客户端、进程管理、`mcp__{server}__{tool}` 桥接 | I38e | ❌ 未开始 | P2、P5 |
@@ -90,13 +90,15 @@ P2 + P5 ───────────► P7
 | 工具词汇层 / Tool trait / Registry / Tauri 桥接 | [I18 spec](./I18-agent-tool-architecture-spec.md) | 实施规格（Step 0-3、8） | Step 0-3 ✅，Step 8 ⚠️ |
 | 工具架构决策（分层、权限、双入口、安全原则） | [I18 design](./I18-agent-tool-architecture-design.md) | ADR | 现行 |
 | 工具控制层 | [I38a](./I38a-tool-control-layer-spec.md) | 实施规格 | 已实现（P2，2026-11-05） |
-| Agent Loop / 累积器 / tools 注入 | [I38b](./I38b-agent-loop-spec.md) | 实施规格 | 未开始 |
+| Agent Loop / 累积器 / tools 注入 | [I38b](./I38b-agent-loop-spec.md) | 实施规格 | 规格定稿（2026-11-05），待 P3 |
 | OS 工具逐个实现 | [I38c](./I38c-os-tools-spec.md) | 实施规格 | 未开始 |
 | 前端五态 / 审批 UI / Agent 模式 | [I38d](./I38d-agent-frontend-modes-spec.md) | 实施规格 | 未开始 |
 | MCP 外部工具 | [I38e](./I38e-mcp-tools-spec.md) | 实施规格 | 未开始 |
 | P8+ 演进候选（子代理 / Worker / Router / continuity） | 本文 §2.1 | 候选清单 | 未立项 |
-| 运行时内核（turn / 状态机 / 端口 / chat 迁移） | [I36 spec](./I36-agent-runtime-spec.md) | 实施规格 | 未实现 |
+| 运行时内核（turn / 状态机 / 端口 / chat 迁移） | [I36 spec](./I36-agent-runtime-spec.md) | 实施规格 | P3 内核与两条链路迁移已实现，C11 一致性收口进行中（2026-11-05） |
 | 运行时决策（D1-D18、参考项目提取） | [I36 design](./I36-agent-runtime-design.md) | ADR | 现行 |
+| 内核能力基线（能力矩阵 / 参考实现对照 / 扩展点 / 门禁） | [I36a](./I36a-agent-kernel-baseline.md) | 基线文档 | 现行 |
+| 内核一致性验证（确定性要求 / 验证矩阵 / 实检缺口） | [I36b](./I36b-agent-kernel-conformance-spec.md) | 验证规格 | 现行 |
 | toolcall 从 chat 剥离 | [I30](./I30-phase1-toolcall-separation-spec.md) | 阶段一 A 段 | A ✅ / B 推迟 |
 | 阶段一工具框架 | [I31](./I31-phase1-tool-framework-spec.md) | 阶段一 | T1/T2 ✅ / T3 ❌ |
 | ToolBox 桥接 | [I18b](./I18b-tool-unified-bridge-spec.md) | 专项规格 | 已落地，待 T3 修正 |
@@ -104,7 +106,7 @@ P2 + P5 ───────────► P7
 
 **单一权威源规则**：
 
-- 工具类型、Trait、Registry、桥接 → I18 spec；控制层 → I38a；循环 → I38b；工具实现 → I38c；前端 → I38d；MCP → I38e；运行时 → I36 spec。
+- 工具类型、Trait、Registry、桥接 → I18 spec；控制层 → I38a；循环 → I38b；工具实现 → I38c；前端 → I38d；MCP → I38e；运行时 → I36 spec；内核一致性判定（DT/V/H）→ I36b。
 - 同一契约不得在两份 spec 中各写一份。引用时写「见 X 文档 §Y」，不复制类型定义。
 - I18 spec 已收敛为框架层规格，不再承载 Step 4-7、9-10。
 

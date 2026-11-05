@@ -97,6 +97,7 @@
 - [x] C3.9 `OsToolResultDto` 新增 `result_for_assistant` / `error_kind`，`Option` 不加 `skip_serializing_if`
 - [x] C3.10 新增 `ToolErrorKindDto` 与 `From<ToolErrorKind>` 映射
 - [x] C3.11 `protocol_bindings.rs` 注册 `ToolErrorKindDto`，DTO 计数断言由 62 改为 63
+  - 注记（2026-11-05）：该计数断言已清理，改为「`src/protocol/dto` 中 `#[derive(...TS)]` 类型集合 ↔ `declarations` 类型集合」双向差集断言。本条作为历史记录保留，后续新增 DTO 不再需要改数字。
 - [x] C3.12 `protocol_dto_roundtrip.rs` 补新字段与 `errorKind:null` 序列化断言
 - [x] C3.13 `npm run contract:gen` 通过，`protocol.contract.ts` 已更新
 - [x] C3.14 存量 `fs_link` 全部单测保持通过（A9）

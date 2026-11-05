@@ -417,11 +417,11 @@ partition_tool_batches(tool_calls):
 2. 若后续确认需要长路径，须按 `docs/analysis/path-handling-inconsistency-analysis.md` §9-B 改为双形态模型（`to_io_path()` / `to_display_path()`），并同步修订 I31 §5.2 的「剥离 `\\?\`」结论。该改造会触及 `canonicalize_lenient` 的返回契约与 `ensure_within_root` 的比较方式，与「存量工具零改动」冲突，故不在 P2 实施。
 3. `dunce::simplified` 对不安全 verbatim 路径（尾随点/空格、保留名）会拒绝简化，此时 `simplify_verbatim` 仍返回 `\\?\` 形态，`ensure_within_root` 可能误拒。影响面限于此类非常规路径，P2 不处理。
 
-**开放问题**：
+**开放问题**（1–3 已由 P4 定稿，取值见 [I38b §9.1](./I38b-agent-loop-spec.md)）：
 
-1. `ApprovalRequest` 是否需要携带 `iteration` 与 `turn_id`？P2 先保留 `tool_call_id`，P4 接入运行时再补。
-2. 审计生产存储是否复用 `messages.tool_calls_json`，还是新建 `tool_calls` 表？P4 与 I36 spec 一并决定，P2 不建表。
-3. `ToolOutcome` 的事件载荷是否直接复用 DTO？P2 只定义内部事件类型，映射在 `src-tauri` 适配层。
+1. ~~`ApprovalRequest` 是否需要携带 `iteration` 与 `turn_id`？~~ **已定稿：不加**。P4 用 `TimingApprovalPrompter` 装饰器按 `tool_call_id` 记录等待时长，`turn_id` / `iteration` 由 `src-tauri` 的 `PipelineEventSink` 适配器在发事件时补齐（I38b §6.1 / §6.4）；P2 的 `ApprovalRequest` 字段保持原样。
+2. ~~审计生产存储是否复用 `messages.tool_calls_json`，还是新建 `tool_calls` 表？~~ **已定稿：都不复用，新建 `permission_grants` / `permission_audit` 两表**（I38b D14）；tool 调用与结果走 `messages` 的 `tool_calls_json` + 独立 `role='tool'` 行，不建 `tool_calls` 表（I38b D11 / §6.2）。
+3. ~~`ToolOutcome` 的事件载荷是否直接复用 DTO？~~ **已定稿：不复用**。`assistant-agent` 侧定义 `ToolEvent`（`assistant-agent` 本地类型），`src-tauri` 的适配器把它映射成 protocol DTO；`assistant-tools` 的 `PipelineEvent` 只喂适配器（I38b §6.1）。
 
 ---
 

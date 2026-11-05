@@ -28,7 +28,7 @@
 
 ### 1.2 非目标
 
-- 控制层（P2 已完成）；RoundExecutor（P4 已完成）。
+- 控制层（P2 已完成）；RoundExecutor（P4，未开始，规格见 [I38b](./I38b-agent-loop-spec.md)）。
 - ToolBox 前端组件与审批 UI（P6）；本阶段只要求 Rust 侧可被 `os_tool_exec` 与 Pipeline 调用。
 - `ask_user` 的完整交互：依赖 P6 输入框，见 §9。
 - MCP（P7）。

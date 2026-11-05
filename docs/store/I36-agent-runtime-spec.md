@@ -18,28 +18,30 @@
 | 请求预算卸载 | `assistant-agent/src/request_projection.rs` | 已实现 | 纯函数，阶梯第 ① 步；内核与两条链路共用 |
 | 压缩判定 | `assistant-agent/src/compaction.rs` | 已实现 | 纯函数 `evaluate_compaction`；不含摘要执行 |
 | 多模态投影 / token 估算 | `multimodal.rs` / `token_estimate.rs` | 已实现 | 纯函数 |
-| chat 链路（迁移来源） | `chat_tasks.rs` / `chat_runtime.rs` / `chat_request.rs` / `chat_options.rs` / `prompt_builder.rs` / `normalization.rs` / `cmd/chat` | 已实现 | Step 3 改调内核，Step 3.4 删除 `chat_runtime` / `chat_tasks` / `chat_request` / `prompt_builder`；`chat_options` / `normalization` 保留为无状态函数 |
-| **端口定义** | `kernel/ports.rs` | 未实现 | `EventSink` / `MessageStore` / `TurnInputSource` / `Clock`，**不得出现 tauri 类型** |
-| **端口生产实现** | `src-tauri/src/adapters/` | 未实现 | `event_sink.rs` / `message_store.rs` / `input_source.rs` |
-| **TurnSpec（参数化）** | `kernel/mod.rs` | 未实现 | `OnBusy` / `max_iterations` / `tools` / `ladder` / `stop_hooks` / `wrap_up` / `route` |
-| turn 令牌表 | `kernel/tasks.rs` | 未实现 | `OnBusy::{Replace, Reject}`；`turn_id = conv:counter` |
-| 流式消费 | `kernel/stream.rs` | 未实现 | delta 累积 / 部分结果 / 单次超时 / 取消；不含 tool 通道 |
-| turn 级请求构建 | `kernel/request.rs` | 未实现 | 吸收 `chat_request` / `prompt_builder` |
-| 部分结果与终态落库 | `kernel/persist.rs` | 未实现 | 经 `MessageStore` 端口 |
-| 事件生成与 seq | `kernel/emit.rs` | 未实现 | 经 `EventSink` 端口 |
-| 会话状态机 | `kernel/state.rs` | 未实现 | chat 链路目前只有布尔 `is_running` |
-| turn 值类型 | `kernel/ids.rs`、`phase.rs`、`outcome.rs` | 未实现 | — |
-| 运行时上限 | `kernel/limits.rs` | 未实现 | 双层墙钟尚未接线 |
-| TurnRunner | `kernel/runner.rs` | 未实现 | 唯一入口；内核无 tauri 依赖 |
+| chat 链路（迁移来源） | `chat_tasks.rs` / `chat_runtime.rs` / `chat_request.rs` / `chat_options.rs` / `prompt_builder.rs` / `normalization.rs` / `cmd/chat` | 已实现 | Step 3 已改调内核（`cmd/chat` → `start_turn(.., TurnSpec::chat())`）；`chat_runtime` / `chat_tasks` / `chat_request` / `prompt_builder` 仍被 `cmd/compaction.rs` 摘要链路复用，尚未删除 |
+| **端口定义** | `kernel/ports.rs` | 已实现 | `EventSink` / `MessageStore` / `TurnInputSource` / `Clock`，**不得出现 tauri 类型** |
+| **端口生产实现** | `src-tauri/src/adapters/` | 已实现 | `event_sink.rs` / `message_store.rs` / `input_source.rs` / `system_clock.rs` / `compaction_sink.rs` / `runner.rs` |
+| **TurnSpec（参数化）** | `kernel/mod.rs` | 已实现 | `OnBusy` / `max_iterations` / `tools` / `ladder` / `stop_hooks` / `wrap_up` / `route` / `kind` / `limits`（见 §0B.2.1 偏差记录） |
+| turn 令牌表 | `kernel/tasks.rs` | 已实现 | `OnBusy::{Replace, Reject}`；`turn_id = conv:counter` |
+| 流式消费 | `kernel/stream.rs` | 已实现 | delta 累积 / 部分结果 / 单次超时 / 取消；不含 tool 通道 |
+| turn 级请求构建 | `kernel/request.rs` | 已实现 | 吸收 `chat_request` / `prompt_builder` |
+| 部分结果与终态落库 | `kernel/persist.rs` | 已实现 | 经 `MessageStore` 端口；终态 `status` 列已加（C7） |
+| 事件生成与 seq | `kernel/emit.rs` | 已实现 | 经 `EventSink` 端口；同 turn `seq` 从 1 起严格单调 |
+| 会话状态机 | `kernel/state.rs` | 已实现 | 内存投影；chat / agent 两条链路均经 `SessionStates` |
+| turn 值类型 | `kernel/ids.rs`、`phase.rs`、`outcome.rs` | 已实现 | — |
+| 运行时上限 | `kernel/limits.rs` | 已实现 | 双层墙钟已在 `runner.rs` / `stream.rs` 接线 |
+| TurnRunner | `kernel/runner.rs` | 已实现 | 唯一入口；内核无 tauri 依赖；`cmd/chat` 与 `cmd/agent` 均经 `adapters/runner.rs` 构建 |
 | 停止钩子 | `agent/stop.rs` | 未实现 | agent 专属 |
 | 中间件链 | `agent/middleware.rs` | 未实现 | agent 专属 |
 | 上下文阶梯 ②③④⑤ | `agent/ladder.rs` | 未实现 | ② 的摘要执行体在 `agent/compaction_exec.rs` |
 | 摘要执行 | `agent/compaction_exec.rs` | 未实现 | 不调用 `cmd/compaction.rs` |
 | 审批门 | `agent/approval.rs` | 未实现 | — |
-| 宿主命令 | `src-tauri/src/cmd/agent/` | 未实现 | 只做「校验入参 → begin_turn → spawn → 映射返回值」 |
-| 消息终态列 | `assistant-storage` | 未实现 | `messages` 无 status 列 |
-| 启动清扫 | `src-tauri/src/setup.rs` 启动序列 | 未实现 | — |
-| 轮级观测（TTFT / 汇总） | `kernel/outcome.rs` + 事件 | 未实现 | 现有只有 provider usage |
+| 宿主命令 | `src-tauri/src/cmd/agent/` | 已实现 | `cmd/agent/mod.rs` 与 `cmd/chat/mod.rs` 只做「校验入参 → `start_turn` → spawn → 映射返回值」 |
+| 消息终态列 | `assistant-storage` | 已实现 | `messages.status`：`streaming` / `completed` / `interrupted` / `failed` |
+| 启动清扫 | `src-tauri/src/setup.rs` 启动序列 | 已实现 | 启动时把遗留 `streaming` 置为 `interrupted`，失败只 `log::warn!` |
+| 轮级观测（TTFT / 汇总） | `kernel/outcome.rs` + `runner.rs` | 已实现 | `TurnOutcome.ttft_ms` + 每轮一条 `[turn]` 固定字段 `info` 日志 |
+
+> 状态以 2026-11-05 代码为准。chat / agent 两条链路均已改调内核。**「已实现」只表示模块与单测存在，不等于全部能力已接线**：`TurnSpec.ladder` / `wrap_up` / `stop_hooks` 在内核内无读取点，`agent/` 下中间件、阶梯、停止钩子、摘要执行、审批门仍未实现（P4 / I38b 范围）；`chat_runtime` 仍被摘要链路 `cmd/compaction.rs` 复用。任务粒度与勾选状态见 [I36-agent-runtime-tasklist.md](./I36-agent-runtime-tasklist.md)。
 
 ---
 
@@ -201,6 +203,7 @@ pub trait MessageStore: Send + Sync {
     async fn save_content(&self, msg_id: &str, content: &str, tokens: Option<u32>, reasoning: Option<&str>) -> Result<(), StoreError>;
     async fn finalize(&self, msg_id: &str, status: MessageStatus) -> Result<(), StoreError>;
     async fn record_usage(&self, records: &[UsageRecord]) -> Result<(), StoreError>;
+    // P4 扩展（tool 落库）：save_tool_calls / append_tool_message，见 I38b spec §6.3
 }
 
 #[async_trait]
@@ -217,6 +220,8 @@ pub trait Clock: Send + Sync {
 ```
 
 > `assistant-agent/Cargo.toml` 需新增 `async-trait`（workspace 已有，原生 `async fn in trait` 不兼容 `dyn`，见 `assistant-tools/src/trait.rs` 注释）。**不得**为此引入 `tauri`。
+
+> **P4 收敛（见 I38b spec §6.1 / D5）**：`TurnEvent::ToolStarted` / `ToolFinished` 两变体替换为单一 `TurnEvent::Tool(ToolEvent)`；`ToolEvent` = 上下文（`turn_id` / `iteration` / `call_id` / `name`）+ 阶段枚举 `ToolEventPayload::{Started, ArgsDelta{delta}, Finished{result, confirmation_wait_ms}, Failed{error, error_kind, confirmation_wait_ms}}`。理由：两变体缺 `iteration` / `args_delta` / 失败原因 / `confirmation_wait_ms`，且 P6 审批阶段继续按变体扩展而非堆 `Option`。P3 未开工，两变体当前无生产者，一次性替换不产生迁移债。
 
 **实现位置**：
 
@@ -244,6 +249,10 @@ pub struct TurnSpec {
     pub stop_hooks: Vec<Arc<dyn StopHook>>,
     pub wrap_up: bool,
     pub route: EventRoute,
+    /// usage 记录的 `kind` 分类，与 `route` 解耦（路由决定投递范围，`kind` 决定统计口径）。
+    pub kind: &'static str,
+    /// 本轮预算；`TurnRunner` 不再单独持有 `limits`。
+    pub limits: TurnLimits,
 }
 
 impl TurnSpec {
@@ -255,6 +264,14 @@ impl TurnSpec {
 ```
 
 **硬约束**：内核内**不得**出现 `if is_agent` / `if is_chat`。差异只能来自 `TurnSpec` 字段。
+
+#### 0B.2.1 偏差记录（实现相对本规格的偏离）
+
+| 偏差 | 实现 | 原因 |
+|---|---|---|
+| `TurnSpec` 从七字段扩到九字段 | 增加 `kind: &'static str` 与 `limits: TurnLimits` | `kind` 供 usage 统计分类，与 `route` 解耦；`limits` 收进 `TurnSpec` 后 `TurnRunner` 不再单独持有预算，链路差异只有一个来源（tasklist C5.13） |
+| `RoundExecutor` 占位放在 `kernel/mod.rs` | 未新建 `agent/` 目录 | P3 尚无 `agent/` 下任何模块（见实施状态总览）；占位只需签名，P4 再迁至 `agent/round_executor.rs`（I38b §2.2） |
+| `ToolCatalog` / `StopHook` 为最小占位 | `ToolCatalog` 空 trait；`StopHook` 只有 `name()` | P3 不驱动工具，`check` 与 async 签名随 P4 定型（I38b D16、I36 Step 5.1） |
 
 ### 0B.3 内核模块骨架
 
@@ -416,19 +433,19 @@ turn token（TurnTasks 持有）
 
 ```rust
 pub struct TurnRunner {
-    states: Arc<SessionStates>,
-    tasks: Arc<TurnTasks>,
-    limits: TurnLimits,
     sink: Arc<dyn EventSink>,
     store: Arc<dyn MessageStore>,
     input: Arc<dyn TurnInputSource>,
+    states: Arc<SessionStates>,
+    tasks: Arc<TurnTasks>,
     clock: Arc<dyn Clock>,
-    middlewares: MiddlewareChain,
-    stop_hooks: Vec<Arc<dyn StopHook>>,
     // P4（I38b）接入多迭代循环后注入；P3 为 None，由 TurnRunner 跑单迭代过渡循环
     round_executor: Option<Arc<dyn RoundExecutor>>,
+    compaction: Option<CompactionConfig>,
 }
 ```
+
+`limits` 已收进 `TurnSpec`（§0B.2.1 偏差记录）；`middlewares` / `stop_hooks` 随 `agent/` 落地，P3 不存在于 `TurnRunner`。
 
 `TurnRunner::run(ctx, spec) -> TurnOutcome` 是唯一入口。新增宿主 `src-tauri/src/cmd/agent/` 只负责：校验入参 → `TurnTasks::begin` → `spawn(runner.run(...))` → 把 `TurnOutcome` 映射成返回值。**落库与事件发射在内核侧完成**（经端口），宿主不碰。这与 `cmd/chat` 的现状相反，是刻意的：chat 把编排写在命令层，内核不重复这个错误。
 
@@ -580,9 +597,11 @@ pub enum MiddlewareOutcome { Continue, StopTurn { reason: String } }
 | 5 | `HardTrimMiddleware` | `before_model` | 阶梯 ⑤：整条淘汰最旧消息 |
 | 6 | `ToolOutputCapMiddleware` | `after_tool` | 单条工具结果字节上限（I38a §4-C6） |
 | 7 | `ToolOutcomeCaptureMiddleware` | `after_tool` | 捕获 `success` / `call_id` / 原始参数，供 `TurnOutcome` 汇总 |
-| 8 | `RepeatedFailureMiddleware` | `after_iteration` | 连续失败熔断（同工具同参数失败 N 次 → StopTurn） |
+| 8 | `RepeatedFailureMiddleware` | `after_iteration` | 失败阶梯：豁免（D26）→ 分类预算（D25）→ 通用 2/3 阶梯（D19）；nudge 只进本次请求，halt 覆盖最终文本 |
 
 **顺序是语义**，不是实现细节：3 必须在 2 之后（否则摘要器读到的是占位符），4 必须在 3 之后（否则还原的是空内容）。
+
+第 8 项的**内部顺序也是语义**：先判豁免（轮询类工具的同参重复是合法进展），再判分类预算（`stage` + `error_kind` 决定该类别能否重试），最后才落通用计数。颠倒会让可分类的失败被通用计数提前熔断，也会让豁免工具被误杀。
 
 ### 4.3 阶梯门控公式
 
@@ -601,9 +620,27 @@ if estimated > budget && microcompact_keep_recent > 0 {
     blank_older_tool_bodies(keep_recent = N)
 }
 
+// ④ 收尾还原：仅 capped turn 的结论调用，撤销 ③ 的清空
+if is_wrap_up_call && restore_allowance > 0 {
+    restore_recent_tool_bodies(allowance = restore_allowance)   // 最近 N 条优先，超出仍保持占位符
+}
+
 // ⑤ 硬裁剪：整条淘汰最旧消息，system 消息永不淘汰，图片按固定成本计价
 while estimated > budget && evictable_oldest_exists() { evict() }
 ```
+
+**④ 的额度从 ① 里拆**（OpenHuman `split_input_allowance`）：
+
+```
+allowance   = budget - estimated_after_③          // ③ 之后剩余空间
+toc_allowance     = allowance * 3 / 4              // 内容清单（供模型定位已有结果）
+restore_allowance = allowance - toc_allowance      // 收尾还原
+```
+
+- 两者共用**同一份** allowance，总额度不因还原而突破 `budget`，因此 ④ 之后不会触发 ⑤。
+- `context_window.is_none()` 时 `restore_allowance = 0`，即不还原（`unwrap_or(0)` 语义）。
+- 还原只作用于**本次结论调用**，不写回历史；后续轮次重新按阶梯计算。
+- 还原不改变落库行，占位符仍留在 `messages` 里——重放时照常走 ③。
 
 **微压缩占位符**：`[tool result cleared: {tool_name}, {tokens} tokens]`——保留工具名与规模，让模型知道「这里发生过什么」，避免凭空丢上下文。
 
@@ -635,15 +672,18 @@ pub struct TurnState<'a> {
     pub iteration: u32,
     pub max_iterations: u32,
     pub tool_calls: u32,
+    pub max_tool_calls: u32,
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub elapsed: Duration,
+    pub turn_deadline: Option<Duration>,
     pub model: &'a str,
 }
 ```
 
 - `check` 是**同步**的，禁止 IO、禁止 await（design §3.5）。
 - `TurnState` 借出循环局部变量，钩子不得持有引用跨迭代。
+- `max_tool_calls` / `turn_deadline` 是 P4 新增字段（D18 三维预算）；`turn_deadline` 由 TurnRunner 算好下发，executor 只读，不重算。
 
 ### 5.2 内置钩子
 
@@ -651,9 +691,12 @@ pub struct TurnState<'a> {
 |---|---|---|
 | `IterationLimitHook` | `iteration > max_iterations` | 冗余保险（主循环已判） |
 | `ToolCallLimitHook` | `tool_calls >= max_tool_calls` | `tool-call-limit` |
+| `TurnWallClockHook` | `elapsed >= turn_deadline` | `turn-wall-clock` |
 | `TurnTokenBudgetHook` | `prompt_tokens + completion_tokens >= turn_token_budget` | `token-budget` |
 
-`turn_token_budget` 从配置读取，未配置时不安装该钩子（不设默认值，避免误杀）。
+前三个恒安装（D18 的三维刹车，任一触发都走 Halt 收尾，不静默截断）。`turn_token_budget` 从配置读取，未配置时不安装该钩子（不设默认值，避免误杀）；它是**附加**维度，不替代三维中的任何一个。
+
+`max_tool_calls` 按**发起数**计：被拒绝、失败、取消的调用同样占预算（它们已经花掉一次工具调用名额）。
 
 ### 5.3 嵌套收紧
 
@@ -693,9 +736,11 @@ restore_phase(previous)
 
 **失败降级**：`run_summarize` 失败时**不中止本轮**，`log::warn!` 后降级到阶梯 ③⑤（对齐 OpenHuman 的 `FaultTolerantCachingSummarizer` 行为）。只有 hook 主动 Stop 才中止。
 
+**计数口径**（D24）：压缩不触碰 `iteration`，摘要调用**不计入** `max_iterations`；但它确实花了一次模型调用，因此 `model_calls += 1` 并计入 token 统计。压缩是 `before_model` 中间件，不是迭代——把计数重置会让压缩变成绕过迭代上限的后门。
+
 ### 6.3 过渡期语义
 
-本规格落地时保持**终止式**（`CompactDecision::Terminate` → 压缩完成后另起），轮内续跑等 P4（I38b）就位后再切（design §3.9 第二步）。切换时只改 `run_summarize` 之后的分支，不改生命周期与事件。
+本规格落地时保持**终止式**（`CompactDecision::Terminate` → 压缩完成后另起），轮内续跑等 P4（I38b）就位后再切（design §3.9 第二步，I38b §9.1 D13 明确**不随 P4 同批**）。切换时只改 `run_summarize` 之后的分支，不改生命周期与事件。
 
 ---
 
@@ -708,7 +753,7 @@ restore_phase(previous)
 | `chat-stream-start`（已有名） | `begin_turn` 后 | `conversation_id` / `attempt_id`(=turn_id) / `message_id` / **新增 `phase`** |
 | `session-state-changed`（新增） | 任意 phase 或 Idle/Error 迁移 | `conversation_id` / `turn_id` / `state` |
 | `chat-delta`（已有名） | 流式增量 | 追加 `iteration`（u32） |
-| `agent-tool-call`（I38d §2.1 定义） | 工具开始/结束/等审批 | `turn_id` / `iteration` / `call_id` |
+| `agent-tool-call`（P4 定义见 [I38b](./I38b-agent-loop-spec.md) §6.1；P6 渲染见 I38d） | 工具开始/结束/等审批 | `turn_id` / `iteration` / `call_id` |
 | `compaction-started` / `compaction-completed`（新增） | 压缩 | `turn_id` / `trigger` / 前后 token |
 | `chat-stream-end` / 终止类（已有名） | 终态 | `turn_id` / `status` / `outcome 摘要` |
 
@@ -818,6 +863,7 @@ ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 14. 构造「摘要 + 最近窗口仍溢出」：按 ②→③→⑤ 顺序各触发一次，最终请求不超预算。
 15. 摘要器失败：本轮不中止，降级到 ③⑤，日志含降级原因。
 16. 窗口未知：不调用摘要器，日志出现一次 `Undetermined` 告警。
+16a. 收尾还原：③ 清空过结果体的 capped turn，结论调用能读到最近结果，且请求总量仍 ≤ `budget`（④ 不把 ⑤ 逼出来）；`restore_allowance = 0`（窗口未知）时不还原。
 
 **Step 5-6**
 
@@ -825,6 +871,7 @@ ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 18. 迭代上限触发收尾：最后一次请求不含 `tools`，且 `wrap_up_injected = true`、`hit_cap = true`。
 19. 手动压缩与自动压缩产生相同的 `compaction-started/completed` 事件序列，仅 `trigger` 不同。
 20. pre-compact hook 返回 Stop → 本轮 `Failed`，不进入摘要执行。
+20a. 压缩触发后 `iteration` 不变，`model_calls` 加 1；摘要调用不占迭代名额（D24）。
 
 **Step 7-8**
 
@@ -849,8 +896,14 @@ ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 | `messages.status` 新增列 | 旧库迁移 | `NOT NULL DEFAULT 'completed'`，旧行语义正确 |
 | 微压缩清空工具结果 | 模型后续可能引用已清空内容 | 占位符保留工具名与规模；收尾调用做还原（④） |
 
-**开放问题**（待 RoundExecutor 就位后定）：
+**开放问题**（已全部定稿，取值以参考项目已落地做法为准）：
 
-1. 工具审批等待期间，`turn_wall_clock` 是否继续计时？当前倾向「继续计时」，因为用户可能长时间不响应；需与审批超时（I38a §2.8）合并考虑。
-2. 收尾调用是否需要读取被微压缩清空的工具结果？当前倾向「需要」（阶梯 ④），但会推高收尾调用的输入量。
-3. 压缩完成后是否重置 `iteration` 计数？当前倾向「不重置」，压缩不改变「这一轮已经用掉几次模型调用」的事实。
+1. ~~工具审批等待期间，`turn_wall_clock` 是否继续计时？~~ **已定稿：计入，并单独记录 `confirmation_wait_ms`**（见 [I38b spec](./I38b-agent-loop-spec.md) §9.1 D12）；审批超时沿用 I38a §2.8。
+2. ~~收尾调用是否需要读取被微压缩清空的工具结果？~~ **已定稿：需要还原，但受独立预算约束**（阶梯 ④ `WrapUpRestoreMiddleware`）。参考 OpenHuman `harness_context_ladder.rs`：`FinalCallWrapUpMiddleware` 在 capped turn 的结论调用前撤销微压缩清空，且还原额度与「内容清单」共用**同一份 allowance**（`split_input_allowance` 拆成 `toc_allowance` / `restore_allowance`），避免还原把请求重新顶回超预算、触发淘汰。实现约束：
+   - 还原只针对**本次结论调用**，不写回落库；后续轮次仍按阶梯重新计算。
+   - 还原按「最近 N 条」优先，超出 `restore_allowance` 的保持占位符（`[tool result cleared: …]`）。
+   - 无 `context_window` 时 `restore_allowance = 0`，即不还原（与 OpenHuman `unwrap_or(0)` 一致）。
+3. ~~压缩完成后是否重置 `iteration` 计数？~~ **已定稿：不重置**。参考 OpenHuman：`max_iterations` 落到 harness `max_model_calls`（`turn_runner.rs` 的 `with_max_model_calls`），压缩是 `before_model` 中间件，不触碰计数器；`turn_run_finalize.rs` 仍以 `run.model_calls` 判顶。理由：压缩改变的是**上下文体积**，不是「这一轮已经花掉几次模型调用」；重置会让压缩变成绕过迭代上限的后门。
+   - 推论：压缩自身的摘要调用**不计入** `max_iterations`（它不是本轮的工具/回答调用），但**计入** `model_calls` 统计与 token 统计。
+
+**已移交 I38b 的决策**（属迭代语义，随循环进 executor，不在 `kernel/` 实现）：三维预算（D18）、失败分类阶梯与重复调用豁免（D25 / D26）、收尾还原额度（D23）、压缩不重置迭代计数（D24）。`kernel/` 只负责 turn 级 deadline 与 `TurnLimits` 下发，不实现上述任何一项。

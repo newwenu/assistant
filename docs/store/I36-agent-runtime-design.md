@@ -2,7 +2,9 @@
 
 > 本文记录运行时**决策**：为什么这样分层、参考了什么、取舍是什么。**不记录进度**。
 > 阶段、状态与门禁见 [I38-agent-roadmap.md](./I38-agent-roadmap.md)（唯一阶段入口）。
-> 实施规格见 [I36-agent-runtime-spec.md](./I36-agent-runtime-spec.md)；Agent Loop 见 [I38b](./I38b-agent-loop-spec.md)。
+> 实施规格见 [I36-agent-runtime-spec.md](./I36-agent-runtime-spec.md)；Agent Loop 见 [I38b](./I38b-agent-loop-spec.md)；
+> 内核能力基线与参考实现对照见 [I36a-agent-kernel-baseline.md](./I36a-agent-kernel-baseline.md)；
+> 内核一致性判定（确定性要求 / 验证矩阵 / 实检缺口）见 [I36b-agent-kernel-conformance-spec.md](./I36b-agent-kernel-conformance-spec.md)。
 > 工具框架见 [I18-agent-tool-architecture-design.md](./I18-agent-tool-architecture-design.md)；
 > ToolBox 桥接见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)；
 > chat 构建剥离见 [I30-phase1-toolcall-separation-spec.md](./I30-phase1-toolcall-separation-spec.md)。
@@ -128,8 +130,12 @@ pub struct TurnSpec {
     pub stop_hooks: Vec<Arc<dyn StopHook>>, // chat = []
     pub wrap_up: bool,                    // chat = false
     pub route: EventRoute,                // Orb | Broadcast
+    pub kind: &'static str,               // usage 统计口径：chat | agent（与 route 解耦）
+    pub limits: TurnLimits,               // 墙钟 / 单调用超时 / 空响应重试 / 微压缩
 }
 ```
+
+**偏差记录（C5 落地时）**：`TurnLimits` 原先作为 `TurnRunner` 字段传入，导致「chat 行为差异」同时藏在 runner 配置与 spec 两处，违反「差异只能来自 `TurnSpec`」。现收进 `TurnSpec`，由 `TurnSpec::chat()` / `TurnSpec::agent()` 绑定各自的 limits；`TurnRunner` 因此为八字段。`TurnLimits::max_iterations` 仅用于派生 `max_tool_calls`，迭代上限的权威值仍是 `TurnSpec::max_iterations`。
 
 **判据**：新需求若只影响 chat 或只影响 agent，用 `TurnSpec` 字段表达；若字段无法表达，才允许分叉。禁止在内核里写 `if conversation.is_agent`。
 
