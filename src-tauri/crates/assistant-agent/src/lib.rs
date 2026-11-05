@@ -4,6 +4,7 @@ pub mod chat_runtime;
 pub mod chat_tasks;
 pub mod compaction;
 pub mod error;
+pub mod kernel;
 pub mod multimodal;
 pub mod normalization;
 pub mod pdf_text;

@@ -180,6 +180,7 @@ version = "0.1.0"
 dependencies = [
  "assistant-providers",
  "assistant-storage",
+ "async-trait",
  "base64 0.23.1",
  "chardetng",
  "chrono",
@@ -189,6 +190,7 @@ dependencies = [
  "log",
  "pdf-extract",
  "proptest",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",

@@ -7,11 +7,15 @@ publish.workspace = true
 
 [features]
 slow-tests = []
+# 端口替身对集成测试可见：`cargo test -p assistant-agent --features test-doubles`
+test-doubles = []
 
 [dependencies]
+serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
+async-trait = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }

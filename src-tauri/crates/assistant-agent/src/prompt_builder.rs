@@ -24,10 +24,6 @@ impl AgentKind {
     pub fn supports_tool_call(&self) -> bool {
         matches!(self, AgentKind::Custom)
     }
-
-    pub fn persists_reasoning(&self) -> bool {
-        matches!(self, AgentKind::Deep)
-    }
 }
 
 pub fn prepare_messages(

@@ -767,14 +767,6 @@ fn d6_agent_kind_supports_tool_call() {
     assert!(AgentKind::Custom.supports_tool_call());
 }
 
-#[test]
-fn d6_agent_kind_persists_reasoning() {
-    assert!(!AgentKind::Default.persists_reasoning());
-    assert!(!AgentKind::Quick.persists_reasoning());
-    assert!(AgentKind::Deep.persists_reasoning());
-    assert!(!AgentKind::Custom.persists_reasoning());
-}
-
 // ─── G4: compaction on_delta 仅 emit delta_text + finish_reason ───
 
 #[tokio::test]

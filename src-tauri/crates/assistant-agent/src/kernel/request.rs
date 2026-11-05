@@ -1,0 +1,187 @@
+use std::sync::Arc;
+
+use assistant_providers::base;
+use assistant_providers::types;
+use assistant_storage::agent_modes::AgentModeRow;
+use assistant_storage::attachment_store::AttachmentStore;
+use assistant_storage::conversations::ConversationDetail;
+use assistant_storage::providers::ProviderRow;
+
+use crate::chat_options::{build_chat_options, DEFAULT_MAX_TOKENS};
+use crate::multimodal::{self, ProjectionPurpose};
+use crate::prompt_builder::{self, AgentKind};
+use crate::request_projection;
+
+use super::ports::TurnInput;
+
+/// provider 中立流类型，仅在此模块内用于收敛 `stream()` 的返回签名。
+type ProviderStream = std::pin::Pin<
+    Box<dyn futures::Stream<Item = Result<base::ChatDelta, base::ProviderError>> + Send>,
+>;
+
+/// 一次模型调用所需的全部输入；构建后不再触碰 DB。
+pub struct ChatRequest {
+    pub chat_messages: Vec<types::ChatMessage>,
+    /// 由输入端口提供，`build()` 只消费不构造（H1）。
+    pub adapter: Arc<dyn base::BaseProviderAdapter>,
+    pub api_key: String,
+    pub model: String,
+    pub options: types::ChatOptions,
+    pub context_window_tokens: Option<u32>,
+    pub kind: AgentKind,
+}
+
+impl ChatRequest {
+    pub fn stream(
+        &self,
+        cancel_token: tokio_util::sync::CancellationToken,
+    ) -> Result<ProviderStream, base::ProviderError> {
+        self.adapter.chat_completion_stream(
+            &self.api_key,
+            &self.chat_messages,
+            &self.model,
+            &self.options,
+            cancel_token,
+        )
+    }
+}
+
+/// 顺序固定：投影 → 多模态 → 提示词 → tools（P3 无 tools，由 `spec.tools` 决定是否注入）。
+///
+/// `iteration` 只影响 tool 结果注入（P4），P3 不改变投影结果。
+pub async fn build(input: &TurnInput, iteration: u32) -> Result<ChatRequest, String> {
+    let _ = iteration;
+
+    let detail = &input.detail;
+    let provider_row = &input.provider.row;
+    let model_id = detail.conversation.model_id.clone();
+    let mode: Option<&AgentModeRow> = input.mode.as_ref();
+
+    let system_prompt = mode.map(|m| m.prompt.as_str()).unwrap_or("");
+    let kind = mode
+        .map(|m| AgentKind::from_mode_kind(&m.kind))
+        .unwrap_or_default();
+    let context_window_tokens =
+        types::resolve_context_window_from_stored(&model_id, &provider_row.models_json);
+    let options = build_chat_options(
+        &kind,
+        mode.unwrap_or(&AgentModeRow::default()),
+        context_window_tokens,
+        &input.reasoning,
+    );
+
+    let offload_budget = offload_budget_of(context_window_tokens, options.max_tokens);
+    let chat_messages = project_chat_messages(
+        detail,
+        system_prompt,
+        provider_row,
+        &model_id,
+        &input.attachments,
+        offload_budget,
+        ProjectionPurpose::Send,
+    )
+    .await;
+
+    let adapter = input.adapter.clone();
+
+    Ok(ChatRequest {
+        chat_messages,
+        adapter,
+        api_key: input.provider.api_key.clone(),
+        model: model_id,
+        options,
+        context_window_tokens,
+        kind,
+    })
+}
+
+/// offload 预算 = 窗口扣除输出预留；窗口未知时预算不可判定，不做裁剪。
+pub fn offload_budget_of(context_window_tokens: Option<u32>, max_tokens: u32) -> Option<usize> {
+    context_window_tokens
+        .filter(|&w| w > 0)
+        .map(|w| w.saturating_sub(max_tokens) as usize)
+}
+
+/// 出站消息投影：system prompt + 历史消息 + 附件投影 + 超预算降级。
+///
+/// 发送路径与「占用展示兜底」共用本函数，保证两者看到的是同一份消息。
+#[allow(clippy::too_many_arguments)]
+pub async fn project_chat_messages(
+    detail: &ConversationDetail,
+    system_prompt: &str,
+    provider_row: &ProviderRow,
+    model_id: &str,
+    attachment_store: &AttachmentStore,
+    offload_budget: Option<usize>,
+    purpose: ProjectionPurpose,
+) -> Vec<types::ChatMessage> {
+    let mut chat_messages = prompt_builder::prepare_messages(detail, system_prompt, None);
+
+    let support_vision =
+        types::resolve_support_vision_from_stored(model_id, &provider_row.models_json);
+    let support_pdf = resolve_native_pdf_support(provider_row, model_id);
+
+    if support_vision {
+        multimodal::rehydrate_images(&mut chat_messages, attachment_store).await;
+    } else {
+        multimodal::project_images_for_text_model(&mut chat_messages);
+    }
+
+    // 文件预算 = 输入预算 - 非文件内容（system / 文本 / 图片 / 工具结果）。
+    let non_file_tokens = crate::token_estimate::estimate_non_file_tokens(&chat_messages);
+    let file_budget = offload_budget.map(|b| b.saturating_sub(non_file_tokens));
+
+    multimodal::project_files(
+        &mut chat_messages,
+        attachment_store,
+        support_pdf,
+        file_budget,
+        purpose,
+    )
+    .await;
+
+    request_projection::offload_if_over_budget(&mut chat_messages, offload_budget, purpose);
+    chat_messages
+}
+
+/// 原生 PDF 能力 = 模型声明支持 PDF + 目标端点确实能发送 PDF。
+fn resolve_native_pdf_support(provider_row: &ProviderRow, model_id: &str) -> bool {
+    if !types::resolve_support_pdf_from_stored(model_id, &provider_row.models_json) {
+        return false;
+    }
+    match base::provider_kind_from_str(&provider_row.type_, provider_row.base_url.clone()) {
+        base::ProviderKind::Anthropic
+        | base::ProviderKind::Gemini
+        | base::ProviderKind::GeminiCodeAssist
+        | base::ProviderKind::OpenAIResponses => true,
+        base::ProviderKind::OpenAI | base::ProviderKind::Custom { .. } => false,
+    }
+}
+
+/// 分支零记录时的占用投影：只读，不构造 adapter、不发起请求、不落库。
+pub async fn estimate_branch_tokens(
+    detail: &ConversationDetail,
+    provider_row: &ProviderRow,
+    attachment_store: &AttachmentStore,
+) -> usize {
+    let system_prompt = detail
+        .conversation
+        .system_prompt
+        .clone()
+        .unwrap_or_default();
+    let model_id = detail.conversation.model_id.clone();
+    let context_window_tokens =
+        types::resolve_context_window_from_stored(&model_id, &provider_row.models_json);
+    let offload_budget = offload_budget_of(context_window_tokens, DEFAULT_MAX_TOKENS);
+    let messages = project_chat_messages(
+        detail,
+        &system_prompt,
+        provider_row,
+        &model_id,
+        attachment_store,
+        offload_budget,
+        ProjectionPurpose::Estimate,
+    )
+    .await;
+    request_projection::estimate_total_tokens(&messages)
+}
