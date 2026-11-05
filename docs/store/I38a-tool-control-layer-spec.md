@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | Draft（未开始） |
+| 状态 | 已实现（P2，2026-11-05） |
 | 日期 | 2026-11-04 |
 | 阶段 | P2（见 [I38 roadmap](./I38-agent-roadmap.md)） |
 | 关联 | [I18 design](./I18-agent-tool-architecture-design.md) §3.5 / §3.9 / §3.12-§3.15、[I18 spec](./I18-agent-tool-architecture-spec.md) Step 4-6（已迁移至本文）、[I31](./I31-phase1-tool-framework-spec.md) §5（`os/path.rs`） |
@@ -10,6 +10,8 @@
 
 > 本文是 P2 的唯一权威规格。I18 spec 的 Step 4-6 已迁入本文并在原文件删除，避免双份定义。
 > 决策依据（为什么取最严、为什么先校验后审批）见 I18 design §3.5 / §3.9 / §3.14 / §3.15，本文不重复论证。
+
+> 执行清单：[I38a-tool-control-layer-tasklist.md](./I38a-tool-control-layer-tasklist.md)（C0–C8 逐项勾选与验收映射）。
 
 ---
 
@@ -304,7 +306,7 @@ evaluate(tool, input, context, policy) -> GatewayDecision:
   2. for intent in intents:
        for resource in intent.resources:
          key = ApprovalKey::from(tool, intent, input, context)
-         if grant_store.is_granted(&key): continue
+         if grant_store.is_granted(&key): audit(GrantHit); continue
          effect = policy.evaluate(intent.action, resource)
          match effect:
            Allow -> audit(Allow); continue
@@ -312,9 +314,9 @@ evaluate(tool, input, context, policy) -> GatewayDecision:
            Ask   -> collect need_approval { key, intent, resource }
   3. if need_approval 非空:
        decision = approval_prompter.request(...).await
-       Approve       -> audit; continue
-       AlwaysApprove -> grant_store.save_grant; audit; continue
-       Deny          -> audit; return RejectedByUser
+       Approve       -> audit(Approved); continue
+       AlwaysApprove -> grant_store.save_grant; audit(AlwaysApproved); continue
+       Deny          -> audit(Rejected); return RejectedByUser
   4. return Allowed
 ```
 
@@ -322,8 +324,10 @@ evaluate(tool, input, context, policy) -> GatewayDecision:
 
 - 意图为空（只读工具）时直接 `Allowed`，不触发审批。
 - 同一工具多意图时，任一 `Deny` 立即返回；`Ask` 合并为一次审批请求。
+- **每一条放行路径都必须留审计**，包括审批缓存命中。`grant_store` 命中记 `GrantHit`，与策略 `Allow` 区分：前者是「用户此前授权」，后者是「策略静态允许」，两者的事后追溯意义不同。
 - 审计失败只记日志，不改变决策（审计不是事实源）。
 - `AlwaysApprove` 只保存当前规范化键，不扩大到工具名或前缀。
+- 空键（`ApprovalKey` 为 `None`）不查缓存、不落 grant，但必须写审计：它每次都会走审批，审计是唯一能证明「确实问过人」的记录。
 
 ### P2-C5 — Pipeline
 
@@ -381,18 +385,18 @@ partition_tool_batches(tool_calls):
 
 ## 5 验收标准
 
-| # | 标准 |
-|---|---|
-| A1 | `cargo test -p assistant-tools` 全绿；`cargo clippy -p assistant-tools -- -D warnings` 无告警 |
-| A2 | `assistant-tools` 的 `cargo tree` 中无 `tauri`；`policy.rs` / `gateway.rs` / `pipeline.rs` 无 `AppHandle` / `Window` |
-| A3 | `most_restrictive` 九种组合、last-match-wins、多层取最严、Ceiling 拒绝 Allow 均有单测 |
-| A4 | Gateway：Allow 直接放行；Ask 触发一次审批；Deny 立即拒绝；`AlwaysApprove` 只对当前键生效，相似键不命中 |
-| A5 | 审批超时返回 `RejectedByUser`（非 Allowed）；取消返回 `Cancelled` |
-| A6 | Pipeline 顺序与并发 batch 数量符合 §4-C5 示例；结果顺序与原始 tool_calls 一致 |
-| A7 | `validate_input` 命中 `blocks_input_rewrite` 时，Pipeline 不进入 Gateway，也不得被任何改写机制绕过 |
-| A8 | 结果持久化：小结果内联；超预算按大小降序落盘；落盘引用与预览长度符合上限 |
-| A9 | `ToolResult` 新增字段后，存量工具（`fs_link`）与 `os_tool_exec` 行为不变；契约生成通过 |
-| A10 | 无新增 DB 表；GrantStore / AuditStore / Storage 均以端口注入 |
+| # | 标准 | 状态 |
+|---|---|---|
+| A1 | `cargo test -p assistant-tools` 全绿；`cargo clippy -p assistant-tools -- -D warnings` 无告警 | ✅ 57+27+15+21+6 passed；clippy `--all-targets` 无告警 |
+| A2 | `assistant-tools` 的 `cargo tree` 中无 `tauri`；`policy.rs` / `gateway.rs` / `pipeline.rs` 无 `AppHandle` / `Window` | ✅ `cargo tree` 仅自身条目；grep 无命中（`pipeline_source_has_no_tauri_dependency` 单测守住） |
+| A3 | `most_restrictive` 九种组合、last-match-wins、多层取最严、Ceiling 拒绝 Allow 均有单测 | ✅ `tests/policy.rs` 21 项 |
+| A4 | Gateway：Allow 直接放行；Ask 触发一次审批；Deny 立即拒绝；`AlwaysApprove` 只对当前键生效，相似键不命中 | ✅ `tests/gateway.rs` |
+| A5 | 审批超时返回 `RejectedByUser`（非 Allowed）；取消返回 `Cancelled` | ⚠️ 超时已实现并单测；取消需 `ToolUseContext` 带取消信号，P2 无该字段，顺延到 P4（见 tasklist C4.13） |
+| A6 | Pipeline 顺序与并发 batch 数量符合 §4-C5 示例；结果顺序与原始 tool_calls 一致 | ✅ `tests/pipeline.rs` |
+| A7 | `validate_input` 命中 `blocks_input_rewrite` 时，Pipeline 不进入 Gateway，也不得被任何改写机制绕过 | ✅ 阶段顺序与 `blocks_input_rewrite` 用例 |
+| A8 | 结果持久化：小结果内联；超预算按大小降序落盘；落盘引用与预览长度符合上限 | ✅ `tests/storage.rs` 6 项 + `tests/pipeline.rs` 单轮预算用例 |
+| A9 | `ToolResult` 新增字段后，存量工具（`fs_link`）与 `os_tool_exec` 行为不变；契约生成通过 | ✅ `fs_link` 单测全绿；`contract:gen` 幂等（契约文件哈希前后一致） |
+| A10 | 无新增 DB 表；GrantStore / AuditStore / Storage 均以端口注入 | ✅ `assistant-storage` 零改动；存储根目录由构造参数注入 |
 
 ---
 
@@ -405,6 +409,13 @@ partition_tool_batches(tool_calls):
 | 前缀匹配被当作默认策略 | 只有 `ApprovalScope::Opaque` 可由工具显式声明；review 检查默认路径 |
 | 审计写入失败影响主流程 | 审计只记日志；只有策略/审批决策影响结果 |
 | 结果落盘破坏可读性 | 只对超过单轮预算的最大结果落盘；预览保留 2K |
+| 审批键被 lossy 归一导致越权命中 | `ApprovalKey` 的路径键必须是合法 UTF-8；无法无损转换时返回空键走审批，禁止 `to_string_lossy` |
+
+**已知限制（P2 明确不支持，不在本阶段解决）**：
+
+1. **不支持 >260 字符的长路径**。`canonicalize_lenient` 统一剥离 `\\?\` 前缀（I31 §5.2），全链路只有「展示形态」一种形态。Rust std 在 Windows 上对绝对路径的文件操作会内部转 verbatim，因此**工具自身的文件读写不受 260 限制**；受限的是外部进程：`mklink` 既不接受 `\\?\` 也受 260 约束，`git` 需 `core.longpaths=true` 才能处理长路径。
+2. 若后续确认需要长路径，须按 `docs/analysis/path-handling-inconsistency-analysis.md` §9-B 改为双形态模型（`to_io_path()` / `to_display_path()`），并同步修订 I31 §5.2 的「剥离 `\\?\`」结论。该改造会触及 `canonicalize_lenient` 的返回契约与 `ensure_within_root` 的比较方式，与「存量工具零改动」冲突，故不在 P2 实施。
+3. `dunce::simplified` 对不安全 verbatim 路径（尾随点/空格、保留名）会拒绝简化，此时 `simplify_verbatim` 仍返回 `\\?\` 形态，`ensure_within_root` 可能误拒。影响面限于此类非常规路径，P2 不处理。
 
 **开放问题**：
 

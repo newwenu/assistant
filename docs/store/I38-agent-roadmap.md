@@ -24,12 +24,12 @@
 
 ## 2 阶段表
 
-| 阶段 | 目标 | 权威 spec | 状态（2026-11-04） | 前置 |
+| 阶段 | 目标 | 权威 spec | 状态（2026-11-05） | 前置 |
 |---|---|---|---|---|
 | **P0 基线** | toolcall 从 chat 剥离；工具词汇层、Registry、`exec::invoke`、ToolBox 桥接 | I30 A 段、I31 T1/T2、I18b | ✅ 已完成 | — |
 | **P1 框架收口** | 共享路径安全 `os/path.rs`；`fs_link` 迁移与权限词汇修正 | I31 T3 | ✅ 已完成（2026-11-04） | P0 |
-| **P2 工具控制层** | Policy / Gateway / Pipeline / 审批键 / 校验 / 并发 / 结果持久化 | I38a | ❌ 未开始 | P1 |
-| **P3 运行时内核** | `turn/` 共用内核、端口、状态机、取消代际、双层超时、chat 等价迁移 | I36 spec | ❌ 未开始 | P0 |
+| **P2 工具控制层** | Policy / Gateway / Pipeline / 审批键 / 校验 / 并发 / 结果持久化 | I38a | ✅ 已完成（2026-11-05） | P1 |
+| **P3 运行时内核** | `kernel/` 共用内核、端口、状态机、取消代际、双层超时、chat 等价迁移 | I36 spec | ❌ 未开始 | P0 |
 | **P4 Agent Loop 闭环** | RoundExecutor 多迭代循环；tool call 累积器；`ChatOptions.tools` 注入 | I38b | ❌ 未开始 | P2、P3；I30 B 段决策 |
 | **P5 OS 工具能力** | `fs_*`、`shell_exec`、`ask_user` 逐个落地 | I38c | ❌ 未开始 | P1、P2 |
 | **P6 前端与模式** | 五态 ToolCallBubble、审批 UI、AgentMode / 对话级工具配置 | I38d | ❌ 未开始 | P4、P5 |
@@ -89,7 +89,7 @@ P2 + P5 ───────────► P7
 | 阶段与门禁 | 本文 | 总纲 | 现行 |
 | 工具词汇层 / Tool trait / Registry / Tauri 桥接 | [I18 spec](./I18-agent-tool-architecture-spec.md) | 实施规格（Step 0-3、8） | Step 0-3 ✅，Step 8 ⚠️ |
 | 工具架构决策（分层、权限、双入口、安全原则） | [I18 design](./I18-agent-tool-architecture-design.md) | ADR | 现行 |
-| 工具控制层 | [I38a](./I38a-tool-control-layer-spec.md) | 实施规格 | 未开始 |
+| 工具控制层 | [I38a](./I38a-tool-control-layer-spec.md) | 实施规格 | 已实现（P2，2026-11-05） |
 | Agent Loop / 累积器 / tools 注入 | [I38b](./I38b-agent-loop-spec.md) | 实施规格 | 未开始 |
 | OS 工具逐个实现 | [I38c](./I38c-os-tools-spec.md) | 实施规格 | 未开始 |
 | 前端五态 / 审批 UI / Agent 模式 | [I38d](./I38d-agent-frontend-modes-spec.md) | 实施规格 | 未开始 |
@@ -116,7 +116,7 @@ P2 + P5 ───────────► P7
 
 | # | 冲突 | 结论 |
 |---|---|---|
-| R1 | RoundExecutor 落点：I18 spec 写 `assistant-agent/src/round_executor.rs`，I36 写 `agent/` | 统一落在 `assistant-agent/src/agent/`：`round_executor.rs`（循环）、`tool_call.rs`（累积器）、`mod.rs`（trait 与导出）。`assistant-agent/src/turn/` 不得引用工具类型 |
+| R1 | RoundExecutor 落点：I18 spec 写 `assistant-agent/src/round_executor.rs`，I36 写 `agent/` | 统一落在 `assistant-agent/src/agent/`：`round_executor.rs`（循环）、`tool_call.rs`（累积器）、`mod.rs`（trait 与导出）。`assistant-agent/src/kernel/` 不得引用工具类型 |
 | R2 | RoundExecutor 职责：I36 design 称其为迭代循环，I36 spec 的主流程把循环写在 TurnRunner | **P3 过渡形态**：TurnRunner 内部跑单迭代循环，`round_executor = None`。**P4 起**：迭代循环（模型调用 → 工具执行 → 回填 → 下一迭代）整体迁入 RoundExecutor；TurnRunner 只保留 turn 生命周期、状态机、预算、阶梯、落库、事件与收尾。P4 的入口固定为 `RoundExecutor::run_iterations` |
 | R3 | `os_tool_exec` 示例仍写 `tool.execute()` + `map_err` | 以代码为准：`exec::invoke(tool, input, context, DEFAULT_TOOL_TIMEOUT)`，`Err` 通道已在 `invoke` 内归一化 |
 | R4 | 工具阶段门禁：I18 design 的 Phase 3 与 I31 的「暂缓」表述不一致 | 以本文 P5 为准：P1 + P2 完成后才可新增破坏性工具；`shell_exec` / `fs_delete` 必须与 P2 的 Policy/Gateway 同期可用 |
