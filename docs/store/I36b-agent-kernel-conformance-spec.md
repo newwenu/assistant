@@ -73,10 +73,10 @@
 
 | 编号 | 基线条目 | 检查点 | 判定方式 | 现状 |
 |---|---|---|---|---|
-| V1 | G1 / K1 | `src/kernel/` 无 `tauri::` / `AppHandle` / `WebviewWindow` | `kernel_ports::kernel_sources_have_no_tauri_types` | 部分（源码扫描有；`cargo tree` 断言缺） |
+| V1 | G1 / K1 | `src/kernel/` 无 `tauri::` / `AppHandle` / `WebviewWindow` | `kernel_ports::kernel_sources_have_no_tauri_types` + `manifest_declares_no_tauri_dependency` + §5.5 `cargo tree` 门禁 | 已通过（源码扫描 + 依赖清单扫描；传递依赖由门禁 `cargo tree` 兜底） |
 | V2 | G1 | 内核可只用测试替身跑完整轮，不启动 Tauri | `kernel_runner` 全量 | 已通过（零监听端口，见 H1 / H8 收口记录） |
 | V3 | DT2 | 内核不自行构造 provider 适配器 | grep `create_provider_adapter` | 已通过（仅 `adapters/input_source.rs` 构造，内核只消费 `TurnInput.adapter`） |
-| V4 | G3 / 验收 3 | `EventSink` 抛错时 turn 不中止、仍落库 | `kernel_runner::sink_failure_does_not_abort_turn` | 部分（不中止已验证；「日志有记录」无断言） |
+| V4 | G3 / 验收 3 | `EventSink` 抛错时 turn 不中止、仍落库 | `kernel_runner::sink_failure_does_not_abort_turn` | 已通过（`RecordingSink::dropped_count()` 断言失败次数 > 0，不静默） |
 | V5 | G3 / 验收 4 | `MessageStore` 失败 → `Failed` + `Finalize(Failed)` | `kernel_runner::store_failure_marks_turn_failed_and_finalizes_failed` | 已通过 |
 
 ### 3.2 参数化
@@ -102,7 +102,7 @@
 | 编号 | 基线条目 | 检查点 | 判定方式 | 现状 |
 |---|---|---|---|---|
 | V14 | 验收 21 | 每条事件带 `turn_id`；同 turn 内 `seq` 严格单调、从 1 起 | `kernel_stream::seq_starts_at_one_and_increases_monotonically` + runner 断言 | 已通过 |
-| V15 | K6 | 先 `StreamStart`、后 `Delta`、末 `Terminated`；终态唯一 | runner 首末事件断言 | 部分（仅 1 条用例断言首末；缺「计数 == 1」统一断言，见 DT6） |
+| V15 | K6 | 先 `StreamStart`、后 `Delta`、末 `Terminated`；终态唯一 | runner 首末事件断言 + `assert_single_terminated` | 已通过（`kernel_runner` 全部用例统一断言 `Terminated` 计数 == 1 且位于末位；代际不符用例断言 0 次） |
 | V16 | K6 | 部分结果保留：provider 错误 / 超时 / 取消都保留已累积正文 | `kernel_stream::provider_error_returns_partial_outcome`、`timeout_keeps_accumulated_content`、`cancelled_stream_keeps_accumulated_content` | 已通过 |
 | V17 | DT4 / Q3 | `TurnEvent` 可稳定序列化用于轨迹比对 | `kernel_emit::event_trace_is_byte_identical_across_runs` | 已通过（两遍轨迹逐字节相同） |
 
@@ -111,7 +111,7 @@
 | 编号 | 基线条目 | 检查点 | 判定方式 | 现状 |
 |---|---|---|---|---|
 | V18 | K7 | 先落库、后改状态（`Finalize` 先于 `finish_turn`） | runner 断言 `StoreCall` 尾部 + 状态断言 | 已通过 |
-| V19 | K7 | 消息创建 → 增量保存 → 终态 finalize 的调用序列固定 | `kernel_runner::chat_turn_completes_end_to_end_with_doubles` 断言 `calls[0..]` | 部分（仅 1 条用例逐项断言；其余用例只查 `contains`） |
+| V19 | K7 | 消息创建 → 增量保存 → 终态 finalize 的调用序列固定 | `kernel_runner::chat_turn_completes_end_to_end_with_doubles` 断言 `calls[0..]` + `store_call_sequence_is_identical_across_runs` | 已通过（chat 路径逐项断言；另加两遍运行 `StoreCall` 序列逐项相同，见 DT5） |
 | V20 | 验收 23 | usage 记录字段齐全、每次 attempt 各一条 | `usage_records`（7 条） | 已通过 |
 | V21 | DT5 | 落库时间戳可注入、可复现 | grep `Utc::now`（`src/kernel/` 应为空） | 已通过（`PersistCtx.created_at_ms` 由 `Clock::now_millis` 注入） |
 
@@ -130,9 +130,9 @@
 | 编号 | 检查点 | 判定方式 | 现状 |
 |---|---|---|---|
 | V27 | `TurnSpec::limits` 各字段都有读取点 | 逐个字段 grep 使用点 | 部分（`max_iterations` / 两个超时有；`max_tool_calls` 无） |
-| V28 | `TurnSpec::ladder` 能改变阶梯行为 | `kernel/runner.rs` 读取点 | 未接线（H7） |
-| V29 | `TurnSpec::wrap_up` 能触发收尾 | 同上 | 未接线（H7） |
-| V30 | `TurnSpec::stop_hooks` 能在迭代前拦截 | 同上 | 未接线（H7） |
+| V28 | `TurnSpec::ladder` 能改变阶梯行为 | `kernel/runner.rs` 读取点 | 未接线（P4 接线；由 `kernel_values::unwired_turn_spec_fields_have_no_read_points_yet` 强制） |
+| V29 | `TurnSpec::wrap_up` 能触发收尾 | 同上 | 未接线（P4 接线；同上断言强制） |
+| V30 | `TurnSpec::stop_hooks` 能在迭代前拦截 | 同上 | 未接线（P4 接线；同上断言强制） |
 
 **判定规则（V27–V30）**：字段已声明但无读取点，一律记为「未接线」，**不得**记为「已实现」。这条规则对 I36a 的能力矩阵同样适用——「代码里有这个类型」不等于「机制在生效」。
 
@@ -185,6 +185,7 @@
 - 判定标准：seq 分配与发射在同一临界区，或有单写者 `debug_assert` 守卫并在 P4 换成锁内分配。
 - 收口建议：P3 定策（写进 I36 spec §3.x 的事件契约），P4 落地。
 - 归属：P3 定策 / P4 实现。
+- 收口记录（2026-11-05，定策）：契约已写回 I36 spec §7.2「排序与过滤」——`seq` 分配必须与 `EventSink::emit` 在同一临界区（同一写者）；P3 由 `TurnEmitter` 独占计数器满足，P4 引入并发写者时改为锁内分配 + 锁内发射。代码侧未改动（当前单写者已满足判定标准），P4 落地时按该契约实现。
 
 ### H6 单次调用超时口径不一致
 
@@ -193,7 +194,7 @@
 - 判定标准：`consume` 的整段耗时受 `model_call` 封顶，或 spec 明确改为「chunk 间隔超时 + turn 墙钟」并同步改验收 10 的措辞。
 - 收口建议：优先「整段包一层 `timeout(model_call_budget)`」，保留 chunk 级超时作为二级（两者叠加，先到先触发）；若选改口径，必须回写 I36 spec 并保留旧条目作历史。
 - 归属：P3（先定口径，再补用例）。
-- 收口记录（2026-11-05）：按「两者叠加」落地——`consume` 在调用入口取 `call_started = clock.now()`，每次等 chunk 的超时额度 = `model_call` 减去已耗时（剩余为 0 即判超时），chunk 级超时降为同一额度的实现手段；I36 spec §3.2 措辞保持不变（本就是「整段封顶」）。新增用例 `timeout_caps_whole_call_even_when_chunks_keep_arriving`：流每 60 ms 稳定出 chunk、预算 100 ms，断言超时且保留已到达 chunk（旧实现会一直跑完，必红）。
+- 收口记录（2026-11-05）：按「两者叠加」落地——`consume` 在调用入口取 `call_started = clock.now()`，每次等 chunk 的超时额度 = `model_call` 减去已耗时（剩余为 0 即判超时），chunk 级超时降为同一额度的实现手段。I36 spec 已回写：§3.3 职责表标为「单次超时**整段封顶**」，并新增「超时口径（H6 定稿）」段与验收 10 的封顶措辞。新增用例 `timeout_caps_whole_call_even_when_chunks_keep_arriving`：流每 60 ms 稳定出 chunk、预算 100 ms，断言超时且保留已到达 chunk（旧实现会一直跑完，必红）。
 
 ### H7 声明但未强制的字段
 
@@ -261,7 +262,7 @@ TurnTrace {
 
 | 端口 | 失败模式 | 期望 |
 |---|---|---|
-| `EventSink` | 第 N 条事件后抛错 | turn 不中止，终态正常，失败次数被记录（当前 `RecordingSink` 静默丢弃，需补计数断言，见 V4） |
+| `EventSink` | 第 N 条事件后抛错 | turn 不中止，终态正常，失败次数被记录（`RecordingSink::dropped_count()` 计数断言，见 V4） |
 | `MessageStore` | 任一写调用失败 | turn `Failed` + `Finalize(Failed)`（V5） |
 | `TurnInputSource` | 未知 id / 缺 provider | 早失败、不落库、终态 `Failed`（`FixtureSource` 已有） |
 | `Clock` | 时钟回拨 / 不推进 | 不 panic；不推进时超时由外部推进触发，回拨时 deadline 判定不出现负值 |
@@ -281,8 +282,11 @@ TurnTrace {
 cargo test -p assistant-agent --features test-doubles
 cargo test -p assistant-agent --features test-doubles --test kernel_runner
 cargo test -p assistant-agent --features test-doubles --test kernel_values
+cargo tree -p assistant-agent --prefix none | Select-String -Pattern '^tauri'
 cargo test --test assembly_contract
 ```
+
+`cargo tree` 一条用于 V1：输出必须为空（`assistant-agent` 的传递依赖里不得出现 `tauri`）。
 
 连跑三遍验证 DT8（同一命令重复执行，结果行必须一致）。
 
@@ -294,8 +298,8 @@ cargo test --test assembly_contract
 
 1. §3 矩阵中「已通过」之外的条目，要么收敛为「已通过」，要么在 I36 spec 明确标注「P4 接线」并同时存在 V27–V30 的未接线断言。
 2. H2 / H3 / H4 / H9 收敛（时间单源、时间戳可注入、时钟可推进、事件可序列化）。——**已完成（2026-11-05）**
-3. H6 口径定稿并写回 I36 spec。——待办
-4. H7 的未接线清单断言存在且为绿。——待办
+3. H6 口径定稿并写回 I36 spec。——**已完成（2026-11-05，整段封顶；I36 spec §3.3 新增「超时口径（H6 定稿）」并同步验收 10 措辞）**
+4. H7 的未接线清单断言存在且为绿。——**已完成（2026-11-05，`kernel_values::unwired_turn_spec_fields_have_no_read_points_yet`）**
 
 ### 6.2 P4 开工前置（Q3 阻断项）
 

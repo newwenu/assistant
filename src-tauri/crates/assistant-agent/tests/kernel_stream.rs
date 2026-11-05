@@ -1,3 +1,5 @@
+#![cfg(feature = "test-doubles")]
+
 mod common;
 
 use std::pin::Pin;
@@ -5,10 +7,11 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use assistant_agent::kernel::ports::test_doubles::{FixedClock, ManualClock};
 use assistant_agent::kernel::stream::{consume as consume_with_clock, StreamError, StreamOutcome};
 use assistant_agent::kernel::Clock;
 use assistant_providers::base::{ChatDelta, ProviderError, TokenUsage};
-use common::{FixedClock, ManualClock, PacedStream};
+use common::PacedStream;
 use futures::stream::{self, Stream};
 use tokio_util::sync::CancellationToken;
 
@@ -24,7 +27,8 @@ where
     F: FnMut(u32, &ChatDelta) + Send,
 {
     let clock = FixedClock::default();
-    consume_with_clock(stream, token, timeout, &clock, clock.base(), on_delta).await
+    let request_started = clock.now();
+    consume_with_clock(stream, token, timeout, &clock, request_started, on_delta).await
 }
 
 fn text_delta(text: &str) -> ChatDelta {
@@ -125,20 +129,16 @@ async fn finish_reason_terminates_stream_before_end() {
     assert_eq!(outcome.full_content, "hi");
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn cancelled_stream_keeps_accumulated_content() {
     let token = CancellationToken::new();
     let cancel_handle = token.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        cancel_handle.cancel();
-    });
 
     let result = consume(
         StallingStream::new(vec![text_delta("partial")]),
         token,
         None,
-        |_seq, _delta| {},
+        move |_seq, _delta| cancel_handle.cancel(),
     )
     .await;
 
@@ -284,7 +284,7 @@ async fn missing_usage_keeps_tokens_none() {
 /// 若实现只看单次间隔，永远不会超时；正确实现应在累计 100ms 后失败。
 #[tokio::test]
 async fn timeout_caps_whole_call_even_when_chunks_keep_arriving() {
-    let clock = Arc::new(ManualClock::default());
+    let clock = Arc::new(ManualClock::starting_now());
     let request_started = clock.now();
     let chunks = vec![text_delta("a"), text_delta("b"), text_delta("c")];
 

@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | Draft |
+| 状态 | 现行（P3 运行时规格） |
 | 日期 | 2026-11-03 |
 | 关联 | [I36-agent-runtime-design.md](./I36-agent-runtime-design.md)（决策依据）、[I38-agent-roadmap.md](./I38-agent-roadmap.md)（阶段 P3）、[I38b-agent-loop-spec.md](./I38b-agent-loop-spec.md)（P4 多迭代闭环）、[I30-phase1-toolcall-separation-spec.md](./I30-phase1-toolcall-separation-spec.md)、[I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md) |
 | 影响范围 | `assistant-agent`（新增 `kernel/` 共用内核、`agent/` 多迭代能力）、`assistant-config`、`assistant-storage`、`src-tauri/src/cmd/agent`（新增）、`src-tauri/src/adapters`（新增，端口实现）、`src-tauri/src/protocol`、前端 chat 域。**chat 链路对外行为不变**：`cmd/chat`、`chat_runtime`、`chat_tasks`、`chat_request`、`prompt_builder` 在 Step 3 内改调内核，Step 3.4 删除旧实现 |
@@ -11,37 +11,39 @@
 
 ---
 
-## 实施状态总览
+## 模块落点索引
 
-| 模块 | 落点 | 状态 | 说明 |
-|---|---|---|---|
-| 请求预算卸载 | `assistant-agent/src/request_projection.rs` | 已实现 | 纯函数，阶梯第 ① 步；内核与两条链路共用 |
-| 压缩判定 | `assistant-agent/src/compaction.rs` | 已实现 | 纯函数 `evaluate_compaction`；不含摘要执行 |
-| 多模态投影 / token 估算 | `multimodal.rs` / `token_estimate.rs` | 已实现 | 纯函数 |
-| chat 链路（迁移来源） | `chat_tasks.rs` / `chat_runtime.rs` / `chat_request.rs` / `chat_options.rs` / `prompt_builder.rs` / `normalization.rs` / `cmd/chat` | 已实现 | Step 3 已改调内核（`cmd/chat` → `start_turn(.., TurnSpec::chat())`）；`chat_runtime` / `chat_tasks` / `chat_request` / `prompt_builder` 仍被 `cmd/compaction.rs` 摘要链路复用，尚未删除 |
-| **端口定义** | `kernel/ports.rs` | 已实现 | `EventSink` / `MessageStore` / `TurnInputSource` / `Clock`，**不得出现 tauri 类型** |
-| **端口生产实现** | `src-tauri/src/adapters/` | 已实现 | `event_sink.rs` / `message_store.rs` / `input_source.rs` / `system_clock.rs` / `compaction_sink.rs` / `runner.rs` |
-| **TurnSpec（参数化）** | `kernel/mod.rs` | 已实现 | `OnBusy` / `max_iterations` / `tools` / `ladder` / `stop_hooks` / `wrap_up` / `route` / `kind` / `limits`（见 §0B.2.1 偏差记录） |
-| turn 令牌表 | `kernel/tasks.rs` | 已实现 | `OnBusy::{Replace, Reject}`；`turn_id = conv:counter` |
-| 流式消费 | `kernel/stream.rs` | 已实现 | delta 累积 / 部分结果 / 单次超时 / 取消；不含 tool 通道 |
-| turn 级请求构建 | `kernel/request.rs` | 已实现 | 吸收 `chat_request` / `prompt_builder` |
-| 部分结果与终态落库 | `kernel/persist.rs` | 已实现 | 经 `MessageStore` 端口；终态 `status` 列已加（C7） |
-| 事件生成与 seq | `kernel/emit.rs` | 已实现 | 经 `EventSink` 端口；同 turn `seq` 从 1 起严格单调 |
-| 会话状态机 | `kernel/state.rs` | 已实现 | 内存投影；chat / agent 两条链路均经 `SessionStates` |
-| turn 值类型 | `kernel/ids.rs`、`phase.rs`、`outcome.rs` | 已实现 | — |
-| 运行时上限 | `kernel/limits.rs` | 已实现 | 双层墙钟已在 `runner.rs` / `stream.rs` 接线 |
-| TurnRunner | `kernel/runner.rs` | 已实现 | 唯一入口；内核无 tauri 依赖；`cmd/chat` 与 `cmd/agent` 均经 `adapters/runner.rs` 构建 |
-| 停止钩子 | `agent/stop.rs` | 未实现 | agent 专属 |
-| 中间件链 | `agent/middleware.rs` | 未实现 | agent 专属 |
-| 上下文阶梯 ②③④⑤ | `agent/ladder.rs` | 未实现 | ② 的摘要执行体在 `agent/compaction_exec.rs` |
-| 摘要执行 | `agent/compaction_exec.rs` | 未实现 | 不调用 `cmd/compaction.rs` |
-| 审批门 | `agent/approval.rs` | 未实现 | — |
-| 宿主命令 | `src-tauri/src/cmd/agent/` | 已实现 | `cmd/agent/mod.rs` 与 `cmd/chat/mod.rs` 只做「校验入参 → `start_turn` → spawn → 映射返回值」 |
-| 消息终态列 | `assistant-storage` | 已实现 | `messages.status`：`streaming` / `completed` / `interrupted` / `failed` |
-| 启动清扫 | `src-tauri/src/setup.rs` 启动序列 | 已实现 | 启动时把遗留 `streaming` 置为 `interrupted`，失败只 `log::warn!` |
-| 轮级观测（TTFT / 汇总） | `kernel/outcome.rs` + `runner.rs` | 已实现 | `TurnOutcome.ttft_ms` + 每轮一条 `[turn]` 固定字段 `info` 日志 |
+本表只回答「这个模块落在哪个文件、归哪个阶段」，**不记录实现进度**。
 
-> 状态以 2026-11-05 代码为准。chat / agent 两条链路均已改调内核。**「已实现」只表示模块与单测存在，不等于全部能力已接线**：`TurnSpec.ladder` / `wrap_up` / `stop_hooks` 在内核内无读取点，`agent/` 下中间件、阶梯、停止钩子、摘要执行、审批门仍未实现（P4 / I38b 范围）；`chat_runtime` 仍被摘要链路 `cmd/compaction.rs` 复用。任务粒度与勾选状态见 [I36-agent-runtime-tasklist.md](./I36-agent-runtime-tasklist.md)。
+| 模块 | 落点 | 归属 |
+|---|---|---|
+| 请求预算卸载（阶梯 ①） | `assistant-agent/src/request_projection.rs` | P3 |
+| 压缩判定（纯函数，不含摘要执行） | `assistant-agent/src/compaction.rs` | P3 |
+| 多模态投影 / token 估算 | `multimodal.rs` / `token_estimate.rs` | P3 |
+| chat 链路（迁移来源） | `chat_tasks.rs` / `chat_runtime.rs` / `chat_request.rs` / `chat_options.rs` / `prompt_builder.rs` / `normalization.rs` / `cmd/chat` | P3 |
+| **端口定义** | `kernel/ports.rs` | P3 |
+| **端口生产实现** | `src-tauri/src/adapters/`（`event_sink.rs` / `message_store.rs` / `input_source.rs` / `system_clock.rs` / `compaction_sink.rs` / `runner.rs`） | P3 |
+| **TurnSpec（参数化）** | `kernel/mod.rs`（见 §0B.2.1 偏差记录） | P3 |
+| turn 令牌表 | `kernel/tasks.rs` | P3 |
+| 流式消费 | `kernel/stream.rs` | P3 |
+| turn 级请求构建 | `kernel/request.rs` | P3 |
+| 部分结果与终态落库 | `kernel/persist.rs` | P3 |
+| 事件生成与 seq | `kernel/emit.rs` | P3 |
+| 会话状态机 | `kernel/state.rs` | P3 |
+| turn 值类型 | `kernel/ids.rs`、`phase.rs`、`outcome.rs` | P3 |
+| 运行时上限 | `kernel/limits.rs` | P3 |
+| TurnRunner | `kernel/runner.rs` | P3 |
+| 停止钩子 | `agent/stop.rs` | P4 |
+| 中间件链 | `agent/middleware.rs` | P4 |
+| 上下文阶梯 ②③④⑤ | `agent/ladder.rs`（② 的摘要执行体在 `agent/compaction_exec.rs`） | P4 |
+| 摘要执行 | `agent/compaction_exec.rs` | P4 |
+| 审批门 | `agent/approval.rs` | P4 |
+| 宿主命令 | `src-tauri/src/cmd/agent/` | P3 |
+| 消息终态列 | `assistant-storage`（`messages.status`：`streaming` / `completed` / `interrupted` / `failed`） | P3 |
+| 启动清扫 | `src-tauri/src/setup.rs` 启动序列 | P3 |
+| 轮级观测（TTFT / 汇总） | `kernel/outcome.rs` + `kernel/runner.rs` | P3 |
+
+> **进度不写在本文**。阶段级状态见 [I38-agent-roadmap.md](./I38-agent-roadmap.md) §2；任务级勾选见 [I36-agent-runtime-tasklist.md](./I36-agent-runtime-tasklist.md)；判定方法见 [I36b](./I36b-agent-kernel-conformance-spec.md) §3。任何「已实现 / 未接线」的结论都不在本文维护。
 
 ---
 
@@ -270,7 +272,7 @@ impl TurnSpec {
 | 偏差 | 实现 | 原因 |
 |---|---|---|
 | `TurnSpec` 从七字段扩到九字段 | 增加 `kind: &'static str` 与 `limits: TurnLimits` | `kind` 供 usage 统计分类，与 `route` 解耦；`limits` 收进 `TurnSpec` 后 `TurnRunner` 不再单独持有预算，链路差异只有一个来源（tasklist C5.13） |
-| `RoundExecutor` 占位放在 `kernel/mod.rs` | 未新建 `agent/` 目录 | P3 尚无 `agent/` 下任何模块（见实施状态总览）；占位只需签名，P4 再迁至 `agent/round_executor.rs`（I38b §2.2） |
+| `RoundExecutor` 占位放在 `kernel/mod.rs` | 未新建 `agent/` 目录 | P3 尚无 `agent/` 下任何模块（见「模块落点索引」）；占位只需签名，P4 再迁至 `agent/round_executor.rs`（I38b §2.2） |
 | `ToolCatalog` / `StopHook` 为最小占位 | `ToolCatalog` 空 trait；`StopHook` 只有 `name()` | P3 不驱动工具，`check` 与 async 签名随 P4 定型（I38b D16、I36 Step 5.1） |
 
 ### 0B.3 内核模块骨架
@@ -542,11 +544,13 @@ pub async fn consume<S>(
 | 做 | 不做 |
 |---|---|
 | delta 累积成 `StreamOutcome`（正文 / 推理 / usage；tool 通道由 `agent/` 扩展） | 不构建请求（`kernel/request.rs` 负责） |
-| 单次超时（`model_call` 或 turn 剩余，取小） | 不做 provider 重试（重试在 adapter 层，只一层） |
+| 单次超时**整段封顶**（`model_call` 或 turn 剩余，取小） | 不做 provider 重试（重试在 adapter 层，只一层） |
 | 取消响应，返回 `PartialOutcome` | 不落库、不发事件（由 `TurnRunner` + `kernel/persist.rs` / `kernel/emit.rs` 负责） |
 | 单调 `seq` 递增并交给回调 | 不判断「是否空响应」（由 `TurnRunner` 判断） |
 
 `StreamOutcome` / `PartialOutcome` 是**内核自己的类型**，不再借用 `chat_runtime` 的同名类型（否则 chat 删除时会连带删除内核类型）。字段集合对齐现状：`full_content` / `reasoning` / `tool_calls`（仅 agent）/ `usage`。
+
+**超时口径（H6 定稿）**：`model_call` 是**单次调用的整段耗时封顶**，不是 chunk 间隔超时。实现上每次等待下一个 chunk 的超时额度取「本次调用入口起算的剩余预算」，因此即使 chunk 持续到达，累计耗时也不会超过 `model_call`（或 turn 剩余）；chunk 级等待复用同一剩余额度，属二级约束，两者先到先触发。验收 10 的「单次模型调用超时」按此口径判定。
 
 **chat 迁移时的等价性**：`kernel/stream.rs` 必须能复现 `chat_runtime::consume_stream` 的全部可观测行为（`seq` 起点、`on_delta` 调用时机、部分结果内容）。这是 Step 3 对比测试的核心断言。
 
@@ -765,6 +769,7 @@ restore_phase(previous)
 
 - 每条事件带 `turn_id`（线字段 `attempt_id`）与 `seq`。
 - `seq` 在同一 turn 内**单调递增**，跨 turn 重新从 0 开始。
+- **seq 分配与发射同序（H5 定稿）**：`seq` 的分配必须与 `EventSink::emit` 在同一临界区（同一写者），任何「先取号、后发射」的两段式实现都不得进入主线——否则工具事件与并行子代理接入后会出现「seq 小的后到」，破坏前端按 `seq` 排序的前提。P3 单写者场景由 `TurnEmitter` 独占 `seq` 计数器满足该契约；P4 引入并发写者时须改为锁内分配 + 锁内发射。
 - 前端按 `turn_id` 过滤、按 `seq` 排序；`session-state-changed` 不带 `seq`（它是状态快照，不是流片段）。
 
 ### 7.3 DTO 变更要求
@@ -853,7 +858,7 @@ ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 7. 新入口（`cmd/agent` 的发送命令）在 `Processing` 状态下返回 `Busy`，且不取消正在跑的 turn；`OnBusy::Replace` 下（chat）仍是顶替语义。
 8. 取消后消息内容落库、`status='interrupted'`、状态回到 `Idle`。
 9. 旧 turn 的迟到完成：手动构造（旧 token 完成晚于新 turn 开始）→ 不写库、不改状态、不发终止事件。
-10. `turn_wall_clock` 与 `model_call` 可分别触发超时；工具执行不受 `model_call` 限制。
+10. `turn_wall_clock` 与 `model_call` 可分别触发超时；工具执行不受 `model_call` 限制。`model_call` 为**整段调用封顶**：chunk 持续到达也不得使单次调用耗时超过该值（§3.3 超时口径）。
 11. 「有推理无正文」响应重试 1 次后仍为空 → `Failed`，且 `iteration` 不因重试递增。
 12. **后台运行**：关闭 orb 窗口（或从未创建）后调用 agent 发送命令，turn 正常跑完并落库；全程无「窗口未找到」错误。
 

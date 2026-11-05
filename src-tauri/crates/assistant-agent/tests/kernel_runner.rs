@@ -149,10 +149,36 @@ fn started_ctx(tasks: &TurnTasks, conversation_id: &str) -> TurnContext {
     TurnContext::new(conversation_id, turn_id, "assistant-1")
 }
 
+/// DT6：每次 `run` 恰好 1 次 `Terminated`，且它是最后一条事件。
+fn assert_single_terminated(events: &[TurnEvent]) {
+    assert_eq!(
+        terminated_count(events),
+        1,
+        "each run must terminate exactly once: {events:?}"
+    );
+    assert!(
+        matches!(events.last(), Some(TurnEvent::Terminated { .. })),
+        "Terminated must be the last event: {events:?}"
+    );
+}
+
+fn terminated_count(events: &[TurnEvent]) -> usize {
+    events
+        .iter()
+        .filter(|event| matches!(event, TurnEvent::Terminated { .. }))
+        .count()
+}
+
 /// 收到首个 delta 立即取消当前轮，用于模拟「流式中途取消」。
 struct CancelOnDeltaSink {
     tasks: Arc<TurnTasks>,
     events: Mutex<Vec<TurnEvent>>,
+}
+
+impl CancelOnDeltaSink {
+    fn events(&self) -> Vec<TurnEvent> {
+        self.events.lock().unwrap().clone()
+    }
 }
 
 impl EventSink for CancelOnDeltaSink {
@@ -200,12 +226,39 @@ async fn chat_turn_completes_end_to_end_with_doubles() {
             ..
         })
     ));
+    assert_single_terminated(&events);
 
     let calls = h.store.calls();
     assert!(matches!(calls[0], StoreCall::Save(_)));
     assert!(matches!(calls[1], StoreCall::Usage(1)));
     assert_eq!(
         calls.last(),
+        Some(&StoreCall::Finalize(
+            "assistant-1".to_string(),
+            MessageStatus::Completed
+        ))
+    );
+}
+
+/// DT5 / V19：同一输入跑两遍，`StoreCall` 序列与内容逐项相同（时间戳由注入时钟提供）。
+#[tokio::test]
+async fn store_call_sequence_is_identical_across_runs() {
+    async fn run_once() -> Vec<StoreCall> {
+        let adapter = Arc::new(ScriptedAdapter::new(vec![completed_script()]));
+        let h = harness(adapter, RecordingSink::new(), InMemoryStore::new());
+        let ctx = started_ctx(&h.tasks, "conv-1");
+        h.runner.run(&ctx, &TurnSpec::chat()).await;
+        h.store.calls()
+    }
+
+    let first = run_once().await;
+    let second = run_once().await;
+
+    assert!(!first.is_empty(), "落库调用序列不得为空");
+    assert_eq!(first, second, "同一输入两遍运行的落库调用序列必须逐项相同");
+    assert!(matches!(first[0], StoreCall::Save(_)));
+    assert_eq!(
+        first.last(),
         Some(&StoreCall::Finalize(
             "assistant-1".to_string(),
             MessageStatus::Completed
@@ -227,6 +280,10 @@ async fn sink_failure_does_not_abort_turn() {
 
     assert_eq!(outcome.status, TurnStatus::Completed);
     assert_eq!(outcome.text, "Hello world");
+    assert!(
+        h.sink.dropped_count() > 0,
+        "V4：事件发射失败必须被记录，不得静默丢弃"
+    );
     assert!(h.store.calls().contains(&StoreCall::Finalize(
         "assistant-1".to_string(),
         MessageStatus::Completed
@@ -242,6 +299,7 @@ async fn store_failure_marks_turn_failed_and_finalizes_failed() {
     let outcome = h.runner.run(&ctx, &TurnSpec::chat()).await;
 
     assert_eq!(outcome.status, TurnStatus::Failed);
+    assert_single_terminated(&h.sink.events());
     assert!(h.store.calls().contains(&StoreCall::Finalize(
         "assistant-1".to_string(),
         MessageStatus::Failed
@@ -259,6 +317,7 @@ async fn chat_spec_does_not_retry_empty_response() {
     assert_eq!(outcome.status, TurnStatus::Failed);
     assert_eq!(outcome.iterations, 1);
     assert_eq!(outcome.model_calls, 1);
+    assert_single_terminated(&h.sink.events());
 }
 
 #[tokio::test]
@@ -278,6 +337,7 @@ async fn empty_response_retries_once_then_fails_without_bumping_iteration() {
     assert_eq!(outcome.status, TurnStatus::Failed);
     assert_eq!(outcome.iterations, 1);
     assert_eq!(outcome.model_calls, 2);
+    assert_single_terminated(&h.sink.events());
     assert_eq!(
         h.store.calls().last(),
         Some(&StoreCall::Finalize(
@@ -306,7 +366,9 @@ async fn provider_error_marks_turn_failed_with_error_text() {
         message.to_lowercase().contains("invalid api key"),
         "unexpected error text: {message}"
     );
-    let terminated = h.sink.events().pop();
+    let events = h.sink.events();
+    assert_single_terminated(&events);
+    let terminated = events.last();
     assert!(matches!(
         terminated,
         Some(TurnEvent::Terminated {
@@ -334,6 +396,7 @@ async fn cancelled_turn_marks_message_interrupted() {
     let outcome = h.runner.run(&ctx, &TurnSpec::chat()).await;
 
     assert_eq!(outcome.status, TurnStatus::Cancelled);
+    assert_single_terminated(&h.sink.events());
     assert!(h.store.calls().contains(&StoreCall::Finalize(
         "assistant-1".to_string(),
         MessageStatus::Interrupted
@@ -375,6 +438,7 @@ async fn cancel_mid_stream_saves_partial_then_finalizes_interrupted() {
         save_at < finalize_at,
         "先落库后改状态：Save 必须在 Finalize 之前"
     );
+    assert_single_terminated(&h.sink.events());
     assert_eq!(
         h.states.get("conv-1"),
         Some(SessionState::Idle),
@@ -396,6 +460,11 @@ async fn stale_turn_writes_nothing_and_emits_nothing() {
     let outcome = h.runner.run(&stale, &TurnSpec::chat()).await;
 
     assert_eq!(outcome.status, TurnStatus::Interrupted);
+    assert_eq!(
+        terminated_count(&h.sink.events()),
+        0,
+        "代际不符时不得发终止事件（DT6）"
+    );
     assert!(h.store.calls().is_empty());
     assert!(h.sink.events().is_empty());
 }
@@ -439,6 +508,7 @@ async fn model_call_timeout_fails_turn_after_call_started() {
         outcome.error,
         Some(TurnError::Other(ref message)) if message.contains("timed out")
     ));
+    assert_single_terminated(&sink.events());
     assert_eq!(
         store.calls().last(),
         Some(&StoreCall::Finalize(
@@ -479,4 +549,5 @@ async fn wall_clock_timeout_fails_turn_before_model_call() {
 
     assert_eq!(outcome.status, TurnStatus::Failed);
     assert_eq!(outcome.model_calls, 0);
+    assert_single_terminated(&sink.events());
 }

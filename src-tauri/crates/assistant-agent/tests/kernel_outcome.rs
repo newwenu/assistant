@@ -1,12 +1,15 @@
+#![cfg(feature = "test-doubles")]
+
 mod common;
 
 use std::sync::Arc;
 use std::time::Duration;
 
+use assistant_agent::kernel::ports::test_doubles::ManualClock;
 use assistant_agent::kernel::stream::consume;
 use assistant_agent::kernel::Clock;
 use assistant_providers::base::{ChatDelta, ProviderError};
-use common::{ManualClock, PacedStream};
+use common::PacedStream;
 use futures::stream;
 use tokio_util::sync::CancellationToken;
 
@@ -19,7 +22,7 @@ fn text_delta(text: &str) -> ChatDelta {
 
 #[tokio::test]
 async fn ttft_is_none_when_stream_emits_no_delta() {
-    let clock = ManualClock::default();
+    let clock = ManualClock::starting_now();
     let request_started = clock.now();
 
     let outcome = consume(
@@ -38,7 +41,7 @@ async fn ttft_is_none_when_stream_emits_no_delta() {
 
 #[tokio::test]
 async fn ttft_records_first_delta_only() {
-    let clock = Arc::new(ManualClock::default());
+    let clock = Arc::new(ManualClock::starting_now());
     let request_started = clock.now();
     let chunks = vec![text_delta("a"), text_delta("b"), ChatDelta::finish("stop")];
 

@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use assistant_providers::base::{
@@ -20,6 +21,8 @@ pub struct RecordingSink {
     events: Mutex<Vec<TurnEvent>>,
     /// 达到该条数后模拟写事件失败（只记日志，不再入列）。
     fail_after: Option<usize>,
+    /// 被模拟失败丢弃的事件条数（V4：失败必须可断言，不得静默）。
+    dropped: AtomicUsize,
 }
 
 impl RecordingSink {
@@ -31,11 +34,17 @@ impl RecordingSink {
         Self {
             events: Mutex::new(Vec::new()),
             fail_after: Some(count),
+            dropped: AtomicUsize::new(0),
         }
     }
 
     pub fn events(&self) -> Vec<TurnEvent> {
         self.lock().clone()
+    }
+
+    /// 模拟发射失败后丢弃的事件条数。
+    pub fn dropped_count(&self) -> usize {
+        self.dropped.load(Ordering::SeqCst)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Vec<TurnEvent>> {
@@ -51,6 +60,7 @@ impl EventSink for RecordingSink {
         let mut events = self.lock();
         if let Some(limit) = self.fail_after {
             if events.len() >= limit {
+                self.dropped.fetch_add(1, Ordering::SeqCst);
                 log::error!("recording sink simulated emit failure");
                 return;
             }
@@ -281,6 +291,11 @@ impl ManualClock {
             base_millis,
             offset: Mutex::new(std::time::Duration::ZERO),
         }
+    }
+
+    /// 以当前真实时刻为基准；用例只关心推进量，不关心绝对起点（H4）。
+    pub fn starting_now() -> Self {
+        Self::new(std::time::Instant::now(), 0)
     }
 
     pub fn advance(&self, delta: std::time::Duration) {

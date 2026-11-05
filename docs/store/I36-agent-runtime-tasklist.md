@@ -295,11 +295,11 @@ P3 交付的内核已为这些模块预留接入点：`TurnSpec.stop_hooks` / `T
 
 > 判定口径与证据见 [I36b-agent-kernel-conformance-spec.md](./I36b-agent-kernel-conformance-spec.md) §4。C11.1–C11.7 属 P3 收口；C11.8 是 P4 开工阻断项。
 
-- [ ] C11.1（H1）模型调用可注入：`TurnInput` 携带 `adapter`，`kernel/request.rs` 不再调用 `create_provider_adapter`；L1 用例零监听端口
-- [ ] C11.2（H2）时间单源：`TurnContext` 起点由 `Clock` 注入，`src/kernel/` 内无 `Instant::now()`
-- [ ] C11.3（H3）落库时间戳可注入：`PersistCtx` 带 `created_at_ms`，`persist` 内无 `Utc::now()`
-- [ ] C11.4（H4）时钟可推进：`ManualClock` + `advance`；超时用例改由虚拟时间触发，用例内无 `sleep`
-- [ ] C11.5（H6）单次调用超时口径定稿并回写 I36 spec §3.2 与验收 10，补「整段封顶」用例
-- [ ] C11.6（H7）未接线字段清单断言：`kernel_values` 显式列出 `ladder` / `wrap_up` / `stop_hooks` 为 P4 接线
-- [ ] C11.7（H9）`TurnEvent` 可稳定序列化（或 `TurnTrace` 投影），黄金轨迹两遍一致
-- [ ] C11.8（H1 / H8，P4 前置）L1 全部改脚本化适配器，真实 TCP 用例降级到 `slow-tests` 特性
+- [x] C11.1（H1）模型调用可注入：`TurnInput` 携带 `adapter`，`kernel/request.rs` 不再调用 `create_provider_adapter`；L1 用例零监听端口
+- [x] C11.2（H2）时间单源：`TurnContext` 起点由 `Clock` 注入，`src/kernel/` 内无 `Instant::now()`
+- [x] C11.3（H3）落库时间戳可注入：`PersistCtx` 带 `created_at_ms`，`persist` 内无 `Utc::now()`
+- [x] C11.4（H4）时钟可推进：`ManualClock` + `advance`；超时用例改由虚拟时间触发，用例内无 `sleep`
+- [x] C11.5（H6）单次调用超时口径定稿并回写 I36 spec §3.2 与验收 10，补「整段封顶」用例
+- [x] C11.6（H7）未接线字段清单断言：`kernel_values` 显式列出 `ladder` / `wrap_up` / `stop_hooks` 为 P4 接线
+- [x] C11.7（H9）`TurnEvent` 可稳定序列化（或 `TurnTrace` 投影），黄金轨迹两遍一致
+- [x] C11.8（H1 / H8，P4 前置）L1 全部改脚本化适配器，真实 TCP 用例降级到 `slow-tests` 特性
