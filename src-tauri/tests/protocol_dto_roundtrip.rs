@@ -8,7 +8,7 @@ use assistant_app::protocol::{
     RetryNotificationDto, ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto,
     SessionStateChangedPayloadDto, SessionStateDto, SettingProviderChangedActionDto,
     SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto, ThemeChangedPayloadDto,
-    TokenUsageDto, TurnPhaseDto,
+    TokenUsageDto, ToolErrorKindDto, TurnPhaseDto,
 };
 use serde::{Deserialize, Serialize};
 
@@ -305,7 +305,9 @@ fn os_tool_dtos_roundtrip() {
     let ok = OsToolResultDto {
         ok: true,
         data: Some(serde_json::json!({ "created": true })),
+        result_for_assistant: Some("created".into()),
         error: None,
+        error_kind: None,
     };
     roundtrip(&ok);
     let json = serde_json::to_string(&ok).unwrap();
@@ -314,11 +316,18 @@ fn os_tool_dtos_roundtrip() {
         "None fields present: {}",
         json
     );
+    assert!(
+        json.contains("\"errorKind\":null"),
+        "None fields present: {}",
+        json
+    );
 
     let failed = OsToolResultDto {
         ok: false,
         data: None,
+        result_for_assistant: None,
         error: Some("boom".into()),
+        error_kind: Some(ToolErrorKindDto::Internal),
     };
     roundtrip(&failed);
 }

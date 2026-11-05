@@ -19,7 +19,7 @@ use assistant_app::protocol::{
     SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto, SiblingInfoDto,
     StorageBreakdownDto, ThemeChangedPayloadDto, TokenUsageCacheDto, TokenUsageCumulativeDto,
     TokenUsageDto, TokenUsageEstimatedSourceDto, TokenUsageOccupancyDto, TokenUsageSummaryDto,
-    TurnPhaseDto, VaultCipherAlgorithmDto, VaultConfDto,
+    ToolErrorKindDto, TurnPhaseDto, VaultCipherAlgorithmDto, VaultConfDto,
     WindowModeChangedPayloadDto, WindowModeDto,
 };
 use ts_rs::{Config, TS};
@@ -147,6 +147,7 @@ fn export_protocol_contract() {
         TokenUsageEstimatedSourceDto::decl(&cfg),
         TokenUsageOccupancyDto::decl(&cfg),
         TokenUsageSummaryDto::decl(&cfg),
+        ToolErrorKindDto::decl(&cfg),
         TurnPhaseDto::decl(&cfg),
         VaultCipherAlgorithmDto::decl(&cfg),
         VaultConfDto::decl(&cfg),

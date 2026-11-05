@@ -1,0 +1,592 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use assistant_tools::gateway::{
+    InMemoryAuditStore, InMemoryGrantStore, ScriptedApprovalPrompter, ToolGateway,
+};
+use assistant_tools::pipeline::{
+    InMemoryEventSink, PipelineEvent, PipelineStage, ToolCall, ToolPipeline,
+};
+use assistant_tools::storage::{
+    PersistToolResult, PersistedRef, ToolResultStorage, PER_ROUND_LIMIT_CHARS,
+    PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS,
+};
+use assistant_tools::{
+    ApprovalDecision, PermissionEffect, PermissionIntent, PermissionRule, ResolvedPermissionPolicy,
+    Tool, ToolErrorKind, ToolRegistry, ToolResult, ToolTier, ToolUseContext, ValidationResult,
+};
+use async_trait::async_trait;
+use serde_json::{json, Value};
+
+fn ctx() -> ToolUseContext {
+    ToolUseContext::default()
+}
+
+fn allow_all() -> ResolvedPermissionPolicy {
+    ResolvedPermissionPolicy::new(
+        vec![PermissionRule::new("*", "*", PermissionEffect::Allow)],
+        Vec::new(),
+    )
+}
+
+fn ask_all() -> ResolvedPermissionPolicy {
+    ResolvedPermissionPolicy::new(
+        vec![PermissionRule::new("*", "*", PermissionEffect::Ask)],
+        Vec::new(),
+    )
+}
+
+fn deny_all() -> ResolvedPermissionPolicy {
+    ResolvedPermissionPolicy::new(
+        vec![PermissionRule::new("*", "*", PermissionEffect::Deny)],
+        Vec::new(),
+    )
+}
+
+#[derive(Clone)]
+struct ProbeSpec {
+    name: &'static str,
+    intents: Vec<PermissionIntent>,
+    validate: ValidationResult,
+    concurrent: bool,
+    delay: Duration,
+    result: ToolResult,
+}
+
+impl ProbeSpec {
+    fn new(name: &'static str) -> Self {
+        Self {
+            name,
+            intents: Vec::new(),
+            validate: ValidationResult::ok(),
+            concurrent: false,
+            delay: Duration::ZERO,
+            result: ToolResult::ok(json!({ "ok": true })),
+        }
+    }
+
+    fn concurrent(mut self) -> Self {
+        self.concurrent = true;
+        self
+    }
+
+    fn with_intents(mut self, intents: Vec<PermissionIntent>) -> Self {
+        self.intents = intents;
+        self
+    }
+
+    fn with_validation(mut self, validate: ValidationResult) -> Self {
+        self.validate = validate;
+        self
+    }
+
+    fn with_delay(mut self, delay: Duration) -> Self {
+        self.delay = delay;
+        self
+    }
+
+    fn with_result(mut self, result: ToolResult) -> Self {
+        self.result = result;
+        self
+    }
+}
+
+struct ProbeTool {
+    spec: ProbeSpec,
+    executed: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl Tool for ProbeTool {
+    fn name(&self) -> &str {
+        self.spec.name
+    }
+
+    async fn description(&self) -> Result<String, String> {
+        Ok("probe tool".to_string())
+    }
+
+    fn input_schema(&self) -> Value {
+        json!({ "type": "object" })
+    }
+
+    fn tier(&self) -> ToolTier {
+        ToolTier::Os
+    }
+
+    fn validate_input(&self, _input: &Value, _context: &ToolUseContext) -> ValidationResult {
+        self.spec.validate.clone()
+    }
+
+    fn is_concurrency_safe(&self, _input: Option<&Value>) -> bool {
+        self.spec.concurrent
+    }
+
+    fn permission_intents(
+        &self,
+        _input: &Value,
+        _context: &ToolUseContext,
+    ) -> Result<Vec<PermissionIntent>, String> {
+        Ok(self.spec.intents.clone())
+    }
+
+    async fn execute(
+        &self,
+        _input: &Value,
+        _context: &ToolUseContext,
+    ) -> Result<ToolResult, String> {
+        self.executed.fetch_add(1, Ordering::SeqCst);
+        if !self.spec.delay.is_zero() {
+            tokio::time::sleep(self.spec.delay).await;
+        }
+        Ok(self.spec.result.clone())
+    }
+}
+
+#[derive(Debug, Default)]
+struct RecordingStorage {
+    persisted: Mutex<Vec<PersistToolResult>>,
+}
+
+impl RecordingStorage {
+    fn calls(&self) -> Vec<PersistToolResult> {
+        self.persisted.lock().map(|v| v.clone()).unwrap_or_default()
+    }
+}
+
+#[async_trait]
+impl ToolResultStorage for RecordingStorage {
+    async fn persist(&self, req: PersistToolResult) -> Result<PersistedRef, String> {
+        let bytes = req.content.len();
+        let path = format!("store/{}.txt", req.tool_call_id);
+        self.persisted.lock().unwrap().push(req);
+        Ok(PersistedRef { path, bytes })
+    }
+}
+
+struct Harness {
+    pipeline: ToolPipeline,
+    registry: Arc<ToolRegistry>,
+    audit: Arc<InMemoryAuditStore>,
+    prompter: Arc<ScriptedApprovalPrompter>,
+    storage: Arc<RecordingStorage>,
+    executed: Arc<AtomicUsize>,
+}
+
+fn harness(decisions: Vec<ApprovalDecision>) -> Harness {
+    let registry = Arc::new(ToolRegistry::new());
+    let grants = Arc::new(InMemoryGrantStore::default());
+    let audit = Arc::new(InMemoryAuditStore::default());
+    let prompter = Arc::new(ScriptedApprovalPrompter::new(decisions));
+    let gateway = Arc::new(ToolGateway::new(
+        grants,
+        audit.clone(),
+        prompter.clone(),
+        Duration::from_secs(5),
+    ));
+    let storage = Arc::new(RecordingStorage::default());
+    let pipeline = ToolPipeline::new(registry.clone(), gateway, storage.clone());
+    Harness {
+        pipeline,
+        registry,
+        audit,
+        prompter,
+        storage,
+        executed: Arc::new(AtomicUsize::new(0)),
+    }
+}
+
+impl Harness {
+    fn add(&self, spec: ProbeSpec) {
+        self.registry.register(Arc::new(ProbeTool {
+            spec,
+            executed: self.executed.clone(),
+        }));
+    }
+}
+
+fn call(id: &str, name: &str) -> ToolCall {
+    ToolCall::new(id, name, json!({}))
+}
+
+#[tokio::test]
+async fn unknown_tool_fails_at_find_stage() {
+    let h = harness(vec![]);
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(&[call("c1", "nope")], &ctx(), &allow_all(), &sink)
+        .await;
+
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].stage, PipelineStage::Find);
+    assert!(!outcomes[0].result.ok);
+    assert_eq!(outcomes[0].result.error_kind, Some(ToolErrorKind::Internal));
+    assert!(outcomes[0]
+        .result
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("unknown tool"));
+    assert_eq!(h.executed.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn invalid_input_returns_business_and_skips_gateway() {
+    let h = harness(vec![ApprovalDecision::Approve]);
+    h.add(
+        ProbeSpec::new("probe")
+            .with_intents(vec![PermissionIntent::new("edit", "a.txt")])
+            .with_validation(ValidationResult::invalid("bad path")),
+    );
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(&[call("c1", "probe")], &ctx(), &ask_all(), &sink)
+        .await;
+
+    assert_eq!(outcomes[0].stage, PipelineStage::Validate);
+    assert!(!outcomes[0].blocks_input_rewrite);
+    assert_eq!(outcomes[0].result.error_kind, Some(ToolErrorKind::Business));
+    assert_eq!(
+        h.prompter.request_count(),
+        0,
+        "validation must run before gateway: no approval for invalid input"
+    );
+    assert!(
+        h.audit.entries().is_empty(),
+        "gateway must not be reached, so it must not audit either"
+    );
+    assert_eq!(h.executed.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn blocked_validation_never_reaches_gateway() {
+    let h = harness(vec![ApprovalDecision::Approve]);
+    h.add(
+        ProbeSpec::new("probe")
+            .with_intents(vec![PermissionIntent::new("edit", "a.txt")])
+            .with_validation(ValidationResult::blocked("not allowed").with_error_code("E_BLOCK")),
+    );
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(&[call("c1", "probe")], &ctx(), &ask_all(), &sink)
+        .await;
+
+    assert_eq!(outcomes[0].stage, PipelineStage::Validate);
+    assert!(outcomes[0].blocks_input_rewrite);
+    assert_eq!(outcomes[0].result.error_kind, Some(ToolErrorKind::Business));
+    assert!(outcomes[0]
+        .result
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("E_BLOCK"));
+    assert_eq!(h.prompter.request_count(), 0);
+    assert!(h.audit.entries().is_empty());
+}
+
+#[tokio::test]
+async fn gateway_denial_stops_before_execution() {
+    let h = harness(vec![]);
+    h.add(ProbeSpec::new("probe").with_intents(vec![PermissionIntent::new("edit", "a.txt")]));
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(&[call("c1", "probe")], &ctx(), &deny_all(), &sink)
+        .await;
+
+    assert_eq!(outcomes[0].stage, PipelineStage::Gateway);
+    assert_eq!(outcomes[0].result.error_kind, Some(ToolErrorKind::Denied));
+    assert_eq!(
+        h.executed.load(Ordering::SeqCst),
+        0,
+        "denied call must not execute"
+    );
+    assert_eq!(h.prompter.request_count(), 0);
+}
+
+#[tokio::test]
+async fn rejected_by_user_is_tagged_denied() {
+    let h = harness(vec![ApprovalDecision::Deny {
+        reason: Some("nope".to_string()),
+    }]);
+    h.add(ProbeSpec::new("probe").with_intents(vec![PermissionIntent::new("edit", "a.txt")]));
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(&[call("c1", "probe")], &ctx(), &ask_all(), &sink)
+        .await;
+
+    assert_eq!(outcomes[0].stage, PipelineStage::Gateway);
+    assert_eq!(outcomes[0].result.error_kind, Some(ToolErrorKind::Denied));
+    assert!(outcomes[0]
+        .result
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("nope"));
+    assert_eq!(h.executed.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn approved_call_runs_and_reports_events_in_order() {
+    let h = harness(vec![ApprovalDecision::Approve]);
+    h.add(ProbeSpec::new("probe").with_intents(vec![PermissionIntent::new("edit", "a.txt")]));
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(&[call("c1", "probe")], &ctx(), &ask_all(), &sink)
+        .await;
+
+    assert_eq!(outcomes[0].stage, PipelineStage::Execute);
+    assert!(outcomes[0].result.ok);
+    assert_eq!(h.executed.load(Ordering::SeqCst), 1);
+    assert!(outcomes[0].persisted.is_none(), "small result stays inline");
+
+    let events = sink.events();
+    assert_eq!(events.len(), 2);
+    assert!(matches!(events[0], PipelineEvent::Started { .. }));
+    assert!(matches!(events[1], PipelineEvent::Finished { .. }));
+}
+
+#[tokio::test]
+async fn failed_call_reports_failed_event() {
+    let h = harness(vec![]);
+    h.add(ProbeSpec::new("probe").with_result(ToolResult::err("boom")));
+    let sink = InMemoryEventSink::new();
+
+    h.pipeline
+        .execute(&[call("c1", "probe")], &ctx(), &allow_all(), &sink)
+        .await;
+
+    let events = sink.events();
+    assert_eq!(events.len(), 2);
+    match &events[1] {
+        PipelineEvent::Failed {
+            error, error_kind, ..
+        } => {
+            assert_eq!(error, "boom");
+            assert_eq!(*error_kind, Some(ToolErrorKind::Business));
+        }
+        other => panic!("expected Failed event, got {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn large_result_is_persisted_with_preview() {
+    let big = "x".repeat(PER_TOOL_LIMIT_CHARS + 1);
+    let h = harness(vec![]);
+    h.add(
+        ProbeSpec::new("probe").with_result(ToolResult::ok_with_assistant(
+            json!({ "big": true }),
+            big.clone(),
+        )),
+    );
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(&[call("c1", "probe")], &ctx(), &allow_all(), &sink)
+        .await;
+
+    let persisted = outcomes[0]
+        .persisted
+        .as_ref()
+        .expect("big result must persist");
+    assert_eq!(h.storage.calls().len(), 1);
+    assert_eq!(h.storage.calls()[0].content, big);
+    let prefix = format!("<persisted-output path=\"{}\">\n", persisted.path);
+    assert!(outcomes[0].assistant_text.starts_with(&prefix));
+    assert_eq!(
+        outcomes[0].assistant_text.chars().count(),
+        prefix.chars().count() + PREVIEW_CHARS,
+        "persisted output must keep only the preview"
+    );
+}
+
+#[tokio::test]
+async fn assistant_text_falls_back_to_compact_data() {
+    let h = harness(vec![]);
+    h.add(ProbeSpec::new("probe").with_result(ToolResult::ok(json!({ "a": 1 }))));
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(&[call("c1", "probe")], &ctx(), &allow_all(), &sink)
+        .await;
+
+    assert_eq!(outcomes[0].assistant_text, r#"{"a":1}"#);
+}
+
+#[tokio::test]
+async fn partition_matches_spec_example() {
+    let h = harness(vec![]);
+    h.add(ProbeSpec::new("read").concurrent());
+    h.add(ProbeSpec::new("grep").concurrent());
+    h.add(ProbeSpec::new("write"));
+    h.add(ProbeSpec::new("bash"));
+
+    let calls = vec![
+        call("c1", "read"),
+        call("c2", "read"),
+        call("c3", "write"),
+        call("c4", "grep"),
+        call("c5", "grep"),
+        call("c6", "bash"),
+    ];
+
+    let batches = h.pipeline.partition_tool_batches(&calls);
+    assert_eq!(batches, vec![vec![0, 1], vec![2], vec![3, 4], vec![5]]);
+}
+
+#[tokio::test]
+async fn partition_treats_unknown_tool_as_serial() {
+    let h = harness(vec![]);
+    h.add(ProbeSpec::new("read").concurrent());
+
+    let calls = vec![
+        call("c1", "read"),
+        call("c2", "missing"),
+        call("c3", "read"),
+    ];
+    let batches = h.pipeline.partition_tool_batches(&calls);
+
+    assert_eq!(batches, vec![vec![0], vec![1], vec![2]]);
+}
+
+#[tokio::test]
+async fn concurrent_batch_preserves_original_order() {
+    let h = harness(vec![]);
+    h.add(
+        ProbeSpec::new("slow")
+            .concurrent()
+            .with_delay(Duration::from_millis(40))
+            .with_result(ToolResult::ok(json!({ "who": "slow" }))),
+    );
+    h.add(
+        ProbeSpec::new("fast")
+            .concurrent()
+            .with_result(ToolResult::ok(json!({ "who": "fast" }))),
+    );
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(
+            &[call("c1", "slow"), call("c2", "fast")],
+            &ctx(),
+            &allow_all(),
+            &sink,
+        )
+        .await;
+
+    assert_eq!(outcomes.len(), 2);
+    assert_eq!(outcomes[0].tool_call_id, "c1");
+    assert_eq!(outcomes[1].tool_call_id, "c2");
+    assert_eq!(outcomes[0].result.data.as_ref().unwrap()["who"], "slow");
+
+    let events = sink.events();
+    assert_eq!(events.len(), 4);
+    assert!(matches!(events[0], PipelineEvent::Started { .. }));
+    assert!(matches!(events[1], PipelineEvent::Started { .. }));
+    assert!(matches!(events[2], PipelineEvent::Finished { .. }));
+    assert!(matches!(events[3], PipelineEvent::Finished { .. }));
+}
+
+#[tokio::test]
+async fn serial_tool_breaks_the_concurrent_batch() {
+    let h = harness(vec![]);
+    h.add(
+        ProbeSpec::new("writer")
+            .with_delay(Duration::from_millis(20))
+            .with_result(ToolResult::ok(json!({ "who": "writer" }))),
+    );
+    h.add(
+        ProbeSpec::new("reader")
+            .concurrent()
+            .with_delay(Duration::from_millis(20))
+            .with_result(ToolResult::ok(json!({ "who": "reader" }))),
+    );
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(
+            &[call("c1", "writer"), call("c2", "reader")],
+            &ctx(),
+            &allow_all(),
+            &sink,
+        )
+        .await;
+
+    assert_eq!(outcomes.len(), 2);
+    assert_eq!(outcomes[0].tool_call_id, "c1");
+    assert_eq!(outcomes[1].tool_call_id, "c2");
+    assert_eq!(
+        h.pipeline
+            .partition_tool_batches(&[call("c1", "writer"), call("c2", "reader")])
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn round_budget_persists_only_the_overflowing_result() {
+    let per_result_chars = 45_000;
+    let text = "q".repeat(per_result_chars);
+    let h = harness(vec![]);
+    h.add(
+        ProbeSpec::new("probe")
+            .concurrent()
+            .with_result(ToolResult::ok_with_assistant(json!({ "big": true }), text)),
+    );
+    let sink = InMemoryEventSink::new();
+    let calls: Vec<ToolCall> = (0..5)
+        .map(|index| ToolCall::new(format!("c{}", index), "probe", json!({})))
+        .collect();
+
+    let outcomes = h
+        .pipeline
+        .execute(&calls, &ctx(), &allow_all(), &sink)
+        .await;
+
+    let round_total_chars = per_result_chars * calls.len();
+    assert!(round_total_chars > PER_ROUND_LIMIT_CHARS);
+    let persisted: Vec<usize> = outcomes
+        .iter()
+        .enumerate()
+        .filter(|(_, outcome)| outcome.persisted.is_some())
+        .map(|(index, _)| index)
+        .collect();
+
+    assert_eq!(
+        persisted,
+        vec![4],
+        "each result is below the per-tool limit, so only the round overflow is persisted"
+    );
+    assert!(outcomes[0].persisted.is_none());
+    assert!(outcomes[4]
+        .assistant_text
+        .starts_with("<persisted-output path="));
+}
+
+#[tokio::test]
+async fn pipeline_source_has_no_tauri_dependency() {
+    let source = include_str!("../src/pipeline.rs");
+    for forbidden in ["tauri", "AppHandle", "Window"] {
+        assert!(
+            !source.contains(forbidden),
+            "pipeline must stay UI-agnostic: found '{}'",
+            forbidden
+        );
+    }
+}

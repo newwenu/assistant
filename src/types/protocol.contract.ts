@@ -73,7 +73,7 @@ reasoningLevels: ReasoningLevelsDto | null, };
 export type MousePositionDto = { clientX: number, clientY: number, };
 export type OrbConfDto = { clickThrough: boolean, alwaysOnTop: boolean, scalePercent: number, opacityPercent: number, hideOnPointerHover: boolean, hoverDelayMs: number, idleOpacityPercent: number, positionX: number | null, positionY: number | null, };
 export type OsToolExecRequestDto = { tool: string, action: string, params: unknown, };
-export type OsToolResultDto = { ok: boolean, data: unknown, error: string | null, };
+export type OsToolResultDto = { ok: boolean, data: unknown, resultForAssistant: string | null, error: string | null, errorKind: ToolErrorKindDto | null, };
 export type ProviderErrorCodeDto = "ApiKeyMissing" | "AuthFailed" | "RateLimited" | "ModelNotFound" | "ContextOverflow" | "NetworkError" | "Timeout" | "ServerError" | "RequestRejected" | "ParseError" | "Cancelled" | "StreamError" | "InternalError";
 export type ProviderErrorPayloadDto = { code: ProviderErrorCodeDto, message: string, retryAfterMs: number | null, retryable: boolean, httpStatus: number | null, provider: string | null, providerCode: string | null, };
 export type ProviderInputDto = { id: string, name: string, type: string, baseUrl: string, apiKey: string, apiKeyChanged?: boolean | null, models: Array<ModelConfigDto>, defaultModel: string, };
@@ -137,6 +137,7 @@ cumulative: TokenUsageCumulativeDto | null,
  * 无「具备缓存能力且上报缓存字段」的请求时缺省
  */
 cache: TokenUsageCacheDto | null, };
+export type ToolErrorKindDto = "business" | "timeout" | "cancelled" | "internal" | "denied";
 export type TurnPhaseDto = "starting" | "compacting" | "thinking" | "streaming" | "toolCalling" | "awaitingApproval" | "finalizing";
 export type VaultCipherAlgorithmDto = "aes256Gcm" | "chacha20Poly1305";
 export type VaultConfDto = { vaultAutoLockMinutes: number, vaultLockOnScreenLock: boolean, vaultClipboardClearSeconds: number, vaultCipherAlgorithm: VaultCipherAlgorithmDto, vaultHibpAutoAudit: boolean, vaultSyncRemoteUrl: string | null, vaultSshAutoAdd: boolean, vaultSshUsePageant: boolean, vaultSshUseOpensshAgent: boolean, vaultSshAuthSockOverride: string, vaultSyncLastAt: number | null, vaultSyncSshHosts: Array<string>, };

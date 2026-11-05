@@ -375,6 +375,7 @@ dependencies = [
  "dashmap",
  "dunce",
  "encoding_rs",
+ "futures",
  "log",
  "serde",
  "serde_json",

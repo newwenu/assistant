@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::context::ToolUseContext;
 use crate::r#trait::Tool;
-use crate::result::ToolResult;
+use crate::result::{ToolErrorKind, ToolResult};
 
 pub const DEFAULT_TOOL_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -30,7 +30,11 @@ pub async fn invoke(
     match tokio::time::timeout(timeout, tool.execute(input, context)).await {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => ToolResult::from_exec_error(name, error),
-        Err(_) => ToolResult::from_exec_error(name, format!("timed out after {:?}", timeout)),
+        Err(_) => ToolResult::from_exec_error_kind(
+            name,
+            ToolErrorKind::Timeout,
+            format!("timed out after {:?}", timeout),
+        ),
     }
 }
 
@@ -122,6 +126,7 @@ mod tests {
         assert!(!result.ok);
         assert!(result.data.is_none());
         assert_eq!(result.error.as_deref(), Some("input must be a JSON object"));
+        assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -142,6 +147,7 @@ mod tests {
         assert!(!result.ok);
         assert!(result.data.is_none());
         assert_eq!(result.error.as_deref(), Some("tool 'stub': boom"));
+        assert_eq!(result.error_kind, Some(ToolErrorKind::Internal));
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -156,6 +162,7 @@ mod tests {
             "unexpected timeout error: {}",
             error
         );
+        assert_eq!(result.error_kind, Some(ToolErrorKind::Timeout));
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -16,6 +16,7 @@ dashmap = { workspace = true }
 chardetng = { workspace = true }
 encoding_rs = { workspace = true }
 dunce = { workspace = true }
+futures = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true }

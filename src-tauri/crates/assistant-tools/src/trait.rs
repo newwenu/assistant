@@ -5,11 +5,58 @@ use serde_json::Value;
 use crate::context::ToolUseContext;
 use crate::result::ToolResult;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ToolTier {
     Sandbox,
     Os,
     External,
+}
+
+/// `validate_input` 的判定结果。
+///
+/// `blocks_input_rewrite = true` 表示该失败**不可通过改写输入绕过**：
+/// 模型必须换一种做法，而不是换个路径/参数重试同一意图。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidationResult {
+    pub ok: bool,
+    pub message: Option<String>,
+    pub error_code: Option<String>,
+    pub blocks_input_rewrite: bool,
+}
+
+impl ValidationResult {
+    pub fn ok() -> Self {
+        Self {
+            ok: true,
+            message: None,
+            error_code: None,
+            blocks_input_rewrite: false,
+        }
+    }
+
+    pub fn invalid(message: impl Into<String>) -> Self {
+        Self {
+            ok: false,
+            message: Some(message.into()),
+            error_code: None,
+            blocks_input_rewrite: false,
+        }
+    }
+
+    pub fn blocked(message: impl Into<String>) -> Self {
+        Self {
+            ok: false,
+            message: Some(message.into()),
+            error_code: None,
+            blocks_input_rewrite: true,
+        }
+    }
+
+    pub fn with_error_code(mut self, code: impl Into<String>) -> Self {
+        self.error_code = Some(code.into());
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -97,6 +144,17 @@ pub trait Tool: Send + Sync {
 
     fn is_readonly(&self) -> bool {
         self.behavior_hints().read_only
+    }
+
+    /// 纯检查、无 IO。Pipeline 的 validate 阶段调用，先于审批，
+    /// 避免为非法输入弹审批框。路径检查必须复用 `os::path`。
+    fn validate_input(&self, _input: &Value, _context: &ToolUseContext) -> ValidationResult {
+        ValidationResult::ok()
+    }
+
+    /// 默认等于只读：只读工具可并发，写类工具默认串行。工具可按 input 覆写。
+    fn is_concurrency_safe(&self, _input: Option<&Value>) -> bool {
+        self.is_readonly()
     }
 
     fn permission_intents(
