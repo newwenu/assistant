@@ -85,7 +85,7 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 **验证**：
 
 - 单测：构造 `resolved: "system"` 的载荷投递给 `listen(UiEvent.ThemeChanged)` 回调，断言 `resolved` 落在 `light | dark`。`themeStore.init` 里的 `win.onThemeChanged` 已按系统主题做 `resolveTheme`，本次只需修 `listen` 这条覆盖路径；
-- Rust 测试：`ThemeChangedPayloadDto` round-trip 增补 `"system"` 与非法值用例（现有测试只覆盖 `"dark"`，见 `src-tauri/src/protocol/dto/mod.rs::test_setting_dtos_roundtrip`）。该测试位于 lib 的 `#[cfg(test)]`，必须跑 `cargo test -p assistant-app --lib`（或 `cargo test -p assistant-app`），`--test protocol_bindings` 不会执行它；
+- Rust 测试：`ThemeChangedPayloadDto` round-trip 增补 `"system"` 与非法值用例（现有测试只覆盖 `"dark"`，见 `src-tauri/tests/protocol_dto_roundtrip.rs::setting_dtos_roundtrip`）。该测试位于集成测试目标，跑 `cargo test -p assistant-app --test protocol_dto_roundtrip`；`--test protocol_bindings` 是契约生成器，不会执行它；
 - 手测：`ThemeToggle` 在系统暗色下切到「跟随系统」，确认 `data-theme="dark"` 且界面不变浅。
 
 ---
@@ -157,10 +157,10 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 **修法**：
 
-- 在 `src-tauri/src/protocol/dto/config.rs` 的 `#[cfg(test)] mod tests` 中，用各结构体的构造入口（如 `AppConf::new()`）或显式全字段构造，序列化后做 snake→camel 归一化，再与 `*ConfDto::from(conf)` 序列化结果的键集合比对；排除清单只允许 `compact_threshold_percent` 一项并注释迁移用途；
+- 在 `src-tauri/tests/protocol_dto_roundtrip.rs` 中，用各结构体的构造入口（如 `AppConf::new()`）或显式全字段构造，序列化后做 snake→camel 归一化，再与 `*ConfDto::from(conf)` 序列化结果的键集合比对；排除清单只允许 `compact_threshold_percent` 一项并注释迁移用途。**不要放 lib 的 `#[cfg(test)]`**：Windows 上 `assistant-app` lib 测试二进制缺 Common Controls v6 清单，启动即 `STATUS_ENTRYPOINT_NOT_FOUND`，lib 单测在本机不可执行；
 - DTO 的 camelCase 输出断言放 `src-tauri/tests/protocol_contract.rs`（已有 `conversation_dto_outputs_camel_case` 等先例）。`src-tauri/tests/protocol_bindings.rs` 是契约生成器，会重写 `src/types/protocol.contract.ts`，不要往里加 serde 断言。
 
-**验证**：`cargo test -p assistant-app --lib`（单测在 lib 内）；若断言放集成测试则用 `cargo test -p assistant-app --test protocol_contract`；临时删 `AppConfDto` 一个字段确认测试失败，再恢复。`--test protocol_bindings` 不会执行 lib 单测，不能作为本项的验证命令。
+**验证**：`cargo test -p assistant-app --test protocol_dto_roundtrip --test protocol_contract`；临时删 `AppConfDto` 一个字段确认测试失败，再恢复。`--test protocol_bindings` 不执行任何断言，不能作为本项的验证命令。
 
 ---
 
@@ -243,11 +243,11 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 | 阶段 | 内容 | 验证命令（在仓库根目录执行；cargo 在 `src-tauri` 目录执行） |
 |---|---|---|
-| 1 | C1 主题解析与 DTO 收窄 | `cargo test -p assistant-app --lib`；`npm run typecheck`；`npm run test` |
+| 1 | C1 主题解析与 DTO 收窄 | `cargo test -p assistant-app --test protocol_dto_roundtrip`；`npm run typecheck`；`npm run test` |
 | 2 | C2 错误码映射表 | `npm run typecheck`；`npm run test` |
 | 3 | C5 服务层复用生成类型 | `npm run typecheck`；`npm run lint` |
 | 4 | C3 `amend()` 未知键校验 + 命名转换注释与用例 | `cargo test -p assistant-config`；`npm run test` |
-| 5 | C4 配置 DTO 字段集合测试 | `cargo test -p assistant-app --lib`；`cargo test -p assistant-app --test protocol_contract` |
+| 5 | C4 配置 DTO 字段集合测试 | `cargo test -p assistant-app --test protocol_dto_roundtrip`；`cargo test -p assistant-app --test protocol_contract` |
 | 6 | C7 死代码与兼容垫片清理 | `npm run typecheck`；`npm run lint`；全局检索无残留引用 |
 | 7 | C6 命令错误契约（另立项） | 视迁移范围 |
 
