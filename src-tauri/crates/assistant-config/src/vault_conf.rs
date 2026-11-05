@@ -17,9 +17,10 @@ fn default_vault_clipboard_clear_seconds() -> u16 {
 }
 
 /// 保险库加密算法（封闭集合）。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum VaultCipherAlgorithm {
     #[serde(rename = "aes256Gcm")]
+    #[default]
     Aes256Gcm,
     #[serde(rename = "chacha20Poly1305")]
     Chacha20Poly1305,
@@ -31,12 +32,6 @@ impl VaultCipherAlgorithm {
             Self::Aes256Gcm => "aes256Gcm",
             Self::Chacha20Poly1305 => "chacha20Poly1305",
         }
-    }
-}
-
-impl Default for VaultCipherAlgorithm {
-    fn default() -> Self {
-        Self::Aes256Gcm
     }
 }
 
