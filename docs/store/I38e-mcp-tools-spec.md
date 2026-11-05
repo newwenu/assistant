@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | Draft（未开始） |
+| 状态 | 现行（P7 规格；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-04 |
 | 阶段 | P7（见 [I38 roadmap](./I38-agent-roadmap.md)） |
 | 关联 | [I18 design](./I18-agent-tool-architecture-design.md) §3.8 / §4.3、[I18 spec](./I18-agent-tool-architecture-spec.md)（框架层）、[I38a](./I38a-tool-control-layer-spec.md)（Policy/Gateway/Pipeline）、[I38c](./I38c-os-tools-spec.md)（工具实现范式）、[I36 spec](./I36-agent-runtime-spec.md)（超时与取消） |

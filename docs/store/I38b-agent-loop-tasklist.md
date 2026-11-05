@@ -4,6 +4,7 @@
 > 阶段：[I38-agent-roadmap.md](./I38-agent-roadmap.md) P4
 > 顺序：C0 → C1 → C2 → C3 → C4 → C5 → C6 → C7 → C8 → C9
 > 勾选条件：代码已改 **且** 对应验收已跑。
+> **状态唯一位置**：本清单是 P4 任务级进度的唯一来源；阶段级结论只在 [roadmap](./I38-agent-roadmap.md) §2 写一次，spec / design / 基线 / 验证文档都不记录进度。本清单**不管理提交**（不写提交拆分 / 提交信息 / 回滚批次，见 roadmap §7 第 2 条）。
 > 范围：只交付 RoundExecutor 多迭代循环、tool call 累积器、`ChatOptions.tools` 注入、P2 遗留生产端口绑定、事件 DTO 与 tool 落库；不新增 OS 工具实现、不做前端审批 UI、不做 MCP、不做压缩续跑式切换、不做子代理。
 > 测试位置：`assistant-agent` 单测一律放 `crates/assistant-agent/tests/<模块>.rs` 集成测试，不写 `#[cfg(test)]` 内联模块；`src-tauri` 侧端到端测试放 `src-tauri/tests/`。
 > 决策基线：D1-D26 已全部定稿（§3.2 / §9.1），开工后不再新增决策；遇到未覆盖问题先回写规格，不在代码里临时拍板。
@@ -19,9 +20,8 @@
 - [ ] C0.3 确认 P4 **不改** `assistant-tools` 任何代码：分批、落盘、结果事件全在 Pipeline 内部完成，executor 不重复实现（§4.5 职责切分）
 - [ ] C0.4 确认 P4 不实现 OS 工具（P5）、前端五态与审批 UI（P6）、MCP（P7）、压缩续跑式（D13）、子代理（P8）
 - [ ] C0.5 确认 D1-D26 与 I36 D10 的边界（「模型可见历史落库、运行时簿记不落库」）已理解一致（§6.2）
-- [ ] C0.6 确认 C1-C7 单独提交、单独回滚，不与 P3 / P5 改动混批
-- [ ] C0.7 确认协议改动一律走 `npm run contract:gen`，禁止手改 `src/types/protocol.contract.ts`
-- [ ] C0.8 确认 `MessageDto` 本阶段不动（工具卡片字段归 P6）
+- [ ] C0.6 确认协议改动一律走 `npm run contract:gen`，禁止手改 `src/types/protocol.contract.ts`
+- [ ] C0.7 确认 `MessageDto` 本阶段不动（工具卡片字段归 P6）
 
 ---
 
@@ -43,7 +43,10 @@
 - [ ] C1.11 Anthropic adapter 填 `false`，有 index 时带 `Indexed` 键
 - [ ] C1.12 Gemini adapter 只透传快照片段并标 `true`，累积统一交给 `agent/tool_call.rs`（D8，修 F15/F16）
 - [ ] C1.13 删除 `assistant-providers/src/tool_call_accumulator.rs` 及其 `lib.rs` 导出（A7）
-- [ ] C1.14 全仓 grep 确认无第二份累积器实现
+- [ ] C1.13a `kernel/stream.rs` 的 `StreamAccumulator` 删除 `tool_calls` 字段与 `apply_tool_call`，只保留正文 / 推理 / usage / `ttft_ms` / `finish_reason` / `has_effective_output`（§3.1）
+- [ ] C1.13b `StreamOutcome` / `PartialOutcome` 删除 `tool_calls` 字段；工具片段改由 `consume` 的 `on_delta` 回调原样交给调用方累积
+- [ ] C1.13c 删除后 `kernel/runner.rs` 的过渡循环暂不可编译 → **C1 与 C5 必须同批交付**（见 C5.2）
+- [ ] C1.14 全仓 grep 确认无第二份累积器实现：`assistant-providers` 无 `ToolCallAccumulator`，`assistant-agent/src/kernel/stream.rs` 无 `ToolCallAccum`（A7 口径见 spec §3.1）
 - [ ] C1.15 `tool_call.rs` 不出现 `tauri` / `AppHandle` / `assistant_tools` 引用
 - [ ] C1.16 测试：跨 chunk 累积（`Unindexed` 与 `Indexed` 双键）
 - [ ] C1.17 测试：Gemini 快照替换语义
@@ -63,7 +66,8 @@
 - [ ] C2.2 `ChatOptions` 新增 `tools: Option<Vec<ToolSpec>>`，`#[serde(default, skip_serializing_if = "Option::is_none")]`（§4.2）
 - [ ] C2.3 `build_chat_options` 新增 `tools` 参数并填入返回结构（不新增第二个构造函数）
 - [ ] C2.4 同步两处 `ChatOptions` 完整字面量构造：`chat_options.rs`、`cmd/compaction.rs`（压缩摘要显式 `tools: None`，不得用 `..Default::default()`）
-- [ ] C2.5 `kernel/ports.rs` 新增 `ToolCatalog` async trait（`agent_tools() -> Vec<ToolSpec>`，D16）
+- [ ] C2.5 `kernel/ports.rs` 声明 `ToolCatalog` async trait（`agent_tools() -> Vec<ToolSpec>`，D16）；**同时删除 `kernel/mod.rs` 的同步占位 `ToolCatalog` / `EmptyToolCatalog` 及其导出**，全仓只留一套
+- [ ] C2.5a `TurnSpec.tools: Option<Arc<dyn ToolCatalog>>` 与 `runner.rs` 的 `spec.tools.is_none()` 判定改到新签名（P3 过渡循环随 C5 删除）
 - [ ] C2.6 `src-tauri` 实现 `ToolCatalog`：调 `ToolRegistry::tool_definitions_for_tier(ToolTier::Os)`，逐条转 `ToolSpec`
 - [ ] C2.7 `max_tier` 常量放适配器内，`External` 排除（D15）；`fs_link` 为 `TOOLBOX_ONLY` 不会出现
 - [ ] C2.8 注入开关：仅 `AgentKind::supports_tool_call()` 为真（现状 `custom`）取工具，`default` / `quick` / `deep` 恒 `None`（A9）
@@ -99,7 +103,8 @@
 - [ ] C3.9 `ToolStage` / `ToolErrorClass` 为本地镜像枚举，不 import `assistant-tools` 类型
 - [ ] C3.10 新建 `agent/tool_event.rs`：`ToolEvent`（上下文）+ `ToolEventPayload::{Started, ArgsDelta{delta}, Finished{result, confirmation_wait_ms}, Failed{error, error_kind, confirmation_wait_ms}}`（§6.1）
 - [ ] C3.11 `kernel/ports.rs` 的 `TurnEvent::ToolStarted` / `ToolFinished` 收敛为 `TurnEvent::Tool(ToolEvent)`
-- [ ] C3.12 `event_sink.rs` 的 `match` 分支随 `TurnEvent::Tool(_)` 改写（P3 期只打 debug 日志，无生产者）
+- [ ] C3.11a 删除 `kernel/emit.rs` 的 `TurnEmitter::tool_started` / `tool_finished` 两个方法，改为单一 `tool_event(&self, event: ToolEvent)`（P3 已实现但无调用方，§6.1 现状核对）
+- [ ] C3.12 `event_sink.rs` 的 `ToolStarted` / `ToolFinished` 两个 `match` 分支（P3 期只打 debug 日志）合并为 `TurnEvent::Tool(_)` 分支，线事件映射在 C6.7 接入
 - [ ] C3.13 全仓 grep 确认 `ToolStarted` / `ToolFinished` 变体名已消失
 - [ ] C3.14 `test_doubles.rs` 的 `MessageStore` 替身补 `save_tool_calls` / `append_tool_message`，支持「写入 → 读回 → 重建 wire 形状」
 - [ ] C3.15 `test_doubles.rs` 新增 `ToolCatalog` / `ToolExecutionPort` 替身（可脚本化返回工具集与结果）
@@ -130,7 +135,12 @@
 - [ ] C4.15 适配器在 `pipeline.execute` 返回后按 `tool_call_id` 取出并 `remove`，避免无界增长
 - [ ] C4.16 未走审批（`Allow` 直通）时 `confirmation_wait_ms = 0`
 - [ ] C4.17 `RoundOutcome.confirmation_wait_ms` 汇总本 turn 全部等待
-- [ ] C4.18 承接 P2 遗留生产端口：`PermissionGrantStore` / `PermissionAuditStore` / `ApprovalPrompter` / `PipelineEventSink` / `ToolResultStorage` 全部绑定真实实现
+- [ ] C4.18 承接 P2 遗留生产端口（现状：`src-tauri` 只有 `ToolRegistry`，其余全部未装配，见 spec §6.4）
+- [ ] C4.18a 新建 `src-tauri/src/adapters/` 下的 `PermissionGrantStore` / `PermissionAuditStore` 实现（`Mutex<Connection>` + 同步 rusqlite，沿用 `DbMessageStore::with_conn` 模式）
+- [ ] C4.18b `permission_grants` / `permission_audit` 两表（`CREATE TABLE IF NOT EXISTS`，D14）随本批先建（C6.13 复用同一段建表代码，不重复）
+- [ ] C4.18c `ApprovalPrompter` 生产默认实现「Ask 即 Deny + 写审计」（`reason = "approval channel not available in P4"`，fail-closed；P6 替换内层，装饰器结构不变）
+- [ ] C4.18d 装配 `ToolPipeline` / `ToolGateway` / `ToolResultStorage` / `PipelineEventSink` 并在 `setup.rs` 与 `TurnRunner` 之间接线
+- [ ] C4.18e `src-tauri` 全仓 grep 确认无遗留未绑定端口（`PermissionGrantStore` / `PermissionAuditStore` / `ApprovalPrompter` / `PipelineEventSink` / `ToolResultStorage` 均有生产实例）
 - [ ] C4.19 承接取消打标：turn 取消时整批结果标 `Cancelled`，content 写「已取消」（§4.4）
 - [ ] C4.20 `append_tool_results`：回填请求历史 + 写 `role='tool'` 行，两者文本逐字节一致（D21 / D11）
 - [ ] C4.21 `after_tool` 阶梯顺序固定为 D26（豁免）→ D25（分类预算）→ D19（通用 2/3 阶梯）
@@ -155,7 +165,7 @@
 实现：`assistant-agent/src/kernel/runner.rs`
 
 - [ ] C5.1 `TurnRunner` 切到 `executor.run_iterations(ctx)`
-- [ ] C5.2 删除 P3 的过渡单迭代循环，全仓无第二套循环体
+- [ ] C5.2 删除 P3 的过渡单迭代循环，全仓无第二套循环体；**本项与 C1.13a–C1.13c 同批交付**（C1 删 `StreamOutcome.tool_calls` 后过渡循环即不可编译）
 - [ ] C5.3 一次性替换，**不保留**运行时双路径开关
 - [ ] C5.4 测试：chat 路径事件序列与 P3 对比一致（A9）
 - [ ] C5.5 测试：chat 路径无 tool 消息、无 `tools` 注入（A9）
@@ -179,7 +189,7 @@
 - [ ] C6.10 `npm run contract:gen` 生成 `protocol.contract.ts`，确认四变体为 discriminated union（A10）
 - [ ] C6.11 `assistant-storage/src/db.rs`：`CREATE TABLE messages` 加 `tool_call_id TEXT` 与 `is_error INTEGER NOT NULL DEFAULT 0`
 - [ ] C6.12 `db.rs` 既有库分支追加两段 `pragma_table_info` 守卫 + `ALTER TABLE messages ADD COLUMN ...`，放在 `model_id` 守卫之后
-- [ ] C6.13 `db.rs` 建表段新增 `permission_grants` / `permission_audit` 两表（`CREATE TABLE IF NOT EXISTS`，幂等，不做 ALTER 迁移，D14）
+- [ ] C6.13 `db.rs` 建表段新增 `permission_grants` / `permission_audit` 两表（`CREATE TABLE IF NOT EXISTS`，幂等，不做 ALTER 迁移，D14）；若 C4.18b 已提前落地，此处只核对不重复建
 - [ ] C6.14 `conversations/mod.rs`：`MSG_SELECT` 追加两列（13 → 15）；`MessageRow` 加 `tool_call_id: Option<String>` / `is_error: bool`
 - [ ] C6.15 `read_msg_row` 用具名列同步（`row.get("tool_call_id")` / `row.get::<_, i64>("is_error")? != 0`）
 - [ ] C6.16 补齐 `MessageRow` 结构体字面量的两字段：`src/cmd/compaction.rs`、`src/cmd/chat/insert.rs`（两处）、`src/adapters/message_store.rs`；不得改成 `..Default::default()`
@@ -236,13 +246,11 @@
 
 ---
 
-## C9 文档与提交
+## C9 文档
 
-- [ ] C9.1 更新 I38b 规格头表状态为「已实现」并记录日期
-- [ ] C9.2 更新 I38b §8 验收表 A1–A19 状态
-- [ ] C9.3 更新 I38 roadmap §2：P4 标记已完成并记录日期
-- [ ] C9.4 更新 I38 roadmap §4 文档地图：I38b 状态同步
-- [ ] C9.5 单独提交，提交信息标注 `I38b P4`
+- [ ] C9.1 更新 [roadmap](./I38-agent-roadmap.md) §2：P4 标记已完成并记录日期（阶段状态唯一台账）
+- [ ] C9.2 在本清单勾选 C1–C8 完成项（任务级进度只在本清单维护）
+- [ ] C9.3 确认 I38b 规格与 I36 spec 无进度表述（spec 只写「怎么做」）
 
 ---
 

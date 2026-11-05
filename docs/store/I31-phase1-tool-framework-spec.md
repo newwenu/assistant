@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | Draft（T1/T2/T3 已落地，P1 收口完成） |
+| 状态 | 已归档（阶段一工具框架规格；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-04 |
 | 关联 | [I38 roadmap](./I38-agent-roadmap.md)（P0/P1）、[I18 design](./I18-agent-tool-architecture-design.md)、[I18 spec](./I18-agent-tool-architecture-spec.md)（Step 0-3 / 8）、[I30](./I30-phase1-toolcall-separation-spec.md)、[I18b](./I18b-tool-unified-bridge-spec.md)、[I38c](./I38c-os-tools-spec.md)（工具能力去向） |
 | 影响范围 | `src-tauri/crates/assistant-tools` 单 crate |
@@ -514,11 +514,13 @@ tempfile = { workspace = true }
 
 ## 11 实施顺序
 
-| 阶段 | 内容 | 前置 | 状态 |
-|---|---|---|---|
-| T1 | `definition.rs` + `registry.rs` 改造（F1/F2/F3）+ `trait.rs::ToolAudience`（O1）+ 单测 | 无 | ✅ 已完成 |
-| T2 | `exec.rs` + `result.rs::from_exec_error`（F8）+ 单测 | T1 | ✅ 已完成 |
-| T3 | `os/path.rs`（F4/F5/F6）+ 单测；`fs_link` 迁移并修 `permission_intents`（F7）+ 受众声明 | T2 | ✅ 已完成 |
+> 本规格已归档；下表只保留「顺序与前置」，不记录完成状态（阶段结论见 [roadmap](./I38-agent-roadmap.md) §2）。
+
+| 阶段 | 内容 | 前置 |
+|---|---|---|
+| T1 | `definition.rs` + `registry.rs` 改造（F1/F2/F3）+ `trait.rs::ToolAudience`（O1）+ 单测 | 无 |
+| T2 | `exec.rs` + `result.rs::from_exec_error`（F8）+ 单测 | T1 |
+| T3 | `os/path.rs`（F4/F5/F6）+ 单测；`fs_link` 迁移并修 `permission_intents`（F7）+ 受众声明 | T2 |
 
 T1 与 T2 不触碰任何工具，可独立提交、独立回滚。T3 是本阶段唯一的存量改动，涉及已上线能力，需单独回归。
 

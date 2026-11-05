@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | Draft（未开始） |
+| 状态 | 现行（P5 规格；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-04 |
 | 阶段 | P5（见 [I38 roadmap](./I38-agent-roadmap.md)） |
 | 关联 | [I18 spec](./I18-agent-tool-architecture-spec.md) Step 2（已迁入本文）、[I31](./I31-phase1-tool-framework-spec.md) §5（共享路径）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱）、[I38a](./I38a-tool-control-layer-spec.md)（Policy/Gateway/Pipeline）、[I18b](./I18b-tool-unified-bridge-spec.md)（ToolBox 桥接） |
@@ -10,6 +10,8 @@
 
 > 本文是 P5 的唯一权威规格。I18 spec 的 Step 2 工具清单与 Schema 已迁入本文。
 > **门禁**：P1（`os/path.rs`）与 P2（Policy/Gateway）未完成前，不得新增任何破坏性工具，也不得把 `shell_exec` / `fs_delete` 加入生产注册表。
+
+> 执行清单：[I38c-os-tools-tasklist.md](./I38c-os-tools-tasklist.md)（C0–C8 逐项勾选与验收映射）。任务级进度只在该清单维护。
 
 ---
 
@@ -28,7 +30,7 @@
 
 ### 1.2 非目标
 
-- 控制层（P2 已完成）；RoundExecutor（P4，未开始，规格见 [I38b](./I38b-agent-loop-spec.md)）。
+- 控制层（P2 范围）；RoundExecutor（P4 范围，规格见 [I38b](./I38b-agent-loop-spec.md)）。阶段状态见 [roadmap](./I38-agent-roadmap.md) §2。
 - ToolBox 前端组件与审批 UI（P6）；本阶段只要求 Rust 侧可被 `os_tool_exec` 与 Pipeline 调用。
 - `ask_user` 的完整交互：依赖 P6 输入框，见 §9。
 - MCP（P7）。
@@ -45,26 +47,27 @@
 
 ## 2 工具清单与安全标记
 
-| 工具 | action | read_only | destructive | open_world | audience | 实现状态 |
-|---|---|---|---|---|---|---|
-| `fs_read` | read | ✅ | ❌ | ❌ | BOTH | ❌ |
-| `fs_list` | read | ✅ | ❌ | ❌ | BOTH | ❌ |
-| `fs_glob` | read | ✅ | ❌ | ❌ | BOTH | ❌ |
-| `fs_grep` | read | ✅ | ❌ | ❌ | BOTH | ❌ |
-| `fs_write` | edit | ❌ | ❌ | ❌ | BOTH | ❌ |
-| `fs_edit` | edit | ❌ | ❌ | ❌ | BOTH | ❌ |
-| `fs_mkdir` | edit | ❌ | ❌ | ❌ | BOTH | ❌ |
-| `fs_move` | edit | ❌ | ❌ | ❌ | BOTH | ❌ |
-| `fs_delete` | delete | ❌ | ✅ | ❌ | BOTH | ❌ |
-| `shell_exec` | execute | ❌ | ✅ | ✅ | BOTH | ❌ |
-| `ask_user` | — | ✅ | ❌ | ❌ | AGENT_ONLY | ❌（P6 联调） |
-| `fs_link` | — | 实际 `read_only=false` | ❌ | ✅ | TOOLBOX_ONLY | ✅（见 I18b） |
+| 工具 | action | read_only | destructive | open_world | audience |
+|---|---|---|---|---|---|
+| `fs_read` | read | 是 | 否 | 否 | BOTH |
+| `fs_list` | read | 是 | 否 | 否 | BOTH |
+| `fs_glob` | read | 是 | 否 | 否 | BOTH |
+| `fs_grep` | read | 是 | 否 | 否 | BOTH |
+| `fs_write` | edit | 否 | 否 | 否 | BOTH |
+| `fs_edit` | edit | 否 | 否 | 否 | BOTH |
+| `fs_mkdir` | edit | 否 | 否 | 否 | BOTH |
+| `fs_move` | edit | 否 | 否 | 否 | BOTH |
+| `fs_delete` | delete | 否 | 是 | 否 | BOTH |
+| `shell_exec` | execute | 否 | 是 | 是 | BOTH（守卫齐备后；否则 AGENT_ONLY） |
+| `ask_user` | — | 是 | 否 | 否 | AGENT_ONLY |
+| `fs_link` | — | 实际 `read_only=false` | 否 | 是 | TOOLBOX_ONLY |
 
 **硬约束**：
 
 1. 新增工具**必须显式声明受众**。默认值是 `NONE`（fail-closed），遗漏声明时工具不会出现在任何入口（I31 §4.2.1）。
 2. 只读工具的 `permission_intents` 返回空 `Vec`；修改/破坏性工具按 §3 词汇表声明。
 3. `fs_link` 的受众为 `TOOLBOX_ONLY`，不进入 LLM 工具列表；其 Path/permission 修正属于 P1（I31 T3）。
+4. 任务级进度只在[执行清单](./I38c-os-tools-tasklist.md)勾选；阶段级结论只在 [roadmap](./I38-agent-roadmap.md) §2 写一次（roadmap §7）。
 
 ---
 

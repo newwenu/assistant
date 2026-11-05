@@ -530,7 +530,7 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 
 ## 6. Crate 组织
 
-> 本节表达**目标态**的模块边界与归属，不是进度表；各模块实际落地情况见 [I18-spec](I18-agent-tool-architecture-spec.md) 的「实施状态总览」。
+> 本节表达**目标态**的模块边界与归属，不是进度表；阶段状态见 [I38 roadmap](I38-agent-roadmap.md) §2，任务级进度见对应 tasklist。
 
 ```
 src-tauri/

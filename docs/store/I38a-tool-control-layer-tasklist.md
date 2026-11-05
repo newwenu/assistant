@@ -4,6 +4,7 @@
 > 阶段：[I38-agent-roadmap.md](./I38-agent-roadmap.md) P2
 > 顺序：C0 → C1 → C2 → C3 → C4 → C5 → C6 → C7 → C8
 > 勾选条件：代码已改 **且** 对应验收已跑。
+> **状态唯一位置**：本清单是 P2 任务级进度的唯一来源；阶段级结论只在 [roadmap](./I38-agent-roadmap.md) §2 写一次。本清单**不管理提交**（不写提交拆分 / 提交信息 / 回滚批次，见 roadmap §7 第 2 条）。
 > 范围：只交付 `assistant-tools` 控制层与 DTO 契约同步；不新增工具实现、不改前端、不建 DB 表。
 > 测试位置：新增单测一律放 `crates/assistant-tools/tests/<模块>.rs` 集成测试，不写 `#[cfg(test)]` 内联模块。
 
@@ -11,14 +12,13 @@
 
 ## C0 口径与前置确认
 
-- [x] C0.1 确认 P2 只改 `assistant-tools` crate 与 `os_tool` DTO，不动 `src-tauri` 运行时与前端组件——工作区另有并行变更（chat 推理落库、DTO 单测迁移），提交时须按路径过滤
+- [x] C0.1 确认 P2 只改 `assistant-tools` crate 与 `os_tool` DTO，不动 `src-tauri` 运行时与前端组件
 - [x] C0.2 确认 `Tool` trait 新增方法均带默认实现，存量 `fs_link` 零改动（A9）
 - [x] C0.3 确认 `exec::invoke` 仍是唯一执行入口，Pipeline 复用 `invoke` 而非直接调 `execute()`
 - [x] C0.4 确认审批与存储均为端口 trait，`assistant-tools` 不引入 `tauri`（A2）
 - [x] C0.5 确认 P2 不建 DB 表，`GrantStore` / `AuditStore` / `Storage` 生产绑定随 P4（A10）
 - [x] C0.6 确认 P2 只用测试替身工具，不新增任何 `fs_*` / `shell_exec` 实现
 - [x] C0.7 确认 `ToolResultStorage` 根目录由构造参数注入，不读全局配置
-- [ ] C0.8 确认 C1–C6 单独提交、单独回滚，不与 P3 改动混批
 
 ---
 
@@ -195,13 +195,10 @@
 
 ---
 
-## C8 文档与提交
+## C8 文档
 
-- [x] C8.1 更新 I38a 规格头表状态为「已实现」
-- [x] C8.2 更新 I38a §5 验收表 A1–A10 状态
-- [x] C8.3 更新 I38 roadmap §2：P2 标记已完成并记录日期
-- [x] C8.4 更新 I38 roadmap §4 文档地图：I38a 状态同步
-- [ ] C8.5 单独提交，提交信息标注 `I38a P2`
+- [x] C8.1 更新 I38 roadmap §2：P2 标记已完成并记录日期（阶段状态唯一台账）
+- [x] C8.2 更新 I38a §5 验收表 A1–A10 为一次性验收记录
 
 ---
 

@@ -7,9 +7,9 @@
 | 关联 | [I38 阶段总纲](./I38-agent-roadmap.md)、[I36 运行时决策](./I36-agent-runtime-design.md)、[I36 运行时规格](./I36-agent-runtime-spec.md)、[I36 任务清单](./I36-agent-runtime-tasklist.md)、[I36b 一致性验证](./I36b-agent-kernel-conformance-spec.md)、[I38b Agent Loop](./I38b-agent-loop-spec.md)、[I38a 工具控制层](./I38a-tool-control-layer-spec.md) |
 | 影响范围 | 仅文档；不改变任何代码契约 |
 
-> 本文是 agent 文档的**内核篇**：回答「一个够用且通用的内核必须具备哪些能力、本项目内核处在什么位置、每个缺口的归属阶段与扩展点」。
+> 本文是 agent 文档的**内核篇**：回答「一个够用且通用的内核必须具备哪些能力、本项目内核的归属阶段与扩展点」。
 > 本文**不**回答「怎么做」——实现步骤见 I36 spec / I38b；工具实现见 I38c；前端见 I38d。
-> **单一权威源不变**：类型与契约仍归各 spec，本文只做横向对照与基线判定，不复制类型定义。
+> **单一权威源不变**：类型与契约归各 spec，阶段进度归 I38 roadmap，判定方法归 I36b；本文只做横向对照与基线判定，不复制类型定义，**也不维护任何实现状态**。
 
 ---
 
@@ -57,7 +57,7 @@
 | 类别 | 内容 | 占比 | 是否会改动现有文档 |
 |---|---|---|---|
 | **转述** | §2 能力矩阵的「能力」列与「阶段」列（对应 I36 spec Step 0–8、I38b D1–D26、I38a、roadmap §2.1）；§3 的机制描述 | 约 6 成 | 不改。已有决策已定稿，本文只做横向索引 |
-| **核对** | §2 的「现状」列（逐模块比对代码与任务清单勾选）；§4.2 收口清单 | 约 2 成 | **会**：状态口径与代码不符的文档需修正（已修 5 处，见 §4.2 末注） |
+| **核对** | §4.2 开工前缺口快照（一次性历史记录）；§4.3 接口冲突清单 | 约 2 成 | **会**：口径与代码不符的文档需修正（已修 5 处，见 §4.2 末注） |
 | **新增** | §1.2 入阶段三判据；§1.3 不变式的强制点；§4.3 接口冲突清单；§5 扩展点表；§6 门禁 G5/G7/G8；§7 优先级 | 约 2 成 | 部分会：G7/G8 需并入 I38b 验收，G5 需可见性收口 |
 
 判定方法：凡是能在既有 spec 里找到原文的，归入「转述」；凡是从参考项目**机制**推出、但本项目文档未写的，归入「新增」。**新增项一律不直接改设计**，只登记为门禁或验收候选，由对应阶段开工时决定是否采纳。
@@ -66,9 +66,7 @@
 
 ## 2 内核能力矩阵
 
-状态列取值：**已落地** / **骨架** / **未实现** / **不做**。参考列只列首个可对照的实现，细节见 §3。
-
-**本表不记录现状**：每行只登记「能力 → 归属 → 参考 → 阶段」。实现进度见 [I38 roadmap](./I38-agent-roadmap.md) §2 与各阶段 tasklist；判定方法见 [I36b](./I36b-agent-kernel-conformance-spec.md) §3。
+**本表不记录现状**：每行只登记「能力 → 归属 → 参考 → 阶段」。参考列只列首个可对照的实现，细节见 §3。实现进度见 [I38 roadmap](./I38-agent-roadmap.md) §2 与各阶段 tasklist；判定方法见 [I36b](./I36b-agent-kernel-conformance-spec.md) §3。
 
 ### 2.1 turn 生命周期
 
@@ -87,51 +85,51 @@
 
 ### 2.2 循环与工具执行
 
-| 能力 | 归属 | 现状 | 参考 | 决策 / 阶段 |
-|---|---|---|---|---|
-| 迭代循环（模型 → 工具 → 回填） | RoundExecutor | 骨架（占位 trait） | OpenHuman `turn_runner`、Goose `StateMachine` | P4 |
-| tool call 累积器（跨 chunk、快照模式、截断修复） | agent | 未实现 | OpenBitFun / Codex 三家方言差异 | P4（I38b D1–D9） |
-| `ChatOptions.tools` 三 adapter 注入 | providers | 未实现 | Goose / Codex 统一 `Tool` 形状 | P4（D10） |
-| 工具结果回填与落库（`role=tool` + `tool_call_id` / `is_error`） | 宿主 + storage | 未实现 | 三家均落库且均不建 tool 表 | P4（D11） |
-| 并行批次（`is_concurrency_safe`） | tools | 已落地（P2） | Codex `tools/parallel.rs` 读写闸门 | P4 接线（D20） |
-| 结果体积预算与落盘回填 | tools | 已落地（P2） | DSH retention library（§3.3） | P4 接线（D21） |
-| 重复失败阶梯（Continue / Nudge / Halt） | agent | 未实现 | OpenHuman `RepeatedToolFailureMiddleware` | P4（D19 / D25） |
-| 重复调用豁免（轮询类工具） | agent | 未实现 | OpenHuman `is_repeat_call_exempt`（仅 `wait_subagent`） | P4 空集（D26） |
-| 未处理工具调用兜底（fail-closed 回灌错误） | agent | 未实现 | Goose `UnhandledToolCallsOperation`（§3.1） | P4 |
-| 审批等待与工具耗时分账 | agent | 未实现 | OpenBitFun `confirmation_wait_ms` 独立字段 | P4（D12） |
+| 能力 | 归属 | 参考 | 决策 / 阶段 |
+|---|---|---|---|
+| 迭代循环（模型 → 工具 → 回填） | RoundExecutor | OpenHuman `turn_runner`、Goose `StateMachine` | P4 |
+| tool call 累积器（跨 chunk、快照模式、截断修复） | agent | OpenBitFun / Codex 三家方言差异 | P4（I38b D1–D9） |
+| `ChatOptions.tools` 三 adapter 注入 | providers | Goose / Codex 统一 `Tool` 形状 | P4（D10） |
+| 工具结果回填与落库（`role=tool` + `tool_call_id` / `is_error`） | 宿主 + storage | 三家均落库且均不建 tool 表 | P4（D11） |
+| 并行批次（`is_concurrency_safe`） | tools | Codex `tools/parallel.rs` 读写闸门 | P2 落地 / P4 接线（D20） |
+| 结果体积预算与落盘回填 | tools | DSH retention library（§3.3） | P2 落地 / P4 接线（D21） |
+| 重复失败阶梯（Continue / Nudge / Halt） | agent | OpenHuman `RepeatedToolFailureMiddleware` | P4（D19 / D25） |
+| 重复调用豁免（轮询类工具） | agent | OpenHuman `is_repeat_call_exempt`（仅 `wait_subagent`） | P4 空集（D26） |
+| 未处理工具调用兜底（fail-closed 回灌错误） | agent | Goose `UnhandledToolCallsOperation`（§3.1） | P4 |
+| 审批等待与工具耗时分账 | agent | OpenBitFun `confirmation_wait_ms` 独立字段 | P4（D12） |
 
 ### 2.3 上下文与预算
 
-| 能力 | 归属 | 现状 | 参考 | 决策 / 阶段 |
-|---|---|---|---|---|
-| 请求投影（图片 → 工具 → 历史文本逐级卸载） | kernel | 已落地 | 三家同构 | P3 |
-| 终止式压缩（压缩即结束本轮） | kernel | 已落地 | Codex `compact.rs` | P3 |
-| 阶梯 ② 摘要压缩（续跑式） | agent | 未实现 | OpenHuman `ContextCompressionMiddleware` | P4 之后单独提交（D13） |
-| 阶梯 ③ 微压缩（清空旧工具结果正文） | agent | 未实现 | OpenHuman `MicrocompactMiddleware` + token 预算门 | P4 |
-| 阶梯 ④ 收尾调用还原（受 allowance 约束） | agent | 未实现 | OpenHuman `FinalCallWrapUpMiddleware` | P4（D23） |
-| 阶梯 ⑤ 确定性裁剪（按比例预算、系统消息不丢） | agent | 未实现 | OpenHuman `ImageAwareMessageTrimMiddleware` | P4 |
-| 三维预算（迭代 / 工具次数 / 墙钟） | kernel | 已落地 | OpenHuman 同时设三类上限 | P3（D18） |
-| 成本（USD）预算 | 宿主端口 | 未实现 | OpenHuman `BudgetGate` 端口 + `CostBudgetMiddleware` | P8+ |
+| 能力 | 归属 | 参考 | 决策 / 阶段 |
+|---|---|---|---|
+| 请求投影（图片 → 工具 → 历史文本逐级卸载） | kernel | 三家同构 | P3 |
+| 终止式压缩（压缩即结束本轮） | kernel | Codex `compact.rs` | P3 |
+| 阶梯 ② 摘要压缩（续跑式） | agent | OpenHuman `ContextCompressionMiddleware` | P4 之后单独提交（D13） |
+| 阶梯 ③ 微压缩（清空旧工具结果正文） | agent | OpenHuman `MicrocompactMiddleware` + token 预算门 | P4 |
+| 阶梯 ④ 收尾调用还原（受 allowance 约束） | agent | OpenHuman `FinalCallWrapUpMiddleware` | P4（D23） |
+| 阶梯 ⑤ 确定性裁剪（按比例预算、系统消息不丢） | agent | OpenHuman `ImageAwareMessageTrimMiddleware` | P4 |
+| 三维预算（迭代 / 工具次数 / 墙钟） | kernel | OpenHuman 同时设三类上限 | P3（D18） |
+| 成本（USD）预算 | 宿主端口 | OpenHuman `BudgetGate` 端口 + `CostBudgetMiddleware` | P8+ |
 
 ### 2.4 观测与恢复
 
-| 能力 | 归属 | 现状 | 参考 | 决策 / 阶段 |
-|---|---|---|---|---|
-| 轮级用量汇总（迭代 / 调用 / token / 工具数） | kernel | 已落地（未接线；工具数为 0 待 P4 填） | OpenBitFun `TurnStats` / `TurnTokenUsage` | P3 C8 |
-| TTFT | kernel | 未实现 | OpenBitFun 首 token 计时 | P3 C8 |
-| 事件 seq 与终态去重 | kernel | 已落地（未接线） | OpenBitFun `event_router.rs` / `event_queue.rs` | P3 C6 |
-| 崩溃后「停在哪个 turn」可判定 | storage | 未实现 | DSH turn enclosure（§3.3） | P3 C7 |
-| 重启续跑 / 后台常驻 | — | 不做 | DSH goal / schedule；OpenHuman `reaper.rs` | P9，单独 ADR |
+| 能力 | 归属 | 参考 | 决策 / 阶段 |
+|---|---|---|---|
+| 轮级用量汇总（迭代 / 调用 / token / 工具数） | kernel | OpenBitFun `TurnStats` / `TurnTokenUsage` | P3 C8（工具数随 P4 填充） |
+| TTFT | kernel | OpenBitFun 首 token 计时 | P3 C8 |
+| 事件 seq 与终态去重 | kernel | OpenBitFun `event_router.rs` / `event_queue.rs` | P3 C6 |
+| 崩溃后「停在哪个 turn」可判定 | storage | DSH turn enclosure（§3.3） | P3 C7 |
+| 重启续跑 / 后台常驻 | — | DSH goal / schedule；OpenHuman `reaper.rs` | P9，单独 ADR |
 
 ### 2.5 演进能力（P8+）
 
-| 能力 | 归属 | 现状 | 参考 | 决策 / 阶段 |
-|---|---|---|---|---|
-| 子代理（一次性委派、深度上限、只读工具集） | agent | 未实现 | Goose `SubagentOperation`、Codex control plane | P8.1 |
-| 可继续子会话 / 任务板 / steer | 新层 | 未实现 | DSH continuable subagent、OpenBitFun `subagentProjection` | P8.2 |
-| 会话之上 Router | 新层 | 未实现 | DSH Super-agent Router / Worker | P8.3 |
-| 排队输入 / 中途插话 | kernel | 不做 | DSH `inject` + steering FIFO | P8+，需先解决「注入消息是否落库」 |
-| 长期记忆 / RAG | 新层 | 不做 | OpenHuman `experience` / `learning` | 无规格，暂不立项 |
+| 能力 | 归属 | 参考 | 决策 / 阶段 |
+|---|---|---|---|
+| 子代理（一次性委派、深度上限、只读工具集） | agent | Goose `SubagentOperation`、Codex control plane | P8.1 |
+| 可继续子会话 / 任务板 / steer | 新层 | DSH continuable subagent、OpenBitFun `subagentProjection` | P8.2 |
+| 会话之上 Router | 新层 | DSH Super-agent Router / Worker | P8.3 |
+| 排队输入 / 中途插话 | kernel | DSH `inject` + steering FIFO | P8+，需先解决「注入消息是否落库」 |
+| 长期记忆 / RAG | 新层 | OpenHuman `experience` / `learning` | 无规格，暂不立项 |
 
 > 委派预留（`agent_id` / `parent_turn_id` / `delegation_depth` + 取消树）已在 I36 D16–D18 定稿，P4 只留字段不实现；禁止在 RoundExecutor 内写 `if is_subagent`（roadmap R10）。
 
@@ -216,7 +214,9 @@
 | 工具执行语义 | `partition_tool_batches` 并行分批、未注册 fail-closed、结果按索引回填 |
 | 权限取最严 | `most_restrictive` + 审批键规范化 + 授权两表 |
 
-### 4.2 P3 收口（代码已在，接线未完成）
+### 4.2 P3 开工前缺口快照（历史记录）
+
+> 下表是 2026-11-05 P3 开工前的核对快照，**只作历史记录，不作现状依据**。当前进度见 [I38 roadmap](./I38-agent-roadmap.md) §2 与 [I36 tasklist](./I36-agent-runtime-tasklist.md)。
 
 | 缺口 | 现象 | 收口项 |
 |---|---|---|
@@ -226,11 +226,11 @@
 | 终态列缺失 | `messages` 无 `status`；启动清扫未接 | C7 |
 | 观测缺失 | 无 `ttft_ms`、无轮级汇总日志 | C8 |
 
-**本次核对已修正的文档事实**（均在 `docs/store`，不改设计）：
+**本次核对已修正的文档事实**（历史记录；均在 `docs/store`，不改设计）：
 
-| 文档 | 原状态 | 修正为 |
+| 文档 | 原文 | 修正为 |
 |---|---|---|
-| I36 spec 实施状态总览 | 端口 / `TurnSpec` / `tasks` / `stream` / `request` / `persist` / `emit` / `state` / `limits` / `runner` 全标「未实现」；`limits` 标「双层墙钟尚未接线」 | 均标「已实现」；双层墙钟已在 `runner.rs` / `stream.rs` 接线 |
+| I36 spec 模块落点索引（原「实施状态总览」） | 端口 / `TurnSpec` / `tasks` / `stream` / `request` / `persist` / `emit` / `state` / `limits` / `runner` 全标「未实现」；`limits` 标「双层墙钟尚未接线」 | 该表改为纯落点索引，不再记录实现状态 |
 | I36 spec §0B.2 | `TurnSpec` 七字段，无偏差记录（tasklist C5.13 引用的「§0B.2 偏差记录」不存在） | 补 `kind` / `limits` 两字段，新增 §0B.2.1 偏差记录 |
 | I36 spec §3.1 | `TurnRunner` 列 10 字段（含 `limits` / `middlewares` / `stop_hooks`） | 按实现列 8 字段，说明 `limits` 已进 `TurnSpec`、其余随 `agent/` 落地 |
 | I36 tasklist C5.14 | 落点写 `agent/mod.rs` | 实际落点 `kernel/mod.rs`；P4 再迁 `agent/round_executor.rs` |

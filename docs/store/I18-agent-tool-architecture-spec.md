@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 现行（框架层已完成，桥接待收口） |
+| 状态 | 现行（框架层规格；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-04（结构重构） |
 | 关联 | [I38 roadmap](./I38-agent-roadmap.md)（阶段入口）、[I18 design](./I18-agent-tool-architecture-design.md)（决策依据） |
 | 影响范围 | `assistant-tools`（框架层）、`src-tauri/src/cmd/os_tool_exec.rs`、`src-tauri/src/protocol/dto/os_tool.rs`、前端 `src/tools/os.ts` |
@@ -42,15 +42,19 @@ Step 8  Tauri 桥接          os_tool_exec · os.ts · 双入口分流
 | 控制层 | 迁出 | Policy / Gateway / Pipeline 见 I38a |
 | 连接层 | Step 8 | 把框架接到 Tauri 与前端；ToolBox 双入口 |
 
-### 实施状态（2026-11-04）
+### 本文覆盖的 Step 与去向
 
-| Step | 模块 | 状态 | 说明 |
-|---|---|---|---|
-| 0 | 值类型 | ✅ 完成 | `trait.rs` / `result.rs` / `context.rs` |
-| 1 | Tool Trait | ✅ 完成 | 含 `audience()` / `ToolAudience` |
-| 2 | 工具实现 | ❌ 未完成 | 仅 `fs_link`（`TOOLBOX_ONLY`）；其余见 I38c |
-| 3 | ToolRegistry | ✅ 完成 | `<=` 语义、排序、`description()` 降级、受众过滤 |
-| 8 | Tauri 桥接 | ⚠️ 部分完成 | `os_tool_exec` 已走 `exec::invoke`；待补 `workspace_root` 来源 |
+> 本节只说明「哪些 Step 归本文、哪些已迁出」，**不记录完成状态**；阶段状态见 [roadmap](./I38-agent-roadmap.md) §2，任务级进度见对应 tasklist。
+
+| Step | 模块 | 归属 |
+|---|---|---|
+| 0 | 值类型 | 本文（`trait.rs` / `result.rs` / `context.rs`） |
+| 1 | Tool Trait | 本文（含 `audience()` / `ToolAudience`） |
+| 2 | 工具实现 | 已迁出至 [I38c](./I38c-os-tools-spec.md)（清单与状态在 I38c §2） |
+| 3 | ToolRegistry | 本文（`<=` 语义、排序、`description()` 降级、受众过滤） |
+| 4-6 | 控制层 | 已迁出至 [I38a](./I38a-tool-control-layer-spec.md) |
+| 8 | Tauri 桥接 | 本文（`os_tool_exec` 走 `exec::invoke`；`workspace_root` 来源见 I18b） |
+| 9-10 | 前端与 Agent 模式 | 已迁出至 [I38d](./I38d-agent-frontend-modes-spec.md) |
 
 ---
 

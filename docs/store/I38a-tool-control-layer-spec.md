@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 已实现（P2，2026-11-05） |
+| 状态 | 现行（P2 工具控制层规格；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-04 |
 | 阶段 | P2（见 [I38 roadmap](./I38-agent-roadmap.md)） |
 | 关联 | [I18 design](./I18-agent-tool-architecture-design.md) §3.5 / §3.9 / §3.12-§3.15、[I18 spec](./I18-agent-tool-architecture-spec.md) Step 4-6（已迁移至本文）、[I31](./I31-phase1-tool-framework-spec.md) §5（`os/path.rs`） |
@@ -385,7 +385,9 @@ partition_tool_batches(tool_calls):
 
 ## 5 验收标准
 
-| # | 标准 | 状态 |
+> 本节是 P2 一次性验收记录（2026-11-05），只说明「当时如何判定通过」，不是阶段状态台账；阶段结论见 [roadmap](./I38-agent-roadmap.md) §2。
+
+| # | 标准 | 验收记录 |
 |---|---|---|
 | A1 | `cargo test -p assistant-tools` 全绿；`cargo clippy -p assistant-tools -- -D warnings` 无告警 | ✅ 57+27+15+21+6 passed；clippy `--all-targets` 无告警 |
 | A2 | `assistant-tools` 的 `cargo tree` 中无 `tauri`；`policy.rs` / `gateway.rs` / `pipeline.rs` 无 `AppHandle` / `Window` | ✅ `cargo tree` 仅自身条目；grep 无命中（`pipeline_source_has_no_tauri_dependency` 单测守住） |

@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | Draft（未开始） |
+| 状态 | 现行（P6 规格；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-04 |
 | 阶段 | P6（见 [I38 roadmap](./I38-agent-roadmap.md)） |
 | 关联 | [I18 spec](./I18-agent-tool-architecture-spec.md) Step 9-10（已迁入本文）、[I36 spec](./I36-agent-runtime-spec.md) Step 7（事件与 DTO）、[I38a](./I38a-tool-control-layer-spec.md)（审批端口）、[I38b](./I38b-agent-loop-spec.md)（工具事件）、[I18b](./I18b-tool-unified-bridge-spec.md)（ToolBox 桥接） |

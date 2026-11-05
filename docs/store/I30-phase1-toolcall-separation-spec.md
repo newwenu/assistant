@@ -2,16 +2,16 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | A 段已完成；B 段已迁出 |
+| 状态 | 已归档（A 段规格；B 段已迁出至 I38b，进度见 [roadmap](./I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-02（2026-11-04 归档修订） |
 | 关联 | [I38 roadmap](./I38-agent-roadmap.md)（P0/P4）、[I38b](./I38b-agent-loop-spec.md)（B 段去向）、[I18 spec](./I18-agent-tool-architecture-spec.md)、[I18b](./I18b-tool-unified-bridge-spec.md)、[I31](./I31-phase1-tool-framework-spec.md) |
 | 影响范围 | `assistant-agent`、`assistant-providers`、`assistant-storage`、`src-tauri/src/cmd/chat`、`src-tauri/src/protocol`、前端 chat 域 |
 
 本文拆为两段，**执行节奏不同**：
 
-| 段 | 内容 | 状态 | 可否独立执行 |
+| 段 | 内容 | 处置 | 可否独立执行 |
 |---|---|---|---|
-| **A 剥离** | 把 tool call 从 chat 构建路径删干净（§5） | ✅ 已完成 | 是，零行为变化 |
+| **A 剥离** | 把 tool call 从 chat 构建路径删干净（§5） | 已归档（本规格不再维护其状态） | 是，零行为变化 |
 | **B 设计** | 新建 `agent/` 落点与累积器契约 | → [I38b](./I38b-agent-loop-spec.md) | P4 开工时执行 |
 
 **B 段去向**：原 §6 的 D1-D10 决策表已迁入 [I38b §3.2](./I38b-agent-loop-spec.md)，落点统一为 `assistant-agent/src/agent/tool_call.rs`。B 段推迟的原始理由（无调用方、契约未定型、删除后仍可从 git 历史取回）保留在 git 历史中，不再作为实施依据。

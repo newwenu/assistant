@@ -5,6 +5,7 @@
 > 决策：[I36-agent-runtime-design.md](./I36-agent-runtime-design.md)
 > 顺序：C0 → C1 → C2 → C3 → C4 → C5 → C6 → C7 → C8 → C9 → C11（C10 为 P4 交接，不在交付范围）
 > 勾选条件：代码已改 **且** 对应验收已跑。
+> **状态唯一位置**：本清单是 P3 任务级进度的唯一来源；阶段级结论只在 [roadmap](./I38-agent-roadmap.md) §2 写一次，spec / design / 基线 / 验证文档都不记录进度。本清单**不管理提交**（不写提交拆分 / 提交信息 / 回滚批次，见 roadmap §7 第 2 条）。
 > 范围：`assistant-agent/src/kernel/` 共用内核、`src-tauri/src/adapters/` 端口实现、`src-tauri/src/cmd/agent/` 宿主命令、chat 等价迁移、事件 DTO、`messages.status`、轮级观测。
 > 不包含：RoundExecutor 多迭代循环（P4 / I38b）、`agent/` 下的停止钩子 / 中间件链 / 阶梯 / 摘要执行 / 审批门（见 C10 交接）、任何工具实现（P5 / I38c）、前端 UI（P6 / I38d）。
 > 测试位置：新增单测一律放 `crates/assistant-agent/tests/<模块>.rs` 集成测试；端口替身放 `kernel/ports/test_doubles.rs` 且仅 `#[cfg(test)]`。
@@ -45,8 +46,7 @@
 - [ ] C0.6 确认 `messages` 迁移只做 ADD COLUMN，不改写存量数据
 - [ ] C0.7 确认 P3 不新增工具、不改 `Tool` trait / `ToolRegistry`
 - [ ] C0.8 确认旧实现删除时机：对比测试全绿后才删 `chat_runtime` / `chat_tasks` / `chat_request` / `prompt_builder`
-- [ ] C0.9 确认提交拆分：C1-C2（骨架与端口）/ C3-C4（状态机与令牌）/ C5（chat 迁移）/ C6-C7（事件与持久化）/ C8-C9（观测与收尾）
-- [ ] C0.10 确认线字段仍叫 `attempt_id`，`TurnId` 只作为内核别名，不改前端解析
+- [ ] C0.9 确认线字段仍叫 `attempt_id`，`TurnId` 只作为内核别名，不改前端解析
 
 ---
 
@@ -268,9 +268,8 @@
 - [x] C9.7 `cargo test --test assembly_contract` 通过（验收 23）——8 passed
 - [x] C9.8 `npm run contract:gen` 幂等（以生成前后契约文件哈希比对验证）——`protocol.contract.ts` / `vault.contract.ts` 哈希不变
 - [x] C9.9 前端 `npm test` 中 chat 相关两套测试全绿——`src/chat` + `src/services` 11 文件 137 用例通过
-- [x] C9.10 更新 I36 spec「实施状态总览」中已落地模块
+- [x] C9.10 更新 I36 spec「模块落点索引」（原「实施状态总览」）中的模块落点与归属阶段
 - [x] C9.11 更新 I38 roadmap §2 P3 状态与 §4 文档地图
-- [ ] C9.12 按 C0.9 的拆分单独提交
 
 ---
 

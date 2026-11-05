@@ -27,17 +27,17 @@
 
 ### 1.2 验证对象
 
-| 层 | 对象 | 位置 | 现有覆盖 |
+| 层 | 对象 | 位置 | 对应用例 |
 |---|---|---|---|
-| 入口 | `TurnRunner::run` 主流程 | `src-tauri/crates/assistant-agent/src/kernel/runner.rs` | `tests/kernel_runner.rs`（10 条端到端） |
-| 端口 | `EventSink` / `MessageStore` / `TurnInputSource` / `Clock` | `kernel/ports.rs`、`kernel/ports/test_doubles.rs` | `tests/kernel_ports.rs`（2 条）+ lib 单测 |
-| 状态机 | 会话状态、代际、Busy 语义 | `kernel/state.rs`、`kernel/tasks.rs` | `tests/kernel_state.rs`（8）+ `tests/kernel_tasks.rs`（10） |
-| 事件 | `TurnEvent`、seq 分配、终态事件 | `kernel/ports.rs`、`kernel/emit.rs` | `tests/kernel_stream.rs`（8）+ runner 断言 |
-| 落库 | 终态持久化、usage 记录 | `kernel/persist.rs` | `tests/usage_records.rs`（7）+ runner 断言 |
-| 参数 | `TurnSpec` / `TurnLimits` / `LadderPolicy` | `kernel/mod.rs`、`kernel/limits.rs` | `tests/kernel_values.rs`（10） |
+| 入口 | `TurnRunner::run` 主流程 | `src-tauri/crates/assistant-agent/src/kernel/runner.rs` | `tests/kernel_runner.rs` |
+| 端口 | `EventSink` / `MessageStore` / `TurnInputSource` / `Clock` | `kernel/ports.rs`、`kernel/ports/test_doubles.rs` | `tests/kernel_ports.rs` + lib 单测 |
+| 状态机 | 会话状态、代际、Busy 语义 | `kernel/state.rs`、`kernel/tasks.rs` | `tests/kernel_state.rs`、`tests/kernel_tasks.rs` |
+| 事件 | `TurnEvent`、seq 分配、终态事件 | `kernel/ports.rs`、`kernel/emit.rs` | `tests/kernel_stream.rs` + runner 断言 |
+| 落库 | 终态持久化、usage 记录 | `kernel/persist.rs` | `tests/usage_records.rs` + runner 断言 |
+| 参数 | `TurnSpec` / `TurnLimits` / `LadderPolicy` | `kernel/mod.rs`、`kernel/limits.rs` | `tests/kernel_values.rs` |
 | 契约 | 事件 → wire 映射 | `src/types/protocol.contract.ts`、`assembly_contract` | `cargo test --test assembly_contract`（cwd = `src-tauri`） |
 
-**实检基线（2026-11-05）**：`cargo test -p assistant-agent --features test-doubles`（cwd = `src-tauri`）→ 11 个测试二进制，**149 passed / 0 failed**（其中 kernel 相关 48 条，含 `kernel_runner` 10 条）。这是 Q1 的当前证据，不是 Q2/Q3 的证据。
+**结果不入文档**：通过与否按 §5.5 命令当次运行结果判定；用例增删随代码同批评审，本文只登记「对象 → 用例文件」的对应关系。
 
 ### 1.3 不在范围
 
@@ -67,74 +67,74 @@
 
 ## 3 一致性矩阵 V1–V30
 
-现状取值：`已通过`（有测试且断言到位）、`部分`（有测试但覆盖面不足）、`未通过`（无强制点或行为不符）、`未接线`（字段/接口已声明但无执行点）。矩阵只做判定，不提出新设计。
+**本表只定义判定方法，不记录判定结果**。每次运行按 §5.5 命令得到结果，结果不入文档；阶段归属见 [I36a](./I36a-agent-kernel-baseline.md) §2 与 [roadmap](./I38-agent-roadmap.md) §2。
 
 ### 3.1 隔离与端口
 
-| 编号 | 基线条目 | 检查点 | 判定方式 | 现状 |
-|---|---|---|---|---|
-| V1 | G1 / K1 | `src/kernel/` 无 `tauri::` / `AppHandle` / `WebviewWindow` | `kernel_ports::kernel_sources_have_no_tauri_types` + `manifest_declares_no_tauri_dependency` + §5.5 `cargo tree` 门禁 | 已通过（源码扫描 + 依赖清单扫描；传递依赖由门禁 `cargo tree` 兜底） |
-| V2 | G1 | 内核可只用测试替身跑完整轮，不启动 Tauri | `kernel_runner` 全量 | 已通过（零监听端口，见 H1 / H8 收口记录） |
-| V3 | DT2 | 内核不自行构造 provider 适配器 | grep `create_provider_adapter` | 已通过（仅 `adapters/input_source.rs` 构造，内核只消费 `TurnInput.adapter`） |
-| V4 | G3 / 验收 3 | `EventSink` 抛错时 turn 不中止、仍落库 | `kernel_runner::sink_failure_does_not_abort_turn` | 已通过（`RecordingSink::dropped_count()` 断言失败次数 > 0，不静默） |
-| V5 | G3 / 验收 4 | `MessageStore` 失败 → `Failed` + `Finalize(Failed)` | `kernel_runner::store_failure_marks_turn_failed_and_finalizes_failed` | 已通过 |
+| 编号 | 基线条目 | 检查点 | 判定方式 |
+|---|---|---|---|
+| V1 | G1 / K1 | `src/kernel/` 无 `tauri::` / `AppHandle` / `WebviewWindow` | `kernel_ports::kernel_sources_have_no_tauri_types` + `manifest_declares_no_tauri_dependency` + §5.5 `cargo tree` 门禁（传递依赖由 `cargo tree` 兜底） |
+| V2 | G1 | 内核可只用测试替身跑完整轮，不启动 Tauri | `kernel_runner` 全量（零监听端口，见 H1 / H8 收口记录） |
+| V3 | DT2 | 内核不自行构造 provider 适配器 | grep `create_provider_adapter`（仅 `adapters/input_source.rs` 构造，内核只消费 `TurnInput.adapter`） |
+| V4 | G3 / 验收 3 | `EventSink` 抛错时 turn 不中止、仍落库 | `kernel_runner::sink_failure_does_not_abort_turn`（`RecordingSink::dropped_count()` 断言失败次数 > 0，不静默） |
+| V5 | G3 / 验收 4 | `MessageStore` 失败 → `Failed` + `Finalize(Failed)` | `kernel_runner::store_failure_marks_turn_failed_and_finalizes_failed` |
 
 ### 3.2 参数化
 
-| 编号 | 基线条目 | 检查点 | 判定方式 | 现状 |
-|---|---|---|---|---|
-| V6 | K2 / 验收 5 | `TurnSpec::chat()` / `agent()` 字段值符合 I36 spec §0B.2 | `kernel_values::chat_spec_field_values`、`agent_spec_field_values` | 已通过 |
-| V7 | K2 | 内核代码无 `is_agent` / `is_chat` 分支 | `kernel_values::kernel_sources_have_no_branch_on_agent_kind` | 已通过 |
-| V8 | K2 / Q2 | 差异只通过入参表达，且**每个入参都有读取点** | 逐个字段 grep 使用点 | 未接线（`ladder` / `wrap_up` / `stop_hooks` 无读取点；已在 `kernel_values` 显式登记为 P4 清单，见 H7） |
+| 编号 | 基线条目 | 检查点 | 判定方式 |
+|---|---|---|---|
+| V6 | K2 / 验收 5 | `TurnSpec::chat()` / `agent()` 字段值符合 I36 spec §0B.2 | `kernel_values::chat_spec_field_values`、`agent_spec_field_values` |
+| V7 | K2 | 内核代码无 `is_agent` / `is_chat` 分支 | `kernel_values::kernel_sources_have_no_branch_on_agent_kind` |
+| V8 | K2 / Q2 | 差异只通过入参表达，且**每个入参都有读取点** | 逐个字段 grep 使用点；P4 未接线字段由 `kernel_values::unwired_turn_spec_fields_have_no_read_points_yet` 显式登记（见 H7） |
 
 ### 3.3 状态机与代际
 
-| 编号 | 基线条目 | 检查点 | 判定方式 | 现状 |
-|---|---|---|---|---|
-| V9 | K4 / 验收 7 | `Processing` 下 `Busy` 拒绝新 turn，且不取消旧 turn | `kernel_tasks::reject_returns_busy_and_keeps_old_turn_running` | 已通过 |
-| V10 | K4 | `OnBusy::Replace` 取消旧 turn 并递增代际 | `kernel_tasks::replace_cancels_previous_turn_and_bumps_counter` | 已通过 |
-| V11 | K4 / 验收 8 | 取消后落库、`status='interrupted'`、状态回 `Idle` | `kernel_runner` 取消用例 + `kernel_state` | 已通过 |
-| V12 | K5 / 验收 9 | 旧代际迟到完成：不写库、不改状态、不发终止事件 | `kernel_runner::stale_turn_*` | 已通过 |
-| V13 | K5 | 不可恢复错误后拒绝新 turn（`Unrecoverable`） | `kernel_state::unrecoverable_error_blocks_new_turn` | 已通过 |
+| 编号 | 基线条目 | 检查点 | 判定方式 |
+|---|---|---|---|
+| V9 | K4 / 验收 7 | `Processing` 下 `Busy` 拒绝新 turn，且不取消旧 turn | `kernel_tasks::reject_returns_busy_and_keeps_old_turn_running` |
+| V10 | K4 | `OnBusy::Replace` 取消旧 turn 并递增代际 | `kernel_tasks::replace_cancels_previous_turn_and_bumps_counter` |
+| V11 | K4 / 验收 8 | 取消后落库、`status='interrupted'`、状态回 `Idle` | `kernel_runner` 取消用例 + `kernel_state` |
+| V12 | K5 / 验收 9 | 旧代际迟到完成：不写库、不改状态、不发终止事件 | `kernel_runner::stale_turn_*` |
+| V13 | K5 | 不可恢复错误后拒绝新 turn（`Unrecoverable`） | `kernel_state::unrecoverable_error_blocks_new_turn` |
 
 ### 3.4 事件
 
-| 编号 | 基线条目 | 检查点 | 判定方式 | 现状 |
-|---|---|---|---|---|
-| V14 | 验收 21 | 每条事件带 `turn_id`；同 turn 内 `seq` 严格单调、从 1 起 | `kernel_stream::seq_starts_at_one_and_increases_monotonically` + runner 断言 | 已通过 |
-| V15 | K6 | 先 `StreamStart`、后 `Delta`、末 `Terminated`；终态唯一 | runner 首末事件断言 + `assert_single_terminated` | 已通过（`kernel_runner` 全部用例统一断言 `Terminated` 计数 == 1 且位于末位；代际不符用例断言 0 次） |
-| V16 | K6 | 部分结果保留：provider 错误 / 超时 / 取消都保留已累积正文 | `kernel_stream::provider_error_returns_partial_outcome`、`timeout_keeps_accumulated_content`、`cancelled_stream_keeps_accumulated_content` | 已通过 |
-| V17 | DT4 / Q3 | `TurnEvent` 可稳定序列化用于轨迹比对 | `kernel_emit::event_trace_is_byte_identical_across_runs` | 已通过（两遍轨迹逐字节相同） |
+| 编号 | 基线条目 | 检查点 | 判定方式 |
+|---|---|---|---|
+| V14 | 验收 21 | 每条事件带 `turn_id`；同 turn 内 `seq` 严格单调、从 1 起 | `kernel_stream::seq_starts_at_one_and_increases_monotonically` + runner 断言 |
+| V15 | K6 | 先 `StreamStart`、后 `Delta`、末 `Terminated`；终态唯一 | runner 首末事件断言 + `assert_single_terminated`（`kernel_runner` 全部用例统一断言 `Terminated` 计数 == 1 且位于末位；代际不符用例断言 0 次） |
+| V16 | K6 | 部分结果保留：provider 错误 / 超时 / 取消都保留已累积正文 | `kernel_stream::provider_error_returns_partial_outcome`、`timeout_keeps_accumulated_content`、`cancelled_stream_keeps_accumulated_content` |
+| V17 | DT4 / Q3 | `TurnEvent` 可稳定序列化用于轨迹比对 | `kernel_emit::event_trace_is_byte_identical_across_runs`（两遍轨迹逐字节相同） |
 
 ### 3.5 落库
 
-| 编号 | 基线条目 | 检查点 | 判定方式 | 现状 |
-|---|---|---|---|---|
-| V18 | K7 | 先落库、后改状态（`Finalize` 先于 `finish_turn`） | runner 断言 `StoreCall` 尾部 + 状态断言 | 已通过 |
-| V19 | K7 | 消息创建 → 增量保存 → 终态 finalize 的调用序列固定 | `kernel_runner::chat_turn_completes_end_to_end_with_doubles` 断言 `calls[0..]` + `store_call_sequence_is_identical_across_runs` | 已通过（chat 路径逐项断言；另加两遍运行 `StoreCall` 序列逐项相同，见 DT5） |
-| V20 | 验收 23 | usage 记录字段齐全、每次 attempt 各一条 | `usage_records`（7 条） | 已通过 |
-| V21 | DT5 | 落库时间戳可注入、可复现 | grep `Utc::now`（`src/kernel/` 应为空） | 已通过（`PersistCtx.created_at_ms` 由 `Clock::now_millis` 注入） |
+| 编号 | 基线条目 | 检查点 | 判定方式 |
+|---|---|---|---|
+| V18 | K7 | 先落库、后改状态（`Finalize` 先于 `finish_turn`） | runner 断言 `StoreCall` 尾部 + 状态断言 |
+| V19 | K7 | 消息创建 → 增量保存 → 终态 finalize 的调用序列固定 | `kernel_runner::chat_turn_completes_end_to_end_with_doubles` 断言 `calls[0..]` + `store_call_sequence_is_identical_across_runs`（chat 路径逐项断言 + 两遍运行序列逐项相同，见 DT5） |
+| V20 | 验收 23 | usage 记录字段齐全、每次 attempt 各一条 | `usage_records`（7 条） |
+| V21 | DT5 | 落库时间戳可注入、可复现 | grep `Utc::now`（`src/kernel/` 应为空）；`PersistCtx.created_at_ms` 由 `Clock::now_millis` 注入 |
 
 ### 3.6 预算与终止
 
-| 编号 | 基线条目 | 检查点 | 判定方式 | 现状 |
-|---|---|---|---|---|
-| V22 | K3 / 验收 10 | `turn_wall_clock` 可触发超时 | `kernel_runner::wall_clock_timeout_fails_turn_before_model_call`（`StepClock` 推进） | 已通过（虚拟时钟触发，无 `sleep`） |
-| V23 | K3 / 验收 10 | 单次模型调用超时可触发，且**口径与 spec 一致** | `kernel_stream::timeout_caps_whole_call_even_when_chunks_keep_arriving` + 语义核对 | 已通过（整段封顶，见 H6） |
-| V24 | K3 | 工具执行不受 `model_call` 限制 | P3 无工具执行点 | 未接线（P4） |
-| V25 | 验收 11 | 空响应重试 1 次仍空 → `Failed`，且 `iteration` 不递增 | `kernel_runner::chat_spec_does_not_retry_empty_response` + agent 重试用例 | 已通过 |
-| V26 | 验收 18 | 迭代触顶收尾：末次请求无 `tools`、`wrap_up_injected = true` | 无执行点 | 未接线（P4，见 H7） |
+| 编号 | 基线条目 | 检查点 | 判定方式 |
+|---|---|---|---|
+| V22 | K3 / 验收 10 | `turn_wall_clock` 可触发超时 | `kernel_runner::wall_clock_timeout_fails_turn_before_model_call`（`StepClock` 推进，虚拟时钟触发，无 `sleep`） |
+| V23 | K3 / 验收 10 | 单次模型调用超时可触发，且**口径与 spec 一致** | `kernel_stream::timeout_caps_whole_call_even_when_chunks_keep_arriving` + 语义核对（整段封顶，见 H6） |
+| V24 | K3 | 工具执行不受 `model_call` 限制 | P4 引入工具执行点后，以「工具耗时 > `model_call` 仍不失败」为判定 |
+| V25 | 验收 11 | 空响应重试 1 次仍空 → `Failed`，且 `iteration` 不递增 | `kernel_runner::chat_spec_does_not_retry_empty_response` + agent 重试用例 |
+| V26 | 验收 18 | 迭代触顶收尾：末次请求无 `tools`、`wrap_up_injected = true` | P4 接线后断言 `wrap_up_injected`（见 H7） |
 
 ### 3.7 声明但未强制（Q2 专项）
 
-| 编号 | 检查点 | 判定方式 | 现状 |
-|---|---|---|---|
-| V27 | `TurnSpec::limits` 各字段都有读取点 | 逐个字段 grep 使用点 | 部分（`max_iterations` / 两个超时有；`max_tool_calls` 无） |
-| V28 | `TurnSpec::ladder` 能改变阶梯行为 | `kernel/runner.rs` 读取点 | 未接线（P4 接线；由 `kernel_values::unwired_turn_spec_fields_have_no_read_points_yet` 强制） |
-| V29 | `TurnSpec::wrap_up` 能触发收尾 | 同上 | 未接线（P4 接线；同上断言强制） |
-| V30 | `TurnSpec::stop_hooks` 能在迭代前拦截 | 同上 | 未接线（P4 接线；同上断言强制） |
+| 编号 | 检查点 | 判定方式 |
+|---|---|---|
+| V27 | `TurnSpec::limits` 各字段都有读取点 | 逐个字段 grep 使用点（`max_tool_calls` 的读取点随 P4 工具执行点落地） |
+| V28 | `TurnSpec::ladder` 能改变阶梯行为 | `kernel/runner.rs` 读取点；P4 接线前由 `kernel_values::unwired_turn_spec_fields_have_no_read_points_yet` 强制 |
+| V29 | `TurnSpec::wrap_up` 能触发收尾 | 同上 |
+| V30 | `TurnSpec::stop_hooks` 能在迭代前拦截 | 同上 |
 
-**判定规则（V27–V30）**：字段已声明但无读取点，一律记为「未接线」，**不得**记为「已实现」。这条规则对 I36a 的能力矩阵同样适用——「代码里有这个类型」不等于「机制在生效」。
+**判定规则（V27–V30）**：字段已声明但无读取点，一律判为「未接线」，**不得**判为「已实现」。这条规则对 I36a 的能力矩阵同样适用——「代码里有这个类型」不等于「机制在生效」。
 
 ---
 
@@ -282,11 +282,11 @@ TurnTrace {
 cargo test -p assistant-agent --features test-doubles
 cargo test -p assistant-agent --features test-doubles --test kernel_runner
 cargo test -p assistant-agent --features test-doubles --test kernel_values
-cargo tree -p assistant-agent --prefix none | Select-String -Pattern '^tauri'
+cargo tree -p assistant-agent --prefix none | Select-String -Pattern 'tauri\s+v\d'
 cargo test --test assembly_contract
 ```
 
-`cargo tree` 一条用于 V1：输出必须为空（`assistant-agent` 的传递依赖里不得出现 `tauri`）。
+`cargo tree` 一条用于 V1：输出必须为空（`assistant-agent` 的传递依赖里不得出现 `tauri` 包；用 `tauri\s+v\d` 匹配包行，避免误匹配 `src-tauri` 路径文本）。
 
 连跑三遍验证 DT8（同一命令重复执行，结果行必须一致）。
 
@@ -296,16 +296,18 @@ cargo test --test assembly_contract
 
 ### 6.1 P3 收口（Q1 + Q2）
 
-1. §3 矩阵中「已通过」之外的条目，要么收敛为「已通过」，要么在 I36 spec 明确标注「P4 接线」并同时存在 V27–V30 的未接线断言。
-2. H2 / H3 / H4 / H9 收敛（时间单源、时间戳可注入、时钟可推进、事件可序列化）。——**已完成（2026-11-05）**
-3. H6 口径定稿并写回 I36 spec。——**已完成（2026-11-05，整段封顶；I36 spec §3.3 新增「超时口径（H6 定稿）」并同步验收 10 措辞）**
-4. H7 的未接线清单断言存在且为绿。——**已完成（2026-11-05，`kernel_values::unwired_turn_spec_fields_have_no_read_points_yet`）**
+1. §3 矩阵的每一条都必须有判定方式；未接线的条目由 V27–V30 的未接线断言显式兜住，不得靠「代码里有类型」推定。
+2. H2 / H3 / H4 / H9 收敛（时间单源、时间戳可注入、时钟可推进、事件可序列化）。
+3. H6 口径定稿并写回 I36 spec（整段封顶；I36 spec §3.3 新增「超时口径（H6 定稿）」并同步验收 10 措辞）。
+4. H7 的未接线清单断言存在且为绿（`kernel_values::unwired_turn_spec_fields_have_no_read_points_yet`）。
+
+**这四条是否已完成，见 [I36 tasklist](./I36-agent-runtime-tasklist.md) C11.1–C11.8 与 [roadmap](./I38-agent-roadmap.md) §2，本文不重复记录完成状态。**
 
 ### 6.2 P4 开工前置（Q3 阻断项）
 
 H1 与 H8 **必须**先收敛：没有脚本化适配器，`RoundExecutor` 的多轮模型响应无法在 L1 构造，P4 的测试只能继续依赖真实 TCP，确定性从第一行代码起就不可得。
 
-**状态（2026-11-05）：已收敛。** `TurnInput` 携带适配器、`ScriptedAdapter` 可按调用顺序给出多轮流，L1 全量用例零监听端口、零真实等待，`RoundExecutor` 可在 L1 直接构造多轮响应。
+收敛方式：`TurnInput` 携带适配器，`ScriptedAdapter` 按调用顺序给出多轮流；L1 全量用例零监听端口、零真实等待，`RoundExecutor` 可在 L1 直接构造多轮响应。
 
 ### 6.3 判定表
 
@@ -327,11 +329,13 @@ H1 与 H8 **必须**先收敛：没有脚本化适配器，`RoundExecutor` 的�
 |---|---|
 | [I36a 内核基线](./I36a-agent-kernel-baseline.md) | 本文的输入：能力矩阵与 K/G 条目；本文只判定，不改其条目 |
 | [I36 运行时规格](./I36-agent-runtime-spec.md) | 契约与验收编号来源；H6 / H7 需要改口径时必须回写该文档 |
-| [I36 任务清单](./I36-agent-runtime-tasklist.md) | H1–H9 的落地任务为 C11.1–C11.8（P3 收口 + P4 前置） |
-| [I38b Agent Loop](./I38b-agent-loop-spec.md) | P4 循环体规格；本文的 V24 / V26 / H7 在 P4 转「已通过」 |
+| [I36 任务清单](./I36-agent-runtime-tasklist.md) | H1–H9 的落地任务为 C11.1–C11.8（P3 收口 + P4 前置）；完成勾选只在这里维护 |
+| [I38b Agent Loop](./I38b-agent-loop-spec.md) | P4 循环体规格；本文的 V24 / V26 / H7 在 P4 才有判定对象 |
+| [I38 阶段总纲](./I38-agent-roadmap.md) | 阶段级进度唯一入口；本文不写阶段状态 |
 
 维护规则：
 
-1. 矩阵只增不改编号；条目失效时改「现状」列并注明日期，不删除行。
-2. 缺口收敛后，在 H 条末追加「收口记录（日期 + 提交/测试名）」，保留原文。
+1. 矩阵只增不改编号；条目失效时改「判定方式」列并注明日期，不删除行。**矩阵不设「现状」列**——判定结果由当次运行给出，不写进文档。
+2. 缺口收敛后，在 H 条末追加「收口记录（日期 + 提交/测试名）」，保留原文；这是**一次性历史记录**，不随进度反复改写。
 3. 新增内核能力时，先补 DT / V 条目，再实现；顺序倒置视为规格缺口。
+4. 本文是 `DT*` / `V*` / `H*` 的唯一维护点；其他文档只引用编号，不复制条目、不记录其判定结果。

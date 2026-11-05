@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 规格定稿（决策已全部拍板，待开工） |
+| 状态 | 现行（P4 规格，决策已全部拍板；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-05 |
 | 阶段 | P4（见 [I38 roadmap](./I38-agent-roadmap.md)） |
 | 关联 | [I36 spec](./I36-agent-runtime-spec.md)（turn 生命周期与端口）、[I38a](./I38a-tool-control-layer-spec.md)（ToolPipeline）、[I30](./I30-phase1-toolcall-separation-spec.md) §6（B 段决策）、[I18 design](./I18-agent-tool-architecture-design.md) §3.4 / §3.15 |
@@ -143,6 +143,13 @@ P4 **不实现**子代理，但契约必须可扩展，否则 P8 要重改 trait
 - 输入是 provider 流类型（`UnifiedResponse` / `ChatDelta` 片段），输出是完整的 `FinalizedToolCall`。
 - **不得**再出现第三套累积器；chat 路径已无累积器（P0 已剥离）。
 
+**P4-C1 的必做清理（现状核对 2026-11-05）**：`assistant-agent/src/kernel/stream.rs` 的 `StreamAccumulator` 里已有第二份工具片段累积（`tool_calls: Vec<ToolCallAccum>` + `apply_tool_call`，含 id 匹配与追加，`StreamOutcome.tool_calls` / `PartialOutcome.tool_calls` 对外暴露）。这不是「已剥离」，C1 必须一并处理：
+
+- `StreamAccumulator` 只保留 `full_content` / `full_reasoning` / usage / `ttft_ms` / `finish_reason` / `has_effective_output`，**删除 `tool_calls` 字段与 `apply_tool_call`**，`StreamOutcome` / `PartialOutcome` 同步删除 `tool_calls`。
+- 工具片段改由 `stream::consume` 的 `on_delta` 回调原样交给调用方，由 executor 持有的 `agent/tool_call.rs` 累积器消费（`consume` 的职责变成「正文/推理/usage/seq 累积 + 逐条回调」）。
+- 连带删除：`kernel/runner.rs` 的 P3 过渡循环里 `stream_outcome.tool_calls` 的三处引用随 C5 一起消失；C1 与 C5 之间该循环暂不可编译，因此**C1 与 C5 必须同批交付**（任务清单已据此标注）。
+- 验收 A7 的 grep 口径扩为「`assistant-providers` 无累积器 **且** `assistant-agent/src/kernel/stream.rs` 无 `ToolCallAccum`」。
+
 ### 3.2 D1-D10 决策表（P4 开工前定稿）
 
 | # | 决策点 | 结论 | 说明 |
@@ -192,6 +199,8 @@ pub struct ToolSpec {
 - `ToolDefinition`（`assistant-tools`）→ `ToolSpec` 的转换在 `src-tauri` 适配层完成，经 `ToolCatalog` 端口进入 `kernel/request.rs`。
 
 **`ToolCatalog` 端口**（`assistant-agent/src/kernel/ports.rs`，与 `MessageStore` / `TurnEvent` 同文件，async，D16）：
+
+> **现状核对（2026-11-05）**：P3 已在 `kernel/mod.rs` 留了同步占位 `pub trait ToolCatalog: Send + Sync {}` 与 `EmptyToolCatalog`，`TurnSpec.tools: Option<Arc<dyn ToolCatalog>>` 指向的就是它。C2 **不是新增**，而是：① 在 `ports.rs` 声明下面的 async trait；② 删除 `mod.rs` 的同步占位与 `EmptyToolCatalog`（连带删掉其导出）；③ 把 `TurnSpec.tools` 与 `runner.rs` 的 `spec.tools.is_none()` 判定改到新签名。全仓不得留两套 `ToolCatalog`。
 
 ```rust
 #[async_trait]
@@ -472,7 +481,7 @@ pub enum ToolEventPayload {
 }
 ```
 
-- `TurnEvent` 侧：`kernel::ports::TurnEvent` 现有的 `ToolStarted` / `ToolFinished` 两个变体收敛为单一 `TurnEvent::Tool(ToolEvent)`。P3 未开工，这两个变体**没有生产者**（`src-tauri/src/adapters/event_sink.rs:116/128` 只有 `match` 分支打 debug 日志，不发线事件），直接替换不产生迁移债；替换后全仓 grep 不得再有这两个变体名，且 `event_sink.rs` 的日志分支随 `TurnEvent::Tool(_)` 一并改写。
+- `TurnEvent` 侧：`kernel::ports::TurnEvent` 现有的 `ToolStarted` / `ToolFinished` 两个变体收敛为单一 `TurnEvent::Tool(ToolEvent)`。**现状核对（2026-11-05）**：P3 已完成，`kernel/emit.rs:96/104` 已有 `TurnEmitter::tool_started` / `tool_finished` 两个发射方法，但**无调用方**（生产者为空，不是方法不存在）。因此 C3 的动作是：① 删掉这两个 `TurnEmitter` 方法，改为单一 `tool_event(&self, event: ToolEvent)`；② `event_sink.rs` 的 `ToolStarted` / `ToolFinished` 两个 `match` 分支（只打 debug 日志）合并为 `TurnEvent::Tool(_)` 分支并接 C6 的线事件映射；③ 替换后全仓 grep 不得再有这两个变体名与这两个方法名。除这三处外无其他调用点，替换不产生迁移债。
 - `error_kind` 用本地镜像 `ToolErrorClass`（§4.5），**不**在事件里泄漏 `assistant_tools::ToolErrorKind`：P2 的 `PipelineEvent::Failed` 已带 `error_kind`，适配器必须把它搬过来，否则 P6 只能靠文本猜错误类别。`ToolErrorClass` 由 §4.5 的 contract 测试锁定与 `ToolErrorKind` 一一对应，新增变体会让该测试失败。
 - `TurnRunner` 把 `TurnEvent::Tool(e)` 映射为线事件 `agent-tool-call`，字段 camelCase（`confirmationWaitMs` 等），映射逻辑在 `src-tauri/src/adapters/event_sink.rs`；映射只做字段搬运（枚举变体 → 枚举变体），不做语义重组。
 - **扩展方式固定**：P6 新增审批阶段（`ConfirmationNeeded` / `Confirmed` / `Rejected`）时，加 `ToolEventPayload` 变体与对应 wire 变体，**不**在既有变体上加 `Option` 字段。这与 OpenBitFun 加六个阶段时的方式一致。
@@ -668,17 +677,22 @@ impl Drop for WaitGuard {
 - 未走审批（`Allow` 直通，未进入 `request()`）时值为 `0`，不区分「未审批」与「瞬时审批」——两者对墙钟影响相同。
 - 该值只进 `ToolEvent` 与 `RoundOutcome.confirmation_wait_ms` 汇总，**不落库**（D12）。
 
+**P2 遗留端口的生产绑定（C4.18 的现状与口径，2026-11-05）**：`src-tauri` 目前**只有** `ToolRegistry` 被初始化（`setup.rs:104` 的 `os::register_os_tools`），`ToolPipeline` / `ToolGateway` / `PermissionGrantStore` / `PermissionAuditStore` / `ApprovalPrompter` / `ToolResultStorage` / `PipelineEventSink` 一个都没有装配，grep 全仓无引用。C4.18 因此是「新建装配」而非「接线」，且必须先定两件事：
+
+1. **`PermissionGrantStore` / `PermissionAuditStore` 的生产实现**：新建 `permission_grants` / `permission_audit` 两表（D14，`CREATE TABLE IF NOT EXISTS`），实现放 `src-tauri/src/adapters/`，沿用 `DbMessageStore::with_conn` 的 `Mutex<Connection>` + 同步 rusqlite 模式（§6.3 末尾的既定做法），不引入连接池或 `spawn_blocking`。
+2. **`ApprovalPrompter` 的生产默认**：真实审批 UI 归 P6，P4 必须给一个语义明确的默认实现 —— **「Ask 即 Deny 并写审计」**：`request()` 立即返回 `Deny`（带 `reason = "approval channel not available in P4"`），审计由 `PermissionAuditStore` 记录该决策。这符合 I38a §2.8「超时视为 `Deny`、不得默认放行」，也保证 `ResolvedPermissionPolicy` 判为 `Ask` 的工具在 P4 是 fail-closed 而非静默放行。P6 用「发 `ConfirmationNeeded` 事件 + 命令回填」的实现替换该默认值，**装饰器结构不变**（`TimingApprovalPrompter` 包住新的内层即可，`confirmation_wait_ms` 仍是 `0`）。
+
 ---
 
 ## 7 实施步骤
 
 | 步骤 | 内容 | 依赖 |
 |---|---|---|
-| P4-C1 | 迁移累积器到 `agent/tool_call.rs`；落地 D1-D9；删除 providers 侧累积器；三 adapter 快照语义修正 | P3 |
-| P4-C2 | `ToolSpec` + `ChatOptions.tools` + 三 adapter 注入；`convert_tools` 转正；回填方言修正（Anthropic `input` / Gemini `args` 转对象、Gemini `functionResponse` 工具名，§4.3）；`ToolCatalog` 端口（async，§4.1）与 `src-tauri` 适配器 | P4-C1 |
-| P4-C3 | RoundExecutor trait / `RoundOutcome` / `TurnObserver`；`TurnRunCtx` | P3 |
-| P4-C4 | `src-tauri/src/agent/round_executor.rs` 实现：stop hooks、阶梯、模型调用、§5.1 预算内裁剪、工具执行（`ToolExecutionPort` 适配器包 `assistant_tools::ToolPipeline`）、回填、收尾；承接 P2 遗留生产端口（`PermissionGrantStore` / `PermissionAuditStore` / `ApprovalPrompter` / `PipelineEventSink` / `ToolResultStorage` / 取消打标）；审批等待计时按 D12 | P2、P4-C1/C2/C3 |
-| P4-C5 | TurnRunner 切到 `executor.run_iterations`；删除 P3 的过渡循环 | P4-C4 |
+| P4-C1 | 迁移累积器到 `agent/tool_call.rs`；落地 D1-D9；删除 providers 侧累积器；**删除 `kernel/stream.rs` 的第二份累积（§3.1）**；三 adapter 快照语义修正 | P3 |
+| P4-C2 | `ToolSpec` + `ChatOptions.tools` + 三 adapter 注入；`convert_tools` 转正；回填方言修正（Anthropic `input` / Gemini `args` 转对象、Gemini `functionResponse` 工具名，§4.3）；`ToolCatalog` 端口（async，§4.1，**迁移并删除 `kernel/mod.rs` 的同步占位**）与 `src-tauri` 适配器 | P4-C1 |
+| P4-C3 | RoundExecutor trait / `RoundOutcome` / `TurnObserver`；`TurnRunCtx`；`TurnEvent::Tool` 收敛（**替换 `TurnEmitter::tool_started` / `tool_finished` 两个方法**，§6.1） | P3 |
+| P4-C4 | `src-tauri/src/agent/round_executor.rs` 实现：stop hooks、阶梯、模型调用、§5.1 预算内裁剪、工具执行（`ToolExecutionPort` 适配器包 `assistant_tools::ToolPipeline`）、回填、收尾；**新建 P2 端口装配**（`permission_grants` / `permission_audit` 两表 + `PermissionGrantStore` / `PermissionAuditStore` 生产实现 + `ApprovalPrompter` 默认「Ask 即 Deny」+ `PipelineEventSink` / `ToolResultStorage` / 取消打标，§6.4）；审批等待计时按 D12 | P2、P4-C1/C2/C3 |
+| P4-C5 | TurnRunner 切到 `executor.run_iterations`；删除 P3 的过渡循环（**与 C1 同批交付**：C1 删 `StreamOutcome.tool_calls` 后过渡循环即不可编译） | P4-C4 |
 | P4-C6 | 事件与落库：新增 `protocol/dto/agent.rs`（`AgentToolCallDto` + `AgentToolCallPayloadDto`）与 `AGENT_TOOL_CALL` 事件名、`event_sink` 映射、`MessageStore` 端口扩展（§6.3）、`messages` 新增 `tool_call_id` / `is_error` 两列 + `MSG_SELECT` / `MessageRow` 同步、`tool_calls_json` 与 tool 结果行写入、`prompt_builder` 重建 tool 消息、契约生成（D5 / D11 / D14，清单见 §6.1.1） | P4-C4 |
 | P4-C7 | 端到端测试：3 迭代闭环、收尾、空响应、取消、工具失败、三维预算、预算内裁剪、nudge/halt、并行批次、tool 落库往返、失败分类阶梯、端口镜像、回填方言（A11-A19、A12b） | P4-C5/C6 |
 
@@ -696,7 +710,7 @@ impl Drop for WaitGuard {
 | A4 | 取消：部分内容落库、`status = interrupted`、工具结果标 `Cancelled`、状态回 `Idle` |
 | A5 | 工具失败（`error_kind = Business`）回填给模型后可继续下一迭代；`Denied` 不重试 |
 | A6 | 三个 adapter 的 `ToolSpec` 注入形状有快照测试；Gemini 快照语义与 `arguments_is_snapshot` 一致 |
-| A7 | 累积器只有一处实现：`assistant-providers/src/tool_call_accumulator.rs` 已删除，全仓无第二份 |
+| A7 | 累积器只有一处实现：`assistant-providers/src/tool_call_accumulator.rs` 已删除，`assistant-agent/src/kernel/stream.rs` 无 `ToolCallAccum`（`StreamOutcome` / `PartialOutcome` 无 `tool_calls` 字段），全仓无第二份（§3.1） |
 | A8 | `cargo tree -p assistant-agent` 无 `tauri`、无 `assistant-tools`；`agent/round_executor.rs` 仅含 trait 与值类型 |
 | A9 | chat 路径行为不变：`default` / `quick` / `deep` 档位 `tools = None`（即使注册表有工具）、无 tool 消息、事件序列与 P3 对比测试一致；仅 `custom` 档位注入工具 |
 | A10 | 事件 DTO 经 `npm run contract:gen` 生成（`AgentToolCallDto` / `AgentToolCallPayloadDto` 进 `protocol.contract.ts`，四变体为 discriminated union）；`cargo test --test assembly_contract` 与 `cargo test --test protocol_dto_roundtrip` 通过；`protocol_bindings.rs` 的「源码 TS 派生类型 ↔ `declarations`」集合断言通过（2026-11-05 起取代原计数断言，新增 DTO 只加 `declarations` 条目即可，无魔数要改） |
