@@ -38,17 +38,17 @@
 
 ### 1.3 七条内核不变式
 
-| 编号 | 不变式 | 强制点 | 现状 |
-|---|---|---|---|
-| K1 | 一轮只有一个入口（`TurnRunner::run`），宿主只做 begin / spawn / 映射 | `kernel/runner.rs` | 已落地（未接线） |
-| K2 | 内核零 tauri，外部世界只经四端口 | `kernel/ports.rs` | 已落地 |
-| K3 | 工具执行唯一入口是 `ToolPipeline`，不得裸调 `Tool::execute` | Pipeline 契约；当前 `Tool::execute` 仍是 `pub`，裸调只靠调用点约束 | 已落地（P2），强制手段待补（G5） |
-| K4 | 事实以落库为准，内存状态只是投影 | `kernel/state.rs` + `kernel/persist.rs` | 已落地（未接线：无生产 `MessageStore`） |
-| K5 | 取消只置位令牌，不做 `abort`；旧代际的迟到写入一律丢弃 | `kernel/tasks.rs` | 已落地 |
-| K6 | 事件恒带 `turn_id`，同 turn `seq` 严格单调；终态只有一个出口 | `kernel/emit.rs` + `runner.rs` | 已落地（未接线：无生产 `EventSink`） |
-| K7 | 链路差异只经 `TurnSpec` 参数表达，内核内不写 `if is_agent` | `kernel/mod.rs` | 已落地（有文件扫描用例） |
+| 编号 | 不变式 | 强制点 |
+|---|---|---|
+| K1 | 一轮只有一个入口（`TurnRunner::run`），宿主只做 begin / spawn / 映射 | `kernel/runner.rs` |
+| K2 | 内核零 tauri，外部世界只经四端口 | `kernel/ports.rs` |
+| K3 | 工具执行唯一入口是 `ToolPipeline`，不得裸调 `Tool::execute` | Pipeline 契约；`Tool::execute` 仍是 `pub`，裸调只靠调用点约束（G5 待补） |
+| K4 | 事实以落库为准，内存状态只是投影 | `kernel/state.rs` + `kernel/persist.rs` |
+| K5 | 取消只置位令牌，不做 `abort`；旧代际的迟到写入一律丢弃 | `kernel/tasks.rs` |
+| K6 | 事件恒带 `turn_id`，同 turn `seq` 严格单调；终态只有一个出口 | `kernel/emit.rs` + `runner.rs` |
+| K7 | 链路差异只经 `TurnSpec` 参数表达，内核内不写 `if is_agent` | `kernel/mod.rs` |
 
-「已落地」指代码存在且对应任务清单项已勾选；「已落地（未接线）」指模块与单测齐备、但尚无生产调用方（无端口实现或链路未改调）；「骨架」指代码存在但对应清单项未勾选或未接线；「未实现」指代码不存在。
+本表只登记**不变式与强制点**。每条不变式当前是否成立、用什么用例判定，见 [I36b](./I36b-agent-kernel-conformance-spec.md) §3；是否已落地见 [I38 roadmap](./I38-agent-roadmap.md) §2 与各阶段 tasklist。本文不维护「现状」。
 
 ### 1.4 溯源：哪些是转述，哪些是新增
 
@@ -68,20 +68,22 @@
 
 状态列取值：**已落地** / **骨架** / **未实现** / **不做**。参考列只列首个可对照的实现，细节见 §3。
 
+**本表不记录现状**：每行只登记「能力 → 归属 → 参考 → 阶段」。实现进度见 [I38 roadmap](./I38-agent-roadmap.md) §2 与各阶段 tasklist；判定方法见 [I36b](./I36b-agent-kernel-conformance-spec.md) §3。
+
 ### 2.1 turn 生命周期
 
-| 能力 | 归属 | 现状 | 参考 | 决策 / 阶段 |
-|---|---|---|---|---|
-| turn 身份（宿主按 `conv:counter` 生成，内核只消费） | kernel | 已落地 | OpenBitFun `turn_cancellation.rs` 按 turn id 建令牌表 | P3 |
-| 七态状态机（`Thinking/Streaming/ToolCalling/AwaitingApproval/...`） | kernel | 已落地 | OpenHuman `session_state`、OpenBitFun `SessionState::Processing` | P3 |
-| 取消令牌表 + 忙时策略（`Replace` / `Reject`） | kernel | 已落地 | Codex 中断只作用于被 spawn 的 agent，根 agent 不可中断 | P3 |
-| 代际守卫（迟到完成不写库 / 不改状态 / 不发事件） | kernel | 已落地 | Codex `interrupt` 快照语义 | P3 |
-| 双层墙钟（turn 总时长 + 单次模型调用） | kernel | 已落地 | OpenHuman `turn_policy.rs` 同时设 turn 与单次调用上限 | P3 |
-| 流式消费与部分结果 | kernel | 已落地（未接线） | OpenHuman `turn_runner.rs` 经 harness 流 | P3 C5 |
-| turn 级请求构建 | kernel | 已落地（未接线） | OpenBitFun `prompt.rs` / `prompt_cache.rs` | P3 C5 |
-| 终态落库（`status` 四值） | kernel | 骨架（`persist.rs` 在，`messages.status` 列缺） | Codex rollout、OpenBitFun `session_event_journal.rs` | P3 C7 |
-| 启动清扫（`streaming` → `interrupted`） | 宿主 | 未实现 | DSH 崩溃恢复以 turn 为边界（§3.3） | P3 C7 |
-| 停止钩子（两次调用之间刹车） | kernel（trait）+ agent | 骨架（占位 trait） | Goose `StopHook` + `deny_limit`（§3.1） | P4 |
+| 能力 | 归属 | 参考 | 决策 / 阶段 |
+|---|---|---|---|
+| turn 身份（宿主按 `conv:counter` 生成，内核只消费） | kernel | OpenBitFun `turn_cancellation.rs` 按 turn id 建令牌表 | P3 |
+| 七态状态机（`Thinking/Streaming/ToolCalling/AwaitingApproval/...`） | kernel | OpenHuman `session_state`、OpenBitFun `SessionState::Processing` | P3 |
+| 取消令牌表 + 忙时策略（`Replace` / `Reject`） | kernel | Codex 中断只作用于被 spawn 的 agent，根 agent 不可中断 | P3 |
+| 代际守卫（迟到完成不写库 / 不改状态 / 不发事件） | kernel | Codex `interrupt` 快照语义 | P3 |
+| 双层墙钟（turn 总时长 + 单次模型调用） | kernel | OpenHuman `turn_policy.rs` 同时设 turn 与单次调用上限 | P3 |
+| 流式消费与部分结果 | kernel | OpenHuman `turn_runner.rs` 经 harness 流 | P3 C5 |
+| turn 级请求构建 | kernel | OpenBitFun `prompt.rs` / `prompt_cache.rs` | P3 C5 |
+| 终态落库（`status` 四值） | kernel | Codex rollout、OpenBitFun `session_event_journal.rs` | P3 C7 |
+| 启动清扫（`streaming` → `interrupted`） | 宿主 | DSH 崩溃恢复以 turn 为边界（§3.3） | P3 C7 |
+| 停止钩子（两次调用之间刹车） | kernel（trait）+ agent | Goose `StopHook` + `deny_limit`（§3.1） | P4 |
 
 ### 2.2 循环与工具执行
 

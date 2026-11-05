@@ -76,11 +76,10 @@ impl TurnInputSource for TauriInputSource {
             .ok_or_else(|| InputError::NotFound(provider_id.clone()))?;
         let api_key = self.decrypt_key(&row)?;
         // 适配器构造上移到宿主侧：内核只消费 `TurnInput.adapter`（H1）。
-        let adapter: Arc<dyn assistant_providers::base::BaseProviderAdapter> = Arc::from(
-            assistant_providers::base::create_provider_adapter(
+        let adapter: Arc<dyn assistant_providers::base::BaseProviderAdapter> =
+            Arc::from(assistant_providers::base::create_provider_adapter(
                 assistant_agent::provider_config::build_provider_config(&row),
-            ),
-        );
+            ));
 
         Ok(TurnInput {
             detail,

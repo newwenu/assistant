@@ -13,6 +13,27 @@ fn collect_kernel_sources(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// I36b V1 / G1：本 crate 的依赖清单不得出现 `tauri`。
+///
+/// 源码扫描证明「内核代码不引用 tauri 类型」，本用例补「依赖层面也拿不到 tauri」；
+/// 传递依赖由 §5.5 的 `cargo tree` 门禁兜底。
+#[test]
+fn manifest_declares_no_tauri_dependency() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+    let text = std::fs::read_to_string(&manifest).expect("read Cargo.toml");
+    let offenders: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            line.starts_with("tauri") || line.contains("tauri =") || line.contains("tauri}")
+        })
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "assistant-agent 不得直接依赖 tauri（G1）：{offenders:?}"
+    );
+}
+
 #[test]
 fn kernel_sources_have_no_tauri_types() {
     let kernel_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
