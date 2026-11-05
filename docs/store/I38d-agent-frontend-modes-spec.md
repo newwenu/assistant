@@ -22,9 +22,10 @@
 | 1 | 工具调用五态渲染（running / success / error / awaiting_user / cancelled） |
 | 2 | 审批交互闭环（Approve / Deny / AlwaysApprove / 超时自动 Deny） |
 | 3 | 前端只订阅后端 phase，不自行推导、不轮询 idle |
-| 4 | AgentMode 扩展字段（`maxToolTier` / `approvalLevel` / `tools`）与对话级 `ConversationToolConfig` |
+| 4 | AgentMode 扩展字段（`maxToolTier` / `approvalLevel` / `tools`）与对话级 `ConversationToolConfig`（仅内存，不落库） |
 | 5 | `resolveAvailableTools` deny-by-default + 层级硬上限 |
 | 6 | AgentMode → PermissionPolicy 映射；项目级权限加载入口 |
+| 7 | chat / agent 链路显式切换：新建会话按 `mode.kind` 选路，会话内锁定（§4.8） |
 
 ### 1.2 非目标
 
@@ -213,11 +214,13 @@ RoundExecutor → ToolPipeline → Gateway: Ask
 |---|---|---|
 | SQLite `agent_modes` | `ADD COLUMN max_tool_tier TEXT NOT NULL DEFAULT 'sandbox'` | snake_case |
 | SQLite `agent_modes` | `ADD COLUMN approval_level TEXT NOT NULL DEFAULT 'none'` | snake_case |
-| SQLite `conversations` | `ADD COLUMN tool_config_json TEXT NOT NULL DEFAULT '{}'` | snake_case |
 | Rust `AgentModeRow` | 新增 `max_tool_tier: String` / `approval_level: String` | snake_case |
-| Rust `ConversationRow` | 新增 `tool_config_json: String` | snake_case |
 | DTO / 前端 `AgentMode` | `maxToolTier` / `approvalLevel` / `tools` | camelCase |
-| DTO / 前端 `ConversationToolConfig` | `maxToolTier` / `approvalLevel` / `enabledTools` / `disabledTools` | camelCase |
+| DTO `SendChatMessageArgsDto` | 新增 `toolConfig: ConversationToolConfig \| null` | camelCase |
+| DTO `ConversationDto` | 新增 `modeId: string \| null`（链路判据来源，§4.8） | camelCase |
+| 前端 `ConversationToolConfig` | `maxToolTier` / `approvalLevel` / `enabledTools` / `disabledTools` | camelCase，**仅内存** |
+
+**不引入对话级持久层**：`conversations` 表**不加** `tool_config_json`，`ConversationRow` 也不加字段。对话级配置只存在于前端内存（按 `conversationId` 索引），随每次发送请求传给后端；后端不持有该状态，也不落库。
 
 **迁移纪律**：只允许 `ADD COLUMN`，禁止 DROP / RENAME / 数据重写（与主库规则一致）。
 
@@ -253,9 +256,9 @@ interface ConversationToolConfig {
 
 **deny-by-default**：白名单为空 = 无工具；新增工具不会自动对所有模式可用（I18 design §3.11）。
 
-### 4.4 对话级配置与预填充
+### 4.4 对话级临时配置与初始化
 
-对话创建时从 AgentMode **深拷贝**：
+对话创建时（前端新建会话）从 AgentMode 初始化**内存态**：
 
 ```
 conversation.toolConfig = {
@@ -266,7 +269,11 @@ conversation.toolConfig = {
 }
 ```
 
-之后独立演化，AgentMode 修改不回溯影响已创建对话。
+- 该对象只存在于前端内存，按 `conversationId` 索引，**不落库**（§4.1）。
+- 会话内修改只影响当前对话；AgentMode 后续修改也不回溯影响已创建对话（双向下沉）。
+- **新建对话 → 重新从 AgentMode 初始化，即自动还原**，不依赖计时器（I18 design §3.11）。
+- 应用重启 → 内存态丢失，重新打开的会话按 AgentMode 重新初始化。
+- 每次发送消息把当前 `toolConfig` 随请求传给后端（`SendChatMessageArgsDto.toolConfig`）；后端不缓存该状态。
 
 ### 4.5 resolveAvailableTools
 
@@ -286,6 +293,7 @@ fn resolve_available_tools(
 
 **不变量**：
 
+- `config` 来自请求携带的会话内存态（`SendChatMessageArgsDto.toolConfig`）；为 `null` 时按该会话所属 AgentMode 预设解析，**不视为"无工具"**。
 - `maxToolTier` 是硬上限；`enabledTools` 包含更高层级工具也不生效。
 - 同一工具同时出现在 `enabledTools` / `disabledTools` → 禁用。
 - 工具 `name` 是稳定标识，不随 i18n 变化。
@@ -339,7 +347,7 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 | 交互点 | 位置 | 功能 |
 |---|---|---|
 | AgentMode 编辑表单 | 设置页 `/settings/agents` | 层级上限、审批级别、按 tier 分组的工具多选；默认全不勾选 |
-| 对话工具栏 | 聊天输入区 | 当前会话可用工具概览，点击增删；变更写回 `tool_config` |
+| 对话工具栏 | 聊天输入区（**仅 agent 会话**，见 §4.8） | 当前会话可用工具概览，点击增删；变更写入**会话内存态**（不落库） |
 | 工具可用性变更提示 | 聊天流 | 配置变更时系统消息提示「已启用 shell_exec」等 |
 
 编辑表单：
@@ -356,13 +364,47 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 - 内置模式（`isBuiltin: true`）可查看但不可修改；用户需创建自定义模式。
 - 层级上限切换时，下方分组自动展开 / 折叠。
 
+### 4.8 chat / agent 显式切换
+
+**两套模式集合**（同一张 `agent_modes` 表，按 `kind` 字段区分）：
+
+| 集合 | 判定 | 可选值 | 工具能力 |
+|---|---|---|---|
+| chat 模式 | `kind ∈ {default, quick, deep}` | 默认 / 快速 / 深度 | **无**，`tools` 恒为 `[]` |
+| agent 模式 | `kind = custom` | 用户自定义模式 | **有**，按 §4.5 解析 |
+
+**切换是显式的，且只发生在新建会话时**：
+
+- 入口：新建会话时选择模式；选择器按上表两组分栏展示，跨组不可混选。
+- 链路一旦创建即固定，**不支持在同一会话内从 chat 切到 agent**（或反向）。需要换链路 = 新建会话，**不复用 `conversationId`**。
+- 理由：同一会话内混用两套 turn 语义，会让历史消息里前半段无 `tool_calls`、后半段有，无法回溯解释；同时 `TurnSpec` 差异（`on_busy`、`max_iterations`、审批）在会话中途变更会让进行中的 turn 行为不可预期。
+
+**命令映射**（链路差异只由 `TurnSpec` 承载，见 I36 spec §0B.2）：
+
+| 会话链路 | 判定来源 | 发送命令 | TurnSpec |
+|---|---|---|---|
+| chat | 会话所属 mode 的 `kind ∈ {default, quick, deep}` | `send_chat_message` | `TurnSpec::chat()` |
+| agent | 会话所属 mode 的 `kind = custom` | `send_agent_message` | `TurnSpec::agent()` |
+
+**不变量**：
+
+- **链路由 `mode.kind` 唯一决定**，前端不得根据会话内工具配置反推链路，也不得在 chat 会话上调用 `send_agent_message`。
+- **判据取自会话自身**：`ConversationDto.modeId` → `agent_modes` 行 → `kind`。前端**不得**用全局选中态（`selectedModeId`）或发送请求的 `mode_id` 作为链路判据；否则会话中途换模式会直接换链路。
+- `modeId = null`、或 `modeId` 查不到对应 mode 行时，按 `default` 处理（chat 链路）。
+- chat 会话恒 `tools = None`：即便该 mode 记录的 `tools` 非空，也不注入（`TurnSpec::chat()` 已固定）。
+- `ConversationToolConfig` 只对 agent 会话存在；chat 会话传 `null`，且不渲染对话工具栏。
+- 工具相关 UI（对话工具栏、`ToolCallBubble`、审批面板）**只在 agent 会话渲染**。
+- 两条链路共用同一会话状态机与 phase 语义（I36 spec Step 1）；`session-state-changed` 的消费方式一致。
+- 老会话无 `kind` 或 `kind` 非法时按 `default` 归入 chat 链路（`AgentKind::from_mode_kind` 的兜底语义）。
+
 ---
 
 ## 5 实施步骤
 
 | 步骤 | 内容 | 依赖 |
 |---|---|---|
-| P6-C1 | DTO：`AgentToolCallPayloadDto` / 审批请求与决策 / `AgentMode` 扩展 / `ConversationToolConfig`；`npm run contract:gen` | P4 |
+| P6-C1 | DTO：`AgentToolCallPayloadDto` / 审批请求与决策 / `AgentMode` 扩展 / `ConversationDto.modeId`（§4.8 判据）/ `ConversationToolConfig`（仅内存，随请求传递）；`npm run contract:gen` | P4 |
+| P6-C1b | 链路选路（§4.8）：新建会话按 `mode.kind` 分流到 `send_chat_message` / `send_agent_message`；发送时以会话 `modeId` 判定链路（**不取全局选中态**）；会话内锁定链路；chat 会话不渲染工具 UI | P6-C1 |
 | P6-C2 | 前端事件接入：订阅 `agent-tool-call` 与 `session-state-changed`；按 `turnId` 过滤 | P6-C1 |
 | P6-C3 | `ToolCallBubble` 五态 + 大结果折叠 + 历史恢复 | P6-C2 |
 | P6-C4 | 审批 UI 与命令；超时置灰；AlwaysApprove 文案 | P6-C3 |
@@ -386,6 +428,7 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 | A8 | AgentMode 表单默认全不勾选；内置模式不可修改 |
 | A9 | `npm run contract:gen` 后 `src/types/protocol.contract.ts` 可编译；`cargo test --test assembly_contract` 通过 |
 | A10 | 审批级别三档的 Policy 映射有单测；tier 规则拒绝超层级工具 |
+| A11 | 链路选路：`kind ∈ {default, quick, deep}` 的会话只调 `send_chat_message` 且不渲染工具 UI；`kind = custom` 的会话只调 `send_agent_message`；同一 `conversationId` 上无法切换链路 |
 
 ---
 
@@ -402,7 +445,7 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 **开放问题**：
 
 1. `alwaysApprove` 的持久化范围：本会话还是跨会话？P2 当前为会话级；跨会话需要新的持久化策略，P7 前不定。
-2. 对话工具栏与 AgentMode 表单的编辑权限：内置模式只读，自定义模式可改；是否允许在对话中临时启用而不写回配置？当前倾向不引入临时层（I18 design §3.11）。
+2. 对话工具栏与 AgentMode 表单的编辑权限：内置模式只读，自定义模式可改。**已定论**：不引入对话级持久层——工具栏变更只写入会话内存态，不落库、不设还原计时器；新建对话从 AgentMode 预设重新初始化，即自动还原（I18 design §3.11）。
 3. 审批等待是否计入 turn 墙钟：与 P4 开放问题 2 同一决策，联调时定稿。
 
 ---

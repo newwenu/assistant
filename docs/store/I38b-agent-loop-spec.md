@@ -227,8 +227,8 @@ pub struct ChatOptions {
 ```
 
 - `None` / 空数组 = 不声明工具（chat 路径行为不变）。
-- **注入开关按 agent 档位**：只有 `AgentKind::supports_tool_call()` 为真的 turn（现状仅 `custom`，见 `prompt_builder.rs:24`）才向 `ToolCatalog` 取工具；`default` / `quick` / `deep` 一律 `tools = None`，即使注册表里有 agent 可见工具也不注入。这样「chat 路径行为不变」（A9）由档位判定保证，不依赖注册表是否为空。
-- **赋值点**：`build_chat_options`（`chat_options.rs:39`）新增 `tools: Option<Vec<ToolSpec>>` 参数并在返回结构里填入；调用点从 `chat_request.rs` 迁到 `kernel/request.rs` 时，agent 档位传 `Some(...)`、chat 档位传 `None`。不新增第二个构造函数，避免两套 options 组装逻辑。
+- **注入开关以 `TurnSpec.tools` 为准**：`TurnSpec::chat()` 恒为 `None`，`TurnSpec::agent()` 为 `Some(catalog)`。`AgentKind::supports_tool_call()`（现状仅 `custom`，见 `prompt_builder.rs:24`）只用于**前端选路**（chat 会话 / agent 会话，见 I38d §4.8）与 `request.rs` 的二次门控，**不作为链路判据**。这样「chat 路径行为不变」（A9）由 `TurnSpec` 保证，不依赖注册表是否为空。
+- **赋值点**：`build_chat_options`（`chat_options.rs:39`）新增 `tools: Option<Vec<ToolSpec>>` 参数并在返回结构里填入；调用点从 `chat_request.rs` 迁到 `kernel/request.rs` 时，agent 链路（`TurnSpec::agent()`）传 `Some(...)`、chat 链路（`TurnSpec::chat()`）传 `None`。不新增第二个构造函数，避免两套 options 组装逻辑。
 - **`ChatOptions` 是内部结构，不是 wire DTO**（`cmd/compaction.rs:137` 与 `chat_options.rs:54` 用完整字面量构造），加字段会让这两处编译失败：`chat_options.rs` 随本次改动同步；`cmd/compaction.rs` 的压缩摘要调用显式写 `tools: None`（摘要不带工具），**不得**改成 `..Default::default()` 掩盖语义。
 - 现有 `ChatMessage.tool_calls` / `tool_call_id` 已存在（F12），本阶段开始被填充。
 

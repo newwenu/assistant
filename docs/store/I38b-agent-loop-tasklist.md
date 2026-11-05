@@ -30,30 +30,30 @@
 实现：`src-tauri/crates/assistant-agent/src/agent/tool_call.rs`、`src-tauri/crates/assistant-providers/src/**`
 测试：`src-tauri/crates/assistant-agent/tests/tool_call.rs`
 
-- [ ] C1.1 新建 `assistant-agent/src/agent/tool_call.rs`，`agent/mod.rs` 增加 `pub mod tool_call;`
-- [ ] C1.2 定义 `ToolCallStreamKey { Indexed(usize), Unindexed }`（D1），Anthropic 有 index 用 `Indexed`、否则 `Unindexed`
-- [ ] C1.3 定义 `ToolCallBoundary { NewTool, FinishReason, StreamEnd }`（D2），保留 `finalized_previous` 语义
-- [ ] C1.4 实现 `apply_delta`（增量入口）与 `apply_unified_response`（`UnifiedResponse` 入口，D4）
-- [ ] C1.5 实现跨 chunk 累积：`Indexed` 按 index 分组、`Unindexed` 单槽累积
-- [ ] C1.6 实现 `arguments_is_snapshot` 分支：`true` 用快照替换、`false` 追加（D8）
-- [ ] C1.7 截断处理按 D3：先 `repair_truncated_json`，修复可用则降级（`is_error = false` + 修复提示），失败才报 `Truncated`
-- [ ] C1.8 非法 JSON 不 panic，产出可回灌的失败结果
-- [ ] C1.9 `ChatDelta` 新增 `delta_tool_call_arguments_is_snapshot: bool`（D9，provider 内部流类型，非 wire）
-- [ ] C1.10 OpenAI adapter 填 `arguments_is_snapshot = false`
-- [ ] C1.11 Anthropic adapter 填 `false`，有 index 时带 `Indexed` 键
-- [ ] C1.12 Gemini adapter 只透传快照片段并标 `true`，累积统一交给 `agent/tool_call.rs`（D8，修 F15/F16）
-- [ ] C1.13 删除 `assistant-providers/src/tool_call_accumulator.rs` 及其 `lib.rs` 导出（A7）
-- [ ] C1.13a `kernel/stream.rs` 的 `StreamAccumulator` 删除 `tool_calls` 字段与 `apply_tool_call`，只保留正文 / 推理 / usage / `ttft_ms` / `finish_reason` / `has_effective_output`（§3.1）
-- [ ] C1.13b `StreamOutcome` / `PartialOutcome` 删除 `tool_calls` 字段；工具片段改由 `consume` 的 `on_delta` 回调原样交给调用方累积
-- [ ] C1.13c 删除后 `kernel/runner.rs` 的过渡循环暂不可编译 → **C1 与 C5 必须同批交付**（见 C5.2）
-- [ ] C1.14 全仓 grep 确认无第二份累积器实现：`assistant-providers` 无 `ToolCallAccumulator`，`assistant-agent/src/kernel/stream.rs` 无 `ToolCallAccum`（A7 口径见 spec §3.1）
-- [ ] C1.15 `tool_call.rs` 不出现 `tauri` / `AppHandle` / `assistant_tools` 引用
-- [ ] C1.16 测试：跨 chunk 累积（`Unindexed` 与 `Indexed` 双键）
-- [ ] C1.17 测试：Gemini 快照替换语义
-- [ ] C1.18 测试：三种 `ToolCallBoundary` 的终结行为
-- [ ] C1.19 测试：截断 JSON 修复成功 / 失败两条路径
-- [ ] C1.20 测试：非法 JSON 产出失败结果不 panic
-- [ ] C1.21 测试：三 adapter 对同一逻辑调用产出等价的 `FinalizedToolCall`（A6 前半）
+- [x] C1.1 新建 `assistant-agent/src/agent/tool_call.rs`，`agent/mod.rs` 增加 `pub mod tool_call;`
+- [x] C1.2 定义 `ToolCallStreamKey { Indexed(usize), Unindexed }`（D1），Anthropic 有 index 用 `Indexed`、否则 `Unindexed`
+- [x] C1.3 定义 `ToolCallBoundary { NewTool, FinishReason, StreamEnd }`（D2），保留 `finalized_previous` 语义
+- [x] C1.4 实现 `apply_delta`（增量入口）与 `apply_unified_response`（`UnifiedResponse` 入口，D4）
+- [x] C1.5 实现跨 chunk 累积：`Indexed` 按 index 分组、`Unindexed` 单槽累积
+- [x] C1.6 实现 `arguments_is_snapshot` 分支：`true` 用快照替换、`false` 追加（D8）
+- [x] C1.7 截断处理按 D3：先 `repair_truncated_json`，修复可用则降级（`is_error = false` + 修复提示），失败才报 `Truncated`
+- [x] C1.8 非法 JSON 不 panic，产出可回灌的失败结果
+- [x] C1.9 `ChatDelta` 新增 `delta_tool_call_arguments_is_snapshot: bool`（D9，provider 内部流类型，非 wire）
+- [x] C1.10 OpenAI adapter 填 `arguments_is_snapshot = false`
+- [x] C1.11 Anthropic adapter 填 `false`，有 index 时带 `Indexed` 键
+- [x] C1.12 Gemini adapter 只透传快照片段并标 `true`，累积统一交给 `agent/tool_call.rs`（D8，修 F15/F16）
+- [x] C1.13 删除 `assistant-providers/src/tool_call_accumulator.rs` 及其 `lib.rs` 导出（A7）
+- [x] C1.13a `kernel/stream.rs` 的 `StreamAccumulator` 删除 `tool_calls` 字段与 `apply_tool_call`，只保留正文 / 推理 / usage / `ttft_ms` / `finish_reason` / `has_effective_output`（§3.1）
+- [x] C1.13b `StreamOutcome` / `PartialOutcome` 删除 `tool_calls` 字段；工具片段改由 `consume` 的 `on_delta` 回调原样交给调用方累积
+- [x] C1.13c 删除后 `kernel/runner.rs` 的过渡循环暂不可编译 → **C1 与 C5 必须同批交付**（见 C5.2）
+- [x] C1.14 全仓 grep 确认无第二份累积器实现：`assistant-providers` 无 `ToolCallAccumulator`，`assistant-agent/src/kernel/stream.rs` 无 `ToolCallAccum`（A7 口径见 spec §3.1）
+- [x] C1.15 `tool_call.rs` 不出现 `tauri` / `AppHandle` / `assistant_tools` 引用
+- [x] C1.16 测试：跨 chunk 累积（`Unindexed` 与 `Indexed` 双键）
+- [x] C1.17 测试：Gemini 快照替换语义
+- [x] C1.18 测试：三种 `ToolCallBoundary` 的终结行为
+- [x] C1.19 测试：截断 JSON 修复成功 / 失败两条路径
+- [x] C1.20 测试：非法 JSON 产出失败结果不 panic
+- [x] C1.21 测试：三 adapter 对同一逻辑调用产出等价的 `FinalizedToolCall`（A6 前半）
 
 ---
 
@@ -62,29 +62,29 @@
 实现：`assistant-providers/src/types/tool.rs`、`types/config.rs`、`openai/**`、`anthropic/**`、`gemini/**`、`assistant-agent/src/kernel/ports.rs`、`src-tauri/src/adapters/**`
 测试：`src-tauri/crates/assistant-providers/tests/`、`src-tauri/src/agent/` 装配测试
 
-- [ ] C2.1 定义 `ToolSpec { name, description, input_schema }`，`serde(rename_all = "camelCase")`（§4.1）
-- [ ] C2.2 `ChatOptions` 新增 `tools: Option<Vec<ToolSpec>>`，`#[serde(default, skip_serializing_if = "Option::is_none")]`（§4.2）
-- [ ] C2.3 `build_chat_options` 新增 `tools` 参数并填入返回结构（不新增第二个构造函数）
-- [ ] C2.4 同步两处 `ChatOptions` 完整字面量构造：`chat_options.rs`、`cmd/compaction.rs`（压缩摘要显式 `tools: None`，不得用 `..Default::default()`）
-- [ ] C2.5 `kernel/ports.rs` 声明 `ToolCatalog` async trait（`agent_tools() -> Vec<ToolSpec>`，D16）；**同时删除 `kernel/mod.rs` 的同步占位 `ToolCatalog` / `EmptyToolCatalog` 及其导出**，全仓只留一套
-- [ ] C2.5a `TurnSpec.tools: Option<Arc<dyn ToolCatalog>>` 与 `runner.rs` 的 `spec.tools.is_none()` 判定改到新签名（P3 过渡循环随 C5 删除）
-- [ ] C2.6 `src-tauri` 实现 `ToolCatalog`：调 `ToolRegistry::tool_definitions_for_tier(ToolTier::Os)`，逐条转 `ToolSpec`
-- [ ] C2.7 `max_tier` 常量放适配器内，`External` 排除（D15）；`fs_link` 为 `TOOLBOX_ONLY` 不会出现
-- [ ] C2.8 注入开关：仅 `AgentKind::supports_tool_call()` 为真（现状 `custom`）取工具，`default` / `quick` / `deep` 恒 `None`（A9）
-- [ ] C2.9 `ToolCatalog` 返回空 `Vec` 时 `tools = None`，循环退化为单次调用（A9）
-- [ ] C2.10 OpenAI `ChatRequest` 新增 `tools: Option<Vec<Value>>` + `skip_serializing_if`，构造点 `openai/chat.rs` 填值
-- [ ] C2.11 `openai/message_converter.rs` 新增 `ToolSpec` → `{ type: "function", function: { name, description, parameters } }` 转换
-- [ ] C2.12 Anthropic `MessagesRequest` 新增 `tools` 字段，构造点 `anthropic/request.rs` 填值
-- [ ] C2.13 `anthropic/message_converter.rs` 新增 `ToolSpec` → `{ name, description, input_schema }` 转换（无 `parameters` 包壳）
-- [ ] C2.14 Gemini `convert_tools` 签名由 `&[(String, String, String)]` 改为 `&[ToolSpec]`
-- [ ] C2.15 去掉 `convert_tools` / `sanitize_schema` / `strip_unsupported_schema_fields` 上的 `#[allow(dead_code)]`（转正）
-- [ ] C2.16 Gemini `request.rs` 构造点填 `convert_tools(...)`；`code_assist.rs` 保持 `None`（不改 Code Assist 行为）
-- [ ] C2.17 Anthropic 回填 `tool_use.input` 从字符串改为 JSON 对象，解析失败回退 `{}`（§4.3 必须修正项）
-- [ ] C2.18 Gemini 回填 `functionCall.args` 从字符串改为 JSON 对象，解析失败回退 `{}`（§4.3 必须修正项）
-- [ ] C2.19 Gemini `functionResponse` 必须带工具名：确认 `convert_tool_result_parts` 在 `name` 非空时产出 parts
-- [ ] C2.20 测试：三 adapter `ToolSpec` 注入形状快照（A6 后半）
-- [ ] C2.21 测试：带工具历史的第二轮请求三方言均合法（A19）
-- [ ] C2.22 测试：`custom` 注入、`default` / `quick` / `deep` 不注入（A9）
+- [x] C2.1 定义 `ToolSpec { name, description, input_schema }`，`serde(rename_all = "camelCase")`（§4.1）
+- [x] C2.2 `ChatOptions` 新增 `tools: Option<Vec<ToolSpec>>`，`#[serde(default, skip_serializing_if = "Option::is_none")]`（§4.2）
+- [x] C2.3 `build_chat_options` 新增 `tools` 参数并填入返回结构（不新增第二个构造函数）
+- [x] C2.4 同步两处 `ChatOptions` 完整字面量构造：`chat_options.rs`、`cmd/compaction.rs`（压缩摘要显式 `tools: None`，不得用 `..Default::default()`）
+- [x] C2.5 `kernel/ports.rs` 声明 `ToolCatalog` async trait（`agent_tools() -> Vec<ToolSpec>`，D16）；**同时删除 `kernel/mod.rs` 的同步占位 `ToolCatalog` / `EmptyToolCatalog` 及其导出**，全仓只留一套
+- [x] C2.5a `TurnSpec.tools: Option<Arc<dyn ToolCatalog>>` 与 `runner.rs` 的 `spec.tools.is_none()` 判定改到新签名（P3 过渡循环随 C5 删除）
+- [x] C2.6 `src-tauri` 实现 `ToolCatalog`：调 `ToolRegistry::tool_definitions_for_tier(ToolTier::Os)`，逐条转 `ToolSpec`
+- [x] C2.7 `max_tier` 常量放适配器内，`External` 排除（D15）；`fs_link` 为 `TOOLBOX_ONLY` 不会出现
+- [x] C2.8 注入开关：`TurnSpec.tools` 有值（仅 agent 链路传入）且 `AgentKind::supports_tool_call()` 为真（现状 `custom`）才取工具；`default` / `quick` / `deep` 恒 `None`（A9）
+- [x] C2.9 `ToolCatalog` 返回空 `Vec` 时 `tools = None`，循环退化为单次调用（A9）
+- [x] C2.10 OpenAI `ChatRequest` 新增 `tools: Option<Vec<Value>>` + `skip_serializing_if`，构造点 `openai/chat.rs` 填值
+- [x] C2.11 `openai/message_converter.rs` 新增 `ToolSpec` → `{ type: "function", function: { name, description, parameters } }` 转换
+- [x] C2.12 Anthropic `MessagesRequest` 新增 `tools` 字段，构造点 `anthropic/request.rs` 填值
+- [x] C2.13 `anthropic/message_converter.rs` 新增 `ToolSpec` → `{ name, description, input_schema }` 转换（无 `parameters` 包壳）
+- [x] C2.14 Gemini `convert_tools` 签名由 `&[(String, String, String)]` 改为 `&[ToolSpec]`
+- [x] C2.15 去掉 `convert_tools` / `sanitize_schema` / `strip_unsupported_schema_fields` 上的 `#[allow(dead_code)]`（转正）
+- [x] C2.16 Gemini `request.rs` 构造点填 `convert_tools(...)`；`code_assist.rs` 保持 `None`（不改 Code Assist 行为）
+- [x] C2.17 Anthropic 回填 `tool_use.input` 从字符串改为 JSON 对象，解析失败回退 `{}`（§4.3 必须修正项）
+- [x] C2.18 Gemini 回填 `functionCall.args` 从字符串改为 JSON 对象，解析失败回退 `{}`（§4.3 必须修正项）
+- [x] C2.19 Gemini `functionResponse` 必须带工具名：确认 `convert_tool_result_parts` 在 `name` 非空时产出 parts
+- [x] C2.20 测试：三 adapter `ToolSpec` 注入形状快照（A6 后半）
+- [x] C2.21 测试：带工具历史的第二轮请求三方言均合法（A19）
+- [x] C2.22 测试：`custom` 注入、`default` / `quick` / `deep` 不注入（A9）
 
 ---
 
@@ -92,24 +92,24 @@
 
 实现：`assistant-agent/src/agent/round_executor.rs`、`agent/tool_event.rs`、`kernel/ports.rs`、`kernel/ports/test_doubles.rs`
 
-- [ ] C3.1 定义 `RoundExecutor` trait（`run_iterations(ctx) -> RoundOutcome`，`#[async_trait]`）
-- [ ] C3.2 定义 `RoundOutcome`，含 `confirmation_wait_ms`（D12）与 `hit_cap` / `wrap_up_injected` 分离
-- [ ] C3.3 定义 `TurnObserver { set_phase, emit_tool_event }`
-- [ ] C3.4 定义 `TurnRunCtx`：`turn_id` / `conversation_id` / `iteration` / `remaining_turn_budget` / `child_token` / `ToolCatalog` / `ToolExecutionPort` / `EventSink` / `MessageStore` / `TurnInputSource` / `Clock` / `TurnLimits` / `TurnSpec`
-- [ ] C3.5 `TurnRunCtx` 新增委派预留字段 `agent_id` / `parent_turn_id` / `delegation_depth`，P4 恒为根 agent 值（§2.4）
-- [ ] C3.6 定义 `ToolExecutionPort` / `ToolExecCtx` / `ToolExecResult` / `ToolStage` / `ToolErrorClass`，全部声明在 `round_executor.rs`（§4.5）
-- [ ] C3.7 `ToolExecCtx` 不含权限端口、不含 `TurnObserver`（§4.5）
-- [ ] C3.8 `ToolExecResult` 字段与 `ToolOutcome` 的映射表逐项对齐（`content` 取 `assistant_text`，不取 `result_for_assistant`）
-- [ ] C3.9 `ToolStage` / `ToolErrorClass` 为本地镜像枚举，不 import `assistant-tools` 类型
-- [ ] C3.10 新建 `agent/tool_event.rs`：`ToolEvent`（上下文）+ `ToolEventPayload::{Started, ArgsDelta{delta}, Finished{result, confirmation_wait_ms}, Failed{error, error_kind, confirmation_wait_ms}}`（§6.1）
-- [ ] C3.11 `kernel/ports.rs` 的 `TurnEvent::ToolStarted` / `ToolFinished` 收敛为 `TurnEvent::Tool(ToolEvent)`
-- [ ] C3.11a 删除 `kernel/emit.rs` 的 `TurnEmitter::tool_started` / `tool_finished` 两个方法，改为单一 `tool_event(&self, event: ToolEvent)`（P3 已实现但无调用方，§6.1 现状核对）
-- [ ] C3.12 `event_sink.rs` 的 `ToolStarted` / `ToolFinished` 两个 `match` 分支（P3 期只打 debug 日志）合并为 `TurnEvent::Tool(_)` 分支，线事件映射在 C6.7 接入
-- [ ] C3.13 全仓 grep 确认 `ToolStarted` / `ToolFinished` 变体名已消失
-- [ ] C3.14 `test_doubles.rs` 的 `MessageStore` 替身补 `save_tool_calls` / `append_tool_message`，支持「写入 → 读回 → 重建 wire 形状」
-- [ ] C3.15 `test_doubles.rs` 新增 `ToolCatalog` / `ToolExecutionPort` 替身（可脚本化返回工具集与结果）
-- [ ] C3.16 `round_executor.rs` / `tool_event.rs` 不出现 `tauri` / `AppHandle` / `assistant_tools`（A8）
-- [ ] C3.17 测试：`ToolStage` / `ToolErrorClass` 与 `PipelineStage` / `ToolErrorKind` 一一对应（A18 前半）
+- [x] C3.1 定义 `RoundExecutor` trait（`run_iterations(ctx) -> RoundOutcome`，`#[async_trait]`）
+- [x] C3.2 定义 `RoundOutcome`，含 `confirmation_wait_ms`（D12）与 `hit_cap` / `wrap_up_injected` 分离
+- [x] C3.3 定义 `TurnObserver { set_phase, emit_tool_event }`
+- [x] C3.4 定义 `TurnRunCtx`：`turn_id` / `conversation_id` / `iteration` / `remaining_turn_budget` / `child_token` / `ToolCatalog` / `ToolExecutionPort` / `EventSink` / `MessageStore` / `TurnInputSource` / `Clock` / `TurnLimits` / `TurnSpec`
+- [x] C3.5 `TurnRunCtx` 新增委派预留字段 `agent_id` / `parent_turn_id` / `delegation_depth`，P4 恒为根 agent 值（§2.4）
+- [x] C3.6 定义 `ToolExecutionPort` / `ToolExecCtx` / `ToolExecResult` / `ToolStage` / `ToolErrorClass`，全部声明在 `round_executor.rs`（§4.5）
+- [x] C3.7 `ToolExecCtx` 不含权限端口、不含 `TurnObserver`（§4.5）
+- [x] C3.8 `ToolExecResult` 字段与 `ToolOutcome` 的映射表逐项对齐（`content` 取 `assistant_text`，不取 `result_for_assistant`）
+- [x] C3.9 `ToolStage` / `ToolErrorClass` 为本地镜像枚举，不 import `assistant-tools` 类型
+- [x] C3.10 新建 `agent/tool_event.rs`：`ToolEvent`（上下文）+ `ToolEventPayload::{Started, ArgsDelta{delta}, Finished{result, confirmation_wait_ms}, Failed{error, error_kind, confirmation_wait_ms}}`（§6.1）
+- [x] C3.11 `kernel/ports.rs` 的 `TurnEvent::ToolStarted` / `ToolFinished` 收敛为 `TurnEvent::Tool(ToolEvent)`
+- [x] C3.11a 删除 `kernel/emit.rs` 的 `TurnEmitter::tool_started` / `tool_finished` 两个方法，改为单一 `tool_event(&self, event: ToolEvent)`（P3 已实现但无调用方，§6.1 现状核对）
+- [x] C3.12 `event_sink.rs` 的 `ToolStarted` / `ToolFinished` 两个 `match` 分支（P3 期只打 debug 日志）合并为 `TurnEvent::Tool(_)` 分支，线事件映射在 C6.7 接入
+- [x] C3.13 全仓 grep 确认 `ToolStarted` / `ToolFinished` 变体名已消失
+- [x] C3.14 `test_doubles.rs` 的 `MessageStore` 替身补 `save_tool_calls` / `append_tool_message`，支持「写入 → 读回 → 重建 wire 形状」
+- [x] C3.15 `test_doubles.rs` 新增 `ToolCatalog` / `ToolExecutionPort` 替身（可脚本化返回工具集与结果）
+- [x] C3.16 `round_executor.rs` / `tool_event.rs` 不出现 `tauri` / `AppHandle` / `assistant_tools`（A8）
+- [x] C3.17 测试：`ToolStage` / `ToolErrorClass` 与 `PipelineStage` / `ToolErrorKind` 一一对应（A18 前半）
 
 ---
 

@@ -119,6 +119,8 @@
 | 停止钩子 / 收尾调用 | 无 | 有 |
 | 事件路由 | orb 窗口 | 广播 |
 
+**选路不进内核**：哪个会话走 chat、哪个走 agent，由前端按**会话所属模式**的 `kind` 决定——`kind ∈ {default, quick, deep}` → `send_chat_message`，`kind = custom` → `send_agent_message`；会话创建后链路固定，不在同一 `conversationId` 内切换。规则见 I38d §4.8。内核只提供 `TurnSpec::chat()` / `TurnSpec::agent()` 两个取值，不做任何选路判断，也不读取模式表。
+
 **参数化而不是分叉**：上述差异全部表达为内核的入参（`TurnSpec`），不写 `if is_agent { ... }`：
 
 ```rust

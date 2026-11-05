@@ -188,7 +188,7 @@ Stopped → Starting → Ready → Error → Stopped
 
 1. 凭据不得写入明文配置；需要密钥时复用 provider / vault 的既有加密路径。
 2. server 默认禁用；启用是显式动作。
-3. 配置变更只影响新会话，不回溯已创建会话（与 AgentMode 深拷贝语义一致）。
+3. 配置变更只影响新会话，不回溯已创建会话（与 AgentMode 语义一致：对话级配置仅存在于内存，新对话重新初始化）。
 
 ---
 

@@ -5,7 +5,7 @@
 | 状态 | 现行（P3 运行时规格） |
 | 日期 | 2026-11-03 |
 | 关联 | [I36-agent-runtime-design.md](./I36-agent-runtime-design.md)（决策依据）、[I38-agent-roadmap.md](./I38-agent-roadmap.md)（阶段 P3）、[I38b-agent-loop-spec.md](./I38b-agent-loop-spec.md)（P4 多迭代闭环）、[I30-phase1-toolcall-separation-spec.md](./I30-phase1-toolcall-separation-spec.md)、[I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md) |
-| 影响范围 | `assistant-agent`（新增 `kernel/` 共用内核、`agent/` 多迭代能力）、`assistant-config`、`assistant-storage`、`src-tauri/src/cmd/agent`（新增）、`src-tauri/src/adapters`（新增，端口实现）、`src-tauri/src/protocol`、前端 chat 域。**chat 链路对外行为不变**：`cmd/chat`、`chat_runtime`、`chat_tasks`、`chat_request`、`prompt_builder` 在 Step 3 内改调内核，Step 3.4 删除旧实现 |
+| 影响范围 | `assistant-agent`（新增 `kernel/` 共用内核、`agent/` 多迭代能力）、`assistant-config`、`assistant-storage`、`src-tauri/src/cmd/agent`（新增）、`src-tauri/src/adapters`（新增，端口实现）、`src-tauri/src/protocol`、前端 chat 域。**chat 链路对外行为不变**：`cmd/chat` 在 Step 3.4 改调内核，`chat_runtime` / `chat_tasks` / `chat_request` 在 Step 3.5 退役；`prompt_builder` / `chat_options` 属共享层，保留 |
 
 本文只写**怎么做**。为什么这样分层、参考了什么、取舍是什么，见 design 文档，本文不重复论证。
 
@@ -21,6 +21,8 @@
 | 压缩判定（纯函数，不含摘要执行） | `assistant-agent/src/compaction.rs` | P3 |
 | 多模态投影 / token 估算 | `multimodal.rs` / `token_estimate.rs` | P3 |
 | chat 链路（迁移来源） | `chat_tasks.rs` / `chat_runtime.rs` / `chat_request.rs` / `chat_options.rs` / `prompt_builder.rs` / `normalization.rs` / `cmd/chat` | P3 |
+| **旧模块退役（§3.5）** | 删除 `chat_tasks.rs` / `chat_runtime.rs` / `chat_request.rs`；保留 `chat_options.rs` / `prompt_builder.rs`（内核共享层） | P3 |
+| **压缩链路迁移（§3.5）** | `src-tauri/src/cmd/compaction.rs` → `kernel/stream.rs` + `kernel/persist.rs` + `adapters/event_sink.rs` | P3 |
 | **端口定义** | `kernel/ports.rs` | P3 |
 | **端口生产实现** | `src-tauri/src/adapters/`（`event_sink.rs` / `message_store.rs` / `input_source.rs` / `system_clock.rs` / `compaction_sink.rs` / `runner.rs`） | P3 |
 | **TurnSpec（参数化）** | `kernel/mod.rs`（见 §0B.2.1 偏差记录） | P3 |
@@ -267,6 +269,8 @@ impl TurnSpec {
 
 **硬约束**：内核内**不得**出现 `if is_agent` / `if is_chat`。差异只能来自 `TurnSpec` 字段。
 
+**链路选路归前端**：哪个会话走 `chat()`、哪个走 `agent()` 由模式 `kind` 决定，规则与命令映射见 I38d §4.8；本节只定义两条链路各自的 `TurnSpec` 取值，不定义选路策略。
+
 #### 0B.2.1 偏差记录（实现相对本规格的偏离）
 
 | 偏差 | 实现 | 原因 |
@@ -389,6 +393,8 @@ impl TurnTasks {
 | `finish` | 校验 `turn_id` 后移除 | 同左 |
 
 **唯一必须一致的东西**：`turn_id` 格式 `{conv}:{counter}`。前端按它解析并丢弃过期事件（I16），格式漂移会让前端要写两套解析。
+
+**链路选择不在本节**：哪个会话走 chat、哪个走 agent 由前端按会话所属模式的 `kind` 决定，规则与命令映射见 I38d §4.8；本节只保证两条链路共用同一张令牌表与同一套 phase 语义。
 
 `SessionStates` 与 `TurnTasks` 的关系：`TurnTasks` 只管「谁在跑」，`SessionStates` 只管「处于哪个阶段」。`begin_turn` 必须先 `TurnTasks::begin` 成功、再 `SessionStates::begin_turn`；后者失败时立即 `TurnTasks::finish` 回滚。
 
@@ -560,7 +566,7 @@ pub async fn consume<S>(
 
 1. `cmd/chat/mod.rs` 的 `send_chat_message` 内部换成 `TurnRunner::run(ctx, TurnSpec::chat())`，宿主只保留：入参校验 → `begin` → `spawn` → 返回值映射。
 2. `spawn_chat_stream` / `spawn_db_writer` / `spawn_finish_listener` / `spawn_compaction_listener` 的职责迁到 `kernel/persist.rs` + `kernel/emit.rs` + `adapters/`。`cmd/chat/stream.rs` 只剩 `StreamEmitCtx` 到 `EventSink` 的适配（或直接删除）。
-3. 对比测试全绿后，删除 `chat_runtime.rs` / `chat_tasks.rs` / `chat_request.rs` / `prompt_builder.rs`，并从 `assistant-agent/src/lib.rs` 移除 `pub mod`。
+3. 对比测试全绿后，按 §3.5 退役 `chat_runtime.rs` / `chat_tasks.rs` / `chat_request.rs`，并从 `assistant-agent/src/lib.rs` 移除 `pub mod`。`prompt_builder.rs` / `chat_options.rs` **不删**（内核与压缩链路共用，见 §3.5）。
 4. `setup.rs` 的 `manage(ChatTasks::new())` 换成 `manage(TurnTasks::new())`；`cancel_chat` 改调 `TurnTasks::cancel`。
 
 **禁止**：
@@ -569,6 +575,76 @@ pub async fn consume<S>(
 - 删除前不跑对比测试——`chat_streamCharacterization.test.ts` 与 `chatOrchestrator.test.ts` 是前端侧的护栏，后端需自己补 `RecordingSink` 对比测试。
 
 **窗口缺失的行为变更**：`send_chat_message` 不再要求 orb 窗口存在（`error.orb_window_not_found` 从发送路径移除，仅保留给真正需要窗口的命令）。这是**有意的行为变更**，属于「后台可运行」的一部分（design §3.13），需在验收 12 中覆盖。
+
+### 3.5 旧模块退役与压缩链路迁移
+
+§3.4 的「删除旧实现」只覆盖发送链路；压缩链路（`src-tauri/src/cmd/compaction.rs`）与占用查询（`src-tauri/src/cmd/conversation.rs`）仍引用旧模块，不先迁移则旧模块无法退役。本节是退役的**前置规格**，也是 §3.4 第 3 步的展开。
+
+**迁移前现状（边界必须清楚）**：
+
+- `kernel/ports.rs` 的 `CompactionSink`、`adapters/compaction_sink.rs` 的 `TauriCompactionSink` **已存在并接线**：`kernel/runner.rs` 在 turn 完全收尾后（`tasks.finish` 之后）调用 `sink.terminate`，并受 `still_current` 与 `CompactDecision::Terminate` 双重门控。
+- 未迁移的只剩两处：`cmd/compaction.rs::execute_compaction` 内部的流消费 / usage / 事件三块，以及 `cmd/conversation.rs` 的 `estimate_branch_tokens`。
+- 因此本节**不新建 adapter、不改 `runner.rs` 触发时序**，只替换执行体内部依赖与测试引用。
+
+#### 3.5.1 退役分类
+
+| 模块 | 处置 | 依据 |
+|---|---|---|
+| `chat_runtime.rs` | 删除 | 流消费与 usage 记录已由 `kernel/stream.rs` + `kernel/persist.rs` 覆盖 |
+| `chat_tasks.rs` | 删除 | 已由 `kernel/tasks.rs` 覆盖（`TurnTasks` 语义等价） |
+| `chat_request.rs` | 删除 | 已由 `kernel/request.rs` 覆盖，含 `project_chat_messages` / `estimate_branch_tokens` / `offload_budget_of` |
+| `prompt_builder.rs` | **保留** | `kernel/request.rs` 与压缩链路共用；不是 chat 独占实现 |
+| `chat_options.rs` | **保留** | `kernel/request.rs` 调 `build_chat_options`，删则内核不可编译 |
+| `normalization.rs` / `multimodal.rs` / `request_projection.rs` / `token_estimate.rs` / `compaction.rs` | **保留** | 共享纯函数层，两条链路都用 |
+
+#### 3.5.2 替代映射
+
+| 旧符号 | 新落点 | 差异 |
+|---|---|---|
+| `chat_runtime::consume_stream(stream, token, on_delta, timeout)` | `kernel::stream::consume(stream, token, timeout, clock, request_started, on_delta)` | 新增 `clock` / `request_started`（时间单源，C8.2） |
+| `chat_runtime::{StreamOutcome, PartialOutcome, StreamError}` | `kernel::stream::{StreamOutcome, PartialOutcome, StreamError}` | 字段集合一致 |
+| `chat_runtime::{build_usage_records, UsageRecordCtx}` | `kernel::persist::{build_usage_records, PersistCtx}` | `kind` / `provider_id` / `model_id` / `cache_capable` 由 `PersistCtx` 携带 |
+| `chat_tasks::ChatTasks` | `kernel::tasks::TurnTasks` | `begin` / `finish` / `cancel` 同名 |
+| `chat_request::{project_chat_messages, estimate_branch_tokens, offload_budget_of}` | `kernel::request::{...}` | 签名一致 |
+| `prompt_builder::prepare_messages` | **不迁移** | 继续 `use crate::prompt_builder` |
+
+#### 3.5.3 压缩链路迁移要求
+
+`src-tauri/src/cmd/compaction.rs` 的 `execute_compaction` 按下列五点改写，其余（读配置、建消息、写 summary、解锁会话）保持不变：
+
+1. **流消费**：改用 `kernel::stream::consume`，注入 `SystemClock` 与 `request_started = clock.now()`；超时取 `kernel::limits::DEFAULT_COMPACTION_MODEL_CALL_TIMEOUT`（30s，取值与 I39 §3.5 一致，不写字面量）。不得继续 `use assistant_agent::chat_runtime`。
+2. **usage 记录**：改用 `kernel::persist::build_usage_records`，`PersistCtx.kind = "compaction"`，`branch_leaf_id` 取会话 `active_branch_id`，`created_at_ms` 取自 `clock.now_millis()`（旧 `UsageRecordCtx` 无该字段，由 `Utc::now()` 内部取值，迁移后必须显式传入）。成功与三条失败分支（取消 / 超时 / provider 错误）都必须写，口径与现状一致。
+3. **事件**：`chat-stream-start` / `chat-delta` 改经 `kernel::emit::TurnEmitter`（`stream_start(TurnPhase::Compacting)` + `delta`），`TurnEmitter` 以压缩的 `attempt_id` 作为 `turn_id`，由 `adapters/event_sink.rs` 映射成线事件；删除手写的 `emit_orb_only` 调用与 `AtomicU32` 自增。线事件 `seq` 由 `TurnEmitter::delta` 分配，`consume` 回调传入的流内序号不参与线事件；`last_seq()` 供终态事件使用。`TurnEmitter::dispatch` 有代际校验，所有增量事件必须在 `tasks.finish` 之前发射。
+4. **去掉 orb 窗口硬依赖**：`get_webview_window(...).ok_or_else(|| "Orb window not found")?` 必须删除；窗口缺失只记日志。压缩与发送同样受「后台可运行」约束（验收 12）。
+5. **hook 留空**：`pre_compact_hook` / `post_compact_hook` 的读取点在 P4（§6.2）接线，本节只要求生命周期顺序与事件形状就位，不要求 hook 生效。
+
+`src-tauri/src/cmd/conversation.rs` 的 `estimate_branch_tokens` 直接改调 `kernel::request::estimate_branch_tokens`（签名相同，纯读、不建 adapter）。
+
+#### 3.5.4 退役顺序（不可颠倒）
+
+1. 先迁调用点：`cmd/compaction.rs` → `cmd/conversation.rs` → 测试（`tests/attachment_budget.rs` / `tests/usage_records.rs` / `tests/chat_runtime_spec.rs`）。每迁一处即跑该模块测试。
+2. 再处理测试引用（覆盖不得随旧模块消失）：
+   - b7 `StreamAccumulator` 7 例迁到 `tests/kernel_stream.rs`（内核现无 accumulator 单测）；
+   - c8 / c9 的 9 例 `consume_stream` 与 `kernel_stream.rs` 逐条对照，未覆盖者补入；
+   - d4 `prepare_messages` / d5 `build_chat_options` / d6 `agent_kind` 用例改 use 到 `prompt_builder` / `chat_options`，拆到独立测试文件；
+   - g4 / g6 / g7 的 5 例改 `kernel::stream::consume` 重写，保留 partial outcome 与「summary = full_content」断言；
+   - `chat_tasks` 3 例与 `kernel_tasks.rs` 对照；`estimate_text_tokens` 3 例改 `token_estimate`。
+3. 最后删文件与 `lib.rs` 的 `pub mod`，跑 `cargo test -p assistant-agent --features test-doubles` 与 `cargo test --workspace --no-run`。
+
+#### 3.5.5 测试命令口径
+
+`kernel_emit` / `kernel_outcome` / `kernel_request_tools` / `kernel_runner` / `kernel_stream` 均以 `#![cfg(feature = "test-doubles")]` 开头，**默认 `cargo test -p assistant-agent` 下为 0 用例**。验收命令必须写全 `--features test-doubles`；「0 passed」不得判为通过。
+
+#### 3.5.6 与 P4 的衔接
+
+本节只换 `cmd/compaction.rs` 内部依赖，**不搬文件**：P3 结束时压缩执行体仍在 `src-tauri/src/cmd/`。P4 的 `agent/compaction_exec.rs`（§6.2）以本节迁移后的内核调用组合（`stream::consume` + `persist::build_usage_records` + `emit::TurnEmitter`）为蓝本重写，届时才把摘要执行体下沉到内核；不得在 P4 回退到 `chat_runtime`。
+
+#### 3.5.7 禁止
+
+- 保留「旧模块 + 新模块」双实现超过一个提交周期（编译期只允许一条路径）。
+- 为迁移在 `kernel/` 引入 `tauri` / `AppHandle`：压缩的窗口、DB、配置访问留在 `src-tauri`。
+- 删除 `prompt_builder.rs` / `chat_options.rs`（内核直接依赖，删了必然编译失败）。
+- 以「旧模块仍有引用」为由推迟退役而不登记引用点：引用点必须在 tasklist 逐条列出。
 
 ---
 
@@ -746,6 +822,8 @@ restore_phase(previous)
 
 本规格落地时保持**终止式**（`CompactDecision::Terminate` → 压缩完成后另起），轮内续跑等 P4（I38b）就位后再切（design §3.9 第二步，I38b §9.1 D13 明确**不随 P4 同批**）。切换时只改 `run_summarize` 之后的分支，不改生命周期与事件。
 
+**共享边界**：压缩与 chat 共享哪些积木（互斥源 / 流消费 / 事件发射 / usage 构造 / 投影 / 刷新点 / 失败通道）、保留哪些独立实现（编排 / 超时口径 / 落库 / 会话级收尾），见 [I39](./I39-compaction-chat-merge-spec.md)；本文只负责生命周期与事件语义。
+
 ---
 
 ## Step 7 — 事件与 DTO
@@ -883,6 +961,12 @@ ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 21. 每条事件都带 `turn_id`；同 turn 内 `seq` 严格单调。
 22. 强制结束进程（流式中）后重启：该消息 `status='interrupted'`，UI 不再显示「正在生成」。
 23. `npm run contract:gen` 后前端类型可编译，`cargo test --test assembly_contract` 通过。
+
+**Step 3.5（旧模块退役与压缩链路迁移）**
+
+24. 旧模块退役：`chat_runtime.rs` / `chat_tasks.rs` / `chat_request.rs` 删除后，`assistant-agent/src`、`assistant-agent/tests` 与 `src-tauri/src` 内 grep 无 `chat_runtime` / `chat_tasks` / `chat_request`；`prompt_builder.rs` / `chat_options.rs` 仍在且被 `kernel/request.rs` 使用。
+24a. 压缩链路无 orb 窗口：关闭或从未创建 orb 窗口后调用手动压缩，摘要仍完成、`kind = "compaction"` 的 usage 记录落库、事件序列与窗口存在时一致。
+25. 内核测试口径：`cargo test -p assistant-agent --features test-doubles` 下 `kernel_emit` / `kernel_outcome` / `kernel_request_tools` / `kernel_runner` / `kernel_stream` 每套用例数 > 0 且全绿；仅跑默认 feature 得到的「0 passed」不作为通过依据。
 
 ---
 

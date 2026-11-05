@@ -29,10 +29,10 @@
 | **P0 基线** | toolcall 从 chat 剥离；工具词汇层、Registry、`exec::invoke`、ToolBox 桥接 | I30 A 段、I31 T1/T2、I18b | ✅ 已完成 | — |
 | **P1 框架收口** | 共享路径安全 `os/path.rs`；`fs_link` 迁移与权限词汇修正 | I31 T3 | ✅ 已完成（2026-11-04） | P0 |
 | **P2 工具控制层** | Policy / Gateway / Pipeline / 审批键 / 校验 / 并发 / 结果持久化 | I38a | ✅ 已完成（2026-11-05） | P1 |
-| **P3 运行时内核** | `kernel/` 共用内核、端口、状态机、取消代际、双层超时、chat 等价迁移 | I36 spec、[I36a](./I36a-agent-kernel-baseline.md) | ✅ 已完成（C1–C11，2026-11-05；chat / agent 两条链路均已改调内核，H1–H9 全部收口） | P0 |
+| **P3 运行时内核** | `kernel/` 共用内核、端口、状态机、取消代际、双层超时、chat 等价迁移 | I36 spec、[I36a](./I36a-agent-kernel-baseline.md)、[I39](./I39-compaction-chat-merge-spec.md) | ✅ 已完成（C1–C11，2026-11-05；chat / agent 两条链路均已改调内核，H1–H9 全部收口；压缩共享边界（I39）已落地：互斥源 / 投影 / 刷新点 / 失败通道统一） | P0 |
 | **P4 Agent Loop 闭环** | RoundExecutor 多迭代循环；tool call 累积器；`ChatOptions.tools` 注入 | I38b | ❌ 未开始（规格已定稿，2026-11-05） | P2、P3；I30 B 段决策 |
 | **P5 OS 工具能力** | `fs_*`、`shell_exec`、`ask_user` 逐个落地 | I38c | ❌ 未开始 | P1、P2 |
-| **P6 前端与模式** | 五态 ToolCallBubble、审批 UI、AgentMode / 对话级工具配置 | I38d | ❌ 未开始 | P4、P5 |
+| **P6 前端与模式** | 五态 ToolCallBubble、审批 UI、AgentMode / 对话级工具配置；chat / agent 链路显式切换（新建会话按 `mode.kind` 选路，会话内锁定） | I38d | ❌ 未开始 | P4、P5 |
 | **P7 MCP 外部工具** | MCP 客户端、进程管理、`mcp__{server}__{tool}` 桥接 | I38e | ❌ 未开始 | P2、P5 |
 
 **P0 的完成判据**（已复核代码）：`assistant-agent` 与前端不再持有 chat tool call 累积器与渲染组件；`ToolRegistry` 具备 `<=` 语义与受众过滤；`os_tool_exec` 已走 `exec::invoke`；生产注册表只有 `fs_link`（`TOOLBOX_ONLY`）。
@@ -99,6 +99,7 @@ P2 + P5 ───────────► P7
 | 运行时决策（D1-D18、参考项目提取） | [I36 design](./I36-agent-runtime-design.md) | ADR |
 | 内核能力基线（能力矩阵 / 参考实现对照 / 扩展点 / 门禁） | [I36a](./I36a-agent-kernel-baseline.md) | 基线文档 |
 | 内核一致性验证（确定性要求 / 验证矩阵 / 实检缺口） | [I36b](./I36b-agent-kernel-conformance-spec.md) | 验证规格 |
+| 压缩与 chat 的共享边界（共享积木 / 保留独立编排） | [I39](./I39-compaction-chat-merge-spec.md) | 专项规格 |
 | P3 任务级进度（C1–C11 勾选） | [I36 tasklist](./I36-agent-runtime-tasklist.md) | 任务清单（唯一任务级进度） |
 | P4 任务级进度（C1–C9 勾选） | [I38b tasklist](./I38b-agent-loop-tasklist.md) | 任务清单（唯一任务级进度） |
 | toolcall 从 chat 剥离 | [I30](./I30-phase1-toolcall-separation-spec.md) | 阶段一 A 段 |
@@ -133,6 +134,7 @@ P2 + P5 ───────────► P7
 | R9 | `ToolAudience` 默认值：早期为迁移便利用 `BOTH` | **2026-11-04 收紧为 `NONE`（fail-closed）**：未显式声明受众的工具对两个入口都不可见。唯一存量工具 `fs_link` 已显式声明 `TOOLBOX_ONLY`，行为不变；新工具必须在 `audience()` 中显式声明 |
 | R10 | 子代理 / 多 agent 是否属于当前阶段 | **P0–P7 不实现**。P4 只预留 `agent_id` / `parent_turn_id` / `delegation_depth` 三个可选字段（I36 D16-D18），实现归 P8.1；不得在 RoundExecutor 内写 `if is_subagent` |
 | R11 | Super-agent 的 Router / Worker 与现有单会话 turn | **不作为当前架构目标**。P0–P7 是 Worker 层基础；P8.2/P8.3 才补子会话与 Router。跨重启的 persistence / Watchdog 归 P9，单独 ADR（I36 D13b），不得直接叠加后台进程 |
+| R12 | 压缩与 chat 的共享边界 | **不属 R7 的三份边界**：生命周期语义仍归 I36 spec Step 6，续跑式切换点仍归 P4。共享到什么程度归 [I39](./I39-compaction-chat-merge-spec.md)。结论：**压缩不收编为 `TurnSpec` 第三种实例**，保留 `execute_compaction` 独立编排；只共享 `TurnTasks` 互斥源、`stream::consume`、`TurnEmitter`、usage 构造、`project_chat_messages` 投影、`emit_stream_finished` 刷新点与 `chat-delta.error` 失败通道 |
 
 ---
 
@@ -147,7 +149,7 @@ P2 + P5 ───────────► P7
 | P3 | `cargo tree -p assistant-agent` 无 tauri；chat 对比测试（事件序列 / seq / 落库 / 错误文案）逐条一致；关闭窗口后 turn 可跑完 |
 | P4 | 多迭代闭环可跑通；`max_iterations` / 收尾调用 / 空响应重试 / 工具结果回填均有测试；`ChatOptions.tools` 在三个 adapter 生效 |
 | P5 | 每个工具独立 spec 验收；破坏性工具只在 P2 就绪后注册；ToolBox 与 Agent 两入口共享 `execute()` 内安全守卫 |
-| P6 | 五态渲染与审批闭环可用；`resolveAvailableTools` deny-by-default；跨窗口 phase 不漂移 |
+| P6 | 五态渲染与审批闭环可用；`resolveAvailableTools` deny-by-default；跨窗口 phase 不漂移；链路选路按 `mode.kind` 分流且会话内不可切换 |
 | P7 | MCP server 启停/重连；工具命名与安全标记推断符合 I18 design §3.8；External 工具的 Policy 生效 |
 
 ---

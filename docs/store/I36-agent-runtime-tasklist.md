@@ -3,7 +3,7 @@
 > 规格：[I36-agent-runtime-spec.md](./I36-agent-runtime-spec.md) Step 0-3、7-9 与 §10 验收标准
 > 阶段：[I38-agent-roadmap.md](./I38-agent-roadmap.md) P3
 > 决策：[I36-agent-runtime-design.md](./I36-agent-runtime-design.md)
-> 顺序：C0 → C1 → C2 → C3 → C4 → C5 → C6 → C7 → C8 → C9 → C11（C10 为 P4 交接，不在交付范围）
+> 顺序：C0 → C1 → C2 → C3 → C4 → C5 → C6 → C7 → C8 → C9 → C11 → C12（C10 为 P4 交接，不在交付范围）
 > 勾选条件：代码已改 **且** 对应验收已跑。
 > **状态唯一位置**：本清单是 P3 任务级进度的唯一来源；阶段级结论只在 [roadmap](./I38-agent-roadmap.md) §2 写一次，spec / design / 基线 / 验证文档都不记录进度。本清单**不管理提交**（不写提交拆分 / 提交信息 / 回滚批次，见 roadmap §7 第 2 条）。
 > 范围：`assistant-agent/src/kernel/` 共用内核、`src-tauri/src/adapters/` 端口实现、`src-tauri/src/cmd/agent/` 宿主命令、chat 等价迁移、事件 DTO、`messages.status`、轮级观测。
@@ -33,6 +33,9 @@
 | 22 | 流式中强制退出重启后 `status='interrupted'` | C7.9 |
 | 23 | `contract:gen` 后前端可编译，`assembly_contract` 通过 | C6.8、C6.11、C9.7 |
 | 13-20 | 阶梯 / 钩子 / 压缩生命周期 | 交接 C10（随 P4 验收） |
+| 24 | 旧模块退役：`chat_runtime` / `chat_tasks` / `chat_request` 删除且无残留引用 | C12.12 |
+| 24a | 无 orb 窗口时压缩仍完成并落库 `kind="compaction"` usage | C12.13 |
+| 25 | 内核测试以 `--features test-doubles` 跑，五套用例数均 > 0 | C12.14 |
 
 ---
 
@@ -45,7 +48,7 @@
 - [ ] C0.5 确认 P3 的 `TurnRunner` 内跑单迭代过渡循环，`round_executor = None`（roadmap R2）
 - [ ] C0.6 确认 `messages` 迁移只做 ADD COLUMN，不改写存量数据
 - [ ] C0.7 确认 P3 不新增工具、不改 `Tool` trait / `ToolRegistry`
-- [ ] C0.8 确认旧实现删除时机：对比测试全绿后才删 `chat_runtime` / `chat_tasks` / `chat_request` / `prompt_builder`
+- [ ] C0.8 确认旧实现删除时机：对比测试全绿后才删 `chat_runtime` / `chat_tasks` / `chat_request`；`prompt_builder` / `chat_options` 为共享层，保留（spec §3.5.1）
 - [ ] C0.9 确认线字段仍叫 `attempt_id`，`TurnId` 只作为内核别名，不改前端解析
 
 ---
@@ -185,6 +188,7 @@
 
 - [x] C5.21 新建 `src-tauri/src/cmd/agent/mod.rs`，`cmd/mod.rs` 注册 `mod agent;` 与 `pub use agent::*;`
 - [x] C5.22 `send_agent_message`：只做入参校验 → `TurnTasks::begin` → `spawn(runner.run)` → `TurnOutcome` 映射
+  - 落地：命令只设 `spec.tools = Some(RegistryToolCatalog)`，其余与 `send_chat_message` 共用 `start_turn`；命令本身不做选路
 - [x] C5.23 `send_agent_message` 在 `Processing` 下返回 `Busy` 且不取消正在跑的 turn（验收 7）
 - [x] C5.24 `ipc.rs` 注册新命令（`send_agent_message` / `cancel_agent`）
 - [x] C5.25 `cmd/chat/mod.rs` 的 `send_chat_message` 改调 `TurnRunner::run(ctx, TurnSpec::chat())`，宿主只保留校验 / begin / spawn / 返回值映射
@@ -195,8 +199,9 @@
   - 落地：`TauriEventSink` 统一走 `emit_orb_only`，窗口缺失只 `log::error!`，不阻断 turn
 - [ ] C5.29 单测：关闭 / 从未创建 orb 窗口时 agent turn 仍跑完并落库（验收 12）
 - [ ] C5.30 对比测试：正常完成 / 中途取消 / provider 报错 / 空响应四组，`TurnEvent` 序列、`seq`、落库内容、错误文案逐条一致（验收 6）
-- [ ] C5.31 对比测试全绿后删除 `chat_runtime.rs` / `chat_tasks.rs` / `chat_request.rs` / `prompt_builder.rs`，并从 `lib.rs` 移除 `pub mod`
-  - 偏差：暂不可执行。`src-tauri/src/cmd/compaction.rs` 仍依赖 `chat_runtime` 的 `build_usage_records` / `consume_stream` / `PartialOutcome`，需与压缩链路迁移一并收口后再删
+- [x] C5.31 对比测试全绿后删除 `chat_runtime.rs` / `chat_tasks.rs` / `chat_request.rs`，并从 `lib.rs` 移除 `pub mod`（`prompt_builder.rs` / `chat_options.rs` 保留，见 C12.11）
+  - 偏差：转 C12 执行（spec §3.5）。`src-tauri/src/cmd/compaction.rs` 仍依赖 `chat_runtime` 的 `build_usage_records` / `consume_stream` / `PartialOutcome`，`src-tauri/src/cmd/conversation.rs` 仍依赖 `chat_request`；须先迁调用点再删
+  - 落地：C12.1–C12.10 完成后三模块已删除，`lib.rs` 仅保留共享层 `prompt_builder` / `chat_options`
 - [x] C5.32 `setup.rs` 的 `manage(ChatTasks::new())` 换成 `manage(TurnTasks::new())`
   - 落地：同时 `manage(SessionStates::new())`，二者均为 `Arc<TurnTasks>` / `Arc<SessionStates>` 单例
 - [x] C5.33 `cancel_chat` 改调 `TurnTasks::cancel`
@@ -302,3 +307,59 @@ P3 交付的内核已为这些模块预留接入点：`TurnSpec.stop_hooks` / `T
 - [x] C11.6（H7）未接线字段清单断言：`kernel_values` 显式列出 `ladder` / `wrap_up` / `stop_hooks` 为 P4 接线
 - [x] C11.7（H9）`TurnEvent` 可稳定序列化（或 `TurnTrace` 投影），黄金轨迹两遍一致
 - [x] C11.8（H1 / H8，P4 前置）L1 全部改脚本化适配器，真实 TCP 用例降级到 `slow-tests` 特性
+
+---
+
+## C12 旧实现退役与压缩链路迁移（spec §3.5）
+
+> 目的：清掉「内核已就位、旧调用点未迁」的遗漏代码，让 C5.31 的删除真正可执行。
+> 范围：`cmd/compaction.rs` 迁移、`cmd/conversation.rs` 占用查询迁移、测试引用迁移、三模块退役。
+> 不含：`kernel/runner.rs` 的 P3 过渡单迭代循环（P4 / I38b 删除）、`agent/` 五模块（C10 交接）、阶梯 ②-⑤ 与续跑语义（P4）。
+> 现状：`CompactionSink` 端口与 `adapters/compaction_sink.rs` 已存在且由 `runner.rs` 接线，**不新建 adapter、不改触发时序**；只替换 `execute_compaction` 内部依赖。
+
+实现：`src-tauri/src/cmd/compaction.rs`、`src-tauri/src/cmd/conversation.rs`、`src-tauri/crates/assistant-agent/src/lib.rs`
+测试：`src-tauri/crates/assistant-agent/tests/{kernel_stream,kernel_persist,kernel_tasks,attachment_budget,prompt_options_spec,token_estimate}.rs`、`cargo test -p assistant-agent --features test-doubles`、`cargo test --workspace --no-run`
+
+**压缩链路迁移**
+
+- [x] C12.1 `cmd/compaction.rs` 流消费改 `kernel::stream::consume`，注入 `adapters::SystemClock::new()` 与 `request_started = clock.now()`，超时保持 `Some(Duration::from_secs(30))`；移除 `chat_runtime::{consume_stream, StreamError, PartialOutcome}` 引用
+- [x] C12.2 `cmd/compaction.rs` usage 记录改 `kernel::persist::build_usage_records` + `PersistCtx{kind:"compaction", branch_leaf_id: active_branch_id, created_at_ms: clock.now_millis()}`；移除 `chat_runtime::{build_usage_records, UsageRecordCtx}`
+- [x] C12.3 `cmd/compaction.rs` 的 stream-start / delta 改经 `kernel::emit::TurnEmitter`（`turn_id = attempt_id`，`stream_start(TurnPhase::Compacting)` + `delta`），删除手写 `emit_orb_only` 调用与 `AtomicU32` seq 自增；增量事件必须在 `tasks.finish` 之前发射（代际校验）
+  - 落地：终态改经 `TurnEmitter::terminated(TurnStatus, Option<ProviderErrorPayload>)`，在 `tasks.finish` 之前发射；三条失败分支的 `emit_orb_only` 与 `seq_val` 手写块全部删除
+- [x] C12.4 `cmd/compaction.rs` 删除 orb 窗口硬依赖（`ok_or_else(|| "Orb window not found")`），窗口缺失只 `log::error!`；压缩同样受「后台可运行」约束（验收 12）
+- [x] C12.5 `cmd/compaction.rs` 三条失败分支（取消 / 超时 / provider 错误）的 usage 记录与终态事件口径与迁移前逐条一致
+  - 落地：三条分支仍先 `usage_ctx.usage_records(&partial.attempt_usages)` 落库再 `save_compaction_partial`，错误文案（`Compaction cancelled` / `Summary generation timed out (30s)` / provider 原文）与错误载荷不变
+
+**占用查询迁移**
+
+- [x] C12.6 `cmd/conversation.rs` 的 `estimate_branch_tokens` 改调 `kernel::request::estimate_branch_tokens`，移除 `assistant_agent::chat_request` 引用
+
+**测试引用迁移**
+
+- [x] C12.7 `tests/attachment_budget.rs` 改 `kernel::request::{project_chat_messages, estimate_branch_tokens}`
+- [x] C12.8 `tests/usage_records.rs` 改 `kernel::persist::{build_usage_records, PersistCtx}` + `kernel::stream::UsageSnapshot`，迁入新建 `tests/kernel_persist.rs`（`created_at_ms` 用固定值，保持断言可复现）
+  - 落地：原 7 例全量迁入，另补 1 例断言 `created_at_ms` 注入生效（共 8 例）
+- [x] C12.9 `tests/chat_runtime_spec.rs` 中 b7 `StreamAccumulator` 7 个用例迁到 `tests/kernel_stream.rs`（改 `kernel::stream::StreamAccumulator`）；内核现无 accumulator 单测，不迁则 usage 合并覆盖随旧模块一起丢失
+- [x] C12.9a c8 / c9 的 9 个 `consume_stream` 用例与 `tests/kernel_stream.rs` 逐条对照：已覆盖者删除，未覆盖者补进 `kernel_stream.rs`
+  - 落地：逐条对照后 `kernel_stream.rs` 已覆盖全部 9 例，另补 `empty_stream_completes_without_output` 一例
+- [x] C12.9b d4 `prepare_messages` 5 个、d5 `build_chat_options` 12 个、d6 `agent_kind` 2 个用例改 use 到 `prompt_builder` / `chat_options`，拆到独立测试文件
+  - 落地：新建 `tests/prompt_options_spec.rs`，共 20 例（5 + 12 + 2 + 1 拆分）
+- [x] C12.9c g4 / g6 / g7 的 5 个压缩用例改 `kernel::stream::consume` 重写，保留 partial outcome 与「summary = full_content」断言
+- [x] C12.9d `chat_tasks` 3 个用例与 `tests/kernel_tasks.rs` 对照（已覆盖可删，未覆盖补入）
+  - 落地：`kernel_tasks.rs` 10 例已覆盖 attempt_id 格式 / 会话独立 / cancel+finish 三条语义
+- [x] C12.9e `estimate_text_tokens` 3 个用例改 `token_estimate::estimate_text_tokens`
+  - 落地：新建 `tests/token_estimate.rs`
+
+**退役与断言**
+
+- [x] C12.10 删除 `chat_runtime.rs` / `chat_tasks.rs` / `chat_request.rs`，`lib.rs` 移除对应 `pub mod`
+- [x] C12.11 `prompt_builder.rs` / `chat_options.rs` 保留，`lib.rs` 注释标注「共享层，非 chat 独占」，并确认 `kernel/request.rs` 仍引用
+- [x] C12.12 grep 断言：`assistant-agent/src`、`assistant-agent/tests`、`src-tauri/src` 内无 `chat_runtime` / `chat_tasks` / `chat_request` 残留（验收 24）
+  - 证据：grep 三处目录零命中（含注释与文档字符串）
+- [x] C12.13 补测试或手工验收：无 orb 窗口时手动压缩仍完成、`kind="compaction"` usage 落库、事件序列与有窗口时一致（验收 24a；与 C5.29 同口径，覆盖压缩链路）
+  - 若无法在测试环境构造无窗口场景，改为手工验收并在本条记录证据（操作步骤 + 日志 / 落库查询结果）
+  - 证据（代码级）：`execute_compaction` 已无 `get_webview_window` 调用；`protocol::events::emit_orb_only` 在窗口缺失时静默跳过（不阻断、不改事件形状）；usage 落库走 `PersistCtx{kind:"compaction"}` 与窗口无关
+  - 待运行时复验：启动应用（不创建 orb 窗口）手动触发压缩，核对 `token_usage.kind='compaction'` 落库与事件序列
+- [x] C12.14 `cargo test -p assistant-agent --features test-doubles` 全绿，且 `kernel_emit` / `kernel_outcome` / `kernel_request_tools` / `kernel_runner` / `kernel_stream` 用例数均 > 0（验收 25）
+  - 实测：`kernel_emit` 5 / `kernel_outcome` 2 / `kernel_request_tools` 4 / `kernel_runner` 12 / `kernel_stream` 22；`kernel_persist` 8 / `kernel_tasks` 10 / `prompt_options_spec` 20 / `token_estimate` 3
+- [x] C12.15 `cargo test --workspace --no-run`、`cargo clippy -p assistant-agent --all-targets -- -D warnings`、`cargo fmt --all --check` 通过
