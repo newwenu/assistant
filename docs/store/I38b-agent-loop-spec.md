@@ -42,7 +42,7 @@
 
 | 层 | 归属 | 职责 |
 |---|---|---|
-| TurnRunner | `assistant-agent/src/turn/turn_runner.rs` | turn 开始/结束、状态机、双层超时、取消代际、终态落库、事件主干、phase 投影 |
+| TurnRunner | `assistant-agent/src/kernel/runner.rs` | turn 开始/结束、状态机、双层超时、取消代际、终态落库、事件主干、phase 投影 |
 | **RoundExecutor** | trait 在 `assistant-agent/src/agent/round_executor.rs`；实现在 `src-tauri/src/agent/round_executor.rs` | 迭代循环：停止钩子 → 阶梯/`before_model` → 模型调用 → 工具执行 → `after_tool` / `after_iteration` → 下一迭代；收尾调用；空响应重试 |
 | Provider 流式 | `assistant-providers` | 单次请求：投影、流式片段、usage、单次超时 |
 
@@ -66,11 +66,11 @@ TurnRunner::run(ctx, spec):
 | 组件 | 位置 | 可依赖 |
 |---|---|---|
 | `agent/tool_call.rs` | `assistant-agent` | `assistant-providers`（流类型）；**不得**依赖 `assistant-tools` |
-| `agent/round_executor.rs`（trait + `RoundOutcome`） | `assistant-agent` | 仅依赖 `turn/ports` 与 provider 流类型；**不得**依赖 `assistant-tools` |
+| `agent/round_executor.rs`（trait + `RoundOutcome`） | `assistant-agent` | 仅依赖 `kernel/ports` 与 provider 流类型；**不得**依赖 `assistant-tools` |
 | RoundExecutor 实现 | `src-tauri/src/agent/round_executor.rs` | `assistant-agent` + `assistant-tools`（ToolPipeline / ToolRegistry） |
-| `turn/request.rs` | `assistant-agent` | 通过 `ToolCatalog` 端口取得 provider 中立工具定义；不直接 import `assistant-tools` |
+| `kernel/request.rs` | `assistant-agent` | 通过 `ToolCatalog` 端口取得 provider 中立工具定义；不直接 import `assistant-tools` |
 
-**理由**：I36 design §4 规定 `turn/agent → assistant-tools` 禁止，只依赖抽象。实现层放在 `src-tauri` 才能同时持有 Pipeline 与运行时，不破坏 crate 依赖方向。
+**理由**：I36 design §4 规定 `kernel` / `agent` → `assistant-tools` 禁止，只依赖抽象。实现层放在 `src-tauri` 才能同时持有 Pipeline 与运行时，不破坏 crate 依赖方向。
 
 ### 2.3 接口契约
 
@@ -179,7 +179,7 @@ pub struct ToolSpec {
 ```
 
 - `ToolSpec` 是 provider 输入形状，不携带 `tier` / `audience` / `behavior_hints`。
-- `ToolDefinition`（`assistant-tools`）→ `ToolSpec` 的转换在 `src-tauri` 适配层完成，经 `ToolCatalog` 端口进入 `turn/request.rs`。
+- `ToolDefinition`（`assistant-tools`）→ `ToolSpec` 的转换在 `src-tauri` 适配层完成，经 `ToolCatalog` 端口进入 `kernel/request.rs`。
 
 ### 4.2 ChatOptions
 
@@ -235,7 +235,7 @@ run_iterations(ctx) -> RoundOutcome:
     // 3) 单次模型调用
     observer.set_phase(Streaming)
     let stream = provider.chat_completion_stream(request_with_tools, model_call_budget, child_token)
-    let res = turn::stream::consume(stream, child_token, model_call_budget, on_delta)
+    let res = kernel::stream::consume(stream, child_token, model_call_budget, on_delta)
     model_calls += 1
     match res:
       Cancelled(partial) -> persist_partial; return Cancelled

@@ -5,7 +5,7 @@
 | 状态 | Draft |
 | 日期 | 2026-11-03 |
 | 关联 | [I36-agent-runtime-design.md](./I36-agent-runtime-design.md)（决策依据）、[I38-agent-roadmap.md](./I38-agent-roadmap.md)（阶段 P3）、[I38b-agent-loop-spec.md](./I38b-agent-loop-spec.md)（P4 多迭代闭环）、[I30-phase1-toolcall-separation-spec.md](./I30-phase1-toolcall-separation-spec.md)、[I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md) |
-| 影响范围 | `assistant-agent`（新增 `turn/` 共用内核、`agent/` 多迭代能力）、`assistant-config`、`assistant-storage`、`src-tauri/src/cmd/agent`（新增）、`src-tauri/src/adapters`（新增，端口实现）、`src-tauri/src/protocol`、前端 chat 域。**chat 链路对外行为不变**：`cmd/chat`、`chat_runtime`、`chat_tasks`、`chat_request`、`prompt_builder` 在 Step 3 内改调内核，Step 3.4 删除旧实现 |
+| 影响范围 | `assistant-agent`（新增 `kernel/` 共用内核、`agent/` 多迭代能力）、`assistant-config`、`assistant-storage`、`src-tauri/src/cmd/agent`（新增）、`src-tauri/src/adapters`（新增，端口实现）、`src-tauri/src/protocol`、前端 chat 域。**chat 链路对外行为不变**：`cmd/chat`、`chat_runtime`、`chat_tasks`、`chat_request`、`prompt_builder` 在 Step 3 内改调内核，Step 3.4 删除旧实现 |
 
 本文只写**怎么做**。为什么这样分层、参考了什么、取舍是什么，见 design 文档，本文不重复论证。
 
@@ -19,18 +19,18 @@
 | 压缩判定 | `assistant-agent/src/compaction.rs` | 已实现 | 纯函数 `evaluate_compaction`；不含摘要执行 |
 | 多模态投影 / token 估算 | `multimodal.rs` / `token_estimate.rs` | 已实现 | 纯函数 |
 | chat 链路（迁移来源） | `chat_tasks.rs` / `chat_runtime.rs` / `chat_request.rs` / `chat_options.rs` / `prompt_builder.rs` / `normalization.rs` / `cmd/chat` | 已实现 | Step 3 改调内核，Step 3.4 删除 `chat_runtime` / `chat_tasks` / `chat_request` / `prompt_builder`；`chat_options` / `normalization` 保留为无状态函数 |
-| **端口定义** | `turn/ports.rs` | 未实现 | `EventSink` / `MessageStore` / `TurnInputSource` / `Clock`，**不得出现 tauri 类型** |
+| **端口定义** | `kernel/ports.rs` | 未实现 | `EventSink` / `MessageStore` / `TurnInputSource` / `Clock`，**不得出现 tauri 类型** |
 | **端口生产实现** | `src-tauri/src/adapters/` | 未实现 | `event_sink.rs` / `message_store.rs` / `input_source.rs` |
-| **TurnSpec（参数化）** | `turn/mod.rs` | 未实现 | `OnBusy` / `max_iterations` / `tools` / `ladder` / `stop_hooks` / `wrap_up` / `route` |
-| turn 令牌表 | `turn/tasks.rs` | 未实现 | `OnBusy::{Replace, Reject}`；`turn_id = conv:counter` |
-| 流式消费 | `turn/stream.rs` | 未实现 | delta 累积 / 部分结果 / 单次超时 / 取消；不含 tool 通道 |
-| turn 级请求构建 | `turn/request.rs` | 未实现 | 吸收 `chat_request` / `prompt_builder` |
-| 部分结果与终态落库 | `turn/persist.rs` | 未实现 | 经 `MessageStore` 端口 |
-| 事件生成与 seq | `turn/emit.rs` | 未实现 | 经 `EventSink` 端口 |
-| 会话状态机 | `turn/state.rs` | 未实现 | chat 链路目前只有布尔 `is_running` |
-| turn 值类型 | `turn/ids.rs`、`phase.rs`、`outcome.rs` | 未实现 | — |
-| 运行时上限 | `turn/limits.rs` | 未实现 | 双层墙钟尚未接线 |
-| TurnRunner | `turn/turn_runner.rs` | 未实现 | 唯一入口；内核无 tauri 依赖 |
+| **TurnSpec（参数化）** | `kernel/mod.rs` | 未实现 | `OnBusy` / `max_iterations` / `tools` / `ladder` / `stop_hooks` / `wrap_up` / `route` |
+| turn 令牌表 | `kernel/tasks.rs` | 未实现 | `OnBusy::{Replace, Reject}`；`turn_id = conv:counter` |
+| 流式消费 | `kernel/stream.rs` | 未实现 | delta 累积 / 部分结果 / 单次超时 / 取消；不含 tool 通道 |
+| turn 级请求构建 | `kernel/request.rs` | 未实现 | 吸收 `chat_request` / `prompt_builder` |
+| 部分结果与终态落库 | `kernel/persist.rs` | 未实现 | 经 `MessageStore` 端口 |
+| 事件生成与 seq | `kernel/emit.rs` | 未实现 | 经 `EventSink` 端口 |
+| 会话状态机 | `kernel/state.rs` | 未实现 | chat 链路目前只有布尔 `is_running` |
+| turn 值类型 | `kernel/ids.rs`、`phase.rs`、`outcome.rs` | 未实现 | — |
+| 运行时上限 | `kernel/limits.rs` | 未实现 | 双层墙钟尚未接线 |
+| TurnRunner | `kernel/runner.rs` | 未实现 | 唯一入口；内核无 tauri 依赖 |
 | 停止钩子 | `agent/stop.rs` | 未实现 | agent 专属 |
 | 中间件链 | `agent/middleware.rs` | 未实现 | agent 专属 |
 | 上下文阶梯 ②③④⑤ | `agent/ladder.rs` | 未实现 | ② 的摘要执行体在 `agent/compaction_exec.rs` |
@@ -39,7 +39,7 @@
 | 宿主命令 | `src-tauri/src/cmd/agent/` | 未实现 | 只做「校验入参 → begin_turn → spawn → 映射返回值」 |
 | 消息终态列 | `assistant-storage` | 未实现 | `messages` 无 status 列 |
 | 启动清扫 | `src-tauri/src/setup.rs` 启动序列 | 未实现 | — |
-| 轮级观测（TTFT / 汇总） | `turn/outcome.rs` + 事件 | 未实现 | 现有只有 provider usage |
+| 轮级观测（TTFT / 汇总） | `kernel/outcome.rs` + 事件 | 未实现 | 现有只有 provider usage |
 
 ---
 
@@ -53,8 +53,8 @@
 
 1. `messages` 表可加列（迁移脚本随本规格一起提交）。
 2. 摘要执行体在 `agent/compaction_exec.rs` 新建，不依赖 `AppHandle`，也不调用 `cmd/compaction.rs`。
-3. **内核零 tauri**：`assistant-agent/src/turn/` 下不得出现 `tauri`、`AppHandle`、`Window`、`tauri::State`，不得 `use` 任何 `src-tauri` 类型；可用 `cargo tree -p assistant-agent` 与 `grep` 双重验证。
-4. **端口是唯一出口**：内核访问 DB / 事件 / 输入 / 时钟只经 `turn/ports.rs` 的四个端口（design §1.6）。
+3. **内核零 tauri**：`assistant-agent/src/kernel/` 下不得出现 `tauri`、`AppHandle`、`Window`、`tauri::State`，不得 `use` 任何 `src-tauri` 类型；可用 `cargo tree -p assistant-agent` 与 `grep` 双重验证。
+4. **端口是唯一出口**：内核访问 DB / 事件 / 输入 / 时钟只经 `kernel/ports.rs` 的四个端口（design §1.6）。
 5. Step 0B 与 Step 0-2 **不得**改变 chat 链路的可观测行为；Step 3 是 chat 行为等价迁移，Step 4 才删除旧实现。
 
 ---
@@ -169,7 +169,7 @@ pub struct TurnLimits {
 
 > 这一步先于状态机，因为状态机与 turn 内核都要依赖端口；先有端口，内核才能无 tauri 编译。
 
-### 0B.1 端口契约（`turn/ports.rs`）
+### 0B.1 端口契约（`kernel/ports.rs`）
 
 ```rust
 use std::sync::Arc;
@@ -220,7 +220,7 @@ pub trait Clock: Send + Sync {
 
 **实现位置**：
 
-| 端口 | 生产实现（`src-tauri/src/adapters/`） | 测试实现（`turn/ports/test_doubles.rs`，`#[cfg(test)]`） |
+| 端口 | 生产实现（`src-tauri/src/adapters/`） | 测试实现（`kernel/ports/test_doubles.rs`，`#[cfg(test)]`） |
 |---|---|---|
 | `EventSink` | `event_sink.rs`：`TurnEvent` → `chat-*` / `session-state-changed`，按 `EventRoute` 选 orb / 广播；窗口不存在时静默跳过 | `RecordingSink`（`Vec<TurnEvent>`，供对比测试逐条比对） |
 | `MessageStore` | `message_store.rs`：`DbState` 上调用 `conversations::*` / `token_usage::*` | `InMemoryStore` |
@@ -229,7 +229,7 @@ pub trait Clock: Send + Sync {
 
 **`EventSink` 的窗口语义**：`route = Orb` 时，窗口不存在 → 直接 return（**不报错**）；`route = Broadcast` 时走 `app.emit`，无订阅者也是 no-op。**禁止**在 sink 里返回 `Err` 让内核中止 turn。
 
-### 0B.2 TurnSpec（`turn/mod.rs`）
+### 0B.2 TurnSpec（`kernel/mod.rs`）
 
 ```rust
 pub enum OnBusy { Replace, Reject }
@@ -259,23 +259,23 @@ impl TurnSpec {
 ### 0B.3 内核模块骨架
 
 ```rust
-// turn/mod.rs
+// kernel/mod.rs
 pub mod ids; pub mod phase; pub mod state; pub mod tasks; pub mod stream;
 pub mod request; pub mod persist; pub mod emit; pub mod limits; pub mod outcome;
-pub mod ports; pub mod turn_runner;
+pub mod ports; pub mod runner;
 
-pub use turn_runner::{TurnRunner, TurnOutcome};
+pub use runner::{TurnRunner, TurnOutcome};
 ```
 
 | 模块 | 职责 | 不做 |
 |---|---|---|
-| `turn/tasks.rs` | `begin(conv, spec) -> Result<TurnGuard, StateError>`；`Replace` 取消旧令牌并递增，`Reject` 返回 `Busy` | 不 spawn、不发事件 |
-| `turn/stream.rs` | `consume(stream, sink, seq) -> Result<StreamOutcome, StreamError>`；累积文本/推理/usage，单次超时，取消返回 `Cancelled(partial)` | 不建请求、不重试、不落库、不判空响应 |
-| `turn/request.rs` | `build(spec, input, iteration) -> ChatRequest`；投影 → 多模态 → 提示词 → tools（`spec.tools`） | 不读 DB（输入由端口给） |
-| `turn/persist.rs` | 部分结果 / 终态 / usage 写入；失败即 turn 失败 | 不决定何时写（由 runner 决定） |
-| `turn/emit.rs` | `TurnEvent` 生成 + `seq` 单调分配 | 不映射线事件名（适配层做） |
-| `turn/state.rs` | 状态机（Step 1） | 不发事件（`emit.rs` 发） |
-| `turn/turn_runner.rs` | 唯一入口 `run(ctx) -> TurnOutcome` | 不碰 tauri |
+| `kernel/tasks.rs` | `begin(conv, spec) -> Result<TurnGuard, StateError>`；`Replace` 取消旧令牌并递增，`Reject` 返回 `Busy` | 不 spawn、不发事件 |
+| `kernel/stream.rs` | `consume(stream, sink, seq) -> Result<StreamOutcome, StreamError>`；累积文本/推理/usage，单次超时，取消返回 `Cancelled(partial)` | 不建请求、不重试、不落库、不判空响应 |
+| `kernel/request.rs` | `build(spec, input, iteration) -> ChatRequest`；投影 → 多模态 → 提示词 → tools（`spec.tools`） | 不读 DB（输入由端口给） |
+| `kernel/persist.rs` | 部分结果 / 终态 / usage 写入；失败即 turn 失败 | 不决定何时写（由 runner 决定） |
+| `kernel/emit.rs` | `TurnEvent` 生成 + `seq` 单调分配 | 不映射线事件名（适配层做） |
+| `kernel/state.rs` | 状态机（Step 1） | 不发事件（`emit.rs` 发） |
+| `kernel/runner.rs` | 唯一入口 `run(ctx) -> TurnOutcome` | 不碰 tauri |
 
 ### 0B.4 chat 行为等价契约（Step 3 的验收依据）
 
@@ -381,7 +381,7 @@ impl TurnTasks {
 
 ```
 turn token（TurnTasks 持有）
-├── model stream child token   → turn::stream::consume
+├── model stream child token   → kernel::stream::consume
 ├── tool call child token      → ToolPipeline / exec::invoke
 └── approval wait child token  → ApprovalChannel::wait
 ```
@@ -390,7 +390,7 @@ turn token（TurnTasks 持有）
 
 1. 所有长 await 必须写成 `tokio::select! { biased; _ = child.cancelled() => ..., r = fut => r }`。
 2. 取消**只置位**，禁止 `JoinHandle::abort()`。
-3. 模型流被取消时，`turn/stream.rs` 的 `consume` 返回 `StreamError::Cancelled(PartialOutcome)`，运行时必须落库部分内容（语义对齐 chat 链路已有的 `save_partial_on_error`，实现统一在 `turn/persist.rs`）。
+3. 模型流被取消时，`kernel/stream.rs` 的 `consume` 返回 `StreamError::Cancelled(PartialOutcome)`，运行时必须落库部分内容（语义对齐 chat 链路已有的 `save_partial_on_error`，实现统一在 `kernel/persist.rs`）。
 4. 工具被取消时，工具返回 `ToolErrorKind::Cancelled`（I38a §2 / §3.2），回填给模型时写成「已取消」，不当作失败。
 
 ### 2.2 代际守卫落点
@@ -409,7 +409,7 @@ turn token（TurnTasks 持有）
 
 ## Step 3 — TurnRunner（单迭代可用形态）
 
-> 本步骤完成时，`turn/turn_runner.rs` 的外部行为与 chat 链路**等价**：一次用户输入 → 一次模型调用 → 结束。chat 链路在 Step 3 内改调内核，Step 4 才删除旧实现，故本步骤结束后两条链路共用同一内核。
+> 本步骤完成时，`kernel/runner.rs` 的外部行为与 chat 链路**等价**：一次用户输入 → 一次模型调用 → 结束。chat 链路在 Step 3 内改调内核，Step 4 才删除旧实现，故本步骤结束后两条链路共用同一内核。
 > **过渡边界**：本步骤的循环写在 TurnRunner 内，是 P3 的单迭代形态；P4（I38b）把「模型调用 → 工具执行 → 回填 → 下一迭代」整体迁入 `RoundExecutor::run_iterations`，TurnRunner 只保留 turn 生命周期、状态机、预算、落库与事件。
 
 ### 3.1 结构
@@ -454,7 +454,7 @@ run(ctx):
     // 3) 单次模型调用（受 model_call + turn 剩余约束）
     set_phase(Streaming)
     let stream = adapter.chat_completion_stream(..., model_call_budget(deadline), child_token)?;
-    let res = turn::stream::consume(stream, child_token, model_call_budget(deadline), |seq, d| emit_delta(seq, d)).await;
+    let res = kernel::stream::consume(stream, child_token, model_call_budget(deadline), |seq, d| emit_delta(seq, d)).await;
     outcome.model_calls += 1
     match res {
         Ok(o)  => accumulate(o),
@@ -503,7 +503,7 @@ run(ctx):
 - `persist_terminal` 与 `states.finish_turn` 的先后顺序固定：先落库、后改状态——避免 UI 先看到 Idle 但内容还没写完。
 - `adapter.chat_completion_stream` 是 **provider 适配层**接口（`assistant-provider`），与 chat 命令层无关；名字里的 `chat` 是历史命名，不在本轮改。
 
-### 3.3 `turn/stream.rs` 契约
+### 3.3 `kernel/stream.rs` 契约
 
 ```rust
 pub enum StreamError {
@@ -524,21 +524,21 @@ pub async fn consume<S>(
 
 | 做 | 不做 |
 |---|---|
-| delta 累积成 `StreamOutcome`（正文 / 推理 / usage；tool 通道由 `agent/` 扩展） | 不构建请求（`turn/request.rs` 负责） |
+| delta 累积成 `StreamOutcome`（正文 / 推理 / usage；tool 通道由 `agent/` 扩展） | 不构建请求（`kernel/request.rs` 负责） |
 | 单次超时（`model_call` 或 turn 剩余，取小） | 不做 provider 重试（重试在 adapter 层，只一层） |
-| 取消响应，返回 `PartialOutcome` | 不落库、不发事件（由 `TurnRunner` + `turn/persist.rs` / `turn/emit.rs` 负责） |
+| 取消响应，返回 `PartialOutcome` | 不落库、不发事件（由 `TurnRunner` + `kernel/persist.rs` / `kernel/emit.rs` 负责） |
 | 单调 `seq` 递增并交给回调 | 不判断「是否空响应」（由 `TurnRunner` 判断） |
 
 `StreamOutcome` / `PartialOutcome` 是**内核自己的类型**，不再借用 `chat_runtime` 的同名类型（否则 chat 删除时会连带删除内核类型）。字段集合对齐现状：`full_content` / `reasoning` / `tool_calls`（仅 agent）/ `usage`。
 
-**chat 迁移时的等价性**：`turn/stream.rs` 必须能复现 `chat_runtime::consume_stream` 的全部可观测行为（`seq` 起点、`on_delta` 调用时机、部分结果内容）。这是 Step 3 对比测试的核心断言。
+**chat 迁移时的等价性**：`kernel/stream.rs` 必须能复现 `chat_runtime::consume_stream` 的全部可观测行为（`seq` 起点、`on_delta` 调用时机、部分结果内容）。这是 Step 3 对比测试的核心断言。
 
 ### 3.4 chat 改调内核并删除旧实现
 
 **顺序**（不可颠倒）：
 
 1. `cmd/chat/mod.rs` 的 `send_chat_message` 内部换成 `TurnRunner::run(ctx, TurnSpec::chat())`，宿主只保留：入参校验 → `begin` → `spawn` → 返回值映射。
-2. `spawn_chat_stream` / `spawn_db_writer` / `spawn_finish_listener` / `spawn_compaction_listener` 的职责迁到 `turn/persist.rs` + `turn/emit.rs` + `adapters/`。`cmd/chat/stream.rs` 只剩 `StreamEmitCtx` 到 `EventSink` 的适配（或直接删除）。
+2. `spawn_chat_stream` / `spawn_db_writer` / `spawn_finish_listener` / `spawn_compaction_listener` 的职责迁到 `kernel/persist.rs` + `kernel/emit.rs` + `adapters/`。`cmd/chat/stream.rs` 只剩 `StreamEmitCtx` 到 `EventSink` 的适配（或直接删除）。
 3. 对比测试全绿后，删除 `chat_runtime.rs` / `chat_tasks.rs` / `chat_request.rs` / `prompt_builder.rs`，并从 `assistant-agent/src/lib.rs` 移除 `pub mod`。
 4. `setup.rs` 的 `manage(ChatTasks::new())` 换成 `manage(TurnTasks::new())`；`cancel_chat` 改调 `TurnTasks::cancel`。
 
@@ -782,7 +782,7 @@ ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 
 ### 9.2 TTFT
 
-在 `turn/stream.rs` 的 `consume` 首次回调处记录 `now - request_started`，写入 `TurnOutcome` 与上述日志。**不**引入 TTFM（design §3.19）。
+在 `kernel/stream.rs` 的 `consume` 首次回调处记录 `now - request_started`，写入 `TurnOutcome` 与上述日志。**不**引入 TTFM（design §3.19）。
 
 ### 9.3 上下文占用
 
@@ -796,7 +796,7 @@ ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 
 **Step 0B（端口与内核）**
 
-1. `cargo tree -p assistant-agent` 中**无** `tauri`；`assistant-agent/src/turn/` 下 grep 无 `AppHandle` / `Window` / `tauri::State`。
+1. `cargo tree -p assistant-agent` 中**无** `tauri`；`assistant-agent/src/kernel/` 下 grep 无 `AppHandle` / `Window` / `tauri::State`。
 2. 内核可只用测试替身（`RecordingSink` / `InMemoryStore` / `FixtureSource` / 暂停时钟）跑完一整轮，不启动 Tauri。
 3. `EventSink` 实现抛错/窗口缺失时，turn **不中止**，日志有记录（design §1.7）。
 4. `MessageStore` 失败时 turn 失败并写 `status='failed'`（事实源不可丢）。
@@ -841,7 +841,7 @@ ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 | `attempt_id` 语义升级为 turn 代际 | 命名与语义偏差，读代码易误解 | 文档 + 类型别名；重命名留作独立迁移 |
 | **chat 迁移期行为漂移** | chat 事件序列 / `seq` / 落库时机任一变化，前端与既有测试全崩 | 对比测试（验收 6）；Step 3 保留旧路径可回退，Step 4 前必须全绿 |
 | **迁移期双路径并存** | 同一时刻两条路径都可能被调用，行为不一致 | `send_chat_message` 内**只允许一条路径被编译**（cfg 或直接替换），不做运行时开关 |
-| **端口抽象泄漏** | 有人在 `turn/` 里塞 `AppHandle`，后台运行悄悄失效 | 前置条件 3 的 grep / `cargo tree` 断言进 CI；code review 检查 `turn/` 的 import |
+| **端口抽象泄漏** | 有人在 `kernel/` 里塞 `AppHandle`，后台运行悄悄失效 | 前置条件 3 的 grep / `cargo tree` 断言进 CI；code review 检查 `kernel/` 的 import |
 | `EventSink` 失败被当成致命错误 | 窗口关闭导致 turn 中止 | design §1.7 写死「事件可丢」；验收 3 |
 | 前端仍保留 `ensureIdle()` 轮询 | 双保险期与后端 `Busy` 语义叠加，可能出现「前端等 5 s 后端已拒绝」 | 分三步删（design §5 前端编排上移），每步观察一轮 |
 | 收尾调用多花一次请求 | 成本与延迟增加 | 仅在真正触顶时发生；`hit_cap` 事件让用户可见 |

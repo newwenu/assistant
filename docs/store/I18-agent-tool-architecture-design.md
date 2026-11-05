@@ -537,12 +537,12 @@ src-tauri/
 ├── crates/
 │   ├── assistant-agent/           # 共用 turn 内核 + agent 抽象
 │   │   └── src/
-│   │       ├── turn/              # I36：共用内核（chat 与 agent 都是 client）
+│   │       ├── kernel/            # I36：共用内核（chat 与 agent 都是 client）
 │   │       ├── agent/
 │   │       │   ├── tool_call.rs       # 唯一 tool call 累积器（P4）
 │   │       │   └── round_executor.rs  # RoundExecutor trait + RoundOutcome（仅抽象）
-│   │       ├── chat_runtime.rs    # 退场中（P3 迁入 turn/stream.rs）
-│   │       ├── chat_tasks.rs      # 退场中（P3 迁入 turn/tasks.rs）
+│   │       ├── chat_runtime.rs    # 退场中（P3 迁入 kernel/stream.rs）
+│   │       ├── chat_tasks.rs      # 退场中（P3 迁入 kernel/tasks.rs）
 │   │       └── ...
 │   ├── assistant-tools/           # 新增 crate
 │   │   └── src/

@@ -15,15 +15,15 @@
 
 当前链路是 `send_chat_message` → `adapter.chat_completion_stream` → `chat_runtime::consume_stream` → `cmd/chat` 落库并发事件。一次用户输入对应**一次** provider 请求，请求结束即对话结束。这套链路没有「轮」的概念，因此工具闭环（模型 → 工具 → 回填 → 继续生成）无处安放。
 
-**chat 链路的模块最终迁入共用内核**（§1.4 / §1.5）。下表左侧的 chat 资产不是「参照后自建」，而是**迁移来源**：能力进 `turn/`，chat 与 agent 都从内核调用：
+**chat 链路的模块最终迁入共用内核**（§1.4 / §1.5）。下表左侧的 chat 资产不是「参照后自建」，而是**迁移来源**：能力进 `kernel/`，chat 与 agent 都从内核调用：
 
 | chat 资产 | 位置 | 迁移去向 |
 |---|---|---|
-| 取消令牌 + 代际计数 | `chat_tasks.rs` | `turn/tasks.rs`（`OnBusy::Replace` 保持 chat 语义） |
-| 流式累积与部分结果 | `chat_runtime.rs` | `turn/stream.rs`（tool 通道移到 `agent/`） |
-| 命令层编排（落库 / 发事件 / spawn） | `src-tauri/src/cmd/chat` | `turn/persist.rs` + `turn/emit.rs`（经端口）；命令层只留适配 |
-| 请求构建 / 提示词 | `chat_request.rs`、`prompt_builder.rs` | `turn/request.rs` |
-| 选项 / 归一化 | `chat_options.rs`、`normalization.rs` | 保持为无状态函数，`turn/request.rs` 直接调用 |
+| 取消令牌 + 代际计数 | `chat_tasks.rs` | `kernel/tasks.rs`（`OnBusy::Replace` 保持 chat 语义） |
+| 流式累积与部分结果 | `chat_runtime.rs` | `kernel/stream.rs`（tool 通道移到 `agent/`） |
+| 命令层编排（落库 / 发事件 / spawn） | `src-tauri/src/cmd/chat` | `kernel/persist.rs` + `kernel/emit.rs`（经端口）；命令层只留适配 |
+| 请求构建 / 提示词 | `chat_request.rs`、`prompt_builder.rs` | `kernel/request.rs` |
+| 选项 / 归一化 | `chat_options.rs`、`normalization.rs` | 保持为无状态函数，`kernel/request.rs` 直接调用 |
 
 可直接使用的只有**无状态纯函数**（无会话、无流、无 chat 假设）：
 
@@ -93,7 +93,7 @@
 
 > **本版修订**：上一版结论是「runtime 自建最小重复实现」。本版改为**抽出共用内核，chat 与 agent 都成为内核的 client**。理由：两者在 turn 生命周期、流式消费、部分结果、压缩、事件、落库上做的事**几乎完全相同**，差异只在「迭代次数」「有没有工具」「忙时是顶替还是拒绝」。重复实现会把这三处差异扩散成两套并行演化的代码。
 
-**内核（`assistant-agent/src/turn/`）承担**：
+**内核（`assistant-agent/src/kernel/`）承担**：
 
 | 能力 | chat 用法 | agent 用法 |
 |---|---|---|
@@ -314,7 +314,7 @@ pub enum SessionState {
 **决策**：turn 级 `CancellationToken` 为父令牌，模型流与每次工具执行各取 `child_token()`。取消只置位，**不 `abort()` task**。写终态前校验 `turn_id` 是否为当前代际：非当前代际的完成结果**丢弃**（不写库、不发终止事件、不改状态）。
 
 **理由**：
-- `abort()` 会跳过部分结果落库，用户已经看到的内容会凭空消失；协作式取消能让 `turn::stream::consume` 正常返回 `StreamError::Cancelled(partial)` 并落库。
+- `abort()` 会跳过部分结果落库，用户已经看到的内容会凭空消失；协作式取消能让 `kernel::stream::consume` 正常返回 `StreamError::Cancelled(partial)` 并落库。
 - 代际校验解决「旧 turn 的迟到完成把新 turn 覆盖成 Idle」——这是现有 `attempt_id` 已经在做的事，运行时必须继续遵守，不能因为引入状态机而绕过。
 
 **取舍**：协作式取消要求每个 await 点都响应令牌，靠「自觉检查」不可靠；因此规定所有长 await（模型流、工具执行、审批等待）必须包在 `tokio::select! { biased; _ = token.cancelled() => ..., r = fut => r }` 里，写进规格的验收项。
@@ -426,7 +426,7 @@ pub enum SessionState {
 
 ### 3.14 D14 — 抽共用内核，而不是两套最小实现
 
-**决策**：`assistant-agent/src/turn/` 是 chat 与 agent 共用的 turn 内核；差异用 `TurnSpec` 参数化（§1.5）。
+**决策**：`assistant-agent/src/kernel/` 是 chat 与 agent 共用的 turn 内核；差异用 `TurnSpec` 参数化（§1.5）。
 
 **理由**：
 1. **两份实现必然漂移**。`chat_tasks` 的「顶替」与 `turn_tasks` 的「拒绝」如果各写一遍，后续任何一处修 bug（比如代际校验漏了某个分支）都要改两遍，且只改一边不会被发现。
@@ -519,7 +519,7 @@ pub enum SessionState {
 
 ```
 src-tauri/crates/assistant-agent/src/
-├── turn/                 // 共用内核：chat 与 agent 都是它的 client（§1.5）
+├── kernel/               // 共用内核：chat 与 agent 都是它的 client（§1.5）
 │   ├── mod.rs            // 对外导出 TurnRunner / TurnSpec / TurnContext / ports
 │   ├── ids.rs            // TurnId（= attempt_id 值）、TurnContext
 │   ├── phase.rs          // TurnPhase + 状态投影
@@ -532,7 +532,7 @@ src-tauri/crates/assistant-agent/src/
 │   ├── limits.rs         // TurnLimits + 默认值 + 与 AppConf 的映射
 │   ├── outcome.rs        // TurnOutcome / TurnStatus / 计数
 │   ├── ports.rs          // EventSink / MessageStore / TurnInputSource / Clock
-│   └── turn_runner.rs    // 外层循环：iteration / 阶梯 / 钩子 / 收尾 / 终态
+│   └── runner.rs         // 外层循环：iteration / 阶梯 / 钩子 / 收尾 / 终态
 ├── agent/                // agent 专属：内核之上的多迭代能力
 │   ├── mod.rs
 │   ├── stop.rs           // StopHook / StopDecision / 内置钩子
@@ -540,11 +540,11 @@ src-tauri/crates/assistant-agent/src/
 │   ├── ladder.rs         // 阶梯 ②③④⑤（① 复用 request_projection）
 │   ├── compaction_exec.rs// 摘要执行
 │   └── approval.rs       // 审批门（等待时 phase = AwaitingApproval）
-├── chat_runtime.rs       // 退场中：迁入 turn/stream.rs 后删除
-├── chat_tasks.rs         // 退场中：迁入 turn/tasks.rs（OnBusy::Replace）后删除
-├── chat_request.rs       // 退场中：迁入 turn/request.rs 后删除
+├── chat_runtime.rs       // 退场中：迁入 kernel/stream.rs 后删除
+├── chat_tasks.rs         // 退场中：迁入 kernel/tasks.rs（OnBusy::Replace）后删除
+├── chat_request.rs       // 退场中：迁入 kernel/request.rs 后删除
 ├── chat_options.rs       // 保留：推理档位映射（无状态）
-├── prompt_builder.rs     // 退场中：迁入 turn/request.rs 后删除
+├── prompt_builder.rs     // 退场中：迁入 kernel/request.rs 后删除
 ├── normalization.rs      // 保留：文本归一化（无状态）
 ├── request_projection.rs // 共享纯函数：阶梯第 ① 步
 ├── compaction.rs         // 共享纯函数：判定（不含执行）
@@ -564,10 +564,12 @@ src-tauri/src/
 
 **依赖方向（单向）**：
 
-- `turn` → `request_projection` / `compaction`（判定）/ `token_estimate` / `multimodal` / `pdf_text` / `chat_options` / `normalization`：允许（无状态纯函数）。
-- `turn` / `agent` → `tauri` / `AppHandle` / `Window` / `cmd/*`：**禁止**（§1.4、§1.6）。
+- `kernel` → `request_projection` / `compaction`（判定）/ `token_estimate` / `multimodal` / `pdf_text` / `chat_options` / `normalization`：允许（无状态纯函数）。
+- `kernel` / `agent` → `tauri` / `AppHandle` / `Window` / `cmd/*`：**禁止**（§1.4、§1.6）。
 - `agent` → `assistant-tools`：**禁止**。只依赖 `RoundExecutor` 抽象（P4 / I38b 落地时由宿主注入）。
 - `chat_runtime` / `chat_tasks` / `chat_request` / `prompt_builder`：**迁出后删除**，不作为长期依赖。
+
+**命名**：目录名用 `kernel/`（而非 `turn/`）。理由有三：避免 `turn::TurnRunner` 这类「目录名与类型前缀重复」；与本文「共用内核」同词，路径即术语；把边界写在路径上——`kernel/` 只有 turn 生命周期与端口，策略（停止钩子 / 阶梯 / 审批 / 多迭代循环）归 `agent/`，即 `agent/` 是 `kernel/` 的 client。
 
 ---
 
@@ -577,15 +579,15 @@ src-tauri/src/
 |---|---|
 | I18 design / spec | 工具框架与工具生命周期。RoundExecutor 循环契约见 I38b；本文只定义 turn 生命周期与端口 |
 | I18b | ToolBox 双入口。ToolBox **不进入**运行时（无 turn、无状态机、无审批），运行时只服务 Agent 入口 |
-| I30 | tool call 从 chat 构建剥离。本文的内核抽取**吸收**了 I30 的剥离目标：`turn/stream.rs` 只留文本/推理/usage，tool 通道归 `agent/` |
+| I30 | tool call 从 chat 构建剥离。本文的内核抽取**吸收**了 I30 的剥离目标：`kernel/stream.rs` 只留文本/推理/usage，tool 通道归 `agent/` |
 | I15 / I16 | 流式累积与 attempt 身份。D1 升级 `attempt_id` 语义，需与 I16 的过期事件丢弃规则保持一致 |
 | I20 | 跨窗口事件同步。D2 的状态事件必须走同一广播通道 |
 | I17 | 重试与恢复。D4/D5 不得与既有重试叠加（重试仍在 provider 层） |
 
 **迁移顺序**（先抽内核，再长能力；细粒度步骤编号见 spec 的 Step 0B / 1–9）：
 
-1. **端口与值类型**（`turn/ports.rs`、`ids`、`phase`、`state`、`outcome`）——无行为变化，只新增类型与空实现。
-2. **内核原语**（`turn/tasks.rs`、`turn/stream.rs`、`turn/request.rs`、`turn/persist.rs`、`turn/emit.rs`）——此时内核无调用方，可单测验证。
+1. **端口与值类型**（`kernel/ports.rs`、`ids`、`phase`、`state`、`outcome`）——无行为变化，只新增类型与空实现。
+2. **内核原语**（`kernel/tasks.rs`、`kernel/stream.rs`、`kernel/request.rs`、`kernel/persist.rs`、`kernel/emit.rs`）——此时内核无调用方，可单测验证。
 3. **chat 改调内核**（`OnBusy::Replace`、`max_iterations = 1`、`tools = None`、`route = Orb`）：`send_chat_message` 内部换成内核调用，**外部行为逐字节不变**（事件名 / `seq` 起点 / 落库时机 / 错误文案）。
 4. **删除 chat 旧实现**（`chat_runtime` / `chat_tasks` / `chat_request` / `prompt_builder`），确认无引用后删除。
 5. **取消代际化 + 双层超时**（`stream` 接上 `model_call`）。
