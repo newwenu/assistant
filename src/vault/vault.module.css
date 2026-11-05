@@ -692,7 +692,7 @@
 }
 
 .totpUriInput {
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .totpSecretSection {
