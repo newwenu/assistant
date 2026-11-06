@@ -45,120 +45,71 @@
 
 ### 2.1 工具事件
 
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AgentToolCallPayloadDto {
-    pub conversation_id: String,
-    pub turn_id: String,
-    pub iteration: u32,
-    pub call_id: String,
-    pub name: String,
-    pub phase: AgentToolCallPhaseDto,
-    pub arguments: Option<serde_json::Value>,
-    pub args_delta: Option<String>,
-    pub result: Option<String>,
-    pub error: Option<String>,
-    pub started_at: Option<i64>,
-    pub finished_at: Option<i64>,
-}
+完整声明见设计来源 [I38b §6.1.1](./I38b-agent-loop-spec.md)（落点 `src-tauri/src/protocol/dto/agent.rs`），生成到 `src/types/protocol.contract.ts`。本节只写 P6 增量与前端消费约束，不复述字段。
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase")]
-pub enum AgentToolCallPhaseDto {
-    Started,
-    ArgsDelta,
-    Finished,
-    Failed,
-    AwaitingApproval,
-}
-```
+| 类型 | P6 前 | P6 后 |
+|---|---|---|
+| `AgentToolCallDto` | `conversationId` / `turnId` / `iteration` / `callId` / `name` / `payload` | **不变** |
+| `AgentToolCallPayloadDto` | `tagged enum`（`phase`）：`started` / `argsDelta{delta}` / `finished{result,confirmationWaitMs}` / `failed{error,errorKind,confirmationWaitMs}` | **追加** `awaitingApproval{approval: ToolApprovalRequestDto}`，既有四变体不动 |
+
+即 `{ "phase": "awaitingApproval", "approval": {...} }`。既有四个变体已被 P4 消费，P6 不得修改其字段名或语义。
 
 **约束**：
 
 - 输出 DTO 的 `Option` 字段**不加** `skip_serializing_if`：键恒在、值 `null`，前端声明 `T | null`。
-- 事件名 `agent-tool-call`；`phase` 是封闭枚举，前端不得兜底窄化。
+- 事件名 `agent-tool-call`；`payload.phase` 是封闭枚举，前端不得兜底窄化。
 - 工具调用结果同时进入消息历史；事件只负责实时渲染，不作为事实源。
+- `payload` 是 **tagged enum，不是「扁平结构 + 独立 phase 枚举」**：`phase` 与同变体的其他字段永远同时存在，扁平化会让 `argsDelta` 携带空的 `result`、`finished` 携带空的 `delta`，前端必须自己判断「哪个字段在本 phase 有意义」。
 
 ### 2.2 审批请求与命令
 
-审批载荷复用 P2 的 `ApprovalRequest`，经 DTO 转出：
+审批载荷复用 P2 的 `ApprovalRequest`，经 DTO 转出。**形状与 [I38a §2.8.1](./I38a-tool-control-layer-spec.md) 一一对应**（`Xxx` → `XxxDto`），本节不复述字段声明；完整类型由 `npm run contract:gen` 生成到 `src/types/protocol.contract.ts`。
 
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolApprovalRequestDto {
-    pub conversation_id: String,
-    pub turn_id: String,
-    pub call_id: String,
-    pub tool_name: String,
-    pub arguments: serde_json::Value,
-    pub intents: Vec<PermissionIntentDto>,
-    pub timeout_ms: u64,
-    // P6 新增：用户判断所需信息（分级与来源见 §3.2.1）
-    pub tier: ToolTierDto,
-    pub behavior: ToolBehaviorDto,
-    pub reasons: Vec<ApprovalReasonDto>,
-    pub preview: Option<ApprovalPreviewDto>,
-}
+统一 derive：`Debug, Clone, Serialize, Deserialize, PartialEq, TS`；枚举另加 `Eq`，输入 DTO 另加 `deny_unknown_fields`，输入 `Option` 字段加 `#[ts(optional = nullable)]`。
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolBehaviorDto {
-    pub read_only: bool,
-    pub destructive: bool,
-    pub open_world: bool,
-}
+`rename_all` **只约束 wire DTO**（`protocol/dto/*.rs`），不要套到 `assistant-tools` 的内部类型上——内部类型不参与 wire，序列化成什么形状完全由 DTO 侧的 `From` 决定。DTO 侧分两类：
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ApprovalPreviewDto {
-    pub summary: String,
-    pub details: Vec<ApprovalPreviewItemDto>,
-    pub truncated: bool,
-    pub estimated: bool,
-}
+| 位置 | 规则 | 先例 |
+|---|---|---|
+| DTO 结构体字段 | `camelCase` | `AgentToolCallDto` / `OsToolResultDto` |
+| DTO 枚举变体 | 以该类型 spec 为准：`ToolTierDto` / `ApprovalLevelDto` 用 `snake_case`（与既有 `ConversationListChangeKindDto` 一致）；tagged 枚举（`ApprovalReasonDto`）用 `tag = "kind"` + `camelCase` | `TurnPhaseDto`（camelCase）/ `ConversationListChangeKindDto`（snake_case） |
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ApprovalPreviewItemDto {
-    pub label: String,
-    pub value: String,
-}
+**内部类型的 serde 属性与 wire 无关**：`assistant-tools` 里 `ToolTier` / `PermissionIntent` 恰好也 derive 了 `Serialize` 并带 `rename_all = "camelCase"`（供内部序列化用），但那是内部约定，**不得**当成 wire 契约的兜底——`ToolTierDto` / `PermissionIntentDto` 必须自己声明 `rename_all` 并做 `From` 映射，否则内部类型一改，wire 就静默漂移。
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum ApprovalReasonDto {
-    DefaultPolicy { action: String, resource: String },
-    ApprovalLevel { level: ApprovalLevelDto },
-    ProjectRule { action: String, resource: String },
-    TierCeiling { tier: ToolTierDto },
-    Advisor { rationale: String },
-}
+**既有 DTO 复用**：`ToolTierDto` / `ApprovalLevelDto` 由 P5（[I38c §3.1](./I38c-os-tools-spec.md)）新建；`PermissionIntentDto` 由 **P6 新建**——P2 只有 `assistant-tools::PermissionIntent`（无 `TS` 派生，`src-tauri` 中无对应 DTO），因此 P6 需在 `protocol/dto/agent.rs` 补一个同形 `PermissionIntentDto` + `From` 转换。本节其余 DTO 均为 P6 新建。
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase")]
-pub enum ToolApprovalKindDto {
-    Approve,
-    Deny,
-    AlwaysApprove,
-}
+**生成方式**：Rust DTO 手写一次（唯一源），前端类型由 `npm run contract:gen` 自动产出，**前端与文档都不手写**。三个 ts-rs 相关的落点：
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ToolApprovalDecisionDto {
-    pub conversation_id: String,
-    pub call_id: String,
-    pub decision: ToolApprovalKindDto,
-    pub reason: Option<String>,
-}
-```
+| 情形 | 写法 |
+|---|---|
+| `Duration` | ts-rs 无该 impl，wire 用 `timeout_ms: u64`（前端 `timeoutMs: number`） |
+| `serde_json::Value` | `#[ts(type = "unknown")]`，否则不生成 |
+| tagged 枚举 DTO | `#[serde(tag = "kind", rename_all = "camelCase")]` 可直接生成判别联合，先例见 `ContentBlockDto`（`tag = "type"`） |
+
+| DTO | 字段 | 约束 |
+|---|---|---|
+| `ToolApprovalRequestDto` | `conversationId` / `turnId` / `callId` / `toolName` / `arguments` / `intents` / `timeoutMs` / `context: ApprovalContextDto` | 顶层**不再**加审批信息字段 |
+| `ApprovalContextDto` | `tier: ToolTierDto` / `behavior: ToolBehaviorDto` / `reasons: ApprovalReasonDto[]` / `preview: ApprovalPreviewDto \| null` / `extensions: ApprovalExtensionDto[]` | 恒存在，不可为 `null` |
+| `ApprovalReasonDto` | 封闭枚举 `defaultPolicy{rule}` / `approvalLevel{level}` / `projectRule{action,resource}` / `tierCeiling{tier}` / `advisor{rationale}` | `tag = "kind"`；`advisor` P6 恒不出现 |
+| `ApprovalPreviewDto` | `summary` / `truncated` / `estimated` | `summary` 已由后端格式化；整体 `null` = 未知 |
+| `ApprovalExtensionDto` | `kind: String` / `label` / `value` / `severity: ApprovalExtensionSeverityDto` | `kind` 开放；`label` / `value` 后端已格式化 |
+| `ApprovalExtensionSeverityDto` | `info` / `caution` / `danger` | 封闭三档，仅用于着色 |
+| `ToolBehaviorDto` | `readOnly` / `destructive` / `openWorld` | 三个 `bool` |
+| `ToolApprovalDecisionDto` | `conversationId` / `callId` / `decision: ToolApprovalKindDto` / `reason?: string \| null` | 输入 DTO；`deny_unknown_fields` |
+
+`ToolApprovalKindDto` 为 `approve` / `deny` / `alwaysApprove`（`rename_all = "camelCase"`）。
+
+新增类型必须登记到 `src-tauri/tests/protocol_bindings.rs` 的 `declarations` 数组——该测试扫描 `protocol/dto/*.rs` 中带 `TS` 派生的类型，漏登记即失败。
 
 **DTO 约束**：
 
-- 输出 DTO 的 `Option` 字段不加 `skip_serializing_if`：`preview` 键恒在、值 `null`，前端声明 `ApprovalPreviewDto | null`。
+- `context` **恒存在且不可为 `null`**：它是审批信息的唯一入口，前端不得对 `context` 做空值兜底。
+- `context` 内的 `Option` 字段不加 `skip_serializing_if`：`preview` 键恒在、值 `null`，前端声明 `ApprovalPreviewDto | null`。
 - `reasons` 恒非空（至少一条 `defaultPolicy`），前端不得对空数组兜底成「原因未知」。
+- `extensions` 恒存在（可为空数组）；`kind` 是开放 `String`，前端**不得**白名单过滤，未知 `kind` 必须按 `severity` 排序后原样渲染 `label` / `value`。
 - `ApprovalReasonDto` 是封闭枚举（`tag = "kind"`），前端不得窄化；`advisor` 分支 P6 恒不出现，前端须能渲染未知分支的通用降级（P10 才填充）。
+- **新增审批信息只能加进 `context`**（或 `extensions`），不得新增 `ToolApprovalRequestDto` 顶层字段——否则前端又要按 `tool_name` 分支判断哪些字段有意义。
+- **`arguments` 是已解析的 JSON 对象，不是字符串**：后端从 `ToolCall.arguments`（`Value`，已在 `agent/tool_call.rs` 完成一次解析 + 截断修复）直接 clone 进审批请求，前端拿到即对象，**不得**再 `JSON.parse`。也**不得**复用消息历史里 `ContentBlockDto::ToolUse.input`（那是 `String`，双重编码）——两者可能因截断修复而不同，审批必须用 `arguments`，才能保证「审批看到的」与「实际执行的」是同一份。
 - 命令：`approve_agent_tool_call` / `deny_agent_tool_call`（或统一 `resolve_agent_tool_approval`，只保留一个入口）。
 - 前端倒计时基于 `timeoutMs`；超时后后端自动 Deny，前端同时置灰按钮，避免重复提交。
 - **预留扩展（P10 不落地）**：`ApprovalReasonDto::Advisor` 与 `ApprovalPreviewDto` 的顾问分支由 [I18 design §3.17](./I18-agent-tool-architecture-design.md) 定义；P6 只渲染 `preview` 与 L0/L1 原因，**不得**调用顾问、不得假定 `advisor` 一定存在。
@@ -189,12 +140,13 @@ interface ToolCallView {
 }
 ```
 
-- 流式期间：`AgentToolCallPhaseDto` 映射到 `ToolCallView.status`。
+- 流式期间：`AgentToolCallPayloadDto.phase` 映射到 `ToolCallView.status`。
   - `started` / `argsDelta` → `running`
   - `finished` → `success`
   - `failed` → `error`
   - `awaitingApproval` → `awaiting_user`
 - 取消（turn 终止且未完成）→ `cancelled`。
+- **`arguments` 的来源分两条**：`running` 态由前端累积 `argsDelta` 字符串后 `JSON.parse`（增量 JSON 不完整时保留上一份可解析快照，解析失败只影响预览）；`awaitingApproval` 态**直接取 `approval.arguments`**（后端已解析的完整对象），不再解析。审批判据一律用后者。
 - **不**从 `ChatDeltaPayloadDto` 读取任何工具字段（P0 已移除）。
 
 ### 3.2 ToolCallBubble 五态
@@ -223,14 +175,21 @@ interface ToolCallView {
 
 ### 3.2.1 审批信息分级（用户判断依据）
 
-用户批准一个操作前需要回答四个问题：**要我做什么、为什么问我、有多严重、能不能撤销**。信息按获取成本分四级，**高一级不得依赖低一级不存在**：
+用户批准一个操作前需要回答四个问题：**要我做什么、为什么问我、有多严重、能不能撤销**。信息按获取成本分级，**高一级不得依赖低一级不存在**；L2 有两个出口（预演 `preview` 与后端检测 `extensions`），因为二者共用同一个「仅 `Ask` 路径、2s 预算」的执行窗口：
 
 | 级别 | 内容 | 来源 | 成本 | P6 是否必做 | 缺失时 |
 |---|---|---|---|---|---|
-| **L0 固有** | `tool_name`、`tier`、`behavior`（`readOnly` / `destructive` / `openWorld`） | `Tool` trait 注册期元数据 | 零 | 必做 | 不可能缺失 |
-| **L1 参数推导** | `intents`（action + 规范化 resources）、路径分类（工作区内/外、符号链接、受保护目录）、`reasons`（命中哪条策略） | `permission_intents` + `os/path.rs` + `Policy::explain` | 零（纯函数，无 IO） | 必做 | 不可能缺失 |
-| **L2 预演** | 一句话摘要 + 结构化条目：`delete` 条目数/字节数、`write` 覆盖现有行数/字节数、`edit` diff 行数 | `Tool::preview_for_approval` | 一次 IO，**仅 `Ask` 时执行** | 必做（可为 `null`） | 卡片只显示 L0+L1 |
+| **L0 固有** | `context.tier`、`context.behavior`（`readOnly` / `destructive` / `openWorld`）、`tool_name` | `Tool` trait 注册期元数据 | 零 | 必做 | 不可能缺失 |
+| **L1 参数推导** | `intents`（action + 规范化 resources）、路径分类（工作区内/外、符号链接、受保护目录）、`context.reasons`（命中哪条策略） | `permission_intents` + `os/path.rs` + `Policy::explain` | 零（纯函数，无 IO） | 必做 | 不可能缺失 |
+| **L2 预演** | `context.preview`：一句话 `summary`（后端已格式化，如「删除 128 个条目（3.4 MB）」）+ `truncated` / `estimated` 两个不确定性标记 | `Tool::preview_for_approval` | 一次 IO，**仅 `Ask` 时执行** | 必做（可为 `null`） | 卡片只显示 L0+L1 |
+| **L2 扩展** | `context.extensions[]`：后端检测结论（`kind` + `label` + `value` + `severity`） | 各检测方（路径守卫、MCP 来源等，见 I38a §2.8.1） | 零或一次 IO，与预演共用 2s 预算 | 必做（可为空数组） | 不渲染扩展区 |
 | **L3 顾问** | AI 结论 + `rationale` | `ApprovalAdvisor`（[I18 design §3.17](./I18-agent-tool-architecture-design.md)） | 模型调用 | **P6 不做**（归 P10） | 不显示 |
+
+**所有审批信息都在 `context` 一个包裹内**，顶层不再加字段。理由：这四个问题（在哪执行 / 能不能撤销 / 为什么问我 / 有多大）之外，将来还会出现新问题（P7 的 MCP 来源可信度、P10 的顾问证据），每加一个就改一次顶层 wire 并让前端按 `tool_name` 分支判断「哪些字段有意义」，成本会随工具数增长。包裹后，新增信息只动 `context` 内部，`ApprovalRequest` 与 `ToolApprovalRequestDto` 的签名稳定。
+
+**`preview` 是一句话摘要，不是结构化量级表**：各工具量纲不同（条目数 / 字节数 / 行数 / 替换次数），固定的 `size: u64` 会迫使后端塞进一个含义模糊的数字。`summary` 由后端按工具语义格式化，前端只渲染一行、不解析。结构化量级若将来真的需要，作为 `extensions` 条目加入，**不扩 `preview`**——否则 `preview` 会退化成第二个万能字段。
+
+**`extensions` 是「后端检测结论」的唯一开放出口**：用 `Vec<{kind, label, value, severity}>` 而非 `Map<String, Value>`，是因为 map 的值是任意 JSON，前端不认 `kind` 就只能丢弃或显示 `[object Object]`。`label` + `value` 让前端在完全不认识 `kind` 时也能原样渲染。`severity` 是封闭三档（`info` / `caution` / `danger`），前端按档位统一着色，不需要理解语义。
 
 **L0 信息是零成本却最容易漏的**：`behavior.destructive` 已在 `Tool` trait 上，但 P2 的 `ApprovalRequest` 没携带，导致卡片无法回答「能不能撤销」。这是本节的主要修复目标。
 
@@ -244,6 +203,7 @@ interface ToolCallView {
 │ 路径  D:\proj\tmp\cache                       │
 │       └ 工作区内 · 非符号链接          ← L1   │
 │ 影响  不可逆 · 破坏性                  ← L0   │
+│ ⚠ 检测  目标被 3 个进程占用，删除将失败 ← L2 扩展 │
 │ 原因  项目规则 *.tmp → 需审批          ← L1   │
 │ ⚠ 预估基于参数，执行前可能变化         ← 标注   │
 │ [Approve] [Deny] [AlwaysApprove]              │
@@ -258,6 +218,9 @@ interface ToolCallView {
 | `reasons` 多条 | 全部展示（例如同时命中 `approvalLevel` 与 `projectRule`），不得只取第一条 |
 | `behavior.readOnly = true` | 出现审批卡片本身即异常（只读工具不应 `Ask`）；显示「只读操作被要求确认」以暴露配置问题 |
 | `behavior.openWorld = true` | 必须显示「会访问工作区外部」，与 `destructive` 分开标注 |
+| `context.extensions` 含未知 `kind` | **不得丢弃**；按 `severity` 排序（`danger` → `caution` → `info`），原样显示 `label` / `value`，不解析 `value` 内部结构 |
+| `context.extensions` 为空 | 不渲染扩展区（不显示「无扩展信息」），避免把「无」渲染成噪声 |
+| `context.extensions[].value` | 视为**纯文本**：不得当 Markdown / HTML 渲染。P7 的 MCP 来源字段可能含外部可控文本，渲染即等于给注入开通道 |
 | 参数脱敏 | 审批载荷携带原始参数（用户要据此判断），**不得**在 L0–L2 内做脱敏；脱敏只用于 L3 顾问输入（I18 design §3.17.4） |
 
 **预演的安全约束**（后端实现约束，前端只消费）：
@@ -275,7 +238,9 @@ interface ToolCallView {
 RoundExecutor → ToolPipeline → Gateway: Ask
   → Policy::explain 产出 reasons（L1）
   → Tool::preview_for_approval（仅 Ask；超时/失败 → preview = null）（L2）
-  → ApprovalPrompter（src-tauri 实现），载荷含 tier / behavior / reasons / preview
+  → 各检测方填充 extensions（与预演共用 2s 预算；无结论则空数组）（L2 扩展）
+  → 组装为单个 ApprovalContext
+  → ApprovalPrompter（src-tauri 实现），载荷含 `context`（tier / behavior / reasons / preview / extensions）
   → emit agent-tool-call { phase: awaitingApproval, approval: ToolApprovalRequestDto }
   → ToolCallBubble 渲染 [Approve] [Deny] [Always]
   → 用户点击 → approve_agent_tool_call / deny_agent_tool_call
@@ -313,10 +278,11 @@ RoundExecutor → ToolPipeline → Gateway: Ask
 | SQLite `agent_modes` | `ADD COLUMN max_tool_tier TEXT NOT NULL DEFAULT 'sandbox'` | snake_case |
 | SQLite `agent_modes` | `ADD COLUMN approval_level TEXT NOT NULL DEFAULT 'none'` | snake_case |
 | Rust `AgentModeRow` | 新增 `max_tool_tier: String` / `approval_level: String` | snake_case |
-| DTO / 前端 `AgentMode` | `maxToolTier` / `approvalLevel` / `tools` | camelCase |
+| DTO `AgentModeDto` | 新增 `maxToolTier: ToolTierDto` / `approvalLevel: ApprovalLevelDto`（`tools` 已有） | camelCase，`contract:gen` 生成 |
+| 前端 `AgentMode`（`src/settings/agentMode/types.ts`） | 同步加 `maxToolTier` / `approvalLevel` | 手写镜像，**必须与 `AgentModeDto` 同时改**，漏一处即漂移 |
 | DTO `SendChatMessageArgsDto` | 新增 `toolConfig: ConversationToolConfigDto \| null` | camelCase |
 | DTO `ConversationDto` | 新增 `modeId: string \| null`（链路判据来源，§4.8） | camelCase |
-| 前端 `ConversationToolConfigDto` | `maxToolTier` / `approvalLevel` / `enabledTools` / `disabledTools` | camelCase，**仅内存** |
+| DTO `ConversationToolConfigDto` | `maxToolTier` / `approvalLevel` / `enabledTools` / `disabledTools` | camelCase，`contract:gen` 生成，**仅内存不落库** |
 
 **不引入对话级持久层**：`conversations` 表**不加** `tool_config_json`，`ConversationRow` 也不加字段。对话级配置只存在于前端内存（按 `conversationId` 索引），随每次发送请求传给后端；后端不持有该状态，也不落库。
 
@@ -326,25 +292,16 @@ RoundExecutor → ToolPipeline → Gateway: Ask
 
 ```ts
 // ToolTierDto / ApprovalLevelDto / ConversationToolConfigDto 由 `npm run contract:gen`
-// 从 P5 的 protocol/dto 生成（I38c §3.1），前端不手写定义；枚举值走 snake_case，
-// 与 Rust `rename_all = "snake_case"` 一致。AgentMode 是既有前端接口，只引用生成类型。
-type ToolTierDto = 'sandbox' | 'os' | 'external'
-type ApprovalLevelDto = 'none' | 'dangerous_only' | 'all_os_tools'
-
+// 从 P5 的 protocol/dto 生成（I38c §3.1），前端**不手写**定义，本节只声明前端侧新增字段。
 interface AgentMode {
   // ...现有字段（camelCase）...
   tools: string[]          // 白名单；空数组 = 无可用工具
   maxToolTier: ToolTierDto
   approvalLevel: ApprovalLevelDto
 }
-
-interface ConversationToolConfigDto {
-  maxToolTier: ToolTierDto
-  approvalLevel: ApprovalLevelDto
-  enabledTools: string[]
-  disabledTools: string[]
-}
 ```
+
+`ConversationToolConfigDto` 的字段（`maxToolTier` / `approvalLevel` / `enabledTools` / `disabledTools`）同样以生成类型为准；它**仅存在于内存**、不落库，因此后端不建表，也不在前端额外定义一份。
 
 ### 4.3 内置预设
 
@@ -509,12 +466,12 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 
 | 步骤 | 内容 | 依赖 |
 |---|---|---|
-| P6-C1 | DTO：`AgentToolCallPayloadDto` / 审批请求与决策（含 §2.2 的 `tier` / `behavior` / `reasons` / `preview`）/ `AgentMode` 扩展 / `ConversationDto.modeId`（§4.8 判据）/ `ConversationToolConfig`（仅内存，随请求传递）；`npm run contract:gen` | P4 |
+| P6-C1 | DTO：`AgentToolCallPayloadDto` / 审批请求与决策（含 §2.2 的单个 `ApprovalContextDto` 包裹：tier / behavior / reasons / preview / extensions）/ `AgentMode` 扩展 / `ConversationDto.modeId`（§4.8 判据）/ `ConversationToolConfig`（仅内存，随请求传递）；`npm run contract:gen` | P4 |
 | P6-C1b | 链路选路（§4.8）：新建会话按 `mode.kind` 分流到 `send_chat_message` / `send_agent_message`；发送时以会话 `modeId` 判定链路（**不取全局选中态**）；会话内锁定链路；chat 会话不渲染工具 UI | P6-C1 |
-| P6-C1c | 审批信息装配（§3.2.1）：`ApprovalRequest` 增加 `tier` / `behavior` / `reasons` / `preview`；`Policy::explain` 产出命中规则；`Tool::preview_for_approval` 端口（默认 `None`）与 2s 超时包装；**仅在 `Ask` 路径调用** | P6-C1 |
+| P6-C1c | 审批信息装配（§3.2.1）：`ApprovalRequest` 增加单个 `context: ApprovalContext`（tier / behavior / reasons / preview / extensions）；`Policy::explain` 产出命中规则；`Tool::preview_for_approval` 端口（默认 `None`）与 2s 超时包装；`extensions` 默认空数组，检测方按需填充；**仅在 `Ask` 路径调用** | P6-C1 |
 | P6-C2 | 前端事件接入：订阅 `agent-tool-call` 与 `session-state-changed`；按 `turnId` 过滤 | P6-C1 |
 | P6-C3 | `ToolCallBubble` 五态 + 大结果折叠 + 历史恢复 | P6-C2 |
-| P6-C4 | 审批 UI 与命令；超时置灰；AlwaysApprove 文案；L0/L1/L2 分区渲染与 `null` / `truncated` 降级（§3.2.2） | P6-C3、P6-C1c |
+| P6-C4 | 审批 UI 与命令；超时置灰；AlwaysApprove 文案；L0/L1/L2 分区渲染与 `null` / `truncated` 降级（§3.2.2）；`extensions` 按 `severity` 通用渲染（未知 `kind` 不得丢弃） | P6-C3、P6-C1c |
 | P6-C5 | 删除 `ensureIdle()` / 切会话取消 / 前端 phase 自维护（三步） | P4 稳定 |
 | P6-C6 | AgentMode 表单 + 对话工具栏 + `resolveAvailableTools` 接入 | P6-C1 |
 | P6-C7 | `policy_from_agent_mode` + 项目级 `.assistant/permissions.json` 加载 | P2、P6-C6 |
@@ -536,11 +493,12 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 | A9 | `npm run contract:gen` 后 `src/types/protocol.contract.ts` 可编译；`cargo test --test assembly_contract` 通过 |
 | A10 | 审批级别三档的 Policy 映射有单测；tier 规则拒绝超层级工具 |
 | A11 | 链路选路：`kind ∈ {default, quick, deep}` 的会话只调 `send_chat_message` 且不渲染工具 UI；`kind = custom` 的会话只调 `send_agent_message`；同一 `conversationId` 上无法切换链路 |
-| A12 | 审批载荷四类信息齐备：`tier` / `behavior` / `reasons`（非空）/ `preview`（可为 `null`）；`reasons` 至少含一条 `defaultPolicy` |
+| A12 | 审批载荷为**单个** `context` 包裹：`tier` / `behavior` / `reasons`（非空）/ `preview`（可为 `null`）/ `extensions`（可为空数组）；`reasons` 至少含一条 `defaultPolicy`；`ToolApprovalRequestDto` 顶层无 `tier` / `behavior` / `reasons` / `preview` 字段 |
+| A12b | `extensions` 含未知 `kind` 时卡片仍渲染该条（`label` / `value` 原样显示、按 `severity` 排序）；空数组时不出现扩展区；`value` 按纯文本渲染 |
 | A13 | `preview = null` 时卡片不显示任何「0 个条目」类文案；`truncated = true` 显示「≥ N」；`estimated` 提示恒显示 |
 | A14 | `preview_for_approval` 仅在 `Ask` 路径被调用（`Allow` / `Deny` 路径的调用计数为 0），且超时/失败不影响审批结果 |
 | A15 | `Policy::explain` 与 `evaluate` 结果一致：对同一 `(action, resource)`，`explain` 报出的获胜规则与 `evaluate` 的 effect 相符（表驱动单测） |
-| A16 | 预演与 `execute` 的量级统计一致：`delete` 同一目标下 `preview.entries` 与 `execute` 结果 `data.entries` 在无并发变更时相等 |
+| A16 | 预演与 `execute` 共用同一扫描函数：`delete` 同一目标、无并发变更时，`preview.summary` 中的条目数与 `execute` 的 `data.entries` 相等（单测直接比对共用函数的返回值，不解析 `summary` 字符串） |
 
 ---
 

@@ -101,7 +101,7 @@ pub struct ResolvedPermissionPolicy {
 impl ResolvedPermissionPolicy {
     pub fn evaluate(&self, action: &str, resource: &str) -> PermissionEffect;
 
-    /// P6 新增：返回命中原因，供审批卡片回答「为什么问我」。
+    /// P6 追加：返回命中原因，供审批卡片回答「为什么问我」。
     /// 不改变 evaluate 的结果，仅旁路记录；实现必须与 evaluate 共用同一匹配逻辑。
     pub fn explain(&self, action: &str, resource: &str) -> Vec<ApprovalReason>;
 }
@@ -210,61 +210,99 @@ pub struct ApprovalRequest {
     pub arguments: serde_json::Value,
     pub intents: Vec<PermissionIntent>,
     pub timeout: Duration,
-    // P6 修订（跨阶段契约变更，见 §2.8.1）
-    pub tier: ToolTier,
-    pub behavior: BehaviorHints,
-    pub reasons: Vec<ApprovalReason>,
-    pub preview: Option<ApprovalPreview>,
 }
 ```
+
+以上是 **P2 已交付的形状**（2026-11-05，对应 `gateway.rs` 现况与 tasklist C2.8），本节其余内容均按此版本判定通过。P6 会**追加**一个 `context: ApprovalContext` 字段（跨阶段契约变更），形状见 §2.8.1；**P2 不返工**，也不因 P6 需要而重跑任何 P2 任务。
 
 - 生产实现（P6）：发 `agent-tool-awaiting-approval` 事件 → 前端审批 → Tauri command 回填决策。
 - 测试实现：脚本化返回 `Approve / Deny / AlwaysApprove / 超时`。
 - **超时语义**：超时视为 `Deny`，不得默认放行，也不得无限挂起。
 - **预留扩展（不实现）**：AI 审批顾问（`ApprovalAdvisor`）不在 P2 范围，P2–P7 也**不预留空 trait / 空字段**。插入点（策略之后、人审批之前）、方向性约束（`fuse` 纯函数）、输入分层与启用门禁见 [I18 design §3.17](./I18-agent-tool-architecture-design.md)；本节 `ApprovalPrompter` / `ApprovalDecision` / `GatewayDecision` 契约不因此改变。
 
-#### 2.8.1 P6 修订：审批载荷携带用户判断信息
+#### 2.8.1 P6 追加：单个审批信息包裹（`ApprovalContext`）
+
+**性质**：跨阶段契约变更，**只加不改**。P2 已交付的 5 字段 `ApprovalRequest` 原样保留（见 §2.8），P6 在其末尾追加一个字段：
+
+```rust
+// P6 目标签名（P2 五字段不动，仅追加 context）
+pub struct ApprovalRequest {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub arguments: serde_json::Value,
+    pub intents: Vec<PermissionIntent>,
+    pub timeout: Duration,
+    pub context: ApprovalContext,   // ← P6 新增
+}
+```
 
 **动机**：P2 的 `ApprovalRequest` 只携带「要做什么」（`arguments` + `intents`），无法回答「为什么问我」「有多严重」「能不能撤销」。L0（`tier` / `behavior`）在注册期已知却未随载荷传出，属于零成本信息遗漏；L2（预演）则因为审批发生在 `execute()` 之前，无法复用执行结果。
 
+**形态**：所有审批辅助信息收进**一个**字段 `context`，而不是并列的四个顶层字段。
+
 ```rust
-pub struct ApprovalReason {
-    pub kind: ApprovalReasonKind,
+/// 审批辅助信息的唯一包裹。新增信息只在此扩展，不再加 `ApprovalRequest` 顶层字段。
+pub struct ApprovalContext {
+    pub tier: ToolTier,                     // 在哪执行
+    pub behavior: BehaviorHints,            // 能不能撤销
+    pub reasons: Vec<ApprovalReason>,       // 为什么问我（恒非空）
+    pub preview: Option<ApprovalPreview>,   // 有多大（None = 未知）
+    pub extensions: Vec<ApprovalExtension>, // 其他后端检测结论
 }
 
-pub enum ApprovalReasonKind {
-    /// 命中策略规则（含默认的 `("*","*", Ask)`）。
-    DefaultPolicy { action: String, resource: String },
-    /// 命中 AgentMode 的 approval_level 收紧规则。
+pub enum ApprovalReason {
+    DefaultPolicy { rule: String },                  // 无显式规则命中，走 fail-closed 默认
     ApprovalLevel { level: String },
-    /// 命中项目级 `.assistant/permissions.json` 规则。
     ProjectRule { action: String, resource: String },
-    /// 被 tier ceiling 收紧。
     TierCeiling { tier: ToolTier },
-    /// AI 顾问加码（P10 才产生）。
-    Advisor { rationale: String },
+    Advisor { rationale: String },                   // P10 才产生
 }
 
+/// 一句话量级摘要。整体为 `None` 表示「未知」，与「零」可区分。
 pub struct ApprovalPreview {
-    pub summary: String,
-    pub details: Vec<ApprovalPreviewItem>,
-    pub truncated: bool,
-    pub estimated: bool,
+    pub summary: String,   // 后端已格式化，如「删除 128 个条目（3.4 MB）」
+    pub truncated: bool,   // 已达扫描上限，只知下限
+    pub estimated: bool,   // 按参数估算，执行前会变（TOCTOU）
 }
 
-pub struct ApprovalPreviewItem {
-    pub label: String,
-    pub value: String,
+/// 开放检测结论。`kind` 开放、`severity` 封闭。
+pub struct ApprovalExtension {
+    pub kind: String,
+    pub label: String,     // 后端提供，前端不翻译
+    pub value: String,     // 单行纯文本，前端不解析
+    pub severity: ApprovalExtensionSeverity,
 }
+
+pub enum ApprovalExtensionSeverity { Info, Caution, Danger }
 ```
+
+以上均为 `assistant-tools` 内部类型，**不参与 wire**，因此不 derive `Serialize`、不写任何 `serde` 属性（`tag` / `rename_all` 属于 wire 契约，只在 DTO 侧声明）。序列化形状由 `ApprovalContextDto` / `ApprovalReasonDto`（[I38d §2.2](./I38d-agent-frontend-modes-spec.md)）通过 `From` 决定。
+
+**形态取舍**：
+
+| 决策 | 理由 |
+|---|---|
+| 一个包裹而非四个顶层字段 | 扁平字段每加一类信息（P7 的 MCP 来源、P10 的顾问证据）都要改 `ApprovalRequest` 与 wire，前端也要按 `tool_name` 分支判断「哪些字段有意义」。包裹后加信息只动 `ApprovalContext` 内部，顶层签名稳定 |
+| `extensions` 用 `Vec<结构化条目>` 而非 `BTreeMap<String, Value>` | map 的值是任意 JSON，前端不认 `kind` 就无法渲染，只能丢弃或显示 `[object]`；`label` + `value` 让前端在完全不认识 `kind` 时也能通用渲染。`Vec` 保序，优先级由后端决定 |
+| `kind` 是开放 `String`、`severity` 是封闭 `enum` | 开放集合保留 `String`（前端兜底不窄化，符合项目 DTO 规则）；但严重度是有限集合，用 `enum` 才能让前端按档位统一着色，不需要理解语义 |
+| `preview` 是一句话 `summary` 而非 `size: u64` | 各工具量纲不同（条目数 / 字节数 / 行数 / 替换次数），固定 `size` 会迫使后端塞进一个含义模糊的数字。`summary` 由后端格式化、前端只渲染一行；将来若需要结构化量级，走 `extensions` 而不扩 `preview` |
 
 **装配规则**：
 
 | 字段 | 来源 | 缺失语义 |
 |---|---|---|
 | `tier` / `behavior` | `tool.tier()` / `tool.behavior_hints()` | 不可缺失 |
-| `reasons` | `ResolvedPermissionPolicy::explain(action, resource)`（新增，见 §2.3） | 恒非空，至少一条 `DefaultPolicy` |
-| `preview` | `tool.preview_for_approval(input, ctx)`（新增，见 §3.3） | `None` = 信息未知，**不等于零** |
+| `reasons` | `ResolvedPermissionPolicy::explain(action, resource)`（见 §2.3） | 恒非空，至少一条 `DefaultPolicy`；`rule` 取策略规则文本（如 `* → ask`），不复述 `action` / `resource`（已在 `intents`） |
+| `preview` | `tool.preview_for_approval(input, ctx)`（见 §3.1） | `None` = 信息未知，**不等于零** |
+| `extensions` | 各检测方按需填充（默认空 `Vec`） | 空数组 = 无扩展结论 |
+
+**`extensions` 的边界**（防止它变成第二个「万能字段」）：
+
+- 只承载**检测结论**（「这个路径是符号链接，会指向工作区外」），不承载执行参数、不承载原始文件内容、不承载 AI 判断（AI 结论归 `reasons::Advisor`，P10）。
+- **不得重复** `reasons` / `preview` / `behavior` 已表达的内容；同一事实只能有一个出口，否则卡片出现两种说法时无法判断哪个权威。
+- `value` 必须是**已格式化的单行文本**；不得塞 JSON 让前端自己拼，否则等于把渲染逻辑分散到前端。
+- 产出方与 `preview_for_approval` 共用同一个 2s 预算；超时则该扩展项缺失，不得阻塞审批。
+- 前端**不得**按 `kind` 白名单过滤：未知 `kind` 一律进「其他检测信息」区，按 `severity` 排序后原样显示 `label` / `value`。丢弃未知项等于后端加了检测而用户永远看不到。
 
 **约束**：
 
@@ -272,7 +310,7 @@ pub struct ApprovalPreviewItem {
 - 预演超时（建议 2s）或 `Err` → `preview = None`，审批继续。**信息缺失可以，决策缺失不行**。
 - 预演**不得**改变决策、不得写 grant、不得读取文件全文。
 - 预演耗时单记，不得混入 `TimingApprovalPrompter` 的 `confirmation_wait_ms`。
-- 存量影响：`DenyAllApprovalPrompter` 与 `tests/gateway.rs` 的 `ApprovalRequest` 构造点需同步补字段；因新字段全部由 Gateway 填充，`ApprovalPrompter` 实现方无需改动逻辑。
+- 存量影响（**P6 改动，不是 P2 返工**）：`ApprovalRequest` 的 3 个构造点需补 `context`——`crates/assistant-tools/src/gateway.rs`（Gateway 自身，唯一生产构造点）、`crates/assistant-tools/tests/gateway.rs`、`src-tauri/tests/approval_timing.rs`。`ApprovalPrompter` 实现方（`DenyAllApprovalPrompter` / `TimingApprovalPrompter`）只接收不构造，逻辑无需改动。
 
 ### 2.9 存储端口
 
@@ -393,9 +431,10 @@ evaluate(tool, input, context, policy) -> GatewayDecision:
            Deny  -> audit(Deny); return Denied
            Ask   -> collect need_approval { key, intent, resource }
   3. if need_approval 非空:
-       reasons = policy.explain(action, resource)              // P6 新增
-       preview = timeout(2s, tool.preview_for_approval(input, context)).ok()  // P6 新增，仅此处
-       request = ApprovalRequest { ..., tier, behavior, reasons, preview }
+       reasons = policy.explain(action, resource)              // P6 追加
+       preview = timeout(2s, tool.preview_for_approval(input, context)).ok()  // P6 追加，仅此处
+       approval_context = ApprovalContext { tier, behavior, reasons, preview, extensions: vec![] }  // P6 追加
+       request = ApprovalRequest { ..., context: approval_context }  // P6 追加
        decision = approval_prompter.request(request).await
        Approve       -> audit(Approved); continue
        AlwaysApprove -> grant_store.save_grant; audit(AlwaysApproved); continue
@@ -410,7 +449,7 @@ evaluate(tool, input, context, policy) -> GatewayDecision:
 - **每一条放行路径都必须留审计**，包括审批缓存命中。`grant_store` 命中记 `GrantHit`，与策略 `Allow` 区分：前者是「用户此前授权」，后者是「策略静态允许」，两者的事后追溯意义不同。
 - 审计失败只记日志，不改变决策（审计不是事实源）。
 - `AlwaysApprove` 只保存当前规范化键，不扩大到工具名或前缀。
-- **P6 修订**：`explain` 与 `preview_for_approval` **只允许**在 `need_approval` 非空时调用。`explain` 对多个 `(action, resource)` 各取一次并合并去重；`preview` 每次审批只调一次（取首个 `need_approval` 的 `input`）。两者都不得影响 `GatewayDecision`——`preview` 超时/失败即 `None`，`explain` 异常即退化为一条 `DefaultPolicy`。
+- **P6 追加**：`explain` 与 `preview_for_approval` **只允许**在 `need_approval` 非空时调用。`explain` 对多个 `(action, resource)` 各取一次并合并去重；`preview` 每次审批只调一次（取首个 `need_approval` 的 `input`）。两者都不得影响 `GatewayDecision`——`preview` 超时/失败即 `None`，`explain` 异常即退化为一条 `DefaultPolicy`。
 - 空键（`ApprovalKey` 为 `None`）不查缓存、不落 grant，但必须写审计：它每次都会走审批，审计是唯一能证明「确实问过人」的记录。
 
 ### P2-C5 — Pipeline

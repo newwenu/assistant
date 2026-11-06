@@ -32,7 +32,7 @@
 | **P3 运行时内核** | `kernel/` 共用内核、端口、状态机、取消代际、双层超时、chat 等价迁移 | I36 spec、[I36a](./I36a-agent-kernel-baseline.md)、[I39](./I39-compaction-chat-merge-spec.md) | ✅ 已完成（C1–C11，2026-11-05；chat / agent 两条链路均已改调内核，H1–H9 全部收口；压缩共享边界（I39）已落地：互斥源 / 投影 / 刷新点 / 失败通道统一） | P0 |
 | **P4 Agent Loop 闭环** | RoundExecutor 多迭代循环；tool call 累积器；`ChatOptions.tools` 注入；停止钩子三维预算；阶梯 ③④⑤ 与中间件链（② 不随 P4）；审批默认 fail-closed 装配 | I38b | ✅ 已完成（2026-11-06；C1–C6、C8（除 C8.6）、C9 全部完成，`cargo test -p assistant-agent` / `assistant-providers` / `assistant-storage` 全绿，`clippy -D warnings` 与 `cargo fmt --check` 通过。**C7 端到端批次整体跳过**（用户决策）：`agent_loop_e2e.rs` / `agent_loop_dialect.rs` 未编写，C7.1–C7.17 与 C8.6 不计完成，端到端链路无自动化覆盖为已知缺口；组件级等价覆盖见 tasklist C7 说明） | P2、P3；I30 B 段决策 |
 | **P5 OS 工具能力** | `agent_*.rs` 九个文件工具（注册名 `read` / `ls` / `glob` / `grep` / `write` / `edit` / `mkdir` / `move` / `delete`）、`ask_user` 逐个落地；**`shell` 暂不提供**（[I38c §13](./I38c-os-tools-spec.md)）；白名单工具解析 `resolve_available_tools` 替换 P4 的 `RegistryToolCatalog`（deny-by-default + 显式白名单/黑名单）；清理 P4 接入代码（`ToolCatalog` trait、`RegistryToolCatalog`、`TurnSpec.tools` 类型收窄） | I38c | ❌ 未开始（规格与任务清单已定稿 2026-11-06，待开工） | P1、P2 |
-| **P6 前端与模式** | 五态 ToolCallBubble、审批 UI、AgentMode / 对话级工具配置；chat / agent 链路显式切换（新建会话按 `mode.kind` 选路，会话内锁定）；**审批卡片携带用户判断信息**（L0 `tier`/`behavior` + L1 `Policy::explain` 原因 + L2 `preview_for_approval` 量级预演，[I38d §3.2.1](./I38d-agent-frontend-modes-spec.md)） | I38d | ❌ 未开始 | P4、P5 |
+| **P6 前端与模式** | 五态 ToolCallBubble、审批 UI、AgentMode / 对话级工具配置；chat / agent 链路显式切换（新建会话按 `mode.kind` 选路，会话内锁定）；**审批卡片携带用户判断信息**（单个 `ApprovalContext` 包裹：L0 `tier`/`behavior` + L1 `Policy::explain` 原因 + L2 `preview_for_approval` 量级预演 + `extensions` 后端检测出口，[I38d §3.2.1](./I38d-agent-frontend-modes-spec.md)） | I38d | ❌ 未开始 | P4、P5 |
 | **P7 MCP 外部工具** | MCP 客户端、进程管理、`mcp__{server}__{tool}` 桥接 | I38e | ❌ 未开始 | P2、P5 |
 
 **P0 的完成判据**（已复核代码）：`assistant-agent` 与前端不再持有 chat tool call 累积器与渲染组件；`ToolRegistry` 具备 `<=` 语义与受众过滤；`os_tool_exec` 已走 `exec::invoke`；生产注册表只有 `fs_link`（`TOOLBOX_ONLY`）。
@@ -176,3 +176,9 @@ P2 + P5 ───────────► P7
 6. 阶段完成时保留 spec（不删除），只在本表标注日期与结论，不改 spec 头表状态。
 7. 任何跨阶段契约变更（类型、事件名、落库格式）必须同时更新受影响阶段的 spec，不允许只改当前阶段。
 8. 禁止在 §4 文档地图或阶段汇总类清单里再列「状态」列——这类表只回答「谁管什么」，不回答「做到哪了」；任务级清单（tasklist）是唯一例外，见第 2 条。
+9. **wire 类型不在文档里重复声明**：DTO 的唯一权威源是 `src-tauri/src/protocol/dto/*.rs`（Rust 侧 derive `TS`），前端类型由 `npm run contract:gen` 生成、`npm run contract:check` 校验。因此：
+   - 已生成的类型，完整声明**最多出现一次**，且只允许出现在其**设计来源 spec**（如 `AgentToolCallDto` 在 I38b §6.1.1）作为溯源；其余文档（含后续阶段 spec）只写「字段名 + 约束」表或增量描述；
+   - 文档与生成结果不一致时**以代码为准**并修正文档，文档不得成为第二个契约源；
+   - 尚未实现的 DTO 允许在唯一声明处写完整定义（通常是对应阶段 spec）；
+   - 内部类型（非 wire，如 `assistant-tools` 的 `ApprovalContext`）不在生成范围内，可在其所属 spec 写完整定义，DTO 侧只写映射关系。
+   新增 DTO 必须同时登记到 `src-tauri/tests/protocol_bindings.rs` 的 `declarations` 数组，漏登记该测试直接失败。

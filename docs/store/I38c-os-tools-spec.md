@@ -65,11 +65,11 @@
 | `ask_user` | — | 是 | 否 | 否 | AGENT_ONLY |
 | `fs_link` | — | 实际 `read_only=false` | 否 | 是 | TOOLBOX_ONLY |
 
-**命名规范**：文件名是代码维护名，`Tool::name()` 是注册名（模型与 `os_tool_exec` 看到的唯一标识），两者刻意分离。
+**命名规范**：文件名是代码维护名，`Tool::id()` 是内部唯一标识（注册表键、白名单匹配、审批与审计、`os_tool_exec` 的 `tool` 参数），两者刻意分离；`Tool::name()` 是发给模型的调用名（`ToolSpec.name`），默认与 `id()` 同名，仅在需要内外命名分离时覆写。`register` 只接收工具本身，两个身份字段都由实现声明。
 
 `agent_` 前缀是**受众标记**，不是通用目录前缀：只有 `audience().agent == true` 的工具（`BOTH` / `AGENT_ONLY`）才用 `agent_`，一眼即可看出哪些文件会被注入模型；`TOOLBOX_ONLY` 工具与 Agent 无关，不套该前缀。注册名保持纯动作词，模型侧不出现领域前缀。
 
-| 文件（`assistant-tools/src/os/`） | 注册名（`Tool::name()`） | 旧名 |
+| 文件（`assistant-tools/src/os/`） | 注册名（`Tool::id()`） | 旧名 |
 |---|---|---|
 | `agent_read.rs` | `read` | `fs_read` |
 | `agent_list.rs` | `ls` | `fs_list` |
@@ -84,7 +84,7 @@
 | `agent_ask_user.rs` | `ask_user` | `ask_user` |
 
 1. 注册名一律小写 snake_case、字母开头、≤64 字符，字符集 `[a-z0-9_]`；**禁用 kebab**（Gemini 方言不接受 `-`）。
-2. 文件名与注册名解耦：改注册名只影响 `Tool::name()` 与调用方（前端 `os_tool_exec` 的 `tool` 参数），不影响文件组织。
+2. 文件名与注册名解耦：改注册名只影响 `Tool::id()` 与调用方（前端 `os_tool_exec` 的 `tool` 参数），不影响文件组织。
 3. `os_tool_exec` 的 `tool` 参数、AgentMode 的 `enabledTools` / `disabledTools` 白名单一律填**注册名**（`read`、`write` …），不填文件名。前端 `os.ts` 命名空间是 TS 本地写法：注册名单词时与注册名同名（`os.read`），多词时驼峰（`os.askUser`），不影响 wire（见 [I18b](./I18b-tool-unified-bridge-spec.md) §2）。
 4. `fs_link` 是存量 `TOOLBOX_ONLY` 工具（`audience().agent == false`），**保留 `fs_link.rs` 文件名与 `fs_link` 注册名，不改名、不参与本表**——它不进入模型工具集，`agent_` 前缀对它没有意义。
 5. 本文各工具小节标题一律写**注册名**；实现路径见 §3 与[执行清单](./I38c-os-tools-tasklist.md)。
@@ -135,7 +135,7 @@ pub async fn resolve_available_tools(
     // 1. 层级硬上限 + 受众过滤：ToolRegistry::tool_definitions_for_tier(max_tier).await
     //    → Vec<ToolDefinition>（已按注册名排序）
     // 2. deny-by-default：enabled_tools 为空 → 空集
-    // 3. 白名单过滤：definition.name in enabled_tools
+    // 3. 白名单过滤：definition.id in enabled_tools
     // 4. disabled_tools 优先于 enabled_tools
     // 5. ToolDefinition → ToolSpec（原 tool_catalog.rs 的 into_tool_spec 搬入本文件）
 }
@@ -260,7 +260,7 @@ pub struct ReadTool;
 
 #[async_trait]
 impl Tool for ReadTool {
-    fn name(&self) -> &str { "read" }
+    fn id(&self) -> &str { "read" }
     async fn description(&self) -> Result<String, String>;
     fn input_schema(&self) -> Value;
     fn tier(&self) -> ToolTier { ToolTier::Os }
@@ -273,15 +273,19 @@ impl Tool for ReadTool {
 }
 ```
 
+`id()` 是内部唯一标识（注册表键、白名单匹配、审批与审计、`os_tool_exec` 的 `tool` 参数），必须由工具自身声明；`name()` 是发给模型的调用名，默认返回 `id()`，只有需要内外命名分离时才覆写。注册只接收工具本身（`register(tool)`），身份不从注册处传入，因此不存在「注册点与实现两处同步」的错配。
+
 ### 4.1 审批预演（`preview_for_approval`）
 
 P5 各分册要求「审批卡片展示量级」，但量级只能来自审批**前**的一次只读预演——`execute()` 的结果 `data` 在审批时尚未产生，**不得**用它充当预演信息。契约与超时语义见 [I38a §2.8.1 / §3.1](./I38a-tool-control-layer-spec.md)。
 
-| 工具 | 预演内容 | 成本 | 参考实现 |
+预演返回 `ApprovalPreview`：`summary`（后端格式化的一句话）+ `truncated` + `estimated`。**不返回固定的 `size` 字段**——各工具的量纲不同（条目数 / 字节数 / 行数 / 替换次数），由 `summary` 按工具语义自行表达；需要结构化补充时走 `extensions`，不扩 `preview`（见 [I38a §2.8.1](./I38a-tool-control-layer-spec.md)）。
+
+| 工具 | 预演内容（`summary`） | 成本 | 参考实现 |
 |---|---|---|---|
-| `delete` | `entries` / `bytes` / `truncated`（复用 [delete §3.3](./I38c-delete-spec.md) 的预扫描） | 一次目录遍历，上限 `DELETE_SCAN_LIMIT` | 把 §3.3 的扫描抽成可复用函数，`execute` 与 `preview` 共用 |
-| `write` | 目标是否存在、现有 `lines` / `bytes`、`overwrites` | `metadata` + 行计数（**不读全文内容**） | 与 `write` 的「覆盖前检查」共用同一次统计 |
-| `edit` | `replacements` 数、`beforeLines` / `afterLines`（按参数估算） | 零 IO（参数推导） | diff 已在 `arguments` 中展示，预演只补量级 |
+| `delete` | 「删除 N 个条目（X MB）」；超上限时 `truncated = true`（复用 [delete §3.3](./I38c-delete-spec.md) 的预扫描） | 一次目录遍历，上限 `DELETE_SCAN_LIMIT` | 把 §3.3 的扫描抽成可复用函数，`execute` 与 `preview` 共用 |
+| `write` | 「覆盖 1 个现有文件（当前 N 行 / X KB）」；新建则「新建文件（N 行 / X KB）」 | `metadata` + 行计数（**不读全文内容**） | 与 `write` 的「覆盖前检查」共用同一次统计 |
+| `edit` | 「替换 N 处（约 M 行变更）」；`estimated = true` | 零 IO（参数推导） | diff 已在 `arguments` 中展示，预演只补量级 |
 | 只读组 / `mkdir` / `move` | 不实现（默认 `None`） | — | `mkdir` 的「目标已存在」由 `validate_input` 拒绝，无需预演 |
 
 **约束**：

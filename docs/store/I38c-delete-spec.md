@@ -74,7 +74,7 @@
 - `read_dir` 失败 → `Business`（无法确认目标结构，拒绝删除），不做「先试再删」。
 - 竞态：预扫描与实际删除之间目标可能变化，**以删除操作的返回为准**；预扫描结论只用于文案与审批展示。
 
-**可复用性要求**：扫描函数必须抽成独立单元，**同时**被 `preview_for_approval`（审批前，供卡片）与 `execute`（审批后，供结果与 `recursive = false` 判定）调用；两处禁止各写一份遍历逻辑，否则会出现「审批说 3 项、实际删 300 项」。`preview_for_approval` 只返回 `entries` / `bytes` / `truncated`，不做删除判定，`recursive = false` 的拒绝仍只在 `execute` 内发生。
+**可复用性要求**：扫描函数必须抽成独立单元，**同时**被 `preview_for_approval`（审批前，供卡片）与 `execute`（审批后，供结果与 `recursive = false` 判定）调用；两处禁止各写一份遍历逻辑，否则会出现「审批说 3 项、实际删 300 项」。`preview_for_approval` 只返回 `summary` + `truncated`（量级文案由共用扫描函数的结果格式化），不做删除判定，`recursive = false` 的拒绝仍只在 `execute` 内发生。
 
 ### 3.4 执行
 

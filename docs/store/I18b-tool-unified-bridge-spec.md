@@ -97,26 +97,12 @@ ToolBox 入口需要一条**直达路径**：前端组件 → Tauri command → 
 
 ### 2.3 `os_tool_exec` Tauri command 实现
 
-请求 / 返回的 wire 类型定义在 `src-tauri/src/protocol/dto/os_tool.rs`（全仓唯一 DTO 落点，`*Dto` 后缀 + `rename_all = "camelCase"`）：
+请求 / 返回的 wire 类型定义在 `src-tauri/src/protocol/dto/os_tool.rs`（全仓唯一 DTO 落点，`*Dto` 后缀 + `rename_all = "camelCase"`）。**本节不复述字段**，字段以该文件为准；前端类型由 `npm run contract:gen` 生成，不要照文档手写。
 
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct OsToolExecRequestDto {
-    pub tool: String,
-    pub action: String,
-    #[serde(default)]
-    pub params: Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct OsToolResultDto {
-    pub ok: bool,
-    pub data: Option<Value>,
-    pub error: Option<String>,
-}
-```
+| DTO | 字段 | 说明 |
+|---|---|---|
+| `OsToolExecRequestDto` | `tool` / `action` / `params` | 输入，`deny_unknown_fields` |
+| `OsToolResultDto` | `ok` / `data` / `resultForAssistant` / `error` / `errorKind` | `resultForAssistant` 与 `errorKind` 由 P2 控制层追加（[I38a §3.2](./I38a-tool-control-layer-spec.md)） |
 
 命令本体：
 

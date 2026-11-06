@@ -35,17 +35,17 @@
 实现：`src-tauri/Cargo.toml`、`src-tauri/crates/assistant-tools/Cargo.toml`、`src-tauri/crates/assistant-tools/src/os/{output,mod,path}.rs`、`src-tauri/crates/assistant-tools/src/storage.rs`
 测试：`src-tauri/crates/assistant-tools/tests/{output,storage}.rs`、`os/path.rs` 单测
 
-- [ ] C1.1 workspace `Cargo.toml` 增加 `ignore` / `globset` / `grep-searcher` / `grep-regex`（按 C0.9 定稿）
-- [ ] C1.4 `assistant-tools/Cargo.toml` 以 `workspace = true` 引入 C1.1 的依赖
-- [ ] C1.5 新建 `os/output.rs`：`OutputLimits { max_bytes, max_lines, preview_bytes }`、`TruncatedOutput`（`text` / `truncated` / `total_bytes` / `total_lines` / `returned_lines`）、`truncate_output`
-- [ ] C1.6 `truncate_output` 在截断时显式写「已截断 + 实际行数 / 字节数」，不静默丢弃
-- [ ] C1.7 `os/mod.rs` 增加 `pub mod output;`，并预留各工具模块声明
-- [ ] C1.8 `storage.rs` 新增 `InMemoryReadReceiptStore`（`dashmap`），实现 `ReadReceiptStore::lookup` / `record`
-- [ ] C1.9 `ReadReceiptKey` 补 `session_id: Option<String>`（C0.8），`InMemoryReadReceiptStore` 以其作键的一部分；同一路径 + 行范围 + 修订号在**不同会话**间互不抑制
-- [ ] C1.10 明确「修订号」计算方式：文件长度 + 修改时间（纳秒），不整文件哈希；写入 `agent_read.rs` 注释
-- [ ] C1.11 单测：未超限原样返回；超行 / 超字节各一条；截断提示包含实际值；回执键跨会话隔离
-- [ ] C1.12 `ReadReceiptStore::invalidate_path`（C0.13）：`InMemoryReadReceiptStore` 按组件级前缀移除条目；单测覆盖「子项失效」与「`/a/bc` 不被 `/a/b` 误伤」
-- [ ] C1.13 `os/path.rs::reject_system_dirs` 增加凭据目录（C0.14），按路径组件匹配、大小写不敏感；单测覆盖 `.ssh`、`Microsoft\Credentials` 与「项目目录名恰好含 `keychains` 但不作为组件」的用例
+- [x] C1.1 workspace `Cargo.toml` 增加 `ignore` / `globset` / `grep-searcher` / `grep-regex`（按 C0.9 定稿）
+- [x] C1.4 `assistant-tools/Cargo.toml` 以 `workspace = true` 引入 C1.1 的依赖
+- [x] C1.5 新建 `os/output.rs`：`OutputLimits { max_bytes, max_lines, preview_bytes }`、`TruncatedOutput`（`text` / `truncated` / `total_bytes` / `total_lines` / `returned_lines`）、`truncate_output`
+- [x] C1.6 `truncate_output` 在截断时显式写「已截断 + 实际行数 / 字节数」，不静默丢弃
+- [x] C1.7 `os/mod.rs` 增加 `pub mod output;`，并预留各工具模块声明
+- [x] C1.8 `storage.rs` 新增 `InMemoryReadReceiptStore`（`dashmap`），实现 `ReadReceiptStore::lookup` / `record`
+- [x] C1.9 `ReadReceiptKey` 补 `session_id: Option<String>`（C0.8），`InMemoryReadReceiptStore` 以其作键的一部分；同一路径 + 行范围 + 修订号在**不同会话**间互不抑制
+- [x] C1.10 明确「修订号」计算方式：文件长度 + 修改时间（纳秒），不整文件哈希；写入 `agent_read.rs` 注释
+- [x] C1.11 单测：未超限原样返回；超行 / 超字节各一条；截断提示包含实际值；回执键跨会话隔离
+- [x] C1.12 `ReadReceiptStore::invalidate_path`（C0.13）：`InMemoryReadReceiptStore` 按组件级前缀移除条目；单测覆盖「子项失效」与「`/a/bc` 不被 `/a/b` 误伤」
+- [x] C1.13 `os/path.rs::reject_system_dirs` 增加凭据目录（C0.14），按路径组件匹配、大小写不敏感；单测覆盖 `.ssh`、`Microsoft\Credentials` 与「项目目录名恰好含 `keychains` 但不作为组件」的用例
 
 ---
 
@@ -56,45 +56,45 @@
 
 **组内共同项**
 
-- [ ] C2.1 四个工具均实现 `name` / `description` / `input_schema` / `tier = Os` / `audience = BOTH` / `behavior_hints.read_only = true` / `destructive = false` / `open_world = false`
-- [ ] C2.2 `permission_intents` 返回空 `Vec`（沿用默认实现，A3）
-- [ ] C2.3 `is_concurrency_safe` 返回 `true`（只读默认；不因 input 收紧）
-- [ ] C2.4 `validate_input` 覆盖必填缺失与类型错误，并对所有路径参数调用 `os::path::resolve`（A1 / A2）
-- [ ] C2.5 `execute` 内同步文件 IO / 目录遍历一律包 `tokio::task::spawn_blocking`，不阻塞 tokio worker
-- [ ] C2.6 四个工具均能容忍 `os_tool_exec` 注入的多余 `action` 字段（C0.5）
+- [x] C2.1 四个工具均实现 `id` / `description` / `input_schema` / `tier = Os` / `audience = BOTH` / `behavior_hints.read_only = true` / `destructive = false` / `open_world = false`
+- [x] C2.2 `permission_intents` 返回空 `Vec`（沿用默认实现，A3）
+- [x] C2.3 `is_concurrency_safe` 返回 `true`（只读默认；不因 input 收紧）
+- [x] C2.4 `validate_input` 覆盖必填缺失与类型错误，并对所有路径参数调用 `os::path::resolve`（A1 / A2）
+- [x] C2.5 `execute` 内同步文件 IO / 目录遍历一律包 `tokio::task::spawn_blocking`，不阻塞 tokio worker
+- [x] C2.6 四个工具均能容忍 `os_tool_exec` 注入的多余 `action` 字段（C0.5）
 
 **`read`**
 
-- [ ] C2.7 `input_schema`：`path` / `offset` / `limit` 及边界语义（[read §2 / §3](./I38c-read-spec.md)）
-- [ ] C2.8 默认读全部，上限 1MB / 2000 行；`offset` + `limit` 支持行范围
-- [ ] C2.9 二进制检测：读取前 8KB，含 NUL 字节即拒绝，提示改用十六进制 / 文本工具
-- [ ] C2.10 超限与单行截断的提示文案、输出格式契约（与 `edit` 共用常量）见 [read §3 / §3.2](./I38c-read-spec.md)
-- [ ] C2.11 读取回执：同一 session + 同一路径 + 同一行范围且修订号未变 → 返回「已在上文返回」，不回传内容
-- [ ] C2.12 修订号变化 → 重新读取并刷新回执
-- [ ] C2.13 测试：schema、缺 `path`、`offset` / `limit` 边界、二进制拒绝、截断提示、长行 `[truncated]`、行号前缀格式、回执复用与刷新、空文件
+- [x] C2.7 `input_schema`：`path` / `offset` / `limit` 及边界语义（[read §2 / §3](./I38c-read-spec.md)）
+- [x] C2.8 默认读全部，上限 1MB / 2000 行；`offset` + `limit` 支持行范围
+- [x] C2.9 二进制检测：读取前 8KB，含 NUL 字节即拒绝，提示改用十六进制 / 文本工具
+- [x] C2.10 超限与单行截断的提示文案、输出格式契约（与 `edit` 共用常量）见 [read §3 / §3.2](./I38c-read-spec.md)
+- [x] C2.11 读取回执：同一 session + 同一路径 + 同一行范围且修订号未变 → 返回「已在上文返回」，不回传内容
+- [x] C2.12 修订号变化 → 重新读取并刷新回执
+- [x] C2.13 测试：schema、缺 `path`、`offset` / `limit` 边界、二进制拒绝、截断提示、长行 `[truncated]`、行号前缀格式、回执复用与刷新、空文件
 
 **`ls`**
 
-- [ ] C2.14 `input_schema`：`path`（必填）+ `depth`（默认 1、最大 10）+ `all`（包含隐藏项）
-- [ ] C2.15 输出按名称排序，每层最大 1000 条目，超出时显式提示
-- [ ] C2.16 目录遍历不跟随符号链接（避免越界读取）；对每个条目仍保持 workspace 边界结论一致
-- [ ] C2.17 测试：默认深度、深度夹取、隐藏项开关、排序、1000 条上限、越界路径拒绝、符号链接目录不被跟随
+- [x] C2.14 `input_schema`：`path`（必填）+ `depth`（默认 1、最大 10）+ `all`（包含隐藏项）
+- [x] C2.15 输出按名称排序，每层最大 1000 条目，超出时显式提示
+- [x] C2.16 目录遍历不跟随符号链接（避免越界读取）；对每个条目仍保持 workspace 边界结论一致
+- [x] C2.17 测试：默认深度、深度夹取、隐藏项开关、排序、1000 条上限、越界路径拒绝、符号链接目录不被跟随
 
 **`glob`**
 
-- [ ] C2.18 `input_schema`：`pattern`（必填）+ `path`（基准目录）+ `exclude`（数组）
-- [ ] C2.19 `path` 缺省时取 `workspace_root`；无 `workspace_root` 则返回明确错误
-- [ ] C2.20 使用 `ignore` 的 walker + `globset` 处理 pattern / exclude，遵守 `.gitignore`（C0.9）
-- [ ] C2.21 结果只含 workspace 内路径，最大 1000 条，按路径字典序排序
-- [ ] C2.22 测试：pattern 命中、exclude 生效、1000 条上限、越界拒绝、缺省基准目录、排序稳定
+- [x] C2.18 `input_schema`：`pattern`（必填）+ `path`（基准目录）+ `exclude`（数组）
+- [x] C2.19 `path` 缺省时取 `workspace_root`；无 `workspace_root` 则返回明确错误
+- [x] C2.20 使用 `ignore` 的 walker + `globset` 处理 pattern / exclude，遵守 `.gitignore`（C0.9）
+- [x] C2.21 结果只含 workspace 内路径，最大 1000 条，按路径字典序排序
+- [x] C2.22 测试：pattern 命中、exclude 生效、1000 条上限、越界拒绝、缺省基准目录、排序稳定
 
 **`grep`**
 
-- [ ] C2.23 `input_schema`：`pattern`（必填）+ `path` + `include`（文件 glob）+ `context`（默认 0）
-- [ ] C2.24 使用 `ignore` 遍历 + `grep-searcher` / `grep-regex` 搜索，`include` 用 `globset` 过滤
-- [ ] C2.25 输出含文件路径、行号、匹配行与 context 行；最大 100 条匹配；内部 deadline 提前停止的语义见 [grep §3](./I38c-grep-spec.md)
-- [ ] C2.26 非法正则返回 `ToolResult::err`（`Business`），不 panic、不中断 turn
-- [ ] C2.27 测试：匹配与行号、context 行数、include 过滤、100 条上限、非法正则、越界拒绝、内部 deadline 提前停止
+- [x] C2.23 `input_schema`：`pattern`（必填）+ `path` + `include`（文件 glob）+ `context`（默认 0）
+- [x] C2.24 使用 `ignore` 遍历 + `grep-searcher` / `grep-regex` 搜索，`include` 用 `globset` 过滤
+- [x] C2.25 输出含文件路径、行号、匹配行与 context 行；最大 100 条匹配；内部 deadline 提前停止的语义见 [grep §3](./I38c-grep-spec.md)
+- [x] C2.26 非法正则返回 `ToolResult::err`（`Business`），不 panic、不中断 turn
+- [x] C2.27 测试：匹配与行号、context 行数、include 过滤、100 条上限、非法正则、越界拒绝、内部 deadline 提前停止
 
 ---
 
@@ -110,9 +110,9 @@
 
 **`write`**
 
-- [ ] C3.5 schema：`path` / `content`（必填）+ `append`（默认 false）；覆盖已有文件自动创建父目录
-- [ ] C3.6 单次写入上限 10MB，超出返回 `Business`；`append = true` 时追加而非覆盖；幂等成功、不可读拒绝覆盖与原子写（临时文件 → `sync_all` → rename）见 [write §3](./I38c-write-spec.md)
-- [ ] C3.7 测试：新建、覆盖、追加、父目录自动创建、10MB 拒绝、越界拒绝、相同内容不写盘、不可读文件拒绝覆盖
+- [x] C3.5 schema：`path` / `content`（必填）+ `append`（默认 false）；覆盖已有文件自动创建父目录
+- [x] C3.6 单次写入上限 10MB，超出返回 `Business`；`append = true` 时追加而非覆盖；幂等成功、不可读拒绝覆盖与原子写（临时文件 → `sync_all` → rename）见 [write §3](./I38c-write-spec.md)
+- [x] C3.7 测试：新建、覆盖、追加、父目录自动创建、10MB 拒绝、越界拒绝、相同内容不写盘、不可读文件拒绝覆盖
 
 **`edit`**
 
@@ -190,7 +190,7 @@
 - [ ] C6b.1 新建 `src-tauri/src/adapters/tool_resolver.rs`：`pub async fn resolve_available_tools(registry: &ToolRegistry, enabled_tools: &[String], disabled_tools: &[String], max_tier: ToolTier) -> Vec<ToolSpec>`（**必须 async**：`tool_definitions_for_tier` 与 `Tool::description` 均 async）
 - [ ] C6b.2 过滤顺序固定为 `tier → audience → deny-by-default → whitelist → blacklist`（规格 §3.1）；前两步与排序复用 `ToolRegistry::tool_definitions_for_tier(max_tier)`（返回 `Vec<ToolDefinition>`），并把原 `tool_catalog.rs` 的 `into_tool_spec` 搬入本文件完成 `ToolDefinition → ToolSpec` 转换
 - [ ] C6b.3 `disabled_tools` 优先于 `enabled_tools`：同一工具同时出现 → 排除
-- [ ] C6b.4 工具匹配按 `Tool::name()` 注册名，不按文件名；未知工具名静默忽略（不报错）
+- [ ] C6b.4 工具匹配按 `Tool::id()` 注册名，不按文件名；未知工具名静默忽略（不报错）
 - [ ] C6b.5 返回 `Vec<ToolSpec>` 顺序继承 `tool_definitions_for_tier` 的注册名字典序（确定性输出，便于测试）
 - [ ] C6b.6 在 `src-tauri/src/protocol/dto/agent.rs` 新建 `ConversationToolConfigDto`：`max_tool_tier: ToolTierDto` / `approval_level: ApprovalLevelDto` / `enabled_tools: Vec<String>` / `disabled_tools: Vec<String>`（`camelCase` + `deny_unknown_fields`）
 - [ ] C6b.7 同文件新建 `ToolTierDto`（`Sandbox` / `Os` / `External`）与 `ApprovalLevelDto`（`None` / `DangerousOnly` / `AllOsTools`，`rename_all = "snake_case"` 以对齐 I38d §4.2 的 `dangerous_only` / `all_os_tools`）；`ToolTier` 已存在于 `assistant-tools`，DTO 侧提供 `From` 双向转换，不把内部类型暴露到 wire
