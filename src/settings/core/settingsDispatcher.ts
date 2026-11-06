@@ -67,5 +67,6 @@ export async function dispatchConfPatch<G extends ConfGroup>(
     });
   } catch (e) {
     log.error("dispatchConfPatch failed", e);
+    throw e;
   }
 }

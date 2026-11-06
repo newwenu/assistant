@@ -221,12 +221,19 @@ export default function VaultSyncSettings({
   };
 
   const handleSaveConfig = async () => {
-    await saveSyncConfig(buildConfig());
-    const hosts = sshHosts
-      .split(",")
-      .map((host) => host.trim().toLowerCase())
-      .filter((host) => host.length > 0);
-    await dispatchConfPatch("vault", { vaultSyncSshHosts: hosts });
+    try {
+      await saveSyncConfig(buildConfig());
+      const hosts = sshHosts
+        .split(",")
+        .map((host) => host.trim().toLowerCase())
+        .filter((host) => host.length > 0);
+      await dispatchConfPatch("vault", { vaultSyncSshHosts: hosts });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      message.error(
+        translateKey("common.actions.save_failed_desc", { error: detail }),
+      );
+    }
   };
 
   const handleTestConnection = async () => {

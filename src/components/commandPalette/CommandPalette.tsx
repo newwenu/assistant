@@ -21,6 +21,7 @@ import { aggregateCommands } from "./commandAggregation";
 import { useCommandPaletteShortcut } from "./commandPaletteBindings";
 import { COMMAND_PALETTE_MAX_PER_CATEGORY } from "@/config/constants";
 import { useConfGroup } from "@/settings/core/useConfGroup";
+import { notifyError } from "@/stores/notifyStore";
 import { IS_MAC } from "@/settings/core/types/shortcutTypes";
 import styles from "./CommandPalette.module.css";
 
@@ -104,7 +105,15 @@ export const CommandPalette: React.FC = () => {
 
   const activate = useCallback(
     (cmd: CommandDefinition, keepOpen = false) => {
-      void cmd.action();
+      void Promise.resolve(cmd.action()).catch((e: unknown) => {
+        notifyError(
+          "common.actions.save_failed",
+          "common.actions.save_failed_desc",
+          {
+            error: e instanceof Error ? e.message : String(e),
+          },
+        );
+      });
       if (cmd.closeOnSelect !== false && !keepOpen) close();
     },
     [close],

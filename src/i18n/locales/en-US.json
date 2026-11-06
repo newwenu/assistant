@@ -21,6 +21,8 @@
     },
     "actions": {
       "saved": "Saved",
+      "save_failed": "Save failed",
+      "save_failed_desc": "Settings could not be saved: {{error}}",
       "save": "Save",
       "cancel": "Cancel",
       "more": "More",
@@ -586,7 +588,8 @@
       "summary_label": "Handoff Summary"
     },
     "retry": {
-      "retrying": "Retrying ({{attempt}}/{{max}}) in {{delay}}s…"
+      "retrying": "Retrying ({{attempt}}/{{max}})",
+      "countdown": "in {{seconds}}s…"
     },
     "orb": {
       "conversation_list": "Conversation list",

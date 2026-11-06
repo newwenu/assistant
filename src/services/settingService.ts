@@ -1,3 +1,4 @@
+import type { InstallMascotAssetResultDto } from "@/types/protocol.contract";
 import { tauriInvoke as invoke } from "./tauriInvoke";
 
 function toSnakeCaseKey(key: string): string {
@@ -14,12 +15,6 @@ function patchToSnakeCase(
   return result;
 }
 
-export interface InstallAssetResult {
-  installedPath: string;
-  bytes: number;
-  version: number;
-}
-
 export const settingService = {
   getAppVersion: (): Promise<string> => invoke<string>("get_app_version"),
 
@@ -28,8 +23,8 @@ export const settingService = {
   installMascotAsset: (
     assetType: string,
     filePath: string,
-  ): Promise<InstallAssetResult> =>
-    invoke<InstallAssetResult>("install_mascot_asset", {
+  ): Promise<InstallMascotAssetResultDto> =>
+    invoke<InstallMascotAssetResultDto>("install_mascot_asset", {
       assetType,
       filePath,
     }),

@@ -47,8 +47,12 @@ export const ShortcutSettings: React.FC = () => {
   }, [searchQuery, keybindings]);
 
   const handleReset = async () => {
-    await dispatchKeybindingsReset();
-    msg.success("settings.shortcuts.reset_success");
+    try {
+      await dispatchKeybindingsReset();
+      msg.success("settings.shortcuts.reset_success");
+    } catch (e) {
+      msg.showFailed(e);
+    }
   };
 
   const groupedDefinitions = useMemo(() => {

@@ -90,7 +90,7 @@ export const OrbPanel: React.FC = () => {
               getMouseLogicalPos(),
               getWindowLogicalRect(),
             ]);
-            if (isPointInRect(mouse.x, mouse.y, winRect)) return;
+            if (mouse && isPointInRect(mouse.x, mouse.y, winRect)) return;
           } catch {
             // if coord check fails, fall through to collapse
           }

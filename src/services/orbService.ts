@@ -1,29 +1,19 @@
+import type {
+  MousePositionDto,
+  ScreenSizeDto,
+} from "@/types/protocol.contract";
 import { tauriInvoke as invoke } from "./tauriInvoke";
 
-export interface MousePosition {
-  clientX: number;
-  clientY: number;
-}
-
-export interface ScreenSize {
-  screen: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-}
-
 export const orbService = {
-  getMousePosition: (): Promise<MousePosition> =>
-    invoke<MousePosition>("get_mouse_position"),
+  getMousePosition: (): Promise<MousePositionDto | null> =>
+    invoke<MousePositionDto | null>("get_mouse_position"),
 
   getScreenSize: (
     centerX: number,
     centerY: number,
     scaleFactor: number,
-  ): Promise<ScreenSize> =>
-    invoke<ScreenSize>("get_screen_size", {
+  ): Promise<ScreenSizeDto> =>
+    invoke<ScreenSizeDto>("get_screen_size", {
       centerX,
       centerY,
       scaleFactor,
