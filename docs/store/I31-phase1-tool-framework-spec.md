@@ -13,7 +13,7 @@
 
 本文定义阶段一「工具框架」的交付内容：**类型契约、执行边界、共享路径安全、验收标准**。
 
-**本阶段不实现任何新工具能力**——不新增 `fs_read` / `fs_list` / `fs_glob` / `fs_grep` / `fs_write` / `fs_mkdir` / `fs_move` / `fs_delete` / `shell_exec`。工具能力属 P5（[I38c](./I38c-os-tools-spec.md)），等控制层与桥接语义稳定后再做。本阶段只保证「工具插进来时，框架是对的」。
+**本阶段不实现任何新工具能力**——不新增 `read` / `ls` / `glob` / `grep` / `write` / `mkdir` / `move` / `delete` / `shell`。工具能力属 P5（[I38c](./I38c-os-tools-spec.md)），等控制层与桥接语义稳定后再做。本阶段只保证「工具插进来时，框架是对的」。
 
 ---
 
@@ -113,9 +113,9 @@ src-tauri/crates/assistant-tools/src/
     └── fs_link.rs        (已改) 迁移到 path.rs，修正 permission 词汇（受众声明已完成）
 ```
 
-**不新增**：`os/output.rs`、任何 `fs_*.rs`、`shell_exec.rs`。
+**不新增**：`os/output.rs`、任何 `agent_*.rs`。
 
-> `os/output.rs`（输出截断）本阶段**不建**。它的唯一消费方是 `fs_read` / `fs_glob` / `fs_grep` / `shell_exec`，没有工具就没有调用者，属死代码。等 Step 2 第一个需要截断的工具落地时一并实现。
+> `os/output.rs`（输出截断）本阶段**不建**。它的唯一消费方是 `read` / `glob` / `grep` / `shell`，没有工具就没有调用者，属死代码。等 Step 2 第一个需要截断的工具落地时一并实现。
 
 ---
 
@@ -255,9 +255,9 @@ impl ToolResult {
 |---|---|
 | 异步、`await` 点密集 | `tokio::time::timeout` 直接生效 |
 | 同步文件 IO | 必须 `spawn_blocking` 包裹，超时只保证调用方及时返回，后台线程仍会跑完 |
-| 子进程（`shell_exec`） | **不能依赖 `tokio::timeout`**，必须子进程级超时 + kill（Windows 用 `TerminateProcess` / Job Object） |
+| 子进程（`shell`） | **不能依赖 `tokio::timeout`**，必须子进程级超时 + kill（Windows 用 `TerminateProcess` / Job Object） |
 
-本阶段无 `shell_exec`，但契约必须先写清，避免 Step 2 误以为 `invoke` 的超时对进程有效。
+本阶段无 `shell`，但契约必须先写清，避免 Step 2 误以为 `invoke` 的超时对进程有效。
 
 ### 4.4 ToolUseContext（保持字段不变）
 
@@ -423,7 +423,7 @@ pub fn ensure_within_root(path: &Path, root: &Path) -> Result<(), String>;
 | # | 理由 |
 |---|---|
 | 1 | **没有消费方**。`ChatOptions` 无 `tools` 字段，`ToolDefinition` 无法进入请求；工具实现了也没有 LLM 能看到 |
-| 2 | **控制层未就绪**。`shell_exec` / `fs_delete` 属破坏性能力，按 design §3.10「先安全框架再加能力」，必须在 Policy/Gateway 之后 |
+| 2 | **控制层未就绪**。`shell` / `delete` 属破坏性能力，按 design §3.10「先安全框架再加能力」，必须在 Policy/Gateway 之后 |
 | 3 | **桥接语义未收敛**。`workspace_root` 恒为 `None`、无超时、DTO 刚落位，此时铺 9 个工具会把错误形态复制 9 份 |
 | 4 | **框架先稳定收益更大**。`invoke` + `path.rs` + `ToolDefinition` 一旦定稿，后续每个工具都是「填一个文件 + 注册一行」，成本恒定 |
 
@@ -463,8 +463,8 @@ pub fn ensure_within_root(path: &Path, root: &Path) -> Result<(), String>;
 
 由此产生的硬约束（同步写入 I38c 与 I18 spec Step 8）：
 
-1. **Step 4/5 就绪前，不得把 `shell_exec` 加入生产注册表**。
-2. `fs_delete` 等破坏性工具与前端组件同期上线，不得先行注册。
+1. **Step 4/5 就绪前，不得把 `shell` 加入生产注册表**。
+2. `delete` 等破坏性工具与前端组件同期上线，不得先行注册。
 3. 新增工具时，`os/mod.rs` 应提供分组注册（只读 / 修改 / 危险），`setup.rs` 只注册已确认可暴露的分组。
 
 第 3 条本阶段不实现（无工具可分组），仅作为约定记录。
@@ -536,7 +536,7 @@ T1 与 T2 不触碰任何工具，可独立提交、独立回滚。T3 是本阶�
 
 ## 12 非目标
 
-- 不实现任何新工具（含 `shell_exec`）
+- 不实现任何新工具（含 `shell`）
 - 不新增 Tauri command；`os_tool_exec` 仅把 `find()` 换为 `find_for_toolbox()`（过滤增强，对外行为不变）
 - 不新增前端组件，不改 `os.ts`
 - 不实现控制层（Policy / Gateway / Pipeline / RoundExecutor）
@@ -558,5 +558,5 @@ T1 与 T2 不触碰任何工具，可独立提交、独立回滚。T3 是本阶�
 | R5 | 框架就绪后，后续工具可能绕过 `path.rs` 自行实现 | 在 I38c 写入「必须 import `os::path`」的硬约束，A10 以 grep 校验 |
 | R6 | `DashMap` guard 跨 `await` 死锁 | §4.2 明确「先收集再 await」，列为 code review 检查项 |
 | R7 | 默认值已收紧为 `NONE`（fail-closed），忘记声明不会再静默暴露；剩余风险是新工具漏声明后「功能不可见」而非「安全暴露」 | 文档约束新增工具必须显式声明；`setup.rs` 或 CI 校验「新增工具清单 vs 显式 audience 清单」，避免功能静默失效 |
-| R8 | `invoke` 的超时对子进程无效（`shell_exec` 将来会踩） | §4.3 明确「子进程必须进程级超时 + kill」；P5 实现 `shell_exec` 时以进程组/Job Object 收口，禁止复用 `tokio::timeout` 了事 |
+| R8 | `invoke` 的超时对子进程无效（`shell` 将来会踩） | §4.3 明确「子进程必须进程级超时 + kill」；P5 实现 `shell` 时以进程组/Job Object 收口，禁止复用 `tokio::timeout` 了事 |
 | R9 | A7 的 junction 用例依赖本机环境（开发者模式/权限策略） | 允许 `#[ignore]` 或运行时跳过，不因此判 A1 失败；symlink 用例同理 |

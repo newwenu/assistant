@@ -44,7 +44,7 @@ ToolBox 入口需要一条**直达路径**：前端组件 → Tauri command → 
 ```
                     ┌──────────────────────┐
                     │   Tool trait 实现     │  共享：实现一次
-                    │   (fs_link, fs_read…) │  两个入口可用
+                    │   (fs_link, read…)    │  两个入口可用
                     └──────────┬───────────┘
                                │
                     ┌──────────┴───────────┐
@@ -80,7 +80,7 @@ ToolBox 入口需要一条**直达路径**：前端组件 → Tauri command → 
 
 路径校验（`validate_path()`）等安全约束是 Tool.execute() 内部逻辑，不依赖 ToolPipeline，两个入口均受保护。
 
-**`shell_exec` 同理，且更严格**：它的 SafetyBelt、结构守卫、环境隔离、命令分类全部位于 `execute()` 内部（执行层不变量），ToolBox 直接调用也照样受保护；只有 AllowlistGate / ApprovalGate 这层审批留在 Pipeline，ToolBox 不经过。守卫分层归属见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §3.3–§3.4。
+**`shell` 同理，且更严格**：它的 SafetyBelt、结构守卫、环境隔离、命令分类全部位于 `execute()` 内部（执行层不变量），ToolBox 直接调用也照样受保护；只有 AllowlistGate / ApprovalGate 这层审批留在 Pipeline，ToolBox 不经过。守卫分层归属见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §3.3–§3.4。
 
 **ToolBox 永远不涉及审批**：用户点击即执行意图的表达，不存在「谁来批准」的问题。Pipeline 的 `validate_input` 阶段服务于 Agent 入口——它要在弹审批框之前先排除非法输入；ToolBox 没有审批框，因此不需要这个阶段。两者的共同底线是「不变量不可绕过」，但这条底线由 `execute()` 内部的 `validate_path()` 等函数保证，而不是靠 Pipeline 关卡。
 
@@ -136,7 +136,7 @@ pub async fn os_tool_exec(
 }
 ```
 
-关键：`os_tool_exec` 通过 `exec::invoke` 调 `Tool.execute()`，不经过 ToolPipeline。`invoke` 负责超时（`DEFAULT_TOOL_TIMEOUT = 30s`）与 `Err` 通道归一化；路径校验等安全约束仍由 `execute()` 内部保证，与 Agent 入口调同一个 `execute()` 时行为一致。`shell_exec` 的 SafetyBelt 与纵深防御也在 `execute()` 内，因此 ToolBox 调用它同样受保护——缺的只是 AllowlistGate / ApprovalGate 这层审批。
+关键：`os_tool_exec` 通过 `exec::invoke` 调 `Tool.execute()`，不经过 ToolPipeline。`invoke` 负责超时（`DEFAULT_TOOL_TIMEOUT = 30s`）与 `Err` 通道归一化；路径校验等安全约束仍由 `execute()` 内部保证，与 Agent 入口调同一个 `execute()` 时行为一致。`shell` 的 SafetyBelt 与纵深防御也在 `execute()` 内，因此 ToolBox 调用它同样受保护——缺的只是 AllowlistGate / ApprovalGate 这层审批。
 
 **已知待修**：`ToolUseContext::for_toolbox(None)` 使 `workspace_root` 恒为 `None`，相对路径工具在 ToolBox 入口下不可用，需补工作区来源（见 I18 spec 8.2）。
 
@@ -151,7 +151,16 @@ const result = await os.fsLink.create({ source, target, kind });
 
 > 参数命名以**实际实现**为准：`source` = 链接将被创建的位置，`target` = 已存在的被指向对象，`kind` = `symlink | hardlink | junction`。早期草稿使用的 `original / link / linkType / targetType` 未落地，勿按旧名调用。`fs_link` 为 `TOOLBOX_ONLY`，不进入 LLM 工具列表。
 
-`os` 对象内部统一走 `invoke("os_tool_exec", { tool, action, params })`，每个 OS 工具一个命名空间。`tool` 字段为字符串字面量，直接匹配 Rust `Tool.name()` 返回值，Tauri invoke 自动处理序列化，无需运行时命名转换。
+`os` 对象内部统一走 `invoke("os_tool_exec", { tool, action, params })`，每个 OS 工具一个命名空间。`tool` 字段为字符串字面量，必须与 Rust `Tool::name()` 返回值**逐字一致**，Tauri invoke 自动处理序列化，不做任何运行时命名转换（没有 snake_case → camelCase 的映射）。
+
+**两套命名，职责不同**：
+
+| 层 | 名字 | 约束 | 是否进 wire |
+|---|---|---|---|
+| Rust | `Tool::name()` / 文件名 | 注册名为小写 snake_case 纯动作词（`read` / `write` / `ask_user`）；文件名为 `agent_` 前缀（`agent_read.rs`），见 I38c §2 | 是（`tool` 字面量） |
+| 前端 | `os.ts` 命名空间属性 | camelCase 仅是 TS 本地风格；注册名单词时与注册名同名（`os.read`），多词时驼峰（`os.askUser`） | 否（只影响调用写法） |
+
+因此 `os.fsRead` 这类「Rust `fs_read` ↔ 前端 `fsRead`」的双向转换不再需要：注册名本身就是 `read`，前端直接 `os.read(...)` + `tool: "read"`。
 
 **OsResult 类型**：`{ ok: true; data: T } | { ok: false; error: string; code: string }`。
 
@@ -358,8 +367,9 @@ src/tools/
 > - `cmd/os_tool_exec.rs` 是唯一的 Tauri command，禁止为单个工具新增独立 command
 > - `os_tool_exec` 直达执行：ToolRegistry.find_for_toolbox() → Tool.execute()，不经过 ToolPipeline
 > - 前端 `os.ts` 是所有 OS 工具的类型安全入口，新增工具加一个命名空间即可
-> - `os/` 目录下每个工具一个文件，工具清单及接口由独立 spec 文档规定
-> - `os.ts` 命名空间用 camelCase（`os.fsLink`），`tool` 字段为字符串字面量直接匹配 Rust `Tool.name()`（`"fs_link"`），Tauri invoke 自动处理序列化
+> - `os/` 目录下每个工具至少一个文件（复杂工具可拆为多文件，如 `fs_link` 按职责分文件），工具清单及接口由独立 spec 文档规定
+> - `os.ts` 命名空间用 camelCase（`os.fsLink`），`tool` 字段为字符串字面量直接匹配 Rust `Tool::name()`（`"fs_link"`），Tauri invoke 自动处理序列化
+> - P5 新增的 agent 工具注册名为纯动作词，前端命名空间与注册名同名（`os.read` / `os.ls` / `os.glob` / `os.grep` / `os.write` / `os.edit` / `os.mkdir` / `os.move` / `os.delete` / `os.shell`，`tool` 字面量分别为 `"read"` … `"shell"`）；仅 `ask_user` 为多词，前端写 `os.askUser`，`tool` 仍为 `"ask_user"`
 
 ---
 

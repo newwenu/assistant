@@ -172,6 +172,81 @@ fn init_db_adds_status_column_to_legacy_messages_table() {
 }
 
 #[test]
+fn init_db_creates_permission_tables() {
+    let (conn, _dir) = init_temp_db();
+    for table in ["permission_grants", "permission_audit"] {
+        let count: i64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '{table}'"
+                ),
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "fresh db must have {table}");
+    }
+}
+
+#[test]
+fn init_db_adds_tool_columns_to_legacy_messages_table() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("legacy_tool.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO app_settings (key, value) VALUES ('schema_version', '1');
+             CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tokens INTEGER,
+                timestamp INTEGER NOT NULL,
+                parent_id TEXT,
+                sibling_index INTEGER NOT NULL DEFAULT 0,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                reasoning TEXT,
+                tool_calls_json TEXT,
+                provider_id TEXT,
+                model_id TEXT
+             );
+             INSERT INTO messages (id, conversation_id, role, content, timestamp)
+                 VALUES ('m1','c1','assistant','hello',0);",
+        )
+        .unwrap();
+    }
+
+    let conn = db::init_db(&db_path).unwrap();
+    for column in ["tool_call_id", "is_error"] {
+        let count: i64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = '{column}'"
+                ),
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "legacy db must gain messages.{column}");
+    }
+
+    let (tool_call_id, is_error): (Option<String>, i64) = conn
+        .query_row(
+            "SELECT tool_call_id, is_error FROM messages WHERE id = 'm1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert!(
+        tool_call_id.is_none(),
+        "existing rows keep NULL tool_call_id"
+    );
+    assert_eq!(is_error, 0, "existing rows default is_error to 0");
+}
+
+#[test]
 fn restart_sweep_marks_streaming_message_interrupted() {
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("restart.db");

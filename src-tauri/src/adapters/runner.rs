@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use assistant_agent::agent::round_executor::ToolExecutionPort;
 use assistant_agent::kernel::{
     CompactionConfig, EventSink, SessionStates, TurnInputSource, TurnRunner, TurnTasks,
 };
@@ -15,6 +16,7 @@ pub fn build_turn_runner(
 ) -> TurnRunner {
     let tasks = app.state::<Arc<TurnTasks>>().inner().clone();
     let states = app.state::<Arc<SessionStates>>().inner().clone();
+    let tool_exec = app.state::<Arc<dyn ToolExecutionPort>>().inner().clone();
     TurnRunner::new(
         sink,
         Arc::new(DbMessageStore::new(app.clone())),
@@ -24,6 +26,7 @@ pub fn build_turn_runner(
         Arc::new(SystemClock::new()),
         compaction_config(app),
     )
+    .with_tool_exec(tool_exec)
 }
 
 /// 终止式压缩的判定参数来自 `AppConf`，执行者由适配层提供。

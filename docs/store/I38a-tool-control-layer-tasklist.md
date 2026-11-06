@@ -17,7 +17,7 @@
 - [x] C0.3 确认 `exec::invoke` 仍是唯一执行入口，Pipeline 复用 `invoke` 而非直接调 `execute()`
 - [x] C0.4 确认审批与存储均为端口 trait，`assistant-tools` 不引入 `tauri`（A2）
 - [x] C0.5 确认 P2 不建 DB 表，`GrantStore` / `AuditStore` / `Storage` 生产绑定随 P4（A10）
-- [x] C0.6 确认 P2 只用测试替身工具，不新增任何 `fs_*` / `shell_exec` 实现
+- [x] C0.6 确认 P2 只用测试替身工具，不新增任何 `agent_*` 工具实现
 - [x] C0.7 确认 `ToolResultStorage` 根目录由构造参数注入，不读全局配置
 
 ---
@@ -168,7 +168,7 @@
 - [x] C6.1 定义 `per_tool_limit_chars = 50K` / `per_round_limit_chars = 200K` / `preview_chars = 2K`
 - [x] C6.2 实现选择算法：按序列化字符数**降序**排列，累计超单轮预算者才落盘
 - [x] C6.3 落盘后引用格式为 `<persisted-output path=…>` + 前 `preview_chars` 字符
-- [x] C6.4 定义 `ReadReceiptStore` 端口（跨轮去重预留，P5 由 `fs_read` 使用）
+- [x] C6.4 定义 `ReadReceiptStore` 端口（跨轮去重预留，P5 由 `read` 使用）
 - [x] C6.5 单测：小结果内联、不落盘（A8）
 - [x] C6.6 单测：超预算时按大小降序落盘，且落盘数量最小（A8）
 - [x] C6.7 单测：落盘引用与预览长度不超过 `preview_chars`（A8）
@@ -221,7 +221,7 @@
 
 ## 不做
 
-- 不新增 `fs_read` / `fs_list` / `fs_glob` / `fs_grep` / `fs_write` / `fs_edit` / `fs_mkdir` / `fs_move` / `fs_delete` / `shell_exec`
+- 不新增 `read` / `ls` / `glob` / `grep` / `write` / `edit` / `mkdir` / `move` / `delete` / `shell`
 - 不实现 RoundExecutor、多迭代循环、turn 生命周期（P4 / P3）
 - 不新增 Tauri 事件、审批 UI、前端组件（P6）
 - 不实现 MCP 工具（P7）

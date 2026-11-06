@@ -157,6 +157,216 @@ fn build_chat_options_default_no_temperature() {
     assert_eq!(opts.context_window_tokens, Some(128000));
 }
 
+fn make_tool_row(id: &str, call_id: &str, content: &str, is_error: bool) -> MessageRow {
+    let mut row = make_message_row("tool", content);
+    row.id = id.to_string();
+    row.tool_call_id = Some(call_id.to_string());
+    row.is_error = is_error;
+    row
+}
+
+fn make_assistant_with_calls(id: &str, calls: &[(&str, &str, &str)]) -> MessageRow {
+    let json: Vec<serde_json::Value> = calls
+        .iter()
+        .map(|(call_id, name, arguments)| {
+            serde_json::json!({ "id": call_id, "name": name, "arguments": arguments })
+        })
+        .collect();
+    let mut row = make_message_row("assistant", "");
+    row.id = id.to_string();
+    row.tool_calls_json = Some(serde_json::Value::Array(json).to_string());
+    row
+}
+
+#[test]
+fn prepare_messages_rebuilds_tool_history() {
+    let detail = make_detail(vec![
+        make_message_row("user", "read a.txt"),
+        make_assistant_with_calls(
+            "a1",
+            &[("c1", "read", "{\"path\":\"a.txt\"}"), ("c2", "list", "{}")],
+        ),
+        make_tool_row("t1", "c1", "file body", false),
+        make_tool_row("t2", "c2", "entries", true),
+    ]);
+
+    let wire = prompt_builder::prepare_messages(&detail, "S", None);
+
+    assert_eq!(wire.len(), 5);
+    let calls = wire[2]
+        .tool_calls
+        .as_ref()
+        .expect("assistant 应带 tool_calls");
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].id, "c1");
+    assert_eq!(calls[0].name, "read");
+    assert_eq!(calls[1].id, "c2");
+    assert_eq!(wire[3].tool_call_id.as_deref(), Some("c1"));
+    assert_eq!(wire[3].name.as_deref(), Some("read"));
+    assert!(!wire[3].is_error);
+    assert_eq!(wire[3].content, "file body");
+    assert_eq!(wire[4].tool_call_id.as_deref(), Some("c2"));
+    assert_eq!(wire[4].name.as_deref(), Some("list"));
+    assert!(wire[4].is_error);
+}
+
+#[test]
+fn prepare_messages_synthesizes_missing_tool_result() {
+    let detail = make_detail(vec![
+        make_message_row("user", "go"),
+        make_assistant_with_calls("a1", &[("c1", "read", "{}"), ("c2", "list", "{}")]),
+        make_tool_row("t1", "c1", "ok", false),
+    ]);
+    let rows_before = detail.messages.len();
+
+    let wire = prompt_builder::prepare_messages(&detail, "", None);
+
+    assert_eq!(detail.messages.len(), rows_before, "投影修复不得写库");
+    assert_eq!(wire.len(), 4);
+    assert_eq!(wire[3].role, base::MessageRole::Tool);
+    assert_eq!(wire[3].tool_call_id.as_deref(), Some("c2"));
+    assert_eq!(wire[3].name.as_deref(), Some("list"));
+    assert_eq!(wire[3].content, prompt_builder::INTERRUPTED_TOOL_RESULT);
+    assert!(wire[3].is_error);
+}
+
+#[test]
+fn prepare_messages_drops_orphan_tool_result() {
+    let detail = make_detail(vec![
+        make_message_row("user", "go"),
+        make_tool_row("t1", "ghost", "orphan", false),
+        make_message_row("assistant", "done"),
+    ]);
+
+    let wire = prompt_builder::prepare_messages(&detail, "", None);
+
+    assert_eq!(wire.len(), 2);
+    assert!(matches!(wire[0].role, base::MessageRole::User));
+    assert!(matches!(wire[1].role, base::MessageRole::Assistant));
+}
+
+#[test]
+fn prepare_messages_pairing_repair_is_idempotent() {
+    let detail = make_detail(vec![
+        make_message_row("user", "go"),
+        make_assistant_with_calls("a1", &[("c1", "read", "{}"), ("c2", "list", "{}")]),
+        make_tool_row("t1", "c1", "ok", false),
+        make_tool_row("t2", "ghost", "orphan", false),
+    ]);
+
+    let first = prompt_builder::prepare_messages(&detail, "S", None);
+    let second = prompt_builder::prepare_messages(&detail, "S", None);
+
+    assert_eq!(
+        serde_json::to_value(&first).unwrap(),
+        serde_json::to_value(&second).unwrap()
+    );
+}
+
+#[test]
+fn prepare_messages_replaces_empty_tool_body() {
+    let detail = make_detail(vec![
+        make_message_row("user", "go"),
+        make_assistant_with_calls("a1", &[("c1", "read", "{}")]),
+        make_tool_row("t1", "c1", "", true),
+    ]);
+
+    let wire = prompt_builder::prepare_messages(&detail, "", None);
+
+    assert_eq!(wire[2].content, prompt_builder::EMPTY_TOOL_RESULT);
+    assert!(wire[2].is_error);
+}
+
+#[test]
+fn tool_history_roundtrip_rebuilds_wire_shape() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = assistant_storage::db::init_db(&dir.path().join("wire.db")).unwrap();
+    let conv = ConversationRow {
+        id: "wire-conv".to_string(),
+        title: "Wire".to_string(),
+        title_source: "manual".to_string(),
+        provider_id: None,
+        model_id: "test-model".to_string(),
+        system_prompt: None,
+        is_pinned: false,
+        sort_order: 0,
+        generation: 0,
+        created_at: 0,
+        updated_at: 0,
+        is_full: false,
+        active_branch_id: None,
+    };
+    assistant_storage::conversations::insert_conversation(&conn, &conv).unwrap();
+
+    let row = |id: &str, role: &str, content: &str, ts: i64, parent: Option<&str>| MessageRow {
+        id: id.to_string(),
+        conversation_id: "wire-conv".to_string(),
+        role: role.to_string(),
+        content: content.to_string(),
+        tokens: None,
+        timestamp: ts,
+        parent_id: parent.map(str::to_string),
+        is_pinned: false,
+        reasoning: None,
+        tool_calls_json: None,
+        sibling_index: 0,
+        provider_id: None,
+        model_id: None,
+        tool_call_id: None,
+        is_error: false,
+    };
+
+    assistant_storage::conversations::insert_message(
+        &conn,
+        &row("u1", "user", "read a.txt", 100, None),
+    )
+    .unwrap();
+    assistant_storage::conversations::insert_message(
+        &conn,
+        &row("a1", "assistant", "", 200, Some("u1")),
+    )
+    .unwrap();
+    assistant_storage::conversations::update_message_tool_calls(
+        &conn,
+        "a1",
+        r#"[{"id":"c1","name":"read","arguments":"{\"path\":\"a.txt\"}"},{"id":"c2","name":"list","arguments":"{}"}]"#,
+    )
+    .unwrap();
+
+    let mut t1 = row("t1", "tool", "file body", 300, Some("a1"));
+    t1.tool_call_id = Some("c1".to_string());
+    let mut t2 = row("t2", "tool", "entries", 400, Some("a1"));
+    t2.tool_call_id = Some("c2".to_string());
+    t2.is_error = true;
+    assistant_storage::conversations::insert_message(&conn, &t1).unwrap();
+    assistant_storage::conversations::insert_message(&conn, &t2).unwrap();
+
+    let detail = assistant_storage::conversations::get_conversation_detail(&conn, "wire-conv")
+        .unwrap()
+        .expect("conversation detail");
+
+    let wire = prompt_builder::prepare_messages(&detail, "", None);
+
+    assert_eq!(wire.len(), 4, "落库行链重建为 4 条 wire 消息");
+    assert!(matches!(wire[0].role, base::MessageRole::User));
+    assert!(matches!(wire[1].role, base::MessageRole::Assistant));
+    let calls = wire[1]
+        .tool_calls
+        .as_ref()
+        .expect("assistant 应带 tool_calls");
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].id, "c1");
+    assert_eq!(calls[1].id, "c2");
+    assert_eq!(wire[2].tool_call_id.as_deref(), Some("c1"));
+    assert_eq!(wire[2].name.as_deref(), Some("read"));
+    assert_eq!(wire[2].content, "file body");
+    assert!(!wire[2].is_error);
+    assert_eq!(wire[3].tool_call_id.as_deref(), Some("c2"));
+    assert_eq!(wire[3].name.as_deref(), Some("list"));
+    assert_eq!(wire[3].content, "entries");
+    assert!(wire[3].is_error);
+}
+
 #[test]
 fn build_chat_options_default_with_temperature() {
     let kind = AgentKind::Default;

@@ -347,6 +347,11 @@ impl ToolCallAccumulator {
     pub fn has_pending(&self) -> bool {
         self.pending.values().any(|p| p.has_pending())
     }
+
+    /// 丢弃本次 attempt 已累积的片段（空响应重发前调用）；已发出的 `ArgsDelta` 不受影响。
+    pub fn reset(&mut self) {
+        self.pending.clear();
+    }
 }
 
 /// 无 id 的快照流（Gemini）按分组键合成稳定 id，保证同一轮内唯一。

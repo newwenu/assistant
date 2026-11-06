@@ -19,10 +19,21 @@ use assistant_config::{
 use assistant_orb::placement;
 use assistant_storage::attachment_store::AttachmentStore;
 use assistant_storage::db;
-use assistant_tools::{os, ToolRegistry};
+use assistant_tools::{
+    os, ApprovalPrompter, FileToolResultStorage, PermissionAuditStore, PermissionGrantStore,
+    ToolGateway, ToolPipeline, ToolRegistry, ToolResultStorage,
+};
 
 use super::tray;
+use crate::adapters::{
+    ApprovalWaitRegistry, DbPermissionAuditStore, DbPermissionGrantStore, DenyAllApprovalPrompter,
+    PipelineToolExecution, TimingApprovalPrompter,
+};
 use crate::protocol::ShortcutWarningPayloadDto;
+
+/// 审批等待上限。P4 的审批默认实现恒 `Deny`，该值只在 P6 接入真实审批 UI 后才真正生效；
+/// 超时仍归一为 `Deny`（I38a §2.8），不得默认放行。
+const APPROVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 pub struct DbState(pub std::sync::Mutex<rusqlite::Connection>);
 
@@ -104,6 +115,38 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     {
         let registry = Arc::new(ToolRegistry::new());
         os::register_os_tools(&registry);
+
+        // C4.18：P2 遗留端口的生产装配。顺序固定 —— 授权/审计 → 审批（fail-closed + 计时）
+        // → 网关 → 流水线 → executor 端口适配器；网关只认 `ApprovalPrompter` trait，
+        // 计时装饰器对内层透明。
+        let grants: Arc<dyn PermissionGrantStore> =
+            Arc::new(DbPermissionGrantStore::new(handle.clone()));
+        let audit: Arc<dyn PermissionAuditStore> =
+            Arc::new(DbPermissionAuditStore::new(handle.clone()));
+        let waits = ApprovalWaitRegistry::new();
+        let prompter: Arc<dyn ApprovalPrompter> = Arc::new(TimingApprovalPrompter::with_registry(
+            Arc::new(DenyAllApprovalPrompter::new()),
+            waits.clone(),
+        ));
+        let gateway = Arc::new(ToolGateway::new(grants, audit, prompter, APPROVAL_TIMEOUT));
+
+        // 落盘根目录必须是稳定路径：它会写进 `<persisted-output path="…">`，
+        // 跨进程重放一致性依赖它（§4.5），不得用临时目录。
+        let results_dir = match handle.path().app_data_dir() {
+            Ok(data_dir) => data_dir.join("tool-results"),
+            Err(e) => {
+                log::error!("Failed to resolve app data dir for tool results: {}", e);
+                return Err(Box::new(e));
+            }
+        };
+        let storage: Arc<dyn ToolResultStorage> = Arc::new(FileToolResultStorage::new(results_dir));
+        let pipeline = Arc::new(ToolPipeline::new(registry.clone(), gateway, storage));
+
+        // P4 无会话工作区绑定，`workspace_root` 恒 `None`；P6 接入后再按会话填充。
+        let tool_exec: Arc<dyn assistant_agent::agent::round_executor::ToolExecutionPort> =
+            Arc::new(PipelineToolExecution::new(pipeline, waits, None));
+        handle.manage(tool_exec);
+
         handle.manage(registry);
         log::info!("OS tool registry initialized");
     }

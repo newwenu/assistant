@@ -18,12 +18,12 @@
 - [ ] C0.4 确认所有路径工具只经 `os::path`：读 / 写 / 删 / 移动一律用 `resolve()`；`fs_link` 的叶子保留语义仍用 `resolve_leaf_preserving()`；不新增私有 canonicalize 或失败回退
 - [ ] C0.5 确认 `os_tool_exec` 恒向 `params` 注入 `action`：新工具的 `input_schema` 不声明 `action`、不设 `additionalProperties: false`，`execute()` 忽略未知字段（ToolBox 路径不经过 `validate_input`）
 - [ ] C0.6 确认 `workspace_root` 来源不在 P5（I18 spec B1 标注为 P5/P6）：P5 只保证绝对路径可用；ToolBox 侧相对路径仍不可用，待 P6 补工作区来源
-- [ ] C0.7 确认 `ReadReceiptStore` 的落地方式：P2 只定义了 trait，P5 需补生产实现并由 `FsReadTool` 构造注入；`ToolUseContext.session_id` 为 `None`（ToolBox）时归入同一桶
+- [ ] C0.7 确认 `ReadReceiptStore` 的落地方式：P2 只定义了 trait，P5 需补生产实现并由 `ReadTool` 构造注入；`ToolUseContext.session_id` 为 `None`（ToolBox）时归入同一桶
 - [ ] C0.8 确认 `ReadReceiptKey` 是否补 `session_id`：P2 类型只有 `path` / `start_line` / `end_line`，与规格 §5.1「同一会话内」不符；若补，先回写 I38a 规格再改代码
-- [ ] C0.9 确认 `fs_glob` / `fs_grep` 依赖选型（规格 §11 OQ1）：统一用 `ignore` + `globset` + `grep-searcher` / `grep-regex`，遵守 `.gitignore`；若确认，回写 I38c §5.3 / §5.4 中「glob crate / grep crate」的表述
-- [ ] C0.10 确认 `shell_exec` 超时口径：Pipeline / `exec::invoke` 外层默认 30s，请求 `timeout` 不得大于外层；进程级超时 + `kill_on_drop`，外层超时不得留下孤儿进程
+- [ ] C0.9 确认 `glob` / `grep` 依赖选型（规格 §11 OQ1）：统一用 `ignore` + `globset` + `grep-searcher` / `grep-regex`，遵守 `.gitignore`；若确认，回写 I38c §5.3 / §5.4 中「glob crate / grep crate」的表述
+- [ ] C0.10 确认 `shell` 超时口径：Pipeline / `exec::invoke` 外层默认 30s，请求 `timeout` 不得大于外层；进程级超时 + `kill_on_drop`，外层超时不得留下孤儿进程
 - [ ] C0.11 确认注册分批：`setup.rs` 只调用只读组；修改组 / 危险组函数存在但**不调用**（修改组注册需 P4 审批端口生产绑定，危险组需 P6 审批 UI）
-- [ ] C0.12 确认每个工具显式声明 `audience`：只读 / 修改 / 删除为 `BOTH`；`shell_exec` 仅在全部执行层守卫落地后声明 `BOTH`，任一缺失则改为 `AGENT_ONLY`
+- [ ] C0.12 确认每个工具显式声明 `audience`：只读 / 修改 / 删除为 `BOTH`；`shell` 仅在全部执行层守卫落地后声明 `BOTH`，任一缺失则改为 `AGENT_ONLY`
 
 ---
 
@@ -40,15 +40,15 @@
 - [ ] C1.6 `truncate_output` 在截断时显式写「已截断 + 实际行数 / 字节数」，不静默丢弃
 - [ ] C1.7 `os/mod.rs` 增加 `pub mod output;`，并预留各工具模块声明
 - [ ] C1.8 `storage.rs` 新增 `InMemoryReadReceiptStore`（`DashMap`），实现 `ReadReceiptStore::lookup` / `record`
-- [ ] C1.9 明确「修订号」计算方式：文件长度 + 修改时间（纳秒），不整文件哈希；写入 `fs_read.rs` 注释
+- [ ] C1.9 明确「修订号」计算方式：文件长度 + 修改时间（纳秒），不整文件哈希；写入 `agent_read.rs` 注释
 - [ ] C1.10 单测：未超限原样返回；超行 / 超字节各一条；截断提示包含实际值
 
 ---
 
-## C2 只读组：`fs_read` / `fs_list` / `fs_glob` / `fs_grep`
+## C2 只读组：`read` / `ls` / `glob` / `grep`
 
-实现：`src-tauri/crates/assistant-tools/src/os/{fs_read,fs_list,fs_glob,fs_grep}.rs`
-测试：`src-tauri/crates/assistant-tools/tests/{fs_read,fs_list,fs_glob,fs_grep}.rs`
+实现：`src-tauri/crates/assistant-tools/src/os/{agent_read,agent_list,agent_glob,agent_grep}.rs`
+测试：`src-tauri/crates/assistant-tools/tests/{agent_read,agent_list,agent_glob,agent_grep}.rs`
 
 **组内共同项**
 
@@ -59,7 +59,7 @@
 - [ ] C2.5 `execute` 内同步文件 IO / 目录遍历一律包 `tokio::task::spawn_blocking`，不阻塞 tokio worker
 - [ ] C2.6 四个工具均能容忍 `os_tool_exec` 注入的多余 `action` 字段（C0.5）
 
-**`fs_read`**
+**`read`**
 
 - [ ] C2.7 `input_schema`：`path`（必填）+ `offset`（整数，1 起）+ `limit`（整数）
 - [ ] C2.8 默认读全部，上限 1MB / 2000 行；`offset` + `limit` 支持行范围
@@ -69,14 +69,14 @@
 - [ ] C2.12 修订号变化 → 重新读取并刷新回执
 - [ ] C2.13 测试：schema、缺 `path`、`offset` / `limit` 边界、二进制拒绝、截断提示、回执复用与刷新、空文件
 
-**`fs_list`**
+**`ls`**
 
 - [ ] C2.14 `input_schema`：`path`（必填）+ `depth`（默认 1、最大 10）+ `all`（包含隐藏项）
 - [ ] C2.15 输出按名称排序，每层最大 1000 条目，超出时显式提示
 - [ ] C2.16 目录遍历不跟随符号链接（避免越界读取）；对每个条目仍保持 workspace 边界结论一致
 - [ ] C2.17 测试：默认深度、深度夹取、隐藏项开关、排序、1000 条上限、越界路径拒绝、符号链接目录不被跟随
 
-**`fs_glob`**
+**`glob`**
 
 - [ ] C2.18 `input_schema`：`pattern`（必填）+ `path`（基准目录）+ `exclude`（数组）
 - [ ] C2.19 `path` 缺省时取 `workspace_root`；无 `workspace_root` 则返回明确错误
@@ -84,7 +84,7 @@
 - [ ] C2.21 结果只含 workspace 内路径，最大 1000 条，按路径字典序排序
 - [ ] C2.22 测试：pattern 命中、exclude 生效、1000 条上限、越界拒绝、缺省基准目录、排序稳定
 
-**`fs_grep`**
+**`grep`**
 
 - [ ] C2.23 `input_schema`：`pattern`（必填）+ `path` + `include`（文件 glob）+ `context`（默认 0）
 - [ ] C2.24 使用 `ignore` 遍历 + `grep-searcher` / `grep-regex` 搜索，`include` 用 `globset` 过滤
@@ -94,23 +94,23 @@
 
 ---
 
-## C3 修改组：`fs_write` / `fs_edit` / `fs_mkdir` / `fs_move`
+## C3 修改组：`write` / `edit` / `mkdir` / `move`
 
-实现：`src-tauri/crates/assistant-tools/src/os/{fs_write,fs_edit,fs_mkdir,fs_move}.rs`
-测试：`src-tauri/crates/assistant-tools/tests/{fs_write,fs_edit,fs_mkdir,fs_move}.rs`
+实现：`src-tauri/crates/assistant-tools/src/os/{agent_write,agent_edit,agent_mkdir,agent_move}.rs`
+测试：`src-tauri/crates/assistant-tools/tests/{agent_write,agent_edit,agent_mkdir,agent_move}.rs`
 
 - [ ] C3.1 四个工具 `behavior_hints.read_only = false`、`destructive = false`、`open_world = false`、`audience = BOTH`
 - [ ] C3.2 `is_concurrency_safe` 保持默认（写类串行），不显式放宽
-- [ ] C3.3 `permission_intents` 产出 `edit` + 受影响路径（A3）；`fs_move` 的 `source` / `target` 各一条
+- [ ] C3.3 `permission_intents` 产出 `edit` + 受影响路径（A3）；`move` 的 `source` / `target` 各一条
 - [ ] C3.4 `validate_input` 校验必填 / 类型并调用 `os::path::resolve`；`execute` 仍自行校验，不依赖 Pipeline
 
-**`fs_write`**
+**`write`**
 
 - [ ] C3.5 schema：`path` / `content`（必填）+ `append`（默认 false）；覆盖已有文件自动创建父目录
 - [ ] C3.6 单次写入上限 10MB，超出返回 `Business`；`append = true` 时追加而非覆盖
 - [ ] C3.7 测试：新建、覆盖、追加、父目录自动创建、10MB 拒绝、越界拒绝
 
-**`fs_edit`**
+**`edit`**
 
 - [ ] C3.8 schema：`path` / `old_string` / `new_string`（必填）+ `replace_all`（默认 false）
 - [ ] C3.9 匹配语义：0 匹配 → `Business`；1 匹配 → 替换；多匹配且 `replace_all = false` → `Business`（附匹配次数与首个匹配行号）
@@ -118,13 +118,13 @@
 - [ ] C3.11 成功结果返回起始行与 diff（新增 / 删除行数 + 片段）；审批卡片所需 diff 由 P6 从 `ApprovalRequest.arguments` 渲染，不新增载荷字段
 - [ ] C3.12 测试：0 / 1 / 多匹配三分支、`replace_all` 计数、缩进与 CRLF 原样匹配、diff 形状
 
-**`fs_mkdir`**
+**`mkdir`**
 
 - [ ] C3.13 schema：`path`（必填）+ `parents`（默认 true）
 - [ ] C3.14 `parents = false` 且父目录不存在 → `Business`；目录已存在时幂等返回成功并注明
 - [ ] C3.15 测试：单层 / 多层创建、`parents = false` 失败、已存在幂等、`edit` intent
 
-**`fs_move`**
+**`move`**
 
 - [ ] C3.16 schema：`source` / `target`（必填）+ `overwrite`（默认 false）
 - [ ] C3.17 目标已存在且 `overwrite = false` → `Business`；`overwrite = true` 时先删目标再重命名
@@ -133,10 +133,10 @@
 
 ---
 
-## C4 破坏性组：`fs_delete`
+## C4 破坏性组：`delete`
 
-实现：`src-tauri/crates/assistant-tools/src/os/fs_delete.rs`
-测试：`src-tauri/crates/assistant-tools/tests/fs_delete.rs`
+实现：`src-tauri/crates/assistant-tools/src/os/agent_delete.rs`
+测试：`src-tauri/crates/assistant-tools/tests/agent_delete.rs`
 
 - [ ] C4.1 schema：`path`（必填）+ `recursive`（默认 false）
 - [ ] C4.2 `behavior_hints`：`read_only = false`、`destructive = true`、`open_world = false`；`is_concurrency_safe = false`
@@ -147,10 +147,10 @@
 
 ---
 
-## C5 破坏性组：`shell_exec` 与执行层守卫
+## C5 破坏性组：`shell` 与执行层守卫
 
-实现：`src-tauri/crates/assistant-tools/src/os/shell_exec.rs`、`os/shell/{safety_belt,structural_guard,env_guard,classify,bare_exec}.rs`
-测试：`src-tauri/crates/assistant-tools/tests/shell_exec.rs`
+实现：`src-tauri/crates/assistant-tools/src/os/agent_shell.rs`、`os/shell/{safety_belt,structural_guard,env_guard,classify,bare_exec}.rs`
+测试：`src-tauri/crates/assistant-tools/tests/agent_shell.rs`
 
 - [ ] C5.1 schema：`command`（必填）+ `timeout`（秒，默认 30）+ `cwd`
 - [ ] C5.2 `os/shell/safety_belt.rs`：致命命令清单 + 分词 / 基名提取，作为**唯一命令判定源**
@@ -179,11 +179,58 @@
 - [ ] C6.1 `os/mod.rs` 提供 `register_readonly_tools` / `register_write_tools` / `register_dangerous_tools` 三组函数
 - [ ] C6.2 `register_os_tools` 只保留 `fs_link`（`TOOLBOX_ONLY`），不与新工具混在同一函数
 - [ ] C6.3 `setup.rs` 调用 `os::register_os_tools` + `os::register_readonly_tools`；不调用修改组 / 危险组（A7）
-- [ ] C6.4 单测：只读组注册后包含 `fs_read` / `fs_list` / `fs_glob` / `fs_grep`，且 `fs_link` 仍在
-- [ ] C6.5 单测：未调用修改组 / 危险组时，`find_for_toolbox` 查不到 `fs_write` / `fs_edit` / `fs_mkdir` / `fs_move` / `fs_delete` / `shell_exec`
+- [ ] C6.4 单测：只读组注册后包含 `read` / `ls` / `glob` / `grep`，且 `fs_link` 仍在
+- [ ] C6.5 单测：未调用修改组 / 危险组时，`find_for_toolbox` 查不到 `write` / `edit` / `mkdir` / `move` / `delete` / `shell`
 - [ ] C6.6 单测：`tool_definitions_for_tier(ToolTier::Os)` 仅返回 4 个只读工具且按名排序（`fs_link` 被 `audience` 过滤）
 - [ ] C6.7 单测：显式调用修改组 / 危险组后，对应工具可被 `find_for_toolbox` 查到（仅测试内使用，不改变生产注册）
 - [ ] C6.8 确认不改 `os_tool_exec` 命令与 `OsToolExecRequestDto`；新工具在注入 `action` 后仍可执行（C0.5）
+
+---
+
+## C6b 白名单工具解析（接入层替换）
+
+实现：`src-tauri/src/adapters/tool_resolver.rs`、`src-tauri/src/cmd/agent/mod.rs`、`src-tauri/src/protocol/dto/agent.rs`、`src-tauri/crates/assistant-agent/src/kernel/ports.rs`、`src-tauri/crates/assistant-agent/src/kernel/mod.rs`
+测试：`src-tauri/tests/tool_resolver.rs`
+
+**背景**：P4 的 `RegistryToolCatalog` 用 `tool_definitions_for_tier(MAX_TIER)` 做自动全量注入，无白名单/黑名单。P5 替换为 deny-by-default + 显式白名单/黑名单的 `resolve_available_tools`。
+
+- [ ] C6b.1 新建 `src-tauri/src/adapters/tool_resolver.rs`：实现 `resolve_available_tools(registry, enabled_tools, disabled_tools, max_tier) -> Vec<ToolSpec>`
+- [ ] C6b.2 五步过滤顺序固定为 `tier → audience → deny-by-default → whitelist → blacklist`（规格 §3.1）
+- [ ] C6b.3 `disabled_tools` 优先于 `enabled_tools`：同一工具同时出现 → 排除
+- [ ] C6b.4 工具匹配按 `Tool::name()` 注册名，不按文件名；未知工具名静默忽略（不报错）
+- [ ] C6b.5 返回 `Vec<ToolSpec>` 按注册名字典序排序（确定性输出，便于测试）
+- [ ] C6b.6 新建 `ConversationToolConfigDto`：`max_tool_tier: ToolTier` / `approval_level: ApprovalLevel` / `enabled_tools: Vec<String>` / `disabled_tools: Vec<String>`
+- [ ] C6b.7 定义 `ToolTier` 枚举（`Sandbox` / `Os` / `External`）与 `ApprovalLevel` 枚举（`None` / `DangerousOnly` / `AllOsTools`），P5 先定义，P6 复用不重复
+- [ ] C6b.8 `SendChatMessageArgsDto` 新增 `tool_config: Option<ConversationToolConfigDto>`（`#[ts(optional = nullable)]` + `#[serde(default)]`）
+- [ ] C6b.9 执行 `npm run contract:gen` 生成前端类型；`protocol_bindings.rs` 的 `declarations` 加新类型
+- [ ] C6b.10 `npm run contract:check` 幂等
+
+**接入 `send_agent_message`**：
+
+- [ ] C6b.11 `send_agent_message` 从 `args.tool_config` 取值，`None` 时按 `default`（`max_tier = Os`、空白名单 = deny-by-default）
+- [ ] C6b.12 `spec.tools` 改为 `Option<Vec<ToolSpec>>`：`resolve_available_tools` 返回非空时 `Some(tools)`，空时 `None`（A9 语义：`None` 退化为单次调用）
+- [ ] C6b.13 `TurnSpec.tools` 类型由 `Option<Arc<dyn ToolCatalog>>` 改为 `Option<Vec<ToolSpec>>`
+- [ ] C6b.14 `TurnSpec::agent()` 与 `TurnSpec::chat()` 的 `tools` 默认保持 `None`
+
+**清理 P4 接入代码**：
+
+- [ ] C6b.15 删除 `src-tauri/src/adapters/tool_catalog.rs`（整文件：`RegistryToolCatalog`）
+- [ ] C6b.16 `src-tauri/src/adapters/mod.rs` 删除 `mod tool_catalog;` 与 `pub use` 导出
+- [ ] C6b.17 `src-tauri/src/cmd/agent/mod.rs` 删除 `use crate::adapters::RegistryToolCatalog;`
+- [ ] C6b.18 删除 `assistant-agent/src/kernel/ports.rs` 的 `ToolCatalog` async trait（若无其他实现者）
+- [ ] C6b.19 删除 `assistant-agent/src/kernel/ports/test_doubles.rs` 的 `ToolCatalog` 替身
+- [ ] C6b.20 全仓 grep 确认 `RegistryToolCatalog` / `ToolCatalog` 无残留引用
+
+**测试**：
+
+- [ ] C6b.21 空白名单 → 空集（deny-by-default）
+- [ ] C6b.22 `enabled_tools = ["read", "ls"]` → 仅返回 `read` / `ls`（白名单过滤）
+- [ ] C6b.23 `disabled_tools = ["shell"]` 覆盖 `enabled_tools` 中的同名工具
+- [ ] C6b.24 未知工具名在 `enabled_tools` / `disabled_tools` 中静默忽略
+- [ ] C6b.25 `max_tier = Sandbox` 时 Os 层工具被过滤（层级硬上限）
+- [ ] C6b.26 `TOOLBOX_ONLY` 工具（`fs_link`）不出现在结果中（受众过滤）
+- [ ] C6b.27 结果按注册名字典序排序（确定性）
+- [ ] C6b.28 `ConversationToolConfigDto` 序列化往返（camelCase + deny_unknown_fields）
 
 ---
 
@@ -219,22 +266,22 @@
 | A1 路径只经 `os::path`，无回退规范化 | C0.4、C2.4、C3.4、C4.4、C5.10、C7.5 |
 | A2 每个工具 `input_schema` 单测（合法 / 缺必填 / 类型错误） | C2.4、C2.7、C2.14、C2.18、C2.23、C3.5、C3.8、C3.13、C3.16、C4.1、C5.1 |
 | A3 只读工具 intents 为空 / 并发安全；写删工具 action 正确 | C2.2、C2.3、C3.3、C4.3 |
-| A4 `fs_edit` 3 分支 + 审批载荷含 diff | C3.8–C3.12 |
-| A5 `fs_delete` 拒绝根目录、审批键按规范化路径 | C4.3–C4.6 |
-| A6 `shell_exec` 守卫与进程级 kill | C5.2–C5.15 |
+| A4 `edit` 3 分支 + 审批载荷含 diff | C3.8–C3.12 |
+| A5 `delete` 拒绝根目录、审批键按规范化路径 | C4.3–C4.6 |
+| A6 `shell` 守卫与进程级 kill | C5.2–C5.15 |
 | A7 分组注册：默认只注册只读组 | C0.11、C6.1–C6.7、C7.7 |
-| A8 `fs_read` 读取回执 | C1.8–C1.9、C2.11–C2.13 |
+| A8 `read` 读取回执 | C1.8–C1.9、C2.11–C2.13 |
 | A9 测试、clippy、fmt | C7.1–C7.3 |
 
 ---
 
 ## 不做
 
-- 不实现前端 ToolBox 组件、`os.ts` 命名空间、审批 UI（P6）
-- 不实现 `ask_user`（P6 联调）
-- 不实现 MCP 工具（P7）
 - 不改 `Tool` trait、`ToolPipeline`、`ToolGateway`、Policy 规则集
-- 不改 `OsToolExecRequestDto` / `OsToolResultDto` / 任何前端契约
 - 不改 DB schema、不新增表
 - 不把修改组 / 危险组加入生产注册；不做运行时注册开关
 - 不引入 `windows-sys`；不新增原生构建依赖
+- 不做前端 ToolBox 组件、`os.ts` 命名空间、审批 UI（P6）
+- 不实现 `ask_user`（P6 联调）
+- 不实现 MCP 工具（P7）
+- 不做白名单配置的前端 UI（AgentMode 编辑表单、对话工具栏）——P5 只做后端 `resolve_available_tools`，前端 UI 仍归 P6

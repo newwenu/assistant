@@ -116,6 +116,17 @@ impl StreamOutcome {
     }
 }
 
+/// 输出上限截断判定（D22）：截断不是「模型没说话」，同预算重发必然再次截断。
+///
+/// 取值覆盖三家 adapter 的 `finish_reason` 原生拼写：
+/// OpenAI `length`、Anthropic `max_tokens`、Gemini `MAX_TOKENS`、Responses `max_output_tokens`。
+pub fn is_output_limit_reached(finish_reason: Option<&str>) -> bool {
+    matches!(
+        finish_reason,
+        Some("length" | "max_tokens" | "MAX_TOKENS" | "max_output_tokens")
+    )
+}
+
 #[derive(Debug)]
 pub enum StreamError {
     Cancelled(PartialOutcome),

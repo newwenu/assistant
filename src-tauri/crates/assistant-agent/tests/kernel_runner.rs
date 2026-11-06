@@ -12,7 +12,9 @@ use assistant_agent::kernel::{
     MessageStatus, SessionState, SessionStates, TurnContext, TurnError, TurnEvent, TurnLimits,
     TurnRunner, TurnSpec, TurnStatus, TurnTasks,
 };
-use assistant_providers::base::{BaseProviderAdapter, ChatDelta, ProviderError, TokenUsage};
+use assistant_providers::base::{
+    BaseProviderAdapter, ChatDelta, ProviderError, ProviderErrorCode, TokenUsage,
+};
 use assistant_storage::conversations::{ConversationDetail, ConversationRow, MessageRow};
 use assistant_storage::providers::ProviderRow;
 
@@ -240,6 +242,13 @@ async fn chat_turn_completes_end_to_end_with_doubles() {
             MessageStatus::Completed
         ))
     );
+    assert!(
+        !calls.iter().any(|call| matches!(
+            call,
+            StoreCall::AppendTool(_) | StoreCall::SaveToolCalls(_, _)
+        )),
+        "chat 路径不得写 tool 行"
+    );
 }
 
 /// DT5 / V19：同一输入跑两遍，`StoreCall` 序列与内容逐项相同（时间戳由注入时钟提供）。
@@ -350,6 +359,28 @@ async fn empty_response_retries_once_then_fails_without_bumping_iteration() {
 }
 
 #[tokio::test]
+async fn output_limit_truncation_is_not_retried() {
+    let adapter = Arc::new(ScriptedAdapter::new(vec![
+        ScriptedResponse::Deltas(vec![ChatDelta {
+            finish_reason: Some("length".to_string()),
+            ..Default::default()
+        }]),
+        ScriptedResponse::Deltas(vec![delta_text("should not be requested")]),
+    ]));
+    let h = harness(adapter, RecordingSink::new(), InMemoryStore::new());
+    let ctx = started_ctx(&h.tasks, "conv-1");
+
+    let mut spec = TurnSpec::agent();
+    spec.max_iterations = 1;
+    spec.tools = None;
+    let outcome = h.runner.run(&ctx, &spec).await;
+
+    assert_eq!(outcome.status, TurnStatus::Failed);
+    assert_eq!(outcome.iterations, 1);
+    assert_eq!(outcome.model_calls, 1, "输出上限截断不得重发");
+}
+
+#[tokio::test]
 async fn provider_error_marks_turn_failed_with_error_text() {
     let adapter = Arc::new(ScriptedAdapter::new(vec![ScriptedResponse::Error(
         ProviderError::AuthFailed("invalid api key".to_string()),
@@ -361,7 +392,7 @@ async fn provider_error_marks_turn_failed_with_error_text() {
 
     assert_eq!(outcome.status, TurnStatus::Failed);
     let error = outcome.error.as_ref().expect("error must be reported");
-    let TurnError::Other(message) = error else {
+    let TurnError::Provider(message) = error else {
         panic!("unexpected error variant: {error:?}");
     };
     assert!(
@@ -371,14 +402,20 @@ async fn provider_error_marks_turn_failed_with_error_text() {
     let events = h.sink.events();
     assert_single_terminated(&events);
     let terminated = events.last();
-    assert!(matches!(
-        terminated,
-        Some(TurnEvent::Terminated {
-            status: TurnStatus::Failed,
-            error: Some(_),
-            ..
-        })
-    ));
+    let Some(TurnEvent::Terminated {
+        status: TurnStatus::Failed,
+        error: Some(payload),
+        ..
+    }) = terminated
+    else {
+        panic!("终止事件必须携带 provider 原始错误载荷：{terminated:?}");
+    };
+    assert_eq!(
+        payload.code,
+        ProviderErrorCode::AuthFailed,
+        "错误码不得被降级为通用错误"
+    );
+    assert_eq!(payload.message, "Authentication failed: invalid api key");
     assert_eq!(
         h.store.calls().last(),
         Some(&StoreCall::Finalize(
@@ -506,10 +543,11 @@ async fn model_call_timeout_fails_turn_after_call_started() {
 
     assert_eq!(outcome.status, TurnStatus::Failed);
     assert_eq!(outcome.model_calls, 1);
-    assert!(matches!(
-        outcome.error,
-        Some(TurnError::Other(ref message)) if message.contains("timed out")
-    ));
+    assert!(
+        matches!(outcome.error, Some(TurnError::Timeout)),
+        "超时必须走独立变体：{:?}",
+        outcome.error
+    );
     assert_single_terminated(&sink.events());
     assert_eq!(
         store.calls().last(),
@@ -521,7 +559,7 @@ async fn model_call_timeout_fails_turn_after_call_started() {
 }
 
 #[tokio::test]
-async fn wall_clock_timeout_fails_turn_before_model_call() {
+async fn wall_clock_timeout_halts_turn_before_model_call() {
     let adapter = Arc::new(ScriptedAdapter::new(vec![completed_script()]));
     let sink = Arc::new(RecordingSink::new());
     let store = Arc::new(InMemoryStore::new());
@@ -545,11 +583,21 @@ async fn wall_clock_timeout_fails_turn_before_model_call() {
         .expect("begin");
     let ctx = TurnContext::new("conv-1", turn_id, "assistant-1");
 
-    let mut spec = TurnSpec::chat();
+    // 墙钟预算由 `StopHook` 判定，故必须用装了钩子的 agent spec（chat 不装钩子）。
+    // `wrap_up = false` 走「根因摘要」分支，模型调用数保持 0（A21 预算耗尽出口）。
+    let mut spec = TurnSpec::agent();
+    spec.tools = None;
+    spec.wrap_up = false;
     spec.limits = limits;
     let outcome = runner.run(&ctx, &spec).await;
 
-    assert_eq!(outcome.status, TurnStatus::Failed);
-    assert_eq!(outcome.model_calls, 0);
+    assert_eq!(outcome.status, TurnStatus::Completed);
+    assert_eq!(outcome.model_calls, 0, "墙钟超时必须在模型调用前拦下");
+    assert!(outcome.hit_cap, "预算耗尽出口必须标记 hit_cap");
+    assert!(
+        !outcome.text.trim().is_empty(),
+        "预算耗尽出口不得返回空文本：{:?}",
+        outcome.text
+    );
     assert_single_terminated(&sink.events());
 }

@@ -5,7 +5,7 @@ use assistant_storage::token_usage::TokenUsageRecord;
 use super::ids::TurnId;
 use super::outcome::{TurnOutcome, TurnStatus};
 use super::ports::{MessageStatus, MessageStore, StoreError, UsageRecord};
-use super::stream::{PartialOutcome, UsageSnapshot};
+use super::stream::UsageSnapshot;
 use super::tasks::TurnTasks;
 
 /// 落库上下文：一条助手消息 + 一次 turn 的固定字段。
@@ -76,23 +76,20 @@ pub fn message_status_of(status: TurnStatus) -> MessageStatus {
     }
 }
 
-/// 终态与部分结果的写入者。所有写侧都做代际校验（spec §2.2 第二写侧）。
+/// 终态兜底的写入者。所有写侧都做代际校验（spec §2.2 第二写侧）。
+///
+/// P4 起行级落库全部由 `LoopRoundExecutor` 完成（内容 / usage / 终态），
+/// 这里只处理「执行器一条行都没写成」的情形（投影失败、代际过期、输入错误），
+/// 避免占位行永远停在 `streaming`（C4.20c）。
 pub struct TurnPersister {
     store: Arc<dyn MessageStore>,
     tasks: Arc<TurnTasks>,
     ctx: PersistCtx,
-    /// `persist_partial` 已写过 usage；终态不再重复写，避免同一次 attempt 落两条记录。
-    usage_recorded: std::sync::atomic::AtomicBool,
 }
 
 impl TurnPersister {
     pub fn new(store: Arc<dyn MessageStore>, tasks: Arc<TurnTasks>, ctx: PersistCtx) -> Self {
-        Self {
-            store,
-            tasks,
-            ctx,
-            usage_recorded: std::sync::atomic::AtomicBool::new(false),
-        }
+        Self { store, tasks, ctx }
     }
 
     pub fn ctx(&self) -> &PersistCtx {
@@ -118,42 +115,21 @@ impl TurnPersister {
             .is_current(&self.ctx.conversation_id, &self.ctx.turn_id)
     }
 
-    /// 取消 / 超时 / provider 错误后保存已累积内容与 usage。
-    pub async fn persist_partial(&self, partial: &PartialOutcome) -> Result<(), StoreError> {
-        if !self.is_current() {
-            log::warn!(
-                "persist_partial skipped: turn={} is not the current generation",
-                self.ctx.turn_id
-            );
-            return Ok(());
-        }
-
-        let tokens = partial.last_usage().total_tokens;
-        let reasoning =
-            (!partial.full_reasoning.is_empty()).then_some(partial.full_reasoning.as_str());
-        self.store
-            .save_content(
-                &self.ctx.message_id,
-                &partial.full_content,
-                tokens,
-                reasoning,
-            )
-            .await?;
-        self.store
-            .record_usage(&self.ctx.usage_records(&partial.attempt_usages))
-            .await?;
-        self.usage_recorded
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        Ok(())
-    }
-
-    /// 终态：先写内容与 usage，再写 `messages.status`。
+    /// 终态兜底：仅当执行器没写成任何行时才落内容与终态。
     ///
     /// `messages.tokens` 只接受 provider 上报值，无 usage 时保持 `NULL`。
     pub async fn persist_terminal(&self, outcome: &TurnOutcome) -> Result<(), StoreError> {
         if !self.is_current() {
             log::warn!(
                 "persist_terminal skipped: turn={} is not the current generation",
+                self.ctx.turn_id
+            );
+            return Ok(());
+        }
+
+        if outcome.final_message_id.is_some() {
+            log::debug!(
+                "terminal persist skipped: turn={} already written by executor",
                 self.ctx.turn_id
             );
             return Ok(());
@@ -174,23 +150,6 @@ impl TurnPersister {
         {
             log::error!("save terminal content failed: {err}");
             first_error = Some(err);
-        }
-
-        if self
-            .usage_recorded
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
-            log::debug!(
-                "terminal usage skipped: turn={} already recorded by partial persist",
-                self.ctx.turn_id
-            );
-        } else if let Err(err) = self
-            .store
-            .record_usage(&self.ctx.usage_records(&outcome.attempt_usages))
-            .await
-        {
-            log::error!("record terminal usage failed: {err}");
-            first_error = first_error.or(Some(err));
         }
 
         // 内容写失败也要写终态，否则消息会永远停在 `streaming`（验收 4）。

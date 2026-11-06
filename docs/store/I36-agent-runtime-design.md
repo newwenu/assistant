@@ -234,13 +234,13 @@ pub enum PrefetchClaim<T, E> { Discarded, Ready(T), Waiting(CompressionPrefetch<
 
 ```rust
 pub trait StopHook: Send + Sync {
-    fn name(&self) -> &str;
-    async fn check(&self, ctx: &TurnState<'_>) -> StopDecision;
+    fn name(&self) -> &'static str;
+    fn check(&self, state: &TurnState<'_>) -> StopDecision;
 }
 pub enum StopDecision { Continue, Stop { reason: String } }
 ```
 
-`TurnState` 借出循环局部变量（`iteration` / `max_iterations` / `cost` / `model`），钩子零分配；**在每次模型调用之前触发**——刹车必须发生在花钱之前。
+`TurnState` 借出循环局部变量（`iteration` / `max_iterations` / `tool_calls` / `max_tool_calls` / `prompt_tokens` / `completion_tokens` / `elapsed` / `turn_deadline` / `model`），钩子零分配；`check` 是**同步**的（§3.5），**在每次模型调用之前触发**——刹车必须发生在花钱之前。
 
 **中间件链**（`middleware.rs`）：`before_model` / `after_tool` 两类钩子，把「微压缩」「工具输出封顶 + 语义摘要」「工具策略」「循环守卫」「重复失败熔断」全部表达为中间件。注释里写明动机：这些关注点在旧引擎里写死在工具调用路径上，换 harness 后**全部变成死代码**——只有挂到主循环的钩子上才随循环生效。
 
@@ -339,11 +339,11 @@ pub enum SessionState {
 
 **理由**：OpenHuman 的教训是「用 turn 剩余量当单次上限会杀死合法长任务」；反过来，没有单次上限时，一个卡死的流会让整轮挂死且**永远等不到终止事件**。两者必须同时存在。
 
-**取舍**：两个默认值都是「防挂死」而非「体验指标」，所以远大于用户可感知延迟；都可配置，`0` 表示关闭。工具调用不叠加 `model_call`，因为工具可能合法地跑满 30 s 甚至数分钟（`shell_exec`、未来的 MCP）。
+**取舍**：两个默认值都是「防挂死」而非「体验指标」，所以远大于用户可感知延迟；都可配置，`0` 表示关闭。工具调用不叠加 `model_call`，因为工具可能合法地跑满 30 s 甚至数分钟（`shell`、未来的 MCP）。
 
 ### 3.5 D5 — 停止钩子在迭代之间，不在事后
 
-**决策**：`StopHook { name, check(&TurnState) -> Continue | Stop{reason} }`，在**每次模型调用之前**触发。内置三个：轮级 token 预算、工具调用数上限、重复失败熔断。
+**决策**：`StopHook { name, check(&TurnState) -> Continue | Stop{reason} }`（同步，见 §3.5），在**每次模型调用之前**触发。内置三个恒装：迭代上限、工具调用数上限、turn 墙钟（P4 三维预算，I38b D18）；轮级 token 预算为附加维度，未配置时不安装。重复失败熔断不在此处，归 `after_iteration` 中间件（D19 的 nudge/halt 分级）。
 
 **理由**：事后检查意味着钱已经花了。OpenHuman 明确把 stop hooks 放在 iteration 边界，且 `TurnState` 借出循环局部变量以避免热路径分配。
 
@@ -372,8 +372,8 @@ pub enum SessionState {
 | 序 | 步骤 | 触发 | 成本 | 失败行为 |
 |---|---|---|---|---|
 | ① | 请求投影卸载（已有） | 估算 > budget | 零 | 原样继续 |
-| ② | 摘要压缩 | 估算 ≥ budget × 阈值 | 一次模型调用 | 降级到 ③，不中止 |
-| ③ | 微压缩（清空较旧工具结果体） | ② 已执行或不可用，且仍 > budget | 零 | 原样继续 |
+| ② | 摘要压缩（**不随 P4**，与续跑式同批，I38b D13） | 估算 ≥ budget × 阈值 | 一次模型调用 | 降级到 ③，不中止 |
+| ③ | 微压缩（清空较旧工具结果体） | 仍 > budget（P4 无 ②，直接在此起效） | 零 | 原样继续 |
 | ④ | 收尾还原 | 仅 capped turn 的结论调用 | 零 | 原样继续 |
 | ⑤ | 硬裁剪（整条淘汰最旧消息） | ③/④ 后仍 > budget | 零 | 原样继续 |
 
@@ -390,7 +390,7 @@ pub enum SessionState {
 **迁移分两步**：
 
 1. 先把压缩抽成显式 turn item（`started` / `completed` 事件 + pre/post hook 可中止），但**保持现有终止式语义**（`CompactDecision::Terminate` → 压缩后另起）；
-2. 待 RoundExecutor 就位后，把「终止式」替换为「续跑式」。
+2. 待 RoundExecutor 就位后，把「终止式」替换为「续跑式」。**该步不随 P4 同批**：RoundExecutor 在 P4 落地，但续跑式切换与阶梯 ② 作为 P4 之后的独立提交（I38b D13），P4 期间轮内自动压缩不接线。
 
 **理由**：终止式的用户体感是「对话被打断、要重新发一次」，而压缩本应无感。但直接改成续跑需要一个能继续的地方（RoundExecutor），否则没有落点。
 
@@ -545,9 +545,8 @@ src-tauri/crates/assistant-agent/src/
 │   ├── mod.rs
 │   ├── stop.rs           // StopHook / StopDecision / 内置钩子
 │   ├── middleware.rs     // TurnMiddleware trait + 注册表 + 顺序表
-│   ├── ladder.rs         // 阶梯 ②③④⑤（① 复用 request_projection）
-│   ├── compaction_exec.rs// 摘要执行
-│   └── approval.rs       // 审批门（等待时 phase = AwaitingApproval）
+│   ├── ladder.rs         // 阶梯 ③④⑤（① 复用 request_projection；② 随续跑式压缩同批）
+│   └── compaction_exec.rs// 摘要执行（② 的执行体，随续跑式压缩同批，不在 P4）
 ├── chat_runtime.rs       // 退场中：迁入 kernel/stream.rs 后删除
 ├── chat_tasks.rs         // 退场中：迁入 kernel/tasks.rs（OnBusy::Replace）后删除
 ├── chat_request.rs       // 退场中：迁入 kernel/request.rs 后删除
@@ -575,6 +574,7 @@ src-tauri/src/
 - `kernel` → `request_projection` / `compaction`（判定）/ `token_estimate` / `multimodal` / `pdf_text` / `chat_options` / `normalization`：允许（无状态纯函数）。
 - `kernel` / `agent` → `tauri` / `AppHandle` / `Window` / `cmd/*`：**禁止**（§1.4、§1.6）。
 - `agent` → `assistant-tools`：**禁止**。只依赖 `RoundExecutor` 抽象（P4 / I38b 落地时由宿主注入）。
+- 审批门不在 `agent/`：`ApprovalPrompter` / 授权 / 审计已在 P2 落在 `assistant-tools/src/gateway.rs`；P4 只在宿主侧（`src-tauri/src/agent/`、`src-tauri/src/adapters/`）加 `TimingApprovalPrompter` 装饰器与两表生产实现，**不新建 `assistant-agent/src/agent/approval.rs`**。
 - `chat_runtime` / `chat_tasks` / `chat_request` / `prompt_builder`：**迁出后删除**，不作为长期依赖。
 
 **命名**：目录名用 `kernel/`（而非 `turn/`）。理由有三：避免 `turn::TurnRunner` 这类「目录名与类型前缀重复」；与本文「共用内核」同词，路径即术语；把边界写在路径上——`kernel/` 只有 turn 生命周期与端口，策略（停止钩子 / 阶梯 / 审批 / 多迭代循环）归 `agent/`，即 `agent/` 是 `kernel/` 的 client。
@@ -600,10 +600,10 @@ src-tauri/src/
 4. **删除 chat 旧实现**（`chat_runtime` / `chat_tasks` / `chat_request` / `prompt_builder`），确认无引用后删除。
 5. **取消代际化 + 双层超时**（`stream` 接上 `model_call`）。
 6. **agent 宿主**（`cmd/agent` + `adapters/*`）：`OnBusy::Reject`、`route = Broadcast`，单迭代形态即可上线，用于验证「无窗口可跑」。
-7. **中间件链 + 上下文阶梯**（①②③⑤ 先挂，② 压缩接入）。
+7. **中间件链 + 上下文阶梯**（P4 挂 ①③④⑤，② 与第 10 步同批接入）。
 8. **停止钩子 + 收尾调用**。
 9. **RoundExecutor 接入，多迭代闭环**（P4 / I38b）：TurnRunner 的单迭代循环替换为 `RoundExecutor::run_iterations`。
-10. **压缩从「终止式」切到「续跑式」**（D9 第二步，P4 完成后单独提交）。
+10. **压缩从「终止式」切到「续跑式」，并接入阶梯 ②**（D9 第二步，P4 完成后单独提交；含摘要执行体下沉到 `agent/compaction_exec.rs`，I38b D13）。
 
 第 3 步是最大风险点：chat 的对外行为必须不变。因此第 3 步的验收方式是**对比测试**——同一组请求在旧路径与新路径下，事件序列、`seq`、落库内容、错误文案完全一致（用 `EventSink` 测试实现收集后逐条比对）。
 

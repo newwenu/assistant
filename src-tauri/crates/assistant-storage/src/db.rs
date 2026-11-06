@@ -71,6 +71,23 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             used_at INTEGER NOT NULL
         );
 
+        -- 审批授权与审计（D14）：幂等建表，不做 ALTER 迁移。
+        -- `grant_key` 为 `ApprovalKey` 的规范 JSON；审计只追加不更新，不设 TTL。
+        CREATE TABLE IF NOT EXISTS permission_grants (
+            grant_key TEXT PRIMARY KEY,
+            tool      TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS permission_audit (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            tool      TEXT NOT NULL,
+            action    TEXT NOT NULL,
+            resource  TEXT NOT NULL,
+            outcome   TEXT NOT NULL,
+            at_millis INTEGER NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS compression_state (
             conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
             last_compression_at INTEGER,

@@ -6,6 +6,7 @@ use assistant_providers::base::{
     ProviderConfig, ProviderError, ProviderKind,
 };
 use assistant_providers::types::ToolSpec;
+use assistant_storage::agent_modes::AgentModeRow;
 use assistant_storage::attachment_store::AttachmentStore;
 use assistant_storage::conversations::{ConversationDetail, ConversationRow, MessageRow};
 use assistant_storage::providers::ProviderRow;
@@ -126,6 +127,21 @@ impl InMemoryStore {
     /// 已写入的行，按写入顺序；用于「写入 → 读回 → 重建 wire 形状」断言。
     pub fn replay_messages(&self) -> Vec<ReplayMessage> {
         self.lock_messages().clone()
+    }
+
+    /// 预置既有行：模拟 `TurnRunner` 在进入循环前创建的 assistant 占位行。
+    /// 占位行 id 由调用方给定，不消耗 `next_id`，因此不影响后续行编号。
+    pub fn seed_assistant_row(&self, id: &str, parent_id: Option<&str>) {
+        self.lock_messages().push(ReplayMessage {
+            id: id.to_string(),
+            role: "assistant".to_string(),
+            content: String::new(),
+            parent_id: parent_id.map(str::to_string),
+            tool_calls_json: None,
+            tool_call_id: None,
+            is_error: false,
+            timestamp: 0,
+        });
     }
 
     fn lock_calls(&self) -> std::sync::MutexGuard<'_, Vec<StoreCall>> {
@@ -334,6 +350,7 @@ pub struct FixtureSource {
     provider: ProviderCredential,
     attachments: Arc<AttachmentStore>,
     adapter: Arc<dyn BaseProviderAdapter>,
+    mode: Option<AgentModeRow>,
 }
 
 impl FixtureSource {
@@ -348,7 +365,14 @@ impl FixtureSource {
             provider,
             attachments: Arc::new(AttachmentStore::new(attachment_dir.into())),
             adapter,
+            mode: None,
         }
+    }
+
+    /// 注入 agent mode：`AgentKind::Custom` 才注入 tools，工具循环用例必须走这里。
+    pub fn with_mode(mut self, mode: AgentModeRow) -> Self {
+        self.mode = Some(mode);
+        self
     }
 
     pub fn simple(conversation_id: &str) -> Self {
@@ -402,7 +426,7 @@ impl TurnInputSource for FixtureSource {
         }
         Ok(TurnInput {
             detail: self.detail.clone(),
-            mode: None,
+            mode: self.mode.clone(),
             reasoning: crate::chat_options::ReasoningOverride { level: None },
             provider: self.provider.clone(),
             attachments: self.attachments.clone(),
@@ -562,11 +586,19 @@ impl ScriptedResponse {
     }
 }
 
+/// 一次模型调用的请求快照：用于断言 nudge 注入、收尾撤 tools 与 wire 配对。
+#[derive(Debug, Clone)]
+pub struct RecordedRequest {
+    pub messages: Vec<ChatMessage>,
+    pub tools: Option<Vec<ToolSpec>>,
+}
+
 /// 脚本化 provider 适配器：按调用顺序返回预设流，L1 用例不再起监听端口（H1 / H8）。
 pub struct ScriptedAdapter {
     config: ProviderConfig,
     scripts: Mutex<std::collections::VecDeque<ScriptedResponse>>,
     calls: std::sync::atomic::AtomicU32,
+    requests: Mutex<Vec<RecordedRequest>>,
 }
 
 impl ScriptedAdapter {
@@ -581,12 +613,21 @@ impl ScriptedAdapter {
             },
             scripts: Mutex::new(scripts.into()),
             calls: std::sync::atomic::AtomicU32::new(0),
+            requests: Mutex::new(Vec::new()),
         }
     }
 
     /// 已发生的模型调用次数。
     pub fn calls(&self) -> u32 {
         self.calls.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// 已发出的请求快照，按调用顺序；用于断言本轮实际发送了什么。
+    pub fn requests(&self) -> Vec<RecordedRequest> {
+        match self.requests.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
     }
 
     fn next_script(&self) -> ScriptedResponse {
@@ -610,14 +651,24 @@ impl BaseProviderAdapter for ScriptedAdapter {
     fn chat_completion_stream(
         &self,
         _api_key: &str,
-        _messages: &[ChatMessage],
+        messages: &[ChatMessage],
         _model: &str,
-        _options: &ChatOptions,
+        options: &ChatOptions,
         _cancel_token: CancellationToken,
     ) -> Result<ChatStream, ProviderError> {
         use futures::StreamExt;
 
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        match self.requests.lock() {
+            Ok(mut guard) => guard.push(RecordedRequest {
+                messages: messages.to_vec(),
+                tools: options.tools.clone(),
+            }),
+            Err(poisoned) => poisoned.into_inner().push(RecordedRequest {
+                messages: messages.to_vec(),
+                tools: options.tools.clone(),
+            }),
+        }
         match self.next_script() {
             ScriptedResponse::Deltas(deltas) => {
                 Ok(Box::pin(futures::stream::iter(deltas.into_iter().map(Ok))))

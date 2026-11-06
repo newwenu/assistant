@@ -11,7 +11,7 @@
 
 ## T3.0 口径与前置确认
 
-- [x] T3.0.1 确认 P1 只做 `os/path.rs` + `fs_link` 迁移，不新增任何 `fs_*` / `shell_exec` 工具
+- [x] T3.0.1 确认 P1 只做 `os/path.rs` + `fs_link` 迁移，不新增任何 `agent_*` 工具
 - [x] T3.0.2 确认 `fs_link` 的 `audience()` 保持 `TOOLBOX_ONLY`，不改为 `BOTH`
 - [x] T3.0.3 确认 `fs_link` 的 `source` / `target` 一律走 `resolve_leaf_preserving`；`resolve` 本阶段没有生产调用方
 - [x] T3.0.4 确认 `\\?\` 统一用 `dunce::simplified()`：workspace 根 `Cargo.toml` 增加 `dunce = "1"`，`assistant-tools` 以 workspace 依赖引入
@@ -192,7 +192,7 @@
 
 ## 不做
 
-- 不新增 `fs_read` / `fs_list` / `fs_glob` / `fs_grep` / `fs_write` / `fs_edit` / `fs_mkdir` / `fs_move` / `fs_delete` / `shell_exec`
+- 不新增 `read` / `ls` / `glob` / `grep` / `write` / `edit` / `mkdir` / `move` / `delete` / `shell`
 - 不建 `os/output.rs`
 - 不新增 Tauri command、不改 DTO、不改前端
 - 不实现 Policy / Gateway / Pipeline

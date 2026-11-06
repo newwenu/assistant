@@ -7,7 +7,7 @@
 > 勾选条件：代码已改 **且** 对应验收已跑。
 > **状态唯一位置**：本清单是 P3 任务级进度的唯一来源；阶段级结论只在 [roadmap](./I38-agent-roadmap.md) §2 写一次，spec / design / 基线 / 验证文档都不记录进度。本清单**不管理提交**（不写提交拆分 / 提交信息 / 回滚批次，见 roadmap §7 第 2 条）。
 > 范围：`assistant-agent/src/kernel/` 共用内核、`src-tauri/src/adapters/` 端口实现、`src-tauri/src/cmd/agent/` 宿主命令、chat 等价迁移、事件 DTO、`messages.status`、轮级观测。
-> 不包含：RoundExecutor 多迭代循环（P4 / I38b）、`agent/` 下的停止钩子 / 中间件链 / 阶梯 / 摘要执行 / 审批门（见 C10 交接）、任何工具实现（P5 / I38c）、前端 UI（P6 / I38d）。
+> 不包含：RoundExecutor 多迭代循环（P4 / I38b）、`agent/` 下的停止钩子 / 中间件链 / 阶梯 ③-⑤ / 摘要执行体（见 C10 交接；审批门本体已在 P2 `assistant-tools/src/gateway.rs`，P4 只做宿主侧装配）、任何工具实现（P5 / I38c）、前端 UI（P6 / I38d）。
 > 测试位置：新增单测一律放 `crates/assistant-agent/tests/<模块>.rs` 集成测试；端口替身放 `kernel/ports/test_doubles.rs` 且仅 `#[cfg(test)]`。
 > 硬边界：`kernel/` 下不得出现 `tauri` / `AppHandle` / `Window` / `tauri::State`，不得 `use` 任何 `src-tauri` 类型。
 
@@ -284,10 +284,12 @@
 
 | spec 章节 | 落点 | 依赖 | 对应验收 |
 |---|---|---|---|
-| Step 4 中间件链与阶梯 ②③④⑤ | `agent/middleware.rs`、`agent/ladder.rs` | P4 工具执行 + `agent/compaction_exec.rs` | 13-16 |
-| Step 5 停止钩子 | `agent/stop.rs` | P4 迭代循环 | 17-18 |
-| Step 6 压缩生命周期 | `agent/compaction_exec.rs` + `agent/` | P4 续跑式切换点 | 19-20 |
-| 审批门 | `agent/approval.rs` | P4 + I38a `ApprovalChannel` | 未列号 |
+| Step 4 中间件链与阶梯 ③④⑤ | `assistant-agent/src/agent/middleware.rs`、`assistant-agent/src/agent/ladder.rs` | P4 工具执行 | 13-16 |
+| Step 4 阶梯 ②（摘要执行体） | `assistant-agent/src/agent/compaction_exec.rs` | **不随 P4**，随续跑式压缩同批（I38b D13） | 移出 P4 验收 |
+| Step 5 停止钩子 | `assistant-agent/src/agent/stop.rs` | P4 迭代循环 | 17-18 |
+| Step 6 压缩生命周期 | 手动终止式留在 `src-tauri/src/cmd/compaction.rs`（P3 已迁移内核调用）；`agent/compaction_exec.rs` 随续跑式批次 | **轮内续跑不随 P4**（I38b D13） | 19-20 归续跑式批次 |
+| 审批门（端口与网关） | `assistant-tools/src/gateway.rs` | 已在 P2 落地 | 不适用 |
+| 审批门生产装配（`TimingApprovalPrompter`、两表、`Deny` 默认实现） | `src-tauri/src/agent/`、`src-tauri/src/adapters/` | P4（**不新建 `agent/approval.rs`**） | I38b C4.14 / C4.18 |
 
 P3 交付的内核已为这些模块预留接入点：`TurnSpec.stop_hooks` / `TurnSpec.ladder` / `TurnSpec.tools` / `TurnError::MiddlewareStop` / `TurnOutcome.hit_cap` / `wrap_up_injected`。
 
@@ -314,7 +316,7 @@ P3 交付的内核已为这些模块预留接入点：`TurnSpec.stop_hooks` / `T
 
 > 目的：清掉「内核已就位、旧调用点未迁」的遗漏代码，让 C5.31 的删除真正可执行。
 > 范围：`cmd/compaction.rs` 迁移、`cmd/conversation.rs` 占用查询迁移、测试引用迁移、三模块退役。
-> 不含：`kernel/runner.rs` 的 P3 过渡单迭代循环（P4 / I38b 删除）、`agent/` 五模块（C10 交接）、阶梯 ②-⑤ 与续跑语义（P4）。
+> 不含：`kernel/runner.rs` 的 P3 过渡单迭代循环（P4 / I38b 删除）、`agent/` 四模块（`stop` / `middleware` / `ladder` / `compaction_exec`，C10 交接）、阶梯 ③-⑤ 与续跑语义（P4）、阶梯 ② 与摘要执行体（续跑式压缩批次，I38b D13）。
 > 现状：`CompactionSink` 端口与 `adapters/compaction_sink.rs` 已存在且由 `runner.rs` 接线，**不新建 adapter、不改触发时序**；只替换 `execute_compaction` 内部依赖。
 
 实现：`src-tauri/src/cmd/compaction.rs`、`src-tauri/src/cmd/conversation.rs`、`src-tauri/crates/assistant-agent/src/lib.rs`

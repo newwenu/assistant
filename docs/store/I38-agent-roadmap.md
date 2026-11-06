@@ -30,8 +30,8 @@
 | **P1 框架收口** | 共享路径安全 `os/path.rs`；`fs_link` 迁移与权限词汇修正 | I31 T3 | ✅ 已完成（2026-11-04） | P0 |
 | **P2 工具控制层** | Policy / Gateway / Pipeline / 审批键 / 校验 / 并发 / 结果持久化 | I38a | ✅ 已完成（2026-11-05） | P1 |
 | **P3 运行时内核** | `kernel/` 共用内核、端口、状态机、取消代际、双层超时、chat 等价迁移 | I36 spec、[I36a](./I36a-agent-kernel-baseline.md)、[I39](./I39-compaction-chat-merge-spec.md) | ✅ 已完成（C1–C11，2026-11-05；chat / agent 两条链路均已改调内核，H1–H9 全部收口；压缩共享边界（I39）已落地：互斥源 / 投影 / 刷新点 / 失败通道统一） | P0 |
-| **P4 Agent Loop 闭环** | RoundExecutor 多迭代循环；tool call 累积器；`ChatOptions.tools` 注入 | I38b | ❌ 未开始（规格已定稿，2026-11-05） | P2、P3；I30 B 段决策 |
-| **P5 OS 工具能力** | `fs_*`、`shell_exec`、`ask_user` 逐个落地 | I38c | ❌ 未开始 | P1、P2 |
+| **P4 Agent Loop 闭环** | RoundExecutor 多迭代循环；tool call 累积器；`ChatOptions.tools` 注入；停止钩子三维预算；阶梯 ③④⑤ 与中间件链（② 不随 P4）；审批默认 fail-closed 装配 | I38b | ✅ 已完成（2026-11-06；C1–C6、C8（除 C8.6）、C9 全部完成，`cargo test -p assistant-agent` / `assistant-providers` / `assistant-storage` 全绿，`clippy -D warnings` 与 `cargo fmt --check` 通过。**C7 端到端批次整体跳过**（用户决策）：`agent_loop_e2e.rs` / `agent_loop_dialect.rs` 未编写，C7.1–C7.17 与 C8.6 不计完成，端到端链路无自动化覆盖为已知缺口；组件级等价覆盖见 tasklist C7 说明） | P2、P3；I30 B 段决策 |
+| **P5 OS 工具能力** | `agent_*.rs` 十个文件工具（注册名 `read` / `write` / …）、`shell`、`ask_user` 逐个落地；白名单工具解析 `resolve_available_tools` 替换 P4 的 `RegistryToolCatalog`（deny-by-default + 显式白名单/黑名单）；清理 P4 接入代码（`ToolCatalog` trait、`RegistryToolCatalog`、`TurnSpec.tools` 类型收窄） | I38c | ❌ 未开始 | P1、P2 |
 | **P6 前端与模式** | 五态 ToolCallBubble、审批 UI、AgentMode / 对话级工具配置；chat / agent 链路显式切换（新建会话按 `mode.kind` 选路，会话内锁定） | I38d | ❌ 未开始 | P4、P5 |
 | **P7 MCP 外部工具** | MCP 客户端、进程管理、`mcp__{server}__{tool}` 桥接 | I38e | ❌ 未开始 | P2、P5 |
 
@@ -74,7 +74,7 @@ P2 + P5 ───────────► P7
 | P1 → P2 | `validate_input` 路径检查必须复用 `os/path.rs`，否则两个入口的结论会分叉（I31 §5） |
 | P2 → P4 | Pipeline 是 RoundExecutor 的唯一工具执行入口，未就绪前不得驱动工具 |
 | P3 → P4 | TurnRunner 提供 turn 生命周期、状态机、预算与事件；P4 只替换迭代循环体 |
-| P1 + P2 → P5 | 路径安全与控制层先于任何破坏性工具；`shell_exec` / `fs_delete` 未过 P2 不得进入生产注册表 |
+| P1 + P2 → P5 | 路径安全与控制层先于任何破坏性工具；`shell` / `delete` 未过 P2 不得进入生产注册表 |
 | P4 + P5 → P6 | 前端五态与审批 UI 需要真实工具与事件；模式配置需要 RoundExecutor 的白名单解析 |
 | P2 + P5 → P7 | MCP 工具复用同一 Policy/Gateway/Pipeline，安全标记按 External 推断 |
 
@@ -91,6 +91,7 @@ P2 + P5 ───────────► P7
 | 工具架构决策（分层、权限、双入口、安全原则） | [I18 design](./I18-agent-tool-architecture-design.md) | ADR |
 | 工具控制层 | [I38a](./I38a-tool-control-layer-spec.md) | 实施规格 |
 | Agent Loop / 累积器 / tools 注入 | [I38b](./I38b-agent-loop-spec.md) | 实施规格 |
+| Agent Loop 实施指南（未完成步骤细化） | [I38b 指南](./I38b-agent-loop-impl-guide.md) | 实施指南 |
 | OS 工具逐个实现 | [I38c](./I38c-os-tools-spec.md) | 实施规格 |
 | 前端五态 / 审批 UI / Agent 模式 | [I38d](./I38d-agent-frontend-modes-spec.md) | 实施规格 |
 | MCP 外部工具 | [I38e](./I38e-mcp-tools-spec.md) | 实施规格 |
@@ -102,6 +103,7 @@ P2 + P5 ───────────► P7
 | 压缩与 chat 的共享边界（共享积木 / 保留独立编排） | [I39](./I39-compaction-chat-merge-spec.md) | 专项规格 |
 | P3 任务级进度（C1–C11 勾选） | [I36 tasklist](./I36-agent-runtime-tasklist.md) | 任务清单（唯一任务级进度） |
 | P4 任务级进度（C1–C9 勾选） | [I38b tasklist](./I38b-agent-loop-tasklist.md) | 任务清单（唯一任务级进度） |
+| 前四阶段代码规模与职责分布 | [代码清单](./agent-code-inventory.md) | 现状快照（不写进度） |
 | toolcall 从 chat 剥离 | [I30](./I30-phase1-toolcall-separation-spec.md) | 阶段一 A 段 |
 | 阶段一工具框架 | [I31](./I31-phase1-tool-framework-spec.md) | 阶段一 |
 | ToolBox 桥接 | [I18b](./I18b-tool-unified-bridge-spec.md) | 专项规格 |
@@ -126,15 +128,15 @@ P2 + P5 ───────────► P7
 | R1 | RoundExecutor 落点：I18 spec 写 `assistant-agent/src/round_executor.rs`，I36 写 `agent/` | 统一落在 `assistant-agent/src/agent/`：`round_executor.rs`（循环）、`tool_call.rs`（累积器）、`mod.rs`（trait 与导出）。`assistant-agent/src/kernel/` 不得引用工具类型 |
 | R2 | RoundExecutor 职责：I36 design 称其为迭代循环，I36 spec 的主流程把循环写在 TurnRunner | **P3 过渡形态**：TurnRunner 内部跑单迭代循环，`round_executor = None`。**P4 起**：迭代循环（模型调用 → 工具执行 → 回填 → 下一迭代）整体迁入 RoundExecutor；TurnRunner 只保留 turn 生命周期、状态机、预算、阶梯、落库、事件与收尾。P4 的入口固定为 `RoundExecutor::run_iterations` |
 | R3 | `os_tool_exec` 示例仍写 `tool.execute()` + `map_err` | 以代码为准：`exec::invoke(tool, input, context, DEFAULT_TOOL_TIMEOUT)`，`Err` 通道已在 `invoke` 内归一化 |
-| R4 | 工具阶段门禁：I18 design 的 Phase 3 与 I31 的「暂缓」表述不一致 | 以本文 P5 为准：P1 + P2 完成后才可新增破坏性工具；`shell_exec` / `fs_delete` 必须与 P2 的 Policy/Gateway 同期可用 |
+| R4 | 工具阶段门禁：I18 design 的 Phase 3 与 I31 的「暂缓」表述不一致 | 以本文 P5 为准：P1 + P2 完成后才可新增破坏性工具；`shell` / `delete` 必须与 P2 的 Policy/Gateway 同期可用 |
 | R5 | 前端字段命名：I18 spec Step 10 的 `AgentMode` 同时出现 snake_case 与 camelCase | wire / 前端一律 camelCase（`maxToolTier`、`approvalLevel`、`enabledTools`、`disabledTools`）；Rust 存储 struct 与 DB 列保持 snake_case。转换在 DTO 层完成 |
 | R6 | 工具实现状态散落在 I18 spec Step 2 | 工具清单、Schema 与实施状态统一迁移到 I38c；I18 spec 不再维护逐个工具状态 |
-| R7 | 终止式压缩与续跑式压缩的归属 | 压缩生命周期（事件、hook、trigger）归 I36 spec Step 6；「终止式 → 续跑式」的切换点归 P4（I38b），不另写第三份规格 |
+| R7 | 终止式压缩与续跑式压缩的归属 | 压缩生命周期（事件、hook、trigger）归 I36 spec Step 6；「终止式 → 续跑式」的切换点**不归 P4**，归 P4 之后的续跑式压缩单独批次（I38b D13），不另写第三份规格。P4 只定 `CompactTrigger::Auto` 契约、不接线阶梯 ② |
 | R8 | `ToolResult` 双通道（`result_for_assistant` / `error_kind`）归属 | 类型扩展归 P2（I38a §3）；P0 的 `ToolResult { ok, data, error }` 保持不变，P2 以新增可选字段落地，存量工具零改动 |
 | R9 | `ToolAudience` 默认值：早期为迁移便利用 `BOTH` | **2026-11-04 收紧为 `NONE`（fail-closed）**：未显式声明受众的工具对两个入口都不可见。唯一存量工具 `fs_link` 已显式声明 `TOOLBOX_ONLY`，行为不变；新工具必须在 `audience()` 中显式声明 |
 | R10 | 子代理 / 多 agent 是否属于当前阶段 | **P0–P7 不实现**。P4 只预留 `agent_id` / `parent_turn_id` / `delegation_depth` 三个可选字段（I36 D16-D18），实现归 P8.1；不得在 RoundExecutor 内写 `if is_subagent` |
 | R11 | Super-agent 的 Router / Worker 与现有单会话 turn | **不作为当前架构目标**。P0–P7 是 Worker 层基础；P8.2/P8.3 才补子会话与 Router。跨重启的 persistence / Watchdog 归 P9，单独 ADR（I36 D13b），不得直接叠加后台进程 |
-| R12 | 压缩与 chat 的共享边界 | **不属 R7 的三份边界**：生命周期语义仍归 I36 spec Step 6，续跑式切换点仍归 P4。共享到什么程度归 [I39](./I39-compaction-chat-merge-spec.md)。结论：**压缩不收编为 `TurnSpec` 第三种实例**，保留 `execute_compaction` 独立编排；只共享 `TurnTasks` 互斥源、`stream::consume`、`TurnEmitter`、usage 构造、`project_chat_messages` 投影、`emit_stream_finished` 刷新点与 `chat-delta.error` 失败通道 |
+| R12 | 压缩与 chat 的共享边界 | **不属 R7 的三份边界**：生命周期语义仍归 I36 spec Step 6，续跑式切换点归 P4 之后的续跑式压缩批次。共享到什么程度归 [I39](./I39-compaction-chat-merge-spec.md)。结论：**压缩不收编为 `TurnSpec` 第三种实例**，保留 `execute_compaction` 独立编排；只共享 `TurnTasks` 互斥源、`stream::consume`、`TurnEmitter`、usage 构造、`project_chat_messages` 投影、`emit_stream_finished` 刷新点与 `chat-delta.error` 失败通道 |
 
 ---
 
@@ -147,9 +149,9 @@ P2 + P5 ───────────► P7
 | P1 | `os/path.rs` 有单测；`fs_link` 无私有路径实现；`permission_intents` 仅用 `read/edit/delete/execute`；`cargo test -p assistant-tools` 全绿 |
 | P2 | Policy 单测覆盖 `most_restrictive` / last-match-wins / Ceiling 拒绝 Allow；Gateway 区分 Allow/Ask/Deny；Pipeline 顺序固定为 `find → validate → gateway → execute → persist`；无 tauri 依赖 |
 | P3 | `cargo tree -p assistant-agent` 无 tauri；chat 对比测试（事件序列 / seq / 落库 / 错误文案）逐条一致；关闭窗口后 turn 可跑完 |
-| P4 | 多迭代闭环可跑通；`max_iterations` / 收尾调用 / 空响应重试 / 工具结果回填均有测试；`ChatOptions.tools` 在三个 adapter 生效 |
-| P5 | 每个工具独立 spec 验收；破坏性工具只在 P2 就绪后注册；ToolBox 与 Agent 两入口共享 `execute()` 内安全守卫 |
-| P6 | 五态渲染与审批闭环可用；`resolveAvailableTools` deny-by-default；跨窗口 phase 不漂移；链路选路按 `mode.kind` 分流且会话内不可切换 |
+| P4 | 多迭代闭环可跑通；`max_iterations` / 收尾调用 / 空响应重试 / 工具结果回填均有测试；`ChatOptions.tools` 在三个 adapter 生效；三维预算（迭代 / 工具调用 / 墙钟）各自可触发收尾；阶梯 ③④⑤ 按序生效且不超预算；审批通道缺失时判 `Ask` 的工具为 `Deny` 并写审计 |
+| P5 | 每个工具独立 spec 验收；破坏性工具只在 P2 就绪后注册；ToolBox 与 Agent 两入口共享 `execute()` 内安全守卫；`resolve_available_tools` deny-by-default + 白名单/黑名单有单测；P4 的 `RegistryToolCatalog` / `ToolCatalog` trait 已删除且全仓无残留引用 |
+| P6 | 五态渲染与审批闭环可用；`ConversationToolConfig` 前端内存态初始化与传递；跨窗口 phase 不漂移；链路选路按 `mode.kind` 分流且会话内不可切换 |
 | P7 | MCP server 启停/重连；工具命名与安全标记推断符合 I18 design §3.8；External 工具的 Policy 生效 |
 
 ---

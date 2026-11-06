@@ -20,6 +20,7 @@ type ProviderStream = std::pin::Pin<
 >;
 
 /// 一次模型调用所需的全部输入；构建后不再触碰 DB。
+#[derive(Clone)]
 pub struct ChatRequest {
     pub chat_messages: Vec<types::ChatMessage>,
     /// 由输入端口提供，`build()` 只消费不构造（H1）。

@@ -21,13 +21,16 @@ pub use persist::{PersistCtx, TurnPersister};
 pub use phase::{SessionState, TurnPhase};
 pub use ports::{
     AppendToolMessageReq, ChatError, Clock, CompactionSink, CreateAssistantReq, EventSink,
-    InputError, MessageStatus, MessageStore, ProviderCredential, ProviderDelta, StopHook,
-    StoreError, ToolCatalog, TurnEvent, TurnInput, TurnInputSource, UsageRecord,
+    InputError, MessageStatus, MessageStore, ProviderCredential, ProviderDelta, StopDecision,
+    StopHook, StoreError, ToolCatalog, TurnEvent, TurnGeneration, TurnInput, TurnInputSource,
+    TurnState, UsageRecord,
 };
 pub use request::ChatRequest;
 pub use runner::{CompactionConfig, TurnRunner};
 pub use state::{SessionStates, StateError};
-pub use stream::{PartialOutcome, StreamError, StreamOutcome, UsageSnapshot};
+pub use stream::{
+    is_output_limit_reached, PartialOutcome, StreamError, StreamOutcome, UsageSnapshot,
+};
 pub use tasks::{Busy, TurnEntry, TurnTasks};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +55,13 @@ pub enum LadderPolicy {
     TerminatingCompact,
     /// 全阶梯（agent）。
     Full,
+}
+
+impl LadderPolicy {
+    /// 只投影（chat / deep 等无工具结果链路）：③④⑤ 不注册。
+    pub fn is_projection_only(self) -> bool {
+        matches!(self, Self::ProjectionOnly)
+    }
 }
 
 pub struct TurnSpec {
@@ -87,16 +97,27 @@ impl TurnSpec {
 
     /// agent 链路：拒绝、12 迭代、工具目录由宿主注入、全阶梯、广播路由。
     pub fn agent() -> Self {
+        let limits = TurnLimits::default();
         Self {
             on_busy: OnBusy::Reject,
-            max_iterations: limits::DEFAULT_MAX_ITERATIONS,
+            max_iterations: limits.max_iterations,
             tools: None,
             ladder: LadderPolicy::Full,
-            stop_hooks: Vec::new(),
+            stop_hooks: agent_stop_hooks(),
             wrap_up: true,
             route: EventRoute::Broadcast,
             kind: "agent",
-            limits: TurnLimits::default(),
+            limits,
         }
     }
+}
+
+/// agent 链路恒装的三维预算钩子（`TurnTokenBudgetHook` 只在有配置时追加，
+/// P4 无 token 预算配置面，故不安装）。
+fn agent_stop_hooks() -> Vec<Arc<dyn StopHook>> {
+    vec![
+        Arc::new(crate::agent::stop::IterationLimitHook),
+        Arc::new(crate::agent::stop::ToolCallLimitHook),
+        Arc::new(crate::agent::stop::TurnWallClockHook),
+    ]
 }

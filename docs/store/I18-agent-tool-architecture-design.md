@@ -197,7 +197,7 @@ pub enum ToolTier { Sandbox, Os, External }
 
 **取舍**：
 - OpenBitFun 用 `is_readonly()` + `is_concurrency_safe(input)` 两个方法，`is_concurrency_safe` 默认等于 `is_readonly` 但可按 input 覆盖
-- **选择静态 BehaviorHints**：简化但够用——当前所有工具的安全标记不依赖 input。若未来需要动态判断（如 shell_exec 某些只读命令可并发），可扩展为 `fn behavior_hints(&self, input: &Value) -> BehaviorHints`
+- **选择静态 BehaviorHints**：简化但够用——当前所有工具的安全标记不依赖 input。若未来需要动态判断（如 shell 某些只读命令可并发），可扩展为 `fn behavior_hints(&self, input: &Value) -> BehaviorHints`
 
 **推导规则**（上层消费）：
 - `read_only = true` → Pipeline 可并发执行
@@ -215,7 +215,7 @@ pub struct BehaviorHints { pub read_only: bool, pub destructive: bool, pub open_
 
 **决策**：并发安全以 `behavior_hints().read_only` 为默认判定，同时保留可覆写点，供工具按 input 动态判定；默认实现集中在 trait 层，不分散到各工具。
 
-**理由**：静态标记对 `shell_exec` 判不准——`ls` 可并发、`rm` 不可；文件读取在写操作之后也不能并发。但把判定完全下沉到每个工具，会让「没覆写的工具」失去统一默认值。
+**理由**：静态标记对 `shell` 判不准——`ls` 可并发、`rm` 不可；文件读取在写操作之后也不能并发。但把判定完全下沉到每个工具，会让「没覆写的工具」失去统一默认值。
 
 **取舍**：不整体改为 OpenBitFun 的纯动态 `is_concurrency_safe(input: Option<&Value>)`——无 input 时语义不明，且默认值散落。采用「默认推导 + 可选覆写」：未覆写者行为与现状一致，覆写者按 input 判定。
 
@@ -270,7 +270,7 @@ pub trait Tool: Send + Sync {
 | 超时保护 | 防止 LLM 发起的命令挂起 | 由 Rust `invoke()` 统一兜底（I31 §4.3，已取代「UI 层自行处理」） |
 | 结果回填消息历史 | Agent Loop 需要继续对话 | 结果直接返回组件渲染 |
 
-**安全约束不缺失**：路径校验等在 `Tool.execute()` 内部，两个入口均受保护；`shell_exec` 的执行层守卫同样在 `execute()` 内（见 §3.7.1），只有 AllowlistGate / ApprovalGate 这层审批留在 Pipeline。
+**安全约束不缺失**：路径校验等在 `Tool.execute()` 内部，两个入口均受保护；`shell` 的执行层守卫同样在 `execute()` 内（见 §3.7.1），只有 AllowlistGate / ApprovalGate 这层审批留在 Pipeline。
 
 > ToolBox 桥接完整规格见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
 
@@ -314,11 +314,11 @@ pub trait Tool: Send + Sync {
 | 校验层 | `validate_input` 的形状检查 + 转译 SafetyBelt 结论 | 「形状合法吗、能否自动修正」——仅 Agent 入口 |
 | 审批层 | PolicyEngine、AllowlistGate、ApprovalGate | 「现在允许吗、谁来决定」——依赖人类意图，仅 Agent 入口 |
 
-**理由**：ToolBox 不经过 Pipeline（见 §3.6 与 [I18b](I18b-tool-unified-bridge-spec.md) §2.2）。若 SafetyBelt 留在 Pipeline，ToolBox 调 `shell_exec` 将**完全无守卫**——比「需要审批」严重得多。反之，若把 AllowlistGate 下沉到 `execute()`，用户的免审批偏好会被硬编码进工具实现，且 ToolBox 入口无人可配置。
+**理由**：ToolBox 不经过 Pipeline（见 §3.6 与 [I18b](I18b-tool-unified-bridge-spec.md) §2.2）。若 SafetyBelt 留在 Pipeline，ToolBox 调 `shell` 将**完全无守卫**——比「需要审批」严重得多。反之，若把 AllowlistGate 下沉到 `execute()`，用户的免审批偏好会被硬编码进工具实现，且 ToolBox 入口无人可配置。
 
 **`validate_input` 复用 SafetyBelt 而非另写一套**：两套命令判定必然漂移，出现「校验层放行、执行层拒绝」或更糟的反向情况。唯一判定源在 SafetyBelt，校验层只把结论翻译成 `ValidationResult`，命中时 `blocks_input_rewrite = true`。
 
-**对 `shell_exec` 的约束**：受众仍为 `BOTH`（ToolBox 未来提供 shell 组件时可直接复用），但 `execute()` 内部**必须**包含执行层守卫——这是该工具的实现不变量，不能假设「反正 Pipeline 会拦」。
+**对 `shell` 的约束**：受众仍为 `BOTH`（ToolBox 未来提供 shell 组件时可直接复用），但 `execute()` 内部**必须**包含执行层守卫——这是该工具的实现不变量，不能假设「反正 Pipeline 会拦」。
 
 > 完整分层表、调用链与反例见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §3.3–§3.4。
 
@@ -341,7 +341,7 @@ pub trait Tool: Send + Sync {
 
 **决策**：实施顺序为「框架 → 安全网关 → OS 工具 → MCP」，对应 [I38 roadmap](./I38-agent-roadmap.md) 的 P0/P1 → P2 → P5 → P7；Agent Loop（P4）在框架与内核之后接入。
 
-**理由**：如果先加 OS 工具再建安全框架，LLM 一旦调 `shell_exec("rm -rf /")` 就直接执行——没有任何拦截。
+**理由**：如果先加 OS 工具再建安全框架，LLM 一旦调 `shell("rm -rf /")` 就直接执行——没有任何拦截。
 
 ### 3.11 决策：两级可用性配置 + deny-by-default
 
@@ -351,8 +351,8 @@ pub trait Tool: Send + Sync {
 
 | 层级 | 何时生效 | 持久化 | 典型场景 |
 |------|---------|--------|---------|
-| **AgentMode 预设** | 选择 Agent 模式时 | `agent_modes` 表（**唯一持久层**） | 深度模式预设 fs_read+shell_exec |
-| **对话级临时配置** | 对话创建时从 AgentMode 预设初始化，会话内可随时修改 | **仅内存，不落库**；新对话重新初始化 | 对话中关掉 shell_exec，只留只读工具 |
+| **AgentMode 预设** | 选择 Agent 模式时 | `agent_modes` 表（**唯一持久层**） | 深度模式预设 read+shell |
+| **对话级临时配置** | 对话创建时从 AgentMode 预设初始化，会话内可随时修改 | **仅内存，不落库**；新对话重新初始化 | 对话中关掉 shell，只留只读工具 |
 
 **取舍**：当前不引入对话级持久层。工具可用性变更只作用于**当前对话的内存态**，不写入数据库；新对话创建时从 AgentMode 预设重新初始化，因此**新对话自动还原**，无需任何计时器。进程重启同样回到预设。理由：先把「模式预设 + 会话内调整」这条最小路径跑通，避免在 P6 引入一张新表与一套迁移；等真正出现「跨会话保留工具配置」的需求，再单独加持久层，那时也只是把内存态换成读写来源，`resolveAvailableTools` 的判定逻辑不变。
 
@@ -491,15 +491,15 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 
 **决策**：12 个内置 OS 工具，从安全到危险排序实现。共享 `resolve_path()` + `validate_path()` 基础设施。
 
-#### 4.2.1 决策：编辑语义拆分为 fs_write 与 fs_edit
+#### 4.2.1 决策：编辑语义拆分为 write 与 edit
 
-**决策**：文件编辑拆成两个工具——`fs_write` 负责整文件新建/覆盖，`fs_edit` 负责 `old_string` / `new_string` 唯一匹配替换。
+**决策**：文件编辑拆成两个工具——`write` 负责整文件新建/覆盖，`edit` 负责 `old_string` / `new_string` 唯一匹配替换。
 
 **理由**：整文件覆盖要求模型重述全文——长文件易截断、易误删未读部分，且审批卡片无法展示「改了什么」。唯一匹配替换只要求最小上下文，天然产出 diff 供审批。
 
 **约束**：
 - `old_string` 在文件中必须唯一匹配；0 匹配或多匹配均失败，错误回传匹配次数与首个匹配位置
-- `fs_edit` 标记 `read_only = false, destructive = false`；审批卡片必须展示 diff
+- `edit` 标记 `read_only = false, destructive = false`；审批卡片必须展示 diff
 - 不采纳 codex `apply_patch` 的自定义 patch 语法——需额外解析器与格式教学成本，收益仅在批量多文件编辑场景
 
 > 工具清单、安全标记、每个工具的 JSON Schema 规格和实现见 [I38c](./I38c-os-tools-spec.md)。
@@ -559,23 +559,23 @@ src-tauri/
 │   │       ├── os/                # L1 内置 OS 工具
 │   │       │   ├── mod.rs
 │   │       │   ├── path.rs        # 共享：resolve_path + validate_path
-│   │       │   ├── fs_read.rs
-│   │       │   ├── fs_write.rs
-│   │       │   ├── fs_edit.rs
-│   │       │   ├── fs_delete.rs
-│   │       │   ├── fs_list.rs
-│   │       │   ├── fs_glob.rs
-│   │       │   ├── fs_grep.rs
-│   │       │   ├── fs_mkdir.rs
-│   │       │   ├── fs_move.rs
-│   │       │   ├── shell_exec.rs
+│   │       │   ├── agent_read.rs
+│   │       │   ├── agent_write.rs
+│   │       │   ├── agent_edit.rs
+│   │       │   ├── agent_delete.rs
+│   │       │   ├── agent_list.rs
+│   │       │   ├── agent_glob.rs
+│   │       │   ├── agent_grep.rs
+│   │       │   ├── agent_mkdir.rs
+│   │       │   ├── agent_move.rs
+│   │       │   ├── agent_shell.rs
 │   │       │   ├── shell/         # 执行层守卫（execute() 内部调用，两入口共享）
 │   │       │   │   ├── safety_belt.rs      # 致命命令硬拒绝（唯一命令判定源）
 │   │       │   │   ├── structural_guard.rs # 隐藏执行构造拦截
 │   │       │   │   ├── env_guard.rs        # env_clear + SAFE_ENV_VARS
 │   │       │   │   ├── classify.rs         # 命令风险分级
 │   │       │   │   └── bare_exec.rs         # tokio::process::Command
-│   │       │   └── ask_user.rs
+│   │       │   └── agent_ask_user.rs
 │   │       └── mcp/              # L2 MCP 工具
 │   │           ├── mod.rs
 │   │           ├── bridge.rs      # McpTool + 命名规范
@@ -608,8 +608,8 @@ src-tauri/
 
 **顺序决策**：
 
-1. **先框架后能力**：Tool trait / Registry / `exec::invoke` / 路径安全先稳定，再逐个加工具。理由：先加 OS 工具再建安全框架，模型一旦调 `shell_exec("rm -rf /")` 就没有任何拦截（design §3.10）。
-2. **先安全网关再破坏性工具**：Policy → Gateway → Pipeline 先于 `fs_delete` / `shell_exec`。理由：审批与策略是破坏性能力的前置条件（I38a）。
+1. **先框架后能力**：Tool trait / Registry / `exec::invoke` / 路径安全先稳定，再逐个加工具。理由：先加 OS 工具再建安全框架，模型一旦调 `shell("rm -rf /")` 就没有任何拦截（design §3.10）。
+2. **先安全网关再破坏性工具**：Policy → Gateway → Pipeline 先于 `delete` / `shell`。理由：审批与策略是破坏性能力的前置条件（I38a）。
 3. **先共用内核再 Agent Loop**：TurnRunner / 端口 / 状态机先于 RoundExecutor。理由：多迭代循环需要一个能继续的落点，否则压缩续跑、取消、落库都无处安放（I36 design §3.9）。
 4. **前端最后接**：五态 UI 与模式配置依赖真实的工具事件与白名单解析，提前做只能对着假数据开发（I38d）。
 

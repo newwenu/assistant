@@ -1,14 +1,14 @@
 use assistant_app::protocol::{
-    AgentModeDto, AgentModeKindDto, ChatDeltaPayloadDto, ChatRegeneratePayloadDto,
-    ChatStreamStartPayloadDto, ConversationDetailDto, ConversationDto, ConversationPatchDto,
-    ConversationQueryModeDto, ConversationQueryOptsDto, ConversationTerminatedPayloadDto,
-    ConversationUnlockedPayloadDto, InstallMascotAssetResultDto, MessageDto, ModelConfigDto,
-    MousePositionDto, OsToolExecRequestDto, OsToolResultDto, ProviderErrorCodeDto,
-    ProviderErrorPayloadDto, ProviderListDto, ReasoningLevelsDto, RetryNotificationDto,
-    ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto, SessionStateChangedPayloadDto,
-    SessionStateDto, SettingProviderChangedActionDto, SettingProviderChangedPayloadDto,
-    ShortcutWarningPayloadDto, ThemeChangedPayloadDto, TokenUsageDto, ToolErrorKindDto,
-    TurnPhaseDto,
+    AgentModeDto, AgentModeKindDto, AgentToolCallDto, AgentToolCallPayloadDto, ChatDeltaPayloadDto,
+    ChatRegeneratePayloadDto, ChatStreamStartPayloadDto, ConversationDetailDto, ConversationDto,
+    ConversationPatchDto, ConversationQueryModeDto, ConversationQueryOptsDto,
+    ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto, InstallMascotAssetResultDto,
+    MessageDto, ModelConfigDto, MousePositionDto, OsToolExecRequestDto, OsToolResultDto,
+    ProviderErrorCodeDto, ProviderErrorPayloadDto, ProviderListDto, ReasoningLevelsDto,
+    RetryNotificationDto, ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto,
+    SessionStateChangedPayloadDto, SessionStateDto, SettingProviderChangedActionDto,
+    SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto, ThemeChangedPayloadDto,
+    TokenUsageDto, ToolErrorKindDto, TurnPhaseDto,
 };
 use serde::{Deserialize, Serialize};
 
@@ -329,6 +329,92 @@ fn os_tool_dtos_roundtrip() {
 fn os_tool_exec_request_rejects_unknown_fields() {
     let err = serde_json::from_str::<OsToolExecRequestDto>(
         r#"{"tool":"fs_link","action":"create","params":{},"extra":1}"#,
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("unknown field"), "{}", err);
+}
+
+#[test]
+fn agent_tool_call_dto_roundtrip() {
+    let base = |payload: AgentToolCallPayloadDto| AgentToolCallDto {
+        conversation_id: "c1".into(),
+        turn_id: "t1".into(),
+        iteration: 2,
+        call_id: "call_1".into(),
+        name: "fs_read".into(),
+        payload,
+    };
+
+    let started = base(AgentToolCallPayloadDto::Started);
+    roundtrip(&started);
+    let json = serde_json::to_string(&started).unwrap();
+    assert!(json.contains("\"phase\":\"started\""), "tag: {}", json);
+    assert!(
+        json.contains("\"callId\":\"call_1\""),
+        "camelCase: {}",
+        json
+    );
+    assert!(
+        json.contains("\"conversationId\":\"c1\""),
+        "camelCase: {}",
+        json
+    );
+    assert!(!json.contains("call_id"), "no snake_case: {}", json);
+
+    let args = base(AgentToolCallPayloadDto::ArgsDelta {
+        delta: "{\"path\":".into(),
+    });
+    roundtrip(&args);
+
+    let finished = base(AgentToolCallPayloadDto::Finished {
+        result: "ok".into(),
+        confirmation_wait_ms: Some(120),
+    });
+    roundtrip(&finished);
+    let json = serde_json::to_string(&finished).unwrap();
+    assert!(
+        json.contains("\"confirmationWaitMs\":120"),
+        "explicit rename: {}",
+        json
+    );
+
+    let finished_without_wait = base(AgentToolCallPayloadDto::Finished {
+        result: "ok".into(),
+        confirmation_wait_ms: None,
+    });
+    roundtrip(&finished_without_wait);
+    let json = serde_json::to_string(&finished_without_wait).unwrap();
+    assert!(
+        json.contains("\"confirmationWaitMs\":null"),
+        "None field present: {}",
+        json
+    );
+
+    let failed = base(AgentToolCallPayloadDto::Failed {
+        error: "boom".into(),
+        error_kind: ToolErrorKindDto::Denied,
+        confirmation_wait_ms: Some(7),
+    });
+    roundtrip(&failed);
+    let json = serde_json::to_string(&failed).unwrap();
+    assert!(
+        json.contains("\"errorKind\":\"denied\""),
+        "explicit rename: {}",
+        json
+    );
+
+    let failed_without_wait = base(AgentToolCallPayloadDto::Failed {
+        error: "boom".into(),
+        error_kind: ToolErrorKindDto::Internal,
+        confirmation_wait_ms: None,
+    });
+    roundtrip(&failed_without_wait);
+}
+
+#[test]
+fn agent_tool_call_dto_rejects_unknown_fields() {
+    let err = serde_json::from_str::<AgentToolCallDto>(
+        r#"{"conversationId":"c1","turnId":"t1","iteration":1,"callId":"c","name":"n","payload":{"phase":"started"},"extra":1}"#,
     )
     .unwrap_err();
     assert!(err.to_string().contains("unknown field"), "{}", err);

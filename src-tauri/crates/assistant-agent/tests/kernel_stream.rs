@@ -9,7 +9,8 @@ use std::time::Duration;
 
 use assistant_agent::kernel::ports::test_doubles::{FixedClock, ManualClock};
 use assistant_agent::kernel::stream::{
-    consume as consume_with_clock, StreamAccumulator, StreamError, StreamOutcome,
+    consume as consume_with_clock, is_output_limit_reached, StreamAccumulator, StreamError,
+    StreamOutcome,
 };
 use assistant_agent::kernel::Clock;
 use assistant_providers::base::{ChatDelta, ProviderError, TokenUsage};
@@ -455,6 +456,23 @@ fn accumulator_empty_delta_has_no_effective_output() {
 
     accum.apply_delta(&usage_delta(100, 50, 150));
     assert!(!accum.has_effective_output());
+}
+
+#[test]
+fn output_limit_finish_reasons_are_recognized() {
+    for reason in ["length", "max_tokens", "MAX_TOKENS", "max_output_tokens"] {
+        assert!(
+            is_output_limit_reached(Some(reason)),
+            "应识别为输出上限截断: {reason}"
+        );
+    }
+    for reason in ["stop", "tool_calls", "end_turn", "STOP", ""] {
+        assert!(
+            !is_output_limit_reached(Some(reason)),
+            "不得误判为输出上限截断: {reason}"
+        );
+    }
+    assert!(!is_output_limit_reached(None));
 }
 
 // ─── 压缩链路（迁自旧 chat 链路测试 g4 / g6 / g7） ───

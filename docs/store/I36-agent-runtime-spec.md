@@ -35,15 +35,18 @@
 | turn 值类型 | `kernel/ids.rs`、`phase.rs`、`outcome.rs` | P3 |
 | 运行时上限 | `kernel/limits.rs` | P3 |
 | TurnRunner | `kernel/runner.rs` | P3 |
-| 停止钩子 | `agent/stop.rs` | P4 |
-| 中间件链 | `agent/middleware.rs` | P4 |
-| 上下文阶梯 ②③④⑤ | `agent/ladder.rs`（② 的摘要执行体在 `agent/compaction_exec.rs`） | P4 |
-| 摘要执行 | `agent/compaction_exec.rs` | P4 |
-| 审批门 | `agent/approval.rs` | P4 |
+| 停止钩子 | `assistant-agent/src/agent/stop.rs` | P4 |
+| 中间件链 | `assistant-agent/src/agent/middleware.rs` | P4 |
+| 上下文阶梯 ③④⑤ | `assistant-agent/src/agent/ladder.rs` | P4 |
+| 上下文阶梯 ②（摘要执行体） | `assistant-agent/src/agent/compaction_exec.rs`（**不随 P4，随续跑式压缩同批**，I38b D13） | P4 之后 |
+| 审批门（端口与网关） | `assistant-tools/src/gateway.rs`（`ToolGateway` + `ApprovalPrompter` + `PermissionGrantStore` / `PermissionAuditStore` 端口 + 超时 `Deny`） | P2 |
+| 审批门生产装配（`TimingApprovalPrompter` 装饰器、两表、`Deny` 默认实现） | `src-tauri/src/agent/`、`src-tauri/src/adapters/`、`assistant-storage/src/db.rs` | P4 |
 | 宿主命令 | `src-tauri/src/cmd/agent/` | P3 |
 | 消息终态列 | `assistant-storage`（`messages.status`：`streaming` / `completed` / `interrupted` / `failed`） | P3 |
 | 启动清扫 | `src-tauri/src/setup.rs` 启动序列 | P3 |
 | 轮级观测（TTFT / 汇总） | `kernel/outcome.rs` + `kernel/runner.rs` | P3 |
+
+> **路径口径**：表中 `assistant-agent/src/agent/...` 为库侧（trait / 值类型 / 纯逻辑），只依赖 `kernel/ports`；`src-tauri/src/agent/` 为宿主侧（执行器实现、端口适配器与装配），可依赖 `assistant-tools`。审批门自 P2 起由 `assistant-tools/src/gateway.rs` 承担，**P4 不新建 `agent/approval.rs`**，只加装饰器与生产装配。
 
 > **进度不写在本文**。阶段级状态见 [I38-agent-roadmap.md](./I38-agent-roadmap.md) §2；任务级勾选见 [I36-agent-runtime-tasklist.md](./I36-agent-runtime-tasklist.md)；判定方法见 [I36b](./I36b-agent-kernel-conformance-spec.md) §3。任何「已实现 / 未接线」的结论都不在本文维护。
 
@@ -58,7 +61,7 @@
 **前置条件**：
 
 1. `messages` 表可加列（迁移脚本随本规格一起提交）。
-2. 摘要执行体在 `agent/compaction_exec.rs` 新建，不依赖 `AppHandle`，也不调用 `cmd/compaction.rs`。
+2. 摘要执行体在 `assistant-agent/src/agent/compaction_exec.rs` 新建，不依赖 `AppHandle`，也不调用 `cmd/compaction.rs`；**该执行体随续跑式压缩同批落地，不在 P4 范围**（I38b D13）。
 3. **内核零 tauri**：`assistant-agent/src/kernel/` 下不得出现 `tauri`、`AppHandle`、`Window`、`tauri::State`，不得 `use` 任何 `src-tauri` 类型；可用 `cargo tree -p assistant-agent` 与 `grep` 双重验证。
 4. **端口是唯一出口**：内核访问 DB / 事件 / 输入 / 时钟只经 `kernel/ports.rs` 的四个端口（design §1.6）。
 5. Step 0B 与 Step 0-2 **不得**改变 chat 链路的可观测行为；Step 3 是 chat 行为等价迁移，Step 4 才删除旧实现。
@@ -277,7 +280,7 @@ impl TurnSpec {
 |---|---|---|
 | `TurnSpec` 从七字段扩到九字段 | 增加 `kind: &'static str` 与 `limits: TurnLimits` | `kind` 供 usage 统计分类，与 `route` 解耦；`limits` 收进 `TurnSpec` 后 `TurnRunner` 不再单独持有预算，链路差异只有一个来源（tasklist C5.13） |
 | `RoundExecutor` 占位放在 `kernel/mod.rs` | 未新建 `agent/` 目录 | P3 尚无 `agent/` 下任何模块（见「模块落点索引」）；占位只需签名，P4 再迁至 `agent/round_executor.rs`（I38b §2.2） |
-| `ToolCatalog` / `StopHook` 为最小占位 | `ToolCatalog` 空 trait；`StopHook` 只有 `name()` | P3 不驱动工具，`check` 与 async 签名随 P4 定型（I38b D16、I36 Step 5.1） |
+| `ToolCatalog` / `StopHook` 为最小占位 | `ToolCatalog` 空 trait；`StopHook` 只有 `name()` | P3 不驱动工具，`check` 签名随 P4 定型；**按本节 §5.1 的同步契约补齐，不改成 async**（I36 Step 5.1） |
 
 ### 0B.3 内核模块骨架
 
@@ -637,7 +640,7 @@ pub async fn consume<S>(
 
 #### 3.5.6 与 P4 的衔接
 
-本节只换 `cmd/compaction.rs` 内部依赖，**不搬文件**：P3 结束时压缩执行体仍在 `src-tauri/src/cmd/`。P4 的 `agent/compaction_exec.rs`（§6.2）以本节迁移后的内核调用组合（`stream::consume` + `persist::build_usage_records` + `emit::TurnEmitter`）为蓝本重写，届时才把摘要执行体下沉到内核；不得在 P4 回退到 `chat_runtime`。
+本节只换 `cmd/compaction.rs` 内部依赖，**不搬文件**：P3 结束时压缩执行体仍在 `src-tauri/src/cmd/`。续跑式压缩批次才把摘要执行体下沉为 `assistant-agent/src/agent/compaction_exec.rs`（§6.2），以本节迁移后的内核调用组合（`stream::consume` + `persist::build_usage_records` + `emit::TurnEmitter`）为蓝本重写；该执行体**不在 P4 范围**（I38b D13），也不得回退到 `chat_runtime`。
 
 #### 3.5.7 禁止
 
@@ -681,6 +684,8 @@ pub enum MiddlewareOutcome { Continue, StopTurn { reason: String } }
 
 **顺序是语义**，不是实现细节：3 必须在 2 之后（否则摘要器读到的是占位符），4 必须在 3 之后（否则还原的是空内容）。
 
+> **P4 的实际链**：② `SummarizeMiddleware` 随续跑式压缩同批落地（I38b D13），**P4 只注册 1、3、4、5、6、7、8 共七项**。`assistant-agent/src/agent/middleware.rs` 的顺序表按这七项常量数组实现，不预留空位、不留 TODO 桩；`agent/ladder.rs` 只实现 ③④⑤。② 落地时插回第 2 位，后续项序号顺延，顺序语义不变。
+
 第 8 项的**内部顺序也是语义**：先判豁免（轮询类工具的同参重复是合法进展），再判分类预算（`stage` + `error_kind` 决定该类别能否重试），最后才落通用计数。颠倒会让可分类的失败被通用计数提前熔断，也会让豁免工具被误杀。
 
 ### 4.3 阶梯门控公式
@@ -690,12 +695,12 @@ budget = context_window - reserved_output - COMPACTION_SAFETY_TOKENS(1000)
 // 窗口未知：不压缩，只跑 ①⑤，log::warn! 一次
 if context_window.is_none() { run(Projection, HardTrim); return }
 
-// ② 摘要压缩
+// ② 摘要压缩（不在 P4：随续跑式压缩同批落地，I38b D13；P4 时此段不执行、不判阈值）
 if estimated >= budget * COMPACTION_THRESHOLD_PERCENT / 100 {
     run(Summarize)                       // 失败 → 降级到 ③，不中止
 }
 
-// ③ 微压缩：仅在 ② 已执行或不可用，且估算仍超预算时
+// ③ 微压缩：估算仍超预算时（P4 无 ②，直接在此起效）
 if estimated > budget && microcompact_keep_recent > 0 {
     blank_older_tool_bodies(keep_recent = N)
 }
@@ -746,6 +751,11 @@ restore_allowance = allowance - toc_allowance      // 收尾还原
 pub trait StopHook: Send + Sync {
     fn name(&self) -> &'static str;
     fn check(&self, state: &TurnState<'_>) -> StopDecision;
+}
+
+pub enum StopDecision {
+    Continue,
+    Stop { reason: String },
 }
 
 pub struct TurnState<'a> {
@@ -802,6 +812,8 @@ pub enum CompactTrigger { Manual, Auto }
 
 手动（`manual_compact_conversation`）与自动（轮内阶梯 ②）**共用**同一生命周期与同一套事件，只在 `trigger` 字段上区分。
 
+> **P4 边界**：自动触发依赖阶梯 ②，而 ② 随续跑式压缩同批落地（I38b D13）。P4 只保留手动 `manual_compact_conversation` 的既有终止式语义；`CompactTrigger::Auto` 的枚举与生命周期契约先定，**不在 P4 接线**。
+
 ### 6.2 生命周期
 
 ```
@@ -816,11 +828,13 @@ restore_phase(previous)
 
 **失败降级**：`run_summarize` 失败时**不中止本轮**，`log::warn!` 后降级到阶梯 ③⑤（对齐 OpenHuman 的 `FaultTolerantCachingSummarizer` 行为）。只有 hook 主动 Stop 才中止。
 
+> **P4 期间 `run_summarize` 仍是既有实现**：P4 的压缩路径只有手动终止式，`run_summarize` 指 `src-tauri/src/cmd/compaction.rs` 的现有执行体；下沉到 `agent/compaction_exec.rs` 与本节「轮内续跑」分支同批（I38b D13），P4 不改此处。
+
 **计数口径**（D24）：压缩不触碰 `iteration`，摘要调用**不计入** `max_iterations`；但它确实花了一次模型调用，因此 `model_calls += 1` 并计入 token 统计。压缩是 `before_model` 中间件，不是迭代——把计数重置会让压缩变成绕过迭代上限的后门。
 
 ### 6.3 过渡期语义
 
-本规格落地时保持**终止式**（`CompactDecision::Terminate` → 压缩完成后另起），轮内续跑等 P4（I38b）就位后再切（design §3.9 第二步，I38b §9.1 D13 明确**不随 P4 同批**）。切换时只改 `run_summarize` 之后的分支，不改生命周期与事件。
+本规格落地时保持**终止式**（`CompactDecision::Terminate` → 压缩完成后另起），轮内续跑等 P4 之后的续跑式压缩批次就位后再切（design §3.9 第二步；I38b D13 明确**不随 P4 同批**，阶梯 ② 与切换同批）。切换时只改 `run_summarize` 之后的分支，不改生命周期与事件。
 
 **共享边界**：压缩与 chat 共享哪些积木（互斥源 / 流消费 / 事件发射 / usage 构造 / 投影 / 刷新点 / 失败通道）、保留哪些独立实现（编排 / 超时口径 / 落库 / 会话级收尾），见 [I39](./I39-compaction-chat-merge-spec.md)；本文只负责生命周期与事件语义。
 
@@ -943,18 +957,17 @@ ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 **Step 4（阶梯）**
 
 13. 构造「窗口放得下全部工具结果」的轮：微压缩**不**触发（回归 OpenHuman 的门控教训）。
-14. 构造「摘要 + 最近窗口仍溢出」：按 ②→③→⑤ 顺序各触发一次，最终请求不超预算。
-15. 摘要器失败：本轮不中止，降级到 ③⑤，日志含降级原因。
-16. 窗口未知：不调用摘要器，日志出现一次 `Undetermined` 告警。
+14. 构造「③ 之后仍溢出」：③→⑤ 按序各触发一次，最终请求不超预算（P4 无 ②，见 14b）。
+14b. **阶梯 ② 的三条断言归续跑式压缩批次**：P4 无摘要执行体、`SummarizeMiddleware` 不注册，因此「②→③→⑤ 顺序」「摘要器失败降级到 ③⑤」「窗口未知不调用摘要器」在 P4 不可达，随 ② 落地同批验收。
 16a. 收尾还原：③ 清空过结果体的 capped turn，结论调用能读到最近结果，且请求总量仍 ≤ `budget`（④ 不把 ⑤ 逼出来）；`restore_allowance = 0`（窗口未知）时不还原。
 
 **Step 5-6**
 
 17. `max_tool_calls` 触发时，回填给模型的最后一条消息是「已达工具调用上限」，且本轮仍产出文本。
 18. 迭代上限触发收尾：最后一次请求不含 `tools`，且 `wrap_up_injected = true`、`hit_cap = true`。
-19. 手动压缩与自动压缩产生相同的 `compaction-started/completed` 事件序列，仅 `trigger` 不同。
+19. **自动压缩不在 P4**：P4 只有手动压缩，`compaction-started/completed` 事件序列由手动触发验证；「手动与自动仅 `trigger` 不同」随阶梯 ② 同批验收（I38b D13）。
 20. pre-compact hook 返回 Stop → 本轮 `Failed`，不进入摘要执行。
-20a. 压缩触发后 `iteration` 不变，`model_calls` 加 1；摘要调用不占迭代名额（D24）。
+20a. **摘要计数断言（D24）随 ② 同批**：P4 无轮内压缩，`iteration` / `model_calls` 的该条断言在续跑式压缩批次验收；P4 只验手动压缩不改 `iteration`。
 
 **Step 7-8**
 

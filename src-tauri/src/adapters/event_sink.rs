@@ -4,8 +4,8 @@ use tauri::Manager;
 
 use crate::protocol::events::{emit_broadcast, emit_orb_only, event_name};
 use crate::protocol::{
-    ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto, ChatStreamStartPayloadDto,
-    ChatUserMessageConfirmedPayloadDto, ConversationListChangeKindDto,
+    AgentToolCallDto, ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto,
+    ChatStreamStartPayloadDto, ChatUserMessageConfirmedPayloadDto, ConversationListChangeKindDto,
     ConversationListChangedPayloadDto, MessageChangeKindDto, ProviderErrorPayloadDto,
     SessionStateChangedPayloadDto,
 };
@@ -188,6 +188,15 @@ impl EventSink for TauriEventSink {
                     event.call_id,
                     event.name
                 );
+                let payload = AgentToolCallDto {
+                    conversation_id: self.conversation_id.clone(),
+                    turn_id: event.turn_id.clone(),
+                    iteration: event.iteration,
+                    call_id: event.call_id.clone(),
+                    name: event.name.clone(),
+                    payload: event.payload.into(),
+                };
+                self.emit_wire(event_name::AGENT_TOOL_CALL, payload);
             }
             TurnEvent::CompactionStarted { turn_id } => {
                 log::debug!("compaction started turn={}", turn_id);

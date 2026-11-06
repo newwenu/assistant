@@ -39,7 +39,11 @@ fn agent_spec_field_values() {
     assert_eq!(spec.max_iterations, 12);
     assert!(spec.tools.is_none());
     assert_eq!(spec.ladder, LadderPolicy::Full);
-    assert!(spec.stop_hooks.is_empty());
+    let hook_names: Vec<&str> = spec.stop_hooks.iter().map(|h| h.name()).collect();
+    assert_eq!(
+        hook_names,
+        vec!["iteration-limit", "tool-call-limit", "turn-wall-clock"]
+    );
     assert!(spec.wrap_up);
     assert_eq!(spec.route, EventRoute::Broadcast);
     assert_eq!(spec.kind, "agent");

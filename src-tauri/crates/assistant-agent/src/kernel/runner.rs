@@ -1,23 +1,38 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use assistant_providers::base::{ProviderError, ProviderErrorPayload};
 
 use crate::compaction::{self, CompactDecision};
 
-use crate::agent::round_executor::{RoundExecutor, TurnBudget, TurnRunCtx};
+use crate::agent::round_executor::{
+    RoundExecutor, ToolExecutionPort, TurnBudget, TurnObserver, TurnRunCtx,
+};
+use crate::agent::tool_event::ToolEvent;
 
 use super::emit::TurnEmitter;
 use super::ids::TurnContext;
 use super::outcome::{TurnError, TurnOutcome, TurnStatus};
-use super::persist::{PersistCtx, TurnPersister};
+use super::persist::{cache_capable_of, PersistCtx, TurnPersister};
 use super::phase::TurnPhase;
-use super::ports::{ChatError, EventSink, MessageStore, ProviderDelta, TurnInputSource};
-use super::request::{self, ChatRequest};
+use super::ports::{
+    ChatError, EventSink, MessageStore, ProviderDelta, TurnGeneration, TurnInputSource,
+};
 use super::state::SessionStates;
-use super::stream::{self, PartialOutcome, StreamError, StreamOutcome};
 use super::tasks::TurnTasks;
 use super::{EventRoute, TurnSpec};
+
+/// 代际守卫：`TurnGeneration` 的生产实现，判定与 `TurnPersister::is_current` 同源。
+struct TurnGenerationGuard {
+    tasks: Arc<TurnTasks>,
+    conversation_id: String,
+    turn_id: super::ids::TurnId,
+}
+
+impl TurnGeneration for TurnGenerationGuard {
+    fn is_current(&self) -> bool {
+        self.tasks.is_current(&self.conversation_id, &self.turn_id)
+    }
+}
 
 /// 终止式压缩的触发配置；`None` 表示该链路不做压缩判断。
 #[derive(Clone)]
@@ -35,7 +50,8 @@ pub struct TurnRunner {
     states: Arc<SessionStates>,
     tasks: Arc<TurnTasks>,
     clock: Arc<dyn super::Clock>,
-    round_executor: Option<Arc<dyn RoundExecutor>>,
+    round_executor: Arc<dyn RoundExecutor>,
+    tool_exec: Option<Arc<dyn ToolExecutionPort>>,
     compaction: Option<CompactionConfig>,
 }
 
@@ -56,14 +72,15 @@ impl TurnRunner {
             states,
             tasks,
             clock,
-            round_executor: None,
+            round_executor: Arc::new(crate::agent::loop_executor::LoopRoundExecutor),
+            tool_exec: None,
             compaction,
         }
     }
 
-    /// P3 恒为 `None`；P4 注入真实实现后才会有工具轮。
-    pub fn with_round_executor(mut self, executor: Arc<dyn RoundExecutor>) -> Self {
-        self.round_executor = Some(executor);
+    /// 工具执行端口由宿主装配（`ToolPipeline` 适配器）；`None` 表示该链路无工具执行实现。
+    pub fn with_tool_exec(mut self, port: Arc<dyn ToolExecutionPort>) -> Self {
+        self.tool_exec = Some(port);
         self
     }
 
@@ -209,230 +226,77 @@ impl TurnRunner {
             Some(input.detail.conversation.model_id.clone()),
         );
 
-        let mut iteration: u32 = 0;
-        let mut empty_retries: u32 = 0;
-        let mut retrying_empty = false;
+        let generation = TurnGenerationGuard {
+            tasks: self.tasks.clone(),
+            conversation_id: conversation_id.to_string(),
+            turn_id: ctx.turn_id.clone(),
+        };
+        let observer = RunnerObserver {
+            states: self.states.as_ref(),
+            emitter,
+            spec,
+            conversation_id,
+            turn_id: &ctx.turn_id,
+        };
+        let round_ctx = TurnRunCtx {
+            turn_id: &ctx.turn_id,
+            conversation_id,
+            initial_message_id: &ctx.message_id,
+            start_iteration: 1,
+            remaining_turn_budget: TurnBudget {
+                remaining_tool_calls: spec.limits.max_tool_calls,
+                turn_deadline: spec.limits.turn_wall_clock.map(|d| started_at + d),
+            },
+            turn_started_at: started_at,
+            child_token: &token,
+            tools: spec.tools.as_ref(),
+            tool_exec: self.tool_exec.as_deref(),
+            observer: &observer,
+            store: self.store.as_ref(),
+            input: &input,
+            clock: self.clock.as_ref(),
+            generation: &generation,
+            limits: &spec.limits,
+            spec,
+            provider_id: Some(input.provider.row.id.as_str()),
+            model_id: Some(input.detail.conversation.model_id.as_str()),
+            model: input.detail.conversation.model_id.as_str(),
+            branch_leaf_id: input.detail.conversation.active_branch_id.as_deref(),
+            cache_capable: cache_capable_of(&input.provider.row),
+            agent_id: "root",
+            parent_turn_id: None,
+            delegation_depth: 0,
+        };
 
-        loop {
-            // 1. 刹车
-            if token.is_cancelled() {
-                outcome.status = TurnStatus::Cancelled;
-                *terminal_error = Some(ProviderErrorPayload::from(&ProviderError::Cancelled));
-                break;
-            }
-            if self.wall_clock_exceeded(started_at, &spec.limits) {
-                outcome.status = TurnStatus::Failed;
-                outcome.error = Some(TurnError::Other("turn wall clock exceeded".to_string()));
-                *terminal_error = Some(ProviderErrorPayload::from(&ProviderError::Timeout(
-                    "Turn wall clock exceeded".to_string(),
-                )));
-                break;
-            }
+        let round = self.round_executor.run_iterations(round_ctx).await;
 
-            if !retrying_empty {
-                if iteration >= spec.max_iterations {
-                    outcome.hit_cap = true;
-                    outcome.status = TurnStatus::Completed;
-                    break;
-                }
-                iteration += 1;
-                outcome.iterations = iteration;
-                emitter.set_iteration(iteration);
-                self.set_phase(
-                    emitter,
-                    spec,
-                    conversation_id,
-                    &ctx.turn_id,
-                    TurnPhase::Thinking,
-                );
-            }
-            retrying_empty = false;
+        *compaction_decision = self.decide_compaction_from_outcome(&round, conversation_id);
 
-            // 2. 阶梯：P3 只有投影 + 终止式压缩，构建即完成
-            // 3. 单次调用
-            let request_started = self.clock.now();
-            let request = match request::build(&input, iteration, spec.tools.as_ref()).await {
-                Ok(request) => request,
-                Err(err) => {
-                    outcome.status = TurnStatus::Failed;
-                    outcome.error = Some(TurnError::Other(err.clone()));
-                    *terminal_error = Some(ProviderErrorPayload::from(
-                        &ProviderError::RequestRejected(err),
-                    ));
-                    break;
-                }
-            };
+        outcome.status = round.status;
+        outcome.text = round.text;
+        outcome.reasoning = round.reasoning;
+        outcome.iterations = round.iterations;
+        outcome.model_calls = round.model_calls;
+        outcome.tool_calls = round.tool_calls;
+        outcome.prompt_tokens = round.prompt_tokens;
+        outcome.completion_tokens = round.completion_tokens;
+        outcome.cache_read_tokens = round.cache_read_tokens;
+        outcome.total_tokens = round.total_tokens;
+        outcome.attempt_usages = round.attempt_usages;
+        outcome.ttft_ms = round.ttft_ms;
+        outcome.hit_cap = round.hit_cap;
+        outcome.wrap_up_injected = round.wrap_up_injected;
+        outcome.final_message_id = round.final_message_id;
+        outcome.error = round.error;
 
-            let child = TurnTasks::child_token(&token);
-            let stream = match request.stream(child.clone()) {
-                Ok(stream) => stream,
-                Err(err) => {
-                    outcome.status = TurnStatus::Failed;
-                    *terminal_error = Some(ProviderErrorPayload::from(&err));
-                    outcome.error = Some(TurnError::Other(err.to_string()));
-                    break;
-                }
-            };
-
-            self.set_phase(
-                emitter,
-                spec,
-                conversation_id,
-                &ctx.turn_id,
-                TurnPhase::Streaming,
-            );
-            outcome.model_calls += 1;
-
-            let timeout = self.effective_model_call_timeout(started_at, &spec.limits);
-            let mut tool_acc = crate::agent::tool_call::ToolCallAccumulator::new();
-            let mut tool_calls: Vec<crate::agent::tool_call::FinalizedToolCall> = Vec::new();
-            let result = stream::consume(
-                stream,
-                child.clone(),
-                timeout,
-                self.clock.as_ref(),
-                request_started,
-                |_seq, delta| {
-                    if let Some(previous) = tool_acc.apply_chat_delta(delta).finalized_previous {
-                        tool_calls.push(previous);
-                    }
-                    emit_delta(emitter, delta)
-                },
-            )
-            .await;
-
-            match result {
-                Ok(stream_outcome) => {
-                    tool_calls.extend(
-                        tool_acc.finalize_all(crate::agent::tool_call::ToolCallBoundary::StreamEnd),
-                    );
-                    apply_usage(&mut outcome, &stream_outcome);
-                    outcome.text = stream_outcome.full_content.clone();
-                    outcome.reasoning = stream_outcome.full_reasoning.clone();
-                    outcome.attempt_usages = stream_outcome.attempt_usages.clone();
-
-                    // 4. 空响应重试：不递增 `iteration`
-                    if !stream_outcome.has_effective_output
-                        && empty_retries < spec.limits.empty_response_retries
-                    {
-                        empty_retries += 1;
-                        retrying_empty = true;
-                        continue;
-                    }
-                    if !stream_outcome.has_effective_output {
-                        outcome.status = TurnStatus::Failed;
-                        outcome.error = Some(TurnError::Other("empty response".to_string()));
-                        *terminal_error = Some(ProviderErrorPayload::from(
-                            &ProviderError::ParseError("empty response".to_string()),
-                        ));
-                        break;
-                    }
-
-                    // 5. 无工具结束
-                    if tool_calls.is_empty() || spec.tools.is_none() {
-                        outcome.status = TurnStatus::Completed;
-                        *compaction_decision =
-                            self.decide_compaction(&request, &outcome, conversation_id);
-                        break;
-                    }
-
-                    // 7. 工具执行：P3 无执行器，直接按触顶收尾
-                    match &self.round_executor {
-                        Some(executor) => {
-                            self.set_phase(
-                                emitter,
-                                spec,
-                                conversation_id,
-                                &ctx.turn_id,
-                                TurnPhase::ToolCalling,
-                            );
-                            let round_ctx = TurnRunCtx {
-                                turn_id: &ctx.turn_id,
-                                conversation_id,
-                                iteration,
-                                remaining_turn_budget: TurnBudget {
-                                    remaining_tool_calls: spec.limits.max_tool_calls,
-                                    turn_deadline: None,
-                                },
-                                child_token: &child,
-                                tools: spec.tools.as_deref(),
-                                tool_exec: None,
-                                sink: self.sink.as_ref(),
-                                store: self.store.as_ref(),
-                                input: self.input.as_ref(),
-                                clock: self.clock.as_ref(),
-                                limits: &spec.limits,
-                                spec,
-                                agent_id: "root",
-                                parent_turn_id: None,
-                                delegation_depth: 0,
-                            };
-                            let round =
-                                cancellable(&child, executor.run_iterations(round_ctx)).await;
-                            let Some(round) = round else {
-                                outcome.status = TurnStatus::Cancelled;
-                                *terminal_error =
-                                    Some(ProviderErrorPayload::from(&ProviderError::Cancelled));
-                                break;
-                            };
-                            outcome.tool_calls += round.tool_calls;
-                            if !round.hit_cap {
-                                continue;
-                            }
-                            outcome.hit_cap = true;
-                            outcome.status = TurnStatus::Completed;
-                            break;
-                        }
-                        None => {
-                            log::warn!(
-                                "turn {} requested {} tool calls but no executor is wired",
-                                ctx.turn_id,
-                                tool_calls.len()
-                            );
-                            outcome.hit_cap = true;
-                            outcome.status = TurnStatus::Completed;
-                            break;
-                        }
-                    }
-                }
-                Err(StreamError::Cancelled(partial)) => {
-                    self.save_partial(persister, &partial).await;
-                    outcome.text = partial.full_content.clone();
-                    apply_partial_usage(&mut outcome, &partial);
-                    outcome.status = TurnStatus::Cancelled;
-                    *terminal_error = Some(ProviderErrorPayload::from(&ProviderError::Cancelled));
-                    break;
-                }
-                Err(StreamError::Timeout(partial)) => {
-                    self.save_partial(persister, &partial).await;
-                    outcome.text = partial.full_content.clone();
-                    apply_partial_usage(&mut outcome, &partial);
-                    outcome.status = TurnStatus::Failed;
-                    outcome.error = Some(TurnError::Other("stream timed out".to_string()));
-                    *terminal_error = Some(ProviderErrorPayload::from(&ProviderError::Timeout(
-                        "Stream timed out".to_string(),
-                    )));
-                    break;
-                }
-                Err(StreamError::Provider(err, partial)) => {
-                    self.save_partial(persister, &partial).await;
-                    outcome.text = partial.full_content.clone();
-                    apply_partial_usage(&mut outcome, &partial);
-                    outcome.status = TurnStatus::Failed;
-                    outcome.error = Some(TurnError::Other(err.to_string()));
-                    *terminal_error = Some(ProviderErrorPayload::from(&err));
-                    break;
-                }
-            }
+        // 执行器把 provider 的**原始**错误载荷一并带出（`code` / `retryable` /
+        // `retry_after_ms` 等），在此还原为 `TurnEvent::Terminated.error`。
+        // `TurnError::Provider` 只有文案，无法承载这些字段（I38b V8）。
+        if terminal_error.is_none() {
+            *terminal_error = round.provider_error;
         }
 
         outcome
-    }
-
-    async fn save_partial(&self, persister: &TurnPersister, partial: &PartialOutcome) {
-        if let Err(err) = persister.persist_partial(partial).await {
-            log::error!("partial persist failed: {err}");
-        }
     }
 
     /// 每轮一条固定字段汇总日志（design §9.1）；TTFT 无 delta 时记 `-`。
@@ -480,52 +344,20 @@ impl TurnRunner {
         }
     }
 
-    fn wall_clock_exceeded(
-        &self,
-        started_at: std::time::Instant,
-        limits: &super::limits::TurnLimits,
-    ) -> bool {
-        match limits.turn_wall_clock {
-            Some(limit) if !limit.is_zero() => self.clock.now().duration_since(started_at) >= limit,
-            _ => false,
-        }
-    }
-
-    /// 单次超时取 `min(model_call, turn 剩余)`；都关闭时为 `None`。
-    fn effective_model_call_timeout(
-        &self,
-        started_at: std::time::Instant,
-        limits: &super::limits::TurnLimits,
-    ) -> Option<Duration> {
-        let model_call = limits.model_call.filter(|d| !d.is_zero());
-        let remaining = limits
-            .turn_wall_clock
-            .filter(|d| !d.is_zero())
-            .map(|limit| limit.saturating_sub(self.clock.now().duration_since(started_at)));
-
-        match (model_call, remaining) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (Some(a), None) => Some(a),
-            (None, Some(b)) => Some(b),
-            (None, None) => None,
-        }
-    }
-
     /// 只做判定，不在 turn 内部触发；触发点由 `run` 在 turn 收尾后统一执行。
-    fn decide_compaction(
+    fn decide_compaction_from_outcome(
         &self,
-        request: &ChatRequest,
-        outcome: &TurnOutcome,
+        round: &crate::agent::round_executor::RoundOutcome,
         conversation_id: &str,
     ) -> Option<CompactDecision> {
         let config = self.compaction.as_ref()?;
-        let prompt_tokens = outcome.prompt_tokens?;
+        let prompt_tokens = round.prompt_tokens?;
         let decision = compaction::evaluate_compaction(
             prompt_tokens,
-            request.context_window_tokens,
+            round.context_window_tokens,
             config.auto_compact,
             config.threshold_percent,
-            request.options.max_tokens,
+            round.reserved_output_tokens,
         );
         if decision == CompactDecision::Undetermined {
             log::warn!(
@@ -538,8 +370,32 @@ impl TurnRunner {
     }
 }
 
-fn emit_delta(emitter: &TurnEmitter, delta: &ProviderDelta) {
-    emitter.delta(delta);
+/// 交给 RoundExecutor 的唯一 phase / 工具事件入口（I38b C3.18）。
+/// 执行器不得自持 `EventSink` 绕开这里，`SessionStates` 仍是唯一写方。
+struct RunnerObserver<'a> {
+    states: &'a SessionStates,
+    emitter: &'a TurnEmitter,
+    spec: &'a TurnSpec,
+    conversation_id: &'a str,
+    turn_id: &'a str,
+}
+
+impl TurnObserver for RunnerObserver<'_> {
+    fn set_phase(&self, phase: TurnPhase) {
+        self.states
+            .set_phase(self.conversation_id, &self.turn_id.to_string(), phase);
+        if self.spec.route == EventRoute::Broadcast {
+            self.emitter.phase_changed(phase);
+        }
+    }
+
+    fn emit_tool_event(&self, event: ToolEvent) {
+        self.emitter.tool_event(event);
+    }
+
+    fn delta(&self, delta: &ProviderDelta) -> u32 {
+        self.emitter.delta(delta)
+    }
 }
 
 /// 长 await 一律走这里：`biased` 优先响应取消，禁止 `JoinHandle::abort()`（C4.9）。
@@ -551,28 +407,5 @@ where
         biased;
         _ = token.cancelled() => None,
         value = fut => Some(value),
-    }
-}
-
-fn apply_usage(outcome: &mut TurnOutcome, stream_outcome: &StreamOutcome) {
-    outcome.prompt_tokens = stream_outcome.prompt_tokens;
-    outcome.completion_tokens = stream_outcome.completion_tokens;
-    outcome.cache_read_tokens = stream_outcome.cache_read_tokens;
-    outcome.total_tokens = stream_outcome.total_tokens;
-    if outcome.ttft_ms.is_none() {
-        outcome.ttft_ms = stream_outcome.ttft_ms;
-    }
-}
-
-fn apply_partial_usage(outcome: &mut TurnOutcome, partial: &PartialOutcome) {
-    let usage = partial.last_usage();
-    outcome.prompt_tokens = usage.prompt_tokens;
-    outcome.completion_tokens = usage.completion_tokens;
-    outcome.cache_read_tokens = usage.cache_read_tokens;
-    outcome.total_tokens = usage.total_tokens;
-    outcome.reasoning = partial.full_reasoning.clone();
-    outcome.attempt_usages = partial.attempt_usages.clone();
-    if outcome.ttft_ms.is_none() {
-        outcome.ttft_ms = partial.ttft_ms;
     }
 }

@@ -18,6 +18,94 @@ fn delete_conversation_removes_all_messages() {
 }
 
 #[test]
+fn tool_result_rows_do_not_create_branch_siblings() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "", 200, Some("u1"), 0),
+    )
+    .unwrap();
+    conversations::update_message_tool_calls(
+        &conn,
+        "a1",
+        r#"[{"id":"call_1","name":"fs_read","arguments":"{}"}]"#,
+    )
+    .unwrap();
+
+    for (id, ts) in [("t1", 300), ("t2", 400)] {
+        let mut row = msg_with_parent(id, "c1", "tool", "result", ts, Some("a1"), 0);
+        row.tool_call_id = Some("call_1".to_string());
+        conversations::insert_message(&conn, &row).unwrap();
+    }
+
+    assert_eq!(
+        conversations::get_sibling_count(&conn, "c1", Some("u1")).unwrap(),
+        1,
+        "tool rows must not add siblings under the user message"
+    );
+    let rows = conversations::get_messages(&conn, "c1").unwrap();
+    let tools: Vec<_> = rows.iter().filter(|row| row.role == "tool").collect();
+    assert_eq!(tools.len(), 2);
+    assert!(
+        tools.iter().all(|row| row.sibling_index == 0),
+        "tool rows always use sibling_index 0"
+    );
+    assert!(
+        tools
+            .iter()
+            .all(|row| row.tool_call_id.as_deref() == Some("call_1")),
+        "tool rows keep tool_call_id"
+    );
+}
+
+#[test]
+fn tool_history_roundtrip_preserves_order_and_fields() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "", 200, Some("u1"), 0),
+    )
+    .unwrap();
+    conversations::update_message_tool_calls(
+        &conn,
+        "a1",
+        r#"[{"id":"call_1","name":"fs_read","arguments":"{\"path\":\"a\"}"},{"id":"call_2","name":"fs_list","arguments":"{}"}]"#,
+    )
+    .unwrap();
+
+    for (id, call_id, content, is_error, ts) in [
+        ("t1", "call_1", "ok", false, 300),
+        ("t2", "call_2", "boom", true, 400),
+    ] {
+        let mut row = msg_with_parent(id, "c1", "tool", content, ts, Some("a1"), 0);
+        row.tool_call_id = Some(call_id.to_string());
+        row.is_error = is_error;
+        conversations::insert_message(&conn, &row).unwrap();
+    }
+
+    let rows = conversations::get_messages(&conn, "c1").unwrap();
+    assert_eq!(rows.len(), 4);
+    assert_eq!(rows[0].role, "user");
+    assert_eq!(rows[1].role, "assistant");
+    let tool_calls_json = rows[1]
+        .tool_calls_json
+        .as_deref()
+        .expect("assistant row keeps tool_calls_json");
+    assert!(tool_calls_json.contains("call_1"), "{tool_calls_json}");
+    assert!(tool_calls_json.contains("call_2"), "{tool_calls_json}");
+    assert_eq!(rows[2].role, "tool");
+    assert_eq!(rows[2].tool_call_id.as_deref(), Some("call_1"));
+    assert!(!rows[2].is_error);
+    assert_eq!(rows[3].role, "tool");
+    assert_eq!(rows[3].tool_call_id.as_deref(), Some("call_2"));
+    assert!(rows[3].is_error);
+}
+
+#[test]
 fn toggle_pin_is_involution_and_sorts() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();

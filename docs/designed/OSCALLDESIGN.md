@@ -2,7 +2,7 @@
 
 > **本文档职责**：Shell 执行层安全架构的**权威源**——信任模型、洋葱模型、层间契约、委托约束。
 > **架构决策记录**见 [I18-agent-tool-architecture-design.md](../store/I18-agent-tool-architecture-design.md)（§3.7 洋葱模型决策、§3.7.1 守卫分层归属、§3.8 MCP 隔离边界）。
-> **实施规格**见 [I38c](../store/I38c-os-tools-spec.md)（§7.2 shell_exec）、[I38a](../store/I38a-tool-control-layer-spec.md)（Policy / Gateway）。
+> **实施规格**见 [I38c](../store/I38c-os-tools-spec.md)（§7.2 shell）、[I38a](../store/I38a-tool-control-layer-spec.md)（Policy / Gateway）。
 > **ToolBox 桥接**见 [I18b-tool-unified-bridge-spec.md](../store/I18b-tool-unified-bridge-spec.md)。
 > **Tool Call 状态追踪**见 [I38d](../store/I38d-agent-frontend-modes-spec.md)。
 > **阶段与门禁**见 [I38-roadmap](../store/I38-agent-roadmap.md)。
@@ -198,7 +198,7 @@ os_tool_exec
 
 **反例（不该这么做）**：把 SafetyBelt 放在 Pipeline 里 → ToolBox 调 shell 完全无守卫；把 AllowlistGate 放进 `execute()` → ToolBox 调用时无人可配置、且审批层的用户偏好被硬编码进工具实现。
 
-PolicyEngine 与执行层守卫是**两级安全**：PolicyEngine 做工具级权限决策（"shell_exec 是否允许"），执行层守卫做命令级安全检查（"具体命令是否安全"）。两者独立，PolicyEngine Allow 不跳过执行层守卫。
+PolicyEngine 与执行层守卫是**两级安全**：PolicyEngine 做工具级权限决策（"shell 是否允许"），执行层守卫做命令级安全检查（"具体命令是否安全"）。两者独立，PolicyEngine Allow 不跳过执行层守卫。
 
 ---
 

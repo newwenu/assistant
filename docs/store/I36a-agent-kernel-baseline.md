@@ -243,9 +243,9 @@ P3 用了占位 trait，I38b 另起了一套签名；两边不一致会导致 P4
 | 符号 | 代码现状 | I38b 要求 | 建议落点 |
 |---|---|---|---|
 | `RoundExecutor` | `kernel/mod.rs`，`run_iterations(&self, ctx, iteration)` | `agent/round_executor.rs`，携带迭代状态与工具批次 | `agent/`，内核只留 trait 引用 |
-| `RoundOutcome` | 两字段（`tool_calls` / `executed`） | 多字段（含 `confirmation_wait_ms`） | 与 I38b §2.3 对齐后一次定型 |
+| `RoundOutcome` | 两字段（`tool_calls` / `executed`） | 多字段：`confirmation_wait_ms` + 与 `TurnOutcome` 同名的 `reasoning` / `total_tokens` / `attempt_usages` / `ttft_ms` | 与 I38b §2.3 对齐后一次定型 |
 | `ToolCatalog` | 空同步 trait | `async` + `agent_tools()` | `kernel/ports.rs`，改 async（D16） |
-| `StopHook` | 只有 `name()` | 有 `check`，同步且禁止 IO | `agent/`，语义归 executor |
+| `StopHook` | 只有 `name()` | 补齐 `check(&TurnState<'_>) -> StopDecision`（同步、禁止 IO / await） | trait 留 `kernel/ports.rs`，内置钩子实现落 `agent/stop.rs` |
 
 文档口径已在 §4.2 末表统一：C5.14 的落点改为 `kernel/mod.rs`（并注明 P4 迁至 `agent/round_executor.rs`），I38c §1.2 改为「P4 未开始」。四个符号的签名差异**仍待 P4 开工时一次定型**，属实现决策，本次不动。
 
@@ -254,7 +254,7 @@ P3 用了占位 trait，I38b 另起了一套签名；两边不一致会导致 P4
 | 能力 | 结论 | 理由 |
 |---|---|---|
 | 子代理 / 多 agent | P8.1 起 | 单 turn 闭环不需要；预留字段已够 |
-| 沙箱隔离 | P8+ | `ToolTier::Sandbox` 已定义但零实现；P5 的 `shell_exec` 靠审批兜底 |
+| 沙箱隔离 | P8+ | `ToolTier::Sandbox` 已定义但零实现；P5 的 `shell` 靠审批兜底 |
 | 成本预算 | P8+ | 需要定价目录与账本，属宿主能力 |
 | 排队输入 / steering | P8+ | 先要定「注入消息是否落库、落哪个 turn」 |
 | 重启续跑 / 后台常驻 | P9 | 跨重启状态，单独 ADR |
@@ -306,7 +306,7 @@ G7 / G8 取自 Goose 的 operation notes 与 DSH 的 retention library；它们�
 | P0 | 事件封轮（事件不得落在 turn 之外） | DSH | P3 C6/C7 |
 | P0 | 未处理工具调用 fail-closed 回灌 | Goose | P4 |
 | P0 | 单一公开停止原语 + 不可中断根 | DSH / Codex | P3 已对齐，P8 复用 |
-| P1 | 阶梯顺序不变式（压缩先于微压缩） | OpenHuman | P4 |
+| P1 | 阶梯顺序不变式（压缩先于微压缩） | OpenHuman | ② 落地批次（P4 无 ②，顺序断言不可达，I38b D13） |
 | P1 | 可恢复失败单独余量 + 轮询工具豁免 | OpenHuman | P4 |
 | P1 | 结果保留量精确说明 | DSH | P4 契约预留 |
 | P1 | 预算能力做成宿主端口 | OpenHuman `BudgetGate` | P8 |

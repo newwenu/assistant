@@ -217,7 +217,7 @@ pub trait Tool: Send + Sync {
 
 | 方法 | 调用时机 | 副作用 | 说明 |
 |---|---|---|---|
-| `name()` | 注册 / 查找 / 日志 | 无 | 全局唯一，Rust snake_case（`fs_read`），前端 camelCase（`os.fsRead`） |
+| `name()` | 注册 / 查找 / 日志 | 无 | 全局唯一。**注册名**是模型与 `os_tool_exec` 看到的标识：小写 snake_case、字母开头、≤64、字符集 `[a-z0-9_]`，禁用 kebab（Gemini 不接受 `-`）。**文件名**是代码维护名，与注册名刻意分离：`agent_` 前缀是受众标记，只给 `audience().agent == true` 的工具（`os/agent_read.rs` → 注册名 `read`），`TOOLBOX_ONLY` 工具不套此前缀（存量 `os/fs_link.rs` 保持原名），对照表见 I38c §2 |
 | `description()` | LLM function calling 构建 | 无 | 供模型理解工具用途 |
 | `input_schema()` | LLM function calling 构建 | 无 | JSON Schema |
 | `tier()` | 层级过滤 | 无 | 返回 `ToolTier` |

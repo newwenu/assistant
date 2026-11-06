@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use assistant_providers::base::{BaseProviderAdapter, ChatDelta, ProviderErrorPayload};
 use assistant_storage::agent_modes::AgentModeRow;
@@ -68,6 +69,14 @@ pub enum TurnEvent {
 /// 事件出口。同步且无返回值：发射失败只记日志，不得让 turn 失败（design §1.7）。
 pub trait EventSink: Send + Sync {
     fn emit(&self, event: TurnEvent);
+}
+
+/// 代际校验端口：落库前的「本 turn 是否仍是该对话的当前代际」判定。
+///
+/// 生产实现由 `TurnRunner` 持有 `TurnTasks` 的守卫，内核不感知 `TurnTasks`。
+/// 旧代际一律不得落库 / 发事件（§5.1）。
+pub trait TurnGeneration: Send + Sync {
+    fn is_current(&self) -> bool;
 }
 
 /// 消息终态，与 `messages.status` 列取值一致（Step 8.1）。
@@ -218,9 +227,36 @@ pub trait ToolCatalog: Send + Sync {
     async fn agent_tools(&self) -> Vec<assistant_providers::types::ToolSpec>;
 }
 
-/// 停止钩子。P4 由执行器按三维预算判定，`check` 必须同步且禁止 IO。
+/// 停止钩子判定所需的只读快照。由执行器在两次模型调用之间构造，
+/// 只含计数与预算，不携带消息体，避免钩子做任何 IO。
+#[derive(Debug, Clone, Copy)]
+pub struct TurnState<'a> {
+    pub iteration: u32,
+    pub max_iterations: u32,
+    pub tool_calls: u32,
+    pub max_tool_calls: u32,
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub elapsed: Duration,
+    /// turn 墙钟总时长上限；`None` 或 `0` 表示不设限。由 TurnRunner 下发，执行器只读。
+    pub turn_deadline: Option<Duration>,
+    /// 本次调用使用的模型名，供按模型差异化判定的钩子使用。
+    pub model: &'a str,
+}
+
+/// 停止钩子结论。`Continue` 表示继续下一迭代；`Stop` 携带收尾原因。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StopDecision {
+    Continue,
+    Stop { reason: String },
+}
+
+/// 停止钩子。执行器在每次迭代之间按注册顺序调用，任一 `Stop` 即收尾。
+/// `check` 必须同步且禁止 IO / await：钩子只读 `TurnState` 快照。
 pub trait StopHook: Send + Sync {
     fn name(&self) -> &'static str;
+
+    fn check(&self, state: &TurnState<'_>) -> StopDecision;
 }
 
 #[cfg(any(test, feature = "test-doubles"))]

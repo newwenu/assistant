@@ -156,17 +156,17 @@ interface ToolCallView {
 
 ```
 ┌ running ─────────────┐  ┌ success ─────────────┐
-│ .. fs_read           │  │ ok fs_read  (120ms)  │
+│ .. read             │  │ ok read  (120ms)     │
 │ /src/main.ts        │  │ /src/main.ts         │
 └─────────────────────┘  │ ▾ [45 lines]         │
                          └──────────────────────┘
 ┌ error ──────────────┐  ┌ awaiting_user ───────┐
-│ err shell_exec      │  │ ! shell_exec         │
+│ err shell           │  │ ! shell              │
 │ Permission denied   │  │ rm -rf /tmp/cache    │
 └─────────────────────┘  │ [Approve] [Deny]     │
                          └──────────────────────┘
 ┌ cancelled ──────────┐
-│ ⊘ fs_delete         │
+│ ⊘ delete            │
 │ User rejected       │
 └─────────────────────┘
 ```
@@ -277,6 +277,8 @@ conversation.toolConfig = {
 
 ### 4.5 resolveAvailableTools
 
+> **后端实现已迁至 P5**（见 [I38c §3.1](./I38c-os-tools-spec.md)）。P6 只做前端调用与 UI 绑定：从会话内存态构造 `ConversationToolConfig`，随 `send_agent_message` 请求传给后端；后端 `resolve_available_tools` 完成五步过滤并返回 `Vec<ToolSpec>`。以下为前端视角的接口契约，实际过滤逻辑以 I38c 为准。
+
 ```rust
 fn resolve_available_tools(
     registry: &ToolRegistry,
@@ -348,7 +350,7 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 |---|---|---|
 | AgentMode 编辑表单 | 设置页 `/settings/agents` | 层级上限、审批级别、按 tier 分组的工具多选；默认全不勾选 |
 | 对话工具栏 | 聊天输入区（**仅 agent 会话**，见 §4.8） | 当前会话可用工具概览，点击增删；变更写入**会话内存态**（不落库） |
-| 工具可用性变更提示 | 聊天流 | 配置变更时系统消息提示「已启用 shell_exec」等 |
+| 工具可用性变更提示 | 聊天流 | 配置变更时系统消息提示「已启用 shell」等 |
 
 编辑表单：
 
@@ -356,7 +358,7 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 ┌─ 工具配置 ────────────────────────────────────────┐
 │  层级上限:  [sandbox ▼]   审批级别: [dangerous_only ▼] │
 │  ── Sandbox 工具 ──  ☐ json-viewer ☐ color-picker  │
-│  ── OS 工具 ──       ☐ fs_read ☐ fs_write ...      │
+│  ── OS 工具 ──       ☐ read ☐ write ...            │
 │  ── External ──       (无 MCP server 时显示暂无)    │
 └─────────────────────────────────────────────────────┘
 ```
