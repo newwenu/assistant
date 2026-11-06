@@ -157,6 +157,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     if let Err(e) = crate::window::restore_main_window(handle) {
         log::warn!("Failed to restore main window geometry: {}", e);
     }
+    show_orb_window(handle);
 
     spawn_screen_inspection(handle.clone());
 
@@ -306,6 +307,18 @@ fn position_orb_window(handle: &tauri::AppHandle) {
     let x = primary.x + primary.width as i32 - collapsed_phys as i32 - edge_margin;
     let y = primary.y + primary.height as i32 - collapsed_phys as i32 - edge_margin;
     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+/// 两个窗口在 `tauri.conf.json` 中均为 `visible: false`：
+/// 主窗口只在托盘/Orb/快捷键入口唤起时显示，Orb 则在坐标收敛完成后再显示，
+/// 避免"先出现在系统默认位置、再跳到保存位置"的启动跳动。
+fn show_orb_window(handle: &tauri::AppHandle) {
+    let Some(window) = handle.get_webview_window(WINDOW_ORB) else {
+        return;
+    };
+    if let Err(e) = window.show() {
+        log::warn!("Failed to show orb window: {}", e);
+    }
 }
 
 fn spawn_screen_inspection(handle: tauri::AppHandle) {

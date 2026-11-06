@@ -18,6 +18,7 @@
         "height": 640,
         "resizable": true,
         "center": true,
+        "visible": false,
         "decorations": false
       },
       {
@@ -29,6 +30,7 @@
         "shadow": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
+        "visible": false,
         "decorations": false,
         "resizable": false,
         "maximizable": false,
