@@ -10,31 +10,39 @@ pub(super) fn get_key_store() -> Box<dyn BiometricKeyStore> {
 
 // precondition: None
 #[command]
-pub fn vault_is_biometric_available() -> Result<bool, VaultErrorDto> {
-    let key_store = get_key_store();
-    match key_store.is_available() {
-        Ok(available) => {
-            log::info!("Biometric availability check: {}", available);
-            Ok(available)
+pub async fn vault_is_biometric_available() -> Result<bool, VaultErrorDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let key_store = get_key_store();
+        match key_store.is_available() {
+            Ok(available) => {
+                log::info!("Biometric availability check: {}", available);
+                Ok(available)
+            }
+            Err(e) => {
+                log::error!("Biometric availability check failed: {}", e);
+                Err(VaultErrorDto::from(e))
+            }
         }
-        Err(e) => {
-            log::error!("Biometric availability check failed: {}", e);
-            Err(VaultErrorDto::from(e))
-        }
-    }
+    })
+    .await
+    .map_err(|e| super::internal_error(format!("Biometric availability task join failed: {}", e)))?
 }
 
 // precondition: AnyState
 #[command]
-pub fn vault_is_biometric_enrolled(app: AppHandle) -> Result<bool, VaultErrorDto> {
-    let state = super::vault_state(&app)?;
-    let key_store = get_key_store();
-    state
-        .is_biometric_enrolled(key_store.as_ref())
-        .map_err(|e| {
-            log::warn!("Biometric enrolled check failed: {}", e);
-            VaultErrorDto::from(e)
-        })
+pub async fn vault_is_biometric_enrolled(app: AppHandle) -> Result<bool, VaultErrorDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = super::vault_state(&app)?;
+        let key_store = get_key_store();
+        state
+            .is_biometric_enrolled(key_store.as_ref())
+            .map_err(|e| {
+                log::warn!("Biometric enrolled check failed: {}", e);
+                VaultErrorDto::from(e)
+            })
+    })
+    .await
+    .map_err(|e| super::internal_error(format!("Biometric enrolled task join failed: {}", e)))?
 }
 
 // precondition: AnyState

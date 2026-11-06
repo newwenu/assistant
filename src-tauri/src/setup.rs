@@ -50,6 +50,11 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         log::error!("Failed to init orb config: {}", e);
     }
 
+    #[cfg(all(target_os = "windows", feature = "vault"))]
+    if let Err(e) = assistant_vault::biometric::warm_up_keyring_backend() {
+        log::warn!("Windows Credential Manager backend unavailable: {}", e);
+    }
+
     {
         let locale = AppConf::load()
             .map(|c| c.language)

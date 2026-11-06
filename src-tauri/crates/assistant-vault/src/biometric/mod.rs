@@ -26,6 +26,14 @@ pub trait BiometricKeyStore: Send + Sync {
     }
 }
 
+#[cfg(target_os = "windows")]
+pub fn warm_up_keyring_backend() -> Result<(), String> {
+    match *keyring::Entry::store_status() {
+        Ok(()) => Ok(()),
+        Err(ref e) => Err(e.to_string()),
+    }
+}
+
 pub fn create_key_store() -> Box<dyn BiometricKeyStore> {
     #[cfg(target_os = "windows")]
     {

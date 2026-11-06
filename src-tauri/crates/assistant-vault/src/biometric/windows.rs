@@ -26,23 +26,25 @@ pub struct WindowsHelloKeyStore;
 const SERVICE_NAME: &str = "assistant-vault-biometric";
 const KEYRING_SERVICE: &str = "assistant-vault-biometric";
 
-struct WinRtGuard;
+struct WinRtGuard {
+    owned: bool,
+}
 
 impl WinRtGuard {
     fn new() -> Result<Self, VaultError> {
-        let hr = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
-        if let Err(e) = &hr {
-            if e.code() != RPC_E_CHANGED_MODE {
-                return Err(VaultError::BiometricFailed(format!("RoInitialize: {e}")));
-            }
+        match unsafe { RoInitialize(RO_INIT_MULTITHREADED) } {
+            Ok(()) => Ok(Self { owned: true }),
+            Err(e) if e.code() == RPC_E_CHANGED_MODE => Ok(Self { owned: false }),
+            Err(e) => Err(VaultError::BiometricFailed(format!("RoInitialize: {e}"))),
         }
-        Ok(Self)
     }
 }
 
 impl Drop for WinRtGuard {
     fn drop(&mut self) {
-        unsafe { RoUninitialize() };
+        if self.owned {
+            unsafe { RoUninitialize() };
+        }
     }
 }
 
