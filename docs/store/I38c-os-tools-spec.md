@@ -2,14 +2,14 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 现行（P5 规格；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
-| 日期 | 2026-11-04 |
+| 状态 | 现行（P5 规格索引；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
+| 日期 | 2026-11-04（2026-11-06 修订：C0 口径定稿、C6b 接入面按代码实测校正、读取回执键补 `session_id`、工具细节拆为逐工具分册；**同日移除 `shell`，改为暂不提供**，见 §13） |
 | 阶段 | P5（见 [I38 roadmap](./I38-agent-roadmap.md)） |
 | 关联 | [I18 spec](./I18-agent-tool-architecture-spec.md) Step 2（已迁入本文）、[I31](./I31-phase1-tool-framework-spec.md) §5（共享路径）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱）、[I38a](./I38a-tool-control-layer-spec.md)（Policy/Gateway/Pipeline）、[I18b](./I18b-tool-unified-bridge-spec.md)（ToolBox 桥接） |
 | 影响范围 | `assistant-tools/src/os/*`；`src/tools/os.ts` 与 ToolBox 组件按 I18b 的 5 步流程 |
 
-> 本文是 P5 的唯一权威规格。I18 spec 的 Step 2 工具清单与 Schema 已迁入本文。
-> **门禁**：P1（`os/path.rs`）与 P2（Policy/Gateway）未完成前，不得新增任何破坏性工具，也不得把 `shell` / `delete` 加入生产注册表。
+> 本文是 P5 的**唯一权威索引**：工具清单、共同结构、白名单解析、输出截断、验收标准、风险与开放问题只在此维护；**每个工具的安全标记、schema、行为、错误、参考来源拆到逐工具分册**（§5 / §6 / §7 的表格给出入口）。分册与本文冲突时以分册为准，并回写本文。
+> **门禁**：P1（`os/path.rs`）与 P2（Policy/Gateway）未完成前，不得新增任何破坏性工具，也不得把 `delete` 加入生产注册表。
 
 > 执行清单：[I38c-os-tools-tasklist.md](./I38c-os-tools-tasklist.md)（C0–C8 逐项勾选与验收映射）。任务级进度只在该清单维护。
 
@@ -24,7 +24,7 @@
 | 1 | 只读工具：`read` / `ls` / `glob` / `grep` |
 | 2 | 修改工具：`write` / `edit` / `mkdir` / `move` |
 | 3 | 破坏性工具：`delete` |
-| 4 | 命令执行：`shell` + 执行层洋葱守卫 |
+| 4 | ~~命令执行：`shell` + 执行层洋葱守卫~~ **暂不提供**（决策与理由见 §13） |
 | 5 | 输出截断基础设施 `os/output.rs`（第一个需要截断的工具落地时建） |
 | 6 | 每个工具显式声明 `audience()`，并复用 `os/path.rs` 与 `exec::invoke` |
 | 7 | **白名单工具解析** `resolve_available_tools`：替换 P4 的 `RegistryToolCatalog`（tier + audience 自动全量注入），改为 deny-by-default + 显式白名单/黑名单 |
@@ -32,11 +32,12 @@
 ### 1.2 非目标
 
 - 控制层（P2 范围）；RoundExecutor（P4 范围，规格见 [I38b](./I38b-agent-loop-spec.md)）。阶段状态见 [roadmap](./I38-agent-roadmap.md) §2。
+- 自由格式命令执行（`shell`）：**暂不提供**，理由与恢复条件见 §13。
 - ToolBox 前端组件与审批 UI（P6）；本阶段只要求 Rust 侧可被 `os_tool_exec` 与 Pipeline 调用。
 - `ask_user` 的完整交互：依赖 P6 输入框，见 §9。
 - MCP（P7）。
 - 文件内容语义摘要（I36 design §3.19 未采纳）。
-- 白名单配置的前端 UI（AgentMode 编辑表单、对话工具栏、`ConversationToolConfig` 内存态）归 P6（见 [I38d §4](./I38d-agent-frontend-modes-spec.md)）；P5 只做后端 `resolve_available_tools` 与 `send_agent_message` 接入。
+- 白名单配置的前端 UI（AgentMode 编辑表单、对话工具栏、`ConversationToolConfigDto` 内存态）归 P6（见 [I38d §4](./I38d-agent-frontend-modes-spec.md)）；P5 只做后端 `resolve_available_tools` 与 `send_agent_message` 接入。
 
 ### 1.3 前置
 
@@ -60,7 +61,7 @@
 | `mkdir` | edit | 否 | 否 | 否 | BOTH |
 | `move` | edit | 否 | 否 | 否 | BOTH |
 | `delete` | delete | 否 | 是 | 否 | BOTH |
-| `shell` | execute | 否 | 是 | 是 | BOTH（守卫齐备后；否则 AGENT_ONLY） |
+| ~~`shell`~~ | — | — | — | — | **暂不提供**（§13） |
 | `ask_user` | — | 是 | 否 | 否 | AGENT_ONLY |
 | `fs_link` | — | 实际 `read_only=false` | 否 | 是 | TOOLBOX_ONLY |
 
@@ -79,7 +80,7 @@
 | `agent_mkdir.rs` | `mkdir` | `fs_mkdir` |
 | `agent_move.rs` | `move` | `fs_move` |
 | `agent_delete.rs` | `delete` | `fs_delete` |
-| `agent_shell.rs` | `shell` | `shell_exec` |
+| ~~`agent_shell.rs`~~ | — | 暂不提供（§13） |
 | `agent_ask_user.rs` | `ask_user` | `ask_user` |
 
 1. 注册名一律小写 snake_case、字母开头、≤64 字符，字符集 `[a-z0-9_]`；**禁用 kebab**（Gemini 方言不接受 `-`）。
@@ -102,7 +103,7 @@
 ```
 只读组：read → ls → glob → grep
 修改组：write → edit → mkdir → move
-危险组：delete → shell
+危险组：delete
 特殊：  os/output.rs（第一个需要截断的工具 = read）
 ```
 
@@ -112,7 +113,7 @@
 |---|---|---|
 | P5-R1 只读组 | `read` / `ls` / `glob` / `grep` | P1 完成；P2 的 validate 已就绪 |
 | P5-R2 修改组 | `write` / `edit` / `mkdir` / `move` | P2 的 Gateway 审批可用 |
-| P5-R3 危险组 | `delete` / `shell` | P2 完整；前端组件同期上线（P6），不得先行注册 |
+| P5-R3 危险组 | `delete` | P2 完整；前端组件同期上线（P6），不得先行注册 |
 
 `os/mod.rs` 以 `register_readonly_tools` / `register_write_tools` / `register_dangerous_tools` 分组；`setup.rs` 只调用已确认的组。
 
@@ -125,29 +126,36 @@ P5 在工具实现完成后，新增 `resolve_available_tools` 替换 P4 的接�
 **函数签名**（落点 `src-tauri/src/adapters/tool_resolver.rs`）：
 
 ```rust
-pub fn resolve_available_tools(
+pub async fn resolve_available_tools(
     registry: &ToolRegistry,
     enabled_tools: &[String],
     disabled_tools: &[String],
     max_tier: ToolTier,
 ) -> Vec<ToolSpec> {
-    // 1. 层级硬上限：tier <= max_tier
-    // 2. 只保留 audience().agent == true
-    // 3. deny-by-default：enabled_tools 为空 → 空集
-    // 4. 白名单过滤：tool.name() in enabled_tools
-    // 5. disabled_tools 优先于 enabled_tools
+    // 1. 层级硬上限 + 受众过滤：ToolRegistry::tool_definitions_for_tier(max_tier).await
+    //    → Vec<ToolDefinition>（已按注册名排序）
+    // 2. deny-by-default：enabled_tools 为空 → 空集
+    // 3. 白名单过滤：definition.name in enabled_tools
+    // 4. disabled_tools 优先于 enabled_tools
+    // 5. ToolDefinition → ToolSpec（原 tool_catalog.rs 的 into_tool_spec 搬入本文件）
 }
 ```
 
+**为什么是 async**：`Tool::description()` 是 `async`，`ToolRegistry::tool_definitions_for_tier` 也是 `async fn`（`assistant-tools/src/registry.rs`）。解析器只是在其结果上做名单过滤，因此必须保持 `async`。调用点 `send_agent_message` 本身是 async 命令，额外 `await` 无运行时代价。
+
+**复用既有过滤**：`tool_definitions_for_tier(max_tier)` 已实现「`tier <= max_tier` + `audience().agent == true` + 按注册名排序」，即上表第 1、2 步与确定性排序；它返回 `Vec<ToolDefinition>`，而 `TurnSpec.tools` 需要 `Vec<ToolSpec>`（`assistant_providers::types::ToolSpec`），因此转换函数 `into_tool_spec` 随 `tool_catalog.rs` 一并搬到 `tool_resolver.rs`。解析器只补 deny-by-default / 白名单 / 黑名单，不再重复实现层级与受众判断，也避免两处过滤口径分叉。
+
 **规则**：
 
-| 步 | 规则 | 说明 |
-|---|---|---|
-| 1 | 层级硬上限 | `tool.tier() <= max_tier`；`External` 在 P5 恒不注入 |
-| 2 | 受众过滤 | `tool.audience().agent == true`；`TOOLBOX_ONLY` 不出现在此 |
-| 3 | deny-by-default | `enabled_tools` 为空数组 → 返回空 `Vec`，模型看不到任何工具 |
-| 4 | 白名单匹配 | 仅 `enabled_tools` 中出现的注册名通过 |
-| 5 | 黑名单覆盖 | 同一工具同时出现在两个列表 → 禁用；`disabled_tools` 是最终否决 |
+| 步 | 规则 | 实现位置 | 说明 |
+|---|---|---|---|
+| 1 | 层级硬上限 | `tool_definitions_for_tier` | `tool.tier() <= max_tier`；`External` 在 P5 恒不注入 |
+| 2 | 受众过滤 | `tool_definitions_for_tier` | `tool.audience().agent == true`；`TOOLBOX_ONLY` 不出现在此 |
+| 3 | deny-by-default | 解析器 | `enabled_tools` 为空数组 → 返回空 `Vec`，模型看不到任何工具 |
+| 4 | 白名单匹配 | 解析器 | 仅 `enabled_tools` 中出现的注册名通过 |
+| 5 | 黑名单覆盖 | 解析器 | 同一工具同时出现在两个列表 → 禁用；`disabled_tools` 是最终否决 |
+
+第 1、2 步与排序由 `ToolRegistry::tool_definitions_for_tier` 承担（P2 交付，`assistant-tools/src/registry.rs`），解析器不复制该逻辑。
 
 **与 P4 的对比**：
 
@@ -156,7 +164,7 @@ pub fn resolve_available_tools(
 | 过滤方式 | `tier + audience` 自动 | `tier + audience + enabled_tools + disabled_tools` |
 | 默认行为 | 注册了就可见 | deny-by-default，空白名单 = 无工具 |
 | 配置来源 | 无（硬编码 `MAX_TIER = Os`） | `SendChatMessageArgsDto.tool_config`（前端内存态，每次请求携带） |
-| `ToolCatalog` trait | 调用 `agent_tools()` | **不再使用 `ToolCatalog` trait**，改为同步函数直接调用 |
+| `ToolCatalog` trait | 调用 `agent_tools()` | **不再使用 `ToolCatalog` trait**，改为 async 函数直接调用 `tool_definitions_for_tier` |
 
 **`send_agent_message` 接入**：
 
@@ -171,19 +179,30 @@ let tools = resolve_available_tools(
     &tool_config.enabled_tools,
     &tool_config.disabled_tools,
     tool_config.max_tool_tier,
-);
-spec.tools = if tools.is_empty() { None } else { Some(tools) };
+)
+.await;
+spec.tools = Some(tools);
 ```
+
+**空集归一化留在 `request::resolve_tools`**：`kernel/request.rs` 已有 `resolve_tools(&[ToolSpec]) -> Option<Vec<ToolSpec>>`，空集即 `None`（循环退化为单次调用），且有单测覆盖。接入层不再重复判空，`spec.tools = Some(vec![])` 与 `None` 语义等价。
+
+注意 `start_turn`（`src-tauri/src/cmd/agent/mod.rs`）对 `SendChatMessageArgsDto` 做**穷尽解构**，新增字段后必须显式忽略（`tool_config: _` 或 `..`），否则编译失败；`chat` 链路复用同一 `start_turn`，其 `TurnSpec::chat()` 的 `tools` 恒为 `None`，不受影响。
+
+**`tool_config = null` 的语义**：P5 后端不认识 AgentMode（请求里没有 `modeId`），因此 `None` 一律按 `ConversationToolConfigDto::default()` 处理，且空白名单即 deny-by-default → 空工具集（模型看不到任何工具）。「null 时按会话所属 AgentMode 预设解析」由 P6 保证：前端恒从内存态构造并下发 `toolConfig`，不下发即等价于「无工具」。`Default` 取值：`max_tool_tier = Os`、`approval_level = DangerousOnly`（fail-closed 兜底，P6 显式下发覆盖）、两个名单为空。
 
 **清理范围**（P5 完成时删除）：
 
 | 删除项 | 位置 |
 |---|---|
-| `RegistryToolCatalog` 结构体与 impl | `src-tauri/src/adapters/tool_catalog.rs`（整文件） |
-| `mod tool_catalog;` 导出 | `src-tauri/src/adapters/mod.rs` |
-| `ToolCatalog` async trait（若无其他实现者） | `assistant-agent/src/kernel/ports.rs` |
-| `TurnSpec.tools` 类型由 `Option<Arc<dyn ToolCatalog>>` 改为 `Option<Vec<ToolSpec>>` | `assistant-agent/src/kernel/mod.rs`、`runner.rs`、`request.rs` |
-| P4 的 `test_doubles.rs` 中 `ToolCatalog` 替身 | `assistant-agent/src/kernel/ports/test_doubles.rs` |
+| `RegistryToolCatalog` 结构体与 impl（含 `MAX_TIER`） | `src-tauri/src/adapters/tool_catalog.rs`（整文件；其中 `into_tool_spec` **搬入** `tool_resolver.rs`，不是删除） |
+| `mod tool_catalog;` 与 `pub use tool_catalog::RegistryToolCatalog` | `src-tauri/src/adapters/mod.rs` |
+| `use crate::adapters::RegistryToolCatalog;` | `src-tauri/src/cmd/agent/mod.rs` |
+| `ToolCatalog` async trait（P4 唯一实现者即 `RegistryToolCatalog`） | `assistant-agent/src/kernel/ports.rs` |
+| `TurnSpec.tools` 类型由 `Option<Arc<dyn ToolCatalog>>` 改为 `Option<Vec<ToolSpec>>` | `assistant-agent/src/kernel/mod.rs`（字段 + `chat()` / `agent()` 默认值）、`kernel/runner.rs`（`TurnRunCtx.tools` 赋值；`spec.tools.as_ref()` 改为 `.as_ref().map(Vec::as_slice)`）、`kernel/request.rs`（`build()` 签名由 `Option<&Arc<dyn ToolCatalog>>` 改为 `Option<&[ToolSpec]>`；`resolve_tools` 保留，去掉 `agent_tools().await`） |
+| `TurnRunCtx.tools` / `ToolExecCtx.tools` 同步收窄 | `assistant-agent/src/agent/round_executor.rs`（两处字段声明）、`agent/loop_executor.rs`（`request::build(ctx.tools.as_deref())`、`ToolExecCtx` 构造） |
+| `ToolExecCtx.tools` 字段删除（P4 遗留未使用字段：生产适配器 `PipelineToolExecution` 只读 `observer` / `turn_id` / `iteration` / `conversation_id`，从不读 `tools`） | `assistant-agent/src/agent/round_executor.rs`、`agent/loop_executor.rs` |
+| `test_doubles.rs` 中 `StaticToolCatalog` 替身 | `assistant-agent/src/kernel/ports/test_doubles.rs` |
+| 测试调用点同步 | `assistant-agent/tests/loop_executor.rs`（`catalog` 构造、`spec.tools`、`TurnRunCtx.tools`）、`assistant-agent/tests/kernel_request_tools.rs`（`StaticCatalog` + `request::build` 三处） |
 
 **保留不动**：
 
@@ -194,22 +213,41 @@ spec.tools = if tools.is_empty() { None } else { Some(tools) };
 
 **DTO 扩展**（P5 新增）：
 
-`SendChatMessageArgsDto` 新增 `tool_config: Option<ConversationToolConfigDto>`：
+`SendChatMessageArgsDto`（`src-tauri/src/protocol/dto/chat.rs`，`Deserialize` + `TS`）新增 `tool_config: Option<ConversationToolConfigDto>`：
 
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+// src-tauri/src/protocol/dto/agent.rs
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolTierDto {
+    Sandbox,
+    Os,
+    External,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalLevelDto {
+    None,
+    DangerousOnly,
+    AllOsTools,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationToolConfigDto {
-    pub max_tool_tier: ToolTier,
-    pub approval_level: ApprovalLevel,
+    pub max_tool_tier: ToolTierDto,
+    pub approval_level: ApprovalLevelDto,
     pub enabled_tools: Vec<String>,
     pub disabled_tools: Vec<String>,
 }
 ```
 
-- `Option` 输入字段加 `#[ts(optional = nullable)]` + `#[serde(default)]`。
-- `ToolTier` / `ApprovalLevel` 复用 P6 的类型定义（P5 先定义，P6 不重复）。
-- 执行 `npm run contract:gen` 生成前端类型。
+- `Option` 输入字段加 `#[ts(optional = nullable)]` + `#[serde(default)]`（项目输入 DTO 规则）。
+- 命名一律 `*Dto` 后缀；`ToolTier` 在 `assistant-tools` 已有同形枚举（`Sandbox` / `Os` / `External`），DTO 侧另建 `ToolTierDto` 并提供 `From` 双向转换（与 `ToolErrorKindDto` 同法），**不**把 `assistant-tools` 的类型直接暴露到 wire。
+- `ToolTierDto` 用 `lowercase` 或 `snake_case` 均可（单词值同形）；`ApprovalLevelDto` 必须 `snake_case`，与 [I38d §4.2](./I38d-agent-frontend-modes-spec.md) 的 `'none' | 'dangerous_only' | 'all_os_tools'` 对齐（仓库已有同类先例 `ConversationListChangeKindDto` 用 `snake_case`）。
+- `approval_level` 在 P5 **只承载不消费**：审批级别 → Policy 规则的映射是 P6 的职责（I38d §4.6），P5 只保证字段随契约往返。
+- 执行 `npm run contract:gen` 生成前端类型，并在 `src-tauri/tests/protocol_bindings.rs` 的 `declarations` 数组补三个新类型（该测试会扫描 `protocol/dto/*.rs` 的 `TS` 派生类型，漏声明即失败）。
 
 **P6 的关系**：P5 只做后端解析与 `send_agent_message` 接线；前端 UI（AgentMode 编辑表单、对话工具栏、`ConversationToolConfig` 内存态初始化与传递）仍在 P6（见 [I38d §4](./I38d-agent-frontend-modes-spec.md)）。P6 的 `resolveAvailableTools`（I38d §4.5）后端部分已由 P5 完成，P6 只做前端调用与 UI 绑定。
 
@@ -230,15 +268,37 @@ impl Tool for ReadTool {
     fn behavior_hints(&self) -> BehaviorHints;
     fn validate_input(&self, input: &Value, ctx: &ToolUseContext) -> ValidationResult;
     fn permission_intents(&self, input: &Value, ctx: &ToolUseContext) -> Result<Vec<PermissionIntent>, String>;
+    async fn preview_for_approval(&self, input: &Value, ctx: &ToolUseContext) -> Option<ApprovalPreview>;
     async fn execute(&self, input: &Value, ctx: &ToolUseContext) -> Result<ToolResult, String>;
 }
 ```
+
+### 4.1 审批预演（`preview_for_approval`）
+
+P5 各分册要求「审批卡片展示量级」，但量级只能来自审批**前**的一次只读预演——`execute()` 的结果 `data` 在审批时尚未产生，**不得**用它充当预演信息。契约与超时语义见 [I38a §2.8.1 / §3.1](./I38a-tool-control-layer-spec.md)。
+
+| 工具 | 预演内容 | 成本 | 参考实现 |
+|---|---|---|---|
+| `delete` | `entries` / `bytes` / `truncated`（复用 [delete §3.3](./I38c-delete-spec.md) 的预扫描） | 一次目录遍历，上限 `DELETE_SCAN_LIMIT` | 把 §3.3 的扫描抽成可复用函数，`execute` 与 `preview` 共用 |
+| `write` | 目标是否存在、现有 `lines` / `bytes`、`overwrites` | `metadata` + 行计数（**不读全文内容**） | 与 `write` 的「覆盖前检查」共用同一次统计 |
+| `edit` | `replacements` 数、`beforeLines` / `afterLines`（按参数估算） | 零 IO（参数推导） | diff 已在 `arguments` 中展示，预演只补量级 |
+| 只读组 / `mkdir` / `move` | 不实现（默认 `None`） | — | `mkdir` 的「目标已存在」由 `validate_input` 拒绝，无需预演 |
+
+**约束**：
+
+- 预演与 `execute` **必须复用同一套路径解析与统计函数**，禁止「展示 A、执行 B」。
+- 预演超时 2s 或出错 → `None`，审批继续；`None` 在卡片上表示「未知」，**不得**渲染成 `0`。
+- 预演不得写入 `ReadReceiptStore`、不得写 grant、不得创建/删除任何文件。
+- `delete` 的预扫描与实际删除之间目标可能变化（TOCTOU），预演数字只用于文案，**以 `execute` 返回为准**。
 
 **共享基础设施**（定义与算法见 I31 §5，不在此重复）：
 
 - `resolve()` / `resolve_leaf_preserving()` / `canonicalize_lenient()` / `reject_system_dirs()` / `ensure_within_root()`。
 - `execute()` 内**只能**使用 `resolve()` 的返回值做 IO，禁止「校验 A、使用 B」。
 - 所有 `Err` 先由 `exec::invoke` 归一化；工具内部只返回业务失败（`ToolResult::err`）。
+- `ReadReceiptStore`（`assistant-tools/src/storage.rs`）：`lookup` / `record` / `invalidate_path`；破坏性工具（`delete` / `move`）成功后必须失效受影响路径（见 [delete §3.6](./I38c-delete-spec.md)）。
+
+> **受众与路径约束的关系**：本表工具受众为 `BOTH`，两个入口都会调用同一个 `execute()`。`reject_system_dirs` 等**绝对不变量**两侧都生效；`ensure_within_root` 只在 `workspace_root` 有值时执行，而 ToolBox 入口恒为 `None`，因此**各分册错误表里的「路径越界」只在 Agent 入口发生**。ToolBox 由用户本人调用，不存在越界概念（[I18b](./I18b-tool-unified-bridge-spec.md) §2.2）。
 
 **权限词汇表**（与 P2 一致）：
 
@@ -253,210 +313,42 @@ impl Tool for ReadTool {
 
 ## 5 只读工具
 
-### 5.1 read
+逐工具分册（本索引只维护清单与公共约束，工具细节不在此重复）：
 
-```json
-{
-  "type": "object",
-  "properties": {
-    "path": { "type": "string", "description": "File path to read" },
-    "offset": { "type": "integer", "description": "Start line (1-based)" },
-    "limit": { "type": "integer", "description": "Max lines to read" }
-  },
-  "required": ["path"]
-}
-```
+| 工具 | 分册 | 任务项 |
+|---|---|---|
+| `read` | [I38c-read-spec.md](./I38c-read-spec.md) | C2.7–C2.13 |
+| `ls` | [I38c-ls-spec.md](./I38c-ls-spec.md) | C2.14–C2.17 |
+| `glob` | [I38c-glob-spec.md](./I38c-glob-spec.md) | C2.18–C2.22 |
+| `grep` | [I38c-grep-spec.md](./I38c-grep-spec.md) | C2.23–C2.27 |
 
-**行为**：
-
-- 默认读全部内容，最大 1MB / 2000 行。
-- `offset` + `limit` 支持行范围读取；超过限制返回截断提示 + 实际行数。
-- 二进制检测：前 8KB 含 NULL 字节 → 拒绝，提示用 hex 工具。
-- **读取回执**：同一会话内对同一路径 + 同行范围 + 文件修订号未变 → 返回「已在上文返回」，不回传内容；修订号变化则重读（`ReadReceiptStore` 端口，P2 已定义）。
-
-### 5.2 ls
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "path": { "type": "string", "description": "Directory path to list" },
-    "depth": { "type": "integer", "description": "Max recursion depth (default 1)" },
-    "all": { "type": "boolean", "description": "Include hidden entries" }
-  },
-  "required": ["path"]
-}
-```
-
-默认 `depth = 1`，最大 10；每层最大 1000 条目。输出按名称排序。
-
-### 5.3 glob
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "pattern": { "type": "string", "description": "Glob pattern (e.g. '**/*.ts')" },
-    "path": { "type": "string", "description": "Base directory" },
-    "exclude": { "type": "array", "items": { "type": "string" } }
-  },
-  "required": ["pattern"]
-}
-```
-
-- 使用 `glob` crate（或 `wax` 若需要否定模式）；最大返回 1000 条。
-- 结果只包含 workspace 内路径；越界由 `ensure_within_root` 统一拒绝。
-
-### 5.4 grep
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "pattern": { "type": "string", "description": "Regex pattern" },
-    "path": { "type": "string", "description": "Directory to search" },
-    "include": { "type": "string", "description": "File glob filter" },
-    "context": { "type": "integer", "description": "Lines of context (default 0)" }
-  },
-  "required": ["pattern"]
-}
-```
-
-- 使用 ripgrep Rust API（`grep` crate）；最大返回 100 条匹配。
-- 输出含文件路径、行号、匹配行；大结果按 P2 的三层预算落盘。
+四个工具的安全标记、`input_schema`、行为、错误与参考来源统一在上表分册内维护；跨工具的约束（§4 共同结构、§8 输出截断）只在本文维护。
 
 ---
 
 ## 6 修改工具
 
-### 6.1 write
+| 工具 | 分册 | 任务项 |
+|---|---|---|
+| `write` | [I38c-write-spec.md](./I38c-write-spec.md) | C3.5–C3.7 |
+| `edit` | [I38c-edit-spec.md](./I38c-edit-spec.md) | C3.8–C3.13 |
+| `mkdir` | [I38c-mkdir-spec.md](./I38c-mkdir-spec.md) | C3.14–C3.16 |
+| `move` | [I38c-move-spec.md](./I38c-move-spec.md) | C3.17–C3.21 |
 
-```json
-{
-  "type": "object",
-  "properties": {
-    "path": { "type": "string" },
-    "content": { "type": "string" },
-    "append": { "type": "boolean", "description": "Append mode (default false)" }
-  },
-  "required": ["path", "content"]
-}
-```
-
-- `append = false` 时覆盖已有文件；自动创建父目录。
-- 最大写入 10MB；`permission_intents` → `edit` + 目标路径。
-- 覆盖已有文件属于修改而非破坏：`destructive = false`，但审批卡片必须展示「覆盖」与目标路径。
-
-### 6.2 edit
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "path": { "type": "string" },
-    "old_string": { "type": "string", "description": "必须与文件中唯一一段内容完全匹配（含缩进）" },
-    "new_string": { "type": "string", "description": "替换后的内容，可为空以删除该段" },
-    "replace_all": { "type": "boolean", "description": "允许替换全部匹配（默认 false）" }
-  },
-  "required": ["path", "old_string", "new_string"]
-}
-```
-
-| 情况 | 行为 |
-|---|---|
-| 0 匹配 | 失败，`error_kind = Business`，提示先 `read` 确认内容 |
-| 1 匹配 | 替换并写回，返回起始行与 diff |
-| 多匹配且 `replace_all = false` | 失败，回传匹配次数与首个匹配行号 |
-| 多匹配且 `replace_all = true` | 全部替换，返回替换次数 |
-
-**审批展示**：`edit` 的审批卡片必须展示 diff（新增 / 删除行数 + 片段），不能只展示路径。
-
-### 6.3 mkdir
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "path": { "type": "string" },
-    "parents": { "type": "boolean", "description": "Create parent directories (default true)" }
-  },
-  "required": ["path"]
-}
-```
-
-### 6.4 move
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "source": { "type": "string" },
-    "target": { "type": "string" },
-    "overwrite": { "type": "boolean", "description": "Allow overwrite (default false)" }
-  },
-  "required": ["source", "target"]
-}
-```
-
-- 两个路径各产生一条 `edit` intent。
-- 目标已存在且 `overwrite = false` → 失败（`Business`）。
+`edit` 是全阶段风险最高的工具（匹配与写回做错会静默损坏文件），其匹配流水线、结果分支、写回约束、读前置 guard 全部在 [I38c-edit](./I38c-edit-spec.md) 内定义，实现时以该分册为准。
 
 ---
 
 ## 7 破坏性工具
 
-### 7.1 delete
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "path": { "type": "string" },
-    "recursive": { "type": "boolean", "description": "Delete directory recursively" }
-  },
-  "required": ["path"]
-}
-```
-
-- `destructive = true`，必须经 Gateway 审批。
-- 拒绝删除 `workspace_root` 本身；`recursive = true` 时删除目录及内容。
-- 审批键为规范化绝对路径；批准一次只对该路径生效。
-
-### 7.2 shell
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "command": { "type": "string", "description": "Shell command to execute" },
-    "timeout": { "type": "integer", "description": "Timeout in seconds (default 30)" },
-    "cwd": { "type": "string", "description": "Working directory" }
-  },
-  "required": ["command"]
-}
-```
-
-**守卫分层**（归属见 OSCALLDESIGN §3.3-§3.4，本文只声明不变量）：
-
-| 层 | 内容 | 归属 |
+| 工具 | 分册 | 任务项 |
 |---|---|---|
-| 执行层（`execute()` 内部，两入口共享） | SafetyBelt、结构守卫、环境隔离、命令分类、heredoc 处理、BareExec | `assistant-tools` |
-| 校验层 | `validate_input` 复用 SafetyBelt 判定，命中 `blocks_input_rewrite = true` | `assistant-tools` |
-| 审批层 | AllowlistGate / ApprovalGate | P2 Pipeline（仅 Agent 入口） |
+| `delete` | [I38c-delete-spec.md](./I38c-delete-spec.md) | C4.1–C4.11 |
+| ~~`shell`~~ | — | **暂不提供**，见 §13 |
 
-**实现不变量**：
+### 7.1 危险组注册门禁
 
-1. `execute()` 必须包含 SafetyBelt 与全部纵深防御；**不得**假设「Pipeline 会拦」。
-2. 子进程超时**不能**依赖 `tokio::time::timeout`；必须进程级超时 + kill（Windows 用 Job Object / `TerminateProcess`）。
-3. 环境隔离：`env_clear()` + `SAFE_ENV_VARS` 白名单。
-4. 结构守卫：阻止 `$()` / 反引号 / `&` / `bash -c "..."`（详见 OSCALLDESIGN）。
-5. 默认超时 30s；用户可提高，但受 turn 剩余预算约束。
-
-> 受众为 `BOTH` 的前提是上述执行层守卫全部在 `execute()` 内；任一缺失则改为 `AGENT_ONLY`（I18b §2.2）。
-
-### 7.3 危险组注册门禁
-
-`delete` / `shell` 满足以下全部条件前**不得**加入生产注册表：
+`delete` 满足以下全部条件前**不得**加入生产注册表：
 
 1. P2 的 Policy / Gateway / 审批端口可用。
 2. 前端审批卡片已上线（P6）。
@@ -485,20 +377,50 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 
 ## 9 ask_user（P6 联调）
 
+参考形态（OpenBitFun `assembly/core/src/agentic/tools/implementations/ask_user_question_tool.rs`）：
+
 ```json
 {
   "type": "object",
   "properties": {
-    "question": { "type": "string", "description": "Question to ask the user" }
+    "questions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "properties": {
+          "question": { "type": "string" },
+          "header": { "type": "string", "maxLength": 20 },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "properties": { "label": { "type": "string" }, "description": { "type": "string" } },
+              "required": ["label", "description"],
+              "additionalProperties": false
+            }
+          },
+          "multiSelect": { "type": "boolean", "default": false }
+        },
+        "required": ["question", "header", "options"],
+        "additionalProperties": false
+      }
+    }
   },
-  "required": ["question"]
+  "required": ["questions"],
+  "additionalProperties": false
 }
 ```
 
-- 语义：暂停 Agent Loop，等待前端回答，再继续。
-- 依赖 P2 的审批端口与 P6 输入框；**不属于 P5 退出条件**。
+- 语义：暂停 Agent Loop，等待前端回答，再继续。1–4 个问题、每题 2–10 个选项；「其他」选项由前端自动提供，schema 不声明（避免模型自己造 `Other` 与前端重复）。
+- 结构化形态（而非单个 `question` 字符串）的理由：选项需要 label + description 才能表达权衡，纯字符串会把「选项 + 说明」塞进一段自然语言，前端无法渲染成可点选的输入框。
 - `audience = AGENT_ONLY`（不从前端透传入口暴露）。
-- 超时与取消：超时按用户未回答处理（返回 `Cancelled` 或业务错误，不得默认继续）；取消走 turn 子令牌。
+- 依赖 P2 的审批端口与 P6 输入框；**不属于 P5 退出条件**，P5 只登记形态与阻塞点。
+- **超时**：参考实现把超时放在工具外部配置（`user_question_timeout_secs`），schema 不声明超时参数，并声明 `manages_own_execution_timeout() = true` 绕过统一工具超时。本项目当前没有等价能力，`exec::invoke` 的 `DEFAULT_TOOL_TIMEOUT = 30s` 会在用户回答之前打断等待——这是 P6 的前置阻塞点，候选方案见 §11 OQ5。
+- 超时按用户未回答处理（返回 `Cancelled` 或业务错误，不得默认继续）；取消走 turn 子令牌。
 
 ---
 
@@ -509,12 +431,17 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 | A1 | 所有文件工具只通过 `os::path` 解析路径；crate 内 grep 无 `unwrap_or_else(\|_\| path.to_path_buf())` |
 | A2 | 每个工具都有 `input_schema` 单测（合法 / 缺必填 / 类型错误） |
 | A3 | 只读工具 `permission_intents` 为空、`is_concurrency_safe = true`；修改/删除工具产出规定的 action |
-| A4 | `edit` 的 0 / 1 / 多匹配三分支行为符合 §6.2；审批载荷含 diff |
-| A5 | `delete` 拒绝删除 workspace_root；批准只对规范化路径生效 |
-| A6 | `shell` 在 `execute()` 内命中 SafetyBelt / 结构守卫 / 环境隔离；子进程超时能真正 kill |
-| A7 | 分组注册：默认 `setup.rs` 只注册 P5-R1；危险组未调用时生产注册表不包含 `shell` / `delete` |
-| A8 | `read` 的读取回执：修订号不变 → 复用提示；变更 → 重读 |
+| A4 | `edit` 的 0 / 1 / 多匹配三分支行为符合 [I38c-edit §3 / §4](./I38c-edit-spec.md)；渐进匹配 6 档每档各有用例；歧义时不自动取首个；CRLF 文件写回后仍为 CRLF 且无混合行尾；写回原子（临时文件 → `sync_all` → rename）且崩溃 / 断电不留半截或空文件；审批载荷含 diff。档 2 / 档 4 依赖 `read` 的行号前缀与 ` [truncated]` 标记，契约见 [I38c-read §3.2](./I38c-read-spec.md)，两侧共用同一常量并有对拍用例 |
+| A4b | `edit` 读前置：无回执 → 拒绝并提示 `read`；回执修订号过期 → 拒绝并提示重读；`write` 后紧接 `edit` 不被误拦（[I38c-edit §6](./I38c-edit-spec.md)） |
+| A4c | `write` 覆盖走临时文件 → `sync_all` → rename；内容与现有文件逐字节相同时不写盘且 mtime 不变；已存在但不可读的文件拒绝覆盖（[I38c-write §3](./I38c-write-spec.md)） |
+| A5 | `delete` 拒绝 workspace_root / 文件系统根 / 家目录本身；链接不跟随（删链接不删目标）；递归预扫描给出条目数与字节数且超限不拒删；结果含 `path` / `isDirectory` / `recursive` / `entriesDeleted` / `bytesDeleted` / `truncated`；批准只对规范化路径生效（[I38c-delete §3](./I38c-delete-spec.md)） |
+| A5b | 删除 / 移动成功后 `ReadReceiptStore::invalidate_path` 按组件级前缀失效，删除后重建的文件 `read` 不回放旧内容（[I38c-delete §3.6](./I38c-delete-spec.md)） |
+| A6 | ~~`shell` 守卫与进程级 kill~~ **不适用**：`shell` 暂不提供（§13） |
+| A7 | 分组注册：默认 `setup.rs` 只注册 P5-R1；危险组未调用时生产注册表不包含 `delete` |
+| A8 | `read` 的读取回执：同一会话内修订号不变 → 复用提示；修订号变更 → 重读；不同会话读同一文件互不抑制 |
 | A9 | `cargo test -p assistant-tools` 全绿；`cargo clippy -- -D warnings` 无告警 |
+| A10 | `resolve_available_tools`：空白名单 → 空集；白名单生效；`disabled_tools` 覆盖 `enabled_tools`；超 `max_tool_tier` 与 `TOOLBOX_ONLY` 工具不出现；同输入两次调用顺序一致 |
+| A11 | P4 遗留清理到位：`RegistryToolCatalog` / `ToolCatalog` trait / `StaticToolCatalog` 全部删除，`ToolExecCtx.tools` 未使用字段删除；`cargo test --workspace` 全绿 |
 
 ---
 
@@ -523,25 +450,68 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 | 风险 | 缓解 |
 |---|---|
 | 工具绕过 `os/path.rs` 自行实现 | A1 grep；code review |
-| 破坏性工具提前注册即前端可达 | 分组注册 + §7.3 门禁；I31 §8 |
-| 同步 IO 超时无法中断 | `spawn_blocking`；shell 用进程级超时（I31 §4.3） |
+| 破坏性工具提前注册即前端可达 | 分组注册 + §7.1 门禁；I31 §8 |
+| 同步 IO 超时无法中断 | `spawn_blocking`；超时只保证调用方及时返回（I31 §4.3）。`grep` 在此之上加了遍历内 deadline（外层剩余预算 − 500ms，命中即停并返回已收集结果），不依赖强杀 blocking 线程（[grep §3](./I38c-grep-spec.md)） |
+| `read` 输出格式漂移让 `edit` 档 2 / 档 4 静默失效 | 行号前缀（`{n:>6}\t`）与 ` [truncated]` 标记的唯一产出点是 `read`，两侧共用同一常量；契约写在 [read §3.2](./I38c-read-spec.md)，`edit` 只做检测与剥离 |
+| `ls` 不读 `.gitignore`、`glob` / `grep` 读 `.gitignore`，口径不一致 | 刻意差异（理由见 [ls §3](./I38c-ls-spec.md)）；在三个工具的 `description` 里各自写明「是否受 `.gitignore` 影响」，避免模型把「`ls` 没列出来」当成「文件不存在」 |
 | 大结果挤爆上下文 | P2 三层预算 + `os/output.rs` 单条上限 |
 | Windows 路径形态（UNC / 盘符相对） | I31 §5.2.1 全覆盖；A1 只允许走共享函数 |
+| 符号链接 / junction 让删除作用到 workspace 之外 | 目标分类一律 `symlink_metadata`（不跟随），链接按文件删除、递归不进入链接（[delete §3.2](./I38c-delete-spec.md)） |
+| 递归删除无法中断，可能部分删除 | `remove_dir_all` 无取消点，超时只记录；失败后重查目标存在性并区分「未删除 / 已删除但随后失败」（[delete §3.4](./I38c-delete-spec.md)） |
+| 删除 → 重建后 `read` 回执误判「已读过」（保时间戳的复制 / 解包使长度 + mtime 相同） | 删除 / 移动成功后 `invalidate_path` 按组件级前缀失效（[delete §3.6](./I38c-delete-spec.md)、[I38a §4-P2-C6](./I38a-tool-control-layer-spec.md)） |
+| 崩溃 / 断电后 rename 已完成但内容未落盘（文件存在却为空） | 写临时文件后先 `sync_all()` 再 rename（[write §3](./I38c-write-spec.md)、[edit §5](./I38c-edit-spec.md)），不依赖 rename 单独保证持久性 |
+| 跨会话并发写同一路径，后写者静默覆盖前者 | 原子 rename 只保证不产生半截文件、不保证先后顺序；P5 **不引入** per-target 锁（需在 `os/` 层加跨调用共享状态），冲突可见性由审批卡片（覆盖提示 + 现有行数 / 字节数）与 `read` 回执修订号承担（[write §3 / §5](./I38c-write-spec.md)） |
 
-**开放问题**：
+**开放问题**（编号即引用名，改动需同步全文引用）：
 
-1. `grep` 是否引入 `ignore` crate 以遵守 `.gitignore`？当前倾向：引入，避免搜索结果被构建产物淹没。
-2. `write` 的「覆盖」是否应标记 `destructive`？当前倾向：否，但审批卡片必须显示覆盖提示。
-3. `shell` 的 Job Object 实现是否需要 `windows-sys` 新依赖？在 P5-C3 评估，避免仅为此引入。
+- **OQ1** ~~`grep` 是否引入 `ignore` crate 以遵守 `.gitignore`？~~ **已定稿（2026-11-06）**：引入。`glob` 用 `ignore` + `globset`，`grep` 用 `grep-searcher` + `grep-regex`，全部为 ripgrep 官方组件，语义一致且无 CLI 依赖。
+- **OQ2** ~~文件工具的超时策略如何统一？~~ **已定稿（2026-11-06）**：沿用 `exec::invoke` 的统一 deadline 保证调用方及时返回，工具内部不自行强杀；`spawn_blocking` 任务无法中断，因此需要「提前停止」的工具（`grep`）在遍历循环内按「外层剩余预算 − 500ms」自查 deadline，命中即停并返回已收集结果（[grep §3](./I38c-grep-spec.md)）。`delete` 的 `remove_dir_all` 无取消点，只记录超时并按失败后重查处理（见上表）。
+- **OQ3** ~~`shell` 的 Job Object 实现是否需要 `windows-sys` 新依赖？~~ **已作废（2026-11-06）**：`shell` 改为暂不提供（§13），该依赖问题随之关闭。若将来恢复，原结论可复用：不引入 `windows-sys`，用现有 `windows` 0.62 补 `Win32_System_JobObjects` / `Win32_System_Threading` features，Unix 侧用 `libc` 进程组 kill。
+- **OQ4** **`edit` 是否支持单次多 hunk（codex `apply_patch` 形态）？** 已定稿（2026-11-06）：**P5 不做**。理由：多 hunk 会扩大工具面与审批粒度（一次审批覆盖多处改动），且需要独立的补丁语法解析器；P5 保持「一次调用一次替换」，模型可用多次 `edit` 达成同一效果。若 P6 之后出现「批量重构」痛点，再按新工具 `apply_patch` 单列。
+- **OQ5** **`ask_user` 如何避开 30s 统一工具超时？** 待 P6 定。参考实现让工具「自管执行超时」（`manages_own_execution_timeout() = true`，超时值来自外部配置 `user_question_timeout_secs`，schema 不声明），而本项目 `Tool` trait 没有该标记，`exec::invoke` 的 `DEFAULT_TOOL_TIMEOUT = 30s` 会在用户回答前打断等待。两条候选路径：(a) `timeout_hint` 返回 `None` 表示无默认 deadline，由前端取消或 turn 子令牌终止；(b) `Tool` trait 增加「自管超时」标记。P5 只登记阻塞点，见 §9。
+- **OQ6** `write` 的「覆盖」是否应标记 `destructive`？当前倾向：否，但审批卡片必须显示覆盖提示。
 
 ---
 
 ## 12 参考
 
-| 工具/要素 | 参考项目 | 参考实现 |
-|---|---|---|
-| Read / LS / Glob / Grep | OpenBitFun | `agentic/tools/implementations/` |
-| Write / Edit / Delete | OpenBitFun / codex | `file_write` / `file_edit`；`apply_patch` |
-| Bash / shell 守卫 | OpenBitFun | `BashTool` + `edit_constraint_guard` |
-| AskUser | OpenBitFun | `AskUserQuestionTool` + `UserQuestionController` |
-| 文档转换 / 行限制 | OpenBitFun | `FileReadTool` 三级限制 |
+> 路径根：OpenBitFun = `references/1-ai-agent/OpenBitFun/src/crates/`；codex = `references/1-ai-agent/codex/codex-rs/`。
+> 工具级逐项采纳 / 不采纳记录在各自分册的「参考」节；本表只保留索引级条目。
+
+| 要素 | 参考项目 | 参考实现 | 去向 |
+|---|---|---|---|
+| Read / LS / Glob / Grep | OpenBitFun | `implementations/{file_read,ls,glob,grep}_tool.rs`、`execution/tool-execution/src/{fs/read_file,fs/listing,search/glob_search,search/grep_search}.rs` | [read](./I38c-read-spec.md) §5、[ls](./I38c-ls-spec.md) §5、[glob](./I38c-glob-spec.md) §5、[grep](./I38c-grep-spec.md) §5（含逐项采纳 / 不采纳：`tail`、64000 字符总上限、mtime 排序、`EXCLUDED_NAMES` + `.gitignore`、绝对 pattern 推导搜索根、`output_mode` 三态、`head_limit` 250 等） |
+| Write | OpenBitFun + deepseek-harness-orb | `assembly/core/src/agentic/tools/implementations/file_write_tool.rs`、`packages/fs/fs-local/README.md` | [write](./I38c-write-spec.md) §5（幂等成功 / 不可读拒绝覆盖 / 原子写 + `fsync` 采纳；单字符串 `payload` 形态、`force` 逃生口、写前读前置、200 行 / 20KB 软限制、版本守卫覆盖、per-target 锁不采纳） |
+| Delete | OpenBitFun + codex + openhuman + deepseek-harness-orb | `implementations/delete_file_tool.rs`、`execution/tool-execution/src/fs/delete_path.rs`、`apply-patch/src/lib.rs`、`security/policy/path_checks.rs`、`packages/fs/fs-local/src/index.ts` | [delete](./I38c-delete-spec.md) §5（含逐项采纳与不采纳理由） |
+| **Edit（匹配 / 归一化 / 诊断 / 原子写 / 读前置）** | OpenBitFun + codex | `execution/tool-execution/src/fs/edit_file.rs`、`util/{read_line_prefix,string}.rs`、`apply-patch/src/seek_sequence.rs` | [edit](./I38c-edit-spec.md) §8（含逐项采纳与不采纳理由） |
+| mkdir / move | 无对应实现 | 已核对：OpenBitFun `implementations/` 无 `mkdir` / `rename` 工具；codex `apply-patch` 只有 Add / Delete / Update；goose / deepseek-harness-orb 走 shell | [mkdir](./I38c-mkdir-spec.md) §5、[move](./I38c-move-spec.md) §5——参数与返回语义均为本项目自行定义，无可对照项 |
+| 凭据目录硬禁 | openhuman | `security/policy/path_checks.rs`（`is_always_forbidden`） | 本文 §4 共享 `os::path::reject_system_dirs`，见 [I31 §5.3](./I31-phase1-tool-framework-spec.md) |
+| ~~Bash / shell 守卫~~ | OpenBitFun / codex / openhuman / goose | `BashTool` + `edit_constraint_guard`、`exec_command.rs`、`core/src/exec.rs`、`tools/impl/system/shell.rs` | **暂不提供**，见 §13（评估结论留档） |
+| AskUser | OpenBitFun | `implementations/ask_user_question_tool.rs`（结构化 `questions[]`：1–4 问 / 每问 2–10 选项 / `multiSelect`；`manages_own_execution_timeout()` + 外部 `user_question_timeout_secs`） | 本文 §9（P6 联调，不分册）；超时阻塞点见 §11 OQ5 |
+| 多 hunk 补丁 | codex | `apply-patch/src/{parser,file_update}.rs` | 不采纳，见 §11 OQ4 |
+
+---
+
+## 13 暂不提供的工具
+
+### 13.1 `shell`
+
+**状态**：**暂不提供**（2026-11-06 定稿）。P5 不实现 `shell`，`I38c-shell-spec.md` 已删除，任务清单 C5 整节移除。
+
+**决策理由**：
+
+1. **不可控性当前难以把握**。命令执行的效果完全取决于 `command` 字符串的语义，而字符串语义要经过「模型生成 → 我们的转义/包裹 → 解释器解析 → 目标程序解析」四层传递。任何一层的偏差都会让实际执行偏离模型意图，且**执行前无法可靠验证**——这是破坏性后果（误删、误覆盖、误推送）的主要来源。
+2. **额外包裹本身就是风险源**。为了让输出编码正确、让 shell 不加载 profile，需要在 `command` 前后拼接固定片段（UTF-8 前缀、`-NoProfile` / `-lc` 等）。这些片段会改变「首语句」约束、影响 `param(...)` / `using` / heredoc / 续行片段的语义，等于用一层新的转义去修另一层转义的问题。参考项目各自的做法（OpenBitFun 拼前缀、goose 不拼前缀、openhuman 只用于内部 CIM 探测）并不一致，说明该做法在业界也没有形成可靠共识。
+3. **收益与风险不匹配**。`shell` 能覆盖的场景（构建、测试、git 操作）在当前阶段并非必需；文件工具已能覆盖读写改删。为一个非必需能力承担「静默执行非预期命令」的风险，不划算。
+4. **守卫只能拦已知模式**。SafetyBelt / 结构守卫是模式匹配，无法证明「未被拦截的命令就是安全的」；把安全性建立在不完备的黑名单上，会给出虚假的安全感。
+
+**恢复条件**（任一满足才重新评估，且必须新建分册与任务项，不得直接复用旧稿）：
+
+- 需要真正的 OS 级隔离（容器 / 沙箱 / 受限进程令牌），使「命令做了什么」在系统层面有边界，而非依赖字符串判定；
+- 或引入**结构化执行**：不接收自由格式 `command`，只接收「工具名 + 结构化参数」（如 `git_status` / `npm_test`），把语义校验前移到参数层；
+- 或先具备可验证的命令预演能力（dry-run / 解析树比对），使审批文本与实际执行在语义层面等价。
+
+**对其他阶段的影响**：
+
+- `ask_user`（§9）与 P6 前端联调不受影响。
+- 若其他分册或设计文档提到 `shell`，一律以本节为准；相关任务编号（原 C5）不再使用，后续编号顺延不受影响（C6 / C7 / C8 保持原号，不重排）。

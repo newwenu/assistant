@@ -3,6 +3,7 @@
 > **本文档职责**：对 `references/` 中 3 个有沙盒实现的参考项目进行源码级深度分析，提取架构模式、关键数据结构、平台策略、安全边界及设计取舍，为本项目沙盒实现提供可直接对照的工程参考。
 > **关联文档**：[agent-sandbox-research.md](./agent-sandbox-research.md)（开源项目调研与演进路线） · [I18 架构决策](./I18-agent-tool-architecture-design.md) · [I18 实施规格](./I18-agent-tool-architecture-spec.md)
 > **参考项目**：Codex（OpenAI Codex CLI）· OpenHuman · DeepSeek Harness Orb（DSH）
+> **补充样本**：§5.4 另引 goose 与 OpenBitFun 作为「无沙箱」对照组（goose 无任何沙箱原语；OpenBitFun 无沙箱但有边界层路径检查），用于说明「路径检查」与「操作范围检测」的区别。
 
 ---
 
@@ -807,7 +808,7 @@ per-path exclusive `LockFileEx` lock：
 
 ---
 
-## 5. 三项目关键设计对比
+## 5. 关键设计对比
 
 ### 5.1 平台后端选择策略
 
@@ -838,6 +839,102 @@ per-path exclusive `LockFileEx` lock：
 | **升级机制** | 无 | ElevatedOp 声明式 | WIDER_MODES + sandbox_permissions + justification |
 | **拒绝反馈** | stderr 关键词 | 无 | sandboxDenialMarker |
 | **enforcement 信号** | 无 | SandboxStatus | SandboxEnforcement |
+
+### 5.4 操作范围检测的分层
+
+前面三节比较的是「后端有多硬」。这一节换一个维度：**检查发生在什么时刻、依据是什么对象**。同样一句「禁止访问 `/etc`」，写在四个不同位置，安全性差几个数量级。
+
+| 层 | 检查对象 | 检查时机 | 依赖参数字符串 | 项目 |
+|------|---------|---------|:---:|------|
+| **L4 内核强制** | 内核实际收到的 syscall | 进程运行时 | **否** | Codex（bwrap / Seatbelt / restricted token）· OpenHuman（tinybox-jail / Docker）· DSH（bwrap / Landlock / Seatbelt / windows-acl） |
+| **L3 解析后判定** | `canonicalize` / `realpath` 后的真实路径 | 调用前 | 部分（入口是字符串，判定对象是解析结果） | Codex（`FileContentsChecker`）· OpenHuman（`validate_path`）· OpenBitFun（`host_policy::validate_path`）· DSH（`realpathNormalize`） |
+| **L2 字符串匹配** | 参数字符串本身 | 调用前 | **是** | OpenHuman（`is_path_string_allowed` / `is_always_forbidden`）· Codex（glob deny 条目）· goose（`security/patterns.rs` 正则） |
+| **L1 无检测** | — | — | — | 各项目的文件工具内部实现 |
+
+**只有 L4 不依赖参数形态。** 下面三行对内核来说都是同一个 `open()`：
+
+```text
+cat /etc/shadow
+cat "$(echo L2V0Yy9zaGFkb3c= | base64 -d)"
+ln -s /etc evil && cat evil/shadow
+```
+
+L2 只能拦住第一种。后两行的字符串里根本不含 `/etc`，前缀匹配无从命中。所以 L2 保护的是「老实写法」，不是「操作范围」。
+
+#### L4 的三种落点
+
+| 项目 | Linux | macOS | Windows |
+|------|-------|-------|---------|
+| Codex | bwrap（`--ro-bind / /` 全盘只读起步 + 可写根 `--bind` 叠加）+ 进程内 `PR_SET_NO_NEW_PRIVS` + seccomp | Seatbelt `(deny default)` + 按访问类型生成 `(allow file-write* (subpath ...))` | restricted token + capability SIDs；另有 MXC 容器后端 |
+| OpenHuman | Landlock（经 `tinybox-jail`） | Seatbelt（经 `tinybox-jail`） | AppContainer（经 `tinybox-jail`）；远程会话默认 Docker |
+| DSH | bwrap → Landlock 链式探测 | Seatbelt | windows-acl（ACL 写入 + workspace SID） |
+
+三个细节说明它确实是边界，而不是「参数校验的另一种写法」：
+
+1. **符号链接与非存在路径用挂载遮罩**。Codex 在 bwrap 下对可写根内的 symlink-in-path 和缺失的受保护路径，挂 `/dev/null` 覆盖首个缺失组件——不是「解析路径后拒绝」，而是让该路径在沙箱视图里根本不存在。这是 L4 独有的手段：L3 只能对「已存在的东西」做判定，对「还不存在但将来会被创建」的路径无能为力。
+2. **glob deny 条目在启动前展开再遮罩**。`**/*.env` 这类条目由 `rg --files` 展开成具体文件后逐个 mask，展开失败则整个沙箱构造中止（fail-closed）。
+3. **可写根含符号链接直接报错**。Seatbelt 的 `normalize_writable_root_for_sandbox` 对含 symlink 组件的可写根返回 `symlinked writable roots are not supported`，而不是猜它指向哪里。
+
+#### L3 的共同形状与共同弱点
+
+四个项目的 L3 写法高度相似：先要求绝对路径，再解析，最后对解析结果做包含性判断。
+
+| 项目 | 入口 | 解析方式 | 失败处理 |
+|------|------|---------|---------|
+| Codex | `FileContentsChecker::check()` | `fs::metadata` + `target.canonicalize()` | 注释自述边界：「resolves current objects; it does not assess ownership or OS ACLs」 |
+| OpenHuman | `validate_path()` | `tokio::fs::canonicalize()`，对结果重跑 `is_resolved_path_allowed_for` / `check_resolved_against_forbidden` | `validate_parent_path()` 向上走到最深的已存在祖先再解析，用来抓「父目录是符号链接」 |
+| OpenBitFun | `AppServerHostPolicy::validate_path()` | `dunce::canonicalize()` | 相对路径拒绝、解析失败也拒绝（fail-closed）；但只覆盖 `workspacePath` / `repositoryPath` / `projectWorkspacePath` 这 6 个固定 wire key |
+| DSH | `realpathNormalize()` | `fs.realpath` | 非完全限定路径在 `realpath` 前就抛 `TypeError`；不存在路径保留原始 `ENOENT` |
+
+OpenHuman 的注释直接写明了动机：「The string-level checks above can be bypassed by creating a symlink inside the workspace that points to a forbidden tree (e.g. `evil -> /etc/shadow`)」。配套测试有 `validate_path_blocks_symlink_to_forbidden_path`、`validate_parent_path_blocks_symlinked_parent_dir` 一组。
+
+**L3 的共同弱点：它只保护经过这个函数的调用。** 任何绕开该函数的执行路径——子进程、脚本内部、第三方工具、MCP 服务——都退回 L1。这正是 L4 存在的理由，也是「有路径检查 ≠ 有边界」的分界线。
+
+#### L2 单独使用时的两种形态
+
+- **作为 L3 的前置快速拒绝**（OpenHuman）。`is_path_string_allowed()` 注释自己标了边界：「String-only path check. Does NOT resolve symlinks. Use `validate_path()` for any path that will be used for file I/O.」它挡的是 `\0`、`..` 组件、URL 编码的 `..%2f`、`~` 展开、凭据目录前缀、`workspace_only` 下的绝对路径。这层便宜、快、覆盖面广，但它的定位是「减少进入昂贵解析的次数」，不是安全边界。
+- **作为威胁特征库**（goose）。`security/patterns.rs` 是一组正则（`ssh_key_exfiltration`、`password_file_access`、`systemd_service_creation` 等），由 `scanner.rs` 对 shell 工具的 command 文本做匹配，可选叠加一个 ML 分类器。它只处理 shell 工具，且输出是 `ScanResult { is_malicious, confidence, explanation }`——**一个评分，不是一个拒绝**。这类实现的价值是提示，不是隔离。
+
+#### 降级语义：三个项目三种做法
+
+沙箱不可用时怎么办，是这一节里分歧最大的一点。
+
+| 项目 | 后端不可用时的行为 | 调用方如何得知 |
+|------|-------------------|---------------|
+| Codex | 启动期告警（bwrap 缺失 / 版本过旧 / 无 user namespace / WSL1）；策略与后端不兼容时**拒绝启用**该策略 | 启动日志 |
+| OpenHuman | `cwd_jail::default_backend()` 替换成 `NoopBackend`，句柄报 `SandboxStatus::Inactive` 而非 `Ready` | 主动读状态字段 |
+| DSH | 链式探测落到下一个 rung；`SandboxEnforcement` 报 `full` / `partial` | 主动读 enforcement |
+
+三者都不 fail-open。差别在于**「谁知道边界没了」**：Codex 是启动期可见的告警，另两个需要调用方主动读字段才能发现。OpenHuman 的 `sandbox/README.md` 因此写了一句必须一起读的条款：
+
+> **Do not treat a resolved `SandboxBackendKind` as a security boundary on its own.**
+
+这句话适用于三个项目：**枚举值解析成功，不等于边界已经建立。**
+
+#### 事后观测：没有主动监控
+
+四个项目里没有任何一个做运行时文件系统监控（fsevents / inotify / auditd / ETW 都没有）。Codex 的 `violation.rs` 是**事后**从执行结果反推：
+
+```rust
+const SANDBOX_DENIED_KEYWORDS: [(FileSystemSandboxViolationReason, &str); 7] = [
+    (OperationNotPermitted, "operation not permitted"),
+    (PermissionDenied,      "permission denied"),
+    (ReadOnlyFileSystem,    "read-only file system"),
+    (PolicyDenied,          "seccomp"),
+    (PolicyDenied,          "sandbox"),
+    (PolicyDenied,          "landlock"),
+    (FailedToWriteFile,     "failed to write file"),
+];
+```
+
+分类依据是 exit_code + stderr 关键词，`extract_denied_path_from_text()` 从文本里捞出被拒路径，`SignalSyscall`（`128 + SIGSYS`）单独识别 seccomp 拦截。这是「从沙箱的实际裁决结果里回收信息」，不是主动扫描。它的价值在于把「被拦住」变成可审计事件（`SandboxViolationBackend` 区分 `linux_sandbox` / `seatbelt` / `windows_sandbox` / `windows_mxc` / `managed_network_proxy`），而不是事前预防。
+
+#### 归纳
+
+- **L4 只有三个有沙箱的项目具备**，且都带降级路径。没有沙箱的项目（goose）连 L2 都只有 advisory 形态。
+- **L3 出现得比 L4 广**，因为它不需要平台能力——OpenBitFun 没有沙箱但有 L3。但 L3 的作用域由函数调用决定，不是由系统决定。
+- **L2 从不单独成立**。凡是认真写 L2 的项目，都会在注释里标出它的边界并指向 L3。
+- **「路径检查」和「操作范围检测」是两件事**。前者是字符串或解析结果上的判定，后者要求一个不随参数形态变化的裁决点。只有 L4 提供后者。
 
 ---
 
@@ -923,3 +1020,13 @@ per-path exclusive `LockFileEx` lock：
 | `references/1-ai-agent/deepseek-harness-orb/packages/sandbox/sandbox-local/src/profiles.ts` | bwrap/Landlock/Seatbelt profile 构建 |
 | `references/1-ai-agent/deepseek-harness-orb/packages/sandbox/sandbox-windows-acl/src/token.ts` | WRITE_RESTRICTED Token 构建 |
 | `references/1-ai-agent/deepseek-harness-orb/packages/sandbox/sandbox-windows-acl/src/acl.ts` | ACL 编辑 + 并发 lock |
+
+### 对照组（无沙箱，仅用于 §5.4 分层对照）
+
+| 文件 | 职责 |
+|------|------|
+| `references/1-ai-agent/goose/crates/goose-roaming/SECURITY.md` | 自述无 per-peer capability scoping / read-only mode / session sandboxing |
+| `references/1-ai-agent/goose/crates/goose/src/security/patterns.rs` | 正则威胁特征库（advisory，L2） |
+| `references/1-ai-agent/goose/crates/goose/src/security/scanner.rs` | 仅对 shell 工具文本评分，不产生拒绝 |
+| `references/1-ai-agent/OpenBitFun/src/crates/interfaces/app-server/src/server/host_policy.rs` | App Server 边界路径检查：绝对路径 + `dunce::canonicalize` + 包含性判断（L3） |
+| `references/1-ai-agent/deepseek-harness-orb/packages/workspace/workspace/src/paths.ts` | `realpathNormalize`：workspace 身份的 canonical 基准（L3） |

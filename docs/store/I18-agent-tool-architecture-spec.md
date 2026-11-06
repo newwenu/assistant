@@ -186,7 +186,7 @@ pub struct ToolUseContext {
 2. `workspace_root` 为 `None` 时，文件系统工具只接受绝对路径。
 3. 不新增 deadline / 取消令牌字段：超时由 `exec::invoke` 承担，取消由控制层承担。
 
-**已知待修**：`os_tool_exec` 当前恒传 `workspace_root: None`，ToolBox 侧相对路径不可用（Step 8 收口）。
+**设计约束**：`os_tool_exec` 恒传 `workspace_root: None`——ToolBox 的调用者是用户本人，不存在「越界」，`workspace_root` 对它意味着权限边界而非解析基准（见 [I18b](./I18b-tool-unified-bridge-spec.md) §2.2）。代价是相对路径不可用；若日后补支持，须先把「解析基准」与「权限边界」拆为两个字段，**不得**直接填 `workspace_root`。
 
 **实施状态**：✅ 已实现，`assistant-tools/src/context.rs`。
 
@@ -399,7 +399,7 @@ pub async fn os_tool_exec(
 
 | # | 问题 | 归属 |
 |---|---|---|
-| B1 | `workspace_root` 恒为 `None`，ToolBox 相对路径不可用 | P5/P6 |
+| B1 | ToolBox 相对路径不可用（`workspace_root` 恒为 `None`，属设计取舍：用户本人调用，不存在「越界」） | P5/P6（可用性，非安全） |
 | B2 | `ToolUseContext` 不携带 session / call id | P4（Agent 入口由 Pipeline 注入） |
 | B3 | `tool_names()` 未排序（仅诊断用） | 后续需要确定性诊断输出时补 |
 

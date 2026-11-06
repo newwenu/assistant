@@ -100,6 +100,10 @@ pub struct ResolvedPermissionPolicy {
 
 impl ResolvedPermissionPolicy {
     pub fn evaluate(&self, action: &str, resource: &str) -> PermissionEffect;
+
+    /// P6 新增：返回命中原因，供审批卡片回答「为什么问我」。
+    /// 不改变 evaluate 的结果，仅旁路记录；实现必须与 evaluate 共用同一匹配逻辑。
+    pub fn explain(&self, action: &str, resource: &str) -> Vec<ApprovalReason>;
 }
 ```
 
@@ -111,6 +115,12 @@ for layer in constraint_layers:
     result = result.most_restrictive(eval_rules(layer.rules, action, resource))
 return result
 ```
+
+`explain` 的产出规则：
+
+- 逐层记录**实际改变结果**的那条规则（last-match-wins 的获胜规则），不记录所有被覆盖的规则。
+- `result == Ask` 且无任何显式规则命中 → 返回一条 `DefaultPolicy { action, resource }`（默认策略即「未知一律问」）。
+- `explain` **不得**有副作用、不得影响 `evaluate` 的返回值；两者必须由同一 `eval_rules` 实现驱动，禁止各写一份匹配逻辑（否则会出现「卡片说 A、实际按 B」）。
 
 ### 2.4 PermissionRuntimeCeiling
 
@@ -200,12 +210,69 @@ pub struct ApprovalRequest {
     pub arguments: serde_json::Value,
     pub intents: Vec<PermissionIntent>,
     pub timeout: Duration,
+    // P6 修订（跨阶段契约变更，见 §2.8.1）
+    pub tier: ToolTier,
+    pub behavior: BehaviorHints,
+    pub reasons: Vec<ApprovalReason>,
+    pub preview: Option<ApprovalPreview>,
 }
 ```
 
 - 生产实现（P6）：发 `agent-tool-awaiting-approval` 事件 → 前端审批 → Tauri command 回填决策。
 - 测试实现：脚本化返回 `Approve / Deny / AlwaysApprove / 超时`。
 - **超时语义**：超时视为 `Deny`，不得默认放行，也不得无限挂起。
+- **预留扩展（不实现）**：AI 审批顾问（`ApprovalAdvisor`）不在 P2 范围，P2–P7 也**不预留空 trait / 空字段**。插入点（策略之后、人审批之前）、方向性约束（`fuse` 纯函数）、输入分层与启用门禁见 [I18 design §3.17](./I18-agent-tool-architecture-design.md)；本节 `ApprovalPrompter` / `ApprovalDecision` / `GatewayDecision` 契约不因此改变。
+
+#### 2.8.1 P6 修订：审批载荷携带用户判断信息
+
+**动机**：P2 的 `ApprovalRequest` 只携带「要做什么」（`arguments` + `intents`），无法回答「为什么问我」「有多严重」「能不能撤销」。L0（`tier` / `behavior`）在注册期已知却未随载荷传出，属于零成本信息遗漏；L2（预演）则因为审批发生在 `execute()` 之前，无法复用执行结果。
+
+```rust
+pub struct ApprovalReason {
+    pub kind: ApprovalReasonKind,
+}
+
+pub enum ApprovalReasonKind {
+    /// 命中策略规则（含默认的 `("*","*", Ask)`）。
+    DefaultPolicy { action: String, resource: String },
+    /// 命中 AgentMode 的 approval_level 收紧规则。
+    ApprovalLevel { level: String },
+    /// 命中项目级 `.assistant/permissions.json` 规则。
+    ProjectRule { action: String, resource: String },
+    /// 被 tier ceiling 收紧。
+    TierCeiling { tier: ToolTier },
+    /// AI 顾问加码（P10 才产生）。
+    Advisor { rationale: String },
+}
+
+pub struct ApprovalPreview {
+    pub summary: String,
+    pub details: Vec<ApprovalPreviewItem>,
+    pub truncated: bool,
+    pub estimated: bool,
+}
+
+pub struct ApprovalPreviewItem {
+    pub label: String,
+    pub value: String,
+}
+```
+
+**装配规则**：
+
+| 字段 | 来源 | 缺失语义 |
+|---|---|---|
+| `tier` / `behavior` | `tool.tier()` / `tool.behavior_hints()` | 不可缺失 |
+| `reasons` | `ResolvedPermissionPolicy::explain(action, resource)`（新增，见 §2.3） | 恒非空，至少一条 `DefaultPolicy` |
+| `preview` | `tool.preview_for_approval(input, ctx)`（新增，见 §3.3） | `None` = 信息未知，**不等于零** |
+
+**约束**：
+
+- `preview_for_approval` **只在网关判定为 `Ask` 之后调用**；`Allow` / `Deny` 路径不调用（避免给全量工具调用增加 IO）。
+- 预演超时（建议 2s）或 `Err` → `preview = None`，审批继续。**信息缺失可以，决策缺失不行**。
+- 预演**不得**改变决策、不得写 grant、不得读取文件全文。
+- 预演耗时单记，不得混入 `TimingApprovalPrompter` 的 `confirmation_wait_ms`。
+- 存量影响：`DenyAllApprovalPrompter` 与 `tests/gateway.rs` 的 `ApprovalRequest` 构造点需同步补字段；因新字段全部由 Gateway 填充，`ApprovalPrompter` 实现方无需改动逻辑。
 
 ### 2.9 存储端口
 
@@ -250,12 +317,25 @@ fn validate_input(&self, _input: &Value, _ctx: &ToolUseContext) -> ValidationRes
 fn is_concurrency_safe(&self, _input: Option<&Value>) -> bool {
     self.is_readonly()
 }
+
+/// P6 新增：审批预演。仅在网关判定为 Ask 后调用。
+/// 返回 None 表示「不提供预演信息」，不是「零」。
+async fn preview_for_approval(
+    &self,
+    _input: &Value,
+    _ctx: &ToolUseContext,
+) -> Option<ApprovalPreview> {
+    None
+}
 ```
 
 | 方法 | 调用时机 | 约束 |
 |---|---|---|
 | `validate_input` | Pipeline 的 validate 阶段 | 纯检查、无 IO；路径检查必须复用 `os/path.rs` |
 | `is_concurrency_safe` | Pipeline 分批 | 默认等于 `read_only`；工具可按 input 覆写 |
+| `preview_for_approval` | **仅** Gateway 判定 `Ask` 后、人工审批前 | 可做只读 IO；2s 上限；失败/超时返回 `None`；不得写 grant、不得读全文、不得改变决策 |
+
+`preview_for_approval` 的默认实现返回 `None`，存量工具零改动；P5 的 `delete` / `write` / `edit` 各自覆写（[I38c §4.1](./I38c-os-tools-spec.md)）。
 
 ### 3.2 ToolResult 双通道
 
@@ -313,7 +393,10 @@ evaluate(tool, input, context, policy) -> GatewayDecision:
            Deny  -> audit(Deny); return Denied
            Ask   -> collect need_approval { key, intent, resource }
   3. if need_approval 非空:
-       decision = approval_prompter.request(...).await
+       reasons = policy.explain(action, resource)              // P6 新增
+       preview = timeout(2s, tool.preview_for_approval(input, context)).ok()  // P6 新增，仅此处
+       request = ApprovalRequest { ..., tier, behavior, reasons, preview }
+       decision = approval_prompter.request(request).await
        Approve       -> audit(Approved); continue
        AlwaysApprove -> grant_store.save_grant; audit(AlwaysApproved); continue
        Deny          -> audit(Rejected); return RejectedByUser
@@ -327,6 +410,7 @@ evaluate(tool, input, context, policy) -> GatewayDecision:
 - **每一条放行路径都必须留审计**，包括审批缓存命中。`grant_store` 命中记 `GrantHit`，与策略 `Allow` 区分：前者是「用户此前授权」，后者是「策略静态允许」，两者的事后追溯意义不同。
 - 审计失败只记日志，不改变决策（审计不是事实源）。
 - `AlwaysApprove` 只保存当前规范化键，不扩大到工具名或前缀。
+- **P6 修订**：`explain` 与 `preview_for_approval` **只允许**在 `need_approval` 非空时调用。`explain` 对多个 `(action, resource)` 各取一次并合并去重；`preview` 每次审批只调一次（取首个 `need_approval` 的 `input`）。两者都不得影响 `GatewayDecision`——`preview` 超时/失败即 `None`，`explain` 异常即退化为一条 `DefaultPolicy`。
 - 空键（`ApprovalKey` 为 `None`）不查缓存、不落 grant，但必须写审计：它每次都会走审批，审计是唯一能证明「确实问过人」的记录。
 
 ### P2-C5 — Pipeline
@@ -380,6 +464,10 @@ partition_tool_batches(tool_calls):
 **选择算法**：按序列化字符数**降序**排列，依次累加；累计超过单轮预算的结果才落盘。落盘后消息历史只保留 `<persisted-output path=…>` 引用 + 前 `preview_chars` 字符。
 
 **跨轮去重**（同会话）：同一路径、同一行范围、文件修订号未变的重复读取 → 返回「已在上文返回」，不回传内容；修订号变化则失效重读。该能力属于 `read`（P5），P2 只定义 `ReadReceiptStore` 端口。
+
+**键结构（P5 修订）**：P2 的 `ReadReceiptKey` 只有 `path` / `start_line` / `end_line`，无法表达「同会话」语义。P5 按 [I38c-read §3.1](./I38c-read-spec.md) 给键补 `session_id: Option<String>`（取自 `ToolUseContext.session_id`；agent 链路由 `PipelineToolExecution` 填 `conversation_id`，ToolBox 链路为 `None` 并归入同一桶）。这是跨阶段契约变更，P5 落地时必须与本段同步。
+
+**失效端口（P5 新增）**：修订号是「长度 + mtime」，删除后重建若长度与时间戳恰好相同（保时间戳的复制 / 解包）会误判「已读过」。P5 给 `ReadReceiptStore` 增加 `invalidate_path(&self, path: &str)`，按**组件级前缀**失效路径及其子树（`/a/b` 不得匹配 `/a/bc`）；`delete` 成功与 `move` 的源路径均调用（见 [I38c-delete §3.6](./I38c-delete-spec.md) / [I38c-move §3](./I38c-move-spec.md)）。同属跨阶段契约变更。
 
 ---
 

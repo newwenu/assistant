@@ -270,7 +270,7 @@ pub trait Tool: Send + Sync {
 | 超时保护 | 防止 LLM 发起的命令挂起 | 由 Rust `invoke()` 统一兜底（I31 §4.3，已取代「UI 层自行处理」） |
 | 结果回填消息历史 | Agent Loop 需要继续对话 | 结果直接返回组件渲染 |
 
-**安全约束不缺失**：路径校验等在 `Tool.execute()` 内部，两个入口均受保护；`shell` 的执行层守卫同样在 `execute()` 内（见 §3.7.1），只有 AllowlistGate / ApprovalGate 这层审批留在 Pipeline。
+**安全约束不缺失，但要分两类**：`Tool.execute()` 内部保证的是**绝对不变量**（`..` 穿越、盘符相对路径、规范化失败不回退、受保护系统目录），两个入口均生效；`shell` 的执行层守卫同样在 `execute()` 内（见 §3.7.1），只有 AllowlistGate / ApprovalGate 这层审批留在 Pipeline。**作用域不变量**（`workspace_root` 包含性）只对 Agent 入口生效——ToolBox 的调用者是用户本人，不存在「越界」，详见 [I18b](./I18b-tool-unified-bridge-spec.md) §2.2。
 
 > ToolBox 桥接完整规格见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
 
@@ -479,6 +479,137 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 
 **参考**：DSH `SubagentCapabilities`；OpenHuman `allowed_subagent_ids`；本文 §3.14 与 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §4.3。
 
+### 3.17 决策：AI 审批链路的预留扩展（只定形状，不实现）
+
+**决策**：当前不引入任何 AI 参与审批决策；本节只固化「未来若要引入，允许长成什么形状」——插入点、方向性约束、输入契约、启用门禁与反模式。P0–P7 **不写代码、不加空 trait、不加 wire 字段**。
+
+**理由**：参考分析的结论是「AI 在审批链上占据哪个位置」决定失败模式，而不是「有没有 AI」（[AI 审批参考分析](../analysis/AGENT-AI-APPROVAL-REFERENCE-ANALYSIS.md) §1 / §8.2）。位置是结构决策，一旦写进 Gateway 流程就很难回退；先定决策、后写实现，比先实现再收窄便宜。
+
+#### 3.17.1 三种形态与本项目的可达性
+
+| 形态 | 方向 | 参考实现 | 成立前提 | 本项目 |
+|---|---|---|---|---|
+| 只读分类（Classifier） | 只能把「要问人」改成「不用问」 | goose `SmartApprove` | 有可靠只读标注；分类失败可回落人工 | **可达**（阶段 C） |
+| 声明式收紧（Declared hint） | 只能把「放行」改成「更严」 | openhuman `class.max(declared)` | 有确定性基线可作 `max()` 的左值 | **可达**（阶段 B） |
+| 双向裁决（Reviewer） | 可 allow 也可 deny | codex Guardian | **必须有 L4 内核级 OS 沙箱** | **不可达** |
+
+本项目只有 L2（字符串/规则）+ L3（`canonicalize` 后真实路径 + 受保护目录 + workspace 边界，见 [os/path.rs](../../src-tauri/crates/assistant-tools/src/os/path.rs)），没有 bwrap / Seatbelt / restricted token 这一层。因此**允许的上限是「单向顾问」**：把 codex 的双向裁决搬到只有 L2/L3 的环境，得到的不是更聪明的审批，而是把确定性的拒绝换成了概率性的放行（分析 §7.6 / §8.2）。
+
+#### 3.17.2 预留插入点：策略之后、人审批之前
+
+```
+intents → grant 命中 → policy.evaluate() → [advisor 单向修正] → 人工审批 → 审计
+                                              ↑
+                                  只允许作用于 Allow / Ask 两档
+```
+
+```rust
+// 预留（P10 落地，P2–P7 不出现）
+pub enum AdvisorPower { RelaxOnly, EscalateOnly, Adjudicate }
+pub enum AdvisorOutcome { Allow, Ask, Deny }
+pub enum AdvisorConfidence { High, Medium, Low, Unknown }
+pub enum AdvisorFailure { Timeout, Unavailable, Parse, BudgetExceeded, Cancelled, StaleAuthorization }
+
+pub struct AdvisorVerdict {
+    pub outcome: AdvisorOutcome,
+    pub confidence: AdvisorConfidence,
+    pub rationale: String,   // 必填非空；可解释性是硬要求
+    pub truncated: bool,     // 证据是否被截断
+}
+
+/// 纯函数：方向性约束必须在类型与运算里，不在提示词里。
+pub fn fuse(base: PermissionEffect, power: AdvisorPower, verdict: Result<AdvisorVerdict, AdvisorFailure>) -> PermissionEffect;
+```
+
+| `power` | `base = Allow` | `base = Ask` | `base = Deny` |
+|---|---|---|---|
+| `RelaxOnly` | `Allow`（不改，不调顾问） | `verdict.Allow` 且 `confidence >= High` → `Allow`，否则 `Ask` | `Deny`（不改，不调顾问） |
+| `EscalateOnly` | `verdict ∈ {Ask, Deny}` → 取更严 | `Ask`（不改） | `Deny`（不改） |
+| `Adjudicate` | 仅在 §3.17.6 门禁通过时启用 | 同左 | AI 的 `Deny` 可被人工覆盖，`critical` 除外 |
+
+- 任一 `Err(failure)` → 返回 `base`：**既不放宽也不收紧**，回落人工。
+- 多意图合并：一个 tool call 的所有 `Ask` 意图合并为**一次**顾问调用（与 §3.14 的 `merge_pending` 一致），不按 resource 逐个调模型。
+- **`Deny` 是策略终局**：除 `Adjudicate` 外任何形态都不得改写策略 `Deny`，`RelaxOnly` 甚至不发起顾问调用。
+
+**为什么做成纯函数**：方向性约束必须由接口形状保证（goose 的输出契约里没有 `deny` 字段、openhuman 的 `max()` 让降级在运算上不可发生）。把「请不要批准危险操作」写进提示词是请求，写成 `fuse` 的分支是约束（分析 §8.1 第 2 条）。`fuse` 是单测对象，不需要模型即可验证「AI 永远无法放宽 `Deny`」。
+
+#### 3.17.3 端口与 crate 边界
+
+`ApprovalAdvisor` 是与 `ApprovalPrompter` 并列的端口，位于 `assistant-tools`：
+
+| 约束 | 内容 |
+|---|---|
+| 依赖 | `assistant-tools` 不引入 provider / tauri（沿用 P2 的 A2 校验） |
+| 实现位置 | 生产实现放 `src-tauri/src/adapters/advisor.rs`，用 `assistant-providers` 调独立模型 |
+| 能力上限 | 顾问实现**不得持有** `ToolPipeline` / `ToolRegistry` / 任何执行句柄——评审员只能是只读观察者（codex 把 reviewer 压到 `intersect_with_read_only()` + `AskForApproval::Never`） |
+| 模型选择 | 独立 model 配置，不复用当前会话的模型实例与上下文 |
+| 输出流向 | 顾问结论只进审批载荷与审计，**不进 `messages`**，不参与后续对话 |
+
+#### 3.17.4 输入契约：结构化 + 分层 + 脱敏
+
+```rust
+pub struct AdvisorInput {
+    pub tool_name: String,
+    pub action: String,
+    pub resources: Vec<String>,           // 已脱敏
+    pub trusted: Vec<TrustedFact>,        // 用户显式指令、会话目标
+    pub untrusted: Vec<UntrustedFact>,    // 工具输出、文件内容、MCP 描述
+    pub truncated: bool,
+}
+```
+
+| 不变量 | 说明 |
+|---|---|
+| 被审内容一律 untrusted | 工具参数与文件内容不得被当成指令（goose 提示词、codex 证据分层） |
+| 截断必须显式 | 不得假定缺失内容良性；截断只影响「该不该批」，不抬高「动作本身多危险」 |
+| 输出必须结构化 | 解析失败即 `AdvisorFailure::Parse` 并回落 `base`；不接受自然语言结论 |
+| 脱敏在构造期完成 | `resources` 由独立适配器做脱敏 + 摘要（参考 openhuman `redact_args` / `summarize_action`），不复用审批卡片的原始参数 |
+
+**与人工审批信息的层级关系**：审批卡片的信息分四级——L0（`tier` / `behavior` 注册期元数据）、L1（`intents` + `Policy::explain` 命中原因）、L2（`preview_for_approval` 量级预演）、L3（顾问结论）。P6 只做 L0–L2（[I38d §3.2.1](./I38d-agent-frontend-modes-spec.md)），顾问是 L3，**不得**因为 L3 缺失而阻塞 L0–L2 的展示。L3 的输入必须走脱敏适配器，而卡片展示用的是原始参数——两者是不同通道，禁止把卡片载荷直接喂给顾问。
+
+#### 3.17.5 成本、超时与度量
+
+- **超时独立**：顾问截止时间显著小于人工审批超时（建议 ≤ 1/4，即 30s 对 120s），失败即回落，不延长用户等待。
+- **静态标注优先**：`BehaviorHints.read_only == true` 的工具不调顾问（goose 的短路位置）。
+- **只缓存收紧方向**：不缓存 `RelaxOnly` 的放宽结论，避免一次误判长期免审（分析 §8.3 反模式 5）。
+- **熔断**：同一 turn 连续 N 次 `AdvisorFailure` 或连续 N 次 deny → 本 turn 关闭顾问（codex `circuit_breaker.rs`）。
+- **必须度量打扰量**：`advisor_invocations` / `relaxed` / `escalated` / `fallback` / `approvals_avoided`。打扰量是这套机制唯一的收益指标，而四个参考项目都没有度量它（分析 §9.5）。
+- **计时分离**：顾问耗时单记 `advisor_ms`，不得混入 P4 的 `confirmation_wait_ms`。
+
+#### 3.17.6 审计、UI 与启用门禁
+
+- **审计**：`AuditOutcome` 预留 `AdvisorRelaxed` / `AdvisorEscalated` / `AdvisorAdjudicated` / `AdvisorFallback`；落库需 `permission_audit` 增列（未来 `ADD COLUMN advisor_json TEXT NULL`），符合「只允许 ADD COLUMN」的迁移纪律。
+- **UI**：AI 免审不得静默——气泡上标注「AI 判定只读，本次免审」并提供「撤销该免审」；AI 加码时标注「AI 标记为高风险」。免审**不写 grant**，只对本次调用生效。卡片规格见 [I38d §3.2](./I38d-agent-frontend-modes-spec.md)。
+- **`Adjudicate` 的启用门禁**（三条全部满足才可讨论，缺一不可）：
+  1. 存在 L4 内核级沙箱，且启动期可见地报告「边界是否就绪」（不得像 openhuman `NoopBackend` 那样静默降级）；
+  2. 顾问自身只读、无执行句柄、`require_managed_sandbox` 等价约束成立；
+  3. 完整失败矩阵（超时 / 解析失败 / 预算超限 / 证据不足 / 无法渲染动作）全部落到 deny 或转人工，且默认关闭、按 turn 显式启用。
+
+#### 3.17.7 分阶段引入建议
+
+| 阶段 | 形态 | 前提 | 收益 | 误判代价 |
+|---|---|---|---|---|
+| A（P6 同期） | 不接线，只保留本文决策 | — | 结构可回退 | 无 |
+| B（P10-a 单向收紧） | `EscalateOnly` | 无（不依赖沙箱） | 给 `approval_level = none` 的全放行模式补一层 AI 自检 | 多问一次 |
+| C（P10-b 单向放宽） | `RelaxOnly` | 静态只读标注可用 + 有度量 + UI 撤销入口 | 减少只读类审批打扰（主要收益在 MCP External 工具） | 少问一次 |
+| D（P10-c 双向裁决） | `Adjudicate` | §3.17.6 三条门禁 | — | 无沙箱时 AI 成为唯一屏障 |
+
+**为什么 B 先于 C**：B 的误判只增加打扰，可以在没有沙箱的环境先跑；C 一旦误判就是「少问一次」，必须先有度量与撤销手段。这也解释了为什么 openhuman 选择先不做放宽（分析 §5.7）。
+
+#### 3.17.8 反模式（禁止）
+
+1. 把 AI 审批设成默认开启（四个参考项目无一如此）。
+2. 让顾问拥有执行能力，或让顾问与主 agent 共享执行句柄。
+3. 用提示词承担安全约束——约束必须在 `fuse` 的类型与运算里。
+4. 缓存放宽结论。
+5. 在 L4 沙箱前提不成立时启用 `Adjudicate`。
+6. 顾问结论进入主对话上下文，或让主模型审自己。
+7. 为「以后可能用到」在 P6 就落 `advisor` wire 字段（与 §3.16 对 `agent_id` 的处理同理）。
+
+**取舍**：不在 P2–P7 预留空 trait / 空字段。空 trait 会成为死代码（clippy 与覆盖率都会报），空 wire 字段会进契约生成并污染前端类型；本文用「决策 + 插入点 + 纯函数语义」记录形状，等 P10 立项时再按 §3.17.2 的类型落地。
+
+**参考**：goose `permission_judge.rs`（输出契约无 deny 能力）；codex `guardian-reviewer/src/settings.rs`（评审员只读）与 `assessment.rs` / `policy_template.md`（风险阈值与 `rationale` 必填）；openhuman `security_gate.rs`（`class.max(declared)`）与 `approval/README.md`（脱敏、TTL、审计双写）；完整证据见 [AI 审批参考分析](../analysis/AGENT-AI-APPROVAL-REFERENCE-ANALYSIS.md)。
+
 ---
 
 ## 4. 三层工具设计决策
@@ -568,8 +699,8 @@ src-tauri/
 │   │       │   ├── agent_grep.rs
 │   │       │   ├── agent_mkdir.rs
 │   │       │   ├── agent_move.rs
-│   │       │   ├── agent_shell.rs
-│   │       │   ├── shell/         # 执行层守卫（execute() 内部调用，两入口共享）
+│   │       │   ├── agent_shell.rs    # 暂不提供（I38c §13）
+│   │       │   ├── shell/         # 暂不提供：执行层守卫，保留作恢复时参考
 │   │       │   │   ├── safety_belt.rs      # 致命命令硬拒绝（唯一命令判定源）
 │   │       │   │   ├── structural_guard.rs # 隐藏执行构造拦截
 │   │       │   │   ├── env_guard.rs        # env_clear + SAFE_ENV_VARS

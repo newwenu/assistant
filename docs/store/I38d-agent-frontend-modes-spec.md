@@ -95,6 +95,53 @@ pub struct ToolApprovalRequestDto {
     pub arguments: serde_json::Value,
     pub intents: Vec<PermissionIntentDto>,
     pub timeout_ms: u64,
+    // P6 新增：用户判断所需信息（分级与来源见 §3.2.1）
+    pub tier: ToolTierDto,
+    pub behavior: ToolBehaviorDto,
+    pub reasons: Vec<ApprovalReasonDto>,
+    pub preview: Option<ApprovalPreviewDto>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolBehaviorDto {
+    pub read_only: bool,
+    pub destructive: bool,
+    pub open_world: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalPreviewDto {
+    pub summary: String,
+    pub details: Vec<ApprovalPreviewItemDto>,
+    pub truncated: bool,
+    pub estimated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalPreviewItemDto {
+    pub label: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum ApprovalReasonDto {
+    DefaultPolicy { action: String, resource: String },
+    ApprovalLevel { level: ApprovalLevelDto },
+    ProjectRule { action: String, resource: String },
+    TierCeiling { tier: ToolTierDto },
+    Advisor { rationale: String },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum ToolApprovalKindDto {
+    Approve,
+    Deny,
+    AlwaysApprove,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
@@ -105,18 +152,16 @@ pub struct ToolApprovalDecisionDto {
     pub decision: ToolApprovalKindDto,
     pub reason: Option<String>,
 }
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase")]
-pub enum ToolApprovalKindDto {
-    Approve,
-    Deny,
-    AlwaysApprove,
-}
 ```
 
+**DTO 约束**：
+
+- 输出 DTO 的 `Option` 字段不加 `skip_serializing_if`：`preview` 键恒在、值 `null`，前端声明 `ApprovalPreviewDto | null`。
+- `reasons` 恒非空（至少一条 `defaultPolicy`），前端不得对空数组兜底成「原因未知」。
+- `ApprovalReasonDto` 是封闭枚举（`tag = "kind"`），前端不得窄化；`advisor` 分支 P6 恒不出现，前端须能渲染未知分支的通用降级（P10 才填充）。
 - 命令：`approve_agent_tool_call` / `deny_agent_tool_call`（或统一 `resolve_agent_tool_approval`，只保留一个入口）。
 - 前端倒计时基于 `timeoutMs`；超时后后端自动 Deny，前端同时置灰按钮，避免重复提交。
+- **预留扩展（P10 不落地）**：`ApprovalReasonDto::Advisor` 与 `ApprovalPreviewDto` 的顾问分支由 [I18 design §3.17](./I18-agent-tool-architecture-design.md) 定义；P6 只渲染 `preview` 与 L0/L1 原因，**不得**调用顾问、不得假定 `advisor` 一定存在。
 
 ### 2.3 状态事件
 
@@ -173,13 +218,64 @@ interface ToolCallView {
 
 - 审批卡片必须展示：工具名、规范化参数（命令完整 argv / 文件路径 + diff）、权限意图。
 - `alwaysApprove` 仅在审批卡片内提供，文案说明「本会话内同一操作不再询问」。
+- **AI 顾问启用后（P10，非 P6）**：AI 免审不得静默，卡片须标注「AI 判定只读，本次免审」并提供「撤销该免审」；AI 加码时标注「AI 标记为高风险」并展示 `rationale`。免审不写 grant，只对本次调用生效（[I18 design §3.17.6](./I18-agent-tool-architecture-design.md)）。
 - 大结果默认折叠，展示行数 / 字节数与「展开」。
+
+### 3.2.1 审批信息分级（用户判断依据）
+
+用户批准一个操作前需要回答四个问题：**要我做什么、为什么问我、有多严重、能不能撤销**。信息按获取成本分四级，**高一级不得依赖低一级不存在**：
+
+| 级别 | 内容 | 来源 | 成本 | P6 是否必做 | 缺失时 |
+|---|---|---|---|---|---|
+| **L0 固有** | `tool_name`、`tier`、`behavior`（`readOnly` / `destructive` / `openWorld`） | `Tool` trait 注册期元数据 | 零 | 必做 | 不可能缺失 |
+| **L1 参数推导** | `intents`（action + 规范化 resources）、路径分类（工作区内/外、符号链接、受保护目录）、`reasons`（命中哪条策略） | `permission_intents` + `os/path.rs` + `Policy::explain` | 零（纯函数，无 IO） | 必做 | 不可能缺失 |
+| **L2 预演** | 一句话摘要 + 结构化条目：`delete` 条目数/字节数、`write` 覆盖现有行数/字节数、`edit` diff 行数 | `Tool::preview_for_approval` | 一次 IO，**仅 `Ask` 时执行** | 必做（可为 `null`） | 卡片只显示 L0+L1 |
+| **L3 顾问** | AI 结论 + `rationale` | `ApprovalAdvisor`（[I18 design §3.17](./I18-agent-tool-architecture-design.md)） | 模型调用 | **P6 不做**（归 P10） | 不显示 |
+
+**L0 信息是零成本却最容易漏的**：`behavior.destructive` 已在 `Tool` trait 上，但 P2 的 `ApprovalRequest` 没携带，导致卡片无法回答「能不能撤销」。这是本节的主要修复目标。
+
+**L2 的必要性来自一个规格缺口**：`delete` / `write` / `edit` 分册都要求「审批卡片展示量级」，但预扫描发生在 `execute()` 内——而审批在 `execute()` **之前**。因此预演必须在网关判定为 `Ask` 之后、人工审批之前单独执行，不能复用执行结果里的 `data`。
+
+### 3.2.2 卡片布局与降级
+
+```
+┌ ! delete ──────────────────────────────── 8s ┐
+│ 将删除 128 个条目（3.4 MB）            ← L2   │
+│ 路径  D:\proj\tmp\cache                       │
+│       └ 工作区内 · 非符号链接          ← L1   │
+│ 影响  不可逆 · 破坏性                  ← L0   │
+│ 原因  项目规则 *.tmp → 需审批          ← L1   │
+│ ⚠ 预估基于参数，执行前可能变化         ← 标注   │
+│ [Approve] [Deny] [AlwaysApprove]              │
+└──────────────────────────────────────────────┘
+```
+
+| 规则 | 要求 |
+|---|---|
+| `preview` 为 `null` | 只渲染 L0+L1；**不得**把缺失渲染成「0 个条目」——「未知」与「零」必须可区分 |
+| `preview.truncated = true` | 显示「≥ N（已达扫描上限）」，不得显示精确值 |
+| `preview.estimated` | 恒 `true`；卡片必须展示「预估基于参数」提示（审批在 `execute` 之前，只能按参数推算） |
+| `reasons` 多条 | 全部展示（例如同时命中 `approvalLevel` 与 `projectRule`），不得只取第一条 |
+| `behavior.readOnly = true` | 出现审批卡片本身即异常（只读工具不应 `Ask`）；显示「只读操作被要求确认」以暴露配置问题 |
+| `behavior.openWorld = true` | 必须显示「会访问工作区外部」，与 `destructive` 分开标注 |
+| 参数脱敏 | 审批载荷携带原始参数（用户要据此判断），**不得**在 L0–L2 内做脱敏；脱敏只用于 L3 顾问输入（I18 design §3.17.4） |
+
+**预演的安全约束**（后端实现约束，前端只消费）：
+
+1. **只在 `Ask` 路径执行**：`Allow` / `Deny` 不调 `preview_for_approval`，否则等于给所有工具调用加一次 IO。
+2. **失败不影响决策**：预演超时（建议 2s）或 `Err` → `preview = null`，审批照常进行。信息缺失可以，决策缺失不行。
+3. **必须复用 `resolve()`**：预演与 `execute()` 用同一套路径解析，禁止「展示 A、执行 B」。
+4. **不读文件全文**：`write` 只统计现有行数/字节数（与 [I38c-write](./I38c-write-spec.md) 的「不读全文」一致），`edit` 的 diff 按参数估算并标注。
+5. **不写 grant**：预演是只读观察，不产生任何授权副作用。
+6. **TOCTOU 声明**：预演与实际执行之间目标可能变化，**以执行返回为准**；预演数字只用于审批文案（[I38c-delete §3.3](./I38c-delete-spec.md)）。
 
 ### 3.3 审批交互流
 
 ```
 RoundExecutor → ToolPipeline → Gateway: Ask
-  → ApprovalPrompter（src-tauri 实现）
+  → Policy::explain 产出 reasons（L1）
+  → Tool::preview_for_approval（仅 Ask；超时/失败 → preview = null）（L2）
+  → ApprovalPrompter（src-tauri 实现），载荷含 tier / behavior / reasons / preview
   → emit agent-tool-call { phase: awaitingApproval, approval: ToolApprovalRequestDto }
   → ToolCallBubble 渲染 [Approve] [Deny] [Always]
   → 用户点击 → approve_agent_tool_call / deny_agent_tool_call
@@ -187,6 +283,8 @@ RoundExecutor → ToolPipeline → Gateway: Ask
 ```
 
 **超时**：前端倒计时结束只置灰，不自行发送 Deny；以后端超时为准（避免双决策竞态）。
+
+**预演耗时不计入审批等待**：`preview_for_approval` 的耗时单独统计，不得混入 `confirmation_wait_ms`（后者只度量「等人」的时间）；预演超时上限 2s，超时即 `preview = null` 继续走审批。
 
 ### 3.4 历史消息
 
@@ -216,9 +314,9 @@ RoundExecutor → ToolPipeline → Gateway: Ask
 | SQLite `agent_modes` | `ADD COLUMN approval_level TEXT NOT NULL DEFAULT 'none'` | snake_case |
 | Rust `AgentModeRow` | 新增 `max_tool_tier: String` / `approval_level: String` | snake_case |
 | DTO / 前端 `AgentMode` | `maxToolTier` / `approvalLevel` / `tools` | camelCase |
-| DTO `SendChatMessageArgsDto` | 新增 `toolConfig: ConversationToolConfig \| null` | camelCase |
+| DTO `SendChatMessageArgsDto` | 新增 `toolConfig: ConversationToolConfigDto \| null` | camelCase |
 | DTO `ConversationDto` | 新增 `modeId: string \| null`（链路判据来源，§4.8） | camelCase |
-| 前端 `ConversationToolConfig` | `maxToolTier` / `approvalLevel` / `enabledTools` / `disabledTools` | camelCase，**仅内存** |
+| 前端 `ConversationToolConfigDto` | `maxToolTier` / `approvalLevel` / `enabledTools` / `disabledTools` | camelCase，**仅内存** |
 
 **不引入对话级持久层**：`conversations` 表**不加** `tool_config_json`，`ConversationRow` 也不加字段。对话级配置只存在于前端内存（按 `conversationId` 索引），随每次发送请求传给后端；后端不持有该状态，也不落库。
 
@@ -227,19 +325,22 @@ RoundExecutor → ToolPipeline → Gateway: Ask
 ### 4.2 类型
 
 ```ts
-type ToolTier = 'sandbox' | 'os' | 'external'
-type ApprovalLevel = 'none' | 'dangerous_only' | 'all_os_tools'
+// ToolTierDto / ApprovalLevelDto / ConversationToolConfigDto 由 `npm run contract:gen`
+// 从 P5 的 protocol/dto 生成（I38c §3.1），前端不手写定义；枚举值走 snake_case，
+// 与 Rust `rename_all = "snake_case"` 一致。AgentMode 是既有前端接口，只引用生成类型。
+type ToolTierDto = 'sandbox' | 'os' | 'external'
+type ApprovalLevelDto = 'none' | 'dangerous_only' | 'all_os_tools'
 
 interface AgentMode {
   // ...现有字段（camelCase）...
   tools: string[]          // 白名单；空数组 = 无可用工具
-  maxToolTier: ToolTier
-  approvalLevel: ApprovalLevel
+  maxToolTier: ToolTierDto
+  approvalLevel: ApprovalLevelDto
 }
 
-interface ConversationToolConfig {
-  maxToolTier: ToolTier
-  approvalLevel: ApprovalLevel
+interface ConversationToolConfigDto {
+  maxToolTier: ToolTierDto
+  approvalLevel: ApprovalLevelDto
   enabledTools: string[]
   disabledTools: string[]
 }
@@ -277,25 +378,28 @@ conversation.toolConfig = {
 
 ### 4.5 resolveAvailableTools
 
-> **后端实现已迁至 P5**（见 [I38c §3.1](./I38c-os-tools-spec.md)）。P6 只做前端调用与 UI 绑定：从会话内存态构造 `ConversationToolConfig`，随 `send_agent_message` 请求传给后端；后端 `resolve_available_tools` 完成五步过滤并返回 `Vec<ToolSpec>`。以下为前端视角的接口契约，实际过滤逻辑以 I38c 为准。
+> **后端实现已迁至 P5**（见 [I38c §3.1](./I38c-os-tools-spec.md)）。P6 只做前端调用与 UI 绑定：从会话内存态构造 `ConversationToolConfigDto`，随 `send_agent_message` 请求传给后端；后端 `resolve_available_tools` 完成过滤并返回 `Vec<ToolSpec>`。以下为前端视角的接口契约，实际过滤逻辑以 I38c 为准。
 
 ```rust
-fn resolve_available_tools(
+pub async fn resolve_available_tools(
     registry: &ToolRegistry,
-    config: &ConversationToolConfig,
+    enabled_tools: &[String],
+    disabled_tools: &[String],
     max_tier: ToolTier,
-) -> Vec<Arc<dyn Tool>> {
-    // 1. 层级硬上限（取 AgentMode / 对话配置中的更严者）
-    // 2. 只保留 audience().agent == true
-    // 3. deny-by-default：enabled_tools 为空 → 空集
-    // 4. 白名单过滤
-    // 5. disabled_tools 优先于 enabled_tools
+) -> Vec<ToolSpec> {
+    // 1. 层级硬上限 + 受众过滤（复用 tool_definitions_for_tier(max_tier)，返回 Vec<ToolDefinition>）
+    // 2. deny-by-default：enabled_tools 为空 → 空集
+    // 3. 白名单过滤
+    // 4. disabled_tools 优先于 enabled_tools
+    // 5. ToolDefinition → ToolSpec（返回 Vec<ToolSpec>）
 }
 ```
 
+空集不在此处转 `None`：`kernel/request.rs` 的 `resolve_tools` 负责把空集归一为 `None`（循环退化为单次调用）。
+
 **不变量**：
 
-- `config` 来自请求携带的会话内存态（`SendChatMessageArgsDto.toolConfig`）；为 `null` 时按该会话所属 AgentMode 预设解析，**不视为"无工具"**。
+- `config` 来自请求携带的会话内存态（`SendChatMessageArgsDto.toolConfig`）。**P6 前端恒下发**（新建会话即从 AgentMode 初始化），因此后端不会收到 `null`；后端对 `null` 的兜底语义是 deny-by-default（空工具集），见 [I38c §3.1](./I38c-os-tools-spec.md)。
 - `maxToolTier` 是硬上限；`enabledTools` 包含更高层级工具也不生效。
 - 同一工具同时出现在 `enabledTools` / `disabledTools` → 禁用。
 - 工具 `name` 是稳定标识，不随 i18n 变化。
@@ -405,11 +509,12 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 
 | 步骤 | 内容 | 依赖 |
 |---|---|---|
-| P6-C1 | DTO：`AgentToolCallPayloadDto` / 审批请求与决策 / `AgentMode` 扩展 / `ConversationDto.modeId`（§4.8 判据）/ `ConversationToolConfig`（仅内存，随请求传递）；`npm run contract:gen` | P4 |
+| P6-C1 | DTO：`AgentToolCallPayloadDto` / 审批请求与决策（含 §2.2 的 `tier` / `behavior` / `reasons` / `preview`）/ `AgentMode` 扩展 / `ConversationDto.modeId`（§4.8 判据）/ `ConversationToolConfig`（仅内存，随请求传递）；`npm run contract:gen` | P4 |
 | P6-C1b | 链路选路（§4.8）：新建会话按 `mode.kind` 分流到 `send_chat_message` / `send_agent_message`；发送时以会话 `modeId` 判定链路（**不取全局选中态**）；会话内锁定链路；chat 会话不渲染工具 UI | P6-C1 |
+| P6-C1c | 审批信息装配（§3.2.1）：`ApprovalRequest` 增加 `tier` / `behavior` / `reasons` / `preview`；`Policy::explain` 产出命中规则；`Tool::preview_for_approval` 端口（默认 `None`）与 2s 超时包装；**仅在 `Ask` 路径调用** | P6-C1 |
 | P6-C2 | 前端事件接入：订阅 `agent-tool-call` 与 `session-state-changed`；按 `turnId` 过滤 | P6-C1 |
 | P6-C3 | `ToolCallBubble` 五态 + 大结果折叠 + 历史恢复 | P6-C2 |
-| P6-C4 | 审批 UI 与命令；超时置灰；AlwaysApprove 文案 | P6-C3 |
+| P6-C4 | 审批 UI 与命令；超时置灰；AlwaysApprove 文案；L0/L1/L2 分区渲染与 `null` / `truncated` 降级（§3.2.2） | P6-C3、P6-C1c |
 | P6-C5 | 删除 `ensureIdle()` / 切会话取消 / 前端 phase 自维护（三步） | P4 稳定 |
 | P6-C6 | AgentMode 表单 + 对话工具栏 + `resolveAvailableTools` 接入 | P6-C1 |
 | P6-C7 | `policy_from_agent_mode` + 项目级 `.assistant/permissions.json` 加载 | P2、P6-C6 |
@@ -431,6 +536,11 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 | A9 | `npm run contract:gen` 后 `src/types/protocol.contract.ts` 可编译；`cargo test --test assembly_contract` 通过 |
 | A10 | 审批级别三档的 Policy 映射有单测；tier 规则拒绝超层级工具 |
 | A11 | 链路选路：`kind ∈ {default, quick, deep}` 的会话只调 `send_chat_message` 且不渲染工具 UI；`kind = custom` 的会话只调 `send_agent_message`；同一 `conversationId` 上无法切换链路 |
+| A12 | 审批载荷四类信息齐备：`tier` / `behavior` / `reasons`（非空）/ `preview`（可为 `null`）；`reasons` 至少含一条 `defaultPolicy` |
+| A13 | `preview = null` 时卡片不显示任何「0 个条目」类文案；`truncated = true` 显示「≥ N」；`estimated` 提示恒显示 |
+| A14 | `preview_for_approval` 仅在 `Ask` 路径被调用（`Allow` / `Deny` 路径的调用计数为 0），且超时/失败不影响审批结果 |
+| A15 | `Policy::explain` 与 `evaluate` 结果一致：对同一 `(action, resource)`，`explain` 报出的获胜规则与 `evaluate` 的 effect 相符（表驱动单测） |
+| A16 | 预演与 `execute` 的量级统计一致：`delete` 同一目标下 `preview.entries` 与 `execute` 结果 `data.entries` 在无并发变更时相等 |
 
 ---
 
@@ -443,6 +553,9 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 | phase 漂移 | 后端唯一事实源；前端只订阅 |
 | deny-by-default 导致「工具看不见」被误报为 bug | 设置页与对话工具栏明确显示「未启用」状态 |
 | 迁移期双保险叠加 | 三步删除，每步观察一轮（I36 design §5） |
+| 用户把预演数字当成承诺（预演 3 项、实际删 300 项） | `estimated` 恒 `true` 且卡片必须展示「预估基于参数」；`truncated` 显示「≥ N」；`execute` 结果覆盖卡片数字，并在结果里回显实际量级 |
+| 预演拖慢审批（大目录扫描） | 2s 上限 + `DELETE_SCAN_LIMIT`；超时即 `null`，不阻塞审批 |
+| 卡片信息与实际判定不一致 | `Policy::explain` 与 `evaluate` 共用 `eval_rules`（A15 表驱动单测）；预演与 `execute` 共用统计函数（A16） |
 
 **开放问题**：
 

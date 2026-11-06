@@ -344,10 +344,13 @@
 
 P5 将在白名单工具解析落地时对 P4 的以下交付做类型收窄与清理（规格见 [I38c §3.1](./I38c-os-tools-spec.md)）：
 - `ToolCatalog` async trait 删除（`kernel/ports.rs`）
-- `RegistryToolCatalog` 删除（`src-tauri/src/adapters/tool_catalog.rs`）
+- `RegistryToolCatalog` 删除（`src-tauri/src/adapters/tool_catalog.rs`，含 `MAX_TIER`）
 - `TurnSpec.tools` 类型由 `Option<Arc<dyn ToolCatalog>>` 收窄为 `Option<Vec<ToolSpec>>`
-- `test_doubles.rs` 的 `ToolCatalog` 替身删除
+- 连带同步点（实测清单，缺一处即编译失败）：`kernel/mod.rs`（字段 + `chat()` / `agent()` 默认值）、`kernel/runner.rs`（`TurnRunCtx.tools`）、`kernel/request.rs`（`build()` 签名）、`agent/round_executor.rs`（`TurnRunCtx.tools` / `ToolExecCtx.tools` 字段）、`agent/loop_executor.rs`（`request::build` 传参 + `ToolExecCtx` 构造）、`tests/loop_executor.rs`、`tests/kernel_request_tools.rs`
+- `test_doubles.rs` 的 `StaticToolCatalog` 替身删除
 - 以上变更不影响 P4 的循环机制（RoundExecutor / 停止钩子 / 中间件 / 阶梯 / 落库），仅影响工具注入通道的签名
+
+**P4 遗留缺陷（P5 顺手清理）**：`ToolExecCtx.tools` 是死字段——生产适配器 `PipelineToolExecution`（`src-tauri/src/adapters/tool_exec.rs`）只读 `observer` / `turn_id` / `iteration` / `conversation_id`，从不读 `tools`；P4 为对称性保留了该字段但无消费者。P5 收窄 `TurnSpec.tools` 时一并删除，避免留下 `Option<&[ToolSpec]>` 的新死字段（I38c tasklist C6b.21）。
 
 C4.24–C4.38 循环单测已落地于 `assistant-agent/tests/loop_executor.rs`（26 条，A1–A23 全覆盖，`cargo test -p assistant-agent --features test-doubles --test loop_executor` 全绿）；C4.34 审批计时装饰器单测位于 `src-tauri/tests/approval_timing.rs`（3 条，`cargo test --test approval_timing` 全绿）。
 

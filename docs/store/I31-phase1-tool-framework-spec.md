@@ -33,7 +33,7 @@
 
 | 项 | 归属 |
 |---|---|
-| 9 个新 OS 工具实现 | P5 / [I38c](./I38c-os-tools-spec.md)，见 §6 |
+| 9 个新 OS 工具实现 | P5 / [I38c](./I38c-os-tools-spec.md)，逐工具分册见索引 §5 / §6 / §7 |
 | 控制层（Policy / Gateway / Pipeline） | P2 / [I38a](./I38a-tool-control-layer-spec.md) |
 | RoundExecutor 与累积器 | P4 / [I38b](./I38b-agent-loop-spec.md) |
 | Tauri 桥接（`os_tool_exec` 语义、`workspace_root` 来源、DTO） | I18b / I18 spec Step 8 |
@@ -277,7 +277,7 @@ pub struct ToolUseContext {
 2. `workspace_root` 为 `None` 时，文件系统工具**只接受绝对路径**。
 3. 不新增 deadline / 取消令牌字段：超时由 `invoke` 承担，取消由上层（Step 6）承担。
 
-> `os_tool_exec` 当前恒传 `workspace_root: None`（I18b 遗留问题），因此 ToolBox 侧所有相对路径必然失败。该问题属 Step 8 收口，本阶段不改，但 `path.rs` 的错误信息必须明确指出「未提供 workspace_root，相对路径不可用」，避免用户看到含糊的失败。
+> `os_tool_exec` 恒传 `workspace_root: None`（设计取舍：ToolBox 调用者是用户本人，不存在「越界」，见 I18b §2.2），因此 ToolBox 侧所有相对路径必然失败。这是**可用性缺口而非安全缺口**，本阶段不改，但 `path.rs` 的错误信息必须明确指出「未提供 workspace_root，相对路径不可用」，避免用户看到含糊的失败。
 
 ### 4.5 permission_intents 词汇表（修 F7）
 
@@ -352,8 +352,16 @@ pub fn ensure_within_root(path: &Path, root: &Path) -> Result<(), String>;
    - `ProgramFiles` / `ProgramFiles(x86)`
    - `ProgramData`
 4. Unix 保持 `["/etc", "/usr", "/bin", "/sbin", "/System", "/Library"]`，同样按组件序列比较。
+5. **凭据目录（P5 补充，2026-11-06）**：以下组件无论位于何处一律拒绝，判定**先于**任何 `workspace_root` 授权（root 自身不豁免）：
+   - `.ssh`、`.gnupg`、`.aws`、`.azure`、`.kube`、`keychains`
+   - Windows：`Microsoft\Protect`、`Microsoft\Credentials`、`Microsoft\Crypto`、`Microsoft\Vault`
+   - 大小写不敏感；按路径**组件**匹配，因此 `myproject/keychains/` 这类仅名字相似的普通目录不受影响。
+
+   来源：openhuman `security/policy/path_checks.rs::is_always_forbidden` 的硬不变量。理由：这些目录下的私钥 / 令牌一旦被 `write` / `edit` / `delete` 触及，损失不可逆，且不属于任何合理的 agent 工作对象。
 
 ### 5.4 ensure_within_root
+
+> **作用域**：仅对 Agent 入口生效。ToolBox 入口的调用者是用户本人，不存在「越界」，该函数在 `workspace_root == None` 时整段跳过——这是设计而非缺陷（见 [I18b](./I18b-tool-unified-bridge-spec.md) §2.2）。
 
 1. `root` 也走 `canonicalize_lenient`。
 2. `path` 必须以 `root` 为组件级前缀（`path == root` 允许）。
@@ -423,7 +431,7 @@ pub fn ensure_within_root(path: &Path, root: &Path) -> Result<(), String>;
 | # | 理由 |
 |---|---|
 | 1 | **没有消费方**。`ChatOptions` 无 `tools` 字段，`ToolDefinition` 无法进入请求；工具实现了也没有 LLM 能看到 |
-| 2 | **控制层未就绪**。`shell` / `delete` 属破坏性能力，按 design §3.10「先安全框架再加能力」，必须在 Policy/Gateway 之后 |
+| 2 | **控制层未就绪**。`shell` / `delete` 属破坏性能力，按 design §3.10「先安全框架再加能力」，必须在 Policy/Gateway 之后（2026-11-06 补充：`shell` 已改为暂不提供，见 [I38c §13](./I38c-os-tools-spec.md)） |
 | 3 | **桥接语义未收敛**。`workspace_root` 恒为 `None`、无超时、DTO 刚落位，此时铺 9 个工具会把错误形态复制 9 份 |
 | 4 | **框架先稳定收益更大**。`invoke` + `path.rs` + `ToolDefinition` 一旦定稿，后续每个工具都是「填一个文件 + 注册一行」，成本恒定 |
 
@@ -463,7 +471,7 @@ pub fn ensure_within_root(path: &Path, root: &Path) -> Result<(), String>;
 
 由此产生的硬约束（同步写入 I38c 与 I18 spec Step 8）：
 
-1. **Step 4/5 就绪前，不得把 `shell` 加入生产注册表**。
+1. ~~**Step 4/5 就绪前，不得把 `shell` 加入生产注册表**。~~ 已作废（2026-11-06）：`shell` 改为暂不提供，不存在注册问题（[I38c §13](./I38c-os-tools-spec.md)）。
 2. `delete` 等破坏性工具与前端组件同期上线，不得先行注册。
 3. 新增工具时，`os/mod.rs` 应提供分组注册（只读 / 修改 / 危险），`setup.rs` 只注册已确认可暴露的分组。
 
@@ -558,5 +566,5 @@ T1 与 T2 不触碰任何工具，可独立提交、独立回滚。T3 是本阶�
 | R5 | 框架就绪后，后续工具可能绕过 `path.rs` 自行实现 | 在 I38c 写入「必须 import `os::path`」的硬约束，A10 以 grep 校验 |
 | R6 | `DashMap` guard 跨 `await` 死锁 | §4.2 明确「先收集再 await」，列为 code review 检查项 |
 | R7 | 默认值已收紧为 `NONE`（fail-closed），忘记声明不会再静默暴露；剩余风险是新工具漏声明后「功能不可见」而非「安全暴露」 | 文档约束新增工具必须显式声明；`setup.rs` 或 CI 校验「新增工具清单 vs 显式 audience 清单」，避免功能静默失效 |
-| R8 | `invoke` 的超时对子进程无效（`shell` 将来会踩） | §4.3 明确「子进程必须进程级超时 + kill」；P5 实现 `shell` 时以进程组/Job Object 收口，禁止复用 `tokio::timeout` 了事 |
+| R8 | `invoke` 的超时对子进程无效 | §4.3 明确「子进程必须进程级超时 + kill」。`shell` 已改为暂不提供（[I38c §13](./I38c-os-tools-spec.md)），该风险当前无消费方；契约保留，恢复时以进程组/Job Object 收口，禁止复用 `tokio::timeout` 了事 |
 | R9 | A7 的 junction 用例依赖本机环境（开发者模式/权限策略） | 允许 `#[ignore]` 或运行时跳过，不因此判 A1 失败；symlink 用例同理 |

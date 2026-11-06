@@ -1,8 +1,10 @@
 # OS Call 设计文档
 
+> **状态（2026-11-06）**：本文的 Shell 执行层设计**暂不实施**——`shell` 工具已改为暂不提供，理由与恢复条件见 [I38c §13](../store/I38c-os-tools-spec.md#13-暂不提供的工具)。本文保留为评估留档，不构成实施要求。
+
 > **本文档职责**：Shell 执行层安全架构的**权威源**——信任模型、洋葱模型、层间契约、委托约束。
 > **架构决策记录**见 [I18-agent-tool-architecture-design.md](../store/I18-agent-tool-architecture-design.md)（§3.7 洋葱模型决策、§3.7.1 守卫分层归属、§3.8 MCP 隔离边界）。
-> **实施规格**见 [I38c](../store/I38c-os-tools-spec.md)（§7.2 shell）、[I38a](../store/I38a-tool-control-layer-spec.md)（Policy / Gateway）。
+> **实施规格**见 [I38c §13](../store/I38c-os-tools-spec.md)（`shell` 暂不提供）、[I38a](../store/I38a-tool-control-layer-spec.md)（Policy / Gateway）。
 > **ToolBox 桥接**见 [I18b-tool-unified-bridge-spec.md](../store/I18b-tool-unified-bridge-spec.md)。
 > **Tool Call 状态追踪**见 [I38d](../store/I38d-agent-frontend-modes-spec.md)。
 > **阶段与门禁**见 [I38-roadmap](../store/I38-agent-roadmap.md)。
@@ -16,7 +18,7 @@
 | 层级 | 含义 | 信任模型 | 隔离保证 | 详细设计 |
 |------|------|---------|---------|---------|
 | Sandbox | 前端沙箱（现有 ToolBox 工具） | 完全信任，浏览器环境 | 浏览器沙箱，无 OS 访问 | I18-design §4.1, I18 spec Step 1 |
-| Os | Rust 后端 OS 工具 | 信任实现，需输入校验与安全控制 | 同进程，依赖执行层守卫拦截（见 §3.4） | I18-design §4.2, I38c §7.2 |
+| Os | Rust 后端 OS 工具 | 信任实现，需输入校验与安全控制 | 同进程，依赖执行层守卫拦截（见 §3.4） | I18-design §4.2, I38c-shell |
 | External | MCP 外部工具 | 不信任外部进程，需权限策略 | **无 OS 级隔离**（见 §1.2） | I18-design §4.3, I38e |
 
 ### 1.2 External 层隔离边界声明
@@ -105,7 +107,7 @@ Shell 命令的 `open_world` 属性使其可做任何事，是 Os 层最复杂�
 | ApprovalGate | 审批层 | 未白名单命令需用户确认 | 用户可配置审批级别 | Approve/Deny |
 | BareExec | 执行层 | 实际执行 | 无 | 执行结果 |
 
-> Shell 分层栈完整实现规格见 [I38c](../store/I38c-os-tools-spec.md) §7.2，分层归属理由见 §3.4。
+> Shell 分层栈**暂不实施**（`shell` 暂不提供，见 [I38c §13](../store/I38c-os-tools-spec.md#13-暂不提供的工具)）；分层归属理由见 §3.4，保留作将来恢复时的参考。
 
 ### 3.2 层间契约
 
@@ -137,10 +139,10 @@ ApprovalGate    → Approve    → 进入执行层
 
 | 防御层 | 归属 | 作用 | 详见 |
 |--------|------|------|------|
-| 结构守卫 | 执行层 | 阻止隐藏执行构造（`$(...)` / `` `...` `` / `&` / `bash -c "..."`），防止审批时用户看到的命令与实际执行的不一致 | I38c §7.2 |
-| 环境隔离 | 执行层 | `env_clear()` + `SAFE_ENV_VARS` 白名单，防止 API key / secret 泄漏到子进程 | I38c §7.2 |
-| 命令分类 | 执行层 | 分词 + 基名提取 → 风险分级（High/Medium/Low），High 风险硬拒绝 | I38c §7.2 |
-| heredoc 处理 | 执行层 | 剥离引号包裹的 heredoc body，避免 prose 中的危险命令名误触发 | I38c §7.2 |
+| 结构守卫 | 执行层 | 阻止隐藏执行构造（`$(...)` / `` `...` `` / `&` / `bash -c "..."`），防止审批时用户看到的命令与实际执行的不一致 | I38c-shell |
+| 环境隔离 | 执行层 | `env_clear()` + `SAFE_ENV_VARS` 白名单，防止 API key / secret 泄漏到子进程 | I38c-shell |
+| 命令分类 | 执行层 | 分词 + 基名提取 → 风险分级（High/Medium/Low），High 风险硬拒绝 | I38c-shell |
+| heredoc 处理 | 执行层 | 剥离引号包裹的 heredoc body，避免 prose 中的危险命令名误触发 | I38c-shell |
 
 > 纯 argv 数组执行（`execvp` 语义）可提供更强的确定性保证，但会丧失管道、重定向、变量展开等 shell 能力，对开发工作流影响过大。当前选择 shell 执行 + 纵深防御组合，与 openhuman 的生产验证策略一致。若未来引入 OS 级沙箱（如 dsh 的 Landlock 方案），可重新评估此选择。
 
