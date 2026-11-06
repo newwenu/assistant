@@ -4,63 +4,109 @@ use std::sync::Arc;
 use crate::definition::ToolDefinition;
 use crate::r#trait::{Tool, ToolTier};
 
+/// 一次注册的完整身份。`id` 是内部唯一标识（注册表键、白名单匹配、审批、审计、
+/// 报错前缀），`name` 是发给模型的调用名（`ToolSpec.name`）。
+///
+/// 两者都由工具实现自身声明（`Tool::id` / `Tool::name`），注册处只登记不覆盖。
+#[derive(Clone)]
+pub struct RegisteredTool {
+    pub id: String,
+    pub name: String,
+    pub tool: Arc<dyn Tool>,
+}
+
 pub struct ToolRegistry {
-    tools: DashMap<String, Arc<dyn Tool>>,
+    tools: DashMap<String, RegisteredTool>,
+    /// 模型可见名 → 内部 id。模型回传的调用名走这张表解析回工具。
+    names: DashMap<String, String>,
 }
 
 impl ToolRegistry {
     pub fn new() -> Self {
         Self {
             tools: DashMap::new(),
+            names: DashMap::new(),
         }
     }
 
+    /// 以 `tool.id()` 为键注册，同时登记 `tool.name()` → id 映射。
+    ///
+    /// 同一 id 重复注册会覆盖前一个实现；旧 name 映射一并清除，避免留下悬空别名。
+    /// 同一 name 被不同 id 占用时以最后一次注册为准，并记录告警。
     pub fn register(&self, tool: Arc<dyn Tool>) {
+        let id = tool.id().to_string();
         let name = tool.name().to_string();
-        self.tools.insert(name, tool);
+        self.names.retain(|_, mapped| mapped.as_str() != id);
+        if let Some(existing) = self.names.get(&name) {
+            if existing.value() != &id {
+                log::warn!(
+                    "tool name '{}' already maps to id '{}'; re-pointing to '{}'",
+                    name,
+                    existing.value(),
+                    id
+                );
+            }
+        }
+        self.names.insert(name.clone(), id.clone());
+        self.tools
+            .insert(id.clone(), RegisteredTool { id, name, tool });
     }
 
-    pub fn find(&self, name: &str) -> Option<Arc<dyn Tool>> {
-        self.tools.get(name).map(|entry| Arc::clone(entry.value()))
+    /// 按内部 id 查找。管理、诊断与 ToolBox 入口走这条路径。
+    pub fn find(&self, id: &str) -> Option<RegisteredTool> {
+        self.tools.get(id).map(|entry| entry.value().clone())
     }
 
-    pub fn find_for_toolbox(&self, name: &str) -> Option<Arc<dyn Tool>> {
-        self.find(name).filter(|tool| tool.audience().toolbox)
+    /// 按模型可见名查找。模型回传的调用名走这条路径。
+    pub fn find_by_name(&self, name: &str) -> Option<RegisteredTool> {
+        let id = self.names.get(name).map(|entry| entry.value().clone())?;
+        self.find(&id)
     }
 
-    pub fn tool_names(&self) -> Vec<String> {
+    /// ToolBox 入口按内部 id 查找（`os_tool_exec` 的 `tool` 参数即 id）。
+    pub fn find_for_toolbox(&self, id: &str) -> Option<RegisteredTool> {
+        self.find(id)
+            .filter(|registered| registered.tool.audience().toolbox)
+    }
+
+    pub fn tool_ids(&self) -> Vec<String> {
         self.tools.iter().map(|entry| entry.key().clone()).collect()
     }
 
     pub async fn tool_definitions_for_tier(&self, max_tier: ToolTier) -> Vec<ToolDefinition> {
         let selected = {
-            let mut collected: Vec<(String, Arc<dyn Tool>)> = self
+            let mut collected: Vec<RegisteredTool> = self
                 .tools
                 .iter()
                 .filter(|entry| {
-                    let tool = entry.value();
-                    tool.tier() <= max_tier && tool.audience().agent
+                    let registered = entry.value();
+                    registered.tool.tier() <= max_tier && registered.tool.audience().agent
                 })
-                .map(|entry| (entry.key().clone(), Arc::clone(entry.value())))
+                .map(|entry| entry.value().clone())
                 .collect();
-            collected.sort_by(|left, right| left.0.cmp(&right.0));
+            collected.sort_by(|left, right| left.id.cmp(&right.id));
             collected
         };
 
         let mut definitions = Vec::with_capacity(selected.len());
-        for (name, tool) in selected {
-            let description = match tool.description().await {
+        for registered in selected {
+            let description = match registered.tool.description().await {
                 Ok(description) => description,
                 Err(error) => {
                     log::warn!(
                         "tool '{}' description unavailable, falling back to empty: {}",
-                        name,
+                        registered.id,
                         error
                     );
                     String::new()
                 }
             };
-            definitions.push(ToolDefinition::new(name, description, tool.input_schema()));
+            definitions.push(ToolDefinition::new(
+                registered.id,
+                registered.name,
+                description,
+                registered.tool.input_schema(),
+            ));
         }
         definitions
     }
@@ -75,32 +121,36 @@ impl Default for ToolRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::r#trait::BehaviorHints;
+    use crate::r#trait::{BehaviorHints, ToolAudience};
     use async_trait::async_trait;
     use serde_json::Value;
 
     struct StubTool {
+        id: &'static str,
         name: &'static str,
         tier: ToolTier,
         description: Result<&'static str, &'static str>,
-        audience: crate::r#trait::ToolAudience,
+        audience: ToolAudience,
     }
 
     impl StubTool {
-        fn new(
-            name: &'static str,
-            tier: ToolTier,
-            description: Result<&'static str, &'static str>,
-        ) -> Self {
+        fn new(tier: ToolTier, description: Result<&'static str, &'static str>) -> Self {
             Self {
-                name,
+                id: "stub",
+                name: "stub",
                 tier,
                 description,
-                audience: crate::r#trait::ToolAudience::BOTH,
+                audience: ToolAudience::BOTH,
             }
         }
 
-        fn with_audience(mut self, audience: crate::r#trait::ToolAudience) -> Self {
+        fn with_identity(mut self, id: &'static str, name: &'static str) -> Self {
+            self.id = id;
+            self.name = name;
+            self
+        }
+
+        fn with_audience(mut self, audience: ToolAudience) -> Self {
             self.audience = audience;
             self
         }
@@ -108,6 +158,10 @@ mod tests {
 
     #[async_trait]
     impl Tool for StubTool {
+        fn id(&self) -> &str {
+            self.id
+        }
+
         fn name(&self) -> &str {
             self.name
         }
@@ -124,7 +178,7 @@ mod tests {
             self.tier
         }
 
-        fn audience(&self) -> crate::r#trait::ToolAudience {
+        fn audience(&self) -> ToolAudience {
             self.audience
         }
 
@@ -141,10 +195,14 @@ mod tests {
         }
     }
 
+    fn stub_named(id: &'static str, name: &'static str, tier: ToolTier) -> Arc<dyn Tool> {
+        Arc::new(StubTool::new(tier, Ok("stub")).with_identity(id, name)) as Arc<dyn Tool>
+    }
+
     fn registry_with(names: &[(&'static str, ToolTier)]) -> ToolRegistry {
         let registry = ToolRegistry::new();
         for (name, tier) in names {
-            registry.register(Arc::new(StubTool::new(name, *tier, Ok("stub"))) as Arc<dyn Tool>);
+            registry.register(stub_named(name, name, *tier));
         }
         registry
     }
@@ -158,19 +216,19 @@ mod tests {
         ]);
 
         let sandbox_defs = registry.tool_definitions_for_tier(ToolTier::Sandbox).await;
-        let names: Vec<&str> = sandbox_defs.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names, vec!["sandbox_tool"]);
+        let ids: Vec<&str> = sandbox_defs.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, vec!["sandbox_tool"]);
 
         let os_defs = registry.tool_definitions_for_tier(ToolTier::Os).await;
-        let names: Vec<&str> = os_defs.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names, vec!["os_tool", "sandbox_tool"]);
+        let ids: Vec<&str> = os_defs.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, vec!["os_tool", "sandbox_tool"]);
 
         let external_defs = registry.tool_definitions_for_tier(ToolTier::External).await;
         assert_eq!(external_defs.len(), 3);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn definitions_are_sorted_by_name() {
+    async fn definitions_are_sorted_by_id() {
         let registry = registry_with(&[
             ("zeta", ToolTier::Os),
             ("alpha", ToolTier::Os),
@@ -178,26 +236,27 @@ mod tests {
         ]);
 
         let definitions = registry.tool_definitions_for_tier(ToolTier::Os).await;
-        let names: Vec<&str> = definitions.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names, vec!["alpha", "mu", "zeta"]);
+        let ids: Vec<&str> = definitions.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, vec!["alpha", "mu", "zeta"]);
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn description_failure_degrades_to_empty_string() {
         let registry = ToolRegistry::new();
-        registry.register(
-            Arc::new(StubTool::new("broken", ToolTier::Os, Err("boom"))) as Arc<dyn Tool>
-        );
-        registry
-            .register(Arc::new(StubTool::new("healthy", ToolTier::Os, Ok("ok"))) as Arc<dyn Tool>);
+        registry.register(Arc::new(
+            StubTool::new(ToolTier::Os, Err("boom")).with_identity("broken", "broken"),
+        ) as Arc<dyn Tool>);
+        registry.register(Arc::new(
+            StubTool::new(ToolTier::Os, Ok("ok")).with_identity("healthy", "healthy"),
+        ) as Arc<dyn Tool>);
 
         let definitions = registry.tool_definitions_for_tier(ToolTier::Os).await;
         assert_eq!(definitions.len(), 2);
 
-        let broken = definitions.iter().find(|d| d.name == "broken").unwrap();
+        let broken = definitions.iter().find(|d| d.id == "broken").unwrap();
         assert!(broken.description.is_empty());
 
-        let healthy = definitions.iter().find(|d| d.name == "healthy").unwrap();
+        let healthy = definitions.iter().find(|d| d.id == "healthy").unwrap();
         assert_eq!(healthy.description, "ok");
     }
 
@@ -212,30 +271,65 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn toolbox_only_tool_is_excluded_from_agent_definitions() {
-        use crate::r#trait::ToolAudience;
-
         let registry = ToolRegistry::new();
-        registry.register(
-            Arc::new(StubTool::new("agent_visible", ToolTier::Os, Ok("ok"))) as Arc<dyn Tool>,
-        );
+        registry.register(stub_named("agent_visible", "agent_visible", ToolTier::Os));
         registry.register(Arc::new(
-            StubTool::new("toolbox_only", ToolTier::Os, Ok("ok"))
+            StubTool::new(ToolTier::Os, Ok("ok"))
+                .with_identity("toolbox_only", "toolbox_only")
                 .with_audience(ToolAudience::TOOLBOX_ONLY),
         ) as Arc<dyn Tool>);
 
         let definitions = registry.tool_definitions_for_tier(ToolTier::Os).await;
-        let names: Vec<&str> = definitions.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names, vec!["agent_visible"]);
+        let ids: Vec<&str> = definitions.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, vec!["agent_visible"]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn model_name_is_separate_from_id() {
+        let registry = ToolRegistry::new();
+        registry.register(stub_named("internal_read", "read", ToolTier::Os));
+
+        assert!(registry.find("internal_read").is_some());
+        assert!(registry.find("read").is_none());
+
+        assert!(registry.find_by_name("read").is_some());
+        assert!(registry.find_by_name("internal_read").is_none());
+
+        assert!(registry.find_for_toolbox("internal_read").is_some());
+        assert!(registry.find_for_toolbox("read").is_none());
+
+        let definitions = registry.tool_definitions_for_tier(ToolTier::Os).await;
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions[0].id, "internal_read");
+        assert_eq!(definitions[0].name, "read");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn default_model_name_equals_id() {
+        let registry = registry_with(&[("read", ToolTier::Os)]);
+        let definitions = registry.tool_definitions_for_tier(ToolTier::Os).await;
+        assert_eq!(definitions[0].id, "read");
+        assert_eq!(definitions[0].name, "read");
+    }
+
+    #[test]
+    fn re_registering_same_id_drops_stale_name_alias() {
+        let registry = ToolRegistry::new();
+        registry.register(stub_named("t", "old", ToolTier::Os));
+        registry.register(stub_named("t", "new", ToolTier::Os));
+
+        assert!(registry.find_by_name("old").is_none());
+        assert!(registry.find_by_name("new").is_some());
+        assert!(registry.find("t").is_some());
     }
 
     #[test]
     fn find_for_toolbox_rejects_toolbox_disabled_tools() {
-        use crate::r#trait::ToolAudience;
-
         let registry = ToolRegistry::new();
-        registry.register(Arc::new(StubTool::new("both", ToolTier::Os, Ok("ok"))) as Arc<dyn Tool>);
+        registry.register(stub_named("both", "both", ToolTier::Os));
         registry.register(Arc::new(
-            StubTool::new("agent_only", ToolTier::Os, Ok("ok"))
+            StubTool::new(ToolTier::Os, Ok("ok"))
+                .with_identity("agent_only", "agent_only")
                 .with_audience(ToolAudience::AGENT_ONLY),
         ) as Arc<dyn Tool>);
 
@@ -248,8 +342,6 @@ mod tests {
 
     #[test]
     fn default_audience_is_fail_closed() {
-        use crate::r#trait::ToolAudience;
-
         assert_eq!(ToolAudience::default(), ToolAudience::NONE);
         assert_eq!(
             (ToolAudience::NONE.agent, ToolAudience::NONE.toolbox),

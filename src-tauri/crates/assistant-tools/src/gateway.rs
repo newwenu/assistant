@@ -206,30 +206,30 @@ impl ToolGateway {
             return Ok(GatewayDecision::Allowed);
         }
 
-        let tool_name = tool.name().to_string();
+        let tool_name = tool.id();
         let tier = tool.tier();
         let mut pending: Vec<PendingApproval> = Vec::new();
 
         for intent in &intents {
             for resource in &intent.resources {
                 let key =
-                    ApprovalKey::from_intent(&tool_name, intent, resource, input, context, tier);
+                    ApprovalKey::from_intent(tool_name, intent, resource, input, context, tier);
                 // 空键不查缓存：无法归一即无法证明「批准的正是这次操作」。
                 // 命中缓存也要留审计：放行原因（此前授权）与策略 Allow 不同。
                 if let Some(key) = key.as_ref() {
                     if self.grant_store.is_granted(key).await {
-                        self.audit(&tool_name, &intent.action, resource, AuditOutcome::GrantHit)
+                        self.audit(tool_name, &intent.action, resource, AuditOutcome::GrantHit)
                             .await;
                         continue;
                     }
                 }
                 match policy.evaluate(&intent.action, resource) {
                     PermissionEffect::Allow => {
-                        self.audit(&tool_name, &intent.action, resource, AuditOutcome::Allowed)
+                        self.audit(tool_name, &intent.action, resource, AuditOutcome::Allowed)
                             .await;
                     }
                     PermissionEffect::Deny => {
-                        self.audit(&tool_name, &intent.action, resource, AuditOutcome::Denied)
+                        self.audit(tool_name, &intent.action, resource, AuditOutcome::Denied)
                             .await;
                         return Ok(GatewayDecision::Denied {
                             action: intent.action.clone(),
@@ -251,7 +251,7 @@ impl ToolGateway {
 
         let request = ApprovalRequest {
             tool_call_id: context.tool_call_id.clone().unwrap_or_default(),
-            tool_name: tool_name.clone(),
+            tool_name: tool_name.to_string(),
             arguments: input.clone(),
             intents: merge_pending(&pending),
             timeout: self.approval_timeout,
@@ -262,7 +262,7 @@ impl ToolGateway {
             ApprovalDecision::Approve => {
                 for item in &pending {
                     self.audit(
-                        &tool_name,
+                        tool_name,
                         &item.action,
                         &item.resource,
                         AuditOutcome::Approved,
@@ -284,7 +284,7 @@ impl ToolGateway {
                         }
                     }
                     self.audit(
-                        &tool_name,
+                        tool_name,
                         &item.action,
                         &item.resource,
                         AuditOutcome::AlwaysApproved,
@@ -296,7 +296,7 @@ impl ToolGateway {
             ApprovalDecision::Deny { reason } => {
                 for item in &pending {
                     self.audit(
-                        &tool_name,
+                        tool_name,
                         &item.action,
                         &item.resource,
                         AuditOutcome::Rejected,

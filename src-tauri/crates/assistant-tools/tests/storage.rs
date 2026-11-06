@@ -1,6 +1,9 @@
+use std::path::Path;
+
 use assistant_tools::storage::{
-    persisted_reference, select_persist_targets, FileToolResultStorage, PersistToolResult,
-    ToolResultStorage, PER_ROUND_LIMIT_CHARS, PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS,
+    persisted_reference, select_persist_targets, FileToolResultStorage, InMemoryReadReceiptStore,
+    PersistToolResult, ReadReceipt, ReadReceiptKey, ReadReceiptStore, ToolResultStorage,
+    PER_ROUND_LIMIT_CHARS, PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS,
 };
 
 #[test]
@@ -80,4 +83,90 @@ async fn file_storage_writes_the_full_content() {
     assert_eq!(written, content);
     assert_eq!(reference.bytes, content.len());
     assert!(reference.path.ends_with(".txt"));
+}
+
+fn receipt_key(session: Option<&str>, path: &str) -> ReadReceiptKey {
+    ReadReceiptKey {
+        session_id: session.map(str::to_string),
+        path: path.to_string(),
+        start_line: None,
+        end_line: None,
+    }
+}
+
+fn receipt(revision: &str, tool_call_id: &str) -> ReadReceipt {
+    ReadReceipt {
+        revision: revision.to_string(),
+        tool_call_id: tool_call_id.to_string(),
+    }
+}
+
+#[tokio::test]
+async fn receipt_lookup_is_isolated_by_session() {
+    let store = InMemoryReadReceiptStore::new();
+    let recorded = receipt("1:1", "call-1");
+    store
+        .record(
+            receipt_key(Some("session-1"), "/repo/file.txt"),
+            recorded.clone(),
+        )
+        .await;
+
+    assert_eq!(
+        store
+            .lookup(&receipt_key(Some("session-1"), "/repo/file.txt"))
+            .await,
+        Some(recorded.clone())
+    );
+    assert_eq!(
+        store
+            .lookup(&receipt_key(Some("session-2"), "/repo/file.txt"))
+            .await,
+        None
+    );
+    assert_eq!(
+        store.lookup(&receipt_key(None, "/repo/file.txt")).await,
+        None
+    );
+}
+
+#[tokio::test]
+async fn toolbox_calls_share_a_single_session_bucket() {
+    let store = InMemoryReadReceiptStore::new();
+    let recorded = receipt("2:2", "call-2");
+    store
+        .record(receipt_key(None, "/repo/file.txt"), recorded.clone())
+        .await;
+
+    assert_eq!(
+        store.lookup(&receipt_key(None, "/repo/file.txt")).await,
+        Some(recorded)
+    );
+}
+
+#[tokio::test]
+async fn invalidate_path_removes_subtree_but_not_similar_prefix() {
+    let store = InMemoryReadReceiptStore::new();
+    let recorded = receipt("3:3", "call-3");
+    store
+        .record(receipt_key(None, "/a/b/f1.txt"), recorded.clone())
+        .await;
+    store
+        .record(receipt_key(None, "/a/b/sub/f2.txt"), recorded.clone())
+        .await;
+    store
+        .record(receipt_key(None, "/a/bc/f3.txt"), recorded.clone())
+        .await;
+
+    store.invalidate_path(Path::new("/a/b")).await;
+
+    assert_eq!(store.lookup(&receipt_key(None, "/a/b/f1.txt")).await, None);
+    assert_eq!(
+        store.lookup(&receipt_key(None, "/a/b/sub/f2.txt")).await,
+        None
+    );
+    assert_eq!(
+        store.lookup(&receipt_key(None, "/a/bc/f3.txt")).await,
+        Some(recorded)
+    );
 }

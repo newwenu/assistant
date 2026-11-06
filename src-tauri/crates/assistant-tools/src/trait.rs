@@ -117,14 +117,40 @@ impl PermissionIntent {
     }
 }
 
+/// 审批卡片上的一句话量级摘要。
+///
+/// `preview_for_approval` 返回 `None` 表示「未知」，与「零」可区分：
+/// 卡片不得把 `None` 渲染成 `0`。量纲由各工具自行表达（条目数 / 字节数 / 行数 / 替换次数），
+/// 因此这里不设固定的 `size` 字段。
+///
+/// 内部类型，不参与 wire，因此不 derive `Serialize`。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovalPreview {
+    /// 后端已格式化的一句话，如「删除 128 个条目（3.4 MB）」。
+    pub summary: String,
+    /// 已达扫描上限，只能给出下限。
+    pub truncated: bool,
+    /// 按参数估算，执行前会变（TOCTOU）。
+    pub estimated: bool,
+}
+
 /// 工具执行结果的错误通道分两层：
 /// - `ToolResult { ok: false }`：工具正常执行，业务失败（路径不存在、权限不足、参数缺失、未知 action），
 ///   结果回填给模型，模型可自行纠正。
 /// - `Err(String)`：工具无法完成本次调用（内部缺陷、无法构造结果），
 ///   由 `exec::invoke` 归一化为 `ToolResult::err`，对上游不可见。
+/// 工具的行为契约与身份声明。身份由实现自身持有，注册处只登记不覆盖：
+/// `ToolRegistry::register` 以 `id()` 为键，并把 `name()` 登记为模型可见别名。
 #[async_trait]
 pub trait Tool: Send + Sync {
-    fn name(&self) -> &str;
+    /// 内部唯一标识：注册表键、白名单匹配、审批与审计、报错前缀。
+    fn id(&self) -> &str;
+
+    /// 模型可见的调用名（`ToolSpec.name`）。默认与 [`Tool::id`] 同名；
+    /// 需要内部名与对外调用名分离时才覆写。
+    fn name(&self) -> &str {
+        self.id()
+    }
 
     async fn description(&self) -> Result<String, String>;
 
@@ -163,6 +189,22 @@ pub trait Tool: Send + Sync {
         _context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
         Ok(vec![])
+    }
+
+    /// 审批预演：审批卡片展示「这次操作有多大」。
+    ///
+    /// 调用时机：**仅**网关判定 `Ask` 之后、人工审批之前；`Allow` / `Deny` 路径不调用，
+    /// 避免给全量工具调用增加 IO。默认 `None`（不提供预演），存量工具零改动。
+    ///
+    /// 约束：可做只读 IO；2s 上限由调用方施加，失败 / 超时即 `None`；
+    /// 不得写 grant、不得写 `ReadReceiptStore`、不得创建或删除任何文件、不得改变决策。
+    /// 预演与 `execute` 必须复用同一套路径解析与统计函数，禁止「展示 A、执行 B」。
+    async fn preview_for_approval(
+        &self,
+        _input: &Value,
+        _context: &ToolUseContext,
+    ) -> Option<ApprovalPreview> {
+        None
     }
 
     async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult, String>;

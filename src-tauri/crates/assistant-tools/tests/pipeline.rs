@@ -99,7 +99,7 @@ struct ProbeTool {
 
 #[async_trait]
 impl Tool for ProbeTool {
-    fn name(&self) -> &str {
+    fn id(&self) -> &str {
         self.spec.name
     }
 

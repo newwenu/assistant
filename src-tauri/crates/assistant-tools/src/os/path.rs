@@ -88,14 +88,17 @@ pub fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
-/// 拒绝落在受保护系统目录内的路径。
+/// 拒绝落在受保护系统目录或凭据目录内的路径。
 ///
 /// 输入：已归一的路径。
 /// 返回：`Ok(())` 表示可以继续。
-/// 失败：路径以某个受保护目录为组件级前缀（`C:\Windows.old` 不属于 `C:\Windows`）。
+/// 失败：路径以某个受保护目录为组件级前缀（`C:\Windows.old` 不属于 `C:\Windows`），
+/// 或任一组件命中凭据目录名单。
 ///
 /// Windows 比较大小写不敏感，受保护目录取自 `SystemRoot` / `ProgramFiles` /
 /// `ProgramFiles(x86)` / `ProgramData`，不写死盘符；Unix 使用固定列表。
+/// 凭据目录（`.ssh` / `.gnupg` / `.aws` / `.azure` / `.kube` / `keychains` 等）
+/// 无论位于何处一律拒绝，判定先于 `workspace_root` 授权。
 pub fn reject_system_dirs(path: &Path) -> Result<(), String> {
     for protected in protected_dirs() {
         if component_prefix_match(path, &protected) {
@@ -106,7 +109,14 @@ pub fn reject_system_dirs(path: &Path) -> Result<(), String> {
             ));
         }
     }
-    Ok(())
+    reject_credential_dirs(path)
+}
+
+/// 判断 `path` 是否以 `base` 为组件级前缀（`path == base` 允许）。
+///
+/// 比较按路径组件进行：`/a/bc` 不属于 `/a/b`；Windows 大小写不敏感。
+pub fn is_component_prefix(path: &Path, base: &Path) -> bool {
+    component_prefix_match(path, base)
 }
 
 /// 确认路径位于 workspace 根之内。
@@ -292,6 +302,52 @@ fn protected_dirs() -> Vec<PathBuf> {
     {
         Vec::new()
     }
+}
+
+const CREDENTIAL_DIR_COMPONENTS: &[&str] =
+    &[".ssh", ".gnupg", ".aws", ".azure", ".kube", "keychains"];
+
+#[cfg(windows)]
+const MICROSOFT_CREDENTIAL_DIR_COMPONENTS: &[&str] = &["Protect", "Credentials", "Crypto", "Vault"];
+
+fn reject_credential_dirs(path: &Path) -> Result<(), String> {
+    let components: Vec<&std::ffi::OsStr> = path
+        .components()
+        .map(|component| component.as_os_str())
+        .collect();
+
+    for (index, component) in components.iter().enumerate() {
+        let name = component.to_string_lossy();
+        if CREDENTIAL_DIR_COMPONENTS
+            .iter()
+            .any(|dir| name.eq_ignore_ascii_case(dir))
+        {
+            return Err(format!(
+                "path '{}' is inside a protected credential directory '{}'",
+                path.display(),
+                name
+            ));
+        }
+
+        #[cfg(windows)]
+        if name.eq_ignore_ascii_case("Microsoft") {
+            if let Some(next) = components.get(index + 1) {
+                let next_name = next.to_string_lossy();
+                if MICROSOFT_CREDENTIAL_DIR_COMPONENTS
+                    .iter()
+                    .any(|dir| next_name.eq_ignore_ascii_case(dir))
+                {
+                    return Err(format!(
+                        "path '{}' is inside a protected credential directory 'Microsoft\\{}'",
+                        path.display(),
+                        next_name
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -508,6 +564,40 @@ mod tests {
     fn unix_protected_dirs_use_component_boundaries() {
         assert!(reject_system_dirs(Path::new("/etc/passwd")).is_err());
         assert!(reject_system_dirs(Path::new("/etcfoo/bar")).is_ok());
+    }
+
+    #[test]
+    fn credential_dirs_are_rejected_by_component() {
+        assert!(reject_system_dirs(Path::new("/home/me/.ssh/id_rsa")).is_err());
+        assert!(reject_system_dirs(Path::new("/home/me/keychains/login.keychain")).is_err());
+        assert!(reject_system_dirs(Path::new("/home/me/.aws/credentials")).is_err());
+        assert!(reject_system_dirs(Path::new("/home/me/mykeychains/file.txt")).is_ok());
+        assert!(reject_system_dirs(Path::new("/home/me/.ssh-backup/file.txt")).is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn microsoft_credential_dirs_are_rejected() {
+        assert!(reject_system_dirs(Path::new(
+            r"C:\Users\me\AppData\Local\Microsoft\Credentials\abc"
+        ))
+        .is_err());
+        assert!(reject_system_dirs(Path::new(
+            r"C:\Users\me\AppData\Local\Microsoft\Crypto\keys"
+        ))
+        .is_err());
+        assert!(reject_system_dirs(Path::new(
+            r"C:\Users\me\AppData\Local\Microsoft\Windows\file.txt"
+        ))
+        .is_ok());
+    }
+
+    #[test]
+    fn component_prefix_respects_component_boundaries() {
+        assert!(is_component_prefix(Path::new("/a/b/c"), Path::new("/a/b")));
+        assert!(is_component_prefix(Path::new("/a/b"), Path::new("/a/b")));
+        assert!(!is_component_prefix(Path::new("/a/bc"), Path::new("/a/b")));
+        assert!(!is_component_prefix(Path::new("/a"), Path::new("/a/b")));
     }
 
     #[test]

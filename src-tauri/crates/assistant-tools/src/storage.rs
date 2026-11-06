@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use dashmap::DashMap;
 
 /// 单结果落盘阈值：超过即落盘，与单轮预算无关。
 pub const PER_TOOL_LIMIT_CHARS: usize = 50_000;
@@ -101,9 +102,13 @@ pub fn persisted_reference(path: &str, content: &str) -> String {
     format!("<persisted-output path=\"{}\">\n{}", path, preview)
 }
 
-/// 跨轮去重的键：同一路径、同一行范围。
+/// 跨轮去重的键：同一会话、同一路径、同一行范围。
+///
+/// `session_id` 来自 `ToolUseContext.session_id`；ToolBox 链路为 `None`，
+/// 所有 ToolBox 调用归入同一桶，不会与 Agent 会话互相抑制。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReadReceiptKey {
+    pub session_id: Option<String>,
     pub path: String,
     pub start_line: Option<u64>,
     pub end_line: Option<u64>,
@@ -116,11 +121,52 @@ pub struct ReadReceipt {
     pub tool_call_id: String,
 }
 
-/// 跨轮去重端口（P2 只定义，P5 由 `fs_read` 使用）。
+/// 跨轮去重端口（P2 定义，P5 由 `read` / `edit` 使用）。
 #[async_trait]
 pub trait ReadReceiptStore: Send + Sync {
     async fn lookup(&self, key: &ReadReceiptKey) -> Option<ReadReceipt>;
     async fn record(&self, key: ReadReceiptKey, receipt: ReadReceipt);
+
+    /// 按组件级前缀失效：移除 `path` 自身及其子树下的所有回执。
+    ///
+    /// 供 `delete` / `move` 在成功后调用，覆盖「删除后重建且长度 + mtime 恰好相同」
+    /// 时修订号无法识别的情形（见 `os/path::is_component_prefix`）。
+    async fn invalidate_path(&self, path: &Path);
+}
+
+/// 进程内回执存储（`dashmap`）。生命周期由构造方决定，跨会话共享同一实例。
+pub struct InMemoryReadReceiptStore {
+    receipts: DashMap<ReadReceiptKey, ReadReceipt>,
+}
+
+impl InMemoryReadReceiptStore {
+    pub fn new() -> Self {
+        Self {
+            receipts: DashMap::new(),
+        }
+    }
+}
+
+impl Default for InMemoryReadReceiptStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl ReadReceiptStore for InMemoryReadReceiptStore {
+    async fn lookup(&self, key: &ReadReceiptKey) -> Option<ReadReceipt> {
+        self.receipts.get(key).map(|entry| entry.value().clone())
+    }
+
+    async fn record(&self, key: ReadReceiptKey, receipt: ReadReceipt) {
+        self.receipts.insert(key, receipt);
+    }
+
+    async fn invalidate_path(&self, path: &Path) {
+        self.receipts
+            .retain(|key, _| !crate::os::path::is_component_prefix(Path::new(&key.path), path));
+    }
 }
 
 fn result_file_name(tool_call_id: &str) -> String {

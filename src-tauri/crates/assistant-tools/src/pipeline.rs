@@ -149,8 +149,8 @@ impl ToolPipeline {
         for (index, call) in tool_calls.iter().enumerate() {
             let safe = self
                 .registry
-                .find(&call.tool_name)
-                .map(|tool| tool.is_concurrency_safe(Some(&call.arguments)))
+                .find_by_name(&call.tool_name)
+                .map(|registered| registered.tool.is_concurrency_safe(Some(&call.arguments)))
                 .unwrap_or(false);
 
             if safe && open {
@@ -236,8 +236,8 @@ impl ToolPipeline {
         context: &ToolUseContext,
         policy: &ResolvedPermissionPolicy,
     ) -> ToolOutcome {
-        let tool = match self.registry.find(&call.tool_name) {
-            Some(tool) => tool,
+        let registered = match self.registry.find_by_name(&call.tool_name) {
+            Some(registered) => registered,
             None => {
                 return ToolOutcome::new(
                     call,
@@ -250,6 +250,7 @@ impl ToolPipeline {
                 )
             }
         };
+        let tool = registered.tool.as_ref();
 
         let mut call_context = context.clone();
         call_context.tool_call_id = Some(call.tool_call_id.clone());
@@ -274,7 +275,7 @@ impl ToolPipeline {
 
         let decision = match self
             .gateway
-            .evaluate(tool.as_ref(), &call.arguments, &call_context, policy)
+            .evaluate(tool, &call.arguments, &call_context, policy)
             .await
         {
             Ok(decision) => decision,
@@ -321,13 +322,7 @@ impl ToolPipeline {
             }
         }
 
-        let result = exec::invoke(
-            tool.as_ref(),
-            &call.arguments,
-            &call_context,
-            self.default_timeout,
-        )
-        .await;
+        let result = exec::invoke(tool, &call.arguments, &call_context, self.default_timeout).await;
 
         ToolOutcome::new(call, PipelineStage::Execute, result)
     }

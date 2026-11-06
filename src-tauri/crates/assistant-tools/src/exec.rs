@@ -11,6 +11,8 @@ pub const DEFAULT_TOOL_TIMEOUT: Duration = Duration::from_secs(30);
 /// 工具执行边界的唯一入口。边界只返回 `ToolResult`，永不返回 `Err`：
 /// 工具的 `Err(String)` 在此归一化为 `ToolResult::err`，对上游不可见。
 ///
+/// 错误前缀取自 `tool.id()`（内部唯一标识），工具实现自身声明身份。
+///
 /// 超时的能力边界：`tokio::time::timeout` 只在 `await` 点抢占。
 /// - 异步且 `await` 点密集的工具：超时直接生效。
 /// - 同步阻塞工具（`std::fs` / `std::process::Command`）：必须自行用 `spawn_blocking` 包裹；
@@ -26,12 +28,12 @@ pub async fn invoke(
         return ToolResult::err("input must be a JSON object");
     }
 
-    let name = tool.name();
+    let id = tool.id();
     match tokio::time::timeout(timeout, tool.execute(input, context)).await {
         Ok(Ok(result)) => result,
-        Ok(Err(error)) => ToolResult::from_exec_error(name, error),
+        Ok(Err(error)) => ToolResult::from_exec_error(id, error),
         Err(_) => ToolResult::from_exec_error_kind(
-            name,
+            id,
             ToolErrorKind::Timeout,
             format!("timed out after {:?}", timeout),
         ),
@@ -55,14 +57,13 @@ mod tests {
     }
 
     struct StubTool {
-        name: &'static str,
         behavior: StubBehavior,
     }
 
     #[async_trait]
     impl Tool for StubTool {
-        fn name(&self) -> &str {
-            self.name
+        fn id(&self) -> &str {
+            "stub"
         }
 
         async fn description(&self) -> Result<String, String> {
@@ -108,13 +109,13 @@ mod tests {
         ToolUseContext::for_toolbox(None)
     }
 
-    fn stub(name: &'static str, behavior: StubBehavior) -> StubTool {
-        StubTool { name, behavior }
+    fn stub(behavior: StubBehavior) -> StubTool {
+        StubTool { behavior }
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn rejects_non_object_input() {
-        let tool = stub("stub", StubBehavior::Ok);
+        let tool = stub(StubBehavior::Ok);
         let result = invoke(
             &tool,
             &json!("not an object"),
@@ -131,7 +132,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn passes_through_ok_result() {
-        let tool = stub("stub", StubBehavior::Ok);
+        let tool = stub(StubBehavior::Ok);
         let result = invoke(&tool, &json!({}), &context(), DEFAULT_TOOL_TIMEOUT).await;
 
         assert!(result.ok);
@@ -141,7 +142,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn normalizes_exec_error_with_tool_prefix() {
-        let tool = stub("stub", StubBehavior::Fail("boom"));
+        let tool = stub(StubBehavior::Fail("boom"));
         let result = invoke(&tool, &json!({}), &context(), Duration::from_secs(5)).await;
 
         assert!(!result.ok);
@@ -152,7 +153,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn times_out_slow_async_tool() {
-        let tool = stub("stub", StubBehavior::Slow(Duration::from_millis(300)));
+        let tool = stub(StubBehavior::Slow(Duration::from_millis(300)));
         let result = invoke(&tool, &json!({}), &context(), Duration::from_millis(50)).await;
 
         assert!(!result.ok);
@@ -168,10 +169,10 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn timeout_returns_before_blocking_work_finishes() {
         let finished = Arc::new(AtomicBool::new(false));
-        let tool = stub(
-            "stub",
-            StubBehavior::Blocking(Duration::from_millis(400), Arc::clone(&finished)),
-        );
+        let tool = stub(StubBehavior::Blocking(
+            Duration::from_millis(400),
+            Arc::clone(&finished),
+        ));
 
         let started = std::time::Instant::now();
         let result = invoke(&tool, &json!({}), &context(), Duration::from_millis(50)).await;

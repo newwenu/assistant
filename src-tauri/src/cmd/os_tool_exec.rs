@@ -9,7 +9,7 @@ pub async fn os_tool_exec(
     registry: State<'_, Arc<ToolRegistry>>,
     request: OsToolExecRequestDto,
 ) -> Result<OsToolResultDto, String> {
-    let tool = registry
+    let registered = registry
         .find_for_toolbox(&request.tool)
         .ok_or_else(|| format!("tool '{}' not found in registry", request.tool))?;
 
@@ -22,7 +22,13 @@ pub async fn os_tool_exec(
 
     let context = ToolUseContext::for_toolbox(None);
 
-    let result = invoke(tool.as_ref(), &input, &context, DEFAULT_TOOL_TIMEOUT).await;
+    let result = invoke(
+        registered.tool.as_ref(),
+        &input,
+        &context,
+        DEFAULT_TOOL_TIMEOUT,
+    )
+    .await;
 
     Ok(OsToolResultDto::from(result))
 }

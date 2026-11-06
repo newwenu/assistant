@@ -408,7 +408,6 @@ async fn scripted_prompter_falls_back_to_deny_when_exhausted() {
 }
 
 struct FakeTool {
-    name: String,
     tier: ToolTier,
     intents: Vec<PermissionIntent>,
 }
@@ -416,7 +415,6 @@ struct FakeTool {
 impl FakeTool {
     fn new(intents: Vec<PermissionIntent>) -> Self {
         Self {
-            name: "fake_tool".to_string(),
             tier: ToolTier::Os,
             intents,
         }
@@ -425,8 +423,8 @@ impl FakeTool {
 
 #[async_trait::async_trait]
 impl Tool for FakeTool {
-    fn name(&self) -> &str {
-        &self.name
+    fn id(&self) -> &str {
+        "fake_tool"
     }
 
     async fn description(&self) -> Result<String, String> {

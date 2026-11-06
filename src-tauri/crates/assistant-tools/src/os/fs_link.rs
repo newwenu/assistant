@@ -6,7 +6,8 @@ use crate::context::ToolUseContext;
 use crate::r#trait::{BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier};
 use crate::result::ToolResult;
 
-const TOOL_NAME: &str = "fs_link";
+/// 内部唯一标识（注册表键、白名单匹配、审计）。模型可见名默认与它同名。
+const TOOL_ID: &str = "fs_link";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LinkKind {
@@ -57,8 +58,8 @@ impl Default for FsLinkTool {
 
 #[async_trait]
 impl Tool for FsLinkTool {
-    fn name(&self) -> &str {
-        TOOL_NAME
+    fn id(&self) -> &str {
+        TOOL_ID
     }
 
     async fn description(&self) -> Result<String, String> {
