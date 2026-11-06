@@ -143,28 +143,21 @@ fn load_from_recovers_from_temp_file() {
 }
 
 #[test]
-fn legacy_threshold_key_is_migrated() {
+fn legacy_threshold_key_is_ignored_after_migration_window() {
     let path = conf_path("config.json");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let mut json = serde_json::to_value(AppConf::new()).unwrap();
     json["compact_threshold_percent"] = serde_json::json!(50);
-    std::fs::write(&path, json.to_string()).unwrap();
+    std::fs::write(&path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
 
     let loaded = AppConf::load_from(&path).unwrap();
-    assert_eq!(loaded.compact_threshold_percent_of_budget, 50);
-}
+    assert_eq!(
+        loaded.compact_threshold_percent_of_budget,
+        AppConf::new().compact_threshold_percent_of_budget
+    );
 
-#[test]
-fn explicit_new_threshold_wins_over_legacy_key() {
-    let path = conf_path("config.json");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let mut json = serde_json::to_value(AppConf::new()).unwrap();
-    json["compact_threshold_percent"] = serde_json::json!(50);
-    json["compact_threshold_percent_of_budget"] = serde_json::json!(65);
-    std::fs::write(&path, json.to_string()).unwrap();
-
-    let loaded = AppConf::load_from(&path).unwrap();
-    assert_eq!(loaded.compact_threshold_percent_of_budget, 65);
+    let rewritten = std::fs::read_to_string(&path).unwrap();
+    assert!(!rewritten.contains("compact_threshold_percent\""));
 }
 
 #[test]
@@ -209,11 +202,27 @@ fn amend_type_mismatch_returns_error() {
 }
 
 #[test]
-fn amend_unknown_key_ignored() {
+fn amend_unknown_key_rejected() {
     let conf = AppConf::new();
     let patch = serde_json::json!({ "nonexistent": 42, "theme": "dark" });
+    let err = conf.amend(patch).unwrap_err();
+    assert!(err.contains("nonexistent"), "unexpected error: {}", err);
+}
+
+#[test]
+fn amend_camel_case_key_rejected() {
+    let conf = AppConf::new();
+    let patch = serde_json::json!({ "stayOnTop": true });
+    let err = conf.amend(patch).unwrap_err();
+    assert!(err.contains("stayOnTop"), "unexpected error: {}", err);
+}
+
+#[test]
+fn amend_open_map_keys_accepted() {
+    let conf = AppConf::new();
+    let patch = serde_json::json!({ "keybindings": { "custom_shortcut": "Ctrl+K" } });
     let merged = conf.amend(patch).unwrap();
-    assert_eq!(merged.theme, "dark");
+    assert_eq!(merged.keybindings.get("custom_shortcut").unwrap(), "Ctrl+K");
 }
 
 #[test]

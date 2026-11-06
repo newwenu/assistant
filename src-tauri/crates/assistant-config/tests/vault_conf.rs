@@ -58,11 +58,11 @@ fn amend_single_and_multiple_fields() {
 }
 
 #[test]
-fn amend_unknown_key_ignored() {
+fn amend_unknown_key_rejected() {
     let conf = VaultConf::new();
     let patch = serde_json::json!({ "nonexistent": 42, "vault_ssh_auto_add": true });
-    let merged = conf.amend(patch).unwrap();
-    assert!(merged.vault_ssh_auto_add);
+    let err = conf.amend(patch).unwrap_err();
+    assert!(err.contains("nonexistent"), "unexpected error: {}", err);
 }
 
 #[test]

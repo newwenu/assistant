@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use std::collections::HashMap;
 
-use super::json_config::{get_conf_dir, load_json_config_with_migrate, save_json_config};
+use super::json_config::{
+    amend_json_config, get_conf_dir, load_json_config_with_migrate, save_json_config,
+};
 
 fn default_true() -> bool {
     true
@@ -35,13 +36,6 @@ pub struct AppConf {
     /// 可用预算（窗口扣除输出预留与安全裕度）的使用比例，不是占完整窗口的比例
     #[serde(default = "default_compaction_threshold")]
     pub compact_threshold_percent_of_budget: u8,
-    /// 旧版配置键，仅用于迁移读取，不再写出
-    #[serde(
-        default,
-        rename = "compact_threshold_percent",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub legacy_compact_threshold_percent: Option<u8>,
     #[serde(default)]
     pub compact_summary_prompt: Option<String>,
     #[serde(default = "default_max_summary_tokens")]
@@ -101,7 +95,6 @@ impl AppConf {
             keybindings: default_keybindings(),
             auto_compact: true,
             compact_threshold_percent_of_budget: super::constant::COMPACTION_THRESHOLD_PERCENT,
-            legacy_compact_threshold_percent: None,
             compact_summary_prompt: None,
             compact_summary_max_tokens: super::constant::MAX_SUMMARY_REQUEST_TOKENS as u16,
             main_window_x: None,
@@ -129,25 +122,18 @@ impl AppConf {
         load_json_config_with_migrate(path, Self::new, Self::migrate, "AppConf")
     }
 
-    fn migrate(mut config: Self) -> Self {
-        // 旧键 `compact_threshold_percent` 指「占完整窗口的百分比」，新键指「占可用预算的百分比」。
-        // 两者分母不同，直接沿用数值属于同名不同义，因此迁移时显式告警并提示重新确认取值。
-        if let Some(legacy) = config.legacy_compact_threshold_percent.take() {
-            // 仅当新键未显式设置（仍为默认值）时才沿用旧值，避免旧键覆盖用户已确认的新取值
-            if config.compact_threshold_percent_of_budget == default_compaction_threshold() {
-                log::warn!(
-                    "config key `compact_threshold_percent` ({}) 已废弃，语义由「占完整窗口」改为「占可用预算」；旧值已迁移到 compact_threshold_percent_of_budget，实际阈值可能变化，请在设置中确认。",
-                    legacy
-                );
-                config.compact_threshold_percent_of_budget = legacy;
-            } else {
-                log::warn!(
-                    "config key `compact_threshold_percent` ({}) 已废弃并忽略：`compact_threshold_percent_of_budget` 已显式设置为 {}。",
-                    legacy,
-                    config.compact_threshold_percent_of_budget
-                );
-            }
-        }
+    /// 配置迁移入口。当前没有待执行的迁移，仅保留空实现与下方模板。
+    ///
+    /// 模板（字段语义变更或键改名时按此实现，迁移窗口结束后连同旧字段一起删除）：
+    /// 1. 旧键以 `#[serde(default, rename = "旧键名")] Option<T>` 字段接收，并加
+    ///    `skip_serializing_if = "Option::is_none"`，保证未迁移时旧键不会被写回；
+    /// 2. 在此 `take()` 旧值：仅当新键仍为默认值时才沿用旧值，否则保留用户已确认的新值；
+    /// 3. 两条分支都 `log::warn!` 说明取值来源与可能的变化，提示用户到设置里确认；
+    /// 4. 旧版本不再有用户后，删除旧字段与本段逻辑，恢复成空实现。
+    ///
+    /// 已移除的迁移：`compact_threshold_percent` → `compact_threshold_percent_of_budget`
+    /// （分母由「完整窗口」改为「可用预算」，I29 引入，2026-11-06 关闭迁移窗口）。
+    fn migrate(config: Self) -> Self {
         config
     }
 
@@ -174,18 +160,7 @@ impl AppConf {
     }
 
     pub fn amend(self, patch: serde_json::Value) -> Result<Self, String> {
-        let val = serde_json::to_value(&self).map_err(|e| e.to_string())?;
-        let mut config: BTreeMap<String, serde_json::Value> =
-            serde_json::from_value(val).map_err(|e| e.to_string())?;
-        let new_json: BTreeMap<String, serde_json::Value> =
-            serde_json::from_value(patch).map_err(|e| e.to_string())?;
-        for (k, v) in new_json {
-            config.insert(k, v);
-        }
-        serde_json::from_str::<AppConf>(
-            &serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| format!("amend deserialization failed: {}", e))
+        amend_json_config(&self, patch)
     }
 }
 
