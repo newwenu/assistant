@@ -95,10 +95,7 @@ fn receipt_key(session: Option<&str>, path: &str) -> ReadReceiptKey {
 }
 
 fn receipt(revision: &str, tool_call_id: &str) -> ReadReceipt {
-    ReadReceipt {
-        revision: revision.to_string(),
-        tool_call_id: tool_call_id.to_string(),
-    }
+    ReadReceipt::utf8(revision, tool_call_id)
 }
 
 #[tokio::test]
@@ -140,6 +137,25 @@ async fn toolbox_calls_share_a_single_session_bucket() {
 
     assert_eq!(
         store.lookup(&receipt_key(None, "/repo/file.txt")).await,
+        Some(recorded)
+    );
+}
+
+#[tokio::test]
+async fn receipt_carries_encoding_and_bom_state() {
+    let store = InMemoryReadReceiptStore::new();
+    let recorded = ReadReceipt {
+        revision: "4:4".to_string(),
+        tool_call_id: "call-4".to_string(),
+        encoding: "GBK".to_string(),
+        has_bom: true,
+    };
+    store
+        .record(receipt_key(None, "/repo/gbk.txt"), recorded.clone())
+        .await;
+
+    assert_eq!(
+        store.lookup(&receipt_key(None, "/repo/gbk.txt")).await,
         Some(recorded)
     );
 }

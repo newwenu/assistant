@@ -37,10 +37,7 @@ async fn record(receipts: &Arc<dyn ReadReceiptStore>, path: &Path) -> ReadReceip
     receipts
         .record(
             key.clone(),
-            ReadReceipt {
-                revision: file_revision(path).unwrap(),
-                tool_call_id: "call-read".to_string(),
-            },
+            ReadReceipt::utf8(file_revision(path).unwrap(), "call-read"),
         )
         .await;
     key

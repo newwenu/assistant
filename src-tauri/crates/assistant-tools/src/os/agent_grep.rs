@@ -1,7 +1,10 @@
 use async_trait::async_trait;
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use grep_regex::RegexMatcher;
-use grep_searcher::{Searcher, SearcherBuilder, Sink, SinkContext, SinkContextKind, SinkMatch};
+use grep_searcher::{
+    BinaryDetection, Encoding as SearcherEncoding, Searcher, SearcherBuilder, Sink, SinkContext,
+    SinkContextKind, SinkMatch,
+};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -9,6 +12,7 @@ use std::time::{Duration, Instant};
 use crate::context::ToolUseContext;
 use crate::exec::DEFAULT_TOOL_TIMEOUT;
 use crate::os::path;
+use crate::os::text_encoding::{parse_optional_encoding, BINARY_PROBE_BYTES};
 use crate::r#trait::{BehaviorHints, Tool, ToolAudience, ToolTier, ValidationResult};
 use crate::result::ToolResult;
 
@@ -21,6 +25,8 @@ pub const MAX_MATCHES: usize = 100;
 pub const DEFAULT_CONTEXT: u64 = 0;
 /// 内部 deadline 相对外层超时预留的余量：留出把已收集结果回填的时间。
 pub const DEADLINE_RESERVE: Duration = Duration::from_millis(500);
+/// 零命中探测最多检查的文件数：只回答「scope 里有没有非 UTF-8 文件」，不做全量普查。
+pub const PROBE_FILE_LIMIT: usize = 200;
 
 pub struct AgentGrepTool {
     budget: Duration,
@@ -56,8 +62,10 @@ impl Tool for AgentGrepTool {
             "Search file contents with a regular expression. Output lines are `path:line:text`; \
              context lines use `path-line-text` and non-contiguous groups are separated by `--`. \
              `path` defaults to the workspace root, `include` filters files by glob, `context` \
-             adds surrounding lines. Respects `.gitignore`, skips hidden entries, and returns up \
-             to 100 matching lines. Inline flags such as `(?i)` are supported."
+             adds surrounding lines. Respects `.gitignore`, skips hidden and binary files, and \
+             returns up to 100 matching lines. Inline flags such as `(?i)` are supported. Non-UTF-8 \
+             files are matched as raw bytes unless `encoding` is passed, in which case the whole \
+             search scope is transcoded first."
                 .to_string(),
         )
     }
@@ -69,7 +77,11 @@ impl Tool for AgentGrepTool {
                 "pattern": { "type": "string", "description": "Regex pattern" },
                 "path": { "type": "string", "description": "Directory to search (defaults to the workspace root)" },
                 "include": { "type": "string", "description": "File glob filter (e.g. '*.rs')" },
-                "context": { "type": "integer", "description": "Lines of context before and after each match (default 0)" }
+                "context": { "type": "integer", "description": "Lines of context before and after each match (default 0)" },
+                "encoding": {
+                    "type": "string",
+                    "description": "Optional encoding for every file in the scope (e.g. gbk); omit to search raw UTF-8 bytes"
+                }
             },
             "required": ["pattern"]
         })
@@ -156,6 +168,7 @@ impl Tool for AgentGrepTool {
             .unwrap_or(self.budget);
         let deadline = Instant::now() + budget;
         let context_lines = request.context;
+        let encoding = request.encoding.clone();
         let search_path = base.clone();
         let search = tokio::task::spawn_blocking(move || {
             search(
@@ -163,6 +176,7 @@ impl Tool for AgentGrepTool {
                 &matcher,
                 include.as_ref(),
                 context_lines,
+                encoding,
                 deadline,
             )
         })
@@ -185,6 +199,12 @@ impl Tool for AgentGrepTool {
                 "totalMatches": outcome.match_count,
                 "truncated": outcome.hit_limit,
                 "timedOut": outcome.timed_out,
+                "binarySkipped": outcome.binary_skipped,
+                "lossyLines": outcome.lossy_lines,
+                "nonUtf8Probe": outcome.probe.as_ref().map(|probe| serde_json::json!({
+                    "files": probe.files,
+                    "truncated": probe.truncated
+                })),
                 "matches": outcome.lines
             }),
             assistant_text,
@@ -193,10 +213,11 @@ impl Tool for AgentGrepTool {
 }
 
 fn assistant_text(outcome: &SearchOutcome, budget: Duration) -> String {
-    if outcome.lines.is_empty() && !outcome.timed_out {
-        return "(no matches)".to_string();
-    }
-    let mut text = outcome.lines.join("\n");
+    let mut text = if outcome.lines.is_empty() && !outcome.timed_out {
+        "(no matches)".to_string()
+    } else {
+        outcome.lines.join("\n")
+    };
     if outcome.timed_out {
         text.push_str(&format!(
             "\n[search stopped at the {}ms time budget; results may be incomplete; narrow 'path' \
@@ -209,6 +230,13 @@ fn assistant_text(outcome: &SearchOutcome, budget: Duration) -> String {
             MAX_MATCHES
         ));
     }
+    // footer 形态固定为 `[non-utf8: N file(s)]`（[I38c-grep §3.1]）；
+    // 是否被截断只进 `nonUtf8Probe.truncated`，不延长 footer。
+    if let Some(probe) = &outcome.probe {
+        if probe.files > 0 {
+            text.push_str(&format!("\n[non-utf8: {} file(s)]", probe.files));
+        }
+    }
     text
 }
 
@@ -217,6 +245,7 @@ struct GrepRequest {
     path: Option<String>,
     include: Option<String>,
     context: u64,
+    encoding: Option<SearcherEncoding>,
 }
 
 impl GrepRequest {
@@ -264,11 +293,25 @@ impl GrepRequest {
                 .ok_or_else(|| "'context' must be a non-negative integer".to_string())?,
         };
 
+        // label 校验与 `read` / `write` 共用一套（别名表与错误文案不分叉）；
+        // searcher 只接受自己的 `Encoding` 类型，用规范化名重建即可。
+        let encoding = match parse_optional_encoding(object)? {
+            None => None,
+            Some(resolved) => Some(SearcherEncoding::new(resolved.name()).map_err(|error| {
+                format!(
+                    "cannot search with encoding '{}': {}",
+                    resolved.name(),
+                    error
+                )
+            })?),
+        };
+
         Ok(Self {
             pattern,
             path,
             include,
             context,
+            encoding,
         })
     }
 }
@@ -311,6 +354,15 @@ struct SearchOutcome {
     match_count: usize,
     hit_limit: bool,
     timed_out: bool,
+    binary_skipped: usize,
+    lossy_lines: usize,
+    probe: Option<NonUtf8Probe>,
+}
+
+/// 零命中探测结论（上级 §14.7）：只回答「scope 里有没有非 UTF-8 文件」。
+struct NonUtf8Probe {
+    files: usize,
+    truncated: bool,
 }
 
 /// 同步搜索，必须在 `spawn_blocking` 内调用。
@@ -322,6 +374,7 @@ fn search(
     matcher: &RegexMatcher,
     include: Option<&GlobSet>,
     context: u64,
+    encoding: Option<SearcherEncoding>,
     deadline: Instant,
 ) -> Result<SearchOutcome, String> {
     let mut outcome = SearchOutcome {
@@ -329,25 +382,22 @@ fn search(
         match_count: 0,
         hit_limit: false,
         timed_out: false,
+        binary_skipped: 0,
+        lossy_lines: 0,
+        probe: None,
     };
 
+    // `binary_detection` 默认是 `None`（等于不做检测），必须显式开启：
+    // 否则二进制文件会被当成文本，产出乱码命中行（上级 §14.7）。
     let mut searcher = SearcherBuilder::new()
         .line_number(true)
         .before_context(context as usize)
         .after_context(context as usize)
+        .binary_detection(BinaryDetection::quit(b'\x00'))
+        .encoding(encoding)
         .build();
 
-    let walker = ignore::WalkBuilder::new(base)
-        .hidden(true)
-        .require_git(false)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .parents(true)
-        .follow_links(false)
-        .build();
-
-    for entry in walker {
+    for entry in walk(base) {
         if outcome.hit_limit || outcome.timed_out {
             break;
         }
@@ -356,29 +406,15 @@ fn search(
             break;
         }
 
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => continue,
-        };
-        if !entry
-            .file_type()
-            .map(|kind| kind.is_file())
-            .unwrap_or(false)
-        {
+        let Ok(entry) = entry else {
             continue;
-        }
-        let relative = match entry.path().strip_prefix(base) {
-            Ok(relative) => relative.to_string_lossy().replace('\\', "/"),
-            Err(_) => continue,
         };
-        if let Some(include) = include {
-            if !include.is_match(&relative) {
-                continue;
-            }
-        }
+        let Some(path) = searchable_path(&entry, base, include) else {
+            continue;
+        };
 
         let mut sink = FileSink {
-            path: &relative,
+            path: &path,
             outcome: &mut outcome,
             deadline,
         };
@@ -388,7 +424,126 @@ fn search(
         }
     }
 
+    // 冷路径：只在零命中且未超时时执行，热路径零成本。
+    if outcome.match_count == 0 && !outcome.timed_out {
+        outcome.probe = Some(probe_non_utf8(base, include, deadline));
+    }
+
     Ok(outcome)
+}
+
+fn walk(base: &Path) -> ignore::Walk {
+    ignore::WalkBuilder::new(base)
+        .hidden(true)
+        .require_git(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .parents(true)
+        .follow_links(false)
+        .build()
+}
+
+/// 统一的「这个条目要不要搜」判定：普通文件 + 相对路径 + `include` 过滤。
+fn searchable_path(
+    entry: &ignore::DirEntry,
+    base: &Path,
+    include: Option<&GlobSet>,
+) -> Option<String> {
+    if !entry
+        .file_type()
+        .map(|kind| kind.is_file())
+        .unwrap_or(false)
+    {
+        return None;
+    }
+    let relative = entry.path().strip_prefix(base).ok()?;
+    let relative = relative.to_string_lossy().replace('\\', "/");
+    match include {
+        Some(include) if !include.is_match(&relative) => None,
+        _ => Some(relative),
+    }
+}
+
+/// 逐文件读前 8KB，统计「非 UTF-8 且非二进制」文件数（上级 §14.7 冷路径）。
+///
+/// 复用单个缓冲；有 BOM 的文件已可搜（`bom_sniffing`），合法 UTF-8 的文件本来就搜过了，
+/// 两者都不计入。达到 [`PROBE_FILE_LIMIT`] 或 deadline 即停并标记 `truncated`。
+fn probe_non_utf8(base: &Path, include: Option<&GlobSet>, deadline: Instant) -> NonUtf8Probe {
+    let mut probe = NonUtf8Probe {
+        files: 0,
+        truncated: false,
+    };
+    let mut buffer = Vec::with_capacity(BINARY_PROBE_BYTES);
+    let mut checked = 0usize;
+
+    for entry in walk(base) {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        if searchable_path(&entry, base, include).is_none() {
+            continue;
+        }
+        if checked >= PROBE_FILE_LIMIT {
+            probe.truncated = true;
+            break;
+        }
+        if Instant::now() >= deadline {
+            probe.truncated = true;
+            break;
+        }
+        checked += 1;
+
+        buffer.clear();
+        let read = read_prefix(entry.path(), &mut buffer);
+        if read == PrefixKind::NonUtf8 {
+            probe.files += 1;
+        }
+    }
+
+    probe
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PrefixKind {
+    /// 合法 UTF-8，或只是被 8KB 窗口截断（尾部半个字符）。
+    Utf8,
+    /// 有 BOM：`bom_sniffing` 已能搜。
+    Bom,
+    /// 含 `0x00`：二进制。
+    Binary,
+    /// 既非 UTF-8 也非二进制：`read` 会要求显式 `encoding`。
+    NonUtf8,
+}
+
+fn read_prefix(path: &Path, buffer: &mut Vec<u8>) -> PrefixKind {
+    use std::io::Read as _;
+
+    let Ok(file) = std::fs::File::open(path) else {
+        return PrefixKind::Utf8;
+    };
+    match std::io::BufReader::new(file)
+        .take(BINARY_PROBE_BYTES as u64)
+        .read_to_end(buffer)
+    {
+        Ok(_) => classify_prefix(buffer),
+        Err(_) => PrefixKind::Utf8,
+    }
+}
+
+fn classify_prefix(prefix: &[u8]) -> PrefixKind {
+    if encoding_rs::Encoding::for_bom(prefix).is_some() {
+        return PrefixKind::Bom;
+    }
+    if prefix.contains(&0) {
+        return PrefixKind::Binary;
+    }
+    match std::str::from_utf8(prefix) {
+        Ok(_) => PrefixKind::Utf8,
+        // `error_len == None` 是「读到一半」而非「非法字节」，不能算非 UTF-8。
+        Err(error) if error.error_len().is_none() => PrefixKind::Utf8,
+        Err(_) => PrefixKind::NonUtf8,
+    }
 }
 
 struct FileSink<'a> {
@@ -416,7 +571,10 @@ impl Sink for FileSink<'_> {
         let first_line = mat.line_number().unwrap_or(0);
         for (index, line) in mat.lines().enumerate() {
             let number = first_line + index as u64;
-            let text = trim_line_end(line);
+            let (text, lossy) = trim_line_end(line);
+            if lossy {
+                self.outcome.lossy_lines += 1;
+            }
             self.outcome
                 .lines
                 .push(format!("{}:{}:{}", self.path, number, text));
@@ -434,11 +592,22 @@ impl Sink for FileSink<'_> {
             return Ok(true);
         }
         let number = context.line_number().unwrap_or(0);
-        let text = trim_line_end(context.bytes());
+        // `lossyLines` 只统计命中行（上级 §14.7），上下文行不参与计数。
+        let (text, _) = trim_line_end(context.bytes());
         self.outcome
             .lines
             .push(format!("{}-{}-{}", self.path, number, text));
         Ok(true)
+    }
+
+    fn binary_data(
+        &mut self,
+        _searcher: &Searcher,
+        _binary_byte_offset: u64,
+    ) -> Result<bool, std::io::Error> {
+        self.outcome.binary_skipped += 1;
+        // 返回 false 即放弃本文件：`quit` 语义下继续读没有意义，只会产出乱码行。
+        Ok(false)
     }
 
     fn context_break(&mut self, _searcher: &Searcher) -> Result<bool, std::io::Error> {
@@ -449,7 +618,18 @@ impl Sink for FileSink<'_> {
     }
 }
 
-fn trim_line_end(bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    text.trim_end_matches(['\n', '\r']).to_string()
+/// 去掉行尾换行；返回文本是否含替换字符（原始字节非法 UTF-8）。
+///
+/// 先走 `from_utf8` 快速路径（合法时零分配），失败才 `from_utf8_lossy`
+/// 并置 `lossy`，让调用方能在结果里如实报告「这一行不是 UTF-8」。
+fn trim_line_end(bytes: &[u8]) -> (String, bool) {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => (text.trim_end_matches(['\n', '\r']).to_string(), false),
+        Err(_) => (
+            String::from_utf8_lossy(bytes)
+                .trim_end_matches(['\n', '\r'])
+                .to_string(),
+            true,
+        ),
+    }
 }

@@ -115,10 +115,29 @@ pub struct ReadReceiptKey {
 }
 
 /// 已返回过的读取记录。`revision` 变化即失效，必须重读。
+///
+/// `encoding` / `has_bom` 是写侧（`write` / `edit`）唯一的编码来源：
+/// 它们只消费、不重判（I38c §14.2），因此必须由 `read` 成功时写入。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadReceipt {
     pub revision: String,
     pub tool_call_id: String,
+    /// 实际生效编码的规范名（WHATWG label，如 `UTF-8` / `GBK`）。
+    pub encoding: String,
+    /// 文件是否带 BOM；写回时据此补回。
+    pub has_bom: bool,
+}
+
+impl ReadReceipt {
+    /// 默认回执：UTF-8 无 BOM。适用于新建文件与尚未探测编码的路径。
+    pub fn utf8(revision: impl Into<String>, tool_call_id: impl Into<String>) -> Self {
+        Self {
+            revision: revision.into(),
+            tool_call_id: tool_call_id.into(),
+            encoding: "UTF-8".to_string(),
+            has_bom: false,
+        }
+    }
 }
 
 /// 跨轮去重端口（P2 定义，P5 由 `read` / `edit` 使用）。

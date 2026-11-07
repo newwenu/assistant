@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use encoding_rs::{Encoding, UTF_8};
 use serde_json::Value;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -8,6 +9,9 @@ use crate::context::ToolUseContext;
 use crate::os::agent_read::file_revision;
 use crate::os::output::human_bytes;
 use crate::os::path;
+use crate::os::text_encoding::{
+    detect_and_decode, encode_text, parse_optional_encoding, resolve_label, writes_bom,
+};
 use crate::r#trait::{
     ApprovalPreview, BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier,
     ValidationResult,
@@ -20,6 +24,11 @@ const TOOL_ID: &str = "write";
 
 /// 单次写入上限：按落盘后的完整文件大小计算（`append` 含追加前的内容）。
 pub const MAX_WRITE_BYTES: usize = 10 * 1024 * 1024;
+
+/// 转码写入上限（G3）：非 UTF-8 路径必须整文件解码再编码，成本随文件线性增长。
+///
+/// UTF-8 无 BOM 的直写路径不受此限，仍用 [`MAX_WRITE_BYTES`]。
+pub const MAX_TRANSCODE_BYTES: usize = 1024 * 1024;
 
 pub struct AgentWriteTool {
     receipts: Arc<dyn ReadReceiptStore>,
@@ -39,11 +48,12 @@ impl Tool for AgentWriteTool {
 
     async fn description(&self) -> Result<String, String> {
         Ok(
-            "Write a UTF-8 text file, creating missing parent directories. Overwrites the \
+            "Write a text file, creating missing parent directories. Overwrites the \
              existing file unless `append = true`, in which case the content is appended. \
              Writing content identical to the existing file is a no-op (mtime unchanged). \
              Writes are atomic (temp file + fsync + rename) and capped at 10MB. Refuses to \
-             overwrite an existing file that cannot be read."
+             overwrite an existing file that cannot be read. Non-UTF-8 writes require a prior \
+             read of the file in this session and are capped at 1MB."
                 .to_string(),
         )
     }
@@ -57,7 +67,11 @@ impl Tool for AgentWriteTool {
                     "type": "string",
                     "description": "Full file content, or the fragment to append"
                 },
-                "append": { "type": "boolean", "description": "Append mode (default false)" }
+                "append": { "type": "boolean", "description": "Append mode (default false)" },
+                "encoding": {
+                    "type": "string",
+                    "description": "Optional target encoding (e.g. gbk); omit to keep the file's encoding, new files use UTF-8"
+                }
             },
             "required": ["path", "content"]
         })
@@ -127,17 +141,19 @@ impl Tool for AgentWriteTool {
             return Ok(ToolResult::err(too_large_message(request.content.len())));
         }
 
-        let resolve_context = context.clone();
-        let written = tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve(&request.path, &resolve_context)?;
-            let outcome = write_atomically(&resolved, &request.content, request.append)?;
-            let revision = file_revision(&resolved)?;
-            Ok::<(PathBuf, WriteOutcome, String), String>((resolved, outcome, revision))
+        let probe_context = context.clone();
+        let raw_path = request.path.clone();
+        let prepared = tokio::task::spawn_blocking(move || {
+            let resolved = path::resolve(&raw_path, &probe_context)?;
+            let exists = std::fs::metadata(&resolved)
+                .map(|metadata| metadata.is_file())
+                .unwrap_or(false);
+            Ok::<(PathBuf, bool), String>((resolved, exists))
         })
         .await;
 
-        let (resolved, outcome, revision) = match written {
-            Ok(Ok(written)) => written,
+        let (resolved, exists) = match prepared {
+            Ok(Ok(prepared)) => prepared,
             Ok(Err(error)) => return Ok(ToolResult::err(error)),
             Err(error) => return Err(format!("write task failed: {}", error)),
         };
@@ -148,12 +164,50 @@ impl Tool for AgentWriteTool {
             start_line: None,
             end_line: None,
         };
+
+        let receipt = if exists {
+            self.receipts.lookup(&key).await
+        } else {
+            None
+        };
+        // 现有文件的编码只作「追加时解码现有内容」的来源；目标编码可以与它不同（显式转码）。
+        let source = receipt
+            .as_ref()
+            .and_then(|receipt| resolve_label(&receipt.encoding));
+        let target = resolve_target_encoding(
+            request.encoding,
+            source,
+            receipt.as_ref().is_some_and(|receipt| receipt.has_bom),
+        );
+        let has_receipt = receipt.is_some();
+
+        let write_path = resolved.clone();
+        let content = request.content;
+        let append = request.append;
+        let written = tokio::task::spawn_blocking(move || {
+            let (outcome, target) =
+                write_atomically(&write_path, &content, append, target, source, has_receipt)?;
+            let revision = file_revision(&write_path)?;
+            Ok::<(PathBuf, WriteOutcome, TargetEncoding, String), String>((
+                write_path, outcome, target, revision,
+            ))
+        })
+        .await;
+
+        let (resolved, outcome, target, revision) = match written {
+            Ok(Ok(written)) => written,
+            Ok(Err(error)) => return Ok(ToolResult::err(error)),
+            Err(error) => return Err(format!("write task failed: {}", error)),
+        };
+
         self.receipts
             .record(
                 key,
                 ReadReceipt {
                     revision: revision.clone(),
                     tool_call_id: context.tool_call_id.clone().unwrap_or_default(),
+                    encoding: target.name().to_string(),
+                    has_bom: target.written_bom(),
                 },
             )
             .await;
@@ -189,6 +243,8 @@ impl Tool for AgentWriteTool {
                 "unchanged": outcome.unchanged,
                 "lines": outcome.lines,
                 "bytes": outcome.bytes,
+                "encoding": target.name(),
+                "hasBom": target.written_bom(),
                 "revision": revision
             }),
             assistant_text,
@@ -200,6 +256,7 @@ struct WriteRequest {
     path: String,
     content: String,
     append: bool,
+    encoding: Option<&'static Encoding>,
 }
 
 impl WriteRequest {
@@ -228,10 +285,13 @@ impl WriteRequest {
             Some(_) => return Err("'append' must be a boolean".to_string()),
         };
 
+        let encoding = parse_optional_encoding(object)?;
+
         Ok(Self {
             path,
             content,
             append,
+            encoding,
         })
     }
 }
@@ -245,32 +305,97 @@ struct WriteOutcome {
     lines: usize,
 }
 
+/// 目标编码与 BOM 状态（G1 / G5 的解析结果）。
+#[derive(Debug, Clone, Copy)]
+struct TargetEncoding {
+    encoding: &'static Encoding,
+    has_bom: bool,
+}
+
+impl TargetEncoding {
+    fn name(&self) -> &'static str {
+        self.encoding.name()
+    }
+
+    /// UTF-8 无 BOM：走原有直写路径，不经过 `encode_text`，G2 / G3 / G4 无额外开销。
+    fn is_plain_utf8(&self) -> bool {
+        self.encoding == UTF_8 && !self.has_bom
+    }
+
+    /// 实际会写进文件的 BOM 状态，用于刷新回执（UTF-16 恒写，其余编码无 BOM）。
+    fn written_bom(&self) -> bool {
+        writes_bom(self.encoding, self.has_bom)
+    }
+}
+
+/// G1：编码解析顺序为 `encoding` 参数 → 已存在文件的回执 → UTF-8。
+///
+/// 回执继承让模型不必知道文件原本是什么编码：`read` 已经发现过，写侧直接复用。
+fn resolve_target_encoding(
+    explicit: Option<&'static Encoding>,
+    inherited: Option<&'static Encoding>,
+    inherited_bom: bool,
+) -> TargetEncoding {
+    TargetEncoding {
+        encoding: explicit.or(inherited).unwrap_or(UTF_8),
+        has_bom: inherited_bom,
+    }
+}
+
 /// 同步写入，必须在 `spawn_blocking` 内调用。
 ///
-/// 顺序固定为「读现有内容 → 判等 / 拼装 → 建父目录 → 临时文件 → `sync_all` → rename」：
-/// 先读是为了在不可读时提前拒绝覆盖，而不是写完才发现目标被占用。
-fn write_atomically(path: &Path, content: &str, append: bool) -> Result<WriteOutcome, String> {
+/// 顺序固定为「读现有内容 → 过五道闸 → 判等 / 拼装 → 建父目录 → 临时文件 →
+/// `sync_all` → rename」：先读是为了在不可读时提前拒绝覆盖，而不是写完才发现目标被占用。
+fn write_atomically(
+    path: &Path,
+    content: &str,
+    append: bool,
+    target: TargetEncoding,
+    source: Option<&'static Encoding>,
+    has_receipt: bool,
+) -> Result<(WriteOutcome, TargetEncoding), String> {
     let existing = read_existing(path)?;
     let created = existing.is_none();
+    let existing_len = existing.as_ref().map_or(0, Vec::len);
 
-    let payload: Vec<u8> = match &existing {
-        Some(bytes) if append => {
-            let mut combined = bytes.clone();
-            combined.extend_from_slice(content.as_bytes());
-            combined
+    if !created && !target.is_plain_utf8() && !has_receipt {
+        return Err(format!(
+            "'{}' exists but has not been read in this session; call read on the whole file \
+             before writing it as {} (transcoding an unread file can corrupt its content)",
+            path.display(),
+            target.name()
+        ));
+    }
+
+    // G3 只按「要转码的输入」计：覆盖场景现有内容整篇被替换，不计入上限。
+    if !target.is_plain_utf8() {
+        let transcoded = content.len() + if append { existing_len } else { 0 };
+        if transcoded > MAX_TRANSCODE_BYTES {
+            return Err(format!(
+                "transcoded write is {} bytes ({} new + {} kept by append), exceeding the {} \
+                 byte limit; convert the file with an external tool, then read and edit it",
+                transcoded,
+                content.len(),
+                transcoded - content.len(),
+                MAX_TRANSCODE_BYTES
+            ));
         }
-        _ => content.as_bytes().to_vec(),
-    };
+    }
+
+    let payload = build_payload(path, existing.as_deref(), content, append, target, source)?;
 
     if let Some(bytes) = &existing {
         if bytes == &payload {
-            return Ok(WriteOutcome {
-                created: false,
-                appended: false,
-                unchanged: true,
-                bytes: bytes.len(),
-                lines: count_lines(bytes),
-            });
+            return Ok((
+                WriteOutcome {
+                    created: false,
+                    appended: false,
+                    unchanged: true,
+                    bytes: bytes.len(),
+                    lines: count_lines(bytes),
+                },
+                target,
+            ));
         }
     }
 
@@ -304,13 +429,58 @@ fn write_atomically(path: &Path, content: &str, append: bool) -> Result<WriteOut
     temp.persist(path)
         .map_err(|error| format!("failed to replace '{}': {}", path.display(), error.error))?;
 
-    Ok(WriteOutcome {
-        created,
-        appended: append && !created,
-        unchanged: false,
-        bytes: payload.len(),
-        lines: count_lines(&payload),
-    })
+    Ok((
+        WriteOutcome {
+            created,
+            appended: append && !created,
+            unchanged: false,
+            bytes: payload.len(),
+            lines: count_lines(&payload),
+        },
+        target,
+    ))
+}
+
+/// 生成落盘字节（G2 / G5）。
+///
+/// 追加一律走「解码现有内容 → 拼接 → 整体编码」，**不**把两段字节直接拼接——编码边界处的
+/// 字节拼接会产生非法序列。唯一的直写例外是「现有内容本身是合法 UTF-8 且无 BOM、目标也是
+/// UTF-8 无 BOM」：此时解码 / 编码都是恒等变换，省掉整文件重编码的开销。
+///
+/// 解码现有内容用**现有文件的编码**（回执），不是目标编码：显式转码时两者可以不同。
+fn build_payload(
+    path: &Path,
+    existing: Option<&[u8]>,
+    content: &str,
+    append: bool,
+    target: TargetEncoding,
+    source: Option<&'static Encoding>,
+) -> Result<Vec<u8>, String> {
+    let text = match (existing, append) {
+        (Some(bytes), true) => {
+            let source_encoding = source.unwrap_or(UTF_8);
+            let plain_source = source_encoding == UTF_8
+                && Encoding::for_bom(bytes).is_none()
+                && std::str::from_utf8(bytes).is_ok();
+            if target.is_plain_utf8() && plain_source {
+                let mut combined = Vec::with_capacity(bytes.len() + content.len());
+                combined.extend_from_slice(bytes);
+                combined.extend_from_slice(content.as_bytes());
+                return Ok(combined);
+            }
+            let decoded = detect_and_decode(bytes, Some(source_encoding))
+                .map_err(|error| format!("'{}': {}", path.display(), error))?;
+            format!("{}{}", decoded.text, content)
+        }
+        _ => content.to_string(),
+    };
+
+    if target.is_plain_utf8() {
+        return Ok(text.into_bytes());
+    }
+
+    encode_text(&text, target.encoding, target.has_bom)
+        .map_err(|error| format!("'{}': {}", path.display(), error))
 }
 
 /// 读取现有文件内容：不存在返回 `None`。

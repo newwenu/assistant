@@ -25,6 +25,20 @@ fn write_file(root: &Path, relative: &str, content: &str) {
     std::fs::write(path, content).expect("write fixture");
 }
 
+fn write_bytes(root: &Path, relative: &str, content: &[u8]) {
+    let path = root.join(relative);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create fixture dir");
+    }
+    std::fs::write(path, content).expect("write fixture");
+}
+
+fn gbk(text: &str) -> Vec<u8> {
+    let (bytes, _, had_errors) = encoding_rs::GBK.encode(text);
+    assert!(!had_errors, "fixture must be lossless");
+    bytes.into_owned()
+}
+
 #[test]
 fn schema_declares_pattern_path_include_and_context() {
     let schema = tool().input_schema();
@@ -34,6 +48,7 @@ fn schema_declares_pattern_path_include_and_context() {
     assert!(schema["properties"]["path"].is_object());
     assert!(schema["properties"]["include"].is_object());
     assert!(schema["properties"]["context"].is_object());
+    assert!(schema["properties"]["encoding"].is_object());
     assert!(
         schema["properties"].get("action").is_none(),
         "schema must not declare the toolbox-injected action field"
@@ -72,6 +87,8 @@ fn validate_input_rejects_bad_arguments() {
         json!({ "pattern": "hit", "context": "2" }),
         json!({ "pattern": "hit(", "path": "." }),
         json!({ "pattern": "hit", "include": "*.{rs", "path": "." }),
+        json!({ "pattern": "hit", "encoding": 42 }),
+        json!({ "pattern": "hit", "encoding": "not-an-encoding", "path": "." }),
     ];
     for input in cases {
         assert!(
@@ -85,6 +102,13 @@ fn validate_input_rejects_bad_arguments() {
     assert!(
         tool.validate_input(
             &json!({ "pattern": "hit", "path": ".", "include": "*.rs", "context": 2 }),
+            &ctx
+        )
+        .ok
+    );
+    assert!(
+        tool.validate_input(
+            &json!({ "pattern": "hit", "path": ".", "encoding": "gbk" }),
             &ctx
         )
         .ok
@@ -312,4 +336,131 @@ async fn the_internal_deadline_stops_the_walk_and_keeps_partial_results() {
     assert_eq!(data["totalMatches"], json!(0));
     assert!(result.assistant_text().contains("time budget"));
     assert!(result.assistant_text().contains("may be incomplete"));
+}
+
+#[tokio::test]
+async fn an_explicit_encoding_makes_non_utf8_files_searchable() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_bytes(dir.path(), "zh.txt", &gbk("第一行\n目标行\n第三行\n"));
+
+    let without = tool()
+        .execute(&json!({ "pattern": "目标行", "path": "." }), &ctx)
+        .await
+        .unwrap();
+    assert!(without.ok);
+    assert_eq!(without.data.as_ref().unwrap()["totalMatches"], json!(0));
+
+    let with = tool()
+        .execute(
+            &json!({ "pattern": "目标行", "path": ".", "encoding": "gbk" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    assert!(with.ok, "{:?}", with.error);
+    let data = with.data.as_ref().unwrap();
+    assert_eq!(data["totalMatches"], json!(1));
+    assert_eq!(data["lossyLines"], json!(0));
+    assert_eq!(with.assistant_text(), "zh.txt:2:目标行");
+}
+
+#[tokio::test]
+async fn zero_matches_probe_reports_non_utf8_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_bytes(dir.path(), "zh.txt", &gbk("中文内容\n"));
+    write_file(dir.path(), "en.txt", "plain ascii\n");
+    write_bytes(dir.path(), "bin.dat", b"\x00\x01binary");
+
+    let result = tool()
+        .execute(&json!({ "pattern": "no_such_token", "path": "." }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["nonUtf8Probe"]["files"], json!(1));
+    assert_eq!(data["nonUtf8Probe"]["truncated"], json!(false));
+    let text = result.assistant_text();
+    assert!(text.contains("(no matches)"));
+    assert!(text.contains("[non-utf8: 1 file(s)"));
+}
+
+#[tokio::test]
+async fn a_utf8_only_scope_reports_no_non_utf8_footer() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_file(dir.path(), "a.txt", "alpha\n");
+    write_bytes(dir.path(), "bom.txt", "\u{feff}bom body\n".as_bytes());
+
+    let result = tool()
+        .execute(&json!({ "pattern": "no_such_token", "path": "." }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["nonUtf8Probe"]["files"], json!(0));
+    assert_eq!(result.assistant_text(), "(no matches)");
+}
+
+#[tokio::test]
+async fn hits_skip_the_probe_entirely() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_file(dir.path(), "a.txt", "hit\n");
+    write_bytes(dir.path(), "zh.txt", &gbk("中文内容\n"));
+
+    let result = tool()
+        .execute(&json!({ "pattern": "hit", "path": "." }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    assert_eq!(result.data.as_ref().unwrap()["nonUtf8Probe"], json!(null));
+}
+
+#[tokio::test]
+async fn binary_files_are_skipped_without_garbage_lines() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_bytes(dir.path(), "bin.dat", b"\x00\x01hit\x00tail");
+    write_file(dir.path(), "a.txt", "hit\n");
+
+    let result = tool()
+        .execute(&json!({ "pattern": "hit", "path": "." }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["binarySkipped"], json!(1));
+    assert_eq!(data["totalMatches"], json!(1));
+    assert_eq!(result.assistant_text(), "a.txt:1:hit");
+}
+
+#[tokio::test]
+async fn the_probe_stops_at_its_file_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    let body = gbk("中文内容\n");
+    for index in 0..201 {
+        write_bytes(dir.path(), &format!("zh/{:04}.txt", index), &body);
+    }
+
+    let result = tool()
+        .execute(&json!({ "pattern": "no_such_token", "path": "." }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["nonUtf8Probe"]["files"], json!(200));
+    assert_eq!(data["nonUtf8Probe"]["truncated"], json!(true));
+    assert_eq!(
+        result.assistant_text(),
+        "(no matches)\n[non-utf8: 200 file(s)]",
+        "the footer stays in its documented shape; truncation is only in `data`"
+    );
 }

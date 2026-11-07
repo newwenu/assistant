@@ -1,8 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use assistant_tools::os::agent_write::{AgentWriteTool, MAX_WRITE_BYTES};
-use assistant_tools::storage::{InMemoryReadReceiptStore, ReadReceiptKey, ReadReceiptStore};
+use assistant_tools::os::agent_write::{AgentWriteTool, MAX_TRANSCODE_BYTES, MAX_WRITE_BYTES};
+use assistant_tools::storage::{
+    InMemoryReadReceiptStore, ReadReceipt, ReadReceiptKey, ReadReceiptStore,
+};
 use assistant_tools::{
     Tool, ToolAudience, ToolErrorKind, ToolResult, ToolTier, ToolUseContext, ValidationResult,
 };
@@ -33,6 +35,46 @@ fn write_fixture(root: &Path, name: &str, content: &str) -> PathBuf {
     path
 }
 
+fn write_bytes_fixture(root: &Path, name: &str, content: &[u8]) -> PathBuf {
+    let path = root.join(name);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create fixture parent");
+    }
+    std::fs::write(&path, content).expect("write fixture");
+    path
+}
+
+/// 回执键里的路径必须与工具解析后的一致（`resolve` 会做规范化）。
+fn resolved_path(tool: &AgentWriteTool, ctx: &ToolUseContext, input: &Value) -> String {
+    tool.permission_intents(input, ctx).expect("resolve")[0].resources[0].clone()
+}
+
+/// 模拟一次 `read`：写入回执，供写侧继承编码（G1 / G4）。
+async fn record_read_receipt(
+    receipts: &Arc<dyn ReadReceiptStore>,
+    ctx: &ToolUseContext,
+    resolved: &str,
+    encoding: &str,
+    has_bom: bool,
+) {
+    receipts
+        .record(
+            ReadReceiptKey {
+                session_id: ctx.session_id.clone(),
+                path: resolved.to_string(),
+                start_line: None,
+                end_line: None,
+            },
+            ReadReceipt {
+                revision: String::new(),
+                tool_call_id: "call-read".to_string(),
+                encoding: encoding.to_string(),
+                has_bom,
+            },
+        )
+        .await;
+}
+
 #[test]
 fn schema_declares_path_content_and_append() {
     let schema = tool(store()).input_schema();
@@ -41,6 +83,7 @@ fn schema_declares_path_content_and_append() {
     assert!(schema["properties"]["path"].is_object());
     assert!(schema["properties"]["content"].is_object());
     assert!(schema["properties"]["append"].is_object());
+    assert!(schema["properties"]["encoding"].is_object());
     assert!(
         schema["properties"].get("action").is_none(),
         "schema must not declare the toolbox-injected action field"
@@ -405,4 +448,320 @@ async fn result_data_carries_no_error_channel_on_success() {
     assert!(result.error.is_none());
     assert!(result.error_kind.is_none());
     assert_eq!(result.data.unwrap()["bytes"], Value::from(1));
+}
+
+#[tokio::test]
+async fn new_file_is_written_in_the_requested_encoding() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), Some("session-1"));
+    let receipts = store();
+
+    let result = tool(receipts.clone())
+        .execute(
+            &json!({ "path": "gbk.txt", "content": "中文内容\n", "encoding": "gbk" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let data = result.data.clone().unwrap();
+    assert_eq!(data["encoding"], json!("GBK"));
+    assert_eq!(data["hasBom"], json!(false));
+
+    let (expected, _, had_errors) = encoding_rs::GBK.encode("中文内容\n");
+    assert!(!had_errors);
+    assert_eq!(
+        &std::fs::read(dir.path().join("gbk.txt")).unwrap()[..],
+        expected.as_ref()
+    );
+
+    let key = ReadReceiptKey {
+        session_id: Some("session-1".to_string()),
+        path: data["path"].as_str().unwrap().to_string(),
+        start_line: None,
+        end_line: None,
+    };
+    let receipt = receipts.lookup(&key).await.expect("receipt recorded");
+    assert_eq!(receipt.encoding, "GBK");
+    assert!(!receipt.has_bom);
+}
+
+#[tokio::test]
+async fn transcoding_an_unread_existing_file_is_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), Some("session-1"));
+    let path = write_fixture(dir.path(), "a.txt", "alpha\n");
+
+    let result = tool(store())
+        .execute(
+            &json!({ "path": "a.txt", "content": "beta\n", "encoding": "gbk" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
+    assert!(result
+        .error
+        .unwrap_or_default()
+        .contains("has not been read in this session"));
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "alpha\n",
+        "a rejected write must leave the file untouched"
+    );
+}
+
+#[tokio::test]
+async fn characters_the_target_encoding_cannot_represent_are_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), Some("session-1"));
+
+    let result = tool(store())
+        .execute(
+            &json!({ "path": "gbk.txt", "content": "emoji 😀\n", "encoding": "gbk" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
+    assert!(result
+        .error
+        .unwrap_or_default()
+        .contains("cannot be encoded as GBK"));
+    assert!(
+        !dir.path().join("gbk.txt").exists(),
+        "a lossy encode must not create the file"
+    );
+}
+
+#[tokio::test]
+async fn transcoded_writes_above_one_megabyte_are_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), Some("session-1"));
+    let content = "x".repeat(MAX_TRANSCODE_BYTES + 1);
+
+    let result = tool(store())
+        .execute(
+            &json!({ "path": "big.txt", "content": content, "encoding": "gbk" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
+    assert!(result.error.unwrap_or_default().contains("byte limit"));
+    assert!(!dir.path().join("big.txt").exists());
+}
+
+#[tokio::test]
+async fn append_inherits_the_encoding_from_the_read_receipt() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), Some("session-1"));
+    let receipts = store();
+    let (existing, _, had_errors) = encoding_rs::GBK.encode("中文");
+    assert!(!had_errors);
+    write_bytes_fixture(dir.path(), "gbk.txt", &existing);
+
+    let tool = tool(receipts.clone());
+    let resolved = resolved_path(&tool, &ctx, &json!({ "path": "gbk.txt", "content": "x" }));
+    record_read_receipt(&receipts, &ctx, &resolved, "GBK", false).await;
+
+    let result = tool
+        .execute(
+            &json!({ "path": "gbk.txt", "content": "内容\n", "append": true }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    assert_eq!(result.data.clone().unwrap()["encoding"], json!("GBK"));
+
+    let written = std::fs::read(dir.path().join("gbk.txt")).unwrap();
+    let (expected, _, had_errors) = encoding_rs::GBK.encode("中文内容\n");
+    assert!(!had_errors);
+    assert_eq!(
+        &written[..],
+        expected.as_ref(),
+        "append must decode the existing bytes, concatenate, then re-encode as a whole"
+    );
+}
+
+#[tokio::test]
+async fn transcoded_overwrite_with_identical_content_is_a_no_op() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), Some("session-1"));
+    let receipts = store();
+    let (existing, _, had_errors) = encoding_rs::GBK.encode("中文\n");
+    assert!(!had_errors);
+    let path = write_bytes_fixture(dir.path(), "gbk.txt", &existing);
+    let before = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+    let tool = tool(receipts.clone());
+    let resolved = resolved_path(&tool, &ctx, &json!({ "path": "gbk.txt", "content": "x" }));
+    record_read_receipt(&receipts, &ctx, &resolved, "GBK", false).await;
+
+    let result = tool
+        .execute(&json!({ "path": "gbk.txt", "content": "中文\n" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    assert_eq!(result.data.clone().unwrap()["unchanged"], json!(true));
+    assert_eq!(&std::fs::read(&path).unwrap()[..], existing.as_ref());
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().modified().unwrap(),
+        before,
+        "byte-level idempotency must not touch the file"
+    );
+}
+
+#[tokio::test]
+async fn utf8_bom_is_preserved_through_the_receipt() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), Some("session-1"));
+    let receipts = store();
+    write_bytes_fixture(dir.path(), "a.txt", b"\xEF\xBB\xBFalpha\n");
+
+    let tool = tool(receipts.clone());
+    let resolved = resolved_path(&tool, &ctx, &json!({ "path": "a.txt", "content": "x" }));
+    record_read_receipt(&receipts, &ctx, &resolved, "UTF-8", true).await;
+
+    let result = tool
+        .execute(&json!({ "path": "a.txt", "content": "beta\n" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let data = result.data.clone().unwrap();
+    assert_eq!(data["encoding"], json!("UTF-8"));
+    assert_eq!(data["hasBom"], json!(true));
+    assert_eq!(
+        std::fs::read(dir.path().join("a.txt")).unwrap(),
+        b"\xEF\xBB\xBFbeta\n"
+    );
+}
+
+#[tokio::test]
+async fn utf16_target_always_writes_a_bom() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), Some("session-1"));
+
+    let result = tool(store())
+        .execute(
+            &json!({ "path": "u16.txt", "content": "hi\n", "encoding": "utf-16le" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    assert_eq!(result.data.clone().unwrap()["hasBom"], json!(true));
+
+    let written = std::fs::read(dir.path().join("u16.txt")).unwrap();
+    assert!(written.starts_with(b"\xFF\xFE"));
+    let text: String = written[2..]
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .map(|unit| char::from_u32(unit as u32).unwrap_or('\u{FFFD}'))
+        .collect();
+    assert_eq!(text, "hi\n");
+}
+
+#[tokio::test]
+async fn explicit_transcode_overwrites_the_existing_encoding() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), Some("session-1"));
+    let receipts = store();
+    let (existing, _, had_errors) = encoding_rs::GBK.encode("中文\n");
+    assert!(!had_errors);
+    write_bytes_fixture(dir.path(), "gbk.txt", &existing);
+
+    let tool = tool(receipts.clone());
+    let resolved = resolved_path(&tool, &ctx, &json!({ "path": "gbk.txt", "content": "x" }));
+    record_read_receipt(&receipts, &ctx, &resolved, "GBK", false).await;
+
+    let result = tool
+        .execute(
+            &json!({ "path": "gbk.txt", "content": "plain\n", "encoding": "utf-8" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    assert_eq!(
+        std::fs::read(dir.path().join("gbk.txt")).unwrap(),
+        b"plain\n",
+        "an explicit encoding must win over the inherited one"
+    );
+}
+
+#[tokio::test]
+async fn transcoded_append_decodes_with_the_existing_encoding() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), Some("session-1"));
+    let receipts = store();
+    let (existing, _, had_errors) = encoding_rs::GBK.encode("中文");
+    assert!(!had_errors);
+    write_bytes_fixture(dir.path(), "gbk.txt", &existing);
+
+    let tool = tool(receipts.clone());
+    let resolved = resolved_path(&tool, &ctx, &json!({ "path": "gbk.txt", "content": "x" }));
+    record_read_receipt(&receipts, &ctx, &resolved, "GBK", false).await;
+
+    let result = tool
+        .execute(
+            &json!({
+                "path": "gbk.txt",
+                "content": "内容\n",
+                "append": true,
+                "encoding": "utf-8"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    assert_eq!(
+        String::from_utf8(std::fs::read(dir.path().join("gbk.txt")).unwrap()).unwrap(),
+        "中文内容\n",
+        "append must decode with the source encoding, not the target one"
+    );
+}
+
+#[tokio::test]
+async fn transcoded_overwrite_ignores_the_replaced_bytes_in_the_size_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), Some("session-1"));
+    let receipts = store();
+    let existing = vec![b'x'; MAX_TRANSCODE_BYTES + 4096];
+    write_bytes_fixture(dir.path(), "big.txt", &existing);
+
+    let tool = tool(receipts.clone());
+    let resolved = resolved_path(&tool, &ctx, &json!({ "path": "big.txt", "content": "x" }));
+    record_read_receipt(&receipts, &ctx, &resolved, "GBK", false).await;
+
+    let result = tool
+        .execute(
+            &json!({ "path": "big.txt", "content": "hi\n", "encoding": "gbk" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let (expected, _, had_errors) = encoding_rs::GBK.encode("hi\n");
+    assert!(!had_errors);
+    assert_eq!(
+        &std::fs::read(dir.path().join("big.txt")).unwrap()[..],
+        expected.as_ref()
+    );
 }

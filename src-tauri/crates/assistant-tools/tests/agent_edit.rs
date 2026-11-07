@@ -55,12 +55,44 @@ async fn grant_receipt(
                 start_line: None,
                 end_line: None,
             },
+            assistant_tools::storage::ReadReceipt::utf8(revision, "call-read"),
+        )
+        .await;
+}
+
+/// 与 [`grant_receipt`] 相同，但回执携带 `read` 实际发现的编码 / BOM（上级 §14.5）。
+async fn grant_encoded_receipt(
+    receipts: &Arc<dyn ReadReceiptStore>,
+    root: &Path,
+    name: &str,
+    session: Option<&str>,
+    encoding: &str,
+    has_bom: bool,
+) {
+    let resolved = root.join(name);
+    let revision = assistant_tools::os::agent_read::file_revision(&resolved).unwrap();
+    receipts
+        .record(
+            ReadReceiptKey {
+                session_id: session.map(str::to_string),
+                path: resolved.display().to_string(),
+                start_line: None,
+                end_line: None,
+            },
             assistant_tools::storage::ReadReceipt {
                 revision,
                 tool_call_id: "call-read".to_string(),
+                encoding: encoding.to_string(),
+                has_bom,
             },
         )
         .await;
+}
+
+fn write_bytes_fixture(root: &Path, name: &str, content: &[u8]) -> PathBuf {
+    let path = root.join(name);
+    std::fs::write(&path, content).expect("write fixture");
+    path
 }
 
 #[test]
@@ -607,4 +639,262 @@ async fn edit_refreshes_the_receipt_for_the_next_turn() {
         .unwrap();
     assert!(second.ok, "{:?}", second.error);
     assert_eq!(read(&dir.path().join("a.txt")), "ALPHA2\n");
+}
+
+#[tokio::test]
+async fn gbk_files_stay_gbk_after_editing() {
+    let dir = tempfile::tempdir().unwrap();
+    let receipts = store();
+    let ctx = context(dir.path(), Some("session-1"));
+    let (existing, _, had_errors) = encoding_rs::GBK.encode("中文\n第二行\n");
+    assert!(!had_errors);
+    write_bytes_fixture(dir.path(), "gbk.txt", &existing);
+    grant_encoded_receipt(
+        &receipts,
+        dir.path(),
+        "gbk.txt",
+        Some("session-1"),
+        "GBK",
+        false,
+    )
+    .await;
+
+    let result = tool(receipts.clone())
+        .execute(
+            &json!({ "path": "gbk.txt", "old_string": "第二行", "new_string": "改过的行" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    let data = result.data.clone().unwrap();
+    assert_eq!(data["encoding"], json!("GBK"));
+    assert_eq!(data["hasBom"], json!(false));
+
+    let (expected, _, had_errors) = encoding_rs::GBK.encode("中文\n改过的行\n");
+    assert!(!had_errors);
+    assert_eq!(
+        &std::fs::read(dir.path().join("gbk.txt")).unwrap()[..],
+        expected.as_ref()
+    );
+
+    let key = ReadReceiptKey {
+        session_id: Some("session-1".to_string()),
+        path: data["path"].as_str().unwrap().to_string(),
+        start_line: None,
+        end_line: None,
+    };
+    let receipt = receipts.lookup(&key).await.expect("receipt refreshed");
+    assert_eq!(receipt.encoding, "GBK");
+    assert!(!receipt.has_bom);
+}
+
+#[tokio::test]
+async fn utf8_bom_files_keep_their_bom_after_editing() {
+    let dir = tempfile::tempdir().unwrap();
+    let receipts = store();
+    let ctx = context(dir.path(), Some("session-1"));
+    write_bytes_fixture(dir.path(), "a.txt", b"\xEF\xBB\xBFalpha\n");
+    grant_encoded_receipt(
+        &receipts,
+        dir.path(),
+        "a.txt",
+        Some("session-1"),
+        "UTF-8",
+        true,
+    )
+    .await;
+
+    let result = tool(receipts.clone())
+        .execute(
+            &json!({ "path": "a.txt", "old_string": "alpha", "new_string": "ALPHA" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    assert_eq!(result.data.clone().unwrap()["hasBom"], json!(true));
+    assert_eq!(
+        std::fs::read(dir.path().join("a.txt")).unwrap(),
+        b"\xEF\xBB\xBFALPHA\n"
+    );
+
+    let key = ReadReceiptKey {
+        session_id: Some("session-1".to_string()),
+        path: result.data.clone().unwrap()["path"]
+            .as_str()
+            .unwrap()
+            .to_string(),
+        start_line: None,
+        end_line: None,
+    };
+    let receipt = receipts.lookup(&key).await.expect("receipt refreshed");
+    assert!(receipt.has_bom, "the refreshed receipt must report the BOM");
+}
+
+#[tokio::test]
+async fn characters_the_file_encoding_cannot_represent_are_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let receipts = store();
+    let ctx = context(dir.path(), Some("session-1"));
+    let (existing, _, had_errors) = encoding_rs::GBK.encode("中文\n");
+    assert!(!had_errors);
+    let path = write_bytes_fixture(dir.path(), "gbk.txt", &existing);
+    grant_encoded_receipt(
+        &receipts,
+        dir.path(),
+        "gbk.txt",
+        Some("session-1"),
+        "GBK",
+        false,
+    )
+    .await;
+
+    let result = tool(receipts)
+        .execute(
+            &json!({ "path": "gbk.txt", "old_string": "中文", "new_string": "表情 😀" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
+    assert!(result
+        .error
+        .unwrap_or_default()
+        .contains("cannot be encoded as GBK"));
+    assert_eq!(
+        &std::fs::read(&path).unwrap()[..],
+        existing.as_ref(),
+        "a lossy encode must leave the file untouched"
+    );
+}
+
+#[tokio::test]
+async fn footer_copied_into_old_string_is_diagnosed() {
+    let dir = tempfile::tempdir().unwrap();
+    let receipts = store();
+    let ctx = context(dir.path(), Some("session-1"));
+    let (existing, _, had_errors) = encoding_rs::GBK.encode("中文\n");
+    assert!(!had_errors);
+    write_bytes_fixture(dir.path(), "gbk.txt", &existing);
+    grant_encoded_receipt(
+        &receipts,
+        dir.path(),
+        "gbk.txt",
+        Some("session-1"),
+        "GBK",
+        false,
+    )
+    .await;
+
+    let with_footer = tool(receipts.clone())
+        .execute(
+            &json!({
+                "path": "gbk.txt",
+                "old_string": "中文\n[encoding: GBK]",
+                "new_string": "改过"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!with_footer.ok);
+    let error = with_footer.error.unwrap_or_default();
+    assert!(error.contains("[encoding: GBK]"));
+    assert!(error.contains("not part of the file"));
+    assert!(error.contains("Remove it and retry"));
+    assert_eq!(
+        &std::fs::read(dir.path().join("gbk.txt")).unwrap()[..],
+        existing.as_ref()
+    );
+
+    let retried = tool(receipts)
+        .execute(
+            &json!({ "path": "gbk.txt", "old_string": "中文", "new_string": "改过" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    assert!(retried.ok, "{:?}", retried.error);
+
+    let (expected, _, had_errors) = encoding_rs::GBK.encode("改过\n");
+    assert!(!had_errors);
+    assert_eq!(
+        &std::fs::read(dir.path().join("gbk.txt")).unwrap()[..],
+        expected.as_ref()
+    );
+}
+
+#[tokio::test]
+async fn a_real_footer_shaped_last_line_still_matches_exactly() {
+    let dir = tempfile::tempdir().unwrap();
+    let receipts = store();
+    let ctx = context(dir.path(), Some("session-1"));
+    let (existing, _, had_errors) = encoding_rs::GBK.encode("alpha\n[encoding: GBK]\n");
+    assert!(!had_errors);
+    write_bytes_fixture(dir.path(), "gbk.txt", &existing);
+    grant_encoded_receipt(
+        &receipts,
+        dir.path(),
+        "gbk.txt",
+        Some("session-1"),
+        "GBK",
+        false,
+    )
+    .await;
+
+    let result = tool(receipts)
+        .execute(
+            &json!({
+                "path": "gbk.txt",
+                "old_string": "[encoding: GBK]",
+                "new_string": "[encoding: UTF-8]"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        result.ok,
+        "footer detection must only affect diagnostics, never the match itself: {:?}",
+        result.error
+    );
+    let (expected, _, had_errors) = encoding_rs::GBK.encode("alpha\n[encoding: UTF-8]\n");
+    assert!(!had_errors);
+    assert_eq!(
+        &std::fs::read(dir.path().join("gbk.txt")).unwrap()[..],
+        expected.as_ref()
+    );
+}
+
+#[tokio::test]
+async fn non_utf8_files_still_require_a_receipt() {
+    let dir = tempfile::tempdir().unwrap();
+    let receipts = store();
+    let ctx = context(dir.path(), Some("session-1"));
+    let (existing, _, had_errors) = encoding_rs::GBK.encode("中文\n");
+    assert!(!had_errors);
+    write_bytes_fixture(dir.path(), "gbk.txt", &existing);
+
+    let result = tool(receipts)
+        .execute(
+            &json!({ "path": "gbk.txt", "old_string": "中文", "new_string": "改过" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    let error = result.error.unwrap_or_default();
+    assert!(error.contains("has not been read in this session"));
+    assert_eq!(
+        &std::fs::read(dir.path().join("gbk.txt")).unwrap()[..],
+        existing.as_ref()
+    );
 }

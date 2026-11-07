@@ -319,10 +319,10 @@ async fn the_source_receipt_is_invalidated() {
     receipts
         .record(
             key.clone(),
-            assistant_tools::storage::ReadReceipt {
-                revision: file_revision(&source).unwrap(),
-                tool_call_id: "call-read".to_string(),
-            },
+            assistant_tools::storage::ReadReceipt::utf8(
+                file_revision(&source).unwrap(),
+                "call-read",
+            ),
         )
         .await;
     assert!(receipts.lookup(&key).await.is_some());

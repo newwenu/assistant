@@ -11,6 +11,7 @@ pub mod fs_link;
 pub mod output;
 pub mod path;
 pub mod process_output;
+pub mod text_encoding;
 
 use std::sync::Arc;
 

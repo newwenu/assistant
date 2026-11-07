@@ -19,11 +19,21 @@ fn context(root: &Path, session: Option<&str>) -> ToolUseContext {
 }
 
 fn tool() -> AgentReadTool {
-    let store: Arc<dyn ReadReceiptStore> = Arc::new(InMemoryReadReceiptStore::new());
-    AgentReadTool::new(store)
+    tool_with_store().0
+}
+
+fn tool_with_store() -> (AgentReadTool, Arc<InMemoryReadReceiptStore>) {
+    let store = Arc::new(InMemoryReadReceiptStore::new());
+    (AgentReadTool::new(store.clone()), store)
 }
 
 fn write(root: &Path, name: &str, content: &str) -> std::path::PathBuf {
+    let path = root.join(name);
+    std::fs::write(&path, content).expect("write fixture");
+    path
+}
+
+fn write_bytes(root: &Path, name: &str, content: &[u8]) -> std::path::PathBuf {
     let path = root.join(name);
     std::fs::write(&path, content).expect("write fixture");
     path
@@ -34,13 +44,14 @@ fn prefix(number: usize) -> String {
 }
 
 #[test]
-fn schema_declares_path_offset_and_limit() {
+fn schema_declares_path_offset_limit_and_encoding() {
     let schema = tool().input_schema();
     assert_eq!(schema["type"], json!("object"));
     assert_eq!(schema["required"], json!(["path"]));
     assert!(schema["properties"]["path"].is_object());
     assert!(schema["properties"]["offset"].is_object());
     assert!(schema["properties"]["limit"].is_object());
+    assert!(schema["properties"]["encoding"].is_object());
     assert!(
         schema["properties"].get("action").is_none(),
         "schema must not declare the toolbox-injected action field"
@@ -77,6 +88,8 @@ fn validate_input_rejects_bad_arguments() {
         json!({ "path": "a.txt", "offset": "1" }),
         json!({ "path": "a.txt", "limit": 0 }),
         json!({ "path": "a.txt", "limit": "10" }),
+        json!({ "path": "a.txt", "encoding": 42 }),
+        json!({ "path": "a.txt", "encoding": "bogus-label" }),
     ];
     for input in cases {
         assert!(
@@ -438,4 +451,200 @@ async fn result_is_a_tool_result_with_ok_channel() {
 
     assert!(result.ok);
     assert!(result.error.is_none());
+}
+
+#[tokio::test]
+async fn utf8_without_bom_has_no_encoding_footer() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    write(dir.path(), "a.txt", "alpha\n");
+
+    let result = tool()
+        .execute(&json!({ "path": "a.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(!result.assistant_text().contains("[encoding:"));
+}
+
+#[tokio::test]
+async fn utf8_with_bom_marks_the_footer_and_strips_the_bom() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    write_bytes(dir.path(), "a.txt", b"\xEF\xBB\xBFalpha\n");
+
+    let result = tool()
+        .execute(&json!({ "path": "a.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let text = result.assistant_text();
+    assert_eq!(text, format!("{}alpha\n[encoding: UTF-8 (bom)]", prefix(1)));
+    assert!(!text.contains('\u{FEFF}'));
+}
+
+#[tokio::test]
+async fn gbk_with_explicit_encoding_is_decoded_and_labelled() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let (bytes, _, had_errors) = encoding_rs::GBK.encode("中文内容\n");
+    assert!(!had_errors);
+    write_bytes(dir.path(), "gbk.txt", &bytes);
+
+    let result = tool()
+        .execute(&json!({ "path": "gbk.txt", "encoding": "gbk" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let text = result.assistant_text();
+    assert_eq!(text, format!("{}中文内容\n[encoding: GBK]", prefix(1)));
+}
+
+#[tokio::test]
+async fn gbk_without_encoding_is_guessed() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let (bytes, _, had_errors) = encoding_rs::GBK.encode("系统找不到指定的路径。");
+    assert!(!had_errors);
+    write_bytes(dir.path(), "gbk.txt", &bytes);
+
+    let result = tool()
+        .execute(&json!({ "path": "gbk.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let text = result.assistant_text();
+    assert!(text.contains("系统找不到指定的路径。"));
+    assert!(text.ends_with("[encoding: GBK (guess)]"));
+}
+
+#[tokio::test]
+async fn utf16le_with_bom_is_readable_without_a_bom_character() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let mut bytes = Vec::from(b"\xFF\xFE");
+    for unit in "中文\n".encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    write_bytes(dir.path(), "utf16.txt", &bytes);
+
+    let result = tool()
+        .execute(&json!({ "path": "utf16.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let text = result.assistant_text();
+    assert_eq!(
+        text,
+        format!("{}中文\n[encoding: UTF-16LE (bom)]", prefix(1))
+    );
+    assert!(!text.contains('\u{FEFF}'));
+}
+
+#[tokio::test]
+async fn utf16_without_bom_is_rejected_with_an_encoding_hint() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let mut bytes = Vec::new();
+    for unit in "hi".encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    write_bytes(dir.path(), "utf16.txt", &bytes);
+
+    let result = tool()
+        .execute(&json!({ "path": "utf16.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
+    assert!(result.error.unwrap_or_default().contains("encoding"));
+}
+
+#[tokio::test]
+async fn guessed_lossy_encoding_is_rejected_with_an_encoding_hint() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let mut bytes = b"\xB0\xA1".repeat(50);
+    bytes.push(0xFF);
+    write_bytes(dir.path(), "weird.txt", &bytes);
+
+    let result = tool()
+        .execute(&json!({ "path": "weird.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
+    assert!(result.error.unwrap_or_default().contains("encoding"));
+}
+
+#[tokio::test]
+async fn lossy_explicit_encoding_is_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    write_bytes(dir.path(), "gbk.txt", b"\xFF\xFF");
+
+    let result = tool()
+        .execute(&json!({ "path": "gbk.txt", "encoding": "gbk" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
+    assert!(result.error.unwrap_or_default().contains("GBK"));
+}
+
+#[tokio::test]
+async fn explicit_encoding_overrides_utf8_validation() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    write(dir.path(), "a.txt", "中文\n");
+
+    let result = tool()
+        .execute(
+            &json!({ "path": "a.txt", "encoding": "windows-1252" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let text = result.assistant_text();
+    assert!(!text.contains("中文"));
+    assert_eq!(
+        text,
+        format!(
+            "{}ä¸\u{ad}æ\u{2013}\u{2021}\n[encoding: windows-1252]",
+            prefix(1)
+        )
+    );
+}
+
+#[tokio::test]
+async fn receipt_records_the_detected_encoding_and_bom_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let (tool, store) = tool_with_store();
+    let (bytes, _, had_errors) = encoding_rs::GBK.encode("中文内容\n");
+    assert!(!had_errors);
+    let path = write_bytes(dir.path(), "gbk.txt", &bytes);
+
+    tool.execute(&json!({ "path": "gbk.txt", "encoding": "gbk" }), &ctx)
+        .await
+        .unwrap();
+
+    let key = assistant_tools::storage::ReadReceiptKey {
+        session_id: ctx.session_id.clone(),
+        path: path.display().to_string(),
+        start_line: None,
+        end_line: None,
+    };
+    let receipt = store.lookup(&key).await.expect("receipt recorded");
+    assert_eq!(receipt.encoding, "GBK");
+    assert!(!receipt.has_bom);
 }

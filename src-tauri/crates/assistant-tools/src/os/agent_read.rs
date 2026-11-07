@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use encoding_rs::Encoding;
 use serde_json::Value;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -8,6 +9,9 @@ use std::time::UNIX_EPOCH;
 use crate::context::ToolUseContext;
 use crate::os::output::{truncate_output, OutputLimits, TruncatedOutput};
 use crate::os::path;
+use crate::os::text_encoding::{
+    detect_and_decode, parse_optional_encoding, DecodedText, EncodingSource,
+};
 use crate::r#trait::{BehaviorHints, Tool, ToolAudience, ToolTier, ValidationResult};
 use crate::result::ToolResult;
 use crate::storage::{ReadReceipt, ReadReceiptKey, ReadReceiptStore};
@@ -28,8 +32,6 @@ pub const LINE_TRUNCATED_MARKER: &str = " [truncated]";
 pub const DEFAULT_MAX_BYTES: usize = 1024 * 1024;
 /// 单次读取的行数上限。
 pub const DEFAULT_MAX_LINES: usize = 2000;
-/// 二进制检测窗口：只看前 8KB，避免为探测读入整个大文件。
-pub const BINARY_PROBE_BYTES: usize = 8 * 1024;
 
 /// 读取回执的修订号：文件长度 + 修改时间（纳秒）。
 ///
@@ -67,13 +69,13 @@ impl Tool for AgentReadTool {
 
     async fn description(&self) -> Result<String, String> {
         Ok(
-            "Read a UTF-8 text file with line numbers. Output lines are formatted as \
+            "Read a text file with line numbers. Output lines are formatted as \
              `{line_number:>6}\\t{line}`; single lines longer than 2000 characters are cut and \
              marked ` [truncated]`. Reads up to 2000 lines / 1MB per call; use `offset` (1-based, \
-             0 is treated as 1) and `limit` to page through larger files. Binary files and \
-             non-UTF-8 files are rejected. Re-reading the same range of an unchanged file in the \
-             same session returns only a notice instead of the content. Does not follow \
-             `.gitignore`."
+             0 is treated as 1) and `limit` to page through larger files. Binary files are \
+             rejected. Non-UTF-8 files are decoded via BOM detection, via the `encoding` label, \
+             or by a confident guess. Re-reading the same range of an unchanged file in the same \
+             session returns only a notice instead of the content. Does not follow `.gitignore`."
                 .to_string(),
         )
     }
@@ -84,7 +86,11 @@ impl Tool for AgentReadTool {
             "properties": {
                 "path": { "type": "string", "description": "File path to read" },
                 "offset": { "type": "integer", "description": "Start line (1-based; 0 is treated as 1)" },
-                "limit": { "type": "integer", "description": "Max lines to read (must be >= 1)" }
+                "limit": { "type": "integer", "description": "Max lines to read (must be >= 1)" },
+                "encoding": {
+                    "type": "string",
+                    "description": "Optional encoding label (e.g. gbk); omit to auto-detect, BOM wins"
+                }
             },
             "required": ["path"]
         })
@@ -175,9 +181,12 @@ impl Tool for AgentReadTool {
         let read_path = resolved.clone();
         let offset = request.offset;
         let limit = request.limit;
-        let read = tokio::task::spawn_blocking(move || read_range(&read_path, offset, limit)).await;
+        let encoding = request.encoding;
+        let read =
+            tokio::task::spawn_blocking(move || read_range(&read_path, offset, limit, encoding))
+                .await;
 
-        let (output, total_lines) = match read {
+        let (output, total_lines, decoded) = match read {
             Ok(Ok(read)) => read,
             Ok(Err(error)) => return Ok(ToolResult::err(error)),
             Err(error) => return Err(format!("read task failed: {}", error)),
@@ -197,6 +206,10 @@ impl Tool for AgentReadTool {
                 total_lines, start_line
             )
         };
+        let assistant_text = match encoding_footer(&decoded) {
+            Some(footer) => append_footer(&assistant_text, &footer),
+            None => assistant_text,
+        };
 
         self.receipts
             .record(
@@ -204,6 +217,8 @@ impl Tool for AgentReadTool {
                 ReadReceipt {
                     revision,
                     tool_call_id: context.tool_call_id.clone().unwrap_or_default(),
+                    encoding: decoded.encoding_name().to_string(),
+                    has_bom: decoded.has_bom,
                 },
             )
             .await;
@@ -227,6 +242,7 @@ struct ReadRequest {
     offset: u64,
     limit: Option<usize>,
     offset_specified: bool,
+    encoding: Option<&'static Encoding>,
 }
 
 impl ReadRequest {
@@ -249,12 +265,14 @@ impl ReadRequest {
             Some(value) => Some(value as usize),
             None => None,
         };
+        let encoding = parse_optional_encoding(object)?;
 
         Ok(Self {
             path,
             offset: offset.unwrap_or(1).max(1),
             limit,
             offset_specified: offset.is_some(),
+            encoding,
         })
     }
 }
@@ -269,31 +287,20 @@ fn optional_u64(object: &serde_json::Map<String, Value>, key: &str) -> Result<Op
     }
 }
 
-/// 同步读取与渲染，必须在 `spawn_blocking` 内调用。
+/// 同步读取、解码与渲染，必须在 `spawn_blocking` 内调用。
 fn read_range(
     path: &Path,
     offset: u64,
     limit: Option<usize>,
-) -> Result<(TruncatedOutput, usize), String> {
+    encoding: Option<&'static Encoding>,
+) -> Result<(TruncatedOutput, usize, DecodedText), String> {
     let bytes = std::fs::read(path)
         .map_err(|error| format!("failed to read '{}': {}", path.display(), error))?;
 
-    if bytes.iter().take(BINARY_PROBE_BYTES).any(|byte| *byte == 0) {
-        return Err(format!(
-            "'{}' looks like a binary file (NUL byte within the first {} bytes); \
-             read only supports text files",
-            path.display(),
-            BINARY_PROBE_BYTES
-        ));
-    }
+    let decoded = detect_and_decode(&bytes, encoding)
+        .map_err(|error| format!("'{}': {}", path.display(), error))?;
 
-    let text = String::from_utf8(bytes).map_err(|_| {
-        format!(
-            "'{}' is not valid UTF-8 text; read only supports UTF-8 files",
-            path.display()
-        )
-    })?;
-
+    let text = decoded.text.as_str();
     let total_lines = text.lines().count();
     let start_index = (offset.saturating_sub(1) as usize).min(total_lines);
     let end_index = match limit {
@@ -320,7 +327,31 @@ fn read_range(
         max_lines: DEFAULT_MAX_LINES,
         preview_bytes: 0,
     };
-    Ok((truncate_output(&rendered, &limits), total_lines))
+    Ok((truncate_output(&rendered, &limits), total_lines, decoded))
+}
+
+/// 编码 footer（上级 §14.4）：UTF-8 无 BOM 时静默，其余带来源后缀。
+fn encoding_footer(decoded: &DecodedText) -> Option<String> {
+    if decoded.source == EncodingSource::Utf8 && !decoded.has_bom {
+        return None;
+    }
+    let label = decoded.encoding_name();
+    Some(match decoded.source.suffix() {
+        Some(suffix) => format!("[encoding: {} ({})]", label, suffix),
+        None => format!("[encoding: {}]", label),
+    })
+}
+
+/// 追加 footer 并保证它独占最后一行：正文已以换行结束时不再补空行。
+fn append_footer(text: &str, footer: &str) -> String {
+    if text.is_empty() {
+        return footer.to_string();
+    }
+    if text.ends_with('\n') {
+        format!("{}{}", text, footer)
+    } else {
+        format!("{}\n{}", text, footer)
+    }
 }
 
 fn truncate_line(line: &str) -> String {
