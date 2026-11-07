@@ -63,7 +63,9 @@ fn rejects_incomplete_key_blocks() {
 
 #[test]
 fn accepts_openssh_pkcs1_pkcs8_and_ppk_formats() {
-    let rsa_key = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap();
+    // 1024 位只为验证三种格式的解析与指纹一致性；密钥强度与被测逻辑无关，
+    // 而 2048 位生成在测试机上要 1.5s 以上，属于白等的成本。
+    let rsa_key = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), 1024).unwrap();
     let keypair = ssh_key::private::RsaKeypair::try_from(&rsa_key).unwrap();
     let openssh = ssh_key::PrivateKey::new(
         ssh_key::private::KeypairData::Rsa(keypair),
@@ -75,7 +77,7 @@ fn accepts_openssh_pkcs1_pkcs8_and_ppk_formats() {
 
     let from_openssh = validate_private_key(openssh.as_bytes()).unwrap();
     assert_eq!(from_openssh.key_type, "rsa");
-    assert_eq!(from_openssh.bits, 2048);
+    assert_eq!(from_openssh.bits, 1024);
     assert_eq!(from_openssh.comment, "vault-test@example");
     assert!(from_openssh.fingerprint.starts_with("SHA256:"));
     assert!(from_openssh.public_key.starts_with("ssh-rsa "));
@@ -83,13 +85,13 @@ fn accepts_openssh_pkcs1_pkcs8_and_ppk_formats() {
     let pkcs1 = rsa_key.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF).unwrap();
     let from_pkcs1 = validate_private_key(pkcs1.as_bytes()).unwrap();
     assert_eq!(from_pkcs1.key_type, "rsa");
-    assert_eq!(from_pkcs1.bits, 2048);
+    assert_eq!(from_pkcs1.bits, 1024);
     assert_eq!(from_pkcs1.fingerprint, from_openssh.fingerprint);
 
     let pkcs8 = rsa_key.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF).unwrap();
     let from_pkcs8 = validate_private_key(pkcs8.as_bytes()).unwrap();
     assert_eq!(from_pkcs8.key_type, "rsa");
-    assert_eq!(from_pkcs8.bits, 2048);
+    assert_eq!(from_pkcs8.bits, 1024);
     assert_eq!(from_pkcs8.fingerprint, from_openssh.fingerprint);
 
     let ppk = b"PuTTY-User-Key-File-2: ssh-rsa\nEncryption: none\nComment: imported\nPrivate-Lines: 1\nAAAA\n";

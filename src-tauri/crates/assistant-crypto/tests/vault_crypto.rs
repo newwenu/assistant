@@ -4,6 +4,7 @@ use assistant_crypto::vault_crypto::types::{
 use assistant_crypto::vault_crypto::VaultCrypto;
 use zeroize::Zeroize;
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn derive_master_key_deterministic() {
     let salt = [0xABu8; 32];
@@ -12,6 +13,7 @@ fn derive_master_key_deterministic() {
     assert_eq!(key1, key2);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn derive_master_key_different_passwords() {
     let salt = [0xABu8; 32];
@@ -20,6 +22,7 @@ fn derive_master_key_different_passwords() {
     assert_ne!(key1, key2);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn derive_master_key_different_salts() {
     let salt1 = [0x01u8; 32];
@@ -29,6 +32,7 @@ fn derive_master_key_different_salts() {
     assert_ne!(key1, key2);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn verify_master_password_correct() {
     let hash_salt = [0xCDu8; 32];
@@ -37,6 +41,7 @@ fn verify_master_password_correct() {
     assert!(valid);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn verify_master_password_incorrect() {
     let hash_salt = [0xCDu8; 32];
@@ -45,6 +50,7 @@ fn verify_master_password_incorrect() {
     assert!(!valid);
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn derive_entry_key_deterministic() {
     let master_bytes = VaultCrypto::derive_master_key("password", &[0u8; 32]).unwrap();
@@ -54,6 +60,7 @@ fn derive_entry_key_deterministic() {
     assert_eq!(entry_key1.expose(), entry_key2.expose());
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn derive_entry_key_different_ids() {
     let master_bytes = VaultCrypto::derive_master_key("password", &[0u8; 32]).unwrap();
@@ -63,6 +70,7 @@ fn derive_entry_key_different_ids() {
     assert_ne!(entry_key1.expose(), entry_key2.expose());
 }
 
+#[cfg(feature = "slow-tests")]
 #[test]
 fn derive_sqlcipher_key_deterministic() {
     let master_bytes = VaultCrypto::derive_master_key("password", &[0u8; 32]).unwrap();

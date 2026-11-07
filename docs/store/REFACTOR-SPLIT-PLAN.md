@@ -89,6 +89,22 @@ assistant-agent/src/multimodal/
 | `src-tauri/src/cmd/vault/sync.rs`（387） | 20 个 command 覆盖同步、Git 远端、历史、冲突四类 | `cmd/vault/sync/{mod,git,history,conflict}.rs` |
 | `assistant-providers/gemini/request.rs`（373） | `chat_completion_stream` 单函数（请求体组装 + 发送 + 流包装）+ URL 推导 | `gemini/request/{mod,body,stream,url}.rs` |
 | `src-tauri/src/cmd/compaction.rs`（353） | 2 个入口 command + `execute_compaction` 单函数（提示词构建、provider 调用、流消费、落库）+ 部分结果落库 | `cmd/compaction/{mod,pipeline,persist}.rs`；`execute_compaction` 按"构建提示 → 调 provider → 消费流 → 落库"四段拆 |
+| `assistant-tools/os/agent_grep.rs`（747） | 工具契约、输出渲染（行上限/超时 footer）、请求解析（include 合并、`base_directory`）、遍历与文件过滤策略、`grep-searcher` 接线（`FileSink` + 6 个 `Sink` 回调）、非 UTF-8 前缀探测（冷路径） | `os/agent_grep/{mod,request,outcome,search,sink,probe,render}.rs`；`outcome.rs` 为共享类型叶子，`SearchOutcome` 字段需由私有改 `pub(crate)` |
+| `assistant-tools/os/agent_delete.rs`（571） | 安全边界（`resolve_target` / `reject_undeletable` / `same_path` / `home_dir`）、平台属性（只读与链接判定）、预扫描与审批预演、删除执行（`delete_path` / `remove_link` / `ensure_empty_directory` / `describe_failure`）、工具契约 | `os/agent_delete/{mod,target,attrs,scan,exec}.rs`；`attrs.rs` 为 `scan` 与 `exec` 共用叶子，2 项内联测试测私有函数，保留在源文件内 |
+| `assistant-tools/gateway.rs`（561） | 审批键归一化（`ApprovalScope` / `ApprovalKey` + `canonical_path_for_key` / `split_argv` / `command_cwd` / `parse_endpoint` / `opaque_fingerprint`）、网关决策与审计、三个内存存储实现、测试替身 | `gateway/{mod,approval_key,stores,testing}.rs`；`ApprovalScope` / `ApprovalKey` 必须与归一化规则同处 `approval_key.rs`（分开会让类型留在编排层、规则留在叶子层而互相 `use super`）；`ScriptedApprovalPrompter` 被 `tests/gateway.rs`、`tests/pipeline.rs` 当公开 API 使用，不能加 `#[cfg(test)]`，只能 `pub use` |
+| `assistant-tools/os/agent_write.rs`（531） | 编码策略（`TargetEncoding` + `resolve_target_encoding`）、原子写机制（`write_atomically` / `build_payload` / `read_existing` / `too_large_message`）、行数统计纯函数（`count_lines` / `count_lines_in_file`）、审批预演 | `os/agent_write/{mod,encoding,atomic,lines,preview}.rs`；`lines.rs` 必须独立成叶子，否则 `atomic` 与 `preview` 会为 `count_lines` 互相依赖 |
+
+上述 4 项（`assistant-tools` 工具层，按建议执行次序排列）的共同前提：先把 3 处已复制的实现下沉为跨工具共享叶子，再动手拆分，否则拆完只是把第二份拷贝搬进子模块。先例是 `os/agent_glob.rs` 的 `build_glob_set` 已是 `pub(crate)` 并被 `agent_grep` 复用，属本 crate 既有做法，不触碰对外公开 API。
+
+| 重复项 | 现状 | 建议落点 |
+|---|---|---|
+| `base_directory` | `agent_grep.rs` 与 `agent_glob.rs` 逐字相同 | `os/scope.rs`（`pub(crate)`） |
+| `ignore::WalkBuilder` 配置 | `agent_grep.rs` 与 `agent_glob.rs` 是同一组 `.hidden` / `.git_ignore` / `.follow_links` 开关 | `os/walk.rs`（`pub(crate)`） |
+| `ensure_empty_directory` | `agent_delete.rs` 与 `agent_move.rs` 逻辑同构，仅错误文案不同 | `os/fs_util.rs`（带 `noun` 参数） |
+
+拆分次序：`agent_grep`（零内联测试、以纯搬移为主）→ `agent_delete`（安全边界独立，收益最高）→ `agent_write` → `gateway`（公开 API 需原样 re-export）。
+
+注意：`agent_write` 与 `agent_edit/report.rs` 的审批预演文案用中文，`agent_delete` 的 `describe_preview` 用英文。若审批弹窗直接展示 `summary`，应先统一目标语言再拆，避免搬移时顺手"修正"其中一侧，把语义漂移混进结构重构的 diff。
 
 已从本清单移出的项：
 
@@ -103,6 +119,16 @@ assistant-agent/src/multimodal/
 `gemini/stream.rs`、`cmd/vault/entries.rs`、`openai/chat.rs`、`gemini/code_assist.rs`、`openai/stream.rs`、`stream/inline_think.rs`、`types/chat_delta.rs`、`openai/responses_types.rs`、`src/window.rs`、`security_db/mod.rs`、`assistant-storage/agent_modes.rs`。
 
 触发条件：任一文件出现第二个变化原因（职责数增至 ≥3）时纳入下一轮；**不因行数增长自动触发**。
+
+`assistant-tools` 工具层本轮新增观察项：
+
+| 文件（非空行 / 其中内联测试） | 现状 | 升级条件 |
+|---|---|---|
+| `os/path.rs`（647 / ~295） | 仅两条变化原因：路径归一化（`resolve` / `canonicalize_lenient`）与安全名单（受保护目录、凭据目录、`ensure_within_root`） | 安全名单继续扩张时，下沉 `os/path/protected.rs` |
+| `os/text_encoding.rs`（430 / ~100） | `decode` 与 `encode` 可分，但共享 `Encoding` 枚举与 BOM 语义，拆分收益有限 | 新增编码探测规则时再动 |
+| `os/agent_read.rs`（325） | 唯一可独立的是回执去重 guard，但仅几十行且与读取结果强耦合 | 职责数增至 ≥3 时 |
+
+已核但确认不拆：`pipeline.rs`（350，2 条变化原因）、`registry.rs`（317，其中约 196 行为内联测试，实现单职责）、`os/agent_list.rs` / `os/agent_move.rs` / `os/agent_glob.rs` / `os/agent_mkdir.rs` / `os/output.rs` / `os/process_output.rs`（均 <300 行）。
 
 ---
 
@@ -162,11 +188,12 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 
-注意：`assistant-vault` 的 `tests/sync_engine.rs` 挂在 `#![cfg(feature = "git-tests")]`、`tests/vault_crud.rs` 挂在 `#![cfg(feature = "slow-tests")]`，两个门禁都需显式开启，否则对应测试会显示 `running 0 tests`：
+注意：`assistant-vault` 的 `tests/sync_engine.rs` 挂在 `#![cfg(feature = "git-tests")]`；`tests/vault_crud.rs` 与 `tests/vault_sync_db.rs` 整体挂在 `#![cfg(feature = "slow-tests")]`，`assistant-crypto` 的 `tests/vault_crypto.rs` 中 8 个走真实 Argon2 的用例按用例挂 `#[cfg(feature = "slow-tests")]`。门禁需显式开启，否则对应测试会显示 `running 0 tests` 或被过滤：
 
 ```
 cargo test -p assistant-vault --features slow-tests
 cargo test -p assistant-vault --features git-tests --test sync_engine
+cargo test -p assistant-crypto --features slow-tests --test vault_crypto
 ```
 
 Phase C 与 `multimodal` 无自动化测试覆盖，除上述三条命令外还需手工回归：解锁流程（输入 / 粘贴 / 回车 / Esc / 可见性切换 / DPI 缩放 / 深色主题 / 按钮 hover 与焦点框）；附件四类场景（图片 / 文件 / 纯文本模型 / PDF）。

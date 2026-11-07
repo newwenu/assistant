@@ -181,6 +181,12 @@ rustc_version_runtime.workspace = true
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[profile.dev]
+# 调试信息降为 1（仅文件/行号，不含变量与类型全量信息）：本 workspace 有 80+ 个
+# 集成测试 target，每个都静态链接整条依赖图，完整 debug=2 的 PDB 单个可达 0.21 GB，
+# 且依赖哈希变化后旧产物不回收。降级后 backtrace 仍可读，PDB 体积显著缩小。
+debug = 1
+
 [profile.release]
 codegen-units = 1
 lto = true
