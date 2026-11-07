@@ -2,7 +2,7 @@
 
 > 规格：[I38c-os-tools-spec.md](./I38c-os-tools-spec.md)（索引：§3 实现顺序、§4 共同结构、§10 验收标准）+ 逐工具分册（入口见索引 §5 / §6 / §7 的表格）
 > 阶段：[I38-agent-roadmap.md](./I38-agent-roadmap.md) P5
-> 顺序：C0 → C1 → C2 → C3 → C4 → C6 → C6b → C7 → C8（C5 已移除，`shell` 暂不提供）
+> 顺序：C0 → C1 → C2 → C3 → C4 → C6 → C6b → C7 → C8（C5 已移除，`shell` 暂不提供）；C9 为 P5 之后的独立增量（P11 候选），不参与 P5 门禁
 > 勾选条件：代码已改 **且** 对应验收已跑。
 > **任务项粒度**：一项 = 一个可独立完成、可独立验证的工作单元。语义与边界条件写规格，任务项只写「落点 + 判定条件」，不复制规格原文；同一工具的测试合并为一项，用例清单见规格 §10。任务项内**禁止写行号**，只写符号名（行号会随改动立刻腐化）。
 > 范围：`src-tauri/crates/assistant-tools/src/os/*`、`os/mod.rs` 分组注册、`src-tauri/src/setup.rs` 的注册调用、workspace / crate 依赖；不新增前端组件、不改控制层、不改 DB、不做 MCP。**例外（C6b）**：为接入白名单解析，新增 `ConversationToolConfigDto` / `ToolTierDto` / `ApprovalLevelDto`，`SendChatMessageArgsDto` 增 `tool_config` 字段，`TurnSpec.tools` 收窄为 `Option<Vec<ToolSpec>>`，并删除 P4 的 `ToolCatalog` 接入层（详见 C6b）。
@@ -262,6 +262,69 @@
 
 ---
 
+## C9 多编码支持（P11 候选，不参与 P5 门禁）
+
+> 规格：[I38c §14](./I38c-os-tools-spec.md)（跨工具约束）+ [read §3.3](./I38c-read-spec.md) / [write §3.1](./I38c-write-spec.md) / [edit §5](./I38c-edit-spec.md) / [grep §3.1](./I38c-grep-spec.md)
+> 阶段：[I38-agent-roadmap.md](./I38-agent-roadmap.md) §2.1（P11 候选）
+> 前置：P5 已完成（C0–C8 全绿）；依赖 `encoding_rs` / `chardetng` / `encoding_rs_io` 均已在 crate 依赖中，**不新增依赖**
+> 勾选条件：代码已改 **且** 对应验收（A12–A16）已跑。
+> **门禁**：本组任一项未完成都不影响 P5 结论；不得为 C9 改动 P0–P7 的既有验收口径。
+> **状态**：C9.1–C9.24 全部完成，A12–A16 已跑（`cargo test -p assistant-tools` / `-p assistant-agent`、clippy `-D warnings`、`fmt --check` 全通过）。
+
+实现：`src-tauri/crates/assistant-tools/src/os/{text_encoding,agent_read,agent_write,agent_grep,process_output}.rs`、`src-tauri/crates/assistant-tools/src/os/agent_edit/`（`locate.rs` / `apply.rs`）、`src-tauri/crates/assistant-tools/src/storage.rs`
+测试：`src-tauri/crates/assistant-tools/tests/{text_encoding,agent_read,agent_write,agent_edit,agent_grep,storage}.rs`
+
+**共享检测模块**
+
+- [x] C9.1 新建 `os/text_encoding.rs`：从 `os/process_output.rs` 抽出 `EncodingDetector` + `decode_process_output` 的编码判定部分，提供 `detect_and_decode(bytes, explicit) -> Result<DecodedText, DecodeError>`（返回 `text` / `encoding` / `has_bom` / `source`）与 `encode_text(text, encoding, has_bom) -> Result<Vec<u8>, EncodeError>`；`process_output` 改为 re-export 该模块，行为不变（`IBM866 → WINDOWS_1252` 修正规则随迁）
+- [x] C9.2 `detect_and_decode` 的判定顺序固定为 BOM → 显式 `encoding`（无 BOM 时）→ 二进制判定（原始字节前 8KB 含 `0x00`）→ UTF-8 整文件校验 → `chardetng` 猜测；猜测仅在 `is_confident == true` **且** 整文件解码 `had_errors == false` 时接受（A12）
+  - 二进制判定**必须**排在 UTF-8 校验之前：纯 ASCII 的无 BOM UTF-16（`h\0i\0`）本身是合法 UTF-8，顺序反过来会被静默当成「带 NUL 的文本」读入。
+- [x] C9.3 `encode_text` 有损（`had_errors == true`）返回 `EncodeError`，绝不返回 `?` 替换后的字节；BOM 按编码规则补写（UTF-16 恒补，UTF-8 由调用方 `has_bom` 决定）（A12 / A15）
+  - UTF-16 不能走 `Encoding::encode`：`encoding_rs` 的该 API 是 Web 语义，对 UTF-16 输出 UTF-8；UTF-16 写回按 `encode_utf16` 逐码元拼接。
+- [x] C9.4 单测：UTF-8 / UTF-8+BOM / UTF-16LE+BOM / GBK / Big5 / Shift_JIS / windows-1252 各一例；带 BOM 的 UTF-16 不被二进制检测误杀；无 BOM 的 ASCII UTF-16 在 UTF-8 校验前被拒；不可编码字符（如 emoji 写入 GBK）返回错误；`process_output` 既有用例全部保持通过
+
+**回执与 `read`**
+
+- [x] C9.5 `storage.rs`：`ReadReceipt` 增 `encoding: String` 与 `has_bom: bool`；`InMemoryReadReceiptStore` 读写路径同步；`storage.rs` 单测覆盖新字段
+- [x] C9.6 `agent_read.rs`：`input_schema` 增 `encoding`（可选）；`execute` 改用 `detect_and_decode`，删除 `String::from_utf8(bytes)` 硬失败分支；BOM 在解码时剥离，不进入渲染（A12）
+- [x] C9.7 `agent_read.rs`：footer 一次性追加到结果末尾，UTF-8 无 BOM 时**不输出**；来源后缀 `(bom)` / `(guess)` 按实际生效路径决定；footer 不进 `data` 正文（A13）
+- [x] C9.8 `agent_read.rs`：成功时把 `encoding` / `has_bom` 写入回执；行范围键与整文件键都带（A14）
+- [x] C9.9 测试：schema 合法 / 非法 label；GBK 文件读出的正文与 footer；带 BOM 的 UTF-16 文件可读且首行无 `U+FEFF`；无 BOM 的 UTF-16 被拒并提示传 `encoding`；二进制拒绝；显式 `encoding` 覆盖猜测；UTF-8 无 BOM 时无 footer；回执含新字段
+  - 实测补充：`chardetng` 的 `guess_assess(None, true)` 对非空输入恒返回 `is_confident == true`（1 字节到 200 字节均如此），故「猜测不置信」分支实际不可达；真正生效的兜底是「猜测到的编码整文件解码有损」（如猜成 EUC-KR / GBK 却含 `0xFF`）。单测按后者构造。
+
+**`write` 转码**
+
+- [x] C9.10 `agent_write.rs`：`input_schema` 增 `encoding`（可选）；编码解析顺序为 `encoding` → 已存在文件回执 → UTF-8（G1）
+- [x] C9.11 `agent_write.rs`：五道闸 G1–G5 全部生效，任一不过即 `Business` 且不写盘；`append` 与转码叠加时按「解码现有 → 拼接 → 整体编码」处理，现有内容解码有损即拒绝（A15）
+- [x] C9.12 `agent_write.rs`：幂等判定改为字节级（编码后字节 vs 现有字节）；写后回执刷新为实际写出的 `encoding` / `has_bom`（A14）
+- [x] C9.13 测试：新建 GBK 文件；无回执时对已存在文件要求 GBK → 拒绝（G4）；emoji 写入 GBK → 拒绝（G2）；>1MB 转码写入 → 拒绝（G3）；UTF-8 无 BOM 路径行为与 P5 一致（含幂等不写盘）；`append` 到 GBK 文件后整体仍为 GBK 且无非法序列
+
+**`edit` 写回**
+
+- [x] C9.14 `agent_edit/report.rs`：`not_found_message` 增一段诊断——`old_string` 末尾独占一行的 footer 标记集命中时提示「这不是文件内容，请移除后重试」；只加提示、不改判定，**不检查 `new_string`**（A13，上级 §14.4 规则 4）
+- [x] C9.15 `agent_edit/apply.rs` + `mod.rs`：写回用回执 `encoding` + `has_bom`；`encode` 有损即 `Business` 且不写盘；写后回执刷新（A14 / A15）
+- [x] C9.16 测试：GBK 文件 `edit` 后仍为 GBK；带 BOM 的 UTF-8 文件编辑后 BOM 保留；`old_string` 尾部带 footer 时 0 匹配且诊断含移除提示（重试去掉 footer 后成功）；源文件末行本身即 `[encoding: …]` 时档 1 原样命中、不被误判；`new_string` 含目标编码不可表示字符 → 拒绝且文件未变；无回执仍拒绝
+  - 实测补充：`edit` 解码时仍先查 BOM，因此「回执 `has_bom` 与实际字节不一致」时以文件自述为准（回执只作解码闸门，不作覆盖依据）；回执刷新写入的是实际落盘的 `encoding` / `has_bom`
+
+**`grep` 编码与探测**
+
+- [x] C9.17 `agent_grep.rs`：`SearcherBuilder` 增 `binary_detection(BinaryDetection::quit(b'\x00'))`，保持 `mmap` 关闭、`bom_sniffing` 默认开；`binarySkipped` 计数（A16）
+- [x] C9.18 `agent_grep.rs`：`input_schema` 增 `encoding`；非法 label → `Business`；设置后作为 scope 级开关传入 `SearcherBuilder::encoding`（A16）
+- [x] C9.19 `agent_grep.rs`：`trim_line_end` 改为 `from_utf8` 快速路径 + 失败时 `from_utf8_lossy` 并置 `lossy_lines`，移除静默 `from_utf8_lossy`（A16）
+- [x] C9.20 `agent_grep.rs`：零命中时执行有界 probe（复用单缓冲、前 8KB、跳过 BOM / 二进制 / 合法 UTF-8、`PROBE_FILE_LIMIT = 200`、尊重内部 deadline），结果写 `nonUtf8Probe`，计数 > 0 时输出 `[non-utf8: N file(s)]` footer（A16）
+- [x] C9.21 测试：GBK 目录传 `encoding` 能命中；不传时零命中且 footer 报 `non-utf8`；有命中时不执行 probe（`nonUtf8Probe == null`）；二进制文件不产出乱码行且计入 `binarySkipped`；probe 到上限时 `truncated == true`；UTF-8 目录零命中时无 footer
+  - 实测补充：probe 的 UTF-8 判定把 `Utf8Error::error_len() == None`（8KB 窗口截断在半个字符处）算作合法 UTF-8，否则大文件会被误报为「非 UTF-8」；`binary_data` 返回 `Ok(false)` 才是 `quit` 语义（返回 `true` 会继续读同一文件并产出乱码行）；footer 严格保持 `[non-utf8: N file(s)]` 形态，截断信息只进 `nonUtf8Probe.truncated`（不延长 footer，避免喧宾夺主）
+
+**文档与验收**
+
+- [x] C9.22 回写 [I38a §4-C6](./I38a-tool-control-layer-spec.md) 的 `ReadReceipt` 值扩展（规格已写，落地后确认与代码一致）
+  - 核对结论：规格写的 `encoding: String` + `has_bom: bool`、键结构不变、`revision` 仍是「长度 + mtime」且编码不参与失效，与 `storage.rs` 的 `ReadReceipt` 逐项一致，无需改文档
+- [x] C9.23 `cwd = src-tauri`：`cargo test -p assistant-tools` / `cargo clippy -p assistant-tools --all-targets -- -D warnings` / 先修格式化再 `cargo fmt --all --check` 全通过
+- [x] C9.24 回归确认：P5 的 A1–A11 验收仍全绿（UTF-8 路径行为未变，唯一差异是 §14.3 的二进制检测顺序修正）
+  - 实测：`cargo test -p assistant-tools` 16 个测试目标全绿（含 `agent_read` 19 / `agent_write` 24 / `agent_edit` 28 / `agent_grep` 20）；`cargo test -p assistant-agent` 全绿（A11 的 `ToolCatalog` 清理链路）；`grep` 的 `[non-utf8: …]` tag 已在 §14.4 规则 5 登记，无需回写
+
+---
+
 ## 验收映射
 
 | 规格验收 | 对应任务 |
@@ -280,6 +343,11 @@
 | A9 测试、clippy、fmt | C7.1–C7.3 |
 | A10 `resolve_available_tools` 过滤与确定性 | C6b.1–C6b.5、C6b.23–C6b.29 |
 | A11 P4 遗留清理（`ToolCatalog` 全链路删除） | C6b.16–C6b.22、C7.10 |
+| A12（C9）检测顺序 / BOM 不误杀 / 有损一律拒绝 | C9.1–C9.4、C9.6、C9.9 |
+| A13（C9）footer 契约与 `edit` 标记集诊断 | C9.7、C9.14、C9.16、C9.20 |
+| A14（C9）回执携带编码，写侧只消费不重判 | C9.5、C9.8、C9.12、C9.15 |
+| A15（C9）`write` 五道闸 | C9.3、C9.10、C9.11、C9.13、C9.15 |
+| A16（C9）`grep` 标准配置链与两层探测 | C9.17–C9.21 |
 
 ---
 
@@ -293,3 +361,4 @@
 - 不实现 `ask_user`（P6 联调）
 - 不实现 MCP 工具（P7）
 - 不做白名单配置的前端 UI（AgentMode 编辑表单、对话工具栏）——P5 只做后端 `resolve_available_tools`，前端 UI 仍归 P6
+- 不做多编码支持的代码落地（C9 单列为 P11 候选）；不引入 `iconv` / 外部转码进程 / 新依赖；不做逐文件编码猜测；不做大文件转码写回（[I38c §11 OQ7](./I38c-os-tools-spec.md)）

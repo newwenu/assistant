@@ -3,11 +3,12 @@
 | 项 | 值 |
 |---|---|
 | 状态 | 现行（P5 工具分册） |
-| 日期 | 2026-11-06 |
-| 上级 | [I38c-os-tools-spec.md](./I38c-os-tools-spec.md)（工具清单 / 共同结构 / 验收标准） |
-| 任务 | [I38c-os-tools-tasklist.md](./I38c-os-tools-tasklist.md) C3.5–C3.7 |
+| 日期 | 2026-11-06（2026-11-07 修订：新增 `encoding` 参数与转码五道闸，任务项 C9.10–C9.13） |
+| 上级 | [I38c-os-tools-spec.md](./I38c-os-tools-spec.md)（工具清单 / 共同结构 / 验收标准；多编码跨工具约束见 §14） |
+| 任务 | [I38c-os-tools-tasklist.md](./I38c-os-tools-tasklist.md) C3.5–C3.7（编码支持见 C9.10–C9.13） |
 | 实现 | `src-tauri/crates/assistant-tools/src/os/agent_write.rs` |
 | 注册名 | `write`（旧名 `fs_write`） |
+| 相关 | [I38c-read](./I38c-read-spec.md) §3.3（编码检测）、[I38a §4-C6](./I38a-tool-control-layer-spec.md)（回执端口） |
 
 > 共同约束见上级 §4，本文不重复。
 
@@ -27,7 +28,11 @@
   "properties": {
     "path": { "type": "string" },
     "content": { "type": "string" },
-    "append": { "type": "boolean", "description": "Append mode (default false)" }
+    "append": { "type": "boolean", "description": "Append mode (default false)" },
+    "encoding": {
+      "type": "string",
+      "description": "Optional target encoding (e.g. gbk); omit to keep the file's encoding, new files use UTF-8"
+    }
   },
   "required": ["path", "content"]
 }
@@ -44,6 +49,25 @@
 - **不做 per-target 锁**：同一路径的并发写只由「临时文件 + 原子 rename」保证不产生半截文件，**不保证先后顺序**——后写者会静默覆盖前者。本项目以单会话为主，跨会话冲突改由审批卡片（展示「覆盖」+ 现有行数 / 字节数）与 `read` 回执修订号暴露（[read §3.1](./I38c-read-spec.md)）。引入 per-target 锁需要在 `os/` 层维护跨调用的共享状态（参考实现是 per-target FIFO 锁包住 read→guard→write 整个临界区），P5 不做，理由见 §5。
 - 写回成功后按 [I38c-read §3.1](./I38c-read-spec.md) 的回执键写入新修订号，使「先 `write` 新建、再 `edit`」链路不被读前置误拦。
 
+### 3.1 编码（C9）
+
+编码解析顺序：`encoding` 参数 → 已存在文件的回执 `encoding` → `UTF-8`。解析后过**五道闸**，任一不过即 `Business` 且**不写盘**（上级 §14.6）：
+
+| 闸 | 规则 | 违反时 |
+|---|---|---|
+| G1 | 目标编码必须确定：显式参数或回执继承，二者皆无则 UTF-8 | 不适用（兜底恒可确定） |
+| G2 | `encoding_rs::encode(content)` 的 `had_errors == false` | `Business`：内容含该编码无法表示的字符；**不做 `?` 替换式写回** |
+| G3 | 转码写入 ≤ **1MB**（`content` + `append` 时的现有内容） | `Business`：提示大文件转码写回不支持（上级 §11 OQ7），先外部转码再重读 |
+| G4 | 目标**已存在**且要求非 UTF-8 写入时，必须有本会话回执 | `Business`：提示先 `read`，禁止盲转码覆盖 |
+| G5 | BOM 按目标编码规范：UTF-16 恒写 BOM；UTF-8 仅在回执 `has_bom` 时写 BOM | 不适用（规则内部确定） |
+
+- **G1 的「回执继承」**：`encoding` 缺省且目标是已存在文件时，用回执里的 `encoding` 与 `has_bom`，等价于「按原编码写回」。这是「模型不必知道文件是什么编码」的关键——`read` 已经发现过，`write` 直接用。
+- **UTF-8 路径不受影响**：目标编码解析为 UTF-8 且 `has_bom == false` 时，走原有 `content.as_bytes()` 直写，G2 / G3 / G4 的额外开销为零（`encode` 对 UTF-8 是恒等变换，`had_errors` 恒 false）。
+- **`append` 与转码叠加**：按「解码现有内容 → 拼接 → 整体编码」处理，**不**把两段字节直接拼接（编码边界处的字节拼接会产生非法序列，例如 GBK 多字节字符被截断）。现有内容解码有损时（`had_errors == true`）直接 `Business`，不回退到字节拼接。
+- **幂等判定改为字节级**：`payload_bytes == existing_bytes` 时仍不写盘、不改 mtime；转码路径下 `payload_bytes` 是编码后的字节，因此「同内容不同编码」不会被误判为幂等。
+- **新建文件**：无回执，G4 不适用；`encoding` 缺省写 UTF-8（与现状一致）；显式 `encoding` 生效时按 G2 / G3 / G5 校验。
+- **写后回执**：用**实际写出的**编码与 BOM 状态刷新 `encoding` / `has_bom`，供后续 `edit` / `write` 复用。
+
 ## 4 错误
 
 | 情况 | 行为 |
@@ -53,6 +77,11 @@
 | 目标是目录 | `Business`，提示改用 `mkdir` |
 | 内容超 10MB | `Business` |
 | 目标是已存在但不可读的文件 | `Business`，提示先确认权限 / 关闭占用进程 |
+| `encoding` label 非法 | `Business`，提示 WHATWG Encoding Standard 的规范名 |
+| 内容含目标编码无法表示的字符（G2） | `Business`，指明无法编码的字符；**不**以 `?` 替换写回 |
+| 转码写入超 1MB（G3） | `Business`，提示大文件转码写回不支持，先外部转码再重读 |
+| 已存在文件要求非 UTF-8 写入但无回执（G4） | `Business`，提示先 `read` |
+| `append` 时现有内容解码有损 | `Business`，提示现有内容编码不一致，先 `read` 确认或整体重写 |
 
 ## 5 参考
 
@@ -65,3 +94,4 @@
 | Claude Code（openhuman `bench/harnesses/prompts/claude-code/tools.json`） | `Write`：「Writes a file to the local filesystem, overwriting if one exists … **Overwriting an existing file you haven't Read will fail**」 | **不采纳** 读前置强制（理由同上：`content` 是完整替代，不存在匹配失败，读前置只多一次往返）；保留其「覆盖已有文件」的基本语义 |
 | `append` 参数 | 五个参考实现均只有「创建 / 覆盖」，无追加参数 | **本次新增**：追加是模型高频需求，用 `append` 表达比「先 `read` 再 `write` 全文」便宜一个数量级 |
 | 10MB 硬上限 / 写后回执 | 参考无对应约束 | **本次新增** |
+| `encoding` 参数与转码五道闸（C9） | helix `references/7-text-encoding/helix-view/src/document.rs`（保存按原编码 `encode`，失败即报错）；ripgrep `crates/searcher/src/searcher/mod.rs`（`Encoding::new` 的 label 校验表） | **采纳**「按原编码写回 + 有损即报错」（§3.1 G2 / G5）。**不采纳** 编辑器内存态编码作为来源——本项目用 `ReadReceipt` 继承（§3.1 G1 / G4），避免第二个编码发现点（上级 §14.2） |

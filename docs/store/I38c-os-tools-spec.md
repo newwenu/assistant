@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 状态 | 现行（P5 规格索引；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
-| 日期 | 2026-11-04（2026-11-06 修订：C0 口径定稿、C6b 接入面按代码实测校正、读取回执键补 `session_id`、工具细节拆为逐工具分册；**同日移除 `shell`，改为暂不提供**，见 §13） |
+| 日期 | 2026-11-04（2026-11-06 修订：C0 口径定稿、C6b 接入面按代码实测校正、读取回执键补 `session_id`、工具细节拆为逐工具分册；**同日移除 `shell`，改为暂不提供**，见 §13。2026-11-07 修订：新增 §14 多编码支持（跨工具约束，实现归 P11 候选、任务项 C9）；同日修订 §14.4 规则 4 与 §14.8——footer 由「`edit` 自动剥离」改为「不剥离、只在 0 匹配诊断里识别」，理由见该处） |
 | 阶段 | P5（见 [I38 roadmap](./I38-agent-roadmap.md)） |
 | 关联 | [I18 spec](./I18-agent-tool-architecture-spec.md) Step 2（已迁入本文）、[I31](./I31-phase1-tool-framework-spec.md) §5（共享路径）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱）、[I38a](./I38a-tool-control-layer-spec.md)（Policy/Gateway/Pipeline）、[I18b](./I18b-tool-unified-bridge-spec.md)（ToolBox 桥接） |
 | 影响范围 | `assistant-tools/src/os/*`；`src/tools/os.ts` 与 ToolBox 组件按 I18b 的 5 步流程 |
@@ -11,7 +11,7 @@
 > 本文是 P5 的**唯一权威索引**：工具清单、共同结构、白名单解析、输出截断、验收标准、风险与开放问题只在此维护；**每个工具的安全标记、schema、行为、错误、参考来源拆到逐工具分册**（§5 / §6 / §7 的表格给出入口）。分册与本文冲突时以分册为准，并回写本文。
 > **门禁**：P1（`os/path.rs`）与 P2（Policy/Gateway）未完成前，不得新增任何破坏性工具，也不得把 `delete` 加入生产注册表。
 
-> 执行清单：[I38c-os-tools-tasklist.md](./I38c-os-tools-tasklist.md)（C0–C8 逐项勾选与验收映射）。任务级进度只在该清单维护。
+> 执行清单：[I38c-os-tools-tasklist.md](./I38c-os-tools-tasklist.md)（C0–C8 逐项勾选与验收映射；C9 为 P11 候选增量）。任务级进度只在该清单维护。
 
 ---
 
@@ -38,6 +38,7 @@
 - MCP（P7）。
 - 文件内容语义摘要（I36 design §3.19 未采纳）。
 - 白名单配置的前端 UI（AgentMode 编辑表单、对话工具栏、`ConversationToolConfigDto` 内存态）归 P6（见 [I38d §4](./I38d-agent-frontend-modes-spec.md)）；P5 只做后端 `resolve_available_tools` 与 `send_agent_message` 接入。
+- 非 UTF-8 编码支持的**代码落地**：跨工具约束已在 §14 定稿，实现归 P11 候选（任务项 C9），不进入 P5 门禁。
 
 ### 1.3 前置
 
@@ -116,6 +117,8 @@
 | P5-R3 危险组 | `delete` | P2 完整；前端组件同期上线（P6），不得先行注册 |
 
 `os/mod.rs` 以 `register_readonly_tools` / `register_write_tools` / `register_dangerous_tools` 分组；`setup.rs` 只调用已确认的组。
+
+**P11 增量（C9 多编码）的落地顺序**：`os/text_encoding.rs`（共享检测 / 编码模块）→ `read`（检测 + footer + 回执）→ `write`（五道闸）→ `edit`（footer 识别诊断 + 按原编码写回）→ `grep`（配置链 + 两层探测）。顺序由依赖决定：`read` 是唯一编码发现点，其余三个工具只消费回执或复用同一检测模块（§14.2）。
 
 ### 3.1 白名单工具解析（接入层替换）
 
@@ -326,7 +329,7 @@ P5 各分册要求「审批卡片展示量级」，但量级只能来自审批**
 | `glob` | [I38c-glob-spec.md](./I38c-glob-spec.md) | C2.18–C2.22 |
 | `grep` | [I38c-grep-spec.md](./I38c-grep-spec.md) | C2.23–C2.27 |
 
-四个工具的安全标记、`input_schema`、行为、错误与参考来源统一在上表分册内维护；跨工具的约束（§4 共同结构、§8 输出截断）只在本文维护。
+四个工具的安全标记、`input_schema`、行为、错误与参考来源统一在上表分册内维护；跨工具的约束（§4 共同结构、§8 输出截断）只在本文维护。`read` / `grep` 的编码参数与行为见 §14 与各分册的编码小节（C9 / P11 候选）。
 
 ---
 
@@ -339,7 +342,7 @@ P5 各分册要求「审批卡片展示量级」，但量级只能来自审批**
 | `mkdir` | [I38c-mkdir-spec.md](./I38c-mkdir-spec.md) | C3.14–C3.16 |
 | `move` | [I38c-move-spec.md](./I38c-move-spec.md) | C3.17–C3.21 |
 
-`edit` 是全阶段风险最高的工具（匹配与写回做错会静默损坏文件），其匹配流水线、结果分支、写回约束、读前置 guard 全部在 [I38c-edit](./I38c-edit-spec.md) 内定义，实现时以该分册为准。
+`edit` 是全阶段风险最高的工具（匹配与写回做错会静默损坏文件），其匹配流水线、结果分支、写回约束、读前置 guard 全部在 [I38c-edit](./I38c-edit-spec.md) 内定义，实现时以该分册为准。`write` / `edit` 的编码继承与写回规则见 §14.5 / §14.6 / §14.8。
 
 ---
 
@@ -446,6 +449,11 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 | A9 | `cargo test -p assistant-tools` 全绿；`cargo clippy -- -D warnings` 无告警 |
 | A10 | `resolve_available_tools`：空白名单 → 空集；白名单生效；`disabled_tools` 覆盖 `enabled_tools`；超 `max_tool_tier` 与 `TOOLBOX_ONLY` 工具不出现；同输入两次调用顺序一致 |
 | A11 | P4 遗留清理到位：`RegistryToolCatalog` / `ToolCatalog` trait / `StaticToolCatalog` 全部删除，`ToolExecCtx.tools` 未使用字段删除；`cargo test --workspace` 全绿 |
+| A12 | **（C9）** 编码检测顺序固定为 BOM → 显式 `encoding` → 二进制判定 → UTF-8 整文件校验 → chardetng 猜测（§14.3）；带 BOM 的 UTF-16 文件不被二进制检测误杀；`had_errors == true` 一律拒绝，不存在 `?` 替换式解码或写回 |
+| A13 | **（C9）** footer 契约（§14.4）：UTF-8 无 BOM 静默；其余输出 `[encoding: <label>]`，自动检测加 `(guess)`、BOM 来源加 `(bom)`；footer 独占一行、单次结果至多一次、不进入 `data` 正文；`edit` 不剥离，0 匹配时按标记集给出诊断 |
+| A14 | **（C9）** 回执携带编码（§14.5）：`ReadReceipt` 含 `encoding` / `has_bom`；`edit` / `write` 只消费不重判；同一文件在 `read` 与 `edit` 上不会得出两种编码结论 |
+| A15 | **（C9）** `write` 转码五道闸（§14.6）全部生效：编码确定、内容可完整编码、≤1MB、已存在文件须有回执、BOM 按目标编码写；任一道不过即不写盘 |
+| A16 | **（C9）** `grep` 复用 `grep-searcher` 标准配置链（§14.7）：`binary_detection = quit(b'\x00')`、BOM sniffing 默认开、无 BOM 零转码；`data` 含 `binarySkipped` / `lossyLines` / `nonUtf8Probe`；零命中时前缀探测有界且跳过 BOM / 二进制文件 |
 
 ---
 
@@ -465,6 +473,11 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 | 删除 → 重建后 `read` 回执误判「已读过」（保时间戳的复制 / 解包使长度 + mtime 相同） | 删除 / 移动成功后 `invalidate_path` 按组件级前缀失效（[delete §3.6](./I38c-delete-spec.md)、[I38a §4-P2-C6](./I38a-tool-control-layer-spec.md)） |
 | 崩溃 / 断电后 rename 已完成但内容未落盘（文件存在却为空） | 写临时文件后先 `sync_all()` 再 rename（[write §3](./I38c-write-spec.md)、[edit §5](./I38c-edit-spec.md)），不依赖 rename 单独保证持久性 |
 | 跨会话并发写同一路径，后写者静默覆盖前者 | 原子 rename 只保证不产生半截文件、不保证先后顺序；P5 **不引入** per-target 锁（需在 `os/` 层加跨调用共享状态），冲突可见性由审批卡片（覆盖提示 + 现有行数 / 字节数）与 `read` 回执修订号承担（[write §3 / §5](./I38c-write-spec.md)） |
+| （C9）非 UTF-8 文件被误判编码后写回，静默损坏内容 | 检测顺序固定（BOM → 显式 `encoding` → 二进制 → UTF-8 校验 → chardetng），猜测仅在「置信 + 整文件解码无损」时接受；写回前强制「解码 → 编码」往返无损（§14.3 / §14.6 G2） |
+| （C9）二进制文件被当成「非 UTF-8 文本」报给模型 | `grep` 主遍历 `quit(b'\x00')`；`read` 在猜测前查原始字节前 8KB 的 `0x00`（§14.3 步骤 3）；probe 跳过含 `0x00` 的文件（§14.7） |
+| （C9）footer 被模型复制进 `edit` 的 `old_string`，导致 0 匹配 | footer 是结构化已知后缀（`[encoding: …]` 独占一行），但**不自动剥离**：自动剥离会把模型误解静默修正为成功，模型学不到「footer 不是文件内容」。改为 0 匹配诊断精确指出标记，由模型自行移除；行号前缀因每行必有、模型无法避开，仍走档 2 自动剥离（§14.4 规则 4） |
+| （C9）编码结论分叉（`read` 判 GBK、`edit` 判 UTF-8） | 唯一发现点原则：检测只在 `read` 做，`edit` / `write` 只消费回执；显式参数与 BOM 的优先级固定（§14.2 / §14.3） |
+| （C9）`grep` 设 `encoding` 后全 scope 转码，改变 UTF-8 文件的匹配语义 | `encoding` 是 scope 级显式开关，语义与 ripgrep `--encoding` 一致；未设置时无 BOM 走 `utf8_passthru` 零转码（§14.7） |
 
 **开放问题**（编号即引用名，改动需同步全文引用）：
 
@@ -474,6 +487,9 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 - **OQ4** **`edit` 是否支持单次多 hunk（codex `apply_patch` 形态）？** 已定稿（2026-11-06）：**P5 不做**。理由：多 hunk 会扩大工具面与审批粒度（一次审批覆盖多处改动），且需要独立的补丁语法解析器；P5 保持「一次调用一次替换」，模型可用多次 `edit` 达成同一效果。若 P6 之后出现「批量重构」痛点，再按新工具 `apply_patch` 单列。
 - **OQ5** **`ask_user` 如何避开 30s 统一工具超时？** 待 P6 定。参考实现让工具「自管执行超时」（`manages_own_execution_timeout() = true`，超时值来自外部配置 `user_question_timeout_secs`，schema 不声明），而本项目 `Tool` trait 没有该标记，`exec::invoke` 的 `DEFAULT_TOOL_TIMEOUT = 30s` 会在用户回答前打断等待。两条候选路径：(a) `timeout_hint` 返回 `None` 表示无默认 deadline，由前端取消或 turn 子令牌终止；(b) `Tool` trait 增加「自管超时」标记。P5 只登记阻塞点，见 §9。
 - **OQ6** `write` 的「覆盖」是否应标记 `destructive`？当前倾向：否，但审批卡片必须显示覆盖提示。
+- **OQ7** **（C9）大文件转码写回**：>1MB 的非 UTF-8 文件 `read` 可读，但 `edit` / `write` 转码写回被 §14.6 G3 拒绝。当前结论：**不做**，错误文案提示先外部转码再重读。若将来要做，必须同时解决「流式解码 + 流式编码 + 原子写 + 编码边界与 `sync_all` 的交互」，成本与 P5 的 1MB 上限不是一个量级。
+- **OQ8** **（C9）chardetng 置信度阈值**：不引入可调阈值。接受条件固定为「`guess_assess` 的 `is_confident == true` **且** 整文件解码无损」，两个条件都是二值判定，没有需要调参的旋钮；若实践中误判偏多，只允许收紧为「额外要求猜测结果经往返无损」，不允许放宽到「低置信也接受」。
+- **OQ9** **（C9）回执里的 `encoding` 是否参与修订号 / 失效判定？** 当前结论：**否**。`revision` 仍是「长度 + mtime」，编码变化必然伴随字节变化（长度或 mtime 变化），无需额外维度；「等长等时戳的编码转换」与「删除后重建」同类，由 `invalidate_path` 兜底（§14.5 / §14.9）。
 
 ---
 
@@ -493,6 +509,7 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 | ~~Bash / shell 守卫~~ | OpenBitFun / codex / openhuman / goose | `BashTool` + `edit_constraint_guard`、`exec_command.rs`、`core/src/exec.rs`、`tools/impl/system/shell.rs` | **暂不提供**，见 §13（评估结论留档） |
 | AskUser | OpenBitFun | `implementations/ask_user_question_tool.rs`（结构化 `questions[]`：1–4 问 / 每问 2–10 选项 / `multiSelect`；`manages_own_execution_timeout()` + 外部 `user_question_timeout_secs`） | 本文 §9（P6 联调，不分册）；超时阻塞点见 §11 OQ5 |
 | 多 hunk 补丁 | codex | `apply-patch/src/{parser,file_update}.rs` | 不采纳，见 §11 OQ4 |
+| **多编码检测 / 解码 / 流式转码**（C9） | ripgrep + encoding_rs_io + helix | `references/7-text-encoding/ripgrep/crates/searcher/src/searcher/mod.rs`（`SearcherBuilder::build` 的 `DecodeReaderBytesBuilder` 配置链、`Encoding::new`、`binary_detection`）、`.../crates/core/flags/hiargs.rs`（`BinaryDetection::quit(b'\x00')`）、`references/7-text-encoding/encoding_rs_io/src/lib.rs`（`utf8_passthru` / `strip_bom` / 解码错误契约）、`references/7-text-encoding/helix-view/src/document.rs`（BOM → chardetng → 编码随文档生命周期） | 本文 §14（逐项采纳 / 不采纳：`DecodeReaderBytesBuilder` 配置链、`utf8_passthru`、`strip_bom`、`bom_sniffing`、`quit(b'\x00')` 采纳；逐文件 chardetng 猜测、mmap 加速、`--encoding` 的 CLI 语义外壳不采纳） |
 
 ---
 
@@ -519,3 +536,181 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 
 - `ask_user`（§9）与 P6 前端联调不受影响。
 - 若其他分册或设计文档提到 `shell`，一律以本节为准；相关任务编号（原 C5）不再使用，后续编号顺延不受影响（C6 / C7 / C8 保持原号，不重排）。
+
+---
+
+## 14 多编码支持（P11 候选：C9）
+
+> 本节是**跨工具**的编码约束，适用于 `read` / `write` / `edit` / `grep`；各工具的参数、行为与错误表仍在各自分册，本节只定「四个工具之间必须一致」的部分。
+> **阶段归属**：P11 候选（[roadmap §2.1](./I38-agent-roadmap.md)），不改变 P0–P7 门禁；任务项见[执行清单](./I38c-os-tools-tasklist.md) C9。
+> **依赖**：`encoding_rs` + `chardetng` 已在 `assistant-tools/Cargo.toml`（`os/process_output.rs` 使用），`encoding_rs_io` 随 `grep-searcher` 传递引入——**零新增依赖**。
+
+### 14.1 目标与非目标
+
+| # | 目标 |
+|---|---|
+| 1 | `read` 能读 GBK / GB18030 / Big5 / Shift_JIS / Windows-1252 / UTF-16（含 BOM）等非 UTF-8 文本 |
+| 2 | `write` / `edit` 能**按原编码**写回，不把非 UTF-8 文件悄悄转成 UTF-8 |
+| 3 | `grep` 能显式按指定编码搜索整个 scope，并对「scope 内存在非 UTF-8 文件」给出事实 |
+| 4 | 编码信息以 footer 一次性呈现，成功路径只给事实 |
+
+**非目标**：
+
+- 不改变 UTF-8 路径的既有行为。唯一例外是 §14.3 的**二进制检测顺序修正**（存量缺陷：先查 `0x00` 再解码，会误杀带 BOM 的 UTF-16 文件），该修正随 C9.6 单独落地，不进 P5 门禁。
+- 不做逐文件编码猜测：`grep` 的 probe 只判**字节合法性**，不判**是什么编码**。
+- 不引入 `iconv` / 外部转码进程 / 新依赖。
+- 不做大文件转码写回（§14.9 OQ7）。
+
+### 14.2 唯一发现点原则
+
+| 工具 | 编码来源 | 禁止 |
+|---|---|---|
+| `read` | **唯一检测入口**：BOM → UTF-8 校验 → 二进制判定 → chardetng | — |
+| `edit` | 回执（`ReadReceipt.encoding` / `has_bom`） | 自行 `chardetng` 猜测；自行按 BOM 重判 |
+| `write` | 显式 `encoding` 参数 → 已存在文件的回执继承 → UTF-8 兜底 | 对已存在文件无回执时猜编码 |
+| `grep` | 显式 `encoding` 参数 → `grep-searcher` 的 BOM sniffing | 逐文件猜测 |
+
+理由：同一文件在两个工具上得出两种编码结论，是「读对了、写坏了」的根因。`read` 的检测结果随回执流向写侧，写侧**只消费不重判**。
+
+### 14.3 检测流程（`read`）
+
+固定顺序，前一步命中即停：
+
+| 步 | 判定 | 结果 |
+|---|---|---|
+| 1 | BOM（前 4 字节）：`EF BB BF` → UTF-8、`FF FE` → UTF-16LE、`FE FF` → UTF-16BE | 用该编码解码，`has_bom = true`，来源标 `(bom)`；BOM 优先于显式 `encoding` |
+| 2 | 无 BOM 且传了 `encoding` | 用该编码解码，`has_bom = false`，footer 标该 label；显式声明同时豁免下一步的二进制判定（无 BOM 的 UTF-16 走这条路径） |
+| 3 | 原始字节前 8KB 含 `0x00` | 拒绝（`Business`），提示「可能是二进制文件；若确为无 BOM 的 UTF-16，请显式传 `encoding`」 |
+| 4 | `std::str::from_utf8(bytes)` 通过 | UTF-8，`has_bom = false`，**不进入猜测**（绝大多数文件的路径） |
+| 5 | `EncodingDetector::feed` + `guess_assess` | **仅当** `is_confident == true` **且** 该编码解码整文件 `had_errors == false` 时接受，来源标 `(guess)`；否则拒绝（`Business`），提示显式 `encoding` |
+| 6 | `IBM866 → WINDOWS_1252` 修正 | 沿用 `os/process_output.rs` 的既有规则（ASCII 正文 + 0x80–0x9F 区间仅出现引号 / 破折号字节）；该逻辑抽到共享模块，`process_output` 与文件工具共用一份 |
+
+- **步骤 3 的安全边界**：GBK / GB18030 / Big5 / Shift_JIS / Windows-1252 的字节域均不含 `0x00`，因此该判定不会误杀这些编码；被它拦下的只有真二进制与无 BOM 的 UTF-16。
+- **步骤 3 必须排在步骤 4 之前**：纯 ASCII 的无 BOM UTF-16（`h\0i\0`）本身就是合法 UTF-8，顺序反过来会让它被静默当成「带 NUL 的文本」读入——`read` 会返回看似成功的结果，模型无从察觉。代价是每个非 BOM 文件多一次前 8KB 的 NUL 扫描，`read` 本就整文件读入，相对成本可忽略。
+- **显式 `encoding` 的优先级**：`BOM` > 显式 `encoding` > 自动检测。BOM 是文件自述，比调用方声明更权威；显式参数被 BOM 覆盖时，footer 标 `(bom)` 说明实际来源。这与 `grep-searcher` 的既有语义一致（`bom_override(true)`，见 §12 参考）。
+- **有损解码一律拒绝**：`had_errors == true` 表示该编码无法无损表示全部字节，此时任何写回都必然改变文件内容。因此「解码无损」既是 `read` 的接受条件，也是 `edit` / `write` 的前置条件（§14.6 G2）。
+- **检测范围**：检测在整文件字节上进行（`read` 已把内容读入内存），不做「只喂前 N 字节」的采样猜测——采样会让 `is_confident` 与「整文件无损」两个条件互相矛盾。大文件的内存成本属既有行为，不在 C9 处理。
+- **步骤 5 的实际边界**（实测）：`chardetng` 的 `guess_assess(None, true)` 对非空输入恒返回 `is_confident == true`（1 字节到 200 字节均如此），因此「置信」这一半条件在实践中不构成过滤；真正生效的拒绝条件是「猜到的编码整文件解码有损」——单字节编码（windows-1252 / ISO-8859-x / IBM866 等）能解码任意字节，故不会触发；多字节编码（EUC-KR / GBK / Shift_JIS 等）遇到非法序列才会触发。结论：**任意非二进制、非 UTF-8 的文本都会被猜成某个编码并成功读出**，footer 的 `(guess)` 后缀是模型唯一能察觉「这是猜的」的信号。
+
+### 14.4 呈现契约（footer）
+
+**形态**：结果文本**最后一行**为 `[encoding: <label>]`，可带一个来源后缀：
+
+| 情形 | footer |
+|---|---|
+| UTF-8、无 BOM（默认） | **不输出**（静默） |
+| UTF-8、有 BOM | `[encoding: UTF-8 (bom)]` |
+| BOM 判定为 UTF-16 | `[encoding: UTF-16LE (bom)]` |
+| 显式 `encoding` 生效 | `[encoding: GBK]` |
+| chardetng 猜测生效 | `[encoding: GBK (guess)]` |
+
+`<label>` 用 WHATWG Encoding Standard 的规范名（`Encoding::name()`，如 `UTF-8` / `GBK` / `Shift_JIS` / `windows-1252`），不用用户传入的原始 label（别名 `gb2312` 会被规范化为 `GBK`），保证回执与 footer 是同一个字符串。
+
+**五条规则**：
+
+1. **只给事实**：成功路径不写「你可以传 encoding 覆盖」这类指令，参数用法写在 `input_schema` 的 `description` 里。
+2. **动作只在失败路径**：检测失败 / 有损时，错误文案才提示「传 `encoding`（如 `gbk`）」。
+3. **一次性**：footer 只出现在结果尾部一次，不逐行、不进入 `data` 的正文行与 `matches`。
+4. **结构化已知后缀，但工具不剥离**：以 `[encoding: ` 开头、`]` 结尾、独占一行——该形态是 `edit` **诊断**的标记集（§14.8），不是剥离对象。理由：行号前缀每行必有、模型无法避开，故必须剥离；footer 只在末尾一行且仅非 UTF-8 时出现，模型只复制正文即可避开。自动剥离会把「模型误解」静默修正为成功，模型学不到「footer 不是文件内容」，与 fail-closed 取向相反。改为在 0 匹配诊断里精确指出，由模型自行移除。副作用：源文件自身末行就是 `[encoding: …]` 时不再冲突，档 1 原样命中。
+5. **标记集可扩展**：`grep` 用 tag `non-utf8`（§14.7），同一套「独占一行 + 标记集」规则；新增 tag 必须回写本节。
+
+**`description` 的提示边界**：提示只补「工具接口缺口」，不补「编码常识」。
+
+| 该说（模型不知道的接口事实） | 不该说（模型已有的常识） |
+|---|---|
+| 本工具**支持**非 UTF-8 文本 | 什么是 GBK / UTF-16 / BOM |
+| 参数名是 `encoding`，取值是 WHATWG label | GB18030 与 GBK 的关系、`cp936` / `gb2312` 别名 |
+| 何时该传：无 BOM 的非 UTF-8；有 BOM 自动识别、无需传 | 完整 label 清单（`utf-16le` 走 BOM 路径、`windows-1252` 是猜测兜底，列出无助于决策） |
+| `write` 缺省继承上次 `read` 的编码；新建文件默认 UTF-8 | 转码原理、字节序、码页历史 |
+
+- 示例只给 1–2 个最常见 label（`e.g. gbk`）：形态示例优先于枚举清单。
+- **长度对齐相邻参数**：`description` 不超过同 schema 内其它参数的平均长度（一句话、无第二句）。编码只是可选参数之一，写成长段落会让它在工具描述里**喧宾夺主**，反被模型当成必填项去主动管理。
+- 失败路径的补救提示压成一句（`该文件无 BOM 且非 UTF-8，请传 encoding（如 gbk）`），不展开编码知识。
+- 理由：footer 的价值本就只在「模型主动转码」与「排查乱码」两处；若 `description` / 错误文案再堆编码知识，会让模型误以为编码是它必须主动管理的东西，反而诱发多余的 `encoding` 传参。
+
+### 14.5 回执扩展
+
+`ReadReceipt`（`assistant-tools/src/storage.rs`）增两个字段：
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `encoding` | `String` | 实际生效编码的规范名（§14.4），如 `UTF-8` / `GBK` |
+| `has_bom` | `bool` | 文件是否带 BOM；写回时据此补回 |
+
+- `read` 成功时写入；`write` / `edit` 成功时按**自身实际写出**的编码与 BOM 状态刷新。
+- `edit` / `write` 只消费不重判（§14.2）。
+- 键结构不变（`session_id` / `path` / `start_line` / `end_line`）。`write` / `edit` 消费的是整文件键（`start_line = end_line = None`），因此能拿到该文件的编码；`read` 的行范围键同样带编码，但写侧不使用。
+- **跨阶段契约变更**：`ReadReceipt` 属 P2 定义的 `ReadReceiptStore` 端口，字段扩展已回写 [I38a §4-C6](./I38a-tool-control-layer-spec.md)，落地时两侧必须同步。
+
+### 14.6 `write` 转码五道闸
+
+编码解析顺序：`encoding` 参数 → 已存在文件的回执 `encoding` → `UTF-8`。解析后过五道闸，任一不过即 `Business` 且**不写盘**：
+
+| 闸 | 规则 | 目的 |
+|---|---|---|
+| G1 | 目标编码必须**确定**：显式参数或回执继承，二者皆无则 UTF-8 | 禁止猜测 |
+| G2 | 内容可完整编码：`encoding.encode(content)` 的 `had_errors == false` | 禁止 `?` 替换式写回（不可逆） |
+| G3 | 转码写入 ≤ **1MB**：`content` + 追加时保留的现有内容（覆盖场景现有内容被整篇替换，不计入） | 转码需整文件驻留内存；大文件登记 OQ7 |
+| G4 | 目标是**已存在**文件且要求非 UTF-8 写入时，必须有本会话回执 | 禁止盲转码覆盖 |
+| G5 | BOM 按目标编码规范：UTF-16 恒写 BOM；UTF-8 仅在回执 `has_bom` 时写 BOM | 避免 BOM 无声丢失 |
+
+- `append` 与转码叠加时按「解码现有内容 → 拼接 → 整体编码」处理，**不**把两段字节直接拼接（编码边界处的字节拼接会产生非法序列）；解码现有内容用**现有文件的编码**（回执 `encoding`），不是目标编码——显式转码时两者可以不同。
+- 目标编码与回执继承的编码不同时，按显式参数整篇写出新编码（覆盖即整篇替换，追加则先按现有编码解码再整体按目标编码编码）。
+- 幂等判定改为**字节级**：`payload_bytes == existing_bytes` 时仍不写盘，原有语义不变。
+- 新建文件无回执，G4 不适用；`encoding` 缺省时写 UTF-8（与现状一致）。
+- 「转码写回」的适用边界：`write` 全量替换的场景（模型把整篇内容重新给出）。`edit` 的局部替换不需要模型给出整篇，因此不受 G3 约束之外的额外限制，但同样受 G2 / G5 约束（§14.8）。
+
+### 14.7 `grep` 两层探测
+
+`grep` **不猜测编码**，只做两件事：按显式 `encoding`（或 BOM）搜索；对 scope 内「存在非 UTF-8 文件」给出事实。
+
+**搜索层配置**（复用 `grep-searcher`，不自行实现转码）：
+
+```rust
+SearcherBuilder::new()
+    .line_number(true)
+    .before_context(context).after_context(context)
+    .binary_detection(BinaryDetection::quit(b'\x00'))   // 新增：默认是 None，等于不做二进制检测
+    .encoding(explicit)                                  // Option<grep_searcher::Encoding>
+    .build()
+```
+
+| 配置 | 现状 | 结论 |
+|---|---|---|
+| `utf8_passthru(true)`（`build()` 内固定） | 已是 | 无 BOM 时**零转码**，UTF-8 路径无额外成本 |
+| `bom_sniffing` 默认 `true` | 已是 | UTF-16（带 BOM）**今天就能搜**，且首行不含 `U+FEFF`；因此 probe 必须跳过 BOM 文件，否则会误报「非 UTF-8」 |
+| `binary_detection` 默认 `None` | **未开**（存量缺陷） | 改为 `quit(b'\x00')`：二进制文件不再产出乱码行，命中 `Sink::binary_data` 计入 `binarySkipped` |
+| `encoding` | 未接 | 显式参数映射为 `Encoding::new(label)`（`Result`，非法 label → `Business`）；**scope 级开关**，设置后 scope 内每个文件都走转码 |
+| `mmap` | 默认 `MmapChoice::never()` | 保持关闭。转码路径与 mmap 天然不兼容（`DecodeReaderBytes` 需要读流），开启 mmap 只会让「什么时候转码」变成隐式分支 |
+
+**热路径（命中行）**：`trim_line_end` 先 `std::str::from_utf8`，失败才 `from_utf8_lossy` 并置 `lossy_lines = true`。合法路径因此比现状**少一次分配**（`from_utf8_lossy` 内部本来就会先跑 `from_utf8`）。
+
+**冷路径（零命中时的 probe）**：仅当 `match_count == 0` 且未超时时执行，热路径零成本：
+
+1. 逐文件读**前 8KB**（复用单个缓冲，不每文件新建 `Vec`），用 `read` 同一套前缀分类（§14.3 步骤 1–3）。
+2. 跳过：含 `0x00`（二进制）、有 BOM（已可搜）、合法 UTF-8。
+3. 计数「非 UTF-8 且非二进制」文件；达 `PROBE_FILE_LIMIT`（200）或 deadline 即停，结果标 `nonUtf8Probe.truncated`。
+4. 计数 > 0 时输出 footer `[non-utf8: N file(s)]`；为 0 时静默。
+
+**结果 `data` 新增**：`binarySkipped`（被二进制检测跳过的文件数）、`lossyLines`（含替换字符的命中行数）、`nonUtf8Probe`（`{ "files": N, "truncated": bool }` 或 `null`）。
+
+**已知限制**（写进 `description`）：非 UTF-8 文件未传 `encoding` 时按 UTF-8 逐字节匹配，命中行以替换字符渲染——这是「不猜测」的直接代价。
+
+### 14.8 `edit` 的编码约束
+
+`edit` 不新增 `encoding` 参数：它的输入是「模型看到的文本」，而那段文本来自 `read`，编码已由回执携带。
+
+| 环节 | 约束 |
+|---|---|
+| footer 识别 | **不做剥离**（§14.4 规则 4）：`old_string` / `new_string` 原样进入档位；仅在 `old_string` 0 匹配诊断里检测末尾独占一行的 `[encoding: …]` 标记集并提示「这不是文件内容，请移除后重试」。只加提示、不改判定；**不检查 `new_string`**（硬拒绝会误伤正文本就含该形态的合法内容）。不预处理的理由见 §14.4 规则 4；副产品是源文件自身末行就是该形态时仍可原样命中 |
+| 写回编码 | 用回执 `encoding` + `has_bom`：`encode(新全文)` 的 `had_errors == true` → `Business`（G2），**不**写回 |
+| BOM | `has_bom == true` → 补 BOM（G5）；`false` → 不补 |
+| 行尾 | 沿用现有 `uses_crlf` 判定，编码支持不引入新规则 |
+| 无回执 | 保持现有行为：拒绝并提示先 `read`（[edit §6](./I38c-edit-spec.md)） |
+| 写后刷新 | 用实际写出的编码 / BOM 状态刷新回执，供后续 `edit` / `write` 复用 |
+
+### 14.9 开放问题
+
+- **OQ7 大文件转码写回**：>1MB 的非 UTF-8 文件 `read` 可读，但 `edit` / `write` 转码写回被 G3 拒绝。当前结论：**不做**，错误文案提示先外部转码再重读。详见 §11 OQ7。
+- **OQ8 chardetng 置信度阈值**：不引入可调阈值，接受条件是二值判定。详见 §11 OQ8。
+- **OQ9（本节新增）** **回执里的 `encoding` 是否应参与修订号 / 失效判定？** 当前结论：**否**。`revision` 仍是「长度 + mtime」，编码变化必然伴随字节变化 → 长度或 mtime 变化，无需额外维度；若将来出现「等长等时戳的编码转换」，与「删除后重建」同类，由 `invalidate_path` 兜底。

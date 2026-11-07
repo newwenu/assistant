@@ -508,6 +508,8 @@ partition_tool_batches(tool_calls):
 
 **失效端口（P5 新增）**：修订号是「长度 + mtime」，删除后重建若长度与时间戳恰好相同（保时间戳的复制 / 解包）会误判「已读过」。P5 给 `ReadReceiptStore` 增加 `invalidate_path(&self, path: &str)`，按**组件级前缀**失效路径及其子树（`/a/b` 不得匹配 `/a/bc`）；`delete` 成功与 `move` 的源路径均调用（见 [I38c-delete §3.6](./I38c-delete-spec.md) / [I38c-move §3](./I38c-move-spec.md)）。同属跨阶段契约变更。
 
+**回执值扩展（C9，P11 候选）**：`ReadReceipt` 除 `revision` / `tool_call_id` 外增 `encoding: String`（实际生效编码的规范名）与 `has_bom: bool`，作为 `read` → `edit` / `write` 的**唯一编码来源**（写侧只消费不重判，见 [I38c §14.2](./I38c-os-tools-spec.md)）。键结构不变；`revision` 仍是「长度 + mtime」，编码不参与失效判定（[I38c §14.9 OQ9](./I38c-os-tools-spec.md)）。属跨阶段契约变更，落地时必须与本段同步。
+
 ---
 
 ## 5 验收标准

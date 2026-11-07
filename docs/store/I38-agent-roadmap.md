@@ -41,7 +41,7 @@
 
 参考项目（DeepSeek Harness、Codex、Goose、OpenBitFun、OpenHuman）都在单 agent 闭环之上提供了会话级编排能力。本表只登记候选，**不改变 §2 的 P0–P7 门禁**；任何候选开工前必须先按 §7 第 3 条修改本文 §2/§3，再写 spec。
 
-P8.1–P9 属「会话编排」轴，P10 属「审批链」轴，两条轴不互相前置。
+P8.1–P9 属「会话编排」轴，P10 属「审批链」轴，P11 属「工具能力」轴，三条轴不互相前置。
 
 | 候选 | 目标 | 参考 | 前置 |
 |---|---|---|---|
@@ -50,6 +50,7 @@ P8.1–P9 属「会话编排」轴，P10 属「审批链」轴，两条轴不互
 | **P8.3 Router** | 会话之上的全局协调、跨会话记忆、事件入口与任务分派 | DeepSeek Harness Super-agent 的 Router / Worker | P8.2；P9 的持久化前置 |
 | **P9 continuity** | 重启恢复、Watchdog、事件唤醒与主动执行 | DSH goal / schedule / webhook；OpenHuman `reaper.rs` | 单独 ADR；I36 D13b |
 | **P10 AI 审批顾问** | 在策略与人工审批之间插入单向 AI 顾问（先 `EscalateOnly` 后 `RelaxOnly`）；双向裁决仅在有 L4 沙箱时另议 | goose `smart_approve`；openhuman `class.max(declared)`；codex Guardian | P6（审批 UI 已上线）；决策见 [I18 design §3.17](./I18-agent-tool-architecture-design.md)；证据见 [AI 审批参考分析](../analysis/AGENT-AI-APPROVAL-REFERENCE-ANALYSIS.md) |
+| **P11 多编码工具支持** | 文件工具（`read` / `write` / `edit` / `grep`）支持非 UTF-8 文本：自动检测（BOM → UTF-8 → 二进制 → chardetng）、按原编码写回、footer 一次性呈现、`grep` 显式 `encoding` + 零命中探测 | ripgrep `searcher`（`DecodeReaderBytes` / `Encoding` / `binary_detection`）；encoding_rs_io；helix `document.rs`（BOM → chardetng → 按原编码保存） | P5（工具面已上线）；规格见 [I38c §14](./I38c-os-tools-spec.md)；任务见 [C9](./I38c-os-tools-tasklist.md)；**C9 已全部完成（2026-11-07）** |
 
 **范围约束**：
 
@@ -58,6 +59,7 @@ P8.1–P9 属「会话编排」轴，P10 属「审批链」轴，两条轴不互
 - P8.3 的 Router 是**会话之上的新层**，不得把单会话内核改造成全局调度器。
 - P9 的持久化运行不得绕过 I36 D13a 的现行边界，必须单独决策。
 - P10 只允许单向顾问形态（`EscalateOnly` / `RelaxOnly`）；`Adjudicate` 需先有 L4 内核级沙箱的独立 ADR，不得在现有 L2/L3 检测层上直接启用（I18 design §3.17.1）。
+- P11 只做文件工具的编码支持：不引入 `iconv` / 外部转码进程 / 新依赖，不做逐文件编码猜测（`read` 是唯一编码发现点，`edit` / `write` 只消费回执），不做大文件转码写回（[I38c §11 OQ7](./I38c-os-tools-spec.md)）。UTF-8 路径行为不变，唯一例外是 §14.3 的二进制检测顺序修正。
 
 ---
 
@@ -99,7 +101,7 @@ P2 + P5 ───────────► P7
 | OS 工具逐个实现 | [I38c](./I38c-os-tools-spec.md) | 实施规格 |
 | 前端五态 / 审批 UI / Agent 模式 | [I38d](./I38d-agent-frontend-modes-spec.md) | 实施规格 |
 | MCP 外部工具 | [I38e](./I38e-mcp-tools-spec.md) | 实施规格 |
-| P8+ 演进候选（子代理 / Worker / Router / continuity） | 本文 §2.1 | 候选清单 |
+| P8+ 演进候选（子代理 / Worker / Router / continuity / 多编码） | 本文 §2.1 | 候选清单 |
 | 运行时内核（turn / 状态机 / 端口 / chat 迁移） | [I36 spec](./I36-agent-runtime-spec.md) | 实施规格 |
 | 运行时决策（D1-D18、参考项目提取） | [I36 design](./I36-agent-runtime-design.md) | ADR |
 | 内核能力基线（能力矩阵 / 参考实现对照 / 扩展点 / 门禁） | [I36a](./I36a-agent-kernel-baseline.md) | 基线文档 |
