@@ -40,12 +40,14 @@
 
 ### 3.1 解析与不可删目标
 
-- 一律 `os::path::resolve()`，`execute()` 只用其返回值做 IO。
+- 一律走 `os::path`，`execute()` 只用其返回值做 IO。
+- 用 **`resolve_leaf_preserving()`** 而不是 `resolve()`：`resolve()` 会把叶子上的链接换成真实目标，「删链接」就变成「删目标」，与 §3.2 直接冲突。父目录仍按 `canonicalize_lenient` 归一，`..` 穿越、`reject_system_dirs` 与 `ensure_within_root` 照常生效。
+- 不可删目标的判定对「叶子保留路径」与「跟随链接后的真实路径」各做一次：指向 `workspace_root` / 家目录的链接同样拒绝。
 - 以下目标在 `validate_input` 内直接拒绝（`Business`），不进入审批：
 
 | 目标 | 判定 |
 |---|---|
-| `workspace_root` 本身 | `resolve()` 结果与 `canonicalize_lenient(workspace_root)` 组件级相等；`workspace_root = None` 时跳过该条 |
+| `workspace_root` 本身 | 解析结果与 `canonicalize_lenient(workspace_root)` 组件级相等；`workspace_root = None` 时跳过该条 |
 | 文件系统根 / 盘符根 | `Path::parent()` 为 `None`（`C:\`、`/`、UNC 共享根） |
 | 家目录本身 | 与 `HOME` / `USERPROFILE` 组件级相等（Windows 大小写不敏感）。**只拒家目录本身，不拒其子项**——工作区通常就在家目录下 |
 | 系统目录 / 凭据目录 | `os::path::reject_system_dirs`（含 `.ssh` / `.gnupg` / `.aws` / `.azure` / `.kube` / `keychains` 与 `Microsoft\{Protect,Credentials,Crypto,Vault}`，清单见 I31 §5.3） |
@@ -80,6 +82,7 @@
 
 - 分支：文件 / 链接 → `remove_file`（目录链接按 §3.2 回退）；目录 + `recursive = false` → `remove_dir`；目录 + `recursive = true` → `remove_dir_all`。
 - 不自动清只读属性：Windows 只读文件删除失败 → `Business`，提示先移除只读属性（改属性本身是额外的破坏性写）。
+  实现注意：`std::fs::remove_file` 在 `DeleteFileW` 失败后会**自动清只读属性再重试**，那本身就是「删除顺手改属性」。因此实现改为**删除前判定只读属性直接拒绝**，保证「不改属性」与「确定性失败」两者都成立（对目录递归删除仍交给 `remove_dir_all`，其内部清理只读属性不在本条约束内）。
 - `remove_dir` 返回非空 → `Business`，提示 `recursive = true`。与 §3.3 的预扫描重复是刻意的：预扫描结论可能已过期。
 - 失败或超时后重查目标：仍存在 → 文案「未删除或已部分删除」；已不存在 → 文案「删除已完成，但随后失败」。不得谎报成功，也不得谎报未删。
 - 不重试、不自动分批。`remove_dir_all` 没有取消点，超时只能记录、无法中断（见上级 §11 风险表）。

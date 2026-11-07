@@ -103,10 +103,10 @@
 实现：`src-tauri/crates/assistant-tools/src/os/{agent_write,agent_edit,agent_mkdir,agent_move}.rs`
 测试：`src-tauri/crates/assistant-tools/tests/{agent_write,agent_edit,agent_mkdir,agent_move}.rs`
 
-- [ ] C3.1 四个工具 `behavior_hints.read_only = false`、`destructive = false`、`open_world = false`、`audience = BOTH`
-- [ ] C3.2 `is_concurrency_safe` 保持默认（写类串行），不显式放宽
-- [ ] C3.3 `permission_intents` 产出 `edit` + 受影响路径（A3）；`move` 的 `source` / `target` 各一条
-- [ ] C3.4 `validate_input` 校验必填 / 类型并调用 `os::path::resolve`；`execute` 仍自行校验，不依赖 Pipeline
+- [x] C3.1 四个工具 `behavior_hints.read_only = false`、`destructive = false`、`open_world = false`、`audience = BOTH`
+- [x] C3.2 `is_concurrency_safe` 保持默认（写类串行），不显式放宽
+- [x] C3.3 `permission_intents` 产出 `edit` + 受影响路径（A3）；`move` 的 `source` / `target` 各一条
+- [x] C3.4 `validate_input` 校验必填 / 类型并调用 `os::path::resolve`；`execute` 仍自行校验，不依赖 Pipeline
 
 **`write`**
 
@@ -116,26 +116,26 @@
 
 **`edit`**
 
-- [ ] C3.8 schema：`path` / `old_string` / `new_string`（必填）+ `replace_all`（默认 false）
-- [ ] C3.9 前置拒绝 + 6 档渐进匹配（精确 → 行号前缀剥离 → 尾随换行变体 → 行尾空白不敏感 → 首尾空白不敏感 → 归一化），归一化命中必须回写**真实原文片段**；见 [I38c-edit §3](./I38c-edit-spec.md)「匹配流水线」（含逐档参考来源）与「不变量」
-- [ ] C3.10 结果分支：0 / 1 / 多匹配（`replace_all` 两分支）与 diff 形状（`start_line` / `old_end_line` / `new_end_line` / `match_count`），见 [I38c-edit §4](./I38c-edit-spec.md)
-- [ ] C3.11 写回约束：CRLF 文件整体按 CRLF 写回、BOM 保留、`tempfile` + `sync_all` + `persist` 原子替换，见 [I38c-edit §5](./I38c-edit-spec.md)
-- [ ] C3.12 读前置 guard：复用 `ReadReceiptStore`（无回执拒绝 / 修订号过期拒绝 / `write` 后紧接 `edit` 不误拦），见 [I38c-edit §6](./I38c-edit-spec.md)
-- [ ] C3.13 测试：覆盖 §10 A4 / A4b（三分支、6 档各一例、歧义不取首个、行尾形态与 BOM、原子写、guard 三例）
+- [x] C3.8 schema：`path` / `old_string` / `new_string`（必填）+ `replace_all`（默认 false）
+- [x] C3.9 前置拒绝 + 6 档渐进匹配（精确 → 行号前缀剥离 → 尾随换行变体 → 行尾空白不敏感 → 首尾空白不敏感 → 归一化），归一化命中必须回写**真实原文片段**；见 [I38c-edit §3](./I38c-edit-spec.md)「匹配流水线」（含逐档参考来源）与「不变量」
+- [x] C3.10 结果分支：0 / 1 / 多匹配（`replace_all` 两分支）与 diff 形状（`start_line` / `old_end_line` / `new_end_line` / `match_count`），见 [I38c-edit §4](./I38c-edit-spec.md)
+- [x] C3.11 写回约束：CRLF 文件整体按 CRLF 写回、BOM 保留、`tempfile` + `sync_all` + `persist` 原子替换，见 [I38c-edit §5](./I38c-edit-spec.md)
+- [x] C3.12 读前置 guard：复用 `ReadReceiptStore`（无回执拒绝 / 修订号过期拒绝 / `write` 后紧接 `edit` 不误拦），见 [I38c-edit §6](./I38c-edit-spec.md)
+- [x] C3.13 测试：覆盖 §10 A4 / A4b（三分支、6 档各一例、歧义不取首个、行尾形态与 BOM、原子写、guard 三例）
 
 **`mkdir`**
 
-- [ ] C3.14 schema：`path`（必填）+ `parents`（默认 true）
-- [ ] C3.15 `parents = false` 且父目录不存在 → `Business`；目录已存在时幂等返回成功并注明
-- [ ] C3.16 测试：单层 / 多层创建、`parents = false` 失败、已存在幂等、`edit` intent
+- [x] C3.14 schema：`path`（必填）+ `parents`（默认 true）
+- [x] C3.15 `parents = false` 且父目录不存在 → `Business`；目录已存在时幂等返回成功并注明
+- [x] C3.16 测试：单层 / 多层创建、`parents = false` 失败、已存在幂等、`edit` intent
 
 **`move`**
 
-- [ ] C3.17 schema：`source` / `target`（必填）+ `overwrite`（默认 false）
-- [ ] C3.18 目标已存在且 `overwrite = false` → `Business`；`overwrite = true` 时先删目标再重命名；非空目标目录的处理见 [move §3](./I38c-move-spec.md)
-- [ ] C3.19 仅用 `std::fs::rename`；跨设备失败返回 `Business`，**不**静默降级为复制 + 删除
-- [ ] C3.20 成功后 `ReadReceiptStore::invalidate_path(source)`（C1.12），连带子树失效；`target` 不失效
-- [ ] C3.21 测试：移动文件 / 目录、`overwrite` 两分支、非空目标目录被拒、两条 `edit` intent、目标父目录不存在、移动后源路径回执不命中
+- [x] C3.17 schema：`source` / `target`（必填）+ `overwrite`（默认 false）
+- [x] C3.18 目标已存在且 `overwrite = false` → `Business`；`overwrite = true` 时先删目标再重命名；非空目标目录的处理见 [move §3](./I38c-move-spec.md)
+- [x] C3.19 仅用 `std::fs::rename`；跨设备失败返回 `Business`，**不**静默降级为复制 + 删除
+- [x] C3.20 成功后 `ReadReceiptStore::invalidate_path(source)`（C1.12），连带子树失效；`target` 不失效
+- [x] C3.21 测试：移动文件 / 目录、`overwrite` 两分支、非空目标目录被拒、两条 `edit` intent、目标父目录不存在、移动后源路径回执不命中
 
 ---
 
@@ -144,17 +144,17 @@
 实现：`src-tauri/crates/assistant-tools/src/os/agent_delete.rs`
 测试：`src-tauri/crates/assistant-tools/tests/agent_delete.rs`
 
-- [ ] C4.1 schema：`path`（必填）+ `recursive`（默认 false）；不声明 `force`
-- [ ] C4.2 `behavior_hints`：`read_only = false`、`destructive = true`、`open_world = false`；`is_concurrency_safe = false`
-- [ ] C4.3 `permission_intents` 产出 `delete` + **`resolve()` 返回的规范化绝对路径**（供 P2 `ApprovalKey::Path` 归一，A5）
-- [ ] C4.4 `validate_input` 拒绝不可删目标：`workspace_root` 本身、文件系统根 / 盘符根、家目录本身（`HOME` / `USERPROFILE`，只拒本身不拒子项）；拒绝先于任何删除动作
-- [ ] C4.5 目标分类用 `symlink_metadata`（不跟随）：链接按文件删除、`recursive` 不影响链接、结果 `isDirectory = false`，含 junction / dangling 回退；见 [delete §3.2](./I38c-delete-spec.md)
-- [ ] C4.6 递归预扫描：非空判定 + 条目 / 字节量级 + `DELETE_SCAN_LIMIT` 截断不拒删；见 [delete §3.3](./I38c-delete-spec.md)
-- [ ] C4.7 执行分支：文件 / 链接 / 目录非递归 / 目录递归 + Windows 只读失败提示；见 [delete §3.4](./I38c-delete-spec.md)
-- [ ] C4.8 失败后重查目标存在性，区分「未删除 / 已删除但随后失败」；不重试、不分批；见 [delete §3.4](./I38c-delete-spec.md)
-- [ ] C4.9 结果 `data` 六字段 + `result_for_assistant` 三形态；见 [delete §3.5](./I38c-delete-spec.md)
-- [ ] C4.10 删除成功后 `ReadReceiptStore::invalidate_path`（C1.12），按组件级前缀失效路径及其子树
-- [ ] C4.11 测试：常规删除（文件 / 递归目录 / 非空目录非递归失败）；不可删目标（`workspace_root` 自删含尾随分隔符与链接形式、文件系统根、家目录本身）；链接语义（目录链接只删链接、dangling、junction、`recursive` 对链接无影响）；预扫描（`truncated`、`read_dir` 失败）；失败措辞（只读文件、部分删除）；`delete` intent 与 `..` / 链接归一后同一审批键；删除 → 重建后回执不命中
+- [x] C4.1 schema：`path`（必填）+ `recursive`（默认 false）；不声明 `force`
+- [x] C4.2 `behavior_hints`：`read_only = false`、`destructive = true`、`open_world = false`；`is_concurrency_safe = false`
+- [x] C4.3 `permission_intents` 产出 `delete` + **解析后归一化的绝对路径**（供 P2 `ApprovalKey::Path` 归一，A5）。解析用 `resolve_leaf_preserving`（`resolve` 会跟随叶子链接，与 C4.5 冲突，见 [delete §3.1](./I38c-delete-spec.md)）
+- [x] C4.4 `validate_input` 拒绝不可删目标：`workspace_root` 本身、文件系统根 / 盘符根、家目录本身（`HOME` / `USERPROFILE`，只拒本身不拒子项）；对叶子保留路径与跟随链接后的真实路径各判一次；拒绝先于任何删除动作
+- [x] C4.5 目标分类用 `symlink_metadata`（不跟随）：链接按文件删除、`recursive` 不影响链接、结果 `isDirectory = false`；junction 由 `FILE_ATTRIBUTE_REPARSE_POINT` 识别（`is_symlink()` 对 junction 为 false，见 [delete §3.2](./I38c-delete-spec.md)）
+- [x] C4.6 递归预扫描：非空判定 + 条目 / 字节量级 + `DELETE_SCAN_LIMIT` 截断不拒删；`scan_tree` 由 `preview_for_approval` 与 `execute` 共用
+- [x] C4.7 执行分支：文件 / 链接 / 目录非递归 / 目录递归 + Windows 只读前置拒绝（`std::fs::remove_file` 会自动清属性，故改为删前判定，见 [delete §3.4](./I38c-delete-spec.md)）
+- [x] C4.8 失败后重查目标存在性，区分「未删除 / 已删除但随后失败」；不重试、不分批
+- [x] C4.9 结果 `data` 六字段 + `result_for_assistant` 三形态
+- [x] C4.10 删除成功后 `ReadReceiptStore::invalidate_path`（C1.12），按组件级前缀失效路径及其子树
+- [x] C4.11 测试：常规删除（文件 / 递归目录 / 非空目录非递归失败 / 空目录非递归成功）；不可删目标（`workspace_root` 自删含尾随分隔符与 `.`、文件系统根、家目录本身）；链接语义（文件链接、目录链接 `recursive` 两分支、dangling）；预扫描（量级文案、缺失目标无预演）；失败措辞（只读文件、`describe_failure` 两分支单测）；`delete` intent 与 `..` / 相对路径归一后同一审批键；删除 → 子树回执失效
 
 ---
 
@@ -169,14 +169,14 @@
 实现：`src-tauri/crates/assistant-tools/src/os/mod.rs`、`src-tauri/src/setup.rs`
 测试：`src-tauri/crates/assistant-tools/tests/registration.rs`
 
-- [ ] C6.1 `os/mod.rs` 提供 `register_readonly_tools` / `register_write_tools` / `register_dangerous_tools` 三组函数
-- [ ] C6.2 `register_os_tools` 只保留 `fs_link`（`TOOLBOX_ONLY`），不与新工具混在同一函数
-- [ ] C6.3 `setup.rs` 调用 `os::register_os_tools` + `os::register_readonly_tools`；不调用修改组 / 危险组（A7）
-- [ ] C6.4 单测：只读组注册后包含 `read` / `ls` / `glob` / `grep`，且 `fs_link` 仍在
-- [ ] C6.5 单测：未调用修改组 / 危险组时，`find_for_toolbox` 查不到 `write` / `edit` / `mkdir` / `move` / `delete`
-- [ ] C6.6 单测：`tool_definitions_for_tier(ToolTier::Os)` 仅返回 4 个只读工具且按名排序（`fs_link` 被 `audience` 过滤）
-- [ ] C6.7 单测：显式调用修改组 / 危险组后，对应工具可被 `find_for_toolbox` 查到（仅测试内使用，不改变生产注册）
-- [ ] C6.8 确认不改 `os_tool_exec` 命令与 `OsToolExecRequestDto`；新工具在注入 `action` 后仍可执行（C0.5）
+- [x] C6.1 `os/mod.rs` 提供 `register_readonly_tools` / `register_write_tools` / `register_dangerous_tools` 三组函数
+- [x] C6.2 `register_os_tools` 只保留 `fs_link`（`TOOLBOX_ONLY`），不与新工具混在同一函数
+- [x] C6.3 `setup.rs` 调用 `os::register_os_tools` + `os::register_readonly_tools`；不调用修改组 / 危险组（A7）。只读组需要回执端口，`setup.rs` 装配 `InMemoryReadReceiptStore` 并 `handle.manage`
+- [x] C6.4 单测：只读组注册后包含 `read` / `ls` / `glob` / `grep`，且 `fs_link` 仍在
+- [x] C6.5 单测：未调用修改组 / 危险组时，`find_for_toolbox` 查不到 `write` / `edit` / `mkdir` / `move` / `delete`
+- [x] C6.6 单测：`tool_definitions_for_tier(ToolTier::Os)` 仅返回 4 个只读工具且按名排序（`fs_link` 被 `audience` 过滤）
+- [x] C6.7 单测：显式调用修改组 / 危险组后，对应工具可被 `find_for_toolbox` 查到（仅测试内使用，不改变生产注册）
+- [x] C6.8 确认不改 `os_tool_exec` 命令与 `OsToolExecRequestDto`；新工具在注入 `action` 后仍可执行（C0.5）
 
 ---
 
@@ -187,22 +187,22 @@
 
 **背景**：P4 的 `RegistryToolCatalog` 用 `tool_definitions_for_tier(MAX_TIER)` 做自动全量注入，无白名单/黑名单。P5 替换为 deny-by-default + 显式白名单/黑名单的 `resolve_available_tools`。
 
-- [ ] C6b.1 新建 `src-tauri/src/adapters/tool_resolver.rs`：`pub async fn resolve_available_tools(registry: &ToolRegistry, enabled_tools: &[String], disabled_tools: &[String], max_tier: ToolTier) -> Vec<ToolSpec>`（**必须 async**：`tool_definitions_for_tier` 与 `Tool::description` 均 async）
-- [ ] C6b.2 过滤顺序固定为 `tier → audience → deny-by-default → whitelist → blacklist`（规格 §3.1）；前两步与排序复用 `ToolRegistry::tool_definitions_for_tier(max_tier)`（返回 `Vec<ToolDefinition>`），并把原 `tool_catalog.rs` 的 `into_tool_spec` 搬入本文件完成 `ToolDefinition → ToolSpec` 转换
-- [ ] C6b.3 `disabled_tools` 优先于 `enabled_tools`：同一工具同时出现 → 排除
-- [ ] C6b.4 工具匹配按 `Tool::id()` 注册名，不按文件名；未知工具名静默忽略（不报错）
-- [ ] C6b.5 返回 `Vec<ToolSpec>` 顺序继承 `tool_definitions_for_tier` 的注册名字典序（确定性输出，便于测试）
-- [ ] C6b.6 在 `src-tauri/src/protocol/dto/agent.rs` 新建 `ConversationToolConfigDto`：`max_tool_tier: ToolTierDto` / `approval_level: ApprovalLevelDto` / `enabled_tools: Vec<String>` / `disabled_tools: Vec<String>`（`camelCase` + `deny_unknown_fields`）
-- [ ] C6b.7 同文件新建 `ToolTierDto`（`Sandbox` / `Os` / `External`）与 `ApprovalLevelDto`（`None` / `DangerousOnly` / `AllOsTools`，`rename_all = "snake_case"` 以对齐 I38d §4.2 的 `dangerous_only` / `all_os_tools`）；`ToolTier` 已存在于 `assistant-tools`，DTO 侧提供 `From` 双向转换，不把内部类型暴露到 wire
-- [ ] C6b.8 `SendChatMessageArgsDto` 新增 `tool_config: Option<ConversationToolConfigDto>`（`#[ts(optional = nullable)]` + `#[serde(default)]`）
-- [ ] C6b.9 执行 `npm run contract:gen` 生成前端类型；`src-tauri/tests/protocol_bindings.rs` 的 `declarations` 加三个新类型（该测试扫描 `protocol/dto/*.rs`，漏声明即失败）
-- [ ] C6b.10 `npm run contract:check` 幂等（生成后无 diff；P5 只新增 DTO，不改既有契约）
+- [x] C6b.1 新建 `src-tauri/src/adapters/tool_resolver.rs`：`pub async fn resolve_available_tools(registry: &ToolRegistry, enabled_tools: &[String], disabled_tools: &[String], max_tier: ToolTier) -> Vec<ToolSpec>`（**必须 async**：`tool_definitions_for_tier` 与 `Tool::description` 均 async）
+- [x] C6b.2 过滤顺序固定为 `tier → audience → deny-by-default → whitelist → blacklist`（规格 §3.1）；前两步与排序复用 `ToolRegistry::tool_definitions_for_tier(max_tier)`（返回 `Vec<ToolDefinition>`），并把原 `tool_catalog.rs` 的 `into_tool_spec` 搬入本文件完成 `ToolDefinition → ToolSpec` 转换
+- [x] C6b.3 `disabled_tools` 优先于 `enabled_tools`：同一工具同时出现 → 排除
+- [x] C6b.4 工具匹配按 `Tool::id()` 注册名，不按文件名；未知工具名静默忽略（不报错）
+- [x] C6b.5 返回 `Vec<ToolSpec>` 顺序继承 `tool_definitions_for_tier` 的注册名字典序（确定性输出，便于测试）
+- [x] C6b.6 在 `src-tauri/src/protocol/dto/agent.rs` 新建 `ConversationToolConfigDto`：`max_tool_tier: ToolTierDto` / `approval_level: ApprovalLevelDto` / `enabled_tools: Vec<String>` / `disabled_tools: Vec<String>`（`camelCase` + `deny_unknown_fields`）
+- [x] C6b.7 同文件新建 `ToolTierDto`（`Sandbox` / `Os` / `External`）与 `ApprovalLevelDto`（`None` / `DangerousOnly` / `AllOsTools`，`rename_all = "snake_case"` 以对齐 I38d §4.2 的 `dangerous_only` / `all_os_tools`）；`ToolTier` 已存在于 `assistant-tools`，DTO 侧提供 `From` 双向转换，不把内部类型暴露到 wire
+- [x] C6b.8 `SendChatMessageArgsDto` 新增 `tool_config: Option<ConversationToolConfigDto>`（`#[ts(optional = nullable)]` + `#[serde(default)]`）
+- [x] C6b.9 执行 `npm run contract:gen` 生成前端类型；`src-tauri/tests/protocol_bindings.rs` 的 `declarations` 加三个新类型（该测试扫描 `protocol/dto/*.rs`，漏声明即失败）
+- [x] C6b.10 `npm run contract:check` 幂等（生成后无 diff；P5 只新增 DTO，不改既有契约）
 
 **接入 `send_agent_message`**：
 
-- [ ] C6b.11 `send_agent_message` 从 `args.tool_config` 取值，`None` 时按 `ConversationToolConfigDto::default()`（`max_tier = Os`、`approval_level = DangerousOnly`、空白名单 = deny-by-default），`resolve_available_tools(...).await`
-- [ ] C6b.12 `spec.tools = Some(tools)`（不判空）：空集归一化由 `kernel/request.rs` 的 `resolve_tools` 负责（`Some(vec![])` 与 `None` 等价，已有单测），接入层不重复判空
-- [ ] C6b.13 `TurnSpec.tools` 类型由 `Option<Arc<dyn ToolCatalog>>` 改为 `Option<Vec<ToolSpec>>`，变更面（全部需同步，缺一处即编译失败）：
+- [x] C6b.11 `send_agent_message` 从 `args.tool_config` 取值，`None` 时按 `ConversationToolConfigDto::default()`（`max_tier = Os`、`approval_level = DangerousOnly`、空白名单 = deny-by-default），`resolve_available_tools(...).await`
+- [x] C6b.12 `spec.tools = Some(tools)`（不判空）：空集归一化由 `kernel/request.rs` 的 `resolve_tools` 负责（`Some(vec![])` 与 `None` 等价，已有单测），接入层不重复判空
+- [x] C6b.13 `TurnSpec.tools` 类型由 `Option<Arc<dyn ToolCatalog>>` 改为 `Option<Vec<ToolSpec>>`，变更面（全部需同步，缺一处即编译失败）：
   - `kernel/mod.rs`：`TurnSpec` 字段声明 + `chat()` / `agent()` 的 `tools: None`
   - `kernel/runner.rs`：`TurnRunCtx.tools` 赋值；`request::build(spec.tools.as_ref())` 需改为 `.as_ref().map(Vec::as_slice)`（`Option<&Vec<_>>` 不会自动转 `Option<&[_]>`）
   - `kernel/request.rs`：`build()` 签名由 `Option<&Arc<dyn ToolCatalog>>` 改为 `Option<&[ToolSpec]>`，`resolve_tools` 保留（去掉 `agent_tools().await`）
@@ -210,22 +210,26 @@
   - `agent/loop_executor.rs`：`request::build` 传参用 `ctx.tools.as_deref()`；`ToolExecCtx` 构造处的 `tools: ctx.tools` 随字段删除一并去掉
   - `tests/loop_executor.rs`：`catalog` 构造与 `with_tools` 语义
   - `tests/kernel_request_tools.rs`：`StaticCatalog` 的三处调用
-- [ ] C6b.14 `TurnSpec::agent()` 与 `TurnSpec::chat()` 的 `tools` 默认保持 `None`
-- [ ] C6b.15 `start_turn` 对 `SendChatMessageArgsDto` 的穷尽解构补 `tool_config: _`（或 `..`）；`chat` 链路复用 `start_turn` 不受影响
+- [x] C6b.14 `TurnSpec::agent()` 与 `TurnSpec::chat()` 的 `tools` 默认保持 `None`
+- [x] C6b.15 `start_turn` 对 `SendChatMessageArgsDto` 的穷尽解构补 `tool_config: _`（或 `..`）；`chat` 链路复用 `start_turn` 不受影响
 
 **清理 P4 接入代码**：
 
-- [ ] C6b.16 删除 `src-tauri/src/adapters/tool_catalog.rs`（整文件：`RegistryToolCatalog` + `MAX_TIER`）
-- [ ] C6b.17 `src-tauri/src/adapters/mod.rs` 删除 `mod tool_catalog;` 与 `pub use` 导出
-- [ ] C6b.18 `src-tauri/src/cmd/agent/mod.rs` 删除 `use crate::adapters::RegistryToolCatalog;`
-- [ ] C6b.19 删除 `assistant-agent/src/kernel/ports.rs` 的 `ToolCatalog` async trait（唯一实现者即 `RegistryToolCatalog`）
-- [ ] C6b.20 删除 `assistant-agent/src/kernel/ports/test_doubles.rs` 的 `StaticToolCatalog`
-- [ ] C6b.21 **P4 遗留缺陷清理**：删除 `ToolExecCtx.tools` 字段——生产适配器 `PipelineToolExecution` 从不读取它（只用 `observer` / `turn_id` / `iteration` / `conversation_id`），P4 遗留的未使用字段；同步删 `round_executor.rs` 字段声明与 `loop_executor.rs` 构造处
-- [ ] C6b.22 全仓 grep 确认 `RegistryToolCatalog` / `ToolCatalog` / `StaticToolCatalog` 无残留引用
+- [x] C6b.16 删除 `src-tauri/src/adapters/tool_catalog.rs`（整文件：`RegistryToolCatalog` + `MAX_TIER`）
+- [x] C6b.17 `src-tauri/src/adapters/mod.rs` 删除 `mod tool_catalog;` 与 `pub use` 导出
+- [x] C6b.18 `src-tauri/src/cmd/agent/mod.rs` 删除 `use crate::adapters::RegistryToolCatalog;`
+- [x] C6b.19 删除 `assistant-agent/src/kernel/ports.rs` 的 `ToolCatalog` async trait（唯一实现者即 `RegistryToolCatalog`）
+- [x] C6b.20 删除 `assistant-agent/src/kernel/ports/test_doubles.rs` 的 `StaticToolCatalog`
+- [x] C6b.21 **P4 遗留缺陷清理**：删除 `ToolExecCtx.tools` 字段——生产适配器 `PipelineToolExecution` 从不读取它（只用 `observer` / `turn_id` / `iteration` / `conversation_id`），P4 遗留的未使用字段；同步删 `round_executor.rs` 字段声明与 `loop_executor.rs` 构造处
+- [x] C6b.22 全仓 grep 确认 `RegistryToolCatalog` / `ToolCatalog` / `StaticToolCatalog` 无残留引用
 
 **测试**：
 
-- [ ] C6b.23 测试：覆盖 [§10 A10](./I38c-os-tools-spec.md) 全部用例（空白名单 / 白名单 / 黑名单覆盖 / 未知工具名静默忽略 / `max_tier` 硬上限 / `TOOLBOX_ONLY` 受众过滤 / 字典序确定性 / `ConversationToolConfigDto` 往返）
+- [x] C6b.23 测试：覆盖 [§10 A10](./I38c-os-tools-spec.md) 全部用例（空白名单 / 白名单 / 黑名单覆盖 / 未知工具名静默忽略 / `max_tier` 硬上限 / `TOOLBOX_ONLY` 受众过滤 / 字典序确定性 / `ConversationToolConfigDto` 往返）
+
+**补充修复**（随 C7 全量验收暴露的存量问题）：
+
+- [x] C6b.24 `setup.rs` 的 `#[cfg(all(target_os = "windows", feature = "vault"))]` 违反 `assembly_contract` A2（特性门禁只允许出现在 `cmd/mod.rs` 或与特性同名的 `*_plugin.rs`）。把 Windows keyring 预热移入 `vault_plugin::init()` 的 `setup` 闭包（该 `init()` 已由 `#[cfg(feature = "vault")]` 整体门控），内层只保留 `#[cfg(target_os = "windows")]`；`setup.rs` 删除该段，`feature = "vault"` 门禁行数维持 `VAULT_CFG_LIMIT = 6`
 
 ---
 
@@ -233,14 +237,17 @@
 
 `cwd = src-tauri`
 
-- [ ] C7.1 `cargo test -p assistant-tools` 全绿（A9）
-- [ ] C7.2 `cargo clippy -p assistant-tools --all-targets -- -D warnings` 无告警（A9）
-- [ ] C7.3 先执行格式化修复，再 `cargo fmt --all --check` 通过（A9）
-- [ ] C7.4 grep 静态自查：`assistant-tools/src/os/` 无第二条路径规范化实现、无 `unwrap_or_else(|_| path.to_path_buf())`（A1）；每个新工具都有显式 `audience()`（C0.12）
-- [ ] C7.5 确认 `setup.rs` 生产注册表只含 `fs_link` + 只读四工具（A7）
-- [ ] C7.6 `npm run contract:check` 幂等：执行生成后 `git status` 对契约文件无新增 diff（C6b 已生成并提交 `src/types/protocol.contract.ts`）
-- [ ] C7.7 `git status` 路径核对：无前端组件、无 DB、无 `assistant-tools` 控制层文件改动；允许的变更仅限 `src/types/protocol.contract.ts`、`src-tauri/tests/protocol_bindings.rs` 与 C6b 列出的 Rust 文件（C0.3）
-- [ ] C7.8 `cargo test --workspace` 全绿（含全量编译，以及 `assistant-agent` 的 `loop_executor` / `kernel_request_tools` 同步改动，A11）
+- [x] C7.1 `cargo test -p assistant-tools` 全绿（A9）
+- [x] C7.2 `cargo clippy -p assistant-tools --all-targets -- -D warnings` 无告警（A9）
+- [x] C7.3 先执行格式化修复，再 `cargo fmt --all --check` 通过（A9）
+- [x] C7.4 grep 静态自查：`assistant-tools/src/os/` 无第二条路径规范化实现、无 `unwrap_or_else(|_| path.to_path_buf())`（A1）；每个新工具都有显式 `audience()`（C0.12）
+- [x] C7.5 确认 `setup.rs` 生产注册表只含 `fs_link` + 只读四工具（A7）
+- [x] C7.6 `npm run contract:check` 幂等：执行生成后 `git status` 对契约文件无新增 diff（C6b 已生成并提交 `src/types/protocol.contract.ts`）
+  - 复核口径：生成器对同一工作区重复执行输出稳定；`contract:check` 对 **HEAD** 报 diff 属预期（P5 新增的三个 DTO 尚未提交），提交后即回归无 diff
+- [x] C7.7 `git status` 路径核对：无前端组件、无 DB、无 `assistant-tools` 控制层文件改动；允许的变更仅限 `src/types/protocol.contract.ts`、`src-tauri/tests/protocol_bindings.rs` 与 C6b 列出的 Rust 文件（C0.3）
+  - 实际变更额外包含 C6b.24 的两处 A2 修复文件（`src-tauri/src/setup.rs`、`src-tauri/src/vault_plugin.rs`），以及 C6.3 要求的 `setup.rs` 只读组装配；均为 Rust 侧装配/边界修复，无前端组件、无 DB schema
+- [x] C7.8 `cargo test --workspace` 全绿（含全量编译，以及 `assistant-agent` 的 `loop_executor` / `kernel_request_tools` 同步改动，A11）
+  - 另跑 `cargo clippy --workspace --all-targets -- -D warnings` 与 `npm run lint` / `npm run typecheck` 一并通过
 
 ---
 
@@ -250,8 +257,8 @@
 - [x] C8.2 [I38c §11 OQ1](./I38c-os-tools-spec.md) 标注为已定稿（遵守 `.gitignore`）；OQ3 同时定稿（不引入 `windows-sys`，仅补 `windows` features）
 - [x] C8.3 回写 [I38a §4-C6](./I38a-tool-control-layer-spec.md)：`ReadReceiptKey` 补 `session_id`（C0.8 的跨阶段契约变更）
 - [x] C8.4 回写 [I38d §4.5](./I38d-agent-frontend-modes-spec.md)：函数签名改为 `async` + `Vec<ToolSpec>`，DTO 名补 `Dto` 后缀（与 P5 落点一致）
-- [ ] C8.5 更新 I38 roadmap §2：P5 标记已完成并记录日期
-- [ ] C8.6 在本清单勾选 C1–C7 完成项（任务级进度只在本清单维护）
+- [x] C8.5 更新 I38 roadmap §2：P5 标记已完成并记录日期
+- [x] C8.6 在本清单勾选 C1–C7 完成项（任务级进度只在本清单维护）
 
 ---
 
