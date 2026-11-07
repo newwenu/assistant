@@ -1,20 +1,18 @@
 use async_trait::async_trait;
 use encoding_rs::Encoding;
 use serde_json::Value;
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use crate::context::ToolUseContext;
-use crate::os::output::{truncate_output, OutputLimits, TruncatedOutput};
 use crate::os::path;
-use crate::os::text_encoding::{
-    detect_and_decode, parse_optional_encoding, DecodedText, EncodingSource,
-};
+use crate::os::text_encoding::{parse_optional_encoding, DecodedInfo, EncodingSource};
 use crate::r#trait::{BehaviorHints, Tool, ToolAudience, ToolTier, ValidationResult};
 use crate::result::ToolResult;
 use crate::storage::{ReadReceipt, ReadReceiptKey, ReadReceiptStore};
+
+mod window;
 
 /// 内部唯一标识（注册表键、白名单匹配、审计）。模型可见名默认与它同名。
 const TOOL_ID: &str = "read";
@@ -71,11 +69,13 @@ impl Tool for AgentReadTool {
         Ok(
             "Read a text file with line numbers. Output lines are formatted as \
              `{line_number:>6}\\t{line}`; single lines longer than 2000 characters are cut and \
-             marked ` [truncated]`. Reads up to 2000 lines / 1MB per call; use `offset` (1-based, \
-             0 is treated as 1) and `limit` to page through larger files. Binary files are \
-             rejected. Non-UTF-8 files are decoded via BOM detection, via the `encoding` label, \
-             or by a confident guess. Re-reading the same range of an unchanged file in the same \
-             session returns only a notice instead of the content. Does not follow `.gitignore`."
+             marked ` [truncated]`. Reads up to 2000 lines / 1MB per call for files of any size; \
+             use `offset` (1-based, 0 is treated as 1) and `limit` to page through larger files. \
+             `totalLines` is null when the file is too large to count to the end in one call. \
+             Binary files are rejected. Non-UTF-8 files are decoded via BOM detection, via the \
+             `encoding` label, or by a confident guess. Re-reading the same range of an unchanged \
+             file in the same session returns only a notice instead of the content. Does not \
+             follow `.gitignore`."
                 .to_string(),
         )
     }
@@ -158,7 +158,13 @@ impl Tool for AgentReadTool {
             session_id: context.session_id.clone(),
             path: resolved.display().to_string(),
             start_line: request.offset_specified.then_some(request.offset),
-            end_line: request.limit.map(|limit| request.offset + limit as u64 - 1),
+            // 饱和运算：`offset` 是调用方可控的 u64，`offset + limit - 1` 会溢出回绕。
+            end_line: request.limit.map(|limit| {
+                request
+                    .offset
+                    .saturating_add(limit as u64)
+                    .saturating_sub(1)
+            }),
         };
 
         if let Some(receipt) = self.receipts.lookup(&key).await {
@@ -182,34 +188,48 @@ impl Tool for AgentReadTool {
         let offset = request.offset;
         let limit = request.limit;
         let encoding = request.encoding;
-        let read =
-            tokio::task::spawn_blocking(move || read_range(&read_path, offset, limit, encoding))
-                .await;
+        let scanned = tokio::task::spawn_blocking(move || {
+            window::scan(&window::WindowRequest {
+                path: &read_path,
+                offset,
+                limit,
+                encoding,
+            })
+        })
+        .await;
 
-        let (output, total_lines, decoded) = match read {
-            Ok(Ok(read)) => read,
+        let outcome = match scanned {
+            Ok(Ok(outcome)) => outcome,
             Ok(Err(error)) => return Ok(ToolResult::err(error)),
             Err(error) => return Err(format!("read task failed: {}", error)),
         };
 
-        let start_line = request.offset as usize;
-        let returned_lines = output.returned_lines;
-        let end_line = (returned_lines > 0).then(|| start_line + returned_lines - 1);
+        let start_line = request.offset;
+        let returned_lines = outcome.returned_lines;
+        let end_line = (returned_lines > 0).then(|| start_line + returned_lines as u64 - 1);
 
-        let assistant_text = if returned_lines > 0 {
-            output.text.clone()
-        } else if total_lines == 0 {
+        let mut assistant_text = if returned_lines > 0 {
+            outcome.rendered.clone()
+        } else if outcome.total_lines == Some(0) {
             String::new()
         } else {
-            format!(
-                "No lines in range: file has {} lines, requested start line {}.",
-                total_lines, start_line
-            )
+            match outcome.total_lines {
+                Some(total) => format!(
+                    "No lines in range: file has {} lines, requested start line {}.",
+                    total, start_line
+                ),
+                None => format!(
+                    "No lines in range: no content at or after line {}.",
+                    start_line
+                ),
+            }
         };
-        let assistant_text = match encoding_footer(&decoded) {
-            Some(footer) => append_footer(&assistant_text, &footer),
-            None => assistant_text,
-        };
+        if outcome.truncated && returned_lines > 0 {
+            assistant_text.push_str(&truncation_notice(&outcome));
+        }
+        if let Some(footer) = encoding_footer(&outcome.info) {
+            assistant_text = append_footer(&assistant_text, &footer);
+        }
 
         self.receipts
             .record(
@@ -217,8 +237,8 @@ impl Tool for AgentReadTool {
                 ReadReceipt {
                     revision,
                     tool_call_id: context.tool_call_id.clone().unwrap_or_default(),
-                    encoding: decoded.encoding_name().to_string(),
-                    has_bom: decoded.has_bom,
+                    encoding: outcome.info.encoding_name().to_string(),
+                    has_bom: outcome.info.has_bom,
                 },
             )
             .await;
@@ -228,8 +248,8 @@ impl Tool for AgentReadTool {
                 "path": resolved.display().to_string(),
                 "startLine": start_line,
                 "endLine": end_line,
-                "totalLines": total_lines,
-                "truncated": output.truncated,
+                "totalLines": outcome.total_lines,
+                "truncated": outcome.truncated,
                 "deduplicated": false
             }),
             assistant_text,
@@ -251,13 +271,7 @@ impl ReadRequest {
             .as_object()
             .ok_or_else(|| "input must be a JSON object".to_string())?;
 
-        let path = object
-            .get("path")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| "missing or empty 'path' field".to_string())?
-            .to_string();
+        let path = path::parse_path_arg(object, "path")?;
 
         let offset = optional_u64(object, "offset")?;
         let limit = match optional_u64(object, "limit")? {
@@ -287,56 +301,27 @@ fn optional_u64(object: &serde_json::Map<String, Value>, key: &str) -> Result<Op
     }
 }
 
-/// 同步读取、解码与渲染，必须在 `spawn_blocking` 内调用。
-fn read_range(
-    path: &Path,
-    offset: u64,
-    limit: Option<usize>,
-    encoding: Option<&'static Encoding>,
-) -> Result<(TruncatedOutput, usize, DecodedText), String> {
-    let bytes = std::fs::read(path)
-        .map_err(|error| format!("failed to read '{}': {}", path.display(), error))?;
-
-    let decoded = detect_and_decode(&bytes, encoding)
-        .map_err(|error| format!("'{}': {}", path.display(), error))?;
-
-    let text = decoded.text.as_str();
-    let total_lines = text.lines().count();
-    let start_index = (offset.saturating_sub(1) as usize).min(total_lines);
-    let end_index = match limit {
-        Some(limit) => start_index.saturating_add(limit).min(total_lines),
-        None => total_lines,
-    };
-
-    let mut rendered = String::new();
-    for (index, line) in text.lines().enumerate().take(end_index).skip(start_index) {
-        let number = index + 1;
-        let rendered_line = truncate_line(line);
-        let _ = writeln!(
-            rendered,
-            "{:>width$}{}{}",
-            number,
-            LINE_NUMBER_SEPARATOR,
-            rendered_line,
-            width = LINE_NUMBER_WIDTH
-        );
+/// 截断提示（结果正文尾部，footer 之前）：EOF 已达时给精确总数，否则只报下界。
+fn truncation_notice(outcome: &window::WindowOutcome) -> String {
+    match outcome.total_lines {
+        Some(total) => format!(
+            "[truncated: showing {} of {} lines, {} of {} bytes]",
+            outcome.returned_lines, total, outcome.rendered_bytes, outcome.total_rendered_bytes
+        ),
+        None => format!(
+            "[truncated: showing {} lines, {} bytes; more content follows]",
+            outcome.returned_lines, outcome.rendered_bytes
+        ),
     }
-
-    let limits = OutputLimits {
-        max_bytes: DEFAULT_MAX_BYTES,
-        max_lines: DEFAULT_MAX_LINES,
-        preview_bytes: 0,
-    };
-    Ok((truncate_output(&rendered, &limits), total_lines, decoded))
 }
 
 /// 编码 footer（上级 §14.4）：UTF-8 无 BOM 时静默，其余带来源后缀。
-fn encoding_footer(decoded: &DecodedText) -> Option<String> {
-    if decoded.source == EncodingSource::Utf8 && !decoded.has_bom {
+fn encoding_footer(info: &DecodedInfo) -> Option<String> {
+    if info.source == EncodingSource::Utf8 && !info.has_bom {
         return None;
     }
-    let label = decoded.encoding_name();
-    Some(match decoded.source.suffix() {
+    let label = info.encoding_name();
+    Some(match info.source.suffix() {
         Some(suffix) => format!("[encoding: {} ({})]", label, suffix),
         None => format!("[encoding: {}]", label),
     })
@@ -352,13 +337,4 @@ fn append_footer(text: &str, footer: &str) -> String {
     } else {
         format!("{}\n{}", text, footer)
     }
-}
-
-fn truncate_line(line: &str) -> String {
-    if line.chars().count() <= MAX_LINE_CHARS {
-        return line.to_string();
-    }
-    let mut truncated: String = line.chars().take(MAX_LINE_CHARS).collect();
-    truncated.push_str(LINE_TRUNCATED_MARKER);
-    truncated
 }

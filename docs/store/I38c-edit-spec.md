@@ -81,6 +81,7 @@
 | 多匹配且 `replace_all = false` | `Business`；错误体含匹配次数 + 最多 5 段 ±2 行上下文，提示「扩大 `old_string`」或「用 `replace_all`」 | OpenBitFun `apply_match_and_replace` 的多匹配错误文案 + `match_contexts` |
 | 多匹配且 `replace_all = true` | 全部替换，返回替换次数与首处行号 | 同上 |
 | 命中但 `new_string` 与命中片段完全相同 | `Business`（no-change），不写盘 | OpenBitFun `EditContentError::no_change` |
+| 目标文件超 16MiB（整文件读入闸门 `MAX_WHOLE_FILE_BYTES`） | `Business`，提示 `edit` 需要整文件驻留（匹配 + 行尾归一 + 整篇转码），建议拆分文件或外部处理；**不得**暗示改用 `read` 就能编辑——`read` 只是能读（上级 §14.10），`edit` 仍读不了 | 本项目新增（`read` 改为流式后闸门归 `edit` 独有） |
 
 ## 5 写回
 

@@ -15,6 +15,7 @@ fn context(root: &Path, session: Option<&str>) -> ToolUseContext {
         workspace_root: Some(root.display().to_string()),
         session_id: session.map(str::to_string),
         tool_call_id: Some("call-1".to_string()),
+        ..Default::default()
     }
 }
 
@@ -647,4 +648,164 @@ async fn receipt_records_the_detected_encoding_and_bom_state() {
     let receipt = store.lookup(&key).await.expect("receipt recorded");
     assert_eq!(receipt.encoding, "GBK");
     assert!(!receipt.has_bom);
+}
+
+/// 扫描块大小，与 `agent_read::window::CHUNK_BYTES` 同值。
+const CHUNK_BYTES: usize = 256 * 1024;
+
+/// 构造「恰好把下一个多字节字符的第一个字节留在块边界之前」的 ASCII 填充。
+///
+/// `ab\n` 每行 3 字节，`(CHUNK_BYTES - 1) / 3` 行正好是 `CHUNK_BYTES - 1` 字节，
+/// 因此随后的多字节字符必然跨块。
+fn filler_ending_one_byte_before_the_chunk_boundary() -> String {
+    let lines = (CHUNK_BYTES - 1) / 3;
+    let filler = "ab\n".repeat(lines);
+    assert_eq!(filler.len(), CHUNK_BYTES - 1);
+    filler
+}
+
+#[tokio::test]
+async fn a_gbk_character_split_across_chunks_is_decoded() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let filler = filler_ending_one_byte_before_the_chunk_boundary();
+    let (gbk, _, had_errors) = encoding_rs::GBK.encode("中文\n");
+    assert!(!had_errors);
+    let mut bytes = filler.clone().into_bytes();
+    bytes.extend_from_slice(&gbk);
+    write_bytes(dir.path(), "split-gbk.txt", &bytes);
+
+    let last_line = filler.matches('\n').count() + 1;
+    let result = tool()
+        .execute(
+            &json!({ "path": "split-gbk.txt", "encoding": "gbk", "offset": last_line, "limit": 1 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    let text = result.assistant_text();
+    assert_eq!(text, format!("{}中文\n[encoding: GBK]", prefix(last_line)));
+}
+
+#[tokio::test]
+async fn a_utf8_character_split_across_chunks_is_decoded() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let filler = filler_ending_one_byte_before_the_chunk_boundary();
+    let mut bytes = filler.clone().into_bytes();
+    bytes.extend_from_slice("中文\n".as_bytes());
+    write_bytes(dir.path(), "split-utf8.txt", &bytes);
+
+    let last_line = filler.matches('\n').count() + 1;
+    let result = tool()
+        .execute(
+            &json!({ "path": "split-utf8.txt", "offset": last_line, "limit": 1 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    let text = result.assistant_text();
+    assert_eq!(text, format!("{}中文\n", prefix(last_line)));
+}
+
+#[tokio::test]
+async fn files_above_the_old_whole_file_limit_are_readable() {
+    const LINES: usize = 170_000;
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let line = format!("{}\n", "z".repeat(100));
+    let mut content = String::with_capacity(LINES * line.len());
+    for _ in 0..LINES {
+        content.push_str(&line);
+    }
+    assert!(content.len() > 16 * 1024 * 1024);
+    write(dir.path(), "big.log", &content);
+
+    let head = tool()
+        .execute(&json!({ "path": "big.log" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(head.ok, "{:?}", head.error);
+    let data = head.data.as_ref().unwrap();
+    assert_eq!(data["truncated"], json!(true));
+    assert_eq!(data["totalLines"], Value::Null);
+    let text = head.assistant_text();
+    assert!(text.contains("showing 2000 lines"));
+    assert!(text.contains("more content follows"));
+
+    let tail = tool()
+        .execute(
+            &json!({ "path": "big.log", "offset": LINES - 3, "limit": 3 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(tail.ok, "{:?}", tail.error);
+    let data = tail.data.as_ref().unwrap();
+    assert_eq!(data["totalLines"], json!(LINES));
+    assert_eq!(data["startLine"], json!(LINES - 3));
+    assert_eq!(data["endLine"], json!(LINES - 1));
+    let text = tail.assistant_text();
+    assert_eq!(text.lines().count(), 3);
+    assert!(text.contains(&format!("{}\t{}", LINES - 1, "z".repeat(100))));
+}
+
+#[tokio::test]
+async fn a_single_line_longer_than_the_output_budget_is_cut_without_loading_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let huge = "q".repeat(4 * 1024 * 1024);
+    write(dir.path(), "one-line.txt", &huge);
+
+    let result = tool()
+        .execute(&json!({ "path": "one-line.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["totalLines"], json!(1));
+    assert_eq!(data["truncated"], json!(false));
+    let text = result.assistant_text();
+    assert!(text.contains(&"q".repeat(MAX_LINE_CHARS)));
+    assert!(text.contains(LINE_TRUNCATED_MARKER));
+    assert!(!text.contains(&"q".repeat(MAX_LINE_CHARS + 1)));
+}
+
+#[tokio::test]
+async fn a_utf8_file_that_turns_invalid_later_falls_back_to_a_guess() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    // 头部 8KB 全 ASCII（通过 UTF-8 校验），之后整篇是 GBK 正文：UTF-8 乐观路径必须在
+    // 第一个非法块处回退，并按头部 1MB 样本重猜编码后从头重读。
+    let head = "ab\n".repeat((8 * 1024) / 3 + 1);
+    assert!(head.len() > 8 * 1024);
+    let body_lines = 30_000;
+    let body_text = "中文测试。\n".repeat(body_lines);
+    let (body, _, had_errors) = encoding_rs::GBK.encode(&body_text);
+    assert!(!had_errors);
+    let mut bytes = head.clone().into_bytes();
+    bytes.extend_from_slice(&body);
+    write_bytes(dir.path(), "late-invalid.txt", &bytes);
+
+    let head_lines = head.matches('\n').count();
+    let last_line = head_lines + body_lines;
+    let result = tool()
+        .execute(
+            &json!({ "path": "late-invalid.txt", "offset": last_line, "limit": 1 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    let text = result.assistant_text();
+    assert!(text.contains("中文测试。"));
+    assert!(text.ends_with("(guess)]"));
 }

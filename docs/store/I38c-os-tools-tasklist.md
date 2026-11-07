@@ -267,11 +267,11 @@
 > 规格：[I38c §14](./I38c-os-tools-spec.md)（跨工具约束）+ [read §3.3](./I38c-read-spec.md) / [write §3.1](./I38c-write-spec.md) / [edit §5](./I38c-edit-spec.md) / [grep §3.1](./I38c-grep-spec.md)
 > 阶段：[I38-agent-roadmap.md](./I38-agent-roadmap.md) §2.1（P11 候选）
 > 前置：P5 已完成（C0–C8 全绿）；依赖 `encoding_rs` / `chardetng` / `encoding_rs_io` 均已在 crate 依赖中，**不新增依赖**
-> 勾选条件：代码已改 **且** 对应验收（A12–A17）已跑。
+> 勾选条件：代码已改 **且** 对应验收（A12–A18）已跑。
 > **门禁**：本组任一项未完成都不影响 P5 结论；不得为 C9 改动 P0–P7 的既有验收口径。
-> **状态**：C9.1–C9.30 全部完成，A12–A17 已跑（`cargo test -p assistant-tools` / `-p assistant-agent`、clippy `-D warnings`、`fmt --check` 全通过）。
+> **状态**：C9.1–C9.34 全部完成，A12–A18 已跑（`cargo test -p assistant-tools` / `-p assistant-agent`、clippy `-D warnings`、`fmt --check` 全通过）。
 
-实现：`src-tauri/crates/assistant-tools/src/os/{text_encoding,agent_read,agent_write,agent_grep,process_output}.rs`、`src-tauri/crates/assistant-tools/src/os/agent_edit/`（`locate.rs` / `apply.rs`）、`src-tauri/crates/assistant-tools/src/storage.rs`
+实现：`src-tauri/crates/assistant-tools/src/os/{text_encoding,agent_read,agent_write,agent_grep,process_output}.rs`、`src-tauri/crates/assistant-tools/src/os/agent_read/window.rs`（长文件分块扫描）、`src-tauri/crates/assistant-tools/src/os/agent_edit/`（`locate.rs` / `apply.rs`）、`src-tauri/crates/assistant-tools/src/storage.rs`
 测试：`src-tauri/crates/assistant-tools/tests/{text_encoding,agent_read,agent_write,agent_edit,agent_grep,storage}.rs`
 
 **共享检测模块**
@@ -325,13 +325,25 @@
 - [x] C9.30 测试：`pattern` 带前导空格可命中、全空白被拒；`context = 11` 被拒；单文件大 `context` 被行数上限截断且 `truncated == true`；二进制文件 NUL 前的命中不输出且计入 `binarySkipped`；超 `16 MiB` 文件计入 `largeSkipped`；不可读文件计入 `unreadableFiles` 且 footer 出现（`#[cfg(windows)]` 用 `share_mode(0)` 独占句柄模拟）；`include: "src/*.rs"` 不跨层级、`*.rs` 递归；已设 `encoding` 时 `nonUtf8Probe == null`；`glob` 侧补 `*.ts` 递归 / `src/*.ts` 不递归两例（A17）
   - 实测补充：`context` 回调的 deadline 检查无法在测试里确定性触发——每个块的上下文行紧跟在同块的 `matched` 之后（微秒级），能到点的场景必然先在 `matched` 或遍历入口触发；该检查保留为防御（单文件内 `before_context` 回溯与 `after_context` 逐行产出都可能落在慢盘上），不写断言
 
+**长文件流式读取（三修，规格 [read §3.4](./I38c-read-spec.md) / 上级 §14.10 / A18）**
+
+- [x] C9.31 `agent_read/window.rs`：新建分块扫描器——`CHUNK_BYTES = 256KB` 块 + 换行切分；头部 8KB 做 BOM / NUL 判定；UTF-8 乐观路径逐块 `from_utf8`（`error_len() == None` 且非 EOF 时把尾巴留给下一块）；后续块真非法时按 `GUESS_SAMPLE_BYTES = 1MB` 样本重猜并从头流式解码；非 UTF-8 由同一个 `encoding_rs::Decoder` 跨块续解（A18）
+  - 实现要点：`Decoder` 内部区分 `Locked(encoding_rs::Decoder)` 与 `Utf8 { carry }` 两种形态；`read_chunk` 用 `Read::take` 读满 `CHUNK_BYTES` 才判定非 EOF，因此「读满恰好等于块大小」不会被误判为文件结束。
+- [x] C9.32 `agent_read/window.rs`：行窗口——`limit` 与 1MB / 2000 行取小；窗口填满后按 `EOF_GRACE_CHARS = 1MB` 只计数不渲染；`totalLines` 读到 EOF 才给值、否则 `None`；截断提示按 EOF 到达与否给精确 / 下界两种形态；超长单行累积到 `MAX_LINE_CHARS` 即停并置截断标记（A18）
+  - 实现要点：`line_cap_is_output_cap` 记录「本次截断是输出上限所致还是 `limit` 所致」，`limit` 主动截断不算 `truncated`；`total_rendered_bytes` 在只计数阶段继续累加，供「N of M bytes」的精确形态使用。
+- [x] C9.33 `agent_read.rs`：删除整文件 `std::fs::read` 与 `MAX_READ_FILE_BYTES` 闸门，改调 `window::scan`；闸门重命名 `MAX_WHOLE_FILE_BYTES` 归 `edit` 使用，`file_too_large_message` 拆成 `edit` 专用文案（不再提 `read` / `grep`）；`data.totalLines` 输出 `Option`（未达 EOF 为 `null`）（A18）
+  - 附带：`read` 的 `description` 同步收紧为只写可观察契约（任意大小可读、单次 2000 行 / 1MB、`offset` / `limit` 翻页、`totalLines` 可能为 `null`），分块大小 / 缓冲策略 / 解码器复用等机制不写进描述（见 [read §3.4](./I38c-read-spec.md)）；`encoding_footer` 改为接收 `DecodedInfo`，`truncate_line` 由 `window` 内的 `append` 取代。
+- [x] C9.34 测试：>16MiB 文件可读且 `offset` 翻页；块边界切断多字节字符时 GBK / UTF-8 正文仍正确（构造恰好跨块的字符）；超长单行不撑爆内存；`totalLines` 精确值与 `null` 两例；截断提示两种形态；`edit` 超限文案不提 `read`（A18）
+  - 实测：`agent_read` 37 例全绿（新增 `a_gbk_character_split_across_chunks_is_decoded` / `a_utf8_character_split_across_chunks_is_decoded` / `files_above_the_old_whole_file_limit_are_readable` / `a_single_line_longer_than_the_output_budget_is_cut_without_loading_it` / `a_utf8_file_that_turns_invalid_later_falls_back_to_a_guess`）；`agent_edit` 29 例全绿（新增 `a_file_above_the_whole_file_limit_is_rejected_with_an_edit_only_message`）。
+  - 构造手法：用 `"ab\n"` 重复到 `CHUNK_BYTES - 1` 字节（每行 3 字节整除），使紧随其后的多字节字符第一个字节落在块边界前、其余字节落在下一块；UTF-8 回退用例改为「头部 >8KB 全 ASCII + 之后 3 万行 GBK 正文」，确保触发「头部合法、后续块真非法」而非块尾截断分支。
+
 **文档与验收**
 
 - [x] C9.22 回写 [I38a §4-C6](./I38a-tool-control-layer-spec.md) 的 `ReadReceipt` 值扩展（规格已写，落地后确认与代码一致）
   - 核对结论：规格写的 `encoding: String` + `has_bom: bool`、键结构不变、`revision` 仍是「长度 + mtime」且编码不参与失效，与 `storage.rs` 的 `ReadReceipt` 逐项一致，无需改文档
 - [x] C9.23 `cwd = src-tauri`：`cargo test -p assistant-tools` / `cargo clippy -p assistant-tools --all-targets -- -D warnings` / 先修格式化再 `cargo fmt --all --check` 全通过
 - [x] C9.24 回归确认：P5 的 A1–A11 验收仍全绿（UTF-8 路径行为未变，唯一差异是 §14.3 的二进制检测顺序修正）
-  - 实测：`cargo test -p assistant-tools` 16 个测试目标全绿（含 `agent_read` 19 / `agent_write` 24 / `agent_edit` 28 / `agent_grep` 20）；`cargo test -p assistant-agent` 全绿（A11 的 `ToolCatalog` 清理链路）；`grep` 的 `[non-utf8: …]` tag 已在 §14.4 规则 5 登记，无需回写
+  - 实测：`cargo test -p assistant-tools` 16 个测试目标全绿（含 `agent_read` 37 / `agent_write` 24 / `agent_edit` 29 / `agent_grep` 20）；`cargo test -p assistant-agent` 全绿（A11 的 `ToolCatalog` 清理链路）；`grep` 的 `[non-utf8: …]` tag 已在 §14.4 规则 5 登记，无需回写
 
 ---
 
@@ -359,6 +371,7 @@
 | A15（C9）`write` 五道闸 | C9.3、C9.10、C9.11、C9.13、C9.15 |
 | A16（C9）`grep` 标准配置链与两层探测 | C9.17–C9.21 |
 | A17（二修）`grep` 输出预算与边界 | C9.25–C9.30 |
+| A18（三修）`read` 流式分块读，闸门归 `edit` / `write` / `grep` | C9.31–C9.34 |
 
 ---
 

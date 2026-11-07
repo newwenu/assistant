@@ -379,6 +379,7 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 
 - 截断必须显式告知模型「已截断 + 实际行数 / 字节数」，不得静默丢弃。
 - 大结果落盘由 P2 的 `ToolResultStorage` 负责，`os/output.rs` 只做单条上限。
+- **`read` 的收口点已前移**：分块扫描（[read §3.4](./I38c-read-spec.md)）在读取过程中就按 1MB / 2000 行停止，截断提示由扫描器自己产出（形态与 `truncate_output` 一致：`[truncated: showing N of M lines, X of Y bytes]`，未达 EOF 时改报下界），因此 `read` 不再把整段文本交给 `truncate_output`。`os/output.rs` 保留给其它需要「先有完整文本再收口」的工具。
 
 ---
 
@@ -450,12 +451,13 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 | A9 | `cargo test -p assistant-tools` 全绿；`cargo clippy -- -D warnings` 无告警 |
 | A10 | `resolve_available_tools`：空白名单 → 空集；白名单生效；`disabled_tools` 覆盖 `enabled_tools`；超 `max_tool_tier` 与 `TOOLBOX_ONLY` 工具不出现；同输入两次调用顺序一致 |
 | A11 | P4 遗留清理到位：`RegistryToolCatalog` / `ToolCatalog` trait / `StaticToolCatalog` 全部删除，`ToolExecCtx.tools` 未使用字段删除；`cargo test --workspace` 全绿 |
-| A12 | **（C9）** 编码检测顺序固定为 BOM → 显式 `encoding` → 二进制判定 → UTF-8 整文件校验 → chardetng 猜测（§14.3）；带 BOM 的 UTF-16 文件不被二进制检测误杀；`had_errors == true` 一律拒绝，不存在 `?` 替换式解码或写回 |
+| A12 | **（C9）** 编码检测顺序固定为 BOM → 显式 `encoding` → 二进制判定 → UTF-8 逐块校验 → chardetng 猜测（§14.3）；带 BOM 的 UTF-16 文件不被二进制检测误杀；`had_errors == true` 一律拒绝，不存在 `?` 替换式解码或写回 |
 | A13 | **（C9）** footer 契约（§14.4）：UTF-8 无 BOM 静默；其余输出 `[encoding: <label>]`，自动检测加 `(guess)`、BOM 来源加 `(bom)`；footer 独占一行、单次结果至多一次、不进入 `data` 正文；`edit` 不剥离，0 匹配时按标记集给出诊断 |
 | A14 | **（C9）** 回执携带编码（§14.5）：`ReadReceipt` 含 `encoding` / `has_bom`；`edit` / `write` 只消费不重判；同一文件在 `read` 与 `edit` 上不会得出两种编码结论 |
 | A15 | **（C9）** `write` 转码五道闸（§14.6）全部生效：编码确定、内容可完整编码、≤1MB、已存在文件须有回执、BOM 按目标编码写；任一道不过即不写盘 |
 | A16 | **（C9）** `grep` 复用 `grep-searcher` 标准配置链（§14.7）：`binary_detection = quit(b'\x00')`、BOM sniffing 默认开、无 BOM 零转码；`data` 含 `binarySkipped` / `largeSkipped` / `unreadableFiles` / `lossyLines` / `nonUtf8Probe`；零命中时前缀探测有界且跳过 BOM / 二进制文件；`encoding` 已设时不执行 probe |
 | A17 | **（二修）** `grep` 输出预算与可中断性（[grep §3.2 / §3.3](./I38c-grep-spec.md)）：`context` 超出 `0..=10` 即 `Business`；`MAX_MATCHES` / `MAX_OUTPUT_LINES`（命中 + 上下文合计）任一触发即停并置 `truncated`；deadline 在 `matched` 与 `context` 回调内均检查；`max_filesize = 16 MiB`；`pattern` 原样编译不 `trim`；`include` 与 `glob` 同为 `literal_separator(true)`；二进制文件整文件丢弃、读取失败计入 `unreadableFiles` |
+| A18 | **（长文件）** `read` 不设整文件体积闸门：按 256KB 块 + 行边界流式读取，峰值内存不随文件增长（§14.10 / [read §3.4](./I38c-read-spec.md)）；超 16MiB 文件可读且可用 `offset` / `limit` 翻页；跨块多字节字符（UTF-8 / GBK / UTF-16）解码正确；超长单行不撑爆内存；`totalLines` 读到 EOF 为精确值、否则为 `null`；截断提示按 EOF 是否到达给精确 / 下界两种形态；`edit` / `write` / `grep` 的整文件闸门保留，`read` 不再出现整文件超限文案 |
 
 ---
 
@@ -469,13 +471,16 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 | `read` 输出格式漂移让 `edit` 档 2 / 档 4 静默失效 | 行号前缀（`{n:>6}\t`）与 ` [truncated]` 标记的唯一产出点是 `read`，两侧共用同一常量；契约写在 [read §3.2](./I38c-read-spec.md)，`edit` 只做检测与剥离 |
 | `ls` 不读 `.gitignore`、`glob` / `grep` 读 `.gitignore`，口径不一致 | 刻意差异（理由见 [ls §3](./I38c-ls-spec.md)）；在三个工具的 `description` 里各自写明「是否受 `.gitignore` 影响」，避免模型把「`ls` 没列出来」当成「文件不存在」 |
 | 大结果挤爆上下文 | P2 三层预算 + `os/output.rs` 单条上限；`grep` 另设自身预算（`MAX_MATCHES` / `MAX_OUTPUT_LINES` / `MAX_CONTEXT`，[grep §3.2](./I38c-grep-spec.md)）——上下文行不经过 `MAX_MATCHES`，必须单独计行 |
+| 超大文件读取把内存打满（日志 / 数据库导出） | `read` 改为分块流式（§14.10 / [read §3.4](./I38c-read-spec.md)）：输出窗口在扫描中收口，超长单行到 2000 字符即停止累积，峰值内存与文件大小无关；`edit` / `write` / `grep` 保留 16MiB 闸门，超限文件只走 `read` + `offset` 翻页 |
+| 流式读取的块边界切断多字节字符 | 按 `\n`（`0x0A`）切分——该字节不出现在 UTF-8 / GBK / GB18030 / Big5 / Shift_JIS / windows-1252 的多字节序列中；非 UTF-8 由同一个 `encoding_rs::Decoder` 跨块续解；UTF-8 块尾不完整序列留到下一块；UTF-16 由解码器按 2 字节对齐 |
+| UTF-8 乐观路径中途失败需重读 | 头部 8KB 合法即先按 UTF-8 流式解码；仅当后续块出现真正的非法字节（`error_len() != None`）才重猜一次并重读，最坏 2 遍 IO，第二遍同样在输出窗口 + 宽限预算处停止（§14.10） |
 | Windows 路径形态（UNC / 盘符相对） | I31 §5.2.1 全覆盖；A1 只允许走共享函数 |
 | 符号链接 / junction 让删除作用到 workspace 之外 | 目标分类一律 `symlink_metadata`（不跟随），链接按文件删除、递归不进入链接（[delete §3.2](./I38c-delete-spec.md)） |
 | 递归删除无法中断，可能部分删除 | `remove_dir_all` 无取消点，超时只记录；失败后重查目标存在性并区分「未删除 / 已删除但随后失败」（[delete §3.4](./I38c-delete-spec.md)） |
 | 删除 → 重建后 `read` 回执误判「已读过」（保时间戳的复制 / 解包使长度 + mtime 相同） | 删除 / 移动成功后 `invalidate_path` 按组件级前缀失效（[delete §3.6](./I38c-delete-spec.md)、[I38a §4-P2-C6](./I38a-tool-control-layer-spec.md)） |
 | 崩溃 / 断电后 rename 已完成但内容未落盘（文件存在却为空） | 写临时文件后先 `sync_all()` 再 rename（[write §3](./I38c-write-spec.md)、[edit §5](./I38c-edit-spec.md)），不依赖 rename 单独保证持久性 |
 | 跨会话并发写同一路径，后写者静默覆盖前者 | 原子 rename 只保证不产生半截文件、不保证先后顺序；P5 **不引入** per-target 锁（需在 `os/` 层加跨调用共享状态），冲突可见性由审批卡片（覆盖提示 + 现有行数 / 字节数）与 `read` 回执修订号承担（[write §3 / §5](./I38c-write-spec.md)） |
-| （C9）非 UTF-8 文件被误判编码后写回，静默损坏内容 | 检测顺序固定（BOM → 显式 `encoding` → 二进制 → UTF-8 校验 → chardetng），猜测仅在「置信 + 整文件解码无损」时接受；写回前强制「解码 → 编码」往返无损（§14.3 / §14.6 G2） |
+| （C9）非 UTF-8 文件被误判编码后写回，静默损坏内容 | 检测顺序固定（BOM → 显式 `encoding` → 二进制 → UTF-8 校验 → chardetng），猜测仅在「置信 + 解码全程无损」时接受；写回前强制「解码 → 编码」往返无损（§14.3 / §14.6 G2） |
 | （C9）二进制文件被当成「非 UTF-8 文本」报给模型 | `grep` 主遍历 `quit(b'\x00')`；`read` 在猜测前查原始字节前 8KB 的 `0x00`（§14.3 步骤 3）；probe 跳过含 `0x00` 的文件（§14.7） |
 | （C9）footer 被模型复制进 `edit` 的 `old_string`，导致 0 匹配 | footer 是结构化已知后缀（`[encoding: …]` 独占一行），但**不自动剥离**：自动剥离会把模型误解静默修正为成功，模型学不到「footer 不是文件内容」。改为 0 匹配诊断精确指出标记，由模型自行移除；行号前缀因每行必有、模型无法避开，仍走档 2 自动剥离（§14.4 规则 4） |
 | （C9）编码结论分叉（`read` 判 GBK、`edit` 判 UTF-8） | 唯一发现点原则：检测只在 `read` 做，`edit` / `write` 只消费回执；显式参数与 BOM 的优先级固定（§14.2 / §14.3） |
@@ -499,8 +504,8 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 
   不采纳路径 (a)「`timeout_hint` 返回 `None`」：它让「无 deadline」与「工具自管 deadline」共用同一个 `None`，`exec::invoke` 无法区分「真的不该超时」与「工具自己会收口」，也无法为后者注入配置值。实现归 P6（[I38d §2.4 / §5 P6-C8](./I38d-agent-frontend-modes-spec.md)）。
 - **OQ6** `write` 的「覆盖」是否应标记 `destructive`？当前倾向：否，但审批卡片必须显示覆盖提示。
-- **OQ7** **（C9）大文件转码写回**：>1MB 的非 UTF-8 文件 `read` 可读，但 `edit` / `write` 转码写回被 §14.6 G3 拒绝。当前结论：**不做**，错误文案提示先外部转码再重读。若将来要做，必须同时解决「流式解码 + 流式编码 + 原子写 + 编码边界与 `sync_all` 的交互」，成本与 P5 的 1MB 上限不是一个量级。
-- **OQ8** **（C9）chardetng 置信度阈值**：不引入可调阈值。接受条件固定为「`guess_assess` 的 `is_confident == true` **且** 整文件解码无损」，两个条件都是二值判定，没有需要调参的旋钮；若实践中误判偏多，只允许收紧为「额外要求猜测结果经往返无损」，不允许放宽到「低置信也接受」。
+- **OQ7** **（C9）大文件转码写回**：任意大小的非 UTF-8 文件 `read` 可读（流式，§14.10），但 `edit` / `write` 转码写回被 §14.6 G3 拒绝。当前结论：**不做**，错误文案提示先外部转码再重读。若将来要做，必须同时解决「流式解码 + 流式编码 + 原子写 + 编码边界与 `sync_all` 的交互」，成本与 P5 的 1MB 上限不是一个量级。
+- **OQ8** **（C9）chardetng 置信度阈值**：不引入可调阈值。接受条件固定为「`guess_assess` 的 `is_confident == true` **且** 解码全程无损」，两个条件都是二值判定，没有需要调参的旋钮；若实践中误判偏多，只允许收紧为「额外要求猜测结果经往返无损」，不允许放宽到「低置信也接受」。
 - **OQ9** **（C9）回执里的 `encoding` 是否参与修订号 / 失效判定？** 当前结论：**否**。`revision` 仍是「长度 + mtime」，编码变化必然伴随字节变化（长度或 mtime 变化），无需额外维度；「等长等时戳的编码转换」与「删除后重建」同类，由 `invalidate_path` 兜底（§14.5 / §14.9）。
 
 ---
@@ -569,6 +574,7 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 **非目标**：
 
 - 不改变 UTF-8 路径的既有行为。唯一例外是 §14.3 的**二进制检测顺序修正**（存量缺陷：先查 `0x00` 再解码，会误杀带 BOM 的 UTF-16 文件），该修正随 C9.6 单独落地，不进 P5 门禁。
+- 不改变 `read` 的输出上限（1MB / 2000 行）与行号 / 截断 / footer 形态。长文件支持只改变**读取方式**（整文件读入 → 分块流式），外部语义差异仅限 `totalLines` 可为 `null` 与超限提示的下界形态（§14.10）。
 - 不做逐文件编码猜测：`grep` 的 probe 只判**字节合法性**，不判**是什么编码**。
 - 不引入 `iconv` / 外部转码进程 / 新依赖。
 - 不做大文件转码写回（§14.9 OQ7）。
@@ -593,16 +599,16 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 | 1 | BOM（前 4 字节）：`EF BB BF` → UTF-8、`FF FE` → UTF-16LE、`FE FF` → UTF-16BE | 用该编码解码，`has_bom = true`，来源标 `(bom)`；BOM 优先于显式 `encoding` |
 | 2 | 无 BOM 且传了 `encoding` | 用该编码解码，`has_bom = false`，footer 标该 label；显式声明同时豁免下一步的二进制判定（无 BOM 的 UTF-16 走这条路径） |
 | 3 | 原始字节前 8KB 含 `0x00` | 拒绝（`Business`），提示「可能是二进制文件；若确为无 BOM 的 UTF-16，请显式传 `encoding`」 |
-| 4 | `std::str::from_utf8(bytes)` 通过 | UTF-8，`has_bom = false`，**不进入猜测**（绝大多数文件的路径） |
-| 5 | `EncodingDetector::feed` + `guess_assess` | **仅当** `is_confident == true` **且** 该编码解码整文件 `had_errors == false` 时接受，来源标 `(guess)`；否则拒绝（`Business`），提示显式 `encoding` |
+| 4 | 逐块 `std::str::from_utf8` 校验通过（块尾截断在半个字符处不算失败） | UTF-8，`has_bom = false`，**不进入猜测**（绝大多数文件的路径） |
+| 5 | `EncodingDetector::feed` + `guess_assess`（头部样本，≤1MB） | **仅当** `is_confident == true` **且** 该编码解码全程 `had_errors == false` 时接受，来源标 `(guess)`；否则拒绝（`Business`），提示显式 `encoding` |
 | 6 | `IBM866 → WINDOWS_1252` 修正 | 沿用 `os/process_output.rs` 的既有规则（ASCII 正文 + 0x80–0x9F 区间仅出现引号 / 破折号字节）；该逻辑抽到共享模块，`process_output` 与文件工具共用一份 |
 
 - **步骤 3 的安全边界**：GBK / GB18030 / Big5 / Shift_JIS / Windows-1252 的字节域均不含 `0x00`，因此该判定不会误杀这些编码；被它拦下的只有真二进制与无 BOM 的 UTF-16。
-- **步骤 3 必须排在步骤 4 之前**：纯 ASCII 的无 BOM UTF-16（`h\0i\0`）本身就是合法 UTF-8，顺序反过来会让它被静默当成「带 NUL 的文本」读入——`read` 会返回看似成功的结果，模型无从察觉。代价是每个非 BOM 文件多一次前 8KB 的 NUL 扫描，`read` 本就整文件读入，相对成本可忽略。
+- **步骤 3 必须排在步骤 4 之前**：纯 ASCII 的无 BOM UTF-16（`h\0i\0`）本身就是合法 UTF-8，顺序反过来会让它被静默当成「带 NUL 的文本」读入——`read` 会返回看似成功的结果，模型无从察觉。代价是每个非 BOM 文件多一次前 8KB 的 NUL 扫描，相对成本可忽略。
 - **显式 `encoding` 的优先级**：`BOM` > 显式 `encoding` > 自动检测。BOM 是文件自述，比调用方声明更权威；显式参数被 BOM 覆盖时，footer 标 `(bom)` 说明实际来源。这与 `grep-searcher` 的既有语义一致（`bom_override(true)`，见 §12 参考）。
 - **有损解码一律拒绝**：`had_errors == true` 表示该编码无法无损表示全部字节，此时任何写回都必然改变文件内容。因此「解码无损」既是 `read` 的接受条件，也是 `edit` / `write` 的前置条件（§14.6 G2）。
-- **检测范围**：检测在整文件字节上进行（`read` 已把内容读入内存），不做「只喂前 N 字节」的采样猜测——采样会让 `is_confident` 与「整文件无损」两个条件互相矛盾。大文件的内存成本属既有行为，不在 C9 处理。
-- **步骤 5 的实际边界**（实测）：`chardetng` 的 `guess_assess(None, true)` 对非空输入恒返回 `is_confident == true`（1 字节到 200 字节均如此），因此「置信」这一半条件在实践中不构成过滤；真正生效的拒绝条件是「猜到的编码整文件解码有损」——单字节编码（windows-1252 / ISO-8859-x / IBM866 等）能解码任意字节，故不会触发；多字节编码（EUC-KR / GBK / Shift_JIS 等）遇到非法序列才会触发。结论：**任意非二进制、非 UTF-8 的文本都会被猜成某个编码并成功读出**，footer 的 `(guess)` 后缀是模型唯一能察觉「这是猜的」的信号。
+- **检测范围**：BOM / NUL 只看头部 8KB；猜测只喂头部样本（≤1MB），不为判定把大文件整个再读一遍。采样与「解码无损」并不矛盾：采样只决定「猜哪个编码」，`had_errors` 在流式解码全程校验（§14.10）。
+- **步骤 5 的实际边界**（实测）：`chardetng` 的 `guess_assess(None, true)` 对非空输入恒返回 `is_confident == true`（1 字节到 200 字节均如此），因此「置信」这一半条件在实践中不构成过滤；真正生效的拒绝条件是「猜到的编码解码有损」——单字节编码（windows-1252 / ISO-8859-x / IBM866 等）能解码任意字节，故不会触发；多字节编码（EUC-KR / GBK / Shift_JIS 等）遇到非法序列才会触发。结论：**任意非二进制、非 UTF-8 的文本都会被猜成某个编码并成功读出**，footer 的 `(guess)` 后缀是模型唯一能察觉「这是猜的」的信号。
 
 ### 14.4 呈现契约（footer）
 
@@ -741,6 +747,22 @@ SearcherBuilder::new()
 
 ### 14.9 开放问题
 
-- **OQ7 大文件转码写回**：>1MB 的非 UTF-8 文件 `read` 可读，但 `edit` / `write` 转码写回被 G3 拒绝。当前结论：**不做**，错误文案提示先外部转码再重读。详见 §11 OQ7。
+- **OQ7 大文件转码写回**：任意大小的非 UTF-8 文件 `read` 可读（流式），但 `edit` / `write` 转码写回被 G3 拒绝。当前结论：**不做**，错误文案提示先外部转码再重读。详见 §11 OQ7。
 - **OQ8 chardetng 置信度阈值**：不引入可调阈值，接受条件是二值判定。详见 §11 OQ8。
 - **OQ9（本节新增）** **回执里的 `encoding` 是否应参与修订号 / 失效判定？** 当前结论：**否**。`revision` 仍是「长度 + mtime」，编码变化必然伴随字节变化 → 长度或 mtime 变化，无需额外维度；若将来出现「等长等时戳的编码转换」，与「删除后重建」同类，由 `invalidate_path` 兜底。
+
+### 14.10 长文件读取（`read` 流式分块）
+
+`read` 是唯一可以读超大文件的工具；`edit` / `write` / `grep` 仍要求整文件驻留。外部语义与实现边界写在 [read §3.4](./I38c-read-spec.md)，本节只定跨工具一致的部分。
+
+| 工具 | 整文件闸门 | 理由 |
+|---|---|---|
+| `read` | **无**（按块流式） | 输出窗口已由 1MB / 2000 行收口，内存与文件大小无关 |
+| `edit` | 16MiB（`MAX_WHOLE_FILE_BYTES`） | 匹配、行尾归一、整篇转码写回都要整文件文本 |
+| `write` | 自身 10MB 写入上限 + G3 的 1MB 转码上限 | 见 [write §3](./I38c-write-spec.md) |
+| `grep` | 16MiB（`max_filesize`） | 搜索按文件收口并计 `largeSkipped` |
+
+- **文案拆分**：`read` 不再出现「exceeding … limit for whole-file tools」；该文案只由 `edit` 使用（`MAX_WHOLE_FILE_BYTES` 与提示函数归 `edit` 侧），避免调用方以为 `read` 也读不了。
+- **`totalLines` 的 `Option` 语义**：`read` 读到 EOF 才给精确总行数；输出窗口 + 宽限扫描耗尽仍未到 EOF 时为 `null`。`edit` 的行号假设不受影响（`edit` 只消费 `read` 已返回的行号）。
+- **编码一致**：流式读取仍遵守 §14.2–§14.3：头部锁定编码一次、`Decoder` 跨块续解、`had_errors` 全程校验；`ReadReceipt` 里的 `encoding` / `has_bom` 与实际生效结论一致，写侧行为不变。
+- **能力差异是刻意的**：超 16MiB 的文件只能 `read` + `offset` 翻页，`grep` 会跳过。工具描述与错误文案都要说清这一点，不能让调用方在 `grep` 零命中后误以为文件里没有内容。

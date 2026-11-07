@@ -41,6 +41,30 @@ impl DecodedText {
     pub fn encoding_name(&self) -> &'static str {
         self.encoding.name()
     }
+
+    pub fn info(&self) -> DecodedInfo {
+        DecodedInfo {
+            encoding: self.encoding,
+            has_bom: self.has_bom,
+            source: self.source,
+        }
+    }
+}
+
+/// 流式读取的解码结论：只带 footer / 回执需要的字段，不含正文。
+///
+/// [`DecodedText`] 要求整文件驻留内存，`read` 改为分块解码后只能拿到这份元信息。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecodedInfo {
+    pub encoding: &'static Encoding,
+    pub has_bom: bool,
+    pub source: EncodingSource,
+}
+
+impl DecodedInfo {
+    pub fn encoding_name(&self) -> &'static str {
+        self.encoding.name()
+    }
 }
 
 /// 解码失败。三种情形都对应 `Business`，且都不允许写回（上级 §14.3）。
@@ -292,7 +316,11 @@ fn bom_bytes(encoding: &'static Encoding) -> Option<&'static [u8]> {
     }
 }
 
-fn guess_encoding(bytes: &[u8]) -> (&'static Encoding, bool) {
+/// 用 `chardetng` 猜一个编码，并附带置信标记；`IBM866 → WINDOWS_1252` 修正一并生效。
+///
+/// 调用方负责决定采样窗口：整文件读取传全部字节，流式读取传头部样本（见
+/// [`crate::os::agent_read`] 的分块扫描）。
+pub fn guess_encoding(bytes: &[u8]) -> (&'static Encoding, bool) {
     let mut detector = EncodingDetector::new();
     detector.feed(bytes, true);
     let (encoding, is_confident) = detector.guess_assess(None, true);
