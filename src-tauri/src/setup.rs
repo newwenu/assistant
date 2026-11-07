@@ -20,8 +20,9 @@ use assistant_orb::placement;
 use assistant_storage::attachment_store::AttachmentStore;
 use assistant_storage::db;
 use assistant_tools::{
-    os, ApprovalPrompter, FileToolResultStorage, PermissionAuditStore, PermissionGrantStore,
-    ToolGateway, ToolPipeline, ToolRegistry, ToolResultStorage,
+    os, ApprovalPrompter, FileToolResultStorage, InMemoryReadReceiptStore, PermissionAuditStore,
+    PermissionGrantStore, ReadReceiptStore, ToolGateway, ToolPipeline, ToolRegistry,
+    ToolResultStorage,
 };
 
 use super::tray;
@@ -115,6 +116,12 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     {
         let registry = Arc::new(ToolRegistry::new());
         os::register_os_tools(&registry);
+
+        // P5 注册门禁（I38c §7.1）：生产只放开只读组。修改组要求 Gateway 审批可用，
+        // 危险组还要求前端审批卡片上线，两者都不得在此处调用。
+        let receipts: Arc<dyn ReadReceiptStore> = Arc::new(InMemoryReadReceiptStore::new());
+        os::register_readonly_tools(&registry, receipts.clone());
+        handle.manage(receipts);
 
         // C4.18：P2 遗留端口的生产装配。顺序固定 —— 授权/审计 → 审批（fail-closed + 计时）
         // → 网关 → 流水线 → executor 端口适配器；网关只认 `ApprovalPrompter` trait，

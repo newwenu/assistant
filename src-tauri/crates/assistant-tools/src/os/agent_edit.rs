@@ -181,7 +181,8 @@ impl Tool for AgentEditTool {
         }
 
         let edit_request = request.clone();
-        let edited = tokio::task::spawn_blocking(move || apply_edit(&resolved, &edit_request)).await;
+        let edited =
+            tokio::task::spawn_blocking(move || apply_edit(&resolved, &edit_request)).await;
         let (outcome, revision) = match edited {
             Ok(Ok(edited)) => edited,
             Ok(Err(error)) => return Ok(ToolResult::err(error)),
@@ -317,13 +318,7 @@ fn probe_target(
                 resolved.display()
             ))
         }
-        Err(error) => {
-            return Err(format!(
-                "cannot access '{}': {}",
-                resolved.display(),
-                error
-            ))
-        }
+        Err(error) => return Err(format!("cannot access '{}': {}", resolved.display(), error)),
     };
     if metadata.is_dir() {
         return Err(format!(
@@ -341,8 +336,8 @@ fn probe_target(
 /// 同步编辑并写回。必须在 `spawn_blocking` 内调用。
 fn apply_edit(path: &Path, request: &EditRequest) -> Result<(EditOutcome, String), String> {
     let path_text = path.display().to_string();
-    let raw = std::fs::read(path)
-        .map_err(|error| format!("cannot read '{}': {}", path_text, error))?;
+    let raw =
+        std::fs::read(path).map_err(|error| format!("cannot read '{}': {}", path_text, error))?;
     let text = String::from_utf8(raw).map_err(|_| {
         format!(
             "'{}' is not valid UTF-8; edit only handles UTF-8 text files",
@@ -367,7 +362,7 @@ fn apply_edit(path: &Path, request: &EditRequest) -> Result<(EditOutcome, String
     }
 
     let changed = located.hits.iter().any(|hit| {
-        content[hit.0..hit.1] != effective_replacement(&content, *hit, &located)
+        &content[hit.0..hit.1] != effective_replacement(&content, *hit, &located).as_str()
     });
     if !changed {
         let start_line = line_number_at(&content, located.hits[0].0);
@@ -486,8 +481,7 @@ fn locate(content: &str, old: &str, new: &str) -> Option<Located> {
 
 fn effective_replacement(content: &str, hit: (usize, usize), located: &Located) -> String {
     let mut replacement = located.replacement.clone();
-    if located.line_based && content[hit.0..hit.1].ends_with('\n') && !replacement.ends_with('\n')
-    {
+    if located.line_based && content[hit.0..hit.1].ends_with('\n') && !replacement.ends_with('\n') {
         replacement.push('\n');
     }
     replacement
@@ -565,10 +559,7 @@ fn line_hits(content: &str, pattern: &str, mode: LineMode) -> Vec<(usize, usize)
         LineMode::TrimEnd => line.trim_end().to_string(),
         LineMode::Trim => line.trim().to_string(),
     };
-    let needle: Vec<String> = pattern_lines
-        .iter()
-        .map(|line| normalize(line))
-        .collect();
+    let needle: Vec<String> = pattern_lines.iter().map(|line| normalize(line)).collect();
 
     let mut hits = Vec::new();
     for start in 0..=(spans.len() - needle.len()) {
@@ -700,7 +691,11 @@ fn convert_leading_tabs_to_spaces(text: &str, width: usize) -> String {
             if !prefix.contains('\t') {
                 return line.to_string();
             }
-            format!("{}{}", prefix.replace('\t', &" ".repeat(width)), &line[prefix_len..])
+            format!(
+                "{}{}",
+                prefix.replace('\t', &" ".repeat(width)),
+                &line[prefix_len..]
+            )
         })
         .collect();
     converted.join("\n")
@@ -712,7 +707,11 @@ fn convert_leading_spaces_to_tabs(text: &str, width: usize) -> String {
         .map(|line| {
             let prefix_len = leading_whitespace_len(line);
             let prefix = &line[..prefix_len];
-            if width == 0 || prefix.is_empty() || prefix.contains('\t') || prefix_len % width != 0 {
+            if width == 0
+                || prefix.is_empty()
+                || prefix.contains('\t')
+                || !prefix_len.is_multiple_of(width)
+            {
                 return line.to_string();
             }
             format!("{}{}", "\t".repeat(prefix_len / width), &line[prefix_len..])
@@ -725,8 +724,13 @@ fn persist_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("'{}' has no parent directory", path.display()))?;
-    let mut temp = tempfile::NamedTempFile::new_in(parent)
-        .map_err(|error| format!("create temp file in '{}' failed: {}", parent.display(), error))?;
+    let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|error| {
+        format!(
+            "create temp file in '{}' failed: {}",
+            parent.display(),
+            error
+        )
+    })?;
     temp.write_all(bytes)
         .map_err(|error| format!("write temp file failed: {}", error))?;
     temp.as_file()
@@ -755,10 +759,7 @@ fn diff_text(old: &str, new: &str) -> String {
     rendered.trim_end().to_string()
 }
 
-fn build_preview(
-    request: &EditRequest,
-    context: &ToolUseContext,
-) -> Option<ApprovalPreview> {
+fn build_preview(request: &EditRequest, context: &ToolUseContext) -> Option<ApprovalPreview> {
     let resolved = path::resolve(&request.path, context).ok()?;
     let old_lines = request.old_string.lines().count().max(1);
     let new_lines = request.new_string.lines().count();
@@ -837,7 +838,11 @@ fn nearest_snippet(content: &str, old: &str) -> Option<String> {
         if score == 0 {
             continue;
         }
-        if best.is_none_or(|(best_score, _)| score > best_score) {
+        let take = match best {
+            Some((best_score, _)) => score > best_score,
+            None => true,
+        };
+        if take {
             best = Some((score, index));
         }
     }
@@ -869,9 +874,8 @@ fn render_context(content: &str, center: usize) -> String {
     let to = (center + CONTEXT_LINES).min(spans.len() - 1);
 
     let mut rendered = Vec::new();
-    for index in from..=to {
-        let (start, end, _) = spans[index];
-        rendered.push(format!("{}: {}", index + 1, &content[start..end]));
+    for (offset, (start, end, _)) in spans[from..=to].iter().enumerate() {
+        rendered.push(format!("{}: {}", from + offset + 1, &content[*start..*end]));
     }
     rendered.join("\n")
 }
