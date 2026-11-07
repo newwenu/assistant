@@ -249,7 +249,7 @@ impl TurnRunner {
             },
             turn_started_at: started_at,
             child_token: &token,
-            tools: spec.tools.as_ref(),
+            tools: spec.tools.as_deref(),
             tool_exec: self.tool_exec.as_deref(),
             observer: &observer,
             store: self.store.as_ref(),

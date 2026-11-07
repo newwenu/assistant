@@ -1,22 +1,10 @@
 #![cfg(feature = "test-doubles")]
 
-use std::sync::Arc;
-
 use assistant_agent::kernel::ports::test_doubles::FixtureSource;
-use assistant_agent::kernel::ports::{ToolCatalog, TurnInput, TurnInputSource};
+use assistant_agent::kernel::ports::{TurnInput, TurnInputSource};
 use assistant_agent::kernel::request;
 use assistant_providers::types::ToolSpec;
 use assistant_storage::agent_modes::AgentModeRow;
-use async_trait::async_trait;
-
-struct StaticCatalog(Vec<ToolSpec>);
-
-#[async_trait]
-impl ToolCatalog for StaticCatalog {
-    async fn agent_tools(&self) -> Vec<ToolSpec> {
-        self.0.clone()
-    }
-}
 
 fn spec(name: &str) -> ToolSpec {
     ToolSpec {
@@ -56,30 +44,26 @@ async fn input_with_mode(kind: &str) -> TurnInput {
     input
 }
 
-fn catalog(tools: Vec<ToolSpec>) -> Arc<dyn ToolCatalog> {
-    Arc::new(StaticCatalog(tools))
-}
-
 #[tokio::test]
-async fn custom_mode_injects_catalog_tools() {
+async fn custom_mode_injects_resolved_tools() {
     let input = input_with_mode("custom").await;
-    let catalog = catalog(vec![spec("read_file"), spec("write_file")]);
-    let req = request::build(&input, 1, Some(&catalog))
+    let tools = vec![spec("read_file"), spec("write_file")];
+    let req = request::build(&input, 1, Some(&tools))
         .await
         .expect("build");
 
-    let tools = req.options.tools.expect("tools injected");
-    assert_eq!(tools.len(), 2);
-    assert_eq!(tools[0].name, "read_file");
-    assert_eq!(tools[1].name, "write_file");
+    let injected = req.options.tools.expect("tools injected");
+    assert_eq!(injected.len(), 2);
+    assert_eq!(injected[0].name, "read_file");
+    assert_eq!(injected[1].name, "write_file");
 }
 
 #[tokio::test]
 async fn non_custom_modes_do_not_inject_tools() {
     for kind in ["default", "quick", "deep"] {
         let input = input_with_mode(kind).await;
-        let catalog = catalog(vec![spec("read_file")]);
-        let req = request::build(&input, 1, Some(&catalog))
+        let tools = vec![spec("read_file")];
+        let req = request::build(&input, 1, Some(&tools))
             .await
             .expect("build");
         assert!(req.options.tools.is_none(), "{kind} must not inject tools");
@@ -87,17 +71,17 @@ async fn non_custom_modes_do_not_inject_tools() {
 }
 
 #[tokio::test]
-async fn empty_catalog_degrades_to_no_tools() {
+async fn empty_tool_list_degrades_to_no_tools() {
     let input = input_with_mode("custom").await;
-    let catalog = catalog(Vec::new());
-    let req = request::build(&input, 1, Some(&catalog))
+    let tools: Vec<ToolSpec> = Vec::new();
+    let req = request::build(&input, 1, Some(&tools))
         .await
         .expect("build");
     assert!(req.options.tools.is_none());
 }
 
 #[tokio::test]
-async fn missing_catalog_degrades_to_no_tools() {
+async fn missing_tool_list_degrades_to_no_tools() {
     let input = input_with_mode("custom").await;
     let req = request::build(&input, 1, None).await.expect("build");
     assert!(req.options.tools.is_none());

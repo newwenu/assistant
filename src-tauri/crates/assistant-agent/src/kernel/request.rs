@@ -12,7 +12,7 @@ use crate::multimodal::{self, ProjectionPurpose};
 use crate::prompt_builder::{self, AgentKind};
 use crate::request_projection;
 
-use super::ports::{ToolCatalog, TurnInput};
+use super::ports::TurnInput;
 
 /// provider 中立流类型，仅在此模块内用于收敛 `stream()` 的返回签名。
 type ProviderStream = std::pin::Pin<
@@ -49,12 +49,12 @@ impl ChatRequest {
 
 /// 顺序固定：投影 → 多模态 → 提示词 → tools 注入。
 ///
-/// tools 只在 `AgentKind::supports_tool_call()` 为真且目录非空时注入；
-/// 空目录视为无工具，循环退化为单次调用。
+/// tools 只在 `AgentKind::supports_tool_call()` 为真且清单非空时注入；
+/// 空清单视为无工具，循环退化为单次调用。
 pub async fn build(
     input: &TurnInput,
     iteration: u32,
-    catalog: Option<&Arc<dyn ToolCatalog>>,
+    tools: Option<&[types::ToolSpec]>,
 ) -> Result<ChatRequest, String> {
     let _ = iteration;
 
@@ -69,8 +69,8 @@ pub async fn build(
         .unwrap_or_default();
     let context_window_tokens =
         types::resolve_context_window_from_stored(&model_id, &provider_row.models_json);
-    let tools = match catalog {
-        Some(catalog) if kind.supports_tool_call() => resolve_tools(&catalog.agent_tools().await),
+    let tools = match tools {
+        Some(tools) if kind.supports_tool_call() => resolve_tools(tools),
         _ => None,
     };
     let options = build_chat_options(
@@ -107,10 +107,8 @@ pub async fn build(
     })
 }
 
-/// 空目录视为无工具：`tools = None`，循环退化为单次调用。
-fn resolve_tools(
-    tools: &[assistant_providers::types::ToolSpec],
-) -> Option<Vec<assistant_providers::types::ToolSpec>> {
+/// 空清单视为无工具：`tools = None`，循环退化为单次调用。
+fn resolve_tools(tools: &[types::ToolSpec]) -> Option<Vec<types::ToolSpec>> {
     if tools.is_empty() {
         None
     } else {

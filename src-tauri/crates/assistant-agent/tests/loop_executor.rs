@@ -18,11 +18,11 @@ use assistant_agent::agent::tool_call::FinalizedToolCall;
 use assistant_agent::agent::tool_event::ToolEvent;
 use assistant_agent::kernel::ports::test_doubles::{
     FixedClock, FixtureSource, InMemoryStore, RecordedRequest, ReplayMessage, ScriptedAdapter,
-    ScriptedResponse, ScriptedToolExec, StaticToolCatalog, StepClock, StoreCall,
+    ScriptedResponse, ScriptedToolExec, StepClock, StoreCall,
 };
 use assistant_agent::kernel::{
-    Clock, MessageStatus, ProviderCredential, ProviderDelta, ToolCatalog, TurnError,
-    TurnGeneration, TurnInput, TurnInputSource, TurnLimits, TurnPhase, TurnSpec, TurnStatus,
+    Clock, MessageStatus, ProviderCredential, ProviderDelta, TurnError, TurnGeneration, TurnInput,
+    TurnInputSource, TurnLimits, TurnPhase, TurnSpec, TurnStatus,
 };
 use assistant_providers::base::{BaseProviderAdapter, ChatDelta, ProviderError};
 use assistant_providers::types::ToolSpec;
@@ -488,8 +488,7 @@ async fn run_loop(args: LoopArgs) -> LoopRun {
         .await
         .expect("fixture input");
 
-    let catalog: Option<Arc<dyn ToolCatalog>> = has_tools
-        .then(|| Arc::new(StaticToolCatalog::new(args.tools.clone())) as Arc<dyn ToolCatalog>);
+    let catalog: Option<Vec<ToolSpec>> = has_tools.then(|| args.tools.clone());
 
     let tool_exec: Option<Arc<dyn ToolExecutionPort>> = if args.cancel_on_exec {
         Some(Arc::new(CancelOnExecToolExec {
@@ -528,7 +527,7 @@ async fn run_loop(args: LoopArgs) -> LoopRun {
         },
         turn_started_at: started_at,
         child_token: &token,
-        tools: catalog.as_ref(),
+        tools: catalog.as_deref(),
         tool_exec: tool_exec.as_deref(),
         observer: observer.as_ref(),
         store: store.as_ref(),

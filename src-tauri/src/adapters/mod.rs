@@ -6,8 +6,8 @@ mod message_store;
 mod permission_store;
 mod runner;
 mod system_clock;
-mod tool_catalog;
 mod tool_exec;
+mod tool_resolver;
 
 pub use approval::{
     ApprovalWaitRegistry, DenyAllApprovalPrompter, TimingApprovalPrompter,
@@ -20,5 +20,5 @@ pub use message_store::DbMessageStore;
 pub use permission_store::{DbPermissionAuditStore, DbPermissionGrantStore};
 pub use runner::build_turn_runner;
 pub use system_clock::SystemClock;
-pub use tool_catalog::RegistryToolCatalog;
 pub use tool_exec::PipelineToolExecution;
+pub use tool_resolver::resolve_available_tools;

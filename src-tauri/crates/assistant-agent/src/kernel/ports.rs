@@ -220,13 +220,6 @@ pub trait CompactionSink: Send + Sync {
     async fn terminate(&self, conversation_id: &str);
 }
 
-/// 工具目录端口。P4 只返回全集，tier / audience 过滤由适配器完成。
-/// 实现放在 `src-tauri/src/adapters/`，内核不得 import `assistant-tools`。
-#[async_trait]
-pub trait ToolCatalog: Send + Sync {
-    async fn agent_tools(&self) -> Vec<assistant_providers::types::ToolSpec>;
-}
-
 /// 停止钩子判定所需的只读快照。由执行器在两次模型调用之间构造，
 /// 只含计数与预算，不携带消息体，避免钩子做任何 IO。
 #[derive(Debug, Clone, Copy)]

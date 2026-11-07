@@ -6,6 +6,7 @@ export type AgentModeKindDto = "default" | "quick" | "deep" | "custom";
 export type AgentToolCallDto = { conversationId: string, turnId: string, iteration: number, callId: string, name: string, payload: AgentToolCallPayloadDto, };
 export type AgentToolCallPayloadDto = { "phase": "started" } | { "phase": "argsDelta", delta: string, } | { "phase": "finished", result: string, confirmationWaitMs: number | null, } | { "phase": "failed", error: string, errorKind: ToolErrorKindDto, confirmationWaitMs: number | null, };
 export type AppConfDto = { theme: string, language: string, hotkey: string, stayOnTop: boolean, launchAtLogin: boolean, closeToTray: boolean, keybindings: { [key in string]: string }, autoCompact: boolean, compactThresholdPercentOfBudget: number, compactSummaryPrompt: string | null, compactSummaryMaxTokens: number, mainWindowX: number | null, mainWindowY: number | null, mainWindowWidth: number | null, mainWindowHeight: number | null, miniWindowX: number | null, miniWindowY: number | null, };
+export type ApprovalLevelDto = "none" | "dangerous_only" | "all_os_tools";
 export type AttachmentDeleteResultDto = { removedCount: number, 
 /**
  * 本次删除释放的字节数。未找到目录配额常量，无法论证更窄上限，故保留 `u64`。
@@ -54,6 +55,7 @@ export type ConversationPatchDto = { title?: string | null, titleSource?: string
 export type ConversationQueryModeDto = "paginated" | "all";
 export type ConversationQueryOptsDto = { mode: ConversationQueryModeDto, limit: number, beforeTimestamp?: number | null, };
 export type ConversationTerminatedPayloadDto = { conversationId: string, isFull: boolean, };
+export type ConversationToolConfigDto = { maxToolTier: ToolTierDto, approvalLevel: ApprovalLevelDto, enabledTools: Array<string>, disabledTools: Array<string>, };
 export type ConversationUnlockedPayloadDto = { conversationId: string, };
 export type FileAttachmentRefDto = { attachmentId: string, name: string, bytes: number, };
 export type ImageAttachmentRefDto = { attachmentId: string, mediaType: string | null, bytes: number | null, width: number | null, height: number | null, name: string | null, };
@@ -91,7 +93,11 @@ efforts: Array<string>, };
 export type RetryNotificationDto = { attempt: number, maxAttempts: number, delayMs: number, message: string, errorCode: ProviderErrorCodeDto | null, };
 export type ScreenRectDto = { x: number, y: number, width: number, height: number, };
 export type ScreenSizeDto = { screen: ScreenRectDto, };
-export type SendChatMessageArgsDto = { content: string, modeId?: string | null, branchPointMessageId?: string | null, providerId: string, modelId: string, reasoningLevel?: string | null, };
+export type SendChatMessageArgsDto = { content: string, modeId?: string | null, branchPointMessageId?: string | null, providerId: string, modelId: string, reasoningLevel?: string | null, 
+/**
+ * 工具配置（前端内存态）。缺省即 deny-by-default：模型看不到任何工具。
+ */
+toolConfig?: ConversationToolConfigDto | null, };
 export type SessionStateChangedPayloadDto = { conversationId: string, turnId: string, state: SessionStateDto, };
 export type SessionStateDto = "idle" | { "processing": { turnId: string, phase: TurnPhaseDto, } } | { "error": { message: string, recoverable: boolean, } };
 export type SettingProviderChangedActionDto = "provider-saved" | "provider-deleted";
@@ -139,6 +145,7 @@ cumulative: TokenUsageCumulativeDto | null,
  */
 cache: TokenUsageCacheDto | null, };
 export type ToolErrorKindDto = "business" | "timeout" | "cancelled" | "internal" | "denied";
+export type ToolTierDto = "sandbox" | "os" | "external";
 export type TurnPhaseDto = "starting" | "compacting" | "thinking" | "streaming" | "toolCalling" | "awaitingApproval" | "finalizing";
 export type VaultCipherAlgorithmDto = "aes256Gcm" | "chacha20Poly1305";
 export type VaultConfDto = { vaultAutoLockMinutes: number, vaultLockOnScreenLock: boolean, vaultClipboardClearSeconds: number, vaultCipherAlgorithm: VaultCipherAlgorithmDto, vaultHibpAutoAudit: boolean, vaultSyncRemoteUrl: string | null, vaultSshAutoAdd: boolean, vaultSshUsePageant: boolean, vaultSshUseOpensshAgent: boolean, vaultSshAuthSockOverride: string, vaultSyncLastAt: number | null, vaultSyncSshHosts: Array<string>, };

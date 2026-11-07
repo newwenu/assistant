@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
@@ -8,8 +7,8 @@ use tokio_util::sync::CancellationToken;
 use assistant_providers::base::ProviderErrorPayload;
 
 use crate::kernel::{
-    Clock, MessageStore, ProviderDelta, ToolCatalog, TurnError, TurnGeneration, TurnInput,
-    TurnLimits, TurnPhase, TurnSpec, TurnStatus, UsageSnapshot,
+    Clock, MessageStore, ProviderDelta, TurnError, TurnGeneration, TurnInput, TurnLimits,
+    TurnPhase, TurnSpec, TurnStatus, UsageSnapshot,
 };
 
 pub use super::tool_call::FinalizedToolCall;
@@ -107,7 +106,8 @@ pub struct TurnRunCtx<'a> {
     /// turn 起点的 `Instant`，`elapsed` 的唯一算法来源。
     pub turn_started_at: Instant,
     pub child_token: &'a CancellationToken,
-    pub tools: Option<&'a Arc<dyn ToolCatalog>>,
+    /// 本轮可注入的工具清单（接入层已收敛白名单）。空集视为无工具。
+    pub tools: Option<&'a [assistant_providers::types::ToolSpec]>,
     pub tool_exec: Option<&'a dyn ToolExecutionPort>,
     pub observer: &'a dyn TurnObserver,
     pub store: &'a dyn MessageStore,
@@ -145,7 +145,6 @@ pub struct ToolExecCtx<'a> {
     pub conversation_id: &'a str,
     pub iteration: u32,
     pub child_token: &'a CancellationToken,
-    pub tools: Option<&'a Arc<dyn ToolCatalog>>,
     pub clock: &'a dyn Clock,
     /// 工具事件的唯一出口。适配器的 `PipelineEventSink` 只转发 P2 的
     /// `Started` / `Finished` / `Failed`（§6.1），不在此处发 `ArgsDelta`，

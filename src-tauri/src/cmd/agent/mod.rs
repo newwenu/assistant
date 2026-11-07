@@ -10,7 +10,9 @@ use assistant_agent::multimodal;
 use assistant_storage::attachment_store::AttachmentStore;
 use assistant_tools::ToolRegistry;
 
-use crate::adapters::{build_turn_runner, RegistryToolCatalog, TauriEventSink, TauriInputSource};
+use crate::adapters::{
+    build_turn_runner, resolve_available_tools, TauriEventSink, TauriInputSource,
+};
 use crate::protocol::SendChatMessageArgsDto;
 
 #[command]
@@ -20,8 +22,19 @@ pub async fn send_agent_message(
     args: SendChatMessageArgsDto,
 ) -> Result<(), String> {
     let registry = app.state::<Arc<ToolRegistry>>().inner().clone();
+
+    // 缺省配置即 deny-by-default：空白名单 → 空工具集，模型看不到任何工具。
+    let tool_config = args.tool_config.clone().unwrap_or_default();
+    let tools = resolve_available_tools(
+        &registry,
+        &tool_config.enabled_tools,
+        &tool_config.disabled_tools,
+        tool_config.max_tool_tier.into(),
+    )
+    .await;
+
     let mut spec = TurnSpec::agent();
-    spec.tools = Some(Arc::new(RegistryToolCatalog::new(registry)));
+    spec.tools = Some(tools);
     start_turn(&app, &conversation_id, args, spec).await
 }
 
@@ -47,6 +60,7 @@ pub(crate) async fn start_turn(
         provider_id,
         model_id,
         reasoning_level,
+        tool_config: _,
     } = args;
 
     let content = validate_and_preprocess(app, &content).await?;

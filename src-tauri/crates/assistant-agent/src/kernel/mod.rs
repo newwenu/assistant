@@ -22,8 +22,8 @@ pub use phase::{SessionState, TurnPhase};
 pub use ports::{
     AppendToolMessageReq, ChatError, Clock, CompactionSink, CreateAssistantReq, EventSink,
     InputError, MessageStatus, MessageStore, ProviderCredential, ProviderDelta, StopDecision,
-    StopHook, StoreError, ToolCatalog, TurnEvent, TurnGeneration, TurnInput, TurnInputSource,
-    TurnState, UsageRecord,
+    StopHook, StoreError, TurnEvent, TurnGeneration, TurnInput, TurnInputSource, TurnState,
+    UsageRecord,
 };
 pub use request::ChatRequest;
 pub use runner::{CompactionConfig, TurnRunner};
@@ -67,7 +67,8 @@ impl LadderPolicy {
 pub struct TurnSpec {
     pub on_busy: OnBusy,
     pub max_iterations: u32,
-    pub tools: Option<Arc<dyn ToolCatalog>>,
+    /// 宿主解析好的工具清单（白名单 / 黑名单已在接入层收敛）。空集与 `None` 等价。
+    pub tools: Option<Vec<assistant_providers::types::ToolSpec>>,
     pub ladder: LadderPolicy,
     pub stop_hooks: Vec<Arc<dyn StopHook>>,
     pub wrap_up: bool,

@@ -55,7 +55,6 @@ pub(super) async fn execute_tools(
                 conversation_id: ctx.conversation_id,
                 iteration: it,
                 child_token: ctx.child_token,
-                tools: ctx.tools,
                 clock: ctx.clock,
                 observer: ctx.observer,
             };

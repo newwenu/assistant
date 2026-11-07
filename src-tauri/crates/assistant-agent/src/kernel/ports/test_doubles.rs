@@ -20,8 +20,8 @@ use crate::agent::tool_call::FinalizedToolCall;
 
 use super::{
     AppendToolMessageReq, Clock, CreateAssistantReq, EventSink, InputError, MessageStatus,
-    MessageStore, ProviderCredential, StoreError, ToolCatalog, TurnEvent, TurnInput,
-    TurnInputSource, UsageRecord,
+    MessageStore, ProviderCredential, StoreError, TurnEvent, TurnInput, TurnInputSource,
+    UsageRecord,
 };
 
 #[derive(Default)]
@@ -245,27 +245,6 @@ impl MessageStore for InMemoryStore {
 
     async fn record_usage(&self, records: &[UsageRecord]) -> Result<(), StoreError> {
         self.push(StoreCall::Usage(records.len()))
-    }
-}
-
-pub struct StaticToolCatalog {
-    tools: Vec<ToolSpec>,
-}
-
-impl StaticToolCatalog {
-    pub fn new(tools: Vec<ToolSpec>) -> Self {
-        Self { tools }
-    }
-
-    pub fn empty() -> Self {
-        Self { tools: Vec::new() }
-    }
-}
-
-#[async_trait]
-impl ToolCatalog for StaticToolCatalog {
-    async fn agent_tools(&self) -> Vec<ToolSpec> {
-        self.tools.clone()
     }
 }
 

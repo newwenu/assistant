@@ -187,6 +187,10 @@ pub struct SendChatMessageArgsDto {
     pub model_id: String,
     #[ts(optional = nullable)]
     pub reasoning_level: Option<String>,
+    /// 工具配置（前端内存态）。缺省即 deny-by-default：模型看不到任何工具。
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub tool_config: Option<super::agent::ConversationToolConfigDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
