@@ -124,6 +124,47 @@ async fn matches_are_sorted_by_path() {
 }
 
 #[tokio::test]
+async fn a_pattern_without_a_slash_matches_at_any_depth() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    touch(&dir.path().join("a.ts"));
+    touch(&dir.path().join("src").join("deep").join("b.ts"));
+    touch(&dir.path().join("src").join("deep").join("c.md"));
+
+    let result = tool()
+        .execute(&json!({ "pattern": "*.ts", "path": "." }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    assert_eq!(
+        result.assistant_text(),
+        "a.ts\nsrc/deep/b.ts",
+        "'*.ts' is normalized to '**/*.ts' so it recurses"
+    );
+}
+
+#[tokio::test]
+async fn a_pattern_with_a_slash_only_matches_that_depth() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    touch(&dir.path().join("src").join("a.ts"));
+    touch(&dir.path().join("src").join("nested").join("b.ts"));
+
+    let result = tool()
+        .execute(&json!({ "pattern": "src/*.ts", "path": "." }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    assert_eq!(
+        result.assistant_text(),
+        "src/a.ts",
+        "a pattern containing '/' must not recurse"
+    );
+}
+
+#[tokio::test]
 async fn exclude_filters_after_matching() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path());

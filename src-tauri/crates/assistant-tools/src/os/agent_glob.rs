@@ -225,17 +225,27 @@ struct Matcher {
 }
 
 fn build_matcher(pattern: &str, exclude: &[String]) -> Result<Matcher, String> {
-    let include = build_set(&[pattern.to_string()])
+    let include = build_glob_set(&[pattern.to_string()])
         .map_err(|error| format!("invalid glob pattern '{}': {}", pattern, error))?;
     let exclude =
-        build_set(exclude).map_err(|error| format!("invalid exclude pattern: {}", error))?;
+        build_glob_set(exclude).map_err(|error| format!("invalid exclude pattern: {}", error))?;
     Ok(Matcher { include, exclude })
 }
 
-fn build_set(patterns: &[String]) -> Result<GlobSet, String> {
+/// 编译 glob 集合，`grep` 的 `include` 与本工具的 `pattern` / `exclude` 共用。
+///
+/// 归一化让两个工具对同一 pattern 给出同一集合：`/` 只匹配真实层级分隔
+/// （`literal_separator(true)`），**不含 `/` 的 pattern 自动前置 `**/`**，
+/// 因此 `*.rs` 与 `**/*.rs` 等价、都递归匹配，而 `src/*.rs` 只匹配直接子文件。
+pub(crate) fn build_glob_set(patterns: &[String]) -> Result<GlobSet, String> {
     let mut builder = GlobSetBuilder::new();
     for pattern in patterns {
-        let glob = GlobBuilder::new(pattern)
+        let normalized = if pattern.contains('/') {
+            pattern.clone()
+        } else {
+            format!("**/{}", pattern)
+        };
+        let glob = GlobBuilder::new(&normalized)
             .literal_separator(true)
             .backslash_escape(false)
             .build()

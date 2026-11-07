@@ -426,8 +426,9 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 - 结构化形态（而非单个 `question` 字符串）的理由：选项需要 label + description 才能表达权衡，纯字符串会把「选项 + 说明」塞进一段自然语言，前端无法渲染成可点选的输入框。
 - `audience = AGENT_ONLY`（不从前端透传入口暴露）。
 - 依赖 P2 的审批端口与 P6 输入框；**不属于 P5 退出条件**，P5 只登记形态与阻塞点。
-- **超时**：参考实现把超时放在工具外部配置（`user_question_timeout_secs`），schema 不声明超时参数，并声明 `manages_own_execution_timeout() = true` 绕过统一工具超时。本项目当前没有等价能力，`exec::invoke` 的 `DEFAULT_TOOL_TIMEOUT = 30s` 会在用户回答之前打断等待——这是 P6 的前置阻塞点，候选方案见 §11 OQ5。
-- 超时按用户未回答处理（返回 `Cancelled` 或业务错误，不得默认继续）；取消走 turn 子令牌。
+- **超时（已定稿，见 §11 OQ5）**：采纳参考实现的「工具自管超时」形态。`Tool` trait 增加 `fn manages_own_execution_timeout(&self) -> bool { false }`（默认 `false`，存量工具零改动）；`exec::invoke` 在套统一 deadline 前先查该标记，返回 `true` 时**不套** `DEFAULT_TOOL_TIMEOUT`，改由工具自身的 deadline 收口。超时值来自全局配置 `user_question_timeout_secs`（`None` → 默认 180s；`Some(0)` → 不设 deadline，只由取消终止），schema 不声明超时参数。
+- 绕过统一超时**不等于**不可中断：turn 子令牌的取消仍在 `exec::invoke` 外层生效（`cancellable` 包装），用户停止或链路切换时立即终止等待。
+- 超时按用户未回答处理（返回 `Cancelled` 或业务错误，不得默认继续）。
 
 ---
 
@@ -453,7 +454,8 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 | A13 | **（C9）** footer 契约（§14.4）：UTF-8 无 BOM 静默；其余输出 `[encoding: <label>]`，自动检测加 `(guess)`、BOM 来源加 `(bom)`；footer 独占一行、单次结果至多一次、不进入 `data` 正文；`edit` 不剥离，0 匹配时按标记集给出诊断 |
 | A14 | **（C9）** 回执携带编码（§14.5）：`ReadReceipt` 含 `encoding` / `has_bom`；`edit` / `write` 只消费不重判；同一文件在 `read` 与 `edit` 上不会得出两种编码结论 |
 | A15 | **（C9）** `write` 转码五道闸（§14.6）全部生效：编码确定、内容可完整编码、≤1MB、已存在文件须有回执、BOM 按目标编码写；任一道不过即不写盘 |
-| A16 | **（C9）** `grep` 复用 `grep-searcher` 标准配置链（§14.7）：`binary_detection = quit(b'\x00')`、BOM sniffing 默认开、无 BOM 零转码；`data` 含 `binarySkipped` / `lossyLines` / `nonUtf8Probe`；零命中时前缀探测有界且跳过 BOM / 二进制文件 |
+| A16 | **（C9）** `grep` 复用 `grep-searcher` 标准配置链（§14.7）：`binary_detection = quit(b'\x00')`、BOM sniffing 默认开、无 BOM 零转码；`data` 含 `binarySkipped` / `largeSkipped` / `unreadableFiles` / `lossyLines` / `nonUtf8Probe`；零命中时前缀探测有界且跳过 BOM / 二进制文件；`encoding` 已设时不执行 probe |
+| A17 | **（二修）** `grep` 输出预算与可中断性（[grep §3.2 / §3.3](./I38c-grep-spec.md)）：`context` 超出 `0..=10` 即 `Business`；`MAX_MATCHES` / `MAX_OUTPUT_LINES`（命中 + 上下文合计）任一触发即停并置 `truncated`；deadline 在 `matched` 与 `context` 回调内均检查；`max_filesize = 16 MiB`；`pattern` 原样编译不 `trim`；`include` 与 `glob` 同为 `literal_separator(true)`；二进制文件整文件丢弃、读取失败计入 `unreadableFiles` |
 
 ---
 
@@ -463,10 +465,10 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 |---|---|
 | 工具绕过 `os/path.rs` 自行实现 | A1 grep；code review |
 | 破坏性工具提前注册即前端可达 | 分组注册 + §7.1 门禁；I31 §8 |
-| 同步 IO 超时无法中断 | `spawn_blocking`；超时只保证调用方及时返回（I31 §4.3）。`grep` 在此之上加了遍历内 deadline（外层剩余预算 − 500ms，命中即停并返回已收集结果），不依赖强杀 blocking 线程（[grep §3](./I38c-grep-spec.md)） |
+| 同步 IO 超时无法中断 | `spawn_blocking`；超时只保证调用方及时返回（I31 §4.3）。`grep` 在此之上加了遍历内 deadline（外层剩余预算 − 500ms），检查点覆盖「每文件开始前」与 `matched` / `context` 两个回调，命中即停并返回已收集结果，不依赖强杀 blocking 线程（[grep §3](./I38c-grep-spec.md)）；单文件粒度由 `max_filesize = 16 MiB` 收口（[grep §3.3](./I38c-grep-spec.md)） |
 | `read` 输出格式漂移让 `edit` 档 2 / 档 4 静默失效 | 行号前缀（`{n:>6}\t`）与 ` [truncated]` 标记的唯一产出点是 `read`，两侧共用同一常量；契约写在 [read §3.2](./I38c-read-spec.md)，`edit` 只做检测与剥离 |
 | `ls` 不读 `.gitignore`、`glob` / `grep` 读 `.gitignore`，口径不一致 | 刻意差异（理由见 [ls §3](./I38c-ls-spec.md)）；在三个工具的 `description` 里各自写明「是否受 `.gitignore` 影响」，避免模型把「`ls` 没列出来」当成「文件不存在」 |
-| 大结果挤爆上下文 | P2 三层预算 + `os/output.rs` 单条上限 |
+| 大结果挤爆上下文 | P2 三层预算 + `os/output.rs` 单条上限；`grep` 另设自身预算（`MAX_MATCHES` / `MAX_OUTPUT_LINES` / `MAX_CONTEXT`，[grep §3.2](./I38c-grep-spec.md)）——上下文行不经过 `MAX_MATCHES`，必须单独计行 |
 | Windows 路径形态（UNC / 盘符相对） | I31 §5.2.1 全覆盖；A1 只允许走共享函数 |
 | 符号链接 / junction 让删除作用到 workspace 之外 | 目标分类一律 `symlink_metadata`（不跟随），链接按文件删除、递归不进入链接（[delete §3.2](./I38c-delete-spec.md)） |
 | 递归删除无法中断，可能部分删除 | `remove_dir_all` 无取消点，超时只记录；失败后重查目标存在性并区分「未删除 / 已删除但随后失败」（[delete §3.4](./I38c-delete-spec.md)） |
@@ -485,7 +487,17 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 - **OQ2** ~~文件工具的超时策略如何统一？~~ **已定稿（2026-11-06）**：沿用 `exec::invoke` 的统一 deadline 保证调用方及时返回，工具内部不自行强杀；`spawn_blocking` 任务无法中断，因此需要「提前停止」的工具（`grep`）在遍历循环内按「外层剩余预算 − 500ms」自查 deadline，命中即停并返回已收集结果（[grep §3](./I38c-grep-spec.md)）。`delete` 的 `remove_dir_all` 无取消点，只记录超时并按失败后重查处理（见上表）。
 - **OQ3** ~~`shell` 的 Job Object 实现是否需要 `windows-sys` 新依赖？~~ **已作废（2026-11-06）**：`shell` 改为暂不提供（§13），该依赖问题随之关闭。若将来恢复，原结论可复用：不引入 `windows-sys`，用现有 `windows` 0.62 补 `Win32_System_JobObjects` / `Win32_System_Threading` features，Unix 侧用 `libc` 进程组 kill。
 - **OQ4** **`edit` 是否支持单次多 hunk（codex `apply_patch` 形态）？** 已定稿（2026-11-06）：**P5 不做**。理由：多 hunk 会扩大工具面与审批粒度（一次审批覆盖多处改动），且需要独立的补丁语法解析器；P5 保持「一次调用一次替换」，模型可用多次 `edit` 达成同一效果。若 P6 之后出现「批量重构」痛点，再按新工具 `apply_patch` 单列。
-- **OQ5** **`ask_user` 如何避开 30s 统一工具超时？** 待 P6 定。参考实现让工具「自管执行超时」（`manages_own_execution_timeout() = true`，超时值来自外部配置 `user_question_timeout_secs`，schema 不声明），而本项目 `Tool` trait 没有该标记，`exec::invoke` 的 `DEFAULT_TOOL_TIMEOUT = 30s` 会在用户回答前打断等待。两条候选路径：(a) `timeout_hint` 返回 `None` 表示无默认 deadline，由前端取消或 turn 子令牌终止；(b) `Tool` trait 增加「自管超时」标记。P5 只登记阻塞点，见 §9。
+- **OQ5** ~~`ask_user` 如何避开 30s 统一工具超时？~~ **已定稿（2026-11-07）**：采纳路径 (b)「工具自管超时标记」。参考实现（OpenBitFun `ask_user_question_tool.rs`）的做法是 `manages_own_execution_timeout() = true` + 外部配置 `user_question_timeout_secs`（schema 不声明超时参数），本项目照搬：
+
+  | 项 | 定稿 |
+  |---|---|
+  | trait 增量 | `Tool::manages_own_execution_timeout(&self) -> bool`，默认 `false`；存量工具零改动 |
+  | `exec::invoke` | 先查标记：`true` → 不套 `DEFAULT_TOOL_TIMEOUT`，直接 `execute()`；`false` → 保持 30s 统一 deadline |
+  | 可中断性 | turn 子令牌的 `cancellable` 包装在 `exec::invoke` 外层，绕过统一超时后取消仍立即生效 |
+  | 配置 | 新增 `AppConf.user_question_timeout_secs: Option<u32>`；`None` → 180s，`Some(0)` → 不设 deadline |
+  | 超时结果 | 返回 `Cancelled`（与用户取消同形），turn 继续，模型看到「用户未回答」 |
+
+  不采纳路径 (a)「`timeout_hint` 返回 `None`」：它让「无 deadline」与「工具自管 deadline」共用同一个 `None`，`exec::invoke` 无法区分「真的不该超时」与「工具自己会收口」，也无法为后者注入配置值。实现归 P6（[I38d §2.4 / §5 P6-C8](./I38d-agent-frontend-modes-spec.md)）。
 - **OQ6** `write` 的「覆盖」是否应标记 `destructive`？当前倾向：否，但审批卡片必须显示覆盖提示。
 - **OQ7** **（C9）大文件转码写回**：>1MB 的非 UTF-8 文件 `read` 可读，但 `edit` / `write` 转码写回被 §14.6 G3 拒绝。当前结论：**不做**，错误文案提示先外部转码再重读。若将来要做，必须同时解决「流式解码 + 流式编码 + 原子写 + 编码边界与 `sync_all` 的交互」，成本与 P5 的 1MB 上限不是一个量级。
 - **OQ8** **（C9）chardetng 置信度阈值**：不引入可调阈值。接受条件固定为「`guess_assess` 的 `is_confident == true` **且** 整文件解码无损」，两个条件都是二值判定，没有需要调参的旋钮；若实践中误判偏多，只允许收紧为「额外要求猜测结果经往返无损」，不允许放宽到「低置信也接受」。
@@ -612,7 +624,7 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 2. **动作只在失败路径**：检测失败 / 有损时，错误文案才提示「传 `encoding`（如 `gbk`）」。
 3. **一次性**：footer 只出现在结果尾部一次，不逐行、不进入 `data` 的正文行与 `matches`。
 4. **结构化已知后缀，但工具不剥离**：以 `[encoding: ` 开头、`]` 结尾、独占一行——该形态是 `edit` **诊断**的标记集（§14.8），不是剥离对象。理由：行号前缀每行必有、模型无法避开，故必须剥离；footer 只在末尾一行且仅非 UTF-8 时出现，模型只复制正文即可避开。自动剥离会把「模型误解」静默修正为成功，模型学不到「footer 不是文件内容」，与 fail-closed 取向相反。改为在 0 匹配诊断里精确指出，由模型自行移除。副作用：源文件自身末行就是 `[encoding: …]` 时不再冲突，档 1 原样命中。
-5. **标记集可扩展**：`grep` 用 tag `non-utf8`（§14.7），同一套「独占一行 + 标记集」规则；新增 tag 必须回写本节。
+5. **标记集可扩展**：`grep` 用 tag `non-utf8` / `skipped` / `lossy`（§14.7），同一套「独占一行 + 标记集」规则；新增 tag 必须回写本节。当前登记：`encoding`（`read` / `edit`）、`non-utf8` / `skipped` / `lossy`（`grep`）。
 
 **`description` 的提示边界**：提示只补「工具接口缺口」，不补「编码常识」。
 
@@ -627,6 +639,18 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput;
 - **长度对齐相邻参数**：`description` 不超过同 schema 内其它参数的平均长度（一句话、无第二句）。编码只是可选参数之一，写成长段落会让它在工具描述里**喧宾夺主**，反被模型当成必填项去主动管理。
 - 失败路径的补救提示压成一句（`该文件无 BOM 且非 UTF-8，请传 encoding（如 gbk）`），不展开编码知识。
 - 理由：footer 的价值本就只在「模型主动转码」与「排查乱码」两处；若 `description` / 错误文案再堆编码知识，会让模型误以为编码是它必须主动管理的东西，反而诱发多余的 `encoding` 传参。
+
+**参数描述判据（适用于所有工具参数，不限于编码）**：schema 随每次请求下发，多一句就是常驻成本，且长描述会稀释工具选择的注意力。按「不知道会发生什么」分三档：
+
+| 档 | 条件 | 处理 |
+|---|---|---|
+| 必写 | 不知道就会**静默**得到错误结论（无报错、结果看似正常） | 一句写清。例：`grep` 的 `pattern` 单行匹配（多行正则零命中而不报错）、`glob` 的 `pattern` 相对 `path`（绝对 pattern 静默零命中） |
+| 可写 | 不知道会**报错**，但错误文案已带出该约束 | 允许写**值域**（`context` 的 `0-10`），省一次往返；不写解释 |
+| 不写 | 不知道也不影响结果正确性（宽松语义自纠正 / 纯常识） | 只写进分册 §3。例：`*.rs` 自动前置 `**/` 的深度语义（两种写法结果相同）、`pattern` 是否 `trim`（`trim` 只会放宽命中，不会漏）、`*` 不跨 `/`（glob 常识） |
+
+- 「自纠正」的判定标准：模型按错误理解构造的输入，是否仍能得到**正确或超集**结果。是 → 不写；得到**静默子集或零命中** → 必写。
+- 因此**放宽行为不该配说明书**：自动前置 `**/` 已经让 `*.rs` 与 `**/*.rs` 等价，再在 `description` 里教一遍深度语义，等于为一个模型踩不到的坑付常驻 token。
+- 反向约束：`description` 的措辞只能描述**已实现**的行为。写成「matched verbatim」而代码仍在 `trim`，会让规格与实现分叉且无人察觉；实现契约一律以分册 §3 为准。
 
 ### 14.5 回执扩展
 
@@ -683,18 +707,24 @@ SearcherBuilder::new()
 | `encoding` | 未接 | 显式参数映射为 `Encoding::new(label)`（`Result`，非法 label → `Business`）；**scope 级开关**，设置后 scope 内每个文件都走转码 |
 | `mmap` | 默认 `MmapChoice::never()` | 保持关闭。转码路径与 mmap 天然不兼容（`DecodeReaderBytes` 需要读流），开启 mmap 只会让「什么时候转码」变成隐式分支 |
 
-**热路径（命中行）**：`trim_line_end` 先 `std::str::from_utf8`，失败才 `from_utf8_lossy` 并置 `lossy_lines = true`。合法路径因此比现状**少一次分配**（`from_utf8_lossy` 内部本来就会先跑 `from_utf8`）。
+**热路径（命中行）**：`trim_line_end` 先 `std::str::from_utf8`，失败才 `from_utf8_lossy` 并置 `lossy_lines = true`。合法路径因此比现状**少一次分配**（`from_utf8_lossy` 内部本来就会先跑 `from_utf8`）。命中行与上下文行走同一函数，**两者都计入** `lossyLines`：context 行同样以替换字符渲染，只数命中行会让「结果里有乱码」没有对应计数。
 
-**冷路径（零命中时的 probe）**：仅当 `match_count == 0` 且未超时时执行，热路径零成本：
+**冷路径（零命中时的 probe）**：仅当 `match_count == 0`、未超时**且未显式指定 `encoding`** 时执行，热路径零成本：
 
 1. 逐文件读**前 8KB**（复用单个缓冲，不每文件新建 `Vec`），用 `read` 同一套前缀分类（§14.3 步骤 1–3）。
 2. 跳过：含 `0x00`（二进制）、有 BOM（已可搜）、合法 UTF-8。
 3. 计数「非 UTF-8 且非二进制」文件；达 `PROBE_FILE_LIMIT`（200）或 deadline 即停，结果标 `nonUtf8Probe.truncated`。
 4. 计数 > 0 时输出 footer `[non-utf8: N file(s)]`；为 0 时静默。
 
-**结果 `data` 新增**：`binarySkipped`（被二进制检测跳过的文件数）、`lossyLines`（含替换字符的命中行数）、`nonUtf8Probe`（`{ "files": N, "truncated": bool }` 或 `null`）。
+**显式 `encoding` 时跳过 probe**：`encoding` 已是 scope 级声明，此时再报「scope 内有非 UTF-8 文件」等于暗示换编码重试，属误导；`nonUtf8Probe` 恒为 `null`。
 
-**已知限制**（写进 `description`）：非 UTF-8 文件未传 `encoding` 时按 UTF-8 逐字节匹配，命中行以替换字符渲染——这是「不猜测」的直接代价。
+**结果 `data` 新增**：`binarySkipped`（命中 `binary_data` 的文件数，该文件不产出任何行）、`largeSkipped`（超 `max_filesize` 的文件数）、`unreadableFiles`（读取失败的文件数）、`lossyLines`（含替换字符的渲染行数，命中行与上下文行都计）、`nonUtf8Probe`（`{ "files": N, "truncated": bool }` 或 `null`）。
+
+**footer**：`[non-utf8: N file(s)]`（probe 命中时）、`[skipped: N file(s)]`（`binarySkipped + largeSkipped + unreadableFiles > 0`，有命中 / 零命中都输出）、`[lossy: N line(s)]`（`lossyLines > 0`）。三者都只给事实，动作提示留在错误文案与 `description`。
+
+**输出预算与可中断性**（`grep` 侧细则见 [grep §3.2 / §3.3](./I38c-grep-spec.md)）：`MAX_MATCHES`（100 块）+ `MAX_OUTPUT_LINES`（300 行，命中 + 上下文合计）+ `MAX_CONTEXT`（10，超出即 `Business`）；deadline 检查点覆盖「每文件开始前」与 `matched` / `context` 两个回调；`max_filesize = 16 MiB` 作为单文件闸门。这些约束不属于编码范畴，但只在 `grep` 上生效，故在此登记索引，避免读者误以为全工具统一。
+
+**已知限制**（不进 `description`，只在错误表与文档里说明）：非 UTF-8 文件未传 `encoding` 时按 UTF-8 逐字节匹配，命中行以替换字符渲染——这是「不猜测」的直接代价。`description` 只保留一句「省略即按原样搜索」。
 
 ### 14.8 `edit` 的编码约束
 

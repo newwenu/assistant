@@ -25,7 +25,7 @@
 {
   "type": "object",
   "properties": {
-    "pattern": { "type": "string", "description": "Glob pattern (e.g. '**/*.ts')" },
+    "pattern": { "type": "string", "description": "Glob pattern relative to 'path' (e.g. '**/*.ts')" },
     "path": { "type": "string", "description": "Base directory" },
     "exclude": { "type": "array", "items": { "type": "string" } }
   },
@@ -33,12 +33,15 @@
 }
 ```
 
+`description` 只写「参数是什么 + 一个示例」；深度语义、`literal_separator` 等属实现契约，写在 §3，不进 schema（判据见上级 §14.4「参数描述判据」）。
+
 ## 3 行为
 
 - 依赖选型：`ignore`（目录遍历，遵循 `.gitignore`，跳过隐藏目录与符号链接）+ `globset`（模式与 `exclude` 编译）。两者是 ripgrep 官方组件，与 `grep` 系 crate 同源，不引入第二套遍历 / 匹配语义。
 - `path` 缺省时取 `workspace_root`；无 `workspace_root` 则返回明确错误，不静默退回当前目录。
 - `pattern` 一律**相对 `path`**（`path` 缺省时相对 `workspace_root`）。**不采纳**「绝对 pattern 自动推导搜索根」的隐式行为（参考 `extract_glob_base_directory` / `derive_walk_root`）：隐式基准会让边界判定出现第二套口径，审批资源与实际搜索范围不一致；绝对路径一律由 `path` 显式给出。
 - `exclude` 在 `pattern` 命中后二次过滤，不改变遍历范围。
+- **glob 语法与 [grep](./I38c-grep-spec.md) 的 `include` 统一**（二修）：`literal_separator(true)`（`/` 只匹配真实层级分隔），pattern **不含 `/`** 时自动前置 `**/`。因此 `*.ts` 与 `**/*.ts` 等价、都递归匹配，`src/*.ts` 只匹配 `src` 的直接子文件。两个工具对同一 pattern 给出同一集合；`exclude` 同用此规则。
 - 结果只含 workspace 内路径；越界由 `ensure_within_root` 统一拒绝。
 - 最大返回 1000 条，按路径字典序排序（稳定），超出时显式提示已截断，并给出「收窄 pattern / 指定更小 `path`」的下一步提示。
 

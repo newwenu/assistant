@@ -1,7 +1,9 @@
 use std::path::Path;
 use std::time::Duration;
 
-use assistant_tools::os::agent_grep::{AgentGrepTool, MAX_MATCHES};
+use assistant_tools::os::agent_grep::{
+    AgentGrepTool, MAX_CONTEXT, MAX_FILESIZE, MAX_MATCHES, MAX_OUTPUT_LINES,
+};
 use assistant_tools::{Tool, ToolAudience, ToolErrorKind, ToolTier, ToolUseContext};
 use serde_json::json;
 
@@ -85,6 +87,7 @@ fn validate_input_rejects_bad_arguments() {
         json!({ "pattern": "hit", "include": 42 }),
         json!({ "pattern": "hit", "context": -1 }),
         json!({ "pattern": "hit", "context": "2" }),
+        json!({ "pattern": "hit", "context": MAX_CONTEXT + 1 }),
         json!({ "pattern": "hit(", "path": "." }),
         json!({ "pattern": "hit", "include": "*.{rs", "path": "." }),
         json!({ "pattern": "hit", "encoding": 42 }),
@@ -205,6 +208,186 @@ async fn include_filters_candidate_files() {
 
     assert!(result.ok);
     assert_eq!(result.assistant_text(), "src/a.rs:1:needle");
+}
+
+#[tokio::test]
+async fn include_with_a_slash_only_matches_that_depth() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_file(dir.path(), "src/a.rs", "needle\n");
+    write_file(dir.path(), "src/deep/b.rs", "needle\n");
+
+    let direct = tool()
+        .execute(
+            &json!({ "pattern": "needle", "path": ".", "include": "src/*.rs" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    assert!(direct.ok);
+    assert_eq!(
+        direct.assistant_text(),
+        "src/a.rs:1:needle",
+        "a pattern containing '/' must not recurse"
+    );
+
+    // 不含 `/` 的 pattern 自动前置 `**/`：`*.rs` 与 `**/*.rs` 等价，两个层级都命中。
+    let recursive = tool()
+        .execute(
+            &json!({ "pattern": "needle", "path": ".", "include": "*.rs" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    assert!(recursive.ok);
+    assert_eq!(
+        recursive.assistant_text(),
+        "src/a.rs:1:needle\nsrc/deep/b.rs:1:needle"
+    );
+}
+
+#[tokio::test]
+async fn the_pattern_is_compiled_verbatim_including_whitespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_file(dir.path(), "a.txt", "  hit\nhit\n");
+
+    let indented = tool()
+        .execute(&json!({ "pattern": "  hit", "path": "." }), &ctx)
+        .await
+        .unwrap();
+    assert!(indented.ok);
+    assert_eq!(
+        indented.assistant_text(),
+        "a.txt:1:  hit",
+        "leading whitespace in the pattern must stay significant"
+    );
+}
+
+#[tokio::test]
+async fn context_above_the_limit_is_a_business_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_file(dir.path(), "a.txt", "hit\n");
+
+    let result = tool()
+        .execute(
+            &json!({ "pattern": "hit", "path": ".", "context": MAX_CONTEXT + 1 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
+    let message = result.error.unwrap_or_default();
+    assert!(message.contains("context"));
+    assert!(message.contains(&MAX_CONTEXT.to_string()));
+}
+
+#[tokio::test]
+async fn context_lines_share_the_output_line_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    // 60 个命中、每个间隔 11 行：`context = 10` 时相邻窗口全部连成一片，行数远超 300。
+    let mut body = String::new();
+    for _ in 0..60 {
+        body.push_str("hit\n");
+        for _ in 0..11 {
+            body.push_str("pad\n");
+        }
+    }
+    write_file(dir.path(), "big.txt", &body);
+
+    let result = tool()
+        .execute(
+            &json!({ "pattern": "hit", "path": ".", "context": MAX_CONTEXT }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["truncated"], json!(true));
+    let lines = data["matches"].as_array().unwrap();
+    assert_eq!(
+        lines.len(),
+        MAX_OUTPUT_LINES,
+        "context lines must be capped by the shared line budget"
+    );
+    assert!(result.assistant_text().contains("output line limit"));
+}
+
+#[tokio::test]
+async fn invalid_utf8_hit_lines_are_flagged_as_lossy() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_bytes(dir.path(), "zh.txt", &gbk("中文 hit\n"));
+
+    let result = tool()
+        .execute(&json!({ "pattern": "hit", "path": "." }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["totalMatches"], json!(1));
+    assert_eq!(data["lossyLines"], json!(1));
+    assert!(result.assistant_text().contains("[lossy: 1 line(s)]"));
+}
+
+#[tokio::test]
+async fn an_explicit_encoding_skips_the_probe() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_bytes(dir.path(), "zh.txt", &gbk("中文内容\n"));
+
+    let result = tool()
+        .execute(
+            &json!({ "pattern": "no_such_token", "path": ".", "encoding": "gbk" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["nonUtf8Probe"], json!(null));
+    assert_eq!(
+        result.assistant_text(),
+        "(no matches)",
+        "an explicit encoding already transcoded the scope, so no probe footer"
+    );
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn unreadable_files_are_counted_and_do_not_abort_the_search() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_file(dir.path(), "a.txt", "hit\n");
+    write_file(dir.path(), "locked.txt", "hit\n");
+    // 独占句柄（share_mode 0）让 searcher 打开失败，模拟读取错误。
+    let handle = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(dir.path().join("locked.txt"))
+        .unwrap();
+
+    let result = tool()
+        .execute(&json!({ "pattern": "hit", "path": "." }), &ctx)
+        .await
+        .unwrap();
+    drop(handle);
+
+    assert!(result.ok);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["unreadableFiles"], json!(1));
+    assert_eq!(data["totalMatches"], json!(1));
+    assert_eq!(result.assistant_text(), "a.txt:1:hit\n[skipped: 1 file(s)]");
 }
 
 #[tokio::test]
@@ -437,7 +620,53 @@ async fn binary_files_are_skipped_without_garbage_lines() {
     let data = result.data.as_ref().unwrap();
     assert_eq!(data["binarySkipped"], json!(1));
     assert_eq!(data["totalMatches"], json!(1));
-    assert_eq!(result.assistant_text(), "a.txt:1:hit");
+    assert_eq!(
+        result.assistant_text(),
+        "a.txt:1:hit\n[skipped: 1 file(s)]",
+        "the skipped footer reports the binary file without touching the hit lines"
+    );
+}
+
+#[tokio::test]
+async fn a_binary_file_is_discarded_whole_even_after_a_hit() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    // 命中出现在 NUL 之前：逐行即时输出会把这一行留下，按文件缓冲才能整文件丢弃。
+    write_bytes(dir.path(), "bin.dat", b"hit\n\x00tail");
+    write_file(dir.path(), "a.txt", "hit\n");
+
+    let result = tool()
+        .execute(&json!({ "pattern": "hit", "path": "." }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["binarySkipped"], json!(1));
+    assert_eq!(data["totalMatches"], json!(1));
+    assert_eq!(result.assistant_text(), "a.txt:1:hit\n[skipped: 1 file(s)]");
+}
+
+#[tokio::test]
+async fn files_above_the_size_limit_are_skipped_and_counted() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    write_file(dir.path(), "a.txt", "hit\n");
+    let huge = dir.path().join("huge.log");
+    let file = std::fs::File::create(&huge).unwrap();
+    file.set_len(MAX_FILESIZE + 1).unwrap();
+    drop(file);
+
+    let result = tool()
+        .execute(&json!({ "pattern": "hit", "path": "." }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["largeSkipped"], json!(1));
+    assert_eq!(data["totalMatches"], json!(1));
+    assert_eq!(result.assistant_text(), "a.txt:1:hit\n[skipped: 1 file(s)]");
 }
 
 #[tokio::test]

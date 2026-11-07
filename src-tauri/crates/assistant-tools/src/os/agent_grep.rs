@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
+use globset::GlobSet;
 use grep_regex::RegexMatcher;
 use grep_searcher::{
     BinaryDetection, Encoding as SearcherEncoding, Searcher, SearcherBuilder, Sink, SinkContext,
@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use crate::context::ToolUseContext;
 use crate::exec::DEFAULT_TOOL_TIMEOUT;
+use crate::os::agent_glob;
 use crate::os::path;
 use crate::os::text_encoding::{parse_optional_encoding, BINARY_PROBE_BYTES};
 use crate::r#trait::{BehaviorHints, Tool, ToolAudience, ToolTier, ValidationResult};
@@ -19,10 +20,20 @@ use crate::result::ToolResult;
 /// 内部唯一标识（注册表键、白名单匹配、审计）。模型可见名默认与它同名。
 const TOOL_ID: &str = "grep";
 
-/// 单次返回的匹配行数上限。
+/// 单次返回的命中块上限。
 pub const MAX_MATCHES: usize = 100;
+/// 单次返回的渲染行上限：命中行与上下文行合计。
+///
+/// `MAX_MATCHES` 只数命中块，上下文行完全绕过它——大 `context` 配一个靠前的命中
+/// 就能把整个文件塞进结果，因此必须另有行数闸门（[grep §3.2]）。
+pub const MAX_OUTPUT_LINES: usize = 300;
+/// `context` 上限。超出直接拒绝而非静默夹紧：夹紧会让模型误以为上下文真的给了那么多。
+pub const MAX_CONTEXT: u64 = 10;
 /// `context` 缺省值。
 pub const DEFAULT_CONTEXT: u64 = 0;
+/// 单文件体积上限：单文件在 `spawn_blocking` 内无法被 deadline 中断，
+/// 体积是唯一能在「一个文件」粒度收口的杠杆（[grep §3.3]）。
+pub const MAX_FILESIZE: u64 = 16 * 1024 * 1024;
 /// 内部 deadline 相对外层超时预留的余量：留出把已收集结果回填的时间。
 pub const DEADLINE_RESERVE: Duration = Duration::from_millis(500);
 /// 零命中探测最多检查的文件数：只回答「scope 里有没有非 UTF-8 文件」，不做全量普查。
@@ -63,9 +74,9 @@ impl Tool for AgentGrepTool {
              context lines use `path-line-text` and non-contiguous groups are separated by `--`. \
              `path` defaults to the workspace root, `include` filters files by glob, `context` \
              adds surrounding lines. Respects `.gitignore`, skips hidden and binary files, and \
-             returns up to 100 matching lines. Inline flags such as `(?i)` are supported. Non-UTF-8 \
-             files are matched as raw bytes unless `encoding` is passed, in which case the whole \
-             search scope is transcoded first."
+             caps output at 100 matches / 300 lines. Inline flags such as `(?i)` are supported. \
+             Non-UTF-8 files are matched as raw bytes unless `encoding` is passed, in which case \
+             the whole search scope is transcoded first."
                 .to_string(),
         )
     }
@@ -74,13 +85,19 @@ impl Tool for AgentGrepTool {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "pattern": { "type": "string", "description": "Regex pattern" },
-                "path": { "type": "string", "description": "Directory to search (defaults to the workspace root)" },
+                "pattern": {
+                    "type": "string",
+                    "description": "Regex pattern (single-line match, e.g. 'fn main')"
+                },
+                "path": { "type": "string", "description": "Directory to search" },
                 "include": { "type": "string", "description": "File glob filter (e.g. '*.rs')" },
-                "context": { "type": "integer", "description": "Lines of context before and after each match (default 0)" },
+                "context": {
+                    "type": "integer",
+                    "description": "Lines of context before and after each match (0-10, default 0)"
+                },
                 "encoding": {
                     "type": "string",
-                    "description": "Optional encoding for every file in the scope (e.g. gbk); omit to search raw UTF-8 bytes"
+                    "description": "Optional encoding label (e.g. gbk) for the whole search; omit to search as-is"
                 }
             },
             "required": ["pattern"]
@@ -182,13 +199,14 @@ impl Tool for AgentGrepTool {
         })
         .await;
 
-        let outcome = match search {
+        let mut outcome = match search {
             Ok(Ok(outcome)) => outcome,
             Ok(Err(error)) => return Ok(ToolResult::err(error)),
             Err(error) => return Err(format!("grep task failed: {}", error)),
         };
 
-        let assistant_text = assistant_text(&outcome, self.budget);
+        let lines = outcome.take_lines();
+        let assistant_text = assistant_text(&outcome, &lines, self.budget);
 
         Ok(ToolResult::ok_with_assistant(
             serde_json::json!({
@@ -197,47 +215,87 @@ impl Tool for AgentGrepTool {
                 "include": request.include,
                 "context": request.context,
                 "totalMatches": outcome.match_count,
-                "truncated": outcome.hit_limit,
+                "truncated": outcome.truncated(),
                 "timedOut": outcome.timed_out,
                 "binarySkipped": outcome.binary_skipped,
+                "largeSkipped": outcome.large_skipped,
+                "unreadableFiles": outcome.unreadable,
                 "lossyLines": outcome.lossy_lines,
                 "nonUtf8Probe": outcome.probe.as_ref().map(|probe| serde_json::json!({
                     "files": probe.files,
                     "truncated": probe.truncated
                 })),
-                "matches": outcome.lines
+                "matches": lines
             }),
             assistant_text,
         ))
     }
 }
 
-fn assistant_text(outcome: &SearchOutcome, budget: Duration) -> String {
-    let mut text = if outcome.lines.is_empty() && !outcome.timed_out {
-        "(no matches)".to_string()
+fn assistant_text(outcome: &SearchOutcome, lines: &[String], budget: Duration) -> String {
+    // 超时且零行时不写 `(no matches)`，否则会多出一个前导空行（footer 前只留提示行）。
+    let mut text = if lines.is_empty() {
+        if outcome.timed_out {
+            String::new()
+        } else {
+            "(no matches)".to_string()
+        }
     } else {
-        outcome.lines.join("\n")
+        lines.join("\n")
     };
+
     if outcome.timed_out {
-        text.push_str(&format!(
-            "\n[search stopped at the {}ms time budget; results may be incomplete; narrow 'path' \
-             or 'include']",
-            budget.as_millis()
-        ));
-    } else if outcome.hit_limit {
-        text.push_str(&format!(
-            "\n[truncated: showing the first {} matching lines; narrow 'path' or 'include']",
-            MAX_MATCHES
-        ));
+        push_line(
+            &mut text,
+            &format!(
+                "[search stopped at the {}ms time budget; results may be incomplete; narrow \
+                 'path' or 'include']",
+                budget.as_millis()
+            ),
+        );
+    } else if outcome.match_limit {
+        push_line(
+            &mut text,
+            &format!(
+                "[truncated: showing the first {} matching lines; narrow 'path' or 'include']",
+                MAX_MATCHES
+            ),
+        );
+    } else if outcome.line_limit {
+        push_line(
+            &mut text,
+            &format!(
+                "[truncated: output line limit ({}) reached; narrow 'path', 'include', or reduce \
+                 'context']",
+                MAX_OUTPUT_LINES
+            ),
+        );
     }
-    // footer 形态固定为 `[non-utf8: N file(s)]`（[I38c-grep §3.1]）；
-    // 是否被截断只进 `nonUtf8Probe.truncated`，不延长 footer。
+
+    // footer 标记集：各自独占一行、只给事实（[I38c §14.4] / [grep §3.1]）。
     if let Some(probe) = &outcome.probe {
         if probe.files > 0 {
-            text.push_str(&format!("\n[non-utf8: {} file(s)]", probe.files));
+            push_line(&mut text, &format!("[non-utf8: {} file(s)]", probe.files));
         }
     }
+    let skipped = outcome.skipped_files();
+    if skipped > 0 {
+        push_line(&mut text, &format!("[skipped: {} file(s)]", skipped));
+    }
+    if outcome.lossy_lines > 0 {
+        push_line(
+            &mut text,
+            &format!("[lossy: {} line(s)]", outcome.lossy_lines),
+        );
+    }
     text
+}
+
+fn push_line(text: &mut String, line: &str) {
+    if !text.is_empty() {
+        text.push('\n');
+    }
+    text.push_str(line);
 }
 
 struct GrepRequest {
@@ -254,13 +312,16 @@ impl GrepRequest {
             .as_object()
             .ok_or_else(|| "input must be a JSON object".to_string())?;
 
+        // `pattern` 原样编译，不做 `trim`：前导 / 尾随空格是正则的一部分（搜缩进、搜行尾空格）。
+        // `trim` 只用于拒绝「全空白」输入，不改变编译用的字符串（[grep §3]）。
         let pattern = object
             .get("pattern")
             .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| "missing or empty 'pattern' field".to_string())?
-            .to_string();
+            .ok_or_else(|| "missing 'pattern' field".to_string())?;
+        if pattern.trim().is_empty() {
+            return Err("'pattern' must not be blank".to_string());
+        }
+        let pattern = pattern.to_string();
 
         let path = match object.get("path") {
             None | Some(Value::Null) => None,
@@ -288,9 +349,18 @@ impl GrepRequest {
 
         let context = match object.get("context") {
             None | Some(Value::Null) => DEFAULT_CONTEXT,
-            Some(value) => value
-                .as_u64()
-                .ok_or_else(|| "'context' must be a non-negative integer".to_string())?,
+            Some(value) => {
+                let value = value
+                    .as_u64()
+                    .ok_or_else(|| "'context' must be a non-negative integer".to_string())?;
+                if value > MAX_CONTEXT {
+                    return Err(format!(
+                        "'context' must be between 0 and {} (got {})",
+                        MAX_CONTEXT, value
+                    ));
+                }
+                value
+            }
         };
 
         // label 校验与 `read` / `write` 共用一套（别名表与错误文案不分叉）；
@@ -319,19 +389,9 @@ impl GrepRequest {
 fn build_include(pattern: Option<&str>) -> Result<Option<GlobSet>, String> {
     match pattern {
         None => Ok(None),
-        Some(pattern) => {
-            let glob = GlobBuilder::new(pattern)
-                .literal_separator(false)
-                .backslash_escape(false)
-                .build()
-                .map_err(|error| format!("invalid include glob '{}': {}", pattern, error))?;
-            let mut builder = GlobSetBuilder::new();
-            builder.add(glob);
-            builder
-                .build()
-                .map(Some)
-                .map_err(|error| format!("invalid include glob '{}': {}", pattern, error))
-        }
+        Some(pattern) => agent_glob::build_glob_set(&[pattern.to_string()])
+            .map(Some)
+            .map_err(|error| format!("invalid include glob '{}': {}", pattern, error)),
     }
 }
 
@@ -350,13 +410,61 @@ fn base_directory(path_input: Option<&str>, context: &ToolUseContext) -> Result<
 }
 
 struct SearchOutcome {
-    lines: Vec<String>,
+    /// 已提交的文件（相对路径 + 该文件的渲染行）。文件内行号升序，文件间最后按路径排序。
+    files: Vec<(String, Vec<String>)>,
+    /// 已提交的命中块数。
     match_count: usize,
-    hit_limit: bool,
+    /// 已提交的渲染行数（含上下文行与 `--` 分隔符）。
+    line_count: usize,
+    match_limit: bool,
+    line_limit: bool,
     timed_out: bool,
     binary_skipped: usize,
+    large_skipped: usize,
+    unreadable: usize,
     lossy_lines: usize,
     probe: Option<NonUtf8Probe>,
+}
+
+impl SearchOutcome {
+    fn new() -> Self {
+        Self {
+            files: Vec::new(),
+            match_count: 0,
+            line_count: 0,
+            match_limit: false,
+            line_limit: false,
+            timed_out: false,
+            binary_skipped: 0,
+            large_skipped: 0,
+            unreadable: 0,
+            lossy_lines: 0,
+            probe: None,
+        }
+    }
+
+    fn stopped(&self) -> bool {
+        self.match_limit || self.line_limit || self.timed_out
+    }
+
+    /// 任一输出上限触发（`data.truncated` 的语义）。
+    fn truncated(&self) -> bool {
+        self.match_limit || self.line_limit
+    }
+
+    fn skipped_files(&self) -> usize {
+        self.binary_skipped + self.large_skipped + self.unreadable
+    }
+
+    /// 文件间按路径字典序提交，保证同一子集的输出顺序可复现（[grep §3.3]）。
+    fn take_lines(&mut self) -> Vec<String> {
+        self.files.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut lines = Vec::with_capacity(self.line_count);
+        for (_, file_lines) in self.files.drain(..) {
+            lines.extend(file_lines);
+        }
+        lines
+    }
 }
 
 /// 零命中探测结论（上级 §14.7）：只回答「scope 里有没有非 UTF-8 文件」。
@@ -377,15 +485,10 @@ fn search(
     encoding: Option<SearcherEncoding>,
     deadline: Instant,
 ) -> Result<SearchOutcome, String> {
-    let mut outcome = SearchOutcome {
-        lines: Vec::new(),
-        match_count: 0,
-        hit_limit: false,
-        timed_out: false,
-        binary_skipped: 0,
-        lossy_lines: 0,
-        probe: None,
-    };
+    let mut outcome = SearchOutcome::new();
+    // 显式指定 `encoding` 时整个 scope 已按该编码转码，非 UTF-8 文件也被搜到了，
+    // 探测结论没有信息量，跳过（[grep §3.4]）。
+    let explicit_encoding = encoding.is_some();
 
     // `binary_detection` 默认是 `None`（等于不做检测），必须显式开启：
     // 否则二进制文件会被当成文本，产出乱码命中行（上级 §14.7）。
@@ -398,7 +501,7 @@ fn search(
         .build();
 
     for entry in walk(base) {
-        if outcome.hit_limit || outcome.timed_out {
+        if outcome.stopped() {
             break;
         }
         if Instant::now() >= deadline {
@@ -409,23 +512,27 @@ fn search(
         let Ok(entry) = entry else {
             continue;
         };
-        let Some(path) = searchable_path(&entry, base, include) else {
-            continue;
+        let relative = match decide_file(&entry, base, include) {
+            FileDecision::Search(relative) => relative,
+            FileDecision::Large => {
+                outcome.large_skipped += 1;
+                continue;
+            }
+            FileDecision::Skip => continue,
         };
 
-        let mut sink = FileSink {
-            path: &path,
-            outcome: &mut outcome,
-            deadline,
-        };
-        match searcher.search_path(matcher, entry.path(), &mut sink) {
-            Ok(_) => {}
-            Err(_) => continue,
+        let mut sink = FileSink::new(relative, deadline, &mut outcome);
+        let search_result = searcher.search_path(matcher, entry.path(), &mut sink);
+        let failed = search_result.is_err();
+        sink.finish(failed);
+        drop(sink);
+        if failed {
+            outcome.unreadable += 1;
         }
     }
 
-    // 冷路径：只在零命中且未超时时执行，热路径零成本。
-    if outcome.match_count == 0 && !outcome.timed_out {
+    // 冷路径：只在零命中、未超时且未显式指定 `encoding` 时执行，热路径零成本。
+    if outcome.match_count == 0 && !outcome.timed_out && !explicit_encoding {
         outcome.probe = Some(probe_non_utf8(base, include, deadline));
     }
 
@@ -444,24 +551,34 @@ fn walk(base: &Path) -> ignore::Walk {
         .build()
 }
 
-/// 统一的「这个条目要不要搜」判定：普通文件 + 相对路径 + `include` 过滤。
-fn searchable_path(
-    entry: &ignore::DirEntry,
-    base: &Path,
-    include: Option<&GlobSet>,
-) -> Option<String> {
+enum FileDecision {
+    /// 参与搜索，携带相对 `base` 的 `/` 分隔路径（`include` 与输出都用它）。
+    Search(String),
+    /// 超过单文件体积上限：不搜、不探测，计入 `largeSkipped`。
+    Large,
+    /// 目录、符号链接、`include` 不匹配。
+    Skip,
+}
+
+/// 统一的「这个条目要不要搜」判定：普通文件 + 体积上限 + `include` 过滤。
+fn decide_file(entry: &ignore::DirEntry, base: &Path, include: Option<&GlobSet>) -> FileDecision {
     if !entry
         .file_type()
         .map(|kind| kind.is_file())
         .unwrap_or(false)
     {
-        return None;
+        return FileDecision::Skip;
     }
-    let relative = entry.path().strip_prefix(base).ok()?;
-    let relative = relative.to_string_lossy().replace('\\', "/");
+    if entry.metadata().map(|meta| meta.len()).unwrap_or(0) > MAX_FILESIZE {
+        return FileDecision::Large;
+    }
+    let relative = match entry.path().strip_prefix(base) {
+        Ok(relative) => relative.to_string_lossy().replace('\\', "/"),
+        Err(_) => return FileDecision::Skip,
+    };
     match include {
-        Some(include) if !include.is_match(&relative) => None,
-        _ => Some(relative),
+        Some(include) if !include.is_match(&relative) => FileDecision::Skip,
+        _ => FileDecision::Search(relative),
     }
 }
 
@@ -481,7 +598,7 @@ fn probe_non_utf8(base: &Path, include: Option<&GlobSet>, deadline: Instant) -> 
         let Ok(entry) = entry else {
             continue;
         };
-        if searchable_path(&entry, base, include).is_none() {
+        if !matches!(decide_file(&entry, base, include), FileDecision::Search(_)) {
             continue;
         }
         if checked >= PROBE_FILE_LIMIT {
@@ -546,10 +663,56 @@ fn classify_prefix(prefix: &[u8]) -> PrefixKind {
     }
 }
 
+/// 单文件缓冲：命中行与上下文行先落到这里，文件结束时整体提交。
+///
+/// 按文件缓冲是「二进制整文件丢弃」与「文件间排序」的前提——逐行即时输出既无法
+/// 在发现 NUL 后撤回已产出的行，也无法把同一文件的行聚在一起排序。
 struct FileSink<'a> {
-    path: &'a str,
+    path: String,
     outcome: &'a mut SearchOutcome,
     deadline: Instant,
+    buffer: Vec<String>,
+    matches: usize,
+    lossy: usize,
+    binary: bool,
+}
+
+impl<'a> FileSink<'a> {
+    fn new(path: String, deadline: Instant, outcome: &'a mut SearchOutcome) -> Self {
+        Self {
+            path,
+            outcome,
+            deadline,
+            buffer: Vec::new(),
+            matches: 0,
+            lossy: 0,
+            binary: false,
+        }
+    }
+
+    /// 当前文件还能再放多少行（命中行 + 上下文行 + 分隔符共用同一预算）。
+    fn lines_left(&self) -> usize {
+        MAX_OUTPUT_LINES.saturating_sub(self.outcome.line_count + self.buffer.len())
+    }
+
+    /// 提交或丢弃本文件的缓冲。
+    fn finish(&mut self, failed: bool) {
+        if failed {
+            return;
+        }
+        if self.binary {
+            // 二进制文件整文件丢弃：NUL 之前也可能已有命中，逐行输出会把乱码混进结果。
+            self.outcome.binary_skipped += 1;
+            return;
+        }
+        self.outcome.match_count += self.matches;
+        self.outcome.lossy_lines += self.lossy;
+        self.outcome.line_count += self.buffer.len();
+        if !self.buffer.is_empty() {
+            let lines = std::mem::take(&mut self.buffer);
+            self.outcome.files.push((self.path.clone(), lines));
+        }
+    }
 }
 
 impl Sink for FileSink<'_> {
@@ -560,26 +723,32 @@ impl Sink for FileSink<'_> {
         _searcher: &Searcher,
         mat: &SinkMatch<'_>,
     ) -> Result<bool, std::io::Error> {
-        if self.outcome.match_count >= MAX_MATCHES {
-            self.outcome.hit_limit = true;
+        if self.outcome.match_count + self.matches >= MAX_MATCHES {
+            self.outcome.match_limit = true;
             return Ok(false);
         }
         if Instant::now() >= self.deadline {
             self.outcome.timed_out = true;
             return Ok(false);
         }
+
+        let lines: Vec<&[u8]> = mat.lines().collect();
+        if lines.len() > self.lines_left() {
+            self.outcome.line_limit = true;
+            return Ok(false);
+        }
+
         let first_line = mat.line_number().unwrap_or(0);
-        for (index, line) in mat.lines().enumerate() {
+        for (index, line) in lines.into_iter().enumerate() {
             let number = first_line + index as u64;
             let (text, lossy) = trim_line_end(line);
             if lossy {
-                self.outcome.lossy_lines += 1;
+                self.lossy += 1;
             }
-            self.outcome
-                .lines
+            self.buffer
                 .push(format!("{}:{}:{}", self.path, number, text));
         }
-        self.outcome.match_count += 1;
+        self.matches += 1;
         Ok(true)
     }
 
@@ -591,11 +760,23 @@ impl Sink for FileSink<'_> {
         if matches!(context.kind(), SinkContextKind::Other) {
             return Ok(true);
         }
+        // 上下文行不经过 `matched`，大 `context` 的海量行只在这里出现，必须自查 deadline。
+        if Instant::now() >= self.deadline {
+            self.outcome.timed_out = true;
+            return Ok(false);
+        }
+        if self.lines_left() == 0 {
+            self.outcome.line_limit = true;
+            return Ok(false);
+        }
+
         let number = context.line_number().unwrap_or(0);
-        // `lossyLines` 只统计命中行（上级 §14.7），上下文行不参与计数。
-        let (text, _) = trim_line_end(context.bytes());
-        self.outcome
-            .lines
+        // 上下文行同样以替换字符渲染给模型，因此与命中行一起计入 `lossyLines`。
+        let (text, lossy) = trim_line_end(context.bytes());
+        if lossy {
+            self.lossy += 1;
+        }
+        self.buffer
             .push(format!("{}-{}-{}", self.path, number, text));
         Ok(true)
     }
@@ -605,15 +786,20 @@ impl Sink for FileSink<'_> {
         _searcher: &Searcher,
         _binary_byte_offset: u64,
     ) -> Result<bool, std::io::Error> {
-        self.outcome.binary_skipped += 1;
+        self.binary = true;
         // 返回 false 即放弃本文件：`quit` 语义下继续读没有意义，只会产出乱码行。
         Ok(false)
     }
 
     fn context_break(&mut self, _searcher: &Searcher) -> Result<bool, std::io::Error> {
-        if !self.outcome.lines.is_empty() {
-            self.outcome.lines.push("--".to_string());
+        if self.buffer.is_empty() {
+            return Ok(true);
         }
+        if self.lines_left() == 0 {
+            self.outcome.line_limit = true;
+            return Ok(false);
+        }
+        self.buffer.push("--".to_string());
         Ok(true)
     }
 }

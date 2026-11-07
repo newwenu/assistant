@@ -267,9 +267,9 @@
 > 规格：[I38c §14](./I38c-os-tools-spec.md)（跨工具约束）+ [read §3.3](./I38c-read-spec.md) / [write §3.1](./I38c-write-spec.md) / [edit §5](./I38c-edit-spec.md) / [grep §3.1](./I38c-grep-spec.md)
 > 阶段：[I38-agent-roadmap.md](./I38-agent-roadmap.md) §2.1（P11 候选）
 > 前置：P5 已完成（C0–C8 全绿）；依赖 `encoding_rs` / `chardetng` / `encoding_rs_io` 均已在 crate 依赖中，**不新增依赖**
-> 勾选条件：代码已改 **且** 对应验收（A12–A16）已跑。
+> 勾选条件：代码已改 **且** 对应验收（A12–A17）已跑。
 > **门禁**：本组任一项未完成都不影响 P5 结论；不得为 C9 改动 P0–P7 的既有验收口径。
-> **状态**：C9.1–C9.24 全部完成，A12–A16 已跑（`cargo test -p assistant-tools` / `-p assistant-agent`、clippy `-D warnings`、`fmt --check` 全通过）。
+> **状态**：C9.1–C9.30 全部完成，A12–A17 已跑（`cargo test -p assistant-tools` / `-p assistant-agent`、clippy `-D warnings`、`fmt --check` 全通过）。
 
 实现：`src-tauri/crates/assistant-tools/src/os/{text_encoding,agent_read,agent_write,agent_grep,process_output}.rs`、`src-tauri/crates/assistant-tools/src/os/agent_edit/`（`locate.rs` / `apply.rs`）、`src-tauri/crates/assistant-tools/src/storage.rs`
 测试：`src-tauri/crates/assistant-tools/tests/{text_encoding,agent_read,agent_write,agent_edit,agent_grep,storage}.rs`
@@ -315,6 +315,16 @@
 - [x] C9.21 测试：GBK 目录传 `encoding` 能命中；不传时零命中且 footer 报 `non-utf8`；有命中时不执行 probe（`nonUtf8Probe == null`）；二进制文件不产出乱码行且计入 `binarySkipped`；probe 到上限时 `truncated == true`；UTF-8 目录零命中时无 footer
   - 实测补充：probe 的 UTF-8 判定把 `Utf8Error::error_len() == None`（8KB 窗口截断在半个字符处）算作合法 UTF-8，否则大文件会被误报为「非 UTF-8」；`binary_data` 返回 `Ok(false)` 才是 `quit` 语义（返回 `true` 会继续读同一文件并产出乱码行）；footer 严格保持 `[non-utf8: N file(s)]` 形态，截断信息只进 `nonUtf8Probe.truncated`（不延长 footer，避免喧宾夺主）
 
+**`grep` 输出预算与边界（二修，规格 [grep §3.2 / §3.3](./I38c-grep-spec.md) / 上级 A17）**
+
+- [x] C9.25 `agent_grep.rs`：`pattern` 原样编译（`trim` 只用于判空，不改编译字符串）；`context` 校验 `0..=MAX_CONTEXT(10)`，超出 `Business`；`encoding` 校验与执行统一走 `SearcherEncoding::new`，非法 label 在 `validate_input` 阶段即返回（A17）
+- [x] C9.26 `agent_grep.rs`：输出预算——`MAX_OUTPUT_LINES = 300`（命中行 + 上下文行 + `--` 分隔符合计，`context_break` 与行共用预算），`Sink::matched` 与 `Sink::context` 共用同一预算；`context` 回调补 deadline 检查；`truncated` 语义改为「任一上限触发」，不新增原因字段（A17）
+- [x] C9.27 `agent_grep.rs`：按文件缓冲并在文件结束时提交（路径字典序 → 行号升序）；`Sink::binary_data` 整文件丢弃（NUL 之前的命中不输出）；超 `16 MiB` 文件在 `decide_file` 用 `metadata.len()` 跳过并计 `largeSkipped`（不用 `WalkBuilder::max_filesize`：遍历层静默丢弃、无法计数）；`search_path` 的 `Err` 计 `unreadableFiles`（A17）
+- [x] C9.28 `agent_grep.rs`：`include` 改 `literal_separator(true)`，pattern 不含 `/` 时自动前置 `**/`（与 `glob` 对齐，两者共用 `agent_glob::build_glob_set`）；`encoding.is_some()` 时跳过零命中 probe（`nonUtf8Probe == null`）（A17）
+- [x] C9.29 `agent_grep.rs`：footer 增 `[skipped: N file(s)]`（`binarySkipped + largeSkipped + unreadableFiles > 0`）与 `[lossy: N line(s)]`（`lossyLines > 0`）；`lossyLines` 覆盖上下文行；超时且零行时不再产生前导换行（A17）
+- [x] C9.30 测试：`pattern` 带前导空格可命中、全空白被拒；`context = 11` 被拒；单文件大 `context` 被行数上限截断且 `truncated == true`；二进制文件 NUL 前的命中不输出且计入 `binarySkipped`；超 `16 MiB` 文件计入 `largeSkipped`；不可读文件计入 `unreadableFiles` 且 footer 出现（`#[cfg(windows)]` 用 `share_mode(0)` 独占句柄模拟）；`include: "src/*.rs"` 不跨层级、`*.rs` 递归；已设 `encoding` 时 `nonUtf8Probe == null`；`glob` 侧补 `*.ts` 递归 / `src/*.ts` 不递归两例（A17）
+  - 实测补充：`context` 回调的 deadline 检查无法在测试里确定性触发——每个块的上下文行紧跟在同块的 `matched` 之后（微秒级），能到点的场景必然先在 `matched` 或遍历入口触发；该检查保留为防御（单文件内 `before_context` 回溯与 `after_context` 逐行产出都可能落在慢盘上），不写断言
+
 **文档与验收**
 
 - [x] C9.22 回写 [I38a §4-C6](./I38a-tool-control-layer-spec.md) 的 `ReadReceipt` 值扩展（规格已写，落地后确认与代码一致）
@@ -348,6 +358,7 @@
 | A14（C9）回执携带编码，写侧只消费不重判 | C9.5、C9.8、C9.12、C9.15 |
 | A15（C9）`write` 五道闸 | C9.3、C9.10、C9.11、C9.13、C9.15 |
 | A16（C9）`grep` 标准配置链与两层探测 | C9.17–C9.21 |
+| A17（二修）`grep` 输出预算与边界 | C9.25–C9.30 |
 
 ---
 
