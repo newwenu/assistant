@@ -89,7 +89,7 @@ export function createMascotCapabilityVisible(
   ...requiredCaps: MascotCapabilityKey[]
 ): (conf: Record<string, unknown>) => boolean {
   return (conf) => {
-    const rendererId = (conf.renderer as string) ?? "rive";
+    const rendererId = (conf.renderer as string) ?? "svg";
     const meta = getAllRendererMetas().find(
       (m) => m.id === (rendererId as MascotRendererId),
     );

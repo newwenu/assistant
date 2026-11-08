@@ -6,6 +6,7 @@ import type {
   ToolDescriptorDto,
   ToolTierDto,
 } from "@/types/protocol.contract";
+import type { I18nPath } from "@/i18n";
 import type { ConversationToolConfig } from "../core/chatTypes";
 import { APPROVAL_LEVELS, TOOL_TIERS } from "../core/toolConfig";
 import css from "./ToolConfigPanel.module.css";
@@ -27,6 +28,23 @@ const TIER_RANK: Record<ToolTierDto, number> = {
   sandbox: 0,
   os: 1,
   external: 2,
+};
+
+/**
+ * 面板短提示：`ToolDescriptorDto.description` 是给模型看的提示词（`ask_user` 长达数行），
+ * 悬停时对用户无意义。这里按工具 id 换成一句话说明；未收录的工具回落到后端描述。
+ */
+const TOOL_DESC_KEYS: Record<string, I18nPath> = {
+  read: "chat.tool.panel.tool_desc.read",
+  ls: "chat.tool.panel.tool_desc.ls",
+  glob: "chat.tool.panel.tool_desc.glob",
+  grep: "chat.tool.panel.tool_desc.grep",
+  write: "chat.tool.panel.tool_desc.write",
+  edit: "chat.tool.panel.tool_desc.edit",
+  mkdir: "chat.tool.panel.tool_desc.mkdir",
+  move: "chat.tool.panel.tool_desc.move",
+  delete: "chat.tool.panel.tool_desc.delete",
+  ask_user: "chat.tool.panel.tool_desc.ask_user",
 };
 
 /**
@@ -165,7 +183,11 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
                     {items.map((tool) => (
                       <Tooltip
                         key={tool.id}
-                        title={tool.description || tool.name}
+                        title={
+                          TOOL_DESC_KEYS[tool.id]
+                            ? t(TOOL_DESC_KEYS[tool.id])
+                            : tool.description || tool.name
+                        }
                         placement="top"
                       >
                         <Checkbox value={tool.id} className={css.checkbox}>

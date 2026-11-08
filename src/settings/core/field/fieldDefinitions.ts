@@ -219,7 +219,7 @@ export const MASCOT_RENDERER_SETTING = defineSetting({
   group: "mascot",
   section: "orb-ball",
   type: "select",
-  default: "rive",
+  default: "svg",
   label: "settings.mascot.renderer.label",
   description: "settings.mascot.renderer.description",
   customRender: RendererSelectRender,

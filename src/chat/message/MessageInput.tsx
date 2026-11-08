@@ -125,7 +125,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       >
         <div className="chat-mascot-btn-canvas">
           <MascotRenderer
-            renderer={asRendererId(mascotConf?.renderer ?? "rive")}
+            renderer={asRendererId(mascotConf?.renderer ?? "svg")}
             face={mascotFace}
             size={44}
             primaryColor={hexToArgb(mascotConf?.primaryColor)}

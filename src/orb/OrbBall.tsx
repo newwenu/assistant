@@ -108,7 +108,7 @@ export const OrbBall: React.FC = () => {
         onClick={handleClick}
       >
         <MascotRenderer
-          renderer={asRendererId(mascotConf?.renderer ?? "rive")}
+          renderer={asRendererId(mascotConf?.renderer ?? "svg")}
           face={mascotFace}
           size={ORB_COLLAPSED_SIZE}
           primaryColor={hexToArgb(mascotConf?.primaryColor)}

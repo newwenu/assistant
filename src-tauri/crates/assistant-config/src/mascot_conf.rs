@@ -4,7 +4,7 @@ use std::path::Path;
 use super::json_config::{amend_json_config, get_conf_dir, load_json_config, save_json_config};
 
 fn default_renderer() -> String {
-    "rive".to_string()
+    "svg".to_string()
 }
 
 fn default_true() -> bool {
