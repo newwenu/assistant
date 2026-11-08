@@ -5,11 +5,22 @@ export interface ChatStreamState {
   isStreaming: boolean;
   streamingContent: string;
   streamingMessageId: string | null;
+  /**
+   * 当前流式段所属的迭代号（I38d §3.1.1：一次迭代 = 一条消息 = 一个气泡）。
+   * 迭代号变化即提交上一段、开新段；`null` 表示尚未确定（如刚切回运行中的会话）。
+   */
+  streamingIteration: number | null;
   activeAttemptId: string | null;
   isReasoningStreaming: boolean;
   retryStatus: RetryNotification | null;
 
   beginStream: (messageId: string) => void;
+  /**
+   * 开一条新的流式段（新气泡）：清空正文缓冲、换占位消息 id 与迭代号。
+   * 与 `beginStream` 的差别是保留 `activeAttemptId`——turn 仍在进行。
+   */
+  beginSegment: (messageId: string, iteration: number) => void;
+  setStreamingIteration: (iteration: number) => void;
   cancelStreaming: () => void;
   appendDelta: (delta: string) => void;
   setReasoningStreaming: (streaming: boolean) => void;
@@ -29,6 +40,7 @@ export const useChatStreamStore = create<ChatStreamState>()((set) => {
     isStreaming: false,
     streamingContent: "",
     streamingMessageId: null,
+    streamingIteration: null,
     activeAttemptId: null,
     isReasoningStreaming: false,
     retryStatus: null,
@@ -39,6 +51,21 @@ export const useChatStreamStore = create<ChatStreamState>()((set) => {
 
     beginStream: (messageId: string) => {
       set({ ...resetState, isStreaming: true, streamingMessageId: messageId });
+    },
+
+    beginSegment: (messageId: string, iteration: number) => {
+      set((state) => ({
+        isStreaming: true,
+        streamingContent: "",
+        streamingMessageId: messageId,
+        streamingIteration: iteration,
+        activeAttemptId: state.activeAttemptId,
+        isReasoningStreaming: false,
+      }));
+    },
+
+    setStreamingIteration: (iteration: number) => {
+      set({ streamingIteration: iteration });
     },
 
     cancelStreaming: () => set(resetState),

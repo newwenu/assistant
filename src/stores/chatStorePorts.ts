@@ -1,24 +1,26 @@
 import type {
-  ChatStatePort,
-  ChatEnvPort,
-  ChatOrchestrator,
-  ChatOrchestratorDeps,
-} from "../services/chatOrchestrator";
-import type {
   Message,
   Conversation,
   TokenUsage,
   ContextUsage,
-  AgentToolCall,
 } from "../chat/core/chatTypes";
-import {
-  applyAgentToolCall,
-  cancelPendingToolCalls,
-} from "../chat/core/toolCallView";
 import type { RetryNotification } from "../chat/core/chatTypes";
 import { type ChatError } from "../chat/core/chatErrors";
 import { chatService } from "../services/chatService";
-import { createChatOrchestrator } from "../services/chatOrchestrator";
+import { providerService } from "../services/providerService";
+import {
+  createTurnOrchestrator,
+  type TurnEnvPort,
+  type TurnOrchestrator,
+  type TurnOrchestratorDeps,
+} from "../services/stream/turnOrchestrator";
+import type {
+  StreamStatePort,
+  TurnStrategy,
+} from "../services/stream/turnStrategy";
+import { createChatTurnStrategy } from "../services/stream/strategies/chatTurn";
+import { createAgentTurnStrategy } from "../services/stream/strategies/agentTurn";
+import { createAgentSegments, type AgentSegments } from "./agent/agentSegments";
 import { useChatStreamStore } from "./chatStreamStore";
 import { useAgentModeStore } from "./agentModeStore";
 import {
@@ -63,12 +65,27 @@ interface EnvPortReadable {
   reasoningChoice: ReasoningChoice;
 }
 
+export interface ChatStatePorts {
+  /** 通用视图状态端口：只操作「当前正在流的那一条消息」。 */
+  port: StreamStatePort;
+  /** agent 私有段表（迭代 → 段消息 id），由 `agentTurn` 策略独占使用（I38d §3.7）。 */
+  segments: AgentSegments;
+}
+
+/**
+ * 视图状态端口实现。
+ *
+ * 这里只保留两条链路都要的能力（占位消息、流式缓冲、合并落盘、错误挂载）；
+ * 迭代分段 / 工具归属 / 段表等 agent 语义已下沉到 `stores/agent/agentSegments.ts`。
+ */
 export function createStatePort(
   set: (partial: Partial<StatePortWritable>) => void,
   get: () => StatePortReadable,
   fetchTokenUsageDeps: FetchTokenUsageDeps,
-): ChatStatePort {
-  return {
+): ChatStatePorts {
+  const segments = createAgentSegments(set, get);
+
+  const port: StreamStatePort = {
     beginSend: (messages: Message[], assistantMsgId: string) => {
       useChatStreamStore.getState().beginStream(assistantMsgId);
       // 发送不清零占用：占用反映最近一次请求，与本次发送无关
@@ -86,12 +103,18 @@ export function createStatePort(
       useChatStreamStore.getState().cancelStreaming();
     },
     setActiveAttemptId: (attemptId: string, realMessageId: string) => {
-      const state = get();
       const oldStreamingMessageId =
         useChatStreamStore.getState().streamingMessageId;
       useChatStreamStore
         .getState()
         .setActiveAttemptId(attemptId, realMessageId);
+      if (
+        oldStreamingMessageId === null ||
+        oldStreamingMessageId === realMessageId
+      ) {
+        return;
+      }
+      const state = get();
       set({
         messages: state.messages.map((m) =>
           m.id === oldStreamingMessageId ? { ...m, id: realMessageId } : m,
@@ -124,42 +147,15 @@ export function createStatePort(
     setReasoningStreaming: (streaming: boolean) => {
       useChatStreamStore.getState().setReasoningStreaming(streaming);
     },
-    appendReasoningDelta: (messageId: string, delta: string) => {
+    appendReasoningDelta: (delta: string) => {
+      const messageId = useChatStreamStore.getState().streamingMessageId;
+      if (!messageId) return;
       const state = get();
       set({
         messages: state.messages.map((m) =>
           m.id === messageId
             ? { ...m, reasoning: (m.reasoning || "") + delta }
             : m,
-        ),
-      });
-    },
-    applyToolCall: (messageId: string, call: AgentToolCall) => {
-      const state = get();
-      set({
-        messages: state.messages.map((m) =>
-          m.id === messageId
-            ? {
-                ...m,
-                toolCalls: applyAgentToolCall(
-                  m.toolCalls ?? [],
-                  call,
-                  Date.now(),
-                ),
-              }
-            : m,
-        ),
-      });
-    },
-    settleToolCalls: (messageId: string) => {
-      const state = get();
-      const target = state.messages.find((m) => m.id === messageId);
-      if (!target?.toolCalls?.length) return;
-      const settled = cancelPendingToolCalls(target.toolCalls, Date.now());
-      if (settled === target.toolCalls) return;
-      set({
-        messages: state.messages.map((m) =>
-          m.id === messageId ? { ...m, toolCalls: settled } : m,
         ),
       });
     },
@@ -260,6 +256,8 @@ export function createStatePort(
       useChatStreamStore.getState().setRetryStatus(retry);
     },
   };
+
+  return { port, segments };
 }
 
 export function createEnvPort(
@@ -267,7 +265,7 @@ export function createEnvPort(
   set: (partial: Partial<EnvPortWritable>) => void,
   getSelectedProviderId: () => string | null,
   getSelectedModelId: () => string,
-): ChatEnvPort {
+): TurnEnvPort {
   /**
    * 链路判据取自会话自身：`ConversationDto.modeId` → `agent_modes` 行 → `kind`。
    * 解析逻辑集中在 `resolveConversationRoute`，避免多处口径漂移（I38d §4.8）。
@@ -306,13 +304,35 @@ export function createEnvPort(
 }
 
 export function createOrchestrator(
-  statePort: ChatStatePort,
-  envPort: ChatEnvPort,
-  deps: Omit<ChatOrchestratorDeps, "state" | "env">,
-): ChatOrchestrator {
-  return createChatOrchestrator({
+  statePort: StreamStatePort,
+  envPort: TurnEnvPort,
+  segments: AgentSegments,
+  deps: Pick<
+    TurnOrchestratorDeps,
+    "loadConversations" | "switchConversation" | "renameConversation"
+  >,
+): TurnOrchestrator {
+  const strategies: Record<TurnStrategy["kind"], TurnStrategy> = {
+    chat: createChatTurnStrategy(statePort),
+    agent: createAgentTurnStrategy(statePort, segments),
+  };
+
+  return createTurnOrchestrator({
     state: statePort,
     env: envPort,
+    strategies,
+    // 命令分派是链路判断的第二个（也是最后一个）落点：命令与服务必须同链
+    dispatchSend: (conversationId, args, kind) =>
+      kind === "agent"
+        ? chatService.sendAgentMessage(conversationId, args)
+        : chatService.sendChatMessage(conversationId, args),
+    cancelTurn: (conversationId) =>
+      envPort.getConversationRoute(conversationId).link === "agent"
+        ? chatService.cancelAgent(conversationId)
+        : chatService.cancelChat(conversationId),
+    listProviders: () => providerService.listProviders(),
+    createConversation: (providerId, modelId, modeId) =>
+      chatService.createConversation(providerId, modelId, modeId),
     ...deps,
   });
 }

@@ -1,55 +1,33 @@
-import { chatService } from "./chatService";
-import { providerService } from "./providerService";
 import type {
   Message,
   Conversation,
-  TokenUsage,
-  ContextUsage,
   AgentToolCall,
   ChatDeltaPayload,
-  RetryNotification,
   SendChatMessageArgs,
   SessionStateChangedPayload,
   SessionState,
   TurnPhase,
-} from "../chat/core/chatTypes";
-import type { ConversationRoute } from "../chat/core/conversationLink";
-import { extractPlainText } from "../chat/core/contentBlockUtils";
-import { contextUsageFromTokenUsage } from "../chat/core/chatUtils";
-import { toReasoningLevel, type ReasoningChoice } from "../chat/core/reasoning";
-import type { ChatError } from "../chat/core/chatErrors";
-import { ChatErrorCode, toChatError } from "../chat/core/chatErrors";
-import { CHAT_AUTO_TITLE_LENGTH } from "../config/constants";
-import { createLogger } from "./logger";
+} from "../../chat/core/chatTypes";
+import type { ConversationRoute } from "../../chat/core/conversationLink";
+import { extractPlainText } from "../../chat/core/contentBlockUtils";
+import { contextUsageFromTokenUsage } from "../../chat/core/chatUtils";
+import {
+  toReasoningLevel,
+  type ReasoningChoice,
+} from "../../chat/core/reasoning";
+import { ChatErrorCode, toChatError } from "../../chat/core/chatErrors";
+import { CHAT_AUTO_TITLE_LENGTH } from "../../config/constants";
+import type { Provider } from "../../settings/provider/types";
+import { createLogger } from "../logger";
+import type { StreamTextChunk } from "./transport";
+import type { StreamStatePort, TurnKind, TurnStrategy } from "./turnStrategy";
 
-const log = createLogger("orchestrator");
+const log = createLogger("turnOrchestrator");
 
 export type ChatPhase =
   "idle" | "sending" | "streaming" | "tool_executing" | "error";
 
-export interface ChatStatePort {
-  beginSend: (messages: Message[], assistantMsgId: string) => void;
-  cancelStreaming: () => void;
-  setActiveAttemptId: (attemptId: string, realMessageId: string) => void;
-  clearActiveAttemptId: () => void;
-  resumeStream: (attemptId: string, messageId: string | null) => void;
-  confirmUserMessage: (
-    userMessageId: string,
-    userMessageContent: string,
-  ) => void;
-  appendDelta: (delta: string) => void;
-  setReasoningStreaming: (streaming: boolean) => void;
-  appendReasoningDelta: (messageId: string, delta: string) => void;
-  applyToolCall: (messageId: string, call: AgentToolCall) => void;
-  settleToolCalls: (messageId: string) => void;
-  updateContextUsage: (usage: ContextUsage) => void;
-  finishStream: (usage?: TokenUsage) => void;
-  errorStream: (error: ChatError) => void;
-  setErrorOnMessage: (messageId: string, error: ChatError) => void;
-  setRetryStatus: (retry: RetryNotification | null) => void;
-}
-
-export interface ChatEnvPort {
+export interface TurnEnvPort {
   getActiveConversationId: () => string | null;
   getIsStreaming: () => boolean;
   getStreamingMessageId: () => string | null;
@@ -64,9 +42,25 @@ export interface ChatEnvPort {
   clearPendingBranchPoint: () => void;
 }
 
-export interface ChatOrchestratorDeps {
-  state: ChatStatePort;
-  env: ChatEnvPort;
+export interface TurnOrchestratorDeps {
+  state: StreamStatePort;
+  env: TurnEnvPort;
+  /** 按链路注入的策略；编排骨架不感知具体链路语义（I38d §3.7）。 */
+  strategies: Record<TurnKind, TurnStrategy>;
+  /** 发送命令分派：由组合层按 `kind` 选具体命令，骨架不做链路判断。 */
+  dispatchSend: (
+    conversationId: string,
+    args: SendChatMessageArgs,
+    kind: TurnKind,
+  ) => Promise<void>;
+  /** 取消命令分派：同样按链路由组合层选择。 */
+  cancelTurn: (conversationId: string) => Promise<void>;
+  listProviders: () => Promise<Provider[]>;
+  createConversation: (
+    providerId: string,
+    modelId: string,
+    modeId?: string | null,
+  ) => Promise<string>;
   loadConversations: () => Promise<void>;
   switchConversation: (id: string) => Promise<void>;
   renameConversation: (
@@ -76,11 +70,11 @@ export interface ChatOrchestratorDeps {
   ) => Promise<void>;
 }
 
-export interface ChatOrchestrator {
+export interface TurnOrchestrator {
   send: (content: string) => Promise<void>;
   cancel: () => Promise<void>;
   handleDeltaEvent: (payload: ChatDeltaPayload) => void;
-  onTextDelta: (chunk: ChatTextChunk) => void;
+  onTextDelta: (chunk: StreamTextChunk) => void;
   onStreamStart: (
     conversationId: string,
     attemptId: string,
@@ -100,14 +94,6 @@ export interface ChatOrchestrator {
   getSendInProgress: () => boolean;
   getPhase: () => ChatPhase;
   getActiveConversationId: () => string | null;
-}
-
-/** 文本增量：携带会话 / 轮次标识，供编排层按会话路由（C5.2）。 */
-export interface ChatTextChunk {
-  conversationId: string;
-  attemptId: string;
-  messageId: string;
-  delta: string;
 }
 
 function fallbackTitleFromUserMessage(
@@ -150,9 +136,9 @@ function stateToPhase(state: SessionState): ChatPhase {
   return "error";
 }
 
-export function createChatOrchestrator(
-  deps: ChatOrchestratorDeps,
-): ChatOrchestrator {
+export function createTurnOrchestrator(
+  deps: TurnOrchestratorDeps,
+): TurnOrchestrator {
   let sendInProgress = false;
   let phase: ChatPhase = "idle";
   /**
@@ -172,21 +158,33 @@ export function createChatOrchestrator(
   }
 
   /**
-   * 取消按会话自身链路分派命令：链路只由会话 `modeId` 决定，
-   * 与发送使用同一判据，避免中途切模式造成命令与链路不一致。
+   * 策略选择的**唯一**判据点：会话 `modeId` 解析出的链路。
+   * 其余位置一律通过策略间接分叉，禁止再写 `if (route.link === "agent")`（I38d §3.7）。
    */
-  async function cancelTurn(conversationId: string) {
+  function strategyFor(conversationId: string | null): TurnStrategy {
+    if (!conversationId) return deps.strategies.chat;
     const route = deps.env.getConversationRoute(conversationId);
-    if (route.link === "agent") {
-      await chatService.cancelAgent(conversationId);
-    } else {
-      await chatService.cancelChat(conversationId);
-    }
+    return route.link === "agent"
+      ? deps.strategies.agent
+      : deps.strategies.chat;
   }
 
-  function settleActiveToolCalls() {
-    const messageId = deps.env.getStreamingMessageId();
-    if (messageId) deps.state.settleToolCalls(messageId);
+  function beginTurn(
+    conversationId: string | null,
+    messages: Message[],
+    assistantMsgId: string,
+  ) {
+    deps.state.beginSend(messages, assistantMsgId);
+    strategyFor(conversationId).onBeginSend(assistantMsgId);
+  }
+
+  /**
+   * 切回运行中的会话时 `messageId` 未知，由首个增量补全。
+   * 仅在 `streamingMessageId` 为空（恢复场景）时执行，避免覆盖已有绑定。
+   */
+  function resolveStreamingMessageId(attemptId: string, messageId: string) {
+    if (deps.env.getStreamingMessageId() !== null) return;
+    deps.state.setActiveAttemptId(attemptId, messageId);
   }
 
   async function send(content: string) {
@@ -197,18 +195,17 @@ export function createChatOrchestrator(
       if (deps.env.getIsStreaming()) {
         const prevConvId = deps.env.getActiveConversationId();
         if (prevConvId) {
-          await cancelTurn(prevConvId).catch((e) =>
-            log.warn("cancelTurn failed in send", e),
-          );
+          await deps
+            .cancelTurn(prevConvId)
+            .catch((e) => log.warn("cancelTurn failed in send", e));
         }
-        settleActiveToolCalls();
+        strategyFor(prevConvId).onCancel();
         deps.state.clearActiveAttemptId();
-        deps.state.cancelStreaming();
       }
 
       let convId = deps.env.getActiveConversationId();
       if (!convId) {
-        const provList = await providerService.listProviders();
+        const provList = await deps.listProviders();
         if (provList.length === 0) {
           const errConvId = `err-${Date.now()}`;
           const userMsg: Message = {
@@ -242,7 +239,7 @@ export function createChatOrchestrator(
             providerId: null,
             modelId: null,
           };
-          deps.state.beginSend([userMsg, assistantMsg], assistantMsgId);
+          beginTurn(null, [userMsg, assistantMsg], assistantMsgId);
           deps.state.errorStream({
             code: ChatErrorCode.ApiKeyMissing,
             retryAfterMs: null,
@@ -251,7 +248,7 @@ export function createChatOrchestrator(
           return;
         }
         const p = provList[0];
-        const newId = await chatService.createConversation(
+        const newId = await deps.createConversation(
           p.id,
           p.defaultModel || "",
           "builtin-default",
@@ -318,7 +315,7 @@ export function createChatOrchestrator(
           modelId: null,
         };
         optimisticMessages.push(assistantMsg);
-        deps.state.beginSend(optimisticMessages, assistantMsgId);
+        beginTurn(convId, optimisticMessages, assistantMsgId);
       } else {
         const userMsg: Message = {
           id: `temp-user-${Date.now()}`,
@@ -352,7 +349,7 @@ export function createChatOrchestrator(
           modelId: null,
         };
         optimisticMessages.push(userMsg, assistantMsg);
-        deps.state.beginSend(optimisticMessages, assistantMsgId);
+        beginTurn(convId, optimisticMessages, assistantMsgId);
       }
 
       const convs = deps.env.getConversations();
@@ -363,6 +360,7 @@ export function createChatOrchestrator(
       }
 
       const route = deps.env.getConversationRoute(convId);
+      const kind = strategyFor(convId).kind;
       try {
         const selectedProviderId = deps.env.getSelectedProviderId();
         const selectedModelId = deps.env.getSelectedModelId();
@@ -384,19 +382,13 @@ export function createChatOrchestrator(
           reasoningLevel,
           toolConfig: route.toolConfig,
         };
-        if (route.link === "agent") {
-          await chatService.sendAgentMessage(convId, args);
-        } else {
-          await chatService.sendChatMessage(convId, args);
-        }
+        await deps.dispatchSend(convId, args, kind);
       } catch (e) {
         log.error("sendMessage failed", e);
         deps.state.errorStream(
           toChatError(e, {
             command:
-              route.link === "agent"
-                ? "send_agent_message"
-                : "send_chat_message",
+              kind === "agent" ? "send_agent_message" : "send_chat_message",
             conversationId: convId,
           }),
         );
@@ -411,12 +403,11 @@ export function createChatOrchestrator(
     if (!convId) return;
     const streamingMsgId = deps.env.getStreamingMessageId();
     try {
-      await cancelTurn(convId);
+      await deps.cancelTurn(convId);
     } catch (e) {
       log.error("cancel failed", e);
     }
-    if (streamingMsgId) deps.state.settleToolCalls(streamingMsgId);
-    deps.state.cancelStreaming();
+    strategyFor(convId).onCancel();
     turnIdByConversation.delete(convId);
     phaseByConversation.delete(convId);
     if (streamingMsgId) {
@@ -440,14 +431,11 @@ export function createChatOrchestrator(
       return;
     }
 
-    /** 切回运行中的会话时 `messageId` 未知，由首个非文本增量补全。 */
-    if (deps.env.getStreamingMessageId() === null) {
-      deps.state.setActiveAttemptId(payload.attemptId, payload.messageId);
-    }
+    const strategy = strategyFor(payload.conversationId);
+    resolveStreamingMessageId(payload.attemptId, payload.messageId);
 
     if (payload.error) {
-      settleActiveToolCalls();
-      deps.state.errorStream(toChatError(payload.error));
+      strategy.onDeltaError(toChatError(payload.error));
       return;
     }
 
@@ -457,11 +445,7 @@ export function createChatOrchestrator(
     }
 
     if (payload.deltaReasoning) {
-      const messageId = deps.env.getStreamingMessageId();
-      if (messageId) {
-        deps.state.setReasoningStreaming(true);
-        deps.state.appendReasoningDelta(messageId, payload.deltaReasoning);
-      }
+      strategy.onReasoningDelta(payload);
     }
 
     if (payload.usage) {
@@ -469,9 +453,7 @@ export function createChatOrchestrator(
     }
 
     if (payload.finishReason) {
-      deps.state.setRetryStatus(null);
-      settleActiveToolCalls();
-      deps.state.finishStream(payload.usage ?? undefined);
+      strategy.onFinishReason(payload);
     }
   }
 
@@ -479,17 +461,15 @@ export function createChatOrchestrator(
    * 文本增量按会话路由：后台会话的增量不落到当前会话的流式缓冲（C5.2）。
    * phase 由 `session-state-changed` 驱动，这里不再自行推导（C5.3）。
    */
-  function onTextDelta(chunk: ChatTextChunk) {
+  function onTextDelta(chunk: StreamTextChunk) {
     if (chunk.conversationId !== deps.env.getActiveConversationId()) return;
     const activeAttemptId = deps.env.getActiveAttemptId();
     if (activeAttemptId === null || chunk.attemptId !== activeAttemptId) {
       return;
     }
-    if (deps.env.getStreamingMessageId() === null) {
-      deps.state.setActiveAttemptId(chunk.attemptId, chunk.messageId);
-    }
-    deps.state.setReasoningStreaming(false);
-    deps.state.appendDelta(chunk.delta);
+    const strategy = strategyFor(chunk.conversationId);
+    resolveStreamingMessageId(chunk.attemptId, chunk.messageId);
+    strategy.onTextDelta(chunk);
   }
 
   function onStreamStart(
@@ -499,7 +479,12 @@ export function createChatOrchestrator(
   ) {
     turnIdByConversation.set(conversationId, attemptId);
     if (conversationId !== deps.env.getActiveConversationId()) return;
+    const previousId = deps.env.getStreamingMessageId();
     deps.state.setActiveAttemptId(attemptId, messageId);
+    // 占位消息换成真实行 id 时，策略侧（agent 段表）需要同步改名（§3.7）
+    if (previousId !== null && previousId !== messageId) {
+      strategyFor(conversationId).onMessageIdResolved(previousId, messageId);
+    }
   }
 
   function onUserMessageConfirmed(
@@ -511,15 +496,13 @@ export function createChatOrchestrator(
 
   /**
    * `agent-tool-call` 事件只负责实时渲染，不作为事实源（I38d §2.1）。
-   * 事件不带 `messageId`，因此按 `turnId` 归到当前流的助手消息；
-   * 旧轮（`turnId` 与当前 attempt 不符）的迟到事件直接丢弃。
+   * 事件不带 `messageId`，因此按 `turnId` 校验轮次、按 `iteration` 归到发起该调用的那条消息
+   * （气泡边界 = 迭代，§3.1.1）；旧轮（`turnId` 与当前 attempt 不符）的迟到事件直接丢弃。
    */
   function onAgentToolCall(call: AgentToolCall) {
     const activeTurnId = deps.env.getActiveAttemptId();
     if (!activeTurnId || call.turnId !== activeTurnId) return;
-    const messageId = deps.env.getStreamingMessageId();
-    if (!messageId) return;
-    deps.state.applyToolCall(messageId, call);
+    strategyFor(call.conversationId).onToolCall(call);
   }
 
   /**
@@ -541,17 +524,18 @@ export function createChatOrchestrator(
     setPhase(next);
 
     if (next === "idle" && deps.env.getIsStreaming()) {
-      settleActiveToolCalls();
-      deps.state.finishStream();
+      strategyFor(convId).onTurnIdle();
       return;
     }
     if (next === "error" && deps.env.getIsStreaming()) {
-      settleActiveToolCalls();
-      deps.state.cancelStreaming();
+      strategyFor(convId).onTurnError();
       return;
     }
     if (isRunning(next) && !deps.env.getIsStreaming()) {
-      deps.state.resumeStream(payload.turnId, deps.env.getStreamingMessageId());
+      const strategy = strategyFor(convId);
+      const streamingMessageId = deps.env.getStreamingMessageId();
+      strategy.onResume(streamingMessageId);
+      deps.state.resumeStream(payload.turnId, streamingMessageId);
     }
   }
 
@@ -559,6 +543,7 @@ export function createChatOrchestrator(
   function onConversationSwitch(conversationId: string) {
     const next = phaseByConversation.get(conversationId) ?? "idle";
     setPhase(next);
+    strategyFor(conversationId).onResume(null);
     deps.state.cancelStreaming();
     if (isRunning(next)) {
       const turnId = turnIdByConversation.get(conversationId);

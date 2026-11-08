@@ -1,229 +1,42 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { ChatOrchestrator } from "./chatOrchestrator";
-import type {
-  AgentToolCall,
-  ChatDeltaPayload,
-  ChatStreamStartPayload,
-  ChatUserMessageConfirmedPayload,
-  SessionState,
-  SessionStateChangedPayload,
-} from "../chat/core/chatTypes";
-import { ChatEvent } from "../chat/core/chatTypes";
-import {
-  createChatDeltaCoalescer,
-  createSeqDedupFilter,
-  textChunkScheduler,
-  type CoalescibleDelta,
-} from "../chat/core/streamCoalescer";
-import { createLogger } from "@/services/logger";
+import type { TurnOrchestrator } from "./stream/turnOrchestrator";
+import { subscribeStreamTransport } from "./stream/transport";
 
-const CHAT_DELTA_EVENT = ChatEvent.Delta;
-const log = createLogger("chatStreamEvents");
+let orchestratorInstance: TurnOrchestrator | null = null;
 
-let orchestratorInstance: ChatOrchestrator | null = null;
-
-export function setChatOrchestrator(orchestrator: ChatOrchestrator): void {
+export function setChatOrchestrator(orchestrator: TurnOrchestrator): void {
   orchestratorInstance = orchestrator;
 }
 
-interface StreamStartIds {
-  conversationId: string;
-  attemptId: string;
-  messageId: string;
-}
-
-function describeSessionState(state: SessionState): string {
-  if (state === "idle") return "idle";
-  if ("processing" in state) {
-    return `processing(${state.processing.phase},turn=${state.processing.turnId})`;
-  }
-  return `error(${state.error.message},recoverable=${state.error.recoverable})`;
-}
-
+/**
+ * 订阅后端流式事件。
+ *
+ * 事件名 / 过滤 / 去重 / 合并 / 调度等纯传输职责已搬到 `stream/transport.ts`
+ * （两条链路共用一份，I38d §3.7）；这里只做「传输层 → 编排层」的接线。
+ */
 export function subscribeChatStreamEvents(): () => void {
-  let disposed = false;
-  const unlisteners: UnlistenFn[] = [];
-
-  const track = (promise: Promise<UnlistenFn>) => {
-    promise
-      .then((unlisten) => {
-        if (disposed) unlisten();
-        else unlisteners.push(unlisten);
-      })
-      .catch((error) => {
-        log.debug("listener unavailable", error);
-      });
-  };
-
-  const seqDedup = createSeqDedupFilter();
-  let streamStartIds: StreamStartIds | null = null;
-  let firstDeltaChecked = false;
-
-  track(
-    listen<ChatStreamStartPayload>(ChatEvent.StreamStart, (event) => {
-      if (disposed) return;
-      const payload = event.payload;
-      streamStartIds = {
-        conversationId: payload.conversationId,
-        attemptId: payload.attemptId,
-        messageId: payload.messageId,
-      };
-      firstDeltaChecked = false;
-      orchestratorInstance?.onStreamStart(
-        payload.conversationId,
-        payload.attemptId,
-        payload.messageId,
-      );
-    }),
-  );
-
-  track(
-    listen<ChatUserMessageConfirmedPayload>(
-      ChatEvent.UserMessageConfirmed,
-      (event) => {
-        if (disposed) return;
-        const payload = event.payload;
-        if (
-          orchestratorInstance &&
-          orchestratorInstance.getActiveConversationId() ===
-            payload.conversationId
-        ) {
-          orchestratorInstance.onUserMessageConfirmed(
-            payload.userMessageId,
-            payload.userMessageContent,
-          );
-        }
-      },
-    ),
-  );
-
-  track(
-    listen<SessionStateChangedPayload>(
-      ChatEvent.SessionStateChanged,
-      (event) => {
-        if (disposed) return;
-        const payload = event.payload;
-        if (!orchestratorInstance) return;
-        log.debug(
-          `session-state conv=${payload.conversationId} turn=${payload.turnId} state=${describeSessionState(payload.state)}`,
-        );
-        orchestratorInstance.onSessionState(payload);
-      },
-    ),
-  );
-
-  track(
-    listen<AgentToolCall>(ChatEvent.AgentToolCall, (event) => {
-      if (disposed) return;
-      const payload = event.payload;
-      if (
-        orchestratorInstance &&
-        orchestratorInstance.getActiveConversationId() ===
-          payload.conversationId
-      ) {
-        orchestratorInstance.onAgentToolCall(payload);
-      }
-    }),
-  );
-
-  const coalescer = createChatDeltaCoalescer<CoalescibleDelta>(
-    (event) => {
-      if (event.delta) {
-        if (import.meta.env.DEV) {
-          console.debug(
-            `[coalescer-deliver] seq=${event.seq} len=${event.delta.length} snippet=${JSON.stringify(event.delta.slice(0, 40))}`,
-          );
-        }
-        if (orchestratorInstance) {
-          orchestratorInstance.onTextDelta({
-            conversationId: event.conversationId,
-            attemptId: event.attemptId,
-            messageId: event.messageId,
-            delta: event.delta,
-          });
-        }
-      }
+  return subscribeStreamTransport({
+    getActiveConversationId: () =>
+      orchestratorInstance?.getActiveConversationId() ?? null,
+    onStreamStart: (conversationId, attemptId, messageId) => {
+      orchestratorInstance?.onStreamStart(conversationId, attemptId, messageId);
     },
-    textChunkScheduler,
-    seqDedup.accept,
-  );
-
-  const lastSeqByAttempt = new Map<string, number>();
-
-  track(
-    listen<ChatDeltaPayload>(CHAT_DELTA_EVENT, (event) => {
-      if (disposed) return;
-
-      const payload = event.payload;
-
-      if (!firstDeltaChecked && streamStartIds) {
-        firstDeltaChecked = true;
-        const ids = streamStartIds;
-        if (
-          ids.conversationId !== payload.conversationId ||
-          ids.attemptId !== payload.attemptId ||
-          ids.messageId !== payload.messageId
-        ) {
-          log.error(
-            `R3 stream-start/delta id mismatch: start=(${ids.conversationId},${ids.attemptId},${ids.messageId}) delta=(${payload.conversationId},${payload.attemptId},${payload.messageId})`,
-          );
-        }
-      }
-
-      const lastSeq = lastSeqByAttempt.get(payload.attemptId);
-      if (lastSeq !== undefined && payload.seq <= lastSeq) {
-        log.error(
-          `R4 seq non-monotonic: attemptId=${payload.attemptId} prevSeq=${lastSeq} currSeq=${payload.seq}`,
-        );
-      }
-      lastSeqByAttempt.set(payload.attemptId, payload.seq);
-
-      if (payload.deltaText) {
-        coalescer.push({
-          conversationId: payload.conversationId,
-          attemptId: payload.attemptId,
-          messageId: payload.messageId,
-          seq: payload.seq,
-          delta: payload.deltaText,
-        });
-      }
-
-      if (
-        payload.deltaReasoning ||
-        payload.usage ||
-        payload.finishReason ||
-        payload.error ||
-        payload.deltaRetry
-      ) {
-        coalescer.flush();
-        const nonTextPayload: ChatDeltaPayload = {
-          conversationId: payload.conversationId,
-          attemptId: payload.attemptId,
-          messageId: payload.messageId,
-          seq: payload.seq,
-          iteration: payload.iteration,
-          deltaText: null,
-          deltaReasoning: payload.deltaReasoning,
-          usage: payload.usage,
-          finishReason: payload.finishReason,
-          error: payload.error,
-          deltaRetry: payload.deltaRetry,
-        };
-        if (orchestratorInstance) {
-          orchestratorInstance.handleDeltaEvent(nonTextPayload);
-        }
-      }
-
-      if (payload.finishReason) {
-        seqDedup.reset();
-        lastSeqByAttempt.delete(payload.attemptId);
-      }
-    }),
-  );
-
-  return () => {
-    disposed = true;
-    coalescer.dispose();
-    for (const unlisten of unlisteners.splice(0)) unlisten();
-  };
+    onUserMessageConfirmed: (userMessageId, userMessageContent) => {
+      orchestratorInstance?.onUserMessageConfirmed(
+        userMessageId,
+        userMessageContent,
+      );
+    },
+    onSessionState: (payload) => {
+      orchestratorInstance?.onSessionState(payload);
+    },
+    onToolCall: (call) => {
+      orchestratorInstance?.onAgentToolCall(call);
+    },
+    onTextDelta: (chunk) => {
+      orchestratorInstance?.onTextDelta(chunk);
+    },
+    onDeltaEvent: (payload) => {
+      orchestratorInstance?.handleDeltaEvent(payload);
+    },
+  });
 }

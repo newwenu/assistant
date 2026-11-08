@@ -4,8 +4,9 @@ import { createLogger } from "@/services/logger";
 import { notifyError } from "./notifyStore";
 import { MESSAGES_PAGE_SIZE } from "../config/constants";
 import type { PersistQueue } from "../utils/persistQueue";
-import type { ChatOrchestrator } from "../services/chatOrchestrator";
+import type { TurnOrchestrator } from "../services/stream/turnOrchestrator";
 import { rebuildContent, parseContent } from "../chat/core/contentBlockUtils";
+import { MessageTree } from "../chat/core/messageTree";
 
 const log = createLogger("chatMessageSlice");
 
@@ -37,7 +38,7 @@ export function createMessageSlice(
     partial: Partial<FullState> | ((state: FullState) => Partial<FullState>),
   ) => void,
   get: () => FullState,
-  orchestrator: ChatOrchestrator,
+  orchestrator: TurnOrchestrator,
   persistQueue: PersistQueue,
 ): ChatMessageSlice {
   return {
@@ -119,19 +120,29 @@ export function createMessageSlice(
       const convId = state.currentConversationId;
       if (!convId) return;
 
-      const msg = state.messages.find((m) => m.id === messageId);
-      if (!msg || msg.role !== "assistant") return;
+      const msgIndex = state.messages.findIndex((m) => m.id === messageId);
+      if (msgIndex === -1 || state.messages[msgIndex].role !== "assistant")
+        return;
 
-      const parentMsg = msg.parentId
-        ? state.messages.find((m) => m.id === msg.parentId)
-        : undefined;
-      if (!parentMsg || parentMsg.role !== "user") return;
+      const userContent =
+        [...state.messages]
+          .slice(0, msgIndex)
+          .reverse()
+          .find((m) => m.role === "user")?.content ?? "";
+
+      const tree = MessageTree.fromActiveBranch(state.messages);
+      const branchPointId = tree.getTurnRootId(messageId);
+      const branchPoint = state.messages.find((m) => m.id === branchPointId);
 
       try {
-        await get().resendFrom(msg.timestamp, parentMsg.content, {
-          kind: "branch",
-          branchPointMessageId: messageId,
-        });
+        await get().resendFrom(
+          branchPoint?.timestamp ?? state.messages[msgIndex].timestamp,
+          userContent,
+          {
+            kind: "branch",
+            branchPointMessageId: branchPointId,
+          },
+        );
       } catch (e) {
         log.error("regenerateMessage failed", e);
       }
@@ -150,11 +161,19 @@ export function createMessageSlice(
         .find((m) => m.role === "user");
       if (!userMsg) return;
 
+      const tree = MessageTree.fromActiveBranch(state.messages);
+      const branchPointId = tree.getTurnRootId(msg.id);
+      const branchPoint = state.messages.find((m) => m.id === branchPointId);
+
       try {
-        await get().resendFrom(msg.timestamp, userMsg.content, {
-          kind: "branch",
-          branchPointMessageId: messageId,
-        });
+        await get().resendFrom(
+          branchPoint?.timestamp ?? msg.timestamp,
+          userMsg.content,
+          {
+            kind: "branch",
+            branchPointMessageId: branchPointId,
+          },
+        );
       } catch (e) {
         log.error("retryFromError failed", e);
       }

@@ -19,10 +19,10 @@
 
 | # | 交付 |
 |---|---|
-| 1 | 工具调用五态渲染（running / success / error / awaiting_user / cancelled） |
+| 1 | 工具调用六态渲染（running / success / error / awaiting_user / cancelled / missing；`missing` 仅出现在历史） |
 | 2 | 审批交互闭环（允许 / 拒绝 / 本会话允许 / 始终允许 / 超时自动 Deny） |
 | 3 | 前端只订阅后端 phase，不自行推导、不轮询 idle |
-| 4 | 两级工具装配：模式级 `toolConfig`（新会话初始值）+ 会话级 `conversations.tool_config_json`（布局内调整后持久化）；装配 UI 位于 `AgentLayout`（§4.4 / §4.7） |
+| 4 | 两级工具装配：模式级 `toolConfig`（新会话初始值）+ 会话级 `conversations.tool_config_json`（布局内调整后持久化）；装配 UI **两处**——设置页 agent 模式抽屉（模式级）+ `AgentLayout`（会话级），**各自实现、不复用视图**，仅共用 `toolConfig.ts` 纯数据层（§4.4 / §4.7） |
 | 5 | `resolveAvailableTools` deny-by-default + 层级硬上限 |
 | 6 | AgentMode → PermissionPolicy 映射；项目级权限加载入口 |
 | 7 | chat / agent **同会话内可切换**：每次发送按会话当前 `mode.kind` 选路，默认 chat；turn 进行中禁止切换（§4.8） |
@@ -160,7 +160,7 @@
 interface ToolCallView {
   callId: string
   name: string
-  status: 'running' | 'success' | 'error' | 'awaiting_user' | 'cancelled'
+  status: 'running' | 'success' | 'error' | 'awaiting_user' | 'cancelled' | 'missing'
   arguments? : Record<string, unknown>
   resultText?: string | null
   startedAt?: number | null
@@ -176,8 +176,54 @@ interface ToolCallView {
   - `awaitingApproval` → `awaiting_user`
   - `awaitingAnswer` → `awaiting_user`（卡片形态见 §3.6，与审批卡片并列但不同组件）
 - 取消（turn 终止且未完成）→ `cancelled`。
+- 历史行缺结果 → `missing`：调用已发起但库里没有对应 `role='tool'` 行（后端 `MessageToolCallStatusDto::missing`，见 [I38b 行链修复规格 §8](./I38b-agent-loop-row-chain-fix-spec.md)）。**不得**把缺失与「取消」合并成同一状态——取消是用户可见的正常终止，缺失是落库异常，两者排查口径不同。`missing` 不出现在流式阶段（流式只走 `AgentToolCallPayloadDto.phase`）。
 - **`arguments` 的来源分两条**：`running` 态由前端累积 `argsDelta` 字符串后 `JSON.parse`（增量 JSON 不完整时保留上一份可解析快照，解析失败只影响预览）；`awaitingApproval` 态**直接取 `approval.arguments`**（后端已解析的完整对象），不再解析。审批判据一律用后者。
 - **不**从 `ChatDeltaPayloadDto` 读取任何工具字段（P0 已移除）。
+
+### 3.1.1 气泡边界：一次迭代 = 一条消息 = 一个气泡
+
+**不变量（唯一事实源）**：agent 链路的 `assistant` 消息**逐迭代独立成行**（[I38b §5.1](./I38b-agent-loop-spec.md)：每次模型调用落一条 `assistant` 行，工具结果为独立 `role = 'tool'` 行），前端 `MessageList` 对**每一行**渲染一个独立气泡，**不存在**「整个 turn 合并成一个气泡」的形态。
+
+| 阶段 | 气泡边界判据 | 实现约束 |
+|---|---|---|
+| 历史（`chat-messages-changed` 刷新后） | 消息行 `id` | 一行一气泡；`tool` 行不渲染（`MessageList` 过滤），工具卡片由**发起它的那条 `assistant` 行**的 `tool_calls` 渲染（渲染位置在正文之后，见下） |
+| 流式（turn 进行中） | `iteration`（`ChatDeltaPayloadDto.iteration`） | `iteration` 变化即**提交上一段、开一条新气泡**；不得把所有迭代正文累积进同一缓冲区 |
+
+行链示意：
+
+```
+user
+└ assistant₁  (tool_calls: read, grep)   ← 气泡 1：正文 + 工具卡片
+  └ tool × n
+    └ assistant₂  (tool_calls: write)    ← 气泡 2：正文 + 工具卡片
+      └ tool × m
+        └ assistant₃  (text)             ← 气泡 3：最终答复
+```
+
+**工具卡片归属**：卡片挂在**发起它的那条 `assistant` 消息**上；流式期按事件 `iteration` 归到当前段，不得全部挂到 turn 的第一条消息。
+
+**气泡内顺序**：推理块 → 正文 → 工具卡片（含审批 / 提问卡片）。工具卡片在正文**之后**，因为它在时间上也发生在正文之后（模型先输出说明文字再发起调用），排在末尾才能保证「越靠下越新」。同一条消息内的多张卡片按事件到达顺序自上而下堆叠。
+
+**流式分段规则**：
+
+1. `iteration` 首次出现或递增 → 结束当前段（把缓冲区内容合并进当前段消息）→ 新建段（新占位消息 + 空缓冲）。
+2. 段的 `iteration` 单调递增；回退 / 重复的旧段事件丢弃（与 `turnId` 过滤同级）。
+3. `finishReason` 只结束**本次模型调用**，不结束 turn：中间迭代的 `finishReason` 只提交当前段，turn 的结束由 `session-state-changed` 的 `idle` / `error` 或 `chat-messages-changed` 收口。
+4. 段消息的 `id` 在流式期是前端占位 id（后端该迭代的行要到落库时才创建）；turn 结束后由 `chat-messages-changed` 全量刷新为后端行 id，占位 id 不落库、不作为命令参数。
+5. 后端的 `messageId` 在 turn 内保持不变（等于第 1 迭代的行 id，`initial_message_id` 复用），**不得**用作分段判据——分段只认 `iteration`。
+6. 落库侧必须保证 `conversations.active_branch_id` 始终指向本轮**最后追加的行**：每追加一条 `assistant` / `tool` 行（`parent_id` 等于当前活动叶子时）立即推进叶子。否则 `trace_active_branch` 只追到 turn 首行，`chat-messages-changed` 的全量列表会缺掉同轮后续行，前端按 id 合并时把它们当成不存在而丢弃（现象：同轮第二条消息被吞，切换分支后又能看到）。
+
+**禁止**：用单缓冲把多迭代正文拼进一个 `streamingContent`（典型表现：新迭代开始时上一迭代正文消失、工具卡片全挤在第一条气泡）。
+
+**实现归属**：分段逻辑属于 **agent 链路策略**（§3.7 的 `agentTurn` + `agentSegments`），不得放进共用传输层，也不得让 `chatStreamStore` 持有多段缓冲。
+
+**参考实现对照**：
+
+| 参考项目 | 机制 | 与本节的对应 |
+|---|---|---|
+| OpenBitFun | `ModelRoundItem`：一次模型调用一个块（正文 + 该轮工具卡片） | 同构 |
+| openhuman | `derivedTranscript`：中间迭代叙述作为独立气泡持久化 | 落库逐行、渲染逐条 |
+| DeepSeek 参考 | `TurnProcess` 按轮次串联节点 | 同构 |
 
 ### 3.2 ToolCallBubble 五态
 
@@ -334,6 +380,7 @@ RoundExecutor → ToolPipeline → Gateway: Ask
 
 ### 3.4 历史消息
 
+- 历史按行渲染：一条 `assistant` 行 = 一个气泡；`tool` 行不渲染，卡片由所属 `assistant` 行的 `tool_calls_json` 恢复（§3.1.1）。同一 turn 的多条 `assistant` 行**各自独立**，不得合并。
 - 历史消息从 `tool_calls_json` 恢复为只读的 `ToolCallView`（`success/error` 终态）。
 - 历史卡片不显示审批按钮；`awaiting_user` 不得出现在历史。
 - `tool_calls_json` 为空 / 非法 → 不渲染卡片，不阻塞消息。
@@ -347,6 +394,8 @@ RoundExecutor → ToolPipeline → Gateway: Ask
 | 3 | 删除前端自维护 `phase` 与 `handledTerminalEvents` 去重，改用 `turnId` 过滤 |
 
 规则：切换会话**不取消**后台 turn（I36 design D15）；只有用户显式点停止才取消。
+
+上移后的编排骨架落在 `src/services/stream/turnOrchestrator.ts`，与链路私有策略的分工见 §3.7。
 
 ### 3.6 提问交互（P6-C8）
 
@@ -362,7 +411,55 @@ RoundExecutor → ToolPipeline → Gateway: Ask
 - 「其他」恒由前端追加在选项末尾，选中后展开文本框，内容写 `answers[].other`，不写 `selected`。
 - 超时置灰、不重复提交（与审批一致）；超时后卡片转为 `cancelled` 并标注「未回答」。
 - 提问卡片只在 agent 会话渲染；历史里 `ask_user` 只显示终态（`success` 显示问答摘要，`error` / `cancelled` 显示原因）。
+- 卡片位置与工具卡片一致：挂在发起 `ask_user` 的那条 `assistant` 消息内、正文之后（§3.1.1 气泡内顺序）。
 - 与审批卡片的区别：审批卡片有 `Always`、一次只有一个；提问卡片可以有多条、没有 `Always`。
+
+### 3.7 流式事件与编排的链路分层
+
+**结论：传输层共用，编排层按链路策略分离，视图状态层共用但 agent 段表外置。** 两条链路共用同一个 `TauriEventSink`，事件名、`attemptId` 过滤、`seq` 去重、delta 合并、帧调度完全一致——这部分若复制成两份必然漂移（I16 的 `attemptId` 过滤缺陷即前车之鉴）；而「终态判据」「分段判据」「工具卡片归属」是链路私有语义，混在通用编排里会退化成 §4.8 明令排除的「半 chat 半 agent」。
+
+| 层 | 文件 | 职责 | 链路相关性 |
+|---|---|---|---|
+| 传输层（共用） | `src/services/stream/transport.ts` | `listen` 订阅、`conversationId` / `attemptId` 过滤、`seq` 去重、`createChatDeltaCoalescer`、`textChunkScheduler` | 无关（两条链路逐字一致） |
+| 编排骨架（共用） | `src/services/stream/turnOrchestrator.ts` | 会话路由、send / cancel / retry / regenerate 分派、phase 记录（`session-state-changed`）、跨会话后台流、错误收敛、策略选择 | 仅「分派目标」相关 |
+| 链路策略（分离） | `src/services/stream/strategies/chatTurn.ts`、`agentTurn.ts` | 见「策略差异」表 | 全部私有 |
+| 视图状态（共用） | `src/stores/chatStreamStore.ts` | `isStreaming` / 当前段 `streamingContent` / `streamingMessageId` / `activeAttemptId` / `retryStatus` | 无关（`MessageList` 只消费「当前正在流的那一条」） |
+| agent 段表（私有） | `src/stores/agent/agentSegments.ts` | `iteration → 段消息 id` 映射、开段 / 提交段、占位消息 id 生成 | 仅 agent |
+
+**策略差异（分离的唯一理由）**：
+
+| 能力 | `chatTurn` | `agentTurn` |
+|---|---|---|
+| 文本增量 | 单缓冲累加到当前消息 | 按 `iteration` 分段：变化即提交上一段并开新气泡（§3.1.1） |
+| `finishReason` | 即 turn 结束 → `finishStream` | 只结束本次模型调用 → `commitStreamSegment`；turn 结束由 `session-state-changed idle` / `chat-messages-changed` 收口 |
+| 推理增量 | 追加到当前消息 | 追加到**该迭代**的段消息 |
+| 工具卡片 | 无（不订阅 `agent-tool-call`） | 按事件 `iteration` 归到发起它的那条消息 |
+| 工具终态收敛 | 无 | `settleToolCalls`：turn 取消 / 错误时把 `running` / `awaiting_user` 转 `cancelled` |
+| 段表维护 | 无 | `beginSend` 清空、`setActiveAttemptId` 改映射、turn 结束丢弃 |
+
+**判据（决定放哪一层的唯一标准）**：问「把 agent 链路整个删掉，这段逻辑还要不要？」
+
+- 要 → 留在共用层（传输、会话路由、`seq` 去重、coalesce、phase 记录、跨会话后台流、`cancel` 分派）。
+- 不要 → 下沉到 `agentTurn`（`iteration` 分段、`messageId` 段表、工具卡片归属、段提交与终态收敛）。
+
+**禁止**：
+
+- 复制第二份事件订阅 / coalescer / `seq` 去重：`agentStreamEvents.ts`、`agentOrchestrator.ts` 这类文件不得存在。
+- 在通用层用 `if (route.link === "agent")` 承载 agent 语义——该判断只允许出现在**策略选择**（`turnOrchestrator` 入口）与**命令分派**（组合根 `chatStorePorts.ts`，命令与服务必须同链）两处，之后全程走策略接口。
+- 把 `iteration → messageId` 段表放进 `chatStreamStore`：`MessageList` 的契约只有「当前流式消息 id + 当前缓冲正文」，多段是编排层的事。
+- 让 `chatStreamStore` 持有多段缓冲、由 `MessageList` 自己挑段渲染——视图层不得承担分段判定。
+
+**迁移方式（纯搬移，不改语义，按 [CODE-SPLIT-PRINCIPLE](../principle/CODE-SPLIT-PRINCIPLE.md) §7）**：
+
+| 步 | 动作 |
+|---|---|
+| 1 | 把 `chatStreamEvents.ts` 的 `listen` + 过滤 + 去重 + coalescer + scheduler 原样搬到 `stream/transport.ts`，仅对外暴露「已清洗的增量 / 工具事件 / 状态事件」回调 |
+| 2 | 把 `chatOrchestrator.ts` 的会话路由、send / cancel 分派、phase 记录搬到 `stream/turnOrchestrator.ts`，保留 `ChatStatePort` / `ChatEnvPort` 注入以便单测 |
+| 3 | 把 `appendDelta` / `appendReasoningDelta` / `applyToolCall` / `settleToolCalls` / `commitStreamSegment` 拆成两个策略实现；段表从 `chatStorePorts.ts` 迁到 `agent/agentSegments.ts` |
+| 4 | 策略选择只在 `turnOrchestrator` 入口按 `resolveConversationRoute(...).link` 做一次 |
+| 5 | 现有 `turnOrchestrator.test.ts`（原 `chatOrchestrator.test.ts`）/ `streamCoalescer.test.ts` / `chatStreamStore.test.ts` 保持全绿；补策略级单测（agent 分段、工具归属、`finishReason` 不结束 turn） |
+
+**与 §4.10 的边界**：§4.10 的「共享组件清单」只覆盖**展示组件**；事件订阅与流式编排的分层由本节规定，不进该清单。
 
 ---
 
@@ -378,7 +475,7 @@ RoundExecutor → ToolPipeline → Gateway: Ask
 | Rust `AgentModeRow` | 新增 `tool_config_json: Option<String>`；`kind: String` 语义改为 `chat` / `agent` | snake_case |
 | Rust `ConversationRow` | 新增 `tool_config_json: Option<String>` | snake_case |
 | DTO `AgentModeDto` | `kind: AgentModeKindDto`（`chat` / `agent`）；新增 `toolConfig: ConversationToolConfigDto`（输出恒在，由 `tool_config_json` 解析，缺省为 `sandbox` / `none` / 空名单） | camelCase，`contract:gen` 生成 |
-| DTO `AgentModeInputDto` | 同上；`toolConfig` 为输入（缺省 `sandbox` / `none` / 空名单） | camelCase，输入 DTO |
+| DTO `AgentModeInputDto` | 同上；`toolConfig` 为输入（缺省 `sandbox` / `none` / 空名单），是设置页模式级装配编辑的写入载体（§4.7） | camelCase，输入 DTO |
 | DTO `ConversationDto` | 新增 `toolConfig: ConversationToolConfigDto \| null`（键恒在；`null` = 该会话尚未在 agent 布局装配） | camelCase |
 | DTO `ConversationPatchDto` | 新增 `toolConfig: ConversationToolConfigDto \| null`（缺省 / `null` = 不改；用于布局内装配落库） | camelCase，输入 DTO |
 | DTO `SendChatMessageArgsDto.toolConfig` | 保留：每轮下发的**有效**配置（agent 链路取会话持久值 ?? 模式初始值；chat 链路恒 `null`） | camelCase |
@@ -423,16 +520,16 @@ interface Conversation {
 |---|---|---|---|---|
 | `builtin-default` | 默认 | `chat` | —（不生效） | 唯一内置 chat 通用模式；新建会话默认值；不渲染工具 UI |
 | `builtin-translate` | 翻译助手 | `chat` | —（不生效） | 纯 persona 的 chat 模式，不参与工具装配 |
-| `builtin-agent` | 智能体 | `agent` | `sandbox` / `dangerous_only` / `[]` | 唯一内置 agent 模式；工具在 `AgentLayout` 内装配 |
+| `builtin-agent` | 智能体 | `agent` | `sandbox` / `dangerous_only` / `[]` | 唯一内置 agent 模式；模式级初始值在设置页编辑，会话级在 `AgentLayout` 内装配（§4.4 / §4.7） |
 
-**deny-by-default**：白名单为空 = 无工具；新增工具不会自动对所有模式可用（I18 design §3.11）。`builtin-agent` 虽然链路是 agent，但初始 `enabledTools = []`，必须在布局内显式勾选工具后才可用。
+**deny-by-default**：白名单为空 = 无工具；新增工具不会自动对所有模式可用（I18 design §3.11）。`builtin-agent` 虽然链路是 agent，但初始 `enabledTools = []`，必须在装配 UI 中显式勾选工具后才可用——装配 UI 有**两个入口**：设置页的模式抽屉（写模式级初始值）与 `AgentLayout` 的工具面板（写当前会话），见 §4.4 / §4.7。内置 `builtin-agent` 的初始值可在设置页编辑，`恢复默认` 会把它重置回 `BUILTIN_AGENT_TOOL_CONFIG`。
 
 **自定义模式（`isBuiltin = false`）保留，且支持两种形态**：创建时 `kind` 二选一（`chat` / `agent`），**创建后锁定**（编辑不可改）。
 
 | 自定义 `kind` | 消息路径 | 布局 | 工具装配 |
 |---|---|---|---|
 | `chat` | `send_chat_message` + `TurnSpec::chat()` | `ChatLayout` | 无入口、`toolConfig` 不生效 |
-| `agent` | `send_agent_message` + `TurnSpec::agent()` | `AgentLayout` | `ToolConfigPanel` 可装配，落库会话级（§4.4） |
+| `agent` | `send_agent_message` + `TurnSpec::agent()` | `AgentLayout` | 模式级初始值在设置页编辑，会话级由 `ToolConfigPanel` 装配并落库（§4.4） |
 
 锁定 `kind` 的理由：`kind` 决定已有会话的发送路径与布局，允许编辑会让同一会话在无感知的情况下换链路。需要换类型时新建模式。后端 `update_agent_mode` 收到与既有行不同的 `kind` 时返回 `error.agent_mode_kind_locked`；前端编辑态把类型控件置为只读。
 
@@ -462,6 +559,25 @@ mode.toolConfig = {
 - **重启 / 换窗口**：会话级持久值直接恢复，不需要重新播种，也不会因模式后续修改而漂移（双向下沉）。
 - **会话内切换模式不销毁会话级配置**：切到 chat 时 `toolConfig` 不发送（`null`），但 `conversations.tool_config_json` 保留；切回 agent 复用，**不重新从模式播种**（§4.8）。
 - 每次发送消息把**有效配置**随请求传给后端（`SendChatMessageArgsDto.toolConfig`）；后端不缓存该状态。
+
+**两个编辑入口（2026-11-08 定稿）**：装配 UI 不再只在会话内，模式级与会话级各有常驻入口。
+
+| 入口 | 位置 | 写入命令 | 写入列 | 作用范围 |
+|---|---|---|---|---|
+| 模式级 | 设置页 `/settings/agents` 的模式编辑抽屉（**仅 `kind = agent`**） | `save_agent_mode { toolConfig }` | `agent_modes.tool_config_json` | 只影响**之后新建**的会话；已有会话的会话级值不回溯 |
+| 会话级 | `AgentLayout` 的 `ToolConfigPanel` | `patch_conversation { toolConfig }` | `conversations.tool_config_json` | 当前会话，立即生效并落库 |
+
+- **两处各写一份 UI，不复用组件**（2026-11-08 定稿）：两处可用空间不同——设置页抽屉是高而宽的纵向表单区，`AgentLayout` 面板是输入区上方的一条窄横向条带（受限高度、需紧凑排布）。共用视图只会互相将就（要么面板被撑高、要么抽屉被压扁），因此**不抽象共享编辑器组件**，各自按所在空间实现。
+  - 会话侧：`src/chat/tool/ToolConfigPanel.tsx`（现状，保持）。横向控件行 + 按 tier 折叠分组 + 紧凑等宽勾选，改动即 `patch_conversation`。
+  - 模式侧：`src/settings/shared/sections/ToolAssemblySection.tsx`（新增，与 `PermissionGrantsSection` 同级并列，排版沿用 `SettingsSection` / `SettingField`）。纵向表单布局：层级上限 / 审批级别各占一行（`Select` 撑满），下方按 tier 分组的工具列表，每项带一句说明文字；作为抽屉内独立草稿 state（**不进** antd `Form`），随抽屉保存并入 `save_agent_mode { toolConfig }`。
+  - **只共享纯数据层，不共享视图**：常量 `TOOL_TIERS` / `APPROVAL_LEVELS` / `DEFAULT_TOOL_CONFIG` 与 `resolveEffectiveToolConfig` 已在 `src/chat/core/toolConfig.ts`（设置页已引用该模块，无新增跨域边）。实现时把 `ToolConfigPanel` 内的纯逻辑——`TIER_RANK`、按 tier 分组、按 tier 增删勾选（`setTierSelection`）——上移到同一文件并导出，两侧各自调用；**文案与容器留在各自组件**。i18n 也分开：会话侧沿用 `chat.tool.panel.*`，模式侧用 `settings.agent_mode.tool_assembly.*`（两侧措辞本就不同，不强行合并）。
+  - 允许两侧呈现细节不同（会话侧等宽勾选、模式侧带工具说明），但**语义必须一致**：tier 顺序 `sandbox → os → external`、超出层级上限的工具置灰且不生效、`enabledTools` 为唯一事实。一致性由 A8 的语义条目保证，而不是靠共用组件。
+- **工具清单来源统一，缓存各自持有**：两处都调 `chatService.listAvailableTools()`（同一个 `list_available_tools` 命令，不新增命令）。会话侧沿用 `ConversationView` 的进程内缓存；模式侧在 `ToolAssemblySection` 模块级 Promise 缓存（首次打开拉取一次，之后复用，失败时清空以便重试）。两侧都不各自维护「工具短文案」表——短文案只属会话侧 `ToolConfigPanel`，模式侧直接用 `ToolDescriptorDto.description`。
+- **设置页保存不得改动任何 `conversations.tool_config_json`**：已有会话即使正在使用该模式，也保持自身会话级值（「会话一旦写入即不再回退」）。因此设置页抽屉必须固定提示「仅影响新建会话；已有会话请在对话内调整」。
+- **`AgentLayout` 的「设为该模式默认」是会话级 → 模式级的快捷写回**，与设置页保存走同一条 `save_agent_mode` 命令、写同一列，语义一致（只影响未来新建会话）；设置页是该能力的常驻入口，不依赖当前会话存在。
+- **进行中的 turn 不受模式级编辑影响**：`toolConfig` 在发送时快照（`SendChatMessageArgsDto.toolConfig`），设置页保存只改变后续发送时的模式级兜底。
+- **chat 模式不提供装配 UI**：内置 chat 与自定义 chat 在设置页抽屉内不出现装配区，`toolConfig` 不生效（§4.3 / §4.8）。
+- **内置模式「恢复默认」同时重置模式级装配**：`reset_builtin_mode` 已覆盖 `tool_config_json`（`builtin-agent` → `BUILTIN_AGENT_TOOL_CONFIG`），提示语须说明「已有会话不受影响」。
 - 装配写入失败（`patch_conversation` 报错）时：内存态回滚到写入前的值，并提示「保存失败」，不得让 UI 显示一个实际未落库的配置。
 
 ### 4.5 resolveAvailableTools
@@ -540,14 +656,15 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 
 | 交互点 | 位置 | 功能 |
 |---|---|---|
-| AgentMode 编辑表单 | 设置页 `/settings/agents` | 名称 / 描述 / 类型（创建时）/ prompt / 模型 / 温度 / maxTokens / 推理；**不含**层级上限、审批级别、工具多选（已移出，见下） |
-| 默认工具装配摘要 | 设置页模式行 | 只读展示「`sandbox` · `none` · 3 个工具」，附「在对话中调整」提示 |
+| AgentMode 编辑表单 | 设置页 `/settings/agents` | 名称 / 描述 / 类型（创建时）/ prompt / 模型 / 温度 / maxTokens / 推理 |
+| 模式级工具装配 `ToolAssemblySection`（`src/settings/shared/sections/`） | 设置页模式编辑抽屉（**仅 `kind = agent`**） | 纵向表单：层级上限、审批级别、按 tier 分组的工具多选（每项带说明）；随抽屉保存经 `save_agent_mode { toolConfig }` 写入 `agent_modes.tool_config_json`；固定提示「仅影响新建会话」（§4.4） |
+| 模式级装配摘要 | 设置页模式行 | 只读展示「`sandbox` · `none` · 3 个工具」，点「编辑」进入抽屉修改 |
 | 模式切换 | 共同视图输入区工具栏（**两个布局都有**，§4.10） | `ModeSelector` 单控件：下拉按 `kind` 分组列出对话组 / Agent 组，选中项直接决定链路；turn 进行中置灰（§4.8） |
 | 工具装配面板 `ToolConfigPanel` | `AgentLayout` 输入区上方（**仅 agent 链路**） | 层级上限、审批级别、按 tier 分组的工具多选；默认全不勾选；变更即 `patch_conversation { toolConfig }` 落库（§4.4） |
 | 工具概览条 `ToolToolbar` | `AgentLayout` 输入区上方 | 当前会话已启用工具概览，点击打开装配面板 |
 | 工具可用性变更提示 | 聊天流 | 配置变更时系统消息提示「已启用 shell」等 |
 
-装配面板（`ToolConfigPanel`，位于布局内）：
+会话级装配面板（`ToolConfigPanel`，位于 `AgentLayout`，横向紧凑布局；模式级抽屉是另一份 `ToolAssemblySection`，纵向表单布局，**两者不共用视图**）：
 
 ```
 ┌─ 工具装配 ────────────────────────────────────────┐
@@ -559,10 +676,30 @@ fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
 └─────────────────────────────────────────────────────┘
 ```
 
-- **设置页只保留 persona 配置**：层级上限 / 审批级别 / 工具多选从设置页移除，避免「模式默认值」与「会话实际值」两处编辑产生歧义。
-- 「设为该模式默认」把当前装配写回 `agent_modes.tool_config_json`，只影响**未来**新建会话，不改已有会话；自定义 agent 模式与 `builtin-agent` 可用，其余内置模式隐藏该按钮。
-- 层级上限切换时，下方分组自动展开 / 折叠；超出层级的已选工具显示为不可用并提示将被忽略。
-- 内置模式（`isBuiltin: true`）在设置页不可修改名称 / `kind`；chat 模式（`builtin-default` / `builtin-translate`）不出现工具装配 UI 与「设为该模式默认」。
+模式级装配区（设置页抽屉内，纵向表单布局）：
+
+```
+┌─ 工具装配 ────────────────────────────────────────────┐
+│ 层级上限                                              │
+│ [sandbox                                        ▼]   │
+│ 审批级别                                              │
+│ [dangerous_only                                 ▼]   │
+│ ── Sandbox 工具 ────────────────────────────────────  │
+│  ☐ json-viewer   在沙箱内转换 JSON 文本                │
+│ ── OS 工具 ─────────────────────────────────────────  │
+│  ☐ read          读取工作区文件                        │
+│  ☐ write         写入工作区文件                        │
+│ ── External ── （超出层级上限，置灰）                  │
+│  ⚠ 仅影响新建会话；已有会话请在对话内调整              │
+└──────────────────────────────────────────────────────┘
+```
+
+- **两处编辑入口，作用范围各自显式**：设置页编辑**模式级初始值**（只影响新建会话），`AgentLayout` 编辑**会话级实际值**（当前会话立即生效并落库）。两处 UI 各自实现（§4.4：空间不同，不共用视图），但**语义必须一致**：tier 顺序、层级上限折叠、超限置灰与不生效、`enabledTools` 为唯一事实。早期「设置页只读摘要」的定稿作废（§4.4 / 开放问题 2）。
+- 设置页抽屉在 `kind = agent` 时显示装配区，并固定提示「仅影响新建会话；已有会话请在对话内调整」；chat 模式（`builtin-default` / `builtin-translate` / 自定义 chat）不出现装配区。
+- 「设为该模式默认」保留在 `AgentLayout` 面板，作为**会话级 → 模式级**的快捷写回；与设置页保存走同一 `save_agent_mode` 命令、写同一列，只影响未来新建会话，不改已有会话。自定义 agent 模式与 `builtin-agent` 可用，chat 模式不出现该按钮。
+- `恢复默认`（内置模式）除 persona 外同时把模式级装配重置为内置种子值（`builtin-agent` → `BUILTIN_AGENT_TOOL_CONFIG`），提示语须说明「已有会话不受影响」。
+- 层级上限切换时，两处按同一规则处理超出层级的工具：置灰、不生效（会话侧分组随之折叠，模式侧列表保留可见但禁用）；已勾选但超限的工具提示「将被忽略」（两处一致）。
+- 内置模式（`isBuiltin: true`）在设置页不可修改名称 / `kind`；`kind` 创建后不可改（`error.agent_mode_kind_locked`）。
 
 ### 4.8 chat / agent 会话内切换
 
@@ -652,8 +789,12 @@ src/chat/
     ApprovalCard.tsx          // 审批卡片（§3.2.2）
     QuestionCard.tsx          // 提问卡片（§3.6）
     ToolToolbar.tsx           // 会话工具概览条（§4.7）
-    ToolConfigPanel.tsx       // 会话工具装配面板（§4.4 / §4.7）
+    ToolConfigPanel.tsx       // 会话工具装配面板（横向紧凑布局，§4.4 / §4.7）
+src/settings/shared/sections/
+  ToolAssemblySection.tsx     // 模式级工具装配（纵向表单布局，§4.4 / §4.7）
 ```
+
+**两处装配 UI 不复用视图**：`ToolConfigPanel`（`chat` 域）与 `ToolAssemblySection`（`settings` 域）各自实现，原因是可用空间不同（窄横向条带 vs 宽纵向抽屉），共用一个组件只能互相将就。共享的只有 `src/chat/core/toolConfig.ts` 的纯数据层（常量、有效值解析、tier 分组与勾选增删），且该模块设置页已在引用，不新增跨域边。**不得**把任一方的容器、间距、折叠规则搬到另一方，也不得为此新建 `src/components` 下的共享视图组件。
 
 **职责边界**：
 
@@ -661,9 +802,11 @@ src/chat/
 |---|---|---|
 | `ConversationView` | 会话 / 消息 / 流状态读取；send / cancel / retry / regenerate / branch / fork / compact / 附件；模式切换；`route` 解析；布局选择；`toolConfig` 读写与落库（§4.4） | 直接渲染工具气泡、审批 / 提问卡片 |
 | `ChatLayout` | 对话链路的 chrome、消息区、输入区、上下文栏组合 | 引用任何工具 / 审批 / 提问组件；构造 `toolConfig` |
-| `AgentLayout` | agent 链路的 chrome、消息区（含工具气泡 / 审批 / 提问卡片）、`ToolToolbar` + `ToolConfigPanel`、输入区 | 复制 `MessageList` / `MessageInput` / 附件 / 上下文栏；自行订阅事件 |
+| `AgentLayout` | agent 链路的 `ConversationFrame` 插槽内容（`ToolToolbar` / `ToolConfigPanel` / `ToolChangeNotice`）；工具气泡与审批 / 提问卡片由 `MessageBubble` → `ToolCallBubble` 渲染 | 复制 `MessageList` / `MessageInput` / 附件 / 上下文栏（共享 chrome 与消息区已抽到 `ConversationFrame`）；自行订阅事件 |
 
 **共享组件清单（复用，不复制）**：`MessageList`、`MessageBubble`、`MessageContent`、`MessageInput`、`AttachmentPreview`、`ContextBar`、`CompactBanner`、`ModelSelector`、`ProviderSelector`、`ReasoningSelector`、`ModeSelector`。
+
+该清单**只覆盖展示组件**：事件订阅、流式缓冲与链路编排的分层由 §3.7 规定，不在此清单内，也不得据此把两条链路的事件处理塞进同一个文件。
 
 **布局选择**：只由 `resolveConversationRoute(modeId, modes).link` 决定（与发送同一判据）；**不得**按「消息里有无 `tool_calls`」「全局选中态」「上次渲染的布局」决定。模式切换后布局整体替换，`ConversationView` 不重建。
 
@@ -679,7 +822,7 @@ src/chat/
 
 **工具装配的布局内约束**：
 
-- `ToolConfigPanel` 只存在于 `AgentLayout`；`ChatLayout` 无对应入口，也不提供「临时启用工具」的后门。
+- `ToolConfigPanel` 只存在于 `AgentLayout`；设置页渲染的是另一份 `ToolAssemblySection`（纵向表单布局），**不出现**「设为该模式默认」「完成」等会话专属按钮。`ChatLayout` 无任何装配入口，也不提供「临时启用工具」的后门。
 - 装配变更**只通过 `ConversationView` 的单一写入函数**（`updateToolConfig`）→ 内存态更新 → `patch_conversation { toolConfig }` 落库；`ToolConfigPanel` 自身不调用 Tauri 命令。
 - 首次进入 agent 布局且会话级配置为 `null` 时，由 `ConversationView` 播种（模式级 → 会话级，§4.4），面板首帧即可显示有效值，不出现空态闪烁。
 - turn 进行中面板可打开但控件只读（与模式切换同样理由：避免配置与实际执行不一致）；`awaitingApproval` 期间允许查看，不允许改。
@@ -763,6 +906,7 @@ SELECT COUNT(*) FROM pragma_table_info('agent_modes') WHERE name IN ('tools','ma
 | P6-C3 | `ToolCallBubble` 五态 |
 | P6-C4 | 审批 UI（§3.2.2 / §3.3） |
 | P6-C5 | 前端编排上移（§3.5） |
+| P6-C5a | 流式分层重构：传输层共用、链路语义按策略分离（§3.7） |
 | P6-C6 | AgentMode UI（§4.7） |
 | P6-C7 | 模式到策略映射（§4.6） |
 | P6-C8 | `ask_user`（§2.4 / §3.6，**独立批次，不属主体退出条件**） |
@@ -782,7 +926,8 @@ SELECT COUNT(*) FROM pragma_table_info('agent_modes') WHERE name IN ('tools','ma
 | A5 | `ChatDeltaPayloadDto` 不含任何工具字段（P0 的决定不被回退） |
 | A6 | deny-by-default：`enabledTools = []` 时 `tools` 参数为空；`disabledTools` 优先 |
 | A7 | `maxToolTier` 硬上限：低层级模式下 External 工具不出现在列表 |
-| A8 | 设置页 AgentMode 表单**不含**层级上限 / 审批级别 / 工具多选，仅只读展示默认装配摘要；`ToolConfigPanel` 只在 `AgentLayout` 出现且默认全不勾选；内置模式名称与 `kind` 不可改 |
+| A8 | 装配 UI 两处、作用范围不串：设置页 agent 模式抽屉渲染 `ToolAssemblySection`（保存写 `agent_modes.tool_config_json`，不改任何 `conversations.tool_config_json`，固定提示「仅影响新建会话」）；`AgentLayout` 的 `ToolConfigPanel` 写会话级并即时落库；两处**各自实现视图**（不共用组件），但语义一致——tier 顺序 `sandbox → os → external`、超限置灰且不生效、`enabledTools` 为唯一事实、常量与解析只来自 `src/chat/core/toolConfig.ts`；chat 模式无装配区；会话专属按钮「设为该模式默认」「完成」不出现在设置页；内置模式名称与 `kind` 不可改 |
+| A8b | 新会话首次进入 agent 布局时按模式级初始值播种并落库（§4.4）；模式级保存后重开已有会话，其会话级值不变（不回溯） |
 | A9 | `npm run contract:gen` 后 `src/types/protocol.contract.ts` 可编译；`cargo test --test assembly_contract` 通过 |
 | A10 | 审批级别三档的 Policy 映射有单测；tier 规则拒绝超层级工具 |
 | A11 | 链路选路与会话内切换：每次发送按会话当前 `modeId` 的 `kind` 分派（`chat` → `send_chat_message` + `TurnSpec::chat()`，`agent` → `send_agent_message` + `TurnSpec::agent()`），**自定义模式同样适用**（自定义 chat 与内置对话路径完全一致）；切换只影响下一次发送；同一 `conversationId` 空闲时可往返切换，turn 进行中前端置灰且后端返回 `conversation_busy`；chat 链路不渲染工具 UI、agent 链路渲染；历史按消息自身 `tool_calls_json` 渲染 |
@@ -801,6 +946,8 @@ SELECT COUNT(*) FROM pragma_table_info('agent_modes') WHERE name IN ('tools','ma
 | A23 | 会话级工具配置持久化：布局内装配变更立即 `patch_conversation { toolConfig }` 落库；切到 chat 后 `toolConfig` 不下发但不丢；切回 agent 复用原值；重启 / 换窗口打开同一会话恢复该值，不重新从模式播种 |
 | A24 | 模式模型收敛：内置模式为 `builtin-default`(chat) / `builtin-translate`(chat) / `builtin-agent`(agent)；`builtin-quick` / `builtin-deep` 不存在；自定义模式 `kind` 创建后不可改，两种形态分别走 chat / agent 路径 |
 | A25 | 手动迁移（§4.11）：迁移后内置三行 `kind` 正确、无会话指向 `builtin-quick` / `builtin-deep`；**用户自建行的旧 `kind` 值不被改写、不参与分支判定**（`agent` → agent 链路，其余含 `custom` → chat 链路）；旧工具三列不被回填、`tool_config_json` 为 `NULL` 时取缺省值；`pragma_table_info` 检测 + `ALTER` 与迁移 SQL 在已迁移库上重复执行无副作用 |
+| A26 | 气泡边界（§3.1.1）：agent 链路「一次迭代 = 一条消息 = 一个气泡」——流式期 `iteration` 变化即提交上一段并开新气泡（上一迭代正文不消失）；工具卡片归属发起它的那条消息；`finishReason` 只结束单次模型调用，turn 结束由 `session-state-changed idle` / `chat-messages-changed` 收口；历史刷新后一行一气泡，同一 turn 的多条 `assistant` 行不合并 |
+| A27 | 流式分层（§3.7）：传输层（订阅 / `conversationId`·`attemptId` 过滤 / `seq` 去重 / coalescer / 帧调度）全仓只有**一份**实现，不存在 `agentStreamEvents` / `agentOrchestrator` 第二份订阅；链路私有语义（`iteration` 分段、段表、工具卡片归属、`finishReason` 终态判据、工具终态收敛）只存在于策略层；`chatStreamStore` 无 `iteration → messageId` 段表、无多段缓冲；`link === "agent"` 判断只出现在策略选择一处 |
 
 ---
 
@@ -809,6 +956,9 @@ SELECT COUNT(*) FROM pragma_table_info('agent_modes') WHERE name IN ('tools','ma
 | 风险 | 缓解 |
 |---|---|
 | 前端恢复工具 delta 到 ChatDelta | A5 明确禁止；工具事件独立通道 |
+| 多迭代被合并进单气泡（正文互相覆盖、卡片全挤在第一条） | 分段只认 `iteration`（§3.1.1）；后端每次迭代入口同步 `set_iteration`；`messageId` 在 turn 内恒定，明确不作分段判据；A26 回归 |
+| 同轮后续行被全量刷新吞掉（叶子停在 turn 首行，前端按 id 合并丢弃新行） | 每次追加 `assistant` / `tool` 行即推进 `active_branch_id`（§3.1.1 第 6 条，`advance_active_branch` 仅在扩展当前叶子时生效）；A26 回归 |
+| 流式层共用导致链路语义互相污染（agent 分支散落进通用编排） | 分层判据（§3.7「删掉 agent 后这段逻辑还要不要」）+ 策略接口；`link === "agent"` 只允许在策略选择与命令分派两处；A27 回归 |
 | 双决策竞态（前端超时 + 后端超时） | 前端只置灰，不发送 Deny；后端超时为准 |
 | phase 漂移 | 后端唯一事实源；前端只订阅 |
 | deny-by-default 导致「工具看不见」被误报为 bug | 设置页与对话工具栏明确显示「未启用」状态 |
@@ -823,7 +973,7 @@ SELECT COUNT(*) FROM pragma_table_info('agent_modes') WHERE name IN ('tools','ma
 | 中途切换把待审批卡片藏起来 | turn 进行中禁止切换（前端置灰 + 后端 `conversation_busy`），避免审批只能等超时 `Deny`（§4.8） |
 | 多窗口切换使取消判据漂移 | 后端拒绝 busy 会话的模式变更；`cancel` 与 send 共用 `resolveConversationRoute`（§4.8） |
 | 双布局复制成两份 `ChatView` | 共享组件清单 + 布局差异表 + A21；拆分按 [CODE-SPLIT-PRINCIPLE](../principle/CODE-SPLIT-PRINCIPLE.md) §7 纯搬移（§4.10） |
-| 两级存储漂移（模式改了、会话没变 / 会话改了、模式没变） | 语义显式：模式 = 初始值、会话 = 实际值，会话一旦写入即不再读模式（§4.4）；设置页只读摘要 + A23 |
+| 两级存储漂移（模式改了、会话没变 / 会话改了、模式没变） | 语义显式：模式 = 初始值、会话 = 实际值，会话一旦写入即不再读模式（§4.4）；两处入口各自标注作用范围 + A8 / A8b / A23 |
 | 布局内装配隐式污染其他会话 | 常规装配只写会话级；模式级仅由「设为该模式默认」显式写回（§4.7 / 开放问题 8） |
 | `kind` 归一不可逆（内置行） | 手动迁移前强制备份；迁移 SQL 只按 `id` 精确更新内置行且幂等，带校验查询（§4.11 / A25） |
 | 既有 `custom` / `deep` 模式的工具能力退化 | **已知代价、显式接受**：旧值仅作兼容标签、不决定分支，一律走 chat 链路（`custom` 不映射为 `agent`）。需要 agent 能力的用户新建 `kind = agent` 模式（§4.3 / §4.8 / §4.11） |
@@ -832,7 +982,7 @@ SELECT COUNT(*) FROM pragma_table_info('agent_modes') WHERE name IN ('tools','ma
 **开放问题**：
 
 1. ~~`alwaysApprove` 的持久化范围：本会话还是跨会话？~~ **已定稿（2026-11-08 修订）：默认会话级，可显式升级为全局**。取代 2026-11-07「一律跨会话持久」的定稿。作用域与审批键正交：`ApprovalKey` 仍为 `tool + 规范化 scope`，作用域由 `permission_grants` 的 `grant_key` 前缀承载（`g|` / `s:<conversationId>|`），历史无前缀行按 `global` 兼容读取。不采用「加 `scope` 列 + 复合主键」：本项目迁移只允许 `ADD COLUMN`，改主键需重建表并搬数据。卡片按钮文案与作用域一一对应：`本会话允许` → `session`、`始终允许` → `global`（后者二次确认）；设置页可事后修改作用域（会话级「设为全局」/ 全局「改为仅某会话」），修改走单事务 `set_permission_grant_scope`；会话级授权随会话删除级联清理（§3.3.1 / A18）。
-2. 工具装配的编辑权限与存储位置。**已定稿（2026-11-07 修订）：两级存储 + 布局内编辑**。装配 UI 从设置页移到 `AgentLayout` 的 `ToolConfigPanel`；模式级 `agent_modes.tool_config_json` 只作新会话初始值，会话级 `conversations.tool_config_json` 为实际值并即时落库（§4.1 / §4.4）。设置页只读展示默认装配摘要。早期「不引入对话级持久层、仅内存态」的决定作废。
+2. 工具装配的编辑权限与存储位置。**已定稿（2026-11-08 修订）：两级存储 + 两处编辑入口，两处 UI 各自实现**。模式级 `agent_modes.tool_config_json` 为新会话初始值（设置页模式抽屉的 `ToolAssemblySection` 编辑），会话级 `conversations.tool_config_json` 为实际值并即时落库（`AgentLayout` 的 `ToolConfigPanel` 编辑）。两处可用空间不同（宽纵向抽屉 vs 窄横向条带），**不复用视图组件**，仅共用 `src/chat/core/toolConfig.ts` 的纯数据层与 `list_available_tools` 命令（§4.1 / §4.4 / §4.7）。取代 2026-11-07「设置页只读展示摘要、装配 UI 仅在布局内」的定稿，以及同日「共用同一编辑器组件」的中间方案；早期「不引入对话级持久层、仅内存态」的决定作废。
 3. ~~审批等待是否计入 turn 墙钟：与 P4 开放问题 2 同一决策，联调时定稿。~~ **已定稿（2026-11-07）：计入**，取 P4 D12——审批等待计入 turn 墙钟，同时单独记录 `confirmationWaitMs`（只进事件与内存汇总，不落库），与工具自身 `durationMs` 分开。
 4. ~~`workspace_root` 的来源：全局配置还是会话级绑定？~~ **已定稿（2026-11-07）：P6 用全局配置 `AppConf.workspace_root`**，会话级绑定推迟到 P8.2（§4.9）。
 5. ~~`ask_user` 归 P5 还是 P6，是否阻塞 P6？~~ **已定稿（2026-11-07）：归 P6，但作为 P6-C8 单独批次，不属 P6 主体退出条件**。工具实现、超时能力（`managesOwnExecutionTimeout`）与前端提问卡片同期落地，与 C1–C7 解耦验收（§2.4 / §3.6 / §5）。

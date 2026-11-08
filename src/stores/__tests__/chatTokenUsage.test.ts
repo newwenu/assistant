@@ -342,7 +342,7 @@ function statePort() {
       setContextUsage: (usage) =>
         useChatStore.setState({ contextUsage: usage }),
     },
-  );
+  ).port;
 }
 
 describe("finishStream without usage", () => {

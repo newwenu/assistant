@@ -45,6 +45,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         cmd::cancel_agent,
         cmd::resolve_agent_tool_call,
         cmd::resolve_agent_question,
+        cmd::list_pending_questions,
         cmd::list_available_tools,
         cmd::list_permission_grants,
         cmd::revoke_permission_grant,

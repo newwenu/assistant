@@ -45,15 +45,15 @@
 
 ## C1b 链路选路（依赖 C1、C1a）
 
-实现：`src/chat/core/conversationLink.ts`、`src/services/chatOrchestrator.ts`、`src/chat/ConversationView.tsx`
+实现：`src/chat/core/conversationLink.ts`、`src/services/stream/turnOrchestrator.ts`、`src/chat/ConversationView.tsx`
 
 - [x] C1b.1 只有 `kind === "agent"` 归 agent 链路；`chat` / 旧值（`default` / `quick` / `deep` / `custom`）/ `null` / 其余未知值 / mode 行缺失一律归 chat 链路，单一实现
 - [x] C1b.2 发送时按会话 `modeId` 判定，**不取全局选中态**
 - [x] C1b.3 `toolConfig` 只对 agent 链路构造，chat 恒为 `null`
 - [x] C1b.4 ~~会话内锁定链路：已有消息后选择器只展示会话自身 `modeId`~~ **作废（2026-11-07 决策调整）**：改为会话内可切换，见 C1d；C1b 只保留「选择器展示会话当前 `modeId`」
 - [x] C1b.5 单测 `conversationLink.test.ts` 覆盖各类 `modeId`（`agent` / `chat` / 旧值 `default`、`quick`、`deep`、`custom` / `null` / 未知值 / 行缺失），断言只有 `agent` 进 agent 链路（A11）
-- [ ] C1b.6 chat 会话不渲染工具 UI（A11）——依赖 C3 / C4 组件落地后校验
-- [ ] C1b.7 自定义 `kind = chat` 模式与内置「对话」走完全相同的 chat 路径（命令 / `TurnSpec` / 布局三者一致）（A11）
+- [x] C1b.6 chat 会话不渲染工具 UI（A11）——chat 链路不注入工具，`message.toolCalls` 恒空；`ChatLayout` 不引用任何工具 / 审批 / 提问组件
+- [x] C1b.7 自定义 `kind = chat` 模式与内置「对话」走完全相同的 chat 路径（命令 / `TurnSpec` / 布局三者一致）（A11）——布局只由 `route.link` 决定，与模式来源无关；`toolConfig` 恒 `null`
 
 ---
 
@@ -79,14 +79,14 @@
 
 - [x] C1d.1 `ChatView` 的会话级逻辑（状态读取 / send / cancel / retry / regenerate / branch / fork / compact / 附件）原样迁入 `ConversationView`，语义不改
 - [x] C1d.2 `ChatLayout`：对话 chrome + 消息区 + 输入区 + `ContextBar`，不引用任何工具 / 审批 / 提问组件
-- [ ] C1d.3 `AgentLayout`：复用共享组件（`MessageList` / `MessageInput` / `AttachmentPreview` / `ContextBar` / `CompactBanner` / 选择器），仅追加工具气泡、审批 / 提问卡片、`ToolToolbar` + `ToolConfigPanel`（共享框架与插槽已就位；插槽内容依赖 C3 / C4 / C5 组件落地）
+- [x] C1d.3 `AgentLayout`：复用共享组件（`MessageList` / `MessageInput` / `AttachmentPreview` / `ContextBar` / `CompactBanner` / 选择器），仅追加工具气泡、审批 / 提问卡片、`ToolToolbar` + `ToolConfigPanel`——共享 chrome / 消息区 / 输入区由 `ConversationFrame` 承载，插槽已接 `ToolToolbar` + `ToolConfigPanel` + `ToolChangeNotice`，工具气泡与审批 / 提问卡片由 `MessageBubble` → `ToolCallBubble` 渲染
 - [x] C1d.4 布局由 `resolveConversationRoute(modeId, modes).link` 决定，**不按消息内容 / 全局选中态**判定；切换模式只换布局，不重建视图
 - [x] C1d.5 模式切换为 `ModeSelector` 单控件：下拉按 `kind` 分组列出对话组 / Agent 组，选中项直接决定链路（跨组与组内是同一动作）；不设分段切换控件，无组内记忆内存态
 - [x] C1d.6 默认 chat：新建会话 `modeId = builtin-default`；`builtin-agent` 恒存在，Agent 组永不禁用
 - [x] C1d.7 turn 进行中（phase 非 `idle` / `error`）切换控件置灰；后端 `patch_conversation` 返回 `conversation_busy` 时原样提示
 - [x] C1d.8 移除 `patch_conversation` 的消息数守卫与 `error.conversation_mode_locked` i18n，新增 `error.conversation_busy`
 - [x] C1d.9 `ChatView` 下线：`OrbPanel` / 主窗口改挂 `ConversationView`（保留 `modelOpenRef`），全仓无 `ChatView` 残留引用
-- [ ] C1d.10 验收 A11 / A21 / A22 / A23（A21 / A22 已满足；A11 / A23 的工具 UI 与装配面板依赖 C3 / C4 / C5）
+- [ ] C1d.10 验收 A11 / A21 / A22 / A23（A11 / A21 / A22 已满足；A23 的会话级装配持久化由 C1d.12 覆盖，待随 C9.6 实机回归确认）
 - [x] C1d.11 输入草稿提升为 `ConversationView` 受控值（按 `conversationId` 索引），布局替换不丢草稿
 - [x] C1d.12 `resolveEffectiveToolConfig`（会话级 ?? 模式级 ?? 缺省）单一实现；首次进入 agent 布局且会话级为 `null` 时播种并落库；`updateToolConfig` 唯一写入路径（失败回滚 + 提示）
 
@@ -130,7 +130,7 @@
 
 ## C5 前端编排上移（依赖 P4 稳定）
 
-实现：`src/services/chatOrchestrator.ts`、`src/services/chatStreamEvents.ts`、`src/stores/chatMessageSlice.ts`、`src/stores/chatConversationSlice.ts`、`src/stores/chatStreamStore.ts`
+实现：`src/services/stream/turnOrchestrator.ts`、`src/services/stream/transport.ts`、`src/services/chatStreamEvents.ts`、`src/stores/chatMessageSlice.ts`、`src/stores/chatConversationSlice.ts`、`src/stores/chatStreamStore.ts`
 
 - [x] C5.1 删除 `ensureIdle()`（含 `ENSURE_IDLE_TIMEOUT_MS` 轮询与 `resendFrom` / `switchConversation` 两处调用）
 - [x] C5.2 切会话不取消后台 turn：`onConversationSwitch` 只换本地流式视图，事件按 `conversationId` 路由；切回运行中会话由 `resumeStream` 恢复（`messageId` 由首个增量补全）
@@ -139,11 +139,30 @@
 
 ---
 
+## C5a 流式分层重构（依赖 C5；规格 §3.7）
+
+目标：传输层共用一份、链路语义按策略分离，消除 `chatOrchestrator` / `chatStorePorts` 中散落的 agent 分支（A27）。
+
+实现：`src/services/stream/transport.ts`、`src/services/stream/turnOrchestrator.ts`、`src/services/stream/strategies/chatTurn.ts`、`src/services/stream/strategies/agentTurn.ts`、`src/stores/agent/agentSegments.ts`
+
+- [x] C5a.1 新建 `stream/transport.ts`：`chatStreamEvents.ts` 的 `listen` + `conversationId`/`attemptId` 过滤 + `seq` 去重 + `createChatDeltaCoalescer` + `textChunkScheduler` 原样搬入，只对外暴露「已清洗的增量 / 工具事件 / 状态事件」回调——`chatStreamEvents.ts` 退化为传输层 → 编排层的接线
+- [x] C5a.2 新建 `stream/turnOrchestrator.ts`：会话路由、send / cancel / retry / regenerate 分派、phase 记录、跨会话后台流、错误收敛原样搬入；保留 `ChatStatePort` / `ChatEnvPort` 注入——端口类型落在 `stream/turnStrategy.ts`
+- [x] C5a.3 新建 `strategies/chatTurn.ts`：单缓冲累加、`finishReason → finishStream`、无工具处理
+- [x] C5a.4 新建 `strategies/agentTurn.ts`：按 `iteration` 分段（§3.1.1）、`finishReason → commitStreamSegment`、推理增量按迭代归属、工具卡片按迭代归属、`settleToolCalls` 终态收敛
+- [x] C5a.5 新建 `stores/agent/agentSegments.ts`：`iteration → 段消息 id` 映射、开段 / 提交段、占位 id 生成；从 `chatStorePorts.ts` 迁出，`chatStreamStore` 不持有段表与多段缓冲
+- [x] C5a.6 策略选择只在 `turnOrchestrator` 入口按 `resolveConversationRoute(...).link` 做一次；通用层不再出现 `link === "agent"` 分支——命令分派在组合根 `chatStorePorts.ts` 保留一次同链判断（命令与服务必须同链），编排层其余位置一律走策略接口
+- [x] C5a.7 删除旧入口（`chatStreamEvents.ts` / `chatOrchestrator.ts` 保留为薄适配或直接下线），全仓无 `agentStreamEvents` / `agentOrchestrator` 第二份订阅——`chatOrchestrator.ts` 已删除，`chatStreamEvents.ts` 仅剩接线
+- [x] C5a.8 测试：`turnOrchestrator.test.ts`（原 `chatOrchestrator.test.ts`）/ `agentSegments.test.ts` / `streamCoalescer.test.ts` / `chatStreamStore.test.ts` 全绿；新增策略级单测（agent 分段、工具归属、`finishReason` 不结束 turn）——四文件 79 项全通过，`npm run typecheck` 通过
+- [x] C5a.9 验收 A26 / A27——A27 已满足（传输共用、策略分离、旧入口下线）；A26 根因已定位并修复：`active_branch_id` 在 turn 内停在首行，`chat-messages-changed` 全量列表缺掉同轮后续行，前端按 id 合并即丢弃（切换分支会重算叶子故能恢复）。修复为追加 `assistant` / `tool` 行时推进叶子（`conversations::advance_active_branch`，仅当 `parent_id` 等于当前叶子时生效，不抢占用户已选分支）；存储层新增 2 个单测（33 项全通过），`cargo check` / `npm run typecheck` / `turnOrchestrator` + `agentSegments` 44 项通过，A26 待实机回归
+
+---
+
 ## C6 AgentMode UI（依赖 C1）
 
-实现：`src/settings/pages/AgentModeSettings.tsx`、`src/chat/tool/ToolToolbar.tsx`、`src/chat/tool/ToolConfigPanel.tsx`、`src/chat/layouts/AgentLayout.tsx`（工具栏插槽）
+实现：`src/settings/pages/AgentModeSettings.tsx`、`src/settings/shared/sections/ToolAssemblySection.tsx`、`src/chat/tool/ToolToolbar.tsx`、`src/chat/tool/ToolConfigPanel.tsx`、`src/chat/layouts/AgentLayout.tsx`（工具栏插槽）
 
-- [x] C6.1 设置页表单**移除**层级上限 / 审批级别 / 工具多选（改为只读「默认装配摘要 + 在对话中调整」提示）
+- [x] C6.1 设置页 agent 模式抽屉新增模式级装配区 `ToolAssemblySection`（纵向表单：层级上限 / 审批级别 / 按 tier 分组工具多选，每项带说明），独立草稿 state，随抽屉保存写入 `save_agent_mode { toolConfig }`；固定提示「仅影响新建会话；已有会话请在对话内调整」。**不复用** `ToolConfigPanel` 视图（两处空间不同，§4.4），仅共用 `src/chat/core/toolConfig.ts` 纯数据层
+- [x] C6.1b 纯逻辑上移：`ToolConfigPanel` 内的 `TIER_RANK` / 按 tier 分组 / `setTierSelection` 移入 `src/chat/core/toolConfig.ts` 并导出，会话侧与模式侧各自调用（语义一致由 A8 保证）
 - [x] C6.2 设置页表单保留 persona 配置：名称 / 描述 / 类型（创建时二选一、编辑锁定）/ prompt / 模型 / 温度 / maxTokens / 推理
 - [x] C6.3 内置模式不可删除；编辑时锁定 `name` / `kind`，并提供「恢复默认」（A8）
 - [x] C6.4 `ToolConfigPanel`（仅 `AgentLayout`）：按 tier 分组的工具多选（Sandbox / OS / External），默认全不勾选；变更即 `patch_conversation { toolConfig }` 落库（A8）
@@ -246,3 +265,5 @@
 | A23 会话级工具配置持久化 | C1d.12、C9.6 |
 | A24 模式模型收敛与自定义双形态 | C1a.1、C1a.7、C1a.10 |
 | A25 手动迁移幂等与旧值兜底 | C1a.5、C1a.8、C1a.9 |
+| A26 气泡边界（一次迭代 = 一条消息 = 一个气泡） | C5a.4、C5a.8 |
+| A27 流式分层（传输共用 / 链路语义分离） | C5a.1–C5a.7 |

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use assistant_tools::{
     QuestionAnswerItem, QuestionOutcome, QuestionPrompter, QuestionRequest, QuestionSpec,
@@ -15,11 +16,11 @@ use crate::protocol::{
 /// 提问工具在事件里的模型可见名：与 `AgentAskUserTool::id()` 保持一致。
 const ASK_USER_TOOL_NAME: &str = "ask_user";
 
-/// 待作答登记表：`call_id -> (conversation_id, 题目数量, 答案投递端)`。
+/// 待作答登记表：`call_id -> (会话 / 轮次 / 迭代 / 卡片 DTO / 答案投递端)`。
 ///
 /// 与审批登记表同构：键用 `call_id`（一次 turn 内唯一），并记录 `conversation_id`
 /// 做跨会话校验，避免 A 会话的窗口提交掉 B 会话的卡片。
-/// 题目数量在登记时固化，回填时据此校验「逐题作答」。
+/// 卡片 DTO 一并固化：前端漏收事件后可按会话补拉重放（事件是广播、不重放）。
 #[derive(Debug, Clone, Default)]
 pub struct PendingQuestionRegistry {
     pending: Arc<Mutex<HashMap<String, PendingQuestion>>>,
@@ -28,7 +29,14 @@ pub struct PendingQuestionRegistry {
 #[derive(Debug)]
 struct PendingQuestion {
     conversation_id: String,
-    question_count: usize,
+    turn_id: String,
+    iteration: u32,
+    /// 卡片事实来源：补拉快照直接克隆它，题目数量也从这里派生。
+    question: AgentQuestionRequestDto,
+    /// 原始等待上限；`None` 表示不设 deadline（配置为 `0`）。
+    timeout: Option<Duration>,
+    /// 登记时刻：补拉时据此把 `timeoutMs` 改写成剩余时长。
+    started_at: Instant,
     sender: oneshot::Sender<Vec<QuestionAnswerItem>>,
 }
 
@@ -40,20 +48,24 @@ impl PendingQuestionRegistry {
     /// 登记一个挂起点。已有同 `call_id` 的挂起点时返回 `None`（调用方 fail-closed）。
     fn register(
         &self,
-        call_id: &str,
-        conversation_id: &str,
-        question_count: usize,
+        iteration: u32,
+        question: AgentQuestionRequestDto,
+        timeout: Option<Duration>,
     ) -> Option<oneshot::Receiver<Vec<QuestionAnswerItem>>> {
         let (tx, rx) = oneshot::channel();
         let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
-        if pending.contains_key(call_id) {
+        if pending.contains_key(&question.call_id) {
             return None;
         }
         pending.insert(
-            call_id.to_string(),
+            question.call_id.clone(),
             PendingQuestion {
-                conversation_id: conversation_id.to_string(),
-                question_count,
+                conversation_id: question.conversation_id.clone(),
+                turn_id: question.turn_id.clone(),
+                iteration,
+                question,
+                timeout,
+                started_at: Instant::now(),
                 sender: tx,
             },
         );
@@ -86,10 +98,11 @@ impl PendingQuestionRegistry {
                 ))
             }
         };
-        if answers.len() != entry.question_count {
+        let expected = entry.question.questions.len();
+        if answers.len() != expected {
             return Err(format!(
                 "expected {} answers for call '{}', got {}",
-                entry.question_count,
+                expected,
                 call_id,
                 answers.len()
             ));
@@ -101,6 +114,43 @@ impl PendingQuestionRegistry {
                 .map_err(|_| format!("question channel for call '{}' is already closed", call_id)),
             None => Err(format!("no pending question for call '{}'", call_id)),
         }
+    }
+
+    /// 挂起提问的补拉快照：窗口重连 / 切回会话时据此重建卡片。
+    ///
+    /// 提问事件是广播、不重放，前端一旦漏收就无从得知，只能等后端超时。
+    /// 这里按会话给出全部挂起点，`timeoutMs` 改写为**剩余**毫秒（`0` 仍表示
+    /// 不限时）：前端倒计时从事件到达时刻起算，重放必须扣掉已经等过的时间。
+    /// 已耗尽上限的挂起点跳过，收口交给等待守卫，避免下发一张必过期卡片。
+    pub fn snapshot(&self, conversation_id: &str) -> Vec<AgentToolCallDto> {
+        let pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        let mut out = Vec::new();
+        for entry in pending.values() {
+            if entry.conversation_id != conversation_id {
+                continue;
+            }
+            let remaining_ms = match entry.timeout {
+                None => 0,
+                Some(timeout) => {
+                    let remaining = timeout.saturating_sub(entry.started_at.elapsed());
+                    if remaining.is_zero() {
+                        continue;
+                    }
+                    remaining.as_millis() as u64
+                }
+            };
+            let mut question = entry.question.clone();
+            question.timeout_ms = remaining_ms;
+            out.push(AgentToolCallDto {
+                conversation_id: entry.conversation_id.clone(),
+                turn_id: entry.turn_id.clone(),
+                iteration: entry.iteration,
+                call_id: question.call_id.clone(),
+                name: ASK_USER_TOOL_NAME.to_string(),
+                payload: AgentToolCallPayloadDto::AwaitingAnswer { question },
+            });
+        }
+        out
     }
 
     fn discard(&self, call_id: &str) {
@@ -140,8 +190,8 @@ impl Drop for PendingQuestionGuard<'_> {
 
 /// 真实提问通道：把 `ask_user` 的等待转成前端卡片，等 IPC 回填答案。
 ///
-/// 缺路由信息（无 `conversationId` / `turnId`）时**不发事件直接返回 `Cancelled`**：
-/// 卡片无法路由到任何窗口，等下去只会把 turn 挂死到超时。
+/// 缺路由信息（无 `conversationId` / `turnId` / `iteration`）时**不发事件直接返回
+/// `Cancelled`**：卡片无法归属到任何一条消息，等下去只会把 turn 挂死到超时。
 pub struct TauriQuestionPrompter {
     app: tauri::AppHandle,
     pending: PendingQuestionRegistry,
@@ -172,11 +222,35 @@ impl QuestionPrompter for TauriQuestionPrompter {
                 }
             };
 
-        let receiver = match self.pending.register(
-            &request.tool_call_id,
-            &conversation_id,
-            request.questions.len(),
-        ) {
+        // 迭代号是卡片归属的唯一依据（I38d §3.1.1）：缺值时下发 `0` 只会被前端
+        // 当作「落后于当前段」的迟到事件丢弃，不如在这里 fail-closed。
+        let iteration = match request.iteration {
+            Some(iteration) => iteration,
+            None => {
+                log::error!(
+                    "question for '{}' lacks iteration, cancelling",
+                    request.tool_call_id
+                );
+                return QuestionOutcome::Cancelled;
+            }
+        };
+
+        let question = AgentQuestionRequestDto {
+            conversation_id: conversation_id.clone(),
+            turn_id: turn_id.clone(),
+            call_id: request.tool_call_id.clone(),
+            questions: request.questions.iter().map(question_dto).collect(),
+            // `0` 表示不设超时：前端不显示倒计时（I38d §2.4）。
+            timeout_ms: request
+                .timeout
+                .map(|timeout| timeout.as_millis() as u64)
+                .unwrap_or(0),
+        };
+
+        let receiver = match self
+            .pending
+            .register(iteration, question.clone(), request.timeout)
+        {
             Some(receiver) => receiver,
             None => {
                 log::error!(
@@ -191,24 +265,13 @@ impl QuestionPrompter for TauriQuestionPrompter {
             call_id: request.tool_call_id.clone(),
         };
 
-        let question = AgentQuestionRequestDto {
-            conversation_id: conversation_id.clone(),
-            turn_id: turn_id.clone(),
-            call_id: request.tool_call_id.clone(),
-            questions: request.questions.iter().map(question_dto).collect(),
-            // `0` 表示不设超时：前端不显示倒计时（I38d §2.4）。
-            timeout_ms: request
-                .timeout
-                .map(|timeout| timeout.as_millis() as u64)
-                .unwrap_or(0),
-        };
         emit_broadcast(
             &self.app,
             event_name::AGENT_TOOL_CALL,
             AgentToolCallDto {
                 conversation_id,
                 turn_id,
-                iteration: request.iteration.unwrap_or_default(),
+                iteration,
                 call_id: request.tool_call_id.clone(),
                 name: ASK_USER_TOOL_NAME.to_string(),
                 payload: AgentToolCallPayloadDto::AwaitingAnswer { question },
@@ -246,12 +309,36 @@ mod tests {
         QuestionAnswerItem::new(vec![label.to_string()], None)
     }
 
+    fn request(call_id: &str, conversation_id: &str, count: usize) -> AgentQuestionRequestDto {
+        AgentQuestionRequestDto {
+            conversation_id: conversation_id.to_string(),
+            turn_id: format!("{conversation_id}:1"),
+            call_id: call_id.to_string(),
+            questions: (0..count)
+                .map(|index| AgentQuestionDto {
+                    question: format!("q{index}"),
+                    header: "h".to_string(),
+                    options: Vec::new(),
+                    multi_select: false,
+                })
+                .collect(),
+            timeout_ms: 0,
+        }
+    }
+
+    fn register_one(
+        registry: &PendingQuestionRegistry,
+        call_id: &str,
+        conversation_id: &str,
+        count: usize,
+    ) -> Option<oneshot::Receiver<Vec<QuestionAnswerItem>>> {
+        registry.register(1, request(call_id, conversation_id, count), None)
+    }
+
     #[test]
     fn resolve_requires_matching_conversation() {
         let registry = PendingQuestionRegistry::new();
-        let _rx = registry
-            .register("call-1", "conv-a", 1)
-            .expect("首次登记必须成功");
+        let _rx = register_one(&registry, "call-1", "conv-a", 1).expect("首次登记必须成功");
 
         let error = registry
             .resolve("call-1", "conv-b", vec![answer("A")])
@@ -268,9 +355,7 @@ mod tests {
     #[test]
     fn resolve_rejects_answer_count_mismatch() {
         let registry = PendingQuestionRegistry::new();
-        let _rx = registry
-            .register("call-1", "conv-a", 2)
-            .expect("首次登记必须成功");
+        let _rx = register_one(&registry, "call-1", "conv-a", 2).expect("首次登记必须成功");
 
         let error = registry
             .resolve("call-1", "conv-a", vec![answer("A")])
@@ -282,12 +367,12 @@ mod tests {
     #[test]
     fn duplicate_call_id_is_refused_and_keeps_original() {
         let registry = PendingQuestionRegistry::new();
-        let _first = registry
-            .register("call-1", "conv-a", 1)
-            .expect("首次登记必须成功");
+        let _first = register_one(&registry, "call-1", "conv-a", 1).expect("首次登记必须成功");
 
         assert!(
-            registry.register("call-1", "conv-a", 1).is_none(),
+            registry
+                .register(1, request("call-1", "conv-a", 1), None)
+                .is_none(),
             "重复 call_id 必须 fail-closed 拒绝"
         );
         assert_eq!(registry.len(), 1);
@@ -305,9 +390,7 @@ mod tests {
     #[test]
     fn resolve_is_not_repeatable() {
         let registry = PendingQuestionRegistry::new();
-        let _rx = registry
-            .register("call-1", "conv-a", 1)
-            .expect("首次登记必须成功");
+        let _rx = register_one(&registry, "call-1", "conv-a", 1).expect("首次登记必须成功");
 
         assert!(registry
             .resolve("call-1", "conv-a", vec![answer("A")])
@@ -323,9 +406,7 @@ mod tests {
     #[test]
     fn discard_removes_pending_entry() {
         let registry = PendingQuestionRegistry::new();
-        let _rx = registry
-            .register("call-1", "conv-a", 1)
-            .expect("首次登记必须成功");
+        let _rx = register_one(&registry, "call-1", "conv-a", 1).expect("首次登记必须成功");
 
         registry.discard("call-1");
         assert!(
@@ -337,18 +418,75 @@ mod tests {
     #[test]
     fn discard_does_not_touch_other_calls() {
         let registry = PendingQuestionRegistry::new();
-        let _first = registry
-            .register("call-1", "conv-a", 1)
-            .expect("首次登记必须成功");
-        let _second = registry
-            .register("call-2", "conv-a", 1)
-            .expect("首次登记必须成功");
+        let _first = register_one(&registry, "call-1", "conv-a", 1).expect("首次登记必须成功");
+        let _second = register_one(&registry, "call-2", "conv-a", 1).expect("首次登记必须成功");
 
         registry.discard("call-1");
         assert_eq!(registry.len(), 1, "清理必须按 call_id 精确移除");
         assert!(registry
             .resolve("call-2", "conv-a", vec![answer("A")])
             .is_ok());
+    }
+
+    #[test]
+    fn snapshot_filters_by_conversation_and_reports_remaining_timeout() {
+        let registry = PendingQuestionRegistry::new();
+        let _a = registry
+            .register(
+                2,
+                request("call-a", "conv-a", 1),
+                Some(Duration::from_secs(180)),
+            )
+            .expect("首次登记必须成功");
+        let _b = registry
+            .register(1, request("call-b", "conv-b", 1), None)
+            .expect("首次登记必须成功");
+
+        let shots = registry.snapshot("conv-a");
+        assert_eq!(shots.len(), 1, "只返回本会话的挂起点");
+        let shot = &shots[0];
+        assert_eq!(shot.call_id, "call-a");
+        assert_eq!(shot.iteration, 2);
+        assert_eq!(shot.turn_id, "conv-a:1");
+        assert_eq!(shot.name, ASK_USER_TOOL_NAME);
+
+        let AgentToolCallPayloadDto::AwaitingAnswer { question } = &shot.payload else {
+            panic!("补拉必须重放 AwaitingAnswer 卡片");
+        };
+        assert_eq!(question.call_id, "call-a");
+        assert!(
+            question.timeout_ms <= 180_000 && question.timeout_ms >= 179_000,
+            "剩余时长必须扣掉已等待时间，实际 {}",
+            question.timeout_ms
+        );
+    }
+
+    #[test]
+    fn snapshot_keeps_zero_timeout_as_unlimited() {
+        let registry = PendingQuestionRegistry::new();
+        let _rx = registry
+            .register(1, request("call-1", "conv-a", 1), None)
+            .expect("首次登记必须成功");
+
+        let shots = registry.snapshot("conv-a");
+        assert_eq!(shots.len(), 1);
+        let AgentToolCallPayloadDto::AwaitingAnswer { question } = &shots[0].payload else {
+            panic!("补拉必须重放 AwaitingAnswer 卡片");
+        };
+        assert_eq!(question.timeout_ms, 0, "0 表示不限时，重放不得改写");
+    }
+
+    #[test]
+    fn snapshot_skips_expired_entry() {
+        let registry = PendingQuestionRegistry::new();
+        let _rx = registry
+            .register(1, request("call-1", "conv-a", 1), Some(Duration::ZERO))
+            .expect("首次登记必须成功");
+
+        assert!(
+            registry.snapshot("conv-a").is_empty(),
+            "已耗尽上限的挂起点不得下发一张必过期卡片"
+        );
     }
 
     #[test]

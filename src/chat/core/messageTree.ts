@@ -54,6 +54,27 @@ export class MessageTree {
     return path;
   }
 
+  getTurnRootId(messageId: string): string {
+    let current = this.nodes.get(messageId);
+    if (!current) return messageId;
+
+    const visited = new Set<string>([current.message.id]);
+    let cursor = current.message.parentId
+      ? this.nodes.get(current.message.parentId)
+      : undefined;
+    while (cursor && !visited.has(cursor.message.id)) {
+      if (cursor.message.role === "user") break;
+      visited.add(cursor.message.id);
+      if (cursor.message.role === "assistant") {
+        current = cursor;
+      }
+      cursor = cursor.message.parentId
+        ? this.nodes.get(cursor.message.parentId)
+        : undefined;
+    }
+    return current.message.id;
+  }
+
   getActiveLeafId(): string | null {
     for (const [id, node] of this.nodes) {
       if (node.children.length === 0) return id;

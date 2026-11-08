@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { type ChatOrchestrator } from "../services/chatOrchestrator";
+import { type TurnOrchestrator } from "../services/stream/turnOrchestrator";
 import type { ContextUsage } from "../chat/core/chatTypes";
 import {
   createStatePort,
@@ -34,7 +34,7 @@ type ChatState = ChatConversationSlice &
     resetContextWindow: () => void;
   };
 
-let _orchestrator: ChatOrchestrator | null = null;
+let _orchestrator: TurnOrchestrator | null = null;
 const persistQueue = new PersistQueue();
 
 export const useChatStore = create<ChatState>()((set, get): ChatState => {
@@ -42,14 +42,18 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
     isActiveConv: (convId: string) => get().currentConversationId === convId,
     setContextUsage: (usage: ContextUsage) => set({ contextUsage: usage }),
   };
-  const statePort = createStatePort(set, get, fetchTokenUsageDeps);
+  const { port: statePort, segments } = createStatePort(
+    set,
+    get,
+    fetchTokenUsageDeps,
+  );
   const envPort = createEnvPort(
     get,
     set,
     () => get().selectedProviderId,
     () => get().selectedModelId,
   );
-  const orchestrator = createOrchestrator(statePort, envPort, {
+  const orchestrator = createOrchestrator(statePort, envPort, segments, {
     loadConversations: () => get().loadConversations(),
     switchConversation: (id: string) => get().switchConversation(id),
     renameConversation: (id: string, title: string, titleSource: string) =>
@@ -91,12 +95,7 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
   };
 });
 
-export {
-  createChatOrchestrator,
-  type ChatOrchestrator,
-  type ChatStatePort,
-  type ChatEnvPort,
-} from "../services/chatOrchestrator";
-export function getChatOrchestrator(): ChatOrchestrator | null {
+export type { TurnOrchestrator };
+export function getChatOrchestrator(): TurnOrchestrator | null {
   return _orchestrator;
 }

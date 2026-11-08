@@ -4,6 +4,8 @@ export interface CoalescibleDelta {
   conversationId: string;
   attemptId: string;
   messageId: string;
+  /** 轮内迭代序号（从 1 起）；迭代边界即气泡边界，合并时不得跨迭代（I38d §3.1.1）。 */
+  iteration: number;
   seq: number;
   delta: string;
 }
@@ -93,8 +95,10 @@ export function createChatDeltaCoalescer<E extends CoalescibleDelta>(
   const push = (event: E) => {
     if (accept && !accept(event)) return;
     const last = queue[queue.length - 1];
-    const eventKey = event.attemptId;
-    const lastKey = last ? last.event.attemptId : undefined;
+    const eventKey = `${event.attemptId}:${event.iteration}`;
+    const lastKey = last
+      ? `${last.event.attemptId}:${last.event.iteration}`
+      : undefined;
     if (
       last &&
       last.event.conversationId === event.conversationId &&

@@ -17,6 +17,7 @@ function mkDelta(
     conversationId: "c1",
     attemptId: "a1",
     messageId: "m1",
+    iteration: 1,
     seq: 0,
     ...overrides,
   };
@@ -107,6 +108,27 @@ describe("createChatDeltaCoalescer", () => {
     trigger();
 
     expect(deliver).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not coalesce deltas across iteration boundary (气泡边界 = 迭代)", () => {
+    const deliver = vi.fn();
+    const { schedule, trigger } = manualScheduler();
+    const coalescer = createChatDeltaCoalescer<TestDelta>(deliver, schedule);
+
+    coalescer.push(mkDelta({ iteration: 1, delta: "first" }));
+    coalescer.push(mkDelta({ iteration: 2, delta: "second" }));
+
+    trigger();
+
+    expect(deliver).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenNthCalledWith(
+      1,
+      mkDelta({ iteration: 1, delta: "first" }),
+    );
+    expect(deliver).toHaveBeenNthCalledWith(
+      2,
+      mkDelta({ iteration: 2, delta: "second" }),
+    );
   });
 
   it("flush drains all pending events immediately", () => {

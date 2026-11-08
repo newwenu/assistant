@@ -12,7 +12,7 @@ import { MESSAGES_PAGE_SIZE } from "../config/constants";
 import type { PersistQueue } from "../utils/persistQueue";
 import { useChatStreamStore } from "./chatStreamStore";
 import { useAgentModeStore } from "./agentModeStore";
-import type { ChatOrchestrator } from "../services/chatOrchestrator";
+import type { TurnOrchestrator } from "../services/stream/turnOrchestrator";
 import {
   fetchTokenUsage,
   type FetchTokenUsageDeps,
@@ -80,7 +80,7 @@ export function createConversationSlice(
   get: () => FullState,
   fetchTokenUsageDeps: FetchTokenUsageDeps,
   persistQueue: PersistQueue,
-  getOrchestrator: () => ChatOrchestrator | null,
+  getOrchestrator: () => TurnOrchestrator | null,
 ): ChatConversationSlice {
   return {
     conversations: [],

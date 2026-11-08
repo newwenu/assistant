@@ -210,13 +210,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                   isStreaming={isReasoningStreaming}
                 />
               )}
-              {message.toolCalls && message.toolCalls.length > 0 && (
-                <div className={css.toolCalls}>
-                  {message.toolCalls.map((view) => (
-                    <ToolCallBubble key={view.callId} view={view} />
-                  ))}
-                </div>
-              )}
               {editing ? (
                 <EditBlock
                   value={editContent}
@@ -239,6 +232,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                     <span className={css.streamingCursor} />
                   )}
                 </>
+              )}
+              {message.toolCalls && message.toolCalls.length > 0 && (
+                <div className={css.toolCalls}>
+                  {message.toolCalls.map((view) => (
+                    <ToolCallBubble key={view.callId} view={view} />
+                  ))}
+                </div>
               )}
             </div>
           )}

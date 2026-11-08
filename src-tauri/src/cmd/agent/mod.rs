@@ -15,7 +15,7 @@ use crate::adapters::{
     PendingQuestionRegistry, PipelineToolExecution, TauriEventSink, TauriInputSource,
 };
 use crate::protocol::{
-    AgentQuestionAnswerDto, ConversationToolConfigDto, SendChatMessageArgsDto,
+    AgentQuestionAnswerDto, AgentToolCallDto, ConversationToolConfigDto, SendChatMessageArgsDto,
     ToolApprovalDecisionDto, ToolApprovalKindDto, ToolDescriptorDto,
 };
 
@@ -114,6 +114,20 @@ pub fn resolve_agent_question(app: AppHandle, args: AgentQuestionAnswerDto) -> R
         .map(|item| QuestionAnswerItem::new(item.selected, item.other))
         .collect();
     pending.resolve(&args.call_id, &args.conversation_id, answers)
+}
+
+/// 挂起提问的补拉：窗口重连 / 切回运行中的会话时，用快照重建 `ask_user` 卡片。
+///
+/// 提问事件是广播、不重放：前端漏收（事件早于 `setActiveAttemptId`、窗口重建、
+/// 会话切换回来）就再也无从得知，后端只能等到超时。补拉是唯一恢复途径，
+/// 因此 `timeoutMs` 由后端改写为剩余时长，前端倒计时与真实 deadline 对齐。
+#[command]
+pub fn list_pending_questions(
+    app: AppHandle,
+    conversation_id: String,
+) -> Result<Vec<AgentToolCallDto>, String> {
+    let pending = app.state::<PendingQuestionRegistry>();
+    Ok(pending.snapshot(&conversation_id))
 }
 
 /// 工具装配清单：返回全部 `agent` 受众工具（含 `tier`），供 `ToolConfigPanel` 分组多选。
