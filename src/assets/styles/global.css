@@ -554,7 +554,6 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   background: var(--color-border-secondary) !important;
 }
 
-.orb-compact .chat-view,
 .chat-view-compact {
   flex-direction: column;
   position: relative;
@@ -566,7 +565,7 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   padding-top: var(--orb-header-height);
 }
 
-.orb-compact .chat-input {
+.chat-view-compact .chat-input {
   padding: 4px 8px;
   border-top: 1px solid var(--color-border-secondary);
   background: var(--color-bg);
