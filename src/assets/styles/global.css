@@ -540,6 +540,15 @@ div[data-orb-window].orb-expanded .orb-hitbox {
   font-size: 13px;
 }
 
+.orb-dropdown .ant-select-item-group {
+  margin: 0 4px;
+  padding: 6px 8px 2px !important;
+  font-size: 11px !important;
+  line-height: 16px;
+  color: var(--color-text-tertiary) !important;
+  cursor: default;
+}
+
 .orb-dropdown
   .ant-select-item-option-active:not(.ant-select-item-option-selected) {
   background: var(--color-border-secondary) !important;
