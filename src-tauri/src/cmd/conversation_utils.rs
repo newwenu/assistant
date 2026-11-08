@@ -45,7 +45,7 @@ fn message_tool_calls(
             let status = match found {
                 Some((_, true)) => MessageToolCallStatusDto::Error,
                 Some((_, false)) => MessageToolCallStatusDto::Success,
-                None => MessageToolCallStatusDto::Cancelled,
+                None => MessageToolCallStatusDto::Missing,
             };
             MessageToolCallDto {
                 call_id: call.id,

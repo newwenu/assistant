@@ -5,6 +5,7 @@ import {
   DownOutlined,
   ExclamationCircleOutlined,
   LoadingOutlined,
+  QuestionCircleOutlined,
   StopOutlined,
   UpOutlined,
 } from "@ant-design/icons";
@@ -38,6 +39,8 @@ function StatusIcon({ status }: { status: ToolCallStatus }) {
       return <ExclamationCircleOutlined />;
     case "cancelled":
       return <StopOutlined />;
+    case "missing":
+      return <QuestionCircleOutlined />;
   }
 }
 
@@ -53,6 +56,8 @@ function statusClass(status: ToolCallStatus): string {
       return css.statusAwaiting;
     case "cancelled":
       return css.statusCancelled;
+    case "missing":
+      return css.statusMissing;
   }
 }
 

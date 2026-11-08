@@ -40,7 +40,7 @@ function upsert(
   return next;
 }
 
-/** 历史 `tool_calls_json` 的只读视图：只出现 `success` / `error` / `cancelled` 终态。 */
+/** 历史 `tool_calls_json` 的只读视图：只出现 `success` / `error` / `cancelled` / `missing` 终态。 */
 export function toolCallsFromHistory(
   calls: MessageToolCall[] | undefined | null,
 ): ToolCallView[] | undefined {

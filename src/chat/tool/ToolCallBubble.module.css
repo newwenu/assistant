@@ -44,6 +44,10 @@
   color: var(--color-text-tertiary);
 }
 
+.statusMissing .statusIcon {
+  color: var(--color-warning, #faad14);
+}
+
 .name {
   font-family: var(--font-mono);
   font-weight: 600;

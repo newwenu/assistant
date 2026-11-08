@@ -98,6 +98,7 @@ pub enum MessageToolCallStatusDto {
     Success,
     Error,
     Cancelled,
+    Missing,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]

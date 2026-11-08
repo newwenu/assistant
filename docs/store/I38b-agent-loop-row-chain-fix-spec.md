@@ -223,11 +223,11 @@ append_tool_results(state, ctx, results):
 
 | 编号 | 问题 | 级别 | 处置 |
 |---|---|---|---|
-| D3 | `trace_active_branch` 逐行 N+1 查询（`branch.rs`） | P2 | 后续批次：recursive CTE 一次取回，或按 id 批量取 |
-| D4 | `append_tool_message` / `create_assistant_message` 三条语句无事务（`message_store.rs`） | P1 | 方案 B 一并解决（`conn.unchecked_transaction()`，与 `branch.rs::create_branch` 现有写法一致） |
-| D6 | tool 行 `sibling_index` 恒为 0（同父兄弟 index 重复） | P2 | 链式追加后同父兄弟消失，问题自然消解；若保留同父形态则须按同父计数分配 |
+| D3 | `trace_active_branch` 逐行 N+1 查询（`branch.rs`） | P2 | 后续批次：recursive CTE 一次取回，或按 id 批量取；**本批不做**（放宽深度上限后链长量级仍在千行以内，实测未观察到可感知延迟） |
+| D4 | `append_tool_message` / `create_assistant_message` 三条语句无事务（`message_store.rs`） | P1 | **已随本批完成**：两条路径的 sibling 计数 / insert / status / 叶子推进收进同一 `unchecked_transaction`，与 `branch.rs::create_branch` 写法一致；半写状态（行已插入但叶子未推进）不再可能 |
+| D6 | tool 行 `sibling_index` 恒为 0（同父兄弟 index 重复） | P2 | **已自然消解**：链式追加后每个 tool 行独占一个父节点，同父兄弟形态不再存在，无需分配逻辑 |
 | D7 | `not_executed` 生成的 `skipped` 行走同一缺陷路径（生成于 `budget.rs`；收尾出口 `terminal.rs` 的 `wrap_up_on_last_iteration` 生成 skipped 并链式追加；预算切分在 `budget.rs` 的 `split_by_budget`） | P0 | 随 D1 一并修复，无需单独改动 |
-| D8 | 缺失结果被投影成 `cancelled`（`src-tauri/src/cmd/conversation_utils.rs`），且 `flush_pending` 日志级别为 `debug`（`prompt_builder.rs`） | P1 | 后续批次：缺失至少 `log::warn!`（带 `conversation_id` / `call_id` / `message_id`）；状态语义不再等同「取消」 |
+| D8 | 缺失结果被投影成 `cancelled`（`src-tauri/src/cmd/conversation_utils.rs`），且 `flush_pending` 日志级别为 `debug`（`prompt_builder.rs`） | P1 | **已随本批完成**：DTO 新增 `missing` 态（与 `cancelled` 区分），前端六态渲染；`flush_pending` 与「结果缺父调用」两处均升为 `log::warn!` 并带 `conversation_id` / `message_id` / `call_id` |
 
 ---
 
@@ -322,12 +322,14 @@ U1 → A1 → T1 → T2 → T3 → A2
 
 | 风险 | 缓解 |
 |---|---|
-| 链长增长放大深度上限 / N+1 回溯 / 兄弟计数开销（多工具批次由被截断的约 3 行恢复为完整 5–6 行；单工具批次本就 4–6 行） | D2 与 D1 同批；D3 列入后续批次；A20e 覆盖深度 |
+| 链长增长放大深度上限 / N+1 回溯 / 兄弟计数开销（多工具批次由被截断的约 3 行恢复为完整 5–6 行；单工具批次本就 4–6 行） | D2 与 D1 同批；D3 列入后续批次（本批实测无可感知延迟）；A20e 覆盖深度 |
 | 只改 `append_tool_results` 而漏改 D5，导致迭代 2 断裂 | §5.2 列为前置条件；A20a 覆盖跨迭代 |
 | 规格与实现再次分叉（S1/S2/S4 仍写「挂 assistant 行」） | §4 修订与本批同批提交 |
 | 误以为放宽 `advance_active_branch` 即可修复 | §1.2 / §6.3 明确禁止；保护用户分支选择 |
 | 以「自动纠正叶子」掩盖违例 | 同上 |
 | 存量错位行被误认为新缺陷 | §1.2 明确不做迁移；只验收新写入 |
+| 落库中途失败留下「行已插入、叶子未推进」，其表现与本缺陷一致 | D4 事务化已随本批完成，半写状态不可能 |
+| 缺失结果与用户取消被显示为同一状态，掩盖落库异常 | D8 已随本批完成：DTO 新增 `missing` 态，前端独立渲染 |
 
 **决策定稿**：
 
@@ -340,14 +342,15 @@ U1 → A1 → T1 → T2 → T3 → A2
 
 ## 9 实施顺序
 
-| 顺序 | 内容 | 风险 |
+| 顺序 | 内容 | 状态与风险 |
 |---|---|---|
-| 1 | D1 + D5 + 三处调用点 + D2（方案 A） | 必须同批；单独改 D1 会在迭代 2 断裂 |
-| 2 | A20a–A20c 单测 + A14+ 加强 + 7.2 存储层用例 + 7.3 替身 | 只增测试，无行为变更 |
-| 3 | §4 文档口径修订 | 与 1、2 同批提交 |
-| 4 | D4 事务 + D3 recursive CTE | 存储层改造，独立提交便于回滚 |
-| 5 | D6 / D8 收尾 | 低风险，可合批 |
-| 6 | 方案 B（端口收口） | 独立小批次，不与其他改动混合 |
+| 1 | D1 + D5 + 三处调用点 + D2（方案 A） | **已完成**；必须同批，单独改 D1 会在迭代 2 断裂 |
+| 2 | A20a–A20c 单测 + A14+ 加强 + 7.2 存储层用例 + 7.3 替身 | **已完成**；只增测试，无行为变更 |
+| 3 | §4 文档口径修订 | **已完成**；与 1、2 同批提交 |
+| 4 | D4 事务（`create_assistant_message` / `append_tool_message`） | **已完成**；存储层改造，独立提交便于回滚 |
+| 5 | D6 / D8 收尾 | **已完成**；D6 随链式追加自然消解（无代码改动），D8 落 DTO `missing` 态 + 前端六态渲染 + `warn` 日志 |
+| 6 | D3 recursive CTE | **未做**；留待实际观测到回溯延迟再启动，不阻塞本规格验收 |
+| 7 | 方案 B（端口收口） | **未做**；独立小批次，不与其他改动混合 |
 
 ---
 

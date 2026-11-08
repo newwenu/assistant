@@ -43,9 +43,9 @@ import type {
   TurnPhaseDto,
 } from "../../types/protocol.contract";
 
-/** 工具调用卡片状态（I38d §3.1）。历史只允许 `success` / `error`。 */
+/** 工具调用卡片状态（I38d §3.1）。历史只允许 `success` / `error` / `cancelled` / `missing`。 */
 export type ToolCallStatus =
-  "running" | "success" | "error" | "awaiting_user" | "cancelled";
+  "running" | "success" | "error" | "awaiting_user" | "cancelled" | "missing";
 
 /**
  * 工具调用的前端视图，挂在消息上随消息一起渲染。

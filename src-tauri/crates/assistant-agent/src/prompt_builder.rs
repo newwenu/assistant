@@ -42,7 +42,8 @@ pub fn prepare_messages(
         .collect();
     let tool_names = collect_tool_names(&rows);
     let rebuilt = rebuild_rows(&rows, &tool_names);
-    let mut chat_messages = repair_tool_pairing(rebuilt, &detail.conversation.id);
+    let row_ids: Vec<&str> = rows.iter().map(|row| row.id.as_str()).collect();
+    let mut chat_messages = repair_tool_pairing(rebuilt, &detail.conversation.id, &row_ids);
 
     if !system_prompt.is_empty() {
         chat_messages.insert(
@@ -130,15 +131,26 @@ fn rebuild_rows(rows: &[&MessageRow], tool_names: &HashMap<String, String>) -> V
         .collect()
 }
 
-fn repair_tool_pairing(messages: Vec<ChatMessage>, conversation_id: &str) -> Vec<ChatMessage> {
+fn repair_tool_pairing(
+    messages: Vec<ChatMessage>,
+    conversation_id: &str,
+    row_ids: &[&str],
+) -> Vec<ChatMessage> {
     let mut out: Vec<ChatMessage> = Vec::with_capacity(messages.len());
     let mut pending: Vec<ToolCall> = Vec::new();
+    let mut pending_owner: Option<String> = None;
 
-    for msg in messages {
+    for (index, msg) in messages.into_iter().enumerate() {
         match msg.role {
             MessageRole::Assistant if msg.tool_calls.is_some() => {
-                flush_pending(&mut out, &mut pending, conversation_id);
+                flush_pending(
+                    &mut out,
+                    &mut pending,
+                    conversation_id,
+                    pending_owner.as_deref(),
+                );
                 pending = msg.tool_calls.clone().unwrap_or_default();
+                pending_owner = row_ids.get(index).map(|id| id.to_string());
                 out.push(msg);
             }
             MessageRole::Tool => {
@@ -149,8 +161,9 @@ fn repair_tool_pairing(messages: Vec<ChatMessage>, conversation_id: &str) -> Vec
                 if !matched {
                     log::warn!(
                         target: "agent::prompt_builder",
-                        "会话 {} 的工具结果缺少父调用，投影期丢弃: tool_call_id = {:?}",
+                        "会话 {} 的工具结果缺少父调用，投影期丢弃: message_id = {:?}, tool_call_id = {:?}",
                         conversation_id,
+                        row_ids.get(index),
                         call_id
                     );
                     continue;
@@ -159,21 +172,41 @@ fn repair_tool_pairing(messages: Vec<ChatMessage>, conversation_id: &str) -> Vec
                 out.push(msg);
             }
             _ => {
-                flush_pending(&mut out, &mut pending, conversation_id);
+                flush_pending(
+                    &mut out,
+                    &mut pending,
+                    conversation_id,
+                    pending_owner.as_deref(),
+                );
+                pending_owner = None;
                 out.push(msg);
             }
         }
     }
-    flush_pending(&mut out, &mut pending, conversation_id);
+    flush_pending(
+        &mut out,
+        &mut pending,
+        conversation_id,
+        pending_owner.as_deref(),
+    );
     out
 }
 
-fn flush_pending(out: &mut Vec<ChatMessage>, pending: &mut Vec<ToolCall>, conversation_id: &str) {
+fn flush_pending(
+    out: &mut Vec<ChatMessage>,
+    pending: &mut Vec<ToolCall>,
+    conversation_id: &str,
+    owner_message_id: Option<&str>,
+) {
     for call in pending.drain(..) {
+        // D27 兜底路径：跨进程中断必然留下未配对的调用，投影期只读补一条中断结果让 wire 配平
+        // （不写库，I38b §8）。行链修复后正常 turn 不会再漏写结果行，凡走到这里都意味着
+        // 「中断」或「落库失败」，故用 warn 并带定位三要素，便于与真实缺陷区分。
         log::warn!(
             target: "agent::prompt_builder",
-            "会话 {} 的调用 {} 缺少工具结果，投影期合成中断结果",
+            "会话 {} 的消息 {:?} 的调用 {} 缺少工具结果，投影期合成中断结果",
             conversation_id,
+            owner_message_id,
             call.id
         );
         out.push(ChatMessage {

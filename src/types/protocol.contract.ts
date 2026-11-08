@@ -95,7 +95,7 @@ export type MascotConfDto = { renderer: string, primaryColor: string | null, sec
 export type MessageChangeKindDto = "branch_created" | "branch_switched" | "branch_forked" | "message_deleted" | "messages_compacted" | "stream_finished";
 export type MessageDto = { id: string, conversationId: string, role: string, content: string, tokens: number | null, timestamp: number, parentId: string | null, isPinned: boolean, reasoning: string | null, siblingIndex: number, siblingCount: number | null, providerId: string | null, modelId: string | null, toolCalls: Array<MessageToolCallDto>, };
 export type MessageToolCallDto = { callId: string, name: string, arguments: unknown, status: MessageToolCallStatusDto, result: string | null, };
-export type MessageToolCallStatusDto = "success" | "error" | "cancelled";
+export type MessageToolCallStatusDto = "success" | "error" | "cancelled" | "missing";
 export type ModelConfigDto = { id: string, name: string, ownedBy: string, contextWindow: number | null, supportVision: boolean, 
 /**
  * 输入模态列表（"text"/"image"/"pdf"/"audio"/"video"）；

@@ -98,12 +98,12 @@
 
 ## C6 后续独立批次（不计入本批完成度）
 
-- [ ] C6.1 D4：`create_assistant_message` / `append_tool_message` 的 insert → status → 叶子推进收进同一事务（`unchecked_transaction`，与 `create_branch` 现有写法一致）
-- [ ] C6.2 D3：`trace_active_branch` 的逐行 N+1 查询改为 recursive CTE 或按 id 批量取
-- [ ] C6.3 D6：tool 行 `sibling_index` 分配（链式追加后同父兄弟消失，若保留同父形态则按同父计数）
-- [ ] C6.4 D8：缺失结果投影不再等同 `Cancelled`；`flush_pending` 至少 `log::warn!` 并带 `conversation_id` / `call_id` / `message_id`
-- [ ] C6.5 方案 B：`MessageStore` 端口收口为「追加到分支尾部」原子操作，`parent_id` 从端口 API 消失；须同步 `test_doubles.rs` 与全部调用点，独立提交
-- [ ] C6.6 A20f：方案 B 批次补「`append_tool_message` 内部任一语句失败不留半写状态」用例
+- [x] C6.1 D4：`create_assistant_message` / `append_tool_message` 的 insert → status → 叶子推进收进同一事务（`unchecked_transaction`，与 `create_branch` 现有写法一致）（2026-11-08：`src-tauri/src/adapters/message_store.rs` 两条路径均改为 `let tx = conn.unchecked_transaction()` → 各语句传 `&tx` → `tx.commit()`；`cargo test -p assistant-storage` 35 项与 `assistant-agent` 全量通过）
+- [ ] C6.2 D3：`trace_active_branch` 的逐行 N+1 查询改为 recursive CTE 或按 id 批量取（**不做**：实测链长量级下无可感知延迟，留待观测后再启动）
+- [x] C6.3 D6：tool 行 `sibling_index` 分配（链式追加后同父兄弟消失，若保留同父形态则按同父计数）（2026-11-08：问题已自然消解，无代码改动；每条 tool 行独占一个父节点）
+- [x] C6.4 D8：缺失结果投影不再等同 `Cancelled`；`flush_pending` 至少 `log::warn!` 并带 `conversation_id` / `call_id` / `message_id`（2026-11-08：`MessageToolCallStatusDto` 新增 `Missing` 并跑 `npm run contract:gen` 重生成；`conversation_utils.rs` 缺失结果映射为 `missing`；`prompt_builder.rs` 的 `flush_pending` 与「结果缺父调用」两处升为 `warn` 并带定位三要素；前端 `ToolCallStatus` 扩为六态，`ToolCallBubble` 新增图标/配色/文案，`zh-CN` / `en-US` 补 `missing` 文案；`npm run typecheck`、`npm run lint`、`vitest run`（33 文件）全通过）
+- [ ] C6.5 方案 B：`MessageStore` 端口收口为「追加到分支尾部」原子操作，`parent_id` 从端口 API 消失；须同步 `test_doubles.rs` 与全部调用点，独立提交（**不做**：C6.1 已覆盖用户可见收益；若要补编译期保险，先只把 `msg_id` / `last_row_id` 收成不同 newtype）
+- [ ] C6.6 A20f：方案 B 批次补「`append_tool_message` 内部任一语句失败不留半写状态」用例（随 C6.5 一并取消）
 
 ---
 
