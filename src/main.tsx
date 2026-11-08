@@ -7,6 +7,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { RuntimeLoader } from "@rive-app/webgl2";
 import { useThemeStore } from "@/stores/themeStore";
 import { useLocaleStore } from "@/stores/localeStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useTheme } from "@/hooks/useTheme";
 import { lightTheme, darkTheme } from "@/assets/styles/theme";
 import { WINDOW_ORB } from "@/config/constants";
@@ -16,6 +17,9 @@ import { bootstrapLogger } from "@/services/logger";
 import { registerGlobalErrorHandlers } from "@/services/globalErrorHandler";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { applyLocaleChange } from "@/i18n/localeApplier";
+import { loadFeatures } from "@/features/registry";
+import { getConfGroups } from "@/settings/core/confRuntime";
+import { getConfValue } from "@/settings/core/useConfGroup";
 import "@/i18n";
 import App from "./App";
 import "./assets/styles/fonts.css";
@@ -36,13 +40,13 @@ bootstrapLogger();
 registerGlobalErrorHandlers();
 
 async function bootstrap(): Promise<void> {
-  const { useSettingsStore } = await import("@/stores/settingsStore");
+  await loadFeatures();
   const store = useSettingsStore.getState();
-  await store.loadAppConf();
-  await store.loadOrbConf();
-  await store.loadMascotConf();
+  for (const group of getConfGroups()) {
+    await store.loadConf(group);
+  }
 
-  const lang = useSettingsStore.getState().appConf?.language ?? "zh-CN";
+  const lang = getConfValue("app")?.language ?? "zh-CN";
   await applyLocaleChange(lang);
 }
 

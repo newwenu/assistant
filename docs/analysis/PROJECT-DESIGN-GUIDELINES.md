@@ -20,7 +20,6 @@ Service（IPC 协议）→ Orchestrator（业务编排）→ Store（纯状态�
 | **软规则** | 编排步数 ≤2 且无跨 Store 依赖 | 允许 Store 直接调 Service，但编排逻辑应内聚在单个 action 内 | createConversation（load providers → create → switch）、resendMessage |
 | **豁免** | 单步 `await service.xxx() → set(...)` 纯 CRUD/加载 | Store 直接调 Service 合规，无需引入 Port | listConversations、loadAppConf、deleteConversation |
 
-
 ### 1.2 前端注册表三层（I5-Ext / I14 / I8）
 
 多实现模块（渲染器/策略/设置项）采用 Core → Implementation → Orchestration 三层：
@@ -309,7 +308,7 @@ ToolBox 不经 ToolPipeline：用户主动点击 = 权限主体，审批自己�
 | slice 接口 `ModuleDomainSlice` | 对齐 `ChatCompactSlice` 先例 |
 | 子组件不加父名中缀 | `unlock/PasswordForm.tsx` 非 `PasswordUnlockForm.tsx` |
 | CSS Module 共享 | 同模块子组件共享同一 CSS 文件 |
-| 测试与源同目录 | `vaultStore.test.ts` 放 `vault/core/` |
+| 测试放 `__tests__/` 子目录 | `vault/core/__tests__/vaultStore.test.ts`，与源目录并列但不混放 |
 | `as unknown as` 仅 2 处 | `confUtils.ts` + `i18n/index.ts`，其余禁止 |
 | 新增设置项同步接口 | `AppConf`/`OrbConf`/`MascotConf` + Rust struct + `#[serde(default)]` |
 

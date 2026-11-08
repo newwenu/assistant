@@ -9,12 +9,12 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
-import {
-  storageService,
-  type StorageBreakdownDto,
-  type AttachmentSummary,
-  type ConversationAttachmentSummary,
-} from "@/services/storageService";
+import { storageService } from "@/services/storageService";
+import type {
+  AttachmentSummary,
+  ConversationAttachmentSummary,
+  StorageBreakdownDto,
+} from "@/types/protocol.contract";
 import { formatBytes } from "@/utils/formatBytes";
 
 function formatTimestamp(ts: number): string {

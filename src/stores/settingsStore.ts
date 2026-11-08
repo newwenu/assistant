@@ -1,81 +1,42 @@
 import { create } from "zustand";
-import { DEFAULT_KEYBINDINGS } from "@/settings/core/types/shortcutTypes";
 import { createLogger } from "@/services/logger";
+import type { ConfGroup, ConfStore } from "@/settings/core/types/confRegistry";
+import { fetchConf, getConfSlot } from "@/settings/core/confRuntime";
+import { applyLocaleChange } from "@/i18n/localeApplier";
+
 export type {
   AppConf,
   OrbConf,
   MascotConf,
 } from "@/settings/core/types/confTypes";
-import type {
-  AppConf,
-  OrbConf,
-  MascotConf,
-} from "@/settings/core/types/confTypes";
-import { settingService } from "../services/settingService";
-import { applyLocaleChange } from "@/i18n/localeApplier";
 
 const log = createLogger("settingsStore");
 
 export interface SettingsState {
-  appConf: AppConf | null;
-  orbConf: OrbConf | null;
-  mascotConf: MascotConf | null;
+  confs: ConfStore;
 
-  loadAppConf: () => Promise<void>;
-  loadOrbConf: () => Promise<void>;
-  loadMascotConf: () => Promise<void>;
-  updateKeybinding: (id: string, binding: string) => Promise<void>;
-  resetKeybindings: () => Promise<void>;
+  loadConf: <G extends ConfGroup>(group: G) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  appConf: null,
-  orbConf: null,
-  mascotConf: null,
+  confs: {},
 
-  loadAppConf: async () => {
+  loadConf: async (group) => {
+    if (!getConfSlot(group)) return;
+    const prevLang = group === "app" ? get().confs.app?.language : undefined;
     try {
-      const prevLang = get().appConf?.language;
-      const conf = await settingService.getAppConf();
-      set({ appConf: conf });
-      if (conf.language && conf.language !== prevLang) {
-        await applyLocaleChange(conf.language);
+      const conf = await fetchConf(group);
+      const next: ConfStore = { ...get().confs };
+      next[group] = conf;
+      set({ confs: next });
+      if (group === "app") {
+        const lang = get().confs.app?.language;
+        if (lang && lang !== prevLang) {
+          await applyLocaleChange(lang);
+        }
       }
     } catch (e) {
-      log.error("loadAppConf failed", e);
+      log.error(`loadConf(${group}) failed`, e);
     }
-  },
-
-  loadOrbConf: async () => {
-    try {
-      const conf = await settingService.getOrbConf();
-      set({ orbConf: conf });
-    } catch (e) {
-      log.error("loadOrbConf failed", e);
-    }
-  },
-
-  loadMascotConf: async () => {
-    try {
-      const conf = await settingService.getMascotConf();
-      set({ mascotConf: conf });
-    } catch (e) {
-      log.error("loadMascotConf failed", e);
-    }
-  },
-
-  updateKeybinding: async (id: string, binding: string) => {
-    const { appConf } = get();
-    if (!appConf) return;
-    const newKeybindings = { ...appConf.keybindings, [id]: binding };
-    const { dispatchConfPatch } =
-      await import("../settings/core/settingsDispatcher");
-    await dispatchConfPatch("app", { keybindings: newKeybindings });
-  },
-
-  resetKeybindings: async () => {
-    const { dispatchConfPatch } =
-      await import("../settings/core/settingsDispatcher");
-    await dispatchConfPatch("app", { keybindings: { ...DEFAULT_KEYBINDINGS } });
   },
 }));

@@ -74,6 +74,18 @@
   color: var(--color-text);
   border: 1px solid var(--color-border-secondary);
   border-bottom-left-radius: 4px;
+  align-self: flex-start;
+}
+
+.rootEditing .bubbleAssistant {
+  align-self: stretch;
+}
+
+.toolCalls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 .bubbleError {
@@ -164,22 +176,4 @@
   align-items: center;
   margin-bottom: 6px;
   font-size: 12px;
-}
-
-.retryBanner {
-  display: flex;
-  align-items: center;
-  margin-bottom: 6px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--color-warning-bg);
-  color: var(--color-warning, #faad14);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.retryMessage {
-  margin-left: 8px;
-  color: var(--color-text-secondary);
-  font-size: 11px;
 }

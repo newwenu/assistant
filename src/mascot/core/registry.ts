@@ -8,8 +8,8 @@ import type {
 import {
   defineSetting,
   type SettingDefinition,
-  type ConfGroup,
 } from "@/settings/core/field/fieldRegistry";
+import type { ConfGroup } from "@/settings/core/types/confRegistry";
 import { createLogger } from "@/services/logger";
 
 const log = createLogger("mascot-registry");
@@ -56,10 +56,13 @@ function registerRendererSettings(
 }
 
 export function registerRenderer(entry: RendererEntry): void {
-  if (registry.has(entry.meta.id)) {
-    log.warn(`renderer "${entry.meta.id}" already registered, overwriting`);
-  }
+  const existing = registry.get(entry.meta.id);
   registry.set(entry.meta.id, entry);
+  if (existing) {
+    existing.dispose?.();
+    log.warn(`renderer "${entry.meta.id}" already registered, overwriting`);
+    return;
+  }
   if (entry.meta.settings?.length) {
     registerRendererSettings(entry.meta.id, entry.meta.settings);
   }
@@ -86,7 +89,7 @@ export function createMascotCapabilityVisible(
   ...requiredCaps: MascotCapabilityKey[]
 ): (conf: Record<string, unknown>) => boolean {
   return (conf) => {
-    const rendererId = (conf.renderer as string) ?? "rive";
+    const rendererId = (conf.renderer as string) ?? "svg";
     const meta = getAllRendererMetas().find(
       (m) => m.id === (rendererId as MascotRendererId),
     );

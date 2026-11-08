@@ -1,6 +1,6 @@
 import React, { useCallback } from "react";
 import type { FileAttachmentRef } from "../core/contentBlockTypes";
-import { openAttachmentFile } from "../core/attachmentUtils";
+import { openFromPanel } from "@/orb/panelActions";
 import { formatBytes } from "@/utils/formatBytes";
 import css from "./FileCard.module.css";
 
@@ -14,11 +14,7 @@ export const FileCard: React.FC<FileCardProps> = ({ attachment }) => {
 
   const handleOpen = useCallback(async () => {
     if (!hasValidId) return;
-    try {
-      await openAttachmentFile(attachment.attachmentId);
-    } catch (e) {
-      console.warn("Failed to open attachment:", e);
-    }
+    await openFromPanel({ kind: "attachment", id: attachment.attachmentId });
   }, [attachment.attachmentId, hasValidId]);
 
   return (

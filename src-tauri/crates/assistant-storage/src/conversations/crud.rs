@@ -5,7 +5,7 @@ use super::{read_conv_row, ConversationRow, CONV_SELECT};
 pub fn insert_conversation(conn: &Connection, row: &ConversationRow) -> Result<(), String> {
     conn.execute(
         &format!(
-            "INSERT INTO conversations ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+            "INSERT INTO conversations ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
             CONV_SELECT
         ),
         params![
@@ -21,7 +21,9 @@ pub fn insert_conversation(conn: &Connection, row: &ConversationRow) -> Result<(
             row.created_at,
             row.updated_at,
             row.is_full as i64,
-            row.active_branch_id
+            row.active_branch_id,
+            row.mode_id,
+            row.tool_config_json
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -67,8 +69,8 @@ pub fn get_conversation_by_id(
 
 pub fn update_conversation(conn: &Connection, row: &ConversationRow) -> Result<(), String> {
     conn.execute(
-        "UPDATE conversations SET title=?2, title_source=?3, provider_id=?4, model_id=?5, system_prompt=?6, is_pinned=?7, sort_order=?8, generation=?9, created_at=?10, updated_at=?11, is_full=?12, active_branch_id=?13 WHERE id=?1",
-        params![row.id, row.title, row.title_source, row.provider_id, row.model_id, row.system_prompt, row.is_pinned as i64, row.sort_order, row.generation, row.created_at, row.updated_at, row.is_full as i64, row.active_branch_id],
+        "UPDATE conversations SET title=?2, title_source=?3, provider_id=?4, model_id=?5, system_prompt=?6, is_pinned=?7, sort_order=?8, generation=?9, created_at=?10, updated_at=?11, is_full=?12, active_branch_id=?13, mode_id=?14, tool_config_json=?15 WHERE id=?1",
+        params![row.id, row.title, row.title_source, row.provider_id, row.model_id, row.system_prompt, row.is_pinned as i64, row.sort_order, row.generation, row.created_at, row.updated_at, row.is_full as i64, row.active_branch_id, row.mode_id, row.tool_config_json],
     ).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -80,6 +82,13 @@ pub fn delete_conversation(conn: &Connection, id: &str) -> Result<(), String> {
     tx.execute(
         "DELETE FROM attachment_refs WHERE conversation_id = ?1",
         params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    // 会话级授权随会话删除级联清理：`s:<conversationId>|<key>` 前缀由 Rust 侧唯一维护。
+    let session_prefix = format!("s:{id}|");
+    tx.execute(
+        "DELETE FROM permission_grants WHERE instr(grant_key, ?1) = 1",
+        params![session_prefix],
     )
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;

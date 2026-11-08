@@ -34,6 +34,7 @@ describe("chatStreamStore", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
         streamingContent: "leftover",
@@ -102,6 +103,28 @@ describe("chatStreamStore", () => {
     });
   });
 
+  describe("resumeStream", () => {
+    it("标记流式中并记录 attemptId，messageId 未知时保留原值", () => {
+      useChatStreamStore.getState().resumeStream("attempt-1", null);
+
+      const s = useChatStreamStore.getState();
+      expect(s.isStreaming).toBe(true);
+      expect(s.activeAttemptId).toBe("attempt-1");
+      expect(s.streamingMessageId).toBeNull();
+    });
+
+    it("已知 messageId 时一并写入，不覆盖已有流式内容", () => {
+      useChatStreamStore.setState({ streamingContent: "already" });
+      useChatStreamStore.getState().resumeStream("attempt-2", "msg-2");
+
+      const s = useChatStreamStore.getState();
+      expect(s.isStreaming).toBe(true);
+      expect(s.activeAttemptId).toBe("attempt-2");
+      expect(s.streamingMessageId).toBe("msg-2");
+      expect(s.streamingContent).toBe("already");
+    });
+  });
+
   describe("cancelStreaming", () => {
     it("resets all 6 streaming scalars", () => {
       useChatStreamStore.setState({
@@ -114,6 +137,7 @@ describe("chatStreamStore", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });
@@ -142,6 +166,7 @@ describe("chatStreamStore", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });
@@ -170,6 +195,7 @@ describe("chatStreamStore", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         } as RetryNotification,
       };
@@ -222,6 +248,7 @@ describe("chatStreamStore", () => {
         attempt: 2,
         maxAttempts: 5,
         delayMs: 2000,
+        errorCode: null,
         message: "rate limited",
       };
       useChatStreamStore.getState().setRetryStatus(retry);
@@ -234,6 +261,7 @@ describe("chatStreamStore", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });

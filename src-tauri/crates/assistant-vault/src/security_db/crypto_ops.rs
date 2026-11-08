@@ -138,26 +138,25 @@ impl SecurityDbState {
     }
 
     pub fn decrypt_entry(&self, id: &str) -> Result<crate::types::VaultEntryDecrypted, VaultError> {
+        type EntryRow = (
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            String,
+            i64,
+            i64,
+            i64,
+            i64,
+        );
+
         self.with_conn_and_key(|conn, mk| {
-            let result: Result<
-                (
-                    String,
-                    String,
-                    Option<String>,
-                    Option<String>,
-                    String,
-                    Option<String>,
-                    Option<String>,
-                    Option<String>,
-                    Option<String>,
-                    String,
-                    i64,
-                    i64,
-                    i64,
-                    i64,
-                ),
-                rusqlite::Error,
-            > = conn.query_row(
+            let result: Result<EntryRow, rusqlite::Error> = conn.query_row(
                 "SELECT id, title, username, url, category, encrypted_password, \
                  encrypted_notes, encrypted_totp_secret, encrypted_custom_fields, \
                  tags, is_favorite, revision, created_at, updated_at \
@@ -266,7 +265,7 @@ impl SecurityDbState {
                 custom_fields,
                 tags: serde_json::from_str(&tags_json).unwrap_or_default(),
                 is_favorite: is_fav != 0,
-                revision: revision as u64,
+                revision,
                 created_at: created,
                 updated_at: updated,
             })

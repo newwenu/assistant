@@ -1,3 +1,17 @@
+import type {
+  SettingProviderChangedPayloadDto,
+  ShortcutWarningPayloadDto,
+  ThemeChangedPayloadDto,
+} from "./protocol.contract";
+
+export type SettingProviderChangedPayload = SettingProviderChangedPayloadDto;
+
+export type ShortcutWarningPayload = ShortcutWarningPayloadDto;
+
+export type ThemeChangedPayload = Omit<ThemeChangedPayloadDto, "resolved"> & {
+  resolved: "light" | "dark";
+};
+
 export enum SettingAction {
   ProviderSaved = "provider-saved",
   ProviderDeleted = "provider-deleted",
@@ -17,20 +31,12 @@ export interface SettingEventPayload {
   value?: unknown;
 }
 
-export interface ShortcutWarningPayload {
-  id: string;
-  binding: string;
-  error: string;
-}
-
-export interface ThemeChangedPayload {
-  resolved: "light" | "dark";
-}
-
 export enum UiEvent {
   ShortcutWarning = "shortcut-warning",
   Navigate = "navigate",
   ThemeChanged = "theme-changed",
   OrbNewConversation = "orb-new-conversation",
   OrbBlur = "orb-blur",
+  WindowModeChanged = "ui:window-mode-changed",
+  ClockFinished = "clock:finished",
 }

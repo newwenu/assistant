@@ -36,8 +36,23 @@
   margin-bottom: 8px;
 }
 
+.historyList {
+  display: flex;
+  flex-direction: column;
+}
+
 .historyItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   cursor: pointer;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--color-border-secondary);
+}
+
+.historyItem:last-child {
+  border-bottom: none;
 }
 
 .historyExpr {

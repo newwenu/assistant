@@ -12,3 +12,7 @@
 .tool-page-enter {
   animation: tool-page-fade-in 0.15s ease-out;
 }
+
+.tool-page-container {
+  container-type: inline-size;
+}

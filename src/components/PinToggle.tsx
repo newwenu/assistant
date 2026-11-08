@@ -1,23 +1,29 @@
 import { useEffect, useState } from "react";
 import { Button, Tooltip } from "antd";
 import { PushpinOutlined, PushpinFilled } from "@ant-design/icons";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useConfGroup } from "@/settings/core/useConfGroup";
 import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
+import { useSettingMessage } from "@/settings/shared/useSettingMessage";
 import { useTranslation } from "react-i18next";
 
 export const PinToggle: React.FC = () => {
-  const appConf = useSettingsStore((s) => s.appConf);
+  const appConf = useConfGroup("app");
   const [pinned, setPinned] = useState(appConf?.stayOnTop ?? false);
   const { t } = useTranslation();
+  const msg = useSettingMessage();
 
   useEffect(() => {
     if (appConf) setPinned(appConf.stayOnTop);
   }, [appConf]);
 
   const handleToggle = () => {
-    const next = !pinned;
+    const prev = pinned;
+    const next = !prev;
     setPinned(next);
-    void dispatchConfPatch("app", { stayOnTop: next });
+    void dispatchConfPatch("app", { stayOnTop: next }).catch((e: unknown) => {
+      setPinned(prev);
+      msg.showFailed(e);
+    });
   };
 
   return (

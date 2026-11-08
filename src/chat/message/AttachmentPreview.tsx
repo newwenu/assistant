@@ -1,7 +1,7 @@
 import React from "react";
 import { CloseOutlined } from "@ant-design/icons";
 import { formatBytes } from "@/utils/formatBytes";
-import type { Attachment } from "../core/attachmentTypes";
+import type { Attachment } from "../attachment/types";
 import css from "./AttachmentPreview.module.css";
 
 interface AttachmentPreviewProps {

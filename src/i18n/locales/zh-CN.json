@@ -11,10 +11,18 @@
       "vault": "密码保险库",
       "vault_settings": { "title": "密码保险库设置" },
       "chat_history": "消息历史",
-      "settings": "设置"
+      "settings": "设置",
+      "category": {
+        "general": "通用",
+        "provider": "服务",
+        "vault": "安全",
+        "about": "关于"
+      }
     },
     "actions": {
       "saved": "已保存",
+      "save_failed": "保存失败",
+      "save_failed_desc": "设置未能保存：{{error}}",
       "save": "保存",
       "cancel": "取消",
       "more": "更多操作",
@@ -74,6 +82,11 @@
     }
   },
   "settings": {
+    "not_found": {
+      "title": "页面不存在",
+      "description": "找不到设置页面「{{pageId}}」，它可能属于未启用的特性。",
+      "back": "返回设置总览"
+    },
     "overview": {
       "title": "设置总览",
       "subtitle": "查看当前配置状态，点击进入详细设置",
@@ -101,12 +114,32 @@
       },
       "compact": {
         "auto_compact": { "label": "上下文上限自动终止" },
-        "compact_threshold_percent": { "label": "终止阈值" },
+        "compact_threshold_percent_of_budget": { "label": "可用预算终止阈值" },
         "compact_summary_prompt": {
           "label": "自定义摘要提示词",
           "placeholder": "留空使用默认模板"
         },
         "compact_summary_max_tokens": { "label": "摘要最大长度" }
+      },
+      "agent_tools": {
+        "title": "Agent 工具",
+        "description": "工具执行的工作区与审批等待行为",
+        "workspace_root": {
+          "label": "工作区根目录",
+          "description": "工具的相对路径与默认路径都以此为基准；留空则视为未配置，相对路径类工具将直接报错，不会退回当前目录",
+          "placeholder": "未配置",
+          "pick_title": "选择工作区根目录"
+        },
+        "approval_timeout_secs": {
+          "label": "审批等待上限（秒）",
+          "description": "等待用户确认的最长时间，超时按拒绝处理；留空使用默认 120 秒",
+          "placeholder": "默认 120"
+        },
+        "user_question_timeout_secs": {
+          "label": "提问等待上限（秒）",
+          "description": "ask_user 等待用户作答的最长时间，超时视为未回答并继续；填 0 表示不限时，留空使用默认 180 秒",
+          "placeholder": "默认 180"
+        }
       }
     },
     "appearance": {
@@ -225,10 +258,8 @@
       "empty": "暂无 Agent 模式",
       "section": { "builtin": "内置模式", "custom": "自定义模式" },
       "kind": {
-        "default": "默认",
-        "quick": "快速",
-        "deep": "深度",
-        "custom": "自定义"
+        "chat": "对话",
+        "agent": "Agent"
       },
       "field": {
         "name": {
@@ -248,8 +279,57 @@
         "reasoning_enabled": { "label": "推理" },
         "reasoning_effort": {
           "label": "推理强度",
-          "placeholder": "选择推理强度"
+          "placeholder": "选择推理强度",
+          "options": {
+            "low": "低",
+            "medium": "中",
+            "high": "高"
+          }
+        },
+        "max_tool_tier": {
+          "options": {
+            "sandbox": "沙箱",
+            "os": "系统",
+            "external": "外部"
+          }
+        },
+        "approval_level": {
+          "options": {
+            "none": "全部自动执行",
+            "dangerous_only": "仅危险操作需确认",
+            "all_os_tools": "所有非沙箱工具需确认"
+          }
         }
+      },
+      "tool_assembly": {
+        "title": "工具装配（只读）",
+        "summary": "层级上限：{{tier}} · 审批级别：{{level}} · 已启用 {{count}} 个工具",
+        "hint": "工具装配在对话中调整（Agent 布局的工具面板），此处仅显示该模式的默认值。"
+      },
+      "grants": {
+        "title": "已授权操作",
+        "description": "这些操作被设为「始终允许」，调用时不再询问。撤销后同类操作会重新确认。",
+        "empty": "暂无授权",
+        "revoke": "撤销",
+        "revoked": "已撤销该授权",
+        "revoke_failed": "撤销失败: {{error}}",
+        "clear": "全部清除",
+        "clear_confirm": "清除全部授权？清除后所有「始终允许」的操作会重新询问。",
+        "cleared": "已清除全部授权",
+        "clear_failed": "清除失败: {{error}}",
+        "load_failed": "加载授权列表失败: {{error}}",
+        "scope": {
+          "session": "会话级",
+          "global": "全局"
+        },
+        "set_global": "设为全局",
+        "set_global_confirm": "该操作将在所有会话中不再询问，确认？",
+        "set_session": "改为会话级",
+        "set_session_title": "改为会话级",
+        "set_session_desc": "选择该授权生效的会话，其余会话将重新询问。",
+        "set_session_placeholder": "选择会话",
+        "scope_changed": "已更新授权作用域",
+        "scope_failed": "更新作用域失败: {{error}}"
       },
       "confirm_delete": {
         "title": "确认删除此模式？",
@@ -359,7 +439,8 @@
         "title": "保险库设置"
       },
       "ssh": {
-        "title": "SSH Agent"
+        "title": "SSH Agent 偏好",
+        "agent_location_hint": "密钥列表与运行时状态在保险库内「管理 → SSH Agent」查看。"
       },
       "auto_lock_minutes": { "label": "自动锁定时间（分钟）" },
       "lock_on_screen_lock": { "label": "屏幕锁定时锁定保险库" },
@@ -371,7 +452,6 @@
         "enroll_step_hint": "请再次验证以完成注册",
         "save_message": "生物识别状态已更新"
       },
-      "hibp_auto_audit": { "label": "HIBP 密码泄露审计" },
       "ssh_auto_add": { "label": "解锁时自动添加 SSH 密钥到 Agent" },
       "ssh_use_pageant": { "label": "使用 Pageant (PuTTY)" },
       "ssh_use_openssh_agent": { "label": "使用 OpenSSH Agent" },
@@ -407,7 +487,7 @@
       "category_network_message": "无法连接到服务，请检查网络后重试",
       "category_auth_message": "API Key 无效或已过期，请在设置中检查配置",
       "category_rate_limit_message": "请求过于频繁，请稍后重试",
-      "category_context_overflow_message": "对话内容超出模型上下文窗口限制",
+      "category_context_overflow_message": "对话内容已超出模型上下文窗口。请压缩上下文、新建对话，或切换到上下文窗口更大的模型后重试。",
       "category_timeout_message": "服务响应时间过长，请稍后重试",
       "category_provider_quota_message": "Provider 账户配额已用尽，请检查账户或切换 Provider",
       "category_provider_unavailable_message": "Provider 服务暂时不可用，请稍后重试",
@@ -422,6 +502,19 @@
       "action_start_new_chat": "新建对话",
       "action_copy_diagnostics": "复制诊断信息"
     },
+    "context": {
+      "used": "本次输入",
+      "output": "输出",
+      "cache_read": "缓存命中",
+      "cache_write": "缓存写入",
+      "reasoning": "推理",
+      "cumulative": "累计消耗",
+      "source": "来源",
+      "source_provider": "provider 上报",
+      "source_estimate_record": "本地估算（provider 未上报输入 token）",
+      "source_estimate_projection": "本地估算（provider 未上报 usage）",
+      "no_messages": "尚无消息"
+    },
     "errors": {
       "renameFailed": {
         "title": "重命名失败",
@@ -430,6 +523,14 @@
       "updateModelFailed": {
         "title": "切换模型失败",
         "description": "模型切换未成功，请稍后重试"
+      },
+      "updateModeFailed": {
+        "title": "切换模式失败",
+        "description": "模式切换未成功，请稍后重试"
+      },
+      "updateToolConfigFailed": {
+        "title": "保存工具配置失败",
+        "description": "工具配置未成功保存，已回滚到修改前的值"
       },
       "deleteMessageFailed": {
         "title": "删除消息失败",
@@ -508,12 +609,129 @@
     },
     "mode": {
       "placeholder": "模式",
-      "select_placeholder": "选择模式"
+      "select_placeholder": "选择模式",
+      "group_chat": "对话模式",
+      "group_agent": "Agent 模式",
+      "switch_disabled_tooltip": "正在生成回复，暂不可切换模式"
     },
     "reasoning": {
       "expand": "展开思考",
       "collapse": "收起思考",
       "thinking": "思考中…"
+    },
+    "tool": {
+      "status": {
+        "running": "执行中",
+        "success": "已完成",
+        "error": "失败",
+        "awaiting_user": "等待确认",
+        "cancelled": "已取消"
+      },
+      "result_persisted": "结果已落盘",
+      "result_size": "{{lines}} 行 · {{size}}",
+      "expand": "展开",
+      "collapse": "收起",
+      "no_result": "无输出",
+      "approval": {
+        "title": "需要你确认",
+        "remaining": "剩余 {{time}}",
+        "expired": "已超时",
+        "preview": "预计",
+        "resources": "范围",
+        "impact": "影响",
+        "detection": "检测",
+        "reasons": "原因",
+        "read_only": "只读操作被要求确认（配置异常）",
+        "destructive": "不可逆 · 破坏性",
+        "open_world": "会访问工作区外部",
+        "estimated": "预估基于参数，执行前可能变化",
+        "approve": "允许",
+        "deny": "拒绝",
+        "session_allow": "本会话允许",
+        "always": "始终允许",
+        "always_confirm": "将对该类操作永久放行（所有会话），可在设置页「已授权操作」撤销。确认继续？",
+        "always_hint": "同类操作以后不再询问，可在设置页「已授权操作」撤销",
+        "tier": {
+          "sandbox": "沙箱",
+          "os": "系统",
+          "external": "外部"
+        },
+        "level": {
+          "none": "全部自动执行",
+          "dangerous_only": "仅危险操作需确认",
+          "all_os_tools": "所有非沙箱工具需确认"
+        },
+        "reason": {
+          "default_policy": "默认策略：{{rule}}",
+          "approval_level": "审批级别：{{level}}",
+          "project_rule": "项目规则：{{action}} {{resource}}",
+          "tier_ceiling": "层级上限：{{tier}}",
+          "advisor": "AI 顾问：{{rationale}}"
+        }
+      },
+      "question": {
+        "title": "需要你的选择",
+        "remaining": "剩余 {{time}}",
+        "expired": "已超时",
+        "other": "其他",
+        "other_placeholder": "输入你的答案…",
+        "submit": "提交",
+        "submitting": "提交中…",
+        "hint": "全部作答后才能提交",
+        "multi_hint": "可多选"
+      },
+      "toolbar": {
+        "summary": "工具 {{enabled}}/{{total}} · 上限 {{tier}}",
+        "hint": "会话工具装配"
+      },
+      "notice": {
+        "enabled": "已启用 {{names}}",
+        "disabled": "已停用 {{names}}",
+        "tier": "层级上限调整为 {{tier}}",
+        "level": "审批级别调整为 {{level}}",
+        "separator": "；"
+      },
+      "panel": {
+        "title": "工具装配",
+        "enabled_count": "已启用 {{count}} 个",
+        "done": "完成",
+        "tier_label": "层级上限",
+        "level_label": "审批级别",
+        "set_default": "设为该模式默认",
+        "set_default_hint": "把当前配置写回模式的初始值，仅影响之后新建的会话",
+        "out_of_tier": "超出上限，将被忽略",
+        "group_empty": "该层级暂无工具",
+        "tool_desc": {
+          "read": "读取文本文件（带行号，可按范围分页）",
+          "ls": "按缩进树列出目录条目",
+          "glob": "按文件名模式查找文件",
+          "grep": "按正则搜索文件内容",
+          "write": "新建或覆盖写入文本文件",
+          "edit": "按精确匹配替换文件片段",
+          "mkdir": "创建目录（默认一并创建父目录）",
+          "move": "移动或重命名文件与目录",
+          "delete": "删除文件或目录，不可恢复",
+          "ask_user": "执行中向你提问，等你作答后继续"
+        },
+        "set_default_done_title": "默认值已更新",
+        "set_default_done_desc": "使用该模式新建的会话将从当前工具配置开始。",
+        "set_default_failed_title": "设置默认失败",
+        "set_default_failed_desc": "模式的初始工具配置未更新。"
+      }
+    },
+    "reasoning_depth": {
+      "label": "思考深度",
+      "default": "默认",
+      "off": "关闭",
+      "on": "开启",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "minimal": "极低",
+      "xhigh": "极高",
+      "max": "最高",
+      "from_mode": "当前来自模式：{{value}}",
+      "overridden": "本次会话已覆盖"
     },
     "compact": {
       "banner_title": "对话已达上下文上限",
@@ -528,13 +746,16 @@
       "summary_label": "交接摘要"
     },
     "retry": {
-      "retrying": "正在重试 ({{attempt}}/{{max}})，{{delay}}秒后…"
+      "retrying": "正在重试 ({{attempt}}/{{max}})",
+      "countdown": "{{seconds}}秒后…"
     },
     "orb": {
       "conversation_list": "对话列表",
       "search_conversation": "搜索对话",
       "view_all_in_main": "在主窗口查看全部对话",
-      "search_more_in_main": "在主窗口搜索更多结果"
+      "search_more_in_main": "在主窗口搜索更多结果",
+      "keep_expanded": "保持展开",
+      "stop_keep_expanded": "取消保持展开"
     }
   },
   "history": {
@@ -618,7 +839,8 @@
       "dev": "开发",
       "converter": "转换",
       "security": "安全",
-      "media": "媒体"
+      "media": "媒体",
+      "productivity": "效率"
     },
     "search_placeholder": "搜索工具...",
     "no_match": "未找到匹配的工具",
@@ -695,6 +917,26 @@
       "name": "Cron 解析",
       "description": "Cron 表达式解析与下次执行时间"
     },
+    "clock": {
+      "name": "计时器",
+      "description": "倒计时与正计时，支持预设与自定义时长",
+      "start": "开始",
+      "pause": "暂停",
+      "resume": "继续",
+      "reset": "重置",
+      "finished": "已完成",
+      "finished_hint": "本轮计时已结束，可重新开始。",
+      "status_idle": "准备开始",
+      "status_running": "计时中",
+      "status_paused": "已暂停",
+      "minutes": "分钟",
+      "custom_minutes": "自定义分钟数",
+      "error": "计时操作失败",
+      "mode_countdown": "倒计时",
+      "mode_stopwatch": "计时",
+      "mode_switch_running": "计时进行中，暂停后可切换模式",
+      "stopwatch_hint": "正计时不会自动结束"
+    },
     "calculator": {
       "name": "计算器",
       "description": "数学表达式计算与历史记录"
@@ -724,6 +966,12 @@
       "description": "安全存储和管理密码、凭证与密钥"
     }
   },
+  "mini": {
+    "toggle_to_mini": "切换到小窗",
+    "toggle_to_normal": "展开完整窗口",
+    "page_unsupported": "当前页面不支持小窗",
+    "page_unsupported_desc": "此页面需要完整窗口宽度，已保持当前形态。"
+  },
   "vault": {
     "name": "密码保险库",
     "description": "安全存储和管理密码、凭证与密钥",
@@ -739,10 +987,7 @@
       "unlock": "解锁",
       "create_vault": "创建保险库",
       "biometric_unlock": "生物识别解锁",
-      "recovery_key_unlock": "使用恢复密钥解锁",
-      "recovery_key_divider": "恢复密钥",
       "recovery_key_placeholder": "XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX",
-      "unlock_with_recovery_key": "恢复密钥解锁",
       "use_password": "使用密码解锁",
       "password_divider": "密码"
     },
@@ -753,6 +998,7 @@
       "no_entries": "暂无条目",
       "confirm_delete": "确定删除此条目？",
       "viewing_entry": "查看条目",
+      "select_hint": "从左侧选择条目查看详情",
       "category": "分类",
       "category_login": "登录",
       "category_note": "笔记",
@@ -760,6 +1006,7 @@
       "category_identity": "身份",
       "category_sshKey": "SSH 密钥",
       "category_custom": "自定义",
+      "category_all": "全部",
       "title": "标题",
       "title_required": "标题不能为空",
       "username": "用户名",
@@ -784,10 +1031,28 @@
       "gen_mode_random": "随机字符",
       "gen_mode_passphrase": "密码短语",
       "reveal": "显示",
+      "hold_to_reveal": "按住显示",
+      "release_to_hide": "松开隐藏",
+      "reveal_failed": "显示失败",
+      "reveal_rate_limited": "显示过于频繁，请稍后再试",
       "encrypted": "已加密",
       "revision": "版本",
       "entries_count": "个条目",
+      "entries_count_filtered": "{{visible}} / {{total}} 个条目",
+      "no_matching_entries": "没有匹配的条目",
+      "current_filters": "当前筛选：",
+      "filter_search": "搜索：{{query}}",
+      "filter_category": "分类：{{category}}",
+      "filter_tag": "标签：{{tag}}",
+      "filter_leaked": "仅泄露（{{count}}）",
+      "show_leaked_only": "只看泄露条目",
+      "clear_filters": "清除筛选",
+      "import_or_clone": "从「管理」导入或克隆保险库",
+      "delete_failed": "删除失败",
       "leaked": "个泄露",
+      "sort_recent": "最近更新",
+      "sort_title": "标题",
+      "sort_favorite": "收藏优先",
       "trash": "回收站",
       "trash_empty": "回收站为空",
       "trash_hint": "已删除的条目会保留在此处，可恢复或永久删除",
@@ -822,22 +1087,27 @@
     },
     "tab": {
       "vault": "保险库",
-      "tools": "工具",
-      "sync": "同步",
+      "manage": "管理",
+      "sync": "同步与远程",
       "ssh_agent": "SSH Agent",
       "recovery": "恢复密钥",
       "change_password": "修改主密码",
-      "import_export": "导入 / 导出"
+      "import_export": "导入 / 导出",
+      "danger_zone": "危险操作"
     },
     "confirm_lock": "确定锁定保险库？",
-    "meta": {
-      "integrity_warning_title": "保险库元数据校验失败",
-      "integrity_warning_desc": "恢复密钥解锁成功，但仓库的元数据（.vault-meta）与主密钥不匹配。内容可能被外部修改，建议先导出备份并核对远端仓库后再继续同步。"
+    "lock": "锁定保险库",
+    "lock_failed": "锁定失败",
+    "auto_lock_remaining": "{{time}} 后自动锁定",
+    "alert": {
+      "more": "还有 {{count}} 条提示",
+      "collapse": "收起提示"
     },
     "sync": {
       "status_no_sync": "同步未初始化",
+      "status_no_remote": "已初始化，但未绑定远程仓库",
       "status_dirty": "有未提交的更改",
-      "status_ready": "同步就绪",
+      "status_ready": "本地工作区干净（未检查远程）",
       "status_unknown": "同步状态未知",
       "init": "初始化同步",
       "init_local": "新建本地仓库",
@@ -847,14 +1117,37 @@
       "ssh_hosts_hint": "逗号分隔。留空时仅对 github.com / gitlab.com 启用 SSH 连接复用。",
       "last_sync": "上次同步：{{time}}",
       "last_sync_never": "尚未同步过",
+      "state_ready": "本地工作区干净",
+      "state_no_remote": "未绑定远程",
+      "state_in_sync": "已与远程一致",
+      "state_ahead": "{{count}} 个提交待推送",
+      "state_behind": "远程有 {{count}} 个更新待拉取",
+      "state_diverged": "待推送 {{ahead}} / 待拉取 {{behind}}",
+      "state_dirty": "有未提交改动",
+      "state_off": "同步未初始化",
+      "state_conflict": "存在同步冲突",
+      "state_failed": "同步失败",
+      "state_failed_tip": "{{message}}（点击关闭提示）",
+      "remote_check": "检查远程",
+      "remote_checking": "检查中…",
+      "remote_checked_at": "检查于 {{time}}",
+      "remote_checked_stale": "离线比对于 {{time}}，未联网核对",
+      "remote_check_failed": "远程检查失败：{{message}}",
+      "remote_check_failed_generic": "远程检查失败",
+      "remote_check_no_remote": "尚未绑定远程仓库",
+      "remote_check_no_upstream": "未配置上游分支",
+      "remote_check_hint": "点击「检查远程」与远程比对",
+      "remote_not_bound_tip": "当前仓库仅存在于本机，无法拉取或推送。绑定远程仓库后即可多设备同步。",
+      "remote_not_bound_cta": "绑定远程仓库",
       "pull": "拉取",
       "push": "推送",
+      "push_hint_commits_first": "推送前会先提交本地改动",
       "now": "同步",
       "force_push": "强制推送",
       "force_push_confirm_title": "确认强制推送",
       "force_push_confirm_desc": "强制推送将覆盖远程仓库的历史记录，此操作不可撤销。",
       "result_success": "同步成功",
-      "result_up_to_date": "已是最新",
+      "result_no_remote": "未绑定远程仓库：已提交本地改动，未推送",
       "result_conflict": "同步冲突：{{count}} 个文件",
       "result_error": "同步失败：{{message}}",
       "result_unreadable": "同步完成，但有 {{count}} 个条目无法解密",
@@ -867,6 +1160,7 @@
       "unreadable_overwrite": "用本机数据覆盖对端",
       "err_not_init": "Git 仓库未初始化",
       "err_no_remote": "未配置远程仓库地址",
+      "err_no_upstream": "未配置上游分支，请先执行一次「同步」。若已配置多个远程仓库，请在设置中确认上游。",
       "test_connection": "测试连接",
       "test_ok": "连接成功：远程有 {{count}} 个分支",
       "test_failed": "连接失败",
@@ -915,7 +1209,10 @@
       "meta_fingerprint": "指纹",
       "meta_comment": "备注",
       "public_key": "公钥",
-      "auto_add_on_unlock": "解锁时自动添加到 Agent"
+      "auto_add_on_unlock": "解锁时自动添加到 Agent",
+      "on": "已开启",
+      "off": "已关闭",
+      "auto_add_in_settings": "在设置中修改"
     },
     "recovery": {
       "key_description": "恢复密钥可用于在忘记主密码时解锁保险库。生成后请妥善保存，此密钥仅显示一次。",
@@ -945,7 +1242,23 @@
     "danger_zone": {
       "title": "危险区域",
       "desc": "以下操作具有破坏性且不可撤销，请谨慎执行。",
-      "type_confirm": "请输入 {{code}} 以确认操作"
+      "type_confirm": "请输入 {{code}} 以确认操作",
+      "tab_desc": "这里是所有破坏性操作的集中入口。每一项都需要输入确认码才会执行。",
+      "sync_hint": "强制推送、放弃本地改动、解绑远程仓库等破坏性操作已移至「危险操作」页签。",
+      "unreadable_overwrite_hint": "如需用本机数据覆盖对端，请前往「危险操作」页签执行强制推送。",
+      "open": "前往危险操作",
+      "discard": {
+        "title": "放弃本地改动",
+        "desc": "丢弃所有未提交的本地改动并重置到最近一次提交，此操作不可撤销。"
+      },
+      "force_push": {
+        "title": "强制推送覆盖远程",
+        "desc": "用本机仓库覆盖远程仓库的历史记录，对端提交将丢失，此操作不可撤销。"
+      },
+      "remove_remote": {
+        "title": "解绑远程仓库",
+        "desc": "解除与远程仓库的绑定。本地提交仍保留，但将无法再推送或拉取。"
+      }
     },
     "conflict": {
       "title": "解决同步冲突",
@@ -1047,11 +1360,14 @@
       "enabled": "生物识别已启用",
       "enable": "启用",
       "disable": "禁用",
+      "disable_requires_unlock": "请先解锁密码箱后再禁用生物识别",
       "unlock_failed": "解锁失败",
       "unlocking": "正在解锁…"
     },
     "hibp": {
-      "audit_all": "全库泄露审计"
+      "audit_all": "全库泄露审计",
+      "progress": "正在审计 {{done}} / {{total}}",
+      "cancel": "取消审计"
     }
   }
 }

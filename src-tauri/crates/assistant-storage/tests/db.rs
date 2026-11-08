@@ -109,3 +109,267 @@ fn init_db_cascade_deletes_messages() {
         "CASCADE should delete messages when conversation is deleted"
     );
 }
+
+#[test]
+fn init_db_creates_messages_status_column() {
+    let (conn, _dir) = init_temp_db();
+    let has_status: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'status'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(has_status, 1, "fresh db must have messages.status");
+}
+
+#[test]
+fn init_db_adds_status_column_to_legacy_messages_table() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("legacy.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO app_settings (key, value) VALUES ('schema_version', '1');
+             CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tokens INTEGER,
+                timestamp INTEGER NOT NULL,
+                parent_id TEXT,
+                sibling_index INTEGER NOT NULL DEFAULT 0,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                reasoning TEXT,
+                tool_calls_json TEXT,
+                provider_id TEXT,
+                model_id TEXT
+             );
+             INSERT INTO messages (id, conversation_id, role, content, timestamp)
+                 VALUES ('m1','c1','assistant','hello',0);",
+        )
+        .unwrap();
+    }
+
+    let conn = db::init_db(&db_path).unwrap();
+    let has_status: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'status'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(has_status, 1, "legacy db must gain messages.status");
+
+    let status: String = conn
+        .query_row("SELECT status FROM messages WHERE id = 'm1'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(status, "completed", "existing rows default to completed");
+}
+
+#[test]
+fn init_db_creates_permission_tables() {
+    let (conn, _dir) = init_temp_db();
+    for table in ["permission_grants", "permission_audit"] {
+        let count: i64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '{table}'"
+                ),
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "fresh db must have {table}");
+    }
+}
+
+#[test]
+fn init_db_adds_tool_columns_to_legacy_messages_table() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("legacy_tool.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO app_settings (key, value) VALUES ('schema_version', '1');
+             CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tokens INTEGER,
+                timestamp INTEGER NOT NULL,
+                parent_id TEXT,
+                sibling_index INTEGER NOT NULL DEFAULT 0,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                reasoning TEXT,
+                tool_calls_json TEXT,
+                provider_id TEXT,
+                model_id TEXT
+             );
+             INSERT INTO messages (id, conversation_id, role, content, timestamp)
+                 VALUES ('m1','c1','assistant','hello',0);",
+        )
+        .unwrap();
+    }
+
+    let conn = db::init_db(&db_path).unwrap();
+    for column in ["tool_call_id", "is_error"] {
+        let count: i64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = '{column}'"
+                ),
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "legacy db must gain messages.{column}");
+    }
+
+    let (tool_call_id, is_error): (Option<String>, i64) = conn
+        .query_row(
+            "SELECT tool_call_id, is_error FROM messages WHERE id = 'm1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert!(
+        tool_call_id.is_none(),
+        "existing rows keep NULL tool_call_id"
+    );
+    assert_eq!(is_error, 0, "existing rows default is_error to 0");
+}
+
+#[test]
+fn restart_sweep_marks_streaming_message_interrupted() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("restart.db");
+    {
+        let conn = db::init_db(&db_path).unwrap();
+        conn.execute(
+            "INSERT INTO conversations (id,title,title_source,model_id,created_at,updated_at)
+             VALUES ('c1','t','placeholder','m',0,0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO messages (id,conversation_id,role,content,timestamp)
+             VALUES ('m1','c1','assistant','partial',0)",
+            [],
+        )
+        .unwrap();
+        assistant_storage::conversations::update_message_status(&conn, "m1", "streaming").unwrap();
+    }
+
+    let conn = db::init_db(&db_path).unwrap();
+    let swept =
+        assistant_storage::conversations::mark_streaming_messages_interrupted(&conn).unwrap();
+    assert_eq!(swept, 1, "重启后必须清扫残留的 streaming 消息");
+
+    let status: String = conn
+        .query_row("SELECT status FROM messages WHERE id = 'm1'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(status, "interrupted");
+}
+
+#[test]
+fn init_db_adds_tool_config_columns_to_legacy_tables() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("legacy_tool_config.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO app_settings (key, value) VALUES ('schema_version', '1');
+             CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                title_source TEXT NOT NULL DEFAULT 'placeholder',
+                provider_id TEXT,
+                model_id TEXT NOT NULL,
+                system_prompt TEXT,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                generation INTEGER NOT NULL DEFAULT 0,
+                mode_id TEXT,
+                is_full INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                active_branch_id TEXT
+             );
+             INSERT INTO conversations (id,title,title_source,model_id,created_at,updated_at)
+                 VALUES ('c1','t','placeholder','m',0,0);
+             CREATE TABLE agent_modes (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL DEFAULT 'custom',
+                prompt TEXT NOT NULL DEFAULT '',
+                model TEXT,
+                temperature REAL,
+                max_tokens INTEGER,
+                reasoning_enabled INTEGER,
+                reasoning_effort TEXT,
+                presentation_rank INTEGER NOT NULL DEFAULT 99,
+                is_builtin INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             INSERT INTO agent_modes (id,name,kind,created_at,updated_at)
+                 VALUES ('user-legacy','legacy','deep',0,0);",
+        )
+        .unwrap();
+    }
+
+    let conn = db::init_db(&db_path).unwrap();
+    for table in ["agent_modes", "conversations"] {
+        let count: i64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = 'tool_config_json'"
+                ),
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "legacy db must gain {table}.tool_config_json");
+    }
+
+    let legacy_kind: String = conn
+        .query_row(
+            "SELECT kind FROM agent_modes WHERE id = 'user-legacy'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(legacy_kind, "deep", "用户自建行不得被改写");
+
+    let (conv_tool_config, mode_tool_config): (Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT c.tool_config_json, m.tool_config_json
+             FROM conversations c, agent_modes m
+             WHERE c.id = 'c1' AND m.id = 'user-legacy'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert!(conv_tool_config.is_none(), "既有会话补列后为 NULL");
+    assert!(mode_tool_config.is_none(), "既有模式补列后为 NULL");
+
+    let builtin_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM agent_modes WHERE is_builtin = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(builtin_count, 3, "补列后仍能正常播种内置模式");
+}

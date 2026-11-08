@@ -20,7 +20,8 @@ import {
 import { aggregateCommands } from "./commandAggregation";
 import { useCommandPaletteShortcut } from "./commandPaletteBindings";
 import { COMMAND_PALETTE_MAX_PER_CATEGORY } from "@/config/constants";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useConfGroup } from "@/settings/core/useConfGroup";
+import { notifyError } from "@/stores/notifyStore";
 import { IS_MAC } from "@/settings/core/types/shortcutTypes";
 import styles from "./CommandPalette.module.css";
 
@@ -32,7 +33,7 @@ export const CommandPalette: React.FC = () => {
   const optionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const navigate = useNavigate();
   const { t, i18n: currentI18n } = useTranslation();
-  const appConf = useSettingsStore((s) => s.appConf);
+  const appConf = useConfGroup("app");
   const binding = appConf?.keybindings?.commandPalette;
 
   const allCommands = useMemo(() => {
@@ -104,7 +105,15 @@ export const CommandPalette: React.FC = () => {
 
   const activate = useCallback(
     (cmd: CommandDefinition, keepOpen = false) => {
-      void cmd.action();
+      void Promise.resolve(cmd.action()).catch((e: unknown) => {
+        notifyError(
+          "common.actions.save_failed",
+          "common.actions.save_failed_desc",
+          {
+            error: e instanceof Error ? e.message : String(e),
+          },
+        );
+      });
       if (cmd.closeOnSelect !== false && !keepOpen) close();
     },
     [close],

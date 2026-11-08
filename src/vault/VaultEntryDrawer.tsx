@@ -12,12 +12,14 @@ import {
 } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "./core/vaultStore";
+import { useVaultShallow } from "./core/vaultStore";
 import { vaultService } from "./core/vault.service";
+import { vaultCategoryOptions } from "./core/vaultCategory";
 import type {
   VaultCategory,
   CustomFieldInput,
   ParsedOtpAuth,
+  TotpAlgorithm,
 } from "./core/vault.types";
 import LoginFields from "./forms/LoginFields";
 import CardFields from "./forms/CardFields";
@@ -25,15 +27,6 @@ import NoteFields from "./forms/NoteFields";
 import IdentityFields from "./forms/IdentityFields";
 import SshKeyFields from "./forms/SshKeyFields";
 import CustomFields from "./forms/CustomFields";
-
-const CATEGORY_OPTIONS: { value: VaultCategory; label: string }[] = [
-  { value: "login", label: "Login" },
-  { value: "note", label: "Note" },
-  { value: "card", label: "Card" },
-  { value: "identity", label: "Identity" },
-  { value: "sshKey", label: "SSH Key" },
-  { value: "custom", label: "Custom" },
-];
 
 interface VaultEntryDrawerProps {
   open: boolean;
@@ -51,7 +44,12 @@ export default function VaultEntryDrawer({
   const { t } = useTranslation();
   const { message } = App.useApp();
   const { selectedEntry, createEntry, updateEntry, totpParseUri } =
-    useVaultStore();
+    useVaultShallow((s) => ({
+      selectedEntry: s.selectedEntry,
+      createEntry: s.createEntry,
+      updateEntry: s.updateEntry,
+      totpParseUri: s.totpParseUri,
+    }));
 
   const [category, setCategory] = useState<VaultCategory>("login");
   const [title, setTitle] = useState("");
@@ -60,6 +58,9 @@ export default function VaultEntryDrawer({
   const [url, setUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
+  const [totpDigits, setTotpDigits] = useState(6);
+  const [totpPeriod, setTotpPeriod] = useState(30);
+  const [totpAlgorithm, setTotpAlgorithm] = useState<TotpAlgorithm>("sha1");
   const [totpUriInput, setTotpUriInput] = useState("");
   const [totpUriVisible, setTotpUriVisible] = useState(true);
   const [totpSecretVisible, setTotpSecretVisible] = useState(false);
@@ -99,6 +100,9 @@ export default function VaultEntryDrawer({
       setTags(selectedEntry.tags);
       setPassword("");
       setTotpSecret("");
+      setTotpDigits(selectedEntry.totpDigits ?? 6);
+      setTotpPeriod(selectedEntry.totpPeriod ?? 30);
+      setTotpAlgorithm(selectedEntry.totpAlgorithm ?? "sha1");
       setPasswordDirty(false);
       setNotesDirty(false);
       setTotpDirty(false);
@@ -118,6 +122,9 @@ export default function VaultEntryDrawer({
       setUrl("");
       setNotes("");
       setTotpSecret("");
+      setTotpDigits(6);
+      setTotpPeriod(30);
+      setTotpAlgorithm("sha1");
       setTotpUriInput("");
       setTotpUriVisible(true);
       setTotpSecretVisible(false);
@@ -136,6 +143,9 @@ export default function VaultEntryDrawer({
     try {
       const parsed: ParsedOtpAuth = await totpParseUri(uri);
       handleTotpSecretChange(parsed.secret);
+      setTotpDigits(parsed.digits);
+      setTotpPeriod(parsed.period);
+      setTotpAlgorithm(parsed.algorithm);
       if (parsed.issuer && !title) {
         setTitle(parsed.issuer);
       }
@@ -168,6 +178,26 @@ export default function VaultEntryDrawer({
       return;
     }
 
+    const totp = (() => {
+      if (isEditing && !totpDirty) return undefined;
+      if (isEditing) {
+        return {
+          secret: totpSecret || null,
+          digits: totpDigits,
+          period: totpPeriod,
+          algorithm: totpAlgorithm,
+        };
+      }
+      return totpSecret
+        ? {
+            secret: totpSecret,
+            digits: totpDigits,
+            period: totpPeriod,
+            algorithm: totpAlgorithm,
+          }
+        : undefined;
+    })();
+
     const entryData = {
       category,
       title: title.trim(),
@@ -175,7 +205,7 @@ export default function VaultEntryDrawer({
       password: isEditing && !passwordDirty ? undefined : password || undefined,
       url: url || undefined,
       notes: isEditing && !notesDirty ? undefined : notes || undefined,
-      totpSecret: isEditing && !totpDirty ? undefined : totpSecret || undefined,
+      totp,
       tags,
       customFields,
       isFavorite,
@@ -187,8 +217,8 @@ export default function VaultEntryDrawer({
         await updateEntry(editId, entryData);
         onSaved(editId);
       } else {
-        const id = await createEntry(entryData);
-        onSaved(id);
+        const detail = await createEntry(entryData);
+        onSaved(detail.id);
       }
     } catch {
       message.error(t("vault.entry.save_failed"));
@@ -221,10 +251,7 @@ export default function VaultEntryDrawer({
           <Select
             value={category}
             onChange={(v) => setCategory(v)}
-            options={CATEGORY_OPTIONS.map((o) => ({
-              ...o,
-              label: t(`vault.entry.category_${o.value}`),
-            }))}
+            options={vaultCategoryOptions(t)}
           />
         </Form.Item>
 

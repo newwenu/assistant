@@ -1,34 +1,18 @@
-export interface ModelConfig {
-  id: string;
-  name: string;
-  ownedBy: string;
-  contextWindow?: number;
-  supportVision?: boolean;
-  /** 输入模态列表（"text"/"image"/"pdf"/"audio"/"video"）；存量数据可能缺失 */
-  inputModalities?: string[];
-}
+import type {
+  ModelConfigDto,
+  ProviderInputDto,
+  ProviderListDto,
+  ReasoningLevelsDto,
+} from "../../types/protocol.contract";
 
-export interface Provider {
-  id: string;
-  name: string;
-  type: string;
-  baseUrl: string;
-  apiKeyMasked: string;
-  models: ModelConfig[];
-  defaultModel: string;
-  updatedAt: number;
-}
+/** 目录声明的推理可选项；缺失表示目录没有可用信息 */
+export type ReasoningLevels = ReasoningLevelsDto;
 
-export interface ProviderInput {
-  id: string;
-  name: string;
-  type: string;
-  baseUrl: string;
-  apiKey: string;
-  apiKeyChanged?: boolean;
-  models: string;
-  defaultModel: string;
-}
+export type ModelConfig = ModelConfigDto;
+
+export type Provider = ProviderListDto;
+
+export type ProviderInput = ProviderInputDto;
 
 export type ApiFormat = "openai" | "anthropic" | "local";
 

@@ -2,7 +2,6 @@ pub const APP_IDENTIFIER: &str = "com.assistant";
 
 pub const WINDOW_MAIN: &str = "main";
 pub const WINDOW_ORB: &str = "orb";
-pub const WINDOW_SETTINGS: &str = "settings";
 
 pub const ORB_COLLAPSED_SIZE: u32 = 84;
 pub const ORB_EXPANDED_WIDTH: u32 = 420;
@@ -17,24 +16,16 @@ pub const MAIN_WINDOW_MIN_HEIGHT: f64 = 200.0;
 pub const MAIN_WINDOW_DEFAULT_WIDTH: f64 = 960.0;
 pub const MAIN_WINDOW_DEFAULT_HEIGHT: f64 = 640.0;
 
-pub const HOVER_FADE_DURATION_MS: u64 = 300;
-pub const PLACEMENT_SETTLE_DELAY_MS: u64 = 1000;
-pub const PET_DRAG_THRESHOLD_PX: f64 = 8.0;
+pub const MAIN_WINDOW_MINI_WIDTH: f64 = 280.0;
+pub const MAIN_WINDOW_MINI_HEIGHT: f64 = 420.0;
+pub const MAIN_WINDOW_MINI_MIN_WIDTH: f64 = 240.0;
+pub const MAIN_WINDOW_MINI_MIN_HEIGHT: f64 = 320.0;
+
 pub const WINDOW_EDGE_BUFFER: u32 = 4;
 
 pub const ORB_HITBOX_SIZE: u32 = ORB_COLLAPSED_WINDOW_SIZE;
 pub const ORB_SNAP_BORDER_X: i32 = 24;
-pub const ORB_BLUR_COLLAPSE_DELAY_MS: u64 = 200;
-pub const ORB_SNAP_DELAY_MS: u64 = 1000;
 pub const ORB_SNAP_ANIMATION_MS: u64 = 250;
-pub const DRAG_POLL_INTERVAL_MS: u64 = 16;
-
-pub const CHAT_PANEL_HEADER_HEIGHT: u32 = 40;
-pub const CHAT_INPUT_MIN_ROWS: u32 = 1;
-pub const CHAT_INPUT_MAX_ROWS: u32 = 4;
-pub const CHAT_AUTO_TITLE_LENGTH: usize = 20;
-pub const CHAT_SIDEBAR_WIDTH: u32 = 200;
-pub const STREAM_COALESCE_TIMER_MS: u64 = 50;
 
 pub const COMPACTION_THRESHOLD_PERCENT: u8 = 80;
 pub const MAX_SUMMARY_REQUEST_TOKENS: u32 = 4096;

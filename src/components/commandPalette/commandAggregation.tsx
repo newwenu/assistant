@@ -11,21 +11,23 @@ import {
 import type { NavigateFunction } from "react-router-dom";
 import { tools } from "@/tools/registry";
 import {
-  SETTINGS_PAGES,
-  SETTINGS_CATEGORIES,
+  getSettingsPages,
+  getSettingsCategories,
 } from "@/settings/core/pageRegistry";
 import {
   getAllDefinitions,
   getAllSections,
 } from "@/settings/core/field/fieldRegistry";
-import type { ConfGroup } from "@/settings/core/field/fieldRegistry";
+import { getSettingsSnapshot } from "@/settings/core/snapshot";
 import "@/settings/core/field/fieldDefinitions";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { getConfValue } from "@/settings/core/useConfGroup";
 import {
   dispatchConfPatch,
   dispatchThemeChanged,
 } from "@/settings/core/settingsDispatcher";
 import { defineCommand, clearCommands } from "./commandRegistry";
+import { getFeatures } from "@/features/registry";
+import { navigateInCurrentMode, openTool } from "@/tools/miniNavigate";
 import { translateKey } from "@/i18n";
 
 function tokenize(text: string): string[] {
@@ -58,16 +60,14 @@ const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
   about: <InfoCircleOutlined />,
 };
 
-const GROUP_TO_PAGE: Record<ConfGroup, string> = {
-  app: "general",
-  orb: "appearance",
-  mascot: "appearance",
-};
-
 function registerSettingsCommands(navigate: NavigateFunction): void {
-  for (const page of SETTINGS_PAGES) {
+  const pages = getSettingsPages().filter(
+    (page) => page.visibility !== "deepLinkOnly",
+  );
+  const categories = getSettingsCategories();
+  for (const page of pages) {
     const catLabel =
-      SETTINGS_CATEGORIES.find((c) => c.id === page.categoryId)?.label ?? "";
+      categories.find((c) => c.id === page.categoryId)?.label ?? "";
     const translatedLabel = translateKey(page.label);
     const keywords = mergeKeywords(
       [
@@ -89,16 +89,17 @@ function registerSettingsCommands(navigate: NavigateFunction): void {
       keywords,
       category: "navigation",
       icon: CATEGORY_ICON_MAP[page.categoryId] ?? <SettingOutlined />,
-      action: () => navigate(`/settings/${page.id}`),
+      action: () => navigateInCurrentMode(navigate, `/settings/${page.id}`),
     });
   }
 }
 
 function registerSettingSectionCommands(navigate: NavigateFunction): void {
   const allSections = getAllSections();
+  const pages = getSettingsPages();
   for (const sec of allSections) {
-    const page = SETTINGS_PAGES.find((p) => p.id === sec.pageId);
-    if (!page) continue;
+    const page = pages.find((p) => p.id === sec.pageId);
+    if (!page || page.visibility === "deepLinkOnly") continue;
     const translatedTitle = translateKey(sec.title);
     const autoSources: string[] = [translatedTitle, sec.id, sec.pageId];
     if (sec.description) autoSources.push(translateKey(sec.description));
@@ -110,16 +111,24 @@ function registerSettingSectionCommands(navigate: NavigateFunction): void {
       keywords,
       category: "navigation",
       icon: CATEGORY_ICON_MAP[page.categoryId] ?? <SettingOutlined />,
-      action: () => navigate(`/settings/${sec.pageId}?focus=section:${sec.id}`),
+      action: () =>
+        navigateInCurrentMode(
+          navigate,
+          `/settings/${sec.pageId}?focus=section:${sec.id}`,
+        ),
     });
   }
 }
 
 function registerSettingFieldCommands(navigate: NavigateFunction): void {
   const allDefs = getAllDefinitions();
+  const pages = getSettingsPages();
   for (const def of allDefs) {
-    const pageId = def.pageId ?? GROUP_TO_PAGE[def.group];
+    const pageId =
+      def.pageId ?? getSettingsSnapshot().confPageMap.get(def.group);
     if (!pageId) continue;
+    const page = pages.find((p) => p.id === pageId);
+    if (!page || page.visibility === "deepLinkOnly") continue;
     const translatedLabel = translateKey(def.label);
     const autoSources: string[] = [translatedLabel, def.key, def.group];
     if (def.description && typeof def.description === "string")
@@ -137,7 +146,30 @@ function registerSettingFieldCommands(navigate: NavigateFunction): void {
       }),
       keywords,
       category: "navigation",
-      action: () => navigate(`/settings/${pageId}?focus=${def.key}`),
+      action: () =>
+        navigateInCurrentMode(navigate, `/settings/${pageId}?focus=${def.key}`),
+    });
+  }
+}
+
+function registerFeatureRouteCommands(navigate: NavigateFunction): void {
+  const features = getFeatures();
+  for (const route of features.routes) {
+    if (route.visibility === "deepLinkOnly") continue;
+    const parent = route.navParent
+      ? features.sidebar.find((entry) => entry.key === route.navParent)
+      : undefined;
+    const name = parent ? translateKey(parent.label) : route.boundary;
+    const keywords = mergeKeywords(
+      [name, route.path, route.boundary],
+      [...route.keywords],
+    );
+    defineCommand({
+      id: `nav:feature-route:${route.path}`,
+      name,
+      keywords,
+      category: "navigation",
+      action: () => navigateInCurrentMode(navigate, route.path),
     });
   }
 }
@@ -156,12 +188,12 @@ function registerToolCommands(navigate: NavigateFunction): void {
       keywords,
       category: "tools",
       icon: React.createElement(IconComp),
-      action: () => navigate(`/tools/${tool.id}`),
+      action: () => openTool(navigate, tool.id),
     });
   }
 }
 
-function registerManualCommands(): void {
+function registerManualCommands(navigate: NavigateFunction): void {
   defineCommand({
     id: "action:toggle-theme",
     name: translateKey("command.action.toggle_theme"),
@@ -174,7 +206,7 @@ function registerManualCommands(): void {
     icon: <SkinOutlined />,
     closeOnSelect: false,
     action: async () => {
-      const appConf = useSettingsStore.getState().appConf;
+      const appConf = getConfValue("app");
       if (!appConf) return;
       const order: Array<"system" | "light" | "dark"> = [
         "system",
@@ -200,7 +232,7 @@ function registerManualCommands(): void {
     icon: <ReloadOutlined />,
     action: () => {
       const t = tools[Math.floor(Math.random() * tools.length)];
-      window.location.hash = `#/tools/${t.id}`;
+      return openTool(navigate, t.id);
     },
   });
 
@@ -244,9 +276,7 @@ function registerManualCommands(): void {
     ),
     category: "navigation",
     icon: <HistoryOutlined />,
-    action: () => {
-      window.location.hash = "#/history";
-    },
+    action: () => navigateInCurrentMode(navigate, "/history"),
   });
 }
 
@@ -255,6 +285,7 @@ export function aggregateCommands(navigate: NavigateFunction): void {
   registerSettingsCommands(navigate);
   registerSettingSectionCommands(navigate);
   registerSettingFieldCommands(navigate);
+  registerFeatureRouteCommands(navigate);
   registerToolCommands(navigate);
-  registerManualCommands();
+  registerManualCommands(navigate);
 }

@@ -1,10 +1,11 @@
 # I9 密码箱 密钥体系设计（v1.5：`dek` 解耦 + 纸面即密钥）
 
 > 状态：设计文档（2026-10-28 修订）
+> **实施状态：未开始**（从 §8 的 P0-1 起）
 > 取代：本文早期版本（v2 keyslot + 本地/同步双槽方案，已废弃，理由见 [附录 B](#附录-b被否决的两个方案)）
-> 关联：`I9-vault-password-model-comparison.md`（横向对比基线）、`I9-vault-spec-1-foundation.md`、`I9-vault-spec-5-ssh-and-recovery.md`
+> 关联：`I9-vault-password-model-comparison.md`（横向对比基线）；`docs/achievement2/I9-vault-spec-1-foundation.md`、`docs/achievement2/I9-vault-spec-5-ssh-and-recovery.md`（已归档，仅作历史参照）
 > 范围：密钥派生、密钥层次、文件布局、改密/轮换/吊销语义、恢复通道权限半径。不含 UI 视觉、同步协议细节、条目字段加密格式。
-> **兼容性：本设计不做 v1 → v2 迁移。** 项目尚未投入生产、无存量用户，旧库一律拒绝并提示重置（§5），不实现迁移器、不保留兼容读取分支。
+> **已确认前提（2026-11-01）**：①**不做 v1 → v2 迁移**——项目未投入生产、无存量用户，旧库一律拒绝并提示重置（§5）；②**同步尚未启用**——本期不设计 `.vault-meta` 的跨设备导出格式（§6.2、§10 D11）。
 > 路径约定：文中所有路径均为**仓库相对路径**。
 
 ---
@@ -35,13 +36,13 @@
 | 仓库中的密钥材料 | `masterKeySalt` + `hashSalt` + `emergency` | 一个 password slot（包裹 `dek`） |
 | 改密成本 | O(n)：重加密全部条目 + `PRAGMA rekey` | O(1)：重包 20 字节 + `PRAGMA rekey`（本机页密钥） |
 | 改密对恢复密钥 | **作废**（`clear_emergency_data`） | **不作废**（纸面就是 `dek`，与口令无关） |
-| 恢复密钥能开库 | **能**（等价影子主密码） | **不能**（`dbKey` 不在纸面里） |
+| 恢复密钥能开库 | **能**（`recovery_key::unlock_with_recovery_key` 解出 `BK‖MK` 后可开库并做探针读；仅测试引用，命令层未调用） | **不能**（`dbKey` 不在纸面里，且不再提供该函数） |
 | 仓库中的恢复封装 | 有（`emergency: {token, salt}`） | **无**（仓库里没有恢复相关密钥字段） |
 | 口令校验 | 独立 `hash_salt` + 第三次 Argon2id | GCM tag（省掉一次派生与一个字段） |
 | 跨用户预计算 | 可（硬编码 `BOOTSTRAP_SALT`） | 不可（每库随机 salt） |
 | 全熵密钥上的 `kdf_iter` | 256000（无意义开销） | 1 |
 | 抄错检测 | 无 | 分组 + CRC32C（秒级定位） |
-| 恢复通道类型 | `bool` + 全局连接 | `RecoverySession`（只持 `dek`，编译期无法开库） |
+| 恢复通道类型 | `bool` + 全局连接（`unlock_with_recovery_key`）；产品命令只做条目导出 | `RecoverySession`（只持 `dek`，编译期无法开库） |
 | 额外文件 | 恢复包（用户自带） | **零**（用户随身零文件） |
 
 ### 0.4 相对早期 v2 双槽方案的收敛
@@ -68,10 +69,10 @@
 3. **纸面无法单独撤销**。纸面与 `dek` 同体，换纸面必然换 `dek`，即 `rotate_dek`（O(n) 重加密）。
 4. **改密不吊销旧口令**。旧口令 + 仓库历史仍可解出当前 `dek`。真吊销只有 `rotate_dek`。
 5. **单凭据**。本设计只有一个 password slot，不预留 YubiKey / 多口令扩展位（需要时再加 slot，结构已兼容）。
-6. **恢复通道只带得回条目，带不回本机基础设施**（审计、生物识别注册、设置、`revision`、`anchor`）。这不是本设计新引入的损失：v1 的 `unlock_with_recovery_key` 第一件事就是 `if !path.exists() { return Err(NotInitialized) }`（`recovery_key/mod.rs:185-190`），**换机器时 v1 的恢复密钥同样开不了库**，其灾难路径 `vault_disaster_recovery_export` 也只导出条目明文。换言之，在「机器丢了」这个唯一需要恢复的场景里，v1 与 v1.5 能带回的东西**完全相同**。这些数据本身也只在本机有效（`security.db` 不进 git），且用户对其丢失无感（§0.6 T3）。
+6. **恢复通道只带得回条目，带不回本机基础设施**（审计、生物识别注册、设置、`revision`、`anchor`）。这不是本设计新引入的损失：v1 的 `unlock_with_recovery_key` 解出 `BK‖MK` 后仍要求 `security.db` 存在，否则返回 `NotInitialized`（`recovery_key/mod.rs:184-185`），**换机器时 v1 的恢复密钥同样开不了库**；命令层实际走的灾难路径 `vault_disaster_recovery_export` 也只导出条目明文。换言之，在「机器丢了」这个唯一需要恢复的场景里，v1 与 v1.5 能带回的东西**完全相同**。这些数据本身也只在本机有效（`security.db` 不进 git），且用户对其丢失无感（§0.6 T3）。
 7. **不设防 OS 端点攻破**。本设计假设「用户会话与 OS 凭据可信」：同用户代码执行、内核 / 管理员权限、物理接触并攻破 OS 登录、攻破 TPM / keystore，**均不在威胁模型内**。理由：这些能力已足以读取解锁后的进程内存（`master_key` / `bootstrap_key` / `conn` 常驻 `Mutex`），攻破 keystore 不构成新增路径，边际风险为零。因此生物识别**不按「第二因素」定位**，而是「口令的等价替代凭据」。
    - **推论（必须写入用户可见文案）**：开启生物识别后，保险箱强度 = **min(主密码强度, OS 登录强度)**。Windows Hello 在多数设备上退化为 4~6 位 PIN。这是产品承诺问题，不是密码学问题。
-   - **不属于本条的三件事**（它们不依赖任何攻击发生，属于本设计自身的语义 / 实现问题，见 §7.2 R8/R9 与 §9.2 I12）：`rotate_dek` 不吊销生物识别、生物识别路径无审计、`set_key_unprotected` 的默认回落。
+   - **不属于本条的三件事**（它们不依赖任何攻击发生，属于本设计自身的语义 / 实现问题，见 §7.2 R8/R9 与 §9.2 I12）：`rotate_dek` 不吊销生物识别、生物识别**失败 / 取消**路径无审计、`set_key_unprotected` 的默认回落。
 
 ---
 
@@ -93,7 +94,7 @@
    - T3 只在本机有效（`security.db` 不进 git，换机器就没了，谈不上「保护」）；
    - T3 在 v1 的灾难场景下同样不可恢复，故不存在「v1 有、v1.5 没有」的落差。
 
-   剩下唯一的增量是「攻击者同时拿到纸面与本机磁盘时，读不到审计日志」——而审计日志只含事件类型与条目 ID（`security_db/schema.rs:29-34`），不含条目名。**这条收益小到不值得写进任何对比表**。它的真实定位是「权限最小化」的副产品（`RecoverySession` 拿不到 `conn()`），不是安全收益。§7.1 已按此改写。
+   剩下唯一的增量是「攻击者同时拿到纸面与本机磁盘时，读不到审计日志」——而审计日志只含事件类型与条目 ID（`security_db/schema.rs:29-34`），不含条目名。**这条增量只作为事实差异记录（§0.3、§7.1），不作为卖点**。它的真实定位是「权限最小化」的副产品（`RecoverySession` 拿不到 `conn()`）。
 
 ---
 
@@ -101,7 +102,7 @@
 
 ### 1.1 当前仓库里躺着什么
 
-`.vault-meta` v1 的结构（`src-tauri/crates/assistant-sync/src/vault_file/types.rs`）：
+`.vault-meta` v1 的结构（`src-tauri/crates/assistant-vault/src/vault_file/types.rs`）：
 
 ```jsonc
 "crypto":    { "masterKeySalt", "hashSalt", "argon2Params", "defaultCipher" },
@@ -120,8 +121,8 @@
 **S1｜没有数据密钥层，口令与数据强耦合。**
 `master_key = Argon2id(口令)` 同时是「口令派生物」和「条目密钥根」。于是改密必然换根，必然重加密全部条目（`rekey.rs` 的 O(n) 路径），必然作废一切从旧根派生的材料——包括恢复密钥。`clear_emergency_data` 是被迫的，不是产品选择。
 
-**S2｜恢复密钥与普通密码完全等价。**
-`recovery_key::unlock_with_recovery_key` 解出 `BK‖MK` 后直接调用 `set_conn_and_key`，返回 `bool`。它拿到的是一份**完整凭据**：能开库、能读审计、能改库、能导出全部条目。恢复通道与主密码在权限上没有任何区别，唯一的差别是「更长的随机串」。
+**S2｜恢复密钥在库层是一份完整凭据。**
+`recovery_key::unlock_with_recovery_key` 解出 `BK‖MK` 后直接调用 `set_conn_and_key`，返回 `bool`：能开库、能读审计、能改库、能导出全部条目，与主密码在权限上没有区别。该函数当前仅被测试引用、命令层未调用（产品侧恢复走 `vault_disaster_recovery_export`，只导出条目明文），但它是库的公开 API，能力就在那里。
 
 **S3｜仓库是钥匙库，不是数据仓库。**
 仓库里既有数据（`entries/*.enc`），又有开数据的钥匙（`crypto` 字段），还有第二把钥匙的锁（`emergency` 字段）。这使「仓库泄露」与「数据泄露」在威胁模型上不可分离。
@@ -160,14 +161,14 @@
                                        ▼
   password ──Argon2id(salt_kdf)──▶ KEK ──AES-256-GCM──▶ wrappedDek ──▶ dek
                                     │                                    │
-                                    │ HKDF("sqlcipher:"‖vaultId)          │ HKDF("entry:"‖entryId)
+                                    │ HKDF("i9:v1:sqlcipher:"‖vaultId)    │ HKDF("i9:v1:entry:"‖entryId)
                                     ▼                                    ▼
                                   dbKey(32)                        entryKey(32)
                                     │                                    │
                                     ▼                                    ▼
                         SQLCipher 页密钥(security.db)          entries/*.enc + 库内加密列
                                                                          │
-                                              HKDF("meta-integrity") ────┘
+                                          HKDF("i9:v1:meta-integrity") ──┘
                                                          ▼
                                             .vault-meta 的 HMAC 密钥
 ```
@@ -180,7 +181,7 @@
 
 ### 2.2 数据位置
 
-应用侧只有两个数据文件，没有第三个：
+应用自己管理的文件只有两个（`security.db` 与 OS keystore 由系统托管，不是应用写的明文文件）：
 
 | 位置 | 文件 | 进 git | 内容 |
 |---|---|---|---|
@@ -228,7 +229,7 @@
 - `payloadKind` 目前只有 `"dek"`。它的存在是为了让未来出现 `"dbKey"` 之类的 payload 时，AAD 能阻止 kind 降级/互换。
 - `wrappedDek` 明文长度固定 20 字节；总长 48 字节，Base64 后 64 字符。
 - `recoveryBackup` **不含任何密钥**，只记录「用户确认已备份 `dekVersion=N` 的纸面」。它被 integrity 覆盖，因此篡改可见。
-- 解析必须**严格**：`version` 缺失、`slots` 为空、`payloadKind` 未知、`kdf.algo` 未知 → 一律返回 `Unknown`，**禁止任何静默降级**（当前 `read_vault_meta` 的 `.unwrap_or(VAULT_META_VERSION)` 必须删除）。
+- 解析必须**严格**：`version` 缺失、`slots` 为空、`payloadKind` 未知、`kdf.algo` 未知 → 一律返回 `Unknown`，**禁止任何静默降级**。当前代码两处必须改：`read_vault_meta` 完全不校验 `version`（`vault_file/mod.rs:260-263`，直接反序列化）；`write_emergency_data` 用 `.unwrap_or(VAULT_META_VERSION)` 静默沿用旧版本号（`:327-331`）。
 - `version = 1`（v1 的 `crypto` / `emergency` 结构）→ `UnsupportedVaultVersion`。**不做兼容解析、不做字段映射**，处置见 §5。
 
 ### 2.4 派生规则
@@ -243,7 +244,7 @@
 
 - `KEK` 直接从 Argon2id 取 32 字节，不经 HKDF。
 - 条目密钥**按条目派生**，不做「一把钥匙解全部条目」。同一 `entryId` 在 `entries/*.enc` 与库内加密列使用同一把，保证两处密文可交叉校验。
-- `info` 前缀带 `i9:v1:` 版本，为将来算法迁移留出无歧义命名空间。
+- `info` 前缀带 `i9:v1:` 版本，为将来算法迁移留出无歧义命名空间。**此处的 `v1` 指密钥层次代际，与 `.vault-meta` 的 `version: 2` 无关**（§2.3 命名说明），实现时照抄 `i9:v1:` 字面量，不要「顺手改成 v2」。
 
 ### 2.5 AAD 规范
 
@@ -266,7 +267,7 @@ GCM 的 AAD 固定为：
 ```
 1. 读 .vault-meta
    ├─ 不存在 ──▶ NotInitialized
-   ├─ version = 1（v1 结构）──▶ UnsupportedVaultVersion（§5：不迁移，仅提示重置）
+   ├─ version = 1，或 version 缺失但存在 `crypto.masterKeySalt`（v1 结构）──▶ UnsupportedVaultVersion（§5：不迁移，仅提示重置）
    ├─ version 非 2 / 无法解析 ──▶ Corrupted
    └─ 取 slots[0]，校验 type/payloadKind
 2. KEK = Argon2id(口令, slot.kdf)                     ← 全流程唯一一次 Argon2id
@@ -295,6 +296,7 @@ GCM 的 AAD 固定为：
 ```
 1. 归一化 + 解码纸面字符串（§4.1）
    └─ CRC 不符 ──▶ InvalidRecoveryKeyChecksum（"请检查第 3 组第 2 位"）
+      └─ 定位方式：40 位置 × 31 替换值逐个重算 CRC，唯一通过者即错位（本质是纠错，安全含义见 §4.4）
 2. dek = 解码结果（20 字节）
 3. 读 .vault-meta，取 manifest
 4. metaKey = HKDF(dek, "i9:v1:meta-integrity")，校验 integrity
@@ -358,7 +360,7 @@ GCM 的 AAD 固定为：
 - **`slot.id` 递增**（`pwd-3` → `pwd-4`），便于日志区分「哪一代封装」。
 - **崩溃窗口**：第 4 步与第 6 步之间中断，`security.db` 已是新钥匙、`.vault-meta` 仍是旧 slot。后果：旧口令能解出 `dek`（meta 旧），但打不开库。修复路径见 §3.5（重建缓存），不需要任何额外文件。
 - `PRAGMA rekey` 中断可能损坏 `security.db`。它只是**可重建的缓存**（条目真身在 `entries/*.enc`，审计真身在 JSONL），因此损坏的代价是「重建 + 从 JSONL 回放审计」，不是数据丢失。
-- **禁止**在命令层调用 `clear_emergency_data`（当前 `src-tauri/src/cmd/vault/entries.rs:189`）。改密与恢复材料彻底无关。
+- **禁止**在命令层调用 `clear_emergency_data`（当前 `src-tauri/src/cmd/vault/entries.rs:259`）。改密与恢复材料彻底无关。
 
 ### 3.3 `rotate_dek`（真吊销）
 
@@ -448,8 +450,8 @@ fingerprint = SHA256(payload)                      ← 与 payload 一起存 OS 
 分组示例（`-` 仅用于展示，解析时忽略）：
 
 ```
-K7M2-9QXF-3TBA-8WZE-5RNC-J4YD-6PHK-2SVG-9MTB-7XQF
-└───── 8 ─────┘ × 5 组
+K7M2QXF9-3TBAWZE5-RNCJ4YD6-PHK2SVG9-MTB7XQFD
+└──── 8 ────┘ × 5 组
 ```
 
 输入归一化（必须实现，否则用户抄写必失败）：
@@ -478,18 +480,18 @@ K7M2-9QXF-3TBA-8WZE-5RNC-J4YD-6PHK-2SVG-9MTB-7XQF
 |---|---|---|
 | 信息量 | 160 bit | 128 bit |
 | 抄写长度 | 40 字符 | 12 词 ≈ 70 字符 |
-| 抄错后能否定位 | **能**（CRC + 分组） | 能（词表校验和） |
+| 抄错后能否定位 | **能**（按位重算 CRC，定位到具体字符） | 不能（校验和只报「整句有错」，不指出哪个词） |
 | 歧义来源 | 需归一化（O/0、I/1） | 词形相似（`accept`/`except`） |
 | 本地化 | 无语言依赖 | 需中文词表，跨语言不一致 |
 | 实现成本 | 一个编解码器 | 词表 + 校验和 + 本地化 |
 
-结论：Base32 + CRC 在「短、可定位、无语言依赖」三项上都不差，且不需要维护词表。助记词的价值在「人脑记忆」，而恢复密钥的使用场景是**从纸上抄进输入框**，不需要记忆。
+结论：Base32 + CRC 在「短、**可定位**、无语言依赖」三项上都更好，且不需要维护词表。助记词的价值在「人脑记忆」，而恢复密钥的使用场景是**从纸上抄进输入框**，不需要记忆。
 
 ### 4.4 「可验证性」与「预言机」是同一件事
 
 用户曾提出「用哈希逆向难度实现恢复密钥的可验证性」。这个想法值得正面回应：
 
-> **任何确定性校验值，本质上都是「给定候选密钥，判断是否正确」的预言机。** 差别只在于单次猜测的代价。
+> **任何确定性校验值，本质上都是「给定候选值，判断是否通过」的预言机。** 真正的分水岭是两件事：它判断的是「**抄对了**」还是「**猜对了**」，以及单次猜测的代价。
 
 三种做法的对比：
 
@@ -501,16 +503,27 @@ K7M2-9QXF-3TBA-8WZE-5RNC-J4YD-6PHK-2SVG-9MTB-7XQF
 
 **本设计的选择：只在纸面上放 CRC32C（防抄错），不在任何存储介质上放 `dek` 的哈希。**
 
-- CRC32C 是**线性、可伪造**的校验，攻击者无法用它把搜索空间从 2^160 降到 2^32——因为它只校验「抄写完整性」，不校验「密钥正确性」。若攻击者要构造一个 CRC 正确的候选 `dek`，他仍需先猜出 160 bit。
+- CRC32C 是**线性、可伪造**的校验：给定任意 `dek`，攻击者都能算出配套 CRC 并构造出「校验通过」的字符串，因此它**不能**证明密钥正确。反过来说，对一个给定的 CRC 值，通过校验的 `dek` 仍有 2^160 / 2^32 = **2^128** 个，依旧不可穷举。它唯一的用途是「抄错必然被发现」（漏检概率 2^-32）。
 - 而 `SHA256(dek)` 一旦落到仓库里，就等价于公开一个 2^160 的哈希靶，且**每次猜测只需要一次 SHA256**。这是净损失。
 
 一句话：**恢复密钥不需要「可验证」，它需要「可抄对」。** 前者是危险的，后者是廉价的。
+
+**两个必须分清的对象（常见误读）**：
+
+| 问题 | 答案 | 依据 |
+|---|---|---|
+| CRC 校验的是口令吗 | **不是**，校验的是纸面上的 `dek` | CRC 只覆盖 25 字节（版本 + `dek` + CRC），与口令无关 |
+| 仓库里存了口令吗 | **没有**，只有 `slot.kdf.salt` 与 `wrappedDek` | 口令从不落盘；无任何口令派生材料带校验值 |
+| 仓库能否「知道」口令 | **不能**，但能**验证猜测**（离线 Argon2id + GCM 试解 slot） | 任何「口令包裹密钥」方案固有，与 CRC 无关；见 §0.5-1 与附录 C G1 |
+| CRC 能否加速口令爆破 | **不能**，单次猜测仍是 1 次 Argon2id，CRC 不参与 | 两条链路互不连通 |
+
+CRC 的真实代价是另一件事：**它是 `dek` 候选的廉价验证通道**（1 次 CRC32C 即可判断候选是否「抄对了」）。可利用的前提是攻击者已持有绝大部分 `dek`（如照片糊了 3 位），此时穷举 31³ ≈ 3 万次即可还原——即「纸面部分泄露 → 全文泄露」的放大器。**但它只放大已泄露的纸面，不触及口令**；且去掉 CRC 后同样的部分泄露仍可用 HKDF + HMAC over meta 验证（3 万候选仍是秒级），增量可忽略。另外 **CRC 只存在于纸面，不在仓库里**：只拿到仓库的攻击者手上没有这个校验值，无从使用。
 
 ### 4.5 `RecoverySession` 类型隔离
 
 ```rust
 pub struct RecoverySession {
-    dek: MasterKey,      // 仅此一个字段
+    dek: Dek,            // 20B 新 newtype；仅此一个字段
 }
 impl RecoverySession {
     pub fn export_all(&self) -> Result<Vec<PlainEntry>, VaultError>;
@@ -519,8 +532,10 @@ impl RecoverySession {
 }
 ```
 
+> `Dek` 必须是独立 newtype，不能复用 `MasterKey`：后者固定 `[u8; 32]`（`assistant-crypto/src/vault_crypto/types.rs:108`），而 `dek` 是 20B（D3）。
+
 - 恢复路径的返回类型**不是** `bool`，而是只持 `dek` 的会话对象。从类型层面保证：恢复通道拿不到数据库连接，也就无法读审计、无法改库、无法注册生物识别。
-- 这是把「权限裁剪」从**运行时约定**（当前 `unlock_with_recovery_key` 直接 `set_conn_and_key`）改成**编译期事实**。参考项目中没有一个这么做（LUKS 的 keyfile、Bitwarden 的 Emergency Access 都是完整凭据）。
+- 这是把「权限裁剪」从**运行时约定**（当前 `unlock_with_recovery_key` 直接 `set_conn_and_key`，仅测试引用）改成**编译期事实**。参考项目中没有一个这么做（LUKS 的 keyfile、Bitwarden 的 Emergency Access 都是完整凭据）。
 - 同时删除 `unlock_with_recovery_key`：**恢复密钥不存在「解锁」语义**，只有「导出」语义。
 
 ### 4.6 传递通道
@@ -540,7 +555,9 @@ impl RecoverySession {
 
 ### 4.7 无远端时的纸面失效
 
-若仓库从未同步到任何远端（纯本机 git），则纸面在**本机磁盘损坏**时无用（条目文件本身没了）。UI 在「仅本机」状态下必须把「备份恢复密钥」降级为提示：「恢复密钥只能恢复条目内容，不能恢复不存在的仓库；请同时备份仓库」。
+**本期同步未启用**，因此所有用户的仓库都只在本机（本地 git）。这意味着纸面在**本机磁盘损坏**时无用：条目文件本身没了，`dek` 再正确也没有密文可解。
+
+UI 必须把这一点说清：「备份恢复密钥」旁边固定提示「恢复密钥只能解开条目，不能重建不存在的仓库；请同时备份仓库目录」。这不是边角情况，而是当前唯一场景——**纸面 + 仓库备份是两件必须同时做的事**，缺任一件都不构成恢复能力。启用同步后（§10 D11）这条提示才可降级为「仅本机模式」时出现。
 
 ---
 
@@ -572,45 +589,54 @@ impl RecoverySession {
 
 ## 6. 代码改动清单
 
-### 6.1 `assistant-security` 层
+### 6.1 `assistant-crypto` / `assistant-vault` 层
+
+> crate 布局说明：`assistant-security` 现只剩 `hibp` / `screen_lock` / `ssh_agent` / `unlock_dialog` / `clipboard_guard` / `reveal_guard`，其 `vault_crypto/mod.rs` 只有一行 `pub use assistant_crypto::vault_crypto::*;`。密码箱主体在 `assistant-vault`，密码学原语在 `assistant-crypto`。下表按现布局列出。
 
 | 文件 | 改动 |
 |---|---|
-| `src-tauri/crates/assistant-security/src/vault_crypto/mod.rs` | 删除 `derive_master_key`（口令→根密钥）、`verify_master_password`、`derive_sqlcipher_key(MasterKey)`；新增 `derive_kek`、`derive_db_key(KEK, vault_id)`、`derive_entry_key(dek, entry_id)`、`derive_meta_key(dek)` |
-| `src-tauri/crates/assistant-security/src/security_db/mod.rs` | 删除 `BOOTSTRAP_SALT`（:22-25，**无任何保留用途**，不留迁移例外）；`SQLCIPHER_PRAGMAS` 的 `kdf_iter` 改 `1`（:27-28，改前先用一条「旧 pragmas 建库 → `kdf_iter=1` 打开」的测试确认 raw key 下该 pragma 是否为 no-op）；`init`/`unlock` 改为接收 `dbKey`；新增 `UnsupportedVaultVersion` |
-| `src-tauri/crates/assistant-security/src/security_db/rekey.rs` | `change_master_password` 改为 §3.2：不重加密条目，只重包 + `PRAGMA rekey`；删除对 `clear_emergency_data` 的任何依赖；新增 `LocalDbKeyMismatch` 修复入口 |
-| `src-tauri/crates/assistant-security/src/security_db/biometric_ops.rs` | payload 由 64B（`BK‖MK`）改为 52B（`dek‖dbKey`）；新增 `fingerprint = SHA256(payload)` 存取与比对；`restore_keys_from_plaintext` 改为返回 `(dek, dbKey)` |
-| `src-tauri/crates/assistant-security/src/security_db/schema.rs` | `vault_meta` 表新增 `anchor_meta_hash`、`anchor_dek_version`、`anchor_revision`；删除 `hash_salt` / `bootstrap_salt` 相关键 |
-| `src-tauri/crates/assistant-security/src/recovery_key/mod.rs` | **重写**：删除 `generate_recovery_key`（不再有 recovery slot）、`decrypt_recovery_keys`、`unlock_with_recovery_key`；新增 `encode_paper(dek)` / `decode_paper(&str) -> Result<MasterKey, VaultError>`（含 Crockford + CRC32C + 归一化）、`RecoverySession` |
-| `src-tauri/crates/assistant-security/src/lib.rs` | 导出 `RecoverySession`；移除 `unlock_with_recovery_key` |
+| `src-tauri/crates/assistant-crypto/src/vault_crypto/mod.rs` | 删除 `derive_master_key`（口令→根密钥）、`verify_master_password`、`derive_sqlcipher_key(MasterKey)`；新增 `derive_kek`、`derive_db_key(KEK, vault_id)`、`derive_entry_key(dek, entry_id)`、`derive_meta_key(dek)`。`assistant-security/src/vault_crypto/mod.rs` 只是转发，无需改 |
+| `src-tauri/crates/assistant-vault/src/security_db/mod.rs` | 删除 `BOOTSTRAP_SALT`（:22-26，**无任何保留用途**，不留迁移例外）；`SQLCIPHER_PRAGMAS` 的 `kdf_iter` 改 `1`（:27-28，改前先用一条「旧 pragmas 建库 → `kdf_iter=1` 打开」的测试确认 raw key 下该 pragma 是否为 no-op）；`init`/`unlock` 改为接收 `dbKey`；`unlock` 删除第三次 Argon2id（`:154-180`）；新增 `UnsupportedVaultVersion` |
+| `src-tauri/crates/assistant-vault/src/security_db/rekey.rs` | `change_master_password`（`:15`）改为 §3.2：不重加密条目，只重包 + `PRAGMA rekey`（当前 O(n) 重加密段在 `:73-207`，`PRAGMA rekey` 在 `:208`）；新增 `LocalDbKeyMismatch` 修复入口（旧口令重包 / 重建缓存，§3.5） |
+| `src-tauri/crates/assistant-vault/src/security_db/biometric_ops.rs` | payload 由 64B（`BK‖MK`，长度校验 `:41-44`）改为 52B（`dek‖dbKey`）；新增 `fingerprint = SHA256(payload)` 存取与比对；`restore_keys_from_plaintext`（`:35-79`）改为返回 `(dek, dbKey)`，并补探针读（当前只做 `PRAGMA key` + `SQLCIPHER_PRAGMAS`，**无验证读**就写入 `conn`） |
+| `src-tauri/crates/assistant-vault/src/security_db/entries/*.rs`、`crypto_ops.rs`、`vault_file/mod.rs` | `derive_entry_key(mk, id)` 共 **17 处 / 7 个文件**（`crypto_ops.rs` 6、`rekey.rs` 3、`write.rs` 2、`import.rs` 2、`vault_file/mod.rs` 2、`snapshot.rs` 1、`deleted.rs` 1），机械替换为 `dek` |
+| `src-tauri/crates/assistant-vault/src/security_db/schema.rs`、`meta.rs` | `vault_meta` 表（当前只有 `key/value`，`schema.rs:4-7`）新增 `anchor_meta_hash`、`anchor_dek_version`、`anchor_revision`；删除 `master_key_salt` / `hash_salt` / `master_key_hash` 三个键及其读写函数（`meta.rs:51-70`） |
+| `src-tauri/crates/assistant-vault/src/recovery_key/mod.rs` | **重写**：删除 `generate_recovery_key`、`decrypt_recovery_keys`、`unlock_with_recovery_key`；新增 `encode_paper(dek)` / `decode_paper(&str) -> Result<Dek, VaultError>`（含 Crockford + CRC32C + 归一化）、`RecoverySession` |
+| `src-tauri/crates/assistant-vault/src/lib.rs` | 导出 `RecoverySession`；移除 `unlock_with_recovery_key` |
 
-### 6.2 `assistant-sync` 层
+### 6.2 `vault_file` 与同步层（同步未启用）
 
 | 文件 | 改动 |
 |---|---|
-| `src-tauri/crates/assistant-sync/src/vault_file/types.rs` | 新增 `VaultCryptoMetaV2`（`vaultId` / `dekVersion` / `slots` / `manifest` / `recoveryBackup` / `integrity`）；删除 `EmergencyDataFile`、`CryptoMeta.masterKeySalt` / `hashSalt` / `argon2Params`（v1 结构整体删除，不留兼容反序列化） |
-| `src-tauri/crates/assistant-sync/src/vault_file/mod.rs` | `read_vault_meta` **删除 `.unwrap_or(VAULT_META_VERSION)`**，改为严格解析：`version=1` → `UnsupportedVaultVersion`（不迁移，§5），其余非法 → `Unknown`；删除 `write_emergency_data` / `clear_emergency_data`；新增 `write_vault_meta_v2`（原子写）与 manifest 计算 |
-| `src-tauri/crates/assistant-sync/src/sync_engine/mod.rs` | `remote_uses_other_master_key`（:302-315）改为比较 `vaultId`；`to_crypto_meta`（:1124-1137）改为生成 v2 结构；pull 时新增 manifest 校验（`VaultManifestMismatch`） |
+| `src-tauri/crates/assistant-vault/src/vault_file/types.rs` | 新增 `VaultMetaFileV2`（`vaultId` / `dekVersion` / `slots` / `manifest` / `recoveryBackup` / `integrity`）；删除 `VaultCryptoMeta`（`masterKeySalt` / `hashSalt` / `argon2Params`）、`EmergencyDataFile`，不留兼容反序列化 |
+| `src-tauri/crates/assistant-vault/src/vault_file/mod.rs` | `read_vault_meta`（`:260-263`）改为严格解析：`version=1` → `UnsupportedVaultVersion`（不迁移，§5），其余非法 → `Unknown`；删除 `read_emergency_data`（`:312`）、`write_emergency_data`（`:320-346`）、`clear_emergency_data`（`:347-366`）、`rewrite_vault_meta_with_new_key`（`:367`）与 `.unwrap_or(VAULT_META_VERSION)`（`:330`）；新增 `write_vault_meta_v2`（原子写）与 manifest 计算；`verify_vault_meta_integrity`（`:265`）改挂 `metaKey` |
+| `src-tauri/crates/assistant-vault/src/sync_engine/pull_push.rs` | `remote_uses_other_master_key`（`:203`）改为比较 `vaultId` |
+| `src-tauri/crates/assistant-vault/src/sync_engine/export.rs` | 删除 `to_crypto_meta`（`:88`）与 `VaultCryptoInfo` 的密钥字段（`masterKeySalt` / `hashSalt` / `argon2Params`）；`vaultId` 是否进入导出由 §10 D11 决定 |
+| `src-tauri/crates/assistant-vault/src/sync_engine/emergency.rs` | 删除 `read_emergency_data`（`:24`）；`disaster_recovery_export`（`:36`）改为接受 `RecoverySession`，不再从恢复密钥字符串重建 `BK‖MK` |
+| `src-tauri/crates/assistant-vault/src/sync_engine/mod.rs`、`preview.rs` | pull 时新增 manifest 校验（`VaultManifestMismatch`） |
+
+**跨设备导出格式本期不设计**：同步未启用，`.vault-meta` v2 只需在单机 git 仓库内自洽。`VaultCryptoInfo` 一旦删掉密钥字段，导出里就不再有任何可重建 slot 的材料——这是有意的（§10 D11），不要顺手补一个「导出 salt」字段。
 
 ### 6.3 命令层与前端
 
 | 文件 | 改动 |
 |---|---|
-| `src-tauri/src/cmd/vault/recovery.rs` | `vault_unlock_with_recovery_key`（:34-99）删除；新增 `vault_export_recovery_key`（返回 40 字符 + 分组）、`vault_recover_from_paper`（返回 `RecoverySession` 的导出结果）、`vault_rotate_dek` |
-| `src-tauri/src/cmd/vault/entries.rs` | 删除 `clear_emergency_data` 调用（:189）；`export_all_entries` 的 `force` 参数（:196-202）改为由 `RecoverySession` 自然约束，不再需要 `force` 绕过 |
-| `src/vault/unlock/RecoveryKeyForm.tsx` | 改为「恢复密钥（纸面）」输入：实时归一化、分组显示、CRC 错误提示到组位 |
+| `src-tauri/src/cmd/vault/recovery.rs` | 现有 4 个命令：`vault_generate_recovery_key`（`:10`）、`vault_has_recovery_key`（`:42`）、`vault_verify_vault_meta_integrity`（`:50`）、`vault_disaster_recovery_export`（`:146`）。改为 `vault_export_recovery_key`（展示当前 `dek`，40 字符 + 分组）、`vault_recover_from_paper`（返回 `RecoverySession` 的导出结果）、`vault_rotate_dek`；`vault_generate_recovery_key` / `vault_has_recovery_key` / `vault_disaster_recovery_export` 删除（「是否已备份纸面」由 `recoveryBackup` 标记回答） |
+| `src-tauri/src/cmd/vault/entries.rs` | `vault_change_master_password`（`:231`）内的 `disenroll_biometric`（`:248`）、`clear_emergency_data`（`:259`）、`RecoveryKeyInvalidated` 审计（`:281`）全部删除；改为「用新 `KEK` 重包生物识别 payload（`dek‖dbKey`）」，仅重包失败时 disenroll；`export_all_entries(state, true, &[])`（`:269`）的 `force=true` 删除——改密不再重写任何条目文件，`RecoverySession` 的导出路径也不需要 `force` 绕过 |
+| `src/vault/unlock/RecoveryKeyForm.tsx` | **新建**（当前目录只有 `BiometricButton.tsx` / `DisasterRecovery.tsx` / `PasswordForm.tsx`）：纸面输入，实时归一化、分组显示、CRC 错误提示到组位 |
+| `src/vault/unlock/DisasterRecovery.tsx` | 改为「纸面恢复」流程：输入 40 字符 → 只读预览 → 导出条目 |
 | `src/vault/settings/RecoveryTab.tsx` | 「生成恢复密钥」改为「备份恢复密钥」（展示当前 `dek`）；新增「轮换数据密钥」独立入口 + 强警告；移除「恢复密钥已失效」的旧文案 |
-| `src/vault/core/vault.service.ts` | 移除 `unlockWithRecoveryKey`（:242-243）；新增 `exportRecoveryKey` / `recoverFromPaper` / `rotateDek` |
+| `src/vault/core/vault.service.ts` | 移除 `generateRecoveryKey`（`:262`）、`hasRecoveryKey`（`:265`）、`disasterRecoveryExport`（`:270`）；新增 `exportRecoveryKey` / `recoverFromPaper` / `rotateDek` |
 
 ### 6.4 必须同时删除的死代码
 
 - `MasterKey` 作为「口令派生物」的所有用法（只保留其作为 `dek` 载体的角色）。
 - `hash_salt` 与第三次 Argon2id 派生。
-- `EmergencyData` / `emergency` 字段的全部读写路径（跨 `assistant-security`、`assistant-sync`、命令层、前端四层）。
+- `EmergencyData` / `emergency` 字段的全部读写路径（跨 `assistant-vault`、命令层、前端三层）。
 - `unlock_with_recovery_key` 的 `bool` 返回与 `set_conn_and_key` 调用。
 - v1 `.vault-meta` 兼容读取：`crypto` / `emergency` 反序列化、`masterKeySalt`、`hashSalt`、`argon2Params` 解析。
 - v1 `integrity` HMAC 及其规范化编码（不保留兼容校验用途，理由见 §5）。
-- 恢复码路径复制的 `PRAGMA` 字面量（`recovery_key/mod.rs:156-157`），统一走 `SQLCIPHER_PRAGMAS`。
+- 恢复码路径复制的 `PRAGMA` 字面量（`recovery_key/mod.rs:191`），统一走 `SQLCIPHER_PRAGMAS`。
 
 本设计**不实现**迁移器，因此不应存在 staging 目录、`journal.json`、`.vault-legacy/` 归档、`LegacyVaultDetected` 这类代码——若在实现时被「顺手加上」，视为偏离设计。
 
@@ -625,7 +651,7 @@ impl RecoverySession {
 | 仓库 | 离线爆破口令 | 能（`BOOTSTRAP_SALT` 可预计算） | 能，但每库独立 salt + 参数可调 |
 | 仓库 + 口令 | 解密全部条目 | 能 | 能 |
 | 仓库 + 口令 + 本机磁盘 | 开库、读审计 | 能 | 能（`dbKey = HKDF(KEK)`） |
-| **纸面** | 解密全部条目 | 能（且还能开库） | 能（**不能开库**） |
+| **纸面** | 解密全部条目 | 能（`unlock_with_recovery_key` 还能开库，仅测试引用） | 能（**不能开库**，且无此函数） |
 | 纸面 + 仓库 | 解全部条目 | 能 | 能 |
 | 本机磁盘 + 口令 | 开库 | 能 | 能 |
 | OS keystore | 生物识别解锁（等价于持有完整凭据：`dek` + `dbKey`） | 能 | 能 |
@@ -646,7 +672,7 @@ impl RecoverySession {
 | 编号 | 风险 | 缓解 |
 |---|---|---|
 | R1 | 纸面泄露 = 数据泄露 | 生成时强警告；建议离线保管；提供「轮换数据密钥」入口 |
-| R2 | 纸面持有者可快速验证口令猜测（已知 `dek` → 试解 slot 即知口令对错） | 影响有限（其已持有全部数据）；不为它牺牲可抄写性 |
+| R2 | 纸面持有者可离线验证口令猜测（已知 `dek` 时每次猜测仍需 1 次 Argon2id + 1 次 GCM，与常规离线爆破**同价**，不加速） | 无实际增量：其已持有全部数据，猜出口令不带来任何新能力；不为它牺牲可抄写性 |
 | R3 | `PRAGMA rekey` 中断损坏本机库 | 库是可重建缓存；审计双写 JSONL；`rekey` 前自动备份 |
 | R4 | 改密不吊销旧口令 | UI 显式告知；提供 `rotate_dek` |
 | R5 | 多设备改密后本机库失配 | §3.5 两条修复路径（旧口令重包 / 重建缓存） |
@@ -654,14 +680,15 @@ impl RecoverySession {
 | R7 | 全熵密钥上的 `kdf_iter=256000` 纯浪费 | 改 `1` |
 | R8 | **`rotate_dek` 不吊销生物识别**：wrapping key 由固定公开挑战的签名派生，是常量；`rotate_dek` 只换 payload 里的 `dek`，旧签名仍能解出新 payload。用户执行「轮换数据密钥」后会合理地认为旧凭据全部失效，实际没有 | `rotate_dek` 成功后**删除 Hello 凭据并强制重注册**（`delete_key` 已调用 `KeyCredentialManager::DeleteAsync`，路径现成）；若用户拒绝重注册，则视为「已停用生物识别」并显式告知 |
 | R9 | **`set_key_unprotected` 默认回落为 `set_key`**（`biometric/mod.rs:24-26`）：非 Windows 路径把 wrapping key 与密文存入同一 key store；若两者 ACL 相同，AES-GCM 只是「任何人拿到都能解」的壳，等价明文 | 逐平台确认：macOS 必须设 `kSecAccessControlUserPresence`；Linux 必须确认 secret service 绑定会话锁；不满足的平台**直接禁用生物识别**，而不是静默降级 |
-| R10 | 生物识别路径**完全不产生审计**（口令路径的 `VaultUnlockFailed` 不覆盖它） | 见 §7.3：成功 / 失败 / 签名变化全部写 JSONL |
+| R10 | 生物识别路径**成功解锁有审计、失败 / 取消无审计**（成功写 `VaultUnlock` + `"biometric"`，`biometric_ops.rs:79-84`；失败与 `UserCanceled` 无事件，口令路径的 `VaultUnlockFailed` 也不覆盖它） | 见 §7.3：成功 / 失败 / 签名变化全部写 JSONL |
+| R11 | **纸面部分泄露 = 全文泄露**：CRC32C 让「已持有绝大部分 `dek`」的攻击者能以 1 次 CRC 验证候选，31³ ≈ 3 万次即可补全 3 个模糊字符（§4.4） | 不为此去掉 CRC（纠错是核心体验，且无 CRC 时同样可验证，见 §4.4）；改为在文案上要求「整张纸要么完整保密、要么视为已泄露」，禁止拍照局部留存 |
 
 ### 7.3 可观测性
 
 - **审计双写**：`security_audit_log` 表 + 本机 JSONL（`.audit/*.jsonl`，不加密、不含密钥）。理由：恢复路径无法读库，若审计只在库里，则「用纸面导出全部条目」这件事不可审计。JSONL 让下次口令解锁时可以补录一条 `RecoveryExportUsed`。
 - **恢复密钥使用可审计**：`RecoverySession::export_all` 结束时写一条 `RecoveryExportUsed { entryCount, at }` 到 JSONL。
 - **改密/轮换必须留痕**：`MasterPasswordChange`、`DekRotated { from, to }`、`LocalDbRebuilt`、`AnchorRollbackRejected`。
-- **生物识别路径必须留痕**：`BiometricUnlocked`、`BiometricFailed { reason }`（含 `UserCanceled`）、`BiometricSignatureChanged`、`BiometricEnrolled` / `BiometricRevoked`。理由：这条路径绕过了口令与 slot，是唯一没有审计的解锁入口（R10）。
+- **生物识别路径必须留痕**：`BiometricUnlocked`、`BiometricFailed { reason }`（含 `UserCanceled`）、`BiometricSignatureChanged`、`BiometricEnrolled` / `BiometricRevoked`。理由：这条路径绕过了口令与 slot，且失败时当前完全不留痕（R10）。
 - **审计位置**：`.audit/*.jsonl` 与 `security.db` 同级（本机数据目录），**不得落在 vault 目录内**（否则进 git，形成新的历史泄露面）；按大小 / 日期轮转，避免无限增长。
 
 ---
@@ -670,16 +697,18 @@ impl RecoverySession {
 
 | 阶段 | 内容 | 可交付性 |
 |---|---|---|
-| **P0-1** | 验证 raw key 下 `kdf_iter` 语义 → 改 `1`；**删除** `BOOTSTRAP_SALT`（无迁移例外） | 独立可合，无 schema 变更 |
-| **P0-2** | 引入 `dek` + `.vault-meta` v2（单槽）+ 严格解析（`version=1` → `UnsupportedVaultVersion`）；`init`/`unlock`/`change_password` 走新路径 | 新库可用；旧库明确拒绝（§5） |
-| **P0-3** | 纸面编解码（Crockford + CRC32C + 归一化）+ `RecoverySession` + 删除 `unlock_with_recovery_key` | 恢复通道权限裁剪生效 |
-| **P1-1** | `manifest` + `anchor` | 补上删除/回滚检测 |
-| **P1-2** | 生物识别 payload 改 `dek‖dbKey` + `fingerprint` + 自动重包 + **解锁验证读（探针）** | 修掉静默过期与「假解锁」 |
+| **P0-1** | 验证 raw key 下 `kdf_iter` 语义 → 改 `1`（`security_db/mod.rs:27-28`）；`recovery_key/mod.rs:191` 的 PRAGMA 字面量改为走 `SQLCIPHER_PRAGMAS` | 独立可合，不动密钥结构、不动 schema |
+| **P0-2** | **一次原子切换**：引入 `dek` + `.vault-meta` v2（单槽）+ 严格解析（`version=1` → `UnsupportedVaultVersion`）；`init`/`unlock`/`change_password` 走新路径（改密 O(1)）；删 `BOOTSTRAP_SALT`、`hash_salt`、第三次 Argon2id；`derive_entry_key` 17 处换 `dek`；**同批删除 v1 恢复通道**（`generate_recovery_key` / `decrypt_recovery_keys` / `unlock_with_recovery_key`、命令层 `vault_generate_recovery_key` / `vault_has_recovery_key` / `vault_disaster_recovery_export`、前端对应入口） | 新库可用；旧库明确拒绝（§5）。**中间态不可发布**：P0-2 到 P0-3 之间没有恢复通道 |
+| **P0-3** | 纸面编解码（Crockford + CRC32C + 归一化）+ `RecoverySession` + 命令层 `vault_export_recovery_key` / `vault_recover_from_paper` + 前端纸面入口 | 恢复通道重新可用，且权限已裁剪 |
+| **P1-1** | `manifest` + `anchor`（含 `anchor_*` 写入 `vault_meta`） | 补上删除/回滚检测 |
+| **P1-2** | 生物识别 payload 改 `dek‖dbKey`（52B）+ `fingerprint` + 自动重包 + **解锁验证读（探针，I12）** | 修掉静默过期与「假解锁」 |
 | **P1-3** | `rotate_dek` + 全量重加密 + `dekVersion` + **删除 Hello 凭据强制重注册**（R8） | 真吊销能力 |
 
-依赖关系：P0-2 依赖 P0-1；P0-3 依赖 P0-2；P1-3 依赖 P1-1（manifest 需全量重算）。
+依赖关系：P0-2 依赖 P0-1；P0-3 依赖 P0-2；P1-1 依赖 P0-2；P1-2 依赖 P1-1；P1-3 依赖 P1-1（manifest 需全量重算）与 P1-2（重注册复用生物识别 payload 路径）。
 
-**没有「迁移」阶段，也没有「删除兼容分支」的收尾阶段**：v1 兼容代码在 P0-1 / P0-2 中一次性删完，不保留过渡期。
+**P0-1 只碰 `kdf_iter` 与 PRAGMA 去重，不碰 `BOOTSTRAP_SALT`**：删 `BOOTSTRAP_SALT` 会让 `generate_recovery_key` / `decrypt_recovery_keys` / `unlock_with_recovery_key` 全部编译失败，必须与 v2 切换同批，否则 P0-1 无法独立合入。
+
+**没有「迁移」阶段，也没有「删除兼容分支」的收尾阶段**：v1 兼容代码在 P0-2 中一次性删完，不保留过渡期。
 
 ---
 
@@ -691,9 +720,10 @@ impl RecoverySession {
 |---|---|---|
 | T1 | `encode_paper` → `decode_paper` 往返（1000 次随机 `dek`） | 结果一致；长度恒为 40 |
 | T2 | 归一化：小写、含 `-`/空格、全角、`O`/`0`、`I`/`1`/`l`/`L`、`U`/`V` 混用 | 全部解出同一 `dek` |
-| T3 | 单字符替换（遍历 40 个位置 × 32 个替换值） | 全部返回 `InvalidRecoveryKeyChecksum` |
+| T3 | 单字符替换（遍历 40 个位置 × 31 个其他字符） | 全部返回 `InvalidRecoveryKeyChecksum`（CRC-32 保证检出全部单字符错误） |
 | T4 | 截断 / 超长 / 非法字符 | `InvalidRecoveryKeyFormat`，不 panic |
 | T5 | CRC 正确的伪造 `dek`（攻击者构造） | 能通过 CRC，但解不开任何条目 → 证明 CRC 不是密钥预言机 |
+| T5b | 纠错定位：随机挖掉 1~3 个字符后跑定位逻辑 | 唯一还原原 `dek`；且**不**触达任何口令相关代码路径 |
 | T6 | AAD：把 `slotId`/`dekVersion`/`payloadKind` 任一改掉后解包 | `InvalidPassword`（GCM 失败） |
 | T7 | `dbKey` 派生：同 `KEK` + 不同 `vaultId` | 输出不同 |
 | T8 | `entryKey` 派生：同 `dek` + 不同 `entryId` | 输出不同 |
@@ -713,7 +743,7 @@ impl RecoverySession {
 | I9 | 改密后生物识别重包失败 | 下次生物识别解锁 → `BiometricReset`，不返回错误密钥 |
 | I10 | 打开 `version=1` 的旧库 | `UnsupportedVaultVersion`；**不修改任何文件**（`.vault-meta` / `security.db` / `entries/` 的内容与 mtime 不变） |
 | I11 | 重置仓库后重新初始化 | 新库 `version=2`、`vaultId` 重新生成；无旧文件残留；`recoveryBackup` 为空 |
-| I12 | **生物识别解锁必须验证读**：`restore_keys_from_plaintext` 用 payload 的 `dbKey` 打开库后，**必须**执行探针查询（`SELECT value FROM vault_meta WHERE key='schema_version'`，与恢复码路径 `recovery_key/mod.rs:146-155` 一致） | 探针失败 → `BiometricReset`，**不得**进入已解锁状态。用例：用 A 设备的 `security.db` + B 设备的 keystore payload，断言返回 `BiometricReset` 而非「解锁成功、首次读条目才报错」 |
+| I12 | **生物识别解锁必须验证读**：`restore_keys_from_plaintext` 用 payload 的 `dbKey` 打开库后，**必须**执行探针查询（`SELECT value FROM vault_meta WHERE key='schema_version'`，与恢复码路径 `recovery_key/mod.rs:194-198` 一致） | 探针失败 → `BiometricReset`，**不得**进入已解锁状态。用例：用 A 设备的 `security.db` + B 设备的 keystore payload，断言返回 `BiometricReset` 而非「解锁成功、首次读条目才报错」 |
 | I13 | `rotate_dek` 后生物识别 | 旧 Hello 凭据已被删除；旧 payload 无法解出新 `dek`；用户被要求重新注册 |
 
 ### 9.3 手工验收
@@ -739,6 +769,7 @@ impl RecoverySession {
 | **D8** | 旧库是否迁移 | **否**（已决：无存量用户，不实现迁移器；v1 库直接 `UnsupportedVaultVersion` + 提示重置，§5） | 迁移 → 需 staging / journal / 回滚 / 崩溃注入，当前无收益 |
 | **D9** | 审计主存储 | `security.db` + JSONL 双写 | 仅库 → 恢复路径不可审计 |
 | **D10** | `vaultId` 是否随 `rotate_dek` 变 | **否**（仓库身份不变） | 变 → 会让同步判据失效 |
+| **D11** | `.vault-meta` v2 的跨设备导出契约 | **本期不设计**（同步未启用；`VaultCryptoInfo` 删掉密钥字段后，导出不含任何可重建 slot 的材料，§6.2） | 启用同步时再设计：需决定 `vaultId` / `slots` 是否进导出、pull 时如何校验 manifest；届时 `remote_uses_other_master_key` 的 `vaultId` 判据才有实际作用 |
 
 ---
 

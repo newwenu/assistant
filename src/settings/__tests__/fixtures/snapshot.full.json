@@ -1,0 +1,427 @@
+{
+  "counts": {
+    "pages": 8,
+    "categories": 4,
+    "sections": 9,
+    "fields": 43,
+    "routes": 1,
+    "sidebar": 1,
+    "confPageMap": 4
+  },
+  "pages": [
+    {
+      "id": "general",
+      "categoryId": "general",
+      "order": 10,
+      "visibility": "sidebar",
+      "navParent": null,
+      "emptyPage": false
+    },
+    {
+      "id": "appearance",
+      "categoryId": "general",
+      "order": 20,
+      "visibility": "sidebar",
+      "navParent": null,
+      "emptyPage": false
+    },
+    {
+      "id": "shortcuts",
+      "categoryId": "general",
+      "order": 30,
+      "visibility": "sidebar",
+      "navParent": null,
+      "emptyPage": false
+    },
+    {
+      "id": "providers",
+      "categoryId": "provider",
+      "order": 40,
+      "visibility": "sidebar",
+      "navParent": null,
+      "emptyPage": true
+    },
+    {
+      "id": "agents",
+      "categoryId": "provider",
+      "order": 50,
+      "visibility": "sidebar",
+      "navParent": null,
+      "emptyPage": true
+    },
+    {
+      "id": "storage",
+      "categoryId": "general",
+      "order": 60,
+      "visibility": "sidebar",
+      "navParent": null,
+      "emptyPage": true
+    },
+    {
+      "id": "vault",
+      "categoryId": "vault",
+      "order": 65,
+      "visibility": "sidebar",
+      "navParent": null,
+      "emptyPage": false
+    },
+    {
+      "id": "about",
+      "categoryId": "about",
+      "order": 70,
+      "visibility": "sidebar",
+      "navParent": null,
+      "emptyPage": false
+    }
+  ],
+  "categories": [
+    {
+      "id": "general",
+      "order": 0
+    },
+    {
+      "id": "provider",
+      "order": 10
+    },
+    {
+      "id": "vault",
+      "order": 20
+    },
+    {
+      "id": "about",
+      "order": 30
+    }
+  ],
+  "sections": [
+    {
+      "id": "general-main",
+      "pageId": "general"
+    },
+    {
+      "id": "agent-main",
+      "pageId": "general"
+    },
+    {
+      "id": "theme",
+      "pageId": "appearance"
+    },
+    {
+      "id": "orb-ball",
+      "pageId": "appearance"
+    },
+    {
+      "id": "orb-panel",
+      "pageId": "appearance"
+    },
+    {
+      "id": "shortcuts-main",
+      "pageId": "shortcuts"
+    },
+    {
+      "id": "about-main",
+      "pageId": "about"
+    },
+    {
+      "id": "vault-general",
+      "pageId": "vault"
+    },
+    {
+      "id": "vault-ssh",
+      "pageId": "vault"
+    }
+  ],
+  "fields": [
+    {
+      "key": "riveIdlePoseRotation",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "boolean"
+    },
+    {
+      "key": "riveSrc",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "asset-picker"
+    },
+    {
+      "key": "svgAnimated",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "boolean"
+    },
+    {
+      "key": "gifBorderRadius",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "slider"
+    },
+    {
+      "key": "gifSrc",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "asset-picker"
+    },
+    {
+      "key": "language",
+      "group": "app",
+      "section": "general-main",
+      "type": "select"
+    },
+    {
+      "key": "launchAtLogin",
+      "group": "app",
+      "section": "general-main",
+      "type": "boolean"
+    },
+    {
+      "key": "closeToTray",
+      "group": "app",
+      "section": "general-main",
+      "type": "boolean"
+    },
+    {
+      "key": "stayOnTop",
+      "group": "app",
+      "section": "general-main",
+      "type": "boolean"
+    },
+    {
+      "key": "theme",
+      "group": "app",
+      "section": "theme",
+      "type": "select"
+    },
+    {
+      "key": "opacityPercent",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "slider"
+    },
+    {
+      "key": "idleOpacityPercent",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "slider"
+    },
+    {
+      "key": "scalePercent",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "slider"
+    },
+    {
+      "key": "clickThrough",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "boolean"
+    },
+    {
+      "key": "hideOnPointerHover",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "boolean"
+    },
+    {
+      "key": "hoverDelayMs",
+      "group": "orb",
+      "section": "orb-ball",
+      "type": "slider"
+    },
+    {
+      "key": "alwaysOnTop",
+      "group": "orb",
+      "section": "orb-panel",
+      "type": "boolean"
+    },
+    {
+      "key": "primaryColor",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "color"
+    },
+    {
+      "key": "renderer",
+      "group": "mascot",
+      "section": "orb-ball",
+      "type": "select"
+    },
+    {
+      "key": "keybindings.toggle_orb",
+      "group": "app",
+      "section": "shortcuts-main",
+      "type": "keybinding"
+    },
+    {
+      "key": "keybindings.toggle_main",
+      "group": "app",
+      "section": "shortcuts-main",
+      "type": "keybinding"
+    },
+    {
+      "key": "keybindings.new_chat",
+      "group": "app",
+      "section": "shortcuts-main",
+      "type": "keybinding"
+    },
+    {
+      "key": "keybindings.commandPalette",
+      "group": "app",
+      "section": "shortcuts-main",
+      "type": "keybinding"
+    },
+    {
+      "key": "autoCompact",
+      "group": "app",
+      "section": "general-main",
+      "type": "boolean"
+    },
+    {
+      "key": "compactThresholdPercentOfBudget",
+      "group": "app",
+      "section": "general-main",
+      "type": "slider"
+    },
+    {
+      "key": "compactSummaryPrompt",
+      "group": "app",
+      "section": "general-main",
+      "type": "textarea"
+    },
+    {
+      "key": "compactSummaryMaxTokens",
+      "group": "app",
+      "section": "general-main",
+      "type": "number"
+    },
+    {
+      "key": "workspaceRoot",
+      "group": "app",
+      "section": "agent-main",
+      "type": "string"
+    },
+    {
+      "key": "approvalTimeoutSecs",
+      "group": "app",
+      "section": "agent-main",
+      "type": "number"
+    },
+    {
+      "key": "userQuestionTimeoutSecs",
+      "group": "app",
+      "section": "agent-main",
+      "type": "number"
+    },
+    {
+      "key": "app_name",
+      "group": "app",
+      "section": "about-main",
+      "type": "readonly"
+    },
+    {
+      "key": "build_date",
+      "group": "app",
+      "section": "about-main",
+      "type": "readonly"
+    },
+    {
+      "key": "tech_stack",
+      "group": "app",
+      "section": "about-main",
+      "type": "readonly"
+    },
+    {
+      "key": "license",
+      "group": "app",
+      "section": "about-main",
+      "type": "readonly"
+    },
+    {
+      "key": "vaultAutoLockMinutes",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "number"
+    },
+    {
+      "key": "vaultLockOnScreenLock",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "boolean"
+    },
+    {
+      "key": "vaultClipboardClearSeconds",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "number"
+    },
+    {
+      "key": "vaultCipherAlgorithm",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "select"
+    },
+    {
+      "key": "vaultBiometricUnlock",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "boolean"
+    },
+    {
+      "key": "vaultSshAutoAdd",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "boolean"
+    },
+    {
+      "key": "vaultSshUsePageant",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "boolean"
+    },
+    {
+      "key": "vaultSshUseOpensshAgent",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "boolean"
+    },
+    {
+      "key": "vaultSshAuthSockOverride",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "string"
+    }
+  ],
+  "routes": [
+    {
+      "path": "/vault",
+      "boundary": "密码保险库",
+      "order": 0,
+      "visibility": "sidebar",
+      "navParent": "vault"
+    }
+  ],
+  "sidebar": [
+    {
+      "key": "vault",
+      "slot": "after-tools",
+      "order": 0
+    }
+  ],
+  "confPageMap": [
+    [
+      "app",
+      "general"
+    ],
+    [
+      "mascot",
+      "appearance"
+    ],
+    [
+      "orb",
+      "appearance"
+    ],
+    [
+      "vault",
+      "vault"
+    ]
+  ]
+}

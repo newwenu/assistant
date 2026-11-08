@@ -2,15 +2,26 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   ConversationListChangedPayload,
   ConversationTerminatedPayload,
-  ConversationCompactFailedPayload,
   ConversationUnlockedPayload,
-  ChatMessagesChangedPayload,
   Message,
+  ToolCallView,
 } from "../chat/core/chatTypes";
+import type { ChatMessagesChangedPayloadDto } from "../types/protocol.contract";
 import { ChatEvent } from "../chat/core/chatTypes";
-import { toChatError } from "../chat/core/chatErrors";
+import { hasPendingToolCalls, toChatMessage } from "../chat/core/toolCallView";
 import { useChatStore } from "../stores/chatStore";
 import { createLogger } from "@/services/logger";
+
+/** 实时流里仍在进行的调用优先保留前端视图；否则以后端终态为准。 */
+function mergeToolCalls(
+  frontend: ToolCallView[] | undefined,
+  backend: ToolCallView[] | undefined,
+): ToolCallView[] | undefined {
+  if (!frontend || frontend.length === 0) return backend;
+  if (hasPendingToolCalls(frontend)) return frontend;
+  if (backend && backend.length > 0) return backend;
+  return frontend;
+}
 
 function mergeMessagesPreservingFrontendState(
   frontendMessages: Message[],
@@ -29,6 +40,7 @@ function mergeMessagesPreservingFrontendState(
       ...backendMsg,
       error: frontendMsg.error ?? backendMsg.error,
       reasoning: backendMsg.reasoning ?? frontendMsg.reasoning,
+      toolCalls: mergeToolCalls(frontendMsg.toolCalls, backendMsg.toolCalls),
     };
   });
 }
@@ -87,27 +99,9 @@ export function subscribeChatLifecycleEvents(): () => void {
         const payload = event.payload;
         const store = useChatStore.getState();
         if (store.currentConversationId === payload.conversationId) {
-          useChatStore.setState({
-            isFull: payload.isFull,
-            compactSummary: payload.summary,
-            compactError: null,
-          });
+          useChatStore.setState({ isFull: payload.isFull });
         }
         void useChatStore.getState().loadConversations(true);
-      },
-    ),
-  );
-
-  track(
-    listen<ConversationCompactFailedPayload>(
-      ChatEvent.ConversationCompactFailed,
-      (event) => {
-        if (disposed) return;
-        const payload = event.payload;
-        const store = useChatStore.getState();
-        if (store.currentConversationId === payload.conversationId) {
-          useChatStore.setState({ compactError: toChatError(payload.error) });
-        }
       },
     ),
   );
@@ -120,11 +114,7 @@ export function subscribeChatLifecycleEvents(): () => void {
         const payload = event.payload;
         const store = useChatStore.getState();
         if (store.currentConversationId === payload.conversationId) {
-          useChatStore.setState({
-            isFull: false,
-            compactSummary: null,
-            compactError: null,
-          });
+          useChatStore.setState({ isFull: false });
         }
         void useChatStore.getState().loadConversations(true);
       },
@@ -134,27 +124,34 @@ export function subscribeChatLifecycleEvents(): () => void {
   let lastProcessedSeq = 0;
 
   track(
-    listen<ChatMessagesChangedPayload>(ChatEvent.MessagesChanged, (event) => {
-      if (disposed) return;
-      const payload = event.payload;
-      const store = useChatStore.getState();
-      if (store.currentConversationId === payload.conversationId) {
-        if (payload._seq !== undefined && payload._seq <= lastProcessedSeq) {
-          void store.switchConversation(payload.conversationId);
-          return;
+    listen<ChatMessagesChangedPayloadDto>(
+      ChatEvent.MessagesChanged,
+      (event) => {
+        if (disposed) return;
+        const payload = event.payload;
+        const store = useChatStore.getState();
+        if (store.currentConversationId === payload.conversationId) {
+          if (payload.seq !== null && payload.seq <= lastProcessedSeq) {
+            void store.switchConversation(payload.conversationId);
+            return;
+          }
+          if (payload.seq !== null) {
+            lastProcessedSeq = payload.seq;
+          }
+          const backendMessages = payload.messages.map(toChatMessage);
+          useChatStore.setState({
+            messages: mergeMessagesPreservingFrontendState(
+              store.messages,
+              backendMessages,
+            ),
+            activeBranchId: payload.activeBranchId,
+          });
+          if (payload.changeKind !== "stream_finished") {
+            useChatStore.getState().refreshTokenUsage();
+          }
         }
-        if (payload._seq !== undefined) {
-          lastProcessedSeq = payload._seq;
-        }
-        useChatStore.setState({
-          messages: mergeMessagesPreservingFrontendState(
-            store.messages,
-            payload.messages,
-          ),
-          activeBranchId: payload.activeBranchId,
-        });
-      }
-    }),
+      },
+    ),
   );
 
   return () => {

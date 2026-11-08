@@ -1,22 +1,34 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { viteStaticCopy } from "vite-plugin-static-copy";
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import process from "node:process";
 
 const host = process.env.TAURI_DEV_HOST;
 
+interface FeatureSpec {
+  default: boolean;
+  cargoFeature: string;
+  env: string;
+}
+
+const featureManifest = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "config/features.json"), "utf8"),
+) as Record<string, FeatureSpec>;
+
+function featureDefines(): Record<string, string> {
+  const defines: Record<string, string> = {};
+  for (const spec of Object.values(featureManifest)) {
+    const override = process.env[spec.env];
+    const enabled = override === undefined ? spec.default : override !== "0";
+    defines[`__${spec.env}__`] = JSON.stringify(enabled);
+  }
+  return defines;
+}
+
 // https://vite.dev/config/
 export default defineConfig(() => ({
-  plugins: [
-    react(),
-    viteStaticCopy({
-      targets: [
-        { src: "node_modules/@rive-app/webgl2/rive.wasm", dest: "." },
-        { src: "node_modules/@rive-app/webgl2/rive_fallback.wasm", dest: "." },
-      ],
-    }),
-  ],
+  plugins: [react()],
   resolve: {
     alias: {
       "@": resolve(import.meta.dirname, "src"),
@@ -24,6 +36,7 @@ export default defineConfig(() => ({
   },
   define: {
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+    ...featureDefines(),
   },
 
   optimizeDeps: {

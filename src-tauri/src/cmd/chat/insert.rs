@@ -2,29 +2,36 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use assistant_storage::{
-    agent_modes::{self, AgentModeRow},
     attachment_store::{self},
     conversations::{self, MessageRow},
     providers::{self as provider_store},
 };
 
 pub(crate) struct InsertedMessages {
-    pub mode: Option<AgentModeRow>,
     pub assistant_msg_id: String,
     pub user_msg_id: Option<String>,
-    pub detail: conversations::ConversationDetail,
-    pub provider_row: provider_store::ProviderRow,
+}
+
+pub(crate) struct InsertChatInput<'a> {
+    pub conversation_id: &'a str,
+    pub content: &'a str,
+    pub branch_point_message_id: Option<&'a str>,
+    pub provider_id: &'a str,
+    pub model_id: &'a str,
 }
 
 pub(crate) fn insert_chat_messages(
     conn: &rusqlite::Connection,
-    conversation_id: &str,
-    content: &str,
-    mode_id: Option<&str>,
-    branch_point_message_id: Option<&str>,
-    provider_id: &str,
-    model_id: &str,
+    input: InsertChatInput<'_>,
 ) -> Result<InsertedMessages, String> {
+    let InsertChatInput {
+        conversation_id,
+        content,
+        branch_point_message_id,
+        provider_id,
+        model_id,
+    } = input;
+
     if conversations::is_conversation_full(conn, conversation_id)
         .map_err(super::super::translate_storage_error)?
     {
@@ -32,8 +39,6 @@ pub(crate) fn insert_chat_messages(
     }
 
     let now = Utc::now().timestamp_millis();
-    let mode: Option<AgentModeRow> =
-        mode_id.and_then(|id| agent_modes::get_by_id(conn, id).ok().flatten());
 
     let detail_before = conversations::get_conversation_detail(conn, conversation_id)?
         .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
@@ -78,17 +83,9 @@ pub(crate) fn insert_chat_messages(
 
     conversations::update_active_branch_id(conn, conversation_id, &assistant_msg_id)?;
 
-    let detail = conversations::get_conversation_detail(conn, conversation_id)?
-        .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
-    let provider_row = provider_store::get_provider_by_id(conn, provider_id)?
-        .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
-
     Ok(InsertedMessages {
-        mode,
         assistant_msg_id,
         user_msg_id,
-        detail,
-        provider_row,
     })
 }
 
@@ -215,6 +212,8 @@ fn insert_user_message_with_attachments(
             sibling_index,
             provider_id: None,
             model_id: None,
+            tool_call_id: None,
+            is_error: false,
         },
     )?;
 
@@ -254,8 +253,11 @@ fn insert_placeholder_assistant_message(
             sibling_index,
             provider_id: provider_id.map(|s| s.to_string()),
             model_id: model_id.map(|s| s.to_string()),
+            tool_call_id: None,
+            is_error: false,
         },
     )?;
+    conversations::update_message_status(conn, &aid, "streaming")?;
     Ok(aid)
 }
 

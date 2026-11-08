@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Form, Typography, Spin } from "antd";
+import { Button, Form, Typography } from "antd";
 import { LockOutlined, SyncOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -158,43 +158,25 @@ export default function VaultUnlock() {
           onFinish={() => void handlePasswordSubmitInner()}
           className={styles.unlockForm}
         >
-          {!biometricReady ? (
-            <div className={styles.unlockLoading}>
-              <Spin />
-            </div>
-          ) : biometricDefault ? (
-            <>
-              <BiometricButton
-                unlockMethod={unlockMethod}
-                onUnlock={() => void handleBiometricUnlock()}
-                primary
-              />
-              <PasswordForm
-                isInitialized={isInitialized}
-                password={password}
-                onPasswordChange={setPassword}
-                confirmPassword={confirmPassword}
-                onConfirmPasswordChange={setConfirmPassword}
-                strength={strength}
-                error={error}
-                unlockMethod={unlockMethod}
-                canSubmit={canSubmit}
-                collapsed
-              />
-            </>
-          ) : (
-            <PasswordForm
-              isInitialized={isInitialized}
-              password={password}
-              onPasswordChange={setPassword}
-              confirmPassword={confirmPassword}
-              onConfirmPasswordChange={setConfirmPassword}
-              strength={strength}
-              error={error}
+          {biometricReady && biometricDefault ? (
+            <BiometricButton
               unlockMethod={unlockMethod}
-              canSubmit={canSubmit}
+              onUnlock={() => void handleBiometricUnlock()}
+              primary
             />
-          )}
+          ) : null}
+          <PasswordForm
+            isInitialized={isInitialized}
+            password={password}
+            onPasswordChange={setPassword}
+            confirmPassword={confirmPassword}
+            onConfirmPasswordChange={setConfirmPassword}
+            strength={strength}
+            error={error}
+            unlockMethod={unlockMethod}
+            canSubmit={canSubmit}
+            collapsed={biometricDefault}
+          />
 
           <div className={styles.unlockFooter}>
             <Button

@@ -30,8 +30,8 @@ export const MascotRenderer: FC<Props> = (props) => {
 
   const entry = getRenderer(props.renderer);
   if (!entry) {
-    log.warn(`unknown renderer "${props.renderer}", falling back to rive`);
-    const fallback = getRenderer(BUILTIN_RENDERER_IDS.rive);
+    log.warn(`unknown renderer "${props.renderer}", falling back to svg`);
+    const fallback = getRenderer(BUILTIN_RENDERER_IDS.svg);
     if (!fallback) return null;
     const Component = fallback.component;
     return (

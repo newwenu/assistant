@@ -12,6 +12,8 @@ use crate::types::{VaultCategory, VaultEntryImport, VaultEntrySnapshot};
 use assistant_crypto::vault_crypto::types::{CipherAlgorithm, MasterKey, VaultPlaintext};
 use assistant_crypto::vault_crypto::VaultCrypto;
 
+pub use crate::dto::integrity::IntegrityResult;
+
 use assistant_sync::types::SyncError;
 use types::{
     BlobCustomField, EmergencyDataFile, EntryBlob, EntryFile, ImportedEntry, VaultCryptoMeta,
@@ -24,13 +26,20 @@ const ENTRIES_DIR: &str = "entries";
 const VAULT_META_FILE: &str = ".vault-meta";
 const VAULT_META_VERSION: u32 = 1;
 
+pub type CipherProvider = Box<dyn Fn() -> CipherAlgorithm + Send + Sync>;
+
 pub struct VaultFileManager {
     vault_dir: PathBuf,
+    cipher: CipherProvider,
 }
 
 impl VaultFileManager {
-    pub fn new(vault_dir: PathBuf) -> Self {
-        Self { vault_dir }
+    pub fn new(vault_dir: PathBuf, cipher: CipherProvider) -> Self {
+        Self { vault_dir, cipher }
+    }
+
+    pub(crate) fn cipher_algorithm(&self) -> CipherAlgorithm {
+        (self.cipher)()
     }
 
     pub fn vault_dir(&self) -> &Path {
@@ -83,8 +92,8 @@ impl VaultFileManager {
                 })
                 .collect(),
             totp_secret: snapshot.totp_secret.clone(),
-            totp_digits: snapshot.totp_digits,
-            totp_period: snapshot.totp_period,
+            totp_digits: 6,
+            totp_period: 30,
             tags: snapshot.tags.clone(),
             is_favorite: snapshot.is_favorite,
             created_at: snapshot.created_at,
@@ -95,7 +104,7 @@ impl VaultFileManager {
         let plaintext = VaultPlaintext::from(blob_json);
         let entry_key = VaultCrypto::derive_entry_key(master_key, &snapshot.id);
         let encrypted =
-            VaultCrypto::encrypt_field(&plaintext, entry_key.expose(), CipherAlgorithm::default())
+            VaultCrypto::encrypt_field(&plaintext, entry_key.expose(), self.cipher_algorithm())
                 .map_err(|e| SyncError::Other(e.to_string()))?;
 
         let file = EntryFile {
@@ -134,6 +143,13 @@ impl VaultFileManager {
     ) -> Result<ImportedEntry, SyncError> {
         let file: EntryFile =
             serde_json::from_str(content).map_err(|e| SyncError::Other(e.to_string()))?;
+
+        if file.revision < 0 {
+            return Err(SyncError::Other(format!(
+                "Invalid negative revision {} in entry file {}",
+                file.revision, file.id
+            )));
+        }
 
         let entry_key = VaultCrypto::derive_entry_key(master_key, &file.id);
         let plaintext = VaultCrypto::decrypt_field(&file.encrypted_blob, entry_key.expose())
@@ -383,8 +399,6 @@ impl ImportedEntry {
             password: self.blob.password,
             notes: self.blob.notes,
             totp_secret: self.blob.totp_secret,
-            totp_digits: self.blob.totp_digits,
-            totp_period: self.blob.totp_period,
             custom_fields: self
                 .blob
                 .custom_fields
@@ -432,11 +446,4 @@ fn compute_vault_meta_hmac(master_key: &MasterKey, meta: &VaultMetaFile) -> Vec<
     meta_for_hmac.integrity = String::new();
     let content = serde_json::to_vec(&meta_for_hmac).unwrap_or_default();
     compute_hmac(master_key.expose(), &content)
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IntegrityResult {
-    pub valid: bool,
-    pub message: String,
 }

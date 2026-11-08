@@ -17,8 +17,9 @@ import {
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
 import { formatConversationTitle } from "../utils/formatConversationTitle";
-import { useOrbExpand } from "./OrbExpand";
-import { ChatView } from "../chat/ChatView";
+import { isOrbBlurCollapseSuppressed, useOrbExpand } from "./OrbExpand";
+import { openFromPanel } from "./panelActions";
+import { ConversationView } from "../chat/ConversationView";
 import { useChatStore, getChatOrchestrator } from "../stores/chatStore";
 import {
   subscribeChatStreamEvents,
@@ -32,15 +33,14 @@ import {
   isPointInRect,
 } from "./OrbCoord";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
-import { orbService } from "../services/orbService";
 import { useNotifyStore } from "../stores/notifyStore";
 import { translateKey } from "../i18n";
 
 export const OrbPanel: React.FC = () => {
   const { expand, collapse } = useOrbExpand();
   const expandDirection = useOrbStore((s) => s.expandDirection);
-  const isPinned = useOrbStore((s) => s.isPinned);
-  const setPinned = useOrbStore((s) => s.setPinned);
+  const keepExpanded = useOrbStore((s) => s.keepExpanded);
+  const setKeepExpanded = useOrbStore((s) => s.setKeepExpanded);
   const chat = useChatStore();
   const panelRef = useRef<HTMLDivElement>(null);
   const [messageApi, messageContextHolder] = message.useMessage({
@@ -79,10 +79,12 @@ export const OrbPanel: React.FC = () => {
     let timer: number | null = null;
     const unlistenBlur = listen(UiEvent.OrbBlur, () => {
       closeAllMenus();
-      if (useOrbStore.getState().isPinned) return;
+      if (useOrbStore.getState().keepExpanded) return;
+      if (isOrbBlurCollapseSuppressed()) return;
       if (timer !== null) clearTimeout(timer);
       timer = window.setTimeout(() => {
         void (async () => {
+          if (isOrbBlurCollapseSuppressed()) return;
           const state = useOrbStore.getState();
           if (state.isDragging) return;
           try {
@@ -90,7 +92,7 @@ export const OrbPanel: React.FC = () => {
               getMouseLogicalPos(),
               getWindowLogicalRect(),
             ]);
-            if (isPointInRect(mouse.x, mouse.y, winRect)) return;
+            if (mouse && isPointInRect(mouse.x, mouse.y, winRect)) return;
           } catch {
             // if coord check fails, fall through to collapse
           }
@@ -145,10 +147,9 @@ export const OrbPanel: React.FC = () => {
   const isTruncated = filtered.length > ORB_HISTORY_LIST_LIMIT;
 
   const handleOpenHistoryInMain = useCallback(() => {
-    void orbService.openMainWindowAndNavigate("/history");
     setHistoryOpen(false);
-    void collapse();
-  }, [collapse]);
+    void openFromPanel({ kind: "main", route: "/history" });
+  }, []);
 
   const historyMenuItems: MenuProps["items"] = [
     {
@@ -262,15 +263,19 @@ export const OrbPanel: React.FC = () => {
         </Dropdown>
         <div className="orb-chrome-center" />
         <Tooltip
-          title={isPinned ? t("common.actions.unpin") : t("common.actions.pin")}
+          title={
+            keepExpanded
+              ? t("chat.orb.stop_keep_expanded")
+              : t("chat.orb.keep_expanded")
+          }
           mouseEnterDelay={0.5}
         >
           <Button
             type="text"
             size="small"
             className="orb-chrome-btn"
-            icon={isPinned ? <PushpinFilled /> : <PushpinOutlined />}
-            onClick={() => setPinned(!isPinned)}
+            icon={keepExpanded ? <PushpinFilled /> : <PushpinOutlined />}
+            onClick={() => setKeepExpanded(!keepExpanded)}
           />
         </Tooltip>
         <Tooltip title={t("common.actions.collapse")} mouseEnterDelay={0.5}>
@@ -287,7 +292,7 @@ export const OrbPanel: React.FC = () => {
         </Tooltip>
       </div>
       {messageContextHolder}
-      <ChatView modelOpenRef={modelOpenRef} />
+      <ConversationView modelOpenRef={modelOpenRef} />
     </div>
   );
 };

@@ -7,26 +7,107 @@ use tauri::{App, Manager};
 use crate::protocol::events::{emit_broadcast, event_name};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+use assistant_config::shortcut::{resolve_bindings, BindingIssue};
 use assistant_config::{
     app_conf::AppConf,
     constant::{
         ORB_CHROME_INSET, ORB_COLLAPSED_WINDOW_SIZE, ORB_HITBOX_SIZE, WINDOW_MAIN, WINDOW_ORB,
     },
     orb_conf::OrbConf,
+    vault_conf::VaultConf,
 };
 use assistant_orb::placement;
 use assistant_storage::attachment_store::AttachmentStore;
 use assistant_storage::db;
-use assistant_tools::{os, ToolRegistry};
+use assistant_tools::{
+    os, ApprovalPrompter, FileToolResultStorage, InMemoryReadReceiptStore, PermissionAuditStore,
+    PermissionGrantStore, ReadReceiptStore, ToolGateway, ToolPipeline, ToolRegistry,
+    ToolResultStorage,
+};
 
 use super::tray;
+use crate::adapters::{
+    ApprovalWaitRegistry, DbPermissionAuditStore, DbPermissionGrantStore, PendingApprovalRegistry,
+    PendingQuestionRegistry, PipelineToolExecution, TauriApprovalPrompter, TauriQuestionPrompter,
+    TimingApprovalPrompter,
+};
 use crate::protocol::ShortcutWarningPayloadDto;
+
+/// 审批等待上限的兜底值：配置 `approvalTimeoutSecs` 缺省或非法时用它。
+/// 超时仍归一为 `Deny`（I38a §2.8），不得默认放行。
+const APPROVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// 审批超时的取值来源：每次审批现读配置，改设置后对下一次审批立即生效。
+/// `Some(0)` 在保存时已被 `AppConf::validate` 拒绝；手改配置文件写进 0 时按兜底值处理，
+/// 不允许「零超时」这种既非放行也非等待的语义。
+fn approval_timeout_from_conf() -> std::time::Duration {
+    match AppConf::load() {
+        Ok(conf) => match conf.approval_timeout_secs {
+            Some(secs) if secs > 0 => std::time::Duration::from_secs(u64::from(secs)),
+            Some(_) => {
+                log::warn!("approval_timeout_secs = 0 is invalid, falling back to default");
+                APPROVAL_TIMEOUT
+            }
+            None => APPROVAL_TIMEOUT,
+        },
+        Err(e) => {
+            log::warn!("Failed to load app config for approval timeout: {e}");
+            APPROVAL_TIMEOUT
+        }
+    }
+}
+
+/// 提问等待上限的兜底值：配置 `userQuestionTimeoutSecs` 缺省时用它。
+/// 与审批不同，`Some(0)` 是**合法**取值，表示不设 deadline（I38c §11 OQ5）。
+const USER_QUESTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// 提问超时的取值来源：每次提问现读配置，改设置后下一次提问立即生效。
+///
+/// 返回 `None` 表示**不设 deadline**（`Some(0)` 或配置读取失败降级为兜底值之外的
+/// 唯一例外）；读取失败按兜底 180s 处理，不静默变成「无限等待」。
+fn user_question_timeout_from_conf() -> Option<std::time::Duration> {
+    match AppConf::load() {
+        Ok(conf) => match conf.user_question_timeout_secs {
+            Some(0) => None,
+            Some(secs) => Some(std::time::Duration::from_secs(u64::from(secs))),
+            None => Some(USER_QUESTION_TIMEOUT),
+        },
+        Err(e) => {
+            log::warn!("Failed to load app config for user question timeout: {e}");
+            Some(USER_QUESTION_TIMEOUT)
+        }
+    }
+}
+
+/// 工作区根目录的取值来源（I38d §4.9）：每次工具执行现读配置。
+///
+/// 非法值（空串 / 非绝对路径 / 目录不存在）一律按 `None` 处理，
+/// 让工具层报「未配置工作区」，**不得**静默退回当前目录。
+pub(crate) fn workspace_root_from_conf() -> Option<String> {
+    let conf = match AppConf::load() {
+        Ok(conf) => conf,
+        Err(e) => {
+            log::warn!("Failed to load app config for workspace root: {e}");
+            return None;
+        }
+    };
+    let root = conf.workspace_root?;
+    let path = std::path::Path::new(&root);
+    if root.is_empty() || !path.is_absolute() || !path.is_dir() {
+        log::warn!("workspace_root is not a usable absolute directory, treating as unset: {root}");
+        return None;
+    }
+    Some(root)
+}
 
 pub struct DbState(pub std::sync::Mutex<rusqlite::Connection>);
 
 pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle();
 
+    if let Err(e) = VaultConf::load() {
+        log::error!("Failed to init vault config: {}", e);
+    }
     if let Err(e) = AppConf::load() {
         log::error!("Failed to init app config: {}", e);
     }
@@ -44,8 +125,19 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     match handle.path().app_data_dir() {
         Ok(data_dir) => {
             let db_path = data_dir.join("assistant.db");
-            match db::init_db(&db_path) {
+            match db::init_db_localized(&db_path, &|key| assistant_i18n::t(key)) {
                 Ok(conn) => {
+                    match assistant_storage::conversations::mark_streaming_messages_interrupted(
+                        &conn,
+                    ) {
+                        Ok(0) => {}
+                        Ok(count) => {
+                            log::warn!("startup sweep: {count} streaming messages -> interrupted");
+                        }
+                        Err(e) => {
+                            log::warn!("startup sweep failed: {e}");
+                        }
+                    }
                     handle.manage(DbState(std::sync::Mutex::new(conn)));
                 }
                 Err(e) => {
@@ -81,13 +173,73 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    handle.manage(assistant_agent::chat_tasks::ChatTasks::new());
-
-    crate::cmd::setup(&handle);
+    handle.manage(Arc::new(assistant_agent::kernel::TurnTasks::new()));
+    handle.manage(Arc::new(assistant_agent::kernel::SessionStates::new()));
+    handle.manage(std::sync::Arc::new(crate::clock::ClockRuntime::new()));
 
     {
         let registry = Arc::new(ToolRegistry::new());
         os::register_os_tools(&registry);
+
+        // P5 注册门禁（I38c §7.1）：生产只放开只读组。修改组要求 Gateway 审批可用，
+        // 危险组还要求前端审批卡片上线，两者都不得在此处调用。
+        let receipts: Arc<dyn ReadReceiptStore> = Arc::new(InMemoryReadReceiptStore::new());
+        os::register_readonly_tools(&registry, receipts.clone());
+        handle.manage(receipts);
+
+        // C8 交互组：`ask_user` 只面向 Agent（AGENT_ONLY），等待由工具自管超时，
+        // 超时值每次现读全局配置（`None` → 180s、`0` → 不限时）。
+        let question_pending = PendingQuestionRegistry::new();
+        handle.manage(question_pending.clone());
+        os::register_interactive_tools(
+            &registry,
+            Arc::new(TauriQuestionPrompter::new(handle.clone(), question_pending)),
+            Arc::new(user_question_timeout_from_conf),
+        );
+
+        // C4.18：P2 遗留端口的生产装配。顺序固定 —— 授权/审计 → 审批（真实 UI + 计时）
+        // → 网关 → 流水线 → executor 端口适配器；网关只认 `ApprovalPrompter` trait，
+        // 计时装饰器对内层透明。
+        let grants: Arc<dyn PermissionGrantStore> =
+            Arc::new(DbPermissionGrantStore::new(handle.clone()));
+        let audit: Arc<dyn PermissionAuditStore> =
+            Arc::new(DbPermissionAuditStore::new(handle.clone()));
+        let waits = ApprovalWaitRegistry::new();
+        let pending = PendingApprovalRegistry::new();
+        handle.manage(pending.clone());
+        let prompter: Arc<dyn ApprovalPrompter> = Arc::new(TimingApprovalPrompter::with_registry(
+            Arc::new(TauriApprovalPrompter::new(handle.clone(), pending)),
+            waits.clone(),
+        ));
+        let gateway = Arc::new(ToolGateway::with_timeout_source(
+            grants,
+            audit,
+            prompter,
+            Arc::new(approval_timeout_from_conf),
+        ));
+
+        // 落盘根目录必须是稳定路径：它会写进 `<persisted-output path="…">`，
+        // 跨进程重放一致性依赖它（§4.5），不得用临时目录。
+        let results_dir = match handle.path().app_data_dir() {
+            Ok(data_dir) => data_dir.join("tool-results"),
+            Err(e) => {
+                log::error!("Failed to resolve app data dir for tool results: {}", e);
+                return Err(Box::new(e));
+            }
+        };
+        let storage: Arc<dyn ToolResultStorage> = Arc::new(FileToolResultStorage::new(results_dir));
+        let pipeline = Arc::new(ToolPipeline::new(registry.clone(), gateway, storage));
+
+        // 工作区根目录按 I38d §4.9 读全局配置：每次执行现读，改设置后下一轮生效。
+        // 这里只登记「共享基础设施 + 默认策略」的基底实例；每轮实际使用的执行器
+        // 由 `with_policy` 按会话有效工具配置派生（C7），避免全局单例缓存策略。
+        let tool_exec = Arc::new(PipelineToolExecution::with_workspace_source(
+            pipeline,
+            waits,
+            Arc::new(workspace_root_from_conf),
+        ));
+        handle.manage(tool_exec);
+
         handle.manage(registry);
         log::info!("OS tool registry initialized");
     }
@@ -95,6 +247,10 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     tray::create_tray(handle);
 
     position_orb_window(handle);
+    if let Err(e) = crate::window::restore_main_window(handle) {
+        log::warn!("Failed to restore main window geometry: {}", e);
+    }
+    show_orb_window(handle);
 
     spawn_screen_inspection(handle.clone());
 
@@ -131,63 +287,77 @@ fn parse_shortcut(s: &str) -> Option<Shortcut> {
     code.map(|c| Shortcut::new(Some(modifiers), c))
 }
 
+/// 按下快捷键时执行的回调
+type ShortcutAction = fn(&tauri::AppHandle);
+
+/// 全局快捷键的静态定义：id 用于配置查找，第二项是按下时执行的回调。
+static SHORTCUT_SPECS: &[(&str, ShortcutAction)] = &[
+    ("toggle_orb", toggle_orb_action),
+    ("toggle_main", toggle_main_action),
+    ("new_chat", new_chat_action),
+];
+
+fn toggle_orb_action(app: &tauri::AppHandle) {
+    let _ = crate::window::toggle(app, WINDOW_ORB);
+}
+
+fn toggle_main_action(app: &tauri::AppHandle) {
+    let _ = crate::window::toggle(app, WINDOW_MAIN);
+}
+
+fn new_chat_action(app: &tauri::AppHandle) {
+    emit_broadcast(app, event_name::ORB_NEW_CONVERSATION, ());
+}
+
+fn emit_shortcut_warning(handle: &tauri::AppHandle, issue: &BindingIssue) {
+    log::warn!(
+        "Shortcut {} ({}) unavailable: {}",
+        issue.id,
+        issue.binding,
+        issue.error
+    );
+    emit_broadcast(
+        handle,
+        event_name::SHORTCUT_WARNING,
+        ShortcutWarningPayloadDto {
+            id: issue.id.to_string(),
+            binding: issue.binding.clone(),
+            error: issue.error.clone(),
+        },
+    );
+}
+
 pub fn register_global_shortcuts(handle: &tauri::AppHandle) {
     let conf = match AppConf::load() {
         Ok(c) => c,
         Err(_) => return,
     };
 
-    let bindings = &conf.keybindings;
-    let gs = handle.global_shortcut();
+    let defaults = assistant_config::app_conf::default_keybindings();
+    let (resolved, issues) =
+        resolve_bindings(SHORTCUT_SPECS, &conf.keybindings, &defaults, parse_shortcut);
+    for issue in &issues {
+        emit_shortcut_warning(handle, issue);
+    }
 
+    let gs = handle.global_shortcut();
     let _ = gs.unregister_all();
 
-    let primary_mod = if cfg!(target_os = "macos") {
-        "Meta"
-    } else {
-        "Control"
-    };
-    let default_toggle_orb = format!("{}+Shift+O", primary_mod);
-    let default_toggle_main = format!("{}+Shift+M", primary_mod);
-    let default_new_chat = format!("{}+Shift+N", primary_mod);
-
-    let shortcut_ids: [(&str, &str); 3] = [
-        ("toggle_orb", &default_toggle_orb),
-        ("toggle_main", &default_toggle_main),
-        ("new_chat", &default_new_chat),
-    ];
-
-    for (id, default) in shortcut_ids {
-        let binding = bindings.get(id).map(|s| s.as_str()).unwrap_or(default);
-        let Some(shortcut) = parse_shortcut(binding) else {
-            log::warn!("Failed to parse shortcut binding for {}: {}", id, binding);
-            continue;
-        };
-
-        if let Err(e) = gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+    for item in resolved {
+        let action = item.action;
+        let id = item.id;
+        let binding = item.binding.clone();
+        if let Err(e) = gs.on_shortcut(item.shortcut, move |app, _shortcut, event| {
             if event.state != ShortcutState::Pressed {
                 return;
             }
-            match id {
-                "toggle_orb" => {
-                    let _ = crate::window::toggle(app, WINDOW_ORB);
-                }
-                "toggle_main" => {
-                    let _ = crate::window::toggle(app, WINDOW_MAIN);
-                }
-                "new_chat" => {
-                    emit_broadcast(app, event_name::ORB_NEW_CONVERSATION, ());
-                }
-                _ => {}
-            }
+            action(app);
         }) {
-            log::warn!("Failed to register shortcut {} ({}): {}", id, binding, e);
-            emit_broadcast(
+            emit_shortcut_warning(
                 handle,
-                event_name::SHORTCUT_WARNING,
-                ShortcutWarningPayloadDto {
-                    id: id.to_string(),
-                    binding: binding.to_string(),
+                &BindingIssue {
+                    id,
+                    binding,
                     error: e.to_string(),
                 },
             );
@@ -232,10 +402,22 @@ fn position_orb_window(handle: &tauri::AppHandle) {
     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
+/// 两个窗口在 `tauri.conf.json` 中均为 `visible: false`：
+/// 主窗口只在托盘/Orb/快捷键入口唤起时显示，Orb 则在坐标收敛完成后再显示，
+/// 避免"先出现在系统默认位置、再跳到保存位置"的启动跳动。
+fn show_orb_window(handle: &tauri::AppHandle) {
+    let Some(window) = handle.get_webview_window(WINDOW_ORB) else {
+        return;
+    };
+    if let Err(e) = window.show() {
+        log::warn!("Failed to show orb window: {}", e);
+    }
+}
+
 fn spawn_screen_inspection(handle: tauri::AppHandle) {
     std::thread::spawn(move || loop {
         std::thread::sleep(placement::PLACEMENT_INSPECTION_INTERVAL);
-        if crate::SHOULD_EXIT.load(std::sync::atomic::Ordering::Relaxed) {
+        if crate::lifecycle::should_exit() {
             break;
         }
         let Some(window) = handle.get_webview_window(WINDOW_ORB) else {

@@ -211,6 +211,17 @@ const cronParser = defineTool({
   widthMode: "default",
 });
 
+const clock = defineTool({
+  id: "clock",
+  name: "tools.clock.name",
+  description: "tools.clock.description",
+  icon: FieldTimeOutlined,
+  keywords: ["pomodoro", "focus", "countdown", "stopwatch", "session", "break"],
+  component: lazyWithRecovery(() => import("./clock")),
+  widthMode: "default",
+  miniFriendly: true,
+});
+
 const calculator = defineTool({
   id: "calculator",
   name: "tools.calculator.name",
@@ -310,6 +321,7 @@ export const tools: ToolDefinition[] = [
   jwtParser,
   sqlFormatter,
   cronParser,
+  clock,
   textDiff,
   textStatistics,
   qrcodeGenerator,

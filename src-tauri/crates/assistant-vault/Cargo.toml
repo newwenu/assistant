@@ -7,6 +7,7 @@ publish.workspace = true
 
 [features]
 slow-tests = []
+git-tests = []
 
 [dependencies]
 assistant-crypto = { workspace = true }
@@ -27,10 +28,11 @@ hmac = { workspace = true }
 aes-gcm = { workspace = true }
 argon2 = { workspace = true }
 hkdf = { workspace = true }
-keyring = { workspace = true }
 zxcvbn = { workspace = true }
+ts-rs = "12"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+keyring = { workspace = true }
 windows = { workspace = true }
 windows-future = { workspace = true }
 

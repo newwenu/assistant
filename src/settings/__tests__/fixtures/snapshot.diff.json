@@ -1,0 +1,115 @@
+{
+  "counts": {
+    "pages": 1,
+    "categories": 1,
+    "sections": 2,
+    "fields": 9,
+    "routes": 1,
+    "sidebar": 1,
+    "confPageMap": 1
+  },
+  "pages": [
+    {
+      "id": "vault",
+      "categoryId": "vault",
+      "order": 65,
+      "visibility": "sidebar",
+      "navParent": null,
+      "emptyPage": false
+    }
+  ],
+  "categories": [
+    {
+      "id": "vault",
+      "order": 20
+    }
+  ],
+  "sections": [
+    {
+      "id": "vault-general",
+      "pageId": "vault"
+    },
+    {
+      "id": "vault-ssh",
+      "pageId": "vault"
+    }
+  ],
+  "fields": [
+    {
+      "key": "vaultAutoLockMinutes",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "number"
+    },
+    {
+      "key": "vaultLockOnScreenLock",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "boolean"
+    },
+    {
+      "key": "vaultClipboardClearSeconds",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "number"
+    },
+    {
+      "key": "vaultCipherAlgorithm",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "select"
+    },
+    {
+      "key": "vaultBiometricUnlock",
+      "group": "vault",
+      "section": "vault-general",
+      "type": "boolean"
+    },
+    {
+      "key": "vaultSshAutoAdd",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "boolean"
+    },
+    {
+      "key": "vaultSshUsePageant",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "boolean"
+    },
+    {
+      "key": "vaultSshUseOpensshAgent",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "boolean"
+    },
+    {
+      "key": "vaultSshAuthSockOverride",
+      "group": "vault",
+      "section": "vault-ssh",
+      "type": "string"
+    }
+  ],
+  "routes": [
+    {
+      "path": "/vault",
+      "boundary": "密码保险库",
+      "order": 0,
+      "visibility": "sidebar",
+      "navParent": "vault"
+    }
+  ],
+  "sidebar": [
+    {
+      "key": "vault",
+      "slot": "after-tools",
+      "order": 0
+    }
+  ],
+  "confPageMap": [
+    [
+      "vault",
+      "vault"
+    ]
+  ]
+}

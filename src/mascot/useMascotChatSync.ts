@@ -34,11 +34,7 @@ function hadToolCallInRecentTurn(messages: Message[]): boolean {
     lastUserMsgIdx >= 0 &&
     messages
       .slice(messages.length - 1 - lastUserMsgIdx)
-      .some(
-        (m) =>
-          m.role === "tool" ||
-          (m.role === "assistant" && (m.toolCalls?.length ?? 0) > 0),
-      )
+      .some((m) => m.role === "tool")
   );
 }
 

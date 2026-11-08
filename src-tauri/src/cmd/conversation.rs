@@ -5,18 +5,20 @@ use uuid::Uuid;
 use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
     ChatMessagesChangedPayloadDto, ConversationDetailDto, ConversationDto,
-    ConversationListChangedPayloadDto, ConversationPatchDto, ConversationQueryOptsDto, MessageDto,
+    ConversationListChangeKindDto, ConversationListChangedPayloadDto, ConversationPatchDto,
+    ConversationQueryOptsDto, MessageChangeKindDto, MessageDto, TokenUsageEstimatedSourceDto,
     TokenUsageSummaryDto,
 };
+use assistant_agent::kernel::request;
 use assistant_storage::{
-    agent_modes,
+    attachment_store::AttachmentStore,
     conversations::{self, ConversationRow, MessageRow},
     providers::{self as provider_store},
 };
 
 fn emit_list_changed(
     app: &AppHandle,
-    kind: &str,
+    kind: ConversationListChangeKindDto,
     id: Option<String>,
     affected: Option<Vec<String>>,
 ) {
@@ -24,7 +26,7 @@ fn emit_list_changed(
         app,
         event_name::CONVERSATION_LIST_CHANGED,
         ConversationListChangedPayloadDto {
-            change_kind: kind.to_string(),
+            change_kind: kind,
             conversation_id: id,
             affected_ids: affected,
         },
@@ -59,17 +61,17 @@ pub fn create_conversation(
         updated_at: now,
         is_full: false,
         active_branch_id: None,
+        mode_id,
+        tool_config_json: None,
     };
     conversations::insert_conversation(&conn, &row)?;
 
-    if let Some(mid) = mode_id {
-        let _ = conn.execute(
-            "UPDATE conversations SET mode_id = ?1 WHERE id = ?2",
-            rusqlite::params![mid, id],
-        );
-    }
-
-    emit_list_changed(&app, "created", Some(id.clone()), None);
+    emit_list_changed(
+        &app,
+        ConversationListChangeKindDto::Created,
+        Some(id.clone()),
+        None,
+    );
 
     Ok(id)
 }
@@ -115,16 +117,8 @@ fn build_detail_dto(
     messages: Vec<MessageRow>,
     total_count: i64,
 ) -> Result<ConversationDetailDto, String> {
-    let msg_ids: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
-    let sibling_counts = conversations::get_sibling_counts_batch(conn, conv_id, &msg_ids)?;
-    let message_dtos: Vec<MessageDto> = messages
-        .into_iter()
-        .map(|m| {
-            let mut dto = MessageDto::from(m);
-            dto.sibling_count = sibling_counts.get(&dto.id).copied();
-            dto
-        })
-        .collect();
+    let message_dtos: Vec<MessageDto> =
+        super::conversation_utils::messages_with_sibling_counts(conn, conv_id, &messages)?;
     Ok(ConversationDetailDto {
         conversation: conv.into(),
         messages: message_dtos,
@@ -208,7 +202,7 @@ pub fn delete_conversation(app: AppHandle, id: String) -> Result<(), String> {
     let conn = super::get_db_conn(&state)?;
     conversations::delete_conversation(&conn, &id)?;
 
-    emit_list_changed(&app, "deleted", Some(id), None);
+    emit_list_changed(&app, ConversationListChangeKindDto::Deleted, Some(id), None);
 
     Ok(())
 }
@@ -222,12 +216,12 @@ pub fn patch_conversation(
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
 
-    let mut changed_kinds: Vec<&str> = Vec::new();
+    let mut changed_kinds: Vec<ConversationListChangeKindDto> = Vec::new();
 
     if let Some(ref title) = patch.title {
         let source = patch.title_source.as_deref().unwrap_or("user");
         conversations::rename_conversation(&conn, &id, title, source)?;
-        changed_kinds.push("renamed");
+        changed_kinds.push(ConversationListChangeKindDto::Renamed);
     }
 
     if patch.model_id.is_some() || patch.provider_id.is_some() {
@@ -237,14 +231,42 @@ pub fn patch_conversation(
 
         if let Some(ref model_id) = patch.model_id {
             conv.model_id = model_id.clone();
-            changed_kinds.push("model_updated");
+            changed_kinds.push(ConversationListChangeKindDto::ModelUpdated);
         }
         if let Some(ref provider_id) = patch.provider_id {
             conv.provider_id = Some(provider_id.clone());
-            changed_kinds.push("provider_updated");
+            changed_kinds.push(ConversationListChangeKindDto::ProviderUpdated);
         }
         conv.updated_at = now;
         conversations::update_conversation(&conn, &conv)?;
+    }
+
+    if let Some(ref mode_id) = patch.mode_id {
+        let tasks = app
+            .state::<std::sync::Arc<assistant_agent::kernel::TurnTasks>>()
+            .inner()
+            .clone();
+        if tasks.current(&id).is_some() {
+            return Err(assistant_i18n::t("error.conversation_busy"));
+        }
+        let now = Utc::now().timestamp_millis();
+        let mut conv = conversations::get_conversation_by_id(&conn, &id)?
+            .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+        conv.mode_id = Some(mode_id.clone());
+        conv.updated_at = now;
+        conversations::update_conversation(&conn, &conv)?;
+        changed_kinds.push(ConversationListChangeKindDto::ModeUpdated);
+    }
+
+    if let Some(ref tool_config) = patch.tool_config {
+        let now = Utc::now().timestamp_millis();
+        let mut conv = conversations::get_conversation_by_id(&conn, &id)?
+            .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+        conv.tool_config_json =
+            Some(serde_json::to_string(tool_config).map_err(|e| e.to_string())?);
+        conv.updated_at = now;
+        conversations::update_conversation(&conn, &conv)?;
+        changed_kinds.push(ConversationListChangeKindDto::ToolConfigUpdated);
     }
 
     for kind in changed_kinds {
@@ -275,14 +297,14 @@ pub fn delete_message_persist(app: AppHandle, message_id: String) -> Result<(), 
                 event_name::CHAT_MESSAGES_CHANGED,
                 ChatMessagesChangedPayloadDto {
                     conversation_id: cid.clone(),
-                    change_kind: "message_deleted".to_string(),
+                    change_kind: MessageChangeKindDto::MessageDeleted,
                     messages: super::conversation_utils::messages_with_sibling_counts(
                         &conn,
                         cid,
                         &detail.messages,
                     )?,
                     active_branch_id: detail.conversation.active_branch_id.clone(),
-                    _seq: None,
+                    seq: None,
                 },
             );
         }
@@ -330,7 +352,12 @@ pub fn toggle_conversation_pin(app: AppHandle, id: String) -> Result<bool, Strin
     let conn = super::get_db_conn(&state)?;
     let result = conversations::toggle_pin(&conn, &id)?;
 
-    emit_list_changed(&app, "pin_toggled", Some(id), None);
+    emit_list_changed(
+        &app,
+        ConversationListChangeKindDto::PinToggled,
+        Some(id),
+        None,
+    );
 
     Ok(result)
 }
@@ -342,7 +369,12 @@ pub fn duplicate_conversation(app: AppHandle, id: String) -> Result<String, Stri
     let new_id = conversations::duplicate_conversation(&conn, &id)
         .map_err(super::translate_storage_error)?;
 
-    emit_list_changed(&app, "duplicated", Some(new_id.clone()), None);
+    emit_list_changed(
+        &app,
+        ConversationListChangeKindDto::Duplicated,
+        Some(new_id.clone()),
+        None,
+    );
 
     Ok(new_id)
 }
@@ -357,7 +389,12 @@ pub fn batch_delete_conversations(app: AppHandle, ids: Vec<String>) -> Result<()
     let affected = ids.clone();
     conversations::batch_delete(&conn, &ids)?;
 
-    emit_list_changed(&app, "batch_deleted", None, Some(affected));
+    emit_list_changed(
+        &app,
+        ConversationListChangeKindDto::BatchDeleted,
+        None,
+        Some(affected),
+    );
 
     Ok(())
 }
@@ -368,26 +405,67 @@ pub fn purge_conversations(app: AppHandle) -> Result<(), String> {
     let conn = super::get_db_conn(&state)?;
     conversations::purge_all(&conn)?;
 
-    emit_list_changed(&app, "purged", None, None);
+    emit_list_changed(&app, ConversationListChangeKindDto::Purged, None, None);
 
     Ok(())
 }
 
 #[command]
-pub fn get_conversation_token_usage(
+pub async fn get_conversation_token_usage(
     app: AppHandle,
     conversation_id: String,
     context_window_tokens: Option<u32>,
 ) -> Result<TokenUsageSummaryDto, String> {
-    let state = app.state::<crate::setup::DbState>();
-    let conn = super::get_db_conn(&state)?;
-    let ctx = if let Some(c) = context_window_tokens {
-        c
-    } else {
-        super::conversation_utils::resolve_context_window_for_conversation(&conn, &conversation_id)
+    let (summary, detail, provider_row, window) = {
+        let state = app.state::<crate::setup::DbState>();
+        let conn = super::get_db_conn(&state)?;
+        let window = context_window_tokens.filter(|&c| c > 0).or_else(|| {
+            super::conversation_utils::resolve_context_window_for_conversation(
+                &conn,
+                &conversation_id,
+            )
+        });
+        let conversation = conversations::get_conversation_by_id(&conn, &conversation_id)?
+            .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+        let summary = assistant_storage::token_usage::get_summary(
+            &conn,
+            &conversation_id,
+            conversation.active_branch_id.as_deref(),
+            window,
+        )?;
+        let detail = conversations::get_conversation_detail(&conn, &conversation_id)?;
+        let provider_row = conversation
+            .provider_id
+            .as_deref()
+            .and_then(|id| provider_store::get_provider_by_id(&conn, id).ok().flatten());
+        (summary, detail, provider_row, window)
     };
-    let summary = agent_modes::get_conversation_token_usage(&conn, &conversation_id, ctx)?;
-    Ok(summary.into())
+
+    let mut dto: TokenUsageSummaryDto = summary.into();
+
+    // 记录表在该分支零记录时，按分支出站投影估算兜底；只读，不写记录表、不写 messages.tokens
+    if dto.occupancy.used_tokens.is_none() {
+        if let (Some(detail), Some(provider_row)) = (detail, provider_row) {
+            if !detail.messages.is_empty() {
+                let attachment_store = app.state::<AttachmentStore>();
+                let estimated =
+                    request::estimate_branch_tokens(&detail, &provider_row, &attachment_store)
+                        .await;
+                if estimated > 0 {
+                    let estimated = estimated as i64;
+                    let window = window.filter(|&w| w > 0);
+                    dto.occupancy.used_tokens = Some(estimated);
+                    dto.occupancy.estimated = true;
+                    dto.occupancy.estimated_source = Some(TokenUsageEstimatedSourceDto::Projection);
+                    dto.occupancy.context_window_tokens = window;
+                    dto.occupancy.percentage =
+                        window.map(|w| (estimated as f32 / w as f32).clamp(0.0, 1.0));
+                }
+            }
+        }
+    }
+
+    Ok(dto)
 }
 
 #[command]
@@ -397,7 +475,7 @@ pub fn create_branch(
     branch_point_message_id: String,
     new_role: String,
     new_content: String,
-    _seq: Option<u32>,
+    seq: Option<u32>,
 ) -> Result<crate::protocol::MessageDto, String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
@@ -418,14 +496,14 @@ pub fn create_branch(
         event_name::CHAT_MESSAGES_CHANGED,
         crate::protocol::ChatMessagesChangedPayloadDto {
             conversation_id: conversation_id.clone(),
-            change_kind: "branch_created".to_string(),
+            change_kind: MessageChangeKindDto::BranchCreated,
             messages: super::conversation_utils::messages_with_sibling_counts(
                 &conn,
                 &conversation_id,
                 &detail.messages,
             )?,
             active_branch_id: detail.conversation.active_branch_id.clone(),
-            _seq,
+            seq,
         },
     );
 
@@ -437,7 +515,7 @@ pub fn switch_branch(
     app: AppHandle,
     conversation_id: String,
     target_message_id: String,
-    _seq: Option<u32>,
+    seq: Option<u32>,
 ) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
@@ -452,14 +530,14 @@ pub fn switch_branch(
         event_name::CHAT_MESSAGES_CHANGED,
         crate::protocol::ChatMessagesChangedPayloadDto {
             conversation_id: conversation_id.clone(),
-            change_kind: "branch_switched".to_string(),
+            change_kind: MessageChangeKindDto::BranchSwitched,
             messages: super::conversation_utils::messages_with_sibling_counts(
                 &conn,
                 &conversation_id,
                 &detail.messages,
             )?,
             active_branch_id: detail.conversation.active_branch_id.clone(),
-            _seq,
+            seq,
         },
     );
 
@@ -512,18 +590,23 @@ pub fn fork_to_new_conversation(
         event_name::CHAT_MESSAGES_CHANGED,
         crate::protocol::ChatMessagesChangedPayloadDto {
             conversation_id: source_conversation_id.clone(),
-            change_kind: "branch_forked".to_string(),
+            change_kind: MessageChangeKindDto::BranchForked,
             messages: super::conversation_utils::messages_with_sibling_counts(
                 &conn,
                 &source_conversation_id,
                 &detail.messages,
             )?,
             active_branch_id: detail.conversation.active_branch_id.clone(),
-            _seq: None,
+            seq: None,
         },
     );
 
-    emit_list_changed(&app, "created", Some(new_conv_id.clone()), None);
+    emit_list_changed(
+        &app,
+        ConversationListChangeKindDto::Created,
+        Some(new_conv_id.clone()),
+        None,
+    );
 
     Ok(new_conv_id)
 }

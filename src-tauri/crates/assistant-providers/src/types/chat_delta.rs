@@ -20,6 +20,12 @@ pub struct ChatDelta {
     pub delta_tool_call_id: Option<String>,
     pub delta_tool_call_name: Option<String>,
     pub delta_tool_call_arguments: Option<String>,
+    /// 流内分组序号；缺失时累积器视作单槽。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta_tool_call_index: Option<usize>,
+    /// `delta_tool_call_arguments` 是否为完整快照（Gemini 语义）而非增量片段。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub delta_tool_call_arguments_is_snapshot: bool,
     pub finish_reason: Option<String>,
     pub usage: Option<TokenUsage>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -120,13 +126,13 @@ pub struct TokenUsage {
     pub cache_write_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u32>,
-    #[serde(default)]
-    pub context_window_tokens: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window_tokens: Option<u32>,
 }
 
 pub fn unified_responses_into_chat_deltas(
     responses: Vec<UnifiedResponse>,
-    context_window_tokens: u32,
+    context_window_tokens: Option<u32>,
 ) -> Vec<ChatDelta> {
     responses
         .into_iter()
@@ -136,7 +142,7 @@ pub fn unified_responses_into_chat_deltas(
 
 fn unified_response_into_chat_deltas(
     response: UnifiedResponse,
-    context_window_tokens: u32,
+    context_window_tokens: Option<u32>,
 ) -> Vec<ChatDelta> {
     let mut deltas = Vec::new();
     let mut usage_consumed = false;
@@ -157,6 +163,8 @@ fn unified_response_into_chat_deltas(
             delta_tool_call_id: None,
             delta_tool_call_name: None,
             delta_tool_call_arguments: None,
+            delta_tool_call_index: None,
+            delta_tool_call_arguments_is_snapshot: false,
             finish_reason: None,
             usage,
             delta_retry: None,
@@ -179,6 +187,8 @@ fn unified_response_into_chat_deltas(
             delta_tool_call_id: tc.id,
             delta_tool_call_name: tc.name,
             delta_tool_call_arguments: tc.arguments,
+            delta_tool_call_index: tc.tool_call_index,
+            delta_tool_call_arguments_is_snapshot: tc.arguments_is_snapshot,
             finish_reason: None,
             usage,
             delta_retry: None,
@@ -204,6 +214,8 @@ fn unified_response_into_chat_deltas(
                 delta_tool_call_id: None,
                 delta_tool_call_name: None,
                 delta_tool_call_arguments: None,
+                delta_tool_call_index: None,
+                delta_tool_call_arguments_is_snapshot: false,
                 finish_reason: response.finish_reason,
                 usage: response
                     .usage
@@ -219,7 +231,7 @@ fn unified_response_into_chat_deltas(
 
 fn unified_usage_to_token_usage(
     usage: &UnifiedTokenUsage,
-    context_window_tokens: u32,
+    context_window_tokens: Option<u32>,
 ) -> TokenUsage {
     TokenUsage {
         prompt_tokens: usage.prompt_token_count,
@@ -244,7 +256,7 @@ mod tests {
             reasoning_content: Some("thinking...".to_string()),
             ..Default::default()
         };
-        let deltas = unified_response_into_chat_deltas(response, 0);
+        let deltas = unified_response_into_chat_deltas(response, None);
         assert_eq!(deltas.len(), 1);
         assert_eq!(deltas[0].delta_text.as_deref(), Some("hello"));
         assert_eq!(deltas[0].delta_reasoning.as_deref(), Some("thinking..."));
@@ -262,7 +274,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let deltas = unified_response_into_chat_deltas(response, 0);
+        let deltas = unified_response_into_chat_deltas(response, None);
         assert_eq!(deltas.len(), 1);
         assert_eq!(deltas[0].delta_tool_call_id.as_deref(), Some("tc_1"));
         assert_eq!(deltas[0].delta_tool_call_name.as_deref(), Some("search"));
@@ -276,7 +288,7 @@ mod tests {
             tool_call_completion: Some(ToolCallCompletion::NormalNoToolUse),
             ..Default::default()
         };
-        let deltas = unified_response_into_chat_deltas(response, 0);
+        let deltas = unified_response_into_chat_deltas(response, None);
         assert_eq!(deltas.len(), 1);
         assert_eq!(deltas[0].finish_reason.as_deref(), Some("stop"));
     }
@@ -294,7 +306,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let deltas = unified_response_into_chat_deltas(response, 128000);
+        let deltas = unified_response_into_chat_deltas(response, Some(128000));
         assert_eq!(deltas.len(), 1);
         let usage = deltas[0].usage.as_ref().unwrap();
         assert_eq!(usage.prompt_tokens, 10);
@@ -302,7 +314,7 @@ mod tests {
         assert_eq!(usage.cache_read_tokens, Some(5));
         assert_eq!(usage.cache_write_tokens, Some(3));
         assert_eq!(usage.reasoning_tokens, None);
-        assert_eq!(usage.context_window_tokens, 128000);
+        assert_eq!(usage.context_window_tokens, Some(128000));
     }
 
     #[test]
@@ -319,7 +331,7 @@ mod tests {
             finish_reason: Some("tool_calls".to_string()),
             ..Default::default()
         };
-        let deltas = unified_response_into_chat_deltas(response, 0);
+        let deltas = unified_response_into_chat_deltas(response, None);
         assert_eq!(deltas.len(), 2);
         assert_eq!(deltas[0].delta_text.as_deref(), Some("result"));
         assert_eq!(deltas[1].delta_tool_call_id.as_deref(), Some("tc_1"));

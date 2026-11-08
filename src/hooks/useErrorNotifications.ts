@@ -22,7 +22,9 @@ export function useErrorNotifications() {
             : api.error;
       method({
         message: translateKey(item.titleKey, item.options),
-        description: translateKey(item.descriptionKey, item.options),
+        description:
+          item.descriptionText ??
+          translateKey(item.descriptionKey, item.options),
         placement: "topRight",
       });
     }

@@ -11,7 +11,6 @@ use crate::gemini::types::{GeminiStreamResponse, GenerateContentRequest};
 use crate::sse_log::SseLogCollector;
 use crate::stream::stats::StreamStats;
 use crate::stream::timeout::{StreamTimeoutController, StreamTimeoutStage};
-use crate::tool_call_accumulator::{ToolCallAccumulator, ToolCallBoundary, ToolCallStreamKey};
 use crate::trace;
 use crate::types::chat_delta::unified_responses_into_chat_deltas;
 use tokio_util::sync::CancellationToken;
@@ -38,7 +37,10 @@ pub(crate) fn chat_completion_stream(
         contents,
         system_instruction,
         generation_config: None,
-        tools: None,
+        tools: options
+            .tools
+            .as_deref()
+            .and_then(message_converter::convert_tools),
         tool_config: None,
     };
 
@@ -187,7 +189,6 @@ pub(crate) fn chat_completion_stream(
             let mut stats = StreamStats::new("gemini");
             let mut _sse_chunk_count: u32 = 0;
             let mut received_finish_reason = false;
-            let mut tool_call_accumulator = ToolCallAccumulator::new();
 
             while let Some(event_result) = event_source.next().await {
                 if let Some(stage) = timeout_ctrl.check() {
@@ -262,25 +263,6 @@ pub(crate) fn chat_completion_stream(
                 if data == "[DONE]" {
                     stats.record_sse_event("done");
                     if !received_finish_reason {
-                        let finalized = tool_call_accumulator.finalize_all(ToolCallBoundary::StreamEnd);
-                        for tc in finalized {
-                            let deltas = unified_responses_into_chat_deltas(
-                                vec![crate::types::unified::UnifiedResponse {
-                                    tool_call: Some(crate::types::unified::UnifiedToolCall {
-                                        tool_call_index: None,
-                                        id: Some(tc.tool_id.clone()),
-                                        name: Some(tc.tool_name.clone()),
-                                        arguments: Some(tc.raw_arguments.clone()),
-                                        arguments_is_snapshot: false,
-                                    }),
-                                    ..Default::default()
-                                }],
-                                context_window_tokens,
-                            );
-                            for delta in deltas {
-                                yield Ok(delta);
-                            }
-                        }
                         yield Ok(ChatDelta::finish("stop"));
                     }
                     return;
@@ -324,54 +306,13 @@ pub(crate) fn chat_completion_stream(
                     }
                 };
 
-                let mut unified_responses = gemini_response_to_unified(gemini_response);
+                let unified_responses = gemini_response_to_unified(gemini_response);
 
-                for unified in &mut unified_responses {
-                    if let Some(ref tc) = unified.tool_call {
-                        let key = ToolCallStreamKey::from(tc.tool_call_index);
-                        let outcome = tool_call_accumulator.apply_delta(
-                            key,
-                            tc.id.clone(),
-                            tc.name.clone(),
-                            tc.arguments.clone(),
-                            true,
-                        );
-
-                        if let Some(finalized) = outcome.finalized_previous {
-                            let deltas = unified_responses_into_chat_deltas(
-                                vec![crate::types::unified::UnifiedResponse {
-                                    tool_call: Some(crate::types::unified::UnifiedToolCall {
-                                        tool_call_index: None,
-                                        id: Some(finalized.tool_id.clone()),
-                                        name: Some(finalized.tool_name.clone()),
-                                        arguments: Some(finalized.raw_arguments.clone()),
-                                        arguments_is_snapshot: false,
-                                    }),
-                                    ..Default::default()
-                                }],
-                                context_window_tokens,
-                            );
-                            for delta in deltas {
-                                yield Ok(delta);
-                            }
-                        }
-
-                        if let Some(ref params) = outcome.params_partial {
-                            unified.tool_call = Some(crate::types::unified::UnifiedToolCall {
-                                tool_call_index: tc.tool_call_index,
-                                id: Some(params.tool_id.clone()),
-                                name: Some(params.tool_name.clone()),
-                                arguments: Some(params.params_chunk.clone()),
-                                arguments_is_snapshot: false,
-                            });
-                        } else {
-                            unified.tool_call = None;
-                        }
-                    }
-
-                    if unified.finish_reason.is_some() {
-                        received_finish_reason = true;
-                    }
+                if unified_responses
+                    .iter()
+                    .any(|unified| unified.finish_reason.is_some())
+                {
+                    received_finish_reason = true;
                 }
 
                 for unified in unified_responses {
@@ -401,27 +342,8 @@ pub(crate) fn chat_completion_stream(
             }
 
             if !received_finish_reason {
-                debug!("Gemini stream ended without finish_reason, flushing tool calls");
+                debug!("Gemini stream ended without finish_reason");
                 stats.log_summary("no_finish_reason");
-                let finalized = tool_call_accumulator.finalize_all(ToolCallBoundary::StreamEnd);
-                for tc in finalized {
-                    let deltas = unified_responses_into_chat_deltas(
-                        vec![crate::types::unified::UnifiedResponse {
-                            tool_call: Some(crate::types::unified::UnifiedToolCall {
-                                tool_call_index: None,
-                                id: Some(tc.tool_id.clone()),
-                                name: Some(tc.tool_name.clone()),
-                                arguments: Some(tc.raw_arguments.clone()),
-                                arguments_is_snapshot: false,
-                            }),
-                            ..Default::default()
-                        }],
-                        context_window_tokens,
-                    );
-                    for delta in deltas {
-                        yield Ok(delta);
-                    }
-                }
             }
             return;
         }

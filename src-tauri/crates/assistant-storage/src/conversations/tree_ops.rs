@@ -113,7 +113,7 @@ pub fn delete_subtree(conn: &Connection, id: &str) -> Result<(), String> {
             .ok()
             .flatten();
 
-        let needs_fix = current_ab.as_ref().map_or(true, |ab| {
+        let needs_fix = current_ab.as_ref().is_none_or(|ab| {
             let still_exists: bool = tx
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM messages WHERE id = ?1 AND conversation_id = ?2)",

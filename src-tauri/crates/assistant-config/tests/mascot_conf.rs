@@ -3,7 +3,7 @@ use assistant_config::mascot_conf::MascotConf;
 #[test]
 fn new_returns_defaults() {
     let conf = MascotConf::new();
-    assert_eq!(conf.renderer, "rive");
+    assert_eq!(conf.renderer, "svg");
     assert!(conf.primary_color.is_none());
     assert!(conf.secondary_color.is_none());
     assert!(!conf.rive_idle_pose_rotation);

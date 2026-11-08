@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use assistant_vault::security_db::SecurityDbState;
 use std::path::{Path, PathBuf};
 

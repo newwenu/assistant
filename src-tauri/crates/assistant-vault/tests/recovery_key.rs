@@ -1,12 +1,16 @@
 mod common;
 
+#[cfg(feature = "slow-tests")]
 use assistant_crypto::vault_crypto::types::CipherAlgorithm;
-use assistant_vault::recovery_key::{
-    format_recovery_key, generate_recovery_key, parse_recovery_key, unlock_with_recovery_key,
-};
+use assistant_vault::recovery_key::{format_recovery_key, parse_recovery_key};
+#[cfg(feature = "slow-tests")]
+use assistant_vault::recovery_key::{generate_recovery_key, unlock_with_recovery_key};
+#[cfg(feature = "slow-tests")]
 use assistant_vault::security_db::SecurityDbState;
+#[cfg(feature = "slow-tests")]
 use assistant_vault::types::VaultError;
-use common::{cleanup, init_vault, temp_db_path, STRONG_PW};
+#[cfg(feature = "slow-tests")]
+use common::{cleanup, temp_db_path, STRONG_PW};
 
 #[test]
 fn format_recovery_key_has_four_groups_of_eight() {

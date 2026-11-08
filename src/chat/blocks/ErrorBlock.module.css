@@ -1,14 +1,22 @@
 .root {
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--color-border-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-secondary);
+  border-left: 3px solid var(--color-error, #ff4d4f);
+  border-radius: var(--radius);
+  background: var(--color-bg-elevated);
+}
+
+.rootWarning {
+  border-left-color: var(--color-warning, #faad14);
 }
 
 .header {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 4px;
   color: var(--color-error, #ff4d4f);
   font-weight: 500;
   font-size: 13px;
@@ -36,7 +44,6 @@
   color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 1.5;
-  margin-bottom: 4px;
   user-select: text;
   cursor: text;
 }
@@ -45,7 +52,6 @@
   color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.5;
-  margin-bottom: 4px;
 }
 
 .actions {
@@ -64,7 +70,6 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin-top: 4px;
   padding: 2px 10px;
   border: 1px solid var(--color-border-secondary);
   border-radius: var(--radius);

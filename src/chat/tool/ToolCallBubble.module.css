@@ -1,0 +1,125 @@
+.root {
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 10px;
+  background: var(--color-bg-elevated);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.statusIcon {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+}
+
+.statusRunning .statusIcon {
+  color: var(--color-primary);
+}
+
+.statusSuccess .statusIcon {
+  color: var(--color-success, #52c41a);
+}
+
+.statusError .statusIcon {
+  color: var(--color-error, #ff4d4f);
+}
+
+.statusAwaiting .statusIcon {
+  color: var(--color-warning, #faad14);
+}
+
+.statusCancelled .statusIcon {
+  color: var(--color-text-tertiary);
+}
+
+.name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusLabel {
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.duration {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.args {
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.persisted {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-tertiary);
+  flex-wrap: wrap;
+}
+
+.persistedPath {
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.result {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--color-bg-container, rgba(0, 0, 0, 0.02));
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  opacity: 0.8;
+}
+
+.resultStats {
+  color: var(--color-text-tertiary);
+}
+
+.empty {
+  color: var(--color-text-tertiary);
+}

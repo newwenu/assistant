@@ -1,69 +1,38 @@
-import { useEffect, useState } from "react";
-import {
-  Input,
-  Tag,
-  List,
-  Button,
-  Empty,
-  Spin,
-  App,
-  Space,
-  Tooltip,
-  Alert,
-  Modal,
-} from "antd";
-import {
-  SearchOutlined,
-  PlusOutlined,
-  StarFilled,
-  CopyOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  UserOutlined,
-  FileTextOutlined,
-  CreditCardOutlined,
-  IdcardOutlined,
-  CodeOutlined,
-  ToolOutlined,
-  SyncOutlined,
-  CloudSyncOutlined,
-  WarningOutlined,
-} from "@ant-design/icons";
+import { useMemo, useEffect, useState, useRef } from "react";
+import { Button, Empty, Spin, App, Alert, Modal, Space } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "./core/vaultStore";
-import type { VaultCategory } from "./core/vault.types";
-import { formatRelativeTime } from "@/utils/formatRelativeTime";
+import { useVaultShallow } from "./core/vaultStore";
 import TrashDrawer from "./TrashDrawer";
 import VaultConflictResolve from "./settings/VaultConflictResolve";
+import VaultToolbar from "./VaultToolbar";
+import VaultAlerts from "./VaultAlerts";
+import VaultActiveFilters from "./VaultActiveFilters";
+import VaultCategoryBar from "./VaultCategoryBar";
+import VaultEntryRow from "./VaultEntryRow";
 import styles from "./vault.module.css";
 
-const CATEGORY_OPTIONS: { value: VaultCategory; label: string }[] = [
-  { value: "login", label: "Login" },
-  { value: "note", label: "Note" },
-  { value: "card", label: "Card" },
-  { value: "identity", label: "Identity" },
-  { value: "sshKey", label: "SSH Key" },
-  { value: "custom", label: "Custom" },
-];
-
-const CATEGORY_ICONS: Record<VaultCategory, React.ReactNode> = {
-  login: <UserOutlined />,
-  note: <FileTextOutlined />,
-  card: <CreditCardOutlined />,
-  identity: <IdcardOutlined />,
-  sshKey: <CodeOutlined />,
-  custom: <ToolOutlined />,
-};
+const SEARCH_DEBOUNCE_MS = 250;
 
 interface VaultListProps {
   onAdd: () => void;
   onEdit: (id: string) => void;
   onSelect: (id: string) => void;
+  onDeleted?: (id: string) => void;
+  onOpenManage: () => void;
+  selectedId?: string | null;
 }
 
-export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
+export default function VaultList({
+  onAdd,
+  onEdit,
+  onSelect,
+  onDeleted,
+  onOpenManage,
+  selectedId,
+}: VaultListProps) {
   const { t } = useTranslation();
-  const { modal } = App.useApp();
+  const { modal, message } = App.useApp();
   const [trashOpen, setTrashOpen] = useState(false);
   const [conflictPickerOpen, setConflictPickerOpen] = useState(false);
   const [conflictPath, setConflictPath] = useState<string | null>(null);
@@ -74,16 +43,22 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
     searchQuery,
     categoryFilter,
     tagFilter,
+    onlyLeaked,
+    sortBy,
     hibpLeaks,
+    hibpAuditing,
+    hibpProgress,
     syncReadyness,
     syncConflicts,
     pendingRemovals,
-    syncLastAt,
     syncing,
     loadEntries,
+    loadTotalEntryCount,
     setSearchQuery,
     setCategoryFilter,
     setTagFilter,
+    setOnlyLeaked,
+    setSortBy,
     copyPassword,
     deleteEntry,
     resetAutoLockTimer,
@@ -93,29 +68,117 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
     loadSyncLastTime,
     confirmRemovals,
     hibpAudit,
-    hibpAuditing,
-  } = useVaultStore();
+    hibpAuditCancel,
+  } = useVaultShallow((s) => ({
+    entries: s.entries,
+    loading: s.loading,
+    searchQuery: s.searchQuery,
+    categoryFilter: s.categoryFilter,
+    tagFilter: s.tagFilter,
+    onlyLeaked: s.onlyLeaked,
+    sortBy: s.sortBy,
+    hibpLeaks: s.hibpLeaks,
+    hibpAuditing: s.hibpAuditing,
+    hibpProgress: s.hibpProgress,
+    syncReadyness: s.syncReadyness,
+    syncConflicts: s.syncConflicts,
+    pendingRemovals: s.pendingRemovals,
+    syncing: s.syncing,
+    loadEntries: s.loadEntries,
+    loadTotalEntryCount: s.loadTotalEntryCount,
+    setSearchQuery: s.setSearchQuery,
+    setCategoryFilter: s.setCategoryFilter,
+    setTagFilter: s.setTagFilter,
+    setOnlyLeaked: s.setOnlyLeaked,
+    setSortBy: s.setSortBy,
+    copyPassword: s.copyPassword,
+    deleteEntry: s.deleteEntry,
+    resetAutoLockTimer: s.resetAutoLockTimer,
+    syncNow: s.syncNow,
+    loadSyncReadyness: s.loadSyncReadyness,
+    loadPendingRemovals: s.loadPendingRemovals,
+    loadSyncLastTime: s.loadSyncLastTime,
+    confirmRemovals: s.confirmRemovals,
+    hibpAudit: s.hibpAudit,
+    hibpAuditCancel: s.hibpAuditCancel,
+  }));
+
+  const initialLoadDone = useRef(false);
 
   useEffect(() => {
-    void loadEntries();
     void loadSyncReadyness();
     void loadPendingRemovals();
     void loadSyncLastTime();
+    void loadTotalEntryCount();
   }, [
-    searchQuery,
-    categoryFilter,
-    tagFilter,
-    loadEntries,
     loadSyncReadyness,
     loadPendingRemovals,
     loadSyncLastTime,
+    loadTotalEntryCount,
   ]);
+
+  useEffect(() => {
+    const silent = initialLoadDone.current;
+    const timer = setTimeout(
+      () => {
+        initialLoadDone.current = true;
+        void loadEntries({ silent });
+      },
+      silent ? SEARCH_DEBOUNCE_MS : 0,
+    );
+    return () => clearTimeout(timer);
+  }, [searchQuery, categoryFilter, tagFilter, loadEntries]);
+
+  const leakCount = Object.values(hibpLeaks).filter(
+    (count) => count > 0,
+  ).length;
+
+  useEffect(() => {
+    if (onlyLeaked && leakCount === 0) setOnlyLeaked(false);
+  }, [leakCount, onlyLeaked, setOnlyLeaked]);
+
+  const repoState =
+    syncReadyness !== null && typeof syncReadyness === "object"
+      ? syncReadyness.repoState
+      : null;
+
+  const visibleEntries = useMemo(() => {
+    const filtered = onlyLeaked
+      ? entries.filter((entry) => (hibpLeaks[entry.id] ?? 0) > 0)
+      : entries;
+    if (sortBy === "title") {
+      return [...filtered].sort((a, b) => a.title.localeCompare(b.title));
+    }
+    if (sortBy === "favorite") {
+      return [...filtered].sort((a, b) => {
+        if (a.isFavorite === b.isFavorite) return b.updatedAt - a.updatedAt;
+        return a.isFavorite ? -1 : 1;
+      });
+    }
+    return [...filtered].sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [entries, onlyLeaked, sortBy, hibpLeaks]);
+
+  const hasActiveFilters =
+    searchQuery !== "" ||
+    categoryFilter !== null ||
+    tagFilter !== null ||
+    onlyLeaked;
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setCategoryFilter(null);
+    setTagFilter(null);
+    setOnlyLeaked(false);
+  };
 
   const handleDelete = (id: string) => {
     modal.confirm({
       title: t("vault.entry.confirm_delete"),
       okType: "danger",
-      onOk: () => void deleteEntry(id),
+      onOk: () =>
+        deleteEntry(id)
+          .then(() => onDeleted?.(id))
+          .catch(() => message.error(t("vault.entry.delete_failed"))),
     });
   };
 
@@ -125,248 +188,110 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
     setRemovalConfirmOpen(false);
   };
 
-  const leakCount = Object.values(hibpLeaks).filter((c) => c > 0).length;
-  const repoState =
-    syncReadyness !== null && typeof syncReadyness === "object"
-      ? syncReadyness.repoState
-      : null;
+  const handleSyncClick = () => {
+    if (pendingRemovals !== null) {
+      setRemovalConfirmOpen(true);
+      return;
+    }
+    void syncNow();
+  };
 
   return (
     <div className={styles.listContainer}>
-      {pendingRemovals !== null && (
-        <Alert
-          type="warning"
-          showIcon
-          title={t("vault.sync.pending_removals_banner", {
-            count: pendingRemovals.entries.length,
-          })}
-          description={t("vault.sync.pending_removals_hint")}
-          action={
-            <Button size="small" onClick={() => setRemovalConfirmOpen(true)}>
-              {t("vault.sync.pending_removals_open")}
-            </Button>
-          }
-          style={{ marginBottom: 12 }}
-        />
-      )}
-      {repoState !== null && (
-        <Alert
-          type="warning"
-          showIcon
-          title={t("vault.conflict.detected")}
-          description={t("vault.conflict.detected_hint", {
-            state: repoState,
-            count: syncConflicts.length,
-          })}
-          action={
-            <Button size="small" onClick={() => setConflictPickerOpen(true)}>
-              {t("vault.conflict.open_resolver")}
-            </Button>
-          }
-          style={{ marginBottom: 12 }}
-        />
-      )}
-      <div className={styles.listHeader}>
-        <Input
-          prefix={<SearchOutlined />}
-          placeholder={t("vault.entry.search")}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          allowClear
-          className={styles.searchInput}
-        />
-        <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
-          {t("vault.entry.add_entry")}
-        </Button>
-        <Tooltip title={t("vault.entry.trash")}>
-          <Button
-            icon={<DeleteOutlined />}
-            onClick={() => setTrashOpen(true)}
-          />
-        </Tooltip>
-      </div>
+      <VaultAlerts
+        pendingRemovals={pendingRemovals}
+        repoState={repoState}
+        conflictCount={syncConflicts.length}
+        onOpenRemovals={() => setRemovalConfirmOpen(true)}
+        onOpenConflicts={() => setConflictPickerOpen(true)}
+      />
 
-      <div className={styles.categoryBar}>
-        {CATEGORY_OPTIONS.map((o) => (
-          <Tag.CheckableTag
-            key={o.value}
-            checked={categoryFilter === o.value}
-            onChange={(checked) => setCategoryFilter(checked ? o.value : null)}
-          >
-            {CATEGORY_ICONS[o.value]}
-            <span style={{ marginLeft: 4 }}>
-              {t(`vault.entry.category_${o.value}`)}
-            </span>
-          </Tag.CheckableTag>
-        ))}
-      </div>
+      <VaultToolbar
+        searchQuery={searchQuery}
+        syncing={syncing}
+        hibpAuditing={hibpAuditing}
+        hibpProgress={hibpProgress}
+        conflictState={repoState}
+        pendingRemovalCount={pendingRemovals?.entries.length ?? 0}
+        onSearchChange={setSearchQuery}
+        onAdd={onAdd}
+        onAudit={() => void hibpAudit()}
+        onCancelAudit={() => void hibpAuditCancel()}
+        onSync={handleSyncClick}
+        onOpenTrash={() => setTrashOpen(true)}
+      />
+
+      {hasActiveFilters && (
+        <VaultActiveFilters
+          searchQuery={searchQuery}
+          categoryFilter={categoryFilter}
+          tagFilter={tagFilter}
+          onlyLeaked={onlyLeaked}
+          leakCount={leakCount}
+          onSearchClear={() => setSearchQuery("")}
+          onCategoryClear={() => setCategoryFilter(null)}
+          onTagClear={() => setTagFilter(null)}
+          onLeakedClear={() => setOnlyLeaked(false)}
+          onClearAll={clearFilters}
+        />
+      )}
+
+      <VaultCategoryBar
+        categoryFilter={categoryFilter}
+        leakCount={leakCount}
+        onlyLeaked={onlyLeaked}
+        sortBy={sortBy}
+        onCategoryChange={setCategoryFilter}
+        onOnlyLeakedChange={setOnlyLeaked}
+        onSortChange={setSortBy}
+      />
 
       {loading ? (
         <Spin className={styles.spin} />
-      ) : entries.length === 0 ? (
+      ) : visibleEntries.length === 0 ? (
         <div className={styles.emptyWrap}>
-          <Empty description={t("vault.entry.no_entries")}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
-              {t("vault.entry.add_entry")}
-            </Button>
-          </Empty>
+          {hasActiveFilters ? (
+            <Empty description={t("vault.entry.no_matching_entries")}>
+              <Button onClick={clearFilters}>
+                {t("vault.entry.clear_filters")}
+              </Button>
+            </Empty>
+          ) : (
+            <Empty description={t("vault.entry.no_entries")}>
+              <Space orientation="vertical" align="center">
+                <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
+                  {t("vault.entry.add_entry")}
+                </Button>
+                <Button type="link" onClick={onOpenManage}>
+                  {t("vault.entry.import_or_clone")}
+                </Button>
+              </Space>
+            </Empty>
+          )}
         </div>
       ) : (
-        <List
-          dataSource={entries}
-          className={styles.entryList}
-          renderItem={(entry) => (
-            <List.Item
-              className={styles.entryItem}
-              onClick={() => {
+        <div className={styles.entryList}>
+          {visibleEntries.map((entry) => (
+            <VaultEntryRow
+              key={entry.id}
+              entry={entry}
+              selected={selectedId === entry.id}
+              leakCount={hibpLeaks[entry.id] ?? 0}
+              tagFilter={tagFilter}
+              onSelect={(id) => {
                 resetAutoLockTimer();
-                onSelect(entry.id);
+                onSelect(id);
               }}
-              actions={[
-                <Tooltip key="copy" title={t("common.actions.copy")}>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<CopyOutlined />}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void copyPassword(entry.id);
-                    }}
-                  />
-                </Tooltip>,
-                <Tooltip key="edit" title={t("common.actions.edit")}>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEdit(entry.id);
-                    }}
-                  />
-                </Tooltip>,
-                <Tooltip key="delete" title={t("common.actions.delete")}>
-                  <Button
-                    type="text"
-                    size="small"
-                    danger
-                    icon={<DeleteOutlined />}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(entry.id);
-                    }}
-                  />
-                </Tooltip>,
-              ]}
-            >
-              <List.Item.Meta
-                avatar={CATEGORY_ICONS[entry.category]}
-                title={
-                  <span>
-                    {entry.isFavorite && (
-                      <StarFilled
-                        style={{ color: "#faad14", marginRight: 4 }}
-                      />
-                    )}
-                    {hibpLeaks[entry.id] > 0 && (
-                      <WarningOutlined
-                        style={{ color: "#ff4d4f", marginLeft: 4 }}
-                      />
-                    )}
-                    {entry.title}
-                  </span>
-                }
-                description={
-                  <span className={styles.entryDescription}>
-                    {entry.username && (
-                      <span className={styles.entryUsername}>
-                        {entry.username}
-                      </span>
-                    )}
-                    {entry.url && (
-                      <span className={styles.entryUrl}>{entry.url}</span>
-                    )}
-                    {entry.tags.length > 0 && (
-                      <span className={styles.entryTags}>
-                        {entry.tags.map((tag) => (
-                          <Tag
-                            key={tag}
-                            color={tagFilter === tag ? "blue" : undefined}
-                            style={{ cursor: "pointer" }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setTagFilter(tagFilter === tag ? null : tag);
-                            }}
-                          >
-                            {tag}
-                          </Tag>
-                        ))}
-                      </span>
-                    )}
-                    <span className={styles.entryTime}>
-                      {formatRelativeTime(entry.updatedAt)}
-                    </span>
-                  </span>
-                }
-              />
-            </List.Item>
-          )}
-        />
-      )}
-
-      <div className={styles.syncBar}>
-        <div className={styles.syncBarLeft}>
-          <span>
-            {entries.length} {t("vault.entry.entries_count")}
-          </span>
-          {leakCount > 0 && (
-            <span className={styles.leakWarning}>
-              <WarningOutlined style={{ marginRight: 4 }} />
-              {leakCount} {t("vault.entry.leaked")}
-            </span>
-          )}
+              onEdit={onEdit}
+              onDelete={handleDelete}
+              onCopy={(id) => void copyPassword(id)}
+              onToggleTag={(tag) =>
+                setTagFilter(tagFilter === tag ? null : tag)
+              }
+            />
+          ))}
         </div>
-        <Space size={4}>
-          {syncLastAt !== null && (
-            <Tooltip
-              title={t("vault.sync.last_sync", {
-                time: new Date(syncLastAt).toLocaleString(),
-              })}
-            >
-              <span className={styles.syncLastAt}>
-                {formatRelativeTime(syncLastAt)}
-              </span>
-            </Tooltip>
-          )}
-          <Tooltip title={t("vault.hibp.audit_all")}>
-            <Button
-              type="text"
-              size="small"
-              icon={<WarningOutlined />}
-              onClick={() => void hibpAudit()}
-              loading={hibpAuditing}
-            />
-          </Tooltip>
-          {syncReadyness === "ready" && (
-            <CloudSyncOutlined style={{ color: "#52c41a" }} />
-          )}
-          {syncReadyness === "dirty" && (
-            <CloudSyncOutlined style={{ color: "#faad14" }} />
-          )}
-          {syncReadyness === "noSync" && (
-            <CloudSyncOutlined style={{ color: "#d9d9d9" }} />
-          )}
-          <Tooltip title={t("vault.sync.now")}>
-            <Button
-              type="text"
-              size="small"
-              icon={<SyncOutlined spin={syncing} />}
-              onClick={() => void syncNow()}
-              disabled={syncing}
-            />
-          </Tooltip>
-        </Space>
-      </div>
+      )}
 
       <TrashDrawer open={trashOpen} onClose={() => setTrashOpen(false)} />
 
@@ -379,27 +304,22 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
         {syncConflicts.length === 0 ? (
           <Empty description={t("vault.conflict.no_files")} />
         ) : (
-          <List
-            dataSource={syncConflicts}
-            renderItem={(file) => (
-              <List.Item
-                actions={[
-                  <Button
-                    key="open"
-                    type="link"
-                    onClick={() => {
-                      setConflictPath(file.path);
-                      setConflictPickerOpen(false);
-                    }}
-                  >
-                    {t("vault.conflict.resolve")}
-                  </Button>,
-                ]}
-              >
+          <div className={styles.simpleList}>
+            {syncConflicts.map((file) => (
+              <div key={file.path} className={styles.simpleListItem}>
                 <span>{file.title ?? file.path}</span>
-              </List.Item>
-            )}
-          />
+                <Button
+                  type="link"
+                  onClick={() => {
+                    setConflictPath(file.path);
+                    setConflictPickerOpen(false);
+                  }}
+                >
+                  {t("vault.conflict.resolve")}
+                </Button>
+              </div>
+            ))}
+          </div>
         )}
       </Modal>
 
@@ -444,14 +364,13 @@ export default function VaultList({ onAdd, onEdit, onSelect }: VaultListProps) {
               />
             )}
             <p>{t("vault.sync.pending_removals_desc")}</p>
-            <List
-              dataSource={pendingRemovals.entries}
-              renderItem={(entry) => (
-                <List.Item>
+            <div className={styles.simpleList}>
+              {pendingRemovals.entries.map((entry) => (
+                <div key={entry.id} className={styles.simpleListItem}>
                   <span>{entry.title ?? entry.id}</span>
-                </List.Item>
-              )}
-            />
+                </div>
+              ))}
+            </div>
           </>
         )}
       </Modal>

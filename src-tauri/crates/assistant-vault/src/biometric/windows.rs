@@ -17,6 +17,8 @@ use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTIT
 use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
 use windows_future::{IAsyncAction, IAsyncOperation};
 
+// HRESULT 以无符号位模式书写，转 `i32` 是有意的符号位解释。
+#[allow(clippy::cast_sign_loss)]
 const RPC_E_CHANGED_MODE: HRESULT = HRESULT(0x80010106u32 as i32);
 
 pub struct WindowsHelloKeyStore;
@@ -24,23 +26,25 @@ pub struct WindowsHelloKeyStore;
 const SERVICE_NAME: &str = "assistant-vault-biometric";
 const KEYRING_SERVICE: &str = "assistant-vault-biometric";
 
-struct WinRtGuard;
+struct WinRtGuard {
+    owned: bool,
+}
 
 impl WinRtGuard {
     fn new() -> Result<Self, VaultError> {
-        let hr = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
-        if let Err(e) = &hr {
-            if e.code() != RPC_E_CHANGED_MODE {
-                return Err(VaultError::BiometricFailed(format!("RoInitialize: {e}")));
-            }
+        match unsafe { RoInitialize(RO_INIT_MULTITHREADED) } {
+            Ok(()) => Ok(Self { owned: true }),
+            Err(e) if e.code() == RPC_E_CHANGED_MODE => Ok(Self { owned: false }),
+            Err(e) => Err(VaultError::BiometricFailed(format!("RoInitialize: {e}"))),
         }
-        Ok(Self)
     }
 }
 
 impl Drop for WinRtGuard {
     fn drop(&mut self) {
-        unsafe { RoUninitialize() };
+        if self.owned {
+            unsafe { RoUninitialize() };
+        }
     }
 }
 
@@ -72,8 +76,18 @@ fn buffer_to_bytes(buffer: &IBuffer) -> windows::core::Result<Vec<u8>> {
     Ok(array.to_vec())
 }
 
+// HRESULT 以无符号位模式书写，转 `i32` 是有意的符号位解释。
+#[allow(clippy::cast_sign_loss)]
+const ERROR_NOT_FOUND: HRESULT = HRESULT(0x80070490u32 as i32);
+#[allow(clippy::cast_sign_loss)]
+const ERROR_FILE_NOT_FOUND: HRESULT = HRESULT(0x80070002u32 as i32);
+
 fn map_win_error(e: windows::core::Error) -> VaultError {
     VaultError::BiometricFailed(e.message().to_string())
+}
+
+fn is_not_found_error(e: &windows::core::Error) -> bool {
+    e.code() == ERROR_NOT_FOUND || e.code() == ERROR_FILE_NOT_FOUND
 }
 
 fn credential_name(key_id: &str) -> HSTRING {
@@ -151,13 +165,28 @@ impl BiometricKeyStore for WindowsHelloKeyStore {
         let _guard = WinRtGuard::new()?;
         let name = credential_name(key_id);
 
-        let delete_op = KeyCredentialManager::DeleteAsync(&name);
-        if let Ok(op) = delete_op {
-            let _ = wait_for_action(op);
+        let open_result = KeyCredentialManager::OpenAsync(&name)
+            .map_err(map_win_error)?
+            .join()
+            .map_err(map_win_error)?;
+
+        if get_credential_status(&open_result)? == KeyCredentialStatus::Success {
+            match KeyCredentialManager::DeleteAsync(&name) {
+                Ok(op) => match wait_for_action(op) {
+                    Ok(()) => {}
+                    Err(e) if is_not_found_error(&e) => {}
+                    Err(e) => return Err(map_win_error(e)),
+                },
+                Err(e) if is_not_found_error(&e) => {}
+                Err(e) => return Err(map_win_error(e)),
+            }
         }
 
         let entry = keyring_entry(key_id)?;
-        let _ = entry.delete_credential();
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(e) => return Err(VaultError::BiometricFailed(format!("keyring delete: {e}"))),
+        }
         info!("Windows Hello: biometric key deleted for '{}'", key_id);
         Ok(())
     }

@@ -1,47 +1,67 @@
-import type { Message, ContextUsage } from "./chatTypes";
+import type {
+  Message,
+  ContextUsage,
+  TokenUsage,
+  TokenUsageSummary,
+} from "./chatTypes";
 import { chatService } from "@/services/chatService";
-import { useProviderStore } from "@/stores/providerStore";
-
-export function resolveContextWindowTokens(
-  modelId: string,
-  providerId: string | null,
-): number | undefined {
-  if (!providerId) return undefined;
-  const provider = useProviderStore
-    .getState()
-    .providers.find((p) => p.id === providerId);
-  if (!provider) return undefined;
-  const model = provider.models.find((m) => m.id === modelId);
-  if (model && model.contextWindow && model.contextWindow > 0) {
-    return model.contextWindow;
-  }
-  return undefined;
-}
 
 export interface FetchTokenUsageDeps {
   isActiveConv: (convId: string) => boolean;
   setContextUsage: (usage: ContextUsage) => void;
 }
 
-export function fetchTokenUsage(
-  convId: string,
-  modelId: string,
-  providerId: string | null,
-  deps: FetchTokenUsageDeps,
-) {
+export function contextUsageFromTokenUsage(usage: TokenUsage): ContextUsage {
+  const maxTokens =
+    usage.contextWindowTokens && usage.contextWindowTokens > 0
+      ? usage.contextWindowTokens
+      : undefined;
+  return {
+    usedTokens: usage.promptTokens,
+    hasUsage: true,
+    maxTokens,
+    percentage: maxTokens
+      ? Math.min(usage.promptTokens / maxTokens, 1)
+      : undefined,
+    completionTokens: usage.completionTokens,
+    cacheReadTokens: usage.cacheReadTokens ?? undefined,
+    cacheWriteTokens: usage.cacheWriteTokens ?? undefined,
+    reasoningTokens: usage.reasoningTokens ?? undefined,
+  };
+}
+
+/** 从记录表派生摘要映射为展示模型；三组口径互不覆盖 */
+export function contextUsageFromSummary(
+  summary: TokenUsageSummary,
+): ContextUsage {
+  const o = summary.occupancy;
+  return {
+    usedTokens: o.usedTokens ?? 0,
+    hasUsage: typeof o.usedTokens === "number",
+    maxTokens: o.contextWindowTokens ?? undefined,
+    percentage: o.contextWindowTokens ? (o.percentage ?? undefined) : undefined,
+    completionTokens: o.completionTokens ?? undefined,
+    cacheReadTokens: o.cacheReadTokens ?? undefined,
+    cacheWriteTokens: o.cacheWriteTokens ?? undefined,
+    reasoningTokens: o.reasoningTokens ?? undefined,
+    cumulativeTokens: summary.cumulative?.totalTokens,
+    estimated: o.estimated || undefined,
+    estimatedSource: o.estimatedSource ?? undefined,
+  };
+}
+
+const tokenUsageRequestSeq = new Map<string, number>();
+
+export function fetchTokenUsage(convId: string, deps: FetchTokenUsageDeps) {
+  const seq = (tokenUsageRequestSeq.get(convId) ?? 0) + 1;
+  tokenUsageRequestSeq.set(convId, seq);
   chatService
-    .getConversationTokenUsage(
-      convId,
-      resolveContextWindowTokens(modelId, providerId),
-    )
+    .getConversationTokenUsage(convId)
     .then((summary) => {
-      if (summary && deps.isActiveConv(convId)) {
-        deps.setContextUsage({
-          usedTokens: summary.totalTokens,
-          maxTokens: summary.contextWindowTokens,
-          percentage: summary.percentage,
-        });
-      }
+      if (!summary) return;
+      if (tokenUsageRequestSeq.get(convId) !== seq) return;
+      if (!deps.isActiveConv(convId)) return;
+      deps.setContextUsage(contextUsageFromSummary(summary));
     })
     .catch(() => {});
 }

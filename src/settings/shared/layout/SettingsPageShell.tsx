@@ -3,7 +3,7 @@ import { Button, Divider, Typography } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { useNavigate, useParams } from "react-router-dom";
 import { translateKey } from "@/i18n";
-import { SETTINGS_PAGE_MAP, isSettingsPageId } from "../../core/pageRegistry";
+import { getSettingsPageMap, isSettingsPageId } from "../../core/pageRegistry";
 
 interface SettingsPageShellProps {
   children: React.ReactNode;
@@ -26,7 +26,7 @@ export const SettingsPageShell: React.FC<SettingsPageShellProps> = ({
   const { pageId } = useParams<{ pageId: string }>();
   const manifest =
     pageId && isSettingsPageId(pageId)
-      ? SETTINGS_PAGE_MAP.get(pageId)
+      ? getSettingsPageMap().get(pageId)
       : undefined;
   const title = manifest ? translateKey(manifest.label) : undefined;
 

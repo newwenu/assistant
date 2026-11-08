@@ -8,11 +8,24 @@ publish = false
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
 # async-trait 保留：Rust 原生 async fn in trait 不兼容 dyn Trait（无法构建 vtable），见 trait.rs
 async-trait = { workspace = true }
 dashmap = { workspace = true }
 chardetng = { workspace = true }
 encoding_rs = { workspace = true }
+dunce = { workspace = true }
+futures = { workspace = true }
+# P5 OS 工具：遍历 / glob 匹配 / 正则搜索 / 原子写
+ignore = { workspace = true }
+globset = { workspace = true }
+grep-searcher = { workspace = true }
+grep-regex = { workspace = true }
+tempfile = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

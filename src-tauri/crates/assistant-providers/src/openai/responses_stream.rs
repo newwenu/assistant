@@ -145,7 +145,8 @@ pub(crate) fn responses_stream(
     let api_key = api_key.to_string();
     let base_url = adapter.base_url().to_string();
 
-    let req_messages = message_converter::convert_messages(messages);
+    let req_messages =
+        message_converter::convert_messages(messages, message_converter::OpenAiTarget::Responses);
 
     let client = adapter.client.clone();
     let retry_config = adapter.retry_config.clone();

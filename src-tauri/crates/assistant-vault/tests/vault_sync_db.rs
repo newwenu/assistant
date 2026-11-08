@@ -1,10 +1,11 @@
+#![cfg(feature = "slow-tests")]
+
 mod common;
 
 use assistant_crypto::vault_crypto::types::CipherAlgorithm;
+use assistant_vault::dto::VaultEntryCreate;
 use assistant_vault::security_db::SecurityDbState;
-use assistant_vault::types::{
-    ImportOutcome, VaultCategory, VaultEntryCreate, VaultEntryImport, VaultError,
-};
+use assistant_vault::types::{ImportOutcome, VaultCategory, VaultEntryImport, VaultError};
 use common::{cleanup, init_vault, temp_db_path, STRONG_PW};
 
 const ALGO: CipherAlgorithm = CipherAlgorithm::Aes256Gcm;
@@ -17,14 +18,14 @@ fn create(title: &str) -> VaultEntryCreate {
         url: Some("https://github.com".to_string()),
         password: Some("pw-123".to_string()),
         notes: None,
-        totp_secret: None,
+        totp: None,
         tags: vec!["dev".to_string()],
         custom_fields: vec![],
         is_favorite: false,
     }
 }
 
-fn import(id: &str, revision: u64, title: &str, updated_at: i64) -> VaultEntryImport {
+fn import(id: &str, revision: i64, title: &str, updated_at: i64) -> VaultEntryImport {
     VaultEntryImport {
         id: id.to_string(),
         category: VaultCategory::Login,
@@ -35,8 +36,6 @@ fn import(id: &str, revision: u64, title: &str, updated_at: i64) -> VaultEntryIm
         password: Some("remote-pw".to_string()),
         notes: None,
         totp_secret: None,
-        totp_digits: 6,
-        totp_period: 30,
         custom_fields: vec![],
         tags: vec![],
         is_favorite: false,

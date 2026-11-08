@@ -22,7 +22,9 @@ import {
 } from "antd";
 import { useTranslation } from "react-i18next";
 import { vaultService } from "../core/vault.service";
-import { useVaultStore } from "../core/vaultStore";
+import { vaultCategoryLabel } from "../core/vaultCategory";
+import { vaultErrorMessage } from "../core/vaultError";
+import { useVaultShallow } from "../core/vaultStore";
 import type {
   ConflictPreview,
   ConflictResolution,
@@ -62,7 +64,9 @@ export default function VaultConflictResolve({
 }: VaultConflictResolveProps) {
   const { t } = useTranslation();
   const { message, modal } = App.useApp();
-  const { resolveConflict } = useVaultStore();
+  const { resolveConflict } = useVaultShallow((s) => ({
+    resolveConflict: s.resolveConflict,
+  }));
   const [resolution, setResolution] = useState<ConflictResolution>("useLocal");
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<ConflictPreview | null>(null);
@@ -87,7 +91,7 @@ export default function VaultConflictResolve({
       setPreview(await vaultService.conflictPreview(conflictPath));
     } catch (e) {
       setPreview(null);
-      setPreviewError(String(e));
+      setPreviewError(vaultErrorMessage(e));
     } finally {
       setPreviewLoading(false);
     }
@@ -162,7 +166,7 @@ export default function VaultConflictResolve({
         });
       }, REVEAL_TIMEOUT_MS);
     } catch (e) {
-      message.error(String(e));
+      message.error(vaultErrorMessage(e));
     } finally {
       setRevealingKey(null);
     }
@@ -247,8 +251,8 @@ export default function VaultConflictResolve({
       t("vault.entry.category"),
       true,
       true,
-      <Text>{t(`vault.entry.category_${local.category}`)}</Text>,
-      <Text>{t(`vault.entry.category_${remote.category}`)}</Text>,
+      <Text>{vaultCategoryLabel(t, local.category)}</Text>,
+      <Text>{vaultCategoryLabel(t, remote.category)}</Text>,
     );
     push(
       "username",
@@ -394,7 +398,7 @@ export default function VaultConflictResolve({
             {version.title}
           </Descriptions.Item>
           <Descriptions.Item label={t("vault.entry.category")}>
-            {t(`vault.entry.category_${version.category}`)}
+            {vaultCategoryLabel(t, version.category)}
           </Descriptions.Item>
           {version.username && (
             <Descriptions.Item label={t("vault.entry.username")}>

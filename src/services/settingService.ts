@@ -1,9 +1,5 @@
+import type { InstallMascotAssetResultDto } from "@/types/protocol.contract";
 import { tauriInvoke as invoke } from "./tauriInvoke";
-import type {
-  AppConf,
-  OrbConf,
-  MascotConf,
-} from "../settings/core/types/confTypes";
 
 function toSnakeCaseKey(key: string): string {
   return key.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);
@@ -19,20 +15,7 @@ function patchToSnakeCase(
   return result;
 }
 
-export interface InstallAssetResult {
-  installedPath: string;
-  bytes: number;
-  version: number;
-}
-
 export const settingService = {
-  getAppConf: (): Promise<AppConf> => invoke<AppConf>("get_app_conf"),
-
-  getOrbConf: (): Promise<OrbConf> => invoke<OrbConf>("get_orb_conf"),
-
-  getMascotConf: (): Promise<MascotConf> =>
-    invoke<MascotConf>("get_mascot_conf"),
-
   getAppVersion: (): Promise<string> => invoke<string>("get_app_version"),
 
   getRustcVersion: (): Promise<string> => invoke<string>("get_rustc_version"),
@@ -40,8 +23,8 @@ export const settingService = {
   installMascotAsset: (
     assetType: string,
     filePath: string,
-  ): Promise<InstallAssetResult> =>
-    invoke<InstallAssetResult>("install_mascot_asset", {
+  ): Promise<InstallMascotAssetResultDto> =>
+    invoke<InstallMascotAssetResultDto>("install_mascot_asset", {
       assetType,
       filePath,
     }),

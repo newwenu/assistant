@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useCallback } from "react";
 import { Input } from "antd";
 import { useTranslation } from "react-i18next";
 import {
@@ -12,37 +12,40 @@ import {
   useMascotStore,
 } from "../../mascot";
 import { buildRendererConfig } from "../../mascot/core/mascotConfig";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { useConfGroup } from "@/settings/core/useConfGroup";
 import { useAttachmentStore } from "../../stores/attachmentStore";
 import {
   buildContentBlocksAsync,
   serializeContent,
 } from "../core/contentBlockUtils";
-import { usePasteAttach } from "../../hooks/usePasteAttach";
 
 interface MessageInputProps {
+  /** 受控草稿：由 `ConversationView` 按 `conversationId` 持有，布局替换不丢草稿。 */
+  value: string;
+  onValueChange: (value: string) => void;
   onSend: (content: string) => void;
   onCancel: () => void;
+  onPaste: (e: React.ClipboardEvent) => void;
   isStreaming: boolean;
   disabled: boolean;
   isFull?: boolean;
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
+  value,
+  onValueChange,
   onSend,
   onCancel,
+  onPaste,
   isStreaming,
   disabled,
   isFull = false,
 }) => {
-  const [value, setValue] = useState("");
-
   const mascotFace = useMascotStore((s) => s.face);
-  const mascotConf = useSettingsStore((s) => s.mascotConf);
+  const mascotConf = useConfGroup("mascot");
   const attachments = useAttachmentStore((s) => s.attachments);
   const clearAttachments = useAttachmentStore((s) => s.clearAttachments);
   const { t } = useTranslation();
-  const { handlePaste } = usePasteAttach();
 
   const doSend = useCallback(async () => {
     const hasText = value.trim().length > 0;
@@ -53,9 +56,17 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     const blocks = await buildContentBlocksAsync(value, attachments);
     const content = serializeContent(blocks);
     onSend(content);
-    setValue("");
+    onValueChange("");
     clearAttachments();
-  }, [value, attachments, disabled, isStreaming, onSend, clearAttachments]);
+  }, [
+    value,
+    attachments,
+    disabled,
+    isStreaming,
+    onSend,
+    onValueChange,
+    clearAttachments,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -85,11 +96,11 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       <Input.TextArea
         value={value}
         onChange={(e) => {
-          setValue(e.target.value);
+          onValueChange(e.target.value);
           useMascotStore.getState().notifyListening();
         }}
         onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
+        onPaste={onPaste}
         autoSize={{
           minRows: CHAT_INPUT_MIN_ROWS,
           maxRows: CHAT_INPUT_MAX_ROWS,
@@ -114,7 +125,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       >
         <div className="chat-mascot-btn-canvas">
           <MascotRenderer
-            renderer={asRendererId(mascotConf?.renderer ?? "rive")}
+            renderer={asRendererId(mascotConf?.renderer ?? "svg")}
             face={mascotFace}
             size={44}
             primaryColor={hexToArgb(mascotConf?.primaryColor)}

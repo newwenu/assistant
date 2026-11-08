@@ -6,12 +6,14 @@ pub struct ChatOptions {
     pub temperature: f32,
     pub max_tokens: u32,
     pub stream: bool,
-    #[serde(default)]
-    pub context_window_tokens: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window_tokens: Option<u32>,
     #[serde(default)]
     pub reasoning_enabled: Option<bool>,
     #[serde(default)]
     pub reasoning_effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<super::tool::ToolSpec>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -86,22 +88,16 @@ impl Default for SseLogConfig {
     }
 }
 
+/// 窗口解析：模型配置 → provider 发现 → 内置目录，全部取不到时返回 `None`。
 pub fn resolve_context_window(
     model_id: &str,
     stored: Option<u32>,
     api_context: Option<u32>,
-) -> u32 {
-    if let Some(ctx) = stored {
-        if ctx > 0 {
-            return ctx;
-        }
-    }
-    if let Some(ctx) = api_context {
-        if ctx > 0 {
-            return ctx;
-        }
-    }
-    crate::model_catalog::get_context_window_tokens(model_id)
+) -> Option<u32> {
+    stored
+        .filter(|&ctx| ctx > 0)
+        .or_else(|| api_context.filter(|&ctx| ctx > 0))
+        .or_else(|| crate::model_catalog::get_context_window_tokens(model_id))
 }
 
 /// models_json 由前端写入（save_provider 直接入库），键为 camelCase
@@ -124,7 +120,7 @@ fn parse_stored_models(models_json: &str) -> Vec<StoredModelEntry> {
     serde_json::from_str(models_json).unwrap_or_default()
 }
 
-pub fn resolve_context_window_from_stored(model_id: &str, models_json: &str) -> u32 {
+pub fn resolve_context_window_from_stored(model_id: &str, models_json: &str) -> Option<u32> {
     let stored = parse_stored_models(models_json)
         .iter()
         .find(|m| m.id == model_id)
@@ -182,21 +178,24 @@ mod tests {
     fn stored_context_window_wins_over_catalog() {
         assert_eq!(
             resolve_context_window_from_stored("gpt-4o", SAMPLE),
-            128_000
+            Some(128_000)
         );
     }
 
     #[test]
     fn zero_or_missing_context_falls_back_to_catalog() {
         // contextWindow: 0 被过滤，走内置 catalog
-        assert!(resolve_context_window_from_stored("gpt-4o-mini", SAMPLE) > 0);
-        // 模型不在存储列表 → catalog 回退
-        assert!(resolve_context_window_from_stored("no-such-model", SAMPLE) > 0);
+        assert!(resolve_context_window_from_stored("gpt-4o-mini", SAMPLE).is_some());
+        // 模型不在存储列表且不在目录内 → 未知，不回退硬编码常量
+        assert_eq!(
+            resolve_context_window_from_stored("no-such-model", SAMPLE),
+            None
+        );
     }
 
     #[test]
     fn invalid_json_falls_back_to_catalog() {
-        assert!(resolve_context_window_from_stored("gpt-4o", "not-json") > 0);
+        assert!(resolve_context_window_from_stored("gpt-4o", "not-json").is_some());
     }
 
     #[test]
@@ -233,7 +232,7 @@ mod tests {
     fn unknown_fields_are_tolerated() {
         // 前端未来新增字段不应破坏解析
         let json = r#"[{"id":"m1","name":"M1","ownedBy":"x","contextWindow":4096,"supportVision":true,"newField":"whatever"}]"#;
-        assert_eq!(resolve_context_window_from_stored("m1", json), 4096);
+        assert_eq!(resolve_context_window_from_stored("m1", json), Some(4096));
         assert!(resolve_support_vision_from_stored("m1", json));
     }
 
@@ -242,6 +241,7 @@ mod tests {
         // base::ModelConfig 的 snake_case 格式不是存储契约，此类数据应回退
         let json = r#"[{"id":"m1","name":"M1","owned_by":"x","context_window":4096,"support_vision":true}]"#;
         assert!(!resolve_support_vision_from_stored("m1", json));
-        assert!(resolve_context_window_from_stored("m1", json) > 0);
+        // 存储契约未命中且目录内无此模型 → 窗口未知，返回 None
+        assert!(resolve_context_window_from_stored("m1", json).is_none());
     }
 }

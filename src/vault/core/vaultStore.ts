@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 import {
   createLifecycleSlice,
   type VaultLifecycleSlice,
@@ -32,6 +33,10 @@ export type VaultState = VaultLifecycleSlice &
   VaultBiometricSlice &
   VaultSyncSlice &
   VaultRecoverySlice;
+
+export function useVaultShallow<T>(selector: (state: VaultState) => T): T {
+  return useVaultStore(useShallow(selector));
+}
 
 export const useVaultStore = create<VaultState>()((set, get): VaultState => {
   const lifecycleSlice = createLifecycleSlice(set, get);

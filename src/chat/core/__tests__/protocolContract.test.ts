@@ -6,9 +6,9 @@ import type {
   TokenUsage,
   RetryNotification,
   ChatDeltaPayload,
+  ChatMessagesChangedPayload,
   ChatStreamStartPayload,
   ConversationTerminatedPayload,
-  ConversationCompactFailedPayload,
   ConversationUnlockedPayload,
   ChatRegeneratePayload,
 } from "../chatTypes";
@@ -25,9 +25,11 @@ const sampleMessage: Message = {
   timestamp: 1000,
   parentId: null,
   siblingIndex: 0,
+  siblingCount: null,
   isPinned: false,
-  reasoning: undefined,
-  toolCalls: undefined,
+  reasoning: null,
+  providerId: null,
+  modelId: null,
 };
 
 const sampleConversation: Conversation = {
@@ -44,6 +46,8 @@ const sampleConversation: Conversation = {
   updatedAt: 1000,
   isFull: false,
   activeBranchId: null,
+  modeId: null,
+  toolConfig: null,
 };
 
 const sampleConversationDetail: ConversationDetail = {
@@ -58,11 +62,9 @@ describe("protocol DTO — camelCase contract", () => {
     expect(msg).toHaveProperty("conversationId");
     expect(msg).toHaveProperty("parentId");
     expect(msg).toHaveProperty("isPinned");
-    expect(msg).toHaveProperty("toolCalls");
     expect(msg).not.toHaveProperty("conversation_id");
     expect(msg).not.toHaveProperty("parent_id");
     expect(msg).not.toHaveProperty("is_pinned");
-    expect(msg).not.toHaveProperty("tool_calls");
   });
 
   it("Conversation uses camelCase fields", () => {
@@ -87,24 +89,19 @@ describe("protocol DTO — camelCase contract", () => {
       attemptId: "a",
       messageId: "m",
       seq: 0,
+      iteration: 1,
       deltaText: "hi",
-      deltaReasoning: undefined,
-      deltaToolCallId: undefined,
-      deltaToolCallName: undefined,
-      deltaToolCallArguments: undefined,
-      finishReason: undefined,
-      usage: undefined,
-      error: undefined,
-      deltaRetry: undefined,
+      deltaReasoning: null,
+      finishReason: null,
+      usage: null,
+      error: null,
+      deltaRetry: null,
     };
     expect(payload).toHaveProperty("conversationId");
     expect(payload).toHaveProperty("attemptId");
     expect(payload).toHaveProperty("messageId");
     expect(payload).toHaveProperty("deltaText");
     expect(payload).toHaveProperty("deltaReasoning");
-    expect(payload).toHaveProperty("deltaToolCallId");
-    expect(payload).toHaveProperty("deltaToolCallName");
-    expect(payload).toHaveProperty("deltaToolCallArguments");
     expect(payload).toHaveProperty("finishReason");
     expect(payload).not.toHaveProperty("conversation_id");
     expect(payload).not.toHaveProperty("delta_text");
@@ -116,6 +113,7 @@ describe("protocol DTO — camelCase contract", () => {
       conversationId: "c",
       attemptId: "a",
       messageId: "m",
+      phase: "starting",
     };
     expect(payload).toHaveProperty("conversationId");
     expect(payload).toHaveProperty("attemptId");
@@ -125,20 +123,11 @@ describe("protocol DTO — camelCase contract", () => {
   it("ConversationTerminatedPayload uses camelCase fields", () => {
     const payload: ConversationTerminatedPayload = {
       conversationId: "c",
-      summary: "done",
       isFull: false,
     };
     expect(payload).toHaveProperty("conversationId");
     expect(payload).toHaveProperty("isFull");
     expect(payload).not.toHaveProperty("is_full");
-  });
-
-  it("ConversationCompactFailedPayload uses camelCase fields", () => {
-    const payload: ConversationCompactFailedPayload = {
-      conversationId: "c",
-      error: "oom",
-    };
-    expect(payload).toHaveProperty("conversationId");
   });
 
   it("ConversationUnlockedPayload uses camelCase fields", () => {
@@ -154,6 +143,9 @@ describe("protocol DTO — camelCase contract", () => {
       promptTokens: 10,
       completionTokens: 20,
       totalTokens: 30,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      reasoningTokens: null,
       contextWindowTokens: 0,
     };
     expect(usage).toHaveProperty("promptTokens");
@@ -170,6 +162,7 @@ describe("protocol DTO — camelCase contract", () => {
       maxAttempts: 3,
       delayMs: 500,
       message: "retrying",
+      errorCode: null,
     };
     expect(retry).toHaveProperty("delayMs");
     expect(retry).toHaveProperty("maxAttempts");
@@ -202,6 +195,9 @@ describe("protocol DTO — camelCase contract", () => {
           name: "GPT-4",
           ownedBy: "openai",
           contextWindow: 8192,
+          supportVision: false,
+          inputModalities: [],
+          reasoningLevels: null,
         },
       ],
       defaultModel: "gpt-4",
@@ -240,10 +236,10 @@ describe("business type — field preservation", () => {
     expect(msg.isPinned).toBe(false);
   });
 
-  it("Message handles null/undefined for optional fields", () => {
+  it("Message uses null for absent optional fields", () => {
     const msg = sampleMessage;
     expect(msg.parentId).toBeNull();
-    expect(msg.reasoning).toBeUndefined();
+    expect(msg.reasoning).toBeNull();
   });
 
   it("Conversation preserves all fields", () => {
@@ -262,5 +258,12 @@ describe("business type — field preservation", () => {
     expect(detail.messages).toHaveLength(1);
     expect(detail.messages[0].id).toBe("msg-1");
     expect(detail.totalCount).toBe(1);
+  });
+
+  it("ChatMessagesChangedPayload reads seq from the wire payload", () => {
+    const payload = JSON.parse(
+      '{"conversationId":"c","changeKind":"branch_switched","messages":[],"activeBranchId":null,"seq":1}',
+    ) as ChatMessagesChangedPayload;
+    expect(payload.seq).toBe(1);
   });
 });

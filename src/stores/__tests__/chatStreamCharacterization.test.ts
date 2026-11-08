@@ -56,7 +56,11 @@ vi.mock("../notifyStore", () => ({
 
 vi.mock("../agentModeStore", () => ({
   useAgentModeStore: {
-    getState: () => ({ selectedModeId: null }),
+    getState: () => ({
+      selectedModeId: null,
+      modes: [],
+      selectMode: vi.fn(),
+    }),
     subscribe: () => () => {},
   },
 }));
@@ -89,7 +93,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
     });
     useChatStore.setState({
       messages: [],
-      contextUsage: { usedTokens: 0, maxTokens: 128_000, percentage: 0 },
+      contextUsage: { usedTokens: 0, hasUsage: false },
     });
   });
 
@@ -113,6 +117,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
         streamingContent: "leftover",
@@ -193,6 +198,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });
@@ -221,6 +227,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });
@@ -257,6 +264,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
         attempt: 2,
         maxAttempts: 5,
         delayMs: 2000,
+        errorCode: null,
         message: "rate limited",
       };
       useChatStreamStore.getState().setRetryStatus(retry);
@@ -269,6 +277,7 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
           attempt: 1,
           maxAttempts: 3,
           delayMs: 1000,
+          errorCode: null,
           message: "retry",
         },
       });

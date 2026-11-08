@@ -19,7 +19,7 @@ export const CompactBanner: React.FC = () => {
     const providerId = currentConv?.providerId;
     const modelId = currentConv?.modelId;
     if (!providerId || !modelId) return;
-    void chat.createConversation(providerId, modelId);
+    void chat.createConversation(providerId, modelId, "builtin-default");
   };
 
   const handleUnlock = () => {

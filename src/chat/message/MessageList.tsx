@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { MessageBubble, RoleContext } from "./MessageBubble";
 import type { Message } from "../../chat/core/chatTypes";
 import type { RetryNotification } from "../../chat/core/chatTypes";
+import type { RecoveryActionCode } from "../core/chatErrorRecovery";
 import css from "./MessageList.module.css";
 
 const SCROLL_THRESHOLD = 100;
@@ -30,6 +31,7 @@ interface MessageListProps {
   onRetryMessage?: (messageId: string) => void;
   onSwitchBranch?: (messageId: string, direction: "prev" | "next") => void;
   onFork?: (messageId: string) => void;
+  onErrorAction?: (code: RecoveryActionCode) => void;
   retryStatus?: RetryNotification | null;
 }
 
@@ -49,6 +51,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   onRetryMessage,
   onSwitchBranch,
   onFork,
+  onErrorAction,
   retryStatus,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -56,26 +59,31 @@ export const MessageList: React.FC<MessageListProps> = ({
   const { t } = useTranslation();
   const [unreadCount, setUnreadCount] = useState(0);
   const lastScrollHeightRef = useRef(0);
-  const seenMessageCountRef = useRef(messages.length);
   const rafIdRef = useRef<number | null>(null);
   const loadMoreTriggeredRef = useRef(false);
   const programScrollRef = useRef(false);
   const prevIsStreamingRef = useRef(isStreaming);
 
+  const visibleMessages = useMemo(
+    () => messages.filter((msg) => msg.role !== "tool"),
+    [messages],
+  );
+  const seenMessageCountRef = useRef(visibleMessages.length);
+
   const lastAssistantIndex = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "assistant") return i;
+    for (let i = visibleMessages.length - 1; i >= 0; i--) {
+      if (visibleMessages[i].role === "assistant") return i;
     }
     return -1;
-  }, [messages]);
+  }, [visibleMessages]);
 
   useEffect(() => {
     if (userScrolledUp) {
-      const delta = messages.length - seenMessageCountRef.current;
+      const delta = visibleMessages.length - seenMessageCountRef.current;
       if (delta > 0) setUnreadCount((c) => c + delta);
     }
-    seenMessageCountRef.current = messages.length;
-  }, [messages.length, userScrolledUp]);
+    seenMessageCountRef.current = visibleMessages.length;
+  }, [visibleMessages.length, userScrolledUp]);
 
   useEffect(() => {
     if (userScrolledUp || !scrollRef.current) return;
@@ -89,7 +97,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         behavior: isStreaming ? "auto" : "smooth",
       });
     }
-  }, [messages, isStreaming, streamingContent, userScrolledUp]);
+  }, [visibleMessages, isStreaming, streamingContent, userScrolledUp]);
 
   useEffect(() => {
     if (prevIsStreamingRef.current && !isStreaming) {
@@ -162,9 +170,9 @@ export const MessageList: React.FC<MessageListProps> = ({
 
   const streamingMsgId =
     streamingMessageId ??
-    (messages.length > 0 && isStreaming
-      ? messages[messages.length - 1].role === "assistant"
-        ? messages[messages.length - 1].id
+    (visibleMessages.length > 0 && isStreaming
+      ? visibleMessages[visibleMessages.length - 1].role === "assistant"
+        ? visibleMessages[visibleMessages.length - 1].id
         : undefined
       : undefined);
 
@@ -172,7 +180,7 @@ export const MessageList: React.FC<MessageListProps> = ({
     .filter(Boolean)
     .join(" ");
 
-  if (messages.length === 0) {
+  if (visibleMessages.length === 0) {
     return (
       <div className={css.wrapper}>
         <div className={containerClass} ref={scrollRef} />
@@ -201,7 +209,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             )}
           </div>
         )}
-        {messages.map((msg, index) => {
+        {visibleMessages.map((msg, index) => {
           const isStreamingMsg = msg.id === streamingMsgId;
           const displayMsg =
             isStreamingMsg && streamingContent != null
@@ -211,7 +219,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           return (
             <RoleContext.Provider
               key={msg.id}
-              value={index > 0 ? messages[index - 1].role : undefined}
+              value={index > 0 ? visibleMessages[index - 1].role : undefined}
             >
               <MessageBubble
                 message={displayMsg}
@@ -229,6 +237,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                 }
                 onSwitchBranch={onSwitchBranch}
                 onFork={onFork}
+                onErrorAction={onErrorAction}
               />
             </RoleContext.Provider>
           );

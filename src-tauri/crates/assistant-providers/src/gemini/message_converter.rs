@@ -1,5 +1,5 @@
 use crate::base::{ChatMessage, MessageRole};
-use crate::types::{parse_content, ContentBlock};
+use crate::types::{parse_content, ContentBlock, ToolSpec};
 use serde_json::{json, Value};
 
 pub(crate) fn convert_messages(messages: &[ChatMessage]) -> (Option<Value>, Vec<Value>) {
@@ -144,7 +144,7 @@ fn convert_assistant_parts(msg: &ChatMessage) -> Vec<Value> {
                 "functionCall".to_string(),
                 json!({
                     "name": tc.name,
-                    "args": tc.arguments,
+                    "args": parse_function_args(&tc.arguments),
                 }),
             );
 
@@ -163,6 +163,16 @@ fn convert_assistant_parts(msg: &ChatMessage) -> Vec<Value> {
     }
 
     parts
+}
+
+fn parse_function_args(arguments: &str) -> Value {
+    if arguments.trim().is_empty() {
+        return json!({});
+    }
+    match serde_json::from_str::<Value>(arguments) {
+        Ok(Value::Object(map)) => Value::Object(map),
+        _ => json!({}),
+    }
 }
 
 fn convert_tool_result_parts(msg: &ChatMessage) -> Vec<Value> {
@@ -225,19 +235,18 @@ fn push_content(contents: &mut Vec<Value>, role: &str, parts: Vec<Value>) {
     }));
 }
 
-#[allow(dead_code)]
-pub(crate) fn convert_tools(tool_defs: &[(String, String, String)]) -> Option<Vec<Value>> {
+pub(crate) fn convert_tools(tool_defs: &[ToolSpec]) -> Option<Vec<Value>> {
     if tool_defs.is_empty() {
         return None;
     }
 
     let declarations: Vec<Value> = tool_defs
         .iter()
-        .map(|(name, description, parameters)| {
-            let schema = sanitize_schema(parameters.clone());
+        .map(|tool| {
+            let schema = sanitize_schema(&tool.input_schema);
             json!({
-                "name": name,
-                "description": description,
+                "name": tool.name,
+                "description": tool.description,
                 "parameters": schema,
             })
         })
@@ -252,15 +261,10 @@ pub(crate) fn convert_tools(tool_defs: &[(String, String, String)]) -> Option<Ve
     }
 }
 
-#[allow(dead_code)]
-fn sanitize_schema(parameters: String) -> Value {
-    match serde_json::from_str::<Value>(&parameters) {
-        Ok(value) => strip_unsupported_schema_fields(value),
-        Err(_) => json!({ "type": "object", "properties": {} }),
-    }
+fn sanitize_schema(parameters: &Value) -> Value {
+    strip_unsupported_schema_fields(parameters.clone())
 }
 
-#[allow(dead_code)]
 fn strip_unsupported_schema_fields(value: Value) -> Value {
     match value {
         Value::Object(mut map) => {
@@ -401,6 +405,101 @@ mod tests {
         let (_, contents) = convert_messages(&messages);
         let fc = &contents[0]["parts"][0]["functionCall"];
         assert_eq!(fc["name"], "search");
+        assert_eq!(fc["args"], json!({ "query": "rust" }));
+    }
+
+    #[test]
+    fn convert_assistant_tool_call_with_invalid_args_falls_back_to_empty_object() {
+        let messages = vec![ChatMessage {
+            role: MessageRole::Assistant,
+            content: String::new(),
+            tool_calls: Some(vec![ToolCall {
+                id: "tc_1".to_string(),
+                name: "search".to_string(),
+                arguments: "{not json".to_string(),
+            }]),
+            tool_call_id: None,
+            name: None,
+            is_error: false,
+            thinking_signature: None,
+            content_blocks: None,
+        }];
+        let (_, contents) = convert_messages(&messages);
+        assert_eq!(contents[0]["parts"][0]["functionCall"]["args"], json!({}));
+    }
+
+    #[test]
+    fn second_round_tool_history_is_well_formed() {
+        let messages = vec![
+            ChatMessage {
+                role: MessageRole::Assistant,
+                content: String::new(),
+                tool_calls: Some(vec![ToolCall {
+                    id: "tc_1".to_string(),
+                    name: "read_file".to_string(),
+                    arguments: r#"{"path":"a.txt"}"#.to_string(),
+                }]),
+                tool_call_id: None,
+                name: None,
+                is_error: false,
+                thinking_signature: None,
+                content_blocks: None,
+            },
+            ChatMessage {
+                role: MessageRole::Tool,
+                content: r#"{"content":"file body"}"#.to_string(),
+                tool_calls: None,
+                tool_call_id: Some("tc_1".to_string()),
+                name: Some("read_file".to_string()),
+                is_error: false,
+                thinking_signature: None,
+                content_blocks: None,
+            },
+        ];
+        let (_, contents) = convert_messages(&messages);
+        assert_eq!(contents[0]["role"], "model");
+        assert_eq!(contents[0]["parts"][0]["functionCall"]["name"], "read_file");
+        assert_eq!(
+            contents[0]["parts"][0]["functionCall"]["args"],
+            json!({ "path": "a.txt" })
+        );
+        assert_eq!(contents[1]["role"], "user");
+        assert_eq!(
+            contents[1]["parts"][0]["functionResponse"]["name"],
+            "read_file"
+        );
+        assert_eq!(
+            contents[1]["parts"][0]["functionResponse"]["response"]["content"],
+            "file body"
+        );
+    }
+
+    #[test]
+    fn convert_tools_uses_function_declarations_with_sanitized_schema() {
+        let tools = vec![ToolSpec {
+            name: "search".to_string(),
+            description: "search the web".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "q": { "type": "string" } },
+                "allOf": [{ "type": "object" }]
+            }),
+        }];
+        let converted = convert_tools(&tools).expect("non-empty tools");
+        assert_eq!(converted.len(), 1);
+        let declarations = &converted[0]["functionDeclarations"];
+        assert_eq!(declarations[0]["name"], "search");
+        assert_eq!(declarations[0]["description"], "search the web");
+        assert_eq!(
+            declarations[0]["parameters"]["properties"]["q"]["type"],
+            "string"
+        );
+        assert!(declarations[0]["parameters"].get("allOf").is_none());
+    }
+
+    #[test]
+    fn convert_tools_returns_none_for_empty_input() {
+        assert!(convert_tools(&[]).is_none());
     }
 
     #[test]

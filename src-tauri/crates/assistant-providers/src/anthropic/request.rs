@@ -52,6 +52,11 @@ pub(crate) fn chat_completion_stream(
             None
         },
         system,
+        tools: options
+            .tools
+            .as_deref()
+            .map(message_converter::convert_tools)
+            .filter(|tools| !tools.is_empty()),
     };
 
     let client = adapter.client.clone();

@@ -5,16 +5,19 @@ use assistant_providers::base::{
 
 #[test]
 fn context_window_known_models() {
-    assert_eq!(get_context_window_tokens("gpt-4"), 8_192);
-    assert_eq!(get_context_window_tokens("gpt-4-turbo"), 128_000);
-    assert_eq!(get_context_window_tokens("gpt-4o"), 128_000);
-    assert_eq!(get_context_window_tokens("claude-3.5-sonnet"), 200_000);
+    assert_eq!(get_context_window_tokens("gpt-4"), Some(8_192));
+    assert_eq!(get_context_window_tokens("gpt-4-turbo"), Some(128_000));
+    assert_eq!(get_context_window_tokens("gpt-4o"), Some(128_000));
+    assert_eq!(
+        get_context_window_tokens("claude-3.5-sonnet"),
+        Some(200_000)
+    );
 }
 
 #[test]
-fn context_window_unknown_returns_default() {
-    assert_eq!(get_context_window_tokens(""), 128_000);
-    assert_eq!(get_context_window_tokens("unknown"), 128_000);
+fn context_window_unknown_stays_unknown() {
+    assert_eq!(get_context_window_tokens(""), None);
+    assert_eq!(get_context_window_tokens("unknown"), None);
     assert_eq!(
         get_context_window_tokens("GPT-4O"),
         get_context_window_tokens("gpt-4o")

@@ -157,9 +157,9 @@ fn ssh_uri_host(uri: &str) -> Option<&str> {
         uri = stripped;
     }
 
-    let before_slash = uri.splitn(2, '/').next().unwrap();
-    let after_at = before_slash.splitn(2, '@').last().unwrap();
-    let before_colon = after_at.splitn(2, ':').next().unwrap();
+    let before_slash = uri.split('/').next().unwrap();
+    let after_at = before_slash.rsplit('@').next().unwrap();
+    let before_colon = after_at.split(':').next().unwrap();
     let host = before_colon.trim();
 
     if host.len() >= 3 {

@@ -85,7 +85,11 @@ const DEFAULT_ACTIONS: Record<ChatErrorCategory, RecoveryActionCode[]> = {
     "switch_model",
     "copy_diagnostics",
   ],
-  [ChatErrorCategory.ContextOverflow]: ["copy_diagnostics"],
+  [ChatErrorCategory.ContextOverflow]: [
+    "compress_context",
+    "start_new_chat",
+    "copy_diagnostics",
+  ],
   [ChatErrorCategory.Timeout]: ["retry", "switch_model", "copy_diagnostics"],
   [ChatErrorCategory.ProviderQuota]: [
     "open_model_settings",

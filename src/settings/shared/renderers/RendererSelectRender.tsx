@@ -8,13 +8,13 @@ const { Text } = Typography;
 export function RendererSelectRender({ value, onChange }: FieldRenderProps) {
   const metas = getAllRendererMetas();
   const currentMeta = metas.find(
-    (m) => m.id === asRendererId((value as string) ?? "rive"),
+    (m) => m.id === asRendererId((value as string) ?? "svg"),
   );
 
   return (
     <>
       <Select
-        value={value ?? "rive"}
+        value={value ?? "svg"}
         onChange={(v) => onChange?.(v)}
         style={{ width: "100%" }}
         options={metas.map((m) => ({

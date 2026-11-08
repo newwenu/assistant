@@ -8,7 +8,7 @@ import { useProviderStore } from "../stores/providerStore";
 import { useThemeStore } from "../stores/themeStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { createLogger } from "./logger";
-import { applyLocaleChange } from "@/i18n/localeApplier";
+import { isConfGroupAvailable } from "@/settings/core/confRuntime";
 
 const log = createLogger("setting-events");
 
@@ -53,23 +53,13 @@ export function subscribeSettingEvents(): () => void {
   track(
     listen<SettingEventPayload>(SettingEvent.ConfPatched, ({ payload }) => {
       if (disposed) return;
-      if (payload.action === SettingAction.ConfPatched) {
-        const { group, patch } = (payload.value as {
-          group: string;
-          patch: Record<string, unknown>;
-        }) ?? { group: "", patch: {} };
-        const store = useSettingsStore.getState();
-        if (group === "app") {
-          void store.loadAppConf().then(async () => {
-            if ("language" in patch) {
-              const lang =
-                useSettingsStore.getState().appConf?.language ?? "zh-CN";
-              await applyLocaleChange(lang);
-            }
-          });
-        } else if (group === "orb") void store.loadOrbConf();
-        else if (group === "mascot") void store.loadMascotConf();
-      }
+      if (payload.action !== SettingAction.ConfPatched) return;
+      const { group } = (payload.value as {
+        group: string;
+        patch: Record<string, unknown>;
+      }) ?? { group: "", patch: {} };
+      if (!isConfGroupAvailable(group)) return;
+      void useSettingsStore.getState().loadConf(group);
     }),
   );
 

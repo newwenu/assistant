@@ -33,7 +33,7 @@ function colorsEqual(
 
 export function MascotColorGroupRender({ value, conf }: FieldRenderProps) {
   const { t } = useTranslation();
-  const rendererId = (conf?.renderer as string) ?? "rive";
+  const rendererId = (conf?.renderer as string) ?? "svg";
   const metas = getAllRendererMetas();
   const currentMeta = metas.find((m) => m.id === asRendererId(rendererId));
   const capabilities = currentMeta?.capabilities;

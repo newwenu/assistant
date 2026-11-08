@@ -18,6 +18,121 @@ fn delete_conversation_removes_all_messages() {
 }
 
 #[test]
+fn tool_result_rows_do_not_create_branch_siblings() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "", 200, Some("u1"), 0),
+    )
+    .unwrap();
+    conversations::update_message_tool_calls(
+        &conn,
+        "a1",
+        r#"[{"id":"call_1","name":"fs_read","arguments":"{}"}]"#,
+    )
+    .unwrap();
+
+    for (id, ts) in [("t1", 300), ("t2", 400)] {
+        let mut row = msg_with_parent(id, "c1", "tool", "result", ts, Some("a1"), 0);
+        row.tool_call_id = Some("call_1".to_string());
+        conversations::insert_message(&conn, &row).unwrap();
+    }
+
+    assert_eq!(
+        conversations::get_sibling_count(&conn, "c1", Some("u1")).unwrap(),
+        1,
+        "tool rows must not add siblings under the user message"
+    );
+    let rows = conversations::get_messages(&conn, "c1").unwrap();
+    let tools: Vec<_> = rows.iter().filter(|row| row.role == "tool").collect();
+    assert_eq!(tools.len(), 2);
+    assert!(
+        tools.iter().all(|row| row.sibling_index == 0),
+        "tool rows always use sibling_index 0"
+    );
+    assert!(
+        tools
+            .iter()
+            .all(|row| row.tool_call_id.as_deref() == Some("call_1")),
+        "tool rows keep tool_call_id"
+    );
+}
+
+#[test]
+fn tool_history_roundtrip_preserves_order_and_fields() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "", 200, Some("u1"), 0),
+    )
+    .unwrap();
+    conversations::update_message_tool_calls(
+        &conn,
+        "a1",
+        r#"[{"id":"call_1","name":"fs_read","arguments":"{\"path\":\"a\"}"},{"id":"call_2","name":"fs_list","arguments":"{}"}]"#,
+    )
+    .unwrap();
+
+    for (id, call_id, content, is_error, ts) in [
+        ("t1", "call_1", "ok", false, 300),
+        ("t2", "call_2", "boom", true, 400),
+    ] {
+        let mut row = msg_with_parent(id, "c1", "tool", content, ts, Some("a1"), 0);
+        row.tool_call_id = Some(call_id.to_string());
+        row.is_error = is_error;
+        conversations::insert_message(&conn, &row).unwrap();
+    }
+
+    let rows = conversations::get_messages(&conn, "c1").unwrap();
+    assert_eq!(rows.len(), 4);
+    assert_eq!(rows[0].role, "user");
+    assert_eq!(rows[1].role, "assistant");
+    let tool_calls_json = rows[1]
+        .tool_calls_json
+        .as_deref()
+        .expect("assistant row keeps tool_calls_json");
+    assert!(tool_calls_json.contains("call_1"), "{tool_calls_json}");
+    assert!(tool_calls_json.contains("call_2"), "{tool_calls_json}");
+    assert_eq!(rows[2].role, "tool");
+    assert_eq!(rows[2].tool_call_id.as_deref(), Some("call_1"));
+    assert!(!rows[2].is_error);
+    assert_eq!(rows[3].role, "tool");
+    assert_eq!(rows[3].tool_call_id.as_deref(), Some("call_2"));
+    assert!(rows[3].is_error);
+
+    let results = conversations::get_tool_results(&conn, "c1").unwrap();
+    assert_eq!(
+        results,
+        vec![
+            ("call_1".to_string(), "ok".to_string(), false),
+            ("call_2".to_string(), "boom".to_string(), true),
+        ]
+    );
+}
+
+#[test]
+fn get_tool_results_isolates_conversations() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_conversation(&conn, &conv("c2")).unwrap();
+    for (conv_id, id, call_id) in [("c1", "t1", "call_1"), ("c2", "t2", "call_2")] {
+        let mut row = msg(id, conv_id, "tool", "result", 100);
+        row.tool_call_id = Some(call_id.to_string());
+        conversations::insert_message(&conn, &row).unwrap();
+    }
+
+    let results = conversations::get_tool_results(&conn, "c1").unwrap();
+    assert_eq!(
+        results,
+        vec![("call_1".to_string(), "result".to_string(), false)]
+    );
+}
+
+#[test]
 fn toggle_pin_is_involution_and_sorts() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();
@@ -506,6 +621,90 @@ fn fork_to_new_conversation_copies_active_branch() {
         orig_detail.messages.len(),
         4,
         "original conversation must be untouched"
+    );
+}
+
+#[test]
+fn inserted_messages_default_to_completed_status() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("m1", "c1", "user", "hi", 100)).unwrap();
+
+    assert_eq!(
+        conversations::get_message_status(&conn, "m1").unwrap(),
+        Some("completed".to_string())
+    );
+}
+
+#[test]
+fn update_message_status_roundtrips_all_values() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("m1", "c1", "assistant", "", 100)).unwrap();
+
+    for status in ["streaming", "interrupted", "failed", "completed"] {
+        conversations::update_message_status(&conn, "m1", status).unwrap();
+        assert_eq!(
+            conversations::get_message_status(&conn, "m1").unwrap(),
+            Some(status.to_string())
+        );
+    }
+}
+
+#[test]
+fn update_message_status_unknown_id_is_noop() {
+    let conn = init_db();
+    conversations::update_message_status(&conn, "missing", "failed").unwrap();
+    assert_eq!(
+        conversations::get_message_status(&conn, "missing").unwrap(),
+        None
+    );
+}
+
+#[test]
+fn startup_sweep_marks_only_streaming_messages_interrupted() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("m1", "c1", "user", "hi", 100)).unwrap();
+    conversations::insert_message(&conn, &msg("m2", "c1", "assistant", "", 200)).unwrap();
+    conversations::insert_message(&conn, &msg("m3", "c1", "assistant", "done", 300)).unwrap();
+    conversations::update_message_status(&conn, "m2", "streaming").unwrap();
+
+    let swept = conversations::mark_streaming_messages_interrupted(&conn).unwrap();
+
+    assert_eq!(swept, 1);
+    assert_eq!(
+        conversations::get_message_status(&conn, "m2").unwrap(),
+        Some("interrupted".to_string())
+    );
+    assert_eq!(
+        conversations::get_message_status(&conn, "m1").unwrap(),
+        Some("completed".to_string())
+    );
+    assert_eq!(
+        conversations::get_message_status(&conn, "m3").unwrap(),
+        Some("completed".to_string())
+    );
+}
+
+#[test]
+fn startup_sweep_is_idempotent() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("m1", "c1", "assistant", "", 100)).unwrap();
+    conversations::update_message_status(&conn, "m1", "streaming").unwrap();
+
+    assert_eq!(
+        conversations::mark_streaming_messages_interrupted(&conn).unwrap(),
+        1
+    );
+    assert_eq!(
+        conversations::mark_streaming_messages_interrupted(&conn).unwrap(),
+        0
+    );
+    assert_eq!(
+        conversations::get_message_status(&conn, "m1").unwrap(),
+        Some("interrupted".to_string())
     );
 }
 

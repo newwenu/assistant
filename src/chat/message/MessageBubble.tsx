@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { Typography } from "antd";
 import { CompressOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import type { Message, ToolCall } from "../../chat/core/chatTypes";
+import type { Message } from "../../chat/core/chatTypes";
 import type { RetryNotification } from "../../chat/core/chatTypes";
 import type {
   ImageBlock,
@@ -12,10 +12,11 @@ import type {
 import { ErrorBlock } from "../blocks/ErrorBlock";
 import { RetryBanner } from "../blocks/RetryBanner";
 import { getErrorPresentation } from "../core/chatErrorRecovery";
+import type { RecoveryActionCode } from "../core/chatErrorRecovery";
 import { extractPlainText, parseContent } from "../core/contentBlockUtils";
 import { translateKey } from "../../i18n";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
-import { ToolCallBlock } from "../blocks/ToolCallBlock";
+import { ToolCallBubble } from "../tool/ToolCallBubble";
 import { EditBlock } from "../blocks/EditBlock";
 import { BranchPicker } from "../blocks/BranchPicker";
 import { MessageContent } from "./MessageContent";
@@ -34,6 +35,7 @@ interface MessageBubbleProps {
   onRetry?: () => void;
   onSwitchBranch?: (messageId: string, direction: "prev" | "next") => void;
   onFork?: (messageId: string) => void;
+  onErrorAction?: (code: RecoveryActionCode) => void;
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
@@ -49,13 +51,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     onRetry,
     onSwitchBranch,
     onFork,
+    onErrorAction,
   }) => {
     const { t } = useTranslation();
     const isUser = message.role === "user";
     const isCompactSummary = message.role === "compact_summary";
     const hasError = message.error != null;
     const hasReasoning = !!message.reasoning;
-    const hasToolCalls = !!message.toolCalls && message.toolCalls.length > 0;
 
     const [editing, setEditing] = useState(false);
     const [editContent, setEditContent] = useState(message.content);
@@ -155,6 +157,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
         ? getErrorPresentation(message.error).severity
         : null;
 
+    const hasBody =
+      message.content.trim().length > 0 ||
+      hasReasoning ||
+      (message.toolCalls?.length ?? 0) > 0 ||
+      isCompactSummary ||
+      editing;
+    const showBubble = hasBody || (!hasError && !retryStatus);
+
     const rootClass = [
       css.root,
       isUser
@@ -172,70 +182,79 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     return (
       <div className={rootClass} data-role={message.role}>
         <div className={css.stack}>
-          <div
-            className={[
-              css.bubble,
-              isUser ? css.bubbleUser : css.bubbleAssistant,
-              errorSeverity === "warning"
-                ? css.bubbleWarning
-                : hasError
-                  ? css.bubbleError
-                  : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            {hasError && message.error && (
-              <ErrorBlock error={message.error} onRetry={onRetry} />
-            )}
-            {retryStatus && isStreaming && (
-              <RetryBanner
-                retryStatus={retryStatus}
-                onCancel={() => onRetry?.()}
-              />
-            )}
-            {isCompactSummary && (
-              <div className={css.compactSummaryHeader}>
-                <CompressOutlined style={{ marginRight: 6 }} />
-                <Typography.Text type="warning" strong>
-                  {t("chat.compact.summary_label")}
-                </Typography.Text>
-              </div>
-            )}
-            {hasReasoning && (
-              <ReasoningBlock
-                content={message.reasoning!}
-                isStreaming={isReasoningStreaming}
-              />
-            )}
-            {hasToolCalls &&
-              message.toolCalls!.map((tc: ToolCall) => (
-                <ToolCallBlock key={tc.id} toolCall={tc} />
-              ))}
-            {editing ? (
-              <EditBlock
-                value={editContent}
-                onChange={setEditContent}
-                onConfirm={confirmEdit}
-                onCancel={cancelEdit}
-                imageBlocks={editImageBlocks}
-                fileBlocks={editFileBlocks}
-                onRemoveImage={handleRemoveEditImage}
-                onRemoveFile={handleRemoveEditFile}
-              />
-            ) : (
-              <>
-                <MessageContent
-                  content={message.content}
-                  role={message.role}
-                  isStreaming={isStreaming}
+          {showBubble && (
+            <div
+              className={[
+                css.bubble,
+                isUser ? css.bubbleUser : css.bubbleAssistant,
+                errorSeverity === "warning"
+                  ? css.bubbleWarning
+                  : hasError
+                    ? css.bubbleError
+                    : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              {isCompactSummary && (
+                <div className={css.compactSummaryHeader}>
+                  <CompressOutlined style={{ marginRight: 6 }} />
+                  <Typography.Text type="warning" strong>
+                    {t("chat.compact.summary_label")}
+                  </Typography.Text>
+                </div>
+              )}
+              {hasReasoning && (
+                <ReasoningBlock
+                  content={message.reasoning!}
+                  isStreaming={isReasoningStreaming}
                 />
-                {isStreaming && !isReasoningStreaming && (
-                  <span className={css.streamingCursor} />
-                )}
-              </>
-            )}
-          </div>
+              )}
+              {message.toolCalls && message.toolCalls.length > 0 && (
+                <div className={css.toolCalls}>
+                  {message.toolCalls.map((view) => (
+                    <ToolCallBubble key={view.callId} view={view} />
+                  ))}
+                </div>
+              )}
+              {editing ? (
+                <EditBlock
+                  value={editContent}
+                  onChange={setEditContent}
+                  onConfirm={confirmEdit}
+                  onCancel={cancelEdit}
+                  imageBlocks={editImageBlocks}
+                  fileBlocks={editFileBlocks}
+                  onRemoveImage={handleRemoveEditImage}
+                  onRemoveFile={handleRemoveEditFile}
+                />
+              ) : (
+                <>
+                  <MessageContent
+                    content={message.content}
+                    role={message.role}
+                    isStreaming={isStreaming}
+                  />
+                  {isStreaming && !isReasoningStreaming && (
+                    <span className={css.streamingCursor} />
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          {hasError && message.error && (
+            <ErrorBlock
+              error={message.error}
+              onRetry={onRetry}
+              onAction={onErrorAction}
+            />
+          )}
+          {retryStatus && isStreaming && (
+            <RetryBanner
+              retryStatus={retryStatus}
+              onCancel={() => onRetry?.()}
+            />
+          )}
           {!editing && (
             <div className={css.actionsWrapper}>
               <BranchPicker
@@ -269,6 +288,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     if (prev.message.id !== next.message.id) return false;
     if (prev.message.content !== next.message.content) return false;
     if (prev.message.reasoning !== next.message.reasoning) return false;
+    if (prev.message.toolCalls !== next.message.toolCalls) return false;
     if (prev.message.error !== next.message.error) return false;
     if (prev.message.timestamp !== next.message.timestamp) return false;
     if (prev.isStreaming !== next.isStreaming) return false;
@@ -283,19 +303,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     if (prev.onFork !== next.onFork) return false;
     if (prev.message.siblingIndex !== next.message.siblingIndex) return false;
     if (prev.message.siblingCount !== next.message.siblingCount) return false;
-    const prevTc = prev.message.toolCalls;
-    const nextTc = next.message.toolCalls;
-    if (prevTc !== nextTc) {
-      if (!prevTc || !nextTc || prevTc.length !== nextTc.length) return false;
-      for (let i = 0; i < prevTc.length; i++) {
-        if (
-          prevTc[i].id !== nextTc[i].id ||
-          prevTc[i].name !== nextTc[i].name ||
-          prevTc[i].arguments !== nextTc[i].arguments
-        )
-          return false;
-      }
-    }
     return true;
   },
 );

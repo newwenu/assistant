@@ -2,17 +2,11 @@ import { useState, useCallback } from "react";
 import { Form, Input, Button, Progress, Typography, Modal, App } from "antd";
 import { LockOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "../core/vaultStore";
+import { useVaultShallow } from "../core/vaultStore";
 import { vaultService } from "../core/vault.service";
+import { vaultErrorMessage } from "../core/vaultError";
 import type { StrengthResult } from "../core/vault.types";
-
-const SCORE_COLORS: Record<number, string> = {
-  0: "#ff4d4f",
-  1: "#ff7a45",
-  2: "#faad14",
-  3: "#52c41a",
-  4: "#13c8a8",
-};
+import { STRENGTH_COLORS, STRENGTH_FALLBACK_COLOR } from "../core/vaultColors";
 
 const STRENGTH_SUFFIXES = [
   "very_weak",
@@ -33,7 +27,13 @@ export default function ChangePasswordTab() {
     biometricAvailable,
     enrollBiometric,
     checkBiometricEnrolled,
-  } = useVaultStore();
+  } = useVaultShallow((s) => ({
+    changeMasterPassword: s.changeMasterPassword,
+    loading: s.loading,
+    biometricAvailable: s.biometricAvailable,
+    enrollBiometric: s.enrollBiometric,
+    checkBiometricEnrolled: s.checkBiometricEnrolled,
+  }));
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -92,7 +92,7 @@ export default function ChangePasswordTab() {
         setReEnrollOpen(true);
       }
     } catch (e) {
-      message.error(String(e));
+      message.error(vaultErrorMessage(e));
     }
   };
 
@@ -104,7 +104,7 @@ export default function ChangePasswordTab() {
       message.success(t("vault.biometric.enabled"));
       setReEnrollOpen(false);
     } catch (e) {
-      message.error(String(e));
+      message.error(vaultErrorMessage(e));
     } finally {
       setReEnrollLoading(false);
     }
@@ -142,7 +142,9 @@ export default function ChangePasswordTab() {
           <div style={{ marginTop: -8, marginBottom: 16 }}>
             <Progress
               percent={(strength.score / 4) * 100}
-              strokeColor={SCORE_COLORS[strength.score] ?? "#d9d9d9"}
+              strokeColor={
+                STRENGTH_COLORS[strength.score] ?? STRENGTH_FALLBACK_COLOR
+              }
               showInfo={false}
               size="small"
             />

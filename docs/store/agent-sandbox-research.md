@@ -25,7 +25,7 @@
 | **Sandbox tier 无实现** | `ToolTier::Sandbox` 已定义但无对应工具 |
 | **PermissionIntent 无拦截** | `permission_intents()` 仅声明式，无实际执行层拦截 |
 | **无进程级隔离** | Os 层工具与主进程同进程运行，无 OS 级隔离 |
-| **无 shell 命令执行** | 无 `shell_exec` 工具，Agent 无法执行命令行 |
+| **无 shell 命令执行** | 无 `shell` 工具，Agent 无法执行命令行 |
 | **External 层无隔离** | MCP 进程无 cgroup/seccomp/namespace 隔离（OSCALLDESIGN §1.2 已声明） |
 
 ### 1.3 参考项目内已有实现
@@ -161,7 +161,7 @@ L4 硬件虚拟化 ─── microVM / KVM（独立内核，最强隔离）
 **对本项目的参考价值**：
 - ⭐⭐⭐ Rust crate 直接可用：`landlock` crate 可直接加入 `assistant-tools` 依赖
 - ⭐⭐ self-restrict-then-exec 模式：先限制自己，再 exec 目标命令——约 300 行 C/Rust 即可实现
-- ⭐ 与 PermissionIntent 天然对齐：`PermissionIntent { action: "fs_read", resources: ["/workspace"] }` → 直接生成 Landlock ruleset
+- ⭐ 与 PermissionIntent 天然对齐：`PermissionIntent { action: "read", resources: ["/workspace"] }` → 直接生成 Landlock ruleset
 - ⚠️ 仅 Linux 5.13+，macOS/Windows 需另选方案
 
 ### 4.2 seccomp-bpf
@@ -349,7 +349,7 @@ L4 硬件虚拟化 ─── microVM / KVM（独立内核，最强隔离）
 
 ### 10.1 设计原则
 
-1. **先安全框架再加能力**：I18-spec 已确立此原则——先用 fs_link 验证端到端，再建安全框架，再安全地加 shell_exec
+1. **先安全框架再加能力**：I18-spec 已确立此原则——先用 fs_link 验证端到端，再建安全框架，再安全地加 shell
 2. **声明式权限 → 实际拦截闭环**：`PermissionIntent` 声明 → `SandboxBackend` trait 执行，完成从"策略决策"到"虚拟化执行"的闭环
 3. **fail-closed**：沙箱不可用时拒绝执行而非放行
 4. **跨平台抽象**：每个平台选最强虚拟化原语，统一暴露为 `SandboxBackend` trait

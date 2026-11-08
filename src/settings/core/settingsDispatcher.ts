@@ -7,24 +7,12 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { providerService } from "@/services/providerService";
 import { settingService } from "@/services/settingService";
 import { createLogger } from "@/services/logger";
-import type {
-  AppConf,
-  OrbConf,
-  MascotConf,
-} from "@/settings/core/types/confTypes";
 import type { ProviderInput } from "@/settings/provider/types";
-import { CONF_LOAD_KEY_MAP, type ConfGroup } from "./field/fieldRegistry";
+import type { ConfGroup, ConfOf } from "./types/confRegistry";
+import { DEFAULT_KEYBINDINGS } from "./types/shortcutTypes";
 import { emitSettingEventToPeers } from "@/services/crossWindowEvent";
 
 const log = createLogger("settingsDispatcher");
-
-export type ConfOf<G extends ConfGroup> = G extends "app"
-  ? AppConf
-  : G extends "orb"
-    ? OrbConf
-    : G extends "mascot"
-      ? MascotConf
-      : never;
 
 export async function dispatchProviderSaved(provider: ProviderInput) {
   await providerService.saveProvider(provider);
@@ -61,6 +49,10 @@ export async function dispatchThemeChanged(mode: "system" | "light" | "dark") {
   });
 }
 
+export async function dispatchKeybindingsReset() {
+  await dispatchConfPatch("app", { keybindings: { ...DEFAULT_KEYBINDINGS } });
+}
+
 export async function dispatchConfPatch<G extends ConfGroup>(
   group: G,
   patch: Partial<ConfOf<G>>,
@@ -68,12 +60,13 @@ export async function dispatchConfPatch<G extends ConfGroup>(
   try {
     await settingService.patchConf(group, patch);
     const store = useSettingsStore.getState();
-    await store[CONF_LOAD_KEY_MAP[group]]();
+    await store.loadConf(group);
     await emitSettingEventToPeers(SettingEvent.ConfPatched, {
       action: SettingAction.ConfPatched,
       value: { group, patch },
     });
   } catch (e) {
     log.error("dispatchConfPatch failed", e);
+    throw e;
   }
 }

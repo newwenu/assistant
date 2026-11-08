@@ -4,11 +4,12 @@ use uuid::Uuid;
 
 use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
-    ModelConfigDto, ProviderInputDto, ProviderListDto, SettingProviderChangedPayloadDto,
+    ModelConfigDto, ProviderInputDto, ProviderListDto, ReasoningLevelsDto,
+    SettingProviderChangedActionDto, SettingProviderChangedPayloadDto,
 };
 use assistant_agent::provider_config::build_provider_config;
+use assistant_crypto::api_key as crypto;
 use assistant_providers::base::{self, ProviderConfig};
-use assistant_security::crypto;
 use assistant_storage::providers::{self as provider_store, ProviderRow};
 
 fn mask_api_key_encrypted(encrypted: &str) -> String {
@@ -66,12 +67,8 @@ pub fn save_provider(app: AppHandle, provider: ProviderInputDto) -> Result<(), S
     let type_ = provider.type_;
     let base_url = provider.base_url;
     let api_key_plain = provider.api_key;
-    let api_key_changed = provider.api_key_changed;
-    let models_json = if provider.models.is_empty() {
-        "[]".to_string()
-    } else {
-        provider.models
-    };
+    let api_key_changed = provider.api_key_changed.unwrap_or(false);
+    let models_json = serde_json::to_string(&provider.models).map_err(|e| e.to_string())?;
     let default_model = provider.default_model;
 
     let machine_id = crypto::get_machine_id()?;
@@ -122,7 +119,7 @@ pub fn save_provider(app: AppHandle, provider: ProviderInputDto) -> Result<(), S
         &app,
         event_name::SETTING_PROVIDER_CHANGED,
         SettingProviderChangedPayloadDto {
-            action: "provider-saved".to_string(),
+            action: SettingProviderChangedActionDto::ProviderSaved,
             id: None,
         },
     );
@@ -138,11 +135,30 @@ pub fn delete_provider(app: AppHandle, id: String) -> Result<(), String> {
         &app,
         event_name::SETTING_PROVIDER_CHANGED,
         SettingProviderChangedPayloadDto {
-            action: "provider-deleted".to_string(),
+            action: SettingProviderChangedActionDto::ProviderDeleted,
             id: Some(id),
         },
     );
     Ok(())
+}
+
+fn model_config_dto(m: base::ModelConfig) -> ModelConfigDto {
+    let reasoning_levels =
+        assistant_providers::model_catalog::catalog_reasoning_levels(&m.id).map(|levels| {
+            ReasoningLevelsDto {
+                toggle: levels.toggle,
+                efforts: levels.efforts,
+            }
+        });
+    ModelConfigDto {
+        id: m.id,
+        name: m.name,
+        owned_by: m.owned_by,
+        context_window: m.context_window,
+        support_vision: m.support_vision,
+        input_modalities: m.input_modalities,
+        reasoning_levels,
+    }
 }
 
 #[command]
@@ -158,17 +174,7 @@ pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelC
     let api_key = crypto::decrypt_api_key_b64(&row.api_key_encrypted, &machine_id)
         .map_err(|e| e.to_string())?;
     let models = adapter.list_models(&api_key).map_err(|e| e.to_string())?;
-    Ok(models
-        .into_iter()
-        .map(|m| ModelConfigDto {
-            id: m.id,
-            name: m.name,
-            owned_by: m.owned_by,
-            context_window: m.context_window,
-            support_vision: m.support_vision,
-            input_modalities: m.input_modalities,
-        })
-        .collect())
+    Ok(models.into_iter().map(model_config_dto).collect())
 }
 
 #[command]
@@ -186,15 +192,5 @@ pub fn preview_models_cmd(
     };
     let adapter = base::create_provider_adapter(config);
     let models = adapter.list_models(&api_key).map_err(|e| e.to_string())?;
-    Ok(models
-        .into_iter()
-        .map(|m| ModelConfigDto {
-            id: m.id,
-            name: m.name,
-            owned_by: m.owned_by,
-            context_window: m.context_window,
-            support_vision: m.support_vision,
-            input_modalities: m.input_modalities,
-        })
-        .collect())
+    Ok(models.into_iter().map(model_config_dto).collect())
 }

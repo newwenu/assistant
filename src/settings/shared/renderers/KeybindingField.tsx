@@ -10,7 +10,7 @@ import {
   normalizeBinding,
   type ConflictInfo,
 } from "../../core/types/shortcutTypes";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useConfGroup } from "@/settings/core/useConfGroup";
 
 const { Text } = Typography;
 
@@ -26,7 +26,7 @@ export function KeybindingField({
 }: SettingFieldProps) {
   const { t } = useTranslation();
   const shortcutId = shortcutIdFromKey(schema.key);
-  const appConf = useSettingsStore((s) => s.appConf);
+  const appConf = useConfGroup("app");
   const keybindings = appConf?.keybindings ?? DEFAULT_KEYBINDINGS;
 
   const conflicts = useMemo(() => detectConflicts(keybindings), [keybindings]);

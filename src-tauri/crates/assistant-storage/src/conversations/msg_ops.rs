@@ -5,7 +5,7 @@ use super::{read_msg_row, MessageRow, MSG_SELECT};
 pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String> {
     conn.execute(
         &format!(
-            "INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+            "INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
             MSG_SELECT
         ),
         params![
@@ -21,7 +21,9 @@ pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String>
             row.tool_calls_json,
             row.sibling_index,
             row.provider_id,
-            row.model_id
+            row.model_id,
+            row.tool_call_id,
+            row.is_error as i64
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -47,14 +49,56 @@ pub fn update_message_content(
     content: &str,
     tokens: Option<i64>,
     reasoning: Option<&str>,
-    tool_calls_json: Option<&str>,
 ) -> Result<(), String> {
     conn.execute(
-        "UPDATE messages SET content = ?2, tokens = ?3, reasoning = ?4, tool_calls_json = ?5 WHERE id = ?1",
-        params![id, content, tokens, reasoning, tool_calls_json],
+        "UPDATE messages SET content = ?2, tokens = ?3, reasoning = ?4 WHERE id = ?1",
+        params![id, content, tokens, reasoning],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 写 `messages.tool_calls_json`；在 assistant 行 `finalize` 之前调用。
+pub fn update_message_tool_calls(
+    conn: &Connection,
+    id: &str,
+    tool_calls_json: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE messages SET tool_calls_json = ?2 WHERE id = ?1",
+        params![id, tool_calls_json],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 写 `messages.status`；取值由调用方给出（`streaming` / `completed` / `interrupted` / `failed`）。
+pub fn update_message_status(conn: &Connection, id: &str, status: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE messages SET status = ?2 WHERE id = ?1",
+        params![id, status],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 启动清扫：上一进程未收尾的流式消息一律标记为 `interrupted`，返回受影响行数。
+pub fn mark_streaming_messages_interrupted(conn: &Connection) -> Result<usize, String> {
+    conn.execute(
+        "UPDATE messages SET status = 'interrupted' WHERE status = 'streaming'",
+        [],
+    )
+    .map_err(|e| e.to_string())
+}
+
+pub fn get_message_status(conn: &Connection, id: &str) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT status FROM messages WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
 }
 
 pub fn get_messages_paginated(
@@ -127,6 +171,28 @@ pub fn get_message_by_id(conn: &Connection, id: &str) -> Result<Option<MessageRo
     } else {
         Ok(None)
     }
+}
+
+pub fn get_tool_results(
+    conn: &Connection,
+    conversation_id: &str,
+) -> Result<Vec<(String, String, bool)>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT tool_call_id, content, is_error FROM messages WHERE conversation_id = ?1 AND role = 'tool' AND tool_call_id IS NOT NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![conversation_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)? != 0,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn get_sibling_count(

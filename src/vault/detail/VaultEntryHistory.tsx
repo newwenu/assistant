@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Modal,
-  List,
   Typography,
   Space,
   Button,
@@ -14,12 +13,13 @@ import {
 } from "antd";
 import { useTranslation } from "react-i18next";
 import { vaultService } from "../core/vault.service";
-import { useVaultStore } from "../core/vaultStore";
+import { vaultCategoryLabel } from "../core/vaultCategory";
+import { vaultErrorCode, vaultErrorMessage } from "../core/vaultError";
+import { useVaultShallow } from "../core/vaultStore";
 import type { EntryPreview, HistoryCommit } from "../core/vault.types";
+import styles from "../vault.module.css";
 
 const { Text } = Typography;
-
-const OLD_KEY_MARKER = "cannot be decrypted with the current master key";
 
 interface VaultEntryHistoryProps {
   open: boolean;
@@ -43,7 +43,9 @@ export default function VaultEntryHistory({
 }: VaultEntryHistoryProps) {
   const { t } = useTranslation();
   const { message, modal } = App.useApp();
-  const { loadEntries } = useVaultStore();
+  const { loadEntries } = useVaultShallow((s) => ({
+    loadEntries: s.loadEntries,
+  }));
 
   const [commits, setCommits] = useState<HistoryCommit[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -64,7 +66,7 @@ export default function VaultEntryHistory({
       .historyList(entryId, 50)
       .then((list) => setCommits(list))
       .catch((e: unknown) => {
-        message.error(String(e));
+        message.error(vaultErrorMessage(e));
       })
       .finally(() => setLoadingList(false));
   }, [open, entryId, message]);
@@ -79,9 +81,10 @@ export default function VaultEntryHistory({
         const result = await vaultService.historyPreview(commit, entryId);
         setPreview(result);
       } catch (e: unknown) {
-        const text = String(e);
         setPreviewError(
-          text.includes(OLD_KEY_MARKER) ? t("vault.history.old_key") : text,
+          vaultErrorCode(e) === "historyDecryptFailed"
+            ? t("vault.history.old_key")
+            : vaultErrorMessage(e),
         );
       } finally {
         setLoadingPreview(false);
@@ -132,9 +135,10 @@ export default function VaultEntryHistory({
           message.success(t("vault.history.restored"));
           onClose();
         } catch (e: unknown) {
-          const text = String(e);
           message.error(
-            text.includes(OLD_KEY_MARKER) ? t("vault.history.old_key") : text,
+            vaultErrorCode(e) === "historyDecryptFailed"
+              ? t("vault.history.old_key")
+              : vaultErrorMessage(e),
           );
         } finally {
           setRestoring(false);
@@ -174,55 +178,42 @@ export default function VaultEntryHistory({
           ) : commits.length === 0 ? (
             <Empty description={t("vault.history.empty")} />
           ) : (
-            <List
-              size="small"
-              dataSource={commits}
-              style={{ maxHeight: 360, overflowY: "auto" }}
-              renderItem={(item, index) => (
-                <List.Item
+            <div className={styles.commitList}>
+              {commits.map((item, index) => (
+                <div
+                  key={item.hash}
+                  className={`${styles.commitItem} ${
+                    selected === item.hash ? styles.commitItemActive : ""
+                  }`}
                   onClick={() => void loadPreview(item.hash)}
-                  style={{
-                    cursor: "pointer",
-                    background:
-                      selected === item.hash
-                        ? "rgba(22, 119, 255, 0.1)"
-                        : undefined,
-                    paddingInline: 8,
-                  }}
                 >
-                  <List.Item.Meta
-                    title={
-                      <Space size={6}>
-                        <Text style={{ fontSize: 13 }}>
-                          {formatTime(item.timestamp)}
-                        </Text>
-                        <Tag
-                          color={operationColor(item.message)}
-                          style={{ marginInlineEnd: 0 }}
-                        >
-                          {operationLabel(item.message)}
-                        </Tag>
-                        {index === 0 && (
-                          <Tag style={{ marginInlineEnd: 0 }}>
-                            {t("vault.history.current")}
-                          </Tag>
-                        )}
-                      </Space>
-                    }
-                    description={
-                      <Space orientation="vertical" size={0}>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {item.message}
-                        </Text>
-                        <Text code style={{ fontSize: 11 }}>
-                          {item.hash.slice(0, 8)}
-                        </Text>
-                      </Space>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
+                  <Space size={6} wrap>
+                    <Text style={{ fontSize: 13 }}>
+                      {formatTime(item.timestamp)}
+                    </Text>
+                    <Tag
+                      color={operationColor(item.message)}
+                      style={{ marginInlineEnd: 0 }}
+                    >
+                      {operationLabel(item.message)}
+                    </Tag>
+                    {index === 0 && (
+                      <Tag style={{ marginInlineEnd: 0 }}>
+                        {t("vault.history.current")}
+                      </Tag>
+                    )}
+                  </Space>
+                  <Space orientation="vertical" size={0}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {item.message}
+                    </Text>
+                    <Text code style={{ fontSize: 11 }}>
+                      {item.hash.slice(0, 8)}
+                    </Text>
+                  </Space>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
@@ -243,7 +234,7 @@ export default function VaultEntryHistory({
                   {preview.title}
                 </Descriptions.Item>
                 <Descriptions.Item label={t("vault.entry.category")}>
-                  {t(`vault.entry.category_${preview.category}`)}
+                  {vaultCategoryLabel(t, preview.category)}
                 </Descriptions.Item>
                 {preview.username && (
                   <Descriptions.Item label={t("vault.entry.username")}>

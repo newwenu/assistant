@@ -13,22 +13,12 @@ fn new_returns_valid_and_matches_default() {
     assert!(conf.close_to_tray);
     assert_eq!(conf.keybindings.len(), 3);
     assert!(conf.auto_compact);
-    assert_eq!(conf.vault_auto_lock_minutes, 5);
-    assert!(conf.vault_lock_on_screen_lock);
-    assert_eq!(conf.vault_clipboard_clear_seconds, 30);
-    assert_eq!(conf.vault_cipher_algorithm, "aes256Gcm");
-    assert!(!conf.vault_biometric_enabled);
-    assert!(conf.vault_hibp_auto_audit);
     assert!(conf.validate().is_ok());
 
     let default = AppConf::default();
     assert_eq!(conf.theme, default.theme);
     assert_eq!(conf.keybindings, default.keybindings);
     assert_eq!(conf.auto_compact, default.auto_compact);
-    assert_eq!(
-        conf.vault_auto_lock_minutes,
-        default.vault_auto_lock_minutes
-    );
 }
 
 #[test]
@@ -49,6 +39,25 @@ fn validate_theme_and_language_rules() {
 }
 
 #[test]
+fn validate_agent_tool_rules() {
+    let mut conf = AppConf::new();
+    assert!(conf.validate().is_ok(), "两项都留空是合法状态");
+
+    conf.approval_timeout_secs = Some(0);
+    assert!(conf.validate().is_err(), "零超时既非放行也非等待，必须拒绝");
+    conf.approval_timeout_secs = Some(5);
+    assert!(conf.validate().is_ok());
+
+    conf.workspace_root = Some(String::new());
+    assert!(conf.validate().is_err(), "空串不得当作未配置");
+    conf.workspace_root = Some("relative/dir".to_string());
+    assert!(conf.validate().is_err(), "相对路径无法作为工作区根");
+    let absolute = std::env::temp_dir();
+    conf.workspace_root = Some(absolute.to_string_lossy().into_owned());
+    assert!(conf.validate().is_ok(), "绝对路径合法");
+}
+
+#[test]
 fn serialize_deserialize_roundtrip() {
     let original = AppConf::new();
     let json = serde_json::to_string(&original).unwrap();
@@ -63,40 +72,13 @@ fn serialize_deserialize_roundtrip() {
     assert_eq!(original.keybindings, restored.keybindings);
     assert_eq!(original.auto_compact, restored.auto_compact);
     assert_eq!(
-        original.compact_threshold_percent,
-        restored.compact_threshold_percent
+        original.compact_threshold_percent_of_budget,
+        restored.compact_threshold_percent_of_budget
     );
     assert_eq!(
         original.compact_summary_max_tokens,
         restored.compact_summary_max_tokens
     );
-    assert_eq!(
-        original.vault_auto_lock_minutes,
-        restored.vault_auto_lock_minutes
-    );
-    assert_eq!(
-        original.vault_lock_on_screen_lock,
-        restored.vault_lock_on_screen_lock
-    );
-    assert_eq!(
-        original.vault_clipboard_clear_seconds,
-        restored.vault_clipboard_clear_seconds
-    );
-    assert_eq!(
-        original.vault_cipher_algorithm,
-        restored.vault_cipher_algorithm
-    );
-    assert_eq!(
-        original.vault_biometric_enabled,
-        restored.vault_biometric_enabled
-    );
-    assert_eq!(
-        original.vault_hibp_auto_audit,
-        restored.vault_hibp_auto_audit
-    );
-    assert_eq!(original.vault_ssh_auto_add, restored.vault_ssh_auto_add);
-    assert_eq!(original.vault_sync_last_at, restored.vault_sync_last_at);
-    assert_eq!(original.vault_sync_ssh_hosts, restored.vault_sync_ssh_hosts);
 }
 
 #[test]
@@ -109,10 +91,6 @@ fn deserialize_missing_optional_fields_use_defaults() {
     assert!(!conf.close_to_tray);
     assert!(conf.keybindings.is_empty());
     assert!(conf.auto_compact);
-    assert_eq!(conf.vault_auto_lock_minutes, 5);
-    assert_eq!(conf.vault_cipher_algorithm, "aes256Gcm");
-    assert_eq!(conf.vault_sync_last_at, None);
-    assert!(conf.vault_sync_ssh_hosts.is_empty());
 }
 
 #[test]
@@ -184,6 +162,24 @@ fn load_from_recovers_from_temp_file() {
 }
 
 #[test]
+fn legacy_threshold_key_is_ignored_after_migration_window() {
+    let path = conf_path("config.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut json = serde_json::to_value(AppConf::new()).unwrap();
+    json["compact_threshold_percent"] = serde_json::json!(50);
+    std::fs::write(&path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+    let loaded = AppConf::load_from(&path).unwrap();
+    assert_eq!(
+        loaded.compact_threshold_percent_of_budget,
+        AppConf::new().compact_threshold_percent_of_budget
+    );
+
+    let rewritten = std::fs::read_to_string(&path).unwrap();
+    assert!(!rewritten.contains("compact_threshold_percent\""));
+}
+
+#[test]
 fn amend_single_field() {
     let conf = AppConf::new();
     let patch = serde_json::json!({ "theme": "dark" });
@@ -225,11 +221,27 @@ fn amend_type_mismatch_returns_error() {
 }
 
 #[test]
-fn amend_unknown_key_ignored() {
+fn amend_unknown_key_rejected() {
     let conf = AppConf::new();
     let patch = serde_json::json!({ "nonexistent": 42, "theme": "dark" });
+    let err = conf.amend(patch).unwrap_err();
+    assert!(err.contains("nonexistent"), "unexpected error: {}", err);
+}
+
+#[test]
+fn amend_camel_case_key_rejected() {
+    let conf = AppConf::new();
+    let patch = serde_json::json!({ "stayOnTop": true });
+    let err = conf.amend(patch).unwrap_err();
+    assert!(err.contains("stayOnTop"), "unexpected error: {}", err);
+}
+
+#[test]
+fn amend_open_map_keys_accepted() {
+    let conf = AppConf::new();
+    let patch = serde_json::json!({ "keybindings": { "custom_shortcut": "Ctrl+K" } });
     let merged = conf.amend(patch).unwrap();
-    assert_eq!(merged.theme, "dark");
+    assert_eq!(merged.keybindings.get("custom_shortcut").unwrap(), "Ctrl+K");
 }
 
 #[test]
@@ -241,32 +253,16 @@ fn amend_keybindings() {
 }
 
 #[test]
-fn amend_vault_fields() {
-    let conf = AppConf::new();
-    let patch = serde_json::json!({
-        "vault_auto_lock_minutes": 10,
-        "vault_biometric_enabled": true,
-        "vault_hibp_auto_audit": false,
-        "vault_ssh_auto_add": true
-    });
-    let merged = conf.amend(patch).unwrap();
-    assert_eq!(merged.vault_auto_lock_minutes, 10);
-    assert!(merged.vault_biometric_enabled);
-    assert!(!merged.vault_hibp_auto_audit);
-    assert!(merged.vault_ssh_auto_add);
-}
-
-#[test]
 fn amend_compact_fields() {
     let conf = AppConf::new();
     let patch = serde_json::json!({
         "auto_compact": false,
-        "compact_threshold_percent": 50,
+        "compact_threshold_percent_of_budget": 50,
         "compact_summary_prompt": "Summarize briefly"
     });
     let merged = conf.amend(patch).unwrap();
     assert!(!merged.auto_compact);
-    assert_eq!(merged.compact_threshold_percent, 50);
+    assert_eq!(merged.compact_threshold_percent_of_budget, 50);
     assert_eq!(
         merged.compact_summary_prompt.as_deref(),
         Some("Summarize briefly")

@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { orbService } from "../services/orbService";
 import { useOrbStore } from "../stores/orbStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { getConfValue } from "@/settings/core/useConfGroup";
 import { createLogger } from "@/services/logger";
 import {
   ORB_COLLAPSED_SIZE,
@@ -45,6 +46,45 @@ function waitForPanelTransition(): Promise<void> {
   });
 }
 
+let collapsingPromise: Promise<void> | null = null;
+let blurCollapseSuppressedUntil = 0;
+
+/** 面板内的主动打开动作会抢走焦点，用时间窗屏蔽失焦自动收起，避免与显式收起重复。 */
+export function suppressOrbBlurCollapse(ms = 600): void {
+  blurCollapseSuppressedUntil = Date.now() + ms;
+}
+
+export function isOrbBlurCollapseSuppressed(): boolean {
+  return Date.now() < blurCollapseSuppressedUntil;
+}
+
+/** 收起唯一入口：并发调用合并为同一次，已收起时直接返回。 */
+export async function collapseOrbPanel(): Promise<void> {
+  if (collapsingPromise) return collapsingPromise;
+  if (!useOrbStore.getState().isExpanded) return;
+
+  const run = (async () => {
+    const { expandDirection, expandVertical } = useOrbStore.getState();
+    try {
+      useOrbStore.getState().collapse();
+      await waitForPanelTransition();
+      await orbService.collapseOrbPanel(expandDirection, expandVertical);
+      useOrbStore.getState().setBallVisible(true);
+      const orbConf = getConfValue("orb");
+      if (orbConf?.clickThrough) {
+        await orbService.setOrbClickThrough(true);
+      }
+    } catch (e) {
+      log.error("collapse invoke failed", e);
+    } finally {
+      collapsingPromise = null;
+    }
+  })();
+
+  collapsingPromise = run;
+  return run;
+}
+
 interface UseOrbExpandReturn {
   isExpanded: boolean;
   expand: () => Promise<void>;
@@ -54,12 +94,12 @@ interface UseOrbExpandReturn {
 export function useOrbExpand(): UseOrbExpandReturn {
   const isExpanded = useOrbStore((s) => s.isExpanded);
   const storeExpand = useOrbStore((s) => s.expand);
-  const storeCollapse = useOrbStore((s) => s.collapse);
   const setExpandDirection = useOrbStore((s) => s.setExpandDirection);
   const setExpandVertical = useOrbStore((s) => s.setExpandVertical);
   const setBallVisible = useOrbStore((s) => s.setBallVisible);
 
   const expand = useCallback(async () => {
+    if (collapsingPromise) await collapsingPromise;
     let direction: "left" | "right" = "right";
     let vertical: "up" | "down" = "down";
 
@@ -151,7 +191,7 @@ export function useOrbExpand(): UseOrbExpandReturn {
       await waitForPaint();
       await orbService.expandOrbPanel(direction, vertical);
       storeExpand();
-      const orbConf = useSettingsStore.getState().orbConf;
+      const orbConf = getConfValue("orb");
       if (orbConf?.clickThrough) {
         await orbService.setOrbClickThrough(false);
       }
@@ -160,22 +200,7 @@ export function useOrbExpand(): UseOrbExpandReturn {
     }
   }, [storeExpand, setExpandDirection, setExpandVertical, setBallVisible]);
 
-  const collapse = useCallback(async () => {
-    const direction = useOrbStore.getState().expandDirection;
-    const vertical = useOrbStore.getState().expandVertical;
-    try {
-      storeCollapse();
-      await waitForPanelTransition();
-      await orbService.collapseOrbPanel(direction, vertical);
-      setBallVisible(true);
-      const orbConf = useSettingsStore.getState().orbConf;
-      if (orbConf?.clickThrough) {
-        await orbService.setOrbClickThrough(true);
-      }
-    } catch (e) {
-      log.error("collapse invoke failed", e);
-    }
-  }, [storeCollapse, setBallVisible]);
+  const collapse = useCallback(() => collapseOrbPanel(), []);
 
   return { isExpanded, expand, collapse };
 }
@@ -186,8 +211,8 @@ export async function collapseOrbOnInit(): Promise<void> {
     await orbService.collapseOrbPanel(expandDirection, expandVertical);
     useOrbStore.getState().collapse();
     useOrbStore.getState().setBallVisible(true);
-    await useSettingsStore.getState().loadOrbConf();
-    const orbConf = useSettingsStore.getState().orbConf;
+    await useSettingsStore.getState().loadConf("orb");
+    const orbConf = getConfValue("orb");
     if (orbConf?.clickThrough) {
       await orbService.setOrbClickThrough(true);
     }

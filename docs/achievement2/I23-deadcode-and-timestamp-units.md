@@ -358,37 +358,3 @@ spec/设计文档中的声明已补：`I9-vault-spec-4-git-sync.md` §11.6 与 `
 |------|------|------|
 | `Modal` 使用了已废弃的 `maskClosable` prop | `RecoveryTab.tsx:98` | antd v5 已改为 `mask={{ closable: false }}`，旧写法触发 deprecation 告警 |
 | 文件末尾缺换行，`prettier/prettier` 报 `Insert ⏎` | `vault.service.ts` | 补换行后 eslint 干净 |
-
----
-
-## 五、复现方法
-
-死代码扫描（PowerShell，`src-tauri` 根目录执行）：
-
-```powershell
-$root = 'g:\codeversion\assistant\src-tauri'
-$targets = Get-ChildItem "$root\crates\assistant-security\src","$root\crates\assistant-sync\src" -Recurse -Filter *.rs
-$all = Get-ChildItem $root -Recurse -Filter *.rs | Where-Object { $_.FullName -notmatch '\\target\\' }
-$cache = @{}; foreach ($a in $all) { $cache[$a.FullName] = Get-Content $a.FullName -Raw }
-foreach ($f in $targets) {
-  foreach ($x in [regex]::Matches($cache[$f.FullName], 'pub (?:async )?fn ([a-zA-Z0-9_]+)')) {
-    $n = $x.Groups[1].Value; $c = 0
-    foreach ($k in $cache.Keys) { $c += ([regex]::Matches($cache[$k], "\b$n\b")).Count }
-    if ($c -le 1) { "{0}`t{1}" -f $n, $f.FullName }
-  }
-}
-```
-
-`Count = 1` 表示「仅定义处自身匹配」，即全仓无引用。
-
-> 注意：必须用 `\b` 词边界。否则 `enroll_biometric` 会匹配进 `enroll_biometric_with_hint`，`is_biometric_available` 会匹配进 `vault_is_biometric_available`，产生假阴性。
-
----
-
-## 六、与 I9-vault-deadcode.md 的关系
-
-本文是**增量补充**，不替代该文档：
-
-- I9 文档 13 条问题中，#1~#11、#13 已修复或已消解，#5（`queryAuditLog` 无 UI）、#6（缺 `vault_backup` IPC 与触发时机）、#9 旁支（硬编码 `CipherAlgorithm::default()`）仍残留 —— 这些**不在本文重复**。
-- 本文新增的 9 项死代码均为该文档未涉及的条目（多为跨 crate `pub` 方法，未进入其「vault 功能链路」审查范围）。
-- 本文第三部分（时间戳单位）是该文档完全未覆盖的新维度。

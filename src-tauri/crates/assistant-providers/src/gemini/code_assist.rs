@@ -362,7 +362,7 @@ pub(crate) fn list_code_assist_models() -> Vec<crate::base::ModelConfig> {
             id: (*id).to_string(),
             name: (*name).to_string(),
             owned_by: "google".to_string(),
-            context_window: 1_000_000,
+            context_window: Some(1_000_000),
             support_vision: true,
             input_modalities: vec!["text".to_string(), "image".to_string()],
         })

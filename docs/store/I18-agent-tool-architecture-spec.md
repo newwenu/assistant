@@ -1,9 +1,25 @@
-# I18 — Agent Tool 架构实施规格
+# I18 — Agent Tool 框架层规格（Step 0-3、8）
 
-> **本文档职责**：从底层到顶层的**实施规格**——每步讲清：建什么、为什么先建、建完能干什么、类型契约、行为约束。是类型定义、流程算法、接口签名的**唯一权威源**。
-> **架构决策记录**（为什么这样设计、参考了什么、做了什么取舍）见 [I18-agent-tool-architecture-design.md](./I18-agent-tool-architecture-design.md)。
-> **Shell 执行层安全架构**（洋葱模型、层间契约、委托约束）见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
-> **ToolBox 双入口桥接**（os_tool_exec、os.ts、新增工具 5 步流程）见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
+| 项 | 值 |
+|---|---|
+| 状态 | 现行（框架层规格；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
+| 日期 | 2026-11-04（结构重构） |
+| 关联 | [I38 roadmap](./I38-agent-roadmap.md)（阶段入口）、[I18 design](./I18-agent-tool-architecture-design.md)（决策依据） |
+| 影响范围 | `assistant-tools`（框架层）、`src-tauri/src/cmd/os_tool_exec.rs`、`src-tauri/src/protocol/dto/os_tool.rs`、前端 `src/tools/os.ts` |
+
+> **本文职责已收窄**：只覆盖**词汇层与框架层**（Step 0-3、Step 8 桥接）。
+> 以下内容已迁出，不在本文维护：
+>
+> | 主题 | 权威文档 |
+> |---|---|
+> | 权限控制层（Policy / Gateway / Pipeline / 审批 / 结果预算） | [I38a](./I38a-tool-control-layer-spec.md) |
+> | Agent Loop（RoundExecutor / 累积器 / tools 注入） | [I38b](./I38b-agent-loop-spec.md) |
+> | OS 工具逐个实现与 Schema | [I38c](./I38c-os-tools-spec.md) |
+> | 前端五态 / 审批 UI / Agent 模式 | [I38d](./I38d-agent-frontend-modes-spec.md) |
+> | MCP 外部工具 | [I38e](./I38e-mcp-tools-spec.md) |
+> | 运行时内核（turn / 状态机 / 端口） | [I36 spec](./I36-agent-runtime-spec.md) |
+>
+> 决策依据（为什么这样分层、参考了什么、取舍）见 [I18 design](./I18-agent-tool-architecture-design.md)，本文不重复论证。
 
 ---
 
@@ -12,62 +28,61 @@
 ```
 Step 0  值类型              ToolTier · BehaviorHints · ToolResult · PermissionIntent · ToolUseContext
 Step 1  Tool Trait          统一工具抽象接口
-Step 2  工具实现            L1 OS 工具 (fs_read → fs_list → fs_glob → fs_grep → fs_write → fs_mkdir → fs_move → fs_link → fs_delete → shell_exec → ask_user)
-Step 3  ToolRegistry        注册 · 查找 · 层级过滤
-Step 4  Permission Policy   PermissionEffect · PermissionRule · ResolvedPermissionPolicy · Ceiling
-Step 5  Tool Gateway        策略评估 · 记忆授权 · 用户审批 · 审计日志
-Step 6  Tool Pipeline       查找→评估→审批→执行→持久化→事件
-Step 7  RoundExecutor       Agent Loop：消费→提取→执行→回填→继续
+Step 2  工具实现            → 已迁出到 I38c（P5）
+Step 3  ToolRegistry        注册 · 查找 · 层级 / 受众过滤
 Step 8  Tauri 桥接          os_tool_exec · os.ts · 双入口分流
-Step 9  前端集成            ChatDelta 扩展 · ToolCallBubble 五态 · 审批 UI
-Step 10 Agent 模式集成      max_tool_tier · approval_level · Policy 映射
 ```
 
-### 三层性质
+### 层次职责
 
-| 性质 | Steps | 说明 |
-|------|-------|------|
-| **词汇层** | 0-1 | 定义"工具长什么样"、"结果长什么样"。零行为，纯类型。没有这些，上面写不出类型签名 |
-| **执行层** | 2 | 真正干活的代码。每个 `Tool.execute()` 是唯一有 IO 副作用的地方。内含安全约束（validate_path / 大小限制等）。没有这些，上面全是空壳 |
-| **控制层** | 3-7 | 不干活，但决定"谁可以干"、"按什么顺序干"。没有这些，工具只能被用户手动调（ToolBox 入口）；有了这些，工具能被 LLM 自主调（Agent 入口） |
-| **连接层** | 8-10 | 把控制层接到前端、接到配置。没有这些，后端逻辑无法触达用户 |
+| 层 | 本文章节 | 说明 |
+|---|---|---|
+| 词汇层 | Step 0-1 | 定义「工具长什么样、结果长什么样」。零行为，纯类型 |
+| 执行层 | Step 2（迁出） | `execute()` 是唯一有 IO 副作用的地方；实现见 I38c |
+| 控制层 | 迁出 | Policy / Gateway / Pipeline 见 I38a |
+| 连接层 | Step 8 | 把框架接到 Tauri 与前端；ToolBox 双入口 |
 
-### 搭建顺序原则：先安全框架再加能力
+### 本文覆盖的 Step 与去向
 
-如果先加 OS 工具再建安全框架，LLM 一旦调 `shell_exec("rm -rf /")` 就直接执行——没有任何拦截。
+> 本节只说明「哪些 Step 归本文、哪些已迁出」，**不记录完成状态**；阶段状态见 [roadmap](./I38-agent-roadmap.md) §2，任务级进度见对应 tasklist。
 
-所以 **Step 4-7（控制层）先于 Step 2 的后续扩展**：先用 fs_link 验证端到端，再建安全框架，再安全地加 fs_read/write/shell_exec。
+| Step | 模块 | 归属 |
+|---|---|---|
+| 0 | 值类型 | 本文（`trait.rs` / `result.rs` / `context.rs`） |
+| 1 | Tool Trait | 本文（含 `audience()` / `ToolAudience`） |
+| 2 | 工具实现 | 已迁出至 [I38c](./I38c-os-tools-spec.md)（清单与状态在 I38c §2） |
+| 3 | ToolRegistry | 本文（`<=` 语义、排序、`description()` 降级、受众过滤） |
+| 4-6 | 控制层 | 已迁出至 [I38a](./I38a-tool-control-layer-spec.md) |
+| 8 | Tauri 桥接 | 本文（`os_tool_exec` 走 `exec::invoke`；`workspace_root` 来源见 I18b） |
+| 9-10 | 前端与 Agent 模式 | 已迁出至 [I38d](./I38d-agent-frontend-modes-spec.md) |
 
 ---
 
 ## Step 0 — 值类型
 
 > **建什么**：工具体系的基础词汇——层级标记、安全标记、结果格式、权限声明、执行上下文。
-> **为什么先建**：上面每一层都引用这些类型。没有 ToolTier 就写不出 Tool Trait，没有 ToolResult 就写不出 execute() 签名。
-> **建完能干什么**：可以写 Tool Trait 的签名了。
+> **为什么先建**：上面每一层都引用这些类型。没有 `ToolTier` 就写不出 `Tool` trait，没有 `ToolResult` 就写不出 `execute()` 签名。
 
 ### 0.1 ToolTier
 
-工具能力层级，**描述执行环境**，不决定安全边界（安全决策在 Step 4 Policy 层）。
+工具能力层级，**描述执行环境**，不决定安全边界（安全决策在控制层）。
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ToolTier {
-    Sandbox,   // 前端沙箱，无 OS 访问，安全由浏览器保证
-    Os,        // Rust 后端，有 OS 访问，安全需上层强制
-    External,  // 外部进程（MCP），有 OS+网络访问，安全需上层强制
+    Sandbox,   // 前端沙箱，无 OS 访问
+    Os,        // Rust 后端，有 OS 访问
+    External,  // 外部进程（MCP），有 OS + 网络访问
 }
 ```
 
-**PartialOrd 语义**：`Sandbox < Os < External`。Agent 模式声明 `max_tier` 即可限制可用层级——`tool_definitions_for_tier(Os)` 应返回 Sandbox + Os 工具。
-
-**参考**：OpenBitFun 无显式 ToolTier 枚举，但通过 `ToolExposure`（Direct / Deferred）+ `is_readonly()` + `is_concurrency_safe()` 三元组实现等效分层。openhuman 通过 `ToolPolicy` trait 的 `check()` 方法做工具级准入，无层级枚举。我们的 ToolTier 是更简洁的显式分层。
+**PartialOrd 语义**：`Sandbox < Os < External`。Agent 模式声明 `max_tier` 即可限制可用层级——`tool_definitions_for_tier(Os)` 返回 Sandbox + Os 工具。
 
 **实施状态**：✅ 已实现，`assistant-tools/src/trait.rs`。
 
 ### 0.2 BehaviorHints
 
-三维安全标记，**描述工具对系统的潜在影响**，不决定是否放行（放行在 Step 5 Gateway 层）。
+三维安全标记，**描述工具对系统的潜在影响**，不决定是否放行（放行在控制层）。
 
 ```rust
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -79,52 +94,73 @@ pub struct BehaviorHints {
 ```
 
 **推导规则**（上层消费）：
-- `read_only = true` → Step 6 Pipeline 可并发执行（OpenBitFun: `is_concurrency_safe()`）
-- `destructive = true` → Step 5 Gateway 触发 Ask 审批
-- `open_world = true` → Step 5 Gateway 触发 Ask 审批
 
-**参考**：OpenBitFun 用 `is_readonly()` + `is_concurrency_safe(input)` 两个方法，`is_concurrency_safe` 默认等于 `is_readonly` 但可按 input 覆盖（如 Task 工具单实例时并发安全）。我们的 BehaviorHints 是静态的（不依赖 input），简化但够用。
+- `read_only = true` → Pipeline 可并发执行
+- `destructive = true` → Gateway 触发 Ask 审批
+- `open_world = true` → Gateway 触发 Ask 审批
 
 **实施状态**：✅ 已实现，`assistant-tools/src/trait.rs`。
 
 ### 0.3 ToolResult
 
-工具执行结果，Rust↔前端统一序列化格式。
+工具执行结果，Rust ↔ 前端统一序列化格式。
+
+**当前实现**（`assistant-tools/src/result.rs`）：
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolResult {
     pub ok: bool,
-    pub data: Option<Value>,    // ok=true 时有值
-    pub error: Option<String>,  // ok=false 时有值
+    pub data: Option<Value>,
+    pub error: Option<String>,
 }
 ```
 
-**构造器契约**：
-- `ToolResult::ok(data)` → `{ ok: true, data: Some(data), error: None }`
-- `ToolResult::err(msg)` → `{ ok: false, data: None, error: Some(msg) }`
+**P2（I38a §3.2）将增量扩展**：
 
-**OsToolResult**：Tauri command 返回类型，与 ToolResult 同构，`From<ToolResult>` 转换。存在原因：Tauri command 需要独立序列化类型。
+```rust
+pub struct ToolResult {
+    pub ok: bool,
+    pub data: Option<Value>,                  // UI 渲染
+    pub result_for_assistant: Option<String>, // 回填模型的精简文本
+    pub error: Option<String>,
+    pub error_kind: Option<ToolErrorKind>,
+}
 
-**参考**：OpenBitFun 的 `ToolResult` 更丰富——含 `output`(Value) + `is_error`(bool) + `artifacts`(Vec) + `presentation`(String)。artifacts 支持持久化大结果到文件（>50KB 自动落盘），presentation 控制前端渲染。我们的简化版暂不含 artifacts/presentation，后续 Step 6 Pipeline 可扩展。
+pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
+```
 
-**实施状态**：✅ 已实现，`assistant-tools/src/result.rs`。
+| `error_kind` | 产生位置 | 模型应有的反应 |
+|---|---|---|
+| `Business` | 工具内部业务失败（路径不存在、参数缺失、未知 action） | 可改参数重试 |
+| `Timeout` | `exec::invoke` 超时兜底 | 可重试，但应缩小范围或提高 timeout |
+| `Cancelled` | 用户取消 / 代际切换 | 不重试 |
+| `Internal` | 工具返回 `Err` 后被 `invoke` 归一化 | 不重试，向用户报告 |
+| `Denied` | Gateway 拒绝或审批拒绝 | 不重试，换方案 |
+
+**wire 约束**：
+
+- Tauri 返回类型是 `protocol/dto/os_tool.rs::OsToolResultDto`，与 `ToolResult` 同构。
+- 输出 DTO 的 `Option` 字段**不加** `skip_serializing_if`：键恒在、值 `null`，前端声明 `T | null`。
+- 改 DTO 后执行 `npm run contract:gen`，并提交 `src/types/protocol.contract.ts`。
+
+**实施状态**：✅ 基础字段已实现；双通道与 `error_kind` 由 P2 扩展（I38a §3.2），存量工具零改动。
 
 ### 0.4 PermissionIntent
 
-工具声明的单个权限需求。**纯声明**——工具说"我需要什么"，ToolGateway 决定"允不允许"。
+工具声明的单个权限需求。**纯声明**——工具说「我需要什么」，Gateway 决定「允不允许」。
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionIntent {
-    pub action: String,          // "read" / "edit" / "delete" / "execute" / "network" / "external"
-    pub resources: Vec<String>,  // 路径 glob / 命令名 / URL pattern / "*"
+    pub action: String,          // read / edit / delete / execute / network / external
+    pub resources: Vec<String>,  // 路径 glob / 命令名 / URL pattern / *
 }
 ```
 
-**参考**：OpenBitFun 的 `PermissionIntent` 含 `action`(String) + `resources`(Vec<String>)，与我们的同构。OpenBitFun 在 Pipeline 中调用 `plan_permission_intents()` 将多个工具的 intents 合并为 `PermissionIntentPlan`，再交 `PermissionRequestManager` 批量审批——支持同轮多工具的权限请求合并展示。我们的单工具审批简化版后续可扩展。
+**硬约束**：`permission_intents()` 不执行任何 IO、不修改状态；只读工具返回空 `Vec`。
 
 **实施状态**：✅ 已实现，`assistant-tools/src/trait.rs`。
 
@@ -142,9 +178,15 @@ pub struct ToolUseContext {
 }
 ```
 
-**工厂方法**：`ToolUseContext::for_toolbox(workspace_root)` — 构造 ToolBox 入口上下文（无 session_id / tool_call_id）。
+**工厂方法**：`ToolUseContext::for_toolbox(workspace_root)`。
 
-**参考**：OpenBitFun 的 `ToolUseContext` 更丰富——含 `session_id` / `channel` / `agent_definition_id` / `custom_data`(HashMap) / `cancellation_token`。openhuman 的 `ToolCallContext` 含 `session_id` / `channel` / `agent_definition_id` / `call_id` / `iteration` / `source`。我们的简化版在 Step 7 RoundExecutor 时需扩展 `cancellation_token` 和 `iteration`。
+**语义约束**：
+
+1. `workspace_root` 若为 `Some`，必须是已存在的绝对路径；不合法则所有相对路径解析失败。
+2. `workspace_root` 为 `None` 时，文件系统工具只接受绝对路径。
+3. 不新增 deadline / 取消令牌字段：超时由 `exec::invoke` 承担，取消由控制层承担。
+
+**设计约束**：`os_tool_exec` 恒传 `workspace_root: None`——ToolBox 的调用者是用户本人，不存在「越界」，`workspace_root` 对它意味着权限边界而非解析基准（见 [I18b](./I18b-tool-unified-bridge-spec.md) §2.2）。代价是相对路径不可用；若日后补支持，须先把「解析基准」与「权限边界」拆为两个字段，**不得**直接填 `workspace_root`。
 
 **实施状态**：✅ 已实现，`assistant-tools/src/context.rs`。
 
@@ -152,9 +194,7 @@ pub struct ToolUseContext {
 
 ## Step 1 — Tool Trait
 
-> **建什么**：统一工具抽象接口，三层工具（Sandbox / OS / MCP）均实现此 trait。
-> **为什么先建**：工具实现（Step 2）和 Registry（Step 3）都依赖此 trait。没有它写不出 `Arc<dyn Tool>`。
-> **建完能干什么**：可以开始写具体的工具实现了。
+统一工具抽象接口，三层工具（Sandbox / OS / MCP）均实现此 trait。
 
 ```rust
 #[async_trait]
@@ -163,312 +203,99 @@ pub trait Tool: Send + Sync {
     async fn description(&self) -> Result<String, String>;
     fn input_schema(&self) -> Value;
     fn tier(&self) -> ToolTier;
+    fn audience(&self) -> ToolAudience { ToolAudience::BOTH }
     fn behavior_hints(&self) -> BehaviorHints { BehaviorHints::default() }
     fn is_readonly(&self) -> bool { self.behavior_hints().read_only }
-    fn permission_intents(&self, _input: &Value, _context: &ToolUseContext) -> Result<Vec<PermissionIntent>, String> { Ok(vec![]) }
-    async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult, String>;
+    fn permission_intents(&self, _input: &Value, _context: &ToolUseContext)
+        -> Result<Vec<PermissionIntent>, String> { Ok(vec![]) }
+    async fn execute(&self, input: &Value, context: &ToolUseContext)
+        -> Result<ToolResult, String>;
 }
 ```
 
-### 方法契约
+### 1.1 方法契约
 
 | 方法 | 调用时机 | 副作用 | 说明 |
-|------|---------|--------|------|
-| `name()` | 注册/查找/日志 | 无 | 全局唯一，Rust snake_case（`fs_link`），前端 camelCase（`os.fsLink`） |
-| `description()` | LLM function calling 构建 | 无 | 供 LLM 理解工具用途 |
+|---|---|---|---|
+| `name()` | 注册 / 查找 / 日志 | 无 | 全局唯一。**注册名**是模型与 `os_tool_exec` 看到的标识：小写 snake_case、字母开头、≤64、字符集 `[a-z0-9_]`，禁用 kebab（Gemini 不接受 `-`）。**文件名**是代码维护名，与注册名刻意分离：`agent_` 前缀是受众标记，只给 `audience().agent == true` 的工具（`os/agent_read.rs` → 注册名 `read`），`TOOLBOX_ONLY` 工具不套此前缀（存量 `os/fs_link.rs` 保持原名），对照表见 I38c §2 |
+| `description()` | LLM function calling 构建 | 无 | 供模型理解工具用途 |
 | `input_schema()` | LLM function calling 构建 | 无 | JSON Schema |
-| `tier()` | 层级过滤 | 无 | 返回 ToolTier |
-| `behavior_hints()` | 安全评估 | 无 | 三维安全标记，默认全 false |
-| `is_readonly()` | 并发决策 | 无 | 默认从 behavior_hints 推导 |
-| `permission_intents()` | ToolGateway 评估 | 无 | 声明权限需求，**纯声明不执行 IO**；默认无需求 |
-| `execute()` | Pipeline / os_tool_exec | **有** | 唯一有副作用的方法，内含路径校验等安全约束 |
+| `tier()` | 层级过滤 | 无 | 返回 `ToolTier` |
+| `audience()` | 两个入口的查询侧过滤 | 无 | 见 §1.2 |
+| `behavior_hints()` | 安全评估 | 无 | 默认全 `false` |
+| `is_readonly()` | 并发决策 | 无 | 默认从 `behavior_hints()` 推导 |
+| `permission_intents()` | Gateway 评估 | **无** | 纯声明；只读工具返回空 |
+| `execute()` | Pipeline / `os_tool_exec` | **有** | 唯一有副作用的方法；内含路径校验等安全约束 |
 
-### 关键约束
+### 1.2 ToolAudience
 
-1. **`permission_intents()` 纯声明**：只描述"我需要什么权限"，不执行任何 IO，不修改任何状态
-2. **`execute()` 内含安全约束**：路径校验（`validate_path()`）、大小限制、冲突检测等在 execute() 内部——两个入口（Agent / ToolBox）均受保护，不依赖外层 Pipeline
-3. **async_trait 必要性**：Rust 原生 `async fn in trait` 不兼容 `dyn Trait`（无法构建 vtable）
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolAudience {
+    pub agent: bool,
+    pub toolbox: bool,
+}
 
-### 参考
+impl ToolAudience {
+    pub const BOTH: Self;
+    pub const TOOLBOX_ONLY: Self;
+    pub const AGENT_ONLY: Self;
+    pub const NONE: Self;
+}
 
-**OpenBitFun** 的 `Tool` trait 更丰富——含 `short_description()` / `default_exposure()` / `is_concurrency_safe(input)` / `validate_input()` / `call_impl()` + `call()`（call 包含 hook 拦截，call_impl 是纯业务逻辑）/ `render_result_for_assistant()` / `permission_intents()` 等。核心模式一致：`permission_intents()` 纯声明，`call_impl()` 有副作用。
+impl Default for ToolAudience {
+    fn default() -> Self { Self::NONE }
+}
 
-**openhuman** 的 `ToolPolicy` trait 是独立的策略接口（`check(request) → PolicyDecision`），不混入 Tool trait。工具实现分散在各 domain module（`tools/impl/system/`、`tools/impl/network/`），通过 `orchestrator_tools.rs` 汇总注册。
+fn audience(&self) -> ToolAudience { ToolAudience::NONE }
+```
 
-**实施状态**：✅ 已实现，`assistant-tools/src/trait.rs`。
+| 常量 | `agent` | `toolbox` | 典型用途 |
+|---|---|---|---|
+| `BOTH` | 是 | 是 | 通用工具，两个入口都可用 |
+| `TOOLBOX_ONLY` | 否 | 是 | `fs_link`：用户点按钮可用，模型不应看到 |
+| `AGENT_ONLY` | 是 | 否 | 只服务 Agent Loop，不从前端透传入口暴露 |
+| `NONE`（默认） | 否 | 否 | fail-closed：未显式声明受众的新工具不可见 |
+
+**硬约束**：
+
+1. 新增工具必须显式声明受众。默认值是 `NONE`：忘记声明时工具不会出现在任何入口，属于**安全失败**而非静默暴露。
+2. `audience` 只决定「能否被某个入口看到」，不决定「是否启用」；启用由 `ConversationToolConfig` 白名单控制（I38d §4）。
+3. `audience().agent == false` 的工具不得进入 `tool_definitions_for_tier`。
+
+### 1.3 与 P2 的增量接口
+
+P2 在 `Tool` trait 增加以下**带默认实现**的方法（契约见 I38a §3.1）：
+
+```rust
+fn validate_input(&self, _input: &Value, _ctx: &ToolUseContext) -> ValidationResult;
+fn is_concurrency_safe(&self, _input: Option<&Value>) -> bool;
+```
+
+- `validate_input`：Pipeline 的 validate 阶段；不变量违规需标 `blocks_input_rewrite = true`。
+- `is_concurrency_safe`：默认等于 `is_readonly()`；工具可按 input 覆写。
+- 存量工具零改动。
+
+**实施状态**：✅ 基础 trait 已实现；P2 增量方法未实现（I38a §4-C3）。
+
+### 1.4 参考
+
+- OpenBitFun：`Tool` trait 含 `short_description()` / `default_exposure()` / `is_concurrency_safe(input)` / `validate_input()` / `call_impl()` + `call()` / `permission_intents()`。核心模式一致：`permission_intents()` 纯声明，执行方法有副作用。
+- openhuman：`ToolPolicy` 是独立策略接口，不混入 `Tool` trait；本项目的 Policy 同样独立（I38a）。
 
 ---
 
-## Step 2 — 工具实现
+## Step 2 — 工具实现（已迁出）
 
-> **建什么**：真正干活的代码——每个 Tool.execute() 是唯一有 IO 副作用的地方。
-> **为什么现在建**：没有工具实现，Registry 是空壳，Pipeline 执行什么？RoundExecutor 驱动什么？
-> **建完能干什么**：有了具体工具，可以注册到 Registry、通过 os_tool_exec 调用、验证端到端。
+工具清单、安全标记、每个工具的 JSON Schema 与实施顺序 → 见 [I38c](./I38c-os-tools-spec.md)。
 
-### 搭建顺序：从安全到危险
-
-先搭只读工具（最安全），再搭修改工具，再搭破坏性工具，最后搭最复杂的 shell_exec。
-
-```
-fs_read ──→ fs_list ──→ fs_glob ──→ fs_grep     只读，可并发，无审批需求
-    │
-fs_write ──→ fs_mkdir ──→ fs_move ──→ fs_link    修改，需审批
-    │
-fs_delete                                       破坏性，需审批
-    │
-shell_exec                                      开放世界，需审批 + 洋葱守卫
-ask_user                                        特殊：AI 主动问用户
-```
-
-### 工具清单与安全标记
-
-| 工具名 | action | read_only | destructive | open_world | 说明 |
-|--------|--------|-----------|-------------|------------|------|
-| `fs_read` | read | ✅ | ❌ | ❌ | 读文件，支持行范围/tail，最大 1MB |
-| `fs_list` | read | ✅ | ❌ | ❌ | 列目录，限制深度和条目数 |
-| `fs_glob` | read | ✅ | ❌ | ❌ | glob 模式搜索文件 |
-| `fs_grep` | read | ✅ | ❌ | ❌ | ripgrep 内容搜索 |
-| `fs_write` | edit | ❌ | ❌ | ❌ | 写文件，路径白名单约束 |
-| `fs_mkdir` | edit | ❌ | ❌ | ❌ | 创建目录（含 parents） |
-| `fs_move` | edit | ❌ | ❌ | ❌ | 移动/重命名文件 |
-| `fs_link` | edit | ❌ | ❌ | ❌ | 创建/检查链接（symlink/hardlink/junction） |
-| `fs_delete` | delete | ❌ | ✅ | ❌ | 删除文件/目录，需审批 |
-| `shell_exec` | execute | ❌ | ✅ | ✅ | Shell 命令执行，需审批+超时+洋葱守卫 |
-| `ask_user` | — | ✅ | ❌ | ❌ | AI 主动问用户，暂停等待回答 |
-
-### 每个工具的内部结构
-
-每个 OS 工具遵循统一模式（以 fs_read 为例）：
-
-```rust
-pub struct FsReadTool;
-
-#[async_trait]
-impl Tool for FsReadTool {
-    fn name(&self) -> &str { "fs_read" }
-    async fn description(&self) -> Result<String, String> { Ok("Read file contents".into()) }
-    fn input_schema(&self) -> Value { /* JSON Schema */ }
-    fn tier(&self) -> ToolTier { ToolTier::Os }
-    fn behavior_hints(&self) -> BehaviorHints {
-        BehaviorHints { read_only: true, destructive: false, open_world: false }
-    }
-    fn permission_intents(&self, input: &Value, _ctx: &ToolUseContext) -> Result<Vec<PermissionIntent>> {
-        let path = input.get("path").and_then(Value::as_str).unwrap_or("");
-        Ok(vec![PermissionIntent::new("read", path)])
-    }
-    async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult, String> {
-        // 1. 解析参数
-        // 2. resolve_path() — 相对路径→绝对路径
-        // 3. validate_path() — ..遍历 + 系统目录保护
-        // 4. 执行 IO
-        // 5. 构造 ToolResult
-    }
-}
-```
-
-### 共享基础设施
-
-所有文件系统工具共享：
-
-**`resolve_path(path_str, context)`**：相对路径 + workspace_root → 绝对路径。无 workspace_root 时拒绝相对路径。
-
-**`validate_path(path)`**：两层校验——
-1. `..` 遍历检测：任何 Component::ParentDir 拒绝
-2. 系统目录保护：`/etc` `/usr` `/bin` `/sbin` `/System` `/Library` `C:\Windows` `C:\Program Files` 等拒绝
-
-### fs_read 规格
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "path": { "type": "string", "description": "File path to read" },
-    "offset": { "type": "integer", "description": "Start line (1-based)" },
-    "limit": { "type": "integer", "description": "Max lines to read" }
-  },
-  "required": ["path"]
-}
-```
-
-**行为**：
-- 默认读全部内容，最大 1MB / 2000 行
-- offset + limit 支持行范围读取
-- 超过限制返回截断提示 + 实际行数
-- 二进制文件检测：前 8KB 含 NULL 字节 → 拒绝，提示用 hex 工具
-
-**参考**：OpenBitFun `FileReadTool` 含 `default_max_lines_to_read` / `max_line_chars` / `max_total_chars` 三级限制，支持 document-read（PDF/DOCX 转 markdown），支持 `render_mode`(Auto/Source/Markdown)。
-
-### fs_list 规格
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "path": { "type": "string", "description": "Directory path to list" },
-    "depth": { "type": "integer", "description": "Max recursion depth (default 1)" }
-  },
-  "required": ["path"]
-}
-```
-
-**行为**：默认 depth=1（仅当前目录），最大 depth=10，每层最大 1000 条目。
-
-**参考**：OpenBitFun `LsTool` 支持 `--all`（显示隐藏文件）和路径解析。
-
-### fs_glob 规格
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "pattern": { "type": "string", "description": "Glob pattern (e.g. '**/*.ts')" },
-    "path": { "type": "string", "description": "Base directory" }
-  },
-  "required": ["pattern"]
-}
-```
-
-**行为**：使用 `glob` crate，最大返回 1000 条路径。
-
-**参考**：OpenBitFun `GlobTool` 使用 `wax::Glob` 支持否定模式（`!node_modules`）。
-
-### fs_grep 规格
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "pattern": { "type": "string", "description": "Regex pattern" },
-    "path": { "type": "string", "description": "Directory to search" },
-    "include": { "type": "string", "description": "File glob filter" }
-  },
-  "required": ["pattern"]
-}
-```
-
-**行为**：使用 `grep` crate（ripgrep Rust API），最大返回 100 条匹配。
-
-**参考**：OpenBitFun `GrepTool` 支持 `--include` / `--exclude` glob 过滤 + `--context` 行上下文。
-
-### fs_write 规格
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "path": { "type": "string" },
-    "content": { "type": "string" },
-    "append": { "type": "boolean", "description": "Append mode (default false)" }
-  },
-  "required": ["path", "content"]
-}
-```
-
-**行为**：创建不存在的父目录。append=false 时覆盖已有文件。最大写入 10MB。
-
-**参考**：OpenBitFun `FileWriteTool` 支持 diff-based 写入（`+++ path` / `---` 分隔的多文件写入），支持 plan artifact 诊断。
-
-### fs_delete 规格
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "path": { "type": "string" },
-    "recursive": { "type": "boolean", "description": "Delete directory recursively" }
-  },
-  "required": ["path"]
-}
-```
-
-**行为**：`destructive = true`，必须经审批。recursive=true 时删除目录及内容。拒绝删除 workspace_root 本身。
-
-**参考**：OpenBitFun `DeleteFileTool`。
-
-### shell_exec 规格
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "command": { "type": "string", "description": "Shell command to execute" },
-    "timeout": { "type": "integer", "description": "Timeout in seconds (default 30)" },
-    "cwd": { "type": "string", "description": "Working directory" }
-  },
-  "required": ["command"]
-}
-```
-
-**行为**：`destructive = true, open_world = true`，必须经审批 + 洋葱守卫。详见 [OSCALLDESIGN.md](./OSCALLDESIGN.md)。
-
-**Shell 洋葱栈**（由内到外）：
-
-```
-┌─ ApprovalGate ────────────────────────┐
-│  ┌─ AllowlistGate ──────────────────┐  │
-│  │  ┌─ SafetyBelt ────────────────┐  │  │
-│  │  │  ┌─ BareExec ────────────┐  │  │  │
-│  │  │  │  tokio::process::Command │  │  │  │
-│  │  │  └──────────────────────┘  │  │  │
-│  │  └───────────────────────────┘  │  │
-│  └────────────────────────────────┘  │
-└──────────────────────────────────────┘
-```
-
-| 层 | 职责 | 可配置 | 失败行为 |
-|----|------|--------|---------|
-| SafetyBelt | 致命命令硬拒绝 | 编译期固定 | Deny |
-| AllowlistGate | 常用命令免审批 | 用户可配置 | Pass → 下一层 |
-| ApprovalGate | 未白名单命令需用户确认 | 用户可配置 | Approve/Deny |
-| BareExec | 实际执行 | 无 | 执行结果 |
-
-**BareExec 纵深防御**：
-
-| 防御层 | 作用 |
-|--------|------|
-| 结构守卫 | 阻止 `$()` / `` `...` `` / `&` / `bash -c "..."` |
-| 环境隔离 | `env_clear()` + `SAFE_ENV_VARS` 白名单 |
-| 命令分类 | 分词 + 基名提取 → 风险分级（High/Medium/Low） |
-| heredoc 处理 | 剥离引号包裹的 heredoc body |
-
-### ask_user 规格
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "question": { "type": "string", "description": "Question to ask the user" }
-  },
-  "required": ["question"]
-}
-```
-
-**行为**：AI 主动问用户，暂停 Agent Loop 等待回答。通过 ApprovalChannel 机制实现——发射 `AgenticEvent::ToolAwaitingUserInput`，前端渲染输入框，用户提交后继续。
-
-**参考**：OpenBitFun `AskUserQuestionTool` 支持 `UserQuestionController`（超时/取消控制）+ 多层 controller 链（子 Agent 问题冒泡到父 Agent）。
-
-### fs_link 实施状态
-
-✅ 已实现，`assistant-tools/src/os/fs_link.rs`。支持 create/check 两个 action，symlink/hardlink/junction 三种类型。
-
-**与规格偏差**：
-- Junction 用 `cmd /c mklink /J` 子进程而非 Win32 API `CreateSymbolicLinkW`（有进程开销但功能正确）
-- 无特权检测+自动降级（Windows 无特权时直接报错，不自动降级为 Junction）
-- `behavior_hints.open_world = true`（规格为 false，实际更保守）
-- hardlink 检测用 Win32 `GetFileInformationByHandle` 查 `nNumberOfLinks`
-- junction 目标读取用 Win32 `GetFinalPathNameByHandleW`
-
-### 其他 OS 工具实施状态
-
-❌ `fs_read` / `fs_write` / `fs_delete` / `fs_list` / `fs_glob` / `fs_grep` / `fs_mkdir` / `fs_move` / `shell_exec` / `ask_user` 均未实现。
+**当前唯一实现**：`fs_link`（`assistant-tools/src/os/fs_link.rs`，`TOOLBOX_ONLY`），完整设计见 [I18b](./I18b-tool-unified-bridge-spec.md) §4。
 
 ---
 
 ## Step 3 — ToolRegistry
 
-> **建什么**：工具注册中心，全局唯一，所有工具注册到同一 Registry。
-> **为什么现在建**：有了 Tool Trait + 具体实现，需要一个地方存 `Arc<dyn Tool>` 并支持查找。
-> **建完能干什么**：可以通过 `registry.find("fs_read")` 拿到工具实例并调用。os_tool_exec 已经在用。
+工具注册中心，全局唯一，所有工具注册到同一 Registry。
 
 ```rust
 pub struct ToolRegistry {
@@ -476,832 +303,119 @@ pub struct ToolRegistry {
 }
 ```
 
-### 操作契约
+### 3.1 操作契约
 
 | 方法 | 签名 | 行为 |
-|------|------|------|
+|---|---|---|
 | `new()` | `→ ToolRegistry` | 创建空 Registry |
 | `register()` | `(Arc<dyn Tool>) → ()` | 以 `tool.name()` 为 key 插入；同名覆盖 |
-| `find()` | `(&str) → Option<Arc<dyn Tool>>` | 按 name 精确查找 |
-| `tool_names()` | `() → Vec<String>` | 返回所有已注册工具名 |
-| `tool_definitions_for_tier()` | `(ToolTier) → Vec<Value>` | 返回 **tier ≤ 参数** 的工具定义列表 |
+| `find()` | `(&str) → Option<Arc<dyn Tool>>` | 按 name 精确查找，**全量视图**（管理/诊断用） |
+| `find_for_toolbox()` | `(&str) → Option<Arc<dyn Tool>>` | 仅返回 `audience().toolbox == true` 的工具（`os_tool_exec` 使用） |
+| `tool_names()` | `() → Vec<String>` | 返回所有已注册工具名（全量视图，当前未排序） |
+| `tool_definitions_for_tier()` | `(ToolTier) → Vec<ToolDefinition>` | 返回 **tier ≤ 参数 且 `audience().agent == true`** 的工具定义，按 name 字典序排序 |
 
-### tool_definitions_for_tier 修正
+### 3.2 约束
 
-**当前实现**：`filter(|entry| entry.value().tier() == tier)` — 仅返回精确匹配层级。
+1. **`<=` 语义**：`entry.value().tier() <= max_tier`。
+2. **先收集再 await**：`DashMap` 迭代产生的 guard 不得跨 `await`；先收集 `Arc<dyn Tool>`，drop guard，再逐个 `await description()`。
+3. **确定性排序**：结果按 `name` 字典序排序；顺序不稳定会破坏 prompt 缓存命中。
+4. **描述失败降级**：`description()` 失败不 panic，降级为空串并 `log::warn`。
+5. **受众过滤**：`tool_definitions_for_tier` 只收集 `audience().agent == true`；`find_for_toolbox` 只返回 `audience().toolbox == true`。
 
-**规格要求**：`filter(|entry| entry.value().tier() <= max_tier)` — 返回指定层级及以下所有工具。
-
-**理由**：Agent 模式声明 `max_tool_tier: Os` 时，应同时获得 Sandbox 工具。Sandbox < Os，Sandbox 工具更安全，没有理由排除。
-
-**参考**：OpenBitFun 通过 `ToolExposure`（Direct / Deferred）+ `GetToolSpec` / `CallDeferredTool` 机制实现延迟加载——Deferred 工具不在初始 manifest 中，LLM 需先调 `GetToolSpec` 获取定义再调 `CallDeferredTool` 执行。我们的 tier 过滤更简单直接。
-
-### 注册时机
+### 3.3 注册时机
 
 ```rust
-// setup.rs 中
+// setup.rs
 let registry = Arc::new(ToolRegistry::new());
-os::register_os_tools(&registry);  // L1 OS 工具
-// sandbox::register_sandbox_tools(&registry);  // L0 沙箱工具（待实现）
+os::register_readonly_tools(&registry);   // P5-R1
+// os::register_write_tools(&registry);    // P5-R2（P2 审批就绪后）
+// os::register_dangerous_tools(&registry);// P5-R3（P2 + P6 就绪后）
 handle.manage(registry);
 ```
 
-**实施状态**：⚠️ 部分实现，`assistant-tools/src/registry.rs`。`tool_definitions_for_tier` 过滤条件需修正为 `<=`。
+**实施状态**：✅ 完成，`assistant-tools/src/registry.rs`。`<=` 语义、按名排序、`description()` 降级、受众过滤均已落地并有单测。
 
 ---
 
-## Step 4 — Permission Policy Engine
+## Step 8 — Tauri 桥接（ToolBox 入口）
 
-> **建什么**：纯决策逻辑——给定 (action, resource)，返回 Allow / Ask / Deny。零 IO，零副作用，可独立写单测。
-> **为什么现在建**：安全框架的核心。ToolGateway（Step 5）和 Agent 模式（Step 10）都依赖它。先建 Policy 再建 Gateway，Gateway 才有东西可调。
-> **建完能干什么**：可以写 `policy.evaluate("read", "/src/main.ts") → Allow` 的单测了。
-
-### 4.1 PermissionEffect
-
-```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PermissionEffect {
-    Allow,   // 放行
-    Ask,     // 需用户审批
-    Deny,    // 硬拒绝
-}
-```
-
-**组合语义**：`most_restrictive` —— Deny > Ask > Allow
-
-```rust
-impl PermissionEffect {
-    pub const fn most_restrictive(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Deny, _) | (_, Self::Deny) => Self::Deny,
-            (Self::Ask, _) | (_, Self::Ask) => Self::Ask,
-            (Self::Allow, Self::Allow) => Self::Allow,
-        }
-    }
-}
-```
-
-**参考**：OpenBitFun `PermissionEffect` 完全同构，`most_restrictive` 语义一致。openhuman 的 `PolicyDecision` 是 `Allow / Deny / RequireApproval` 三值，同构。
-
-### 4.2 PermissionRule
-
-```rust
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PermissionRule {
-    pub action: String,        // "read" / "edit" / "delete" / "execute" / "*"
-    pub resource: String,      // 路径 glob / 命令名 / "tier:os" / "*"
-    pub effect: PermissionEffect,
-}
-```
-
-**匹配语义**：
-- 同一规则集内：**后匹配优先**（last-match-wins）——宽泛规则在前，具体规则在后覆盖
-- 不同规则集之间：取 `most_restrictive`
-
-**参考**：OpenBitFun `PermissionRule` 同构。`PermissionConstraintsLayer` 封装一个规则集，未匹配时默认 Allow，层间取 most_restrictive。
-
-### 4.3 ResolvedPermissionPolicy
-
-```rust
-#[derive(Debug, Clone, Default)]
-pub struct ResolvedPermissionPolicy {
-    rules: Vec<PermissionRule>,                          // 应用级主规则
-    constraint_layers: Vec<PermissionConstraintLayer>,    // 项目级 + Agent 模式级
-}
-```
-
-**评估算法**：
-
-```
-evaluate(action, resource):
-  result = Allow
-  // 主规则（last-match-wins）
-  result = result.most_restrictive(eval_rules(rules, action, resource))
-  // 各约束层独立评估
-  for layer in constraint_layers:
-    result = result.most_restrictive(eval_rules(layer.rules, action, resource))
-  return result
-```
-
-### 4.4 PermissionRuntimeCeiling
-
-委托执行的权限天花板。**禁止携带 Allow 规则**——委托只能收紧不能放宽。
-
-```rust
-pub struct PermissionRuntimeCeiling {
-    rules: Vec<PermissionRule>,  // 所有 effect != Allow
-}
-
-impl PermissionRuntimeCeiling {
-    pub fn try_new(rules: Vec<PermissionRule>) -> Result<Self, CeilingValidationError> {
-        if let Some(rule) = rules.iter().find(|r| r.effect == PermissionEffect::Allow) {
-            return Err(CeilingValidationError { rule: rule.clone() });
-        }
-        Ok(Self { rules })
-    }
-}
-```
-
-### 4.5 默认规则集
-
-```rust
-fn default_global_rules() -> Vec<PermissionRule> {
-    vec![
-        PermissionRule::new("*", "*", PermissionEffect::Ask),           // 默认全部需审批
-        PermissionRule::new("read", "*", PermissionEffect::Allow),      // 文件读取显式 Allow
-        PermissionRule::new("read", "/etc/shadow", PermissionEffect::Deny),    // 系统敏感路径 Deny
-        PermissionRule::new("read", "/etc/ssh/**", PermissionEffect::Deny),
-        PermissionRule::new("edit", "/etc/**", PermissionEffect::Deny),
-        PermissionRule::new("edit", "C:/Windows/**", PermissionEffect::Deny),
-        PermissionRule::new("edit", "C:/Program Files/**", PermissionEffect::Deny),
-    ]
-}
-```
-
-**设计原则**：默认 Ask + 显式 Allow——新增 action 类型默认需审批，避免意外放行。
-
-### 项目级权限配置
-
-用户可在项目根目录创建 `.assistant/permissions.json`：
-
-```json
-{
-  "rules": [
-    { "action": "read",  "resource": "src/**",    "effect": "allow" },
-    { "action": "edit",  "resource": "src/**",    "effect": "allow" },
-    { "action": "edit",  "resource": "*.lock",    "effect": "deny"  },
-    { "action": "execute", "resource": "npm run *",  "effect": "allow" },
-    { "action": "execute", "resource": "git *",      "effect": "allow" },
-    { "action": "execute", "resource": "*",          "effect": "ask"   }
-  ]
-}
-```
-
-加载优先级：应用默认 → 项目配置 → Agent 模式配置，取 `most_restrictive`。
-
-**实施状态**：❌ 未实现。需新增 `assistant-tools/src/policy.rs`。
-
----
-
-## Step 5 — Tool Gateway
-
-> **建什么**：权限网关——连接 Policy（Step 4）和用户审批，是 RoundExecutor 和工具执行之间的安全层。
-> **为什么现在建**：Policy 已就位，但"Ask 效果怎么变成用户交互"需要 Gateway 来桥接。
-> **建完能干什么**：`gateway.evaluate(tool, input, context, policy)` 可以返回 Allowed / Denied / RejectedByUser。
-
-### 5.1 核心结构
-
-```rust
-pub struct ToolGateway {
-    policy_engine: Arc<PolicyEngine>,
-    approval_channel: ApprovalChannel,
-    grant_store: Arc<dyn PermissionGrantStore>,
-    audit_store: Arc<dyn PermissionAuditStore>,
-    event_queue: Arc<EventQueue>,
-}
-```
-
-### 5.2 评估流程
-
-```
-evaluate(tool, input, context, policy) → GatewayDecision:
-
-  1. 收集权限意图
-     intents = tool.permission_intents(input, context)
-
-  2. 逐条评估
-     for intent in intents:
-       for resource in intent.resources:
-         a. 查询 GrantStore（记忆授权）→ 命中则 Allow，跳过
-         b. 策略评估 policy.evaluate(action, resource)
-            - Allow → 记录审计，继续
-            - Ask → 加入 need_approval 列表
-            - Deny → 记录审计，立即返回 Denied
-
-  3. 需审批的意图 → 请求用户
-     emit AgenticEvent::ToolAwaitingApproval
-     decision = approval_channel.wait_for_approval()
-     - Approve → 记录审计
-     - AlwaysApprove → 写入 GrantStore + 记录审计
-     - Deny → 记录审计，返回 RejectedByUser
-
-  4. 全部通过 → Allowed
-```
-
-**参考**：OpenBitFun 的 `PermissionRequestManager` + `PendingPermissionReceiver` 实现批量审批——同轮多工具的权限请求合并为一个 `PermissionIntentPlan` 展示给用户，用户可一次性批准/拒绝。我们的单工具审批是简化版。
-
-### 5.3 ApprovalChannel
-
-```rust
-pub struct ApprovalChannel {
-    pending: TokioMutex<HashMap<String, ApprovalWaiter>>,
-    timeout: Duration,
-}
-
-pub enum ApprovalDecision {
-    Approve,                           // 本次允许
-    Deny { reason: Option<String> },   // 拒绝
-    AlwaysApprove,                     // 永久允许（写入 GrantStore）
-}
-```
-
-**超时语义**：审批请求带超时，超时后**自动 Deny**——用户未响应视为拒绝，而非无限挂起或默认放行。
-
-**参考**：OpenBitFun 通过 `PermissionReplySource`（User / AutoApproved / Ceiling）区分审批来源。openhuman 的 `ToolPolicy::check()` 返回 `PolicyDecision`，无独立审批通道——审批在 harness middleware 层处理。
-
-### 5.4 GrantStore / AuditStore
-
-```rust
-#[async_trait]
-pub trait PermissionGrantStore: Send + Sync {
-    async fn is_granted(&self, action: &str, resource: &str) -> bool;
-    async fn save_grant(&self, action: &str, resource: &str) -> Result<()>;
-}
-
-#[async_trait]
-pub trait PermissionAuditStore: Send + Sync {
-    async fn log_decision(&self, entry: AuditEntry) -> Result<()>;
-}
-```
-
-### 5.5 GatewayDecision
-
-```rust
-pub enum GatewayDecision {
-    Allowed,
-    Denied { action: String, resource: String },
-    RejectedByUser { reason: Option<String> },
-}
-```
-
-**实施状态**：❌ 未实现。需新增 `assistant-tools/src/gateway.rs`。
-
----
-
-## Step 6 — Tool Pipeline
-
-> **建什么**：工具执行编排器——串联 Registry（Step 3）+ Gateway（Step 5）+ 执行（Step 2）+ 持久化 + 事件。
-> **为什么现在建**：Gateway 能决策了，但"查找工具 → 评估权限 → 审批 → 执行 → 持久化 → 发事件"的完整编排需要 Pipeline。
-> **建完能干什么**：`pipeline.execute(tool_calls, context)` 可以完成一个工具调用的完整生命周期。
-
-### 6.1 核心结构
-
-```rust
-pub struct ToolPipeline {
-    registry: Arc<ToolRegistry>,
-    gateway: Arc<ToolGateway>,
-    result_storage: Arc<ToolResultStorage>,
-    default_timeout: Duration,
-}
-```
-
-### 6.2 执行流程
-
-```
-execute(tool_calls, context) → Vec<ToolResult>:
-
-  for tool_call in tool_calls:
-    1. 查找工具
-       tool = registry.find(tool_call.name)
-       未找到 → ToolResult::err("Unknown tool")
-
-    2. 权限网关评估
-       decision = gateway.evaluate(tool, input, context, policy)
-       Denied/RejectedByUser → ToolResult::err(reason)
-
-    3. 执行（带超时 + 取消）
-       result = timeout(default_timeout, tool.execute(input, context))
-       超时 → ToolResult::err("Tool execution timed out")
-
-    4. 持久化
-       result_storage.persist(tool_call_id, conversation_id, ...)
-
-    5. 发射事件
-       event_queue.emit(AgenticEvent::ToolCompleted { ... })
-
-    6. 收集结果
-```
-
-### 6.3 并发编排
-
-只读工具可并发执行，修改/破坏性工具串行：
-
-```
-[fs_read_1, fs_read_2]  ← 并发 batch
-[fs_write_1]            ← 串行
-[fs_grep_1, fs_grep_2]  ← 并发 batch
-[shell_exec_1]          ← 串行
-```
-
-**参考**：OpenBitFun `partition_tool_batches()` 将工具按 `is_concurrency_safe` 分组——连续的并发安全工具合并为一个 batch 用 `join_all` 执行，遇到非安全工具切分。测试验证：`[read_1, read_2, write_1, grep_1, grep_2, bash_1]` → 4 个 batch（2 并发 + 2 串行）。
-
-### 6.4 结果持久化策略
-
-大结果（>50KB）自动落盘，消息历史中只保留引用 + 预览：
-
-```
-ToolResult (小) → 直接嵌入消息历史
-ToolResult (大) → 写入文件 → 消息历史中放 <persisted-output> 引用 + 前 2000 字符预览
-```
-
-**参考**：OpenBitFun `ToolResultStoragePolicy` 含 `per_tool_limit_chars`(50K) / `per_round_limit_chars`(200K) / `preview_chars`(2K)。`select_tool_result_indices_for_persistence()` 按大小降序选择需持久化的结果，直到总字符数低于限制。
-
-**实施状态**：❌ 未实现。需新增 `assistant-tools/src/pipeline.rs`。
-
----
-
-## Step 7 — RoundExecutor（Agent Loop）
-
-> **建什么**：Agent Loop 核心——消费 LLM 流式输出，提取 tool_calls，执行并回填，形成闭环。
-> **为什么现在建**：Pipeline 已能执行工具了，但"LLM 返回 tool_call → 执行 → 回填结果 → 继续生成"的循环需要 RoundExecutor。
-> **建完能干什么**：LLM 可以真正调工具了。Agent Loop 闭环。
-
-### 7.1 核心结构
-
-```rust
-pub struct RoundExecutor {
-    ai_client: Arc<AIClient>,
-    tool_pipeline: Arc<ToolPipeline>,
-    stream_processor: Arc<StreamProcessor>,
-    event_queue: Arc<EventQueue>,
-    max_iterations: u32,
-}
-```
-
-### 7.2 循环流程
-
-```
-execute_round(context) → RoundOutcome:
-
-  for iteration in 0..max_iterations:
-    1. 解析可用工具（两级可用性配置叠加）
-       available = resolve_available_tools(
-         registry,
-         context.conversation_tool_config,
-       )
-       tool_defs = available.map(|t| ToolDefinition::from_tool(t))
-
-    2. 构建请求
-       request = ModelRequest { messages, tools: tool_defs }
-
-    3. 调用 LLM（流式）
-       stream_outcome = stream_processor.process_stream(request, ai_client)
-
-    4. 提取 assistant message（含 text + tool_calls）
-       messages.push(stream_outcome.assistant_message)
-
-    5. 无 tool_call → 对话结束
-       return Finished(stream_outcome)
-
-    6. 发射 tool_call running 事件
-       emit AgenticEvent::ToolCallStarted { ... }
-
-    7. 执行工具
-       tool_results = tool_pipeline.execute(tool_calls, context)
-
-    8. 回填 tool_results 到消息历史
-       messages.push(Message::tool_results_message(...))
-
-    9. 继续循环（LLM 基于工具结果继续生成）
-
-  return MaxIterationsReached
-```
-
-### 7.3 当前缺口
-
-当前 `StreamAccumulator`（`chat_runtime.rs`）已能累积 `tool_calls`，`StreamOutcome.tool_calls` 已有数据。但 **tool_call 到此为止**——没有执行、没有回填、没有继续循环。RoundExecutor 是补全 Agent Loop 的关键缺失。
-
-**参考**：OpenBitFun 的 `agent-runtime` crate 包含完整的 turn loop——`AgentSession` 管理消息历史 + tool 执行 + 子 Agent 委托 + 代际守卫。openhuman 的 `agent_turn_loop` 在 `tinyagents` harness 中实现，含 middleware 链（policy → output capture → compaction）。
-
-**实施状态**：❌ 未实现。需新增 `assistant-agent/src/round_executor.rs`。
-
----
-
-## Step 8 — Tauri 桥接（双入口分流）
-
-> **建什么**：两个入口共享 Tool trait 实现，但执行路径分流。
-> **为什么现在建**：ToolBox 入口（os_tool_exec）已实现且工作。Agent 入口（RoundExecutor → Pipeline）在 Step 7 建完后自然就位。
-> **建完能干什么**：用户可以通过 ToolBox 点击调用工具（已有），LLM 可以通过 Agent Loop 自主调用工具（新增）。
+> Agent 入口（RoundExecutor → ToolPipeline）见 I38b；本文只定义 ToolBox 直达路径。
+> 完整的 5 步新增流程、`os.ts` 代理与 `fs_link` 设计见 [I18b](./I18b-tool-unified-bridge-spec.md)。
 
 ### 8.1 双入口架构
 
 ```
-                    ┌──────────────────────┐
-                    │   Tool trait 实现     │  共享：实现一次
-                    └──────────┬───────────┘
-                               │
-                    ┌──────────┴───────────┐
-                    │    ToolRegistry       │  共享：注册一次
-                    └────┬────────────┬────┘
-                         │            │
-           ┌─────────────┘            └──────────────┐
-           │                                         │
-  ┌────────┴──────────────┐           ┌──────────────┴─────────┐
-  │   ToolBox 入口         │           │   Agent 入口            │
-  │   os_tool_exec         │           │   RoundExecutor         │
-  │   ↓ ToolRegistry.find  │           │   ↓ ToolPipeline        │
-  │   ↓ Tool.execute()     │           │     → ToolGateway      │
-  │   ↓ 返回结果           │           │     → Tool.execute()   │
-  │   直达执行              │           │     → ResultStorage     │
-  └────────────────────────┘           └────────────────────────┘
+Tool trait 实现 ──► ToolRegistry ──┬──► ToolBox：os_tool_exec → execute()
+                                   └──► Agent：RoundExecutor → ToolPipeline → Gateway → execute()
 ```
 
-### 8.2 为什么 ToolBox 不经过 ToolPipeline
+两个入口共享 Tool trait 与 Registry；ToolBox 不经过 Pipeline（用户点击即执行意图），安全不变量由 `execute()` 内部保证。
 
-| ToolPipeline 基础设施 | Agent 场景（LLM 自主调用） | ToolBox 场景（用户主动调用） |
-|---|---|---|
-| ToolGateway 审批流 | LLM 自主决策 → 需要人类审批 | 用户自己点的 → 审批自己无意义 |
-| Permission Policy 评估 | 防止 LLM 越权 | 用户就是权限主体 |
-| 审计日志 | 追踪 AI 自主行为 | 用户操作，不是 AI 行为 |
-| 超时保护 | 防止 LLM 发起的命令挂起 | UI 层自行处理 |
-| 结果回填消息历史 | Agent Loop 需要继续对话 | 结果直接返回组件渲染 |
-
-**安全约束不缺失**：路径校验等在 `Tool.execute()` 内部，两个入口均受保护。
-
-### 8.3 os_tool_exec Tauri command
+### 8.2 os_tool_exec（**以代码为准**）
 
 ```rust
 #[tauri::command]
 pub async fn os_tool_exec(
     registry: State<'_, Arc<ToolRegistry>>,
-    request: OsToolExecRequest,
-) -> Result<OsToolResult, String> {
-    let tool = registry.find(&request.tool)
-        .ok_or_else(|| format!("tool '{}' not found", request.tool))?;
-    let context = ToolUseContext::for_toolbox(None);
-    let result = tool.execute(&input, &context).await.map_err(|e| e.to_string())?;
-    Ok(OsToolResult::from(result))
-}
-```
+    request: OsToolExecRequestDto,
+) -> Result<OsToolResultDto, String> {
+    let tool = registry
+        .find_for_toolbox(&request.tool)
+        .ok_or_else(|| format!("tool '{}' not found in registry", request.tool))?;
 
-**约束**：`os_tool_exec` 是**唯一**的 Tauri command 入口，禁止为单个 OS 工具新增独立 Tauri command。
-
-### 8.4 前端 os.ts 代理对象
-
-```typescript
-export const os = {
-  fsLink: {
-    create(source, target, kind): Promise<OsResult<FsLinkCreateResult>>,
-    check(source): Promise<OsLinkCheckResult>,
-  },
-  // 新增工具只在这里加一个命名空间
-};
-```
-
-### 8.5 新增 OS 工具标准流程（5 步）
-
-| 步骤 | 位置 | 内容 |
-|------|------|------|
-| 1 | `assistant-tools/os/{tool}.rs` | 实现 Tool trait |
-| 2 | `assistant-tools/os/mod.rs` | 加 `mod {tool};` + `registry.register()` |
-| 3 | `src/tools/os.ts` | 加一个命名空间 + 类型 |
-| 4 | `src/tools/{tool-dir}/index.tsx` | React 组件，调 `os.{namespace}.*()` |
-| 5 | `src/tools/registry.ts` | 加一行 `defineTool()` |
-
-**不需要**：单独的 Tauri command、单独的 service 文件、cmd/mod.rs 注册。
-
-**实施状态**：✅ os_tool_exec 已实现（`cmd/os_tool_exec.rs`）。✅ os.ts 已实现。✅ fs_link 完整流程已走通。
-
----
-
-## Step 9 — 前端集成
-
-> **建什么**：ChatDelta 扩展（tool_call_status 五态）+ ToolCallBubble 渲染 + 审批交互 UI。
-> **为什么现在建**：后端 RoundExecutor + Gateway 已能发射事件了，但前端需要消费这些事件、渲染工具调用状态、处理审批交互。
-> **建完能干什么**：用户可以看到工具调用过程（running/success/error），可以审批危险操作（awaiting_user → Approve/Deny）。
-
-### 9.1 ChatDelta 扩展
-
-```typescript
-interface ChatDeltaPayload {
-  // ...现有字段...
-  tool_call_status?: ToolCallStatus
-  tool_call_result?: string
-  tool_call_started_at?: number
-  tool_call_finished_at?: number
-  tool_call_awaiting_approval?: ToolApprovalRequest
-}
-
-type ToolCallStatus = 'running' | 'success' | 'error' | 'awaiting_user' | 'cancelled'
-
-interface ToolApprovalRequest {
-  tool_call_id: string
-  tool_name: string
-  arguments: Record<string, unknown>
-  intents: PermissionIntent[]
-}
-```
-
-### 9.2 ToolCallBubble 五态渲染
-
-```
-┌─ running ───────────┐   ┌─ success ───────────┐
-│ 🔄 fs_read          │   │ ✅ fs_read  (120ms) │
-│ /src/main.ts        │   │ /src/main.ts        │
-└─────────────────────┘   │ ▼ [45 lines]        │
-                           └─────────────────────┘
-┌─ error ─────────────┐   ┌─ awaiting_user ─────┐
-│ ❌ shell_exec        │   │ ⚠️ shell_exec       │
-│ Permission denied   │   │ rm -rf /tmp/cache   │
-└─────────────────────┘   │ [✓ Approve] [✗ Deny]│
-                           └─────────────────────┘
-┌─ cancelled ──────────┐
-│ ⊘ fs_delete         │
-│ User rejected       │
-└──────────────────────┘
-```
-
-**参考**：OpenBitFun `ToolCardStatus` 含 `running` / `completed` / `error` / `cancelled` / `awaiting_approval` 五态，`toolInteractionModel` 管理交互状态机。openhuman `tool-call.tsx` / `tool-error.tsx` / `tool-fallback.tsx` 分组件渲染。
-
-### 9.3 审批交互流
-
-```
-RoundExecutor → ToolGateway evaluate → Ask
-  → emit AgenticEvent::ToolAwaitingApproval
-  → 前端 ChatDeltaPayload.tool_call_awaiting_approval
-  → ToolCallBubble 渲染 [Approve] [Deny] 按钮
-  → 用户点击 → Tauri command: approve_tool_call / deny_tool_call
-  → Rust ApprovalChannel 收到决策
-  → 继续执行或拒绝
-```
-
-**实施状态**：❌ 未实现。ChatDelta 已有 `delta_tool_call_id/name/arguments`（流式累积），但 `tool_call_status` 五态和审批交互未实现。
-
----
-
-## Step 10 — Agent 模式集成 + 两级可用性配置
-
-> **建什么**：两级可用性配置（AgentMode 预设 → 对话级）+ Agent 模式到 PermissionPolicy 的映射 + deny-by-default 语义。
-> **为什么最后建**：Policy（Step 4）和前端（Step 9）都已就位，只需要把 Agent 模式配置接入 Policy 生成 + 可用性配置接入 RoundExecutor。
-> **建完能干什么**：不同 Agent 模式有不同的工具能力和审批级别；用户可在对话中随时增删可用工具。
-
-### 10.1 AgentMode 扩展字段
-
-```typescript
-interface AgentMode {
-  // ...现有字段...
-  tools: string[]                    // 工具白名单（空=无可用工具，deny-by-default）
-  max_tool_tier: ToolTier           // 允许的最高工具层级
-  approval_level: ApprovalLevel     // 审批级别
-}
-
-type ToolTier = 'sandbox' | 'os' | 'external'
-
-type ApprovalLevel =
-  | 'none'              // 全部自动执行
-  | 'dangerous_only'    // 仅 destructive/open_world 需审批
-  | 'all_os_tools'      // 所有非 Sandbox 工具需审批
-```
-
-**`tools` 语义**：白名单，deny-by-default。`tools: []` = 无可用工具，`tools: ["fs_read"]` = 仅 fs_read 可用。所有内置模式默认 `tools: []`，用户必须显式启用工具。
-
-### 10.2 内置预设
-
-| 模式 | max_tool_tier | approval_level | tools | 说明 |
-|------|---------------|----------------|-------|------|
-| 默认 | `sandbox` | `none` | `[]` | 无可用工具，用户按需启用 |
-| 快速 | `sandbox` | `none` | `[]` | 同上 |
-| 深度 | `os` | `dangerous_only` | `[]` | 层级开放到 OS，但工具仍需显式启用 |
-| 翻译助手 | `sandbox` | `none` | `[]` | 同默认 |
-
-**设计理由**：deny-by-default 确保新增工具不会自动对任何模式可用，与最小权限原则一致。用户在 AgentMode 编辑表单或对话工具栏中显式勾选所需工具。
-
-### 10.3 ConversationToolConfig（对话级）
-
-对话创建时从 AgentMode 预设**深拷贝**，之后独立演化。AgentMode 修改不回溯影响已创建的对话。
-
-```typescript
-interface ConversationToolConfig {
-  maxToolTier: ToolTier              // 层级上限（硬上限，不可被 enabledTools 超越）
-  approvalLevel: ApprovalLevel       // 审批级别
-  enabledTools: string[]             // 显式启用的工具名列表
-  disabledTools: string[]            // 显式禁用的工具名列表（优先级高于 enabledTools）
-}
-```
-
-**不变量**：
-- `disabledTools` 优先级高于 `enabledTools`——同一工具同时出现在两个列表中，结果为禁用
-- `maxToolTier` 是硬上限——即使 `enabledTools` 包含 External 工具，`maxToolTier: Os` 时 External 工具仍不可用
-- 工具 `name` 是稳定标识符，不因 i18n 变化
-
-**预填充逻辑**：
-```
-conversation.tool_config = {
-  maxToolTier:     agentMode.max_tool_tier,
-  approvalLevel:   agentMode.approval_level,
-  enabledTools:    [...agentMode.tools],   // 深拷贝
-  disabledTools:   [],
-}
-```
-
-### 10.4 resolveAvailableTools() 解析算法
-
-两级配置叠加解析：
-
-```rust
-fn resolve_available_tools(
-    registry: &ToolRegistry,
-    config: &ConversationToolConfig,
-) -> Vec<Arc<dyn Tool>> {
-    // 1. 层级过滤（硬上限）
-    let tier_filtered: Vec<_> = registry.all_tools()
-        .filter(|t| t.tier() <= config.max_tool_tier)
-        .collect();
-
-    // 2. 白名单过滤（deny-by-default：空=无工具）
-    let candidates: Vec<_> = if config.enabled_tools.is_empty() {
-        vec![]  // deny-by-default：无显式启用 = 无可用工具
+    let mut input = request.params;
+    if let Some(obj) = input.as_object_mut() {
+        obj.insert("action".to_string(), Value::String(request.action));
     } else {
-        tier_filtered.into_iter()
-            .filter(|t| config.enabled_tools.contains(&t.name().to_string()))
-            .collect()
-    };
-
-    // 3. 排除禁用列表
-    candidates.into_iter()
-        .filter(|t| !config.disabled_tools.contains(&t.name().to_string()))
-        .collect()
-}
-```
-
-### 10.5 可用性层与权限层正交声明
-
-| 层 | 问题 | 机制 | 时机 |
-|----|------|------|------|
-| **可用性层** | LLM **能否看到**这个工具？ | `resolveAvailableTools()` | 构建 LLM 请求时 |
-| **权限层** | LLM **能否执行**这个操作？ | `ToolGateway.evaluate()` | 执行 tool_call 时 |
-
-**交互规则**：
-- 可用性层先过滤——不可用的工具不出现在 `tools` 参数中，LLM 不会生成对应 tool_call
-- 权限层后评估——即使工具可用，具体操作仍可能被 Policy Deny 或要求审批
-- 两者不冲突——可用性是"工具级开关"，权限是"操作级控制"
-
-### 10.6 Agent 模式 → Policy 映射
-
-```rust
-fn policy_from_agent_mode(mode: &AgentModeConfig) -> ResolvedPermissionPolicy {
-    let mut global_rules = default_global_rules();
-
-    match mode.approval_level {
-        ApprovalLevel::None => {
-            global_rules.insert(0, PermissionRule::new("*", "*", PermissionEffect::Allow));
-        },
-        ApprovalLevel::DangerousOnly => {
-            // 保持默认（read=Allow, edit/execute=Ask）
-        },
-        ApprovalLevel::AllOsTools => {
-            global_rules.push(PermissionRule::new("read", "*", PermissionEffect::Ask));
-        },
+        input = serde_json::json!({ "action": request.action });
     }
 
-    let tier_rules = match mode.max_tool_tier {
-        ToolTier::Sandbox => vec![
-            PermissionRule::new("*", "tier:os", PermissionEffect::Deny),
-            PermissionRule::new("*", "tier:external", PermissionEffect::Deny),
-        ],
-        ToolTier::Os => vec![
-            PermissionRule::new("*", "tier:external", PermissionEffect::Deny),
-        ],
-        ToolTier::External => vec![],
-    };
-
-    ResolvedPermissionPolicy::new(global_rules, vec![
-        PermissionConstraintLayer::new(tier_rules),
-    ])
+    let context = ToolUseContext::for_toolbox(None);
+    let result = invoke(tool.as_ref(), &input, &context, DEFAULT_TOOL_TIMEOUT).await;
+    Ok(OsToolResultDto::from(result))
 }
 ```
 
-**参考**：OpenBitFun 通过 `agents.md` + `ToolExposure` override 实现——每个 Agent 定义可覆盖工具的默认暴露级别（Direct/Deferred）。OpenHuman 通过 `ToolPolicy` trait 的 `check()` 方法实现——`AllowAllToolPolicy` 是默认，可安装自定义策略。
+**与旧文档的差异（已修正）**：旧版示例调用 `tool.execute().await.map_err(...)`，已过时。当前实现走 `exec::invoke`：
 
-### 10.7 数据模型扩展清单
+- `Err` 通道在 `invoke` 内归一化为 `ToolResult { ok: false }`；
+- 超时由 `DEFAULT_TOOL_TIMEOUT`（30s）兜底；
+- 前端从 `invoke()` reject 变为 resolve 出 `OsResult { ok: false, error }`，`os.ts` 已按 `OsResult` 消费。
 
-| 层 | 变更 | 说明 |
-|----|------|------|
-| **Rust 存储** | `AgentModeRow` 新增 `max_tool_tier: String`（`"sandbox"/"os"/"external"`）+ `approval_level: String`（`"none"/"dangerous_only"/"all_os_tools"`） | 当前仅有 `tools_json`，缺两个控制字段 |
-| **Rust 存储** | `ConversationDetail` / `ConversationRow` 新增 `tool_config_json: String` | 对话级工具配置 |
-| **SQLite** | `ALTER TABLE agent_modes ADD COLUMN max_tool_tier TEXT NOT NULL DEFAULT 'sandbox';` | 迁移 |
-| **SQLite** | `ALTER TABLE agent_modes ADD COLUMN approval_level TEXT NOT NULL DEFAULT 'none';` | 迁移 |
-| **SQLite** | `ALTER TABLE conversations ADD COLUMN tool_config_json TEXT NOT NULL DEFAULT '{}';` | 迁移 |
-| **前端类型** | `AgentMode` interface 新增 `maxToolTier` + `approvalLevel` | 对齐 Rust |
-| **前端类型** | 新增 `ConversationToolConfig` interface | 对话级配置 |
+### 8.3 wire 类型
 
-### 10.8 前端交互规格
+请求 / 返回类型在 `src-tauri/src/protocol/dto/os_tool.rs`（全仓唯一 DTO 落点，`*Dto` 后缀 + `rename_all = "camelCase"`）：
 
-| 交互点 | 位置 | 功能 |
-|--------|------|------|
-| **AgentMode 编辑表单** | 设置页 | 工具多选列表（按 tier 分组展示），deny-by-default 默认全不勾选 |
-| **对话工具栏** | 聊天输入区旁 | 当前对话的可用工具概览（图标列表），点击展开可增删 |
-| **工具可用性变更提示** | 聊天流中 | 当工具配置变更时，系统消息提示"已启用 shell_exec"等 |
+- `OsToolExecRequestDto { tool, action, params }`，`deny_unknown_fields`。
+- `OsToolResultDto { ok, data, error }`；P2 扩展双通道后新增 `resultForAssistant` / `errorKind`，按输出 DTO 规则处理。
 
-**AgentMode 编辑表单的工具选择器**：
+**硬约束**：
 
-```
-┌─ 工具配置 ────────────────────────────────────────┐
-│                                                     │
-│  层级上限:  [Sandbox ▼]  (Sandbox / Os / External)  │
-│  审批级别:  [dangerous_only ▼]                      │
-│                                                     │
-│  ── Sandbox 工具 ──                                │
-│  ☐ json-viewer  ☐ color-picker  ☐ base64           │
-│                                                     │
-│  ── OS 工具 ──                                     │
-│  ☐ fs_read  ☐ fs_list  ☐ fs_glob  ☐ fs_grep       │
-│  ☐ fs_write  ☐ fs_delete  ☐ shell_exec             │
-│  ☐ ask_user                                         │
-│                                                     │
-│  ── External (MCP) ──                              │
-│  (无 MCP server 连接时显示"暂无外部工具")            │
-│                                                     │
-└─────────────────────────────────────────────────────┘
-```
+1. `os_tool_exec` 是**唯一**的 Tauri command 入口，禁止为单个 OS 工具新增独立 command。
+2. 新增 OS 工具不新增 request DTO；参数差异只体现在 `params` 与 `input_schema()`。
+3. `tools` 受众为 `AGENT_ONLY` 的工具不会出现在 `find_for_toolbox`，前端不可达。
 
-- 默认全不勾选（deny-by-default）
-- 层级上限切换时，下方工具列表自动展开/折叠对应分组
-- 内置 AgentMode（`isBuiltin: true`）的工具预设**可查看但不可修改**——用户需创建自定义模式
+### 8.4 待收口
 
-**实施状态**：❌ `max_tool_tier` / `approval_level` / `ConversationToolConfig` / `resolveAvailableTools` 均未实现。需扩展 `agent_modes` 表 + `conversations` 表 + `AgentModeRow` struct + `ConversationRow` struct + 前端 interface + RoundExecutor 集成。
+| # | 问题 | 归属 |
+|---|---|---|
+| B1 | ToolBox 相对路径不可用（`workspace_root` 恒为 `None`，属设计取舍：用户本人调用，不存在「越界」） | P5/P6（可用性，非安全） |
+| B2 | `ToolUseContext` 不携带 session / call id | P4（Agent 入口由 Pipeline 注入） |
+| B3 | `tool_names()` 未排序（仅诊断用） | 后续需要确定性诊断输出时补 |
 
 ---
 
-## Crate 组织
+## 与既有文档的关系
 
-```
-src-tauri/
-├── crates/
-│   ├── assistant-agent/
-│   │   └── src/
-│   │       ├── chat_runtime.rs    # 现有：StreamAccumulator
-│   │       ├── chat_tasks.rs      # 现有：任务管理+取消
-│   │       ├── round_executor.rs  # 新增：Agent Loop
-│   │       └── ...
-│   ├── assistant-tools/
-│   │   └── src/
-│   │       ├── lib.rs             # 现有
-│   │       ├── trait.rs           # 现有：Tool trait + ToolTier + BehaviorHints
-│   │       ├── registry.rs        # 现有：ToolRegistry
-│   │       ├── result.rs          # 现有：ToolResult + OsToolResult
-│   │       ├── context.rs         # 现有：ToolUseContext
-│   │       ├── policy.rs          # 新增：PermissionEffect + PermissionRule + ResolvedPermissionPolicy
-│   │       ├── gateway.rs         # 新增：ToolGateway + ApprovalChannel
-│   │       ├── pipeline.rs        # 新增：ToolPipeline
-│   │       ├── sandbox/           # 新增：L0 沙箱工具桥接
-│   │       │   └── mod.rs
-│   │       ├── os/                # 现有+扩展
-│   │       │   ├── mod.rs         # 现有：register_os_tools()
-│   │       │   ├── fs_link.rs     # 现有
-│   │       │   ├── process_output.rs  # 现有
-│   │       │   ├── fs_read.rs     # 新增
-│   │       │   ├── fs_write.rs    # 新增
-│   │       │   ├── fs_delete.rs   # 新增
-│   │       │   ├── fs_list.rs     # 新增
-│   │       │   ├── fs_glob.rs     # 新增
-│   │       │   ├── fs_grep.rs     # 新增
-│   │       │   ├── fs_mkdir.rs    # 新增
-│   │       │   ├── fs_move.rs     # 新增
-│   │       │   ├── shell_exec.rs  # 新增
-│   │       │   └── ask_user.rs    # 新增
-│   │       └── mcp/               # 新增：L2 MCP 工具
-│   │           ├── mod.rs
-│   │           ├── bridge.rs
-│   │           ├── client.rs
-│   │           └── server_manager.rs
-│   └── assistant-providers/       # 现有：provider 适配+流式
-├── src/
-│   └── cmd/
-│       └── os_tool_exec.rs        # 现有：唯一 Tauri command 入口
-```
-
----
-
-## 实施状态总览
-
-| Step | 模块 | 状态 | 关键文件 |
-|------|------|------|---------|
-| 0 | 值类型 | ✅ 完成 | `trait.rs` `result.rs` `context.rs` |
-| 1 | Tool Trait | ✅ 完成 | `trait.rs` |
-| 2 | L1 OS: fs_link | ✅ 完成 | `os/fs_link.rs` |
-| 2 | L1 OS: 其他 | ❌ 未实现 | 需新增 fs_read/write/delete/list/glob/grep/mkdir/move/shell_exec/ask_user |
-| 3 | ToolRegistry | ⚠️ 部分完成 | `registry.rs`（`tool_definitions_for_tier` 需修正为 `<=`） |
-| 4 | Permission Policy | ❌ 未实现 | 需新增 `policy.rs` |
-| 5 | Tool Gateway | ❌ 未实现 | 需新增 `gateway.rs` |
-| 6 | Tool Pipeline | ❌ 未实现 | 需新增 `pipeline.rs` |
-| 7 | RoundExecutor | ❌ 未实现 | 需新增 `round_executor.rs` |
-| 8 | Tauri 桥接 | ✅ 完成 | `os_tool_exec.rs` `os.ts` |
-| 9 | 前端集成 | ❌ 未实现 | ChatDelta 五态 + ToolCallBubble + 审批 UI |
-| 10 | Agent 模式+两级可用性 | ❌ 未实现 | max_tool_tier + approval_level + ConversationToolConfig + resolveAvailableTools + Policy 映射 |
-
----
-
-## 安全原则
-
-1. **工具自描述权限，策略层决策**：工具 `permission_intents()` 声明需求，ToolGateway 决定放行
-2. **多层策略取最严**：应用默认 + 项目配置 + Agent 模式三层叠加，`most_restrictive` 组合
-3. **委托只能收紧不能放宽**：`PermissionRuntimeCeiling` 禁止携带 `Allow` 规则
-4. **审批流统一**：`Ask` → `awaiting_user` → 前端审批 UI → approve/reject
-5. **先建框架再加能力**：Policy → Gateway → Pipeline → RoundExecutor → OS 工具 → MCP
-6. **最小权限**：工具默认声明最高限制，Agent 模式按需放宽
-7. **超时隔离**：所有工具执行带超时，Shell 执行默认 30s
-8. **审计日志**：所有工具调用记录到 `tool_calls` 表
-9. **路径约束**：文件操作限制在工作区或用户授权路径内，系统敏感路径硬拒绝
-10. **双入口不破坏现有体验**：前端 ToolBox 独立使用不变，Agent Loop 调用是新增能力
-11. **deny-by-default**：工具白名单空=无可用工具，新增工具不自动对任何模式可用，必须显式启用
+| 文档 | 关系 |
+|---|---|
+| [I38 roadmap](./I38-agent-roadmap.md) | 阶段、状态、门禁的唯一入口 |
+| [I18 design](./I18-agent-tool-architecture-design.md) | 分层、权限、双入口、安全原则的决策依据 |
+| [I38a](./I38a-tool-control-layer-spec.md) | 控制层（Policy / Gateway / Pipeline / 审批 / 预算） |
+| [I38b](./I38b-agent-loop-spec.md) | RoundExecutor、累积器、`ChatOptions.tools` |
+| [I38c](./I38c-os-tools-spec.md) | OS 工具清单与 Schema |
+| [I38d](./I38d-agent-frontend-modes-spec.md) | 五态 UI、审批 UI、Agent 模式 |
+| [I38e](./I38e-mcp-tools-spec.md) | MCP 外部工具 |
+| [I18b](./I18b-tool-unified-bridge-spec.md) | ToolBox 桥接与新增工具 5 步流程 |
+| [I31](./I31-phase1-tool-framework-spec.md) | 阶段一框架（T1/T2 已落地，T3 待做） |
+| [OSCALLDESIGN](../designed/OSCALLDESIGN.md) | Shell 洋葱模型 |

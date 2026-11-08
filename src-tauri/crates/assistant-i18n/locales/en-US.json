@@ -18,20 +18,15 @@
   },
   "chat": {
     "empty_content": "Message content cannot be empty",
-    "provider_deleted": "The Provider for this conversation has been deleted. Please select a new Provider before sending",
+    "session_busy": "The conversation is busy, please try again later",
     "new_conversation_title": "New Chat",
     "too_many_images": "Too many images (max {{max}})",
     "too_many_files": "Too many files (max {{max}})",
     "attachments_not_allowed": "Attachments are not allowed on this channel",
     "file_too_large": "File too large (max {{max_mb}} MB)",
     "image_too_large": "Image too large (max {{max_mb}} MB)",
-    "image_projected_placeholder": "[Image omitted — current model does not support images]",
-    "image_not_found_placeholder": "[Image not found]",
-    "image_offloaded_placeholder": "[Image offloaded (ID: {{id}})]",
-    "file_not_found_placeholder": "[File not found]",
     "compaction": {
-      "summary_truncated": "[Summary truncated. Use search_history for full details]",
-      "default_summary_prompt": "Generate a handoff summary for the following conversation so that an AI in a new session can continue without reading the original.\n\nOutput format (strictly follow):\n\n## Handoff Summary\n\n**Goal**: The user's core objective, 1-2 sentences\n\n**Progress**:\n- Key completed steps, one per line, in chronological order\n\n**Todo**:\n- Outstanding items, if any\n\n**Key Information**:\n- File paths, config values, variable names, error codes, and other concrete values needed going forward\n- Each item must state the concrete value; avoid vague references like \"some file\" or \"some value\"\n\n**Tool Call Summary**:\n- Executed tool names and key results, one per line\n- E.g. `read_file → config.rs content read`, `run_command → compilation passed`\n\nRules:\n1. Self-contained: do not reference \"above\" or \"earlier\"; state all information directly\n2. Concrete: write full file paths, full variable names, raw error codes\n3. Concise: omit step-by-step details; keep only key decisions and milestones\n4. Actionable: pasting into a new conversation lets the AI continue immediately without follow-up questions\n5. Tool calls: keep tool name + result summary; omit full output"
+      "summary_truncated": "[Summary truncated. Use search_history for full details]"
     }
   },
   "conversation": {
@@ -39,14 +34,19 @@
   },
   "window": {
     "title_main": "Assistant",
-    "title_settings": "Settings",
     "unknown_label": "Unknown window label: %{label}"
+  },
+  "clock": {
+    "notification_title": "Timer finished",
+    "notification_body": "Your countdown has completed."
   },
   "error": {
     "conversation_not_found": "Conversation not found",
+    "conversation_busy": "The conversation is generating a reply; its mode cannot be changed right now",
     "provider_not_found": "Provider not found",
     "orb_window_not_found": "Orb window not found",
-    "db_lock": "DB lock: %{error}"
+    "db_lock": "DB lock: %{error}",
+    "agent_mode_kind_locked": "The mode type cannot be changed; create a new mode instead"
   },
   "agent_mode": {
     "builtin_cannot_delete": "Built-in modes cannot be deleted",
@@ -56,13 +56,9 @@
         "name": "Default",
         "description": "Standard parameters, the most common pure chat mode"
       },
-      "quick": {
-        "name": "Quick",
-        "description": "Low temperature + short output, suitable for simple Q&A"
-      },
-      "deep": {
-        "name": "Deep",
-        "description": "Long output, suitable for scenarios requiring lengthy responses"
+      "agent": {
+        "name": "Agent",
+        "description": "General-purpose mode with tool-calling capability"
       },
       "translate": {
         "name": "Translator",

@@ -1,16 +1,20 @@
-import { tauriInvoke as invoke } from "@/services/tauriInvoke";
+import { featureInvoke } from "@/services/featureIpc";
+import { vaultModule } from "@/features/vault/module";
 import type {
   VaultEntrySummary,
   VaultEntryDetail,
   RevealResult,
   VaultEntryCreate,
   VaultEntryUpdate,
-  TotpResult,
+  TotpCode,
   ParsedOtpAuth,
   AuditLogEntry,
   StrengthResult,
   SyncResult,
   SyncConfig,
+  SyncAction,
+  RemoteMode,
+  RemoteStatus,
   Readyness,
   ConflictResolution,
   ConflictFile,
@@ -21,18 +25,21 @@ import type {
   SshKeyInfo,
   SshKeyMeta,
   IntegrityResult,
+  HibpAuditEntry,
   DisasterRecoveryResult,
 } from "./vault.types";
 
 export type {
   VaultCategory,
+  VaultErrorCode,
+  VaultErrorDto,
   VaultEntrySummary,
   VaultEntryDetail,
   RevealResult,
   CustomFieldInput,
   VaultEntryCreate,
   VaultEntryUpdate,
-  TotpResult,
+  TotpCode,
   ParsedOtpAuth,
   AuditLogEntry,
   StrengthResult,
@@ -44,6 +51,10 @@ export type {
   EntryPreview,
   ConflictPreview,
   SyncConfig,
+  SyncAction,
+  RemoteMode,
+  RemoteStatus,
+  RemoteStatusErrorKind,
   ConflictResolution,
   SshKeyInfo,
   IntegrityResult,
@@ -51,11 +62,13 @@ export type {
   RevealedField,
 } from "./vault.types";
 
+const invoke = featureInvoke(vaultModule);
+
 export const vaultService = {
   init: (masterPassword: string): Promise<void> =>
     invoke("vault_init", { masterPassword }),
 
-  unlock: (masterPassword: string): Promise<boolean> =>
+  unlock: (masterPassword: string): Promise<void> =>
     invoke("vault_unlock", { masterPassword }),
 
   isLocked: (): Promise<boolean> => invoke("vault_is_locked"),
@@ -70,6 +83,8 @@ export const vaultService = {
     tag?: string,
   ): Promise<VaultEntrySummary[]> =>
     invoke("vault_list_entries", { category, search, tag }),
+
+  countEntries: (): Promise<number> => invoke("vault_count_entries"),
 
   getEntry: (id: string): Promise<VaultEntryDetail> =>
     invoke("vault_get_entry", { id }),
@@ -86,11 +101,16 @@ export const vaultService = {
   revealNotes: (id: string): Promise<RevealResult> =>
     invoke("vault_reveal_notes", { id }),
 
-  createEntry: (entry: VaultEntryCreate): Promise<string> =>
+  createEntry: (entry: VaultEntryCreate): Promise<VaultEntryDetail> =>
     invoke("vault_create_entry", { entry }),
 
-  updateEntry: (id: string, entry: VaultEntryUpdate): Promise<void> =>
-    invoke("vault_update_entry", { id, entry }),
+  updateEntry: (
+    id: string,
+    entry: VaultEntryUpdate,
+  ): Promise<VaultEntryDetail> => invoke("vault_update_entry", { id, entry }),
+
+  setFavorite: (id: string, isFavorite: boolean): Promise<VaultEntryDetail> =>
+    invoke("vault_set_favorite", { id, isFavorite }),
 
   deleteEntry: (id: string): Promise<void> =>
     invoke("vault_delete_entry", { id }),
@@ -112,24 +132,10 @@ export const vaultService = {
   importVault: (path: string, format: "csv" | "json"): Promise<number> =>
     invoke("vault_import", { path, format }),
 
-  totpGenerate: (
-    id: string,
-    period?: number,
-    digits?: number,
-    algorithm?: string,
-  ): Promise<TotpResult> =>
-    invoke("vault_totp_generate", { id, period, digits, algorithm }),
+  totpGenerate: (id: string): Promise<TotpCode> =>
+    invoke("vault_totp_generate", { id }),
 
-  totpCopy: (
-    id: string,
-    period?: number,
-    digits?: number,
-    algorithm?: string,
-  ): Promise<void> =>
-    invoke("vault_copy_totp", { id, period, digits, algorithm }),
-
-  totpTimeRemaining: (period?: number): Promise<number> =>
-    invoke("vault_totp_time_remaining", { period }),
+  totpCopy: (id: string): Promise<void> => invoke("vault_copy_totp", { id }),
 
   totpParseUri: (uri: string): Promise<ParsedOtpAuth> =>
     invoke("vault_totp_parse_uri", { uri }),
@@ -137,12 +143,14 @@ export const vaultService = {
   queryAuditLog: (limit?: number): Promise<AuditLogEntry[]> =>
     invoke("vault_query_audit_log", { limit }),
 
-  showUnlockWindow: (): Promise<boolean> => invoke("vault_show_unlock_window"),
+  showUnlockWindow: (): Promise<void> => invoke("vault_show_unlock_window"),
 
   hibpCheck: (id: string): Promise<number> =>
     invoke("vault_hibp_check", { id }),
 
-  hibpAudit: (): Promise<[string, number][]> => invoke("vault_hibp_audit"),
+  hibpAudit: (): Promise<HibpAuditEntry[]> => invoke("vault_hibp_audit"),
+
+  hibpAuditCancel: (): Promise<void> => invoke("vault_hibp_audit_cancel"),
 
   checkMasterPasswordStrength: (password: string): Promise<StrengthResult> =>
     invoke("vault_check_master_password_strength", { password }),
@@ -153,17 +161,20 @@ export const vaultService = {
   isBiometricEnrolled: (): Promise<boolean> =>
     invoke("vault_is_biometric_enrolled"),
 
-  unlockBiometric: (): Promise<boolean> => invoke("vault_unlock_biometric"),
+  unlockBiometric: (): Promise<void> => invoke("vault_unlock_biometric"),
 
   enrollBiometric: (): Promise<void> => invoke("vault_enroll_biometric"),
 
   disenrollBiometric: (): Promise<void> => invoke("vault_disenroll_biometric"),
 
-  syncPull: (): Promise<SyncResult> => invoke("vault_sync", { action: "pull" }),
-  syncPush: (): Promise<SyncResult> => invoke("vault_sync", { action: "push" }),
-  syncNow: (): Promise<SyncResult> => invoke("vault_sync", { action: "sync" }),
+  syncPull: (): Promise<SyncResult> =>
+    invoke("vault_sync", { action: "pull" satisfies SyncAction }),
+  syncPush: (): Promise<SyncResult> =>
+    invoke("vault_sync", { action: "push" satisfies SyncAction }),
+  syncNow: (): Promise<SyncResult> =>
+    invoke("vault_sync", { action: "sync" satisfies SyncAction }),
   syncForcePush: (): Promise<SyncResult> =>
-    invoke("vault_sync", { action: "forcePush" }),
+    invoke("vault_sync", { action: "forcePush" satisfies SyncAction }),
   syncLastTime: (): Promise<number | null> => invoke("vault_sync_last_time"),
   getSyncConfig: (): Promise<SyncConfig> => invoke("vault_get_sync_config"),
   setSyncConfig: (config: SyncConfig): Promise<void> =>
@@ -177,9 +188,17 @@ export const vaultService = {
   gitInit: (): Promise<void> => invoke("vault_git_init"),
   gitClone: (url: string): Promise<void> => invoke("vault_git_init", { url }),
   gitAddRemote: (remote: string, url: string): Promise<void> =>
-    invoke("vault_git_remote", { remote, url, mode: "add" }),
+    invoke("vault_git_remote", {
+      remote,
+      url,
+      mode: "add" satisfies RemoteMode,
+    }),
   gitSetRemote: (remote: string, url: string): Promise<void> =>
-    invoke("vault_git_remote", { remote, url, mode: "set" }),
+    invoke("vault_git_remote", {
+      remote,
+      url,
+      mode: "set" satisfies RemoteMode,
+    }),
   gitRemoveRemote: (remote: string): Promise<void> =>
     invoke("vault_git_remove_remote", { remote }),
   gitTestConnection: (url?: string): Promise<number> =>
@@ -187,6 +206,8 @@ export const vaultService = {
   syncAbort: (): Promise<void> => invoke("vault_sync_abort"),
   syncDiscard: (): Promise<void> => invoke("vault_sync_discard"),
   syncReadyness: (): Promise<Readyness> => invoke("vault_sync_readyness"),
+  syncRemoteStatus: (fetch = false): Promise<RemoteStatus> =>
+    invoke("vault_sync_remote_status", { fetch }),
   syncConflicts: (): Promise<ConflictFile[]> => invoke("vault_sync_conflicts"),
   syncPendingRemovals: (): Promise<PendingRemovals | null> =>
     invoke("vault_sync_pending_removals"),
@@ -235,9 +256,6 @@ export const vaultService = {
 
   generateRecoveryKey: (): Promise<string> =>
     invoke("vault_generate_recovery_key"),
-
-  unlockWithRecoveryKey: (recoveryKey: string): Promise<boolean> =>
-    invoke("vault_unlock_with_recovery_key", { recoveryKey }),
 
   hasRecoveryKey: (): Promise<boolean> => invoke("vault_has_recovery_key"),
 

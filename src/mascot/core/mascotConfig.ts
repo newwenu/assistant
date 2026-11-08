@@ -2,7 +2,7 @@ import type { MascotConf } from "@/settings/core/types/confTypes";
 import type { RendererConfig } from "./types";
 
 export function buildRendererConfig(conf: MascotConf): RendererConfig {
-  const renderer = conf.renderer ?? "rive";
+  const renderer = conf.renderer ?? "svg";
   return {
     idlePoseRotation: conf.riveIdlePoseRotation,
     src: renderer === "rive" ? conf.riveSrc : conf.gifSrc,

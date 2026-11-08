@@ -12,7 +12,7 @@ import {
   ORB_SNAP_DELAY_MS,
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
-import { useSettingsStore } from "../stores/settingsStore";
+import { getConfValue } from "@/settings/core/useConfGroup";
 
 const IS_WINDOWS = /\bWindows\b/i.test(navigator.userAgent);
 const IS_MACOS = /\bMacintosh\b/i.test(navigator.userAgent);
@@ -101,7 +101,7 @@ export function useOrbDrag() {
         setDragging(true);
         cancelSnap();
 
-        const orbConf = useSettingsStore.getState().orbConf;
+        const orbConf = getConfValue("orb");
         if (orbConf?.clickThrough) {
           orbService
             .setOrbClickThrough(false)
@@ -149,7 +149,7 @@ export function useOrbDrag() {
         setDragging(false);
         const state = useOrbStore.getState();
         if (!state.isExpanded) {
-          const orbConf = useSettingsStore.getState().orbConf;
+          const orbConf = getConfValue("orb");
           if (orbConf?.clickThrough) {
             orbService
               .setOrbClickThrough(true)

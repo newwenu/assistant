@@ -14,7 +14,7 @@ pub use message::{
     message_role_from_str, parse_content, ChatMessage, ContentBlock, ContentBlockType,
     FileAttachmentRef, ImageAttachmentRef, MessageRole,
 };
-pub use tool::ToolCall;
+pub use tool::{ToolCall, ToolSpec};
 pub use unified::{
     ReasoningContentKind, ToolCallCompletion, UnifiedResponse, UnifiedTokenUsage, UnifiedToolCall,
 };

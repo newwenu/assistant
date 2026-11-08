@@ -5,12 +5,18 @@ export function useVaultAutoLock() {
   const resetAutoLockTimer = useVaultStore((s) => s.resetAutoLockTimer);
 
   useEffect(() => {
-    const handler = () => resetAutoLockTimer();
+    const handler = () => {
+      if (useVaultStore.getState().isLocked) return;
+      resetAutoLockTimer();
+    };
     window.addEventListener("mousemove", handler);
     window.addEventListener("keydown", handler);
 
     const visibilityHandler = () => {
-      if (document.visibilityState === "visible") {
+      if (
+        document.visibilityState === "visible" &&
+        !useVaultStore.getState().isLocked
+      ) {
         resetAutoLockTimer();
       }
     };

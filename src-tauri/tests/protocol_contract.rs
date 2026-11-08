@@ -1,6 +1,7 @@
 use assistant_app::protocol::{
-    ChatDeltaPayloadDto, ConversationDetailDto, ConversationDto, MessageDto,
-    ProviderErrorPayloadDto, RetryNotificationDto, TokenUsageDto,
+    ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto, ConversationDetailDto, ConversationDto,
+    MessageChangeKindDto, MessageDto, ProviderErrorPayloadDto, RetryNotificationDto,
+    SessionStateChangedPayloadDto, SessionStateDto, TokenUsageDto, TurnPhaseDto,
 };
 use assistant_providers::base::{ProviderErrorCode, ProviderErrorPayload};
 use assistant_providers::types::chat_delta::{RetryNotification, TokenUsage};
@@ -21,6 +22,8 @@ fn sample_conversation_row() -> ConversationRow {
         updated_at: 1000,
         is_full: false,
         active_branch_id: None,
+        mode_id: None,
+        tool_config_json: None,
     }
 }
 
@@ -39,6 +42,8 @@ fn sample_message_row() -> MessageRow {
         sibling_index: 0,
         provider_id: None,
         model_id: None,
+        tool_call_id: None,
+        is_error: false,
     }
 }
 
@@ -50,7 +55,7 @@ fn sample_token_usage() -> TokenUsage {
         cache_read_tokens: None,
         cache_write_tokens: None,
         reasoning_tokens: None,
-        context_window_tokens: 0,
+        context_window_tokens: None,
     }
 }
 
@@ -82,11 +87,9 @@ fn sample_chat_delta_dto() -> ChatDeltaPayloadDto {
         attempt_id: "a".into(),
         message_id: "m".into(),
         seq: 0,
+        iteration: 0,
         delta_text: None,
         delta_reasoning: None,
-        delta_tool_call_id: None,
-        delta_tool_call_name: None,
-        delta_tool_call_arguments: None,
         finish_reason: None,
         usage: None,
         delta_retry: None,
@@ -95,21 +98,15 @@ fn sample_chat_delta_dto() -> ChatDeltaPayloadDto {
 }
 
 #[test]
-fn chat_delta_payload_dto_skip_serializing_none() {
+fn chat_delta_payload_dto_keeps_null_optional_fields() {
     let payload = ChatDeltaPayloadDto {
         ..sample_chat_delta_dto()
     };
     let v = serde_json::to_value(&payload).unwrap();
     let obj = v.as_object().unwrap();
 
-    assert!(
-        !obj.contains_key("error"),
-        "error should be skipped when None"
-    );
-    assert!(
-        !obj.contains_key("deltaRetry"),
-        "deltaRetry should be skipped when None"
-    );
+    assert_eq!(obj["error"], serde_json::Value::Null);
+    assert_eq!(obj["deltaRetry"], serde_json::Value::Null);
 }
 
 #[test]
@@ -193,11 +190,9 @@ fn chat_delta_payload_dto_round_trip() {
         attempt_id: "a".into(),
         message_id: "m".into(),
         seq: 42,
+        iteration: 2,
         delta_text: Some("hello".into()),
         delta_reasoning: Some("thinking".into()),
-        delta_tool_call_id: None,
-        delta_tool_call_name: None,
-        delta_tool_call_arguments: None,
         finish_reason: Some("stop".into()),
         usage: Some(TokenUsageDto::from(sample_token_usage())),
         delta_retry: Some(RetryNotificationDto::from(sample_retry_notification())),
@@ -210,6 +205,7 @@ fn chat_delta_payload_dto_round_trip() {
     assert_eq!(restored["attemptId"], "a");
     assert_eq!(restored["messageId"], "m");
     assert_eq!(restored["seq"], 42);
+    assert_eq!(restored["iteration"], 2);
     assert_eq!(restored["deltaText"], "hello");
     assert_eq!(restored["deltaReasoning"], "thinking");
     assert_eq!(restored["finishReason"], "stop");
@@ -258,6 +254,20 @@ fn conversation_detail_dto_wire_format() {
         msgs[0].as_object().unwrap().contains_key("conversationId"),
         "conversationId should be camelCase"
     );
+}
+
+#[test]
+fn chat_messages_changed_payload_uses_seq_key() {
+    let payload = ChatMessagesChangedPayloadDto {
+        conversation_id: "conv-1".into(),
+        change_kind: MessageChangeKindDto::BranchSwitched,
+        messages: vec![],
+        active_branch_id: None,
+        seq: Some(1),
+    };
+    let v = serde_json::to_value(&payload).unwrap();
+    assert_eq!(v["seq"], 1, "seq must survive camelCase renaming");
+    assert!(v.get("_seq").is_none(), "wire key must be seq, not _seq");
 }
 
 #[test]
@@ -315,18 +325,18 @@ fn token_usage_dto_serde_default_fields() {
         "cacheWriteTokens should default to None (provider did not report cache stats)"
     );
     assert_eq!(
-        usage.context_window_tokens, 0,
-        "contextWindowTokens should default to 0"
+        usage.context_window_tokens, None,
+        "contextWindowTokens should default to None (window unknown)"
     );
     let serialized = serde_json::to_string(&usage).unwrap();
     assert!(
-        !serialized.contains("cacheReadTokens"),
-        "cacheReadTokens must be omitted when not reported: {}",
+        serialized.contains("\"cacheReadTokens\":null"),
+        "cacheReadTokens must be present as null: {}",
         serialized
     );
     assert!(
-        !serialized.contains("cacheWriteTokens"),
-        "cacheWriteTokens must be omitted when not reported: {}",
+        serialized.contains("\"cacheWriteTokens\":null"),
+        "cacheWriteTokens must be present as null: {}",
         serialized
     );
 }
@@ -342,4 +352,87 @@ fn token_usage_dto_round_trip() {
     assert_eq!(usage.cache_read_tokens, restored.cache_read_tokens);
     assert_eq!(usage.cache_write_tokens, restored.cache_write_tokens);
     assert_eq!(usage.context_window_tokens, restored.context_window_tokens);
+}
+
+#[test]
+fn turn_phase_dto_serializes_identically_to_kernel_turn_phase() {
+    use assistant_agent::kernel::TurnPhase;
+
+    let pairs = [
+        (TurnPhase::Starting, TurnPhaseDto::Starting),
+        (TurnPhase::Compacting, TurnPhaseDto::Compacting),
+        (TurnPhase::Thinking, TurnPhaseDto::Thinking),
+        (TurnPhase::Streaming, TurnPhaseDto::Streaming),
+        (TurnPhase::ToolCalling, TurnPhaseDto::ToolCalling),
+        (TurnPhase::AwaitingApproval, TurnPhaseDto::AwaitingApproval),
+        (TurnPhase::Finalizing, TurnPhaseDto::Finalizing),
+    ];
+
+    for (kernel, dto) in pairs {
+        assert_eq!(
+            serde_json::to_value(kernel).unwrap(),
+            serde_json::to_value(dto).unwrap(),
+            "wire value drifted from kernel for {kernel:?}"
+        );
+        assert_eq!(TurnPhaseDto::from(kernel), dto, "From mapping drifted");
+    }
+}
+
+#[test]
+fn session_state_changed_payload_wire_shape() {
+    let processing = SessionStateChangedPayloadDto {
+        conversation_id: "c1".into(),
+        turn_id: "t1".into(),
+        state: SessionStateDto::Processing {
+            turn_id: "t1".into(),
+            phase: TurnPhaseDto::ToolCalling,
+        },
+    };
+    let v = serde_json::to_value(&processing).unwrap();
+
+    assert_eq!(v["conversationId"], "c1");
+    assert_eq!(v["turnId"], "t1");
+    assert_eq!(v["state"]["processing"]["turnId"], "t1");
+    assert_eq!(v["state"]["processing"]["phase"], "toolCalling");
+    assert!(
+        v.get("seq").is_none(),
+        "session-state-changed is a snapshot, not a stream fragment: {v}"
+    );
+
+    let idle = serde_json::to_value(SessionStateDto::Idle).unwrap();
+    assert_eq!(idle, "idle", "unit variant must serialize as bare string");
+
+    let error = serde_json::to_value(SessionStateDto::Error {
+        message: "boom".into(),
+        recoverable: true,
+    })
+    .unwrap();
+    assert_eq!(error["error"]["message"], "boom");
+    assert_eq!(error["error"]["recoverable"], true);
+}
+
+#[test]
+fn session_state_dto_round_trips_through_json() {
+    let states = [
+        SessionStateDto::Idle,
+        SessionStateDto::Processing {
+            turn_id: "t1".into(),
+            phase: TurnPhaseDto::Finalizing,
+        },
+        SessionStateDto::Error {
+            message: "boom".into(),
+            recoverable: false,
+        },
+    ];
+
+    for state in states {
+        let payload = SessionStateChangedPayloadDto {
+            conversation_id: "c1".into(),
+            turn_id: "t1".into(),
+            state,
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        let restored: SessionStateChangedPayloadDto = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, payload, "round-trip failed for {json}");
+    }
 }

@@ -1,5 +1,4 @@
 import type { Message } from "../chat/core/chatTypes";
-import type { ChatError } from "../chat/core/chatErrors";
 import { chatService } from "../services/chatService";
 import { createLogger } from "@/services/logger";
 import { notifyError } from "./notifyStore";
@@ -9,12 +8,9 @@ const log = createLogger("chatCompactSlice");
 
 export interface ChatCompactSlice {
   isFull: boolean;
-  compactSummary: string | null;
-  compactError: ChatError | null;
 
   manualCompact: () => Promise<void>;
   unlockConversation: () => Promise<void>;
-  clearCompactError: () => void;
 }
 
 type FullState = ChatCompactSlice & {
@@ -30,8 +26,6 @@ export function createCompactSlice(
 ): ChatCompactSlice {
   return {
     isFull: false,
-    compactSummary: null,
-    compactError: null,
 
     manualCompact: async () => {
       const convId = get().currentConversationId;
@@ -44,7 +38,13 @@ export function createCompactSlice(
         content: "",
         tokens: null,
         timestamp: Date.now(),
+        parentId: null,
+        isPinned: false,
+        reasoning: null,
         siblingIndex: 0,
+        siblingCount: null,
+        providerId: null,
+        modelId: null,
       };
       useChatStreamStore.getState().beginStream(summaryMsgId);
       set({
@@ -73,10 +73,6 @@ export function createCompactSlice(
       } catch (e) {
         log.error("Unlock conversation failed", e);
       }
-    },
-
-    clearCompactError: () => {
-      set({ compactError: null });
     },
   };
 }

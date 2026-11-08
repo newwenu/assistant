@@ -5,22 +5,15 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { SETTINGS_DETAIL_PAGES } from "../core/pageRegistry";
+import { getSettingsDetailPages } from "../core/pageRegistry";
 import type { SettingsPageManifest } from "../core/types/pageTypes";
+import type { ConfGroup } from "../core/types/confRegistry";
 import {
   getSectionsByPage,
   getDefinitionsBySection,
-  CONF_KEY_MAP,
-  type ConfGroup,
   type SettingDefinition,
 } from "../core/field/fieldRegistry";
 import { toConfRecord } from "../core/types/confUtils";
-
-function useConfByGroup(group: ConfGroup): Record<string, unknown> | null {
-  const confKey = CONF_KEY_MAP[group];
-  const conf = useSettingsStore((s) => s[confKey]);
-  return toConfRecord(conf);
-}
 
 function readFieldValue(
   def: SettingDefinition,
@@ -122,32 +115,20 @@ const FieldDrivenSummary: React.FC<{ page: SettingsPageManifest }> = ({
     return groups;
   }, [sections]);
 
-  const loadAppConf = useSettingsStore((s) => s.loadAppConf);
-  const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
-  const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
+  const loadConf = useSettingsStore((s) => s.loadConf);
+  const confs = useSettingsStore((s) => s.confs);
 
   useEffect(() => {
-    if (allGroups.has("app")) void loadAppConf();
-    if (allGroups.has("orb")) void loadOrbConf();
-    if (allGroups.has("mascot")) void loadMascotConf();
-  }, [allGroups, loadAppConf, loadOrbConf, loadMascotConf]);
-
-  const appConf = useConfByGroup("app");
-  const orbConf = useConfByGroup("orb");
-  const mascotConf = useConfByGroup("mascot");
+    for (const group of allGroups) void loadConf(group);
+  }, [allGroups, loadConf]);
 
   const items = useMemo(() => {
-    const confMap: Record<ConfGroup, Record<string, unknown> | null> = {
-      app: appConf,
-      orb: orbConf,
-      mascot: mascotConf,
-    };
     const result: { key: string; label: string; value: string }[] = [];
     for (const sec of sections) {
       const defs = getDefinitionsBySection(sec.id);
       for (const def of defs) {
         if (def.type === "color" || def.type === "textarea") continue;
-        const conf = confMap[def.group];
+        const conf = toConfRecord(confs[def.group]);
         if (!conf) continue;
         if (def.visible && !def.visible(conf)) continue;
         const rawValue = readFieldValue(def, conf);
@@ -159,7 +140,7 @@ const FieldDrivenSummary: React.FC<{ page: SettingsPageManifest }> = ({
       }
     }
     return result;
-  }, [sections, appConf, orbConf, mascotConf]);
+  }, [sections, confs]);
 
   if (items.length === 0) return null;
 
@@ -249,7 +230,7 @@ export const SettingsOverview: React.FC = () => {
       </div>
 
       <div className="settings-overview-panels">
-        {SETTINGS_DETAIL_PAGES.map((page) =>
+        {getSettingsDetailPages().map((page) =>
           getSectionsByPage(page.id).length > 0 ? (
             <FieldDrivenSummary key={page.id} page={page} />
           ) : (

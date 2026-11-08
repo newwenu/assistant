@@ -6,12 +6,7 @@ import type {
   ImageAttachmentRef,
   FileAttachmentRef,
 } from "./contentBlockTypes";
-import type { Attachment, AllowedImageMimeType } from "./attachmentTypes";
-import {
-  ALLOWED_IMAGE_MIME_TYPES,
-  ATTACHMENT_MAX_IMAGE_SIZE_BYTES,
-  IMAGE_EXT_TO_MIME,
-} from "./attachmentTypes";
+import type { Attachment } from "../attachment/types";
 
 export function buildContentBlocks(
   text: string,
@@ -151,29 +146,6 @@ export function parseContent(content: string): ContentBlock[] | null {
 
 export function serializeContent(blocks: ContentBlock[]): string {
   return JSON.stringify(blocks);
-}
-
-export function resolveImageMimeType(file: File): AllowedImageMimeType | null {
-  if (
-    ALLOWED_IMAGE_MIME_TYPES.includes(
-      file.type as (typeof ALLOWED_IMAGE_MIME_TYPES)[number],
-    )
-  ) {
-    return file.type as AllowedImageMimeType;
-  }
-  // 部分平台对 bmp/tiff/jfif 不返回 MIME，回退到扩展名判断
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  return IMAGE_EXT_TO_MIME[ext] ?? null;
-}
-
-export function validateImageFile(file: File): { ok: boolean; error?: string } {
-  if (!resolveImageMimeType(file)) {
-    return { ok: false, error: "invalid_image_type" };
-  }
-  if (file.size > ATTACHMENT_MAX_IMAGE_SIZE_BYTES) {
-    return { ok: false, error: "image_too_large" };
-  }
-  return { ok: true };
 }
 
 export function extractPlainText(content: string): string {

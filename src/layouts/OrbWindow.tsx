@@ -8,13 +8,12 @@ export const OrbWindow: React.FC = () => {
   const isExpanded = useOrbStore((s) => s.isExpanded);
   const expandDirection = useOrbStore((s) => s.expandDirection);
   const expandVertical = useOrbStore((s) => s.expandVertical);
-  const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
-  const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
+  const loadConf = useSettingsStore((s) => s.loadConf);
 
   React.useEffect(() => {
-    void loadOrbConf();
-    void loadMascotConf();
-  }, [loadOrbConf, loadMascotConf]);
+    void loadConf("orb");
+    void loadConf("mascot");
+  }, [loadConf]);
 
   const orbClassName = [
     isExpanded ? "orb-expanded" : "",

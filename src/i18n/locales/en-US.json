@@ -11,10 +11,18 @@
       "vault": "Password Vault",
       "vault_settings": { "title": "Vault Settings" },
       "chat_history": "Chat History",
-      "settings": "Settings"
+      "settings": "Settings",
+      "category": {
+        "general": "General",
+        "provider": "Provider",
+        "vault": "Security",
+        "about": "About"
+      }
     },
     "actions": {
       "saved": "Saved",
+      "save_failed": "Save failed",
+      "save_failed_desc": "Settings could not be saved: {{error}}",
       "save": "Save",
       "cancel": "Cancel",
       "more": "More",
@@ -74,6 +82,11 @@
     }
   },
   "settings": {
+    "not_found": {
+      "title": "Page Not Found",
+      "description": "Settings page \"{{pageId}}\" was not found; it may belong to a disabled feature.",
+      "back": "Back to Settings Overview"
+    },
     "overview": {
       "title": "Settings Overview",
       "subtitle": "View current configuration, click to open detailed settings",
@@ -101,12 +114,34 @@
       },
       "compact": {
         "auto_compact": { "label": "Auto-terminate on context limit" },
-        "compact_threshold_percent": { "label": "Termination threshold" },
+        "compact_threshold_percent_of_budget": {
+          "label": "Termination threshold (of usable budget)"
+        },
         "compact_summary_prompt": {
           "label": "Custom summary prompt",
           "placeholder": "Leave empty to use default template"
         },
         "compact_summary_max_tokens": { "label": "Max summary length" }
+      },
+      "agent_tools": {
+        "title": "Agent Tools",
+        "description": "Workspace and approval behavior for tool execution",
+        "workspace_root": {
+          "label": "Workspace Root",
+          "description": "Relative and default paths in tools resolve against this directory. Leave empty to treat it as unconfigured: path-based tools will fail instead of falling back to the current directory",
+          "placeholder": "Not configured",
+          "pick_title": "Select workspace root"
+        },
+        "approval_timeout_secs": {
+          "label": "Approval Timeout (seconds)",
+          "description": "Longest time to wait for user confirmation; timing out counts as a denial. Leave empty for the default 120 seconds",
+          "placeholder": "Default 120"
+        },
+        "user_question_timeout_secs": {
+          "label": "Question Timeout (seconds)",
+          "description": "Longest time ask_user waits for an answer; timing out counts as unanswered and the turn continues. Use 0 for no limit, leave empty for the default 180 seconds",
+          "placeholder": "Default 180"
+        }
       }
     },
     "appearance": {
@@ -232,10 +267,8 @@
       "empty": "No agent modes",
       "section": { "builtin": "Built-in Modes", "custom": "Custom Modes" },
       "kind": {
-        "default": "Default",
-        "quick": "Quick",
-        "deep": "Deep",
-        "custom": "Custom"
+        "chat": "Chat",
+        "agent": "Agent"
       },
       "field": {
         "name": {
@@ -258,8 +291,57 @@
         "reasoning_enabled": { "label": "Reasoning" },
         "reasoning_effort": {
           "label": "Reasoning Effort",
-          "placeholder": "Select reasoning effort"
+          "placeholder": "Select reasoning effort",
+          "options": {
+            "low": "Low",
+            "medium": "Medium",
+            "high": "High"
+          }
+        },
+        "max_tool_tier": {
+          "options": {
+            "sandbox": "Sandbox",
+            "os": "System",
+            "external": "External"
+          }
+        },
+        "approval_level": {
+          "options": {
+            "none": "Auto-run everything",
+            "dangerous_only": "Ask for dangerous actions",
+            "all_os_tools": "Ask for all non-sandbox tools"
+          }
         }
+      },
+      "tool_assembly": {
+        "title": "Tool assembly (read-only)",
+        "summary": "Max tier: {{tier}} · Approval level: {{level}} · {{count}} tools enabled",
+        "hint": "Adjust tool assembly in a conversation (Agent layout tool panel). This only shows the mode's default."
+      },
+      "grants": {
+        "title": "Authorized actions",
+        "description": "These operations are set to \"Always allow\" and no longer prompt. Revoking makes similar operations ask again.",
+        "empty": "No grants yet",
+        "revoke": "Revoke",
+        "revoked": "Grant revoked",
+        "revoke_failed": "Revoke failed: {{error}}",
+        "clear": "Clear all",
+        "clear_confirm": "Clear all grants? Operations set to \"Always allow\" will prompt again.",
+        "cleared": "All grants cleared",
+        "clear_failed": "Clear failed: {{error}}",
+        "load_failed": "Failed to load grants: {{error}}",
+        "scope": {
+          "session": "Session",
+          "global": "Global"
+        },
+        "set_global": "Make global",
+        "set_global_confirm": "This operation will no longer prompt in any conversation. Continue?",
+        "set_session": "Make session-only",
+        "set_session_title": "Make session-only",
+        "set_session_desc": "Choose the conversation this grant applies to; other conversations will prompt again.",
+        "set_session_placeholder": "Select a conversation",
+        "scope_changed": "Grant scope updated",
+        "scope_failed": "Failed to update scope: {{error}}"
       },
       "confirm_delete": {
         "title": "Delete this mode?",
@@ -372,7 +454,8 @@
         "title": "Vault Settings"
       },
       "ssh": {
-        "title": "SSH Agent"
+        "title": "SSH Agent Preferences",
+        "agent_location_hint": "Key list and runtime status are available in the vault under \"Manage → SSH Agent\"."
       },
       "auto_lock_minutes": { "label": "Auto Lock Time (minutes)" },
       "lock_on_screen_lock": { "label": "Lock Vault on Screen Lock" },
@@ -384,7 +467,6 @@
         "enroll_step_hint": "Please verify again to complete enrollment",
         "save_message": "Biometric status updated"
       },
-      "hibp_auto_audit": { "label": "HIBP Password Leak Audit" },
       "ssh_auto_add": { "label": "Auto Add SSH Keys to Agent on Unlock" },
       "ssh_use_pageant": { "label": "Use Pageant (PuTTY)" },
       "ssh_use_openssh_agent": { "label": "Use OpenSSH Agent" },
@@ -420,7 +502,7 @@
       "category_network_message": "Unable to connect to the service. Please check your network and retry",
       "category_auth_message": "API Key is invalid or expired. Please check your settings",
       "category_rate_limit_message": "Too many requests. Please retry after a short wait",
-      "category_context_overflow_message": "Conversation exceeds the model's context window limit",
+      "category_context_overflow_message": "The conversation exceeds the model's context window. Compress the context, start a new chat, or switch to a model with a larger context window, then retry.",
       "category_timeout_message": "Service is taking too long to respond. Please retry",
       "category_provider_quota_message": "Provider account quota is exhausted. Check your account or switch provider",
       "category_provider_unavailable_message": "Provider service is temporarily unavailable. Please retry later",
@@ -435,6 +517,19 @@
       "action_start_new_chat": "New Chat",
       "action_copy_diagnostics": "Copy Diagnostics"
     },
+    "context": {
+      "used": "Input",
+      "output": "Output",
+      "cache_read": "Cache Hit",
+      "cache_write": "Cache Write",
+      "reasoning": "Reasoning",
+      "cumulative": "Cumulative",
+      "source": "Source",
+      "source_provider": "Reported by provider",
+      "source_estimate_record": "Local estimate (provider did not report input tokens)",
+      "source_estimate_projection": "Local estimate (provider did not report usage)",
+      "no_messages": "No messages yet"
+    },
     "errors": {
       "renameFailed": {
         "title": "Rename Failed",
@@ -443,6 +538,14 @@
       "updateModelFailed": {
         "title": "Model Switch Failed",
         "description": "Model switch was unsuccessful, please try again later"
+      },
+      "updateModeFailed": {
+        "title": "Mode Switch Failed",
+        "description": "Mode switch was unsuccessful, please try again later"
+      },
+      "updateToolConfigFailed": {
+        "title": "Save Tool Config Failed",
+        "description": "The tool configuration was not saved; it has been rolled back"
       },
       "deleteMessageFailed": {
         "title": "Delete Message Failed",
@@ -521,12 +624,129 @@
     },
     "mode": {
       "placeholder": "Mode",
-      "select_placeholder": "Select Mode"
+      "select_placeholder": "Select Mode",
+      "group_chat": "Chat modes",
+      "group_agent": "Agent modes",
+      "switch_disabled_tooltip": "A reply is being generated; switching modes is unavailable"
     },
     "reasoning": {
       "expand": "Show thinking",
       "collapse": "Hide thinking",
       "thinking": "Thinking…"
+    },
+    "tool": {
+      "status": {
+        "running": "Running",
+        "success": "Done",
+        "error": "Failed",
+        "awaiting_user": "Awaiting approval",
+        "cancelled": "Cancelled"
+      },
+      "result_persisted": "Output saved to",
+      "result_size": "{{lines}} lines · {{size}}",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "no_result": "No output",
+      "approval": {
+        "title": "Approval required",
+        "remaining": "{{time}} left",
+        "expired": "Timed out",
+        "preview": "Expected",
+        "resources": "Scope",
+        "impact": "Impact",
+        "detection": "Detected",
+        "reasons": "Why",
+        "read_only": "A read-only operation requested confirmation (configuration issue)",
+        "destructive": "Irreversible · destructive",
+        "open_world": "Accesses outside the workspace",
+        "estimated": "Estimate based on arguments; may change at execution",
+        "approve": "Approve",
+        "deny": "Deny",
+        "session_allow": "Allow in this conversation",
+        "always": "Always allow",
+        "always_confirm": "This permanently allows this kind of operation across all conversations. You can revoke it under Settings → Authorized actions. Continue?",
+        "always_hint": "Same kind of operation will no longer prompt; revoke under Settings → Authorized actions",
+        "tier": {
+          "sandbox": "Sandbox",
+          "os": "OS",
+          "external": "External"
+        },
+        "level": {
+          "none": "Run everything automatically",
+          "dangerous_only": "Only dangerous operations need confirmation",
+          "all_os_tools": "All non-sandbox tools need confirmation"
+        },
+        "reason": {
+          "default_policy": "Default policy: {{rule}}",
+          "approval_level": "Approval level: {{level}}",
+          "project_rule": "Project rule: {{action}} {{resource}}",
+          "tier_ceiling": "Tier ceiling: {{tier}}",
+          "advisor": "AI advisor: {{rationale}}"
+        }
+      },
+      "question": {
+        "title": "Waiting for your input",
+        "remaining": "{{time}} left",
+        "expired": "Timed out",
+        "other": "Other",
+        "other_placeholder": "Type your answer…",
+        "submit": "Submit",
+        "submitting": "Submitting…",
+        "hint": "Answer every question to submit",
+        "multi_hint": "Multiple choice"
+      },
+      "toolbar": {
+        "summary": "{{enabled}}/{{total}} tools · up to {{tier}}",
+        "hint": "Conversation tool assembly"
+      },
+      "notice": {
+        "enabled": "Enabled {{names}}",
+        "disabled": "Disabled {{names}}",
+        "tier": "Tier ceiling set to {{tier}}",
+        "level": "Approval level set to {{level}}",
+        "separator": "; "
+      },
+      "panel": {
+        "title": "Tool assembly",
+        "enabled_count": "{{count}} enabled",
+        "done": "Done",
+        "tier_label": "Tier ceiling",
+        "level_label": "Approval level",
+        "set_default": "Set as mode default",
+        "set_default_hint": "Writes the current configuration back to the mode's initial value for new conversations",
+        "out_of_tier": "Above ceiling, ignored",
+        "group_empty": "No tools in this tier",
+        "tool_desc": {
+          "read": "Read a text file with line numbers, paged by range",
+          "ls": "List a directory as an indented tree",
+          "glob": "Find files by name pattern",
+          "grep": "Search file contents by regex",
+          "write": "Create or overwrite a text file",
+          "edit": "Replace an exact fragment of a file",
+          "mkdir": "Create a directory (parents included)",
+          "move": "Move or rename a file or directory",
+          "delete": "Delete a file or directory, irreversible",
+          "ask_user": "Ask you questions mid-run and wait for answers"
+        },
+        "set_default_done_title": "Default updated",
+        "set_default_done_desc": "New conversations with this mode start from the current tool configuration.",
+        "set_default_failed_title": "Failed to set default",
+        "set_default_failed_desc": "The mode's initial tool configuration was not updated."
+      }
+    },
+    "reasoning_depth": {
+      "label": "Thinking depth",
+      "default": "Default",
+      "off": "Off",
+      "on": "On",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "minimal": "Minimal",
+      "xhigh": "Extra high",
+      "max": "Max",
+      "from_mode": "From mode: {{value}}",
+      "overridden": "Overridden for this conversation"
     },
     "compact": {
       "banner_title": "Conversation reached context limit",
@@ -541,13 +761,16 @@
       "summary_label": "Handoff Summary"
     },
     "retry": {
-      "retrying": "Retrying ({{attempt}}/{{max}}) in {{delay}}s…"
+      "retrying": "Retrying ({{attempt}}/{{max}})",
+      "countdown": "in {{seconds}}s…"
     },
     "orb": {
       "conversation_list": "Conversation list",
       "search_conversation": "Search conversations",
       "view_all_in_main": "View all conversations in main window",
-      "search_more_in_main": "Search more results in main window"
+      "search_more_in_main": "Search more results in main window",
+      "keep_expanded": "Keep expanded",
+      "stop_keep_expanded": "Stop keeping expanded"
     }
   },
   "history": {
@@ -631,7 +854,8 @@
       "dev": "Development",
       "converter": "Converter",
       "security": "Security",
-      "media": "Media"
+      "media": "Media",
+      "productivity": "Productivity"
     },
     "search_placeholder": "Search tools...",
     "no_match": "No matching tools found",
@@ -708,6 +932,26 @@
       "name": "Cron Parser",
       "description": "Parse Cron expressions and show next execution times"
     },
+    "clock": {
+      "name": "Timer",
+      "description": "Countdown and stopwatch with presets and custom durations",
+      "start": "Start",
+      "pause": "Pause",
+      "resume": "Resume",
+      "reset": "Reset",
+      "finished": "Finished",
+      "finished_hint": "This round has ended. You can start again.",
+      "status_idle": "Ready",
+      "status_running": "Running",
+      "status_paused": "Paused",
+      "minutes": "min",
+      "custom_minutes": "Custom minutes",
+      "error": "Timer action failed",
+      "mode_countdown": "Countdown",
+      "mode_stopwatch": "Stopwatch",
+      "mode_switch_running": "Pause the timer before switching modes",
+      "stopwatch_hint": "The stopwatch does not stop automatically"
+    },
     "calculator": {
       "name": "Calculator",
       "description": "Evaluate math expressions with history"
@@ -737,6 +981,12 @@
       "description": "Securely store and manage passwords, credentials and keys"
     }
   },
+  "mini": {
+    "toggle_to_mini": "Switch to mini window",
+    "toggle_to_normal": "Expand to full window",
+    "page_unsupported": "This page does not support mini mode",
+    "page_unsupported_desc": "This page needs the full window width; the current mode is kept."
+  },
   "vault": {
     "name": "Password Vault",
     "description": "Securely store and manage passwords, credentials and keys",
@@ -752,10 +1002,7 @@
       "unlock": "Unlock",
       "create_vault": "Create Vault",
       "biometric_unlock": "Unlock with Biometrics",
-      "recovery_key_unlock": "Unlock with Recovery Key",
-      "recovery_key_divider": "Recovery Key",
       "recovery_key_placeholder": "XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX",
-      "unlock_with_recovery_key": "Unlock with Recovery Key",
       "use_password": "Use Password",
       "password_divider": "Password"
     },
@@ -766,6 +1013,7 @@
       "no_entries": "No entries",
       "confirm_delete": "Delete this entry?",
       "viewing_entry": "Viewing Entry",
+      "select_hint": "Select an entry from the list to view details",
       "category": "Category",
       "category_login": "Login",
       "category_note": "Note",
@@ -773,6 +1021,7 @@
       "category_identity": "Identity",
       "category_sshKey": "SSH Key",
       "category_custom": "Custom",
+      "category_all": "All",
       "title": "Title",
       "title_required": "Title is required",
       "username": "Username",
@@ -797,10 +1046,28 @@
       "gen_mode_random": "Random",
       "gen_mode_passphrase": "Passphrase",
       "reveal": "Reveal",
+      "hold_to_reveal": "Hold to reveal",
+      "release_to_hide": "Release to hide",
+      "reveal_failed": "Reveal failed",
+      "reveal_rate_limited": "Too many reveals, please try again later",
       "encrypted": "Encrypted",
       "revision": "Revision",
       "entries_count": "entries",
+      "entries_count_filtered": "{{visible}} / {{total}} entries",
+      "no_matching_entries": "No matching entries",
+      "current_filters": "Filters:",
+      "filter_search": "Search: {{query}}",
+      "filter_category": "Category: {{category}}",
+      "filter_tag": "Tag: {{tag}}",
+      "filter_leaked": "Leaked only ({{count}})",
+      "show_leaked_only": "Show leaked entries only",
+      "clear_filters": "Clear filters",
+      "import_or_clone": "Import or clone a vault from \"Manage\"",
+      "delete_failed": "Failed to delete",
       "leaked": "leaked",
+      "sort_recent": "Recently updated",
+      "sort_title": "Title",
+      "sort_favorite": "Favorites first",
       "trash": "Trash",
       "trash_empty": "Trash is empty",
       "trash_hint": "Deleted entries are kept here until restored or purged",
@@ -835,22 +1102,27 @@
     },
     "tab": {
       "vault": "Vault",
-      "tools": "Tools",
-      "sync": "Sync",
+      "manage": "Manage",
+      "sync": "Sync & Remote",
       "ssh_agent": "SSH Agent",
       "recovery": "Recovery Key",
       "change_password": "Change Password",
-      "import_export": "Import / Export"
+      "import_export": "Import / Export",
+      "danger_zone": "Danger Zone"
     },
     "confirm_lock": "Lock the vault?",
-    "meta": {
-      "integrity_warning_title": "Vault metadata integrity check failed",
-      "integrity_warning_desc": "The vault was unlocked with the recovery key, but the repository metadata (.vault-meta) does not match the master key. Contents may have been modified externally; export a backup and verify the remote repository before syncing again."
+    "lock": "Lock vault",
+    "lock_failed": "Failed to lock the vault",
+    "auto_lock_remaining": "Auto-lock in {{time}}",
+    "alert": {
+      "more": "{{count}} more alert(s)",
+      "collapse": "Collapse alerts"
     },
     "sync": {
       "status_no_sync": "Sync not initialized",
+      "status_no_remote": "Initialized, but no remote is bound",
       "status_dirty": "Uncommitted changes",
-      "status_ready": "Sync ready",
+      "status_ready": "Local working tree is clean (remote not checked)",
       "status_unknown": "Sync status unknown",
       "init": "Initialize Sync",
       "init_local": "Create Local Repository",
@@ -858,16 +1130,39 @@
       "remote_url": "Remote Repository URL",
       "ssh_hosts": "SSH Connection Reuse Hosts",
       "ssh_hosts_hint": "Comma separated. Leave empty to reuse SSH connections only for github.com / gitlab.com.",
-      "last_sync": "Last sync: {{time}}",
+      "last_sync": "Last synced: {{time}}",
       "last_sync_never": "Never synced",
+      "state_ready": "Local working tree clean",
+      "state_no_remote": "No remote bound",
+      "state_in_sync": "In sync with remote",
+      "state_ahead": "{{count}} commit(s) to push",
+      "state_behind": "{{count}} update(s) to pull",
+      "state_diverged": "{{ahead}} to push / {{behind}} to pull",
+      "state_dirty": "Uncommitted changes",
+      "state_off": "Sync not initialized",
+      "state_conflict": "Sync conflict",
+      "state_failed": "Sync failed",
+      "state_failed_tip": "{{message}} (click to dismiss)",
+      "remote_check": "Check remote",
+      "remote_checking": "Checking…",
+      "remote_checked_at": "Checked at {{time}}",
+      "remote_checked_stale": "Compared offline at {{time}}; not verified online",
+      "remote_check_failed": "Remote check failed: {{message}}",
+      "remote_check_failed_generic": "Remote check failed",
+      "remote_check_no_remote": "No remote is bound",
+      "remote_check_no_upstream": "No upstream branch configured",
+      "remote_check_hint": "Click \"Check remote\" to compare with the remote",
+      "remote_not_bound_tip": "This repository exists only on this device. Bind a remote to sync across devices.",
+      "remote_not_bound_cta": "Bind remote",
       "pull": "Pull",
       "push": "Push",
+      "push_hint_commits_first": "Local changes are committed before pushing",
       "now": "Sync",
       "force_push": "Force Push",
       "force_push_confirm_title": "Confirm Force Push",
       "force_push_confirm_desc": "Force push will overwrite the remote repository history. This action cannot be undone.",
       "result_success": "Sync succeeded",
-      "result_up_to_date": "Already up to date",
+      "result_no_remote": "No remote bound: local changes committed, not pushed",
       "result_conflict": "Sync conflict: {{count}} file(s)",
       "result_error": "Sync failed: {{message}}",
       "result_unreadable": "Sync finished, but {{count}} entry(ies) could not be decrypted",
@@ -880,6 +1175,7 @@
       "unreadable_overwrite": "Overwrite remote with local data",
       "err_not_init": "Git repository not initialized",
       "err_no_remote": "No remote repository configured",
+      "err_no_upstream": "No upstream branch configured. Run \"Sync\" once first. If multiple remotes are configured, choose an upstream in Settings.",
       "test_connection": "Test Connection",
       "test_ok": "Connected: {{count}} branch(es) on remote",
       "test_failed": "Connection failed",
@@ -928,7 +1224,10 @@
       "meta_fingerprint": "Fingerprint",
       "meta_comment": "Comment",
       "public_key": "Public Key",
-      "auto_add_on_unlock": "Auto-add to Agent on unlock"
+      "auto_add_on_unlock": "Auto-add to Agent on unlock",
+      "on": "On",
+      "off": "Off",
+      "auto_add_in_settings": "Change in Settings"
     },
     "recovery": {
       "key_description": "A recovery key can unlock the vault if you forget your master password. Save it securely — it will only be shown once.",
@@ -958,7 +1257,23 @@
     "danger_zone": {
       "title": "Danger Zone",
       "desc": "The following actions are destructive and cannot be undone. Proceed with caution.",
-      "type_confirm": "Type {{code}} to confirm"
+      "type_confirm": "Type {{code}} to confirm",
+      "tab_desc": "All destructive actions live here. Each one requires typing a confirmation code before it runs.",
+      "sync_hint": "Force push, discarding local changes and removing the remote have moved to the Danger Zone tab.",
+      "unreadable_overwrite_hint": "To overwrite the remote with this device, run force push from the Danger Zone tab.",
+      "open": "Open Danger Zone",
+      "discard": {
+        "title": "Discard local changes",
+        "desc": "Discards all uncommitted local changes and resets to the last commit. This cannot be undone."
+      },
+      "force_push": {
+        "title": "Force push overwriting remote",
+        "desc": "Overwrites the remote repository history with this device. Commits on the other side will be lost. This cannot be undone."
+      },
+      "remove_remote": {
+        "title": "Remove remote repository",
+        "desc": "Unbinds the remote repository. Local commits are kept, but pushing and pulling will stop working."
+      }
     },
     "conflict": {
       "title": "Resolve Sync Conflict",
@@ -1060,11 +1375,14 @@
       "enabled": "Biometrics enabled",
       "enable": "Enable",
       "disable": "Disable",
+      "disable_requires_unlock": "Unlock the vault before disabling biometrics",
       "unlock_failed": "Unlock failed",
       "unlocking": "Unlocking…"
     },
     "hibp": {
-      "audit_all": "Audit All"
+      "audit_all": "Audit All",
+      "progress": "Auditing {{done}} / {{total}}",
+      "cancel": "Cancel audit"
     }
   }
 }

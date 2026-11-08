@@ -29,6 +29,7 @@ const SECRET_SCHEMA_DONT_MATCH_NAME: c_int = 2;
 const SECRET_SCHEMA_ATTRIBUTE_STRING: c_int = 0;
 const SECRET_COLLECTION_DEFAULT: *const c_char = ptr::null();
 const SECRET_SERVICE_NONE: c_int = 0;
+const SECRET_ERROR_NO_SUCH_OBJECT: c_int = 2;
 
 extern "C" {
     fn secret_password_store_sync(
@@ -241,7 +242,18 @@ impl BiometricKeyStore for LibsecretKeyStore {
             );
 
             if !error.is_null() {
+                let code = (*error).code;
+                let msg = CString::from_raw((*error).message);
                 g_free(error as *mut c_void);
+                let msg = msg
+                    .into_string()
+                    .unwrap_or_else(|_| "libsecret error".into());
+                if code == SECRET_ERROR_NO_SUCH_OBJECT {
+                    debug!("libsecret: biometric key '{}' already absent", key_id);
+                    return Ok(());
+                }
+                warn!("libsecret: delete failed for '{}': {}", key_id, msg);
+                return Err(VaultError::BiometricFailed(msg));
             }
             info!("libsecret: biometric key deleted for '{}'", key_id);
             Ok(())

@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::path::Path;
-use std::process::{Command, ExitStatus, Output};
+use std::process::{Command, Output};
 use std::time::SystemTime;
 
 use crate::types::{RepositoryState, SyncError};
@@ -212,7 +212,7 @@ pub fn git_branch_upstream(repo: &Path, reference: &str) -> Result<Option<String
         return Ok(None);
     }
 
-    cmd_assert_status(output.status)?;
+    cmd_assert_status(&output, repo)?;
 
     let upstream = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if upstream.is_empty() {
@@ -429,7 +429,10 @@ pub fn git_log(
         if stderr.contains("does not have any commits") {
             return Ok(Vec::new());
         }
-        return Err(SyncError::GitStatus(output.status.code().unwrap_or(-1)));
+        return Err(SyncError::GitFailed {
+            code: output.status.code().unwrap_or(-1),
+            stderr: sanitize_git_stderr(repo, &stderr),
+        });
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -470,11 +473,72 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    cmd_assert_status(
-        cmd_git(args, repo, connects_remote)
-            .status()
-            .map_err(|e| SyncError::Io(e.to_string()))?,
-    )
+    let output = git_output(repo, args, connects_remote)?;
+    cmd_assert_status(&output, repo)
+}
+
+/// 返回 `(本地领先, 远程领先)`，对应 `git rev-list --left-right --count A...B`。
+pub fn git_rev_list_left_right_count(repo: &Path, range: &str) -> Result<(u32, u32), SyncError> {
+    let out = git_stdout_ok(repo, ["rev-list", "--left-right", "--count", range], false)?;
+    let mut parts = out.split_whitespace();
+    match (
+        parts.next().and_then(|v| v.parse::<u32>().ok()),
+        parts.next().and_then(|v| v.parse::<u32>().ok()),
+    ) {
+        (Some(left), Some(right)) => Ok((left, right)),
+        _ => Err(SyncError::GitCli(format!(
+            "git rev-list returned unexpected output: {out}"
+        ))),
+    }
+}
+
+const MAX_GIT_STDERR_CHARS: usize = 2000;
+
+/// Git stderr 脱敏：URL userinfo → `***@`，仓库绝对路径 → `<vault>`，并截断。
+pub fn sanitize_git_stderr(repo: &Path, raw: &str) -> String {
+    let text = match repo.to_str() {
+        Some(path) => {
+            let trimmed = path.trim_end_matches(['/', '\\']);
+            if trimmed.is_empty() {
+                raw.trim().to_string()
+            } else {
+                [trimmed.to_string(), trimmed.replace('\\', "/")]
+                    .into_iter()
+                    .fold(raw.trim().to_string(), |text, variant| {
+                        text.replace(&variant, "<vault>")
+                    })
+            }
+        }
+        None => raw.trim().to_string(),
+    };
+    redact_url_userinfo(&text)
+        .chars()
+        .take(MAX_GIT_STDERR_CHARS)
+        .collect()
+}
+
+fn redact_url_userinfo(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(index) = rest.find("://") {
+        let split = index + 3;
+        out.push_str(&rest[..split]);
+        let tail = &rest[split..];
+        let authority_end = tail
+            .find(|c: char| c.is_whitespace() || matches!(c, '/' | '"' | '\''))
+            .unwrap_or(tail.len());
+        let authority = &tail[..authority_end];
+        match authority.rfind('@') {
+            Some(at) => {
+                out.push_str("***@");
+                out.push_str(&authority[at + 1..]);
+            }
+            None => out.push_str(authority),
+        }
+        rest = &tail[authority_end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 fn git_output<I, S>(repo: &Path, args: I, connects_remote: bool) -> Result<Output, SyncError>
@@ -499,7 +563,7 @@ where
 {
     let output = git_output(repo, args, connects_remote)?;
     if output.status.code() != Some(allow_exit_code) {
-        cmd_assert_status(output.status)?;
+        cmd_assert_status(&output, repo)?;
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
@@ -510,7 +574,7 @@ where
     S: AsRef<OsStr>,
 {
     let output = git_output(repo, args, connects_remote)?;
-    cmd_assert_status(output.status)?;
+    cmd_assert_status(&output, repo)?;
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
@@ -537,9 +601,12 @@ where
     cmd
 }
 
-fn cmd_assert_status(status: ExitStatus) -> Result<(), SyncError> {
-    if !status.success() {
-        return Err(SyncError::GitStatus(status.code().unwrap_or(-1)));
+fn cmd_assert_status(output: &Output, repo: &Path) -> Result<(), SyncError> {
+    if !output.status.success() {
+        return Err(SyncError::GitFailed {
+            code: output.status.code().unwrap_or(-1),
+            stderr: sanitize_git_stderr(repo, &String::from_utf8_lossy(&output.stderr)),
+        });
     }
     Ok(())
 }

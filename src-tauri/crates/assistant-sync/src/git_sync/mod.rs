@@ -2,9 +2,12 @@ pub mod git;
 pub mod ssh;
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
-use crate::types::{ConflictFile, Readyness, RepositoryState, SyncConfig, SyncError};
+use crate::types::{
+    ConflictFile, Readyness, RemoteStatus, RemoteStatusErrorKind, RepositoryState, SyncConfig,
+    SyncError,
+};
 
 pub const STORE_GIT_DIR: &str = ".git/";
 pub const GIT_PULL_OUTDATED: Duration = Duration::from_secs(30);
@@ -35,7 +38,9 @@ impl GitSync {
 
         match git::git_state(&self.repo_path)? {
             RepositoryState::Clean => {
-                if git::git_has_changes(&self.repo_path)? {
+                if !self.has_remote()? {
+                    Ok(Readyness::NoRemote)
+                } else if git::git_has_changes(&self.repo_path)? {
                     Ok(Readyness::Dirty)
                 } else {
                     Ok(Readyness::Ready)
@@ -54,31 +59,47 @@ impl GitSync {
             return Ok(());
         }
 
-        let repo = &self.repo_path;
-        if git::git_branch_upstream(repo, "HEAD")?.is_none() {
-            let remotes = self.tracked_remote_or_remotes()?;
-            if remotes.len() != 1 {
-                return Ok(());
-            }
+        self.ensure_upstream()?;
+        self.pull()
+    }
 
-            let remote = &remotes[0];
-            git::git_fetch(repo, Some(remote))?;
-
-            let remote_branches = git::git_branch_remote(repo)?;
-            if remote_branches.is_empty() {
-                return Ok(());
-            }
-
-            let branch = git::git_current_branch(repo)?;
-            let upstream_ref = format!("{remote}/{branch}");
-
-            if !remote_branches.contains(&upstream_ref) {
-                return Ok(());
-            }
-            git::git_branch_set_upstream(repo, None, &upstream_ref)?;
+    /// 尝试自动建立上游。返回 `Ok(true)` 表示过程中执行了一次 fetch，
+    /// 调用方可据此跳过重复 fetch；条件不满足时静默返回 `Ok(false)`。
+    pub fn ensure_upstream(&self) -> Result<bool, SyncError> {
+        if !self.is_init() || !self.has_remote()? {
+            return Ok(false);
         }
 
-        self.pull()
+        let repo = &self.repo_path;
+        if git::git_branch_upstream(repo, "HEAD")?.is_some() {
+            return Ok(false);
+        }
+
+        let remotes = self.tracked_remote_or_remotes()?;
+        if remotes.len() != 1 {
+            return Ok(false);
+        }
+
+        let remote = &remotes[0];
+        git::git_fetch(repo, Some(remote))?;
+
+        let remote_branches = git::git_branch_remote(repo)?;
+        if remote_branches.is_empty() {
+            return Ok(true);
+        }
+
+        let branch = git::git_current_branch(repo)?;
+        let upstream_ref = format!("{remote}/{branch}");
+        if !remote_branches.contains(&upstream_ref) {
+            return Ok(true);
+        }
+
+        git::git_branch_set_upstream(repo, None, &upstream_ref)?;
+        Ok(true)
+    }
+
+    pub fn state(&self) -> Result<RepositoryState, SyncError> {
+        git::git_state(&self.repo_path)
     }
 
     pub fn finalize(&self, msg: &str) -> Result<(), SyncError> {
@@ -116,6 +137,139 @@ impl GitSync {
         }
 
         self.push(set_branch.as_deref(), set_upstream.as_deref())
+    }
+
+    pub fn finalize_force(&self, msg: &str) -> Result<(), SyncError> {
+        if !self.is_init() {
+            return Ok(());
+        }
+
+        if git::git_has_changes(&self.repo_path)? {
+            self.commit_all(msg, false)?;
+        }
+
+        if !self.has_remote()? {
+            return Ok(());
+        }
+
+        if git::git_branch_upstream(&self.repo_path, "HEAD")?.is_none() {
+            self.ensure_upstream()?;
+        }
+
+        if git::git_branch_upstream(&self.repo_path, "HEAD")?.is_none() {
+            return Err(SyncError::NoUpstreamConfigured);
+        }
+
+        git::git(&self.repo_path, ["push", "-q", "--force"], true)
+    }
+
+    pub fn remote_status(&self, fetch: bool) -> Result<RemoteStatus, SyncError> {
+        if !self.is_init() {
+            return Err(SyncError::NotInitialized);
+        }
+
+        let repo = &self.repo_path;
+        let mut status = RemoteStatus {
+            upstream: None,
+            ahead: None,
+            behind: None,
+            fetched: false,
+            checked_at: now_ms(),
+            error_kind: None,
+            error_detail: None,
+        };
+
+        let has_remote = match self.has_remote() {
+            Ok(value) => value,
+            Err(error) => {
+                set_status_error(
+                    &mut status,
+                    repo,
+                    RemoteStatusErrorKind::CompareFailed,
+                    error,
+                );
+                return Ok(status);
+            }
+        };
+        if !has_remote {
+            status.error_kind = Some(RemoteStatusErrorKind::NoRemote);
+            return Ok(status);
+        }
+
+        let mut upstream = match git::git_branch_upstream(repo, "HEAD") {
+            Ok(value) => value,
+            Err(error) => {
+                set_status_error(
+                    &mut status,
+                    repo,
+                    RemoteStatusErrorKind::CompareFailed,
+                    error,
+                );
+                return Ok(status);
+            }
+        };
+
+        let mut fetched_by_upstream = false;
+        if upstream.is_none() && fetch {
+            match self.ensure_upstream() {
+                Ok(fetched) => {
+                    fetched_by_upstream = fetched;
+                    upstream = match git::git_branch_upstream(repo, "HEAD") {
+                        Ok(value) => value,
+                        Err(error) => {
+                            set_status_error(
+                                &mut status,
+                                repo,
+                                RemoteStatusErrorKind::CompareFailed,
+                                error,
+                            );
+                            return Ok(status);
+                        }
+                    };
+                }
+                Err(error) => {
+                    set_status_error(&mut status, repo, RemoteStatusErrorKind::FetchFailed, error);
+                    return Ok(status);
+                }
+            }
+        }
+
+        status.fetched = fetched_by_upstream;
+        let Some(upstream) = upstream else {
+            status.error_kind = Some(RemoteStatusErrorKind::NoUpstream);
+            status.checked_at = now_ms();
+            return Ok(status);
+        };
+        status.upstream = Some(upstream.clone());
+
+        if fetch && !fetched_by_upstream {
+            match git::git_fetch(repo, None) {
+                Ok(()) => status.fetched = true,
+                Err(error) => {
+                    set_status_error(&mut status, repo, RemoteStatusErrorKind::FetchFailed, error);
+                }
+            }
+        }
+
+        match git::git_rev_list_left_right_count(repo, &format!("HEAD...{upstream}")) {
+            Ok((ahead, behind)) => {
+                status.ahead = Some(ahead);
+                status.behind = Some(behind);
+            }
+            Err(error) => {
+                if status.error_kind.is_none() {
+                    set_status_error(
+                        &mut status,
+                        repo,
+                        RemoteStatusErrorKind::CompareFailed,
+                        error,
+                    );
+                }
+            }
+        }
+
+        status.checked_at = now_ms();
+        Ok(status)
     }
 
     pub fn init(&self) -> Result<(), SyncError> {
@@ -278,6 +432,23 @@ impl GitSync {
         }
         Ok(conflicts)
     }
+}
+
+fn set_status_error(
+    status: &mut RemoteStatus,
+    repo: &Path,
+    kind: RemoteStatusErrorKind,
+    error: impl std::fmt::Display,
+) {
+    status.error_kind = Some(kind);
+    status.error_detail = Some(git::sanitize_git_stderr(repo, &error.to_string()));
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 fn safe_need_to_push(repo: &Path) -> bool {

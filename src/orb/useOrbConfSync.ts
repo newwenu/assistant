@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { settingService } from "../services/settingService";
+import { fetchConf } from "@/settings/core/confRuntime";
 import { orbService } from "../services/orbService";
 import type { OrbConf } from "@/settings/core/types/confTypes";
 import { SettingEvent, SettingAction } from "../types/events";
@@ -11,7 +11,8 @@ const log = createLogger("useOrbConfSync");
 
 async function reloadAndApply(appliedRef: React.RefObject<string>) {
   try {
-    const conf = await settingService.getOrbConf();
+    const conf = await fetchConf("orb");
+    if (!conf) return;
     await applyOrbConf(conf, appliedRef);
   } catch (e) {
     log.warn("reload failed", e);

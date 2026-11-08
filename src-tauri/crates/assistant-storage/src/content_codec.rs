@@ -52,16 +52,14 @@ pub fn content_text_preview(content: &str, max_len: usize) -> String {
             }
             format!("{}…", &plain[..end])
         }
+    } else if content.len() <= max_len {
+        content.to_string()
     } else {
-        if content.len() <= max_len {
-            content.to_string()
-        } else {
-            let mut end = max_len;
-            while end > 0 && !content.is_char_boundary(end) {
-                end -= 1;
-            }
-            format!("{}…", &content[..end])
+        let mut end = max_len;
+        while end > 0 && !content.is_char_boundary(end) {
+            end -= 1;
         }
+        format!("{}…", &content[..end])
     }
 }
 

@@ -1,21 +1,21 @@
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use tauri::{command, AppHandle, Emitter, Manager};
+use tauri::{command, AppHandle, Manager};
 use uuid::Uuid;
 
-use crate::protocol::events::{emit_broadcast, emit_orb_only, event_name};
+use crate::adapters::{SystemClock, TauriEventSink};
+use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
-    ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto, ChatStreamStartPayloadDto,
-    ConversationCompactFailedPayloadDto, ConversationTerminatedPayloadDto,
-    ConversationUnlockedPayloadDto, ProviderErrorPayloadDto,
+    ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto, MessageChangeKindDto,
 };
-use assistant_agent::chat_runtime::{self, PartialOutcome, StreamError};
-use assistant_agent::chat_tasks::ChatTasks;
-use assistant_agent::prompt_builder;
+use assistant_agent::kernel::{
+    limits, request, stream, Clock, EventRoute, EventSink, OnBusy, PartialOutcome, PersistCtx,
+    StreamError, TurnEmitter, TurnPhase, TurnStatus, TurnTasks,
+};
+use assistant_agent::multimodal::ProjectionPurpose;
 use assistant_agent::provider_config::build_provider_config;
+use assistant_crypto::api_key as crypto;
 use assistant_providers::base::{self, ProviderErrorPayload};
-use assistant_security::crypto;
 use assistant_storage::{
     conversations,
     providers::{self as provider_store},
@@ -23,8 +23,6 @@ use assistant_storage::{
 
 #[command]
 pub fn manual_compact_conversation(app: AppHandle, conversation_id: String) -> Result<(), String> {
-    use assistant_agent::compaction::{is_terminating, set_terminating};
-
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
 
@@ -32,9 +30,6 @@ pub fn manual_compact_conversation(app: AppHandle, conversation_id: String) -> R
         .ok_or_else(|| "Conversation not found".to_string())?;
     if detail.conversation.is_full {
         return Err("Conversation is already full".to_string());
-    }
-    if is_terminating(&conversation_id) {
-        return Err("Conversation is already being terminated".to_string());
     }
 
     let provider_id = detail
@@ -45,12 +40,10 @@ pub fn manual_compact_conversation(app: AppHandle, conversation_id: String) -> R
     let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
         .ok_or_else(|| "Provider not found".to_string())?;
 
-    let chat_tasks: tauri::State<'_, ChatTasks> = app.state::<ChatTasks>();
-    if chat_tasks.is_running(&conversation_id) {
+    let tasks = app.state::<std::sync::Arc<TurnTasks>>().inner().clone();
+    if tasks.current(&conversation_id).is_some() {
         return Err("Cannot compact while stream is running".to_string());
     }
-
-    set_terminating(&conversation_id, true);
 
     let app_clone = app.clone();
     let conv_id = conversation_id.clone();
@@ -60,16 +53,6 @@ pub fn manual_compact_conversation(app: AppHandle, conversation_id: String) -> R
         if let Err(e) =
             execute_compaction(&app_clone, &conv_id, &compact_detail, &compact_provider_row).await
         {
-            use assistant_agent::compaction::set_terminating;
-            set_terminating(&conv_id, false);
-            emit_broadcast(
-                &app_clone,
-                event_name::CONVERSATION_COMPACT_FAILED,
-                ConversationCompactFailedPayloadDto {
-                    conversation_id: conv_id.clone(),
-                    error: e.clone(),
-                },
-            );
             log::error!("Manual compaction failed for {}: {}", conv_id, e);
         }
     });
@@ -101,10 +84,9 @@ pub(crate) async fn execute_compaction(
     detail: &conversations::ConversationDetail,
     provider_row: &provider_store::ProviderRow,
 ) -> Result<(), String> {
-    use assistant_agent::compaction::{default_compact_summary_prompt, set_terminating};
+    use assistant_agent::compaction::default_compact_summary_prompt;
     use assistant_config::app_conf::AppConf;
     use assistant_providers::base::{ChatOptions, ProviderError};
-    use std::time::Duration;
 
     let app_conf = AppConf::load().map_err(|e| e.to_string())?;
     let system_prompt = detail
@@ -119,9 +101,6 @@ pub(crate) async fn execute_compaction(
         .as_deref()
         .unwrap_or(&default_prompt);
 
-    let chat_messages =
-        prompt_builder::prepare_messages(detail, &system_prompt, Some(summary_prompt));
-
     let config = build_provider_config(provider_row);
     let adapter = base::create_provider_adapter(config);
     let model = detail.conversation.model_id.clone();
@@ -132,17 +111,39 @@ pub(crate) async fn execute_compaction(
 
     let max_tokens = app_conf.compact_summary_max_tokens as u32;
 
+    // 与 chat 共用投影：附件投影 + 超预算降级，避免超限请求直发 provider。
+    let context_window_tokens = assistant_providers::types::resolve_context_window_from_stored(
+        &model,
+        &provider_row.models_json,
+    );
+    let offload_budget = request::offload_budget_of(context_window_tokens, max_tokens);
+    let attachment_store = app.state::<assistant_storage::attachment_store::AttachmentStore>();
+    let chat_messages = request::project_chat_messages(
+        detail,
+        &system_prompt,
+        provider_row,
+        &model,
+        &attachment_store,
+        offload_budget,
+        ProjectionPurpose::Send,
+        Some(summary_prompt),
+    )
+    .await;
+
     let options = ChatOptions {
         temperature: 0.3,
         max_tokens,
         stream: true,
-        context_window_tokens: 0,
+        context_window_tokens: None,
         reasoning_enabled: None,
         reasoning_effort: None,
+        tools: None,
     };
 
-    let chat_tasks = app.state::<ChatTasks>();
-    let (cancel_token, attempt_id) = chat_tasks.start(conversation_id.to_string());
+    let tasks = app.state::<std::sync::Arc<TurnTasks>>().inner().clone();
+    let (attempt_id, cancel_token) = tasks
+        .begin(conversation_id, OnBusy::Replace)
+        .map_err(|_| "Conversation is busy".to_string())?;
 
     let stream = adapter
         .chat_completion_stream(
@@ -176,71 +177,82 @@ pub(crate) async fn execute_compaction(
                 sibling_index: 0,
                 provider_id: None,
                 model_id: None,
+                tool_call_id: None,
+                is_error: false,
             },
         )?;
     }
 
-    let orb_win = app
-        .get_webview_window(assistant_config::constant::WINDOW_ORB)
-        .ok_or_else(|| "Orb window not found".to_string())?;
-
-    emit_orb_only(
-        &app,
-        event_name::CHAT_STREAM_START,
-        ChatStreamStartPayloadDto {
-            conversation_id: conversation_id.to_string(),
-            attempt_id: attempt_id.to_string(),
-            message_id: summary_msg_id.to_string(),
-        },
+    let sink: Arc<dyn EventSink> = Arc::new(
+        TauriEventSink::new(
+            app.clone(),
+            EventRoute::Orb,
+            conversation_id,
+            summary_msg_id.clone(),
+        )
+        .with_finished_change_kind(MessageChangeKindDto::MessagesCompacted),
     );
+    let emitter = TurnEmitter::new(sink, tasks.clone(), conversation_id, attempt_id.clone());
+    emitter.stream_start(TurnPhase::Compacting);
 
-    emit_orb_only(
-        &app,
-        event_name::CHAT_DELTA,
-        ChatDeltaPayloadDto {
-            conversation_id: conversation_id.to_string(),
-            attempt_id: attempt_id.to_string(),
-            message_id: summary_msg_id.to_string(),
-            seq: 0,
-            delta_text: Some(String::new()),
-            ..Default::default()
-        },
-    );
+    let clock = SystemClock::new();
+    let request_started = clock.now();
 
-    let conv_id = conversation_id.to_string();
-    let msg_id = summary_msg_id.clone();
-    let aid = attempt_id.clone();
-
-    let last_seq = Arc::new(AtomicU32::new(0));
-    let last_seq_clone = last_seq.clone();
-
-    let result = chat_runtime::consume_stream(
+    let result = stream::consume(
         stream,
         cancel_token,
-        move |seq, delta| {
-            last_seq_clone.store(seq, Ordering::Relaxed);
-            let payload = ChatDeltaPayloadDto {
-                conversation_id: conv_id.clone(),
-                attempt_id: aid.clone(),
-                message_id: msg_id.clone(),
-                seq,
-                delta_text: delta.delta_text.clone(),
-                finish_reason: delta.finish_reason.clone(),
-                ..Default::default()
-            };
-            let _ = orb_win.emit(event_name::CHAT_DELTA, payload);
+        Some(limits::DEFAULT_COMPACTION_MODEL_CALL_TIMEOUT),
+        &clock,
+        request_started,
+        |_seq, delta| {
+            emitter.delta(delta);
         },
-        Some(Duration::from_secs(30)),
     )
     .await;
 
-    let seq_val = last_seq.load(Ordering::Relaxed);
+    let usage_ctx = PersistCtx {
+        conversation_id: conversation_id.to_string(),
+        turn_id: attempt_id.clone(),
+        message_id: summary_msg_id.clone(),
+        branch_leaf_id: detail.conversation.active_branch_id.clone(),
+        kind: "compaction".to_string(),
+        provider_id: Some(provider_row.id.clone()),
+        model_id: Some(model.clone()),
+        cache_capable: crate::cmd::token_usage_record::cache_capable_of(provider_row),
+        created_at_ms: clock.now_millis(),
+    };
 
-    chat_tasks.finish(conversation_id);
+    let (_, terminal_error) = match &result {
+        Ok(_) => (TurnStatus::Completed, None),
+        Err(StreamError::Cancelled(_)) => (
+            TurnStatus::Cancelled,
+            Some(ProviderErrorPayload::from(&ProviderError::Cancelled)),
+        ),
+        Err(StreamError::Timeout(_)) => (
+            TurnStatus::Failed,
+            Some(ProviderErrorPayload::from(&ProviderError::Timeout(
+                "Summary generation timed out (30s)".to_string(),
+            ))),
+        ),
+        Err(StreamError::Provider(e, _)) => {
+            (TurnStatus::Failed, Some(ProviderErrorPayload::from(e)))
+        }
+    };
 
-    match result {
+    let final_status = match result {
         Ok(outcome) => {
             let mut summary = outcome.full_content;
+
+            log::info!(
+                "[compaction-usage] conversation={} prompt={:?} completion={:?} total={:?} estimated={} attempts={}",
+                conversation_id,
+                outcome.prompt_tokens,
+                outcome.completion_tokens,
+                outcome.total_tokens,
+                outcome.estimated,
+                outcome.attempt_usages.len()
+            );
+            let usage_records = usage_ctx.usage_records(&outcome.attempt_usages);
 
             let max_summary_chars =
                 (assistant_config::constant::MAX_SUMMARY_OUTPUT_TOKENS as usize) * 4;
@@ -252,162 +264,134 @@ pub(crate) async fn execute_compaction(
                 ));
             }
 
-            {
-                let state = app.state::<crate::setup::DbState>();
-                let conn = super::get_db_conn(&state)?;
-
-                let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-
-                conversations::update_message_content(
-                    &tx,
-                    &summary_msg_id,
-                    &summary,
-                    None,
-                    None,
-                    None,
-                )?;
-                conversations::set_conversation_is_full(&tx, conversation_id, true)?;
-                conversations::update_active_branch_id(&tx, conversation_id, &summary_msg_id)?;
-
-                let now = chrono::Utc::now().timestamp_millis();
-                let existing = conversations::get_compression_state(&tx, conversation_id)?;
-                let new_count = existing
-                    .as_ref()
-                    .map(|s| s.compression_count + 1)
-                    .unwrap_or(1);
-                let state_row = conversations::CompressionStateRow {
-                    conversation_id: conversation_id.to_string(),
-                    last_compression_at: Some(now),
-                    compression_count: new_count,
-                };
-                conversations::upsert_compression_state(&tx, &state_row)?;
-
-                tx.commit().map_err(|e| e.to_string())?;
-            }
-
-            set_terminating(conversation_id, false);
-
-            emit_broadcast(
-                &app,
-                event_name::CONVERSATION_TERMINATED,
-                ConversationTerminatedPayloadDto {
-                    conversation_id: conversation_id.to_string(),
-                    summary: summary.clone(),
-                    is_full: true,
-                },
+            let commit = commit_summary(
+                app,
+                conversation_id,
+                &summary_msg_id,
+                &summary,
+                &usage_records,
             );
-
-            {
-                let state = app.state::<crate::setup::DbState>();
-                let conn = super::get_db_conn(&state)?;
-                if let Some(detail) =
-                    conversations::get_conversation_detail(&conn, conversation_id)?
-                {
-                    let messages = super::conversation_utils::messages_with_sibling_counts(
-                        &conn,
+            match commit {
+                Ok(()) => {
+                    log::info!(
+                        "Conversation {} terminated with summary ({} chars)",
                         conversation_id,
-                        &detail.messages,
-                    )?;
-                    emit_broadcast(
-                        &app,
-                        event_name::CHAT_MESSAGES_CHANGED,
-                        ChatMessagesChangedPayloadDto {
-                            conversation_id: conversation_id.to_string(),
-                            change_kind: "messages_compacted".to_string(),
-                            messages,
-                            active_branch_id: detail.conversation.active_branch_id.clone(),
-                            _seq: None,
-                        },
+                        summary.len()
                     );
+                    TurnStatus::Completed
+                }
+                Err(err) => {
+                    log::error!("Compaction commit failed for {}: {}", conversation_id, err);
+                    TurnStatus::Failed
                 }
             }
-
-            log::info!(
-                "Conversation {} terminated with summary ({} chars)",
-                conversation_id,
-                summary.len()
-            );
-
-            Ok(())
         }
         Err(StreamError::Cancelled(partial)) => {
-            save_compaction_partial(app, &summary_msg_id, &partial);
-            set_terminating(conversation_id, false);
-            emit_orb_only(
-                app,
-                event_name::CHAT_DELTA,
-                ChatDeltaPayloadDto {
-                    conversation_id: conversation_id.to_string(),
-                    attempt_id: attempt_id.to_string(),
-                    message_id: summary_msg_id.to_string(),
-                    seq: seq_val,
-                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(
-                        &ProviderError::Cancelled,
-                    ))),
-                    ..Default::default()
-                },
-            );
-            Err("Compaction cancelled".to_string())
+            let usage_records = usage_ctx.usage_records(&partial.attempt_usages);
+            save_compaction_partial(app, &summary_msg_id, &partial, &usage_records);
+            TurnStatus::Cancelled
         }
-        Err(StreamError::Provider(e, partial)) => {
-            save_compaction_partial(app, &summary_msg_id, &partial);
-            set_terminating(conversation_id, false);
-            emit_orb_only(
-                app,
-                event_name::CHAT_DELTA,
-                ChatDeltaPayloadDto {
-                    conversation_id: conversation_id.to_string(),
-                    attempt_id: attempt_id.to_string(),
-                    message_id: summary_msg_id.to_string(),
-                    seq: seq_val,
-                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(
-                        &e,
-                    ))),
-                    ..Default::default()
-                },
-            );
-            Err(e.to_string())
+        Err(StreamError::Provider(_, partial)) => {
+            let usage_records = usage_ctx.usage_records(&partial.attempt_usages);
+            save_compaction_partial(app, &summary_msg_id, &partial, &usage_records);
+            TurnStatus::Failed
         }
         Err(StreamError::Timeout(partial)) => {
-            save_compaction_partial(app, &summary_msg_id, &partial);
-            set_terminating(conversation_id, false);
-            emit_orb_only(
-                app,
-                event_name::CHAT_DELTA,
-                ChatDeltaPayloadDto {
-                    conversation_id: conversation_id.to_string(),
-                    attempt_id: attempt_id.to_string(),
-                    message_id: summary_msg_id.to_string(),
-                    seq: seq_val,
-                    error: Some(ProviderErrorPayloadDto::from(ProviderErrorPayload::from(
-                        &ProviderError::Timeout("Summary generation timed out (30s)".to_string()),
-                    ))),
-                    ..Default::default()
-                },
-            );
-            Err("Summary generation timed out (30s)".to_string())
+            let usage_records = usage_ctx.usage_records(&partial.attempt_usages);
+            save_compaction_partial(app, &summary_msg_id, &partial, &usage_records);
+            TurnStatus::Failed
         }
+    };
+
+    let terminal_error = match final_status {
+        TurnStatus::Completed | TurnStatus::Cancelled => terminal_error,
+        TurnStatus::Failed if terminal_error.is_none() => Some(ProviderErrorPayload::from(
+            &ProviderError::RequestFailed("compaction commit failed".to_string()),
+        )),
+        TurnStatus::Failed => terminal_error,
+        TurnStatus::Interrupted => terminal_error,
+    };
+
+    // 顺序契约：事务提交 → 终态事件（含 chat-messages-changed）→ 会话级终止 → 释放互斥。
+    emitter.terminated(final_status, terminal_error);
+
+    if final_status == TurnStatus::Completed {
+        emit_broadcast(
+            app,
+            event_name::CONVERSATION_TERMINATED,
+            ConversationTerminatedPayloadDto {
+                conversation_id: conversation_id.to_string(),
+                is_full: true,
+            },
+        );
+    }
+
+    tasks.finish(conversation_id, &attempt_id);
+
+    if final_status == TurnStatus::Completed {
+        Ok(())
+    } else if final_status == TurnStatus::Cancelled {
+        Err("Compaction cancelled".to_string())
+    } else {
+        Err("Compaction failed".to_string())
     }
 }
 
-fn save_compaction_partial(app: &AppHandle, msg_id: &str, partial: &PartialOutcome) {
-    if !partial.has_effective_output {
-        return;
+fn commit_summary(
+    app: &AppHandle,
+    conversation_id: &str,
+    summary_msg_id: &str,
+    summary: &str,
+    usage_records: &[assistant_storage::token_usage::TokenUsageRecord],
+) -> Result<(), String> {
+    let state = app.state::<crate::setup::DbState>();
+    let conn = super::get_db_conn(&state)?;
+
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+
+    conversations::update_message_content(&tx, summary_msg_id, summary, None, None)?;
+    conversations::set_conversation_is_full(&tx, conversation_id, true)?;
+    conversations::update_active_branch_id(&tx, conversation_id, summary_msg_id)?;
+
+    let now = chrono::Utc::now().timestamp_millis();
+    let existing = conversations::get_compression_state(&tx, conversation_id)?;
+    let new_count = existing
+        .as_ref()
+        .map(|s| s.compression_count + 1)
+        .unwrap_or(1);
+    let state_row = conversations::CompressionStateRow {
+        conversation_id: conversation_id.to_string(),
+        last_compression_at: Some(now),
+        compression_count: new_count,
+    };
+    conversations::upsert_compression_state(&tx, &state_row)?;
+
+    for record in usage_records {
+        assistant_storage::token_usage::insert_record(&tx, record)?;
     }
+
+    tx.commit().map_err(|e| e.to_string())
+}
+
+fn save_compaction_partial(
+    app: &AppHandle,
+    msg_id: &str,
+    partial: &PartialOutcome,
+    usage_records: &[assistant_storage::token_usage::TokenUsageRecord],
+) {
     let state = app.state::<crate::setup::DbState>();
     let Ok(conn) = super::get_db_conn(&state) else {
         return;
     };
-    let tokens = partial
-        .total_tokens
-        .map(|t| t as i64)
-        .or_else(|| chat_runtime::estimate_tokens(&partial.full_content));
-    let _ = conversations::update_message_content(
-        &conn,
-        msg_id,
-        &partial.full_content,
-        tokens,
-        None,
-        None,
-    );
+    // 失败也落 usage：累计口径包含中断请求
+    for record in usage_records {
+        if let Err(e) = assistant_storage::token_usage::insert_record(&conn, record) {
+            log::error!("Failed to save compaction token usage: {}", e);
+        }
+    }
+    if !partial.has_effective_output {
+        return;
+    }
+    // 摘要消息的 tokens 保持 NULL：压缩产出的 usage 只进累计口径，不写估算值
+    let _ = conversations::update_message_content(&conn, msg_id, &partial.full_content, None, None);
 }

@@ -2,27 +2,29 @@ import { defineSetting, defineSection } from "./fieldRegistry";
 import { ThemeRadioRender } from "../../shared/renderers/ThemeRadioRender";
 import { RendererSelectRender } from "../../shared/renderers/RendererSelectRender";
 import { MascotColorGroupRender } from "../../shared/renderers/MascotColorGroupRender";
+import { FolderPickerField } from "../../shared/renderers/FolderPickerField";
 import {
   SHORTCUT_DEFINITIONS,
   DEFAULT_KEYBINDINGS,
 } from "../types/shortcutTypes";
 import { createMascotCapabilityVisible } from "@/mascot";
-import { lazyWithRecovery } from "@/utils/lazyWithRecovery";
 import {
   COMPACTION_THRESHOLD_PERCENT,
   MAX_SUMMARY_REQUEST_TOKENS,
 } from "@/config/constants";
 
-const BiometricSwitchRender = lazyWithRecovery(() =>
-  import("../../shared/renderers/BiometricSwitchRender").then((m) => ({
-    default: m.BiometricSwitchRender,
-  })),
-);
-
 defineSection({
   id: "general-main",
   pageId: "general",
   title: "settings.general.main.title",
+});
+
+defineSection({
+  id: "agent-main",
+  pageId: "general",
+  title: "settings.general.agent_tools.title",
+  description: "settings.general.agent_tools.description",
+  keywords: ["workspace", "工作区", "审批", "approval", "超时"],
 });
 
 defineSection({
@@ -59,31 +61,6 @@ defineSection({
   pageId: "about",
   title: "settings.about.main.title",
   keywords: ["version", "版本"],
-});
-
-defineSection({
-  id: "vault-general",
-  pageId: "vault",
-  title: "settings.vault.general.title",
-  keywords: [
-    "auto",
-    "lock",
-    "clipboard",
-    "cipher",
-    "biometric",
-    "hibp",
-    "自动锁定",
-    "剪贴板",
-    "加密",
-    "生物识别",
-  ],
-});
-
-defineSection({
-  id: "vault-ssh",
-  pageId: "vault",
-  title: "settings.vault.ssh.title",
-  keywords: ["ssh", "agent", "pageant", "openssh", "密钥"],
 });
 
 export const APP_SETTINGS = [
@@ -242,7 +219,7 @@ export const MASCOT_RENDERER_SETTING = defineSetting({
   group: "mascot",
   section: "orb-ball",
   type: "select",
-  default: "rive",
+  default: "svg",
   label: "settings.mascot.renderer.label",
   description: "settings.mascot.renderer.description",
   customRender: RendererSelectRender,
@@ -283,12 +260,12 @@ export const COMPACT_SETTINGS = [
     label: "settings.general.compact.auto_compact.label",
   }),
   defineSetting({
-    key: "compactThresholdPercent",
+    key: "compactThresholdPercentOfBudget",
     group: "app",
     section: "general-main",
     type: "slider",
     default: COMPACTION_THRESHOLD_PERCENT,
-    label: "settings.general.compact.compact_threshold_percent.label",
+    label: "settings.general.compact.compact_threshold_percent_of_budget.label",
     min: 50,
     max: 99,
     step: 1,
@@ -317,6 +294,72 @@ export const COMPACT_SETTINGS = [
     max: 16384,
     step: 256,
     visible: (conf: Record<string, unknown>) => !!conf.autoCompact,
+  }),
+];
+
+export const AGENT_TOOL_SETTINGS = [
+  defineSetting({
+    key: "workspaceRoot",
+    group: "app",
+    section: "agent-main",
+    type: "string",
+    default: null,
+    label: "settings.general.agent_tools.workspace_root.label",
+    description: "settings.general.agent_tools.workspace_root.description",
+    placeholder: "settings.general.agent_tools.workspace_root.placeholder",
+    customRender: FolderPickerField,
+    readValue: (conf: Record<string, unknown>) =>
+      typeof conf.workspaceRoot === "string" ? conf.workspaceRoot : null,
+    buildPatch: (value: unknown): Record<string, unknown> => ({
+      workspaceRoot:
+        typeof value === "string" && value.length > 0 ? value : null,
+    }),
+  }),
+  defineSetting({
+    key: "approvalTimeoutSecs",
+    group: "app",
+    section: "agent-main",
+    type: "number",
+    default: null,
+    label: "settings.general.agent_tools.approval_timeout_secs.label",
+    description:
+      "settings.general.agent_tools.approval_timeout_secs.description",
+    placeholder:
+      "settings.general.agent_tools.approval_timeout_secs.placeholder",
+    min: 5,
+    max: 3600,
+    step: 5,
+    readValue: (conf: Record<string, unknown>) =>
+      typeof conf.approvalTimeoutSecs === "number"
+        ? conf.approvalTimeoutSecs
+        : null,
+    buildPatch: (value: unknown): Record<string, unknown> => ({
+      approvalTimeoutSecs:
+        typeof value === "number" && value > 0 ? value : null,
+    }),
+  }),
+  defineSetting({
+    key: "userQuestionTimeoutSecs",
+    group: "app",
+    section: "agent-main",
+    type: "number",
+    default: null,
+    label: "settings.general.agent_tools.user_question_timeout_secs.label",
+    description:
+      "settings.general.agent_tools.user_question_timeout_secs.description",
+    placeholder:
+      "settings.general.agent_tools.user_question_timeout_secs.placeholder",
+    min: 0,
+    max: 3600,
+    step: 5,
+    readValue: (conf: Record<string, unknown>) =>
+      typeof conf.userQuestionTimeoutSecs === "number"
+        ? conf.userQuestionTimeoutSecs
+        : null,
+    buildPatch: (value: unknown): Record<string, unknown> => ({
+      userQuestionTimeoutSecs:
+        typeof value === "number" && value >= 0 ? value : null,
+    }),
   }),
 ];
 
@@ -359,104 +402,3 @@ defineSetting({
   label: "settings.about.field.license.label",
   readValue: () => "MIT",
 });
-
-export const VAULT_GENERAL_SETTINGS = [
-  defineSetting({
-    key: "vaultAutoLockMinutes",
-    group: "app",
-    section: "vault-general",
-    type: "number",
-    default: 5,
-    label: "settings.vault.auto_lock_minutes.label",
-    min: 1,
-    max: 60,
-  }),
-  defineSetting({
-    key: "vaultLockOnScreenLock",
-    group: "app",
-    section: "vault-general",
-    type: "boolean",
-    default: true,
-    label: "settings.vault.lock_on_screen_lock.label",
-  }),
-  defineSetting({
-    key: "vaultClipboardClearSeconds",
-    group: "app",
-    section: "vault-general",
-    type: "number",
-    default: 30,
-    label: "settings.vault.clipboard_clear_seconds.label",
-    min: 5,
-    max: 300,
-  }),
-  defineSetting({
-    key: "vaultCipherAlgorithm",
-    group: "app",
-    section: "vault-general",
-    type: "select",
-    default: "aes256Gcm",
-    label: "settings.vault.cipher_algorithm.label",
-    options: [
-      { label: "AES-256-GCM", value: "aes256Gcm" },
-      { label: "ChaCha20-Poly1305", value: "chacha20Poly1305" },
-    ],
-  }),
-  defineSetting({
-    key: "vaultBiometricEnabled",
-    group: "app",
-    section: "vault-general",
-    type: "boolean",
-    default: false,
-    label: "settings.vault.biometric_enabled.label",
-    description: "settings.vault.biometric_enabled.description",
-    customRender: BiometricSwitchRender,
-    saveMessage: "settings.vault.biometric_enabled.save_message",
-  }),
-  defineSetting({
-    key: "vaultHibpAutoAudit",
-    group: "app",
-    section: "vault-general",
-    type: "boolean",
-    default: true,
-    label: "settings.vault.hibp_auto_audit.label",
-  }),
-];
-
-export const VAULT_SSH_SETTINGS = [
-  defineSetting({
-    key: "vaultSshAutoAdd",
-    group: "app",
-    section: "vault-ssh",
-    type: "boolean",
-    default: false,
-    label: "settings.vault.ssh_auto_add.label",
-  }),
-  defineSetting({
-    key: "vaultSshUsePageant",
-    group: "app",
-    section: "vault-ssh",
-    type: "boolean",
-    default: true,
-    label: "settings.vault.ssh_use_pageant.label",
-    visible: () => navigator.platform.toLowerCase().includes("win"),
-  }),
-  defineSetting({
-    key: "vaultSshUseOpensshAgent",
-    group: "app",
-    section: "vault-ssh",
-    type: "boolean",
-    default: true,
-    label: "settings.vault.ssh_use_openssh_agent.label",
-    visible: () => navigator.platform.toLowerCase().includes("win"),
-  }),
-  defineSetting({
-    key: "vaultSshAuthSockOverride",
-    group: "app",
-    section: "vault-ssh",
-    type: "string",
-    default: "",
-    label: "settings.vault.ssh_auth_sock_override.label",
-    placeholder: "settings.vault.ssh_auth_sock_override.placeholder",
-    visible: () => !navigator.platform.toLowerCase().includes("win"),
-  }),
-];

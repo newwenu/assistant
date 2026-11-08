@@ -1,10 +1,24 @@
 pub mod context;
+pub mod definition;
+pub mod exec;
+pub mod gateway;
 pub mod os;
+pub mod pipeline;
+pub mod policy;
+pub mod question;
 pub mod registry;
 pub mod result;
+pub mod storage;
 pub mod r#trait;
 
 pub use context::*;
+pub use definition::*;
+pub use exec::*;
+pub use gateway::*;
+pub use pipeline::*;
+pub use policy::*;
+pub use question::*;
 pub use r#trait::*;
 pub use registry::*;
 pub use result::*;
+pub use storage::*;

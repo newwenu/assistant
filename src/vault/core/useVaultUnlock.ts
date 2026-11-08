@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useVaultStore } from "./vaultStore";
+import { useVaultShallow } from "./vaultStore";
 import { vaultService } from "./vault.service";
 import type { StrengthResult } from "./vault.types";
 
@@ -14,7 +14,6 @@ export function useVaultUnlock() {
     error,
     clearError,
     unlockBiometric,
-    unlockWithRecoveryKey,
     checkRecoveryKeySet,
     checkBiometricAvailable,
     checkBiometricEnrolled,
@@ -27,15 +26,33 @@ export function useVaultUnlock() {
     cancelDisasterRecovery,
     setDisasterRecoveryStep,
     disasterRecoveryExport,
-  } = useVaultStore();
+  } = useVaultShallow((s) => ({
+    isInitialized: s.isInitialized,
+    init: s.init,
+    unlock: s.unlock,
+    loading: s.loading,
+    error: s.error,
+    clearError: s.clearError,
+    unlockBiometric: s.unlockBiometric,
+    checkRecoveryKeySet: s.checkRecoveryKeySet,
+    checkBiometricAvailable: s.checkBiometricAvailable,
+    checkBiometricEnrolled: s.checkBiometricEnrolled,
+    biometricAvailable: s.biometricAvailable,
+    biometricEnrolled: s.biometricEnrolled,
+    recoveryKeySet: s.recoveryKeySet,
+    disasterRecoveryStep: s.disasterRecoveryStep,
+    disasterRecoveryResult: s.disasterRecoveryResult,
+    startDisasterRecovery: s.startDisasterRecovery,
+    cancelDisasterRecovery: s.cancelDisasterRecovery,
+    setDisasterRecoveryStep: s.setDisasterRecoveryStep,
+    disasterRecoveryExport: s.disasterRecoveryExport,
+  }));
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [strength, setStrength] = useState<StrengthResult | null>(null);
-  const [recoveryKey, setRecoveryKey] = useState("");
-  const [showRecoveryKey, setShowRecoveryKey] = useState(false);
   const [unlockMethod, setUnlockMethod] = useState<
-    "password" | "biometric" | "recoveryKey" | null
+    "password" | "biometric" | null
   >(null);
   const [drGitUrl, setDrGitUrl] = useState("");
   const [drRecoveryKey, setDrRecoveryKey] = useState("");
@@ -81,18 +98,6 @@ export function useVaultUnlock() {
     }
   }, [clearError, unlockBiometric]);
 
-  const handleRecoveryKeySubmit = useCallback(async () => {
-    clearError();
-    if (!recoveryKey) return;
-    setUnlockMethod("recoveryKey");
-    try {
-      await unlockWithRecoveryKey(recoveryKey);
-    } finally {
-      setUnlockMethod(null);
-    }
-    setRecoveryKey("");
-  }, [recoveryKey, clearError, unlockWithRecoveryKey]);
-
   const checkStrength = useCallback(
     (pwd: string) => {
       if (!isInitialized && pwd.length > 0) {
@@ -118,10 +123,6 @@ export function useVaultUnlock() {
     strength,
     setStrength,
     checkStrength,
-    recoveryKey,
-    setRecoveryKey,
-    showRecoveryKey,
-    setShowRecoveryKey,
     unlockMethod,
     canSubmit,
     biometricAvailable,
@@ -129,7 +130,6 @@ export function useVaultUnlock() {
     recoveryKeySet,
     handlePasswordSubmit,
     handleBiometricUnlock,
-    handleRecoveryKeySubmit,
     checkBiometricAvailable,
     checkBiometricEnrolled,
     checkRecoveryKeySet,

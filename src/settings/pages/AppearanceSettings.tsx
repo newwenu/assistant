@@ -9,15 +9,13 @@ import { SettingsGroup } from "../shared/sections/SettingsGroup";
 import { THEME_SETTING } from "../core/field/fieldDefinitions";
 
 export const AppearanceSettings: React.FC = () => {
-  const loadAppConf = useSettingsStore((s) => s.loadAppConf);
-  const loadOrbConf = useSettingsStore((s) => s.loadOrbConf);
-  const loadMascotConf = useSettingsStore((s) => s.loadMascotConf);
+  const loadConf = useSettingsStore((s) => s.loadConf);
 
   useEffect(() => {
-    void loadAppConf();
-    void loadOrbConf();
-    void loadMascotConf();
-  }, [loadAppConf, loadOrbConf, loadMascotConf]);
+    void loadConf("app");
+    void loadConf("orb");
+    void loadConf("mascot");
+  }, [loadConf]);
 
   return (
     <SettingsPageShell>

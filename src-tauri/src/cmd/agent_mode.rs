@@ -2,7 +2,7 @@ use chrono::Utc;
 use tauri::{command, AppHandle, Manager};
 use uuid::Uuid;
 
-use crate::protocol::{AgentModeDto, AgentModeInputDto};
+use crate::protocol::{AgentModeDto, AgentModeInputDto, ConversationToolConfigDto};
 use assistant_storage::agent_modes::{self, AgentModeRow};
 
 fn row_to_dto(row: &AgentModeRow) -> AgentModeDto {
@@ -25,6 +25,29 @@ pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), St
     let is_new = mode.id.is_empty();
     let now = Utc::now().timestamp_millis();
 
+    // `kind` 决定已有会话的发送路径与布局，允许编辑会让同一会话静默换链路（I38d §4.8）。
+    // 与既有行不一致即拒绝；换类型必须新建模式。
+    let existing = if is_new {
+        None
+    } else {
+        agent_modes::get_by_id(&conn, &mode.id)?
+    };
+    if let Some(row) = existing.as_ref() {
+        if row.kind != mode.kind.as_str() {
+            return Err(assistant_i18n::t("error.agent_mode_kind_locked"));
+        }
+    }
+
+    let tool_config = match mode.tool_config {
+        Some(cfg) => cfg,
+        None if is_new => ConversationToolConfigDto::default(),
+        None => existing
+            .as_ref()
+            .map(|m| AgentModeDto::from_row(m).tool_config)
+            .unwrap_or_default(),
+    };
+    let tool_config_json = Some(serde_json::to_string(&tool_config).map_err(|e| e.to_string())?);
+
     let row = AgentModeRow {
         id: if is_new {
             Uuid::new_v4().to_string()
@@ -33,18 +56,18 @@ pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), St
         },
         name: mode.name,
         description: mode.description,
-        kind: mode.kind,
+        kind: mode.kind.as_str().to_string(),
         prompt: mode.prompt,
         model: mode.model,
         temperature: mode.temperature,
         max_tokens: mode.max_tokens,
         reasoning_enabled: mode.reasoning_enabled,
         reasoning_effort: mode.reasoning_effort,
-        tools_json: serde_json::to_string(&mode.tools).unwrap_or_else(|_| "[]".to_string()),
         presentation_rank: mode.presentation_rank,
         is_builtin: mode.is_builtin,
         created_at: mode.created_at,
         updated_at: now,
+        tool_config_json,
     };
 
     if is_new {
@@ -66,5 +89,6 @@ pub fn delete_agent_mode(app: AppHandle, id: String) -> Result<(), String> {
 pub fn reset_builtin_mode(app: AppHandle, id: String) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
-    agent_modes::reset_builtin_mode(&conn, &id).map_err(super::translate_storage_error)
+    agent_modes::reset_builtin_mode(&conn, &id, &|key| assistant_i18n::t(key))
+        .map_err(super::translate_storage_error)
 }

@@ -39,18 +39,23 @@ export const ErrorBlock: React.FC<ErrorBlockProps> = ({
   const handleAction = (code: RecoveryActionCode) => {
     if (code === "retry" || code === "wait_and_retry") {
       onRetry?.();
-    } else {
-      onAction?.(code);
+      return;
     }
+    if (code === "copy_diagnostics") {
+      void navigator.clipboard.writeText(presentation.diagnostics);
+      return;
+    }
+    onAction?.(code);
   };
 
-  const headerClass =
-    presentation.severity === "warning"
-      ? `${css.header} ${css.headerWarning}`
-      : css.header;
+  const isWarning = presentation.severity === "warning";
+  const rootClass = isWarning ? `${css.root} ${css.rootWarning}` : css.root;
+  const headerClass = isWarning
+    ? `${css.header} ${css.headerWarning}`
+    : css.header;
 
   return (
-    <div className={css.root}>
+    <div className={rootClass}>
       <div className={headerClass}>
         <span className={css.icon}>
           {React.createElement(presentation.icon)}

@@ -9,18 +9,31 @@ import type {
   Conversation,
   TokenUsage,
   ContextUsage,
+  AgentToolCall,
 } from "../chat/core/chatTypes";
+import {
+  applyAgentToolCall,
+  cancelPendingToolCalls,
+} from "../chat/core/toolCallView";
 import type { RetryNotification } from "../chat/core/chatTypes";
 import { type ChatError } from "../chat/core/chatErrors";
 import { chatService } from "../services/chatService";
 import { createChatOrchestrator } from "../services/chatOrchestrator";
 import { useChatStreamStore } from "./chatStreamStore";
 import { useAgentModeStore } from "./agentModeStore";
+import {
+  resolveReasoningChoice,
+  type ReasoningChoice,
+} from "../chat/core/reasoning";
+import {
+  resolveConversationRoute,
+  type ConversationRoute,
+} from "../chat/core/conversationLink";
 import { createLogger } from "@/services/logger";
 import {
   mergeStreamingContent,
   fetchTokenUsage,
-  resolveContextWindowTokens,
+  contextUsageFromTokenUsage,
   type FetchTokenUsageDeps,
 } from "../chat/core/chatUtils";
 
@@ -47,6 +60,7 @@ interface EnvPortReadable {
   messages: Message[];
   conversations: Conversation[];
   pendingBranchPoint: string | null;
+  reasoningChoice: ReasoningChoice;
 }
 
 export function createStatePort(
@@ -57,20 +71,8 @@ export function createStatePort(
   return {
     beginSend: (messages: Message[], assistantMsgId: string) => {
       useChatStreamStore.getState().beginStream(assistantMsgId);
-      const state = get();
-      const convId = state.currentConversationId;
-      const conv = convId
-        ? state.conversations.find((c) => c.id === convId)
-        : undefined;
-      const resolved = resolveContextWindowTokens(
-        conv?.modelId ?? "",
-        conv?.providerId ?? null,
-      );
-      const maxTokens = resolved ?? state.contextUsage.maxTokens ?? 128_000;
-      set({
-        messages,
-        contextUsage: { usedTokens: 0, maxTokens, percentage: 0 },
-      });
+      // 发送不清零占用：占用反映最近一次请求，与本次发送无关
+      set({ messages });
     },
     cancelStreaming: () => {
       const stream = useChatStreamStore.getState();
@@ -98,6 +100,9 @@ export function createStatePort(
     },
     clearActiveAttemptId: () => {
       useChatStreamStore.getState().clearActiveAttemptId();
+    },
+    resumeStream: (attemptId: string, messageId: string | null) => {
+      useChatStreamStore.getState().resumeStream(attemptId, messageId);
     },
     confirmUserMessage: (userMessageId: string, userMessageContent: string) => {
       const state = get();
@@ -129,30 +134,33 @@ export function createStatePort(
         ),
       });
     },
-    appendToolCallDelta: (
-      messageId: string,
-      toolCallId: string | undefined,
-      toolCallName: string | undefined,
-      toolCallArguments: string | undefined,
-    ) => {
+    applyToolCall: (messageId: string, call: AgentToolCall) => {
       const state = get();
       set({
-        messages: state.messages.map((m) => {
-          if (m.id !== messageId) return m;
-          const toolCalls = [...(m.toolCalls || [])];
-          if (toolCallId) {
-            toolCalls.push({
-              id: toolCallId,
-              name: toolCallName || "",
-              arguments: toolCallArguments || "",
-            });
-          } else if (toolCalls.length > 0) {
-            const last = toolCalls[toolCalls.length - 1];
-            if (toolCallName) last.name += toolCallName;
-            if (toolCallArguments) last.arguments += toolCallArguments;
-          }
-          return { ...m, toolCalls };
-        }),
+        messages: state.messages.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                toolCalls: applyAgentToolCall(
+                  m.toolCalls ?? [],
+                  call,
+                  Date.now(),
+                ),
+              }
+            : m,
+        ),
+      });
+    },
+    settleToolCalls: (messageId: string) => {
+      const state = get();
+      const target = state.messages.find((m) => m.id === messageId);
+      if (!target?.toolCalls?.length) return;
+      const settled = cancelPendingToolCalls(target.toolCalls, Date.now());
+      if (settled === target.toolCalls) return;
+      set({
+        messages: state.messages.map((m) =>
+          m.id === messageId ? { ...m, toolCalls: settled } : m,
+        ),
       });
     },
     updateContextUsage: (usage: ContextUsage) => {
@@ -165,12 +173,8 @@ export function createStatePort(
       const convId = state.currentConversationId;
       const newContextUsage = usage
         ? {
-            usedTokens: usage.promptTokens,
-            maxTokens: usage.contextWindowTokens || 128_000,
-            percentage:
-              usage.contextWindowTokens && usage.contextWindowTokens > 0
-                ? usage.promptTokens / usage.contextWindowTokens
-                : usage.promptTokens / 128_000,
+            ...contextUsageFromTokenUsage(usage),
+            cumulativeTokens: state.contextUsage.cumulativeTokens,
           }
         : state.contextUsage;
 
@@ -199,13 +203,7 @@ export function createStatePort(
       }
 
       if (convId && !usage) {
-        const conv = state.conversations.find((c) => c.id === convId);
-        fetchTokenUsage(
-          convId,
-          conv?.modelId ?? "",
-          conv?.providerId ?? null,
-          fetchTokenUsageDeps,
-        );
+        fetchTokenUsage(convId, fetchTokenUsageDeps);
       }
     },
     setErrorOnMessage: (messageId: string, error: ChatError) => {
@@ -270,6 +268,20 @@ export function createEnvPort(
   getSelectedProviderId: () => string | null,
   getSelectedModelId: () => string,
 ): ChatEnvPort {
+  /**
+   * 链路判据取自会话自身：`ConversationDto.modeId` → `agent_modes` 行 → `kind`。
+   * 解析逻辑集中在 `resolveConversationRoute`，避免多处口径漂移（I38d §4.8）。
+   * agent 链路的每轮工具配置取「会话持久值 ?? 模式初始值」。
+   */
+  function getConversationRoute(conversationId: string): ConversationRoute {
+    const conv = get().conversations.find((c) => c.id === conversationId);
+    return resolveConversationRoute(
+      conv?.modeId ?? null,
+      useAgentModeStore.getState().modes ?? [],
+      conv?.toolConfig ?? null,
+    );
+  }
+
   return {
     getActiveConversationId: () => get().currentConversationId,
     getIsStreaming: () => useChatStreamStore.getState().isStreaming,
@@ -278,7 +290,14 @@ export function createEnvPort(
     getActiveAttemptId: () => useChatStreamStore.getState().activeAttemptId,
     getMessages: () => get().messages,
     getConversations: () => get().conversations,
-    getSelectedModeId: () => useAgentModeStore.getState().selectedModeId,
+    getConversationRoute,
+    getReasoningChoice: () => {
+      const { modes, selectedModeId } = useAgentModeStore.getState();
+      return resolveReasoningChoice(
+        get().reasoningChoice,
+        modes.find((m) => m.id === selectedModeId),
+      );
+    },
     getSelectedProviderId,
     getSelectedModelId,
     getPendingBranchPoint: () => get().pendingBranchPoint,

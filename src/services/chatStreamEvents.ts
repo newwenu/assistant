@@ -1,9 +1,12 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ChatOrchestrator } from "./chatOrchestrator";
 import type {
+  AgentToolCall,
   ChatDeltaPayload,
   ChatStreamStartPayload,
   ChatUserMessageConfirmedPayload,
+  SessionState,
+  SessionStateChangedPayload,
 } from "../chat/core/chatTypes";
 import { ChatEvent } from "../chat/core/chatTypes";
 import {
@@ -27,6 +30,14 @@ interface StreamStartIds {
   conversationId: string;
   attemptId: string;
   messageId: string;
+}
+
+function describeSessionState(state: SessionState): string {
+  if (state === "idle") return "idle";
+  if ("processing" in state) {
+    return `processing(${state.processing.phase},turn=${state.processing.turnId})`;
+  }
+  return `error(${state.error.message},recoverable=${state.error.recoverable})`;
 }
 
 export function subscribeChatStreamEvents(): () => void {
@@ -58,16 +69,11 @@ export function subscribeChatStreamEvents(): () => void {
         messageId: payload.messageId,
       };
       firstDeltaChecked = false;
-      if (
-        orchestratorInstance &&
-        orchestratorInstance.getActiveConversationId() ===
-          payload.conversationId
-      ) {
-        orchestratorInstance.onStreamStart(
-          payload.attemptId,
-          payload.messageId,
-        );
-      }
+      orchestratorInstance?.onStreamStart(
+        payload.conversationId,
+        payload.attemptId,
+        payload.messageId,
+      );
     }),
   );
 
@@ -91,6 +97,35 @@ export function subscribeChatStreamEvents(): () => void {
     ),
   );
 
+  track(
+    listen<SessionStateChangedPayload>(
+      ChatEvent.SessionStateChanged,
+      (event) => {
+        if (disposed) return;
+        const payload = event.payload;
+        if (!orchestratorInstance) return;
+        log.debug(
+          `session-state conv=${payload.conversationId} turn=${payload.turnId} state=${describeSessionState(payload.state)}`,
+        );
+        orchestratorInstance.onSessionState(payload);
+      },
+    ),
+  );
+
+  track(
+    listen<AgentToolCall>(ChatEvent.AgentToolCall, (event) => {
+      if (disposed) return;
+      const payload = event.payload;
+      if (
+        orchestratorInstance &&
+        orchestratorInstance.getActiveConversationId() ===
+          payload.conversationId
+      ) {
+        orchestratorInstance.onAgentToolCall(payload);
+      }
+    }),
+  );
+
   const coalescer = createChatDeltaCoalescer<CoalescibleDelta>(
     (event) => {
       if (event.delta) {
@@ -100,7 +135,12 @@ export function subscribeChatStreamEvents(): () => void {
           );
         }
         if (orchestratorInstance) {
-          orchestratorInstance.onTextDelta(event.delta);
+          orchestratorInstance.onTextDelta({
+            conversationId: event.conversationId,
+            attemptId: event.attemptId,
+            messageId: event.messageId,
+            delta: event.delta,
+          });
         }
       }
     },
@@ -150,9 +190,6 @@ export function subscribeChatStreamEvents(): () => void {
 
       if (
         payload.deltaReasoning ||
-        payload.deltaToolCallId ||
-        payload.deltaToolCallName ||
-        payload.deltaToolCallArguments ||
         payload.usage ||
         payload.finishReason ||
         payload.error ||
@@ -164,10 +201,9 @@ export function subscribeChatStreamEvents(): () => void {
           attemptId: payload.attemptId,
           messageId: payload.messageId,
           seq: payload.seq,
+          iteration: payload.iteration,
+          deltaText: null,
           deltaReasoning: payload.deltaReasoning,
-          deltaToolCallId: payload.deltaToolCallId,
-          deltaToolCallName: payload.deltaToolCallName,
-          deltaToolCallArguments: payload.deltaToolCallArguments,
           usage: payload.usage,
           finishReason: payload.finishReason,
           error: payload.error,

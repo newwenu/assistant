@@ -1,17 +1,15 @@
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { SettingsState } from "@/stores/settingsStore";
-import { CONF_KEY_MAP, type ConfGroup } from "./field/fieldRegistry";
+import type { ConfGroup, ConfStore } from "./types/confRegistry";
 
-export function optimisticConfUpdate(
-  group: ConfGroup,
+export function optimisticConfUpdate<G extends ConfGroup>(
+  group: G,
   key: string,
   value: unknown,
 ): void {
-  const confKey = CONF_KEY_MAP[group];
-  const store = useSettingsStore.getState();
-  const current = store[confKey];
+  const state = useSettingsStore.getState();
+  const current = state.confs[group];
   if (!current) return;
-  useSettingsStore.setState({
-    [confKey]: { ...current, [key]: value },
-  } as Partial<SettingsState>);
+  const next: ConfStore = { ...state.confs };
+  next[group] = Object.assign({}, current, { [key]: value });
+  useSettingsStore.setState({ confs: next });
 }

@@ -5,6 +5,8 @@ use rusqlite::{params, Connection};
 
 use assistant_crypto::error::VaultError;
 
+pub use crate::dto::audit::AuditLogEntry;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditEvent {
     VaultUnlock,
@@ -96,12 +98,4 @@ pub fn query_log(conn: &Connection, limit: i64) -> Result<Vec<AuditLogEntry>, Va
         entries.push(row.map_err(|e| VaultError::Database(e.to_string()))?);
     }
     Ok(entries)
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct AuditLogEntry {
-    pub id: String,
-    pub event_type: String,
-    pub detail: Option<String>,
-    pub timestamp: i64,
 }

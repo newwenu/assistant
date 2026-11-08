@@ -115,7 +115,8 @@ pub async fn get_storage_breakdown(app: AppHandle) -> Result<StorageBreakdownDto
     conversations.sort_by(|a, b| b.total_bytes.cmp(&a.total_bytes));
 
     let total_bytes: u64 = all_entries.iter().map(|e| e.bytes).sum();
-    let total_count = all_entries.len() as u64;
+    let total_count =
+        u32::try_from(all_entries.len()).map_err(|_| "attachment count exceeds u32".to_string())?;
 
     Ok(StorageBreakdownDto {
         total_bytes,
@@ -166,6 +167,9 @@ pub async fn delete_attachments(
             }
         }
     }
+
+    let removed_count = u32::try_from(removed_count)
+        .map_err(|_| "removed attachment count exceeds u32".to_string())?;
 
     Ok(AttachmentDeleteResultDto {
         removed_count,

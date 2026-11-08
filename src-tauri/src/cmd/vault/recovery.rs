@@ -1,164 +1,93 @@
 use tauri::{command, AppHandle, Manager};
 
 use assistant_vault::audit::{log as audit_log, AuditEvent};
+use assistant_vault::dto::{DisasterRecoveryResultDto, IntegrityResult, VaultErrorDto};
 use assistant_vault::sync_engine::SyncEngine;
+use assistant_vault::types::VaultError;
 
+// precondition: Unlocked
 #[command]
-pub fn vault_generate_recovery_key(app: AppHandle) -> Result<String, String> {
-    let state = super::vault_state(&app)?;
-    let master_key = state.get_master_key().map_err(|e| e.to_string())?;
-    let mk = master_key.as_ref().ok_or("Vault is locked")?;
-    let bootstrap_key = state.get_bootstrap_key().map_err(|e| e.to_string())?;
-    let bk = bootstrap_key.as_ref().ok_or("Vault is locked")?;
+pub fn vault_generate_recovery_key(app: AppHandle) -> Result<String, VaultErrorDto> {
+    super::with_unlocked(&app, |state| {
+        let master_key = state.get_master_key().map_err(VaultErrorDto::from)?;
+        let mk = master_key
+            .as_ref()
+            .ok_or_else(|| VaultErrorDto::from(VaultError::Locked))?;
+        let bootstrap_key = state.get_bootstrap_key().map_err(VaultErrorDto::from)?;
+        let bk = bootstrap_key
+            .as_ref()
+            .ok_or_else(|| VaultErrorDto::from(VaultError::Locked))?;
 
-    let (recovery_key, emergency) =
-        assistant_vault::recovery_key::generate_recovery_key(mk, bk).map_err(|e| e.to_string())?;
+        let (recovery_key, emergency) =
+            assistant_vault::recovery_key::generate_recovery_key(mk, bk)
+                .map_err(VaultErrorDto::from)?;
 
-    let engine = super::sync_state(&app)?;
-    engine
-        .write_emergency_data(mk, &emergency)
-        .map_err(|e| e.to_string())?;
+        let engine = super::sync_state(&app)?;
+        engine
+            .write_emergency_data(mk, &emergency)
+            .map_err(VaultErrorDto::from)?;
 
-    {
-        let guard = state.get_conn().map_err(|e| e.to_string())?;
+        let guard = state.get_conn().map_err(VaultErrorDto::from)?;
         if let Some(conn) = guard.as_ref() {
             let _ = audit_log(conn, AuditEvent::RecoveryKeyGenerated, None);
         }
-    }
 
-    log::warn!("Recovery key generated and emergency data written");
-    Ok(recovery_key)
+        log::warn!("Recovery key generated and emergency data written");
+        Ok(recovery_key)
+    })
 }
 
+// precondition: AnyState
 #[command]
-pub fn vault_unlock_with_recovery_key(
-    app: AppHandle,
-    recovery_key: String,
-) -> Result<bool, String> {
-    let state = super::vault_state(&app)?;
-    if !state.is_locked() {
-        return Err("Vault is already unlocked".to_string());
-    }
-
+pub fn vault_has_recovery_key(app: AppHandle) -> Result<bool, VaultErrorDto> {
     let engine = super::sync_state(&app)?;
-    let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
-    let emergency = emergency.ok_or("Recovery key not set")?;
-
-    let emergency_data = assistant_vault::recovery_key::EmergencyData {
-        token: emergency.token,
-        salt: emergency.salt,
-    };
-
-    let result = assistant_vault::recovery_key::unlock_with_recovery_key(
-        &recovery_key,
-        &emergency_data,
-        &state,
-    )
-    .map_err(|e| {
-        log::warn!("Vault unlock with recovery key failed: {}", e);
-        e.to_string()
-    })?;
-
-    if result {
-        let mut integrity_warning: Option<String> = None;
-        if let Ok(master_key) = state.get_master_key() {
-            if let Some(mk) = master_key.as_ref() {
-                match engine.verify_vault_meta_integrity(mk) {
-                    Ok(integrity) => {
-                        if !integrity.valid {
-                            log::warn!(
-                                "Recovery key unlock: vault meta integrity mismatch — {}",
-                                integrity.message
-                            );
-                            integrity_warning = Some(integrity.message);
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Recovery key unlock: vault meta integrity check failed: {}",
-                            e
-                        );
-                        integrity_warning = Some(e.to_string());
-                    }
-                }
-            }
-        }
-        if let Some(message) = integrity_warning {
-            crate::protocol::events::emit_broadcast(
-                &app,
-                crate::protocol::events::event_name::VAULT_META_INTEGRITY_WARNING,
-                crate::protocol::events::VaultMetaIntegrityWarningPayload { message },
-            );
-        }
-
-        super::ssh_auto_add_on_unlock(&app);
-        crate::protocol::events::emit_broadcast(
-            &app,
-            crate::protocol::events::event_name::VAULT_UNLOCKED,
-            (),
-        );
-        log::warn!("Vault unlocked via recovery key");
-    }
-
-    Ok(result)
-}
-
-#[command]
-pub fn vault_has_recovery_key(app: AppHandle) -> Result<bool, String> {
-    let engine = super::sync_state(&app)?;
-    let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
+    let emergency = engine.read_emergency_data().map_err(VaultErrorDto::from)?;
     Ok(emergency.is_some())
 }
 
+// precondition: Unlocked
 #[command]
-pub fn vault_verify_vault_meta_integrity(
-    app: AppHandle,
-) -> Result<assistant_vault::vault_file::IntegrityResult, String> {
-    let state = super::vault_state(&app)?;
-    let master_key = state.get_master_key().map_err(|e| e.to_string())?;
-    let mk = master_key.as_ref().ok_or("Vault is locked")?;
+pub fn vault_verify_vault_meta_integrity(app: AppHandle) -> Result<IntegrityResult, VaultErrorDto> {
+    super::with_unlocked(&app, |state| {
+        let master_key = state.get_master_key().map_err(VaultErrorDto::from)?;
+        let mk = master_key
+            .as_ref()
+            .ok_or_else(|| VaultErrorDto::from(VaultError::Locked))?;
 
-    let engine = super::sync_state(&app)?;
-    engine
-        .verify_vault_meta_integrity(mk)
-        .map_err(|e| e.to_string())
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DisasterRecoveryResult {
-    pub file_path: String,
-    pub entry_count: u32,
-    pub integrity_warning: bool,
-    pub skipped_ids: Vec<String>,
+        let engine = super::sync_state(&app)?;
+        engine
+            .verify_vault_meta_integrity(mk)
+            .map_err(VaultErrorDto::from)
+    })
 }
 
 const EMERGENCY_META_FILE: &str = ".vault-meta";
 
-fn emergency_repo_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+fn emergency_repo_dir(app: &AppHandle) -> Result<std::path::PathBuf, VaultErrorDto> {
     let data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
+        .map_err(|e| super::internal_error(format!("Failed to resolve app data dir: {}", e)))?;
     Ok(data_dir.join("security").join("recovery"))
 }
 
-fn prepare_emergency_repo(dir: &std::path::Path) -> Result<(), String> {
+fn prepare_emergency_repo(dir: &std::path::Path) -> Result<(), VaultErrorDto> {
     if dir.exists() {
-        std::fs::remove_dir_all(dir)
-            .map_err(|e| format!("Failed to clear emergency repo {}: {}", dir.display(), e))?;
+        std::fs::remove_dir_all(dir).map_err(|e| {
+            log::warn!("Failed to clear emergency repo {}: {}", dir.display(), e);
+            VaultErrorDto::from(VaultError::Io(e))
+        })?;
     }
-    std::fs::create_dir_all(dir)
-        .map_err(|e| format!("Failed to create emergency repo {}: {}", dir.display(), e))
+    std::fs::create_dir_all(dir).map_err(|e| VaultErrorDto::from(VaultError::Io(e)))
 }
 
 fn export_from_engine(
     engine: &SyncEngine,
     recovery_key: &str,
     export_path: &str,
-) -> Result<DisasterRecoveryResult, String> {
-    let emergency = engine.read_emergency_data().map_err(|e| e.to_string())?;
-    let emergency = emergency.ok_or("Recovery key not set in .vault-meta")?;
+) -> Result<DisasterRecoveryResultDto, VaultErrorDto> {
+    let emergency = engine.read_emergency_data().map_err(VaultErrorDto::from)?;
+    let emergency = emergency.ok_or_else(|| VaultErrorDto::from(VaultError::RecoveryKeyNotSet))?;
 
     let emergency_data = assistant_vault::recovery_key::EmergencyData {
         token: emergency.token,
@@ -169,7 +98,7 @@ fn export_from_engine(
         assistant_vault::recovery_key::decrypt_recovery_keys(recovery_key, &emergency_data)
             .map_err(|e| {
                 log::warn!("Disaster recovery: decrypt failed: {}", e);
-                e.to_string()
+                VaultErrorDto::from(e)
             })?;
 
     let mut integrity_warning = false;
@@ -188,12 +117,14 @@ fn export_from_engine(
 
     let (exports, skipped_ids) = engine.disaster_recovery_export(&master_key).map_err(|e| {
         log::warn!("Disaster recovery: export failed: {}", e);
-        e.to_string()
+        VaultErrorDto::from(e)
     })?;
 
     let entry_count = exports.len() as u32;
-    let json = serde_json::to_string_pretty(&exports).map_err(|e| e.to_string())?;
-    std::fs::write(export_path, &json).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&exports).map_err(|e| {
+        super::internal_error(format!("Failed to serialize recovery export: {}", e))
+    })?;
+    std::fs::write(export_path, &json).map_err(|e| VaultErrorDto::from(VaultError::Io(e)))?;
 
     log::info!(
         "Disaster recovery export: {} entries to {} ({} skipped)",
@@ -202,7 +133,7 @@ fn export_from_engine(
         skipped_ids.len()
     );
 
-    Ok(DisasterRecoveryResult {
+    Ok(DisasterRecoveryResultDto {
         file_path: export_path.to_string(),
         entry_count,
         integrity_warning,
@@ -210,6 +141,7 @@ fn export_from_engine(
     })
 }
 
+// precondition: AnyState
 #[command]
 pub async fn vault_disaster_recovery_export(
     app: AppHandle,
@@ -217,7 +149,7 @@ pub async fn vault_disaster_recovery_export(
     recovery_key: String,
     export_path: String,
     commit: Option<String>,
-) -> Result<DisasterRecoveryResult, String> {
+) -> Result<DisasterRecoveryResultDto, VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
         let url = git_url
             .as_deref()
@@ -245,28 +177,26 @@ pub async fn vault_disaster_recovery_export(
                         remote_url: Some(url.clone()),
                         ..Default::default()
                     },
+                    Box::new(super::cipher_algo),
                 );
 
                 engine.clone_recovery_repo(&url).map_err(|e| {
                     log::warn!("Disaster recovery: clone failed: {}", e);
                     let _ = std::fs::remove_dir_all(&repo_dir);
-                    format!("Failed to clone vault repository: {}", e)
+                    VaultErrorDto::from(e)
                 })?;
 
                 if let Some(commit) = commit.as_deref() {
                     engine.checkout_recovery_repo(commit).map_err(|e| {
                         log::warn!("Disaster recovery: checkout {} failed: {}", commit, e);
                         let _ = std::fs::remove_dir_all(&repo_dir);
-                        format!("Failed to checkout commit {}: {}", commit, e)
+                        VaultErrorDto::from(e)
                     })?;
                 }
 
                 if !repo_dir.join(EMERGENCY_META_FILE).exists() {
                     let _ = std::fs::remove_dir_all(&repo_dir);
-                    return Err(
-                        "Cloned repository is not a vault repository: .vault-meta missing"
-                            .to_string(),
-                    );
+                    return Err(VaultErrorDto::from(VaultError::NotInitialized));
                 }
 
                 export_from_engine(&engine, &recovery_key, &export_path)
@@ -279,5 +209,7 @@ pub async fn vault_disaster_recovery_export(
         }
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| {
+        super::internal_error(format!("Vault disaster recovery task join failed: {}", e))
+    })?
 }

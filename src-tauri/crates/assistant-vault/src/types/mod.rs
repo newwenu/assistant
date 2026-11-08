@@ -6,104 +6,35 @@ use assistant_crypto::vault_crypto::types::CipherAlgorithm;
 
 pub use assistant_crypto::error::VaultError;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum VaultCategory {
-    #[default]
-    Login,
-    Note,
-    Card,
-    Identity,
-    SshKey,
-    Custom,
-}
+pub use crate::shared::*;
 
-impl fmt::Display for VaultCategory {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Login => write!(f, "login"),
-            Self::Note => write!(f, "note"),
-            Self::Card => write!(f, "card"),
-            Self::Identity => write!(f, "identity"),
-            Self::SshKey => write!(f, "sshKey"),
-            Self::Custom => write!(f, "custom"),
-        }
-    }
-}
+/// Unix **毫秒**时间戳别名。wire 上为 JSON number，最大可精确表示值为 2^53-1。
+pub type Millis = i64;
 
-impl VaultCategory {
-    pub fn parse(s: &str) -> Option<Self> {
-        s.parse().ok()
-    }
-}
+/// JSON number 可精确表示的整数上限（2^53-1）。
+pub const MAX_SAFE_JSON_MILLIS: i64 = (1 << 53) - 1;
 
-impl std::str::FromStr for VaultCategory {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "login" => Ok(Self::Login),
-            "note" => Ok(Self::Note),
-            "card" => Ok(Self::Card),
-            "identity" => Ok(Self::Identity),
-            "sshKey" => Ok(Self::SshKey),
-            "custom" => Ok(Self::Custom),
-            _ => Err(format!("unknown VaultCategory: {}", s)),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CustomFieldInput {
-    pub name: String,
-    pub value: String,
-    pub is_protected: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultEntryCreate {
-    pub category: VaultCategory,
-    pub title: String,
-    pub username: Option<String>,
-    pub url: Option<String>,
-    pub password: Option<String>,
-    pub notes: Option<String>,
-    pub totp_secret: Option<String>,
-    pub tags: Vec<String>,
-    pub custom_fields: Vec<CustomFieldInput>,
-    pub is_favorite: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultEntryUpdate {
-    pub category: VaultCategory,
-    pub title: String,
-    pub username: Option<String>,
-    pub url: Option<String>,
-    pub password: Option<String>,
-    pub notes: Option<String>,
-    pub totp_secret: Option<String>,
-    pub tags: Vec<String>,
-    pub custom_fields: Vec<CustomFieldInput>,
-    pub is_favorite: bool,
+/// 取当前 Unix 毫秒时间戳，并在构造处校验 JSON number 值域。
+pub fn now_millis() -> Millis {
+    let value = chrono::Utc::now().timestamp_millis();
+    debug_assert!(
+        (0..=MAX_SAFE_JSON_MILLIS).contains(&value),
+        "timestamp {value} is outside the JSON safe integer range"
+    );
+    value
 }
 
 #[derive(Debug, Clone)]
 pub struct VaultEntrySnapshot {
     pub id: String,
     pub category: VaultCategory,
-    pub revision: u64,
+    pub revision: i64,
     pub title: String,
     pub username: Option<String>,
     pub url: Option<String>,
     pub password: Option<String>,
     pub notes: Option<String>,
     pub totp_secret: Option<String>,
-    pub totp_digits: u32,
-    pub totp_period: u32,
     pub custom_fields: Vec<CustomFieldInput>,
     pub tags: Vec<String>,
     pub is_favorite: bool,
@@ -116,15 +47,13 @@ pub struct VaultEntrySnapshot {
 pub struct VaultEntryImport {
     pub id: String,
     pub category: VaultCategory,
-    pub revision: u64,
+    pub revision: i64,
     pub title: String,
     pub username: Option<String>,
     pub url: Option<String>,
     pub password: Option<String>,
     pub notes: Option<String>,
     pub totp_secret: Option<String>,
-    pub totp_digits: u32,
-    pub totp_period: u32,
     pub custom_fields: Vec<CustomFieldInput>,
     pub tags: Vec<String>,
     pub is_favorite: bool,
@@ -151,38 +80,6 @@ pub struct VaultCryptoInfo {
     pub default_cipher: CipherAlgorithm,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultEntrySummary {
-    pub id: String,
-    pub category: VaultCategory,
-    pub title: String,
-    pub username: Option<String>,
-    pub url: Option<String>,
-    pub tags: Vec<String>,
-    pub is_favorite: bool,
-    pub updated_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultEntryDetail {
-    pub id: String,
-    pub category: VaultCategory,
-    pub title: String,
-    pub username: Option<String>,
-    pub url: Option<String>,
-    pub has_password: bool,
-    pub has_notes: bool,
-    pub has_totp: bool,
-    pub custom_field_names: Vec<String>,
-    pub tags: Vec<String>,
-    pub is_favorite: bool,
-    pub revision: u64,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-
 pub struct VaultEntryDecrypted {
     pub id: String,
     pub category: VaultCategory,
@@ -195,7 +92,7 @@ pub struct VaultEntryDecrypted {
     pub custom_fields: Vec<DecryptedCustomField>,
     pub tags: Vec<String>,
     pub is_favorite: bool,
-    pub revision: u64,
+    pub revision: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -233,13 +130,6 @@ pub struct DecryptedCustomField {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RevealResult {
-    pub value: String,
-    pub expires_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct VaultEntryExport {
     pub category: VaultCategory,
     pub title: String,
@@ -248,6 +138,9 @@ pub struct VaultEntryExport {
     pub password: Option<String>,
     pub notes: Option<String>,
     pub totp_secret: Option<String>,
+    pub totp_digits: u32,
+    pub totp_period: u32,
+    pub totp_algorithm: String,
     pub tags: Vec<String>,
     pub custom_fields: Vec<CustomFieldInput>,
     pub is_favorite: bool,
@@ -264,6 +157,12 @@ pub struct VaultEntryCsvRow {
     pub password: Option<String>,
     pub notes: Option<String>,
     pub totp_secret: Option<String>,
+    #[serde(default = "default_totp_digits")]
+    pub totp_digits: u32,
+    #[serde(default = "default_totp_period")]
+    pub totp_period: u32,
+    #[serde(default = "default_totp_algorithm")]
+    pub totp_algorithm: String,
     #[serde(
         serialize_with = "serialize_tags_csv",
         deserialize_with = "deserialize_tags_csv",
@@ -275,7 +174,19 @@ pub struct VaultEntryCsvRow {
     pub updated_at: i64,
 }
 
-fn serialize_tags_csv<S: serde::Serializer>(tags: &Vec<String>, s: S) -> Result<S::Ok, S::Error> {
+fn default_totp_digits() -> u32 {
+    6
+}
+
+fn default_totp_period() -> u32 {
+    30
+}
+
+fn default_totp_algorithm() -> String {
+    "sha1".to_string()
+}
+
+fn serialize_tags_csv<S: serde::Serializer>(tags: &[String], s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(&tags.join(","))
 }
 
@@ -301,6 +212,9 @@ impl From<VaultEntryExport> for VaultEntryCsvRow {
             password: e.password,
             notes: e.notes,
             totp_secret: e.totp_secret,
+            totp_digits: e.totp_digits,
+            totp_period: e.totp_period,
+            totp_algorithm: e.totp_algorithm,
             tags: e.tags,
             is_favorite: e.is_favorite,
             created_at: e.created_at,
@@ -309,8 +223,17 @@ impl From<VaultEntryExport> for VaultEntryCsvRow {
     }
 }
 
-impl From<VaultEntryCsvRow> for VaultEntryCreate {
+impl From<VaultEntryCsvRow> for crate::dto::VaultEntryCreate {
     fn from(r: VaultEntryCsvRow) -> Self {
+        let totp = r
+            .totp_secret
+            .as_ref()
+            .map(|secret| crate::dto::TotpInputDto {
+                secret: Some(secret.clone()),
+                digits: r.totp_digits,
+                period: r.totp_period,
+                algorithm: crate::dto::totp::algorithm_dto_from_str(&r.totp_algorithm),
+            });
         Self {
             category: r.category,
             title: r.title,
@@ -318,7 +241,7 @@ impl From<VaultEntryCsvRow> for VaultEntryCreate {
             url: r.url,
             password: r.password,
             notes: r.notes,
-            totp_secret: r.totp_secret,
+            totp,
             tags: r.tags,
             custom_fields: Vec::new(),
             is_favorite: r.is_favorite,

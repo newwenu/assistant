@@ -1,21 +1,28 @@
+mod agent;
 mod agent_mode;
 mod app;
-mod chat;
+pub(crate) mod chat;
+mod clock;
 mod compaction;
 mod config;
 mod conversation;
-mod conversation_utils;
+pub(crate) mod conversation_utils;
 mod mascot_asset;
 mod orb;
 mod os_tool_exec;
+mod permission;
 mod provider;
 mod storage;
+mod token_usage_record;
 mod tool;
-mod vault;
+#[cfg(feature = "vault")]
+pub(crate) mod vault;
 
+pub use agent::*;
 pub use agent_mode::*;
 pub use app::*;
 pub use chat::*;
+pub use clock::*;
 pub use compaction::*;
 pub use config::*;
 pub use conversation::*;
@@ -23,10 +30,41 @@ pub use conversation::*;
 pub use mascot_asset::*;
 pub use orb::*;
 pub use os_tool_exec::*;
+pub use permission::*;
 pub use provider::*;
 pub use storage::*;
 pub use tool::*;
-pub use vault::*;
+#[cfg(feature = "vault")]
+pub use vault::vault_cleanup_on_exit;
+
+#[cfg(not(feature = "vault"))]
+pub fn vault_cleanup_on_exit(_app: &tauri::AppHandle) {}
+
+pub(crate) type ConfApplier = fn(&tauri::AppHandle, serde_json::Value) -> Result<(), String>;
+
+static CONF_APPLIERS: std::sync::Mutex<Vec<(&'static str, ConfApplier)>> =
+    std::sync::Mutex::new(Vec::new());
+
+static CORE_CONF_APPLIERS_SEEDED: std::sync::Once = std::sync::Once::new();
+
+pub(crate) fn register_conf_applier(group: &'static str, applier: ConfApplier) {
+    let mut registry = CONF_APPLIERS.lock().unwrap_or_else(|e| e.into_inner());
+    if registry.iter().any(|(existing, _)| *existing == group) {
+        log::error!("conf applier group {} 被重复注册，已忽略后一次", group);
+        return;
+    }
+    registry.push((group, applier));
+}
+
+pub(crate) fn conf_side_effects() -> Vec<(&'static str, ConfApplier)> {
+    CORE_CONF_APPLIERS_SEEDED.call_once(|| {
+        register_conf_applier("app", config::apply_app_conf as ConfApplier);
+        register_conf_applier("orb", config::apply_orb_conf as ConfApplier);
+        register_conf_applier("mascot", config::apply_mascot_conf as ConfApplier);
+    });
+    let registry = CONF_APPLIERS.lock().unwrap_or_else(|e| e.into_inner());
+    registry.clone()
+}
 
 pub(crate) fn get_db_conn<'a>(
     state: &'a tauri::State<'a, crate::setup::DbState>,

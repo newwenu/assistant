@@ -92,7 +92,7 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip(&assistant_i18n::t("app.name"))
+        .tooltip(assistant_i18n::t("app.name"))
         .on_menu_event(move |app: &AppHandle, event| match event.id.as_ref() {
             "new_chat" => {
                 emit_broadcast(app, event_name::ORB_NEW_CONVERSATION, ());

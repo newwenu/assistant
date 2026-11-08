@@ -5,10 +5,12 @@ mod common;
 use std::path::PathBuf;
 use std::process::Command;
 
-use assistant_sync::git_sync::git::git_ref_hash;
+use assistant_sync::git_sync::git::{
+    git_current_branch, git_fetch, git_ref_hash, sanitize_git_stderr,
+};
 use assistant_sync::git_sync::ssh::resolve_persist_hosts;
 use assistant_sync::git_sync::GitSync;
-use assistant_sync::types::{Readyness, SyncConfig};
+use assistant_sync::types::{Readyness, RemoteStatusErrorKind, SyncConfig, SyncError};
 use common::{bare_repo, git_env};
 
 fn sync(repo: PathBuf) -> GitSync {
@@ -16,7 +18,7 @@ fn sync(repo: PathBuf) -> GitSync {
 }
 
 #[test]
-fn readyness_is_no_sync_before_init_and_ready_after() {
+fn readyness_is_no_sync_then_no_remote_after_init() {
     git_env();
     let dir = tempfile::tempdir().unwrap();
     let git = sync(dir.path().join("vault"));
@@ -24,15 +26,18 @@ fn readyness_is_no_sync_before_init_and_ready_after() {
     assert_eq!(git.readyness().unwrap(), Readyness::NoSync);
 
     git.init().unwrap();
-    assert_eq!(git.readyness().unwrap(), Readyness::Ready);
+    assert_eq!(git.readyness().unwrap(), Readyness::NoRemote);
 }
 
 #[test]
 fn dirty_after_change_and_ready_after_commit() {
     git_env();
     let dir = tempfile::tempdir().unwrap();
+    let remote = bare_repo(dir.path());
     let git = sync(dir.path().join("vault"));
     git.init().unwrap();
+    git.add_remote_url("origin", remote.to_str().unwrap())
+        .unwrap();
 
     std::fs::create_dir_all(git.path().join("entries")).unwrap();
     std::fs::write(git.path().join("entries").join("a.enc"), b"payload").unwrap();
@@ -40,6 +45,17 @@ fn dirty_after_change_and_ready_after_commit() {
 
     git.commit_all("vault: add a", false).unwrap();
     assert_eq!(git.readyness().unwrap(), Readyness::Ready);
+}
+
+#[test]
+fn dirty_without_remote_reports_no_remote() {
+    git_env();
+    let dir = tempfile::tempdir().unwrap();
+    let git = sync(dir.path().join("vault"));
+    git.init().unwrap();
+
+    std::fs::write(git.path().join("local.enc"), b"x").unwrap();
+    assert_eq!(git.readyness().unwrap(), Readyness::NoRemote);
 }
 
 #[test]
@@ -92,7 +108,7 @@ fn finalize_without_remote_only_commits() {
     std::fs::write(git.path().join("local.enc"), b"x").unwrap();
     git.finalize("vault: local commit").unwrap();
 
-    assert_eq!(git.readyness().unwrap(), Readyness::Ready);
+    assert_eq!(git.readyness().unwrap(), Readyness::NoRemote);
     assert!(!git.has_remote().unwrap());
 }
 
@@ -209,4 +225,136 @@ fn detect_conflicts_reports_both_sides() {
     assert!(!conflicts[0].local_hash.is_empty());
     assert!(!conflicts[0].remote_hash.is_empty());
     assert_ne!(conflicts[0].local_hash, conflicts[0].remote_hash);
+}
+
+#[test]
+fn readyness_no_remote_then_ready_after_remote_added() {
+    git_env();
+    let dir = tempfile::tempdir().unwrap();
+    let remote = bare_repo(dir.path());
+    let git = sync(dir.path().join("vault"));
+
+    git.init().unwrap();
+    assert_eq!(git.readyness().unwrap(), Readyness::NoRemote);
+
+    git.add_remote_url("origin", remote.to_str().unwrap())
+        .unwrap();
+    assert_eq!(git.readyness().unwrap(), Readyness::Ready);
+}
+
+fn diverged_repos(dir: &std::path::Path) -> (GitSync, String) {
+    let remote = bare_repo(dir);
+
+    let source = sync(dir.join("source"));
+    source.init().unwrap();
+    std::fs::write(source.path().join("base.enc"), b"base").unwrap();
+    source.commit_all("vault: base", false).unwrap();
+    source
+        .add_remote_url("origin", remote.to_str().unwrap())
+        .unwrap();
+    let branch = git_current_branch(source.path()).unwrap();
+    source.push(Some(&branch), Some("origin")).unwrap();
+
+    let target = sync(dir.join("target"));
+    target.clone(remote.to_str().unwrap(), true).unwrap();
+    std::fs::write(target.path().join("remote.enc"), b"remote").unwrap();
+    target.commit_all("vault: remote", false).unwrap();
+    target.push(None, None).unwrap();
+
+    std::fs::write(source.path().join("local.enc"), b"local").unwrap();
+    source.commit_all("vault: local", false).unwrap();
+
+    (source, branch)
+}
+
+#[test]
+fn remote_status_ahead_behind_after_divergence() {
+    git_env();
+    let dir = tempfile::tempdir().unwrap();
+    let (source, branch) = diverged_repos(dir.path());
+
+    let status = source.remote_status(true).unwrap();
+    let expected = format!("origin/{branch}");
+    assert_eq!(status.upstream.as_deref(), Some(expected.as_str()));
+    assert_eq!(status.ahead, Some(1));
+    assert_eq!(status.behind, Some(1));
+    assert!(status.fetched);
+    assert!(status.error_kind.is_none());
+}
+
+#[test]
+fn remote_status_offline_uses_existing_refs() {
+    git_env();
+    let dir = tempfile::tempdir().unwrap();
+    let (source, _branch) = diverged_repos(dir.path());
+
+    let online = source.remote_status(true).unwrap();
+    let offline = source.remote_status(false).unwrap();
+    assert!(!offline.fetched);
+    assert_eq!(offline.ahead, online.ahead);
+    assert_eq!(offline.behind, online.behind);
+    assert!(offline.error_kind.is_none());
+}
+
+#[test]
+fn remote_status_no_upstream_reports_error() {
+    git_env();
+    let dir = tempfile::tempdir().unwrap();
+    let remote = bare_repo(dir.path());
+    let git = sync(dir.path().join("vault"));
+    git.init().unwrap();
+    git.add_remote_url("origin", remote.to_str().unwrap())
+        .unwrap();
+
+    let status = git.remote_status(false).unwrap();
+    assert!(status.upstream.is_none());
+    assert!(status.ahead.is_none());
+    assert!(status.behind.is_none());
+    assert_eq!(status.error_kind, Some(RemoteStatusErrorKind::NoUpstream));
+}
+
+#[test]
+fn git_failed_carries_stderr() {
+    git_env();
+    let dir = tempfile::tempdir().unwrap();
+    let git = sync(dir.path().join("vault"));
+    git.init().unwrap();
+
+    let missing = dir.path().join("missing-remote.git");
+    let err = git_fetch(git.path(), Some(missing.to_str().unwrap())).unwrap_err();
+    match err {
+        SyncError::GitFailed { code, stderr } => {
+            assert_ne!(code, 0);
+            assert!(!stderr.is_empty(), "stderr must be captured");
+        }
+        other => panic!("expected GitFailed, got {other:?}"),
+    }
+}
+
+#[test]
+fn sanitize_git_stderr_redacts_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("vault");
+    let raw = "fatal: unable to access 'https://alice:secret@git.example.com/repo.git/': bad";
+    let sanitized = sanitize_git_stderr(&repo, raw);
+    assert!(!sanitized.contains("alice"));
+    assert!(!sanitized.contains("secret"));
+    assert!(sanitized.contains("https://***@git.example.com/repo.git/"));
+}
+
+#[test]
+fn sanitize_git_stderr_replaces_repo_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("vault");
+    let raw = format!("fatal: not a git repository: {}", repo.display());
+    let sanitized = sanitize_git_stderr(&repo, &raw);
+    assert!(sanitized.contains("<vault>"));
+    assert!(!sanitized.contains(repo.to_str().unwrap()));
+}
+
+#[test]
+fn sanitize_git_stderr_truncates() {
+    let dir = tempfile::tempdir().unwrap();
+    let sanitized = sanitize_git_stderr(dir.path(), &"x".repeat(3000));
+    assert_eq!(sanitized.chars().count(), 2000);
 }

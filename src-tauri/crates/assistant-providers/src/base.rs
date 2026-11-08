@@ -133,6 +133,32 @@ impl From<&ProviderError> for ProviderErrorPayload {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CacheCapability {
+    /// 适配层未声明缓存能力（无法从上报字段反推）
+    #[default]
+    None,
+    /// 只上报读缓存（OpenAI Chat Completions / Gemini）
+    Read,
+    /// 读缓存与写缓存都上报（Anthropic / OpenAI Responses）
+    ReadWrite,
+}
+
+impl CacheCapability {
+    /// 命中率分母要求该值为 true：无缓存能力的请求不参与分母。
+    pub fn is_capable(&self) -> bool {
+        !matches!(self, CacheCapability::None)
+    }
+
+    pub fn as_flag(&self) -> i64 {
+        if self.is_capable() {
+            1
+        } else {
+            0
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ProviderKind {
     OpenAI,
@@ -153,6 +179,16 @@ impl ProviderKind {
                 | ProviderKind::GeminiCodeAssist
         )
     }
+
+    /// 缓存能力由适配层声明，不由「是否上报字段」或 `0` 值反推（M14）。
+    pub fn cache_capability(&self) -> CacheCapability {
+        match self {
+            ProviderKind::Anthropic | ProviderKind::OpenAIResponses => CacheCapability::ReadWrite,
+            ProviderKind::Gemini | ProviderKind::GeminiCodeAssist => CacheCapability::Read,
+            // OpenAI Chat Completions 与 Custom（OpenAI 兼容协议）只解析读缓存
+            ProviderKind::OpenAI | ProviderKind::Custom { .. } => CacheCapability::Read,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -169,8 +205,8 @@ pub struct ModelConfig {
     pub id: String,
     pub name: String,
     pub owned_by: String,
-    #[serde(default)]
-    pub context_window: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u32>,
     #[serde(default)]
     pub support_vision: bool,
     /// 输入模态列表（"text"/"image"/"pdf"/"audio"/"video"），权威能力来源；

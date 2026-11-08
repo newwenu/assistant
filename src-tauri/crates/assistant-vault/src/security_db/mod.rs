@@ -12,8 +12,8 @@ use assistant_crypto::vault_crypto::types::{CipherAlgorithm, MasterKey};
 use assistant_crypto::vault_crypto::VaultCrypto;
 
 pub mod biometric_ops;
-pub mod crud;
 pub mod crypto_ops;
+pub mod entries;
 pub mod import_export;
 pub mod meta;
 pub mod rekey;

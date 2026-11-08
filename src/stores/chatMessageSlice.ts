@@ -54,8 +54,6 @@ export function createMessageSlice(
       contentToSend: string,
       strategy?: TruncationStrategy,
     ) => {
-      await orchestrator.ensureIdle();
-
       if (!strategy || strategy.kind === "truncate") {
         const snapshot = get().messages;
         set((state) => ({
