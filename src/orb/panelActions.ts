@@ -3,6 +3,7 @@ import { openAttachmentFile } from "@/chat/attachment/paths";
 import { WINDOW_ORB } from "@/config/constants";
 import { orbService } from "../services/orbService";
 import { createLogger } from "@/services/logger";
+import { notifyError } from "@/stores/notifyStore";
 import { useOrbStore } from "../stores/orbStore";
 import { collapseOrbPanel, suppressOrbBlurCollapse } from "./OrbExpand";
 
@@ -29,28 +30,42 @@ export async function openFromPanel(
     suppressOrbBlurCollapse();
   }
 
+  let opened = false;
   try {
-    await runTarget(target);
+    opened = await runTarget(target);
   } catch (e) {
     log.error("openFromPanel failed", { kind: target.kind, error: e });
+    if (target.kind === "attachment") {
+      notifyError(
+        "chat.attachment.open_failed_title",
+        "chat.attachment.open_failed_description",
+      );
+    }
   } finally {
-    if (shouldCollapse) {
+    if (shouldCollapse && opened) {
       await collapseOrbPanel();
     }
   }
 }
 
-async function runTarget(target: PanelOpenTarget): Promise<void> {
+async function runTarget(target: PanelOpenTarget): Promise<boolean> {
   switch (target.kind) {
-    case "attachment":
-      await openAttachmentFile(target.id);
-      return;
+    case "attachment": {
+      const opened = await openAttachmentFile(target.id);
+      if (!opened) {
+        notifyError(
+          "chat.attachment.missing_title",
+          "chat.attachment.missing_description",
+        );
+      }
+      return opened;
+    }
     case "main":
       if (target.route) {
         await orbService.openMainWindowAndNavigate(target.route);
       } else {
         await orbService.openMainWindow();
       }
-      return;
+      return true;
   }
 }

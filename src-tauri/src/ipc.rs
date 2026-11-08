@@ -84,5 +84,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         cmd::os_tool_exec,
         cmd::get_storage_breakdown,
         cmd::delete_attachments,
+        cmd::open_attachment,
     ]
 }

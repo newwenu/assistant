@@ -177,6 +177,30 @@ pub async fn delete_attachments(
     })
 }
 
+#[command]
+pub async fn open_attachment(app: AppHandle, attachment_id: String) -> Result<bool, String> {
+    if !is_plain_file_name(&attachment_id) {
+        return Ok(false);
+    }
+
+    let path = app.state::<AttachmentStore>().file_path(&attachment_id);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let metadata = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(e.to_string()),
+        };
+        if !metadata.is_file() {
+            return Ok(false);
+        }
+        tauri_plugin_opener::open_path(path.as_path(), None::<&str>).map_err(|e| e.to_string())?;
+        Ok(true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 fn media_type_from_id(id: &str) -> String {
     if let Some(ext) = id.rsplit('.').next() {
         match ext {
@@ -189,5 +213,49 @@ fn media_type_from_id(id: &str) -> String {
         }
     } else {
         "application/octet-stream".to_string()
+    }
+}
+
+fn is_plain_file_name(id: &str) -> bool {
+    if id.is_empty() || id.starts_with('.') || id.ends_with(".tmp") {
+        return false;
+    }
+    let mut components = std::path::Path::new(id).components();
+    matches!(
+        (components.next(), components.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_plain_file_name;
+
+    #[test]
+    fn accepts_plain_file_name() {
+        assert!(is_plain_file_name("abc123.png"));
+        assert!(is_plain_file_name("abc123.pdf"));
+    }
+
+    #[test]
+    fn rejects_empty_hidden_and_tmp() {
+        assert!(!is_plain_file_name(""));
+        assert!(!is_plain_file_name(".hidden.png"));
+        assert!(!is_plain_file_name("abc123.png.tmp"));
+    }
+
+    #[test]
+    fn rejects_traversal_and_separators() {
+        assert!(!is_plain_file_name(".."));
+        assert!(!is_plain_file_name("../abc123.png"));
+        assert!(!is_plain_file_name("a/b.png"));
+        assert!(!is_plain_file_name("/abc123.png"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rejects_windows_prefix_and_backslash() {
+        assert!(!is_plain_file_name(r"C:\abc123.png"));
+        assert!(!is_plain_file_name(r"a\b.png"));
     }
 }

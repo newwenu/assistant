@@ -12,4 +12,7 @@ export const storageService = {
     attachmentIds: string[],
   ): Promise<AttachmentDeleteResultDto> =>
     invoke<AttachmentDeleteResultDto>("delete_attachments", { attachmentIds }),
+
+  openAttachment: (attachmentId: string): Promise<boolean> =>
+    invoke<boolean>("open_attachment", { attachmentId }),
 };
