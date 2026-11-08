@@ -30,6 +30,8 @@ pub fn conv(id: &str) -> ConversationRow {
         updated_at: 1000,
         is_full: false,
         active_branch_id: None,
+        mode_id: None,
+        tool_config_json: None,
     }
 }
 

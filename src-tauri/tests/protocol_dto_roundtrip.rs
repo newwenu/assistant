@@ -2,14 +2,16 @@ use assistant_app::protocol::{
     AgentModeDto, AgentModeKindDto, AgentToolCallDto, AgentToolCallPayloadDto, ChatDeltaPayloadDto,
     ChatRegeneratePayloadDto, ChatStreamStartPayloadDto, ConversationDetailDto, ConversationDto,
     ConversationPatchDto, ConversationQueryModeDto, ConversationQueryOptsDto,
-    ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto, InstallMascotAssetResultDto,
-    MessageDto, ModelConfigDto, MousePositionDto, OsToolExecRequestDto, OsToolResultDto,
-    ProviderErrorCodeDto, ProviderErrorPayloadDto, ProviderListDto, ReasoningLevelsDto,
-    RetryNotificationDto, ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto,
-    SessionStateChangedPayloadDto, SessionStateDto, SettingProviderChangedActionDto,
-    SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto, ThemeChangedPayloadDto,
-    TokenUsageDto, ToolErrorKindDto, TurnPhaseDto,
+    ConversationTerminatedPayloadDto, ConversationToolConfigDto, ConversationUnlockedPayloadDto,
+    InstallMascotAssetResultDto, MessageDto, MessageToolCallDto, MessageToolCallStatusDto,
+    ModelConfigDto, MousePositionDto, OsToolExecRequestDto, OsToolResultDto, ProviderErrorCodeDto,
+    ProviderErrorPayloadDto, ProviderListDto, ReasoningLevelsDto, RetryNotificationDto,
+    ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto, SessionStateChangedPayloadDto,
+    SessionStateDto, SettingProviderChangedActionDto, SettingProviderChangedPayloadDto,
+    ShortcutWarningPayloadDto, ThemeChangedPayloadDto, TokenUsageDto, ToolErrorKindDto,
+    TurnPhaseDto,
 };
+use assistant_storage::agent_modes::AgentModeRow;
 use serde::{Deserialize, Serialize};
 
 fn roundtrip<T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug>(value: &T) {
@@ -34,6 +36,8 @@ fn conversation_dto_roundtrip() {
         updated_at: 1000,
         is_full: false,
         active_branch_id: None,
+        mode_id: None,
+        tool_config: None,
     };
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
@@ -57,10 +61,63 @@ fn message_dto_roundtrip() {
         sibling_count: None,
         provider_id: None,
         model_id: None,
+        tool_calls: Vec::new(),
     };
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
     assert!(json.contains("conversationId"), "camelCase: {}", json);
+}
+
+#[test]
+fn message_dto_roundtrip_keeps_tool_call_terminal_states() {
+    let dto = MessageDto {
+        id: "m1".into(),
+        conversation_id: "c1".into(),
+        role: "assistant".into(),
+        content: String::new(),
+        tokens: None,
+        timestamp: 1000,
+        parent_id: None,
+        is_pinned: false,
+        reasoning: None,
+        sibling_index: 0,
+        sibling_count: None,
+        provider_id: None,
+        model_id: None,
+        tool_calls: vec![
+            MessageToolCallDto {
+                call_id: "call_1".into(),
+                name: "fs_read".into(),
+                arguments: serde_json::json!({ "path": "a" }),
+                status: MessageToolCallStatusDto::Success,
+                result: Some("ok".into()),
+            },
+            MessageToolCallDto {
+                call_id: "call_2".into(),
+                name: "fs_write".into(),
+                arguments: serde_json::Value::Null,
+                status: MessageToolCallStatusDto::Cancelled,
+                result: None,
+            },
+        ],
+    };
+    roundtrip(&dto);
+    let json = serde_json::to_string(&dto).unwrap();
+    assert!(
+        json.contains("\"callId\":\"call_1\""),
+        "camelCase: {}",
+        json
+    );
+    assert!(
+        json.contains("\"status\":\"success\"") && json.contains("\"status\":\"cancelled\""),
+        "snake_case enum: {}",
+        json
+    );
+    assert!(
+        json.contains("\"result\":null"),
+        "output Option keeps the key with null: {}",
+        json
+    );
 }
 
 #[test]
@@ -112,25 +169,52 @@ fn provider_error_payload_dto_roundtrip() {
 fn agent_mode_dto_roundtrip() {
     let dto = AgentModeDto {
         id: "mode1".into(),
-        name: "Quick".into(),
-        description: "quick mode".into(),
-        kind: AgentModeKindDto::Quick,
+        name: "Agent".into(),
+        description: "agent mode".into(),
+        kind: AgentModeKindDto::Agent,
         prompt: "prompt".into(),
         model: None,
         temperature: None,
         max_tokens: None,
         reasoning_enabled: None,
         reasoning_effort: None,
-        tools: vec![],
         presentation_rank: 0,
         is_builtin: true,
         created_at: 1000,
         updated_at: 1000,
+        tool_config: ConversationToolConfigDto::default(),
     };
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
     assert!(json.contains("presentationRank"), "camelCase: {}", json);
     assert!(json.contains("isBuiltin"), "camelCase: {}", json);
+    assert!(json.contains("toolConfig"), "camelCase: {}", json);
+}
+
+fn mode_row_without_tool_config(id: &str) -> AgentModeRow {
+    AgentModeRow {
+        id: id.into(),
+        name: "mode".into(),
+        description: String::new(),
+        kind: "agent".into(),
+        prompt: String::new(),
+        model: None,
+        temperature: None,
+        max_tokens: None,
+        reasoning_enabled: None,
+        reasoning_effort: None,
+        presentation_rank: 0,
+        is_builtin: true,
+        created_at: 1000,
+        updated_at: 1000,
+        tool_config_json: None,
+    }
+}
+
+#[test]
+fn agent_mode_tool_config_falls_back_to_contract_default() {
+    let dto = AgentModeDto::from_row(&mode_row_without_tool_config("builtin-agent"));
+    assert_eq!(dto.tool_config, ConversationToolConfigDto::default());
 }
 
 #[test]
@@ -190,6 +274,8 @@ fn conversation_detail_dto_roundtrip() {
             updated_at: 1000,
             is_full: false,
             active_branch_id: None,
+            mode_id: None,
+            tool_config: None,
         },
         messages: vec![],
         total_count: 0,
@@ -467,12 +553,19 @@ fn conversation_patch_dto_roundtrip() {
         title_source: Some("user".into()),
         model_id: None,
         provider_id: Some("p1".into()),
+        mode_id: Some("builtin-default".into()),
+        tool_config: None,
     };
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
     assert!(json.contains("titleSource"), "camelCase: {}", json);
     assert!(json.contains("providerId"), "camelCase: {}", json);
     assert!(json.contains("\"modelId\":null"), "None present: {}", json);
+    assert!(
+        json.contains("\"modeId\":\"builtin-default\""),
+        "camelCase: {}",
+        json
+    );
 }
 
 #[test]

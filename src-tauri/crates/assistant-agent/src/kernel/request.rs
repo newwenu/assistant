@@ -74,7 +74,6 @@ pub async fn build(
         _ => None,
     };
     let options = build_chat_options(
-        &kind,
         mode.unwrap_or(&AgentModeRow::default()),
         context_window_tokens,
         &input.reasoning,

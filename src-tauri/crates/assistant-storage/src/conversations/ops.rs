@@ -14,7 +14,7 @@ pub fn search_conversations(
     query: &str,
 ) -> Result<Vec<ConversationRow>, String> {
     let pattern = format!("%{}%", query);
-    let sql = "SELECT DISTINCT c.id, c.title, c.title_source, c.provider_id, c.model_id, c.system_prompt, c.is_pinned, c.sort_order, c.generation, c.created_at, c.updated_at, c.is_full, c.active_branch_id \
+    let sql = "SELECT DISTINCT c.id, c.title, c.title_source, c.provider_id, c.model_id, c.system_prompt, c.is_pinned, c.sort_order, c.generation, c.created_at, c.updated_at, c.is_full, c.active_branch_id, c.mode_id, c.tool_config_json \
          FROM conversations c \
          LEFT JOIN messages m ON m.conversation_id = c.id \
          WHERE c.title LIKE ?1 OR m.content LIKE ?1 \
@@ -128,6 +128,8 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Sto
         updated_at: now,
         is_full: false,
         active_branch_id: None,
+        mode_id: detail.conversation.mode_id.clone(),
+        tool_config_json: detail.conversation.tool_config_json.clone(),
     };
     insert_conversation(conn, &new_conv)?;
 
@@ -190,6 +192,12 @@ pub fn purge_all(conn: &Connection) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM conversations", [])
         .map_err(|e| e.to_string())?;
+    // 会话全部清空后会话级授权全部失效；全局授权保留，直到用户撤销。
+    conn.execute(
+        "DELETE FROM permission_grants WHERE substr(grant_key, 1, 2) = 's:'",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -237,6 +245,8 @@ pub fn fork_to_new_conversation(
         updated_at: now,
         is_full: false,
         active_branch_id: None,
+        mode_id: source_conv.mode_id.clone(),
+        tool_config_json: source_conv.tool_config_json.clone(),
     };
     insert_conversation(conn, &new_conv)?;
 

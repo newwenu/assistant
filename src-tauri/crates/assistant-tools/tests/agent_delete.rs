@@ -16,6 +16,7 @@ fn context(root: &Path, session: Option<&str>) -> ToolUseContext {
         workspace_root: Some(root.display().to_string()),
         session_id: session.map(str::to_string),
         tool_call_id: Some("call-1".to_string()),
+        ..Default::default()
     }
 }
 
@@ -178,6 +179,7 @@ fn validate_input_rejects_the_filesystem_root() {
         workspace_root: None,
         session_id: None,
         tool_call_id: Some("call-1".to_string()),
+        ..Default::default()
     };
 
     let result = tool(store()).validate_input(&json!({ "path": root.display().to_string() }), &ctx);
@@ -201,6 +203,7 @@ fn validate_input_rejects_the_home_directory_itself() {
         workspace_root: None,
         session_id: None,
         tool_call_id: Some("call-1".to_string()),
+        ..Default::default()
     };
 
     let result = tool(store()).validate_input(&json!({ "path": home.display().to_string() }), &ctx);

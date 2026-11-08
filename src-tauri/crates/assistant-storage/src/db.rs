@@ -6,6 +6,13 @@ use crate::agent_modes;
 use crate::migrations;
 
 pub fn init_db(db_path: &Path) -> Result<Connection, String> {
+    init_db_localized(db_path, &|key| key.to_string())
+}
+
+pub fn init_db_localized(
+    db_path: &Path,
+    resolve: &dyn Fn(&str) -> String,
+) -> Result<Connection, String> {
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -38,7 +45,28 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
             is_full INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
-            active_branch_id TEXT
+            active_branch_id TEXT,
+            tool_config_json TEXT
+        );
+
+        -- 模式级工具装配（`ModeToolConfig` 的 JSON）由 `agent_modes` 模块负责编解码；
+        -- 内置行初始值见 `agent_modes::BUILTIN_AGENT_TOOL_CONFIG`。
+        CREATE TABLE IF NOT EXISTS agent_modes (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL DEFAULT 'custom',
+            prompt TEXT NOT NULL DEFAULT '',
+            model TEXT,
+            temperature REAL,
+            max_tokens INTEGER,
+            reasoning_enabled INTEGER,
+            reasoning_effort TEXT,
+            presentation_rank INTEGER NOT NULL DEFAULT 99,
+            is_builtin INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            tool_config_json TEXT
         );
 
         -- `tool_calls_json` 为 agentloop 预留列（当前写入恒 NULL），禁止 DROP；
@@ -140,7 +168,33 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
     )
     .map_err(|e| e.to_string())?;
 
-    agent_modes::init_table(&conn)?;
+    let has_agent_tool_config: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('agent_modes') WHERE name = 'tool_config_json'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_agent_tool_config {
+        conn.execute_batch("ALTER TABLE agent_modes ADD COLUMN tool_config_json TEXT;")
+            .map_err(|e| e.to_string())?;
+        info!("Added tool_config_json column to agent_modes table");
+    }
+
+    let has_conv_tool_config: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'tool_config_json'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_conv_tool_config {
+        conn.execute_batch("ALTER TABLE conversations ADD COLUMN tool_config_json TEXT;")
+            .map_err(|e| e.to_string())?;
+        info!("Added tool_config_json column to conversations table");
+    }
 
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_messages_parent_id
@@ -148,7 +202,7 @@ pub fn init_db(db_path: &Path) -> Result<Connection, String> {
     )
     .map_err(|e| e.to_string())?;
 
-    agent_modes::seed_builtin_modes(&conn)?;
+    agent_modes::seed_builtin_modes(&conn, resolve)?;
 
     let is_new_db: bool = conn
         .query_row(

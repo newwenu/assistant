@@ -77,11 +77,11 @@ impl Tool for AgentMoveTool {
             Ok(request) => request,
             Err(error) => return ValidationResult::invalid(error),
         };
-        if request.source == request.target {
-            return ValidationResult::invalid(same_path_message(&request.source));
-        }
         match resolve_both(&request, context) {
-            Ok(_) => ValidationResult::ok(),
+            Ok((source, target)) => match same_target(&source, &target) {
+                Some(error) => ValidationResult::invalid(error),
+                None => ValidationResult::ok(),
+            },
             Err(error) => ValidationResult::invalid(error),
         }
     }
@@ -104,9 +104,6 @@ impl Tool for AgentMoveTool {
             Ok(request) => request,
             Err(error) => return Ok(ToolResult::err(error)),
         };
-        if request.source == request.target {
-            return Ok(ToolResult::err(same_path_message(&request.source)));
-        }
 
         let resolve_context = context.clone();
         let moved = tokio::task::spawn_blocking(move || {
@@ -159,21 +156,9 @@ impl MoveRequest {
             .as_object()
             .ok_or_else(|| "input must be a JSON object".to_string())?;
 
-        let source = object
-            .get("source")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| "missing or empty 'source' field".to_string())?
-            .to_string();
+        let source = path::parse_path_arg(object, "source")?;
 
-        let target = object
-            .get("target")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| "missing or empty 'target' field".to_string())?
-            .to_string();
+        let target = path::parse_path_arg(object, "target")?;
 
         let overwrite = match object.get("overwrite") {
             None | Some(Value::Null) => false,
@@ -189,11 +174,24 @@ impl MoveRequest {
     }
 }
 
-fn same_path_message(path: &str) -> String {
-    format!(
-        "'source' and 'target' are the same path ('{}'); nothing to move",
-        path
-    )
+/// 目标非法时返回错误文案：同一路径，或把源移进它自己的子目录。
+///
+/// 判等必须用解析后的路径：`a.txt` 与 `./a.txt` 字符串不同但指向同一文件。
+fn same_target(source: &Path, target: &Path) -> Option<String> {
+    if path::same_path(source, target) {
+        return Some(format!(
+            "'source' and 'target' are the same path ('{}'); nothing to move",
+            source.display()
+        ));
+    }
+    if path::is_component_prefix(target, source) {
+        return Some(format!(
+            "cannot move '{}' into its own subdirectory '{}'",
+            source.display(),
+            target.display()
+        ));
+    }
+    None
 }
 
 /// 两端都走叶子保留解析：移动操作的是链接本身，`canonicalize` 会把链接换成其真实目标。
@@ -213,9 +211,15 @@ struct MoveOutcome {
 
 /// 同步移动，必须在 `spawn_blocking` 内调用。
 ///
-/// 顺序固定为「查源 → 查目标 → （按需）删目标 → 查目标父目录 → rename」：
-/// 所有拒绝都发生在任何破坏性动作之前，`overwrite` 的删除是最后一步的前置动作。
+/// 顺序固定为「判同路径 → 查源 → 查目标 → （非空目录拒绝）→ 查目标父目录 → rename」。
+/// 删除被覆盖的目标只发生在 **rename 失败之后**：目标还在原位时 rename 失败（跨设备、
+/// 权限、占用）不会造成任何丢失；反过来先删后 rename，任何一次 rename 失败都会让目标
+/// 白删、源没动。
 fn move_path(source: &Path, target: &Path, overwrite: bool) -> Result<MoveOutcome, String> {
+    if let Some(error) = same_target(source, target) {
+        return Err(error);
+    }
+
     let source_meta = match std::fs::symlink_metadata(source) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == ErrorKind::NotFound => {
@@ -227,24 +231,23 @@ fn move_path(source: &Path, target: &Path, overwrite: bool) -> Result<MoveOutcom
     };
     let is_directory = source_meta.file_type().is_dir();
 
-    let mut overwritten = false;
-    match std::fs::symlink_metadata(target) {
-        Ok(metadata) => {
-            if !overwrite {
-                return Err(format!(
-                    "'{}' already exists; pass overwrite = true to replace it",
-                    target.display()
-                ));
-            }
-            if metadata.file_type().is_dir() {
-                ensure_empty_directory(target)?;
-            }
-            remove_target(target, &metadata)?;
-            overwritten = true;
-        }
-        Err(error) if error.kind() == ErrorKind::NotFound => {}
+    let target_meta = match std::fs::symlink_metadata(target) {
+        Ok(metadata) => Some(metadata),
+        Err(error) if error.kind() == ErrorKind::NotFound => None,
         Err(error) => {
             return Err(format!("cannot access '{}': {}", target.display(), error));
+        }
+    };
+    if let Some(metadata) = &target_meta {
+        if !overwrite {
+            return Err(format!(
+                "'{}' already exists; pass overwrite = true to replace it",
+                target.display()
+            ));
+        }
+        // 目录必须为空：判定放在任何破坏性动作之前，`move` 不得隐式递归删除。
+        if metadata.file_type().is_dir() {
+            ensure_empty_directory(target)?;
         }
     }
 
@@ -270,28 +273,52 @@ fn move_path(source: &Path, target: &Path, overwrite: bool) -> Result<MoveOutcom
         }
     }
 
-    std::fs::rename(source, target).map_err(|error| {
-        if error.kind() == ErrorKind::CrossesDevices {
-            format!(
-                "cannot move '{}' to '{}' across devices/filesystems; copy the content and then \
-                 delete the source in two separate steps",
-                source.display(),
-                target.display()
-            )
-        } else {
-            format!(
-                "failed to move '{}' to '{}': {}",
-                source.display(),
-                target.display(),
-                error
-            )
+    if let Err(first_error) = std::fs::rename(source, target) {
+        if first_error.kind() == ErrorKind::CrossesDevices {
+            return Err(cross_device_message(source, target));
         }
-    })?;
+        let Some(metadata) = target_meta.as_ref() else {
+            return Err(failed_move_message(source, target, &first_error));
+        };
+        // 目标已存在且允许覆盖：Windows 的 rename 不能替换已存在的目录，删除后重试一次。
+        remove_target(target, metadata)?;
+        std::fs::rename(source, target).map_err(|error| {
+            if error.kind() == ErrorKind::CrossesDevices {
+                cross_device_message(source, target)
+            } else {
+                format!(
+                    "the existing target '{}' was removed to make room, but moving '{}' still \
+                     failed: {}; the source is unchanged",
+                    target.display(),
+                    source.display(),
+                    error
+                )
+            }
+        })?;
+    }
 
     Ok(MoveOutcome {
-        overwritten,
+        overwritten: target_meta.is_some(),
         is_directory,
     })
+}
+
+fn cross_device_message(source: &Path, target: &Path) -> String {
+    format!(
+        "cannot move '{}' to '{}' across devices/filesystems; copy the content and then delete \
+         the source in two separate steps",
+        source.display(),
+        target.display()
+    )
+}
+
+fn failed_move_message(source: &Path, target: &Path, error: &std::io::Error) -> String {
+    format!(
+        "failed to move '{}' to '{}': {}",
+        source.display(),
+        target.display(),
+        error
+    )
 }
 
 /// 非空目录拒绝：`move` 不得隐式递归删除，那会让一次审批覆盖两类破坏性改动。

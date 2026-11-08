@@ -279,3 +279,97 @@ fn restart_sweep_marks_streaming_message_interrupted() {
         .unwrap();
     assert_eq!(status, "interrupted");
 }
+
+#[test]
+fn init_db_adds_tool_config_columns_to_legacy_tables() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("legacy_tool_config.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO app_settings (key, value) VALUES ('schema_version', '1');
+             CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                title_source TEXT NOT NULL DEFAULT 'placeholder',
+                provider_id TEXT,
+                model_id TEXT NOT NULL,
+                system_prompt TEXT,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                generation INTEGER NOT NULL DEFAULT 0,
+                mode_id TEXT,
+                is_full INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                active_branch_id TEXT
+             );
+             INSERT INTO conversations (id,title,title_source,model_id,created_at,updated_at)
+                 VALUES ('c1','t','placeholder','m',0,0);
+             CREATE TABLE agent_modes (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL DEFAULT 'custom',
+                prompt TEXT NOT NULL DEFAULT '',
+                model TEXT,
+                temperature REAL,
+                max_tokens INTEGER,
+                reasoning_enabled INTEGER,
+                reasoning_effort TEXT,
+                presentation_rank INTEGER NOT NULL DEFAULT 99,
+                is_builtin INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             INSERT INTO agent_modes (id,name,kind,created_at,updated_at)
+                 VALUES ('user-legacy','legacy','deep',0,0);",
+        )
+        .unwrap();
+    }
+
+    let conn = db::init_db(&db_path).unwrap();
+    for table in ["agent_modes", "conversations"] {
+        let count: i64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = 'tool_config_json'"
+                ),
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "legacy db must gain {table}.tool_config_json");
+    }
+
+    let legacy_kind: String = conn
+        .query_row(
+            "SELECT kind FROM agent_modes WHERE id = 'user-legacy'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(legacy_kind, "deep", "用户自建行不得被改写");
+
+    let (conv_tool_config, mode_tool_config): (Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT c.tool_config_json, m.tool_config_json
+             FROM conversations c, agent_modes m
+             WHERE c.id = 'c1' AND m.id = 'user-legacy'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert!(conv_tool_config.is_none(), "既有会话补列后为 NULL");
+    assert!(mode_tool_config.is_none(), "既有模式补列后为 NULL");
+
+    let builtin_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM agent_modes WHERE is_builtin = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(builtin_count, 3, "补列后仍能正常播种内置模式");
+}

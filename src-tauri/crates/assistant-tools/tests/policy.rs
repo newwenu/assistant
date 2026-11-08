@@ -58,6 +58,48 @@ fn last_match_wins_within_a_single_rule_set() {
 }
 
 #[test]
+fn explain_reports_the_rule_that_decided_the_effect() {
+    let policy = ResolvedPermissionPolicy::new(
+        vec![
+            PermissionRule::new("*", "*", PermissionEffect::Ask),
+            PermissionRule::new("read", "*", PermissionEffect::Allow),
+        ],
+        Vec::new(),
+    );
+
+    let read_rules = policy.explain("read", "src/main.rs");
+    assert_eq!(read_rules.len(), 1);
+    assert_eq!(read_rules[0].action, "read", "解释必须与 evaluate 同源");
+    assert_eq!(read_rules[0].effect, PermissionEffect::Allow);
+
+    let edit_rules = policy.explain("edit", "src/main.rs");
+    assert_eq!(edit_rules.len(), 1);
+    assert_eq!(edit_rules[0].action, "*");
+    assert_eq!(edit_rules[0].effect, PermissionEffect::Ask);
+}
+
+#[test]
+fn explain_reports_one_rule_per_layer() {
+    let policy = ResolvedPermissionPolicy::new(
+        vec![PermissionRule::new("*", "*", PermissionEffect::Allow)],
+        Vec::new(),
+    )
+    .with_constraint_layer(PermissionConstraintLayer::new(vec![PermissionRule::new(
+        "delete",
+        "*",
+        PermissionEffect::Ask,
+    )]));
+
+    let rules = policy.explain("delete", "tmp/cache");
+    assert_eq!(rules.len(), 2, "主规则集与约束层各一条");
+    assert_eq!(
+        policy.evaluate("delete", "tmp/cache"),
+        PermissionEffect::Ask,
+        "约束层更严，结论必须与解释一致"
+    );
+}
+
+#[test]
 fn specific_rule_overrides_broad_rule_in_same_layer() {
     let policy = ResolvedPermissionPolicy::new(
         vec![

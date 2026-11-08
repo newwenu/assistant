@@ -153,6 +153,7 @@ async fn the_registered_groups_carry_the_expected_metadata() {
                 workspace_root: None,
                 session_id: None,
                 tool_call_id: Some("call-1".to_string()),
+                ..Default::default()
             },
         )
         .await;

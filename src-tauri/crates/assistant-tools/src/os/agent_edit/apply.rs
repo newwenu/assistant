@@ -14,6 +14,27 @@ use super::report::{ambiguous_message, diff_text, not_found_message};
 use super::text::line_number_at;
 use super::EditRequest;
 
+/// `edit` 的整文件体积上限：匹配、行尾归一、整篇转码写回都需要整文件文本。
+///
+/// `read` 已改为分块流式（`read` §3.4），不再受此限制；`grep` 有同值的单文件闸门，
+/// 但两者语义不同（`grep` 跳过并计数，`edit` 直接拒绝）。
+pub const MAX_WHOLE_FILE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// `edit` 的体积超限文案：只说 `edit` 的约束，不提 `read` / `grep`。
+///
+/// 提到「`read` 能读」会让调用方以为换个工具就能编辑；`edit` 必须整文件驻留，
+/// 超限文件的唯一出路是拆分或外部处理。
+pub fn file_too_large_message(path: &Path, bytes: u64) -> String {
+    format!(
+        "'{}' is {} bytes, exceeding the {} byte limit for edit; edit needs the whole file in \
+         memory (matching, line-ending normalization, transcoding) — split the file or edit it \
+         with an external tool",
+        path.display(),
+        bytes,
+        MAX_WHOLE_FILE_BYTES
+    )
+}
+
 /// 一次编辑的结果。行号均以替换前的文件为准，`match_count` 为实际替换次数。
 pub(super) struct EditOutcome {
     pub(super) start_line: usize,
@@ -48,6 +69,10 @@ pub(super) fn probe_target(
     }
     if !metadata.is_file() {
         return Err(format!("'{}' is not a regular file", resolved.display()));
+    }
+    // `edit` 独有的闸门：`read` 已改为分块流式，不再有整文件上限。
+    if metadata.len() > MAX_WHOLE_FILE_BYTES {
+        return Err(file_too_large_message(&resolved, metadata.len()));
     }
     let revision = file_revision(&resolved)?;
     Ok((resolved, revision))

@@ -8,7 +8,7 @@ pub mod msg_ops;
 pub mod ops;
 pub mod tree_ops;
 
-const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at, is_full, active_branch_id";
+const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at, is_full, active_branch_id, mode_id, tool_config_json";
 const MSG_SELECT: &str =
     "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index, provider_id, model_id, tool_call_id, is_error";
 
@@ -27,6 +27,8 @@ pub struct ConversationRow {
     pub updated_at: i64,
     pub is_full: bool,
     pub active_branch_id: Option<String>,
+    pub mode_id: Option<String>,
+    pub tool_config_json: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -69,6 +71,8 @@ fn read_conv_row(row: &rusqlite::Row) -> rusqlite::Result<ConversationRow> {
         updated_at: row.get(10)?,
         is_full: row.get::<_, i64>(11)? != 0,
         active_branch_id: row.get(12)?,
+        mode_id: row.get(13)?,
+        tool_config_json: row.get(14)?,
     })
 }
 
@@ -128,7 +132,7 @@ pub use crud::{
 pub use msg_ops::{
     get_conversation_id_by_message, get_message_by_id, get_message_count, get_message_status,
     get_messages, get_messages_paginated, get_sibling_count, get_sibling_counts_batch,
-    insert_message, mark_streaming_messages_interrupted, update_message_content,
+    get_tool_results, insert_message, mark_streaming_messages_interrupted, update_message_content,
     update_message_status, update_message_tool_calls,
 };
 pub use ops::{

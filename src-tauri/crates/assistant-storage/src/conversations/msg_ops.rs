@@ -173,6 +173,28 @@ pub fn get_message_by_id(conn: &Connection, id: &str) -> Result<Option<MessageRo
     }
 }
 
+pub fn get_tool_results(
+    conn: &Connection,
+    conversation_id: &str,
+) -> Result<Vec<(String, String, bool)>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT tool_call_id, content, is_error FROM messages WHERE conversation_id = ?1 AND role = 'tool' AND tool_call_id IS NOT NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![conversation_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)? != 0,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
+}
+
 pub fn get_sibling_count(
     conn: &Connection,
     conversation_id: &str,

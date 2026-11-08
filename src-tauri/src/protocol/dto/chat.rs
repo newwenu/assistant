@@ -59,10 +59,19 @@ pub struct ConversationDto {
     pub is_full: bool,
     #[serde(default)]
     pub active_branch_id: Option<String>,
+    #[serde(default)]
+    pub mode_id: Option<String>,
+    /// 会话级工具配置；键恒在，未配置时为 `null`（agent 链路回退到模式初始值）。
+    #[serde(default)]
+    pub tool_config: Option<super::agent::ConversationToolConfigDto>,
 }
 
 impl From<ConversationRow> for ConversationDto {
     fn from(r: ConversationRow) -> Self {
+        let tool_config = r
+            .tool_config_json
+            .as_deref()
+            .and_then(|raw| serde_json::from_str(raw).ok());
         Self {
             id: r.id,
             title: r.title,
@@ -77,8 +86,29 @@ impl From<ConversationRow> for ConversationDto {
             updated_at: r.updated_at,
             is_full: r.is_full,
             active_branch_id: r.active_branch_id,
+            mode_id: r.mode_id,
+            tool_config,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageToolCallStatusDto {
+    Success,
+    Error,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MessageToolCallDto {
+    pub call_id: String,
+    pub name: String,
+    #[ts(type = "unknown")]
+    pub arguments: serde_json::Value,
+    pub status: MessageToolCallStatusDto,
+    pub result: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
@@ -99,6 +129,8 @@ pub struct MessageDto {
     pub sibling_count: Option<i64>,
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
+    #[serde(default)]
+    pub tool_calls: Vec<MessageToolCallDto>,
 }
 
 impl From<MessageRow> for MessageDto {
@@ -117,6 +149,7 @@ impl From<MessageRow> for MessageDto {
             sibling_count: None,
             provider_id: r.provider_id,
             model_id: r.model_id,
+            tool_calls: Vec::new(),
         }
     }
 }
@@ -140,6 +173,13 @@ pub struct ConversationPatchDto {
     pub model_id: Option<String>,
     #[ts(optional = nullable)]
     pub provider_id: Option<String>,
+    /// 会话当前模式；切换只影响下一次发送，不回溯已有消息（I38d §4.8）。
+    #[ts(optional = nullable)]
+    pub mode_id: Option<String>,
+    /// 会话级工具配置；缺省或 `null` 表示不改。
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub tool_config: Option<super::agent::ConversationToolConfigDto>,
 }
 
 /// 会话详情查询模式（封闭集合）。
@@ -187,7 +227,8 @@ pub struct SendChatMessageArgsDto {
     pub model_id: String,
     #[ts(optional = nullable)]
     pub reasoning_level: Option<String>,
-    /// 工具配置（前端内存态）。缺省即 deny-by-default：模型看不到任何工具。
+    /// 每轮有效工具配置（agent 链路 = 会话持久值 ?? 模式初始值；chat 链路恒 `null`）。
+    /// 缺省即 deny-by-default：模型看不到任何工具。
     #[serde(default)]
     #[ts(optional = nullable)]
     pub tool_config: Option<super::agent::ConversationToolConfigDto>,
@@ -522,6 +563,8 @@ pub enum ConversationListChangeKindDto {
     Duplicated,
     ModelUpdated,
     ProviderUpdated,
+    ModeUpdated,
+    ToolConfigUpdated,
     BatchDeleted,
     Purged,
     Created,

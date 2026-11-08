@@ -1,6 +1,8 @@
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
+use serde_json::Value;
+
 use crate::context::ToolUseContext;
 
 /// 把工具输入解析为可安全使用的绝对路径。
@@ -119,6 +121,55 @@ pub fn is_component_prefix(path: &Path, base: &Path) -> bool {
     component_prefix_match(path, base)
 }
 
+/// 判断两个路径是否指向同一位置（互为组件级前缀）。
+///
+/// 输入：两个已由 `resolve` / `resolve_leaf_preserving` 归一过的路径。
+/// 用途：破坏性操作的目标判等。禁止用原始字符串比较——`a.txt` 与 `./a.txt` 解析后相同，
+/// 字符串比较会把「同一目标」误判成两个，`move` 因此先删目标再移动而丢文件。
+pub fn same_path(left: &Path, right: &Path) -> bool {
+    component_prefix_match(left, right) && component_prefix_match(right, left)
+}
+
+/// 取必填路径参数：缺失、非字符串、空串、首尾空白都拒绝。
+///
+/// 不做 `trim()` 静默修正：`" a.txt"` 与 `"a.txt"` 是两个不同路径，静默改写会让
+/// 删除 / 覆盖落到调用方没有指定的目标上。
+pub fn parse_path_arg(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+) -> Result<String, String> {
+    let value = object
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("missing or non-string '{}' field", key))?;
+    validate_path_text(value, key)?;
+    Ok(value.to_string())
+}
+
+/// 取可选路径参数：缺失或 `null` 返回 `None`，其余按 [`parse_path_arg`] 校验。
+pub fn parse_optional_path_arg(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+) -> Result<Option<String>, String> {
+    match object.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(_) => parse_path_arg(object, key).map(Some),
+    }
+}
+
+fn validate_path_text(value: &str, key: &str) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err(format!("missing or empty '{}' field", key));
+    }
+    if value != value.trim() {
+        return Err(format!(
+            "'{}' must not have leading or trailing whitespace",
+            key
+        ));
+    }
+    Ok(())
+}
+
 /// 确认路径位于 workspace 根之内。
 ///
 /// 输入：`path` 必须已由 `canonicalize_lenient` 或 `resolve_leaf_preserving` 归一；
@@ -135,6 +186,31 @@ pub fn ensure_within_root(path: &Path, root: &Path) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// 路径相对工作区根的位置，供审批卡片回答「工作区内/外」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceMembership {
+    /// 已配置工作区，且路径位于其内。
+    Inside,
+    /// 已配置工作区，但路径越界。
+    Outside,
+    /// 未配置工作区：没有边界，就没有结论。
+    Unconfigured,
+}
+
+/// 判定路径是否落在工作区内。
+///
+/// 直接复用 [`ensure_within_root`]：审批卡片的结论与执行期的边界校验同源，
+/// 不会出现「审批说在区内、执行说越界」两套口径。
+pub fn workspace_membership(path: &Path, context: &ToolUseContext) -> WorkspaceMembership {
+    let Some(root) = context.workspace_root.as_deref() else {
+        return WorkspaceMembership::Unconfigured;
+    };
+    match ensure_within_root(path, Path::new(root)) {
+        Ok(()) => WorkspaceMembership::Inside,
+        Err(_) => WorkspaceMembership::Outside,
+    }
 }
 
 fn join_input(input: &str, context: &ToolUseContext) -> Result<PathBuf, String> {
@@ -494,16 +570,18 @@ mod tests {
         );
     }
 
+    /// UNC 路径按绝对路径处理，不要求 `workspace_root`。
+    ///
+    /// 只断言「绝对性判定」本身，不真的去访问共享：`resolve` 会触发 SMB 探测，
+    /// 在共享不可达时 Windows 网络栈要等十几秒才超时（本机实测约 16s），
+    /// 让每次全量测试都白等。判定逻辑是纯字符串/组件运算，无需触网即可覆盖。
     #[cfg(windows)]
     #[test]
     fn unc_path_is_treated_as_absolute() {
         let context = ToolUseContext::default();
-        let error =
-            resolve(r"\\server\share\file.txt", &context).expect_err("share is unreachable");
-        assert!(
-            !error.contains("requires workspace_root"),
-            "UNC path must not be treated as relative: {error}"
-        );
+        let joined = join_input(r"\\server\share\file.txt", &context)
+            .expect("UNC path is absolute, must not require workspace_root");
+        assert_eq!(joined, Path::new(r"\\server\share\file.txt"));
     }
 
     #[cfg(windows)]
@@ -621,6 +699,30 @@ mod tests {
         assert_eq!(
             resolved,
             canonicalize_lenient(dir.path()).expect("canonical root")
+        );
+    }
+
+    #[test]
+    fn workspace_membership_matches_the_boundary_check() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let inside = dir.path().join("a.txt");
+        std::fs::write(&inside, b"x").expect("write file");
+        let other = tempfile::tempdir().expect("tempdir");
+        let outside = other.path().join("b.txt");
+
+        let context = context_with_root(dir.path());
+        assert_eq!(
+            workspace_membership(&inside, &context),
+            WorkspaceMembership::Inside
+        );
+        assert_eq!(
+            workspace_membership(&outside, &context),
+            WorkspaceMembership::Outside
+        );
+        assert_eq!(
+            workspace_membership(&inside, &ToolUseContext::default()),
+            WorkspaceMembership::Unconfigured,
+            "未配置工作区不得给出「在区内」的假结论"
         );
     }
 

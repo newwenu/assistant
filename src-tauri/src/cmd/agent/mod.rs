@@ -8,12 +8,13 @@ use assistant_agent::kernel::{
 };
 use assistant_agent::multimodal;
 use assistant_storage::attachment_store::AttachmentStore;
-use assistant_tools::ToolRegistry;
+use assistant_tools::{ApprovalDecision, ToolRegistry};
 
 use crate::adapters::{
-    build_turn_runner, resolve_available_tools, TauriEventSink, TauriInputSource,
+    build_turn_runner, resolve_available_tools, PendingApprovalRegistry, TauriEventSink,
+    TauriInputSource,
 };
-use crate::protocol::SendChatMessageArgsDto;
+use crate::protocol::{SendChatMessageArgsDto, ToolApprovalDecisionDto, ToolApprovalKindDto};
 
 #[command]
 pub async fn send_agent_message(
@@ -43,6 +44,36 @@ pub fn cancel_agent(app: AppHandle, conversation_id: String) -> Result<(), Strin
     let tasks = app.state::<Arc<TurnTasks>>().inner().clone();
     tasks.cancel(&conversation_id);
     Ok(())
+}
+
+/// 审批回填：把前端卡片上的决策投递给正在等待的网关。
+///
+/// 只做「找到挂起点 → 投递」，不在这里写 `permission_grants`：
+/// `AllowSession` / `AllowAlways` 落授权由 `ToolGateway` 统一处理，命令层不重复。
+/// 找不到挂起点（已超时 / 已决策 / `conversationId` 不匹配）返回错误，
+/// 让前端知道这次点击无效，而不是假装成功。
+#[command]
+pub fn resolve_agent_tool_call(
+    app: AppHandle,
+    args: ToolApprovalDecisionDto,
+) -> Result<(), String> {
+    let pending = app.state::<PendingApprovalRegistry>();
+    let decision = match args.decision {
+        ToolApprovalKindDto::Approve => ApprovalDecision::Approve,
+        ToolApprovalKindDto::Deny => ApprovalDecision::Deny {
+            reason: args.reason.clone(),
+        },
+        ToolApprovalKindDto::AllowSession => ApprovalDecision::AllowSession,
+        ToolApprovalKindDto::AllowAlways => ApprovalDecision::AllowAlways,
+    };
+    if pending.resolve(&args.call_id, &args.conversation_id, decision) {
+        Ok(())
+    } else {
+        Err(format!(
+            "no pending approval for call '{}' (already decided or timed out)",
+            args.call_id
+        ))
+    }
 }
 
 /// 宿主对一次发送只做四件事：入参校验、建消息、`begin`、`spawn`。

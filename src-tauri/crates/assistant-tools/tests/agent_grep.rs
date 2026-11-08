@@ -12,6 +12,7 @@ fn context(root: &Path) -> ToolUseContext {
         workspace_root: Some(root.display().to_string()),
         session_id: None,
         tool_call_id: Some("call-1".to_string()),
+        ..Default::default()
     }
 }
 

@@ -11,6 +11,7 @@ fn context(root: &Path, session: Option<&str>) -> ToolUseContext {
         workspace_root: Some(root.display().to_string()),
         session_id: session.map(str::to_string),
         tool_call_id: Some("call-1".to_string()),
+        ..Default::default()
     }
 }
 

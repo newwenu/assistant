@@ -320,6 +320,23 @@ impl ToolPipeline {
                     ),
                 );
             }
+            // 超时不是「用户拒绝」：打 `Timeout` 标并给出「无人应答」的文案，
+            // 否则模型会误判用户意图（把「不在场」理解成「不同意」）。
+            GatewayDecision::ApprovalTimedOut { timeout } => {
+                return ToolOutcome::new(
+                    call,
+                    PipelineStage::Gateway,
+                    ToolResult::from_exec_error_kind(
+                        &call.tool_name,
+                        ToolErrorKind::Timeout,
+                        format!(
+                            "approval timed out after {:?}; the user did not respond, \
+                             so the call was not executed",
+                            timeout
+                        ),
+                    ),
+                )
+            }
         }
 
         let result = exec::invoke(tool, &call.arguments, &call_context, self.default_timeout).await;

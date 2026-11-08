@@ -20,6 +20,8 @@ fn make_detail(messages: Vec<MessageRow>) -> ConversationDetail {
             updated_at: 0,
             is_full: false,
             active_branch_id: None,
+            mode_id: None,
+            tool_config_json: None,
         },
         messages,
     }
@@ -57,11 +59,11 @@ fn make_mode(kind: &str, temperature: Option<f32>, max_tokens: Option<u32>) -> A
         max_tokens,
         reasoning_enabled: None,
         reasoning_effort: None,
-        tools_json: "[]".to_string(),
         presentation_rank: 0,
         is_builtin: true,
         created_at: 0,
         updated_at: 0,
+        tool_config_json: None,
     }
 }
 
@@ -139,17 +141,11 @@ fn prepare_messages_append_user_prompt_compaction() {
 }
 
 #[test]
-fn build_chat_options_default_no_temperature() {
-    let kind = AgentKind::Default;
-    let mode = make_mode("default", None, None);
+fn build_chat_options_no_temperature_fallback() {
+    let mode = make_mode("chat", None, None);
 
-    let opts = chat_options::build_chat_options(
-        &kind,
-        &mode,
-        Some(128000),
-        &ReasoningOverride::default(),
-        None,
-    );
+    let opts =
+        chat_options::build_chat_options(&mode, Some(128000), &ReasoningOverride::default(), None);
 
     assert_eq!(opts.temperature, 0.7);
     assert_eq!(opts.max_tokens, 4096);
@@ -295,6 +291,8 @@ fn tool_history_roundtrip_rebuilds_wire_shape() {
         updated_at: 0,
         is_full: false,
         active_branch_id: None,
+        mode_id: None,
+        tool_config_json: None,
     };
     assistant_storage::conversations::insert_conversation(&conn, &conv).unwrap();
 
@@ -368,110 +366,54 @@ fn tool_history_roundtrip_rebuilds_wire_shape() {
 }
 
 #[test]
-fn build_chat_options_default_with_temperature() {
-    let kind = AgentKind::Default;
-    let mode = make_mode("default", Some(0.5), Some(2048));
+fn build_chat_options_with_temperature() {
+    let mode = make_mode("chat", Some(0.5), Some(2048));
 
-    let opts = chat_options::build_chat_options(
-        &kind,
-        &mode,
-        Some(128000),
-        &ReasoningOverride::default(),
-        None,
-    );
+    let opts =
+        chat_options::build_chat_options(&mode, Some(128000), &ReasoningOverride::default(), None);
 
     assert_eq!(opts.temperature, 0.5);
     assert_eq!(opts.max_tokens, 2048);
 }
 
 #[test]
-fn build_chat_options_quick() {
-    let kind = AgentKind::Quick;
-    let mode = make_mode("quick", Some(0.3), Some(1024));
-
-    let opts = chat_options::build_chat_options(
-        &kind,
-        &mode,
-        Some(128000),
-        &ReasoningOverride::default(),
-        None,
-    );
-
-    assert_eq!(opts.temperature, 0.3);
-    assert_eq!(opts.max_tokens, 1024);
-}
-
-#[test]
 fn build_chat_options_unknown_window_stays_none() {
-    let kind = AgentKind::Default;
-    let mode = make_mode("default", None, None);
+    let mode = make_mode("chat", None, None);
 
-    let opts =
-        chat_options::build_chat_options(&kind, &mode, None, &ReasoningOverride::default(), None);
+    let opts = chat_options::build_chat_options(&mode, None, &ReasoningOverride::default(), None);
 
     assert_eq!(opts.context_window_tokens, None);
 }
 
 #[test]
-fn build_chat_options_deep_with_temperature() {
-    let kind = AgentKind::Deep;
-    let mode = make_mode("deep", Some(0.7), Some(8192));
+fn build_chat_options_agent_mode_uses_mode_temperature() {
+    let mode = make_mode("agent", Some(0.8), Some(6000));
 
-    let opts = chat_options::build_chat_options(
-        &kind,
-        &mode,
-        Some(128000),
-        &ReasoningOverride::default(),
-        None,
-    );
-
-    assert_eq!(opts.temperature, 0.7);
-    assert_eq!(opts.max_tokens, 8192);
-}
-
-#[test]
-fn build_chat_options_deep_no_temperature_fallback() {
-    let kind = AgentKind::Deep;
-    let mode = make_mode("deep", None, None);
-
-    let opts = chat_options::build_chat_options(
-        &kind,
-        &mode,
-        Some(128000),
-        &ReasoningOverride::default(),
-        None,
-    );
-
-    assert_eq!(opts.temperature, 0.3);
-    assert_eq!(opts.max_tokens, 4096);
-}
-
-#[test]
-fn build_chat_options_custom() {
-    let kind = AgentKind::Custom;
-    let mode = make_mode("custom", Some(0.8), Some(6000));
-
-    let opts = chat_options::build_chat_options(
-        &kind,
-        &mode,
-        Some(128000),
-        &ReasoningOverride::default(),
-        None,
-    );
+    let opts =
+        chat_options::build_chat_options(&mode, Some(128000), &ReasoningOverride::default(), None);
 
     assert_eq!(opts.temperature, 0.8);
     assert_eq!(opts.max_tokens, 6000);
 }
 
 #[test]
+fn build_chat_options_legacy_deep_kind_no_longer_overrides_temperature() {
+    let mode = make_mode("deep", None, None);
+
+    let opts =
+        chat_options::build_chat_options(&mode, Some(128000), &ReasoningOverride::default(), None);
+
+    assert_eq!(opts.temperature, 0.7);
+    assert_eq!(opts.max_tokens, 4096);
+}
+
+#[test]
 fn build_chat_options_reasoning() {
-    let kind = AgentKind::Deep;
-    let mut mode = make_mode("deep", Some(0.7), Some(8192));
+    let mut mode = make_mode("agent", Some(0.7), Some(8192));
     mode.reasoning_enabled = Some(true);
     mode.reasoning_effort = Some("high".to_string());
 
     let opts = chat_options::build_chat_options(
-        &kind,
         &mode,
         Some(128000),
         &ReasoningOverride {
@@ -486,13 +428,11 @@ fn build_chat_options_reasoning() {
 
 #[test]
 fn build_chat_options_reasoning_default_level_ignores_mode() {
-    let kind = AgentKind::Deep;
-    let mut mode = make_mode("deep", Some(0.7), Some(8192));
+    let mut mode = make_mode("agent", Some(0.7), Some(8192));
     mode.reasoning_enabled = Some(true);
     mode.reasoning_effort = Some("high".to_string());
 
     let opts = chat_options::build_chat_options(
-        &kind,
         &mode,
         Some(128000),
         &ReasoningOverride {
@@ -507,18 +447,12 @@ fn build_chat_options_reasoning_default_level_ignores_mode() {
 
 #[test]
 fn build_chat_options_reasoning_absent_level_equals_default() {
-    let kind = AgentKind::Deep;
-    let mut mode = make_mode("deep", Some(0.7), Some(8192));
+    let mut mode = make_mode("agent", Some(0.7), Some(8192));
     mode.reasoning_enabled = Some(true);
     mode.reasoning_effort = Some("high".to_string());
 
-    let opts = chat_options::build_chat_options(
-        &kind,
-        &mode,
-        Some(128000),
-        &ReasoningOverride::default(),
-        None,
-    );
+    let opts =
+        chat_options::build_chat_options(&mode, Some(128000), &ReasoningOverride::default(), None);
 
     assert_eq!(opts.reasoning_enabled, None);
     assert_eq!(opts.reasoning_effort, None);
@@ -526,13 +460,11 @@ fn build_chat_options_reasoning_absent_level_equals_default() {
 
 #[test]
 fn build_chat_options_reasoning_override_off_wins() {
-    let kind = AgentKind::Deep;
-    let mut mode = make_mode("deep", Some(0.7), Some(8192));
+    let mut mode = make_mode("agent", Some(0.7), Some(8192));
     mode.reasoning_enabled = Some(true);
     mode.reasoning_effort = Some("high".to_string());
 
     let opts = chat_options::build_chat_options(
-        &kind,
         &mode,
         Some(128000),
         &ReasoningOverride {
@@ -547,13 +479,11 @@ fn build_chat_options_reasoning_override_off_wins() {
 
 #[test]
 fn build_chat_options_reasoning_override_effort_wins() {
-    let kind = AgentKind::Deep;
-    let mut mode = make_mode("deep", Some(0.7), Some(8192));
+    let mut mode = make_mode("agent", Some(0.7), Some(8192));
     mode.reasoning_enabled = Some(true);
     mode.reasoning_effort = Some("high".to_string());
 
     let opts = chat_options::build_chat_options(
-        &kind,
         &mode,
         Some(128000),
         &ReasoningOverride {
@@ -568,13 +498,11 @@ fn build_chat_options_reasoning_override_effort_wins() {
 
 #[test]
 fn build_chat_options_reasoning_override_enables_without_effort() {
-    let kind = AgentKind::Deep;
-    let mut mode = make_mode("deep", Some(0.7), Some(8192));
+    let mut mode = make_mode("agent", Some(0.7), Some(8192));
     mode.reasoning_enabled = None;
     mode.reasoning_effort = None;
 
     let opts = chat_options::build_chat_options(
-        &kind,
         &mode,
         Some(128000),
         &ReasoningOverride {
@@ -589,18 +517,18 @@ fn build_chat_options_reasoning_override_enables_without_effort() {
 
 #[test]
 fn agent_kind_from_mode_kind() {
-    assert_eq!(AgentKind::from_mode_kind("default"), AgentKind::Default);
-    assert_eq!(AgentKind::from_mode_kind("quick"), AgentKind::Quick);
-    assert_eq!(AgentKind::from_mode_kind("deep"), AgentKind::Deep);
-    assert_eq!(AgentKind::from_mode_kind("custom"), AgentKind::Custom);
-    assert_eq!(AgentKind::from_mode_kind("unknown"), AgentKind::Default);
-    assert_eq!(AgentKind::from_mode_kind(""), AgentKind::Default);
+    assert_eq!(AgentKind::from_mode_kind("agent"), AgentKind::Agent);
+    assert_eq!(AgentKind::from_mode_kind("chat"), AgentKind::Chat);
+    assert_eq!(AgentKind::from_mode_kind("default"), AgentKind::Chat);
+    assert_eq!(AgentKind::from_mode_kind("quick"), AgentKind::Chat);
+    assert_eq!(AgentKind::from_mode_kind("deep"), AgentKind::Chat);
+    assert_eq!(AgentKind::from_mode_kind("custom"), AgentKind::Chat);
+    assert_eq!(AgentKind::from_mode_kind("unknown"), AgentKind::Chat);
+    assert_eq!(AgentKind::from_mode_kind(""), AgentKind::Chat);
 }
 
 #[test]
 fn agent_kind_supports_tool_call() {
-    assert!(!AgentKind::Default.supports_tool_call());
-    assert!(!AgentKind::Quick.supports_tool_call());
-    assert!(!AgentKind::Deep.supports_tool_call());
-    assert!(AgentKind::Custom.supports_tool_call());
+    assert!(!AgentKind::Chat.supports_tool_call());
+    assert!(AgentKind::Agent.supports_tool_call());
 }

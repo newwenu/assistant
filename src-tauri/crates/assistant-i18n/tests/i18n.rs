@@ -24,8 +24,7 @@ fn i18n_full_suite() {
         "不是内置模式，无法恢复默认"
     );
     assert_eq!(t("agent_mode.builtin.default.name"), "默认");
-    assert_eq!(t("agent_mode.builtin.quick.name"), "快速");
-    assert_eq!(t("agent_mode.builtin.deep.name"), "深度");
+    assert_eq!(t("agent_mode.builtin.agent.name"), "智能体");
     assert_eq!(t("agent_mode.builtin.translate.name"), "翻译助手");
     assert_eq!(
         t("chat.compaction.summary_truncated"),
@@ -50,8 +49,7 @@ fn i18n_full_suite() {
         "Not a built-in mode; cannot reset to default"
     );
     assert_eq!(t("agent_mode.builtin.default.name"), "Default");
-    assert_eq!(t("agent_mode.builtin.quick.name"), "Quick");
-    assert_eq!(t("agent_mode.builtin.deep.name"), "Deep");
+    assert_eq!(t("agent_mode.builtin.agent.name"), "Agent");
     assert_eq!(t("agent_mode.builtin.translate.name"), "Translator");
     assert_eq!(
         t("chat.compaction.summary_truncated"),

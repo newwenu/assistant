@@ -21,6 +21,8 @@ pub struct AppConfDto {
     pub main_window_height: Option<u32>,
     pub mini_window_x: Option<i32>,
     pub mini_window_y: Option<i32>,
+    pub workspace_root: Option<String>,
+    pub approval_timeout_secs: Option<u32>,
 }
 
 impl From<assistant_config::app_conf::AppConf> for AppConfDto {
@@ -43,6 +45,8 @@ impl From<assistant_config::app_conf::AppConf> for AppConfDto {
             main_window_height: c.main_window_height,
             mini_window_x: c.mini_window_x,
             mini_window_y: c.mini_window_y,
+            workspace_root: c.workspace_root,
+            approval_timeout_secs: c.approval_timeout_secs,
         }
     }
 }

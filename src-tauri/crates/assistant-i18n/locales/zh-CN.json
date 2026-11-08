@@ -34,7 +34,6 @@
   },
   "window": {
     "title_main": "Assistant",
-    "title_settings": "设置",
     "unknown_label": "未知窗口标签: %{label}"
   },
   "clock": {
@@ -43,6 +42,7 @@
   },
   "error": {
     "conversation_not_found": "对话未找到",
+    "conversation_busy": "会话正在生成回复，暂不可切换模式",
     "provider_not_found": "Provider 未找到",
     "orb_window_not_found": "Orb 窗口未找到",
     "db_lock": "数据库锁: %{error}"
@@ -55,13 +55,9 @@
         "name": "默认",
         "description": "标准参数，最常用的纯对话模式"
       },
-      "quick": {
-        "name": "快速",
-        "description": "低温度 + 短输出，适合简单问答"
-      },
-      "deep": {
-        "name": "深度",
-        "description": "长输出，适合需要长篇回答的场景"
+      "agent": {
+        "name": "智能体",
+        "description": "带工具调用能力的通用模式"
       },
       "translate": {
         "name": "翻译助手",

@@ -28,6 +28,8 @@ fn fixture_input(conversation_id: &str, adapter: Arc<dyn BaseProviderAdapter>) -
         updated_at: 0,
         is_full: false,
         active_branch_id: None,
+        mode_id: None,
+        tool_config_json: None,
     };
     let messages = vec![MessageRow {
         id: "user-1".to_string(),

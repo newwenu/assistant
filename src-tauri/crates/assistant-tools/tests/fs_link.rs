@@ -98,18 +98,40 @@ fn protected_root_for_test() -> Option<PathBuf> {
 
 #[test]
 fn permission_intents_use_edit_vocabulary() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let context = context_with_root(dir.path());
     let intents = FsLinkTool
         .permission_intents(
             &json!({"action": "create", "source": "a.txt", "target": "b.txt"}),
-            &ToolUseContext::default(),
+            &context,
         )
         .expect("permission intents");
     assert_eq!(intents.len(), 2);
     for intent in &intents {
         assert_eq!(intent.action, "edit");
     }
-    assert_eq!(intents[0].resources, vec!["a.txt".to_string()]);
-    assert_eq!(intents[1].resources, vec!["b.txt".to_string()]);
+    assert_eq!(
+        intents[0].resources,
+        vec![dir.path().join("a.txt").display().to_string()],
+        "意图必须是解析后的绝对路径，策略按绝对路径匹配"
+    );
+    assert_eq!(
+        intents[1].resources,
+        vec![dir.path().join("b.txt").display().to_string()]
+    );
+}
+
+#[test]
+fn permission_intents_do_not_require_link_kind() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let context = context_with_root(dir.path());
+    let intents = FsLinkTool
+        .permission_intents(
+            &json!({"action": "create", "source": "a.txt", "target": "b.txt"}),
+            &context,
+        )
+        .expect("链接类型不参与授权范围");
+    assert_eq!(intents.len(), 2);
 }
 
 #[test]

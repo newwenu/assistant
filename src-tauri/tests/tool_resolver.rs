@@ -133,8 +133,8 @@ fn the_tool_config_dto_round_trips_through_json() {
 #[test]
 fn the_default_tool_config_is_fail_closed() {
     let config = ConversationToolConfigDto::default();
-    assert_eq!(config.max_tool_tier, ToolTierDto::Os);
-    assert_eq!(config.approval_level, ApprovalLevelDto::DangerousOnly);
+    assert_eq!(config.max_tool_tier, ToolTierDto::Sandbox);
+    assert_eq!(config.approval_level, ApprovalLevelDto::None);
     assert!(config.enabled_tools.is_empty());
     assert!(config.disabled_tools.is_empty());
 }

@@ -1,8 +1,6 @@
 use assistant_providers::base::ChatOptions;
 use assistant_storage::agent_modes::AgentModeRow;
 
-use crate::prompt_builder::AgentKind;
-
 /// 内置档位值：不指定强度，交给 Provider 默认。前端与后端共认这一个字符串
 pub const REASONING_LEVEL_DEFAULT: &str = "default";
 /// 内置档位值：显式关闭
@@ -37,16 +35,12 @@ fn resolve_reasoning_level(level: Option<&str>) -> (Option<bool>, Option<String>
 }
 
 pub fn build_chat_options(
-    kind: &AgentKind,
     mode: &AgentModeRow,
     context_window_tokens: Option<u32>,
     reasoning: &ReasoningOverride,
     tools: Option<Vec<assistant_providers::types::ToolSpec>>,
 ) -> ChatOptions {
-    let temperature = match kind {
-        AgentKind::Deep => mode.temperature.unwrap_or(0.3),
-        _ => mode.temperature.unwrap_or(0.7),
-    };
+    let temperature = mode.temperature.unwrap_or(0.7);
 
     let max_tokens = mode.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
 

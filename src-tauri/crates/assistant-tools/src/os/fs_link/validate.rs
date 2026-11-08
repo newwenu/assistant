@@ -2,25 +2,23 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 use crate::context::ToolUseContext;
+use crate::os::path;
 
 use super::LinkKind;
 
-pub(super) struct CreateInput<'a> {
-    pub source: &'a str,
-    pub target: &'a str,
+pub(super) struct CreateInput {
+    pub source: String,
+    pub target: String,
     pub kind: LinkKind,
 }
 
-pub(super) fn parse_create_input(input: &Value) -> Result<CreateInput<'_>, String> {
-    let source = input
-        .get("source")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "missing 'source' field".to_string())?;
-    let target = input
-        .get("target")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "missing 'target' field".to_string())?;
-    let kind_str = input
+pub(super) fn parse_create_input(input: &Value) -> Result<CreateInput, String> {
+    let object = input
+        .as_object()
+        .ok_or_else(|| "input must be a JSON object".to_string())?;
+    let source = path::parse_path_arg(object, "source")?;
+    let target = path::parse_path_arg(object, "target")?;
+    let kind_str = object
         .get("kind")
         .and_then(Value::as_str)
         .ok_or_else(|| "missing 'kind' field".to_string())?;
@@ -32,11 +30,11 @@ pub(super) fn parse_create_input(input: &Value) -> Result<CreateInput<'_>, Strin
     })
 }
 
-pub(super) fn parse_check_input(input: &Value) -> Result<&str, String> {
-    input
-        .get("source")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "missing 'source' field".to_string())
+pub(super) fn parse_check_input(input: &Value) -> Result<String, String> {
+    let object = input
+        .as_object()
+        .ok_or_else(|| "input must be a JSON object".to_string())?;
+    path::parse_path_arg(object, "source")
 }
 
 pub(super) fn resolve_path(raw: &str, context: &ToolUseContext) -> Result<PathBuf, String> {

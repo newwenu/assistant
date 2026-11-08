@@ -13,8 +13,9 @@ use assistant_tools::storage::{
     PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS,
 };
 use assistant_tools::{
-    ApprovalDecision, PermissionEffect, PermissionIntent, PermissionRule, ResolvedPermissionPolicy,
-    Tool, ToolErrorKind, ToolRegistry, ToolResult, ToolTier, ToolUseContext, ValidationResult,
+    ApprovalDecision, AuditOutcome, PermissionEffect, PermissionIntent, PermissionRule,
+    ResolvedPermissionPolicy, Tool, ToolErrorKind, ToolRegistry, ToolResult, ToolTier,
+    ToolUseContext, ValidationResult,
 };
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -175,6 +176,10 @@ struct Harness {
 }
 
 fn harness(decisions: Vec<ApprovalDecision>) -> Harness {
+    harness_with_timeout(decisions, Duration::from_secs(5))
+}
+
+fn harness_with_timeout(decisions: Vec<ApprovalDecision>, timeout: Duration) -> Harness {
     let registry = Arc::new(ToolRegistry::new());
     let grants = Arc::new(InMemoryGrantStore::default());
     let audit = Arc::new(InMemoryAuditStore::default());
@@ -183,7 +188,7 @@ fn harness(decisions: Vec<ApprovalDecision>) -> Harness {
         grants,
         audit.clone(),
         prompter.clone(),
-        Duration::from_secs(5),
+        timeout,
     ));
     let storage = Arc::new(RecordingStorage::default());
     let pipeline = ToolPipeline::new(registry.clone(), gateway, storage.clone());
@@ -310,6 +315,60 @@ async fn gateway_denial_stops_before_execution() {
         "denied call must not execute"
     );
     assert_eq!(h.prompter.request_count(), 0);
+}
+
+#[tokio::test]
+async fn approval_timeout_is_tagged_timeout_not_denied() {
+    let registry = Arc::new(ToolRegistry::new());
+    let grants = Arc::new(InMemoryGrantStore::default());
+    let audit = Arc::new(InMemoryAuditStore::default());
+    let prompter = Arc::new(
+        ScriptedApprovalPrompter::new(vec![ApprovalDecision::Approve])
+            .with_delay(Duration::from_millis(200)),
+    );
+    let gateway = Arc::new(ToolGateway::new(
+        grants,
+        audit.clone(),
+        prompter.clone(),
+        Duration::from_millis(20),
+    ));
+    let pipeline = ToolPipeline::new(
+        registry.clone(),
+        gateway,
+        Arc::new(RecordingStorage::default()),
+    );
+    let executed = Arc::new(AtomicUsize::new(0));
+    registry.register(Arc::new(ProbeTool {
+        spec: ProbeSpec::new("probe").with_intents(vec![PermissionIntent::new("edit", "a.txt")]),
+        executed: executed.clone(),
+    }));
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = pipeline
+        .execute(&[call("c1", "probe")], &ctx(), &ask_all(), &sink)
+        .await;
+
+    assert_eq!(outcomes[0].stage, PipelineStage::Gateway);
+    assert_eq!(
+        outcomes[0].result.error_kind,
+        Some(ToolErrorKind::Timeout),
+        "超时必须打 Timeout 标，而不是 Denied"
+    );
+    let error = outcomes[0].result.error.as_deref().unwrap();
+    assert!(
+        error.contains("did not respond"),
+        "超时文案必须说明「无人应答」：{error}"
+    );
+    assert!(
+        !error.contains("rejected by user"),
+        "超时不得伪装成用户拒绝：{error}"
+    );
+    assert_eq!(executed.load(Ordering::SeqCst), 0, "超时调用不得执行");
+    assert_eq!(
+        audit.entries()[0].outcome,
+        AuditOutcome::TimedOut,
+        "超时审计必须与用户拒绝分开"
+    );
 }
 
 #[tokio::test]

@@ -2,7 +2,6 @@ pub const APP_IDENTIFIER: &str = "com.assistant";
 
 pub const WINDOW_MAIN: &str = "main";
 pub const WINDOW_ORB: &str = "orb";
-pub const WINDOW_SETTINGS: &str = "settings";
 
 pub const ORB_COLLAPSED_SIZE: u32 = 84;
 pub const ORB_EXPANDED_WIDTH: u32 = 420;

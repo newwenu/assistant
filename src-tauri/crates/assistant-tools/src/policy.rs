@@ -110,6 +110,35 @@ impl ResolvedPermissionPolicy {
         }
         result
     }
+
+    /// 命中规则解释：返回主规则集与各约束层中**实际生效**的那条规则。
+    ///
+    /// 与 [`Self::evaluate`] 共用同一套 `matches` 语义（单层 last-match-wins），
+    /// 因此解释与结论永不背离。纯函数、无 IO，供审批卡片回答「为什么问我」。
+    pub fn explain(&self, action: &str, resource: &str) -> Vec<&PermissionRule> {
+        let mut matched = Vec::new();
+        if let Some(rule) = last_match(&self.rules, action, resource) {
+            matched.push(rule);
+        }
+        for layer in &self.constraint_layers {
+            if let Some(rule) = last_match(&layer.rules, action, resource) {
+                matched.push(rule);
+            }
+        }
+        matched
+    }
+}
+
+/// 单层内的生效规则（last-match-wins）：解释必须与 [`evaluate_rules`] 同源。
+fn last_match<'a>(
+    rules: &'a [PermissionRule],
+    action: &str,
+    resource: &str,
+) -> Option<&'a PermissionRule> {
+    rules
+        .iter()
+        .rev()
+        .find(|rule| rule.matches(action, resource))
 }
 
 /// 单层内 **last-match-wins**：宽泛规则在前，具体规则在后覆盖；未命中默认 `Allow`。

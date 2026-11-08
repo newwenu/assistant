@@ -19,7 +19,6 @@ use assistant_config::{
         MAIN_WINDOW_MIN_HEIGHT, MAIN_WINDOW_MIN_WIDTH, ORB_CHROME_INSET, ORB_COLLAPSED_SIZE,
         ORB_COLLAPSED_WINDOW_SIZE, ORB_EXPANDED_HEIGHT, ORB_EXPANDED_WIDTH,
         ORB_EXPANDED_WINDOW_HEIGHT, ORB_EXPANDED_WINDOW_WIDTH, WINDOW_MAIN, WINDOW_ORB,
-        WINDOW_SETTINGS,
     },
 };
 use assistant_orb::placement::{self, WindowBounds};
@@ -103,24 +102,6 @@ static WINDOW_SPECS: LazyLock<HashMap<&'static str, WindowSpec>> = LazyLock::new
             skip_taskbar: false,
         },
     );
-    m.insert(
-        WINDOW_SETTINGS,
-        WindowSpec {
-            label: WINDOW_SETTINGS,
-            url: "/settings",
-            title: "Settings",
-            width: 600.0,
-            height: 500.0,
-            min_width: None,
-            min_height: None,
-            center: true,
-            resizable: true,
-            decorations: false,
-            transparent: false,
-            always_on_top: false,
-            skip_taskbar: false,
-        },
-    );
     m
 });
 
@@ -144,7 +125,6 @@ pub fn show_or_create(app: &AppHandle, label: &str) -> Result<(), String> {
 
     let resolved_title = match label {
         WINDOW_MAIN => assistant_i18n::t("window.title_main"),
-        WINDOW_SETTINGS => assistant_i18n::t("window.title_settings"),
         _ => spec.title.to_string(),
     };
 
@@ -373,11 +353,6 @@ pub fn set_main_window_mode(app: AppHandle, mode: WindowModeDto) -> Result<(), S
 #[command]
 pub fn open_main_window(app: AppHandle) -> Result<(), String> {
     show_or_create(&app, WINDOW_MAIN)
-}
-
-#[command]
-pub fn open_settings(app: AppHandle) -> Result<(), String> {
-    show_or_create(&app, WINDOW_SETTINGS)
 }
 
 #[command]

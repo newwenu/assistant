@@ -95,10 +95,14 @@ impl PipelineEventSink for ObserverPipelineSink<'_> {
 ///
 /// 分批、并行、落盘、事件发射全部由 `ToolPipeline::execute` 内部完成，
 /// 本适配器**不得**重复调用 `partition_tool_batches` / `select_persist_targets`。
+///
+/// 工作区根目录的取值来源：每次执行重新求值，改设置后下一轮立即生效（I38d §4.9）。
+pub type WorkspaceRootSource = Arc<dyn Fn() -> Option<String> + Send + Sync>;
+
 pub struct PipelineToolExecution {
     pipeline: Arc<ToolPipeline>,
     waits: ApprovalWaitRegistry,
-    workspace_root: Option<String>,
+    workspace_root: WorkspaceRootSource,
 }
 
 impl PipelineToolExecution {
@@ -106,6 +110,14 @@ impl PipelineToolExecution {
         pipeline: Arc<ToolPipeline>,
         waits: ApprovalWaitRegistry,
         workspace_root: Option<String>,
+    ) -> Self {
+        Self::with_workspace_source(pipeline, waits, Arc::new(move || workspace_root.clone()))
+    }
+
+    pub fn with_workspace_source(
+        pipeline: Arc<ToolPipeline>,
+        waits: ApprovalWaitRegistry,
+        workspace_root: WorkspaceRootSource,
     ) -> Self {
         Self {
             pipeline,
@@ -146,8 +158,10 @@ impl ToolExecutionPort for PipelineToolExecution {
         // 每次执行现构造：`workspace_root` / `session_id` 是会话级信息，
         // `tool_call_id` 由 Pipeline 在每次调用内部逐条填充。
         let context = ToolUseContext {
-            workspace_root: self.workspace_root.clone(),
+            workspace_root: (self.workspace_root)(),
             session_id: Some(ctx.conversation_id.to_string()),
+            turn_id: Some(ctx.turn_id.to_string()),
+            iteration: Some(ctx.iteration),
             tool_call_id: None,
         };
         let policy = ResolvedPermissionPolicy::default_global();

@@ -34,7 +34,6 @@
   },
   "window": {
     "title_main": "Assistant",
-    "title_settings": "Settings",
     "unknown_label": "Unknown window label: %{label}"
   },
   "clock": {
@@ -43,6 +42,7 @@
   },
   "error": {
     "conversation_not_found": "Conversation not found",
+    "conversation_busy": "The conversation is generating a reply; its mode cannot be changed right now",
     "provider_not_found": "Provider not found",
     "orb_window_not_found": "Orb window not found",
     "db_lock": "DB lock: %{error}"
@@ -55,13 +55,9 @@
         "name": "Default",
         "description": "Standard parameters, the most common pure chat mode"
       },
-      "quick": {
-        "name": "Quick",
-        "description": "Low temperature + short output, suitable for simple Q&A"
-      },
-      "deep": {
-        "name": "Deep",
-        "description": "Long output, suitable for scenarios requiring lengthy responses"
+      "agent": {
+        "name": "Agent",
+        "description": "General-purpose mode with tool-calling capability"
       },
       "translate": {
         "name": "Translator",

@@ -103,6 +103,33 @@ fn tool_history_roundtrip_preserves_order_and_fields() {
     assert_eq!(rows[3].role, "tool");
     assert_eq!(rows[3].tool_call_id.as_deref(), Some("call_2"));
     assert!(rows[3].is_error);
+
+    let results = conversations::get_tool_results(&conn, "c1").unwrap();
+    assert_eq!(
+        results,
+        vec![
+            ("call_1".to_string(), "ok".to_string(), false),
+            ("call_2".to_string(), "boom".to_string(), true),
+        ]
+    );
+}
+
+#[test]
+fn get_tool_results_isolates_conversations() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_conversation(&conn, &conv("c2")).unwrap();
+    for (conv_id, id, call_id) in [("c1", "t1", "call_1"), ("c2", "t2", "call_2")] {
+        let mut row = msg(id, conv_id, "tool", "result", 100);
+        row.tool_call_id = Some(call_id.to_string());
+        conversations::insert_message(&conn, &row).unwrap();
+    }
+
+    let results = conversations::get_tool_results(&conn, "c1").unwrap();
+    assert_eq!(
+        results,
+        vec![("call_1".to_string(), "result".to_string(), false)]
+    );
 }
 
 #[test]

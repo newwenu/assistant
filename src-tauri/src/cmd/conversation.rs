@@ -61,15 +61,10 @@ pub fn create_conversation(
         updated_at: now,
         is_full: false,
         active_branch_id: None,
+        mode_id,
+        tool_config_json: None,
     };
     conversations::insert_conversation(&conn, &row)?;
-
-    if let Some(mid) = mode_id {
-        let _ = conn.execute(
-            "UPDATE conversations SET mode_id = ?1 WHERE id = ?2",
-            rusqlite::params![mid, id],
-        );
-    }
 
     emit_list_changed(
         &app,
@@ -122,16 +117,8 @@ fn build_detail_dto(
     messages: Vec<MessageRow>,
     total_count: i64,
 ) -> Result<ConversationDetailDto, String> {
-    let msg_ids: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
-    let sibling_counts = conversations::get_sibling_counts_batch(conn, conv_id, &msg_ids)?;
-    let message_dtos: Vec<MessageDto> = messages
-        .into_iter()
-        .map(|m| {
-            let mut dto = MessageDto::from(m);
-            dto.sibling_count = sibling_counts.get(&dto.id).copied();
-            dto
-        })
-        .collect();
+    let message_dtos: Vec<MessageDto> =
+        super::conversation_utils::messages_with_sibling_counts(conn, conv_id, &messages)?;
     Ok(ConversationDetailDto {
         conversation: conv.into(),
         messages: message_dtos,
@@ -252,6 +239,34 @@ pub fn patch_conversation(
         }
         conv.updated_at = now;
         conversations::update_conversation(&conn, &conv)?;
+    }
+
+    if let Some(ref mode_id) = patch.mode_id {
+        let tasks = app
+            .state::<std::sync::Arc<assistant_agent::kernel::TurnTasks>>()
+            .inner()
+            .clone();
+        if tasks.current(&id).is_some() {
+            return Err(assistant_i18n::t("error.conversation_busy"));
+        }
+        let now = Utc::now().timestamp_millis();
+        let mut conv = conversations::get_conversation_by_id(&conn, &id)?
+            .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+        conv.mode_id = Some(mode_id.clone());
+        conv.updated_at = now;
+        conversations::update_conversation(&conn, &conv)?;
+        changed_kinds.push(ConversationListChangeKindDto::ModeUpdated);
+    }
+
+    if let Some(ref tool_config) = patch.tool_config {
+        let now = Utc::now().timestamp_millis();
+        let mut conv = conversations::get_conversation_by_id(&conn, &id)?
+            .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+        conv.tool_config_json =
+            Some(serde_json::to_string(tool_config).map_err(|e| e.to_string())?);
+        conv.updated_at = now;
+        conversations::update_conversation(&conn, &conv)?;
+        changed_kinds.push(ConversationListChangeKindDto::ToolConfigUpdated);
     }
 
     for kind in changed_kinds {

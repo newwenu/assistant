@@ -11,25 +11,22 @@ pub const EMPTY_TOOL_RESULT: &str = "(空结果)";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AgentKind {
     #[default]
-    Default,
-    Quick,
-    Deep,
-    Custom,
+    Chat,
+    Agent,
 }
 
 impl AgentKind {
+    /// 唯一分支规则：`kind = agent` 走 agent 链路，其余（含旧值兼容标签）一律 chat。
     pub fn from_mode_kind(s: &str) -> Self {
-        match s {
-            "default" => AgentKind::Default,
-            "quick" => AgentKind::Quick,
-            "deep" => AgentKind::Deep,
-            "custom" => AgentKind::Custom,
-            _ => AgentKind::Default,
+        if s == "agent" {
+            AgentKind::Agent
+        } else {
+            AgentKind::Chat
         }
     }
 
     pub fn supports_tool_call(&self) -> bool {
-        matches!(self, AgentKind::Custom)
+        matches!(self, AgentKind::Agent)
     }
 }
 

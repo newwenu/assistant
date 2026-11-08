@@ -181,13 +181,7 @@ impl DeleteRequest {
             .as_object()
             .ok_or_else(|| "input must be a JSON object".to_string())?;
 
-        let path = object
-            .get("path")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| "missing or empty 'path' field".to_string())?
-            .to_string();
+        let path = path::parse_path_arg(object, "path")?;
 
         let recursive = match object.get("recursive") {
             None | Some(Value::Null) => false,
@@ -238,7 +232,7 @@ fn reject_undeletable(target: &Path, context: &ToolUseContext) -> Result<(), Str
         }
         if let Some(root) = context.workspace_root.as_deref() {
             if let Ok(root) = path::canonicalize_lenient(Path::new(root)) {
-                if same_path(&candidate, &root) {
+                if path::same_path(&candidate, &root) {
                     return Err(format!(
                         "refusing to delete the workspace root itself ('{}')",
                         root.display()
@@ -248,7 +242,7 @@ fn reject_undeletable(target: &Path, context: &ToolUseContext) -> Result<(), Str
         }
         if let Some(home) = home_dir() {
             if let Ok(home) = path::canonicalize_lenient(&home) {
-                if same_path(&candidate, &home) {
+                if path::same_path(&candidate, &home) {
                     return Err(format!(
                         "refusing to delete the home directory itself ('{}')",
                         home.display()
@@ -258,11 +252,6 @@ fn reject_undeletable(target: &Path, context: &ToolUseContext) -> Result<(), Str
         }
     }
     Ok(())
-}
-
-/// 组件级相等（Windows 大小写不敏感由 `is_component_prefix` 承担）。
-fn same_path(left: &Path, right: &Path) -> bool {
-    path::is_component_prefix(left, right) && path::is_component_prefix(right, left)
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -558,6 +547,7 @@ fn describe_failure(target: &Path, error: &std::io::Error, noun: &str) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::InMemoryReadReceiptStore;
 
     /// 失败后重查目标：仍存在 → 「未删除或已部分删除」；已不存在 → 「已完成，但随后失败」。
     #[test]
@@ -601,6 +591,43 @@ mod tests {
             is_link_like(&metadata),
             "a directory link must never be walked as a real directory"
         );
+    }
+
+    /// A16：预演与执行共用同一扫描函数，量级数字必须一致。
+    ///
+    /// 直接比对 `scan_tree` 的返回值与 `execute` 的 `data`，不解析 `summary` 文案。
+    #[tokio::test]
+    async fn preview_and_execution_report_the_same_scale() {
+        let dir = tempfile::tempdir().unwrap();
+        let tree = dir.path().join("tree");
+        std::fs::create_dir(&tree).unwrap();
+        std::fs::create_dir(tree.join("nested")).unwrap();
+        std::fs::write(tree.join("a.txt"), b"abc").unwrap();
+        std::fs::write(tree.join("nested/b.txt"), b"abcdef").unwrap();
+
+        let context = ToolUseContext {
+            workspace_root: Some(dir.path().display().to_string()),
+            ..Default::default()
+        };
+        let input = serde_json::json!({ "path": "tree", "recursive": true });
+        let request = DeleteRequest::parse(&input).unwrap();
+        let target = resolve_target(&request, &context).unwrap();
+        let scan = scan_tree(&target).expect("scan");
+
+        let result = AgentDeleteTool::new(Arc::new(InMemoryReadReceiptStore::new()))
+            .execute(&input, &context)
+            .await
+            .expect("execute");
+        assert!(result.ok, "delete must succeed: {:?}", result.error);
+
+        let data = result.data.expect("delete data");
+        assert_eq!(
+            data["entriesDeleted"].as_u64().unwrap() as usize,
+            scan.entries,
+            "审批预演与实际删除必须共用同一份扫描结果"
+        );
+        assert_eq!(data["bytesDeleted"].as_u64().unwrap(), scan.bytes);
+        assert_eq!(data["truncated"].as_bool().unwrap(), scan.truncated);
     }
 
     #[cfg(unix)]

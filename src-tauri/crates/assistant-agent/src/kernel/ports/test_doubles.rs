@@ -348,7 +348,7 @@ impl FixtureSource {
         }
     }
 
-    /// 注入 agent mode：`AgentKind::Custom` 才注入 tools，工具循环用例必须走这里。
+    /// 注入 agent mode：`AgentKind::Agent` 才注入 tools，工具循环用例必须走这里。
     pub fn with_mode(mut self, mode: AgentModeRow) -> Self {
         self.mode = Some(mode);
         self
@@ -370,6 +370,8 @@ impl FixtureSource {
             updated_at: now,
             is_full: false,
             active_branch_id: None,
+            mode_id: None,
+            tool_config_json: None,
         };
         let messages: Vec<MessageRow> = Vec::new();
         let provider = ProviderCredential {

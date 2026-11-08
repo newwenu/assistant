@@ -26,11 +26,11 @@ fn mode(kind: &str) -> AgentModeRow {
         max_tokens: None,
         reasoning_enabled: None,
         reasoning_effort: None,
-        tools_json: "[]".to_string(),
         presentation_rank: 0,
         is_builtin: false,
         created_at: 0,
         updated_at: 0,
+        tool_config_json: None,
     }
 }
 
@@ -45,8 +45,8 @@ async fn input_with_mode(kind: &str) -> TurnInput {
 }
 
 #[tokio::test]
-async fn custom_mode_injects_resolved_tools() {
-    let input = input_with_mode("custom").await;
+async fn agent_mode_injects_resolved_tools() {
+    let input = input_with_mode("agent").await;
     let tools = vec![spec("read_file"), spec("write_file")];
     let req = request::build(&input, 1, Some(&tools))
         .await
@@ -59,8 +59,8 @@ async fn custom_mode_injects_resolved_tools() {
 }
 
 #[tokio::test]
-async fn non_custom_modes_do_not_inject_tools() {
-    for kind in ["default", "quick", "deep"] {
+async fn non_agent_modes_do_not_inject_tools() {
+    for kind in ["chat", "default", "quick", "deep", "custom"] {
         let input = input_with_mode(kind).await;
         let tools = vec![spec("read_file")];
         let req = request::build(&input, 1, Some(&tools))
@@ -72,7 +72,7 @@ async fn non_custom_modes_do_not_inject_tools() {
 
 #[tokio::test]
 async fn empty_tool_list_degrades_to_no_tools() {
-    let input = input_with_mode("custom").await;
+    let input = input_with_mode("agent").await;
     let tools: Vec<ToolSpec> = Vec::new();
     let req = request::build(&input, 1, Some(&tools))
         .await
@@ -82,7 +82,7 @@ async fn empty_tool_list_degrades_to_no_tools() {
 
 #[tokio::test]
 async fn missing_tool_list_degrades_to_no_tools() {
-    let input = input_with_mode("custom").await;
+    let input = input_with_mode("agent").await;
     let req = request::build(&input, 1, None).await.expect("build");
     assert!(req.options.tools.is_none());
 }

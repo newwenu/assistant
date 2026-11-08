@@ -39,6 +39,25 @@ fn validate_theme_and_language_rules() {
 }
 
 #[test]
+fn validate_agent_tool_rules() {
+    let mut conf = AppConf::new();
+    assert!(conf.validate().is_ok(), "两项都留空是合法状态");
+
+    conf.approval_timeout_secs = Some(0);
+    assert!(conf.validate().is_err(), "零超时既非放行也非等待，必须拒绝");
+    conf.approval_timeout_secs = Some(5);
+    assert!(conf.validate().is_ok());
+
+    conf.workspace_root = Some(String::new());
+    assert!(conf.validate().is_err(), "空串不得当作未配置");
+    conf.workspace_root = Some("relative/dir".to_string());
+    assert!(conf.validate().is_err(), "相对路径无法作为工作区根");
+    let absolute = std::env::temp_dir();
+    conf.workspace_root = Some(absolute.to_string_lossy().into_owned());
+    assert!(conf.validate().is_ok(), "绝对路径合法");
+}
+
+#[test]
 fn serialize_deserialize_roundtrip() {
     let original = AppConf::new();
     let json = serde_json::to_string(&original).unwrap();

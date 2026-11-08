@@ -256,13 +256,7 @@ impl EditRequest {
             .as_object()
             .ok_or_else(|| "input must be a JSON object".to_string())?;
 
-        let path = object
-            .get("path")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| "missing or empty 'path' field".to_string())?
-            .to_string();
+        let path = path::parse_path_arg(object, "path")?;
 
         let old_string = object
             .get("old_string")

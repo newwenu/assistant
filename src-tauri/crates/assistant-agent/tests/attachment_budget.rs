@@ -497,6 +497,8 @@ fn detail_with_file(model: &str, file_content: &str) -> ConversationDetail {
             updated_at: 0,
             is_full: false,
             active_branch_id: None,
+            mode_id: None,
+            tool_config_json: None,
         },
         messages: vec![MessageRow {
             id: "m1".to_string(),

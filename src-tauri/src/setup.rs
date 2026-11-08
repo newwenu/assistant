@@ -27,14 +27,55 @@ use assistant_tools::{
 
 use super::tray;
 use crate::adapters::{
-    ApprovalWaitRegistry, DbPermissionAuditStore, DbPermissionGrantStore, DenyAllApprovalPrompter,
-    PipelineToolExecution, TimingApprovalPrompter,
+    ApprovalWaitRegistry, DbPermissionAuditStore, DbPermissionGrantStore, PendingApprovalRegistry,
+    PipelineToolExecution, TauriApprovalPrompter, TimingApprovalPrompter,
 };
 use crate::protocol::ShortcutWarningPayloadDto;
 
-/// 审批等待上限。P4 的审批默认实现恒 `Deny`，该值只在 P6 接入真实审批 UI 后才真正生效；
+/// 审批等待上限的兜底值：配置 `approvalTimeoutSecs` 缺省或非法时用它。
 /// 超时仍归一为 `Deny`（I38a §2.8），不得默认放行。
 const APPROVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// 审批超时的取值来源：每次审批现读配置，改设置后对下一次审批立即生效。
+/// `Some(0)` 在保存时已被 `AppConf::validate` 拒绝；手改配置文件写进 0 时按兜底值处理，
+/// 不允许「零超时」这种既非放行也非等待的语义。
+fn approval_timeout_from_conf() -> std::time::Duration {
+    match AppConf::load() {
+        Ok(conf) => match conf.approval_timeout_secs {
+            Some(secs) if secs > 0 => std::time::Duration::from_secs(u64::from(secs)),
+            Some(_) => {
+                log::warn!("approval_timeout_secs = 0 is invalid, falling back to default");
+                APPROVAL_TIMEOUT
+            }
+            None => APPROVAL_TIMEOUT,
+        },
+        Err(e) => {
+            log::warn!("Failed to load app config for approval timeout: {e}");
+            APPROVAL_TIMEOUT
+        }
+    }
+}
+
+/// 工作区根目录的取值来源（I38d §4.9）：每次工具执行现读配置。
+///
+/// 非法值（空串 / 非绝对路径 / 目录不存在）一律按 `None` 处理，
+/// 让工具层报「未配置工作区」，**不得**静默退回当前目录。
+fn workspace_root_from_conf() -> Option<String> {
+    let conf = match AppConf::load() {
+        Ok(conf) => conf,
+        Err(e) => {
+            log::warn!("Failed to load app config for workspace root: {e}");
+            return None;
+        }
+    };
+    let root = conf.workspace_root?;
+    let path = std::path::Path::new(&root);
+    if root.is_empty() || !path.is_absolute() || !path.is_dir() {
+        log::warn!("workspace_root is not a usable absolute directory, treating as unset: {root}");
+        return None;
+    }
+    Some(root)
+}
 
 pub struct DbState(pub std::sync::Mutex<rusqlite::Connection>);
 
@@ -61,7 +102,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     match handle.path().app_data_dir() {
         Ok(data_dir) => {
             let db_path = data_dir.join("assistant.db");
-            match db::init_db(&db_path) {
+            match db::init_db_localized(&db_path, &|key| assistant_i18n::t(key)) {
                 Ok(conn) => {
                     match assistant_storage::conversations::mark_streaming_messages_interrupted(
                         &conn,
@@ -123,7 +164,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         os::register_readonly_tools(&registry, receipts.clone());
         handle.manage(receipts);
 
-        // C4.18：P2 遗留端口的生产装配。顺序固定 —— 授权/审计 → 审批（fail-closed + 计时）
+        // C4.18：P2 遗留端口的生产装配。顺序固定 —— 授权/审计 → 审批（真实 UI + 计时）
         // → 网关 → 流水线 → executor 端口适配器；网关只认 `ApprovalPrompter` trait，
         // 计时装饰器对内层透明。
         let grants: Arc<dyn PermissionGrantStore> =
@@ -131,11 +172,18 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let audit: Arc<dyn PermissionAuditStore> =
             Arc::new(DbPermissionAuditStore::new(handle.clone()));
         let waits = ApprovalWaitRegistry::new();
+        let pending = PendingApprovalRegistry::new();
+        handle.manage(pending.clone());
         let prompter: Arc<dyn ApprovalPrompter> = Arc::new(TimingApprovalPrompter::with_registry(
-            Arc::new(DenyAllApprovalPrompter::new()),
+            Arc::new(TauriApprovalPrompter::new(handle.clone(), pending)),
             waits.clone(),
         ));
-        let gateway = Arc::new(ToolGateway::new(grants, audit, prompter, APPROVAL_TIMEOUT));
+        let gateway = Arc::new(ToolGateway::with_timeout_source(
+            grants,
+            audit,
+            prompter,
+            Arc::new(approval_timeout_from_conf),
+        ));
 
         // 落盘根目录必须是稳定路径：它会写进 `<persisted-output path="…">`，
         // 跨进程重放一致性依赖它（§4.5），不得用临时目录。
@@ -149,9 +197,13 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let storage: Arc<dyn ToolResultStorage> = Arc::new(FileToolResultStorage::new(results_dir));
         let pipeline = Arc::new(ToolPipeline::new(registry.clone(), gateway, storage));
 
-        // P4 无会话工作区绑定，`workspace_root` 恒 `None`；P6 接入后再按会话填充。
+        // 工作区根目录按 I38d §4.9 读全局配置：每次执行现读，改设置后下一轮生效。
         let tool_exec: Arc<dyn assistant_agent::agent::round_executor::ToolExecutionPort> =
-            Arc::new(PipelineToolExecution::new(pipeline, waits, None));
+            Arc::new(PipelineToolExecution::with_workspace_source(
+                pipeline,
+                waits,
+                Arc::new(workspace_root_from_conf),
+            ));
         handle.manage(tool_exec);
 
         handle.manage(registry);

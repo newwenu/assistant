@@ -249,23 +249,23 @@ fn echo_tool() -> ToolSpec {
     }
 }
 
-fn custom_mode() -> AgentModeRow {
+fn agent_mode() -> AgentModeRow {
     AgentModeRow {
-        id: "mode-custom".to_string(),
-        name: "custom".to_string(),
+        id: "mode-agent".to_string(),
+        name: "agent".to_string(),
         description: String::new(),
-        kind: "custom".to_string(),
+        kind: "agent".to_string(),
         prompt: "you are a fixture".to_string(),
         model: None,
         temperature: None,
         max_tokens: Some(4096),
         reasoning_enabled: None,
         reasoning_effort: None,
-        tools_json: "[]".to_string(),
         presentation_rank: 0,
         is_builtin: false,
         created_at: 0,
         updated_at: 0,
+        tool_config_json: None,
     }
 }
 
@@ -284,6 +284,8 @@ fn fixture_source(adapter: Arc<dyn BaseProviderAdapter>) -> FixtureSource {
         updated_at: 0,
         is_full: false,
         active_branch_id: None,
+        mode_id: None,
+        tool_config_json: None,
     };
     let messages = vec![MessageRow {
         id: "user-1".to_string(),
@@ -481,7 +483,7 @@ async fn run_loop(args: LoopArgs) -> LoopRun {
     let mut source = fixture_source(adapter.clone() as Arc<dyn BaseProviderAdapter>);
     let has_tools = !args.tools.is_empty();
     if has_tools {
-        source = source.with_mode(custom_mode());
+        source = source.with_mode(agent_mode());
     }
     let input: TurnInput = source
         .conversation_detail(CONVERSATION_ID)

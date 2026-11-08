@@ -55,6 +55,13 @@ pub struct AppConf {
     pub mini_window_x: Option<i32>,
     #[serde(default)]
     pub mini_window_y: Option<i32>,
+    /// 全局工作区根目录（I38d §4.9）。`None` = 未配置：相对路径与缺省 `path` 报
+    /// 「未配置工作区」，**不得**静默退回当前目录。每次工具执行现读，改设置后下一轮生效。
+    #[serde(default)]
+    pub workspace_root: Option<String>,
+    /// 审批等待上限（秒）。`None` → 默认 120s；`Some(0)` 非法（审批必须有时限）。
+    #[serde(default)]
+    pub approval_timeout_secs: Option<u32>,
 }
 
 /// 平台主修饰键：macOS 用 Command，其余用 Control。
@@ -103,6 +110,8 @@ impl AppConf {
             main_window_height: None,
             mini_window_x: None,
             mini_window_y: None,
+            workspace_root: None,
+            approval_timeout_secs: None,
         }
     }
 
@@ -155,6 +164,15 @@ impl AppConf {
         }
         if self.language.is_empty() {
             return Err("language must not be empty".to_string());
+        }
+        if self.approval_timeout_secs == Some(0) {
+            return Err("approval_timeout_secs must be greater than 0".to_string());
+        }
+        if let Some(root) = self.workspace_root.as_deref() {
+            let path = Path::new(root);
+            if root.is_empty() || !path.is_absolute() {
+                return Err("workspace_root must be a non-empty absolute path".to_string());
+            }
         }
         Ok(())
     }

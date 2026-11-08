@@ -4,7 +4,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use assistant_app::adapters::{ApprovalWaitRegistry, TimingApprovalPrompter};
-use assistant_tools::{request_with_timeout, ApprovalDecision, ApprovalPrompter, ApprovalRequest};
+use assistant_tools::{
+    request_with_timeout, ApprovalContext, ApprovalDecision, ApprovalPrompter, ApprovalRequest,
+    ApprovalWait, ToolTier,
+};
 use async_trait::async_trait;
 
 /// 固定等待 20ms 才返回的审批替身：让 `WaitGuard` 有可断言的等待时长。
@@ -21,10 +24,14 @@ impl ApprovalPrompter for SlowApproval {
 fn request(call_id: &str, timeout: Duration) -> ApprovalRequest {
     ApprovalRequest {
         tool_call_id: call_id.to_string(),
+        conversation_id: Some("conv-1".to_string()),
+        turn_id: Some("turn-1".to_string()),
+        iteration: Some(1),
         tool_name: "echo".to_string(),
         arguments: serde_json::json!({}),
         intents: Vec::new(),
         timeout,
+        context: ApprovalContext::minimal(ToolTier::Os, Default::default(), Vec::new()),
     }
 }
 
@@ -50,17 +57,31 @@ async fn approval_wait_recorded_per_call_and_removed_after_take() {
     assert!(registry.is_empty(), "take 之后不得残留，避免跨迭代无界增长");
 }
 
+/// 永不返回的审批替身：模拟「无人应答」。
+///
+/// 不能用 `sleep` 替身：`tokio::time::timeout` 先轮询内部 future、再查截止时间，
+/// 整仓并行下任务若被抢占超过「超时 - sleep」的时间，两个计时器同时就绪就会返回
+/// `Decided`，把「无人应答」误判成「已决策」。永不就绪的 future 让超时判定与调度无关。
+struct NeverApproval;
+
+#[async_trait]
+impl ApprovalPrompter for NeverApproval {
+    async fn request(&self, _request: ApprovalRequest) -> ApprovalDecision {
+        std::future::pending().await
+    }
+}
+
 /// C4.34：超时由外层 `request_with_timeout` 触发，future 被 drop 时仍记录等待。
 #[tokio::test]
 async fn approval_wait_recorded_on_timeout_drop() {
     let registry = ApprovalWaitRegistry::new();
-    let prompter = timed(&registry);
+    let prompter = TimingApprovalPrompter::with_registry(Arc::new(NeverApproval), registry.clone());
 
     let decision =
         request_with_timeout(&prompter, request("call-2", Duration::from_millis(5))).await;
     assert!(
-        matches!(decision, ApprovalDecision::Deny { .. }),
-        "超时必须归一为 Deny，不得放行：{decision:?}"
+        matches!(decision, ApprovalWait::TimedOut { .. }),
+        "超时必须归一为拒绝且与用户拒绝区分，不得放行：{decision:?}"
     );
 
     let waited = registry

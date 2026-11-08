@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::context::ToolUseContext;
+use crate::os::path;
 use crate::r#trait::{BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier};
 use crate::result::ToolResult;
 
@@ -120,39 +121,42 @@ impl Tool for FsLinkTool {
     fn permission_intents(
         &self,
         input: &Value,
-        _context: &ToolUseContext,
+        context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
-        let action = input.get("action").and_then(Value::as_str).unwrap_or("");
-
-        if action == "check" {
-            return Ok(vec![]);
+        let object = input
+            .as_object()
+            .ok_or_else(|| "input must be a JSON object".to_string())?;
+        match object.get("action").and_then(Value::as_str) {
+            Some("create") => {}
+            Some("check") => return Ok(vec![]),
+            Some(other) => return Err(format!("unknown action '{}'", other)),
+            None => return Err("missing 'action' field".to_string()),
         }
 
-        let source = input
-            .get("source")
-            .and_then(Value::as_str)
-            .unwrap_or("<unknown>");
-        let target = input
-            .get("target")
-            .and_then(Value::as_str)
-            .unwrap_or("<unknown>");
+        // 意图必须用解析后的路径：策略规则按绝对路径匹配，原始字符串（含相对路径、
+        // `..` 段）会让同一目标在不同规则下命中不一致；缺失字段也不能兜底成占位符。
+        // `kind` 不参与意图：审批问的是「这两个路径要被改动」，链接类型不影响授权范围。
+        let source = path::parse_path_arg(object, "source")?;
+        let target = path::parse_path_arg(object, "target")?;
+        let source = validate::resolve_path(&source, context)?;
+        let target = validate::resolve_path(&target, context)?;
 
         Ok(vec![
-            PermissionIntent::new("edit", source),
-            PermissionIntent::new("edit", target),
+            PermissionIntent::new("edit", source.display().to_string()),
+            PermissionIntent::new("edit", target.display().to_string()),
         ])
     }
 
     async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult, String> {
-        let action = input
-            .get("action")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "missing 'action' field".to_string())?;
+        let action = match input.get("action").and_then(Value::as_str) {
+            Some(action) => action,
+            None => return Ok(ToolResult::err("missing 'action' field".to_string())),
+        };
 
         match action {
             "create" => self.exec_create(input, context).await,
             "check" => self.exec_check(input, context).await,
-            _ => Err(format!("unknown action '{}'", action)),
+            _ => Ok(ToolResult::err(format!("unknown action '{}'", action))),
         }
     }
 }
@@ -164,8 +168,8 @@ impl FsLinkTool {
         context: &ToolUseContext,
     ) -> Result<ToolResult, String> {
         let parsed = validate::parse_create_input(input)?;
-        let source = validate::resolve_path(parsed.source, context)?;
-        let target = validate::resolve_path(parsed.target, context)?;
+        let source = validate::resolve_path(&parsed.source, context)?;
+        let target = validate::resolve_path(&parsed.target, context)?;
 
         if let Err(message) = validate::ensure_target_exists(&target) {
             return Ok(ToolResult::err(message));
@@ -190,7 +194,7 @@ impl FsLinkTool {
         context: &ToolUseContext,
     ) -> Result<ToolResult, String> {
         let source_str = validate::parse_check_input(input)?;
-        let source = validate::resolve_path(source_str, context)?;
+        let source = validate::resolve_path(&source_str, context)?;
 
         let info = check::check_link(&source)?;
 

@@ -180,17 +180,7 @@ impl GlobRequest {
             .ok_or_else(|| "missing or empty 'pattern' field".to_string())?
             .to_string();
 
-        let path = match object.get("path") {
-            None | Some(Value::Null) => None,
-            Some(value) => Some(
-                value
-                    .as_str()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| "'path' must be a non-empty string".to_string())?
-                    .to_string(),
-            ),
-        };
+        let path = path::parse_optional_path_arg(object, "path")?;
 
         let exclude = match object.get("exclude") {
             None | Some(Value::Null) => Vec::new(),

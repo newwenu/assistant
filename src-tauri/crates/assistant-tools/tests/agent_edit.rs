@@ -14,6 +14,7 @@ fn context(root: &Path, session: Option<&str>) -> ToolUseContext {
         workspace_root: Some(root.display().to_string()),
         session_id: session.map(str::to_string),
         tool_call_id: Some("call-1".to_string()),
+        ..Default::default()
     }
 }
 
@@ -896,5 +897,32 @@ async fn non_utf8_files_still_require_a_receipt() {
     assert_eq!(
         &std::fs::read(dir.path().join("gbk.txt")).unwrap()[..],
         existing.as_ref()
+    );
+}
+
+#[tokio::test]
+async fn a_file_above_the_whole_file_limit_is_rejected_with_an_edit_only_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let receipts = store();
+    let ctx = context(dir.path(), Some("session-1"));
+    let content = "x".repeat(16 * 1024 * 1024 + 1);
+    std::fs::write(dir.path().join("big.txt"), &content).unwrap();
+
+    let result = tool(receipts)
+        .execute(
+            &json!({ "path": "big.txt", "old_string": "x", "new_string": "y" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
+    let error = result.error.unwrap_or_default();
+    assert!(error.contains("limit for edit"));
+    assert!(
+        !error.contains("read") && !error.contains("grep"),
+        "read no longer shares this gate, so the message must not point at it: {}",
+        error
     );
 }

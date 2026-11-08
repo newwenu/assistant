@@ -1,17 +1,18 @@
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use assistant_tools::gateway::{
-    request_with_timeout, ApprovalDecision, ApprovalKey, ApprovalPrompter, ApprovalRequest,
-    ApprovalScope, AuditEntry, AuditOutcome, ChildGrantStore, InMemoryAuditStore,
-    InMemoryGrantStore, PermissionAuditStore, PermissionGrantStore, ScriptedApprovalPrompter,
-    ToolGateway,
+    request_with_timeout, ApprovalContext, ApprovalDecision, ApprovalExtensionSeverity,
+    ApprovalKey, ApprovalPrompter, ApprovalReason, ApprovalRequest, ApprovalScope, ApprovalWait,
+    AuditEntry, AuditOutcome, ChildGrantStore, GrantScope, InMemoryAuditStore, InMemoryGrantStore,
+    PermissionAuditStore, PermissionGrantStore, ScriptedApprovalPrompter, ToolGateway,
 };
+use assistant_tools::os::path::ensure_within_root;
 use assistant_tools::storage::{FileToolResultStorage, PersistToolResult, ToolResultStorage};
 use assistant_tools::{
-    GatewayDecision, PermissionEffect, PermissionIntent, PermissionRule, ResolvedPermissionPolicy,
-    Tool, ToolResult, ToolTier, ToolUseContext,
+    ApprovalPreview, BehaviorHints, GatewayDecision, PermissionEffect, PermissionIntent,
+    PermissionRule, ResolvedPermissionPolicy, Tool, ToolResult, ToolTier, ToolUseContext,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -50,10 +51,14 @@ fn command_key(
 fn approval_request(timeout: Duration) -> ApprovalRequest {
     ApprovalRequest {
         tool_call_id: "call-1".to_string(),
+        conversation_id: Some("conv-1".to_string()),
+        turn_id: Some("turn-1".to_string()),
+        iteration: Some(1),
         tool_name: "fs_edit".to_string(),
         arguments: json!({ "path": "a.txt" }),
         intents: vec![PermissionIntent::new("edit", "a.txt")],
         timeout,
+        context: ApprovalContext::minimal(ToolTier::Os, Default::default(), Vec::new()),
     }
 }
 
@@ -274,22 +279,40 @@ async fn empty_key_never_hits_the_cache() {
     assert!(store.is_empty());
 
     let real = path_key("fs_read", "read", "C:/tmp/a.txt").unwrap();
-    store.save_grant(&real).await.unwrap();
-    assert!(store.is_granted(&real).await);
+    store
+        .save_grant(&real, GrantScope::Global, None)
+        .await
+        .unwrap();
+    assert!(store.is_granted(&real, None).await);
     assert_eq!(store.len(), 1);
+}
+
+/// 永不返回的审批替身：模拟「无人应答」。
+///
+/// `tokio::time::timeout` 先轮询内部 future、再查截止时间；若用 `with_delay(200ms)`
+/// 配 20ms 超时，并行负载下任务被抢占过久会让两个计时器同时就绪，从而返回 `Decided`。
+/// 永不就绪的 future 让超时判定与调度无关。
+struct NeverApproval;
+
+#[async_trait::async_trait]
+impl ApprovalPrompter for NeverApproval {
+    async fn request(&self, _request: ApprovalRequest) -> ApprovalDecision {
+        std::future::pending().await
+    }
 }
 
 #[tokio::test]
 async fn approval_timeout_is_denied() {
-    let prompter = ScriptedApprovalPrompter::new(vec![ApprovalDecision::Approve])
-        .with_delay(Duration::from_millis(200));
-
     let decision =
-        request_with_timeout(&prompter, approval_request(Duration::from_millis(20))).await;
+        request_with_timeout(&NeverApproval, approval_request(Duration::from_millis(20))).await;
 
     match decision {
-        ApprovalDecision::Deny { reason } => {
-            assert_eq!(reason.as_deref(), Some("approval timed out"));
+        ApprovalWait::TimedOut { timeout } => {
+            assert_eq!(
+                timeout,
+                Duration::from_millis(20),
+                "超时结局必须带上实际等待上限"
+            );
         }
         other => panic!("timeout must deny, got {:?}", other),
     }
@@ -300,7 +323,7 @@ async fn approval_within_timeout_is_approved() {
     let prompter = ScriptedApprovalPrompter::new(vec![ApprovalDecision::Approve]);
     let decision = request_with_timeout(&prompter, approval_request(Duration::from_secs(5))).await;
 
-    assert_eq!(decision, ApprovalDecision::Approve);
+    assert_eq!(decision, ApprovalWait::Decided(ApprovalDecision::Approve));
     assert_eq!(prompter.request_count(), 1);
 }
 
@@ -308,19 +331,22 @@ async fn approval_within_timeout_is_approved() {
 async fn always_approve_only_writes_the_current_key() {
     let store = InMemoryGrantStore::default();
     let granted = path_key("fs_edit", "edit", "C:/tmp/a.txt").unwrap();
-    store.save_grant(&granted).await.unwrap();
+    store
+        .save_grant(&granted, GrantScope::Global, None)
+        .await
+        .unwrap();
 
-    assert!(store.is_granted(&granted).await);
+    assert!(store.is_granted(&granted, None).await);
 
     let similar = path_key("fs_edit", "edit", "C:/tmp/a.txt.bak").unwrap();
-    assert!(!store.is_granted(&similar).await);
+    assert!(!store.is_granted(&similar, None).await);
 
     let other_action = path_key("fs_read", "read", "C:/tmp/a.txt").unwrap();
-    assert!(!store.is_granted(&other_action).await);
+    assert!(!store.is_granted(&other_action, None).await);
 
     let normalized = path_key("fs_edit", "edit", "C:/tmp/./a.txt").unwrap();
     assert_eq!(normalized, granted);
-    assert!(store.is_granted(&normalized).await);
+    assert!(store.is_granted(&normalized, None).await);
 }
 
 #[tokio::test]
@@ -329,16 +355,22 @@ async fn child_grant_store_reads_parent_but_writes_local() {
     let parent: Arc<dyn PermissionGrantStore> = parent_concrete.clone();
 
     let parent_key = path_key("fs_read", "read", "C:/tmp/parent.txt").unwrap();
-    parent.save_grant(&parent_key).await.unwrap();
+    parent
+        .save_grant(&parent_key, GrantScope::Global, None)
+        .await
+        .unwrap();
 
     let child = ChildGrantStore::new(parent.clone());
-    assert!(child.is_granted(&parent_key).await);
+    assert!(child.is_granted(&parent_key, None).await);
 
     let child_key = path_key("fs_edit", "edit", "C:/tmp/child.txt").unwrap();
-    child.save_grant(&child_key).await.unwrap();
+    child
+        .save_grant(&child_key, GrantScope::Global, None)
+        .await
+        .unwrap();
 
-    assert!(child.is_granted(&child_key).await);
-    assert!(!parent_concrete.is_granted(&child_key).await);
+    assert!(child.is_granted(&child_key, None).await);
+    assert!(!parent_concrete.is_granted(&child_key, None).await);
     assert_eq!(child.local().len(), 1);
     assert_eq!(parent_concrete.len(), 1);
 }
@@ -583,7 +615,7 @@ async fn gateway_merges_multiple_asks_into_one_request() {
 #[tokio::test]
 async fn gateway_always_approve_persists_key_and_skips_second_prompt() {
     let prompter = Arc::new(ScriptedApprovalPrompter::new(vec![
-        ApprovalDecision::AlwaysApprove,
+        ApprovalDecision::AllowAlways,
     ]));
     let (gateway, grants, audit) = gateway_with(prompter.clone());
     let tool = FakeTool::new(vec![PermissionIntent::new("edit", "C:/ws/a.txt")]);
@@ -620,7 +652,7 @@ async fn gateway_always_approve_persists_key_and_skips_second_prompt() {
 #[tokio::test]
 async fn gateway_always_approve_does_not_cover_a_different_resource() {
     let prompter = Arc::new(ScriptedApprovalPrompter::new(vec![
-        ApprovalDecision::AlwaysApprove,
+        ApprovalDecision::AllowAlways,
         ApprovalDecision::Deny { reason: None },
     ]));
     let (gateway, grants, _) = gateway_with(prompter.clone());
@@ -685,14 +717,19 @@ async fn gateway_rejected_by_user_carries_reason() {
 }
 
 #[tokio::test]
-async fn gateway_timeout_becomes_rejected_by_user() {
+async fn gateway_timeout_is_not_user_rejection() {
     let prompter = Arc::new(
         ScriptedApprovalPrompter::new(vec![ApprovalDecision::Approve])
             .with_delay(Duration::from_millis(300)),
     );
     let grants = Arc::new(InMemoryGrantStore::default());
     let audit = Arc::new(InMemoryAuditStore::default());
-    let gateway = ToolGateway::new(grants.clone(), audit, prompter, Duration::from_millis(20));
+    let gateway = ToolGateway::new(
+        grants.clone(),
+        audit.clone(),
+        prompter,
+        Duration::from_millis(20),
+    );
     let tool = FakeTool::new(vec![PermissionIntent::new("edit", "C:/ws/a.txt")]);
 
     let decision = gateway
@@ -706,18 +743,26 @@ async fn gateway_timeout_becomes_rejected_by_user() {
         .unwrap();
 
     match decision {
-        GatewayDecision::RejectedByUser { reason } => {
-            assert_eq!(reason.as_deref(), Some("approval timed out"));
+        GatewayDecision::ApprovalTimedOut { timeout } => {
+            assert_eq!(timeout, Duration::from_millis(20));
         }
-        other => panic!("timeout must not allow, got {:?}", other),
+        other => panic!(
+            "timeout must not be reported as user rejection, got {:?}",
+            other
+        ),
     }
     assert!(grants.is_empty(), "timeout must not persist a grant");
+    assert_eq!(
+        audit.entries()[0].outcome,
+        AuditOutcome::TimedOut,
+        "超时必须在审计里与用户拒绝分开"
+    );
 }
 
 #[tokio::test]
 async fn gateway_empty_key_still_asks_and_never_persists() {
     let prompter = Arc::new(ScriptedApprovalPrompter::new(vec![
-        ApprovalDecision::AlwaysApprove,
+        ApprovalDecision::AllowAlways,
     ]));
     let (gateway, grants, audit) = gateway_with(prompter.clone());
     let tool = FakeTool::new(vec![PermissionIntent::new("edit", "   ")]);
@@ -736,7 +781,7 @@ async fn gateway_empty_key_still_asks_and_never_persists() {
     assert_eq!(prompter.request_count(), 1, "empty key must still prompt");
     assert!(
         grants.is_empty(),
-        "AlwaysApprove on an empty key must not persist anything"
+        "AllowAlways on an empty key must not persist anything"
     );
     let entries = audit.entries();
     assert_eq!(
@@ -745,4 +790,225 @@ async fn gateway_empty_key_still_asks_and_never_persists() {
         "empty key must be audited: it is the only proof a human was asked"
     );
     assert_eq!(entries[0].outcome, AuditOutcome::AlwaysApproved);
+}
+
+/// 审批卡片信息装配（I38d §3.2.1）：L0 零成本、L2 只在 `Ask` 路径付出 IO。
+struct PreviewingTool {
+    intents: Vec<PermissionIntent>,
+    preview: Option<ApprovalPreview>,
+    preview_calls: Arc<Mutex<usize>>,
+}
+
+impl PreviewingTool {
+    fn new(intents: Vec<PermissionIntent>, preview: Option<ApprovalPreview>) -> Self {
+        Self {
+            intents,
+            preview,
+            preview_calls: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    fn preview_calls(&self) -> usize {
+        self.preview_calls.lock().map(|c| *c).unwrap_or(0)
+    }
+}
+
+#[async_trait::async_trait]
+impl Tool for PreviewingTool {
+    fn id(&self) -> &str {
+        "previewing_tool"
+    }
+
+    async fn description(&self) -> Result<String, String> {
+        Ok("tool with approval preview".to_string())
+    }
+
+    fn input_schema(&self) -> Value {
+        json!({ "type": "object" })
+    }
+
+    fn tier(&self) -> ToolTier {
+        ToolTier::Os
+    }
+
+    fn behavior_hints(&self) -> BehaviorHints {
+        BehaviorHints {
+            read_only: false,
+            destructive: true,
+            open_world: false,
+        }
+    }
+
+    fn permission_intents(
+        &self,
+        _input: &Value,
+        _context: &ToolUseContext,
+    ) -> Result<Vec<PermissionIntent>, String> {
+        Ok(self.intents.clone())
+    }
+
+    async fn preview_for_approval(
+        &self,
+        _input: &Value,
+        _context: &ToolUseContext,
+    ) -> Option<ApprovalPreview> {
+        if let Ok(mut calls) = self.preview_calls.lock() {
+            *calls += 1;
+        }
+        self.preview.clone()
+    }
+
+    async fn execute(
+        &self,
+        _input: &Value,
+        _context: &ToolUseContext,
+    ) -> Result<ToolResult, String> {
+        Ok(ToolResult::ok(Value::Null))
+    }
+}
+
+/// 捕获审批请求的替身：断言卡片拿到了什么，而不是只看最终决策。
+struct CapturingPrompter {
+    seen: Arc<Mutex<Vec<ApprovalRequest>>>,
+}
+
+#[async_trait::async_trait]
+impl ApprovalPrompter for CapturingPrompter {
+    async fn request(&self, request: ApprovalRequest) -> ApprovalDecision {
+        if let Ok(mut seen) = self.seen.lock() {
+            seen.push(request);
+        }
+        ApprovalDecision::Approve
+    }
+}
+
+#[tokio::test]
+async fn gateway_ask_path_carries_l0_l1_l2_context() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
+    let (gateway, _, _) = gateway_with(prompter);
+    let tool = PreviewingTool::new(
+        vec![PermissionIntent::new("delete", "C:/ws/tmp/cache")],
+        Some(ApprovalPreview {
+            summary: "删除 128 个条目（3.4 MB）".to_string(),
+            truncated: true,
+            estimated: false,
+        }),
+    );
+
+    let decision = gateway
+        .evaluate(
+            &tool,
+            &Value::Null,
+            &ctx(),
+            &ResolvedPermissionPolicy::default_global(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(decision, GatewayDecision::Allowed);
+    assert_eq!(tool.preview_calls(), 1, "Ask 路径必须预演一次");
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    let context = &seen[0].context;
+    assert_eq!(context.tier, ToolTier::Os, "L0 层级来自工具元数据");
+    assert!(context.behavior.destructive, "L0 行为提示必须透传");
+    assert_eq!(
+        context.reasons,
+        vec![ApprovalReason::DefaultPolicy {
+            rule: "* *".to_string()
+        }],
+        "L1 必须说明命中哪条策略"
+    );
+    let preview = context.preview.as_ref().expect("L2 预演必须透传");
+    assert_eq!(preview.summary, "删除 128 个条目（3.4 MB）");
+    assert!(preview.truncated);
+    assert!(!preview.estimated);
+    assert!(
+        context.extensions.is_empty(),
+        "未配置工作区时没有工作区结论，也不得伪造扩展项"
+    );
+}
+
+/// A17：审批卡片的「工作区内/外」与执行期边界同源，结论必须一致。
+#[tokio::test]
+async fn workspace_extension_agrees_with_the_execution_boundary() {
+    let root = tempdir().unwrap();
+    let inside = root.path().join("inside.txt");
+    std::fs::write(&inside, b"x").unwrap();
+    let other = tempdir().unwrap();
+    let outside = other.path().join("outside.txt");
+
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
+    let (gateway, _, _) = gateway_with(prompter);
+    let context = ToolUseContext::for_toolbox(Some(root.path().display().to_string()));
+
+    for resource in [inside.display().to_string(), outside.display().to_string()] {
+        let tool = PreviewingTool::new(vec![PermissionIntent::new("edit", resource)], None);
+        gateway
+            .evaluate(
+                &tool,
+                &Value::Null,
+                &context,
+                &ResolvedPermissionPolicy::default_global(),
+            )
+            .await
+            .unwrap();
+    }
+
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+
+    let inside_extension = seen[0]
+        .context
+        .extensions
+        .iter()
+        .find(|extension| extension.kind == "workspace")
+        .expect("inside target must carry a workspace conclusion");
+    assert!(
+        ensure_within_root(&inside, root.path()).is_ok(),
+        "执行期边界必须放行区内目标"
+    );
+    assert_eq!(inside_extension.value, "inside the workspace root");
+    assert_eq!(inside_extension.severity, ApprovalExtensionSeverity::Info);
+
+    let outside_extension = seen[1]
+        .context
+        .extensions
+        .iter()
+        .find(|extension| extension.kind == "workspace")
+        .expect("outside target must carry a workspace conclusion");
+    assert!(
+        ensure_within_root(&outside, root.path()).is_err(),
+        "执行期边界必须拒绝区外目标"
+    );
+    assert_eq!(outside_extension.value, "outside the workspace root");
+    assert_eq!(
+        outside_extension.severity,
+        ApprovalExtensionSeverity::Caution
+    );
+}
+
+#[tokio::test]
+async fn gateway_allow_path_never_pays_the_preview_cost() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let prompter = Arc::new(CapturingPrompter { seen });
+    let (gateway, _, _) = gateway_with(prompter);
+    let tool = PreviewingTool::new(
+        vec![PermissionIntent::new("delete", "C:/ws/tmp/cache")],
+        Some(ApprovalPreview {
+            summary: "不该被调用".to_string(),
+            truncated: false,
+            estimated: false,
+        }),
+    );
+
+    let decision = gateway
+        .evaluate(&tool, &Value::Null, &ctx(), &allow_all())
+        .await
+        .unwrap();
+
+    assert_eq!(decision, GatewayDecision::Allowed);
+    assert_eq!(tool.preview_calls(), 0, "Allow 路径不得为卡片付出 IO");
 }
