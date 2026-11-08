@@ -1,0 +1,128 @@
+.root {
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  min-width: 0;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.timer {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.questionHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip {
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--color-text-tertiary);
+  background: var(--color-border-secondary);
+  white-space: nowrap;
+}
+
+.multiHint {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.questionText {
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  font: inherit;
+}
+
+.option:hover {
+  border-color: var(--color-primary);
+}
+
+.optionActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+
+.option:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.optionLabel {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.optionDesc {
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.otherInput {
+  margin-top: 2px;
+}
+
+.error {
+  color: var(--color-error, #ff4d4f);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hint {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}

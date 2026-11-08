@@ -46,6 +46,8 @@ const sampleConversation: Conversation = {
   updatedAt: 1000,
   isFull: false,
   activeBranchId: null,
+  modeId: null,
+  toolConfig: null,
 };
 
 const sampleConversationDetail: ConversationDetail = {

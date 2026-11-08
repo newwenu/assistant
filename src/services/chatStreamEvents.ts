@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ChatOrchestrator } from "./chatOrchestrator";
 import type {
+  AgentToolCall,
   ChatDeltaPayload,
   ChatStreamStartPayload,
   ChatUserMessageConfirmedPayload,
@@ -68,16 +69,11 @@ export function subscribeChatStreamEvents(): () => void {
         messageId: payload.messageId,
       };
       firstDeltaChecked = false;
-      if (
-        orchestratorInstance &&
-        orchestratorInstance.getActiveConversationId() ===
-          payload.conversationId
-      ) {
-        orchestratorInstance.onStreamStart(
-          payload.attemptId,
-          payload.messageId,
-        );
-      }
+      orchestratorInstance?.onStreamStart(
+        payload.conversationId,
+        payload.attemptId,
+        payload.messageId,
+      );
     }),
   );
 
@@ -107,18 +103,27 @@ export function subscribeChatStreamEvents(): () => void {
       (event) => {
         if (disposed) return;
         const payload = event.payload;
-        if (
-          orchestratorInstance &&
-          orchestratorInstance.getActiveConversationId() !==
-            payload.conversationId
-        ) {
-          return;
-        }
+        if (!orchestratorInstance) return;
         log.debug(
-          `session-state turn=${payload.turnId} state=${describeSessionState(payload.state)}`,
+          `session-state conv=${payload.conversationId} turn=${payload.turnId} state=${describeSessionState(payload.state)}`,
         );
+        orchestratorInstance.onSessionState(payload);
       },
     ),
+  );
+
+  track(
+    listen<AgentToolCall>(ChatEvent.AgentToolCall, (event) => {
+      if (disposed) return;
+      const payload = event.payload;
+      if (
+        orchestratorInstance &&
+        orchestratorInstance.getActiveConversationId() ===
+          payload.conversationId
+      ) {
+        orchestratorInstance.onAgentToolCall(payload);
+      }
+    }),
   );
 
   const coalescer = createChatDeltaCoalescer<CoalescibleDelta>(
@@ -130,7 +135,12 @@ export function subscribeChatStreamEvents(): () => void {
           );
         }
         if (orchestratorInstance) {
-          orchestratorInstance.onTextDelta(event.delta);
+          orchestratorInstance.onTextDelta({
+            conversationId: event.conversationId,
+            attemptId: event.attemptId,
+            messageId: event.messageId,
+            delta: event.delta,
+          });
         }
       }
     },

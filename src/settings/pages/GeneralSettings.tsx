@@ -4,7 +4,11 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { SettingsGroup } from "../shared/sections/SettingsGroup";
 import { SettingsSection } from "../shared/layout/SettingsSection";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
-import { APP_SETTINGS, COMPACT_SETTINGS } from "../core/field/fieldDefinitions";
+import {
+  APP_SETTINGS,
+  COMPACT_SETTINGS,
+  AGENT_TOOL_SETTINGS,
+} from "../core/field/fieldDefinitions";
 import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
 
 export const GeneralSettings: React.FC = () => {
@@ -28,6 +32,16 @@ export const GeneralSettings: React.FC = () => {
           <SettingsGroup
             group="app"
             definitions={COMPACT_SETTINGS}
+            onPatch={onPatch}
+            onPatchComplete={onPatchComplete}
+          />
+        </Form>
+      </SettingsSection>
+      <SettingsSection id="agent-main">
+        <Form layout="vertical">
+          <SettingsGroup
+            group="app"
+            definitions={AGENT_TOOL_SETTINGS}
             onPatch={onPatch}
             onPatchComplete={onPatchComplete}
           />

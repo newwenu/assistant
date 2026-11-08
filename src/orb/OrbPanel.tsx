@@ -17,8 +17,9 @@ import {
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
 import { formatConversationTitle } from "../utils/formatConversationTitle";
-import { useOrbExpand } from "./OrbExpand";
-import { ChatView } from "../chat/ChatView";
+import { isOrbBlurCollapseSuppressed, useOrbExpand } from "./OrbExpand";
+import { openFromPanel } from "./panelActions";
+import { ConversationView } from "../chat/ConversationView";
 import { useChatStore, getChatOrchestrator } from "../stores/chatStore";
 import {
   subscribeChatStreamEvents,
@@ -32,7 +33,6 @@ import {
   isPointInRect,
 } from "./OrbCoord";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
-import { orbService } from "../services/orbService";
 import { useNotifyStore } from "../stores/notifyStore";
 import { translateKey } from "../i18n";
 
@@ -80,9 +80,11 @@ export const OrbPanel: React.FC = () => {
     const unlistenBlur = listen(UiEvent.OrbBlur, () => {
       closeAllMenus();
       if (useOrbStore.getState().keepExpanded) return;
+      if (isOrbBlurCollapseSuppressed()) return;
       if (timer !== null) clearTimeout(timer);
       timer = window.setTimeout(() => {
         void (async () => {
+          if (isOrbBlurCollapseSuppressed()) return;
           const state = useOrbStore.getState();
           if (state.isDragging) return;
           try {
@@ -145,10 +147,9 @@ export const OrbPanel: React.FC = () => {
   const isTruncated = filtered.length > ORB_HISTORY_LIST_LIMIT;
 
   const handleOpenHistoryInMain = useCallback(() => {
-    void orbService.openMainWindowAndNavigate("/history");
     setHistoryOpen(false);
-    void collapse();
-  }, [collapse]);
+    void openFromPanel({ kind: "main", route: "/history" });
+  }, []);
 
   const historyMenuItems: MenuProps["items"] = [
     {
@@ -291,7 +292,7 @@ export const OrbPanel: React.FC = () => {
         </Tooltip>
       </div>
       {messageContextHolder}
-      <ChatView modelOpenRef={modelOpenRef} />
+      <ConversationView modelOpenRef={modelOpenRef} />
     </div>
   );
 };

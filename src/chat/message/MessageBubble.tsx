@@ -16,6 +16,7 @@ import type { RecoveryActionCode } from "../core/chatErrorRecovery";
 import { extractPlainText, parseContent } from "../core/contentBlockUtils";
 import { translateKey } from "../../i18n";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
+import { ToolCallBubble } from "../tool/ToolCallBubble";
 import { EditBlock } from "../blocks/EditBlock";
 import { BranchPicker } from "../blocks/BranchPicker";
 import { MessageContent } from "./MessageContent";
@@ -156,6 +157,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
         ? getErrorPresentation(message.error).severity
         : null;
 
+    const hasBody =
+      message.content.trim().length > 0 ||
+      hasReasoning ||
+      (message.toolCalls?.length ?? 0) > 0 ||
+      isCompactSummary ||
+      editing;
+    const showBubble = hasBody || (!hasError && !retryStatus);
+
     const rootClass = [
       css.root,
       isUser
@@ -173,70 +182,79 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     return (
       <div className={rootClass} data-role={message.role}>
         <div className={css.stack}>
-          <div
-            className={[
-              css.bubble,
-              isUser ? css.bubbleUser : css.bubbleAssistant,
-              errorSeverity === "warning"
-                ? css.bubbleWarning
-                : hasError
-                  ? css.bubbleError
-                  : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            {hasError && message.error && (
-              <ErrorBlock
-                error={message.error}
-                onRetry={onRetry}
-                onAction={onErrorAction}
-              />
-            )}
-            {retryStatus && isStreaming && (
-              <RetryBanner
-                retryStatus={retryStatus}
-                onCancel={() => onRetry?.()}
-              />
-            )}
-            {isCompactSummary && (
-              <div className={css.compactSummaryHeader}>
-                <CompressOutlined style={{ marginRight: 6 }} />
-                <Typography.Text type="warning" strong>
-                  {t("chat.compact.summary_label")}
-                </Typography.Text>
-              </div>
-            )}
-            {hasReasoning && (
-              <ReasoningBlock
-                content={message.reasoning!}
-                isStreaming={isReasoningStreaming}
-              />
-            )}
-            {editing ? (
-              <EditBlock
-                value={editContent}
-                onChange={setEditContent}
-                onConfirm={confirmEdit}
-                onCancel={cancelEdit}
-                imageBlocks={editImageBlocks}
-                fileBlocks={editFileBlocks}
-                onRemoveImage={handleRemoveEditImage}
-                onRemoveFile={handleRemoveEditFile}
-              />
-            ) : (
-              <>
-                <MessageContent
-                  content={message.content}
-                  role={message.role}
-                  isStreaming={isStreaming}
+          {showBubble && (
+            <div
+              className={[
+                css.bubble,
+                isUser ? css.bubbleUser : css.bubbleAssistant,
+                errorSeverity === "warning"
+                  ? css.bubbleWarning
+                  : hasError
+                    ? css.bubbleError
+                    : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              {isCompactSummary && (
+                <div className={css.compactSummaryHeader}>
+                  <CompressOutlined style={{ marginRight: 6 }} />
+                  <Typography.Text type="warning" strong>
+                    {t("chat.compact.summary_label")}
+                  </Typography.Text>
+                </div>
+              )}
+              {hasReasoning && (
+                <ReasoningBlock
+                  content={message.reasoning!}
+                  isStreaming={isReasoningStreaming}
                 />
-                {isStreaming && !isReasoningStreaming && (
-                  <span className={css.streamingCursor} />
-                )}
-              </>
-            )}
-          </div>
+              )}
+              {message.toolCalls && message.toolCalls.length > 0 && (
+                <div className={css.toolCalls}>
+                  {message.toolCalls.map((view) => (
+                    <ToolCallBubble key={view.callId} view={view} />
+                  ))}
+                </div>
+              )}
+              {editing ? (
+                <EditBlock
+                  value={editContent}
+                  onChange={setEditContent}
+                  onConfirm={confirmEdit}
+                  onCancel={cancelEdit}
+                  imageBlocks={editImageBlocks}
+                  fileBlocks={editFileBlocks}
+                  onRemoveImage={handleRemoveEditImage}
+                  onRemoveFile={handleRemoveEditFile}
+                />
+              ) : (
+                <>
+                  <MessageContent
+                    content={message.content}
+                    role={message.role}
+                    isStreaming={isStreaming}
+                  />
+                  {isStreaming && !isReasoningStreaming && (
+                    <span className={css.streamingCursor} />
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          {hasError && message.error && (
+            <ErrorBlock
+              error={message.error}
+              onRetry={onRetry}
+              onAction={onErrorAction}
+            />
+          )}
+          {retryStatus && isStreaming && (
+            <RetryBanner
+              retryStatus={retryStatus}
+              onCancel={() => onRetry?.()}
+            />
+          )}
           {!editing && (
             <div className={css.actionsWrapper}>
               <BranchPicker
@@ -270,6 +288,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     if (prev.message.id !== next.message.id) return false;
     if (prev.message.content !== next.message.content) return false;
     if (prev.message.reasoning !== next.message.reasoning) return false;
+    if (prev.message.toolCalls !== next.message.toolCalls) return false;
     if (prev.message.error !== next.message.error) return false;
     if (prev.message.timestamp !== next.message.timestamp) return false;
     if (prev.isStreaming !== next.isStreaming) return false;

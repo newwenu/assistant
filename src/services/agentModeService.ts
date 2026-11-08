@@ -1,11 +1,14 @@
 import { tauriInvoke as invoke } from "./tauriInvoke";
-import type { AgentMode, AgentModeInput } from "../settings/agentMode/types";
+import type {
+  AgentModeDto,
+  AgentModeInputDto,
+} from "../types/protocol.contract";
 
 export const agentModeService = {
-  listModes: (): Promise<AgentMode[]> =>
-    invoke<AgentMode[]>("list_agent_modes").then((r) => r || []),
+  listModes: (): Promise<AgentModeDto[]> =>
+    invoke<AgentModeDto[]>("list_agent_modes").then((r) => r || []),
 
-  saveMode: (mode: AgentModeInput): Promise<void> =>
+  saveMode: (mode: AgentModeInputDto): Promise<void> =>
     invoke("save_agent_mode", { mode }),
 
   deleteMode: (id: string): Promise<void> =>

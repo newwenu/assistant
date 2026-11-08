@@ -2,8 +2,8 @@
   "counts": {
     "pages": 7,
     "categories": 3,
-    "sections": 6,
-    "fields": 31,
+    "sections": 7,
+    "fields": 34,
     "routes": 0,
     "sidebar": 0,
     "confPageMap": 3
@@ -83,6 +83,10 @@
   "sections": [
     {
       "id": "general-main",
+      "pageId": "general"
+    },
+    {
+      "id": "agent-main",
       "pageId": "general"
     },
     {
@@ -267,6 +271,24 @@
       "key": "compactSummaryMaxTokens",
       "group": "app",
       "section": "general-main",
+      "type": "number"
+    },
+    {
+      "key": "workspaceRoot",
+      "group": "app",
+      "section": "agent-main",
+      "type": "string"
+    },
+    {
+      "key": "approvalTimeoutSecs",
+      "group": "app",
+      "section": "agent-main",
+      "type": "number"
+    },
+    {
+      "key": "userQuestionTimeoutSecs",
+      "group": "app",
+      "section": "agent-main",
       "type": "number"
     },
     {

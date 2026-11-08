@@ -1,11 +1,19 @@
 import { tauriInvoke as invoke } from "./tauriInvoke";
 import type {
+  ConversationDetailDto,
+  ToolDescriptorDto,
+} from "../types/protocol.contract";
+import { toChatMessage } from "../chat/core/toolCallView";
+import type {
+  AgentQuestionAnswer,
   Conversation,
   ConversationDetail,
+  ConversationToolConfig,
   Message,
   SendChatMessageArgs,
   SiblingInfo,
   TokenUsageSummary,
+  ToolApprovalDecision,
 } from "../chat/core/chatTypes";
 
 export type { ConversationDetail, TokenUsageSummary };
@@ -28,18 +36,22 @@ export const chatService = {
     limit: number,
     beforeTimestamp: number | null,
   ): Promise<ConversationDetail | null> =>
-    invoke<ConversationDetail | null>("get_conversation", {
+    invoke<ConversationDetailDto | null>("get_conversation", {
       id,
       opts: { mode: "paginated", limit, beforeTimestamp },
-    }).then((r) => r ?? null),
+    }).then((r) =>
+      r ? { ...r, messages: r.messages.map(toChatMessage) } : null,
+    ),
 
   getConversationAllMessages: (
     id: string,
   ): Promise<ConversationDetail | null> =>
-    invoke<ConversationDetail | null>("get_conversation", {
+    invoke<ConversationDetailDto | null>("get_conversation", {
       id,
       opts: { mode: "all" },
-    }).then((r) => r ?? null),
+    }).then((r) =>
+      r ? { ...r, messages: r.messages.map(toChatMessage) } : null,
+    ),
 
   getConversationTokenUsage: (
     conversationId: string,
@@ -60,6 +72,8 @@ export const chatService = {
       titleSource?: string;
       modelId?: string;
       providerId?: string;
+      modeId?: string;
+      toolConfig?: ConversationToolConfig;
     },
   ): Promise<void> => invoke("patch_conversation", { id, patch }),
 
@@ -84,8 +98,28 @@ export const chatService = {
     args: SendChatMessageArgs,
   ): Promise<void> => invoke("send_chat_message", { conversationId, args }),
 
+  sendAgentMessage: (
+    conversationId: string,
+    args: SendChatMessageArgs,
+  ): Promise<void> => invoke("send_agent_message", { conversationId, args }),
+
   cancelChat: (conversationId: string): Promise<void> =>
     invoke("cancel_chat", { conversationId }),
+
+  cancelAgent: (conversationId: string): Promise<void> =>
+    invoke("cancel_agent", { conversationId }),
+
+  /** 审批回填：`approve` / `deny` / `allowSession` / `allowAlways`（I38d §3.3）。 */
+  resolveAgentToolApproval: (args: ToolApprovalDecision): Promise<void> =>
+    invoke("resolve_agent_tool_call", { args }),
+
+  /** 提问回填：`ask_user` 卡片的作答结果（I38c §9）。 */
+  resolveAgentQuestion: (args: AgentQuestionAnswer): Promise<void> =>
+    invoke("resolve_agent_question", { args }),
+
+  /** 工具装配清单：全部 agent 受众工具，按 tier 分组供面板渲染（I38d §4.7）。 */
+  listAvailableTools: (): Promise<ToolDescriptorDto[]> =>
+    invoke<ToolDescriptorDto[]>("list_available_tools").then((r) => r || []),
 
   incrementGeneration: (id: string): Promise<void> =>
     invoke("increment_generation", { id }),

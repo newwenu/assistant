@@ -9,7 +9,12 @@ import type {
   Conversation,
   TokenUsage,
   ContextUsage,
+  AgentToolCall,
 } from "../chat/core/chatTypes";
+import {
+  applyAgentToolCall,
+  cancelPendingToolCalls,
+} from "../chat/core/toolCallView";
 import type { RetryNotification } from "../chat/core/chatTypes";
 import { type ChatError } from "../chat/core/chatErrors";
 import { chatService } from "../services/chatService";
@@ -20,6 +25,10 @@ import {
   resolveReasoningChoice,
   type ReasoningChoice,
 } from "../chat/core/reasoning";
+import {
+  resolveConversationRoute,
+  type ConversationRoute,
+} from "../chat/core/conversationLink";
 import { createLogger } from "@/services/logger";
 import {
   mergeStreamingContent,
@@ -92,6 +101,9 @@ export function createStatePort(
     clearActiveAttemptId: () => {
       useChatStreamStore.getState().clearActiveAttemptId();
     },
+    resumeStream: (attemptId: string, messageId: string | null) => {
+      useChatStreamStore.getState().resumeStream(attemptId, messageId);
+    },
     confirmUserMessage: (userMessageId: string, userMessageContent: string) => {
       const state = get();
       const tempUserMsg = state.messages.find(
@@ -119,6 +131,35 @@ export function createStatePort(
           m.id === messageId
             ? { ...m, reasoning: (m.reasoning || "") + delta }
             : m,
+        ),
+      });
+    },
+    applyToolCall: (messageId: string, call: AgentToolCall) => {
+      const state = get();
+      set({
+        messages: state.messages.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                toolCalls: applyAgentToolCall(
+                  m.toolCalls ?? [],
+                  call,
+                  Date.now(),
+                ),
+              }
+            : m,
+        ),
+      });
+    },
+    settleToolCalls: (messageId: string) => {
+      const state = get();
+      const target = state.messages.find((m) => m.id === messageId);
+      if (!target?.toolCalls?.length) return;
+      const settled = cancelPendingToolCalls(target.toolCalls, Date.now());
+      if (settled === target.toolCalls) return;
+      set({
+        messages: state.messages.map((m) =>
+          m.id === messageId ? { ...m, toolCalls: settled } : m,
         ),
       });
     },
@@ -227,6 +268,20 @@ export function createEnvPort(
   getSelectedProviderId: () => string | null,
   getSelectedModelId: () => string,
 ): ChatEnvPort {
+  /**
+   * 链路判据取自会话自身：`ConversationDto.modeId` → `agent_modes` 行 → `kind`。
+   * 解析逻辑集中在 `resolveConversationRoute`，避免多处口径漂移（I38d §4.8）。
+   * agent 链路的每轮工具配置取「会话持久值 ?? 模式初始值」。
+   */
+  function getConversationRoute(conversationId: string): ConversationRoute {
+    const conv = get().conversations.find((c) => c.id === conversationId);
+    return resolveConversationRoute(
+      conv?.modeId ?? null,
+      useAgentModeStore.getState().modes ?? [],
+      conv?.toolConfig ?? null,
+    );
+  }
+
   return {
     getActiveConversationId: () => get().currentConversationId,
     getIsStreaming: () => useChatStreamStore.getState().isStreaming,
@@ -235,7 +290,7 @@ export function createEnvPort(
     getActiveAttemptId: () => useChatStreamStore.getState().activeAttemptId,
     getMessages: () => get().messages,
     getConversations: () => get().conversations,
-    getSelectedModeId: () => useAgentModeStore.getState().selectedModeId,
+    getConversationRoute,
     getReasoningChoice: () => {
       const { modes, selectedModeId } = useAgentModeStore.getState();
       return resolveReasoningChoice(

@@ -15,6 +15,11 @@ export interface ChatStreamState {
   setReasoningStreaming: (streaming: boolean) => void;
   setActiveAttemptId: (attemptId: string, messageId: string) => void;
   clearActiveAttemptId: () => void;
+  /**
+   * 切回仍在运行的会话：恢复流式视图（C5.2）。
+   * `messageId` 未知时传 `null`，由后续 delta 补全；不覆盖已有内容。
+   */
+  resumeStream: (attemptId: string, messageId: string | null) => void;
   setRetryStatus: (retry: RetryNotification | null) => void;
   resetStreaming: () => void;
 }
@@ -52,6 +57,14 @@ export const useChatStreamStore = create<ChatStreamState>()((set) => {
 
     clearActiveAttemptId: () => {
       set({ activeAttemptId: null, streamingMessageId: null });
+    },
+
+    resumeStream: (attemptId, messageId) => {
+      set((state) => ({
+        isStreaming: true,
+        activeAttemptId: attemptId,
+        streamingMessageId: messageId ?? state.streamingMessageId,
+      }));
     },
 
     setRetryStatus: (retry: RetryNotification | null) => {

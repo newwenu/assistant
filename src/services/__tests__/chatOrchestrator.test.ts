@@ -63,7 +63,9 @@ vi.mock("../chatService", () => ({
     ),
     createConversation: vi.fn(() => Promise.resolve("conv-new")),
     sendChatMessage: vi.fn(() => Promise.resolve()),
+    sendAgentMessage: vi.fn(() => Promise.resolve()),
     cancelChat: vi.fn(() => Promise.resolve()),
+    cancelAgent: vi.fn(() => Promise.resolve()),
   },
 }));
 
@@ -77,10 +79,13 @@ function createMockDeps(): {
     cancelStreaming: vi.fn(),
     setActiveAttemptId: vi.fn(),
     clearActiveAttemptId: vi.fn(),
+    resumeStream: vi.fn(),
     confirmUserMessage: vi.fn(),
     appendDelta: vi.fn(),
     setReasoningStreaming: vi.fn(),
     appendReasoningDelta: vi.fn(),
+    applyToolCall: vi.fn(),
+    settleToolCalls: vi.fn(),
     updateContextUsage: vi.fn(),
     finishStream: vi.fn(),
     errorStream: vi.fn(),
@@ -95,7 +100,11 @@ function createMockDeps(): {
     getActiveAttemptId: vi.fn(() => "conv-1:1"),
     getMessages: vi.fn(() => []),
     getConversations: vi.fn(() => []),
-    getSelectedModeId: vi.fn(() => null),
+    getConversationRoute: vi.fn(() => ({
+      link: "chat" as const,
+      modeId: null,
+      toolConfig: null,
+    })),
     getReasoningChoice: vi.fn<() => ReasoningChoice>(() => "inherit"),
     getSelectedProviderId: vi.fn(() => "provider-1"),
     getSelectedModelId: vi.fn(() => "model-1"),
@@ -154,6 +163,55 @@ describe("chatOrchestrator", () => {
       );
       await orchestrator.send("hello");
       expect(chatService.cancelChat).toHaveBeenCalledWith("conv-prev");
+    });
+  });
+
+  describe("send — link routing (I38d §4.8)", () => {
+    it("agent 会话走 send_agent_message，并下发 mode 派生的工具配置", async () => {
+      const { chatService } = await import("../chatService");
+      const toolConfig = {
+        maxToolTier: "os" as const,
+        approvalLevel: "dangerous_only" as const,
+        enabledTools: ["read", "write"],
+        disabledTools: [],
+      };
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
+        link: "agent",
+        modeId: "mode-custom",
+        toolConfig,
+      });
+      await orchestrator.send("hello");
+      expect(chatService.sendChatMessage).not.toHaveBeenCalled();
+      expect(chatService.sendAgentMessage).toHaveBeenCalledTimes(1);
+      const [, args] = vi.mocked(chatService.sendAgentMessage).mock.calls[0];
+      expect(args.modeId).toBe("mode-custom");
+      expect(args.toolConfig).toEqual(toolConfig);
+    });
+
+    it("chat 会话走 send_chat_message，modeId 取自会话路由", async () => {
+      const { chatService } = await import("../chatService");
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
+        link: "chat",
+        modeId: "builtin-translate",
+        toolConfig: null,
+      });
+      await orchestrator.send("hello");
+      expect(chatService.sendAgentMessage).not.toHaveBeenCalled();
+      const [, args] = vi.mocked(chatService.sendChatMessage).mock.calls[0];
+      expect(args.modeId).toBe("builtin-translate");
+      expect(args.toolConfig).toBeNull();
+    });
+
+    it("agent 会话取消走 cancel_agent", async () => {
+      const { chatService } = await import("../chatService");
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
+        link: "agent",
+        modeId: "mode-custom",
+        toolConfig: null,
+      });
+      await orchestrator.cancel();
+      expect(chatService.cancelChat).not.toHaveBeenCalled();
+      expect(chatService.cancelAgent).toHaveBeenCalledWith("conv-1");
     });
   });
 
@@ -337,36 +395,128 @@ describe("chatOrchestrator", () => {
     });
   });
 
-  describe("ChatPhase state machine", () => {
-    it("idle → sending on send, → idle on finish, → error on error", async () => {
+  describe("ChatPhase — 由 session-state-changed 驱动", () => {
+    it("phase 在 send 期间保持 idle，不再由前端自行推导", async () => {
       expect(orchestrator.getPhase()).toBe("idle");
-      const sendPromise = orchestrator.send("hello");
-      expect(orchestrator.getPhase()).toBe("sending");
-      await sendPromise;
+      await orchestrator.send("hello");
+      expect(orchestrator.getPhase()).toBe("idle");
+    });
 
-      orchestrator.handleDeltaEvent(
-        makeDelta({
-          conversationId: "conv-1",
-          attemptId: "conv-1:1",
-          messageId: "msg-assistant",
-          seq: 1,
-          error: makeProviderError("fail"),
-        }),
-      );
+    it("processing(starting) → sending，idle → idle", () => {
+      orchestrator.onSessionState({
+        conversationId: "conv-1",
+        turnId: "conv-1:1",
+        state: { processing: { turnId: "conv-1:1", phase: "starting" } },
+      });
+      expect(orchestrator.getPhase()).toBe("sending");
+
+      orchestrator.onSessionState({
+        conversationId: "conv-1",
+        turnId: "conv-1:1",
+        state: "idle",
+      });
+      expect(orchestrator.getPhase()).toBe("idle");
+    });
+
+    it("error 态映射为 error", () => {
+      orchestrator.onSessionState({
+        conversationId: "conv-1",
+        turnId: "conv-1:1",
+        state: { error: { message: "boom", recoverable: false } },
+      });
       expect(orchestrator.getPhase()).toBe("error");
     });
 
-    it("transitions to idle on finish", () => {
+    it("后台会话的状态不影响当前会话 phase", () => {
+      orchestrator.onSessionState({
+        conversationId: "conv-other",
+        turnId: "conv-other:1",
+        state: { processing: { turnId: "conv-other:1", phase: "streaming" } },
+      });
+      expect(orchestrator.getPhase()).toBe("idle");
+    });
+  });
+
+  describe("onConversationSwitch — 不取消后台 turn", () => {
+    it("切到空闲会话：phase 归 idle 并清空本地流式视图", () => {
+      vi.mocked(mockDeps.env.getIsStreaming).mockReturnValue(true);
+      orchestrator.onConversationSwitch("conv-2");
+      expect(orchestrator.getPhase()).toBe("idle");
+      expect(mockDeps.state.cancelStreaming).toHaveBeenCalled();
+      expect(mockDeps.state.resumeStream).not.toHaveBeenCalled();
+    });
+
+    it("切到仍在运行的会话：恢复流式视图且 messageId 未知", () => {
+      orchestrator.onSessionState({
+        conversationId: "conv-2",
+        turnId: "conv-2:1",
+        state: { processing: { turnId: "conv-2:1", phase: "streaming" } },
+      });
+      orchestrator.onConversationSwitch("conv-2");
+      expect(orchestrator.getPhase()).toBe("streaming");
+      expect(mockDeps.state.resumeStream).toHaveBeenCalledWith(
+        "conv-2:1",
+        null,
+      );
+    });
+
+    it("切会话不触发任何取消命令", async () => {
+      const { chatService } = await import("../chatService");
+      orchestrator.onConversationSwitch("conv-2");
+      expect(chatService.cancelChat).not.toHaveBeenCalled();
+      expect(chatService.cancelAgent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("handleDeltaEvent — 会话路由", () => {
+    it("非当前会话的增量被丢弃", () => {
       orchestrator.handleDeltaEvent(
         makeDelta({
-          conversationId: "conv-1",
+          conversationId: "conv-other",
           attemptId: "conv-1:1",
-          messageId: "msg-assistant",
+          messageId: "msg-1",
           seq: 1,
-          finishReason: "stop",
+          deltaReasoning: "other",
         }),
       );
-      expect(orchestrator.getPhase()).toBe("idle");
+      expect(mockDeps.state.appendReasoningDelta).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("onTextDelta — 会话路由", () => {
+    it("当前会话的文本增量写入流式缓冲", () => {
+      orchestrator.onTextDelta({
+        conversationId: "conv-1",
+        attemptId: "conv-1:1",
+        messageId: "msg-1",
+        delta: "hi",
+      });
+      expect(mockDeps.state.appendDelta).toHaveBeenCalledWith("hi");
+    });
+
+    it("后台会话的文本增量不污染当前会话", () => {
+      orchestrator.onTextDelta({
+        conversationId: "conv-other",
+        attemptId: "conv-other:1",
+        messageId: "msg-other",
+        delta: "bg",
+      });
+      expect(mockDeps.state.appendDelta).not.toHaveBeenCalled();
+    });
+
+    it("切回运行中的会话后由首个增量补全 messageId", () => {
+      vi.mocked(mockDeps.env.getStreamingMessageId).mockReturnValue(null);
+      orchestrator.onTextDelta({
+        conversationId: "conv-1",
+        attemptId: "conv-1:1",
+        messageId: "msg-new",
+        delta: "hi",
+      });
+      expect(mockDeps.state.setActiveAttemptId).toHaveBeenCalledWith(
+        "conv-1:1",
+        "msg-new",
+      );
+      expect(mockDeps.state.appendDelta).toHaveBeenCalledWith("hi");
     });
   });
 
@@ -412,12 +562,17 @@ describe("chatOrchestrator", () => {
   });
 
   describe("onStreamStart", () => {
-    it("delegates to state.setActiveAttemptId", () => {
-      orchestrator.onStreamStart("conv-1:3", "msg-new");
+    it("当前会话委托 state.setActiveAttemptId，并按会话记录 turnId", () => {
+      orchestrator.onStreamStart("conv-1", "conv-1:3", "msg-new");
       expect(mockDeps.state.setActiveAttemptId).toHaveBeenCalledWith(
         "conv-1:3",
         "msg-new",
       );
+    });
+
+    it("后台会话的 stream-start 不改变当前会话的流式视图", () => {
+      orchestrator.onStreamStart("conv-other", "conv-other:1", "msg-other");
+      expect(mockDeps.state.setActiveAttemptId).not.toHaveBeenCalled();
     });
   });
 

@@ -122,6 +122,26 @@
           "placeholder": "Leave empty to use default template"
         },
         "compact_summary_max_tokens": { "label": "Max summary length" }
+      },
+      "agent_tools": {
+        "title": "Agent Tools",
+        "description": "Workspace and approval behavior for tool execution",
+        "workspace_root": {
+          "label": "Workspace Root",
+          "description": "Relative and default paths in tools resolve against this directory. Leave empty to treat it as unconfigured: path-based tools will fail instead of falling back to the current directory",
+          "placeholder": "Not configured",
+          "pick_title": "Select workspace root"
+        },
+        "approval_timeout_secs": {
+          "label": "Approval Timeout (seconds)",
+          "description": "Longest time to wait for user confirmation; timing out counts as a denial. Leave empty for the default 120 seconds",
+          "placeholder": "Default 120"
+        },
+        "user_question_timeout_secs": {
+          "label": "Question Timeout (seconds)",
+          "description": "Longest time ask_user waits for an answer; timing out counts as unanswered and the turn continues. Use 0 for no limit, leave empty for the default 180 seconds",
+          "placeholder": "Default 180"
+        }
       }
     },
     "appearance": {
@@ -247,10 +267,8 @@
       "empty": "No agent modes",
       "section": { "builtin": "Built-in Modes", "custom": "Custom Modes" },
       "kind": {
-        "default": "Default",
-        "quick": "Quick",
-        "deep": "Deep",
-        "custom": "Custom"
+        "chat": "Chat",
+        "agent": "Agent"
       },
       "field": {
         "name": {
@@ -279,7 +297,51 @@
             "medium": "Medium",
             "high": "High"
           }
+        },
+        "max_tool_tier": {
+          "options": {
+            "sandbox": "Sandbox",
+            "os": "System",
+            "external": "External"
+          }
+        },
+        "approval_level": {
+          "options": {
+            "none": "Auto-run everything",
+            "dangerous_only": "Ask for dangerous actions",
+            "all_os_tools": "Ask for all non-sandbox tools"
+          }
         }
+      },
+      "tool_assembly": {
+        "title": "Tool assembly (read-only)",
+        "summary": "Max tier: {{tier}} · Approval level: {{level}} · {{count}} tools enabled",
+        "hint": "Adjust tool assembly in a conversation (Agent layout tool panel). This only shows the mode's default."
+      },
+      "grants": {
+        "title": "Authorized actions",
+        "description": "These operations are set to \"Always allow\" and no longer prompt. Revoking makes similar operations ask again.",
+        "empty": "No grants yet",
+        "revoke": "Revoke",
+        "revoked": "Grant revoked",
+        "revoke_failed": "Revoke failed: {{error}}",
+        "clear": "Clear all",
+        "clear_confirm": "Clear all grants? Operations set to \"Always allow\" will prompt again.",
+        "cleared": "All grants cleared",
+        "clear_failed": "Clear failed: {{error}}",
+        "load_failed": "Failed to load grants: {{error}}",
+        "scope": {
+          "session": "Session",
+          "global": "Global"
+        },
+        "set_global": "Make global",
+        "set_global_confirm": "This operation will no longer prompt in any conversation. Continue?",
+        "set_session": "Make session-only",
+        "set_session_title": "Make session-only",
+        "set_session_desc": "Choose the conversation this grant applies to; other conversations will prompt again.",
+        "set_session_placeholder": "Select a conversation",
+        "scope_changed": "Grant scope updated",
+        "scope_failed": "Failed to update scope: {{error}}"
       },
       "confirm_delete": {
         "title": "Delete this mode?",
@@ -477,6 +539,14 @@
         "title": "Model Switch Failed",
         "description": "Model switch was unsuccessful, please try again later"
       },
+      "updateModeFailed": {
+        "title": "Mode Switch Failed",
+        "description": "Mode switch was unsuccessful, please try again later"
+      },
+      "updateToolConfigFailed": {
+        "title": "Save Tool Config Failed",
+        "description": "The tool configuration was not saved; it has been rolled back"
+      },
       "deleteMessageFailed": {
         "title": "Delete Message Failed",
         "description": "Message deletion was unsuccessful, please try again later"
@@ -554,12 +624,103 @@
     },
     "mode": {
       "placeholder": "Mode",
-      "select_placeholder": "Select Mode"
+      "select_placeholder": "Select Mode",
+      "group_chat": "Chat modes",
+      "group_agent": "Agent modes",
+      "switch_disabled_tooltip": "A reply is being generated; switching modes is unavailable"
     },
     "reasoning": {
       "expand": "Show thinking",
       "collapse": "Hide thinking",
       "thinking": "Thinking…"
+    },
+    "tool": {
+      "status": {
+        "running": "Running",
+        "success": "Done",
+        "error": "Failed",
+        "awaiting_user": "Awaiting approval",
+        "cancelled": "Cancelled"
+      },
+      "result_persisted": "Output saved to",
+      "result_size": "{{lines}} lines · {{size}}",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "no_result": "No output",
+      "approval": {
+        "title": "Approval required",
+        "remaining": "{{time}} left",
+        "expired": "Timed out",
+        "preview": "Expected",
+        "resources": "Scope",
+        "impact": "Impact",
+        "detection": "Detected",
+        "reasons": "Why",
+        "read_only": "A read-only operation requested confirmation (configuration issue)",
+        "destructive": "Irreversible · destructive",
+        "open_world": "Accesses outside the workspace",
+        "estimated": "Estimate based on arguments; may change at execution",
+        "approve": "Approve",
+        "deny": "Deny",
+        "session_allow": "Allow in this conversation",
+        "always": "Always allow",
+        "always_confirm": "This permanently allows this kind of operation across all conversations. You can revoke it under Settings → Authorized actions. Continue?",
+        "always_hint": "Same kind of operation will no longer prompt; revoke under Settings → Authorized actions",
+        "tier": {
+          "sandbox": "Sandbox",
+          "os": "OS",
+          "external": "External"
+        },
+        "level": {
+          "none": "Run everything automatically",
+          "dangerous_only": "Only dangerous operations need confirmation",
+          "all_os_tools": "All non-sandbox tools need confirmation"
+        },
+        "reason": {
+          "default_policy": "Default policy: {{rule}}",
+          "approval_level": "Approval level: {{level}}",
+          "project_rule": "Project rule: {{action}} {{resource}}",
+          "tier_ceiling": "Tier ceiling: {{tier}}",
+          "advisor": "AI advisor: {{rationale}}"
+        }
+      },
+      "question": {
+        "title": "Waiting for your input",
+        "remaining": "{{time}} left",
+        "expired": "Timed out",
+        "other": "Other",
+        "other_placeholder": "Type your answer…",
+        "submit": "Submit",
+        "submitting": "Submitting…",
+        "hint": "Answer every question to submit",
+        "multi_hint": "Multiple choice"
+      },
+      "toolbar": {
+        "summary": "{{enabled}}/{{total}} tools · up to {{tier}}",
+        "hint": "Conversation tool assembly"
+      },
+      "notice": {
+        "enabled": "Enabled {{names}}",
+        "disabled": "Disabled {{names}}",
+        "tier": "Tier ceiling set to {{tier}}",
+        "level": "Approval level set to {{level}}",
+        "separator": "; "
+      },
+      "panel": {
+        "title": "Tool assembly",
+        "enabled_count": "{{count}} enabled",
+        "done": "Done",
+        "tier_label": "Tier ceiling",
+        "level_label": "Approval level",
+        "set_default": "Set as mode default",
+        "set_default_hint": "Writes the current configuration back to the mode's initial value for new conversations",
+        "out_of_tier": "Above ceiling, ignored",
+        "group_empty": "No tools in this tier",
+        "set_default_done_title": "Default updated",
+        "set_default_done_desc": "New conversations with this mode start from the current tool configuration.",
+        "set_default_failed_title": "Failed to set default",
+        "set_default_failed_desc": "The mode's initial tool configuration was not updated."
+      }
     },
     "reasoning_depth": {
       "label": "Thinking depth",

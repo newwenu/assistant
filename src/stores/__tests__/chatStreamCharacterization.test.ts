@@ -56,7 +56,11 @@ vi.mock("../notifyStore", () => ({
 
 vi.mock("../agentModeStore", () => ({
   useAgentModeStore: {
-    getState: () => ({ selectedModeId: null }),
+    getState: () => ({
+      selectedModeId: null,
+      modes: [],
+      selectMode: vi.fn(),
+    }),
     subscribe: () => () => {},
   },
 }));

@@ -1,5 +1,17 @@
 import { type ChatError } from "./chatErrors";
 import type {
+  AgentQuestionAnswerDto,
+  AgentQuestionAnswerItemDto,
+  AgentQuestionDto,
+  AgentQuestionOptionDto,
+  AgentQuestionRequestDto,
+  AgentToolCallDto,
+  AgentToolCallPayloadDto,
+  ApprovalContextDto,
+  ApprovalExtensionDto,
+  ApprovalExtensionSeverityDto,
+  ApprovalPreviewDto,
+  ApprovalReasonDto,
   ChatDeltaPayloadDto,
   ChatMessagesChangedPayloadDto,
   ChatRegeneratePayloadDto,
@@ -10,9 +22,11 @@ import type {
   ConversationListChangeKindDto,
   ConversationListChangedPayloadDto,
   ConversationTerminatedPayloadDto,
+  ConversationToolConfigDto,
   ConversationUnlockedPayloadDto,
   MessageChangeKindDto,
   MessageDto,
+  MessageToolCallDto,
   RetryNotificationDto,
   SendChatMessageArgsDto,
   SessionStateChangedPayloadDto,
@@ -23,11 +37,44 @@ import type {
   TokenUsageDto,
   TokenUsageOccupancyDto,
   TokenUsageSummaryDto,
+  ToolApprovalRequestDto,
+  ToolApprovalDecisionDto,
+  ToolErrorKindDto,
   TurnPhaseDto,
 } from "../../types/protocol.contract";
 
-/** 线格式 Message；`error` 是前端本地状态，不属于后端 DTO。 */
-export type Message = MessageDto & { error?: ChatError | null };
+/** 工具调用卡片状态（I38d §3.1）。历史只允许 `success` / `error`。 */
+export type ToolCallStatus =
+  "running" | "success" | "error" | "awaiting_user" | "cancelled";
+
+/**
+ * 工具调用的前端视图，挂在消息上随消息一起渲染。
+ * `arguments` 在 `awaitingApproval` 态直接取 `approval.arguments`（后端已解析），
+ * `running` 态由 `argsText` 增量累积后解析出的最近一次可解析快照。
+ */
+export interface ToolCallView {
+  callId: string;
+  name: string;
+  status: ToolCallStatus;
+  arguments?: Record<string, unknown>;
+  /** `argsDelta` 累积的原始文本；解析失败不影响预览 */
+  argsText?: string | null;
+  resultText?: string | null;
+  startedAt?: number | null;
+  finishedAt?: number | null;
+  approval?: ToolApprovalRequestDto | null;
+  question?: AgentQuestionRequestDto | null;
+  errorKind?: ToolErrorKindDto | null;
+  confirmationWaitMs?: number | null;
+}
+
+/** 线格式 Message；wire 的 `toolCalls` 由 `toChatMessage` 转为前端视图，`error` 为前端本地状态。 */
+export type Message = Omit<MessageDto, "toolCalls"> & {
+  error?: ChatError | null;
+  toolCalls?: ToolCallView[];
+};
+
+export type MessageToolCall = MessageToolCallDto;
 
 export type Conversation = ConversationDto;
 
@@ -81,6 +128,22 @@ export type TurnPhase = TurnPhaseDto;
 export type SessionState = SessionStateDto;
 export type SessionStateChangedPayload = SessionStateChangedPayloadDto;
 
+export type AgentToolCall = AgentToolCallDto;
+export type AgentToolCallPayload = AgentToolCallPayloadDto;
+
+export type ToolApprovalRequest = ToolApprovalRequestDto;
+export type ToolApprovalDecision = ToolApprovalDecisionDto;
+export type AgentQuestionRequest = AgentQuestionRequestDto;
+export type AgentQuestion = AgentQuestionDto;
+export type AgentQuestionOption = AgentQuestionOptionDto;
+export type AgentQuestionAnswer = AgentQuestionAnswerDto;
+export type AgentQuestionAnswerItem = AgentQuestionAnswerItemDto;
+export type ApprovalContext = ApprovalContextDto;
+export type ApprovalPreview = ApprovalPreviewDto;
+export type ApprovalExtension = ApprovalExtensionDto;
+export type ApprovalExtensionSeverity = ApprovalExtensionSeverityDto;
+export type ApprovalReason = ApprovalReasonDto;
+
 export enum ChatEvent {
   StreamStart = "chat-stream-start",
   UserMessageConfirmed = "chat-user-message-confirmed",
@@ -90,6 +153,7 @@ export enum ChatEvent {
   ConversationTerminated = "conversation-terminated",
   ConversationUnlocked = "conversation-unlocked",
   SessionStateChanged = "session-state-changed",
+  AgentToolCall = "agent-tool-call",
 }
 
 export type MessageChangeKind = MessageChangeKindDto;
@@ -107,3 +171,6 @@ export type ConversationListChangeKind = ConversationListChangeKindDto;
 export type ConversationListChangedPayload = ConversationListChangedPayloadDto;
 
 export type SendChatMessageArgs = SendChatMessageArgsDto;
+
+/** 随发送请求下发的会话工具配置；仅 agent 链路存在（I38d §4.8）。 */
+export type ConversationToolConfig = ConversationToolConfigDto;

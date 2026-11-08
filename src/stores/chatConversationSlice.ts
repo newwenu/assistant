@@ -1,4 +1,8 @@
-import type { Conversation, ContextUsage } from "../chat/core/chatTypes";
+import type {
+  Conversation,
+  ContextUsage,
+  ConversationToolConfig,
+} from "../chat/core/chatTypes";
 import type { Message, TruncationStrategy } from "../chat/core/chatTypes";
 import { chatService } from "../services/chatService";
 import { providerService } from "../services/providerService";
@@ -7,6 +11,7 @@ import { notifyError } from "./notifyStore";
 import { MESSAGES_PAGE_SIZE } from "../config/constants";
 import type { PersistQueue } from "../utils/persistQueue";
 import { useChatStreamStore } from "./chatStreamStore";
+import { useAgentModeStore } from "./agentModeStore";
 import type { ChatOrchestrator } from "../services/chatOrchestrator";
 import {
   fetchTokenUsage,
@@ -40,7 +45,11 @@ export interface ChatConversationSlice {
   branchOperationSeq: number;
 
   loadConversations: (silent?: boolean) => Promise<void>;
-  createConversation: (providerId: string, modelId: string) => Promise<string>;
+  createConversation: (
+    providerId: string,
+    modelId: string,
+    modeId?: string | null,
+  ) => Promise<string>;
   ensureCurrentConversation: () => Promise<void>;
   switchConversation: (id: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
@@ -50,6 +59,11 @@ export interface ChatConversationSlice {
     titleSource?: string,
   ) => Promise<void>;
   updateModel: (id: string, modelId: string) => Promise<void>;
+  setConversationMode: (id: string, modeId: string) => Promise<boolean>;
+  setConversationToolConfig: (
+    id: string,
+    toolConfig: ConversationToolConfig,
+  ) => Promise<void>;
   togglePin: (id: string) => Promise<void>;
   duplicateConversation: (id: string) => Promise<void>;
   batchDelete: (ids: string[]) => Promise<void>;
@@ -102,6 +116,7 @@ export function createConversationSlice(
         const id = await chatService.createConversation(
           p.id,
           p.defaultModel || "",
+          "builtin-default",
         );
         await get().loadConversations();
         await get().switchConversation(id);
@@ -110,9 +125,17 @@ export function createConversationSlice(
       }
     },
 
-    createConversation: async (providerId: string, modelId: string) => {
+    createConversation: async (
+      providerId,
+      modelId,
+      modeId = "builtin-default",
+    ) => {
       try {
-        const id = await chatService.createConversation(providerId, modelId);
+        const id = await chatService.createConversation(
+          providerId,
+          modelId,
+          modeId,
+        );
         await get().loadConversations();
         await get().switchConversation(id);
         return id;
@@ -123,21 +146,16 @@ export function createConversationSlice(
     },
 
     switchConversation: async (id: string) => {
-      if (useChatStreamStore.getState().isStreaming) {
-        const orchestrator = getOrchestrator();
-        if (orchestrator) {
-          await orchestrator.ensureIdle();
-        } else {
-          const prevConvId = get().currentConversationId;
-          if (prevConvId) {
-            await chatService
-              .cancelChat(prevConvId)
-              .catch((e) =>
-                log.warn("cancelChat failed in switchConversation", e),
-              );
-          }
-          useChatStreamStore.getState().resetStreaming();
-        }
+      /**
+       * 切会话**不取消**后台 turn（C5.2 / A4）：后台轮次由后端继续推进，
+       * 这里只把本地流式视图换成目标会话的状态；目标会话仍在运行时由
+       * `session-state-changed` 驱动恢复（`onConversationSwitch`）。
+       */
+      const orchestrator = getOrchestrator();
+      if (orchestrator) {
+        orchestrator.onConversationSwitch(id);
+      } else {
+        useChatStreamStore.getState().resetStreaming();
       }
       try {
         const detail = await chatService.getConversationPaginated(
@@ -161,6 +179,9 @@ export function createConversationSlice(
             isFull: detail.conversation?.isFull ?? false,
             reasoningChoice: DEFAULT_REASONING_CHOICE,
           });
+          useAgentModeStore
+            .getState()
+            .selectMode(detail.conversation?.modeId ?? "builtin-default");
           fetchTokenUsage(id, fetchTokenUsageDeps);
         }
       } catch (e) {
@@ -221,6 +242,54 @@ export function createConversationSlice(
         notifyError(
           "chat.errors.updateModelFailed.title",
           "chat.errors.updateModelFailed.description",
+        );
+      }
+    },
+
+    setConversationMode: async (id: string, modeId: string) => {
+      try {
+        await persistQueue.enqueue(async () => {
+          await chatService.patchConversation(id, { modeId });
+        });
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === id ? { ...c, modeId } : c,
+          ),
+        }));
+        return true;
+      } catch (e) {
+        log.error("setConversationMode failed", e);
+        notifyError(
+          "chat.errors.updateModeFailed.title",
+          "chat.errors.updateModeFailed.description",
+          undefined,
+          typeof e === "string" && e.trim() ? e : undefined,
+        );
+        return false;
+      }
+    },
+
+    setConversationToolConfig: async (id, toolConfig) => {
+      const previous = get().conversations.find((c) => c.id === id)?.toolConfig;
+      set((state) => ({
+        conversations: state.conversations.map((c) =>
+          c.id === id ? { ...c, toolConfig } : c,
+        ),
+      }));
+      try {
+        await persistQueue.enqueue(async () => {
+          await chatService.patchConversation(id, { toolConfig });
+        });
+      } catch (e) {
+        log.error("setConversationToolConfig failed", e);
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === id ? { ...c, toolConfig: previous ?? null } : c,
+          ),
+        }));
+        notifyError(
+          "chat.errors.updateToolConfigFailed.title",
+          "chat.errors.updateToolConfigFailed.description",
         );
       }
     },

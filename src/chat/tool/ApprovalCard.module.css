@@ -1,0 +1,146 @@
+.root {
+  border: 1px solid var(--color-warning, #faad14);
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  min-width: 0;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.timer {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.tier {
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.tierSandbox {
+  color: var(--color-text-tertiary);
+  background: var(--color-border-secondary);
+}
+
+.tierOs {
+  color: var(--color-warning, #faad14);
+  background: var(--color-warning-bg);
+}
+
+.tierExternal {
+  color: var(--color-error, #ff4d4f);
+  background: var(--color-error-bg);
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.label {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.value {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.intent {
+  display: flex;
+  gap: 6px;
+  font-family: var(--font-mono);
+  min-width: 0;
+}
+
+.intentAction {
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.readOnly {
+  color: var(--color-warning, #faad14);
+}
+
+.destructive {
+  color: var(--color-error, #ff4d4f);
+}
+
+.openWorld {
+  color: var(--color-warning, #faad14);
+}
+
+.extension {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.extensionLabel {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+.severityDanger {
+  color: var(--color-error, #ff4d4f);
+}
+
+.severityCaution {
+  color: var(--color-warning, #faad14);
+}
+
+.severityInfo {
+  color: var(--color-text-secondary);
+}
+
+.reason {
+  color: var(--color-text-secondary);
+}
+
+.note {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.error {
+  color: var(--color-error, #ff4d4f);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.alwaysHint {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}

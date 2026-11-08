@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useCallback } from "react";
 import { Input } from "antd";
 import { useTranslation } from "react-i18next";
 import {
@@ -20,6 +20,9 @@ import {
 } from "../core/contentBlockUtils";
 
 interface MessageInputProps {
+  /** 受控草稿：由 `ConversationView` 按 `conversationId` 持有，布局替换不丢草稿。 */
+  value: string;
+  onValueChange: (value: string) => void;
   onSend: (content: string) => void;
   onCancel: () => void;
   onPaste: (e: React.ClipboardEvent) => void;
@@ -29,6 +32,8 @@ interface MessageInputProps {
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
+  value,
+  onValueChange,
   onSend,
   onCancel,
   onPaste,
@@ -36,8 +41,6 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   disabled,
   isFull = false,
 }) => {
-  const [value, setValue] = useState("");
-
   const mascotFace = useMascotStore((s) => s.face);
   const mascotConf = useConfGroup("mascot");
   const attachments = useAttachmentStore((s) => s.attachments);
@@ -53,9 +56,17 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     const blocks = await buildContentBlocksAsync(value, attachments);
     const content = serializeContent(blocks);
     onSend(content);
-    setValue("");
+    onValueChange("");
     clearAttachments();
-  }, [value, attachments, disabled, isStreaming, onSend, clearAttachments]);
+  }, [
+    value,
+    attachments,
+    disabled,
+    isStreaming,
+    onSend,
+    onValueChange,
+    clearAttachments,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -85,7 +96,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       <Input.TextArea
         value={value}
         onChange={(e) => {
-          setValue(e.target.value);
+          onValueChange(e.target.value);
           useMascotStore.getState().notifyListening();
         }}
         onKeyDown={handleKeyDown}

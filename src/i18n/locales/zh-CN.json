@@ -120,6 +120,26 @@
           "placeholder": "留空使用默认模板"
         },
         "compact_summary_max_tokens": { "label": "摘要最大长度" }
+      },
+      "agent_tools": {
+        "title": "Agent 工具",
+        "description": "工具执行的工作区与审批等待行为",
+        "workspace_root": {
+          "label": "工作区根目录",
+          "description": "工具的相对路径与默认路径都以此为基准；留空则视为未配置，相对路径类工具将直接报错，不会退回当前目录",
+          "placeholder": "未配置",
+          "pick_title": "选择工作区根目录"
+        },
+        "approval_timeout_secs": {
+          "label": "审批等待上限（秒）",
+          "description": "等待用户确认的最长时间，超时按拒绝处理；留空使用默认 120 秒",
+          "placeholder": "默认 120"
+        },
+        "user_question_timeout_secs": {
+          "label": "提问等待上限（秒）",
+          "description": "ask_user 等待用户作答的最长时间，超时视为未回答并继续；填 0 表示不限时，留空使用默认 180 秒",
+          "placeholder": "默认 180"
+        }
       }
     },
     "appearance": {
@@ -238,10 +258,8 @@
       "empty": "暂无 Agent 模式",
       "section": { "builtin": "内置模式", "custom": "自定义模式" },
       "kind": {
-        "default": "默认",
-        "quick": "快速",
-        "deep": "深度",
-        "custom": "自定义"
+        "chat": "对话",
+        "agent": "Agent"
       },
       "field": {
         "name": {
@@ -267,7 +285,51 @@
             "medium": "中",
             "high": "高"
           }
+        },
+        "max_tool_tier": {
+          "options": {
+            "sandbox": "沙箱",
+            "os": "系统",
+            "external": "外部"
+          }
+        },
+        "approval_level": {
+          "options": {
+            "none": "全部自动执行",
+            "dangerous_only": "仅危险操作需确认",
+            "all_os_tools": "所有非沙箱工具需确认"
+          }
         }
+      },
+      "tool_assembly": {
+        "title": "工具装配（只读）",
+        "summary": "层级上限：{{tier}} · 审批级别：{{level}} · 已启用 {{count}} 个工具",
+        "hint": "工具装配在对话中调整（Agent 布局的工具面板），此处仅显示该模式的默认值。"
+      },
+      "grants": {
+        "title": "已授权操作",
+        "description": "这些操作被设为「始终允许」，调用时不再询问。撤销后同类操作会重新确认。",
+        "empty": "暂无授权",
+        "revoke": "撤销",
+        "revoked": "已撤销该授权",
+        "revoke_failed": "撤销失败: {{error}}",
+        "clear": "全部清除",
+        "clear_confirm": "清除全部授权？清除后所有「始终允许」的操作会重新询问。",
+        "cleared": "已清除全部授权",
+        "clear_failed": "清除失败: {{error}}",
+        "load_failed": "加载授权列表失败: {{error}}",
+        "scope": {
+          "session": "会话级",
+          "global": "全局"
+        },
+        "set_global": "设为全局",
+        "set_global_confirm": "该操作将在所有会话中不再询问，确认？",
+        "set_session": "改为会话级",
+        "set_session_title": "改为会话级",
+        "set_session_desc": "选择该授权生效的会话，其余会话将重新询问。",
+        "set_session_placeholder": "选择会话",
+        "scope_changed": "已更新授权作用域",
+        "scope_failed": "更新作用域失败: {{error}}"
       },
       "confirm_delete": {
         "title": "确认删除此模式？",
@@ -462,6 +524,14 @@
         "title": "切换模型失败",
         "description": "模型切换未成功，请稍后重试"
       },
+      "updateModeFailed": {
+        "title": "切换模式失败",
+        "description": "模式切换未成功，请稍后重试"
+      },
+      "updateToolConfigFailed": {
+        "title": "保存工具配置失败",
+        "description": "工具配置未成功保存，已回滚到修改前的值"
+      },
       "deleteMessageFailed": {
         "title": "删除消息失败",
         "description": "消息删除未成功，请稍后重试"
@@ -539,12 +609,103 @@
     },
     "mode": {
       "placeholder": "模式",
-      "select_placeholder": "选择模式"
+      "select_placeholder": "选择模式",
+      "group_chat": "对话模式",
+      "group_agent": "Agent 模式",
+      "switch_disabled_tooltip": "正在生成回复，暂不可切换模式"
     },
     "reasoning": {
       "expand": "展开思考",
       "collapse": "收起思考",
       "thinking": "思考中…"
+    },
+    "tool": {
+      "status": {
+        "running": "执行中",
+        "success": "已完成",
+        "error": "失败",
+        "awaiting_user": "等待确认",
+        "cancelled": "已取消"
+      },
+      "result_persisted": "结果已落盘",
+      "result_size": "{{lines}} 行 · {{size}}",
+      "expand": "展开",
+      "collapse": "收起",
+      "no_result": "无输出",
+      "approval": {
+        "title": "需要你确认",
+        "remaining": "剩余 {{time}}",
+        "expired": "已超时",
+        "preview": "预计",
+        "resources": "范围",
+        "impact": "影响",
+        "detection": "检测",
+        "reasons": "原因",
+        "read_only": "只读操作被要求确认（配置异常）",
+        "destructive": "不可逆 · 破坏性",
+        "open_world": "会访问工作区外部",
+        "estimated": "预估基于参数，执行前可能变化",
+        "approve": "允许",
+        "deny": "拒绝",
+        "session_allow": "本会话允许",
+        "always": "始终允许",
+        "always_confirm": "将对该类操作永久放行（所有会话），可在设置页「已授权操作」撤销。确认继续？",
+        "always_hint": "同类操作以后不再询问，可在设置页「已授权操作」撤销",
+        "tier": {
+          "sandbox": "沙箱",
+          "os": "系统",
+          "external": "外部"
+        },
+        "level": {
+          "none": "全部自动执行",
+          "dangerous_only": "仅危险操作需确认",
+          "all_os_tools": "所有非沙箱工具需确认"
+        },
+        "reason": {
+          "default_policy": "默认策略：{{rule}}",
+          "approval_level": "审批级别：{{level}}",
+          "project_rule": "项目规则：{{action}} {{resource}}",
+          "tier_ceiling": "层级上限：{{tier}}",
+          "advisor": "AI 顾问：{{rationale}}"
+        }
+      },
+      "question": {
+        "title": "需要你的选择",
+        "remaining": "剩余 {{time}}",
+        "expired": "已超时",
+        "other": "其他",
+        "other_placeholder": "输入你的答案…",
+        "submit": "提交",
+        "submitting": "提交中…",
+        "hint": "全部作答后才能提交",
+        "multi_hint": "可多选"
+      },
+      "toolbar": {
+        "summary": "工具 {{enabled}}/{{total}} · 上限 {{tier}}",
+        "hint": "会话工具装配"
+      },
+      "notice": {
+        "enabled": "已启用 {{names}}",
+        "disabled": "已停用 {{names}}",
+        "tier": "层级上限调整为 {{tier}}",
+        "level": "审批级别调整为 {{level}}",
+        "separator": "；"
+      },
+      "panel": {
+        "title": "工具装配",
+        "enabled_count": "已启用 {{count}} 个",
+        "done": "完成",
+        "tier_label": "层级上限",
+        "level_label": "审批级别",
+        "set_default": "设为该模式默认",
+        "set_default_hint": "把当前配置写回模式的初始值，仅影响之后新建的会话",
+        "out_of_tier": "超出上限，将被忽略",
+        "group_empty": "该层级暂无工具",
+        "set_default_done_title": "默认值已更新",
+        "set_default_done_desc": "使用该模式新建的会话将从当前工具配置开始。",
+        "set_default_failed_title": "设置默认失败",
+        "set_default_failed_desc": "模式的初始工具配置未更新。"
+      }
     },
     "reasoning_depth": {
       "label": "思考深度",

@@ -3,8 +3,9 @@ import { Button, Typography, Drawer, Form, Tag, Space, App } from "antd";
 import { EditOutlined, DeleteOutlined, UndoOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
-import { useAgentModeStore } from "@/stores/agentModeStore";
-import type { AgentMode } from "@/settings/agentMode/types";
+import { useAgentModeStore, type AgentMode } from "@/stores/agentModeStore";
+import type { ConversationToolConfig } from "@/chat/core/chatTypes";
+import { DEFAULT_TOOL_CONFIG } from "@/chat/core/toolConfig";
 import type { FieldSchema } from "../core/types/fieldSchema";
 import { SettingField } from "../shared/renderers/SettingField";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
@@ -20,6 +21,7 @@ import {
 } from "../core/agentKind/agentModeRegistry";
 import "../core/agentKind/agentModeDefinitions";
 import { useSettingMessage } from "../shared/useSettingMessage";
+import { PermissionGrantsSection } from "../shared/sections/PermissionGrantsSection";
 import { REASONING_EFFORTS, type ReasoningEffort } from "@/chat/core/reasoning";
 
 interface ModeFormData {
@@ -37,7 +39,7 @@ interface ModeFormData {
 const defaultFormData: ModeFormData = {
   name: "",
   description: "",
-  kind: "custom",
+  kind: "chat",
   prompt: "",
   model: null,
   temperature: null,
@@ -176,8 +178,6 @@ export const AgentModeSettings: React.FC = () => {
       )
     : customModes;
 
-  const isBuiltinEditing = !!editingMode?.isBuiltin;
-
   const handleAdd = () => {
     setEditingMode(null);
     form.resetFields();
@@ -190,7 +190,7 @@ export const AgentModeSettings: React.FC = () => {
     form.setFieldsValue({
       name: mode.name,
       description: mode.description,
-      kind: mode.kind,
+      kind: mode.kind === "agent" ? "agent" : "chat",
       prompt: mode.prompt,
       model: mode.model,
       temperature: mode.temperature,
@@ -235,14 +235,17 @@ export const AgentModeSettings: React.FC = () => {
 
   const handleSave = async () => {
     const values = await form.validateFields();
-    const kind = (values.kind || "custom") as AgentMode["kind"];
+    const kind = (values.kind || "chat") as AgentMode["kind"];
+    const toolConfig: ConversationToolConfig = editingMode
+      ? editingMode.toolConfig
+      : DEFAULT_TOOL_CONFIG;
     try {
       if (editingMode) {
         await store.saveMode({
           ...editingMode,
           ...values,
           kind,
-          tools: editingMode.tools,
+          toolConfig,
           presentationRank: editingMode.presentationRank,
           isBuiltin: editingMode.isBuiltin,
         });
@@ -250,7 +253,7 @@ export const AgentModeSettings: React.FC = () => {
         await store.saveMode({
           ...values,
           kind,
-          tools: [],
+          toolConfig,
           presentationRank: 99,
           isBuiltin: false,
         });
@@ -279,9 +282,14 @@ export const AgentModeSettings: React.FC = () => {
   };
 
   const isFieldDisabled = (schema: FieldSchema): boolean => {
-    if (!isBuiltinEditing) return false;
-    return schema.key === "name" || schema.key === "kind";
+    if (!editingMode) return false;
+    if (schema.key === "kind") return true;
+    return editingMode.isBuiltin && schema.key === "name";
   };
+
+  const summaryToolConfig = editingMode?.toolConfig ?? DEFAULT_TOOL_CONFIG;
+  const formKind = (formValues?.kind as string | undefined) ?? "chat";
+  const showToolSummary = formKind === "agent";
 
   const renderModeRow = (mode: AgentMode) => (
     <div key={mode.id} className="entity-list-row">
@@ -361,6 +369,7 @@ export const AgentModeSettings: React.FC = () => {
           sections={sections}
           emptyDescription={t("settings.agent_mode.empty")}
         />
+        <PermissionGrantsSection />
         <Drawer
           title={
             editingMode
@@ -427,6 +436,46 @@ export const AgentModeSettings: React.FC = () => {
               </Form.Item>
             ))}
           </Form>
+          {showToolSummary && (
+            <div
+              style={{
+                marginTop: 16,
+                padding: "8px 12px",
+                border: "1px solid var(--color-border-secondary)",
+                borderRadius: 8,
+              }}
+            >
+              <Typography.Text strong style={{ fontSize: 13 }}>
+                {t("settings.agent_mode.tool_assembly.title")}
+              </Typography.Text>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 12,
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                {t("settings.agent_mode.tool_assembly.summary", {
+                  tier: translateKey(
+                    `settings.agent_mode.field.max_tool_tier.options.${summaryToolConfig.maxToolTier}`,
+                  ),
+                  level: translateKey(
+                    `settings.agent_mode.field.approval_level.options.${summaryToolConfig.approvalLevel}`,
+                  ),
+                  count: summaryToolConfig.enabledTools.length,
+                })}
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 12,
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
+                {t("settings.agent_mode.tool_assembly.hint")}
+              </div>
+            </div>
+          )}
         </Drawer>
       </SettingsPageShell>
     </>

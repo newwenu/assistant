@@ -1,10 +1,35 @@
 import { create } from "zustand";
 import { agentModeService } from "../services/agentModeService";
 import { createLogger } from "@/services/logger";
-export type { AgentMode, AgentModeInput } from "@/settings/agentMode/types";
-export { toModeInput } from "@/settings/agentMode/types";
-import type { AgentMode } from "@/settings/agentMode/types";
-import { toModeInput } from "@/settings/agentMode/types";
+import type {
+  AgentModeDto,
+  AgentModeInputDto,
+} from "@/types/protocol.contract";
+import { DEFAULT_TOOL_CONFIG } from "@/chat/core/toolConfig";
+
+export type AgentMode = AgentModeDto;
+export type AgentModeInput = AgentModeInputDto;
+
+export function toModeInput(
+  mode: Partial<AgentMode> & { id?: string },
+): AgentModeInput {
+  return {
+    id: mode.id || "",
+    name: mode.name || "",
+    description: mode.description || "",
+    kind: mode.kind || "chat",
+    prompt: mode.prompt || "",
+    model: mode.model ?? null,
+    temperature: mode.temperature ?? null,
+    maxTokens: mode.maxTokens ?? null,
+    reasoningEnabled: mode.reasoningEnabled ?? null,
+    reasoningEffort: mode.reasoningEffort ?? null,
+    presentationRank: mode.presentationRank ?? 99,
+    isBuiltin: mode.isBuiltin ?? false,
+    createdAt: mode.createdAt ?? Date.now(),
+    toolConfig: mode.toolConfig ?? DEFAULT_TOOL_CONFIG,
+  };
+}
 
 interface AgentModeState {
   modes: AgentMode[];

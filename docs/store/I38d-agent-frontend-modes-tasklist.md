@@ -159,11 +159,24 @@
 
 实现：`src-tauri/crates/assistant-tools/src/policy.rs`、`src-tauri/src/adapters/`、项目级 `.assistant/permissions.json`
 
-- [ ] C7.1 `policy_from_agent_mode`：`none` 插入 `("*","*",Allow)`；`dangerous_only` 保持默认；`all_os_tools` 追加 `("read","*",Ask)`
-- [ ] C7.2 tier 约束层：`sandbox` 拒绝 `tier:os` / `tier:external`；`os` 拒绝 `tier:external`；`external` 无约束
-- [ ] C7.3 单测：三档审批级别的规则差异（A10）
-- [ ] C7.4 单测：tier 规则拒绝超层级工具（A10）
-- [ ] C7.5 项目级 `.assistant/permissions.json` 加载与合并顺序
+- [x] C7.1 `policy_from_agent_mode`：`none` 改写基座规则为 `("*","*",Allow)`；`dangerous_only` 保持默认；`all_os_tools` 在基础规则内追加 `("read","*",Ask)`
+  - 单层内为 last-match-wins，`none` 必须**改写**首条基座而非追加（追加到末尾会连硬保护 Deny 一起覆盖）
+  - `all_os_tools` 的宽泛 `read` 规则必须排在硬保护规则之前，否则「读敏感路径」的 Deny 会被降级成 `Ask`
+  - `default_global_rules()` 拆为 `base_rules()`（可被审批级别改写）+ `hard_deny_rules()`（恒 Deny），拼接结果与原 7 条规则同序
+- [x] C7.2 tier 约束层：`sandbox` 拒绝 `tier:os` / `tier:external`；`os` 拒绝 `tier:external`；`external` 无约束
+  - `ResolvedPermissionPolicy::evaluate_tier_ceiling()` **只看约束层**：主规则集的 `("*","*")` 会匹配任意资源串，参与判定会把「默认需审批」误判为层级拒绝
+  - `Gateway::evaluate` 在 intent 判定之前先查层级上限，越界直接 `Denied` 并写审计（A7 的第二道闸）
+- [x] C7.3 单测：三档审批级别的规则差异（A10）
+  - `policy.rs` 内 `mod tests`：`none_level_allows_non_protected_actions` / `dangerous_only_keeps_default_reads_allowed` / `all_os_tools_asks_even_for_reads` / `approval_level_rules_are_explained_as_approval_level`
+  - `RuleOrigin::ApprovalLevel` 使审批卡片的 `reason` 输出 `approvalLevel` 而非投影成 `projectRule`
+- [x] C7.4 单测：tier 规则拒绝超层级工具（A10）
+  - `sandbox_ceiling_denies_os_and_external_tiers` / `os_ceiling_denies_only_external_tier` / `external_ceiling_denies_nothing`
+  - `none` 级别下 tier 上限仍生效：自动执行不等于越过层级
+- [x] C7.5 项目级 `.assistant/permissions.json` 加载与合并顺序
+  - `src-tauri/src/adapters/permission_policy.rs`：`policy_for_tool_config()` 按「默认 → 审批级别 → tier → 项目层」组装
+  - 项目层只作为额外约束层追加，经 `most_restrictive` 合并，**只能收紧不能放宽**
+  - 文件缺失视为无项目规则；读取失败 / JSON 非法 → 整层退化为 `("*","*",Deny)`（fail-closed）
+  - `src-tauri/tests/permission_policy.rs` 覆盖缺失、收紧、不可放宽、非法回退、tier 来源
 
 ---
 
@@ -172,11 +185,21 @@
 实现：`src-tauri/crates/assistant-tools/src/os/agent_ask_user.rs`、`src-tauri/src/cmd/`、`src/chat/tool/`（`QuestionCard`）
 
 - [x] C8.1 `AgentQuestionRequestDto` 与 `awaitingAnswer` 载荷（DTO 已落地）
-- [ ] C8.2 `Tool::manages_own_execution_timeout()`（默认 `false`）+ `exec::invoke` 分支不套统一 deadline（A19）
-- [ ] C8.3 `agent_ask_user` 工具实现（`AGENT_ONLY`），1–4 问、`multiSelect`（A20）
-- [ ] C8.4 `userQuestionTimeoutSecs` 配置：`null` → 180s、`0` → 不限时（A19）
-- [ ] C8.5 `resolve_agent_question` 命令接线
-- [ ] C8.6 提问卡片：逐条渲染、「其他」写 `other`、全部作答才可提交、超时置灰、历史只显示终态（A20）
+  - `protocol/dto/agent.rs` 追加 `AgentToolCallPayloadDto::AwaitingAnswer`；前端 `toolCallView` 把 `awaitingAnswer` 与 `awaitingApproval` 统一映射到 `awaiting_user`
+- [x] C8.2 `Tool::manages_own_execution_timeout()`（默认 `false`）+ `exec::invoke` 分支不套统一 deadline（A19）
+  - 默认实现返回 `false`，存量工具零改动；`exec::invoke` 对自管超时工具跳过 30s 统一 deadline，取消仍由 turn 子令牌在外层立即收口
+- [x] C8.3 `agent_ask_user` 工具实现（`AGENT_ONLY`），1–4 问、`multiSelect`（A20）
+  - `assistant-tools/src/os/agent_ask_user.rs`：`ToolTier::Sandbox` + `AGENT_ONLY` + `manages_own_execution_timeout() = true`
+  - 输入校验集中在 `assistant-tools/src/question.rs`（1–4 问、每问 2–10 选项、`header` ≤20 字符），工具与适配层复用同一套规则
+- [x] C8.4 `userQuestionTimeoutSecs` 配置：`null` → 180s、`0` → 不限时（A19）
+  - `AppConf.user_question_timeout_secs: Option<u32>`；`setup.rs` 每次提问现读配置，读取失败降级 180s（不静默变无限等待）
+  - 设置页「Agent 工具」组新增「提问等待上限（秒）」输入框，`min=0`（与审批的 `> 0` 不同，`0` 合法）
+- [x] C8.5 `resolve_agent_question` 命令接线
+  - `adapters/question.rs`：`PendingQuestionRegistry`（`call_id` 主键 + `conversation_id` 跨会话校验 + 题目数量校验）+ `TauriQuestionPrompter`
+  - 缺路由信息 / 重复 `call_id` 直接 `Cancelled`，不把 turn 挂到超时；超时与取消由 `PendingQuestionGuard` 幂等清理登记项
+- [x] C8.6 提问卡片：逐条渲染、「其他」写 `other`、全部作答才可提交、超时置灰、历史只显示终态（A20）
+  - `src/chat/tool/QuestionCard.tsx`：`timeoutMs = 0` 不显示倒计时；倒计时结束只置灰，收口等后端 `failed(cancelled)` 事件
+  - 历史消息不渲染卡片，`ask_user` 按 `success` / `error` / `cancelled` 终态展示
 
 ---
 
@@ -184,11 +207,11 @@
 
 `cwd = src-tauri` 与仓库根分别执行。
 
-- [ ] C9.1 `npm run contract:gen` 后 `src/types/protocol.contract.ts` 可编译（A9）
-- [ ] C9.2 `cargo test --test assembly_contract` 通过（A9）
-- [ ] C9.3 `cargo clippy --workspace --all-targets -- -D warnings` 无告警
-- [ ] C9.4 先执行格式化修复，再 `cargo fmt --all --check` 通过
-- [ ] C9.5 `npm run lint` / `npm run typecheck` / `npm run test` 通过
+- [x] C9.1 `npm run contract:gen` 后 `src/types/protocol.contract.ts` 可编译（A9）
+- [x] C9.2 `cargo test --test assembly_contract` 通过（A9）
+- [x] C9.3 `cargo clippy --workspace --all-targets -- -D warnings` 无告警
+- [x] C9.4 先执行格式化修复，再 `cargo fmt --all --check` 通过
+- [x] C9.5 `npm run lint` / `npm run typecheck` / `npm run test` 通过
 - [ ] C9.6 手工回归：审批三态、超时置灰、多窗口 phase、同会话模式切换（空闲可切、turn 进行中置灰、多窗口被后端拒绝）、切回 agent 复用工具配置、重启后会话级装配恢复
 
 ---

@@ -45,12 +45,43 @@ describe("chatService", () => {
     it("returns ConversationDetail when invoke returns data", async () => {
       mockInvoke.mockResolvedValue({
         conversation: { id: "c1" },
-        messages: [{ id: "m1" }],
+        messages: [{ id: "m1", toolCalls: [] }],
         totalCount: 1,
       });
       const result = await chatService.getConversationAllMessages("c1");
       expect(result).not.toBeNull();
       expect(result!.messages).toHaveLength(1);
+    });
+
+    it("maps wire toolCalls into ToolCallView", async () => {
+      mockInvoke.mockResolvedValue({
+        conversation: { id: "c1" },
+        messages: [
+          {
+            id: "m1",
+            toolCalls: [
+              {
+                callId: "call-1",
+                name: "read_file",
+                arguments: { path: "a.txt" },
+                status: "success",
+                result: "ok",
+              },
+            ],
+          },
+        ],
+        totalCount: 1,
+      });
+      const result = await chatService.getConversationAllMessages("c1");
+      expect(result!.messages[0].toolCalls).toEqual([
+        {
+          callId: "call-1",
+          name: "read_file",
+          status: "success",
+          arguments: { path: "a.txt" },
+          resultText: "ok",
+        },
+      ]);
     });
 
     it("returns null when invoke returns null (fallback)", async () => {

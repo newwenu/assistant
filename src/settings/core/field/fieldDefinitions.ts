@@ -2,6 +2,7 @@ import { defineSetting, defineSection } from "./fieldRegistry";
 import { ThemeRadioRender } from "../../shared/renderers/ThemeRadioRender";
 import { RendererSelectRender } from "../../shared/renderers/RendererSelectRender";
 import { MascotColorGroupRender } from "../../shared/renderers/MascotColorGroupRender";
+import { FolderPickerField } from "../../shared/renderers/FolderPickerField";
 import {
   SHORTCUT_DEFINITIONS,
   DEFAULT_KEYBINDINGS,
@@ -16,6 +17,14 @@ defineSection({
   id: "general-main",
   pageId: "general",
   title: "settings.general.main.title",
+});
+
+defineSection({
+  id: "agent-main",
+  pageId: "general",
+  title: "settings.general.agent_tools.title",
+  description: "settings.general.agent_tools.description",
+  keywords: ["workspace", "工作区", "审批", "approval", "超时"],
 });
 
 defineSection({
@@ -285,6 +294,72 @@ export const COMPACT_SETTINGS = [
     max: 16384,
     step: 256,
     visible: (conf: Record<string, unknown>) => !!conf.autoCompact,
+  }),
+];
+
+export const AGENT_TOOL_SETTINGS = [
+  defineSetting({
+    key: "workspaceRoot",
+    group: "app",
+    section: "agent-main",
+    type: "string",
+    default: null,
+    label: "settings.general.agent_tools.workspace_root.label",
+    description: "settings.general.agent_tools.workspace_root.description",
+    placeholder: "settings.general.agent_tools.workspace_root.placeholder",
+    customRender: FolderPickerField,
+    readValue: (conf: Record<string, unknown>) =>
+      typeof conf.workspaceRoot === "string" ? conf.workspaceRoot : null,
+    buildPatch: (value: unknown): Record<string, unknown> => ({
+      workspaceRoot:
+        typeof value === "string" && value.length > 0 ? value : null,
+    }),
+  }),
+  defineSetting({
+    key: "approvalTimeoutSecs",
+    group: "app",
+    section: "agent-main",
+    type: "number",
+    default: null,
+    label: "settings.general.agent_tools.approval_timeout_secs.label",
+    description:
+      "settings.general.agent_tools.approval_timeout_secs.description",
+    placeholder:
+      "settings.general.agent_tools.approval_timeout_secs.placeholder",
+    min: 5,
+    max: 3600,
+    step: 5,
+    readValue: (conf: Record<string, unknown>) =>
+      typeof conf.approvalTimeoutSecs === "number"
+        ? conf.approvalTimeoutSecs
+        : null,
+    buildPatch: (value: unknown): Record<string, unknown> => ({
+      approvalTimeoutSecs:
+        typeof value === "number" && value > 0 ? value : null,
+    }),
+  }),
+  defineSetting({
+    key: "userQuestionTimeoutSecs",
+    group: "app",
+    section: "agent-main",
+    type: "number",
+    default: null,
+    label: "settings.general.agent_tools.user_question_timeout_secs.label",
+    description:
+      "settings.general.agent_tools.user_question_timeout_secs.description",
+    placeholder:
+      "settings.general.agent_tools.user_question_timeout_secs.placeholder",
+    min: 0,
+    max: 3600,
+    step: 5,
+    readValue: (conf: Record<string, unknown>) =>
+      typeof conf.userQuestionTimeoutSecs === "number"
+        ? conf.userQuestionTimeoutSecs
+        : null,
+    buildPatch: (value: unknown): Record<string, unknown> => ({
+      userQuestionTimeoutSecs:
+        typeof value === "number" && value >= 0 ? value : null,
+    }),
   }),
 ];
 
