@@ -53,9 +53,9 @@ export interface ConversationLayoutProps {
 /** `AgentLayout` 专属插槽；`ChatLayout` 不传入，因此无工具 UI。 */
 export interface AgentLayoutSlots {
   /** 工具概览条，位于输入区工具栏内。 */
-  toolbar?: ReactNode;
+  toolToolbar?: ReactNode;
   /** 工具装配面板，位于输入区工具栏上方。 */
-  panel?: ReactNode;
+  toolPanel?: ReactNode;
   /** 审批 / 提问卡片等消息区下方插槽。 */
   belowMessages?: ReactNode;
 }

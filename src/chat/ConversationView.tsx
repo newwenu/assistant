@@ -604,7 +604,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
           {route.link === "agent" ? (
             <AgentLayout
               {...layoutProps}
-              toolbar={
+              toolToolbar={
                 <ToolToolbar
                   config={effectiveToolConfig}
                   total={tools.length}
@@ -612,7 +612,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
                   onToggle={() => setToolPanelOpen((prev) => !prev)}
                 />
               }
-              panel={
+              toolPanel={
                 toolPanelOpen ? (
                   <ToolConfigPanel
                     config={effectiveToolConfig}

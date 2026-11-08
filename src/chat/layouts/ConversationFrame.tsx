@@ -20,9 +20,9 @@ import type { ConversationLayoutProps } from "./layoutProps";
 
 interface ConversationFrameProps extends ConversationLayoutProps {
   /** 输入区工具栏内追加控件（`AgentLayout` 的 `ToolToolbar`）。 */
-  extraToolbar?: React.ReactNode;
+  toolToolbar?: React.ReactNode;
   /** 输入区工具栏上方追加面板（`AgentLayout` 的 `ToolConfigPanel`）。 */
-  extraPanel?: React.ReactNode;
+  toolPanel?: React.ReactNode;
   /** 消息区下方追加插槽（审批 / 提问卡片）。 */
   belowMessages?: React.ReactNode;
 }
@@ -73,8 +73,8 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
     onPaste,
     onAttach,
     onCompact,
-    extraToolbar,
-    extraPanel,
+    toolToolbar,
+    toolPanel,
     belowMessages,
   } = props;
   const { t } = useTranslation();
@@ -142,7 +142,7 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
       )}
       {belowMessages}
       <AttachmentPreviewBar />
-      {extraPanel}
+      {toolPanel}
       <div className="chat-tool-bar">
         {modeControls}
         <ReasoningSelector variant="chip" />
@@ -165,7 +165,7 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
           disabled={isStreaming}
           title={t("chat.input.attach")}
         />
-        {extraToolbar}
+        {toolToolbar}
       </div>
       <MessageInput
         value={draft}
