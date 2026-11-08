@@ -6,17 +6,24 @@ use assistant_agent::kernel::{
 };
 use tauri::Manager;
 
-use super::{DbMessageStore, SystemClock, TauriCompactionSink};
+use super::{DbMessageStore, PipelineToolExecution, SystemClock, TauriCompactionSink};
 
 /// 用宿主托管的单例状态装配 runner；每次 turn 只换 `sink` 与输入源。
+///
+/// `tool_exec` 为 `Some` 时使用调用方按会话有效工具配置派生的执行器（C7），
+/// `None` 时回落到宿主托管的默认策略执行器（聊天等无工具配置的场景）。
 pub fn build_turn_runner(
     app: &tauri::AppHandle,
     sink: Arc<dyn EventSink>,
     input: Arc<dyn TurnInputSource>,
+    tool_exec: Option<Arc<dyn ToolExecutionPort>>,
 ) -> TurnRunner {
     let tasks = app.state::<Arc<TurnTasks>>().inner().clone();
     let states = app.state::<Arc<SessionStates>>().inner().clone();
-    let tool_exec = app.state::<Arc<dyn ToolExecutionPort>>().inner().clone();
+    let tool_exec: Arc<dyn ToolExecutionPort> = match tool_exec {
+        Some(exec) => exec,
+        None => app.state::<Arc<PipelineToolExecution>>().inner().clone(),
+    };
     TurnRunner::new(
         sink,
         Arc::new(DbMessageStore::new(app.clone())),

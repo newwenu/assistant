@@ -60,6 +60,16 @@ impl From<&str> for ApprovalLevelDto {
     }
 }
 
+impl From<ApprovalLevelDto> for assistant_tools::ApprovalLevel {
+    fn from(level: ApprovalLevelDto) -> Self {
+        match level {
+            ApprovalLevelDto::None => Self::None,
+            ApprovalLevelDto::DangerousOnly => Self::DangerousOnly,
+            ApprovalLevelDto::AllOsTools => Self::AllOsTools,
+        }
+    }
+}
+
 /// 一次发送携带的工具配置（前端内存态，随请求下发）。
 ///
 /// 空白名单即 deny-by-default：模型看不到任何工具。
@@ -81,6 +91,30 @@ impl Default for ConversationToolConfigDto {
             approval_level: ApprovalLevelDto::None,
             enabled_tools: Vec::new(),
             disabled_tools: Vec::new(),
+        }
+    }
+}
+
+/// 工具装配清单条目（`ToolConfigPanel` 渲染用，I38d §4.7）。
+///
+/// 只含面板需要的事实：`id` 是白名单取值，`name` 是展示名，`tier` 决定分组。
+/// 不下发 `inputSchema`：装配面板不展示参数结构，且它体积大。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ToolDescriptorDto {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub tier: ToolTierDto,
+}
+
+impl From<assistant_tools::ToolDescriptor> for ToolDescriptorDto {
+    fn from(descriptor: assistant_tools::ToolDescriptor) -> Self {
+        Self {
+            id: descriptor.id,
+            name: descriptor.name,
+            description: descriptor.description,
+            tier: descriptor.tier.into(),
         }
     }
 }

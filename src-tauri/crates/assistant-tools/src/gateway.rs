@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::context::ToolUseContext;
 use crate::os::path::{workspace_membership, WorkspaceMembership};
-use crate::policy::{PermissionEffect, PermissionRule, ResolvedPermissionPolicy};
+use crate::policy::{PermissionEffect, PermissionRule, ResolvedPermissionPolicy, RuleOrigin};
 use crate::r#trait::{ApprovalPreview, BehaviorHints, PermissionIntent, Tool, ToolTier};
 
 /// 审批预演与扩展检测共用的执行预算（I38d §3.2.1）。
@@ -144,9 +144,9 @@ pub enum ApprovalWait {
 
 /// 「为什么问我」：命中哪条策略导致 `Ask`。
 ///
-/// 封闭枚举：前端不得窄化，未知分支须能通用降级。P6 只会产出
-/// `DefaultPolicy` / `ProjectRule` / `TierCeiling`；`ApprovalLevel` 与
-/// `Advisor` 分别归 P6-C7 与 P10。
+/// 封闭枚举：前端不得窄化，未知分支须能通用降级。P6 产出
+/// `DefaultPolicy` / `ApprovalLevel` / `ProjectRule`（层级越界是硬 `Deny`，
+/// 不进「为什么问我」，故 `TierCeiling` 暂不产出）；`Advisor` 归 P10。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApprovalReason {
     DefaultPolicy { rule: String },
@@ -345,13 +345,25 @@ impl ToolGateway {
         context: &ToolUseContext,
         policy: &ResolvedPermissionPolicy,
     ) -> Result<GatewayDecision, String> {
+        let tool_name = tool.id();
+        let tier = tool.tier();
+
+        // tier 硬上限先于 intent 判定：层级越界的工具即使声明的 intent 全为 Allow
+        // 也不得执行（可用性层过滤之外的第二道闸，I38d A7）。
+        let tier_resource = format!("tier:{}", tier.as_str());
+        if policy.evaluate_tier_ceiling(tier) == PermissionEffect::Deny {
+            self.audit(tool_name, "*", &tier_resource, AuditOutcome::Denied)
+                .await;
+            return Ok(GatewayDecision::Denied {
+                action: "*".to_string(),
+                resource: tier_resource,
+            });
+        }
+
         let intents = tool.permission_intents(input, context)?;
         if intents.is_empty() {
             return Ok(GatewayDecision::Allowed);
         }
-
-        let tool_name = tool.id();
-        let tier = tool.tier();
         let mut pending: Vec<PendingApproval> = Vec::new();
 
         for intent in &intents {
@@ -671,14 +683,23 @@ fn ask_reasons(
 }
 
 fn reason_from_rule(rule: &PermissionRule) -> ApprovalReason {
-    if rule.action == "*" && rule.resource == "*" {
-        ApprovalReason::DefaultPolicy {
-            rule: "* *".to_string(),
-        }
-    } else {
-        ApprovalReason::ProjectRule {
-            action: rule.action.clone(),
-            resource: rule.resource.clone(),
+    match rule.origin {
+        // 审批级别追加的规则：卡片直接显示「哪个级别要求的审批」，
+        // 比投影成 `projectRule` 更能解释「为什么问我」。
+        RuleOrigin::ApprovalLevel { level } => ApprovalReason::ApprovalLevel {
+            level: level.as_str().to_string(),
+        },
+        RuleOrigin::Config => {
+            if rule.action == "*" && rule.resource == "*" {
+                ApprovalReason::DefaultPolicy {
+                    rule: "* *".to_string(),
+                }
+            } else {
+                ApprovalReason::ProjectRule {
+                    action: rule.action.clone(),
+                    resource: rule.resource.clone(),
+                }
+            }
         }
     }
 }

@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::r#trait::ToolTier;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolDefinition {
@@ -26,4 +28,18 @@ impl ToolDefinition {
             input_schema,
         }
     }
+}
+
+/// 工具装配清单条目：不含 `input_schema`，只够前端按 tier 分组渲染多选。
+///
+/// 与 `ToolDefinition` 分开：装配面板不需要 schema（体积大且无展示价值），
+/// 而 `ToolDefinition` 是发给模型的载荷，两者用途不同，不能共用结构。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolDescriptor {
+    /// 内部唯一标识，也是白名单 `enabled_tools` / `disabled_tools` 的取值。
+    pub id: String,
+    /// 发给模型的调用名，面板展示用。
+    pub name: String,
+    pub description: String,
+    pub tier: ToolTier,
 }

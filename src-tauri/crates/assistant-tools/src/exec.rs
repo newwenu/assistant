@@ -29,6 +29,14 @@ pub async fn invoke(
     }
 
     let id = tool.id();
+    if tool.manages_own_execution_timeout() {
+        // 自管超时的工具（`ask_user`）不套统一 deadline：它的等待长度由用户作答决定，
+        // 30s 统一超时会把「用户还没点」误判成工具失败。取消仍由外层 turn 子令牌收口。
+        return match tool.execute(input, context).await {
+            Ok(result) => result,
+            Err(error) => ToolResult::from_exec_error(id, error),
+        };
+    }
     match tokio::time::timeout(timeout, tool.execute(input, context)).await {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => ToolResult::from_exec_error(id, error),
@@ -58,6 +66,7 @@ mod tests {
 
     struct StubTool {
         behavior: StubBehavior,
+        manages_own_timeout: bool,
     }
 
     #[async_trait]
@@ -76,6 +85,10 @@ mod tests {
 
         fn tier(&self) -> ToolTier {
             ToolTier::Os
+        }
+
+        fn manages_own_execution_timeout(&self) -> bool {
+            self.manages_own_timeout
         }
 
         async fn execute(
@@ -110,7 +123,17 @@ mod tests {
     }
 
     fn stub(behavior: StubBehavior) -> StubTool {
-        StubTool { behavior }
+        StubTool {
+            behavior,
+            manages_own_timeout: false,
+        }
+    }
+
+    fn self_managed_stub(behavior: StubBehavior) -> StubTool {
+        StubTool {
+            behavior,
+            manages_own_timeout: true,
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -164,6 +187,29 @@ mod tests {
             error
         );
         assert_eq!(result.error_kind, Some(ToolErrorKind::Timeout));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn self_managed_tool_bypasses_unified_deadline() {
+        let tool = self_managed_stub(StubBehavior::Slow(Duration::from_millis(200)));
+        let result = invoke(&tool, &json!({}), &context(), Duration::from_millis(50)).await;
+
+        assert!(
+            result.ok,
+            "self-managed tool must not be killed by the unified deadline: {:?}",
+            result.error
+        );
+        assert_eq!(result.data, Some(json!({ "slow": true })));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn self_managed_tool_still_normalizes_exec_error() {
+        let tool = self_managed_stub(StubBehavior::Fail("boom"));
+        let result = invoke(&tool, &json!({}), &context(), Duration::from_secs(5)).await;
+
+        assert!(!result.ok);
+        assert_eq!(result.error.as_deref(), Some("tool 'stub': boom"));
+        assert_eq!(result.error_kind, Some(ToolErrorKind::Internal));
     }
 
     #[tokio::test(flavor = "multi_thread")]

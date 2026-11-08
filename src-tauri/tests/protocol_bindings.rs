@@ -24,8 +24,8 @@ use assistant_app::protocol::{
     SiblingInfoDto, StorageBreakdownDto, ThemeChangedPayloadDto, TokenUsageCacheDto,
     TokenUsageCumulativeDto, TokenUsageDto, TokenUsageEstimatedSourceDto, TokenUsageOccupancyDto,
     TokenUsageSummaryDto, ToolApprovalDecisionDto, ToolApprovalKindDto, ToolApprovalRequestDto,
-    ToolBehaviorDto, ToolErrorKindDto, ToolTierDto, TurnPhaseDto, VaultCipherAlgorithmDto,
-    VaultConfDto, WindowModeChangedPayloadDto, WindowModeDto,
+    ToolBehaviorDto, ToolDescriptorDto, ToolErrorKindDto, ToolTierDto, TurnPhaseDto,
+    VaultCipherAlgorithmDto, VaultConfDto, WindowModeChangedPayloadDto, WindowModeDto,
 };
 use ts_rs::{Config, TS};
 
@@ -175,6 +175,7 @@ fn export_protocol_contract() {
         ToolApprovalKindDto::decl(&cfg),
         ToolApprovalRequestDto::decl(&cfg),
         ToolBehaviorDto::decl(&cfg),
+        ToolDescriptorDto::decl(&cfg),
         ToolErrorKindDto::decl(&cfg),
         ToolTierDto::decl(&cfg),
         TurnPhaseDto::decl(&cfg),

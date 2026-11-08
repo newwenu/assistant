@@ -13,6 +13,17 @@ pub enum ToolTier {
     External,
 }
 
+impl ToolTier {
+    /// 与 serde 同形的小写标识；策略规则用 `tier:<tier>` 表达层级上限。
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Sandbox => "sandbox",
+            Self::Os => "os",
+            Self::External => "external",
+        }
+    }
+}
+
 /// `validate_input` 的判定结果。
 ///
 /// `blocks_input_rewrite = true` 表示该失败**不可通过改写输入绕过**：
@@ -181,6 +192,15 @@ pub trait Tool: Send + Sync {
     /// 默认等于只读：只读工具可并发，写类工具默认串行。工具可按 input 覆写。
     fn is_concurrency_safe(&self, _input: Option<&Value>) -> bool {
         self.is_readonly()
+    }
+
+    /// 是否自管执行超时（I38c §11 OQ5）。
+    ///
+    /// 返回 `true` 时 `exec::invoke` **不套**统一 deadline，由工具自身的等待收口
+    /// （`ask_user` 要等用户作答，30s 统一超时会把它当成失败）。
+    /// 绕过统一超时**不等于**不可中断：turn 子令牌的取消在 `exec::invoke` 外层生效。
+    fn manages_own_execution_timeout(&self) -> bool {
+        false
     }
 
     fn permission_intents(

@@ -45,7 +45,8 @@
     "conversation_busy": "会话正在生成回复，暂不可切换模式",
     "provider_not_found": "Provider 未找到",
     "orb_window_not_found": "Orb 窗口未找到",
-    "db_lock": "数据库锁: %{error}"
+    "db_lock": "数据库锁: %{error}",
+    "agent_mode_kind_locked": "模式类型不可修改，需要换类型时请新建模式"
   },
   "agent_mode": {
     "builtin_cannot_delete": "内置模式不可删除",

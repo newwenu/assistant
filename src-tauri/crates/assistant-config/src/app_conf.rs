@@ -62,6 +62,10 @@ pub struct AppConf {
     /// 审批等待上限（秒）。`None` → 默认 120s；`Some(0)` 非法（审批必须有时限）。
     #[serde(default)]
     pub approval_timeout_secs: Option<u32>,
+    /// `ask_user` 等待用户作答的上限（秒）。`None` → 默认 180s；
+    /// `Some(0)` → 不设 deadline（只由取消终止），因此不像审批那样拒绝 0。
+    #[serde(default)]
+    pub user_question_timeout_secs: Option<u32>,
 }
 
 /// 平台主修饰键：macOS 用 Command，其余用 Control。
@@ -112,6 +116,7 @@ impl AppConf {
             mini_window_y: None,
             workspace_root: None,
             approval_timeout_secs: None,
+            user_question_timeout_secs: None,
         }
     }
 

@@ -8,13 +8,16 @@ use assistant_agent::kernel::{
 };
 use assistant_agent::multimodal;
 use assistant_storage::attachment_store::AttachmentStore;
-use assistant_tools::{ApprovalDecision, ToolRegistry};
+use assistant_tools::{ApprovalDecision, QuestionAnswerItem, ToolRegistry};
 
 use crate::adapters::{
-    build_turn_runner, resolve_available_tools, PendingApprovalRegistry, TauriEventSink,
-    TauriInputSource,
+    build_turn_runner, policy_for_tool_config, resolve_available_tools, PendingApprovalRegistry,
+    PendingQuestionRegistry, PipelineToolExecution, TauriEventSink, TauriInputSource,
 };
-use crate::protocol::{SendChatMessageArgsDto, ToolApprovalDecisionDto, ToolApprovalKindDto};
+use crate::protocol::{
+    AgentQuestionAnswerDto, ConversationToolConfigDto, SendChatMessageArgsDto,
+    ToolApprovalDecisionDto, ToolApprovalKindDto, ToolDescriptorDto,
+};
 
 #[command]
 pub async fn send_agent_message(
@@ -34,9 +37,29 @@ pub async fn send_agent_message(
     )
     .await;
 
+    // 权限策略随本次发送的配置逐轮现算（I38d §4.6）：审批级别 → 主规则集，
+    // 层级上限 → 约束层，项目级 `.assistant/permissions.json` → 额外约束层。
+    let tool_exec = policy_executor(&app, &tool_config);
+
     let mut spec = TurnSpec::agent();
     spec.tools = Some(tools);
-    start_turn(&app, &conversation_id, args, spec).await
+    start_turn(&app, &conversation_id, args, spec, Some(tool_exec)).await
+}
+
+/// 从宿主托管的基底执行器派生「本轮策略」执行器；共享 `pipeline` 与审批等待表，
+/// 不把策略写回全局单例，因此改配置后下一轮即生效。
+fn policy_executor(
+    app: &AppHandle,
+    tool_config: &ConversationToolConfigDto,
+) -> Arc<dyn assistant_agent::agent::round_executor::ToolExecutionPort> {
+    let base = app.state::<Arc<PipelineToolExecution>>().inner().clone();
+    let policy = policy_for_tool_config(tool_config, workspace_root().as_deref());
+    Arc::new(base.with_policy(policy))
+}
+
+/// 工作区根目录：与执行期同源（`AppConf`），保证项目级权限文件定位一致。
+fn workspace_root() -> Option<String> {
+    crate::setup::workspace_root_from_conf()
 }
 
 #[command]
@@ -76,6 +99,38 @@ pub fn resolve_agent_tool_call(
     }
 }
 
+/// 提问回填：把前端卡片上的答案投递给正在等待的 `ask_user`。
+///
+/// 与 `resolve_agent_tool_call` 对称：只做「找到挂起点 → 投递」，
+/// 收口（超时 / 取消 / 继续执行）全部在工具与 turn 侧完成。
+/// 提交无效（已超时 / 已作答 / 会话不匹配 / 答案条数不符）返回错误，
+/// 让前端提示这次提交无效，而不是假装成功。
+#[command]
+pub fn resolve_agent_question(app: AppHandle, args: AgentQuestionAnswerDto) -> Result<(), String> {
+    let pending = app.state::<PendingQuestionRegistry>();
+    let answers: Vec<QuestionAnswerItem> = args
+        .answers
+        .into_iter()
+        .map(|item| QuestionAnswerItem::new(item.selected, item.other))
+        .collect();
+    pending.resolve(&args.call_id, &args.conversation_id, answers)
+}
+
+/// 工具装配清单：返回全部 `agent` 受众工具（含 `tier`），供 `ToolConfigPanel` 分组多选。
+///
+/// 不按层级上限过滤：面板要能显示「已选但超出上限、将被忽略」的工具。
+/// 白名单仍由 `resolve_available_tools` 在发送时按 `max_tool_tier` 过滤，二者口径不同。
+#[command]
+pub async fn list_available_tools(app: AppHandle) -> Result<Vec<ToolDescriptorDto>, String> {
+    let registry = app.state::<Arc<ToolRegistry>>().inner().clone();
+    Ok(registry
+        .agent_tool_descriptors()
+        .await
+        .into_iter()
+        .map(ToolDescriptorDto::from)
+        .collect())
+}
+
 /// 宿主对一次发送只做四件事：入参校验、建消息、`begin`、`spawn`。
 /// 其余编排全部在内核里，`spec` 是唯一的链路差异来源。
 pub(crate) async fn start_turn(
@@ -83,6 +138,7 @@ pub(crate) async fn start_turn(
     conversation_id: &str,
     args: SendChatMessageArgsDto,
     spec: TurnSpec,
+    tool_exec: Option<Arc<dyn assistant_agent::agent::round_executor::ToolExecutionPort>>,
 ) -> Result<(), String> {
     let SendChatMessageArgsDto {
         content,
@@ -149,7 +205,7 @@ pub(crate) async fn start_turn(
             level: reasoning_level,
         },
     ));
-    let runner = build_turn_runner(app, sink, input);
+    let runner = build_turn_runner(app, sink, input, tool_exec);
 
     let ctx = TurnContext::new(conversation_id, turn_id, inserted.assistant_msg_id);
 

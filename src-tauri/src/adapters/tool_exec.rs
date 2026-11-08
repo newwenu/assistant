@@ -103,6 +103,7 @@ pub struct PipelineToolExecution {
     pipeline: Arc<ToolPipeline>,
     waits: ApprovalWaitRegistry,
     workspace_root: WorkspaceRootSource,
+    policy: Arc<ResolvedPermissionPolicy>,
 }
 
 impl PipelineToolExecution {
@@ -123,6 +124,18 @@ impl PipelineToolExecution {
             pipeline,
             waits,
             workspace_root,
+            policy: Arc::new(ResolvedPermissionPolicy::default_global()),
+        }
+    }
+
+    /// 派生携带本轮策略的执行器：`pipeline` / 审批等待表 / 工作区来源共享，
+    /// 只有策略随「会话有效工具配置」逐轮变化（I38d §4.6），不缓存在全局单例上。
+    pub fn with_policy(&self, policy: ResolvedPermissionPolicy) -> Self {
+        Self {
+            pipeline: self.pipeline.clone(),
+            waits: self.waits.clone(),
+            workspace_root: self.workspace_root.clone(),
+            policy: Arc::new(policy),
         }
     }
 
@@ -164,7 +177,7 @@ impl ToolExecutionPort for PipelineToolExecution {
             iteration: Some(ctx.iteration),
             tool_call_id: None,
         };
-        let policy = ResolvedPermissionPolicy::default_global();
+        let policy = self.policy.as_ref();
 
         let sink = ObserverPipelineSink {
             observer: ctx.observer,
@@ -174,7 +187,7 @@ impl ToolExecutionPort for PipelineToolExecution {
         };
 
         self.pipeline
-            .execute(&tool_calls, &context, &policy, &sink)
+            .execute(&tool_calls, &context, policy, &sink)
             .await
             .into_iter()
             .map(|outcome| self.exec_result(outcome))

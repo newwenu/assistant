@@ -1,3 +1,4 @@
+pub mod agent_ask_user;
 pub mod agent_delete;
 pub mod agent_edit;
 pub mod agent_glob;
@@ -15,6 +16,8 @@ pub mod text_encoding;
 
 use std::sync::Arc;
 
+use crate::os::agent_ask_user::QuestionTimeoutSource;
+use crate::question::QuestionPrompter;
 use crate::r#trait::Tool;
 use crate::registry::ToolRegistry;
 use crate::storage::ReadReceiptStore;
@@ -46,4 +49,16 @@ pub fn register_write_tools(registry: &ToolRegistry, receipts: Arc<dyn ReadRecei
 /// 危险组：`delete`。`destructive = true`，审批门禁未上线前不得加入生产注册表。
 pub fn register_dangerous_tools(registry: &ToolRegistry, receipts: Arc<dyn ReadReceiptStore>) {
     registry.register(Arc::new(agent_delete::AgentDeleteTool::new(receipts)) as Arc<dyn Tool>);
+}
+
+/// 交互组：`ask_user`。必须同时给出提问通道与超时来源；
+/// 没有 UI 的场合调用方不应调用本函数（`QuestionPrompter` 缺省即 fail-closed）。
+pub fn register_interactive_tools(
+    registry: &ToolRegistry,
+    prompter: Arc<dyn QuestionPrompter>,
+    timeout: QuestionTimeoutSource,
+) {
+    registry.register(
+        Arc::new(agent_ask_user::AgentAskUserTool::new(prompter, timeout)) as Arc<dyn Tool>,
+    );
 }

@@ -2,6 +2,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::r#trait::ToolTier;
+
 /// 资源匹配在 Windows 上大小写不敏感：默认规则以 `C:/Windows/**` 形式表达，
 /// 而 `os::path` 产出的规范路径可能是任意大小写。放宽匹配只会让 `Deny` 覆盖更广，
 /// 不会让 `Allow` 越过用户显式写下的拒绝。
@@ -35,6 +37,10 @@ pub struct PermissionRule {
     /// 路径 glob / 命令名 / URL pattern / `tier:<tier>` / `*`
     pub resource: String,
     pub effect: PermissionEffect,
+    /// 规则来源：只用于审批卡片的「为什么问我」，不参与 wire。
+    /// 项目级 `permissions.json` 反序列化时恒为 `Config`。
+    #[serde(skip)]
+    pub origin: RuleOrigin,
 }
 
 impl PermissionRule {
@@ -47,11 +53,53 @@ impl PermissionRule {
             action: action.into(),
             resource: resource.into(),
             effect,
+            origin: RuleOrigin::Config,
         }
+    }
+
+    /// 标注规则来源（`ApprovalLevel` 追加的规则需要区别于用户显式规则）。
+    pub fn with_origin(mut self, origin: RuleOrigin) -> Self {
+        self.origin = origin;
+        self
     }
 
     pub fn matches(&self, action: &str, resource: &str) -> bool {
         pattern_matches(&self.action, action) && pattern_matches(&self.resource, resource)
+    }
+}
+
+/// 规则来源。默认 `Config`：应用默认规则、项目配置、tier 约束层。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RuleOrigin {
+    #[default]
+    Config,
+    /// 由审批级别追加的规则（`none` 的 `Allow` / `all_os_tools` 的 `Ask`）。
+    ApprovalLevel { level: ApprovalLevel },
+}
+
+/// 审批级别（`tool_config.approvalLevel` 的内部形态）。
+///
+/// 与 storage / DTO 的枚举同名同值：三处都是同一封闭集合的镜像，
+/// 各 crate 只依赖自己需要的那一份，避免跨层依赖。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalLevel {
+    /// 全部自动执行（仍受 tier 与工具白名单约束）。
+    #[default]
+    None,
+    /// 仅 `destructive` / `open_world` 需审批。
+    DangerousOnly,
+    /// 所有非 Sandbox 工具需审批。
+    AllOsTools,
+}
+
+impl ApprovalLevel {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::DangerousOnly => "dangerous_only",
+            Self::AllOsTools => "all_os_tools",
+        }
     }
 }
 
@@ -127,6 +175,77 @@ impl ResolvedPermissionPolicy {
         }
         matched
     }
+
+    /// 层级硬上限判定：把工具的 `tier` 投影成资源 `tier:<tier>` 后按 `("*", tier)` 评估。
+    ///
+    /// tier 约束层的规则（`("*", "tier:os", Deny)` 等）不针对具体 action，
+    /// 因此不能混进 intent 的 `(action, resource)` 评估，必须单独判一次。
+    /// **只看约束层**：主规则集里的 `("*","*")` 会匹配任意资源串，
+    /// 若参与本次判定会把「默认需审批」误判成层级拒绝。
+    pub fn evaluate_tier_ceiling(&self, tier: ToolTier) -> PermissionEffect {
+        let resource = format!("tier:{}", tier.as_str());
+        let mut result = PermissionEffect::Allow;
+        for layer in &self.constraint_layers {
+            result = result.most_restrictive(evaluate_rules(&layer.rules, "*", &resource));
+        }
+        result
+    }
+}
+
+/// Agent 模式（或会话有效工具配置）→ 权限策略（I38d §4.6）。
+///
+/// 主规则集 = 基础规则（审批级别可改写）+ 硬保护规则；约束层承载 tier 上限。
+/// 项目级 `permissions.json` 作为额外约束层由调用方追加（只能收紧，不能放宽）。
+pub fn policy_from_agent_mode(
+    max_tier: ToolTier,
+    approval_level: ApprovalLevel,
+) -> ResolvedPermissionPolicy {
+    let mut base = base_rules();
+
+    match approval_level {
+        // `none`：把「未命中具体规则」时的基座结论由 `Ask` 改写为 `Allow`。
+        // 单层内 last-match-wins，基座是宽泛规则、必须排在最前，因此改写而非追加；
+        // 追加到末尾会连硬保护 Deny 一起覆盖。
+        ApprovalLevel::None => {
+            base[0] = PermissionRule::new("*", "*", PermissionEffect::Allow).with_origin(
+                RuleOrigin::ApprovalLevel {
+                    level: approval_level,
+                },
+            );
+        }
+        // `dangerous_only`：保持默认（`read` 允许，`edit` / `execute` 需审批）。
+        ApprovalLevel::DangerousOnly => {}
+        // `all_os_tools`：读取也要审批。追加在基础规则内（仍在硬保护之前），
+        // 这样「读敏感路径」的 Deny 不会被这条宽泛 `read` 规则覆盖成 `Ask`。
+        ApprovalLevel::AllOsTools => base.push(
+            PermissionRule::new("read", "*", PermissionEffect::Ask).with_origin(
+                RuleOrigin::ApprovalLevel {
+                    level: approval_level,
+                },
+            ),
+        ),
+    }
+
+    let mut global_rules = base;
+    global_rules.extend(hard_deny_rules());
+
+    let tier_rules = match max_tier {
+        ToolTier::Sandbox => vec![
+            PermissionRule::new("*", "tier:os", PermissionEffect::Deny),
+            PermissionRule::new("*", "tier:external", PermissionEffect::Deny),
+        ],
+        ToolTier::Os => vec![PermissionRule::new(
+            "*",
+            "tier:external",
+            PermissionEffect::Deny,
+        )],
+        ToolTier::External => Vec::new(),
+    };
+
+    ResolvedPermissionPolicy::new(
+        global_rules,
+        vec![PermissionConstraintLayer::new(tier_rules)],
+    )
 }
 
 /// 单层内的生效规则（last-match-wins）：解释必须与 [`evaluate_rules`] 同源。
@@ -200,10 +319,24 @@ impl PermissionRuntimeCeiling {
     }
 }
 
+/// 应用默认规则集：基础规则 + 硬保护规则，顺序固定（宽泛在前、具体在后）。
 pub fn default_global_rules() -> Vec<PermissionRule> {
+    let mut rules = base_rules();
+    rules.extend(hard_deny_rules());
+    rules
+}
+
+/// 基础规则：决定「未命中具体规则」时的结论。审批级别会改写首条或追加 `read` 规则。
+fn base_rules() -> Vec<PermissionRule> {
     vec![
         PermissionRule::new("*", "*", PermissionEffect::Ask),
         PermissionRule::new("read", "*", PermissionEffect::Allow),
+    ]
+}
+
+/// 硬保护规则：敏感路径恒为 `Deny`，任何审批级别都不得放宽。
+fn hard_deny_rules() -> Vec<PermissionRule> {
+    vec![
         PermissionRule::new("read", "/etc/shadow", PermissionEffect::Deny),
         PermissionRule::new("read", "/etc/ssh/**", PermissionEffect::Deny),
         PermissionRule::new("edit", "/etc/**", PermissionEffect::Deny),
@@ -256,5 +389,146 @@ fn chars_equal(left: char, right: char) -> bool {
         left.eq_ignore_ascii_case(&right)
     } else {
         left == right
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn policy(level: ApprovalLevel, tier: ToolTier) -> ResolvedPermissionPolicy {
+        policy_from_agent_mode(tier, level)
+    }
+
+    #[test]
+    fn none_level_allows_non_protected_actions() {
+        let policy = policy(ApprovalLevel::None, ToolTier::External);
+        assert_eq!(
+            policy.evaluate("read", "/tmp/a.txt"),
+            PermissionEffect::Allow
+        );
+        assert_eq!(
+            policy.evaluate("edit", "/tmp/a.txt"),
+            PermissionEffect::Allow
+        );
+        assert_eq!(
+            policy.evaluate("execute", "rm -rf /"),
+            PermissionEffect::Allow
+        );
+        // 自动执行不等于取消硬保护：敏感路径恒为 Deny。
+        assert_eq!(
+            policy.evaluate("read", "/etc/shadow"),
+            PermissionEffect::Deny
+        );
+        assert_eq!(
+            policy.evaluate("edit", "C:/Windows/System32/a.dll"),
+            PermissionEffect::Deny
+        );
+    }
+
+    #[test]
+    fn dangerous_only_keeps_default_reads_allowed() {
+        let policy = policy(ApprovalLevel::DangerousOnly, ToolTier::External);
+        assert_eq!(
+            policy.evaluate("read", "/tmp/a.txt"),
+            PermissionEffect::Allow
+        );
+        assert_eq!(policy.evaluate("edit", "/tmp/a.txt"), PermissionEffect::Ask);
+        assert_eq!(
+            policy.evaluate("execute", "git status"),
+            PermissionEffect::Ask
+        );
+    }
+
+    #[test]
+    fn all_os_tools_asks_even_for_reads() {
+        let policy = policy(ApprovalLevel::AllOsTools, ToolTier::External);
+        assert_eq!(policy.evaluate("read", "/tmp/a.txt"), PermissionEffect::Ask);
+        assert_eq!(policy.evaluate("edit", "/tmp/a.txt"), PermissionEffect::Ask);
+        // 宽泛 `read` 的 Ask 不得覆盖敏感路径的硬保护 Deny。
+        assert_eq!(
+            policy.evaluate("read", "/etc/shadow"),
+            PermissionEffect::Deny
+        );
+    }
+
+    #[test]
+    fn approval_level_rules_are_explained_as_approval_level() {
+        let policy = policy(ApprovalLevel::AllOsTools, ToolTier::External);
+        let matched = policy.explain("read", "/tmp/a.txt");
+        let rule = matched
+            .iter()
+            .find(|rule| rule.effect == PermissionEffect::Ask)
+            .expect("read must hit the approval-level rule");
+        assert_eq!(
+            rule.origin,
+            RuleOrigin::ApprovalLevel {
+                level: ApprovalLevel::AllOsTools
+            }
+        );
+    }
+
+    #[test]
+    fn sandbox_ceiling_denies_os_and_external_tiers() {
+        // 审批级别为 `none` 时 tier 上限仍然生效：自动执行不等于越过层级。
+        let policy = policy(ApprovalLevel::None, ToolTier::Sandbox);
+        assert_eq!(
+            policy.evaluate_tier_ceiling(ToolTier::Os),
+            PermissionEffect::Deny
+        );
+        assert_eq!(
+            policy.evaluate_tier_ceiling(ToolTier::External),
+            PermissionEffect::Deny
+        );
+        assert_ne!(
+            policy.evaluate_tier_ceiling(ToolTier::Sandbox),
+            PermissionEffect::Deny
+        );
+    }
+
+    #[test]
+    fn os_ceiling_denies_only_external_tier() {
+        let policy = policy(ApprovalLevel::DangerousOnly, ToolTier::Os);
+        assert_eq!(
+            policy.evaluate_tier_ceiling(ToolTier::External),
+            PermissionEffect::Deny
+        );
+        assert_ne!(
+            policy.evaluate_tier_ceiling(ToolTier::Os),
+            PermissionEffect::Deny
+        );
+        assert_ne!(
+            policy.evaluate_tier_ceiling(ToolTier::Sandbox),
+            PermissionEffect::Deny
+        );
+    }
+
+    #[test]
+    fn external_ceiling_denies_nothing() {
+        let policy = policy(ApprovalLevel::DangerousOnly, ToolTier::External);
+        for tier in [ToolTier::Sandbox, ToolTier::Os, ToolTier::External] {
+            assert_ne!(
+                policy.evaluate_tier_ceiling(tier),
+                PermissionEffect::Deny,
+                "{tier:?} must not be denied by an external ceiling"
+            );
+        }
+    }
+
+    #[test]
+    fn constraint_layer_tightens_but_never_relaxes() {
+        // 项目层只有 `Ask` 规则：`none` 级别的 `Allow` 结论必须被收紧为 `Ask`。
+        let policy = policy(ApprovalLevel::None, ToolTier::External).with_constraint_layer(
+            PermissionConstraintLayer::new(vec![PermissionRule::new(
+                "edit",
+                "**/*.env",
+                PermissionEffect::Ask,
+            )]),
+        );
+        assert_eq!(policy.evaluate("edit", "/tmp/.env"), PermissionEffect::Ask);
+        assert_eq!(
+            policy.evaluate("edit", "/tmp/a.txt"),
+            PermissionEffect::Allow
+        );
     }
 }

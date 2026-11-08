@@ -45,7 +45,8 @@
     "conversation_busy": "The conversation is generating a reply; its mode cannot be changed right now",
     "provider_not_found": "Provider not found",
     "orb_window_not_found": "Orb window not found",
-    "db_lock": "DB lock: %{error}"
+    "db_lock": "DB lock: %{error}",
+    "agent_mode_kind_locked": "The mode type cannot be changed; create a new mode instead"
   },
   "agent_mode": {
     "builtin_cannot_delete": "Built-in modes cannot be deleted",

@@ -28,7 +28,8 @@ use assistant_tools::{
 use super::tray;
 use crate::adapters::{
     ApprovalWaitRegistry, DbPermissionAuditStore, DbPermissionGrantStore, PendingApprovalRegistry,
-    PipelineToolExecution, TauriApprovalPrompter, TimingApprovalPrompter,
+    PendingQuestionRegistry, PipelineToolExecution, TauriApprovalPrompter, TauriQuestionPrompter,
+    TimingApprovalPrompter,
 };
 use crate::protocol::ShortcutWarningPayloadDto;
 
@@ -56,11 +57,33 @@ fn approval_timeout_from_conf() -> std::time::Duration {
     }
 }
 
+/// 提问等待上限的兜底值：配置 `userQuestionTimeoutSecs` 缺省时用它。
+/// 与审批不同，`Some(0)` 是**合法**取值，表示不设 deadline（I38c §11 OQ5）。
+const USER_QUESTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// 提问超时的取值来源：每次提问现读配置，改设置后下一次提问立即生效。
+///
+/// 返回 `None` 表示**不设 deadline**（`Some(0)` 或配置读取失败降级为兜底值之外的
+/// 唯一例外）；读取失败按兜底 180s 处理，不静默变成「无限等待」。
+fn user_question_timeout_from_conf() -> Option<std::time::Duration> {
+    match AppConf::load() {
+        Ok(conf) => match conf.user_question_timeout_secs {
+            Some(0) => None,
+            Some(secs) => Some(std::time::Duration::from_secs(u64::from(secs))),
+            None => Some(USER_QUESTION_TIMEOUT),
+        },
+        Err(e) => {
+            log::warn!("Failed to load app config for user question timeout: {e}");
+            Some(USER_QUESTION_TIMEOUT)
+        }
+    }
+}
+
 /// 工作区根目录的取值来源（I38d §4.9）：每次工具执行现读配置。
 ///
 /// 非法值（空串 / 非绝对路径 / 目录不存在）一律按 `None` 处理，
 /// 让工具层报「未配置工作区」，**不得**静默退回当前目录。
-fn workspace_root_from_conf() -> Option<String> {
+pub(crate) fn workspace_root_from_conf() -> Option<String> {
     let conf = match AppConf::load() {
         Ok(conf) => conf,
         Err(e) => {
@@ -164,6 +187,16 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         os::register_readonly_tools(&registry, receipts.clone());
         handle.manage(receipts);
 
+        // C8 交互组：`ask_user` 只面向 Agent（AGENT_ONLY），等待由工具自管超时，
+        // 超时值每次现读全局配置（`None` → 180s、`0` → 不限时）。
+        let question_pending = PendingQuestionRegistry::new();
+        handle.manage(question_pending.clone());
+        os::register_interactive_tools(
+            &registry,
+            Arc::new(TauriQuestionPrompter::new(handle.clone(), question_pending)),
+            Arc::new(user_question_timeout_from_conf),
+        );
+
         // C4.18：P2 遗留端口的生产装配。顺序固定 —— 授权/审计 → 审批（真实 UI + 计时）
         // → 网关 → 流水线 → executor 端口适配器；网关只认 `ApprovalPrompter` trait，
         // 计时装饰器对内层透明。
@@ -198,12 +231,13 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let pipeline = Arc::new(ToolPipeline::new(registry.clone(), gateway, storage));
 
         // 工作区根目录按 I38d §4.9 读全局配置：每次执行现读，改设置后下一轮生效。
-        let tool_exec: Arc<dyn assistant_agent::agent::round_executor::ToolExecutionPort> =
-            Arc::new(PipelineToolExecution::with_workspace_source(
-                pipeline,
-                waits,
-                Arc::new(workspace_root_from_conf),
-            ));
+        // 这里只登记「共享基础设施 + 默认策略」的基底实例；每轮实际使用的执行器
+        // 由 `with_policy` 按会话有效工具配置派生（C7），避免全局单例缓存策略。
+        let tool_exec = Arc::new(PipelineToolExecution::with_workspace_source(
+            pipeline,
+            waits,
+            Arc::new(workspace_root_from_conf),
+        ));
         handle.manage(tool_exec);
 
         handle.manage(registry);

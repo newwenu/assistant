@@ -25,11 +25,25 @@ pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), St
     let is_new = mode.id.is_empty();
     let now = Utc::now().timestamp_millis();
 
+    // `kind` 决定已有会话的发送路径与布局，允许编辑会让同一会话静默换链路（I38d §4.8）。
+    // 与既有行不一致即拒绝；换类型必须新建模式。
+    let existing = if is_new {
+        None
+    } else {
+        agent_modes::get_by_id(&conn, &mode.id)?
+    };
+    if let Some(row) = existing.as_ref() {
+        if row.kind != mode.kind.as_str() {
+            return Err(assistant_i18n::t("error.agent_mode_kind_locked"));
+        }
+    }
+
     let tool_config = match mode.tool_config {
         Some(cfg) => cfg,
         None if is_new => ConversationToolConfigDto::default(),
-        None => agent_modes::get_by_id(&conn, &mode.id)?
-            .map(|m| AgentModeDto::from_row(&m).tool_config)
+        None => existing
+            .as_ref()
+            .map(|m| AgentModeDto::from_row(m).tool_config)
             .unwrap_or_default(),
     };
     let tool_config_json = Some(serde_json::to_string(&tool_config).map_err(|e| e.to_string())?);

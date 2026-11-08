@@ -13,7 +13,8 @@ pub async fn send_chat_message(
     conversation_id: String,
     args: SendChatMessageArgsDto,
 ) -> Result<(), String> {
-    super::agent::start_turn(&app, &conversation_id, args, TurnSpec::chat()).await
+    // 聊天链路不挂工具，因此不派生策略执行器，由 runner 回落默认。
+    super::agent::start_turn(&app, &conversation_id, args, TurnSpec::chat(), None).await
 }
 
 #[command]

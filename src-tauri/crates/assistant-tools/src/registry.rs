@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 
-use crate::definition::ToolDefinition;
+use crate::definition::{ToolDefinition, ToolDescriptor};
 use crate::r#trait::{Tool, ToolTier};
 
 /// 一次注册的完整身份。`id` 是内部唯一标识（注册表键、白名单匹配、审批、审计、
@@ -109,6 +109,45 @@ impl ToolRegistry {
             ));
         }
         definitions
+    }
+
+    /// 装配面板清单：全部 `agent` 受众工具（**不按层级过滤**），带 `tier` 供前端分组。
+    ///
+    /// 不过滤层级是有意的：面板要展示「超出层级上限、将被忽略」的已选工具，
+    /// 由前端按 `max_tool_tier` 置灰，后端只提供事实。
+    pub async fn agent_tool_descriptors(&self) -> Vec<ToolDescriptor> {
+        let selected = {
+            let mut collected: Vec<RegisteredTool> = self
+                .tools
+                .iter()
+                .filter(|entry| entry.value().tool.audience().agent)
+                .map(|entry| entry.value().clone())
+                .collect();
+            collected.sort_by(|left, right| left.id.cmp(&right.id));
+            collected
+        };
+
+        let mut descriptors = Vec::with_capacity(selected.len());
+        for registered in selected {
+            let description = match registered.tool.description().await {
+                Ok(description) => description,
+                Err(error) => {
+                    log::warn!(
+                        "tool '{}' description unavailable, falling back to empty: {}",
+                        registered.id,
+                        error
+                    );
+                    String::new()
+                }
+            };
+            descriptors.push(ToolDescriptor {
+                id: registered.id.clone(),
+                name: registered.name.clone(),
+                description,
+                tier: registered.tool.tier(),
+            });
+        }
+        descriptors
     }
 }
 
