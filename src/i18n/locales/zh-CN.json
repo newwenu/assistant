@@ -571,6 +571,12 @@
       "file_too_large": "文件大小不能超过 {{max}} MB",
       "invalid_file_type": "不支持的文件格式"
     },
+    "attachment": {
+      "missing_title": "附件文件已不存在",
+      "missing_description": "该文件可能已被清理或手动删除",
+      "open_failed_title": "无法打开附件",
+      "open_failed_description": "请检查系统是否已关联可打开该类型文件的程序"
+    },
     "view": {
       "no_provider_title": "请先配置 AI Provider",
       "no_provider_content": "在设置中添加 AI Provider 后即可开始对话",
@@ -799,9 +805,17 @@
     "batch_deleted": "已删除 {{count}} 个对话",
     "selected_count": "已选 {{count}} 项",
     "no_messages": "暂无消息",
-    "scroll_load_more": "↑ 向上滚动加载更多消息",
     "back_to_bottom": "↓ 回到底部",
     "select_to_view": "选择左侧对话查看消息历史",
+    "tree": {
+      "other_branches": "其他分支（{{count}} 条）",
+      "orphan_group": "未挂载消息（{{count}} 条）",
+      "expand": "展开",
+      "collapse": "收起",
+      "focus_hint": "当前查看分支",
+      "raw_rows": "原始行",
+      "collapse_all": "收起分支"
+    },
     "errors": {
       "deleteConversationFailed": {
         "title": "删除失败",

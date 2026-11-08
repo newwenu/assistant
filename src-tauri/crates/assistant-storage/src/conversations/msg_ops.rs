@@ -32,7 +32,7 @@ pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String>
 
 pub fn get_messages(conn: &Connection, conversation_id: &str) -> Result<Vec<MessageRow>, String> {
     let sql = format!(
-        "SELECT {} FROM messages WHERE conversation_id = ?1 ORDER BY timestamp ASC",
+        "SELECT {} FROM messages WHERE conversation_id = ?1 ORDER BY timestamp ASC, rowid ASC",
         MSG_SELECT
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;

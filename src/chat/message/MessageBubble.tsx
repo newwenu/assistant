@@ -29,6 +29,7 @@ interface MessageBubbleProps {
   isReasoningStreaming?: boolean;
   retryStatus?: RetryNotification | null;
   compact?: boolean;
+  showBranchPicker?: boolean;
   onDelete?: (id: string) => void;
   onEdit?: (id: string, newContent: string) => void;
   onRegenerate?: (id: string) => void;
@@ -45,6 +46,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     isReasoningStreaming = false,
     retryStatus = null,
     compact = false,
+    showBranchPicker = true,
     onDelete,
     onEdit,
     onRegenerate,
@@ -257,14 +259,16 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
           )}
           {!editing && (
             <div className={css.actionsWrapper}>
-              <BranchPicker
-                currentSiblingIndex={message.siblingIndex}
-                siblingCount={message.siblingCount ?? 1}
-                onSwitch={(direction) => {
-                  onSwitchBranch?.(message.id, direction);
-                }}
-                onFork={onFork ? () => onFork(message.id) : undefined}
-              />
+              {showBranchPicker && (
+                <BranchPicker
+                  currentSiblingIndex={message.siblingIndex}
+                  siblingCount={message.siblingCount ?? 1}
+                  onSwitch={(direction) => {
+                    onSwitchBranch?.(message.id, direction);
+                  }}
+                  onFork={onFork ? () => onFork(message.id) : undefined}
+                />
+              )}
               <MessageActions
                 role={message.role}
                 isStreaming={isStreaming}
@@ -295,6 +299,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     if (prev.isReasoningStreaming !== next.isReasoningStreaming) return false;
     if (prev.retryStatus !== next.retryStatus) return false;
     if (prev.compact !== next.compact) return false;
+    if (prev.showBranchPicker !== next.showBranchPicker) return false;
     if (prev.onDelete !== next.onDelete) return false;
     if (prev.onEdit !== next.onEdit) return false;
     if (prev.onRegenerate !== next.onRegenerate) return false;

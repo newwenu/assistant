@@ -1,137 +1,25 @@
-import React, { useRef, useState, useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Typography, Button, Empty, Spin, Tag, Popconfirm } from "antd";
+import { Typography, Button, Empty, Spin, Tag, Popconfirm, Switch } from "antd";
 import {
   DeleteOutlined,
   ExportOutlined,
   MessageOutlined,
 } from "@ant-design/icons";
 import type { Conversation, Message } from "../../chat/core/chatTypes";
-import {
-  VIRTUAL_SCROLL_THRESHOLD,
-  VIRTUAL_SCROLL_OVERSCAN,
-  SCROLL_LOAD_THRESHOLD_PX,
-} from "../../config/constants";
-import { HistoryMessageItem } from "./HistoryMessageItem";
+import { HistoryBranchView } from "./HistoryBranchView";
 import { formatConversationTitle } from "../../utils/formatConversationTitle";
 import css from "./HistoryDetail.module.css";
-
-interface BranchSlot {
-  siblings: Message[];
-  activeIndex: number;
-  branchLabel: string;
-}
-
-function buildBranchView(messages: Message[]): BranchSlot[] {
-  if (messages.length === 0) return [];
-
-  const byId = new Map<string, Message>();
-  for (const msg of messages) {
-    byId.set(msg.id, msg);
-  }
-
-  const childrenOf = new Map<string, Message[]>();
-  const roots: Message[] = [];
-
-  for (const msg of messages) {
-    const pid = msg.parentId;
-    if (pid && byId.has(pid)) {
-      let siblings = childrenOf.get(pid);
-      if (!siblings) {
-        siblings = [];
-        childrenOf.set(pid, siblings);
-      }
-      siblings.push(msg);
-    } else {
-      roots.push(msg);
-    }
-  }
-
-  const sortSiblings = (siblings: Message[]) =>
-    siblings.sort((a, b) => a.siblingIndex - b.siblingIndex);
-  sortSiblings(roots);
-  for (const siblings of childrenOf.values()) {
-    sortSiblings(siblings);
-  }
-
-  const depthOf = new Map<string, number>();
-  const bfsQueue: string[] = [];
-  for (const root of roots) {
-    depthOf.set(root.id, 0);
-    bfsQueue.push(root.id);
-  }
-  while (bfsQueue.length > 0) {
-    const id = bfsQueue.shift()!;
-    const depth = depthOf.get(id)!;
-    const children = childrenOf.get(id);
-    if (children) {
-      for (const child of children) {
-        depthOf.set(child.id, depth + 1);
-        bfsQueue.push(child.id);
-      }
-    }
-  }
-
-  const byDepth = new Map<number, Message[]>();
-  for (const msg of messages) {
-    const depth = depthOf.get(msg.id) ?? 0;
-    let group = byDepth.get(depth);
-    if (!group) {
-      group = [];
-      byDepth.set(depth, group);
-    }
-    group.push(msg);
-  }
-
-  const depths = Array.from(byDepth.keys()).sort((a, b) => a - b);
-  const slots: BranchSlot[] = [];
-  let branchCounter = 1;
-
-  for (const depth of depths) {
-    const group = byDepth.get(depth)!;
-
-    if (depth === 0) {
-      const userRoots = group.filter((m) => m.role === "user");
-      const orphanRoots = group.filter((m) => m.role !== "user");
-
-      if (userRoots.length > 0) {
-        slots.push({
-          siblings: userRoots,
-          activeIndex: userRoots.length - 1,
-          branchLabel: `B${branchCounter++}`,
-        });
-      }
-      if (orphanRoots.length > 0) {
-        slots.push({
-          siblings: orphanRoots,
-          activeIndex: orphanRoots.length - 1,
-          branchLabel: `O1`,
-        });
-      }
-    } else {
-      slots.push({
-        siblings: group,
-        activeIndex: group.length - 1,
-        branchLabel: `B${branchCounter++}`,
-      });
-    }
-  }
-
-  return slots;
-}
 
 interface HistoryDetailProps {
   selectedId: string | null;
   selectedConv: Conversation | undefined;
   messages: Message[];
   totalCount: number;
-  hasMore: boolean;
-  loadingMore: boolean;
   loadingMessages: boolean;
   onExport: (id: string, format: string) => void;
   onDeleteConversation: (id: string) => void;
   onDeleteMessage: (id: string) => void;
-  onLoadMore: () => void;
 }
 
 export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
@@ -140,59 +28,88 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
     selectedConv,
     messages,
     totalCount,
-    hasMore,
-    loadingMore,
     loadingMessages,
     onExport,
     onDeleteConversation,
     onDeleteMessage,
-    onLoadMore,
   }) => {
     const { t } = useTranslation();
     const messageListRef = useRef<HTMLDivElement>(null);
+    const autoScrolledRef = useRef<string | null>(null);
     const [userScrolledUp, setUserScrolledUp] = useState(false);
+    const [scrollTop, setScrollTop] = useState(0);
+    const [viewportHeight, setViewportHeight] = useState(0);
+    const [focusLeafId, setFocusLeafId] = useState<string | null>(null);
+    const [revealNonce, setRevealNonce] = useState(0);
+    const [expandedKeys, setExpandedKeys] = useState<ReadonlySet<string>>(
+      () => new Set<string>(),
+    );
+    const [rawRows, setRawRows] = useState(false);
 
-    const branchSlots = useMemo(() => buildBranchView(messages), [messages]);
+    useEffect(() => {
+      setFocusLeafId(null);
+      setExpandedKeys(new Set<string>());
+      setRawRows(false);
+      setScrollTop(0);
+      setUserScrolledUp(false);
+      autoScrolledRef.current = null;
+    }, [selectedId]);
 
-    const useVirtualScroll = branchSlots.length > VIRTUAL_SCROLL_THRESHOLD;
+    useEffect(() => {
+      const element = messageListRef.current;
+      if (!element) return;
+      const update = () => setViewportHeight(element.clientHeight);
+      update();
+      const observer = new ResizeObserver(update);
+      observer.observe(element);
+      return () => observer.disconnect();
+    }, [selectedId]);
 
-    const visibleSlots = useMemo(() => {
-      if (!useVirtualScroll) return branchSlots;
-      const container = messageListRef.current;
-      if (!container) return branchSlots;
-
-      const ESTIMATED_ITEM_HEIGHT = 80;
-      const { scrollTop, clientHeight } = container;
-      const start = Math.max(
-        0,
-        Math.floor(scrollTop / ESTIMATED_ITEM_HEIGHT) - VIRTUAL_SCROLL_OVERSCAN,
-      );
-      const end = Math.min(
-        branchSlots.length,
-        Math.ceil((scrollTop + clientHeight) / ESTIMATED_ITEM_HEIGHT) +
-          VIRTUAL_SCROLL_OVERSCAN,
-      );
-      return branchSlots.slice(start, end);
-    }, [branchSlots, useVirtualScroll]);
+    useEffect(() => {
+      if (!selectedId || loadingMessages || messages.length === 0) return;
+      if (autoScrolledRef.current === selectedId) return;
+      autoScrolledRef.current = selectedId;
+      const frame = requestAnimationFrame(() => {
+        const element = messageListRef.current;
+        if (!element) return;
+        element.scrollTop = element.scrollHeight;
+        setScrollTop(element.scrollTop);
+      });
+      return () => cancelAnimationFrame(frame);
+    }, [selectedId, loadingMessages, messages.length]);
 
     const handleScroll = useCallback(() => {
-      if (!messageListRef.current) return;
-      const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
-      setUserScrolledUp(scrollHeight - scrollTop - clientHeight > 100);
-
-      if (hasMore && !loadingMore && scrollTop < SCROLL_LOAD_THRESHOLD_PX) {
-        onLoadMore();
-      }
-    }, [hasMore, loadingMore, onLoadMore]);
+      const element = messageListRef.current;
+      if (!element) return;
+      setScrollTop(element.scrollTop);
+      setUserScrolledUp(
+        element.scrollHeight - element.scrollTop - element.clientHeight > 100,
+      );
+    }, []);
 
     const scrollToBottom = useCallback(() => {
-      if (messageListRef.current) {
-        messageListRef.current.scrollTo({
-          top: messageListRef.current.scrollHeight,
-          behavior: "smooth",
-        });
-        setUserScrolledUp(false);
-      }
+      const element = messageListRef.current;
+      if (!element) return;
+      element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+      setUserScrolledUp(false);
+    }, []);
+
+    const handleFocusNode = useCallback((nodeId: string) => {
+      setFocusLeafId(nodeId);
+      setRevealNonce((value) => value + 1);
+    }, []);
+
+    const toggleStub = useCallback((key: string) => {
+      setExpandedKeys((previous) => {
+        const next = new Set(previous);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    }, []);
+
+    const collapseAll = useCallback(() => {
+      setExpandedKeys(new Set<string>());
     }, []);
 
     if (!selectedId || !selectedConv) {
@@ -236,6 +153,23 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
             </Button>
           </Popconfirm>
         </div>
+        {messages.length > 0 && (
+          <div className={css.toolbar}>
+            <span className={css.toolbarLabel}>
+              {t("history.tree.raw_rows")}
+            </span>
+            <Switch
+              size="small"
+              checked={rawRows}
+              onChange={(checked) => setRawRows(checked)}
+            />
+            {expandedKeys.size > 0 && (
+              <Button type="link" size="small" onClick={collapseAll}>
+                {t("history.tree.collapse_all")}
+              </Button>
+            )}
+          </div>
+        )}
         <div
           ref={messageListRef}
           onScroll={handleScroll}
@@ -248,33 +182,20 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
           ) : messages.length === 0 ? (
             <Empty description={t("history.no_messages")} />
           ) : (
-            <>
-              {loadingMore && (
-                <div className={css.loadingMoreWrap}>
-                  <Spin size="small" />
-                  <Typography.Text
-                    type="secondary"
-                    style={{ marginLeft: 8, fontSize: 12 }}
-                  >
-                    {t("common.actions.loading")}
-                  </Typography.Text>
-                </div>
-              )}
-              {hasMore && !loadingMore && (
-                <div className={css.loadMoreHint}>
-                  {t("history.scroll_load_more")}
-                </div>
-              )}
-              {(useVirtualScroll ? visibleSlots : branchSlots).map((slot) => (
-                <HistoryMessageItem
-                  key={slot.siblings[slot.activeIndex].id}
-                  siblings={slot.siblings}
-                  activeIndex={slot.activeIndex}
-                  branchLabel={slot.branchLabel}
-                  onDelete={onDeleteMessage}
-                />
-              ))}
-            </>
+            <HistoryBranchView
+              messages={messages}
+              activeBranchId={selectedConv.activeBranchId}
+              focusLeafId={focusLeafId}
+              expandedKeys={expandedKeys}
+              rawRows={rawRows}
+              scrollTop={scrollTop}
+              viewportHeight={viewportHeight}
+              scrollContainerRef={messageListRef}
+              revealNonce={revealNonce}
+              onDeleteMessage={onDeleteMessage}
+              onFocusNode={handleFocusNode}
+              onToggleStub={toggleStub}
+            />
           )}
           {userScrolledUp && (
             <button className={css.scrollToBottom} onClick={scrollToBottom}>

@@ -586,6 +586,12 @@
       "file_too_large": "File size cannot exceed {{max}} MB",
       "invalid_file_type": "Unsupported file type"
     },
+    "attachment": {
+      "missing_title": "Attachment file no longer exists",
+      "missing_description": "The file may have been cleaned up or deleted manually",
+      "open_failed_title": "Failed to open attachment",
+      "open_failed_description": "Check whether an application is associated with this file type"
+    },
     "view": {
       "no_provider_title": "Please configure an AI Provider first",
       "no_provider_content": "Add an AI Provider in Settings to start chatting",
@@ -814,9 +820,17 @@
     "batch_deleted": "{{count}} conversations deleted",
     "selected_count": "{{count}} selected",
     "no_messages": "No messages yet",
-    "scroll_load_more": "↑ Scroll up to load more messages",
     "back_to_bottom": "↓ Back to bottom",
     "select_to_view": "Select a conversation on the left to view message history",
+    "tree": {
+      "other_branches": "Other branches ({{count}})",
+      "orphan_group": "Detached messages ({{count}})",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "focus_hint": "Viewing branch",
+      "raw_rows": "Raw rows",
+      "collapse_all": "Collapse branches"
+    },
     "errors": {
       "deleteConversationFailed": {
         "title": "Delete Failed",

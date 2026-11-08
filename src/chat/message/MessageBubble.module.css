@@ -43,7 +43,7 @@
   flex-direction: column;
   gap: 6px;
   min-width: 0;
-  max-width: min(calc(var(--chat-content-width, 420px) * 0.702), 82%);
+  max-width: var(--message-bubble-max-width, min(294.84px, 82%));
 }
 
 .rootRoleAssistant .stack {
@@ -164,7 +164,7 @@
 }
 
 .compact .stack {
-  max-width: 92%;
+  max-width: var(--message-bubble-max-width, 92%);
 }
 
 .compact .rootRoleAssistant .stack {

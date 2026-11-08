@@ -29,8 +29,6 @@ export const HistoryManager: React.FC = () => {
   const selectedId = useHistoryStore((s) => s.selectedId);
   const messages = useHistoryStore((s) => s.messages);
   const totalCount = useHistoryStore((s) => s.totalCount);
-  const hasMore = useHistoryStore((s) => s.hasMore);
-  const loadingMore = useHistoryStore((s) => s.loadingMore);
   const loadingMessages = useHistoryStore((s) => s.loadingMessages);
   const collapsedGroups = useHistoryStore((s) => s.collapsedGroups);
   const multiSelectMode = useHistoryStore((s) => s.multiSelectMode);
@@ -41,7 +39,6 @@ export const HistoryManager: React.FC = () => {
   const selectConversation = useHistoryStore((s) => s.selectConversation);
   const clearSelection = useHistoryStore((s) => s.clearSelection);
   const refreshMessages = useHistoryStore((s) => s.refreshMessages);
-  const loadMoreMessages = useHistoryStore((s) => s.loadMoreMessages);
   const toggleGroup = useHistoryStore((s) => s.toggleGroup);
   const loadConversations = useHistoryStore((s) => s.loadConversations);
   const enterMultiSelect = useHistoryStore((s) => s.enterMultiSelect);
@@ -327,15 +324,10 @@ export const HistoryManager: React.FC = () => {
         selectedConv={selectedConv}
         messages={messages}
         totalCount={totalCount}
-        hasMore={hasMore}
-        loadingMore={loadingMore}
         loadingMessages={loadingMessages}
         onExport={(id, format) => void exportConversation(id, format)}
         onDeleteConversation={(id) => void deleteConversation(id)}
         onDeleteMessage={(id) => void deleteMessage(id)}
-        onLoadMore={() => {
-          void loadMoreMessages();
-        }}
       />
       {multiSelectMode && (
         <MultiSelectBar
