@@ -7,8 +7,7 @@
 | 模块 | 职责 | 交互方式 |
 |------|------|---------|
 | **Orb 悬浮球** | AI 对话、Agent 模式切换、Mascot 形象、上下文压缩提示 | 桌面常驻，点击展开对话面板，失焦收起 |
-| **主窗口** | 工具箱、消息历史、密码保险库、设置入口 | 从托盘/悬浮球菜单打开，标准窗口 |
-| **设置窗口** | 总览 / 通用 / 外观 / 快捷键 / Provider / Agent / 存储 / 保险库 / 关于 | 独立窗口 |
+| **主窗口** | 工具箱、消息历史、密码保险库、设置页（总览 / 通用 / 外观 / 快捷键 / Provider / Agent / 存储 / 保险库 / 关于） | 从托盘/悬浮球菜单打开，标准窗口 |
 | **保险库解锁对话框** | 主密码 / 生物识别解锁 | 系统原生对话框（Win32 自绘窗口 / macOS osascript / Linux zenity·kdialog），非 Tauri webview 窗口 |
 
 > **主窗口不提供 AI 对话功能**，所有 AI 交互通过 Orb 完成。主窗口专注工具、历史管理与配置。
@@ -136,7 +135,7 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 | `/tools/:id` | 具体工具界面 |
 | `/history` | 消息历史管理（对话列表 + 搜索 + 筛选 + 批量操作 + 详情/分支） |
 | `/vault` | 密码保险库（解锁后进入条目列表/详情；解锁为系统原生对话框） |
-| `/settings` | 设置窗口入口（重定向到 `/settings/overview`） |
+| `/settings` | 设置页入口（重定向到 `/settings/overview`） |
 | `/settings/overview` | 设置总览 |
 | `/settings/general` | 通用设置（语言/开机自启/关闭到托盘/置顶/压缩参数） |
 | `/settings/appearance` | 外观设置（主题 + Orb/Mascot 外观） |
@@ -443,7 +442,7 @@ assistant/
 │   ├── App.tsx                    # 多窗口分流（webview.label → 组件映射）
 │   ├── config/constants.ts        # 窗口标签/尺寸/阈值（与 Rust constant.rs 对齐）
 │   ├── features/                  # 特性模块注册（registry / aggregate / nav + vault 模块）
-│   ├── layouts/                   # 各窗口布局（AppShell / MainLayout / NormalLayout / MiniLayout / OrbWindow / SettingsWindow）
+│   ├── layouts/                   # 各窗口布局（AppShell / MainLayout / NormalLayout / MiniLayout / OrbWindow）
 │   ├── orb/                       # OrbBall / OrbPanel / OrbDrag / OrbExpand / OrbCoord / OrbContextMenu / useOrbConfSync
 │   ├── mascot/                    # core（types / expressionPolicy / registry / resolve）+ renderers（rive / svg / gif）+ MascotRenderer / mascotStore / useMascotChatSync
 │   ├── chat/                      # ChatView / MessageList / MessageInput / 选择器 / compact 横幅 / message 渲染

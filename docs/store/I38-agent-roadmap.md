@@ -32,7 +32,7 @@
 | **P3 运行时内核** | `kernel/` 共用内核、端口、状态机、取消代际、双层超时、chat 等价迁移 | I36 spec、[I36a](./I36a-agent-kernel-baseline.md)、[I39](./I39-compaction-chat-merge-spec.md) | ✅ 已完成（C1–C11，2026-11-05；chat / agent 两条链路均已改调内核，H1–H9 全部收口；压缩共享边界（I39）已落地：互斥源 / 投影 / 刷新点 / 失败通道统一） | P0 |
 | **P4 Agent Loop 闭环** | RoundExecutor 多迭代循环；tool call 累积器；`ChatOptions.tools` 注入；停止钩子三维预算；阶梯 ③④⑤ 与中间件链（② 不随 P4）；审批默认 fail-closed 装配 | I38b | ✅ 已完成（2026-11-06；C1–C6、C8（除 C8.6）、C9 全部完成，`cargo test -p assistant-agent` / `assistant-providers` / `assistant-storage` 全绿，`clippy -D warnings` 与 `cargo fmt --check` 通过。**C7 端到端批次整体跳过**（用户决策）：`agent_loop_e2e.rs` / `agent_loop_dialect.rs` 未编写，C7.1–C7.17 与 C8.6 不计完成，端到端链路无自动化覆盖为已知缺口；组件级等价覆盖见 tasklist C7 说明） | P2、P3；I30 B 段决策 |
 | **P5 OS 工具能力** | `agent_*.rs` 九个文件工具（注册名 `read` / `ls` / `glob` / `grep` / `write` / `edit` / `mkdir` / `move` / `delete`）、`ask_user` 逐个落地；**`shell` 暂不提供**（[I38c §13](./I38c-os-tools-spec.md)）；白名单工具解析 `resolve_available_tools` 替换 P4 的 `RegistryToolCatalog`（deny-by-default + 显式白名单/黑名单）；清理 P4 接入代码（`ToolCatalog` trait、`RegistryToolCatalog`、`TurnSpec.tools` 类型收窄） | I38c | ✅ 已完成（2026-11-06；C1–C4、C6、C6b、C7、C8 全部完成，`cargo test --workspace` 全绿，`cargo clippy --workspace --all-targets -- -D warnings` 与 `cargo fmt --check` 通过，`npm run contract:check` 幂等。`ask_user` 不属 P5 退出条件，阻塞点登记在 [I38c §9](./I38c-os-tools-spec.md)，归 P6；`shell` 按 §13 暂不提供） | P1、P2 |
-| **P6 前端与模式** | 五态 ToolCallBubble、审批 UI、AgentMode / 对话级工具配置；chat / agent 链路显式切换（新建会话按 `mode.kind` 选路，会话内锁定）；**审批卡片携带用户判断信息**（单个 `ApprovalContext` 包裹：L0 `tier`/`behavior` + L1 `Policy::explain` 原因 + L2 `preview_for_approval` 量级预演 + `extensions` 后端检测出口，[I38d §3.2.1](./I38d-agent-frontend-modes-spec.md)） | I38d | ❌ 未开始 | P4、P5 |
+| **P6 前端与模式** | 五态 ToolCallBubble、审批 UI、AgentMode / 对话级工具配置；chat / agent **同会话内可切换**（每次发送按会话 `mode.kind` 选路，默认 chat，turn 进行中禁止切换）；**共同视图 + 双布局**（`ConversationView` + `ChatLayout` / `AgentLayout`）；**审批卡片携带用户判断信息**（单个 `ApprovalContext` 包裹：L0 `tier`/`behavior` + L1 `Policy::explain` 原因 + L2 `preview_for_approval` 量级预演 + `extensions` 后端检测出口，[I38d §3.2.1](./I38d-agent-frontend-modes-spec.md)） | I38d | 🚧 进行中（2026-11-07 开工）：开放问题全部定稿——`alwaysApprove` 跨会话持久 + 设置页撤销入口、审批等待计入墙钟（P4 D12）、`workspace_root` 用全局配置（会话级绑定归 P8.2）、审批超时默认 120s；`ask_user` 归 P6-C8 且**不属主体退出条件**。P6-C1 契约先行已完成（2026-11-07：审批/提问 DTO + `AgentMode` 扩展 + `ConversationDto.modeId` 全链路，`contract:gen` 已重新生成）；P6-C1b 链路选路已完成（2026-11-07：`conversationLink.ts` 单一判据、send/cancel 按会话 `modeId` 分派、模式选择器双组分栏）；2026-11-07 决策调整：**会话内锁定改为同会话可切换**，新增 P6-C1d 共同视图 + 双布局，C1b.4 锁定项作废；下一步 P6-C1c 审批信息装配 | P4、P5 |
 | **P7 MCP 外部工具** | MCP 客户端、进程管理、`mcp__{server}__{tool}` 桥接 | I38e | ❌ 未开始 | P2、P5 |
 
 **P0 的完成判据**（已复核代码）：`assistant-agent` 与前端不再持有 chat tool call 累积器与渲染组件；`ToolRegistry` 具备 `<=` 语义与受众过滤；`os_tool_exec` 已走 `exec::invoke`；生产注册表只有 `fs_link`（`TOOLBOX_ONLY`）。
@@ -109,13 +109,14 @@ P2 + P5 ───────────► P7
 | 压缩与 chat 的共享边界（共享积木 / 保留独立编排） | [I39](./I39-compaction-chat-merge-spec.md) | 专项规格 |
 | P3 任务级进度（C1–C11 勾选） | [I36 tasklist](./I36-agent-runtime-tasklist.md) | 任务清单（唯一任务级进度） |
 | P4 任务级进度（C1–C9 勾选） | [I38b tasklist](./I38b-agent-loop-tasklist.md) | 任务清单（唯一任务级进度） |
+| P6 任务级进度（C1–C8 勾选） | [I38d tasklist](./I38d-agent-frontend-modes-tasklist.md) | 任务清单（唯一任务级进度） |
 | 前四阶段代码规模与职责分布 | [代码清单](./agent-code-inventory.md) | 现状快照（不写进度） |
 | toolcall 从 chat 剥离 | [I30](./I30-phase1-toolcall-separation-spec.md) | 阶段一 A 段 |
 | 阶段一工具框架 | [I31](./I31-phase1-tool-framework-spec.md) | 阶段一 |
 | ToolBox 桥接 | [I18b](./I18b-tool-unified-bridge-spec.md) | 专项规格 |
 | Shell 洋葱模型 | [OSCALLDESIGN](../designed/OSCALLDESIGN.md) | 专项设计 |
 
-本表只回答「谁管什么」，**不写进度**（进度见 §2）；各文档内部 Step / T / C 编号的勾选由该文档自身维护，属规格内部条目，不是阶段状态。
+本表只回答「谁管什么」，**不写进度**（阶段级进度见 §2，任务级勾选见各 tasklist）；各文档内部 Step / T / C 编号的勾选由该文档自身维护，属规格内部条目，不是阶段状态。
 
 **单一权威源规则**：
 
@@ -143,6 +144,7 @@ P2 + P5 ───────────► P7
 | R10 | 子代理 / 多 agent 是否属于当前阶段 | **P0–P7 不实现**。P4 只预留 `agent_id` / `parent_turn_id` / `delegation_depth` 三个可选字段（I36 D16-D18），实现归 P8.1；不得在 RoundExecutor 内写 `if is_subagent` |
 | R11 | Super-agent 的 Router / Worker 与现有单会话 turn | **不作为当前架构目标**。P0–P7 是 Worker 层基础；P8.2/P8.3 才补子会话与 Router。跨重启的 persistence / Watchdog 归 P9，单独 ADR（I36 D13b），不得直接叠加后台进程 |
 | R12 | 压缩与 chat 的共享边界 | **不属 R7 的三份边界**：生命周期语义仍归 I36 spec Step 6，续跑式切换点归 P4 之后的续跑式压缩批次。共享到什么程度归 [I39](./I39-compaction-chat-merge-spec.md)。结论：**压缩不收编为 `TurnSpec` 第三种实例**，保留 `execute_compaction` 独立编排；只共享 `TurnTasks` 互斥源、`stream::consume`、`TurnEmitter`、usage 构造、`project_chat_messages` 投影、`emit_stream_finished` 刷新点与 `chat-delta.error` 失败通道 |
+| R13 | chat / agent 能否在同一会话内切换（I38d 早期规格要求「会话内锁定」） | **2026-11-07 改为同会话可切换**：链路由每次发送时的 `modeId → kind` 决定，默认 chat；turn 进行中禁止切换（前端置灰 + 后端 `conversation_busy`）。前端形态为**共同视图 + 双布局**（`ConversationView` + `ChatLayout` / `AgentLayout`），复用 chat 共享组件（[I38d §4.8 / §4.10](./I38d-agent-frontend-modes-spec.md)） |
 
 ---
 
@@ -157,7 +159,7 @@ P2 + P5 ───────────► P7
 | P3 | `cargo tree -p assistant-agent` 无 tauri；chat 对比测试（事件序列 / seq / 落库 / 错误文案）逐条一致；关闭窗口后 turn 可跑完 |
 | P4 | 多迭代闭环可跑通；`max_iterations` / 收尾调用 / 空响应重试 / 工具结果回填均有测试；`ChatOptions.tools` 在三个 adapter 生效；三维预算（迭代 / 工具调用 / 墙钟）各自可触发收尾；阶梯 ③④⑤ 按序生效且不超预算；审批通道缺失时判 `Ask` 的工具为 `Deny` 并写审计 |
 | P5 | 每个工具独立 spec 验收；破坏性工具只在 P2 就绪后注册；ToolBox 与 Agent 两入口共享 `execute()` 内安全守卫；`resolve_available_tools` deny-by-default + 白名单/黑名单有单测；P4 的 `RegistryToolCatalog` / `ToolCatalog` trait 已删除且全仓无残留引用 |
-| P6 | 五态渲染与审批闭环可用；`ConversationToolConfig` 前端内存态初始化与传递；跨窗口 phase 不漂移；链路选路按 `mode.kind` 分流且会话内不可切换 |
+| P6 | 五态渲染与审批闭环可用；`ConversationToolConfig` 前端内存态初始化与传递；跨窗口 phase 不漂移；链路按 `mode.kind` 每次发送分流、**会话内可切换**（turn 进行中禁止）；共同视图 + 双布局，默认 chat |
 | P7 | MCP server 启停/重连；工具命名与安全标记推断符合 I18 design §3.8；External 工具的 Policy 生效 |
 
 ---

@@ -1,4 +1,4 @@
-﻿# I38b — P4：Agent Loop 闭环规格
+﻿﻿# I38b — P4：Agent Loop 闭环规格
 
 | 项 | 值 |
 |---|---|
@@ -313,7 +313,7 @@ pub struct ChatOptions {
 ```
 
 - `None` / 空数组 = 不声明工具（chat 路径行为不变）。
-- **注入开关以 `TurnSpec.tools` 为准**：`TurnSpec::chat()` 恒为 `None`，`TurnSpec::agent()` 为 `Some(catalog)`。`AgentKind::supports_tool_call()`（现状仅 `custom`，见 `prompt_builder.rs:24`）只用于**前端选路**（chat 会话 / agent 会话，见 I38d §4.8）与 `request.rs` 的二次门控，**不作为链路判据**。这样「chat 路径行为不变」（A9）由 `TurnSpec` 保证，不依赖注册表是否为空。
+- **注入开关以 `TurnSpec.tools` 为准**：`TurnSpec::chat()` 恒为 `None`，`TurnSpec::agent()` 为 `Some(catalog)`。`AgentKind::supports_tool_call()`（P6 起改为「`kind = agent` 为真」，旧值 `custom` 等一律为假，见 I38d §4.11）只用于 `request.rs` 的二次门控，**不作为链路判据**；链路由前端按会话 `modeId` 选路（chat 会话 / agent 会话，见 I38d §4.8）。这样「chat 路径行为不变」（A9）由 `TurnSpec` 保证，不依赖注册表是否为空。
 - **赋值点**：`build_chat_options`（`chat_options.rs:39`）新增 `tools: Option<Vec<ToolSpec>>` 参数并在返回结构里填入；调用点从 `chat_request.rs` 迁到 `kernel/request.rs` 时，agent 链路（`TurnSpec::agent()`）传 `Some(...)`、chat 链路（`TurnSpec::chat()`）传 `None`。不新增第二个构造函数，避免两套 options 组装逻辑。
 - **`ChatOptions` 是内部结构，不是 wire DTO**（`cmd/compaction.rs:137` 与 `chat_options.rs:54` 用完整字面量构造），加字段会让这两处编译失败：`chat_options.rs` 随本次改动同步；`cmd/compaction.rs` 的压缩摘要调用显式写 `tools: None`（摘要不带工具），**不得**改成 `..Default::default()` 掩盖语义。
 - 现有 `ChatMessage.tool_calls` / `tool_call_id` 已存在（F12），本阶段开始被填充。
@@ -763,7 +763,7 @@ impl Drop for WaitGuard {
 | A6 | 三个 adapter 的 `ToolSpec` 注入形状有快照测试；Gemini 快照语义与 `arguments_is_snapshot` 一致 |
 | A7 | 累积器只有一处实现：`assistant-providers/src/tool_call_accumulator.rs` 已删除，`assistant-agent/src/kernel/stream.rs` 无 `ToolCallAccum`（`StreamOutcome` / `PartialOutcome` 无 `tool_calls` 字段），全仓无第二份（§3.1） |
 | A8 | `cargo tree -p assistant-agent` 无 `tauri`、无 `assistant-tools`；`agent/round_executor.rs` 仅含 trait 与值类型 |
-| A9 | chat 路径行为不变：`default` / `quick` / `deep` 档位 `tools = None`（即使注册表有工具）、无 tool 消息、事件序列与 P3 对比测试一致；仅 `custom` 档位注入工具 |
+| A9 | chat 路径行为不变：`default` / `quick` / `deep` / `custom` 等旧值模式（P6 起按 chat 链路处理）`tools = None`（即使注册表有工具）、无 tool 消息、事件序列与 P3 对比测试一致；仅 `kind = agent` 的模式注入工具 |
 | A10 | 事件 DTO 经 `npm run contract:gen` 生成（`AgentToolCallDto` / `AgentToolCallPayloadDto` 进 `protocol.contract.ts`，四变体为 discriminated union）；`cargo test --test assembly_contract` 与 `cargo test --test protocol_dto_roundtrip` 通过；`protocol_bindings.rs` 的「源码 TS 派生类型 ↔ `declarations`」集合断言通过（2026-11-05 起取代原计数断言，新增 DTO 只加 `declarations` 条目即可，无魔数要改） |
 | A11 | tool 落库往返一致：assistant 行 `tool_calls_json` + `role='tool'` 行（`tool_call_id` / `is_error`）写入 → 读回 → `prompt_builder` 重建出 §4.4 的 wire 形状，顺序与 `tool_calls` 一致；迁移只做 `ADD COLUMN`，旧行 `NULL` / `0` 语义正确 |
 | A11b | 投影期配对修复（D27）：构造「assistant 行有 `tool_calls_json` 但无 tool 行」的历史 → `prepare_messages` 产出配平的 wire（合成 `is_error = true` 的「未执行：本轮中断」结果），且 `messages` 表**无新增行**；构造「tool 行无父调用」→ 投影丢弃该消息、请求仍合法；修复对同一输入幂等 |
@@ -833,7 +833,7 @@ impl Drop for WaitGuard {
 | D26 | 重复调用豁免 | P4 豁免集为空；P8 引入 `wait_subagent` 时加入白名单（轮询类工具的相同参数重复调用属于合法进展，不计入 D19/D25） | OpenHuman `is_repeat_call_exempt()`：仅 `wait_subagent` 豁免，避免长任务在第三次轮询就被熔断 |
 | D27 | 投影期配对修复 | **`prompt_builder` 重建 wire 时做一次只读配对修复**：正向孤儿（assistant 行 `tool_calls_json` 有调用、无对应 `role='tool'` 行）合成 `is_error = true` 的「未执行：本轮中断」结果行（只进投影、不写库）；反向孤儿（`role='tool'` 行找不到父调用）投影时丢弃并 `log::warn!`。规则见 §6.2 | goose `conversation.rs::fix_messages` 每次发请求前跑 `fix_tool_calling`（删孤儿 tool_request / 孤儿 tool_response）与 `fix_empty_tool_results`（补占位）；OpenAI / Anthropic / Gemini 三家都强制 function_call ↔ 结果配对，缺配对整条会话之后每轮 400、且无法自愈 |
 
-**D12 细节**：超时沿用 I38a §2.8 —— 超时即 `Deny`，不得放行、不得无限挂起；默认 5 min，取值由审批配置提供（配置项随 P6 落地）。P4 只在 `ToolEvent` 与内存统计里带该值，不落库；是否落库与展示由 P6 定。
+**D12 细节**：超时沿用 I38a §2.8 —— 超时即 `Deny`，不得放行、不得无限挂起；默认 **120s**（P6 定稿，见 [I38d §3.3](./I38d-agent-frontend-modes-spec.md)，原「5 min」作废），取值由审批配置 `approvalTimeoutSecs` 提供。P4 只在 `ToolEvent` 与内存统计里带该值，不落库；是否落库与展示由 P6 定。
 
 **D14 细节**：两张新表按 `CREATE TABLE IF NOT EXISTS` 建在 `db.rs` 的建表段（幂等，老库首次启动即补齐，不需要 ALTER 迁移），字段直接对齐 P2 端口入参，不做额外索引或历史表：
 

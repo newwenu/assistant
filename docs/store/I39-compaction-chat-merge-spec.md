@@ -226,7 +226,7 @@ impl TauriEventSink {
 |---|---|
 | `chatCompactSlice.manualCompact` | 乐观插入临时 `compact_summary` 消息 + `beginStream(tempId)`；`invoke` 抛错（已满 / 正忙）时回滚临时消息并 `notifyError`（准入失败，turn 未开始） |
 | `chatCompactSlice.isFull` / `unlockConversation` | 不变 |
-| `CompactBanner` | `isFull` 提示与「解压」入口，不变 |
+| `CompactBanner` | `isFull` 提示与「解压」入口，不变；「新建对话」恒传 `builtin-default`（不继承当前会话 `modeId`），见 §4.3 |
 | `MessageBubble` 的 `compact_summary` 只读分支 | 不变（含 `compactSummaryHeader`）；`ErrorBlock` 分支在它之前，失败时照常渲染 |
 | `chatStreamStore` / `chatStorePorts` | 不改 |
 
@@ -241,6 +241,15 @@ impl TauriEventSink {
 | `src/chat/ChatView.tsx` | 删 `CompactErrorBanner` 的 import 与渲染 |
 
 失败呈现路径统一为：`chat-delta.error` → 摘要消息 `error` 字段 → `MessageBubble` 的 `ErrorBlock`。
+
+### 4.3 压缩不继承会话模式
+
+压缩请求与「压缩横幅里的新建对话」是两件不同的事，二者都不继承会话 `modeId`：
+
+| 项 | 判据 | 理由 |
+|---|---|---|
+| 压缩请求本身 | `execute_compaction` 直接构造 `ChatOptions { tools: None, temperature: 0.3 }` 调 provider 适配器 | 压缩是单次摘要调用，无迭代、无工具轮、无 `TurnSpec`（§1.2）；会话模式对摘要生成没有任何影响面，继承只会把 `toolConfig` 等无关状态拖进后台任务 |
+| 横幅的「新建对话」 | 恒传 `builtin-default` | 该按钮不是用户显式选模式，只是一个空白新会话；按 I38d §4.8「新建会话 `modeId = builtin-default`」处理。切到 agent 由共同视图的 `ModeSelector` 承担（I38d §4.10），不需要在压缩入口隐式带过链路 |
 
 ---
 

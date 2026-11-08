@@ -70,7 +70,7 @@
 - [x] C2.5a `TurnSpec.tools: Option<Arc<dyn ToolCatalog>>` 与 `runner.rs` 的 `spec.tools.is_none()` 判定改到新签名（P3 过渡循环随 C5 删除）
 - [x] C2.6 `src-tauri` 实现 `ToolCatalog`：调 `ToolRegistry::tool_definitions_for_tier(ToolTier::Os)`，逐条转 `ToolSpec`
 - [x] C2.7 `max_tier` 常量放适配器内，`External` 排除（D15）；`fs_link` 为 `TOOLBOX_ONLY` 不会出现
-- [x] C2.8 注入开关：`TurnSpec.tools` 有值（仅 agent 链路传入）且 `AgentKind::supports_tool_call()` 为真（现状 `custom`）才取工具；`default` / `quick` / `deep` 恒 `None`（A9）
+- [x] C2.8 注入开关：`TurnSpec.tools` 有值（仅 agent 链路传入）且 `AgentKind::supports_tool_call()` 为真（现状 `custom`；**P6 起改为 `kind = agent` 为真，旧值一律为假**，见 I38d §4.11）才取工具；`default` / `quick` / `deep` 恒 `None`（A9）
 - [x] C2.9 `ToolCatalog` 返回空 `Vec` 时 `tools = None`，循环退化为单次调用（A9）
 - [x] C2.10 OpenAI `ChatRequest` 新增 `tools: Option<Vec<Value>>` + `skip_serializing_if`，构造点 `openai/chat.rs` 填值
 - [x] C2.11 `openai/message_converter.rs` 新增 `ToolSpec` → `{ type: "function", function: { name, description, parameters } }` 转换
@@ -84,7 +84,7 @@
 - [x] C2.19 Gemini `functionResponse` 必须带工具名：确认 `convert_tool_result_parts` 在 `name` 非空时产出 parts
 - [x] C2.20 测试：三 adapter `ToolSpec` 注入形状快照（A6 后半）
 - [x] C2.21 测试：带工具历史的第二轮请求三方言均合法（A19）
-- [x] C2.22 测试：`custom` 注入、`default` / `quick` / `deep` 不注入（A9）
+- [x] C2.22 测试：`custom` 注入、`default` / `quick` / `deep` 不注入（A9；**P6 起改为 `kind = agent` 注入、其余旧值不注入**）
 
 ---
 
