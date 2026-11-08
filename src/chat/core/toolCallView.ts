@@ -117,12 +117,15 @@ export function applyAgentToolCall(
         approval: null,
         finishedAt: now,
       });
-    case "awaitingAnswer":
+    case "awaitingAnswer": {
+      const current = views.find((view) => view.callId === call.callId);
       return upsert(views, call.callId, call.name, {
         status: "awaiting_user",
         question: payload.question,
         approval: null,
+        startedAt: current?.startedAt ?? now,
       });
+    }
   }
 }
 

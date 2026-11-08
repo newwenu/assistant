@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -38,6 +38,42 @@ struct PendingQuestion {
     /// 登记时刻：补拉时据此把 `timeoutMs` 改写成剩余时长。
     started_at: Instant,
     sender: oneshot::Sender<Vec<QuestionAnswerItem>>,
+}
+
+/// 答案与题目规格的语义校验（IPC 兜底，前端已拦住正常路径）。
+///
+/// 只拒绝**确定无效**的提交：越界 `label`、同一 `label` 重复、单选多答。
+/// 不校验「是否已作答」——那属于交互约束，误判会把用户卡在卡片上重试不出来。
+fn validate_answer_semantics(
+    questions: &[AgentQuestionDto],
+    answers: &[QuestionAnswerItem],
+) -> Result<(), String> {
+    for (index, (spec, answer)) in questions.iter().zip(answers.iter()).enumerate() {
+        let number = index + 1;
+        let mut seen = HashSet::new();
+        for label in &answer.selected {
+            if !spec.options.iter().any(|option| &option.label == label) {
+                return Err(format!(
+                    "question {} answer '{}' is not one of its options",
+                    number, label
+                ));
+            }
+            if !seen.insert(label.as_str()) {
+                return Err(format!(
+                    "question {} answer repeats option '{}'",
+                    number, label
+                ));
+            }
+        }
+        if !spec.multi_select && answer.selected.len() > 1 {
+            return Err(format!(
+                "question {} is single-select but got {} selected options",
+                number,
+                answer.selected.len()
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl PendingQuestionRegistry {
@@ -106,6 +142,9 @@ impl PendingQuestionRegistry {
                 call_id,
                 answers.len()
             ));
+        }
+        if let Err(error) = validate_answer_semantics(&entry.question.questions, &answers) {
+            return Err(error);
         }
         match pending.remove(call_id) {
             Some(entry) => entry
@@ -304,6 +343,7 @@ fn question_dto(question: &QuestionSpec) -> AgentQuestionDto {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::AgentQuestionOptionDto;
 
     fn answer(label: &str) -> QuestionAnswerItem {
         QuestionAnswerItem::new(vec![label.to_string()], None)
@@ -318,7 +358,18 @@ mod tests {
                 .map(|index| AgentQuestionDto {
                     question: format!("q{index}"),
                     header: "h".to_string(),
-                    options: Vec::new(),
+                    // 题目恒带 2 个选项：`validate_questions` 也要求 2-10 个，
+                    // 空选项在真实链路里不存在，用它做夹具会掩盖答案校验。
+                    options: vec![
+                        AgentQuestionOptionDto {
+                            label: "A".to_string(),
+                            description: "a".to_string(),
+                        },
+                        AgentQuestionOptionDto {
+                            label: "B".to_string(),
+                            description: "b".to_string(),
+                        },
+                    ],
                     multi_select: false,
                 })
                 .collect(),
@@ -362,6 +413,80 @@ mod tests {
             .expect_err("答案条数必须与题目数一致");
         assert!(error.contains("expected 2 answers"));
         assert_eq!(registry.len(), 1, "无效提交不得移除挂起点");
+    }
+
+    #[test]
+    fn resolve_rejects_label_outside_options() {
+        let registry = PendingQuestionRegistry::new();
+        let _rx = register_one(&registry, "call-1", "conv-a", 1).expect("首次登记必须成功");
+
+        let error = registry
+            .resolve("call-1", "conv-a", vec![answer("C")])
+            .expect_err("越界 label 必须拒绝");
+        assert!(error.contains("is not one of its options"));
+        assert_eq!(registry.len(), 1, "无效提交不得移除挂起点");
+    }
+
+    #[test]
+    fn resolve_rejects_repeated_label() {
+        let registry = PendingQuestionRegistry::new();
+        let mut spec = request("call-1", "conv-a", 1);
+        spec.questions[0].multi_select = true;
+        let _rx = registry.register(1, spec, None).expect("首次登记必须成功");
+
+        let error = registry
+            .resolve(
+                "call-1",
+                "conv-a",
+                vec![QuestionAnswerItem::new(
+                    vec!["A".to_string(), "A".to_string()],
+                    None,
+                )],
+            )
+            .expect_err("重复 label 必须拒绝");
+        assert!(error.contains("repeats option"));
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn resolve_rejects_multiple_labels_for_single_select() {
+        let registry = PendingQuestionRegistry::new();
+        let _rx = register_one(&registry, "call-1", "conv-a", 1).expect("首次登记必须成功");
+
+        let error = registry
+            .resolve(
+                "call-1",
+                "conv-a",
+                vec![QuestionAnswerItem::new(
+                    vec!["A".to_string(), "B".to_string()],
+                    None,
+                )],
+            )
+            .expect_err("单选题多答必须拒绝");
+        assert!(error.contains("single-select"));
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn resolve_accepts_multiple_labels_for_multi_select() {
+        let registry = PendingQuestionRegistry::new();
+        let mut spec = request("call-1", "conv-a", 1);
+        spec.questions[0].multi_select = true;
+        let _rx = registry.register(1, spec, None).expect("首次登记必须成功");
+
+        assert!(
+            registry
+                .resolve(
+                    "call-1",
+                    "conv-a",
+                    vec![QuestionAnswerItem::new(
+                        vec!["A".to_string(), "B".to_string()],
+                        None,
+                    )],
+                )
+                .is_ok(),
+            "多选题必须接受多个已选 label"
+        );
     }
 
     #[test]

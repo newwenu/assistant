@@ -126,6 +126,18 @@ pub fn validate_questions(questions: &[QuestionSpec]) -> Result<(), String> {
                 ));
             }
         }
+        // `label` 是答案的唯一键：重复 label 会让「用户选了哪一个」无法表达，
+        // 前端点选与后端回填都会指向同一串文本，只能在这里拒绝。
+        let mut labels = std::collections::HashSet::new();
+        for option in &question.options {
+            if !labels.insert(option.label.trim()) {
+                return Err(format!(
+                    "question {} has duplicate option label '{}'",
+                    number,
+                    option.label.trim()
+                ));
+            }
+        }
     }
 
     Ok(())
@@ -238,6 +250,21 @@ mod tests {
 
         let mut spec = question("标签", 2);
         spec.options[1].description = String::new();
+        assert!(validate_questions(&[spec]).is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_option_labels() {
+        let mut spec = question("标签", 2);
+        let first = spec.options[0].label.clone();
+        spec.options[1].label = first.clone();
+        let error = validate_questions(&[spec]).expect_err("duplicate labels must be rejected");
+        assert!(error.contains("duplicate option label"));
+
+        // 去掉首尾空白后相同也算重复：label 是答案键，比较按 trim 后的文本。
+        let mut spec = question("标签", 2);
+        let first = spec.options[0].label.clone();
+        spec.options[1].label = format!(" {} ", first);
         assert!(validate_questions(&[spec]).is_err());
     }
 

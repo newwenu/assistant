@@ -29,17 +29,18 @@ function errorText(err: unknown): string {
   return String(err);
 }
 
-function emptyDrafts(count: number): QuestionDraft[] {
-  return Array.from({ length: count }, () => ({
-    selected: [],
-    otherSelected: false,
-    otherText: "",
-  }));
+function newDraft(): QuestionDraft {
+  return { selected: [], otherSelected: false, otherText: "" };
 }
 
-/** 一题是否算「已作答」：选了选项，或选了「其他」且填了内容。 */
+function emptyDrafts(count: number): QuestionDraft[] {
+  return Array.from({ length: count }, newDraft);
+}
+
+/** 一题是否算「已作答」：选了选项，或「其他」处于选中态且填了内容。 */
 function isAnswered(draft: QuestionDraft): boolean {
-  return draft.selected.length > 0 || draft.otherText.trim().length > 0;
+  if (draft.selected.length > 0) return true;
+  return draft.otherSelected && draft.otherText.trim().length > 0;
 }
 
 /**
@@ -51,6 +52,10 @@ function isAnswered(draft: QuestionDraft): boolean {
  * - 超时只置灰不自动提交：收口以后端超时为准，避免与用户点击竞态。
  *
  * `timeoutMs = 0` 表示不限时（配置为 0），此时不显示倒计时。
+ *
+ * 倒计时锚点：`timeoutMs` 在补拉快照里已被后端改写为**剩余**毫秒，
+ * 因此缺 `startedAt` 时以挂载时刻为锚点即可；`deadline` 必须固定，
+ * 不能在渲染期现算，否则每次渲染都会重建 interval、倒计时永远不走。
  */
 export const QuestionCard: React.FC<QuestionCardProps> = ({
   question,
@@ -64,11 +69,26 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const questionCount = question.questions.length;
   const timed = question.timeoutMs > 0;
-  const deadline = (startedAt ?? Date.now()) + question.timeoutMs;
+  const [mountedAt] = useState(() => Date.now());
+  const deadline = useMemo(
+    () => (startedAt ?? mountedAt) + question.timeoutMs,
+    [startedAt, mountedAt, question.timeoutMs],
+  );
   const [remainingMs, setRemainingMs] = useState(() =>
     timed ? deadline - Date.now() : 0,
   );
+
+  /** 题数与 `drafts` 对齐：补拉重放可能带来不同的题数，越界会直接崩卡片。 */
+  useEffect(() => {
+    setDrafts((prev) => {
+      if (prev.length === questionCount) return prev;
+      const next = prev.slice(0, questionCount);
+      while (next.length < questionCount) next.push(newDraft());
+      return next;
+    });
+  }, [questionCount]);
 
   useEffect(() => {
     if (!timed) return;
@@ -86,34 +106,43 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
     [drafts],
   );
 
-  const patch = (index: number, next: Partial<QuestionDraft>) => {
+  /** 所有改动都走函数式更新：连续点击不会读到渲染期的旧 `drafts`。 */
+  const updateDraft = (
+    index: number,
+    updater: (draft: QuestionDraft) => QuestionDraft,
+  ) => {
     if (locked) return;
     setDrafts((prev) =>
-      prev.map((draft, i) => (i === index ? { ...draft, ...next } : draft)),
+      prev.map((draft, i) => (i === index ? updater(draft) : draft)),
     );
   };
 
+  const patch = (index: number, next: Partial<QuestionDraft>) => {
+    updateDraft(index, (draft) => ({ ...draft, ...next }));
+  };
+
   const toggleOption = (index: number, spec: AgentQuestion, label: string) => {
-    if (locked) return;
-    const draft = drafts[index];
-    if (!spec.multiSelect) {
-      patch(index, { selected: [label], otherSelected: false });
-      return;
-    }
-    const selected = draft.selected.includes(label)
-      ? draft.selected.filter((item) => item !== label)
-      : [...draft.selected, label];
-    patch(index, { selected });
+    updateDraft(index, (draft) => {
+      if (!spec.multiSelect) {
+        return { ...draft, selected: [label], otherSelected: false };
+      }
+      const selected = draft.selected.includes(label)
+        ? draft.selected.filter((item) => item !== label)
+        : [...draft.selected, label];
+      return { ...draft, selected };
+    });
   };
 
   const toggleOther = (index: number, spec: AgentQuestion) => {
-    if (locked) return;
-    const draft = drafts[index];
-    if (spec.multiSelect) {
-      patch(index, { otherSelected: !draft.otherSelected });
-      return;
-    }
-    patch(index, { selected: [], otherSelected: true });
+    updateDraft(index, (draft) => {
+      if (spec.multiSelect) {
+        return { ...draft, otherSelected: !draft.otherSelected };
+      }
+      // 单选下「其他」是排他项，再点一次取消，与多选的可取消语义保持一致。
+      return draft.otherSelected
+        ? { ...draft, otherSelected: false }
+        : { ...draft, selected: [], otherSelected: true };
+    });
   };
 
   const submit = async () => {
@@ -126,7 +155,10 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
         callId: question.callId,
         answers: drafts.map((draft) => ({
           selected: draft.selected,
-          other: draft.otherSelected ? draft.otherText.trim() : null,
+          other:
+            draft.otherSelected && draft.otherText.trim().length > 0
+              ? draft.otherText.trim()
+              : null,
         })),
       });
       setSubmitted(true);
@@ -153,8 +185,11 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
       </div>
 
       {question.questions.map((spec, index) => {
-        const draft = drafts[index];
+        const draft = drafts[index] ?? newDraft();
         const otherActive = draft.otherSelected;
+        const markClass = spec.multiSelect
+          ? css.optionMarkMulti
+          : css.optionMarkSingle;
         return (
           <div className={css.question} key={`${spec.header}-${index}`}>
             <div className={css.questionHead}>
@@ -167,18 +202,27 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
             </div>
             <div className={css.questionText}>{spec.question}</div>
             <div className={css.options}>
-              {spec.options.map((option) => {
+              {spec.options.map((option, optionIndex) => {
                 const active = draft.selected.includes(option.label);
                 return (
                   <button
                     type="button"
-                    key={option.label}
+                    key={optionIndex}
                     className={`${css.option} ${active ? css.optionActive : ""}`}
                     disabled={locked}
+                    aria-pressed={active}
                     onClick={() => toggleOption(index, spec, option.label)}
                   >
-                    <span className={css.optionLabel}>{option.label}</span>
-                    <span className={css.optionDesc}>{option.description}</span>
+                    <span
+                      className={`${css.optionMark} ${markClass} ${active ? css.optionMarkActive : ""}`}
+                      aria-hidden="true"
+                    />
+                    <span className={css.optionBody}>
+                      <span className={css.optionLabel}>{option.label}</span>
+                      <span className={css.optionDesc}>
+                        {option.description}
+                      </span>
+                    </span>
                   </button>
                 );
               })}
@@ -186,6 +230,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
                 className={`${css.option} ${otherActive ? css.optionActive : ""}`}
                 role="button"
                 tabIndex={locked ? -1 : 0}
+                aria-pressed={otherActive}
                 onClick={() => toggleOther(index, spec)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
@@ -194,23 +239,29 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
                   }
                 }}
               >
-                <span className={css.optionLabel}>
-                  {t("chat.tool.question.other")}
+                <span
+                  className={`${css.optionMark} ${markClass} ${otherActive ? css.optionMarkActive : ""}`}
+                  aria-hidden="true"
+                />
+                <span className={css.optionBody}>
+                  <span className={css.optionLabel}>
+                    {t("chat.tool.question.other")}
+                  </span>
+                  {otherActive && (
+                    <Input
+                      className={css.otherInput}
+                      size="small"
+                      autoFocus
+                      disabled={locked}
+                      value={draft.otherText}
+                      placeholder={t("chat.tool.question.other_placeholder")}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(event) =>
+                        patch(index, { otherText: event.target.value })
+                      }
+                    />
+                  )}
                 </span>
-                {otherActive && (
-                  <Input
-                    className={css.otherInput}
-                    size="small"
-                    autoFocus
-                    disabled={locked}
-                    value={draft.otherText}
-                    placeholder={t("chat.tool.question.other_placeholder")}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={(event) =>
-                      patch(index, { otherText: event.target.value })
-                    }
-                  />
-                )}
               </div>
             </div>
           </div>

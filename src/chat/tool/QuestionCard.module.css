@@ -69,8 +69,9 @@
 
 .option {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 6px;
   padding: 6px 8px;
   border: 1px solid var(--color-border-secondary);
   border-radius: 6px;
@@ -94,6 +95,53 @@
 .option:disabled {
   cursor: default;
   opacity: 0.6;
+}
+
+/* 选择态标记：单选画圆、多选画方，样式本身就在传达「能否多选」。 */
+.optionMark {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  display: grid;
+  place-items: center;
+}
+
+.optionMarkSingle {
+  border-radius: 50%;
+}
+
+.optionMarkMulti {
+  border-radius: 3px;
+}
+
+.optionMarkActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+.optionMarkActive::after {
+  content: "";
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--color-text-on-primary, #fff);
+}
+
+.optionMarkActive.optionMarkSingle::after {
+  border-radius: 50%;
+}
+
+.optionBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 
 .optionLabel {
