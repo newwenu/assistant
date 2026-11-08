@@ -22,6 +22,7 @@ import {
 import "../core/agentKind/agentModeDefinitions";
 import { useSettingMessage } from "../shared/useSettingMessage";
 import { PermissionGrantsSection } from "../shared/sections/PermissionGrantsSection";
+import { ToolAssemblySection } from "../shared/sections/ToolAssemblySection";
 import { REASONING_EFFORTS, type ReasoningEffort } from "@/chat/core/reasoning";
 
 interface ModeFormData {
@@ -54,6 +55,8 @@ export const AgentModeSettings: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingMode, setEditingMode] = useState<AgentMode | null>(null);
   const [form] = Form.useForm<ModeFormData>();
+  const [toolConfigDraft, setToolConfigDraft] =
+    useState<ConversationToolConfig>(DEFAULT_TOOL_CONFIG);
   const msg = useSettingMessage();
   const { modal } = App.useApp();
   const [searchQuery, setSearchQuery] = useState("");
@@ -182,6 +185,7 @@ export const AgentModeSettings: React.FC = () => {
     setEditingMode(null);
     form.resetFields();
     form.setFieldsValue(defaultFormData);
+    setToolConfigDraft(DEFAULT_TOOL_CONFIG);
     setDrawerOpen(true);
   };
 
@@ -198,6 +202,7 @@ export const AgentModeSettings: React.FC = () => {
       reasoningEnabled: mode.reasoningEnabled,
       reasoningEffort: mode.reasoningEffort,
     });
+    setToolConfigDraft(mode.toolConfig ?? DEFAULT_TOOL_CONFIG);
     setDrawerOpen(true);
   };
 
@@ -236,9 +241,10 @@ export const AgentModeSettings: React.FC = () => {
   const handleSave = async () => {
     const values = await form.validateFields();
     const kind = (values.kind || "chat") as AgentMode["kind"];
-    const toolConfig: ConversationToolConfig = editingMode
-      ? editingMode.toolConfig
-      : DEFAULT_TOOL_CONFIG;
+    const toolConfig =
+      kind === "agent"
+        ? toolConfigDraft
+        : (editingMode?.toolConfig ?? DEFAULT_TOOL_CONFIG);
     try {
       if (editingMode) {
         await store.saveMode({
@@ -287,9 +293,8 @@ export const AgentModeSettings: React.FC = () => {
     return editingMode.isBuiltin && schema.key === "name";
   };
 
-  const summaryToolConfig = editingMode?.toolConfig ?? DEFAULT_TOOL_CONFIG;
   const formKind = (formValues?.kind as string | undefined) ?? "chat";
-  const showToolSummary = formKind === "agent";
+  const showToolAssembly = formKind === "agent";
 
   const renderModeRow = (mode: AgentMode) => (
     <div key={mode.id} className="entity-list-row">
@@ -307,6 +312,19 @@ export const AgentModeSettings: React.FC = () => {
             className="entity-list-row-detail"
           >
             {mode.description}
+          </Typography.Text>
+        )}
+        {mode.kind === "agent" && (
+          <Typography.Text type="secondary" className="entity-list-row-model">
+            {t("settings.agent_mode.tool_assembly.summary", {
+              tier: t(
+                `settings.agent_mode.field.max_tool_tier.options.${mode.toolConfig.maxToolTier}`,
+              ),
+              level: t(
+                `settings.agent_mode.field.approval_level.options.${mode.toolConfig.approvalLevel}`,
+              ),
+              count: mode.toolConfig.enabledTools.length,
+            })}
           </Typography.Text>
         )}
       </div>
@@ -436,45 +454,11 @@ export const AgentModeSettings: React.FC = () => {
               </Form.Item>
             ))}
           </Form>
-          {showToolSummary && (
-            <div
-              style={{
-                marginTop: 16,
-                padding: "8px 12px",
-                border: "1px solid var(--color-border-secondary)",
-                borderRadius: 8,
-              }}
-            >
-              <Typography.Text strong style={{ fontSize: 13 }}>
-                {t("settings.agent_mode.tool_assembly.title")}
-              </Typography.Text>
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 12,
-                  color: "var(--color-text-secondary)",
-                }}
-              >
-                {t("settings.agent_mode.tool_assembly.summary", {
-                  tier: translateKey(
-                    `settings.agent_mode.field.max_tool_tier.options.${summaryToolConfig.maxToolTier}`,
-                  ),
-                  level: translateKey(
-                    `settings.agent_mode.field.approval_level.options.${summaryToolConfig.approvalLevel}`,
-                  ),
-                  count: summaryToolConfig.enabledTools.length,
-                })}
-              </div>
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 12,
-                  color: "var(--color-text-tertiary)",
-                }}
-              >
-                {t("settings.agent_mode.tool_assembly.hint")}
-              </div>
-            </div>
+          {showToolAssembly && (
+            <ToolAssemblySection
+              config={toolConfigDraft}
+              onChange={setToolConfigDraft}
+            />
           )}
         </Drawer>
       </SettingsPageShell>

@@ -1,11 +1,19 @@
 import type {
   ApprovalLevelDto,
   ConversationToolConfigDto,
+  ToolDescriptorDto,
   ToolTierDto,
 } from "../../types/protocol.contract";
 
 /** 工具层级的完整取值集合（顺序即 UI 展示顺序）。 */
 export const TOOL_TIERS: ToolTierDto[] = ["sandbox", "os", "external"];
+
+/** 层级高低权重：数值越大越靠外，用于与 `maxToolTier` 比较。 */
+export const TIER_RANK: Record<ToolTierDto, number> = {
+  sandbox: 0,
+  os: 1,
+  external: 2,
+};
 
 /** 审批级别的完整取值集合（顺序即 UI 展示顺序）。 */
 export const APPROVAL_LEVELS: ApprovalLevelDto[] = [
@@ -79,4 +87,37 @@ export function isEmptyToolConfigDiff(diff: ToolConfigDiff): boolean {
     diff.tierChanged === null &&
     diff.levelChanged === null
   );
+}
+
+/** 按 tier 分组；顺序与 `TOOL_TIERS` 一致，无工具的 tier 也保留空数组。 */
+export function groupToolsByTier(
+  tools: ToolDescriptorDto[],
+): Map<ToolTierDto, ToolDescriptorDto[]> {
+  const map = new Map<ToolTierDto, ToolDescriptorDto[]>();
+  for (const tier of TOOL_TIERS) map.set(tier, []);
+  for (const tool of tools) map.get(tool.tier)?.push(tool);
+  return map;
+}
+
+/** 该 tier 中已被勾选的工具 id，顺序与传入清单一致。 */
+export function selectedIdsInTier(
+  config: ConversationToolConfigDto,
+  tools: ToolDescriptorDto[],
+  tier: ToolTierDto,
+): string[] {
+  const inTier = tools.filter((tool) => tool.tier === tier);
+  return config.enabledTools.filter((id) => inTier.some((t) => t.id === id));
+}
+
+/** 整体替换某个 tier 的勾选集合，保留其它 tier 的选择。 */
+export function setTierSelection(
+  config: ConversationToolConfigDto,
+  tools: ToolDescriptorDto[],
+  tier: ToolTierDto,
+  ids: string[],
+): ConversationToolConfigDto {
+  const others = config.enabledTools.filter(
+    (id) => !tools.some((tool) => tool.id === id && tool.tier === tier),
+  );
+  return { ...config, enabledTools: [...others, ...ids] };
 }

@@ -302,9 +302,15 @@
         }
       },
       "tool_assembly": {
-        "title": "工具装配（只读）",
-        "summary": "层级上限：{{tier}} · 审批级别：{{level}} · 已启用 {{count}} 个工具",
-        "hint": "工具装配在对话中调整（Agent 布局的工具面板），此处仅显示该模式的默认值。"
+        "title": "工具装配",
+        "summary": "{{tier}} · {{level}} · {{count}} 个工具",
+        "enabled_count": "已启用 {{count}} 个",
+        "tier_label": "层级上限",
+        "level_label": "审批级别",
+        "out_of_tier": "超出上限，不生效",
+        "group_empty": "该层级暂无工具",
+        "load_failed": "加载工具清单失败，请稍后重试。",
+        "hint": "仅影响之后新建的会话；已有会话请在对话内调整。"
       },
       "grants": {
         "title": "已授权操作",
@@ -625,7 +631,8 @@
         "success": "已完成",
         "error": "失败",
         "awaiting_user": "等待确认",
-        "cancelled": "已取消"
+        "cancelled": "已取消",
+        "missing": "结果缺失"
       },
       "result_persisted": "结果已落盘",
       "result_size": "{{lines}} 行 · {{size}}",

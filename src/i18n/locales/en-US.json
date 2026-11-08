@@ -314,9 +314,15 @@
         }
       },
       "tool_assembly": {
-        "title": "Tool assembly (read-only)",
-        "summary": "Max tier: {{tier}} · Approval level: {{level}} · {{count}} tools enabled",
-        "hint": "Adjust tool assembly in a conversation (Agent layout tool panel). This only shows the mode's default."
+        "title": "Tool assembly",
+        "summary": "{{tier}} · {{level}} · {{count}} tools",
+        "enabled_count": "{{count}} enabled",
+        "tier_label": "Max tier",
+        "level_label": "Approval level",
+        "out_of_tier": "Above max tier, ignored",
+        "group_empty": "No tools in this tier",
+        "load_failed": "Failed to load tools. Try again later.",
+        "hint": "Only affects conversations created later; adjust existing conversations inside the chat."
       },
       "grants": {
         "title": "Authorized actions",
@@ -640,7 +646,8 @@
         "success": "Done",
         "error": "Failed",
         "awaiting_user": "Awaiting approval",
-        "cancelled": "Cancelled"
+        "cancelled": "Cancelled",
+        "missing": "Result missing"
       },
       "result_persisted": "Output saved to",
       "result_size": "{{lines}} lines · {{size}}",

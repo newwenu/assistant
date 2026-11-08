@@ -8,7 +8,14 @@ import type {
 } from "@/types/protocol.contract";
 import type { I18nPath } from "@/i18n";
 import type { ConversationToolConfig } from "../core/chatTypes";
-import { APPROVAL_LEVELS, TOOL_TIERS } from "../core/toolConfig";
+import {
+  APPROVAL_LEVELS,
+  TIER_RANK,
+  TOOL_TIERS,
+  groupToolsByTier,
+  selectedIdsInTier,
+  setTierSelection,
+} from "../core/toolConfig";
 import css from "./ToolConfigPanel.module.css";
 
 interface ToolConfigPanelProps {
@@ -23,12 +30,6 @@ interface ToolConfigPanelProps {
   onSetDefault: () => void;
   onClose: () => void;
 }
-
-const TIER_RANK: Record<ToolTierDto, number> = {
-  sandbox: 0,
-  os: 1,
-  external: 2,
-};
 
 /**
  * 面板短提示：`ToolDescriptorDto.description` 是给模型看的提示词（`ask_user` 长达数行），
@@ -67,12 +68,7 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
   const { t } = useTranslation();
   const ceiling = TIER_RANK[config.maxToolTier];
 
-  const grouped = useMemo(() => {
-    const map = new Map<ToolTierDto, ToolDescriptorDto[]>();
-    for (const tier of TOOL_TIERS) map.set(tier, []);
-    for (const tool of tools) map.get(tool.tier)?.push(tool);
-    return map;
-  }, [tools]);
+  const grouped = useMemo(() => groupToolsByTier(tools), [tools]);
 
   const enabledCount = config.enabledTools.length;
 
@@ -81,13 +77,6 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
 
   const setLevel = (approvalLevel: ApprovalLevelDto) =>
     onChange({ ...config, approvalLevel });
-
-  const setTierSelection = (tier: ToolTierDto, ids: string[]) => {
-    const others = config.enabledTools.filter(
-      (id) => !tools.some((tool) => tool.id === id && tool.tier === tier),
-    );
-    onChange({ ...config, enabledTools: [...others, ...ids] });
-  };
 
   return (
     <div className={css.root}>
@@ -149,9 +138,7 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
           {TOOL_TIERS.map((tier) => {
             const items = grouped.get(tier) ?? [];
             const beyondCeiling = TIER_RANK[tier] > ceiling;
-            const selected = config.enabledTools.filter((id) =>
-              items.some((tool) => tool.id === id),
-            );
+            const selected = selectedIdsInTier(config, tools, tier);
             return (
               <div
                 key={tier}
@@ -176,7 +163,14 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
                     value={selected}
                     disabled={beyondCeiling}
                     onChange={(values) =>
-                      setTierSelection(tier, values.map(String))
+                      onChange(
+                        setTierSelection(
+                          config,
+                          tools,
+                          tier,
+                          values.map(String),
+                        ),
+                      )
                     }
                     className={css.checkboxGroup}
                   >
