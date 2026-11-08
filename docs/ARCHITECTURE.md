@@ -109,13 +109,19 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 
 ### 3.5 Agent 模式
 
+模式由 `kind` 决定链路形态：`chat` 走纯对话链路（不注入工具、不渲染工具 / 审批 UI），`agent` 走 agent 链路（可装配工具、可审批、可提问）。内置模式三行：
+
+| 内置模式 | kind | 能力 |
+|------|------|------|
+| `builtin-default`（默认） | `chat` | 无 system prompt，标准参数(0.7/4096)——最常用的纯对话模式 |
+| `builtin-translate`（翻译助手） | `chat` | 内置翻译 system prompt，低温度(0.3)——高频且 prompt 稳定 |
+| `builtin-agent`（Agent） | `agent` | 无 system prompt；模式级初始装配为 `sandbox` / `dangerous_only` / 空白名单，设置页可改模式级初始值，对话内可改会话级装配 |
+
 | 模式 | 能力 |
 |------|------|
-| **默认** | 无 system prompt，标准参数(0.7/4096)——最常用的纯对话模式 |
-| **快速** | 无 system prompt，低温度(0.3) + 短输出(2048)——简短确定的回答 |
-| **深度** | 无 system prompt，长输出(8192)——需要长篇回答的场景 |
-| **翻译助手** | 内置翻译 system prompt，低温度(0.3)——高频且 prompt 稳定 |
-| **自定义** | 用户自定义 system_prompt / temperature / max_tokens / model / tools 组合 |
+| **自定义** | 用户自定义 system_prompt / temperature / max_tokens / model；创建时二选一 `chat` / `agent`，编辑时锁定类型；`agent` 形态可装配工具 |
+
+> `builtin-quick` / `builtin-deep` 已下线；旧 `kind` 值（`default` / `quick` / `deep` / `custom`）只作兼容标签，一律归 chat 链路。同一会话内可切换 chat / agent：每次发送按会话当前 `modeId` 的 `kind` 选路（默认 chat），turn 进行中禁止切换。工具装配、审批与提问交互见 [I38d spec](./store/I38d-agent-frontend-modes-spec.md)，工具控制层见 [I38a spec](./store/I38a-tool-control-layer-spec.md)，阶段状态见 [I38 roadmap](./store/I38-agent-roadmap.md)。
 
 > 原 Prompt 模板（代码解释/文本摘要/续写/头脑风暴）不再内置，用户可自行创建自定义模式。I6 实现。
 
@@ -179,11 +185,11 @@ interface ToolDefinition {
 
 ### 4.3 设置
 
-- **通用设置**：语言（zh-CN / en-US）/ 开机自启 / 关闭到托盘 / 置顶主窗口 / 上下文压缩阈值与模型
+- **通用设置**：语言（zh-CN / en-US）/ 开机自启 / 关闭到托盘 / 置顶主窗口 / 上下文压缩阈值与模型 / **Agent 工具**（工作区根目录、审批等待上限、提问等待上限）
 - **外观设置**：主题（亮/暗/跟随系统）+ Orb 悬浮球外观（透明度/缩放/圆角/鼠标穿透/悬停隐藏/悬停延迟）+ Orb 悬浮窗（始终置顶）+ Mascot 外观
 - **快捷键**：全局快捷键（toggle_orb / toggle_main / new_chat）+ 应用内快捷键（command_palette），分组展示 + 录制 + 冲突检测 + 重置
 - **Provider 管理**：添加/编辑/删除 AI Provider（名称 + API Key + Base URL + 模型列表），密钥经后端加密存储
-- **Agent 模式**：内置（默认/快速/深度/翻译助手）+ 自定义模式，支持 system_prompt / temperature / max_tokens / model / tools 组合
+- **Agent 模式**：内置三行（`builtin-default` / `builtin-translate` 为 `chat` 形态，`builtin-agent` 为 `agent` 形态）+ 自定义模式，支持 system_prompt / temperature / max_tokens / model / 推理开关与强度；**工具装配为两级**：设置页模式抽屉（`ToolAssemblySection`）编辑模式级初始值（只影响新建会话），对话内 `ToolConfigPanel` 编辑会话级实际值并落会话；本页另含「已授权操作」撤销与作用域互转
 - **存储管理**：附件占用统计 + 孤儿附件清理
 - **保险库**：Git 同步（远程/分支/Rebase）/ SSH 密钥 / 生物识别解锁 / 恢复密钥导出
 - **关于**：版本信息 + 构建信息（检查更新未实现）
@@ -222,7 +228,8 @@ CREATE TABLE conversations (
   is_full INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  active_branch_id TEXT
+  active_branch_id TEXT,
+  tool_config_json TEXT
 );
 
 CREATE TABLE messages (
@@ -252,11 +259,11 @@ CREATE TABLE agent_modes (
   max_tokens INTEGER,
   reasoning_enabled INTEGER,
   reasoning_effort TEXT,
-  tools TEXT NOT NULL DEFAULT '[]',
   presentation_rank INTEGER NOT NULL DEFAULT 99,
   is_builtin INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  tool_config_json TEXT    -- 模式级工具装配（ModeToolConfig 的 JSON），builtin-agent 的初始值见 BUILTIN_AGENT_TOOL_CONFIG
 );
 
 CREATE TABLE tool_favorites (
@@ -266,6 +273,22 @@ CREATE TABLE tool_favorites (
 CREATE TABLE tool_history (
   tool_id TEXT PRIMARY KEY,
   used_at INTEGER NOT NULL
+);
+
+-- 审批授权与审计：grant_key 为 ApprovalKey 的规范 JSON；审计只追加不更新，不设 TTL
+CREATE TABLE permission_grants (
+  grant_key TEXT PRIMARY KEY,
+  tool      TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE permission_audit (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  tool      TEXT NOT NULL,
+  action    TEXT NOT NULL,
+  resource  TEXT NOT NULL,
+  outcome   TEXT NOT NULL,
+  at_millis INTEGER NOT NULL
 );
 
 CREATE TABLE compression_state (
@@ -398,13 +421,15 @@ assistant/
 │   │   ├── cmd/                   # Tauri commands（按域拆分）
 │   │   │   ├── mod.rs
 │   │   │   ├── app.rs             # 应用级（窗口/配置/快捷键）
-│   │   │   ├── chat/              # 对话发送与流式任务 / 流式事件消费 / 消息落库
+│   │   │   ├── chat/              # chat 链路发送（`send_chat_message` + `TurnSpec::chat`）与消息插入
 │   │   │   ├── clock.rs           # 时钟工具后端
 │   │   │   ├── compaction.rs      # 上下文压缩命令
 │   │   │   ├── conversation.rs    # 会话/消息 CRUD、搜索、导出
 │   │   │   ├── conversation_utils.rs
 │   │   │   ├── token_usage_record.rs  # token_usage_records 写入
+│   │   │   ├── agent/             # Agent 运行命令（提问作答 resolve_agent_question）
 │   │   │   ├── agent_mode.rs
+│   │   │   ├── permission.rs      # 审批授权（permission_grants）与审计查询
 │   │   │   ├── provider.rs
 │   │   │   ├── storage.rs         # 附件统计 / 孤儿附件清理
 │   │   │   ├── mascot_asset.rs
@@ -425,10 +450,10 @@ assistant/
 │   │   ├── assistant-config/      # AppConf / OrbConf / MascotConf / VaultConf + 原子写
 │   │   ├── assistant-orb/         # hover.rs（悬停隐藏）/ placement.rs（多屏约束）
 │   │   ├── assistant-providers/   # openai（Chat + Responses）/ anthropic / gemini（含 Code Assist）
-│   │   ├── assistant-agent/       # chat_runtime / chat_tasks / compaction / prompt_builder / multimodal
-│   │   ├── assistant-storage/     # db / conversations / providers / agent_modes / attachments / token_usage / tool_*
+│   │   ├── assistant-agent/       # kernel（turn 状态机 / 端口 / 流消费）+ agent（RoundExecutor / tool_call 累积器 / 阶梯 / 中间件）+ chat 侧（compaction / prompt_builder / multimodal）
+│   │   ├── assistant-storage/     # db / conversations / providers / agent_modes / attachments / token_usage / tool_* / permission_*
 │   │   ├── assistant-i18n/        # 后端文案（zh-CN / en-US）
-│   │   ├── assistant-tools/       # 工具执行上下文与注册（Agent 侧）
+│   │   ├── assistant-tools/       # 工具控制层（trait / registry / policy / gateway / pipeline / exec / question）+ os 工具实现（read/ls/glob/grep/write/edit/mkdir/move/delete/ask_user/fs_link）
 │   │   ├── assistant-crypto/      # 加密原语（KDF / AEAD）与 API Key 加密
 │   │   ├── assistant-security/    # unlock_dialog（Win32 / macOS / Linux 原生）/ hibp / ssh_agent / screen_lock / clipboard_guard / reveal_guard
 │   │   ├── assistant-sync/        # git_sync（git / ssh）+ types
@@ -445,7 +470,7 @@ assistant/
 │   ├── layouts/                   # 各窗口布局（AppShell / MainLayout / NormalLayout / MiniLayout / OrbWindow）
 │   ├── orb/                       # OrbBall / OrbPanel / OrbDrag / OrbExpand / OrbCoord / OrbContextMenu / useOrbConfSync
 │   ├── mascot/                    # core（types / expressionPolicy / registry / resolve）+ renderers（rive / svg / gif）+ MascotRenderer / mascotStore / useMascotChatSync
-│   ├── chat/                      # ChatView / MessageList / MessageInput / 选择器 / compact 横幅 / message 渲染
+│   ├── chat/                      # ConversationView（共同视图）/ ChatLayout + AgentLayout / message / tool（ToolCallBubble / ApprovalCard / QuestionCard / ToolConfigPanel）/ compact / selectors
 │   ├── tools/                     # ToolBox / MiniToolBox / ToolPage / registry.ts + 23 个工具实现
 │   ├── history/                   # 历史管理（列表 / 详情 / 分支 / 批量操作 / 导出）
 │   ├── settings/                  # 设置（core 字段与页面注册 / pages 各设置页 / provider / agentMode / overview）
@@ -728,9 +753,11 @@ assistant/
 | 前端 Agent 管理 | OpenBitFun | web-ui/src/app/scenes/agents/agentsStore.ts | `AgentFilterLevel`（all/builtin/user/project/external）+ 创建/编辑页面 |
 | 模式配置 profile | OpenBitFun | agents.rs L22-27 | `STANDARD_HARNESS_CONFIG`：mode 可组合为 profile，支持子代理 |
 
-> **Function Calling / 内置工具 / MCP 客户端暂不实现**，后续迭代按需加入。参考方案已验证：OpenBitFun `mcp_tool_bridge.rs` 命名规范 + 三维安全标记(read_only/destructive/open_world)。
+> **Function Calling / 内置工具已实现**（I38 P4 / P5）；**MCP 客户端未实现**（I38 P7，见 [I38e](./store/I38e-mcp-tools-spec.md)）。参考方案已验证：OpenBitFun `mcp_tool_bridge.rs` 命名规范 + 三维安全标记(read_only/destructive/open_world)。
 
 **验收：** 可切换 Agent 模式（内置 + 自定义），可创建/编辑/删除自定义模式，不同模式 system prompt / 温度不同，token 用量可见，Prompt 模板管理页合并到 Agent 模式页
+
+> **2026-11-07 变更**：本节记录 I6 当时交付的四个内置预设，其后已收敛为 `builtin-default` / `builtin-translate`（`chat`）与 `builtin-agent`（`agent`），快速 / 深度下线，模式与工具装配的现行语义见 §3.5。
 
 ---
 
@@ -749,9 +776,9 @@ fn should_terminate(prompt_tokens: u32, context_window: u32) -> bool {
 - 触发：`prompt_tokens >= context_window * 80%`（流结束后检查）
 - 动作：生成交接摘要（目标/进展/待办/关键信息）→ 标记 `is_full=1` → 前端锁定对话
 - 摘要：以 `role = 'compact_summary'` 的消息持久化，继续对话时注入上下文
-- 检索：`search_history` 工具仍待 tool-call 基础设施就绪
+- 检索：`search_history` 工具尚未实现（tool-call 执行循环已在 I38 P4 / P5 就绪，接入待排期）
 
-> **跨对话检索工具依赖 tool-call 执行循环**（当前项目未实现），I7 已交付终止 + 摘要 + 横幅 + 继续对话；检索工具待 tool-call 就绪后接入。
+> **I7 已交付终止 + 摘要 + 横幅 + 继续对话**；`search_history` 跨对话检索工具仍未提供，tool-call 基础设施就绪后可直接按工具契约接入。
 
 **参考：**
 
@@ -764,7 +791,7 @@ fn should_terminate(prompt_tokens: u32, context_window: u32) -> bool {
 - [x] 对话满终止（阈值触发 + 交接摘要生成 + is_full 标记）
 - [x] CompressionState 持久化（SQLite compression_state 表）
 - [x] 对话满 UI（横幅 + 继续对话（新建对话 + 摘要注入）+ 解锁 + 输入区禁用 + 侧边栏锁图标）
-- [ ] 跨对话检索工具（`search_history`，待 tool-call 就绪）
+- [ ] 跨对话检索工具（`search_history`，tool-call 基础设施已就绪，待接入）
 
 **验收：** 长对话 token 接近窗口 80% 时自动终止，"继续对话"按钮自动注入摘要到新对话，对话只读
 
@@ -791,6 +818,16 @@ fn should_terminate(prompt_tokens: u32, context_window: u32) -> bool {
 
 ---
 
+### I18–I38 — Agent 工具与运行时（并行主线）
+
+**交付：** 工具词汇层与 Registry、工具控制层（Policy / Gateway / Pipeline / 审批键与审计）、运行时内核（turn 状态机 / 取消代际 / 双层超时）、Agent Loop（多迭代 / 三维预算 / 阶梯收尾）、九个 OS 文件工具 + `ask_user`、前端五态气泡 / 审批卡片 / 提问卡片 / 模式与工具装配切换。
+
+**状态：** 阶段划分（P0–P7）、退出条件与完成情况**只在** [I38 roadmap](./store/I38-agent-roadmap.md) §2 维护；本节不重复记录进度。
+
+**验收：** 各阶段 tasklist —— [I36 运行时](./store/I36-agent-runtime-tasklist.md)、[I38b 循环](./store/I38b-agent-loop-tasklist.md)、[I38c 工具](./store/I38c-os-tools-tasklist.md)、[I38d 前端](./store/I38d-agent-frontend-modes-tasklist.md)。
+
+---
+
 ### 迭代依赖
 
 ```
@@ -806,7 +843,7 @@ I0 脚手架 ✅
                          └→ I8 打包发布（未开始）
 ```
 
-I2-History 依赖 I2；I3 和 I4 可并行（均依赖 I2）；I5 依赖 I2+I4；I6 依赖 I2+I5；I7 依赖 I6；I8 依赖全部功能稳定。保险库（I9）与图片附件（I2e/I2f）为并行支线。
+I2-History 依赖 I2；I3 和 I4 可并行（均依赖 I2）；I5 依赖 I2+I4；I6 依赖 I2+I5；I7 依赖 I6；I8 依赖全部功能稳定。保险库（I9）、图片附件（I2e/I2f）与 Agent 主线（I18 → I36 / I38a–I38d）为并行支线，不进入上面这条 UI 主链。
 
 ---
 
