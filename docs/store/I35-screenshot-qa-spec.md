@@ -2,10 +2,10 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | Draft（rev3） |
-| 日期 | 2026-11-03 |
-| 修订 | rev3：取消新增 webview，改为复用 Orb 窗口做全屏覆盖层；chat 自隐藏且保留草稿；快捷键注册改为表驱动并更换默认组合；补充 Cap 参考项目 |
-| 上游调研 | 本仓库代码核对 + `references/1-ai-agent/OpenBitFun`、`references/2-desktop-orb/airi`、`references/3-screen-capture/Cap` 对照 |
+| 状态 | Draft（rev4） |
+| 日期 | 2026-11-03（rev4：2026-11-08） |
+| 修订 | rev4：抓屏只隐藏覆盖层宿主 `orb`，`main` 不再隐藏，底图与用户触发瞬间所见一致；rev3：取消新增 webview，改为复用 Orb 窗口做全屏覆盖层；chat 自隐藏且保留草稿；快捷键注册改为表驱动并更换默认组合；补充 Cap 参考项目 |
+| 上游调研 | 本仓库代码核对 + `references/1-ai-agent/OpenBitFun`、`references/2-desktop-orb/airi`、`references/3-screen-capture/Cap`、`references/3-screen-capture/Kiri`、`references/3-screen-capture/shiping` 对照 |
 | 关联规格 | `docs/achievement3/I2e-multimodal-attachments-spec.md`（附件链路）、`docs/achievement/I4-spec.md`（全局快捷键） |
 | 影响范围 | 复用 Orb 窗口（**不新增 webview**）、Rust 模块 `screenshot`、6 条命令、3 个 DTO、2 个事件、快捷键注册重构与默认值调整、临时目录与清理、i18n、设置提示；`assistant-storage` / `assistant-agent` 各一处受控清理；`Cargo.toml` 新增 `xcap` 与直接 `image` 依赖 |
 
@@ -21,7 +21,7 @@
 
 | 环节 | 现状 | 本规格的改动 |
 |---|---|---|
-| 抓屏 | 无 | 新增 `src-tauri/src/screenshot/`：`xcap` 后端 + 可注入 `CaptureBackend`；抓屏时隐藏所有应用窗口 |
+| 抓屏 | 无 | 新增 `src-tauri/src/screenshot/`：`xcap` 后端 + 可注入 `CaptureBackend`；抓屏时只隐藏覆盖层宿主 `orb` |
 | 框选 | 无 | 把 Orb 窗口临时放大到光标所在显示器，前端在同一个 webview 里渲染覆盖层；chat/Orb 面板隐藏但保持挂载 |
 | 图片进消息 | 已存在，支持 `file_path` 直通 | 裁剪结果由 orb 直接 `ingestPathToStore`；不再需要跨窗口结果事件 |
 
@@ -30,11 +30,12 @@
 - **不新增 webview**：少一个 WebView2/WKWebView 实例、少一份 JS 运行上下文、少一套 `viewMap` / `capabilities` / 布局入口；这是 rev2 的主要重量来源。
 - **结果直通**：裁剪在 Orb 的同一 JS 上下文里完成，直接写入 `attachmentStore`，不需要 `screenshot-captured` 事件、跨 webview 状态同步或 `get_screenshot_session` 的常规路径（只保留兜底）。
 - **chat 自隐藏**：`OrbWindow` 是唯一的覆盖层宿主；截图期间用 CSS 隐藏 `OrbBall`/`OrbPanel`，`ChatView` **保持挂载**，因此输入草稿、附件列表和流式状态都不丢。
+- **只隐藏宿主**：抓屏前只隐藏 `orb` 一个窗口，`main` / `settings` 保持用户原状并进入底图，因此「用户触发瞬间所见 = 冻结底图」，也不需要为它们维护可见性快照。
 - **代价**：Orb 窗口的几何、可见性、焦点、置顶、点击穿透需要快照/恢复；`spawn_screen_inspection` 与 `ORB_BLUR` 必须暂停，否则会把全屏几何写回 `OrbConf` 或触发折叠。
 
 本规格**不改动** `assistant-agent` 的附件准入判断与上限、`assistant-storage` 的附件存储格式、`contentBlockUtils` 的序列化、Provider 的请求投影。后端只增加一处受控清理：**准入成功后删除 `attachments/screenshot-tmp/` 下的源文件**（不改变任何准入结果）。
 
-### 1.1 rev3 关键修正（实现前必读）
+### 1.1 rev3 / rev4 关键修正（实现前必读）
 
 | rev2 的问题 | rev3 处理 |
 |---|---|
@@ -45,6 +46,7 @@
 | Orb 的几何/位置可能被巡检线程写坏 | 截图期间暂停 `spawn_screen_inspection`、`snap_orb_to_*`、`save_orb_position_sync`；恢复后写回原几何 |
 | 失焦会把 Orb 折叠 | Rust 在截图期间跳过 `ORB_BLUR`；`OrbPanel` 的 blur 处理再加一层 store 判断 |
 | 前端 `toPhysical` 与 Rust 重复换算 | 前端只发归一化选区（0..1），Rust 按原图尺寸换算一次；跨 DPI 不再依赖 `scale_factor` |
+| rev3 抓屏隐藏全部应用窗口，底图与用户所见不符（从 Orb 触发时截不到 main） | rev4：只隐藏覆盖层宿主 `orb`；`main` / `settings` 保持原状并进入底图 |
 | 契约 5 个 DTO / 57 → 62 | rev3 只需 3 个 DTO（会话、裁剪参数、裁剪结果），57 → 60 |
 | 快捷键注册写死数组 + `match` | 改为 `SHORTCUT_SPECS` 元组表 + 上游 crate 纯函数解析；空配置=禁用、重复/非法绑定统一告警 |
 | 默认 `Ctrl+Shift+N` 冲突多 | 三条默认改为四键组合（见 §7.5）；前端同步默认值，外部冲突以注册失败为准 |
@@ -57,7 +59,7 @@
 2. 框选结果以图片附件形式进入 Orb 输入区，用户补一句话即可发送；不自动发送。
 3. 截图附件与「粘贴 / 文件选择 / 拖拽」走完全相同的准入、上限、预览、存储路径。
 4. 取消（ESC / 右键 / 关闭）后不留下任何临时文件，不残留覆盖层；成功发送后临时源文件也被消费删除。
-5. 截图前后的可见性、焦点、Orb 位置与尺寸恢复到用户原本状态。
+5. 截图前后的 Orb 可见性、焦点、位置与尺寸恢复到用户原本状态；`main` / `settings` 全程不受影响。
 6. **不新增 webview**；整个覆盖层运行在现有 Orb webview 中。
 7. 截图期间 chat/Orb 面板自隐藏，输入草稿不丢，Orb 不折叠、不被巡检线程写回错误位置。
 8. 4K / 混合 DPI 下选区与最终产物一致，产物 ≤ 8MB。
@@ -108,7 +110,7 @@
 | F24 | `get_mouse_position()` 用 `mouse_position` crate；现有用法按物理坐标处理 | `src-tauri/src/cmd/orb.rs` | 坐标空间落地时核实；`None` 回退 Orb 中心/主屏 |
 | F25 | Orb 展开/收起由 Rust 重算窗口尺寸与位置；`hide()` 无过渡回调 | `src-tauri/src/window.rs` | 抓屏前隐藏窗口必须自行 delay |
 | F26 | Orb 右键菜单项在 Rust 端构造；菜单点击统一在 `menu.rs` 分发 | `src-tauri/src/window.rs`、`src-tauri/src/menu.rs` | 新增菜单项要同时改这两处 |
-| F27 | `ChatView` 只被 `OrbPanel` 使用，主窗口没有聊天输入框 | `src/orb/OrbPanel.tsx` | 结果固定回写 Orb；主窗口只作为被隐藏/恢复对象 |
+| F27 | `ChatView` 只被 `OrbPanel` 使用，主窗口没有聊天输入框 | `src/orb/OrbPanel.tsx` | 结果固定回写 Orb；主窗口不参与覆盖层，也不被隐藏（rev4） |
 | F28 | 契约测试硬断言 57 个 DTO | `src-tauri/tests/protocol_bindings.rs` | rev3 新增 3 个 DTO，断言改为 **60** |
 | F29 | `MessageInput` 没有暴露 focus 句柄 | `src/chat/message/MessageInput.tsx` | 需要补 ref 或焦点事件 |
 | F30 | `ScreenLockMonitor` 只在 `#[cfg(feature = "vault")]` 的 vault 模块内构造，未作为全局 State 管理 | `src-tauri/src/cmd/mod.rs`、`src-tauri/src/cmd/vault/mod.rs` | V1 无法直接复用锁屏 gate |
@@ -125,6 +127,7 @@
 | F41 | `ChatView` 的附件按钮在流式时禁用；`supportVision` 由当前模型决定 | `src/chat/ChatView.tsx` | 截图按钮应沿用同样的禁用条件 |
 | F42 | `ShortcutSettings` 使用 `appConf.keybindings ?? DEFAULT_KEYBINDINGS`；`KeybindingField` 只检测内部重复 | `src/settings/pages/ShortcutSettings.tsx`、`src/settings/shared/renderers/KeybindingField.tsx` | 默认值漂移会让设置页显示与实际注册不一致；外部冲突无法可靠静态枚举，以注册失败为准 |
 | F43 | `references/3-screen-capture/Cap` 已加入部分快照 | 本仓库 references（gitignored） | 作为原生覆盖层、捕获排除、权限校验的只读参考 |
+| F44 | `references/3-screen-capture/Kiri`（MIT）与 `shiping`（CC BY-NC 4.0）已完整克隆 | 本仓库 references（gitignored） | Kiri 可复制 Rust 抓屏实现；shiping 仅读流程与几何换算，禁止复制代码 |
 
 ---
 
@@ -150,7 +153,7 @@
 | 14 | chat/Orb 面板只隐藏（CSS），不卸载；`ChatView` 的草稿、附件、流式状态必须保留 | F38 |
 | 15 | 截图期间暂停 `spawn_screen_inspection`、`snap_orb_to_*`、`save_orb_position_sync`；恢复后写回原几何 | F35 / F36 / F40 |
 | 16 | 截图期间 Rust 跳过 Orb 的 `ORB_BLUR`，前端 blur 处理再加 store 判断；Orb 不得折叠 | F37 |
-| 17 | 抓屏前隐藏所有应用窗口（main / orb / settings）；成功后强制显示并聚焦 Orb，取消时按快照恢复 | 目标 5 |
+| 17 | 抓屏前只隐藏覆盖层宿主 `orb`；`main` / `settings` 保持用户原状并进入底图；成功后显示并聚焦 Orb，取消时按快照恢复 Orb | 目标 5 / §6.3 |
 
 ---
 
@@ -193,7 +196,7 @@
 复用 Orb 的可行性：
 
 - Orb 窗口已经是透明、无边框、置顶、`skipTaskbar`、不可缩放；可以临时 `set_size`/`set_position` 成显示器物理尺寸（F35）。
-- 覆盖层是**静态截图**：先隐藏所有窗口 → 抓屏 → 把 Orb 放大并显示截图；窗口自身不会入镜，也不需要透明穿透。
+- 覆盖层是**静态截图**：先隐藏 `orb` → 抓屏 → 把 Orb 放大并显示截图；宿主窗口自身不会入镜，也不需要透明穿透。`main` / `settings` 不隐藏，因此底图包含它们的内容。
 - Orb 的 JS 上下文与 `ChatView` 共享；裁剪结果直接进 `attachmentStore`（不变式 14 的附加收益）。
 - 主要风险是 Orb 的状态机（巡检、失焦、点击穿透、位置持久化），在 §8.6 逐条加守卫。
 
@@ -201,7 +204,8 @@
 
 V1 选择**静态冻结**：
 
-- 抓屏时隐藏所有应用窗口，抓到一张稳定的整屏图；后续框选不会因为桌面内容变化而错位。
+- 抓屏时只隐藏覆盖层宿主 `orb`，抓到一张稳定的整屏图；后续框选不会因为桌面内容变化而错位。
+- `main` / `settings` 保持用户触发瞬间的样子进入底图，「冻结底图 = 用户所见」；V1 不提供「隐藏本应用窗口」的开关，不想让其入镜时由用户自行挪开或最小化。
 - 代价是抓屏后需要把图写盘（预览）并保留在内存；一个 4K 会话约 33MB，裁剪/取消即释放。
 - 静态图让「选区 = 最终产物」的验收更确定。
 
@@ -216,7 +220,7 @@ V2 可评估实时覆盖层 + 捕获排除（Cap 的 `overlay_backdrop.rs`）：
 `src-tauri/crates/assistant-config/src/constant.rs`：
 
 ```rust
-/// 抓屏前隐藏所有应用窗口后的等待时间（毫秒），等待 DWM 完成一次合成
+/// 抓屏前隐藏覆盖层宿主 `orb` 后的等待时间（毫秒），等待 DWM 完成一次合成
 pub const SCREENSHOT_HIDE_SETTLE_MS: u64 = 150;
 /// 会话事件发出后、显示覆盖层前的等待时间（毫秒），让 orb 先隐藏 chat 并挂载 Overlay
 pub const SCREENSHOT_OVERLAY_SETTLE_MS: u64 = 100;
@@ -519,14 +523,16 @@ struct OrbWindowSnapshot {
 2. macOS 权限预检（未授权 → 返回错误码，**不隐藏任何窗口**）。
 3. `get_mouse_position()`（F24）→ 失败回退 Orb 中心 → 失败回退主屏中心；用 `placement::nearest_screen` 选显示器。
 4. 从 `CaptureBackend::monitors()` 中按物理 bounds 匹配显示器；`scale_factor` 以 Tauri `available_monitors()` 为准。
-5. 快照 Orb 几何/可见性/焦点/置顶/点击穿透（F35/F39）；隐藏所有可见且未最小化的应用窗口（main / orb / settings），`SCREENSHOT_ACTIVE = true`；若有窗口被隐藏，`sleep(SCREENSHOT_HIDE_SETTLE_MS)`（F25）。
+5. 快照 Orb 几何/可见性/焦点/置顶/点击穿透（F35/F39）；只隐藏 `orb`（若其可见），`main` / `settings` 保持用户原状并进入底图；`SCREENSHOT_ACTIVE = true`；若 Orb 被隐藏，`sleep(SCREENSHOT_HIDE_SETTLE_MS)`（F25）。
 6. `spawn_blocking`：抓 RGBA + 编码预览 PNG + 写入 `attachments/screenshot-tmp/<uuid>.png`。
 7. 生成一次性令牌（uuid v4 32 hex），写入 `PendingSession`，`Phase = Selecting`。
 8. **在 Orb 仍隐藏时** `emit_orb_only(SCREENSHOT_SESSION, session)`；sleep `SCREENSHOT_OVERLAY_SETTLE_MS`，让 orb 隐藏 chat、挂载 Overlay、开始加载底图。
 9. 把 Orb 窗口设为 `always_on_top(true)`、`set_ignore_cursor_events(false)`、物理位置/尺寸 = 目标显示器；`show()` + `set_focus()`。返回 `Ok(())`。
-10. 任一步失败 → 删除预览 → 恢复窗口/几何 → `SCREENSHOT_ACTIVE = false` → `Phase = Idle` → 返回错误码。
+10. 任一步失败 → 删除预览 → 恢复 Orb 窗口/几何 → `SCREENSHOT_ACTIVE = false` → `Phase = Idle` → 返回错误码。
 
 > 先确定显示器再隐藏窗口：鼠标位置不受隐藏影响，权限/无显示器错误不会造成窗口闪烁。
+> Windows 上隐藏后需确认 `IsWindowVisible` 为 false 并 `DwmFlush`，不能只依赖固定延时（参考 Kiri ADR 0107，见 §14.3）。
+> 抓屏前若首帧为空或全黑，重试一次再判定失败（参考 shiping `take-screenshot.ts`）。
 > 覆盖层显示前先发会话事件：orb 可以在隐藏状态下隐藏 chat、挂载 Overlay；`OVERLAY_SETTLE_MS` 减少「chat 被拉成全屏」的一帧闪烁。
 
 ### 8.3 会话拉取（`get_screenshot_session`）
@@ -596,7 +602,7 @@ if snapshot.focused { window.set_focus()?; }
 - 保险库锁屏、系统空闲锁定：`ScreenLockMonitor` 只在 vault feature 内构造（F30），宿主层拿不到。**V1 明确不做锁屏 gate，在验收里标注为已知缺口；V2 把 monitor 提升为全局 `ScreenLockState` 后再接入。**
 - 令牌一次性、只发给 orb；`crop/cancel` 校验调用方 label 与令牌。
 - 临时文件位于应用数据目录内，随会话删除；不写系统临时目录。
-- 参考 Cap 的 `overlay_backdrop.rs`：Windows `WDA_EXCLUDEFROMCAPTURE` / macOS `NSWindowSharingNone` 可把自身窗口排除出截图；V1 仍用「隐藏窗口 + 150ms」保证跨平台一致，V2 可切到捕获排除以减少闪烁。
+- 参考 Cap 的 `overlay_backdrop.rs`：Windows `WDA_EXCLUDEFROMCAPTURE` / macOS `NSWindowSharingNone` 可把自身窗口排除出截图；V1 仍用「隐藏 `orb` + 150ms + 可见性校验」保证跨平台一致，V2 可切到捕获排除以减少闪烁。
 
 ### 8.8 清理与临时文件生命周期
 
@@ -604,7 +610,7 @@ if snapshot.focused { window.set_focus()?; }
 |---|---|
 | 取消（ESC / 右键 / `cancel_screenshot`） | 删除抓屏预览；清会话；恢复 Orb 几何/可见性/焦点；`Phase = Idle` |
 | Orb `CloseRequested` 且截图活跃 | `prevent_close` + 取消清理 |
-| 抓屏/编码/建覆盖层失败 | 删除预览；恢复窗口；`SCREENSHOT_ACTIVE = false`；`Phase = Idle` |
+| 抓屏/编码/建覆盖层失败 | 删除预览；恢复 Orb；`SCREENSHOT_ACTIVE = false`；`Phase = Idle` |
 | 裁剪成功 | 删除抓屏预览；保留裁剪产物 |
 | 消息发送准入成功 | `admit_attachments` 在整条消息准入完成后批量删除 `screenshot-tmp` 源文件 |
 | 用户显式移除附件 | 前端 `release_screenshot([filePath])` 立即删除 |
@@ -889,6 +895,7 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 | `crop` 换算 | 0.1/0.25/0.5/0.75/1.0 归一化在 1000×500 / 3840×2160 下的取整与夹取 |
 | `capture.rs` | 显示器选择：单屏、双屏（光标在副屏）、副屏负坐标；`FakeBackend` |
 | 状态机 | 忙时 `start` 忽略；`cancel` 幂等；裁剪期间取消丢弃产物 |
+| `orb_overlay` | 只快照/隐藏 `orb`；`main` / `settings` 不进入快照；隐藏失败时按快照复位 Orb |
 | `attachment_store` | `is_screenshot_tmp_path` 只认子目录内路径；`sweep` 只删超阈值文件；`remove` 幂等 |
 | `admit_attachments` | 带 screenshot-tmp `file_path` 的图片准入成功后源文件被删；普通路径不被删；准入失败不删 |
 | `setup.rs` | 快捷键解析：默认、覆盖、显式清空、非法、重复、缺默认 —— 逻辑下沉到 `assistant-config::shortcut::resolve_bindings`，由 `crates/assistant-config/tests/shortcut.rs` 覆盖 |
@@ -906,7 +913,8 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 
 | 场景 | 期望 |
 |---|---|
-| 快捷键触发 | 该屏变暗进入框选；没有新窗口出现；Orb / 主窗 / 设置窗均不可见 |
+| 快捷键触发 | 该屏变暗进入框选；没有新窗口出现；Orb 不可见，主窗/设置窗保持原状并出现在底图 |
+| 从 Orb 触发且主窗可见 | 底图包含主窗内容，框选主窗区域后产物与所见一致；主窗未被隐藏或移动 |
 | chat 自隐藏 | 截图期间看不到 OrbBall/OrbPanel；结束或取消后恢复 |
 | 草稿保留 | 在输入框输入文字后触发截图、取消，文字仍在 |
 | 取消 / 右键 / ESC | 覆盖层消失，Orb 回到原位置/尺寸/可见性/焦点；`screenshot-tmp` 为空 |
@@ -958,6 +966,7 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 | 13 | 显示器热插拔导致几何过期 | 抓屏到裁剪期间配置变化可能错位；V1 日志 + V2 监听取消 |
 | 14 | 截图临时文件残留 | 发送准入删除 + 显式移除释放 + 启动/新抓屏 sweep 三重兜底 |
 | 15 | Cap 参考代码为 AGPL-3.0 | 只读参考、不复制；交互与失败语义可借鉴 |
+| 16 | 主窗/设置窗遮挡用户想截的目标 | 与系统截图工具一致，由用户自行挪开或最小化；V2 可提供「抓屏时隐藏本应用窗口」的可选项 |
 
 ---
 
@@ -990,6 +999,19 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 
 第三方开源截图工具（Flameshot / ShareX，均为 GPL-3）只可参考交互习惯，**不可复制代码**。
 
+### 14.3 Kiri / shiping（新增，完整克隆）
+
+两个项目位于 `references/3-screen-capture/`（`references/` 已被 `.gitignore` 忽略，不参与构建与分发）。
+
+| 项目 | 许可证 | 可借鉴内容 | 用途 |
+|---|---|---|---|
+| `references/3-screen-capture/Kiri` | MIT，可复制 | `src-tauri/src/capture/mod.rs` 的 `CaptureHealth`（`expected_stop` / `unexpected_failure` 边界）与 `VIDEO_FRAME_QUEUE_CAPACITY = 2` 有界帧队列；`capture/{windows,macos,linux}.rs` 三平台实现 | Rust 抓屏错误分类与平台差异 |
+| `references/3-screen-capture/Kiri` | MIT | `docs/adr/0107-windows-capture-visibility-and-pin-drag.md`（隐藏后 DWM flush 与可见性校验）、`0029` / `0047`（macOS 全屏 Space 覆盖层）、`0051` / `0052`（Linux 边界与授权恢复） | 跨平台风险与验收口径 |
+| `references/3-screen-capture/shiping` | **CC BY-NC 4.0，禁止商用** | `src/main/take-screenshot.ts`（首抓空帧重试、按 DIP 尺寸 resize 后再编码）、`src/shared/capture-region.ts`（`RegionRect` / `regionToPixels`） | 只读借鉴流程与几何换算，**不得复制代码** |
+| `references/3-screen-capture/shiping` | CC BY-NC 4.0 | `src/main/window-privacy.ts`（`setContentProtection` + Windows 软隐藏后重置）、`src/main/region-picker.ts`（框选窗口生命周期） | 自身窗口隐身与框选交互 |
+
+与 rev4 的关系：Kiri ADR 0107 证明「隐藏窗口后不能只等固定延时，必须确认窗口真的不可见并 flush DWM」，这是 `SCREENSHOT_HIDE_SETTLE_MS` 之外仍需在 Windows 上补可见性校验的依据；shiping 的 `take-screenshot.ts` 说明「先抓空帧重试一次」是必要兜底。
+
 ---
 
 ## 15 rev3 修订摘要
@@ -1007,3 +1029,21 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 | §9.7 | 无冲突检测边界说明 | 明确只检测内部重复；外部冲突以 OS 注册失败为准，不维护静态表 |
 | §10 | 新窗口文件 | 移除 `ScreenshotWindow`，新增 `orb_overlay.rs` / `screenshotStore.ts` / `useScreenshotSession.ts` |
 | §14 | 无截屏参考项目 | 新增 `references/3-screen-capture/Cap` 部分快照 |
+
+---
+
+## 16 rev4 修订摘要
+
+| 章节 | rev3 | rev4 |
+|---|---|---|
+| §1 | 抓屏时隐藏所有应用窗口 | 只隐藏覆盖层宿主 `orb` |
+| §1.1 | — | 新增一行修正记录（rev3 底图与所见不符） |
+| §2 目标 5 | 恢复所有窗口的可见性/焦点 | 只恢复 Orb；`main` / `settings` 全程不受影响 |
+| §4 F27 | 主窗口作为被隐藏/恢复对象 | 主窗口不参与覆盖层、不被隐藏 |
+| §5 不变式 17 | 抓屏前隐藏所有应用窗口 | 只隐藏 `orb`；`main` / `settings` 进入底图 |
+| §6.3 | 先隐藏所有窗口 → 抓屏 | 先隐藏 `orb` → 抓屏；底图 = 用户所见 |
+| §7.1 | 常量注释「隐藏所有应用窗口」 | 注释改为「隐藏 `orb`」，值仍 150ms |
+| §8.2 | 隐藏 main / orb / settings | 只快照并隐藏 `orb`；补 Windows 可见性校验与空帧重试 |
+| §11.3 | 期望三窗均不可见 | 主窗/设置窗保持原状并进入底图；新增「从 Orb 触发」用例 |
+| §13 | — | 新增主窗遮挡风险（与系统截图工具行为一致） |
+| §14 | 仅 Cap | 新增 §14.3 Kiri / shiping 对照（含许可证约束） |
