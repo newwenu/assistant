@@ -32,6 +32,7 @@ pub(super) async fn ensure_row(
     };
     let msg_id = ctx.store.create_assistant_message(req).await?;
     state.msg_id = msg_id.clone();
+    state.last_row_id = msg_id.clone();
     state.row_created = true;
     Ok(msg_id)
 }
@@ -123,6 +124,7 @@ pub(super) async fn persist_row_as_new(
     };
     let msg_id = ctx.store.create_assistant_message(req).await?;
     state.msg_id = msg_id.clone();
+    state.last_row_id = msg_id.clone();
     state.row_created = true;
     state.row_finalized = false;
     let reasoning = String::new();
@@ -159,7 +161,6 @@ pub(super) async fn persist_final_text(
 pub(super) async fn append_tool_results(
     state: &mut RoundState,
     ctx: &TurnRunCtx<'_>,
-    parent_id: String,
     results: Vec<ToolExecResult>,
 ) -> Result<(), StoreError> {
     if results.is_empty() {
@@ -185,7 +186,7 @@ pub(super) async fn append_tool_results(
         });
         let req = AppendToolMessageReq {
             conversation_id: ctx.conversation_id.to_string(),
-            parent_id: parent_id.clone(),
+            parent_id: state.last_row_id.clone(),
             tool_call_id: result.call_id.clone(),
             content: result.content.clone(),
             is_error: result.is_error,
@@ -196,7 +197,6 @@ pub(super) async fn append_tool_results(
             Ok(id) => state.last_row_id = id,
             Err(err) => {
                 log::error!("append tool row failed: {err}");
-                state.last_row_id = parent_id.clone();
                 return Err(err);
             }
         }

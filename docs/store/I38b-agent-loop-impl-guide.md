@@ -310,9 +310,9 @@ turn 取消时整批结果标 `Cancelled`，content 写「已取消」。Pipelin
 
 #### C4.20 `append_tool_results`
 
-对每个结果：内存 `request.messages` 追加一条 `role='tool'`（`tool_call_id` / `name` / `is_error` / content）+ `store.append_tool_message(parent = msg_id)`。两份文本逐字节一致（D21/D11）。
+对每个结果：内存 `request.messages` 追加一条 `role='tool'`（`tool_call_id` / `name` / `is_error` / content）+ `store.append_tool_message(parent = last_row_id)`，每写成功一条即回写 `last_row_id`（首条挂本迭代 assistant 行，后续逐条链式追加）。两份文本逐字节一致（D21/D11）。
 
-返回最后一条 tool 行 id 作为下一次 `last_row_id`。
+返回最后一条 tool 行 id；函数内已同步回写 `last_row_id`，调用方不再传入 `parent_id`。
 
 #### C4.20a `ensure_row` 幂等
 
@@ -325,6 +325,7 @@ fn ensure_row() -> String {
             provider_id: ctx.provider_id.map(str::to_string),
             model_id: ctx.model_id.map(str::to_string),
         }).await?;
+        last_row_id = msg_id.clone();
         row_created = true;
     }
     msg_id
@@ -333,6 +334,7 @@ fn ensure_row() -> String {
 
 - `iteration == start_iteration`（P4 恒为 1）复用 `ctx.initial_message_id`
 - 每迭代重置 `row_created = false`
+- 建行成功后必须回写 `last_row_id = msg_id`：否则下一迭代的 tool 行仍挂上一迭代末行，链式追加会断在「迭代 2 首个 tool 行」
 
 #### C4.20b 错误/取消/超时路径
 
@@ -372,7 +374,7 @@ for r in results.iter_mut() {
         halt_reason = halt_reason.or(Some(reason));
     }
 }
-last_row_id = append_tool_results(msg_id, results ++ skipped);
+append_tool_results(results ++ skipped);   // 内部逐条推进 last_row_id，无需接收 msg_id
 tool_calls += n;
 ```
 
@@ -476,7 +478,7 @@ tokio::select! {
 | `persist_row(msg_id, content, tool_calls, status)` | `save_content` → `record_usage` → `save_tool_calls`（非空时）→ `finalize`；置 `final_message_id` 与 `row_finalized` | 不建行 |
 | `persist_row_as_new(content, status)` | 无条件新建 assistant 行（`parent = last_row_id`），再按上述顺序落库 | 不复用当前 `msg_id` |
 | `persist_final_text(text, status)` | 择行：`row_finalized == false` → `persist_row(ensure_row(), text, status)`；`row_finalized == true` → `persist_row_as_new(text, status)` | 不产生两条行 |
-| `append_tool_results(msg_id, results)` | 对每个结果追加内存消息 + `store.append_tool_message(parent = msg_id)`；返回最后一条 tool 行 id | 不发事件 |
+| `append_tool_results(results)` | 对每个结果追加内存消息 + `store.append_tool_message(parent = last_row_id)`（逐条推进 `last_row_id`）；返回最后一条 tool 行 id | 不发事件 |
 | `not_executed(calls, reason)` | 构造 skipped 形状（`is_error = true` / `Gateway` / `Denied`） | 不执行 |
 | `split_by_budget(calls, remaining_calls, remaining_clock)` | 按原始顺序切分 `to_run` / `skipped` | 不改顺序 |
 
@@ -624,6 +626,7 @@ run_iterations(ctx) -> RoundOutcome:
               provider_id: ctx.provider_id.map(str::to_string),   // `Option<&str>` → `Option<String>`
               model_id: ctx.model_id.map(str::to_string),
           }).await?                    // 实现内同步 conversations.active_branch_id（§6.2）
+          last_row_id = msg_id.clone() // 关键：不写回会让下一迭代 tool 行挂错父节点
           row_created = true
       return msg_id
 
@@ -769,7 +772,7 @@ run_iterations(ctx) -> RoundOutcome:
     if ctx.spec.wrap_up && iteration == ctx.limits.max_iterations:
         // 本轮 calls 一律不执行，但必须写配对结果行，否则收尾请求 wire 非法（§5.3 同形）
         tool_calls += n                                   // 未执行也算「发起」（D18 按发起数计）
-        last_row_id = append_tool_results(msg_id, not_executed(calls, "已达迭代上限"))
+        append_tool_results(not_executed(calls, "已达迭代上限"))
         // 收尾调用的 ④ 还原由 `is_wrap_up_call = true` 触发（见 §5.2 的 `call_model_without_tools`），
         // executor 不再单独算 `restore_allowance`，也不在调用点拼 `wrap_up_restore`
         let wrapped = call_model_without_tools(request, wrap_up_instruction)
@@ -815,7 +818,7 @@ run_iterations(ctx) -> RoundOutcome:
         // 否则下一轮 wire 缺配对结果会 400（§5.3）。先记原因，全部落库后再走无进展 Halt。
         if let StopTurn { reason } = chain.after_tool(&mut view, &turn_ctx).await:
             halt_reason = halt_reason.or(Some(reason))
-    last_row_id = append_tool_results(msg_id, results ++ skipped)   // 回填内存历史 + 写 role='tool' 行（D11）
+    append_tool_results(results ++ skipped)   // 回填内存历史 + 写 role='tool' 行（D11），内部逐条推进 last_row_id
     tool_calls += n                                                // 按发起数计（D18），含 skipped
 
     // 8) 迭代后钩子（D26 → D25 → D19 的顺序由中间件链内部固定，executor 不重排）
@@ -933,7 +936,7 @@ P3 的 `TurnRunner` 是「一个 turn 一行消息」的写方（`TurnContext.me
 | `persist_row(msg_id, content, tool_calls, status)` | `save_content` → `record_usage`（本次 attempt 的 usage，按 `msg_id` 一条）→ `tool_calls` 非空时 `save_tool_calls` → `finalize(msg_id, status)`；并置 `final_message_id = Some(msg_id)`、`row_finalized = true` | 不建行（行由 `ensure_row` 提供） |
 | `persist_row_as_new(content, status)` | **无条件**新建一条 assistant 行（`parent = last_row_id`，即上一条 tool 行 / 上一迭代末行），再按 `persist_row` 的同样顺序落库（同样置 `final_message_id = Some(new_id)`、`row_finalized = true`）；用于收尾调用结果与「本迭代行已 finalize 后的终态文本」，**不复用本迭代的 `msg_id`** | 不改动上一条 assistant / tool 行；无新 attempt 时不写 usage |
 | `persist_final_text(text, status)` | 终态文本（`stopped` / `halted_by_budget` 非收尾路径 / `halted_with_summary` / 收尾调用失败）的择行写入：`row_finalized == false` 时走 `persist_row(ensure_row(), text, status)`（第 1 迭代即占位行，**绝不悬空**）；`row_finalized == true` 时走 `persist_row_as_new(text, status)`（本迭代行已 `finalize`，只能新建） | 不产生两条 assistant 行、不覆盖已 `finalize` 的行 |
-| `append_tool_results(msg_id, results)` | 对每个结果：内存 `request.messages` 追加一条 `role='tool'`（`tool_call_id` / `name` / `is_error` / 同一份 `content`）+ `store.append_tool_message(parent = msg_id)`；返回**最后一条 tool 行 id** 作为下一次 `last_row_id` | 不发事件（`Started/Finished/Failed` 由 Pipeline sink 发）、不改 assistant 行 |
+| `append_tool_results(results)` | 对每个结果：内存 `request.messages` 追加一条 `role='tool'`（`tool_call_id` / `name` / `is_error` / 同一份 `content`）+ `store.append_tool_message(parent = last_row_id)`，每写成功一条即回写 `last_row_id`（首条挂本迭代 assistant 行，后续逐条链式追加）；返回**最后一条 tool 行 id** | 不发事件（`Started/Finished/Failed` 由 Pipeline sink 发）、不改 assistant 行 |
 | `not_executed(calls, reason)` | 按 §5.3 的 `skipped` 形状构造结果（`is_error = true` / `Gateway` / `Denied` / 指定 `content`） | 不执行、不进失败统计 |
 | `split_by_budget(calls, remaining_calls, remaining_clock)` | 按原始顺序切分 `to_run` / `skipped`（§5.3） | 不改顺序、不重新排序 |
 | `stopped(reason, previous_content)` | 由 **`before_model`** 中间件的 `StopTurn` 触发（P4 无实现，保留通用出口）：把上一迭代已落库正文（为空时用根因摘要）经 `persist_final_text(text, Completed)` 落库并返回 `Completed`；`reason` 取 `StopTurn.reason`（**不含** `middleware` 名） | 不再调模型 |

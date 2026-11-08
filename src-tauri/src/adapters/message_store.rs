@@ -35,14 +35,15 @@ impl MessageStore for DbMessageStore {
         req: CreateAssistantReq,
     ) -> Result<String, StoreError> {
         self.with_conn(|conn| {
+            let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
             let sibling_index = conversations::get_sibling_count(
-                conn,
+                &tx,
                 &req.conversation_id,
                 req.parent_id.as_deref(),
             )?;
             let id = uuid::Uuid::new_v4().to_string();
             conversations::insert_message(
-                conn,
+                &tx,
                 &MessageRow {
                     id: id.clone(),
                     conversation_id: req.conversation_id.clone(),
@@ -61,7 +62,14 @@ impl MessageStore for DbMessageStore {
                     is_error: false,
                 },
             )?;
-            conversations::update_message_status(conn, &id, MessageStatus::Streaming.as_db_str())?;
+            conversations::update_message_status(&tx, &id, MessageStatus::Streaming.as_db_str())?;
+            conversations::advance_active_branch(
+                &tx,
+                &req.conversation_id,
+                req.parent_id.as_deref(),
+                &id,
+            )?;
+            tx.commit().map_err(|e| e.to_string())?;
             Ok(id)
         })
     }
@@ -92,9 +100,10 @@ impl MessageStore for DbMessageStore {
 
     async fn append_tool_message(&self, req: AppendToolMessageReq) -> Result<String, StoreError> {
         self.with_conn(|conn| {
+            let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
             let id = uuid::Uuid::new_v4().to_string();
             conversations::insert_message(
-                conn,
+                &tx,
                 &MessageRow {
                     id: id.clone(),
                     conversation_id: req.conversation_id.clone(),
@@ -113,7 +122,14 @@ impl MessageStore for DbMessageStore {
                     is_error: req.is_error,
                 },
             )?;
-            conversations::update_message_status(conn, &id, MessageStatus::Completed.as_db_str())?;
+            conversations::update_message_status(&tx, &id, MessageStatus::Completed.as_db_str())?;
+            conversations::advance_active_branch(
+                &tx,
+                &req.conversation_id,
+                Some(req.parent_id.as_str()),
+                &id,
+            )?;
+            tx.commit().map_err(|e| e.to_string())?;
             Ok(id)
         })
     }

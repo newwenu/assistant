@@ -5,7 +5,10 @@ use super::crud::get_conversation_by_id;
 use super::msg_ops::get_message_by_id;
 use super::{read_msg_row, MessageRow, MSG_SELECT};
 
-const MAX_BRANCH_DEPTH: usize = 1000;
+/// 环检测已是主防线（`trace_active_branch` / `find_branch_leaf` 的 `visited` 集合），
+/// 深度上限只作防环冗余，须高于正常会话的链长量级：一次 turn 每迭代写
+/// assistant + tool 共 2 行，多工具批次链式追加后每轮 5–6 行，故上限取 10000。
+const MAX_BRANCH_DEPTH: usize = 10000;
 const MAX_SIBLINGS: i64 = 20;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -130,6 +133,41 @@ pub fn get_message_siblings(
     };
 
     Ok(siblings)
+}
+
+/// 追加一行后把 `active_branch_id` 推进到新行。
+///
+/// 仅当新行的 `parent_id` 正是当前活动叶子（或会话尚无活动分支）时才推进：
+/// 一轮内可能连续追加多行（agent 每次迭代一条 assistant + 若干 tool），
+/// 每行都必须成为新的叶子，否则 `trace_active_branch` 只能追到旧叶子，
+/// 同轮后续行会从详情里消失。若用户已切到别的分支（`parent_id` 与叶子不符），
+/// 则不抢占其选择。
+pub fn advance_active_branch(
+    conn: &Connection,
+    conversation_id: &str,
+    parent_id: Option<&str>,
+    new_id: &str,
+) -> Result<(), String> {
+    let active: Option<String> = conn
+        .query_row(
+            "SELECT active_branch_id FROM conversations WHERE id = ?1",
+            params![conversation_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .flatten();
+
+    let extends_active = match (active.as_deref(), parent_id) {
+        (None, _) => true,
+        (Some(active_id), Some(parent)) => active_id == parent,
+        (Some(_), None) => false,
+    };
+
+    if extends_active {
+        update_active_branch_id(conn, conversation_id, new_id)?;
+    }
+    Ok(())
 }
 
 pub fn create_branch(

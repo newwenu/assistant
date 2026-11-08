@@ -106,6 +106,9 @@ pub struct InMemoryStore {
     /// 注入后所有写操作立即失败。
     fail: bool,
     next_id: Mutex<u32>,
+    /// 活跃分支叶子，语义对齐 `conversations::advance_active_branch`：
+    /// 仅当新行父节点等于当前叶子时前移。缺少它则无法在单测层发现叶子停滞。
+    active_leaf: Mutex<Option<String>>,
 }
 
 impl InMemoryStore {
@@ -131,6 +134,7 @@ impl InMemoryStore {
 
     /// 预置既有行：模拟 `TurnRunner` 在进入循环前创建的 assistant 占位行。
     /// 占位行 id 由调用方给定，不消耗 `next_id`，因此不影响后续行编号。
+    /// 命令层建占位行时会无条件 `update_active_branch_id`，故叶子直接指向该行。
     pub fn seed_assistant_row(&self, id: &str, parent_id: Option<&str>) {
         self.lock_messages().push(ReplayMessage {
             id: id.to_string(),
@@ -142,6 +146,12 @@ impl InMemoryStore {
             is_error: false,
             timestamp: 0,
         });
+        *self.lock_active_leaf() = Some(id.to_string());
+    }
+
+    /// 当前活跃分支叶子；`None` 表示尚未写入任何行。
+    pub fn active_leaf(&self) -> Option<String> {
+        self.lock_active_leaf().clone()
     }
 
     fn lock_calls(&self) -> std::sync::MutexGuard<'_, Vec<StoreCall>> {
@@ -155,6 +165,26 @@ impl InMemoryStore {
         match self.messages.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    fn lock_active_leaf(&self) -> std::sync::MutexGuard<'_, Option<String>> {
+        match self.active_leaf.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    /// 叶子推进：与 `advance_active_branch` 同规则，父节点等于当前叶子才前移。
+    fn advance_leaf(&self, parent_id: Option<&str>, new_id: &str) {
+        let mut leaf = self.lock_active_leaf();
+        let extends = match (leaf.as_deref(), parent_id) {
+            (None, _) => true,
+            (Some(active), Some(parent)) => active == parent,
+            (Some(_), None) => false,
+        };
+        if extends {
+            *leaf = Some(new_id.to_string());
         }
     }
 
@@ -195,6 +225,7 @@ impl MessageStore for InMemoryStore {
             is_error: false,
             timestamp: 0,
         });
+        self.advance_leaf(req.parent_id.as_deref(), &id);
         Ok(id)
     }
 
@@ -230,12 +261,13 @@ impl MessageStore for InMemoryStore {
             id: id.clone(),
             role: "tool".to_string(),
             content: req.content,
-            parent_id: Some(req.parent_id),
+            parent_id: Some(req.parent_id.clone()),
             tool_calls_json: None,
             tool_call_id: Some(req.tool_call_id),
             is_error: req.is_error,
             timestamp: req.timestamp,
         });
+        self.advance_leaf(Some(req.parent_id.as_str()), &id);
         Ok(id)
     }
 

@@ -80,6 +80,10 @@ impl Default for RoundOutcome {
 pub trait TurnObserver: Send + Sync {
     fn set_phase(&self, phase: TurnPhase);
 
+    /// 进入新迭代时同步迭代号。`Delta` / `ToolEvent` 据此标记所属迭代，
+    /// 前端以它为气泡边界（I38d §3.1.1：一次迭代 = 一条消息 = 一个气泡）。
+    fn set_iteration(&self, iteration: u32);
+
     fn emit_tool_event(&self, event: ToolEvent);
 
     /// 正文 / 推理增量：返回本次事件的 `seq`。executor **只能**经这里发 delta，

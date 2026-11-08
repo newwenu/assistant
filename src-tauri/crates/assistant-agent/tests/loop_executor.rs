@@ -72,12 +72,13 @@ impl RecordingObserver {
 
 impl TurnObserver for RecordingObserver {
     fn set_phase(&self, phase: TurnPhase) {
-        if phase == TurnPhase::Streaming {
-            self.iteration.fetch_add(1, Ordering::SeqCst);
-        }
         if let Ok(mut guard) = self.phases.lock() {
             guard.push(phase);
         }
+    }
+
+    fn set_iteration(&self, iteration: u32) {
+        self.iteration.store(iteration, Ordering::SeqCst);
     }
 
     fn emit_tool_event(&self, event: ToolEvent) {
@@ -607,6 +608,20 @@ fn assert_single_chain(replay: &[ReplayMessage], first_parent: &str) {
     }
 }
 
+/// 从叶子沿 `parent_id` 回溯，返回可见行 id（含叶子；父不在 replay 内即停止）。
+fn trace_from_leaf(replay: &[ReplayMessage], leaf: &str) -> Vec<String> {
+    let mut chain = Vec::new();
+    let mut cursor = Some(leaf.to_string());
+    while let Some(id) = cursor {
+        let Some(msg) = replay.iter().find(|msg| msg.id == id) else {
+            break;
+        };
+        chain.push(id);
+        cursor = msg.parent_id.clone();
+    }
+    chain
+}
+
 fn last_user_contents(requests: &[RecordedRequest]) -> Vec<String> {
     requests
         .iter()
@@ -1131,6 +1146,8 @@ async fn a14_batch_runs_once_and_keeps_port_order() {
         "wire 与落库同序"
     );
 
+    assert_single_chain(&replay, "user-1");
+
     assert_eq!(run.outcome.status, TurnStatus::Completed);
     assert_eq!(run.outcome.tool_calls, 3);
 }
@@ -1292,6 +1309,311 @@ async fn a20_row_chain_is_single_line() {
         run.outcome.final_message_id.as_deref(),
         Some(replay.last().expect("last row").id.as_str()),
         "终态行就是最后写入的 assistant 行"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A20a / A20b / A20c：多工具批次的行链单链（INV1–INV5）
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a20a_multi_tool_batch_keeps_single_chain() {
+    let run = run_loop(
+        LoopArgs::new(vec![
+            multi_tool_script(&[
+                ("call-1", "echo", "{\"q\":\"a\"}"),
+                ("call-2", "echo", "{\"q\":\"b\"}"),
+                ("call-3", "echo", "{\"q\":\"c\"}"),
+            ]),
+            ScriptedResponse::text(&["done"]),
+        ])
+        .with_tools(vec![echo_tool()])
+        .with_results(vec![
+            ok_result("call-1", "echo", "a"),
+            ok_result("call-2", "echo", "b"),
+            ok_result("call-3", "echo", "c"),
+        ]),
+    )
+    .await;
+
+    let replay = run.replay();
+    assert_eq!(
+        replay.len(),
+        5,
+        "占位行 + 3 条 tool 行 + 第 2 迭代 assistant 行：{replay:?}"
+    );
+    assert_single_chain(&replay, "user-1");
+    assert_eq!(assistant_rows(&replay).len(), 2, "占位行 + 第 2 迭代新建");
+    assert_eq!(
+        assistant_rows(&replay)
+            .iter()
+            .filter(|msg| msg.parent_id.as_deref() == Some("user-1"))
+            .count(),
+        1,
+        "只有占位行挂在 user 上，不得出现第二条假分支"
+    );
+
+    let last_id = replay.last().expect("last row").id.clone();
+    assert_eq!(
+        run.outcome.final_message_id.as_deref(),
+        Some(last_id.as_str()),
+        "终态行就是最后写入行"
+    );
+    assert_eq!(
+        run.store.active_leaf().as_deref(),
+        Some(last_id.as_str()),
+        "叶子必须推进到最后一行（缺陷表现即停在第 1 条 tool 行）"
+    );
+    assert_eq!(run.outcome.status, TurnStatus::Completed);
+}
+
+#[tokio::test]
+async fn a20a_cross_iteration_chains_onto_last_tool_row() {
+    let run = run_loop(
+        LoopArgs::new(vec![
+            multi_tool_script(&[
+                ("call-1", "echo", "{\"q\":\"a\"}"),
+                ("call-2", "echo", "{\"q\":\"b\"}"),
+            ]),
+            multi_tool_script(&[
+                ("call-3", "echo", "{\"q\":\"c\"}"),
+                ("call-4", "echo", "{\"q\":\"d\"}"),
+            ]),
+            ScriptedResponse::text(&["done"]),
+        ])
+        .with_tools(vec![echo_tool()])
+        .with_results(vec![
+            ok_result("call-1", "echo", "a"),
+            ok_result("call-2", "echo", "b"),
+            ok_result("call-3", "echo", "c"),
+            ok_result("call-4", "echo", "d"),
+        ]),
+    )
+    .await;
+
+    let replay = run.replay();
+    assert_single_chain(&replay, "user-1");
+
+    let tools = tool_rows(&replay);
+    assert_eq!(tools.len(), 4);
+    let assistants = assistant_rows(&replay);
+    assert_eq!(assistants.len(), 3, "占位行 + 两个迭代各一行");
+
+    assert_eq!(
+        assistants[1].parent_id.as_deref(),
+        Some(tools[1].id.as_str()),
+        "第 2 迭代 assistant 行必须挂在第 1 迭代最后一条 tool 行上（INV4）"
+    );
+    assert_eq!(
+        tools[2].parent_id.as_deref(),
+        Some(assistants[1].id.as_str()),
+        "第 2 迭代首条 tool 行必须挂在第 2 迭代 assistant 行上（D5 前置条件）"
+    );
+
+    let last_id = replay.last().expect("last row").id.clone();
+    assert_eq!(run.store.active_leaf().as_deref(), Some(last_id.as_str()));
+}
+
+#[tokio::test]
+async fn a20b_skipped_rows_chain_onto_previous_row() {
+    let run = run_loop(
+        LoopArgs::new(vec![
+            multi_tool_script(&[
+                ("call-1", "echo", "{\"q\":\"a\"}"),
+                ("call-2", "echo", "{\"q\":\"b\"}"),
+                ("call-3", "echo", "{\"q\":\"c\"}"),
+            ]),
+            ScriptedResponse::text(&["never"]),
+        ])
+        .with_tools(vec![echo_tool()])
+        .with_results(vec![ok_result("call-1", "echo", "a")])
+        .with_iterations(2)
+        .with_max_tool_calls(1),
+    )
+    .await;
+
+    let replay = run.replay();
+    assert_single_chain(&replay, "user-1");
+
+    let tools = tool_rows(&replay);
+    assert_eq!(tools.len(), 3, "超额调用同样写配对结果行");
+    assert!(!tools[0].is_error, "预算内的调用正常完成");
+    assert_eq!(
+        tools.iter().filter(|msg| msg.is_error).count(),
+        2,
+        "is_error 行数与 skipped 数一致"
+    );
+    for skipped in &tools[1..] {
+        assert!(
+            skipped.content.contains("预算已用尽"),
+            "skipped content: {}",
+            skipped.content
+        );
+    }
+
+    let last_id = replay.last().expect("last row").id.clone();
+    assert_eq!(run.store.active_leaf().as_deref(), Some(last_id.as_str()));
+    assert_eq!(run.outcome.status, TurnStatus::Completed);
+    assert!(run.outcome.hit_cap);
+}
+
+#[tokio::test]
+async fn a20c_budget_exit_chains_terminal_row() {
+    let run = run_loop(
+        LoopArgs::new(vec![multi_tool_script(&[
+            ("call-1", "echo", "{\"q\":\"a\"}"),
+            ("call-2", "echo", "{\"q\":\"b\"}"),
+            ("call-3", "echo", "{\"q\":\"c\"}"),
+        ])])
+        .with_tools(vec![echo_tool()])
+        .with_results(vec![
+            ok_result("call-1", "echo", "a"),
+            ok_result("call-2", "echo", "b"),
+            ok_result("call-3", "echo", "c"),
+        ])
+        .with_iterations(1),
+    )
+    .await;
+
+    let replay = run.replay();
+    assert_single_chain(&replay, "user-1");
+    assert_eq!(run.outcome.status, TurnStatus::Completed);
+    assert!(run.outcome.hit_cap);
+
+    let last_id = replay.last().expect("last row").id.clone();
+    assert_eq!(
+        last_id,
+        run.outcome.final_message_id.clone().unwrap_or_default()
+    );
+    assert_eq!(run.store.active_leaf().as_deref(), Some(last_id.as_str()));
+    assert_eq!(tool_rows(&replay).len(), 3, "终态行在全部 tool 行之后写入");
+}
+
+#[tokio::test]
+async fn a20c_no_progress_exit_chains_terminal_row() {
+    let denied = |id: &str| {
+        err_result(
+            id,
+            "echo",
+            "denied",
+            ToolStage::Gateway,
+            Some(ToolErrorClass::Denied),
+        )
+    };
+    let run = run_loop(
+        LoopArgs::new(vec![
+            multi_tool_script(&[
+                ("call-1", "echo", "{\"q\":\"a\"}"),
+                ("call-2", "echo", "{\"q\":\"a\"}"),
+                ("call-3", "echo", "{\"q\":\"a\"}"),
+            ]),
+            ScriptedResponse::text(&["unreachable"]),
+        ])
+        .with_tools(vec![echo_tool()])
+        .with_results(vec![denied("call-1"), denied("call-2"), denied("call-3")]),
+    )
+    .await;
+
+    let replay = run.replay();
+    assert_single_chain(&replay, "user-1");
+    assert_eq!(run.outcome.status, TurnStatus::Failed);
+    assert!(matches!(
+        run.outcome.error,
+        Some(TurnError::NoProgress { .. })
+    ));
+
+    let last_id = replay.last().expect("last row").id.clone();
+    assert_eq!(
+        run.outcome.final_message_id.as_deref(),
+        Some(last_id.as_str()),
+        "无进展出口新建终态行，位于全部 tool 行之后"
+    );
+    assert_eq!(run.store.active_leaf().as_deref(), Some(last_id.as_str()));
+}
+
+#[tokio::test]
+async fn a20c_wrap_up_keeps_terminal_row_on_branch() {
+    let run = run_loop(
+        LoopArgs::new(vec![
+            tool_call_script("call-1", "echo", "{\"q\":\"a\"}"),
+            multi_tool_script(&[
+                ("call-2", "echo", "{\"q\":\"b\"}"),
+                ("call-3", "echo", "{\"q\":\"c\"}"),
+            ]),
+            ScriptedResponse::text(&["final answer"]),
+        ])
+        .with_tools(vec![echo_tool()])
+        .with_results(vec![ok_result("call-1", "echo", "a")])
+        .with_iterations(2)
+        .with_wrap_up(),
+    )
+    .await;
+
+    let replay = run.replay();
+    assert_single_chain(&replay, "user-1");
+    assert_eq!(run.outcome.text, "final answer");
+
+    let tools = tool_rows(&replay);
+    assert_eq!(tools.len(), 3, "1 条执行 + 2 条 skipped");
+    let terminal = run.outcome.final_message_id.clone().expect("终态行");
+    let leaf = run.store.active_leaf().expect("叶子");
+
+    assert_eq!(
+        leaf, terminal,
+        "收尾出口的终态行在 skipped 行之后新建，即最后写入行（INV5a）"
+    );
+    assert_eq!(
+        row(&replay, &terminal).parent_id.as_deref(),
+        Some(tools[2].id.as_str()),
+        "终态行父 = 最后一条 skipped tool 行"
+    );
+    assert!(
+        trace_from_leaf(&replay, &leaf).contains(&terminal),
+        "终态行必须可从叶子回溯（INV5b）；leaf={leaf}, terminal={terminal}"
+    );
+}
+
+#[tokio::test]
+async fn a20c_tool_exec_cancel_keeps_terminal_row_on_branch() {
+    let run = run_loop(
+        LoopArgs::new(vec![
+            multi_tool_script(&[
+                ("call-1", "echo", "{\"q\":\"a\"}"),
+                ("call-2", "echo", "{\"q\":\"b\"}"),
+                ("call-3", "echo", "{\"q\":\"c\"}"),
+            ]),
+            ScriptedResponse::text(&["unreachable"]),
+        ])
+        .with_tools(vec![echo_tool()])
+        .cancel_on_exec(),
+    )
+    .await;
+
+    assert_eq!(run.outcome.status, TurnStatus::Cancelled);
+
+    let replay = run.replay();
+    assert_single_chain(&replay, "user-1");
+
+    let tools = tool_rows(&replay);
+    assert_eq!(tools.len(), 3, "取消批次仍写全部配对结果行");
+    for tool in &tools {
+        assert_eq!(tool.content, "已取消");
+        assert!(tool.is_error);
+    }
+
+    let terminal = run.outcome.final_message_id.clone().expect("终态行");
+    let leaf = run.store.active_leaf().expect("叶子");
+    assert_eq!(
+        leaf, tools[2].id,
+        "叶子是最后一条 cancelled tool 行（INV5a）"
+    );
+    assert_eq!(
+        terminal, INITIAL_MESSAGE_ID,
+        "取消出口复用本迭代 assistant 行"
+    );
+    assert!(
+        trace_from_leaf(&replay, &leaf).contains(&terminal),
+        "终态行必须可从叶子回溯（INV5b）；leaf={leaf}, terminal={terminal}"
     );
 }
 
@@ -1530,6 +1852,40 @@ async fn a23_deltas_flow_only_through_observer_with_iteration_tag() {
         "observer 收到的增量拼回正文"
     );
     assert_eq!(run.outcome.text, "hello");
+}
+
+#[tokio::test]
+async fn a23_text_deltas_carry_advancing_iteration() {
+    let run = run_loop(
+        LoopArgs::new(vec![
+            ScriptedResponse::Deltas(vec![
+                delta_text("one"),
+                tool_call_delta(0, "call-1", "echo", "{\"q\":\"a\"}"),
+                ChatDelta {
+                    finish_reason: Some("tool_calls".to_string()),
+                    ..Default::default()
+                },
+            ]),
+            ScriptedResponse::text(&["two"]),
+        ])
+        .with_tools(vec![echo_tool()])
+        .with_results(vec![ok_result("call-1", "echo", "a")]),
+    )
+    .await;
+
+    assert_eq!(run.outcome.iterations, 2);
+    let deltas = run.observer.deltas();
+    let text: Vec<_> = deltas.iter().filter(|d| !d.text.is_empty()).collect();
+    assert_eq!(
+        text.iter().map(|d| d.text.as_str()).collect::<Vec<_>>(),
+        vec!["one", "two"],
+        "两迭代正文都经 observer"
+    );
+    assert_eq!(text[0].iteration, 1, "第 1 迭代正文标 1");
+    assert_eq!(
+        text[1].iteration, 2,
+        "第 2 迭代正文必须标 2：标 1 会让前端把整轮合并进同一气泡（I38d §3.1.1）"
+    );
 }
 
 #[tokio::test]

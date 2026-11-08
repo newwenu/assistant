@@ -247,6 +247,8 @@ pub(crate) async fn run(ctx: TurnRunCtx<'_>) -> RoundOutcome {
 
     for it in start_iteration..=max_iterations {
         state.iteration = it;
+        // 迭代号必须随迭代推进，否则 Delta 恒标记为 1，前端无法按迭代切气泡（I38d §3.1.1）。
+        ctx.observer.set_iteration(it);
         let elapsed = ctx
             .clock
             .now()
@@ -404,8 +406,7 @@ pub(crate) async fn run(ctx: TurnRunCtx<'_>) -> RoundOutcome {
                 } => (all_results, halt_reason),
             };
 
-        let msg_id = state.msg_id.clone();
-        let append = append_tool_results(&mut state, &ctx, msg_id, all_results).await;
+        let append = append_tool_results(&mut state, &ctx, all_results).await;
         state.tool_calls += n;
         let _ = &append;
 

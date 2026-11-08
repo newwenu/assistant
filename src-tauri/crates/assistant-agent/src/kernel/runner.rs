@@ -389,6 +389,10 @@ impl TurnObserver for RunnerObserver<'_> {
         }
     }
 
+    fn set_iteration(&self, iteration: u32) {
+        self.emitter.set_iteration(iteration);
+    }
+
     fn emit_tool_event(&self, event: ToolEvent) {
         self.emitter.tool_event(event);
     }

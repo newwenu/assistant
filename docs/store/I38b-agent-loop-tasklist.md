@@ -271,7 +271,7 @@
 - [ ] C7.11 端口镜像不漂移 + `assistant-agent` 源码无 `assistant_tools` 引用（A18）（跳过；镜像契约已由 `src-tauri/tests/agent_tool_mirror.rs` 覆盖，源码无引用由 C8.10 覆盖）
 - [ ] C7.12 回填方言：Anthropic `input` 对象、Gemini `args` 对象、`functionResponse` 带工具名、非法 arguments 回退 `{}` 不 400（A19）（跳过；已由 `message_converter` 单测覆盖）
 - [ ] C7.13 累积器唯一实现（A7）（跳过）
-- [ ] C7.14 行链与 `active_branch_id` 端到端：三迭代后行序、`parent_id` 链、活跃叶、无假分支（A20）（跳过；行链已由 `loop_executor.rs` 单测覆盖）
+- [ ] C7.14 行链与 `active_branch_id` 端到端：三迭代后行序、`parent_id` 链、活跃叶、无假分支（A20）（跳过；行链已由 `loop_executor.rs` 单测覆盖；多工具批次的单链与叶子推进覆盖下沉至 [行链修复规格](./I38b-agent-loop-row-chain-fix-spec.md) §7.2 / §7.3）
 - [ ] C7.15 双 Halt 出口端到端：预算耗尽 `completed` + `hit_cap` + 文本非空；无进展 `failed` + 根因摘要（A21）（跳过；已由 `loop_executor.rs` / `kernel_runner.rs` 覆盖）
 - [ ] C7.16 错误路径建行端到端：第 2 迭代取消 / 超时 / provider 错误新增行且第 1 迭代行不变（A22）（跳过）
 - [ ] C7.17 delta `seq` 单调与旧代际丢弃端到端（A23）（跳过）
@@ -332,7 +332,7 @@
 
 **核对时修复的实际缺陷（非偏差，属回归）**：
 
-1. 行链回归：`append_tool_results` 末尾曾把 `last_row_id` 覆盖回 assistant 行，使下一迭代新行与 tool 行成为兄弟分支（假分支）。已删除该覆盖，`last_row_id` 严格等于最后一条 tool 行 id。
+1. 行链回归：`append_tool_results` 末尾曾把 `last_row_id` 覆盖回 assistant 行，使下一迭代新行与 tool 行成为兄弟分支（假分支）。已删除该覆盖，`last_row_id` 严格等于最后一条 tool 行 id。**修复不完整（2026-11-08 补记）**：该次只修了父节点、没修叶子——tool 行仍全部挂 assistant 行，`advance_active_branch` 因此停在第 1 条 tool 行；同时 `ensure_row` / `persist_row_as_new` 建行后未回写 `last_row_id`，遗留 D5 维护不对称。多工具批次下的活跃分支打断与后续行不可见，由 [行链修复规格](./I38b-agent-loop-row-chain-fix-spec.md) 收口。
 2. 取消路径行 id 误用：`ensure_row` / `persist_row_as_new` / `append_tool_results` 曾用 `cancellable(...).unwrap_or(Ok(旧 id))`，取消时把父行 id 当成本次要写的行 id。现三处统一返回 `Option<T>`，取消即跳过写入，不伪造 id。
 3. 过时断言：`kernel_values.rs` 的 `agent_spec_field_values` 曾断言 `spec.stop_hooks.is_empty()`，与 P4 恒装三个钩子冲突；改为断言钩子名列表。
 4. C4.19 取消批次形状与 C4.40c usage 单次落库：核对时补实现（前者原为 `Denied` + 「未执行：本轮已取消」，后者原为每次 `persist_row` 全量重写 `attempt_usages`）。

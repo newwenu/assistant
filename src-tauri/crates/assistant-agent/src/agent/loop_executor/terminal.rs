@@ -154,8 +154,7 @@ pub(super) async fn cancelled_tool_exec(
     let n = (to_run.len() + skipped.len()) as u32;
     let mut all_results = cancelled_results(&to_run);
     all_results.extend(skipped);
-    let msg_id = state.msg_id.clone();
-    let append = append_tool_results(state, ctx, msg_id, all_results).await;
+    let append = append_tool_results(state, ctx, all_results).await;
     state.tool_calls += n;
     let persist = match append {
         Err(err) => Err(err),
@@ -337,8 +336,7 @@ pub(super) async fn wrap_up_on_last_iteration(
 ) -> RoundOutcome {
     state.tool_calls += calls.len() as u32;
     let skipped = not_executed(&calls, "未执行：已达迭代上限");
-    let msg_id = state.msg_id.clone();
-    let append = append_tool_results(state, ctx, msg_id, skipped).await;
+    let append = append_tool_results(state, ctx, skipped).await;
     let wrapped = call_model_without_tools(state, ctx, turn_ctx).await;
     let (base, persist) = match wrapped {
         Ok(wrapped) => {

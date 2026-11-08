@@ -1,4 +1,4 @@
-﻿﻿# I38b — P4：Agent Loop 闭环规格
+﻿# I38b — P4：Agent Loop 闭环规格
 
 | 项 | 值 |
 |---|---|
@@ -601,7 +601,7 @@ pub enum AgentToolCallPayloadDto {
 - **结果行的 `id` 用新 UUID，不借用 call_id**：本仓 `messages.id` 是主键且参与分支（`parent_id` / `sibling_index`）与前端标识，call_id 在同一对话内可能因重试重复，借用会污染主键语义。
 - **新增列 `tool_call_id TEXT`**（旧行 `NULL`）承载 call_id，使 `prompt_builder` 能重建 provider wire 形状。
 - **新增列 `is_error INTEGER NOT NULL DEFAULT 0`** 承载行级失败标记：Anthropic 的 `tool_result` 需要显式 `is_error`，不能靠 content 猜。
-- 结果行 `parent_id` 指向对应 assistant 行，`sibling_index = 0`；一个 `tool_calls_json` 条目对应一条 tool 行，顺序一致，重放按行序而非时间戳匹配。
+- 结果行 `parent_id` 指向**上一条写入行**（同批首条 tool 行指向本迭代 assistant 行，后续逐条链式追加），`sibling_index = 0`；一个 `tool_calls_json` 条目对应一条 tool 行，顺序一致，重放按行序而非时间戳匹配。链式追加是硬约束：所有 tool 行都挂 assistant 行会让 `active_branch_id` 停在第 1 条 tool 行，导致后续行与终态文本不可见（详见 [I38b 行链修复规格](./I38b-agent-loop-row-chain-fix-spec.md)）。
 - **不落库**：`turn_id` / `iteration` / `provider_attempt`（守 I36 D10）。
 - **不建 `tool_calls` 表**；迁移只允许 `ADD COLUMN`，禁止 `DROP` / `RENAME` / 存量行重写。
 - `MessageDto` 逐字段不变（其 `deny_unknown_fields` 决定前端契约）；工具卡片渲染与 DTO 扩展归 P6。
@@ -661,7 +661,7 @@ pub struct AppendToolMessageReq {
 - `save_tool_calls` 在 assistant 消息 `finalize` 之前调用，避免终态消息被二次改写。
 - `append_tool_message` 一次调用只写一条结果行，顺序由调用方保证（与 `tool_calls` 一致）。
 - 测试替身必须实现这两个方法，且能回放「写入 → 读回 → 重建 wire 形状」（A11）。
-- **`append_tool_message` 的 `parent_id` 指向 assistant 行，`sibling_index` 恒为 `0`**：tool 行不参与分支兄弟计数（`get_sibling_count` 只按 `parent_id` 计，若同一 assistant 行下有多个 tool 行，它们的 `sibling_index` 会重复）。P4 明确接受这一重复：分支视图按 `role` 过滤 tool 行（`role='tool'` 不渲染为独立消息），且 `sibling_index` 只在前端分支切换时使用，tool 行不参与。**不新增「按 role 分桶的 sibling_index」**，那会改 `get_sibling_count` 语义并波及现有分支逻辑。
+- **`append_tool_message` 的 `parent_id` 指向链尾行（首条指向本迭代 assistant 行，后续逐条链式追加），`sibling_index` 恒为 `0`**：tool 行不参与分支兄弟计数。链式追加后同父兄弟重复（原「同一 assistant 行下多个 tool 行 `sibling_index` 重复」）自然消失；分支视图按 `role` 过滤 tool 行（`role='tool'` 不渲染为独立消息），`sibling_index` 只在前端分支切换时使用，tool 行不参与。**不新增「按 role 分桶的 sibling_index」**，那会改 `get_sibling_count` 语义并波及现有分支逻辑。链式追加是硬约束：全部挂 assistant 行会让 `active_branch_id` 停在第 1 条 tool 行（见 [行链修复规格](./I38b-agent-loop-row-chain-fix-spec.md)）。
 - **实现沿用 `DbMessageStore::with_conn`**（`src/adapters/message_store.rs:18`，`Mutex<Connection>` + 同步 rusqlite）：新增两个方法照抄该模式即可，不为 P4 引入 `spawn_blocking` 或连接池 —— 这是 P3 既定的落库方式，单次工具结果写入量与普通消息同量级；若后续成为热点（大量并行工具），在 P8 统一改造，P4 不做双轨。
 
 **存储侧同步改动**（缺一不可，否则 `prompt_builder` 读不到）：
@@ -796,7 +796,7 @@ impl Drop for WaitGuard {
 | 依赖方向被破坏 | A8 以 `cargo tree` 断言；RoundExecutor 实现只允许在 `src-tauri` |
 | P4-C5 切换导致 chat/agent 双路径漂移 | 一次性替换，不做运行时开关；A9 对比测试 |
 | tool 结果行数翻倍推高上下文占用 | 结果行只存回填文本（已落盘时为引用 + 预览，不存全文）；阶梯 ① 投影按行序截断 |
-| `role='tool'` 行进入分支视图 | 结果行 `parent_id` 挂 assistant 行、`sibling_index = 0`，不产生新分支 |
+| `role='tool'` 行进入分支视图 | 结果行链式挂在前一行（首条挂本迭代 assistant 行）、`sibling_index = 0`，不产生新分支；链式追加同时保证 `active_branch_id` 推进到最后一行 |
 | 只卡迭代次数导致单轮工具风暴 | D18 的 `max_tool_calls` 与墙钟独立计数；A12 |
 | nudge 写库污染后续轮 | D19 只进本次请求；A13 断言 `messages` 无新增行 |
 | 并行执行打乱结果顺序 | 批内并行、按 `tool_calls` 索引回填与落库；A14 |

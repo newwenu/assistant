@@ -551,6 +551,158 @@ fn get_message_siblings_returns_ordered_list() {
 }
 
 #[test]
+fn advance_active_branch_tracks_multi_iteration_chain() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "first", 200, Some("u1"), 0),
+    )
+    .unwrap();
+    conversations::update_active_branch_id(&conn, "c1", "a1").unwrap();
+
+    let mut tool = msg_with_parent("t1", "c1", "tool", "result", 300, Some("a1"), 0);
+    tool.tool_call_id = Some("call_1".to_string());
+    conversations::insert_message(&conn, &tool).unwrap();
+    conversations::advance_active_branch(&conn, "c1", Some("a1"), "t1").unwrap();
+
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a2", "c1", "assistant", "second", 400, Some("t1"), 0),
+    )
+    .unwrap();
+    conversations::advance_active_branch(&conn, "c1", Some("t1"), "a2").unwrap();
+
+    let detail = conversations::get_conversation_detail(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    let ids: Vec<_> = detail.messages.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, vec!["u1", "a1", "t1", "a2"]);
+    assert_eq!(detail.conversation.active_branch_id.as_deref(), Some("a2"));
+}
+
+#[test]
+fn multi_tool_batch_chain_advances_leaf_to_terminal_row() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+
+    // 与 executor 真实产生的 parent 序列一致：U1 → A1 → T1 → T2 → T3 → A2。
+    // 缺陷形态（全部 tool 行挂 A1）会让叶子停在第 1 条 tool 行，这里按单链推进。
+    let steps: [(&str, &str, &str); 5] = [
+        ("a1", "assistant", "u1"),
+        ("t1", "tool", "a1"),
+        ("t2", "tool", "t1"),
+        ("t3", "tool", "t2"),
+        ("a2", "assistant", "t3"),
+    ];
+    for (index, (id, role, parent)) in steps.iter().enumerate() {
+        let mut row = msg_with_parent(
+            id,
+            "c1",
+            role,
+            if *role == "tool" { "result" } else { "" },
+            200 + index as i64 * 10,
+            Some(parent),
+            0,
+        );
+        if *role == "tool" {
+            row.tool_call_id = Some(format!("call_{index}"));
+        }
+        conversations::insert_message(&conn, &row).unwrap();
+        conversations::advance_active_branch(&conn, "c1", Some(parent), id).unwrap();
+    }
+
+    let detail = conversations::get_conversation_detail(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    let ids: Vec<_> = detail.messages.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, vec!["u1", "a1", "t1", "t2", "t3", "a2"]);
+    assert_eq!(
+        detail.conversation.active_branch_id.as_deref(),
+        Some("a2"),
+        "叶子必须推进到终态 assistant 行，而不是停在第 1 条 tool 行"
+    );
+    assert_eq!(
+        conversations::get_sibling_count(&conn, "c1", Some("u1")).unwrap(),
+        1,
+        "tool 行链式追加，不得在 U1 下产生假分支"
+    );
+    assert_eq!(
+        conversations::get_sibling_count(&conn, "c1", Some("a1")).unwrap(),
+        1,
+        "A1 下只有 1 个孩子（T1），tool 行彼此不成兄弟"
+    );
+}
+
+#[test]
+fn long_single_chain_detail_still_opens() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("m0", "c1", "user", "q", 100)).unwrap();
+
+    // 放宽前上限为 1000，这里构造 1200 行合法单链，验证详情不再被深度上限截断。
+    let depth = 1200;
+    let mut parent = "m0".to_string();
+    for index in 1..=depth {
+        let id = format!("m{index}");
+        let row = msg_with_parent(
+            &id,
+            "c1",
+            "assistant",
+            "x",
+            100 + index as i64,
+            Some(&parent),
+            0,
+        );
+        conversations::insert_message(&conn, &row).unwrap();
+        parent = id;
+    }
+    conversations::update_active_branch_id(&conn, "c1", &parent).unwrap();
+
+    let detail = conversations::get_conversation_detail(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(detail.messages.len(), depth as usize + 1, "长链全部可见");
+    assert_eq!(
+        detail.conversation.active_branch_id.as_deref(),
+        Some(parent.as_str())
+    );
+}
+
+#[test]
+fn advance_active_branch_keeps_user_branch_selection() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "picked", 200, Some("u1"), 0),
+    )
+    .unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a2", "c1", "assistant", "other", 300, Some("u1"), 1),
+    )
+    .unwrap();
+    conversations::update_active_branch_id(&conn, "c1", "a1").unwrap();
+
+    conversations::advance_active_branch(&conn, "c1", Some("u1"), "a2").unwrap();
+
+    let detail = conversations::get_conversation_detail(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        detail.conversation.active_branch_id.as_deref(),
+        Some("a1"),
+        "advancing must not steal the user's branch selection"
+    );
+    let ids: Vec<_> = detail.messages.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, vec!["u1", "a1"]);
+}
+
+#[test]
 fn trace_active_branch_follows_parent_chain() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();

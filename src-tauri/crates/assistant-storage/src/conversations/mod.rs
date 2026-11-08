@@ -118,8 +118,8 @@ pub fn get_conversation_detail(
 }
 
 pub use branch::{
-    create_branch, find_branch_leaf, get_message_siblings, switch_branch, trace_active_branch,
-    update_active_branch_id, MaxSiblingsExceededError, SiblingInfo,
+    advance_active_branch, create_branch, find_branch_leaf, get_message_siblings, switch_branch,
+    trace_active_branch, update_active_branch_id, MaxSiblingsExceededError, SiblingInfo,
 };
 pub use compression::{
     get_compression_state, is_conversation_full, set_conversation_is_full,
