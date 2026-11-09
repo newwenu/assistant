@@ -20,6 +20,7 @@ pub async fn os_tool_exec(
         input = serde_json::json!({ "action": request.action });
     }
 
+    // ToolBox 没有会话、没有基准、没有边界（I38h §4.2）：相对路径直接报错。
     let context = ToolUseContext::for_toolbox(None);
 
     let result = invoke(

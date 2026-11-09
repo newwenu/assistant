@@ -12,17 +12,31 @@ fn receipts() -> Arc<dyn ReadReceiptStore> {
     Arc::new(InMemoryReadReceiptStore::new())
 }
 
-/// 生产注册形态：`fs_link` + 只读组。
-fn production_registry() -> ToolRegistry {
+/// 只读批次形态：`fs_link` + 只读组（P5-R1）。
+fn readonly_registry() -> ToolRegistry {
     let registry = registry();
     os::register_os_tools(&registry);
     os::register_readonly_tools(&registry, receipts());
     registry
 }
 
+/// 修改组形态：`fs_link` + 只读组 + 修改组（P5-R2，P6 启用）。
+fn write_registry() -> ToolRegistry {
+    let registry = readonly_registry();
+    os::register_write_tools(&registry, receipts());
+    registry
+}
+
+/// 生产注册形态：`fs_link` + 只读组 + 修改组 + 危险组（与 `tool_setup.rs` 一致）。
+fn production_registry() -> ToolRegistry {
+    let registry = write_registry();
+    os::register_dangerous_tools(&registry, receipts());
+    registry
+}
+
 #[test]
 fn the_readonly_group_registers_the_four_read_tools_and_keeps_fs_link() {
-    let registry = production_registry();
+    let registry = readonly_registry();
     let ids: Vec<String> = {
         let mut ids = registry.tool_ids();
         ids.sort();
@@ -36,24 +50,24 @@ fn the_readonly_group_registers_the_four_read_tools_and_keeps_fs_link() {
 }
 
 #[test]
-fn the_write_and_dangerous_groups_stay_out_of_the_production_registry() {
+fn the_production_registry_registers_every_group() {
     let registry = production_registry();
     for id in ["write", "edit", "mkdir", "move", "delete"] {
         assert!(
-            registry.find_for_toolbox(id).is_none(),
-            "'{}' must not be reachable before its gate opens",
+            registry.find_for_toolbox(id).is_some(),
+            "'{}' must be reachable in the production registry",
             id
         );
         assert!(
-            registry.find(id).is_none(),
-            "'{}' must not be registered",
+            registry.find(id).is_some(),
+            "'{}' must be registered in the production registry",
             id
         );
     }
 }
 
 #[tokio::test]
-async fn tool_definitions_for_os_tier_only_expose_the_readonly_tools() {
+async fn tool_definitions_for_os_tier_expose_every_os_facing_tool() {
     let registry = production_registry();
     let definitions = registry.tool_definitions_for_tier(ToolTier::Os).await;
     let ids: Vec<&str> = definitions
@@ -62,7 +76,7 @@ async fn tool_definitions_for_os_tier_only_expose_the_readonly_tools() {
         .collect();
     assert_eq!(
         ids,
-        vec!["glob", "grep", "ls", "read"],
+        vec!["delete", "edit", "glob", "grep", "ls", "mkdir", "move", "read", "write"],
         "fs_link is TOOLBOX_ONLY and must be filtered out by audience"
     );
 
@@ -78,7 +92,7 @@ async fn tool_definitions_for_os_tier_only_expose_the_readonly_tools() {
 
 #[test]
 fn the_write_group_becomes_reachable_when_explicitly_registered() {
-    let registry = production_registry();
+    let registry = readonly_registry();
     os::register_write_tools(&registry, receipts());
 
     for id in ["write", "edit", "mkdir", "move"] {
@@ -96,7 +110,7 @@ fn the_write_group_becomes_reachable_when_explicitly_registered() {
 
 #[test]
 fn the_dangerous_group_becomes_reachable_when_explicitly_registered() {
-    let registry = production_registry();
+    let registry = readonly_registry();
     os::register_dangerous_tools(&registry, receipts());
 
     assert!(
@@ -114,8 +128,6 @@ fn the_dangerous_group_becomes_reachable_when_explicitly_registered() {
 #[tokio::test]
 async fn the_registered_groups_carry_the_expected_metadata() {
     let registry = production_registry();
-    os::register_write_tools(&registry, receipts());
-    os::register_dangerous_tools(&registry, receipts());
 
     let expectations = [
         ("write", ToolTier::Os, false),
@@ -167,8 +179,6 @@ async fn the_registered_groups_carry_the_expected_metadata() {
 #[tokio::test]
 async fn the_injected_action_key_does_not_break_the_new_tools() {
     let registry = production_registry();
-    os::register_write_tools(&registry, receipts());
-    os::register_dangerous_tools(&registry, receipts());
 
     let dir = tempfile::tempdir().unwrap();
     let context =

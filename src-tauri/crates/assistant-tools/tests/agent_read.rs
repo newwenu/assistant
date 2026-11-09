@@ -152,7 +152,6 @@ async fn reads_the_whole_file_with_line_number_prefixes() {
     assert_eq!(data["endLine"], json!(2));
     assert_eq!(data["totalLines"], json!(2));
     assert_eq!(data["truncated"], json!(false));
-    assert_eq!(data["deduplicated"], json!(false));
 }
 
 #[tokio::test]
@@ -336,7 +335,7 @@ async fn byte_cap_truncates_and_reports_the_real_total() {
 }
 
 #[tokio::test]
-async fn unchanged_reads_in_the_same_session_are_deduplicated() {
+async fn repeated_reads_return_full_content() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), Some("session-1"));
     write(dir.path(), "a.txt", "alpha\nbeta\n");
@@ -346,37 +345,17 @@ async fn unchanged_reads_in_the_same_session_are_deduplicated() {
         .execute(&json!({ "path": "a.txt" }), &ctx)
         .await
         .unwrap();
-    assert_eq!(first.data.as_ref().unwrap()["deduplicated"], json!(false));
     assert!(first.assistant_text().contains("alpha"));
 
     let second = tool
         .execute(&json!({ "path": "a.txt" }), &ctx)
         .await
         .unwrap();
+    assert!(second.ok);
+    assert_eq!(second.assistant_text(), first.assistant_text());
     let data = second.data.as_ref().unwrap();
-    assert_eq!(data["deduplicated"], json!(true));
-    assert!(!second.assistant_text().contains("alpha"));
-    assert!(second.assistant_text().contains("Already returned"));
-}
-
-#[tokio::test]
-async fn a_different_session_is_not_suppressed() {
-    let dir = tempfile::tempdir().unwrap();
-    let first_ctx = context(dir.path(), Some("session-1"));
-    let second_ctx = context(dir.path(), Some("session-2"));
-    write(dir.path(), "a.txt", "alpha\n");
-
-    let tool = tool();
-    tool.execute(&json!({ "path": "a.txt" }), &first_ctx)
-        .await
-        .unwrap();
-    let second = tool
-        .execute(&json!({ "path": "a.txt" }), &second_ctx)
-        .await
-        .unwrap();
-
-    assert_eq!(second.data.as_ref().unwrap()["deduplicated"], json!(false));
-    assert!(second.assistant_text().contains("alpha"));
+    assert_eq!(data["startLine"], json!(1));
+    assert_eq!(data["totalLines"], json!(2));
 }
 
 #[tokio::test]
@@ -397,15 +376,11 @@ async fn a_changed_revision_is_read_again() {
         .await
         .unwrap();
 
-    assert_eq!(
-        refreshed.data.as_ref().unwrap()["deduplicated"],
-        json!(false)
-    );
     assert!(refreshed.assistant_text().contains("beta"));
 }
 
 #[tokio::test]
-async fn different_ranges_are_not_deduplicated() {
+async fn a_different_range_returns_only_that_range() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), Some("session-1"));
     write(dir.path(), "a.txt", "one\ntwo\nthree\nfour\n");
@@ -420,7 +395,7 @@ async fn different_ranges_are_not_deduplicated() {
         .await
         .unwrap();
 
-    assert_eq!(ranged.data.as_ref().unwrap()["deduplicated"], json!(false));
+    assert_eq!(ranged.data.as_ref().unwrap()["startLine"], json!(3));
     assert!(ranged.assistant_text().contains("three"));
 }
 
@@ -642,8 +617,6 @@ async fn receipt_records_the_detected_encoding_and_bom_state() {
     let key = assistant_tools::storage::ReadReceiptKey {
         session_id: ctx.session_id.clone(),
         path: path.display().to_string(),
-        start_line: None,
-        end_line: None,
     };
     let receipt = store.lookup(&key).await.expect("receipt recorded");
     assert_eq!(receipt.encoding, "GBK");

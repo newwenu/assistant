@@ -16,6 +16,10 @@ import styles from "./fs-link.module.css";
 
 const { TextArea } = Input;
 
+/** 绝对路径判定：盘符 / POSIX 根 / UNC。相对路径不按工作区解析（I38h §10.4）。 */
+const isAbsolutePath = (p: string) =>
+  /^[A-Za-z]:[\\/]/.test(p) || p.startsWith("/") || p.startsWith("\\\\");
+
 export default function FsLink() {
   const [source, setSource] = useState("");
   const [target, setTarget] = useState("");
@@ -66,6 +70,10 @@ export default function FsLink() {
       message.warning("请填写源路径和目标路径");
       return;
     }
+    if (!isAbsolutePath(source) || !isAbsolutePath(target)) {
+      message.warning("请填写绝对路径（本工具不按工作区解析相对路径）");
+      return;
+    }
     setLoading(true);
     setError(null);
     setCreateResult(null);
@@ -88,6 +96,10 @@ export default function FsLink() {
   const handleCheck = async () => {
     if (!source) {
       message.warning("请填写要检查的路径");
+      return;
+    }
+    if (!isAbsolutePath(source)) {
+      message.warning("请填写绝对路径（本工具不按工作区解析相对路径）");
       return;
     }
     setLoading(true);
@@ -120,7 +132,7 @@ export default function FsLink() {
       <div className={styles.section}>
         <Typography.Text strong>源路径 — 链接将被创建在此位置</Typography.Text>
         <Typography.Text type="secondary" className={styles.fieldHint}>
-          即新链接本身的路径。创建后，访问此路径等同于访问目标路径。此路径当前不应已存在。
+          即新链接本身的路径。创建后，访问此路径等同于访问目标路径。此路径当前不应已存在。必须填写绝对路径，相对路径不会按工作区解析。
         </Typography.Text>
         <TextArea
           value={source}
@@ -136,7 +148,7 @@ export default function FsLink() {
           目标路径 — 链接指向的实际文件或目录
         </Typography.Text>
         <Typography.Text type="secondary" className={styles.fieldHint}>
-          即链接引用的真实位置。此路径必须已存在，否则创建会失败。可拖入文件或文件夹到页面任意位置。
+          即链接引用的真实位置。此路径必须已存在，否则创建会失败。必须填写绝对路径。可拖入文件或文件夹到页面任意位置。
         </Typography.Text>
         <TextArea
           value={target}

@@ -2,7 +2,6 @@ import { defineSetting, defineSection } from "./fieldRegistry";
 import { ThemeRadioRender } from "../../shared/renderers/ThemeRadioRender";
 import { RendererSelectRender } from "../../shared/renderers/RendererSelectRender";
 import { MascotColorGroupRender } from "../../shared/renderers/MascotColorGroupRender";
-import { FolderPickerField } from "../../shared/renderers/FolderPickerField";
 import {
   SHORTCUT_DEFINITIONS,
   DEFAULT_KEYBINDINGS,
@@ -298,23 +297,6 @@ export const COMPACT_SETTINGS = [
 ];
 
 export const AGENT_TOOL_SETTINGS = [
-  defineSetting({
-    key: "workspaceRoot",
-    group: "app",
-    section: "agent-main",
-    type: "string",
-    default: null,
-    label: "settings.general.agent_tools.workspace_root.label",
-    description: "settings.general.agent_tools.workspace_root.description",
-    placeholder: "settings.general.agent_tools.workspace_root.placeholder",
-    customRender: FolderPickerField,
-    readValue: (conf: Record<string, unknown>) =>
-      typeof conf.workspaceRoot === "string" ? conf.workspaceRoot : null,
-    buildPatch: (value: unknown): Record<string, unknown> => ({
-      workspaceRoot:
-        typeof value === "string" && value.length > 0 ? value : null,
-    }),
-  }),
   defineSetting({
     key: "approvalTimeoutSecs",
     group: "app",

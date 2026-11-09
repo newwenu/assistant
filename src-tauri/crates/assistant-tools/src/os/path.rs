@@ -7,10 +7,11 @@ use crate::context::ToolUseContext;
 
 /// 把工具输入解析为可安全使用的绝对路径。
 ///
-/// 输入：原始路径字符串（绝对路径，或配合 `workspace_root` 的相对路径）+ 上下文。
+/// 输入：原始路径字符串（绝对路径，或配合 `resolve_base` 的相对路径，
+/// `resolve_base` 缺省时回退 `workspace_root`）+ 上下文。
 /// 返回：经 `canonicalize_lenient` 归一、并通过受保护目录与 workspace 边界检查的绝对路径。
-/// 失败：盘符相对路径（`C:foo`）、含 `..`、相对路径缺少 `workspace_root`、
-/// `workspace_root` 非绝对路径、路径不可归一、落在受保护目录、越出 workspace 根。
+/// 失败：盘符相对路径（`C:foo`）、含 `..`、相对路径缺少解析基准、
+/// 解析基准非绝对路径、路径不可归一、落在受保护目录、越出 workspace 根。
 ///
 /// 调用方必须使用返回值做 IO，不得再用原始字符串，避免「校验 A、使用 B」。
 pub fn resolve(input: &str, context: &ToolUseContext) -> Result<PathBuf, String> {
@@ -221,9 +222,11 @@ fn join_input(input: &str, context: &ToolUseContext) -> Result<PathBuf, String> 
         return Ok(raw.to_path_buf());
     }
 
-    let Some(root) = context.workspace_root.as_deref() else {
+    let Some(root) = resolution_base(context) else {
+        // 只陈述失败事实，不给调用策略：错误文本会进入模型上下文，
+        // 「改用绝对路径」之类的建议等于教模型去试探边界。
         return Err(format!(
-            "relative path '{}' requires workspace_root in context",
+            "relative path '{}' cannot be resolved: no workspace directory is configured",
             input
         ));
     };
@@ -231,15 +234,29 @@ fn join_input(input: &str, context: &ToolUseContext) -> Result<PathBuf, String> 
     let root_path = Path::new(root);
     if !root_path.is_absolute() {
         return Err(format!(
-            "workspace_root '{}' must be an absolute path",
+            "configured workspace root '{}' must be an absolute path",
             root
         ));
     }
     if !root_path.exists() {
-        return Err(format!("workspace_root '{}' does not exist", root));
+        return Err(format!(
+            "configured workspace root '{}' does not exist",
+            root
+        ));
     }
 
     Ok(root_path.join(raw))
+}
+
+/// 相对路径的解析基准：优先 `resolve_base`（ToolBox 只填它），回退 `workspace_root`。
+///
+/// 两者语义不同：`resolve_base` 只提供「从哪算起」，`workspace_root` 额外构成权限边界。
+/// 缺省 `path` 参数的工具（`glob` / `grep`）默认目录也用它，不算边界。
+pub(crate) fn resolution_base(context: &ToolUseContext) -> Option<&str> {
+    context
+        .resolve_base
+        .as_deref()
+        .or(context.workspace_root.as_deref())
 }
 
 fn reject_drive_relative(path: &Path, original: &str) -> Result<(), String> {
@@ -279,7 +296,7 @@ fn normalize_components(path: &Path, original: &str) -> Result<PathBuf, String> 
             Component::CurDir => {}
             Component::ParentDir => {
                 return Err(format!(
-                    "path '{}' contains '..' traversal, use a canonical path instead",
+                    "path '{}' contains '..' traversal, which is not allowed",
                     original
                 ))
             }
@@ -430,8 +447,17 @@ fn reject_credential_dirs(path: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// Agent 链路形态：只填 `workspace_root`，相对路径基准由 `resolution_base` 回退提供。
     fn context_with_root(root: &Path) -> ToolUseContext {
-        ToolUseContext::for_toolbox(Some(root.display().to_string()))
+        ToolUseContext {
+            workspace_root: Some(root.display().to_string()),
+            ..Default::default()
+        }
+    }
+
+    /// ToolBox 形态：只给解析基准，没有权限边界（I18b §2.2）。
+    fn toolbox_context(base: &Path) -> ToolUseContext {
+        ToolUseContext::for_toolbox(Some(base.display().to_string()))
     }
 
     fn create_dir_link(link: &Path, target: &Path) -> bool {
@@ -692,6 +718,57 @@ mod tests {
     }
 
     #[test]
+    fn toolbox_base_resolves_relative_paths_without_creating_a_boundary() {
+        let base_dir = tempfile::tempdir().expect("tempdir");
+        let other_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(base_dir.path().join("inside.txt"), b"x").expect("write file");
+        std::fs::write(other_dir.path().join("outside.txt"), b"x").expect("write file");
+
+        let context = toolbox_context(base_dir.path());
+        let relative = resolve("inside.txt", &context).expect("relative path resolves via base");
+        assert_eq!(
+            relative,
+            canonicalize_lenient(base_dir.path())
+                .expect("canonical base")
+                .join("inside.txt")
+        );
+
+        let outside = other_dir.path().join("outside.txt").display().to_string();
+        let resolved = resolve(&outside, &context).expect("ToolBox has no boundary");
+        assert_eq!(
+            resolved,
+            canonicalize_lenient(other_dir.path())
+                .expect("canonical other")
+                .join("outside.txt")
+        );
+        assert_eq!(
+            workspace_membership(&resolved, &context),
+            WorkspaceMembership::Unconfigured,
+            "ToolBox 只给解析基准，不产生「在区内/越界」结论"
+        );
+    }
+
+    #[test]
+    fn differing_base_and_boundary_fails_closed() {
+        let base_dir = tempfile::tempdir().expect("tempdir");
+        let boundary_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(base_dir.path().join("a.txt"), b"x").expect("write file");
+
+        let context = ToolUseContext {
+            workspace_root: Some(boundary_dir.path().display().to_string()),
+            resolve_base: Some(base_dir.path().display().to_string()),
+            ..Default::default()
+        };
+
+        let error =
+            resolve("a.txt", &context).expect_err("基准在边界外时必须拒绝，不能只按基准放行");
+        assert!(
+            error.contains("outside workspace root"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
     fn workspace_root_itself_is_allowed() {
         let dir = tempfile::tempdir().expect("tempdir");
         let context = context_with_root(dir.path());
@@ -750,8 +827,13 @@ mod tests {
         let error = resolve("relative.txt", &ToolUseContext::default())
             .expect_err("relative path must fail without root");
         assert!(
-            error.contains("requires workspace_root"),
+            error.contains("cannot be resolved"),
             "unexpected error: {error}"
+        );
+        // 错误文本会进入模型上下文，不得携带「改用绝对路径」这类调用策略。
+        assert!(
+            !error.contains("instead") && !error.contains("absolute path"),
+            "error must not suggest a workaround: {error}"
         );
     }
 
@@ -775,7 +857,7 @@ mod tests {
         let context = context_with_root(&missing_root);
         let error = resolve("file.txt", &context).expect_err("missing root must be rejected");
         assert!(
-            error.contains("workspace_root") && error.contains("does not exist"),
+            error.contains("workspace root") && error.contains("does not exist"),
             "unexpected error: {error}"
         );
     }

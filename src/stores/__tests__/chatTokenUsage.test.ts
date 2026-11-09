@@ -38,6 +38,7 @@ vi.mock("../../services/chatService", () => ({
     listProviders: vi.fn(() => Promise.resolve([])),
     createConversation: vi.fn(() => Promise.resolve("conv-1")),
     getConversationPaginated: vi.fn(() => Promise.resolve(null)),
+    listPendingQuestions: vi.fn(() => Promise.resolve([])),
     getConversationTokenUsage: vi.fn(() => Promise.resolve(null)),
     deleteConversation: vi.fn(() => Promise.resolve()),
     renameConversation: vi.fn(() => Promise.resolve()),

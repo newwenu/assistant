@@ -244,6 +244,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
               )}
             </div>
           )}
+          {!isStreaming && message.status === "interrupted" && (
+            <div className={css.interruptedNote}>
+              <Typography.Text type="secondary">
+                {t("chat.message.interrupted")}
+              </Typography.Text>
+            </div>
+          )}
           {hasError && message.error && (
             <ErrorBlock
               error={message.error}

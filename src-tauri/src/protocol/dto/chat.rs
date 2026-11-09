@@ -61,6 +61,9 @@ pub struct ConversationDto {
     pub active_branch_id: Option<String>,
     #[serde(default)]
     pub mode_id: Option<String>,
+    /// 会话绑定的工作区根；空串表示未配置，wire 上永不出现 `null`（I38h §8.1）。
+    #[serde(default)]
+    pub workspace_root: String,
     /// 会话级工具配置；键恒在，未配置时为 `null`（agent 链路回退到模式初始值）。
     #[serde(default)]
     pub tool_config: Option<super::agent::ConversationToolConfigDto>,
@@ -87,6 +90,7 @@ impl From<ConversationRow> for ConversationDto {
             is_full: r.is_full,
             active_branch_id: r.active_branch_id,
             mode_id: r.mode_id,
+            workspace_root: r.workspace_root,
             tool_config,
         }
     }
@@ -112,6 +116,27 @@ pub struct MessageToolCallDto {
     pub result: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageStatusDto {
+    Streaming,
+    Completed,
+    Interrupted,
+    Failed,
+}
+
+impl MessageStatusDto {
+    /// 存储层 `messages.status` → DTO 封闭集合；未知取值一律按 `completed` 兜底。
+    pub fn from_db(raw: &str) -> Self {
+        match raw {
+            "streaming" => Self::Streaming,
+            "interrupted" => Self::Interrupted,
+            "failed" => Self::Failed,
+            _ => Self::Completed,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MessageDto {
@@ -130,6 +155,9 @@ pub struct MessageDto {
     pub sibling_count: Option<i64>,
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
+    /// 消息终态（I41 §1）：取消落 `interrupted`，前端据此呈现「已中断」，
+    /// 不再依赖 `error` 承载取消语义。
+    pub status: MessageStatusDto,
     #[serde(default)]
     pub tool_calls: Vec<MessageToolCallDto>,
 }
@@ -150,6 +178,7 @@ impl From<MessageRow> for MessageDto {
             sibling_count: None,
             provider_id: r.provider_id,
             model_id: r.model_id,
+            status: MessageStatusDto::from_db(&r.status),
             tool_calls: Vec::new(),
         }
     }
@@ -181,6 +210,15 @@ pub struct ConversationPatchDto {
     #[serde(default)]
     #[ts(optional = nullable)]
     pub tool_config: Option<super::agent::ConversationToolConfigDto>,
+    /// 工作区根（输入三态）：缺省或 `null` = 不改；有值 = 校验后写入；空串一律 `Err`。
+    /// 清除绑定请用 `clear_workspace_root`（I38h §8.2）。
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub workspace_root: Option<String>,
+    /// 显式清除工作区绑定（写回空串）；与 `workspace_root` 同时出现视为歧义。
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub clear_workspace_root: Option<bool>,
 }
 
 /// 会话详情查询模式（封闭集合）。

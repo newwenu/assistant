@@ -22,42 +22,40 @@ use assistant_storage::{
 };
 
 #[command]
-pub fn manual_compact_conversation(app: AppHandle, conversation_id: String) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
-    let conn = super::get_db_conn(&state)?;
+pub async fn manual_compact_conversation(
+    app: AppHandle,
+    conversation_id: String,
+) -> Result<(), String> {
+    // DB 锁必须在下一次 `await` 之前释放：`execute_compaction` 内部会再次取同一把锁。
+    let (detail, provider_row) = {
+        let state = app.state::<crate::setup::DbState>();
+        let conn = super::get_db_conn(&state)?;
 
-    let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
-        .ok_or_else(|| "Conversation not found".to_string())?;
-    if detail.conversation.is_full {
-        return Err("Conversation is already full".to_string());
-    }
+        let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
+            .ok_or_else(|| "Conversation not found".to_string())?;
+        if detail.conversation.is_full {
+            return Err("Conversation is already full".to_string());
+        }
 
-    let provider_id = detail
-        .conversation
-        .provider_id
-        .clone()
-        .ok_or_else(|| "Provider not set for conversation".to_string())?;
-    let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
-        .ok_or_else(|| "Provider not found".to_string())?;
+        let provider_id = detail
+            .conversation
+            .provider_id
+            .clone()
+            .ok_or_else(|| "Provider not set for conversation".to_string())?;
+        let provider_row = provider_store::get_provider_by_id(&conn, &provider_id)?
+            .ok_or_else(|| "Provider not found".to_string())?;
+        (detail, provider_row)
+    };
 
     let tasks = app.state::<std::sync::Arc<TurnTasks>>().inner().clone();
-    if tasks.current(&conversation_id).is_some() {
+    if tasks.is_busy(&conversation_id) {
         return Err("Cannot compact while stream is running".to_string());
     }
 
-    let app_clone = app.clone();
-    let conv_id = conversation_id.clone();
-    let compact_detail = detail.clone();
-    let compact_provider_row = provider_row.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) =
-            execute_compaction(&app_clone, &conv_id, &compact_detail, &compact_provider_row).await
-        {
-            log::error!("Manual compaction failed for {}: {}", conv_id, e);
-        }
-    });
-
-    Ok(())
+    // 运行期结果必须同步回传：`execute_compaction` 的取消 / 失败分支只有把错误交给
+    // invoke 的 Promise，才能被前端 `chatCompactSlice` 的 catch 命中（I41 §1.2）。
+    // 若改为 spawn，则只有日志可见，前端永远收不到取消语义。
+    execute_compaction(&app, &conversation_id, &detail, &provider_row).await
 }
 
 #[command]
@@ -89,11 +87,6 @@ pub(crate) async fn execute_compaction(
     use assistant_providers::base::{ChatOptions, ProviderError};
 
     let app_conf = AppConf::load().map_err(|e| e.to_string())?;
-    let system_prompt = detail
-        .conversation
-        .system_prompt
-        .clone()
-        .unwrap_or_default();
 
     let default_prompt = default_compact_summary_prompt();
     let summary_prompt = app_conf
@@ -120,7 +113,7 @@ pub(crate) async fn execute_compaction(
     let attachment_store = app.state::<assistant_storage::attachment_store::AttachmentStore>();
     let chat_messages = request::project_chat_messages(
         detail,
-        &system_prompt,
+        "",
         provider_row,
         &model,
         &attachment_store,
@@ -129,7 +122,6 @@ pub(crate) async fn execute_compaction(
         Some(summary_prompt),
     )
     .await;
-
     let options = ChatOptions {
         temperature: 0.3,
         max_tokens,
@@ -179,6 +171,7 @@ pub(crate) async fn execute_compaction(
                 model_id: None,
                 tool_call_id: None,
                 is_error: false,
+                status: "streaming".to_string(),
             },
         )?;
     }

@@ -305,8 +305,8 @@ fn move_path(source: &Path, target: &Path, overwrite: bool) -> Result<MoveOutcom
 
 fn cross_device_message(source: &Path, target: &Path) -> String {
     format!(
-        "cannot move '{}' to '{}' across devices/filesystems; copy the content and then delete \
-         the source in two separate steps",
+        "cannot move '{}' to '{}' across devices/filesystems; write the content to the target and \
+         delete the source instead",
         source.display(),
         target.display()
     )

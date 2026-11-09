@@ -46,7 +46,8 @@ pub fn init_db_localized(
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             active_branch_id TEXT,
-            tool_config_json TEXT
+            tool_config_json TEXT,
+            workspace_root TEXT NOT NULL DEFAULT ''
         );
 
         -- 模式级工具装配（`ModeToolConfig` 的 JSON）由 `agent_modes` 模块负责编解码；
@@ -127,6 +128,16 @@ pub fn init_db_localized(
             value TEXT NOT NULL
         );
 
+        -- 工作区目录簿：只作会话头下拉的「最近工作区」候选与显示名缓存，
+        -- **不参与解析**。会话绑定值存在 `conversations.workspace_root`，
+        -- 删除簿行不得改变任何会话的行为。
+        CREATE TABLE IF NOT EXISTS workspaces (
+            path       TEXT PRIMARY KEY,
+            name       TEXT,
+            created_at INTEGER NOT NULL,
+            used_at    INTEGER NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_messages_conv_ts
           ON messages(conversation_id, timestamp);
 
@@ -194,6 +205,24 @@ pub fn init_db_localized(
         conn.execute_batch("ALTER TABLE conversations ADD COLUMN tool_config_json TEXT;")
             .map_err(|e| e.to_string())?;
         info!("Added tool_config_json column to conversations table");
+    }
+
+    // 工作区绑定列（I38h §2.1）：空串 = 未配置，列不允许 NULL。
+    // 存量行在加列时直接落到 `''`，因此读取侧永远拿到 `String`。
+    let has_conv_workspace_root: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'workspace_root'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_conv_workspace_root {
+        conn.execute_batch(
+            "ALTER TABLE conversations ADD COLUMN workspace_root TEXT NOT NULL DEFAULT '';",
+        )
+        .map_err(|e| e.to_string())?;
+        info!("Added workspace_root column to conversations table");
     }
 
     conn.execute_batch(

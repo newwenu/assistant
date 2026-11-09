@@ -39,7 +39,7 @@ fn read(path: &Path) -> String {
     std::fs::read_to_string(path).expect("read file")
 }
 
-/// 模拟「本会话已读过整个文件」的回执（`read` 不带 offset / limit 时写入的键）。
+/// 模拟「本会话已读过该文件」的回执。
 async fn grant_receipt(
     receipts: &Arc<dyn ReadReceiptStore>,
     root: &Path,
@@ -53,8 +53,6 @@ async fn grant_receipt(
             ReadReceiptKey {
                 session_id: session.map(str::to_string),
                 path: resolved.display().to_string(),
-                start_line: None,
-                end_line: None,
             },
             assistant_tools::storage::ReadReceipt::utf8(revision, "call-read"),
         )
@@ -77,8 +75,6 @@ async fn grant_encoded_receipt(
             ReadReceiptKey {
                 session_id: session.map(str::to_string),
                 path: resolved.display().to_string(),
-                start_line: None,
-                end_line: None,
             },
             assistant_tools::storage::ReadReceipt {
                 revision,
@@ -683,8 +679,6 @@ async fn gbk_files_stay_gbk_after_editing() {
     let key = ReadReceiptKey {
         session_id: Some("session-1".to_string()),
         path: data["path"].as_str().unwrap().to_string(),
-        start_line: None,
-        end_line: None,
     };
     let receipt = receipts.lookup(&key).await.expect("receipt refreshed");
     assert_eq!(receipt.encoding, "GBK");
@@ -728,8 +722,6 @@ async fn utf8_bom_files_keep_their_bom_after_editing() {
             .as_str()
             .unwrap()
             .to_string(),
-        start_line: None,
-        end_line: None,
     };
     let receipt = receipts.lookup(&key).await.expect("receipt refreshed");
     assert!(receipt.has_bom, "the refreshed receipt must report the BOM");

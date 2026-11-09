@@ -123,13 +123,7 @@
       },
       "agent_tools": {
         "title": "Agent 工具",
-        "description": "工具执行的工作区与审批等待行为",
-        "workspace_root": {
-          "label": "工作区根目录",
-          "description": "工具的相对路径与默认路径都以此为基准；留空则视为未配置，相对路径类工具将直接报错，不会退回当前目录",
-          "placeholder": "未配置",
-          "pick_title": "选择工作区根目录"
-        },
+        "description": "工具执行的审批等待行为",
         "approval_timeout_secs": {
           "label": "审批等待上限（秒）",
           "description": "等待用户确认的最长时间，超时按拒绝处理；留空使用默认 120 秒",
@@ -538,6 +532,10 @@
         "title": "保存工具配置失败",
         "description": "工具配置未成功保存，已回滚到修改前的值"
       },
+      "updateWorkspaceFailed": {
+        "title": "切换工作区失败",
+        "description": "工作区切换未成功，已保留原绑定值"
+      },
       "deleteMessageFailed": {
         "title": "删除消息失败",
         "description": "消息删除未成功，请稍后重试"
@@ -596,7 +594,8 @@
       "confirm_delete_subtree": "将删除 {{count}} 条消息",
       "confirm_delete_subtree_desc": "此操作不可撤销",
       "message_deleted": "消息已删除",
-      "delete_failed": "删除失败"
+      "delete_failed": "删除失败",
+      "interrupted": "已中断"
     },
     "branch": {
       "previous": "上一个版本",
@@ -854,6 +853,25 @@
       "chat_history": "消息历史",
       "chat_history_desc": "查看对话历史记录"
     }
+  },
+  "workspace": {
+    "chip": {
+      "select": "选择工作区",
+      "missing": "失效"
+    },
+    "action": {
+      "choose": "选择文件夹…",
+      "clear": "清除绑定（未配置）"
+    },
+    "error": {
+      "invalid": {
+        "title": "工作区路径无效",
+        "description": "所选文件夹无法登记为工作区，请重新选择"
+      },
+      "busy": "会话正在生成回复，暂不可切换工作区"
+    },
+    "switch_ok": "工作区已切换",
+    "switch_cleared_session_grants": "本会话的授权已清除，全局授权仍然有效"
   },
   "tools": {
     "category": {

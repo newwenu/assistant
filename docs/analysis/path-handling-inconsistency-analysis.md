@@ -2,7 +2,7 @@
 
 > 分析对象：当前工作区代码（前端 `src/`，后端 `src-tauri/`，配置 `src-tauri/tauri.conf.json`、`src-tauri/capabilities/`）
 > 分析方式：静态检索 + 调用链人工追溯
-> 关联文档：`docs/store/I31-phase1-tool-framework-spec.md` §5（共享路径安全 `os/path.rs`）、`docs/store/I18-agent-tool-architecture-spec.md` Step 2（文件系统工具）、`docs/analysis/PROJECT-DESIGN-GUIDELINES.md` §1.3（Rust cmd 薄壳）
+> 关联文档：I31 阶段一工具框架规格 §5（已归档；共享路径安全 `os/path.rs`）、I18-agent-tool-architecture-spec Step 2（已归档；文件系统工具）、`docs/analysis/PROJECT-DESIGN-GUIDELINES.md` §1.3（Rust cmd 薄壳）
 > 性质：**分析**，不含实施步骤；整改建议见 §9
 
 ## 目录
@@ -262,8 +262,8 @@
 
 | 规格 | 已覆盖 | 未覆盖 |
 |------|--------|--------|
-| `docs/store/I31-phase1-tool-framework-spec.md` §5 | `canonicalize_lenient`、`reject_system_dirs`、`ensure_within_root`、Windows 路径形态（盘符相对、UNC、符号链接 root） | 应用目录统一（§2/§3 的 B1~B4）；`\\?\` 双形态；外部进程（`git` / `mklink`）路径形态 |
-| `docs/store/I18-agent-tool-architecture-spec.md` Step 2 | 「路径校验必须落在 `os/path.rs`，不得内联」 | 受信目录层；`workspace_root` 的规范化时机 |
+| I31 阶段一工具框架规格 §5（已归档） | `canonicalize_lenient`、`reject_system_dirs`、`ensure_within_root`、Windows 路径形态（盘符相对、UNC、符号链接 root） | 应用目录统一（§2/§3 的 B1~B4）；`\\?\` 双形态；外部进程（`git` / `mklink`）路径形态 |
+| I18-agent-tool-architecture-spec Step 2（已归档） | 「路径校验必须落在 `os/path.rs`，不得内联」 | 受信目录层；`workspace_root` 的规范化时机 |
 | `docs/store/I27-tool-data-store-spec.md` | `tool_data_dir` 的绝对路径与 `..` 校验 | 长度约束；`tool_data_dir` 与 `files/<tool_id>` 的拼接校验 |
 | 无 | — | 附件 id / vault 导入导出 / 桌宠源路径的校验 |
 

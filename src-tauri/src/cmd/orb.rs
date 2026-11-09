@@ -129,6 +129,11 @@ pub fn snap_orb_to_screen(app: AppHandle) -> Result<(), String> {
 }
 
 #[command]
+pub fn cancel_orb_snap() {
+    ORB_SNAP_CANCEL.store(true, Ordering::Release);
+}
+
+#[command]
 pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
     ORB_SNAP_CANCEL.store(true, Ordering::Release);
 

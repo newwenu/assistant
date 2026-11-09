@@ -30,6 +30,8 @@ export const orbService = {
 
   snapOrbToEdge: (): Promise<void> => invoke("snap_orb_to_edge"),
 
+  cancelOrbSnap: (): Promise<void> => invoke("cancel_orb_snap"),
+
   showOrbContextMenu: (x: number, y: number): Promise<void> =>
     invoke("show_orb_context_menu", { x, y }),
 

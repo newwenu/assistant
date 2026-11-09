@@ -143,7 +143,8 @@ impl TurnRunner {
 
         // 压缩必须在本 turn 完全收尾后触发：压缩自身的 `begin(Replace)` 会顶替当前代际，
         // 提前触发会让本轮的终态落库与终态事件被静默丢弃。
-        if still_current {
+        // 被取消 / 中断的轮不触发：取消是用户意图，不应随即自动发起一次摘要调用（I41 §4）。
+        if still_current && matches!(outcome.status, TurnStatus::Completed | TurnStatus::Failed) {
             if let (Some(config), Some(CompactDecision::Terminate)) =
                 (&self.compaction, compaction_decision)
             {

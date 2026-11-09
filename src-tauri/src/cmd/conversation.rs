@@ -63,6 +63,7 @@ pub fn create_conversation(
         active_branch_id: None,
         mode_id,
         tool_config_json: None,
+        workspace_root: String::new(),
     };
     conversations::insert_conversation(&conn, &row)?;
 
@@ -246,7 +247,7 @@ pub fn patch_conversation(
             .state::<std::sync::Arc<assistant_agent::kernel::TurnTasks>>()
             .inner()
             .clone();
-        if tasks.current(&id).is_some() {
+        if tasks.is_busy(&id) {
             return Err(assistant_i18n::t("error.conversation_busy"));
         }
         let now = Utc::now().timestamp_millis();
@@ -267,6 +268,56 @@ pub fn patch_conversation(
         conv.updated_at = now;
         conversations::update_conversation(&conn, &conv)?;
         changed_kinds.push(ConversationListChangeKindDto::ToolConfigUpdated);
+    }
+
+    // 工作区三态（I38h §8.2）：缺省/`null` 不改；有值校验后写入；空串 `Err`；
+    // `clearWorkspaceRoot: true` 写回空串。写入与授权清理必须同事务（§6.2）。
+    let workspace_request: Option<Option<String>> = match (
+        patch.clear_workspace_root.unwrap_or(false),
+        patch.workspace_root.as_deref(),
+    ) {
+        (true, Some(_)) => return Err(assistant_i18n::t("error.workspace_patch_conflict")),
+        (true, None) => Some(None),
+        (false, Some(raw)) => {
+            if raw.trim().is_empty() {
+                return Err(assistant_i18n::t("error.workspace_empty"));
+            }
+            let canonical = crate::tool_setup::validate_workspace_root(raw)
+                .ok_or_else(|| assistant_i18n::t("error.workspace_invalid"))?;
+            Some(Some(canonical))
+        }
+        (false, None) => None,
+    };
+
+    if let Some(target) = workspace_request {
+        let tasks = app
+            .state::<std::sync::Arc<assistant_agent::kernel::TurnTasks>>()
+            .inner()
+            .clone();
+        if tasks.is_busy(&id) {
+            return Err(assistant_i18n::t("error.conversation_busy"));
+        }
+        conversations::get_conversation_by_id(&conn, &id)?
+            .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let value = target.as_deref().unwrap_or("");
+        assistant_storage::workspaces::set_conversation_workspace(&tx, &id, value)?;
+        assistant_storage::workspaces::clear_session_grants(&tx, &id)?;
+        // 审计：`tool = "workspace"`，清除绑定记 `resource = "none"`（不落空串）。
+        tx.execute(
+            "INSERT INTO permission_audit (tool, action, resource, outcome, at_millis)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                "workspace",
+                "switch",
+                target.as_deref().unwrap_or("none"),
+                "allowed",
+                Utc::now().timestamp_millis()
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
     }
 
     for kind in changed_kinds {
@@ -416,7 +467,7 @@ pub async fn get_conversation_token_usage(
     conversation_id: String,
     context_window_tokens: Option<u32>,
 ) -> Result<TokenUsageSummaryDto, String> {
-    let (summary, detail, provider_row, window) = {
+    let (summary, detail, provider_row, window, mode_prompt, workspace_root) = {
         let state = app.state::<crate::setup::DbState>();
         let conn = super::get_db_conn(&state)?;
         let window = context_window_tokens.filter(|&c| c > 0).or_else(|| {
@@ -438,7 +489,27 @@ pub async fn get_conversation_token_usage(
             .provider_id
             .as_deref()
             .and_then(|id| provider_store::get_provider_by_id(&conn, id).ok().flatten());
-        (summary, detail, provider_row, window)
+        // 占用估算的系统提示词必须与发送路径同源：`mode.prompt`，不是会话遗留列。
+        let mode_prompt = conversation
+            .mode_id
+            .as_deref()
+            .and_then(|id| {
+                assistant_storage::agent_modes::get_by_id(&conn, id)
+                    .ok()
+                    .flatten()
+            })
+            .map(|m| m.prompt)
+            .unwrap_or_default();
+        // 估算与真实提示词同源（I38h §4 #3）：同一个会话、同一个解析点。
+        let workspace_root = crate::tool_setup::resolve_workspace(&conn, &conversation_id);
+        (
+            summary,
+            detail,
+            provider_row,
+            window,
+            mode_prompt,
+            workspace_root,
+        )
     };
 
     let mut dto: TokenUsageSummaryDto = summary.into();
@@ -448,9 +519,17 @@ pub async fn get_conversation_token_usage(
         if let (Some(detail), Some(provider_row)) = (detail, provider_row) {
             if !detail.messages.is_empty() {
                 let attachment_store = app.state::<AttachmentStore>();
-                let estimated =
-                    request::estimate_branch_tokens(&detail, &provider_row, &attachment_store)
-                        .await;
+                let facts = assistant_agent::prompt_builder::PromptFacts {
+                    working_directory: workspace_root.clone(),
+                };
+                let estimated = request::estimate_branch_tokens(
+                    &detail,
+                    &mode_prompt,
+                    &facts,
+                    &provider_row,
+                    &attachment_store,
+                )
+                .await;
                 if estimated > 0 {
                     let estimated = estimated as i64;
                     let window = window.filter(|&w| w > 0);

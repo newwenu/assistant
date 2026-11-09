@@ -1,7 +1,7 @@
 # 参考项目沙盒实现深度分析
 
 > **本文档职责**：对 `references/` 中 3 个有沙盒实现的参考项目进行源码级深度分析，提取架构模式、关键数据结构、平台策略、安全边界及设计取舍，为本项目沙盒实现提供可直接对照的工程参考。
-> **关联文档**：[agent-sandbox-research.md](./agent-sandbox-research.md)（开源项目调研与演进路线） · [I18 架构决策](./I18-agent-tool-architecture-design.md) · [I18 实施规格](./I18-agent-tool-architecture-spec.md)
+> **关联文档**：[agent-sandbox-research.md](./agent-sandbox-research.md)（开源项目调研与演进路线） · [I18 架构决策](./I18-agent-tool-architecture-design.md) · I18 实施规格（已归档）
 > **参考项目**：Codex（OpenAI Codex CLI）· OpenHuman · DeepSeek Harness Orb（DSH）
 > **补充样本**：§5.4 另引 goose 与 OpenBitFun 作为「无沙箱」对照组（goose 无任何沙箱原语；OpenBitFun 无沙箱但有边界层路径检查），用于说明「路径检查」与「操作范围检测」的区别。
 

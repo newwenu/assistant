@@ -129,6 +129,12 @@
   pointer-events: none;
 }
 
+.interruptedNote {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .root:hover .actionsWrapper {
   opacity: 1;
   pointer-events: auto;

@@ -71,7 +71,7 @@ cargo build --timings
 
 - 本文所有单包数字均为**三次中位数**，不适用于精确到秒级的因果推断。
 - 包与包之间的**相对量级**（例如 `windows` 远大于 `zxcvbn`）是稳定的，可用于排序与决策。
-- 跨文档、跨日期的绝对值**不可比较**。存档文档 `docs/achievement2/compile-time-analysis.md` 的 171.5s wall 与本次 96.6s 差异全部来自机器状态，与代码无关。
+- 跨文档、跨日期的绝对值**不可比较**。存档文档 compile-time-analysis（已归档）的 171.5s wall 与本次 96.6s 差异全部来自机器状态，与代码无关。
 
 ### 1.3 已知缺失项
 
@@ -341,7 +341,7 @@ tauri-plugin-dialog       start=66.0s  dur=0.5s   end=66.4s
 
 ## 8. 与存档文档的差异（为什么旧数字不能直接用）
 
-存档文档 `docs/achievement2/compile-time-analysis.md` 记录的 617 units / Σ1311.0s / wall 171.5s，与本次 623 units / Σ1088.3s / wall 96.6s 相比：
+存档文档 compile-time-analysis（已归档）记录的 617 units / Σ1311.0s / wall 171.5s，与本次 623 units / Σ1088.3s / wall 96.6s 相比：
 
 | 维度 | 差异 | 原因 |
 |---|---|---|

@@ -3,7 +3,7 @@
 > 更新日期：2026-10-30
 > 数据口径：`src-tauri` workspace 实测（`Cargo.toml` + 源码行数 + `cargo tree`）
 > 关联文档：`docs/store/compile-time-attribution.md`（编译耗时归属实测）
-> 历史决策与施工记录：`docs/achievement2/crate-architecture-analysis.md`（已冻结，不再维护）
+> 历史决策与施工记录：crate-architecture-analysis（已归档，不再维护）
 
 ---
 
@@ -379,7 +379,7 @@ storage 与 vault 的 build.rs 内容一致，都服务于 `rusqlite`（SQLCiphe
 
 ## 5. 判据：何时该拆出新 crate
 
-沿用存档文档 `docs/achievement2/crate-architecture-analysis.md` §4.3 的决策检查表，口径不变：**命中任一条件才值得独立成 crate；全部不命中则留在主 app**。示例按 2026-10-30 实测更新。
+沿用存档文档 crate-architecture-analysis（已归档）§4.3 的决策检查表，口径不变：**命中任一条件才值得独立成 crate；全部不命中则留在主 app**。示例按 2026-10-30 实测更新。
 
 | # | 条件 | 判据 | 当前实测示例 |
 |---|---|---|---|

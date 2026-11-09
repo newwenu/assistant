@@ -363,11 +363,11 @@ mod tests {
 
     fn context() -> ToolUseContext {
         ToolUseContext {
-            workspace_root: None,
             session_id: Some("conv-1".to_string()),
             turn_id: Some("turn-1".to_string()),
             iteration: Some(2),
             tool_call_id: Some("call-1".to_string()),
+            ..Default::default()
         }
     }
 

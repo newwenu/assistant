@@ -11,6 +11,7 @@ mod menu;
 mod plugins;
 pub mod protocol;
 mod setup;
+mod tool_setup;
 mod tray;
 mod vault_plugin;
 mod window;

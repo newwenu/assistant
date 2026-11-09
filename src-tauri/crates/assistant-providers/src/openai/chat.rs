@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
-use log::{debug, warn};
+use log::{debug, log_enabled, trace, warn, Level};
 
 use crate::base::{ChatDelta, ChatMessage, ChatOptions, ChatStream, ProviderError};
 use crate::client::quirks::{
@@ -278,9 +278,9 @@ pub(crate) fn chat_completion_stream(
                 stats.record_sse_event("data");
                 sse_log.push(data.clone());
                 sse_chunk_count += 1;
-                if data.contains("\"usage\"") {
-                    let preview = &data[..data.len().min(200)];
-                    debug!("[SSE #{}] {}", sse_chunk_count, preview);
+                if data.contains("\"usage\"") && log_enabled!(Level::Trace) {
+                    let preview = crate::trace::truncate_utf8(&data, 200);
+                    trace!("[SSE #{}] {}", sse_chunk_count, preview);
                 }
 
                 let event_json: serde_json::Value = match serde_json::from_str(&data) {
@@ -309,7 +309,7 @@ pub(crate) fn chat_completion_stream(
                 }
 
                 if !is_valid_chat_completion_chunk(&event_json) {
-                    debug!(
+                    trace!(
                         "[SSE] skipping non-standard event; object={}",
                         event_json.get("object").and_then(|v| v.as_str()).unwrap_or("<missing>")
                     );

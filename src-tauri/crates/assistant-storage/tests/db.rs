@@ -373,3 +373,73 @@ fn init_db_adds_tool_config_columns_to_legacy_tables() {
         .unwrap();
     assert_eq!(builtin_count, 3, "补列后仍能正常播种内置模式");
 }
+
+#[test]
+fn init_db_adds_workspace_root_column_with_empty_default_and_does_not_migrate() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("legacy_workspace.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO app_settings (key, value) VALUES ('schema_version', '1');
+             CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                title_source TEXT NOT NULL DEFAULT 'placeholder',
+                provider_id TEXT,
+                model_id TEXT NOT NULL,
+                system_prompt TEXT,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                generation INTEGER NOT NULL DEFAULT 0,
+                mode_id TEXT,
+                is_full INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                active_branch_id TEXT
+             );
+             INSERT INTO conversations (id,title,title_source,model_id,created_at,updated_at)
+                 VALUES ('c1','t','placeholder','m',0,0);",
+        )
+        .unwrap();
+    }
+
+    let conn = db::init_db(&db_path).unwrap();
+
+    let notnull: i64 = conn
+        .query_row(
+            "SELECT \"notnull\" FROM pragma_table_info('conversations') WHERE name = 'workspace_root'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(notnull, 1, "列必须 NOT NULL");
+
+    let dflt: Option<String> = conn
+        .query_row(
+            "SELECT dflt_value FROM pragma_table_info('conversations') WHERE name = 'workspace_root'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(dflt.as_deref(), Some("''"), "默认值必须为空串哨兵");
+
+    let value: String = conn
+        .query_row(
+            "SELECT workspace_root FROM conversations WHERE id = 'c1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(value, "", "存量会话升级后为未配置，不做任何回填");
+
+    let has_book: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'workspaces'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(has_book, 1, "目录簿表随初始化创建");
+}

@@ -2,7 +2,7 @@
 
 > 分析对象：当前工作区代码（前端 `src/`，后端 `src-tauri/`）
 > 分析方式：静态检索 + 人工分组判定
-> 关联规范：`docs/analysis/PROJECT-DESIGN-GUIDELINES.md` §4 错误处理、`docs/achievement1/I19-error-system-spec.md`
+> 关联规范：`docs/analysis/PROJECT-DESIGN-GUIDELINES.md` §4 错误处理、I19-error-system-spec（已归档）
 
 ## 目录
 

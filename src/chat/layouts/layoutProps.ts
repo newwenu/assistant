@@ -52,6 +52,8 @@ export interface ConversationLayoutProps {
 
 /** `AgentLayout` 专属插槽；`ChatLayout` 不传入，因此无工具 UI。 */
 export interface AgentLayoutSlots {
+  /** 会话级工作区选择器，位于顶部 chrome bar（I38h §9.2）。 */
+  workspaceControl?: ReactNode;
   /** 工具概览条，位于输入区工具栏内。 */
   toolToolbar?: ReactNode;
   /** 工具装配面板，位于输入区工具栏上方。 */

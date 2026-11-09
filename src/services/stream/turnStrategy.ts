@@ -37,6 +37,8 @@ export interface StreamStatePort {
   finishStream: (usage?: TokenUsage) => void;
   errorStream: (error: ChatError) => void;
   setErrorOnMessage: (messageId: string, error: ChatError) => void;
+  /** 用户取消后把气泡落为 `interrupted`（I41 §1），替代原先写 `Cancelled` 错误。 */
+  markMessageInterrupted: (messageId: string) => void;
   setRetryStatus: (retry: RetryNotification | null) => void;
 }
 
@@ -65,8 +67,12 @@ export interface TurnStrategy {
   onTurnError: () => void;
   /** 用户显式取消。 */
   onCancel: () => void;
-  /** 切回运行中的会话：`messageId` 为 `null` 表示真实行 id 尚不可知。 */
-  onResume: (messageId: string | null) => void;
+  /**
+   * 切回运行中的会话：`messageId` 为 `null` 表示真实行 id 尚不可知。
+   * `iteration` 只在补拉快照（`list_pending_questions`）回填时给出，
+   * 用于把段表直接绑定到历史行，避免后续事件为同一次迭代再开气泡。
+   */
+  onResume: (messageId: string | null, iteration?: number) => void;
   /** 真实行 id 就绪：`previousId` 是占位 id。 */
   onMessageIdResolved: (previousId: string, realMessageId: string) => void;
 }

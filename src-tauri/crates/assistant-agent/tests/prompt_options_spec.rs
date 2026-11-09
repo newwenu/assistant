@@ -1,5 +1,5 @@
 use assistant_agent::chat_options::{self, ReasoningOverride};
-use assistant_agent::prompt_builder::{self, AgentKind};
+use assistant_agent::prompt_builder::{self, AgentKind, PromptFacts};
 use assistant_providers::base;
 use assistant_storage::agent_modes::AgentModeRow;
 use assistant_storage::conversations::{ConversationDetail, ConversationRow, MessageRow};
@@ -22,6 +22,7 @@ fn make_detail(messages: Vec<MessageRow>) -> ConversationDetail {
             active_branch_id: None,
             mode_id: None,
             tool_config_json: None,
+            workspace_root: String::new(),
         },
         messages,
     }
@@ -44,6 +45,7 @@ fn make_message_row(role: &str, content: &str) -> MessageRow {
         model_id: None,
         tool_call_id: None,
         is_error: false,
+        status: "completed".to_string(),
     }
 }
 
@@ -138,6 +140,45 @@ fn prepare_messages_append_user_prompt_compaction() {
     assert_eq!(result.len(), 4);
     assert!(matches!(result[3].role, base::MessageRole::User));
     assert_eq!(result[3].content, "Please summarize the conversation");
+}
+
+#[test]
+fn compose_system_prompt_appends_fact_after_prompt() {
+    let facts = PromptFacts {
+        working_directory: Some("G:/ws".to_string()),
+    };
+
+    let composed = prompt_builder::compose_system_prompt("You are helpful", &facts);
+
+    assert_eq!(composed, "You are helpful\n\nWorking directory: G:/ws");
+}
+
+#[test]
+fn compose_system_prompt_fact_only_when_prompt_empty() {
+    let facts = PromptFacts {
+        working_directory: Some("G:/ws".to_string()),
+    };
+
+    let composed = prompt_builder::compose_system_prompt("", &facts);
+
+    assert_eq!(composed, "Working directory: G:/ws");
+}
+
+#[test]
+fn compose_system_prompt_unchanged_without_facts() {
+    let composed =
+        prompt_builder::compose_system_prompt("You are helpful", &PromptFacts::default());
+    assert_eq!(composed, "You are helpful");
+
+    let composed = prompt_builder::compose_system_prompt(
+        "You are helpful",
+        &PromptFacts {
+            working_directory: Some(String::new()),
+        },
+    );
+    assert_eq!(composed, "You are helpful");
+
+    assert!(prompt_builder::compose_system_prompt("", &prompt_builder::NO_FACTS).is_empty());
 }
 
 #[test]
@@ -293,6 +334,7 @@ fn tool_history_roundtrip_rebuilds_wire_shape() {
         active_branch_id: None,
         mode_id: None,
         tool_config_json: None,
+        workspace_root: String::new(),
     };
     assistant_storage::conversations::insert_conversation(&conn, &conv).unwrap();
 
@@ -312,6 +354,7 @@ fn tool_history_roundtrip_rebuilds_wire_shape() {
         model_id: None,
         tool_call_id: None,
         is_error: false,
+        status: "completed".to_string(),
     };
 
     assistant_storage::conversations::insert_message(

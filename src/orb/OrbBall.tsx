@@ -6,8 +6,7 @@ import {
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
 import { useOrbDrag } from "./OrbDrag";
-import { useOrbExpand, collapseOrbOnInit } from "./OrbExpand";
-import { OrbContextMenu } from "./OrbContextMenu";
+import { collapseOrbOnInit } from "./OrbExpand";
 import { useOrbConfSync } from "./useOrbConfSync";
 import {
   MascotRenderer,
@@ -29,9 +28,16 @@ export const OrbBall: React.FC = () => {
   const setHovering = useOrbStore((s) => s.setHovering);
   const mascotFace = useMascotStore((s) => s.face);
   const mascotConf = useConfGroup("mascot");
-  const { expand } = useOrbExpand();
-  const { onPointerDown, onPointerMove, onPointerUp, hasDraggedRef } =
-    useOrbDrag();
+  const {
+    activePointerType,
+    isPressed,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+    onLostPointerCapture,
+    onContextMenu,
+  } = useOrbDrag();
 
   const [settled, setSettled] = useState(false);
   const [settledIn, setSettledIn] = useState(false);
@@ -57,21 +63,18 @@ export const OrbBall: React.FC = () => {
     })();
   }, []);
 
-  const handlePointerEnter = useCallback(() => {
-    if (!settled) return;
-    setHovering(true);
-  }, [setHovering, settled]);
+  const handlePointerEnter = useCallback(
+    (e: React.PointerEvent<HTMLElement>) => {
+      if (!settled) return;
+      if (e.pointerType !== "mouse") return;
+      setHovering(true);
+    },
+    [setHovering, settled],
+  );
 
   const handlePointerLeave = useCallback(() => {
     setHovering(false);
   }, [setHovering]);
-
-  const handleClick = useCallback(() => {
-    if (hasDraggedRef.current) return;
-    if (!isExpanded) {
-      void expand();
-    }
-  }, [isExpanded, expand, hasDraggedRef]);
 
   const ballLeft =
     isExpanded && expandDirection === "left"
@@ -84,40 +87,46 @@ export const OrbBall: React.FC = () => {
 
   const stateClass = isDragging
     ? "orb-dragging"
-    : isHovering
-      ? "orb-hover"
-      : "orb-idle";
+    : isPressed
+      ? "orb-pressed"
+      : isHovering
+        ? "orb-hover"
+        : "orb-idle";
+  const touchClass =
+    activePointerType === "touch" || activePointerType === "pen"
+      ? " orb-touch"
+      : "";
 
   return (
-    <OrbContextMenu>
-      <div
-        className={`orb-hitbox${!isBallVisible ? " orb-ball-hidden" : ""}${!settled ? " orb-settling" : ""}${settledIn ? " orb-settled-in" : ""} ${stateClass}`}
-        style={{
-          position: "absolute",
-          top: ballTop,
-          left: ballLeft,
-          width: ORB_HITBOX_SIZE,
-          height: ORB_HITBOX_SIZE,
-          zIndex: 1,
-        }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerEnter={handlePointerEnter}
-        onPointerLeave={handlePointerLeave}
-        onClick={handleClick}
-      >
-        <MascotRenderer
-          renderer={asRendererId(mascotConf?.renderer ?? "svg")}
-          face={mascotFace}
-          size={ORB_COLLAPSED_SIZE}
-          primaryColor={hexToArgb(mascotConf?.primaryColor)}
-          secondaryColor={hexToArgb(mascotConf?.secondaryColor)}
-          rendererConfig={
-            mascotConf ? buildRendererConfig(mascotConf) : undefined
-          }
-        />
-      </div>
-    </OrbContextMenu>
+    <div
+      className={`orb-hitbox${!isBallVisible ? " orb-ball-hidden" : ""}${!settled ? " orb-settling" : ""}${settledIn ? " orb-settled-in" : ""}${touchClass} ${stateClass}`}
+      style={{
+        position: "absolute",
+        top: ballTop,
+        left: ballLeft,
+        width: ORB_HITBOX_SIZE,
+        height: ORB_HITBOX_SIZE,
+        zIndex: 1,
+      }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onLostPointerCapture={onLostPointerCapture}
+      onContextMenu={onContextMenu}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+    >
+      <MascotRenderer
+        renderer={asRendererId(mascotConf?.renderer ?? "svg")}
+        face={mascotFace}
+        size={ORB_COLLAPSED_SIZE}
+        primaryColor={hexToArgb(mascotConf?.primaryColor)}
+        secondaryColor={hexToArgb(mascotConf?.secondaryColor)}
+        rendererConfig={
+          mascotConf ? buildRendererConfig(mascotConf) : undefined
+        }
+      />
+    </div>
   );
 };

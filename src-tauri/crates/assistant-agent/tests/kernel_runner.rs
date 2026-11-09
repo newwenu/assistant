@@ -9,8 +9,8 @@ use assistant_agent::kernel::ports::test_doubles::{
 };
 use assistant_agent::kernel::ports::EventSink;
 use assistant_agent::kernel::{
-    MessageStatus, SessionState, SessionStates, TurnContext, TurnError, TurnEvent, TurnLimits,
-    TurnRunner, TurnSpec, TurnStatus, TurnTasks,
+    CompactionConfig, CompactionSink, MessageStatus, SessionState, SessionStates, TurnContext,
+    TurnError, TurnEvent, TurnLimits, TurnRunner, TurnSpec, TurnStatus, TurnTasks,
 };
 use assistant_providers::base::{
     BaseProviderAdapter, ChatDelta, ProviderError, ProviderErrorCode, TokenUsage,
@@ -44,6 +44,14 @@ fn completed_script() -> ScriptedResponse {
 }
 
 fn fixture_input(conversation_id: &str, adapter: Arc<dyn BaseProviderAdapter>) -> FixtureSource {
+    fixture_input_with_models(conversation_id, adapter, "[]")
+}
+
+fn fixture_input_with_models(
+    conversation_id: &str,
+    adapter: Arc<dyn BaseProviderAdapter>,
+    models_json: &str,
+) -> FixtureSource {
     let conversation = ConversationRow {
         id: conversation_id.to_string(),
         title: "fixture".to_string(),
@@ -60,6 +68,7 @@ fn fixture_input(conversation_id: &str, adapter: Arc<dyn BaseProviderAdapter>) -
         active_branch_id: None,
         mode_id: None,
         tool_config_json: None,
+        workspace_root: String::new(),
     };
     let messages = vec![MessageRow {
         id: "user-1".to_string(),
@@ -77,6 +86,7 @@ fn fixture_input(conversation_id: &str, adapter: Arc<dyn BaseProviderAdapter>) -
         model_id: None,
         tool_call_id: None,
         is_error: false,
+        status: "completed".to_string(),
     }];
     let provider = assistant_agent::kernel::ProviderCredential {
         row: ProviderRow {
@@ -85,7 +95,7 @@ fn fixture_input(conversation_id: &str, adapter: Arc<dyn BaseProviderAdapter>) -
             type_: "openai".to_string(),
             base_url: "scripted://local".to_string(),
             api_key_encrypted: String::new(),
-            models_json: "[]".to_string(),
+            models_json: models_json.to_string(),
             default_model: "fixture-model".to_string(),
             updated_at: 0,
         },
@@ -129,15 +139,27 @@ fn harness_with<S: EventSink + 'static>(
     store: Arc<InMemoryStore>,
     tasks: Arc<TurnTasks>,
 ) -> Harness<S> {
+    harness_with_options(adapter, sink, store, tasks, "[]", None)
+}
+
+/// 允许指定 provider 的模型元数据（如 `contextWindow`）与压缩配置，用于验证终止式压缩触发。
+fn harness_with_options<S: EventSink + 'static>(
+    adapter: Arc<dyn BaseProviderAdapter>,
+    sink: Arc<S>,
+    store: Arc<InMemoryStore>,
+    tasks: Arc<TurnTasks>,
+    models_json: &str,
+    compaction: Option<CompactionConfig>,
+) -> Harness<S> {
     let states = Arc::new(SessionStates::new());
     let runner = TurnRunner::new(
         sink.clone(),
         store.clone(),
-        Arc::new(fixture_input("conv-1", adapter)),
+        Arc::new(fixture_input_with_models("conv-1", adapter, models_json)),
         states.clone(),
         tasks.clone(),
         Arc::new(FixedClock::default()),
-        None,
+        compaction,
     );
     Harness {
         runner,
@@ -602,4 +624,324 @@ async fn wall_clock_timeout_halts_turn_before_model_call() {
         outcome.text
     );
     assert_single_terminated(&sink.events());
+}
+
+/// C5.30 golden：四组终态（正常完成 / 中途取消 / provider 报错 / 空响应）的事件序列、
+/// `seq` 连续性、落库终态与错误文案不变量。不依赖已删除的 `chat_runtime` 旧基线。
+fn event_shape(events: &[TurnEvent]) -> Vec<String> {
+    events
+        .iter()
+        .map(|event| match event {
+            TurnEvent::StreamStart { .. } => "stream_start".to_string(),
+            TurnEvent::Delta { seq, .. } => format!("delta:{seq}"),
+            TurnEvent::PhaseChanged { phase, .. } => format!("phase:{phase:?}"),
+            TurnEvent::Tool(_) => "tool".to_string(),
+            TurnEvent::CompactionStarted { .. } => "compaction_started".to_string(),
+            TurnEvent::CompactionFinished { ok, .. } => format!("compaction_finished:{ok}"),
+            TurnEvent::Terminated { status, .. } => format!("terminated:{status:?}"),
+            TurnEvent::UserMessageConfirmed { .. } => "user_message_confirmed".to_string(),
+        })
+        .collect()
+}
+
+fn assert_turn_invariants(
+    events: &[TurnEvent],
+    calls: &[StoreCall],
+    expected: TurnStatus,
+    expected_status: MessageStatus,
+) {
+    assert_single_terminated(events);
+
+    let Some(TurnEvent::Terminated {
+        status, last_seq, ..
+    }) = events.last()
+    else {
+        panic!("last event must be Terminated: {events:?}");
+    };
+    assert_eq!(*status, expected, "终态不符：{events:?}");
+
+    let seqs: Vec<u32> = events
+        .iter()
+        .filter_map(|event| match event {
+            TurnEvent::Delta { seq, .. } => Some(*seq),
+            _ => None,
+        })
+        .collect();
+    for (index, seq) in seqs.iter().enumerate() {
+        assert_eq!(
+            *seq,
+            index as u32 + 1,
+            "Delta seq 必须从 1 起连续递增：{seqs:?}"
+        );
+    }
+    assert_eq!(
+        *last_seq,
+        seqs.last().copied().unwrap_or(0),
+        "Terminated.last_seq 必须等于末条 Delta 的 seq：{events:?}"
+    );
+
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| matches!(call, StoreCall::Finalize(..)))
+            .count(),
+        1,
+        "终态只能写一次：{calls:?}"
+    );
+    assert_eq!(
+        calls.last(),
+        Some(&StoreCall::Finalize(
+            "assistant-1".to_string(),
+            expected_status
+        )),
+        "Finalize 必须是最后一次落库调用：{calls:?}"
+    );
+    assert!(
+        !calls.iter().any(|call| matches!(
+            call,
+            StoreCall::AppendTool(_) | StoreCall::SaveToolCalls(_, _)
+        )),
+        "chat 路径不得写 tool 行：{calls:?}"
+    );
+}
+
+#[tokio::test]
+async fn golden_event_sequence_completed() {
+    let adapter = Arc::new(ScriptedAdapter::new(vec![completed_script()]));
+    let h = harness(adapter, RecordingSink::new(), InMemoryStore::new());
+    let ctx = started_ctx(&h.tasks, "conv-1");
+
+    let outcome = h.runner.run(&ctx, &TurnSpec::chat()).await;
+
+    let events = h.sink.events();
+    assert_eq!(
+        event_shape(&events),
+        vec![
+            "stream_start",
+            "delta:1",
+            "delta:2",
+            "delta:3",
+            "terminated:Completed"
+        ]
+    );
+    assert_turn_invariants(
+        &events,
+        &h.store.calls(),
+        TurnStatus::Completed,
+        MessageStatus::Completed,
+    );
+    assert_eq!(outcome.text, "Hello world");
+    assert!(outcome.error.is_none(), "成功终态不得携带错误");
+}
+
+#[tokio::test]
+async fn golden_event_sequence_cancelled_mid_stream() {
+    let adapter = Arc::new(ScriptedAdapter::new(vec![ScriptedResponse::Stall(vec![
+        delta_text("Hello"),
+    ])]));
+    let tasks = Arc::new(TurnTasks::new());
+    let sink = Arc::new(CancelOnDeltaSink {
+        tasks: tasks.clone(),
+        events: Mutex::new(Vec::new()),
+    });
+    let h = harness_with(adapter, sink, Arc::new(InMemoryStore::new()), tasks.clone());
+    let ctx = started_ctx(&h.tasks, "conv-1");
+
+    let outcome = h.runner.run(&ctx, &TurnSpec::chat()).await;
+
+    let events = h.sink.events();
+    assert_eq!(
+        event_shape(&events),
+        vec!["stream_start", "delta:1", "terminated:Cancelled"]
+    );
+    assert_turn_invariants(
+        &events,
+        &h.store.calls(),
+        TurnStatus::Cancelled,
+        MessageStatus::Interrupted,
+    );
+    assert_eq!(outcome.text, "Hello", "已收到的部分内容必须保留");
+    assert_eq!(h.states.get("conv-1"), Some(SessionState::Idle));
+}
+
+#[tokio::test]
+async fn golden_event_sequence_provider_error() {
+    let adapter = Arc::new(ScriptedAdapter::new(vec![ScriptedResponse::Error(
+        ProviderError::AuthFailed("invalid api key".to_string()),
+    )]));
+    let h = harness(adapter, RecordingSink::new(), InMemoryStore::new());
+    let ctx = started_ctx(&h.tasks, "conv-1");
+
+    let _outcome = h.runner.run(&ctx, &TurnSpec::chat()).await;
+
+    let events = h.sink.events();
+    assert_eq!(
+        event_shape(&events),
+        vec!["stream_start", "terminated:Failed"]
+    );
+    assert_turn_invariants(
+        &events,
+        &h.store.calls(),
+        TurnStatus::Failed,
+        MessageStatus::Failed,
+    );
+    let Some(TurnEvent::Terminated {
+        error: Some(payload),
+        ..
+    }) = events.last()
+    else {
+        panic!("provider 报错的终止事件必须携带错误载荷：{events:?}");
+    };
+    assert_eq!(payload.code, ProviderErrorCode::AuthFailed);
+    assert_eq!(payload.message, "Authentication failed: invalid api key");
+}
+
+#[tokio::test]
+async fn golden_event_sequence_empty_response() {
+    let adapter = Arc::new(ScriptedAdapter::new(vec![ScriptedResponse::empty()]));
+    let h = harness(adapter, RecordingSink::new(), InMemoryStore::new());
+    let ctx = started_ctx(&h.tasks, "conv-1");
+
+    let outcome = h.runner.run(&ctx, &TurnSpec::chat()).await;
+
+    let events = h.sink.events();
+    assert_eq!(
+        event_shape(&events),
+        vec!["stream_start", "terminated:Failed"]
+    );
+    assert_turn_invariants(
+        &events,
+        &h.store.calls(),
+        TurnStatus::Failed,
+        MessageStatus::Failed,
+    );
+    assert!(
+        matches!(outcome.error, Some(TurnError::EmptyResponse)),
+        "空响应必须走独立错误变体：{:?}",
+        outcome.error
+    );
+    let Some(TurnEvent::Terminated {
+        error: Some(payload),
+        ..
+    }) = events.last()
+    else {
+        panic!("空响应的终止事件必须携带错误载荷：{events:?}");
+    };
+    assert!(
+        payload.message.to_lowercase().contains("empty response"),
+        "unexpected error text: {}",
+        payload.message
+    );
+}
+
+/// 终止式压缩触发端的替身：只记录调用目标，压缩本身由宿主异步执行。
+struct CountingCompactionSink {
+    calls: Mutex<Vec<String>>,
+}
+
+impl CountingCompactionSink {
+    fn new() -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+#[async_trait::async_trait]
+impl CompactionSink for CountingCompactionSink {
+    async fn terminate(&self, conversation_id: &str) {
+        self.calls.lock().unwrap().push(conversation_id.to_string());
+    }
+}
+
+/// 已知窗口 `contextWindow` = 20000 → 预算 14904，阈值 50% 即 7452；
+/// 下述脚本的 usage 为 20000 prompt tokens，必定判定为 `Terminate`。
+const COMPACTION_MODELS_JSON: &str = r#"[{"id":"fixture-model","contextWindow":20000}]"#;
+
+fn heavy_usage() -> TokenUsage {
+    TokenUsage {
+        prompt_tokens: 20_000,
+        completion_tokens: 4,
+        total_tokens: 20_004,
+        ..Default::default()
+    }
+}
+
+fn compaction_config(sink: Arc<CountingCompactionSink>) -> CompactionConfig {
+    CompactionConfig {
+        sink,
+        auto_compact: true,
+        threshold_percent: 50,
+    }
+}
+
+#[tokio::test]
+async fn completed_turn_triggers_terminal_compaction() {
+    let sink = Arc::new(CountingCompactionSink::new());
+    let h = harness_with_options(
+        Arc::new(ScriptedAdapter::new(vec![ScriptedResponse::Deltas(vec![
+            delta_text("Hello"),
+            ChatDelta {
+                finish_reason: Some("stop".to_string()),
+                usage: Some(heavy_usage()),
+                ..Default::default()
+            },
+        ])])),
+        Arc::new(RecordingSink::new()),
+        Arc::new(InMemoryStore::new()),
+        Arc::new(TurnTasks::new()),
+        COMPACTION_MODELS_JSON,
+        Some(compaction_config(sink.clone())),
+    );
+    let ctx = started_ctx(&h.tasks, "conv-1");
+
+    let outcome = h.runner.run(&ctx, &TurnSpec::chat()).await;
+
+    assert_eq!(outcome.status, TurnStatus::Completed);
+    assert_eq!(
+        sink.calls(),
+        vec!["conv-1".to_string()],
+        "完成的轮必须触发一次终止式压缩"
+    );
+}
+
+#[tokio::test]
+async fn cancelled_turn_never_triggers_compaction() {
+    let sink = Arc::new(CountingCompactionSink::new());
+    let tasks = Arc::new(TurnTasks::new());
+    let h = harness_with_options(
+        Arc::new(ScriptedAdapter::new(vec![ScriptedResponse::Stall(vec![
+            ChatDelta {
+                delta_text: Some("Hello".to_string()),
+                usage: Some(heavy_usage()),
+                ..Default::default()
+            },
+        ])])),
+        Arc::new(CancelOnDeltaSink {
+            tasks: tasks.clone(),
+            events: Mutex::new(Vec::new()),
+        }),
+        Arc::new(InMemoryStore::new()),
+        tasks.clone(),
+        COMPACTION_MODELS_JSON,
+        Some(compaction_config(sink.clone())),
+    );
+    let ctx = started_ctx(&h.tasks, "conv-1");
+
+    let outcome = h.runner.run(&ctx, &TurnSpec::chat()).await;
+
+    assert_eq!(outcome.status, TurnStatus::Cancelled);
+    assert!(
+        outcome.prompt_tokens.is_some(),
+        "取消前已收到 usage，压缩判定已产生：{:?}",
+        outcome.prompt_tokens
+    );
+    assert!(
+        sink.calls().is_empty(),
+        "取消是用户意图，不得随即自动发起摘要调用（I41 §4）"
+    );
 }

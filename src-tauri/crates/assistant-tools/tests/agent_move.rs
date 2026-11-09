@@ -314,8 +314,6 @@ async fn the_source_receipt_is_invalidated() {
     let key = ReadReceiptKey {
         session_id: Some("session-1".to_string()),
         path: source.display().to_string(),
-        start_line: None,
-        end_line: None,
     };
     receipts
         .record(

@@ -91,6 +91,19 @@ export interface TurnOrchestrator {
    * 目标会话仍在运行时恢复流式视图，`messageId` 由后续 delta 补全。
    */
   onConversationSwitch: (conversationId: string) => void;
+  /**
+   * 补拉快照回填：会话仍有挂起的工具调用（当前只有 `ask_user`）。
+   *
+   * 窗口重载后 `phaseByConversation` / `turnIdByConversation` 是空的，
+   * 只靠事件无法得知轮次仍在进行，切回时会被判成 `idle` 而不恢复流式视图；
+   * 快照是唯一的兜底来源，用它恢复 phase 与段表，否则作答后的事件会落到新开的占位气泡。
+   */
+  onPendingToolCalls: (
+    conversationId: string,
+    turnId: string,
+    messageId: string | null,
+    iteration: number,
+  ) => void;
   getSendInProgress: () => boolean;
   getPhase: () => ChatPhase;
   getActiveConversationId: () => string | null;
@@ -410,15 +423,15 @@ export function createTurnOrchestrator(
     strategyFor(convId).onCancel();
     turnIdByConversation.delete(convId);
     phaseByConversation.delete(convId);
-    if (streamingMsgId) {
-      deps.state.setErrorOnMessage(
-        streamingMsgId,
-        toChatError({
-          code: ChatErrorCode.Cancelled,
-          retryAfterMs: null,
-          retryable: false,
-        }),
-      );
+    // 压缩不是 turn（I39 §1.2）：其流式占位气泡是临时摘要行，取消后由后端落库的
+    // `interrupted` 摘要行刷新呈现，不在该气泡上写 `Cancelled` 错误（I41 §1）。
+    const isCompactionStream =
+      streamingMsgId !== null &&
+      deps.env
+        .getMessages()
+        .some((m) => m.id === streamingMsgId && m.role === "compact_summary");
+    if (streamingMsgId && !isCompactionStream) {
+      deps.state.markMessageInterrupted(streamingMsgId);
     }
     setPhase("idle");
   }
@@ -551,6 +564,25 @@ export function createTurnOrchestrator(
     }
   }
 
+  /**
+   * 补拉快照回填：只补「轮次仍在进行」这一事实，卡片本身由调用方回挂到消息上。
+   * `messageId` 为 `null`（历史没加载到发起行）时退回 `onConversationSwitch` 的未知段语义。
+   */
+  function onPendingToolCalls(
+    conversationId: string,
+    turnId: string,
+    messageId: string | null,
+    iteration: number,
+  ) {
+    const next = phaseByConversation.get(conversationId) ?? "tool_executing";
+    phaseByConversation.set(conversationId, next);
+    turnIdByConversation.set(conversationId, turnId);
+    if (conversationId !== deps.env.getActiveConversationId()) return;
+    setPhase(next);
+    strategyFor(conversationId).onResume(messageId, iteration);
+    deps.state.resumeStream(turnId, messageId);
+  }
+
   return {
     send,
     cancel,
@@ -561,6 +593,7 @@ export function createTurnOrchestrator(
     onAgentToolCall,
     onSessionState,
     onConversationSwitch,
+    onPendingToolCalls,
     getSendInProgress: () => sendInProgress,
     getPhase: () => phase,
     getActiveConversationId: () => deps.env.getActiveConversationId(),

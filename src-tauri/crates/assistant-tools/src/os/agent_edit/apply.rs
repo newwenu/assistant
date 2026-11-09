@@ -23,12 +23,11 @@ pub const MAX_WHOLE_FILE_BYTES: u64 = 16 * 1024 * 1024;
 /// `edit` 的体积超限文案：只说 `edit` 的约束，不提 `read` / `grep`。
 ///
 /// 提到「`read` 能读」会让调用方以为换个工具就能编辑；`edit` 必须整文件驻留，
-/// 超限文件的唯一出路是拆分或外部处理。
+/// 超限文件的唯一出路是拆分（工具集内没有外部转码手段，I38c §4.2）。
 pub fn file_too_large_message(path: &Path, bytes: u64) -> String {
     format!(
         "'{}' is {} bytes, exceeding the {} byte limit for edit; edit needs the whole file in \
-         memory (matching, line-ending normalization, transcoding) — split the file or edit it \
-         with an external tool",
+         memory (matching, line-ending normalization, transcoding), so split it into smaller files",
         path.display(),
         bytes,
         MAX_WHOLE_FILE_BYTES
@@ -184,8 +183,7 @@ fn encode_payload(
 
     if bytes.len() > MAX_TRANSCODE_BYTES {
         return Err(format!(
-            "transcoded write is {} bytes, exceeding the {} byte limit; convert the file with an \
-             external tool, then read and edit it",
+            "transcoded write is {} bytes, exceeding the {} byte limit for transcoded writes",
             bytes.len(),
             MAX_TRANSCODE_BYTES
         ));

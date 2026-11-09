@@ -11,7 +11,11 @@ import { createAgentTurnStrategy } from "../stream/strategies/agentTurn";
 import type { AgentSegments } from "../../stores/agent/agentSegments";
 import { chatService } from "../chatService";
 import type { ReasoningChoice } from "../../chat/core/reasoning";
-import type { ChatDeltaPayload, TokenUsage } from "../../chat/core/chatTypes";
+import type {
+  ChatDeltaPayload,
+  Message,
+  TokenUsage,
+} from "../../chat/core/chatTypes";
 import type { ProviderErrorPayloadDto } from "../../types/protocol.contract";
 
 function makeProviderError(message: string): ProviderErrorPayloadDto {
@@ -88,6 +92,7 @@ function createMockStatePort(): StreamStatePort {
     finishStream: vi.fn(),
     errorStream: vi.fn(),
     setErrorOnMessage: vi.fn(),
+    markMessageInterrupted: vi.fn(),
     setRetryStatus: vi.fn(),
   };
 }
@@ -96,6 +101,7 @@ function createMockSegments(): AgentSegments {
   return {
     reset: vi.fn(),
     markUnknownSegment: vi.fn(),
+    adoptSegment: vi.fn(),
     renameSegment: vi.fn(),
     appendDelta: vi.fn(),
     appendReasoningDelta: vi.fn(),
@@ -641,6 +647,56 @@ describe("turnOrchestrator", () => {
     });
   });
 
+  describe("onPendingToolCalls — 补拉快照回填", () => {
+    it("窗口重载后 phase 为空：用快照恢复运行态并绑定历史行", () => {
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
+        link: "agent",
+        modeId: null,
+        toolConfig: null,
+      });
+      orchestrator.onPendingToolCalls("conv-1", "conv-1:1", "msg-1", 2);
+      expect(orchestrator.getPhase()).toBe("tool_executing");
+      expect(mockDeps.state.resumeStream).toHaveBeenCalledWith(
+        "conv-1:1",
+        "msg-1",
+      );
+      expect(mockDeps.segments.adoptSegment).toHaveBeenCalledWith(2, "msg-1");
+      expect(mockDeps.segments.markUnknownSegment).not.toHaveBeenCalled();
+    });
+
+    it("历史没加载到发起行：仍恢复流式视图，段表退回未知", () => {
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
+        link: "agent",
+        modeId: null,
+        toolConfig: null,
+      });
+      orchestrator.onPendingToolCalls("conv-1", "conv-1:1", null, 2);
+      expect(mockDeps.state.resumeStream).toHaveBeenCalledWith(
+        "conv-1:1",
+        null,
+      );
+      expect(mockDeps.segments.markUnknownSegment).toHaveBeenCalled();
+      expect(mockDeps.segments.adoptSegment).not.toHaveBeenCalled();
+    });
+
+    it("非当前会话：只记录轮次状态，不驱动 UI", () => {
+      vi.mocked(mockDeps.env.getActiveConversationId).mockReturnValue("conv-2");
+      orchestrator.onPendingToolCalls("conv-1", "conv-1:1", "msg-1", 2);
+      expect(orchestrator.getPhase()).toBe("idle");
+      expect(mockDeps.state.resumeStream).not.toHaveBeenCalled();
+    });
+
+    it("已有 phase 时不覆盖（快照只补未知状态）", () => {
+      orchestrator.onSessionState({
+        conversationId: "conv-1",
+        turnId: "conv-1:1",
+        state: { processing: { turnId: "conv-1:1", phase: "streaming" } },
+      });
+      orchestrator.onPendingToolCalls("conv-1", "conv-1:1", "msg-1", 2);
+      expect(orchestrator.getPhase()).toBe("streaming");
+    });
+  });
+
   describe("handleDeltaEvent — 会话路由", () => {
     it("非当前会话的增量被丢弃", () => {
       orchestrator.handleDeltaEvent(
@@ -789,6 +845,47 @@ describe("turnOrchestrator", () => {
         "conv-42",
       );
       expect(orchestrator.getActiveConversationId()).toBe("conv-42");
+    });
+  });
+
+  describe("cancel — 压缩占位气泡（I41 §1）", () => {
+    const compactSummary: Message = {
+      id: "temp-compact-1",
+      conversationId: "conv-1",
+      role: "compact_summary",
+      content: "",
+      tokens: null,
+      timestamp: 0,
+      parentId: null,
+      isPinned: false,
+      reasoning: null,
+      siblingIndex: 0,
+      siblingCount: null,
+      providerId: null,
+      modelId: null,
+    };
+
+    it("压缩流取消不在临时摘要气泡上写 interrupted", async () => {
+      vi.mocked(mockDeps.env.getStreamingMessageId).mockReturnValue(
+        "temp-compact-1",
+      );
+      vi.mocked(mockDeps.env.getMessages).mockReturnValue([compactSummary]);
+
+      await orchestrator.cancel();
+
+      expect(mockDeps.state.markMessageInterrupted).not.toHaveBeenCalled();
+    });
+
+    it("普通助手流取消仍写 interrupted", async () => {
+      vi.mocked(mockDeps.env.getStreamingMessageId).mockReturnValue(
+        "msg-assistant",
+      );
+
+      await orchestrator.cancel();
+
+      expect(mockDeps.state.markMessageInterrupted).toHaveBeenCalledWith(
+        "msg-assistant",
+      );
     });
   });
 });

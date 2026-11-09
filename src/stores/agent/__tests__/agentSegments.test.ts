@@ -27,6 +27,28 @@ function finishedCall(iteration: number, callId = "call-1"): AgentToolCall {
   };
 }
 
+/** 历史行：等待期的调用在库里只有「已发起、无结果行」，映射成 `missing`。 */
+function historyMessage(id: string, callId: string): Message {
+  return {
+    id,
+    conversationId: "conv-1",
+    role: "assistant",
+    content: "done",
+    tokens: null,
+    timestamp: Date.now(),
+    parentId: null,
+    isPinned: false,
+    reasoning: null,
+    siblingIndex: 0,
+    siblingCount: null,
+    providerId: null,
+    modelId: null,
+    toolCalls: [
+      { callId, name: "ask_user", status: "missing", resultText: null },
+    ],
+  };
+}
+
 describe("agentSegments — 一次迭代 = 一条消息 = 一个气泡", () => {
   let messages: Message[] = [];
   let segments: ReturnType<typeof createAgentSegments>;
@@ -150,5 +172,28 @@ describe("agentSegments — 一次迭代 = 一条消息 = 一个气泡", () => {
     expect(messages).toHaveLength(2);
     expect(messages[0].content).toBe("first");
     expect(useChatStreamStore.getState().streamingContent).toBe("resumed");
+  });
+
+  it("adoptSegment 把段表绑定到历史行，后续工具事件不再新开气泡", () => {
+    messages = [historyMessage("msg-1", "call-1")];
+    useChatStreamStore.getState().resumeStream("conv-1:1", "msg-1");
+
+    segments.adoptSegment(2, "msg-1");
+    segments.applyToolCall(2, finishedCall(2, "call-1"));
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].toolCalls?.[0]?.status).toBe("success");
+    expect(useChatStreamStore.getState().streamingIteration).toBe(2);
+  });
+
+  it("段表未绑定时按 callId 回挂已加载的历史行，避免同迭代双气泡", () => {
+    messages = [historyMessage("msg-1", "call-1")];
+    useChatStreamStore.getState().cancelStreaming();
+    segments.markUnknownSegment();
+
+    segments.applyToolCall(2, finishedCall(2, "call-1"));
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].toolCalls?.[0]?.status).toBe("success");
   });
 });

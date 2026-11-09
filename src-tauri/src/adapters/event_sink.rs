@@ -133,6 +133,7 @@ impl EventSink for TauriEventSink {
     fn emit(&self, event: TurnEvent) {
         match event {
             TurnEvent::StreamStart { turn_id, phase } => {
+                log::debug!("chat-stream-start turn={} phase={:?}", turn_id, phase);
                 self.emit_wire(
                     event_name::CHAT_STREAM_START,
                     ChatStreamStartPayloadDto {
@@ -156,7 +157,6 @@ impl EventSink for TauriEventSink {
                 iteration,
                 delta,
             } => {
-                log::debug!("chat-delta turn={turn_id} seq={seq} iteration={iteration}");
                 let payload = ChatDeltaPayloadDto {
                     conversation_id: self.conversation_id.clone(),
                     attempt_id: turn_id,
@@ -210,6 +210,17 @@ impl EventSink for TauriEventSink {
                 last_seq,
                 error,
             } => {
+                let error_summary = error.as_ref().map(|err| {
+                    let message: String = err.message.chars().take(200).collect();
+                    format!("{:?}: {}", err.code, message)
+                });
+                log::info!(
+                    "chat-stream-end turn={} status={} last_seq={} error={}",
+                    turn_id,
+                    status.as_str(),
+                    last_seq,
+                    error_summary.as_deref().unwrap_or("none")
+                );
                 let error_message = error.as_ref().map(|err| err.message.clone());
                 if let Some(err) = error {
                     let payload = ChatDeltaPayloadDto {

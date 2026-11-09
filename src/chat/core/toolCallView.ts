@@ -155,3 +155,52 @@ export function hasPendingToolCalls(views: ToolCallView[]): boolean {
     (view) => view.status === "running" || view.status === "awaiting_user",
   );
 }
+
+/** 找到发起该工具调用的那条消息；补拉快照只带 `callId`，靠历史行里的调用列表定位。 */
+export function findToolCallOwner(
+  messages: Message[],
+  callId: string,
+): Message | undefined {
+  return messages.find((message) =>
+    message.toolCalls?.some((view) => view.callId === callId),
+  );
+}
+
+/**
+ * 补拉快照回挂：把挂起的调用覆盖到发起它的那条历史消息上。
+ *
+ * 等待期间该调用在库里只有「已发起、无结果行」，历史视图会渲染成 `missing`；
+ * 补拉必须显式改写成 `awaiting_user` + `question`，否则切回会话看到的是
+ * 「结果缺失」的残卡而不是可作答的提问卡。定位不到的调用（历史未加载到该行）
+ * 直接跳过，交给后端超时收口。
+ */
+export function applyPendingToolCalls(
+  messages: Message[],
+  calls: AgentToolCall[],
+  now: number,
+): Message[] {
+  if (calls.length === 0) return messages;
+  const callsByCallId = new Map<string, AgentToolCall[]>();
+  for (const call of calls) {
+    const list = callsByCallId.get(call.callId);
+    if (list) list.push(call);
+    else callsByCallId.set(call.callId, [call]);
+  }
+  let changed = false;
+  const next = messages.map((message) => {
+    if (!message.toolCalls?.length) return message;
+    const patches = message.toolCalls.flatMap(
+      (view) => callsByCallId.get(view.callId) ?? [],
+    );
+    if (patches.length === 0) return message;
+    changed = true;
+    return {
+      ...message,
+      toolCalls: patches.reduce(
+        (views, call) => applyAgentToolCall(views, call, now),
+        message.toolCalls,
+      ),
+    };
+  });
+  return changed ? next : messages;
+}

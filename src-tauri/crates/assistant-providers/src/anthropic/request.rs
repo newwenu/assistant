@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
-use log::{debug, warn};
+use log::{debug, trace, warn};
 
 use crate::anthropic::stream::{
     content_block_delta_to_unified, content_block_start_to_unified, message_delta_to_unified,
@@ -353,7 +353,7 @@ pub(crate) fn chat_completion_stream(
                                         }
                                     }
                                     Err(e) => {
-                                        debug!("Skipping invalid content_block_delta: {}", e);
+                                        trace!("Skipping invalid content_block_delta: {}", e);
                                     }
                                 }
                             }
@@ -413,7 +413,7 @@ pub(crate) fn chat_completion_stream(
                     }
                     "content_block_stop" => {}
                     _ => {
-                        debug!("[SSE] Unknown Anthropic event type: {}", event_type);
+                        trace!("[SSE] Unknown Anthropic event type: {}", event_type);
                     }
                 }
             }

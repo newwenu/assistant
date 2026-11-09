@@ -32,6 +32,7 @@ import type { RecoveryActionCode } from "./core/chatErrorRecovery";
 import { AgentLayout } from "./layouts/AgentLayout";
 import { ChatLayout } from "./layouts/ChatLayout";
 import { ModeSelector } from "./selectors/ModeSelector";
+import { WorkspaceSelector } from "./selectors/WorkspaceSelector";
 import { ToolConfigPanel } from "./tool/ToolConfigPanel";
 import { ToolToolbar } from "./tool/ToolToolbar";
 import { ToolChangeNotice } from "./tool/ToolChangeNotice";
@@ -453,6 +454,20 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     [chat],
   );
 
+  /** 工作区切换：`WorkspaceSelector` 已先登记目录簿，这里只写会话绑定（I38h §9.1）。 */
+  const handleWorkspaceSwitch = useCallback(
+    async (path: string) => {
+      if (!conversationId) return false;
+      return chat.setConversationWorkspace(conversationId, path);
+    },
+    [chat, conversationId],
+  );
+
+  const handleWorkspaceClear = useCallback(async () => {
+    if (!conversationId) return false;
+    return chat.setConversationWorkspace(conversationId, "");
+  }, [chat, conversationId]);
+
   const handleRegenerateMessage = useCallback(
     (messageId: string) => {
       void chat.regenerateMessage(messageId);
@@ -604,6 +619,15 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
           {route.link === "agent" ? (
             <AgentLayout
               {...layoutProps}
+              workspaceControl={
+                <WorkspaceSelector
+                  workspaceRoot={chat.workspaceRoot}
+                  disabled={isBusy}
+                  openRef={modelOpenRef}
+                  onSwitch={handleWorkspaceSwitch}
+                  onClear={handleWorkspaceClear}
+                />
+              }
               toolToolbar={
                 <ToolToolbar
                   config={effectiveToolConfig}

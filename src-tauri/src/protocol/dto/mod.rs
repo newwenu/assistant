@@ -7,6 +7,7 @@ pub mod orb;
 pub mod os_tool;
 pub mod settings;
 pub mod storage;
+pub mod workspace;
 
 /// Unix **毫秒**时间戳。wire 上为 JSON number，最大可精确表示值为 2^53-1。
 pub type Millis = i64;
@@ -20,3 +21,4 @@ pub use orb::*;
 pub use os_tool::*;
 pub use settings::*;
 pub use storage::*;
+pub use workspace::*;

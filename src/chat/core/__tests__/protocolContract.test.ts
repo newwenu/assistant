@@ -47,6 +47,7 @@ const sampleConversation: Conversation = {
   isFull: false,
   activeBranchId: null,
   modeId: null,
+  workspaceRoot: "",
   toolConfig: null,
 };
 

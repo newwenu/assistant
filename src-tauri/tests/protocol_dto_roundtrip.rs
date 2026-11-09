@@ -3,13 +3,13 @@ use assistant_app::protocol::{
     ChatRegeneratePayloadDto, ChatStreamStartPayloadDto, ConversationDetailDto, ConversationDto,
     ConversationPatchDto, ConversationQueryModeDto, ConversationQueryOptsDto,
     ConversationTerminatedPayloadDto, ConversationToolConfigDto, ConversationUnlockedPayloadDto,
-    InstallMascotAssetResultDto, MessageDto, MessageToolCallDto, MessageToolCallStatusDto,
-    ModelConfigDto, MousePositionDto, OsToolExecRequestDto, OsToolResultDto, ProviderErrorCodeDto,
-    ProviderErrorPayloadDto, ProviderListDto, ReasoningLevelsDto, RetryNotificationDto,
-    ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto, SessionStateChangedPayloadDto,
-    SessionStateDto, SettingProviderChangedActionDto, SettingProviderChangedPayloadDto,
-    ShortcutWarningPayloadDto, ThemeChangedPayloadDto, TokenUsageDto, ToolErrorKindDto,
-    TurnPhaseDto,
+    InstallMascotAssetResultDto, MessageDto, MessageStatusDto, MessageToolCallDto,
+    MessageToolCallStatusDto, ModelConfigDto, MousePositionDto, OsToolExecRequestDto,
+    OsToolResultDto, ProviderErrorCodeDto, ProviderErrorPayloadDto, ProviderListDto,
+    ReasoningLevelsDto, RetryNotificationDto, ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto,
+    SessionStateChangedPayloadDto, SessionStateDto, SettingProviderChangedActionDto,
+    SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto, ThemeChangedPayloadDto,
+    TokenUsageDto, ToolErrorKindDto, TurnPhaseDto,
 };
 use assistant_storage::agent_modes::AgentModeRow;
 use serde::{Deserialize, Serialize};
@@ -37,6 +37,7 @@ fn conversation_dto_roundtrip() {
         is_full: false,
         active_branch_id: None,
         mode_id: None,
+        workspace_root: String::new(),
         tool_config: None,
     };
     roundtrip(&dto);
@@ -61,6 +62,7 @@ fn message_dto_roundtrip() {
         sibling_count: None,
         provider_id: None,
         model_id: None,
+        status: MessageStatusDto::Completed,
         tool_calls: Vec::new(),
     };
     roundtrip(&dto);
@@ -84,6 +86,7 @@ fn message_dto_roundtrip_keeps_tool_call_terminal_states() {
         sibling_count: None,
         provider_id: None,
         model_id: None,
+        status: MessageStatusDto::Interrupted,
         tool_calls: vec![
             MessageToolCallDto {
                 call_id: "call_1".into(),
@@ -118,6 +121,34 @@ fn message_dto_roundtrip_keeps_tool_call_terminal_states() {
         "output Option keeps the key with null: {}",
         json
     );
+}
+
+#[test]
+fn message_status_dto_maps_db_values_and_falls_back_to_completed() {
+    assert_eq!(
+        MessageStatusDto::from_db("streaming"),
+        MessageStatusDto::Streaming
+    );
+    assert_eq!(
+        MessageStatusDto::from_db("completed"),
+        MessageStatusDto::Completed
+    );
+    assert_eq!(
+        MessageStatusDto::from_db("interrupted"),
+        MessageStatusDto::Interrupted
+    );
+    assert_eq!(
+        MessageStatusDto::from_db("failed"),
+        MessageStatusDto::Failed
+    );
+    assert_eq!(
+        MessageStatusDto::from_db("future-unknown-status"),
+        MessageStatusDto::Completed,
+        "未知取值必须兜底 completed，不得把存量数据读成终态之外的态"
+    );
+
+    let json = serde_json::to_string(&MessageStatusDto::Interrupted).unwrap();
+    assert_eq!(json, "\"interrupted\"", "wire 形态为 snake_case");
 }
 
 #[test]
@@ -275,6 +306,7 @@ fn conversation_detail_dto_roundtrip() {
             is_full: false,
             active_branch_id: None,
             mode_id: None,
+            workspace_root: String::new(),
             tool_config: None,
         },
         messages: vec![],
@@ -555,6 +587,8 @@ fn conversation_patch_dto_roundtrip() {
         provider_id: Some("p1".into()),
         mode_id: Some("builtin-default".into()),
         tool_config: None,
+        workspace_root: None,
+        clear_workspace_root: None,
     };
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();

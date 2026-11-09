@@ -9,3 +9,4 @@ pub mod providers;
 pub mod token_usage;
 pub mod tool_favorites;
 pub mod tool_history;
+pub mod workspaces;

@@ -25,5 +25,5 @@ pub use permission_store::{DbPermissionAuditStore, DbPermissionGrantStore};
 pub use question::{PendingQuestionRegistry, TauriQuestionPrompter};
 pub use runner::build_turn_runner;
 pub use system_clock::SystemClock;
-pub use tool_exec::PipelineToolExecution;
+pub use tool_exec::{PipelineToolExecution, WorkspaceRootSource};
 pub use tool_resolver::resolve_available_tools;

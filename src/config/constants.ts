@@ -20,12 +20,14 @@ export const SIDEBAR_WIDTH = 240;
 export const SIDEBAR_COLLAPSED_WIDTH = 64;
 
 export const PET_DRAG_THRESHOLD_PX = 8;
+export const TOUCH_DRAG_THRESHOLD_PX = 12;
+export const LONG_PRESS_MOVE_TOLERANCE_PX = 8;
 export const EXPAND_DIRECTION_HYSTERESIS_PX = 24;
 
-export const DRAG_POLL_INTERVAL_MS = 16;
 export const ORB_BLUR_COLLAPSE_DELAY_MS = 200;
 export const ORB_SNAP_DELAY_MS = 1000;
 export const LONG_PRESS_DURATION_MS = 500;
+export const CONTEXT_MENU_DEDUPE_MS = 700;
 
 export const CHAT_INPUT_MIN_ROWS = 1;
 export const CHAT_INPUT_MAX_ROWS = 4;

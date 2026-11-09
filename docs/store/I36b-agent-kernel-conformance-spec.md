@@ -4,7 +4,7 @@
 |---|---|
 | 状态 | 现行（验证规格；定义判定，不改设计） |
 | 日期 | 2026-11-05 |
-| 关联 | [I36a 内核基线](./I36a-agent-kernel-baseline.md)、[I36 运行时规格](./I36-agent-runtime-spec.md)、[I36 任务清单](./I36-agent-runtime-tasklist.md)、[I38b Agent Loop](./I38b-agent-loop-spec.md)、[I38 阶段总纲](./I38-agent-roadmap.md) |
+| 关联 | [I36a 内核基线](./I36a-agent-kernel-baseline.md)、I36 运行时规格（已归档）、I36 任务清单（已归档）、I38b Agent Loop（已归档）、[I38 阶段总纲](./I38-agent-roadmap.md) |
 | 影响范围 | 文档；§4 缺口 H1–H9 在对应阶段落地时才触碰代码 |
 
 > 定位：I36a 回答「内核应该具备哪些能力」，I36b 回答「**怎么判定实现确实符合基线，并且能在任意机器上确定性复现**」。
@@ -301,7 +301,7 @@ cargo test --test assembly_contract
 3. H6 口径定稿并写回 I36 spec（整段封顶；I36 spec §3.3 新增「超时口径（H6 定稿）」并同步验收 10 措辞）。
 4. H7 的未接线清单断言存在且为绿（`kernel_values::unwired_turn_spec_fields_have_no_read_points_yet`）。
 
-**这四条是否已完成，见 [I36 tasklist](./I36-agent-runtime-tasklist.md) C11.1–C11.8 与 [roadmap](./I38-agent-roadmap.md) §2，本文不重复记录完成状态。**
+**这四条是否已完成，见 I36 tasklist（已归档） C11.1–C11.8 与 [roadmap](./I38-agent-roadmap.md) §2，本文不重复记录完成状态。**
 
 ### 6.2 P4 开工前置（Q3 阻断项）
 
@@ -328,9 +328,9 @@ H1 与 H8 **必须**先收敛：没有脚本化适配器，`RoundExecutor` 的�
 | 文档 | 关系 |
 |---|---|
 | [I36a 内核基线](./I36a-agent-kernel-baseline.md) | 本文的输入：能力矩阵与 K/G 条目；本文只判定，不改其条目 |
-| [I36 运行时规格](./I36-agent-runtime-spec.md) | 契约与验收编号来源；H6 / H7 需要改口径时必须回写该文档 |
-| [I36 任务清单](./I36-agent-runtime-tasklist.md) | H1–H9 的落地任务为 C11.1–C11.8（P3 收口 + P4 前置）；完成勾选只在这里维护 |
-| [I38b Agent Loop](./I38b-agent-loop-spec.md) | P4 循环体规格；本文的 V24 / V26 / H7 在 P4 才有判定对象 |
+| I36 运行时规格（已归档） | 契约与验收编号来源；H6 / H7 需要改口径时必须回写该文档 |
+| I36 任务清单（已归档） | H1–H9 的落地任务为 C11.1–C11.8（P3 收口 + P4 前置）；完成勾选只在这里维护 |
+| I38b Agent Loop（已归档） | P4 循环体规格；本文的 V24 / V26 / H7 在 P4 才有判定对象 |
 | [I38 阶段总纲](./I38-agent-roadmap.md) | 阶段级进度唯一入口；本文不写阶段状态 |
 
 维护规则：

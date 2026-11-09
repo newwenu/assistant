@@ -287,6 +287,7 @@ fn fixture_source(adapter: Arc<dyn BaseProviderAdapter>) -> FixtureSource {
         active_branch_id: None,
         mode_id: None,
         tool_config_json: None,
+        workspace_root: String::new(),
     };
     let messages = vec![MessageRow {
         id: "user-1".to_string(),
@@ -304,6 +305,7 @@ fn fixture_source(adapter: Arc<dyn BaseProviderAdapter>) -> FixtureSource {
         model_id: None,
         tool_call_id: None,
         is_error: false,
+        status: "completed".to_string(),
     }];
     let provider = ProviderCredential {
         row: ProviderRow {

@@ -4,11 +4,11 @@
 |---|---|
 | 状态 | 现行（能力基线，只读对照） |
 | 日期 | 2026-11-05 |
-| 关联 | [I38 阶段总纲](./I38-agent-roadmap.md)、[I36 运行时决策](./I36-agent-runtime-design.md)、[I36 运行时规格](./I36-agent-runtime-spec.md)、[I36 任务清单](./I36-agent-runtime-tasklist.md)、[I36b 一致性验证](./I36b-agent-kernel-conformance-spec.md)、[I38b Agent Loop](./I38b-agent-loop-spec.md)、[I38a 工具控制层](./I38a-tool-control-layer-spec.md) |
+| 关联 | [I38 阶段总纲](./I38-agent-roadmap.md)、I36 运行时决策（已归档）、I36 运行时规格（已归档）、I36 任务清单（已归档）、[I36b 一致性验证](./I36b-agent-kernel-conformance-spec.md)、I38b Agent Loop（已归档）、I38a 工具控制层（已归档） |
 | 影响范围 | 仅文档；不改变任何代码契约 |
 
 > 本文是 agent 文档的**内核篇**：回答「一个够用且通用的内核必须具备哪些能力、本项目内核的归属阶段与扩展点」。
-> 本文**不**回答「怎么做」——实现步骤见 I36 spec / I38b；工具实现见 I38c；前端见 I38d。
+> 本文**不**回答「怎么做」——实现步骤见 I36 spec / I38b（均已归档）；工具实现见 I38c（已归档）；前端见 I38d（已归档）。
 > **单一权威源不变**：类型与契约归各 spec，阶段进度归 I38 roadmap，判定方法归 I36b；本文只做横向对照与基线判定，不复制类型定义，**也不维护任何实现状态**。
 
 ---
@@ -216,7 +216,7 @@
 
 ### 4.2 P3 开工前缺口快照（历史记录）
 
-> 下表是 2026-11-05 P3 开工前的核对快照，**只作历史记录，不作现状依据**。当前进度见 [I38 roadmap](./I38-agent-roadmap.md) §2 与 [I36 tasklist](./I36-agent-runtime-tasklist.md)。
+> 下表是 2026-11-05 P3 开工前的核对快照，**只作历史记录，不作现状依据**。当前进度见 [I38 roadmap](./I38-agent-roadmap.md) §2 与 I36 tasklist（已归档）。
 
 | 缺口 | 现象 | 收口项 |
 |---|---|---|

@@ -222,6 +222,15 @@ export function createStatePort(
         `chat-error code=${error.code} retryable=${error.retryable} message=${displayMessage}`,
       );
     },
+    markMessageInterrupted: (messageId: string) => {
+      const state = get();
+      if (!state.messages.some((m) => m.id === messageId)) return;
+      set({
+        messages: state.messages.map((m) =>
+          m.id === messageId ? { ...m, status: "interrupted" } : m,
+        ),
+      });
+    },
     errorStream: (error: ChatError) => {
       const stream = useChatStreamStore.getState();
       if (!stream.streamingMessageId) return;

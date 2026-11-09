@@ -126,7 +126,7 @@ assistant-agent/src/multimodal/
 |---|---|---|
 | `os/path.rs`（647 / ~295） | 仅两条变化原因：路径归一化（`resolve` / `canonicalize_lenient`）与安全名单（受保护目录、凭据目录、`ensure_within_root`） | 安全名单继续扩张时，下沉 `os/path/protected.rs` |
 | `os/text_encoding.rs`（430 / ~100） | `decode` 与 `encode` 可分，但共享 `Encoding` 枚举与 BOM 语义，拆分收益有限 | 新增编码探测规则时再动 |
-| `os/agent_read.rs`（325） | 唯一可独立的是回执去重 guard，但仅几十行且与读取结果强耦合 | 职责数增至 ≥3 时 |
+| `os/agent_read.rs`（325） | 唯一可独立的是回执 guard（读前置校验 + 编码继承），但仅几十行且与读取结果强耦合 | 职责数增至 ≥3 时 |
 
 已核但确认不拆：`pipeline.rs`（350，2 条变化原因）、`registry.rs`（317，其中约 196 行为内联测试，实现单职责）、`os/agent_list.rs` / `os/agent_move.rs` / `os/agent_glob.rs` / `os/agent_mkdir.rs` / `os/output.rs` / `os/process_output.rs`（均 <300 行）。
 

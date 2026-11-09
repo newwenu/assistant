@@ -18,7 +18,7 @@ export type AgentQuestionOptionDto = { label: string, description: string, };
 export type AgentQuestionRequestDto = { conversationId: string, turnId: string, callId: string, questions: Array<AgentQuestionDto>, timeoutMs: number, };
 export type AgentToolCallDto = { conversationId: string, turnId: string, iteration: number, callId: string, name: string, payload: AgentToolCallPayloadDto, };
 export type AgentToolCallPayloadDto = { "phase": "started" } | { "phase": "argsDelta", delta: string, } | { "phase": "finished", result: string, confirmationWaitMs: number | null, } | { "phase": "failed", error: string, errorKind: ToolErrorKindDto, confirmationWaitMs: number | null, } | { "phase": "awaitingApproval", approval: ToolApprovalRequestDto, } | { "phase": "approvalClosed", timeoutMs: number, } | { "phase": "awaitingAnswer", question: AgentQuestionRequestDto, };
-export type AppConfDto = { theme: string, language: string, hotkey: string, stayOnTop: boolean, launchAtLogin: boolean, closeToTray: boolean, keybindings: { [key in string]: string }, autoCompact: boolean, compactThresholdPercentOfBudget: number, compactSummaryPrompt: string | null, compactSummaryMaxTokens: number, mainWindowX: number | null, mainWindowY: number | null, mainWindowWidth: number | null, mainWindowHeight: number | null, miniWindowX: number | null, miniWindowY: number | null, workspaceRoot: string | null, approvalTimeoutSecs: number | null, userQuestionTimeoutSecs: number | null, };
+export type AppConfDto = { theme: string, language: string, hotkey: string, stayOnTop: boolean, launchAtLogin: boolean, closeToTray: boolean, keybindings: { [key in string]: string }, autoCompact: boolean, compactThresholdPercentOfBudget: number, compactSummaryPrompt: string | null, compactSummaryMaxTokens: number, mainWindowX: number | null, mainWindowY: number | null, mainWindowWidth: number | null, mainWindowHeight: number | null, miniWindowX: number | null, miniWindowY: number | null, approvalTimeoutSecs: number | null, userQuestionTimeoutSecs: number | null, };
 export type ApprovalContextDto = { tier: ToolTierDto, behavior: ToolBehaviorDto, reasons: Array<ApprovalReasonDto>, preview: ApprovalPreviewDto | null, extensions: Array<ApprovalExtensionDto>, };
 export type ApprovalExtensionDto = { kind: string, label: string, value: string, severity: ApprovalExtensionSeverityDto, };
 export type ApprovalExtensionSeverityDto = "info" | "caution" | "danger";
@@ -68,6 +68,10 @@ export type ConversationAttachmentSummary = { conversationId: string, title: str
 export type ConversationDetailDto = { conversation: ConversationDto, messages: Array<MessageDto>, totalCount: number, };
 export type ConversationDto = { id: string, title: string, titleSource: string, providerId: string | null, modelId: string, systemPrompt: string | null, isPinned: boolean, sortOrder: number, generation: number, createdAt: number, updatedAt: number, isFull: boolean, activeBranchId: string | null, modeId: string | null, 
 /**
+ * 会话绑定的工作区根；空串表示未配置，wire 上永不出现 `null`（I38h §8.1）。
+ */
+workspaceRoot: string, 
+/**
  * 会话级工具配置；键恒在，未配置时为 `null`（agent 链路回退到模式初始值）。
  */
 toolConfig: ConversationToolConfigDto | null, };
@@ -81,7 +85,16 @@ modeId?: string | null,
 /**
  * 会话级工具配置；缺省或 `null` 表示不改。
  */
-toolConfig?: ConversationToolConfigDto | null, };
+toolConfig?: ConversationToolConfigDto | null, 
+/**
+ * 工作区根（输入三态）：缺省或 `null` = 不改；有值 = 校验后写入；空串一律 `Err`。
+ * 清除绑定请用 `clear_workspace_root`（I38h §8.2）。
+ */
+workspaceRoot?: string | null, 
+/**
+ * 显式清除工作区绑定（写回空串）；与 `workspace_root` 同时出现视为歧义。
+ */
+clearWorkspaceRoot?: boolean | null, };
 export type ConversationQueryModeDto = "paginated" | "all";
 export type ConversationQueryOptsDto = { mode: ConversationQueryModeDto, limit: number, beforeTimestamp?: number | null, };
 export type ConversationTerminatedPayloadDto = { conversationId: string, isFull: boolean, };
@@ -93,7 +106,13 @@ export type ImageAttachmentRefDto = { attachmentId: string, mediaType: string | 
 export type InstallMascotAssetResultDto = { installedPath: string, bytes: number, version: number, };
 export type MascotConfDto = { renderer: string, primaryColor: string | null, secondaryColor: string | null, riveIdlePoseRotation: boolean, riveSrc: string | null, svgAnimated: boolean, gifSrc: string | null, gifBorderRadius: number, };
 export type MessageChangeKindDto = "branch_created" | "branch_switched" | "branch_forked" | "message_deleted" | "messages_compacted" | "stream_finished";
-export type MessageDto = { id: string, conversationId: string, role: string, content: string, tokens: number | null, timestamp: number, parentId: string | null, isPinned: boolean, reasoning: string | null, siblingIndex: number, siblingCount: number | null, providerId: string | null, modelId: string | null, toolCalls: Array<MessageToolCallDto>, };
+export type MessageDto = { id: string, conversationId: string, role: string, content: string, tokens: number | null, timestamp: number, parentId: string | null, isPinned: boolean, reasoning: string | null, siblingIndex: number, siblingCount: number | null, providerId: string | null, modelId: string | null, 
+/**
+ * 消息终态（I41 §1）：取消落 `interrupted`，前端据此呈现「已中断」，
+ * 不再依赖 `error` 承载取消语义。
+ */
+status: MessageStatusDto, toolCalls: Array<MessageToolCallDto>, };
+export type MessageStatusDto = "streaming" | "completed" | "interrupted" | "failed";
 export type MessageToolCallDto = { callId: string, name: string, arguments: unknown, status: MessageToolCallStatusDto, result: string | null, };
 export type MessageToolCallStatusDto = "success" | "error" | "cancelled" | "missing";
 export type ModelConfigDto = { id: string, name: string, ownedBy: string, contextWindow: number | null, supportVision: boolean, 
@@ -193,3 +212,8 @@ export type VaultCipherAlgorithmDto = "aes256Gcm" | "chacha20Poly1305";
 export type VaultConfDto = { vaultAutoLockMinutes: number, vaultLockOnScreenLock: boolean, vaultClipboardClearSeconds: number, vaultCipherAlgorithm: VaultCipherAlgorithmDto, vaultHibpAutoAudit: boolean, vaultSyncRemoteUrl: string | null, vaultSshAutoAdd: boolean, vaultSshUsePageant: boolean, vaultSshUseOpensshAgent: boolean, vaultSshAuthSockOverride: string, vaultSyncLastAt: number | null, vaultSyncSshHosts: Array<string>, };
 export type WindowModeChangedPayloadDto = { mode: WindowModeDto, };
 export type WindowModeDto = "normal" | "mini";
+export type WorkspaceDto = { path: string, name: string, 
+/**
+ * 目录当前是否已不存在：只读探测，不回写库（I38h §8 表）。
+ */
+missing: boolean, };

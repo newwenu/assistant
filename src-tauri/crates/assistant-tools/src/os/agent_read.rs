@@ -73,9 +73,7 @@ impl Tool for AgentReadTool {
              use `offset` (1-based, 0 is treated as 1) and `limit` to page through larger files. \
              `totalLines` is null when the file is too large to count to the end in one call. \
              Binary files are rejected. Non-UTF-8 files are decoded via BOM detection, via the \
-             `encoding` label, or by a confident guess. Re-reading the same range of an unchanged \
-             file in the same session returns only a notice instead of the content. Does not \
-             follow `.gitignore`."
+             `encoding` label, or by a confident guess. Does not follow `.gitignore`."
                 .to_string(),
         )
     }
@@ -157,32 +155,7 @@ impl Tool for AgentReadTool {
         let key = ReadReceiptKey {
             session_id: context.session_id.clone(),
             path: resolved.display().to_string(),
-            start_line: request.offset_specified.then_some(request.offset),
-            // 饱和运算：`offset` 是调用方可控的 u64，`offset + limit - 1` 会溢出回绕。
-            end_line: request.limit.map(|limit| {
-                request
-                    .offset
-                    .saturating_add(limit as u64)
-                    .saturating_sub(1)
-            }),
         };
-
-        if let Some(receipt) = self.receipts.lookup(&key).await {
-            if receipt.revision == revision {
-                return Ok(ToolResult::ok_with_assistant(
-                    serde_json::json!({
-                        "path": resolved.display().to_string(),
-                        "revision": revision,
-                        "deduplicated": true
-                    }),
-                    format!(
-                        "Already returned in this session and unchanged since revision {}. \
-                         Use offset/limit to read a different range.",
-                        revision
-                    ),
-                ));
-            }
-        }
 
         let read_path = resolved.clone();
         let offset = request.offset;
@@ -249,8 +222,7 @@ impl Tool for AgentReadTool {
                 "startLine": start_line,
                 "endLine": end_line,
                 "totalLines": outcome.total_lines,
-                "truncated": outcome.truncated,
-                "deduplicated": false
+                "truncated": outcome.truncated
             }),
             assistant_text,
         ))
@@ -261,7 +233,6 @@ struct ReadRequest {
     path: String,
     offset: u64,
     limit: Option<usize>,
-    offset_specified: bool,
     encoding: Option<&'static Encoding>,
 }
 
@@ -285,7 +256,6 @@ impl ReadRequest {
             path,
             offset: offset.unwrap_or(1).max(1),
             limit,
-            offset_specified: offset.is_some(),
             encoding,
         })
     }

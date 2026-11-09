@@ -15,17 +15,18 @@ use assistant_app::protocol::{
     ConversationQueryModeDto, ConversationQueryOptsDto, ConversationTerminatedPayloadDto,
     ConversationToolConfigDto, ConversationUnlockedPayloadDto, FileAttachmentRefDto, GrantScopeDto,
     ImageAttachmentRefDto, InstallMascotAssetResultDto, MascotConfDto, MessageChangeKindDto,
-    MessageDto, MessageToolCallDto, MessageToolCallStatusDto, ModelConfigDto, MousePositionDto,
-    OrbConfDto, OsToolExecRequestDto, OsToolResultDto, PermissionGrantDto, PermissionIntentDto,
-    ProviderErrorCodeDto, ProviderErrorPayloadDto, ProviderInputDto, ProviderListDto,
-    ReasoningLevelsDto, RetryNotificationDto, ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto,
-    SessionStateChangedPayloadDto, SessionStateDto, SetGrantScopeArgsDto,
+    MessageDto, MessageStatusDto, MessageToolCallDto, MessageToolCallStatusDto, ModelConfigDto,
+    MousePositionDto, OrbConfDto, OsToolExecRequestDto, OsToolResultDto, PermissionGrantDto,
+    PermissionIntentDto, ProviderErrorCodeDto, ProviderErrorPayloadDto, ProviderInputDto,
+    ProviderListDto, ReasoningLevelsDto, RetryNotificationDto, ScreenRectDto, ScreenSizeDto,
+    SendChatMessageArgsDto, SessionStateChangedPayloadDto, SessionStateDto, SetGrantScopeArgsDto,
     SettingProviderChangedActionDto, SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto,
     SiblingInfoDto, StorageBreakdownDto, ThemeChangedPayloadDto, TokenUsageCacheDto,
     TokenUsageCumulativeDto, TokenUsageDto, TokenUsageEstimatedSourceDto, TokenUsageOccupancyDto,
     TokenUsageSummaryDto, ToolApprovalDecisionDto, ToolApprovalKindDto, ToolApprovalRequestDto,
     ToolBehaviorDto, ToolDescriptorDto, ToolErrorKindDto, ToolTierDto, TurnPhaseDto,
     VaultCipherAlgorithmDto, VaultConfDto, WindowModeChangedPayloadDto, WindowModeDto,
+    WorkspaceDto,
 };
 use ts_rs::{Config, TS};
 
@@ -138,6 +139,7 @@ fn export_protocol_contract() {
         MascotConfDto::decl(&cfg),
         MessageChangeKindDto::decl(&cfg),
         MessageDto::decl(&cfg),
+        MessageStatusDto::decl(&cfg),
         MessageToolCallDto::decl(&cfg),
         MessageToolCallStatusDto::decl(&cfg),
         ModelConfigDto::decl(&cfg),
@@ -183,6 +185,7 @@ fn export_protocol_contract() {
         VaultConfDto::decl(&cfg),
         WindowModeChangedPayloadDto::decl(&cfg),
         WindowModeDto::decl(&cfg),
+        WorkspaceDto::decl(&cfg),
     ];
 
     let mut output = String::from(

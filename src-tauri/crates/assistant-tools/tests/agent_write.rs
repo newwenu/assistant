@@ -63,8 +63,6 @@ async fn record_read_receipt(
             ReadReceiptKey {
                 session_id: ctx.session_id.clone(),
                 path: resolved.to_string(),
-                start_line: None,
-                end_line: None,
             },
             ReadReceipt {
                 revision: String::new(),
@@ -298,7 +296,7 @@ async fn content_above_the_limit_is_rejected() {
 }
 
 #[tokio::test]
-async fn directory_target_is_rejected_with_a_mkdir_hint() {
+async fn directory_target_is_rejected_without_a_misleading_hint() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), None);
     std::fs::create_dir(dir.path().join("sub")).unwrap();
@@ -310,7 +308,13 @@ async fn directory_target_is_rejected_with_a_mkdir_hint() {
 
     assert!(!result.ok);
     assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
-    assert!(result.error.unwrap_or_default().contains("use mkdir"));
+    let error = result.error.unwrap_or_default();
+    assert!(error.contains("is a directory"));
+    assert!(
+        !error.contains("mkdir"),
+        "mkdir cannot fix an already existing directory, so the message must not suggest it: {}",
+        error
+    );
 }
 
 #[cfg(windows)]
@@ -424,8 +428,6 @@ async fn write_records_a_read_receipt_for_the_new_revision() {
     let key = ReadReceiptKey {
         session_id: Some("session-1".to_string()),
         path: path_text,
-        start_line: None,
-        end_line: None,
     };
     let receipt = receipts
         .lookup(&key)
@@ -480,8 +482,6 @@ async fn new_file_is_written_in_the_requested_encoding() {
     let key = ReadReceiptKey {
         session_id: Some("session-1".to_string()),
         path: data["path"].as_str().unwrap().to_string(),
-        start_line: None,
-        end_line: None,
     };
     let receipt = receipts.lookup(&key).await.expect("receipt recorded");
     assert_eq!(receipt.encoding, "GBK");

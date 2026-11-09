@@ -6,6 +6,7 @@ import type {
 import { toChatMessage } from "../chat/core/toolCallView";
 import type {
   AgentQuestionAnswer,
+  AgentToolCall,
   Conversation,
   ConversationDetail,
   ConversationToolConfig,
@@ -17,6 +18,14 @@ import type {
 } from "../chat/core/chatTypes";
 
 export type { ConversationDetail, TokenUsageSummary };
+
+/**
+ * 压缩运行期取消的判定（I41 §1）：后端取消分支返回该文案，属「用户停止」而非失败，
+ * 前端不提示、不当作错误呈现。文案比较集中在此处，禁止散落到调用方。
+ */
+export function isCompactCancelled(error: unknown): boolean {
+  return typeof error === "string" && error.includes("Compaction cancelled");
+}
 
 export const chatService = {
   listConversations: (): Promise<Conversation[]> =>
@@ -74,6 +83,8 @@ export const chatService = {
       providerId?: string;
       modeId?: string;
       toolConfig?: ConversationToolConfig;
+      workspaceRoot?: string;
+      clearWorkspaceRoot?: boolean;
     },
   ): Promise<void> => invoke("patch_conversation", { id, patch }),
 
@@ -116,6 +127,15 @@ export const chatService = {
   /** 提问回填：`ask_user` 卡片的作答结果（I38c §9）。 */
   resolveAgentQuestion: (args: AgentQuestionAnswer): Promise<void> =>
     invoke("resolve_agent_question", { args }),
+
+  /**
+   * 挂起提问的补拉：切回会话 / 窗口重载时重建 `ask_user` 卡片。
+   * 快照里的 `timeoutMs` 已被后端改写为剩余毫秒（I38c §9）。
+   */
+  listPendingQuestions: (conversationId: string): Promise<AgentToolCall[]> =>
+    invoke<AgentToolCall[]>("list_pending_questions", { conversationId }).then(
+      (r) => r || [],
+    ),
 
   /** 工具装配清单：全部 agent 受众工具，按 tier 分组供面板渲染（I38d §4.7）。 */
   listAvailableTools: (): Promise<ToolDescriptorDto[]> =>

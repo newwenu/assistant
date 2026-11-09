@@ -89,8 +89,6 @@ fn receipt_key(session: Option<&str>, path: &str) -> ReadReceiptKey {
     ReadReceiptKey {
         session_id: session.map(str::to_string),
         path: path.to_string(),
-        start_line: None,
-        end_line: None,
     }
 }
 

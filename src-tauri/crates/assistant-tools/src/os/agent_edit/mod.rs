@@ -167,8 +167,6 @@ impl Tool for AgentEditTool {
         let key = ReadReceiptKey {
             session_id: context.session_id.clone(),
             path: path_text.clone(),
-            start_line: None,
-            end_line: None,
         };
         let receipt = match self.receipts.lookup(&key).await {
             None => {

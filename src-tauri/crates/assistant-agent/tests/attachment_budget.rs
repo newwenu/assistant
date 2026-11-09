@@ -1,5 +1,6 @@
 use assistant_agent::kernel::request;
 use assistant_agent::multimodal::{self, MultimodalConfig, ProjectionPurpose};
+use assistant_agent::prompt_builder::PromptFacts;
 use assistant_agent::request_projection::{estimate_total_tokens, offload_if_over_budget};
 use assistant_agent::token_estimate::estimate_text_tokens;
 use assistant_providers::types::{
@@ -499,6 +500,7 @@ fn detail_with_file(model: &str, file_content: &str) -> ConversationDetail {
             active_branch_id: None,
             mode_id: None,
             tool_config_json: None,
+            workspace_root: String::new(),
         },
         messages: vec![MessageRow {
             id: "m1".to_string(),
@@ -516,6 +518,7 @@ fn detail_with_file(model: &str, file_content: &str) -> ConversationDetail {
             model_id: Some(model.to_string()),
             tool_call_id: None,
             is_error: false,
+            status: "completed".to_string(),
         }],
     }
 }
@@ -550,6 +553,8 @@ async fn display_and_send_use_the_same_budget() {
         None,
     )
     .await;
-    let shown = request::estimate_branch_tokens(&detail, &row, &store).await;
+    let shown =
+        request::estimate_branch_tokens(&detail, "sys", &PromptFacts::default(), &row, &store)
+            .await;
     assert_eq!(estimate_total_tokens(&sent), shown);
 }

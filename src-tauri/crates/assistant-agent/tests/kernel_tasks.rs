@@ -122,6 +122,39 @@ fn generation_guard_matches_current_turn() {
     assert!(!tasks.is_current("missing", &turn));
 }
 
+#[test]
+fn is_busy_ignores_cancelled_generation() {
+    let tasks = TurnTasks::new();
+    assert!(!tasks.is_busy("conv"));
+    let (_, token) = tasks.begin("conv", OnBusy::Reject).expect("begin");
+    assert!(tasks.is_busy("conv"));
+
+    tasks.cancel("conv");
+    assert!(token.is_cancelled());
+    assert!(
+        !tasks.is_busy("conv"),
+        "cancel must release mutual exclusion before finish"
+    );
+    assert_eq!(tasks.current("conv").as_deref(), Some("conv:1"));
+}
+
+#[test]
+fn reject_after_cancel_replaces_stale_generation() {
+    let tasks = TurnTasks::new();
+    let (old_id, old_token) = tasks.begin("conv", OnBusy::Reject).expect("begin");
+    tasks.cancel("conv");
+    assert!(old_token.is_cancelled());
+
+    let (new_id, new_token) = tasks.begin("conv", OnBusy::Reject).expect("begin");
+    assert_eq!(new_id, "conv:2");
+    assert!(!new_token.is_cancelled());
+    assert_eq!(tasks.current("conv"), Some(new_id));
+    assert!(
+        !tasks.is_current("conv", &old_id),
+        "stale generation must lose the generation guard"
+    );
+}
+
 #[tokio::test]
 async fn cancelled_token_completes_select_branch() {
     let tasks = TurnTasks::new();

@@ -125,13 +125,7 @@
       },
       "agent_tools": {
         "title": "Agent Tools",
-        "description": "Workspace and approval behavior for tool execution",
-        "workspace_root": {
-          "label": "Workspace Root",
-          "description": "Relative and default paths in tools resolve against this directory. Leave empty to treat it as unconfigured: path-based tools will fail instead of falling back to the current directory",
-          "placeholder": "Not configured",
-          "pick_title": "Select workspace root"
-        },
+        "description": "Approval behavior for tool execution",
         "approval_timeout_secs": {
           "label": "Approval Timeout (seconds)",
           "description": "Longest time to wait for user confirmation; timing out counts as a denial. Leave empty for the default 120 seconds",
@@ -553,6 +547,10 @@
         "title": "Save Tool Config Failed",
         "description": "The tool configuration was not saved; it has been rolled back"
       },
+      "updateWorkspaceFailed": {
+        "title": "Switch Workspace Failed",
+        "description": "The workspace switch was unsuccessful; the previous value was kept"
+      },
       "deleteMessageFailed": {
         "title": "Delete Message Failed",
         "description": "Message deletion was unsuccessful, please try again later"
@@ -611,7 +609,8 @@
       "confirm_delete_subtree": "Will delete {{count}} message(s)",
       "confirm_delete_subtree_desc": "This action cannot be undone",
       "message_deleted": "Message deleted",
-      "delete_failed": "Delete failed"
+      "delete_failed": "Delete failed",
+      "interrupted": "Interrupted"
     },
     "branch": {
       "previous": "Previous version",
@@ -869,6 +868,25 @@
       "chat_history": "Chat History",
       "chat_history_desc": "View conversation history"
     }
+  },
+  "workspace": {
+    "chip": {
+      "select": "Select workspace",
+      "missing": "Missing"
+    },
+    "action": {
+      "choose": "Choose folder…",
+      "clear": "Clear binding (unconfigured)"
+    },
+    "error": {
+      "invalid": {
+        "title": "Invalid Workspace Path",
+        "description": "The selected folder could not be registered as a workspace; please choose again"
+      },
+      "busy": "The conversation is generating a reply; the workspace cannot be changed right now"
+    },
+    "switch_ok": "Workspace switched",
+    "switch_cleared_session_grants": "Session-level grants were cleared; global grants remain in effect"
   },
   "tools": {
     "category": {

@@ -2,10 +2,10 @@
 
 > 本文档记录架构**决策**：为什么这样设计、参考了什么、做了什么取舍。
 > **阶段、状态与门禁**见 [I38-agent-roadmap.md](./I38-agent-roadmap.md)（唯一阶段入口）。
-> **框架层实施规格**（Step 0-3、8）见 [I18-agent-tool-architecture-spec.md](./I18-agent-tool-architecture-spec.md)。
-> **控制层**见 [I38a](./I38a-tool-control-layer-spec.md)；**Agent Loop** 见 [I38b](./I38b-agent-loop-spec.md)；**OS 工具**见 [I38c](./I38c-os-tools-spec.md)；**前端与模式**见 [I38d](./I38d-agent-frontend-modes-spec.md)；**MCP** 见 [I38e](./I38e-mcp-tools-spec.md)。
+> **框架层实施规格**（Step 0-3、8）见 I18-agent-tool-architecture-spec（已归档）。
+> **控制层**见 I38a（已归档）；**Agent Loop** 见 I38b（已归档）；**OS 工具**见 I38c（已归档）；**前端与模式**见 I38d（已归档）；**MCP** 见 [I38e](./I38e-mcp-tools-spec.md)。
 > **Shell 安全子域**见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
-> **ToolBox 双入口桥接**见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
+> **ToolBox 双入口桥接**见 I18b-tool-unified-bridge-spec（已归档）。
 
 ---
 
@@ -254,7 +254,7 @@ pub trait Tool: Send + Sync {
 
 **关键不变量**：`PermissionRuntimeCeiling` 禁止携带 Allow 规则——委托只能收紧不能放宽，编译期可检查。
 
-> 完整类型定义、评估算法、默认规则集见 [I38a](./I38a-tool-control-layer-spec.md) §2-§4。
+> 完整类型定义、评估算法、默认规则集见 I38a（已归档）§2-§4。
 
 ### 3.6 决策：双入口分流
 
@@ -270,9 +270,9 @@ pub trait Tool: Send + Sync {
 | 超时保护 | 防止 LLM 发起的命令挂起 | 由 Rust `invoke()` 统一兜底（I31 §4.3，已取代「UI 层自行处理」） |
 | 结果回填消息历史 | Agent Loop 需要继续对话 | 结果直接返回组件渲染 |
 
-**安全约束不缺失，但要分两类**：`Tool.execute()` 内部保证的是**绝对不变量**（`..` 穿越、盘符相对路径、规范化失败不回退、受保护系统目录），两个入口均生效；`shell` 的执行层守卫同样在 `execute()` 内（见 §3.7.1），只有 AllowlistGate / ApprovalGate 这层审批留在 Pipeline。**作用域不变量**（`workspace_root` 包含性）只对 Agent 入口生效——ToolBox 的调用者是用户本人，不存在「越界」，详见 [I18b](./I18b-tool-unified-bridge-spec.md) §2.2。
+**安全约束不缺失，但要分两类**：`Tool.execute()` 内部保证的是**绝对不变量**（`..` 穿越、盘符相对路径、规范化失败不回退、受保护系统目录），两个入口均生效；`shell` 的执行层守卫同样在 `execute()` 内（见 §3.7.1），只有 AllowlistGate / ApprovalGate 这层审批留在 Pipeline。**作用域不变量**（`workspace_root` 包含性）只对 Agent 入口生效——ToolBox 的调用者是用户本人，不存在「越界」，详见 I18b（已归档）§2.2。
 
-> ToolBox 桥接完整规格见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)。
+> ToolBox 桥接完整规格见 I18b-tool-unified-bridge-spec（已归档）。
 
 ### 3.6.1 决策：受众维度与双入口分离
 
@@ -292,7 +292,7 @@ pub trait Tool: Send + Sync {
 - `fs_link` 是第一个非 `BOTH` 工具，声明 `TOOLBOX_ONLY`。它存在的意义是验证桥接链路，不是给模型的能力；受众维度让这个定位第一次可以被代码表达，而不是靠文档口头约定。
 - 默认值 `NONE` 是**安全默认**：新增工具必须显式声明受众。迁移期曾用 `BOTH` 保证存量零改动，但唯一存量工具 `fs_link` 已显式声明 `TOOLBOX_ONLY`，因此收紧为 `NONE` 不改变现有行为（见 I38c §2 硬约束）。
 
-> 规格落地见 [I31-phase1-tool-framework-spec.md](./I31-phase1-tool-framework-spec.md) §4.2.1。
+> 规格落地见 I31-phase1-tool-framework-spec（已归档）§4.2.1。
 
 ### 3.7 决策：Shell 执行层洋葱模型
 
@@ -314,7 +314,7 @@ pub trait Tool: Send + Sync {
 | 校验层 | `validate_input` 的形状检查 + 转译 SafetyBelt 结论 | 「形状合法吗、能否自动修正」——仅 Agent 入口 |
 | 审批层 | PolicyEngine、AllowlistGate、ApprovalGate | 「现在允许吗、谁来决定」——依赖人类意图，仅 Agent 入口 |
 
-**理由**：ToolBox 不经过 Pipeline（见 §3.6 与 [I18b](I18b-tool-unified-bridge-spec.md) §2.2）。若 SafetyBelt 留在 Pipeline，ToolBox 调 `shell` 将**完全无守卫**——比「需要审批」严重得多。反之，若把 AllowlistGate 下沉到 `execute()`，用户的免审批偏好会被硬编码进工具实现，且 ToolBox 入口无人可配置。
+**理由**：ToolBox 不经过 Pipeline（见 §3.6 与 I18b（已归档）§2.2）。若 SafetyBelt 留在 Pipeline，ToolBox 调 `shell` 将**完全无守卫**——比「需要审批」严重得多。反之，若把 AllowlistGate 下沉到 `execute()`，用户的免审批偏好会被硬编码进工具实现，且 ToolBox 入口无人可配置。
 
 **`validate_input` 复用 SafetyBelt 而非另写一套**：两套命令判定必然漂移，出现「校验层放行、执行层拒绝」或更糟的反向情况。唯一判定源在 SafetyBelt，校验层只把结论翻译成 `ValidationResult`，命中时 `blocks_input_rewrite = true`。
 
@@ -401,9 +401,9 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 
 **wire 约束**：`ToolResult` 经 `protocol/dto` 转出时，新增 `Option` 字段按 DTO 规则处理——键恒在、值为 `null`，前端声明为 `T | null`；不得在 DTO 层静默丢弃。
 
-### 3.13 决策：工具输出预算——选择算法与跨轮复用
+### 3.13 决策：工具输出预算——选择算法
 
-**决策**：大结果持久化不是「超阈值就全落盘」，而是三层上限 + 按大小降序选择 + 跨轮去重。
+**决策**：大结果持久化不是「超阈值就全落盘」，而是三层上限 + 按大小降序选择。
 
 | 参数 | 取值 | 作用 |
 |---|---|---|
@@ -413,14 +413,25 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 
 **选择算法**：按序列化字符数降序排列，依次累加；累计超过 `per_round_limit_chars` 的结果才落盘。落盘后消息历史只保留 `<persisted-output path=…>` 引用 + 前 `preview_chars` 字符预览。
 
-**跨轮复用**：同一会话内对同一路径、同一行范围且文件修订号未变化的重复读取，返回「已在上文返回」语义——不回传内容，只回一句提示复用上文；文件修订号变化则复用失效，必须重读。
+**不做重复读取去重**（2026-11-09 修订）：参考实现是 OpenBitFun 的 **review read receipt**（`assembly/core/src/agentic/tools/implementations/file_read_tool.rs` 的 `already_served_result`、`assembly/core/src/agentic/tools/review_read_receipt_runtime.rs` 的 `review_read_receipts_enabled` / `file_revision`、`execution/agent-runtime/src/review_read_receipt.rs` 的 `ReviewReadReceiptStore`），它会在同一会话内对「同路径 + 同行范围 + 修订号未变」的重复读取只回一句提示、不回传内容。本项目**移除**该语义：重复 `read` 一律完整回传，读取回执只保留两个用途——`edit` / `write` 的读前置闸门与编码继承（见 I38c-read §3.1（已归档） / I38a §4-C6（已归档））。
+
+不采纳的实质理由是参考实现自带的四道前提在移植时全部丢失，去重会退化成「失败即死循环」：
+
+| 参考实现的前提 | 本项目当初的偏差 | 后果 |
+|---|---|---|
+| 仅评审场景启用（`review_read_receipts_enabled`：`deep_review_run_manifest` 或 agent_type ∈ `CodeReview` / `DeepReview` / `ReviewWorker` / `ReviewJudge`） | 闸门移除，对所有会话的 `read` 生效 | `write` / `edit` 后重读被拒，模型拿不到当前文本 |
+| 修订号含 `content_sha256`（外加 `modified_ns` / `byte_len`，且读前读后各算一次比对） | 只用「长度 + mtime」 | 等长等时戳的改写被误判未变 |
+| 按合并后的 `ranges` 判「请求区间是否被完整覆盖」 | 用 `(path, start_line, end_line)` 精确键 | 换 `limit` 绕过去重，重叠区间又不命中 |
+| 截断结果不记回执（`content_truncated` 直接 return） | 执行时立刻记回执，落盘截断发生在其后 | 回执宣称已完整回传，实际只剩 2K 预览 |
+
+结论：省下的 token 远小于一次失败编辑的代价，故整段语义不进入本项目。
 
 **取舍**：
 - 不做全局摘要压缩：不可逆且丢信息
 - 不做「所有结果一律落盘」：IO 成本高且破坏可读性
 - 不做「小结果也落盘」：落盘的价值在节省上下文，小结果没有这个收益
 
-**参考**：OpenBitFun `ToolResultStoragePolicy` + `select_tool_result_indices_for_persistence()`（按大小降序选择）；`file_read_tool` 的 `already_served` + `file_revision` 读取回执。
+**参考**：OpenBitFun `ToolResultStoragePolicy` + `select_tool_result_indices_for_persistence()`（按大小降序选择）。读取回执本身参照了 `file_read_tool.rs` 的 `already_served` 与 `review_read_receipt.rs` 的 `ReviewReadReceiptStore`，但**只取其「会话级回执」的数据结构**（`(session, path)` → 修订号 + 区间），去重语义与「修订号含 `content_sha256`」「仅评审 agent 启用」等前提均不采纳（理由见上表）。
 
 ### 3.14 决策：审批键规范化与会话级复用
 
@@ -458,7 +469,7 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 
 **顺序**：`find → validate → gateway → execute → persist`。校验先于权限评估，避免为明显非法的输入弹审批框。
 
-**只作用于 Agent 入口**：ToolBox 是用户主动调用，不经过 Pipeline，因此没有 validate 阶段，也不存在审批。它的不变量保护在 `execute()` 内部（`validate_path()` 等）。两个入口必须复用同一套判定函数，否则同一条路径可能在 Agent 侧被拒、在 ToolBox 侧放行。详见 [I18b](I18b-tool-unified-bridge-spec.md) §2.2。
+**只作用于 Agent 入口**：ToolBox 是用户主动调用，不经过 Pipeline，因此没有 validate 阶段，也不存在审批。它的不变量保护在 `execute()` 内部（`validate_path()` 等）。两个入口必须复用同一套判定函数，否则同一条路径可能在 Agent 侧被拒、在 ToolBox 侧放行。详见 I18b（已归档）§2.2。
 
 ### 3.16 决策：子 Agent 权限继承与会话作用域（P8 前置）
 
@@ -565,7 +576,7 @@ pub struct AdvisorInput {
 | 输出必须结构化 | 解析失败即 `AdvisorFailure::Parse` 并回落 `base`；不接受自然语言结论 |
 | 脱敏在构造期完成 | `resources` 由独立适配器做脱敏 + 摘要（参考 openhuman `redact_args` / `summarize_action`），不复用审批卡片的原始参数 |
 
-**与人工审批信息的层级关系**：审批卡片的信息分四级——L0（`tier` / `behavior` 注册期元数据）、L1（`intents` + `Policy::explain` 命中原因）、L2（`preview_for_approval` 量级预演）、L3（顾问结论）。P6 只做 L0–L2（[I38d §3.2.1](./I38d-agent-frontend-modes-spec.md)），顾问是 L3，**不得**因为 L3 缺失而阻塞 L0–L2 的展示。L3 的输入必须走脱敏适配器，而卡片展示用的是原始参数——两者是不同通道，禁止把卡片载荷直接喂给顾问。
+**与人工审批信息的层级关系**：审批卡片的信息分四级——L0（`tier` / `behavior` 注册期元数据）、L1（`intents` + `Policy::explain` 命中原因）、L2（`preview_for_approval` 量级预演）、L3（顾问结论）。P6 只做 L0–L2（I38d §3.2.1，已归档），顾问是 L3，**不得**因为 L3 缺失而阻塞 L0–L2 的展示。L3 的输入必须走脱敏适配器，而卡片展示用的是原始参数——两者是不同通道，禁止把卡片载荷直接喂给顾问。
 
 #### 3.17.5 成本、超时与度量
 
@@ -579,7 +590,7 @@ pub struct AdvisorInput {
 #### 3.17.6 审计、UI 与启用门禁
 
 - **审计**：`AuditOutcome` 预留 `AdvisorRelaxed` / `AdvisorEscalated` / `AdvisorAdjudicated` / `AdvisorFallback`；落库需 `permission_audit` 增列（未来 `ADD COLUMN advisor_json TEXT NULL`），符合「只允许 ADD COLUMN」的迁移纪律。
-- **UI**：AI 免审不得静默——气泡上标注「AI 判定只读，本次免审」并提供「撤销该免审」；AI 加码时标注「AI 标记为高风险」。免审**不写 grant**，只对本次调用生效。卡片规格见 [I38d §3.2](./I38d-agent-frontend-modes-spec.md)。
+- **UI**：AI 免审不得静默——气泡上标注「AI 判定只读，本次免审」并提供「撤销该免审」；AI 加码时标注「AI 标记为高风险」。免审**不写 grant**，只对本次调用生效。卡片规格见 I38d §3.2（已归档）。
 - **`Adjudicate` 的启用门禁**（三条全部满足才可讨论，缺一不可）：
   1. 存在 L4 内核级沙箱，且启动期可见地报告「边界是否就绪」（不得像 openhuman `NoopBackend` 那样静默降级）；
   2. 顾问自身只读、无执行句柄、`require_managed_sandbox` 等价约束成立；
@@ -633,7 +644,7 @@ pub struct AdvisorInput {
 - `edit` 标记 `read_only = false, destructive = false`；审批卡片必须展示 diff
 - 不采纳 codex `apply_patch` 的自定义 patch 语法——需额外解析器与格式教学成本，收益仅在批量多文件编辑场景
 
-> 工具清单、安全标记、每个工具的 JSON Schema 规格和实现见 [I38c](./I38c-os-tools-spec.md)。
+> 工具清单、安全标记、每个工具的 JSON Schema 规格和实现见 I38c（已归档）。
 > Shell 安全守卫（SafetyBelt / AllowlistGate / ApprovalGate / BareExec）见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
 
 ### 4.3 L2: MCP/外部工具
@@ -648,7 +659,7 @@ pub struct AdvisorInput {
 
 ## 5. 前端集成与 Agent 模式
 
-> ChatDelta 扩展、ToolCallBubble 五态渲染、审批交互流、AgentMode 扩展字段、内置预设、Policy 映射的完整规格见 [I38d](./I38d-agent-frontend-modes-spec.md)。
+> ChatDelta 扩展、ToolCallBubble 五态渲染、审批交互流、AgentMode 扩展字段、内置预设、Policy 映射的完整规格见 I38d（已归档）。
 > **注意**：P0 已从 `ChatDeltaPayloadDto` 删除 tool 三字段，工具事件走独立的 `agent-tool-call`，不得恢复 chat delta 工具通道。
 
 **关键决策摘要**：
@@ -793,7 +804,7 @@ src-tauri/
 | 结果双通道（§3.12） | OpenBitFun | `execution/tool-contracts/src/framework.rs` | `data` / `result_for_assistant` / `image_attachments` 三通道分离 |
 | 错误语义分类（§3.12） | codex | `tools/src/tool_executor.rs` | `FunctionCallError::RespondToModel` 与取消回传「abort」的区分 |
 | 输出预算与持久化（§3.13） | OpenBitFun | `execution/tool-contracts/src/tool_result_storage.rs` | 单工具/单轮/预览三层上限 + 按大小降序选择落盘 |
-| 读取去重回执（§3.13） | OpenBitFun | `agentic/tools/implementations/file_read_tool.rs` | `already_served` + 文件修订号失效 |
+| 读取回执（§3.13，仅闸门 + 编码） | OpenBitFun | `agentic/tools/implementations/file_read_tool.rs`（`already_served_result`）、`agentic/tools/review_read_receipt_runtime.rs`（`review_read_receipts_enabled` / `file_revision`）、`execution/agent-runtime/src/review_read_receipt.rs`（`ReviewReadReceiptStore`） | 仅参考会话级回执的数据结构与「读后修订号比对」；**不采纳**去重（`already_served`）、`content_sha256` 修订号、评审 agent 闸门、区间覆盖判定——本项目回执只用于 `edit` 读前置与编码继承 |
 | 审批缓存与键规范化（§3.14） | codex | `core/src/tools/approvals.rs`、`core/src/tools/runtimes/` | `with_cached_approval` + `ApplyPatchApprovalKey` / `UnifiedExecApprovalKey` |
 | 执行前校验（§3.15） | OpenBitFun | `execution/tool-contracts/src/framework.rs` | `ValidationResult` + `blocks_input_rewrite()` 不变量不可改写 |
 | 多表面暴露（§3.2.1，暂不采纳） | codex | `tools/src/tool_executor.rs` | `ToolExposures` bitflags 与六值 `ToolExposure` |

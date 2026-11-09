@@ -1,3 +1,4 @@
+import { isTauri as detectTauri } from "@tauri-apps/api/core";
 import * as tauriLog from "@tauri-apps/plugin-log";
 
 export enum LogLevel {
@@ -9,11 +10,10 @@ export enum LogLevel {
   NONE = 5,
 }
 
-const isTauri = "__TAURI__" in window;
 const isDev = import.meta.env.DEV;
 
 let currentLevel: LogLevel = isDev ? LogLevel.DEBUG : LogLevel.WARN;
-let consoleForwardMinLevel: LogLevel = isDev ? LogLevel.DEBUG : LogLevel.WARN;
+let consoleForwardMinLevel: LogLevel = LogLevel.INFO;
 
 const TAURI_LOG_FNS: Record<number, (message: string) => Promise<void>> = {
   [LogLevel.TRACE]: tauriLog.trace,
@@ -62,7 +62,7 @@ function formatConsoleArgs(args: unknown[]): string {
 }
 
 async function writeTauri(level: LogLevel, message: string): Promise<void> {
-  if (!isTauri) return;
+  if (!detectTauri()) return;
   const fn = TAURI_LOG_FNS[level];
   if (!fn) return;
   try {
@@ -100,7 +100,9 @@ function createLogMethod(level: LogLevel, context: string) {
     const fullMessage = `${prefix} ${msg}${dataStr}`;
 
     consoleFn(fullMessage);
-    void writeTauri(level, fullMessage);
+    if (level >= consoleForwardMinLevel) {
+      void writeTauri(level, fullMessage);
+    }
   };
 }
 
@@ -123,7 +125,7 @@ export function setConsoleForwardMinLevel(level: LogLevel): void {
 }
 
 export function bootstrapLogger(): void {
-  if (!isTauri) return;
+  if (!detectTauri()) return;
   if (
     (globalThis as Record<string, unknown>)
       .__assistant_console_forward_installed__

@@ -36,11 +36,44 @@ import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { useNotifyStore } from "../stores/notifyStore";
 import { translateKey } from "../i18n";
 
+function useMouseOnlyTooltip(): {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+} {
+  const [open, setOpen] = useState(false);
+  const [pointerType, setPointerType] = useState("mouse");
+
+  useEffect(() => {
+    const onPointer = (e: PointerEvent) => {
+      setPointerType(e.pointerType);
+      if (e.pointerType !== "mouse") setOpen(false);
+    };
+    document.addEventListener("pointermove", onPointer, true);
+    document.addEventListener("pointerdown", onPointer, true);
+    return () => {
+      document.removeEventListener("pointermove", onPointer, true);
+      document.removeEventListener("pointerdown", onPointer, true);
+    };
+  }, []);
+
+  const onOpenChange = useCallback(
+    (next: boolean) => {
+      setOpen(next && pointerType === "mouse");
+    },
+    [pointerType],
+  );
+
+  return { open: open && pointerType === "mouse", onOpenChange };
+}
+
 export const OrbPanel: React.FC = () => {
   const { expand, collapse } = useOrbExpand();
   const expandDirection = useOrbStore((s) => s.expandDirection);
   const keepExpanded = useOrbStore((s) => s.keepExpanded);
   const setKeepExpanded = useOrbStore((s) => s.setKeepExpanded);
+  const historyTip = useMouseOnlyTooltip();
+  const keepExpandedTip = useMouseOnlyTooltip();
+  const collapseTip = useMouseOnlyTooltip();
   const chat = useChatStore();
   const panelRef = useRef<HTMLDivElement>(null);
   const [messageApi, messageContextHolder] = message.useMessage({
@@ -252,6 +285,8 @@ export const OrbPanel: React.FC = () => {
           <Tooltip
             title={t("chat.orb.conversation_list")}
             mouseEnterDelay={0.5}
+            open={historyTip.open}
+            onOpenChange={historyTip.onOpenChange}
           >
             <Button
               type="text"
@@ -269,6 +304,8 @@ export const OrbPanel: React.FC = () => {
               : t("chat.orb.keep_expanded")
           }
           mouseEnterDelay={0.5}
+          open={keepExpandedTip.open}
+          onOpenChange={keepExpandedTip.onOpenChange}
         >
           <Button
             type="text"
@@ -278,7 +315,12 @@ export const OrbPanel: React.FC = () => {
             onClick={() => setKeepExpanded(!keepExpanded)}
           />
         </Tooltip>
-        <Tooltip title={t("common.actions.collapse")} mouseEnterDelay={0.5}>
+        <Tooltip
+          title={t("common.actions.collapse")}
+          mouseEnterDelay={0.5}
+          open={collapseTip.open}
+          onOpenChange={collapseTip.onOpenChange}
+        >
           <Button
             type="text"
             size="small"

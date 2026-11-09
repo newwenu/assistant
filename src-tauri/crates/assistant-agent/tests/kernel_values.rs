@@ -36,7 +36,7 @@ fn chat_limits_keep_existing_chat_behaviour() {
 fn agent_spec_field_values() {
     let spec = TurnSpec::agent();
     assert_eq!(spec.on_busy, OnBusy::Reject);
-    assert_eq!(spec.max_iterations, 12);
+    assert_eq!(spec.max_iterations, 50);
     assert!(spec.tools.is_none());
     assert_eq!(spec.ladder, LadderPolicy::Full);
     let hook_names: Vec<&str> = spec.stop_hooks.iter().map(|h| h.name()).collect();
@@ -54,13 +54,13 @@ fn agent_spec_field_values() {
 fn default_limits_match_spec_table() {
     let limits = TurnLimits::default();
     assert_eq!(limits.max_iterations, DEFAULT_MAX_ITERATIONS);
-    assert_eq!(limits.max_iterations, 12);
-    assert_eq!(limits.max_tool_calls, derived_tool_call_limit(12));
-    assert_eq!(limits.max_tool_calls, 96);
+    assert_eq!(limits.max_iterations, 50);
+    assert_eq!(limits.max_tool_calls, derived_tool_call_limit(50));
+    assert_eq!(limits.max_tool_calls, 400);
     assert_eq!(limits.turn_wall_clock, Some(DEFAULT_TURN_WALL_CLOCK));
-    assert_eq!(limits.turn_wall_clock, Some(Duration::from_secs(30 * 60)));
+    assert_eq!(limits.turn_wall_clock, Some(Duration::from_secs(60 * 60)));
     assert_eq!(limits.model_call, Some(DEFAULT_MODEL_CALL_TIMEOUT));
-    assert_eq!(limits.model_call, Some(Duration::from_secs(10 * 60)));
+    assert_eq!(limits.model_call, Some(Duration::from_secs(15 * 60)));
     assert_eq!(limits.empty_response_retries, 1);
     assert_eq!(
         limits.microcompact_keep_recent,

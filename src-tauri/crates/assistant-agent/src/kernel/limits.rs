@@ -1,8 +1,13 @@
 use std::time::Duration;
 
-pub const DEFAULT_MAX_ITERATIONS: u32 = 12;
-pub const DEFAULT_TURN_WALL_CLOCK: Duration = Duration::from_secs(30 * 60);
-pub const DEFAULT_MODEL_CALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+/// 有效迭代数上限（主 agent，工具密集任务）。取 OpenHuman orchestrator / `EXTENDED_MAX_TOOL_ITERATIONS` 的 50 档；
+/// 参考项目另有全局兜底 10 与 specialist 5–12，本项目按「主控 agent」定位取上限档。
+/// 注意：`wrap_up = true` 时最后一轮撤工具只产出结论，实际可执行工具的轮数为 `N - 1`。
+pub const DEFAULT_MAX_ITERATIONS: u32 = 50;
+/// turn 总墙钟。只做失控兜底，不兼职单调用上限（参考 OpenHuman #5766：60 min，旧值 10 min 已废弃）。
+pub const DEFAULT_TURN_WALL_CLOCK: Duration = Duration::from_secs(60 * 60);
+/// 单次模型调用墙钟，每次 provider 重试重新计时；实际取 `min(本值, turn 剩余)`（参考 OpenHuman #5766：15 min）。
+pub const DEFAULT_MODEL_CALL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 /// 压缩链路：摘要生成单次调用 30s 硬上限（沿用旧口径，不引入配置面）。
 pub const DEFAULT_COMPACTION_MODEL_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 pub const DEFAULT_EMPTY_RESPONSE_RETRIES: u32 = 1;

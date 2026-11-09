@@ -42,11 +42,14 @@
   },
   "error": {
     "conversation_not_found": "Conversation not found",
-    "conversation_busy": "The conversation is generating a reply; its mode cannot be changed right now",
+    "conversation_busy": "The conversation is generating a reply; settings cannot be changed right now",
     "provider_not_found": "Provider not found",
     "orb_window_not_found": "Orb window not found",
     "db_lock": "DB lock: %{error}",
-    "agent_mode_kind_locked": "The mode type cannot be changed; create a new mode instead"
+    "agent_mode_kind_locked": "The mode type cannot be changed; create a new mode instead",
+    "workspace_invalid": "Invalid workspace path: an existing directory is required (relative paths are not supported)",
+    "workspace_empty": "Workspace path cannot be empty; use the clear action to unbind",
+    "workspace_patch_conflict": "Setting and clearing the workspace binding at the same time is not allowed"
   },
   "agent_mode": {
     "builtin_cannot_delete": "Built-in modes cannot be deleted",

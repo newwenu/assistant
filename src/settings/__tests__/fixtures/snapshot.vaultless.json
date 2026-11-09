@@ -3,7 +3,7 @@
     "pages": 7,
     "categories": 3,
     "sections": 7,
-    "fields": 34,
+    "fields": 33,
     "routes": 0,
     "sidebar": 0,
     "confPageMap": 3
@@ -272,12 +272,6 @@
       "group": "app",
       "section": "general-main",
       "type": "number"
-    },
-    {
-      "key": "workspaceRoot",
-      "group": "app",
-      "section": "agent-main",
-      "type": "string"
     },
     {
       "key": "approvalTimeoutSecs",

@@ -1,12 +1,12 @@
 # OS Call 设计文档
 
-> **状态（2026-11-06）**：本文的 Shell 执行层设计**暂不实施**——`shell` 工具已改为暂不提供，理由与恢复条件见 [I38c §13](../store/I38c-os-tools-spec.md#13-暂不提供的工具)。本文保留为评估留档，不构成实施要求。
+> **状态（2026-11-06）**：本文的 Shell 执行层设计**暂不实施**——`shell` 工具已改为暂不提供，理由与恢复条件见 I38c §13（已归档）。本文保留为评估留档，不构成实施要求。
 
 > **本文档职责**：Shell 执行层安全架构的**权威源**——信任模型、洋葱模型、层间契约、委托约束。
 > **架构决策记录**见 [I18-agent-tool-architecture-design.md](../store/I18-agent-tool-architecture-design.md)（§3.7 洋葱模型决策、§3.7.1 守卫分层归属、§3.8 MCP 隔离边界）。
-> **实施规格**见 [I38c §13](../store/I38c-os-tools-spec.md)（`shell` 暂不提供）、[I38a](../store/I38a-tool-control-layer-spec.md)（Policy / Gateway）。
-> **ToolBox 桥接**见 [I18b-tool-unified-bridge-spec.md](../store/I18b-tool-unified-bridge-spec.md)。
-> **Tool Call 状态追踪**见 [I38d](../store/I38d-agent-frontend-modes-spec.md)。
+> **实施规格**见 I38c §13（已归档）（`shell` 暂不提供）、I38a（已归档）（Policy / Gateway）。
+> **ToolBox 桥接**见 I18b-tool-unified-bridge-spec（已归档）。
+> **Tool Call 状态追踪**见 I38d（已归档）。
 > **阶段与门禁**见 [I38-roadmap](../store/I38-agent-roadmap.md)。
 
 ---
@@ -33,7 +33,7 @@ MCP server 以独立子进程运行，但当前**不提供 cgroup / seccomp / na
 
 ### 1.3 安全模型
 
-所有层工具通过 `permission_intents()` 声明权限需求，Agent 入口由 ToolPipeline 统一收集并交由 PolicyEngine 决策（ToolBox 入口无审批，见 §2）。详见 [I38a](../store/I38a-tool-control-layer-spec.md) §2 / §4。
+所有层工具通过 `permission_intents()` 声明权限需求，Agent 入口由 ToolPipeline 统一收集并交由 PolicyEngine 决策（ToolBox 入口无审批，见 §2）。详见 I38a（已归档）§2 / §4。
 
 ---
 
@@ -68,7 +68,7 @@ ToolBox（os_tool_exec）
 
 > 这条分界线决定了洋葱栈不能整体留在 Pipeline：若整体留在 Pipeline，ToolBox 调用 shell 就会完全绕过 SafetyBelt。守卫分层归属见 §3.4。
 
-> RoundExecutor 完整循环、代际守卫、并发编排等实现规格见 [I38b](../store/I38b-agent-loop-spec.md) 与 [I38a](../store/I38a-tool-control-layer-spec.md) §4-C5。
+> RoundExecutor 完整循环、代际守卫、并发编排等实现规格见 I38b（已归档）与 I38a（已归档）§4-C5。
 
 ---
 
@@ -107,7 +107,7 @@ Shell 命令的 `open_world` 属性使其可做任何事，是 Os 层最复杂�
 | ApprovalGate | 审批层 | 未白名单命令需用户确认 | 用户可配置审批级别 | Approve/Deny |
 | BareExec | 执行层 | 实际执行 | 无 | 执行结果 |
 
-> Shell 分层栈**暂不实施**（`shell` 暂不提供，见 [I38c §13](../store/I38c-os-tools-spec.md#13-暂不提供的工具)）；分层归属理由见 §3.4，保留作将来恢复时的参考。
+> Shell 分层栈**暂不实施**（`shell` 暂不提供，见 I38c §13（已归档））；分层归属理由见 §3.4，保留作将来恢复时的参考。
 
 ### 3.2 层间契约
 
@@ -218,7 +218,7 @@ ApprovalGate 通过审批通道与用户交互，其架构属性如下：
 | 空键不命中 | 无法生成指纹（如命令解析失败）时直接走审批，不允许命中缓存 |
 | 审计记录 | 所有审批决策（含 Allow 自动放行）写入 AuditStore，只追加不可修改 |
 
-> GrantStore / AuditStore 接口规格与 `ApprovalKey` 归一规则见 [I38a](../store/I38a-tool-control-layer-spec.md) §2.6 / §2.9；设计理由见 [I18-design](../store/I18-agent-tool-architecture-design.md) §3.14。
+> GrantStore / AuditStore 接口规格与 `ApprovalKey` 归一规则见 I38a（已归档）§2.6 / §2.9；设计理由见 [I18-design](../store/I18-agent-tool-architecture-design.md) §3.14。
 
 ### 4.2 超时语义
 
@@ -248,4 +248,4 @@ ApprovalGate 通过审批通道与用户交互，其架构属性如下：
 
 子 Agent 的 `max_tool_tier` 不可超过父 Agent。若父 Agent 为 Os 层，子 Agent 不可升级到 External 层。
 
-> 委托策略的完整解析与评估规格见 [I38a](../store/I38a-tool-control-layer-spec.md) §2.3 / §2.4。
+> 委托策略的完整解析与评估规格见 I38a（已归档）§2.3 / §2.4。

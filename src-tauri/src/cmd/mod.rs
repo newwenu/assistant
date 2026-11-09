@@ -17,6 +17,7 @@ mod token_usage_record;
 mod tool;
 #[cfg(feature = "vault")]
 pub(crate) mod vault;
+mod workspace;
 
 pub use agent::*;
 pub use agent_mode::*;
@@ -36,6 +37,7 @@ pub use storage::*;
 pub use tool::*;
 #[cfg(feature = "vault")]
 pub use vault::vault_cleanup_on_exit;
+pub use workspace::*;
 
 #[cfg(not(feature = "vault"))]
 pub fn vault_cleanup_on_exit(_app: &tauri::AppHandle) {}

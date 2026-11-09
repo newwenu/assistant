@@ -942,7 +942,11 @@ async fn workspace_extension_agrees_with_the_execution_boundary() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
     let (gateway, _, _) = gateway_with(prompter);
-    let context = ToolUseContext::for_toolbox(Some(root.path().display().to_string()));
+    // 工作区结论来自权限边界，只有 Agent 链路形态才有；ToolBox 形态不产生该结论。
+    let context = ToolUseContext {
+        workspace_root: Some(root.path().display().to_string()),
+        ..Default::default()
+    };
 
     for resource in [inside.display().to_string(), outside.display().to_string()] {
         let tool = PreviewingTool::new(vec![PermissionIntent::new("edit", resource)], None);

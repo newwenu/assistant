@@ -861,6 +861,40 @@ fn startup_sweep_is_idempotent() {
 }
 
 #[test]
+fn duplicate_and_fork_do_not_carry_streaming_status() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    let mut streaming = msg("m1", "c1", "assistant", "partial", 100);
+    streaming.status = "streaming".to_string();
+    conversations::insert_message(&conn, &streaming).unwrap();
+    let mut interrupted = msg_with_parent("m2", "c1", "assistant", "cut", 200, Some("m1"), 0);
+    interrupted.status = "interrupted".to_string();
+    conversations::insert_message(&conn, &interrupted).unwrap();
+
+    let copy_id = conversations::duplicate_conversation(&conn, "c1").unwrap();
+    let copy = conversations::get_conversation_detail(&conn, &copy_id)
+        .unwrap()
+        .unwrap();
+    let copy_statuses: Vec<&str> = copy.messages.iter().map(|m| m.status.as_str()).collect();
+    assert_eq!(
+        copy_statuses,
+        vec!["completed", "interrupted"],
+        "streaming 是运行期瞬时态，拷贝后必须落为 completed；终态原样承接"
+    );
+
+    let fork_id = conversations::fork_to_new_conversation(&conn, "c1", "m2").unwrap();
+    let fork = conversations::get_conversation_detail(&conn, &fork_id)
+        .unwrap()
+        .unwrap();
+    let fork_statuses: Vec<&str> = fork.messages.iter().map(|m| m.status.as_str()).collect();
+    assert_eq!(
+        fork_statuses,
+        vec!["completed", "interrupted"],
+        "分叉同样不得承接 streaming"
+    );
+}
+
+#[test]
 fn fork_preserves_parent_chain_in_new_conversation() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();

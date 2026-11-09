@@ -649,3 +649,104 @@ async fn pipeline_source_has_no_tauri_dependency() {
         );
     }
 }
+
+/// V1 冒烟 e2e：生产注册表 → 真实 `ToolPipeline` → 真实 `os` 工具 → 真实 tempdir。
+///
+/// 只锁这条接缝：`read` / `write` 各一次，走真实注册表（含真实权限意图与审批网关）、
+/// 真实执行与真实落盘。批处理、方言、重试等分支已由组件级测试覆盖，不在此重复。
+///
+/// 读的目标用预置文件而非刚写出的文件，与本用例要锁的接缝（注册表 → 管线 → 真实 IO）保持正交。
+#[tokio::test]
+async fn production_os_tools_round_trip_through_the_pipeline() {
+    use assistant_tools::storage::InMemoryReadReceiptStore;
+    use assistant_tools::{os, ReadReceiptStore};
+
+    let dir = tempfile::tempdir().unwrap();
+    let seed = dir.path().join("seed.txt");
+    std::fs::write(&seed, "beta\n").unwrap();
+
+    let registry = Arc::new(ToolRegistry::new());
+    let receipts: Arc<dyn ReadReceiptStore> = Arc::new(InMemoryReadReceiptStore::new());
+    os::register_os_tools(&registry);
+    os::register_readonly_tools(&registry, receipts.clone());
+    os::register_write_tools(&registry, receipts);
+
+    let audit = Arc::new(InMemoryAuditStore::default());
+    let gateway = Arc::new(ToolGateway::new(
+        Arc::new(InMemoryGrantStore::default()),
+        audit.clone(),
+        Arc::new(ScriptedApprovalPrompter::new(vec![])),
+        Duration::from_secs(5),
+    ));
+    let storage = Arc::new(RecordingStorage::default());
+    let pipeline = ToolPipeline::new(registry, gateway, storage.clone());
+    let sink = InMemoryEventSink::new();
+
+    let context = ToolUseContext {
+        workspace_root: Some(dir.path().display().to_string()),
+        session_id: Some("smoke".to_string()),
+        turn_id: Some("turn-1".to_string()),
+        iteration: Some(1),
+        tool_call_id: None,
+        ..Default::default()
+    };
+
+    let outcomes = pipeline
+        .execute(
+            &[ToolCall::new(
+                "call-1",
+                "read",
+                json!({ "path": "seed.txt" }),
+            )],
+            &context,
+            &allow_all(),
+            &sink,
+        )
+        .await;
+    assert_eq!(outcomes.len(), 1);
+    assert!(outcomes[0].result.ok, "{:?}", outcomes[0].result.error);
+    assert_eq!(outcomes[0].stage, PipelineStage::Execute);
+    assert!(
+        outcomes[0].assistant_text.contains("beta"),
+        "the read tool must return the real file content: {}",
+        outcomes[0].assistant_text
+    );
+
+    let target = dir.path().join("smoke.txt");
+    let outcomes = pipeline
+        .execute(
+            &[ToolCall::new(
+                "call-2",
+                "write",
+                json!({ "path": "smoke.txt", "content": "alpha\n" }),
+            )],
+            &context,
+            &allow_all(),
+            &sink,
+        )
+        .await;
+    assert_eq!(outcomes.len(), 1);
+    assert!(outcomes[0].result.ok, "{:?}", outcomes[0].result.error);
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        "alpha\n",
+        "the write tool must hit the real file system"
+    );
+
+    // `read` 当前不声明权限意图，网关走 `intents.is_empty()` 短路、不留审计（I38 G1）；
+    // 因此这里只锁「write 走完真实网关并留下审计」，不锁条目总数，避免 G1 定稿后误伤。
+    let entries = audit.entries();
+    assert!(
+        entries.iter().any(|entry| entry.tool == "write"),
+        "the write call must pass through the real gateway audit: {entries:?}"
+    );
+    assert!(
+        entries.iter().all(|entry| entry.tool == "write"),
+        "the read call has no intents today, so it must not audit: {entries:?}"
+    );
+    assert_eq!(
+        storage.calls().len(),
+        0,
+        "small results must not be persisted"
+    );
+}

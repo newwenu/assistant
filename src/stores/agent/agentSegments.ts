@@ -3,6 +3,7 @@ import type { AgentToolCall } from "../../chat/core/chatTypes";
 import {
   applyAgentToolCall,
   cancelPendingToolCalls,
+  findToolCallOwner,
 } from "../../chat/core/toolCallView";
 import { useChatStreamStore } from "../chatStreamStore";
 
@@ -27,6 +28,8 @@ export interface AgentSegments {
   reset: (assistantMsgId: string) => void;
   /** 切回运行中的会话：真实行 id 未知，首个增量必须开新段。 */
   markUnknownSegment: () => void;
+  /** 补拉快照接管：已知「当前段就是历史里的哪一行」，把段表直接绑定到该行。 */
+  adoptSegment: (iteration: number, messageId: string) => void;
   /** 真实行 id 就绪：把占位 id 在段表里换成真实 id。 */
   renameSegment: (previousId: string, realMessageId: string) => void;
   appendDelta: (iteration: number, delta: string) => void;
@@ -127,6 +130,14 @@ export function createAgentSegments(
       pendingNewSegment = true;
     },
 
+    adoptSegment: (iteration: number, messageId: string) => {
+      segmentMessageIdByIteration.clear();
+      segmentMessageIdByIteration.set(iteration, messageId);
+      currentIteration = iteration;
+      pendingNewSegment = false;
+      useChatStreamStore.getState().setStreamingIteration(iteration);
+    },
+
     renameSegment: (previousId: string, realMessageId: string) => {
       for (const [iteration, id] of segmentMessageIdByIteration) {
         if (id === previousId) {
@@ -167,6 +178,34 @@ export function createAgentSegments(
     },
 
     applyToolCall: (iteration: number, call: AgentToolCall) => {
+      /**
+       * 恢复场景（段表未绑定该迭代）里，若历史已加载发起这条调用的行，
+       * 直接回挂到该行：否则 `resolveSegment` 会为同一次迭代再开一个空气泡，
+       * 出现「一次迭代两个气泡」的瞬时重复（审批 / 提问恢复同样走这里）。
+       */
+      if (!segmentMessageIdByIteration.has(iteration)) {
+        const owner = findToolCallOwner(get().messages, call.callId);
+        if (owner) {
+          segmentMessageIdByIteration.set(iteration, owner.id);
+          currentIteration = iteration;
+          pendingNewSegment = false;
+          set({
+            messages: get().messages.map((m) =>
+              m.id === owner.id
+                ? {
+                    ...m,
+                    toolCalls: applyAgentToolCall(
+                      m.toolCalls ?? [],
+                      call,
+                      Date.now(),
+                    ),
+                  }
+                : m,
+            ),
+          });
+          return;
+        }
+      }
       const messageId = resolveSegment(iteration);
       if (!messageId) return;
       const state = get();

@@ -1,5 +1,5 @@
 import type { Message } from "../chat/core/chatTypes";
-import { chatService } from "../services/chatService";
+import { chatService, isCompactCancelled } from "../services/chatService";
 import { createLogger } from "@/services/logger";
 import { notifyError } from "./notifyStore";
 import { useChatStreamStore } from "./chatStreamStore";
@@ -53,15 +53,19 @@ export function createCompactSlice(
       try {
         await chatService.manualCompactConversation(convId);
       } catch (e) {
+        useChatStreamStore.getState().cancelStreaming();
+        set({
+          messages: get().messages.filter((m) => m.id !== summaryMsgId),
+        });
+        if (isCompactCancelled(e)) {
+          log.info("Manual compact cancelled", e);
+          return;
+        }
         log.error("Manual compact failed", e);
         notifyError(
           "chat.errors.compactFailed.title",
           "chat.errors.compactFailed.description",
         );
-        useChatStreamStore.getState().cancelStreaming();
-        set({
-          messages: get().messages.filter((m) => m.id !== summaryMsgId),
-        });
       }
     },
 

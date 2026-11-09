@@ -102,7 +102,9 @@ pub fn persisted_reference(path: &str, content: &str) -> String {
     format!("<persisted-output path=\"{}\">\n{}", path, preview)
 }
 
-/// 跨轮去重的键：同一会话、同一路径、同一行范围。
+/// 读取回执的键：同一会话、同一路径。
+///
+/// 行范围**不参与键**：回执不承担去重，重复 `read` 每次都完整回传并覆盖刷新同一条回执。
 ///
 /// `session_id` 来自 `ToolUseContext.session_id`；ToolBox 链路为 `None`，
 /// 所有 ToolBox 调用归入同一桶，不会与 Agent 会话互相抑制。
@@ -110,11 +112,9 @@ pub fn persisted_reference(path: &str, content: &str) -> String {
 pub struct ReadReceiptKey {
     pub session_id: Option<String>,
     pub path: String,
-    pub start_line: Option<u64>,
-    pub end_line: Option<u64>,
 }
 
-/// 已返回过的读取记录。`revision` 变化即失效，必须重读。
+/// 已读取过的文件记录。`revision` 变化即失效，`edit` / `write` 据此拒绝「未读过或已过期」。
 ///
 /// `encoding` / `has_bom` 是写侧（`write` / `edit`）唯一的编码来源：
 /// 它们只消费、不重判（I38c §14.2），因此必须由 `read` 成功时写入。
@@ -140,7 +140,10 @@ impl ReadReceipt {
     }
 }
 
-/// 跨轮去重端口（P2 定义，P5 由 `read` / `edit` 使用）。
+/// 读取回执端口（P2 定义，P5 由 `read` / `edit` / `write` 使用）。
+///
+/// 只承担两件事：`edit` / `write` 的「本会话读过该文件」闸门，以及编码结论继承。
+/// **不承担去重**：`read` 不做 `lookup` 判断是否跳过回传。
 #[async_trait]
 pub trait ReadReceiptStore: Send + Sync {
     async fn lookup(&self, key: &ReadReceiptKey) -> Option<ReadReceipt>;

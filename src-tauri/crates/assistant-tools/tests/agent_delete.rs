@@ -32,8 +32,6 @@ async fn record(receipts: &Arc<dyn ReadReceiptStore>, path: &Path) -> ReadReceip
     let key = ReadReceiptKey {
         session_id: Some("session-1".to_string()),
         path: path.display().to_string(),
-        start_line: None,
-        end_line: None,
     };
     receipts
         .record(
@@ -437,7 +435,7 @@ async fn the_preview_reports_the_scale_before_approval() {
 
 #[cfg(windows)]
 #[tokio::test]
-async fn a_read_only_file_reports_the_attribute_hint() {
+async fn a_read_only_file_is_refused_without_an_unreachable_hint() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), None);
     let target = dir.path().join("locked.txt");
@@ -459,7 +457,12 @@ async fn a_read_only_file_reports_the_attribute_hint() {
     assert!(error.contains("read-only"), "unexpected message: {}", error);
     assert!(
         error.contains("attribute"),
-        "the message must tell the user what to do: {}",
+        "the message must state that delete leaves attributes untouched: {}",
+        error
+    );
+    assert!(
+        !error.contains("remove the"),
+        "no tool can change attributes, so the message must not suggest doing it: {}",
         error
     );
     assert!(target.exists(), "a refused delete must not remove the file");

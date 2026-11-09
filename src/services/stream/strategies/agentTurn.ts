@@ -61,8 +61,12 @@ export function createAgentTurnStrategy(
       state.cancelStreaming();
     },
 
-    onResume: (messageId) => {
-      if (messageId === null) segments.markUnknownSegment();
+    onResume: (messageId, iteration) => {
+      if (messageId !== null && iteration !== undefined) {
+        segments.adoptSegment(iteration, messageId);
+        return;
+      }
+      segments.markUnknownSegment();
     },
 
     onMessageIdResolved: (previousId, realMessageId) => {

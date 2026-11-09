@@ -47,7 +47,7 @@ impl TurnTasks {
     }
 
     /// `Replace`：取消旧令牌、计数 +1、返回新 turn（chat 现状）。
-    /// `Reject`：返回 `Busy`，旧令牌原样继续跑（agent）。
+    /// `Reject`：返回 `Busy`，旧令牌原样继续跑（agent）；旧代际已取消时按 `Replace` 顶替。
     pub fn begin(
         &self,
         conversation_id: &str,
@@ -57,7 +57,7 @@ impl TurnTasks {
         let token = CancellationToken::new();
         let next_counter = match map.get(conversation_id) {
             Some(existing) => {
-                if on_busy == OnBusy::Reject {
+                if on_busy == OnBusy::Reject && !existing.token.is_cancelled() {
                     return Err(Busy);
                 }
                 existing.token.cancel();
@@ -115,6 +115,15 @@ impl TurnTasks {
     pub fn is_current(&self, conversation_id: &str, turn_id: &TurnId) -> bool {
         self.current(conversation_id)
             .map(|current| current == *turn_id)
+            .unwrap_or(false)
+    }
+
+    /// 互斥判定：存在当前代际且令牌未取消。取消意图一旦置位即视为解除忙，
+    /// 无需等待收尾完成（I41 §2）。
+    pub fn is_busy(&self, conversation_id: &str) -> bool {
+        self.lock_map()
+            .get(conversation_id)
+            .map(|entry| !entry.token.is_cancelled())
             .unwrap_or(false)
     }
 

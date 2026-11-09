@@ -32,6 +32,7 @@ pub fn conv(id: &str) -> ConversationRow {
         active_branch_id: None,
         mode_id: None,
         tool_config_json: None,
+        workspace_root: String::new(),
     }
 }
 
@@ -52,6 +53,7 @@ pub fn msg(id: &str, conv_id: &str, role: &str, content: &str, ts: i64) -> Messa
         model_id: None,
         tool_call_id: None,
         is_error: false,
+        status: "completed".to_string(),
     }
 }
 
@@ -80,6 +82,7 @@ pub fn msg_with_parent(
         model_id: None,
         tool_call_id: None,
         is_error: false,
+        status: "completed".to_string(),
     }
 }
 

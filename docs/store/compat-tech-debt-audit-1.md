@@ -3,7 +3,7 @@
 > 审计日期：2026-11-04
 > 审计范围：`src-tauri/src/protocol/dto/**`、`src-tauri/crates/assistant-config/**`、`src-tauri/src/cmd/**`、`src/**` 中消费这些契约的 service / store / 类型文件
 > 审计方法：`#[serde]` / `#[ts]` 派生全量检索 + `#[command]` 签名核对 + 生成契约与手写类型逐字段对照 + 前端消费点与导出别名反查 + 失败路径推演
-> 证据基准：只采当前工作区源码。`docs/achievement3/dto-frontend-backend-sync-audit.md` 只作为历史清单追溯，不作为现状依据
+> 证据基准：只采当前工作区源码。dto-frontend-backend-sync-audit（已归档）只作为历史清单追溯，不作为现状依据
 > 引用口径：行号以本次审计时的源码为准；行号会随迭代漂移，定位优先用「文件名::类型名::字段名」锚点
 > 修订记录：
 > - 2026-11-04 复核修正 D8 证据与 C4 测试方案，补充 C7 死代码清单与复核统计口径；

@@ -404,6 +404,7 @@ impl FixtureSource {
             active_branch_id: None,
             mode_id: None,
             tool_config_json: None,
+            workspace_root: String::new(),
         };
         let messages: Vec<MessageRow> = Vec::new();
         let provider = ProviderCredential {
@@ -443,6 +444,7 @@ impl TurnInputSource for FixtureSource {
             reasoning: crate::chat_options::ReasoningOverride { level: None },
             provider: self.provider.clone(),
             attachments: self.attachments.clone(),
+            prompt_facts: crate::prompt_builder::PromptFacts::default(),
             adapter: self.adapter.clone(),
         })
     }

@@ -19,6 +19,8 @@ import { useAttachmentStore } from "../../stores/attachmentStore";
 import type { ConversationLayoutProps } from "./layoutProps";
 
 interface ConversationFrameProps extends ConversationLayoutProps {
+  /** 顶部 chrome bar 的工作区选择器（仅 `AgentLayout` 传入）。 */
+  workspaceControl?: React.ReactNode;
   /** 输入区工具栏内追加控件（`AgentLayout` 的 `ToolToolbar`）。 */
   toolToolbar?: React.ReactNode;
   /** 输入区工具栏上方追加面板（`AgentLayout` 的 `ToolConfigPanel`）。 */
@@ -73,6 +75,7 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
     onPaste,
     onAttach,
     onCompact,
+    workspaceControl,
     toolToolbar,
     toolPanel,
     belowMessages,
@@ -97,6 +100,7 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
           variant="chip"
           openRef={modelOpenRef}
         />
+        {workspaceControl}
         <Button
           type="text"
           size="small"

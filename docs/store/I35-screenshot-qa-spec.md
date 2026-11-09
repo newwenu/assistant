@@ -6,7 +6,7 @@
 | 日期 | 2026-11-03（rev4：2026-11-08） |
 | 修订 | rev4：抓屏只隐藏覆盖层宿主 `orb`，`main` 不再隐藏，底图与用户触发瞬间所见一致；rev3：取消新增 webview，改为复用 Orb 窗口做全屏覆盖层；chat 自隐藏且保留草稿；快捷键注册改为表驱动并更换默认组合；补充 Cap 参考项目 |
 | 上游调研 | 本仓库代码核对 + `references/1-ai-agent/OpenBitFun`、`references/2-desktop-orb/airi`、`references/3-screen-capture/Cap`、`references/3-screen-capture/Kiri`、`references/3-screen-capture/shiping` 对照 |
-| 关联规格 | `docs/achievement3/I2e-multimodal-attachments-spec.md`（附件链路）、`docs/achievement/I4-spec.md`（全局快捷键） |
+| 关联规格 | I2e-multimodal-attachments-spec（已归档，附件链路）、I4-spec（已归档，全局快捷键） |
 | 影响范围 | 复用 Orb 窗口（**不新增 webview**）、Rust 模块 `screenshot`、6 条命令、3 个 DTO、2 个事件、快捷键注册重构与默认值调整、临时目录与清理、i18n、设置提示；`assistant-storage` / `assistant-agent` 各一处受控清理；`Cargo.toml` 新增 `xcap` 与直接 `image` 依赖 |
 
 本文是落地规格。所有「既有事实」均已对照源码核对，标注了文件位置；**未核对的第三方库 API 单独标注为「落地时核实」**，不作为契约。

@@ -5,8 +5,12 @@ use assistant_tools::result::ToolResult;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
+/// Agent 链路形态：只填 `workspace_root`（ToolBox 形态没有边界，不能用来断言越界）。
 fn context_with_root(root: &Path) -> ToolUseContext {
-    ToolUseContext::for_toolbox(Some(root.display().to_string()))
+    ToolUseContext {
+        workspace_root: Some(root.display().to_string()),
+        ..Default::default()
+    }
 }
 
 async fn run_create(

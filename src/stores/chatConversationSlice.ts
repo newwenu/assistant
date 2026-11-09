@@ -3,7 +3,15 @@ import type {
   ContextUsage,
   ConversationToolConfig,
 } from "../chat/core/chatTypes";
-import type { Message, TruncationStrategy } from "../chat/core/chatTypes";
+import type {
+  AgentToolCall,
+  Message,
+  TruncationStrategy,
+} from "../chat/core/chatTypes";
+import {
+  applyPendingToolCalls,
+  findToolCallOwner,
+} from "../chat/core/toolCallView";
 import { chatService } from "../services/chatService";
 import { providerService } from "../services/providerService";
 import { createLogger } from "@/services/logger";
@@ -40,6 +48,8 @@ type FullState = ChatConversationSlice & {
 export interface ChatConversationSlice {
   conversations: Conversation[];
   currentConversationId: string | null;
+  /** 当前会话的工作区根；空串 = 未配置（I38h §8.1，永不出现 `null`）。 */
+  workspaceRoot: string;
   isLoadingConversations: boolean;
   activeBranchId: string | null;
   branchOperationSeq: number;
@@ -60,6 +70,11 @@ export interface ChatConversationSlice {
   ) => Promise<void>;
   updateModel: (id: string, modelId: string) => Promise<void>;
   setConversationMode: (id: string, modeId: string) => Promise<boolean>;
+  /** 写入会话工作区绑定；空串 = 清除。成功后同步本地 `workspaceRoot`。 */
+  setConversationWorkspace: (
+    id: string,
+    workspaceRoot: string,
+  ) => Promise<boolean>;
   setConversationToolConfig: (
     id: string,
     toolConfig: ConversationToolConfig,
@@ -85,6 +100,7 @@ export function createConversationSlice(
   return {
     conversations: [],
     currentConversationId: null,
+    workspaceRoot: "",
     isLoadingConversations: false,
     activeBranchId: null,
     branchOperationSeq: 0,
@@ -157,20 +173,37 @@ export function createConversationSlice(
       } else {
         useChatStreamStore.getState().resetStreaming();
       }
+      /**
+       * 挂起提问的补拉与历史加载并行：`ask_user` 的等待期在库里只有「已发起、
+       * 无结果行」，历史视图会渲染成 `missing`，不补拉就看不到可作答的卡片。
+       * 补拉失败不能拖垮整个切会话，退化为「无挂起提问」。
+       */
+      const pendingPromise = chatService.listPendingQuestions(id).catch((e) => {
+        log.error("Failed to list pending questions", e);
+        return [] as AgentToolCall[];
+      });
       try {
         const detail = await chatService.getConversationPaginated(
           id,
           MESSAGES_PAGE_SIZE,
           null,
         );
+        const pending = await pendingPromise;
         if (detail) {
+          const baseMessages = detail.messages || [];
+          const messages = applyPendingToolCalls(
+            baseMessages,
+            pending,
+            Date.now(),
+          );
           const hasBranch = !!detail.conversation?.activeBranchId;
           set({
             currentConversationId: id,
-            messages: detail.messages || [],
+            messages,
             activeBranchId: detail.conversation?.activeBranchId ?? null,
+            workspaceRoot: detail.conversation?.workspaceRoot ?? "",
             hasMoreMessages:
-              !hasBranch && (detail.messages || []).length < detail.totalCount,
+              !hasBranch && baseMessages.length < detail.totalCount,
             totalMessageCount: detail.totalCount,
             contextUsage: {
               usedTokens: 0,
@@ -179,6 +212,25 @@ export function createConversationSlice(
             isFull: detail.conversation?.isFull ?? false,
             reasoningChoice: DEFAULT_REASONING_CHOICE,
           });
+          /**
+           * 快照同时是「轮次仍在进行」的唯一证据：窗口重载后内存里的
+           * phase / turnId 为空，必须靠它恢复流式视图，否则作答后的事件会被丢弃。
+           */
+          if (orchestrator && pending.length > 0) {
+            const call = pending[0];
+            const owner = findToolCallOwner(baseMessages, call.callId);
+            if (!owner) {
+              log.warn(
+                `pending question ${call.callId} has no loaded owner message`,
+              );
+            }
+            orchestrator.onPendingToolCalls(
+              id,
+              call.turnId,
+              owner?.id ?? null,
+              call.iteration,
+            );
+          }
           useAgentModeStore
             .getState()
             .selectMode(detail.conversation?.modeId ?? "builtin-default");
@@ -199,6 +251,7 @@ export function createConversationSlice(
         set({
           currentConversationId: null,
           messages: [],
+          workspaceRoot: "",
         });
       }
     },
@@ -269,6 +322,35 @@ export function createConversationSlice(
       }
     },
 
+    setConversationWorkspace: async (id: string, workspaceRoot: string) => {
+      try {
+        await persistQueue.enqueue(async () => {
+          await chatService.patchConversation(
+            id,
+            workspaceRoot === ""
+              ? { clearWorkspaceRoot: true }
+              : { workspaceRoot },
+          );
+        });
+        if (get().currentConversationId === id) set({ workspaceRoot });
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === id ? { ...c, workspaceRoot } : c,
+          ),
+        }));
+        return true;
+      } catch (e) {
+        log.error("setConversationWorkspace failed", e);
+        notifyError(
+          "chat.errors.updateWorkspaceFailed.title",
+          "chat.errors.updateWorkspaceFailed.description",
+          undefined,
+          typeof e === "string" && e.trim() ? e : undefined,
+        );
+        return false;
+      }
+    },
+
     setConversationToolConfig: async (id, toolConfig) => {
       const previous = get().conversations.find((c) => c.id === id)?.toolConfig;
       set((state) => ({
@@ -319,6 +401,7 @@ export function createConversationSlice(
         set({
           currentConversationId: null,
           messages: [],
+          workspaceRoot: "",
         });
       }
     },
@@ -332,6 +415,7 @@ export function createConversationSlice(
         conversations: [],
         currentConversationId: null,
         messages: [],
+        workspaceRoot: "",
       });
     },
 

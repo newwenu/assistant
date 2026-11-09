@@ -42,11 +42,14 @@
   },
   "error": {
     "conversation_not_found": "对话未找到",
-    "conversation_busy": "会话正在生成回复，暂不可切换模式",
+    "conversation_busy": "会话正在生成回复，暂不可切换",
     "provider_not_found": "Provider 未找到",
     "orb_window_not_found": "Orb 窗口未找到",
     "db_lock": "数据库锁: %{error}",
-    "agent_mode_kind_locked": "模式类型不可修改，需要换类型时请新建模式"
+    "agent_mode_kind_locked": "模式类型不可修改，需要换类型时请新建模式",
+    "workspace_invalid": "工作区路径无效：需要已存在的目录（相对路径不可用）",
+    "workspace_empty": "工作区路径不能为空；清除绑定请使用清除操作",
+    "workspace_patch_conflict": "不能同时设置与清除工作区绑定"
   },
   "agent_mode": {
     "builtin_cannot_delete": "内置模式不可删除",

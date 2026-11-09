@@ -161,8 +161,6 @@ impl Tool for AgentWriteTool {
         let key = ReadReceiptKey {
             session_id: context.session_id.clone(),
             path: resolved.display().to_string(),
-            start_line: None,
-            end_line: None,
         };
 
         let receipt = if exists {
@@ -354,8 +352,8 @@ fn write_atomically(
 
     if !created && !target.is_plain_utf8() && !has_receipt {
         return Err(format!(
-            "'{}' exists but has not been read in this session; call read on the whole file \
-             before writing it as {} (transcoding an unread file can corrupt its content)",
+            "'{}' exists but has not been read in this session; read it first so its encoding is \
+             known before writing it as {} (transcoding an unread file can corrupt its content)",
             path.display(),
             target.name()
         ));
@@ -367,7 +365,7 @@ fn write_atomically(
         if transcoded > MAX_TRANSCODE_BYTES {
             return Err(format!(
                 "transcoded write is {} bytes ({} new + {} kept by append), exceeding the {} \
-                 byte limit; convert the file with an external tool, then read and edit it",
+                 byte limit for transcoded writes",
                 transcoded,
                 content.len(),
                 transcoded - content.len(),
@@ -489,7 +487,7 @@ fn read_existing(path: &Path) -> Result<Option<Vec<u8>>, String> {
 
     if metadata.is_dir() {
         return Err(format!(
-            "'{}' is a directory; use mkdir to create directories",
+            "'{}' is a directory; write targets files only",
             path.display()
         ));
     }
@@ -499,8 +497,8 @@ fn read_existing(path: &Path) -> Result<Option<Vec<u8>>, String> {
 
     std::fs::read(path).map(Some).map_err(|error| {
         format!(
-            "'{}' exists but cannot be read ({}); refusing to overwrite an unreadable file — \
-             check its permissions or close the process holding it",
+            "'{}' exists but cannot be read ({}); refusing to overwrite a file whose current \
+             content cannot be confirmed",
             path.display(),
             error
         )
@@ -509,7 +507,7 @@ fn read_existing(path: &Path) -> Result<Option<Vec<u8>>, String> {
 
 fn too_large_message(bytes: usize) -> String {
     format!(
-        "content is {} bytes, exceeding the {} byte write limit; split the file into smaller writes",
+        "content is {} bytes, exceeding the {} byte write limit",
         bytes, MAX_WRITE_BYTES
     )
 }

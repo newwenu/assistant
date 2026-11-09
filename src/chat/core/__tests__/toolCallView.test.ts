@@ -7,7 +7,9 @@ import type {
 import type { MessageDto } from "../../../types/protocol.contract";
 import {
   applyAgentToolCall,
+  applyPendingToolCalls,
   cancelPendingToolCalls,
+  findToolCallOwner,
   hasPendingToolCalls,
   toChatMessage,
   toolCallsFromHistory,
@@ -320,6 +322,7 @@ describe("历史 toolCalls 映射", () => {
       siblingCount: null,
       providerId: null,
       modelId: null,
+      status: "completed",
       toolCalls: [
         {
           callId: "call-1",
@@ -357,8 +360,104 @@ describe("历史 toolCalls 映射", () => {
       siblingCount: null,
       providerId: null,
       modelId: null,
+      status: "completed",
       toolCalls: [],
     } satisfies MessageDto;
     expect("toolCalls" in toChatMessage(dto)).toBe(false);
+  });
+});
+
+describe("补拉快照回挂（list_pending_questions）", () => {
+  function historyMessage(id: string, callIds: string[]): Message {
+    return {
+      id,
+      conversationId: "conv-1",
+      role: "assistant",
+      content: "",
+      tokens: null,
+      timestamp: 1,
+      parentId: null,
+      isPinned: false,
+      reasoning: null,
+      siblingIndex: 0,
+      siblingCount: null,
+      providerId: null,
+      modelId: null,
+      toolCalls: callIds.map((callId) => ({
+        callId,
+        name: "ask_user",
+        status: "missing" as const,
+        resultText: null,
+      })),
+    };
+  }
+
+  function pendingQuestion(callId: string, iteration = 1): AgentToolCall {
+    return call(
+      {
+        phase: "awaitingAnswer",
+        question: {
+          conversationId: "conv-1",
+          turnId: "turn-1",
+          callId,
+          timeoutMs: 60_000,
+          questions: [
+            {
+              question: "继续吗？",
+              header: "确认",
+              multiSelect: false,
+              options: [{ label: "继续", description: "" }],
+            },
+          ],
+        },
+      },
+      { callId, iteration },
+    );
+  }
+
+  it("把等待期的 missing 残卡改写为可作答的 awaiting_user", () => {
+    const messages = [historyMessage("msg-1", ["call-1"])];
+    const next = applyPendingToolCalls(
+      messages,
+      [pendingQuestion("call-1")],
+      NOW,
+    );
+    expect(next[0].toolCalls?.[0]).toMatchObject({
+      status: "awaiting_user",
+      startedAt: NOW,
+    });
+    expect(next[0].toolCalls?.[0].question?.questions[0].header).toBe("确认");
+    expect(next[0].toolCalls?.[0].question?.timeoutMs).toBe(60_000);
+  });
+
+  it("只回挂命中的 callId，其余消息保持原引用", () => {
+    const messages = [
+      historyMessage("msg-1", ["call-1"]),
+      historyMessage("msg-2", ["call-2"]),
+    ];
+    const next = applyPendingToolCalls(
+      messages,
+      [pendingQuestion("call-1")],
+      NOW,
+    );
+    expect(next[0].toolCalls?.[0].status).toBe("awaiting_user");
+    expect(next[1]).toBe(messages[1]);
+  });
+
+  it("快照为空或无命中时返回原引用", () => {
+    const messages = [historyMessage("msg-1", ["call-1"])];
+    expect(applyPendingToolCalls(messages, [], NOW)).toBe(messages);
+    expect(
+      applyPendingToolCalls(messages, [pendingQuestion("call-9")], NOW),
+    ).toBe(messages);
+  });
+
+  it("findToolCallOwner 按 callId 定位发起行", () => {
+    const messages = [
+      historyMessage("msg-1", ["call-1"]),
+      historyMessage("msg-2", ["call-2"]),
+    ];
+    expect(findToolCallOwner(messages, "call-2")?.id).toBe("msg-2");
+    expect(findToolCallOwner(messages, "call-9")).toBeUndefined();
   });
 });

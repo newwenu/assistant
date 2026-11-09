@@ -39,7 +39,7 @@ pub async fn send_agent_message(
 
     // 权限策略随本次发送的配置逐轮现算（I38d §4.6）：审批级别 → 主规则集，
     // 层级上限 → 约束层，项目级 `.assistant/permissions.json` → 额外约束层。
-    let tool_exec = policy_executor(&app, &tool_config);
+    let tool_exec = policy_executor(&app, &conversation_id, &tool_config);
 
     let mut spec = TurnSpec::agent();
     spec.tools = Some(tools);
@@ -50,16 +50,27 @@ pub async fn send_agent_message(
 /// 不把策略写回全局单例，因此改配置后下一轮即生效。
 fn policy_executor(
     app: &AppHandle,
+    conversation_id: &str,
     tool_config: &ConversationToolConfigDto,
 ) -> Arc<dyn assistant_agent::agent::round_executor::ToolExecutionPort> {
     let base = app.state::<Arc<PipelineToolExecution>>().inner().clone();
-    let policy = policy_for_tool_config(tool_config, workspace_root().as_deref());
+    let policy =
+        policy_for_tool_config(tool_config, workspace_root(app, conversation_id).as_deref());
     Arc::new(base.with_policy(policy))
 }
 
-/// 工作区根目录：与执行期同源（`AppConf`），保证项目级权限文件定位一致。
-fn workspace_root() -> Option<String> {
-    crate::setup::workspace_root_from_conf()
+/// 工作区根目录：与执行期同源（`tool_setup::resolve_workspace`），
+/// 保证项目级 `.assistant/permissions.json` 与工具边界锚在同一目录（I38h §4 #4）。
+fn workspace_root(app: &AppHandle, conversation_id: &str) -> Option<String> {
+    let state = app.state::<crate::setup::DbState>();
+    let resolved = match state.0.lock() {
+        Ok(conn) => crate::tool_setup::resolve_workspace(&conn, conversation_id),
+        Err(e) => {
+            log::warn!("Failed to lock db for workspace resolve: {e}");
+            None
+        }
+    };
+    resolved
 }
 
 #[command]

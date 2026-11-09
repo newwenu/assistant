@@ -24,6 +24,7 @@ fn sample_conversation_row() -> ConversationRow {
         active_branch_id: None,
         mode_id: None,
         tool_config_json: None,
+        workspace_root: String::new(),
     }
 }
 
@@ -44,6 +45,7 @@ fn sample_message_row() -> MessageRow {
         model_id: None,
         tool_call_id: None,
         is_error: false,
+        status: "completed".to_string(),
     }
 }
 

@@ -1,4 +1,4 @@
-use log::debug;
+use log::{debug, log_enabled, trace, Level};
 use serde_json::Value;
 
 pub(crate) fn redact_api_key(url: &str) -> String {
@@ -43,16 +43,30 @@ pub(crate) fn log_request(url: &str, body: &Value, attempt: u32) {
     );
 }
 
+/// 按字节上限截断字符串，边界回退到最近的字符边界，避免多字节字符被切断。
+pub(crate) fn truncate_utf8(data: &str, max_bytes: usize) -> String {
+    if data.len() <= max_bytes {
+        return data.to_string();
+    }
+    let end = data
+        .char_indices()
+        .take_while(|(i, _)| *i < max_bytes)
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(0);
+    format!("{}...(truncated {} bytes)", &data[..end], data.len() - end)
+}
+
 pub(crate) fn log_response_chunk(attempt: u32, chunk_index: u32, data: &str) {
-    let preview = if data.len() > 200 {
-        format!("{}...(truncated {} bytes)", &data[..200], data.len() - 200)
-    } else {
-        data.to_string()
-    };
-    debug!(
-        "[trace] response attempt={} chunk={} data={}",
-        attempt, chunk_index, preview,
-    );
+    if log_enabled!(Level::Trace) {
+        let preview = truncate_utf8(data, 200);
+        trace!(
+            "[trace] response attempt={} chunk={} data={}",
+            attempt,
+            chunk_index,
+            preview,
+        );
+    }
 }
 
 pub(crate) fn log_error(attempt: u32, error: &str) {
@@ -97,5 +111,26 @@ mod tests {
         let result = redact_json_api_key(&body);
         assert!(result.get("api_key").is_none());
         assert!(result.get("model").is_some());
+    }
+
+    #[test]
+    fn truncate_utf8_keeps_short_input_intact() {
+        assert_eq!(truncate_utf8("abc", 200), "abc");
+        assert_eq!(truncate_utf8("中文", 200), "中文");
+    }
+
+    #[test]
+    fn truncate_utf8_never_splits_multibyte_char() {
+        let data = "中文中文中文";
+        let result = truncate_utf8(data, 7);
+        assert!(result.starts_with("中文中"), "result: {result}");
+        assert!(result.ends_with("(truncated 9 bytes)"), "result: {result}");
+    }
+
+    #[test]
+    fn truncate_utf8_handles_boundary_at_exact_char_end() {
+        let data = "中文中文";
+        let result = truncate_utf8(data, 6);
+        assert_eq!(result, "中文...(truncated 6 bytes)");
     }
 }

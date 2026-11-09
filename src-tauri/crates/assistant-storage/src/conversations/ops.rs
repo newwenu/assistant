@@ -9,12 +9,22 @@ use crate::error::StorageError;
 
 pub const COPY_TITLE_SOURCE: &str = "copy";
 
+/// 复制 / 分叉会话时消息状态的承接：`streaming` 是运行期瞬时态，拷贝后不可能继续流式，
+/// 一律落为 `completed`；其余终态（含 `interrupted` / `failed`）原样承接。
+fn carried_status(status: &str) -> String {
+    if status == "streaming" {
+        "completed".to_string()
+    } else {
+        status.to_string()
+    }
+}
+
 pub fn search_conversations(
     conn: &Connection,
     query: &str,
 ) -> Result<Vec<ConversationRow>, String> {
     let pattern = format!("%{}%", query);
-    let sql = "SELECT DISTINCT c.id, c.title, c.title_source, c.provider_id, c.model_id, c.system_prompt, c.is_pinned, c.sort_order, c.generation, c.created_at, c.updated_at, c.is_full, c.active_branch_id, c.mode_id, c.tool_config_json \
+    let sql = "SELECT DISTINCT c.id, c.title, c.title_source, c.provider_id, c.model_id, c.system_prompt, c.is_pinned, c.sort_order, c.generation, c.created_at, c.updated_at, c.is_full, c.active_branch_id, c.mode_id, c.tool_config_json, c.workspace_root \
          FROM conversations c \
          LEFT JOIN messages m ON m.conversation_id = c.id \
          WHERE c.title LIKE ?1 OR m.content LIKE ?1 \
@@ -130,6 +140,7 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Sto
         active_branch_id: None,
         mode_id: detail.conversation.mode_id.clone(),
         tool_config_json: detail.conversation.tool_config_json.clone(),
+        workspace_root: detail.conversation.workspace_root.clone(),
     };
     insert_conversation(conn, &new_conv)?;
 
@@ -154,6 +165,7 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Sto
             model_id: msg.model_id.clone(),
             tool_call_id: msg.tool_call_id.clone(),
             is_error: msg.is_error,
+            status: carried_status(&msg.status),
         };
         insert_message(conn, &new_msg)?;
     }
@@ -247,6 +259,7 @@ pub fn fork_to_new_conversation(
         active_branch_id: None,
         mode_id: source_conv.mode_id.clone(),
         tool_config_json: source_conv.tool_config_json.clone(),
+        workspace_root: source_conv.workspace_root.clone(),
     };
     insert_conversation(conn, &new_conv)?;
 
@@ -275,6 +288,7 @@ pub fn fork_to_new_conversation(
             model_id: msg.model_id.clone(),
             tool_call_id: msg.tool_call_id.clone(),
             is_error: msg.is_error,
+            status: carried_status(&msg.status),
         };
         insert_message(conn, &new_msg)?;
     }

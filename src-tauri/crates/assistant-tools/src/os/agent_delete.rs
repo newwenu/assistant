@@ -282,7 +282,7 @@ fn is_readonly(metadata: &std::fs::Metadata) -> bool {
 
 fn readonly_message(target: &Path) -> String {
     format!(
-        "'{}' is read-only; remove the read-only attribute first (delete never changes attributes)",
+        "'{}' is read-only; delete never changes file attributes, so this target cannot be removed",
         target.display()
     )
 }
@@ -536,10 +536,6 @@ fn describe_failure(target: &Path, error: &std::io::Error, noun: &str) -> String
     } else {
         message
             .push_str("; the target no longer exists, so the deletion completed before the error");
-    }
-    #[cfg(windows)]
-    if error.kind() == ErrorKind::PermissionDenied {
-        message.push_str("; if the target is read-only, remove the read-only attribute first");
     }
     message
 }

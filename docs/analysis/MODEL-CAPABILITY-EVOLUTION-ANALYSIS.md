@@ -1,7 +1,7 @@
 # 模型能力描述与演进兼容性分析
 
 > 日期：2026-11-01
-> 关联：`docs/ARCHITECTURE.md` · `docs/store/dto-frontend-backend-sync-audit.md` · `docs/store/I29-token-usage-analysis.md`
+> 关联：`docs/ARCHITECTURE.md` · dto-frontend-backend-sync-audit（已归档） · I29-token-usage-analysis（已归档）
 > 范围：models.dev 目录 → 能力判定 → 请求构造 → 流协议 → 持久化 → 前端投影
 > 性质：**前瞻分析**。讨论能力描述的结构形态与演进兼容性，不描述修复方案，不跟踪代码进度。
 > 阅读约定：结论部分（§1、§3–§8）讨论的是结构，不随代码修复失效；基线快照（§2）是某一时刻的结构证据，修复后**不再更新**，不构成待办清单。

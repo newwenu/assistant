@@ -143,9 +143,7 @@ impl PendingQuestionRegistry {
                 answers.len()
             ));
         }
-        if let Err(error) = validate_answer_semantics(&entry.question.questions, &answers) {
-            return Err(error);
-        }
+        validate_answer_semantics(&entry.question.questions, &answers)?;
         match pending.remove(call_id) {
             Some(entry) => entry
                 .sender

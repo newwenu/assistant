@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use crate::agent::tool_event::ToolEvent;
 use crate::chat_options::ReasoningOverride;
+use crate::prompt_builder::PromptFacts;
 
 use super::outcome::TurnStatus;
 use super::phase::TurnPhase;
@@ -169,6 +170,8 @@ pub struct TurnInput {
     pub provider: ProviderCredential,
     /// 附件读盘句柄，同样由端口给出。
     pub attachments: Arc<AttachmentStore>,
+    /// 环境事实（I38d §4.9.1）：只承载取值，渲染归 `prompt_builder`，内核不读配置。
+    pub prompt_facts: PromptFacts,
     /// provider 适配器由输入端口构造，内核只消费不构造（H1）：
     /// 生产由 `create_provider_adapter` 给出，L1 用例注入脚本化适配器。
     pub adapter: Arc<dyn BaseProviderAdapter>,

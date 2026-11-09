@@ -389,9 +389,9 @@ fn base_directory(path_input: Option<&str>, context: &ToolUseContext) -> Result<
     match path_input {
         Some(input) => path::resolve(input, context),
         None => {
-            let root = context.workspace_root.as_deref().ok_or_else(|| {
-                "'path' is required when the context has no workspace_root; pass an explicit \
-                 directory"
+            let root = path::resolution_base(context).ok_or_else(|| {
+                "'path' is required when the context has no workspace_root or resolve_base; pass \
+                 an explicit directory"
                     .to_string()
             })?;
             path::resolve(root, context)

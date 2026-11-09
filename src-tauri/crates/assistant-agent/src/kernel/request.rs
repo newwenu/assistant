@@ -9,7 +9,7 @@ use assistant_storage::providers::ProviderRow;
 
 use crate::chat_options::{build_chat_options, DEFAULT_MAX_TOKENS};
 use crate::multimodal::{self, ProjectionPurpose};
-use crate::prompt_builder::{self, AgentKind};
+use crate::prompt_builder::{self, AgentKind, PromptFacts};
 use crate::request_projection;
 
 use super::ports::TurnInput;
@@ -63,10 +63,17 @@ pub async fn build(
     let model_id = detail.conversation.model_id.clone();
     let mode: Option<&AgentModeRow> = input.mode.as_ref();
 
-    let system_prompt = mode.map(|m| m.prompt.as_str()).unwrap_or("");
     let kind = mode
         .map(|m| AgentKind::from_mode_kind(&m.kind))
         .unwrap_or_default();
+    // 环境事实只对 agent 链路可见（I38d §4.9.1）：chat 会话没有工具，路径事实无用且徒增常驻 token。
+    let facts = if kind.supports_tool_call() {
+        &input.prompt_facts
+    } else {
+        &prompt_builder::NO_FACTS
+    };
+    let system_prompt =
+        prompt_builder::compose_system_prompt(mode.map(|m| m.prompt.as_str()).unwrap_or(""), facts);
     let context_window_tokens =
         types::resolve_context_window_from_stored(&model_id, &provider_row.models_json);
     let tools = match tools {
@@ -83,7 +90,7 @@ pub async fn build(
     let offload_budget = offload_budget_of(context_window_tokens, options.max_tokens);
     let chat_messages = project_chat_messages(
         detail,
-        system_prompt,
+        &system_prompt,
         provider_row,
         &model_id,
         &input.attachments,
@@ -181,16 +188,17 @@ fn resolve_native_pdf_support(provider_row: &ProviderRow, model_id: &str) -> boo
 }
 
 /// 分支零记录时的占用投影：只读，不构造 adapter、不发起请求、不落库。
+///
+/// `system_prompt` / `facts` 必须与 `build()` 同源（`mode.prompt` + 同一环境事实），
+/// 否则「占用展示」与实际出站请求看到的系统前缀不同（I38d §4.9.1 / A29）。
 pub async fn estimate_branch_tokens(
     detail: &ConversationDetail,
+    system_prompt: &str,
+    facts: &PromptFacts,
     provider_row: &ProviderRow,
     attachment_store: &AttachmentStore,
 ) -> usize {
-    let system_prompt = detail
-        .conversation
-        .system_prompt
-        .clone()
-        .unwrap_or_default();
+    let system_prompt = prompt_builder::compose_system_prompt(system_prompt, facts);
     let model_id = detail.conversation.model_id.clone();
     let context_window_tokens =
         types::resolve_context_window_from_stored(&model_id, &provider_row.models_json);

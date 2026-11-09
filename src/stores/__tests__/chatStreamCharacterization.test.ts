@@ -1,29 +1,36 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("../../services/chatService", () => ({
-  chatService: {
-    listConversations: vi.fn(() => Promise.resolve([])),
-    listProviders: vi.fn(() => Promise.resolve([])),
-    createConversation: vi.fn(() => Promise.resolve("conv-1")),
-    getConversationPaginated: vi.fn(() => Promise.resolve(null)),
-    getConversationTokenUsage: vi.fn(() => Promise.resolve(null)),
-    deleteConversation: vi.fn(() => Promise.resolve()),
-    renameConversation: vi.fn(() => Promise.resolve()),
-    updateConversationModel: vi.fn(() => Promise.resolve()),
-    sendChatMessage: vi.fn(() => Promise.resolve()),
-    cancelChat: vi.fn(() => Promise.resolve()),
-    incrementGeneration: vi.fn(() => Promise.resolve()),
-    deleteMessagePersist: vi.fn(() => Promise.resolve()),
-    editMessage: vi.fn(() => Promise.resolve()),
-    manualCompactConversation: vi.fn(() => Promise.resolve()),
-    unlockConversation: vi.fn(() => Promise.resolve()),
-    toggleConversationPin: vi.fn(() => Promise.resolve()),
-    duplicateConversation: vi.fn(() => Promise.resolve()),
-    batchDeleteConversations: vi.fn(() => Promise.resolve()),
-    purgeConversations: vi.fn(() => Promise.resolve()),
-    switchBranch: vi.fn(() => Promise.resolve()),
-  },
-}));
+vi.mock("../../services/chatService", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../services/chatService")
+  >("../../services/chatService");
+  return {
+    isCompactCancelled: actual.isCompactCancelled,
+    chatService: {
+      listConversations: vi.fn(() => Promise.resolve([])),
+      listProviders: vi.fn(() => Promise.resolve([])),
+      createConversation: vi.fn(() => Promise.resolve("conv-1")),
+      getConversationPaginated: vi.fn(() => Promise.resolve(null)),
+      listPendingQuestions: vi.fn(() => Promise.resolve([])),
+      getConversationTokenUsage: vi.fn(() => Promise.resolve(null)),
+      deleteConversation: vi.fn(() => Promise.resolve()),
+      renameConversation: vi.fn(() => Promise.resolve()),
+      updateConversationModel: vi.fn(() => Promise.resolve()),
+      sendChatMessage: vi.fn(() => Promise.resolve()),
+      cancelChat: vi.fn(() => Promise.resolve()),
+      incrementGeneration: vi.fn(() => Promise.resolve()),
+      deleteMessagePersist: vi.fn(() => Promise.resolve()),
+      editMessage: vi.fn(() => Promise.resolve()),
+      manualCompactConversation: vi.fn(() => Promise.resolve()),
+      unlockConversation: vi.fn(() => Promise.resolve()),
+      toggleConversationPin: vi.fn(() => Promise.resolve()),
+      duplicateConversation: vi.fn(() => Promise.resolve()),
+      batchDeleteConversations: vi.fn(() => Promise.resolve()),
+      purgeConversations: vi.fn(() => Promise.resolve()),
+      switchBranch: vi.fn(() => Promise.resolve()),
+    },
+  };
+});
 
 vi.mock("../../services/providerService", () => ({
   providerService: {
@@ -80,6 +87,8 @@ vi.mock("../../utils/persistQueue", () => ({
 
 import { useChatStore } from "../chatStore";
 import { useChatStreamStore } from "../chatStreamStore";
+import { chatService } from "../../services/chatService";
+import { notifyError } from "../notifyStore";
 
 describe("chatStreamStore behavior equivalence (post-integration)", () => {
   beforeEach(() => {
@@ -303,6 +312,41 @@ describe("chatStreamStore behavior equivalence (post-integration)", () => {
       expect(s.streamingMessageId).toBeNull();
       expect(s.activeAttemptId).toBeNull();
       expect(s.isReasoningStreaming).toBe(false);
+    });
+  });
+
+  describe("manualCompact — 运行期取消 / 失败分支（I41 §1.2）", () => {
+    beforeEach(() => {
+      vi.mocked(chatService.manualCompactConversation).mockReset();
+      vi.mocked(notifyError).mockReset();
+      useChatStore.setState({
+        currentConversationId: "conv-1",
+        messages: [],
+      });
+    });
+
+    it("取消：结束流式、移除临时摘要气泡，且不提示失败", async () => {
+      vi.mocked(chatService.manualCompactConversation).mockRejectedValueOnce(
+        "Compaction cancelled",
+      );
+
+      await useChatStore.getState().manualCompact();
+
+      expect(useChatStore.getState().messages).toHaveLength(0);
+      expect(useChatStreamStore.getState().isStreaming).toBe(false);
+      expect(notifyError).not.toHaveBeenCalled();
+    });
+
+    it("失败：移除临时气泡并提示失败", async () => {
+      vi.mocked(chatService.manualCompactConversation).mockRejectedValueOnce(
+        "Compaction failed",
+      );
+
+      await useChatStore.getState().manualCompact();
+
+      expect(useChatStore.getState().messages).toHaveLength(0);
+      expect(useChatStreamStore.getState().isStreaming).toBe(false);
+      expect(notifyError).toHaveBeenCalledTimes(1);
     });
   });
 });

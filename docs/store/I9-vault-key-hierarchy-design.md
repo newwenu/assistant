@@ -3,7 +3,7 @@
 > 状态：设计文档（2026-10-28 修订）
 > **实施状态：未开始**（从 §8 的 P0-1 起）
 > 取代：本文早期版本（v2 keyslot + 本地/同步双槽方案，已废弃，理由见 [附录 B](#附录-b被否决的两个方案)）
-> 关联：`I9-vault-password-model-comparison.md`（横向对比基线）；`docs/achievement2/I9-vault-spec-1-foundation.md`、`docs/achievement2/I9-vault-spec-5-ssh-and-recovery.md`（已归档，仅作历史参照）
+> 关联：`I9-vault-password-model-comparison.md`（横向对比基线）；I9-vault-spec-1-foundation、I9-vault-spec-5-ssh-and-recovery（已归档，仅作历史参照）
 > 范围：密钥派生、密钥层次、文件布局、改密/轮换/吊销语义、恢复通道权限半径。不含 UI 视觉、同步协议细节、条目字段加密格式。
 > **已确认前提（2026-11-01）**：①**不做 v1 → v2 迁移**——项目未投入生产、无存量用户，旧库一律拒绝并提示重置（§5）；②**同步尚未启用**——本期不设计 `.vault-meta` 的跨设备导出格式（§6.2、§10 D11）。
 > 路径约定：文中所有路径均为**仓库相对路径**。

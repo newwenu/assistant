@@ -30,6 +30,7 @@ fn fixture_input(conversation_id: &str, adapter: Arc<dyn BaseProviderAdapter>) -
         active_branch_id: None,
         mode_id: None,
         tool_config_json: None,
+        workspace_root: String::new(),
     };
     let messages = vec![MessageRow {
         id: "user-1".to_string(),
@@ -47,6 +48,7 @@ fn fixture_input(conversation_id: &str, adapter: Arc<dyn BaseProviderAdapter>) -
         model_id: None,
         tool_call_id: None,
         is_error: false,
+        status: "completed".to_string(),
     }];
     let provider = assistant_agent::kernel::ProviderCredential {
         row: ProviderRow {

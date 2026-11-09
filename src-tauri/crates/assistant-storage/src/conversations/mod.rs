@@ -8,9 +8,9 @@ pub mod msg_ops;
 pub mod ops;
 pub mod tree_ops;
 
-const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at, is_full, active_branch_id, mode_id, tool_config_json";
+const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at, is_full, active_branch_id, mode_id, tool_config_json, workspace_root";
 const MSG_SELECT: &str =
-    "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index, provider_id, model_id, tool_call_id, is_error";
+    "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index, provider_id, model_id, tool_call_id, is_error, status";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConversationRow {
@@ -29,6 +29,7 @@ pub struct ConversationRow {
     pub active_branch_id: Option<String>,
     pub mode_id: Option<String>,
     pub tool_config_json: Option<String>,
+    pub workspace_root: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -48,6 +49,7 @@ pub struct MessageRow {
     pub model_id: Option<String>,
     pub tool_call_id: Option<String>,
     pub is_error: bool,
+    pub status: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -73,6 +75,7 @@ fn read_conv_row(row: &rusqlite::Row) -> rusqlite::Result<ConversationRow> {
         active_branch_id: row.get(12)?,
         mode_id: row.get(13)?,
         tool_config_json: row.get(14)?,
+        workspace_root: row.get(15)?,
     })
 }
 
@@ -93,6 +96,7 @@ fn read_msg_row(row: &rusqlite::Row) -> rusqlite::Result<MessageRow> {
         model_id: row.get("model_id")?,
         tool_call_id: row.get("tool_call_id")?,
         is_error: row.get::<_, i64>("is_error")? != 0,
+        status: row.get("status")?,
     })
 }
 

@@ -68,8 +68,15 @@ export interface ToolCallView {
   confirmationWaitMs?: number | null;
 }
 
-/** 线格式 Message；wire 的 `toolCalls` 由 `toChatMessage` 转为前端视图，`error` 为前端本地状态。 */
-export type Message = Omit<MessageDto, "toolCalls"> & {
+/** 消息终态（I41 §1）：取消落 `interrupted`，不再用 `error` 承载取消语义。 */
+export type MessageStatus = MessageDto["status"];
+
+/**
+ * 线格式 Message；wire 的 `toolCalls` 由 `toChatMessage` 转为前端视图，`error` 为前端本地状态。
+ * `status` 本地放宽为可选：乐观占位消息（尚未落库）没有终态。
+ */
+export type Message = Omit<MessageDto, "toolCalls" | "status"> & {
+  status?: MessageStatus;
   error?: ChatError | null;
   toolCalls?: ToolCallView[];
 };

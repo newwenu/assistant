@@ -30,6 +30,45 @@ impl AgentKind {
     }
 }
 
+/// 环境事实：随系统提示词下发、不落库、每轮重算（I38d §4.9.1）。
+///
+/// 取值由宿主侧给出（唯一来源 `tool_setup::workspace_root_from_conf()`），
+/// 渲染格式归本 crate，保证发送路径与占用估算看到同一句话。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PromptFacts {
+    /// 工作区根目录；`None` 表示未配置或配置非法。
+    pub working_directory: Option<String>,
+}
+
+/// 无事实：chat 链路与未配置工作区共用，使「不注入」成为显式取值而非隐式缺省。
+pub const NO_FACTS: PromptFacts = PromptFacts {
+    working_directory: None,
+};
+
+impl PromptFacts {
+    /// 渲染为系统提示词的一行；空值渲染为 `None`（整行不出现，不写占位符）。
+    pub fn render(&self) -> Option<String> {
+        self.working_directory
+            .as_deref()
+            .filter(|path| !path.is_empty())
+            .map(|path| format!("Working directory: {path}"))
+    }
+}
+
+/// 拼装最终系统提示词：`mode.prompt` 在前，事实行在后，`\n\n` 分隔。
+///
+/// 两者皆空时返回空串，`prepare_messages` 据此不插系统消息（与注入前逐字节相同）。
+pub fn compose_system_prompt(system_prompt: &str, facts: &PromptFacts) -> String {
+    let Some(fact) = facts.render() else {
+        return system_prompt.to_string();
+    };
+    if system_prompt.is_empty() {
+        fact
+    } else {
+        format!("{system_prompt}\n\n{fact}")
+    }
+}
+
 pub fn prepare_messages(
     detail: &ConversationDetail,
     system_prompt: &str,

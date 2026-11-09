@@ -2,11 +2,21 @@ use std::sync::Arc;
 
 use assistant_agent::chat_options::ReasoningOverride;
 use assistant_agent::kernel::{InputError, ProviderCredential, TurnInput, TurnInputSource};
+use assistant_agent::prompt_builder::PromptFacts;
 use assistant_storage::agent_modes;
 use assistant_storage::attachment_store::AttachmentStore;
 use assistant_storage::{conversations, providers};
 use async_trait::async_trait;
 use tauri::Manager;
+
+/// 环境事实的唯一取值点：与工具执行、占用估算、策略加载共用
+/// [`crate::tool_setup::resolve_workspace`]，保证「提示词说的」与「工具用的」同源
+/// （I38h §4 #2）。
+fn prompt_facts(conn: &rusqlite::Connection, conversation_id: &str) -> PromptFacts {
+    PromptFacts {
+        working_directory: crate::tool_setup::resolve_workspace(conn, conversation_id),
+    }
+}
 
 /// 一次 turn 的发送参数：mode 选择与推理强度由宿主命令给出，内核不感知来源。
 pub struct TauriInputSource {
@@ -75,6 +85,7 @@ impl TurnInputSource for TauriInputSource {
             .with_conn(|conn| providers::get_provider_by_id(conn, &provider_id))?
             .ok_or_else(|| InputError::NotFound(provider_id.clone()))?;
         let api_key = self.decrypt_key(&row)?;
+        let prompt_facts = self.with_conn(|conn| Ok(prompt_facts(conn, conversation_id)))?;
         // 适配器构造上移到宿主侧：内核只消费 `TurnInput.adapter`（H1）。
         let adapter: Arc<dyn assistant_providers::base::BaseProviderAdapter> =
             Arc::from(assistant_providers::base::create_provider_adapter(
@@ -87,6 +98,7 @@ impl TurnInputSource for TauriInputSource {
             reasoning: self.reasoning.clone(),
             provider: ProviderCredential { row, api_key },
             attachments: self.attachments.clone(),
+            prompt_facts,
             adapter,
         })
     }

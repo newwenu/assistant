@@ -96,8 +96,11 @@ impl PipelineEventSink for ObserverPipelineSink<'_> {
 /// 分批、并行、落盘、事件发射全部由 `ToolPipeline::execute` 内部完成，
 /// 本适配器**不得**重复调用 `partition_tool_batches` / `select_persist_targets`。
 ///
-/// 工作区根目录的取值来源：每次执行重新求值，改设置后下一轮立即生效（I38d §4.9）。
-pub type WorkspaceRootSource = Arc<dyn Fn() -> Option<String> + Send + Sync>;
+/// 工作区根目录的取值来源：按会话 id 每次执行重新求值（I38h §4 #1）。
+///
+/// 入参是 `conversation_id` 而不是空参——无参会让实现退回「全局取值」的老路，
+/// 而工作区是会话级绑定。
+pub type WorkspaceRootSource = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
 pub struct PipelineToolExecution {
     pipeline: Arc<ToolPipeline>,
@@ -112,7 +115,11 @@ impl PipelineToolExecution {
         waits: ApprovalWaitRegistry,
         workspace_root: Option<String>,
     ) -> Self {
-        Self::with_workspace_source(pipeline, waits, Arc::new(move || workspace_root.clone()))
+        Self::with_workspace_source(
+            pipeline,
+            waits,
+            Arc::new(move |_: &str| workspace_root.clone()),
+        )
     }
 
     pub fn with_workspace_source(
@@ -170,12 +177,15 @@ impl ToolExecutionPort for PipelineToolExecution {
 
         // 每次执行现构造：`workspace_root` / `session_id` 是会话级信息，
         // `tool_call_id` 由 Pipeline 在每次调用内部逐条填充。
+        // Agent 链路只填 `workspace_root`：它兼作权限边界，同时经 `resolution_base`
+        // 的回退作为相对路径基准。不额外填 `resolve_base`，避免出现「有基准无边界」的上下文。
         let context = ToolUseContext {
-            workspace_root: (self.workspace_root)(),
+            workspace_root: (self.workspace_root)(ctx.conversation_id),
             session_id: Some(ctx.conversation_id.to_string()),
             turn_id: Some(ctx.turn_id.to_string()),
             iteration: Some(ctx.iteration),
             tool_call_id: None,
+            ..Default::default()
         };
         let policy = self.policy.as_ref();
 

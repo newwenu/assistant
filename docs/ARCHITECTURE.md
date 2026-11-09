@@ -121,7 +121,7 @@ Orb 是 AI 交互核心——桌面常驻透明小球，展开后为 AI 对话�
 |------|------|
 | **自定义** | 用户自定义 system_prompt / temperature / max_tokens / model；创建时二选一 `chat` / `agent`，编辑时锁定类型；`agent` 形态可装配工具 |
 
-> `builtin-quick` / `builtin-deep` 已下线；旧 `kind` 值（`default` / `quick` / `deep` / `custom`）只作兼容标签，一律归 chat 链路。同一会话内可切换 chat / agent：每次发送按会话当前 `modeId` 的 `kind` 选路（默认 chat），turn 进行中禁止切换。工具装配、审批与提问交互见 [I38d spec](./store/I38d-agent-frontend-modes-spec.md)，工具控制层见 [I38a spec](./store/I38a-tool-control-layer-spec.md)，阶段状态见 [I38 roadmap](./store/I38-agent-roadmap.md)。
+> `builtin-quick` / `builtin-deep` 已下线；旧 `kind` 值（`default` / `quick` / `deep` / `custom`）只作兼容标签，一律归 chat 链路。同一会话内可切换 chat / agent：每次发送按会话当前 `modeId` 的 `kind` 选路（默认 chat），turn 进行中禁止切换。工具装配、审批与提问交互见 I38d spec（已归档），工具控制层见 I38a spec（已归档），阶段状态见 [I38 roadmap](./store/I38-agent-roadmap.md)。
 
 > 原 Prompt 模板（代码解释/文本摘要/续写/头脑风暴）不再内置，用户可自行创建自定义模式。I6 实现。
 
@@ -185,7 +185,7 @@ interface ToolDefinition {
 
 ### 4.3 设置
 
-- **通用设置**：语言（zh-CN / en-US）/ 开机自启 / 关闭到托盘 / 置顶主窗口 / 上下文压缩阈值与模型 / **Agent 工具**（工作区根目录、审批等待上限、提问等待上限）
+- **通用设置**：语言（zh-CN / en-US）/ 开机自启 / 关闭到托盘 / 置顶主窗口 / 上下文压缩阈值与模型 / **Agent 工具**（审批等待上限、提问等待上限）
 - **外观设置**：主题（亮/暗/跟随系统）+ Orb 悬浮球外观（透明度/缩放/圆角/鼠标穿透/悬停隐藏/悬停延迟）+ Orb 悬浮窗（始终置顶）+ Mascot 外观
 - **快捷键**：全局快捷键（toggle_orb / toggle_main / new_chat）+ 应用内快捷键（command_palette），分组展示 + 录制 + 冲突检测 + 重置
 - **Provider 管理**：添加/编辑/删除 AI Provider（名称 + API Key + Base URL + 模型列表），密钥经后端加密存储
@@ -352,7 +352,9 @@ CREATE TABLE token_usage_records (
 └── vault-config.json     # VaultConf（保险库设置，禁止落在 vault 仓库目录）
 ```
 
-> 日志由 `tauri-plugin-log` 写入系统日志目录，开发环境同时输出到终端。
+> 日志由 `tauri-plugin-log` 写入系统日志目录（Win: `%LOCALAPPDATA%\com.assistant\logs`）。双档：开发构建 `assistant-dev.log`（`Debug` 级 + stdout），生产构建 `assistant.log`（`Info` 级、无 stdout）。滚动为单文件 10MB + `KeepSome(3)`（1 活动 + 3 归档，单档上限 40MB），时间戳与归档名用本地时区，每次启动归档上一份。
+>
+> 崩溃转储走独立目录 `%APPDATA%\com.assistant\crashes`（`assistant-crash`），不受日志滚动影响。完整策略与实施清单见 I42 日志策略规格（已归档）。
 
 ---
 
@@ -444,6 +446,7 @@ assistant/
 │   │   ├── menu.rs                # 原生菜单
 │   │   ├── plugins.rs             # Tauri 插件注册
 │   │   ├── setup.rs               # 应用初始化（配置 + 数据库 + 窗口 + 托盘）
+│   │   ├── tool_setup.rs          # 工具基础设施装配（注册表/网关/流水线/执行器端口）
 │   │   ├── tray.rs                # 系统托盘
 │   │   └── window.rs              # 窗口管理（创建/展开/收起/设置）
 │   ├── crates/
@@ -820,11 +823,11 @@ fn should_terminate(prompt_tokens: u32, context_window: u32) -> bool {
 
 ### I18–I38 — Agent 工具与运行时（并行主线）
 
-**交付：** 工具词汇层与 Registry、工具控制层（Policy / Gateway / Pipeline / 审批键与审计）、运行时内核（turn 状态机 / 取消代际 / 双层超时）、Agent Loop（多迭代 / 三维预算 / 阶梯收尾）、九个 OS 文件工具 + `ask_user`、前端五态气泡 / 审批卡片 / 提问卡片 / 模式与工具装配切换。
+**交付：** 工具词汇层与 Registry、工具控制层（Policy / Gateway / Pipeline / 审批键与审计）、运行时内核（turn 状态机 / 取消代际 / 双层超时）、Agent Loop（多迭代 / 三维预算 / 阶梯收尾）、九个 OS 文件工具 + `ask_user`、前端五态气泡 / 审批卡片 / 提问卡片 / 模式与工具装配切换、会话级工作区绑定与切换 chip（P12）。
 
-**状态：** 阶段划分（P0–P7）、退出条件与完成情况**只在** [I38 roadmap](./store/I38-agent-roadmap.md) §2 维护；本节不重复记录进度。
+**状态：** 阶段划分（P0–P12，其中 P8–P11 为后续轴、P12 已完成）、退出条件与完成情况**只在** [I38 roadmap](./store/I38-agent-roadmap.md) §2 维护；本节不重复记录进度。
 
-**验收：** 各阶段 tasklist —— [I36 运行时](./store/I36-agent-runtime-tasklist.md)、[I38b 循环](./store/I38b-agent-loop-tasklist.md)、[I38c 工具](./store/I38c-os-tools-tasklist.md)、[I38d 前端](./store/I38d-agent-frontend-modes-tasklist.md)。
+**验收：** 各阶段 tasklist —— I36 运行时（已归档）、I38b 循环（已归档）、I38c 工具（已归档）、I38d 前端（已归档）、I38h 工作区（已归档）。
 
 ---
 
