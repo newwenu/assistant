@@ -209,6 +209,11 @@ fn into_tool_call(call: FinalizedToolCall) -> ToolCall {
     ToolCall::new(call.tool_id, call.tool_name, call.arguments)
 }
 
+/// `PipelineStage` → `ToolStage` 端口镜像（一一对应）。
+///
+/// 不单独设镜像测试：本函数为穷尽 match，`PipelineStage` 新增变体即在此编译期报
+/// non-exhaustive；各 stage 取值由 `crates/assistant-tools/tests/pipeline.rs` 覆盖。
+/// 若在测试内另抄一份映射再断言往返恒等，断言只校验副本，改坏本函数也不会失败。
 fn into_stage(stage: PipelineStage) -> ToolStage {
     match stage {
         PipelineStage::Find => ToolStage::Find,
@@ -219,6 +224,7 @@ fn into_stage(stage: PipelineStage) -> ToolStage {
     }
 }
 
+/// `ToolErrorKind` → `ToolErrorClass` 端口镜像（一一对应），理由同 [`into_stage`]。
 fn into_error_class(kind: ToolErrorKind) -> ToolErrorClass {
     match kind {
         ToolErrorKind::Business => ToolErrorClass::Business,

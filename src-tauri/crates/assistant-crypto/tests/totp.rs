@@ -5,43 +5,50 @@ use assistant_crypto::vault_crypto::totp::{
 const SECRET: &str = "JBSWY3DPEHPK3PXP";
 const NOW: u64 = 1_700_000_000;
 
-fn generate(secret: &str, spec: TotpSpec) -> assistant_crypto::vault_crypto::totp::TotpCode {
-    let bytes = decode_base32(secret).unwrap();
-    generate_at(&bytes, &spec, NOW).unwrap()
-}
-
+// 原 5 个用例只断言「码长 + 纯数字 + time_remaining 范围」，SHA1/SHA256/SHA512 互换、
+// 动态截断（offset = 末字节 & 0x0f）写错时仍会全绿，已合并替换为下方 RFC 6238 向量。
+/// RFC 6238 Appendix B known-answer vector（各算法使用各自长度的 seed）。
+/// T=59 与 T=1111111111 覆盖单步与多步 counter，8 位 / 6 位覆盖截断后取模。
 #[test]
-fn totp_code_is_correct_length_and_numeric() {
-    let result = generate(SECRET, TotpSpec::default());
-    assert_eq!(result.code.len(), 6);
-    assert!(result.code.chars().all(|c| c.is_ascii_digit()));
-}
+fn totp_matches_rfc6238_appendix_b_vectors() {
+    const SHA1_SEED: &[u8] = b"12345678901234567890";
+    const SHA256_SEED: &[u8] = b"12345678901234567890123456789012";
+    const SHA512_SEED: &[u8] = b"1234567890123456789012345678901234567890123456789012345678901234";
 
-#[test]
-fn totp_8_digit_code() {
-    let result = generate(SECRET, TotpSpec::new(8, 30, TotpAlgorithm::Sha1));
-    assert_eq!(result.code.len(), 8);
-    assert!(result.code.chars().all(|c| c.is_ascii_digit()));
-}
+    let cases: [(&[u8], TotpAlgorithm, u32, u64, &str); 7] = [
+        (SHA1_SEED, TotpAlgorithm::Sha1, 8, 59, "94287082"),
+        (SHA256_SEED, TotpAlgorithm::Sha256, 8, 59, "46119246"),
+        (SHA512_SEED, TotpAlgorithm::Sha512, 8, 59, "90693936"),
+        (SHA1_SEED, TotpAlgorithm::Sha1, 6, 59, "287082"),
+        (SHA1_SEED, TotpAlgorithm::Sha1, 8, 1_111_111_111, "14050471"),
+        (
+            SHA256_SEED,
+            TotpAlgorithm::Sha256,
+            8,
+            1_111_111_111,
+            "67062674",
+        ),
+        (
+            SHA512_SEED,
+            TotpAlgorithm::Sha512,
+            8,
+            1_111_111_111,
+            "99943326",
+        ),
+    ];
 
-#[test]
-fn totp_sha256_algorithm() {
-    let result = generate(SECRET, TotpSpec::new(6, 30, TotpAlgorithm::Sha256));
-    assert_eq!(result.code.len(), 6);
-    assert!(result.code.chars().all(|c| c.is_ascii_digit()));
-}
+    for (seed, algorithm, digits, unix_time, expected) in cases {
+        let code = generate_at(seed, &TotpSpec::new(digits, 30, algorithm), unix_time).unwrap();
+        assert_eq!(
+            code.code, expected,
+            "{algorithm:?} / {digits} digits / T={unix_time}"
+        );
+    }
 
-#[test]
-fn totp_sha512_algorithm() {
-    let result = generate(SECRET, TotpSpec::new(6, 30, TotpAlgorithm::Sha512));
-    assert_eq!(result.code.len(), 6);
-    assert!(result.code.chars().all(|c| c.is_ascii_digit()));
-}
-
-#[test]
-fn totp_custom_period() {
-    let result = generate(SECRET, TotpSpec::new(6, 60, TotpAlgorithm::Sha1));
-    assert!(result.time_remaining > 0 && result.time_remaining <= 60);
+    assert_eq!(
+        decode_base32("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ").unwrap(),
+        SHA1_SEED
+    );
 }
 
 #[test]

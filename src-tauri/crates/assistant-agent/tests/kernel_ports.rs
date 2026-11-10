@@ -1,4 +1,3 @@
-use assistant_agent::kernel::{ProviderDelta, TurnEvent, TurnPhase, TurnStatus};
 use std::path::{Path, PathBuf};
 
 fn collect_kernel_sources(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -57,34 +56,7 @@ fn kernel_sources_have_no_tauri_types() {
     }
 }
 
-#[test]
-fn turn_event_carries_turn_id_and_status_on_termination() {
-    let events = [
-        TurnEvent::StreamStart {
-            turn_id: "conv:1".to_string(),
-            phase: TurnPhase::Thinking,
-        },
-        TurnEvent::Delta {
-            turn_id: "conv:1".to_string(),
-            seq: 0,
-            iteration: 1,
-            delta: ProviderDelta::default(),
-        },
-        TurnEvent::Terminated {
-            turn_id: "conv:1".to_string(),
-            status: TurnStatus::Cancelled,
-            last_seq: 0,
-            error: None,
-        },
-    ];
-    assert_eq!(events.len(), 3);
-    assert!(matches!(events[0], TurnEvent::StreamStart { .. }));
-    assert!(matches!(events[1], TurnEvent::Delta { seq: 0, .. }));
-    assert!(matches!(
-        events[2],
-        TurnEvent::Terminated {
-            status: TurnStatus::Cancelled,
-            ..
-        }
-    ));
-}
+// 原 `turn_event_carries_turn_id_and_status_on_termination` 已删除：它在测试内构造三个
+// 枚举值再断言其匹配自身（含 events.len() == 3），无行为信息量。TurnEvent 的
+// turn_id / status 由非 Option 字段在编译期强制，真实路由由 kernel_emit.rs 与
+// loop_executor.rs 驱动 TurnEmitter 覆盖。
