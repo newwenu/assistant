@@ -29,6 +29,7 @@
 | 6 | 取消树：父 turn 取消向下传播；子取消不反向取消父；父 turn 结束不留孤儿任务 |
 | 7 | 结果回传：只把子 turn 终态文本 + 统计摘要回填父模型，不内联子 transcript |
 | 8 | 记账隔离：子 turn 不写 `messages`，usage 以 `kind = subagent` 落在父会话名下 |
+| 9 | 可见性：`spawn_agent` 默认不可见，须在工具面板显式启用；面板由既有 `list_available_tools` 数据驱动，不新增前端组件 |
 
 ### 1.2 非目标
 
@@ -36,8 +37,8 @@
 - Router / Worker 跨会话调度、跨会话记忆（P8.3）。
 - 跨重启的子代理存活、Watchdog、事件唤醒（P9，需单独 ADR）。
 - 子代理写操作。P8.1 的子工具集**硬限制为只读**；写类子代理需要子审批通道与清理策略，归 P8.2。
-- 子代理专用 UI。P8.1 不新增前端组件、不新增 wire 字段；子代理活动不可见（只通过父工具卡片体现）。
-- 子代理使用 External / MCP 工具。P8.1 子工具集只允许 `tier <= Os`；External 工具的权限意图会触发 `Ask`，而 P8.1 没有子审批通道，归 P8.2。
+- 子代理专用 UI。P8.1 不新增前端组件、不新增 wire 字段；子代理活动不可见（只通过父工具卡片体现）。工具面板的启用开关复用既有工具列表数据，不属新增 UI。
+- 子代理使用 External / MCP 工具。P8.1 子工具集只允许 `tier <= Os`；External / MCP 归 P8.2（需要子审批通道与外部工具资源级规则的继承）。
 - 子代理独立模型配置。P8.1 继承父 provider / model；独立 model 配置归 P8.2 或独立批次。
 - 子代理附件传递。任务上下文由父以文本传入；P8.1 不把父历史或附件转交给子代理。
 
@@ -76,7 +77,7 @@ SubagentRunner（src-tauri 适配器）
 
 | 组件 | 位置 | 约束 |
 |---|---|---|
-| `SpawnAgentTool` | `src-tauri` | 实现 `assistant_tools::Tool`；依赖 `assistant-agent` 与 `assistant_tools`；**不得**放进 `assistant-tools` crate |
+| `SpawnAgentTool` | `src-tauri` | 实现 `assistant_tools::Tool`；依赖 `assistant-agent` 与 `assistant_tools`；**不得**放进 `assistant-tools` crate——该 crate 不可依赖 `assistant-agent`（沿用 I38b §2.2），放入会造成依赖方向倒置 |
 | `SubagentRunner` | `src-tauri` | 只做装配与端口适配；循环语义全部在内核 |
 | 内核扩展 | `assistant-agent` | 不依赖 `tauri` / `assistant_tools`（沿用 I38b §2.2） |
 | 权限字段 | `assistant-tools` | 不依赖 `assistant-agent` / `tauri` |
@@ -151,7 +152,7 @@ SubagentRunner（src-tauri 适配器）
 
 顺序固定：
 
-1. `spawn_agent` 必须出现在 `context.allowed_tools` 中；否则 `ValidationResult::blocked("spawn_agent is not enabled for this turn")`。这堵住「模型幻觉调用未装配工具」的旁路。
+1. `context.allowed_tools` 必须为 `Some` 且包含 `spawn_agent`；否则 `ValidationResult::blocked("spawn_agent is not enabled for this turn")`。`None`（宿主未下发）按空集处理——fail-closed，绝不表示「不设限」。这堵住「模型幻觉调用未装配工具」的旁路。
 2. `context.delegation_depth >= 1` → `blocked("sub-agent cannot delegate again")`（`max_depth = 1`）。
 3. 解析 schema；`task` / `tools` / `maxIterations` 按 §3.2 校验。
 4. 显式 `tools` 时逐项检查：不在 `context.allowed_tools`、非只读、或命中排除名单 → `invalid`，错误文本列出违规项；**不静默丢弃**。
@@ -186,10 +187,12 @@ ToolExecResult { is_error: true, stage: Gateway, error_kind: Denied,
 |---|---|
 | `Completed` | `ok = true`；`data` = §3.5.1；`result_for_assistant` = 摘要文本 |
 | `Failed` | `ok = false`、`error_kind = Business`；错误文本取 `TurnError` 的稳定文案（禁止 `Debug`）；子 `TurnOutcome` 不含 provider 原始载荷，故不附 `code` |
-| `Cancelled` | `ok = false`、`error_kind = Cancelled` |
-| `Interrupted` | `ok = false`、`error_kind = Cancelled`（父侧按「被中断」呈现） |
-| 外层超时（§4.5） | `ok = false`、`error_kind = Timeout` |
-| 装配失败（DB / provider / 槽位） | `ok = false`、`error_kind = Business` 或 `Internal`；文案说明原因 |
+| `Cancelled` | `ok = false`、`error_kind = Cancelled`；`data.status = "cancelled"` |
+| `Interrupted` | `ok = false`、`error_kind = Cancelled`；`data.status = "interrupted"`，文案为「子 turn 被中断」以区别于父取消——区分依据取子 `TurnOutcome` 的终止原因，不由父侧推断 |
+| 外层超时（§4.5） | 内核 `turn_wall_clock` 收敛 → `ok = false`、`error_kind = Timeout`、`data.status = "timeout"`；外层 deadline 触发 → `Internal`（见 §4.5） |
+| 装配失败（DB / provider / 槽位 / 策略缺失） | `ok = false`、`error_kind = Business` 或 `Internal`；文案说明原因 |
+
+`data.status` 的封闭取值集：`completed` / `failed` / `cancelled` / `interrupted` / `timeout`。失败、取消、中断、超时**同样返回 `data`**：字段齐全，`text` 为空串，统计字段取已累计值（未完成的迭代 / 调用次数照实填写）。
 
 #### 3.5.1 `data` 形状（内部工具结果，非 wire）
 
@@ -224,11 +227,12 @@ ToolExecResult { is_error: true, stage: Gateway, error_kind: Denied,
 
 | 字段 | 取值 |
 |---|---|
-| `agent_id` | `format!("{}:sub:{}", parent_agent_id, seq)`；`parent_agent_id = context.agent_id.unwrap_or(context.session_id)`，`seq` 是父 turn 内从 1 递增 |
+| `agent_id` | `format!("{}:sub:{}", parent_agent_id, seq)`；`parent_agent_id = context.agent_id.unwrap_or(context.session_id)` |
+| `seq` | 父 turn 内从 1 递增，**持有者是父 turn 的 `ToolUseContext`**（由 `RoundExecutor` 每轮构造并随工具调用下发），不是 `SpawnAgentTool` 实例状态——工具是注册表单例，挂在实例上会跨 turn / 跨会话串号。`SpawnAgentTool` 只读 `seq` 不自增 |
 | `parent_turn_id` | 父 `TurnRunCtx.turn_id` |
 | `delegation_depth` | 父深度 + 1（根为 0，故子为 1） |
 | 子 `TurnId` | 子 `TurnTasks` 生成 `{child_scope}:{counter}`；`child_scope = agent_id` |
-| 子 `conversation_id` | 合成作用域 `agent_id`（仅内核内部使用，不落 `conversations` 表） |
+| 子 `turn_scope` | 内核 `TurnRunner` 的 `conversation_id` 形参取此值 = `agent_id`（合成作用域，仅内核内部使用，不落 `conversations` 表）。**与 §4.7 记账的 `conversation_id`（父会话 id）是两回事**，不得混用同一变量 |
 
 根 agent 的 `agent_id` 取 `conversation_id`（I36 D16）；P8.1 把 `TurnRunner` 里原先硬编码的 `"root"` 改为 `conversation_id`，但不改变任何 wire 行为。
 
@@ -240,7 +244,7 @@ ToolExecResult { is_error: true, stage: Gateway, error_kind: Denied,
 | `max_iterations` | 输入 `maxIterations`，硬上限 8 |
 | `tools` | §3.4 解析后的 `Vec<ToolSpec>`；空集归一为 `None`。`ToolSpec` 必须按 id 从 `ToolRegistry` **重新取**（`description` / `input_schema` 以注册表当前值为准），不得复用父 turn 的注入快照 |
 | `ladder` | `Full`（微压缩 / 收尾还原 / 确定性裁剪对子 turn 同样有效） |
-| `stop_hooks` | 与 agent 链路一致的三维预算钩子 |
+| `stop_hooks` | 与 agent 链路一致的三维预算钩子。**该构造在 `assistant-agent` 内是私有实现**，`SubagentRunner`（`src-tauri`）取不到，因此 C1 必须在内核提供 `TurnSpec::subagent_limits_only(max_iterations)`（或等价的公开构造器）由内核自行填充，宿主只传 `max_iterations` |
 | `wrap_up` | `true` |
 | `route` | `Broadcast`（子 `EventSink` 丢弃事件，route 不影响 wire） |
 | `kind` | `"subagent"`（usage 分类） |
@@ -270,7 +274,7 @@ pub struct TurnIdentity {
 | `max_iterations` | 入参（1–8） | 父可收窄，不能放大 |
 | `max_tool_calls` | `derived_tool_call_limit(max_iterations)` | 沿用 P4 的派生公式 |
 | `turn_wall_clock` | `min(120s, 父 turn 剩余墙钟)`；父剩余未知时 120s | 防止单个委派吞掉父 turn 预算 |
-| `model_call` | `min(120s, child_wall)` | 单次调用不得超过子墙钟 |
+| `model_call` | `min(60s, max(15s, child_wall / max_iterations))`，且每轮再与子剩余墙钟取小 | 单次调用不得独占子预算，否则后续迭代无预算；`min(child_wall, …)` 形式恒真、无保护作用 |
 | `empty_response_retries` | 1 | 与 agent 一致 |
 | `microcompact_keep_recent` | 6 | 与 agent 一致 |
 
@@ -301,16 +305,18 @@ pub struct TurnIdentity {
 parent_token = TurnTasks::cancel_token(parent_conversation_id)
 child_token  = parent_token.child_token()
 child_tasks  = TurnTasks::new(); begin_child(child_scope, &child_token)
-outer_deadline = child_wall_clock + 5s grace
+watchdog_deadline = child_wall_clock + 5s grace
 ```
+
+**超时分层**：子墙钟（`turn_wall_clock`）是**唯一**的常规超时来源，由内核 stop hooks 收敛为 `Timeout`；外层 `watchdog_deadline` 只作**看门狗**，正常路径永不触发。它触发意味着内核预算收敛失效（实现缺陷），因此按 `Internal` 上报并附「子 turn 未在自身墙钟内收敛」，**不得**伪装成 `Timeout`——否则内核缺陷被静默吞掉。
 
 | 行为 | 规则 |
 |---|---|
 | 运行方式 | `SpawnAgentTool::execute` **内联 await** 子 `TurnRunner::run`；不得 `spawn` 后不等待 |
 | 父取消 | 父令牌取消 → 子令牌随取消树失效 → 子 `TurnRunner` 的长 await 走 `cancellable` 返回 `Cancelled`；父 `ToolPipeline` 外层的取消仍可丢弃整个 future |
 | 子取消 | 子令牌取消**不**影响父令牌（`CancellationToken::child_token` 单向） |
-| 外层超时 | `tokio::time::timeout(outer_deadline, child.run())`；超时后 `child_tasks.cancel(child_scope)` 并返回 `Timeout`，不把子 turn 转成游离任务 |
-| 孤儿防止 | 子 runner 不启动后台 task；父 turn 结束（完成 / 失败 / 取消）时子 future 必然已结束或被丢弃 |
+| 外层超时 | `tokio::time::timeout(watchdog_deadline, child.run())`；触发后 `child_tasks.cancel(child_scope)` 并返回 `Internal`（见上「超时分层」），不把子 turn 转成游离任务 |
+| 孤儿防止 | 子 runner 不启动后台 task；父 turn 结束（完成 / 失败 / 取消）时子 future 必然已结束或被丢弃。`begin_child` 写入的 `TurnTasks` 条目同样用 RAII 守卫 `finish`：父 Pipeline 丢弃 `spawn_agent` future 时条目不得残留 |
 | 槽位 | 同一 `(conversation_id, parent_turn_id)` 只允许一个在跑子代理；第二次直接 `Business` 拒绝，不排队（I18 §3.16）。槽位用 RAII 守卫释放，父 turn 取消 / future 丢弃时不得残留 |
 | 并发 | `is_concurrency_safe = false`，同迭代多个 `spawn_agent` 由 Pipeline 串行成批 |
 
@@ -324,9 +330,11 @@ outer_deadline = child_wall_clock + 5s grace
 | `TurnTasks` | 独立实例 + `begin_child`；不写父 `TurnTasks` 条目 |
 | `Clock` | 生产 `SystemClock`（与父同源） |
 | `CompactionConfig` | `None`：子 turn 不做终止式压缩；上下文压力由阶梯 ③④⑤ 处理 |
-| `ToolResultStorage` | 子作用域目录：`app_data_dir()/tool-results/subagents/<slug>/`；子 turn 结束后删除该目录。`slug` 由 `agent_id` 过滤为 `[A-Za-z0-9_-]`。删除失败只 `log::warn!`，不影响结果回传 |
+| `ToolResultStorage` | 子作用域目录：`app_data_dir()/tool-results/subagents/<slug>/`；子 turn 收尾后由 RAII 守卫清理（见下「子结果落盘清理」）。`slug` 由 `agent_id` 过滤为 `[A-Za-z0-9_-]`。删除失败只 `log::warn!`，不影响结果回传 |
 
-**子结果落盘清理**：子工具结果超过 P2 阈值时会落盘；若沿用父共享目录，文件会在子 transcript 丢弃后成为孤儿。因此子 `PipelineToolExecution` 必须派生一个带子作用域 `ToolResultStorage` 的 `ToolPipeline`（`ToolPipeline::with_storage`），并在子 turn 收尾（成功 / 失败 / 取消 / 超时）后统一删除子目录。清理必须用 RAII 守卫（`Drop` 内做 best-effort `remove_dir_all`），否则父 turn 取消导致 `spawn_agent` future 被丢弃时清理代码不会执行；删除失败只 `log::warn!`。
+**子结果落盘清理**：子工具结果超过 P2 阈值时会落盘；若沿用父共享目录，文件会在子 transcript 丢弃后成为孤儿。因此子 `PipelineToolExecution` 必须派生一个带子作用域 `ToolResultStorage` 的 `ToolPipeline`（`ToolPipeline::with_storage`），并在子 turn 收尾（成功 / 失败 / 取消 / 超时）后统一清理子目录。清理必须用 RAII 守卫，否则父 turn 取消导致 `spawn_agent` future 被丢弃时清理代码不会执行；删除失败只 `log::warn!`。
+
+**清理不得阻塞执行器**：`Drop` 跑在 tokio worker 线程上，同步 `remove_dir_all` 在大目录上会卡执行器。守卫的 `Drop` 只做两件事：把子目录 `rename` 到 `tool-results/subagents/.trash/<slug>-<uuid>/`（同卷、O(1)），再 `tokio::spawn` 异步删除该 trash 目录。`rename` 失败（跨卷或权限）时退回异步删除原目录，仍不得在 `Drop` 内同步删除。进程启动时清空 `.trash/` 作为兜底。
 
 **子事件不可见的取舍**：P8.1 没有 roster / 投影 UI，若把子事件广播出去，前端会收到无法归属的 `turn_id` / 工具卡片。P8.2 引入 `subagentProjection` 后再消费这些事件；届时只需替换 `EventSink` 与前端投影，不改内核。
 
@@ -336,7 +344,7 @@ outer_deadline = child_wall_clock + 5s grace
 
 | 字段 | 取值 |
 |---|---|
-| `conversation_id` | 父会话 id（子 turn 的合成 id 不落库） |
+| `conversation_id` | 父会话 id（子 turn 的合成 `turn_scope` 不落库）。**与 §4.1 的 `turn_scope` 是两个不同值**，`SubagentMessageStore` 必须显式持有父会话 id，不得复用内核形参 |
 | `message_id` | `None`（子消息不在 `messages` 表，不制造悬空引用） |
 | `attempt_id` | 子 `turn_id` |
 | `branch_leaf_id` | `None`（父分支叶子不可见于工具上下文；累计口径仍含子代理） |
@@ -383,24 +391,40 @@ outer_deadline = child_wall_clock + 5s grace
 规则：
 
 1. 子代理**不复用**父代理的授权；「只读父作用域」仅指实现可查询父库做审计与解释，不作为放行依据（比 I18 §3.16 的「授权读取」更严格，避免父批准被委派放大）。
-2. 子代理新增批准只写子作用域；P8.1 子工具全只读且子策略不走 `Ask`（§5.4），因此不产生子批准；该字段在此阶段只做契约与单测覆盖，P8.2 的子审批通道直接复用。
+2. 子代理新增批准只写子作用域；P8.1 子作用域命中 `Ask` 时由 `FailClosedPrompter` 直接拒绝（§5.4），不产生子批准。该字段在 P8.1 的行为是**阻断父授权命中**（父键无 `agentId`，子键有），P8.2 的子审批通道直接复用同一维度。
 3. 父 turn 结束不清理子批准（P8.1 无子批准）；清理策略归 P8.2。
 
-### 5.4 子策略（固定、只读）
+### 5.4 子策略（以父策略为基座，只收紧）
 
 子 `ToolExecutionPort` 使用：
 
 ```
-child_policy = ResolvedPermissionPolicy::default_global()
+child_policy = parent_policy.without_rules_from(RuleOrigin::ApprovalLevel)   // 剥掉父审批级别规则
              + PermissionRuntimeCeiling::try_new(deny_non_read_rules()).constraint_layer()
              + PermissionConstraintLayer::new([("*", "tier:external", Deny)])
 ```
 
+**基座必须是父策略，不能是 `default_global()`**：子工具集只继承父的工具 **id**，不继承资源级规则。若以 `default_global()` 为基座，父的项目规则（例如对某类资源路径的 `Deny`）不会进入子策略，子代理就能读到父策略明令拒绝的资源——违反 I18 §3.16「权限只能收紧」。以父策略为基座后，约束层逐层取最严（`policy::most_restrictive`），保证 `child ⊆ parent`。
+
 `deny_non_read_rules` 对 `edit` / `write` / `delete` / `move` / `copy` / `execute` / `run` / `shell` / `agent` / `network` / `fetch` / `http` 逐条 `Deny`（不得出现 `Allow`，`try_new` 会拒绝）。
 
-- 不用 `("*","*",Deny)`：`evaluate_tier_ceiling` 会以 `action = "*"` 求值，宽泛 Deny 会把只读工具的 tier 也拒掉。
-- 子代理不继承父的 `approval_level`：父的 `all_os_tools` 不会让子代理的只读调用逐次弹审批；委派本身的审批（§5.1）覆盖该授权。此取舍登记在 §10 OQ4。
-- 只读工具当前 `permission_intents` 为空，`ToolGateway` 短路为 `Allowed`；路径安全仍由 `validate_input` 复用 `os::path` 兜底。
+- **不加 `("*","*",Ask)` 层**。约束层合并只有「逐对 `(action, resource)` 取更严」一个算子，`("*","*",Ask)` 会把主规则集的 `("read","*",Allow)` 抬升为 `Ask`：在 `none` / `dangerous_only` 审批级别下，所有只读工具都会变成 `Ask` → 被 `FailClosedPrompter` 拒绝，子代理无法完成任何任务。规则层也没有「仅把 `Ask` 改写为 `Deny`」的能力——唯一写法是 `("*","*",Deny)`，而它会把 `Allow` 一并杀掉。因此 **`Ask`→`Deny` 只由 prompter 承担，策略层不得重复表达**。
+- **剥掉父的审批级别规则**（`RuleOrigin::ApprovalLevel`）而非继承：父 `all_os_tools` 追加的 `("read","*",Ask)` 不该级联成子代理逐次审批。剥掉后 `none` 级别的 `("*","*",Allow)` 同时消失，基座回到默认 `Ask`——方向是收紧。唯一放宽方向是 `all_os_tools` 下子代理的 read 比父宽松（仅 read 类、且已被委派审批 §5.1 覆盖），登记在 §10 OQ4，不隐藏。
+- 不用 `("*","*",Deny)` 作 ceiling：`evaluate_tier_ceiling` 以 `action = "*"` 求值，宽泛 Deny 会把只读工具的 tier 也拒掉。
+- 路径安全仍由 `validate_input` 复用 `os::path` 兜底。
+
+**子作用域无审批通道 ⇒ `Ask` 由 `FailClosedPrompter` 落到 `Deny`**：
+
+子 `ToolGateway` 装配一个 `FailClosedPrompter`，其 `prompt` 立即返回 `ApprovalDecision::Deny`（不等待、不弹卡片、不写授权），并把原因记为「子代理无审批通道」。行为封闭如下：
+
+| 情形 | 结果 |
+|---|---|
+| 只读工具、工具未声明 `permission_intents` | `Allowed`：intent 为空时 gateway 直接短路，不进入策略求值 |
+| 只读工具声明了 `permission_intents`，剥级别后的父策略求值为 `Ask` | `Denied`（`FailClosedPrompter`），**不会**进入未定义状态 |
+| 父会话的 `AllowSession` / `AllowAlways` 授权 | **不命中**：子键含 `agentId`，父键不含（§5.3），故不能借父批准放行 |
+| 非只读 action（即使剥级别后的父策略为 `Allow`） | `Denied`（`deny_non_read_rules`） |
+
+当前只读工具均未声明 `permission_intents`（trait 默认空实现），故 P8.1 正常路径不出现 `Ask`；上表第 2 行是**机制兜底**，不依赖该现状——未来任何只读工具新增 intent，行为都已封闭，无须回改本节。
 
 ---
 
@@ -430,7 +454,7 @@ child_policy = ResolvedPermissionPolicy::default_global()
 |---|---|
 | `tool_setup.rs` | 注册 `spawn_agent`（`AGENT_ONLY`）；与 OS 工具共用同一 `ToolRegistry` / `ToolPipeline` |
 | `list_available_tools` | 返回 `spawn_agent`（tier `sandbox`），前端工具面板可勾选 |
-| 可见性 | 必须同时满足：`maxToolTier >= sandbox`（默认即满足） **且** `enabledTools` 显式包含 `spawn_agent` |
+| 可见性 | 必须同时满足：`maxToolTier >= sandbox`（默认即满足） **且** `enabledTools` 显式包含 `spawn_agent`。前者由 `resolve_available_tools` 的 `tool_definitions_for_tier(max_tier)` 落地，后者由 `enabled` 集合落地——两个过滤都作用在**父工具集 P** 上，故 §3.4 的 `P` 已按 `maxToolTier` 收敛，子工具集的 `tier <= Os` 过滤是**第二道**、不依赖第一道的正确性 |
 | 默认值 | 内置 `builtin-agent` 的 `enabledTools` 为空 → 默认看不到 `spawn_agent`；启用是显式动作 |
 | ToolBox | `AGENT_ONLY` → `os_tool_exec` 不可达 |
 | MCP | P7 的 External 工具**不进入 P8.1 子工具集**（`tier <= Os` 过滤）；子代理使用 External 工具归 P8.2（需要子审批通道） |
@@ -443,17 +467,18 @@ child_policy = ResolvedPermissionPolicy::default_global()
 
 | 步骤 | 内容 | 依赖 |
 |---|---|---|
-| **P8.1-C1** | 内核身份与上下文：`TurnSpec.identity`（`agent_id` / `parent_turn_id` / `delegation_depth`）；`TurnRunner` 根身份由 `"root"` 改为 `conversation_id`；`TurnRunCtx` / `ToolExecCtx` 透传身份与 `remaining_turn_ms`；`ToolUseContext` 新增 `agent_id` / `delegation_depth` / `allowed_tools` / `remaining_turn_ms`（全部可选且有默认值）；`TurnLimits::subagent(max_iterations)`；`TurnTasks::begin_child(scope, parent_token)` | P4 内核 |
-| **P8.1-C2** | 审批键作用域：`ApprovalKey` 新增可选 `agent_id`，根键序列化保持不变；`ApprovalKey::from_intent` 从 `ToolUseContext.agent_id` 取值；补「父键不命中子键」单测 | C1 |
+| **P8.1-C1** | 内核身份与上下文：`TurnSpec.identity`（`agent_id` / `parent_turn_id` / `delegation_depth`）；`TurnRunner` 根身份由 `"root"` 改为 `conversation_id`；`TurnRunCtx` / `ToolExecCtx` 透传身份与 `remaining_turn_ms` / `delegate_seq`；`ToolUseContext` 新增 `agent_id` / `delegation_depth` / `allowed_tools` / `remaining_turn_ms` / `delegate_seq`；`TurnLimits::subagent(max_iterations)`；`TurnSpec::subagent_limits_only(max_iterations)` 公开构造器（内核内填充 `stop_hooks`）；`TurnTasks::begin_child(scope, parent_token)` | P4 内核 |
+| **P8.1-C2** | 审批键作用域：`ApprovalKey` 新增可选 `agent_id`（`#[serde(default, skip_serializing_if = "Option::is_none")]`），根键序列化保持不变；`ApprovalKey::from_intent` 从 `ToolUseContext.agent_id` 取值（父链路恒为 `None`，子链路为 `Some`）；补「父键不命中子键」「父会话授权不命中子调用」单测。**P8.1 的行为价值是阻断父授权命中**，而非新增子批准 | C1 |
 | **P8.1-C3** | `spawn_agent` 工具：身份、schema、`validate_input`（含 `allowed_tools` / 深度 / 只读子集）、`preview_for_approval`、`permission_intents`、`manages_own_execution_timeout`、执行期槽位与结果映射 | C1、C2 |
-| **P8.1-C4** | `SubagentRunner`：合成 `TurnInputSource`、`SubagentMessageStore`（usage 转写）、`DiscardingEventSink`、独立 `SessionStates` / `TurnTasks`、子 `PipelineToolExecution`（子策略 + 执行期白名单 + 子作用域 `ToolResultStorage`）、外层超时与取消树、子结果目录清理 | C1、C3 |
-| **P8.1-C5** | 宿主装配：`tool_setup.rs` 注册 `spawn_agent`；`send_agent_message` / `policy_executor` 下发父有效工具 id 集（`PipelineToolExecution::with_allowed_tools`）；`tool_resolver` 提取共享过滤函数并新增 id 版解析 | C3、C4 |
-| **P8.1-C6** | 测试与验收：§9 A1–A12；重点覆盖只读子集、执行期白名单、深度/槽位、取消树、超时、usage 隔离、根键兼容 | C5 |
+| **P8.1-C4** | `SubagentRunner`：合成 `TurnInputSource`、`SubagentMessageStore`（usage 转写）、`DiscardingEventSink`、独立 `SessionStates` / `TurnTasks`、子 `PipelineToolExecution`（**以父已解析策略为基座**、剥 `RuleOrigin::ApprovalLevel`、`FailClosedPrompter` 承担 `Ask→Deny`、执行期白名单、子作用域 `ToolResultStorage`）、看门狗超时与取消树、子结果目录清理（rename 到 `.trash/` + 异步删除） | C1、C3 |
+| **P8.1-C5** | 宿主装配：`tool_setup.rs` 注册 `spawn_agent`；`send_agent_message` / `policy_executor` 下发父有效工具 id 集（`PipelineToolExecution::with_allowed_tools`）、父剩余墙钟与 `delegate_seq`；`tool_resolver` 提取共享过滤函数并新增 id 版解析 | C3、C4 |
+| **P8.1-C6** | 测试与验收：§9 A1–A14；重点覆盖只读子集、执行期白名单、深度/槽位、取消树、超时分层、策略继承、`Ask→Deny`、usage 隔离、根键兼容 | C5 |
 | **P8.1-C7** | 文档复核：roadmap §2.1 / §3 / §4 与本文引用一致；不改 wire DTO（无需 `contract:gen`） | C6 |
 
 **跨阶段契约变更登记**：
 
 - `ToolUseContext` 字段新增属 `assistant-tools` 内部类型，不是 wire；但所有使用结构体字面量的测试需补 `..Default::default()`。
+- `ToolUseContext.allowed_tools: Option<Vec<String>>` 的 `None` **必须按空集处理（fail-closed）**，不得表示「不设限」——它是 §3.3 第 1 步的反幻觉闸门。`remaining_turn_ms: Option<u64>` 的 `None` 才表示「父不设限」。两者默认语义不同，不得合并陈述。
 - `ApprovalKey` 的 `agent_id` 必须 `#[serde(default, skip_serializing_if = "Option::is_none")]`，否则历史授权键失效。
 - `TurnSpec` 仅内核可见；`TurnRunCtx` / `ToolExecCtx` 字段新增会被 `assistant-agent` 测试替身引用，需同批更新。
 
@@ -464,17 +489,19 @@ child_policy = ResolvedPermissionPolicy::default_global()
 | # | 标准 |
 |---|---|
 | A1 | `spawn_agent` 的 `audience = AGENT_ONLY`：`list_available_tools` 可见，`os_tool_exec` 不可达 |
-| A2 | 未在 `allowed_tools` 中时 `validate_input` 拒绝；深度 ≥ 1 时拒绝；两种拒绝都不进入审批 |
+| A2 | `allowed_tools = None` 与「不含 `spawn_agent`」均被 `validate_input` 拒绝（`None` 按空集，fail-closed）；深度 ≥ 1 时拒绝；拒绝都不进入审批 |
 | A3 | 默认子工具集 = 父只读工具集去 `spawn_agent` / `ask_user`；显式 `tools` 含非子集或非只读项时返回可纠正错误并列出违规项 |
 | A4 | 子工具集为空时子 turn 仍可纯推理完成，`tools = None` |
 | A5 | 子代理回传伪造/未列入的工具调用时，执行期白名单返回 `Denied`，不进入 `ToolPipeline` |
-| A6 | 子代理无法再次委派（工具不在子集 **且** 深度自检拒绝）；同父 turn 第二个并发委派被 `Business` 拒绝 |
-| A7 | 父 turn 取消 → 子令牌取消、子 `TurnRunner` 收敛为 `Cancelled`；子取消不取消父；无后台 task 残留 |
-| A8 | 子 run 超过子墙钟返回 `Timeout`，且子任务已取消；子 `Failed` / `Cancelled` / `Interrupted` 的 `error_kind` 与文案符合 §3.5 |
+| A6 | 子代理无法再次委派：`spawn_agent` 不在子工具集，**且** 子 turn 内即使伪造调用也被执行期白名单拒绝、`delegation_depth >= 1` 自检也拒绝——三条独立路径各自可测。槽位约束按**串行**验证：同一父 turn 内第二次委派在第一次结束后发起，仍被 `Business` 拒绝（P8.1 不存在并发委派，`is_concurrency_safe = false` + 内联 await） |
+| A7 | 父 turn 取消 → 子令牌取消、子 `TurnRunner` 收敛为 `Cancelled`；子取消不取消父；无后台 task 残留；子 `TurnTasks` 条目已 `finish`（父 Pipeline 丢弃 future 后条目数归零） |
+| A8 | 内核 `turn_wall_clock` 收敛返回 `Timeout` 且子任务已取消；**看门狗路径**（人为让内核不收敛）返回 `Internal` 而非 `Timeout`；子 `Failed` / `Cancelled` / `Interrupted` 的 `error_kind`、`data.status` 与文案符合 §3.5 |
 | A9 | 子成功回传：`data` 字段齐全，`result_for_assistant` 含状态头与子文本；父模型可读 |
 | A10 | 子 `messages` 不入库：父会话 `messages` 数量与内容不变；`token_usage_records` 出现 `kind = 'subagent'` 行，`conversation_id` 为父会话，占用查询（`kind = 'chat'`）不受影响 |
 | A11 | `ApprovalKey` 根键 JSON 与改造前逐字节一致；子键含 `agentId` 且不命中父键；`permission_grants` 历史行仍可命中 |
-| A12 | `cargo test -p assistant-tools`、`cargo test -p assistant-agent`、`cargo test --test assembly_contract` 通过；`assistant-agent` 无 tauri 依赖；`cargo clippy --workspace --all-targets -- -D warnings` 与 `cargo fmt --check` 通过；`npm run contract:check` 幂等（P8.1 不改 DTO） |
+| A12 | 子策略以父策略为基座：父项目规则 `("read", "<path>", Deny)` 在子作用域同样 `Denied`；父 `AllowSession` 授权不使子调用放行 |
+| A13 | 用一个声明了 `permission_intents` 的**假只读工具**注入子 `ToolGateway`：求值为 `Ask` 时由 `FailClosedPrompter` 返回 `Denied`，不弹卡片、不写授权、不等待超时；同一工具在父作用域仍按原策略求值（不因该机制被改判） |
+| A14 | `cargo test -p assistant-tools`、`cargo test -p assistant-agent`、`cargo test --test assembly_contract` 通过；`assistant-agent` 无 tauri 依赖；`cargo clippy --workspace --all-targets -- -D warnings` 与 `cargo fmt --check` 通过；`npm run contract:check` 幂等（P8.1 不改 DTO） |
 
 ---
 
@@ -486,16 +513,18 @@ child_policy = ResolvedPermissionPolicy::default_global()
 | 父上下文无法被继承导致任务失败 | 系统提示要求任务自包含；错误回填给父模型，父可补充上下文重试 |
 | 子代理绕过工具白名单 | 执行期白名单（§3.4），不依赖注入期可见性 |
 | 父批准被委派放大 | `ApprovalKey.agent_id` 作用域；子键与父键不互命中 |
-| `spawn_agent` 未装配却被模型调用 | `validate_input` 检查 `allowed_tools`，未装配即 blocked |
+| `spawn_agent` 未装配却被模型调用 | `validate_input` 检查 `allowed_tools`，`None` 按空集 fail-closed；A2 锁定 |
 | 历史授权键失效 | `agent_id` 省略序列化；A11 锁定 |
 | 子事件污染前端 | P8.1 丢弃子事件；P8.2 再引入投影 |
+| **子代理内部失败不可观测** | 子事件全丢弃且 `TurnOutcome` 不含 provider 原始载荷，工具被 `Denied`、单次模型调用超时等在父模型与用户侧都不可见。缓解：① §3.5 把每类失败映射为稳定文案 + `data.status`，父模型至少能看到类别；② 子链路日志必须带 `agent_id` / `parent_turn_id` 关联标识，`FailClosedPrompter` 的拒绝单独 `log::warn!`；③ A13 锁定拒绝路径可测 |
+| 清理阻塞 tokio 执行器 | `Drop` 只做 rename + 异步删除（§4.6），启动时清空 `.trash/` 兜底 |
 
 **开放问题**（P8.1 按下列默认落地；后续批次可改）：
 
 1. **子代理模型**：P8.1 继承父 provider / model；是否需要独立便宜模型？归 P8.2。
 2. **父级执行期白名单**：现状 `PipelineToolExecution` 只做注入期白名单，父 agent 幻觉调用未装配工具仍可能进入 Pipeline（只受策略约束）。P8.1 只对 `spawn_agent` 做自检、对子代理做执行期白名单；是否把执行期白名单提升为 P2 的通用能力，需单独评估（会改 P2 契约）。
 3. **`AllowAlways` 语义**：当前覆盖全部委派而非单个任务；若未来引入写类子代理，必须改成任务摘要 + 子工具集并重新定稿。
-4. **子代理不继承父 `approval_level`**：只读子调用不逐次弹审批，委派审批覆盖；若用户要求 `all_os_tools` 对子读也生效，需要在子策略中注入父审批级别，归 P8.2。
+4. **子代理不继承父 `approval_level`**：落地方式是剥掉 `RuleOrigin::ApprovalLevel` 规则（§5.4），只读子调用不逐次弹审批，委派审批覆盖。副作用：`all_os_tools` 下父的 read 需审批、子的 read 不需，这是唯一「子比父宽松」的方向（仅 read 类）。若用户要求该级别对子读也生效，改为保留父级别规则并在子策略内注入，归 P8.2。
 5. **交互工具排除名单**：P8.1 硬编码排除 `ask_user`。新增交互类工具时需要 `BehaviorHints` 增加「需要用户在场」维度，或维护统一排除表。
 6. **子代理结果体积**：依赖 P2 的落盘阈值；若父模型仍频繁遇到超大子结果，再考虑专用摘要器（I36 design §3.19 的解冻条件）。
 
