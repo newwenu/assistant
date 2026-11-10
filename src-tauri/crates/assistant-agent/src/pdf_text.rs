@@ -52,7 +52,14 @@ pub async fn extract_or_load(store: &AttachmentStore, att: &FileAttachmentRef) -
         return Some(text);
     }
 
-    let path = store.file_path(&att.attachment_id);
+    let path = match store.file_path(&att.attachment_id) {
+        Ok(path) => path,
+        Err(e) => {
+            log::warn!("[pdf-extract] 附件 id 非法: {} ({})", att.name, e);
+            release(&att.attachment_id, &lock);
+            return None;
+        }
+    };
     let extracted = tokio::task::spawn_blocking(move || pdf_extract::extract_text(&path)).await;
 
     let text = match extracted {

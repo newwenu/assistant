@@ -255,6 +255,7 @@
         "chat": "对话",
         "agent": "Agent"
       },
+      "avatar": { "none": "未设置" },
       "field": {
         "name": {
           "label": "名称",
@@ -262,6 +263,10 @@
           "required": "请输入模式名称"
         },
         "description": { "label": "描述", "placeholder": "模式描述" },
+        "avatar": {
+          "label": "头像",
+          "description": "内置头像；暂不支持上传自定义图片"
+        },
         "kind": { "label": "类型" },
         "prompt": {
           "label": "系统提示词",
@@ -567,7 +572,8 @@
       "image_not_found": "图片找不到了",
       "too_many_files": "最多只能添加 {{max}} 个文件",
       "file_too_large": "文件大小不能超过 {{max}} MB",
-      "invalid_file_type": "不支持的文件格式"
+      "invalid_file_type": "不支持的文件格式",
+      "import_failed": "附件导入失败，请重试"
     },
     "attachment": {
       "missing_title": "附件文件已不存在",
@@ -598,7 +604,13 @@
       "interrupted": "已中断",
       "identity": {
         "unknown_mode": "未知模式",
-        "separator": "·"
+        "separator": "·",
+        "avatar": {
+          "builtin_chat": "对话气泡",
+          "builtin_agent": "机器人",
+          "builtin_translate": "翻译",
+          "builtin_default": "默认"
+        }
       }
     },
     "branch": {

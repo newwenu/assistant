@@ -156,6 +156,8 @@ tauri-plugin-autostart = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
 tauri-plugin-notification = { workspace = true }
 mouse_position = { workspace = true }
+# 受管目录基根解析（src/app_dirs）；workspace 已固定版本，不新增外部 crate
+dirs = { workspace = true }
 rusqlite = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
@@ -196,3 +198,4 @@ strip = true
 
 [dev-dependencies]
 minidump = "0.27.0"
+tempfile = { workspace = true }

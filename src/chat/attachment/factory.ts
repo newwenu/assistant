@@ -1,4 +1,3 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import type { AdmitError, AllowedImageMimeType, Attachment } from "./types";
 import {
   ALLOWED_IMAGE_MIME_TYPES,
@@ -7,6 +6,8 @@ import {
   FILE_EXT_TO_MIME,
   IMAGE_EXT_TO_MIME,
 } from "./types";
+import { attachmentUrl } from "./paths";
+import { storageService } from "@/services/storageService";
 
 export type AttachmentResult =
   { ok: true; attachment: Attachment } | { ok: false; error: AdmitError };
@@ -25,10 +26,6 @@ function generateAttachmentId(): string {
 
 function extOf(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
-}
-
-function fileNameFromPath(filePath: string): string {
-  return filePath.split(/[\\/]/).pop() ?? filePath;
 }
 
 export function resolveImageMimeType(file: File): AllowedImageMimeType | null {
@@ -65,21 +62,61 @@ export function createImageAttachmentFromFile(file: File): AttachmentResult {
   });
 }
 
-export function createImageAttachmentFromPath(
+/**
+ * 路径附件：先做扩展名预筛，再由 `import_attachment` 完成校验与入库。
+ *
+ * 入库后附件只有 `attachmentId`，前端不再保留原始绝对路径；
+ * 预筛只用于快速失败，大小与类型以后端判定为准。
+ */
+export async function createPathAttachment(
   filePath: string,
-): AttachmentResult {
-  const mimeType = IMAGE_EXT_TO_MIME[extOf(filePath)];
-  if (!mimeType) return reject("invalid_type");
+): Promise<AttachmentResult> {
+  const ext = extOf(filePath);
+  const imageMime = IMAGE_EXT_TO_MIME[ext];
+  const fileMime = FILE_EXT_TO_MIME[ext];
+  if (!imageMime && !fileMime) return reject("invalid_file_type");
 
-  return accept({
+  let imported;
+  try {
+    imported = await storageService.importAttachment(filePath);
+  } catch (e) {
+    return reject(mapImportError(e));
+  }
+
+  const base = {
     id: generateAttachmentId(),
-    kind: "image",
-    file: new File([], fileNameFromPath(filePath), { type: mimeType }),
-    previewUrl: convertFileSrc(filePath),
-    mimeType,
-    originalSizeBytes: 0,
-    filePath,
-  });
+    file: new File([], imported.fileName, {
+      type: imageMime ?? fileMime ?? "application/octet-stream",
+    }),
+    originalSizeBytes: imported.bytes,
+    attachmentId: imported.attachmentId,
+  };
+
+  if (imageMime) {
+    return accept({
+      ...base,
+      kind: "image",
+      mimeType: imageMime,
+      previewUrl: await attachmentUrl(imported.attachmentId).catch(() => ""),
+    });
+  }
+  if (fileMime) {
+    return accept({
+      ...base,
+      kind: "file",
+      mimeType: fileMime,
+      previewUrl: "",
+    });
+  }
+  return reject("invalid_file_type");
+}
+
+function mapImportError(e: unknown): AdmitError {
+  const message = typeof e === "string" ? e : "";
+  if (message === "file_too_large") return "file_too_large";
+  if (message === "too_large") return "too_large";
+  if (message === "invalid_file_type") return "invalid_file_type";
+  return "import_failed";
 }
 
 export function createFileAttachmentFromFile(file: File): AttachmentResult {
@@ -95,22 +132,5 @@ export function createFileAttachmentFromFile(file: File): AttachmentResult {
     previewUrl: "",
     mimeType,
     originalSizeBytes: file.size,
-  });
-}
-
-export function createFileAttachmentFromPath(
-  filePath: string,
-): AttachmentResult {
-  const mimeType = FILE_EXT_TO_MIME[extOf(filePath)];
-  if (!mimeType) return reject("invalid_file_type");
-
-  return accept({
-    id: generateAttachmentId(),
-    kind: "file",
-    file: new File([], fileNameFromPath(filePath), { type: mimeType }),
-    previewUrl: "",
-    mimeType,
-    originalSizeBytes: 0,
-    filePath,
   });
 }

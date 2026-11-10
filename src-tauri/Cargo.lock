@@ -217,6 +217,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "csv",
+ "dirs 7.0.0",
  "futures",
  "log",
  "minidump",
@@ -234,6 +235,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tempfile",
  "tokio",
  "ts-rs",
  "uuid",
@@ -258,7 +260,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "crash-handler",
- "dirs 7.0.0",
  "minidump-writer",
 ]
 

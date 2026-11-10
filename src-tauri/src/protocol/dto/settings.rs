@@ -209,7 +209,8 @@ pub struct ThemeChangedPayloadDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InstallMascotAssetResultDto {
-    pub installed_path: String,
+    /// 相对素材根目录的路径（如 `rive/custom.riv`）。前端经 `mascotAssetUrl` 拼接，不持有绝对路径。
+    pub rel_path: String,
     pub bytes: u64,
     pub version: u64,
 }

@@ -2,8 +2,9 @@
 
 > 分析对象：当前工作区代码（前端 `src/`，后端 `src-tauri/`，配置 `src-tauri/tauri.conf.json`、`src-tauri/capabilities/`）
 > 分析方式：静态检索 + 调用链人工追溯
-> 关联文档：I31 阶段一工具框架规格 §5（已归档；共享路径安全 `os/path.rs`）、I18-agent-tool-architecture-spec Step 2（已归档；文件系统工具）、`docs/analysis/PROJECT-DESIGN-GUIDELINES.md` §1.3（Rust cmd 薄壳）
+> 关联文档：I31 阶段一工具框架规格 §5（已归档；共享路径安全 `os/path.rs`）、I18-agent-tool-architecture-spec Step 2（已归档；文件系统工具）、`docs/principle/CODE-REVIEW-PRINCIPLE.md` D4（命令层薄壳）
 > 性质：**分析**，不含实施步骤；整改建议见 §9
+> 规格：`../store/I44-app-dir-management-spec.md`（结论已按当前代码重新取值；本文不作为规格依据）
 
 ## 目录
 

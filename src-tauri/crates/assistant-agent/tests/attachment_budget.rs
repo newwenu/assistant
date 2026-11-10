@@ -434,28 +434,49 @@ async fn admission_rejects_untrusted_channel_attachments() {
 }
 
 #[tokio::test]
-async fn admission_rejects_path_traversal() {
-    let (_dir, store) = store();
-    let config = MultimodalConfig {
-        allow_absolute_paths: false,
-        ..MultimodalConfig::trusted_channel_input()
-    };
-    let content = r#"[{"type":"image","attachment":{"attachmentId":"","name":"x.png"},"file_path":"../x.png"}]"#;
-    let result = multimodal::admit_attachments(content, &store, &config).await;
-    assert!(result.is_err());
+async fn admission_rejects_file_path_channel() {
+    let (dir, store) = store();
+    let path = dir.path().join("x.png");
+    std::fs::write(&path, b"not an image").expect("write");
+    let config = MultimodalConfig::trusted_channel_input();
+
+    let traversal = r#"[{"type":"image","attachment":{"attachmentId":"","name":"x.png"},"file_path":"../x.png"}]"#;
+    let error = multimodal::admit_attachments(traversal, &store, &config)
+        .await
+        .expect_err("file_path 通道必须整体拒绝");
+    assert!(error.to_string().contains("file_path"));
+
+    let absolute = format!(
+        r#"[{{"type":"image","attachment":{{"attachmentId":"","name":"x.png"}},"file_path":{}}}]"#,
+        serde_json::to_string(&path.to_string_lossy()).unwrap()
+    );
+    assert!(multimodal::admit_attachments(&absolute, &store, &config)
+        .await
+        .is_err());
+
+    let file = format!(
+        r#"[{{"type":"file","attachment":{{"attachmentId":"","name":"a.txt"}},"file_path":{}}}]"#,
+        serde_json::to_string(&path.to_string_lossy()).unwrap()
+    );
+    assert!(multimodal::admit_attachments(&file, &store, &config)
+        .await
+        .is_err());
+    assert!(
+        !std::fs::read_dir(dir.path())
+            .expect("read dir")
+            .any(|entry| entry
+                .map(|e| e.file_name().to_string_lossy().starts_with("derived"))
+                .unwrap_or(false)),
+        "拒绝路径不得产生任何落盘产物"
+    );
 }
 
 #[tokio::test]
 async fn admission_rejects_forged_mime() {
-    let (dir, store) = store();
-    let path = dir.path().join("fake.png");
-    std::fs::write(&path, b"not an image").expect("write");
-    let content = format!(
-        r#"[{{"type":"image","attachment":{{"attachmentId":"","name":"fake.png"}},"file_path":{}}}]"#,
-        serde_json::to_string(&path.to_string_lossy()).unwrap()
-    );
+    let (_dir, store) = store();
+    let content = r#"[{"type":"image","attachment":{"attachmentId":"","name":"fake.png"},"cached_data":"AAAA"}]"#;
     let result =
-        multimodal::admit_attachments(&content, &store, &MultimodalConfig::trusted_channel_input())
+        multimodal::admit_attachments(content, &store, &MultimodalConfig::trusted_channel_input())
             .await;
     assert!(result.is_err());
 }

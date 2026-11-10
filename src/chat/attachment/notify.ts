@@ -48,5 +48,8 @@ export function notifyAttachError(error: AdmitError): void {
         "chat.input.invalid_file_type",
       );
       break;
+    case "import_failed":
+      notifyWarning("chat.input.import_failed", "chat.input.import_failed");
+      break;
   }
 }

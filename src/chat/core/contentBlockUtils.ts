@@ -64,12 +64,6 @@ export async function buildContentBlocksAsync(
       };
       if (ref.attachmentId) {
         blocks.push({ type: "image", attachment: ref } satisfies ImageBlock);
-      } else if (att.filePath) {
-        blocks.push({
-          type: "image",
-          attachment: ref,
-          file_path: att.filePath,
-        } satisfies ImageBlock);
       } else {
         const cached_data = await fileToBase64(att.file);
         blocks.push({
@@ -86,12 +80,6 @@ export async function buildContentBlocksAsync(
       };
       if (ref.attachmentId) {
         blocks.push({ type: "file", attachment: ref } satisfies FileBlock);
-      } else if (att.filePath) {
-        blocks.push({
-          type: "file",
-          attachment: ref,
-          file_path: att.filePath,
-        } satisfies FileBlock);
       } else {
         const cached_data = await fileToBase64(att.file);
         blocks.push({

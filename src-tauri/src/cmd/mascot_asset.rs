@@ -1,12 +1,15 @@
 use std::fs;
 use std::path::PathBuf;
-use tauri::{command, AppHandle, Manager};
+use tauri::command;
 
+use crate::app_dirs::AppDirs;
 use crate::protocol::InstallMascotAssetResultDto;
 use assistant_config::atomic_write::atomic_write;
+use assistant_tools::os::path::{resolve_external_input, ExternalInputMode};
 
 const MAX_ASSET_BYTES: u64 = 2 * 1024 * 1024;
 
+#[derive(Debug)]
 struct AssetSpec {
     dir_name: &'static str,
     allowed_extensions: &'static [&'static str],
@@ -34,9 +37,10 @@ fn get_asset_spec(asset_type: &str) -> Result<AssetSpec, String> {
     }
 }
 
-pub(crate) fn mascot_assets_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    Ok(data_dir.join("mascot-assets"))
+pub(crate) fn mascot_assets_dir() -> Result<PathBuf, String> {
+    AppDirs::resolve()
+        .map(|dirs| dirs.mascot_assets())
+        .map_err(|e| e.to_string())
 }
 
 fn validate_mime(data: &[u8], asset_type: &str) -> Result<(), String> {
@@ -69,18 +73,11 @@ fn validate_mime(data: &[u8], asset_type: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[command]
-pub async fn install_mascot_asset(
-    app: AppHandle,
-    asset_type: String,
-    file_path: String,
-) -> Result<InstallMascotAssetResultDto, String> {
-    let spec = get_asset_spec(&asset_type)?;
+fn resolve_source(asset_type: &str, file_path: &str) -> Result<(AssetSpec, PathBuf), String> {
+    let spec = get_asset_spec(asset_type)?;
 
-    let src_path = PathBuf::from(&file_path);
-    if !src_path.exists() {
-        return Err(format!("source file not found: {}", file_path));
-    }
+    let src_path = resolve_external_input(file_path, ExternalInputMode::Read)
+        .map_err(|e| format!("source path rejected: {}", e))?;
 
     let src_ext = src_path
         .extension()
@@ -95,19 +92,37 @@ pub async fn install_mascot_asset(
         ));
     }
 
-    let data = fs::read(&src_path).map_err(|e| format!("read failed: {}", e))?;
+    Ok((spec, src_path))
+}
 
-    if data.len() as u64 > MAX_ASSET_BYTES {
+#[command]
+pub async fn install_mascot_asset(
+    asset_type: String,
+    file_path: String,
+) -> Result<InstallMascotAssetResultDto, String> {
+    let (spec, src_path) = resolve_source(&asset_type, &file_path)?;
+
+    let src_ext = src_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+
+    let src_bytes = fs::metadata(&src_path)
+        .map_err(|e| format!("metadata failed: {}", e))?
+        .len();
+    if src_bytes > MAX_ASSET_BYTES {
         return Err(format!(
             "file too large: {} bytes (max {} bytes)",
-            data.len(),
-            MAX_ASSET_BYTES
+            src_bytes, MAX_ASSET_BYTES
         ));
     }
 
+    let data = fs::read(&src_path).map_err(|e| format!("read failed: {}", e))?;
+
     validate_mime(&data, &asset_type)?;
 
-    let assets_dir = mascot_assets_dir(&app)?;
+    let assets_dir = mascot_assets_dir()?;
     let target_dir = assets_dir.join(spec.dir_name);
     let target_name = format!("{}.{}", spec.target_filename, src_ext);
     let target_path = target_dir.join(&target_name);
@@ -123,16 +138,16 @@ pub async fn install_mascot_asset(
         .unwrap_or(0);
 
     Ok(InstallMascotAssetResultDto {
-        installed_path: target_path.to_string_lossy().to_string(),
+        rel_path: format!("{}/{}", spec.dir_name, target_name),
         bytes: data.len() as u64,
         version,
     })
 }
 
 #[command]
-pub async fn uninstall_mascot_asset(app: AppHandle, asset_type: String) -> Result<(), String> {
+pub async fn uninstall_mascot_asset(asset_type: String) -> Result<(), String> {
     let spec = get_asset_spec(&asset_type)?;
-    let target_dir = mascot_assets_dir(&app)?.join(spec.dir_name);
+    let target_dir = mascot_assets_dir()?.join(spec.dir_name);
     for ext in spec.allowed_extensions {
         let path = target_dir.join(format!("{}{}", spec.target_filename, ext));
         if path.exists() {
@@ -140,10 +155,55 @@ pub async fn uninstall_mascot_asset(app: AppHandle, asset_type: String) -> Resul
         }
     }
     if asset_type == "rive" {
-        let manifest_path = mascot_assets_dir(&app)?.join("rive/custom-manifest.json");
+        let manifest_path = mascot_assets_dir()?.join("rive/custom-manifest.json");
         if manifest_path.exists() {
             let _ = fs::remove_file(&manifest_path);
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unknown_asset_type() {
+        let error = get_asset_spec("video").expect_err("未知素材类型必须报错");
+        assert!(error.contains("unknown asset_type"), "unexpected: {error}");
+    }
+
+    #[test]
+    fn rejects_extension_outside_asset_type() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let error =
+            resolve_source("rive", path.to_str().unwrap()).expect_err("扩展名不在白名单必须报错");
+        assert!(error.contains("not allowed"), "unexpected: {error}");
+    }
+
+    #[test]
+    fn rejects_system_directory_source() {
+        let path = if cfg!(windows) {
+            r"C:\Windows\System32\drivers\etc\hosts"
+        } else {
+            "/etc/hosts"
+        };
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        let error = resolve_source("gif", path).expect_err("系统目录源必须被拒绝");
+        assert!(
+            error.contains("source path rejected"),
+            "unexpected: {error}"
+        );
+    }
+
+    #[test]
+    fn rejects_relative_source() {
+        let error = resolve_source("gif", "assets/custom.gif").expect_err("相对路径必须被拒绝");
+        assert!(
+            error.contains("source path rejected"),
+            "unexpected: {error}"
+        );
+    }
 }

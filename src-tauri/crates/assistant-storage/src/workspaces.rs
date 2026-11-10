@@ -31,11 +31,16 @@ pub fn list(conn: &Connection) -> Result<Vec<WorkspaceEntry>, String> {
 }
 
 /// 目录显示名缺省取 basename；根目录等无 basename 的路径退回路径本身。
+///
+/// 显示名会进 DB 与 wire，只接受无损 UTF-8：`to_string_lossy` 会把不可表示的
+/// basename 改写成带替换字符的另一个字符串（I44 §10.3）。`path` 本身已是 UTF-8
+/// 文本，其 basename 天然可转，`to_str` 只是把这个前提钉住。
 pub fn default_name(path: &str) -> String {
     std::path::Path::new(path)
         .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
+        .and_then(|n| n.to_str())
         .filter(|n| !n.is_empty())
+        .map(str::to_string)
         .unwrap_or_else(|| path.to_string())
 }
 

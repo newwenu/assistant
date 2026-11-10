@@ -63,12 +63,10 @@ pub fn vault_verify_vault_meta_integrity(app: AppHandle) -> Result<IntegrityResu
 
 const EMERGENCY_META_FILE: &str = ".vault-meta";
 
-fn emergency_repo_dir(app: &AppHandle) -> Result<std::path::PathBuf, VaultErrorDto> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| super::internal_error(format!("Failed to resolve app data dir: {}", e)))?;
-    Ok(data_dir.join("security").join("recovery"))
+fn emergency_repo_dir(_app: &AppHandle) -> Result<std::path::PathBuf, VaultErrorDto> {
+    let dirs = crate::app_dirs::AppDirs::resolve()
+        .map_err(|e| super::internal_error(format!("Failed to resolve app dirs: {}", e)))?;
+    Ok(super::recovery_dir(&dirs))
 }
 
 fn prepare_emergency_repo(dir: &std::path::Path) -> Result<(), VaultErrorDto> {

@@ -1,0 +1,60 @@
+{
+  "note": "I44 §10.2 受控重复向量：Rust strip_verbatim_prefix 与前端 stripVerbatimPrefix 共用。新增用例只改本文件。",
+  "vectors": [
+    {
+      "input": "\\\\?\\G:\\code\\app",
+      "expected": "G:\\code\\app",
+      "note": "盘符 verbatim 前缀剥离"
+    },
+    {
+      "input": "\\\\?\\C:\\",
+      "expected": "C:\\",
+      "note": "根路径剥离后保留尾分隔符"
+    },
+    {
+      "input": "\\\\?\\UNC\\server\\share\\dir",
+      "expected": "\\\\server\\share\\dir",
+      "note": "UNC verbatim 转常规 UNC"
+    },
+    {
+      "input": "\\\\?\\UNC\\server\\share",
+      "expected": "\\\\server\\share",
+      "note": "UNC 无尾部组件"
+    },
+    {
+      "input": "G:\\code\\app",
+      "expected": "G:\\code\\app",
+      "note": "无前缀原样返回"
+    },
+    {
+      "input": "/home/user/app",
+      "expected": "/home/user/app",
+      "note": "POSIX 路径原样返回"
+    },
+    {
+      "input": "",
+      "expected": "",
+      "note": "空串原样返回"
+    },
+    {
+      "input": "\\\\?\\",
+      "expected": "",
+      "note": "只有前缀时返回空串"
+    },
+    {
+      "input": "\\\\?\\UNC\\",
+      "expected": "\\\\",
+      "note": "只有 UNC 前缀时返回双反斜杠"
+    },
+    {
+      "input": "\\\\?\\g:/CODE/app",
+      "expected": "g:/CODE/app",
+      "note": "不做大小写归一、不做分隔符替换"
+    },
+    {
+      "input": "\\\\?\\G:\\a\\\\?\\b",
+      "expected": "G:\\a\\\\?\\b",
+      "note": "只剥离头部一次，内嵌前缀保留"
+    }
+  ]
+}

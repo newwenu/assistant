@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
+import { repoPath } from "./paths";
 
-const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
-const TAURI_SRC = path.join(REPO_ROOT, "src-tauri", "src");
+const TAURI_SRC = repoPath("src-tauri/src");
 const HANDLER_OPEN = "generate_handler![";
 const PLUGIN_SUFFIX = "_plugin.rs";
 

@@ -2,13 +2,8 @@ import { useCallback, useEffect } from "react";
 import type { ClipboardEvent } from "react";
 import { useAttachmentStore } from "../../stores/attachmentStore";
 import type { AttachmentResult } from "./factory";
-import {
-  createFileAttachmentFromPath,
-  createImageAttachmentFromFile,
-  createImageAttachmentFromPath,
-} from "./factory";
+import { createImageAttachmentFromFile, createPathAttachment } from "./factory";
 import { notifyAttachError } from "./notify";
-import { ALLOWED_IMAGE_EXTENSIONS } from "./types";
 import { extractPastedImages } from "./sources/paste";
 import { pickAttachmentPaths } from "./sources/filePicker";
 import { subscribeDragDrop } from "./sources/dragDrop";
@@ -31,13 +26,8 @@ export function useAttachmentIntake(): AttachmentIntake {
   }, []);
 
   const ingestPath = useCallback(
-    (filePath: string) => {
-      const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
-      ingest(
-        ALLOWED_IMAGE_EXTENSIONS.includes(ext)
-          ? createImageAttachmentFromPath(filePath)
-          : createFileAttachmentFromPath(filePath),
-      );
+    async (filePath: string) => {
+      ingest(await createPathAttachment(filePath));
     },
     [ingest],
   );
@@ -55,13 +45,13 @@ export function useAttachmentIntake(): AttachmentIntake {
   const handleFileSelect = useCallback(async () => {
     const supportVision = useAttachmentStore.getState().supportVision;
     const paths = await pickAttachmentPaths(supportVision);
-    for (const path of paths) ingestPath(path);
+    for (const path of paths) await ingestPath(path);
   }, [ingestPath]);
 
   useEffect(
     () =>
       subscribeDragDrop((paths) => {
-        for (const path of paths) ingestPath(path);
+        for (const path of paths) void ingestPath(path);
       }),
     [ingestPath],
   );

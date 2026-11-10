@@ -1,6 +1,7 @@
 mod agent;
 mod agent_mode;
 mod app;
+mod attachment;
 pub(crate) mod chat;
 mod clock;
 mod compaction;
@@ -22,6 +23,7 @@ mod workspace;
 pub use agent::*;
 pub use agent_mode::*;
 pub use app::*;
+pub use attachment::*;
 pub use chat::*;
 pub use clock::*;
 pub use compaction::*;

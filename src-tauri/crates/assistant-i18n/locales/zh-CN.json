@@ -49,7 +49,8 @@
     "agent_mode_kind_locked": "模式类型不可修改，需要换类型时请新建模式",
     "workspace_invalid": "工作区路径无效：需要已存在的目录（相对路径不可用）",
     "workspace_empty": "工作区路径不能为空；清除绑定请使用清除操作",
-    "workspace_patch_conflict": "不能同时设置与清除工作区绑定"
+    "workspace_patch_conflict": "不能同时设置与清除工作区绑定",
+    "path_not_utf8": "该路径包含无法表示的字符（非 UTF-8），请换一个目录"
   },
   "agent_mode": {
     "builtin_cannot_delete": "内置模式不可删除",

@@ -1,13 +1,44 @@
-import { appDataDir, join } from "@tauri-apps/api/path";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { join } from "@tauri-apps/api/path";
+import type { AssetDirsDto } from "@/types/protocol.contract";
 import { storageService } from "@/services/storageService";
 
-let attachmentsDirCache: string | null = null;
+let assetDirsPromise: Promise<AssetDirsDto> | null = null;
 
-export async function getAttachmentsDir(): Promise<string> {
-  if (!attachmentsDirCache) {
-    attachmentsDirCache = await join(await appDataDir(), "attachments");
+async function assetDirs(): Promise<AssetDirsDto> {
+  if (!assetDirsPromise) {
+    assetDirsPromise = storageService.getAssetDirs().catch((e: unknown) => {
+      assetDirsPromise = null;
+      throw e;
+    });
   }
-  return attachmentsDirCache;
+  return assetDirsPromise;
+}
+
+async function assetUrl(baseDir: string, name: string): Promise<string> {
+  return convertFileSrc(await join(baseDir, name));
+}
+
+/**
+ * 附件文件在 asset 作用域内的 URL。`id` 由 `import_attachment` 返回，
+ * 前端只拼一次目录，不再持有目录名与绝对路径知识。
+ */
+export async function attachmentUrl(id: string): Promise<string> {
+  const dirs = await assetDirs();
+  return assetUrl(dirs.attachmentsDir, id);
+}
+
+/**
+ * 桌宠素材 URL。`relPath` 由 `install_mascot_asset` 返回（相对素材根），
+ * `version` 用于刷新缓存。
+ */
+export async function mascotAssetUrl(
+  relPath: string,
+  version?: number,
+): Promise<string> {
+  const dirs = await assetDirs();
+  const url = await assetUrl(dirs.mascotAssetsDir, relPath);
+  return version === undefined ? url : `${url}?v=${version}`;
 }
 
 /**

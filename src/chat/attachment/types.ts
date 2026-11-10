@@ -86,7 +86,6 @@ interface BaseAttachment {
   width?: number;
   height?: number;
   attachmentId?: string;
-  filePath?: string;
 }
 
 export interface ImageAttachment extends BaseAttachment {
@@ -113,4 +112,5 @@ export type AdmitError =
   | "no_vision"
   | "too_many_files"
   | "file_too_large"
-  | "invalid_file_type";
+  | "invalid_file_type"
+  | "import_failed";

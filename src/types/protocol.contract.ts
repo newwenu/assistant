@@ -34,11 +34,13 @@ export type ApprovalExtensionSeverityDto = "info" | "caution" | "danger";
 export type ApprovalLevelDto = "none" | "dangerous_only" | "all_os_tools";
 export type ApprovalPreviewDto = { summary: string, truncated: boolean, estimated: boolean, };
 export type ApprovalReasonDto = { "kind": "defaultPolicy", rule: string, } | { "kind": "approvalLevel", level: ApprovalLevelDto, } | { "kind": "projectRule", action: string, resource: string, } | { "kind": "tierCeiling", tier: ToolTierDto, } | { "kind": "advisor", rationale: string, };
+export type AssetDirsDto = { attachmentsDir: string, mascotAssetsDir: string, };
 export type AttachmentDeleteResultDto = { removedCount: number, 
 /**
  * 本次删除释放的字节数。未找到目录配额常量，无法论证更窄上限，故保留 `u64`。
  */
 removedBytes: number, };
+export type AttachmentImportDto = { attachmentId: string, mediaType: string, bytes: number, fileName: string, };
 export type AttachmentSummary = { attachmentId: string, mediaType: string, bytes: number, createdAt: number, };
 export type ChatDeltaPayloadDto = { conversationId: string, attemptId: string, messageId: string, seq: number, 
 /**
@@ -112,7 +114,11 @@ export type ConversationUnlockedPayloadDto = { conversationId: string, };
 export type FileAttachmentRefDto = { attachmentId: string, name: string, bytes: number, };
 export type GrantScopeDto = "session" | "global";
 export type ImageAttachmentRefDto = { attachmentId: string, mediaType: string | null, bytes: number | null, width: number | null, height: number | null, name: string | null, };
-export type InstallMascotAssetResultDto = { installedPath: string, bytes: number, version: number, };
+export type InstallMascotAssetResultDto = { 
+/**
+ * 相对素材根目录的路径（如 `rive/custom.riv`）。前端经 `mascotAssetUrl` 拼接，不持有绝对路径。
+ */
+relPath: string, bytes: number, version: number, };
 export type MascotConfDto = { renderer: string, primaryColor: string | null, secondaryColor: string | null, riveIdlePoseRotation: boolean, riveSrc: string | null, svgAnimated: boolean, gifSrc: string | null, gifBorderRadius: number, };
 export type MessageChangeKindDto = "branch_created" | "branch_switched" | "branch_forked" | "message_deleted" | "messages_compacted" | "stream_finished";
 export type MessageDto = { id: string, conversationId: string, role: string, content: string, tokens: number | null, timestamp: number, parentId: string | null, isPinned: boolean, reasoning: string | null, siblingIndex: number, siblingCount: number | null, providerId: string | null, modelId: string | null, 

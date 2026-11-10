@@ -8,5 +8,4 @@ publish.workspace = true
 [dependencies]
 crash-handler = { workspace = true }
 minidump-writer = { workspace = true }
-dirs = { workspace = true }
 chrono = { workspace = true }

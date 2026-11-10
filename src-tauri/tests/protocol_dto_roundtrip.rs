@@ -545,13 +545,13 @@ fn agent_tool_call_dto_rejects_unknown_fields() {
 #[test]
 fn install_mascot_asset_result_dto_roundtrip() {
     let dto = InstallMascotAssetResultDto {
-        installed_path: "mascot/rive/custom.riv".into(),
+        rel_path: "rive/custom.riv".into(),
         bytes: 1024,
         version: 1700000000000,
     };
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
-    assert!(json.contains("installedPath"), "camelCase: {}", json);
+    assert!(json.contains("relPath"), "camelCase: {}", json);
 }
 
 #[test]

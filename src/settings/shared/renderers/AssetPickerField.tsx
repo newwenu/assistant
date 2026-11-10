@@ -1,8 +1,8 @@
 import { useState, useCallback } from "react";
 import { Button, Space, Input } from "antd";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
+import { mascotAssetUrl } from "@/chat/attachment/paths";
 import { settingService } from "../../../services/settingService";
 import type { SettingFieldProps } from "../../core/types/fieldSchema";
 import { useSettingMessage } from "../useSettingMessage";
@@ -29,7 +29,7 @@ export function AssetPickerField({
         config.assetType,
         selected,
       );
-      const assetUrl = `${convertFileSrc(result.installedPath)}?v=${result.version}`;
+      const assetUrl = await mascotAssetUrl(result.relPath, result.version);
       onChange(assetUrl);
       setUrlInput(assetUrl);
       msg.success("settings.asset_picker.installed", {

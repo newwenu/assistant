@@ -52,6 +52,60 @@ pub fn resolve_leaf_preserving(input: &str, context: &ToolUseContext) -> Result<
     Ok(resolved)
 }
 
+/// 外部路径的用途：读入受管目录，或从受管目录写出。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalInputMode {
+    Read,
+    Write,
+}
+
+/// 校验受管目录之外的用户输入路径（导入源 / 导出目标）。
+///
+/// 输入：原始路径字符串（必须是绝对路径）+ 用途。
+/// 返回：经 `canonicalize_lenient` 归一、并通过受保护目录与凭据目录检查的绝对路径。
+/// 失败：非绝对路径、盘符相对路径、含 `..`、不可归一、落在受保护目录或凭据目录；
+/// `Read` 要求目标是文件，`Write` 要求父目录存在且本身不是受保护目录。
+///
+/// 与 [`resolve`] 的区别是**不套 workspace 边界**：这些路径本来就不在工作区内。
+/// 调用方必须使用返回值做 IO，不得再用原始字符串。
+pub fn resolve_external_input(input: &str, mode: ExternalInputMode) -> Result<PathBuf, String> {
+    let raw = Path::new(input);
+    reject_drive_relative(raw, input)?;
+    if !raw.is_absolute() {
+        return Err(format!("external path '{}' must be absolute", input));
+    }
+
+    let canonical = canonicalize_lenient(raw)?;
+    reject_system_dirs(&canonical)?;
+
+    match mode {
+        ExternalInputMode::Read => {
+            let meta = std::fs::metadata(&canonical)
+                .map_err(|e| format!("cannot stat '{}': {}", canonical.display(), e))?;
+            if !meta.is_file() {
+                return Err(format!(
+                    "external path '{}' is not a regular file",
+                    canonical.display()
+                ));
+            }
+        }
+        ExternalInputMode::Write => {
+            let parent = canonical
+                .parent()
+                .ok_or_else(|| format!("external path '{}' has no parent directory", input))?;
+            if !parent.is_dir() {
+                return Err(format!(
+                    "parent directory of '{}' does not exist",
+                    canonical.display()
+                ));
+            }
+            reject_system_dirs(parent)?;
+        }
+    }
+
+    Ok(canonical)
+}
+
 /// 宽松规范化：路径不存在时也给出确定结果。
 ///
 /// 输入：待规范化的路径。
@@ -320,13 +374,18 @@ fn canonicalize_existing(path: &Path) -> Result<PathBuf, String> {
     Ok(simplify_verbatim(&canonical))
 }
 
+/// 去掉 verbatim 前缀；非 UTF-8 路径原样返回。
+///
+/// 这里只做前缀剥离，不重新构造路径：`to_string_lossy` 得到的文本若被用来
+/// `PathBuf::from`，非 UTF-8 字节会被替换字符改写，得到另一个目录（I44 §10.3）。
 fn simplify_verbatim(path: &Path) -> PathBuf {
     #[cfg(windows)]
     {
         let simplified = dunce::simplified(path);
-        let text = simplified.to_string_lossy();
-        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
-            return PathBuf::from(format!(r"\\{}", rest));
+        if let Some(text) = simplified.to_str() {
+            if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+                return PathBuf::from(format!(r"\\{}", rest));
+            }
         }
         simplified.to_path_buf()
     }
@@ -350,11 +409,18 @@ fn component_prefix_match(path: &Path, base: &Path) -> bool {
         .all(|(base_component, path_component)| component_eq(base_component, path_component))
 }
 
+/// 组件相等判定：Windows 上大小写不敏感。
+///
+/// 不用 `to_string_lossy` 做归一：两条不同的非 UTF-8 组件会被塌缩成同一串，
+/// 使 `component_prefix_match` 把「不在工作区内」判成「在工作区内」（I44 §10.3
+/// 禁止 lossy 写入比较键）。非 UTF-8 组件退化为按字节精确比较，方向只会更严。
 fn component_eq(left: &Component, right: &Component) -> bool {
     #[cfg(windows)]
     {
-        left.as_os_str().to_string_lossy().to_lowercase()
-            == right.as_os_str().to_string_lossy().to_lowercase()
+        match (left.as_os_str().to_str(), right.as_os_str().to_str()) {
+            (Some(a), Some(b)) => a.to_lowercase() == b.to_lowercase(),
+            _ => left.as_os_str() == right.as_os_str(),
+        }
     }
     #[cfg(not(windows))]
     {
@@ -893,5 +959,83 @@ mod tests {
             error.contains("outside workspace root"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn external_input_rejects_relative_and_traversal() {
+        let error = resolve_external_input("relative.txt", ExternalInputMode::Read)
+            .expect_err("相对路径必须拒绝");
+        assert!(
+            error.contains("must be absolute"),
+            "unexpected error: {error}"
+        );
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let traversal = dir
+            .path()
+            .join("child")
+            .join("..")
+            .join("file.txt")
+            .display()
+            .to_string();
+        let error =
+            resolve_external_input(&traversal, ExternalInputMode::Read).expect_err("'..' 必须拒绝");
+        assert!(error.contains(".."), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn external_input_read_requires_a_regular_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("missing.txt").display().to_string();
+        assert!(resolve_external_input(&missing, ExternalInputMode::Read).is_err());
+
+        let as_dir = dir.path().display().to_string();
+        assert!(resolve_external_input(&as_dir, ExternalInputMode::Read).is_err());
+
+        let file = dir.path().join("ok.txt");
+        std::fs::write(&file, b"x").expect("write file");
+        let resolved = resolve_external_input(&file.display().to_string(), ExternalInputMode::Read)
+            .expect("普通文件应通过");
+        assert_eq!(resolved, canonicalize_lenient(&file).expect("canonical"));
+    }
+
+    #[test]
+    fn external_input_write_requires_existing_parent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing_parent = dir
+            .path()
+            .join("missing")
+            .join("out.txt")
+            .display()
+            .to_string();
+        let error = resolve_external_input(&missing_parent, ExternalInputMode::Write)
+            .expect_err("父目录不存在必须拒绝");
+        assert!(
+            error.contains("does not exist"),
+            "unexpected error: {error}"
+        );
+
+        let ok = dir.path().join("out.txt").display().to_string();
+        assert!(resolve_external_input(&ok, ExternalInputMode::Write).is_ok());
+    }
+
+    #[test]
+    fn external_input_rejects_protected_and_credential_dirs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let creds = dir.path().join(".ssh");
+        std::fs::create_dir(&creds).expect("create .ssh");
+        let target = creds.join("id_rsa").display().to_string();
+        let error = resolve_external_input(&target, ExternalInputMode::Write)
+            .expect_err("凭据目录必须拒绝");
+        assert!(error.contains("credential"), "unexpected error: {error}");
+
+        if let Some(protected) = protected_root_for_test() {
+            let target = protected.join("child.txt");
+            assert!(
+                resolve_external_input(&target.display().to_string(), ExternalInputMode::Write)
+                    .is_err(),
+                "受保护系统目录必须拒绝"
+            );
+        }
     }
 }

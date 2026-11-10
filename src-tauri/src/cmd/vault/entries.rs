@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use assistant_tools::os::path::{resolve_external_input, ExternalInputMode};
 
 use tauri::{command, AppHandle};
 
@@ -342,7 +342,9 @@ pub async fn vault_export_to_file(
                 }
             };
 
-            std::fs::write(&path, &content).map_err(|e| VaultErrorDto::from(VaultError::Io(e)))
+            let target = resolve_external_input(&path, ExternalInputMode::Write)
+                .map_err(super::validation_error)?;
+            std::fs::write(&target, &content).map_err(|e| VaultErrorDto::from(VaultError::Io(e)))
         })
     })
     .await
@@ -358,7 +360,8 @@ pub async fn vault_import(
 ) -> Result<u32, VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
         super::with_unlocked(&app, |state| {
-            let file_path = PathBuf::from(&path);
+            let file_path = resolve_external_input(&path, ExternalInputMode::Read)
+                .map_err(super::validation_error)?;
             let data = std::fs::read_to_string(&file_path)
                 .map_err(|e| VaultErrorDto::from(VaultError::Io(e)))?;
 

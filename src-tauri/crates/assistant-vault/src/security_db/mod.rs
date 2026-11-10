@@ -252,7 +252,25 @@ impl SecurityDbState {
     }
 
     fn backup_conn(conn: &rusqlite::Connection, db_path: &Path) -> Result<PathBuf, VaultError> {
-        let backup_dir = db_path.parent().unwrap_or(Path::new(".")).join("backups");
+        // 备份目录以安全库所在目录为根：路径必须是绝对路径且父目录非空，
+        // 否则 `backups/` 会落到进程 cwd，产生调用方不可见的副本。
+        let parent = db_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .ok_or_else(|| {
+                VaultError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Security db path has no parent directory",
+                ))
+            })?;
+        if !parent.is_absolute() {
+            return Err(VaultError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Security db path must be absolute",
+            )));
+        }
+
+        let backup_dir = parent.join("backups");
         std::fs::create_dir_all(&backup_dir)?;
 
         let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f");

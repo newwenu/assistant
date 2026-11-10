@@ -103,6 +103,37 @@ describe("buildContentBlocks", () => {
     expect(blocks[0].type).toBe("text");
     expect(blocks[1].type).toBe("image");
   });
+
+  it("never emits file_path, even without an attachment id", () => {
+    const image: Attachment = {
+      id: "att-1",
+      kind: "image",
+      file: new File([], "test.png", { type: "image/png" }),
+      previewUrl: "",
+      mimeType: "image/png",
+      originalSizeBytes: 100,
+    };
+    const doc: Attachment = {
+      id: "att-2",
+      kind: "file",
+      file: new File([], "notes.md", { type: "text/markdown" }),
+      previewUrl: "",
+      mimeType: "text/markdown",
+      originalSizeBytes: 10,
+    };
+    const blocks = buildContentBlocks("hello", [image, doc]);
+    for (const block of blocks) {
+      expect(block).not.toHaveProperty("file_path");
+    }
+    expect(blocks[1]).toMatchObject({
+      type: "image",
+      attachment: { attachmentId: "" },
+    });
+    expect(blocks[2]).toMatchObject({
+      type: "file",
+      attachment: { attachmentId: "" },
+    });
+  });
 });
 
 describe("extractPlainText", () => {

@@ -8,7 +8,31 @@ use assistant_vault::dto::VaultErrorDto;
 use assistant_vault::security_db::SecurityDbState;
 use assistant_vault::sync_engine::SyncEngine;
 
+use crate::app_dirs::AppDirs;
 use crate::protocol::events::{emit_broadcast, event_name};
+
+// 可选能力自持目录名：随 `feature = "vault"` 编译，只从 `AppDirs` 取 data 基根。
+// 不加 `vault_` 前缀：`assistant-vault/tests/conf_keys.rs` 会把 `pub vault_*` 当作配置键比对。
+const SECURITY_DIR: &str = "security";
+const SECURITY_DB_FILE: &str = "security.db";
+const VAULT_DIR: &str = "vault";
+const RECOVERY_DIR: &str = "recovery";
+
+pub(crate) fn security_dir(dirs: &AppDirs) -> std::path::PathBuf {
+    dirs.data().join(SECURITY_DIR)
+}
+
+pub(crate) fn security_db_path(dirs: &AppDirs) -> std::path::PathBuf {
+    security_dir(dirs).join(SECURITY_DB_FILE)
+}
+
+pub(crate) fn repo_dir(dirs: &AppDirs) -> std::path::PathBuf {
+    security_dir(dirs).join(VAULT_DIR)
+}
+
+pub(crate) fn recovery_dir(dirs: &AppDirs) -> std::path::PathBuf {
+    security_dir(dirs).join(RECOVERY_DIR)
+}
 
 pub struct SshAgentState {
     pub added_fingerprints: std::sync::Mutex<std::collections::HashSet<String>>,
@@ -192,17 +216,13 @@ pub(crate) fn sync_state(app: &AppHandle) -> Result<tauri::State<'_, SyncEngine>
     Ok(app.state::<SyncEngine>())
 }
 
-pub fn vault_setup(handle: &AppHandle) {
-    let security_db_path = match handle.path().app_data_dir() {
-        Ok(data_dir) => data_dir.join("security").join("security.db"),
-        Err(e) => {
-            log::error!("Failed to resolve app data dir for security db: {}", e);
-            std::path::PathBuf::from("security/security.db")
-        }
-    };
-    handle.manage(SecurityDbState::new(
-        security_db_path.to_str().unwrap_or("security/security.db"),
-    ));
+pub fn vault_setup(handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let dirs = AppDirs::resolve()?;
+    let db_path = security_db_path(&dirs);
+    let db_path_str = db_path.to_str().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "安全库路径不是 UTF-8")
+    })?;
+    handle.manage(SecurityDbState::new(db_path_str));
     handle.manage(RevealGuard::new());
     handle.manage(ClipboardGuard::new());
     handle.manage(SshAgentState {
@@ -210,10 +230,7 @@ pub fn vault_setup(handle: &AppHandle) {
     });
     log::info!("SecurityDbState + RevealGuard + ClipboardGuard + SshAgentState initialized");
 
-    let vault_dir = match handle.path().app_data_dir() {
-        Ok(data_dir) => data_dir.join("security").join("vault"),
-        Err(_) => std::path::PathBuf::from("security/vault"),
-    };
+    let vault_dir = repo_dir(&dirs);
     let sync_config = VaultConf::load()
         .ok()
         .map(|c| {
@@ -235,6 +252,7 @@ pub fn vault_setup(handle: &AppHandle) {
     log::info!("SyncEngine initialized");
 
     spawn_screen_lock_watcher(handle);
+    Ok(())
 }
 
 fn spawn_screen_lock_watcher(handle: &AppHandle) {

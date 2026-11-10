@@ -2,6 +2,7 @@
 // 参考: BongoCat/crates/bongocat-app/src/lib.rs — 模块化组织
 
 pub mod adapters;
+pub mod app_dirs;
 #[doc(hidden)]
 pub mod clock;
 mod cmd;

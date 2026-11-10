@@ -47,9 +47,6 @@ pub struct MultimodalConfig {
     pub max_file_bytes: usize,
     pub allowed_image_media_types: Vec<String>,
     pub allowed_file_extensions: Vec<String>,
-    /// 可信通道允许绝对路径（桌面选择器返回的路径）；
-    /// 不可信通道必须禁止绝对路径与 `..`。
-    pub allow_absolute_paths: bool,
 }
 
 impl MultimodalConfig {
@@ -94,7 +91,6 @@ impl MultimodalConfig {
                 "sql".into(),
                 "log".into(),
             ],
-            allow_absolute_paths: true,
         }
     }
 
@@ -106,40 +102,17 @@ impl MultimodalConfig {
             max_file_bytes: 0,
             allowed_image_media_types: Vec::new(),
             allowed_file_extensions: Vec::new(),
-            allow_absolute_paths: false,
         }
     }
 }
 
-async fn validate_path(path: &str, config: &MultimodalConfig) -> Result<(), String> {
-    if config.allow_absolute_paths {
-        return Ok(());
-    }
-    if path.contains("..") {
-        return Err("path traversal detected".to_string());
-    }
-    if Path::new(path).is_absolute() {
-        return Err("absolute path not allowed".to_string());
-    }
-    let meta = tokio::fs::symlink_metadata(path)
-        .await
-        .map_err(|e| format!("stat failed: {}", e))?;
-    if meta.file_type().is_symlink() {
-        return Err("symlink not allowed".to_string());
+fn reject_file_path(file_path: &Option<String>) -> Result<(), AgentError> {
+    if file_path.is_some() {
+        return Err(AgentError::other(
+            "file_path is not accepted: attachments must be archived first (attachmentId required)",
+        ));
     }
     Ok(())
-}
-
-fn media_type_from_ext(ext: &str) -> Option<&'static str> {
-    match ext {
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" | "jfif" => Some("image/jpeg"),
-        "gif" => Some("image/gif"),
-        "webp" => Some("image/webp"),
-        "bmp" => Some("image/bmp"),
-        "tif" | "tiff" => Some("image/tiff"),
-        _ => None,
-    }
 }
 
 fn file_media_type_from_ext(ext: &str) -> Option<&'static str> {
@@ -175,14 +148,6 @@ fn ext_of(name: &str) -> String {
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .unwrap_or_default()
-}
-
-fn file_name_from_path(path: &str) -> String {
-    Path::new(path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(path)
-        .to_string()
 }
 
 fn apply_blocks(msg: &mut ChatMessage, blocks: Vec<ContentBlock>) {
@@ -264,28 +229,9 @@ async fn admit_image(
         return Ok(());
     }
 
-    if let Some(fp) = file_path.as_deref() {
-        validate_path(fp, config).await?;
-    }
+    reject_file_path(file_path)?;
 
-    let (data, mt): (Vec<u8>, String) = if let Some(fp) = file_path.take() {
-        let path = Path::new(&fp);
-        if !path.exists() {
-            return Err(AgentError::other(format!("file not found: {}", fp)));
-        }
-        let mt = media_type_from_ext(&ext_of(&fp))
-            .map(|s| s.to_string())
-            .ok_or_else(|| {
-                AgentError::other(format!(
-                    "unsupported image extension: .{} (allowed: png, jpg, jpeg, jfif, gif, webp, bmp, tif, tiff)",
-                    ext_of(&fp)
-                ))
-            })?;
-        let data = tokio::fs::read(&fp)
-            .await
-            .map_err(|e| AgentError::other(format!("read failed: {}", e)))?;
-        (data, mt)
-    } else if let Some(data_b64) = cached_data.take() {
+    let (data, mt): (Vec<u8>, String) = if let Some(data_b64) = cached_data.take() {
         let data = general_purpose::STANDARD
             .decode(&data_b64)
             .map_err(|e| AgentError::other(format!("Invalid base64 in ImageBlock: {}", e)))?;
@@ -296,7 +242,7 @@ async fn admit_image(
         (data, mt)
     } else {
         return Err(AgentError::other(
-            "ImageBlock needs either file_path or cached_data",
+            "ImageBlock needs cached_data (attachmentId empty)",
         ));
     };
 
@@ -362,37 +308,9 @@ async fn admit_file(
         return Ok(());
     }
 
-    if let Some(fp) = file_path.as_deref() {
-        validate_path(fp, config).await?;
-        let ext = ext_of(fp);
-        if !config.allowed_file_extensions.iter().any(|e| e == &ext) {
-            return Err(AgentError::other(format!(
-                "unsupported file extension: .{}",
-                ext
-            )));
-        }
-    }
+    reject_file_path(file_path)?;
 
-    let (data, mt, name): (Vec<u8>, String, String) = if let Some(fp) = file_path.take() {
-        let path = Path::new(&fp);
-        if !path.exists() {
-            return Err(AgentError::other(format!("file not found: {}", fp)));
-        }
-        let mt = file_media_type_from_ext(&ext_of(&fp))
-            .map(|s| s.to_string())
-            .ok_or_else(|| {
-                AgentError::other(format!("unsupported file extension: .{}", ext_of(&fp)))
-            })?;
-        let data = tokio::fs::read(&fp)
-            .await
-            .map_err(|e| AgentError::other(format!("read failed: {}", e)))?;
-        let name = if attachment.name.is_empty() {
-            file_name_from_path(&fp)
-        } else {
-            attachment.name.clone()
-        };
-        (data, mt, name)
-    } else if let Some(data_b64) = cached_data.take() {
+    let (data, mt, name): (Vec<u8>, String, String) = if let Some(data_b64) = cached_data.take() {
         let data = general_purpose::STANDARD
             .decode(&data_b64)
             .map_err(|e| AgentError::other(format!("Invalid base64 in FileBlock: {}", e)))?;
@@ -410,7 +328,7 @@ async fn admit_file(
         (data, mt, attachment.name.clone())
     } else {
         return Err(AgentError::other(
-            "FileBlock needs either file_path or cached_data",
+            "FileBlock needs cached_data (attachmentId empty)",
         ));
     };
 

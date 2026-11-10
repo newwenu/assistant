@@ -339,11 +339,15 @@ CREATE TABLE token_usage_records (
 ```
 <app_data_dir>/           # Win: %APPDATA%\com.assistant / macOS: ~/Library/Application Support/com.assistant / Linux: ~/.local/share/com.assistant
 ├── assistant.db          # SQLite（业务数据）
-├── attachments/          # 图片附件（asset 协议注册目录）
-├── mascot-assets/        # Mascot 资源
+├── attachments/          # 附件原文件（asset 协议注册目录，作用域 `*`）
+│   └── derived/          # 附件侧车（缩略图等，只供后端读取，不经 asset 协议暴露）
+├── tool-results/         # 工具结果落盘（大输出按文件名引用）
+├── mascot-assets/        # Mascot 资源（asset 协议注册目录，作用域 `**`）
 └── security/
     ├── security.db       # 安全模块 / 保险库元数据（SQLCipher）
-    └── vault/            # 保险库 Git 工作区（本地提交 / 远程同步）
+    ├── vault/            # 保险库 Git 工作区（本地提交 / 远程同步）
+    ├── backups/          # 安全库备份
+    └── recovery/         # 恢复用产物
 
 <config_dir>/             # Win: %APPDATA%\com.assistant / macOS: ~/Library/Application Support/com.assistant / Linux: ~/.config/com.assistant
 ├── config.json           # AppConf
@@ -352,9 +356,9 @@ CREATE TABLE token_usage_records (
 └── vault-config.json     # VaultConf（保险库设置，禁止落在 vault 仓库目录）
 ```
 
-> 日志由 `tauri-plugin-log` 写入系统日志目录（Win: `%LOCALAPPDATA%\com.assistant\logs`）。双档：开发构建 `assistant-dev.log`（`Debug` 级 + stdout），生产构建 `assistant.log`（`Info` 级、无 stdout）。滚动为单文件 10MB + `KeepSome(3)`（1 活动 + 3 归档，单档上限 40MB），时间戳与归档名用本地时区，每次启动归档上一份。
+> 第一层目录名与 `assistant.db` 文件名只在 `src-tauri/src/app_dirs/dir_name.rs` 出现一次；基根拼接只在 `app_dirs/roots.rs`。`tauri.conf.json` 的 `assetProtocol.scope.allow` 与 `AppDirs::asset_scopes()` 由测试比对，前端不重复这些字符串。
 >
-> 崩溃转储走独立目录 `%APPDATA%\com.assistant\crashes`（`assistant-crash`），不受日志滚动影响。完整策略与实施清单见 I42 日志策略规格（已归档）。
+> 日志与崩溃转储同根，落在应用本地数据根：Win `%LOCALAPPDATA%\com.assistant` / macOS `~/Library/Application Support/com.assistant` / Linux `~/.local/share/com.assistant`，目录名分别为 `logs/`、`crashes/`。日志由 `tauri-plugin-log` 写入。双档：开发构建 `assistant-dev.log`（`Debug` 级 + stdout），生产构建 `assistant.log`（`Info` 级、无 stdout）。滚动为单文件 10MB + `KeepSome(3)`（1 活动 + 3 归档，单档上限 40MB），时间戳与归档名用本地时区，每次启动归档上一份。崩溃转储走 `crashes/`（`assistant-crash`），不受日志滚动影响。完整策略与实施清单见 I42 日志策略规格（已归档）。
 
 ---
 

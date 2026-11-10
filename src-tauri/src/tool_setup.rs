@@ -65,11 +65,15 @@ fn user_question_timeout_from_conf() -> Option<std::time::Duration> {
 /// 工作区绑定值的**唯一校验实现**（I38h §1）：写入校验与读取校验必须共用这一份，
 /// 否则会出现「保存时说合法、执行时说越界」。
 ///
-/// 返回 `None` 覆盖两种情形：空串（未配置）与脏值（已绑定但当前不可用）。
-/// 两者在 DB 中可区分（空串 vs 非空），在执行期不可区分（都无可用工作区）。
+/// 返回 `None` 覆盖三种情形：空串（未配置）、脏值（已绑定但当前不可用）、
+/// 非 UTF-8 路径（无法作为 wire / DB 文本承载，按不可用处理）。
+/// 前两者在 DB 中可区分（空串 vs 非空），在执行期不可区分（都无可用工作区）。
 ///
 /// 存储值保持 `std::fs::canonicalize` 的原样（Windows 上可能带 `\\?\` 前缀）：
 /// 该值是绑定比较与解析的唯一键，不做展示层美化；`\\?\` 的剥离只发生在展示侧。
+///
+/// 不用 `to_string_lossy`：lossy 会把非 UTF-8 路径改写成另一个字符串，
+/// 导致「校验的是 A、存下来的是 B」，绑定比较随之失效（I44 §10.3）。
 pub(crate) fn validate_workspace_root(raw: &str) -> Option<String> {
     if raw.trim().is_empty() {
         return None;
@@ -82,7 +86,7 @@ pub(crate) fn validate_workspace_root(raw: &str) -> Option<String> {
     if !canonical.is_dir() {
         return None;
     }
-    Some(canonical.to_string_lossy().into_owned())
+    canonical.to_str().map(str::to_string)
 }
 
 /// 工作区根目录的**唯一解析入口**（I38h §3）：4 处消费点全部调这一份。
@@ -160,13 +164,7 @@ pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
 
     // 落盘根目录必须是稳定路径：它会写进 `<persisted-output path="…">`，
     // 跨进程重放一致性依赖它（§4.5），不得用临时目录。
-    let results_dir = match handle.path().app_data_dir() {
-        Ok(data_dir) => data_dir.join("tool-results"),
-        Err(e) => {
-            log::error!("Failed to resolve app data dir for tool results: {}", e);
-            return Err(Box::new(e));
-        }
-    };
+    let results_dir = crate::app_dirs::AppDirs::resolve()?.tool_results();
     let storage: Arc<dyn ToolResultStorage> = Arc::new(FileToolResultStorage::new(results_dir));
     let pipeline = Arc::new(ToolPipeline::new(registry.clone(), gateway, storage));
 
@@ -267,7 +265,7 @@ mod tests {
         let file = dir.path().join("a.txt");
         std::fs::write(&file, "x").unwrap();
         assert_eq!(
-            validate_workspace_root(&file.to_string_lossy()),
+            validate_workspace_root(file.to_str().unwrap()),
             None,
             "文件不是目录"
         );
@@ -276,11 +274,11 @@ mod tests {
     #[test]
     fn validate_returns_canonical_for_real_directory() {
         let dir = TempDir::new("canonical");
-        let raw = dir.path().to_string_lossy().into_owned();
+        let raw = dir.path().to_str().unwrap().to_string();
         let canonical = dir.path().canonicalize().unwrap();
         assert_eq!(
             validate_workspace_root(&raw).as_deref(),
-            Some(canonical.to_string_lossy().as_ref())
+            Some(canonical.to_str().unwrap())
         );
     }
 
@@ -296,10 +294,10 @@ mod tests {
         let (conn, _db) = conn();
         let dir = TempDir::new("valid");
         let canonical = dir.path().canonicalize().unwrap();
-        insert_conversation(&conn, &conversation("c1", &dir.path().to_string_lossy())).unwrap();
+        insert_conversation(&conn, &conversation("c1", dir.path().to_str().unwrap())).unwrap();
         assert_eq!(
             resolve_workspace(&conn, "c1").as_deref(),
-            Some(canonical.to_string_lossy().as_ref())
+            Some(canonical.to_str().unwrap())
         );
     }
 
@@ -311,7 +309,7 @@ mod tests {
 
         let dir = TempDir::new("gone");
         let gone = dir.path().join("gone");
-        insert_conversation(&conn, &conversation("c2", &gone.to_string_lossy())).unwrap();
+        insert_conversation(&conn, &conversation("c2", gone.to_str().unwrap())).unwrap();
         assert_eq!(resolve_workspace(&conn, "c2"), None, "目录已不存在");
     }
 
@@ -325,7 +323,7 @@ mod tests {
     fn resolve_does_not_read_workspaces_book() {
         let (conn, _db) = conn();
         let dir = TempDir::new("book");
-        let path = dir.path().to_string_lossy().into_owned();
+        let path = dir.path().to_str().unwrap().to_string();
         assistant_storage::workspaces::upsert(&conn, &path, None).unwrap();
         insert_conversation(&conn, &conversation("c1", "")).unwrap();
         assert_eq!(

@@ -152,6 +152,27 @@ fn backup_keeps_latest_five() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[cfg(feature = "slow-tests")]
+#[test]
+fn backup_rejects_relative_or_parentless_db_path() {
+    let path = temp_db_path();
+    let db = SecurityDbState::new(path.to_str().unwrap());
+    db.init(STRONG_PW).unwrap();
+
+    let relative = std::path::Path::new("relative").join("security.db");
+    assert!(
+        db.backup(&relative).is_err(),
+        "相对路径必须拒绝，避免 backups/ 落到 cwd"
+    );
+    assert!(!std::path::Path::new("relative").join("backups").exists());
+
+    let parentless = std::path::Path::new("security.db");
+    assert!(db.backup(parentless).is_err(), "无父目录的路径必须拒绝");
+    assert!(!std::path::Path::new("backups").exists());
+
+    cleanup(&path);
+}
+
 #[test]
 fn cipher_algorithm_from_conf_is_case_insensitive() {
     use assistant_crypto::vault_crypto::types::CipherAlgorithm;

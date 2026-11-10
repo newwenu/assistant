@@ -62,13 +62,21 @@ pub fn list_workspaces(app: AppHandle) -> Result<Vec<WorkspaceDto>, String> {
 /// 打开系统目录选择器，只返回所选路径，**不写库**（登记由 `register_workspace` 负责）。
 ///
 /// 声明为 `async`：阻塞式对话框不能占用主线程事件循环。
+///
+/// 非 UTF-8 路径直接报错，不用 `to_string_lossy` 改写（I44 §10.3）：
+/// lossy 会返回一个与真实目录不同的字符串，后续登记必然失败或落到别处。
 #[command]
 pub async fn choose_workspace_dir(app: AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let picked = app.dialog().file().blocking_pick_folder();
-    Ok(picked
-        .and_then(|path| path.into_path().ok())
-        .map(|path| path.to_string_lossy().into_owned()))
+    let Some(path) = picked.and_then(|path| path.into_path().ok()) else {
+        return Ok(None);
+    };
+    let value = path
+        .to_str()
+        .map(str::to_string)
+        .ok_or_else(|| assistant_i18n::t("error.path_not_utf8"))?;
+    Ok(Some(value))
 }
 
 /// 登记（或刷新）目录簿条目；路径与 `patch_conversation` 写入值共用同一校验。

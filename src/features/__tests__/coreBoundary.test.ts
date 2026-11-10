@@ -2,10 +2,9 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { commandGroups } from "@/test-utils/rustCommands";
+import { readRepoFile, repoFileExists, repoPath } from "@/test-utils/paths";
 
-const SRC_ROOT = path.resolve(import.meta.dirname, "../..");
-const REPO_ROOT = path.resolve(SRC_ROOT, "..");
-const TAURI_ROOT = path.join(REPO_ROOT, "src-tauri");
+const TAURI_ROOT = repoPath("src-tauri");
 
 const ASSEMBLY_POINTS = [
   "config/features.json",
@@ -42,23 +41,20 @@ interface FeatureEntry {
 }
 
 function declaredFeatures(): Record<string, FeatureEntry> {
-  const raw = fs.readFileSync(
-    path.join(REPO_ROOT, "config/features.json"),
-    "utf8",
-  );
+  const raw = readRepoFile("config/features.json");
   return JSON.parse(raw) as Record<string, FeatureEntry>;
 }
 
 function read(relative: string): string {
-  return fs.readFileSync(path.join(REPO_ROOT, relative), "utf8");
+  return readRepoFile(relative);
 }
 
 function exists(relative: string): boolean {
-  return fs.existsSync(path.join(REPO_ROOT, relative));
+  return repoFileExists(relative);
 }
 
 function collect(relativeDir: string, out: string[] = []): string[] {
-  const absolute = path.join(REPO_ROOT, relativeDir);
+  const absolute = repoPath(relativeDir);
   if (!fs.existsSync(absolute)) return out;
   for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
     const child = path.join(relativeDir, entry.name).split(path.sep).join("/");

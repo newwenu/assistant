@@ -50,9 +50,17 @@ fn log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         builder = builder.target(Target::new(TargetKind::Stdout));
     }
 
-    builder
-        .target(Target::new(TargetKind::LogDir {
-            file_name: Some(if is_dev { "assistant-dev" } else { "assistant" }.into()),
-        }))
-        .build()
+    let file_name = if is_dev { "assistant-dev" } else { "assistant" };
+    match crate::app_dirs::AppDirs::resolve() {
+        // 日志与崩溃同根（local 根），显式给出目录，不用插件的 LogDir 默认落点。
+        Ok(dirs) => builder.target(Target::new(TargetKind::Folder {
+            path: dirs.logs(),
+            file_name: Some(file_name.into()),
+        })),
+        Err(e) => {
+            eprintln!("file logging disabled: {}", e);
+            builder
+        }
+    }
+    .build()
 }

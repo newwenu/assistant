@@ -45,43 +45,26 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         assistant_i18n::init_global(&locale);
     }
 
-    match handle.path().app_data_dir() {
-        Ok(data_dir) => {
-            let db_path = data_dir.join("assistant.db");
-            match db::init_db_localized(&db_path, &|key| assistant_i18n::t(key)) {
-                Ok(conn) => {
-                    match assistant_storage::conversations::mark_streaming_messages_interrupted(
-                        &conn,
-                    ) {
-                        Ok(0) => {}
-                        Ok(count) => {
-                            log::warn!("startup sweep: {count} streaming messages -> interrupted");
-                        }
-                        Err(e) => {
-                            log::warn!("startup sweep failed: {e}");
-                        }
-                    }
-                    handle.manage(DbState(std::sync::Mutex::new(conn)));
-                }
-                Err(e) => {
-                    log::error!("Failed to init database: {}", e);
-                }
+    let dirs = crate::app_dirs::AppDirs::resolve()?;
+
+    {
+        let conn = db::init_db_localized(&dirs.database(), &|key| assistant_i18n::t(key))
+            .map_err(Box::<dyn std::error::Error>::from)?;
+        match assistant_storage::conversations::mark_streaming_messages_interrupted(&conn) {
+            Ok(0) => {}
+            Ok(count) => {
+                log::warn!("startup sweep: {count} streaming messages -> interrupted");
+            }
+            Err(e) => {
+                log::warn!("startup sweep failed: {e}");
             }
         }
-        Err(e) => {
-            log::error!("Failed to resolve app data dir: {}", e);
-        }
+        handle.manage(DbState(std::sync::Mutex::new(conn)));
     }
 
     {
-        let attachments_dir = match handle.path().app_data_dir() {
-            Ok(data_dir) => data_dir.join("attachments"),
-            Err(e) => {
-                log::error!("Failed to resolve app data dir for attachments: {}", e);
-                return Err(Box::new(e));
-            }
-        };
-        std::fs::create_dir_all(&attachments_dir).expect("Failed to create attachments directory");
+        let attachments_dir = dirs.attachments();
+        std::fs::create_dir_all(&attachments_dir)?;
         let store = AttachmentStore::new(attachments_dir);
         handle.manage(store);
         log::info!("AttachmentStore initialized");

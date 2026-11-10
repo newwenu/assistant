@@ -1,15 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { storageService } from "@/services/storageService";
 import {
   createFileAttachmentFromFile,
-  createFileAttachmentFromPath,
   createImageAttachmentFromFile,
-  createImageAttachmentFromPath,
+  createPathAttachment,
   validateImageFile,
 } from "../factory";
 import { ATTACHMENT_MAX_IMAGE_SIZE_BYTES } from "../types";
 
+vi.mock("@/services/storageService", () => ({
+  storageService: { importAttachment: vi.fn() },
+}));
+vi.mock("../paths", () => ({
+  attachmentUrl: vi.fn(() => Promise.resolve("asset://localhost/attachment")),
+}));
+
+const importAttachment = vi.mocked(storageService.importAttachment);
+
 function imageFile(name = "shot.png", type = "image/png", size = 0): File {
   return new File([new Uint8Array(size)], name, { type });
+}
+
+function imported(name: string, mediaType: string, bytes = 42) {
+  return {
+    attachmentId: `sha-${name}`,
+    mediaType,
+    bytes,
+    fileName: name,
+  };
 }
 
 describe("validateImageFile", () => {
@@ -46,12 +64,6 @@ describe("image factories", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("invalid_type");
   });
-
-  it("createImageAttachmentFromPath rejects unknown extension", () => {
-    const result = createImageAttachmentFromPath("C:/tmp/report.pdf");
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toBe("invalid_type");
-  });
 });
 
 describe("file factories", () => {
@@ -70,10 +82,63 @@ describe("file factories", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("invalid_file_type");
   });
+});
 
-  it("createFileAttachmentFromPath rejects unknown extension", () => {
-    const result = createFileAttachmentFromPath("C:/tmp/binary.exe");
+describe("createPathAttachment", () => {
+  beforeEach(() => {
+    importAttachment.mockReset();
+  });
+
+  it("rejects unknown extension before touching the backend", async () => {
+    const result = await createPathAttachment("C:/tmp/binary.exe");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("invalid_file_type");
+    expect(importAttachment).not.toHaveBeenCalled();
+  });
+
+  it("imports an image and keeps only the attachment id", async () => {
+    importAttachment.mockResolvedValue(imported("shot.png", "image/png", 128));
+    const result = await createPathAttachment("C:/tmp/shot.png");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.attachment.kind).toBe("image");
+      expect(result.attachment.attachmentId).toBe("sha-shot.png");
+      expect(result.attachment.originalSizeBytes).toBe(128);
+      expect(result.attachment.previewUrl).toBe("asset://localhost/attachment");
+      expect(result.attachment).not.toHaveProperty("filePath");
+    }
+    expect(importAttachment).toHaveBeenCalledWith("C:/tmp/shot.png");
+  });
+
+  it("imports a document as a file attachment", async () => {
+    importAttachment.mockResolvedValue(imported("notes.md", "text/markdown"));
+    const result = await createPathAttachment("C:/tmp/notes.md");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.attachment.kind).toBe("file");
+      expect(result.attachment.attachmentId).toBe("sha-notes.md");
+      expect(result.attachment.previewUrl).toBe("");
+    }
+  });
+
+  it("maps backend too_large to the admit error", async () => {
+    importAttachment.mockRejectedValue("too_large");
+    const result = await createPathAttachment("C:/tmp/shot.png");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("too_large");
+  });
+
+  it("maps backend file_too_large to the admit error", async () => {
+    importAttachment.mockRejectedValue("file_too_large");
+    const result = await createPathAttachment("C:/tmp/notes.md");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("file_too_large");
+  });
+
+  it("falls back to import_failed for unexpected backend errors", async () => {
+    importAttachment.mockRejectedValue("read failed: permission denied");
+    const result = await createPathAttachment("C:/tmp/shot.png");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("import_failed");
   });
 });

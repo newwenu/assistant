@@ -25,6 +25,38 @@ pub enum AttachmentError {
     TooManyImages { count: usize, max: usize },
     #[error("Base64 decode error: {0}")]
     Base64(#[from] base64::DecodeError),
+    #[error("Invalid attachment id: {0}")]
+    InvalidId(String),
+}
+
+/// 附件 id 即文件名，只允许单层普通文件名。
+///
+/// 拒绝空串、隐藏名、`.` / `..`、`.tmp` 中间态、路径分隔符、盘符与 ADS（`:`）、
+/// NUL 与控制字符。判据与路径构造在同一处，调用方无法绕过。
+pub fn is_plain_file_name(id: &str) -> bool {
+    if id.is_empty()
+        || id.starts_with('.')
+        || id.ends_with(".tmp")
+        || id.contains(':')
+        || id.contains('/')
+        || id.contains('\\')
+        || id.chars().any(|c| c == '\0' || c.is_control())
+    {
+        return false;
+    }
+    let mut components = Path::new(id).components();
+    matches!(
+        (components.next(), components.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    )
+}
+
+fn ensure_plain(id: &str) -> Result<(), AttachmentError> {
+    if is_plain_file_name(id) {
+        Ok(())
+    } else {
+        Err(AttachmentError::InvalidId(id.to_string()))
+    }
 }
 
 pub struct ImageAttachmentRef {
@@ -122,30 +154,37 @@ impl AttachmentStore {
     }
 
     pub async fn read(&self, id: &str) -> Result<Vec<u8>, AttachmentError> {
-        let path = self.config.dir.join(id);
+        let path = self.file_path(id)?;
         Ok(fs::read(&path).await?)
     }
 
     /// 附件原文件的绝对路径，供 PDF 抽取等只读派生流程使用。
-    pub fn file_path(&self, id: &str) -> PathBuf {
-        self.config.dir.join(id)
+    ///
+    /// 入口即校验 id：非法 id 返回 `InvalidId`，不产出任何可 join 的路径。
+    pub fn file_path(&self, id: &str) -> Result<PathBuf, AttachmentError> {
+        ensure_plain(id)?;
+        Ok(self.config.dir.join(id))
     }
 
     /// PDF 文本层侧车路径：`derived/{sha}.extract-v1.txt`。
-    pub fn derived_path(&self, id: &str) -> PathBuf {
+    ///
+    /// 保持私有：外部只能通过下面的侧车方法读写，避免多一条未校验的路径入口。
+    fn derived_path(&self, id: &str) -> Result<PathBuf, AttachmentError> {
+        ensure_plain(id)?;
         let stem = Path::new(id)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or(id);
-        self.config
+        Ok(self
+            .config
             .dir
             .join(DERIVED_DIR)
-            .join(format!("{}.{}.txt", stem, EXTRACTOR_VERSION))
+            .join(format!("{}.{}.txt", stem, EXTRACTOR_VERSION)))
     }
 
-    /// 读取侧车文本；不存在或读取失败都返回 `None`，由调用方回退。
+    /// 读取侧车文本；不存在、读取失败或 id 非法都返回 `None`，由调用方回退。
     pub async fn read_derived_text(&self, id: &str) -> Option<String> {
-        let path = self.derived_path(id);
+        let path = self.derived_path(id).ok()?;
         match fs::read_to_string(&path).await {
             Ok(text) if !text.trim().is_empty() => Some(text),
             _ => None,
@@ -154,7 +193,7 @@ impl AttachmentStore {
 
     /// 写入侧车文本；已存在时直接返回，避免并发重复写。
     pub async fn write_derived_text(&self, id: &str, text: &str) -> Result<(), AttachmentError> {
-        let path = self.derived_path(id);
+        let path = self.derived_path(id)?;
         if path.exists() {
             return Ok(());
         }
@@ -167,9 +206,10 @@ impl AttachmentStore {
         Ok(())
     }
 
-    pub async fn delete_derived_text(&self, id: &str) {
-        let path = self.derived_path(id);
+    pub async fn delete_derived_text(&self, id: &str) -> Result<(), AttachmentError> {
+        let path = self.derived_path(id)?;
         let _ = fs::remove_file(&path).await;
+        Ok(())
     }
 
     pub async fn list_all(&self) -> Result<Vec<AttachmentEntry>, AttachmentError> {
@@ -201,8 +241,9 @@ impl AttachmentStore {
     }
 
     pub async fn delete(&self, id: &str) -> Result<(), AttachmentError> {
-        self.delete_derived_text(id).await;
-        let path = self.config.dir.join(id);
+        ensure_plain(id)?;
+        self.delete_derived_text(id).await?;
+        let path = self.file_path(id)?;
         Ok(fs::remove_file(&path).await?)
     }
 

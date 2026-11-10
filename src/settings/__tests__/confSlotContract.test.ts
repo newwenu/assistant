@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import path from "node:path";
 import {
   getBuiltinConfSlots,
   getBuiltinPages,
 } from "@/settings/core/builtinRegistry";
 import { commandGroups } from "@/test-utils/rustCommands";
-
-const SETTINGS_ROOT = path.resolve(import.meta.dirname, "..");
-const SRC_ROOT = path.resolve(SETTINGS_ROOT, "..");
-const REPO_ROOT = path.resolve(SRC_ROOT, "..");
+import { readRepoFile, repoFileExists, repoPath } from "@/test-utils/paths";
 
 interface FeatureEntry {
   default: boolean;
@@ -24,11 +20,11 @@ interface SlotDecl {
 }
 
 function read(relative: string): string {
-  return fs.readFileSync(path.join(REPO_ROOT, relative), "utf8");
+  return readRepoFile(relative);
 }
 
 function exists(relative: string): boolean {
-  return fs.existsSync(path.join(REPO_ROOT, relative));
+  return repoFileExists(relative);
 }
 
 function declaredFeatures(): Record<string, FeatureEntry> {
@@ -65,7 +61,7 @@ function extractField(text: string, field: string): string | undefined {
 }
 
 function featureSlotFiles(): { name: string; file: string }[] {
-  const featuresDir = path.join(SRC_ROOT, "features");
+  const featuresDir = repoPath("src/features");
   return fs
     .readdirSync(featuresDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())

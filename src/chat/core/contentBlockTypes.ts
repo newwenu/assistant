@@ -7,7 +7,6 @@ export interface ImageBlock {
   type: "image";
   attachment: ImageAttachmentRef;
   cached_data?: string;
-  file_path?: string;
   offloaded?: true;
 }
 
@@ -15,7 +14,6 @@ export interface FileBlock {
   type: "file";
   attachment: FileAttachmentRef;
   cached_data?: string;
-  file_path?: string;
 }
 
 export interface ImageAttachmentRef {

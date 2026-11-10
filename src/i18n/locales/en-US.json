@@ -264,6 +264,7 @@
         "chat": "Chat",
         "agent": "Agent"
       },
+      "avatar": { "none": "Not set" },
       "field": {
         "name": {
           "label": "Name",
@@ -273,6 +274,10 @@
         "description": {
           "label": "Description",
           "placeholder": "Mode description"
+        },
+        "avatar": {
+          "label": "Avatar",
+          "description": "Built-in avatars only; custom image upload is not supported yet"
         },
         "kind": { "label": "Type" },
         "prompt": {
@@ -582,7 +587,8 @@
       "image_not_found": "Image not found",
       "too_many_files": "Maximum {{max}} files allowed",
       "file_too_large": "File size cannot exceed {{max}} MB",
-      "invalid_file_type": "Unsupported file type"
+      "invalid_file_type": "Unsupported file type",
+      "import_failed": "Failed to import attachment, please retry"
     },
     "attachment": {
       "missing_title": "Attachment file no longer exists",
@@ -613,7 +619,13 @@
       "interrupted": "Interrupted",
       "identity": {
         "unknown_mode": "Unknown mode",
-        "separator": "·"
+        "separator": "·",
+        "avatar": {
+          "builtin_chat": "Chat bubble",
+          "builtin_agent": "Robot",
+          "builtin_translate": "Translate",
+          "builtin_default": "Default"
+        }
       }
     },
     "branch": {

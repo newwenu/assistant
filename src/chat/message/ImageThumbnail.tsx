@@ -1,10 +1,8 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { join } from "@tauri-apps/api/path";
 import { useTranslation } from "react-i18next";
 import { FileImageOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { ImageAttachmentRef } from "../core/contentBlockTypes";
-import { getAttachmentsDir } from "../attachment/paths";
+import { attachmentUrl } from "../attachment/paths";
 import { openFromPanel } from "@/orb/panelActions";
 import css from "./ImageThumbnail.module.css";
 
@@ -50,10 +48,9 @@ export const ImageThumbnail: React.FC<ImageThumbnailProps> = ({
 
     let cancelled = false;
     void (async () => {
-      const dir = await getAttachmentsDir();
-      const filePath = await join(dir, attachment.attachmentId);
+      const url = await attachmentUrl(attachment.attachmentId);
       if (!cancelled) {
-        setAssetUrl(convertFileSrc(filePath));
+        setAssetUrl(url);
       }
     })();
     return () => {

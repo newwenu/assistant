@@ -14,7 +14,7 @@ pub fn init() -> TauriPlugin<tauri::Wry> {
             if let Err(error) = assistant_vault::biometric::warm_up_keyring_backend() {
                 log::warn!("Windows Credential Manager backend unavailable: {}", error);
             }
-            crate::cmd::vault::vault_setup(app);
+            crate::cmd::vault::vault_setup(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

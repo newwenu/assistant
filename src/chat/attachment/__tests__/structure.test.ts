@@ -6,13 +6,13 @@ const MODULE_ROOT = path.resolve(import.meta.dirname, "..");
 const SOURCES_DIR = path.join(MODULE_ROOT, "sources");
 const INTAKE_FILE = path.join(MODULE_ROOT, "intake.ts");
 const FACTORY_FILE = path.join(MODULE_ROOT, "factory.ts");
+const PATHS_FILE = path.join(MODULE_ROOT, "paths.ts");
 
 const CREATED_SOURCE_FILE_NAMES = ["paste", "filePicker", "dragDrop"];
 const FACTORY_EXPORT_NAMES = [
   "createImageAttachmentFromFile",
-  "createImageAttachmentFromPath",
   "createFileAttachmentFromFile",
-  "createFileAttachmentFromPath",
+  "createPathAttachment",
 ];
 
 function read(file: string): string {
@@ -45,11 +45,15 @@ describe("attachment sources wiring", () => {
 });
 
 describe("attachment factory matrix", () => {
-  it("exposes the full 2x2 create matrix", () => {
+  it("exposes the file factories plus the single path factory", () => {
     const factory = read(FACTORY_FILE);
     for (const name of FACTORY_EXPORT_NAMES) {
-      expect(factory).toContain(`export function ${name}(`);
+      expect(factory).toMatch(
+        new RegExp(`export (async )?function ${name}\\(`),
+      );
     }
+    expect(factory).not.toContain("createImageAttachmentFromPath");
+    expect(factory).not.toContain("createFileAttachmentFromPath");
   });
 
   it("no longer references the removed core attachment modules", () => {
@@ -60,5 +64,26 @@ describe("attachment factory matrix", () => {
     for (const file of files) {
       expect(read(file)).not.toContain("core/attachment");
     }
+  });
+});
+
+describe("attachment paths single join point", () => {
+  it("exports only the URL helpers", () => {
+    const paths = read(PATHS_FILE);
+    expect(paths).toContain("export async function attachmentUrl(");
+    expect(paths).toContain("export async function mascotAssetUrl(");
+    expect(paths).not.toContain("getAttachmentsDir");
+  });
+
+  it("keeps exactly one convertFileSrc call", () => {
+    const paths = read(PATHS_FILE);
+    const hits = paths.match(/convertFileSrc\(/g) ?? [];
+    expect(hits.length).toBe(1);
+  });
+
+  it("takes directory names from the backend instead of literals", () => {
+    const paths = read(PATHS_FILE);
+    expect(paths).toContain("getAssetDirs");
+    expect(paths).not.toContain('"attachments"');
   });
 });
