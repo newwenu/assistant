@@ -15,6 +15,34 @@
 
 .rootRoleAssistant {
   align-items: flex-start;
+  /* 头像尺寸单一来源（I43 §5.1）：历史树详情取 20px，`.compact` 覆盖为 18px */
+  --msg-avatar-size: 20px;
+}
+
+.identityRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--msg-avatar-size, 20px);
+  max-width: 100%;
+  margin-bottom: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: none;
+}
+
+.identityMode,
+.identityModel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.identitySeparator {
+  flex: 0 0 auto;
 }
 
 .rootRoleCompactSummary {
@@ -124,6 +152,10 @@
 }
 
 .actionsWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
   opacity: 0;
   transition: opacity 0.15s ease-in-out;
   pointer-events: none;
@@ -144,14 +176,13 @@
   font-size: 11px;
   line-height: 1;
   color: var(--color-text-tertiary);
-  margin-top: 4px;
-  opacity: 0;
-  transition: opacity 0.2s ease-in-out;
+  white-space: nowrap;
   user-select: none;
 }
 
-.root:hover .timestamp {
-  opacity: 1;
+.compact {
+  /* 主会话视图恒为 compact，头像与身份行取 18px（I43 §5.1） */
+  --msg-avatar-size: 18px;
 }
 
 .compact .bubble {

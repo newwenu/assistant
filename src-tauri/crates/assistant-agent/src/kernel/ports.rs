@@ -106,6 +106,8 @@ pub struct CreateAssistantReq {
     pub parent_id: Option<String>,
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
+    /// turn 起点的模式快照（I43 §3.4）：由 `TurnInput.mode` 取值，内核不读 DB。
+    pub mode_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]

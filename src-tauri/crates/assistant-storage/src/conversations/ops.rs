@@ -166,6 +166,7 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Sto
             tool_call_id: msg.tool_call_id.clone(),
             is_error: msg.is_error,
             status: carried_status(&msg.status),
+            mode_id: msg.mode_id.clone(),
         };
         insert_message(conn, &new_msg)?;
     }
@@ -289,6 +290,7 @@ pub fn fork_to_new_conversation(
             tool_call_id: msg.tool_call_id.clone(),
             is_error: msg.is_error,
             status: carried_status(&msg.status),
+            mode_id: msg.mode_id.clone(),
         };
         insert_message(conn, &new_msg)?;
     }

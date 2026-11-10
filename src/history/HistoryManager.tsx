@@ -7,6 +7,8 @@ import { chatService } from "../services/chatService";
 import { subscribeHistoryEvents } from "../services/historyEvents";
 import { useChatStore } from "../stores/chatStore";
 import { useHistoryStore } from "../stores/historyStore";
+import { useAgentModeStore } from "../stores/agentModeStore";
+import { useProviderStore } from "../stores/providerStore";
 import { PersistQueue } from "../utils/persistQueue";
 import { createLogger } from "@/services/logger";
 import { notifyError } from "@/stores/notifyStore";
@@ -64,9 +66,19 @@ export const HistoryManager: React.FC = () => {
 
   const { refreshing, handleRefresh } = useHistoryRefresh(refreshMessages);
 
+  const loadModes = useAgentModeStore((s) => s.loadModes);
+  const loadProviders = useProviderStore((s) => s.loadProviders);
+
   useEffect(() => {
     void loadConversations();
   }, [loadConversations]);
+
+  // 身份解析依赖模式与 provider 目录（I43 §4.3）：历史页可能被直接进入，
+  // 不预先加载会让所有历史消息退化为「未知模式 + 原始 modelId」。
+  useEffect(() => {
+    void loadModes();
+    void loadProviders();
+  }, [loadModes, loadProviders]);
 
   useEffect(() => {
     const cleanup = subscribeHistoryEvents();

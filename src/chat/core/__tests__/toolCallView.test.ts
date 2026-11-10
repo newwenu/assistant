@@ -6,6 +6,10 @@ import type {
 } from "../chatTypes";
 import type { MessageDto } from "../../../types/protocol.contract";
 import {
+  makeMessage,
+  makeMessageDto,
+} from "../../../test-utils/messageFixtures";
+import {
   applyAgentToolCall,
   applyPendingToolCalls,
   cancelPendingToolCalls,
@@ -308,21 +312,11 @@ describe("历史 toolCalls 映射", () => {
   });
 
   it("toChatMessage 把线格式 toolCalls 转成视图且不带原始字段", () => {
-    const dto: MessageDto = {
-      id: "m1",
+    const dto: MessageDto = makeMessageDto("m1", {
       conversationId: "c1",
       role: "assistant",
       content: "done",
-      tokens: null,
       timestamp: 1,
-      parentId: null,
-      isPinned: false,
-      reasoning: null,
-      siblingIndex: 0,
-      siblingCount: null,
-      providerId: null,
-      modelId: null,
-      status: "completed",
       toolCalls: [
         {
           callId: "call-1",
@@ -332,7 +326,7 @@ describe("历史 toolCalls 映射", () => {
           result: "ok",
         },
       ],
-    };
+    });
     const message: Message = toChatMessage(dto);
     expect(message.toolCalls).toEqual([
       {
@@ -346,50 +340,28 @@ describe("历史 toolCalls 映射", () => {
   });
 
   it("toChatMessage 无工具调用时不挂 toolCalls 字段", () => {
-    const dto = {
-      id: "m1",
+    const dto = makeMessageDto("m1", {
       conversationId: "c1",
       role: "user",
       content: "hi",
-      tokens: null,
       timestamp: 1,
-      parentId: null,
-      isPinned: false,
-      reasoning: null,
-      siblingIndex: 0,
-      siblingCount: null,
-      providerId: null,
-      modelId: null,
-      status: "completed",
-      toolCalls: [],
-    } satisfies MessageDto;
+    });
     expect("toolCalls" in toChatMessage(dto)).toBe(false);
   });
 });
 
 describe("补拉快照回挂（list_pending_questions）", () => {
   function historyMessage(id: string, callIds: string[]): Message {
-    return {
-      id,
-      conversationId: "conv-1",
+    return makeMessage(id, {
       role: "assistant",
-      content: "",
-      tokens: null,
       timestamp: 1,
-      parentId: null,
-      isPinned: false,
-      reasoning: null,
-      siblingIndex: 0,
-      siblingCount: null,
-      providerId: null,
-      modelId: null,
       toolCalls: callIds.map((callId) => ({
         callId,
         name: "ask_user",
         status: "missing" as const,
         resultText: null,
       })),
-    };
+    });
   }
 
   function pendingQuestion(callId: string, iteration = 1): AgentToolCall {

@@ -87,6 +87,7 @@ fn fixture_input_with_models(
         tool_call_id: None,
         is_error: false,
         status: "completed".to_string(),
+        mode_id: None,
     }];
     let provider = assistant_agent::kernel::ProviderCredential {
         row: ProviderRow {

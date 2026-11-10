@@ -209,19 +209,27 @@ pub fn create_branch(
     let new_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
 
-    let (provider_id, model_id): (Option<String>, Option<String>) = if new_role == "assistant" {
+    let (provider_id, model_id, mode_id): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = if new_role == "assistant" {
         let conv = get_conversation_by_id(&tx, conversation_id)?;
         match conv {
-            Some(c) => (c.provider_id.clone(), Some(c.model_id.clone())),
-            None => (None, None),
+            Some(c) => (
+                c.provider_id.clone(),
+                Some(c.model_id.clone()),
+                c.mode_id.clone(),
+            ),
+            None => (None, None, None),
         }
     } else {
-        (None, None)
+        (None, None, None)
     };
 
     tx.execute(
-        "INSERT INTO messages (id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index, provider_id, model_id)
-         VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, 0, NULL, NULL, ?7, ?8, ?9)",
+        "INSERT INTO messages (id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index, provider_id, model_id, mode_id)
+         VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, 0, NULL, NULL, ?7, ?8, ?9, ?10)",
         params![
             new_id,
             conversation_id,
@@ -232,6 +240,7 @@ pub fn create_branch(
             max_sibling_index + 1,
             provider_id,
             model_id,
+            mode_id,
         ],
     )
     .map_err(|e| e.to_string())?;

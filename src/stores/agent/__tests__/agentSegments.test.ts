@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createAgentSegments } from "../agentSegments";
 import { useChatStreamStore } from "../../chatStreamStore";
 import type { AgentToolCall, Message } from "../../../chat/core/chatTypes";
+import { makeMessage } from "../../../test-utils/messageFixtures";
 
 type ToolPayload = AgentToolCall["payload"];
 
@@ -29,24 +30,14 @@ function finishedCall(iteration: number, callId = "call-1"): AgentToolCall {
 
 /** 历史行：等待期的调用在库里只有「已发起、无结果行」，映射成 `missing`。 */
 function historyMessage(id: string, callId: string): Message {
-  return {
-    id,
-    conversationId: "conv-1",
+  return makeMessage(id, {
     role: "assistant",
     content: "done",
-    tokens: null,
     timestamp: Date.now(),
-    parentId: null,
-    isPinned: false,
-    reasoning: null,
-    siblingIndex: 0,
-    siblingCount: null,
-    providerId: null,
-    modelId: null,
     toolCalls: [
       { callId, name: "ask_user", status: "missing", resultText: null },
     ],
-  };
+  });
 }
 
 describe("agentSegments — 一次迭代 = 一条消息 = 一个气泡", () => {
@@ -69,21 +60,11 @@ describe("agentSegments — 一次迭代 = 一条消息 = 一个气泡", () => {
 
   function beginTurn(assistantMsgId: string) {
     messages = [
-      {
-        id: assistantMsgId,
-        conversationId: "conv-1",
+      makeMessage(assistantMsgId, {
         role: "assistant",
-        content: "",
-        tokens: null,
         timestamp: Date.now(),
         parentId: "msg-user",
-        isPinned: false,
-        reasoning: null,
-        siblingIndex: 0,
-        siblingCount: null,
-        providerId: null,
-        modelId: null,
-      },
+      }),
     ];
     useChatStreamStore.getState().beginStream(assistantMsgId);
     segments.reset(assistantMsgId);

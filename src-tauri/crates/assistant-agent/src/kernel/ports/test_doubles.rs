@@ -770,6 +770,7 @@ mod tests {
                 parent_id: None,
                 provider_id: Some("p".to_string()),
                 model_id: Some("m".to_string()),
+                mode_id: None,
             })
             .await
             .expect("create");
@@ -805,6 +806,7 @@ mod tests {
                 parent_id: None,
                 provider_id: None,
                 model_id: None,
+                mode_id: None,
             })
             .await;
         assert!(created.is_err(), "injected failure must surface");

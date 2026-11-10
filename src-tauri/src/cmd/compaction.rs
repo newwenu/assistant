@@ -172,6 +172,7 @@ pub(crate) async fn execute_compaction(
                 tool_call_id: None,
                 is_error: false,
                 status: "streaming".to_string(),
+                mode_id: None,
             },
         )?;
     }

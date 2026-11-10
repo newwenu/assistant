@@ -67,7 +67,8 @@ pub fn init_db_localized(
             is_builtin INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
-            tool_config_json TEXT
+            tool_config_json TEXT,
+            avatar TEXT
         );
 
         -- `tool_calls_json` 为 agentloop 预留列（当前写入恒 NULL），禁止 DROP；
@@ -88,7 +89,8 @@ pub fn init_db_localized(
             model_id TEXT,
             status TEXT NOT NULL DEFAULT 'completed',
             tool_call_id TEXT,
-            is_error INTEGER NOT NULL DEFAULT 0
+            is_error INTEGER NOT NULL DEFAULT 0,
+            mode_id TEXT
         );
 
         CREATE TABLE IF NOT EXISTS tool_favorites (
@@ -191,6 +193,21 @@ pub fn init_db_localized(
         conn.execute_batch("ALTER TABLE agent_modes ADD COLUMN tool_config_json TEXT;")
             .map_err(|e| e.to_string())?;
         info!("Added tool_config_json column to agent_modes table");
+    }
+
+    // 模式头像标识（I43 §3.1）：可空，`NULL` = 未配置，读取侧走渲染降级链。
+    let has_agent_avatar: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('agent_modes') WHERE name = 'avatar'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_agent_avatar {
+        conn.execute_batch("ALTER TABLE agent_modes ADD COLUMN avatar TEXT;")
+            .map_err(|e| e.to_string())?;
+        info!("Added avatar column to agent_modes table");
     }
 
     let has_conv_tool_config: bool = conn
@@ -322,6 +339,22 @@ pub fn init_db_localized(
             )
             .map_err(|e| e.to_string())?;
             info!("Added is_error column to messages table");
+        }
+
+        // 消息级模式（I43 §3.1）：`NULL` = 未知来源（存量行 / 压缩摘要 / user 行）。
+        // 只追加列，不回填存量数据。
+        let has_mode_id: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'mode_id'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())?
+            > 0;
+        if !has_mode_id {
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN mode_id TEXT;")
+                .map_err(|e| e.to_string())?;
+            info!("Added mode_id column to messages table");
         }
 
         #[allow(unused)]

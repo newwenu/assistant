@@ -1,10 +1,11 @@
 import type { Message } from "../../chat/core/chatTypes";
-import type { AgentToolCall } from "../../chat/core/chatTypes";
+import type { AgentToolCall, Conversation } from "../../chat/core/chatTypes";
 import {
   applyAgentToolCall,
   cancelPendingToolCalls,
   findToolCallOwner,
 } from "../../chat/core/toolCallView";
+import { createOptimisticMessage } from "../../chat/core/optimisticMessage";
 import { useChatStreamStore } from "../chatStreamStore";
 
 interface SegmentsWritable {
@@ -14,6 +15,8 @@ interface SegmentsWritable {
 interface SegmentsReadable {
   messages: Message[];
   currentConversationId: string | null;
+  /** 会话列表：仅用于取本轮身份字段（`modeId` / `providerId` / `modelId`）。 */
+  conversations?: Conversation[];
 }
 
 /**
@@ -55,21 +58,19 @@ export function createAgentSegments(
     conversationId: string | null,
     parentId: string | null,
   ): Message {
-    return {
+    // 身份字段取会话现值，与落库后回读一致（I43 §4.1）；会话不在列表时兜底 `null`。
+    const conv = get().conversations?.find((c) => c.id === conversationId);
+    return createOptimisticMessage({
       id,
       conversationId: conversationId ?? "",
       role: "assistant",
       content: "",
-      tokens: null,
       timestamp: Date.now(),
       parentId,
-      isPinned: false,
-      reasoning: null,
-      siblingIndex: 0,
-      siblingCount: null,
-      providerId: null,
-      modelId: null,
-    };
+      providerId: conv?.providerId,
+      modelId: conv?.modelId,
+      modeId: conv?.modeId,
+    });
   }
 
   function commitSegmentContent() {

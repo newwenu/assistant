@@ -54,6 +54,7 @@ pub fn msg(id: &str, conv_id: &str, role: &str, content: &str, ts: i64) -> Messa
         tool_call_id: None,
         is_error: false,
         status: "completed".to_string(),
+        mode_id: None,
     }
 }
 
@@ -83,6 +84,7 @@ pub fn msg_with_parent(
         tool_call_id: None,
         is_error: false,
         status: "completed".to_string(),
+        mode_id: None,
     }
 }
 

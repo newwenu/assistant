@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Typography } from "antd";
 import { CompressOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
@@ -21,6 +21,10 @@ import { EditBlock } from "../blocks/EditBlock";
 import { BranchPicker } from "../blocks/BranchPicker";
 import { MessageContent } from "./MessageContent";
 import { MessageActions } from "./MessageActions";
+import { MessageAvatar } from "./MessageAvatar";
+import { resolveMessageIdentity } from "./messageIdentity";
+import { useAgentModeStore } from "../../stores/agentModeStore";
+import { useProviderStore } from "../../stores/providerStore";
 import css from "./MessageBubble.module.css";
 
 interface MessageBubbleProps {
@@ -29,6 +33,11 @@ interface MessageBubbleProps {
   isReasoningStreaming?: boolean;
   retryStatus?: RetryNotification | null;
   compact?: boolean;
+  /**
+   * 是否渲染头像与身份行（I43 §4.4）：`MessageList` 按轮次起点显式传入，
+   * 历史树详情等无列表上下文的场景走缺省 `true`。
+   */
+  showIdentity?: boolean;
   showBranchPicker?: boolean;
   onDelete?: (id: string) => void;
   onEdit?: (id: string, newContent: string) => void;
@@ -46,6 +55,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     isReasoningStreaming = false,
     retryStatus = null,
     compact = false,
+    showIdentity = true,
     showBranchPicker = true,
     onDelete,
     onEdit,
@@ -58,8 +68,21 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     const { t } = useTranslation();
     const isUser = message.role === "user";
     const isCompactSummary = message.role === "compact_summary";
+    /** 身份指示只对 `role === "assistant"` 生效（I43 N1），`tool` 等角色不参与。 */
+    const isAssistant = message.role === "assistant";
+    const identityVisible = isAssistant && showIdentity;
     const hasError = message.error != null;
     const hasReasoning = !!message.reasoning;
+
+    const modes = useAgentModeStore((s) => s.modes);
+    const providers = useProviderStore((s) => s.providers);
+    const identity = useMemo(
+      () =>
+        identityVisible
+          ? resolveMessageIdentity(message, modes, providers)
+          : null,
+      [identityVisible, message, modes, providers],
+    );
 
     const [editing, setEditing] = useState(false);
     const [editContent, setEditContent] = useState(message.content);
@@ -181,8 +204,29 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
       .filter(Boolean)
       .join(" ");
 
+    const identityModeText = identity
+      ? (identity.modeName ?? t("chat.message.identity.unknown_mode"))
+      : null;
+    const identityTitle = identity
+      ? [identityModeText, identity.modelName].filter(Boolean).join(" ")
+      : undefined;
+
     return (
       <div className={rootClass} data-role={message.role}>
+        {identity && identityModeText !== null && (
+          <div className={css.identityRow} title={identityTitle}>
+            <MessageAvatar modeId={message.modeId} />
+            <span className={css.identityMode}>{identityModeText}</span>
+            {identity.modelName && (
+              <>
+                <span className={css.identitySeparator}>
+                  {t("chat.message.identity.separator")}
+                </span>
+                <span className={css.identityModel}>{identity.modelName}</span>
+              </>
+            )}
+          </div>
+        )}
         <div className={css.stack}>
           {showBubble && (
             <div
@@ -266,6 +310,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
           )}
           {!editing && (
             <div className={css.actionsWrapper}>
+              <span className={css.timestamp}>
+                {new Date(message.timestamp).toLocaleTimeString()}
+              </span>
               {showBranchPicker && (
                 <BranchPicker
                   currentSiblingIndex={message.siblingIndex}
@@ -288,9 +335,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
               />
             </div>
           )}
-        </div>
-        <div className={css.timestamp}>
-          {new Date(message.timestamp).toLocaleTimeString()}
         </div>
       </div>
     );
@@ -315,6 +359,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     if (prev.onFork !== next.onFork) return false;
     if (prev.message.siblingIndex !== next.message.siblingIndex) return false;
     if (prev.message.siblingCount !== next.message.siblingCount) return false;
+    if (prev.message.modeId !== next.message.modeId) return false;
+    if (prev.message.modelId !== next.message.modelId) return false;
+    if (prev.message.providerId !== next.message.providerId) return false;
+    if (prev.showIdentity !== next.showIdentity) return false;
     return true;
   },
 );

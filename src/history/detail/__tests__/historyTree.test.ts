@@ -9,26 +9,7 @@ import {
   type HistoryRow,
 } from "../historyTree";
 import type { Message } from "../../../chat/core/chatTypes";
-
-function makeMessage(id: string, overrides: Partial<Message> = {}): Message {
-  return {
-    id,
-    conversationId: "conv-1",
-    role: "user",
-    content: "",
-    tokens: null,
-    timestamp: 0,
-    parentId: null,
-    isPinned: false,
-    reasoning: null,
-    siblingIndex: 0,
-    siblingCount: 1,
-    providerId: null,
-    modelId: null,
-    toolCalls: [],
-    ...overrides,
-  };
-}
+import { makeMessage } from "../../../test-utils/messageFixtures";
 
 const noExpand = new Set<string>();
 const flatten = (

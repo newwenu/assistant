@@ -17,6 +17,10 @@ import type {
   TokenUsage,
 } from "../../chat/core/chatTypes";
 import type { ProviderErrorPayloadDto } from "../../types/protocol.contract";
+import {
+  makeConversationRoute,
+  makeMessage,
+} from "../../test-utils/messageFixtures";
 
 function makeProviderError(message: string): ProviderErrorPayloadDto {
   return {
@@ -127,11 +131,7 @@ function createMockDeps(): {
     getActiveAttemptId: vi.fn(() => "conv-1:1"),
     getMessages: vi.fn(() => []),
     getConversations: vi.fn(() => []),
-    getConversationRoute: vi.fn(() => ({
-      link: "chat" as const,
-      modeId: null,
-      toolConfig: null,
-    })),
+    getConversationRoute: vi.fn(() => makeConversationRoute()),
     getReasoningChoice: vi.fn<() => ReasoningChoice>(() => "inherit"),
     getSelectedProviderId: vi.fn(() => "provider-1"),
     getSelectedModelId: vi.fn(() => "model-1"),
@@ -299,11 +299,9 @@ describe("turnOrchestrator", () => {
     });
 
     it("agent：deltaReasoning 按 iteration 归属到段（§3.1.1）", () => {
-      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
-        link: "agent",
-        modeId: null,
-        toolConfig: null,
-      });
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue(
+        makeConversationRoute({ link: "agent" }),
+      );
       orchestrator.handleDeltaEvent(
         makeDelta({ iteration: 2, deltaReasoning: "thinking..." }),
       );
@@ -368,11 +366,9 @@ describe("turnOrchestrator", () => {
     });
 
     it("agent 会话的 finishReason 只提交本段，不结束 turn（§3.1.1）", () => {
-      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
-        link: "agent",
-        modeId: null,
-        toolConfig: null,
-      });
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue(
+        makeConversationRoute({ link: "agent" }),
+      );
       orchestrator.handleDeltaEvent(
         makeDelta({
           conversationId: "conv-1",
@@ -391,11 +387,9 @@ describe("turnOrchestrator", () => {
 
   describe("onAgentToolCall — 按迭代归属", () => {
     it("工具调用事件按 iteration 交给 agent 策略（气泡边界 = 迭代）", () => {
-      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
-        link: "agent",
-        modeId: null,
-        toolConfig: null,
-      });
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue(
+        makeConversationRoute({ link: "agent" }),
+      );
       orchestrator.onAgentToolCall({
         conversationId: "conv-1",
         turnId: "conv-1:1",
@@ -575,11 +569,9 @@ describe("turnOrchestrator", () => {
 
   describe("session-state → 策略收口", () => {
     it("agent 会话 idle 时收敛工具终态并结束流式", () => {
-      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
-        link: "agent",
-        modeId: null,
-        toolConfig: null,
-      });
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue(
+        makeConversationRoute({ link: "agent" }),
+      );
       vi.mocked(mockDeps.env.getIsStreaming).mockReturnValue(true);
       orchestrator.onSessionState({
         conversationId: "conv-1",
@@ -626,11 +618,9 @@ describe("turnOrchestrator", () => {
     });
 
     it("agent 会话切回时标记段未知，避免覆盖已落库正文", () => {
-      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
-        link: "agent",
-        modeId: null,
-        toolConfig: null,
-      });
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue(
+        makeConversationRoute({ link: "agent" }),
+      );
       orchestrator.onSessionState({
         conversationId: "conv-2",
         turnId: "conv-2:1",
@@ -649,11 +639,9 @@ describe("turnOrchestrator", () => {
 
   describe("onPendingToolCalls — 补拉快照回填", () => {
     it("窗口重载后 phase 为空：用快照恢复运行态并绑定历史行", () => {
-      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
-        link: "agent",
-        modeId: null,
-        toolConfig: null,
-      });
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue(
+        makeConversationRoute({ link: "agent" }),
+      );
       orchestrator.onPendingToolCalls("conv-1", "conv-1:1", "msg-1", 2);
       expect(orchestrator.getPhase()).toBe("tool_executing");
       expect(mockDeps.state.resumeStream).toHaveBeenCalledWith(
@@ -665,11 +653,9 @@ describe("turnOrchestrator", () => {
     });
 
     it("历史没加载到发起行：仍恢复流式视图，段表退回未知", () => {
-      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
-        link: "agent",
-        modeId: null,
-        toolConfig: null,
-      });
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue(
+        makeConversationRoute({ link: "agent" }),
+      );
       orchestrator.onPendingToolCalls("conv-1", "conv-1:1", null, 2);
       expect(mockDeps.state.resumeStream).toHaveBeenCalledWith(
         "conv-1:1",
@@ -726,11 +712,9 @@ describe("turnOrchestrator", () => {
     });
 
     it("agent 会话的文本增量按迭代归属到段（§3.1.1）", () => {
-      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
-        link: "agent",
-        modeId: null,
-        toolConfig: null,
-      });
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue(
+        makeConversationRoute({ link: "agent" }),
+      );
       orchestrator.onTextDelta({
         conversationId: "conv-1",
         attemptId: "conv-1:1",
@@ -821,11 +805,9 @@ describe("turnOrchestrator", () => {
     });
 
     it("占位 id 换成真实 id 时通知策略改名", () => {
-      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
-        link: "agent",
-        modeId: null,
-        toolConfig: null,
-      });
+      vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue(
+        makeConversationRoute({ link: "agent" }),
+      );
       orchestrator.onStreamStart("conv-1", "conv-1:3", "msg-new");
       expect(mockDeps.segments.renameSegment).toHaveBeenCalledWith(
         "msg-assistant",
@@ -849,21 +831,9 @@ describe("turnOrchestrator", () => {
   });
 
   describe("cancel — 压缩占位气泡（I41 §1）", () => {
-    const compactSummary: Message = {
-      id: "temp-compact-1",
-      conversationId: "conv-1",
+    const compactSummary: Message = makeMessage("temp-compact-1", {
       role: "compact_summary",
-      content: "",
-      tokens: null,
-      timestamp: 0,
-      parentId: null,
-      isPinned: false,
-      reasoning: null,
-      siblingIndex: 0,
-      siblingCount: null,
-      providerId: null,
-      modelId: null,
-    };
+    });
 
     it("压缩流取消不在临时摘要气泡上写 interrupted", async () => {
       vi.mocked(mockDeps.env.getStreamingMessageId).mockReturnValue(

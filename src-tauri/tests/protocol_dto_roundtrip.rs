@@ -62,6 +62,7 @@ fn message_dto_roundtrip() {
         sibling_count: None,
         provider_id: None,
         model_id: None,
+        mode_id: None,
         status: MessageStatusDto::Completed,
         tool_calls: Vec::new(),
     };
@@ -86,6 +87,7 @@ fn message_dto_roundtrip_keeps_tool_call_terminal_states() {
         sibling_count: None,
         provider_id: None,
         model_id: None,
+        mode_id: None,
         status: MessageStatusDto::Interrupted,
         tool_calls: vec![
             MessageToolCallDto {
@@ -214,6 +216,7 @@ fn agent_mode_dto_roundtrip() {
         created_at: 1000,
         updated_at: 1000,
         tool_config: ConversationToolConfigDto::default(),
+        avatar: None,
     };
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
@@ -239,6 +242,7 @@ fn mode_row_without_tool_config(id: &str) -> AgentModeRow {
         created_at: 1000,
         updated_at: 1000,
         tool_config_json: None,
+        avatar: None,
     }
 }
 

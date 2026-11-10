@@ -46,6 +46,7 @@ fn make_message_row(role: &str, content: &str) -> MessageRow {
         tool_call_id: None,
         is_error: false,
         status: "completed".to_string(),
+        mode_id: None,
     }
 }
 
@@ -66,6 +67,7 @@ fn make_mode(kind: &str, temperature: Option<f32>, max_tokens: Option<u32>) -> A
         created_at: 0,
         updated_at: 0,
         tool_config_json: None,
+        avatar: None,
     }
 }
 
@@ -355,6 +357,7 @@ fn tool_history_roundtrip_rebuilds_wire_shape() {
         tool_call_id: None,
         is_error: false,
         status: "completed".to_string(),
+        mode_id: None,
     };
 
     assistant_storage::conversations::insert_message(

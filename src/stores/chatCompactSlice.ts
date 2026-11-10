@@ -1,4 +1,5 @@
 import type { Message } from "../chat/core/chatTypes";
+import { createOptimisticMessage } from "../chat/core/optimisticMessage";
 import { chatService, isCompactCancelled } from "../services/chatService";
 import { createLogger } from "@/services/logger";
 import { notifyError } from "./notifyStore";
@@ -31,21 +32,14 @@ export function createCompactSlice(
       const convId = get().currentConversationId;
       if (!convId) return;
       const summaryMsgId = `temp-compact-${Date.now()}`;
-      const summaryMsg: Message = {
+      const summaryMsg: Message = createOptimisticMessage({
         id: summaryMsgId,
         conversationId: convId,
         role: "compact_summary",
         content: "",
-        tokens: null,
         timestamp: Date.now(),
         parentId: null,
-        isPinned: false,
-        reasoning: null,
-        siblingIndex: 0,
-        siblingCount: null,
-        providerId: null,
-        modelId: null,
-      };
+      });
       useChatStreamStore.getState().beginStream(summaryMsgId);
       set({
         messages: [...get().messages, summaryMsg],

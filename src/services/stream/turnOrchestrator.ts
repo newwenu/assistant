@@ -10,6 +10,7 @@ import type {
 } from "../../chat/core/chatTypes";
 import type { ConversationRoute } from "../../chat/core/conversationLink";
 import { extractPlainText } from "../../chat/core/contentBlockUtils";
+import { createOptimisticMessage } from "../../chat/core/optimisticMessage";
 import { contextUsageFromTokenUsage } from "../../chat/core/chatUtils";
 import {
   toReasoningLevel,
@@ -221,37 +222,23 @@ export function createTurnOrchestrator(
         const provList = await deps.listProviders();
         if (provList.length === 0) {
           const errConvId = `err-${Date.now()}`;
-          const userMsg: Message = {
+          const userMsg: Message = createOptimisticMessage({
             id: `temp-user-${Date.now()}`,
             conversationId: errConvId,
             role: "user",
             content,
-            tokens: null,
             timestamp: Date.now(),
             parentId: null,
-            isPinned: false,
-            reasoning: null,
-            siblingIndex: 0,
-            siblingCount: null,
-            providerId: null,
-            modelId: null,
-          };
+          });
           const assistantMsgId = `temp-assistant-${Date.now()}`;
-          const assistantMsg: Message = {
+          const assistantMsg: Message = createOptimisticMessage({
             id: assistantMsgId,
             conversationId: errConvId,
             role: "assistant",
             content: "",
-            tokens: null,
             timestamp: Date.now() + 1,
             parentId: null,
-            isPinned: false,
-            reasoning: null,
-            siblingIndex: 0,
-            siblingCount: null,
-            providerId: null,
-            modelId: null,
-          };
+          });
           beginTurn(null, [userMsg, assistantMsg], assistantMsgId);
           deps.state.errorStream({
             code: ChatErrorCode.ApiKeyMissing,
@@ -280,6 +267,13 @@ export function createTurnOrchestrator(
         });
         return;
       }
+
+      // 身份指示与落库后保持一致（I43 §4.1）：乐观消息必须带 `modeId` / `providerId` /
+      // `modelId`，否则流式首屏与落库回读不同源、视觉会跳。读取因此前移到消息构造之前，
+      // 后续复用同一组局部变量，禁止重复调用 env 端口。
+      const route = deps.env.getConversationRoute(convId);
+      const selectedProviderId = deps.env.getSelectedProviderId();
+      const selectedModelId = deps.env.getSelectedModelId();
 
       const currentMessages = deps.env.getMessages();
       const pendingBranchPoint = deps.env.getPendingBranchPoint();
@@ -312,55 +306,40 @@ export function createTurnOrchestrator(
 
       if (branchPointMsg && branchPointMsg.role === "assistant") {
         const assistantMsgId = `temp-assistant-${Date.now()}`;
-        const assistantMsg: Message = {
+        const assistantMsg: Message = createOptimisticMessage({
           id: assistantMsgId,
           conversationId: convId,
           role: "assistant",
           content: "",
-          tokens: null,
           timestamp: Date.now(),
           parentId: userParentId,
-          isPinned: false,
-          reasoning: null,
-          siblingIndex: 0,
-          siblingCount: null,
-          providerId: null,
-          modelId: null,
-        };
+          providerId: selectedProviderId,
+          modelId: selectedModelId,
+          modeId: route.modeId,
+        });
         optimisticMessages.push(assistantMsg);
         beginTurn(convId, optimisticMessages, assistantMsgId);
       } else {
-        const userMsg: Message = {
+        const userMsg: Message = createOptimisticMessage({
           id: `temp-user-${Date.now()}`,
           conversationId: convId,
           role: "user",
           content,
-          tokens: null,
           timestamp: Date.now(),
           parentId: userParentId,
-          isPinned: false,
-          reasoning: null,
-          siblingIndex: 0,
-          siblingCount: null,
-          providerId: null,
-          modelId: null,
-        };
+        });
         const assistantMsgId = `temp-assistant-${Date.now()}`;
-        const assistantMsg: Message = {
+        const assistantMsg: Message = createOptimisticMessage({
           id: assistantMsgId,
           conversationId: convId,
           role: "assistant",
           content: "",
-          tokens: null,
           timestamp: Date.now() + 1,
           parentId: userMsg.id,
-          isPinned: false,
-          reasoning: null,
-          siblingIndex: 0,
-          siblingCount: null,
-          providerId: null,
-          modelId: null,
-        };
+          providerId: selectedProviderId,
+          modelId: selectedModelId,
+          modeId: route.modeId,
+        });
         optimisticMessages.push(userMsg, assistantMsg);
         beginTurn(convId, optimisticMessages, assistantMsgId);
       }
@@ -372,11 +351,8 @@ export function createTurnOrchestrator(
         void deps.renameConversation(convId, fbTitle, "fallback");
       }
 
-      const route = deps.env.getConversationRoute(convId);
       const kind = strategyFor(convId).kind;
       try {
-        const selectedProviderId = deps.env.getSelectedProviderId();
-        const selectedModelId = deps.env.getSelectedModelId();
         if (!selectedProviderId) {
           deps.state.errorStream({
             code: ChatErrorCode.ApiKeyMissing,

@@ -519,6 +519,7 @@ fn detail_with_file(model: &str, file_content: &str) -> ConversationDetail {
             tool_call_id: None,
             is_error: false,
             status: "completed".to_string(),
+            mode_id: None,
         }],
     }
 }

@@ -15,22 +15,12 @@ import type {
 import type { Provider } from "../../../settings/provider/types";
 import type { SettingEventPayload } from "../../../types/events";
 import { SettingAction } from "../../../types/events";
+import { makeMessage } from "../../../test-utils/messageFixtures";
 
-const sampleMessage: Message = {
-  id: "msg-1",
-  conversationId: "conv-1",
-  role: "user",
+const sampleMessage: Message = makeMessage("msg-1", {
   content: "hello",
-  tokens: null,
   timestamp: 1000,
-  parentId: null,
-  siblingIndex: 0,
-  siblingCount: null,
-  isPinned: false,
-  reasoning: null,
-  providerId: null,
-  modelId: null,
-};
+});
 
 const sampleConversation: Conversation = {
   id: "conv-1",

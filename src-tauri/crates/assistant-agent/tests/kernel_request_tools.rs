@@ -33,6 +33,7 @@ fn mode(kind: &str) -> AgentModeRow {
         created_at: 0,
         updated_at: 0,
         tool_config_json: None,
+        avatar: None,
     }
 }
 

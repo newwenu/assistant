@@ -18,6 +18,8 @@ pub(crate) struct InsertChatInput<'a> {
     pub branch_point_message_id: Option<&'a str>,
     pub provider_id: &'a str,
     pub model_id: &'a str,
+    /// 本次发送所选模式（I43 §3.4）；空串视为未选，回退 `conversations.mode_id`。
+    pub mode_id: Option<&'a str>,
 }
 
 pub(crate) fn insert_chat_messages(
@@ -30,6 +32,7 @@ pub(crate) fn insert_chat_messages(
         branch_point_message_id,
         provider_id,
         model_id,
+        mode_id,
     } = input;
 
     if conversations::is_conversation_full(conn, conversation_id)
@@ -58,6 +61,12 @@ pub(crate) fn insert_chat_messages(
     let msg_provider_id = Some(provider_id.to_string());
     let msg_model_id = Some(model_id.to_string());
 
+    // 模式来源统一：本次所选（非空串）优先，否则回退会话现值（I43 §3.4）。
+    let msg_mode_id: Option<String> = match mode_id {
+        Some(raw) if !raw.is_empty() => Some(raw.to_string()),
+        _ => detail_before.conversation.mode_id.clone(),
+    };
+
     let (_user_msg_id, assistant_msg_id, user_msg_id) = if let Some(bp_id) = branch_point_message_id
     {
         insert_on_branch(
@@ -68,6 +77,7 @@ pub(crate) fn insert_chat_messages(
             now,
             &msg_provider_id,
             &msg_model_id,
+            msg_mode_id.as_deref(),
         )?
     } else {
         insert_normal_append(
@@ -78,6 +88,7 @@ pub(crate) fn insert_chat_messages(
             now,
             &msg_provider_id,
             &msg_model_id,
+            msg_mode_id.as_deref(),
         )?
     };
 
@@ -97,6 +108,7 @@ fn insert_on_branch(
     now: i64,
     msg_provider_id: &Option<String>,
     msg_model_id: &Option<String>,
+    mode_id: Option<&str>,
 ) -> Result<(String, String, Option<String>), String> {
     let branch_point = conversations::get_message_by_id(conn, bp_id)?
         .ok_or_else(|| format!("Branch point message {} not found", bp_id))?;
@@ -126,6 +138,7 @@ fn insert_on_branch(
             now + 1,
             msg_provider_id.as_deref(),
             msg_model_id.as_deref(),
+            mode_id,
         )?;
 
         Ok((uid.clone(), aid, Some(uid)))
@@ -146,6 +159,7 @@ fn insert_on_branch(
             now,
             msg_provider_id.as_deref(),
             msg_model_id.as_deref(),
+            mode_id,
         )?;
 
         Ok((String::new(), aid, None))
@@ -160,6 +174,7 @@ fn insert_normal_append(
     now: i64,
     msg_provider_id: &Option<String>,
     msg_model_id: &Option<String>,
+    mode_id: Option<&str>,
 ) -> Result<(String, String, Option<String>), String> {
     let user_parent_id = detail_before.messages.last().map(|m| m.id.clone());
     let user_sibling_index =
@@ -182,6 +197,7 @@ fn insert_normal_append(
         now + 1,
         msg_provider_id.as_deref(),
         msg_model_id.as_deref(),
+        mode_id,
     )?;
 
     Ok((uid.clone(), aid, Some(uid)))
@@ -215,6 +231,7 @@ fn insert_user_message_with_attachments(
             tool_call_id: None,
             is_error: false,
             status: "completed".to_string(),
+            mode_id: None,
         },
     )?;
 
@@ -236,6 +253,7 @@ fn insert_placeholder_assistant_message(
     timestamp: i64,
     provider_id: Option<&str>,
     model_id: Option<&str>,
+    mode_id: Option<&str>,
 ) -> Result<String, String> {
     let aid = Uuid::new_v4().to_string();
     conversations::insert_message(
@@ -257,6 +275,7 @@ fn insert_placeholder_assistant_message(
             tool_call_id: None,
             is_error: false,
             status: "streaming".to_string(),
+            mode_id: mode_id.map(|s| s.to_string()),
         },
     )?;
     conversations::update_message_status(conn, &aid, "streaming")?;

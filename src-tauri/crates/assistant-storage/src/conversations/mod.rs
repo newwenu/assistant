@@ -10,7 +10,7 @@ pub mod tree_ops;
 
 const CONV_SELECT: &str = "id, title, title_source, provider_id, model_id, system_prompt, is_pinned, sort_order, generation, created_at, updated_at, is_full, active_branch_id, mode_id, tool_config_json, workspace_root";
 const MSG_SELECT: &str =
-    "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index, provider_id, model_id, tool_call_id, is_error, status";
+    "id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index, provider_id, model_id, tool_call_id, is_error, status, mode_id";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConversationRow {
@@ -50,6 +50,9 @@ pub struct MessageRow {
     pub tool_call_id: Option<String>,
     pub is_error: bool,
     pub status: String,
+    /// 该消息落库时生效的模式 id（I43 §3.5）。`NULL` = 未知来源
+    /// （存量行 / 压缩摘要 / user 行），渲染侧走降级链。
+    pub mode_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -97,6 +100,7 @@ fn read_msg_row(row: &rusqlite::Row) -> rusqlite::Result<MessageRow> {
         tool_call_id: row.get("tool_call_id")?,
         is_error: row.get::<_, i64>("is_error")? != 0,
         status: row.get("status")?,
+        mode_id: row.get("mode_id")?,
     })
 }
 

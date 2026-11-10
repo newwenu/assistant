@@ -610,7 +610,11 @@
       "confirm_delete_subtree_desc": "This action cannot be undone",
       "message_deleted": "Message deleted",
       "delete_failed": "Delete failed",
-      "interrupted": "Interrupted"
+      "interrupted": "Interrupted",
+      "identity": {
+        "unknown_mode": "Unknown mode",
+        "separator": "·"
+      }
     },
     "branch": {
       "previous": "Previous version",

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { AgentToolCall, Message } from "../../chat/core/chatTypes";
+import { makeMessage } from "../../test-utils/messageFixtures";
 
 vi.mock("../../services/chatService", () => ({
   chatService: {
@@ -78,20 +79,12 @@ let convId = "";
 let turnId = "";
 
 function historyMessage(): Message {
-  return {
-    id: MESSAGE_ID,
+  return makeMessage(MESSAGE_ID, {
     conversationId: convId,
     role: "assistant",
     content: "正在等待确认",
-    tokens: null,
     timestamp: 1,
     parentId: "msg-user",
-    isPinned: false,
-    reasoning: null,
-    siblingIndex: 0,
-    siblingCount: null,
-    providerId: null,
-    modelId: null,
     toolCalls: [
       {
         callId: CALL_ID,
@@ -100,7 +93,7 @@ function historyMessage(): Message {
         resultText: null,
       },
     ],
-  };
+  });
 }
 
 function detail() {

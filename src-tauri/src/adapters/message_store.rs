@@ -61,6 +61,7 @@ impl MessageStore for DbMessageStore {
                     tool_call_id: None,
                     is_error: false,
                     status: "streaming".to_string(),
+                    mode_id: req.mode_id.clone(),
                 },
             )?;
             conversations::update_message_status(&tx, &id, MessageStatus::Streaming.as_db_str())?;
@@ -122,6 +123,7 @@ impl MessageStore for DbMessageStore {
                     tool_call_id: Some(req.tool_call_id.clone()),
                     is_error: req.is_error,
                     status: "completed".to_string(),
+                    mode_id: None,
                 },
             )?;
             conversations::update_message_status(&tx, &id, MessageStatus::Completed.as_db_str())?;

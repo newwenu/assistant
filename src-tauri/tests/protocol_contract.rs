@@ -46,6 +46,7 @@ fn sample_message_row() -> MessageRow {
         tool_call_id: None,
         is_error: false,
         status: "completed".to_string(),
+        mode_id: None,
     }
 }
 

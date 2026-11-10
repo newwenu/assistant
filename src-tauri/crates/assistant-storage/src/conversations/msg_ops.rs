@@ -5,7 +5,7 @@ use super::{read_msg_row, MessageRow, MSG_SELECT};
 pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String> {
     conn.execute(
         &format!(
-            "INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+            "INSERT INTO messages ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
             MSG_SELECT
         ),
         params![
@@ -24,7 +24,8 @@ pub fn insert_message(conn: &Connection, row: &MessageRow) -> Result<(), String>
             row.model_id,
             row.tool_call_id,
             row.is_error as i64,
-            row.status
+            row.status,
+            row.mode_id
         ],
     )
     .map_err(|e| e.to_string())?;

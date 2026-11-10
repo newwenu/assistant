@@ -50,6 +50,8 @@ pub struct AgentModeDto {
     pub updated_at: i64,
     /// 模式级工具装配；键恒在，`tool_config_json` 缺失时取契约缺省。
     pub tool_config: ConversationToolConfigDto,
+    /// 头像标识（I43 §3.5）：键恒在，`null` = 未配置，渲染侧走降级链。
+    pub avatar: Option<String>,
 }
 
 impl AgentModeDto {
@@ -77,6 +79,7 @@ impl AgentModeDto {
             created_at: row.created_at,
             updated_at: row.updated_at,
             tool_config,
+            avatar: row.avatar.clone(),
         }
     }
 }
@@ -106,6 +109,11 @@ pub struct AgentModeInputDto {
     #[serde(default)]
     #[ts(optional = nullable)]
     pub tool_config: Option<ConversationToolConfigDto>,
+    /// 头像标识（I43 §3.5 三态）：缺省 / `null` = 沿用库内现值；空串 = 清除为
+    /// `NULL`；其余原样落库（合法性由运行时兜底，不在本层校验）。
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub avatar: Option<String>,
 }
 
 /// 目录声明的推理可选项投影；`None`（外层 `Option`）表示目录没有可用信息。

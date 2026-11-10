@@ -28,6 +28,9 @@ export function toModeInput(
     isBuiltin: mode.isBuiltin ?? false,
     createdAt: mode.createdAt ?? Date.now(),
     toolConfig: mode.toolConfig ?? DEFAULT_TOOL_CONFIG,
+    // 原样透传三态（I43 §6）：`undefined` → 缺省、`null` → 缺省、`""` → 清除，
+    // 因此禁止 `?? null` 兜底，否则 `""` 会被折叠成 `null`，头像永远清不掉。
+    avatar: mode.avatar,
   };
 }
 

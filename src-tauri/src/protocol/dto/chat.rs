@@ -155,6 +155,9 @@ pub struct MessageDto {
     pub sibling_count: Option<i64>,
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
+    /// 该消息落库时生效的模式 id（I43 §3.5）：键恒在，`null` = 未知来源，
+    /// 渲染侧走降级链（内置头像 → 通用助手头像）。
+    pub mode_id: Option<String>,
     /// 消息终态（I41 §1）：取消落 `interrupted`，前端据此呈现「已中断」，
     /// 不再依赖 `error` 承载取消语义。
     pub status: MessageStatusDto,
@@ -178,6 +181,7 @@ impl From<MessageRow> for MessageDto {
             sibling_count: None,
             provider_id: r.provider_id,
             model_id: r.model_id,
+            mode_id: r.mode_id,
             status: MessageStatusDto::from_db(&r.status),
             tool_calls: Vec::new(),
         }

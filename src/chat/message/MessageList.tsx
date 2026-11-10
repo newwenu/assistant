@@ -216,6 +216,9 @@ export const MessageList: React.FC<MessageListProps> = ({
               ? { ...msg, content: streamingContent }
               : msg;
           const isLastAssistant = index === lastAssistantIndex;
+          const showIdentity =
+            msg.role === "assistant" &&
+            (index === 0 || visibleMessages[index - 1].role !== "assistant");
           return (
             <RoleContext.Provider
               key={msg.id}
@@ -227,6 +230,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                 isReasoningStreaming={isStreamingMsg && isReasoningStreaming}
                 retryStatus={isStreamingMsg ? retryStatus : null}
                 compact={compact}
+                showIdentity={showIdentity}
                 onDelete={onDeleteMessage}
                 onEdit={onEditMessage}
                 onRegenerate={isLastAssistant ? onRegenerateMessage : undefined}

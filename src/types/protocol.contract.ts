@@ -4,12 +4,21 @@ export type AgentModeDto = { id: string, name: string, description: string, kind
 /**
  * 模式级工具装配；键恒在，`tool_config_json` 缺失时取契约缺省。
  */
-toolConfig: ConversationToolConfigDto, };
+toolConfig: ConversationToolConfigDto, 
+/**
+ * 头像标识（I43 §3.5）：键恒在，`null` = 未配置，渲染侧走降级链。
+ */
+avatar: string | null, };
 export type AgentModeInputDto = { id: string, name: string, description: string, kind: AgentModeKindDto, prompt: string, model?: string | null, temperature?: number | null, maxTokens?: number | null, reasoningEnabled?: boolean | null, reasoningEffort?: string | null, presentationRank: number, isBuiltin: boolean, createdAt: number, 
 /**
  * 模式级工具装配；缺省或 `null` 表示沿用库内现值。
  */
-toolConfig?: ConversationToolConfigDto | null, };
+toolConfig?: ConversationToolConfigDto | null, 
+/**
+ * 头像标识（I43 §3.5 三态）：缺省 / `null` = 沿用库内现值；空串 = 清除为
+ * `NULL`；其余原样落库（合法性由运行时兜底，不在本层校验）。
+ */
+avatar?: string | null, };
 export type AgentModeKindDto = "chat" | "agent";
 export type AgentQuestionAnswerDto = { conversationId: string, callId: string, answers: Array<AgentQuestionAnswerItemDto>, };
 export type AgentQuestionAnswerItemDto = { selected: Array<string>, other?: string | null, };
@@ -107,6 +116,11 @@ export type InstallMascotAssetResultDto = { installedPath: string, bytes: number
 export type MascotConfDto = { renderer: string, primaryColor: string | null, secondaryColor: string | null, riveIdlePoseRotation: boolean, riveSrc: string | null, svgAnimated: boolean, gifSrc: string | null, gifBorderRadius: number, };
 export type MessageChangeKindDto = "branch_created" | "branch_switched" | "branch_forked" | "message_deleted" | "messages_compacted" | "stream_finished";
 export type MessageDto = { id: string, conversationId: string, role: string, content: string, tokens: number | null, timestamp: number, parentId: string | null, isPinned: boolean, reasoning: string | null, siblingIndex: number, siblingCount: number | null, providerId: string | null, modelId: string | null, 
+/**
+ * 该消息落库时生效的模式 id（I43 §3.5）：键恒在，`null` = 未知来源，
+ * 渲染侧走降级链（内置头像 → 通用助手头像）。
+ */
+modeId: string | null, 
 /**
  * 消息终态（I41 §1）：取消落 `interrupted`，前端据此呈现「已中断」，
  * 不再依赖 `error` 承载取消语义。

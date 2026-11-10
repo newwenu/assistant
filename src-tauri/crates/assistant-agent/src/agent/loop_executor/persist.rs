@@ -29,6 +29,7 @@ pub(super) async fn ensure_row(
         parent_id: Some(state.last_row_id.clone()),
         provider_id: ctx.provider_id.map(str::to_string),
         model_id: ctx.model_id.map(str::to_string),
+        mode_id: ctx.input.mode.as_ref().map(|m| m.id.clone()),
     };
     let msg_id = ctx.store.create_assistant_message(req).await?;
     state.msg_id = msg_id.clone();
@@ -121,6 +122,7 @@ pub(super) async fn persist_row_as_new(
         parent_id: Some(state.last_row_id.clone()),
         provider_id: ctx.provider_id.map(str::to_string),
         model_id: ctx.model_id.map(str::to_string),
+        mode_id: ctx.input.mode.as_ref().map(|m| m.id.clone()),
     };
     let msg_id = ctx.store.create_assistant_message(req).await?;
     state.msg_id = msg_id.clone();

@@ -25,6 +25,7 @@ fn mode_row(id: &str, kind: &str, is_builtin: bool) -> AgentModeRow {
         created_at: 1,
         updated_at: 1,
         tool_config_json: None,
+        avatar: None,
     }
 }
 

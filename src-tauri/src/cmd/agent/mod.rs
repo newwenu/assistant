@@ -194,6 +194,7 @@ pub(crate) async fn start_turn(
                     branch_point_message_id: branch_point_message_id.as_deref(),
                     provider_id: &provider_id,
                     model_id: &model_id,
+                    mode_id: mode_id.as_deref(),
                 },
             )
         })

@@ -595,7 +595,11 @@
       "confirm_delete_subtree_desc": "此操作不可撤销",
       "message_deleted": "消息已删除",
       "delete_failed": "删除失败",
-      "interrupted": "已中断"
+      "interrupted": "已中断",
+      "identity": {
+        "unknown_mode": "未知模式",
+        "separator": "·"
+      }
     },
     "branch": {
       "previous": "上一个版本",

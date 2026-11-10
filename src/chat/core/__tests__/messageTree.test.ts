@@ -1,28 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { MessageTree } from "../messageTree";
 import type { Message } from "../chatTypes";
-
-function makeMessage(
-  id: string,
-  overrides: Partial<Message> & { conversationId?: string } = {},
-): Message {
-  return {
-    id,
-    conversationId: overrides.conversationId ?? "conv-1",
-    role: overrides.role ?? "user",
-    content: overrides.content ?? "",
-    tokens: null,
-    timestamp: overrides.timestamp ?? 0,
-    parentId: overrides.parentId ?? null,
-    siblingIndex: overrides.siblingIndex ?? 0,
-    siblingCount: overrides.siblingCount ?? 1,
-    isPinned: false,
-    reasoning: null,
-    providerId: null,
-    modelId: null,
-    ...overrides,
-  };
-}
+import { makeMessage } from "../../../test-utils/messageFixtures";
 
 describe("MessageTree.fromActiveBranch", () => {
   it("builds tree from linear message sequence", () => {

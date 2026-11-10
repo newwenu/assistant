@@ -48,6 +48,14 @@ pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), St
     };
     let tool_config_json = Some(serde_json::to_string(&tool_config).map_err(|e| e.to_string())?);
 
+    // 头像三态（I43 §3.5）：缺省 / `null` 沿用现值；`""` 清除为 `NULL`；非空覆盖。
+    let avatar = match mode.avatar {
+        Some(raw) if raw.is_empty() => None,
+        Some(raw) => Some(raw),
+        None if is_new => None,
+        None => existing.as_ref().and_then(|m| m.avatar.clone()),
+    };
+
     let row = AgentModeRow {
         id: if is_new {
             Uuid::new_v4().to_string()
@@ -68,6 +76,7 @@ pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), St
         created_at: mode.created_at,
         updated_at: now,
         tool_config_json,
+        avatar,
     };
 
     if is_new {
