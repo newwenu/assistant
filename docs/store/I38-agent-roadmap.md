@@ -96,6 +96,7 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | P8.1 子代理（`spawn_agent` / 子作用域 / 取消树 / 结果回传；**可选，暂缓接入**） | [I38f](./I38f-agent-subagent-spec.md) | 可选实施规格 |
 | P10 AI 审批顾问（`EscalateOnly` / `RelaxOnly` / 审计与度量） | [I38g](./I38g-agent-approval-advisor-spec.md) | 实施规格 |
 | P12 工作区（会话绑定 / 目录簿 / 唯一解析点） | I38h（已归档） | 实施规格 |
+| assistant 消息身份指示（头像 / 模式 / 模型、消息级 `mode_id`） | [I43](./I43-assistant-identity-spec.md) | 实施规格 |
 | P8.2+ 演进候选（Worker / Router / continuity / 多编码） | 本文 §2.1 | 候选清单 |
 | 运行时内核（turn / 状态机 / 端口 / chat 迁移） | I36 spec（已归档） | 实施规格 |
 | 运行时决策（D1-D18、参考项目提取） | I36 design（已归档） | ADR |
