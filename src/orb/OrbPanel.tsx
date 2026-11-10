@@ -36,6 +36,11 @@ import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { useNotifyStore } from "../stores/notifyStore";
 import { translateKey } from "../i18n";
 
+function isHoverCapable(): boolean {
+  if (typeof window.matchMedia !== "function") return true;
+  return window.matchMedia("(hover: hover)").matches;
+}
+
 function useMouseOnlyTooltip(): {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -120,6 +125,10 @@ export const OrbPanel: React.FC = () => {
           if (isOrbBlurCollapseSuppressed()) return;
           const state = useOrbStore.getState();
           if (state.isDragging) return;
+          if (!isHoverCapable()) {
+            void collapse();
+            return;
+          }
           try {
             const [mouse, winRect] = await Promise.all([
               getMouseLogicalPos(),
