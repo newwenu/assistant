@@ -944,3 +944,87 @@ fn get_sibling_counts_batch_efficient() {
         "a1 has 2 siblings under u1"
     );
 }
+
+#[test]
+fn message_mode_id_roundtrips_through_read_paths() {
+    let conn = init_db();
+    let mut conversation = conv("c1");
+    conversation.mode_id = Some("builtin-agent".to_string());
+    conversations::insert_conversation(&conn, &conversation).unwrap();
+
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    let mut assistant = msg_with_parent("a1", "c1", "assistant", "answer", 200, Some("u1"), 0);
+    assistant.mode_id = Some("builtin-agent".to_string());
+    conversations::insert_message(&conn, &assistant).unwrap();
+
+    let rows = conversations::get_messages(&conn, "c1").unwrap();
+    assert_eq!(rows[0].mode_id, None, "A6: user 行 mode_id 为 NULL");
+    assert_eq!(
+        rows[1].mode_id.as_deref(),
+        Some("builtin-agent"),
+        "A3: assistant 行往返保留 mode_id"
+    );
+
+    let paginated = conversations::get_messages_paginated(&conn, "c1", 10, None).unwrap();
+    let paginated_assistant = paginated
+        .iter()
+        .find(|m| m.id == "a1")
+        .expect("分页结果必须包含 assistant 行");
+    assert_eq!(
+        paginated_assistant.mode_id.as_deref(),
+        Some("builtin-agent")
+    );
+
+    let detail = conversations::get_conversation_detail(&conn, "c1")
+        .unwrap()
+        .unwrap();
+    let detail_assistant = detail
+        .messages
+        .iter()
+        .find(|m| m.id == "a1")
+        .expect("详情结果必须包含 assistant 行");
+    assert_eq!(detail_assistant.mode_id.as_deref(), Some("builtin-agent"));
+}
+
+#[test]
+fn copy_paths_keep_message_mode_id() {
+    let conn = init_db();
+    let mut conversation = conv("c1");
+    conversation.mode_id = Some("builtin-agent".to_string());
+    conversations::insert_conversation(&conn, &conversation).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    let mut assistant = msg_with_parent("a1", "c1", "assistant", "answer", 200, Some("u1"), 0);
+    assistant.mode_id = Some("builtin-agent".to_string());
+    conversations::insert_message(&conn, &assistant).unwrap();
+
+    let copy_id = conversations::duplicate_conversation(&conn, "c1").unwrap();
+    let copy = conversations::get_conversation_detail(&conn, &copy_id)
+        .unwrap()
+        .unwrap();
+    let copied_assistant = copy
+        .messages
+        .iter()
+        .find(|m| m.role == "assistant")
+        .expect("副本必须包含 assistant 行");
+    assert_eq!(
+        copied_assistant.mode_id.as_deref(),
+        Some("builtin-agent"),
+        "复制会话复制源行的 mode_id，不重置"
+    );
+    assert!(
+        copy.messages
+            .iter()
+            .all(|m| m.role != "user" || m.mode_id.is_none()),
+        "复制后的 user 行仍为 NULL"
+    );
+
+    let branch =
+        conversations::create_branch(&conn, "c1", "a1", "assistant", "alt answer").unwrap();
+    assert_eq!(
+        branch.mode_id.as_deref(),
+        Some("builtin-agent"),
+        "分支 assistant 行继承 conversations.mode_id"
+    );
+    let user_branch = conversations::create_branch(&conn, "c1", "u1", "user", "alt q").unwrap();
+    assert_eq!(user_branch.mode_id, None, "分支 user 行写 NULL");
+}

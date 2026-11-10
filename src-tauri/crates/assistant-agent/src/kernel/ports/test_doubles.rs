@@ -8,6 +8,7 @@ use assistant_providers::base::{
 use assistant_providers::types::ToolSpec;
 use assistant_storage::agent_modes::AgentModeRow;
 use assistant_storage::attachment_store::AttachmentStore;
+use assistant_storage::conversations::branch::branch_extends_active;
 use assistant_storage::conversations::{ConversationDetail, ConversationRow, MessageRow};
 use assistant_storage::providers::ProviderRow;
 use async_trait::async_trait;
@@ -97,6 +98,8 @@ pub struct ReplayMessage {
     pub tool_call_id: Option<String>,
     pub is_error: bool,
     pub timestamp: i64,
+    /// assistant 行落库的模式快照（I43 §3.4）；其他行恒 `None`。
+    pub mode_id: Option<String>,
 }
 
 #[derive(Default)]
@@ -106,8 +109,9 @@ pub struct InMemoryStore {
     /// 注入后所有写操作立即失败。
     fail: bool,
     next_id: Mutex<u32>,
-    /// 活跃分支叶子，语义对齐 `conversations::advance_active_branch`：
-    /// 仅当新行父节点等于当前叶子时前移。缺少它则无法在单测层发现叶子停滞。
+    /// 活跃分支叶子，推进判据直接调用生产侧
+    /// `conversations::branch::branch_extends_active`，替身不复刻规则。
+    /// 缺少它则无法在单测层发现叶子停滞。
     active_leaf: Mutex<Option<String>>,
 }
 
@@ -135,7 +139,8 @@ impl InMemoryStore {
     /// 预置既有行：模拟 `TurnRunner` 在进入循环前创建的 assistant 占位行。
     /// 占位行 id 由调用方给定，不消耗 `next_id`，因此不影响后续行编号。
     /// 命令层建占位行时会无条件 `update_active_branch_id`，故叶子直接指向该行。
-    pub fn seed_assistant_row(&self, id: &str, parent_id: Option<&str>) {
+    /// `mode_id` 与命令层一致：取本次发送的模式快照。
+    pub fn seed_assistant_row(&self, id: &str, parent_id: Option<&str>, mode_id: Option<&str>) {
         self.lock_messages().push(ReplayMessage {
             id: id.to_string(),
             role: "assistant".to_string(),
@@ -145,6 +150,7 @@ impl InMemoryStore {
             tool_call_id: None,
             is_error: false,
             timestamp: 0,
+            mode_id: mode_id.map(str::to_string),
         });
         *self.lock_active_leaf() = Some(id.to_string());
     }
@@ -175,15 +181,11 @@ impl InMemoryStore {
         }
     }
 
-    /// 叶子推进：与 `advance_active_branch` 同规则，父节点等于当前叶子才前移。
+    /// 叶子推进：判据直接取自生产侧 `branch_extends_active`，
+    /// 与 `advance_active_branch` 共用同一份规则，替身不复刻。
     fn advance_leaf(&self, parent_id: Option<&str>, new_id: &str) {
         let mut leaf = self.lock_active_leaf();
-        let extends = match (leaf.as_deref(), parent_id) {
-            (None, _) => true,
-            (Some(active), Some(parent)) => active == parent,
-            (Some(_), None) => false,
-        };
-        if extends {
+        if branch_extends_active(leaf.as_deref(), parent_id) {
             *leaf = Some(new_id.to_string());
         }
     }
@@ -224,6 +226,7 @@ impl MessageStore for InMemoryStore {
             tool_call_id: None,
             is_error: false,
             timestamp: 0,
+            mode_id: req.mode_id.clone(),
         });
         self.advance_leaf(req.parent_id.as_deref(), &id);
         Ok(id)
@@ -266,6 +269,7 @@ impl MessageStore for InMemoryStore {
             tool_call_id: Some(req.tool_call_id),
             is_error: req.is_error,
             timestamp: req.timestamp,
+            mode_id: None,
         });
         self.advance_leaf(Some(req.parent_id.as_str()), &id);
         Ok(id)

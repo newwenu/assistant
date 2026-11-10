@@ -443,3 +443,135 @@ fn init_db_adds_workspace_root_column_with_empty_default_and_does_not_migrate() 
         .unwrap();
     assert_eq!(has_book, 1, "目录簿表随初始化创建");
 }
+
+fn has_column(conn: &rusqlite::Connection, table: &str, column: &str) -> bool {
+    conn.query_row(
+        &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'"),
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .unwrap()
+        > 0
+}
+
+#[test]
+fn init_db_creates_message_mode_id_and_mode_avatar_columns() {
+    let (conn, _dir) = init_temp_db();
+    assert!(
+        has_column(&conn, "messages", "mode_id"),
+        "A1: 新库必须有 messages.mode_id"
+    );
+    assert!(
+        has_column(&conn, "agent_modes", "avatar"),
+        "A1: 新库必须有 agent_modes.avatar"
+    );
+}
+
+#[test]
+fn init_db_adds_identity_columns_to_legacy_tables() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("legacy_identity.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO app_settings (key, value) VALUES ('schema_version', '1');
+             CREATE TABLE agent_modes (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL DEFAULT 'custom',
+                prompt TEXT NOT NULL DEFAULT '',
+                model TEXT,
+                temperature REAL,
+                max_tokens INTEGER,
+                reasoning_enabled INTEGER,
+                reasoning_effort TEXT,
+                presentation_rank INTEGER NOT NULL DEFAULT 99,
+                is_builtin INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                tool_config_json TEXT
+             );
+             INSERT INTO agent_modes (id,name,kind,created_at,updated_at)
+                 VALUES ('user-legacy','legacy','chat',0,0);
+             CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tokens INTEGER,
+                timestamp INTEGER NOT NULL,
+                parent_id TEXT,
+                sibling_index INTEGER NOT NULL DEFAULT 0,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                reasoning TEXT,
+                tool_calls_json TEXT,
+                provider_id TEXT,
+                model_id TEXT,
+                status TEXT NOT NULL DEFAULT 'completed',
+                tool_call_id TEXT,
+                is_error INTEGER NOT NULL DEFAULT 0
+             );
+             INSERT INTO messages (id, conversation_id, role, content, timestamp)
+                 VALUES ('m1','c1','assistant','hello',0);",
+        )
+        .unwrap();
+    }
+
+    let conn = db::init_db(&db_path).unwrap();
+    assert!(
+        has_column(&conn, "messages", "mode_id"),
+        "A2: 旧库升级必须补上 messages.mode_id"
+    );
+    assert!(
+        has_column(&conn, "agent_modes", "avatar"),
+        "A2: 旧库升级必须补上 agent_modes.avatar"
+    );
+
+    let message_mode_id: Option<String> = conn
+        .query_row("SELECT mode_id FROM messages WHERE id = 'm1'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert!(
+        message_mode_id.is_none(),
+        "A2: 存量消息不回填 mode_id，保持 NULL"
+    );
+
+    let legacy_avatar: Option<String> = conn
+        .query_row(
+            "SELECT avatar FROM agent_modes WHERE id = 'user-legacy'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        legacy_avatar.is_none(),
+        "A2: 存量模式行头像保持 NULL，渲染侧走降级链"
+    );
+
+    let default_avatar: Option<String> = conn
+        .query_row(
+            "SELECT avatar FROM agent_modes WHERE id = 'builtin-default'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        default_avatar.as_deref(),
+        Some("builtin:chat"),
+        "A2: 内置行按种子值补齐头像"
+    );
+
+    drop(conn);
+    let conn = db::init_db(&db_path).unwrap();
+    assert!(
+        has_column(&conn, "messages", "mode_id"),
+        "A2: 列已存在时必须跳过重复 ALTER"
+    );
+    assert!(
+        has_column(&conn, "agent_modes", "avatar"),
+        "A2: 列已存在时必须跳过重复 ALTER"
+    );
+}

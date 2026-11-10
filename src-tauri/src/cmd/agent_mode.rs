@@ -9,6 +9,16 @@ fn row_to_dto(row: &AgentModeRow) -> AgentModeDto {
     AgentModeDto::from_row(row)
 }
 
+/// 头像三态（I43 §3.5）：缺省 / `null` 沿用现值；`""` 清除为 `NULL`；非空覆盖。
+fn resolve_avatar(input: Option<String>, existing: Option<&AgentModeRow>) -> Option<String> {
+    match input {
+        Some(raw) if raw.is_empty() => None,
+        Some(raw) => Some(raw),
+        None if existing.is_none() => None,
+        None => existing.and_then(|m| m.avatar.clone()),
+    }
+}
+
 #[command]
 pub fn list_agent_modes(app: AppHandle) -> Result<Vec<AgentModeDto>, String> {
     let state = app.state::<crate::setup::DbState>();
@@ -49,12 +59,7 @@ pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), St
     let tool_config_json = Some(serde_json::to_string(&tool_config).map_err(|e| e.to_string())?);
 
     // 头像三态（I43 §3.5）：缺省 / `null` 沿用现值；`""` 清除为 `NULL`；非空覆盖。
-    let avatar = match mode.avatar {
-        Some(raw) if raw.is_empty() => None,
-        Some(raw) => Some(raw),
-        None if is_new => None,
-        None => existing.as_ref().and_then(|m| m.avatar.clone()),
-    };
+    let avatar = resolve_avatar(mode.avatar, existing.as_ref());
 
     let row = AgentModeRow {
         id: if is_new {
@@ -100,4 +105,54 @@ pub fn reset_builtin_mode(app: AppHandle, id: String) -> Result<(), String> {
     let conn = super::get_db_conn(&state)?;
     agent_modes::reset_builtin_mode(&conn, &id, &|key| assistant_i18n::t(key))
         .map_err(super::translate_storage_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_avatar;
+    use assistant_storage::agent_modes::AgentModeRow;
+
+    fn existing(avatar: Option<&str>) -> AgentModeRow {
+        AgentModeRow {
+            avatar: avatar.map(|v| v.to_string()),
+            ..AgentModeRow::default()
+        }
+    }
+
+    #[test]
+    fn new_mode_without_avatar_stays_null() {
+        assert_eq!(resolve_avatar(None, None), None);
+    }
+
+    #[test]
+    fn new_mode_with_avatar_persists_value() {
+        assert_eq!(
+            resolve_avatar(Some("builtin:agent".to_string()), None),
+            Some("builtin:agent".to_string())
+        );
+    }
+
+    #[test]
+    fn missing_avatar_keeps_existing_value() {
+        let row = existing(Some("builtin:translate"));
+        assert_eq!(
+            resolve_avatar(None, Some(&row)),
+            Some("builtin:translate".to_string())
+        );
+    }
+
+    #[test]
+    fn empty_avatar_clears_existing_value() {
+        let row = existing(Some("builtin:translate"));
+        assert_eq!(resolve_avatar(Some(String::new()), Some(&row)), None);
+    }
+
+    #[test]
+    fn non_empty_avatar_overrides_existing_value() {
+        let row = existing(Some("builtin:chat"));
+        assert_eq!(
+            resolve_avatar(Some("builtin:agent".to_string()), Some(&row)),
+            Some("builtin:agent".to_string())
+        );
+    }
 }

@@ -198,3 +198,63 @@ fn init_db_reopen_is_idempotent() {
     let user = agent_modes::get_by_id(&conn, "user-deep").unwrap().unwrap();
     assert_eq!(user.kind, "deep");
 }
+
+#[test]
+fn avatar_roundtrips_through_insert_and_read() {
+    let conn = init_db();
+    let mut row = mode_row("user-avatar", "chat", false);
+    row.avatar = Some("builtin:agent".to_string());
+    agent_modes::insert_mode(&conn, &row).unwrap();
+
+    let stored = agent_modes::get_by_id(&conn, "user-avatar")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.avatar.as_deref(), Some("builtin:agent"));
+
+    let mut updated = stored.clone();
+    updated.avatar = Some("builtin:translate".to_string());
+    agent_modes::update_mode(&conn, &updated).unwrap();
+    let reread = agent_modes::get_by_id(&conn, "user-avatar")
+        .unwrap()
+        .unwrap();
+    assert_eq!(reread.avatar.as_deref(), Some("builtin:translate"));
+
+    updated.avatar = None;
+    agent_modes::update_mode(&conn, &updated).unwrap();
+    assert_eq!(
+        agent_modes::get_by_id(&conn, "user-avatar")
+            .unwrap()
+            .unwrap()
+            .avatar,
+        None,
+        "update 写入 NULL 即清除头像"
+    );
+}
+
+#[test]
+fn reset_builtin_mode_restores_default_avatar() {
+    let conn = init_db();
+    let resolver = |key: &str| key.to_string();
+
+    for (id, expected) in [
+        ("builtin-default", "builtin:chat"),
+        ("builtin-agent", "builtin:agent"),
+        ("builtin-translate", "builtin:translate"),
+    ] {
+        let mut row = agent_modes::get_by_id(&conn, id).unwrap().unwrap();
+        assert_eq!(row.avatar.as_deref(), Some(expected), "种子头像");
+
+        row.avatar = Some("builtin:default".to_string());
+        row.name = "renamed".to_string();
+        agent_modes::update_mode(&conn, &row).unwrap();
+
+        agent_modes::reset_builtin_mode(&conn, id, &resolver).unwrap();
+        let reset = agent_modes::get_by_id(&conn, id).unwrap().unwrap();
+        assert_eq!(
+            reset.avatar.as_deref(),
+            Some(expected),
+            "A4: 重置后 {id} 头像恢复内置默认值"
+        );
+        assert_ne!(reset.name, "renamed", "A4: 重置同时恢复名称");
+    }
+}

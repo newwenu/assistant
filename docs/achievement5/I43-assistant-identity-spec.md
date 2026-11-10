@@ -4,9 +4,9 @@
 |---|---|
 | 状态 | 现行 |
 | 日期 | 2026-11-09 |
-| 修订 | 2026-11-10：按当前代码核对后修订（历史页目录加载、历史树身份规则、avatar 三态表单映射、chat 链路 `mode_id` 来源、验收方式、影响面补齐）；同日取消 CSP 放开：删除远程 / `asset:` 头像分支，改为「不改 CSP + 渲染层拒绝 URL 前缀 + 后续走 `data:` 内联图」；同日将身份指示布局由「头像列 + 内容列」两列改为气泡**上方独立一行**（头像在行首、不占用气泡侧边，气泡无左缩进） |
+| 修订 | 2026-11-10：按当前代码核对后修订（历史页目录加载、历史树身份规则、avatar 三态表单映射、chat 链路 `mode_id` 来源、验收方式、影响面补齐）；同日取消 CSP 放开：删除远程 / `asset:` 头像分支，改为「不改 CSP + 渲染层拒绝 URL 前缀 + 后续走 `data:` 内联图」；同日将身份指示布局由「头像列 + 内容列」两列改为气泡**上方独立一行**（头像在行首、不占用气泡侧边，气泡无左缩进）；同日完成全部自动化断言并 UI 手工验收通过（A9–A13、A18、A21），I43 实现与验收闭环 |
 | 关联 | I38d（已归档）（共同视图 / 双布局 / 消息气泡）、I38h（已归档）（`conversations.mode_id` 会话绑定）、I38 agent roadmap §4 |
-| 影响范围 | `assistant-storage`（`messages` / `agent_modes` 表与行结构）、`assistant-agent`（`CreateAssistantReq` / `TurnRunCtx`）、`src-tauri/src/protocol/dto`（`MessageDto` / `AgentModeDto` / `AgentModeInputDto`）、`src-tauri/src/cmd`（落库入口）、`src-tauri/src/adapters`（落库适配）、`src/chat/message/`（气泡与头像）、`src/settings/pages/`（模式设置页）、`src/history/`（历史树身份解析的目录加载）、`src/i18n/locales/`、前端与 Rust 测试夹具 |
+| 影响范围 | `assistant-storage`（`messages` / `agent_modes` 表与行结构）、`assistant-agent`（`CreateAssistantReq`）、`src-tauri/src/protocol/dto`（`MessageDto` / `AgentModeDto` / `AgentModeInputDto`）、`src-tauri/src/cmd`（落库入口）、`src-tauri/src/adapters`（落库适配）、`src/chat/message/`（气泡与头像）、`src/settings/pages/`（模式设置页）、`src/history/`（历史树身份解析的目录加载）、`src/i18n/locales/`、前端与 Rust 测试夹具 |
 
 > 本文只定义「assistant 消息的发送方身份指示」与「消息级模式持久化」。气泡排版、工具卡片、审批五态仍以 I38d（已归档）为准，本文不重复。
 > 本文不新增阶段；它是跨 P6（前端视图）与 P12（会话绑定）的**契约变更**，按 roadmap §7 第 7 条同时落在两个阶段的既有实现上。
@@ -217,7 +217,8 @@ v1 只有内置 SVG。将来若支持自定义头像，按成本 / 风险排序�
 
 | 文件 | 位置 | 补值 |
 |---|---|---|
-| `src/services/stream/turnOrchestrator.ts` | 全部 `Message` 字面量（错误占位、分支点 assistant、普通追加 user / assistant 各若干处） | 见下方「取值规则」 |
+| `src/chat/core/optimisticMessage.ts` | `createOptimisticMessage()` | **乐观占位消息的唯一构造点**，身份字段缺省值（`null`）与 `modeId` / `providerId` / `modelId` 入参都收敛在此 |
+| `src/services/stream/turnOrchestrator.ts` | 全部乐观消息构造（错误占位、分支点 assistant、普通追加 user / assistant） | 一律走 `createOptimisticMessage()`，不写字面量；取值见下方「取值规则」 |
 | `src/stores/agent/agentSegments.ts` | `makePlaceholder()` | 本次发送模式 id |
 | `src/stores/chatCompactSlice.ts` | `manualCompact` 的 `summaryMsg` | `modeId: null`（压缩摘要不渲染身份） |
 | `src/services/__tests__/turnOrchestrator.test.ts` | 消息夹具 | `modeId: null` |
@@ -226,11 +227,11 @@ v1 只有内置 SVG。将来若支持自定义头像，按成本 / 风险排序�
 | `src/chat/core/__tests__/toolCallView.test.ts` | 3 处夹具 | `modeId: null` |
 | `src/chat/core/__tests__/protocolContract.test.ts` | 1 处夹具 | `modeId: null` |
 
-取值规则（`turnOrchestrator.ts`）：
+取值规则（`turnOrchestrator.ts`，经 `createOptimisticMessage()` 落值）：
 
 1. `modeId` 取 `deps.env.getConversationRoute(convId).modeId`（`ConversationRoute` 已带 `modeId`，见 `src/chat/core/conversationLink.ts`）；无会话的错误占位消息填 `null`。
 2. `providerId` / `modelId` 取 `deps.env.getSelectedProviderId()` / `deps.env.getSelectedModelId()`。
-3. **读取顺序必须提前**：当前实现里乐观消息字面量先构造，`getConversationRoute(convId)` 与 `getSelectedProviderId()` / `getSelectedModelId()` 的读取都发生在其后（`route` 在 `try` 之前、两个 selected id 在 `try` 块内）。C7 需把这些读取上移到乐观消息构造之前，用局部变量复用，禁止重复调用。
+3. **读取顺序必须提前**：`getConversationRoute(convId)`、`getSelectedProviderId()`、`getSelectedModelId()` 在构造乐观消息**之前**一次性读入局部变量，后续构造与 `SendChatMessageArgs` 复用同一组值，禁止重复调用 env 端口。
 4. **不得**引用 `ConversationView` 的 `currentProviderId` / `currentModelId`：那是 React 组件状态，`turnOrchestrator` 是纯 service，只能通过 `TurnEnvPort` 取值。
 
 乐观占位消息补 `modeId` / `providerId` / `modelId` 是必需项：流式期间消息尚未落库回读，若不填则首屏身份指示与落库后不一致（类型不报错，但视觉会跳）。
@@ -435,6 +436,8 @@ i18n 新增 key（`zh-CN.json` / `en-US.json` 同步）：
 ## 8 验收标准
 
 > 测试方式说明：当前项目 `vitest` 未配置 `environment: "jsdom"`，未安装 `@testing-library/react`，`src/` 下不存在 `.test.tsx`。因此涉及 DOM 渲染的条目一律**手工验收**；若后续引入组件测试基建，可另立条目转为自动化，本文不把该基建列为 v1 范围。
+>
+> 验收状态：A1–A8、A14、A17、A22 已由自动化断言覆盖并通过；A9–A13、A18、A21 已于 2026-11-10 完成 UI 手工验收并通过。
 
 | # | 验收 | 方式 |
 |---|---|---|
@@ -443,7 +446,7 @@ i18n 新增 key（`zh-CN.json` / `en-US.json` 同步）：
 | A3 | `insert_message` / `read_msg_row` 往返保留 `mode_id` | 存储层单测：插入 `Some("builtin-agent")` 后读回相等 |
 | A4 | `agent_modes` 增删改查与重置保留/恢复 `avatar` | 存储层单测：`reset_builtin_mode` 后等于内置默认值（含 `builtin-translate → builtin:translate`） |
 | A5 | agent 一轮多迭代的所有 assistant 行 `mode_id` 相同且等于 turn 起点模式 | 内核集成测试：多迭代 turn 后逐行断言 |
-| A6 | chat 链路 `user` 行 `mode_id` 为 `NULL`，`assistant` 行为发送模式 | 存储层单测 |
+| A6 | chat 链路 `user` 行 `mode_id` 为 `NULL`，`assistant` 行为发送模式 | 命令层内联单测（`src-tauri/src/cmd/chat/insert.rs`）：user 行 `NULL`、assistant 行取发送模式、空串/缺省回退 `conversations.mode_id`、分支插入同规则 |
 | A7 | `MessageDto` 输出恒含 `modeId` 键（值可为 `null`） | 序列化断言 |
 | A8 | 契约生成与校验通过 | `npm run contract:gen` + `npm run contract:check` |
 | A9 | 单轮多迭代（主会话 `MessageList`）只出现一个头像与一行身份 | 手工验收（自动化需先引入组件测试基建） |
@@ -473,11 +476,11 @@ i18n 新增 key（`zh-CN.json` / `en-US.json` 同步）：
 | C2 | `agent_modes` 行结构、SELECT、insert/update、内置默认值（含 translate）、重置 | `assistant-storage/src/agent_modes.rs` |
 | C3 | `MessageRow`、`MSG_SELECT`（追加末尾）、`insert_message`、分支 INSERT、会话复制/分叉复制（复制 `mode_id`）、摘要行 | `assistant-storage/src/conversations/{mod,msg_ops,branch,ops}.rs`、`src-tauri/src/cmd/compaction.rs` |
 | C4 | DTO 字段（`AgentModeDto` / `AgentModeInputDto` / `MessageDto`）与 `save_agent_mode` 三态 | `src-tauri/src/protocol/dto/{settings,chat}.rs`、`src-tauri/src/cmd/agent_mode.rs` |
-| C5 | `CreateAssistantReq.mode_id`、`TurnRunCtx.mode_id`、runner 构造点、内核落库透传、适配层透传 | `assistant-agent/src/kernel/ports.rs`、`assistant-agent/src/agent/round_executor.rs`、`assistant-agent/src/kernel/runner.rs`、`assistant-agent/src/agent/loop_executor/persist.rs`、`src-tauri/src/adapters/message_store.rs` |
-| C6 | chat 插入签名扩展（`InsertChatInput` / 两个私有函数）、分支赋值、摘要置空 | `src-tauri/src/cmd/chat/insert.rs`、`src-tauri/src/cmd/compaction.rs` |
-| C7 | 契约生成与前端类型同步（`toModeInput` 补 `avatar`；乐观消息补 `modeId` / `providerId` / `modelId`，读取顺序提前；`chatCompactSlice` 与全部测试夹具补 `modeId`） | `npm run contract:gen`、`src/stores/agentModeStore.ts`、`src/services/stream/turnOrchestrator.ts`、`src/stores/agent/agentSegments.ts`、`src/stores/chatCompactSlice.ts`、`src/**/__tests__/*.ts` |
+| C5 | `CreateAssistantReq.mode_id`、内核落库透传（`ctx.input.mode`，**不改 `TurnRunCtx`**）、适配层透传 | `assistant-agent/src/kernel/ports.rs`、`assistant-agent/src/agent/loop_executor/persist.rs`、`src-tauri/src/adapters/message_store.rs` |
+| C6 | chat 插入签名扩展（`InsertChatInput` / `MessageIdentity` / 三个私有函数）、分支赋值、摘要置空、A6 内联单测 | `src-tauri/src/cmd/chat/insert.rs`、`src-tauri/src/cmd/compaction.rs` |
+| C7 | 契约生成与前端类型同步（`toModeInput` 补 `avatar`；`createOptimisticMessage` 单一构造点补 `modeId` / `providerId` / `modelId`，读取顺序提前；`chatCompactSlice` 与全部测试夹具补 `modeId`） | `npm run contract:gen`、`src/stores/agentModeStore.ts`、`src/chat/core/optimisticMessage.ts`、`src/services/stream/turnOrchestrator.ts`、`src/stores/agent/agentSegments.ts`、`src/stores/chatCompactSlice.ts`、`src/**/__tests__/*.ts` |
 | C8 | 头像组件与内置 SVG 集合（4 个内置头像 + 选项常量 + `data:` 分支 + URL 前缀拒绝） | `src/chat/message/MessageAvatar.tsx`、`.module.css`、`src/chat/message/avatars/index.tsx` |
-| C9 | 气泡身份行与两列布局、`MessageList` 起点判定 | `src/chat/message/MessageBubble.tsx`、`MessageBubble.module.css`、`MessageList.tsx` |
+| C9 | 气泡身份行（气泡上方独立一行，纵向单列，不改为两列）、`MessageList` 起点判定 | `src/chat/message/MessageBubble.tsx`、`MessageBubble.module.css`、`MessageList.tsx` |
 | C10 | 设置页头像字段（显式空值选项）与 i18n（中英同步） | `src/settings/pages/AgentModeSettings.tsx`、`src/i18n/locales/*.json` |
 | C11 | 历史页目录加载（`modes` + `providers`） | `src/history/HistoryManager.tsx` |
 
@@ -494,24 +497,23 @@ i18n 新增 key（`zh-CN.json` / `en-US.json` 同步）：
 | 存储 | `src-tauri/crates/assistant-storage/src/conversations/branch.rs` | 显式列清单 + `?10` 绑定 |
 | 存储 | `src-tauri/crates/assistant-storage/src/conversations/ops.rs` | `duplicate_conversation` / `fork_to_new_conversation` 复制 `mode_id` |
 | 内核 | `src-tauri/crates/assistant-agent/src/kernel/ports.rs` | `CreateAssistantReq` 加字段 |
-| 内核 | `src-tauri/crates/assistant-agent/src/agent/round_executor.rs` | `TurnRunCtx` 加 `mode_id` |
-| 内核 | `src-tauri/crates/assistant-agent/src/kernel/runner.rs` | `TurnRunCtx` 构造点填 `mode_id`（取自 `input.mode`） |
-| 内核 | `src-tauri/crates/assistant-agent/src/agent/loop_executor/persist.rs` | 两处 `CreateAssistantReq` 透传 |
+| 内核 | `src-tauri/crates/assistant-agent/src/agent/loop_executor/persist.rs` | 两处 `CreateAssistantReq` 透传（取值 `ctx.input.mode`；`TurnRunCtx` 与 runner 构造点**不改动**） |
 | 内核 | `src-tauri/crates/assistant-agent/src/kernel/ports/test_doubles.rs` | 测试桩字段同步 |
 | 协议 | `src-tauri/src/protocol/dto/settings.rs` | 模式 DTO 加 `avatar` |
 | 协议 | `src-tauri/src/protocol/dto/chat.rs` | 消息 DTO 加 `mode_id` |
 | 命令 | `src-tauri/src/cmd/agent_mode.rs` | 三态保存 + 行结构字面量补 `avatar` |
-| 命令 | `src-tauri/src/cmd/chat/insert.rs` | 入参扩展 + 两处 `MessageRow` 补 `mode_id` |
+| 命令 | `src-tauri/src/cmd/chat/insert.rs` | 入参扩展 + `MessageIdentity` 聚合身份字段 + 两处 `MessageRow`（`user` 行 `None`、`assistant` 占位行按 §3.4 取值）+ 内联单测（A6） |
 | 命令 | `src-tauri/src/cmd/compaction.rs` | 摘要行 `MessageRow` 补 `mode_id: None` |
 | 适配 | `src-tauri/src/adapters/message_store.rs` | 两处 `MessageRow` 透传 |
 | 前端类型 | `src/types/protocol.contract.ts` | 生成产物 |
 | 前端状态 | `src/stores/agentModeStore.ts` | `toModeInput` 补 `avatar`（原样透传） |
 | 前端状态 | `src/stores/agent/agentSegments.ts` | `makePlaceholder` 补 `modeId` / `providerId` / `modelId` |
 | 前端状态 | `src/stores/chatCompactSlice.ts` | 压缩摘要占位消息补 `modeId: null` |
-| 前端流 | `src/services/stream/turnOrchestrator.ts` | 乐观消息补三字段 + 读取顺序提前 |
+| 前端流 | `src/chat/core/optimisticMessage.ts` | **新增**：乐观占位消息单一构造点（身份字段缺省 `null`） |
+| 前端流 | `src/services/stream/turnOrchestrator.ts` | 改用 `createOptimisticMessage` 补三字段 + 读取顺序提前 |
 | 前端状态 | `src/stores/providerStore.ts` | **只读复用**：模型展示名解析，不改动 |
 | 前端视图 | `src/chat/message/MessageList.tsx` | 起点判定 + 传 `showIdentity` |
-| 前端视图 | `src/chat/message/MessageBubble.tsx` / `.module.css` | 身份行与两列布局 + `--msg-avatar-size` |
+| 前端视图 | `src/chat/message/MessageBubble.tsx` / `.module.css` | 身份行（气泡上方独立一行，纵向单列）+ `--msg-avatar-size` |
 | 前端视图 | `src/chat/message/MessageAvatar.tsx` / `.module.css` | 新增（内置 SVG + `data:` 分支，不生成 URL 型 `src`） |
 | 前端视图 | `src/chat/message/avatars/index.tsx` | 新增内置 SVG 与选项常量 |
 | 前端历史 | `src/history/HistoryManager.tsx` | 挂载时加载 `modes` + `providers` |

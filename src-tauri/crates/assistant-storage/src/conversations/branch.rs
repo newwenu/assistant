@@ -135,6 +135,18 @@ pub fn get_message_siblings(
     Ok(siblings)
 }
 
+/// 叶子推进判据：新行是否接在当前活动叶子之后。
+///
+/// 抽成纯函数供 `advance_active_branch`（SQLite 落库）与内核测试替身
+/// `InMemoryStore::advance_leaf` 共用，规则只有这一份，替身不再复刻。
+pub fn branch_extends_active(active: Option<&str>, parent: Option<&str>) -> bool {
+    match (active, parent) {
+        (None, _) => true,
+        (Some(active_id), Some(parent_id)) => active_id == parent_id,
+        (Some(_), None) => false,
+    }
+}
+
 /// 追加一行后把 `active_branch_id` 推进到新行。
 ///
 /// 仅当新行的 `parent_id` 正是当前活动叶子（或会话尚无活动分支）时才推进：
@@ -158,11 +170,7 @@ pub fn advance_active_branch(
         .map_err(|e| e.to_string())?
         .flatten();
 
-    let extends_active = match (active.as_deref(), parent_id) {
-        (None, _) => true,
-        (Some(active_id), Some(parent)) => active_id == parent,
-        (Some(_), None) => false,
-    };
+    let extends_active = branch_extends_active(active.as_deref(), parent_id);
 
     if extends_active {
         update_active_branch_id(conn, conversation_id, new_id)?;
@@ -209,23 +217,20 @@ pub fn create_branch(
     let new_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
 
-    let (provider_id, model_id, mode_id): (
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    ) = if new_role == "assistant" {
-        let conv = get_conversation_by_id(&tx, conversation_id)?;
-        match conv {
-            Some(c) => (
-                c.provider_id.clone(),
-                Some(c.model_id.clone()),
-                c.mode_id.clone(),
-            ),
-            None => (None, None, None),
-        }
-    } else {
-        (None, None, None)
-    };
+    let (provider_id, model_id, mode_id): (Option<String>, Option<String>, Option<String>) =
+        if new_role == "assistant" {
+            let conv = get_conversation_by_id(&tx, conversation_id)?;
+            match conv {
+                Some(c) => (
+                    c.provider_id.clone(),
+                    Some(c.model_id.clone()),
+                    c.mode_id.clone(),
+                ),
+                None => (None, None, None),
+            }
+        } else {
+            (None, None, None)
+        };
 
     tx.execute(
         "INSERT INTO messages (id, conversation_id, role, content, tokens, timestamp, parent_id, is_pinned, reasoning, tool_calls_json, sibling_index, provider_id, model_id, mode_id)

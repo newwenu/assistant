@@ -307,6 +307,7 @@ fn fixture_source(adapter: Arc<dyn BaseProviderAdapter>) -> FixtureSource {
         tool_call_id: None,
         is_error: false,
         status: "completed".to_string(),
+        mode_id: None,
     }];
     let provider = ProviderCredential {
         row: ProviderRow {
@@ -480,7 +481,8 @@ async fn run_loop(args: LoopArgs) -> LoopRun {
     });
     let store = Arc::new(InMemoryStore::new());
     // 模拟 `TurnRunner` 在进入循环前已建好占位行，执行器直接复用该 id。
-    store.seed_assistant_row(INITIAL_MESSAGE_ID, Some("user-1"));
+    let seeded_mode_id = (!args.tools.is_empty()).then_some("mode-agent");
+    store.seed_assistant_row(INITIAL_MESSAGE_ID, Some("user-1"), seeded_mode_id);
     let clock = args.clock;
     let started_at = clock.now();
 
@@ -1313,6 +1315,54 @@ async fn a20_row_chain_is_single_line() {
         Some(replay.last().expect("last row").id.as_str()),
         "终态行就是最后写入的 assistant 行"
     );
+}
+
+// ---------------------------------------------------------------------------
+// A5 / C4.9：一轮多迭代的所有 assistant 行沿用同一模式快照
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a5_all_assistant_rows_share_turn_mode_snapshot() {
+    let run = run_loop(
+        LoopArgs::new(vec![
+            tool_call_script("call-1", "echo", "{\"q\":\"a\"}"),
+            tool_call_script("call-2", "echo", "{\"q\":\"b\"}"),
+            ScriptedResponse::text(&["done"]),
+        ])
+        .with_tools(vec![echo_tool()])
+        .with_results(vec![
+            ok_result("call-1", "echo", "a"),
+            ok_result("call-2", "echo", "b"),
+        ]),
+    )
+    .await;
+
+    let replay = run.replay();
+    let assistants = assistant_rows(&replay);
+    assert_eq!(assistants.len(), 3, "占位行 + 两次新建");
+    for msg in assistants {
+        assert_eq!(
+            msg.mode_id.as_deref(),
+            Some("mode-agent"),
+            "A5: 每一条 assistant 行（含占位行）都写入 turn 起点模式快照，不得中途换模式"
+        );
+    }
+    for msg in tool_rows(&replay) {
+        assert_eq!(msg.mode_id, None, "A6: tool 行不写 mode_id");
+    }
+}
+
+#[tokio::test]
+async fn a5_assistant_rows_without_mode_stay_null() {
+    let run = run_loop(LoopArgs::new(vec![ScriptedResponse::text(&["done"])])).await;
+
+    let replay = run.replay();
+    for msg in assistant_rows(&replay) {
+        assert_eq!(
+            msg.mode_id, None,
+            "未配置模式时 assistant 行 mode_id 保持 NULL，不凭空造值"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

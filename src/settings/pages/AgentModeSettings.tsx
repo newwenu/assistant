@@ -1,12 +1,25 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Button, Typography, Drawer, Form, Tag, Space, App } from "antd";
+import {
+  Button,
+  Typography,
+  Drawer,
+  Form,
+  Tag,
+  Space,
+  App,
+  Select,
+} from "antd";
 import { EditOutlined, DeleteOutlined, UndoOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
 import { useAgentModeStore, type AgentMode } from "@/stores/agentModeStore";
 import type { ConversationToolConfig } from "@/chat/core/chatTypes";
 import { DEFAULT_TOOL_CONFIG } from "@/chat/core/toolConfig";
-import type { FieldSchema } from "../core/types/fieldSchema";
+import type {
+  FieldSchema,
+  FieldRenderProps,
+  SelectOption,
+} from "../core/types/fieldSchema";
 import { SettingField } from "../shared/renderers/SettingField";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
 import {
@@ -24,10 +37,65 @@ import { useSettingMessage } from "../shared/useSettingMessage";
 import { PermissionGrantsSection } from "../shared/sections/PermissionGrantsSection";
 import { ToolAssemblySection } from "../shared/sections/ToolAssemblySection";
 import { REASONING_EFFORTS, type ReasoningEffort } from "@/chat/core/reasoning";
+import {
+  BUILTIN_AVATAR_OPTIONS,
+  BUILTIN_AVATARS,
+  resolveBuiltinAvatar,
+} from "@/chat/message/avatars";
+
+const AvatarPreview: React.FC<{ avatar: string; kind: string }> = ({
+  avatar,
+  kind,
+}) => {
+  const Builtin =
+    resolveBuiltinAvatar(avatar) ??
+    (kind === "agent"
+      ? BUILTIN_AVATARS.agent
+      : kind === "chat"
+        ? BUILTIN_AVATARS.chat
+        : BUILTIN_AVATARS.default);
+  return (
+    <div
+      style={{
+        width: 20,
+        height: 20,
+        flex: "0 0 auto",
+        borderRadius: 6,
+        overflow: "hidden",
+      }}
+    >
+      <Builtin />
+    </div>
+  );
+};
+
+const AvatarFieldRender: React.FC<FieldRenderProps> = ({
+  value,
+  onChange,
+  schema,
+  disabled,
+  fieldContext,
+}) => {
+  const avatar = typeof value === "string" ? value : "";
+  const kind = (fieldContext?.formValues.kind as string | undefined) ?? "chat";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <Select
+        options={schema.options}
+        value={avatar}
+        onChange={(v) => onChange?.(v)}
+        disabled={disabled}
+        style={{ flex: 1 }}
+      />
+      <AvatarPreview avatar={avatar} kind={kind} />
+    </div>
+  );
+};
 
 interface ModeFormData {
   name: string;
   description: string;
+  avatar: string;
   kind: string;
   prompt: string;
   model: string | null;
@@ -40,6 +108,7 @@ interface ModeFormData {
 const defaultFormData: ModeFormData = {
   name: "",
   description: "",
+  avatar: "",
   kind: "chat",
   prompt: "",
   model: null,
@@ -74,6 +143,17 @@ export const AgentModeSettings: React.FC = () => {
     [],
   );
 
+  const avatarOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: "", label: t("settings.agent_mode.avatar.none") },
+      ...BUILTIN_AVATAR_OPTIONS.map((o) => ({
+        value: o.value,
+        label: translateKey(o.labelKey),
+      })),
+    ],
+    [t],
+  );
+
   const reasoningEffortOptions = useMemo(() => {
     const labels: Record<ReasoningEffort, string> = {
       low: t("settings.agent_mode.field.reasoning_effort.options.low"),
@@ -100,6 +180,14 @@ export const AgentModeSettings: React.FC = () => {
         label: t("settings.agent_mode.field.description.label"),
         rows: 2,
         placeholder: t("settings.agent_mode.field.description.placeholder"),
+      },
+      {
+        key: "avatar",
+        type: "select",
+        label: t("settings.agent_mode.field.avatar.label"),
+        description: t("settings.agent_mode.field.avatar.description"),
+        options: avatarOptions,
+        customRender: AvatarFieldRender,
       },
       {
         key: "kind",
@@ -157,7 +245,7 @@ export const AgentModeSettings: React.FC = () => {
         visible: (fv) => fv.reasoningEnabled === true,
       },
     ],
-    [t, kindOptions, reasoningEffortOptions],
+    [t, kindOptions, reasoningEffortOptions, avatarOptions],
   );
 
   useEffect(() => {
@@ -194,6 +282,7 @@ export const AgentModeSettings: React.FC = () => {
     form.setFieldsValue({
       name: mode.name,
       description: mode.description,
+      avatar: mode.avatar ?? "",
       kind: mode.kind === "agent" ? "agent" : "chat",
       prompt: mode.prompt,
       model: mode.model,
@@ -450,6 +539,14 @@ export const AgentModeSettings: React.FC = () => {
                   value={null}
                   onChange={() => {}}
                   disabled={isFieldDisabled(schema)}
+                  fieldContext={
+                    schema.key === "avatar"
+                      ? {
+                          mode: editingMode ? "edit" : "add",
+                          formValues: { ...(formValues ?? {}) },
+                        }
+                      : undefined
+                  }
                 />
               </Form.Item>
             ))}
