@@ -1,6 +1,7 @@
 # Vault 可选编译（编译拆分）方案
 
 > 状态：L1 已实施并验证通过；L2~L5 未实施
+> 2026-11-11 更新：`get_vault_conf` 已按 `docs/store/feature-mount-traversal-spec.md` §4 S7 更名为 `vault_get_conf` 并迁入 vault 插件；下文 L1 记录中「命令保留在 core / `main.tsx` 无条件调用」等描述按历史口径阅读，最新形态以该规格为准。
 > 事实基线：`docs/store/crate-architecture.md`、`docs/store/compile-time-attribution.md`
 > 覆盖范围：`src-tauri/`（Cargo workspace + Tauri 集成层）、`src/`（前端）
 
