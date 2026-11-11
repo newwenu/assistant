@@ -51,7 +51,7 @@
 | 可选性落点为「挂载表 + 互斥块」 | `feature_mounts.rs` 的 `MOUNTS`；`vault_plugin.rs` 的 `#[cfg(feature="vault")] mod mounted` / `#[cfg(not(feature="vault"))] mod mounted` | 2 处互斥块，块外 `pub(crate) use mounted::{init, on_exit, on_setup}` |
 | 挂载表是唯一「特性 → 函数」映射 | `feature_mounts.rs` `const MOUNTS: &[FeatureMount]` + `fn mounts()` | 1 张表、1 个读入口（B7 断言）；表内 0 处 cfg（B1 断言） |
 | 命令清单从插件真源派生 | `build.rs` `plugin_ids()` 扫 `src/*_plugin.rs` + `COMMAND_PREFIX_TEMPLATE = "crate::cmd::{}::"` | 已泛化为多插件；单文件必须恰有 1 个 `generate_handler![` 块，否则 panic |
-| vault 命令条数 | `vault_plugin.rs` 的 `generate_handler![` 块 | **70 条**（`cmd/vault/**` 共 71 个 `pub fn vault_*`，其中 `vault_setup` 是插件 setup 钩子，不注册） |
+| vault 命令条数 | `vault_plugin.rs` 的 `generate_handler![` 块 | **69 条**（`cmd/vault/**` 共 71 个 `pub fn vault_*`，其中 `vault_setup` / `vault_cleanup_on_exit` 是插件生命周期钩子，不注册） |
 
 ### 1.3 门禁层
 
@@ -214,7 +214,7 @@ v1 的 E5（"`build.rs` 单真源、单前缀、单插件，第二个插件必 p
 | 挂载表 cfg 数 | 0（`feature_mounts.rs` 全文无 `#[cfg(`） | 达标（B1） |
 | 本体 cfg 数 | 3（== 上限 3） | 达标但**零余量**（B4） |
 | 互斥块签名一致性 | `init` / `on_setup` / `on_exit` 三函数两侧同签名 | 达标（B5） |
-| 命令表隔离 | 70 条全在 `vault_plugin.rs`，`ipc.rs` 85 条宿主命令零 cfg | 达标（A1、A6） |
+| 命令表隔离 | 69 条全在 `vault_plugin.rs`，`ipc.rs` 85 条宿主命令零 cfg | 达标（A1、A6） |
 | 特性权限隔离 | `capabilities/vault.json` 只含 `vault:default`；`default.json` 不含 | 达标（B8） |
 | **`window.rs` 提供者化** | **未做**，`WINDOW_SPECS` 是单条目静态表 | **未达标**，但当前无消费方（见 §3 推论末段） |
 
