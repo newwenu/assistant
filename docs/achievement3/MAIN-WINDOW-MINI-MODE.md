@@ -1,6 +1,6 @@
 # 主窗口小窗（Mini）模式分析
 
-> 日期：2026-11-01｜关联：[CLOCK-NOTES-REFERENCE-ANALYSIS.md](./CLOCK-NOTES-REFERENCE-ANALYSIS.md) · `docs/ARCHITECTURE.md`
+> 日期：2026-11-01｜关联：[CLOCK-NOTES-REFERENCE-ANALYSIS.md](../analysis/CLOCK-NOTES-REFERENCE-ANALYSIS.md) · `docs/ARCHITECTURE.md`
 > 前提约束：**不新增窗口**，以最少内存与资源开销提供工具悬浮小窗形态
 
 ---

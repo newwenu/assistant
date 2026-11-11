@@ -1,6 +1,6 @@
 # 时钟与便签：工具化可行性分析
 
-> 日期：2026-10-31｜关联：[MAIN-WINDOW-MINI-MODE.md](./MAIN-WINDOW-MINI-MODE.md) · `docs/ARCHITECTURE.md` · `docs/FRONTEND.md`
+> 日期：2026-10-31｜关联：MAIN-WINDOW-MINI-MODE.md（已归档） · `docs/ARCHITECTURE.md` · `docs/FRONTEND.md`
 
 ---
 
