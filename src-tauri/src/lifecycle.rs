@@ -16,7 +16,9 @@ pub fn should_exit() -> bool {
 
 pub fn on_run_event(app_handle: &AppHandle, event: tauri::RunEvent) {
     if let tauri::RunEvent::Exit = event {
-        crate::cmd::vault_cleanup_on_exit(app_handle);
+        for mount in crate::feature_mounts::mounts() {
+            (mount.on_exit)(app_handle);
+        }
     }
     if let tauri::RunEvent::ExitRequested { api, .. } = event {
         if !should_exit() {

@@ -6,6 +6,7 @@ pub mod app_dirs;
 #[doc(hidden)]
 pub mod clock;
 mod cmd;
+mod feature_mounts;
 mod ipc;
 mod lifecycle;
 mod menu;

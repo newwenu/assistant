@@ -37,12 +37,7 @@ pub use permission::*;
 pub use provider::*;
 pub use storage::*;
 pub use tool::*;
-#[cfg(feature = "vault")]
-pub use vault::vault_cleanup_on_exit;
 pub use workspace::*;
-
-#[cfg(not(feature = "vault"))]
-pub fn vault_cleanup_on_exit(_app: &tauri::AppHandle) {}
 
 pub(crate) type ConfApplier = fn(&tauri::AppHandle, serde_json::Value) -> Result<(), String>;
 

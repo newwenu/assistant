@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { commandGroups } from "@/test-utils/rustCommands";
 import { readRepoFile, repoFileExists, repoPath } from "@/test-utils/paths";
 
@@ -11,10 +12,16 @@ const ASSEMBLY_POINTS = [
   "src/vite-env.d.ts",
   "src/features/registry.ts",
   "src-tauri/Cargo.toml",
+  "src-tauri/src/feature_mounts.rs",
+  "src-tauri/src/lib.rs",
+];
+
+const TRAVERSAL_FILES = [
   "src-tauri/build.rs",
   "src-tauri/capabilities/default.json",
-  "src-tauri/src/lib.rs",
   "src-tauri/src/plugins.rs",
+  "src-tauri/src/lifecycle.rs",
+  "src-tauri/src/setup.rs",
 ];
 
 const CORE_SCAN_ROOTS = ["src/settings", "src/features", "src-tauri/src"];
@@ -24,13 +31,9 @@ const RESERVED_COMMAND_GROUPS = ["core"];
 
 const FEATURE_FOOTPRINT_ALLOWLIST: Record<string, string[]> = {
   vault: [
-    "src-tauri/src/cmd/config.rs",
     "src-tauri/src/cmd/mod.rs",
-    "src-tauri/src/ipc.rs",
-    "src-tauri/src/lifecycle.rs",
     "src-tauri/src/protocol/dto/config.rs",
     "src-tauri/src/protocol/events.rs",
-    "src-tauri/src/setup.rs",
   ],
 };
 
@@ -84,6 +87,7 @@ function isFeatureBody(relative: string, feature: string): boolean {
   const files = [
     `src/features/${feature}.ts`,
     `src-tauri/src/${feature}_plugin.rs`,
+    `src-tauri/capabilities/${feature}.json`,
   ];
   return (
     dirs.some((dir) => relative.startsWith(dir)) || files.includes(relative)
@@ -131,6 +135,16 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
     const cargoFeatures = cargoFeatureSection();
     const groups = declaredGroups();
 
+    if (!buildRs.includes("read_dir")) {
+      problems.push("build.rs 未按目录遍历插件真源（缺少 read_dir）");
+    }
+    if (!buildRs.includes("_plugin.rs")) {
+      problems.push("build.rs 未以 _plugin.rs 后缀识别插件文件");
+    }
+    if (!pluginsRs.includes("feature_mounts::mounts()")) {
+      problems.push("plugins.rs 未遍历 feature_mounts::mounts()");
+    }
+
     for (const name of names) {
       const entry = features[name];
       if (entry.env !== `${name.toUpperCase()}_ENABLED`) {
@@ -157,29 +171,30 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
       ) {
         problems.push(`${name}: Cargo.toml default 集合未包含该特性`);
       }
-      if (!buildRs.includes(`"${name}"`)) {
-        problems.push(`${name}: build.rs 未声明内联插件 ${name}`);
-      }
       if (!libRs.includes(`mod ${name}_plugin`)) {
         problems.push(`${name}: lib.rs 未声明 mod ${name}_plugin`);
       }
-      if (!pluginsRs.includes(`${name}_plugin::init()`)) {
-        problems.push(`${name}: plugins.rs 未挂载 ${name}_plugin::init()`);
+      if (!libRs.includes(`mod feature_mounts`)) {
+        problems.push(`${name}: lib.rs 未声明 mod feature_mounts`);
+      }
+      const mounts = read("src-tauri/src/feature_mounts.rs");
+      if (!mounts.includes(`id: "${name}"`)) {
+        problems.push(`${name}: feature_mounts.rs 的 MOUNTS 未登记 id ${name}`);
       }
       if ((groups[name] ?? []).length === 0) {
         problems.push(`${name}: 插件 ${name}_plugin.rs 未注册任何命令`);
       }
-      if (!capabilities.includes(`"${name}:default"`)) {
+      const capability = `src-tauri/capabilities/${name}.json`;
+      if (!exists(capability)) {
+        problems.push(`${name}: 缺少特性能力文件 ${capability}`);
+      } else if (!read(capability).includes(`"${name}:default"`)) {
         problems.push(
-          `${name}: capabilities/default.json 缺少 ${name}:default`,
+          `${name}: ${capability} 的 permissions 缺少 ${name}:default`,
         );
       }
-      if (
-        !exists(`src-tauri/permissions/${name}/default.toml`) &&
-        !buildRs.includes(".default_permission(")
-      ) {
+      if (capabilities.includes(`"${name}:default"`)) {
         problems.push(
-          `${name}: 既无 permissions/${name}/default.toml，build.rs 也未生成默认权限`,
+          `${name}: capabilities/default.json 仍授予 ${name}:default，特性权限未拆分`,
         );
       }
       const plugin = `src-tauri/src/${name}_plugin.rs`;
@@ -249,5 +264,82 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
       );
     }
     expect(problems).toEqual([]);
+  });
+
+  it("registry.ts 只允许动态 import + 编译期守卫", () => {
+    const registry = read("src/features/registry.ts");
+    const problems: string[] = [];
+    for (const name of names) {
+      const staticImport = new RegExp(
+        `import\\s*\\{[^}]*\\}\\s*from\\s*"(\\.[^"]*|@/features)/${name}/`,
+      );
+      if (staticImport.test(registry)) {
+        problems.push(`${name}: registry.ts 使用了静态 import，chunk 无法裁剪`);
+      }
+      if (!registry.includes(`await import("./${name}/module")`)) {
+        problems.push(
+          `${name}: registry.ts 缺少 await import("./${name}/module")`,
+        );
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it("每个特性的 env 开关都在 vite-env.d.ts 声明", () => {
+    const viteEnv = read("src/vite-env.d.ts");
+    const problems: string[] = [];
+    for (const name of names) {
+      const env = features[name].env;
+      if (
+        !new RegExp(`declare const __${env}__\\s*:\\s*boolean`).test(viteEnv)
+      ) {
+        problems.push(
+          `${name}: vite-env.d.ts 缺少 declare const __${env}__: boolean`,
+        );
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it("遍历化后的调用方不再点名特性", () => {
+    const problems: string[] = [];
+    for (const file of TRAVERSAL_FILES) {
+      const text = read(file).toLowerCase();
+      for (const name of names) {
+        if (text.includes(name.toLowerCase())) {
+          problems.push(`${file} 仍出现特性名 ${name}`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it("关闭态产物不含特性专有字符串", (ctx) => {
+    const distDir = repoPath("dist");
+    const closed = names.filter(
+      (name) => process.env[features[name].env] === "0",
+    );
+    if (closed.length === 0) {
+      ctx.skip();
+      return;
+    }
+    expect(
+      fs.existsSync(path.join(distDir, "assets")),
+      "声明了关闭态（env=0）却没有 dist/assets：先跑 feature-build.ps1 -Task build -Without <id> 再验",
+    ).toBe(true);
+    for (const name of closed) {
+      const result = spawnSync(
+        process.execPath,
+        [
+          repoPath("scripts/assert-feature-absent.mjs"),
+          "--feature",
+          name,
+          "--dist",
+          distDir,
+        ],
+        { encoding: "utf8" },
+      );
+      expect(result.status, result.stderr ?? "").toBe(0);
+    }
   });
 });

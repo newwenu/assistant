@@ -11,6 +11,6 @@ declare module "@/settings/core/types/confRegistry" {
 
 export const vaultConfSlot = {
   group: "vault",
-  invoke: "get_vault_conf",
+  invoke: "vault_get_conf",
   pageId: "vault",
 } satisfies ConfSlot<"vault">;

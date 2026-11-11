@@ -6,6 +6,8 @@ import { commandGroups } from "@/test-utils/rustCommands";
 const SRC_ROOT = path.resolve(import.meta.dirname, "../..");
 const INVOKE_LITERAL =
   /(?:^|[^A-Za-z0-9_$])(?:invoke|tauriInvoke)(?:<[^>]*>)?\(\s*"([^"]+)"/g;
+const INVOKE_SLOT = /(?:^|[^A-Za-z0-9_$])invoke:\s*"([^"]+)"/g;
+const INVOKE_PATTERNS = [INVOKE_LITERAL, INVOKE_SLOT];
 
 function collectSourceFiles(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -26,12 +28,14 @@ function literalInvokes(files: string[]): Map<string, string[]> {
   const found = new Map<string, string[]>();
   for (const file of files) {
     const text = fs.readFileSync(file, "utf8");
-    for (const match of text.matchAll(INVOKE_LITERAL)) {
-      const name = match[1];
-      const relative = path.relative(SRC_ROOT, file).replace(/\\/g, "/");
-      const hits = found.get(name) ?? [];
-      hits.push(relative);
-      found.set(name, hits);
+    const relative = path.relative(SRC_ROOT, file).replace(/\\/g, "/");
+    for (const pattern of INVOKE_PATTERNS) {
+      for (const match of text.matchAll(pattern)) {
+        const name = match[1];
+        const hits = found.get(name) ?? [];
+        hits.push(relative);
+        found.set(name, hits);
+      }
     }
   }
   return found;

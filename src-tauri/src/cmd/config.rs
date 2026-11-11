@@ -3,15 +3,12 @@ use std::sync::Mutex;
 use tauri::{command, AppHandle, Manager};
 
 use crate::protocol::events::{emit_broadcast, event_name};
-use crate::protocol::{
-    AppConfDto, MascotConfDto, OrbConfDto, ThemeChangedPayloadDto, VaultConfDto,
-};
+use crate::protocol::{AppConfDto, MascotConfDto, OrbConfDto, ThemeChangedPayloadDto};
 use assistant_config::{
     app_conf::AppConf,
     constant::{WINDOW_MAIN, WINDOW_ORB},
     mascot_conf::MascotConf,
     orb_conf::OrbConf,
-    vault_conf::VaultConf,
 };
 
 static CONF_LOCK: Mutex<()> = Mutex::new(());
@@ -169,14 +166,6 @@ pub fn get_orb_conf() -> Result<OrbConfDto, String> {
 pub fn get_mascot_conf() -> Result<MascotConfDto, String> {
     MascotConf::load().map(MascotConfDto::from).map_err(|e| {
         error!("Failed to load mascot config: {}", e);
-        e.to_string()
-    })
-}
-
-#[command]
-pub fn get_vault_conf() -> Result<VaultConfDto, String> {
-    VaultConf::load().map(VaultConfDto::from).map_err(|e| {
-        error!("Failed to load vault config: {}", e);
         e.to_string()
     })
 }

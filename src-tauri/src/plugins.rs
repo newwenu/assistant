@@ -2,8 +2,8 @@
 
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
-pub fn attach(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    builder
+pub fn attach(mut builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -15,8 +15,11 @@ pub fn attach(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry>
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
-        ))
-        .plugin(crate::vault_plugin::init())
+        ));
+    for mount in crate::feature_mounts::mounts() {
+        builder = builder.plugin((mount.plugin)());
+    }
+    builder
 }
 
 /// 日志插件配置

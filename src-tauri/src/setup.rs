@@ -14,7 +14,6 @@ use assistant_config::{
         ORB_CHROME_INSET, ORB_COLLAPSED_WINDOW_SIZE, ORB_HITBOX_SIZE, WINDOW_MAIN, WINDOW_ORB,
     },
     orb_conf::OrbConf,
-    vault_conf::VaultConf,
 };
 use assistant_orb::placement;
 use assistant_storage::attachment_store::AttachmentStore;
@@ -28,8 +27,10 @@ pub struct DbState(pub std::sync::Mutex<rusqlite::Connection>);
 pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle();
 
-    if let Err(e) = VaultConf::load() {
-        log::error!("Failed to init vault config: {}", e);
+    for mount in crate::feature_mounts::mounts() {
+        if let Err(e) = (mount.on_setup)(handle) {
+            log::error!("[{}] {}", mount.id, e);
+        }
     }
     if let Err(e) = AppConf::load() {
         log::error!("Failed to init app config: {}", e);

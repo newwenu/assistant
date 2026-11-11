@@ -40,6 +40,7 @@ pub struct SshAgentState {
 
 mod audit;
 mod biometric;
+mod conf;
 mod entries;
 mod lifecycle;
 mod recovery;
@@ -49,6 +50,7 @@ mod sync;
 
 pub use audit::*;
 pub use biometric::*;
+pub use conf::*;
 pub use entries::*;
 pub use lifecycle::*;
 pub use recovery::*;

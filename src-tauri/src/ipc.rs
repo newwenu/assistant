@@ -1,5 +1,5 @@
 // 参考: ChatGPT/src-tauri/src/main.rs — invoke_handler 集中注册
-// vault 命令已迁至 vault_plugin.rs 的插件边界，本文件只保留宿主命令，无 cfg
+// 特性命令已迁至同名 *_plugin.rs 的插件边界，本文件只保留宿主命令，无 cfg
 
 use crate::cmd;
 use crate::window;
@@ -10,7 +10,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         cmd::get_app_conf,
         cmd::get_orb_conf,
         cmd::get_mascot_conf,
-        cmd::get_vault_conf,
         cmd::patch_conf,
         cmd::toggle_orb_visibility,
         cmd::set_orb_click_through,

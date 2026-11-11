@@ -1,6 +1,6 @@
-// 参考: docs/store/I24-feature-extension-spec.md §3.8.5 — 装配契约的六条集合断言
+// 参考: docs/store/feature-mount-traversal-spec.md §6 — 装配契约 A1–A8 / B1–B9 断言
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -8,16 +8,21 @@ const REGISTRATION_OPEN: &str = "generate_handler![";
 const CFG_PREFIX: &str = "#[cfg(";
 const CFG_FEATURE_MARKER: &str = "feature = \"";
 const CFG_ALLOWED_IN: &str = "cmd/mod.rs";
-const PARSER_FLOOR: usize = 120;
-const VAULT_CFG_LIMIT: usize = 6;
+const FEATURE_CFG_LIMIT: usize = 3;
 const LIB_RS_LINE_LIMIT: usize = 40;
-const CLEANUP_FN: &str = "fn vault_cleanup_on_exit";
-const BUILD_PLUGIN_SOURCE_PREFIX: &str = "src/";
-const BUILD_PLUGIN_SOURCE_SUFFIX: &str = "_plugin.rs";
 const ACL_ALLOW_PREFIX: &str = "allow-";
 const ACL_PARSER_FLOOR: usize = 60;
 const CONF_APPLIER_OPEN: &str = "register_conf_applier(";
 const CONFIG_CONF_MODULE_SUFFIX: &str = "_conf";
+const MOUNT_ID_MARKER: &str = "id: \"";
+const MOUNT_TABLE_TYPE: &str = "&[FeatureMount]";
+const MOUNT_ACCESSOR: &str = "fn mounts(";
+const PLUGIN_FILE_SUFFIX: &str = "_plugin.rs";
+const PLUGIN_DISCOVERY_MARKER: &str = "read_dir";
+const CAPABILITIES_DIR: &str = "capabilities";
+const FEATURE_MANIFEST: &str = "config/features.json";
+const CARGO_MANIFEST: &str = "Cargo.toml";
+const CALLER_FILES: [&str; 3] = ["plugins.rs", "lifecycle.rs", "setup.rs"];
 
 fn manifest_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
@@ -70,12 +75,6 @@ fn plugin_registry_names() -> Result<Vec<String>, String> {
             .unwrap_or_else(|e| panic!("{} is readable: {}", file.display(), e));
         names.extend(registered_names(&text)?);
     }
-    Ok(names)
-}
-
-fn registered_all() -> Result<Vec<String>, String> {
-    let mut names = registered_names(&read("ipc.rs"))?;
-    names.extend(plugin_registry_names()?);
     Ok(names)
 }
 
@@ -199,16 +198,158 @@ fn permission_to_command(permission: &str) -> Option<String> {
         .map(|rest| rest.replace('-', "_"))
 }
 
-fn build_rs_plugin_sources() -> Vec<String> {
+fn build_rs_text() -> String {
     let path = manifest_dir().join("build.rs");
     let text = fs::read_to_string(&path).expect("build.rs is readable");
-    string_literals(&strip_rust_comments(&text))
+    strip_rust_comments(&text)
+}
+
+fn manifest_feature_ids() -> Vec<String> {
+    let mut ids: Vec<String> = manifest_feature_entries()
         .into_iter()
-        .filter(|literal| {
-            literal.starts_with(BUILD_PLUGIN_SOURCE_PREFIX)
-                && literal.ends_with(BUILD_PLUGIN_SOURCE_SUFFIX)
+        .map(|(id, _)| id)
+        .collect();
+    ids.sort();
+    ids
+}
+
+fn manifest_cargo_features() -> Vec<String> {
+    let mut features: Vec<String> = manifest_feature_entries()
+        .into_iter()
+        .map(|(_, entry)| {
+            entry
+                .get("cargoFeature")
+                .and_then(|value| value.as_str())
+                .unwrap_or_else(|| panic!("features.json 条目缺少 cargoFeature"))
+                .to_string()
         })
+        .collect();
+    features.sort();
+    features
+}
+
+fn manifest_feature_entries() -> Vec<(String, serde_json::Value)> {
+    let path = manifest_dir()
+        .parent()
+        .expect("crate lives under repo root")
+        .join(FEATURE_MANIFEST);
+    let text = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{} is readable: {}", path.display(), e));
+    let value: serde_json::Value =
+        serde_json::from_str(&text).expect("features.json is valid JSON");
+    value
+        .as_object()
+        .expect("features.json is an object")
+        .iter()
+        .map(|(id, entry)| (id.clone(), entry.clone()))
         .collect()
+}
+
+fn cargo_feature_ids() -> Vec<String> {
+    let path = manifest_dir().join(CARGO_MANIFEST);
+    let text = fs::read_to_string(&path).expect("Cargo.toml is readable");
+    let mut ids = Vec::new();
+    let mut in_features = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_features = trimmed == "[features]";
+            continue;
+        }
+        if !in_features {
+            continue;
+        }
+        let Some((key, _)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key == "default" || key.is_empty() {
+            continue;
+        }
+        ids.push(key.to_string());
+    }
+    ids.sort();
+    ids
+}
+
+fn mounts_ids() -> Vec<String> {
+    let text = read("feature_mounts.rs");
+    let cleaned = strip_rust_comments(&text);
+    let mut ids = Vec::new();
+    let mut cursor = 0;
+    while let Some(offset) = cleaned[cursor..].find(MOUNT_ID_MARKER) {
+        let start = cursor + offset + MOUNT_ID_MARKER.len();
+        let end = cleaned[start..]
+            .find('"')
+            .unwrap_or_else(|| panic!("feature_mounts.rs 的 id 字面量未闭合"));
+        ids.push(cleaned[start..start + end].to_string());
+        cursor = start + end;
+    }
+    ids.sort();
+    ids
+}
+
+fn cfg_attr_count(text: &str, feature: &str) -> usize {
+    cfg_feature_names(text)
+        .into_iter()
+        .filter(|name| name == feature)
+        .count()
+}
+
+fn negated_block_marker(feature: &str) -> String {
+    format!("#[cfg(not(feature = \"{}\"))]", feature)
+}
+
+fn enabled_block_marker(feature: &str) -> String {
+    format!("#[cfg(feature = \"{}\")]", feature)
+}
+
+fn fn_signature(text: &str, file: &str, name: &str) -> String {
+    let needle = format!("fn {}(", name);
+    let start = text
+        .find(&needle)
+        .unwrap_or_else(|| panic!("{} 缺少 {}", file, needle));
+    let body = &text[start + needle.len()..];
+    let mut depth = 1usize;
+    let mut close = None;
+    for (index, ch) in body.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(index);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let params = &body[..close.unwrap_or_else(|| panic!("{} 的参数表未闭合", file))];
+    let tail = &body[close.unwrap() + 1..];
+
+    let mut normalized = Vec::new();
+    for param in params.split(',') {
+        let param = param.trim();
+        if param.is_empty() {
+            continue;
+        }
+        let (name, ty) = param
+            .split_once(':')
+            .unwrap_or_else(|| panic!("{} 的参数缺少类型: {}", file, param));
+        let name = name.trim().trim_start_matches('_');
+        let ty = shorten_paths(ty).split_whitespace().collect::<String>();
+        normalized.push(format!("{}:{}", name, ty));
+    }
+
+    let ret = match tail.split_once("->") {
+        Some((_, ty)) => shorten_paths(ty.split('{').next().unwrap_or(""))
+            .split_whitespace()
+            .collect::<String>(),
+        None => String::new(),
+    };
+
+    format!("({})->{}", normalized.join(","), ret)
 }
 
 fn plugin_feature_names() -> Vec<String> {
@@ -334,55 +475,6 @@ fn shorten_paths(text: &str) -> String {
     out
 }
 
-fn normalized_signature(text: &str, file: &str) -> String {
-    let start = text
-        .find(CLEANUP_FN)
-        .unwrap_or_else(|| panic!("{} 缺少 {}", file, CLEANUP_FN));
-    let after_name = &text[start + CLEANUP_FN.len()..];
-    let open = after_name
-        .find('(')
-        .unwrap_or_else(|| panic!("{} 的 {} 缺少参数表", file, CLEANUP_FN));
-    let body = &after_name[open + 1..];
-    let mut depth = 1usize;
-    let mut close = None;
-    for (index, ch) in body.char_indices() {
-        match ch {
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth == 0 {
-                    close = Some(index);
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-    let params = &body[..close.unwrap_or_else(|| panic!("{} 的参数表未闭合", file))];
-    let tail = &body[close.unwrap() + 1..];
-    assert!(
-        !tail.trim_start().starts_with("->"),
-        "{} 的 {} 返回类型与另一侧不一致",
-        file,
-        CLEANUP_FN
-    );
-
-    let mut normalized = Vec::new();
-    for param in params.split(',') {
-        let param = param.trim();
-        if param.is_empty() {
-            continue;
-        }
-        let (name, ty) = param
-            .split_once(':')
-            .unwrap_or_else(|| panic!("{} 的参数缺少类型: {}", file, param));
-        let name = name.trim().trim_start_matches('_');
-        let ty = shorten_paths(ty).split_whitespace().collect::<String>();
-        normalized.push(format!("{}:{}", name, ty));
-    }
-    normalized.join(",")
-}
-
 fn cfg_feature_names(text: &str) -> Vec<String> {
     let mut names = Vec::new();
     for line in text.lines() {
@@ -427,7 +519,6 @@ fn a2_feature_cfg_only_in_boundary_files() {
     collect_rs_files(&src_root(), &mut files);
 
     let mut offenders = Vec::new();
-    let mut vault_total = 0usize;
     for file in files {
         let text = fs::read_to_string(&file).expect("source file is readable");
         let relative = file
@@ -439,9 +530,6 @@ fn a2_feature_cfg_only_in_boundary_files() {
             if !cfg_location_allowed(&feature, &relative) {
                 offenders.push(format!("{} -> feature \"{}\"", relative, feature));
             }
-            if feature == "vault" {
-                vault_total += 1;
-            }
         }
     }
 
@@ -450,12 +538,6 @@ fn a2_feature_cfg_only_in_boundary_files() {
         "特性 #[cfg] 只能出现在 {} 或与特性同名的 *_plugin.rs，越界: {:?}",
         CFG_ALLOWED_IN,
         offenders
-    );
-    assert!(
-        vault_total <= VAULT_CFG_LIMIT,
-        "全后端 vault 特性 #[cfg] 共 {} 行，超过上限 {}",
-        vault_total,
-        VAULT_CFG_LIMIT
     );
 }
 
@@ -515,17 +597,29 @@ fn a4_plugin_registry_and_acl_grants_match_both_ways() {
 
 #[test]
 fn a5_parser_floor() {
-    let total = registered_all().expect("注册表可解析").len();
+    let problems: Vec<String> = plugin_feature_names()
+        .into_iter()
+        .filter_map(|feature| {
+            let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
+            let names = registered_names(&read(&plugin_file))
+                .unwrap_or_else(|e| panic!("{} 注册表可解析: {}", plugin_file, e));
+            if names.is_empty() {
+                Some(format!("{} 未解析到任何命令", plugin_file))
+            } else {
+                None
+            }
+        })
+        .collect();
+
     assert!(
-        total >= PARSER_FLOOR,
-        "注册表仅解析到 {} 条命令，低于下限 {}，解析器可能已失效",
-        total,
-        PARSER_FLOOR
+        problems.is_empty(),
+        "每个 *_plugin.rs 至少要注册 1 条命令，解析器可能已失效: {:?}",
+        problems
     );
 }
 
 #[test]
-fn a6_registration_partition_and_stub_signature() {
+fn a6_registration_partition() {
     let core = registered_names(&read("ipc.rs")).expect("ipc.rs 注册表可解析");
     let plugin = plugin_registry_names().expect("插件注册表可解析");
 
@@ -537,13 +631,6 @@ fn a6_registration_partition_and_stub_signature() {
         overlap.is_empty(),
         "同一命令不得同时在宿主与插件注册: {:?}",
         overlap
-    );
-
-    let stub = normalized_signature(&read("cmd/mod.rs"), "cmd/mod.rs");
-    let real = normalized_signature(&read("cmd/vault/mod.rs"), "cmd/vault/mod.rs");
-    assert_eq!(
-        stub, real,
-        "vault_cleanup_on_exit 的桩与真实现签名归一化后必须一致"
     );
 }
 
@@ -566,26 +653,21 @@ fn a7_plugin_command_list_matches_build_acl() {
         "未发现任何 *_plugin.rs，解析器可能已失效"
     );
 
-    let build_sources = build_rs_plugin_sources();
+    let build_text = build_rs_text();
     assert!(
-        !build_sources.is_empty(),
-        "build.rs 未引用任何 *_plugin.rs 真源，派生逻辑可能已失效"
+        build_text.contains(PLUGIN_DISCOVERY_MARKER),
+        "build.rs 未按文件系统遍历插件真源（缺少 read_dir），派生逻辑可能已失效"
+    );
+    assert!(
+        build_text.contains(PLUGIN_FILE_SUFFIX),
+        "build.rs 未以 {} 后缀识别插件文件，派生逻辑可能已失效",
+        PLUGIN_FILE_SUFFIX
     );
 
     let mut problems = Vec::new();
     let mut registered_total = 0usize;
     for feature in &features {
-        let plugin_file = format!("{}_plugin.rs", feature.replace('-', "_"));
-        let expected_source = format!("{}{}", BUILD_PLUGIN_SOURCE_PREFIX, plugin_file);
-        if !build_sources
-            .iter()
-            .any(|source| source == &expected_source)
-        {
-            problems.push(format!(
-                "{}: build.rs 未引用真源 {}，ACL schema 可能由陈旧副本派生",
-                feature, expected_source
-            ));
-        }
+        let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
 
         let registered: BTreeSet<String> = registered_names(&read(&plugin_file))
             .unwrap_or_else(|e| panic!("{} 注册表可解析: {}", plugin_file, e))
@@ -661,5 +743,306 @@ fn a8_conf_applier_groups_match_config_structs() {
         unknown_group.is_empty(),
         "存在无对应 assistant-config 结构体的 applier 分组: {:?}",
         unknown_group
+    );
+}
+
+#[test]
+fn b1_mount_table_has_no_cfg() {
+    let text = read("feature_mounts.rs");
+    assert!(
+        !text.contains(CFG_PREFIX),
+        "feature_mounts.rs 不得出现任何 {}，表内容必须与开关无关",
+        CFG_PREFIX
+    );
+}
+
+#[test]
+fn b2_feature_drift() {
+    let manifest = manifest_feature_ids();
+    assert!(
+        !manifest.is_empty(),
+        "config/features.json 未声明任何特性，漂移断言失去基准"
+    );
+    let cargo = cargo_feature_ids();
+    let mounts = mounts_ids();
+    let plugins = plugin_feature_names();
+
+    let mut problems = Vec::new();
+    for (label, ids) in [
+        ("feature_mounts MOUNTS", &mounts),
+        ("src/*_plugin.rs", &plugins),
+    ] {
+        if ids.join("|") != manifest.join("|") {
+            problems.push(format!(
+                "{} 的 {} ≠ 清单 {}",
+                label,
+                ids.join(", "),
+                manifest.join(", ")
+            ));
+        }
+    }
+
+    let missing: Vec<String> = manifest_cargo_features()
+        .into_iter()
+        .filter(|feature| !cargo.iter().any(|cargo_feature| cargo_feature == feature))
+        .collect();
+    if !missing.is_empty() {
+        problems.push(format!(
+            "Cargo.toml [features] 缺少清单声明的 {}",
+            missing.join(", ")
+        ));
+    }
+
+    assert!(
+        problems.is_empty(),
+        "特性漂移（清单 / 挂载表 / 磁盘 三方全等，Cargo 侧为子集）: {:?}",
+        problems
+    );
+}
+
+#[test]
+fn b3_callers_do_not_name_features() {
+    let mut problems = Vec::new();
+    for file in CALLER_FILES {
+        let text = strip_rust_comments(&read(file));
+        let literals = string_literals(&text);
+        for feature in manifest_feature_ids() {
+            if literals.iter().any(|literal| *literal == feature) {
+                problems.push(format!("{} 直接点名特性 {}", file, feature));
+            }
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "调用方必须只遍历挂载表，不得出现特性名字面量: {:?}",
+        problems
+    );
+}
+
+#[test]
+fn b4_feature_cfg_budget_and_mutual_blocks() {
+    let features = manifest_feature_ids();
+    let mut files = Vec::new();
+    collect_rs_files(&src_root(), &mut files);
+
+    let mut totals: BTreeMap<String, usize> = BTreeMap::new();
+    for file in files {
+        let text = fs::read_to_string(&file).expect("source file is readable");
+        for feature in &features {
+            let count = cfg_attr_count(&text, feature);
+            if count > 0 {
+                *totals.entry(feature.clone()).or_insert(0) += count;
+            }
+        }
+    }
+
+    let over_budget: Vec<String> = totals
+        .iter()
+        .filter(|(_, count)| **count > FEATURE_CFG_LIMIT)
+        .map(|(name, count)| format!("{}: {} 行 cfg，上限 {}", name, count, FEATURE_CFG_LIMIT))
+        .collect();
+    assert!(
+        over_budget.is_empty(),
+        "单特性全后端 cfg 行数超限: {:?}",
+        over_budget
+    );
+
+    let mut problems = Vec::new();
+    for feature in &features {
+        let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
+        let text = strip_rust_comments(&read(&plugin_file));
+        if !text.contains(&enabled_block_marker(feature)) {
+            problems.push(format!(
+                "{} 缺少启用块 {}",
+                plugin_file,
+                enabled_block_marker(feature)
+            ));
+        }
+        if !text.contains(&negated_block_marker(feature)) {
+            problems.push(format!(
+                "{} 缺少关闭块 {}",
+                plugin_file,
+                negated_block_marker(feature)
+            ));
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "特性本体必须是「一对互斥块」形态: {:?}",
+        problems
+    );
+}
+
+#[test]
+fn b5_disabled_block_mirrors_enabled_signatures() {
+    let hooks = ["init", "on_setup", "on_exit"];
+    let mut problems = Vec::new();
+
+    for feature in manifest_feature_ids() {
+        let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
+        let text = strip_rust_comments(&read(&plugin_file));
+        let marker = negated_block_marker(&feature);
+        let Some(split) = text.find(&marker) else {
+            problems.push(format!("{} 缺少关闭块 {}", plugin_file, marker));
+            continue;
+        };
+        let enabled = &text[..split];
+        let disabled = &text[split..];
+
+        for hook in hooks {
+            let left = fn_signature(enabled, &plugin_file, hook);
+            let right = fn_signature(disabled, &plugin_file, hook);
+            if left != right {
+                problems.push(format!(
+                    "{} 的 {} 两侧签名不一致: 启用 {} / 关闭 {}",
+                    plugin_file, hook, left, right
+                ));
+            }
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "关闭态实现必须与启用态同签名，否则挂载表函数指针类型失配: {:?}",
+        problems
+    );
+}
+
+#[test]
+fn b6_cmd_mod_cfg_equals_feature_count() {
+    let text = read("cmd/mod.rs");
+    let features = manifest_feature_ids();
+    let actual: Vec<String> = cfg_feature_names(&text)
+        .into_iter()
+        .filter(|name| features.iter().any(|feature| feature == name))
+        .collect();
+
+    assert_eq!(
+        actual.len(),
+        features.len(),
+        "cmd/mod.rs 特性 cfg 应为每特性恒定 1 条，实际 {:?}",
+        actual
+    );
+
+    for feature in &features {
+        assert_eq!(
+            cfg_attr_count(&text, feature),
+            1,
+            "cmd/mod.rs 的 {} 必须恰好 1 条 cfg 属性（空桩或 pub use 回流会超限）",
+            feature
+        );
+    }
+}
+
+#[test]
+fn b7_single_mount_table() {
+    let text = strip_rust_comments(&read("feature_mounts.rs"));
+    assert_eq!(
+        text.matches(MOUNT_TABLE_TYPE).count(),
+        1,
+        "feature_mounts.rs 必须恰有 1 张 {} 表",
+        MOUNT_TABLE_TYPE
+    );
+    assert!(
+        text.contains(MOUNT_ACCESSOR),
+        "feature_mounts.rs 缺少唯一读入口 {}",
+        MOUNT_ACCESSOR
+    );
+    assert_eq!(
+        text.matches("MOUNTS").count(),
+        2,
+        "MOUNTS 只允许「声明 1 次 + 被 mounts() 返回 1 次」，出现第二张表或旁路读取即失败"
+    );
+}
+
+#[test]
+fn b8_capabilities_split_per_feature() {
+    let mut problems = Vec::new();
+    let features = manifest_feature_ids();
+
+    let default_text =
+        fs::read_to_string(manifest_dir().join(CAPABILITIES_DIR).join("default.json"))
+            .expect("capabilities/default.json 可读")
+            .replace('\u{feff}', "");
+    let default: serde_json::Value =
+        serde_json::from_str(&default_text).expect("capabilities/default.json 是合法 JSON");
+    let default_permissions: Vec<String> = default
+        .get("permissions")
+        .and_then(|value| value.as_array())
+        .expect("default.json 的 permissions 是数组")
+        .iter()
+        .map(|value| value.as_str().unwrap_or_default().to_string())
+        .collect();
+
+    for feature in &features {
+        let expected = format!("{}:default", feature);
+        let path = manifest_dir()
+            .join(CAPABILITIES_DIR)
+            .join(format!("{}.json", feature));
+        if !path.is_file() {
+            problems.push(format!("缺少 {}", path.display()));
+            continue;
+        }
+        let text = fs::read_to_string(&path).expect("capability 文件可读");
+        let value: serde_json::Value =
+            serde_json::from_str(&text).expect("capability 文件是合法 JSON");
+        if value.get("identifier").and_then(|v| v.as_str()) != Some(feature.as_str()) {
+            problems.push(format!("{} 的 identifier 不是 {}", path.display(), feature));
+        }
+        let permissions = value
+            .get("permissions")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if !permissions
+            .iter()
+            .any(|item| item.as_str() == Some(expected.as_str()))
+        {
+            problems.push(format!(
+                "{} 的 permissions 缺少 {}",
+                path.display(),
+                expected
+            ));
+        }
+        if default_permissions.iter().any(|item| *item == expected) {
+            problems.push(format!("default.json 仍授予 {}，特性权限未拆分", expected));
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "capabilities 未按特性拆分: {:?}",
+        problems
+    );
+}
+
+#[test]
+fn b9_single_handler_block_per_plugin() {
+    let mut problems = Vec::new();
+    for feature in manifest_feature_ids() {
+        let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
+        let text = strip_rust_comments(&read(&plugin_file));
+        let count = text.matches(REGISTRATION_OPEN).count();
+        if count != 1 {
+            problems.push(format!(
+                "{} 有 {} 个 {} 注册块，必须恰为 1",
+                plugin_file, count, REGISTRATION_OPEN
+            ));
+        }
+    }
+
+    let build_text = build_rs_text();
+    assert!(
+        build_text.contains("count() != 1"),
+        "build.rs 未对 {} 块数量做同一判据的 panic",
+        REGISTRATION_OPEN
+    );
+
+    assert!(
+        problems.is_empty(),
+        "插件注册块数量异常（build.rs 与 ACL 派生只读首个块）: {:?}",
+        problems
     );
 }
