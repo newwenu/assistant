@@ -1,35 +1,38 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
-use assistant_crypto::vault_crypto::types::MasterKey;
-use assistant_crypto::vault_crypto::VaultCrypto;
+use assistant_crypto::vault_crypto::derive_entry_key;
+use assistant_crypto::vault_crypto::types::Dek;
 
 use crate::security_db::SecurityDbState;
 use crate::types::{VaultCategory, VaultEntrySnapshot, VaultError};
 
-use super::field_crypto::{decrypt_custom_fields, decrypt_opt};
+use super::field_crypto::{
+    decrypt_custom_fields, decrypt_opt, FIELD_NOTES, FIELD_PASSWORD, FIELD_TOTP,
+};
 use super::query_ids;
 
 impl SecurityDbState {
     pub fn export_all_snapshots(&self) -> Result<Vec<VaultEntrySnapshot>, VaultError> {
-        self.with_conn_and_key(|conn, mk| {
+        self.with_conn_and_dek(|conn, dek, dek_version| {
             let ids = query_ids(
                 conn,
                 "SELECT id FROM vault_entries WHERE deleted_at IS NULL ORDER BY created_at",
             )?;
             ids.iter()
-                .map(|id| read_snapshot(conn, mk, id))
+                .map(|id| read_snapshot(conn, dek, dek_version, id))
                 .collect::<Result<Vec<_>, VaultError>>()
         })
     }
 
     pub fn snapshot(&self, id: &str) -> Result<VaultEntrySnapshot, VaultError> {
-        self.with_conn_and_key(|conn, mk| read_snapshot(conn, mk, id))
+        self.with_conn_and_dek(|conn, dek, dek_version| read_snapshot(conn, dek, dek_version, id))
     }
 }
 
 pub(super) fn read_snapshot(
     conn: &Connection,
-    mk: &MasterKey,
+    dek: &Dek,
+    dek_version: u32,
     id: &str,
 ) -> Result<VaultEntrySnapshot, VaultError> {
     let row = conn
@@ -78,19 +81,25 @@ pub(super) fn read_snapshot(
         updated_at,
     ) = row.ok_or_else(|| VaultError::NotFound(id.to_string()))?;
 
-    let entry_key = VaultCrypto::derive_entry_key(mk, &id);
+    let entry_key = derive_entry_key(dek, &id);
+
+    let password = decrypt_opt(enc_password.as_deref(), &entry_key, FIELD_PASSWORD, &id)?;
+    let notes = decrypt_opt(enc_notes.as_deref(), &entry_key, FIELD_NOTES, &id)?;
+    let totp_secret = decrypt_opt(enc_totp.as_deref(), &entry_key, FIELD_TOTP, &id)?;
+    let custom_fields = decrypt_custom_fields(enc_custom_fields.as_deref(), &entry_key, &id)?;
 
     Ok(VaultEntrySnapshot {
         id,
         category: VaultCategory::parse(&category).unwrap_or_default(),
         revision,
+        dek_version,
         title,
         username,
         url,
-        password: decrypt_opt(enc_password.as_deref(), entry_key.expose())?,
-        notes: decrypt_opt(enc_notes.as_deref(), entry_key.expose())?,
-        totp_secret: decrypt_opt(enc_totp.as_deref(), entry_key.expose())?,
-        custom_fields: decrypt_custom_fields(enc_custom_fields.as_deref(), entry_key.expose())?,
+        password,
+        notes,
+        totp_secret,
+        custom_fields,
         tags: serde_json::from_str(&tags_json).unwrap_or_default(),
         is_favorite: is_favorite != 0,
         created_at,

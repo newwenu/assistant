@@ -260,7 +260,11 @@ function normalize(source: SnapshotSource): {
         target: pageId,
         message: `conf group "${slot.group}" references unknown page "${pageId}"`,
       });
-      keptConfs.push({ group: slot.group, invoke: slot.invoke });
+      keptConfs.push({
+        group: slot.group,
+        invoke: slot.invoke,
+        namespace: slot.namespace,
+      });
       continue;
     }
     if (!groupPagePairs.has(`${slot.group}\u0000${pageId}`)) {
@@ -269,7 +273,11 @@ function normalize(source: SnapshotSource): {
         target: slot.group,
         message: `conf group "${slot.group}" declares page "${pageId}" but no setting of this group lives there`,
       });
-      keptConfs.push({ group: slot.group, invoke: slot.invoke });
+      keptConfs.push({
+        group: slot.group,
+        invoke: slot.invoke,
+        namespace: slot.namespace,
+      });
       continue;
     }
     keptConfs.push(slot);

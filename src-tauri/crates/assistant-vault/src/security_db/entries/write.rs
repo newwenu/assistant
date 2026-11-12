@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection};
 
-use assistant_crypto::vault_crypto::types::{CipherAlgorithm, MasterKey};
-use assistant_crypto::vault_crypto::VaultCrypto;
+use assistant_crypto::vault_crypto::derive_entry_key;
+use assistant_crypto::vault_crypto::types::{CipherAlgorithm, Dek};
 
 use crate::audit::{log as audit_log, AuditEvent};
 use crate::dto::totp::payload_from_input;
@@ -9,7 +9,9 @@ use crate::dto::{VaultEntryCreate, VaultEntryUpdate};
 use crate::security_db::SecurityDbState;
 use crate::types::{VaultEntrySnapshot, VaultError};
 
-use super::field_crypto::{encrypt_custom_fields, encrypt_opt};
+use super::field_crypto::{
+    encrypt_custom_fields, encrypt_opt, FIELD_NOTES, FIELD_PASSWORD, FIELD_TOTP,
+};
 use super::snapshot::read_snapshot;
 
 impl SecurityDbState {
@@ -18,7 +20,9 @@ impl SecurityDbState {
         entry: VaultEntryCreate,
         algo: CipherAlgorithm,
     ) -> Result<String, VaultError> {
-        self.with_conn_and_key(|conn, mk| create_entry_in(conn, mk, entry, algo).map(|s| s.id))
+        self.with_conn_and_dek(|conn, dek, dv| {
+            create_entry_in(conn, dek, dv, entry, algo).map(|s| s.id)
+        })
     }
 
     pub fn update_entry(
@@ -27,7 +31,7 @@ impl SecurityDbState {
         entry: VaultEntryUpdate,
         algo: CipherAlgorithm,
     ) -> Result<(), VaultError> {
-        self.with_conn_and_key(|conn, mk| update_entry_in(conn, mk, id, entry, algo))
+        self.with_conn_and_dek(|conn, dek, _dv| update_entry_in(conn, dek, id, entry, algo))
     }
 
     pub fn set_favorite(
@@ -35,16 +39,14 @@ impl SecurityDbState {
         id: &str,
         is_favorite: bool,
     ) -> Result<VaultEntrySnapshot, VaultError> {
-        self.with_conn_and_key(|conn, mk| {
+        self.with_conn_and_dek(|conn, dek, dv| {
             set_favorite_in(conn, id, is_favorite)?;
-            read_snapshot(conn, mk, id)
+            read_snapshot(conn, dek, dv, id)
         })
     }
 
     pub fn delete_entry(&self, id: &str) -> Result<(), VaultError> {
-        let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
-        delete_entry_in(conn, id)
+        self.with_conn(|conn| delete_entry_in(conn, id))
     }
 
     pub fn delete_entries_tx(
@@ -52,7 +54,7 @@ impl SecurityDbState {
         ids: &[String],
         detail: Option<&str>,
     ) -> Result<usize, VaultError> {
-        self.with_transaction(|conn, _mk| {
+        self.with_transaction(|conn, _session| {
             let now = crate::types::now_millis();
             let mut deleted = 0usize;
             for id in ids {
@@ -82,11 +84,13 @@ impl SecurityDbState {
         export: F,
     ) -> Result<VaultEntrySnapshot, VaultError>
     where
-        F: FnOnce(&MasterKey, &VaultEntrySnapshot) -> Result<(), VaultError>,
+        F: FnOnce(&Dek, &VaultEntrySnapshot) -> Result<(), VaultError>,
     {
-        self.with_transaction(|conn, mk| {
-            let snapshot = create_entry_in(conn, mk, entry, algo)?;
-            export(mk, &snapshot)?;
+        self.with_transaction(|conn, session| {
+            let dek = &session.dek;
+            let dek_version = session.dek_version;
+            let snapshot = create_entry_in(conn, dek, dek_version, entry, algo)?;
+            export(dek, &snapshot)?;
             Ok(snapshot)
         })
     }
@@ -99,12 +103,14 @@ impl SecurityDbState {
         export: F,
     ) -> Result<VaultEntrySnapshot, VaultError>
     where
-        F: FnOnce(&MasterKey, &VaultEntrySnapshot) -> Result<(), VaultError>,
+        F: FnOnce(&Dek, &VaultEntrySnapshot) -> Result<(), VaultError>,
     {
-        self.with_transaction(|conn, mk| {
-            update_entry_in(conn, mk, id, entry, algo)?;
-            let snapshot = read_snapshot(conn, mk, id)?;
-            export(mk, &snapshot)?;
+        self.with_transaction(|conn, session| {
+            let dek = &session.dek;
+            let dek_version = session.dek_version;
+            update_entry_in(conn, dek, id, entry, algo)?;
+            let snapshot = read_snapshot(conn, dek, dek_version, id)?;
+            export(dek, &snapshot)?;
             Ok(snapshot)
         })
     }
@@ -116,23 +122,25 @@ impl SecurityDbState {
         export: F,
     ) -> Result<VaultEntrySnapshot, VaultError>
     where
-        F: FnOnce(&MasterKey, &VaultEntrySnapshot) -> Result<(), VaultError>,
+        F: FnOnce(&Dek, &VaultEntrySnapshot) -> Result<(), VaultError>,
     {
-        self.with_transaction(|conn, mk| {
+        self.with_transaction(|conn, session| {
+            let dek = &session.dek;
+            let dek_version = session.dek_version;
             set_favorite_in(conn, id, is_favorite)?;
-            let snapshot = read_snapshot(conn, mk, id)?;
-            export(mk, &snapshot)?;
+            let snapshot = read_snapshot(conn, dek, dek_version, id)?;
+            export(dek, &snapshot)?;
             Ok(snapshot)
         })
     }
 
     pub fn delete_entry_tx<F>(&self, id: &str, export: F) -> Result<(), VaultError>
     where
-        F: FnOnce(&str) -> Result<(), VaultError>,
+        F: FnOnce(&Dek, &str) -> Result<(), VaultError>,
     {
-        self.with_transaction(|conn, _mk| {
+        self.with_transaction(|conn, session| {
             delete_entry_in(conn, id)?;
-            export(id)?;
+            export(&session.dek, id)?;
             Ok(())
         })
     }
@@ -140,20 +148,27 @@ impl SecurityDbState {
 
 fn create_entry_in(
     conn: &Connection,
-    mk: &MasterKey,
+    dek: &Dek,
+    dek_version: u32,
     entry: VaultEntryCreate,
     algo: CipherAlgorithm,
 ) -> Result<VaultEntrySnapshot, VaultError> {
     let id = uuid::Uuid::new_v4().to_string();
-    let entry_key = VaultCrypto::derive_entry_key(mk, &id);
+    let entry_key = derive_entry_key(dek, &id);
     let now = crate::types::now_millis();
 
     let totp_payload = payload_from_input(entry.totp.as_ref());
-    let encrypted_password = encrypt_opt(entry.password.as_deref(), entry_key.expose(), algo)?;
-    let encrypted_notes = encrypt_opt(entry.notes.as_deref(), entry_key.expose(), algo)?;
-    let encrypted_totp = encrypt_opt(totp_payload.as_deref(), entry_key.expose(), algo)?;
+    let encrypted_password = encrypt_opt(
+        entry.password.as_deref(),
+        &entry_key,
+        FIELD_PASSWORD,
+        &id,
+        algo,
+    )?;
+    let encrypted_notes = encrypt_opt(entry.notes.as_deref(), &entry_key, FIELD_NOTES, &id, algo)?;
+    let encrypted_totp = encrypt_opt(totp_payload.as_deref(), &entry_key, FIELD_TOTP, &id, algo)?;
     let encrypted_custom_fields =
-        encrypt_custom_fields(&entry.custom_fields, entry_key.expose(), algo)?;
+        encrypt_custom_fields(&entry.custom_fields, &entry_key, &id, algo)?;
     let tags_json =
         serde_json::to_string(&entry.tags).map_err(|e| VaultError::Validation(e.to_string()))?;
 
@@ -181,35 +196,43 @@ fn create_entry_in(
     .map_err(|e| VaultError::Database(e.to_string()))?;
 
     let _ = audit_log(conn, AuditEvent::VaultEntryCreated, Some(&id));
-    read_snapshot(conn, mk, &id)
+    read_snapshot(conn, dek, dek_version, &id)
 }
 
 fn update_entry_in(
     conn: &Connection,
-    mk: &MasterKey,
+    dek: &Dek,
     id: &str,
     entry: VaultEntryUpdate,
     algo: CipherAlgorithm,
 ) -> Result<(), VaultError> {
-    let entry_key = VaultCrypto::derive_entry_key(mk, id);
+    let entry_key = derive_entry_key(dek, id);
     let now = crate::types::now_millis();
 
-    let encrypted_password = encrypt_opt(entry.password.as_deref(), entry_key.expose(), algo)?;
-    let encrypted_notes = encrypt_opt(entry.notes.as_deref(), entry_key.expose(), algo)?;
+    let encrypted_password = encrypt_opt(
+        entry.password.as_deref(),
+        &entry_key,
+        FIELD_PASSWORD,
+        id,
+        algo,
+    )?;
+    let encrypted_notes = encrypt_opt(entry.notes.as_deref(), &entry_key, FIELD_NOTES, id, algo)?;
     // None = 保持不变；Some(None) = 清除；Some(Some(_)) = 整体替换
     let encrypted_totp: Option<Option<String>> = match entry.totp.as_ref() {
         None => None,
         Some(input) => match payload_from_input(Some(input)) {
             Some(payload) => Some(encrypt_opt(
                 Some(payload.as_str()),
-                entry_key.expose(),
+                &entry_key,
+                FIELD_TOTP,
+                id,
                 algo,
             )?),
             None => Some(None),
         },
     };
     let encrypted_custom_fields =
-        encrypt_custom_fields(&entry.custom_fields, entry_key.expose(), algo)?;
+        encrypt_custom_fields(&entry.custom_fields, &entry_key, id, algo)?;
 
     let tags_json =
         serde_json::to_string(&entry.tags).map_err(|e| VaultError::Validation(e.to_string()))?;

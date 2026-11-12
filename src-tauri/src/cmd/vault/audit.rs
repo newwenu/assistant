@@ -121,6 +121,7 @@ pub fn vault_query_audit_log(
 
 // precondition: Unlocked
 #[command]
+#[allow(deprecated)] // 明文立即移交 SafePassword，由它负责 Drop 清零
 pub async fn vault_hibp_check(app: AppHandle, id: String) -> Result<u32, VaultErrorDto> {
     let password = super::with_unlocked(&app, |state| {
         state.decrypt_password(&id).map_err(VaultErrorDto::from)
@@ -165,6 +166,7 @@ pub fn vault_hibp_audit_cancel() {
 
 // precondition: Unlocked
 #[command]
+#[allow(deprecated)] // 明文立即移交 SafePassword，由它负责 Drop 清零
 pub async fn vault_hibp_audit(app: AppHandle) -> Result<Vec<HibpAuditEntryDto>, VaultErrorDto> {
     use futures::stream::{self, StreamExt};
     use tokio::time::{sleep, Duration};

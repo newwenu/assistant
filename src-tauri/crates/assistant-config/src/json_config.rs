@@ -106,6 +106,27 @@ pub fn save_json_config<T: Serialize>(
     Ok(())
 }
 
+/// 严格加载：文件损坏时返回错误，且**不写回**用户配置文件。
+///
+/// 与 `load_json_config_with_migrate` 的宽松回退不同，本函数用于「配置损坏必须
+/// 显式报错、不得静默覆盖用户数据」的场景（capability-gating-spec §2.2.3 / T-C12）。
+pub fn load_json_config_strict<T>(path: &Path, tag: &str) -> Result<T, Box<dyn std::error::Error>>
+where
+    T: DeserializeOwned,
+{
+    let mut file = File::open(path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+
+    serde_json::from_str::<T>(&contents).map_err(|e| {
+        error!(
+            "[{}] parse error: {}, refusing to overwrite user config",
+            tag, e
+        );
+        format!("[{}] config is corrupt: {}", tag, e).into()
+    })
+}
+
 /// 把 patch 合并进当前配置，并拒绝任何 patch 里未被结构体字段消费的键。
 ///
 /// 配置结构体故意不加 `deny_unknown_fields`（读文件必须向前兼容，旧版本读到新版本

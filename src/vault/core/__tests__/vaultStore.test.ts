@@ -1,9 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockInvokeMap = new Map<string, (...args: unknown[]) => unknown>();
+const mockInvokeCalls: string[] = [];
+
+const confMock = vi.hoisted(() => ({
+  vault: undefined as { vaultAutoLockMinutes: number } | undefined,
+}));
+
+vi.mock("@/settings/core/useConfGroup", () => ({
+  getConfValue: (group: string) => (group === "vault" ? confMock.vault : null),
+  useConfGroup: () => null,
+}));
 
 vi.mock("@/services/tauriInvoke", () => ({
   tauriInvoke: (cmd: string, args?: unknown): Promise<unknown> => {
+    mockInvokeCalls.push(cmd);
     const fn = mockInvokeMap.get(cmd);
     if (fn) return Promise.resolve(fn(args));
     return Promise.resolve(undefined);
@@ -11,6 +22,7 @@ vi.mock("@/services/tauriInvoke", () => ({
 }));
 
 import { useVaultStore } from "../vaultStore";
+import { translateKey } from "@/i18n";
 import type { VaultEntryDetail } from "../vault.types";
 
 function mockCmd(cmd: string, impl: (...args: unknown[]) => unknown) {
@@ -24,6 +36,7 @@ function vaultError(code: string, message: string): Error {
 function resetStore() {
   const store = useVaultStore.getState();
   store.clearError();
+  confMock.vault = undefined;
   useVaultStore.setState({
     isLocked: true,
     isInitialized: false,
@@ -55,7 +68,7 @@ function resetStore() {
     _biometricRetryTimerId: null,
     _biometricAvailRetryCount: 0,
     _biometricEnrolledRetryCount: 0,
-    _recoveryKeySetAt: 0,
+    _recoveryBackupAt: 0,
     syncReadyness: null,
     remoteStatus: null,
     remoteChecking: false,
@@ -65,13 +78,18 @@ function resetStore() {
     syncing: false,
     sshAgentKeys: [],
     sshAgentRunning: false,
-    recoveryKeySet: false,
-    integrityResult: null,
+    recoveryBackup: null,
+    exportFilePath: null,
   });
 }
 
 function clearMocks() {
   mockInvokeMap.clear();
+  mockInvokeCalls.length = 0;
+}
+
+function cmdCalls(): string[] {
+  return mockInvokeCalls.map((c) => c.replace("plugin:vault|", ""));
 }
 
 describe("vaultStore lifecycle", () => {
@@ -131,7 +149,7 @@ describe("vaultStore lifecycle", () => {
     const state = useVaultStore.getState();
     expect(state.isLocked).toBe(true);
     expect(state.errorCode).toBe("invalidPassword");
-    expect(state.error).toBe("Invalid master password");
+    expect(state.error).toBe(translateKey("vault.error.invalidPassword"));
   });
 
   it("unlock → invoke throws error stays locked", async () => {
@@ -194,6 +212,90 @@ describe("vaultStore lifecycle", () => {
     const state = useVaultStore.getState();
     expect(state.isLocked).toBe(false);
     expect(state.isInitialized).toBe(true);
+  });
+});
+
+describe("vaultStore lock paths", () => {
+  beforeEach(() => {
+    clearMocks();
+    resetStore();
+  });
+
+  afterEach(() => {
+    useVaultStore.getState().clearAutoLockTimer();
+  });
+
+  it("T-R6 lock → revealedField cleared together with reveal timer", async () => {
+    mockCmd("vault_lock", () => Promise.resolve(undefined));
+
+    useVaultStore.setState({
+      isLocked: false,
+      revealedField: {
+        entryId: "entry-1",
+        value: "plaintext-secret",
+        expiresAt: Date.now() + 5000,
+        kind: "password",
+        visible: true,
+      },
+      revealTimerId: setTimeout(() => {}, 99999),
+    });
+
+    await useVaultStore.getState().lock();
+
+    const state = useVaultStore.getState();
+    expect(state.isLocked).toBe(true);
+    expect(state.revealedField).toBeNull();
+    expect(state.revealTimerId).toBeNull();
+  });
+
+  it("T-R7 / T-C3 autoLock=0 → no timer scheduled and no auto lock triggered", () => {
+    confMock.vault = { vaultAutoLockMinutes: 0 };
+    mockCmd("vault_lock", () => Promise.resolve(undefined));
+
+    useVaultStore.setState({ isLocked: false });
+    useVaultStore.getState().resetAutoLockTimer(true);
+
+    expect(useVaultStore.getState().autoLockDeadline).toBeNull();
+    expect(useVaultStore.getState().isLocked).toBe(false);
+    expect(cmdCalls()).not.toContain("vault_lock");
+  });
+
+  it("autoLock>0 → schedules deadline and locks when it elapses", async () => {
+    confMock.vault = { vaultAutoLockMinutes: 5 };
+    mockCmd("vault_lock", () => Promise.resolve(undefined));
+
+    vi.useFakeTimers();
+    try {
+      useVaultStore.setState({ isLocked: false });
+      useVaultStore.getState().resetAutoLockTimer(true);
+
+      const deadline = useVaultStore.getState().autoLockDeadline;
+      expect(deadline).not.toBeNull();
+      expect(deadline! - Date.now()).toBe(5 * 60 * 1000);
+
+      vi.advanceTimersByTime(5 * 60 * 1000);
+      await Promise.resolve();
+
+      expect(cmdCalls()).toContain("vault_lock");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lock failure → stays unlocked, records error and restarts timer", async () => {
+    confMock.vault = { vaultAutoLockMinutes: 5 };
+    mockCmd("vault_lock", () =>
+      Promise.reject(vaultError("locked", "vault is busy")),
+    );
+
+    useVaultStore.setState({ isLocked: false });
+
+    await expect(useVaultStore.getState().lock()).rejects.toBeTruthy();
+
+    const state = useVaultStore.getState();
+    expect(state.isLocked).toBe(false);
+    expect(state.errorCode).toBe("locked");
+    expect(state.autoLockDeadline).not.toBeNull();
   });
 });
 
@@ -716,16 +818,16 @@ describe("vaultStore biometric", () => {
     const state = useVaultStore.getState();
     expect(state.isLocked).toBe(true);
     expect(state.errorCode).toBe("biometricCancelled");
-    expect(state.error).toBe("Biometric cancelled");
+    expect(state.error).toBe(translateKey("vault.error.biometricCancelled"));
   });
 
-  it("unlockBiometric → crypto failure disenrolls credential", async () => {
+  it("unlockBiometric → biometricReset marks credential invalid without retry", async () => {
     useVaultStore.setState({
       biometricEnrolled: true,
       _biometricEnrolledAt: 1,
     });
     mockCmd("vault_unlock_biometric", () =>
-      Promise.reject(vaultError("crypto", "Crypto error")),
+      Promise.reject(vaultError("biometricReset", "Biometric reset")),
     );
     mockCmd("vault_disenroll_biometric", () => Promise.resolve(undefined));
 
@@ -734,8 +836,11 @@ describe("vaultStore biometric", () => {
 
     const state = useVaultStore.getState();
     expect(state.isLocked).toBe(true);
-    expect(state.errorCode).toBe("crypto");
+    expect(state.errorCode).toBe("biometricReset");
     expect(state.biometricEnrolled).toBe(false);
+    expect(
+      cmdCalls().filter((c) => c === "vault_unlock_biometric"),
+    ).toHaveLength(1);
   });
 });
 
@@ -749,16 +854,52 @@ describe("vaultStore recovery key", () => {
     useVaultStore.getState().clearAutoLockTimer();
   });
 
-  it("generateRecoveryKey → returns key and sets recoveryKeySet", async () => {
-    mockCmd("vault_generate_recovery_key", () =>
-      Promise.resolve("ABCDEFGH-IJKLMNOP-QRSTUVWX-YZ234567"),
+  it("exportRecoveryKey → returns paper key and records backup", async () => {
+    mockCmd("vault_export_recovery_key", () =>
+      Promise.resolve({
+        paperKey: "0123456789ABCDEFGHJKMNPQRSTVWXYZ01234567",
+        groups: ["01234567", "89ABCDEF", "GHJKMNPQ", "RSTVWXYZ", "01234567"],
+        dekVersion: 1,
+        createdAt: 1_700_000_000_000,
+      }),
+    );
+    mockCmd("vault_has_recovery_backup", () =>
+      Promise.resolve({ dekVersion: 1, confirmedAt: 1_700_000_000_000 }),
     );
 
     const store = useVaultStore.getState();
-    const key = await store.generateRecoveryKey();
+    const result = await store.exportRecoveryKey("correct horse");
 
-    expect(key).toBe("ABCDEFGH-IJKLMNOP-QRSTUVWX-YZ234567");
-    expect(useVaultStore.getState().recoveryKeySet).toBe(true);
+    expect(result?.groups).toHaveLength(5);
+    expect(useVaultStore.getState().recoveryBackup).toEqual({
+      dekVersion: 1,
+      confirmedAt: 1_700_000_000_000,
+    });
+  });
+
+  it("rotateDek → returns new paper key, clears backup and biometric enrollment", async () => {
+    mockCmd("vault_rotate_dek", () =>
+      Promise.resolve({
+        paperKey: "0123456789ABCDEFGHJKMNPQRSTVWXYZ01234567",
+        groups: ["01234567", "89ABCDEF", "GHJKMNPQ", "RSTVWXYZ", "01234567"],
+        dekVersion: 2,
+        createdAt: 1_700_000_000_000,
+      }),
+    );
+    mockCmd("vault_has_recovery_backup", () => Promise.resolve(null));
+    mockCmd("vault_list_entries", () => Promise.resolve([]));
+    useVaultStore.setState({
+      biometricEnrolled: true,
+      recoveryBackup: { dekVersion: 1, confirmedAt: 1_700_000_000_000 },
+    });
+
+    const store = useVaultStore.getState();
+    const result = await store.rotateDek();
+
+    expect(result?.dekVersion).toBe(2);
+    expect(cmdCalls()).toContain("vault_rotate_dek");
+    expect(useVaultStore.getState().recoveryBackup).toBeNull();
+    expect(useVaultStore.getState().biometricEnrolled).toBe(false);
   });
 });
 
@@ -796,7 +937,9 @@ describe("vaultStore sync", () => {
     const store = useVaultStore.getState();
     await store.syncNow();
 
-    expect(useVaultStore.getState().syncError).toBe("git failed");
+    expect(useVaultStore.getState().syncError).toBe(
+      translateKey("vault.error.gitUnavailable"),
+    );
     expect(useVaultStore.getState().errorCode).toBe("gitUnavailable");
     expect(useVaultStore.getState().syncing).toBe(false);
   });

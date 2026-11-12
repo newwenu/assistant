@@ -500,9 +500,10 @@ assistant/
 
 ## 8. 安全设计
 
-- API Key AES-256-GCM 加密存储，密钥派生自机器唯一标识 + HKDF
-- 保险库：主密码经 Argon2id 派生主密钥，条目密钥由 HKDF 按 entry_id 派生；条目内容 AES-256-GCM / ChaCha20-Poly1305 加密；元数据库 `security.db` 使用 SQLCipher
-- 保险库附加防护：TOTP 二次验证、HIBP 泄露检查、生物识别解锁（平台原生）、应用内锁屏 / 空闲锁定、剪贴板自动清除与防截屏、恢复密钥、SSH Agent
+- Provider API Key：以 `SHA-256(machine_uid)` 做 AES-256-GCM 本机包裹。`machine_uid` 可被同机任意进程读取，因此这是混淆 / 防误读而**不是保密**，UI 与文档不得宣称「API Key 已加密保护」
+- 保险库（v1.5 密钥层次）：随机 160 bit `dek` 由 `kek = Argon2id(主密码, salt)` 包封；`dbKey` / `metaKey` / `entryKey` 均由 `HKDF(dek, 域标签)` 派生；改密只重包 `dek`（O(1)，不 rekey 本机库）；条目内容 AES-256-GCM / ChaCha20-Poly1305；`security.db` 使用 SQLCipher（`kdf_iter=1`，直接以 `dbKey` 为 raw key）；`.vault-meta` v2 带 HMAC 完整性校验
+- 恢复通道：40 字符纸面恢复密钥（Crockford base32 + CRC32C）；`RecoverySession` 只持 `dek` 与只读副本，恢复过程不读写本机正式仓库与 `security.db`；恢复码仅在生成时展示一次，不自动写入剪贴板，只提供打印
+- 保险库附加防护：TOTP 二次验证、HIBP 泄露检查、生物识别解锁（平台原生）、应用内锁屏 / 空闲锁定（锁定统一走 `lock_session(reason)`）、剪贴板自动清除与防截屏、SSH Agent
 - 同步：保险库以本地 Git 仓库工作区形式提交，支持远程仓库 / 分支 / Rebase（`assistant-sync`）
 - Tauri 2 安全模型：前端通过 IPC 调用 Rust，capabilities 中显式声明权限；asset 协议仅放行附件目录
 - Rust 后端处理所有敏感操作（API 请求、加密、数据库），前端不直接访问系统资源

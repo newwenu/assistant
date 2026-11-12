@@ -1,10 +1,11 @@
 use tauri::{command, AppHandle};
 
 use assistant_sync::types::{ConflictResolution, SyncConfig};
+use assistant_vault::audit::{log as audit_log, AuditEvent};
 use assistant_vault::dto::{
     ConflictFileDto, ConflictPreviewDto, ConflictResolutionDto, EntryPreviewDto, HistoryCommitDto,
-    PendingRemovalsDto, ReadynessDto, RemoteModeDto, RemoteStatusDto, SyncActionDto, SyncConfigDto,
-    SyncResultDto, VaultErrorDto,
+    PendingRemovalsDto, ReadynessDto, RemoteModeDto, RemoteStatusDto, RevealResult, SyncActionDto,
+    SyncConfigDto, SyncResultDto, VaultErrorDto,
 };
 
 // precondition: Unlocked
@@ -391,10 +392,21 @@ pub fn vault_conflict_reveal(
     path: String,
     side: String,
     field: String,
-) -> Result<String, VaultErrorDto> {
+) -> Result<RevealResult, VaultErrorDto> {
     super::with_unlocked(&app, |db| {
         let engine = super::sync_state(&app)?;
-        engine
+
+        let guard = super::reveal_guard(&app)?;
+        if let Err(e) = guard.check_and_record() {
+            if let Ok(conn_guard) = db.get_conn() {
+                if let Some(conn) = conn_guard.as_ref() {
+                    let _ = audit_log(conn, AuditEvent::VaultRevealRateLimited, Some(&path));
+                }
+            }
+            return Err(VaultErrorDto::from(e));
+        }
+
+        let value = engine
             .reveal_conflict_field(db, &path, &side, &field)
             .map_err(|e| {
                 log::warn!(
@@ -404,6 +416,21 @@ pub fn vault_conflict_reveal(
                     e
                 );
                 VaultErrorDto::from(e)
-            })
+            })?;
+
+        let expires_at =
+            chrono::Utc::now().timestamp_millis() + (super::REVEAL_TTL_SECS as i64) * 1000;
+
+        if let Ok(conn_guard) = db.get_conn() {
+            if let Some(conn) = conn_guard.as_ref() {
+                let _ = audit_log(
+                    conn,
+                    AuditEvent::VaultReveal,
+                    Some(&format!("conflict:{}:{}:{}", path, side, field)),
+                );
+            }
+        }
+
+        Ok(RevealResult { value, expires_at })
     })
 }

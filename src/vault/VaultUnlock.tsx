@@ -1,13 +1,21 @@
 import { useEffect, useState } from "react";
-import { Button, Form, Typography } from "antd";
-import { LockOutlined, SyncOutlined } from "@ant-design/icons";
+import { Form, Typography } from "antd";
+import { LockOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { save } from "@tauri-apps/plugin-dialog";
 import { App } from "antd";
 import { useVaultUnlock } from "./core/useVaultUnlock";
+import {
+  needsAppUpgrade,
+  needsDbRepair,
+  needsRepositoryReset,
+} from "./core/vaultError";
+import { vaultErrorText } from "./core/vaultErrorText";
 import PasswordForm from "./unlock/PasswordForm";
 import BiometricButton from "./unlock/BiometricButton";
 import DisasterRecovery from "./unlock/DisasterRecovery";
+import DbRepairDialog from "./unlock/DbRepairDialog";
+import ResetRepositoryPanel from "./unlock/ResetRepositoryPanel";
+import VersionTooNewPanel from "./unlock/VersionTooNewPanel";
 import styles from "./vault.module.css";
 
 const BIOMETRIC_PROBE_TIMEOUT_MS = 2_000;
@@ -19,6 +27,11 @@ export default function VaultUnlock() {
     isInitialized,
     loading,
     error,
+    errorCode,
+    clearError,
+    resetRepository,
+    rebuildLocalDb,
+    checkStatus,
     password,
     setPassword,
     confirmPassword,
@@ -34,21 +47,15 @@ export default function VaultUnlock() {
     handleBiometricUnlock,
     checkBiometricAvailable,
     checkBiometricEnrolled,
-    disasterRecoveryStep,
-    disasterRecoveryResult,
-    startDisasterRecovery,
-    cancelDisasterRecovery,
-    setDisasterRecoveryStep,
-    disasterRecoveryExport,
-    drGitUrl,
-    setDrGitUrl,
-    drRecoveryKey,
-    setDrRecoveryKey,
-    drCommit,
-    setDrCommit,
   } = useVaultUnlock();
 
   const [biometricReady, setBiometricReady] = useState(false);
+  const [repairDismissed, setRepairDismissed] = useState(false);
+  const errorText = vaultErrorText(errorCode, error);
+
+  useEffect(() => {
+    if (!needsDbRepair(errorCode)) setRepairDismissed(false);
+  }, [errorCode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,42 +101,26 @@ export default function VaultUnlock() {
 
   const biometricDefault =
     isInitialized && biometricAvailable && biometricEnrolled;
+  const biometricReset = errorCode === "biometricReset";
 
-  const handleDisasterRecoveryNext = async () => {
-    if (disasterRecoveryStep === 1) {
-      setDisasterRecoveryStep(2);
-    } else if (disasterRecoveryStep === 2) {
-      if (!drRecoveryKey) return;
-      const filePath = await save({
-        defaultPath: "vault-recovery-export.json",
-        filters: [{ name: "JSON", extensions: ["json"] }],
-      });
-      if (!filePath) return;
-      await disasterRecoveryExport(
-        drGitUrl || null,
-        drRecoveryKey,
-        filePath,
-        drCommit.trim() || null,
-      );
-    }
-  };
-
-  if (disasterRecoveryStep) {
+  if (needsRepositoryReset(errorCode)) {
     return (
-      <DisasterRecovery
-        step={disasterRecoveryStep}
-        result={disasterRecoveryResult}
+      <ResetRepositoryPanel
         loading={loading}
-        error={error}
-        drGitUrl={drGitUrl}
-        onDrGitUrlChange={setDrGitUrl}
-        drRecoveryKey={drRecoveryKey}
-        onDrRecoveryKeyChange={setDrRecoveryKey}
-        drCommit={drCommit}
-        onDrCommitChange={setDrCommit}
-        onNext={handleDisasterRecoveryNext}
-        onCancel={cancelDisasterRecovery}
-        onSetStep={setDisasterRecoveryStep}
+        error={errorText}
+        onReset={resetRepository}
+      />
+    );
+  }
+
+  if (needsAppUpgrade(errorCode)) {
+    return (
+      <VersionTooNewPanel
+        error={errorText}
+        onRetry={() => {
+          clearError();
+          void checkStatus();
+        }}
       />
     );
   }
@@ -158,11 +149,12 @@ export default function VaultUnlock() {
           onFinish={() => void handlePasswordSubmitInner()}
           className={styles.unlockForm}
         >
-          {biometricReady && biometricDefault ? (
+          {biometricReady && (biometricDefault || biometricReset) ? (
             <BiometricButton
               unlockMethod={unlockMethod}
               onUnlock={() => void handleBiometricUnlock()}
-              primary
+              primary={biometricDefault}
+              resetRequired={biometricReset}
             />
           ) : null}
           <PasswordForm
@@ -172,25 +164,25 @@ export default function VaultUnlock() {
             confirmPassword={confirmPassword}
             onConfirmPasswordChange={setConfirmPassword}
             strength={strength}
-            error={error}
+            error={errorText}
             unlockMethod={unlockMethod}
             canSubmit={canSubmit}
             collapsed={biometricDefault}
           />
 
           <div className={styles.unlockFooter}>
-            <Button
-              type="link"
-              size="small"
-              icon={<SyncOutlined />}
-              disabled={!!unlockMethod}
-              onClick={startDisasterRecovery}
-            >
-              {t("vault.disaster_recovery.title")}
-            </Button>
+            <DisasterRecovery disabled={!!unlockMethod} />
           </div>
         </Form>
       </div>
+
+      <DbRepairDialog
+        open={needsDbRepair(errorCode) && !repairDismissed}
+        loading={loading}
+        error={errorText}
+        onRebuild={rebuildLocalDb}
+        onClose={() => setRepairDismissed(true)}
+      />
     </div>
   );
 }

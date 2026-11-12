@@ -6,13 +6,14 @@ use assistant_sync::types::{PendingRemovals, SyncConfig};
 
 use crate::vault_file::{CipherProvider, VaultFileManager};
 
-mod emergency;
 mod export;
 mod history;
 mod lifecycle;
 mod preview;
 mod pull_push;
 mod remote_admin;
+
+pub use preview::mask_entry_preview;
 
 pub struct SyncEngine {
     git_sync: Mutex<GitSync>,

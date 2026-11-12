@@ -29,7 +29,7 @@
 
 1. `feature = "vault"` 关闭时：
    - 不注册任何 `vault_*` 命令；
-   - 不创建 `SecurityDbState` / `SyncEngine` / `RevealGuard` / `ClipboardGuard` / `SshAgentState`；
+   - 不创建 `SecurityDbState` / `VaultRepo` / `SyncEngine` / `RevealGuard` / `ClipboardGuard` / `SshAgentState`；
    - 不监听屏幕锁；
    - 不读取 `vault-config.json`；
    - 前端不挂载 vault 路由/模块。
@@ -73,8 +73,8 @@
 | `vault_hibp_auto_audit` | `bool` | `true` | 解锁后是否自动跑 HIBP | 影响网络出口 |
 | `vault_sync_remote_url` | `Option<String>` | `None` | 远端 URL（可能含凭据） | 需脱敏 |
 | `vault_ssh_auto_add` | `bool` | `false` | 解锁后自动注入 SSH key | 扩大 agent 驻留 |
-| `vault_ssh_use_pageant` | `bool` | `true` | 使用 Pageant | 平台相关 |
-| `vault_ssh_use_openssh_agent` | `bool` | `true` | 使用 OpenSSH agent | 平台相关 |
+| `vault_ssh_use_pageant` | `bool` | `true` | 使用 Pageant；关闭时用 OpenSSH agent | 平台相关 |
+| `vault_ssh_use_openssh_agent` | `bool` | `true` | 保留字段；**当前无消费点**，桥接仅由 `vault_ssh_use_pageant` 单向决定 | 平台相关 |
 | `vault_ssh_auth_sock_override` | `String` | 空 | 覆盖 `SSH_AUTH_SOCK` | 可指向不可信 agent |
 | `vault_sync_last_at` | `Option<i64>` | `None` | 上次同步时间（毫秒） | 无 |
 | `vault_sync_ssh_hosts` | `Vec<String>` | 空 | 持久化 SSH host key 的主机 | 影响信任范围 |
@@ -135,12 +135,20 @@
 ```
 1. 检测到 v1 → UnsupportedVaultVersion
 2. UI：提示「此库由旧版本创建，本版本不支持升级」+「重置仓库」入口
+   同屏提示先备份仓库目录（重置不可逆，旧库不会被自动保留）
 3. 重置：二次确认 + confirm_token("RESET-VAULT")
-4. 重置流程：锁库 → 清 keystore → 备份 .vault-meta.bak（仅一次）→ 删 .vault-meta / security.db / entries/ / audit /
+4. 重置流程：锁库 → 清 keystore → 备份 `<security>/vault-meta.bak`（**仓库之外**，每次重置覆盖）→ 删 .vault-meta / security.db / entries/ / audit /
 5. 审计 VaultRepositoryReset（JSONL）
+6. 重置成功后回到初始化页（未初始化态），由用户主动执行初始化；不自动创建新库
 ```
 
 禁止：迁移器、staging 目录、`journal.json`、`.vault-legacy/` 归档、字段映射。
+
+补充约束：
+
+- **检测阶段只读**：报 `UnsupportedVaultVersion` 时不得创建、改名或删除仓库内任何文件（与 key-hierarchy-spec §11.2 I10 一致）。
+- **备份提示不等于备份**：UI 只提示用户自行备份，应用不得代为复制或归档旧库（§9.4）。
+- **重置后不自动重建**：第 6 步只切到初始化页；是否新建库由用户点击初始化决定，避免「确认重置即静默建库」。
 
 ### 3.3 仓库格式版本
 
@@ -184,7 +192,8 @@
    ├─ AppDirs::resolve()
    ├─ SecurityDbState::new(security/security.db)
    ├─ manage RevealGuard / ClipboardGuard / SshAgentState
-   ├─ manage SyncEngine(security/vault)
+   ├─ manage VaultRepo(security/vault)          # 仓库文件层，独立持有
+   ├─ manage SyncEngine(共享同一 repo)          # 仅 git 同步
    └─ spawn_screen_lock_watcher()
 4. 前端挂载 vault 模块（若 feature 开启）
 ```
@@ -194,6 +203,7 @@
 1. `vault_setup` 失败必须让插件 setup 失败，不得带着半初始化状态继续。
 2. keyring 预热失败不得阻断口令路径。
 3. `AppDirs::resolve` 失败必须报错，不得回退到当前工作目录。
+4. 生物识别、恢复、改密、轮换只依赖 `VaultRepo`，不得经 `SyncEngine` 取 repo；`remote_url = None`（从未配置同步）时这些功能必须照常可用（key §9.3）。
 
 ### 5.2 退出
 
@@ -271,6 +281,15 @@
 | T-C12 | 配置损坏 | `Validation`；不覆盖用户配置 |
 | T-C13 | 仓库出现 `security.db` | `RepositoryContainsForbiddenFile` |
 | T-C14 | 退出 | `lock_session(AppExit)` 被调用 |
+
+手工验收（M2.16，无自动化替代）：
+
+| 编号 | 步骤 | 断言 |
+|---|---|---|
+| T-C8a | 放入 v1 库（`version=1`）→ 打开应用 | 解锁页显示「不支持升级」+ 重置入口 + 备份提示；仓库内文件 mtime 与内容 hash 均不变 |
+| T-C8b | 点重置 → 输入 `RESET-VAULT` → 确认 | 审计落一条 `VaultRepositoryReset`；`<security>/vault-meta.bak` 存在且**仓库根目录无该文件**；`.vault-meta` / `security.db` / `entries/` / `audit/` 均不存在；界面回到初始化页且**未自动建库** |
+| T-C8c | 重置确认前关闭对话框 | 磁盘无任何变化（无 `vault-meta.bak`、无删除） |
+| T-C8d | 重置后重新初始化并新建条目 | 不再出现 `RepositoryContainsForbiddenFile`；`.vault-meta` 与 `entries/*.enc` 正常写入 |
 
 ---
 

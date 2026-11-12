@@ -32,11 +32,38 @@ pub enum SyncError {
     #[error("Vault meta integrity check failed: {0}")]
     VaultMetaIntegrityFailed(String),
 
-    #[error("Entry version cannot be decrypted with the current master key: {0}")]
+    #[error("Entry version cannot be decrypted with the current vault key: {0}")]
     HistoryDecryptFailed(String),
+
+    #[error("Unsupported entry file version: {0}")]
+    UnsupportedEntryFileVersion(String),
+
+    #[error("Vault entry corrupted: {0}")]
+    EntryCorrupted(String),
 
     #[error("Remote repository uses a different master key (another device changed the master password): {0}")]
     VaultKeyMismatch(String),
+
+    #[error("Remote vault uses a newer data key generation (remote {remote} > local {local})")]
+    VaultDekVersionAhead { remote: u32, local: u32 },
+
+    #[error("Remote vault uses an older data key generation (remote {remote} < local {local})")]
+    VaultDekVersionBehind { remote: u32, local: u32 },
+
+    #[error("Vault manifest does not match entry files")]
+    VaultManifestMismatch,
+
+    #[error("Unsupported vault version; reset required")]
+    UnsupportedVaultVersion,
+
+    #[error("Vault meta is corrupted or unparsable: {0}")]
+    VaultCorrupted(String),
+
+    #[error("History entry was encrypted with a retired data key (dekVersion {0})")]
+    HistoryDekUnavailable(u32),
+
+    #[error("Repository contains forbidden file: {0}")]
+    RepositoryContainsForbiddenFile(String),
 
     #[error("{0}")]
     Other(String),

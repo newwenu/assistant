@@ -1,131 +1,102 @@
-import { useState } from "react";
-import { Button, Typography, Space, Modal, Input, App } from "antd";
-import {
-  CopyOutlined,
-  KeyOutlined,
-  SafetyCertificateOutlined,
-} from "@ant-design/icons";
+import { useEffect, useState } from "react";
+import { Alert, Button, Divider, Space, Typography } from "antd";
+import { KeyOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import type { IntegrityResult } from "../core/vault.types";
+import { useVaultShallow } from "../core/vaultStore";
+import RecoveryKeyDialog from "./RecoveryKeyDialog";
+import RotateDekDialog from "./RotateDekDialog";
+import PaperRecoveryFlow from "../unlock/PaperRecoveryFlow";
 
-interface RecoveryTabProps {
-  recoveryKeySet: boolean;
-  integrityResult: IntegrityResult | null;
-  generateRecoveryKey: () => Promise<string | null>;
-  checkRecoveryKeySet: () => Promise<void>;
-  verifyIntegrity: () => Promise<IntegrityResult | null>;
-}
-
-export default function RecoveryTab({
-  recoveryKeySet,
-  integrityResult,
-  generateRecoveryKey,
-  checkRecoveryKeySet,
-  verifyIntegrity,
-}: RecoveryTabProps) {
+export default function RecoveryTab() {
   const { t } = useTranslation();
-  const { message } = App.useApp();
-  const [recoveryKeyModalOpen, setRecoveryKeyModalOpen] = useState(false);
-  const [generatedRecoveryKey, setGeneratedRecoveryKey] = useState<
-    string | null
-  >(null);
-  const [recoveryKeyLoading, setRecoveryKeyLoading] = useState(false);
+  const { recoveryBackup, loadRecoveryBackup } = useVaultShallow((s) => ({
+    recoveryBackup: s.recoveryBackup,
+    loadRecoveryBackup: s.loadRecoveryBackup,
+  }));
+  const [exportOpen, setExportOpen] = useState(false);
+  const [recoverOpen, setRecoverOpen] = useState(false);
+  const [rotateOpen, setRotateOpen] = useState(false);
 
-  const handleGenerateRecoveryKey = async () => {
-    setRecoveryKeyLoading(true);
-    try {
-      const key = await generateRecoveryKey();
-      if (key) {
-        setGeneratedRecoveryKey(key);
-        setRecoveryKeyModalOpen(true);
-        await checkRecoveryKeySet();
-      }
-    } finally {
-      setRecoveryKeyLoading(false);
-    }
-  };
+  useEffect(() => {
+    void loadRecoveryBackup();
+  }, [loadRecoveryBackup]);
 
-  const handleCopyRecoveryKey = () => {
-    if (!generatedRecoveryKey) return;
-    void navigator.clipboard.writeText(generatedRecoveryKey);
-    message.success(t("vault.recovery.key_copied"));
-  };
-
-  const handleConfirmSaved = () => {
-    setRecoveryKeyModalOpen(false);
-    setGeneratedRecoveryKey(null);
-  };
+  const exportedAt = recoveryBackup
+    ? new Date(recoveryBackup.confirmedAt).toLocaleString()
+    : null;
 
   return (
     <>
       <div>
         <Typography.Paragraph type="secondary">
-          {t("vault.recovery.key_description")}
+          {t("vault.recovery.export.desc")}
         </Typography.Paragraph>
+
+        {recoveryBackup ? (
+          <Alert
+            type="success"
+            showIcon
+            style={{ marginBottom: 16 }}
+            title={t("vault.recovery.backupPresent", {
+              version: recoveryBackup.dekVersion,
+              time: exportedAt,
+            })}
+          />
+        ) : (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+            title={t("vault.recovery.backupMissing")}
+          />
+        )}
 
         <Space orientation="vertical" style={{ width: "100%" }}>
           <Button
             type="primary"
             icon={<KeyOutlined />}
-            loading={recoveryKeyLoading}
-            onClick={() => void handleGenerateRecoveryKey()}
+            onClick={() => setExportOpen(true)}
           >
-            {recoveryKeySet
-              ? t("vault.recovery.key_regenerate")
-              : t("vault.recovery.key_generate")}
+            {recoveryBackup
+              ? t("vault.recovery.export.regenerate")
+              : t("vault.recovery.export.title")}
           </Button>
+          <Button icon={<SyncOutlined />} onClick={() => setRecoverOpen(true)}>
+            {t("vault.recovery.paper.entry")}
+          </Button>
+        </Space>
 
+        <Divider style={{ margin: "24px 0 16px" }} />
+
+        <Space orientation="vertical" style={{ width: "100%" }} size="small">
+          <Typography.Text strong type="danger">
+            {t("vault.recovery.rotate.title")}
+          </Typography.Text>
+          <Typography.Paragraph
+            type="secondary"
+            style={{ margin: 0, fontSize: 12 }}
+          >
+            {t("vault.recovery.rotate.entry_desc")}
+          </Typography.Paragraph>
           <Button
-            icon={<SafetyCertificateOutlined />}
-            onClick={() => void verifyIntegrity()}
+            danger
+            icon={<ReloadOutlined />}
+            onClick={() => setRotateOpen(true)}
           >
-            {t("vault.recovery.verify_integrity")}
+            {t("vault.recovery.rotate.entry")}
           </Button>
-
-          {integrityResult && (
-            <Typography.Text
-              type={integrityResult.valid ? "success" : "danger"}
-            >
-              {integrityResult.message}
-            </Typography.Text>
-          )}
         </Space>
       </div>
 
-      <Modal
-        open={recoveryKeyModalOpen}
-        title={t("vault.recovery.key_generated_title")}
-        mask={{ closable: false }}
-        onCancel={() => {
-          setRecoveryKeyModalOpen(false);
-          setGeneratedRecoveryKey(null);
-        }}
-        footer={[
-          <Button
-            key="copy"
-            icon={<CopyOutlined />}
-            disabled={!generatedRecoveryKey}
-            onClick={handleCopyRecoveryKey}
-          >
-            {t("vault.recovery.key_copy")}
-          </Button>,
-          <Button key="saved" type="primary" onClick={handleConfirmSaved}>
-            {t("vault.recovery.key_saved_confirm")}
-          </Button>,
-        ]}
-      >
-        <Typography.Paragraph type="warning">
-          {t("vault.recovery.key_warning")}
-        </Typography.Paragraph>
-        {generatedRecoveryKey && (
-          <Input.TextArea
-            value={generatedRecoveryKey}
-            readOnly
-            autoSize
-            style={{ fontFamily: "monospace", textAlign: "center" }}
-          />
-        )}
-      </Modal>
+      <RecoveryKeyDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+      />
+      <RotateDekDialog open={rotateOpen} onClose={() => setRotateOpen(false)} />
+      <PaperRecoveryFlow
+        open={recoverOpen}
+        onClose={() => setRecoverOpen(false)}
+      />
     </>
   );
 }

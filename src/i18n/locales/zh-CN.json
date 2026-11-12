@@ -408,7 +408,7 @@
           "keep": "保留原密钥",
           "required": "请输入 API Key",
           "required_first": "请先输入 API Key",
-          "encrypted_hint": "密钥将加密存储",
+          "encrypted_hint": "密钥仅以本机混淆形式保存，同机进程可读取，并非保密存储",
           "keep_hint": "留空则保留原密钥"
         },
         "base_url": { "label": "Base URL", "required": "请输入 Base URL" },
@@ -449,8 +449,15 @@
       },
       "auto_lock_minutes": { "label": "自动锁定时间（分钟）" },
       "lock_on_screen_lock": { "label": "屏幕锁定时锁定保险库" },
-      "clipboard_clear_seconds": { "label": "剪贴板清除时间（秒）" },
-      "cipher_algorithm": { "label": "加密算法" },
+      "clipboard_clear_seconds": {
+        "label": "剪贴板清除时间（秒）",
+        "confirm_zero_title": "关闭剪贴板自动清除？",
+        "confirm_zero_content": "设为 0 后复制的明文将一直留在剪贴板，直到你手动覆盖或锁定保险库。确认继续？"
+      },
+      "cipher_algorithm": {
+        "label": "加密算法",
+        "description": "仅影响新建或更新的条目，以及密钥轮换；已有条目保持原算法，仍可正常解密"
+      },
       "biometric_enabled": {
         "label": "生物识别解锁",
         "description": "启用需要两次认证",
@@ -458,8 +465,10 @@
         "save_message": "生物识别状态已更新"
       },
       "ssh_auto_add": { "label": "解锁时自动添加 SSH 密钥到 Agent" },
-      "ssh_use_pageant": { "label": "使用 Pageant (PuTTY)" },
-      "ssh_use_openssh_agent": { "label": "使用 OpenSSH Agent" },
+      "ssh_use_pageant": {
+        "label": "使用 Pageant (PuTTY)",
+        "description": "关闭后改用 OpenSSH Agent（Windows 系统）"
+      },
       "ssh_auth_sock_override": {
         "label": "SSH_AUTH_SOCK 路径覆盖",
         "placeholder": "留空使用默认路径"
@@ -1030,6 +1039,50 @@
   "vault": {
     "name": "密码保险库",
     "description": "安全存储和管理密码、凭证与密钥",
+    "error": {
+      "locked": "保险库已锁定，请先解锁",
+      "invalidPassword": "主密码不正确",
+      "notInitialized": "保险库尚未初始化",
+      "alreadyExists": "保险库已存在",
+      "rateLimited": "尝试次数过多，请稍后再试",
+      "crypto": "加密操作失败",
+      "notFound": "未找到目标内容",
+      "entryCorrupted": "条目数据已损坏",
+      "validation": "输入内容不符合要求",
+      "biometricUnavailable": "当前设备不支持生物识别",
+      "biometricCancelled": "生物识别已取消",
+      "biometricFailed": "生物识别失败",
+      "biometricReset": "生物识别凭据已失效，请重新注册",
+      "invalidKeyFormat": "密钥格式不正确",
+      "invalidRecoveryKeyFormat": "恢复密钥格式不正确，请检查长度与字符",
+      "invalidRecoveryKeyChecksum": "恢复密钥校验失败，可能有字符抄错",
+      "invalidRecoveryKeyOrMetaTampered": "恢复密钥无法解开仓库元数据：密钥抄错或元数据已被篡改",
+      "vaultMetaIntegrityFailed": "仓库元数据完整性校验失败",
+      "unsupportedVaultVersion": "此库由旧版本创建，当前版本不支持，只能重置",
+      "vaultVersionTooNew": "此库由更新版本创建，当前应用无法识别，请升级应用",
+      "localDbKeyMismatch": "本机数据库与当前主密码不匹配",
+      "vaultRollbackDetected": "检测到仓库完整性基线回滚",
+      "vaultManifestMismatch": "条目文件与清单不一致，仓库可能被改动",
+      "vaultCorrupted": "仓库文件损坏或无法解析",
+      "cancelled": "操作已取消",
+      "repoNotInitialized": "同步仓库尚未初始化",
+      "noRemoteConfigured": "尚未配置远端仓库",
+      "noUpstream": "当前分支未设置上游分支",
+      "syncConflict": "同步冲突，需要手动解决",
+      "gitUnavailable": "Git 不可用",
+      "keyMismatch": "密钥不匹配",
+      "historyDecryptFailed": "历史版本无法解密",
+      "vaultDekVersionAhead": "远端数据密钥版本高于本机，请先升级本应用",
+      "vaultDekVersionBehind": "本机数据密钥版本高于远端，请先执行推送",
+      "repositoryContainsForbiddenFile": "仓库包含不允许的文件，请检查仓库内容",
+      "historyDekUnavailable": "缺少该历史版本的数据密钥，无法解密",
+      "internal": "内部错误"
+    },
+    "versionTooNew": {
+      "title": "此库由更新版本创建",
+      "desc": "当前应用无法识别该库的版本。请升级应用后再打开，不要重置仓库，否则会删除其中的数据。",
+      "retry": "重新检测"
+    },
     "unlock": {
       "title": "解锁保险库",
       "subtitle": "使用生物识别或主密码继续",
@@ -1045,6 +1098,23 @@
       "recovery_key_placeholder": "XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX",
       "use_password": "使用密码解锁",
       "password_divider": "密码"
+    },
+    "reset": {
+      "title": "此库由旧版本创建",
+      "desc": "本版本不支持升级旧库，需要重置仓库后才能重新创建密码库。",
+      "backupHint": "重置不可逆：旧库不会被自动保留。若其中含有真实凭据，请先自行备份仓库目录。",
+      "confirm1": "重置将删除仓库内的 .vault-meta、security.db、entries/ 与 audit/。确认继续？",
+      "confirm2": "请输入 RESET-VAULT 以确认重置。",
+      "tokenLabel": "RESET-VAULT",
+      "proceed": "我已备份，继续",
+      "action": "重置仓库"
+    },
+    "repair": {
+      "title": "本机数据库与仓库基线不一致",
+      "desc": "本机数据库的密钥或完整性基线（anchor）与仓库不一致，无法安全解锁。可以重建本机缓存：条目文件与审计日志会重新导入，不会丢失数据。",
+      "rebuildWarning": "重建会丢弃现有本机数据库，并把完整性基线（anchor）重置为当前仓库状态；重置后仓库回滚将不再被检测到。",
+      "passwordLabel": "主密码",
+      "rebuildButton": "重建本机数据库"
     },
     "entry": {
       "search": "搜索",
@@ -1270,17 +1340,68 @@
       "auto_add_in_settings": "在设置中修改"
     },
     "recovery": {
-      "key_description": "恢复密钥可用于在忘记主密码时解锁保险库。生成后请妥善保存，此密钥仅显示一次。",
-      "key_generate": "生成恢复密钥",
-      "key_regenerate": "重新生成恢复密钥",
-      "key_generated_title": "恢复密钥已生成",
-      "key_warning": "请立即将此恢复密钥保存到安全位置！关闭此窗口后将无法再次查看。",
-      "key_copy": "复制密钥",
-      "key_copied": "恢复密钥已复制到剪贴板",
-      "key_saved_confirm": "我已安全保存",
-      "verify_integrity": "验证保险库完整性",
-      "integrity_valid": "保险库完整性验证通过",
-      "integrity_invalid": "保险库完整性验证失败，数据可能被篡改"
+      "backupPresent": "恢复密钥已备份：数据密钥版本 {{version}}，备份于 {{time}}",
+      "backupMissing": "尚未备份恢复密钥，忘记主密码时将无法恢复数据",
+      "export": {
+        "title": "备份恢复密钥",
+        "desc": "恢复密钥可在忘记主密码时解密仓库。生成后请手抄或打印保存，密钥不会写入磁盘。",
+        "submit": "生成并显示",
+        "warning": "关闭此窗口后将无法再次查看恢复密钥，请务必先抄写或打印完成。",
+        "print": "打印密钥",
+        "printTitle": "密码箱恢复密钥",
+        "printFooter": "这张纸就是全部数据。请离线保存，不要截图、拍照分享或粘贴到任何聊天工具。",
+        "channelNote": "恢复密钥不会自动写入剪贴板或剪贴板历史；请手抄或打印保存，不要截图、生成二维码或分享给他人。",
+        "confirmTitle": "确认放弃备份？",
+        "confirmWritten": "我已将恢复密钥完整抄写并妥善保存",
+        "regenerate": "重新备份恢复密钥",
+        "dekVersion": "数据密钥版本：{{version}}"
+      },
+      "rotate": {
+        "title": "轮换数据密钥",
+        "entry": "轮换数据密钥",
+        "entry_desc": "生成全新的数据密钥并重加密全部条目，用于吊销已泄露的旧口令或旧恢复密钥。该操作不可撤销。",
+        "desc": "轮换后旧恢复密钥立即失效，新恢复密钥只在本次显示一次，请立即抄写。",
+        "warning": "此操作不可撤销，请确认你已理解以下后果",
+        "warn_old_paper": "旧恢复密钥（纸面）立即失效，无法再用它恢复数据",
+        "warn_entries": "全部条目将用新数据密钥重新加密，正在同步的其他设备需要重新同步",
+        "warn_biometric": "本机生物识别凭据将被删除，需要重新注册",
+        "warn_history": "旧版本历史（同步提交）将无法预览或恢复",
+        "submit": "轮换数据密钥",
+        "new_paper_warning": "旧恢复密钥已失效。关闭此窗口后将无法再次查看新恢复密钥，请务必先抄写完成。",
+        "biometric_notice": "生物识别凭据已删除，请重新注册。",
+        "reenroll_title": "轮换数据密钥后需重新注册生物识别",
+        "reenroll_desc": "旧凭据已随轮换删除。现在重新注册，之后才能用指纹/Windows Hello 解锁。",
+        "reenroll_ok": "立即注册",
+        "reenroll_skip": "暂不注册",
+        "reenroll_success": "生物识别已重新注册",
+        "reenroll_failed": "生物识别注册失败，可稍后在设置中重新开启",
+        "reenroll_disabled": "未重新注册，生物识别已停用"
+      },
+      "paper": {
+        "title": "纸面恢复",
+        "entry": "用恢复密钥恢复数据",
+        "desc": "输入手抄的 40 字符恢复密钥。恢复会从仓库拉取一份临时副本到本机隔离目录读取，不读取也不修改本机密码库。",
+        "step_input": "输入密钥",
+        "step_done": "导出完成",
+        "repoUrl": "仓库地址",
+        "repoUrlPlaceholder": "https://example.com/vault.git",
+        "repoUrlHint": "留空则使用已保存的同步远端；换机恢复必须填写",
+        "repoUrlMissing": "需要填写仓库地址才能拉取恢复副本",
+        "inputLabel": "恢复密钥",
+        "inputHint": "每 8 字符一组，共 5 组；大小写、空格与连字符均可忽略",
+        "submit": "解密并导出",
+        "copy": "复制导出内容",
+        "copied": "导出内容已复制到剪贴板",
+        "success": "成功解密 {{count}} 个条目",
+        "skippedCount": "{{count}} 个条目无法解密，已跳过",
+        "nextSteps": "请用此内容重建密码库，并重新生成恢复密钥。",
+        "locateResult": "第 {{group}} 组第 {{index}} 位可能抄错，请核对",
+        "format": {
+          "short": "恢复密钥长度不足 40 个字符",
+          "long": "恢复密钥超过 40 个字符",
+          "char": "恢复密钥包含非法字符，仅允许 0-9 与 A-Z"
+        }
+      }
     },
     "change_password": {
       "description": "修改用于加密和解锁保险库的主密码。修改后，生物识别和恢复密钥将失效，需要重新启用。",
@@ -1288,11 +1409,7 @@
       "new_password": "新密码",
       "confirm_new": "确认新密码",
       "submit": "修改主密码",
-      "success": "主密码修改成功。如需使用生物识别解锁或恢复密钥，请重新启用。",
-      "re_enroll_title": "重新启用生物识别解锁",
-      "re_enroll_desc": "密码变更已使生物识别解锁失效。是否立即重新启用？",
-      "re_enroll_skip": "跳过",
-      "re_enroll_confirm": "启用"
+      "success": "主密码修改成功。"
     },
     "danger_zone": {
       "title": "危险区域",
@@ -1377,27 +1494,16 @@
       "op_restore": "恢复",
       "op_other": "其他"
     },
-    "disaster_recovery": {
-      "title": "灾难恢复",
-      "step_git": "连接 Git",
-      "step_key": "恢复密钥",
-      "step_done": "导出完成",
-      "git_hint": "输入 Git 仓库地址，留空则使用本地已有仓库",
-      "git_placeholder": "https://github.com/you/vault-backup.git",
-      "commit_placeholder": "可选：历史提交 hash（留空 = 最新版本）",
-      "export": "解密并导出",
-      "success": "成功导出 {{count}} 个条目",
-      "skipped_warning": "{{count}} 个条目无法解密，已跳过：{{ids}}",
-      "integrity_warning": "HMAC 验证失败，数据可能被篡改",
-      "next_steps": "现在可以创建新密码库并导入此 JSON 文件来恢复密码。",
-      "open_file": "打开文件位置"
-    },
     "import_export": {
       "export_title": "导出保险库",
       "export_description": "将所有保险库条目导出为文件。文件将包含解密后的数据，请妥善保管。CSV 格式不含自定义字段，标签以逗号分隔。",
       "export_format_json": "JSON",
       "export_format_csv": "CSV",
       "export_warning": "导出文件包含未加密的密码，导出不去重，请及时删除或移至安全位置。",
+      "export_confirm_title": "确认导出明文",
+      "export_confirm_content": "导出文件包含未加密的密码与备注，任何能读取该文件的人都能看到全部内容。确认继续导出？",
+      "export_confirm_ok": "确认导出",
+      "export_confirm_cancel": "取消",
       "export_button": "导出",
       "export_success": "已导出至：{{path}}",
       "import_title": "导入保险库",
@@ -1417,7 +1523,9 @@
       "disable": "禁用",
       "disable_requires_unlock": "请先解锁密码箱后再禁用生物识别",
       "unlock_failed": "解锁失败",
-      "unlocking": "正在解锁…"
+      "unlocking": "正在解锁…",
+      "reset_required": "生物识别凭据已失效",
+      "reenroll_required": "生物识别凭据已失效，请使用主密码解锁后重新注册"
     },
     "hibp": {
       "audit_all": "全库泄露审计",

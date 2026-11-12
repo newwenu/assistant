@@ -14,31 +14,21 @@ export default function VaultSettings() {
   const {
     sshAgentKeys,
     sshAgentRunning,
-    recoveryKeySet,
-    integrityResult,
     loading,
     sshListAgent,
     sshCheckAgentRunning,
     sshRemoveFromAgent,
     sshAutoAddAll,
-    generateRecoveryKey,
-    checkRecoveryKeySet,
-    verifyIntegrity,
     exportVault,
     importVault,
   } = useVaultShallow((s) => ({
     sshAgentKeys: s.sshAgentKeys,
     sshAgentRunning: s.sshAgentRunning,
-    recoveryKeySet: s.recoveryKeySet,
-    integrityResult: s.integrityResult,
     loading: s.loading,
     sshListAgent: s.sshListAgent,
     sshCheckAgentRunning: s.sshCheckAgentRunning,
     sshRemoveFromAgent: s.sshRemoveFromAgent,
     sshAutoAddAll: s.sshAutoAddAll,
-    generateRecoveryKey: s.generateRecoveryKey,
-    checkRecoveryKeySet: s.checkRecoveryKeySet,
-    verifyIntegrity: s.verifyIntegrity,
     exportVault: s.exportVault,
     importVault: s.importVault,
   }));
@@ -76,15 +66,7 @@ export default function VaultSettings() {
         {
           key: "recovery",
           label: t("vault.tab.recovery"),
-          children: (
-            <RecoveryTab
-              recoveryKeySet={recoveryKeySet}
-              integrityResult={integrityResult}
-              generateRecoveryKey={generateRecoveryKey}
-              checkRecoveryKeySet={checkRecoveryKeySet}
-              verifyIntegrity={verifyIntegrity}
-            />
-          ),
+          children: <RecoveryTab />,
         },
         {
           key: "change_password",

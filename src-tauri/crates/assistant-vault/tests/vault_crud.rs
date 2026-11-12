@@ -6,7 +6,9 @@ use assistant_crypto::vault_crypto::types::CipherAlgorithm;
 use assistant_vault::dto::{VaultEntryCreate, VaultEntryUpdate};
 use assistant_vault::security_db::SecurityDbState;
 use assistant_vault::types::{CustomFieldInput, VaultCategory, VaultError};
-use common::{cleanup, init_vault, temp_db_path, STRONG_PW};
+use common::{
+    cleanup, init_vault, repo_for, temp_db_path, try_initialize_at, unlock_at, STRONG_PW,
+};
 
 #[cfg(feature = "slow-tests")]
 #[test]
@@ -371,18 +373,18 @@ fn change_master_password_and_relock_unlock() {
         .unwrap();
 
     let new_password = "N3wStr0ng#P@ss!2026";
-    db.change_master_password(STRONG_PW, new_password, CipherAlgorithm::Aes256Gcm)
+    assistant_vault::lifecycle::change_password(&db, &repo_for(&path), STRONG_PW, new_password)
         .unwrap();
 
     db.lock().unwrap();
     assert!(db.is_locked());
 
     assert!(matches!(
-        db.unlock(STRONG_PW),
+        unlock_at(&db, STRONG_PW),
         Err(VaultError::InvalidPassword)
     ));
 
-    db.unlock(new_password).unwrap();
+    unlock_at(&db, new_password).unwrap();
     assert!(!db.is_locked());
 
     let pw = db.decrypt_password(&id).unwrap();
@@ -397,7 +399,8 @@ fn change_master_password_rejects_weak_new_password() {
     let path = temp_db_path();
     let db = init_vault(&path, STRONG_PW);
 
-    let result = db.change_master_password(STRONG_PW, "123", CipherAlgorithm::Aes256Gcm);
+    let result =
+        assistant_vault::lifecycle::change_password(&db, &repo_for(&path), STRONG_PW, "123");
     assert!(matches!(result, Err(VaultError::Validation(_))));
 
     cleanup(&path);
@@ -409,10 +412,11 @@ fn change_master_password_rejects_wrong_current_password() {
     let path = temp_db_path();
     let db = init_vault(&path, STRONG_PW);
 
-    let result = db.change_master_password(
+    let result = assistant_vault::lifecycle::change_password(
+        &db,
+        &repo_for(&path),
         "wrong_password",
         "N3wStr0ng#P@ss!2026",
-        CipherAlgorithm::Aes256Gcm,
     );
     assert!(matches!(result, Err(VaultError::InvalidPassword)));
 
@@ -426,7 +430,7 @@ fn init_rejects_weak_master_password() {
     let _ = std::fs::remove_file(&path);
     let db = SecurityDbState::new(path.to_str().unwrap());
 
-    let result = db.init("123");
+    let result = try_initialize_at(&db, "123");
     assert!(
         matches!(result, Err(VaultError::Validation(_))),
         "weak password should be rejected"

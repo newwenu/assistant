@@ -4,13 +4,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use assistant_crypto::vault_crypto::types::{CipherAlgorithm, MasterKey};
+use assistant_crypto::vault_crypto::types::{CipherAlgorithm, Dek};
 use assistant_sync::git_sync::GitSync;
 use assistant_sync::types::SyncConfig;
 use assistant_vault::security_db::SecurityDbState;
 use assistant_vault::sync_engine::SyncEngine;
 use assistant_vault::types::{CustomFieldInput, VaultCategory, VaultEntrySnapshot};
-use assistant_vault::vault_file::types::VaultMetaFile;
 use assistant_vault::vault_file::VaultFileManager;
 
 pub const PASSWORD: &str = "Str0ng#P@ssw0rd!2025";
@@ -44,29 +43,48 @@ pub fn temp_db_path() -> PathBuf {
     dir.join("vault.db")
 }
 
-fn template_db() -> &'static Path {
+fn template_dir() -> &'static Path {
     static TEMPLATE: OnceLock<PathBuf> = OnceLock::new();
     TEMPLATE.get_or_init(|| {
-        let path = test_dir().join("template.db");
-        let _ = std::fs::remove_file(&path);
+        let dir = test_dir().join("template");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("vault.db");
         let db = SecurityDbState::new(path.to_str().unwrap());
-        db.init(PASSWORD).unwrap();
+        let repo = repo_at(&path);
+        assistant_vault::lifecycle::initialize(&db, &repo, PASSWORD).unwrap();
         db.lock().unwrap();
-        path
+        dir
     })
 }
 
+fn repo_at(db_path: &Path) -> VaultFileManager {
+    VaultFileManager::new(
+        db_path.parent().unwrap().join("vault"),
+        Box::new(|| CipherAlgorithm::Aes256Gcm),
+    )
+}
+
 pub fn open_db(path: &Path) -> SecurityDbState {
-    std::fs::copy(template_db(), path).unwrap();
+    let template = template_dir();
+    std::fs::copy(template.join("vault.db"), path).unwrap();
+    let dst_repo_dir = path.parent().unwrap().join("vault");
+    std::fs::create_dir_all(&dst_repo_dir).unwrap();
+    std::fs::copy(
+        template.join("vault").join(".vault-meta"),
+        dst_repo_dir.join(".vault-meta"),
+    )
+    .unwrap();
     let db = SecurityDbState::new(path.to_str().unwrap());
-    db.unlock(PASSWORD).unwrap();
+    assistant_vault::lifecycle::unlock(&db, &repo_at(path), PASSWORD).unwrap();
     db
 }
 
 pub fn open_db_with_password(path: &Path, password: &str) -> SecurityDbState {
     let _ = std::fs::remove_file(path);
     let db = SecurityDbState::new(path.to_str().unwrap());
-    db.init(password).unwrap();
+    let repo = repo_at(path);
+    assistant_vault::lifecycle::initialize(&db, &repo, password).unwrap();
     db
 }
 
@@ -76,12 +94,12 @@ pub fn cleanup(path: &Path) {
     }
 }
 
-pub fn master_key() -> MasterKey {
-    MasterKey::new([7u8; 32])
+pub fn dek() -> Dek {
+    Dek::new([7u8; 20])
 }
 
-pub fn other_key() -> MasterKey {
-    MasterKey::new([9u8; 32])
+pub fn other_dek() -> Dek {
+    Dek::new([9u8; 20])
 }
 
 pub fn entry_snapshot(id: &str) -> VaultEntrySnapshot {
@@ -89,6 +107,7 @@ pub fn entry_snapshot(id: &str) -> VaultEntrySnapshot {
         id: id.to_string(),
         category: VaultCategory::Login,
         revision: 3,
+        dek_version: 1,
         title: "GitHub".to_string(),
         username: Some("user@example.com".to_string()),
         url: Some("https://github.com".to_string()),
@@ -120,6 +139,7 @@ pub fn remote_snapshot(
         id: id.to_string(),
         category: VaultCategory::Login,
         revision,
+        dek_version: 1,
         title: title.to_string(),
         username: Some("remote".to_string()),
         url: None,
@@ -166,14 +186,6 @@ pub fn meta_path(vault_dir: &Path) -> PathBuf {
     vault_dir.join(".vault-meta")
 }
 
-pub fn write_meta(vault_dir: &Path, meta: &VaultMetaFile) {
-    std::fs::write(
-        meta_path(vault_dir),
-        serde_json::to_string_pretty(meta).unwrap(),
-    )
-    .unwrap();
-}
-
 pub fn engine(dir: &Path) -> SyncEngine {
     SyncEngine::new(
         dir.join("vault"),
@@ -186,27 +198,33 @@ pub fn git_repo(path: PathBuf) -> GitSync {
     GitSync::new(path, SyncConfig::default())
 }
 
-pub fn write_remote(engine: &SyncEngine, db: &SecurityDbState, snapshots: &[VaultEntrySnapshot]) {
-    let guard = db.get_master_key().unwrap();
-    let key = guard.as_ref().unwrap();
-    for snap in snapshots {
-        engine
-            .vault_file_manager()
-            .export_entry(key, snap, false)
-            .unwrap();
+pub fn seed_meta(engine: &SyncEngine, db: &SecurityDbState) {
+    let mgr = engine.vault_file_manager();
+    if mgr.meta_path().exists() {
+        return;
     }
-    let meta_path = engine.vault_file_manager().vault_dir().join(".vault-meta");
-    let existing = std::fs::read_to_string(&meta_path)
-        .ok()
-        .and_then(|content| serde_json::from_str::<VaultMetaFile>(&content).ok());
-    let (crypto, emergency) = match existing {
-        Some(meta) => (meta.crypto, meta.emergency),
-        None => (None, None),
-    };
-    engine
-        .vault_file_manager()
-        .export_vault_meta(key, crypto, emergency)
-        .unwrap();
+    let seed_repo = repo_at(Path::new(db.db_path()));
+    let seed = std::fs::read(seed_repo.meta_path()).unwrap();
+    std::fs::create_dir_all(mgr.vault_dir()).unwrap();
+    std::fs::write(mgr.meta_path(), seed).unwrap();
+}
+
+pub fn rewrite_meta(engine: &SyncEngine, db: &SecurityDbState) {
+    let dek_guard = db.get_dek().unwrap();
+    let dek = dek_guard.as_ref().unwrap();
+    assistant_vault::lifecycle::sync_write_meta(engine.vault_file_manager(), dek).unwrap();
+}
+
+pub fn write_remote(engine: &SyncEngine, db: &SecurityDbState, snapshots: &[VaultEntrySnapshot]) {
+    seed_meta(engine, db);
+    let dek_guard = db.get_dek().unwrap();
+    let dek = dek_guard.as_ref().unwrap();
+    let mgr = engine.vault_file_manager();
+    for snap in snapshots {
+        mgr.export_entry(dek, snap).unwrap();
+    }
+    drop(dek_guard);
+    rewrite_meta(engine, db);
 }
 
 pub fn bare_repo(dir: &Path) -> PathBuf {

@@ -165,7 +165,7 @@ impl RecoverySession {
 约束：
 
 1. **不持有 `SecurityDbState`、不持有 `Connection`、不持有 `DbKey`**。设计只写 `dek` 一个字段；仅持 `dek` 时 `export_all` 无法读磁盘，故补 `entries_dir` 与 `manifest`（均为只读、无密钥）。
-2. **禁止提供** `conn()` / `db()` / `exec()` / `audit()` / `db_key()`。`db_key` 拿不到是编译期事实，不是运行时约定。
+2. **禁止提供** `conn()` / `db()` / `exec()` / `audit()` / `db_key()`。隔离是**API 层最小权限**，不是密码学保证（见下方口径）。
 3. `PlainEntry` 定义在 `assistant-vault/src/types.rs`：
 
 ```rust
@@ -176,11 +176,29 @@ pub struct PlainEntry {
 }
 ```
 
-> 权限口径：v1.5 的 `dbKey = HKDF(KEK)` 使纸面在密码学上无法开库；若后续改为 `dbKey = HKDF(dek)`，则 `RecoverySession` 的隔离退化为**API 层最小权限**，文档必须同步改口径，不得继续宣称「密码学上不可能开库」。
+> 权限口径：`dbKey = HKDF(dek, vaultId)`（key-hierarchy-spec §3.2 附录 C-16）。纸面持有者握有 `dek`，若绕过本 API 自行派生即可得到 `dbKey`。因此 `RecoverySession` 的隔离是**API 层最小权限**（不给 `conn()` / `exec()` / `db_key()`），**不得宣称「密码学上不可能开库」**。这层隔离仍有价值：它阻止恢复通道被误用为完整凭据，且审计不可读。
 
 ---
 
 ## 3. 恢复流程
+
+### 3.0 恢复副本的准备与清理（命令层职责）
+
+```
+1. 取仓库地址：入参 git_url 优先，为空则回退 VaultConf.vault_sync_remote_url
+   └─ 都没有 ──▶ Validation（换机恢复必须显式提供）
+2. 删除上一次残留的 <security>/recovery/（崩溃恢复）
+3. git clone <url> → <security>/recovery/（复用 GitSync::clone，目标须为空目录）
+4. repo = VaultFileManager::new(<security>/recovery/, cipher)
+5. open_recovery_session(&repo, paper_key) → export_all()
+6. 无论成功、失败、提前返回，都删除 <security>/recovery/
+```
+
+约束：
+
+1. **只读副本，不写副本**：恢复流程不 commit、不 push、不改副本内任何文件。
+2. **不触碰本机正式仓库**：恢复期间 `<security>/vault/` 既不读也不写；因此恢复完成后本机仓库状态完全不变。
+3. **副本必须用后即删**：以 RAII 守卫实现（Drop 时清理），保证 panic 与提前返回同样生效。这正是 v1 `F12/F25` 的修复口径 —— v1 的缺陷是「clone 后不清理」，不是「不该 clone」。
 
 ### 3.1 `open_recovery_session`
 
@@ -190,6 +208,10 @@ pub fn open_recovery_session(
     raw_key: &str,
 ) -> Result<RecoverySession, VaultError>;
 ```
+
+**`repo` 必须指向恢复副本 `<security>/recovery/`，不得指向本机正式仓库 `<security>/vault/`。**
+
+理由：本机正式仓库在换机、磁盘损坏、误删 `security/` 时可能不存在或不可信；若恢复读本机仓库，「纸面恢复」就退化成一个只能在仓库完好时工作的功能，与它存在的意义相反。副本由命令层在调用本函数之前 clone 出来（§3.0），本函数只读，不做任何网络与写入动作。
 
 ```
 1. dek = decode_paper(raw_key)
@@ -259,7 +281,7 @@ fn vault_has_recovery_backup(app: AppHandle) -> Result<Option<RecoveryBackupDto>
 | 命令 | 处理 | 签名 |
 |---|---|---|
 | `vault_export_recovery_key` | **新增** | `fn vault_export_recovery_key(app, master_password: String) -> Result<RecoveryKeyDto, VaultErrorDto>` |
-| `vault_recover_from_paper` | **新增** | `async fn vault_recover_from_paper(app, paper_key: String) -> Result<RecoveryExportDto, VaultErrorDto>` |
+| `vault_recover_from_paper` | **新增** | `async fn vault_recover_from_paper(app, paper_key: String, git_url: Option<String>) -> Result<RecoveryExportDto, VaultErrorDto>`；`git_url` 为空时回退已保存的同步远端，仍为空则 `Validation`；内部按 §3.0 clone 副本 → §3.1 会话 → 用后删副本 |
 | `vault_locate_paper_error` | **新增** | `fn vault_locate_paper_error(paper_key: String) -> Result<Option<PaperErrorPosDto>, VaultErrorDto>` |
 | `vault_has_recovery_backup` | **新增** | `fn vault_has_recovery_backup(app: AppHandle) -> Result<Option<RecoveryBackupDto>, VaultErrorDto>` |
 | `vault_generate_recovery_key` | **删除** | — |
@@ -373,8 +395,8 @@ export interface PaperErrorPos { group: number; index: number; }
 | 组件 | 职责 | 约束 |
 |---|---|---|
 | `RecoveryKeyDialog.tsx`（新建） | 展示 5 组纸面、复制、强制「我已抄写」勾选 | 关闭前未勾选 → 二次确认；**不提供「稍后再说」直接关闭** |
-| `PaperRecoveryFlow.tsx`（新建） | 输入 → `locatePaperError` 定位 → 失败提示 → 导出 | 定位结果只在**校验失败**时展示；格式错不定位 |
-| `DisasterRecovery.tsx` | 改为「纸面恢复」流程 | 输入 40 字符 → 只读预览 → 导出条目 |
+| `PaperRecoveryFlow.tsx`（新建） | 仓库地址输入（可空，留空用已保存远端）+ 输入 → `locatePaperError` 定位 → 失败提示 → 导出 | 定位结果只在**校验失败**时展示；格式错不定位；仓库地址为空且无已保存远端时由后端返回 `Validation` |
+| `DisasterRecovery.tsx` | 改为「纸面恢复」流程 | 输入 40 字符 + 仓库地址 → 只读预览 → 导出条目 |
 | `RecoveryTab.tsx` | 「生成恢复密钥」改为「备份恢复密钥」；**移除完整性校验按钮**（`vault_verify_vault_meta_integrity` 已删除，props `integrityResult` / `verifyIntegrity` 一并移除） | 展示当前 `dek`；新增「轮换数据密钥」独立入口 + 强警告 |
 | `RecoveryKeyForm.tsx`（新建） | 纸面输入 | 实时归一化、分组显示、CRC 错误提示到组位 |
 
@@ -383,6 +405,7 @@ export interface PaperErrorPos { group: number; index: number; }
 ```
 vault.recovery.export.title / desc / copy / copied / confirmWritten
 vault.recovery.paper.inputLabel / inputHint / locateSuccess / locateFailed / checksumFailed / formatFailed
+vault.recovery.paper.repoUrl / repoUrlPlaceholder / repoUrlHint / repoUrlMissing
 vault.recovery.export.success / skippedCount
 vault.rotate.title / desc / confirm / success / biometricReenrollRequired
 vault.error.invalidRecoveryKeyFormat / invalidRecoveryKeyChecksum / invalidRecoveryKeyOrMetaTampered
@@ -412,7 +435,7 @@ vault.error.invalidRecoveryKeyFormat / invalidRecoveryKeyChecksum / invalidRecov
 |---|---|---|
 | T1 | `encode_paper` → `decode_paper` 往返（1000 次随机 `dek`） | 结果一致；长度恒 40 |
 | T2 | 归一化：小写、`-`/空格、全角、`O/0`、`I/1/l/L`、`U/V` 混用 | 全部解出同一 `dek` |
-| T3 | 单字符替换（40 位 × 31 值） | 全部 `InvalidRecoveryKeyChecksum` |
+| T3 | 单字符替换（40 位 × 31 值） | 第 3–40 位全部 `InvalidRecoveryKeyChecksum`；第 1 位因改动了版本字节高位、按 ④ 先于 ⑤ 的顺序返回 `InvalidRecoveryKeyFormat`；第 2 位视候选是否保留 `0x02` 字节而落 `Format` 或 `Checksum`，两者均不得返回 `Ok` |
 | T4 | 截断/超长/非法字符 | `InvalidRecoveryKeyFormat`，不 panic |
 | T5 | CRC 正确的伪造 `dek` | 通过 CRC，但解不开任何条目 |
 | T5b | 随机挖掉 1~3 个字符后定位 | 唯一还原；不触达口令代码路径 |
@@ -420,6 +443,8 @@ vault.error.invalidRecoveryKeyFormat / invalidRecoveryKeyChecksum / invalidRecov
 | I8 | 6 级校验顺序 | 长度 39 → `Format`；40 字符含 `U` 归一化后 CRC 不符 → `Checksum` |
 | I9 | 抄错一位（含 `O/I/L/U` 混淆） | `locate_checksum_error` 返回恰好一个位置，且等于实际错位 |
 | I11 | `open_recovery_session` + `export_all` | 全部条目明文；**不产生任何 `security.db` 读写** |
+| I12 | 恢复副本生命周期 | clone 到 `<security>/recovery/` 读取；结束后（成功/失败/panic）目录不存在；`<security>/vault/` 内容与 mtime 不变 |
+| I13 | 换机恢复（本机无正式仓库） | 提供 `git_url` 即可恢复；不提供且无已保存远端 → `Validation` |
 | T-N1 | 全角/连字符/`O/I/L/U` | 全部正确映射 |
 | I5 | 恢复会话 | 编译期拿不到 `dbKey`/连接/审计 |
 
@@ -440,3 +465,5 @@ vault.error.invalidRecoveryKeyFormat / invalidRecoveryKeyChecksum / invalidRecov
 5. **禁止**在恢复流程中写入 `.vault-meta`（除导出纸面的 `recoveryBackup` 标记）。
 6. **禁止**为 v1 恢复码保留兼容解析。
 7. **禁止**在组件内硬编码中文文案。
+8. **禁止**让 `vault_recover_from_paper` 读取本机正式仓库 `<security>/vault/`；只能读临时副本 `<security>/recovery/`。
+9. **禁止**在恢复结束后保留 `<security>/recovery/`（含失败与 panic 路径）。

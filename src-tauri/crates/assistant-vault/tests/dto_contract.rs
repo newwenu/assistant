@@ -4,10 +4,11 @@ use assistant_sync::types::{
     RepositoryState, SyncConfig, SyncError, SyncResult,
 };
 use assistant_vault::dto::{
-    ConflictFileDto, DisasterRecoveryResultDto, EntryPreviewDto, HibpAuditEntryDto,
-    PendingRemovalsDto, ReadynessDto, RemoteModeDto, RemoteStatusDto, RemoteStatusErrorKindDto,
-    RepositoryStateDto, SshKeyInfoDto, SshKeyMetaDto, SyncActionDto, SyncConfigDto, SyncResultDto,
-    TotpCodeDto, UnreadableEntriesDto, UnreadableReasonDto, VaultErrorCode, VaultErrorDto,
+    ConflictFileDto, EntryPreviewDto, HibpAuditEntryDto, PaperErrorPosDto, PendingRemovalsDto,
+    ReadynessDto, RecoveryBackupDto, RecoveryEntryDto, RecoveryExportDto, RecoveryKeyDto,
+    RecoverySkipDto, RemoteModeDto, RemoteStatusDto, RemoteStatusErrorKindDto, RepositoryStateDto,
+    SshKeyInfoDto, SshKeyMetaDto, SyncActionDto, SyncConfigDto, SyncResultDto, TotpCodeDto,
+    UnreadableEntriesDto, UnreadableReasonDto, VaultErrorCode, VaultErrorDto,
 };
 use serde_json::{json, to_value};
 
@@ -190,6 +191,37 @@ fn git_errors_map_to_expected_codes() {
 }
 
 #[test]
+fn t_s12_sync_error_message_never_contains_remote_credentials() {
+    let dto = VaultErrorDto::from(SyncError::GitFailed {
+        code: 128,
+        stderr:
+            "fatal: unable to access 'https://alice:secret-token@git.example.com/repo.git/': 403"
+                .into(),
+    });
+    assert_eq!(dto.code, VaultErrorCode::GitUnavailable);
+    assert!(
+        !dto.message.contains("alice"),
+        "username leaked: {}",
+        dto.message
+    );
+    assert!(
+        !dto.message.contains("secret-token"),
+        "token leaked: {}",
+        dto.message
+    );
+    assert!(dto.message.contains("git.example.com/repo.git/"));
+
+    let dto = VaultErrorDto::from(SyncError::GitCli(
+        "git ls-remote https://token@git.example.com/repo.git failed".into(),
+    ));
+    assert!(
+        !dto.message.contains("token@"),
+        "userinfo leaked: {}",
+        dto.message
+    );
+}
+
+#[test]
 fn entry_preview_dto_is_one_to_one() {
     let domain = sample_entry_preview("unlisted");
     let dto = EntryPreviewDto::from(domain.clone());
@@ -229,21 +261,60 @@ fn remote_mode_dto_wire_is_frozen() {
 }
 
 #[test]
-fn disaster_recovery_result_dto_wire_is_frozen() {
-    let dto = DisasterRecoveryResultDto {
-        file_path: "synthetic/export.json".into(),
-        entry_count: 2,
-        integrity_warning: true,
-        skipped_ids: vec!["synthetic-skipped".into()],
+fn recovery_dto_wire_is_frozen() {
+    let key = RecoveryKeyDto {
+        paper_key: "0123456789ABCDEFGHJKMNPQRSTVWXYZ01234567".into(),
+        groups: vec!["01234567".into(); 5],
+        dek_version: 3,
+        created_at: 1_700_000_000_000,
     };
     assert_eq!(
-        to_value(&dto).unwrap(),
+        to_value(&key).unwrap(),
         json!({
-            "filePath": "synthetic/export.json",
-            "entryCount": 2,
-            "integrityWarning": true,
-            "skippedIds": ["synthetic-skipped"],
+            "paperKey": "0123456789ABCDEFGHJKMNPQRSTVWXYZ01234567",
+            "groups": ["01234567", "01234567", "01234567", "01234567", "01234567"],
+            "dekVersion": 3,
+            "createdAt": 1_700_000_000_000i64,
         })
+    );
+
+    let export = RecoveryExportDto {
+        entries: vec![RecoveryEntryDto {
+            id: "synthetic-entry".into(),
+            category: "login".into(),
+            blob: json!({ "title": "synthetic" }),
+        }],
+        skipped: vec![RecoverySkipDto {
+            id: "synthetic-skipped".into(),
+            reason: "decrypt failed".into(),
+        }],
+        exported_at: 1_700_000_000_000,
+        dek_version: 3,
+    };
+    assert_eq!(
+        to_value(&export).unwrap(),
+        json!({
+            "entries": [{
+                "id": "synthetic-entry",
+                "category": "login",
+                "blob": { "title": "synthetic" },
+            }],
+            "skipped": [{ "id": "synthetic-skipped", "reason": "decrypt failed" }],
+            "exportedAt": 1_700_000_000_000i64,
+            "dekVersion": 3,
+        })
+    );
+
+    let pos = PaperErrorPosDto { group: 3, index: 5 };
+    assert_eq!(to_value(pos).unwrap(), json!({ "group": 3, "index": 5 }));
+
+    let backup = RecoveryBackupDto {
+        dek_version: 3,
+        confirmed_at: 1_700_000_000_000,
+    };
+    assert_eq!(
+        to_value(&backup).unwrap(),
+        json!({ "dekVersion": 3, "confirmedAt": 1_700_000_000_000i64 })
     );
 }
 
@@ -305,18 +376,44 @@ fn vault_error_code_strings_are_frozen() {
         (VaultErrorCode::RateLimited, "rateLimited"),
         (VaultErrorCode::Crypto, "crypto"),
         (VaultErrorCode::NotFound, "notFound"),
+        (VaultErrorCode::EntryCorrupted, "entryCorrupted"),
         (VaultErrorCode::Validation, "validation"),
         (VaultErrorCode::BiometricUnavailable, "biometricUnavailable"),
         (VaultErrorCode::BiometricCancelled, "biometricCancelled"),
         (VaultErrorCode::BiometricFailed, "biometricFailed"),
         (VaultErrorCode::BiometricReset, "biometricReset"),
         (VaultErrorCode::InvalidKeyFormat, "invalidKeyFormat"),
-        (VaultErrorCode::InvalidRecoveryKey, "invalidRecoveryKey"),
-        (VaultErrorCode::RecoveryKeyNotSet, "recoveryKeyNotSet"),
+        (
+            VaultErrorCode::InvalidRecoveryKeyFormat,
+            "invalidRecoveryKeyFormat",
+        ),
+        (
+            VaultErrorCode::InvalidRecoveryKeyChecksum,
+            "invalidRecoveryKeyChecksum",
+        ),
+        (
+            VaultErrorCode::InvalidRecoveryKeyOrMetaTampered,
+            "invalidRecoveryKeyOrMetaTampered",
+        ),
         (
             VaultErrorCode::VaultMetaIntegrityFailed,
             "vaultMetaIntegrityFailed",
         ),
+        (
+            VaultErrorCode::UnsupportedVaultVersion,
+            "unsupportedVaultVersion",
+        ),
+        (VaultErrorCode::VaultVersionTooNew, "vaultVersionTooNew"),
+        (VaultErrorCode::LocalDbKeyMismatch, "localDbKeyMismatch"),
+        (
+            VaultErrorCode::VaultRollbackDetected,
+            "vaultRollbackDetected",
+        ),
+        (
+            VaultErrorCode::VaultManifestMismatch,
+            "vaultManifestMismatch",
+        ),
+        (VaultErrorCode::VaultCorrupted, "vaultCorrupted"),
         (VaultErrorCode::Cancelled, "cancelled"),
         (VaultErrorCode::RepoNotInitialized, "repoNotInitialized"),
         (VaultErrorCode::NoRemoteConfigured, "noRemoteConfigured"),
@@ -334,6 +431,78 @@ fn vault_error_code_strings_are_frozen() {
             "wire code for {code:?} must stay stable"
         );
     }
+}
+
+fn frontend_error_codes() -> Vec<String> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../src/vault/core/vaultError.ts");
+    let text = std::fs::read_to_string(&path).expect("vaultError.ts must be readable");
+    let body = text
+        .split_once("VAULT_ERROR_CODES")
+        .and_then(|(_, rest)| rest.split_once("= ["))
+        .and_then(|(_, rest)| rest.split_once(']'))
+        .map(|(body, _)| body)
+        .expect("VAULT_ERROR_CODES array must exist in vaultError.ts");
+    body.split(',')
+        .map(|entry| entry.trim().trim_matches('"').trim_matches('\''))
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn vault_error_codes_match_frontend_array() {
+    let rust: Vec<String> = [
+        VaultErrorCode::Locked,
+        VaultErrorCode::InvalidPassword,
+        VaultErrorCode::NotInitialized,
+        VaultErrorCode::AlreadyExists,
+        VaultErrorCode::RateLimited,
+        VaultErrorCode::Crypto,
+        VaultErrorCode::NotFound,
+        VaultErrorCode::EntryCorrupted,
+        VaultErrorCode::Validation,
+        VaultErrorCode::BiometricUnavailable,
+        VaultErrorCode::BiometricCancelled,
+        VaultErrorCode::BiometricFailed,
+        VaultErrorCode::BiometricReset,
+        VaultErrorCode::InvalidKeyFormat,
+        VaultErrorCode::InvalidRecoveryKeyFormat,
+        VaultErrorCode::InvalidRecoveryKeyChecksum,
+        VaultErrorCode::InvalidRecoveryKeyOrMetaTampered,
+        VaultErrorCode::VaultMetaIntegrityFailed,
+        VaultErrorCode::UnsupportedVaultVersion,
+        VaultErrorCode::VaultVersionTooNew,
+        VaultErrorCode::LocalDbKeyMismatch,
+        VaultErrorCode::VaultRollbackDetected,
+        VaultErrorCode::VaultManifestMismatch,
+        VaultErrorCode::VaultCorrupted,
+        VaultErrorCode::Cancelled,
+        VaultErrorCode::RepoNotInitialized,
+        VaultErrorCode::NoRemoteConfigured,
+        VaultErrorCode::NoUpstream,
+        VaultErrorCode::SyncConflict,
+        VaultErrorCode::GitUnavailable,
+        VaultErrorCode::KeyMismatch,
+        VaultErrorCode::HistoryDecryptFailed,
+        VaultErrorCode::Internal,
+    ]
+    .into_iter()
+    .map(|code| {
+        to_value(code)
+            .unwrap()
+            .as_str()
+            .expect("VaultErrorCode must serialize as a string")
+            .to_string()
+    })
+    .collect();
+
+    let frontend = frontend_error_codes();
+    assert_eq!(
+        rust.iter().collect::<std::collections::BTreeSet<_>>(),
+        frontend.iter().collect::<std::collections::BTreeSet<_>>(),
+        "T-D1: VaultErrorCode 与 vaultError.ts 的 VAULT_ERROR_CODES 必须双向一致"
+    );
 }
 
 #[test]

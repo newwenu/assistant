@@ -41,6 +41,9 @@ mod mounted {
                 crate::cmd::vault::vault_restore_entry,
                 crate::cmd::vault::vault_purge_deleted,
                 crate::cmd::vault::vault_change_master_password,
+                crate::cmd::vault::vault_rotate_dek,
+                crate::cmd::vault::vault_rebuild_local_db,
+                crate::cmd::vault::vault_reset_repository,
                 crate::cmd::vault::vault_export_to_file,
                 crate::cmd::vault::vault_import,
                 crate::cmd::vault::vault_totp_generate,
@@ -85,19 +88,25 @@ mod mounted {
                 crate::cmd::vault::vault_ssh_is_agent_running,
                 crate::cmd::vault::vault_ssh_parse_key,
                 crate::cmd::vault::vault_ssh_key_meta,
-                crate::cmd::vault::vault_generate_recovery_key,
-                crate::cmd::vault::vault_has_recovery_key,
-                crate::cmd::vault::vault_verify_vault_meta_integrity,
-                crate::cmd::vault::vault_disaster_recovery_export,
                 crate::cmd::vault::vault_get_conf,
+                crate::cmd::vault::vault_export_recovery_key,
+                crate::cmd::vault::vault_recover_from_paper,
+                crate::cmd::vault::vault_locate_paper_error,
+                crate::cmd::vault::vault_has_recovery_backup,
             ])
             .build()
     }
 
     pub(crate) fn on_setup(_app: &tauri::AppHandle) -> Result<(), String> {
-        assistant_config::vault_conf::VaultConf::load()
-            .map(|_| ())
-            .map_err(|e| format!("Failed to init vault config: {}", e))
+        match assistant_config::vault_conf::VaultConf::load() {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                // 配置损坏或非法时不覆盖用户文件、也不阻塞应用启动；
+                // 具体错误由 vault_get_conf 以 Validation 返回给前端。
+                log::error!("Failed to init vault config: {}", e);
+                Ok(())
+            }
+        }
     }
 
     pub(crate) fn on_exit(app: &tauri::AppHandle) {

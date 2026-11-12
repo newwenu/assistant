@@ -16,6 +16,7 @@ interface FeatureEntry {
 interface SlotDecl {
   group: string;
   invoke: string;
+  namespace?: string;
   pageId?: string;
 }
 
@@ -82,6 +83,7 @@ function featureSlotDecl(file: string): SlotDecl {
   return {
     group: group as string,
     invoke: invoke as string,
+    namespace: extractField(body, "namespace"),
     pageId: extractField(body, "pageId"),
   };
 }
@@ -130,6 +132,11 @@ describe("配置槽位契约（槽位声明与命令清单、页面注册表、�
       }
       if (decl.group !== name) {
         problems.push(`${name}: 槽位 group 为 ${decl.group}，必须与特性名同名`);
+      }
+      if (decl.namespace !== name) {
+        problems.push(
+          `${name}: 槽位 namespace 为 ${decl.namespace ?? "(未声明)"}，插件命令必须以 plugin:${name}| 前缀调用`,
+        );
       }
 
       const allowed = new Set([

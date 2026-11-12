@@ -24,9 +24,12 @@ import type {
   ConflictPreview,
   SshKeyInfo,
   SshKeyMeta,
-  IntegrityResult,
   HibpAuditEntry,
-  DisasterRecoveryResult,
+  ExportResult,
+  RecoveryKeyDto,
+  RecoveryExportDto,
+  RecoveryBackupDto,
+  PaperErrorPosDto,
 } from "./vault.types";
 
 export type {
@@ -58,7 +61,10 @@ export type {
   ConflictResolution,
   SshKeyInfo,
   IntegrityResult,
-  DisasterRecoveryResult,
+  RecoveryKeyDto,
+  RecoveryExportDto,
+  RecoveryBackupDto,
+  PaperErrorPosDto,
   RevealedField,
 } from "./vault.types";
 
@@ -76,6 +82,12 @@ export const vaultService = {
   isInitialized: (): Promise<boolean> => invoke("vault_is_initialized"),
 
   lock: (): Promise<void> => invoke("vault_lock"),
+
+  resetRepository: (confirmToken: string): Promise<void> =>
+    invoke("vault_reset_repository", { confirmToken }),
+
+  rebuildLocalDb: (masterPassword: string): Promise<void> =>
+    invoke("vault_rebuild_local_db", { masterPassword }),
 
   listEntries: (
     category?: string,
@@ -126,8 +138,12 @@ export const vaultService = {
   changeMasterPassword: (current: string, newPassword: string): Promise<void> =>
     invoke("vault_change_master_password", { current, new: newPassword }),
 
-  exportVaultToFile: (format: "csv" | "json", path: string): Promise<void> =>
-    invoke("vault_export_to_file", { format, path }),
+  exportVaultToFile: (
+    format: "csv" | "json",
+    path: string,
+    confirmToken: string,
+  ): Promise<ExportResult> =>
+    invoke("vault_export_to_file", { format, path, confirmToken }),
 
   importVault: (path: string, format: "csv" | "json"): Promise<number> =>
     invoke("vault_import", { path, format }),
@@ -233,7 +249,8 @@ export const vaultService = {
     path: string,
     side: "local" | "remote",
     field: string,
-  ): Promise<string> => invoke("vault_conflict_reveal", { path, side, field }),
+  ): Promise<RevealResult> =>
+    invoke("vault_conflict_reveal", { path, side, field }),
 
   sshAddToAgent: (id: string, lifetime?: number): Promise<string> =>
     invoke("vault_ssh_add_to_agent", { id, lifetime }),
@@ -254,24 +271,20 @@ export const vaultService = {
   sshKeyMeta: (id: string): Promise<SshKeyMeta> =>
     invoke("vault_ssh_key_meta", { id }),
 
-  generateRecoveryKey: (): Promise<string> =>
-    invoke("vault_generate_recovery_key"),
+  exportRecoveryKey: (masterPassword: string): Promise<RecoveryKeyDto> =>
+    invoke("vault_export_recovery_key", { masterPassword }),
 
-  hasRecoveryKey: (): Promise<boolean> => invoke("vault_has_recovery_key"),
+  rotateDek: (): Promise<RecoveryKeyDto> => invoke("vault_rotate_dek"),
 
-  verifyVaultMetaIntegrity: (): Promise<IntegrityResult> =>
-    invoke("vault_verify_vault_meta_integrity"),
+  hasRecoveryBackup: (): Promise<RecoveryBackupDto | null> =>
+    invoke("vault_has_recovery_backup"),
 
-  disasterRecoveryExport: (
-    gitUrl: string | null,
-    recoveryKey: string,
-    exportPath: string,
-    commit?: string | null,
-  ): Promise<DisasterRecoveryResult> =>
-    invoke("vault_disaster_recovery_export", {
-      gitUrl,
-      recoveryKey,
-      exportPath,
-      commit: commit ?? null,
-    }),
+  recoverFromPaper: (
+    paperKey: string,
+    gitUrl?: string,
+  ): Promise<RecoveryExportDto> =>
+    invoke("vault_recover_from_paper", { paperKey, gitUrl: gitUrl ?? null }),
+
+  locatePaperError: (paperKey: string): Promise<PaperErrorPosDto | null> =>
+    invoke("vault_locate_paper_error", { paperKey }),
 };

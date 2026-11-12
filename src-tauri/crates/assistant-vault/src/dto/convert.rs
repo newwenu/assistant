@@ -353,6 +353,7 @@ impl From<VaultError> for VaultErrorDto {
             VaultError::Crypto(_) => VaultErrorCode::Crypto,
             VaultError::Database(_) => VaultErrorCode::Internal,
             VaultError::NotFound(_) => VaultErrorCode::NotFound,
+            VaultError::EntryCorrupted(_) => VaultErrorCode::EntryCorrupted,
             VaultError::Validation(_) => VaultErrorCode::Validation,
             VaultError::Clipboard(_) => VaultErrorCode::Internal,
             VaultError::Io(_) => VaultErrorCode::Internal,
@@ -361,15 +362,25 @@ impl From<VaultError> for VaultErrorDto {
             VaultError::BiometricFailed(_) => VaultErrorCode::BiometricFailed,
             VaultError::BiometricReset => VaultErrorCode::BiometricReset,
             VaultError::InvalidKeyFormat(_) => VaultErrorCode::InvalidKeyFormat,
-            VaultError::InvalidRecoveryKey => VaultErrorCode::InvalidRecoveryKey,
-            VaultError::RecoveryKeyNotSet => VaultErrorCode::RecoveryKeyNotSet,
+            VaultError::InvalidRecoveryKeyFormat => VaultErrorCode::InvalidRecoveryKeyFormat,
+            VaultError::InvalidRecoveryKeyChecksum => VaultErrorCode::InvalidRecoveryKeyChecksum,
+            VaultError::InvalidRecoveryKeyOrMetaTampered => {
+                VaultErrorCode::InvalidRecoveryKeyOrMetaTampered
+            }
             VaultError::VaultMetaIntegrityFailed => VaultErrorCode::VaultMetaIntegrityFailed,
+            VaultError::UnsupportedVaultVersion => VaultErrorCode::UnsupportedVaultVersion,
+            VaultError::VaultVersionTooNew => VaultErrorCode::VaultVersionTooNew,
+            VaultError::LocalDbKeyMismatch => VaultErrorCode::LocalDbKeyMismatch,
+            VaultError::VaultRollbackDetected => VaultErrorCode::VaultRollbackDetected,
+            VaultError::VaultManifestMismatch => VaultErrorCode::VaultManifestMismatch,
+            VaultError::VaultCorrupted(_) => VaultErrorCode::VaultCorrupted,
             VaultError::Other(_) => VaultErrorCode::Internal,
         };
         let message = match &v {
             VaultError::Crypto(_) => "Cryptographic operation failed".to_string(),
             VaultError::Database(_) => "Vault database error".to_string(),
             VaultError::InvalidKeyFormat(_) => "Invalid SSH key format".to_string(),
+            VaultError::VaultCorrupted(m) => m.clone(),
             other => other.to_string(),
         };
         VaultErrorDto::new(code, message)
@@ -391,9 +402,22 @@ impl From<SyncError> for VaultErrorDto {
             SyncError::VaultMetaIntegrityFailed(_) => VaultErrorCode::VaultMetaIntegrityFailed,
             SyncError::HistoryDecryptFailed(_) => VaultErrorCode::HistoryDecryptFailed,
             SyncError::VaultKeyMismatch(_) => VaultErrorCode::KeyMismatch,
+            SyncError::VaultDekVersionAhead { .. } => VaultErrorCode::VaultDekVersionAhead,
+            SyncError::VaultDekVersionBehind { .. } => VaultErrorCode::VaultDekVersionBehind,
+            SyncError::VaultManifestMismatch => VaultErrorCode::VaultManifestMismatch,
+            SyncError::UnsupportedVaultVersion => VaultErrorCode::UnsupportedVaultVersion,
+            SyncError::VaultCorrupted(_) => VaultErrorCode::VaultCorrupted,
+            SyncError::HistoryDekUnavailable(_) => VaultErrorCode::HistoryDekUnavailable,
+            SyncError::RepositoryContainsForbiddenFile(_) => {
+                VaultErrorCode::RepositoryContainsForbiddenFile
+            }
+            SyncError::UnsupportedEntryFileVersion(_) | SyncError::EntryCorrupted(_) => {
+                VaultErrorCode::Internal
+            }
             SyncError::Other(_) => VaultErrorCode::Internal,
         };
-        VaultErrorDto::new(code, v.to_string())
+        let message = assistant_sync::redact::redact_url_userinfo(&v.to_string());
+        VaultErrorDto::new(code, message)
     }
 }
 

@@ -132,14 +132,14 @@ pub fn copy_and_guard(&self, secret: &str, ttl_secs: u64) -> Result<(), VaultErr
 
 ### 2.3 灾难恢复导出
 
-当前：`vault_disaster_recovery_export` 可传 `git_url` + `commit`，clone 到 `security/recovery/`，导出全条目 JSON。
+现状（v1）：`vault_disaster_recovery_export` 可传 `git_url` + `commit`，clone 到 `security/recovery/`，导出全条目 JSON。
 
-目标：
+目标（v1.5 已切换为纸面密钥通道）：
 
-1. `export_path` 同 §2.1 的路径与权限要求。
-2. 导出结束（成功/失败）删除 `security/recovery/`。
-3. 审计 `RecoveryExportUsed { entryCount, at }` 写 JSONL（库不可用）。
-4. 若 `integrity_warning=true`，导出文件仍生成，但 UI 必须强提示。
+1. 恢复入口改为 `vault_recover_from_paper`（`RecoverySession`，见 recovery-channel-spec）。仓库来源与 v1 一致：按 recovery-channel-spec §3.0 clone 一份**临时副本**到 `security/recovery/` 读取，**不读也不改本机正式仓库 `security/vault/`**；副本用后即删（成功、失败、panic 路径都要删）。
+2. 恢复结果为内存中的条目 DTO，不落盘明文；解锁后由用户显式触发 §2.1 的导出命令，路径与权限要求同 §2.1。
+3. 审计 `RecoveryExportUsed { entryCount, at }` 写 JSONL（库不可用），恢复态不写 `security.db`。
+4. 若存在不可解密条目，`skipped` 逐条返回原因，UI 必须强提示，不得静默丢弃。
 5. 禁止把恢复码写入导出文件、日志、审计。
 
 ---
@@ -236,7 +236,7 @@ pub fn copy_and_guard(&self, secret: &str, ttl_secs: u64) -> Result<(), VaultErr
    - 不进入应用数据目录（`security/`）；
    - 不进入仓库目录；
    - 不覆盖已存在文件，除非二次确认。
-4. 灾难恢复 clone 目录固定 `security/recovery/`，使用后删除，禁止保留。
+4. `security/recovery/` 是恢复专用临时副本目录：恢复时 clone 到此、只读、用后即删（含失败与 panic 路径）；不得改作其它用途，也不得长期保留。
 
 ---
 
@@ -245,7 +245,7 @@ pub fn copy_and_guard(&self, secret: &str, ttl_secs: u64) -> Result<(), VaultErr
 | 文件 | 改动 |
 |---|---|
 | `src-tauri/src/cmd/vault/entries.rs` | 导出/导入：confirm_token、路径校验、0600、审计、临时文件 |
-| `src-tauri/src/cmd/vault/recovery.rs` | 灾难恢复：路径/权限/审计/清理 `security/recovery/` |
+| `src-tauri/src/cmd/vault/recovery.rs` | 纸面恢复：clone 临时副本 → `RecoverySession` 导出 → 删副本 + JSONL 审计 |
 | `src-tauri/src/cmd/vault/reveal.rs` | TTL 来自配置；揭示审计；禁止明文日志 |
 | `src-tauri/src/cmd/vault/audit.rs` | HIBP 限速与审计；TOTP 不记 secret |
 | `src-tauri/src/cmd/vault/ssh.rs` | 自动路径补审计；lifetime 生效；私钥不落日志 |
@@ -274,7 +274,7 @@ pub fn copy_and_guard(&self, secret: &str, ttl_secs: u64) -> Result<(), VaultErr
 | T-P7 | 冲突揭示 4 次 | 第 4 次 `RateLimited`；每次成功有审计 |
 | T-P8 | 揭示后锁定 | 前端 `revealedField=null` |
 | T-P9 | 恢复码展示 | 审计 `RecoveryKeyExported`；剪贴板未被自动写入 |
-| T-P10 | 灾难恢复成功 | `security/recovery/` 不存在；JSONL 有 `RecoveryExportUsed` |
+| T-P10 | 纸面恢复成功 | 恢复后 `security/recovery/` 不存在；本机仓库未被读取/修改；JSONL 有 `RecoveryExportUsed`；库不被写入 |
 | T-P11 | SSH 自动注入 | 审计存在；detail 为指纹 |
 | T-P12 | 日志扫描 | 无口令/密钥/明文字段/未脱敏 URL |
 | T-P13 | API key 文件被同机进程读取 | 能解密；文档与 UI 不得声称保密 |

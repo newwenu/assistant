@@ -91,7 +91,7 @@ fn delete_tx_soft_deletes_and_reports_id() {
         .unwrap();
 
     let mut exported = None;
-    db.delete_entry_tx(&snapshot.id, |id| {
+    db.delete_entry_tx(&snapshot.id, |_, id| {
         exported = Some(id.to_string());
         Ok(())
     })
@@ -118,7 +118,7 @@ fn delete_tx_rolls_back_when_export_fails() {
         .unwrap();
 
     assert!(db
-        .delete_entry_tx(&snapshot.id, |_| {
+        .delete_entry_tx(&snapshot.id, |_, _| {
             Err(VaultError::Validation("export failed".to_string()))
         })
         .is_err());
@@ -182,17 +182,5 @@ fn export_all_snapshots_excludes_deleted_entries() {
     assert_eq!(snapshots.len(), 1);
     assert_eq!(snapshots[0].id, kept.id);
     assert_eq!(snapshots[0].password.as_deref(), Some("pw-123"));
-    cleanup(&path);
-}
-
-#[test]
-fn vault_crypto_info_exposes_salts_and_argon2_params() {
-    let (path, db) = db();
-
-    let info = db.vault_crypto_info(ALGO).unwrap();
-    assert_eq!(info.default_cipher, ALGO);
-    assert!(info.argon2_m > 0 && info.argon2_t > 0 && info.argon2_p > 0);
-    assert_ne!(info.master_key_salt, [0u8; 32]);
-    assert_ne!(info.hash_salt, [0u8; 32]);
     cleanup(&path);
 }

@@ -24,6 +24,13 @@ pub trait BiometricKeyStore: Send + Sync {
     fn set_key_unprotected(&self, key_id: &str, data: &[u8]) -> Result<(), VaultError> {
         self.set_key(key_id, data)
     }
+
+    /// R9：非 Windows 平台 wrapping key 与密文共用同一 key store。
+    /// ACL 不满足时注册必须返回 `BiometricUnavailable`，禁止静默降级。
+    /// Windows Hello（TPM）天然满足，默认返回 true。
+    fn acl_satisfied(&self) -> Result<bool, VaultError> {
+        Ok(true)
+    }
 }
 
 #[cfg(target_os = "windows")]

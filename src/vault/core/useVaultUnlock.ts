@@ -12,40 +12,32 @@ export function useVaultUnlock() {
     unlock,
     loading,
     error,
+    errorCode,
     clearError,
+    resetRepository,
+    rebuildLocalDb,
+    checkStatus,
     unlockBiometric,
-    checkRecoveryKeySet,
     checkBiometricAvailable,
     checkBiometricEnrolled,
     biometricAvailable,
     biometricEnrolled,
-    recoveryKeySet,
-    disasterRecoveryStep,
-    disasterRecoveryResult,
-    startDisasterRecovery,
-    cancelDisasterRecovery,
-    setDisasterRecoveryStep,
-    disasterRecoveryExport,
   } = useVaultShallow((s) => ({
     isInitialized: s.isInitialized,
     init: s.init,
     unlock: s.unlock,
     loading: s.loading,
     error: s.error,
+    errorCode: s.errorCode,
     clearError: s.clearError,
+    resetRepository: s.resetRepository,
+    rebuildLocalDb: s.rebuildLocalDb,
+    checkStatus: s.checkStatus,
     unlockBiometric: s.unlockBiometric,
-    checkRecoveryKeySet: s.checkRecoveryKeySet,
     checkBiometricAvailable: s.checkBiometricAvailable,
     checkBiometricEnrolled: s.checkBiometricEnrolled,
     biometricAvailable: s.biometricAvailable,
     biometricEnrolled: s.biometricEnrolled,
-    recoveryKeySet: s.recoveryKeySet,
-    disasterRecoveryStep: s.disasterRecoveryStep,
-    disasterRecoveryResult: s.disasterRecoveryResult,
-    startDisasterRecovery: s.startDisasterRecovery,
-    cancelDisasterRecovery: s.cancelDisasterRecovery,
-    setDisasterRecoveryStep: s.setDisasterRecoveryStep,
-    disasterRecoveryExport: s.disasterRecoveryExport,
   }));
 
   const [password, setPassword] = useState("");
@@ -54,9 +46,6 @@ export function useVaultUnlock() {
   const [unlockMethod, setUnlockMethod] = useState<
     "password" | "biometric" | null
   >(null);
-  const [drGitUrl, setDrGitUrl] = useState("");
-  const [drRecoveryKey, setDrRecoveryKey] = useState("");
-  const [drCommit, setDrCommit] = useState("");
 
   const canSubmit =
     !loading &&
@@ -115,7 +104,11 @@ export function useVaultUnlock() {
     isInitialized,
     loading,
     error,
+    errorCode,
     clearError,
+    resetRepository,
+    rebuildLocalDb,
+    checkStatus,
     password,
     setPassword,
     confirmPassword,
@@ -127,23 +120,9 @@ export function useVaultUnlock() {
     canSubmit,
     biometricAvailable,
     biometricEnrolled,
-    recoveryKeySet,
     handlePasswordSubmit,
     handleBiometricUnlock,
     checkBiometricAvailable,
     checkBiometricEnrolled,
-    checkRecoveryKeySet,
-    disasterRecoveryStep,
-    disasterRecoveryResult,
-    startDisasterRecovery,
-    cancelDisasterRecovery,
-    setDisasterRecoveryStep,
-    disasterRecoveryExport,
-    drGitUrl,
-    setDrGitUrl,
-    drRecoveryKey,
-    setDrRecoveryKey,
-    drCommit,
-    setDrCommit,
   };
 }

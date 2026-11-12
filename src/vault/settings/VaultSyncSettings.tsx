@@ -30,7 +30,11 @@ import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import { useConfGroup } from "@/settings/core/useConfGroup";
 import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
 import { useVaultShallow, useVaultStore } from "../core/vaultStore";
-import { deriveSyncDisplay, remoteErrorText } from "../core/syncDisplay";
+import {
+  deriveSyncDisplay,
+  redactUrlUserInfo,
+  remoteErrorText,
+} from "../core/syncDisplay";
 import type {
   SyncConfig,
   SyncResult,
@@ -46,7 +50,9 @@ function syncErrorText(code: VaultErrorCode | null, message: string): string {
   const i18nKey = code ? SYNC_ERROR_KEY_MAP[code] : undefined;
   return i18nKey
     ? translateKey(i18nKey)
-    : translateKey("vault.sync.result_error", { message });
+    : translateKey("vault.sync.result_error", {
+        message: redactUrlUserInfo(message),
+      });
 }
 
 function getSyncResultInfo(
@@ -229,7 +235,9 @@ export default function VaultSyncSettings({
         .filter((host) => host.length > 0);
       await dispatchConfPatch("vault", { vaultSyncSshHosts: hosts });
     } catch (e) {
-      const detail = e instanceof Error ? e.message : String(e);
+      const detail = redactUrlUserInfo(
+        e instanceof Error ? e.message : String(e),
+      );
       message.error(
         translateKey("common.actions.save_failed_desc", { error: detail }),
       );

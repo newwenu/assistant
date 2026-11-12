@@ -269,13 +269,13 @@ pub fn derive_kek(password: &str, salt: &[u8], m: u32, t: u32, p: u32) -> Result
 ### 3.2 `derive_db_key`
 
 ```rust
-pub fn derive_db_key(kek: &Kek, vault_id: &str) -> DbKey;
+pub fn derive_db_key(dek: &Dek, vault_id: &str) -> DbKey;
 ```
 
-`HKDF-SHA256(salt = 空, ikm = KEK, info = "i9:v1:sqlcipher:" + vault_id)`，输出 32 字节。
+`HKDF-SHA256(salt = 空, ikm = dek, info = "i9:v1:sqlcipher:" + vault_id)`，输出 32 字节。
 `vault_id` 为空 → `panic!`（编程错误，不是用户输入）。
 
-> 若采纳设计评审建议改为 `HKDF(dek, …)`，必须同步修改本文 §3.2、§4.5、§4.8 与 sync/runtime 规格；当前规格按设计 v1.5 的 `KEK` 派生执行。
+> 派生输入是 `dek`，不是 `KEK`（设计评审修正，见附录 C-16）。这样改密才是真 O(1)：`dek` 不变 ⇒ `dbKey` 不变 ⇒ **不需要 `PRAGMA rekey`**，也不会产生多设备的 `LocalDbKeyMismatch`。代价：纸面持有者可推出 `dbKey`，但纸面本就能解全部条目，审计又属于 T3（设计 §0.6），故可接受。
 
 ### 3.3 `derive_entry_key`
 
@@ -423,9 +423,10 @@ pub fn rotate_dek(paths: VaultPaths<'_>)
 
 理由：
 
-1. **不可分割性**：改密的「`PRAGMA rekey` → 原子写 meta → 更新 anchor」三步跨越两层，任何一层单独暴露都会让命令层重复实现顺序。
+1. **不可分割性**：改密的「重包 `dek` → 原子写 meta → 更新 anchor」三步跨越两层，任何一层单独暴露都会让命令层重复实现顺序。
 2. **可测性**：集成测试直接调这 4 个函数，不需要构造 Tauri `AppHandle`。
 3. 命令层退化为薄封装（§9）。
+4. **所有权**：`VaultFileManager` 由独立 managed state `VaultRepo`（`Arc<VaultFileManager>`）持有，`SyncEngine` 共享同一实例；命令层只从 `repo_state` 取 repo，**禁止经 `SyncEngine` 转手**（§9.3）。
 
 ### 4.2 `VaultFileManager` 改动
 
@@ -485,7 +486,8 @@ impl VaultFileManager {
    ├─ 或 version 缺失且 value["emergency"] 存在
    └────────────────────────────────▶ UnsupportedVaultVersion
    ├─ version 缺失且上述特征键均不存在 ─▶ VaultCorrupted
-   ├─ version 存在但 != 2 ───────────▶ VaultCorrupted
+   ├─ version 存在且 > 2 ────────────▶ VaultVersionTooNew
+   ├─ version 存在但 == 0 或非法 ─────▶ VaultCorrupted
 5. 反序列化为 VaultMetaFileV2 失败 ──▶ VaultCorrupted
 6. 字段校验（任一失败 → VaultCorrupted）：
    ├─ vault_id 非 32 个小写 hex 字符
@@ -604,7 +606,7 @@ pub fn set_anchor(conn: &Connection, anchor: &Anchor) -> Result<(), String>;
 |---|---|
 | `initialize` | `revision = 0` |
 | 每次 `write_vault_meta_v2` 成功后 | `revision += 1` |
-| `LocalDbRebuilt`（§4.7 选项 2） | `revision` 重置为 **0** |
+| `LocalDbRebuilt`（§4.7） | `revision` 重置为 **0** |
 | `unlock` | **只读不写** |
 
 **校验顺序**：先探针读（证明 `db_key` 对），再比 anchor（证明 meta 未被回滚）。顺序不可交换。
@@ -614,27 +616,20 @@ pub fn set_anchor(conn: &Connection, anchor: &Anchor) -> Result<(), String>;
 文件：`src-tauri/crates/assistant-vault/src/security_db/rekey.rs`。
 
 ```rust
-pub fn repair_local_db_with_old_password(
-    &self, old_password: &str, new_password: &str,
-    repo: &VaultFileManager, anchor: &Anchor,
-) -> Result<(), VaultError>;
-
 pub fn rebuild_local_db(
     &self, repo: &VaultFileManager, dek: &Dek, db_key: &DbKey, anchor: &Anchor,
 ) -> Result<(), VaultError>;
 ```
 
-**`repair_local_db_with_old_password`**：
+**触发场景**（`dbKey = HKDF(dek)` 之后）：
 
-```
-1. 从 .vault-meta 取当前 kdf/salt → 用 old_password 派生 KEK_old
-2. dbKey_old = HKDF(KEK_old, "i9:v1:sqlcipher:" + vaultId)
-3. 打开 security.db（PRAGMA key = x'dbKey_old'）→ 探针读确认
-   └─ 失败 ──▶ LocalDbKeyMismatch（旧口令也不对，转选项 2）
-4. PRAGMA rekey = x'dbKey_new'（dbKey_new 由新口令派生）
-5. set_anchor(anchor)，revision 保留当前值 +1
-6. 审计 LocalDbRepaired
-```
+1. `rotate_dek` 后本机库仍使用旧 `dek` 派生的 `dbKey`。
+2. 在设备 B 上恢复了 `rotate_dek` 之前的 `security.db` 备份。
+3. `rotate_dek` 在「条目重加密 → 写 meta → 本机 rekey」之间崩溃，本机库仍是旧钥匙。
+
+**改密不再触发本错误**：`dek` 不变 ⇒ `dbKey` 不变。这是本修正最大的运维收益。
+
+**为什么不再提供「输入旧口令重包」**：旧口令只能配合**旧** `.vault-meta` 解出旧 `dek`；当前 meta 只包着新 `dek`，因此 `dbKey_old = HKDF(dek_old)` 无法从「当前 meta + 旧口令」得到。旧口令路径在 `HKDF(dek)` 下不可行，只保留重建。
 
 **`rebuild_local_db`**：
 
@@ -649,9 +644,10 @@ pub fn rebuild_local_db(
 
 约束：
 
-1. **两条路径都必须可用**。选项 2 是「忘了旧口令」时的唯一出路。
+1. **重建是唯一路径**，必须始终可用；不得依赖任何历史密钥或历史槽。
 2. 重建的代价是 `anchor` 基线重置，**必须在日志与 UI 里写明**。
 3. `security.db` 是缓存，**删除前不要求用户导出**。
+4. 多设备口径：改密后其余设备**无需修复**；`rotate_dek` 后其余设备各自重建一次（N 台设备 = N 次重建，但只在真吊销时发生）。
 
 ### 4.8 `change_master_password` 重写（O(1)）
 
@@ -670,22 +666,23 @@ pub fn change_master_password(
 2. KEK_old = derive_kek(current, slot.kdf) → dek = open_dek(KEK_old, wrappedDek, AAD)
    └─ GCM 失败 ──▶ InvalidPassword
 3. 新 salt(16) → KEK_new = derive_kek(new, salt_new, 同参数)
-4. dbKey_new = derive_db_key(KEK_new, vaultId)
-5. 备份 security.db → PRAGMA rekey = x'dbKey_new'
-6. slot' = { id: pwd-{n+1}, kdf: 新 salt, wrappedDek: seal_dek(KEK_new, dek, AAD(slot', dekVersion)), createdAt: now }
-7. write_vault_meta_v2（原子写）                        ← 提交点
-8. anchor = { meta_hash: 新文件 hash, dek_version 不变, revision += 1 }
-9. repackage_biometric_payload（见 biometric-spec §8）
-   ├─ 成功 ──▶ 继续
-   └─ 失败 ──▶ 删除 vault-fingerprint + warn，**不阻断**
-10. 返回新 meta
+4. slot' = { id: pwd-{n+1}, kdf: 新 salt, wrappedDek: seal_dek(KEK_new, dek, AAD(slot', dekVersion)), createdAt: now }
+5. write_vault_meta_v2（原子写）                        ← 提交点，唯一跨层写入
+6. anchor = { meta_hash: 新文件 hash, dek_version 不变, revision += 1 }
+7. 清理历史 `security-*.db.bak`（若存在，见 runtime-session-spec §4.3）
+8. 返回新 meta
 ```
+
+要点：
+
+- `dbKey = HKDF(dek)` 与口令无关 → 改密**不 `PRAGMA rekey` 本机库、不重建**。`dek` / `dbKey` 都不变，因此生物识别 payload（`dek‖dbKey`）**无需重包**。
+- 真 O(1)：只重包 20 字节 `dek` + 一次原子写；条目与库内加密列一个字节都不动。
+- **无跨层崩溃窗口**：全流程只剩 meta 原子写一个提交点（v1.5 早期版本的「rekey 与 meta 之间崩溃」在 `HKDF(dek)` 下消失）。
+- 多设备：其余设备用新口令解锁时派生出同一个 `dek` ⇒ 同一个 `dbKey`，**无需任何修复**。
 
 **删除的 v1 逻辑**：`:70-207` 的全量条目重加密段、`:208` 之后的旧 `PRAGMA rekey`、`meta::get_salt("hash_salt")`、`verify_master_password`。
 
-**崩溃窗口**（第 5 步与第 7 步之间）：`security.db` 已是新钥匙、`.vault-meta` 仍是旧 slot。表现为「旧口令能解出 `dek`（meta 旧），但打不开库」。检测路径：`unlock` 探针失败 → `LocalDbKeyMismatch` → §4.7。
-
-**备份处理**：改密成功后旧 `.bak` 是旧密钥代际，必须按 runtime-session-spec §4.3 删除或重加密；不得保留「旧口令可打开」的备份。
+**备份处理**：改密不再产生新 `.bak`；旧 `.bak` 由同一 `dbKey` 加密，只有当前 `dek` 可解，不存在「旧口令可打开」的问题。第 7 步仅为清理历史残留。
 
 ### 4.9 `rotate_dek`
 
@@ -698,18 +695,19 @@ pub fn change_master_password(
 4. 库内加密列同样重加密
 5. slot' = seal_dek(当前 KEK, dek_new, AAD(slot', dekVersion+1))
 6. dek_version += 1；manifest 全量重算；recovery_backup = None
-7. write_vault_meta_v2；anchor 更新（revision += 1）
-8. 返回 (新 meta, encode_paper(&dek_new))
+7. write_vault_meta_v2；anchor 更新（revision += 1）        ← 提交点
+8. dbKey_new = HKDF(dek_new, vaultId) → PRAGMA rekey 本机库
+9. 返回 (新 meta, encode_paper(&dek_new))
 ```
 
 约束：
 
-1. `dbKey` **不变** → **不调用 `PRAGMA rekey`**。
+1. `dbKey` **随 `dek` 变化** → 必须在 meta 提交后对**本机库** `PRAGMA rekey`。其余设备下次解锁会落入 `LocalDbKeyMismatch`，按 §4.7 重建。第 8 步崩溃不丢数据：本机库是可重建缓存，下次解锁同样走 §4.7。
 2. `vaultId` **不变**。
 3. 第 3–4 步失败必须**整体回滚**：先写临时目录，全部成功后再批量 rename；**禁止边写边替换**。
 4. `recovery_backup` 必须清空。
 5. 生物识别凭据删除放在**第 1 步**（理由见 biometric-spec §9 约束 2）。
-6. **禁止在持有 `dek` 会话守卫时调用 `init`/`unlock`/`set_session`**——`std::sync::Mutex` 非重入，会自锁死。正确顺序：取守卫 → 完成第 3–6 步 → 显式 `drop(guard)` → 第 7 步之后写入新会话。
+6. **禁止在持有 `dek` 会话守卫时调用 `init`/`unlock`/`set_session`**——`std::sync::Mutex` 非重入，会自锁死。正确顺序：取守卫 → 完成第 3–8 步 → 显式 `drop(guard)` → 写入新会话。
 7. 轮换成功**不自动重注册**生物识别；由 UI 引导重新注册。
 
 ### 4.10 `derive_entry_key` 替换点
@@ -732,10 +730,11 @@ pub fn change_master_password(
 
 ## 5. 生物识别层（已迁出）
 
-payload 52B、key id、签名/HKDF 参数冻结、fingerprint、`restore_keys_from_plaintext`、平台入口、注册/重包、R8/R9、keystore 清理，全部见 [I9-vault-biometric-spec.md](./I9-vault-biometric-spec.md)。本文不再重复，仅保留两处交叉依赖：
+payload 52B、key id、签名/HKDF 参数冻结、fingerprint、`restore_keys_from_plaintext`、平台入口、注册/吊销、R8/R9、keystore 清理，全部见 [I9-vault-biometric-spec.md](./I9-vault-biometric-spec.md)。本文不再重复，仅保留一处交叉依赖：
 
-- §4.8 第 9 步：改密后重包；
 - §4.9 第 1 步：`rotate_dek` 前删除凭据。
+
+> 改密不再重包生物识别 payload：`dek` / `dbKey` 均不变（biometric-spec §8）。
 
 ---
 
@@ -757,6 +756,9 @@ payload 52B、key id、签名/HKDF 参数冻结、fingerprint、`restore_keys_fr
 ```rust
 #[error("Unsupported vault version; reset required")]
 UnsupportedVaultVersion,
+
+#[error("Vault version is newer than this application; upgrade required")]
+VaultVersionTooNew,
 
 #[error("Local vault database key mismatch")]
 LocalDbKeyMismatch,
@@ -780,6 +782,7 @@ VaultCorrupted(String),
 | 变体 | camelCase | retryable |
 |---|---|---|
 | `UnsupportedVaultVersion` | `unsupportedVaultVersion` | 否 |
+| `VaultVersionTooNew` | `vaultVersionTooNew` | 否 |
 | `LocalDbKeyMismatch` | `localDbKeyMismatch` | 否 |
 | `VaultRollbackDetected` | `vaultRollbackDetected` | 否 |
 | `VaultManifestMismatch` | `vaultManifestMismatch` | 否 |
@@ -793,6 +796,7 @@ VaultCorrupted(String),
 
 ```rust
 VaultError::UnsupportedVaultVersion => (VaultErrorCode::UnsupportedVaultVersion, e.to_string()),
+VaultError::VaultVersionTooNew => (VaultErrorCode::VaultVersionTooNew, e.to_string()),
 VaultError::LocalDbKeyMismatch => (VaultErrorCode::LocalDbKeyMismatch, e.to_string()),
 VaultError::VaultRollbackDetected => (VaultErrorCode::VaultRollbackDetected, e.to_string()),
 VaultError::VaultManifestMismatch => (VaultErrorCode::VaultManifestMismatch, e.to_string()),
@@ -850,6 +854,30 @@ VaultError::VaultCorrupted(m) => (VaultErrorCode::VaultCorrupted, m.clone()),
 - 纸面/恢复 DTO 见 recovery-channel-spec；
 - 同步 DTO 见 sync-crypto-spec。
 
+### 9.3 状态注入与仓库所有权（补 C-17）
+
+`VaultFileManager` 是仓库文件层的无状态句柄（`PathBuf` + cipher 闭包），**与 git 同步无关**；`SyncEngine` 只在构造时复用同一实例。所有权与取用入口固定为：
+
+```rust
+// src-tauri/src/cmd/vault/mod.rs（应用层；库层不依赖 tauri）
+pub struct VaultRepo(pub Arc<VaultFileManager>);
+impl VaultRepo { pub fn manager(&self) -> &VaultFileManager { &self.0 } }
+
+pub(crate) fn repo_state(app: &AppHandle) -> Result<tauri::State<'_, VaultRepo>, VaultErrorDto>;
+
+// vault_setup()
+let repo = Arc::new(VaultFileManager::new(vault_dir, Box::new(cipher_algo)));
+handle.manage(VaultRepo(repo.clone()));
+handle.manage(SyncEngine::new_with_repo(repo, sync_config));
+```
+
+约束：
+
+1. 编排层函数（§4.1）与生命周期、恢复、生物识别、轮换命令**只从 `repo_state` 取 repo**，禁止经 `SyncEngine::vault_file_manager()` 转手——否则命令层为拿 repo 引入同步引擎依赖，§4.1 理由 3 的「薄封装」失效，且与 capability-gating-spec §1.1 的 feature-off（不创建 `SyncEngine`）冲突。
+2. `SyncEngine` 内持 `Arc<VaultFileManager>` 而非自建实例；保留 `SyncEngine::new`（内部委托 `new_with_repo`）与 `vault_file_manager()` 作为过渡入口供既有测试使用，**命令层不得调用**。
+3. `tests/command_gate.rs` 的 `STATE_ACCESS` 必须包含 `repo_state(`，使 `AnyState` / `None` 命令的 state 访问判定覆盖新入口。
+4. 新增 managed state 必须在本节列出「持有者 + 取用入口 + feature-off 时是否创建」，不得只写构造点。
+
 ---
 
 ## 10. 前端（核心）
@@ -875,16 +903,20 @@ export function needsRepositoryReset(code: VaultErrorCode): boolean {
   return code === 'unsupportedVaultVersion';
 }
 export function needsDbRepair(code: VaultErrorCode): boolean {
-  return code === 'localDbKeyMismatch';
+  return code === 'localDbKeyMismatch' || code === 'vaultRollbackDetected';
 }
 ```
+
+`vaultRollbackDetected` 也走重建入口：重建把 anchor 重置为当前仓库状态，是唯一能恢复的路径（提示文案必须写明「重置后回滚不再被检测」）。
 
 ### 10.3 组件
 
 核心只要求：
 
-- `UnsupportedVaultVersion` 的处置入口放在解锁页，按钮触发 `resetRepository()`（capability-gating-spec §3.2）；
-- `localDbKeyMismatch` 时展示 `DbRepairDialog`（选项 1/2，见 §4.7）。
+- `UnsupportedVaultVersion` 的处置入口放在解锁页，按钮触发 `resetRepository()`（capability-gating-spec §3.2）；入口旁必须有备份提示，且检测阶段不改动任何文件（§11.2 I10）。
+- 重置成功后界面切到初始化页（未初始化态），**不自动建库**；是否初始化由用户另行点击（capability-gating-spec §3.2 第 6 步）。
+- `localDbKeyMismatch` / `vaultRollbackDetected` 时展示 `DbRepairDialog`：仅保留重建入口（`rebuild_local_db`），需输入主密码派生当前 `dek` / `dbKey`；不提供旧口令重包路径（理由见 §4.7）。重建会把 anchor 重置为当前仓库状态，因此文案必须写明「重置后仓库回滚不再被检测」。
+- `vaultVersionTooNew` 时展示只读提示面板（`VersionTooNewPanel`）：说明「请升级应用」，**不提供重置入口**（否则会删掉更新版本写入的真实数据）。
 
 其余组件归各域规格。
 
@@ -893,13 +925,21 @@ export function needsDbRepair(code: VaultErrorCode): boolean {
 核心 key：
 
 ```
-vault.error.unsupportedVaultVersion / localDbKeyMismatch / vaultRollbackDetected
-vault.error.vaultManifestMismatch / vaultCorrupted
-vault.repair.title / desc / oldPasswordLabel / rebuildButton / rebuildWarning
-vault.reset.title / desc / confirm1 / confirm2 / tokenLabel / done
+vault.error.locked / invalidPassword / notInitialized / alreadyExists / rateLimited
+vault.error.crypto / notFound / entryCorrupted / validation
+vault.error.biometricUnavailable / biometricCancelled / biometricFailed / biometricReset
+vault.error.invalidKeyFormat / invalidRecoveryKey / recoveryKeyNotSet
+vault.error.vaultMetaIntegrityFailed / unsupportedVaultVersion / vaultVersionTooNew
+vault.error.localDbKeyMismatch / vaultRollbackDetected / vaultManifestMismatch
+vault.error.vaultCorrupted / cancelled / repoNotInitialized / noRemoteConfigured
+vault.error.noUpstream / syncConflict / gitUnavailable / keyMismatch
+vault.error.historyDecryptFailed / internal
+vault.versionTooNew.title / desc / retry
+vault.repair.title / desc / rebuildWarning / passwordLabel / rebuildButton
+vault.reset.title / desc / backupHint / confirm1 / confirm2 / tokenLabel / proceed / action
 ```
 
-约束：**禁止在组件内写中文字面量**；`vault.error.*` 与 camelCase 错误码一一对应。
+约束：**禁止在组件内写中文字面量**；`vault.error.*` 与 camelCase 错误码**一一对应**（由 `vaultErrorText.ts` 的 `satisfies Record<VaultErrorCode, I18nPath>` 在编译期强制穷尽），界面文案只取本地化键、不直接展示后端 `message`（后端原文仅作无码兜底）。`vault.reset.backupHint` 承载「重置不可逆，请先自行备份仓库目录」，与 capability-gating-spec §3.2 第 2 步一致。
 
 ---
 
@@ -958,8 +998,8 @@ fn pragmas_has_no_duplicate_keys() {
 | **T-G1** | `canonical_meta_bytes` 黄金向量：固定 meta → 输出字节与硬编码期望完全一致 |
 | **T-G2** | `build_slot_aad` 输出字节序列与 §3.6 逐字节一致 |
 | **I1** | 新建库：`vault_init` → `dekVersion=1`、`slots.len()=1`、`slot.id="pwd-1"`、`manifest.count=0`、`recoveryBackup=None` |
-| **I2** | 改密：`pwd-1` → `pwd-2`；`dekVersion` 不变；条目文件 sha256 不变；`wrappedDek` 变化；`dbKey` 变化 |
-| **I3** | 改密后 `dek` 不变：用改密前的 `dek` 解任一条目成功 |
+| **I2** | 改密：`pwd-1` → `pwd-2`；`dekVersion` 不变；条目文件 sha256 不变；`wrappedDek` 变化；`dbKey` **不变**；本机库**未被 rekey** |
+| **I3** | 改密后 `dek` 不变：用改密前的 `dek` 解任一条目成功；`dbKey` 亦不变（改密前的 `security.db` 副本仍可解锁） |
 | **I4** | 解锁链路：口令错 → `InvalidPassword`；`dbKey` 对但 meta 被改 → `VaultRollbackDetected` |
 | **I5** | 严格解析：`version=1` → `UnsupportedVaultVersion`；`version` 缺失且有 `crypto.masterKeySalt` → `UnsupportedVaultVersion`；`version` 缺失且无特征键 → `VaultCorrupted` |
 | **I10** | `UnsupportedVaultVersion` 路径不修改任何文件（mtime 与内容 hash 不变） |
@@ -1001,6 +1041,22 @@ P0-2 落地后必须全绿：
 
 纸面常量（`PAPER_*` / `CROCKFORD_ALPHABET`）见 recovery-channel-spec §1；生物识别常量见 biometric-spec §2/§3。
 
+### A.1 实测解锁耗时（M7.9）
+
+测量方式：Windows 开发机、release 构建，`cargo run --release -p assistant-vault --example bench_unlock`（两次独立运行，含 Argon2id、HKDF、SQLCipher 开库三段；下表取两次运行的区间）。
+
+| 环节 | v1 | v1.5 | 说明 |
+|---|---|---|---|
+| Argon2id(m=65536,t=3,p=4) 单次 | 85–95 ms | 同（单次） | v1.5 只派生一次 `kek` |
+| Argon2id 总次数 | 3 次，合计 261–283 ms | 1 次，85–95 ms | 删除 `bootstrap_key` 与 `hash_salt` 两次派生 |
+| HKDF(`dek`→`dbKey`) | — | 13–25 µs | 可忽略 |
+| SQLCipher 开库（raw key，`kdf_iter=256000`） | 13.1–15.2 ms | — | v1 |
+| SQLCipher 开库（raw key，`kdf_iter=1`） | — | 12.9–15.0 ms | v1.5；raw key 下 `kdf_iter` 仅差 0.17–0.21 ms（近乎 no-op） |
+| **解锁总计** | **274–298 ms** | **98–108 ms** | 约 2.7–2.8 倍提速 |
+| SQLCipher 开库（passphrase，`kdf_iter=256000`） | 101.6–102.0 ms | — | 仅作对照：口令密钥路径才真正受 `kdf_iter` 影响 |
+
+结论：v1.5 的解锁收益主要来自「删除两次 Argon2id」，而不是 `kdf_iter=1`；`kdf_iter=1` 的意义是避免在已由 Argon2id 派生的全熵 `dbKey` 上重复做 PBKDF2。改密耗时另见 §4.6：只重包 `dek`，不再 `PRAGMA rekey`，与 `dekVersion` 无关。
+
 ---
 
 ## 附录 B：核心文件改动索引
@@ -1023,6 +1079,9 @@ P0-2 落地后必须全绿：
 | `assistant-vault/src/dto/error.rs` / `convert.rs` | 增 5 个核心码；穷尽 match | §7.2–7.3 |
 | `src-tauri/src/cmd/vault/lifecycle.rs` | 改 `vault_init`/`vault_unlock`/`vault_show_unlock_window` | §9.1 |
 | `src-tauri/src/cmd/vault/entries.rs` | 改 `vault_change_master_password`；新增 `vault_rotate_dek` | §9.1 |
+| `src-tauri/src/cmd/vault/mod.rs` | 新增 `VaultRepo` state + `repo_state()`；`vault_setup` 先建 repo 再注入 `SyncEngine` | §4.1、§9.3 |
+| `assistant-vault/src/sync_engine/mod.rs` | `SyncEngine` 内持 `Arc<VaultFileManager>`；新增 `new_with_repo` | §9.3 |
+| `assistant-vault/tests/command_gate.rs` | `STATE_ACCESS` 补 `repo_state(` | §9.3 |
 | `src-tauri/src/vault_plugin.rs` | 更新 `generate_handler!` | §9.1 |
 | `src/vault/core/vault.service.ts` | 新增 `rotateDek` | §10.1 |
 | `src/vault/core/vaultError.ts` | 数组增 5 项 + 2 个判定函数 | §7.4、§10.2 |
@@ -1048,6 +1107,10 @@ P0-2 落地后必须全绿：
 | **C-8** | §6.1 列 `derive_entry_key` 17 处 | 复核为 17 处（含 `rekey.rs` 3 处随重写消失，净替换 14 处） | 设计把随重写消失的调用点也计入 |
 | **C-9** | §2.4 未说明 AAD 在「仅改密」场景的重放弱点 | §3.6 要求把该弱点写进函数注释 | 设计 §2.5 已论证但未要求落到代码注释 |
 | **C-10–C-15** | 生物识别 key id、删除语义、参数冻结、平台入口 | 已迁至 [I9-vault-biometric-spec.md](./I9-vault-biometric-spec.md) §2/§3/§6/§9/§11 | 职责分派 |
+| **C-16** | §0.2 A3 / §2.4 / §3.2：`dbKey = HKDF(KEK, vaultId)` | 改为 `dbKey = HKDF(dek, vaultId)` | 设计 §0.6/§7.1 自评 A3 的收益≈0（只保护 T3 审计），代价却是改密后 N 台设备各修一次 + 崩溃窗口 + `LocalDbKeyMismatch` 机制。改为从 `dek` 派生后：改密不再碰本机库、无多设备修复、无跨层崩溃窗口，生物识别也无需重包；代价是纸面持有者可推出 `dbKey`（但纸面本就能解全部条目）。`rotate_dek` 时才需要 rekey 本机库，且其本就是 O(n) 全量重加密 |
+| **C-17** | §6.3 / §9 未定义 `VaultFileManager` 的持有者；实现上它被塞进 `SyncEngine` 私有字段，命令层只能经 `sync_state()` 转手取 repo | 新增独立 managed state `VaultRepo`（`Arc<VaultFileManager>`），`SyncEngine` 共享同一实例；命令层从 `repo_state` 取 repo（§4.1 理由 4、§9.3） | 编排层签名本就是 `repo: &VaultFileManager`，库层正确、应用层缺「谁持有」；经 `SyncEngine` 转手使「命令层薄封装」（§4.1 理由 3）失效，并与 capability-gating-spec §1.1 的 feature-off（不创建 `SyncEngine`）冲突——vault 核心能力不能挂在可选同步组件下 |
+
+**保留设计的已知取舍（评审记录，暂不修改）**：A2「纸面本体即 `dek`」保持不变。因此「换一张纸」等价于 `rotate_dek`，代价是 O(n) 全量重加密 + `dekVersion + 1` + 全设备重建本机库。评审曾建议改为 recovery slot（换纸 O(1)、`dek` 可回 256 bit），当前决定不采纳，理由是仓库最小化与恢复路径不依赖仓库封装结构。若「纸面轮换」成为高频需求，应按 recovery slot 重新评估。
 
 ---
 

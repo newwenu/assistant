@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Form, Input, Button, Progress, Typography, Modal, App } from "antd";
+import { Form, Input, Button, Progress, Typography, App } from "antd";
 import { LockOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultShallow } from "../core/vaultStore";
@@ -21,27 +21,15 @@ const MIN_SCORE = 2;
 export default function ChangePasswordTab() {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  const {
-    changeMasterPassword,
-    loading,
-    biometricAvailable,
-    enrollBiometric,
-    checkBiometricEnrolled,
-  } = useVaultShallow((s) => ({
+  const { changeMasterPassword, loading } = useVaultShallow((s) => ({
     changeMasterPassword: s.changeMasterPassword,
     loading: s.loading,
-    biometricAvailable: s.biometricAvailable,
-    enrollBiometric: s.enrollBiometric,
-    checkBiometricEnrolled: s.checkBiometricEnrolled,
   }));
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [strength, setStrength] = useState<StrengthResult | null>(null);
-
-  const [reEnrollOpen, setReEnrollOpen] = useState(false);
-  const [reEnrollLoading, setReEnrollLoading] = useState(false);
 
   const checkStrength = useCallback((pwd: string) => {
     if (pwd.length > 0) {
@@ -88,30 +76,9 @@ export default function ChangePasswordTab() {
       setNewPassword("");
       setConfirmPassword("");
       setStrength(null);
-      if (biometricAvailable) {
-        setReEnrollOpen(true);
-      }
     } catch (e) {
       message.error(vaultErrorMessage(e));
     }
-  };
-
-  const handleReEnroll = async () => {
-    setReEnrollLoading(true);
-    try {
-      await enrollBiometric();
-      await checkBiometricEnrolled();
-      message.success(t("vault.biometric.enabled"));
-      setReEnrollOpen(false);
-    } catch (e) {
-      message.error(vaultErrorMessage(e));
-    } finally {
-      setReEnrollLoading(false);
-    }
-  };
-
-  const handleReEnrollCancel = () => {
-    setReEnrollOpen(false);
   };
 
   return (
@@ -201,30 +168,6 @@ export default function ChangePasswordTab() {
           </Button>
         </Form.Item>
       </Form>
-
-      <Modal
-        open={reEnrollOpen}
-        title={t("vault.change_password.re_enroll_title")}
-        onCancel={handleReEnrollCancel}
-        footer={[
-          <Button key="skip" onClick={handleReEnrollCancel}>
-            {t("vault.change_password.re_enroll_skip")}
-          </Button>,
-          <Button
-            key="enroll"
-            type="primary"
-            loading={reEnrollLoading}
-            onClick={() => void handleReEnroll()}
-          >
-            {t("vault.change_password.re_enroll_confirm")}
-          </Button>,
-        ]}
-        destroyOnHidden
-      >
-        <Typography.Paragraph type="secondary">
-          {t("vault.change_password.re_enroll_desc")}
-        </Typography.Paragraph>
-      </Modal>
     </div>
   );
 }

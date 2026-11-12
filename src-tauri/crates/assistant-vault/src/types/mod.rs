@@ -2,8 +2,6 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use assistant_crypto::vault_crypto::types::CipherAlgorithm;
-
 pub use assistant_crypto::error::VaultError;
 
 pub use crate::shared::*;
@@ -29,6 +27,7 @@ pub struct VaultEntrySnapshot {
     pub id: String,
     pub category: VaultCategory,
     pub revision: i64,
+    pub dek_version: u32,
     pub title: String,
     pub username: Option<String>,
     pub url: Option<String>,
@@ -40,6 +39,13 @@ pub struct VaultEntrySnapshot {
     pub is_favorite: bool,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlainEntry {
+    pub id: String,
+    pub category: String,
+    pub blob: crate::vault_file::types::EntryBlobV2,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,17 +73,6 @@ pub enum ImportOutcome {
     Updated,
     SkippedLocallyDeleted,
     SkippedStale,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultCryptoInfo {
-    pub master_key_salt: [u8; 32],
-    pub hash_salt: [u8; 32],
-    pub argon2_m: u32,
-    pub argon2_t: u32,
-    pub argon2_p: u32,
-    pub default_cipher: CipherAlgorithm,
 }
 
 pub struct VaultEntryDecrypted {

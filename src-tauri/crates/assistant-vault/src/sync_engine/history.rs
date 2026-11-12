@@ -30,6 +30,12 @@ impl SyncEngine {
         resolution: ConflictResolution,
         remote_copy_suffix: Option<&str>,
     ) -> Result<(), SyncError> {
+        if path == crate::vault_file::VAULT_META_FILE_NAME {
+            return Err(SyncError::Other(
+                ".vault-meta conflicts are never auto-merged; resolve manually".to_string(),
+            ));
+        }
+
         let entry_id = parse_entry_id(path).ok_or_else(|| {
             SyncError::Other(format!("conflict path is not a vault entry file: {}", path))
         })?;
@@ -68,9 +74,42 @@ impl SyncEngine {
             _ => {}
         }
 
-        if self.conflicts(security_db)?.is_empty() {
-            self.finalize("vault: resolve conflict")?;
+        self.finish_resolution(security_db)
+    }
+
+    pub fn resolve_meta_conflict(
+        &self,
+        security_db: &SecurityDbState,
+        use_remote: bool,
+    ) -> Result<(), SyncError> {
+        let path = crate::vault_file::VAULT_META_FILE_NAME;
+        {
+            let git = self.git_sync.lock().unwrap_or_else(|e| e.into_inner());
+            if use_remote {
+                git.resolve_conflict_remote(path)?;
+            } else {
+                git.resolve_conflict_local(path)?;
+            }
         }
+
+        self.finish_resolution(security_db)
+    }
+
+    fn finish_resolution(&self, security_db: &SecurityDbState) -> Result<(), SyncError> {
+        if !self.conflicts(security_db)?.is_empty() {
+            return Ok(());
+        }
+
+        self.validate_meta_identity(security_db)?;
+
+        let dek_guard = security_db.get_dek().map_err(|_| SyncError::VaultLocked)?;
+        let dek = dek_guard.as_ref().ok_or(SyncError::VaultLocked)?;
+        let meta = crate::lifecycle::sync_write_meta(&self.vault_file, dek)
+            .map_err(|e| SyncError::Other(e.to_string()))?;
+        drop(dek_guard);
+
+        self.advance_anchor(security_db, &meta)?;
+        self.finalize("vault: resolve conflict")?;
 
         Ok(())
     }
@@ -84,12 +123,11 @@ impl SyncEngine {
             .snapshot(entry_id)
             .map_err(|e| SyncError::Other(e.to_string()))?;
 
-        let mk_guard = security_db
-            .get_master_key()
-            .map_err(|_| SyncError::VaultLocked)?;
-        let master_key = mk_guard.as_ref().ok_or(SyncError::VaultLocked)?;
+        let dek_guard = security_db.get_dek().map_err(|_| SyncError::VaultLocked)?;
+        let dek = dek_guard.as_ref().ok_or(SyncError::VaultLocked)?;
 
-        self.vault_file.export_entry(master_key, &snapshot, false)
+        self.vault_file.export_entry(dek, &snapshot)?;
+        Ok(())
     }
 
     fn decode_entry_content(
@@ -97,13 +135,11 @@ impl SyncEngine {
         security_db: &SecurityDbState,
         content: &str,
     ) -> Result<ImportedEntry, SyncError> {
-        let mk_guard = security_db
-            .get_master_key()
-            .map_err(|_| SyncError::VaultLocked)?;
-        let master_key = mk_guard.as_ref().ok_or(SyncError::VaultLocked)?;
+        let dek_guard = security_db.get_dek().map_err(|_| SyncError::VaultLocked)?;
+        let dek = dek_guard.as_ref().ok_or(SyncError::VaultLocked)?;
 
         self.vault_file
-            .decode_entry_file(master_key, content)
+            .decode_entry_file(dek, content)
             .map_err(|e| SyncError::HistoryDecryptFailed(e.to_string()))
     }
 
@@ -118,11 +154,15 @@ impl SyncEngine {
         let vault_file = &self.vault_file;
 
         security_db
-            .force_import_entry_tx(entry, self.vault_file.cipher_algorithm(), |mk, snapshot| {
-                vault_file
-                    .export_entry(mk, snapshot, false)
-                    .map_err(|e| assistant_crypto::error::VaultError::Other(e.to_string()))
-            })
+            .force_import_entry_tx(
+                entry,
+                self.vault_file.cipher_algorithm(),
+                |dek, snapshot| {
+                    vault_file
+                        .export_entry(dek, snapshot)
+                        .map_err(|e| assistant_crypto::error::VaultError::Other(e.to_string()))
+                },
+            )
             .map_err(|e| SyncError::Other(e.to_string()))
     }
 
@@ -145,11 +185,15 @@ impl SyncEngine {
 
         let vault_file = &self.vault_file;
         security_db
-            .create_remote_copy_tx(entry, self.vault_file.cipher_algorithm(), |mk, snapshot| {
-                vault_file
-                    .export_entry(mk, snapshot, false)
-                    .map_err(|e| assistant_crypto::error::VaultError::Other(e.to_string()))
-            })
+            .create_remote_copy_tx(
+                entry,
+                self.vault_file.cipher_algorithm(),
+                |dek, snapshot| {
+                    vault_file
+                        .export_entry(dek, snapshot)
+                        .map_err(|e| assistant_crypto::error::VaultError::Other(e.to_string()))
+                },
+            )
             .map_err(|e| SyncError::Other(e.to_string()))
     }
 
@@ -217,16 +261,14 @@ impl SyncEngine {
             )
         };
 
-        let mk_guard = security_db
-            .get_master_key()
-            .map_err(|_| SyncError::VaultLocked)?;
-        let master_key = mk_guard.as_ref().ok_or(SyncError::VaultLocked)?;
+        let dek_guard = security_db.get_dek().map_err(|_| SyncError::VaultLocked)?;
+        let dek = dek_guard.as_ref().ok_or(SyncError::VaultLocked)?;
 
         let decode = |content: Option<&String>| -> (Option<ImportedEntry>, Option<String>) {
             let Some(content) = content else {
                 return (None, None);
             };
-            match self.vault_file.decode_entry_file(master_key, content) {
+            match self.vault_file.decode_entry_file(dek, content) {
                 Ok(imported) => (Some(imported), None),
                 Err(e) => (None, Some(e.to_string())),
             }
@@ -281,16 +323,14 @@ impl SyncEngine {
             git.show_file(stage, path)?
         };
 
-        let mk_guard = security_db
-            .get_master_key()
-            .map_err(|_| SyncError::VaultLocked)?;
-        let master_key = mk_guard.as_ref().ok_or(SyncError::VaultLocked)?;
-        let imported = self.vault_file.decode_entry_file(master_key, &content)?;
+        let dek_guard = security_db.get_dek().map_err(|_| SyncError::VaultLocked)?;
+        let dek = dek_guard.as_ref().ok_or(SyncError::VaultLocked)?;
+        let imported = self.vault_file.decode_entry_file(dek, &content)?;
         let blob = imported.blob;
 
         match field {
             "password" => blob.password,
-            "totpSecret" => blob.totp_secret,
+            "totpSecret" => blob.totp.map(|totp| totp.secret),
             "notes" => blob.notes,
             other => blob
                 .custom_fields
@@ -329,14 +369,16 @@ impl SyncEngine {
                 entry,
                 self.vault_file.cipher_algorithm(),
                 commit,
-                |mk, snap| {
+                |dek, snap| {
                     vault_file
-                        .export_entry(mk, snap, false)
-                        .map_err(|e| assistant_crypto::error::VaultError::Other(e.to_string()))
+                        .export_entry(dek, snap)
+                        .map_err(|e| assistant_crypto::error::VaultError::Other(e.to_string()))?;
+                    crate::lifecycle::sync_write_meta(vault_file, dek).map(|_| ())
                 },
             )
             .map_err(|e| SyncError::Other(e.to_string()))?;
 
+        self.refresh_anchor(security_db)?;
         self.finalize(&format!("vault: restore {}", snapshot.id))?;
         Ok(snapshot)
     }
@@ -356,13 +398,26 @@ impl SyncEngine {
             git.show_file(commit, &path)?
         };
 
-        let mk_guard = security_db
-            .get_master_key()
-            .map_err(|_| SyncError::VaultLocked)?;
-        let master_key = mk_guard.as_ref().ok_or(SyncError::VaultLocked)?;
+        let dek_guard = security_db.get_dek().map_err(|_| SyncError::VaultLocked)?;
+        let dek = dek_guard.as_ref().ok_or(SyncError::VaultLocked)?;
+
+        // rotate_dek 后旧 dek 不保留，历史文件声明的 dekVersion 与当前会话不一致时
+        // 必然不可读，必须返回 `HistoryDekUnavailable` 而不是伪装成解密失败。
+        let current_dek_version = dek_guard.dek_version().ok_or(SyncError::VaultLocked)?;
+        let declared = crate::vault_file::peek_entry_dek_version(&content)?;
+        if declared != current_dek_version {
+            log::debug!(
+                "history entry {} in commit {} uses retired dekVersion {} (current {})",
+                entry_id,
+                commit,
+                declared,
+                current_dek_version
+            );
+            return Err(SyncError::HistoryDekUnavailable(declared));
+        }
 
         self.vault_file
-            .decode_entry_file(master_key, &content)
+            .decode_entry_file(dek, &content)
             .map_err(|e| SyncError::HistoryDecryptFailed(e.to_string()))
     }
 }

@@ -121,6 +121,12 @@ impl BiometricKeyStore for LibsecretKeyStore {
         }
     }
 
+    fn acl_satisfied(&self) -> Result<bool, VaultError> {
+        // R9：libsecret 的访问控制由系统 keyring 守护进程提供（绑定会话锁）。
+        // 无可用守护进程即视为 ACL 不满足，禁止静默降级为明文存储。
+        self.is_available()
+    }
+
     fn set_key(&self, key_id: &str, data: &[u8]) -> Result<(), VaultError> {
         let schema = get_schema();
         let c_label = CString::new(key_id)

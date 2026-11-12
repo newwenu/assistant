@@ -420,7 +420,7 @@
           "keep": "Keep original key",
           "required": "Please enter API Key",
           "required_first": "Please enter API Key first",
-          "encrypted_hint": "Key will be stored encrypted",
+          "encrypted_hint": "Stored locally in obfuscated form only; other local processes can read it, so this is not confidential storage",
           "keep_hint": "Leave empty to keep the original key"
         },
         "base_url": {
@@ -464,8 +464,15 @@
       },
       "auto_lock_minutes": { "label": "Auto Lock Time (minutes)" },
       "lock_on_screen_lock": { "label": "Lock Vault on Screen Lock" },
-      "clipboard_clear_seconds": { "label": "Clipboard Clear Time (seconds)" },
-      "cipher_algorithm": { "label": "Cipher Algorithm" },
+      "clipboard_clear_seconds": {
+        "label": "Clipboard Clear Time (seconds)",
+        "confirm_zero_title": "Disable clipboard auto-clear?",
+        "confirm_zero_content": "Setting 0 keeps copied plaintext in the clipboard until you overwrite it or lock the vault. Continue?"
+      },
+      "cipher_algorithm": {
+        "label": "Cipher Algorithm",
+        "description": "Only affects new or updated entries and key rotation; existing entries keep their original algorithm and still decrypt normally"
+      },
       "biometric_enabled": {
         "label": "Biometric Unlock",
         "description": "Enabling requires two authentications",
@@ -473,8 +480,10 @@
         "save_message": "Biometric status updated"
       },
       "ssh_auto_add": { "label": "Auto Add SSH Keys to Agent on Unlock" },
-      "ssh_use_pageant": { "label": "Use Pageant (PuTTY)" },
-      "ssh_use_openssh_agent": { "label": "Use OpenSSH Agent" },
+      "ssh_use_pageant": {
+        "label": "Use Pageant (PuTTY)",
+        "description": "When disabled, the OpenSSH Agent is used instead (Windows)"
+      },
       "ssh_auth_sock_override": {
         "label": "SSH_AUTH_SOCK Path Override",
         "placeholder": "Leave empty for default"
@@ -1045,6 +1054,50 @@
   "vault": {
     "name": "Password Vault",
     "description": "Securely store and manage passwords, credentials and keys",
+    "error": {
+      "locked": "The vault is locked; unlock it first",
+      "invalidPassword": "Incorrect master password",
+      "notInitialized": "The vault is not initialized",
+      "alreadyExists": "The vault already exists",
+      "rateLimited": "Too many attempts; try again later",
+      "crypto": "Cryptographic operation failed",
+      "notFound": "The requested item was not found",
+      "entryCorrupted": "Entry data is corrupted",
+      "validation": "Input does not meet the requirements",
+      "biometricUnavailable": "Biometrics are not available on this device",
+      "biometricCancelled": "Biometric authentication was cancelled",
+      "biometricFailed": "Biometric authentication failed",
+      "biometricReset": "Biometric credentials are invalid; re-enrollment required",
+      "invalidKeyFormat": "Invalid key format",
+      "invalidRecoveryKeyFormat": "Recovery key format is invalid; check its length and characters",
+      "invalidRecoveryKeyChecksum": "Recovery key checksum failed; a character may be wrong",
+      "invalidRecoveryKeyOrMetaTampered": "The recovery key cannot open the vault metadata: the key is wrong or the metadata was tampered with",
+      "vaultMetaIntegrityFailed": "Vault metadata integrity check failed",
+      "unsupportedVaultVersion": "This vault was created by an older version and is no longer supported; reset is required",
+      "vaultVersionTooNew": "This vault was created by a newer version and cannot be read; upgrade the application",
+      "localDbKeyMismatch": "The local database does not match the current master password",
+      "vaultRollbackDetected": "Vault integrity baseline rollback detected",
+      "vaultManifestMismatch": "Entry files do not match the manifest; the vault may have been modified",
+      "vaultCorrupted": "Vault files are corrupted or unparsable",
+      "cancelled": "Operation cancelled",
+      "repoNotInitialized": "The sync repository is not initialized",
+      "noRemoteConfigured": "No remote repository is configured",
+      "noUpstream": "The current branch has no upstream",
+      "syncConflict": "Sync conflict; manual resolution required",
+      "gitUnavailable": "Git is unavailable",
+      "keyMismatch": "Key mismatch",
+      "historyDecryptFailed": "The historical revision cannot be decrypted",
+      "vaultDekVersionAhead": "The remote data key version is newer than this app; please upgrade",
+      "vaultDekVersionBehind": "The local data key version is newer than the remote; push first",
+      "repositoryContainsForbiddenFile": "The repository contains files that are not allowed; please check its contents",
+      "historyDekUnavailable": "The data key for this revision is unavailable; it cannot be decrypted",
+      "internal": "Internal error"
+    },
+    "versionTooNew": {
+      "title": "This vault was created by a newer version",
+      "desc": "The current application cannot read this vault version. Upgrade the application before opening it. Do not reset the repository, or its data will be deleted.",
+      "retry": "Check Again"
+    },
     "unlock": {
       "title": "Unlock Vault",
       "subtitle": "Continue with biometrics or your master password",
@@ -1060,6 +1113,23 @@
       "recovery_key_placeholder": "XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX",
       "use_password": "Use Password",
       "password_divider": "Password"
+    },
+    "reset": {
+      "title": "This vault was created by an older version",
+      "desc": "This version cannot upgrade an old vault. Reset the repository to create a new vault.",
+      "backupHint": "Reset is irreversible: the old vault is not preserved. If it holds real credentials, back up the repository directory first.",
+      "confirm1": "Reset deletes .vault-meta, security.db, entries/ and audit/ inside the repository. Continue?",
+      "confirm2": "Type RESET-VAULT to confirm the reset.",
+      "tokenLabel": "RESET-VAULT",
+      "proceed": "I have a backup, continue",
+      "action": "Reset Repository"
+    },
+    "repair": {
+      "title": "Local database does not match the repository baseline",
+      "desc": "The local database key or integrity baseline (anchor) does not match the repository, so it cannot be unlocked safely. Rebuilding the local cache re-imports entry files and audit logs; no data is lost.",
+      "rebuildWarning": "Rebuilding discards the existing local database and resets the integrity baseline (anchor) to the current repository state; repository rollback will no longer be detected afterwards.",
+      "passwordLabel": "Master password",
+      "rebuildButton": "Rebuild Local Database"
     },
     "entry": {
       "search": "Search",
@@ -1285,17 +1355,68 @@
       "auto_add_in_settings": "Change in Settings"
     },
     "recovery": {
-      "key_description": "A recovery key can unlock the vault if you forget your master password. Save it securely — it will only be shown once.",
-      "key_generate": "Generate Recovery Key",
-      "key_regenerate": "Regenerate Recovery Key",
-      "key_generated_title": "Recovery Key Generated",
-      "key_warning": "Save this recovery key to a secure location immediately! You will not be able to view it again after closing this window.",
-      "key_copy": "Copy Key",
-      "key_copied": "Recovery key copied to clipboard",
-      "key_saved_confirm": "I've Saved It Securely",
-      "verify_integrity": "Verify Vault Integrity",
-      "integrity_valid": "Vault integrity verified",
-      "integrity_invalid": "Vault integrity check failed — data may be tampered"
+      "backupPresent": "Recovery key backed up: DEK version {{version}}, saved at {{time}}",
+      "backupMissing": "No recovery key backup yet; without one you cannot recover data if you forget the master password",
+      "export": {
+        "title": "Back Up Recovery Key",
+        "desc": "A recovery key can decrypt the vault if you forget the master password. Write it down or print it — the key is never written to disk.",
+        "submit": "Generate and Show",
+        "warning": "You will not be able to view the recovery key again after closing this window. Write it down or print it first.",
+        "print": "Print Key",
+        "printTitle": "Vault Recovery Key",
+        "printFooter": "This sheet is the entire vault. Keep it offline; do not screenshot, photograph, or paste it into any chat tool.",
+        "channelNote": "The recovery key is never written to the clipboard or clipboard history; write it down or print it. Do not screenshot it, generate a QR code from it, or share it.",
+        "confirmTitle": "Discard this backup?",
+        "confirmWritten": "I have written down the full recovery key and stored it safely",
+        "regenerate": "Back Up Recovery Key Again",
+        "dekVersion": "DEK version: {{version}}"
+      },
+      "rotate": {
+        "title": "Rotate Data Key",
+        "entry": "Rotate Data Key",
+        "entry_desc": "Generates a brand-new data key and re-encrypts every entry, revoking leaked old passwords or recovery keys. This cannot be undone.",
+        "desc": "The old recovery key becomes invalid immediately. The new recovery key is shown only once — write it down now.",
+        "warning": "This action cannot be undone. Confirm you understand the consequences",
+        "warn_old_paper": "The old recovery key (paper copy) stops working immediately and can no longer recover data",
+        "warn_entries": "Every entry is re-encrypted with the new data key; other synced devices must re-sync",
+        "warn_biometric": "Biometric credentials on this device are deleted and must be enrolled again",
+        "warn_history": "History from older commits can no longer be previewed or restored",
+        "submit": "Rotate Data Key",
+        "new_paper_warning": "The old recovery key is now invalid. You will not be able to view the new recovery key again after closing this window — write it down first.",
+        "biometric_notice": "Biometric credentials were deleted; please enroll again.",
+        "reenroll_title": "Re-enroll biometrics after rotating the data key",
+        "reenroll_desc": "Old credentials were deleted during rotation. Enroll again to keep unlocking with fingerprint / Windows Hello.",
+        "reenroll_ok": "Enroll now",
+        "reenroll_skip": "Not now",
+        "reenroll_success": "Biometrics re-enrolled",
+        "reenroll_failed": "Biometric enrollment failed; you can enable it again later in settings",
+        "reenroll_disabled": "Biometrics not re-enrolled and are now disabled"
+      },
+      "paper": {
+        "title": "Paper Recovery",
+        "entry": "Recover data with a recovery key",
+        "desc": "Enter the 40-character recovery key you wrote down. Recovery clones a temporary copy of the repository into a local isolated directory; your local vault is neither read nor modified.",
+        "step_input": "Enter key",
+        "step_done": "Export done",
+        "repoUrl": "Repository URL",
+        "repoUrlPlaceholder": "https://example.com/vault.git",
+        "repoUrlHint": "Leave empty to use the saved sync remote; required when recovering on a new machine",
+        "repoUrlMissing": "A repository URL is required to fetch a recovery copy",
+        "inputLabel": "Recovery key",
+        "inputHint": "5 groups of 8 characters; case, spaces and hyphens are ignored",
+        "submit": "Decrypt and Export",
+        "copy": "Copy Export",
+        "copied": "Export copied to clipboard",
+        "success": "Decrypted {{count}} entries",
+        "skippedCount": "{{count}} entries could not be decrypted and were skipped",
+        "nextSteps": "Rebuild your vault from this export and generate a new recovery key.",
+        "locateResult": "Group {{group}}, position {{index}} may be miswritten; please check",
+        "format": {
+          "short": "Recovery key is shorter than 40 characters",
+          "long": "Recovery key is longer than 40 characters",
+          "char": "Recovery key contains invalid characters; only 0-9 and A-Z are allowed"
+        }
+      }
     },
     "change_password": {
       "description": "Change the master password used to encrypt and unlock the vault. After changing, biometric enrollment and recovery key will be invalidated — you will need to re-enable them.",
@@ -1303,11 +1424,7 @@
       "new_password": "New Password",
       "confirm_new": "Confirm New Password",
       "submit": "Change Password",
-      "success": "Master password changed successfully. Please re-enable biometric unlock and regenerate recovery key if needed.",
-      "re_enroll_title": "Re-enable Biometric Unlock",
-      "re_enroll_desc": "Biometric unlock has been invalidated by the password change. Would you like to re-enable it now?",
-      "re_enroll_skip": "Skip",
-      "re_enroll_confirm": "Enable"
+      "success": "Master password changed successfully."
     },
     "danger_zone": {
       "title": "Danger Zone",
@@ -1392,27 +1509,16 @@
       "op_restore": "Restore",
       "op_other": "Other"
     },
-    "disaster_recovery": {
-      "title": "Disaster Recovery",
-      "step_git": "Connect Git",
-      "step_key": "Recovery Key",
-      "step_done": "Export Complete",
-      "git_hint": "Enter your Git repository URL. Leave empty to use the local repository.",
-      "git_placeholder": "https://github.com/you/vault-backup.git",
-      "commit_placeholder": "Optional: historical commit hash (empty = latest)",
-      "export": "Decrypt & Export",
-      "success": "Successfully exported {{count}} entries",
-      "skipped_warning": "{{count}} entries could not be decrypted and were skipped: {{ids}}",
-      "integrity_warning": "HMAC verification failed — data may be tampered",
-      "next_steps": "You can now create a new vault and import this JSON file to restore your passwords.",
-      "open_file": "Open File Location"
-    },
     "import_export": {
       "export_title": "Export Vault",
       "export_description": "Export all vault entries to a file. The file will contain decrypted data — keep it safe. CSV format does not include custom fields; tags are comma-separated.",
       "export_format_json": "JSON",
       "export_format_csv": "CSV",
       "export_warning": "The exported file contains unencrypted passwords. Export does not deduplicate. Please delete or move the file to a secure location promptly.",
+      "export_confirm_title": "Confirm Plaintext Export",
+      "export_confirm_content": "The exported file contains unencrypted passwords and notes; anyone who can read the file can see everything. Continue the export?",
+      "export_confirm_ok": "Export",
+      "export_confirm_cancel": "Cancel",
       "export_button": "Export",
       "export_success": "Exported to: {{path}}",
       "import_title": "Import into Vault",
@@ -1432,7 +1538,9 @@
       "disable": "Disable",
       "disable_requires_unlock": "Unlock the vault before disabling biometrics",
       "unlock_failed": "Unlock failed",
-      "unlocking": "Unlocking…"
+      "unlocking": "Unlocking…",
+      "reset_required": "Biometric credentials are invalid",
+      "reenroll_required": "Biometric credentials are invalid. Unlock with your master password, then re-enroll."
     },
     "hibp": {
       "audit_all": "Audit All",

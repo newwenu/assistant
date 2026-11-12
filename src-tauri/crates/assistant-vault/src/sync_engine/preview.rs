@@ -2,16 +2,16 @@ use assistant_sync::git_sync::GitSync;
 use assistant_sync::types::{ConflictFile, EntryPreview, EntryPreviewField};
 
 use crate::security_db::SecurityDbState;
-use crate::vault_file::types::{EntryBlob, ImportedEntry};
+use crate::vault_file::types::{EntryBlobV2, ImportedEntry};
 
 const MASKED: &str = "•••";
 
-pub(super) fn mask_entry_preview(
+pub fn mask_entry_preview(
     commit: &str,
     id: String,
     category: String,
     revision: i64,
-    blob: EntryBlob,
+    blob: EntryBlobV2,
 ) -> EntryPreview {
     EntryPreview {
         id,
@@ -24,8 +24,8 @@ pub(super) fn mask_entry_preview(
         username: blob.username,
         url: blob.url,
         password: blob.password.map(|_| MASKED.to_string()),
-        notes: blob.notes,
-        totp_secret: blob.totp_secret.map(|_| MASKED.to_string()),
+        notes: blob.notes.map(|_| MASKED.to_string()),
+        totp_secret: blob.totp.map(|_| MASKED.to_string()),
         custom_fields: blob
             .custom_fields
             .into_iter()
@@ -110,7 +110,7 @@ pub(super) fn diff_entry_fields(local: &ImportedEntry, remote: &ImportedEntry) -
     if a.notes != b.notes {
         fields.push("notes".to_string());
     }
-    if a.totp_secret != b.totp_secret {
+    if a.totp.as_ref().map(|t| &t.secret) != b.totp.as_ref().map(|t| &t.secret) {
         fields.push("totpSecret".to_string());
     }
     if a.tags != b.tags {

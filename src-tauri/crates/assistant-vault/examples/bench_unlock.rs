@@ -1,4 +1,5 @@
 use argon2::{Algorithm, Argon2, Params, Version};
+use assistant_vault::security_db::SQLCIPHER_PRAGMAS;
 use hkdf::Hkdf;
 use rusqlite::Connection;
 use sha2::Sha256;
@@ -12,10 +13,12 @@ fn main() {
     let password = "TestPassword123!";
     let salt = [0u8; 32];
 
+    let pragmas_kdf_256000 = SQLCIPHER_PRAGMAS.replace("kdf_iter=1", "kdf_iter=256000");
+
     let argon2_params = Params::new(65536, 3, 4, Some(32)).unwrap();
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon2_params);
 
-    println!("=== Argon2id (64MB, 3 passes, 4 lanes) ===");
+    println!("=== Argon2id (m=65536, t=3, p=4) ===");
     let mut key = [0u8; 32];
 
     let t1 = measure(|| {
@@ -23,29 +26,30 @@ fn main() {
             .hash_password_into(password.as_bytes(), &salt, &mut key)
             .unwrap();
     });
-    println!("  #1 (bootstrap_salt):  {:?}", t1);
+    println!("  #1 (v1.5 kek, single KDF): {:?}", t1);
 
     let t2 = measure(|| {
         argon2
             .hash_password_into(password.as_bytes(), &salt, &mut key)
             .unwrap();
     });
-    println!("  #2 (master_key_salt): {:?}", t2);
+    println!("  #2 (v1 master_key, removed): {:?}", t2);
 
     let t3 = measure(|| {
         argon2
             .hash_password_into(password.as_bytes(), &salt, &mut key)
             .unwrap();
     });
-    println!("  #3 (hash_salt verify): {:?}", t3);
+    println!("  #3 (v1 hash verify, removed): {:?}", t3);
     let argon2_total = t1 + t2 + t3;
     println!("  Argon2id total:       {:?}", argon2_total);
 
-    println!("\n=== HKDF (bootstrap_key -> sqlcipher_key) ===");
+    println!("\n=== HKDF (dek -> dbKey) ===");
     let t_hkdf = measure(|| {
         let hkdf = Hkdf::<Sha256>::new(None, &key);
         let mut sqlcipher_key = [0u8; 32];
-        hkdf.expand(b"sqlcipher", &mut sqlcipher_key).unwrap();
+        hkdf.expand(b"i9:v1:sqlcipher:", &mut sqlcipher_key)
+            .unwrap();
     });
     println!("  HKDF: {:?}", t_hkdf);
 
@@ -56,7 +60,7 @@ fn main() {
     let sqlcipher_key_hex = {
         let hkdf = Hkdf::<Sha256>::new(None, &key);
         let mut sk = [0u8; 32];
-        hkdf.expand(b"sqlcipher", &mut sk).unwrap();
+        hkdf.expand(b"i9:v1:sqlcipher:", &mut sk).unwrap();
         hex::encode(sk)
     };
 
@@ -64,7 +68,7 @@ fn main() {
         let conn = Connection::open(&db_path).unwrap();
         conn.execute_batch(&format!("PRAGMA key = \"x'{}'\";", sqlcipher_key_hex))
             .unwrap();
-        conn.execute_batch("PRAGMA cipher_page_size = 4096; PRAGMA kdf_iter = 256000; PRAGMA cipher_hmac_algorithm = HMAC_SHA512; PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;").unwrap();
+        conn.execute_batch(&pragmas_kdf_256000).unwrap();
         conn.execute_batch("CREATE TABLE IF NOT EXISTS vault_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT OR IGNORE INTO vault_meta VALUES ('schema_version','1');").unwrap();
     });
     println!("  Create + PRAGMA:     {:?}", t_create);
@@ -73,7 +77,7 @@ fn main() {
         let conn = Connection::open(&db_path).unwrap();
         conn.execute_batch(&format!("PRAGMA key = \"x'{}'\";", sqlcipher_key_hex))
             .unwrap();
-        conn.execute_batch("PRAGMA cipher_page_size = 4096; PRAGMA kdf_iter = 256000; PRAGMA cipher_hmac_algorithm = HMAC_SHA512; PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;").unwrap();
+        conn.execute_batch(&pragmas_kdf_256000).unwrap();
         let _: String = conn
             .query_row(
                 "SELECT value FROM vault_meta WHERE key = 'schema_version'",
@@ -92,7 +96,7 @@ fn main() {
         let conn = Connection::open(&db_path2).unwrap();
         conn.execute_batch(&format!("PRAGMA key = \"x'{}'\";", sqlcipher_key_hex))
             .unwrap();
-        conn.execute_batch("PRAGMA cipher_page_size = 4096; PRAGMA kdf_iter = 1; PRAGMA cipher_hmac_algorithm = HMAC_SHA512; PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;").unwrap();
+        conn.execute_batch(SQLCIPHER_PRAGMAS).unwrap();
         conn.execute_batch("CREATE TABLE IF NOT EXISTS vault_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT OR IGNORE INTO vault_meta VALUES ('schema_version','1');").unwrap();
     });
     println!("  Create + PRAGMA (kdf=1):   {:?}", t_create2);
@@ -101,7 +105,7 @@ fn main() {
         let conn = Connection::open(&db_path2).unwrap();
         conn.execute_batch(&format!("PRAGMA key = \"x'{}'\";", sqlcipher_key_hex))
             .unwrap();
-        conn.execute_batch("PRAGMA cipher_page_size = 4096; PRAGMA kdf_iter = 1; PRAGMA cipher_hmac_algorithm = HMAC_SHA512; PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;").unwrap();
+        conn.execute_batch(SQLCIPHER_PRAGMAS).unwrap();
         let _: String = conn
             .query_row(
                 "SELECT value FROM vault_meta WHERE key = 'schema_version'",
@@ -120,7 +124,7 @@ fn main() {
         let conn = Connection::open(&db_path3).unwrap();
         conn.execute_batch("PRAGMA key = 'test_passphrase_for_kdf_benchmark';")
             .unwrap();
-        conn.execute_batch("PRAGMA cipher_page_size = 4096; PRAGMA kdf_iter = 256000; PRAGMA cipher_hmac_algorithm = HMAC_SHA512; PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;").unwrap();
+        conn.execute_batch(&pragmas_kdf_256000).unwrap();
         conn.execute_batch("CREATE TABLE IF NOT EXISTS vault_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT OR IGNORE INTO vault_meta VALUES ('schema_version','1');").unwrap();
     });
     println!(
@@ -132,7 +136,7 @@ fn main() {
         let conn = Connection::open(&db_path3).unwrap();
         conn.execute_batch("PRAGMA key = 'test_passphrase_for_kdf_benchmark';")
             .unwrap();
-        conn.execute_batch("PRAGMA cipher_page_size = 4096; PRAGMA kdf_iter = 256000; PRAGMA cipher_hmac_algorithm = HMAC_SHA512; PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;").unwrap();
+        conn.execute_batch(&pragmas_kdf_256000).unwrap();
         let _: String = conn
             .query_row(
                 "SELECT value FROM vault_meta WHERE key = 'schema_version'",
@@ -161,8 +165,12 @@ fn main() {
         t_passphrase_open
     );
     println!(
-        "  Crypto total (current):                     {:?}",
+        "  Crypto total (v1: 3x Argon2id + kdf=256000): {:?}",
         argon2_total + t_open
+    );
+    println!(
+        "  Crypto total (v1.5: 1x Argon2id + kdf=1):    {:?}",
+        t1 + t_open2
     );
     let diff = if t_open > t_open2 {
         t_open - t_open2

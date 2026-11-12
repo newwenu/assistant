@@ -12,8 +12,8 @@ const VAULT_GENERAL_SETTINGS: ExtensionSettingDefinition[] = [
     type: "number",
     default: 5,
     label: "settings.vault.auto_lock_minutes.label",
-    min: 1,
-    max: 60,
+    min: 0,
+    max: 1440,
   },
   {
     key: "vaultLockOnScreenLock",
@@ -30,8 +30,12 @@ const VAULT_GENERAL_SETTINGS: ExtensionSettingDefinition[] = [
     type: "number",
     default: 30,
     label: "settings.vault.clipboard_clear_seconds.label",
-    min: 5,
-    max: 300,
+    min: 0,
+    max: 600,
+    customRenderLoad: () =>
+      import("./settings/ClipboardClearSecondsRender").then((m) => ({
+        default: m.ClipboardClearSecondsRender,
+      })),
   },
   {
     key: "vaultCipherAlgorithm",
@@ -40,6 +44,7 @@ const VAULT_GENERAL_SETTINGS: ExtensionSettingDefinition[] = [
     type: "select",
     default: "aes256Gcm",
     label: "settings.vault.cipher_algorithm.label",
+    description: "settings.vault.cipher_algorithm.description",
     options: [
       { label: "AES-256-GCM", value: "aes256Gcm" },
       { label: "ChaCha20-Poly1305", value: "chacha20Poly1305" },
@@ -76,15 +81,7 @@ const VAULT_SSH_SETTINGS: ExtensionSettingDefinition[] = [
     type: "boolean",
     default: true,
     label: "settings.vault.ssh_use_pageant.label",
-    visible: () => navigator.platform.toLowerCase().includes("win"),
-  },
-  {
-    key: "vaultSshUseOpensshAgent",
-    group: "vault",
-    section: "vault-ssh",
-    type: "boolean",
-    default: true,
-    label: "settings.vault.ssh_use_openssh_agent.label",
+    description: "settings.vault.ssh_use_pageant.description",
     visible: () => navigator.platform.toLowerCase().includes("win"),
   },
   {

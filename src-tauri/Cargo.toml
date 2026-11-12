@@ -61,6 +61,7 @@ machine-uid = "0.6"
 hex = "0.4"
 argon2 = "0.5"
 hkdf = "0.12"
+crc = "3"
 zeroize = { version = "1", features = ["derive", "alloc"] }
 subtle = "2"
 uuid = { version = "1", features = ["v4"] }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveSyncDisplay } from "../syncDisplay";
+import { deriveSyncDisplay, redactUrlUserInfo } from "../syncDisplay";
 import type { RemoteStatus } from "../vault.types";
 
 function remoteStatus(overrides: Partial<RemoteStatus> = {}): RemoteStatus {
@@ -186,5 +186,40 @@ describe("deriveSyncDisplay", () => {
         syncError: null,
       }),
     ).toEqual({ kind: "ahead", ahead: 1 });
+  });
+});
+
+describe("T-S12 remote URL redaction", () => {
+  it("strips userinfo from a full URL", () => {
+    expect(
+      redactUrlUserInfo("https://alice:secret@git.example.com/repo.git"),
+    ).toBe("https://git.example.com/repo.git");
+  });
+
+  it("strips userinfo embedded in an error message", () => {
+    const message =
+      "fatal: unable to access 'https://token@git.example.com/repo.git/': 403";
+    const redacted = redactUrlUserInfo(message);
+    expect(redacted).not.toContain("token");
+    expect(redacted).toContain("https://git.example.com/repo.git/");
+  });
+
+  it("leaves URLs without userinfo untouched", () => {
+    expect(redactUrlUserInfo("https://git.example.com/repo.git")).toBe(
+      "https://git.example.com/repo.git",
+    );
+  });
+
+  it("failed sync display never shows credentials", () => {
+    const display = deriveSyncDisplay({
+      readyness: null,
+      remoteStatus: null,
+      syncError:
+        "git clone failed: https://alice:secret@git.example.com/repo.git",
+    });
+    expect(display.kind).toBe("failed");
+    expect(display.kind === "failed" && display.message).not.toContain(
+      "secret",
+    );
   });
 });

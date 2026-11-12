@@ -1,9 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use super::atomic_write::recover_temp;
 use super::json_config::{
-    amend_json_config, get_conf_dir, load_json_config_with_migrate, save_json_config,
+    amend_json_config, get_conf_dir, load_json_config_strict, save_json_config,
 };
+
+/// 自动锁定分钟数上限（24 小时）。
+pub const MAX_AUTO_LOCK_MINUTES: u16 = 24 * 60;
+/// 剪贴板自动清除秒数上限（10 分钟）。
+pub const MAX_CLIPBOARD_CLEAR_SECONDS: u16 = 600;
 
 fn default_true() -> bool {
     true
@@ -95,13 +101,29 @@ impl VaultConf {
     }
 
     pub fn load_from(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        if let Some(tmp_bytes) = recover_temp(path) {
+            if let Ok(conf) = serde_json::from_slice::<Self>(&tmp_bytes) {
+                conf.validate()?;
+                save_json_config(path, &conf)?;
+                return Ok(conf);
+            }
+            log::error!("[VaultConf] temp file invalid, discarding");
+        }
+
         if !path.exists() {
             if let Some(legacy) = Self::migrate_from_app_conf(path) {
+                legacy.validate()?;
                 legacy.save_to(path)?;
                 return Ok(legacy);
             }
+            let default = Self::new();
+            default.save_to(path)?;
+            return Ok(default);
         }
-        load_json_config_with_migrate(path, Self::new, Self::migrate, "VaultConf")
+
+        let conf: Self = load_json_config_strict(path, "VaultConf")?;
+        conf.validate()?;
+        Ok(conf)
     }
 
     fn migrate_from_app_conf(vault_path: &Path) -> Option<Self> {
@@ -109,10 +131,6 @@ impl VaultConf {
         let contents = std::fs::read_to_string(legacy_path).ok()?;
         let value: serde_json::Value = serde_json::from_str(&contents).ok()?;
         serde_json::from_value(value).ok()
-    }
-
-    fn migrate(config: Self) -> Self {
-        config
     }
 
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -125,12 +143,127 @@ impl VaultConf {
 
     pub fn validate(&self) -> Result<(), String> {
         // 加密算法已是封闭枚举，非法值会在反序列化阶段被拒绝。
+        if self.vault_auto_lock_minutes > MAX_AUTO_LOCK_MINUTES {
+            return Err(format!(
+                "vault_auto_lock_minutes must be <= {} (0 disables auto-lock), got {}",
+                MAX_AUTO_LOCK_MINUTES, self.vault_auto_lock_minutes
+            ));
+        }
+        if self.vault_clipboard_clear_seconds > MAX_CLIPBOARD_CLEAR_SECONDS {
+            return Err(format!(
+                "vault_clipboard_clear_seconds must be <= {} (0 keeps clipboard), got {}",
+                MAX_CLIPBOARD_CLEAR_SECONDS, self.vault_clipboard_clear_seconds
+            ));
+        }
+        self.validate_auth_sock()?;
+        self.validate_remote_url()?;
+        self.validate_ssh_hosts()?;
+        Ok(())
+    }
+
+    fn validate_auth_sock(&self) -> Result<(), String> {
+        let raw = &self.vault_ssh_auth_sock_override;
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(());
+        }
+        if raw.chars().any(|c| c.is_control()) {
+            return Err("vault_ssh_auth_sock_override must not contain control characters".into());
+        }
+        if !Path::new(trimmed).is_absolute() {
+            return Err(format!(
+                "vault_ssh_auth_sock_override must be an absolute path, got {}",
+                trimmed
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_remote_url(&self) -> Result<(), String> {
+        let Some(raw) = self.vault_sync_remote_url.as_deref() else {
+            return Ok(());
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(());
+        }
+        if trimmed.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err(
+                "vault_sync_remote_url must not contain whitespace or control characters".into(),
+            );
+        }
+        if is_supported_remote_url(trimmed) {
+            return Ok(());
+        }
+        Err(format!(
+            "vault_sync_remote_url has unsupported form: {} (expected http(s)://, ssh://, file://, user@host:path or an absolute local path)",
+            trimmed
+        ))
+    }
+
+    fn validate_ssh_hosts(&self) -> Result<(), String> {
+        for host in &self.vault_sync_ssh_hosts {
+            let trimmed = host.trim();
+            if trimmed.is_empty() {
+                return Err("vault_sync_ssh_hosts must not contain empty entries".into());
+            }
+            if trimmed.chars().any(|c| c.is_whitespace() || c.is_control()) {
+                return Err(format!(
+                    "vault_sync_ssh_hosts entry must be a bare host name, got {}",
+                    trimmed
+                ));
+            }
+            if trimmed.contains('@') || trimmed.contains("://") || trimmed.contains('/') {
+                return Err(format!(
+                    "vault_sync_ssh_hosts entry must be a bare host name, got {}",
+                    trimmed
+                ));
+            }
+        }
         Ok(())
     }
 
     pub fn amend(self, patch: serde_json::Value) -> Result<Self, String> {
         amend_json_config(&self, patch)
     }
+}
+
+fn is_absolute_local_path(value: &str) -> bool {
+    if value.starts_with('/') || value.starts_with("\\\\") {
+        return true;
+    }
+    let bytes = value.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
+}
+
+fn is_scp_style_remote(value: &str) -> bool {
+    let Some((left, path)) = value.split_once(':') else {
+        return false;
+    };
+    if path.is_empty() {
+        return false;
+    }
+    let Some((user, host)) = left.split_once('@') else {
+        return false;
+    };
+    !user.is_empty() && !host.is_empty() && !host.contains('/') && !user.contains('/')
+}
+
+fn is_supported_remote_url(value: &str) -> bool {
+    if is_absolute_local_path(value) || value.starts_with("file://") {
+        return true;
+    }
+    for scheme in ["https://", "http://", "ssh://"] {
+        if let Some(rest) = value.strip_prefix(scheme) {
+            let authority = rest.split('/').next().unwrap_or("");
+            let host = authority.rsplit('@').next().unwrap_or("");
+            return !host.is_empty();
+        }
+    }
+    is_scp_style_remote(value)
 }
 
 impl Default for VaultConf {

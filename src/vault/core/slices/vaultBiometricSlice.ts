@@ -120,15 +120,8 @@ export function createBiometricSlice(
         log.info("Vault unlocked via biometric");
       } catch (e) {
         const code = vaultErrorCode(e);
-        if (code === "crypto" || code === "notFound") {
-          try {
-            await vaultService.disenrollBiometric();
-            set({ biometricEnrolled: false, _biometricEnrolledAt: 0 });
-          } catch {
-            log.warn(
-              "disenrollBiometric also failed during unlockBiometric cleanup",
-            );
-          }
+        if (code === "biometricReset") {
+          set({ biometricEnrolled: false, _biometricEnrolledAt: 0 });
         }
         log.error("unlockBiometric failed", e);
         set({

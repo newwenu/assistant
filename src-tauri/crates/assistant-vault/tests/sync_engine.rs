@@ -4,10 +4,14 @@ mod sync_common;
 
 use std::path::Path;
 
+use base64::Engine;
+
+use assistant_crypto::error::VaultError;
 use assistant_crypto::vault_crypto::types::CipherAlgorithm;
 use assistant_sync::types::{
     ConflictResolution, Readyness, SyncError, SyncResult, UnreadableReason,
 };
+use assistant_vault::biometric::BiometricKeyStore;
 use assistant_vault::dto::{VaultErrorCode, VaultErrorDto};
 use assistant_vault::security_db::SecurityDbState;
 use assistant_vault::sync_engine::SyncEngine;
@@ -65,12 +69,7 @@ fn import_reports_removed_ids_without_touching_local_data() {
         )
         .unwrap();
 
-    let guard = db.get_master_key().unwrap();
-    engine
-        .vault_file_manager()
-        .export_vault_meta(guard.as_ref().unwrap(), None, None)
-        .unwrap();
-    drop(guard);
+    write_remote(&engine, &db, &[]);
 
     let report = engine
         .import_from_repo(&db, std::slice::from_ref(&local.id))
@@ -176,6 +175,66 @@ fn conflict_preview_decrypts_both_sides_and_blocks_history_restore() {
 }
 
 #[test]
+fn t_s7_history_preview_after_rotate_reports_history_dek_unavailable() {
+    sync_common::git_env();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = temp_db_path();
+    let db = open_db(&db_path);
+    let engine = engine(dir.path());
+
+    write_remote(&engine, &db, &[snapshot("e1", "First", 1, 1_000)]);
+    engine.init(&db).unwrap();
+    write_remote(&engine, &db, &[snapshot("e1", "Second", 2, 2_000)]);
+    engine.finalize("vault: update e1").unwrap();
+
+    let commits = engine.history_list(Some("e1"), 10).unwrap();
+    let old = commits[1].hash.clone();
+
+    assistant_vault::lifecycle::rotate_dek(&db, engine.vault_file_manager(), &NoKeyStore).unwrap();
+
+    let err = engine.history_preview(&db, &old, "e1").unwrap_err();
+    assert!(
+        matches!(err, SyncError::HistoryDekUnavailable(_)),
+        "rotate 后旧历史预览必须返回 HistoryDekUnavailable，实际 {err:?}"
+    );
+
+    let err = engine.history_restore(&db, &old, "e1").unwrap_err();
+    assert!(
+        matches!(err, SyncError::HistoryDekUnavailable(_)),
+        "rotate 后旧历史恢复必须返回 HistoryDekUnavailable，实际 {err:?}"
+    );
+
+    cleanup(&db_path);
+}
+
+/// 空 keystore：`rotate_dek` 第 1 步删除 `vault-payload`，不存在即视为成功。
+struct NoKeyStore;
+
+impl BiometricKeyStore for NoKeyStore {
+    fn is_available(&self) -> Result<bool, VaultError> {
+        Ok(true)
+    }
+    fn set_key(&self, _key_id: &str, _data: &[u8]) -> Result<(), VaultError> {
+        Ok(())
+    }
+    fn get_key(&self, key_id: &str) -> Result<Vec<u8>, VaultError> {
+        Err(VaultError::BiometricFailed(format!("missing {}", key_id)))
+    }
+    fn delete_key(&self, _key_id: &str) -> Result<(), VaultError> {
+        Ok(())
+    }
+    fn has_key(&self, _key_id: &str) -> Result<bool, VaultError> {
+        Ok(false)
+    }
+    fn request_signature(&self, _key_id: &str) -> Result<Vec<u8>, VaultError> {
+        Err(VaultError::BiometricFailed("no signature".to_string()))
+    }
+    fn acl_satisfied(&self) -> Result<bool, VaultError> {
+        Ok(true)
+    }
+}
+
+#[test]
 fn history_restore_rejects_version_encrypted_with_other_master_key() {
     sync_common::git_env();
     let dir = tempfile::tempdir().unwrap();
@@ -189,13 +248,12 @@ fn history_restore_rejects_version_encrypted_with_other_master_key() {
     engine.init(&db).unwrap();
 
     {
-        let guard = other_db.get_master_key().unwrap();
+        let guard = other_db.get_dek().unwrap();
         engine
             .vault_file_manager()
             .export_entry(
                 guard.as_ref().unwrap(),
                 &snapshot("e1", "Other key", 2, 2_000),
-                false,
             )
             .unwrap();
     }
@@ -230,6 +288,41 @@ fn import_aborts_when_vault_meta_tampered() {
         .import_from_repo(&db, &["e1".to_string()])
         .unwrap_err();
 
+    assert!(matches!(err, SyncError::UnsupportedVaultVersion));
+    assert!(db.list_entry_ids(false).unwrap().is_empty());
+    cleanup(&db_path);
+}
+
+#[test]
+fn pull_aborts_when_vault_meta_integrity_broken() {
+    sync_common::git_env();
+    let dir = tempfile::tempdir().unwrap();
+    let remote = bare_repo(dir.path());
+    let db_path = temp_db_path();
+    let db = open_db(&db_path);
+
+    let source = engine(&dir.path().join("source"));
+    write_remote(&source, &db, &[snapshot("e1", "First", 1, 1_000)]);
+    source.init(&db).unwrap();
+    source
+        .ensure_remote("origin", remote.to_str().unwrap())
+        .unwrap();
+    source.finalize("vault: base").unwrap();
+    git_repo(source.vault_file_manager().vault_dir().to_path_buf())
+        .push(None, None)
+        .unwrap();
+
+    let target = engine(&dir.path().join("target"));
+    target.clone_repo(remote.to_str().unwrap()).unwrap();
+
+    let meta_path = target.vault_file_manager().vault_dir().join(".vault-meta");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+    meta["integrity"] =
+        serde_json::json!(base64::engine::general_purpose::STANDARD.encode([0u8; 32]));
+    std::fs::write(&meta_path, serde_json::to_string(&meta).unwrap()).unwrap();
+
+    let err = target.pull(&db).unwrap_err();
     assert!(matches!(err, SyncError::VaultMetaIntegrityFailed(_)));
     assert!(db.list_entry_ids(false).unwrap().is_empty());
     cleanup(&db_path);
@@ -325,6 +418,7 @@ fn pull_stages_all_removals_then_cancel_keeps_db_and_confirm_soft_deletes() {
 
     source.vault_file_manager().remove_entry_file("e1").unwrap();
     source.vault_file_manager().remove_entry_file("e2").unwrap();
+    sync_common::rewrite_meta(&source, &db);
     commit_repo(&source, "vault: delete all");
     git_repo(source.vault_file_manager().vault_dir().to_path_buf())
         .push(None, None)
@@ -419,6 +513,7 @@ fn unreadable_entry_reported_by_pull_and_sync_now_without_overwriting() {
         .join("entries/e2.enc");
     let corrupted = b"not a valid entry file".to_vec();
     std::fs::write(&broken, &corrupted).unwrap();
+    sync_common::rewrite_meta(&target, &db);
 
     match target.pull(&db).unwrap() {
         SyncResult::UnreadableEntries { ids, reason } => {
@@ -517,6 +612,12 @@ fn stage_conflict(dir: &Path, db: &SecurityDbState) -> SyncEngine {
     commit_repo(&source, "vault: update e1");
     source.import_from_repo(db, &[]).unwrap();
     assert!(matches!(source.pull(db).unwrap(), SyncResult::Conflict(_)));
+    source.resolve_meta_conflict(db, true).unwrap();
+    assert!(source
+        .conflicts(db)
+        .unwrap()
+        .iter()
+        .any(|c| c.path == "entries/e1.enc"));
     source
 }
 
@@ -548,7 +649,7 @@ fn resolved_use_remote_does_not_regress_on_next_sync() {
             .join("entries/e1.enc"),
     )
     .unwrap();
-    let guard = db.get_master_key().unwrap();
+    let guard = db.get_dek().unwrap();
     let decoded = source
         .vault_file_manager()
         .decode_entry_file(guard.as_ref().unwrap(), &content)
@@ -604,22 +705,16 @@ fn conflict_preview_reports_only_the_undecryptable_side() {
 
     let target = engine(&dir.path().join("target"));
     target.clone_repo(remote.to_str().unwrap()).unwrap();
-    let other_key = other.get_master_key().unwrap();
+    let other_dek = other.get_dek().unwrap();
     target
         .vault_file_manager()
         .export_entry(
-            other_key.as_ref().unwrap(),
+            other_dek.as_ref().unwrap(),
             &snapshot("e1", "Remote side", 2, 2_000),
-            false,
         )
         .unwrap();
-    drop(other_key);
-    let guard = db.get_master_key().unwrap();
-    target
-        .vault_file_manager()
-        .export_vault_meta(guard.as_ref().unwrap(), None, None)
-        .unwrap();
-    drop(guard);
+    drop(other_dek);
+    sync_common::rewrite_meta(&target, &db);
     commit_repo(&target, "vault: update e1");
     target.finalize("vault: update e1").unwrap();
 
@@ -637,7 +732,7 @@ fn conflict_preview_reports_only_the_undecryptable_side() {
 }
 
 #[test]
-fn force_export_rewrites_entries_after_master_password_change() {
+fn export_skips_unchanged_entries_after_master_password_change() {
     let _rekey = sync_common::rekey_guard();
     let dir = tempfile::tempdir().unwrap();
     let db_path = temp_db_path();
@@ -654,30 +749,24 @@ fn force_export_rewrites_entries_after_master_password_change() {
         .vault_dir()
         .join(format!("entries/{}.enc", created.id));
 
-    engine.export_all_entries(&db, false, &[]).unwrap();
+    sync_common::seed_meta(&engine, &db);
+    engine.export_all_entries(&db, &[]).unwrap();
     let before = std::fs::read(&path).unwrap();
 
-    engine.export_all_entries(&db, false, &[]).unwrap();
+    engine.export_all_entries(&db, &[]).unwrap();
     assert_eq!(
         std::fs::read(&path).unwrap(),
         before,
         "unchanged revision must be skipped"
     );
 
-    db.change_master_password(PASSWORD, "N3w#P@ssw0rd!2026", CipherAlgorithm::Aes256Gcm)
+    db.change_master_password(engine.vault_file_manager(), PASSWORD, "N3w#P@ssw0rd!2026")
         .unwrap();
-    engine.export_all_entries(&db, false, &[]).unwrap();
+    engine.export_all_entries(&db, &[]).unwrap();
     assert_eq!(
         std::fs::read(&path).unwrap(),
         before,
-        "non-force export must skip entries whose revision did not change"
-    );
-
-    engine.export_all_entries(&db, true, &[]).unwrap();
-    assert_ne!(
-        std::fs::read(&path).unwrap(),
-        before,
-        "force export must rewrite ciphertext with the new master key"
+        "changing the master password must not rewrite entry ciphertext because the DEK is stable"
     );
     cleanup(&db_path);
 }
@@ -697,6 +786,7 @@ fn push_bootstraps_upstream_and_commits_dirty_changes() {
         })
         .unwrap();
 
+    sync_common::seed_meta(&source, &db);
     source.init(&db).unwrap();
     source
         .ensure_remote("origin", remote.to_str().unwrap())
@@ -739,6 +829,7 @@ fn sync_now_without_remote_commits_local_changes() {
         )
         .unwrap();
 
+    sync_common::seed_meta(&engine, &db);
     engine.init(&db).unwrap();
     assert!(matches!(
         engine.sync_now(&db).unwrap(),
@@ -762,6 +853,7 @@ fn pull_failure_is_not_conflict() {
     let db_path = temp_db_path();
     let db = open_db(&db_path);
     let engine = engine(dir.path());
+    sync_common::seed_meta(&engine, &db);
     engine.init(&db).unwrap();
 
     let missing = dir.path().join("missing.git");

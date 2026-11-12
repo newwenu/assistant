@@ -4,8 +4,6 @@ use assistant_crypto::vault_crypto::types::SecureString;
 use assistant_vault::audit::{log as audit_log, AuditEvent};
 use assistant_vault::dto::{RevealResult, VaultErrorDto};
 
-static REVEAL_TTL_SECS: u64 = 30;
-
 // precondition: Unlocked
 #[command]
 pub fn vault_copy_password(app: AppHandle, id: String) -> Result<(), VaultErrorDto> {
@@ -60,6 +58,7 @@ pub fn vault_copy_field(
 
 // precondition: Unlocked
 #[command]
+#[allow(deprecated)] // 明文立即移交给 wire DTO（WebView 边界无法清零）
 pub fn vault_reveal_password(app: AppHandle, id: String) -> Result<RevealResult, VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         let guard = super::reveal_guard(&app)?;
@@ -73,7 +72,8 @@ pub fn vault_reveal_password(app: AppHandle, id: String) -> Result<RevealResult,
 
         let password = state.decrypt_password(&id).map_err(VaultErrorDto::from)?;
 
-        let expires_at = chrono::Utc::now().timestamp_millis() + (REVEAL_TTL_SECS as i64) * 1000;
+        let expires_at =
+            chrono::Utc::now().timestamp_millis() + (super::REVEAL_TTL_SECS as i64) * 1000;
 
         {
             let conn_guard = state.get_conn().map_err(VaultErrorDto::from)?;
@@ -91,6 +91,7 @@ pub fn vault_reveal_password(app: AppHandle, id: String) -> Result<RevealResult,
 
 // precondition: Unlocked
 #[command]
+#[allow(deprecated)] // 明文立即移交给 wire DTO（WebView 边界无法清零）
 pub fn vault_reveal_notes(app: AppHandle, id: String) -> Result<RevealResult, VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         let guard = super::reveal_guard(&app)?;
@@ -104,7 +105,8 @@ pub fn vault_reveal_notes(app: AppHandle, id: String) -> Result<RevealResult, Va
 
         let notes = state.decrypt_notes(&id).map_err(VaultErrorDto::from)?;
 
-        let expires_at = chrono::Utc::now().timestamp_millis() + (REVEAL_TTL_SECS as i64) * 1000;
+        let expires_at =
+            chrono::Utc::now().timestamp_millis() + (super::REVEAL_TTL_SECS as i64) * 1000;
 
         {
             let conn_guard = state.get_conn().map_err(VaultErrorDto::from)?;

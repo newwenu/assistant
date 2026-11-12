@@ -16,7 +16,10 @@ pub use audit::{AuditLogEntry, StrengthResult, StrengthWarning};
 pub use error::{VaultErrorCode, VaultErrorDto};
 pub use hibp::HibpAuditEntryDto;
 pub use integrity::IntegrityResult;
-pub use recovery::DisasterRecoveryResultDto;
+pub use recovery::{
+    ExportResultDto, PaperErrorPosDto, RecoveryBackupDto, RecoveryEntryDto, RecoveryExportDto,
+    RecoveryKeyDto, RecoverySkipDto,
+};
 pub use ssh::{SshKeyInfoDto, SshKeyMetaDto};
 pub use sync::{
     ConflictFileDto, ConflictPreviewDto, ConflictResolutionDto, EntryPreviewDto,

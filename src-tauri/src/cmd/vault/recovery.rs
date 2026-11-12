@@ -1,213 +1,182 @@
-use tauri::{command, AppHandle, Manager};
+use std::path::PathBuf;
 
-use assistant_vault::audit::{log as audit_log, AuditEvent};
-use assistant_vault::dto::{DisasterRecoveryResultDto, IntegrityResult, VaultErrorDto};
-use assistant_vault::sync_engine::SyncEngine;
-use assistant_vault::types::VaultError;
+use tauri::{command, AppHandle};
+
+use assistant_config::vault_conf::VaultConf;
+use assistant_sync::git_sync::GitSync;
+use assistant_sync::types::SyncConfig;
+use assistant_vault::dto::{
+    PaperErrorPosDto, RecoveryBackupDto, RecoveryEntryDto, RecoveryExportDto, RecoveryKeyDto,
+    RecoverySkipDto, VaultErrorDto,
+};
+use assistant_vault::vault_file::VaultFileManager;
+
+/// 恢复副本的生命周期守卫：无论成功、失败还是提前返回，都删除 `<security>/recovery/`。
+struct RecoveryDirGuard {
+    security_root: PathBuf,
+}
+
+impl Drop for RecoveryDirGuard {
+    fn drop(&mut self) {
+        if let Err(e) = super::cleanup_recovery_dir(&self.security_root) {
+            log::warn!("Failed to clean recovery directory: {}", e);
+        }
+    }
+}
+
+/// 取恢复用的仓库地址：优先用本次传入的值，否则回退到已保存的同步远端。
+fn resolve_recovery_url(git_url: Option<String>) -> Result<String, VaultErrorDto> {
+    if let Some(url) = git_url
+        .map(|u| u.trim().to_string())
+        .filter(|u| !u.is_empty())
+    {
+        return Ok(url);
+    }
+    VaultConf::load()
+        .ok()
+        .and_then(|c| c.vault_sync_remote_url)
+        .filter(|u| !u.trim().is_empty())
+        .ok_or_else(|| {
+            super::validation_error(
+                "Paper recovery requires a repository URL to read a fresh copy".to_string(),
+            )
+        })
+}
+
+/// clone 一份仓库副本到恢复目录，供恢复读取。
+///
+/// 调用方负责在 clone 前清空目录，并在作用域结束时通过 `RecoveryDirGuard` 删除副本。
+fn clone_recovery_copy(target: &std::path::Path, url: &str) -> Result<(), VaultErrorDto> {
+    let git = GitSync::new(
+        target.to_path_buf(),
+        SyncConfig {
+            remote_url: Some(url.to_string()),
+            ..Default::default()
+        },
+    );
+    git.clone(url, true).map_err(|e| {
+        log::warn!("Recovery clone failed: {}", e);
+        VaultErrorDto::from(e)
+    })
+}
 
 // precondition: Unlocked
 #[command]
-pub fn vault_generate_recovery_key(app: AppHandle) -> Result<String, VaultErrorDto> {
-    super::with_unlocked(&app, |state| {
-        let master_key = state.get_master_key().map_err(VaultErrorDto::from)?;
-        let mk = master_key
-            .as_ref()
-            .ok_or_else(|| VaultErrorDto::from(VaultError::Locked))?;
-        let bootstrap_key = state.get_bootstrap_key().map_err(VaultErrorDto::from)?;
-        let bk = bootstrap_key
-            .as_ref()
-            .ok_or_else(|| VaultErrorDto::from(VaultError::Locked))?;
-
-        let (recovery_key, emergency) =
-            assistant_vault::recovery_key::generate_recovery_key(mk, bk)
-                .map_err(VaultErrorDto::from)?;
-
+pub async fn vault_export_recovery_key(
+    app: AppHandle,
+    master_password: String,
+) -> Result<RecoveryKeyDto, VaultErrorDto> {
+    tauri::async_runtime::spawn_blocking(move || {
         let engine = super::sync_state(&app)?;
-        engine
-            .write_emergency_data(mk, &emergency)
-            .map_err(VaultErrorDto::from)?;
-
-        let guard = state.get_conn().map_err(VaultErrorDto::from)?;
-        if let Some(conn) = guard.as_ref() {
-            let _ = audit_log(conn, AuditEvent::RecoveryKeyGenerated, None);
-        }
-
-        log::warn!("Recovery key generated and emergency data written");
-        Ok(recovery_key)
+        super::with_unlocked(&app, |state| {
+            assistant_vault::lifecycle::export_recovery_key(
+                state,
+                engine.vault_file_manager(),
+                &master_password,
+            )
+            .map_err(|e| {
+                log::warn!("Recovery key export failed: {}", e);
+                VaultErrorDto::from(e)
+            })
+        })
     })
+    .await
+    .map_err(|e| super::internal_error(format!("vault_export_recovery_key task failed: {}", e)))?
 }
 
 // precondition: AnyState
 #[command]
-pub fn vault_has_recovery_key(app: AppHandle) -> Result<bool, VaultErrorDto> {
-    let engine = super::sync_state(&app)?;
-    let emergency = engine.read_emergency_data().map_err(VaultErrorDto::from)?;
-    Ok(emergency.is_some())
-}
+pub async fn vault_recover_from_paper(
+    app: AppHandle,
+    paper_key: String,
+    git_url: Option<String>,
+) -> Result<RecoveryExportDto, VaultErrorDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let url = resolve_recovery_url(git_url)?;
 
-// precondition: Unlocked
-#[command]
-pub fn vault_verify_vault_meta_integrity(app: AppHandle) -> Result<IntegrityResult, VaultErrorDto> {
-    super::with_unlocked(&app, |state| {
-        let master_key = state.get_master_key().map_err(VaultErrorDto::from)?;
-        let mk = master_key
-            .as_ref()
-            .ok_or_else(|| VaultErrorDto::from(VaultError::Locked))?;
+        let dirs = crate::app_dirs::AppDirs::resolve()
+            .map_err(|e| super::internal_error(format!("Failed to resolve app dirs: {}", e)))?;
+        let security_root = super::security_dir(&dirs);
+        let recovery_root = super::recovery_dir(&dirs);
 
-        let engine = super::sync_state(&app)?;
-        engine
-            .verify_vault_meta_integrity(mk)
-            .map_err(VaultErrorDto::from)
-    })
-}
-
-const EMERGENCY_META_FILE: &str = ".vault-meta";
-
-fn emergency_repo_dir(_app: &AppHandle) -> Result<std::path::PathBuf, VaultErrorDto> {
-    let dirs = crate::app_dirs::AppDirs::resolve()
-        .map_err(|e| super::internal_error(format!("Failed to resolve app dirs: {}", e)))?;
-    Ok(super::recovery_dir(&dirs))
-}
-
-fn prepare_emergency_repo(dir: &std::path::Path) -> Result<(), VaultErrorDto> {
-    if dir.exists() {
-        std::fs::remove_dir_all(dir).map_err(|e| {
-            log::warn!("Failed to clear emergency repo {}: {}", dir.display(), e);
-            VaultErrorDto::from(VaultError::Io(e))
+        // 守卫先于 clone 建立：clone 失败、恢复失败、提前返回都会删除副本。
+        let _guard = RecoveryDirGuard {
+            security_root: security_root.clone(),
+        };
+        super::cleanup_recovery_dir(&security_root).map_err(|e| {
+            super::internal_error(format!("Failed to prepare recovery directory: {}", e))
         })?;
-    }
-    std::fs::create_dir_all(dir).map_err(|e| VaultErrorDto::from(VaultError::Io(e)))
-}
+        clone_recovery_copy(&recovery_root, &url)?;
 
-fn export_from_engine(
-    engine: &SyncEngine,
-    recovery_key: &str,
-    export_path: &str,
-) -> Result<DisasterRecoveryResultDto, VaultErrorDto> {
-    let emergency = engine.read_emergency_data().map_err(VaultErrorDto::from)?;
-    let emergency = emergency.ok_or_else(|| VaultErrorDto::from(VaultError::RecoveryKeyNotSet))?;
-
-    let emergency_data = assistant_vault::recovery_key::EmergencyData {
-        token: emergency.token,
-        salt: emergency.salt,
-    };
-
-    let (_bootstrap_key, master_key) =
-        assistant_vault::recovery_key::decrypt_recovery_keys(recovery_key, &emergency_data)
+        let repo = VaultFileManager::new(recovery_root, Box::new(super::cipher_algo));
+        let session = assistant_vault::recovery_key::open_recovery_session(&repo, &paper_key)
             .map_err(|e| {
-                log::warn!("Disaster recovery: decrypt failed: {}", e);
+                log::warn!("Paper recovery failed: {}", e);
                 VaultErrorDto::from(e)
             })?;
 
-    let mut integrity_warning = false;
-    match engine.verify_vault_meta_integrity(&master_key) {
-        Ok(result) => {
-            if !result.valid {
-                integrity_warning = true;
-                log::warn!("Disaster recovery: HMAC mismatch — {}", result.message);
-            }
-        }
-        Err(e) => {
-            integrity_warning = true;
-            log::warn!("Disaster recovery: integrity check error: {}", e);
-        }
-    }
+        let export = session.export_all().map_err(VaultErrorDto::from)?;
+        let dek_version = session.dek_version();
 
-    let (exports, skipped_ids) = engine.disaster_recovery_export(&master_key).map_err(|e| {
-        log::warn!("Disaster recovery: export failed: {}", e);
-        VaultErrorDto::from(e)
-    })?;
+        // 恢复态没有 `security.db` 连接：只写 JSONL，解锁后由补录回填。
+        let state = super::vault_state(&app)?;
+        let _ = state.audit_jsonl(
+            assistant_vault::audit::AuditEvent::RecoveryExportUsed,
+            Some(&export.entries.len().to_string()),
+        );
 
-    let entry_count = exports.len() as u32;
-    let json = serde_json::to_string_pretty(&exports).map_err(|e| {
-        super::internal_error(format!("Failed to serialize recovery export: {}", e))
-    })?;
-    std::fs::write(export_path, &json).map_err(|e| VaultErrorDto::from(VaultError::Io(e)))?;
+        let entries = export
+            .entries
+            .into_iter()
+            .map(|entry| {
+                let blob = serde_json::to_value(&entry.blob).map_err(|e| {
+                    super::internal_error(format!("Failed to serialize entry blob: {}", e))
+                })?;
+                Ok(RecoveryEntryDto {
+                    id: entry.id,
+                    category: entry.category,
+                    blob,
+                })
+            })
+            .collect::<Result<Vec<_>, VaultErrorDto>>()?;
 
-    log::info!(
-        "Disaster recovery export: {} entries to {} ({} skipped)",
-        entry_count,
-        export_path,
-        skipped_ids.len()
-    );
+        let skipped = export
+            .skipped
+            .into_iter()
+            .map(|skip| RecoverySkipDto {
+                id: skip.id,
+                reason: skip.reason,
+            })
+            .collect();
 
-    Ok(DisasterRecoveryResultDto {
-        file_path: export_path.to_string(),
-        entry_count,
-        integrity_warning,
-        skipped_ids,
+        Ok(RecoveryExportDto {
+            entries,
+            skipped,
+            exported_at: assistant_vault::types::now_millis(),
+            dek_version,
+        })
     })
+    .await
+    .map_err(|e| super::internal_error(format!("vault_recover_from_paper task failed: {}", e)))?
+}
+
+// precondition: None
+#[command]
+pub fn vault_locate_paper_error(
+    paper_key: String,
+) -> Result<Option<PaperErrorPosDto>, VaultErrorDto> {
+    Ok(
+        assistant_vault::recovery_key::locate_checksum_error(&paper_key)
+            .map(|(group, index)| PaperErrorPosDto { group, index }),
+    )
 }
 
 // precondition: AnyState
 #[command]
-pub async fn vault_disaster_recovery_export(
+pub fn vault_has_recovery_backup(
     app: AppHandle,
-    git_url: Option<String>,
-    recovery_key: String,
-    export_path: String,
-    commit: Option<String>,
-) -> Result<DisasterRecoveryResultDto, VaultErrorDto> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let url = git_url
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string);
-        let commit = commit
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string);
-
-        match url {
-            Some(url) => {
-                let repo_dir = emergency_repo_dir(&app)?;
-                prepare_emergency_repo(&repo_dir)?;
-                log::info!(
-                    "Disaster recovery: cloning into emergency repo {}",
-                    repo_dir.display()
-                );
-
-                let engine = SyncEngine::new(
-                    repo_dir.clone(),
-                    assistant_sync::SyncConfig {
-                        remote_url: Some(url.clone()),
-                        ..Default::default()
-                    },
-                    Box::new(super::cipher_algo),
-                );
-
-                engine.clone_recovery_repo(&url).map_err(|e| {
-                    log::warn!("Disaster recovery: clone failed: {}", e);
-                    let _ = std::fs::remove_dir_all(&repo_dir);
-                    VaultErrorDto::from(e)
-                })?;
-
-                if let Some(commit) = commit.as_deref() {
-                    engine.checkout_recovery_repo(commit).map_err(|e| {
-                        log::warn!("Disaster recovery: checkout {} failed: {}", commit, e);
-                        let _ = std::fs::remove_dir_all(&repo_dir);
-                        VaultErrorDto::from(e)
-                    })?;
-                }
-
-                if !repo_dir.join(EMERGENCY_META_FILE).exists() {
-                    let _ = std::fs::remove_dir_all(&repo_dir);
-                    return Err(VaultErrorDto::from(VaultError::NotInitialized));
-                }
-
-                export_from_engine(&engine, &recovery_key, &export_path)
-            }
-            None => {
-                log::info!("Disaster recovery: reading local vault without git operations");
-                let engine = app.state::<SyncEngine>();
-                export_from_engine(&engine, &recovery_key, &export_path)
-            }
-        }
-    })
-    .await
-    .map_err(|e| {
-        super::internal_error(format!("Vault disaster recovery task join failed: {}", e))
-    })?
+) -> Result<Option<RecoveryBackupDto>, VaultErrorDto> {
+    let engine = super::sync_state(&app)?;
+    assistant_vault::lifecycle::recovery_backup(engine.vault_file_manager())
+        .map_err(VaultErrorDto::from)
 }

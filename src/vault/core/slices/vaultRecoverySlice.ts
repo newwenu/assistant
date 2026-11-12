@@ -2,35 +2,32 @@ import { createLogger } from "@/services/logger";
 import { vaultService } from "../vault.service";
 import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
 import type {
-  IntegrityResult,
-  DisasterRecoveryResult,
+  PaperErrorPosDto,
+  RecoveryBackupDto,
+  RecoveryExportDto,
+  RecoveryKeyDto,
   VaultErrorCode,
 } from "../vault.types";
 
 const log = createLogger("vaultStore");
 
-const BIOMETRIC_CACHE_TTL_MS = 5_000;
+const RECOVERY_BACKUP_CACHE_TTL_MS = 5_000;
+
+const EXPORT_CONFIRM_TOKEN = "EXPORT-PLAINTEXT";
 
 export interface VaultRecoverySlice {
-  _recoveryKeySetAt: number;
-  recoveryKeySet: boolean;
-  integrityResult: IntegrityResult | null;
-  disasterRecoveryStep: 1 | 2 | 3 | null;
-  disasterRecoveryResult: DisasterRecoveryResult | null;
+  _recoveryBackupAt: number;
+  recoveryBackup: RecoveryBackupDto | null;
   exportFilePath: string | null;
 
-  generateRecoveryKey: () => Promise<string | null>;
-  checkRecoveryKeySet: () => Promise<void>;
-  verifyIntegrity: () => Promise<IntegrityResult | null>;
-  startDisasterRecovery: () => void;
-  cancelDisasterRecovery: () => void;
-  setDisasterRecoveryStep: (step: 1 | 2 | 3) => void;
-  disasterRecoveryExport: (
-    gitUrl: string | null,
-    recoveryKey: string,
-    exportPath: string,
-    commit?: string | null,
-  ) => Promise<DisasterRecoveryResult | null>;
+  loadRecoveryBackup: () => Promise<void>;
+  exportRecoveryKey: (masterPassword: string) => Promise<RecoveryKeyDto | null>;
+  rotateDek: () => Promise<RecoveryKeyDto | null>;
+  recoverFromPaper: (
+    paperKey: string,
+    gitUrl?: string,
+  ) => Promise<RecoveryExportDto | null>;
+  locatePaperError: (paperKey: string) => Promise<PaperErrorPosDto | null>;
   exportVault: (format: "csv" | "json", path: string) => Promise<string | null>;
   importVault: (path: string, format: "csv" | "json") => Promise<number | null>;
 }
@@ -40,6 +37,7 @@ type FullState = VaultRecoverySlice & {
   loading: boolean;
   error: string | null;
   errorCode: VaultErrorCode | null;
+  biometricEnrolled: boolean;
   _biometricEnrolledAt: number;
   resetAutoLockTimer: () => void;
   loadEntries: () => Promise<void>;
@@ -52,92 +50,91 @@ export function createRecoverySlice(
   get: () => FullState,
 ): VaultRecoverySlice {
   return {
-    _recoveryKeySetAt: 0,
-    recoveryKeySet: false,
-    integrityResult: null,
-    disasterRecoveryStep: null,
-    disasterRecoveryResult: null,
+    _recoveryBackupAt: 0,
+    recoveryBackup: null,
     exportFilePath: null,
 
-    generateRecoveryKey: async () => {
-      set({ loading: true, error: null, errorCode: null });
-      try {
-        const key = await vaultService.generateRecoveryKey();
-        set({ recoveryKeySet: true, loading: false });
-        return key;
-      } catch (e) {
-        log.error("generateRecoveryKey failed", e);
-        set({
-          error: vaultErrorMessage(e),
-          errorCode: vaultErrorCode(e),
-          loading: false,
-        });
-        return null;
-      }
-    },
-
-    checkRecoveryKeySet: async () => {
+    loadRecoveryBackup: async () => {
       const now = Date.now();
-      if (now - get()._recoveryKeySetAt < BIOMETRIC_CACHE_TTL_MS) return;
+      if (now - get()._recoveryBackupAt < RECOVERY_BACKUP_CACHE_TTL_MS) return;
       try {
-        const has = await vaultService.hasRecoveryKey();
-        set({ recoveryKeySet: has, _recoveryKeySetAt: Date.now() });
+        const backup = await vaultService.hasRecoveryBackup();
+        set({ recoveryBackup: backup, _recoveryBackupAt: Date.now() });
       } catch (e) {
-        log.error("checkRecoveryKeySet failed", e);
+        log.error("loadRecoveryBackup failed", e);
       }
     },
 
-    verifyIntegrity: async () => {
-      try {
-        const result = await vaultService.verifyVaultMetaIntegrity();
-        set({ integrityResult: result });
-        return result;
-      } catch (e) {
-        log.error("verifyIntegrity failed", e);
-        set({ error: vaultErrorMessage(e), errorCode: vaultErrorCode(e) });
-        return null;
-      }
-    },
-
-    startDisasterRecovery: () => {
-      set({
-        disasterRecoveryStep: 1,
-        disasterRecoveryResult: null,
-        error: null,
-        errorCode: null,
-      });
-    },
-
-    cancelDisasterRecovery: () => {
-      set({ disasterRecoveryStep: null, disasterRecoveryResult: null });
-    },
-
-    setDisasterRecoveryStep: (step) => {
-      set({ disasterRecoveryStep: step });
-    },
-
-    disasterRecoveryExport: async (gitUrl, recoveryKey, exportPath, commit) => {
+    exportRecoveryKey: async (masterPassword) => {
       set({ loading: true, error: null, errorCode: null });
       try {
-        const result = await vaultService.disasterRecoveryExport(
-          gitUrl,
-          recoveryKey,
-          exportPath,
-          commit,
-        );
+        const result = await vaultService.exportRecoveryKey(masterPassword);
+        const backup = await vaultService.hasRecoveryBackup();
         set({
-          disasterRecoveryStep: 3,
-          disasterRecoveryResult: result,
           loading: false,
+          recoveryBackup: backup,
+          _recoveryBackupAt: Date.now(),
         });
         return result;
       } catch (e) {
-        log.error("disasterRecoveryExport failed", e);
+        log.error("exportRecoveryKey failed", e);
         set({
           error: vaultErrorMessage(e),
           errorCode: vaultErrorCode(e),
           loading: false,
         });
+        return null;
+      }
+    },
+
+    rotateDek: async () => {
+      set({ loading: true, error: null, errorCode: null });
+      try {
+        const result = await vaultService.rotateDek();
+        const backup = await vaultService.hasRecoveryBackup();
+        set({
+          loading: false,
+          recoveryBackup: backup,
+          _recoveryBackupAt: Date.now(),
+          // rotate_dek 第 1 步已删除本机生物识别凭据，必须让用户重新注册（R8）。
+          biometricEnrolled: false,
+          _biometricEnrolledAt: 0,
+        });
+        await get().loadEntries();
+        return result;
+      } catch (e) {
+        log.error("rotateDek failed", e);
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
+        return null;
+      }
+    },
+
+    recoverFromPaper: async (paperKey, gitUrl) => {
+      set({ loading: true, error: null, errorCode: null });
+      try {
+        const result = await vaultService.recoverFromPaper(paperKey, gitUrl);
+        set({ loading: false });
+        return result;
+      } catch (e) {
+        log.error("recoverFromPaper failed", e);
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
+        return null;
+      }
+    },
+
+    locatePaperError: async (paperKey) => {
+      try {
+        return await vaultService.locatePaperError(paperKey);
+      } catch (e) {
+        log.error("locatePaperError failed", e);
         return null;
       }
     },
@@ -145,9 +142,13 @@ export function createRecoverySlice(
     exportVault: async (format, path) => {
       set({ loading: true, error: null, errorCode: null });
       try {
-        await vaultService.exportVaultToFile(format, path);
-        set({ exportFilePath: path, loading: false });
-        return path;
+        const result = await vaultService.exportVaultToFile(
+          format,
+          path,
+          EXPORT_CONFIRM_TOKEN,
+        );
+        set({ exportFilePath: result.path, loading: false });
+        return result.path;
       } catch (e) {
         log.error("exportVault failed", e);
         set({

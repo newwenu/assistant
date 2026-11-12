@@ -182,7 +182,7 @@
 
 ### 2.4 `aes-gcm` ↔ `chacha20poly1305` — 🟢 场景不同
 
-`aes-gcm` 用于 API Key 加密（`crypto/api_key.rs`），`chacha20poly1305` 用于 Vault 数据加密（`vault_crypto/mod.rs`），两种 AEAD 算法服务于不同安全层级。
+`aes-gcm` 用于 API Key 本机包裹（`crypto/api_key.rs`；密钥为 `SHA-256(machine_uid)`，同机可读，属混淆而非保密），`chacha20poly1305` 用于 Vault 数据加密（`vault_crypto/mod.rs`），两种 AEAD 算法服务于不同安全层级。
 
 ### 2.5 `sha2` ↔ `sha1` — 🟢 场景不同
 

@@ -27,12 +27,14 @@
 
 ## 1. 现状
 
+> v1 基线（作为缺陷来源保留，便于追溯）。M4 完成后写/读路径已按 §2.2–§2.4 重排：写路径只剩 `lifecycle::sync_write_meta` 一条；pull 顺序改为 §2.4。
+
 ```
-写路径（两条，重复）
+写路径（v1，两条，重复）
 A. export_all_entries() → export_entry(...) × N → read_emergency_data → export_vault_meta(master_key, crypto, emergency)
 B. write_signed_vault_meta() → export_vault_meta(master_key, crypto, emergency)
 
-读路径
+读路径（v1）
 pull() → git pull → import_from_repo()
   → verify_vault_meta_integrity(master_key)         // HMAC over VaultMetaFile
   → read_all_entries(master_key)                     // 逐条解密
@@ -64,6 +66,8 @@ pull() → git pull → import_from_repo()
 
 ```
 .vault-meta
+.gitignore
+.git/
 entries/*.enc
 ```
 
@@ -83,6 +87,8 @@ entries/*.enc
 1. `VaultFileManager::ensure_structure` 只创建 `entries/`，不得创建其他目录。
 2. 写入前检查仓库根目录，发现禁止项 → `RepositoryContainsForbiddenFile`，并在 UI 提示（不自动删除，避免误删用户文件）。
 3. `.gitignore` 不得依赖用户手工维护；应用应在初始化时写入最小 `.gitignore`，只包含上述禁止项。
+4. `entries/` 内只允许 `*.enc`；`.gitignore` 由 `ensure_gitignore` 生成（已存在则不覆盖，避免抹掉用户追加项）。
+5. 重置仓库的 meta 备份写到 `<security>/vault-meta.bak`（仓库**同级**），不得写进仓库根目录：备份含 `slots[].wrapped_dek`，落在仓库内既违反第 1–2 条，也会被同步推上远端。旧实现遗留的仓库内 `.vault-meta.bak` 由启动流程迁出仓库。
 
 ### 2.2 单一写入者
 
@@ -136,7 +142,8 @@ sync_engine 只能读，不得调用任何签名/写 meta 的函数
    └─ 相同 → 继续
 5. 比较 dekVersion：
    ├─ remote > local → VaultDekVersionAhead（见 §2.6）
-   └─ remote <= local → 继续
+   ├─ remote < local → VaultDekVersionBehind（见 §2.6）
+   └─ 相等 → 继续
 6. verify_meta_integrity(metaKey = HKDF(dek, "i9:v1:meta-integrity"))
 7. verify_manifest()（逐条 sha256）
    ├─ 不符 → VaultManifestMismatch
@@ -152,6 +159,7 @@ sync_engine 只能读，不得调用任何签名/写 meta 的函数
 2. **第 7 步必须在第 8 步之前**：先证明「文件集合与 manifest 一致」，再解密；否则会把「被替换但恰好能解密」的文件导入。
 3. **第 9 步 anchor 更新是 pull 的一部分**：pull 成功后本机基线必须前移，否则下次解锁会误报 `VaultRollbackDetected`。
 4. `removed_ids` 的推断必须改为「以 manifest 为准」：远端 manifest 中不存在、但本地 `entries/` 中存在的 ID 才是候选删除；本地新建未导出的条目不在此列（修复 F23）。
+5. **本地写 meta 同样必须前移 anchor**：条目 CRUD、push / `force_push`、`confirm_removals`、历史恢复、`remote_admin::init` 每次 `sync_write_meta` 之后都要把 anchor 前移为「当前 meta 文件 hash + 当前 dekVersion」（`lifecycle::refresh_anchor`）。刷新必须在**事务回调之外**调用——回调持有 session 锁，`std::sync::Mutex` 不可重入会自锁死。
 
 ### 2.5 冲突
 
@@ -201,7 +209,7 @@ sync_engine 只能读，不得调用任何签名/写 meta 的函数
 
 ### 2.9 临时目录与残留
 
-1. `security/recovery/` 仅用于灾难恢复期间的临时 clone；导出结束（成功或失败）后必须删除。
+1. `security/recovery/` 是纸面恢复的**临时仓库副本**：`vault_recover_from_paper` 按 recovery-channel-spec §3.0 clone 到此、只读、用后即删（RAII 守卫覆盖成功/失败/panic）。启动与重置仓库时额外删除上次崩溃残留（`cmd/vault/mod.rs::cleanup_recovery_dir`）。本机正式仓库 `security/vault/` 在恢复期间不读不写。
 2. `write_atomically` 的 `.tmp` 文件在下次启动时清理（仅限 `entries/` 与 `.vault-meta.tmp`）。
 3. `security/backups/` 不进入仓库；改密后的旧备份策略见 runtime-session-spec §4.3。
 
@@ -217,8 +225,7 @@ pub fn compute_manifest(&self, dek_version: u32) -> Result<VaultManifest, VaultE
 pub fn verify_manifest(&self) -> Result<(), VaultError>;
 
 // lifecycle.rs（唯一编排出口）
-pub fn sync_write_meta(repo: &VaultFileManager, dek: &Dek, dek_version: u32)
-    -> Result<VaultMetaFileV2, VaultError>;
+pub fn sync_write_meta(repo: &VaultFileManager, dek: &Dek) -> Result<VaultMetaFileV2, VaultError>;
 
 // sync_engine/pull_push.rs
 pub fn pull(&self, db: &SecurityDbState) -> Result<SyncResult, SyncError>;
@@ -243,9 +250,9 @@ pub fn import_from_repo(&self, db: &SecurityDbState) -> Result<ImportReport, Syn
 | `src-tauri/crates/assistant-vault/src/security_db/entries/query.rs` | 删除 `vault_crypto_info`（v1 专用 salt 导出，F21） |
 | `src-tauri/crates/assistant-vault/src/security_db/rekey.rs` | 改密后不再清 `emergency`（v1.5 无此字段）；rotate_dek 清 `recoveryBackup` |
 | `src-tauri/src/cmd/vault/entries.rs` | `vault_import` 增加 `.enc` 写入与 `finalize`；`vault_change_master_password` 删除 emergency/强制重导出 |
-| `src-tauri/src/cmd/vault/recovery.rs` | 灾难恢复结束后删除 `security/recovery/` |
+| `src-tauri/src/cmd/vault/recovery.rs` | 纸面恢复：clone 临时副本到 `security/recovery/` 只读 → `RecoverySession` 导出 → 用后删副本 + JSONL 审计 |
 | `src-tauri/src/cmd/vault/sync.rs` | 远端 URL 脱敏；错误消息脱敏 |
-| `src-tauri/src/cmd/vault/mod.rs` | 初始化时写入最小 `.gitignore`；启动清理 `.tmp` |
+| `src-tauri/src/cmd/vault/mod.rs` | 初始化时写入最小 `.gitignore`、启动清理 `.tmp`、删除恢复副本残留（`cleanup_recovery_dir`） |
 
 ---
 
@@ -270,7 +277,7 @@ pub fn import_from_repo(&self, db: &SecurityDbState) -> Result<ImportReport, Syn
 
 | 编号 | 用例 | 断言 |
 |---|---|---|
-| T-S1 | push 后检查仓库 | 只有 `.vault-meta` 与 `entries/*.enc`；无 `security.db`/`.tmp`/`backup` |
+| T-S1 | push 后检查仓库 | 只有 `.vault-meta`、`.gitignore`、`.git/` 与 `entries/*.enc`；无 `security.db`/`.tmp`/`backup` |
 | T-S2 | 手工改 `entries` 中某文件一字节 → pull | `VaultManifestMismatch`，不导入任何条目 |
 | T-S3 | 手工删 `entries` 中一条 → pull | 进入 `PendingRemovals`，不自动删本地 |
 | T-S4 | 本地新建条目未 push → pull | 不被判为远端删除 |
@@ -280,7 +287,7 @@ pub fn import_from_repo(&self, db: &SecurityDbState) -> Result<ImportReport, Syn
 | T-S8 | `.vault-meta` 冲突 | 不自动合并；选择后重新校验 manifest |
 | T-S9 | 冲突预览含 notes | notes 被脱敏 |
 | T-S10 | `vault_conflict_reveal` 连点 4 次 | 第 4 次 `RateLimited`；每次成功都有审计 |
-| T-S11 | 灾难恢复成功/失败 | `security/recovery/` 均被删除 |
+| T-S11 | 纸面恢复成功/失败 | 恢复副本 `security/recovery/` 用后即删；本机 `security/vault/` 不读不写 |
 | T-S12 | 远端 URL 含 `user:token@` 的失败日志 | 输出中不含 token |
 | T-S13 | 旧 meta（version=1）pull | `UnsupportedVaultVersion`，不修改任何本地文件 |
 

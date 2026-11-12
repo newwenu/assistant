@@ -35,6 +35,8 @@ export interface VaultLifecycleSlice {
   unlock: (masterPassword: string) => Promise<void>;
   lock: () => Promise<void>;
   changeMasterPassword: (current: string, newPassword: string) => Promise<void>;
+  resetRepository: (confirmToken: string) => Promise<void>;
+  rebuildLocalDb: (masterPassword: string) => Promise<void>;
   checkStatus: () => Promise<void>;
   clearError: () => void;
   resetAutoLockTimer: (force?: boolean) => void;
@@ -55,7 +57,7 @@ type FullState = VaultLifecycleSlice & {
   sortBy: import("./vaultEntriesSlice").VaultSortBy;
   hibpLeaks: Record<string, number>;
   _biometricEnrolledAt: number;
-  _recoveryKeySetAt: number;
+  _recoveryBackupAt: number;
 };
 
 export function createLifecycleSlice(
@@ -81,7 +83,7 @@ export function createLifecycleSlice(
           isInitialized: true,
           loading: false,
           _biometricEnrolledAt: 0,
-          _recoveryKeySetAt: 0,
+          _recoveryBackupAt: 0,
         });
         get().resetAutoLockTimer(true);
       } catch (e) {
@@ -102,7 +104,7 @@ export function createLifecycleSlice(
           isLocked: false,
           loading: false,
           _biometricEnrolledAt: 0,
-          _recoveryKeySetAt: 0,
+          _recoveryBackupAt: 0,
         });
         get().resetAutoLockTimer(true);
       } catch (e) {
@@ -131,7 +133,7 @@ export function createLifecycleSlice(
           sortBy: "recent",
           hibpLeaks: {},
           _biometricEnrolledAt: 0,
-          _recoveryKeySetAt: 0,
+          _recoveryBackupAt: 0,
         });
         get().clearRevealedField();
       } catch (e) {
@@ -152,10 +154,68 @@ export function createLifecycleSlice(
         set({
           loading: false,
           _biometricEnrolledAt: 0,
-          _recoveryKeySetAt: 0,
+          _recoveryBackupAt: 0,
         });
       } catch (e) {
         log.error("changeMasterPassword failed", e);
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
+        throw e;
+      }
+    },
+
+    resetRepository: async (confirmToken) => {
+      get().clearAutoLockTimer();
+      set({ loading: true, error: null, errorCode: null });
+      try {
+        await vaultService.resetRepository(confirmToken);
+        set({
+          isLocked: true,
+          isInitialized: false,
+          entries: [],
+          totalEntryCount: 0,
+          selectedEntry: null,
+          searchQuery: "",
+          categoryFilter: null,
+          tagFilter: null,
+          onlyLeaked: false,
+          sortBy: "recent",
+          hibpLeaks: {},
+          _biometricEnrolledAt: 0,
+          _recoveryBackupAt: 0,
+          error: null,
+          errorCode: null,
+          loading: false,
+        });
+        get().clearRevealedField();
+      } catch (e) {
+        log.error("resetRepository failed", e);
+        set({
+          error: vaultErrorMessage(e),
+          errorCode: vaultErrorCode(e),
+          loading: false,
+        });
+        throw e;
+      }
+    },
+
+    rebuildLocalDb: async (masterPassword) => {
+      set({ loading: true, error: null, errorCode: null });
+      try {
+        await vaultService.rebuildLocalDb(masterPassword);
+        set({
+          isLocked: false,
+          isInitialized: true,
+          loading: false,
+          _biometricEnrolledAt: 0,
+          _recoveryBackupAt: 0,
+        });
+        get().resetAutoLockTimer(true);
+      } catch (e) {
+        log.error("rebuildLocalDb failed", e);
         set({
           error: vaultErrorMessage(e),
           errorCode: vaultErrorCode(e),
@@ -197,7 +257,13 @@ export function createLifecycleSlice(
       }
       lastAutoLockResetAt = now;
       if (autoLockTimer) clearTimeout(autoLockTimer);
-      const deadline = now + getAutoLockMs();
+      autoLockTimer = null;
+      const autoLockMs = getAutoLockMs();
+      if (autoLockMs <= 0) {
+        set({ autoLockDeadline: null });
+        return;
+      }
+      const deadline = now + autoLockMs;
       autoLockTimer = setTimeout(() => {
         autoLockTimer = null;
         void get()

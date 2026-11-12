@@ -3,7 +3,7 @@
     "pages": 1,
     "categories": 1,
     "sections": 2,
-    "fields": 9,
+    "fields": 8,
     "routes": 1,
     "sidebar": 1,
     "confPageMap": 1
@@ -73,12 +73,6 @@
     },
     {
       "key": "vaultSshUsePageant",
-      "group": "vault",
-      "section": "vault-ssh",
-      "type": "boolean"
-    },
-    {
-      "key": "vaultSshUseOpensshAgent",
       "group": "vault",
       "section": "vault-ssh",
       "type": "boolean"

@@ -1,25 +1,20 @@
 use crate::dto::VaultEntryCreate;
-use crate::types::{VaultEntryExport, VaultError};
-use assistant_crypto::vault_crypto::types::CipherAlgorithm;
+use crate::types::{VaultEntryExport, VaultEntrySnapshot, VaultError};
+use assistant_crypto::vault_crypto::types::{CipherAlgorithm, Dek};
 
 use super::SecurityDbState;
 
 impl SecurityDbState {
     pub fn export_entries(&self) -> Result<Vec<VaultEntryExport>, VaultError> {
-        let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
-
-        let ids: Vec<String> = {
+        let ids: Vec<String> = self.with_conn(|conn| {
             let mut stmt = conn
                 .prepare("SELECT id FROM vault_entries WHERE deleted_at IS NULL")
                 .map_err(|e| VaultError::Database(e.to_string()))?;
             let rows = stmt
                 .query_map([], |row| row.get(0))
                 .map_err(|e| VaultError::Database(e.to_string()))?;
-            rows.filter_map(|r| r.ok()).collect()
-        };
-
-        drop(conn_guard);
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        })?;
 
         let mut exports = Vec::new();
         for id in &ids {
@@ -72,11 +67,15 @@ impl SecurityDbState {
         Ok(exports)
     }
 
-    pub fn import_entries(
+    pub fn import_entries<F>(
         &self,
         entries: Vec<VaultEntryCreate>,
         algo: CipherAlgorithm,
-    ) -> Result<u32, VaultError> {
+        mut export: F,
+    ) -> Result<u32, VaultError>
+    where
+        F: FnMut(&Dek, &VaultEntrySnapshot) -> Result<(), VaultError>,
+    {
         let existing = self.export_entries()?;
         let mut count = 0u32;
         for entry in entries {
@@ -106,7 +105,7 @@ impl SecurityDbState {
                 );
                 continue;
             }
-            self.create_entry(entry, algo)?;
+            self.create_entry_tx(entry, algo, |dek, snapshot| export(dek, snapshot))?;
             count += 1;
         }
         Ok(count)

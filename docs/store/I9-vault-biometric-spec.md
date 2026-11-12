@@ -14,11 +14,11 @@
 
 | 文件 | 改动性质 |
 |---|---|
-| `src-tauri/crates/assistant-vault/src/security_db/biometric_ops.rs` | 主改：payload、指纹、探针、审计、重包、吊销 |
+| `src-tauri/crates/assistant-vault/src/security_db/biometric_ops.rs` | 主改：payload、指纹、探针、审计、吊销 |
 | `src-tauri/crates/assistant-vault/src/biometric/mod.rs` | trait 增加 ACL 判定方法；`delete_key` 错误语义 |
 | `src-tauri/crates/assistant-vault/src/biometric/{windows,macos,linux}.rs` | ACL 判定；`delete_key` 区分 not-found / 真实失败 |
 | `src-tauri/src/cmd/vault/biometric.rs` | 签名不变，跟随类型改名 |
-| `src-tauri/src/cmd/vault/entries.rs` | 改密后重包调用点 |
+| `src-tauri/src/cmd/vault/entries.rs` | 改密路径不再触碰生物识别（删除 v1 的 `disenroll` / 恢复材料清理调用） |
 | `src/vault/unlock/BiometricButton.tsx`、`src/vault/core/slices/vaultBiometricSlice.ts`、`src/vault/settings/ChangePasswordTab.tsx` | 前端入口与重注册引导 |
 
 不覆盖：密钥派生（key-hierarchy-spec §3）、会话锁定（runtime-session-spec）、平台能力总表（capability-gating-spec §4）。
@@ -114,7 +114,7 @@ fn compute_fingerprint(payload: &[u8]) -> String;   // 小写 hex(SHA-256(payloa
 
 - 与 payload **一起**存 keystore（key id `vault-fingerprint`）。
 - **明文 hex，不加密**——只用于「是否过期」的比对，SHA-256 单向，不含密钥信息。
-- **必须对明文 52B payload 计算，不能对密文计算**：非 Windows 路径每次注册都会生成新的随机 wrapping key，密文随之变化；若指纹基于密文，则「重包后内容其实没变」也会被判为过期，导致每次改密都误报 `BiometricReset`。
+- **必须对明文 52B payload 计算，不能对密文计算**：非 Windows 路径每次注册都会生成新的随机 wrapping key，密文随之变化；若指纹基于密文，则「payload 内容未变」也会被误判为过期，导致误报 `BiometricReset`。
 
 ---
 
@@ -253,23 +253,18 @@ where
 
 ---
 
-## 8. 自动重包与失败标记
+## 8. 自动重包（已废弃）
 
-```rust
-pub fn repackage_biometric_payload(&self, key_store: &dyn BiometricKeyStore)
-    -> Result<(), VaultError>;
-```
+`dbKey = HKDF(dek, vaultId)`（key-hierarchy-spec §3.2 / 附录 C-16）之后：
 
-调用时机：
-
-| 场景 | 调用者 | 失败处理 |
+| 场景 | 密钥变化 | 处理 |
 |---|---|---|
-| 改密（`dbKey` 变） | `lifecycle::change_password` 第 9 步 | **不阻断**改密；标记待重注册 |
-| `rotate_dek`（`dek` 变） | **不调用本函数**；改走 §9 的「删除凭据」 | R8 要求删除凭据而非重包，删除失败即中止 |
+| 改密 | `dek` / `dbKey` **均不变** | payload 仍有效，**无需重包** |
+| `rotate_dek` | `dek` / `dbKey` 均变 | 走 §9 的「删除凭据」，由用户重新注册 |
 
-「标记待重注册」的实现：**删除 fingerprint 条目**（`vault-fingerprint`）。下次 `restore_keys_from_plaintext` 第 3 步读不到 fingerprint → `BiometricReset`。**不引入额外标志位**——少一个可被篡改的状态。
+因此不再需要 `repackage_biometric_payload`，也不再有「重包失败 → 标记待重注册」这条路径。**实现时不要保留该函数**；若未来出现「密钥变化但必须保留凭据」的场景，再按当时的安全语义重新设计。
 
-注意：此机制**仅用于改密路径**（`dbKey` 变，payload 内容过期但仍存在）。`rotate_dek` 不走这条，而是直接删凭据（§9）。
+`fingerprint`（§3）仍保留：它用于识别「payload 与当前会话密钥不匹配」（例如手工替换了 keystore 文件、或跨设备拷贝了 payload），此时返回 `BiometricReset` 而不是用错误密钥开库。
 
 ---
 
@@ -293,7 +288,7 @@ pub fn repackage_biometric_payload(&self, key_store: &dyn BiometricKeyStore)
 1. **第 1 步失败必须中止**。这是全流程唯一「删除失败等于安全前提落空」的位置。
 2. **`rotate_dek` 的执行顺序**：删除凭据必须是 `lifecycle::rotate_dek` 的**第 1 步**（任何破坏性写入之前）。若放在末尾，条目已按 `dek_new` 重加密，此时删除失败而中止，会留下「新密文 + 旧 meta」的不一致仓库。
 3. 第 2 步的 3 个条目失败只 `warn`：`vault-payload` 已删时，剩余条目无法构成可用解锁路径。
-4. **不得**把失败降级为「标记待重注册」（§8 的机制）——那只适用于「payload 已过期但仍存在」的情形。
+4. **不得**把失败降级为「标记待重注册」——§8 的自动重包机制已废弃；payload 过期只有「删除凭据 + 重新注册」一条路径（§9）。
 
 ---
 
@@ -382,7 +377,7 @@ fn clear_all_biometric_entries(key_store: &dyn BiometricKeyStore) -> Result<(), 
 |---|---|
 | `src/vault/unlock/BiometricButton.tsx` | 「重新注册」引导；`BiometricReset` 不自动重试 |
 | `src/vault/core/slices/vaultBiometricSlice.ts` | 注册/解锁状态；`reset` 语义 |
-| `src/vault/settings/ChangePasswordTab.tsx` | 改密成功后合并提示「同时更新生物识别」 |
+| `src/vault/settings/ChangePasswordTab.tsx` | 删除「同时更新生物识别」提示（改密不改变 payload） |
 | `src/i18n/locales/*/vault.json` | `vault.biometric.reset_required` / `reenroll_required` |
 
 ---
@@ -409,7 +404,7 @@ fn clear_all_biometric_entries(key_store: &dyn BiometricKeyStore) -> Result<(), 
 | T-B5 | 篡改 `vault-payload` 使 GCM 失败 | 解锁返回 `BiometricReset`，不是 `VaultError::Crypto` |
 | I12 | 用 A 设备 `security.db` + B 设备 keystore payload | `BiometricReset`，不得进入已解锁状态 |
 | I13 | `rotate_dek` 后 | 旧 Hello 凭据已删除；旧 payload 无法解出新 `dek`；要求重新注册 |
-| T-B6 | 改密后重包失败 | 改密成功；下次生物识别 → `BiometricReset` |
+| T-B6 | keystore payload 与当前 `dek` 不匹配（跨设备拷贝 / 手工替换） | `BiometricReset`，不得用错误密钥开库 |
 
 T-B1/T-B2/T-B3 通过 mock `BiometricKeyStore` 注入失败；前提是 `delete_key` 具备可失败语义（§11.2）。
 

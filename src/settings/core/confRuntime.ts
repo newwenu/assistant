@@ -1,4 +1,5 @@
 import { tauriInvoke } from "@/services/tauriInvoke";
+import { pluginCommand } from "@/services/featureIpc";
 import { createLogger } from "@/services/logger";
 import type { ConfGroup, ConfOf } from "./types/confRegistry";
 import type { ConfSlot } from "./types/confSlot";
@@ -35,6 +36,9 @@ export async function fetchConf<G extends ConfGroup>(
 ): Promise<ConfOf<G> | null> {
   const slot = slots.get(group);
   if (!slot) return null;
-  const raw = await tauriInvoke<ConfOf<G>>(slot.invoke);
+  const command = slot.namespace
+    ? pluginCommand(slot.namespace, slot.invoke)
+    : slot.invoke;
+  const raw = await tauriInvoke<ConfOf<G>>(command);
   return raw ?? null;
 }

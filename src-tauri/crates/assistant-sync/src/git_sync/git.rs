@@ -131,7 +131,7 @@ pub fn git_ls_remote(repo: &Path, url: &str) -> Result<String, SyncError> {
                 output.status.code().unwrap_or(-1)
             )
         } else {
-            stderr
+            sanitize_git_stderr(repo, &stderr)
         }));
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -494,7 +494,7 @@ pub fn git_rev_list_left_right_count(repo: &Path, range: &str) -> Result<(u32, u
 
 const MAX_GIT_STDERR_CHARS: usize = 2000;
 
-/// Git stderr 脱敏：URL userinfo → `***@`，仓库绝对路径 → `<vault>`，并截断。
+/// Git stderr 脱敏：URL userinfo → 去掉 `user:token@`，仓库绝对路径 → `<vault>`，并截断。
 pub fn sanitize_git_stderr(repo: &Path, raw: &str) -> String {
     let text = match repo.to_str() {
         Some(path) => {
@@ -511,34 +511,10 @@ pub fn sanitize_git_stderr(repo: &Path, raw: &str) -> String {
         }
         None => raw.trim().to_string(),
     };
-    redact_url_userinfo(&text)
+    crate::redact::redact_url_userinfo(&text)
         .chars()
         .take(MAX_GIT_STDERR_CHARS)
         .collect()
-}
-
-fn redact_url_userinfo(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(index) = rest.find("://") {
-        let split = index + 3;
-        out.push_str(&rest[..split]);
-        let tail = &rest[split..];
-        let authority_end = tail
-            .find(|c: char| c.is_whitespace() || matches!(c, '/' | '"' | '\''))
-            .unwrap_or(tail.len());
-        let authority = &tail[..authority_end];
-        match authority.rfind('@') {
-            Some(at) => {
-                out.push_str("***@");
-                out.push_str(&authority[at + 1..]);
-            }
-            None => out.push_str(authority),
-        }
-        rest = &tail[authority_end..];
-    }
-    out.push_str(rest);
-    out
 }
 
 fn git_output<I, S>(repo: &Path, args: I, connects_remote: bool) -> Result<Output, SyncError>

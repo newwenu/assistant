@@ -1,139 +1,102 @@
 use rusqlite::params;
 
 use crate::types::{VaultCategory, VaultError};
+use assistant_crypto::vault_crypto::field_aad;
 use assistant_crypto::vault_crypto::types::{SecureString, VaultPlaintext};
-use assistant_crypto::vault_crypto::VaultCrypto;
+use assistant_crypto::vault_crypto::{decrypt_field, derive_entry_key};
 
+use super::entries::field_crypto::{
+    decrypt_custom_fields, decrypt_opt, FIELD_NOTES, FIELD_PASSWORD, FIELD_SSH_PRIVATE_KEY,
+    FIELD_TOTP,
+};
 use super::SecurityDbState;
+
+fn map_row_error(id: &str, e: rusqlite::Error) -> VaultError {
+    match e {
+        rusqlite::Error::QueryReturnedNoRows => VaultError::NotFound(id.to_string()),
+        other => VaultError::Database(other.to_string()),
+    }
+}
+
+fn read_encrypted_field(
+    conn: &rusqlite::Connection,
+    id: &str,
+    column: &str,
+) -> Result<String, VaultError> {
+    let sql = format!("SELECT {column} FROM vault_entries WHERE id = ?1 AND deleted_at IS NULL");
+    let value: Option<String> = conn
+        .query_row(&sql, params![id], |row| row.get(0))
+        .map_err(|e| map_row_error(id, e))?;
+    value.ok_or_else(|| VaultError::NotFound(id.to_string()))
+}
+
+fn secure_string(entry_id: &str, plaintext: VaultPlaintext) -> Result<SecureString, VaultError> {
+    plaintext
+        .to_str()
+        .map(|s| SecureString::new(s.to_string()))
+        .map_err(|_| VaultError::EntryCorrupted(entry_id.to_string()))
+}
 
 impl SecurityDbState {
     pub fn decrypt_password(&self, id: &str) -> Result<SecureString, VaultError> {
-        self.with_conn_and_key(|conn, mk| {
-            let encrypted: String = conn
-                .query_row(
-                    "SELECT encrypted_password FROM vault_entries WHERE id = ?1 AND deleted_at IS NULL",
-                    params![id],
-                    |row| row.get(0),
-                )
-                .map_err(|e| match e {
-                    rusqlite::Error::QueryReturnedNoRows => VaultError::NotFound(id.to_string()),
-                    other => VaultError::Database(other.to_string()),
-                })?;
-
-            let entry_key = VaultCrypto::derive_entry_key(mk, id);
-            let plaintext = VaultCrypto::decrypt_field(&encrypted, entry_key.expose())
-                .map_err(VaultError::Crypto)?;
-            plaintext.to_str().map(|s| SecureString::new(s.to_string())).map_err(|_| {
-                VaultError::Crypto("Decrypted password is not valid UTF-8".to_string())
-            })
+        self.with_conn_and_dek(|conn, dek, _dv| {
+            let encrypted = read_encrypted_field(conn, id, "encrypted_password")?;
+            let entry_key = derive_entry_key(dek, id);
+            let aad = field_aad(id, FIELD_PASSWORD);
+            let plaintext = decrypt_field(&entry_key, &encrypted, &aad)
+                .map_err(|_| VaultError::EntryCorrupted(id.to_string()))?;
+            secure_string(id, plaintext)
         })
     }
 
     pub fn decrypt_notes(&self, id: &str) -> Result<SecureString, VaultError> {
-        self.with_conn_and_key(|conn, mk| {
-            let encrypted: String = conn
-                .query_row(
-                    "SELECT encrypted_notes FROM vault_entries WHERE id = ?1 AND deleted_at IS NULL",
-                    params![id],
-                    |row| row.get(0),
-                )
-                .map_err(|e| match e {
-                    rusqlite::Error::QueryReturnedNoRows => VaultError::NotFound(id.to_string()),
-                    other => VaultError::Database(other.to_string()),
-                })?;
-
-            let entry_key = VaultCrypto::derive_entry_key(mk, id);
-            let plaintext = VaultCrypto::decrypt_field(&encrypted, entry_key.expose())
-                .map_err(VaultError::Crypto)?;
-            plaintext.to_str().map(|s| SecureString::new(s.to_string())).map_err(|_| {
-                VaultError::Crypto("Decrypted notes is not valid UTF-8".to_string())
-            })
+        self.with_conn_and_dek(|conn, dek, _dv| {
+            let encrypted = read_encrypted_field(conn, id, "encrypted_notes")?;
+            let entry_key = derive_entry_key(dek, id);
+            let aad = field_aad(id, FIELD_NOTES);
+            let plaintext = decrypt_field(&entry_key, &encrypted, &aad)
+                .map_err(|_| VaultError::EntryCorrupted(id.to_string()))?;
+            secure_string(id, plaintext)
         })
     }
 
     pub fn decrypt_totp_secret(&self, id: &str) -> Result<SecureString, VaultError> {
-        self.with_conn_and_key(|conn, mk| {
-            let encrypted: String = conn
-                .query_row(
-                    "SELECT encrypted_totp_secret FROM vault_entries WHERE id = ?1 AND deleted_at IS NULL",
-                    params![id],
-                    |row| row.get(0),
-                )
-                .map_err(|e| match e {
-                    rusqlite::Error::QueryReturnedNoRows => VaultError::NotFound(id.to_string()),
-                    other => VaultError::Database(other.to_string()),
-                })?;
-
-            let entry_key = VaultCrypto::derive_entry_key(mk, id);
-            let plaintext = VaultCrypto::decrypt_field(&encrypted, entry_key.expose())
-                .map_err(VaultError::Crypto)?;
-            plaintext.to_str().map(|s| SecureString::new(s.to_string())).map_err(|_| {
-                VaultError::Crypto("Decrypted TOTP secret is not valid UTF-8".to_string())
-            })
+        self.with_conn_and_dek(|conn, dek, _dv| {
+            let encrypted = read_encrypted_field(conn, id, "encrypted_totp_secret")?;
+            let entry_key = derive_entry_key(dek, id);
+            let aad = field_aad(id, FIELD_TOTP);
+            let plaintext = decrypt_field(&entry_key, &encrypted, &aad)
+                .map_err(|_| VaultError::EntryCorrupted(id.to_string()))?;
+            secure_string(id, plaintext)
         })
     }
 
     pub fn decrypt_field(&self, id: &str, field_name: &str) -> Result<SecureString, VaultError> {
-        self.with_conn_and_key(|conn, mk| {
-            let custom_fields_json: String = conn
-                .query_row(
-                    "SELECT encrypted_custom_fields FROM vault_entries WHERE id = ?1 AND deleted_at IS NULL",
-                    params![id],
-                    |row| row.get(0),
-                )
-                .map_err(|e| match e {
-                    rusqlite::Error::QueryReturnedNoRows => VaultError::NotFound(id.to_string()),
-                    other => VaultError::Database(other.to_string()),
-                })?;
-
-            let fields: Vec<serde_json::Value> = serde_json::from_str(&custom_fields_json)
-                .map_err(|e| VaultError::Database(e.to_string()))?;
-
-            let field = fields
-                .iter()
-                .find(|f| f.get("name").and_then(|n| n.as_str()) == Some(field_name))
-                .ok_or_else(|| VaultError::NotFound(field_name.to_string()))?;
-
-            if field.get("isProtected").and_then(|v| v.as_bool()) == Some(true) {
-                let encrypted = field
-                    .get("valueEncrypted")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| VaultError::Validation("Protected field has no encrypted value".to_string()))?;
-                let entry_key = VaultCrypto::derive_entry_key(mk, id);
-                let plaintext = VaultCrypto::decrypt_field(encrypted, entry_key.expose())
-                    .map_err(VaultError::Crypto)?;
-                plaintext.to_str().map(|s| SecureString::new(s.to_string())).map_err(|_| {
-                    VaultError::Crypto("Decrypted field is not valid UTF-8".to_string())
-                })
-            } else {
-                field
-                    .get("value")
-                    .and_then(|v| v.as_str())
-                    .map(|s| SecureString::new(s.to_string()))
-                    .ok_or_else(|| VaultError::Validation("Unprotected field has no value".to_string()))
-            }
+        self.with_conn_and_dek(|conn, dek, _dv| {
+            let json = read_encrypted_field(conn, id, "encrypted_custom_fields")?;
+            let entry_key = derive_entry_key(dek, id);
+            let fields = decrypt_custom_fields(Some(json.as_str()), &entry_key, id)?;
+            fields
+                .into_iter()
+                .find(|f| f.name == field_name)
+                .map(|f| SecureString::new(f.value))
+                .ok_or_else(|| VaultError::NotFound(field_name.to_string()))
         })
     }
 
-    pub fn decrypt_ssh_private_key(
-        &self,
-        id: &str,
-    ) -> Result<assistant_crypto::vault_crypto::types::VaultPlaintext, VaultError> {
-        self.with_conn_and_key(|conn, mk| {
-            let encrypted: String = conn
+    pub fn decrypt_ssh_private_key(&self, id: &str) -> Result<VaultPlaintext, VaultError> {
+        self.with_conn_and_dek(|conn, dek, _dv| {
+            let encrypted: Option<String> = conn
                 .query_row(
                     "SELECT encrypted_password FROM vault_entries WHERE id = ?1 AND deleted_at IS NULL AND category = 'sshKey'",
-                    rusqlite::params![id],
+                    params![id],
                     |row| row.get(0),
                 )
-                .map_err(|e| match e {
-                    rusqlite::Error::QueryReturnedNoRows => VaultError::NotFound(id.to_string()),
-                    other => VaultError::Database(other.to_string()),
-                })?;
-
-            let entry_key = VaultCrypto::derive_entry_key(mk, id);
-            VaultCrypto::decrypt_field(&encrypted, entry_key.expose())
-                .map_err(VaultError::Crypto)
+                .map_err(|e| map_row_error(id, e))?;
+            let encrypted = encrypted.ok_or_else(|| VaultError::NotFound(id.to_string()))?;
+            let entry_key = derive_entry_key(dek, id);
+            let aad = field_aad(id, FIELD_SSH_PRIVATE_KEY);
+            decrypt_field(&entry_key, &encrypted, &aad).map_err(|_| VaultError::EntryCorrupted(id.to_string()))
         })
     }
 
@@ -155,7 +118,7 @@ impl SecurityDbState {
             i64,
         );
 
-        self.with_conn_and_key(|conn, mk| {
+        self.with_conn_and_dek(|conn, dek, _dv| {
             let result: Result<EntryRow, rusqlite::Error> = conn.query_row(
                 "SELECT id, title, username, url, category, encrypted_password, \
                  encrypted_notes, encrypted_totp_secret, encrypted_custom_fields, \
@@ -205,53 +168,20 @@ impl SecurityDbState {
                 Err(e) => return Err(VaultError::Database(e.to_string())),
             };
 
-            let entry_key = VaultCrypto::derive_entry_key(mk, &eid);
+            let entry_key = derive_entry_key(dek, &eid);
 
-            let password = enc_pw
-                .map(|enc| VaultCrypto::decrypt_field(&enc, entry_key.expose()))
-                .transpose()
-                .map_err(VaultError::Crypto)?;
+            let password = decrypt_opt(enc_pw.as_deref(), &entry_key, FIELD_PASSWORD, &eid)?;
+            let notes = decrypt_opt(enc_notes.as_deref(), &entry_key, FIELD_NOTES, &eid)?;
+            let totp_secret = decrypt_opt(enc_totp.as_deref(), &entry_key, FIELD_TOTP, &eid)?;
 
-            let notes = enc_notes
-                .map(|enc| VaultCrypto::decrypt_field(&enc, entry_key.expose()))
-                .transpose()
-                .map_err(VaultError::Crypto)?;
-
-            let totp_secret = enc_totp
-                .map(|enc| VaultCrypto::decrypt_field(&enc, entry_key.expose()))
-                .transpose()
-                .map_err(VaultError::Crypto)?;
-
-            let custom_fields: Vec<crate::types::DecryptedCustomField> = enc_cf
-                .and_then(|json| {
-                    let fields: Vec<serde_json::Value> = serde_json::from_str(&json).ok()?;
-                    Some(
-                        fields
-                            .iter()
-                            .filter_map(|f| {
-                                let name = f.get("name")?.as_str()?.to_string();
-                                if f.get("isProtected").and_then(|v| v.as_bool()) == Some(true) {
-                                    let enc = f.get("valueEncrypted")?.as_str()?;
-                                    let pt =
-                                        VaultCrypto::decrypt_field(enc, entry_key.expose()).ok()?;
-                                    Some(crate::types::DecryptedCustomField {
-                                        name,
-                                        value: pt,
-                                        is_protected: true,
-                                    })
-                                } else {
-                                    let val = f.get("value")?.as_str()?.to_string();
-                                    Some(crate::types::DecryptedCustomField {
-                                        name,
-                                        value: VaultPlaintext::new_str(&val),
-                                        is_protected: false,
-                                    })
-                                }
-                            })
-                            .collect(),
-                    )
+            let custom_fields = decrypt_custom_fields(enc_cf.as_deref(), &entry_key, &eid)?
+                .into_iter()
+                .map(|f| crate::types::DecryptedCustomField {
+                    name: f.name,
+                    value: VaultPlaintext::new_str(&f.value),
+                    is_protected: f.is_protected,
                 })
-                .unwrap_or_default();
+                .collect();
 
             Ok(crate::types::VaultEntryDecrypted {
                 id: eid,
@@ -259,9 +189,9 @@ impl SecurityDbState {
                 title,
                 username,
                 url,
-                password,
-                notes,
-                totp_secret,
+                password: password.map(|s| VaultPlaintext::new_str(&s)),
+                notes: notes.map(|s| VaultPlaintext::new_str(&s)),
+                totp_secret: totp_secret.map(|s| VaultPlaintext::new_str(&s)),
                 custom_fields,
                 tags: serde_json::from_str(&tags_json).unwrap_or_default(),
                 is_favorite: is_fav != 0,

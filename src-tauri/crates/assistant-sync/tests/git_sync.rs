@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use assistant_sync::git_sync::git::{
-    git_current_branch, git_fetch, git_ref_hash, sanitize_git_stderr,
+    git_current_branch, git_fetch, git_ls_remote, git_ref_hash, sanitize_git_stderr,
 };
 use assistant_sync::git_sync::ssh::resolve_persist_hosts;
 use assistant_sync::git_sync::GitSync;
@@ -339,7 +339,21 @@ fn sanitize_git_stderr_redacts_credentials() {
     let sanitized = sanitize_git_stderr(&repo, raw);
     assert!(!sanitized.contains("alice"));
     assert!(!sanitized.contains("secret"));
-    assert!(sanitized.contains("https://***@git.example.com/repo.git/"));
+    assert!(sanitized.contains("https://git.example.com/repo.git/"));
+}
+
+#[test]
+fn t_s12_ls_remote_failure_never_leaks_credentials() {
+    git_env();
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("vault");
+    std::fs::create_dir_all(&repo).unwrap();
+    let url = "https://alice:secret-token@127.0.0.1:1/vault.git";
+
+    let error = git_ls_remote(&repo, url).unwrap_err();
+    let message = error.to_string();
+    assert!(!message.contains("alice"), "username leaked: {message}");
+    assert!(!message.contains("secret-token"), "token leaked: {message}");
 }
 
 #[test]

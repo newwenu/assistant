@@ -20,12 +20,23 @@ export default function ImportExportTab({
   importVault,
 }: ImportExportTabProps) {
   const { t } = useTranslation();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [exportFormat, setExportFormat] = useState<"json" | "csv">("json");
   const [importFormat, setImportFormat] = useState<"json" | "csv">("json");
   const [importFilePath, setImportFilePath] = useState("");
 
-  const handleExport = async () => {
+  const handleExport = () => {
+    modal.confirm({
+      title: t("vault.import_export.export_confirm_title"),
+      content: t("vault.import_export.export_confirm_content"),
+      okText: t("vault.import_export.export_confirm_ok"),
+      cancelText: t("vault.import_export.export_confirm_cancel"),
+      okButtonProps: { danger: true },
+      onOk: () => performExport(),
+    });
+  };
+
+  const performExport = async () => {
     const ext = exportFormat === "json" ? "json" : "csv";
     const filterName = exportFormat === "json" ? "JSON" : "CSV";
     const filePath = await save({

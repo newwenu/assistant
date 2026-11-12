@@ -1,12 +1,7 @@
-use base64::engine::general_purpose::STANDARD as B64;
-use base64::Engine;
-
-use assistant_crypto::vault_crypto::types::{CipherAlgorithm, MasterKey};
+use assistant_crypto::vault_crypto::types::MetaKey;
 use assistant_sync::types::SyncError;
 
 use crate::security_db::SecurityDbState;
-use crate::types::VaultCryptoInfo;
-use crate::vault_file::types::{Argon2Params, VaultCryptoMeta};
 use crate::vault_file::IntegrityResult;
 
 use super::SyncEngine;
@@ -15,7 +10,6 @@ impl SyncEngine {
     pub fn export_all_entries(
         &self,
         security_db: &SecurityDbState,
-        force: bool,
         skip_ids: &[String],
     ) -> Result<u32, SyncError> {
         let snapshots = security_db
@@ -24,23 +18,19 @@ impl SyncEngine {
         let deleted_ids = security_db
             .list_deleted_entry_ids()
             .map_err(|e| SyncError::Other(e.to_string()))?;
-        let crypto_info = security_db
-            .vault_crypto_info(self.vault_file.cipher_algorithm())
-            .map_err(|e| SyncError::Other(e.to_string()))?;
 
         self.vault_file.ensure_structure()?;
+        self.vault_file.check_repository_layout()?;
 
-        let mk_guard = security_db
-            .get_master_key()
-            .map_err(|_| SyncError::VaultLocked)?;
-        let master_key = mk_guard.as_ref().ok_or(SyncError::VaultLocked)?;
+        let dek_guard = security_db.get_dek().map_err(|_| SyncError::VaultLocked)?;
+        let dek = dek_guard.as_ref().ok_or(SyncError::VaultLocked)?;
 
         let mut exported = 0u32;
         for snapshot in &snapshots {
             if skip_ids.iter().any(|id| id == &snapshot.id) {
                 continue;
             }
-            self.vault_file.export_entry(master_key, snapshot, force)?;
+            self.vault_file.export_entry(dek, snapshot)?;
             exported += 1;
         }
 
@@ -51,52 +41,15 @@ impl SyncEngine {
             self.vault_file.remove_entry_file(id)?;
         }
 
-        let emergency = self.vault_file.read_emergency_data()?;
-        self.vault_file.export_vault_meta(
-            master_key,
-            Some(to_crypto_meta(&crypto_info)),
-            emergency,
-        )?;
+        crate::lifecycle::sync_write_meta(&self.vault_file, dek)
+            .map_err(|e| SyncError::Other(e.to_string()))?;
 
         Ok(exported)
     }
 
-    pub(super) fn write_signed_vault_meta(
-        &self,
-        security_db: &SecurityDbState,
-    ) -> Result<(), SyncError> {
-        let crypto_info = security_db
-            .vault_crypto_info(self.vault_file.cipher_algorithm())
-            .map_err(|e| SyncError::Other(e.to_string()))?;
-        let mk_guard = security_db
-            .get_master_key()
-            .map_err(|_| SyncError::VaultLocked)?;
-        let master_key = mk_guard.as_ref().ok_or(SyncError::VaultLocked)?;
-        let emergency = self.vault_file.read_emergency_data()?;
+    pub fn verify_meta_integrity(&self, meta_key: &MetaKey) -> Result<IntegrityResult, SyncError> {
         self.vault_file
-            .export_vault_meta(master_key, Some(to_crypto_meta(&crypto_info)), emergency)
-    }
-
-    pub fn verify_vault_meta_integrity(
-        &self,
-        master_key: &MasterKey,
-    ) -> Result<IntegrityResult, SyncError> {
-        self.vault_file.verify_vault_meta_integrity(master_key)
-    }
-}
-
-fn to_crypto_meta(info: &VaultCryptoInfo) -> VaultCryptoMeta {
-    VaultCryptoMeta {
-        master_key_salt: B64.encode(info.master_key_salt),
-        hash_salt: B64.encode(info.hash_salt),
-        argon2_params: Argon2Params {
-            m: info.argon2_m,
-            t: info.argon2_t,
-            p: info.argon2_p,
-        },
-        default_cipher: match info.default_cipher {
-            CipherAlgorithm::ChaCha20Poly1305 => "chacha20poly1305".to_string(),
-            CipherAlgorithm::Aes256Gcm => "aes256Gcm".to_string(),
-        },
+            .verify_meta_integrity(meta_key)
+            .map_err(|e| SyncError::Other(e.to_string()))
     }
 }

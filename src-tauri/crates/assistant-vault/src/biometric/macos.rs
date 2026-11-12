@@ -35,6 +35,22 @@ impl BiometricKeyStore for TouchIdKeyStore {
         Ok(available)
     }
 
+    fn acl_satisfied(&self) -> Result<bool, VaultError> {
+        let access_control = unsafe {
+            SecAccessControlCreateWithFlags(
+                kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                kSecAccessControlUserPresence,
+                std::ptr::null_mut(),
+            )
+        };
+        if access_control.is_null() {
+            warn!("Touch ID ACL (user presence) unsatisfied; biometric disabled");
+            return Ok(false);
+        }
+        unsafe { CFRelease(access_control as *const c_void) };
+        Ok(true)
+    }
+
     fn set_key(&self, key_id: &str, data: &[u8]) -> Result<(), VaultError> {
         let access_control = unsafe {
             SecAccessControlCreateWithFlags(
@@ -257,6 +273,7 @@ extern "C" {
     static kSecAttrSynchronizable: *const c_void;
     static kSecAttrAccessibleWhenUnlockedThisDeviceOnly: *const c_void;
     static kSecAccessControlBiometryCurrentSet: u32;
+    static kSecAccessControlUserPresence: u32;
 
     fn SecItemAdd(query: *const c_void, result: *mut c_void) -> i32;
     fn SecAccessControlCreateWithFlags(

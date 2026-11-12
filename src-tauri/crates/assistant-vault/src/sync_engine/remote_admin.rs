@@ -16,7 +16,22 @@ impl SyncEngine {
 
     pub fn init(&self, security_db: &crate::security_db::SecurityDbState) -> Result<(), SyncError> {
         self.vault_file.ensure_structure()?;
-        self.write_signed_vault_meta(security_db)?;
+        self.vault_file.ensure_gitignore()?;
+        if let Ok(removed) = self.vault_file.clean_temp_files() {
+            if removed > 0 {
+                log::info!(
+                    "Cleaned {} stale temporary file(s) from vault repo",
+                    removed
+                );
+            }
+        }
+        {
+            let dek_guard = security_db.get_dek().map_err(|_| SyncError::VaultLocked)?;
+            let dek = dek_guard.as_ref().ok_or(SyncError::VaultLocked)?;
+            crate::lifecycle::sync_write_meta(&self.vault_file, dek)
+                .map_err(|e| SyncError::Other(e.to_string()))?;
+        }
+        self.refresh_anchor(security_db)?;
         self.git_sync
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -28,20 +43,6 @@ impl SyncEngine {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone(url, true)
-    }
-
-    pub fn clone_recovery_repo(&self, url: &str) -> Result<(), SyncError> {
-        self.git_sync
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone(url, true)
-    }
-
-    pub fn checkout_recovery_repo(&self, commit: &str) -> Result<(), SyncError> {
-        self.git_sync
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .checkout_detached(commit)
     }
 
     pub fn add_remote(&self, remote: &str, url: &str) -> Result<(), SyncError> {

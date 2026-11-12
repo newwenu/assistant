@@ -1,3 +1,13 @@
+//! provider API key 的本机包裹。
+//!
+//! 事实认定（egress-spec §4.1）：密钥为 `SHA-256(machine_uid)`，而 `machine_uid`
+//! 可被同机任意进程读取，因此这里的包裹**不是保密**，只是混淆与防误读。
+//! 任何同机进程只要读到 provider 库文件即可解密，不得在 UI / 文档中宣称「已加密保护」。
+//!
+//! 升级路径（未实现，仅登记）：改用 OS keystore（DPAPI / Keychain / libsecret）
+//! 或用户口令派生密钥。本模块与保险箱密钥体系（`dek` / `master_key` / 生物识别
+//! wrapping key）完全隔离，禁止复用。
+
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::engine::general_purpose::STANDARD as B64;

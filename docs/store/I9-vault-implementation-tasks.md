@@ -1,11 +1,9 @@
 # I9 密码箱 — 实施任务清单（v1.5）
 
-> 状态：待执行（2026-11-11）
-> 基线：当前代码；v1.5 尚未实施。
+> **已被 [I9-vault-v15-tasklist.md](./I9-vault-v15-tasklist.md) 取代**（后者为进度唯一来源）；本文保留作历史参照。其中 `dbKey` 相关的旧口径（由 `KEK` 派生、改密需 `PRAGMA rekey`）以 key-hierarchy-spec 附录 C-16 为准。
 > 依据规格：
 > [核心](./I9-vault-key-hierarchy-spec.md)、[条目](./I9-vault-entry-cipher-spec.md)、[同步](./I9-vault-sync-crypto-spec.md)、[运行时](./I9-vault-runtime-session-spec.md)、[明文出口](./I9-vault-plaintext-egress-spec.md)、[生物识别](./I9-vault-biometric-spec.md)、[恢复通道](./I9-vault-recovery-channel-spec.md)、[审计](./I9-vault-audit-spec.md)、[能力门禁](./I9-vault-capability-gating-spec.md)。
 > 路径约定：全部为仓库相对路径。
-> 状态取值：`未开始` / `进行中` / `完成` / `阻塞`。
 
 ---
 
@@ -40,7 +38,7 @@
 | **M0-2** | 改密成功后处理旧备份：删除改密前的 `security-*.db.bak`，或对新库/备份重新 rekey；固定一种策略，不留给用户 | `security_db/rekey.rs`、`security_db/mod.rs` | 无 | 改密后用旧口令无法打开任何残留备份；`security_db.rs` 新增断言 | runtime §4.3、F13 |
 | **M0-3** | 导出护栏：`vault_export_to_file` 增加 `confirm_token("EXPORT-PLAINTEXT")`、路径校验、0600、临时文件 + rename、审计 | `src-tauri/src/cmd/vault/entries.rs`、`src/vault/settings/ImportExportTab.tsx` | 无 | 未传 token/非法路径被拒；导出后文件权限正确 | egress §2.1 |
 | **M0-4** | 预览与冲突揭示：`mask_entry_preview` 脱敏 `notes`；`vault_conflict_reveal` 接 `RevealGuard` + 审计 + TTL | `sync_engine/preview.rs`、`sync_engine/history.rs`、`cmd/vault/sync.rs` | 无 | notes 显示 `•••`；连点 4 次触发 `RateLimited` | egress §1.3、sync §2.7 |
-| **M0-5** | 灾难恢复临时目录清理：成功/失败都删除 `security/recovery/` | `cmd/vault/recovery.rs` | 无 | 导出后目录不存在 | egress §2.3、F12 |
+| **M0-5** | 恢复副本生命周期：`vault_recover_from_paper` clone 临时副本到 `security/recovery/` 只读，用后即删（含失败/panic）；启动与重置仓库时清残留 | `cmd/vault/recovery.rs`、`cmd/vault/mod.rs`（`cleanup_recovery_dir`） | 无 | 恢复结束后副本不存在；本机仓库不读不写 | recovery §3.0、egress §2.3、sync §2.9、F12 |
 | **M0-6** | 导入一致性：`vault_import` 写 `entries/*.enc` 并 `finalize`，不再只写库 | `cmd/vault/entries.rs` | 无 | 导入后立即检查 `.enc` 与 git 提交 | entry-cipher §5.2、F6 |
 | **M0-7** | 回归测试：为 M0-1–M0-6 增加断言 | `tests/security_db.rs`、`tests/vault_file.rs`、`tests/egress_guard.rs`（新增） | M0-1–M0-6 | 全部通过 | 各规格测试节 |
 
@@ -125,7 +123,7 @@
 | **M4-2** | push 顺序固定：写 `.enc` → manifest → meta → commit；删除 `sync_engine` 的 meta 写入 | `sync_engine/export.rs`、`lifecycle.rs` | M4-1 | 单一写入者；T-S1 通过 | sync §2.2–§2.3 |
 | **M4-3** | pull 顺序固定：git pull → 严格 meta → `vaultId` → `dekVersion` → integrity → manifest → import → anchor | `sync_engine/pull_push.rs` | M4-2 | T-S2–T-S7 通过 | sync §2.4–§2.6 |
 | **M4-4** | 冲突：`.vault-meta` 不自动合并；条目预览脱敏；`removed_ids` 以 manifest 为准 | `sync_engine/history.rs`、`preview.rs`、`pull_push.rs` | M4-3、M0-4 | T-S3/T-S4/T-S8/T-S9 通过 | sync §2.5–§2.7 |
-| **M4-5** | 仓库白名单 + `.gitignore` + `.tmp` 清理 + `security/recovery/` 清理 | `vault_file/mod.rs`、`cmd/vault/mod.rs`、`cmd/vault/recovery.rs` | M4-2 | T-S1/T-S11 通过 | sync §2.1、§2.9 |
+| **M4-5** | 仓库白名单 + `.gitignore` + `.tmp` 清理 + 恢复副本残留清理 | `vault_file/mod.rs`、`cmd/vault/mod.rs`、`cmd/vault/lifecycle.rs` | M4-2 | T-S1/T-S11 通过 | sync §2.1、§2.9 |
 
 ---
 

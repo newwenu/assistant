@@ -209,7 +209,7 @@ pub struct TotpBlob {
 
 ```rust
 pub fn derive_entry_key(dek: &Dek, entry_id: &str) -> PerEntryKey;       // v1.5
-pub fn derive_legacy_entry_key(master_key: &MasterKey, entry_id: &str) -> PerEntryKey; // 仅测试/迁移诊断，不用于新写入
+// v1 的 derive_legacy_entry_key(&MasterKey, entry_id) 与 MasterKey 类型已随 M2.12 删除（生产零调用）
 
 pub fn encrypt_entry_blob(
     key: &PerEntryKey,

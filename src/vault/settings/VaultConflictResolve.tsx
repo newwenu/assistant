@@ -33,8 +33,6 @@ import type {
 
 const { Text } = Typography;
 
-const REVEAL_TIMEOUT_MS = 30_000;
-
 type ConflictSide = "local" | "remote";
 
 interface VaultConflictResolveProps {
@@ -149,14 +147,15 @@ export default function VaultConflictResolve({
     const key = `${side}:${field}`;
     setRevealingKey(key);
     try {
-      const value = await vaultService.revealConflictField(
+      const result = await vaultService.revealConflictField(
         conflictPath,
         side,
         field,
       );
-      setRevealed((prev) => ({ ...prev, [key]: value }));
+      setRevealed((prev) => ({ ...prev, [key]: result.value }));
       const timer = revealTimers.current[key];
       if (timer) window.clearTimeout(timer);
+      const ttl = Math.max(0, result.expiresAt - Date.now());
       revealTimers.current[key] = window.setTimeout(() => {
         delete revealTimers.current[key];
         setRevealed((prev) => {
@@ -164,7 +163,7 @@ export default function VaultConflictResolve({
           delete next[key];
           return next;
         });
-      }, REVEAL_TIMEOUT_MS);
+      }, ttl);
     } catch (e) {
       message.error(vaultErrorMessage(e));
     } finally {

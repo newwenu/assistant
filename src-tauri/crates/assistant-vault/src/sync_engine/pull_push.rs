@@ -1,6 +1,5 @@
-use base64::engine::general_purpose::STANDARD as B64;
-use base64::Engine;
-
+use assistant_crypto::error::VaultError;
+use assistant_crypto::vault_crypto::derive_meta_key;
 use assistant_sync::types::{
     ImportReport, ImportSummary, PendingRemovalEntry, PendingRemovals, RepositoryState, SyncError,
     SyncResult, UnreadableReason,
@@ -8,9 +7,19 @@ use assistant_sync::types::{
 
 use crate::security_db::SecurityDbState;
 use crate::types::{ImportOutcome, VaultEntryImport};
+use crate::vault_file::types::VaultMetaFileV2;
 
 use super::preview::{attach_conflict_titles, collect_conflicts};
 use super::SyncEngine;
+
+fn map_meta_error(err: VaultError) -> SyncError {
+    match err {
+        VaultError::VaultVersionTooNew => SyncError::UnsupportedVaultVersion,
+        VaultError::VaultCorrupted(message) => SyncError::VaultCorrupted(message),
+        VaultError::NotInitialized => SyncError::NotInitialized,
+        other => SyncError::Other(other.to_string()),
+    }
+}
 
 impl SyncEngine {
     pub fn pending_removals(&self) -> Option<PendingRemovals> {
@@ -58,7 +67,8 @@ impl SyncEngine {
         let deleted = security_db
             .delete_entries_tx(ids, Some("remote"))
             .map_err(|e| SyncError::Other(e.to_string()))?;
-        self.export_all_entries(security_db, false, &[])?;
+        self.export_all_entries(security_db, &[])?;
+        self.refresh_anchor(security_db)?;
         self.finalize("vault: sync")?;
         *self
             .pending_removals
@@ -103,6 +113,8 @@ impl SyncEngine {
             }
         }
 
+        let remote_meta = self.validate_remote_meta(security_db)?;
+
         let report = self.import_from_repo(security_db, &before)?;
         log::info!(
             "Vault pull imported {} entries (inserted {}, updated {}, skipped {}, removed {})",
@@ -112,6 +124,8 @@ impl SyncEngine {
             report.summary.skipped,
             report.removed_ids.len()
         );
+
+        self.advance_anchor(security_db, &remote_meta)?;
 
         if !report.removed_ids.is_empty() {
             let pending = self.stage_pending_removals(security_db, &report.removed_ids)?;
@@ -128,31 +142,106 @@ impl SyncEngine {
         Ok(SyncResult::Success)
     }
 
+    pub(super) fn validate_meta_identity(
+        &self,
+        security_db: &SecurityDbState,
+    ) -> Result<VaultMetaFileV2, SyncError> {
+        self.vault_file.check_repository_layout()?;
+
+        let remote = self
+            .vault_file
+            .read_vault_meta_v2()
+            .map_err(map_meta_error)?;
+
+        let local_vault_id = security_db
+            .vault_id()
+            .map_err(|e| SyncError::Other(e.to_string()))?
+            .ok_or_else(|| SyncError::Other("local vault id is missing".to_string()))?;
+        if remote.vault_id != local_vault_id {
+            return Err(SyncError::VaultKeyMismatch(format!(
+                "remote repository belongs to vault {}",
+                remote.vault_id
+            )));
+        }
+
+        let dek_guard = security_db.get_dek().map_err(|_| SyncError::VaultLocked)?;
+        let dek = dek_guard.as_ref().ok_or(SyncError::VaultLocked)?;
+        let local_dek_version = dek_guard.dek_version().ok_or(SyncError::VaultLocked)?;
+        if remote.dek_version > local_dek_version {
+            return Err(SyncError::VaultDekVersionAhead {
+                remote: remote.dek_version,
+                local: local_dek_version,
+            });
+        }
+        if remote.dek_version < local_dek_version {
+            return Err(SyncError::VaultDekVersionBehind {
+                remote: remote.dek_version,
+                local: local_dek_version,
+            });
+        }
+
+        let meta_key = derive_meta_key(dek);
+        let integrity = self
+            .vault_file
+            .verify_meta_integrity(&meta_key)
+            .map_err(|e| SyncError::Other(e.to_string()))?;
+        if !integrity.valid {
+            return Err(SyncError::VaultMetaIntegrityFailed(integrity.message));
+        }
+
+        Ok(remote)
+    }
+
+    fn validate_remote_meta(
+        &self,
+        security_db: &SecurityDbState,
+    ) -> Result<VaultMetaFileV2, SyncError> {
+        let remote = self.validate_meta_identity(security_db)?;
+
+        self.vault_file.verify_manifest().map_err(|e| match e {
+            assistant_crypto::error::VaultError::VaultManifestMismatch => {
+                SyncError::VaultManifestMismatch
+            }
+            other => SyncError::Other(other.to_string()),
+        })?;
+
+        Ok(remote)
+    }
+
+    pub(super) fn advance_anchor(
+        &self,
+        security_db: &SecurityDbState,
+        remote_meta: &VaultMetaFileV2,
+    ) -> Result<(), SyncError> {
+        let meta_hash = self
+            .vault_file
+            .meta_file_hash()
+            .map_err(|e| SyncError::Other(e.to_string()))?;
+        security_db
+            .refresh_anchor(&meta_hash, remote_meta.dek_version)
+            .map_err(|e| SyncError::Other(e.to_string()))
+    }
+
+    /// 本地写完 `.vault-meta` 后前移 anchor。调用方必须保证此刻不持有 session 锁。
+    pub(super) fn refresh_anchor(&self, security_db: &SecurityDbState) -> Result<(), SyncError> {
+        crate::lifecycle::refresh_anchor(security_db, &self.vault_file)
+            .map_err(|e| SyncError::Other(e.to_string()))
+    }
+
     pub fn import_from_repo(
         &self,
         security_db: &SecurityDbState,
         before: &[String],
     ) -> Result<ImportReport, SyncError> {
+        let remote_meta = self
+            .vault_file
+            .read_vault_meta_v2()
+            .map_err(map_meta_error)?;
+
         let (imported, unreadable_ids) = {
-            let mk_guard = security_db
-                .get_master_key()
-                .map_err(|_| SyncError::VaultLocked)?;
-            let master_key = mk_guard.as_ref().ok_or(SyncError::VaultLocked)?;
-
-            let integrity = self.vault_file.verify_vault_meta_integrity(master_key)?;
-            if !integrity.valid {
-                return Err(self.attributed_integrity_error(security_db, integrity.message)?);
-            }
-
-            let (entries, unreadable_ids) = self.vault_file.read_all_entries(master_key)?;
-            if !unreadable_ids.is_empty() && self.remote_uses_other_master_key(security_db)? {
-                return Err(SyncError::VaultKeyMismatch(format!(
-                    "{} entry file(s) cannot be decrypted: {}",
-                    unreadable_ids.len(),
-                    unreadable_ids.join(", ")
-                )));
-            }
-            (entries, unreadable_ids)
+            let dek_guard = security_db.get_dek().map_err(|_| SyncError::VaultLocked)?;
+            let dek = dek_guard.as_ref().ok_or(SyncError::VaultLocked)?;
+            self.vault_file.read_all_entries(dek)?
         };
 
         let entries: Vec<VaultEntryImport> =
@@ -179,9 +268,16 @@ impl SyncEngine {
         }
 
         let after = self.vault_file.list_entry_files()?;
+        let manifest_ids: Vec<&str> = remote_meta
+            .manifest
+            .entries
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect();
         let removed_ids: Vec<String> = before
             .iter()
             .filter(|id| !after.iter().any(|existing| existing == *id))
+            .filter(|id| !manifest_ids.contains(&id.as_str()))
             .cloned()
             .collect();
 
@@ -208,46 +304,27 @@ impl SyncEngine {
         })
     }
 
-    fn remote_uses_other_master_key(
-        &self,
-        security_db: &SecurityDbState,
-    ) -> Result<bool, SyncError> {
-        let remote_salt = self
-            .vault_file
-            .read_vault_meta()
-            .ok()
-            .and_then(|meta| meta.crypto.map(|crypto| crypto.master_key_salt));
-
-        let Some(remote_salt) = remote_salt else {
+    fn remote_uses_other_dek(&self, security_db: &SecurityDbState) -> Result<bool, SyncError> {
+        let dek_guard = security_db.get_dek().map_err(|_| SyncError::VaultLocked)?;
+        let Some(dek) = dek_guard.as_ref() else {
             return Ok(false);
         };
-
-        let local = security_db
-            .vault_crypto_info(self.vault_file.cipher_algorithm())
-            .map_err(|e| SyncError::Other(e.to_string()))?;
-
-        Ok(remote_salt.trim() != B64.encode(local.master_key_salt))
-    }
-
-    fn attributed_integrity_error(
-        &self,
-        security_db: &SecurityDbState,
-        message: String,
-    ) -> Result<SyncError, SyncError> {
-        if self.remote_uses_other_master_key(security_db)? {
-            Ok(SyncError::VaultKeyMismatch(
-                "Remote repository was written with a different master key".to_string(),
-            ))
-        } else {
-            Ok(SyncError::VaultMetaIntegrityFailed(message))
+        if !self.vault_file.meta_path().exists() {
+            return Ok(false);
         }
+        let meta_key = derive_meta_key(dek);
+        let result = self
+            .vault_file
+            .verify_meta_integrity(&meta_key)
+            .map_err(|e| SyncError::Other(e.to_string()))?;
+        Ok(!result.valid)
     }
 
     fn unreadable_reason(
         &self,
         security_db: &SecurityDbState,
     ) -> Result<UnreadableReason, SyncError> {
-        if self.remote_uses_other_master_key(security_db)? {
+        if self.remote_uses_other_dek(security_db)? {
             Ok(UnreadableReason::KeyMismatch)
         } else {
             Ok(UnreadableReason::Corrupt)
@@ -271,7 +348,8 @@ impl SyncEngine {
             }
         }
 
-        self.export_all_entries(security_db, false, &[])?;
+        self.export_all_entries(security_db, &[])?;
+        self.refresh_anchor(security_db)?;
         self.finalize("vault: sync")?;
         Ok(SyncResult::Success)
     }
@@ -294,7 +372,8 @@ impl SyncEngine {
         };
 
         if !has_remote {
-            self.export_all_entries(security_db, false, &[])?;
+            self.export_all_entries(security_db, &[])?;
+            self.refresh_anchor(security_db)?;
             self.finalize("vault: sync")?;
             return Ok(SyncResult::NoRemote);
         }
@@ -314,6 +393,8 @@ impl SyncEngine {
             return Ok(SyncResult::Conflict(conflicts));
         }
 
+        let remote_meta = self.validate_remote_meta(security_db)?;
+
         let report = self.import_from_repo(security_db, &before)?;
 
         if !report.removed_ids.is_empty() {
@@ -326,9 +407,17 @@ impl SyncEngine {
             return Ok(SyncResult::PendingRemovals(pending));
         }
 
-        self.export_all_entries(security_db, false, &report.unreadable_ids)?;
+        self.export_all_entries(security_db, &report.unreadable_ids)?;
 
         self.finalize("vault: sync")?;
+
+        let meta_hash = self
+            .vault_file
+            .meta_file_hash()
+            .map_err(|e| SyncError::Other(e.to_string()))?;
+        security_db
+            .refresh_anchor(&meta_hash, remote_meta.dek_version)
+            .map_err(|e| SyncError::Other(e.to_string()))?;
 
         if !report.unreadable_ids.is_empty() {
             return Ok(SyncResult::UnreadableEntries {
@@ -353,7 +442,8 @@ impl SyncEngine {
             }
         }
 
-        self.export_all_entries(security_db, false, &[])?;
+        self.export_all_entries(security_db, &[])?;
+        self.refresh_anchor(security_db)?;
         self.finalize_force("vault: sync")?;
         Ok(SyncResult::Success)
     }

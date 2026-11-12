@@ -1,7 +1,6 @@
 # I9 密码箱 密钥体系设计（v1.5：`dek` 解耦 + 纸面即密钥）
 
 > 状态：设计文档（2026-10-28 修订）
-> **实施状态：未开始**（从 §8 的 P0-1 起）
 > 取代：本文早期版本（v2 keyslot + 本地/同步双槽方案，已废弃，理由见 [附录 B](#附录-b被否决的两个方案)）
 > 关联：`I9-vault-password-model-comparison.md`（横向对比基线）；I9-vault-spec-1-foundation、I9-vault-spec-5-ssh-and-recovery（已归档，仅作历史参照）
 > 范围：密钥派生、密钥层次、文件布局、改密/轮换/吊销语义、恢复通道权限半径。不含 UI 视觉、同步协议细节、条目字段加密格式。
@@ -397,6 +396,8 @@ GCM 的 AAD 固定为：
 
 ### 3.5 本机库失配（`LocalDbKeyMismatch`）
 
+> **已被 `I9-vault-key-hierarchy-spec.md` §4.7 取代**：最终实现改为 `dbKey = HKDF(dek, vaultId)`，改密不改变 `dek` 与本机库钥匙，因此**不再提供「输入旧口令重包」路径**，只保留 `rebuild_local_db` 重建入口。本节保留的是 A3「`dbKey` 由 KEK 派生」前提下的早期推导，仅作决策历史参照。
+
 触发场景：
 
 1. 本机改密崩溃（§3.2 第 4~6 步之间）。
@@ -570,8 +571,8 @@ UI 必须把这一点说清：「备份恢复密钥」旁边固定提示「恢�
 ```
 1. 检测：.vault-meta 的 version = 1（或缺失 version 但存在 crypto.masterKeySalt）
    ──▶ UnsupportedVaultVersion（明确错误，不是 LegacyVaultDetected）
-2. UI：提示「此库由旧版本创建，本版本不支持升级」，并提供「重置仓库」入口
-3. 重置仓库：二次确认 → 删除 .vault-meta / security.db / entries/ → 重新初始化
+2. UI：提示「此库由旧版本创建，本版本不支持升级」，同屏提示先自行备份仓库目录，并提供「重置仓库」入口
+3. 重置仓库：二次确认 → 删除 .vault-meta / security.db / entries/ → 回到初始化页（由用户主动初始化，不自动建库）
 4. 不解析旧库任何字段（判代际只看 version / 特征键是否存在），不重加密，不产生任何中间文件
 ```
 

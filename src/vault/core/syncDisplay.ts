@@ -1,7 +1,19 @@
 import type { TFunction } from "i18next";
 import type { Readyness, RemoteStatus, RepositoryState } from "./vault.types";
 
+const URL_USERINFO_RE = /\b[a-z][a-z0-9+.-]*:\/\/[^/\s"']*@/gi;
+
+export function redactUrlUserInfo(text: string): string {
+  return text.replace(URL_USERINFO_RE, (match: string) => {
+    const schemeEnd = match.indexOf("://") + 3;
+    return match.slice(0, schemeEnd);
+  });
+}
+
 export function remoteErrorText(status: RemoteStatus, t: TFunction): string {
+  const detail = status.errorDetail
+    ? redactUrlUserInfo(status.errorDetail)
+    : null;
   switch (status.errorKind) {
     case "noRemote":
       return t("vault.sync.remote_check_no_remote");
@@ -9,8 +21,8 @@ export function remoteErrorText(status: RemoteStatus, t: TFunction): string {
       return t("vault.sync.remote_check_no_upstream");
     case "fetchFailed":
     case "compareFailed":
-      return status.errorDetail
-        ? t("vault.sync.remote_check_failed", { message: status.errorDetail })
+      return detail
+        ? t("vault.sync.remote_check_failed", { message: detail })
         : t("vault.sync.remote_check_failed_generic");
     default:
       return t("vault.sync.remote_check_hint");
@@ -41,7 +53,7 @@ export function deriveSyncDisplay(input: {
     return { kind: "repoState", state: readyness.repoState };
   }
   if (syncError !== null) {
-    return { kind: "failed", message: syncError };
+    return { kind: "failed", message: redactUrlUserInfo(syncError) };
   }
   if (readyness === null) {
     return { kind: "unknown" };

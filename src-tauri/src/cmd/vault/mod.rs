@@ -5,7 +5,7 @@ use assistant_security::clipboard_guard::ClipboardGuard;
 use assistant_security::reveal_guard::RevealGuard;
 use assistant_security::screen_lock::ScreenLockMonitor;
 use assistant_vault::dto::VaultErrorDto;
-use assistant_vault::security_db::SecurityDbState;
+use assistant_vault::security_db::{LockReason, SecurityDbState};
 use assistant_vault::sync_engine::SyncEngine;
 
 use crate::app_dirs::AppDirs;
@@ -16,7 +16,13 @@ use crate::protocol::events::{emit_broadcast, event_name};
 const SECURITY_DIR: &str = "security";
 const SECURITY_DB_FILE: &str = "security.db";
 const VAULT_DIR: &str = "vault";
+/// 纸面恢复的临时仓库副本目录：clone 到这里读取，结束后整体删除，从不触碰本机仓库。
 const RECOVERY_DIR: &str = "recovery";
+/// 重置前的 `.vault-meta` 备份文件名，存放于 `<security>/`（仓库之外）。
+///
+/// 备份含 `slots[].wrapped_dek`：写进 `<security>/vault/` 会同时撞上
+/// `check_repository_layout` 白名单与同步白名单（后者会把备份推上远端）。
+const META_BACKUP_FILE: &str = "vault-meta.bak";
 
 pub(crate) fn security_dir(dirs: &AppDirs) -> std::path::PathBuf {
     dirs.data().join(SECURITY_DIR)
@@ -30,9 +36,52 @@ pub(crate) fn repo_dir(dirs: &AppDirs) -> std::path::PathBuf {
     security_dir(dirs).join(VAULT_DIR)
 }
 
+/// 重置前的 meta 备份路径 `<security>/vault-meta.bak`，与仓库同级、不在仓库内。
+pub(crate) fn meta_backup_path(dirs: &AppDirs) -> std::path::PathBuf {
+    security_dir(dirs).join(META_BACKUP_FILE)
+}
+
+/// 把旧实现留在仓库根目录的 `.vault-meta.bak` 迁出仓库。
+///
+/// 早期重置流程把备份写进 `<security>/vault/`，命中 `check_repository_layout`
+/// 白名单校验后会让后续每次写条目都报 `RepositoryContainsForbiddenFile`。
+/// 这里只迁移、不丢弃内容；失败仅告警，不阻断启动。
+fn relocate_legacy_meta_backup(dirs: &AppDirs) -> std::io::Result<()> {
+    let legacy = repo_dir(dirs).join(".vault-meta.bak");
+    if !legacy.is_file() {
+        return Ok(());
+    }
+    let target = meta_backup_path(dirs);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(&legacy, &target)?;
+    std::fs::remove_file(&legacy)?;
+    log::info!("Relocated legacy .vault-meta.bak out of the vault repository");
+    Ok(())
+}
+
+/// 纸面恢复专用的仓库副本目录 `<security>/recovery/`。
+///
+/// 恢复只读这里，不读也不改本机仓库 `<security>/vault/`；因此换机 / 本机仓库损坏时同样可用。
 pub(crate) fn recovery_dir(dirs: &AppDirs) -> std::path::PathBuf {
     security_dir(dirs).join(RECOVERY_DIR)
 }
+
+/// 删除 `<security>/recovery/`。
+///
+/// 两种调用时机：恢复开始前清掉上一次崩溃残留；恢复结束（成功/失败）后清理本次副本。
+pub(crate) fn cleanup_recovery_dir(security_root: &std::path::Path) -> std::io::Result<()> {
+    let path = security_root.join(RECOVERY_DIR);
+    if path.is_dir() {
+        std::fs::remove_dir_all(&path)?;
+    } else if path.exists() {
+        std::fs::remove_file(&path)?;
+    }
+    Ok(())
+}
+
+pub(crate) const REVEAL_TTL_SECS: u64 = 30;
 
 pub struct SshAgentState {
     pub added_fingerprints: std::sync::Mutex<std::collections::HashSet<String>>,
@@ -71,6 +120,10 @@ pub(crate) fn persist_sync_remote_url(url: Option<&str>) {
         return;
     }
     conf.vault_sync_remote_url = next;
+    if let Err(e) = conf.validate() {
+        log::warn!("Refusing to persist invalid sync remote url: {}", e);
+        return;
+    }
     if let Err(e) = conf.save() {
         log::warn!("Failed to persist sync remote url: {}", e);
     }
@@ -220,6 +273,12 @@ pub(crate) fn sync_state(app: &AppHandle) -> Result<tauri::State<'_, SyncEngine>
 
 pub fn vault_setup(handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let dirs = AppDirs::resolve()?;
+    if let Err(e) = cleanup_recovery_dir(&security_dir(&dirs)) {
+        log::warn!("Failed to remove stale recovery directory: {}", e);
+    }
+    if let Err(e) = relocate_legacy_meta_backup(&dirs) {
+        log::warn!("Failed to relocate legacy .vault-meta.bak: {}", e);
+    }
     let db_path = security_db_path(&dirs);
     let db_path_str = db_path.to_str().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::InvalidData, "安全库路径不是 UTF-8")
@@ -268,7 +327,7 @@ fn spawn_screen_lock_watcher(handle: &AppHandle) {
                 .unwrap_or(true);
             if lock_on_screen {
                 let state = app_handle.state::<SecurityDbState>();
-                if let Err(e) = state.lock() {
+                if let Err(e) = state.lock_session(LockReason::ScreenLock) {
                     log::error!("Screen lock triggered vault_lock but failed: {}", e);
                 } else {
                     log::info!("Screen lock triggered vault_lock");
@@ -307,9 +366,13 @@ fn spawn_screen_lock_watcher(handle: &AppHandle) {
     log::info!("ScreenLockMonitor initialized");
 }
 
+/// 退出路径：先锁库（写 `app_exit` 审计并清零密钥），再清剪贴板 / SSH / 揭示态。
 pub fn vault_cleanup_on_exit(app: &AppHandle) {
-    let guard = app.state::<ClipboardGuard>();
-    let _ = guard.force_clear();
+    let state = app.state::<SecurityDbState>();
+    if let Err(e) = state.lock_session(LockReason::AppExit) {
+        log::warn!("Vault lock on exit failed: {}", e);
+    }
+    on_locked(app);
 }
 
 pub fn apply_vault_side_effects(prev: &VaultConf, conf: &VaultConf) {
@@ -326,4 +389,32 @@ pub fn apply_conf(_app: &tauri::AppHandle, patch: serde_json::Value) -> Result<(
     merged.save().map_err(|e| e.to_string())?;
     apply_vault_side_effects(&prev, &merged);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn removes_stale_recovery_directory_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let security_root = dir.path().join("security");
+        let recovery = security_root.join("recovery");
+        std::fs::create_dir_all(recovery.join("entries")).unwrap();
+        std::fs::write(recovery.join("entries/e1.enc"), b"ciphertext").unwrap();
+
+        cleanup_recovery_dir(&security_root).unwrap();
+        assert!(!recovery.exists(), "recovery 目录必须被整体删除");
+        assert!(security_root.exists(), "security 根目录必须保留");
+    }
+
+    #[test]
+    fn cleanup_is_noop_when_recovery_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let security_root = dir.path().join("security");
+        std::fs::create_dir_all(&security_root).unwrap();
+
+        cleanup_recovery_dir(&security_root).unwrap();
+        assert!(security_root.exists());
+    }
 }

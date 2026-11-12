@@ -18,6 +18,8 @@ pub enum VaultError {
     Database(String),
     #[error("Entry not found: {0}")]
     NotFound(String),
+    #[error("Entry corrupted: {0}")]
+    EntryCorrupted(String),
     #[error("Validation error: {0}")]
     Validation(String),
     #[error("Clipboard error: {0}")]
@@ -34,12 +36,26 @@ pub enum VaultError {
     BiometricReset,
     #[error("Invalid SSH key format: {0}")]
     InvalidKeyFormat(String),
-    #[error("Invalid recovery key")]
-    InvalidRecoveryKey,
-    #[error("Recovery key not set")]
-    RecoveryKeyNotSet,
+    #[error("Invalid recovery key format")]
+    InvalidRecoveryKeyFormat,
+    #[error("Recovery key checksum mismatch")]
+    InvalidRecoveryKeyChecksum,
+    #[error("Recovery key or vault meta tampered")]
+    InvalidRecoveryKeyOrMetaTampered,
     #[error("Vault meta integrity check failed")]
     VaultMetaIntegrityFailed,
+    #[error("Unsupported vault version; reset required")]
+    UnsupportedVaultVersion,
+    #[error("Vault version is newer than this application; upgrade required")]
+    VaultVersionTooNew,
+    #[error("Local vault database key mismatch")]
+    LocalDbKeyMismatch,
+    #[error("Vault rollback detected")]
+    VaultRollbackDetected,
+    #[error("Vault manifest mismatch")]
+    VaultManifestMismatch,
+    #[error("Vault meta is corrupted or unparsable")]
+    VaultCorrupted(String),
     #[error("{0}")]
     Other(String),
 }

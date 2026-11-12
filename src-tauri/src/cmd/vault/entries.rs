@@ -1,25 +1,39 @@
+use std::path::{Path, PathBuf};
+
 use assistant_tools::os::path::{resolve_external_input, ExternalInputMode};
 
 use tauri::{command, AppHandle};
 
-use assistant_vault::audit::{log as audit_log, AuditEvent};
+use assistant_vault::audit::{log as audit_log, path_digest, AuditEvent};
 use assistant_vault::dto::{
-    VaultEntryCreate, VaultEntryDetail, VaultEntrySummary, VaultEntryUpdate, VaultErrorDto,
+    ExportResultDto, VaultEntryCreate, VaultEntryDetail, VaultEntrySummary, VaultEntryUpdate,
+    VaultErrorDto,
 };
+use assistant_vault::plaintext_export::{validate_export_target, verify_export_token};
 use assistant_vault::types::{VaultEntryCsvRow, VaultEntryExport, VaultEntrySnapshot, VaultError};
 
-use assistant_crypto::vault_crypto::types::MasterKey;
+use assistant_crypto::vault_crypto::types::Dek;
+use assistant_vault::security_db::SecurityDbState;
 use assistant_vault::sync_engine::SyncEngine;
 
 fn export_entry_to_sync(
     engine: &SyncEngine,
-    master_key: &MasterKey,
+    dek: &Dek,
     snapshot: &VaultEntrySnapshot,
 ) -> Result<(), VaultError> {
     engine
         .vault_file_manager()
-        .export_entry(master_key, snapshot, false)
+        .export_entry(dek, snapshot)
         .map_err(|e| VaultError::Other(e.to_string()))
+}
+
+fn sync_meta(engine: &SyncEngine, dek: &Dek) -> Result<(), VaultError> {
+    assistant_vault::lifecycle::sync_write_meta(engine.vault_file_manager(), dek)?;
+    Ok(())
+}
+
+fn refresh_anchor(state: &SecurityDbState, engine: &SyncEngine) -> Result<(), VaultError> {
+    assistant_vault::lifecycle::refresh_anchor(state, engine.vault_file_manager())
 }
 
 fn prepare_sync(engine: &SyncEngine) {
@@ -78,10 +92,13 @@ pub fn vault_create_entry(
         prepare_sync(&engine);
 
         let snapshot = state
-            .create_entry_tx(entry, super::cipher_algo(), |mk, snap| {
-                export_entry_to_sync(&engine, mk, snap)
+            .create_entry_tx(entry, super::cipher_algo(), |dek, snap| {
+                export_entry_to_sync(&engine, dek, snap)?;
+                sync_meta(&engine, dek)
             })
             .map_err(VaultErrorDto::from)?;
+
+        refresh_anchor(state, &engine).map_err(VaultErrorDto::from)?;
 
         log::info!("Vault entry created: {}", snapshot.id);
         super::ssh::auto_add_entry(&app, &snapshot.id);
@@ -103,10 +120,13 @@ pub fn vault_update_entry(
         prepare_sync(&engine);
 
         let snapshot = state
-            .update_entry_tx(&id, entry, super::cipher_algo(), |mk, snap| {
-                export_entry_to_sync(&engine, mk, snap)
+            .update_entry_tx(&id, entry, super::cipher_algo(), |dek, snap| {
+                export_entry_to_sync(&engine, dek, snap)?;
+                sync_meta(&engine, dek)
             })
             .map_err(VaultErrorDto::from)?;
+
+        refresh_anchor(state, &engine).map_err(VaultErrorDto::from)?;
 
         log::info!("Vault entry updated: {}", snapshot.id);
         finalize_sync(&engine, &format!("vault: update {}", snapshot.id));
@@ -127,10 +147,13 @@ pub fn vault_set_favorite(
         prepare_sync(&engine);
 
         let snapshot = state
-            .set_favorite_tx(&id, is_favorite, |mk, snap| {
-                export_entry_to_sync(&engine, mk, snap)
+            .set_favorite_tx(&id, is_favorite, |dek, snap| {
+                export_entry_to_sync(&engine, dek, snap)?;
+                sync_meta(&engine, dek)
             })
             .map_err(VaultErrorDto::from)?;
+
+        refresh_anchor(state, &engine).map_err(VaultErrorDto::from)?;
 
         log::info!(
             "Vault entry favorite set: {} -> {}",
@@ -153,13 +176,16 @@ pub fn vault_delete_entry(app: AppHandle, id: String) -> Result<(), VaultErrorDt
         let fingerprint = super::ssh::entry_fingerprint(&app, &id);
 
         state
-            .delete_entry_tx(&id, |entry_id| {
+            .delete_entry_tx(&id, |dek, entry_id| {
                 engine
                     .vault_file_manager()
                     .remove_entry_file(entry_id)
-                    .map_err(|e| VaultError::Other(e.to_string()))
+                    .map_err(|e| VaultError::Other(e.to_string()))?;
+                sync_meta(&engine, dek)
             })
             .map_err(VaultErrorDto::from)?;
+
+        refresh_anchor(state, &engine).map_err(VaultErrorDto::from)?;
 
         if let Some(fp) = fingerprint {
             super::ssh::auto_remove_fingerprint(&app, &fp);
@@ -188,8 +214,13 @@ pub fn vault_restore_entry(app: AppHandle, id: String) -> Result<(), VaultErrorD
         prepare_sync(&engine);
 
         let snapshot = state
-            .restore_entry_tx(&id, |mk, snap| export_entry_to_sync(&engine, mk, snap))
+            .restore_entry_tx(&id, |dek, snap| {
+                export_entry_to_sync(&engine, dek, snap)?;
+                sync_meta(&engine, dek)
+            })
             .map_err(VaultErrorDto::from)?;
+
+        refresh_anchor(state, &engine).map_err(VaultErrorDto::from)?;
 
         log::info!("Vault entry restored: {}", snapshot.id);
         finalize_sync(&engine, &format!("vault: restore {}", snapshot.id));
@@ -228,6 +259,13 @@ pub fn vault_purge_deleted(app: AppHandle) -> Result<u32, VaultErrorDto> {
 
         log::info!("Vault purged {} deleted entries", purged);
         if purged > 0 {
+            {
+                let dek_guard = state.get_dek().map_err(VaultErrorDto::from)?;
+                let dek = dek_guard
+                    .as_ref()
+                    .ok_or_else(|| VaultErrorDto::from(VaultError::Locked))?;
+                sync_meta(&engine, dek).map_err(VaultErrorDto::from)?;
+            }
             finalize_sync(&engine, &format!("vault: purge {} entries", purged));
         }
         Ok(purged)
@@ -243,52 +281,14 @@ pub async fn vault_change_master_password(
 ) -> Result<(), VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
         super::with_unlocked(&app, |state| {
-            state
-                .change_master_password(&current, &new, super::cipher_algo())
-                .map_err(VaultErrorDto::from)?;
-
-            {
-                let key_store = super::biometric::get_key_store();
-                if state
-                    .is_biometric_enrolled(key_store.as_ref())
-                    .unwrap_or(false)
-                {
-                    let _ = state.disenroll_biometric(key_store.as_ref());
-                }
-            }
-
-            {
-                let engine = super::sync_state(&app)?;
-                let master_key = state.get_master_key().map_err(VaultErrorDto::from)?;
-                let mk = master_key
-                    .as_ref()
-                    .ok_or_else(|| VaultErrorDto::from(VaultError::Locked))?;
-
-                if let Err(e) = engine.clear_emergency_data(mk) {
-                    log::warn!(
-                        "Failed to clear emergency data after master password change: {}",
-                        e
-                    );
-                }
-            }
-
-            {
-                let engine = super::sync_state(&app)?;
-                if let Err(e) = engine.export_all_entries(state, true, &[]) {
-                    log::warn!(
-                        "Failed to re-export vault entries after master password change: {}",
-                        e
-                    );
-                }
-                finalize_sync(&engine, "vault: master password changed");
-            }
-
-            {
-                let guard = state.get_conn().map_err(VaultErrorDto::from)?;
-                if let Some(conn) = guard.as_ref() {
-                    let _ = audit_log(conn, AuditEvent::RecoveryKeyInvalidated, None);
-                }
-            }
+            let engine = super::sync_state(&app)?;
+            assistant_vault::lifecycle::change_password(
+                state,
+                engine.vault_file_manager(),
+                &current,
+                &new,
+            )
+            .map_err(VaultErrorDto::from)?;
 
             log::info!("Vault master password changed");
             Ok(())
@@ -298,23 +298,39 @@ pub async fn vault_change_master_password(
     .map_err(|e| super::internal_error(format!("Vault task join failed: {}", e)))?
 }
 
+fn resolve_export_target(path: &str) -> Result<PathBuf, VaultErrorDto> {
+    let target =
+        resolve_external_input(path, ExternalInputMode::Write).map_err(super::validation_error)?;
+
+    let dirs = crate::app_dirs::AppDirs::resolve()
+        .map_err(|e| super::internal_error(format!("Failed to resolve app dirs: {}", e)))?;
+    let security = super::security_dir(&dirs);
+    let repo = super::repo_dir(&dirs);
+
+    validate_export_target(&target, &[security.as_path(), repo.as_path()])
+        .map_err(VaultErrorDto::from)
+}
+
+fn write_private_file(target: &Path, content: &[u8]) -> Result<(), VaultError> {
+    assistant_vault::plaintext_export::write_private_file(target, content)
+}
+
 // precondition: Unlocked
 #[command]
 pub async fn vault_export_to_file(
     app: AppHandle,
     format: String,
     path: String,
-) -> Result<(), VaultErrorDto> {
+    confirm_token: String,
+) -> Result<ExportResultDto, VaultErrorDto> {
+    verify_export_token(&confirm_token).map_err(VaultErrorDto::from)?;
+
     tauri::async_runtime::spawn_blocking(move || {
+        let target = resolve_export_target(&path)?;
+
         super::with_unlocked(&app, |state| {
             let entries: Vec<VaultEntryExport> =
                 state.export_entries().map_err(VaultErrorDto::from)?;
-            log::info!(
-                "Vault export to file: {} entries as {} -> {}",
-                entries.len(),
-                format,
-                path
-            );
 
             let content = match format.as_str() {
                 "json" => serde_json::to_string_pretty(&entries)
@@ -342,9 +358,40 @@ pub async fn vault_export_to_file(
                 }
             };
 
-            let target = resolve_external_input(&path, ExternalInputMode::Write)
-                .map_err(super::validation_error)?;
-            std::fs::write(&target, &content).map_err(|e| VaultErrorDto::from(VaultError::Io(e)))
+            let digest = path_digest(&target.to_string_lossy());
+            let audit_detail = format!("{}:{}:{}", format, entries.len(), digest);
+
+            if let Err(err) = write_private_file(&target, &content) {
+                if let Ok(guard) = state.get_conn() {
+                    if let Some(conn) = guard.as_ref() {
+                        let _ = audit_log(
+                            conn,
+                            AuditEvent::VaultEntriesExported,
+                            Some(&format!("{}:failed", audit_detail)),
+                        );
+                    }
+                }
+                log::warn!("Vault export to file failed: {}", err);
+                return Err(VaultErrorDto::from(err));
+            }
+
+            if let Ok(guard) = state.get_conn() {
+                if let Some(conn) = guard.as_ref() {
+                    let _ = audit_log(conn, AuditEvent::VaultEntriesExported, Some(&audit_detail));
+                }
+            }
+
+            log::info!(
+                "Vault export to file: {} entries as {} -> {}",
+                entries.len(),
+                format,
+                target.display()
+            );
+
+            Ok(ExportResultDto {
+                path: target.to_string_lossy().to_string(),
+                count: entries.len() as u32,
+            })
         })
     })
     .await
@@ -388,13 +435,45 @@ pub async fn vault_import(
                 }
             };
 
+            let engine = super::sync_state(&app)?;
+            prepare_sync(&engine);
+
             let result = state
-                .import_entries(entries, super::cipher_algo())
+                .import_entries(entries, super::cipher_algo(), |mk, snapshot| {
+                    export_entry_to_sync(&engine, mk, snapshot)
+                })
                 .map_err(VaultErrorDto::from)?;
+
+            if result > 0 {
+                {
+                    let dek_guard = state.get_dek().map_err(VaultErrorDto::from)?;
+                    let dek = dek_guard
+                        .as_ref()
+                        .ok_or_else(|| VaultErrorDto::from(VaultError::Locked))?;
+                    sync_meta(&engine, dek).map_err(VaultErrorDto::from)?;
+                }
+                finalize_sync(&engine, &format!("vault: import {} entries", result));
+            }
+
+            if let Ok(guard) = state.get_conn() {
+                if let Some(conn) = guard.as_ref() {
+                    let _ = audit_log(
+                        conn,
+                        AuditEvent::VaultEntriesImported,
+                        Some(&format!(
+                            "{}:{}:{}",
+                            format,
+                            result,
+                            path_digest(&file_path.to_string_lossy())
+                        )),
+                    );
+                }
+            }
+
             log::info!(
                 "Vault import: {} entries from {} ({})",
                 result,
-                path,
+                file_path.display(),
                 format
             );
             Ok(result)

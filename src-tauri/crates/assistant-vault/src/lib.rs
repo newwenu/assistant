@@ -3,7 +3,9 @@
 pub mod audit;
 pub mod biometric;
 pub mod dto;
+pub mod lifecycle;
 pub mod password_strength;
+pub mod plaintext_export;
 pub mod recovery_key;
 pub mod security_db;
 pub mod shared;

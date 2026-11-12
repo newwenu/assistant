@@ -1,237 +1,336 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine;
 use rand::Rng;
-use rusqlite::params;
-use zeroize::Zeroize;
+use sha2::{Digest, Sha256};
 
-use crate::audit::{log as audit_log, AuditEvent};
-use assistant_crypto::error::VaultError;
-use assistant_crypto::vault_crypto::types::{CipherAlgorithm, MasterKey};
-use assistant_crypto::vault_crypto::VaultCrypto;
+use crate::audit::{log_dual, AuditEvent};
+use crate::types::VaultError;
+use crate::vault_file::types::{KdfParams, VaultMetaFileV2, VaultSlot};
+use crate::vault_file::VaultFileManager;
+use assistant_crypto::vault_crypto::types::{CipherAlgorithm, DbKey, Dek};
+use assistant_crypto::vault_crypto::{
+    build_slot_aad, derive_entry_key, derive_kek, open_dek, seal_dek,
+};
 
-use super::{meta, SecurityDbState, BOOTSTRAP_SALT};
+use super::entries::field_crypto::{
+    decrypt_custom_fields, decrypt_opt, encrypt_custom_fields, encrypt_opt, FIELD_NOTES,
+    FIELD_PASSWORD, FIELD_TOTP,
+};
+use super::{
+    entries, meta, open_connection, schema, Anchor, SecurityDbState, BACKUP_PREFIX, BACKUP_SUFFIX,
+    MAX_BACKUPS,
+};
+
+const PASSWORD_SLOT_TYPE: &str = "password";
+const KEK_SALT_LEN: usize = 16;
 
 impl SecurityDbState {
     pub fn change_master_password(
         &self,
-        current_password: &str,
-        new_password: &str,
-        algo: CipherAlgorithm,
-    ) -> Result<(), VaultError> {
-        {
-            let strength = crate::password_strength::estimate_strength(new_password);
-            if strength.score < 2 {
-                return Err(VaultError::Validation(format!(
-                    "New master password too weak (score {}/4, need ≥2). {}",
-                    strength.score, strength.crack_time_display
-                )));
+        repo: &VaultFileManager,
+        current: &str,
+        new: &str,
+    ) -> Result<VaultMetaFileV2, VaultError> {
+        let strength = crate::password_strength::estimate_strength(new);
+        if strength.score < 2 {
+            return Err(VaultError::Validation(format!(
+                "New master password too weak (score {}/4, need ≥2). {}",
+                strength.score, strength.crack_time_display
+            )));
+        }
+
+        let meta_v2 = repo.read_vault_meta_v2()?;
+        let slot = meta_v2
+            .slots
+            .iter()
+            .find(|slot| slot.slot_type == PASSWORD_SLOT_TYPE)
+            .ok_or_else(|| VaultError::VaultCorrupted("password slot not found".to_string()))?
+            .clone();
+
+        let old_salt = decode_salt(&slot.kdf)?;
+        let kek_old = derive_kek(current, &old_salt, slot.kdf.m, slot.kdf.t, slot.kdf.p)?;
+        let wrapped_old = B64
+            .decode(&slot.wrapped_dek)
+            .map_err(|e| VaultError::VaultCorrupted(format!("wrappedDek decode failed: {}", e)))?;
+        let aad_old = build_slot_aad(
+            &slot.payload_kind,
+            &slot.slot_type,
+            &slot.id,
+            meta_v2.dek_version,
+        );
+        let dek = open_dek(&kek_old, &wrapped_old, &aad_old)?;
+
+        let new_salt: [u8; KEK_SALT_LEN] = rand::thread_rng().gen();
+        let kek_new = derive_kek(new, &new_salt, slot.kdf.m, slot.kdf.t, slot.kdf.p)?;
+
+        let next_slot_id = next_password_slot_id(&meta_v2.slots);
+        let aad_new = build_slot_aad(
+            &slot.payload_kind,
+            &slot.slot_type,
+            &next_slot_id,
+            meta_v2.dek_version,
+        );
+        let wrapped_new = seal_dek(&kek_new, &dek, &aad_new)?;
+
+        let new_slot = VaultSlot {
+            id: next_slot_id,
+            slot_type: slot.slot_type.clone(),
+            payload_kind: slot.payload_kind.clone(),
+            kdf: KdfParams {
+                algo: slot.kdf.algo.clone(),
+                salt: B64.encode(new_salt),
+                m: slot.kdf.m,
+                t: slot.kdf.t,
+                p: slot.kdf.p,
+                v: slot.kdf.v,
+            },
+            wrapped_dek: B64.encode(wrapped_new),
+            created_at: crate::types::now_millis(),
+        };
+
+        let mut meta_new = meta_v2.clone();
+        meta_new.slots = vec![new_slot];
+
+        let db_path = self.db_path().to_string();
+        let meta_path = repo.meta_path();
+        let audit_writer = self.audit_writer();
+
+        let (committed_meta, meta_hash) = self.with_session_mut(|session| {
+            if dek.expose() != session.dek.expose() {
+                return Err(VaultError::VaultCorrupted(
+                    "password slot dek does not match session dek".to_string(),
+                ));
             }
-        }
 
-        let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let conn = conn_guard.as_ref().ok_or(VaultError::Locked)?;
+            repo.write_vault_meta_v2(&mut meta_new, &session.meta_key)?;
+            let meta_hash = sha256_hex_file(&meta_path)?;
 
-        let hash_salt = meta::get_salt(conn, "hash_salt")?
-            .ok_or_else(|| VaultError::Database("hash_salt not found".to_string()))?;
-        let stored_hash = meta::get_master_key_hash(conn)?
-            .ok_or_else(|| VaultError::Database("master_key_hash not found".to_string()))?;
-        let valid = VaultCrypto::verify_master_password(current_password, &stored_hash, &hash_salt)
-            .map_err(VaultError::Crypto)?;
-        if !valid {
-            return Err(VaultError::InvalidPassword);
-        }
-
-        let backup_path = Self::backup_conn(conn, Path::new(&self.db_path))?;
-
-        let new_master_key_salt: [u8; 32] = rand::thread_rng().gen();
-        let new_hash_salt: [u8; 32] = rand::thread_rng().gen();
-        let new_master_key_bytes =
-            VaultCrypto::derive_master_key(new_password, &new_master_key_salt)
-                .map_err(VaultError::Crypto)?;
-        let new_master_key_hash = VaultCrypto::derive_master_key(new_password, &new_hash_salt)
-            .map_err(VaultError::Crypto)?;
-        let new_master_key = MasterKey::new(new_master_key_bytes);
-
-        let entry_ids: Vec<String>;
-        {
-            let mk_guard = self.master_key.lock().unwrap_or_else(|e| e.into_inner());
-            let old_master_key = mk_guard.as_ref().ok_or(VaultError::Locked)?;
-
-            entry_ids = {
-                let mut stmt = conn
-                    .prepare("SELECT id FROM vault_entries WHERE deleted_at IS NULL")
-                    .map_err(|e| VaultError::Database(e.to_string()))?;
-                let rows = stmt
-                    .query_map([], |row| row.get(0))
-                    .map_err(|e| VaultError::Database(e.to_string()))?;
-                rows.filter_map(|r| r.ok()).collect()
+            let revision = meta::get_anchor(&session.conn)
+                .map_err(VaultError::Database)?
+                .map(|anchor| anchor.revision)
+                .unwrap_or(0)
+                .saturating_add(1);
+            let anchor = Anchor {
+                meta_hash: meta_hash.clone(),
+                dek_version: meta_new.dek_version,
+                revision,
             };
+            meta::set_anchor(&session.conn, &anchor).map_err(VaultError::Database)?;
 
-            conn.execute_batch("BEGIN TRANSACTION")
-                .map_err(|e| VaultError::Database(e.to_string()))?;
+            let _ = log_dual(
+                Some(&session.conn),
+                Some(&audit_writer),
+                AuditEvent::MasterPasswordChange,
+                None,
+            );
 
-            let re_encrypt_result: Result<(), VaultError> = (|| {
-                for eid in &entry_ids {
-                    let old_entry_key = VaultCrypto::derive_entry_key(old_master_key, eid);
-                    let new_entry_key = VaultCrypto::derive_entry_key(&new_master_key, eid);
+            Ok((meta_new.clone(), meta_hash))
+        })?;
 
-                    let re_encrypt = |col: &str| -> Result<Option<String>, VaultError> {
-                        let encrypted: Option<String> = conn
-                            .query_row(
-                                &format!("SELECT {} FROM vault_entries WHERE id = ?1", col),
-                                params![eid],
-                                |row| row.get(0),
-                            )
-                            .map_err(|e| VaultError::Database(e.to_string()))?;
-                        match encrypted {
-                            Some(enc) => {
-                                let pt = VaultCrypto::decrypt_field(&enc, old_entry_key.expose())
-                                    .map_err(VaultError::Crypto)?;
-                                let re_enc =
-                                    VaultCrypto::encrypt_field(&pt, new_entry_key.expose(), algo)
-                                        .map_err(VaultError::Crypto)?;
-                                Ok(Some(re_enc))
-                            }
-                            None => Ok(None),
-                        }
-                    };
+        match Self::purge_backups(Path::new(&db_path)) {
+            Ok(removed) => log::info!("Purged {} pre-rotation vault backup(s)", removed),
+            Err(err) => log::warn!("Failed to purge pre-rotation vault backups: {}", err),
+        }
 
-                    let new_password_enc = re_encrypt("encrypted_password")?;
-                    let new_notes_enc = re_encrypt("encrypted_notes")?;
-                    let new_totp_enc = re_encrypt("encrypted_totp_secret")?;
+        log::info!(
+            "Master password changed (O(1): dek repackage only, anchor {})",
+            meta_hash
+        );
+        Ok(committed_meta)
+    }
 
-                    let new_custom_fields_enc: Option<String> = {
-                        let cf_json: Option<String> = conn
-                            .query_row(
-                                "SELECT encrypted_custom_fields FROM vault_entries WHERE id = ?1",
-                                params![eid],
-                                |row| row.get(0),
-                            )
-                            .map_err(|e| VaultError::Database(e.to_string()))?;
-                        match cf_json {
-                            Some(json) => {
-                                let fields: Vec<serde_json::Value> = serde_json::from_str(&json)
-                                    .map_err(|e| VaultError::Database(e.to_string()))?;
-                                let re_encrypted: Vec<serde_json::Value> = fields
-                                    .iter()
-                                    .map(|f| {
-                                        if f.get("isProtected").and_then(|v| v.as_bool())
-                                            == Some(true)
-                                        {
-                                            if let Some(enc_val) =
-                                                f.get("valueEncrypted").and_then(|v| v.as_str())
-                                            {
-                                                match VaultCrypto::decrypt_field(
-                                                    enc_val,
-                                                    old_entry_key.expose(),
-                                                ) {
-                                                    Ok(pt) => {
-                                                        match VaultCrypto::encrypt_field(
-                                                            &pt,
-                                                            new_entry_key.expose(),
-                                                            algo,
-                                                        ) {
-                                                            Ok(re_enc) => serde_json::json!({
-                                                                "name": f.get("name"),
-                                                                "valueEncrypted": re_enc,
-                                                                "isProtected": true
-                                                            }),
-                                                            Err(_) => f.clone(),
-                                                        }
-                                                    }
-                                                    Err(_) => f.clone(),
-                                                }
-                                            } else {
-                                                f.clone()
-                                            }
-                                        } else {
-                                            f.clone()
-                                        }
-                                    })
-                                    .collect();
-                                Some(
-                                    serde_json::to_string(&re_encrypted)
-                                        .map_err(|e| VaultError::Validation(e.to_string()))?,
-                                )
-                            }
-                            None => None,
-                        }
-                    };
+    pub fn rebuild_local_db(
+        &self,
+        repo: &VaultFileManager,
+        dek: &Dek,
+        db_key: &DbKey,
+        anchor: &Anchor,
+    ) -> Result<(), VaultError> {
+        let db_path = PathBuf::from(self.db_path());
 
-                    conn.execute(
-                        "UPDATE vault_entries SET encrypted_password = ?1, encrypted_notes = ?2, encrypted_totp_secret = ?3, encrypted_custom_fields = ?4 WHERE id = ?5",
-                        params![new_password_enc, new_notes_enc, new_totp_enc, new_custom_fields_enc, eid],
-                    ).map_err(|e| VaultError::Database(e.to_string()))?;
-                }
-                Ok(())
-            })();
+        if let Some(session) = self
+            .session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            drop(session);
+        }
 
-            if let Err(e) = re_encrypt_result {
-                let _ = conn.execute_batch("ROLLBACK");
-                return Err(e);
+        if db_path.exists() {
+            Self::backup_db_file(&db_path)?;
+            std::fs::remove_file(&db_path)?;
+        }
+
+        let conn = open_connection(&db_path, db_key)?;
+        conn.execute_batch(schema::INIT_SQL)
+            .map_err(|e| VaultError::Database(e.to_string()))?;
+        meta::ensure_schema_version(&conn).map_err(VaultError::Database)?;
+        let vault_id = repo.read_vault_meta_v2()?.vault_id;
+        meta::set_vault_id(&conn, &vault_id).map_err(VaultError::Database)?;
+
+        let algo = repo.cipher_algorithm();
+        let entry_count = match entries::rebuild_index(&conn, repo, dek, algo) {
+            Ok(count) => count,
+            Err(err) => {
+                drop(conn);
+                let _ = std::fs::remove_file(&db_path);
+                return Err(err);
             }
+        };
 
-            meta::set_salt(conn, "master_key_salt", &new_master_key_salt)?;
-            meta::set_salt(conn, "hash_salt", &new_hash_salt)?;
-            meta::set_master_key_hash(conn, &new_master_key_hash)?;
-
-            if let Some(test_id) = entry_ids.first() {
-                let test_entry_key = VaultCrypto::derive_entry_key(&new_master_key, test_id);
-                let test_enc: Option<String> = conn
-                    .query_row(
-                        "SELECT encrypted_password FROM vault_entries WHERE id = ?1",
-                        params![test_id],
-                        |row| row.get(0),
-                    )
-                    .ok()
-                    .flatten();
-                if let Some(enc) = test_enc {
-                    if VaultCrypto::decrypt_field(&enc, test_entry_key.expose()).is_err() {
-                        let _ = conn.execute_batch("ROLLBACK");
-                        return Err(VaultError::Crypto(
-                            "Verification failed after re-encryption, transaction rolled back"
-                                .to_string(),
-                        ));
-                    }
-                }
-            }
-
-            conn.execute_batch("COMMIT")
-                .map_err(|e| VaultError::Database(e.to_string()))?;
+        let rebuilt_anchor = Anchor {
+            meta_hash: anchor.meta_hash.clone(),
+            dek_version: anchor.dek_version,
+            revision: 0,
+        };
+        if let Err(err) = meta::set_anchor(&conn, &rebuilt_anchor).map_err(VaultError::Database) {
+            drop(conn);
+            let _ = std::fs::remove_file(&db_path);
+            return Err(err);
         }
 
-        let new_bootstrap_key_bytes = VaultCrypto::derive_master_key(new_password, &BOOTSTRAP_SALT)
-            .map_err(VaultError::Crypto)?;
-        let new_bootstrap_key = MasterKey::new(new_bootstrap_key_bytes);
-        let new_sqlcipher_key = VaultCrypto::derive_sqlcipher_key(&new_bootstrap_key);
-        let new_sqlcipher_key_hex = hex::encode(new_sqlcipher_key);
-        conn.execute_batch(&format!("PRAGMA rekey = \"x'{}'\"", new_sqlcipher_key_hex))
-            .map_err(|e| {
-                VaultError::Database(format!(
-                    "PRAGMA rekey failed: {}. Backup at: {}",
-                    e,
-                    backup_path.display()
-                ))
-            })?;
-        {
-            let mut key_arr = new_sqlcipher_key;
-            key_arr.zeroize();
-        }
+        let audit_writer = self.audit_writer();
+        let _ = log_dual(
+            Some(&conn),
+            Some(&audit_writer),
+            AuditEvent::LocalDbRebuilt,
+            Some(&entry_count.to_string()),
+        );
+        drop(conn);
 
-        {
-            let mut mk_guard = self.master_key.lock().unwrap_or_else(|e| e.into_inner());
-            *mk_guard = Some(new_master_key);
-        }
-        {
-            let mut bk_guard = self.bootstrap_key.lock().unwrap_or_else(|e| e.into_inner());
-            *bk_guard = Some(new_bootstrap_key);
-        }
-
-        let _ = audit_log(conn, AuditEvent::MasterPasswordChange, None);
-        log::info!("Master password changed successfully (PRAGMA rekey + entry re-encryption + custom_fields re-encryption)");
-
-        drop(conn_guard);
-
+        log::info!(
+            "Local security db rebuilt from entry files ({} entries, anchor revision reset to 0)",
+            entry_count
+        );
         Ok(())
     }
+
+    fn backup_db_file(db_path: &Path) -> Result<PathBuf, VaultError> {
+        let backup_dir = Self::backup_dir_for(db_path)?;
+        std::fs::create_dir_all(&backup_dir)?;
+
+        let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f");
+        let mut seq = 0u32;
+        let mut backup_path = backup_dir.join(format!(
+            "{}{}-{:03}{}",
+            BACKUP_PREFIX, timestamp, seq, BACKUP_SUFFIX
+        ));
+        while backup_path.exists() {
+            seq += 1;
+            backup_path = backup_dir.join(format!(
+                "{}{}-{:03}{}",
+                BACKUP_PREFIX, timestamp, seq, BACKUP_SUFFIX
+            ));
+        }
+
+        std::fs::copy(db_path, &backup_path)?;
+        Self::prune_backups(&backup_dir, MAX_BACKUPS)?;
+        Ok(backup_path)
+    }
+}
+
+fn decode_salt(kdf: &KdfParams) -> Result<Vec<u8>, VaultError> {
+    B64.decode(&kdf.salt)
+        .map_err(|e| VaultError::VaultCorrupted(format!("kdf salt decode failed: {}", e)))
+}
+
+fn next_password_slot_id(slots: &[VaultSlot]) -> String {
+    let max = slots
+        .iter()
+        .filter_map(|slot| slot.id.strip_prefix("pwd-"))
+        .filter_map(|suffix| suffix.parse::<u32>().ok())
+        .max()
+        .unwrap_or(0);
+    format!("pwd-{}", max + 1)
+}
+
+fn sha256_hex_file(path: &Path) -> Result<String, VaultError> {
+    let bytes = std::fs::read(path)?;
+    Ok(hex::encode(Sha256::digest(&bytes)))
+}
+
+/// `rotate_dek` 第 4 步：把本机库里所有条目的加密列从 `dek_old` 换成 `dek_new`。
+///
+/// 包含墓碑行（`deleted_at IS NOT NULL`），否则重建索引会让已删条目复活。
+/// 明文列与 `revision` 不变，只有密文与派生密钥变化。
+pub(crate) fn reencrypt_entry_columns(
+    tx: &rusqlite::Transaction<'_>,
+    dek_old: &Dek,
+    dek_new: &Dek,
+    algo: CipherAlgorithm,
+) -> Result<usize, VaultError> {
+    let rows: Vec<(
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT id, encrypted_password, encrypted_notes, encrypted_totp_secret, \
+                 encrypted_custom_fields FROM vault_entries",
+            )
+            .map_err(|e| VaultError::Database(e.to_string()))?;
+        let mapped = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                ))
+            })
+            .map_err(|e| VaultError::Database(e.to_string()))?;
+        let mut out = Vec::new();
+        for row in mapped {
+            out.push(row.map_err(|e| VaultError::Database(e.to_string()))?);
+        }
+        out
+    };
+
+    let mut count = 0usize;
+    for (id, enc_password, enc_notes, enc_totp, enc_custom) in rows {
+        let key_old = derive_entry_key(dek_old, &id);
+        let key_new = derive_entry_key(dek_new, &id);
+
+        let password = decrypt_opt(enc_password.as_deref(), &key_old, FIELD_PASSWORD, &id)?;
+        let notes = decrypt_opt(enc_notes.as_deref(), &key_old, FIELD_NOTES, &id)?;
+        let totp = decrypt_opt(enc_totp.as_deref(), &key_old, FIELD_TOTP, &id)?;
+        let custom = decrypt_custom_fields(enc_custom.as_deref(), &key_old, &id)?;
+
+        let new_password = encrypt_opt(password.as_deref(), &key_new, FIELD_PASSWORD, &id, algo)?;
+        let new_notes = encrypt_opt(notes.as_deref(), &key_new, FIELD_NOTES, &id, algo)?;
+        let new_totp = encrypt_opt(totp.as_deref(), &key_new, FIELD_TOTP, &id, algo)?;
+        let new_custom = match enc_custom {
+            Some(_) => Some(encrypt_custom_fields(&custom, &key_new, &id, algo)?),
+            None => None,
+        };
+
+        tx.execute(
+            "UPDATE vault_entries SET encrypted_password = ?1, encrypted_notes = ?2, \
+             encrypted_totp_secret = ?3, encrypted_custom_fields = ?4 WHERE id = ?5",
+            rusqlite::params![new_password, new_notes, new_totp, new_custom, &id],
+        )
+        .map_err(|e| VaultError::Database(e.to_string()))?;
+        count += 1;
+    }
+
+    Ok(count)
+}
+
+/// `rotate_dek` 第 8 步：对本机 SQLCipher 库执行 `PRAGMA rekey` 切到新 `dbKey`。
+///
+/// 必须在该连接上没有打开事务时调用；成功后同一连接的后续读写继续可用。
+pub(crate) fn rotate_local_db_key(
+    conn: &rusqlite::Connection,
+    db_key_new: &DbKey,
+) -> Result<(), VaultError> {
+    let key_hex = hex::encode(db_key_new.expose());
+    conn.execute_batch(&format!("PRAGMA rekey = \"x'{}'\";", key_hex))
+        .map_err(|e| VaultError::Database(format!("PRAGMA rekey failed: {}", e)))
 }

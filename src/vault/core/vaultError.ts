@@ -1,4 +1,5 @@
 import type { VaultErrorCode, VaultErrorDto } from "./vault.types";
+import { vaultErrorText } from "./vaultErrorText";
 
 const VAULT_ERROR_CODES: readonly VaultErrorCode[] = [
   "locked",
@@ -8,15 +9,23 @@ const VAULT_ERROR_CODES: readonly VaultErrorCode[] = [
   "rateLimited",
   "crypto",
   "notFound",
+  "entryCorrupted",
   "validation",
   "biometricUnavailable",
   "biometricCancelled",
   "biometricFailed",
   "biometricReset",
   "invalidKeyFormat",
-  "invalidRecoveryKey",
-  "recoveryKeyNotSet",
+  "invalidRecoveryKeyFormat",
+  "invalidRecoveryKeyChecksum",
+  "invalidRecoveryKeyOrMetaTampered",
   "vaultMetaIntegrityFailed",
+  "unsupportedVaultVersion",
+  "vaultVersionTooNew",
+  "localDbKeyMismatch",
+  "vaultRollbackDetected",
+  "vaultManifestMismatch",
+  "vaultCorrupted",
   "cancelled",
   "repoNotInitialized",
   "noRemoteConfigured",
@@ -44,5 +53,18 @@ export function vaultErrorCode(value: unknown): VaultErrorCode | null {
 }
 
 export function vaultErrorMessage(value: unknown): string {
-  return isVaultErrorDto(value) ? value.message : String(value);
+  if (!isVaultErrorDto(value)) return String(value);
+  return vaultErrorText(value.code, value.message) ?? value.message;
+}
+
+export function needsRepositoryReset(code: VaultErrorCode | null): boolean {
+  return code === "unsupportedVaultVersion";
+}
+
+export function needsDbRepair(code: VaultErrorCode | null): boolean {
+  return code === "localDbKeyMismatch" || code === "vaultRollbackDetected";
+}
+
+export function needsAppUpgrade(code: VaultErrorCode | null): boolean {
+  return code === "vaultVersionTooNew";
 }

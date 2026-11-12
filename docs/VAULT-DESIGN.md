@@ -1,5 +1,9 @@
 # I9 — 密码管理箱（Password Vault）设计文档
 
+> **状态：历史设计（已归档，只读）**。本文描述的是 v1 密钥体系（`master_key` 同时充当口令派生物与条目密钥根、三次 Argon2id、`BOOTSTRAP_SALT`、32 字符恢复码、`emergency.token`），这些内容**已被 v1.5 取代，不代表当前实现**。
+> 现状以 `docs/VAULT-DESIGN-v1.5.md`（v1.5 设计文档，讲加密模型与取舍，自包含）与 `docs/store/` 下的活跃规格为准：`I9-vault-key-hierarchy-design.md` / `I9-vault-key-hierarchy-spec.md`（密钥层次）、`I9-vault-entry-cipher-spec.md`（条目层）、`I9-vault-sync-crypto-spec.md`（仓库完整性）、`I9-vault-runtime-session-spec.md`（运行时与会话）、`I9-vault-plaintext-egress-spec.md`（明文出口）、`I9-vault-recovery-channel-spec.md`（纸面恢复）、`I9-vault-audit-spec.md`（审计）、`I9-vault-capability-gating-spec.md`（能力门禁）、`I9-vault-crypto-surface-inventory.md`（全景清单）。
+> 保留原因：作为 I9 的原始需求与选型记录，供追溯；本文不再修改，其 TOTP 章节已被 `I34-vault-totp-config-design.md`（已归档）取代，Git 同步章节已被 `I32-vault-git-sync-spec.md`（已归档）取代。
+
 ## 1. 概述
 
 在现有工具箱体系中新增 **密码管理箱** 工具，提供本地加密存储 + 云同步能力。复用项目已有的 AES-256-GCM 加密、SQLite 存储、工具注册体系，新增 Argon2id 主密码派生 + Git 云同步（参考 prs）。

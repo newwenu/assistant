@@ -1,13 +1,15 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
-use assistant_crypto::vault_crypto::types::{CipherAlgorithm, MasterKey};
-use assistant_crypto::vault_crypto::VaultCrypto;
+use assistant_crypto::vault_crypto::derive_entry_key;
+use assistant_crypto::vault_crypto::types::{CipherAlgorithm, Dek};
 
 use crate::audit::{log as audit_log, AuditEvent};
 use crate::security_db::SecurityDbState;
 use crate::types::{ImportOutcome, VaultEntryImport, VaultEntrySnapshot, VaultError};
 
-use super::field_crypto::{encrypt_custom_fields, encrypt_opt};
+use super::field_crypto::{
+    encrypt_custom_fields, encrypt_opt, FIELD_NOTES, FIELD_PASSWORD, FIELD_TOTP,
+};
 use super::snapshot::read_snapshot;
 
 impl SecurityDbState {
@@ -18,9 +20,11 @@ impl SecurityDbState {
         export: F,
     ) -> Result<VaultEntrySnapshot, VaultError>
     where
-        F: FnOnce(&MasterKey, &VaultEntrySnapshot) -> Result<(), VaultError>,
+        F: FnOnce(&Dek, &VaultEntrySnapshot) -> Result<(), VaultError>,
     {
-        self.with_transaction(|conn, mk| {
+        self.with_transaction(|conn, session| {
+            let dek = &session.dek;
+            let dek_version = session.dek_version;
             let local_revision: Option<i64> = conn
                 .query_row(
                     "SELECT revision FROM vault_entries WHERE id = ?1",
@@ -35,9 +39,9 @@ impl SecurityDbState {
                 None => entry.revision + 1,
             };
 
-            write_imported_entry_in(conn, mk, &entry, revision, algo)?;
-            let snapshot = read_snapshot(conn, mk, &entry.id)?;
-            export(mk, &snapshot)?;
+            write_imported_entry_in(conn, dek, &entry, revision, algo)?;
+            let snapshot = read_snapshot(conn, dek, dek_version, &entry.id)?;
+            export(dek, &snapshot)?;
             let _ = audit_log(conn, AuditEvent::VaultEntryUpdated, Some(&entry.id));
             Ok(snapshot)
         })
@@ -50,9 +54,11 @@ impl SecurityDbState {
         export: F,
     ) -> Result<VaultEntrySnapshot, VaultError>
     where
-        F: FnOnce(&MasterKey, &VaultEntrySnapshot) -> Result<(), VaultError>,
+        F: FnOnce(&Dek, &VaultEntrySnapshot) -> Result<(), VaultError>,
     {
-        self.with_transaction(|conn, mk| {
+        self.with_transaction(|conn, session| {
+            let dek = &session.dek;
+            let dek_version = session.dek_version;
             let max_revision: i64 = conn
                 .query_row(
                     "SELECT COALESCE(MAX(revision), 0) FROM vault_entries",
@@ -62,9 +68,9 @@ impl SecurityDbState {
                 .map_err(|e| VaultError::Database(e.to_string()))?;
             let revision = max_revision.max(entry.revision) + 1;
 
-            write_imported_entry_in(conn, mk, &entry, revision, algo)?;
-            let snapshot = read_snapshot(conn, mk, &entry.id)?;
-            export(mk, &snapshot)?;
+            write_imported_entry_in(conn, dek, &entry, revision, algo)?;
+            let snapshot = read_snapshot(conn, dek, dek_version, &entry.id)?;
+            export(dek, &snapshot)?;
             let _ = audit_log(conn, AuditEvent::VaultEntryCreated, Some(&entry.id));
             Ok(snapshot)
         })
@@ -75,13 +81,13 @@ impl SecurityDbState {
         entries: Vec<VaultEntryImport>,
         algo: CipherAlgorithm,
     ) -> Result<Vec<ImportOutcome>, VaultError> {
-        self.with_conn_and_key(|conn, mk| {
+        self.with_conn_and_dek(|conn, dek, _dv| {
             let tx = conn
                 .unchecked_transaction()
                 .map_err(|e| VaultError::Database(e.to_string()))?;
             let mut outcomes = Vec::with_capacity(entries.len());
             for entry in entries {
-                outcomes.push(upsert_imported_in(&tx, mk, entry, algo)?);
+                outcomes.push(upsert_imported_in(&tx, dek, entry, algo)?);
             }
             tx.commit()
                 .map_err(|e| VaultError::Database(e.to_string()))?;
@@ -90,19 +96,37 @@ impl SecurityDbState {
     }
 }
 
-fn write_imported_entry_in(
+pub(super) fn write_imported_entry_in(
     conn: &Connection,
-    mk: &MasterKey,
+    dek: &Dek,
     entry: &VaultEntryImport,
     revision: i64,
     algo: CipherAlgorithm,
 ) -> Result<(), VaultError> {
-    let entry_key = VaultCrypto::derive_entry_key(mk, &entry.id);
-    let encrypted_password = encrypt_opt(entry.password.as_deref(), entry_key.expose(), algo)?;
-    let encrypted_notes = encrypt_opt(entry.notes.as_deref(), entry_key.expose(), algo)?;
-    let encrypted_totp = encrypt_opt(entry.totp_secret.as_deref(), entry_key.expose(), algo)?;
+    let entry_key = derive_entry_key(dek, &entry.id);
+    let encrypted_password = encrypt_opt(
+        entry.password.as_deref(),
+        &entry_key,
+        FIELD_PASSWORD,
+        &entry.id,
+        algo,
+    )?;
+    let encrypted_notes = encrypt_opt(
+        entry.notes.as_deref(),
+        &entry_key,
+        FIELD_NOTES,
+        &entry.id,
+        algo,
+    )?;
+    let encrypted_totp = encrypt_opt(
+        entry.totp_secret.as_deref(),
+        &entry_key,
+        FIELD_TOTP,
+        &entry.id,
+        algo,
+    )?;
     let encrypted_custom_fields =
-        encrypt_custom_fields(&entry.custom_fields, entry_key.expose(), algo)?;
+        encrypt_custom_fields(&entry.custom_fields, &entry_key, &entry.id, algo)?;
     let tags_json =
         serde_json::to_string(&entry.tags).map_err(|e| VaultError::Validation(e.to_string()))?;
 
@@ -179,7 +203,7 @@ fn write_imported_entry_in(
 
 fn upsert_imported_in(
     conn: &Connection,
-    mk: &MasterKey,
+    dek: &Dek,
     entry: VaultEntryImport,
     algo: CipherAlgorithm,
 ) -> Result<ImportOutcome, VaultError> {
@@ -192,12 +216,30 @@ fn upsert_imported_in(
         .optional()
         .map_err(|e| VaultError::Database(e.to_string()))?;
 
-    let entry_key = VaultCrypto::derive_entry_key(mk, &entry.id);
-    let encrypted_password = encrypt_opt(entry.password.as_deref(), entry_key.expose(), algo)?;
-    let encrypted_notes = encrypt_opt(entry.notes.as_deref(), entry_key.expose(), algo)?;
-    let encrypted_totp = encrypt_opt(entry.totp_secret.as_deref(), entry_key.expose(), algo)?;
+    let entry_key = derive_entry_key(dek, &entry.id);
+    let encrypted_password = encrypt_opt(
+        entry.password.as_deref(),
+        &entry_key,
+        FIELD_PASSWORD,
+        &entry.id,
+        algo,
+    )?;
+    let encrypted_notes = encrypt_opt(
+        entry.notes.as_deref(),
+        &entry_key,
+        FIELD_NOTES,
+        &entry.id,
+        algo,
+    )?;
+    let encrypted_totp = encrypt_opt(
+        entry.totp_secret.as_deref(),
+        &entry_key,
+        FIELD_TOTP,
+        &entry.id,
+        algo,
+    )?;
     let encrypted_custom_fields =
-        encrypt_custom_fields(&entry.custom_fields, entry_key.expose(), algo)?;
+        encrypt_custom_fields(&entry.custom_fields, &entry_key, &entry.id, algo)?;
     let tags_json =
         serde_json::to_string(&entry.tags).map_err(|e| VaultError::Validation(e.to_string()))?;
 
