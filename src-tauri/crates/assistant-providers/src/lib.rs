@@ -1,5 +1,6 @@
 pub mod anthropic;
 pub mod base;
+pub mod capability;
 pub mod client;
 pub mod diagnostics;
 pub mod gemini;

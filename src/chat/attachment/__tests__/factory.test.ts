@@ -1,21 +1,43 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { storageService } from "@/services/storageService";
+import type { AttachmentLimitsDto } from "@/types/protocol.contract";
 import {
   createFileAttachmentFromFile,
   createImageAttachmentFromFile,
   createPathAttachment,
   validateImageFile,
 } from "../factory";
-import { ATTACHMENT_MAX_IMAGE_SIZE_BYTES } from "../types";
+import {
+  prefetchAttachmentLimits,
+  resetAttachmentLimitsForTest,
+} from "../limits";
+
+const LIMITS: AttachmentLimitsDto = {
+  maxImages: 4,
+  maxFiles: 4,
+  maxImageBytes: 8 * 1024 * 1024,
+  maxFileBytes: 16 * 1024 * 1024,
+};
 
 vi.mock("@/services/storageService", () => ({
-  storageService: { importAttachment: vi.fn() },
+  storageService: { importAttachment: vi.fn(), getAttachmentLimits: vi.fn() },
 }));
 vi.mock("../paths", () => ({
   attachmentUrl: vi.fn(() => Promise.resolve("asset://localhost/attachment")),
 }));
 
 const importAttachment = vi.mocked(storageService.importAttachment);
+const getAttachmentLimits = vi.mocked(storageService.getAttachmentLimits);
+
+async function loadLimits(overrides: Partial<AttachmentLimitsDto> = {}) {
+  resetAttachmentLimitsForTest();
+  getAttachmentLimits.mockResolvedValue({ ...LIMITS, ...overrides });
+  await prefetchAttachmentLimits();
+}
+
+beforeEach(async () => {
+  await loadLimits();
+});
 
 function imageFile(name = "shot.png", type = "image/png", size = 0): File {
   return new File([new Uint8Array(size)], name, { type });
@@ -44,9 +66,17 @@ describe("validateImageFile", () => {
   it("rejects oversized image", () => {
     expect(
       validateImageFile(
-        imageFile("big.png", "image/png", ATTACHMENT_MAX_IMAGE_SIZE_BYTES + 1),
+        imageFile("big.png", "image/png", LIMITS.maxImageBytes + 1),
       ),
     ).toBe("too_large");
+  });
+
+  it("follows the limits reported by the backend DTO", async () => {
+    await loadLimits({ maxImageBytes: 10 });
+    expect(validateImageFile(imageFile("a.png", "image/png", 11))).toBe(
+      "too_large",
+    );
+    expect(validateImageFile(imageFile("b.png", "image/png", 10))).toBeNull();
   });
 });
 

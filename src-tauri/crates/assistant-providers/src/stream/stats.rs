@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use log::debug;
+use log::{debug, warn};
 
 use crate::types::unified::{UnifiedResponse, UnifiedTokenUsage};
 
@@ -14,6 +14,7 @@ pub struct StreamStats {
     total_sse_events: usize,
     total_unified_responses: usize,
     last_usage: Option<UnifiedTokenUsage>,
+    last_replay_protocol: Option<String>,
     counters: BTreeMap<String, usize>,
 }
 
@@ -27,6 +28,7 @@ impl StreamStats {
             total_sse_events: 0,
             total_unified_responses: 0,
             last_usage: None,
+            last_replay_protocol: None,
             counters: BTreeMap::new(),
         }
     }
@@ -43,6 +45,10 @@ impl StreamStats {
 
     pub fn increment(&mut self, label: impl Into<String>) {
         *self.counters.entry(label.into()).or_insert(0) += 1;
+    }
+
+    pub fn counter(&self, label: &str) -> usize {
+        self.counters.get(label).copied().unwrap_or(0)
     }
 
     pub fn record_unified_response(&mut self, response: &UnifiedResponse) {
@@ -77,6 +83,11 @@ impl StreamStats {
         }
         if response.provider_metadata.is_some() {
             self.increment("out:provider_metadata");
+            classified = true;
+        }
+        if let Some(capture) = response.model_response_replay.as_ref() {
+            self.last_replay_protocol = Some(capture.protocol.clone());
+            self.increment("out:replay_capture");
             classified = true;
         }
 
@@ -139,6 +150,16 @@ impl StreamStats {
             unified_response_rate_per_sec,
             counter_lines
         );
+
+        if self.counter("out:replay_capture") > 0 {
+            warn!(
+                target: "ai::stream_stats",
+                "{} opaque reasoning captured (replay-only): count={} protocol={}",
+                self.provider,
+                self.counter("out:replay_capture"),
+                self.last_replay_protocol.as_deref().unwrap_or("unknown")
+            );
+        }
     }
 
     pub fn total_sse_events(&self) -> usize {
@@ -208,5 +229,36 @@ mod tests {
         let usage = stats.last_usage.as_ref().unwrap();
         assert_eq!(usage.prompt_token_count, 10);
         assert_eq!(usage.candidates_token_count, 20);
+    }
+
+    #[test]
+    fn records_replay_capture_separately() {
+        use crate::types::unified::{ModelResponseReplayCapture, ModelResponseReplayItem};
+        let mut stats = StreamStats::new("codex");
+        stats.record_unified_response(&UnifiedResponse {
+            model_response_replay: Some(ModelResponseReplayCapture {
+                protocol: "codex".to_string(),
+                items: vec![ModelResponseReplayItem::OpaqueReasoning {
+                    item_id: None,
+                    summary: Vec::new(),
+                    opaque_state: "enc".to_string(),
+                }],
+            }),
+            ..Default::default()
+        });
+        assert_eq!(stats.counter("out:replay_capture"), 1);
+        assert_eq!(stats.counter("out:other"), 0);
+        assert_eq!(stats.last_replay_protocol.as_deref(), Some("codex"));
+    }
+
+    #[test]
+    fn no_replay_capture_for_plain_text() {
+        let mut stats = StreamStats::new("openai");
+        stats.record_unified_response(&UnifiedResponse {
+            text: Some("hi".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(stats.counter("out:replay_capture"), 0);
+        assert!(stats.last_replay_protocol.is_none());
     }
 }

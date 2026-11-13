@@ -147,6 +147,31 @@ export function extractPlainText(content: string): string {
   return content;
 }
 
+function derivedTextOfBlock(block: ContentBlock): string | null {
+  // 向前兼容：parseContent 允许未知 type 通过，故按宽类型读取而非依赖封闭联合
+  const b: { type: string; text?: unknown; attachment?: { name?: string } } =
+    block;
+  switch (b.type) {
+    case "text":
+      return typeof b.text === "string" ? b.text : null;
+    case "image":
+      return "[图片]";
+    case "file":
+      return b.attachment?.name ? `[文件 ${b.attachment.name}]` : "[文件]";
+    default:
+      return `[${b.type}]`;
+  }
+}
+
+export function extractDerivedText(content: string): string {
+  const blocks = parseContent(content);
+  if (!blocks) return content;
+  return blocks
+    .map(derivedTextOfBlock)
+    .filter((t): t is string => t !== null)
+    .join("\n");
+}
+
 export function rebuildContent(
   originalContent: string,
   newText: string,

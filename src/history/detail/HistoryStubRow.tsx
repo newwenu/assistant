@@ -1,7 +1,7 @@
 import React, { useCallback } from "react";
 import { BranchesOutlined, WarningOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { extractPlainText } from "../../chat/core/contentBlockUtils";
+import { extractDerivedText } from "../../chat/core/contentBlockUtils";
 import {
   BRANCH_COLORS,
   type HistoryStubRow as HistoryStubRowModel,
@@ -18,7 +18,7 @@ interface HistoryStubRowProps {
 }
 
 function previewText(content: string): string {
-  const text = extractPlainText(content).replace(/\s+/g, " ").trim();
+  const text = extractDerivedText(content).replace(/\s+/g, " ").trim();
   if (text.length === 0) return "—";
   return text.length > PREVIEW_LENGTH
     ? `${text.slice(0, PREVIEW_LENGTH)}…`

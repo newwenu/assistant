@@ -213,6 +213,15 @@ pub struct ModelConfig {
     /// support_vision 为便捷派生值（含 "image" 即 true）。
     #[serde(default)]
     pub input_modalities: Vec<String>,
+    /// 视觉能力事实（三态 + 来源）
+    #[serde(default)]
+    pub vision: Option<crate::capability::CapabilityFact>,
+    /// 原生 PDF 能力事实（三态 + 来源）
+    #[serde(default)]
+    pub pdf: Option<crate::capability::CapabilityFact>,
+    /// 附件能力事实（三态 + 来源）
+    #[serde(default)]
+    pub attachment: Option<crate::capability::CapabilityFact>,
 }
 
 pub type ChatStream = Pin<Box<dyn Stream<Item = Result<ChatDelta, ProviderError>> + Send>>;

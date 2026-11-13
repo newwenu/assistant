@@ -46,6 +46,16 @@ pub struct AssetDirsDto {
     pub mascot_assets_dir: String,
 }
 
+/// 附件限额的只读投影，数值唯一来源是 `assistant_agent::multimodal::ATTACHMENT_LIMITS`。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AttachmentLimitsDto {
+    pub max_images: u32,
+    pub max_files: u32,
+    pub max_image_bytes: u64,
+    pub max_file_bytes: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttachmentDeleteResultDto {

@@ -1,4 +1,5 @@
 use crate::base::{resolve_context_window, ModelConfig, ProviderError};
+use crate::capability::{catalog_fact, CapabilityFeature};
 use crate::client::error::classify_http_error;
 use crate::client::quirks::wants_bearer_auth;
 use crate::vision::{input_modalities_for, resolve_support_vision};
@@ -60,14 +61,18 @@ pub(crate) fn list_models(
             .into_iter()
             .map(|m| {
                 let ctx = resolve_context_window(&m.id, None, m.resolved_context_window());
-                let input_modalities = input_modalities_for(&m.id);
+                let vision = resolve_support_vision(&m.id, None);
+                let input_modalities = input_modalities_for(&m.id).unwrap_or_default();
                 ModelConfig {
                     id: m.id.clone(),
                     name: m.display_name.unwrap_or(m.id.clone()),
                     owned_by: "anthropic".to_string(),
                     context_window: ctx,
-                    support_vision: resolve_support_vision(&m.id, None),
+                    support_vision: vision.is_supported(),
                     input_modalities,
+                    vision: Some(vision),
+                    pdf: Some(catalog_fact(&m.id, CapabilityFeature::Pdf)),
+                    attachment: Some(catalog_fact(&m.id, CapabilityFeature::Attachment)),
                 }
             })
             .collect();

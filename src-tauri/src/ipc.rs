@@ -91,5 +91,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         cmd::open_attachment,
         cmd::import_attachment,
         cmd::get_asset_dirs,
+        cmd::get_attachment_limits,
     ]
 }

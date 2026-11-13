@@ -434,7 +434,12 @@
         "fetch_models": "Fetch Models",
         "models_fetched": "Fetched {{count}} models",
         "models_fetch_failed": "Failed to fetch models: {{error}}",
-        "models_more": "{{count}} more models..."
+        "models_more": "{{count}} more models...",
+        "attachment_support": {
+          "supported": "Attachments",
+          "unsupported": "No attachments",
+          "unknown": "Unknown"
+        }
       }
     },
     "about": {
@@ -587,6 +592,7 @@
       "stop": "Stop generating",
       "attach": "Attach",
       "model_no_vision": "Current model does not support images",
+      "model_vision_unknown": "Cannot confirm whether this model supports images. Attachment kept; it will be treated as text if unsupported",
       "too_many_images": "Maximum {{max}} images allowed",
       "image_too_large": "Image size cannot exceed {{max}} MB",
       "invalid_image_type": "Unsupported image format. Only PNG, JPEG, WebP, GIF, BMP, TIFF are supported",
@@ -783,7 +789,8 @@
       "xhigh": "Extra high",
       "max": "Max",
       "from_mode": "From mode: {{value}}",
-      "overridden": "Overridden for this conversation"
+      "overridden": "Overridden for this conversation",
+      "unsupported": "Not supported by this endpoint: {{value}}"
     },
     "compact": {
       "banner_title": "Conversation reached context limit",

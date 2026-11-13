@@ -2,6 +2,7 @@ import type {
   AssetDirsDto,
   AttachmentDeleteResultDto,
   AttachmentImportDto,
+  AttachmentLimitsDto,
   StorageBreakdownDto,
 } from "@/types/protocol.contract";
 import { tauriInvoke as invoke } from "./tauriInvoke";
@@ -12,6 +13,9 @@ export const storageService = {
 
   getAssetDirs: (): Promise<AssetDirsDto> =>
     invoke<AssetDirsDto>("get_asset_dirs"),
+
+  getAttachmentLimits: (): Promise<AttachmentLimitsDto> =>
+    invoke<AttachmentLimitsDto>("get_attachment_limits"),
 
   importAttachment: (path: string): Promise<AttachmentImportDto> =>
     invoke<AttachmentImportDto>("import_attachment", { path }),

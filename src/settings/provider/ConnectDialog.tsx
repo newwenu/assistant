@@ -370,6 +370,13 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
               >
                 <span className="connect-model-name">{m.name || m.id}</span>
                 <span className="connect-model-id">{m.id}</span>
+                {m.attachment ? (
+                  <span className="connect-model-attachment">
+                    {t(
+                      `settings.provider.field.attachment_support.${m.attachment.support}`,
+                    )}
+                  </span>
+                ) : null}
               </button>
             ))}
             {models.length > 20 && (

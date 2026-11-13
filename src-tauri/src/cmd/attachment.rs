@@ -2,12 +2,10 @@ use std::path::{Path, PathBuf};
 use tauri::{command, AppHandle, Manager};
 
 use crate::app_dirs::AppDirs;
-use crate::protocol::{AssetDirsDto, AttachmentImportDto};
+use crate::protocol::{AssetDirsDto, AttachmentImportDto, AttachmentLimitsDto};
+use assistant_agent::multimodal::ATTACHMENT_LIMITS;
 use assistant_storage::attachment_store::AttachmentStore;
 use assistant_tools::os::path::{resolve_external_input, ExternalInputMode};
-
-const MAX_IMAGE_BYTES: u64 = 8 * 1024 * 1024;
-const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
 
 /// 与 `src/chat/attachment/types.ts` 的白名单保持一致；后端判定为准。
 fn media_type_for_extension(ext: &str) -> Option<&'static str> {
@@ -65,6 +63,16 @@ pub fn get_asset_dirs() -> Result<AssetDirsDto, String> {
     asset_dirs_from(&dirs)
 }
 
+#[command]
+pub fn get_attachment_limits() -> AttachmentLimitsDto {
+    AttachmentLimitsDto {
+        max_images: ATTACHMENT_LIMITS.max_images as u32,
+        max_files: ATTACHMENT_LIMITS.max_files as u32,
+        max_image_bytes: ATTACHMENT_LIMITS.max_image_bytes,
+        max_file_bytes: ATTACHMENT_LIMITS.max_file_bytes,
+    }
+}
+
 #[derive(Debug)]
 struct ImportPlan {
     path: PathBuf,
@@ -97,9 +105,9 @@ fn plan_import(path: &str) -> Result<ImportPlan, String> {
         .map_err(|_| IMPORT_FAILED.to_string())?
         .len();
     let limit = if is_image {
-        MAX_IMAGE_BYTES
+        ATTACHMENT_LIMITS.max_image_bytes
     } else {
-        MAX_FILE_BYTES
+        ATTACHMENT_LIMITS.max_file_bytes
     };
     if bytes > limit {
         return Err(if is_image {
@@ -214,7 +222,9 @@ mod tests {
     fn rejects_oversized_image_at_import() {
         let (_dir, file) = scratch("huge.png");
         let handle = std::fs::File::create(&file).expect("创建临时文件");
-        handle.set_len(MAX_IMAGE_BYTES + 1).expect("扩展文件长度");
+        handle
+            .set_len(ATTACHMENT_LIMITS.max_image_bytes + 1)
+            .expect("扩展文件长度");
         drop(handle);
         let error = plan_import(file.to_str().unwrap()).expect_err("超限图片必须拒绝");
         assert_eq!(error, "too_large");
@@ -224,7 +234,9 @@ mod tests {
     fn rejects_oversized_document_at_import() {
         let (_dir, file) = scratch("huge.pdf");
         let handle = std::fs::File::create(&file).expect("创建临时文件");
-        handle.set_len(MAX_FILE_BYTES + 1).expect("扩展文件长度");
+        handle
+            .set_len(ATTACHMENT_LIMITS.max_file_bytes + 1)
+            .expect("扩展文件长度");
         drop(handle);
         let error = plan_import(file.to_str().unwrap()).expect_err("超限文档必须拒绝");
         assert_eq!(error, "file_too_large");

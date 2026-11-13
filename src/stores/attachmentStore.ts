@@ -1,11 +1,15 @@
 import { create } from "zustand";
-import type { AdmitError, Attachment } from "../chat/attachment/types";
+import type {
+  AdmitError,
+  Attachment,
+  VisionSupport,
+} from "../chat/attachment/types";
 import { admitAttachment } from "../chat/attachment/admit";
 
 interface AttachmentState {
   attachments: Attachment[];
-  supportVision: boolean;
-  setSupportVision: (v: boolean) => void;
+  visionSupport: VisionSupport;
+  setVisionSupport: (v: VisionSupport) => void;
   addAttachment: (att: Attachment) => AdmitError | null;
   removeAttachment: (id: string) => void;
   clearAttachments: () => void;
@@ -13,14 +17,14 @@ interface AttachmentState {
 
 export const useAttachmentStore = create<AttachmentState>((set, get) => ({
   attachments: [],
-  supportVision: false,
+  visionSupport: "unsupported",
 
-  setSupportVision: (v: boolean) => set({ supportVision: v }),
+  setVisionSupport: (v: VisionSupport) => set({ visionSupport: v }),
 
   addAttachment: (att: Attachment): AdmitError | null => {
     const error = admitAttachment(att, {
       attachments: get().attachments,
-      supportVision: get().supportVision,
+      visionSupport: get().visionSupport,
     });
     if (error) return error;
     set((s) => ({ attachments: [...s.attachments, att] }));

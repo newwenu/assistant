@@ -9,6 +9,7 @@ import { useAgentModeStore } from "../../stores/agentModeStore";
 import {
   reasoningChoices,
   resolveReasoningChoice,
+  unsupportedEffortSummary,
   REASONING_DEFAULT,
   REASONING_INHERIT,
   REASONING_OFF,
@@ -54,9 +55,16 @@ export const ReasoningSelector: React.FC<ReasoningSelectorProps> = ({
       ?.reasoningLevels;
   }, [providers, selectedProviderId, selectedModelId]);
 
+  /** 该端点会丢弃的档位；`providers` 未加载时为空（不过滤，保持现行为） */
+  const unsupportedEfforts = useMemo(() => {
+    const provider = providers.find((p) => p.id === selectedProviderId);
+    return provider?.effortSupport.find((s) => s.modelId === selectedModelId)
+      ?.unsupported;
+  }, [providers, selectedProviderId, selectedModelId]);
+
   const choices = useMemo(
-    () => reasoningChoices(reasoningLevels ?? undefined),
-    [reasoningLevels],
+    () => reasoningChoices(reasoningLevels ?? undefined, unsupportedEfforts),
+    [reasoningLevels, unsupportedEfforts],
   );
 
   const mode = modes.find((m) => m.id === selectedModeId);
@@ -88,10 +96,27 @@ export const ReasoningSelector: React.FC<ReasoningSelectorProps> = ({
     label: labelFor(value),
   }));
 
-  const tooltip =
+  const baseTooltip =
     reasoningChoice === REASONING_INHERIT
       ? t("chat.reasoning_depth.from_mode", { value: labelFor(displayChoice) })
       : t("chat.reasoning_depth.overridden");
+
+  const unsupportedSummary = unsupportedEffortSummary(
+    unsupportedEfforts,
+    labelFor,
+  );
+  const unsupportedNote = unsupportedSummary
+    ? t("chat.reasoning_depth.unsupported", { value: unsupportedSummary })
+    : null;
+
+  const tooltip = unsupportedNote ? (
+    <div>
+      <div>{baseTooltip}</div>
+      <div>{unsupportedNote}</div>
+    </div>
+  ) : (
+    baseTooltip
+  );
 
   const handleChange = useCallback(
     (value?: ReasoningChoice) => {

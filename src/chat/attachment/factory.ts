@@ -1,11 +1,10 @@
 import type { AdmitError, AllowedImageMimeType, Attachment } from "./types";
 import {
   ALLOWED_IMAGE_MIME_TYPES,
-  ATTACHMENT_MAX_FILE_SIZE_BYTES,
-  ATTACHMENT_MAX_IMAGE_SIZE_BYTES,
   FILE_EXT_TO_MIME,
   IMAGE_EXT_TO_MIME,
 } from "./types";
+import { attachmentLimits } from "./limits";
 import { attachmentUrl } from "./paths";
 import { storageService } from "@/services/storageService";
 
@@ -42,7 +41,7 @@ export function resolveImageMimeType(file: File): AllowedImageMimeType | null {
 
 export function validateImageFile(file: File): AdmitError | null {
   if (!resolveImageMimeType(file)) return "invalid_type";
-  if (file.size > ATTACHMENT_MAX_IMAGE_SIZE_BYTES) return "too_large";
+  if (file.size > attachmentLimits().maxImageBytes) return "too_large";
   return null;
 }
 
@@ -122,7 +121,7 @@ function mapImportError(e: unknown): AdmitError {
 export function createFileAttachmentFromFile(file: File): AttachmentResult {
   const mimeType = FILE_EXT_TO_MIME[extOf(file.name)];
   if (!mimeType) return reject("invalid_file_type");
-  if (file.size > ATTACHMENT_MAX_FILE_SIZE_BYTES)
+  if (file.size > attachmentLimits().maxFileBytes)
     return reject("file_too_large");
 
   return accept({

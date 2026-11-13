@@ -12,7 +12,7 @@ import type {
   ConversationUnlockedPayload,
   ChatRegeneratePayload,
 } from "../chatTypes";
-import type { Provider } from "../../../settings/provider/types";
+import type { Provider, ModelConfig } from "../../../settings/provider/types";
 import type { SettingEventPayload } from "../../../types/events";
 import { SettingAction } from "../../../types/events";
 import { makeMessage } from "../../../test-utils/messageFixtures";
@@ -189,19 +189,82 @@ describe("protocol DTO — camelCase contract", () => {
           supportVision: false,
           inputModalities: [],
           reasoningLevels: null,
+          vision: null,
+          pdf: null,
+          attachment: null,
         },
       ],
       defaultModel: "gpt-4",
       updatedAt: 1000,
+      effortSupport: [
+        {
+          modelId: "gpt-4",
+          expressible: ["low", "medium", "high"],
+          unsupported: ["minimal"],
+        },
+      ],
     };
     expect(provider).toHaveProperty("baseUrl");
     expect(provider).toHaveProperty("apiKeyMasked");
     expect(provider).toHaveProperty("defaultModel");
     expect(provider).toHaveProperty("updatedAt");
+    expect(provider).toHaveProperty("effortSupport");
     expect(provider).not.toHaveProperty("base_url");
     expect(provider).not.toHaveProperty("api_key_masked");
     expect(provider).not.toHaveProperty("default_model");
     expect(provider).not.toHaveProperty("updated_at");
+  });
+
+  /**
+   * 验收 A10：含三态能力的 model 经「读取 → 写回」后字段不丢。
+   * 这里用 JSON 往返模拟 wire：DTO 带 `deny_unknown_fields`，
+   * 少注册一个键就会在写回时被整项丢弃。
+   */
+  it("Model capability facts survive a JSON round-trip", () => {
+    const model: ModelConfig = {
+      id: "gpt-4o",
+      name: "GPT-4o",
+      ownedBy: "openai",
+      contextWindow: 128000,
+      supportVision: true,
+      inputModalities: ["text", "image"],
+      reasoningLevels: null,
+      vision: { support: "supported", source: "api" },
+      pdf: { support: "unsupported", source: "catalog" },
+      attachment: { support: "unknown", source: "fallback" },
+    };
+
+    const written = JSON.parse(JSON.stringify(model)) as ModelConfig;
+
+    expect(written.vision).toEqual({ support: "supported", source: "api" });
+    expect(written.pdf).toEqual({ support: "unsupported", source: "catalog" });
+    expect(written.attachment).toEqual({
+      support: "unknown",
+      source: "fallback",
+    });
+    // 键恒在、值可为 null：不允许「缺失」与「null」两种形态并存
+    expect(written).toHaveProperty("vision");
+    expect(written).toHaveProperty("pdf");
+    expect(written).toHaveProperty("attachment");
+  });
+
+  it("Legacy model keeps capability keys as explicit nulls", () => {
+    const legacy: ModelConfig = {
+      id: "gpt-4",
+      name: "GPT-4",
+      ownedBy: "openai",
+      contextWindow: 8192,
+      supportVision: false,
+      inputModalities: [],
+      reasoningLevels: null,
+      vision: null,
+      pdf: null,
+      attachment: null,
+    };
+    const written = JSON.parse(JSON.stringify(legacy)) as ModelConfig;
+    expect(written.vision).toBeNull();
+    expect(written.pdf).toBeNull();
+    expect(written.attachment).toBeNull();
   });
 
   it("SettingEventPayload uses camelCase fields", () => {

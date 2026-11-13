@@ -87,3 +87,28 @@ describe("attachment paths single join point", () => {
     expect(paths).not.toContain('"attachments"');
   });
 });
+
+describe("attachment limits single source", () => {
+  const LIMITS_FILE = path.join(MODULE_ROOT, "limits.ts");
+
+  function moduleFiles(): string[] {
+    return fs
+      .readdirSync(MODULE_ROOT, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith(".ts"))
+      .map((e) => path.join(MODULE_ROOT, e.name))
+      .filter((file) => file !== LIMITS_FILE);
+  }
+
+  it("reads the limits from the backend DTO", () => {
+    const limits = read(LIMITS_FILE);
+    expect(limits).toContain("getAttachmentLimits");
+    expect(limits).toContain("export function attachmentLimits(");
+  });
+
+  it("holds no numeric limit literal outside the limits module", () => {
+    for (const file of moduleFiles()) {
+      expect(read(file)).not.toMatch(/\b(8|16)\s*\*\s*1024\s*\*\s*1024/);
+      expect(read(file)).not.toMatch(/ATTACHMENT_MAX_/);
+    }
+  });
+});

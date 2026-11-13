@@ -4,12 +4,14 @@ use uuid::Uuid;
 
 use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
-    ModelConfigDto, ProviderInputDto, ProviderListDto, ReasoningLevelsDto,
+    CapabilitySourceDto, CapabilitySupportDto, ModelCapabilityDto, ModelConfigDto,
+    ModelEffortSupportDto, ProviderInputDto, ProviderListDto, ReasoningLevelsDto,
     SettingProviderChangedActionDto, SettingProviderChangedPayloadDto,
 };
 use assistant_agent::provider_config::build_provider_config;
 use assistant_crypto::api_key as crypto;
 use assistant_providers::base::{self, ProviderConfig};
+use assistant_providers::capability::{CapabilityFact, Provenance, Support};
 use assistant_storage::providers::{self as provider_store, ProviderRow};
 
 fn mask_api_key_encrypted(encrypted: &str) -> String {
@@ -43,8 +45,15 @@ pub fn list_providers(app: AppHandle) -> Result<Vec<ProviderListDto>, String> {
     let masked: Vec<ProviderListDto> = rows
         .iter()
         .map(|r| {
-            let models: Vec<ModelConfigDto> =
-                serde_json::from_str(&r.models_json).unwrap_or_default();
+            let models: Vec<ModelConfigDto> = assistant_providers::types::parse_items_lossy(
+                &r.models_json,
+                &format!("models_json:{}", r.id),
+            );
+            let kind = base::provider_kind_from_str(&r.type_, r.base_url.clone());
+            let effort_support = models
+                .iter()
+                .map(|model| effort_support_dto(&kind, model))
+                .collect();
             ProviderListDto {
                 id: r.id.clone(),
                 name: r.name.clone(),
@@ -54,6 +63,7 @@ pub fn list_providers(app: AppHandle) -> Result<Vec<ProviderListDto>, String> {
                 models,
                 default_model: r.default_model.clone(),
                 updated_at: r.updated_at,
+                effort_support,
             }
         })
         .collect();
@@ -142,6 +152,40 @@ pub fn delete_provider(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
+fn capability_dto(fact: Option<CapabilityFact>) -> Option<ModelCapabilityDto> {
+    fact.map(|fact| ModelCapabilityDto {
+        support: match fact.support {
+            Support::Supported => CapabilitySupportDto::Supported,
+            Support::Unsupported => CapabilitySupportDto::Unsupported,
+            Support::Unknown => CapabilitySupportDto::Unknown,
+        },
+        source: match fact.provenance {
+            Provenance::ApiDeclared => CapabilitySourceDto::Api,
+            Provenance::Catalog => CapabilitySourceDto::Catalog,
+            Provenance::Snapshot => CapabilitySourceDto::Snapshot,
+            Provenance::Fallback => CapabilitySourceDto::Fallback,
+        },
+    })
+}
+
+fn effort_support_dto(kind: &base::ProviderKind, model: &ModelConfigDto) -> ModelEffortSupportDto {
+    let declared: Vec<String> = model
+        .reasoning_levels
+        .as_ref()
+        .map(|levels| levels.efforts.clone())
+        .unwrap_or_default();
+    let expressible = assistant_providers::client::quirks::expressible_efforts(kind, &model.id)
+        .map(|values| values.into_iter().map(str::to_string).collect::<Vec<_>>())
+        .unwrap_or_else(|| declared.clone());
+    let unsupported =
+        assistant_providers::client::quirks::unsupported_efforts(kind, &model.id, &declared);
+    ModelEffortSupportDto {
+        model_id: model.id.clone(),
+        expressible,
+        unsupported,
+    }
+}
+
 fn model_config_dto(m: base::ModelConfig) -> ModelConfigDto {
     let reasoning_levels =
         assistant_providers::model_catalog::catalog_reasoning_levels(&m.id).map(|levels| {
@@ -158,6 +202,9 @@ fn model_config_dto(m: base::ModelConfig) -> ModelConfigDto {
         support_vision: m.support_vision,
         input_modalities: m.input_modalities,
         reasoning_levels,
+        vision: capability_dto(m.vision),
+        pdf: capability_dto(m.pdf),
+        attachment: capability_dto(m.attachment),
     }
 }
 
@@ -175,6 +222,27 @@ pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelC
         .map_err(|e| e.to_string())?;
     let models = adapter.list_models(&api_key).map_err(|e| e.to_string())?;
     Ok(models.into_iter().map(model_config_dto).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 与 `assistant-providers/src/types/config.rs` 单测共用同一样本：两处解析点必须给出相同项数
+    const MIXED_MODELS_JSON: &str = r#"[
+        {"id":"good1","name":"Good 1","ownedBy":"x"},
+        {"name":"broken"},
+        {"id":"good2","name":"Good 2","ownedBy":"x"}
+    ]"#;
+
+    #[test]
+    fn ui_model_list_parsing_is_lossy() {
+        let models: Vec<ModelConfigDto> =
+            assistant_providers::types::parse_items_lossy(MIXED_MODELS_JSON, "models_json:test");
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "good1");
+        assert_eq!(models[1].id, "good2");
+    }
 }
 
 #[command]

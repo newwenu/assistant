@@ -365,6 +365,12 @@ pub(crate) fn list_code_assist_models() -> Vec<crate::base::ModelConfig> {
             context_window: Some(1_000_000),
             support_vision: true,
             input_modalities: vec!["text".to_string(), "image".to_string()],
+            vision: Some(crate::capability::CapabilityFact::new(
+                crate::capability::Support::Supported,
+                crate::capability::Provenance::Fallback,
+            )),
+            pdf: None,
+            attachment: None,
         })
         .collect()
 }

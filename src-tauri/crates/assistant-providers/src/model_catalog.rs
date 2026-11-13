@@ -23,9 +23,9 @@ pub struct ModelFacts {
     pub input_modalities: Vec<String>,
     /// 目录未声明可表达的 `reasoning_options` 时为 None
     pub reasoning_levels: Option<ReasoningLevels>,
+    /// 目录的 `attachment` 布尔；目录未声明该键时为 None
+    pub attachment: Option<bool>,
 }
-
-const KNOWN_EFFORTS: [&str; 6] = ["minimal", "low", "medium", "high", "xhigh", "max"];
 
 fn parse_reasoning_levels(model_val: &serde_json::Value) -> Option<ReasoningLevels> {
     let raw = model_val.get("reasoning_options")?;
@@ -50,7 +50,7 @@ fn parse_reasoning_levels(model_val: &serde_json::Value) -> Option<ReasoningLeve
                         levels.toggle = true;
                         continue;
                     }
-                    if KNOWN_EFFORTS.contains(&value.as_str()) && !levels.efforts.contains(&value) {
+                    if !value.is_empty() && !levels.efforts.contains(&value) {
                         levels.efforts.push(value);
                     }
                 }
@@ -113,6 +113,8 @@ static MODEL_CATALOG: LazyLock<HashMap<String, ModelFacts>> = LazyLock::new(|| {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
+            let attachment = model_val.get("attachment").and_then(|v| v.as_bool());
+
             map.insert(
                 model_id.clone(),
                 ModelFacts {
@@ -123,6 +125,7 @@ static MODEL_CATALOG: LazyLock<HashMap<String, ModelFacts>> = LazyLock::new(|| {
                     tool_call,
                     input_modalities,
                     reasoning_levels: parse_reasoning_levels(model_val),
+                    attachment,
                 },
             );
         }
@@ -158,6 +161,19 @@ pub fn catalog_reasoning(model_id: &str) -> Option<bool> {
 
 pub fn catalog_tool_call(model_id: &str) -> Option<bool> {
     MODEL_CATALOG.get(model_id).map(|f| f.tool_call)
+}
+
+/// 目录是否声明该模型可原生接收 PDF（`modalities.input` 含 `pdf`）。
+/// 与 `catalog_supports_vision` 同语义：目录未收录 → `None`。
+pub fn catalog_supports_pdf(model_id: &str) -> Option<bool> {
+    MODEL_CATALOG
+        .get(model_id)
+        .map(|f| f.input_modalities.iter().any(|m| m == "pdf"))
+}
+
+/// 目录是否声明该模型支持附件；目录未收录或未声明该键 → `None`。
+pub fn catalog_supports_attachment(model_id: &str) -> Option<bool> {
+    MODEL_CATALOG.get(model_id).and_then(|f| f.attachment)
 }
 
 /// 目录声明的推理可选项。
@@ -290,6 +306,29 @@ mod tests {
             catalog_reasoning_levels("qwen3-next-80b-a3b-thinking"),
             None
         );
+    }
+
+    #[test]
+    fn reasoning_levels_keep_any_non_empty_word() {
+        let model = serde_json::json!({
+            "reasoning_options": [
+                { "type": "effort", "values": ["minimal", "xhigh", "max", "custom", " MINIMAL ", ""] },
+                { "type": "toggle" }
+            ]
+        });
+        let levels = parse_reasoning_levels(&model).unwrap();
+        assert!(levels.toggle);
+        assert_eq!(levels.efforts, vec!["minimal", "xhigh", "max", "custom"]);
+    }
+
+    #[test]
+    fn reasoning_levels_route_none_and_off_to_toggle() {
+        let model = serde_json::json!({
+            "reasoning_options": [{ "type": "effort", "values": ["none", "off", "high"] }]
+        });
+        let levels = parse_reasoning_levels(&model).unwrap();
+        assert!(levels.toggle);
+        assert_eq!(levels.efforts, vec!["high"]);
     }
 
     #[test]

@@ -100,10 +100,11 @@ export interface FileAttachment extends BaseAttachment {
 
 export type Attachment = ImageAttachment | FileAttachment;
 
-export const ATTACHMENT_MAX_IMAGES = 4;
-export const ATTACHMENT_MAX_FILES = 4;
-export const ATTACHMENT_MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
-export const ATTACHMENT_MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
+/**
+ * 模型视觉能力三态。`unknown` 与 `unsupported` 语义不同：
+ * 前者是「不知道」（放行并标注），后者是「确定不支持」（拦截）。
+ */
+export type VisionSupport = "supported" | "unsupported" | "unknown";
 
 export type AdmitError =
   | "too_many"

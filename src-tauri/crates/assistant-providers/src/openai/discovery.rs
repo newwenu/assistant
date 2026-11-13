@@ -2,6 +2,7 @@ use super::types::ModelItem;
 use super::types::ModelsResponse;
 use super::OpenAIAdapter;
 use crate::base::{resolve_context_window, ModelConfig, ProviderError};
+use crate::capability::{catalog_fact, CapabilityFeature};
 use crate::client::error::classify_http_error;
 use crate::vision::{input_modalities_for, resolve_support_vision};
 
@@ -24,14 +25,18 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                 }
             };
             let api_hint = m.resolved_support_vision();
-            let input_modalities = input_modalities_for(&id);
+            let vision = resolve_support_vision(&id, api_hint);
+            let input_modalities = input_modalities_for(&id).unwrap_or_default();
             configs.push(ModelConfig {
                 id: id.clone(),
                 name,
                 owned_by: m.owned_by.clone().unwrap_or_default(),
                 context_window: ctx,
-                support_vision: resolve_support_vision(&id, api_hint),
+                support_vision: vision.is_supported(),
                 input_modalities,
+                vision: Some(vision),
+                pdf: Some(catalog_fact(&id, CapabilityFeature::Pdf)),
+                attachment: Some(catalog_fact(&id, CapabilityFeature::Attachment)),
             });
         }
     }
@@ -54,14 +59,18 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
                     }
                 };
                 let api_hint = m.resolved_support_vision();
-                let input_modalities = input_modalities_for(&id);
+                let vision = resolve_support_vision(&id, api_hint);
+                let input_modalities = input_modalities_for(&id).unwrap_or_default();
                 configs.push(ModelConfig {
                     id: id.clone(),
                     name,
                     owned_by: m.owned_by.clone().unwrap_or_default(),
                     context_window: ctx,
-                    support_vision: resolve_support_vision(&id, api_hint),
+                    support_vision: vision.is_supported(),
                     input_modalities,
+                    vision: Some(vision),
+                    pdf: Some(catalog_fact(&id, CapabilityFeature::Pdf)),
+                    attachment: Some(catalog_fact(&id, CapabilityFeature::Attachment)),
                 });
             }
         }

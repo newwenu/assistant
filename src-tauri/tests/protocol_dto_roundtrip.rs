@@ -1,16 +1,16 @@
 use assistant_app::protocol::{
     AgentModeDto, AgentModeKindDto, AgentToolCallDto, AgentToolCallPayloadDto, AppConfDto,
-    ChatDeltaPayloadDto, ChatRegeneratePayloadDto, ChatStreamStartPayloadDto,
-    ConversationDetailDto, ConversationDto, ConversationPatchDto, ConversationQueryModeDto,
-    ConversationQueryOptsDto, ConversationTerminatedPayloadDto, ConversationToolConfigDto,
-    ConversationUnlockedPayloadDto, InstallMascotAssetResultDto, MascotConfDto, MessageDto,
-    MessageStatusDto, MessageToolCallDto, MessageToolCallStatusDto, ModelConfigDto,
-    MousePositionDto, OrbConfDto, OsToolExecRequestDto, OsToolResultDto, ProviderErrorCodeDto,
-    ProviderErrorPayloadDto, ProviderListDto, ReasoningLevelsDto, ResolvedThemeDto,
-    RetryNotificationDto, ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto,
-    SessionStateChangedPayloadDto, SessionStateDto, SettingProviderChangedActionDto,
-    SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto, ThemeChangedPayloadDto,
-    TokenUsageDto, ToolErrorKindDto, TurnPhaseDto, VaultConfDto,
+    CapabilitySourceDto, CapabilitySupportDto, ChatDeltaPayloadDto, ChatRegeneratePayloadDto,
+    ChatStreamStartPayloadDto, ConversationDetailDto, ConversationDto, ConversationPatchDto,
+    ConversationQueryModeDto, ConversationQueryOptsDto, ConversationTerminatedPayloadDto,
+    ConversationToolConfigDto, ConversationUnlockedPayloadDto, InstallMascotAssetResultDto,
+    MascotConfDto, MessageDto, MessageStatusDto, MessageToolCallDto, MessageToolCallStatusDto,
+    ModelCapabilityDto, ModelConfigDto, ModelEffortSupportDto, MousePositionDto, OrbConfDto,
+    OsToolExecRequestDto, OsToolResultDto, ProviderErrorCodeDto, ProviderErrorPayloadDto,
+    ProviderListDto, ReasoningLevelsDto, ResolvedThemeDto, RetryNotificationDto, ScreenRectDto,
+    ScreenSizeDto, SendChatMessageArgsDto, SessionStateChangedPayloadDto, SessionStateDto,
+    SettingProviderChangedActionDto, SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto,
+    ThemeChangedPayloadDto, TokenUsageDto, ToolErrorKindDto, TurnPhaseDto, VaultConfDto,
 };
 use assistant_storage::agent_modes::AgentModeRow;
 use serde::{Deserialize, Serialize};
@@ -273,9 +273,23 @@ fn provider_list_dto_roundtrip() {
                 toggle: false,
                 efforts: vec!["low".into(), "medium".into(), "high".into()],
             }),
+            vision: Some(ModelCapabilityDto {
+                support: CapabilitySupportDto::Supported,
+                source: CapabilitySourceDto::Api,
+            }),
+            pdf: Some(ModelCapabilityDto {
+                support: CapabilitySupportDto::Unsupported,
+                source: CapabilitySourceDto::Catalog,
+            }),
+            attachment: None,
         }],
         default_model: "gpt-4".into(),
         updated_at: 1000,
+        effort_support: vec![ModelEffortSupportDto {
+            model_id: "gpt-4".into(),
+            expressible: vec!["low".into(), "medium".into(), "high".into()],
+            unsupported: vec!["minimal".into()],
+        }],
     };
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
@@ -284,6 +298,7 @@ fn provider_list_dto_roundtrip() {
     assert!(json.contains("inputModalities"), "camelCase: {}", json);
     assert!(json.contains("defaultModel"), "camelCase: {}", json);
     assert!(json.contains("reasoningLevels"), "camelCase: {}", json);
+    assert!(json.contains("effortSupport"), "camelCase: {}", json);
 }
 
 #[test]

@@ -9,7 +9,7 @@ import type {
   TurnPhase,
 } from "../../chat/core/chatTypes";
 import type { ConversationRoute } from "../../chat/core/conversationLink";
-import { extractPlainText } from "../../chat/core/contentBlockUtils";
+import { extractDerivedText } from "../../chat/core/contentBlockUtils";
 import { createOptimisticMessage } from "../../chat/core/optimisticMessage";
 import { contextUsageFromTokenUsage } from "../../chat/core/chatUtils";
 import {
@@ -110,11 +110,11 @@ export interface TurnOrchestrator {
   getActiveConversationId: () => string | null;
 }
 
-function fallbackTitleFromUserMessage(
+export function fallbackTitleFromUserMessage(
   userMessage: string,
   maxLength = CHAT_AUTO_TITLE_LENGTH,
 ): string {
-  const plainText = extractPlainText(userMessage);
+  const plainText = extractDerivedText(userMessage);
   const firstLine = plainText.split("\n").find((l) => l.trim()) || "";
   if (firstLine.length <= maxLength) return firstLine.trim();
   const puncts = ["。", "？", "！", ".", "?", "!", "；", ";", "，", ","];

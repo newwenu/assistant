@@ -1,26 +1,31 @@
 import type { AdmitError } from "./types";
-import {
-  ATTACHMENT_MAX_FILES,
-  ATTACHMENT_MAX_FILE_SIZE_BYTES,
-  ATTACHMENT_MAX_IMAGES,
-  ATTACHMENT_MAX_IMAGE_SIZE_BYTES,
-} from "./types";
+import { attachmentLimits } from "./limits";
 import { notifyInfo, notifyWarning } from "../../stores/notifyStore";
 
+const MEGABYTE = 1024 * 1024;
+
+export function notifyVisionUnknown(): void {
+  notifyInfo(
+    "chat.input.model_vision_unknown",
+    "chat.input.model_vision_unknown",
+  );
+}
+
 export function notifyAttachError(error: AdmitError): void {
+  const limits = attachmentLimits();
   switch (error) {
     case "too_many":
       notifyWarning(
         "chat.input.too_many_images",
         "chat.input.too_many_images",
-        { max: ATTACHMENT_MAX_IMAGES },
+        { max: limits.maxImages },
       );
       break;
     case "too_large":
       notifyWarning(
         "chat.input.image_too_large",
         "chat.input.image_too_large",
-        { max: ATTACHMENT_MAX_IMAGE_SIZE_BYTES / (1024 * 1024) },
+        { max: limits.maxImageBytes / MEGABYTE },
       );
       break;
     case "invalid_type":
@@ -34,12 +39,12 @@ export function notifyAttachError(error: AdmitError): void {
       break;
     case "too_many_files":
       notifyWarning("chat.input.too_many_files", "chat.input.too_many_files", {
-        max: ATTACHMENT_MAX_FILES,
+        max: limits.maxFiles,
       });
       break;
     case "file_too_large":
       notifyWarning("chat.input.file_too_large", "chat.input.file_too_large", {
-        max: ATTACHMENT_MAX_FILE_SIZE_BYTES / (1024 * 1024),
+        max: limits.maxFileBytes / MEGABYTE,
       });
       break;
     case "invalid_file_type":

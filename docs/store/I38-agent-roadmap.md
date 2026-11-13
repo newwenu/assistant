@@ -97,6 +97,8 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | P10 AI 审批顾问（`EscalateOnly` / `RelaxOnly` / 审计与度量） | [I38g](./I38g-agent-approval-advisor-spec.md) | 实施规格 |
 | P12 工作区（会话绑定 / 目录簿 / 唯一解析点） | I38h（已归档） | 实施规格 |
 | assistant 消息身份指示（头像 / 模式 / 模型、消息级 `mode_id`） | I43-assistant-identity-spec.md（已归档） | 实施规格 |
+| 模型能力事实（三态 + 来源 + 主体 key；内容/列表/推理三处止损） | [I45](./I45-model-capability-facts-spec.md) | 实施规格 |
+| 模型能力事实任务级进度（C1–C3 勾选） | [I45 tasklist](./I45-model-capability-facts-tasklist.md) | 任务清单（唯一任务级进度） |
 | P8.2+ 演进候选（Worker / Router / continuity / 多编码） | 本文 §2.1 | 候选清单 |
 | 运行时内核（turn / 状态机 / 端口 / chat 迁移） | I36 spec（已归档） | 实施规格 |
 | 运行时决策（D1-D18、参考项目提取） | I36 design（已归档） | ADR |
@@ -120,7 +122,7 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 
 **单一权威源规则**：
 
-- 工具类型、Trait、Registry、桥接 → I18 spec；控制层 → I38a；循环 → I38b；工具实现 → I38c；前端 → I38d；MCP → I38e；运行时 → I36 spec；内核一致性判定（DT/V/H）→ I36b。其中 I18 spec、I38a、I38b、I38c、I38d 与 I36 spec 均已归档：P0–P6 关闭后，工具框架、控制层、循环、工具实现、前端与运行时的实际行为以代码为准，归档文本只作基线对照。
+- 工具类型、Trait、Registry、桥接 → I18 spec；控制层 → I38a；循环 → I38b；工具实现 → I38c；前端 → I38d；MCP → I38e；运行时 → I36 spec；内核一致性判定（DT/V/H）→ I36b；模型能力事实（三态 / 来源 / 主体 key / 未知策略）→ I45。其中 I18 spec、I38a、I38b、I38c、I38d 与 I36 spec 均已归档：P0–P6 关闭后，工具框架、控制层、循环、工具实现、前端与运行时的实际行为以代码为准，归档文本只作基线对照。模型能力演进的现状来源是 `MODEL-CAPABILITY-EVOLUTION-ANALYSIS.md`（已归档，只读分析，不作规格依据）。
 - 同一契约不得在两份 spec 中各写一份。引用时写「见 X 文档 §Y」，不复制类型定义。
 - I18 spec 已收敛为框架层规格（Step 0-3、8），归档时不再承载 Step 4-7、9-10。
 

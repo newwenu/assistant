@@ -419,7 +419,12 @@
         "fetch_models": "获取模型",
         "models_fetched": "获取到 {{count}} 个模型",
         "models_fetch_failed": "获取模型列表失败: {{error}}",
-        "models_more": "还有 {{count}} 个模型..."
+        "models_more": "还有 {{count}} 个模型...",
+        "attachment_support": {
+          "supported": "支持附件",
+          "unsupported": "不支持附件",
+          "unknown": "未知"
+        }
       }
     },
     "about": {
@@ -572,6 +577,7 @@
       "stop": "停止生成",
       "attach": "添加附件",
       "model_no_vision": "当前模型不支持图片",
+      "model_vision_unknown": "无法确认当前模型是否支持图片，已保留附件；若模型不支持，将按文本处理",
       "too_many_images": "最多只能添加 {{max}} 张图片",
       "image_too_large": "图片大小不能超过 {{max}} MB",
       "invalid_image_type": "不支持的图片格式，仅支持 PNG、JPEG、WebP、GIF、BMP、TIFF",
@@ -768,7 +774,8 @@
       "xhigh": "极高",
       "max": "最高",
       "from_mode": "当前来自模式：{{value}}",
-      "overridden": "本次会话已覆盖"
+      "overridden": "本次会话已覆盖",
+      "unsupported": "该端点不支持：{{value}}"
     },
     "compact": {
       "banner_title": "对话已达上下文上限",

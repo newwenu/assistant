@@ -35,12 +35,20 @@ export interface ReasoningLevelsLike {
  * - 有开关 + 无档位 → 默认 + 关闭 + 开启
  * - 无开关 + 有档位 → 默认 + 每个 effort
  * - 无开关 + 无档位 → 仅默认（模型不接受任何档位声明）
+ *
+ * `unsupported` 是**黑名单**：只从目录声明的 effort 里剔除，不用可表达集合求交集
+ * （否则别名档位会被误删）；`default` / `off` / `on` 是内置语义位，原样保留。
  */
 export function reasoningChoices(
   levels: ReasoningLevelsLike | undefined,
+  unsupported?: readonly string[],
 ): readonly ReasoningChoice[] {
   if (!levels) return REASONING_CHOICES;
-  const efforts = levels.efforts;
+  const blocked = unsupported ?? [];
+  const efforts =
+    blocked.length === 0
+      ? levels.efforts
+      : levels.efforts.filter((effort) => !blocked.includes(effort));
   if (levels.toggle) {
     return efforts.length > 0
       ? [REASONING_DEFAULT, REASONING_OFF, ...efforts]
@@ -49,6 +57,18 @@ export function reasoningChoices(
   return efforts.length > 0
     ? [REASONING_DEFAULT, ...efforts]
     : [REASONING_DEFAULT];
+}
+
+/**
+ * 差集说明里的档位清单（按目录顺序拼成 `minimal / xhigh`）。
+ * 没有会被丢弃的档位时返回 `null`，调用方不追加说明行。
+ */
+export function unsupportedEffortSummary(
+  unsupported: readonly string[] | undefined,
+  labelFor: (effort: string) => string,
+): string | null {
+  if (!unsupported || unsupported.length === 0) return null;
+  return unsupported.map(labelFor).join(" / ");
 }
 
 export interface ReasoningModeDefaults {

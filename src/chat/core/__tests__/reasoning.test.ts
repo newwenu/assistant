@@ -4,6 +4,7 @@ import {
   reasoningChoices,
   resolveReasoningChoice,
   toReasoningLevel,
+  unsupportedEffortSummary,
   REASONING_CHOICES,
   REASONING_DEFAULT,
 } from "../reasoning";
@@ -58,6 +59,63 @@ describe("reasoningChoices", () => {
   it("always exposes default first and never inherit", () => {
     expect(reasoningChoices(undefined)[0]).toBe(REASONING_DEFAULT);
     expect(reasoningChoices(undefined)).not.toContain("inherit");
+  });
+
+  it("drops unsupported efforts but keeps builtin semantic slots", () => {
+    expect(
+      reasoningChoices(
+        {
+          toggle: true,
+          efforts: ["minimal", "low", "medium", "high", "xhigh", "max"],
+        },
+        ["minimal", "xhigh", "max"],
+      ),
+    ).toEqual(["default", "off", "low", "medium", "high"]);
+  });
+
+  it("keeps alias efforts that are only rewritten downstream", () => {
+    expect(
+      reasoningChoices(
+        { toggle: false, efforts: ["low", "medium", "high"] },
+        [],
+      ),
+    ).toEqual(["default", "low", "medium", "high"]);
+    expect(
+      reasoningChoices({ toggle: false, efforts: ["medium", "high", "max"] }, [
+        "minimal",
+      ]),
+    ).toEqual(["default", "medium", "high", "max"]);
+  });
+
+  it("keeps the previous behaviour when unsupported is absent or empty", () => {
+    const levels = { toggle: true, efforts: ["low", "high", "xhigh"] };
+    expect(reasoningChoices(levels)).toEqual(reasoningChoices(levels, []));
+    expect(reasoningChoices(levels)).toEqual([
+      "default",
+      "off",
+      "low",
+      "high",
+      "xhigh",
+    ]);
+  });
+
+  it("falls back to toggle-only when every effort is unsupported", () => {
+    expect(
+      reasoningChoices({ toggle: true, efforts: ["minimal"] }, ["minimal"]),
+    ).toEqual(["default", "off", "on"]);
+  });
+});
+
+describe("unsupportedEffortSummary", () => {
+  it("names every unsupported effort in order", () => {
+    expect(
+      unsupportedEffortSummary(["minimal", "xhigh", "max"], (e) => e),
+    ).toBe("minimal / xhigh / max");
+  });
+
+  it("returns null when nothing is unsupported", () => {
+    expect(unsupportedEffortSummary(undefined, (e) => e)).toBeNull();
+    expect(unsupportedEffortSummary([], (e) => e)).toBeNull();
   });
 });
 

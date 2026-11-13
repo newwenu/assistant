@@ -13,10 +13,22 @@ use crate::token_estimate::{
     estimate_text_tokens, is_pdf_name, truncate_to_tokens, PDF_NATIVE_TOKENS,
 };
 
-const MAX_IMAGES: usize = 4;
-const MAX_FILES: usize = 4;
-const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
-const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
+/// 附件限额的**唯一数值来源**：后端准入、前端展示、DTO 均从这里取。
+/// 字段必须 `pub`——`src-tauri` 是另一个 crate，私有字段读不到。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttachmentLimits {
+    pub max_images: usize,
+    pub max_files: usize,
+    pub max_image_bytes: u64,
+    pub max_file_bytes: u64,
+}
+
+pub const ATTACHMENT_LIMITS: AttachmentLimits = AttachmentLimits {
+    max_images: 4,
+    max_files: 4,
+    max_image_bytes: 8 * 1024 * 1024,
+    max_file_bytes: 16 * 1024 * 1024,
+};
 
 /// 单文件最低配额：低于该值时不再截断正文，直接降级为占位文本。
 const MIN_FILE_QUOTA_TOKENS: usize = 2_000;
@@ -52,10 +64,10 @@ pub struct MultimodalConfig {
 impl MultimodalConfig {
     pub fn trusted_channel_input() -> Self {
         Self {
-            max_images: MAX_IMAGES,
-            max_files: MAX_FILES,
-            max_image_bytes: MAX_IMAGE_BYTES,
-            max_file_bytes: MAX_FILE_BYTES,
+            max_images: ATTACHMENT_LIMITS.max_images,
+            max_files: ATTACHMENT_LIMITS.max_files,
+            max_image_bytes: ATTACHMENT_LIMITS.max_image_bytes as usize,
+            max_file_bytes: ATTACHMENT_LIMITS.max_file_bytes as usize,
             allowed_image_media_types: vec![
                 "image/png".into(),
                 "image/jpeg".into(),

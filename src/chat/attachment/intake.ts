@@ -3,7 +3,7 @@ import type { ClipboardEvent } from "react";
 import { useAttachmentStore } from "../../stores/attachmentStore";
 import type { AttachmentResult } from "./factory";
 import { createImageAttachmentFromFile, createPathAttachment } from "./factory";
-import { notifyAttachError } from "./notify";
+import { notifyAttachError, notifyVisionUnknown } from "./notify";
 import { extractPastedImages } from "./sources/paste";
 import { pickAttachmentPaths } from "./sources/filePicker";
 import { subscribeDragDrop } from "./sources/dragDrop";
@@ -22,7 +22,17 @@ export function useAttachmentIntake(): AttachmentIntake {
     const error = useAttachmentStore
       .getState()
       .addAttachment(result.attachment);
-    if (error) notifyAttachError(error);
+    if (error) {
+      notifyAttachError(error);
+      return;
+    }
+    // 视觉能力未知时放行图片，但标注一条说明（与后端「保留图片交服务端判定」一致）
+    if (
+      result.attachment.kind === "image" &&
+      useAttachmentStore.getState().visionSupport === "unknown"
+    ) {
+      notifyVisionUnknown();
+    }
   }, []);
 
   const ingestPath = useCallback(
@@ -43,8 +53,8 @@ export function useAttachmentIntake(): AttachmentIntake {
   );
 
   const handleFileSelect = useCallback(async () => {
-    const supportVision = useAttachmentStore.getState().supportVision;
-    const paths = await pickAttachmentPaths(supportVision);
+    const visionSupport = useAttachmentStore.getState().visionSupport;
+    const paths = await pickAttachmentPaths(visionSupport);
     for (const path of paths) await ingestPath(path);
   }, [ingestPath]);
 

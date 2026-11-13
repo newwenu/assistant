@@ -165,6 +165,7 @@ function createMockDeps(): {
           models: [],
           defaultModel: "m1",
           updatedAt: 0,
+          effortSupport: [],
         },
       ]),
     ),

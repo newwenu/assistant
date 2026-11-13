@@ -4,6 +4,7 @@ import {
   parseContent,
   serializeContent,
   extractPlainText,
+  extractDerivedText,
   rebuildContent,
 } from "../contentBlockUtils";
 import type { Attachment } from "../../attachment/types";
@@ -154,6 +155,53 @@ describe("extractPlainText", () => {
       },
     ]);
     expect(extractPlainText(json)).toBe("hello");
+  });
+
+  it("drops non-text blocks (edit box semantics)", () => {
+    const json = JSON.stringify([
+      { type: "image", attachment: { attachmentId: "a" } },
+    ]);
+    expect(extractPlainText(json)).toBe("");
+  });
+});
+
+describe("extractDerivedText", () => {
+  it("returns plain text as-is", () => {
+    expect(extractDerivedText("hello world")).toBe("hello world");
+  });
+
+  it("keeps text and adds placeholders for non-text blocks", () => {
+    const json = JSON.stringify([
+      { type: "text", text: "look at this" },
+      { type: "image", attachment: { attachmentId: "abc.png" } },
+    ]);
+    expect(extractDerivedText(json)).toBe("look at this\n[图片]");
+  });
+
+  it("derives non-empty text from an image-only message", () => {
+    const json = JSON.stringify([
+      { type: "image", attachment: { attachmentId: "a" } },
+    ]);
+    expect(extractDerivedText(json)).toBe("[图片]");
+  });
+
+  it("uses file name when present", () => {
+    const named = JSON.stringify([
+      {
+        type: "file",
+        attachment: { attachmentId: "a", name: "a.pdf", bytes: 0 },
+      },
+    ]);
+    expect(extractDerivedText(named)).toBe("[文件 a.pdf]");
+    const unnamed = JSON.stringify([
+      { type: "file", attachment: { attachmentId: "a" } },
+    ]);
+    expect(extractDerivedText(unnamed)).toBe("[文件]");
+  });
+
+  it("falls back to a generic placeholder for unknown block types", () => {
+    const json = JSON.stringify([{ type: "artifact" }]);
+    expect(extractDerivedText(json)).toBe("[artifact]");
   });
 });
 

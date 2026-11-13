@@ -41,6 +41,7 @@ import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
 import { createLogger } from "@/services/logger";
 import type { ToolDescriptorDto } from "../types/protocol.contract";
 import { useAttachmentIntake } from "./attachment";
+import { prefetchAttachmentLimits } from "./attachment/limits";
 
 const log = createLogger("ConversationView");
 
@@ -68,7 +69,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     (s) => s.setSelectedProviderModel,
   );
   const [forkTarget, setForkTarget] = useState<string | null>(null);
-  const setSupportVision = useAttachmentStore((s) => s.setSupportVision);
+  const setVisionSupport = useAttachmentStore((s) => s.setVisionSupport);
 
   const conversationId = chat.currentConversationId;
   const conversation = chat.conversations.find((c) => c.id === conversationId);
@@ -95,24 +96,32 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     conversation?.toolConfig ?? null,
   );
 
-  const supportVision = (() => {
+  const visionSupport = (() => {
     const p = provider.providers.find((pr) => pr.id === currentProviderId);
     const model = p?.models.find((m) => m.id === currentModelId);
-    // inputModalities 为空视为存量数据，回退 supportVision，避免隐藏原有图片入口
-    const modalities = model?.inputModalities;
+    // 模型未找到：保持 unsupported（未选模型时不冒出图片入口）
+    if (!model) return "unsupported" as const;
+    // 三态事实优先；null 表示存量 models_json，按旧字段派生（与后端同一口径）
+    if (model.vision) return model.vision.support;
+    const modalities = model.inputModalities;
     if (modalities && modalities.length > 0) {
-      return modalities.includes("image");
+      return modalities.includes("image")
+        ? ("supported" as const)
+        : ("unsupported" as const);
     }
-    return model?.supportVision ?? false;
+    return model.supportVision
+      ? ("supported" as const)
+      : ("unsupported" as const);
   })();
 
   useEffect(() => {
-    setSupportVision(supportVision);
-  }, [supportVision, setSupportVision]);
+    setVisionSupport(visionSupport);
+  }, [visionSupport, setVisionSupport]);
 
   const { handlePaste, handleFileSelect } = useAttachmentIntake();
 
   useEffect(() => {
+    void prefetchAttachmentLimits().catch(() => {});
     void useProviderStore
       .getState()
       .loadProviders()

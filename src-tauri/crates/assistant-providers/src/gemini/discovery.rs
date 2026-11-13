@@ -1,4 +1,5 @@
 use crate::base::{resolve_context_window, ModelConfig, ProviderError};
+use crate::capability::{catalog_fact, CapabilityFeature};
 use crate::client::error::classify_http_error;
 use crate::vision::{input_modalities_for, resolve_support_vision};
 
@@ -65,14 +66,18 @@ pub(crate) fn list_models(
                     .unwrap_or(&model.name)
                     .to_string();
                 let ctx = resolve_context_window(&id, None, model.input_token_limit);
-                let input_modalities = input_modalities_for(&id);
+                let vision = resolve_support_vision(&id, None);
+                let input_modalities = input_modalities_for(&id).unwrap_or_default();
                 ModelConfig {
                     id: id.clone(),
                     name: model.display_name.unwrap_or(id.clone()),
                     owned_by: "google".to_string(),
                     context_window: ctx,
-                    support_vision: resolve_support_vision(&id, None),
+                    support_vision: vision.is_supported(),
                     input_modalities,
+                    vision: Some(vision),
+                    pdf: Some(catalog_fact(&id, CapabilityFeature::Pdf)),
+                    attachment: Some(catalog_fact(&id, CapabilityFeature::Attachment)),
                 }
             })
             .collect();

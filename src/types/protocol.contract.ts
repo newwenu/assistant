@@ -41,7 +41,10 @@ export type AttachmentDeleteResultDto = { removedCount: number,
  */
 removedBytes: number, };
 export type AttachmentImportDto = { attachmentId: string, mediaType: string, bytes: number, fileName: string, };
+export type AttachmentLimitsDto = { maxImages: number, maxFiles: number, maxImageBytes: number, maxFileBytes: number, };
 export type AttachmentSummary = { attachmentId: string, mediaType: string, bytes: number, createdAt: number, };
+export type CapabilitySourceDto = "api" | "catalog" | "snapshot" | "fallback";
+export type CapabilitySupportDto = "supported" | "unsupported" | "unknown";
 export type ChatDeltaPayloadDto = { conversationId: string, attemptId: string, messageId: string, seq: number, 
 /**
  * 轮内迭代序号，从 1 起；provider 重试不递增。chat 链路恒为 1。
@@ -135,6 +138,7 @@ status: MessageStatusDto, toolCalls: Array<MessageToolCallDto>, };
 export type MessageStatusDto = "streaming" | "completed" | "interrupted" | "failed";
 export type MessageToolCallDto = { callId: string, name: string, arguments: unknown, status: MessageToolCallStatusDto, result: string | null, };
 export type MessageToolCallStatusDto = "success" | "error" | "cancelled" | "missing";
+export type ModelCapabilityDto = { support: CapabilitySupportDto, source: CapabilitySourceDto, };
 export type ModelConfigDto = { id: string, name: string, ownedBy: string, contextWindow: number | null, supportVision: boolean, 
 /**
  * 输入模态列表（"text"/"image"/"pdf"/"audio"/"video"）；
@@ -144,7 +148,28 @@ inputModalities: Array<string>,
 /**
  * 目录声明的档位；存量 models_json 无此字段，缺省即 None（走未知模型策略）。
  */
-reasoningLevels: ReasoningLevelsDto | null, };
+reasoningLevels: ReasoningLevelsDto | null, 
+/**
+ * 视觉能力事实；存量 models_json 无此字段，缺省即 None（由旧字段派生）。
+ */
+vision: ModelCapabilityDto | null, 
+/**
+ * 原生 PDF 能力事实；存量 models_json 无此字段，缺省即 None。
+ */
+pdf: ModelCapabilityDto | null, 
+/**
+ * 附件能力事实；存量 models_json 无此字段，缺省即 None。
+ */
+attachment: ModelCapabilityDto | null, };
+export type ModelEffortSupportDto = { modelId: string, 
+/**
+ * 该端点可原样下发的档位；端点不归一（responses）时等于目录声明档位。
+ */
+expressible: Array<string>, 
+/**
+ * 目录声明但会被该端点丢弃的档位（保序）；别名档位不计入。
+ */
+unsupported: Array<string>, };
 export type MousePositionDto = { clientX: number, clientY: number, };
 export type OrbConfDto = { clickThrough: boolean, alwaysOnTop: boolean, scalePercent: number, opacityPercent: number, hideOnPointerHover: boolean, hoverDelayMs: number, idleOpacityPercent: number, positionX: number | null, positionY: number | null, };
 export type OsToolExecRequestDto = { tool: string, action: string, params: unknown, };
@@ -154,7 +179,11 @@ export type PermissionIntentDto = { action: string, resources: Array<string>, };
 export type ProviderErrorCodeDto = "ApiKeyMissing" | "AuthFailed" | "RateLimited" | "ModelNotFound" | "ContextOverflow" | "NetworkError" | "Timeout" | "ServerError" | "RequestRejected" | "ParseError" | "Cancelled" | "StreamError" | "InternalError";
 export type ProviderErrorPayloadDto = { code: ProviderErrorCodeDto, message: string, retryAfterMs: number | null, retryable: boolean, httpStatus: number | null, provider: string | null, providerCode: string | null, };
 export type ProviderInputDto = { id: string, name: string, type: string, baseUrl: string, apiKey: string, apiKeyChanged?: boolean | null, models: Array<ModelConfigDto>, defaultModel: string, };
-export type ProviderListDto = { id: string, name: string, type: string, baseUrl: string, apiKeyMasked: string, models: Array<ModelConfigDto>, defaultModel: string, updatedAt: number, };
+export type ProviderListDto = { id: string, name: string, type: string, baseUrl: string, apiKeyMasked: string, models: Array<ModelConfigDto>, defaultModel: string, updatedAt: number, 
+/**
+ * 档位可表达投影（只读），按 `models` 顺序一一对应。
+ */
+effortSupport: Array<ModelEffortSupportDto>, };
 export type ReasoningLevelsDto = { 
 /**
  * 模型提供开启/关闭开关
