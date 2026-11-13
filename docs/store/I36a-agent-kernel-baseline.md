@@ -168,7 +168,7 @@
 
 ### 3.3 DeepSeek Harness：能力接缝 + 不变量
 
-`references/1-ai-agent/deepseek-harness-orb/.agents/notes/archived/architecture/` 的设计笔记，几乎每条都对应我们内核的一条不变式：
+`references/1-ai-agent/deepseek-harness/.agents/notes/archived/architecture/` 的设计笔记，几乎每条都对应我们内核的一条不变式：
 
 - `2026-06-17-filesystem-capability-seam.md`：能力按**三包**拆——接口包（`dsh-fs`）、实现包（`dsh-fs-local`）、消费包（`dsh-tool-fs`）；**消费包只依赖接口包，永不依赖实现包**。文件访问策略、路径解析、原子写属于实现；工具 schema 与结果格式属于消费。并明确写明：**接缝本身不蕴含权限与沙箱**，containment 由独立策略包在 `tools/execute` 前否决。这条直接印证我们「Policy 不在内核、在 Pipeline」的取舍，也提示需要一条「不得绕过 Pipeline」的不变式。
 - `2026-06-15-turn-enclosure-invariant.md`：**每个会话事件都必须落在一个 turn 内**（`turn/start` 与 `turn/end` 之间），因为 turn 是崩溃恢复边界。排队消息改为在 `turn/start` 之后写入；空闲期注入包成一次性 turn。规则由**生产方**强制并加 dev 断言，而不是让读取方容忍。

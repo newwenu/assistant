@@ -2,7 +2,7 @@
 
 > **本文档职责**：对 `references/` 中 3 个有沙盒实现的参考项目进行源码级深度分析，提取架构模式、关键数据结构、平台策略、安全边界及设计取舍，为本项目沙盒实现提供可直接对照的工程参考。
 > **关联文档**：[agent-sandbox-research.md](./agent-sandbox-research.md)（开源项目调研与演进路线） · [I18 架构决策](./I18-agent-tool-architecture-design.md) · I18 实施规格（已归档）
-> **参考项目**：Codex（OpenAI Codex CLI）· OpenHuman · DeepSeek Harness Orb（DSH）
+> **参考项目**：Codex（OpenAI Codex CLI）· OpenHuman · DeepSeek Harness（DSH）
 > **补充样本**：§5.4 另引 goose 与 OpenBitFun 作为「无沙箱」对照组（goose 无任何沙箱原语；OpenBitFun 无沙箱但有边界层路径检查），用于说明「路径检查」与「操作范围检测」的区别。
 
 ---
@@ -767,6 +767,8 @@ export function seatbeltProfileArgs(policy: SandboxPolicy): string[] {
 2. **Deny ACE** — 移除 ambient `FILE_DELETE_CHILD`（world SID），防止跨可写根删除
 3. **Low no-write-up mandatory label** — 防止低完整性进程写高完整性对象
 
+第 3 项写入的是 SACL（完整性标签），其访问权要求与第 1、2 项的 DACL 不同；两者合并在同一次调用里，因此一次失败会让三项编辑全部不落地——见本节末「权限前置条件实测」。
+
 #### 并发控制
 
 per-path exclusive `LockFileEx` lock：
@@ -789,6 +791,50 @@ per-path exclusive `LockFileEx` lock：
 2. **Low 完整性级限制**：低完整性进程无法写中/高完整性对象，但可读所有
 3. **无网络隔离**：Windows ACL 后端不限制网络访问
 4. **无进程创建限制**：受限令牌下子进程仍可创建（但继承受限令牌）
+
+#### 权限前置条件实测（标准账户 / WRITE_OWNER）
+
+DSH 自身文档把这条写成前提（`sandbox-windows-acl/README.md`：「Granted directories must be caller-owned and grant `WRITE_OWNER`」），但在自动 provisioning 路径上没有自愈或诊断，于是表现为「标准账户下建沙箱拿不到某个目录的完全修改特权」，报错原文只有一句 `windows-acl-run: SetNamedSecurityInfoW failed (Win32 5): grantWrite(<path>)`。
+
+**结论：缺的是对象访问权 `WRITE_OWNER`，不是特权（privilege）。** 完整性标签存放在 SACL，`SetNamedSecurityInfoW` 写 SACL 要求目录对调用者授予 `WRITE_OWNER`；而 DACL 里的「Modify」ACE 不含该位（`GRANT_MASK` 也刻意排除了 `WRITE_DAC`/`WRITE_OWNER`，以免受限子进程改 DACL 逃逸），所有者隐式权限只有 `READ_CONTROL` + `WRITE_DAC`。因此「目录由我所有 + DACL 仅授予我 Modify」这一组合必然被拒。
+
+实测矩阵（Windows 11，标准非提权账户，令牌完整性级别 Medium，未持有 `SeSecurityPrivilege` / `SeRelabelPrivilege`；目录为调用者所有）：
+
+| 实验 | 操作 | 结果 |
+|------|------|------|
+| A | 目录 DACL 设为仅当前用户 `Modify` | OK |
+| B | 合并 DACL + 标签（即 `grantWrite` 的真实调用） | **Win32 5 ERROR_ACCESS_DENIED** |
+| C | 只合并 DACL | OK（证明所有者隐式 `WRITE_DAC` 存在） |
+| D | 只写标签 | **Win32 5** |
+| E | 先给当前用户 `FullControl` 再合并 | OK |
+| F | 补 `FullControl` 后单独写标签 | OK |
+| G | 只给当前用户 `WRITE_OWNER`（0x00080000）后写标签 | OK |
+| H | 目录为调用者所有且 DACL 继承默认 `FullControl`（正常工作区） | OK |
+
+推论链：C 成功而 D 失败说明缺的不是 DACL 侧访问权；G 成功说明只需补 `WRITE_OWNER` 这一位。若真缺特权，错误码会是 1314 `ERROR_PRIVILEGE_NOT_HELD`（「A required privilege is not held by the client」），而实测为 5，故与 `SeSecurityPrivilege` 无关。自查方式：`icacls <工作区目录>` 显示 `(M)` 而非 `(F)` 即命中该场景。
+
+**失败传播链（fail-closed，全程不降级到不受限执行）**：
+
+1. `sandbox-local` 准备阶段调用 `AclWriteGrant.add(workspaceRoot, true)` / `grant.add(tempDir)`
+2. `grantWrite` 经 `mergeAndApply` 以 `DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION` 单次 apply → 返回 5
+3. runner 输出 `windows-acl-run: SetNamedSecurityInfoW failed (Win32 5): grantWrite(<path>)` 并以 **127** 退出
+4. pwsh 执行器按 `windows-acl-run` 签名匹配 `RunnerFailureRule`，归类为 runner 失败 → `SANDBOX_UNAVAILABLE`
+
+**上游已有的补救能力与缺口**：
+
+| 位置 | 行为 |
+|------|------|
+| `sandbox-windows-acl/README.md` | 明确声明该前提，并把「仅 Modify 的目录」写成「会大声失败而不是静默跳过隔离」 |
+| `assets/diagnose-windows-sandbox-acl/SKILL.md` + `diagnose-windows-sandbox-acl.ps1` | 诊断脚本计算 `OWNER / IS_CURRENT_USER / WRITE_DAC / WRITE_OWNER`；对缺 `WRITE_DAC`/`WRITE_OWNER` 的目录补 **FullControl** allow ACE；无权修复时拒绝并给出结论 |
+| 自动 provisioning（`sandbox-local` + `acl.ts`） | **无**前置探测、**无**自愈、错误详情只带路径不带缺失的访问权 |
+
+**对本项目的启示**：
+
+1. **授权前先探测有效访问权**：`WRITE_DAC`（DACL 侧）与 `WRITE_OWNER`（SACL 侧）分开判定，缺哪一位报哪一位，而不是让 Win32 5 自己说话。
+2. **自愈只补最小位**：实验 G 证明补 `WRITE_OWNER` 单一位即可；不要照抄 diagnose 脚本的 `FullControl`（那会额外授出 `FILE_DELETE_CHILD`，与「根内删除权只归能力 SID」的设计意图冲突）。
+3. **自授权不会泄漏给受限子进程**：`WRITE_RESTRICTED` 令牌的访问检查要求「普通 SID 的 ACE 与限制 SID 的 ACE 同时满足」，能力 ACE 不含 `WRITE_OWNER`，故调用者自身补的这条 ACE 对沙箱子进程不可达。
+4. **非所有者场景不可自愈**：若目录 owner 不是调用者（如安装器/管理员创建），连「只合并 DACL」这一步都会返回 5，任何自愈都不可能，只能把诊断结论直接透出给用户。
+5. **合并 apply 是放大器**：把 DACL 与标签拆成两次 apply（或先测标签再合并），可让 DACL 侧先落地、失败范围最小化；但要注意 DACL 先落地而标签失败会留下「有授权、无标签」的中间态，必须显式回滚或按 fail-closed 中止。
 
 ### 4.7 DSH 设计模式总结
 
@@ -961,6 +1007,7 @@ const SANDBOX_DENIED_KEYWORDS: [(FileSystemSandboxViolationReason, &str); 7] = [
 | **违规检测** | Codex | 结构化 ViolationEvent 用于审计和遥测 |
 | **双 SID 复用** | DSH | Windows ACL 性能优化，O(1) 复用 |
 | **并发 ACL lock** | DSH | 多沙盒实例并发安全 |
+| **授权前探测 `WRITE_DAC`/`WRITE_OWNER`** | DSH（缺口反推） | DACL 与 SACL 的访问权要求不同，缺一位就整次 apply 失败（§4.6「权限前置条件实测」）；应探测并只补最小位，而非直接失败 |
 
 ### 6.3 可选借鉴
 
@@ -1012,14 +1059,17 @@ const SANDBOX_DENIED_KEYWORDS: [(FileSystemSandboxViolationReason, &str); 7] = [
 
 | 文件 | 职责 |
 |------|------|
-| `references/1-ai-agent/deepseek-harness-orb/packages/sandbox/sandbox/src/index.ts` | 核心 seam：SandboxMode, SandboxPolicy, ConfinedArgv |
-| `references/1-ai-agent/deepseek-harness-orb/packages/sandbox/sandbox/src/escalation.ts` | 升级词汇 + 严格宽化阶梯 |
-| `references/1-ai-agent/deepseek-harness-orb/packages/sandbox/sandbox-policy/src/index.ts` | 策略解析 + 渲染 |
-| `references/1-ai-agent/deepseek-harness-orb/packages/sandbox/sandbox-policy/src/session-mode.ts` | per-session 模式覆盖 |
-| `references/1-ai-agent/deepseek-harness-orb/packages/sandbox/sandbox-local/src/index.ts` | 链式探测 + confine() |
-| `references/1-ai-agent/deepseek-harness-orb/packages/sandbox/sandbox-local/src/profiles.ts` | bwrap/Landlock/Seatbelt profile 构建 |
-| `references/1-ai-agent/deepseek-harness-orb/packages/sandbox/sandbox-windows-acl/src/token.ts` | WRITE_RESTRICTED Token 构建 |
-| `references/1-ai-agent/deepseek-harness-orb/packages/sandbox/sandbox-windows-acl/src/acl.ts` | ACL 编辑 + 并发 lock |
+| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox/src/index.ts` | 核心 seam：SandboxMode, SandboxPolicy, ConfinedArgv |
+| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox/src/escalation.ts` | 升级词汇 + 严格宽化阶梯 |
+| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-policy/src/index.ts` | 策略解析 + 渲染 |
+| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-policy/src/session-mode.ts` | per-session 模式覆盖 |
+| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-local/src/index.ts` | 链式探测 + confine() |
+| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-local/src/profiles.ts` | bwrap/Landlock/Seatbelt profile 构建 |
+| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-windows-acl/src/token.ts` | WRITE_RESTRICTED Token 构建 |
+| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-windows-acl/src/acl.ts` | ACL 编辑 + 并发 lock |
+| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-windows-acl/src/runner.ts` | Windows ACL runner：`windows-acl-run:` 前缀 + 127 退出契约 |
+| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-windows-acl/README.md` | 声明「目录必须由调用者拥有并授予 `WRITE_OWNER`」（§4.6「权限前置条件实测」） |
+| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-windows-acl/assets/diagnose-windows-sandbox-acl/` | 诊断技能：检测 `WRITE_DAC`/`WRITE_OWNER`，缺位时补 FullControl |
 
 ### 对照组（无沙箱，仅用于 §5.4 分层对照）
 
@@ -1029,4 +1079,4 @@ const SANDBOX_DENIED_KEYWORDS: [(FileSystemSandboxViolationReason, &str); 7] = [
 | `references/1-ai-agent/goose/crates/goose/src/security/patterns.rs` | 正则威胁特征库（advisory，L2） |
 | `references/1-ai-agent/goose/crates/goose/src/security/scanner.rs` | 仅对 shell 工具文本评分，不产生拒绝 |
 | `references/1-ai-agent/OpenBitFun/src/crates/interfaces/app-server/src/server/host_policy.rs` | App Server 边界路径检查：绝对路径 + `dunce::canonicalize` + 包含性判断（L3） |
-| `references/1-ai-agent/deepseek-harness-orb/packages/workspace/workspace/src/paths.ts` | `realpathNormalize`：workspace 身份的 canonical 基准（L3） |
+| `references/1-ai-agent/deepseek-harness/packages/workspace/workspace/src/paths.ts` | `realpathNormalize`：workspace 身份的 canonical 基准（L3） |
