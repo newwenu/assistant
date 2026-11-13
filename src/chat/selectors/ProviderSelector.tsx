@@ -3,6 +3,7 @@ import { Select } from "antd";
 import { DownOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { Provider } from "../../settings/provider/types";
+import { onOrbCloseOverlays } from "../../orb/orbOverlays";
 
 interface ProviderSelectorProps {
   providerId: string | null;
@@ -32,14 +33,14 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
     [openRef],
   );
 
-  useEffect(() => {
-    const handler = () => {
-      setOpen(false);
-      if (openRef) openRef.current = false;
-    };
-    window.addEventListener("orb-close-menus", handler);
-    return () => window.removeEventListener("orb-close-menus", handler);
-  }, [openRef]);
+  useEffect(
+    () =>
+      onOrbCloseOverlays(() => {
+        setOpen(false);
+        if (openRef) openRef.current = false;
+      }),
+    [openRef],
+  );
 
   if (providers.length <= 1) return null;
 

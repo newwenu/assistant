@@ -1,7 +1,7 @@
 use assistant_orb::hover::ScreenBounds;
 use assistant_orb::placement::{
-    bounds_inside_screens, correction_for_screens, snap_orb_to_edge, snap_to_nearest_screen,
-    WindowBounds,
+    anchor_bottom_right, bounds_inside_screens, correction_for_screens, snap_orb_to_edge,
+    snap_to_nearest_screen, WindowBounds,
 };
 
 fn screen(x: i32, y: i32, w: u32, h: u32) -> ScreenBounds {
@@ -11,6 +11,25 @@ fn screen(x: i32, y: i32, w: u32, h: u32) -> ScreenBounds {
         width: w,
         height: h,
     }
+}
+
+#[test]
+fn anchor_bottom_right_insets_margin() {
+    let area = screen(0, 0, 1920, 1040);
+    let (x, y) = anchor_bottom_right(&area, 56, 20);
+    assert_eq!(x, 1920 - 56 - 20);
+    assert_eq!(y, 1040 - 56 - 20);
+}
+
+#[test]
+fn anchor_bottom_right_respects_work_area_height() {
+    let full = screen(0, 0, 1920, 1080);
+    let work = screen(0, 0, 1920, 1040);
+    let (_, y_full) = anchor_bottom_right(&full, 56, 20);
+    let (_, y_work) = anchor_bottom_right(&work, 56, 20);
+    assert!(y_work < y_full);
+    assert!(y_work + 56 <= work.height as i32);
+    assert!(y_full + 56 > work.height as i32);
 }
 
 #[test]

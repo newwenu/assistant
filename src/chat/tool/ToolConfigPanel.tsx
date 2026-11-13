@@ -1,6 +1,7 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Button, Checkbox, Select, Spin, Tag, Tooltip, Typography } from "antd";
 import { useTranslation } from "react-i18next";
+import { useOrbOverlayClose } from "@/orb/orbOverlays";
 import type {
   ApprovalLevelDto,
   ToolDescriptorDto,
@@ -28,7 +29,6 @@ interface ToolConfigPanelProps {
   settingDefault: boolean;
   onChange: (next: ConversationToolConfig) => void;
   onSetDefault: () => void;
-  onClose: () => void;
 }
 
 /**
@@ -49,6 +49,16 @@ const TOOL_DESC_KEYS: Record<string, I18nPath> = {
 };
 
 /**
+ * 审批级别下拉项：`label` 是档位名，`hint` 说明该档位下哪些操作会弹审批。
+ * 下拉列表用 `optionRender` 渲染两行，收起态只显示 `label`。
+ */
+type ApprovalLevelOption = {
+  value: ApprovalLevelDto;
+  label: string;
+  hint: string;
+};
+
+/**
  * 会话工具装配面板（I38d §4.7）：
  * 层级上限 + 审批级别 + 按 tier 分组的工具多选。
  *
@@ -63,12 +73,33 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
   settingDefault,
   onChange,
   onSetDefault,
-  onClose,
 }) => {
   const { t } = useTranslation();
   const ceiling = TIER_RANK[config.maxToolTier];
 
+  /**
+   * 两个下拉都受控：orb 收起时由 `collapseOrbPanel()` 广播统一归零，
+   * 避免下拉弹层留在收起后的小球窗口上。
+   */
+  const [tierOpen, setTierOpen] = useState(false);
+  const [levelOpen, setLevelOpen] = useState(false);
+  const closeDropdowns = useCallback(() => {
+    setTierOpen(false);
+    setLevelOpen(false);
+  }, []);
+  useOrbOverlayClose(closeDropdowns);
+
   const grouped = useMemo(() => groupToolsByTier(tools), [tools]);
+
+  const levelOptions = useMemo<ApprovalLevelOption[]>(
+    () =>
+      APPROVAL_LEVELS.map((level) => ({
+        value: level,
+        label: t(`chat.tool.approval.level.${level}`),
+        hint: t(`chat.tool.approval.level_hint.${level}`),
+      })),
+    [t],
+  );
 
   const enabledCount = config.enabledTools.length;
 
@@ -79,15 +110,12 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
     onChange({ ...config, approvalLevel });
 
   return (
-    <div className={css.root}>
+    <div className={css.root} data-tool-panel>
       <div className={css.header}>
         <Typography.Text strong>{t("chat.tool.panel.title")}</Typography.Text>
         <Typography.Text type="secondary" className={css.count}>
           {t("chat.tool.panel.enabled_count", { count: enabledCount })}
         </Typography.Text>
-        <Button size="small" type="text" onClick={onClose}>
-          {t("chat.tool.panel.done")}
-        </Button>
       </div>
 
       <div className={css.controls}>
@@ -97,6 +125,9 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
             size="small"
             value={config.maxToolTier}
             onChange={setTier}
+            open={tierOpen}
+            onOpenChange={setTierOpen}
+            classNames={{ popup: { root: "tool-panel-dropdown" } }}
             options={TOOL_TIERS.map((tier) => ({
               value: tier,
               label: t(`chat.tool.approval.tier.${tier}`),
@@ -106,14 +137,22 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
         </label>
         <label className={css.field}>
           <span className={css.label}>{t("chat.tool.panel.level_label")}</span>
-          <Select
+          <Select<ApprovalLevelDto, ApprovalLevelOption>
             size="small"
             value={config.approvalLevel}
             onChange={setLevel}
-            options={APPROVAL_LEVELS.map((level) => ({
-              value: level,
-              label: t(`chat.tool.approval.level.${level}`),
-            }))}
+            open={levelOpen}
+            onOpenChange={setLevelOpen}
+            popupMatchSelectWidth={false}
+            virtual={false}
+            classNames={{ popup: { root: "tool-panel-dropdown" } }}
+            options={levelOptions}
+            optionRender={(option) => (
+              <div className={css.levelOption}>
+                <span>{option.data.label}</span>
+                <span className={css.levelOptionHint}>{option.data.hint}</span>
+              </div>
+            )}
             className={css.select}
           />
         </label>

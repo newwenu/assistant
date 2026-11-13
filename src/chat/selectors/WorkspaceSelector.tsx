@@ -16,6 +16,7 @@ import {
   stripVerbatimPrefix,
 } from "../core/workspaceDisplay";
 import { switchWorkspace } from "../core/workspaceSwitch";
+import { onOrbCloseOverlays } from "../../orb/orbOverlays";
 import { notifyError, notifyInfo } from "../../stores/notifyStore";
 import { createLogger } from "../../services/logger";
 
@@ -78,14 +79,14 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
   );
 
   /** 面板收起 / 失焦时统一关闭菜单，避免 portal 菜单留在屏幕上。 */
-  useEffect(() => {
-    const handler = () => {
-      setOpen(false);
-      if (openRef) openRef.current = false;
-    };
-    window.addEventListener("orb-close-menus", handler);
-    return () => window.removeEventListener("orb-close-menus", handler);
-  }, [openRef]);
+  useEffect(
+    () =>
+      onOrbCloseOverlays(() => {
+        setOpen(false);
+        if (openRef) openRef.current = false;
+      }),
+    [openRef],
+  );
 
   const registerAndSwitch = useCallback(
     async (path: string) => {

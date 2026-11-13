@@ -88,7 +88,7 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
         });
       case "approvalLevel":
         return t("chat.tool.approval.reason.approval_level", {
-          level: t(`chat.tool.approval.level.${reason.level}`),
+          level: t(`chat.tool.approval.level_hint.${reason.level}`),
         });
       case "projectRule":
         return t("chat.tool.approval.reason.project_rule", {

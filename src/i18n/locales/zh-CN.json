@@ -294,9 +294,9 @@
         },
         "approval_level": {
           "options": {
-            "none": "全部自动执行",
-            "dangerous_only": "仅危险操作需确认",
-            "all_os_tools": "所有非沙箱工具需确认"
+            "none": "直接运行",
+            "dangerous_only": "默认",
+            "all_os_tools": "手动审批"
           }
         }
       },
@@ -700,9 +700,14 @@
           "external": "外部"
         },
         "level": {
-          "none": "全部自动执行",
-          "dangerous_only": "仅危险操作需确认",
-          "all_os_tools": "所有非沙箱工具需确认"
+          "none": "直接运行",
+          "dangerous_only": "默认",
+          "all_os_tools": "手动审批"
+        },
+        "level_hint": {
+          "none": "所有工具直接执行，不弹审批卡片",
+          "dangerous_only": "读取自动放行，修改和执行需确认",
+          "all_os_tools": "所有工具都需确认，包括读取"
         },
         "reason": {
           "default_policy": "默认策略：{{rule}}",
@@ -725,7 +730,7 @@
       },
       "toolbar": {
         "summary": "工具 {{enabled}}/{{total}} · 上限 {{tier}}",
-        "hint": "会话工具装配"
+        "hint": "会话工具装配 · 审批级别：{{level}}（{{hint}}）"
       },
       "notice": {
         "enabled": "已启用 {{names}}",
@@ -737,7 +742,6 @@
       "panel": {
         "title": "工具装配",
         "enabled_count": "已启用 {{count}} 个",
-        "done": "完成",
         "tier_label": "层级上限",
         "level_label": "审批级别",
         "set_default": "设为该模式默认",

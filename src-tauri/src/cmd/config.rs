@@ -8,7 +8,7 @@ use crate::protocol::{
 };
 use assistant_config::{
     app_conf::{AppConf, ThemeMode},
-    constant::{WINDOW_MAIN, WINDOW_ORB},
+    constant::WINDOW_MAIN,
     mascot_conf::MascotConf,
     orb_conf::OrbConf,
 };
@@ -91,11 +91,7 @@ static APP_SIDE_EFFECTS: &[(&str, AppSideEffectFn)] = &[
 static ORB_SIDE_EFFECTS: &[(&str, OrbSideEffectFn)] = &[
     ("always_on_top", |_app, prev, conf| {
         if prev.always_on_top != conf.always_on_top {
-            if let Some(window) = _app.get_webview_window(WINDOW_ORB) {
-                window
-                    .set_always_on_top(conf.always_on_top)
-                    .map_err(|e| e.to_string())?;
-            }
+            crate::window::apply_orb_window_attrs(_app);
         }
         Ok(())
     }),

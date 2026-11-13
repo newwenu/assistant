@@ -10,21 +10,17 @@ import { Modal } from "antd";
 import { useTranslation } from "react-i18next";
 import { chatService } from "../services/chatService";
 import { openFromPanel } from "@/orb/panelActions";
+import { useOrbOverlayClose, resolveOverlayContainer } from "@/orb/orbOverlays";
 import { useChatStore } from "../stores/chatStore";
 import { useChatStreamStore } from "../stores/chatStreamStore";
 import { useProviderStore } from "../stores/providerStore";
 import { useAgentModeStore } from "../stores/agentModeStore";
-import { useAttachmentStore } from "../stores/attachmentStore";
-import {
-  resolveDefaultModel,
-  resolveProviderModel,
-} from "./core/providerModel";
+import { resolveDefaultModel } from "./core/providerModel";
 import { resolveConversationRoute } from "./core/conversationLink";
 import {
   DEFAULT_TOOL_CONFIG,
   diffToolConfig,
   isEmptyToolConfigDiff,
-  resolveEffectiveToolConfig,
 } from "./core/toolConfig";
 import type { ConversationToolConfig } from "./core/chatTypes";
 import { notifyInfo, notifyError } from "../stores/notifyStore";
@@ -36,14 +32,33 @@ import { WorkspaceSelector } from "./selectors/WorkspaceSelector";
 import { ToolConfigPanel } from "./tool/ToolConfigPanel";
 import { ToolToolbar } from "./tool/ToolToolbar";
 import { ToolChangeNotice } from "./tool/ToolChangeNotice";
+import { useToolCatalog } from "./tool/useToolCatalog";
 import { ForkDialog } from "./blocks/ForkDialog";
 import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
 import { createLogger } from "@/services/logger";
-import type { ToolDescriptorDto } from "../types/protocol.contract";
 import { useAttachmentIntake } from "./attachment";
 import { prefetchAttachmentLimits } from "./attachment/limits";
 
 const log = createLogger("ConversationView");
+
+/**
+ * 工具面板的「内部」区域：面板根、概览条 chip，以及面板内 `Select` 的弹层。
+ * 弹层由 antd 挂到 orb 窗口根节点（见 `OrbWindow` 的 `getPopupContainer`），
+ * 不在面板 DOM 子树内，必须按类名单独放行，否则点选项会被判成「点外部」，
+ * 面板连同弹层一起卸载，选择动作丢失。
+ */
+const TOOL_PANEL_INNER_SELECTORS = [
+  "[data-tool-panel]",
+  "[data-tool-panel-anchor]",
+  ".tool-panel-dropdown",
+];
+
+function isToolPanelInner(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return TOOL_PANEL_INNER_SELECTORS.some(
+    (selector) => target.closest(selector) !== null,
+  );
+}
 
 interface ConversationViewProps {
   modelOpenRef?: RefObject<boolean>;
@@ -68,8 +83,10 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
   const setSelectedProviderModel = useChatStore(
     (s) => s.setSelectedProviderModel,
   );
+  const ensureConversationToolConfig = useChatStore(
+    (s) => s.ensureConversationToolConfig,
+  );
   const [forkTarget, setForkTarget] = useState<string | null>(null);
-  const setVisionSupport = useAttachmentStore((s) => s.setVisionSupport);
 
   const conversationId = chat.currentConversationId;
   const conversation = chat.conversations.find((c) => c.id === conversationId);
@@ -96,28 +113,6 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     conversation?.toolConfig ?? null,
   );
 
-  const visionSupport = (() => {
-    const p = provider.providers.find((pr) => pr.id === currentProviderId);
-    const model = p?.models.find((m) => m.id === currentModelId);
-    // 模型未找到：保持 unsupported（未选模型时不冒出图片入口）
-    if (!model) return "unsupported" as const;
-    // 三态事实优先；null 表示存量 models_json，按旧字段派生（与后端同一口径）
-    if (model.vision) return model.vision.support;
-    const modalities = model.inputModalities;
-    if (modalities && modalities.length > 0) {
-      return modalities.includes("image")
-        ? ("supported" as const)
-        : ("unsupported" as const);
-    }
-    return model.supportVision
-      ? ("supported" as const)
-      : ("unsupported" as const);
-  })();
-
-  useEffect(() => {
-    setVisionSupport(visionSupport);
-  }, [visionSupport, setVisionSupport]);
-
   const { handlePaste, handleFileSelect } = useAttachmentIntake();
 
   useEffect(() => {
@@ -133,90 +128,47 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     if (modes.length === 0) void loadModes();
   }, [modes.length, loadModes]);
 
-  useEffect(() => {
-    if (conversationId && chat.conversations.length > 0) {
-      const conv = chat.conversations.find((c) => c.id === conversationId);
-      if (conv) {
-        const resolved = resolveProviderModel(
-          provider.providers,
-          conv.providerId,
-          conv.modelId,
-        );
-        setSelectedProviderModel(resolved.providerId, resolved.modelId);
-      }
-    }
-  }, [
-    conversationId,
-    chat.conversations,
-    provider.providers,
-    setSelectedProviderModel,
-  ]);
-
-  useEffect(() => {
-    if (!currentProviderId) return;
-    const exists = provider.providers.some((p) => p.id === currentProviderId);
-    if (!exists) {
-      const resolved = resolveProviderModel(
-        provider.providers,
-        null,
-        currentModelId,
-      );
-      setSelectedProviderModel(resolved.providerId, resolved.modelId);
-    }
-  }, [
-    provider.providers,
-    currentProviderId,
-    currentModelId,
-    setSelectedProviderModel,
-  ]);
-
-  /** 播种按会话只做一次：写入失败回滚为 `null` 后不再自动重试，避免死循环（I38d §4.4）。 */
-  const seededConversationRef = useRef<Set<string>>(new Set());
-
   /**
-   * 首次进入 agent 布局且会话级配置为 `null` 时播种并落库（I38d §4.4）：
-   * 模式级初始值 → 会话级持久值，面板首帧即可显示有效值。
+   * 首次进入 agent 布局且会话级配置为 `null` 时按模式初始值播种并落库（I38d §4.4）。
+   * 幂等与「只播一次」由 store 保证，视图不再持有去重 ref。
    */
   useEffect(() => {
     if (!conversationId || route.link !== "agent") return;
-    if (!conversation || conversation.toolConfig) return;
-    if (seededConversationRef.current.has(conversationId)) return;
-    seededConversationRef.current.add(conversationId);
-    const mode = modes.find((m) => m.id === conversation.modeId);
-    void chat.setConversationToolConfig(
-      conversationId,
-      resolveEffectiveToolConfig(null, mode?.toolConfig),
-    );
-  }, [conversationId, route.link, conversation, modes, chat]);
+    void ensureConversationToolConfig(conversationId);
+  }, [conversationId, route.link, modes.length, ensureConversationToolConfig]);
 
   const noProviders = provider.providers.length === 0;
   const isBusy = stream.isStreaming;
 
-  /** 工具清单：agent 链路首次渲染时拉一次，进程内缓存（注册表在启动后不再变化）。 */
-  const [tools, setTools] = useState<ToolDescriptorDto[]>([]);
-  const [toolsLoading, setToolsLoading] = useState(false);
-  const toolsLoadedRef = useRef(false);
+  const { tools, loading: toolsLoading } = useToolCatalog(
+    route.link === "agent",
+  );
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
   const [settingDefault, setSettingDefault] = useState(false);
-
-  useEffect(() => {
-    if (route.link !== "agent" || toolsLoadedRef.current) return;
-    toolsLoadedRef.current = true;
-    setToolsLoading(true);
-    void chatService
-      .listAvailableTools()
-      .then(setTools)
-      .catch((e) => {
-        log.error("listAvailableTools failed", e);
-        toolsLoadedRef.current = false;
-      })
-      .finally(() => setToolsLoading(false));
-  }, [route.link]);
 
   /** 切会话即收起面板：面板内容属于当前会话的工具配置。 */
   useEffect(() => {
     setToolPanelOpen(false);
   }, [conversationId]);
+
+  /** 面板不设「完成」按钮：点击面板外部（对话区任意位置）即收起。 */
+  useEffect(() => {
+    if (!toolPanelOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (isToolPanelInner(event.target)) return;
+      setToolPanelOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () =>
+      document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [toolPanelOpen]);
+
+  /**
+   * orb 收起时同步关闭工具面板：面板与它弹出的下拉都必须归零，
+   * 否则球上会残留展开中的面板/弹层。
+   */
+  const closeToolPanel = useCallback(() => setToolPanelOpen(false), []);
+  useOrbOverlayClose(closeToolPanel);
 
   const currentMode = useMemo(
     () => modes.find((m) => m.id === conversation?.modeId) ?? null,
@@ -366,6 +318,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
       modal.warning({
         title: t("chat.view.no_provider_title"),
         content: t("chat.view.no_provider_content"),
+        getContainer: resolveOverlayContainer,
       });
       return;
     }
@@ -502,6 +455,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
               okText: t("common.actions.confirm"),
               cancelText: t("common.actions.cancel"),
               okType: "danger",
+              getContainer: resolveOverlayContainer,
               onOk: () => resolve(true),
               onCancel: () => resolve(false),
             });
@@ -561,6 +515,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     modal.confirm({
       title: t("chat.compact.generate_summary"),
       content: t("chat.compact.generate_confirm"),
+      getContainer: resolveOverlayContainer,
       onOk: () => chat.manualCompact(),
     });
   }, [modal, t, chat]);
@@ -655,7 +610,6 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
                     settingDefault={settingDefault}
                     onChange={handleToolConfigChange}
                     onSetDefault={handleSetModeDefault}
-                    onClose={() => setToolPanelOpen(false)}
                   />
                 ) : null
               }

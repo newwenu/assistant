@@ -92,6 +92,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     if let Err(e) = crate::window::restore_main_window(handle) {
         log::warn!("Failed to restore main window geometry: {}", e);
     }
+    crate::window::apply_orb_window_attrs(handle);
     show_orb_window(handle);
 
     spawn_screen_inspection(handle.clone());
@@ -235,12 +236,12 @@ fn position_orb_window(handle: &tauri::AppHandle) {
         }
     }
 
-    let Some(primary) = screens.first() else {
+    let area = placement::get_primary_work_area(handle).or_else(|| screens.first().copied());
+    let Some(area) = area else {
         return;
     };
     let edge_margin = 20;
-    let x = primary.x + primary.width as i32 - collapsed_phys as i32 - edge_margin;
-    let y = primary.y + primary.height as i32 - collapsed_phys as i32 - edge_margin;
+    let (x, y) = placement::anchor_bottom_right(&area, collapsed_phys, edge_margin);
     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
 }
 

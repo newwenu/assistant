@@ -4,6 +4,7 @@ import type { SelectProps } from "antd";
 import { DownOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useAgentModeStore } from "../../stores/agentModeStore";
+import { onOrbCloseOverlays } from "../../orb/orbOverlays";
 
 interface ModeSelectorProps {
   variant?: "default" | "chip";
@@ -41,11 +42,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
     }
   }, [modes.length, loadModes]);
 
-  useEffect(() => {
-    const handler = () => setOpen(false);
-    window.addEventListener("orb-close-menus", handler);
-    return () => window.removeEventListener("orb-close-menus", handler);
-  }, []);
+  useEffect(() => onOrbCloseOverlays(() => setOpen(false)), []);
 
   const handleChange = useCallback(
     (next: string) => {

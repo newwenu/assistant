@@ -306,9 +306,9 @@
         },
         "approval_level": {
           "options": {
-            "none": "Auto-run everything",
-            "dangerous_only": "Ask for dangerous actions",
-            "all_os_tools": "Ask for all non-sandbox tools"
+            "none": "Run directly",
+            "dangerous_only": "Default",
+            "all_os_tools": "Manual approval"
           }
         }
       },
@@ -715,9 +715,14 @@
           "external": "External"
         },
         "level": {
-          "none": "Run everything automatically",
-          "dangerous_only": "Only dangerous operations need confirmation",
-          "all_os_tools": "All non-sandbox tools need confirmation"
+          "none": "Run directly",
+          "dangerous_only": "Default",
+          "all_os_tools": "Manual approval"
+        },
+        "level_hint": {
+          "none": "All tools run without asking",
+          "dangerous_only": "Reads run freely; edits and commands need approval",
+          "all_os_tools": "All tools need approval, including reads"
         },
         "reason": {
           "default_policy": "Default policy: {{rule}}",
@@ -740,7 +745,7 @@
       },
       "toolbar": {
         "summary": "{{enabled}}/{{total}} tools · up to {{tier}}",
-        "hint": "Conversation tool assembly"
+        "hint": "Conversation tool assembly · Approval level: {{level}} ({{hint}})"
       },
       "notice": {
         "enabled": "Enabled {{names}}",
@@ -752,7 +757,6 @@
       "panel": {
         "title": "Tool assembly",
         "enabled_count": "{{count}} enabled",
-        "done": "Done",
         "tier_label": "Tier ceiling",
         "level_label": "Approval level",
         "set_default": "Set as mode default",

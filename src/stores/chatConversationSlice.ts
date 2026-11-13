@@ -21,6 +21,8 @@ import type { PersistQueue } from "../utils/persistQueue";
 import { useChatStreamStore } from "./chatStreamStore";
 import { useAgentModeStore } from "./agentModeStore";
 import type { TurnOrchestrator } from "../services/stream/turnOrchestrator";
+import { resolveEffectiveToolConfig } from "../chat/core/toolConfig";
+import type { ProviderModelRef } from "../chat/core/providerModel";
 import {
   fetchTokenUsage,
   type FetchTokenUsageDeps,
@@ -43,6 +45,7 @@ type FullState = ChatConversationSlice & {
   ) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   reasoningChoice: ReasoningChoice;
+  syncSelectionFromConversation: (ref?: ProviderModelRef) => void;
 };
 
 export interface ChatConversationSlice {
@@ -79,6 +82,8 @@ export interface ChatConversationSlice {
     id: string,
     toolConfig: ConversationToolConfig,
   ) => Promise<void>;
+  /** 会话级工具配置缺省时按模式初始值播种并落库，幂等（I38d §4.4）。 */
+  ensureConversationToolConfig: (id: string) => Promise<void>;
   togglePin: (id: string) => Promise<void>;
   duplicateConversation: (id: string) => Promise<void>;
   batchDelete: (ids: string[]) => Promise<void>;
@@ -97,6 +102,9 @@ export function createConversationSlice(
   persistQueue: PersistQueue,
   getOrchestrator: () => TurnOrchestrator | null,
 ): ChatConversationSlice {
+  /** 同一会话的工具配置播种只做一次：写入失败回滚为 `null` 后不再自动重试，避免死循环（I38d §4.4）。 */
+  const seededConversationIds = new Set<string>();
+
   return {
     conversations: [],
     currentConversationId: null,
@@ -234,6 +242,11 @@ export function createConversationSlice(
           useAgentModeStore
             .getState()
             .selectMode(detail.conversation?.modeId ?? "builtin-default");
+          /** 选中项跟随会话，属 store 不变式，不再由视图挂 effect 回写。 */
+          get().syncSelectionFromConversation({
+            providerId: detail.conversation?.providerId ?? null,
+            modelId: detail.conversation?.modelId ?? "",
+          });
           fetchTokenUsage(id, fetchTokenUsageDeps);
         }
       } catch (e) {
@@ -376,6 +389,21 @@ export function createConversationSlice(
       }
     },
 
+    ensureConversationToolConfig: async (id) => {
+      if (seededConversationIds.has(id)) return;
+      const conv = get().conversations.find((c) => c.id === id);
+      if (!conv || conv.toolConfig) return;
+      const { modes } = useAgentModeStore.getState();
+      /** 模式尚未加载完：不播种也不标记，等模式到位后重新调用。 */
+      if (modes.length === 0) return;
+      const mode = modes.find((m) => m.id === conv.modeId);
+      seededConversationIds.add(id);
+      await get().setConversationToolConfig(
+        id,
+        resolveEffectiveToolConfig(null, mode?.toolConfig),
+      );
+    },
+
     togglePin: async (id: string) => {
       await persistQueue.enqueue(async () => {
         await chatService.toggleConversationPin(id);
@@ -446,6 +474,7 @@ export function createConversationSlice(
 
     updateConversations: (convs: Conversation[]) => {
       set({ conversations: convs });
+      get().syncSelectionFromConversation();
     },
   };
 }

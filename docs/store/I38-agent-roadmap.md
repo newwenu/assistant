@@ -99,6 +99,9 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | assistant 消息身份指示（头像 / 模式 / 模型、消息级 `mode_id`） | I43-assistant-identity-spec.md（已归档） | 实施规格 |
 | 模型能力事实（三态 + 来源 + 主体 key；内容/列表/推理三处止损） | [I45](./I45-model-capability-facts-spec.md) | 实施规格 |
 | 模型能力事实任务级进度（C1–C3 勾选） | [I45 tasklist](./I45-model-capability-facts-tasklist.md) | 任务清单（唯一任务级进度） |
+| Agent 节点布局（坐标 / 容器 / 分组 / 密度 / 挂载） | [I46 design](./I46-agent-node-layout-design.md) · [I46 spec](./I46-agent-node-layout-spec.md) | 设计 ADR + 实施规格 |
+| Orb 运行态与可见性（失焦门控 / 档位常驻 / 窗口属性 / 冷启动锚点） | [I47](./I47-orb-runtime-state-spec.md) | 实施规格 |
+| Orb 运行态任务级进度（C1–C4 勾选） | [I47 tasklist](./I47-orb-runtime-state-tasklist.md) | 任务清单（唯一任务级进度） |
 | P8.2+ 演进候选（Worker / Router / continuity / 多编码） | 本文 §2.1 | 候选清单 |
 | 运行时内核（turn / 状态机 / 端口 / chat 迁移） | I36 spec（已归档） | 实施规格 |
 | 运行时决策（D1-D18、参考项目提取） | I36 design（已归档） | ADR |

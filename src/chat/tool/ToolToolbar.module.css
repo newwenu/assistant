@@ -5,6 +5,18 @@
   max-width: 200px;
 }
 
+.level {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.sep {
+  flex: 0 0 auto;
+  opacity: 0.55;
+  font-size: 12px;
+}
+
 .label {
   overflow: hidden;
   text-overflow: ellipsis;

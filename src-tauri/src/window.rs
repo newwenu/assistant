@@ -20,6 +20,7 @@ use assistant_config::{
         ORB_COLLAPSED_WINDOW_SIZE, ORB_EXPANDED_HEIGHT, ORB_EXPANDED_WIDTH,
         ORB_EXPANDED_WINDOW_HEIGHT, ORB_EXPANDED_WINDOW_WIDTH, WINDOW_MAIN, WINDOW_ORB,
     },
+    orb_conf::OrbConf,
 };
 use assistant_orb::placement::{self, WindowBounds};
 
@@ -64,6 +65,26 @@ fn set_mode(mode: MainWindowMode) {
 /// mini 恒置顶；normal 遵循用户设置。
 pub fn effective_on_top(stay_on_top: bool) -> bool {
     current_mode() == MainWindowMode::Mini || stay_on_top
+}
+
+/// Orb 窗口常驻属性（I47 §6.1）：置顶与跨虚拟桌面/空间，二者同源于 `always_on_top`。
+///
+/// 失败只记 warn：窗口属性是尽力而为，不阻断启动。
+/// 不加平台分支——tao 0.37.2 在 Windows 上 `set_visible_on_all_workspaces` 为空实现且不报错。
+pub fn apply_orb_window_attrs(app: &AppHandle) {
+    let Ok(conf) = OrbConf::load() else {
+        log::warn!("Failed to load orb config for window attributes");
+        return;
+    };
+    let Some(window) = app.get_webview_window(WINDOW_ORB) else {
+        return;
+    };
+    if let Err(e) = window.set_always_on_top(conf.always_on_top) {
+        log::warn!("Failed to set orb always on top: {}", e);
+    }
+    if let Err(e) = window.set_visible_on_all_workspaces(conf.always_on_top) {
+        log::warn!("Failed to set orb visible on all workspaces: {}", e);
+    }
 }
 
 pub struct WindowSpec {

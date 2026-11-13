@@ -1,4 +1,5 @@
 import React from "react";
+import { ConfigProvider } from "antd";
 import { useOrbStore } from "@/stores/orbStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { OrbBall } from "@/orb/OrbBall";
@@ -23,18 +24,32 @@ export const OrbWindow: React.FC = () => {
     .filter(Boolean)
     .join(" ");
 
+  /**
+   * 所有 antd 浮层（Select / Dropdown / Tooltip / Popover / Modal）都挂进 orb 窗口根节点，
+   * 而不是默认的 `document.body`。这样浮层属于 orb 自己的 DOM 子树，
+   * 收起时可以由 `global.css` 的兜底规则整体隐藏，任何组件漏订阅关闭广播也不会盖住小球。
+   */
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const getPopupContainer = React.useCallback(
+    () => rootRef.current ?? document.body,
+    [],
+  );
+
   return (
-    <div
-      data-orb-window
-      className={orbClassName}
-      style={{
-        width: "100%",
-        height: "100%",
-        position: "relative",
-      }}
-    >
-      <OrbBall />
-      <OrbPanel />
-    </div>
+    <ConfigProvider getPopupContainer={getPopupContainer}>
+      <div
+        ref={rootRef}
+        data-orb-window
+        className={orbClassName}
+        style={{
+          width: "100%",
+          height: "100%",
+          position: "relative",
+        }}
+      >
+        <OrbBall />
+        <OrbPanel />
+      </div>
+    </ConfigProvider>
   );
 };

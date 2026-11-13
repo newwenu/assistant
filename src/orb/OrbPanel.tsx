@@ -18,6 +18,8 @@ import {
 import { useOrbStore } from "../stores/orbStore";
 import { formatConversationTitle } from "../utils/formatConversationTitle";
 import { isOrbBlurCollapseSuppressed, useOrbExpand } from "./OrbExpand";
+import { isOrbBusy } from "./orbBusy";
+import { closeOrbOverlays } from "./orbOverlays";
 import { openFromPanel } from "./panelActions";
 import { ConversationView } from "../chat/ConversationView";
 import { useChatStore, getChatOrchestrator } from "../stores/chatStore";
@@ -72,7 +74,7 @@ function useMouseOnlyTooltip(): {
 }
 
 export const OrbPanel: React.FC = () => {
-  const { expand, collapse } = useOrbExpand();
+  const { expand, collapse, autoCollapse } = useOrbExpand();
   const expandDirection = useOrbStore((s) => s.expandDirection);
   const keepExpanded = useOrbStore((s) => s.keepExpanded);
   const setKeepExpanded = useOrbStore((s) => s.setKeepExpanded);
@@ -110,7 +112,7 @@ export const OrbPanel: React.FC = () => {
   const closeAllMenus = useCallback(() => {
     setHistoryOpen(false);
     modelOpenRef.current = false;
-    window.dispatchEvent(new CustomEvent("orb-close-menus"));
+    closeOrbOverlays();
   }, []);
 
   useEffect(() => {
@@ -125,8 +127,9 @@ export const OrbPanel: React.FC = () => {
           if (isOrbBlurCollapseSuppressed()) return;
           const state = useOrbStore.getState();
           if (state.isDragging) return;
+          if (isOrbBusy()) return;
           if (!isHoverCapable()) {
-            void collapse();
+            void autoCollapse();
             return;
           }
           try {
@@ -138,7 +141,7 @@ export const OrbPanel: React.FC = () => {
           } catch {
             // if coord check fails, fall through to collapse
           }
-          void collapse();
+          void autoCollapse();
         })();
       }, ORB_BLUR_COLLAPSE_DELAY_MS);
     });
@@ -161,7 +164,7 @@ export const OrbPanel: React.FC = () => {
       cleanupChatLifecycle();
       if (timer !== null) clearTimeout(timer);
     };
-  }, [expand, collapse, closeAllMenus]);
+  }, [expand, autoCollapse, closeAllMenus]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

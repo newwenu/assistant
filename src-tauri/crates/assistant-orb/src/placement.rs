@@ -50,6 +50,27 @@ pub fn get_available_screens(app: &AppHandle) -> Vec<ScreenBounds> {
     screens
 }
 
+/// 可用区右下角锚点（I47 §7.2）：在 `area` 内按 `margin` 内缩放置边长为 `size` 的方形。
+pub fn anchor_bottom_right(area: &ScreenBounds, size: u32, margin: i32) -> (i32, i32) {
+    let x = area.x + area.width as i32 - size as i32 - margin;
+    let y = area.y + area.height as i32 - size as i32 - margin;
+    (x, y)
+}
+
+/// 主显示器可用区（I47 §7.2）：排除任务栏/程序坞。
+///
+/// 冷启动锚点用它而非整屏，否则边距小于任务栏高度时球会落进任务栏。
+pub fn get_primary_work_area(app: &AppHandle) -> Option<ScreenBounds> {
+    let monitor = app.primary_monitor().ok().flatten()?;
+    let area = monitor.work_area();
+    Some(ScreenBounds {
+        x: area.position.x,
+        y: area.position.y,
+        width: area.size.width,
+        height: area.size.height,
+    })
+}
+
 pub fn ensure_orb_on_screen(
     screens: &[ScreenBounds],
     win_x: i32,

@@ -46,6 +46,19 @@
   min-width: 132px;
 }
 
+.levelOption {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.levelOptionHint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
 .loading {
   display: flex;
   justify-content: center;

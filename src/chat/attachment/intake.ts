@@ -1,6 +1,9 @@
 import { useCallback, useEffect } from "react";
 import type { ClipboardEvent } from "react";
-import { useAttachmentStore } from "../../stores/attachmentStore";
+import {
+  getVisionSupport,
+  useAttachmentStore,
+} from "../../stores/attachmentStore";
 import type { AttachmentResult } from "./factory";
 import { createImageAttachmentFromFile, createPathAttachment } from "./factory";
 import { notifyAttachError, notifyVisionUnknown } from "./notify";
@@ -29,7 +32,7 @@ export function useAttachmentIntake(): AttachmentIntake {
     // 视觉能力未知时放行图片，但标注一条说明（与后端「保留图片交服务端判定」一致）
     if (
       result.attachment.kind === "image" &&
-      useAttachmentStore.getState().visionSupport === "unknown"
+      getVisionSupport() === "unknown"
     ) {
       notifyVisionUnknown();
     }
@@ -53,8 +56,7 @@ export function useAttachmentIntake(): AttachmentIntake {
   );
 
   const handleFileSelect = useCallback(async () => {
-    const visionSupport = useAttachmentStore.getState().visionSupport;
-    const paths = await pickAttachmentPaths(visionSupport);
+    const paths = await pickAttachmentPaths(getVisionSupport());
     for (const path of paths) await ingestPath(path);
   }, [ingestPath]);
 

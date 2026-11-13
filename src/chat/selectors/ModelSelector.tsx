@@ -3,6 +3,7 @@ import { Select } from "antd";
 import { DownOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { Provider } from "../../settings/provider/types";
+import { onOrbCloseOverlays } from "../../orb/orbOverlays";
 
 interface ModelSelectorProps {
   providerId: string | null;
@@ -34,14 +35,14 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     [openRef],
   );
 
-  useEffect(() => {
-    const handler = () => {
-      setOpen(false);
-      if (openRef) openRef.current = false;
-    };
-    window.addEventListener("orb-close-menus", handler);
-    return () => window.removeEventListener("orb-close-menus", handler);
-  }, [openRef]);
+  useEffect(
+    () =>
+      onOrbCloseOverlays(() => {
+        setOpen(false);
+        if (openRef) openRef.current = false;
+      }),
+    [openRef],
+  );
 
   const currentProvider = providers.find((p) => p.id === providerId);
   let models: { id: string; name: string }[] = [];

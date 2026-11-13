@@ -2,6 +2,11 @@ import { create } from "zustand";
 import { type TurnOrchestrator } from "../services/stream/turnOrchestrator";
 import type { ContextUsage } from "../chat/core/chatTypes";
 import {
+  resolveProviderModel,
+  type ProviderModelRef,
+} from "../chat/core/providerModel";
+import { useProviderStore } from "./providerStore";
+import {
   createStatePort,
   createEnvPort,
   createOrchestrator,
@@ -32,6 +37,11 @@ type ChatState = ChatConversationSlice &
     reasoningChoice: ReasoningChoice;
     setReasoningChoice: (choice: ReasoningChoice) => void;
     resetContextWindow: () => void;
+    /**
+     * 选中 provider / model 的唯一校正入口：以当前会话声明的组合为准，
+     * 该组合失效（provider 被删除、模型被移除）时回退到可用组合。
+     */
+    syncSelectionFromConversation: (ref?: ProviderModelRef) => void;
   };
 
 let _orchestrator: TurnOrchestrator | null = null;
@@ -92,7 +102,43 @@ export const useChatStore = create<ChatState>()((set, get): ChatState => {
         },
       });
     },
+    syncSelectionFromConversation: (ref?: ProviderModelRef) => {
+      const providers = useProviderStore.getState().providers;
+      if (providers.length === 0) return;
+      const state = get();
+      const conv = state.conversations.find(
+        (c) => c.id === state.currentConversationId,
+      );
+      const source =
+        ref ??
+        (conv ? { providerId: conv.providerId, modelId: conv.modelId } : null);
+      if (!source) return;
+      const resolved = resolveProviderModel(
+        providers,
+        source.providerId,
+        source.modelId,
+      );
+      if (
+        resolved.providerId === state.selectedProviderId &&
+        resolved.modelId === state.selectedModelId
+      ) {
+        return;
+      }
+      set({
+        selectedProviderId: resolved.providerId,
+        selectedModelId: resolved.modelId,
+      });
+    },
   };
+});
+
+/**
+ * provider 列表变化（保存 / 删除 / 跨窗口同步）后校正选中项，
+ * 让「选中项可用」由 store 自己保证，视图不再为此挂 effect。
+ */
+useProviderStore.subscribe((state, prev) => {
+  if (state.providers === prev.providers) return;
+  useChatStore.getState().syncSelectionFromConversation();
 });
 
 export type { TurnOrchestrator };

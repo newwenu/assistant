@@ -6,6 +6,7 @@ import { translateKey } from "../../i18n";
 import { useChatStore } from "../../stores/chatStore";
 import { useProviderStore } from "../../stores/providerStore";
 import { useAgentModeStore } from "../../stores/agentModeStore";
+import { onOrbCloseOverlays } from "../../orb/orbOverlays";
 import {
   reasoningChoices,
   resolveReasoningChoice,
@@ -43,11 +44,7 @@ export const ReasoningSelector: React.FC<ReasoningSelectorProps> = ({
   const modes = useAgentModeStore((s) => s.modes);
   const selectedModeId = useAgentModeStore((s) => s.selectedModeId);
 
-  useEffect(() => {
-    const handler = () => setOpen(false);
-    window.addEventListener("orb-close-menus", handler);
-    return () => window.removeEventListener("orb-close-menus", handler);
-  }, []);
+  useEffect(() => onOrbCloseOverlays(() => setOpen(false)), []);
 
   const reasoningLevels = useMemo(() => {
     const provider = providers.find((p) => p.id === selectedProviderId);

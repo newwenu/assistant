@@ -5,6 +5,8 @@ import { useOrbStore } from "../stores/orbStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { getConfValue } from "@/settings/core/useConfGroup";
 import { createLogger } from "@/services/logger";
+import { isOrbBusy } from "./orbBusy";
+import { closeOrbOverlays } from "./orbOverlays";
 import {
   ORB_COLLAPSED_SIZE,
   ORB_EXPANDED_WIDTH,
@@ -31,6 +33,7 @@ function waitForPaint(): Promise<void> {
 const PANEL_TRANSITION_MS = 300;
 
 function waitForPanelTransition(): Promise<void> {
+  if (typeof document === "undefined") return Promise.resolve();
   const panel = document.querySelector<HTMLElement>(".orb-panel");
   if (!panel) return Promise.resolve();
   return new Promise((resolve) => {
@@ -60,6 +63,7 @@ export function isOrbBlurCollapseSuppressed(): boolean {
 
 /** 收起唯一入口：并发调用合并为同一次，已收起时直接返回。 */
 export async function collapseOrbPanel(): Promise<void> {
+  closeOrbOverlays();
   if (collapsingPromise) return collapsingPromise;
   if (!useOrbStore.getState().isExpanded) return;
 
@@ -85,10 +89,22 @@ export async function collapseOrbPanel(): Promise<void> {
   return run;
 }
 
+/**
+ * 自动收起入口（I47 §4.3）：任务进行中时拦截，显式收起不走这里。
+ *
+ * 提前返回不改任何 store 状态、不调用任何 `orbService` 方法，
+ * 因此不会触发「收起后恢复穿透」。
+ */
+export async function autoCollapseOrb(): Promise<void> {
+  if (isOrbBusy()) return;
+  await collapseOrbPanel();
+}
+
 interface UseOrbExpandReturn {
   isExpanded: boolean;
   expand: () => Promise<void>;
   collapse: () => Promise<void>;
+  autoCollapse: () => Promise<void>;
 }
 
 export function useOrbExpand(): UseOrbExpandReturn {
@@ -201,8 +217,9 @@ export function useOrbExpand(): UseOrbExpandReturn {
   }, [storeExpand, setExpandDirection, setExpandVertical, setBallVisible]);
 
   const collapse = useCallback(() => collapseOrbPanel(), []);
+  const autoCollapse = useCallback(() => autoCollapseOrb(), []);
 
-  return { isExpanded, expand, collapse };
+  return { isExpanded, expand, collapse, autoCollapse };
 }
 
 export async function collapseOrbOnInit(): Promise<void> {
