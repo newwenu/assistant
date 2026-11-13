@@ -11,12 +11,10 @@ export type { ConflictFileDto as ConflictFile } from "./contract/vault.contract"
 export type { ConflictPreviewDto as ConflictPreview } from "./contract/vault.contract";
 export type { ConflictResolutionDto as ConflictResolution } from "./contract/vault.contract";
 export type { EntryPreviewDto as EntryPreview } from "./contract/vault.contract";
-export type { EntryPreviewFieldDto as EntryPreviewField } from "./contract/vault.contract";
 export type { ExportResultDto as ExportResult } from "./contract/vault.contract";
 export type { HibpAuditEntryDto as HibpAuditEntry } from "./contract/vault.contract";
 export type { HistoryCommitDto as HistoryCommit } from "./contract/vault.contract";
 export type { ParsedOtpAuthDto as ParsedOtpAuth } from "./contract/vault.contract";
-export type { PendingRemovalEntryDto as PendingRemovalEntry } from "./contract/vault.contract";
 export type { PendingRemovalsDto as PendingRemovals } from "./contract/vault.contract";
 export type { ReadynessDto as Readyness } from "./contract/vault.contract";
 export type { RemoteModeDto as RemoteMode } from "./contract/vault.contract";
@@ -30,9 +28,7 @@ export type { SyncConfigDto as SyncConfig } from "./contract/vault.contract";
 export type { SyncResultDto as SyncResult } from "./contract/vault.contract";
 export type { TotpAlgorithmDto as TotpAlgorithm } from "./contract/vault.contract";
 export type { TotpCodeDto as TotpCode } from "./contract/vault.contract";
-export type { TotpInputDto as TotpInput } from "./contract/vault.contract";
 export type { UnreadableEntriesDto as UnreadableEntries } from "./contract/vault.contract";
-export type { UnreadableReasonDto as UnreadableReason } from "./contract/vault.contract";
 
 export interface RevealedField {
   entryId: string;

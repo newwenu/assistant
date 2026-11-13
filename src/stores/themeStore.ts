@@ -5,33 +5,37 @@ import { dispatchThemeChanged } from "../settings/core/settingsDispatcher";
 import { dispatchConfPatch } from "../settings/core/settingsDispatcher";
 import { fetchConf } from "../settings/core/confRuntime";
 import { createLogger } from "@/services/logger";
-import { UiEvent, type ThemeChangedPayload } from "@/types/events";
+import { UiEvent } from "@/types/events";
+import type {
+  ResolvedThemeDto,
+  ThemeChangedPayloadDto,
+  ThemeModeDto,
+} from "@/types/protocol.contract";
 
 const log = createLogger("themeStore");
 
-type ThemeMode = "system" | "light" | "dark";
-
 interface ThemeState {
-  mode: ThemeMode;
-  resolved: "light" | "dark";
-  setMode: (mode: ThemeMode) => void;
+  mode: ThemeModeDto;
+  resolved: ResolvedThemeDto;
+  setMode: (mode: ThemeModeDto) => void;
   cycleMode: () => void;
   init: () => Promise<void>;
 }
 
-const SYSTEM_THEME_CYCLE: ThemeMode[] = ["system", "light", "dark"];
+const SYSTEM_THEME_CYCLE: ThemeModeDto[] = ["system", "light", "dark"];
 
-function resolveTheme(mode: ThemeMode, systemTheme: string): "light" | "dark" {
-  return mode === "system"
-    ? (systemTheme as "light" | "dark") || "light"
-    : mode;
+function resolveTheme(
+  mode: ThemeModeDto,
+  systemTheme: ResolvedThemeDto,
+): ResolvedThemeDto {
+  return mode === "system" ? systemTheme : mode;
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
   mode: "system",
   resolved: "light",
 
-  setMode: (mode: ThemeMode) => {
+  setMode: (mode: ThemeModeDto) => {
     dispatchConfPatch("app", { theme: mode }).catch((e) =>
       log.warn("patchConf for theme failed", e),
     );
@@ -52,28 +56,25 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   init: async () => {
     try {
       const conf = await fetchConf("app");
-      const mode = (
-        conf && ["system", "light", "dark"].includes(conf.theme)
-          ? conf.theme
-          : "system"
-      ) as ThemeMode;
+      const mode = conf?.theme ?? "system";
       set({ mode });
 
       const win = getCurrentWindow();
-      const systemTheme = (await win.theme()) || "light";
-      const resolved = resolveTheme(mode, systemTheme);
-      set({ resolved });
+      const systemTheme = (await win.theme()) ?? "light";
+      set({ resolved: resolveTheme(mode, systemTheme) });
 
       await win.onThemeChanged(({ payload }) => {
         if (get().mode === "system") {
-          const r = resolveTheme("system", payload);
-          set({ resolved: r });
+          set({ resolved: resolveTheme("system", payload) });
         }
       });
 
-      await listen<ThemeChangedPayload>(UiEvent.ThemeChanged, ({ payload }) => {
-        set({ resolved: payload.resolved });
-      });
+      await listen<ThemeChangedPayloadDto>(
+        UiEvent.ThemeChanged,
+        ({ payload }) => {
+          set({ resolved: payload.resolved });
+        },
+      );
     } catch (e) {
       log.warn("Theme init failed, using defaults", e);
       set({ mode: "system", resolved: "light" });

@@ -10,15 +10,19 @@
 > - 2026-11-05 复核补齐漏项：vault 错误码与 C6 统计口径修正、C3 补「前端吞异常」、C4 补残余风险与排除清单防僵尸、新增 C8（快捷键默认值三份清单）与 C9（`theme` 配置值域无单源）、§5 补护栏自身约束（禁用快照 / 无 CI）
 > - 2026-11-06 关闭 C5：7 个服务层手写副本删除并改接生成契约，同时修掉未登记的 `get_mouse_position` `Option` 空值漂移
 > - 2026-11-06 关闭 `compact_threshold_percent` 迁移窗口：删除 `AppConf::legacy_compact_threshold_percent` 与 `migrate()` 内的搬运逻辑，`migrate()` 保留空实现 + 迁移模板注释；原「明确不列为死代码」条目改为已移除，C3/C4 中对该迁移字段的引用同步改写
+> - 2026-11-12 关闭 C1 / C2 / C3 / C4 / C7 / C8 / C9：`theme` 与 `resolved` 收窄为封闭枚举并在后端解析、错误码映射改编译期穷举、`patch_conf` 命名转换补用例、配置 DTO 字段集合测试覆盖四个结构体、死代码与 `Omit` 垫片删除、快捷键默认值改生成单源；同时修掉未登记的 `AppConf::workspace_root` 死字段。数字类结论（错误码条数、`Result<_, String>` 处数）不再逐条写死，改为「以生成物/检索命令为准」，避免下一轮复核时先怀疑文档本身
+> - 2026-11-12 口径修正：新增「修法必须落到既有设施」要求——补日志写 `createLogger("<scope>")`（`src/services/logger.ts`，53 个文件在用），补测试写进 `cargo test` / `vitest` 且注明可执行范围；不写「补一条日志/补一个测试」这类无载体表述
 
 ---
 
 ## 0. 结论摘要
 
 1. 上一轮（2026-10-30 / 11-03）审计登记的 D1、D2、D4、D8、D9、D11 **六项已确认关闭**，见 §2。
-2. 仍开放 **8 项**：C1 主题事件值域穿透是无条件可达的 UI 行为缺陷；C3 在键名拼错或命名转换不一致时同样会表现为「显示已保存但值没变」的用户可见失败；C8 快捷键默认值在三处清单人工维持、跨语言无断言；C9 `theme` 配置值本身是无值域 `String` 而前端有 12 处手写三值枚举/映射；C7 是死代码与一次性兼容垫片清理；其余 3 项属「不产生编译/测试失败」的静默失效或重复维护成本。C5 已于 2026-11-06 关闭。
-3. 有 **2 项**属**无需改代码的有意例外**（role/title_source 开放集合、`tool_use_id` snake_case）；`ApiFormat` 类型可保留，但 `as ApiFormat` 的静默错标仍需补运行时校验与日志，属待办而非纯例外，见 §4。
-4. 判定兼容债的口径是「不同步时不产生编译错误或测试失败」。凡是靠人工记忆维持的一致性，一律记为债——不是因为当前错了，而是因为下一次改错不会被发现。
+2. C 类 9 项中 **C1 / C2 / C3 / C4 / C5 / C7 / C8 / C9 已全部关闭**（C5 于 2026-11-06，其余于 2026-11-12），见各节首行状态标记与 §2.1。
+3. 仍开放 **1 项**：C6（chat 域命令错误仍是 `Result<_, String>`），属结构性改造，需单独立项。
+4. 有 **2 项**属**无需改代码的有意例外**（role/title_source 开放集合、`tool_use_id` snake_case）；`ApiFormat` 类型保留，其 `as ApiFormat` 静默错标已于 2026-11-12 补运行时校验与回落日志（`createLogger("providerLookup")`），见 §4。
+5. 判定兼容债的口径是「不同步时不产生编译错误或测试失败」。凡是靠人工记忆维持的一致性，一律记为债——不是因为当前错了，而是因为下一次改错不会被发现。
+6. **数字类结论以生成物与检索命令为准**：错误码条数、`Result<_, String>` 处数这类计数会随迭代漂移，本文不再把它们写成判定依据，只保留「用什么命令复核」。
 
 ---
 
@@ -34,9 +38,9 @@
 | 错误结构 | 同类失败在不同通道返回不同结构，前端需分支处理 |
 | 变更传播 | 新增/重命名字段、枚举值、命令时，漏改的一端不会被编译或测试拦住 |
 
-复核统计口径：集合类结论（C2 的 13/13、25/25）按元素个数计；C6 的 72 处按 `Result<[^>]*, String>` 的**匹配数**计（同一行多次匹配计多次），覆盖 `src-tauri/src/cmd` 下 17 个文件，按行统计会得到不同数字，复核时不要用 `grep -c` 直接比对。
+复核统计口径：集合类结论按元素个数计，**但不写死条数**——错误码条数以生成物 `src/types/protocol.contract.ts::ProviderErrorCodeDto` 与 `src/vault/core/contract/vault.contract.ts::VaultErrorCode` 为准；C6 的处数按 `Result<[^>]*, String>` 的**匹配数**计（同一行多次匹配计多次），覆盖 `src-tauri/src/cmd` 下全部文件，按行统计会得到不同数字，复核时不要用 `grep -c` 直接比对。
 
-> 2026-11-05 复核：vault 错误码两端均为 **25** 项（上一版记 26，已过期）；C6 由 69 处/16 文件增长到 **72 处/17 文件**——这一增长本身说明 C6 是持续增长的结构性债，不适合并入本轮。
+> 2026-11-12 口径修正：原文写死的「13/13、25/25、72 处/17 文件」在复核时已全部过期（vault 生成契约已新增 DEK 版本 / 仓库禁用文件等 4 个错误码而手写侧未跟上；C6 处数继续增长）。这些数字只说明「存在不一致或持续增长」，不能作为判定依据，故从判据中移除，只保留复核方法。
 
 ---
 
@@ -51,13 +55,28 @@
 | D9 `_seq` 防乱序守卫失效 | 后端序列化为 `seq`，前端读 `_seq`，守卫从未生效 | `ChatMessagesChangedPayloadDto::seq`（`src-tauri/src/protocol/dto/branch.rs`）与 `src/services/chatLifecycleEvents.ts` 的 `lastProcessedSeq` 比较键名一致 | 两端改用 `seq` |
 | D11 wire 与 view model 混用 | `Message.error` 等前端本地字段混进 DTO | `src/chat/core/chatTypes.ts` 用交叉类型 `MessageDto & { error?: ChatError \| null }`，wire 不含本地状态 | 交叉类型承载本地扩展 |
 
+### 2.1 2026-11-12 关闭的 C 类项
+
+| 编号 | 关闭方式（均已落盘并跑过验证） |
+|---|---|
+| C1 | 后端新增 `resolve_theme()`，`("theme", ..)` 副作用广播前把 `system` 解析成 `light` / `dark`；`ThemeChangedPayloadDto::resolved` 改为封闭枚举 `ResolvedThemeDto`；前端删除 `src/types/events.ts` 的 `Omit` 硬窄化，直接消费生成联合类型 |
+| C2 | `src/chat/core/chatErrors.ts` 的 `CODE_TO_CATEGORY` 与 `src/vault/core/vaultError.ts` 的 `VAULT_ERROR_CODE_FLAGS` 均改为 `satisfies Record<...>` 的穷举表，漏项即 `npm run typecheck` 失败；改造时手写侧漏掉的 4 个新码（`vaultDekVersionAhead` / `vaultDekVersionBehind` / `repositoryContainsForbiddenFile` / `historyDekUnavailable`）随之显形并补齐 |
+| C3 | 现象一由 `amend_json_config` 的 `serde_ignored` 严格校验关闭（2026-11-06，`amend_unknown_key_rejected` 已固化）；现象三由 `dispatchConfPatch` 的 `catch` 改为 `throw` 关闭；现象二补 `src/services/__tests__/settingService.test.ts`（多词键、已是 snake_case 键、仅转顶层三层断言）。修法 4（`patch_conf` 入参改 camelCase DTO）仍为可选未做，故 `patchToSnakeCase` 暂不删除 |
+| C4 | `src-tauri/tests/protocol_dto_roundtrip.rs::config_dtos_cover_every_config_field` 用泛型 helper 对 `AppConf` / `OrbConf` / `MascotConf` / `VaultConf` 四个结构体逐一比对 snake→camel 归一化后的键集合；排除清单当前为空。错映射残余风险仍按原结论显式保留 |
+| C7 | `vault.types.ts` 的 4 个零引用别名已删；`ThemeChangedPayload` 的 `Omit` 垫片随 C1 删除。`patchToSnakeCase` 因 C3 修法 4 未做而保留 |
+| C8 | `assistant-config::app_conf::DEFAULT_SHORTCUT_PATTERNS` 成为唯一源；`protocol_bindings.rs` 生成 `src/types/shortcutDefaults.generated.ts`，`shortcutTypes.ts` 从生成物读取默认绑定，`npm run contract:check` 的 diff 范围已纳入该文件（前置 `git ls-files --error-unmatch` 守卫，避免文件未被跟踪时 `git diff` 静默放行） |
+| C9 | `AppConf::theme` 由 `String` 收窄为封闭枚举 `ThemeMode`，`AppConfDto::theme` 改为 `ThemeModeDto`，生成契约即 `system` \| `light` \| `dark` 联合；前端 `themeStore` / `settingsDispatcher` / `commandAggregation` / `initSettingSystem` 的手写三值联合与 `as` 强转全部改为消费生成类型 |
+| 附 | 未登记死字段 `AppConf::workspace_root` 删除（唯一来源为 `conversations.workspace_root`，`tool_setup.rs` 明确「不读 AppConf」），同步从 `validate` 与测试移除 |
+
 ---
 
 ## 3. 开放项
 
 优先级口径：**P1** 用户可直接触发的行为错误；**P2** 高概率静默失败或低成本的防回归改动；**P3** 结构性/维护成本，需单独立项或择机处理。
 
-### C1 主题事件 `resolved` 值域穿透（优先级 P1，可达缺陷）
+> 状态：C1 / C2 / C3 / C4 / C5 / C7 / C8 / C9 **已关闭**（C5 于 2026-11-06，其余见 §2.1）。以下各节保留原始分析与修法，作为历史记录；新读者只看首行状态标记与 §2.1 即可。当前唯一开放项为 C6。
+
+### C1 主题事件 `resolved` 值域穿透（优先级 P1，可达缺陷）—— **已关闭 2026-11-12**，见 §2.1
 
 **现象**：后端广播 `theme-changed` 时直接透传配置值，而配置值域是 `system | light | dark`；DTO 声明 `String`，前端却按 `light | dark` 消费。
 
@@ -99,14 +118,14 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 ---
 
-### C2 错误码镜像缺编译期护栏（优先级 P2）
+### C2 错误码镜像缺编译期护栏（优先级 P2）—— **已关闭 2026-11-12**，见 §2.1
 
 **现象**：两个域的前端错误码列表与生成契约人工维持一致，漏项不会报错。
 
 | 域 | 手写列表 | 生成契约 |
 |---|---|---|
-| chat | `src/chat/core/chatErrors.ts::ChatErrorCode`（13 项） | `src/types/protocol.contract.ts::ProviderErrorCodeDto`（13 项） |
-| vault | `src/vault/core/vaultError.ts::VAULT_ERROR_CODES`（25 项） | `src/vault/core/contract/vault.contract.ts::VaultErrorCode`（25 项） |
+| chat | `src/chat/core/chatErrors.ts::CODE_TO_CATEGORY`（`satisfies Record<ChatErrorCode, ...>`） | `src/types/protocol.contract.ts::ProviderErrorCodeDto`（条数以生成物为准） |
+| vault | `src/vault/core/vaultError.ts::VAULT_ERROR_CODE_FLAGS`（`satisfies Record<VaultErrorCode, true>`） | `src/vault/core/contract/vault.contract.ts::VaultErrorCode`（条数以生成物为准） |
 
 **失效表现**：
 
@@ -132,7 +151,7 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 ---
 
-### C3 `patch_conf` 未知键静默丢弃，且读写命名方向相反（优先级 P2）
+### C3 `patch_conf` 未知键静默丢弃，且读写命名方向相反（优先级 P2）—— **已关闭 2026-11-12**（修法 4 未做，见 §2.1）
 
 **现象一：未知键无提示**。四个配置结构体（`AppConf` / `OrbConf` / `MascotConf` / `VaultConf`）的 `amend()` 都是「序列化自身 → 合并 patch → `from_str` 重新反序列化」，而配置结构体**故意不加** `deny_unknown_fields`（配置文件需要向前兼容，老版本读到新配置不能直接失败）。代价是 patch 里拼错的键被合并进去、反序列化时被忽略、保存时消失，**命令返回 `Ok`**，前端 `dispatchConfPatch` 认为保存成功，UI 显示「已保存」但值没变。
 
@@ -168,7 +187,7 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 ---
 
-### C4 配置 DTO 与配置结构体的字段漂移无测试（优先级 P2）
+### C4 配置 DTO 与配置结构体的字段漂移无测试（优先级 P2）—— **已关闭 2026-11-12**，见 §2.1
 
 **现象**：`AppConfDto` / `OrbConfDto` / `MascotConfDto` / `VaultConfDto` 与 `assistant-config` 中对应结构体之间是**手写 `From` 逐字段映射**，没有编译期约束，也没有任何测试。`src-tauri/src/protocol/dto/config.rs` 下 `#[test]` 检索为 0 处。
 
@@ -193,7 +212,7 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 ---
 
-### C5 服务层手写 DTO 副本（优先级 P3）
+### C5 服务层手写 DTO 副本（优先级 P3）—— **已关闭 2026-11-06**
 
 三个 service 文件各自手写了一份与生成契约同构的类型，其中 `storageService` 的四个类型与生成契约**完全同名**（未导入生成类型，因此不构成编译冲突，只是两份独立副本）：
 
@@ -245,18 +264,18 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 ---
 
-### C7 遗留死代码与一次性兼容垫片（优先级 P3）
+### C7 遗留死代码与一次性兼容垫片（优先级 P3）—— **已关闭 2026-11-12**，见 §2.1
 
 **现象**：几轮契约迁移留下了不再被消费的导出、别名和临时转换层。它们不报错、不影响运行，但会让下一次审计误以为仍是有效入口，也会在「统一命名」时被误改。以下清单已逐一核对消费点。
 
 | 位置 | 遗留物 | 判定证据 | 处理 |
 |---|---|---|---|
-| `src/vault/core/vault.types.ts` | `EntryPreviewField` / `PendingRemovalEntry` / `TotpInput` / `UnreadableReason` 四个别名 | barrel 之外引用数为 0；对应原类型仍由 `export *` 导出 | 删除这 4 行别名；其余 22 个别名仍有消费点，暂不能整体删除 barrel |
+| `src/vault/core/vault.types.ts` | `EntryPreviewField` / `PendingRemovalEntry` / `TotpInput` / `UnreadableReason` 四个别名 | barrel 之外引用数为 0；对应原类型仍由 `export *` 导出 | **已删除（2026-11-12）**；其余别名仍有消费点，暂不能整体删除 barrel |
 | `src/services/settingService.ts` | `InstallAssetResult` | C5 改为生成类型后成为重复副本 | 已随 C5 删除（2026-11-06） |
 | `src/services/storageService.ts` | `AttachmentSummary` / `ConversationAttachmentSummary` / `StorageBreakdownDto` / `AttachmentDeleteResultDto` 四个手写接口 | 与生成契约同名同构 | 已随 C5 删除（2026-11-06） |
 | `src/services/orbService.ts` | `MousePosition` / `ScreenSize` | 对应 `MousePositionDto` / `ScreenSizeDto` | 已随 C5 删除（2026-11-06） |
-| `src/types/events.ts` | `ThemeChangedPayload` 的 `Omit` 窄化 | C1 修法 A 后 `resolved` 已是封闭枚举 | 随 C1 一并删除 |
-| `src/services/settingService.ts` | `patchToSnakeCase` | 仅 C3 修法 4（`patch_conf` 入参改为 camelCase DTO）完成后失效 | 届时删除，并移除对应单测 |
+| `src/types/events.ts` | `ThemeChangedPayload` 的 `Omit` 窄化 | C1 修法 A 后 `resolved` 已是封闭枚举 | **已删除（2026-11-12）** |
+| `src/services/settingService.ts` | `patchToSnakeCase` | 仅 C3 修法 4（`patch_conf` 入参改为 camelCase DTO）完成后失效 | **保留**：修法 4 未做，该函数仍是唯一命名转换点，已由 `src/services/__tests__/settingService.test.ts` 固化行为；届时删除函数与单测 |
 
 **明确不列为死代码**（避免后续审计重复挖）：
 
@@ -267,7 +286,7 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 ---
 
-### C8 快捷键默认值在三处清单人工维持（优先级 P2）
+### C8 快捷键默认值在三处清单人工维持（优先级 P2）—— **已关闭 2026-11-12**，见 §2.1
 
 **现象**：同一组默认键位写在三处，且没有任何跨语言断言。
 
@@ -297,7 +316,7 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 ---
 
-### C9 `theme` 配置值无值域，前端多处手写三值枚举（优先级 P2）
+### C9 `theme` 配置值无值域，前端多处手写三值枚举（优先级 P2）—— **已关闭 2026-11-12**，见 §2.1
 
 **现象**：C1 修的是 `theme-changed` 广播的 `resolved` 通道；但 `theme` 这个**配置值本身**同样是无值域的 `String`，前端却按三值联合消费。`system | light | dark` 在源码里以不同形态重复，下表列出 12 处（末行含 3 张映射表）：
 
@@ -335,7 +354,7 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 |---|---|---|---|
 | `role` / `titleSource` 为开放字符串 | `MessageDto::role`、`ConversationDto::title_source` | DB 列为 TEXT，加枚举需要数据迁移；前端按 `user` / `assistant` / `compact_summary` / `placeholder` 比较，未知值走非用户分支渲染，不会崩 | 保留。在字段处补注释「存储边界例外，值域由 DB 决定，前端必须兜底」 |
 | `ContentBlockDto::tool_use_id` snake_case | `src-tauri/src/protocol/dto/chat.rs::ContentBlockDto` 的 `ToolUse` / `ToolResult` | 全仓唯一 snake_case 线格式字段（`#[serde(rename = "tool_use_id")]`），内嵌工具协议原文；前端消费点为 0 | 保留。在 `#[serde(rename)]` 处补注释「协议原文，禁止改为 camelCase」，否则后续统一命名时会被误改并破坏与工具协议的对应关系 |
-| `ApiFormat` 前端联合 | `src/settings/provider/types.ts::ApiFormat` 为 `"openai" \| "anthropic" \| "local"` | 后端 `ProviderInputDto::type` 是 `String`，格式注册表也是开放集合；`providerLookup.ts` 用 `as ApiFormat` 强转，`getApiFormatByType` 对未知类型回落 `"openai"` | 类型保留；`as ApiFormat` 的静默错标仍需修（待办）：当前未知格式会被**错标**成 OpenAI（图标、是否需要 API Key、默认 Base URL 全部走 OpenAI 分支），且无任何日志；改为运行时校验 + 显式回落日志 |
+| `ApiFormat` 前端联合 | `src/settings/provider/types.ts::ApiFormat` 为 `"openai" \| "anthropic" \| "local"` | 后端 `ProviderInputDto::type` 是 `String`，格式注册表也是开放集合；`providerLookup.ts` 的 `getApiFormatByType` 对未知类型回落 `"openai"` | 类型保留。**回落日志已补（2026-11-12）**：`getApiFormatByType` 在 `PRESET_MAP` 未命中时走 `createLogger("providerLookup")` 的 `log.warn`，带上 `type` 与回落后的 `format`；类型仍是 `as ApiFormat` 的开放集合断言，故不构成静默失败。剩余风险：未知格式仍会被**按 OpenAI 分支渲染**（图标、是否需要 API Key、默认 Base URL），但至少可从日志定位 |
 
 ---
 
@@ -343,16 +362,18 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 建议顺序：C1 + C9（同一枚举、同一次契约生成，含 C7 中对应删除）→ C2（防回归，纯类型层）→ ~~C5（去重，含 C7 中对应删除）~~（已完成）→ C3（含 C7 中对应删除）→ C8（快捷键默认值单源）→ C4（后端测试）→ C7（死代码收尾）→ C6（另立项）。
 
+**阶段 1–7 已于 2026-11-12 全部执行完毕**（C5 于 2026-11-06），当前只剩阶段 8（C6，另立项）。下表保留各阶段的验证命令，供回归时复用。
+
 | 阶段 | 内容 | 验证命令（在仓库根目录执行；cargo 在 `src-tauri` 目录执行） |
 |---|---|---|
-| 1 | C1 主题事件 `resolved` 收窄 + C9 `theme` 配置值域单源 | `npm run contract:gen`；`cargo test -p assistant-app --test protocol_dto_roundtrip`；`npm run typecheck`；`npm run test` |
-| 2 | C2 错误码映射表 | `npm run typecheck`；`npm run test` |
+| 1 | C1 主题事件 `resolved` 收窄 + C9 `theme` 配置值域单源（**已完成 2026-11-12**） | `npm run contract:gen`；`cargo test -p assistant-app --test protocol_dto_roundtrip`；`npm run typecheck`；`npm run test` |
+| 2 | C2 错误码映射表（**已完成 2026-11-12**） | `npm run typecheck`；`npm run test` |
 | 3 | C5 服务层复用生成类型（**已完成 2026-11-06**） | `npm run typecheck`；`npm run lint`；`npm run test` |
-| 4 | C3 `amend()` 未知键校验 + 吞异常修复 + 命名转换注释与用例 | `cargo test -p assistant-config`；`npm run test` |
-| 5 | C8 快捷键默认值单源 | `npm run test`；`cargo test -p assistant-config --test shortcut`；若走生成方案再加 `npm run contract:gen` |
-| 6 | C4 配置 DTO 字段集合测试 | `cargo test -p assistant-app --test protocol_dto_roundtrip`；`cargo test -p assistant-app --test protocol_contract` |
-| 7 | C7 死代码与兼容垫片清理 | `npm run typecheck`；`npm run lint`；全局检索无残留引用 |
-| 8 | C6 命令错误契约（另立项） | 视迁移范围 |
+| 4 | C3 `amend()` 未知键校验 + 吞异常修复 + 命名转换用例（**已完成 2026-11-12**） | `cargo test -p assistant-config`；`npm run test` |
+| 5 | C8 快捷键默认值单源（**已完成 2026-11-12**，走生成方案） | `npm run contract:gen`；`npm run test`；`cargo test -p assistant-config --test shortcut` |
+| 6 | C4 配置 DTO 字段集合测试（**已完成 2026-11-12**，覆盖四个结构体） | `cargo test -p assistant-app --test protocol_dto_roundtrip`；`cargo test -p assistant-app --test protocol_contract` |
+| 7 | C7 死代码与兼容垫片清理（**已完成 2026-11-12**，`patchToSnakeCase` 按 C3 修法 4 保留） | `npm run typecheck`；`npm run lint`；全局检索无残留引用 |
+| 8 | C6 命令错误契约（**仍开放**，另立项） | 视迁移范围 |
 
 通用收尾：`npm run contract:check`（确认生成契约与源码一致、无遗漏提交）、`npm run lint`、`npm run typecheck`、`npm run test`；并逐项确认 C7 表中的遗留物已删除，或已在「明确不列为死代码」中写明保留原因。
 
@@ -372,12 +393,13 @@ C 类修法（加测试）会引入新副本。副本算不算债，取决于「
 
 | 主题 | 检索词 |
 |---|---|
-| C1 | `ThemeChangedPayloadDto`、`THEME_CHANGED`、`dispatchThemeChanged`、`win.onThemeChanged`、`data-theme` |
-| C2 | `ChatErrorCode`、`ProviderErrorCodeDto`、`VAULT_ERROR_CODES`、`VaultErrorCode` |
-| C3 | `fn amend`、`patchToSnakeCase`、`patch_conf`、`dispatchConfPatch`、`amend_unknown_key_ignored` |
-| C4 | `impl From<assistant_config::`、`AppConfDto`、`compact_threshold_percent_of_budget` |
-| C5 | `InstallAssetResult`、`StorageBreakdownDto`、`MousePositionDto` |
+| C1 | `ThemeChangedPayloadDto`、`ResolvedThemeDto`、`resolve_theme`、`THEME_CHANGED`、`data-theme` |
+| C2 | `ChatErrorCode`、`CODE_TO_CATEGORY`、`ProviderErrorCodeDto`、`VAULT_ERROR_CODE_FLAGS`、`VaultErrorCode` |
+| C3 | `fn amend`、`amend_json_config`、`patchToSnakeCase`、`patch_conf`、`dispatchConfPatch`、`amend_unknown_key_rejected` |
+| C4 | `assert_dto_covers_config`、`config_dtos_cover_every_config_field`、`AppConfDto` |
+| C5 | `InstallMascotAssetResultDto`、`StorageBreakdownDto`、`MousePositionDto` |
 | C6 | `Result<(), String>`、`VaultErrorDto`、`toChatError` |
-| C7 | `EntryPreviewField`、`PendingRemovalEntry`、`TotpInput`、`UnreadableReason`、`InstallAssetResult`、`patchToSnakeCase`、`tool_calls_json` |
-| C8 | `default_keybindings`、`SHORTCUT_SPECS`、`SHORTCUT_DEFINITIONS`、`DEFAULT_KEYBINDINGS` |
-| C9 | `valid_themes`、`ThemeMode`、`SYSTEM_THEME_CYCLE`、`THEME_SETTING`、`THEME_OPTIONS`、`NEXT_THEME`、`AppConfDto` 的 `theme` |
+| C7 | `EntryPreviewField`、`PendingRemovalEntry`、`TotpInput`、`UnreadableReason`、`patchToSnakeCase`、`tool_calls_json` |
+| C8 | `DEFAULT_SHORTCUT_PATTERNS`、`shortcutDefaults.generated`、`SHORTCUT_SPECS`、`SHORTCUT_DEFINITIONS`、`DEFAULT_KEYBINDINGS` |
+| C9 | `ThemeMode`、`ThemeModeDto`、`SYSTEM_THEME_CYCLE`、`THEME_SETTING`、`THEME_OPTIONS`、`NEXT_THEME` |
+| 日志载体 | `createLogger`、`src/services/logger.ts`（补日志一律走这里，禁止裸 `console.*`） |

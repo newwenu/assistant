@@ -18,7 +18,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "contract:gen": "cd src-tauri && cargo test -p assistant-vault --lib export_bindings && cargo test -p assistant-app --test protocol_bindings",
-    "contract:check": "npm run contract:gen && git diff --exit-code -- src/vault/core/contract src/types/protocol.contract.ts",
+    "contract:check": "npm run contract:gen && git ls-files --error-unmatch src/types/shortcutDefaults.generated.ts && git diff --exit-code -- src/vault/core/contract src/types/protocol.contract.ts src/types/shortcutDefaults.generated.ts",
     "models-dev:update": "node scripts/update-models-dev-snapshot.mjs",
     "models-dev:check": "node scripts/update-models-dev-snapshot.mjs --check"
   },

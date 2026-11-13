@@ -1,12 +1,12 @@
 mod common;
 
-use assistant_config::app_conf::AppConf;
+use assistant_config::app_conf::{AppConf, ThemeMode};
 use common::conf_path;
 
 #[test]
 fn new_returns_valid_and_matches_default() {
     let conf = AppConf::new();
-    assert_eq!(conf.theme, "system");
+    assert_eq!(conf.theme, ThemeMode::System);
     assert_eq!(conf.language, "zh-CN");
     assert_eq!(conf.hotkey, "");
     assert!(!conf.stay_on_top);
@@ -22,20 +22,21 @@ fn new_returns_valid_and_matches_default() {
 }
 
 #[test]
-fn validate_theme_and_language_rules() {
+fn validate_language_rule() {
     let mut conf = AppConf::new();
-    for theme in &["system", "light", "dark"] {
-        conf.theme = theme.to_string();
-        assert!(conf.validate().is_ok());
-    }
-    conf.theme = "neon".to_string();
-    assert!(conf.validate().is_err());
-
-    conf.theme = "system".to_string();
     conf.language = String::new();
     assert!(conf.validate().is_err());
     conf.language = "en-US".to_string();
     assert!(conf.validate().is_ok());
+}
+
+#[test]
+fn deserialize_rejects_unknown_theme() {
+    let json = r#"{"theme":"neon","language":"en","hotkey":"","stay_on_top":true}"#;
+    assert!(
+        serde_json::from_str::<AppConf>(json).is_err(),
+        "theme 是封闭集合，未知值必须在反序列化阶段被拒绝"
+    );
 }
 
 #[test]
@@ -47,14 +48,6 @@ fn validate_agent_tool_rules() {
     assert!(conf.validate().is_err(), "零超时既非放行也非等待，必须拒绝");
     conf.approval_timeout_secs = Some(5);
     assert!(conf.validate().is_ok());
-
-    conf.workspace_root = Some(String::new());
-    assert!(conf.validate().is_err(), "空串不得当作未配置");
-    conf.workspace_root = Some("relative/dir".to_string());
-    assert!(conf.validate().is_err(), "相对路径无法作为工作区根");
-    let absolute = std::env::temp_dir();
-    conf.workspace_root = Some(absolute.to_string_lossy().into_owned());
-    assert!(conf.validate().is_ok(), "绝对路径合法");
 }
 
 #[test]
@@ -86,7 +79,7 @@ fn deserialize_missing_optional_fields_use_defaults() {
     let json = r#"{"theme":"dark","language":"en","hotkey":"","stay_on_top":true}"#;
     let conf: AppConf = serde_json::from_str(json).unwrap();
 
-    assert_eq!(conf.theme, "dark");
+    assert_eq!(conf.theme, ThemeMode::Dark);
     assert!(!conf.launch_at_login);
     assert!(!conf.close_to_tray);
     assert!(conf.keybindings.is_empty());
@@ -114,7 +107,7 @@ fn get_conf_path_under_app_dir() {
 fn load_from_creates_default_when_missing() {
     let path = conf_path("config.json");
     let conf = AppConf::load_from(&path).unwrap();
-    assert_eq!(conf.theme, "system");
+    assert_eq!(conf.theme, ThemeMode::System);
     assert!(path.exists());
 }
 
@@ -122,14 +115,14 @@ fn load_from_creates_default_when_missing() {
 fn save_to_and_load_from_roundtrip() {
     let path = conf_path("config.json");
     let mut conf = AppConf::new();
-    conf.theme = "dark".to_string();
+    conf.theme = ThemeMode::Dark;
     conf.language = "en-US".to_string();
     conf.stay_on_top = true;
 
     conf.save_to(&path).unwrap();
     let loaded = AppConf::load_from(&path).unwrap();
 
-    assert_eq!(loaded.theme, "dark");
+    assert_eq!(loaded.theme, ThemeMode::Dark);
     assert_eq!(loaded.language, "en-US");
     assert!(loaded.stay_on_top);
 }
@@ -141,7 +134,7 @@ fn load_from_falls_back_on_corrupt_file() {
     std::fs::write(&path, b"not json at all").unwrap();
 
     let loaded = AppConf::load_from(&path).unwrap();
-    assert_eq!(loaded.theme, "system");
+    assert_eq!(loaded.theme, ThemeMode::System);
 }
 
 #[test]
@@ -152,12 +145,12 @@ fn load_from_recovers_from_temp_file() {
 
     let temp = path.with_extension("tmp");
     let mut modified = conf.clone();
-    modified.theme = "dark".to_string();
+    modified.theme = ThemeMode::Dark;
     let json = serde_json::to_string_pretty(&modified).unwrap();
     std::fs::write(&temp, json.as_bytes()).unwrap();
 
     let loaded = AppConf::load_from(&path).unwrap();
-    assert_eq!(loaded.theme, "dark");
+    assert_eq!(loaded.theme, ThemeMode::Dark);
     assert!(!temp.exists());
 }
 
@@ -184,7 +177,7 @@ fn amend_single_field() {
     let conf = AppConf::new();
     let patch = serde_json::json!({ "theme": "dark" });
     let merged = conf.amend(patch).unwrap();
-    assert_eq!(merged.theme, "dark");
+    assert_eq!(merged.theme, ThemeMode::Dark);
     assert_eq!(merged.language, "zh-CN");
     assert!(!merged.stay_on_top);
 }
@@ -195,7 +188,7 @@ fn amend_multiple_fields() {
     let patch =
         serde_json::json!({ "theme": "light", "stay_on_top": true, "launch_at_login": true });
     let merged = conf.amend(patch).unwrap();
-    assert_eq!(merged.theme, "light");
+    assert_eq!(merged.theme, ThemeMode::Light);
     assert!(merged.stay_on_top);
     assert!(merged.launch_at_login);
     assert_eq!(merged.language, "zh-CN");
@@ -208,9 +201,20 @@ fn amend_preserves_unpatched_fields() {
     conf.close_to_tray = false;
     let patch = serde_json::json!({ "theme": "dark" });
     let merged = conf.amend(patch).unwrap();
-    assert_eq!(merged.theme, "dark");
+    assert_eq!(merged.theme, ThemeMode::Dark);
     assert_eq!(merged.language, "en-US");
     assert!(!merged.close_to_tray);
+}
+
+#[test]
+fn amend_rejects_unknown_theme() {
+    let conf = AppConf::new();
+    let patch = serde_json::json!({ "theme": "neon" });
+    let err = conf.amend(patch).unwrap_err();
+    assert!(err.contains("neon"), "unexpected error: {}", err);
+    for variant in ["system", "light", "dark"] {
+        assert!(err.contains(variant), "unexpected error: {}", err);
+    }
 }
 
 #[test]
@@ -276,17 +280,20 @@ mod property {
 
     proptest! {
         #[test]
-        fn validate_theme_only_system_light_dark(theme in "[a-zA-Z]{1,10}") {
-            let mut conf = AppConf::new();
-            conf.theme = theme.clone();
+        fn serde_rejects_unknown_theme(theme in "[a-zA-Z]{1,10}") {
+            let mut value = serde_json::to_value(AppConf::new()).unwrap();
+            value["theme"] = serde_json::json!(theme.clone());
+            let json = serde_json::to_string(&value).unwrap();
             let valid = ["system", "light", "dark"];
-            assert_eq!(conf.validate().is_ok(), valid.contains(&theme.as_str()));
+            assert_eq!(
+                serde_json::from_str::<AppConf>(&json).is_ok(),
+                valid.contains(&theme.as_str())
+            );
         }
 
         #[test]
-        fn serde_roundtrip_preserves_validate(theme in "(system|light|dark)", language in "[a-zA-Z-]{1,10}") {
+        fn serde_roundtrip_preserves_validate(language in "[a-zA-Z-]{1,10}") {
             let mut conf = AppConf::new();
-            conf.theme = theme;
             conf.language = language;
             let json = serde_json::to_string(&conf).unwrap();
             let decoded: AppConf = serde_json::from_str(&json).unwrap();

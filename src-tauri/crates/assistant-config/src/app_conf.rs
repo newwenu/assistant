@@ -19,9 +19,19 @@ fn default_max_summary_tokens() -> u16 {
     super::constant::MAX_SUMMARY_REQUEST_TOKENS as u16
 }
 
+/// 主题模式（封闭集合）。线格式 `system` / `light` / `dark`，与协议层
+/// `ThemeModeDto` 及前端联合类型一致；非法值在反序列化阶段即被拒绝。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ThemeMode {
+    System,
+    Light,
+    Dark,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AppConf {
-    pub theme: String,
+    pub theme: ThemeMode,
     pub language: String,
     pub hotkey: String,
     pub stay_on_top: bool,
@@ -55,10 +65,6 @@ pub struct AppConf {
     pub mini_window_x: Option<i32>,
     #[serde(default)]
     pub mini_window_y: Option<i32>,
-    /// 全局工作区根目录（I38d §4.9）。`None` = 未配置：相对路径与缺省 `path` 报
-    /// 「未配置工作区」，**不得**静默退回当前目录。每次工具执行现读，改设置后下一轮生效。
-    #[serde(default)]
-    pub workspace_root: Option<String>,
     /// 审批等待上限（秒）。`None` → 默认 120s；`Some(0)` 非法（审批必须有时限）。
     #[serde(default)]
     pub approval_timeout_secs: Option<u32>,
@@ -82,22 +88,28 @@ pub fn primary_modifier() -> &'static str {
 /// 统一使用四键组合，避开浏览器、编辑器和系统的高频占用：
 /// `Ctrl+Shift+N`（浏览器无痕/新建窗口）、`Ctrl+Shift+O`（编辑器跳转符号）、
 /// `Ctrl+Shift+M`（部分 IDE 重构）等都不再作为默认值。
+///
+/// 第二项是线格式模板，`{primary}` 由 [`primary_modifier`] 在运行时替换；
+/// 前端通过 `npm run contract:gen` 生成的 `src/types/shortcutDefaults.generated.ts`
+/// 读取同一份模板，因此增删快捷键只需改这张表。
+pub static DEFAULT_SHORTCUT_PATTERNS: &[(&str, &str)] = &[
+    ("toggle_orb", "{primary}+Shift+Alt+O"),
+    ("toggle_main", "{primary}+Shift+Alt+M"),
+    ("new_chat", "{primary}+Shift+Alt+N"),
+];
+
 pub fn default_keybindings() -> HashMap<String, String> {
     let primary = primary_modifier();
-    let mut keybindings = HashMap::new();
-    keybindings.insert("toggle_orb".to_string(), format!("{}+Shift+Alt+O", primary));
-    keybindings.insert(
-        "toggle_main".to_string(),
-        format!("{}+Shift+Alt+M", primary),
-    );
-    keybindings.insert("new_chat".to_string(), format!("{}+Shift+Alt+N", primary));
-    keybindings
+    DEFAULT_SHORTCUT_PATTERNS
+        .iter()
+        .map(|(id, pattern)| (id.to_string(), pattern.replace("{primary}", primary)))
+        .collect()
 }
 
 impl AppConf {
     pub fn new() -> Self {
         Self {
-            theme: "system".to_string(),
+            theme: ThemeMode::System,
             language: "zh-CN".to_string(),
             hotkey: "".to_string(),
             stay_on_top: false,
@@ -114,7 +126,6 @@ impl AppConf {
             main_window_height: None,
             mini_window_x: None,
             mini_window_y: None,
-            workspace_root: None,
             approval_timeout_secs: None,
             user_question_timeout_secs: None,
         }
@@ -160,24 +171,11 @@ impl AppConf {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        let valid_themes = ["system", "light", "dark"];
-        if !valid_themes.contains(&self.theme.as_str()) {
-            return Err(format!(
-                "theme must be system/light/dark, got {}",
-                self.theme
-            ));
-        }
         if self.language.is_empty() {
             return Err("language must not be empty".to_string());
         }
         if self.approval_timeout_secs == Some(0) {
             return Err("approval_timeout_secs must be greater than 0".to_string());
-        }
-        if let Some(root) = self.workspace_root.as_deref() {
-            let path = Path::new(root);
-            if root.is_empty() || !path.is_absolute() {
-                return Err("workspace_root must be a non-empty absolute path".to_string());
-            }
         }
         Ok(())
     }

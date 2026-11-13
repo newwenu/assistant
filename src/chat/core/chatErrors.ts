@@ -62,46 +62,28 @@ export function isChatError(value: unknown): value is ChatError {
   );
 }
 
+/**
+ * 错误码到分类的完整映射：`satisfies Record<ChatErrorCode, ChatErrorCategory>`
+ * 保证新增错误码时编译期报错，不再依赖 `Partial` + 运行时兜底。
+ */
+const CODE_TO_CATEGORY = {
+  [ChatErrorCode.NetworkError]: ChatErrorCategory.Network,
+  [ChatErrorCode.AuthFailed]: ChatErrorCategory.Auth,
+  [ChatErrorCode.ApiKeyMissing]: ChatErrorCategory.Auth,
+  [ChatErrorCode.RateLimited]: ChatErrorCategory.RateLimit,
+  [ChatErrorCode.ContextOverflow]: ChatErrorCategory.ContextOverflow,
+  [ChatErrorCode.Timeout]: ChatErrorCategory.Timeout,
+  [ChatErrorCode.ServerError]: ChatErrorCategory.ProviderUnavailable,
+  [ChatErrorCode.ModelNotFound]: ChatErrorCategory.ModelError,
+  [ChatErrorCode.RequestRejected]: ChatErrorCategory.ContentPolicy,
+  [ChatErrorCode.ParseError]: ChatErrorCategory.InvalidRequest,
+  [ChatErrorCode.StreamError]: ChatErrorCategory.Network,
+  [ChatErrorCode.Cancelled]: ChatErrorCategory.Cancelled,
+  [ChatErrorCode.InternalError]: ChatErrorCategory.Unknown,
+} as const satisfies Record<ChatErrorCode, ChatErrorCategory>;
+
 export function inferCategory(error: ChatError): ChatErrorCategory {
-  const codeToCategory: Partial<Record<ChatErrorCode, ChatErrorCategory>> = {
-    [ChatErrorCode.NetworkError]: ChatErrorCategory.Network,
-    [ChatErrorCode.AuthFailed]: ChatErrorCategory.Auth,
-    [ChatErrorCode.ApiKeyMissing]: ChatErrorCategory.Auth,
-    [ChatErrorCode.RateLimited]: ChatErrorCategory.RateLimit,
-    [ChatErrorCode.ContextOverflow]: ChatErrorCategory.ContextOverflow,
-    [ChatErrorCode.Timeout]: ChatErrorCategory.Timeout,
-    [ChatErrorCode.ServerError]: ChatErrorCategory.ProviderUnavailable,
-    [ChatErrorCode.ModelNotFound]: ChatErrorCategory.ModelError,
-    [ChatErrorCode.RequestRejected]: ChatErrorCategory.ContentPolicy,
-    [ChatErrorCode.ParseError]: ChatErrorCategory.InvalidRequest,
-    [ChatErrorCode.StreamError]: ChatErrorCategory.Network,
-    [ChatErrorCode.Cancelled]: ChatErrorCategory.Cancelled,
-    [ChatErrorCode.InternalError]: ChatErrorCategory.Unknown,
-  };
-
-  if (codeToCategory[error.code]) return codeToCategory[error.code]!;
-
-  if (error.httpStatus) {
-    const httpMap: Record<number, ChatErrorCategory> = {
-      401: ChatErrorCategory.Auth,
-      402: ChatErrorCategory.ProviderQuota,
-      403: ChatErrorCategory.Auth,
-      429: ChatErrorCategory.RateLimit,
-      529: ChatErrorCategory.ProviderUnavailable,
-    };
-    if (httpMap[error.httpStatus]) return httpMap[error.httpStatus];
-    if (error.httpStatus >= 500) return ChatErrorCategory.ProviderUnavailable;
-  }
-
-  const msg = (error.message ?? "").toLowerCase();
-  if (msg.includes("insufficient_quota") || msg.includes("billing"))
-    return ChatErrorCategory.ProviderQuota;
-  if (msg.includes("context window") || msg.includes("context_length"))
-    return ChatErrorCategory.ContextOverflow;
-  if (msg.includes("content_policy") || msg.includes("content policy"))
-    return ChatErrorCategory.ContentPolicy;
-
-  return ChatErrorCategory.Unknown;
+  return CODE_TO_CATEGORY[error.code];
 }
 
 export function toChatError(

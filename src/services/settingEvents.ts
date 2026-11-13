@@ -42,11 +42,10 @@ export function subscribeSettingEvents(): () => void {
   track(
     listen<SettingEventPayload>(SettingEvent.ThemeChanged, ({ payload }) => {
       if (disposed) return;
-      if (payload.action === SettingAction.ThemeChanged) {
-        useThemeStore.setState({
-          resolved: payload.value as "light" | "dark",
-        });
-      }
+      if (payload.action !== SettingAction.ThemeChanged) return;
+      const value = payload.value;
+      if (value !== "light" && value !== "dark") return;
+      useThemeStore.setState({ resolved: value });
     }),
   );
 

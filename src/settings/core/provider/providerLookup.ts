@@ -13,7 +13,10 @@ import {
   getAllProviderPresets,
   getApiFormatByType as getApiFormatByTypeFromRegistry,
 } from "./providerPresetRegistry";
+import { createLogger } from "@/services/logger";
 import "./providerDefinitions";
+
+const log = createLogger("providerLookup");
 
 export const API_FORMATS: ApiFormatInfo[] = getAllProviderFormats().map(
   (f) => ({
@@ -54,7 +57,14 @@ export function getPresetByType(type: string): ProviderPreset | undefined {
 }
 
 export function getApiFormatByType(type: string): ApiFormat {
-  return getApiFormatByTypeFromRegistry(type) as ApiFormat;
+  const format = getApiFormatByTypeFromRegistry(type) as ApiFormat;
+  if (!PRESET_MAP.has(type)) {
+    log.warn("unknown provider type, falling back to default api format", {
+      type,
+      format,
+    });
+  }
+  return format;
 }
 
 export function getFormatInfo(format: ApiFormat): ApiFormatInfo | undefined {

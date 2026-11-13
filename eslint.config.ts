@@ -12,6 +12,7 @@ export default defineConfig(
       "dist",
       "src-tauri",
       "src/vault/core/contract",
+      "src/types/shortcutDefaults.generated.ts",
       "references",
       "temp-backup",
       "for_generate",
@@ -28,7 +29,7 @@ export default defineConfig(
       },
     },
     plugins: {
-      "react-hooks": reactHooks,
+      "react-hooks": { rules: reactHooks.rules },
       prettier,
     },
     rules: {

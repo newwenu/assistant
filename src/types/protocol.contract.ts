@@ -27,7 +27,7 @@ export type AgentQuestionOptionDto = { label: string, description: string, };
 export type AgentQuestionRequestDto = { conversationId: string, turnId: string, callId: string, questions: Array<AgentQuestionDto>, timeoutMs: number, };
 export type AgentToolCallDto = { conversationId: string, turnId: string, iteration: number, callId: string, name: string, payload: AgentToolCallPayloadDto, };
 export type AgentToolCallPayloadDto = { "phase": "started" } | { "phase": "argsDelta", delta: string, } | { "phase": "finished", result: string, confirmationWaitMs: number | null, } | { "phase": "failed", error: string, errorKind: ToolErrorKindDto, confirmationWaitMs: number | null, } | { "phase": "awaitingApproval", approval: ToolApprovalRequestDto, } | { "phase": "approvalClosed", timeoutMs: number, } | { "phase": "awaitingAnswer", question: AgentQuestionRequestDto, };
-export type AppConfDto = { theme: string, language: string, hotkey: string, stayOnTop: boolean, launchAtLogin: boolean, closeToTray: boolean, keybindings: { [key in string]: string }, autoCompact: boolean, compactThresholdPercentOfBudget: number, compactSummaryPrompt: string | null, compactSummaryMaxTokens: number, mainWindowX: number | null, mainWindowY: number | null, mainWindowWidth: number | null, mainWindowHeight: number | null, miniWindowX: number | null, miniWindowY: number | null, approvalTimeoutSecs: number | null, userQuestionTimeoutSecs: number | null, };
+export type AppConfDto = { theme: ThemeModeDto, language: string, hotkey: string, stayOnTop: boolean, launchAtLogin: boolean, closeToTray: boolean, keybindings: { [key in string]: string }, autoCompact: boolean, compactThresholdPercentOfBudget: number, compactSummaryPrompt: string | null, compactSummaryMaxTokens: number, mainWindowX: number | null, mainWindowY: number | null, mainWindowWidth: number | null, mainWindowHeight: number | null, miniWindowX: number | null, miniWindowY: number | null, approvalTimeoutSecs: number | null, userQuestionTimeoutSecs: number | null, };
 export type ApprovalContextDto = { tier: ToolTierDto, behavior: ToolBehaviorDto, reasons: Array<ApprovalReasonDto>, preview: ApprovalPreviewDto | null, extensions: Array<ApprovalExtensionDto>, };
 export type ApprovalExtensionDto = { kind: string, label: string, value: string, severity: ApprovalExtensionSeverityDto, };
 export type ApprovalExtensionSeverityDto = "info" | "caution" | "danger";
@@ -164,6 +164,7 @@ toggle: boolean,
  * 可选的 effort 档位，保持目录顺序
  */
 efforts: Array<string>, };
+export type ResolvedThemeDto = "light" | "dark";
 export type RetryNotificationDto = { attempt: number, maxAttempts: number, delayMs: number, message: string, errorCode: ProviderErrorCodeDto | null, };
 export type ScreenRectDto = { x: number, y: number, width: number, height: number, };
 export type ScreenSizeDto = { screen: ScreenRectDto, };
@@ -185,7 +186,8 @@ export type StorageBreakdownDto = {
  * 目录内附件总字节数。未找到目录配额常量，无法论证更窄上限，故保留 `u64`。
  */
 totalBytes: number, totalCount: number, orphans: Array<AttachmentSummary>, conversations: Array<ConversationAttachmentSummary>, };
-export type ThemeChangedPayloadDto = { resolved: string, };
+export type ThemeChangedPayloadDto = { resolved: ResolvedThemeDto, };
+export type ThemeModeDto = "system" | "light" | "dark";
 export type TokenUsageCacheDto = { hitTokens: number, denominatorTokens: number, 
 /**
  * 分母为 0 时不可判定，缺省而不是 0

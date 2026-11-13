@@ -3,9 +3,11 @@ use std::sync::Mutex;
 use tauri::{command, AppHandle, Manager};
 
 use crate::protocol::events::{emit_broadcast, event_name};
-use crate::protocol::{AppConfDto, MascotConfDto, OrbConfDto, ThemeChangedPayloadDto};
+use crate::protocol::{
+    AppConfDto, MascotConfDto, OrbConfDto, ResolvedThemeDto, ThemeChangedPayloadDto,
+};
 use assistant_config::{
-    app_conf::AppConf,
+    app_conf::{AppConf, ThemeMode},
     constant::{WINDOW_MAIN, WINDOW_ORB},
     mascot_conf::MascotConf,
     orb_conf::OrbConf,
@@ -19,6 +21,29 @@ static CONF_LOCK: Mutex<()> = Mutex::new(());
 
 type AppSideEffectFn = fn(&AppHandle, &AppConf, &AppConf) -> Result<(), String>;
 type OrbSideEffectFn = fn(&AppHandle, &OrbConf, &OrbConf) -> Result<(), String>;
+
+/// 把主题模式解析为具体值：`system` 取主窗口当前系统主题，其余直接映射。
+///
+/// 解析放在后端，保证广播出去的 `resolved` 一定落在 `light` / `dark` 之内；
+/// 前端收到后不再做兜底判断。
+fn resolve_theme(app: &AppHandle, mode: ThemeMode) -> ResolvedThemeDto {
+    match mode {
+        ThemeMode::Light => ResolvedThemeDto::Light,
+        ThemeMode::Dark => ResolvedThemeDto::Dark,
+        ThemeMode::System => {
+            let system_dark = app
+                .get_webview_window(WINDOW_MAIN)
+                .and_then(|window| window.theme().ok())
+                .map(|theme| theme == tauri::Theme::Dark)
+                .unwrap_or(false);
+            if system_dark {
+                ResolvedThemeDto::Dark
+            } else {
+                ResolvedThemeDto::Light
+            }
+        }
+    }
+}
 
 static APP_SIDE_EFFECTS: &[(&str, AppSideEffectFn)] = &[
     ("launch_at_login", |_app, prev, conf| {
@@ -52,7 +77,7 @@ static APP_SIDE_EFFECTS: &[(&str, AppSideEffectFn)] = &[
     }),
     ("theme", |app, prev, conf| {
         if prev.theme != conf.theme {
-            let resolved = conf.theme.clone();
+            let resolved = resolve_theme(app, conf.theme);
             emit_broadcast(
                 app,
                 event_name::THEME_CHANGED,

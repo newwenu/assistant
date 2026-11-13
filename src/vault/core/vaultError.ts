@@ -1,48 +1,60 @@
 import type { VaultErrorCode, VaultErrorDto } from "./vault.types";
 import { vaultErrorText } from "./vaultErrorText";
 
-const VAULT_ERROR_CODES: readonly VaultErrorCode[] = [
-  "locked",
-  "invalidPassword",
-  "notInitialized",
-  "alreadyExists",
-  "rateLimited",
-  "crypto",
-  "notFound",
-  "entryCorrupted",
-  "validation",
-  "biometricUnavailable",
-  "biometricCancelled",
-  "biometricFailed",
-  "biometricReset",
-  "invalidKeyFormat",
-  "invalidRecoveryKeyFormat",
-  "invalidRecoveryKeyChecksum",
-  "invalidRecoveryKeyOrMetaTampered",
-  "vaultMetaIntegrityFailed",
-  "unsupportedVaultVersion",
-  "vaultVersionTooNew",
-  "localDbKeyMismatch",
-  "vaultRollbackDetected",
-  "vaultManifestMismatch",
-  "vaultCorrupted",
-  "cancelled",
-  "repoNotInitialized",
-  "noRemoteConfigured",
-  "noUpstream",
-  "syncConflict",
-  "gitUnavailable",
-  "keyMismatch",
-  "historyDecryptFailed",
-  "internal",
-];
+/**
+ * 全部错误码的显式镜像表：`satisfies Record<VaultErrorCode, true>` 让生成契约
+ * 新增错误码时在编译期报错，避免 `isVaultErrorDto` 静默漏判新码。
+ */
+const VAULT_ERROR_CODE_FLAGS = {
+  locked: true,
+  invalidPassword: true,
+  notInitialized: true,
+  alreadyExists: true,
+  rateLimited: true,
+  crypto: true,
+  notFound: true,
+  entryCorrupted: true,
+  validation: true,
+  biometricUnavailable: true,
+  biometricCancelled: true,
+  biometricFailed: true,
+  biometricReset: true,
+  invalidKeyFormat: true,
+  invalidRecoveryKeyFormat: true,
+  invalidRecoveryKeyChecksum: true,
+  invalidRecoveryKeyOrMetaTampered: true,
+  vaultMetaIntegrityFailed: true,
+  unsupportedVaultVersion: true,
+  vaultVersionTooNew: true,
+  localDbKeyMismatch: true,
+  vaultRollbackDetected: true,
+  vaultManifestMismatch: true,
+  vaultCorrupted: true,
+  cancelled: true,
+  repoNotInitialized: true,
+  noRemoteConfigured: true,
+  noUpstream: true,
+  syncConflict: true,
+  gitUnavailable: true,
+  keyMismatch: true,
+  historyDecryptFailed: true,
+  vaultDekVersionAhead: true,
+  vaultDekVersionBehind: true,
+  repositoryContainsForbiddenFile: true,
+  historyDekUnavailable: true,
+  internal: true,
+} as const satisfies Record<VaultErrorCode, true>;
+
+function isVaultErrorCode(value: string): value is VaultErrorCode {
+  return Object.prototype.hasOwnProperty.call(VAULT_ERROR_CODE_FLAGS, value);
+}
 
 export function isVaultErrorDto(value: unknown): value is VaultErrorDto {
   if (typeof value !== "object" || value === null) return false;
   const obj = value as Record<string, unknown>;
   return (
     typeof obj.code === "string" &&
-    VAULT_ERROR_CODES.includes(obj.code as VaultErrorCode) &&
+    isVaultErrorCode(obj.code) &&
     typeof obj.message === "string" &&
     typeof obj.retryable === "boolean"
   );

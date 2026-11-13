@@ -11,6 +11,7 @@ import type { ProviderInput } from "@/settings/provider/types";
 import type { ConfGroup, ConfOf } from "./types/confRegistry";
 import { DEFAULT_KEYBINDINGS } from "./types/shortcutTypes";
 import { emitSettingEventToPeers } from "@/services/crossWindowEvent";
+import type { ResolvedThemeDto, ThemeModeDto } from "@/types/protocol.contract";
 
 const log = createLogger("settingsDispatcher");
 
@@ -33,8 +34,8 @@ export async function dispatchProviderDeleted(id: string) {
   });
 }
 
-export async function dispatchThemeChanged(mode: "system" | "light" | "dark") {
-  let resolved: "light" | "dark";
+export async function dispatchThemeChanged(mode: ThemeModeDto) {
+  let resolved: ResolvedThemeDto;
   if (mode !== "system") {
     resolved = mode;
   } else {

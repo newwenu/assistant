@@ -807,7 +807,7 @@ VaultError::VaultCorrupted(m) => (VaultErrorCode::VaultCorrupted, m.clone()),
 
 文件：`src/vault/core/vaultError.ts`。
 
-`VAULT_ERROR_CODES` 手写数组追加 5 项。**两处不同步的事实**：`VaultErrorCode` 类型由 ts-rs 导出到 `contract/vault.contract.ts`，而数组是手写的；流程是「改 Rust 枚举 → 重新生成 contract → 手工同步数组」。
+`VAULT_ERROR_CODE_FLAGS` 是手写镜像表，以 `as const satisfies Record<VaultErrorCode, true>` 声明：`VaultErrorCode` 类型由 ts-rs 导出到 `contract/vault.contract.ts`，流程是「改 Rust 枚举 → 重新生成 contract」，手写表漏项或多项都会在 `npm run typecheck` 阶段报错，不再需要人工逐条核对条数。
 
 一致性测试由 `assistant-vault/tests/dto_contract.rs` 断言（§11.2 T-D1）。
 
@@ -896,7 +896,7 @@ handle.manage(SyncEngine::new_with_repo(repo, sync_config));
 
 ### 10.2 错误码联合类型
 
-`vaultError.ts` 的 `VAULT_ERROR_CODES` 追加 5 项（§7.4）；域规格各自追加自己的错误码。建议增加判定辅助：
+`vaultError.ts` 的 `VAULT_ERROR_CODE_FLAGS` 追加 5 项（§7.4）；域规格各自追加自己的错误码。建议增加判定辅助：
 
 ```ts
 export function needsRepositoryReset(code: VaultErrorCode): boolean {

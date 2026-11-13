@@ -1,18 +1,20 @@
 use assistant_app::protocol::{
-    AgentModeDto, AgentModeKindDto, AgentToolCallDto, AgentToolCallPayloadDto, ChatDeltaPayloadDto,
-    ChatRegeneratePayloadDto, ChatStreamStartPayloadDto, ConversationDetailDto, ConversationDto,
-    ConversationPatchDto, ConversationQueryModeDto, ConversationQueryOptsDto,
-    ConversationTerminatedPayloadDto, ConversationToolConfigDto, ConversationUnlockedPayloadDto,
-    InstallMascotAssetResultDto, MessageDto, MessageStatusDto, MessageToolCallDto,
-    MessageToolCallStatusDto, ModelConfigDto, MousePositionDto, OsToolExecRequestDto,
-    OsToolResultDto, ProviderErrorCodeDto, ProviderErrorPayloadDto, ProviderListDto,
-    ReasoningLevelsDto, RetryNotificationDto, ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto,
+    AgentModeDto, AgentModeKindDto, AgentToolCallDto, AgentToolCallPayloadDto, AppConfDto,
+    ChatDeltaPayloadDto, ChatRegeneratePayloadDto, ChatStreamStartPayloadDto,
+    ConversationDetailDto, ConversationDto, ConversationPatchDto, ConversationQueryModeDto,
+    ConversationQueryOptsDto, ConversationTerminatedPayloadDto, ConversationToolConfigDto,
+    ConversationUnlockedPayloadDto, InstallMascotAssetResultDto, MascotConfDto, MessageDto,
+    MessageStatusDto, MessageToolCallDto, MessageToolCallStatusDto, ModelConfigDto,
+    MousePositionDto, OrbConfDto, OsToolExecRequestDto, OsToolResultDto, ProviderErrorCodeDto,
+    ProviderErrorPayloadDto, ProviderListDto, ReasoningLevelsDto, ResolvedThemeDto,
+    RetryNotificationDto, ScreenRectDto, ScreenSizeDto, SendChatMessageArgsDto,
     SessionStateChangedPayloadDto, SessionStateDto, SettingProviderChangedActionDto,
     SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto, ThemeChangedPayloadDto,
-    TokenUsageDto, ToolErrorKindDto, TurnPhaseDto,
+    TokenUsageDto, ToolErrorKindDto, TurnPhaseDto, VaultConfDto,
 };
 use assistant_storage::agent_modes::AgentModeRow;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 fn roundtrip<T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug>(value: &T) {
     let json = serde_json::to_string(value).unwrap();
@@ -382,7 +384,7 @@ fn setting_dtos_roundtrip() {
     roundtrip(&shortcut);
 
     let theme = ThemeChangedPayloadDto {
-        resolved: "dark".into(),
+        resolved: ResolvedThemeDto::Dark,
     };
     roundtrip(&theme);
 }
@@ -616,6 +618,59 @@ fn conversation_query_opts_dto_roundtrip() {
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
     assert!(json.contains("beforeTimestamp"), "camelCase: {}", json);
+}
+
+/// 落盘配置与前端配置 DTO 的键集合必须一一对应（snake_case → camelCase 归一化）。
+///
+/// 配置结构体决定磁盘格式，DTO 决定前端契约；任何一侧多出字段都会形成
+/// 「前端看不到、后端却仍在用」的死字段（例如已删除的 `workspace_root`）。
+///
+/// 迁移字段（带 `skip_serializing_if` 的旧键）会让键集合随实例状态变化，
+/// 若今后出现，只允许以静态清单显式排除，并断言其仍存在于结构体侧。
+fn assert_dto_covers_config<C: Serialize, D: Serialize>(tag: &str, conf: &C, dto: &D) {
+    fn camel_case(snake: &str) -> String {
+        let mut out = String::with_capacity(snake.len());
+        let mut upper_next = false;
+        for ch in snake.chars() {
+            if ch == '_' {
+                upper_next = true;
+            } else if upper_next {
+                out.extend(ch.to_uppercase());
+                upper_next = false;
+            } else {
+                out.push(ch);
+            }
+        }
+        out
+    }
+
+    fn keys(value: &serde_json::Value) -> BTreeSet<String> {
+        value
+            .as_object()
+            .expect("config serializes to an object")
+            .keys()
+            .map(|key| camel_case(key))
+            .collect()
+    }
+
+    let conf_keys = keys(&serde_json::to_value(conf).unwrap());
+    let dto_keys = keys(&serde_json::to_value(dto).unwrap());
+    assert_eq!(conf_keys, dto_keys, "{} 与 {}Dto 字段集合不一致", tag, tag);
+}
+
+#[test]
+fn config_dtos_cover_every_config_field() {
+    let app = assistant_config::app_conf::AppConf::new();
+    assert_dto_covers_config("AppConf", &app, &AppConfDto::from(app.clone()));
+
+    let orb = assistant_config::orb_conf::OrbConf::new();
+    assert_dto_covers_config("OrbConf", &orb, &OrbConfDto::from(orb.clone()));
+
+    let mascot = assistant_config::mascot_conf::MascotConf::new();
+    assert_dto_covers_config("MascotConf", &mascot, &MascotConfDto::from(mascot.clone()));
+
+    let vault = assistant_config::vault_conf::VaultConf::new();
+    assert_dto_covers_config("VaultConf", &vault, &VaultConfDto::from(vault.clone()));
 }
 
 #[test]

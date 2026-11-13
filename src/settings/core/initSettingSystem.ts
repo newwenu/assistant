@@ -21,13 +21,14 @@ export function initSettingSystem(): void {
   });
 
   registerSideEffect("theme_change", async (_prev, next) => {
-    const theme = next.theme as "system" | "light" | "dark";
+    const theme = next.theme;
+    if (theme !== "system" && theme !== "light" && theme !== "dark") return;
     await dispatchThemeChanged(theme);
   });
 
   registerSideEffect("locale_change", async (_prev, next) => {
-    const language = next.language as string;
-    if (!language) return;
+    const language = next.language;
+    if (typeof language !== "string" || !language) return;
     await applyLocaleChange(language);
   });
 }

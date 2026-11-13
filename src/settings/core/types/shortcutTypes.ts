@@ -1,3 +1,5 @@
+import { DEFAULT_SHORTCUT_PATTERNS } from "@/types/shortcutDefaults.generated";
+
 export interface ShortcutDefinition {
   id: string;
   group: string;
@@ -14,26 +16,31 @@ export const SHORTCUT_GROUPS = [
 export const IS_MAC = /\bMacintosh\b/i.test(navigator.userAgent);
 export const PRIMARY_MOD = IS_MAC ? "Meta" : "Control";
 
+/** 把 Rust 模板里的 `{primary}` 展开为当前平台的修饰键。 */
+function expandPrimary(pattern: string): string {
+  return pattern.replace("{primary}", PRIMARY_MOD);
+}
+
 export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   {
     id: "toggle_orb",
     group: "global",
     label: "settings.shortcuts.toggle_orb",
-    defaultBinding: `${PRIMARY_MOD}+Shift+Alt+O`,
+    defaultBinding: expandPrimary(DEFAULT_SHORTCUT_PATTERNS.toggle_orb),
     kind: "global",
   },
   {
     id: "toggle_main",
     group: "global",
     label: "settings.shortcuts.toggle_main",
-    defaultBinding: `${PRIMARY_MOD}+Shift+Alt+M`,
+    defaultBinding: expandPrimary(DEFAULT_SHORTCUT_PATTERNS.toggle_main),
     kind: "global",
   },
   {
     id: "new_chat",
     group: "global",
     label: "settings.shortcuts.new_chat",
-    defaultBinding: `${PRIMARY_MOD}+Shift+Alt+N`,
+    defaultBinding: expandPrimary(DEFAULT_SHORTCUT_PATTERNS.new_chat),
     kind: "global",
   },
   {

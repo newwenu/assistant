@@ -413,6 +413,19 @@ fn vault_error_code_strings_are_frozen() {
             VaultErrorCode::VaultManifestMismatch,
             "vaultManifestMismatch",
         ),
+        (VaultErrorCode::VaultDekVersionAhead, "vaultDekVersionAhead"),
+        (
+            VaultErrorCode::VaultDekVersionBehind,
+            "vaultDekVersionBehind",
+        ),
+        (
+            VaultErrorCode::RepositoryContainsForbiddenFile,
+            "repositoryContainsForbiddenFile",
+        ),
+        (
+            VaultErrorCode::HistoryDekUnavailable,
+            "historyDekUnavailable",
+        ),
         (VaultErrorCode::VaultCorrupted, "vaultCorrupted"),
         (VaultErrorCode::Cancelled, "cancelled"),
         (VaultErrorCode::RepoNotInitialized, "repoNotInitialized"),
@@ -438,70 +451,44 @@ fn frontend_error_codes() -> Vec<String> {
         .join("../../../src/vault/core/vaultError.ts");
     let text = std::fs::read_to_string(&path).expect("vaultError.ts must be readable");
     let body = text
-        .split_once("VAULT_ERROR_CODES")
-        .and_then(|(_, rest)| rest.split_once("= ["))
-        .and_then(|(_, rest)| rest.split_once(']'))
+        .split_once("VAULT_ERROR_CODE_FLAGS")
+        .and_then(|(_, rest)| rest.split_once('{'))
+        .and_then(|(_, rest)| rest.split_once('}'))
         .map(|(body, _)| body)
-        .expect("VAULT_ERROR_CODES array must exist in vaultError.ts");
-    body.split(',')
-        .map(|entry| entry.trim().trim_matches('"').trim_matches('\''))
-        .filter(|entry| !entry.is_empty())
-        .map(str::to_string)
+        .expect("VAULT_ERROR_CODE_FLAGS object must exist in vaultError.ts");
+    body.lines()
+        .filter_map(|line| line.trim().strip_suffix(": true,"))
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty())
+        .collect()
+}
+
+/// 从生成契约读错误码全集：`vaultError.ts` 的镜像表必须覆盖 Rust 侧全部变体，
+/// 而生成物由 `npm run contract:gen` 从 `VaultErrorCode` 派生，比手写清单更不易过期。
+fn generated_error_codes() -> Vec<String> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../src/vault/core/contract/vault.contract.ts");
+    let text = std::fs::read_to_string(&path).expect("vault.contract.ts must be readable");
+    let union = text
+        .split_once("export type VaultErrorCode = ")
+        .and_then(|(_, rest)| rest.split_once(';'))
+        .map(|(body, _)| body)
+        .expect("VaultErrorCode union must exist in vault.contract.ts");
+    union
+        .split('|')
+        .map(|item| item.trim().trim_matches('"').to_string())
+        .filter(|item| !item.is_empty())
         .collect()
 }
 
 #[test]
 fn vault_error_codes_match_frontend_array() {
-    let rust: Vec<String> = [
-        VaultErrorCode::Locked,
-        VaultErrorCode::InvalidPassword,
-        VaultErrorCode::NotInitialized,
-        VaultErrorCode::AlreadyExists,
-        VaultErrorCode::RateLimited,
-        VaultErrorCode::Crypto,
-        VaultErrorCode::NotFound,
-        VaultErrorCode::EntryCorrupted,
-        VaultErrorCode::Validation,
-        VaultErrorCode::BiometricUnavailable,
-        VaultErrorCode::BiometricCancelled,
-        VaultErrorCode::BiometricFailed,
-        VaultErrorCode::BiometricReset,
-        VaultErrorCode::InvalidKeyFormat,
-        VaultErrorCode::InvalidRecoveryKeyFormat,
-        VaultErrorCode::InvalidRecoveryKeyChecksum,
-        VaultErrorCode::InvalidRecoveryKeyOrMetaTampered,
-        VaultErrorCode::VaultMetaIntegrityFailed,
-        VaultErrorCode::UnsupportedVaultVersion,
-        VaultErrorCode::VaultVersionTooNew,
-        VaultErrorCode::LocalDbKeyMismatch,
-        VaultErrorCode::VaultRollbackDetected,
-        VaultErrorCode::VaultManifestMismatch,
-        VaultErrorCode::VaultCorrupted,
-        VaultErrorCode::Cancelled,
-        VaultErrorCode::RepoNotInitialized,
-        VaultErrorCode::NoRemoteConfigured,
-        VaultErrorCode::NoUpstream,
-        VaultErrorCode::SyncConflict,
-        VaultErrorCode::GitUnavailable,
-        VaultErrorCode::KeyMismatch,
-        VaultErrorCode::HistoryDecryptFailed,
-        VaultErrorCode::Internal,
-    ]
-    .into_iter()
-    .map(|code| {
-        to_value(code)
-            .unwrap()
-            .as_str()
-            .expect("VaultErrorCode must serialize as a string")
-            .to_string()
-    })
-    .collect();
-
+    let generated = generated_error_codes();
     let frontend = frontend_error_codes();
     assert_eq!(
-        rust.iter().collect::<std::collections::BTreeSet<_>>(),
+        generated.iter().collect::<std::collections::BTreeSet<_>>(),
         frontend.iter().collect::<std::collections::BTreeSet<_>>(),
-        "T-D1: VaultErrorCode 与 vaultError.ts 的 VAULT_ERROR_CODES 必须双向一致"
+        "T-D1: 生成契约 VaultErrorCode 与 vaultError.ts 的 VAULT_ERROR_CODE_FLAGS 必须双向一致"
     );
 }
 

@@ -29,6 +29,7 @@ import { defineCommand, clearCommands } from "./commandRegistry";
 import { getFeatures } from "@/features/registry";
 import { navigateInCurrentMode, openTool } from "@/tools/miniNavigate";
 import { translateKey } from "@/i18n";
+import type { ThemeModeDto } from "@/types/protocol.contract";
 
 function tokenize(text: string): string[] {
   return text
@@ -208,12 +209,8 @@ function registerManualCommands(navigate: NavigateFunction): void {
     action: async () => {
       const appConf = getConfValue("app");
       if (!appConf) return;
-      const order: Array<"system" | "light" | "dark"> = [
-        "system",
-        "light",
-        "dark",
-      ];
-      const current = appConf.theme as "system" | "light" | "dark";
+      const order: ThemeModeDto[] = ["system", "light", "dark"];
+      const current = appConf.theme;
       const next = order[(order.indexOf(current) + 1) % order.length];
       await dispatchConfPatch("app", { theme: next });
       await dispatchThemeChanged(next);

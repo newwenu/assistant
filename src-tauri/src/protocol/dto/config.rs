@@ -1,10 +1,29 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// 主题模式（封闭集合）。`system` 表示跟随系统，由前端解析为具体值。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum ThemeModeDto {
+    System,
+    Light,
+    Dark,
+}
+
+impl From<assistant_config::app_conf::ThemeMode> for ThemeModeDto {
+    fn from(value: assistant_config::app_conf::ThemeMode) -> Self {
+        match value {
+            assistant_config::app_conf::ThemeMode::System => Self::System,
+            assistant_config::app_conf::ThemeMode::Light => Self::Light,
+            assistant_config::app_conf::ThemeMode::Dark => Self::Dark,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AppConfDto {
-    pub theme: String,
+    pub theme: ThemeModeDto,
     pub language: String,
     pub hotkey: String,
     pub stay_on_top: bool,
@@ -28,7 +47,7 @@ pub struct AppConfDto {
 impl From<assistant_config::app_conf::AppConf> for AppConfDto {
     fn from(c: assistant_config::app_conf::AppConf) -> Self {
         Self {
-            theme: c.theme,
+            theme: c.theme.into(),
             language: c.language,
             hotkey: c.hotkey,
             stay_on_top: c.stay_on_top,
