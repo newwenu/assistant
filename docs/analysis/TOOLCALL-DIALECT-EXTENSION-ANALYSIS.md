@@ -1,7 +1,7 @@
 # 工具调用方言扩展性分析
 
 > 日期：2026-11-08
-> 关联：`docs/ARCHITECTURE.md` · `docs/analysis/MODEL-CAPABILITY-EVOLUTION-ANALYSIS.md` · I38d-agent-frontend-modes-spec（已归档）
+> 关联：`docs/ARCHITECTURE.md` · `MODEL-CAPABILITY-EVOLUTION-ANALYSIS.md`（已归档） · I38d-agent-frontend-modes-spec（已归档）
 > 范围：provider 流协议 → 统一中间表示 → 累积终结 → 落库 → DTO 投影 → 前端视图
 > 性质：**前瞻分析**。讨论 tool call 表达形态的结构边界与扩展成本，不描述实施方案，不跟踪代码进度。
 > 阅读约定：结论部分（§0、§3–§6）讨论的是结构，不随代码演进失效；基线快照（§2）是某一时刻的结构证据，代码演进后**不再更新**，不构成待办清单。

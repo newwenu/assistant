@@ -609,4 +609,4 @@ Windows Hello 签名（TPM 内，不可导出）──HKDF-SHA256──▶ AES k
 | R6c 编译期 feature 选 store / mock | `references/4-vault-security/keyring-rs-v3/README.md` | 全文 |
 | R7 Hello 派生 | `references/4-vault-security/watchkey-win/src/crypto.rs`、`src/auth.rs` | 全文 |
 | R7 可选 DPAPI 备用包裹（远程审批） | `references/4-vault-security/watchkey-win/src/companion.rs` | 全文 |
-| P2 设计 | `docs/store/I9-vault-key-hierarchy-design.md` | §0.4、§2.1-2.8、§3、§4、§5、§11 |
+| P2 设计 | `./I9-vault-key-hierarchy-design.md` | §0.4、§2.1-2.8、§3、§4、§5、§11 |

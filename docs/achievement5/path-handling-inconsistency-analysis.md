@@ -4,7 +4,7 @@
 > 分析方式：静态检索 + 调用链人工追溯
 > 关联文档：I31 阶段一工具框架规格 §5（已归档；共享路径安全 `os/path.rs`）、I18-agent-tool-architecture-spec Step 2（已归档；文件系统工具）、`docs/principle/CODE-REVIEW-PRINCIPLE.md` D4（命令层薄壳）
 > 性质：**分析**，不含实施步骤；整改建议见 §9
-> 规格：`../store/I44-app-dir-management-spec.md`（结论已按当前代码重新取值；本文不作为规格依据）
+> 规格：`./I44-app-dir-management-spec.md`（已归档；结论已按当前代码重新取值，本文不作为规格依据）
 
 ## 目录
 
