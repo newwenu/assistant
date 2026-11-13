@@ -208,11 +208,23 @@ pub fn delete_conversation(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 同步命令在主线程执行，而这里既取 DB 连接锁、又对工作区路径做 `canonicalize()`
+/// 磁盘 IO，网络盘/已拔出盘上会直接把窗口卡死；整体下放到阻塞线程池（I38h §9.4）。
 #[command]
-pub fn patch_conversation(
+pub async fn patch_conversation(
     app: AppHandle,
     id: String,
     patch: ConversationPatchDto,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || patch_conversation_blocking(&app, id, &patch))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn patch_conversation_blocking(
+    app: &AppHandle,
+    id: String,
+    patch: &ConversationPatchDto,
 ) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = super::get_db_conn(&state)?;
@@ -321,7 +333,7 @@ pub fn patch_conversation(
     }
 
     for kind in changed_kinds {
-        emit_list_changed(&app, kind, Some(id.clone()), None);
+        emit_list_changed(app, kind, Some(id.clone()), None);
     }
 
     Ok(())
