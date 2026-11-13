@@ -15,25 +15,24 @@ use assistant_vault::types::{VaultEntryCsvRow, VaultEntryExport, VaultEntrySnaps
 use assistant_crypto::vault_crypto::types::Dek;
 use assistant_vault::security_db::SecurityDbState;
 use assistant_vault::sync_engine::SyncEngine;
+use assistant_vault::vault_file::VaultFileManager;
 
 fn export_entry_to_sync(
-    engine: &SyncEngine,
+    repo: &VaultFileManager,
     dek: &Dek,
     snapshot: &VaultEntrySnapshot,
 ) -> Result<(), VaultError> {
-    engine
-        .vault_file_manager()
-        .export_entry(dek, snapshot)
+    repo.export_entry(dek, snapshot)
         .map_err(|e| VaultError::Other(e.to_string()))
 }
 
-fn sync_meta(engine: &SyncEngine, dek: &Dek) -> Result<(), VaultError> {
-    assistant_vault::lifecycle::sync_write_meta(engine.vault_file_manager(), dek)?;
+fn sync_meta(repo: &VaultFileManager, dek: &Dek) -> Result<(), VaultError> {
+    assistant_vault::lifecycle::sync_write_meta(repo, dek)?;
     Ok(())
 }
 
-fn refresh_anchor(state: &SecurityDbState, engine: &SyncEngine) -> Result<(), VaultError> {
-    assistant_vault::lifecycle::refresh_anchor(state, engine.vault_file_manager())
+fn refresh_anchor(state: &SecurityDbState, repo: &VaultFileManager) -> Result<(), VaultError> {
+    assistant_vault::lifecycle::refresh_anchor(state, repo)
 }
 
 fn prepare_sync(engine: &SyncEngine) {
@@ -88,17 +87,18 @@ pub fn vault_create_entry(
 ) -> Result<VaultEntryDetail, VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         let engine = super::sync_state(&app)?;
+        let repo = super::repo_state(&app)?;
 
         prepare_sync(&engine);
 
         let snapshot = state
             .create_entry_tx(entry, super::cipher_algo(), |dek, snap| {
-                export_entry_to_sync(&engine, dek, snap)?;
-                sync_meta(&engine, dek)
+                export_entry_to_sync(repo.manager(), dek, snap)?;
+                sync_meta(repo.manager(), dek)
             })
             .map_err(VaultErrorDto::from)?;
 
-        refresh_anchor(state, &engine).map_err(VaultErrorDto::from)?;
+        refresh_anchor(state, repo.manager()).map_err(VaultErrorDto::from)?;
 
         log::info!("Vault entry created: {}", snapshot.id);
         super::ssh::auto_add_entry(&app, &snapshot.id);
@@ -116,17 +116,18 @@ pub fn vault_update_entry(
 ) -> Result<VaultEntryDetail, VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         let engine = super::sync_state(&app)?;
+        let repo = super::repo_state(&app)?;
 
         prepare_sync(&engine);
 
         let snapshot = state
             .update_entry_tx(&id, entry, super::cipher_algo(), |dek, snap| {
-                export_entry_to_sync(&engine, dek, snap)?;
-                sync_meta(&engine, dek)
+                export_entry_to_sync(repo.manager(), dek, snap)?;
+                sync_meta(repo.manager(), dek)
             })
             .map_err(VaultErrorDto::from)?;
 
-        refresh_anchor(state, &engine).map_err(VaultErrorDto::from)?;
+        refresh_anchor(state, repo.manager()).map_err(VaultErrorDto::from)?;
 
         log::info!("Vault entry updated: {}", snapshot.id);
         finalize_sync(&engine, &format!("vault: update {}", snapshot.id));
@@ -143,17 +144,18 @@ pub fn vault_set_favorite(
 ) -> Result<VaultEntryDetail, VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         let engine = super::sync_state(&app)?;
+        let repo = super::repo_state(&app)?;
 
         prepare_sync(&engine);
 
         let snapshot = state
             .set_favorite_tx(&id, is_favorite, |dek, snap| {
-                export_entry_to_sync(&engine, dek, snap)?;
-                sync_meta(&engine, dek)
+                export_entry_to_sync(repo.manager(), dek, snap)?;
+                sync_meta(repo.manager(), dek)
             })
             .map_err(VaultErrorDto::from)?;
 
-        refresh_anchor(state, &engine).map_err(VaultErrorDto::from)?;
+        refresh_anchor(state, repo.manager()).map_err(VaultErrorDto::from)?;
 
         log::info!(
             "Vault entry favorite set: {} -> {}",
@@ -170,6 +172,7 @@ pub fn vault_set_favorite(
 pub fn vault_delete_entry(app: AppHandle, id: String) -> Result<(), VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         let engine = super::sync_state(&app)?;
+        let repo = super::repo_state(&app)?;
 
         prepare_sync(&engine);
 
@@ -177,15 +180,14 @@ pub fn vault_delete_entry(app: AppHandle, id: String) -> Result<(), VaultErrorDt
 
         state
             .delete_entry_tx(&id, |dek, entry_id| {
-                engine
-                    .vault_file_manager()
+                repo.manager()
                     .remove_entry_file(entry_id)
                     .map_err(|e| VaultError::Other(e.to_string()))?;
-                sync_meta(&engine, dek)
+                sync_meta(repo.manager(), dek)
             })
             .map_err(VaultErrorDto::from)?;
 
-        refresh_anchor(state, &engine).map_err(VaultErrorDto::from)?;
+        refresh_anchor(state, repo.manager()).map_err(VaultErrorDto::from)?;
 
         if let Some(fp) = fingerprint {
             super::ssh::auto_remove_fingerprint(&app, &fp);
@@ -210,17 +212,18 @@ pub fn vault_list_deleted_entries(app: AppHandle) -> Result<Vec<VaultEntrySummar
 pub fn vault_restore_entry(app: AppHandle, id: String) -> Result<(), VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         let engine = super::sync_state(&app)?;
+        let repo = super::repo_state(&app)?;
 
         prepare_sync(&engine);
 
         let snapshot = state
             .restore_entry_tx(&id, |dek, snap| {
-                export_entry_to_sync(&engine, dek, snap)?;
-                sync_meta(&engine, dek)
+                export_entry_to_sync(repo.manager(), dek, snap)?;
+                sync_meta(repo.manager(), dek)
             })
             .map_err(VaultErrorDto::from)?;
 
-        refresh_anchor(state, &engine).map_err(VaultErrorDto::from)?;
+        refresh_anchor(state, repo.manager()).map_err(VaultErrorDto::from)?;
 
         log::info!("Vault entry restored: {}", snapshot.id);
         finalize_sync(&engine, &format!("vault: restore {}", snapshot.id));
@@ -233,6 +236,7 @@ pub fn vault_restore_entry(app: AppHandle, id: String) -> Result<(), VaultErrorD
 pub fn vault_purge_deleted(app: AppHandle) -> Result<u32, VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         let engine = super::sync_state(&app)?;
+        let repo = super::repo_state(&app)?;
 
         prepare_sync(&engine);
 
@@ -244,15 +248,12 @@ pub fn vault_purge_deleted(app: AppHandle) -> Result<u32, VaultErrorDto> {
         }
 
         for id in &ids {
-            engine
-                .vault_file_manager()
-                .remove_entry_file(id)
-                .map_err(|e| {
-                    super::internal_error(format!(
-                        "Failed to remove entry file {} while purging: {}",
-                        id, e
-                    ))
-                })?;
+            repo.manager().remove_entry_file(id).map_err(|e| {
+                super::internal_error(format!(
+                    "Failed to remove entry file {} while purging: {}",
+                    id, e
+                ))
+            })?;
         }
 
         let purged = state.purge_deleted().map_err(VaultErrorDto::from)?;
@@ -264,7 +265,7 @@ pub fn vault_purge_deleted(app: AppHandle) -> Result<u32, VaultErrorDto> {
                 let dek = dek_guard
                     .as_ref()
                     .ok_or_else(|| VaultErrorDto::from(VaultError::Locked))?;
-                sync_meta(&engine, dek).map_err(VaultErrorDto::from)?;
+                sync_meta(repo.manager(), dek).map_err(VaultErrorDto::from)?;
             }
             finalize_sync(&engine, &format!("vault: purge {} entries", purged));
         }
@@ -281,14 +282,9 @@ pub async fn vault_change_master_password(
 ) -> Result<(), VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
         super::with_unlocked(&app, |state| {
-            let engine = super::sync_state(&app)?;
-            assistant_vault::lifecycle::change_password(
-                state,
-                engine.vault_file_manager(),
-                &current,
-                &new,
-            )
-            .map_err(VaultErrorDto::from)?;
+            let repo = super::repo_state(&app)?;
+            assistant_vault::lifecycle::change_password(state, repo.manager(), &current, &new)
+                .map_err(VaultErrorDto::from)?;
 
             log::info!("Vault master password changed");
             Ok(())
@@ -436,11 +432,12 @@ pub async fn vault_import(
             };
 
             let engine = super::sync_state(&app)?;
+            let repo = super::repo_state(&app)?;
             prepare_sync(&engine);
 
             let result = state
                 .import_entries(entries, super::cipher_algo(), |mk, snapshot| {
-                    export_entry_to_sync(&engine, mk, snapshot)
+                    export_entry_to_sync(repo.manager(), mk, snapshot)
                 })
                 .map_err(VaultErrorDto::from)?;
 
@@ -450,7 +447,7 @@ pub async fn vault_import(
                     let dek = dek_guard
                         .as_ref()
                         .ok_or_else(|| VaultErrorDto::from(VaultError::Locked))?;
-                    sync_meta(&engine, dek).map_err(VaultErrorDto::from)?;
+                    sync_meta(repo.manager(), dek).map_err(VaultErrorDto::from)?;
                 }
                 finalize_sync(&engine, &format!("vault: import {} entries", result));
             }

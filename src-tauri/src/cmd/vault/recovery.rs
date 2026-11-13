@@ -67,17 +67,13 @@ pub async fn vault_export_recovery_key(
     master_password: String,
 ) -> Result<RecoveryKeyDto, VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
-        let engine = super::sync_state(&app)?;
+        let repo = super::repo_state(&app)?;
         super::with_unlocked(&app, |state| {
-            assistant_vault::lifecycle::export_recovery_key(
-                state,
-                engine.vault_file_manager(),
-                &master_password,
-            )
-            .map_err(|e| {
-                log::warn!("Recovery key export failed: {}", e);
-                VaultErrorDto::from(e)
-            })
+            assistant_vault::lifecycle::export_recovery_key(state, repo.manager(), &master_password)
+                .map_err(|e| {
+                    log::warn!("Recovery key export failed: {}", e);
+                    VaultErrorDto::from(e)
+                })
         })
     })
     .await
@@ -176,7 +172,6 @@ pub fn vault_locate_paper_error(
 pub fn vault_has_recovery_backup(
     app: AppHandle,
 ) -> Result<Option<RecoveryBackupDto>, VaultErrorDto> {
-    let engine = super::sync_state(&app)?;
-    assistant_vault::lifecycle::recovery_backup(engine.vault_file_manager())
-        .map_err(VaultErrorDto::from)
+    let repo = super::repo_state(&app)?;
+    assistant_vault::lifecycle::recovery_backup(repo.manager()).map_err(VaultErrorDto::from)
 }

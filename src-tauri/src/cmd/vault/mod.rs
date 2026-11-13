@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tauri::{AppHandle, Manager};
 
 use assistant_config::vault_conf::VaultConf;
@@ -7,6 +9,7 @@ use assistant_security::screen_lock::ScreenLockMonitor;
 use assistant_vault::dto::VaultErrorDto;
 use assistant_vault::security_db::{LockReason, SecurityDbState};
 use assistant_vault::sync_engine::SyncEngine;
+use assistant_vault::vault_file::VaultFileManager;
 
 use crate::app_dirs::AppDirs;
 use crate::protocol::events::{emit_broadcast, event_name};
@@ -271,6 +274,22 @@ pub(crate) fn sync_state(app: &AppHandle) -> Result<tauri::State<'_, SyncEngine>
     Ok(app.state::<SyncEngine>())
 }
 
+/// 仓库文件层的唯一持有者。
+///
+/// `VaultFileManager` 只是 `PathBuf` + cipher 闭包的无状态句柄，与 git 同步无关；
+/// 独立持有它，命令层取 repo 就不必依赖 `SyncEngine`（feature-off 时后者不创建）。
+pub struct VaultRepo(pub Arc<VaultFileManager>);
+
+impl VaultRepo {
+    pub fn manager(&self) -> &VaultFileManager {
+        &self.0
+    }
+}
+
+pub(crate) fn repo_state(app: &AppHandle) -> Result<tauri::State<'_, VaultRepo>, VaultErrorDto> {
+    Ok(app.state::<VaultRepo>())
+}
+
 pub fn vault_setup(handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let dirs = AppDirs::resolve()?;
     if let Err(e) = cleanup_recovery_dir(&security_dir(&dirs)) {
@@ -305,12 +324,10 @@ pub fn vault_setup(handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>>
             })
         })
         .unwrap_or_default();
-    handle.manage(SyncEngine::new(
-        vault_dir,
-        sync_config,
-        Box::new(cipher_algo),
-    ));
-    log::info!("SyncEngine initialized");
+    let repo = Arc::new(VaultFileManager::new(vault_dir, Box::new(cipher_algo)));
+    handle.manage(VaultRepo(repo.clone()));
+    handle.manage(SyncEngine::new_with_repo(repo, sync_config));
+    log::info!("VaultRepo + SyncEngine initialized");
 
     spawn_screen_lock_watcher(handle);
     Ok(())

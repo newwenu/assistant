@@ -11,16 +11,12 @@ const RESET_CONFIRM_TOKEN: &str = "RESET-VAULT";
 pub async fn vault_init(app: AppHandle, master_password: String) -> Result<(), VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = super::vault_state(&app)?;
-        let engine = super::sync_state(&app)?;
-        assistant_vault::lifecycle::initialize(
-            state.inner(),
-            engine.vault_file_manager(),
-            &master_password,
-        )
-        .map_err(|e| {
-            log::error!("Vault init failed: {}", e);
-            VaultErrorDto::from(e)
-        })?;
+        let repo = super::repo_state(&app)?;
+        assistant_vault::lifecycle::initialize(state.inner(), repo.manager(), &master_password)
+            .map_err(|e| {
+                log::error!("Vault init failed: {}", e);
+                VaultErrorDto::from(e)
+            })?;
         log::info!("Vault initialized");
         Ok(())
     })
@@ -33,12 +29,8 @@ pub async fn vault_init(app: AppHandle, master_password: String) -> Result<(), V
 pub async fn vault_unlock(app: AppHandle, master_password: String) -> Result<(), VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = super::vault_state(&app)?;
-        let engine = super::sync_state(&app)?;
-        match assistant_vault::lifecycle::unlock(
-            state.inner(),
-            engine.vault_file_manager(),
-            &master_password,
-        ) {
+        let repo = super::repo_state(&app)?;
+        match assistant_vault::lifecycle::unlock(state.inner(), repo.manager(), &master_password) {
             Ok(()) => {
                 super::ssh_auto_add_on_unlock(&app);
                 crate::protocol::events::emit_broadcast(
@@ -128,10 +120,10 @@ pub async fn vault_show_unlock_window(app: AppHandle) -> Result<(), VaultErrorDt
     match result {
         UnlockResult::Confirmed(password) => {
             let state = super::vault_state(&app)?;
-            let engine = super::sync_state(&app)?;
+            let repo = super::repo_state(&app)?;
             match assistant_vault::lifecycle::unlock(
                 state.inner(),
-                engine.vault_file_manager(),
+                repo.manager(),
                 password.expose_str(),
             ) {
                 Ok(()) => {
@@ -164,15 +156,11 @@ pub async fn vault_show_unlock_window(app: AppHandle) -> Result<(), VaultErrorDt
 #[command]
 pub async fn vault_rotate_dek(app: AppHandle) -> Result<RecoveryKeyDto, VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
-        let engine = super::sync_state(&app)?;
+        let repo = super::repo_state(&app)?;
         let key_store = super::biometric::get_key_store();
         super::with_unlocked(&app, |state| {
-            assistant_vault::lifecycle::rotate_dek(
-                state,
-                engine.vault_file_manager(),
-                key_store.as_ref(),
-            )
-            .map_err(VaultErrorDto::from)
+            assistant_vault::lifecycle::rotate_dek(state, repo.manager(), key_store.as_ref())
+                .map_err(VaultErrorDto::from)
         })
     })
     .await
@@ -187,10 +175,10 @@ pub async fn vault_rebuild_local_db(
 ) -> Result<(), VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = super::vault_state(&app)?;
-        let engine = super::sync_state(&app)?;
+        let repo = super::repo_state(&app)?;
         match assistant_vault::lifecycle::rebuild_local_db(
             state.inner(),
-            engine.vault_file_manager(),
+            repo.manager(),
             &master_password,
         ) {
             Ok(()) => {

@@ -7,7 +7,7 @@ const TAURI_COMMAND_ATTRIBUTE: &str = "#[tauri::command]";
 const PRECONDITION_MARKER: &str = "// precondition:";
 const GATE_CALL: &str = "with_unlocked(";
 const DB_ACCESS: &str = "get_conn(";
-const STATE_ACCESS: [&str; 3] = ["vault_state(", "sync_state(", ".state::<"];
+const STATE_ACCESS: [&str; 4] = ["vault_state(", "sync_state(", "repo_state(", ".state::<"];
 const PRECONDITIONS: [&str; 3] = ["None", "AnyState", "Unlocked"];
 
 #[derive(Debug)]

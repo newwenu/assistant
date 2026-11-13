@@ -50,9 +50,9 @@ pub async fn vault_is_biometric_enrolled(app: AppHandle) -> Result<bool, VaultEr
 pub async fn vault_unlock_biometric(app: AppHandle) -> Result<(), VaultErrorDto> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = super::vault_state(&app)?;
-        let engine = super::sync_state(&app)?;
+        let repo = super::repo_state(&app)?;
         let key_store = get_key_store();
-        match state.unlock_biometric(engine.vault_file_manager(), key_store.as_ref()) {
+        match state.unlock_biometric(repo.manager(), key_store.as_ref()) {
             Ok(()) => {
                 super::ssh_auto_add_on_unlock(&app);
                 crate::protocol::events::emit_broadcast(
