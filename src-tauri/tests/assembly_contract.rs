@@ -807,7 +807,7 @@ fn b3_callers_do_not_name_features() {
         let text = strip_rust_comments(&read(file));
         let literals = string_literals(&text);
         for feature in manifest_feature_ids() {
-            if literals.iter().any(|literal| *literal == feature) {
+            if literals.contains(&feature) {
                 problems.push(format!("{} 直接点名特性 {}", file, feature));
             }
         }
@@ -1006,7 +1006,7 @@ fn b8_capabilities_split_per_feature() {
                 expected
             ));
         }
-        if default_permissions.iter().any(|item| *item == expected) {
+        if default_permissions.contains(&expected) {
             problems.push(format!("default.json 仍授予 {}，特性权限未拆分", expected));
         }
     }

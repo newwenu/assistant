@@ -104,7 +104,7 @@ trait AmbiguousIfClone<A> {
 
 impl<T: ?Sized> AmbiguousIfClone<()> for T {}
 
-impl<T: ?Sized + Clone> AmbiguousIfClone<u8> for T {}
+impl<T: Clone> AmbiguousIfClone<u8> for T {}
 
 #[test]
 fn key_types_do_not_implement_clone() {

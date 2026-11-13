@@ -252,6 +252,14 @@ fn sha256_hex_file(path: &Path) -> Result<String, VaultError> {
     Ok(hex::encode(Sha256::digest(&bytes)))
 }
 
+type EntryCipherColumns = (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
 /// `rotate_dek` 第 4 步：把本机库里所有条目的加密列从 `dek_old` 换成 `dek_new`。
 ///
 /// 包含墓碑行（`deleted_at IS NOT NULL`），否则重建索引会让已删条目复活。
@@ -262,13 +270,7 @@ pub(crate) fn reencrypt_entry_columns(
     dek_new: &Dek,
     algo: CipherAlgorithm,
 ) -> Result<usize, VaultError> {
-    let rows: Vec<(
-        String,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    )> = {
+    let rows: Vec<EntryCipherColumns> = {
         let mut stmt = tx
             .prepare(
                 "SELECT id, encrypted_password, encrypted_notes, encrypted_totp_secret, \
