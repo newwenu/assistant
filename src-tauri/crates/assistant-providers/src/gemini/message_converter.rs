@@ -1,5 +1,5 @@
 use crate::base::{ChatMessage, MessageRole};
-use crate::types::{parse_content, ContentBlock, ToolSpec};
+use crate::types::{blocks_of, ContentBlock, ToolSpec};
 use serde_json::{json, Value};
 
 pub(crate) fn convert_messages(messages: &[ChatMessage]) -> (Option<Value>, Vec<Value>) {
@@ -42,75 +42,67 @@ pub(crate) fn convert_messages(messages: &[ChatMessage]) -> (Option<Value>, Vec<
 }
 
 fn convert_user_parts(msg: &ChatMessage) -> Vec<Value> {
-    let blocks: Option<Vec<ContentBlock>> = msg
-        .content_blocks
-        .as_ref()
-        .map(|b| Some(b.clone()))
-        .unwrap_or_else(|| parse_content(&msg.content));
+    let parts: Vec<Value> = match blocks_of(msg) {
+        Some(blocks) => blocks.iter().filter_map(convert_user_block).collect(),
+        None => Vec::new(),
+    };
 
-    if let Some(blocks) = blocks {
-        let has_media = blocks
-            .iter()
-            .any(|b| matches!(b, ContentBlock::Image { .. } | ContentBlock::File { .. }));
-        if has_media {
-            return blocks
-                .iter()
-                .filter_map(|b| match b {
-                    ContentBlock::Text { text } if !text.is_empty() => {
-                        Some(json!({ "text": text }))
-                    }
-                    ContentBlock::Image {
-                        attachment,
-                        cached_data,
-                        ..
-                    } => {
-                        let mt = attachment.media_type.as_deref().unwrap_or("image/png");
-                        let data = cached_data.as_deref().unwrap_or("");
-                        if data.is_empty() {
-                            // 缺少 bytes 时降级为文本，避免静默丢图
-                            Some(json!({
-                                "text": format!(
-                                    "[image unavailable: {}]",
-                                    attachment.name.as_deref().unwrap_or("unknown")
-                                )
-                            }))
-                        } else {
-                            Some(json!({
-                                "inlineData": {
-                                    "mimeType": mt,
-                                    "data": data,
-                                }
-                            }))
-                        }
-                    }
-                    ContentBlock::File {
-                        attachment,
-                        cached_data,
-                        ..
-                    } => {
-                        let data = cached_data.as_deref().unwrap_or("");
-                        if data.is_empty() || !attachment.name.to_lowercase().ends_with(".pdf") {
-                            Some(json!({ "text": attachment.handle_text() }))
-                        } else {
-                            Some(json!({
-                                "inlineData": {
-                                    "mimeType": "application/pdf",
-                                    "data": data,
-                                }
-                            }))
-                        }
-                    }
-                    _ => None,
-                })
-                .collect();
-        }
-    }
-
-    let mut parts = Vec::new();
-    if !msg.content.is_empty() {
-        parts.push(json!({ "text": msg.content }));
+    if parts.is_empty() && !msg.content.is_empty() {
+        // 存量纯文本消息（解析不出块）走这里，原样透传。
+        return vec![json!({ "text": msg.content })];
     }
     parts
+}
+
+/// 单个内容块 → Gemini part；无法承载的块返回 `None`。
+fn convert_user_block(block: &ContentBlock) -> Option<Value> {
+    match block {
+        ContentBlock::Text { text } if !text.is_empty() => Some(json!({ "text": text })),
+        ContentBlock::Image {
+            attachment,
+            cached_data,
+            ..
+        } => {
+            let mt = attachment.media_type.as_deref().unwrap_or("image/png");
+            let data = cached_data.as_deref().unwrap_or("");
+            if data.is_empty() {
+                // 缺少 bytes 时降级为文本，避免静默丢图
+                Some(json!({
+                    "text": format!(
+                        "[image unavailable: {}]",
+                        attachment.name.as_deref().unwrap_or("unknown")
+                    )
+                }))
+            } else {
+                Some(json!({
+                    "inlineData": {
+                        "mimeType": mt,
+                        "data": data,
+                    }
+                }))
+            }
+        }
+        ContentBlock::File {
+            attachment,
+            cached_data,
+            ..
+        } => {
+            let data = cached_data.as_deref().unwrap_or("");
+            Some(
+                if data.is_empty() || !attachment.name.to_lowercase().ends_with(".pdf") {
+                    json!({ "text": attachment.handle_text() })
+                } else {
+                    json!({
+                        "inlineData": {
+                            "mimeType": "application/pdf",
+                            "data": data,
+                        }
+                    })
+                },
+            )
+        }
+        _ => None,
+    }
 }
 
 fn convert_assistant_parts(msg: &ChatMessage) -> Vec<Value> {
@@ -349,6 +341,22 @@ mod tests {
         assert_eq!(contents.len(), 1);
         assert_eq!(contents[0]["role"], "user");
         assert_eq!(contents[0]["parts"][0]["text"], "Hello");
+    }
+
+    #[test]
+    fn json_text_block_array_is_sent_as_plain_text() {
+        let messages = vec![ChatMessage {
+            role: MessageRole::User,
+            content: r#"[{"type":"text","text":"你好"}]"#.to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            is_error: false,
+            thinking_signature: None,
+            content_blocks: None,
+        }];
+        let (_, contents) = convert_messages(&messages);
+        assert_eq!(contents[0]["parts"][0]["text"], "你好");
     }
 
     #[test]

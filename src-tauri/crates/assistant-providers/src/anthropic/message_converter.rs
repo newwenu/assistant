@@ -1,5 +1,5 @@
 use crate::base::{ChatMessage, MessageRole};
-use crate::types::{parse_content, ContentBlock, ToolSpec};
+use crate::types::{blocks_of, ContentBlock, ToolSpec};
 use serde_json::{json, Value};
 
 pub(crate) fn convert_tools(tools: &[ToolSpec]) -> Vec<Value> {
@@ -55,88 +55,81 @@ pub(crate) fn convert_messages(messages: &[ChatMessage]) -> (Option<Value>, Vec<
 }
 
 fn convert_user_message(msg: &ChatMessage) -> Value {
-    let blocks: Option<Vec<ContentBlock>> = msg
-        .content_blocks
-        .as_ref()
-        .map(|b| Some(b.clone()))
-        .unwrap_or_else(|| parse_content(&msg.content));
+    // Anthropic 恒用数组形状：`merge_consecutive_messages` 依赖数组才能合并连续 user 消息。
+    let parts: Vec<Value> = match blocks_of(msg) {
+        Some(blocks) => blocks.iter().filter_map(convert_user_block).collect(),
+        None => Vec::new(),
+    };
 
-    if let Some(blocks) = blocks {
-        let has_media = blocks
-            .iter()
-            .any(|b| matches!(b, ContentBlock::Image { .. } | ContentBlock::File { .. }));
-        if has_media {
-            let content_parts: Vec<Value> = blocks
-                .iter()
-                .map(|b| match b {
-                    ContentBlock::Text { text } => json!({
-                        "type": "text",
-                        "text": text
-                    }),
-                    ContentBlock::Image {
-                        attachment,
-                        cached_data,
-                        ..
-                    } => match cached_data.as_deref().filter(|d| !d.is_empty()) {
-                        Some(data) => json!({
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": attachment.media_type.as_deref().unwrap_or("image/png"),
-                                "data": data
-                            }
-                        }),
-                        // 缺少 bytes 时降级为文本，避免提交空 base64 图片
-                        None => json!({
-                            "type": "text",
-                            "text": format!(
-                                "[image unavailable: {}]",
-                                attachment.name.as_deref().unwrap_or("unknown")
-                            )
-                        }),
-                    },
-                    ContentBlock::File {
-                        attachment,
-                        cached_data,
-                        ..
-                    } => {
-                        let data = cached_data.as_deref().unwrap_or("");
-                        if !data.is_empty() && attachment.name.to_lowercase().ends_with(".pdf") {
-                            json!({
-                                "type": "document",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "application/pdf",
-                                    "data": data
-                                }
-                            })
-                        } else {
-                            json!({
-                                "type": "text",
-                                "text": attachment.handle_text()
-                            })
-                        }
-                    }
-                    _ => json!({}),
-                })
-                .collect();
-            return json!({
-                "role": "user",
-                "content": content_parts
-            });
-        }
+    if parts.is_empty() {
+        // 存量纯文本消息（解析不出块）走这里，原样透传。
+        return json!({
+            "role": "user",
+            "content": [{
+                "type": "text",
+                "text": msg.content
+            }]
+        });
     }
 
-    // 纯文本消息统一输出 content blocks 数组格式：
-    // Anthropic messages API 支持数组 content，且统一格式后
-    // merge_consecutive_messages 才能合并连续 user 消息。
-    json!({
-        "role": "user",
-        "content": [{
+    json!({ "role": "user", "content": parts })
+}
+
+/// 单个内容块 → Anthropic content part；无法承载的块返回 `None`，不产出空对象。
+fn convert_user_block(block: &ContentBlock) -> Option<Value> {
+    match block {
+        ContentBlock::Text { text } => Some(json!({
             "type": "text",
-            "text": msg.content
-        }]
-    })
+            "text": text
+        })),
+        ContentBlock::Image {
+            attachment,
+            cached_data,
+            ..
+        } => Some(match cached_data.as_deref().filter(|d| !d.is_empty()) {
+            Some(data) => json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": attachment.media_type.as_deref().unwrap_or("image/png"),
+                    "data": data
+                }
+            }),
+            // 缺少 bytes 时降级为文本，避免提交空 base64 图片
+            None => json!({
+                "type": "text",
+                "text": format!(
+                    "[image unavailable: {}]",
+                    attachment.name.as_deref().unwrap_or("unknown")
+                )
+            }),
+        }),
+        ContentBlock::File {
+            attachment,
+            cached_data,
+            ..
+        } => {
+            let data = cached_data.as_deref().unwrap_or("");
+            Some(
+                if !data.is_empty() && attachment.name.to_lowercase().ends_with(".pdf") {
+                    json!({
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": data
+                        }
+                    })
+                } else {
+                    json!({
+                        "type": "text",
+                        "text": attachment.handle_text()
+                    })
+                },
+            )
+        }
+        _ => None,
+    }
 }
 
 fn convert_assistant_message(msg: &ChatMessage) -> Option<Value> {
@@ -369,6 +362,17 @@ mod tests {
         assert_eq!(msgs.len(), 1);
         let content = msgs[0]["content"].as_array().unwrap();
         assert_eq!(content.len(), 2);
+    }
+
+    #[test]
+    fn json_text_block_array_is_sent_as_plain_text() {
+        let messages = vec![make_message(
+            MessageRole::User,
+            r#"[{"type":"text","text":"你好"}]"#,
+        )];
+        let (_, msgs) = convert_messages(&messages);
+        assert_eq!(msgs[0]["content"][0]["type"], json!("text"));
+        assert_eq!(msgs[0]["content"][0]["text"], json!("你好"));
     }
 
     #[test]

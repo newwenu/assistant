@@ -1,5 +1,5 @@
 use crate::base::{ChatMessage, MessageRole};
-use crate::types::{parse_content, ContentBlock, ToolSpec};
+use crate::types::{blocks_of, plain_text_of, ContentBlock, ToolSpec};
 use serde_json::{json, Value};
 
 /// 目标端点：两条端点共用 `convert_messages`，但原生附件 part 形状不同。
@@ -88,7 +88,20 @@ fn convert_content_block(block: &ContentBlock, target: OpenAiTarget) -> Option<V
 }
 
 fn build_content(m: &ChatMessage, target: OpenAiTarget) -> Value {
-    if let Some(blocks) = &m.content_blocks {
+    let blocks = blocks_of(m);
+    let has_media = blocks
+        .as_ref()
+        .map(|b| {
+            b.iter().any(|block| {
+                matches!(
+                    block,
+                    ContentBlock::Image { .. } | ContentBlock::File { .. }
+                )
+            })
+        })
+        .unwrap_or(false);
+
+    if let (true, Some(blocks)) = (has_media, blocks.as_ref()) {
         let parts: Vec<Value> = blocks
             .iter()
             .filter_map(|block| convert_content_block(block, target))
@@ -97,21 +110,13 @@ fn build_content(m: &ChatMessage, target: OpenAiTarget) -> Value {
             return json!(parts);
         }
     }
-    if let Some(blocks) = parse_content(&m.content) {
-        let has_media = blocks
-            .iter()
-            .any(|b| matches!(b, ContentBlock::Image { .. } | ContentBlock::File { .. }));
-        if has_media {
-            let parts: Vec<Value> = blocks
-                .iter()
-                .filter_map(|block| convert_content_block(block, target))
-                .collect();
-            if !parts.is_empty() {
-                return json!(parts);
-            }
-        }
+
+    // 无媒体时保持字符串形状（部分第三方兼容端点只接受字符串 content）；
+    // 正文一律从块里取纯文本，避免把 ContentBlock JSON 字面量发给模型。
+    match blocks {
+        Some(blocks) => json!(plain_text_of(&blocks)),
+        None => json!(m.content),
     }
-    json!(m.content)
 }
 
 pub(crate) fn convert_tools(tools: &[ToolSpec]) -> Vec<Value> {
@@ -301,9 +306,25 @@ mod tests {
             ],
         );
         let out = convert_messages(&[msg], OpenAiTarget::ChatCompletions);
-        let parts = out[0]["content"].as_array().unwrap();
-        assert_eq!(parts.len(), 1);
-        assert_eq!(parts[0]["type"], json!("text"));
+        // 纯文本块走字符串形状：Thinking 块不进入出站内容，也不会产出空对象
+        assert_eq!(out[0]["content"], json!("hi"));
+    }
+
+    #[test]
+    fn json_text_block_array_is_sent_as_plain_string() {
+        let msg = ChatMessage {
+            role: MessageRole::User,
+            content: r#"[{"type":"text","text":"你好"}]"#.to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            is_error: false,
+            thinking_signature: None,
+            content_blocks: None,
+        };
+        let out = convert_messages(&[msg], OpenAiTarget::ChatCompletions);
+        assert_eq!(out[0]["content"], json!("你好"));
+        assert!(!out[0]["content"].as_str().unwrap().contains("\"type\""));
     }
 
     #[test]

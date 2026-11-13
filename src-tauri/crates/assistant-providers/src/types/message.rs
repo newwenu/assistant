@@ -131,3 +131,23 @@ pub fn parse_content(content: &str) -> Option<Vec<ContentBlock>> {
         .ok()
         .filter(|b| !b.is_empty())
 }
+
+/// 统一取数：优先内存缓存 `content_blocks`，否则解析 `content` 里的 JSON 块。
+/// 返回 `None` 表示该消息是存量纯文本，调用方应原样使用 `content`。
+pub fn blocks_of(m: &ChatMessage) -> Option<Vec<ContentBlock>> {
+    m.content_blocks
+        .clone()
+        .or_else(|| parse_content(&m.content))
+}
+
+/// 拼接全部 `Text` 块，供「纯文本出站形状」使用；非文本块不参与。
+pub fn plain_text_of(blocks: &[ContentBlock]) -> String {
+    blocks
+        .iter()
+        .filter_map(|b| match b {
+            ContentBlock::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}

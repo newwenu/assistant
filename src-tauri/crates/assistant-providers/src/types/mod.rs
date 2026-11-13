@@ -11,8 +11,8 @@ pub use config::{
     SseLogConfig, StreamTimeoutConfig,
 };
 pub use message::{
-    message_role_from_str, parse_content, ChatMessage, ContentBlock, ContentBlockType,
-    FileAttachmentRef, ImageAttachmentRef, MessageRole,
+    blocks_of, message_role_from_str, parse_content, plain_text_of, ChatMessage, ContentBlock,
+    ContentBlockType, FileAttachmentRef, ImageAttachmentRef, MessageRole,
 };
 pub use tool::{ToolCall, ToolSpec};
 pub use unified::{
