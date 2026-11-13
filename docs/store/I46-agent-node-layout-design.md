@@ -5,8 +5,8 @@
 | 状态 | Draft（设计文档，不记录实施进度） |
 | 日期 | 2026-11-13 |
 | 取代 | [I46 紧凑消息格式设计](./I46-agent-compact-message-format-design.md)（保留为参考记录，不再作为权威源；其信封 / 省略 / 落盘 / 预算结论仍然有效，见 §9） |
-| 关联 | [I18 工具架构 ADR](./I18-agent-tool-architecture-design.md)、[I38 阶段总纲](./I38-agent-roadmap.md)（阶段与门禁唯一入口）、[I36a 内核能力基线](./I36a-agent-kernel-baseline.md)（turn 事件不变式）、[I36b 内核一致性规格](./I36b-agent-kernel-conformance-spec.md)、[I38f 子 Agent 规格](./I38f-agent-subagent-spec.md)（独立会话坐标空间） |
-| 影响范围 | 设计层：定义 agent 输出的**节点形态**（节点 = 行、turn = 容器）、**坐标持久化**、**容器归属**、**分组投影**、**折叠密度**、**挂载单位**。新增 `MessageDto` 两个坐标字段与两列存储；不改 turn 事件语义、不改分支链拓扑、不改工具结果信封 |
+| 关联 | [I46 节点布局规格](./I46-agent-node-layout-spec.md)（实施落地：字段、SQL、写路径、切片、门禁用例）、[I18 工具架构 ADR](./I18-agent-tool-architecture-design.md)、[I38 阶段总纲](./I38-agent-roadmap.md)（阶段与门禁唯一入口）、[I36a 内核能力基线](./I36a-agent-kernel-baseline.md)（turn 事件不变式）、[I36b 内核一致性规格](./I36b-agent-kernel-conformance-spec.md)、[I38f 子 Agent 规格](./I38f-agent-subagent-spec.md)（独立会话坐标空间） |
+| 影响范围 | 设计层：定义 agent 输出的**节点形态**（节点 = 行、turn = 容器）、**坐标持久化**、**容器归属**、**分组投影**、**折叠密度**、**挂载单位**。新增 `MessageDto` 两个坐标字段与两列存储；给两个**既有**事件载荷各加一个只读 `turnIndex`（不新增事件、不改事件语义）；不改分支链拓扑、不改工具结果信封。前置依赖见 §1.4 |
 
 > 本文只回答六件事：一个 agent 节点**凭什么知道自己属于哪一轮**（坐标）；**谁拥有 chrome 与折叠**（容器）；节点**如何被聚合与收起**（分组投影）；一个多迭代 turn **占多少高度**（密度）；节点**按什么单位挂载与分页**（窗口化）；**两类 mode（有工具 / 普通 chat）如何共用同一套形态**（链路只在容器层判定）。
 >
@@ -54,6 +54,16 @@
 
 非目标：不改 turn 事件语义（`turn_id` / `seq` 单调 / 终态唯一，见 I36a）；不改分支链拓扑与压缩投影；不改工具结果信封、省略口径、落盘生命周期（§9）；不为「省 token」引入摘要；不做「会话即文档」的整体重排；不在本文定义虚拟化实现与分页命令（§2.10 只给约束）；**不按 `modeId` / `TurnKind` 在渲染层分叉**（D13）。
 
+### 1.4 前置依赖（本文生效条件）
+
+| # | 依赖 | 现状 | 缺失后果 | 处置 |
+|---|---|---|---|---|
+| P1 | 参考记录的 `compact` 展示投影（`head` / `truncated` / `persisted` / `errorKind` / `anchor`） | **未落地**：`ToolCallView` 只有 `callId` / `name` / `status` / `arguments` / `argsText` / `resultText` / `startedAt` / `finishedAt` / `approval` / `question` / `errorKind` / `confirmationWaitMs`；后端无 `ToolResultCompactDto` | 单行拿不到「对象 + 规模」，D4 表格第 3 列与门禁 9 无法按原样实现 | 单行**先行降级**为「工具名 + `summarizeArguments` + 状态 + 耗时」，规模与锚点两列**省略而非伪造**（D4 / 门禁 9）；`compact` 落地后仅替换 `head` 取值，形态不变 |
+| P2 | 消息写入事务化 | **未落地**：`insert_chat_messages` 与压缩摘要写入各自多次 `insert_message` + `update_*`，无外层事务 | `next_turn_index` 与消息行可能不同步（计数器递增成功、消息写入失败 → 序号空洞；反序 → 重复序号） | 由 D2 约束 6 要求：所有写路径必须在同一事务内完成「取号 → 写行 → 递增」 |
+| P3 | 分页按 turn 聚合 | **未落地**：`get_messages_paginated` 按 `timestamp < cursor` 取消息页 | 跨页切开 turn（G6）；只能靠 §2.10 约束 1 的兜底 | 允许先按 §2.10 约束 1 兜底（切开的边界组落 `unresolved` 并禁用折叠），turn 游标命令归独立议题（OQ12） |
+
+> P1 决定**单行的信息量**，P2 决定**坐标的正确性**，P3 决定**跨页形态**。三者都不阻塞「坐标落库 + 容器归属」这批主干的实施顺序，但都必须在规格文档里写成显式降级分支，不能当成「已经有了」。
+
 ---
 
 ## 2 决策
@@ -84,21 +94,53 @@
 ```rust
 pub struct MessageDto {
     // ...既有字段
-    /// 会话内单调 turn 序号（从 1 起）。`null` = 未知（旧数据 / 压缩摘要 / 子 agent 未对齐）。
+    /// 会话内单调 turn 序号（从 1 起）。`null` = 未知（旧数据 / 未确认的乐观行 / 子 agent 未对齐）。
     pub turn_index: Option<u32>,
-    /// turn 内迭代序号（从 1 起）。`0` = 非迭代行（user / tool / 压缩摘要）。
+    /// turn 内迭代序号（从 1 起）。`0` = 非迭代行（user / 压缩摘要）。
     pub iteration: u32,
 }
 ```
 
-六条硬约束：
+`iteration` 的口径按「行是否属于某次模型调用」划分，不按 `role` 划分：
+
+| 行 | `iteration` | 理由 |
+|---|---|---|
+| `user` | `0` | 不发起模型调用 |
+| `assistant`（某次迭代的正文 / 推理） | `≥ 1`，等于该次迭代 | 一迭代一行（F4） |
+| `tool` | `≥ 1`，等于**发起该调用的那次迭代** | 与 `AgentToolCallDto.iteration` 逐条相等（门禁 1），否则事件与落库无法比对 |
+| `compact_summary` | `0` | 不属任何迭代（坐标见 OQ3 的默认值） |
+
+**tool 行不写 `0`**：它的坐标是「所属迭代」，不是「非迭代行」。它仍不参与渲染（F8 过滤），但坐标必须与事件一致——这是门禁 1 唯一可验证的形式。
+
+七条硬约束：
 
 1. **不复用 kernel `turn_id`**。它是进程内代际 id（F1），重启后与旧值重复，拿它当持久坐标会让「上一轮」与「这一轮」同 id。
 2. **`turnIndex` 是逻辑序号，不是存储槽位**。只用于排序与分组，**禁止**用 `turnIndex + 1` 推算「下一轮」——删除、压缩、分支切换都会让它稀疏。
 3. **坐标是事实，不是推断**。渲染层不得从 `role` / `parentId` / `timestamp` / 消息相邻关系推导 turn；缺坐标一律落 `unresolved` 组，该组不折叠（宁可平铺，不可错并）。
-4. **user 行也带坐标**：它开启一轮，`turnIndex = 新值`、`iteration = 0`。这样「一轮从哪开始」不依赖 role 扫描。
-5. **坐标不区分链路**。chat 链路同样写 `turnIndex`（每轮一个新值），`iteration` 恒 `1`（chat 单缓冲即整轮一条，见 I38d §3.7），正好落进「`iteration >= 1` 是 assistant 行」的口径。**只给 agent 写坐标是错误实现**：chat 行会全部落 `unresolved`，按约束 3 一律平铺不折叠，`TurnTail` 定位不到轮，chrome 静默回落成逐气泡——形态没变、也不报错，属于最难发现的失效。
-6. **写路径唯一**：坐标由内核在落库时写入（`turn_index` 由会话内计数器分配），事件里的 `iteration` 与落库值逐字段相等；前端不参与分配。
+4. **user 行也带坐标**：它开启一轮，`turnIndex = 新值`、`iteration = 0`。这样「一轮从哪开始」不依赖 role 扫描。**唯一的例外是「分支点重生成」**：`insert_on_branch` 在 `branch_point.role == "assistant"` 时只插一条 assistant 行、不插 user 行（现状），此时新行**继承分支点所在 turn 的 `turnIndex`**，并在该 turn 内分配新的 `iteration`（不新开一轮、不落 `unresolved`）。若不写这条规则，重生成会凭空多出一轮或整段平铺。
+5. **坐标不区分链路**。chat 链路同样写 `turnIndex`（每轮一个新值），`iteration` 恒 `1`（chat 单缓冲即整轮一条，见 I38d §3.7），落在「`iteration >= 1` = 属于某次迭代的行」口径内。**只给 agent 写坐标是错误实现**：chat 行会全部落 `unresolved`，按约束 3 一律平铺不折叠，`TurnTail` 定位不到轮，chrome 静默回落成逐气泡——形态没变、也不报错，属于最难发现的失效。
+6. **写路径必须全部覆盖，且在事务内**。生产写入点共 5 处 + 1 处整表复制，缺一处就会产生无坐标行：
+
+| 写路径 | 现状 | 要求 |
+|---|---|---|
+| `cmd/chat/insert.rs` `insert_normal_append`（user + assistant） | 两次 `insert_message`，无事务 | 同一事务内：取号 → 写 user（`iteration = 0`）→ 写 assistant（`iteration = 1`）→ 递增计数器 |
+| `cmd/chat/insert.rs` `insert_on_branch`（分支点 user） | 两次 `insert_message`，无事务 | 同上（新开一轮） |
+| `cmd/chat/insert.rs` `insert_on_branch`（分支点 assistant） | 一次 `insert_message`，无事务 | 同一事务内：读分支点 `turn_index` → 该 turn 内 `iteration = max(iteration)+1`（仅在该 turn 内允许，见约束 2 的例外说明） |
+| `adapters/message_store.rs` `create_assistant_message`（agent 迭代行） | 单次写入 | 同一事务内：读当前 turn 的 `turn_index` → `iteration = 传入值` → 写行 |
+| `adapters/message_store.rs` `append_tool_message`（tool 行） | 单次写入 | 同一事务内：写行，`turn_index` / `iteration` 取发起调用的迭代 |
+| `cmd/compaction.rs` 摘要行 | 单次写入 | 同一事务内：写行，坐标取 OQ3 的默认值 |
+| `conversations::duplicate_conversation` | 整表复制 | 原样复制 `turn_index` / `iteration`，并复制 `next_turn_index`（不重排） |
+
+约束 2 的例外：**`turnIndex` 的唯一合法算术是「同一 turn 内 `iteration` 递增」**，跨 turn 一律取会话计数器新值，禁止 `max(turn_index) + 1`。
+
+7. **实时坐标必须随事件下发，不能等终态快照**。坐标在落库时生成，而 `chat-stream-start` 每 turn 只发一次、`chat-delta` 只带 `iteration`、`chat-user-message-confirmed` 只带 id/content——若不加字段，流式期间当前 turn 恒 `unresolved`，chrome 会先逐气泡、turn 结束再一次性跳到 `TurnTail`（可见跳变）。因此给两个**既有**载荷各加一个只读字段：
+
+| 载荷 | 新增字段 | 来源 |
+|---|---|---|
+| `ChatUserMessageConfirmedPayloadDto` | `turnIndex: u32` | user 行落库时分配的值 |
+| `ChatStreamStartPayloadDto` | `turnIndex: u32`、`iteration: u32`（= 1） | 该 turn 的首个 assistant 行 |
+
+turn 内后续迭代**不新增事件**：前端用「本 turn 已知的 `turnIndex`（来自 `chat-stream-start`）+ 事件自带的 `iteration`」给新开的段赋坐标——两个分量都是 wire 事实，不是相邻关系推断（不违反约束 3）。turn 结束后以 `chat-messages-changed` 的落库坐标为准，两者必须逐条相等（门禁 17）。
 
 收益：F3 的内存 Map 从「唯一真源」降级为「加速缓存」——刷新后可由历史重建，`adoptSegment` 退化为可选优化。
 
@@ -119,7 +161,15 @@ pub struct MessageDto {
 
 - **身份行判据不是「turn 首节点」**：turn 首节点是 user 行，而身份行只对 assistant 生效（现状 `isAssistant && showIdentity`）。判据必须是「本 turn 内首个 assistant 节点」；`compact_summary`（边界行）既不吃身份行，也不吃 `TurnTail`，保留自身渲染。
 - **`TurnTail` 只承接 assistant 侧收尾**：user 行的时间戳与编辑 / 删除留在 user 节点上，不随 `TurnTail` 搬走。`MessageActions` 是 user / assistant 共用组件，**按侧分治**，不是整组上移。
-- **chrome 是视图，不是数据**。`TurnTail` 只读 turn 末节点的 id 与 status，不新增消息行，不改变分支链。
+- **chrome 是视图，不是数据**。`TurnTail` 只读**锚点行**的 id 与 status，不新增消息行，不改变分支链。锚点定义必须精确：
+
+| 优先级 | 锚点 | 说明 |
+|---|---|---|
+| 1 | turn 内**最后一条有正文的 `settled` assistant 回复行** | 与参考项目的 `turn-tail` 口径一致；复制 / 删除 / 重新生成都以「结论」为目标 |
+| 2 | 该 turn 内最后一个 assistant 节点（无回复行时，如纯工具失败轮 / 被中断的空正文轮） | 保证中断与失败轮仍有操作入口 |
+| 3 | 无 assistant 节点 → 不渲染 `TurnTail` | 守卫分支；user-only 的轮（若存在）不产生收尾 |
+
+**禁止**用「turn 末节点」当锚点：末节点可能是 tool 行（被 `role !== "tool"` 过滤掉、不在可见列表里）、过程行或边界行，按位置取会把操作挂到看不见的行上，或挂到 `compact_summary` 上。时间戳取锚点行的 `timestamp`（与现状「显示该气泡时间」语义一致）。
 
 另：**不删除任何操作能力**，只改挂载位置。行内的编辑 / 删除仍可在 hover 时出现，但**不常驻**。
 
@@ -135,15 +185,16 @@ pub struct MessageDto {
 
 单行的字段映射（全部来自结构化字段，无一读正文）：
 
-| 元素 | 来源 | 缺失时 |
-|---|---|---|
-| 状态图标 | `view.status` | — |
-| 工具名 | `view.name` | — |
-| 对象 + 规模 + 成败 | `compact.head` | `compact == null`（旧数据）→ `summarizeArguments(view.arguments)`（现有实现） |
-| 耗时 | `view.startedAt` / `finishedAt` | 省略 |
-| 文档位置引用 | `compact.anchor` | 省略（见 D12） |
+| 元素 | 来源（`compact` 已落地） | 来源（`compact` 未落地，当前现状 P1） | 缺失时 |
+|---|---|---|---|
+| 状态图标 + 成败 | `view.status` / `compact.errorKind` | `view.status` / `view.errorKind`（两者均已存在） | 图标取 `status`；`errorKind` 为 `null` 时不显示分类 |
+| 工具名 | `view.name` | `view.name` | — |
+| 对象 | `compact.head` | `summarizeArguments(view.arguments)`（现有实现） | `summarizeArguments` 返回 `null` → 只显示工具名 |
+| 规模（行数 / 字节 / 命中数） | `compact.head` | **省略** | 不得从 `resultText` 现算（门禁 8），也不得猜 |
+| 耗时 | `view.startedAt` / `finishedAt` | 同左 | 任一为 `null` → 省略 |
+| 文档位置引用 | `compact.anchor` | **不存在** → 省略 | 见 D12 |
 
-理由：F7 证明现状卡片无法压成一行；`compact.head` 就是为此存在的结构化字段（§9）。
+理由：F7 证明现状卡片无法压成一行；`compact.head` 是为「对象 + 规模」存在的结构化字段（§9）。**`compact` 未落地时单行信息量下降，但形态不变**——单行退化为「工具名 + 参数摘要 + 状态 + 耗时」，规模一列留白。这一列不允许用「截断正文前 N 字」或「现场统计字节」填补：前者不准且不稳定，后者违反门禁 8。
 
 ### 2.5 D5 折叠只折过程，任何回复行永不折叠
 
@@ -165,15 +216,21 @@ pub struct MessageDto {
 
 ### 2.7 D7 相位由 transcript 边界驱动，不用定时器
 
-group 带 `phase: collecting | settling | settled`：
+group 带 `phase: collecting | settled`：
 
-| 相位 | 触发 | 渲染 |
+| 相位 | 触发（唯一来源） | 渲染 |
 |---|---|---|
-| `collecting` | turn 正在运行 | 不折叠，逐行展开 |
-| `settling` | turn 收到终态事件、尚未渲染完成 | 保持展开（避免内容在用户眼前塌缩） |
-| `settled` | 终态事件已渲染完毕 | 允许折叠 |
+| `collecting` | turn 正在运行（`session-state-changed` 的 `Processing`） | 不折叠，逐行展开 |
+| `settled` | **终态事件已应用**：收到 `session-state-changed` 的 `Idle` / `Error`，且该 turn 的终态 `chat-messages-changed` 已并入 store | 允许折叠（仍需用户显式操作） |
 
-`settled` 只由 **turn 终态事件**（`Completed` / `Interrupted` / `Failed`）驱动，**不得**用「流静默 N 秒」或定时器判定：静默可能只是工具执行中，定时器还会引入生命周期与重叠控制。
+**只有两个相位**：参考项目里的第三态（`settling`，即「终态已到、渲染未完成」）在本仓**不成立也不需要**——本仓的终态事件顺序是「先 `chat-messages-changed`、后 `session-state-changed`」，看到 `Idle` 时快照必然已并入；而且折叠**默认不自动触发**（OQ11），不存在「内容在用户眼前塌缩」这一风险，所以不需要一个「等渲染完成」的中间态。
+
+两条禁令：
+
+1. **不得**用「流静默 N 秒」或定时器判相位：静默可能只是工具执行中，定时器还会引入生命周期与重叠控制。
+2. **不得**用「渲染完成」（`useEffect` 之后 / 下一帧）作为判据：它不可观测、不可测试，且与数据无关。
+
+若将来启用「settled 后自动收起」（OQ11 的可选设置），届时才引入第三态 `settling`，且其判据必须是**可观测的用户信号**（该组已在视口内且用户未与其交互），仍不得用定时器。
 
 ### 2.8 D8 安全阀：需要用户动作的节点不折叠
 
@@ -208,6 +265,8 @@ group 带 `phase: collecting | settling | settled`：
 > **`head` 必须能独立表达「对象 + 规模 + 成败」**，否则单行退化回「截断正文前 N 字」，既不准也不稳定。
 
 这是布局对信封的唯一反向约束；信封其余部分与布局正交。
+
+**当前状态：该投影尚未落地**（见 §1.4 P1）。因此 D4 的单行在实现时必须走降级分支（工具名 + `summarizeArguments` + 状态 + 耗时），`head` / `anchor` 两列省略；待 `compact` 落地后只替换取值、不改形态。**不得**为了「让单行好看」在渲染层自行拼 head。
 
 ### 2.12 D12 文档锚点是节点的一种行形态
 
@@ -254,7 +313,7 @@ group 带 `phase: collecting | settling | settled`：
 pub struct MessageDto {
     // ...既有字段
     pub turn_index: Option<u32>,   // 会话内单调，从 1 起；null = unresolved
-    pub iteration: u32,            // turn 内迭代，从 1 起；0 = 非迭代行
+    pub iteration: u32,            // turn 内迭代，从 1 起；0 = 非迭代行（user / 压缩摘要）
 }
 ```
 
@@ -263,11 +322,30 @@ pub struct MessageDto {
 | 列 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `turn_index` | `INTEGER` | `NULL` | 旧行为 `NULL`，不猜测回填（§7 OQ1） |
-| `iteration` | `INTEGER NOT NULL` | `0` | user / tool / 摘要行为 `0` |
+| `iteration` | `INTEGER NOT NULL` | `0` | user / `compact_summary` 为 `0`；assistant / tool 行为所属迭代（`>= 1`，见 D2 口径表） |
 
 节点坐标 = `(turnIndex, iteration, callId?)`；`callId` 仅过程行需要，回复行取迭代级。排序键 = `(turnIndex, iteration, 节点类顺序, callId 首次出现顺序)`，其中节点类顺序固定为 `reasoning < reply < process < boundary`。
 
 **不得**用 `turnIndex` 做算术推算（D2 约束 2）；稀疏是合法状态。
+
+**排序的 SQL 落点**（现状所有查询都按 `timestamp ASC, rowid ASC`，新键必须给出 `NULL` 的落位，否则旧数据会被排到最前或最后）：
+
+```sql
+ORDER BY (turn_index IS NULL) ASC,   -- 有坐标的行在前，unresolved 行整体垫底
+         turn_index ASC,
+         iteration ASC,
+         timestamp ASC,
+         rowid ASC                    -- 同迭代同时间戳的稳定兜底
+```
+
+| 位置 | 现状 | 要求 |
+|---|---|---|
+| `msg_ops::get_messages` | `ORDER BY timestamp ASC, rowid ASC` | 改为上表排序键 |
+| `msg_ops::get_messages_paginated` | `WHERE timestamp < ?2 ORDER BY timestamp DESC LIMIT ?3` | 游标改为 `(turn_index, iteration, timestamp, rowid)` 四元组；`turn_index IS NULL` 段单独成页（P3 / OQ12） |
+| `branch::trace_active_branch` | 按父链逐级 `SELECT`，结果顺序由链决定 | 链顺序即 turn 顺序的**唯一权威**；坐标只做校验，不做拓扑 |
+| 索引 | `idx_messages_conv_ts (conversation_id, timestamp)` | 新增 `idx_messages_conv_coord (conversation_id, turn_index, iteration)`；旧索引保留（按时间排序的导出 / 搜索仍在用） |
+
+> 分页查询现状**不按 `active_branch_id` 过滤**（分支树由 `trace_active_branch` 另行求），改 turn 游标不会修正这一点；它是既有偏差，不在本文处理，但规格里必须写成已知限制，避免被误认为「新形态引入」。
 
 ### 3.2 容器归属表
 
@@ -291,7 +369,7 @@ pub struct MessageDto {
 interface NodeGroupView {
   turnIndex: number | null;
   nodes: NodeView[];
-  phase: "collecting" | "settling" | "settled";
+  phase: "collecting" | "settled";
   isLastGroupInTurn: boolean;
   needsAttention: boolean;
   /** 只读容器属性，仅供断言与调试；禁止参与形态 / 折叠决策（D13）。 */
@@ -347,38 +425,47 @@ interface NodeGroupView {
 - 组只包**过程行**；回复行按原序穿插显示，不进入组内；
 - 步行点击 → 就地展开该步卡片，不展开整组；
 - 组头字段全部可算：步数 = 过程行数、耗时 = 首末节点时间差、失败数 = `status` 统计。
+- 上图中的「120 行」「12 命中」「第 40-52 行」来自 `compact.head` / `compact.anchor`；**P1 未落地时这三列整列省略**，步行退化为「✓ read src/a.ts · 40ms」（D4），不得用正文截断代替。
 
 ### 3.6 落地位置
 
 | 位置 | 改动 | 不改 |
 |---|---|---|
-| `MessageList` | 新增 `groupNodeRows(messages)` 纯函数 + `TurnTail` | `role !== "tool"` 过滤、流式滚动逻辑 |
+| `MessageList` | 新增 `groupNodeRows(messages, link)` 纯函数 + `TurnTail`；**props 增加 `link: "chat" \| "agent"`**（由 `ConversationFrame` / `ConversationView` 从 `route.link` 透传） | `role !== "tool"` 过滤、流式滚动逻辑 |
 | `MessageBubble` | `showIdentity` 判据改为「本 turn 内首个 assistant 节点」；`toolCalls.map` 换成 `NodeRow` 渲染 | 正文 markdown、reasoning、error / retry 行为、`compact_summary` 渲染 |
-| `TurnTail` | 新增：只承接 assistant 侧时间戳 / 操作 / 分支 | user 侧 chrome 不动 |
+| `TurnTail` | 新增：只承接 assistant 侧时间戳 / 操作 / 分支，锚点按 D3 三级优先级 | user 侧 chrome 不动 |
 | `ToolCallRenderer` | 单点选路（卡片 / 单行 / 文档引用） | 不读 `role` / `modeId` / `TurnKind` / 工具名 |
-| `agentSegments` | 保留（仍是写入侧的段表） | **不因折叠而改**；坐标持久化后它降级为缓存 |
-| 后端 | `turn_index` 分配与落库、`MessageDto` 映射、`conversation_utils` 注入；**chat 链路同样写坐标** | 事件语义、分支拓扑、结果信封、`resolveConversationRoute` 判定口径 |
+| `agentSegments` | 保留（仍是写入侧的段表）；新增「本 turn `turnIndex`」的会话级缓存，供流式期赋坐标 | **不因折叠而改**；坐标持久化后它降级为缓存 |
+| `protocol/dto/chat.rs` | `MessageDto` 加 `turn_index` / `iteration`；`ChatUserMessageConfirmedPayloadDto` 加 `turnIndex`；`ChatStreamStartPayloadDto` 加 `turnIndex` / `iteration` | 既有字段语义、事件名、`seq` 语义 |
+| `protocol/dto/branch.rs` | `ChatMessagesChangedPayloadDto` 不变（坐标随 `MessageDto` 走） | — |
+| 后端·分配 | 新增 `conversations.next_turn_index` 与「取号 → 写行 → 递增」的事务化辅助函数（唯一入口） | 事件语义、分支拓扑、结果信封、`resolveConversationRoute` 判定口径 |
+| 后端·写路径 | D2 约束 6 的 7 条路径全部改为走该入口；`conversation_utils` 映射坐标 | 压缩投影、`is_full` 判定 |
+| 后端·读取 | `msg_ops` 排序键与索引（§3.1） | `trace_active_branch` 的拓扑求法 |
+
+`groupNodeRows` 的签名必须带 `link`：`NodeGroupView.link` 是容器属性快照，投影函数若只收 `messages` 就拿不到它，会退化成「渲染层自己去读 store」，等于把链路判定重新散开（违反 D13 单点原则）。`link` 只写入投影对象、**不参与任何分支**。
 
 ### 3.7 迁移与兼容
 
 - **旧数据不回填坐标**（倾向，见 OQ1）：`turnIndex = null` → `unresolved` 组 → 平铺渲染、不折叠、不报错。理由是「回填值」与「真实值」不可区分，会让错误的 turn 边界变成不可证伪的事实。
+- **存量会话的新形态收益为零，且这是显式取舍**：所有历史轮都无坐标，因此永远平铺、永不折叠。验收口径必须写成「新形态只对**上线后新增的轮**生效」，不得把「历史会话仍逐气泡」记为缺陷。若产品要求历史也享受折叠，唯一合法路径是「一次性离线回填 + 标记来源」（OQ1 的另一分支），不得在渲染层猜。
 - **旧前端兼容**：新字段为可选，旧前端忽略后行为与今天一致（逐气泡）。
+- **压缩摘要行的坐标是已知未定项**（OQ3）：默认 `turnIndex = null` 会让「含压缩摘要的那一段」落 `unresolved`，从而**平铺不折叠**——即被压缩过的会话会有一段不享受折叠。这是显式取舍（宁可平铺，不可把摘要误并进某个 turn）；若 OQ3 改为「归属被压缩的 turn」，则须同时保证该 turn 内 `iteration` 不冲突。
 - **契约**：DTO 改动后必须 `npm run contract:gen` 并提交生成物（`src/types/protocol.contract.ts`）。
-- **DB**：pragma 守卫的 `ALTER TABLE` 自动补齐存量库，不阻塞启动。
+- **DB**：pragma 守卫的 `ALTER TABLE` 自动补齐存量库，不阻塞启动；`next_turn_index` 的初始值必须是 `1`，**不得**初始化为 `max(turn_index)+1`（旧库没有该列时无法算出，也不需要——旧行不参与新分配）。
 
 ---
 
 ## 4 门禁
 
-1. **坐标一致**：落库 `turn_index` / `iteration` 与事件 `turn_id` / `iteration` 逐条对应；`turn_id` 只作进程内代际校验，不参与持久化。
+1. **坐标一致**：落库 `turn_index` / `iteration` 与事件逐条对应——`assistant` 行对 `chat-delta` / `chat-stream-start` 的 `iteration`，`tool` 行对 `agent-tool-call` 的 `iteration`（tool 行**不写 `0`**）；`turn_id` 只作进程内代际校验，不参与持久化。
 2. **重启等价**：同一会话重启前后，节点分组、顺序、chrome 数量逐项相等（覆盖 F3 的失忆场景）。
 3. **禁用启发式**：渲染层不得从 `role` / `parentId` / `timestamp` 推导 turn；测试须覆盖「两个相邻 turn 都是 assistant 行且无坐标差异」时**不被合并**。
 4. **回复行不折**：任何含正文的节点永不进入折叠组；测试须覆盖「结论给出后仍继续迭代一次」，结论仍在视口内（§8.2 的真实故障形态）。
 5. **折叠纯投影**：折叠前后 `messages` 数组、wire、落库逐项不变；展开后节点顺序与 `id` 与折叠前一致。
-6. **相位不靠定时器**：`phase` 只由 turn 终态事件改变；测试注入长时间静默不改变 `phase`。
+6. **相位不靠定时器**：`phase` 只有两个取值，`settled` 只在「终态 `chat-messages-changed` 已并入 store 且 `session-state-changed` 为 `Idle` / `Error`」时置位；测试注入长时间静默、以及「终态事件已到但快照未并入」都不改变 `phase`。
 7. **安全阀**：`running` / `error` / `awaiting_user` / `boundary` 一律不折叠；组头须显示待处理数。
 8. **收起态不读正文**：收起态不得调用 `parsePersistedOutput` / `resultStats` / markdown 解析（用 spy 断言零调用）。
-9. **单行可读**：`compact == null` 时单行退化为 `summarizeArguments`，不得渲染为空行。
+9. **单行可读**：`compact == null`（即 P1 未落地的全部现状数据）时单行退化为「工具名 + `summarizeArguments` + 状态 + 耗时」，不得渲染为空行，也不得为凑信息量去解析 `resultText`（规模列留白，见 D4）。
 10. **跨页不重建**：分页边界不得合并「非持久化相邻」的同 turn 节点；`unresolved` 组不折叠。
 11. **选路不看身份**：`ToolCallRenderer` 不读 `role` / `modeId` / `TurnKind` / 工具名；测试覆盖「同一 turn 内一个节点有锚点、一个没有」。
 12. **无新增 wire 负担**：除坐标两字段外，分组与折叠**不产生任何 wire 字段**。
@@ -386,6 +473,10 @@ interface NodeGroupView {
 14. **旧数据可用**：无坐标历史正常渲染（单轮平铺、不折叠、不报错）。
 15. **退化等价**：chat 链路、以及 agent 链路中「单轮、零工具」的 turn，在节点布局下的渲染必须与现状**逐项一致**（快照比对：时间戳位置、`MessageActions`、`BranchPicker`、身份行显隐、`compact_summary` 渲染）。这条锁死「节点布局不得顺手改 chat 外观」，也是 D13 唯一可验证的形式。
 16. **节点层零读链路**：`groupNodeRows` 及其下游不得读 `modeId` / `link` / `TurnKind` 做形态或折叠决策（用 spy 或源码断言）；`NodeGroupView.link` 只许出现在断言里。
+17. **流式期坐标不跳变**：流式进行中，当前 turn 的节点必须**已有** `turnIndex`（来自 `chat-stream-start` / `chat-user-message-confirmed`）与 `iteration`（来自 `chat-delta`），不得出现「流式期平铺 → 终态瞬间成组」；turn 结束后落库坐标与流式期坐标逐条相等。
+18. **写路径无遗漏**：D2 约束 6 表中 7 条路径全部产出坐标行——用「新建会话 → chat 一轮 → agent 多迭代含工具一轮 → 分支重生成 → 压缩 → 复制会话」一条端到端用例断言「不存在 `turn_index IS NULL` 的新行」。
+19. **事务原子性**：注入「消息写入失败」时，`next_turn_index` 不得递增（无序号空洞）；注入「计数器更新失败」时消息不得落库。测试用回滚断言，不允许出现「行已写入但计数器未变」的中间态。
+20. **分支重生成不新开轮**：`branch_point.role == "assistant"` 的重生成，新行 `turn_index` 等于分支点所在 turn（门禁 2 的分组不变），`iteration` 在该 turn 内递增（D2 约束 4 的例外）。
 
 ---
 
@@ -415,12 +506,15 @@ interface NodeGroupView {
 
 ## 6 影响
 
-- **契约**：`MessageDto` 新增 `turnIndex`（`Option<u32>`）与 `iteration`（`u32`），无删除；旧前端忽略即退化为现状。运行 `npm run contract:gen` 后提交 `src/types/protocol.contract.ts`。
-- **存储**：`messages` 表加两列（pragma 守卫），`conversations` 表加 `next_turn_index` 计数器（同事务递增），`msg_ops` 读写映射同步。
-- **后端**：`conversation_utils` 注入坐标；`MessageToolCallDto` 不新增 `iteration`（其归属由所在行的 `iteration` 决定）；**chat 与 agent 两条链路都写坐标**（D2 约束 5），写路径唯一，不做链路分支。
-- **前端·形态**：`MessageList` 新增 `groupNodeRows` 纯函数与 `TurnTail`；`MessageBubble` 的 chrome 迁出、`showIdentity` 改读坐标；`ToolCallRenderer` 单点选路。**两条链路共用同一套渲染，chat 靠数据天然退化**（D13），不新增链路分支。
-- **前端·密度**：组头 + 步行 + 组外回复行；收起态只读 `compact.head` 与 `view` 元数据。
-- **测试**：坐标持久化与重启等价、启发式禁用、回复行不折、折叠可逆、相位非定时器、安全阀四类反例、收起态零正文读取、跨页不重建、旧数据平铺、**chat / agent 单轮零工具的退化等价快照**、**节点层零读链路**，各一组。
+- **契约**：`MessageDto` 新增 `turnIndex`（`Option<u32>`）与 `iteration`（`u32`）；`ChatUserMessageConfirmedPayloadDto` 新增 `turnIndex`、`ChatStreamStartPayloadDto` 新增 `turnIndex` / `iteration`（D2 约束 7，均为只读新增、无删除、无事件名变化）；旧前端忽略即退化为现状。运行 `npm run contract:gen` 后提交 `src/types/protocol.contract.ts`。
+- **存储**：`messages` 表加两列（pragma 守卫），新增 `idx_messages_conv_coord`（§3.1），`conversations` 表加 `next_turn_index` 计数器（初值 `1`、同事务递增），`msg_ops` 读写与排序同步。
+- **后端·写**：D2 约束 6 的 7 条写路径（chat 普通追加 / 分支 user / 分支 assistant / agent 迭代行 / tool 行 / 压缩摘要 / 会话复制）全部改为走「取号 → 写行 → 递增」的**单一事务化入口**；`conversation_utils` 映射坐标；`MessageToolCallDto` 不新增 `iteration`（其归属由所在行的 `iteration` 决定）；**chat 与 agent 两条链路都写坐标**（D2 约束 5），不做链路分支。
+- **后端·读**：`get_messages` / `get_messages_paginated` 换排序键与游标；`trace_active_branch` 仍按父链求拓扑（坐标只做校验）。
+- **前端·形态**：`MessageList` 新增 `groupNodeRows(messages, link)` 纯函数与 `TurnTail`，props 透传 `link`；`MessageBubble` 的 chrome 迁出、`showIdentity` 改读坐标；`ToolCallRenderer` 单点选路。**两条链路共用同一套渲染，chat 靠数据天然退化**（D13），不新增链路分支。
+- **前端·坐标**：新增「本 turn `turnIndex`」的会话级缓存（供流式期赋坐标），`agentSegments` 保留为写入侧段表并降级为缓存。
+- **前端·密度**：组头 + 步行 + 组外回复行；收起态只读 `compact.head` 与 `view` 元数据；`compact` 未落地时按 D4 降级（规模列留白）。
+- **测试**：门禁 1–20 各一组；其中新增的三类硬用例是「流式期坐标不跳变（17）」「7 条写路径无 `turn_index IS NULL` 新行（18）」「写失败时计数器不递增（19）」。
+- **前置依赖**：P1（`compact` 投影）、P2（写事务化）、P3（turn 分页）按 §1.4 显式降级，**不得**当成已具备能力实现。
 - **不做**：turn 事件语义、压缩投影、审批链、权限网关、分支拓扑、结果信封（§9）、分页命令与虚拟化实现（§7 OQ12）。
 
 ---
@@ -442,6 +536,9 @@ interface NodeGroupView {
 13. 虚拟化高度估算口径：按行类型常量，还是按内容测量（后者会触发正文读取，违反门禁 8）。
 14. `next_turn_index` 计数器的复位与迁移：会话删除 / fork / 分支切换后是否重算；倾向「fork 复制当前值、删除随会话一并删除、永不回退」。计数器回退会产生重复 `turnIndex`，必须显式禁止 `max()+1` 实现。
 15. chat 是否与 agent 共用同一 `groupNodeRows`：倾向**共用**（差异靠数据退化，门禁 15 保证等价），代价是 chat 也走一遍投影；替代方案是保留 chat 原路径，但那会引入两套渲染，后续必然漂移。
+16. 分支切换后「同一 turn 内的 `iteration` 是否重排」：D2 约束 4 的例外允许「分支点重生成」在同一 turn 内递增 `iteration`，但若用户在同一 turn 内多次切换分支，旧分支行仍占 `iteration` 值，导致同一 turn 内出现「同 `iteration` 不同分支」。当前倾向**不重排**（`iteration` 在 turn 内单调、不保证连续、不保证唯一），`callId` 级顺序仍由链决定；需确认是否有消费者假设「同 turn 内 `iteration` 唯一」。
+17. `compact.head` 的生成归属（P1 落地时）：由内核在生成结果时写入，还是由落库层对结果信封做一次投影？倾向**内核写入**（信封的省略口径在 I46-compact 里已定义，落库层再算会产生第二真源）；本文只依赖「它存在且不读正文」这一条。
+18. `chat-stream-start` 是否已有 `iteration`：D2 约束 7 假设它可携带首个 assistant 行的 `iteration`（= 1）。若实现上该事件在落库前发出、拿不到坐标，则退化为「`chat-stream-start` 只带 `turnIndex`，`iteration` 由首个 `chat-delta` 提供」——两种方案对投影等价，需在规格里定一种，不得两种并存。
 
 ---
 
@@ -497,7 +594,7 @@ interface NodeGroupView {
 
 | 参考记录内容 | 本文处置 |
 |---|---|
-| 三段信封（head / body / tail）、省略三态、口径分离、保留策略分裂、落盘生命周期、预算归属、`compact` wire 字段 | **保留有效**，降为 D11 的「正交收益」，本文不复述 |
+| 三段信封（head / body / tail）、省略三态、口径分离、保留策略分裂、落盘生命周期、预算归属、`compact` wire 字段 | **保留有效**，降为 D11 的「正交收益」，本文不复述；**其中 `compact` 展示投影在当前代码中尚未落地**（`ToolCallView` 无 `head` / `truncated` / `anchor`，后端无 `ToolResultCompactDto`），故按 §1.4 P1 降级实现，不得当成已具备能力 |
 | 门禁 1–12（字节相等、head 单行、三态一致、round-trip、一次传输、事件、口径分离、定位符非解析、分类可回放、清理安全、锚点结果时刻、形态不越界） | **保留有效**，仍约束信封与结果层 |
 | D10 文档形态渲染 | 降为 D12：节点行的一种形态，不再是主轴 |
 | D11 切换点（单点替换渲染函数、拒绝按 role / modeId / 整体重写） | **保留有效**，并入 D12 约束 3 与门禁 11；其中「拒绝按 `modeId` 分叉」升级为独立决策 D13（明确 chat / agent 同构、坐标不区分链路、门禁 15 退化等价） |
