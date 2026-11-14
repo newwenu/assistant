@@ -23,6 +23,7 @@ globset = { workspace = true }
 grep-searcher = { workspace = true }
 grep-regex = { workspace = true }
 tempfile = { workspace = true }
+trash = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true }

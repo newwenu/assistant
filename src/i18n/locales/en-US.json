@@ -772,7 +772,7 @@
           "edit": "Replace an exact fragment of a file",
           "mkdir": "Create a directory (parents included)",
           "move": "Move or rename a file or directory",
-          "delete": "Delete a file or directory, irreversible",
+          "delete": "Delete files or directories (moved to the recycle bin by default)",
           "ask_user": "Ask you questions mid-run and wait for answers"
         },
         "set_default_done_title": "Default updated",

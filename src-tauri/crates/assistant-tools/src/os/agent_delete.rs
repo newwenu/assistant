@@ -1,8 +1,10 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use std::io::ErrorKind;
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::context::ToolUseContext;
 use crate::os::output::human_bytes;
@@ -38,10 +40,13 @@ impl Tool for AgentDeleteTool {
 
     async fn description(&self) -> Result<String, String> {
         Ok(
-            "Delete a file, a symlink or a directory. Deletion is irreversible: there is no \
-             recycle bin, no backup and no `force` switch. A directory is only deleted with \
-             `recursive = true`, and a non-empty directory without it is rejected. Links are \
-             removed as links, their targets are never entered."
+            "Delete a file, a symlink or a directory. By default the target is moved to the \
+             system recycle bin and can be restored from there. Pass `permanent = true` to delete \
+             irreversibly — only when the user explicitly asked for permanent deletion. There is \
+             no automatic fallback: if the recycle bin is unavailable the call fails instead of \
+             deleting permanently. A directory is only removed with `recursive = true`, and a \
+             non-empty directory without it is rejected. Links are removed as links; their \
+             targets are never entered."
                 .to_string(),
         )
     }
@@ -54,6 +59,10 @@ impl Tool for AgentDeleteTool {
                 "recursive": {
                     "type": "boolean",
                     "description": "Delete directory recursively (default false)"
+                },
+                "permanent": {
+                    "type": "boolean",
+                    "description": "Permanently delete instead of moving to the system recycle bin (default false). Only set true when the user explicitly asks for irreversible deletion."
                 }
             },
             "required": ["path"]
@@ -94,10 +103,12 @@ impl Tool for AgentDeleteTool {
     ) -> Result<Vec<PermissionIntent>, String> {
         let request = DeleteRequest::parse(input)?;
         let target = resolve_target(&request, context)?;
-        Ok(vec![PermissionIntent::new(
-            "delete",
-            target.display().to_string(),
-        )])
+        let resource = target.display().to_string();
+        let mut intents = vec![PermissionIntent::new("delete", resource.clone())];
+        if request.permanent {
+            intents.push(PermissionIntent::new("purge", resource));
+        }
+        Ok(intents)
     }
 
     async fn preview_for_approval(
@@ -107,10 +118,11 @@ impl Tool for AgentDeleteTool {
     ) -> Option<ApprovalPreview> {
         let request = DeleteRequest::parse(input).ok()?;
         let recursive = request.recursive;
+        let permanent = request.permanent;
         let context = context.clone();
         tokio::task::spawn_blocking(move || {
             let target = resolve_target(&request, &context).ok()?;
-            describe_preview(&target, recursive)
+            describe_preview(&target, recursive, permanent)
         })
         .await
         .ok()?
@@ -124,19 +136,34 @@ impl Tool for AgentDeleteTool {
 
         let blocking_context = context.clone();
         let deleted = tokio::task::spawn_blocking(move || {
-            let target = resolve_target(&request, &blocking_context)?;
-            let outcome = delete_path(&target, request.recursive)?;
-            Ok::<(PathBuf, DeleteOutcome), String>((target, outcome))
+            let target = match resolve_target(&request, &blocking_context) {
+                Ok(target) => target,
+                Err(error) => return (None, false, Err(error)),
+            };
+            let outcome = delete_path(&target, request.recursive, request.permanent);
+            let gone = std::fs::symlink_metadata(&target).is_err();
+            (Some(target), gone, outcome)
         })
         .await;
 
-        let (target, outcome) = match deleted {
-            Ok(Ok(deleted)) => deleted,
-            Ok(Err(error)) => return Ok(ToolResult::err(error)),
+        let (target, gone, outcome) = match deleted {
+            Ok(value) => value,
             Err(error) => return Err(format!("delete task failed: {}", error)),
         };
 
-        self.receipts.invalidate_path(&target).await;
+        if gone {
+            if let Some(target) = target.as_deref() {
+                self.receipts.invalidate_path(target).await;
+            }
+        }
+
+        let outcome = match outcome {
+            Ok(outcome) => outcome,
+            Err(error) => return Ok(ToolResult::err(error)),
+        };
+        let Some(target) = target else {
+            return Err("delete resolved no target".to_string());
+        };
 
         let path_text = target.display().to_string();
         let assistant_text = if outcome.is_directory {
@@ -148,12 +175,21 @@ impl Tool for AgentDeleteTool {
             } else {
                 (outcome.entries.to_string(), outcome.bytes.to_string())
             };
-            format!(
-                "Deleted directory at: {} ({} entries, {} bytes)",
-                path_text, entries, bytes
-            )
+            if outcome.permanent {
+                format!(
+                    "Permanently deleted directory at: {} ({} entries, {} bytes)",
+                    path_text, entries, bytes
+                )
+            } else {
+                format!(
+                    "Moved directory to the system recycle bin: {} ({} entries, {} bytes)",
+                    path_text, entries, bytes
+                )
+            }
+        } else if outcome.permanent {
+            format!("Permanently deleted file at: {}", path_text)
         } else {
-            format!("Deleted file at: {}", path_text)
+            format!("Moved file to the system recycle bin: {}", path_text)
         };
 
         Ok(ToolResult::ok_with_assistant(
@@ -161,6 +197,7 @@ impl Tool for AgentDeleteTool {
                 "path": path_text,
                 "isDirectory": outcome.is_directory,
                 "recursive": outcome.recursive,
+                "permanent": outcome.permanent,
                 "entriesDeleted": outcome.entries,
                 "bytesDeleted": outcome.bytes,
                 "truncated": outcome.truncated
@@ -173,6 +210,7 @@ impl Tool for AgentDeleteTool {
 struct DeleteRequest {
     path: String,
     recursive: bool,
+    permanent: bool,
 }
 
 impl DeleteRequest {
@@ -189,7 +227,17 @@ impl DeleteRequest {
             Some(_) => return Err("'recursive' must be a boolean".to_string()),
         };
 
-        Ok(Self { path, recursive })
+        let permanent = match object.get("permanent") {
+            None | Some(Value::Null) => false,
+            Some(Value::Bool(value)) => *value,
+            Some(_) => return Err("'permanent' must be a boolean".to_string()),
+        };
+
+        Ok(Self {
+            path,
+            recursive,
+            permanent,
+        })
     }
 }
 
@@ -367,27 +415,45 @@ fn scan_tree(root: &Path) -> Result<ScanOutcome, String> {
     })
 }
 
-fn describe_preview(target: &Path, recursive: bool) -> Option<ApprovalPreview> {
+fn describe_preview(target: &Path, recursive: bool, permanent: bool) -> Option<ApprovalPreview> {
     let metadata = std::fs::symlink_metadata(target).ok()?;
     let file_type = metadata.file_type();
 
     if is_link_like(&metadata) {
-        return Some(ApprovalPreview {
-            summary: format!(
+        let summary = if permanent {
+            format!(
                 "delete the link at {} (its target is not touched)",
                 target.display()
-            ),
+            )
+        } else {
+            format!(
+                "move the link at {} to the system recycle bin (its target is not touched)",
+                target.display()
+            )
+        };
+        return Some(ApprovalPreview {
+            summary,
             truncated: false,
             estimated: true,
         });
     }
     if !file_type.is_dir() {
-        return Some(ApprovalPreview {
-            summary: format!(
-                "delete the file at {} ({})",
+        let size = human_bytes(metadata.len() as usize);
+        let summary = if permanent {
+            format!(
+                "permanently delete the file at {} ({})",
                 target.display(),
-                human_bytes(metadata.len() as usize)
-            ),
+                size
+            )
+        } else {
+            format!(
+                "move the file at {} ({}) to the system recycle bin",
+                target.display(),
+                size
+            )
+        };
+        return Some(ApprovalPreview {
+            summary,
             truncated: false,
             estimated: true,
         });
@@ -404,13 +470,34 @@ fn describe_preview(target: &Path, recursive: bool) -> Option<ApprovalPreview> {
     } else {
         human_bytes(scan.bytes as usize)
     };
-    let verb = if recursive {
-        "delete the directory recursively at"
-    } else {
-        "delete the directory at"
+    let summary = match (permanent, recursive) {
+        (true, true) => format!(
+            "permanently delete the directory at {} ({}, {})",
+            target.display(),
+            entries,
+            bytes
+        ),
+        (true, false) => format!(
+            "delete the directory at {} ({}, {}); it is only deleted if it is empty",
+            target.display(),
+            entries,
+            bytes
+        ),
+        (false, true) => format!(
+            "move the directory at {} ({}, {}) to the system recycle bin",
+            target.display(),
+            entries,
+            bytes
+        ),
+        (false, false) => format!(
+            "move the directory at {} ({}, {}) to the system recycle bin; it is only moved if it is empty",
+            target.display(),
+            entries,
+            bytes
+        ),
     };
     Some(ApprovalPreview {
-        summary: format!("{} {} ({}, {})", verb, target.display(), entries, bytes),
+        summary,
         truncated: scan.truncated,
         estimated: true,
     })
@@ -419,6 +506,7 @@ fn describe_preview(target: &Path, recursive: bool) -> Option<ApprovalPreview> {
 struct DeleteOutcome {
     is_directory: bool,
     recursive: bool,
+    permanent: bool,
     entries: usize,
     bytes: u64,
     truncated: bool,
@@ -427,7 +515,7 @@ struct DeleteOutcome {
 /// 同步删除，必须在 `spawn_blocking` 内调用。
 ///
 /// 分类只用 `symlink_metadata`（不跟随链接），所有拒绝都发生在任何删除动作之前。
-fn delete_path(target: &Path, recursive: bool) -> Result<DeleteOutcome, String> {
+fn delete_path(target: &Path, recursive: bool, permanent: bool) -> Result<DeleteOutcome, String> {
     let metadata = match std::fs::symlink_metadata(target) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == ErrorKind::NotFound => {
@@ -437,13 +525,28 @@ fn delete_path(target: &Path, recursive: bool) -> Result<DeleteOutcome, String> 
             return Err(format!("cannot access '{}': {}", target.display(), error));
         }
     };
+
+    if permanent {
+        delete_permanently(target, &metadata, recursive)
+    } else {
+        move_to_trash(target, &metadata, recursive)
+    }
+}
+
+/// 永久删除分支：不可逆，沿用旧实现（`remove_file` / `remove_dir` / `remove_dir_all`）。
+fn delete_permanently(
+    target: &Path,
+    metadata: &std::fs::Metadata,
+    recursive: bool,
+) -> Result<DeleteOutcome, String> {
     let file_type = metadata.file_type();
 
-    if is_link_like(&metadata) {
+    if is_link_like(metadata) {
         remove_link(target)?;
         return Ok(DeleteOutcome {
             is_directory: false,
             recursive,
+            permanent: true,
             entries: 1,
             bytes: 0,
             truncated: false,
@@ -461,6 +564,7 @@ fn delete_path(target: &Path, recursive: bool) -> Result<DeleteOutcome, String> 
             return Ok(DeleteOutcome {
                 is_directory: true,
                 recursive,
+                permanent: true,
                 entries: 0,
                 bytes: 0,
                 truncated: false,
@@ -472,13 +576,14 @@ fn delete_path(target: &Path, recursive: bool) -> Result<DeleteOutcome, String> 
         return Ok(DeleteOutcome {
             is_directory: true,
             recursive,
+            permanent: true,
             entries: scan.entries,
             bytes: scan.bytes,
             truncated: scan.truncated,
         });
     }
 
-    if is_readonly(&metadata) {
+    if is_readonly(metadata) {
         return Err(readonly_message(target));
     }
     let bytes = metadata.len();
@@ -486,10 +591,155 @@ fn delete_path(target: &Path, recursive: bool) -> Result<DeleteOutcome, String> 
     Ok(DeleteOutcome {
         is_directory: false,
         recursive,
+        permanent: true,
         entries: 1,
         bytes,
         truncated: false,
     })
+}
+
+/// 回收站分支：移动语义，可恢复。
+///
+/// 前置检查（分类、非空目录、预扫描）与永久分支完全一致；差别只在于落点是系统回收站。
+/// 只读文件在这里允许通过：移动不触碰属性，而 `remove_file` 会顺手清掉只读位。
+fn move_to_trash(
+    target: &Path,
+    metadata: &std::fs::Metadata,
+    recursive: bool,
+) -> Result<DeleteOutcome, String> {
+    let (is_directory, entries, bytes, truncated) = if is_link_like(metadata) {
+        (false, 1usize, 0u64, false)
+    } else if metadata.file_type().is_dir() {
+        if !recursive {
+            ensure_empty_directory(target)?;
+            (true, 0usize, 0u64, false)
+        } else {
+            let scan = scan_tree(target)?;
+            (true, scan.entries, scan.bytes, scan.truncated)
+        }
+    } else {
+        (false, 1usize, metadata.len(), false)
+    };
+
+    #[cfg(windows)]
+    if !target
+        .ancestors()
+        .last()
+        .is_some_and(volume_has_recycle_bin)
+    {
+        return Err(format!(
+            "'{}' is on a volume without a recycle bin; pass permanent = true only if the user \
+             agreed to irreversible deletion",
+            target.display()
+        ));
+    }
+
+    let deleted_after = trash_guard_time();
+    match std::panic::catch_unwind(AssertUnwindSafe(|| {
+        log::debug!("moving '{}' to the system recycle bin", target.display());
+        trash::delete(target)
+    })) {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => return Err(trash_failure_message(target, &error.to_string())),
+        Err(_) => {
+            return Err(format!(
+                "cannot move '{}' to the recycle bin: the recycle bin is unavailable in this \
+                 thread; pass permanent = true only if the user agreed to irreversible deletion",
+                target.display()
+            ))
+        }
+    }
+
+    #[cfg(any(windows, target_os = "linux"))]
+    if verify_in_recycle_bin(target, deleted_after) == Some(false) {
+        return Err(format!(
+            "'{}' is gone but was not found in the recycle bin; it may have been deleted \
+             permanently by the shell",
+            target.display()
+        ));
+    }
+
+    Ok(DeleteOutcome {
+        is_directory,
+        recursive,
+        permanent: false,
+        entries,
+        bytes,
+        truncated,
+    })
+}
+
+/// 事后校验的时间下界：调用开始时刻 - 2s，用于容忍 shell 的时间戳精度。
+///
+/// `SystemTime` 的减法在边界上会 panic，因此用 `checked_sub`；取不到下界时返回 `None`，
+/// 校验退化为「只按路径匹配」，不得因此 panic。
+fn trash_guard_time() -> Option<i64> {
+    SystemTime::now()
+        .checked_sub(Duration::from_secs(2))
+        .and_then(|moment| moment.duration_since(UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_secs() as i64)
+}
+
+/// 回收站失败文案：必须与磁盘现状一致，并明确「没有自动回退成永久删除」。
+fn trash_failure_message(target: &Path, reason: &str) -> String {
+    let mut message = format!(
+        "failed to move '{}' to the recycle bin: {}",
+        target.display(),
+        reason
+    );
+    if std::fs::symlink_metadata(target).is_ok() {
+        message.push_str("; the target still exists and may have been partially moved");
+    } else {
+        message.push_str("; the target no longer exists, so the move completed before the error");
+    }
+    message.push_str("; pass permanent = true only if the user agreed to irreversible deletion");
+    message
+}
+
+/// 卷根是否具备回收站（Windows 前置筛查）。
+///
+/// 只做 `$Recycle.Bin` 存在性检查：UNC 共享没有本机回收站，直接判否；组策略可禁用回收站
+/// 而目录仍在，因此这只是廉价筛查，最终结论以 [`verify_in_recycle_bin`] 为准。
+#[cfg(windows)]
+fn volume_has_recycle_bin(volume_root: &Path) -> bool {
+    if is_unc_path(volume_root) {
+        return false;
+    }
+    volume_root.join("$Recycle.Bin").is_dir()
+}
+
+#[cfg(windows)]
+fn is_unc_path(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    matches!(
+        path.components().next(),
+        Some(Component::Prefix(prefix))
+            if matches!(prefix.kind(), Prefix::UNC(_, _) | Prefix::VerbatimUNC(_, _))
+    )
+}
+
+/// 事后校验：目标是否真的落进了回收站。
+///
+/// Windows 在回收站容量 / 配额不足时可能「永久删除并返回成功」，crate 的失败 sink 覆盖不到。
+/// 返回 `None` 表示无法校验（平台不支持或 `list()` 本身失败），此时不改变本次结果。
+#[cfg(any(windows, target_os = "linux"))]
+fn verify_in_recycle_bin(target: &Path, deleted_after: Option<i64>) -> Option<bool> {
+    let listed = std::panic::catch_unwind(AssertUnwindSafe(trash::os_limited::list));
+    let items = match listed {
+        Ok(Ok(items)) => items,
+        Ok(Err(error)) => {
+            log::debug!("cannot list the recycle bin: {}", error);
+            return None;
+        }
+        Err(_) => {
+            log::debug!("cannot list the recycle bin: COM initialization failed");
+            return None;
+        }
+    };
+    Some(items.iter().any(|item| {
+        path::same_path(&item.original_path(), target)
+            && deleted_after.is_none_or(|lower| item.time_deleted >= lower)
+    }))
 }
 
 /// 链接一律按链接删除：删链接本身、不进入目标，`recursive` 不改变行为。
@@ -568,6 +818,87 @@ mod tests {
         assert!(!message.contains("still exists"));
     }
 
+    /// `permanent` 的解析规则与 `recursive` 同构：缺省 / null 为 false，非布尔即拒绝。
+    #[test]
+    fn permanent_defaults_to_false_and_rejects_non_booleans() {
+        let default = DeleteRequest::parse(&serde_json::json!({ "path": "a.txt" })).unwrap();
+        assert!(!default.permanent);
+        assert!(!default.recursive);
+
+        let null = DeleteRequest::parse(&serde_json::json!({ "path": "a.txt", "permanent": null }))
+            .unwrap();
+        assert!(!null.permanent);
+
+        let explicit =
+            DeleteRequest::parse(&serde_json::json!({ "path": "a.txt", "permanent": true }))
+                .unwrap();
+        assert!(explicit.permanent);
+
+        let rejected =
+            DeleteRequest::parse(&serde_json::json!({ "path": "a.txt", "permanent": "yes" }));
+        assert_eq!(
+            rejected.err().unwrap(),
+            "'permanent' must be a boolean".to_string()
+        );
+    }
+
+    /// 卷根没有 `$Recycle.Bin` 或落在 UNC 共享上时必须判否（不依赖真实卷）。
+    #[cfg(windows)]
+    #[test]
+    fn a_volume_without_a_recycle_bin_is_detected() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("plain-volume");
+        std::fs::create_dir(&plain).unwrap();
+        assert!(!volume_has_recycle_bin(&plain));
+
+        let with_bin = dir.path().join("volume-with-bin");
+        std::fs::create_dir(&with_bin).unwrap();
+        std::fs::create_dir(with_bin.join("$Recycle.Bin")).unwrap();
+        assert!(volume_has_recycle_bin(&with_bin));
+
+        assert!(!volume_has_recycle_bin(Path::new(r"\\server\share\folder")));
+    }
+
+    /// 回收站失败文案必须与磁盘现状一致：仍存在 → 可能已部分移动；已消失 → 已完成但随后失败。
+    #[test]
+    fn trash_failure_message_reports_the_actual_state_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("exists.txt");
+        std::fs::write(&existing, "alpha\n").unwrap();
+
+        let message = trash_failure_message(&existing, "denied");
+        assert!(
+            message.contains("failed to move"),
+            "unexpected: {}",
+            message
+        );
+        assert!(message.contains("still exists"), "unexpected: {}", message);
+        assert!(
+            message.contains("partially moved"),
+            "unexpected: {}",
+            message
+        );
+        assert!(
+            message.contains("permanent = true"),
+            "the message must offer the explicit escape hatch: {}",
+            message
+        );
+
+        let missing = dir.path().join("gone.txt");
+        let message = trash_failure_message(&missing, "denied");
+        assert!(
+            message.contains("no longer exists"),
+            "unexpected: {}",
+            message
+        );
+        assert!(
+            message.contains("completed before the error"),
+            "unexpected: {}",
+            message
+        );
+        assert!(!message.contains("still exists"), "unexpected: {}", message);
+    }
+
     /// 链接（含 Windows junction 的重解析点）不得被当成真实目录下降。
     #[test]
     fn junction_like_entries_are_classified_as_links() {
@@ -592,6 +923,7 @@ mod tests {
     /// A16：预演与执行共用同一扫描函数，量级数字必须一致。
     ///
     /// 直接比对 `scan_tree` 的返回值与 `execute` 的 `data`，不解析 `summary` 文案。
+    /// 用 `permanent = true` 保持零回收站副作用。
     #[tokio::test]
     async fn preview_and_execution_report_the_same_scale() {
         let dir = tempfile::tempdir().unwrap();
@@ -605,7 +937,7 @@ mod tests {
             workspace_root: Some(dir.path().display().to_string()),
             ..Default::default()
         };
-        let input = serde_json::json!({ "path": "tree", "recursive": true });
+        let input = serde_json::json!({ "path": "tree", "recursive": true, "permanent": true });
         let request = DeleteRequest::parse(&input).unwrap();
         let target = resolve_target(&request, &context).unwrap();
         let scan = scan_tree(&target).expect("scan");

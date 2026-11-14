@@ -47,12 +47,14 @@ async fn lookup(receipts: &Arc<dyn ReadReceiptStore>, key: &ReadReceiptKey) -> b
 }
 
 #[test]
-fn schema_declares_path_and_recursive_without_force() {
+fn schema_declares_path_recursive_and_permanent_without_force() {
     let schema = tool(store()).input_schema();
     assert_eq!(schema["type"], json!("object"));
     assert_eq!(schema["required"], json!(["path"]));
     assert!(schema["properties"]["path"].is_object());
     assert!(schema["properties"]["recursive"].is_object());
+    assert!(schema["properties"]["permanent"].is_object());
+    assert_eq!(schema["properties"]["permanent"]["type"], json!("boolean"));
     assert!(
         schema["properties"].get("force").is_none(),
         "the model must not be able to skip pre-checks"
@@ -82,12 +84,32 @@ fn tool_metadata_matches_the_delete_contract() {
     let intents = tool(store())
         .permission_intents(&json!({ "path": "a.txt" }), &ctx)
         .unwrap();
-    assert_eq!(intents.len(), 1);
+    assert_eq!(intents.len(), 1, "trashing needs no extra approval");
     assert_eq!(intents[0].action, "delete");
     assert_eq!(
         Path::new(&intents[0].resources[0]),
         assistant_tools::os::path::canonicalize_lenient(&target).unwrap()
     );
+}
+
+#[test]
+fn permanent_mode_adds_a_purge_intent() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let target = dir.path().join("a.txt");
+    std::fs::write(&target, "alpha\n").unwrap();
+    let canonical = assistant_tools::os::path::canonicalize_lenient(&target).unwrap();
+
+    let intents = tool(store())
+        .permission_intents(&json!({ "path": "a.txt", "permanent": true }), &ctx)
+        .unwrap();
+
+    assert_eq!(intents.len(), 2);
+    assert_eq!(intents[0].action, "delete");
+    assert_eq!(intents[1].action, "purge");
+    for intent in &intents {
+        assert_eq!(Path::new(&intent.resources[0]), canonical);
+    }
 }
 
 #[test]
@@ -124,6 +146,7 @@ fn validate_input_rejects_bad_arguments() {
         json!({ "path": 42 }),
         json!({ "path": "  " }),
         json!({ "path": "a.txt", "recursive": "yes" }),
+        json!({ "path": "a.txt", "permanent": "yes" }),
     ];
     for input in cases {
         assert!(
@@ -212,11 +235,17 @@ fn validate_input_rejects_the_home_directory_itself() {
         .contains("home directory"));
 }
 
+#[cfg(any(windows, target_os = "linux"))]
 #[tokio::test]
-async fn deletes_a_file() {
+async fn a_file_goes_to_the_recycle_bin_by_default() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), None);
-    std::fs::write(dir.path().join("a.txt"), "alpha\n").unwrap();
+    let target = dir.path().join("a.txt");
+    std::fs::write(&target, "alpha\n").unwrap();
+    if !recycle_bin_available(dir.path()) {
+        eprintln!("no usable recycle bin on this host; skipping");
+        return;
+    }
 
     let result = tool(store())
         .execute(&json!({ "path": "a.txt" }), &ctx)
@@ -224,26 +253,78 @@ async fn deletes_a_file() {
         .unwrap();
 
     assert!(result.ok, "{:?}", result.error);
-    assert!(!dir.path().join("a.txt").exists());
+    assert!(!target.exists(), "the target must leave the workspace");
+    let trashed = trash_items_under(dir.path());
+    assert_eq!(
+        trashed.len(),
+        1,
+        "the file must be restorable from the recycle bin, not silently purged"
+    );
+    assert!(assistant_tools::os::path::same_path(
+        &trashed[0].original_path(),
+        &target
+    ));
+    purge_trash_under(dir.path());
+
     let data = result.data.clone().unwrap();
+    assert_eq!(data["permanent"], json!(false));
     assert_eq!(data["isDirectory"], json!(false));
     assert_eq!(data["recursive"], json!(false));
     assert_eq!(data["entriesDeleted"], json!(1));
     assert_eq!(data["bytesDeleted"], json!(6));
     assert_eq!(data["truncated"], json!(false));
-    assert!(result.assistant_text().starts_with("Deleted file at: "));
+    assert!(
+        result
+            .assistant_text()
+            .starts_with("Moved file to the system recycle bin: "),
+        "unexpected text: {}",
+        result.assistant_text()
+    );
     assert!(result
         .assistant_text()
         .contains(data["path"].as_str().unwrap()));
 }
 
 #[tokio::test]
-async fn deletes_a_directory_recursively_with_magnitude() {
+async fn a_file_is_permanently_deleted_on_request() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), None);
-    std::fs::create_dir_all(dir.path().join("tree/nested")).unwrap();
-    std::fs::write(dir.path().join("tree/a.txt"), "12345").unwrap();
-    std::fs::write(dir.path().join("tree/nested/b.txt"), "123").unwrap();
+    let target = dir.path().join("a.txt");
+    std::fs::write(&target, "alpha\n").unwrap();
+
+    let result = tool(store())
+        .execute(&json!({ "path": "a.txt", "permanent": true }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    assert!(!target.exists());
+    let data = result.data.clone().unwrap();
+    assert_eq!(data["permanent"], json!(true));
+    assert_eq!(data["entriesDeleted"], json!(1));
+    assert_eq!(data["bytesDeleted"], json!(6));
+    assert!(result
+        .assistant_text()
+        .starts_with("Permanently deleted file at: "));
+    assert!(result
+        .assistant_text()
+        .contains(data["path"].as_str().unwrap()));
+    assert_no_trash_entry_for(&target);
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+#[tokio::test]
+async fn a_directory_goes_to_the_recycle_bin_recursively() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let tree = dir.path().join("tree");
+    std::fs::create_dir_all(tree.join("nested")).unwrap();
+    std::fs::write(tree.join("a.txt"), "12345").unwrap();
+    std::fs::write(tree.join("nested/b.txt"), "123").unwrap();
+    if !recycle_bin_available(dir.path()) {
+        eprintln!("no usable recycle bin on this host; skipping");
+        return;
+    }
 
     let result = tool(store())
         .execute(&json!({ "path": "tree", "recursive": true }), &ctx)
@@ -251,8 +332,13 @@ async fn deletes_a_directory_recursively_with_magnitude() {
         .unwrap();
 
     assert!(result.ok, "{:?}", result.error);
-    assert!(!dir.path().join("tree").exists());
+    assert!(!tree.exists());
+    let trashed = trash_items_under(dir.path());
+    assert_eq!(trashed.len(), 1, "the whole tree must land in the bin");
+    purge_trash_under(dir.path());
+
     let data = result.data.clone().unwrap();
+    assert_eq!(data["permanent"], json!(false));
     assert_eq!(data["isDirectory"], json!(true));
     assert_eq!(data["recursive"], json!(true));
     assert_eq!(data["entriesDeleted"], json!(3));
@@ -260,38 +346,80 @@ async fn deletes_a_directory_recursively_with_magnitude() {
     assert!(result.assistant_text().contains("(3 entries, 8 bytes)"));
     assert!(result
         .assistant_text()
-        .starts_with("Deleted directory at: "));
+        .starts_with("Moved directory to the system recycle bin: "));
 }
 
 #[tokio::test]
-async fn a_non_empty_directory_needs_recursive() {
+async fn a_directory_is_permanently_deleted_on_request() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), None);
-    std::fs::create_dir(dir.path().join("tree")).unwrap();
-    std::fs::write(dir.path().join("tree/a.txt"), "alpha\n").unwrap();
+    let tree = dir.path().join("tree");
+    std::fs::create_dir_all(tree.join("nested")).unwrap();
+    std::fs::write(tree.join("a.txt"), "12345").unwrap();
+    std::fs::write(tree.join("nested/b.txt"), "123").unwrap();
 
     let result = tool(store())
-        .execute(&json!({ "path": "tree" }), &ctx)
+        .execute(
+            &json!({ "path": "tree", "recursive": true, "permanent": true }),
+            &ctx,
+        )
         .await
         .unwrap();
 
-    assert!(!result.ok);
-    assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
+    assert!(result.ok, "{:?}", result.error);
+    assert!(!tree.exists());
+    let data = result.data.clone().unwrap();
+    assert_eq!(data["permanent"], json!(true));
+    assert_eq!(data["isDirectory"], json!(true));
+    assert_eq!(data["entriesDeleted"], json!(3));
+    assert_eq!(data["bytesDeleted"], json!(8));
+    assert!(result.assistant_text().contains("(3 entries, 8 bytes)"));
     assert!(result
-        .error
-        .unwrap_or_default()
-        .contains("recursive = true"));
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("tree/a.txt")).unwrap(),
-        "alpha\n"
-    );
+        .assistant_text()
+        .starts_with("Permanently deleted directory at: "));
+    assert_no_trash_entry_for(&tree);
 }
 
 #[tokio::test]
-async fn an_empty_directory_is_deleted_without_recursive() {
+async fn a_non_empty_directory_needs_recursive_in_both_modes() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+
+    for permanent in [false, true] {
+        let name = format!("tree-{}", permanent);
+        let tree = dir.path().join(&name);
+        std::fs::create_dir(&tree).unwrap();
+        std::fs::write(tree.join("a.txt"), "alpha\n").unwrap();
+
+        let result = tool(store())
+            .execute(&json!({ "path": name, "permanent": permanent }), &ctx)
+            .await
+            .unwrap();
+
+        assert!(!result.ok);
+        assert_eq!(result.error_kind, Some(ToolErrorKind::Business));
+        assert!(result
+            .error
+            .unwrap_or_default()
+            .contains("recursive = true"));
+        assert_eq!(
+            std::fs::read_to_string(tree.join("a.txt")).unwrap(),
+            "alpha\n",
+            "the pre-check must run before any move or delete"
+        );
+    }
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+#[tokio::test]
+async fn an_empty_directory_goes_to_the_recycle_bin_without_recursive() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), None);
     std::fs::create_dir(dir.path().join("empty")).unwrap();
+    if !recycle_bin_available(dir.path()) {
+        eprintln!("no usable recycle bin on this host; skipping");
+        return;
+    }
 
     let result = tool(store())
         .execute(&json!({ "path": "empty" }), &ctx)
@@ -300,8 +428,29 @@ async fn an_empty_directory_is_deleted_without_recursive() {
 
     assert!(result.ok, "{:?}", result.error);
     assert!(!dir.path().join("empty").exists());
+    purge_trash_under(dir.path());
     let data = result.data.unwrap();
     assert_eq!(data["isDirectory"], json!(true));
+    assert_eq!(data["permanent"], json!(false));
+    assert_eq!(data["entriesDeleted"], json!(0));
+}
+
+#[tokio::test]
+async fn an_empty_directory_is_permanently_deleted_without_recursive() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    std::fs::create_dir(dir.path().join("empty")).unwrap();
+
+    let result = tool(store())
+        .execute(&json!({ "path": "empty", "permanent": true }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    assert!(!dir.path().join("empty").exists());
+    let data = result.data.unwrap();
+    assert_eq!(data["isDirectory"], json!(true));
+    assert_eq!(data["permanent"], json!(true));
     assert_eq!(data["entriesDeleted"], json!(0));
 }
 
@@ -333,7 +482,10 @@ async fn deleting_a_file_link_keeps_its_target() {
     }
 
     let result = tool(store())
-        .execute(&json!({ "path": "link.txt", "recursive": true }), &ctx)
+        .execute(
+            &json!({ "path": "link.txt", "recursive": true, "permanent": true }),
+            &ctx,
+        )
         .await
         .unwrap();
 
@@ -366,7 +518,10 @@ async fn deleting_a_directory_link_keeps_its_contents() {
             return;
         }
         let result = tool(store())
-            .execute(&json!({ "path": name, "recursive": recursive }), &ctx)
+            .execute(
+                &json!({ "path": name, "recursive": recursive, "permanent": true }),
+                &ctx,
+            )
             .await
             .unwrap();
         assert!(result.ok, "{:?}", result.error);
@@ -391,7 +546,7 @@ async fn deleting_a_dangling_link_succeeds() {
     }
 
     let result = tool(store())
-        .execute(&json!({ "path": "dangling.txt" }), &ctx)
+        .execute(&json!({ "path": "dangling.txt", "permanent": true }), &ctx)
         .await
         .unwrap();
 
@@ -400,7 +555,7 @@ async fn deleting_a_dangling_link_succeeds() {
 }
 
 #[tokio::test]
-async fn the_preview_reports_the_scale_before_approval() {
+async fn the_preview_reports_the_scale_and_the_destination() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), None);
     std::fs::write(dir.path().join("a.txt"), "alpha\n").unwrap();
@@ -411,18 +566,41 @@ async fn the_preview_reports_the_scale_before_approval() {
         .preview_for_approval(&json!({ "path": "a.txt" }), &ctx)
         .await
         .unwrap();
-    assert!(file.summary.contains("delete the file at"));
+    assert!(file.summary.contains("move the file at"));
+    assert!(file.summary.contains("system recycle bin"));
     assert!(file.summary.contains("6 B"));
     assert!(!file.truncated);
     assert!(file.estimated);
+
+    let purged_file = tool(store())
+        .preview_for_approval(&json!({ "path": "a.txt", "permanent": true }), &ctx)
+        .await
+        .unwrap();
+    assert!(purged_file
+        .summary
+        .contains("permanently delete the file at"));
+    assert!(!purged_file.summary.contains("recycle bin"));
 
     let tree = tool(store())
         .preview_for_approval(&json!({ "path": "tree", "recursive": true }), &ctx)
         .await
         .unwrap();
-    assert!(tree.summary.contains("recursively"));
+    assert!(tree.summary.contains("move the directory at"));
     assert!(tree.summary.contains("1 entries"));
     assert!(tree.summary.contains("5 B"));
+    assert!(tree.summary.contains("system recycle bin"));
+
+    let purged_tree = tool(store())
+        .preview_for_approval(
+            &json!({ "path": "tree", "recursive": true, "permanent": true }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    assert!(purged_tree
+        .summary
+        .contains("permanently delete the directory at"));
+    assert!(!purged_tree.summary.contains("recycle bin"));
 
     assert!(
         tool(store())
@@ -435,7 +613,7 @@ async fn the_preview_reports_the_scale_before_approval() {
 
 #[cfg(windows)]
 #[tokio::test]
-async fn a_read_only_file_is_refused_without_an_unreachable_hint() {
+async fn a_read_only_file_is_refused_in_permanent_mode() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), None);
     let target = dir.path().join("locked.txt");
@@ -446,7 +624,7 @@ async fn a_read_only_file_is_refused_without_an_unreachable_hint() {
     }
 
     let result = tool(store())
-        .execute(&json!({ "path": "locked.txt" }), &ctx)
+        .execute(&json!({ "path": "locked.txt", "permanent": true }), &ctx)
         .await
         .unwrap();
     set_readonly(&target, false);
@@ -468,6 +646,36 @@ async fn a_read_only_file_is_refused_without_an_unreachable_hint() {
     assert!(target.exists(), "a refused delete must not remove the file");
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn a_read_only_file_is_moved_to_the_recycle_bin() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let target = dir.path().join("locked.txt");
+    std::fs::write(&target, "alpha\n").unwrap();
+    if !set_readonly(&target, true) {
+        eprintln!("cannot set the read-only attribute on this host; skipping");
+        return;
+    }
+    if !recycle_bin_available(dir.path()) {
+        eprintln!("no usable recycle bin on this host; skipping");
+        return;
+    }
+
+    let result = tool(store())
+        .execute(&json!({ "path": "locked.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(
+        result.ok,
+        "moving does not touch attributes, so the read-only bit must not block it: {:?}",
+        result.error
+    );
+    assert!(!target.exists());
+    purge_trash_under(dir.path());
+}
+
 #[tokio::test]
 async fn the_receipt_is_invalidated_after_delete() {
     let dir = tempfile::tempdir().unwrap();
@@ -479,7 +687,7 @@ async fn the_receipt_is_invalidated_after_delete() {
     assert!(lookup(&receipts, &key).await);
 
     let result = tool(receipts.clone())
-        .execute(&json!({ "path": "a.txt" }), &ctx)
+        .execute(&json!({ "path": "a.txt", "permanent": true }), &ctx)
         .await
         .unwrap();
     assert!(result.ok, "{:?}", result.error);
@@ -501,7 +709,10 @@ async fn deleting_a_directory_invalidates_receipts_of_its_subtree() {
     let key = record(&receipts, &child).await;
 
     let result = tool(receipts.clone())
-        .execute(&json!({ "path": "tree", "recursive": true }), &ctx)
+        .execute(
+            &json!({ "path": "tree", "recursive": true, "permanent": true }),
+            &ctx,
+        )
         .await
         .unwrap();
     assert!(result.ok, "{:?}", result.error);
@@ -553,4 +764,74 @@ fn set_readonly(path: &Path, readonly: bool) -> bool {
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
+}
+
+/// 回收站里的条目（只统计落在测试目录内的，避免被本机其它文件干扰）。
+#[cfg(any(windows, target_os = "linux"))]
+fn trash_items_under(dir: &Path) -> Vec<trash::TrashItem> {
+    let Ok(items) = trash::os_limited::list() else {
+        return Vec::new();
+    };
+    let Ok(root) = assistant_tools::os::path::canonicalize_lenient(dir) else {
+        return Vec::new();
+    };
+    items
+        .into_iter()
+        .filter(|item| assistant_tools::os::path::is_component_prefix(&item.original_path(), &root))
+        .collect()
+}
+
+/// 清掉测试留在回收站里的条目，避免污染开发机与后续用例。
+#[cfg(any(windows, target_os = "linux"))]
+fn purge_trash_under(dir: &Path) {
+    let items = trash_items_under(dir);
+    assert!(
+        trash::os_limited::purge_all(&items).is_ok(),
+        "cleanup must leave no test leftovers in the recycle bin"
+    );
+}
+
+/// 探测该卷是否真的能用回收站：写探针 → 移入回收站 → 清掉探针。
+///
+/// 返回 false 时用例直接跳过：卷没有 `$Recycle.Bin`（CI 精简镜像、网络盘）时，
+/// 「文件进了回收站」是环境前提而不是回归信号。
+#[cfg(any(windows, target_os = "linux"))]
+fn recycle_bin_available(dir: &Path) -> bool {
+    let probe = dir.join(format!("trash-probe-{}.tmp", std::process::id()));
+    if std::fs::write(&probe, b"probe").is_err() {
+        return false;
+    }
+    let moved = std::panic::catch_unwind(|| trash::delete(&probe));
+    if !matches!(moved, Ok(Ok(()))) {
+        let _ = std::fs::remove_file(&probe);
+        return false;
+    }
+    let Ok(items) = trash::os_limited::list() else {
+        return false;
+    };
+    let probes: Vec<_> = items
+        .into_iter()
+        .filter(|item| assistant_tools::os::path::same_path(&item.original_path(), &probe))
+        .collect();
+    if trash::os_limited::purge_all(&probes).is_err() {
+        return false;
+    }
+    true
+}
+
+/// 永久模式不得留下回收站条目（证明没被静默改成移动）。
+///
+/// 无法列举回收站时不做断言：那是环境限制，与本次行为无关。
+fn assert_no_trash_entry_for(target: &Path) {
+    let listed = std::panic::catch_unwind(trash::os_limited::list);
+    let Ok(Ok(items)) = listed else {
+        return;
+    };
+    assert!(
+        !items
+            .iter()
+            .any(|item| assistant_tools::os::path::same_path(&item.original_path(), target)),
+        "permanent mode must not leave '{}' in the recycle bin",
+        target.display()
+    );
 }
