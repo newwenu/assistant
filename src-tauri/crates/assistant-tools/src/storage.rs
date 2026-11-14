@@ -162,6 +162,9 @@ fn retention_cutoff(retention_days: u32) -> Option<SystemTime> {
 fn sweep_directory(dir: &Path, cutoff: SystemTime, report: &mut CleanupReport) {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
+        // 目录不存在是正常空态（落盘目录按需创建，从未落盘过结果时压根没有），
+        // 不是失败：不告警、不计数，避免每次启动都刷一条无意义的 WARN。
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
         Err(error) => {
             log::warn!(
                 "cleanup tool results: read dir '{}' failed: {}",

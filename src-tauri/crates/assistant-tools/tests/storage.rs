@@ -284,14 +284,14 @@ fn cleanup_sweeps_namespace_directories_and_keeps_empty_dirs() {
 }
 
 #[test]
-fn cleanup_counts_failures_without_panicking_on_missing_root() {
+fn cleanup_skips_missing_root_silently() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("does-not-exist");
 
     let report = cleanup_expired_results(&missing, 30);
 
-    assert_eq!(report.removed, 0);
-    assert_eq!(report.failed, 1);
+    // 目录不存在 = 从未落盘过结果，属正常空态：既不算删除也不算失败。
+    assert_eq!(report, CleanupReport::default());
 }
 
 #[cfg(unix)]
