@@ -5,6 +5,10 @@ import type {
   Message,
 } from "../chatTypes";
 import type { MessageDto } from "../../../types/protocol.contract";
+import type {
+  ToolErrorKindDto,
+  ToolResultCompactDto,
+} from "../../../types/protocol.contract";
 import {
   makeMessage,
   makeMessageDto,
@@ -21,8 +25,50 @@ import {
 
 const NOW = 1_700_000_000_000;
 
+type PayloadInput =
+  | { phase: "started"; argsPreview?: string | null }
+  | {
+      phase: "finished";
+      result: string;
+      confirmationWaitMs?: number | null;
+      compact?: ToolResultCompactDto | null;
+    }
+  | {
+      phase: "failed";
+      error: string;
+      errorKind: ToolErrorKindDto;
+      confirmationWaitMs?: number | null;
+      compact?: ToolResultCompactDto | null;
+    }
+  | Exclude<AgentToolCallPayload, { phase: "started" | "finished" | "failed" }>;
+
+/** 终态载荷的 `compact` 与 `argsPreview` 键恒在，测试按最小写法补齐 `null`。 */
+function normalizePayload(payload: PayloadInput): AgentToolCallPayload {
+  switch (payload.phase) {
+    case "started":
+      return { phase: "started", argsPreview: payload.argsPreview ?? null };
+    case "finished":
+      return {
+        phase: "finished",
+        result: payload.result,
+        confirmationWaitMs: payload.confirmationWaitMs ?? null,
+        compact: payload.compact ?? null,
+      };
+    case "failed":
+      return {
+        phase: "failed",
+        error: payload.error,
+        errorKind: payload.errorKind,
+        confirmationWaitMs: payload.confirmationWaitMs ?? null,
+        compact: payload.compact ?? null,
+      };
+    default:
+      return payload;
+  }
+}
+
 function call(
-  payload: AgentToolCall["payload"],
+  payload: PayloadInput,
   overrides: Partial<AgentToolCall> = {},
 ): AgentToolCall {
   return {
@@ -31,7 +77,7 @@ function call(
     iteration: 1,
     callId: "call-1",
     name: "shell",
-    payload,
+    payload: normalizePayload(payload),
     ...overrides,
   };
 }
@@ -270,6 +316,7 @@ describe("历史 toolCalls 映射", () => {
         arguments: { path: "a.txt" },
         status: "success",
         result: "ok",
+        compact: null,
       },
       {
         callId: "call-2",
@@ -277,6 +324,7 @@ describe("历史 toolCalls 映射", () => {
         arguments: { path: "b.txt" },
         status: "error",
         result: "denied",
+        compact: null,
       },
       {
         callId: "call-3",
@@ -284,6 +332,7 @@ describe("历史 toolCalls 映射", () => {
         arguments: null,
         status: "cancelled",
         result: null,
+        compact: null,
       },
     ]);
     expect(views).toEqual([
@@ -293,6 +342,7 @@ describe("历史 toolCalls 映射", () => {
         status: "success",
         arguments: { path: "a.txt" },
         resultText: "ok",
+        compact: null,
       },
       {
         callId: "call-2",
@@ -300,6 +350,7 @@ describe("历史 toolCalls 映射", () => {
         status: "error",
         arguments: { path: "b.txt" },
         resultText: "denied",
+        compact: null,
       },
       {
         callId: "call-3",
@@ -307,6 +358,7 @@ describe("历史 toolCalls 映射", () => {
         status: "cancelled",
         arguments: undefined,
         resultText: null,
+        compact: null,
       },
     ]);
   });
@@ -324,6 +376,7 @@ describe("历史 toolCalls 映射", () => {
           arguments: { path: "a.txt" },
           status: "success",
           result: "ok",
+          compact: null,
         },
       ],
     });
@@ -335,6 +388,7 @@ describe("历史 toolCalls 映射", () => {
         status: "success",
         arguments: { path: "a.txt" },
         resultText: "ok",
+        compact: null,
       },
     ]);
   });

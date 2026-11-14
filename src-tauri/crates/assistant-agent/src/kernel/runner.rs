@@ -243,6 +243,7 @@ impl TurnRunner {
             turn_id: &ctx.turn_id,
             conversation_id,
             initial_message_id: &ctx.message_id,
+            turn_index: ctx.turn_index,
             start_iteration: 1,
             remaining_turn_budget: TurnBudget {
                 remaining_tool_calls: spec.limits.max_tool_calls,

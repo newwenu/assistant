@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::Value;
 
+use crate::compact::{args_preview, build_compact, ToolResultCompact};
 use crate::context::ToolUseContext;
 use crate::exec::{self, DEFAULT_TOOL_TIMEOUT};
 use crate::gateway::{GatewayDecision, ToolGateway};
@@ -58,6 +59,10 @@ pub struct ToolOutcome {
     /// 回填模型的文本：落盘后为引用 + 预览，否则为原始回填文本。
     pub assistant_text: String,
     pub persisted: Option<PersistedRef>,
+    /// 原始参数：`Started` 的参数摘要与信封 head 的 subject 都从这里取。
+    pub arguments: Value,
+    /// 紧凑信封：展示与历史重载的唯一事实源（I46 compact §3.4）。
+    pub compact: Option<ToolResultCompact>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,17 +70,20 @@ pub enum PipelineEvent {
     Started {
         tool_call_id: String,
         tool_name: String,
+        args_preview: Option<String>,
     },
     Finished {
         tool_call_id: String,
         tool_name: String,
         assistant_text: String,
+        compact: Option<ToolResultCompact>,
     },
     Failed {
         tool_call_id: String,
         tool_name: String,
         error: String,
         error_kind: Option<ToolErrorKind>,
+        compact: Option<ToolResultCompact>,
     },
 }
 
@@ -188,9 +196,11 @@ impl ToolPipeline {
 
         for batch in batches {
             for &index in &batch {
+                let call = &tool_calls[index];
                 sink.emit(PipelineEvent::Started {
-                    tool_call_id: tool_calls[index].tool_call_id.clone(),
-                    tool_name: tool_calls[index].tool_name.clone(),
+                    tool_call_id: call.tool_call_id.clone(),
+                    tool_name: call.tool_name.clone(),
+                    args_preview: args_preview(&call.tool_name, &call.arguments),
                 })
                 .await;
             }
@@ -221,8 +231,14 @@ impl ToolPipeline {
 
         for (outcome, persist) in outcomes.iter_mut().zip(targets) {
             if persist {
-                self.persist(outcome).await;
+                self.persist(outcome, context.session_id.as_deref()).await;
             }
+            outcome.compact = Some(build_compact(
+                &outcome.tool_name,
+                &outcome.arguments,
+                &outcome.result,
+                outcome.persisted.as_ref(),
+            ));
             self.report(outcome, sink).await;
         }
 
@@ -346,7 +362,7 @@ impl ToolPipeline {
 
     /// 阶段 5：落盘单个结果，回填改为引用 + 预览。
     /// 只有成功结果落盘；失败结果的错误文本本身就该完整回填给模型。
-    async fn persist(&self, outcome: &mut ToolOutcome) {
+    async fn persist(&self, outcome: &mut ToolOutcome, session_id: Option<&str>) {
         if !outcome.result.ok {
             return;
         }
@@ -354,6 +370,7 @@ impl ToolPipeline {
         let request = PersistToolResult {
             tool_call_id: outcome.tool_call_id.clone(),
             tool_name: outcome.tool_name.clone(),
+            session_id: session_id.map(str::to_string),
             content: outcome.assistant_text.clone(),
         };
 
@@ -377,6 +394,7 @@ impl ToolPipeline {
                 tool_call_id: outcome.tool_call_id.clone(),
                 tool_name: outcome.tool_name.clone(),
                 assistant_text: outcome.assistant_text.clone(),
+                compact: outcome.compact.clone(),
             }
         } else {
             PipelineEvent::Failed {
@@ -384,6 +402,7 @@ impl ToolPipeline {
                 tool_name: outcome.tool_name.clone(),
                 error: outcome.result.error.clone().unwrap_or_default(),
                 error_kind: outcome.result.error_kind,
+                compact: outcome.compact.clone(),
             }
         };
         sink.emit(event).await;
@@ -401,6 +420,8 @@ impl ToolOutcome {
             result,
             assistant_text,
             persisted: None,
+            arguments: call.arguments.clone(),
+            compact: None,
         }
     }
 }

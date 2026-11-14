@@ -1,5 +1,5 @@
 use assistant_agent::agent::round_executor::ToolErrorClass;
-use assistant_agent::agent::tool_event::ToolEventPayload;
+use assistant_agent::agent::tool_event::{CompactUnit, ToolCompact, ToolEventPayload};
 use assistant_tools::{
     ApprovalContext, ApprovalExtension, ApprovalExtensionSeverity, ApprovalPreview, ApprovalReason,
     BehaviorHints, PermissionIntent, ToolTier,
@@ -119,6 +119,137 @@ impl From<assistant_tools::ToolDescriptor> for ToolDescriptorDto {
     }
 }
 
+/// 工具结果的展示投影（wire 侧）：渲染与历史重载的唯一事实源（I46 compact §3.4）。
+///
+/// 输出 DTO：所有 `Option` 键恒在、值为 `null`（不加 `skip_serializing_if`）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ToolResultCompactDto {
+    pub head: String,
+    pub truncated: Option<TruncatedDto>,
+    pub persisted: Option<PersistedResultDto>,
+    pub error_kind: Option<ToolErrorKindDto>,
+    pub anchor: Option<DocAnchorDto>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum TruncatedUnitDto {
+    Lines,
+    Items,
+    Bytes,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TruncatedDto {
+    pub unit: TruncatedUnitDto,
+    pub returned: Option<u64>,
+    pub total: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PersistedResultDto {
+    pub path: String,
+    pub bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DocAnchorDto {
+    pub path: String,
+    pub ranges: Vec<DocLineRangeDto>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DocLineRangeDto {
+    pub start: u64,
+    pub end: u64,
+}
+
+impl From<ToolCompact> for ToolResultCompactDto {
+    fn from(compact: ToolCompact) -> Self {
+        Self {
+            head: compact.head,
+            truncated: compact.truncated.map(|info| TruncatedDto {
+                unit: info.unit.into(),
+                returned: info.returned,
+                total: info.total,
+            }),
+            persisted: compact.persisted.map(|info| PersistedResultDto {
+                path: info.path,
+                bytes: info.bytes,
+            }),
+            error_kind: compact.error_kind.map(Into::into),
+            anchor: compact.anchor.map(|anchor| DocAnchorDto {
+                path: anchor.path,
+                ranges: anchor
+                    .ranges
+                    .into_iter()
+                    .map(|range| DocLineRangeDto {
+                        start: range.start,
+                        end: range.end,
+                    })
+                    .collect(),
+            }),
+        }
+    }
+}
+
+impl From<CompactUnit> for TruncatedUnitDto {
+    fn from(unit: CompactUnit) -> Self {
+        match unit {
+            CompactUnit::Lines => Self::Lines,
+            CompactUnit::Items => Self::Items,
+            CompactUnit::Bytes => Self::Bytes,
+            CompactUnit::Unknown => Self::Unknown,
+        }
+    }
+}
+
+impl From<assistant_tools::compact::TruncatedUnit> for TruncatedUnitDto {
+    fn from(unit: assistant_tools::compact::TruncatedUnit) -> Self {
+        match unit {
+            assistant_tools::compact::TruncatedUnit::Lines => Self::Lines,
+            assistant_tools::compact::TruncatedUnit::Items => Self::Items,
+            assistant_tools::compact::TruncatedUnit::Bytes => Self::Bytes,
+            assistant_tools::compact::TruncatedUnit::Unknown => Self::Unknown,
+        }
+    }
+}
+
+impl From<assistant_tools::compact::ToolResultCompact> for ToolResultCompactDto {
+    fn from(compact: assistant_tools::compact::ToolResultCompact) -> Self {
+        Self {
+            head: compact.head,
+            truncated: compact.truncated.map(|info| TruncatedDto {
+                unit: info.unit.into(),
+                returned: info.returned,
+                total: info.total,
+            }),
+            persisted: compact.persisted.map(|info| PersistedResultDto {
+                path: info.path,
+                bytes: info.bytes,
+            }),
+            error_kind: compact.error_kind.map(Into::into),
+            anchor: compact.anchor.map(|anchor| DocAnchorDto {
+                path: anchor.path,
+                ranges: anchor
+                    .ranges
+                    .into_iter()
+                    .map(|range| DocLineRangeDto {
+                        start: range.start,
+                        end: range.end,
+                    })
+                    .collect(),
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentToolCallDto {
@@ -133,7 +264,11 @@ pub struct AgentToolCallDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "phase", rename_all = "camelCase")]
 pub enum AgentToolCallPayloadDto {
-    Started,
+    Started {
+        /// 参数摘要（`Started` 首帧只带摘要，完整参数走 `ArgsDelta` 或终态）。
+        #[serde(rename = "argsPreview")]
+        args_preview: Option<String>,
+    },
     ArgsDelta {
         delta: String,
     },
@@ -141,6 +276,7 @@ pub enum AgentToolCallPayloadDto {
         result: String,
         #[serde(rename = "confirmationWaitMs")]
         confirmation_wait_ms: Option<u64>,
+        compact: Option<ToolResultCompactDto>,
     },
     Failed {
         error: String,
@@ -148,6 +284,7 @@ pub enum AgentToolCallPayloadDto {
         error_kind: ToolErrorKindDto,
         #[serde(rename = "confirmationWaitMs")]
         confirmation_wait_ms: Option<u64>,
+        compact: Option<ToolResultCompactDto>,
     },
     AwaitingApproval {
         approval: ToolApprovalRequestDto,
@@ -180,23 +317,27 @@ impl From<ToolErrorClass> for ToolErrorKindDto {
 impl From<ToolEventPayload> for AgentToolCallPayloadDto {
     fn from(payload: ToolEventPayload) -> Self {
         match payload {
-            ToolEventPayload::Started => Self::Started,
+            ToolEventPayload::Started { args_preview } => Self::Started { args_preview },
             ToolEventPayload::ArgsDelta { delta } => Self::ArgsDelta { delta },
             ToolEventPayload::Finished {
                 result,
                 confirmation_wait_ms,
+                compact,
             } => Self::Finished {
                 result,
                 confirmation_wait_ms,
+                compact: compact.map(Into::into),
             },
             ToolEventPayload::Failed {
                 error,
                 error_kind,
                 confirmation_wait_ms,
+                compact,
             } => Self::Failed {
                 error,
                 error_kind: error_kind.into(),
                 confirmation_wait_ms,
+                compact: compact.map(Into::into),
             },
         }
     }

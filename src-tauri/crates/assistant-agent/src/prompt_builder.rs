@@ -4,7 +4,11 @@ use assistant_providers::base::{self, ChatMessage, MessageRole, ToolCall};
 use assistant_storage::conversations::{ConversationDetail, MessageRow};
 
 /// 跨进程中断留下的未配对调用，投影期合成的结果文本（D27）。
-pub const INTERRUPTED_TOOL_RESULT: &str = "未执行：本轮中断";
+///
+/// 单一定义在 storage，此处只转发，避免多处文案漂移。两条文案都不允许断言「未执行」的
+/// 事实错误：`TOOL_NOT_STARTED_RESULT` 只用于占位行 `status = pending` 且正文为空（已声明、
+/// 未进执行队列）的调用，其余一律走「结果未知」——中断时无法判断工具是否已产生副作用。
+pub use assistant_storage::conversations::{INTERRUPTED_TOOL_RESULT, TOOL_NOT_STARTED_RESULT};
 /// 空结果体的投影占位；不落库，避免 Anthropic 把它替换成通用失败文案。
 pub const EMPTY_TOOL_RESULT: &str = "(空结果)";
 
@@ -47,11 +51,30 @@ pub const NO_FACTS: PromptFacts = PromptFacts {
 
 impl PromptFacts {
     /// 渲染为系统提示词的一行；空值渲染为 `None`（整行不出现，不写占位符）。
+    ///
+    /// 展示层剥离 Windows verbatim 前缀：工作区根目录按 `canonicalize` 原样存储，
+    /// 直接下发 `\\?\G:\...` 时模型回填参数容易少抄一个反斜杠，`\?\G:\...` 会被
+    /// 当成根相对路径与进程 cwd 拼接，拼出工作区外的错误路径（I44 §10.3）。
     pub fn render(&self) -> Option<String> {
         self.working_directory
             .as_deref()
             .filter(|path| !path.is_empty())
-            .map(|path| format!("Working directory: {path}"))
+            .map(|path| format!("Working directory: {}", display_path(path)))
+    }
+}
+
+/// 剥离 verbatim 前缀用于展示；非 verbatim 文本原样返回。
+///
+/// `\\?\UNC\server\share` 还原为 `\\server\share`，`\\?\C:\dir` 还原为 `C:\dir`。
+fn display_path(raw: &str) -> String {
+    const VERBATIM_UNC: &str = r"\\?\UNC\";
+    const VERBATIM: &str = r"\\?\";
+    if let Some(rest) = raw.strip_prefix(VERBATIM_UNC) {
+        format!(r"\\{}", rest)
+    } else if let Some(rest) = raw.strip_prefix(VERBATIM) {
+        rest.to_string()
+    } else {
+        raw.to_string()
     }
 }
 
@@ -82,6 +105,8 @@ pub fn prepare_messages(
     let tool_names = collect_tool_names(&rows);
     let rebuilt = rebuild_rows(&rows, &tool_names);
     let row_ids: Vec<&str> = rows.iter().map(|row| row.id.as_str()).collect();
+    // 配对判定只看「有没有结果行」：占位行本身就在链上，因此有占位行即视为已配对，
+    // 不参与文案之外的逻辑。文案在 `rebuild_rows` 里按占位行状态决定。
     let mut chat_messages = repair_tool_pairing(rebuilt, &detail.conversation.id, &row_ids);
 
     if !system_prompt.is_empty() {
@@ -143,7 +168,29 @@ fn rebuild_rows(rows: &[&MessageRow], tool_names: &HashMap<String, String>) -> V
     rows.iter()
         .map(|row| {
             let role = base::message_role_from_str(&row.role);
-            let content = if role == MessageRole::Tool && row.content.is_empty() {
+            // 占位行的文案按阶段决定（D27）：`pending` = 已声明、未进执行队列，可重试；
+            // `running` = 已进队列、结果未落，只能报结果未知。行在链上，配对即成立，
+            // 因此这里补的是「这条结果说了什么」，而不是替调用方决定要不要重试。
+            // `pending` 但正文非空 = 状态推进写失败时预写的保守文案，同样只能报结果未知。
+            let in_flight_text = if role == MessageRole::Tool {
+                match row.status.as_str() {
+                    assistant_storage::conversations::TOOL_ROW_PENDING
+                        if row.content.is_empty() =>
+                    {
+                        Some(TOOL_NOT_STARTED_RESULT)
+                    }
+                    assistant_storage::conversations::TOOL_ROW_PENDING
+                    | assistant_storage::conversations::TOOL_ROW_RUNNING => {
+                        Some(INTERRUPTED_TOOL_RESULT)
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let content = if let Some(text) = in_flight_text {
+                text.to_string()
+            } else if role == MessageRole::Tool && row.content.is_empty() {
                 EMPTY_TOOL_RESULT.to_string()
             } else {
                 row.content.clone()
@@ -162,7 +209,7 @@ fn rebuild_rows(rows: &[&MessageRow], tool_names: &HashMap<String, String>) -> V
                 tool_calls,
                 tool_call_id: row.tool_call_id.clone(),
                 name,
-                is_error: row.is_error,
+                is_error: row.is_error || in_flight_text.is_some(),
                 thinking_signature: None,
                 content_blocks: None,
             }
@@ -238,10 +285,10 @@ fn flush_pending(
     owner_message_id: Option<&str>,
 ) {
     for call in pending.drain(..) {
-        // D27 兜底路径：跨进程中断必然留下未配对的调用，投影期只读补一条中断结果让 wire 配平
-        // （不写库，I38b §8）。行链修复后正常 turn 不会再漏写结果行，凡走到这里都意味着
-        // 「中断」或「落库失败」，故用 warn 并带定位三要素，便于与真实缺陷区分。
-        log::warn!(
+        // D27 兜底路径：链上根本没有这条调用的结果行——存量会话（占位行机制上线前的
+        // 数据），或声明时插行失败。此时无从判断是否已执行，只能保守报「结果未知」。
+        // 走占位行的路径不会走到这里：占位行在链上，`rebuild_rows` 已按其状态补好文案。
+        log::debug!(
             target: "agent::prompt_builder",
             "会话 {} 的消息 {:?} 的调用 {} 缺少工具结果，投影期合成中断结果",
             conversation_id,

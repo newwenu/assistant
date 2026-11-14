@@ -19,6 +19,10 @@ fn default_max_summary_tokens() -> u16 {
     super::constant::MAX_SUMMARY_REQUEST_TOKENS as u16
 }
 
+fn default_result_retention_days() -> u32 {
+    super::constant::RESULT_RETENTION_DAYS
+}
+
 /// 主题模式（封闭集合）。线格式 `system` / `light` / `dark`，与协议层
 /// `ThemeModeDto` 及前端联合类型一致；非法值在反序列化阶段即被拒绝。
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +76,9 @@ pub struct AppConf {
     /// `Some(0)` → 不设 deadline（只由取消终止），因此不像审批那样拒绝 0。
     #[serde(default)]
     pub user_question_timeout_secs: Option<u32>,
+    /// 工具结果落盘文件的保留天数（I46 compact §2.9 D9）。`0` → 完全禁用清理。
+    #[serde(default = "default_result_retention_days")]
+    pub result_retention_days: u32,
 }
 
 /// 平台主修饰键：macOS 用 Command，其余用 Control。
@@ -128,6 +135,7 @@ impl AppConf {
             mini_window_y: None,
             approval_timeout_secs: None,
             user_question_timeout_secs: None,
+            result_retention_days: super::constant::RESULT_RETENTION_DAYS,
         }
     }
 

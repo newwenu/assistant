@@ -16,6 +16,11 @@ pub struct TauriEventSink {
     conversation_id: String,
     message_id: String,
     user_message_content: Option<String>,
+    /// 本轮 turn 序号（I46 §2.6），由宿主 `with_turn_index` 注入；`None` = 无坐标。
+    turn_index: Option<u32>,
+    /// 本次 assistant 占位行的迭代号（I46 §2.6）：分支重生成时可能 `> 1`，
+    /// 因此不能写死 `1`，否则前端占位消息与落库行坐标不一致。
+    iteration: Option<u32>,
     /// 终态刷新的 `change_kind`：chat / agent 为 `StreamFinished`，压缩为 `MessagesCompacted`。
     finished_change_kind: MessageChangeKindDto,
 }
@@ -33,12 +38,22 @@ impl TauriEventSink {
             conversation_id: conversation_id.into(),
             message_id: message_id.into(),
             user_message_content: None,
+            turn_index: None,
+            iteration: None,
             finished_change_kind: MessageChangeKindDto::StreamFinished,
         }
     }
 
     pub fn with_user_message_content(mut self, content: impl Into<String>) -> Self {
         self.user_message_content = Some(content.into());
+        self
+    }
+
+    /// 注入本轮坐标（I46 §2.6）：`chat-stream-start` 与 `chat-user-message-confirmed`
+    /// 共用同一份值，避免两处各自推导。`iteration` 是 assistant 占位行的实际迭代号。
+    pub fn with_turn_coords(mut self, turn_index: Option<u32>, iteration: Option<u32>) -> Self {
+        self.turn_index = turn_index;
+        self.iteration = iteration;
         self
     }
 
@@ -102,7 +117,7 @@ impl TauriEventSink {
                 detail
                     .messages
                     .iter()
-                    .map(|m| crate::protocol::MessageDto::from(m.clone()))
+                    .map(|m| crate::cmd::conversation_utils::wire_message_dto(m.clone()))
                     .collect()
             }
         };
@@ -141,6 +156,8 @@ impl EventSink for TauriEventSink {
                         attempt_id: turn_id.clone(),
                         message_id: self.message_id.clone(),
                         phase: phase.into(),
+                        turn_index: self.turn_index,
+                        iteration: self.iteration,
                     },
                 );
                 self.emit_session_state(
@@ -255,6 +272,7 @@ impl EventSink for TauriEventSink {
                         conversation_id,
                         user_message_id: user_msg_id,
                         user_message_content: self.user_message_content.clone().unwrap_or_default(),
+                        turn_index: self.turn_index,
                     },
                 );
             }

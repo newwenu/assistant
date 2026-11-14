@@ -105,10 +105,15 @@ describe("protocol DTO — camelCase contract", () => {
       attemptId: "a",
       messageId: "m",
       phase: "starting",
+      turnIndex: 1,
+      iteration: 1,
     };
     expect(payload).toHaveProperty("conversationId");
     expect(payload).toHaveProperty("attemptId");
+    expect(payload).toHaveProperty("turnIndex");
+    expect(payload).toHaveProperty("iteration");
     expect(payload).not.toHaveProperty("conversation_id");
+    expect(payload).not.toHaveProperty("turn_index");
   });
 
   it("ConversationTerminatedPayload uses camelCase fields", () => {

@@ -617,6 +617,11 @@
       "message_deleted": "消息已删除",
       "delete_failed": "删除失败",
       "interrupted": "已中断",
+      "group": {
+        "process": "执行过程",
+        "steps": "{{count}} 步",
+        "failed": "{{count}} 失败"
+      },
       "identity": {
         "unknown_mode": "未知模式",
         "separator": "·",
@@ -672,6 +677,14 @@
       },
       "result_persisted": "结果已落盘",
       "result_size": "{{lines}} 行 · {{size}}",
+      "result_truncated": "已截断 · {{scale}}",
+      "doc_jump": "跳到第 {{line}} 行",
+      "unit": {
+        "lines": "行",
+        "items": "项",
+        "bytes": "字节",
+        "unknown": "单位未知"
+      },
       "expand": "展开",
       "collapse": "收起",
       "no_result": "无输出",

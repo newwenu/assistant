@@ -10,13 +10,41 @@ use crate::error::StorageError;
 pub const COPY_TITLE_SOURCE: &str = "copy";
 
 /// 复制 / 分叉会话时消息状态的承接：`streaming` 是运行期瞬时态，拷贝后不可能继续流式，
-/// 一律落为 `completed`；其余终态（含 `interrupted` / `failed`）原样承接。
+/// 一律落为 `completed`；工具占位行的在途态（`pending` / `running`）同理，副本里没有
+/// 执行队列可推进，一律落为 `interrupted`；其余终态原样承接。
 fn carried_status(status: &str) -> String {
     if status == "streaming" {
         "completed".to_string()
+    } else if super::is_tool_row_in_flight(status) {
+        "interrupted".to_string()
     } else {
         status.to_string()
     }
+}
+
+/// 复制 / 分叉时占位行的正文：副本不可能再等到结果，按原阶段补上对应文案，
+/// 否则副本会留下一条正文为空的工具行。
+fn carried_content(msg: &MessageRow) -> String {
+    if msg.status == super::TOOL_ROW_PENDING {
+        super::TOOL_NOT_STARTED_RESULT.to_string()
+    } else if msg.status == super::TOOL_ROW_RUNNING {
+        super::INTERRUPTED_TOOL_RESULT.to_string()
+    } else {
+        msg.content.clone()
+    }
+}
+
+/// 让副本沿用源会话的 `next_turn_index`（I46 §2.4 路径 7）。
+///
+/// 副本已原样复制了源会话的 `turn_index`，计数器若从 1 重新开始就会与既有坐标撞号。
+fn copy_turn_counter(conn: &Connection, source_id: &str, target_id: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE conversations SET next_turn_index = \
+            (SELECT next_turn_index FROM conversations WHERE id = ?1) WHERE id = ?2",
+        params![source_id, target_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub fn search_conversations(
@@ -144,6 +172,10 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Sto
     };
     insert_conversation(conn, &new_conv)?;
 
+    // 坐标计数器沿用源会话（I46 §2.4 路径 7）：不重排、不重算，
+    // 否则副本的下一个 turn 会与已复制的坐标撞号。
+    copy_turn_counter(conn, id, &new_id)?;
+
     let mut message_id_map: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
     for msg in &detail.messages {
@@ -153,7 +185,7 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Sto
             id: new_msg_id,
             conversation_id: new_id.clone(),
             role: msg.role.clone(),
-            content: msg.content.clone(),
+            content: carried_content(msg),
             tokens: msg.tokens,
             timestamp: msg.timestamp,
             parent_id: None,
@@ -164,9 +196,11 @@ pub fn duplicate_conversation(conn: &Connection, id: &str) -> Result<String, Sto
             provider_id: msg.provider_id.clone(),
             model_id: msg.model_id.clone(),
             tool_call_id: msg.tool_call_id.clone(),
-            is_error: msg.is_error,
+            is_error: msg.is_error || super::is_tool_row_in_flight(&msg.status),
             status: carried_status(&msg.status),
             mode_id: msg.mode_id.clone(),
+            turn_index: msg.turn_index,
+            iteration: msg.iteration,
         };
         insert_message(conn, &new_msg)?;
     }
@@ -263,6 +297,7 @@ pub fn fork_to_new_conversation(
         workspace_root: source_conv.workspace_root.clone(),
     };
     insert_conversation(conn, &new_conv)?;
+    copy_turn_counter(conn, source_conversation_id, &new_id)?;
 
     let mut id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for msg in &branch_messages {
@@ -277,7 +312,7 @@ pub fn fork_to_new_conversation(
             id: new_msg_id,
             conversation_id: new_id.clone(),
             role: msg.role.clone(),
-            content: msg.content.clone(),
+            content: carried_content(msg),
             tokens: msg.tokens,
             timestamp: msg.timestamp,
             parent_id: new_parent_id,
@@ -288,9 +323,11 @@ pub fn fork_to_new_conversation(
             provider_id: msg.provider_id.clone(),
             model_id: msg.model_id.clone(),
             tool_call_id: msg.tool_call_id.clone(),
-            is_error: msg.is_error,
+            is_error: msg.is_error || super::is_tool_row_in_flight(&msg.status),
             status: carried_status(&msg.status),
             mode_id: msg.mode_id.clone(),
+            turn_index: msg.turn_index,
+            iteration: msg.iteration,
         };
         insert_message(conn, &new_msg)?;
     }

@@ -20,9 +20,9 @@ use crate::agent::round_executor::{
 use crate::agent::tool_call::FinalizedToolCall;
 
 use super::{
-    AppendToolMessageReq, Clock, CreateAssistantReq, EventSink, InputError, MessageStatus,
-    MessageStore, ProviderCredential, StoreError, TurnEvent, TurnInput, TurnInputSource,
-    UsageRecord,
+    AppendToolMessageReq, Clock, CreateAssistantReq, DeclareToolCallsReq, EventSink, InputError,
+    MessageStatus, MessageStore, ProviderCredential, StoreError, TurnEvent, TurnInput,
+    TurnInputSource, UsageRecord,
 };
 
 #[derive(Default)]
@@ -257,22 +257,49 @@ impl MessageStore for InMemoryStore {
         Ok(())
     }
 
-    async fn append_tool_message(&self, req: AppendToolMessageReq) -> Result<String, StoreError> {
-        let id = format!("{}:tool:{}", req.conversation_id, self.next_id());
-        self.push(StoreCall::AppendTool(id.clone()))?;
-        self.lock_messages().push(ReplayMessage {
-            id: id.clone(),
-            role: "tool".to_string(),
-            content: req.content,
-            parent_id: Some(req.parent_id.clone()),
-            tool_calls_json: None,
-            tool_call_id: Some(req.tool_call_id),
-            is_error: req.is_error,
-            timestamp: req.timestamp,
-            mode_id: None,
-        });
-        self.advance_leaf(Some(req.parent_id.as_str()), &id);
-        Ok(id)
+    async fn declare_tool_calls(
+        &self,
+        _req: DeclareToolCallsReq,
+    ) -> Result<Vec<String>, StoreError> {
+        // 占位行只影响孤立调用的落点（D27），不属于被测的落库序列：不返回 id，
+        // 让后续 `append_tool_messages` 保持原有的「整批新行」行为。
+        Ok(Vec::new())
+    }
+
+    async fn mark_tool_calls_running(
+        &self,
+        _conversation_id: &str,
+        _call_ids: &[String],
+    ) -> Result<(), StoreError> {
+        Ok(())
+    }
+
+    async fn append_tool_messages(
+        &self,
+        reqs: Vec<AppendToolMessageReq>,
+    ) -> Result<Vec<String>, StoreError> {
+        let mut ids = Vec::with_capacity(reqs.len());
+        let mut parent_id = reqs.first().map(|req| req.parent_id.clone());
+        for req in reqs {
+            let id = format!("{}:tool:{}", req.conversation_id, self.next_id());
+            self.push(StoreCall::AppendTool(id.clone()))?;
+            let mounted = parent_id.clone().unwrap_or_else(|| req.parent_id.clone());
+            self.lock_messages().push(ReplayMessage {
+                id: id.clone(),
+                role: "tool".to_string(),
+                content: req.content,
+                parent_id: Some(mounted.clone()),
+                tool_calls_json: None,
+                tool_call_id: Some(req.tool_call_id),
+                is_error: req.is_error,
+                timestamp: req.timestamp,
+                mode_id: None,
+            });
+            self.advance_leaf(Some(mounted.as_str()), &id);
+            parent_id = Some(id.clone());
+            ids.push(id);
+        }
+        Ok(ids)
     }
 
     async fn finalize(&self, msg_id: &str, status: MessageStatus) -> Result<(), StoreError> {
@@ -775,6 +802,8 @@ mod tests {
                 provider_id: Some("p".to_string()),
                 model_id: Some("m".to_string()),
                 mode_id: None,
+                turn_index: Some(1),
+                iteration: 1,
             })
             .await
             .expect("create");
@@ -811,6 +840,8 @@ mod tests {
                 provider_id: None,
                 model_id: None,
                 mode_id: None,
+                turn_index: None,
+                iteration: 1,
             })
             .await;
         assert!(created.is_err(), "injected failure must surface");

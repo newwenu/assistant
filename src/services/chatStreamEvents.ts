@@ -17,13 +17,26 @@ export function subscribeChatStreamEvents(): () => void {
   return subscribeStreamTransport({
     getActiveConversationId: () =>
       orchestratorInstance?.getActiveConversationId() ?? null,
-    onStreamStart: (conversationId, attemptId, messageId) => {
-      orchestratorInstance?.onStreamStart(conversationId, attemptId, messageId);
+    onStreamStart: (
+      conversationId,
+      attemptId,
+      messageId,
+      turnIndex,
+      iteration,
+    ) => {
+      orchestratorInstance?.onStreamStart(
+        conversationId,
+        attemptId,
+        messageId,
+        turnIndex,
+        iteration,
+      );
     },
-    onUserMessageConfirmed: (userMessageId, userMessageContent) => {
+    onUserMessageConfirmed: (userMessageId, userMessageContent, turnIndex) => {
       orchestratorInstance?.onUserMessageConfirmed(
         userMessageId,
         userMessageContent,
+        turnIndex,
       );
     },
     onSessionState: (payload) => {

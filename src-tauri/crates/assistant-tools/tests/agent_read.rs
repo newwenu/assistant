@@ -709,7 +709,7 @@ async fn files_above_the_old_whole_file_limit_are_readable() {
     assert_eq!(data["totalLines"], Value::Null);
     let text = head.assistant_text();
     assert!(text.contains("showing 2000 lines"));
-    assert!(text.contains("more content follows"));
+    assert!(text.contains("total unknown"));
 
     let tail = tool()
         .execute(

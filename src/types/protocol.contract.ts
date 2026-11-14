@@ -26,8 +26,16 @@ export type AgentQuestionDto = { question: string, header: string, options: Arra
 export type AgentQuestionOptionDto = { label: string, description: string, };
 export type AgentQuestionRequestDto = { conversationId: string, turnId: string, callId: string, questions: Array<AgentQuestionDto>, timeoutMs: number, };
 export type AgentToolCallDto = { conversationId: string, turnId: string, iteration: number, callId: string, name: string, payload: AgentToolCallPayloadDto, };
-export type AgentToolCallPayloadDto = { "phase": "started" } | { "phase": "argsDelta", delta: string, } | { "phase": "finished", result: string, confirmationWaitMs: number | null, } | { "phase": "failed", error: string, errorKind: ToolErrorKindDto, confirmationWaitMs: number | null, } | { "phase": "awaitingApproval", approval: ToolApprovalRequestDto, } | { "phase": "approvalClosed", timeoutMs: number, } | { "phase": "awaitingAnswer", question: AgentQuestionRequestDto, };
-export type AppConfDto = { theme: ThemeModeDto, language: string, hotkey: string, stayOnTop: boolean, launchAtLogin: boolean, closeToTray: boolean, keybindings: { [key in string]: string }, autoCompact: boolean, compactThresholdPercentOfBudget: number, compactSummaryPrompt: string | null, compactSummaryMaxTokens: number, mainWindowX: number | null, mainWindowY: number | null, mainWindowWidth: number | null, mainWindowHeight: number | null, miniWindowX: number | null, miniWindowY: number | null, approvalTimeoutSecs: number | null, userQuestionTimeoutSecs: number | null, };
+export type AgentToolCallPayloadDto = { "phase": "started", 
+/**
+ * 参数摘要（`Started` 首帧只带摘要，完整参数走 `ArgsDelta` 或终态）。
+ */
+argsPreview: string | null, } | { "phase": "argsDelta", delta: string, } | { "phase": "finished", result: string, confirmationWaitMs: number | null, compact: ToolResultCompactDto | null, } | { "phase": "failed", error: string, errorKind: ToolErrorKindDto, confirmationWaitMs: number | null, compact: ToolResultCompactDto | null, } | { "phase": "awaitingApproval", approval: ToolApprovalRequestDto, } | { "phase": "approvalClosed", timeoutMs: number, } | { "phase": "awaitingAnswer", question: AgentQuestionRequestDto, };
+export type AppConfDto = { theme: ThemeModeDto, language: string, hotkey: string, stayOnTop: boolean, launchAtLogin: boolean, closeToTray: boolean, keybindings: { [key in string]: string }, autoCompact: boolean, compactThresholdPercentOfBudget: number, compactSummaryPrompt: string | null, compactSummaryMaxTokens: number, mainWindowX: number | null, mainWindowY: number | null, mainWindowWidth: number | null, mainWindowHeight: number | null, miniWindowX: number | null, miniWindowY: number | null, approvalTimeoutSecs: number | null, userQuestionTimeoutSecs: number | null, 
+/**
+ * 工具结果落盘文件保留天数；`0` 表示禁用清理（I46 compact §2.9 D9）。
+ */
+resultRetentionDays: number, };
 export type ApprovalContextDto = { tier: ToolTierDto, behavior: ToolBehaviorDto, reasons: Array<ApprovalReasonDto>, preview: ApprovalPreviewDto | null, extensions: Array<ApprovalExtensionDto>, };
 export type ApprovalExtensionDto = { kind: string, label: string, value: string, severity: ApprovalExtensionSeverityDto, };
 export type ApprovalExtensionSeverityDto = "info" | "caution" | "danger";
@@ -56,8 +64,20 @@ export type ChatStreamStartPayloadDto = { conversationId: string, attemptId: str
 /**
  * 起始 phase；缺省为 `starting`，与内核 `TurnEvent::StreamStart` 同源。
  */
-phase: TurnPhaseDto, };
-export type ChatUserMessageConfirmedPayloadDto = { conversationId: string, userMessageId: string, userMessageContent: string, };
+phase: TurnPhaseDto, 
+/**
+ * 本轮 turn 序号（I46 §2.6）：键恒在、值 `null` = 无坐标（存量分支点）。
+ */
+turnIndex: number | null, 
+/**
+ * 首个 assistant 行的迭代号，恒 `1`。
+ */
+iteration: number | null, };
+export type ChatUserMessageConfirmedPayloadDto = { conversationId: string, userMessageId: string, userMessageContent: string, 
+/**
+ * 本轮 turn 序号（I46 §2.6）：键恒在、值 `null` = 无坐标。
+ */
+turnIndex: number | null, };
 export type ClockModeDto = "countdown" | "stopwatch";
 export type ClockSnapshotDto = { mode: ClockModeDto, status: ClockStatusDto, 
 /**
@@ -110,10 +130,17 @@ workspaceRoot?: string | null,
  */
 clearWorkspaceRoot?: boolean | null, };
 export type ConversationQueryModeDto = "paginated" | "all";
-export type ConversationQueryOptsDto = { mode: ConversationQueryModeDto, limit: number, beforeTimestamp?: number | null, };
+export type ConversationQueryOptsDto = { mode: ConversationQueryModeDto, limit: number, 
+/**
+ * 分页游标（I46 §7.1）：取该 turn 序号之前的页；`null` = 最新一页。
+ * 由 `beforeTimestamp` 改为 turn 边界，保证一页内不切开 turn。
+ */
+beforeTurnIndex?: number | null, };
 export type ConversationTerminatedPayloadDto = { conversationId: string, isFull: boolean, };
 export type ConversationToolConfigDto = { maxToolTier: ToolTierDto, approvalLevel: ApprovalLevelDto, enabledTools: Array<string>, disabledTools: Array<string>, };
 export type ConversationUnlockedPayloadDto = { conversationId: string, };
+export type DocAnchorDto = { path: string, ranges: Array<DocLineRangeDto>, };
+export type DocLineRangeDto = { start: number, end: number, };
 export type FileAttachmentRefDto = { attachmentId: string, name: string, bytes: number, };
 export type GrantScopeDto = "session" | "global";
 export type ImageAttachmentRefDto = { attachmentId: string, mediaType: string | null, bytes: number | null, width: number | null, height: number | null, name: string | null, };
@@ -134,9 +161,21 @@ modeId: string | null,
  * 消息终态（I41 §1）：取消落 `interrupted`，前端据此呈现「已中断」，
  * 不再依赖 `error` 承载取消语义。
  */
-status: MessageStatusDto, toolCalls: Array<MessageToolCallDto>, };
+status: MessageStatusDto, toolCalls: Array<MessageToolCallDto>, 
+/**
+ * 会话内单调 turn 序号（从 1 起）。`null` = 未知（存量行 / 未确认的乐观行）。
+ */
+turnIndex: number | null, 
+/**
+ * turn 内迭代序号。`0` = 非迭代行（user / compact_summary）。
+ */
+iteration: number, };
 export type MessageStatusDto = "streaming" | "completed" | "interrupted" | "failed";
-export type MessageToolCallDto = { callId: string, name: string, arguments: unknown, status: MessageToolCallStatusDto, result: string | null, };
+export type MessageToolCallDto = { callId: string, name: string, arguments: unknown, status: MessageToolCallStatusDto, result: string | null, 
+/**
+ * 展示投影：历史重载的渲染事实源（旧数据由后端重建，重建不出则为 `null`）。
+ */
+compact: ToolResultCompactDto | null, };
 export type MessageToolCallStatusDto = "success" | "error" | "cancelled" | "missing";
 export type ModelCapabilityDto = { support: CapabilitySupportDto, source: CapabilitySourceDto, };
 export type ModelConfigDto = { id: string, name: string, ownedBy: string, contextWindow: number | null, supportVision: boolean, 
@@ -176,6 +215,7 @@ export type OsToolExecRequestDto = { tool: string, action: string, params: unkno
 export type OsToolResultDto = { ok: boolean, data: unknown, resultForAssistant: string | null, error: string | null, errorKind: ToolErrorKindDto | null, };
 export type PermissionGrantDto = { grantKey: string, tool: string, scope: GrantScopeDto, conversationId: string | null, scopeSummary: string, createdAt: number, };
 export type PermissionIntentDto = { action: string, resources: Array<string>, };
+export type PersistedResultDto = { path: string, bytes: number | null, };
 export type ProviderErrorCodeDto = "ApiKeyMissing" | "AuthFailed" | "RateLimited" | "ModelNotFound" | "ContextOverflow" | "NetworkError" | "Timeout" | "ServerError" | "RequestRejected" | "ParseError" | "Cancelled" | "StreamError" | "InternalError";
 export type ProviderErrorPayloadDto = { code: ProviderErrorCodeDto, message: string, retryAfterMs: number | null, retryable: boolean, httpStatus: number | null, provider: string | null, providerCode: string | null, };
 export type ProviderInputDto = { id: string, name: string, type: string, baseUrl: string, apiKey: string, apiKeyChanged?: boolean | null, models: Array<ModelConfigDto>, defaultModel: string, };
@@ -257,7 +297,10 @@ export type ToolApprovalRequestDto = { conversationId: string, turnId: string, c
 export type ToolBehaviorDto = { readOnly: boolean, destructive: boolean, openWorld: boolean, };
 export type ToolDescriptorDto = { id: string, name: string, description: string, tier: ToolTierDto, };
 export type ToolErrorKindDto = "business" | "timeout" | "cancelled" | "internal" | "denied";
+export type ToolResultCompactDto = { head: string, truncated: TruncatedDto | null, persisted: PersistedResultDto | null, errorKind: ToolErrorKindDto | null, anchor: DocAnchorDto | null, };
 export type ToolTierDto = "sandbox" | "os" | "external";
+export type TruncatedDto = { unit: TruncatedUnitDto, returned: number | null, total: number | null, };
+export type TruncatedUnitDto = "lines" | "items" | "bytes" | "unknown";
 export type TurnPhaseDto = "starting" | "compacting" | "thinking" | "streaming" | "toolCalling" | "awaitingApproval" | "finalizing";
 export type VaultCipherAlgorithmDto = "aes256Gcm" | "chacha20Poly1305";
 export type VaultConfDto = { vaultAutoLockMinutes: number, vaultLockOnScreenLock: boolean, vaultClipboardClearSeconds: number, vaultCipherAlgorithm: VaultCipherAlgorithmDto, vaultHibpAutoAudit: boolean, vaultSyncRemoteUrl: string | null, vaultSshAutoAdd: boolean, vaultSshUsePageant: boolean, vaultSshUseOpensshAgent: boolean, vaultSshAuthSockOverride: string, vaultSyncLastAt: number | null, vaultSyncSshHosts: Array<string>, };

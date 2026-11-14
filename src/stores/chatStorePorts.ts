@@ -127,7 +127,27 @@ export function createStatePort(
     resumeStream: (attemptId: string, messageId: string | null) => {
       useChatStreamStore.getState().resumeStream(attemptId, messageId);
     },
-    confirmUserMessage: (userMessageId: string, userMessageContent: string) => {
+    setCurrentTurnIndex: (turnIndex: number | null) => {
+      useChatStreamStore.getState().setCurrentTurnIndex(turnIndex);
+    },
+    setMessageCoords: (
+      messageId: string,
+      turnIndex: number,
+      iteration: number,
+    ) => {
+      const state = get();
+      if (!state.messages.some((m) => m.id === messageId)) return;
+      set({
+        messages: state.messages.map((m) =>
+          m.id === messageId ? { ...m, turnIndex, iteration } : m,
+        ),
+      });
+    },
+    confirmUserMessage: (
+      userMessageId: string,
+      userMessageContent: string,
+      turnIndex: number | null,
+    ) => {
       const state = get();
       const tempUserMsg = state.messages.find(
         (m) => m.role === "user" && m.id.startsWith("temp-user-"),
@@ -136,7 +156,12 @@ export function createStatePort(
       set({
         messages: state.messages.map((m) =>
           m.id === tempUserMsg.id
-            ? { ...m, id: userMessageId, content: userMessageContent }
+            ? {
+                ...m,
+                id: userMessageId,
+                content: userMessageContent,
+                turnIndex: turnIndex ?? m.turnIndex,
+              }
             : m,
         ),
       });

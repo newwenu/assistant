@@ -14,14 +14,14 @@ import { RetryBanner } from "../blocks/RetryBanner";
 import { getErrorPresentation } from "../core/chatErrorRecovery";
 import type { RecoveryActionCode } from "../core/chatErrorRecovery";
 import { extractPlainText, parseContent } from "../core/contentBlockUtils";
-import { translateKey } from "../../i18n";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
-import { ToolCallBubble } from "../tool/ToolCallBubble";
+import { ToolCallRenderer } from "../tool/ToolCallRenderer";
 import { EditBlock } from "../blocks/EditBlock";
 import { BranchPicker } from "../blocks/BranchPicker";
 import { MessageContent } from "./MessageContent";
 import { MessageActions } from "./MessageActions";
 import { MessageAvatar } from "./MessageAvatar";
+import { TurnTail, buildCopyText } from "./TurnTail";
 import { resolveMessageIdentity } from "./messageIdentity";
 import { useAgentModeStore } from "../../stores/agentModeStore";
 import { useProviderStore } from "../../stores/providerStore";
@@ -39,6 +39,10 @@ interface MessageBubbleProps {
    */
   showIdentity?: boolean;
   showBranchPicker?: boolean;
+  /** true 时 assistant 侧 chrome 由 `TurnTail` 承接，本气泡不渲染（I46 §4.4）。 */
+  suppressAssistantChrome?: boolean;
+  /** 本行是所在 turn 的尾锚点：由它挂载唯一的 `TurnTail`。 */
+  isTurnTail?: boolean;
   onDelete?: (id: string) => void;
   onEdit?: (id: string, newContent: string) => void;
   onRegenerate?: (id: string) => void;
@@ -46,6 +50,9 @@ interface MessageBubbleProps {
   onSwitchBranch?: (messageId: string, direction: "prev" | "next") => void;
   onFork?: (messageId: string) => void;
   onErrorAction?: (code: RecoveryActionCode) => void;
+  /** 文档面板当前打开的文件路径；`null` 时工具结果恒走卡片（I46 compact §3.7.4）。 */
+  docPanelPath?: string | null;
+  onOpenDocument?: (path: string, line: number) => void;
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
@@ -57,6 +64,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     compact = false,
     showIdentity = true,
     showBranchPicker = true,
+    suppressAssistantChrome = false,
+    isTurnTail = false,
     onDelete,
     onEdit,
     onRegenerate,
@@ -64,6 +73,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     onSwitchBranch,
     onFork,
     onErrorAction,
+    docPanelPath = null,
+    onOpenDocument,
   }) => {
     const { t } = useTranslation();
     const isUser = message.role === "user";
@@ -90,17 +101,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     const [editFileBlocks, setEditFileBlocks] = useState<FileBlock[]>([]);
 
     const handleCopy = useCallback(() => {
-      let text = message.content;
-      if (message.error) {
-        const presentation = getErrorPresentation(message.error);
-        const errorParts: string[] = [];
-        if (text) errorParts.push(text);
-        errorParts.push(`[${translateKey(presentation.titleKey)}]`);
-        if (message.error.message) errorParts.push(message.error.message);
-        text = errorParts.join("\n");
-      }
-      navigator.clipboard.writeText(text).catch(() => {});
-    }, [message.content, message.error]);
+      navigator.clipboard.writeText(buildCopyText(message)).catch(() => {});
+    }, [message]);
 
     const handleDelete = useCallback(() => {
       onDelete?.(message.id);
@@ -282,7 +284,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
               {message.toolCalls && message.toolCalls.length > 0 && (
                 <div className={css.toolCalls}>
                   {message.toolCalls.map((view) => (
-                    <ToolCallBubble key={view.callId} view={view} />
+                    <ToolCallRenderer
+                      key={view.callId}
+                      view={view}
+                      density="card"
+                      docPanelPath={docPanelPath}
+                      onOpenDocument={onOpenDocument}
+                    />
                   ))}
                 </div>
               )}
@@ -308,7 +316,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
               onCancel={() => onRetry?.()}
             />
           )}
-          {!editing && (
+          {!editing && !(suppressAssistantChrome && isAssistant) && (
             <div className={css.actionsWrapper}>
               <span className={css.timestamp}>
                 {new Date(message.timestamp).toLocaleTimeString()}
@@ -334,6 +342,20 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                 onFork={onFork ? () => onFork(message.id) : undefined}
               />
             </div>
+          )}
+          {!editing && suppressAssistantChrome && isAssistant && isTurnTail && (
+            <TurnTail
+              anchor={message}
+              isStreaming={isStreaming}
+              isBranchAtLimit={(message.siblingCount ?? 1) >= 20}
+              onDelete={onDelete}
+              onRegenerate={onRegenerate}
+              onSwitchBranch={onSwitchBranch}
+              onFork={onFork}
+              onCopy={(text) => {
+                navigator.clipboard.writeText(text).catch(() => {});
+              }}
+            />
           )}
         </div>
       </div>
@@ -363,6 +385,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     if (prev.message.modelId !== next.message.modelId) return false;
     if (prev.message.providerId !== next.message.providerId) return false;
     if (prev.showIdentity !== next.showIdentity) return false;
+    if (prev.suppressAssistantChrome !== next.suppressAssistantChrome)
+      return false;
+    if (prev.isTurnTail !== next.isTurnTail) return false;
+    if (prev.message.turnIndex !== next.message.turnIndex) return false;
+    if (prev.message.iteration !== next.message.iteration) return false;
+    if (prev.message.status !== next.message.status) return false;
     return true;
   },
 );

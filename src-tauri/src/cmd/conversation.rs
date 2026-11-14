@@ -104,8 +104,8 @@ pub fn get_conversation(
         "paginated" => {
             let o = opts.as_ref();
             let limit = o.map(|o| o.limit).unwrap_or(50);
-            let before_ts = o.and_then(|o| o.before_timestamp);
-            get_conversation_paginated_impl(&conn, &id, limit, before_ts)
+            let before_turn = o.and_then(|o| o.before_turn_index);
+            get_conversation_paginated_impl(&conn, &id, limit, before_turn)
         }
         _ => get_conversation_detail_impl(&conn, &id),
     }
@@ -151,7 +151,7 @@ fn get_conversation_paginated_impl(
     conn: &rusqlite::Connection,
     id: &str,
     limit: i64,
-    before_timestamp: Option<i64>,
+    before_turn_index: Option<u32>,
 ) -> Result<Option<ConversationDetailDto>, String> {
     match conversations::get_conversation_by_id(conn, id)? {
         Some(conv) => {
@@ -161,7 +161,7 @@ fn get_conversation_paginated_impl(
                 (branch, count)
             } else {
                 let msgs =
-                    conversations::get_messages_paginated(conn, id, limit, before_timestamp)?;
+                    conversations::get_messages_paginated(conn, id, limit, before_turn_index)?;
                 let count = conversations::get_message_count(conn, id)?;
                 (msgs, count)
             };

@@ -1,0 +1,43 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-align: left;
+}
+
+.root:hover {
+  background: var(--color-bg-elevated);
+}
+
+.chevron {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.label {
+  flex: 0 0 auto;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.count,
+.duration {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+}
+
+.failed {
+  flex: 0 0 auto;
+  color: var(--color-error, #ff4d4f);
+}

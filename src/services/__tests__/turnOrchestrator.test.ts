@@ -88,6 +88,8 @@ function createMockStatePort(): StreamStatePort {
     setActiveAttemptId: vi.fn(),
     clearActiveAttemptId: vi.fn(),
     resumeStream: vi.fn(),
+    setCurrentTurnIndex: vi.fn(),
+    setMessageCoords: vi.fn(),
     confirmUserMessage: vi.fn(),
     appendDelta: vi.fn(),
     setReasoningStreaming: vi.fn(),
@@ -106,6 +108,7 @@ function createMockSegments(): AgentSegments {
     reset: vi.fn(),
     markUnknownSegment: vi.fn(),
     adoptSegment: vi.fn(),
+    rebuildFromMessages: vi.fn(),
     renameSegment: vi.fn(),
     appendDelta: vi.fn(),
     appendReasoningDelta: vi.fn(),
@@ -397,7 +400,7 @@ describe("turnOrchestrator", () => {
         iteration: 2,
         callId: "call-1",
         name: "read_file",
-        payload: { phase: "started" },
+        payload: { phase: "started", argsPreview: null },
       });
       expect(mockDeps.segments.applyToolCall).toHaveBeenCalledWith(
         2,
@@ -412,7 +415,7 @@ describe("turnOrchestrator", () => {
         iteration: 1,
         callId: "call-1",
         name: "read_file",
-        payload: { phase: "started" },
+        payload: { phase: "started", argsPreview: null },
       });
       expect(mockDeps.segments.applyToolCall).not.toHaveBeenCalled();
     });
@@ -798,18 +801,33 @@ describe("turnOrchestrator", () => {
 
   describe("onStreamStart", () => {
     it("当前会话委托 state.setActiveAttemptId，并按会话记录 turnId", () => {
-      orchestrator.onStreamStart("conv-1", "conv-1:3", "msg-new");
+      orchestrator.onStreamStart("conv-1", "conv-1:3", "msg-new", 2, 1);
       expect(mockDeps.state.setActiveAttemptId).toHaveBeenCalledWith(
         "conv-1:3",
         "msg-new",
       );
     });
 
+    it("记录本轮 turn 序号并回填占位消息坐标", () => {
+      orchestrator.onStreamStart("conv-1", "conv-1:3", "msg-new", 2, 1);
+      expect(mockDeps.state.setCurrentTurnIndex).toHaveBeenCalledWith(2);
+      expect(mockDeps.state.setMessageCoords).toHaveBeenCalledWith(
+        "msg-new",
+        2,
+        1,
+      );
+    });
+
+    it("坐标缺失时不回填消息坐标", () => {
+      orchestrator.onStreamStart("conv-1", "conv-1:3", "msg-new", null, null);
+      expect(mockDeps.state.setMessageCoords).not.toHaveBeenCalled();
+    });
+
     it("占位 id 换成真实 id 时通知策略改名", () => {
       vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue(
         makeConversationRoute({ link: "agent" }),
       );
-      orchestrator.onStreamStart("conv-1", "conv-1:3", "msg-new");
+      orchestrator.onStreamStart("conv-1", "conv-1:3", "msg-new", 2, 1);
       expect(mockDeps.segments.renameSegment).toHaveBeenCalledWith(
         "msg-assistant",
         "msg-new",
@@ -817,7 +835,13 @@ describe("turnOrchestrator", () => {
     });
 
     it("后台会话的 stream-start 不改变当前会话的流式视图", () => {
-      orchestrator.onStreamStart("conv-other", "conv-other:1", "msg-other");
+      orchestrator.onStreamStart(
+        "conv-other",
+        "conv-other:1",
+        "msg-other",
+        1,
+        1,
+      );
       expect(mockDeps.state.setActiveAttemptId).not.toHaveBeenCalled();
     });
   });

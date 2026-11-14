@@ -41,10 +41,13 @@ export interface StreamTransportHandlers {
     conversationId: string,
     attemptId: string,
     messageId: string,
+    turnIndex: number | null,
+    iteration: number | null,
   ) => void;
   onUserMessageConfirmed: (
     userMessageId: string,
     userMessageContent: string,
+    turnIndex: number | null,
   ) => void;
   onSessionState: (payload: SessionStateChangedPayload) => void;
   onToolCall: (call: AgentToolCall) => void;
@@ -108,6 +111,8 @@ export function subscribeStreamTransport(
         payload.conversationId,
         payload.attemptId,
         payload.messageId,
+        payload.turnIndex,
+        payload.iteration,
       );
     }),
   );
@@ -122,6 +127,7 @@ export function subscribeStreamTransport(
           handlers.onUserMessageConfirmed(
             payload.userMessageId,
             payload.userMessageContent,
+            payload.turnIndex,
           );
         }
       },

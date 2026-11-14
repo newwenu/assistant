@@ -40,6 +40,7 @@ import type {
   ToolApprovalRequestDto,
   ToolApprovalDecisionDto,
   ToolErrorKindDto,
+  ToolResultCompactDto,
   TurnPhaseDto,
 } from "../../types/protocol.contract";
 
@@ -59,7 +60,11 @@ export interface ToolCallView {
   arguments?: Record<string, unknown>;
   /** `argsDelta` 累积的原始文本；解析失败不影响预览 */
   argsText?: string | null;
+  /** `Started` 首帧的参数摘要（无 `argsDelta` 的调用只能靠它展示参数） */
+  argsPreview?: string | null;
   resultText?: string | null;
+  /** 展示投影：渲染与历史重载的唯一事实源（I46 compact §3.4） */
+  compact?: ToolResultCompactDto | null;
   startedAt?: number | null;
   finishedAt?: number | null;
   approval?: ToolApprovalRequestDto | null;

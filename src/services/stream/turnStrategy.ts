@@ -24,9 +24,18 @@ export interface StreamStatePort {
   setActiveAttemptId: (attemptId: string, realMessageId: string) => void;
   clearActiveAttemptId: () => void;
   resumeStream: (attemptId: string, messageId: string | null) => void;
+  /** 本轮 turn 序号（`chat-stream-start` 下发）；`null` = 坐标未知，渲染侧平铺。 */
+  setCurrentTurnIndex: (turnIndex: number | null) => void;
+  /** 回填占位消息坐标：两个分量都来自 wire，不从相邻关系推算（I46 §3.2）。 */
+  setMessageCoords: (
+    messageId: string,
+    turnIndex: number,
+    iteration: number,
+  ) => void;
   confirmUserMessage: (
     userMessageId: string,
     userMessageContent: string,
+    turnIndex: number | null,
   ) => void;
   /** 单缓冲追加：chat 语义下即整轮唯一气泡。 */
   appendDelta: (delta: string) => void;

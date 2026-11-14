@@ -303,6 +303,11 @@ div[data-orb-window].orb-expanded .orb-panel > * {
   pointer-events: auto !important;
 }
 
+div[data-orb-window].orb-expanded .orb-panel > .ant-message,
+div[data-orb-window].orb-expanded .orb-panel > .ant-notification {
+  pointer-events: none !important;
+}
+
 div[data-orb-window].orb-expanded .ant-dropdown,
 div[data-orb-window].orb-expanded .ant-dropdown-root,
 div[data-orb-window].orb-expanded .orb-dropdown {

@@ -43,6 +43,8 @@ function awaitingMessage(): Message {
     providerId: null,
     modelId: null,
     modeId: null,
+    turnIndex: null,
+    iteration: 0,
     toolCalls: [view],
   };
 }

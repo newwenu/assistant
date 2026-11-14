@@ -43,11 +43,11 @@ export const chatService = {
   getConversationPaginated: (
     id: string | null,
     limit: number,
-    beforeTimestamp: number | null,
+    beforeTurnIndex: number | null,
   ): Promise<ConversationDetail | null> =>
     invoke<ConversationDetailDto | null>("get_conversation", {
       id,
-      opts: { mode: "paginated", limit, beforeTimestamp },
+      opts: { mode: "paginated", limit, beforeTurnIndex },
     }).then((r) =>
       r ? { ...r, messages: r.messages.map(toChatMessage) } : null,
     ),

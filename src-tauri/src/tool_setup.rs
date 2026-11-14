@@ -5,9 +5,9 @@ use tauri::Manager;
 
 use assistant_config::app_conf::AppConf;
 use assistant_tools::{
-    os, ApprovalPrompter, FileToolResultStorage, InMemoryReadReceiptStore, PermissionAuditStore,
-    PermissionGrantStore, ReadReceiptStore, ToolGateway, ToolPipeline, ToolRegistry,
-    ToolResultStorage,
+    cleanup_expired_results, os, ApprovalPrompter, FileToolResultStorage, InMemoryReadReceiptStore,
+    PermissionAuditStore, PermissionGrantStore, ReadReceiptStore, ToolGateway, ToolPipeline,
+    ToolRegistry, ToolResultStorage,
 };
 
 use crate::adapters::{
@@ -15,6 +15,29 @@ use crate::adapters::{
     PendingQuestionRegistry, PipelineToolExecution, TauriApprovalPrompter, TauriQuestionPrompter,
     TimingApprovalPrompter,
 };
+
+/// 启动时按 `mtime` 年龄清理落盘目录（I46 compact §2.9 D9，门禁 10）。
+///
+/// 放到独立线程：清理是纯本地 I/O，不应阻塞启动；失败只 warn、绝不抛出。
+/// 保留天数每次启动读一次配置（`0` → 禁用），运行期改设置下次重启生效。
+fn spawn_result_cleanup(root: std::path::PathBuf) {
+    let retention_days = match AppConf::load() {
+        Ok(conf) => conf.result_retention_days,
+        Err(e) => {
+            log::warn!("Failed to load app config for result retention: {e}");
+            assistant_config::constant::RESULT_RETENTION_DAYS
+        }
+    };
+    std::thread::spawn(move || {
+        let report = cleanup_expired_results(&root, retention_days);
+        log::info!(
+            "tool result cleanup: removed {} expired file(s), {} failure(s) (retention {} days)",
+            report.removed,
+            report.failed,
+            retention_days
+        );
+    });
+}
 
 /// 审批等待上限的兜底值：配置 `approvalTimeoutSecs` 缺省或非法时用它。
 /// 超时仍归一为 `Deny`（I38a §2.8），不得默认放行。
@@ -165,6 +188,7 @@ pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
     // 落盘根目录必须是稳定路径：它会写进 `<persisted-output path="…">`，
     // 跨进程重放一致性依赖它（§4.5），不得用临时目录。
     let results_dir = crate::app_dirs::AppDirs::resolve()?.tool_results();
+    spawn_result_cleanup(results_dir.clone());
     let storage: Arc<dyn ToolResultStorage> = Arc::new(FileToolResultStorage::new(results_dir));
     let pipeline = Arc::new(ToolPipeline::new(registry.clone(), gateway, storage));
 

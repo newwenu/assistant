@@ -9,6 +9,8 @@ import type { Provider } from "../../settings/provider/types";
 
 /** 两个布局共用的 props：只承载展示所需数据与回调，布局自身不持有状态。 */
 export interface ConversationLayoutProps {
+  /** 布局标识快照：仅透传给分组投影记录来源，不参与任何渲染分支（I46 门禁 16）。 */
+  link: "chat" | "agent";
   providerId: string | null;
   providers: Provider[];
   modelId: string;
@@ -60,4 +62,8 @@ export interface AgentLayoutSlots {
   toolPanel?: ReactNode;
   /** 审批 / 提问卡片等消息区下方插槽。 */
   belowMessages?: ReactNode;
+  /** 文档面板当前打开的文件路径；`ChatLayout` 不传即 `null`，工具结果恒走卡片（I46 compact §3.7.4）。 */
+  docPanelPath?: string | null;
+  /** 文档批注跳转回调；与 `docPanelPath` 同源注入。 */
+  onOpenDocument?: (path: string, line: number) => void;
 }

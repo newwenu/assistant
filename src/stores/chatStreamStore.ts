@@ -11,6 +11,11 @@ export interface ChatStreamState {
    */
   streamingIteration: number | null;
   activeAttemptId: string | null;
+  /**
+   * 本轮 turn 序号（I46 §3.2）：由 `chat-stream-start` 下发，是占位消息赋坐标的唯一来源。
+   * `null` 表示尚未确定（如刚切回运行中的会话），此时渲染侧平铺不折叠。
+   */
+  currentTurnIndex: number | null;
   isReasoningStreaming: boolean;
   retryStatus: RetryNotification | null;
 
@@ -21,6 +26,7 @@ export interface ChatStreamState {
    */
   beginSegment: (messageId: string, iteration: number) => void;
   setStreamingIteration: (iteration: number) => void;
+  setCurrentTurnIndex: (turnIndex: number | null) => void;
   cancelStreaming: () => void;
   appendDelta: (delta: string) => void;
   setReasoningStreaming: (streaming: boolean) => void;
@@ -42,6 +48,7 @@ export const useChatStreamStore = create<ChatStreamState>()((set) => {
     streamingMessageId: null,
     streamingIteration: null,
     activeAttemptId: null,
+    currentTurnIndex: null,
     isReasoningStreaming: false,
     retryStatus: null,
   };
@@ -66,6 +73,10 @@ export const useChatStreamStore = create<ChatStreamState>()((set) => {
 
     setStreamingIteration: (iteration: number) => {
       set({ streamingIteration: iteration });
+    },
+
+    setCurrentTurnIndex: (turnIndex: number | null) => {
+      set({ currentTurnIndex: turnIndex });
     },
 
     cancelStreaming: () => set(resetState),

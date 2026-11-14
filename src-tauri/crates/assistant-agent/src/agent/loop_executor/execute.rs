@@ -48,6 +48,18 @@ pub(super) async fn execute_tools(
     ctx.observer.set_phase(TurnPhase::ToolCalling);
     let mut halt_reason_from_tools: Option<String> = None;
     let tool_exec: Option<&dyn ToolExecutionPort> = ctx.tool_exec;
+    // 进执行队列前先把占位行推到 `running`（D27）：只有中断落在「已声明 → 已进入队列」
+    // 之间，才能断言「未开始执行」并允许重试；写失败退化为「结果未知」，不阻断执行。
+    if tool_exec.is_some() && !to_run.is_empty() {
+        let call_ids: Vec<String> = to_run.iter().map(|call| call.tool_id.clone()).collect();
+        if let Err(err) = ctx
+            .store
+            .mark_tool_calls_running(ctx.conversation_id, &call_ids)
+            .await
+        {
+            log::warn!("mark tool_calls running failed: {err}");
+        }
+    }
     let executed: Vec<ToolExecResult> = match tool_exec {
         Some(port) if !to_run.is_empty() => {
             let exec_ctx = ToolExecCtx {

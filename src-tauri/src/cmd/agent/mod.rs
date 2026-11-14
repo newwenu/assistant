@@ -214,7 +214,8 @@ pub(crate) async fn start_turn(
             conversation_id,
             inserted.assistant_msg_id.clone(),
         )
-        .with_user_message_content(&content),
+        .with_user_message_content(&content)
+        .with_turn_coords(inserted.turn_index, Some(inserted.iteration)),
     );
 
     if let Some(user_msg_id) = inserted.user_msg_id.clone() {
@@ -233,7 +234,12 @@ pub(crate) async fn start_turn(
     ));
     let runner = build_turn_runner(app, sink, input, tool_exec);
 
-    let ctx = TurnContext::new(conversation_id, turn_id, inserted.assistant_msg_id);
+    let ctx = TurnContext::new(
+        conversation_id,
+        turn_id,
+        inserted.assistant_msg_id,
+        inserted.turn_index,
+    );
 
     tauri::async_runtime::spawn(async move {
         let outcome = runner.run(&ctx, &spec).await;

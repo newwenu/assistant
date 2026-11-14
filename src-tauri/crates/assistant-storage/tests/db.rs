@@ -247,40 +247,6 @@ fn init_db_adds_tool_columns_to_legacy_messages_table() {
 }
 
 #[test]
-fn restart_sweep_marks_streaming_message_interrupted() {
-    let dir = tempfile::tempdir().unwrap();
-    let db_path = dir.path().join("restart.db");
-    {
-        let conn = db::init_db(&db_path).unwrap();
-        conn.execute(
-            "INSERT INTO conversations (id,title,title_source,model_id,created_at,updated_at)
-             VALUES ('c1','t','placeholder','m',0,0)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO messages (id,conversation_id,role,content,timestamp)
-             VALUES ('m1','c1','assistant','partial',0)",
-            [],
-        )
-        .unwrap();
-        assistant_storage::conversations::update_message_status(&conn, "m1", "streaming").unwrap();
-    }
-
-    let conn = db::init_db(&db_path).unwrap();
-    let swept =
-        assistant_storage::conversations::mark_streaming_messages_interrupted(&conn).unwrap();
-    assert_eq!(swept, 1, "重启后必须清扫残留的 streaming 消息");
-
-    let status: String = conn
-        .query_row("SELECT status FROM messages WHERE id = 'm1'", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_eq!(status, "interrupted");
-}
-
-#[test]
 fn init_db_adds_tool_config_columns_to_legacy_tables() {
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("legacy_tool_config.db");

@@ -10,7 +10,8 @@ use assistant_app::protocol::{
     ProviderListDto, ReasoningLevelsDto, ResolvedThemeDto, RetryNotificationDto, ScreenRectDto,
     ScreenSizeDto, SendChatMessageArgsDto, SessionStateChangedPayloadDto, SessionStateDto,
     SettingProviderChangedActionDto, SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto,
-    ThemeChangedPayloadDto, TokenUsageDto, ToolErrorKindDto, TurnPhaseDto, VaultConfDto,
+    ThemeChangedPayloadDto, TokenUsageDto, ToolErrorKindDto, ToolResultCompactDto, TurnPhaseDto,
+    VaultConfDto,
 };
 use assistant_storage::agent_modes::AgentModeRow;
 use serde::{Deserialize, Serialize};
@@ -67,10 +68,14 @@ fn message_dto_roundtrip() {
         mode_id: None,
         status: MessageStatusDto::Completed,
         tool_calls: Vec::new(),
+        turn_index: Some(1),
+        iteration: 0,
     };
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
     assert!(json.contains("conversationId"), "camelCase: {}", json);
+    assert!(json.contains("\"turnIndex\":1"), "turnIndex: {}", json);
+    assert!(json.contains("\"iteration\":0"), "iteration: {}", json);
 }
 
 #[test]
@@ -91,6 +96,8 @@ fn message_dto_roundtrip_keeps_tool_call_terminal_states() {
         model_id: None,
         mode_id: None,
         status: MessageStatusDto::Interrupted,
+        turn_index: None,
+        iteration: 1,
         tool_calls: vec![
             MessageToolCallDto {
                 call_id: "call_1".into(),
@@ -98,6 +105,7 @@ fn message_dto_roundtrip_keeps_tool_call_terminal_states() {
                 arguments: serde_json::json!({ "path": "a" }),
                 status: MessageToolCallStatusDto::Success,
                 result: Some("ok".into()),
+                compact: None,
             },
             MessageToolCallDto {
                 call_id: "call_2".into(),
@@ -105,6 +113,7 @@ fn message_dto_roundtrip_keeps_tool_call_terminal_states() {
                 arguments: serde_json::Value::Null,
                 status: MessageToolCallStatusDto::Cancelled,
                 result: None,
+                compact: None,
             },
         ],
     };
@@ -343,8 +352,15 @@ fn event_payload_dtos_roundtrip() {
         attempt_id: "a1".into(),
         message_id: "m1".into(),
         phase: TurnPhaseDto::Thinking,
+        turn_index: Some(3),
+        iteration: Some(1),
     };
     roundtrip(&start);
+    let start_json = serde_json::to_string(&start).unwrap();
+    assert!(
+        start_json.contains("\"turnIndex\":3") && start_json.contains("\"iteration\":1"),
+        "coords are wire facts: {start_json}"
+    );
 
     let terminated = ConversationTerminatedPayloadDto {
         conversation_id: "c1".into(),
@@ -484,10 +500,15 @@ fn agent_tool_call_dto_roundtrip() {
         payload,
     };
 
-    let started = base(AgentToolCallPayloadDto::Started);
+    let started = base(AgentToolCallPayloadDto::Started { args_preview: None });
     roundtrip(&started);
     let json = serde_json::to_string(&started).unwrap();
     assert!(json.contains("\"phase\":\"started\""), "tag: {}", json);
+    assert!(
+        json.contains("\"argsPreview\":null"),
+        "None field present: {}",
+        json
+    );
     assert!(
         json.contains("\"callId\":\"call_1\""),
         "camelCase: {}",
@@ -508,6 +529,7 @@ fn agent_tool_call_dto_roundtrip() {
     let finished = base(AgentToolCallPayloadDto::Finished {
         result: "ok".into(),
         confirmation_wait_ms: Some(120),
+        compact: None,
     });
     roundtrip(&finished);
     let json = serde_json::to_string(&finished).unwrap();
@@ -516,10 +538,16 @@ fn agent_tool_call_dto_roundtrip() {
         "explicit rename: {}",
         json
     );
+    assert!(
+        json.contains("\"compact\":null"),
+        "None field present: {}",
+        json
+    );
 
     let finished_without_wait = base(AgentToolCallPayloadDto::Finished {
         result: "ok".into(),
         confirmation_wait_ms: None,
+        compact: None,
     });
     roundtrip(&finished_without_wait);
     let json = serde_json::to_string(&finished_without_wait).unwrap();
@@ -533,6 +561,7 @@ fn agent_tool_call_dto_roundtrip() {
         error: "boom".into(),
         error_kind: ToolErrorKindDto::Denied,
         confirmation_wait_ms: Some(7),
+        compact: None,
     });
     roundtrip(&failed);
     let json = serde_json::to_string(&failed).unwrap();
@@ -546,8 +575,35 @@ fn agent_tool_call_dto_roundtrip() {
         error: "boom".into(),
         error_kind: ToolErrorKindDto::Internal,
         confirmation_wait_ms: None,
+        compact: None,
     });
     roundtrip(&failed_without_wait);
+}
+
+/// 门禁 12（形态不越界）：`compact` 信封字段集固定，文档形态不得引入第二套 wire 字段。
+#[test]
+fn tool_result_compact_keeps_a_single_envelope_field_set() {
+    let dto = ToolResultCompactDto {
+        head: "ok read · a.rs · 3/3 lines".into(),
+        truncated: None,
+        persisted: None,
+        error_kind: None,
+        anchor: None,
+    };
+    roundtrip(&dto);
+
+    let json = serde_json::to_value(&dto).unwrap();
+    let keys: BTreeSet<&str> = json
+        .as_object()
+        .expect("compact envelope serializes as an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        BTreeSet::from(["head", "truncated", "persisted", "errorKind", "anchor"]),
+        "compact 信封字段集必须与设计一致，新增字段即第二套 wire 字段"
+    );
 }
 
 #[test]
@@ -628,11 +684,16 @@ fn conversation_query_opts_dto_roundtrip() {
     let dto = ConversationQueryOptsDto {
         mode: ConversationQueryModeDto::Paginated,
         limit: 50,
-        before_timestamp: Some(1000),
+        before_turn_index: Some(7),
     };
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
-    assert!(json.contains("beforeTimestamp"), "camelCase: {}", json);
+    assert!(json.contains("beforeTurnIndex"), "camelCase: {}", json);
+    assert!(
+        !json.contains("beforeTimestamp"),
+        "timestamp cursor is gone: {}",
+        json
+    );
 }
 
 /// 落盘配置与前端配置 DTO 的键集合必须一一对应（snake_case → camelCase 归一化）。

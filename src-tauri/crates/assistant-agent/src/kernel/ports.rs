@@ -108,6 +108,11 @@ pub struct CreateAssistantReq {
     pub model_id: Option<String>,
     /// turn 起点的模式快照（I43 §3.4）：由 `TurnInput.mode` 取值，内核不读 DB。
     pub mode_id: Option<String>,
+    /// 节点坐标（I46 §2.5）：由宿主透传，内核不认识持久坐标、只搬运。
+    /// `None` 时该列写 `NULL`（存量会话 / 无坐标分支点），渲染侧落 `unresolved`。
+    pub turn_index: Option<u32>,
+    /// turn 内迭代序号；`0` = 非迭代行。
+    pub iteration: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +136,17 @@ impl std::error::Error for StoreError {}
 pub type UsageRecord = TokenUsageRecord;
 
 #[derive(Debug, Clone)]
+pub struct DeclareToolCallsReq {
+    pub conversation_id: String,
+    /// 声明这批调用的 assistant 行 id，整批占位行挂在它之下。
+    pub parent_id: String,
+    pub call_ids: Vec<String>,
+    /// 节点坐标（I46 §2.5）：占位行与声明行同属一个 turn 与迭代。
+    pub turn_index: Option<u32>,
+    pub iteration: u32,
+}
+
+#[derive(Debug, Clone)]
 pub struct AppendToolMessageReq {
     pub conversation_id: String,
     pub parent_id: String,
@@ -138,6 +154,9 @@ pub struct AppendToolMessageReq {
     pub content: String,
     pub is_error: bool,
     pub timestamp: i64,
+    /// 节点坐标（I46 §2.5）：tool 行属于发起该调用的 turn 与迭代，不得写 `0`。
+    pub turn_index: Option<u32>,
+    pub iteration: u32,
 }
 
 #[async_trait]
@@ -155,7 +174,40 @@ pub trait MessageStore: Send + Sync {
 
     async fn save_tool_calls(&self, msg_id: &str, tool_calls_json: &str) -> Result<(), StoreError>;
 
-    async fn append_tool_message(&self, req: AppendToolMessageReq) -> Result<String, StoreError>;
+    /// 声明工具调用（D27）：`tool_calls` 落库之后调用，为每个调用插入一条空的占位结果行。
+    ///
+    /// 返回按序生成的占位行 id（= 整批的新挂载点）。拓扑在此刻定死，结果到达时只回填
+    /// 正文——这是「中断后可自愈」的前提：行已存在，投影有落脚点。
+    async fn declare_tool_calls(&self, req: DeclareToolCallsReq)
+        -> Result<Vec<String>, StoreError>;
+
+    /// 标记「已进入执行队列」（D27）：调用执行端口之前调用，占位行 `pending` → `running`。
+    ///
+    /// 单向推进、不回退。写失败不阻断执行——状态退化为 `pending` 只会让文案更保守，
+    /// 不该让一次可用的工具调用因此失败。
+    async fn mark_tool_calls_running(
+        &self,
+        conversation_id: &str,
+        call_ids: &[String],
+    ) -> Result<(), StoreError>;
+
+    /// 只回填已存在的占位行，不新建行（D27）：用于 turn 已失效（`!is_current`）的提前返回。
+    ///
+    /// 走 `append_tool_messages` 会插入新行、改写挂载点；此处调用时已离开当前分支的
+    /// 写入窗口，只能原地补正文。没有占位行时静默跳过（存量会话）。
+    async fn fill_tool_messages(&self, reqs: Vec<AppendToolMessageReq>) -> Result<(), StoreError> {
+        let _ = reqs;
+        Ok(())
+    }
+
+    /// 一批 tool 结果一次性落库，返回按序的占位行 id。
+    ///
+    /// 同一批必须原子写入：逐条提交时进程若在批中途退出，就会留下「有调用、无结果」的
+    /// 孤立行（D27 的成因）。有占位行则原地回填，没有才插入新行（存量会话）。
+    async fn append_tool_messages(
+        &self,
+        reqs: Vec<AppendToolMessageReq>,
+    ) -> Result<Vec<String>, StoreError>;
 
     async fn finalize(&self, msg_id: &str, status: MessageStatus) -> Result<(), StoreError>;
 

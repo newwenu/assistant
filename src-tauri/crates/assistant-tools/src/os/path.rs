@@ -364,6 +364,12 @@ fn normalize_components(path: &Path, original: &str) -> Result<PathBuf, String> 
     if !has_normal && normalized.as_os_str().is_empty() {
         normalized.push(".");
     }
+    // 归一化自身可能产出盘符相对路径：`PathBuf::push` 遇到带 prefix 的片段会清空
+    // 缓冲区（`\?\G:\...` 里的 `G:` 组件即如此），结果退化成「G 盘当前目录」。
+    // 该形态一旦流出，`exists()` / `canonicalize()` 会按进程 cwd 补全，拼出与工作区
+    // 无关的目录（开发时是 `src-tauri`，打包后是安装目录或用户目录）。
+    // 原始输入已在 `join_input` 查过一次，这里必须复查产物：校验对象与使用对象是同一个。
+    reject_drive_relative(&normalized, original)?;
     Ok(normalized)
 }
 
@@ -659,6 +665,42 @@ mod tests {
         assert!(
             error.contains("relative path with drive prefix is not supported"),
             "unexpected error: {error}"
+        );
+    }
+
+    /// `\?\C:\...` 少一个反斜杠：组件层面只是「根相对路径」，不是合法 verbatim 前缀。
+    ///
+    /// 若放行，`join_input` 会与工作区根拼接，`normalize_components` 再把其中的 `C:`
+    /// 当盘符前缀重新压入缓冲区（`PathBuf::push` 清空已累积内容），产物退化为盘符
+    /// 相对路径，随后 `exists()` / `canonicalize()` 按进程 cwd 补全 —— 开发时拼出
+    /// `src-tauri\...`，打包后拼出安装目录或用户目录。修复点在归一化出口复查形态。
+    #[cfg(windows)]
+    #[test]
+    fn malformed_verbatim_prefix_is_not_resolved_against_cwd() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = context_with_root(dir.path());
+        let root = canonicalize_lenient(dir.path()).expect("canonical root");
+        let root_text = root.to_string_lossy().to_string();
+        let Some((drive, rest)) = root_text.split_once(":\\") else {
+            return;
+        };
+
+        let malformed = format!("\\?\\{drive}:\\{rest}");
+        let error = resolve(&malformed, &context).expect_err("must reject malformed verbatim");
+        assert!(
+            error.contains("relative path with drive prefix is not supported"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            !error.contains("src-tauri"),
+            "error must not leak a cwd-derived path: {error}"
+        );
+
+        let verbatim = format!("\\\\?\\{root_text}");
+        let resolved = resolve(&verbatim, &context).expect("correct verbatim form still resolves");
+        assert_eq!(
+            resolved, root,
+            "verbatim form must resolve to the workspace root"
         );
     }
 

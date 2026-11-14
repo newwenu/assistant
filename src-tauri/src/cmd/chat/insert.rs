@@ -10,6 +10,10 @@ use assistant_storage::{
 pub(crate) struct InsertedMessages {
     pub assistant_msg_id: String,
     pub user_msg_id: Option<String>,
+    /// 本轮 turn 序号（I46 §2.4）。`None` = 分支点位于存量行，该轮无坐标。
+    pub turn_index: Option<u32>,
+    /// assistant 占位行的迭代号（I46 §2.6）：分支重生成时为 `> 1`，事件必须如实下发。
+    pub iteration: u32,
 }
 
 pub(crate) struct InsertChatInput<'a> {
@@ -27,6 +31,13 @@ struct MessageIdentity<'a> {
     provider_id: Option<&'a str>,
     model_id: Option<&'a str>,
     mode_id: Option<&'a str>,
+}
+
+/// 本轮坐标（I46 §2.4 / §2.6）：`turn_index` 与 `iteration` 恒成对出现，
+/// 收成一个入参，写行函数签名不随坐标字段增长。
+struct TurnCoords {
+    turn_index: Option<u32>,
+    iteration: u32,
 }
 
 pub(crate) fn insert_chat_messages(
@@ -56,13 +67,17 @@ pub(crate) fn insert_chat_messages(
     provider_store::get_provider_by_id(conn, provider_id)?
         .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
 
+    // 取号、写行、递增计数器必须同事务（I46 §2.4）：任一失败整体回滚，
+    // 计数器不会因写行失败而空转。
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+
     {
-        let mut conv = conversations::get_conversation_by_id(conn, conversation_id)?
+        let mut conv = conversations::get_conversation_by_id(&tx, conversation_id)?
             .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
         conv.provider_id = Some(provider_id.to_string());
         conv.model_id = model_id.to_string();
         conv.updated_at = now;
-        conversations::update_conversation(conn, &conv)?;
+        conversations::update_conversation(&tx, &conv)?;
     }
 
     // 模式来源统一：本次所选（非空串）优先，否则回退会话现值（I43 §3.4）。
@@ -77,28 +92,38 @@ pub(crate) fn insert_chat_messages(
         mode_id: msg_mode_id.as_deref(),
     };
 
-    let (_user_msg_id, assistant_msg_id, user_msg_id) = if let Some(bp_id) = branch_point_message_id
-    {
-        insert_on_branch(conn, conversation_id, content, bp_id, now, &identity)?
-    } else {
-        insert_normal_append(
-            conn,
-            conversation_id,
-            content,
-            &detail_before,
-            now,
-            &identity,
-        )?
-    };
+    let (assistant_msg_id, user_msg_id, turn_index, iteration) =
+        if let Some(bp_id) = branch_point_message_id {
+            insert_on_branch(&tx, conversation_id, content, bp_id, now, &identity)?
+        } else {
+            insert_normal_append(
+                &tx,
+                conversation_id,
+                content,
+                &detail_before,
+                now,
+                &identity,
+            )?
+        };
 
-    conversations::update_active_branch_id(conn, conversation_id, &assistant_msg_id)?;
+    conversations::update_active_branch_id(&tx, conversation_id, &assistant_msg_id)?;
+
+    tx.commit().map_err(|e| e.to_string())?;
 
     Ok(InsertedMessages {
         assistant_msg_id,
         user_msg_id,
+        turn_index,
+        iteration,
     })
 }
 
+/// 分支发送的坐标归属（I46 §2.4 路径 2 / 3）：
+///
+/// - 分支点是 `user`：等于「在该 user 之后新开一轮」，取新号，`(t, 0)` + `(t, 1)`；
+/// - 分支点是 `assistant`：属于同一轮的重新生成，沿用分支点的 `turn_index`，
+///   迭代号在该轮内递增，**不递增会话计数器**（ADR D2 约束 4 例外）；
+///   分支点无坐标（存量行）时整轮无坐标，落 `unresolved`。
 fn insert_on_branch(
     conn: &rusqlite::Connection,
     conversation_id: &str,
@@ -106,7 +131,7 @@ fn insert_on_branch(
     bp_id: &str,
     now: i64,
     identity: &MessageIdentity<'_>,
-) -> Result<(String, String, Option<String>), String> {
+) -> Result<(String, Option<String>, Option<u32>, u32), String> {
     let branch_point = conversations::get_message_by_id(conn, bp_id)?
         .ok_or_else(|| format!("Branch point message {} not found", bp_id))?;
 
@@ -118,6 +143,8 @@ fn insert_on_branch(
             conversations::get_sibling_count(conn, conversation_id, user_parent_id.as_deref())?
                 .max(0);
 
+        let turn_index = conversations::allocate_turn_index(conn, conversation_id)?;
+
         let uid = insert_user_message_with_attachments(
             conn,
             conversation_id,
@@ -125,6 +152,10 @@ fn insert_on_branch(
             user_parent_id,
             user_sibling_index,
             now,
+            TurnCoords {
+                turn_index: Some(turn_index),
+                iteration: 0,
+            },
         )?;
 
         let aid = insert_placeholder_assistant_message(
@@ -134,9 +165,13 @@ fn insert_on_branch(
             0,
             now + 1,
             identity,
+            TurnCoords {
+                turn_index: Some(turn_index),
+                iteration: 1,
+            },
         )?;
 
-        Ok((uid.clone(), aid, Some(uid)))
+        Ok((aid, Some(uid), Some(turn_index), 1))
     } else {
         let assistant_parent_id = bp_parent_id.clone();
         let assistant_sibling_index = conversations::get_sibling_count(
@@ -146,6 +181,15 @@ fn insert_on_branch(
         )?
         .max(0);
 
+        let (turn_index, iteration) = match branch_point.turn_index {
+            Some(raw) => {
+                let t = u32::try_from(raw).map_err(|_| format!("invalid turn_index {raw}"))?;
+                let it = conversations::allocate_iteration(conn, conversation_id, t)?;
+                (Some(t), it)
+            }
+            None => (None, 0),
+        };
+
         let aid = insert_placeholder_assistant_message(
             conn,
             conversation_id,
@@ -153,9 +197,13 @@ fn insert_on_branch(
             assistant_sibling_index,
             now,
             identity,
+            TurnCoords {
+                turn_index,
+                iteration,
+            },
         )?;
 
-        Ok((String::new(), aid, None))
+        Ok((aid, None, turn_index, iteration))
     }
 }
 
@@ -166,10 +214,12 @@ fn insert_normal_append(
     detail_before: &conversations::ConversationDetail,
     now: i64,
     identity: &MessageIdentity<'_>,
-) -> Result<(String, String, Option<String>), String> {
+) -> Result<(String, Option<String>, Option<u32>, u32), String> {
     let user_parent_id = detail_before.messages.last().map(|m| m.id.clone());
     let user_sibling_index =
         conversations::get_sibling_count(conn, conversation_id, user_parent_id.as_deref())?.max(0);
+
+    let turn_index = conversations::allocate_turn_index(conn, conversation_id)?;
 
     let uid = insert_user_message_with_attachments(
         conn,
@@ -178,6 +228,10 @@ fn insert_normal_append(
         user_parent_id,
         user_sibling_index,
         now,
+        TurnCoords {
+            turn_index: Some(turn_index),
+            iteration: 0,
+        },
     )?;
 
     let aid = insert_placeholder_assistant_message(
@@ -187,9 +241,13 @@ fn insert_normal_append(
         0,
         now + 1,
         identity,
+        TurnCoords {
+            turn_index: Some(turn_index),
+            iteration: 1,
+        },
     )?;
 
-    Ok((uid.clone(), aid, Some(uid)))
+    Ok((aid, Some(uid), Some(turn_index), 1))
 }
 
 fn insert_user_message_with_attachments(
@@ -199,6 +257,7 @@ fn insert_user_message_with_attachments(
     parent_id: Option<String>,
     sibling_index: i64,
     now: i64,
+    coords: TurnCoords,
 ) -> Result<String, String> {
     let uid = Uuid::new_v4().to_string();
     conversations::insert_message(
@@ -221,6 +280,8 @@ fn insert_user_message_with_attachments(
             is_error: false,
             status: "completed".to_string(),
             mode_id: None,
+            turn_index: coords.turn_index.map(i64::from),
+            iteration: i64::from(coords.iteration),
         },
     )?;
 
@@ -241,6 +302,7 @@ fn insert_placeholder_assistant_message(
     sibling_index: i64,
     timestamp: i64,
     identity: &MessageIdentity<'_>,
+    coords: TurnCoords,
 ) -> Result<String, String> {
     let aid = Uuid::new_v4().to_string();
     conversations::insert_message(
@@ -263,6 +325,8 @@ fn insert_placeholder_assistant_message(
             is_error: false,
             status: "streaming".to_string(),
             mode_id: identity.mode_id.map(|s| s.to_string()),
+            turn_index: coords.turn_index.map(i64::from),
+            iteration: i64::from(coords.iteration),
         },
     )?;
     conversations::update_message_status(conn, &aid, "streaming")?;
@@ -435,5 +499,139 @@ mod tests {
             second.user_msg_id.is_none(),
             "以 assistant 为分支点时不新建 user 行"
         );
+    }
+
+    fn coords(conn: &rusqlite::Connection, id: &str) -> (Option<i64>, i64) {
+        let row = conversations::get_message_by_id(conn, id)
+            .unwrap()
+            .expect("message exists");
+        (row.turn_index, row.iteration)
+    }
+
+    fn next_turn_index(conn: &rusqlite::Connection) -> i64 {
+        conn.query_row(
+            "SELECT next_turn_index FROM conversations WHERE id = 'c1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn write_failure_rolls_back_counter_and_rows() {
+        let (_dir, conn) = setup(None);
+        conn.execute_batch(
+            "CREATE TRIGGER fail_message_insert BEFORE INSERT ON messages \
+             WHEN NEW.content = 'boom' BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+        )
+        .unwrap();
+
+        let before = next_turn_index(&conn);
+        let result = insert_chat_messages(
+            &conn,
+            InsertChatInput {
+                conversation_id: "c1",
+                content: "boom",
+                branch_point_message_id: None,
+                provider_id: "p1",
+                model_id: "gpt-4",
+                mode_id: None,
+            },
+        );
+        assert!(result.is_err(), "注入写入失败必须整体报错");
+
+        assert_eq!(
+            next_turn_index(&conn),
+            before,
+            "门禁 19：写行失败时计数器不递增（取号与写行同事务）"
+        );
+        assert_eq!(
+            conversations::get_messages(&conn, "c1").unwrap().len(),
+            0,
+            "回滚后不留半成品行"
+        );
+
+        conn.execute_batch("DROP TRIGGER fail_message_insert;")
+            .unwrap();
+        let ok = send(&conn, None, None);
+        assert_eq!(ok.turn_index, Some(1), "失败轮不占用号，下一轮仍从 1 起");
+    }
+
+    #[test]
+    fn normal_append_allocates_monotonic_turn_coords() {
+        let (_dir, conn) = setup(None);
+        let first = send(&conn, None, None);
+        assert_eq!(first.turn_index, Some(1), "首轮从 1 起");
+
+        let uid = first.user_msg_id.clone().expect("user 行");
+        assert_eq!(coords(&conn, &uid), (Some(1), 0), "user 行 (t, 0)");
+        assert_eq!(
+            coords(&conn, &first.assistant_msg_id),
+            (Some(1), 1),
+            "assistant 行 (t, 1)"
+        );
+
+        let second = send(&conn, None, None);
+        assert_eq!(second.turn_index, Some(2), "下一轮递增");
+        let uid2 = second.user_msg_id.clone().expect("user 行");
+        assert_eq!(coords(&conn, &uid2), (Some(2), 0));
+        assert_eq!(coords(&conn, &second.assistant_msg_id), (Some(2), 1));
+    }
+
+    #[test]
+    fn branch_on_user_point_opens_new_turn() {
+        let (_dir, conn) = setup(None);
+        let first = send(&conn, None, None);
+        let uid = first.user_msg_id.clone().expect("user 行");
+
+        let branched = send(&conn, None, Some(&uid));
+        assert_eq!(
+            branched.turn_index,
+            Some(2),
+            "以 user 为分支点 = 在其后新开一轮"
+        );
+        let new_uid = branched.user_msg_id.clone().expect("user 行");
+        assert_eq!(coords(&conn, &new_uid), (Some(2), 0));
+        assert_eq!(coords(&conn, &branched.assistant_msg_id), (Some(2), 1));
+    }
+
+    #[test]
+    fn branch_on_assistant_point_reuses_turn_and_bumps_iteration() {
+        let (_dir, conn) = setup(None);
+        let first = send(&conn, None, None);
+        assert_eq!(coords(&conn, &first.assistant_msg_id), (Some(1), 1));
+
+        let regenerated = send(&conn, None, Some(&first.assistant_msg_id));
+        assert_eq!(
+            regenerated.turn_index,
+            Some(1),
+            "重生成沿用分支点 turn，不新开轮"
+        );
+        assert_eq!(
+            coords(&conn, &regenerated.assistant_msg_id),
+            (Some(1), 2),
+            "迭代号在该 turn 内递增"
+        );
+
+        let again = send(&conn, None, Some(&regenerated.assistant_msg_id));
+        assert_eq!(coords(&conn, &again.assistant_msg_id), (Some(1), 3));
+    }
+
+    #[test]
+    fn new_rows_never_carry_null_turn_index() {
+        let (_dir, conn) = setup(None);
+        let first = send(&conn, None, None);
+        let second = send(&conn, None, Some(&first.assistant_msg_id));
+
+        let rows = conversations::get_messages(&conn, "c1").unwrap();
+        assert_eq!(rows.len(), 3, "两轮共 3 行（第二轮为分支重生成）");
+        for row in &rows {
+            assert!(
+                row.turn_index.is_some(),
+                "门禁 18：chat 写路径不得产生 NULL 坐标行，违规行 {}",
+                row.id
+            );
+        }
+        assert_eq!(second.turn_index, Some(1));
     }
 }

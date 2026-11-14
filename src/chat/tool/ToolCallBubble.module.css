@@ -75,6 +75,18 @@
   overflow-wrap: anywhere;
 }
 
+.head {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.scale {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
 .persisted {
   display: flex;
   align-items: center;

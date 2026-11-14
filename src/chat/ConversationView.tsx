@@ -521,6 +521,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
   }, [modal, t, chat]);
 
   const layoutProps = {
+    link: route.link,
     providerId: currentProviderId,
     providers: provider.providers,
     modelId: currentModelId,

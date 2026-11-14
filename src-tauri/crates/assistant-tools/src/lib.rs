@@ -1,3 +1,4 @@
+pub mod compact;
 pub mod context;
 pub mod definition;
 pub mod exec;

@@ -1,7 +1,9 @@
 import type {
   ApprovalExtension,
   ApprovalExtensionSeverity,
+  ToolCallView,
 } from "../core/chatTypes";
+import type { ToolResultCompactDto } from "../../types/protocol.contract";
 
 const ARG_SUMMARY_MAX_CHARS = 240;
 const RESULT_COLLAPSE_LINES = 12;
@@ -125,4 +127,81 @@ export function formatToolDuration(
   const minutes = Math.floor(ms / 60_000);
   const seconds = Math.round((ms % 60_000) / 1000);
   return `${minutes}m${seconds}s`;
+}
+
+export interface ResultDisplayPersisted {
+  path: string;
+  bytes: number | null;
+}
+
+/**
+ * 结果区的展示投影：`compact` 存在时一切取自信封，不再解析正文文本；
+ * `compact == null`（旧数据）才回落到 `parsePersistedOutput` / `resultStats`。
+ */
+export interface ResultDisplay {
+  /** 单行标题：信封 `head`；文本兜底时为空。 */
+  head: string | null;
+  /** 展开后原样显示的正文（不改字节）。 */
+  body: string;
+  /** 默认是否折叠：信封已概括，正文默认收起；文本兜底按既有阈值。 */
+  defaultCollapsed: boolean;
+  persisted: ResultDisplayPersisted | null;
+  truncated: ToolResultCompactDto["truncated"];
+  errorKind: ToolResultCompactDto["errorKind"];
+  source: "compact" | "text";
+}
+
+/**
+ * 去掉正文里由后端渲染的落盘标签前缀。路径来自 `compact.persisted`，
+ * 因此这里只是按已知前缀裁剪，不做正则反解（门禁 7：定位符非解析）。
+ */
+function trimPersistedTag(body: string, path: string): string {
+  const tag = `<persisted-output path="${path}">`;
+  if (!body.startsWith(tag)) return body;
+  return body.slice(tag.length).replace(/^\r?\n/, "");
+}
+
+export function resolveResultDisplay(
+  resultText: string | null | undefined,
+  compact: ToolResultCompactDto | null | undefined,
+): ResultDisplay {
+  const text = resultText ?? "";
+  if (compact) {
+    return {
+      head: compact.head,
+      body: compact.persisted
+        ? trimPersistedTag(text, compact.persisted.path)
+        : text,
+      defaultCollapsed: true,
+      persisted: compact.persisted
+        ? { path: compact.persisted.path, bytes: compact.persisted.bytes }
+        : null,
+      truncated: compact.truncated,
+      errorKind: compact.errorKind,
+      source: "compact",
+    };
+  }
+  const persisted = parsePersistedOutput(text);
+  const body = persisted ? persisted.preview : text;
+  return {
+    head: null,
+    body,
+    defaultCollapsed: shouldCollapseResult(body),
+    persisted: persisted ? { path: persisted.path, bytes: null } : null,
+    truncated: null,
+    errorKind: null,
+    source: "text",
+  };
+}
+
+/**
+ * 渲染选路判据（I46 compact §3.7.4）：只有「锚点存在」且「面板正打开该文件」
+ * 才走文档批注引用。**不读** `role` / `modeId` / `TurnKind` / 工具名（门禁 13）。
+ */
+export function shouldRenderDocStub(
+  view: Pick<ToolCallView, "compact">,
+  docPanelPath: string | null | undefined,
+): boolean {
+  const anchor = view.compact?.anchor ?? null;
+  return anchor != null && docPanelPath != null && anchor.path === docPanelPath;
 }

@@ -16,9 +16,8 @@ import { ApprovalCard } from "./ApprovalCard";
 import { QuestionCard } from "./QuestionCard";
 import {
   formatToolDuration,
-  parsePersistedOutput,
+  resolveResultDisplay,
   resultStats,
-  shouldCollapseResult,
   summarizeArguments,
 } from "./toolCallDisplay";
 import css from "./ToolCallBubble.module.css";
@@ -65,16 +64,25 @@ export const ToolCallBubble: React.FC<ToolCallBubbleProps> = ({ view }) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
-  const persisted = parsePersistedOutput(view.resultText);
-  const resultText = persisted ? persisted.preview : (view.resultText ?? "");
-  const hasResult = resultText.trim().length > 0;
-  const collapsible = hasResult && shouldCollapseResult(resultText);
-  const showResult = hasResult && (expanded || !collapsible);
+  const display = resolveResultDisplay(view.resultText, view.compact);
+  const hasBody = display.body.trim().length > 0;
+  const showBody = hasBody && (expanded || !display.defaultCollapsed);
+  const collapsible = hasBody && display.defaultCollapsed;
   const argsSummary =
+    (view.argsPreview?.trim() ? view.argsPreview.trim() : null) ??
     summarizeArguments(view.arguments) ??
     (view.argsText?.trim() ? view.argsText.trim() : null);
   const duration = formatToolDuration(view.startedAt, view.finishedAt);
-  const stats = collapsible ? resultStats(resultText) : null;
+  const stats =
+    collapsible && display.source === "text" ? resultStats(display.body) : null;
+  const truncated = display.truncated
+    ? [
+        scaleNumbers(display.truncated),
+        t(`chat.tool.unit.${display.truncated.unit}`),
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : null;
 
   return (
     <div className={`${css.root} ${statusClass(view.status)}`}>
@@ -99,14 +107,27 @@ export const ToolCallBubble: React.FC<ToolCallBubbleProps> = ({ view }) => {
         <QuestionCard question={view.question} startedAt={view.startedAt} />
       )}
 
-      {persisted && (
-        <div className={css.persisted}>
-          {t("chat.tool.result_persisted")}
-          <span className={css.persistedPath}>{persisted.path}</span>
+      {display.head && <div className={css.head}>{display.head}</div>}
+
+      {truncated && (
+        <div className={css.scale}>
+          {t("chat.tool.result_truncated", { scale: truncated })}
         </div>
       )}
 
-      {showResult && <pre className={css.result}>{resultText}</pre>}
+      {display.persisted && (
+        <div className={css.persisted}>
+          {t("chat.tool.result_persisted")}
+          <span className={css.persistedPath}>{display.persisted.path}</span>
+          {display.persisted.bytes != null && (
+            <span className={css.resultStats}>
+              {formatBytes(display.persisted.bytes)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {showBody && <pre className={css.result}>{display.body}</pre>}
 
       {collapsible && (
         <button
@@ -129,9 +150,21 @@ export const ToolCallBubble: React.FC<ToolCallBubbleProps> = ({ view }) => {
         </button>
       )}
 
-      {!hasResult && view.status === "success" && (
+      {!hasBody && !display.head && view.status === "success" && (
         <div className={css.empty}>{t("chat.tool.no_result")}</div>
       )}
     </div>
   );
 };
+
+/** 截断规模只报数量：`returned/total` 双值齐全时给区间，否则给单值。 */
+function scaleNumbers(
+  truncated: NonNullable<ToolCallView["compact"]>["truncated"],
+) {
+  if (!truncated) return "";
+  if (truncated.returned != null && truncated.total != null) {
+    return `${truncated.returned}/${truncated.total}`;
+  }
+  const single = truncated.returned ?? truncated.total;
+  return single != null ? String(single) : "";
+}

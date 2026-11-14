@@ -1,4 +1,6 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -9,13 +11,21 @@ pub const PER_TOOL_LIMIT_CHARS: usize = 50_000;
 /// 单轮内联预算：所有内联结果回填文本的合计上限。
 pub const PER_ROUND_LIMIT_CHARS: usize = 200_000;
 
-/// 落盘后回填的预览字符数。
-pub const PREVIEW_CHARS: usize = 2_000;
+/// 落盘回填预览的头部窗口（字符）。
+pub const PREVIEW_HEAD_CHARS: usize = 600;
+
+/// 落盘回填预览的尾部窗口（字符）。
+pub const PREVIEW_TAIL_CHARS: usize = 600;
+
+/// 落盘后回填的预览字符数（头尾合计）。
+pub const PREVIEW_CHARS: usize = PREVIEW_HEAD_CHARS + PREVIEW_TAIL_CHARS;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistToolResult {
     pub tool_call_id: String,
     pub tool_name: String,
+    /// 会话 id；用于目录命名空间（I46 compact §2.9 D9）。`None` 归入共享桶。
+    pub session_id: Option<String>,
     pub content: String,
 }
 
@@ -47,10 +57,18 @@ impl FileToolResultStorage {
 #[async_trait]
 impl ToolResultStorage for FileToolResultStorage {
     async fn persist(&self, req: PersistToolResult) -> Result<PersistedRef, String> {
-        tokio::fs::create_dir_all(&self.root)
+        let namespace = session_namespace(req.session_id.as_deref());
+        let dir = self.root.join(namespace);
+        tokio::fs::create_dir_all(&dir)
             .await
             .map_err(|error| format!("create result dir failed: {}", error))?;
-        let path = self.root.join(result_file_name(&req.tool_call_id));
+        let file = format!(
+            "{}-{}-{}",
+            unique_prefix(),
+            safe_component(&req.tool_name),
+            result_file_name(&req.tool_call_id)
+        );
+        let path = dir.join(file);
         let bytes = req.content.len();
         tokio::fs::write(&path, req.content.as_bytes())
             .await
@@ -59,6 +77,153 @@ impl ToolResultStorage for FileToolResultStorage {
             path: path.display().to_string(),
             bytes,
         })
+    }
+}
+
+/// 会话命名空间：会话 id 的 FNV-1a 64 位摘要（不引第三方哈希库，跨进程稳定）。
+///
+/// 不用 `DefaultHasher`：它的算法与密钥未承诺跨版本稳定，而定位符要跨重启有效。
+/// 空 id / `None` 归入 `shared`，与 Agent 会话互不干扰。
+pub fn session_namespace(session_id: Option<&str>) -> String {
+    let Some(id) = session_id.filter(|id| !id.is_empty()) else {
+        return "shared".to_string();
+    };
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in id.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{:016x}", hash)
+}
+
+/// 文件名的唯一前缀：纳秒时间戳 + 进程内自增序号。
+///
+/// 只保证「同一目录内不撞名」，不承担不可猜测性：定位符本身不是凭据，
+/// 越权访问由工作区边界与审批约束。
+fn unique_prefix() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos() as u64)
+        .unwrap_or(0);
+    format!("{:012x}{:04x}", nanos & 0xffff_ffff_ffff, seq & 0xffff)
+}
+
+/// 工具名只作可读提示，非法字符一律替换，避免路径分隔符与保留字符。
+fn safe_component(raw: &str) -> String {
+    let sanitized: String = raw
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let sanitized = sanitized.trim_matches('_');
+    if sanitized.is_empty() {
+        "tool".to_string()
+    } else {
+        sanitized.chars().take(32).collect()
+    }
+}
+
+/// 启动清理结果：只用于日志与测试断言，不参与任何业务判定。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CleanupReport {
+    pub removed: usize,
+    pub failed: usize,
+}
+
+/// 按 `mtime` 年龄清理落盘目录（I46 compact §2.9 D9，门禁 10）。
+///
+/// 约束：只删常规文件、不跟随符号链接、失败只计数不抛出、`retention_days == 0`
+/// 完全禁用。目录本身不修剪（OQ6 定稿：只删文件、保留空目录）。
+/// 旧布局（根目录下的扁平 `<call_id>.txt`）同样按年龄清理，不做迁移。
+pub fn cleanup_expired_results(root: &Path, retention_days: u32) -> CleanupReport {
+    let mut report = CleanupReport::default();
+    if retention_days == 0 {
+        return report;
+    }
+    let Some(cutoff) = retention_cutoff(retention_days) else {
+        return report;
+    };
+    sweep_directory(root, cutoff, &mut report);
+    report
+}
+
+fn retention_cutoff(retention_days: u32) -> Option<SystemTime> {
+    let span = Duration::from_secs(u64::from(retention_days).saturating_mul(86_400));
+    SystemTime::now().checked_sub(span)
+}
+
+fn sweep_directory(dir: &Path, cutoff: SystemTime, report: &mut CleanupReport) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            log::warn!(
+                "cleanup tool results: read dir '{}' failed: {}",
+                dir.display(),
+                error
+            );
+            report.failed += 1;
+            return;
+        }
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                log::warn!(
+                    "cleanup tool results: bad entry in '{}': {}",
+                    dir.display(),
+                    error
+                );
+                report.failed += 1;
+                continue;
+            }
+        };
+        let path = entry.path();
+        // `symlink_metadata` 不跟随链接：符号链接按「非常规文件」跳过，绝不删目标。
+        let meta = match std::fs::symlink_metadata(&path) {
+            Ok(meta) => meta,
+            Err(error) => {
+                log::warn!(
+                    "cleanup tool results: stat '{}' failed: {}",
+                    path.display(),
+                    error
+                );
+                report.failed += 1;
+                continue;
+            }
+        };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
+            sweep_directory(&path, cutoff, report);
+            continue;
+        }
+        if !meta.is_file() {
+            continue;
+        }
+        let expired = meta.modified().map(|mtime| mtime < cutoff).unwrap_or(false);
+        if !expired {
+            continue;
+        }
+        match std::fs::remove_file(&path) {
+            Ok(()) => report.removed += 1,
+            Err(error) => {
+                log::warn!(
+                    "cleanup tool results: remove '{}' failed: {}",
+                    path.display(),
+                    error
+                );
+                report.failed += 1;
+            }
+        }
     }
 }
 
@@ -96,10 +261,26 @@ pub fn select_persist_targets(sizes: &[usize]) -> Vec<bool> {
     persist
 }
 
-/// 落盘后的回填文本：引用 + 前 `PREVIEW_CHARS` 字符。
+/// 落盘后的回填文本：引用 + 头 `PREVIEW_HEAD_CHARS` + 省略标记 + 尾 `PREVIEW_TAIL_CHARS`。
+///
+/// 尾部窗口不可省：工具自己的省略 footer（`[truncated: ...]` / `[encoding: ...]`）
+/// 与命令行类输出的错误末行都在原文末尾，只留头等于把它们全部丢掉。
+///
+/// 标记行**不得复用** `[truncated:` 语法：那是「工具结果被采集侧截断」的专用口径，
+/// 复用会让 `compact.truncated` 把「存储预览被裁」误读成「结果不完整」。
 pub fn persisted_reference(path: &str, content: &str) -> String {
-    let preview: String = content.chars().take(PREVIEW_CHARS).collect();
-    format!("<persisted-output path=\"{}\">\n{}", path, preview)
+    let total = content.chars().count();
+    if total <= PREVIEW_CHARS {
+        return format!("<persisted-output path=\"{}\">\n{}", path, content);
+    }
+
+    let head: String = content.chars().take(PREVIEW_HEAD_CHARS).collect();
+    let tail: String = content.chars().skip(total - PREVIEW_TAIL_CHARS).collect();
+    let omitted = total - PREVIEW_HEAD_CHARS - PREVIEW_TAIL_CHARS;
+    format!(
+        "<persisted-output path=\"{}\">\n{}\n[… {} chars omitted; full output in the file above …]\n{}",
+        path, head, omitted, tail
+    )
 }
 
 /// 读取回执的键：同一会话、同一路径。

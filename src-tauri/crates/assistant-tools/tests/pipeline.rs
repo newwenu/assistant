@@ -215,6 +215,14 @@ fn call(id: &str, name: &str) -> ToolCall {
     ToolCall::new(id, name, json!({}))
 }
 
+/// 取出 `Finished` 事件里下发给 wire 的正文（与 tool 行 `content` 同源）。
+fn finished_text(sink: &InMemoryEventSink) -> String {
+    match &sink.events()[1] {
+        PipelineEvent::Finished { assistant_text, .. } => assistant_text.clone(),
+        other => panic!("expected Finished event, got {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn unknown_tool_fails_at_find_stage() {
     let h = harness(vec![]);
@@ -465,11 +473,43 @@ async fn large_result_is_persisted_with_preview() {
     assert_eq!(h.storage.calls()[0].content, big);
     let prefix = format!("<persisted-output path=\"{}\">\n", persisted.path);
     assert!(outcomes[0].assistant_text.starts_with(&prefix));
+    let marker = format!(
+        "\n[… {} chars omitted; full output in the file above …]\n",
+        big.chars().count() - PREVIEW_CHARS
+    );
     assert_eq!(
         outcomes[0].assistant_text.chars().count(),
-        prefix.chars().count() + PREVIEW_CHARS,
-        "persisted output must keep only the preview"
+        prefix.chars().count() + PREVIEW_CHARS + marker.chars().count(),
+        "persisted output keeps head + tail preview plus one omission marker"
     );
+    let reported = finished_text(&sink);
+    assert_eq!(
+        reported, outcomes[0].assistant_text,
+        "门禁 1：Finished.result 与落库 tool 行正文同源"
+    );
+}
+
+/// 门禁 1（写入侧）：`Finished.result` 与落库 tool 行正文逐字节相等。
+#[tokio::test]
+async fn finished_result_matches_tool_row_text() {
+    let text = "line one\nline two".to_string();
+    let h = harness(vec![]);
+    h.add(
+        ProbeSpec::new("probe").with_result(ToolResult::ok_with_assistant(
+            json!({ "n": 1 }),
+            text.clone(),
+        )),
+    );
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(&[call("c1", "probe")], &ctx(), &allow_all(), &sink)
+        .await;
+
+    assert_eq!(finished_text(&sink), text);
+    assert_eq!(finished_text(&sink), outcomes[0].assistant_text);
+    assert!(h.storage.calls().is_empty(), "small result stays inline");
 }
 
 #[tokio::test]

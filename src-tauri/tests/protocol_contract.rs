@@ -47,6 +47,8 @@ fn sample_message_row() -> MessageRow {
         is_error: false,
         status: "completed".to_string(),
         mode_id: None,
+        turn_index: None,
+        iteration: 0,
     }
 }
 

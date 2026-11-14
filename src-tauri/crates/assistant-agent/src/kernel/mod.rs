@@ -20,10 +20,10 @@ pub use outcome::{TurnError, TurnOutcome, TurnStatus};
 pub use persist::{PersistCtx, TurnPersister};
 pub use phase::{SessionState, TurnPhase};
 pub use ports::{
-    AppendToolMessageReq, ChatError, Clock, CompactionSink, CreateAssistantReq, EventSink,
-    InputError, MessageStatus, MessageStore, ProviderCredential, ProviderDelta, StopDecision,
-    StopHook, StoreError, TurnEvent, TurnGeneration, TurnInput, TurnInputSource, TurnState,
-    UsageRecord,
+    AppendToolMessageReq, ChatError, Clock, CompactionSink, CreateAssistantReq,
+    DeclareToolCallsReq, EventSink, InputError, MessageStatus, MessageStore, ProviderCredential,
+    ProviderDelta, StopDecision, StopHook, StoreError, TurnEvent, TurnGeneration, TurnInput,
+    TurnInputSource, TurnState, UsageRecord,
 };
 pub use request::ChatRequest;
 pub use runner::{CompactionConfig, TurnRunner};

@@ -253,29 +253,45 @@ fn duplicate_creates_independent_copy() {
 fn pagination_covers_all_messages_without_overlap_or_gap() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();
-    for i in 0..5 {
-        conversations::insert_message(
-            &conn,
-            &msg(
-                &format!("m{}", i),
+    // 20 轮，每轮 user + assistant 两行；游标按 turn 走，页边界不得切开 turn。
+    for t in 1..=20i64 {
+        for (offset, role) in [(0i64, "user"), (1i64, "assistant")] {
+            let mut row = msg(
+                &format!("t{t}-{role}"),
                 "c1",
-                "user",
-                &format!("msg{}", i),
-                (i as i64) * 100,
-            ),
-        )
-        .unwrap();
+                role,
+                &format!("msg {t} {role}"),
+                t * 100 + offset,
+            );
+            row.turn_index = Some(t);
+            row.iteration = offset;
+            conversations::insert_message(&conn, &row).unwrap();
+        }
     }
 
-    let page1 = conversations::get_messages_paginated(&conn, "c1", 3, None).unwrap();
-    assert_eq!(page1.len(), 3);
+    let page1 = conversations::get_messages_paginated(&conn, "c1", 50, None).unwrap();
+    assert_eq!(
+        page1.len(),
+        (conversations::TURNS_PER_PAGE as usize) * 2,
+        "first page covers TURNS_PER_PAGE turns, both rows each"
+    );
+    assert_eq!(
+        page1.first().unwrap().turn_index,
+        Some(20 - (conversations::TURNS_PER_PAGE - 1)),
+        "first page is the newest turn window, ascending"
+    );
 
-    let oldest_ts = page1.first().unwrap().timestamp;
-    let page2 = conversations::get_messages_paginated(&conn, "c1", 3, Some(oldest_ts)).unwrap();
+    let cursor = u32::try_from(page1.first().unwrap().turn_index.unwrap()).unwrap();
+    let page2 = conversations::get_messages_paginated(&conn, "c1", 50, Some(cursor)).unwrap();
     assert_eq!(
         page2.len(),
-        2,
-        "remaining 2 messages before oldest of page1"
+        (20 - conversations::TURNS_PER_PAGE as usize) * 2,
+        "remaining turns, whole"
+    );
+    assert_eq!(
+        page2.last().unwrap().turn_index,
+        Some(20 - conversations::TURNS_PER_PAGE),
+        "page boundary never splits a turn"
     );
 
     let all_ids: Vec<&str> = page1
@@ -286,8 +302,116 @@ fn pagination_covers_all_messages_without_overlap_or_gap() {
     let unique: std::collections::HashSet<&str> = all_ids.iter().copied().collect();
     assert_eq!(
         unique.len(),
-        5,
+        40,
         "pages should cover all messages without overlap"
+    );
+}
+
+#[test]
+fn limit_guardrail_never_splits_a_turn() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    // 每轮 5 行，护栏 limit=7 落在第 2 轮中间，必须停在轮边界而不是切轮。
+    for t in 1..=3i64 {
+        for iteration in 0..5i64 {
+            let mut row = msg(
+                &format!("t{t}-{iteration}"),
+                "c1",
+                if iteration == 0 { "user" } else { "assistant" },
+                "x",
+                t * 100 + iteration,
+            );
+            row.turn_index = Some(t);
+            row.iteration = iteration;
+            conversations::insert_message(&conn, &row).unwrap();
+        }
+    }
+
+    let page = conversations::get_messages_paginated(&conn, "c1", 7, None).unwrap();
+    assert_eq!(page.len(), 5, "护栏截断点落在第 1 轮末尾，不切第 2 轮");
+    assert!(
+        page.iter().all(|m| m.turn_index == Some(3)),
+        "最新一页从最大 turn 起，且只含整轮"
+    );
+
+    // 单轮自身超过护栏：整轮返回，宁可超出也不切开。
+    let oversized = conversations::get_messages_paginated(&conn, "c1", 3, None).unwrap();
+    assert_eq!(oversized.len(), 5, "最新一轮自身超限时整轮返回");
+    assert!(oversized.iter().all(|m| m.turn_index == Some(3)));
+}
+
+#[test]
+fn pagination_keeps_unresolved_segment_out_of_turn_pages() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    let mut legacy = msg("legacy", "c1", "user", "old", 10);
+    legacy.turn_index = None;
+    conversations::insert_message(&conn, &legacy).unwrap();
+    let mut row = msg("t1", "c1", "user", "new", 100);
+    row.turn_index = Some(1);
+    row.iteration = 0;
+    conversations::insert_message(&conn, &row).unwrap();
+
+    let first = conversations::get_messages_paginated(&conn, "c1", 50, None).unwrap();
+    assert_eq!(first.len(), 2, "首屏含最新 turn 与存量未解析段");
+    assert_eq!(first.first().unwrap().id, "t1", "有坐标的行在前，升序输出");
+    assert_eq!(
+        first.last().unwrap().id,
+        "legacy",
+        "存量未解析段按排序规则垫底"
+    );
+
+    let second = conversations::get_messages_paginated(&conn, "c1", 50, Some(1)).unwrap();
+    assert!(second.is_empty(), "turn 游标耗尽后不再重复返回");
+}
+
+#[test]
+fn allocate_turn_index_is_monotonic_and_persisted() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    let t1 = conversations::allocate_turn_index(&conn, "c1").unwrap();
+    let t2 = conversations::allocate_turn_index(&conn, "c1").unwrap();
+    assert_eq!((t1, t2), (1, 2), "首轮 1，逐轮递增");
+
+    let mut row = msg("m1", "c1", "user", "hi", 100);
+    row.turn_index = Some(i64::from(t1));
+    row.iteration = 0;
+    conversations::insert_message(&conn, &row).unwrap();
+    let t3 = conversations::allocate_turn_index(&conn, "c1").unwrap();
+    assert_eq!(t3, 3, "计数器落库，不依赖 MAX(turn_index) 重算");
+}
+
+#[test]
+fn allocate_iteration_counts_within_turn_only() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    for (turn, iteration) in [(1i64, 0i64), (1, 1), (1, 2), (2, 0)] {
+        let mut row = msg(
+            &format!("t{turn}-{iteration}"),
+            "c1",
+            "assistant",
+            "x",
+            turn * 100 + iteration,
+        );
+        row.turn_index = Some(turn);
+        row.iteration = iteration;
+        conversations::insert_message(&conn, &row).unwrap();
+    }
+
+    assert_eq!(
+        conversations::allocate_iteration(&conn, "c1", 1).unwrap(),
+        3,
+        "同 turn 内递增"
+    );
+    assert_eq!(
+        conversations::allocate_iteration(&conn, "c1", 2).unwrap(),
+        1,
+        "跨 turn 不累加"
+    );
+    assert_eq!(
+        conversations::allocate_iteration(&conn, "c1", 3).unwrap(),
+        1,
+        "空 turn 从 1 起（0 保留给 user 行）"
     );
 }
 
@@ -814,53 +938,6 @@ fn update_message_status_unknown_id_is_noop() {
 }
 
 #[test]
-fn startup_sweep_marks_only_streaming_messages_interrupted() {
-    let conn = init_db();
-    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
-    conversations::insert_message(&conn, &msg("m1", "c1", "user", "hi", 100)).unwrap();
-    conversations::insert_message(&conn, &msg("m2", "c1", "assistant", "", 200)).unwrap();
-    conversations::insert_message(&conn, &msg("m3", "c1", "assistant", "done", 300)).unwrap();
-    conversations::update_message_status(&conn, "m2", "streaming").unwrap();
-
-    let swept = conversations::mark_streaming_messages_interrupted(&conn).unwrap();
-
-    assert_eq!(swept, 1);
-    assert_eq!(
-        conversations::get_message_status(&conn, "m2").unwrap(),
-        Some("interrupted".to_string())
-    );
-    assert_eq!(
-        conversations::get_message_status(&conn, "m1").unwrap(),
-        Some("completed".to_string())
-    );
-    assert_eq!(
-        conversations::get_message_status(&conn, "m3").unwrap(),
-        Some("completed".to_string())
-    );
-}
-
-#[test]
-fn startup_sweep_is_idempotent() {
-    let conn = init_db();
-    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
-    conversations::insert_message(&conn, &msg("m1", "c1", "assistant", "", 100)).unwrap();
-    conversations::update_message_status(&conn, "m1", "streaming").unwrap();
-
-    assert_eq!(
-        conversations::mark_streaming_messages_interrupted(&conn).unwrap(),
-        1
-    );
-    assert_eq!(
-        conversations::mark_streaming_messages_interrupted(&conn).unwrap(),
-        0
-    );
-    assert_eq!(
-        conversations::get_message_status(&conn, "m1").unwrap(),
-        Some("interrupted".to_string())
-    );
-}
-
-#[test]
 fn duplicate_and_fork_do_not_carry_streaming_status() {
     let conn = init_db();
     conversations::insert_conversation(&conn, &conv("c1")).unwrap();
@@ -1027,4 +1104,209 @@ fn copy_paths_keep_message_mode_id() {
     );
     let user_branch = conversations::create_branch(&conn, "c1", "u1", "user", "alt q").unwrap();
     assert_eq!(user_branch.mode_id, None, "分支 user 行写 NULL");
+}
+
+#[test]
+fn duplicate_and_fork_close_in_flight_placeholders() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    assistant_with_calls(&conn, "a1", "c1", "u1", 200);
+    conversations::insert_tool_placeholders(
+        &conn,
+        "c1",
+        "a1",
+        &[
+            ("p1".to_string(), "call_1".to_string()),
+            ("p2".to_string(), "call_2".to_string()),
+        ],
+        Some(7),
+        2,
+        200,
+    )
+    .unwrap();
+    conversations::mark_tool_rows_running(&conn, "c1", &["call_1".to_string()]).unwrap();
+    conversations::update_active_branch_id(&conn, "c1", "p2").unwrap();
+
+    let copy_id = conversations::duplicate_conversation(&conn, "c1").unwrap();
+    let copy = conversations::get_conversation_detail(&conn, &copy_id)
+        .unwrap()
+        .unwrap();
+    let copied = |call_id: &str| {
+        copy.messages
+            .iter()
+            .find(|m| m.tool_call_id.as_deref() == Some(call_id))
+            .expect("占位行必须被复制")
+    };
+    assert_eq!(copied("call_1").status, "interrupted");
+    assert_eq!(
+        copied("call_1").content,
+        conversations::INTERRUPTED_TOOL_RESULT,
+        "副本没有执行队列可推进，已进队列的只能报结果未知"
+    );
+    assert!(copied("call_1").is_error);
+    assert_eq!(copied("call_2").status, "interrupted");
+    assert_eq!(
+        copied("call_2").content,
+        conversations::TOOL_NOT_STARTED_RESULT,
+        "未进队列的副本行可断言未开始"
+    );
+
+    let fork_id = conversations::fork_to_new_conversation(&conn, "c1", "p2").unwrap();
+    let fork = conversations::get_conversation_detail(&conn, &fork_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(fork.messages.len(), 4, "分叉同样保留占位行，不丢调用");
+    assert!(fork
+        .messages
+        .iter()
+        .filter(|m| m.role == "tool")
+        .all(|m| m.status == "interrupted" && !m.content.is_empty()));
+}
+
+#[test]
+fn interrupted_result_text_does_not_claim_not_executed() {
+    let text = conversations::INTERRUPTED_TOOL_RESULT;
+    assert!(
+        !text.contains("未执行"),
+        "中断时无法判断工具是否已产生副作用，断言「未执行」会诱导模型重复执行非幂等操作"
+    );
+    assert!(text.contains("未知"), "必须明确告知执行结果未知");
+}
+
+fn assistant_with_calls(conn: &rusqlite::Connection, id: &str, conv: &str, parent: &str, ts: i64) {
+    let mut row = msg_with_parent(id, conv, "assistant", "", ts, Some(parent), 0);
+    row.turn_index = Some(7);
+    row.iteration = 2;
+    conversations::insert_message(conn, &row).unwrap();
+    conversations::update_message_tool_calls(
+        conn,
+        id,
+        r#"[{"id":"call_1","name":"fs_read","arguments":"{}"},{"id":"call_2","name":"fs_write","arguments":"{}"}]"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn placeholders_are_declared_under_owner_in_order() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    assistant_with_calls(&conn, "a1", "c1", "u1", 200);
+
+    conversations::insert_tool_placeholders(
+        &conn,
+        "c1",
+        "a1",
+        &[
+            ("p1".to_string(), "call_1".to_string()),
+            ("p2".to_string(), "call_2".to_string()),
+        ],
+        Some(7),
+        2,
+        200,
+    )
+    .unwrap();
+
+    let path = conversations::trace_active_branch(&conn, "c1", "p2").unwrap();
+    let ids: Vec<&str> = path.iter().map(|row| row.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["u1", "a1", "p1", "p2"],
+        "占位行按声明顺序紧挂在 owner 之后"
+    );
+    for row in &path[2..] {
+        assert_eq!(
+            row.status,
+            conversations::TOOL_ROW_PENDING,
+            "声明即 pending"
+        );
+        assert!(row.content.is_empty(), "占位行正文为空");
+        assert_eq!(row.turn_index, Some(7), "坐标与声明行一致");
+        assert_eq!(row.iteration, 2, "坐标与声明行一致");
+    }
+    let active = conversations::get_conversation_by_id(&conn, "c1")
+        .unwrap()
+        .unwrap()
+        .active_branch_id;
+    assert_eq!(active.as_deref(), Some("p2"), "声明即把活跃叶子推到批尾");
+}
+
+#[test]
+fn running_placeholder_never_rolls_back() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    assistant_with_calls(&conn, "a1", "c1", "u1", 200);
+    conversations::insert_tool_placeholders(
+        &conn,
+        "c1",
+        "a1",
+        &[
+            ("p1".to_string(), "call_1".to_string()),
+            ("p2".to_string(), "call_2".to_string()),
+        ],
+        Some(7),
+        2,
+        200,
+    )
+    .unwrap();
+
+    conversations::mark_tool_rows_running(&conn, "c1", &["call_1".to_string()]).unwrap();
+    let path = conversations::trace_active_branch(&conn, "c1", "p2").unwrap();
+    assert_eq!(path[2].status, conversations::TOOL_ROW_RUNNING);
+    assert_eq!(
+        path[3].status,
+        conversations::TOOL_ROW_PENDING,
+        "未执行的保持 pending"
+    );
+
+    conversations::mark_tool_rows_running(&conn, "c1", &["call_1".to_string()]).unwrap();
+    let path = conversations::trace_active_branch(&conn, "c1", "p2").unwrap();
+    assert_eq!(
+        path[2].status,
+        conversations::TOOL_ROW_RUNNING,
+        "不回退到 pending"
+    );
+}
+
+#[test]
+fn fill_keeps_topology_and_closes_placeholder() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    assistant_with_calls(&conn, "a1", "c1", "u1", 200);
+    conversations::insert_tool_placeholders(
+        &conn,
+        "c1",
+        "a1",
+        &[
+            ("p1".to_string(), "call_1".to_string()),
+            ("p2".to_string(), "call_2".to_string()),
+        ],
+        Some(7),
+        2,
+        200,
+    )
+    .unwrap();
+    conversations::mark_tool_rows_running(&conn, "c1", &["call_1".to_string()]).unwrap();
+
+    conversations::fill_tool_row(&conn, "p1", "ok", false).unwrap();
+
+    let path = conversations::trace_active_branch(&conn, "c1", "p2").unwrap();
+    let ids: Vec<&str> = path.iter().map(|row| row.id.as_str()).collect();
+    assert_eq!(ids, vec!["u1", "a1", "p1", "p2"], "回填不插行、不改拓扑");
+    assert_eq!(path[2].status, "completed");
+    assert_eq!(path[2].content, "ok");
+    assert_eq!(path[3].status, conversations::TOOL_ROW_PENDING);
+
+    assert_eq!(
+        conversations::find_tool_placeholder(&conn, "c1", "call_1").unwrap(),
+        None,
+        "已回填的调用不再是在途占位"
+    );
+    assert_eq!(
+        conversations::find_tool_placeholder(&conn, "c1", "call_2").unwrap(),
+        Some("p2".to_string())
+    );
 }

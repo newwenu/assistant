@@ -136,7 +136,7 @@ impl Tool for AgentGlobTool {
             "(no matches)".to_string()
         } else if truncated {
             format!(
-                "{}\n[truncated: showing {} of {} matches; narrow the pattern or pass a more \
+                "{}\n[truncated: showing {} of {} items; narrow the pattern or pass a more \
                  specific 'path']",
                 returned.join("\n"),
                 returned.len(),

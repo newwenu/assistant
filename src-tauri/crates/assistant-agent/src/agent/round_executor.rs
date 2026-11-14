@@ -104,6 +104,8 @@ pub struct TurnRunCtx<'a> {
     pub conversation_id: &'a str,
     /// 命令层预建的占位行，第 1 迭代复用（§5.1）。
     pub initial_message_id: &'a str,
+    /// 会话内 turn 序号（I46 §2.5）：只搬运，不参与任何判定。
+    pub turn_index: Option<u32>,
     /// 起点迭代号，P4 恒为 1。
     pub start_iteration: u32,
     pub remaining_turn_budget: TurnBudget,

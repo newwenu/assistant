@@ -7,7 +7,9 @@ use assistant_providers::types::{ChatMessage, MessageRole};
 
 use crate::agent::round_executor::{ToolExecResult, TurnRunCtx};
 use crate::agent::tool_call::FinalizedToolCall;
-use crate::kernel::{AppendToolMessageReq, CreateAssistantReq, MessageStatus, StoreError};
+use crate::kernel::{
+    AppendToolMessageReq, CreateAssistantReq, DeclareToolCallsReq, MessageStatus, StoreError,
+};
 
 use super::budget::tool_calls_json;
 use super::RoundState;
@@ -30,6 +32,8 @@ pub(super) async fn ensure_row(
         provider_id: ctx.provider_id.map(str::to_string),
         model_id: ctx.model_id.map(str::to_string),
         mode_id: ctx.input.mode.as_ref().map(|m| m.id.clone()),
+        turn_index: ctx.turn_index,
+        iteration: state.iteration,
     };
     let msg_id = ctx.store.create_assistant_message(req).await?;
     state.msg_id = msg_id.clone();
@@ -93,6 +97,28 @@ pub(super) async fn persist_row(
             log::error!("save tool_calls failed: {err}");
             return Err(err);
         }
+        // 占位行声明（D27）：写失败只降级落点（孤立调用退回「有声明无结果」的老路径，
+        // 由投影期合成文案），不能让一次已经可用的调用因此失败。
+        let call_ids: Vec<String> = calls.iter().map(|call| call.tool_id.clone()).collect();
+        match ctx
+            .store
+            .declare_tool_calls(DeclareToolCallsReq {
+                conversation_id: ctx.conversation_id.to_string(),
+                parent_id: msg_id.clone(),
+                call_ids,
+                turn_index: ctx.turn_index,
+                iteration: state.iteration,
+            })
+            .await
+        {
+            Ok(ids) => {
+                // 整批的挂载点前移到最后一个占位行，结果批随后挂在它之下。
+                if let Some(last) = ids.last() {
+                    state.last_row_id = last.clone();
+                }
+            }
+            Err(err) => log::warn!("declare tool calls failed: {err}"),
+        }
     }
 
     if let Err(err) = ctx.store.finalize(&msg_id, status).await {
@@ -123,6 +149,8 @@ pub(super) async fn persist_row_as_new(
         provider_id: ctx.provider_id.map(str::to_string),
         model_id: ctx.model_id.map(str::to_string),
         mode_id: ctx.input.mode.as_ref().map(|m| m.id.clone()),
+        turn_index: ctx.turn_index,
+        iteration: state.iteration,
     };
     let msg_id = ctx.store.create_assistant_message(req).await?;
     state.msg_id = msg_id.clone();
@@ -170,11 +198,31 @@ pub(super) async fn append_tool_results(
     }
     if !is_current(ctx) {
         log::warn!(
-            "append_tool_results skipped: turn={} is not the current generation",
+            "append_tool_results fill-only: turn={} is not the current generation",
             ctx.turn_id
         );
+        // 已离开写入窗口：不能插行改写挂载点，只回填声明时留下的占位行。
+        // 结果本身是真实产生的，回填比留给投影期补文案更准确。
+        let mut reqs = Vec::with_capacity(results.len());
+        for result in &results {
+            reqs.push(AppendToolMessageReq {
+                conversation_id: ctx.conversation_id.to_string(),
+                parent_id: state.last_row_id.clone(),
+                tool_call_id: result.call_id.clone(),
+                content: result.content.clone(),
+                is_error: result.is_error,
+                timestamp: ctx.clock.now_millis(),
+                turn_index: ctx.turn_index,
+                iteration: state.iteration,
+            });
+        }
+        if let Err(err) = ctx.store.fill_tool_messages(reqs).await {
+            log::warn!("fill tool rows failed: {err}");
+        }
         return Ok(());
     }
+    // 整批一次性落库：逐条提交时进程若在批中途退出，就会留下「有调用、无结果」的孤立行。
+    let mut reqs = Vec::with_capacity(results.len());
     for result in &results {
         state.request.chat_messages.push(ChatMessage {
             role: MessageRole::Tool,
@@ -186,22 +234,27 @@ pub(super) async fn append_tool_results(
             thinking_signature: None,
             content_blocks: None,
         });
-        let req = AppendToolMessageReq {
+        reqs.push(AppendToolMessageReq {
             conversation_id: ctx.conversation_id.to_string(),
             parent_id: state.last_row_id.clone(),
             tool_call_id: result.call_id.clone(),
             content: result.content.clone(),
             is_error: result.is_error,
             timestamp: ctx.clock.now_millis(),
-        };
-        let row_id = ctx.store.append_tool_message(req).await;
-        match row_id {
-            Ok(id) => state.last_row_id = id,
-            Err(err) => {
-                log::error!("append tool row failed: {err}");
-                return Err(err);
+            turn_index: ctx.turn_index,
+            iteration: state.iteration,
+        });
+    }
+    match ctx.store.append_tool_messages(reqs).await {
+        Ok(ids) => {
+            if let Some(last) = ids.last() {
+                state.last_row_id = last.clone();
             }
+            Ok(())
+        }
+        Err(err) => {
+            log::error!("append tool rows failed: {err}");
+            Err(err)
         }
     }
-    Ok(())
 }

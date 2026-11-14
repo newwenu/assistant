@@ -152,9 +152,12 @@ pub(crate) async fn execute_compaction(
     {
         let state = app.state::<crate::setup::DbState>();
         let conn = super::get_db_conn(&state)?;
+        // 摘要行不并入被压缩的 turn（ADR OQ3 默认值）：`(NULL, 0)` 永久平铺。
+        // 写行与后续删除旧分支须同事务，任一失败整体回滚。
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let now = chrono::Utc::now().timestamp_millis();
         conversations::insert_message(
-            &conn,
+            &tx,
             &conversations::MessageRow {
                 id: summary_msg_id.clone(),
                 conversation_id: conversation_id.to_string(),
@@ -173,8 +176,11 @@ pub(crate) async fn execute_compaction(
                 is_error: false,
                 status: "streaming".to_string(),
                 mode_id: None,
+                turn_index: None,
+                iteration: 0,
             },
         )?;
+        tx.commit().map_err(|e| e.to_string())?;
     }
 
     let sink: Arc<dyn EventSink> = Arc::new(

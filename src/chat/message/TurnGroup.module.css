@@ -1,0 +1,9 @@
+.root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 组间间距沿用消息气泡的相邻规则（I46 门禁 15：chat 视觉零变化）。 */
+.root + .root {
+  margin-top: 4px;
+}

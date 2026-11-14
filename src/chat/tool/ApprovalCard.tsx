@@ -45,7 +45,11 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
   const [submitting, setSubmitting] = useState<DecisionKind | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const deadline = (startedAt ?? Date.now()) + approval.timeoutMs;
+  const [mountedAt] = useState(() => Date.now());
+  const deadline = useMemo(
+    () => (startedAt ?? mountedAt) + approval.timeoutMs,
+    [startedAt, mountedAt, approval.timeoutMs],
+  );
   const [remainingMs, setRemainingMs] = useState(() => deadline - Date.now());
 
   useEffect(() => {

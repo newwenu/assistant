@@ -30,3 +30,6 @@ pub const ORB_SNAP_ANIMATION_MS: u64 = 250;
 pub const COMPACTION_THRESHOLD_PERCENT: u8 = 80;
 pub const MAX_SUMMARY_REQUEST_TOKENS: u32 = 4096;
 pub const MAX_SUMMARY_OUTPUT_TOKENS: u32 = 2000;
+
+/// 工具结果落盘文件的保留天数（I46 compact §2.9 D9）：`0` 表示完全禁用清理。
+pub const RESULT_RETENTION_DAYS: u32 = 30;

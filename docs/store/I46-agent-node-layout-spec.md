@@ -5,7 +5,7 @@
 | 状态 | Draft（实施规格，不含进度记录） |
 | 日期 | 2026-11-13 |
 | 决策源 | [I46 Agent 节点布局设计（ADR）](./I46-agent-node-layout-design.md)（决策 D1–D13、事实 F1–F15、缺口 G1–G9、门禁 1–20 的唯一出处，本文不复述理由） |
-| 关联 | [I38 阶段总纲](./I38-agent-roadmap.md)（阶段与门禁唯一入口）、[I36a 内核能力基线](./I36a-agent-kernel-baseline.md)（turn 事件不变式）、[I36b 内核一致性规格](./I36b-agent-kernel-conformance-spec.md)、[I46 紧凑消息格式设计](./I46-agent-compact-message-format-design.md)（参考记录，`compact` 信封定义仍在用） |
+| 关联 | [I46 任务清单](./I46-agent-node-layout-tasklist.md)（任务级进度唯一来源，S1–S6 勾选）；[I38 阶段总纲](./I38-agent-roadmap.md)（阶段与门禁唯一入口）、[I36a 内核能力基线](./I36a-agent-kernel-baseline.md)（turn 事件不变式）、[I36b 内核一致性规格](./I36b-agent-kernel-conformance-spec.md)、[I46 紧凑消息格式设计](./I46-agent-compact-message-format-design.md)（参考记录，`compact` 信封定义仍在用） |
 | 影响范围 | 存储两列 + 会话计数器一列；`MessageDto` 两字段；两个既有事件载荷各加坐标；7 条写路径进事务；读取排序键与索引；前端渲染拆 chrome、新增分组投影与 turn 尾；分页游标由时间戳改 turn。**不改**分支链拓扑、工具结果信封、事件名与事件语义 |
 
 > 本文回答「怎么做、改哪些签名、怎么验收」。**为什么这样设计**只在 ADR 里，本文不重述；两文冲突时以 ADR 为准，本文只允许在「实现细节」上细化，不允许推翻决策。
@@ -30,11 +30,11 @@
 
 | 编号 | 前置依赖 | 现状 | 对本文的影响 | 处置 |
 |---|---|---|---|---|
-| P1 | 工具结果展示投影 `compact`（`head` / `truncated` / `persisted` / `errorKind` / `anchor`） | **未落地**：`ToolCallView` 无 `compact`，后端无 `ToolCallCompactDto` | 单行形态只能走降级分支（§6.2），锚点分支（§6.3）不可达 | 不阻塞 S1–S6；S5 实现降级分支，`compact` 落地后只替换取值 |
+| P1 | 工具结果展示投影 `compact`（`head` / `truncated` / `persisted` / `errorKind` / `anchor`） | **已落地（门禁关闭）**：`ToolResultCompactDto` 与 `compact` 信封可用（I46 compact 任务清单 C1–C10 完成） | 单行形态直接取 `compact.head`，锚点分支（§6.3）可达 | 无需降级；降级分支仅作 `compact == null`（旧数据）的兜底 |
 | P2 | 写路径事务化 | `cmd/chat/insert.rs` 与 `cmd/compaction.rs` 的写入**不在事务内**；`adapters/message_store.rs` 两处已在事务内 | 计数器递增与消息写入必须同事务（门禁 19） | S2 内先把 insert 与 compaction 包进 `unchecked_transaction` |
 | P3 | 分页按 turn | `get_messages_paginated` 按 `timestamp < ?` 取页 | 跨页切开 turn（G6） | S6 独立切片；S1–S5 期间接受现状，`unresolved` 组不折叠已兜住 |
 
-三条前置之外的阻塞项：无。P1 缺失导致的「单行信息量下降」是 ADR 显式取舍，不作为验收缺陷。
+三条前置之外的阻塞项：无。P1 已关闭；降级分支仅作旧数据（`compact == null`）的兜底，不作为验收缺陷。
 
 ### 1.3 不做的事
 
@@ -49,7 +49,10 @@
 
 ### 2.1 表结构
 
-新库走 `CREATE TABLE`，存量库走 pragma 守卫 `ALTER TABLE`（沿用 `src-tauri/crates/assistant-storage/src/db.rs` 既有模式，守卫块紧接 `has_mode_id` 之后）。
+新库走 `CREATE TABLE`，存量库走 pragma 守卫 `ALTER TABLE`（沿用 `src-tauri/crates/assistant-storage/src/db.rs` 既有模式）。守卫落点有两处，与既有列守卫的分布一致：
+
+- `messages` 的两列守卫落在 `is_new_db == false` 分支内、紧接 `has_mode_id` 守卫之后（该分支是存量库唯一的加列入口）。
+- `conversations.next_turn_index` 守卫落在该分支**之前**、紧接 `has_conv_workspace_root` 守卫之后（`conversations` 的列守卫都在这个位置，`messages` 的才在分支内）。
 
 ```sql
 -- messages（两列）
@@ -73,9 +76,11 @@ CREATE INDEX IF NOT EXISTS idx_messages_conv_coord
   ON messages (conversation_id, turn_index, iteration);
 ```
 
+索引**不能**写进 `execute_batch` 的建表批里，也不能写进 `is_new_db == false` 分支内：必须落在两处守卫之后、`init` 收尾前。前者在存量库上会因缺列失败（建表批先于加列执行），后者对新库不生效（新库走 `CREATE TABLE`，不进该分支）。
+
 旧索引 `idx_messages_conv_ts` 保留（导出 / 搜索仍按时间排序）。
 
-`MessageRow` 是 struct literal 构造，加字段后编译器会强制全部构造点补齐——这是「写路径无遗漏」的第一道机械保障，不需要额外巡检。
+`MessageRow` 是 struct literal 构造，加字段后编译器会强制全部构造点补齐——这是「写路径无遗漏」的第一道机械保障，不需要额外巡检。构造点共 7 处：`cmd/chat/insert.rs`（2）、`adapters/message_store.rs`（2）、`cmd/compaction.rs`（1）、`conversations/ops.rs` 分支复制（2）；测试替身（`tests/common/mod.rs`、`protocol_contract.rs`、`protocol_dto_roundtrip.rs`、`assistant-agent/tests/*`）一并补齐。
 
 ### 2.2 取号规则
 
@@ -193,9 +198,11 @@ pub struct ChatUserMessageConfirmedPayloadDto {
 pub struct ChatStreamStartPayloadDto {
     // ...既有
     pub turn_index: Option<u32>,
-    pub iteration: Option<u32>,   // 恒 1（首个 assistant 行）
+    pub iteration: Option<u32>,   // assistant 占位行的实际迭代号
 }
 ```
+
+`iteration` **不是恒 `1`**：分支点是 assistant 时属于同轮重生成，`iteration = allocate_iteration(t) ≥ 2`（§2.4 路径 3）。写死 `1` 会让前端占位消息与落库行坐标不一致，因此由 `InsertedMessages.iteration` 如实下发。
 
 `Option` 的理由：`insert_on_branch` 分支点在存量行上时无坐标（§2.4 路径 3），非 `Option` 会逼出假值。`None` 时前端按 `unresolved` 处理。
 
@@ -203,10 +210,10 @@ pub struct ChatStreamStartPayloadDto {
 
 | 载荷 | 装配位置 | 来源 |
 |---|---|---|
-| `ChatUserMessageConfirmedPayloadDto` | `src-tauri/src/adapters/event_sink.rs` | `TauriEventSink` 持有 `turn_index: Option<u32>`（由 `with_turn_index` 注入） |
-| `ChatStreamStartPayloadDto` | 同上 | 同一份 `turn_index`；`iteration` 恒 `1` |
+| `ChatUserMessageConfirmedPayloadDto` | `src-tauri/src/adapters/event_sink.rs` | `TauriEventSink` 持有 `turn_index: Option<u32>` 与 `iteration: Option<u32>`（由 `with_turn_coords` 注入） |
+| `ChatStreamStartPayloadDto` | 同上 | 同一份 `turn_index` / `iteration`，两载荷共用，不各自推导 |
 
-`src-tauri/src/cmd/agent/mod.rs` 的 `TauriEventSink::new(...)` 调用后追加 `.with_turn_index(inserted.turn_index)`；chat 链路走同一个 sink 构造点，不另写一份。
+`src-tauri/src/cmd/agent/mod.rs` 的 `TauriEventSink::new(...)` 调用后追加 `.with_turn_coords(inserted.turn_index, Some(inserted.iteration))`；chat 链路走同一个 sink 构造点，不另写一份。`InsertedMessages` 因此同时携带 `turn_index` 与 `iteration`。
 
 turn 内后续迭代**不新增事件**：前端用「`chat-stream-start` 的 `turnIndex` + `chat-delta` 自带的 `iteration`」给新段赋坐标，两分量均为 wire 事实（ADR D2 约束 7）。
 
@@ -262,7 +269,7 @@ export function createOptimisticMessage(fields: OptimisticMessageFields): Messag
 |---|---|---|
 | `src/stores/agent/agentSegments.ts` `makePlaceholder` | 已知则传（见 §3.4），否则 `null` | 传入的 `iteration` |
 | `src/services/stream/turnOrchestrator.ts` user 占位（发送时） | `null`（后端尚未分配） | `0` |
-| 同上 assistant 占位（`chat-stream-start` 后） | `chat-stream-start` 的 `turnIndex` | `1` |
+| 同上 assistant 占位（`chat-stream-start` 后） | `chat-stream-start` 的 `turnIndex` | `chat-stream-start` 的 `iteration`（分支重生成时 `> 1`） |
 | `src/stores/chat/chatCompactSlice.ts` 等其余点 | 能取到则传，取不到 `null` | 同上口径 |
 
 ### 3.2 事件回填
@@ -289,7 +296,7 @@ export interface StreamTransportHandlers {
 
 `src/services/stream/turnOrchestrator.ts`：
 
-1. `onStreamStart` 把 `turnIndex` 写入 store（新增 `currentTurnIndex: number | null` 与 `setCurrentTurnIndex`），并把当前 assistant 占位行的坐标回填为 `(turnIndex, 1)`。
+1. `onStreamStart` 把 `turnIndex` 写入 store（新增 `currentTurnIndex: number | null` 与 `setCurrentTurnIndex`），并通过 `setMessageCoords(messageId, turnIndex, iteration)` 把当前 assistant 占位行的坐标回填为事件给出的两分量（两分量缺一不回填）。
 2. `onUserMessageConfirmed` 把 `turnIndex` 传给 `confirmUserMessage`（端口签名由 `(id, content)` 扩为 `(id, content, turnIndex)`，同步 `src/stores/chatStorePorts.ts`、`src/services/stream/turnStrategy.ts` 与测试替身）。
 3. `onTextDelta` 收到 `iteration >= 2` 时开新段，新段坐标 = `(store.currentTurnIndex, chunk.iteration)`。
 
@@ -307,6 +314,7 @@ rebuildFromMessages: (messages: Message[], turnIndex: number | null) => void;
 - 扫描 `role === "assistant"` 且 `turnIndex === turnIndex` 且 `iteration >= 1` 的行，按 `iteration` 建映射；
 - 与既有映射冲突时**以消息行为准**（坐标是持久事实）；
 - `resolveSegment(iteration)` 在缓存未命中时先查已加载消息（同坐标行），仍无则 `openSegment`；
+- `markUnknownSegment`（切回运行中会话 / 刷新恢复）先调用 `rebuildFromMessages`：已落库的迭代直接对上历史行，仍在飞的迭代（库中尚无行）由首个增量开新段；
 - `adoptSegment` 保留但退化为可选优化，不再是刷新后恢复的唯一手段（F3 的失忆场景由 `rebuildFromMessages` 覆盖）。
 
 ### 3.4 store 侧新增字段
@@ -359,7 +367,7 @@ interface TurnTailProps {
 ```ts
 /** 优先级 1：最后一条有正文且 settled 的 assistant 回复行；
     2：该 turn 内最后一个 assistant 节点；3：无 assistant 节点 -> null（不渲染 TurnTail）。 */
-function pickTurnAnchor(nodes: NodeView[]): Message | null;
+function pickTailAnchor(messages: Message[]): Message | null;
 ```
 
 3. `compact_summary` 行与 `role === "tool"` 行不参与锚点选择（前者是边界行，后者不在可见列表）。
@@ -383,13 +391,16 @@ interface MessageBubbleProps {
   // ...既有
   /** true 时 assistant 侧 chrome 由 TurnTail 承接，本气泡不渲染。 */
   suppressAssistantChrome?: boolean;
-  /** 折叠态单行等场景复用；缺省 false。 */
-  dense?: boolean;
+  /** 本行是所在 turn 的尾锚点：由它挂载唯一的 TurnTail。 */
+  isTurnTail?: boolean;
 }
 ```
 
 - `suppressAssistantChrome === true` 时跳过 `actionsWrapper`（时间戳 + `BranchPicker` + `MessageActions`）；`error` / `retry` / 编辑块仍在本气泡渲染（失败与重试必须就地）。
 - user 行的 chrome 恒由自身渲染，不受该 prop 影响。
+- `isTurnTail` 由 `groupNodeRows` 的 `tailAnchor` 派生（`tailAnchor.id === message.id`），组件不自行选锚点。
+- 规格曾规划的 `dense` prop 随 `compact` 密度一并落地，本批次不加（避免无用接口）。
+- `TurnTail` 复用 `MessageBubble.module.css` 的 `actionsWrapper` / `timestamp` 样式，挂载位置与该气泡现状一致；chat 轮（1 user + 1 assistant）因此**零视觉变化**，门禁 15 的判据是逐项一致，不是「大致相同」。
 - `React.memo` 比较器追加两个新 prop 与坐标字段（`turnIndex` / `iteration`），否则坐标变化不触发重渲染。
 
 ---
@@ -405,7 +416,8 @@ export interface GroupNodeRowsInput {
   messages: Message[];                 // 已过滤 role === "tool"
   link: "chat" | "agent";              // 只读快照，禁止参与分支（门禁 16）
   phase: GroupPhase;                   // §5.3
-  /** 用于 unresolved 组与流式态判定；不参与分组。 */
+  currentTurnIndex: number | null;     // `chat-stream-start` 载荷（§3.2）
+  /** 流式占位行 id：`currentTurnIndex` 未下发时兜住 `collecting`（§5.3）；不参与分组。 */
   streamingMessageId?: string | null;
 }
 
@@ -419,39 +431,60 @@ export function groupNodeRows(input: GroupNodeRowsInput): NodeGroupView[];
 ```ts
 export type GroupPhase = "collecting" | "settled";
 
+/** 一个连续可折叠步段（run）的统计；`id` 由首步 `callId` 生成，跨渲染稳定。 */
+export interface NodeRunStats {
+  id: string;
+  steps: number;
+  failed: number;
+  durationMs: number | null;
+}
+
 export type NodeView =
   | { kind: "message"; message: Message; showIdentity: boolean; ownsAssistantChrome: boolean }
-  | { kind: "tool"; callId: string; view: ToolCallView; density: "single" | "card" };
+  | {
+      kind: "tool";
+      callId: string;
+      view: ToolCallView;
+      /** 所属折叠 run；步行只在 run 内产生，故恒非空（D8 安全阀已由切段切断）。 */
+      run: NodeRunStats;
+    };
 
 export interface NodeGroupView {
   turnIndex: number | null;
   nodes: NodeView[];                   // 已按 §2.7 键序
   phase: GroupPhase;
   isLastGroupInTurn: boolean;
+  /** 组级汇总，仅供断言与调试；折叠判定只看 run（§5.4）。 */
   needsAttention: boolean;
   link: "chat" | "agent";              // 只读，禁止参与决策
   stats: { steps: number; failed: number; durationMs: number | null };
-  /** 投影算出，供组件决定是否显示折叠控件；展开态是组件本地 state。 */
+  /** 本 turn 内是否存在可折叠 run；`false` 时全部步留在气泡内。 */
   collapsible: boolean;
   /** turn 尾锚点；null 时本组不渲染 TurnTail。 */
   tailAnchor: Message | null;
 }
 ```
 
-- 组内**不含**「是否展开」字段：展开态是 UI 本地状态（ADR D6）。
+- 组内**不含**「是否展开」字段：展开态是 UI 本地状态（ADR D6），**且按 run 各自持有**（§6.1）。
+- 密度不是投影字段：`kind === "tool"` 的步行只在 run 内产生，是否单行由该 run 的展开态决定（§6.1）；投影不预判 UI 状态。
 - `stats` 只由 `view.status` / `view.startedAt` / `view.finishedAt` 与节点数算出，**不读正文**（门禁 8）。
 - `isLastGroupInTurn` 供未来「末组不折叠」类规则使用；本文的实现不使用它做折叠判定（折叠只看 §5.4 判据）。
 
 ### 5.3 相位
 
 ```ts
-phase = (isStreaming && group.turnIndex !== null && group.turnIndex === currentTurnIndex)
+carriesStreamingRow = streamingMessageId != null
+                   && group.messages.some(m => m.id === streamingMessageId)
+
+phase = (isStreaming && group.turnIndex !== null
+         && (group.turnIndex === currentTurnIndex || carriesStreamingRow))
       ? "collecting"
       : "settled";
 ```
 
 - `isStreaming` 唯一来源是 `session-state-changed`（`Processing` → `true`，`Idle` / `Error` → `false`）；
 - `currentTurnIndex` 唯一来源是 `chat-stream-start`（§3.2）；
+- `carriesStreamingRow` 是 `currentTurnIndex` 未下发时（刷新 / 恢复 / 事件乱序）的兜底：只要该组含流式占位行，就仍是 `collecting`。**没有它，运行中的 turn 会被判成 `settled` 而提前收起，组头步数随每次增量跳动**（门禁 6 的反例）；
 - **禁止**静默计时器、`useEffect` 后置标志、渲染完成信号（ADR D7、门禁 6）；
 - 终态事件顺序「先 `chat-messages-changed`、后 `session-state-changed`」保证 `Idle` 到达时快照已并入，故两态足够。
 
@@ -459,20 +492,51 @@ phase = (isStreaming && group.turnIndex !== null && group.turnIndex === currentT
 
 ### 5.4 折叠判据
 
+折叠的**最小单位是 run（连续可折叠步段），不是 turn**。一个 turn 内可以出现多个 run，各自独立计数、独立判定阈值、独立展开（ADR D8 的本意是「需要用户动作的节点不折叠」，不是「整个 turn 一票否决」）。
+
+**步是否可折叠（`isFoldableStep`）**：
+
+```ts
+isFoldableStep(view) = view.status === "success" && hasStepSummary(view)
+// hasStepSummary：compact.head 非空串，或 summarizeArguments(arguments) 非空串
+```
+
+`running` / `error` / `awaiting_user` / `missing` / `cancelled` 一律**不可折叠**，且**切断**当前 run——失败原因是结论的一部分，不能藏进折叠组。
+
+**切段规则（`planRuns`）**：按消息顺序遍历，遇下列任一情况 `flush()` 当前 run 并置 `cutNext`：
+
+- 不可折叠的步（见上）；
+- 消息级 `error != null` 的 assistant 行；
+- `compact_summary` 边界行；
+- **任何带可见正文（`content` 非空或 `reasoning` 存在）的行**。
+
+正文行必须切断 run：它在节点序列里会插入一个气泡节点，若不切断，同一 run 的步会被气泡打断，组头在该段前重复渲染，且**每处都显示整段总步数**——组头计数与实际行数不符（「所有节点共用一个步数」「12 步但下面没那么多行」）。切段后每个 run 在节点序列里严格连续，组头出现且仅出现一次，`run.steps` 恒等于该 run 的步行行数。
+
+同一 turn 内重复下发的 `callId` 只计一次、只渲染一次（`seenCallIds` 与 `emittedCallIds` 同一口径）：否则组头步数虚高，且重复的 React key 会让实际渲染行数少于计数。
+
+**run 成立**：
+
 ```ts
 const PROCESS_COLLAPSE_THRESHOLD = 3;   // src/config/constants.ts
 
-collapsible = processCount >= PROCESS_COLLAPSE_THRESHOLD
-           && group.phase === "settled"
-           && group.turnIndex !== null
-           && !group.needsAttention            // error / awaiting_user
-           && !hasBoundaryNode(group)          // compact_summary / turn 错误
+run = 连续可折叠步，且 pending.length >= PROCESS_COLLAPSE_THRESHOLD
 ```
 
-- `processCount` 只计过程行（`reasoning` / 工具调用 / 重试），**不计回复行**（ADR D5）；
-- 回复行永不进折叠组：任何 `kind === "message"` 且 `message.content` 非空（或 `role === "assistant"` 且非空正文）的节点都留在组外；
-- `needsAttention` 来自 `view.status === "error"` 与 `awaiting_user`（D8 安全阀）；
-- 组头显示待处理数量（`stats.failed` + 待审批数）。
+**组级 `collapsible`**：
+
+```ts
+collapsible = foldAllowed && runs.length > 0
+
+foldAllowed = phase === "settled"
+           && turnIndex !== null
+           && !hasBoundaryNode(turn)      // compact_summary
+```
+
+- `foldAllowed` 只拦「整个 turn 都不能折叠」的情形（流式中 / 无坐标 / 含边界节点）；单步失败**不再**参与组级判定；
+- `processCount` 按 run 计（`NodeRunStats.steps`），不计回复行（ADR D5）。`reasoning` 属于消息行的一部分，折叠态仍以气泡呈现，不折算成步；
+- 回复行永不进折叠组：任何 `kind === "message"` 且 `message.content` 非空（或 `role === "assistant"` 且非空正文）的节点都留在组外；折叠态下只有 run 内的工具调用被抽成独立步行，气泡只去掉这些步的 `toolCalls`，其余（含 `reasoning` 与 run 外的步）原样保留；
+- `needsAttention` 来自 `view.status === "error"` / `"awaiting_user"` 与消息级 `error`，**只作组级汇总与断言**，不参与 `collapsible` 计算（D8 安全阀已下沉到步级切段）；
+- 组头显示本 run 的待处理数量（`NodeRunStats.failed`，即该 run 内 `error` / `cancelled` 工具数）。
 
 ### 5.5 挂载顺序
 
@@ -482,8 +546,14 @@ collapsible = processCount >= PROCESS_COLLAPSE_THRESHOLD
 [身份行] + [回复行 / 过程组（组头 + 步行）] + [TurnTail]
 ```
 
+一个 turn 内可以有**多个过程组**（每个 run 一组），组头在 run 的首步之前渲染：
+
+```
+[身份行] + [run₁ 组头 + run₁ 步行] + [run 外的步（留在气泡内）] + [run₂ 组头 + run₂ 步行] + [回复行] + [TurnTail]
+```
+
 - 组内顺序沿用消息顺序，不重排（`reasoning < reply < process < boundary` 的类顺序只用于同迭代内的稳定排序，实现在投影内，不改消息数组）；
-- `TurnTail` 恒在该组最后一个渲染项之后；
+- `TurnTail` 挂在尾锚点行（§4.2 三级优先级）；锚点通常是该组最后一条回复行，故渲染位置即组末。若该 turn 在回复行之后还有无正文的 assistant 节点（如后续迭代的纯工具行），尾锚点仍是回复行，`TurnTail` 随该行渲染；
 - `unresolved` 组不产生组头、不产生 `TurnTail`（chrome 留在各气泡，形态与现状一致）。
 
 ---
@@ -492,15 +562,29 @@ collapsible = processCount >= PROCESS_COLLAPSE_THRESHOLD
 
 ### 6.1 三档密度
 
+密度按 **run** 判定，不按 turn：
+
 | 档 | 条件 | 渲染 |
 |---|---|---|
-| 单条 | `processCount < 3`，或 `turnIndex === null` | 现状逐节点卡片 |
-| 折叠 | `collapsible === true` 且未展开 | 组头 + 每步一行；回复行在组外 |
-| 展开 | 用户点击组头，或 `phase === "collecting"` | 逐节点还原（复用现有卡片） |
+| 单条 | 该 run 未展开 | 组头 + 每步一行；回复行与 run 外的步在组外 |
+| 展开 | 用户点击该 run 的组头 | 该 run 的步逐条还原为卡片（复用现有卡片），其他 run 不受影响 |
+| 不折叠 | `foldAllowed === false`（流式中 / 无坐标 / 含边界节点），或该段步数不足阈值 | 现状逐节点卡片，无组头 |
 
-展开态由 `GroupHeader` 组件 `useState` 持有，键为 `turnIndex`；切会话时重置。**禁止**把展开态写进 `NodeGroupView`、store 持久层或 `messages`。
+展开态由 `TurnGroup` 的本地 state 持有，**键为 run id（`run:<首步 callId>`）**；`turnIndex` 变化时随父级 key 重建，切会话时重置。**禁止**把展开态写进 `NodeGroupView`、store 持久层或 `messages`。一个 run 的展开/收起**不得**影响同 turn 内其他 run 的密度。
 
-### 6.2 单行取值（`compact` 未落地的降级分支）
+### 6.2 单行取值（正式分支 `compact`，降级仅兜底旧数据）
+
+正式分支（`view.compact != null`，P1 已关闭）：
+
+| 元素 | 取值 | 缺失时 |
+|---|---|---|
+| 状态图标 + 成败 | `view.status` / `view.compact.errorKind` | `errorKind === null` 时不显示分类 |
+| 工具名 | `view.name` | — |
+| 对象 / 规模 / 命中 | `view.compact.head`（后端已拼好的单行，≤ 160 字符） | `head` 为空串时回退降级分支 |
+| 耗时 | `view.startedAt` / `view.finishedAt` | 任一为 `null` 时省略 |
+| 文档位置引用 | `view.compact.anchor` | 为 `null` 时不显示跳转 |
+
+降级分支（仅 `view.compact == null`，即旧数据）：
 
 | 元素 | 取值 | 缺失时 |
 |---|---|---|
@@ -511,7 +595,7 @@ collapsible = processCount >= PROCESS_COLLAPSE_THRESHOLD
 | 耗时 | `view.startedAt` / `view.finishedAt` | 任一为 `null` 时省略 |
 | 文档位置引用 | **不存在** | 见 §6.3 |
 
-`compact` 落地后只把「对象 / 规模 / 锚点」三列换成 `compact.head` / `compact.anchor`，**形态不变**。
+两分支的**形态完全一致**（同一行、同一列序），只是取值来源不同；渲染层不得为「让单行好看」自行拼 head 或现算规模。
 
 ### 6.3 选路单点
 
@@ -521,14 +605,14 @@ collapsible = processCount >= PROCESS_COLLAPSE_THRESHOLD
 interface ToolCallRendererProps {
   view: ToolCallView;
   density: "single" | "card";
-  onOpenDocument?: (path: string, line: number) => void;
 }
 ```
 
+- `onOpenDocument` 属于 `compact.anchor` 分支的接口，随 `compact` 落地一并加入（P1 已关闭，接口已可用）；
 - 选路判据只有 `compact.anchor` 是否存在与文档面板是否打开（ADR D12）；
 - **禁止**读 `role` / `modeId` / `TurnKind` / 工具名（门禁 11）；
-- `compact` 未落地时 `anchor` 恒不存在 → 恒走 `density` 分支；
-- `MessageBubble` 内 `toolCalls.map(...)` 改为 `ToolCallRenderer`，折叠态由投影给出 `density`。
+- 旧数据 `compact == null` 时 `anchor` 恒不存在 → 走 `density` 分支；
+- `MessageBubble` 内 `toolCalls.map(...)` 改为 `ToolCallRenderer`；步行在 `TurnGroup` 内按 run 展开态给出 `density`，投影不产出该字段（§6.1）。
 
 ---
 
@@ -568,7 +652,7 @@ SELECT {MSG_SELECT} FROM messages
 
 ### 7.2 前端
 
-- `MESSAGES_PAGE_SIZE` 语义改为「消息护栏」，另加 `TURNS_PER_PAGE`；
+- `MESSAGES_PAGE_SIZE` 语义改为「消息护栏」，原值保留；`TURNS_PER_PAGE = 12` 是**后端常量**（`assistant-storage` 导出），前端不重复定义——页容量由后端切片，前端只传护栏与游标，避免两处常量漂移；
 - `MessageList` 的 `onLoadMore` 不改语义，只把游标换成 `beforeTurnIndex`；
 - 跨页只合并「持久化相邻」的同 turn 节点；做不到时该组标 `unresolved` 并禁用折叠（门禁 10）。
 
@@ -584,7 +668,7 @@ SELECT {MSG_SELECT} FROM messages
 | S2 | 写路径：7 处 + 取号函数 + `insert_chat_messages` 事务化 + `InsertedMessages.turn_index` + 内核 `TurnContext` 透传 | `cmd/chat/insert.rs`、`adapters/message_store.rs`、`cmd/compaction.rs`、`ops.rs`、`kernel/ids.rs`、`persist.rs`、`round_executor.rs`、`cmd/agent/mod.rs` | 新建会话一轮后，库中无 `turn_index IS NULL` 的新行（门禁 18 的 chat 段） |
 | S3 | 事件与前端数据层：两载荷 + `event_sink` 注入 + handler 签名 + 乐观消息坐标 + store `currentTurnIndex` + 段表 `rebuildFromMessages` | `event_sink.rs`、`transport.ts`、`turnOrchestrator.ts`、`optimisticMessage.ts`、`chatStreamStore.ts`、`chatStorePorts.ts`、`agentSegments.ts` | 流式期当前 turn 节点已有坐标（门禁 17）；刷新后段表可重建（门禁 2 的前端侧） |
 | S4 | 容器层：`showIdentity` 改坐标 + `MessageBubble` 两 prop + `TurnTail` | `MessageList.tsx`、`MessageBubble.tsx`、`TurnTail.tsx` | chat 与 agent 单轮零工具渲染与现状逐项一致（门禁 15） |
-| S5 | 分组与密度：`groupNodeRows` + `GroupHeader` + 三档 + 安全阀 + `ToolCallRenderer` 降级分支 | `groupNodeRows.ts`、`GroupHeader.tsx`、`ToolCallRenderer.tsx`、`ToolCallBubble.tsx` | 8 迭代 × 2 调用场景可折叠；回复行恒在组外（门禁 4、5、7） |
+| S5 | 分组与密度：`groupNodeRows` + 切段（`planRuns`）+ `GroupHeader` + 三档 + 步级安全阀 + `ToolCallRenderer` 单行取值（正式分支 `compact.head`，旧数据降级） | `groupNodeRows.ts`、`TurnGroup.tsx`、`GroupHeader.tsx`、`ToolCallRenderer.tsx`、`ToolCallBubble.tsx` | 8 迭代 × 2 调用场景可折叠；单步失败只切断当前段，其他段照常折叠；回复行恒在组外（门禁 4、5、7） |
 | S6 | 分页按 turn | `msg_ops.rs`、command 层、`chatService.ts`、`constants.ts` | 一次 turn 不被切成两页（门禁 10） |
 
 依赖顺序：S1 → S2 → S3 → S4 → S5 → S6。S4 可在 S2 完成后先做（`turnIndex === null` 全量兜底时形态与现状一致），S5 必须等 S3（否则折叠判据拿不到 `phase`）。
@@ -600,10 +684,10 @@ SELECT {MSG_SELECT} FROM messages
 | 1 坐标一致 | `src-tauri/tests/conversations.rs` 新增用例 + `tests/protocol_dto_roundtrip.rs` | assistant 行 `iteration` 等于 `chat-delta` / `chat-stream-start` 的 `iteration`；tool 行等于 `agent-tool-call` 的 `iteration`；tool 行不写 `0` |
 | 2 重启等价 | `src-tauri/tests/conversations.rs` | 同一库重新打开后，按新排序键得到的 `(turn_index, iteration)` 序列与写入时一致 |
 | 3 禁用启发式 | `src/chat/message/__tests__/groupNodeRows.test.ts` | 两个相邻 assistant 行、坐标不同时不被合并；坐标缺失时落 `unresolved` |
-| 4 回复行不折 | 同上 | 「结论后继续迭代一次」的序列中，含正文节点全部在组外 |
-| 5 折叠纯投影 | 同上 | 投影前后 `messages` 引用/内容不变；展开后节点顺序与 `id` 一致 |
-| 6 相位不靠定时器 | 同上 | 注入长静默不改变 `phase`；`isStreaming=false` 且非当前 turn 时恒 `settled` |
-| 7 安全阀 | 同上 | `running` / `error` / `awaiting_user` / `boundary` 存在时 `collapsible === false` |
+| 4 回复行不折 | 同上 | 「结论后继续迭代一次」的序列中，含正文节点全部在组外；run 外的步留在气泡内 |
+| 5 折叠纯投影 | 同上 | 投影前后 `messages` 引用/内容不变；展开后节点顺序与 `id` 一致；同一 turn 的多个 run 各自计数 |
+| 6 相位不靠定时器 | 同上 | 注入长静默不改变 `phase`；`isStreaming=false` 且非当前 turn 时恒 `settled`；流式增量期间不产生 run |
+| 7 安全阀 | 同上 | `error` / `awaiting_user` / 无摘要的步**切断 run** 且留在气泡内；单步失败不阻止其他成功步（≥ 阈值）折叠；`running` 或 `compact_summary` 存在时该段不折叠 |
 | 8 收起态不读正文 | 同上（spy） | `parsePersistedOutput` / `resultStats` / markdown 解析零调用 |
 | 9 单行可读 | 同上 | `arguments` 可解析时单行非空；不可解析时仍有工具名 + 状态 |
 | 10 跨页不重建 | `src/chat/message/__tests__/groupNodeRows.test.ts` + 后端分页用例 | 页边界处不合并非相邻节点；`unresolved` 组不折叠 |
@@ -650,7 +734,7 @@ npm test
 | # | 限制 | 来源 | 处置 |
 |---|---|---|---|
 | L1 | 分页查询不按 `active_branch_id` 过滤（既有偏差） | ADR §3.1 注 | 不在本文处理；规格中记为已知限制，避免被误认为新形态引入 |
-| L2 | `compact` 未落地时单行缺「规模 / 锚点」两列 | P1 | 降级分支（§6.2），不得现场统计字节 |
+| L2 | 旧数据（`compact == null`）单行缺「规模 / 锚点」两列 | P1（已关闭） | 降级分支（§6.2）兜底，不得现场统计字节；新数据走正式分支 |
 | L3 | 分支点位于存量行（`turn_index IS NULL`）时，重生成行无坐标 | §2.4 路径 3 | 落 `unresolved`，chrome 逐气泡，不报错 |
 | L4 | `duplicate_conversation` 复制后 `next_turn_index` 沿用源值 | §2.4 路径 7 | 复制品的新轮序号与源会话同区间，但两者是独立会话，序号无全局唯一要求 |
 | L5 | 子 agent 独立会话坐标空间未接入 | ADR 关联 I38f | 暂缓，不影响本文六切片 |

@@ -308,6 +308,8 @@ fn fixture_source(adapter: Arc<dyn BaseProviderAdapter>) -> FixtureSource {
         is_error: false,
         status: "completed".to_string(),
         mode_id: None,
+        turn_index: None,
+        iteration: 0,
     }];
     let provider = ProviderCredential {
         row: ProviderRow {

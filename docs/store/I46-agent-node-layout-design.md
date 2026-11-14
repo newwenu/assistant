@@ -58,11 +58,11 @@
 
 | # | 依赖 | 现状 | 缺失后果 | 处置 |
 |---|---|---|---|---|
-| P1 | 参考记录的 `compact` 展示投影（`head` / `truncated` / `persisted` / `errorKind` / `anchor`） | **未落地**：`ToolCallView` 只有 `callId` / `name` / `status` / `arguments` / `argsText` / `resultText` / `startedAt` / `finishedAt` / `approval` / `question` / `errorKind` / `confirmationWaitMs`；后端无 `ToolResultCompactDto` | 单行拿不到「对象 + 规模」，D4 表格第 3 列与门禁 9 无法按原样实现 | 单行**先行降级**为「工具名 + `summarizeArguments` + 状态 + 耗时」，规模与锚点两列**省略而非伪造**（D4 / 门禁 9）；`compact` 落地后仅替换 `head` 取值，形态不变 |
+| P1 | 参考记录的 `compact` 展示投影（`head` / `truncated` / `persisted` / `errorKind` / `anchor`） | **已落地**（2026-11-14，P13 关闭）：`ToolResultCompactDto` 已进 `MessageToolCallDto`，前端 `ToolCallView.compact` 可用 | 单行可直接拿「对象 + 规模 + 锚点」，D4 表格按正式分支实现 | 正式分支取 `compact.head` / `compact.anchor`；`compact == null`（旧数据）才走降级分支（工具名 + `summarizeArguments` + 状态 + 耗时），规模与锚点两列**省略而非伪造**（D4 / 门禁 9） |
 | P2 | 消息写入事务化 | **未落地**：`insert_chat_messages` 与压缩摘要写入各自多次 `insert_message` + `update_*`，无外层事务 | `next_turn_index` 与消息行可能不同步（计数器递增成功、消息写入失败 → 序号空洞；反序 → 重复序号） | 由 D2 约束 6 要求：所有写路径必须在同一事务内完成「取号 → 写行 → 递增」 |
 | P3 | 分页按 turn 聚合 | **未落地**：`get_messages_paginated` 按 `timestamp < cursor` 取消息页 | 跨页切开 turn（G6）；只能靠 §2.10 约束 1 的兜底 | 允许先按 §2.10 约束 1 兜底（切开的边界组落 `unresolved` 并禁用折叠），turn 游标命令归独立议题（OQ12） |
 
-> P1 决定**单行的信息量**，P2 决定**坐标的正确性**，P3 决定**跨页形态**。三者都不阻塞「坐标落库 + 容器归属」这批主干的实施顺序，但都必须在规格文档里写成显式降级分支，不能当成「已经有了」。
+> P1 决定**单行的信息量**，P2 决定**坐标的正确性**，P3 决定**跨页形态**。P1 已于 2026-11-14 关闭；P2 / P3 仍不阻塞「坐标落库 + 容器归属」这批主干的实施顺序，但必须在规格文档里写成显式降级分支，不能当成「已经有了」。
 
 ---
 
@@ -151,7 +151,7 @@ turn 内后续迭代**不新增事件**：前端用「本 turn 已知的 `turnIn
 | 元素 | 现状（F5） | 目标 |
 |---|---|---|
 | 身份行（头像 / 模式 / 模型） | 连续 assistant 的首个气泡 | **turn 内首个 `role === "assistant"` 节点**（判据从「上一条是否 assistant」改为「是否本 turn 首个 assistant 节点」） |
-| 时间戳 | 每个气泡 | **turn 尾**（`TurnTail`） |
+| 时间戳（assistant 侧） | 每个气泡 | **turn 尾**（`TurnTail`） |
 | `MessageActions`（复制 / 删除 / 重新生成） | 每个气泡 | **turn 尾**（仅 assistant 侧） |
 | `BranchPicker` | 每个气泡 | **turn 尾**（仅 assistant 侧） |
 | 失败重试入口 | 每个气泡 | **失败节点**（就地） |
@@ -185,7 +185,7 @@ turn 内后续迭代**不新增事件**：前端用「本 turn 已知的 `turnIn
 
 单行的字段映射（全部来自结构化字段，无一读正文）：
 
-| 元素 | 来源（`compact` 已落地） | 来源（`compact` 未落地，当前现状 P1） | 缺失时 |
+| 元素 | 来源（`compact` 可用，新数据） | 来源（`compact == null`，旧数据兜底） | 缺失时 |
 |---|---|---|---|
 | 状态图标 + 成败 | `view.status` / `compact.errorKind` | `view.status` / `view.errorKind`（两者均已存在） | 图标取 `status`；`errorKind` 为 `null` 时不显示分类 |
 | 工具名 | `view.name` | `view.name` | — |
@@ -194,7 +194,7 @@ turn 内后续迭代**不新增事件**：前端用「本 turn 已知的 `turnIn
 | 耗时 | `view.startedAt` / `finishedAt` | 同左 | 任一为 `null` → 省略 |
 | 文档位置引用 | `compact.anchor` | **不存在** → 省略 | 见 D12 |
 
-理由：F7 证明现状卡片无法压成一行；`compact.head` 是为「对象 + 规模」存在的结构化字段（§9）。**`compact` 未落地时单行信息量下降，但形态不变**——单行退化为「工具名 + 参数摘要 + 状态 + 耗时」，规模一列留白。这一列不允许用「截断正文前 N 字」或「现场统计字节」填补：前者不准且不稳定，后者违反门禁 8。
+理由：F7 证明现状卡片无法压成一行；`compact.head` 是为「对象 + 规模」存在的结构化字段（§9）。**`compact == null`（旧数据）时单行信息量下降，但形态不变**——单行退化为「工具名 + 参数摘要 + 状态 + 耗时」，规模一列留白。这一列不允许用「截断正文前 N 字」或「现场统计字节」填补：前者不准且不稳定，后者违反门禁 8。
 
 ### 2.5 D5 折叠只折过程，任何回复行永不折叠
 
@@ -243,6 +243,8 @@ group 带 `phase: collecting | settled`：
 | `awaiting_user`（审批 / 提问） | 把需要点确认的东西藏进折叠组是事故 |
 | `boundary` 节点（压缩提示 / token 上限 / turn 错误） | 属于 turn 级事实，本就不在过程组内 |
 
+**安全阀是节点级，不是 turn 级**：失败 / 待处理 / 无摘要的步切断它所在的折叠段（run）并留在气泡内完整显示，但**不得**因此否决同一 turn 内其他成功步的折叠——否则一个节点出错就让整轮全部展开，既违背「每个收起的 node 各自处理」，也让流式期与终态的组头计数互相污染。`running` 与 `boundary` 仍是 turn 级：前者整轮处于 `collecting`、不产生任何 run；后者使该 turn 不可折叠。
+
 ### 2.9 D9 折叠不改数据，且必须可逆
 
 门禁要求「折叠前 → 展开后」逐项一致：消息数组、节点顺序、`id`、chrome 数量、分支控件全部相同。任何需要改动段表或落库才能实现的折叠方案都不被采纳（§5）。
@@ -266,7 +268,7 @@ group 带 `phase: collecting | settled`：
 
 这是布局对信封的唯一反向约束；信封其余部分与布局正交。
 
-**当前状态：该投影尚未落地**（见 §1.4 P1）。因此 D4 的单行在实现时必须走降级分支（工具名 + `summarizeArguments` + 状态 + 耗时），`head` / `anchor` 两列省略；待 `compact` 落地后只替换取值、不改形态。**不得**为了「让单行好看」在渲染层自行拼 head。
+**当前状态：该投影已落地**（2026-11-14，见 §1.4 P1）。D4 的单行走正式分支取 `compact.head` / `compact.anchor`；仅 `compact == null`（旧数据）回落到降级分支（工具名 + `summarizeArguments` + 状态 + 耗时），两分支形态一致。**不得**为了「让单行好看」在渲染层自行拼 head。
 
 ### 2.12 D12 文档锚点是节点的一种行形态
 
@@ -425,7 +427,7 @@ interface NodeGroupView {
 - 组只包**过程行**；回复行按原序穿插显示，不进入组内；
 - 步行点击 → 就地展开该步卡片，不展开整组；
 - 组头字段全部可算：步数 = 过程行数、耗时 = 首末节点时间差、失败数 = `status` 统计。
-- 上图中的「120 行」「12 命中」「第 40-52 行」来自 `compact.head` / `compact.anchor`；**P1 未落地时这三列整列省略**，步行退化为「✓ read src/a.ts · 40ms」（D4），不得用正文截断代替。
+- 上图中的「120 行」「12 命中」「第 40-52 行」来自 `compact.head` / `compact.anchor`；**旧数据（`compact == null`）时这三列整列省略**，步行退化为「✓ read src/a.ts · 40ms」（D4），不得用正文截断代替。
 
 ### 3.6 落地位置
 
@@ -463,9 +465,9 @@ interface NodeGroupView {
 4. **回复行不折**：任何含正文的节点永不进入折叠组；测试须覆盖「结论给出后仍继续迭代一次」，结论仍在视口内（§8.2 的真实故障形态）。
 5. **折叠纯投影**：折叠前后 `messages` 数组、wire、落库逐项不变；展开后节点顺序与 `id` 与折叠前一致。
 6. **相位不靠定时器**：`phase` 只有两个取值，`settled` 只在「终态 `chat-messages-changed` 已并入 store 且 `session-state-changed` 为 `Idle` / `Error`」时置位；测试注入长时间静默、以及「终态事件已到但快照未并入」都不改变 `phase`。
-7. **安全阀**：`running` / `error` / `awaiting_user` / `boundary` 一律不折叠；组头须显示待处理数。
+7. **安全阀**：`error` / `awaiting_user` / 无摘要的步切断其所在折叠段并留在气泡内，不阻止同 turn 其他成功步折叠；`running` 期间整轮不产生 run；含 `boundary` 的 turn 不折叠；组头须显示该段待处理数。
 8. **收起态不读正文**：收起态不得调用 `parsePersistedOutput` / `resultStats` / markdown 解析（用 spy 断言零调用）。
-9. **单行可读**：`compact == null`（即 P1 未落地的全部现状数据）时单行退化为「工具名 + `summarizeArguments` + 状态 + 耗时」，不得渲染为空行，也不得为凑信息量去解析 `resultText`（规模列留白，见 D4）。
+9. **单行可读**：`compact == null`（旧数据）时单行退化为「工具名 + `summarizeArguments` + 状态 + 耗时」，不得渲染为空行，也不得为凑信息量去解析 `resultText`（规模列留白，见 D4）。
 10. **跨页不重建**：分页边界不得合并「非持久化相邻」的同 turn 节点；`unresolved` 组不折叠。
 11. **选路不看身份**：`ToolCallRenderer` 不读 `role` / `modeId` / `TurnKind` / 工具名；测试覆盖「同一 turn 内一个节点有锚点、一个没有」。
 12. **无新增 wire 负担**：除坐标两字段外，分组与折叠**不产生任何 wire 字段**。
@@ -512,9 +514,9 @@ interface NodeGroupView {
 - **后端·读**：`get_messages` / `get_messages_paginated` 换排序键与游标；`trace_active_branch` 仍按父链求拓扑（坐标只做校验）。
 - **前端·形态**：`MessageList` 新增 `groupNodeRows(messages, link)` 纯函数与 `TurnTail`，props 透传 `link`；`MessageBubble` 的 chrome 迁出、`showIdentity` 改读坐标；`ToolCallRenderer` 单点选路。**两条链路共用同一套渲染，chat 靠数据天然退化**（D13），不新增链路分支。
 - **前端·坐标**：新增「本 turn `turnIndex`」的会话级缓存（供流式期赋坐标），`agentSegments` 保留为写入侧段表并降级为缓存。
-- **前端·密度**：组头 + 步行 + 组外回复行；收起态只读 `compact.head` 与 `view` 元数据；`compact` 未落地时按 D4 降级（规模列留白）。
+- **前端·密度**：组头 + 步行 + 组外回复行；收起态只读 `compact.head` 与 `view` 元数据；旧数据（`compact == null`）按 D4 降级（规模列留白）。
 - **测试**：门禁 1–20 各一组；其中新增的三类硬用例是「流式期坐标不跳变（17）」「7 条写路径无 `turn_index IS NULL` 新行（18）」「写失败时计数器不递增（19）」。
-- **前置依赖**：P1（`compact` 投影）、P2（写事务化）、P3（turn 分页）按 §1.4 显式降级，**不得**当成已具备能力实现。
+- **前置依赖**：P1（`compact` 投影）已关闭；P2（写事务化）、P3（turn 分页）按 §1.4 显式降级，**不得**当成已具备能力实现。
 - **不做**：turn 事件语义、压缩投影、审批链、权限网关、分支拓扑、结果信封（§9）、分页命令与虚拟化实现（§7 OQ12）。
 
 ---
@@ -594,7 +596,7 @@ interface NodeGroupView {
 
 | 参考记录内容 | 本文处置 |
 |---|---|
-| 三段信封（head / body / tail）、省略三态、口径分离、保留策略分裂、落盘生命周期、预算归属、`compact` wire 字段 | **保留有效**，降为 D11 的「正交收益」，本文不复述；**其中 `compact` 展示投影在当前代码中尚未落地**（`ToolCallView` 无 `head` / `truncated` / `anchor`，后端无 `ToolResultCompactDto`），故按 §1.4 P1 降级实现，不得当成已具备能力 |
+| 三段信封（head / body / tail）、省略三态、口径分离、保留策略分裂、落盘生命周期、预算归属、`compact` wire 字段 | **保留有效**，降为 D11 的「正交收益」，本文不复述；**`compact` 展示投影已于 2026-11-14 落地**（`ToolCallView.compact` 可用，后端 `ToolResultCompactDto` 已进契约），按 §1.4 P1 走正式分支，旧数据按降级分支兜底 |
 | 门禁 1–12（字节相等、head 单行、三态一致、round-trip、一次传输、事件、口径分离、定位符非解析、分类可回放、清理安全、锚点结果时刻、形态不越界） | **保留有效**，仍约束信封与结果层 |
 | D10 文档形态渲染 | 降为 D12：节点行的一种形态，不再是主轴 |
 | D11 切换点（单点替换渲染函数、拒绝按 role / modeId / 整体重写） | **保留有效**，并入 D12 约束 3 与门禁 11；其中「拒绝按 `modeId` 分叉」升级为独立决策 D13（明确 chat / agent 同构、坐标不区分链路、门禁 15 退化等价） |

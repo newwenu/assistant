@@ -186,21 +186,24 @@ export function createMessageSlice(
 
       set({ isLoadingMoreMessages: true });
       try {
-        const earliestTimestamp = state.messages[0].timestamp;
+        const oldestTurnIndex =
+          state.messages.find((m) => m.turnIndex !== null)?.turnIndex ?? null;
         const detail = await chatService.getConversationPaginated(
           state.currentConversationId,
           MESSAGES_PAGE_SIZE,
-          earliestTimestamp,
+          oldestTurnIndex,
         );
         if (detail && detail.messages.length > 0) {
-          const olderMessages = detail.messages.filter(
-            (m) => m.timestamp < earliestTimestamp,
-          );
+          const known = new Set(state.messages.map((m) => m.id));
+          const olderMessages = detail.messages.filter((m) => !known.has(m.id));
           if (olderMessages.length > 0) {
-            set((s) => ({
-              messages: [...olderMessages, ...s.messages],
-              hasMoreMessages: olderMessages.length >= MESSAGES_PAGE_SIZE,
-            }));
+            set((s) => {
+              const messages = [...olderMessages, ...s.messages];
+              return {
+                messages,
+                hasMoreMessages: messages.length < detail.totalCount,
+              };
+            });
           } else {
             set({ hasMoreMessages: false });
           }

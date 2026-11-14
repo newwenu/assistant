@@ -1,11 +1,7 @@
 use assistant_tools::os::output::{truncate_output, OutputLimits};
 
 fn limits(max_bytes: usize, max_lines: usize, preview_bytes: usize) -> OutputLimits {
-    OutputLimits {
-        max_bytes,
-        max_lines,
-        preview_bytes,
-    }
+    OutputLimits::head(max_bytes, max_lines, preview_bytes)
 }
 
 #[test]

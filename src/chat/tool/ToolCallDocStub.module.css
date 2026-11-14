@@ -1,0 +1,67 @@
+.stub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 0 2px 6px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.stub:disabled {
+  cursor: default;
+}
+
+.stub:hover:not(:disabled) .jump {
+  text-decoration: underline;
+}
+
+.statusIcon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+}
+
+.head {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--color-text);
+}
+
+.jump {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.statusRunning .statusIcon {
+  color: var(--color-primary);
+}
+
+.statusSuccess .statusIcon {
+  color: var(--color-success, #52c41a);
+}
+
+.statusError .statusIcon {
+  color: var(--color-error, #ff4d4f);
+}
+
+.statusAwaiting .statusIcon {
+  color: var(--color-warning, #faad14);
+}
+
+.statusCancelled .statusIcon,
+.statusMissing .statusIcon {
+  color: var(--color-text-tertiary);
+}

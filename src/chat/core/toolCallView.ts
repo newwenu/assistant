@@ -51,6 +51,7 @@ export function toolCallsFromHistory(
     status: call.status,
     arguments: asRecord(call.arguments),
     resultText: call.result,
+    compact: call.compact,
   }));
 }
 
@@ -76,7 +77,9 @@ export function applyAgentToolCall(
         startedAt: now,
         finishedAt: null,
         resultText: null,
+        compact: null,
         argsText: "",
+        argsPreview: payload.argsPreview,
       });
     case "argsDelta": {
       const current = views.find((view) => view.callId === call.callId);
@@ -91,6 +94,7 @@ export function applyAgentToolCall(
       return upsert(views, call.callId, call.name, {
         status: "success",
         resultText: payload.result,
+        compact: payload.compact,
         finishedAt: now,
         confirmationWaitMs: payload.confirmationWaitMs,
       });
@@ -98,6 +102,7 @@ export function applyAgentToolCall(
       return upsert(views, call.callId, call.name, {
         status: "error",
         resultText: payload.error,
+        compact: payload.compact,
         errorKind: payload.errorKind,
         finishedAt: now,
         confirmationWaitMs: payload.confirmationWaitMs,

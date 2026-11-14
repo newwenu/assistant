@@ -7,7 +7,9 @@ import React, {
 } from "react";
 import { DownOutlined, LoadingOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { MessageBubble, RoleContext } from "./MessageBubble";
+import { TurnGroup } from "./TurnGroup";
+import { groupNodeRows } from "./groupNodeRows";
+import { useChatStreamStore } from "../../stores/chatStreamStore";
 import type { Message } from "../../chat/core/chatTypes";
 import type { RetryNotification } from "../../chat/core/chatTypes";
 import type { RecoveryActionCode } from "../core/chatErrorRecovery";
@@ -17,6 +19,8 @@ const SCROLL_THRESHOLD = 100;
 
 interface MessageListProps {
   messages: Message[];
+  /** 只读快照：仅写入 `NodeGroupView.link`，不参与分组或渲染决策（I46 门禁 16）。 */
+  link: "chat" | "agent";
   isStreaming: boolean;
   isReasoningStreaming?: boolean;
   streamingMessageId?: string | null;
@@ -33,10 +37,14 @@ interface MessageListProps {
   onFork?: (messageId: string) => void;
   onErrorAction?: (code: RecoveryActionCode) => void;
   retryStatus?: RetryNotification | null;
+  /** 文档面板当前打开的文件路径；`null` 时工具结果恒走卡片（I46 compact §3.7.4）。 */
+  docPanelPath?: string | null;
+  onOpenDocument?: (path: string, line: number) => void;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
   messages,
+  link,
   isStreaming,
   isReasoningStreaming = false,
   streamingMessageId,
@@ -53,6 +61,8 @@ export const MessageList: React.FC<MessageListProps> = ({
   onFork,
   onErrorAction,
   retryStatus,
+  docPanelPath = null,
+  onOpenDocument,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
@@ -64,18 +74,78 @@ export const MessageList: React.FC<MessageListProps> = ({
   const programScrollRef = useRef(false);
   const prevIsStreamingRef = useRef(isStreaming);
 
+  // 防御性过滤：结果正文已挂在 assistant 行的 `toolCalls[].result`，
+  // tool 行在 wire 上 `content` 恒为空串，仅承担分支拓扑（I46 §2.4 D4）。
   const visibleMessages = useMemo(
     () => messages.filter((msg) => msg.role !== "tool"),
     [messages],
   );
   const seenMessageCountRef = useRef(visibleMessages.length);
 
-  const lastAssistantIndex = useMemo(() => {
+  const lastAssistantId = useMemo(() => {
     for (let i = visibleMessages.length - 1; i >= 0; i--) {
-      if (visibleMessages[i].role === "assistant") return i;
+      if (visibleMessages[i].role === "assistant") return visibleMessages[i].id;
     }
-    return -1;
+    return null;
   }, [visibleMessages]);
+
+  const prevRoleById = useMemo(() => {
+    const map = new Map<string, string | undefined>();
+    visibleMessages.forEach((msg, index) => {
+      map.set(msg.id, index > 0 ? visibleMessages[index - 1].role : undefined);
+    });
+    return map;
+  }, [visibleMessages]);
+
+  const currentTurnIndex = useChatStreamStore((s) => s.currentTurnIndex);
+
+  /**
+   * 流式占位行：父级未下发 `streamingMessageId` 时退回「末条 assistant」，
+   * 供投影兜住 `collecting` 判定（I46 §5.3），避免运行中的 turn 被提前收起。
+   */
+  const streamingMsgId = useMemo(() => {
+    if (streamingMessageId != null) return streamingMessageId;
+    if (!isStreaming || visibleMessages.length === 0) return null;
+    const last = visibleMessages[visibleMessages.length - 1];
+    return last.role === "assistant" ? last.id : null;
+  }, [streamingMessageId, isStreaming, visibleMessages]);
+
+  /**
+   * 分组投影（I46 §5）：分组只看 `turnIndex`，相位只来自
+   * `session-state-changed` 的 `isStreaming` 与 `chat-stream-start` 的 `currentTurnIndex`。
+   */
+  const groups = useMemo(
+    () =>
+      groupNodeRows({
+        messages: visibleMessages,
+        link,
+        phase: isStreaming ? "collecting" : "settled",
+        currentTurnIndex,
+        streamingMessageId: streamingMsgId,
+      }),
+    [visibleMessages, link, isStreaming, currentTurnIndex, streamingMsgId],
+  );
+
+  const handlers = useMemo(
+    () => ({
+      onDelete: onDeleteMessage,
+      onEdit: onEditMessage,
+      onRegenerate: onRegenerateMessage,
+      onRetryMessage,
+      onSwitchBranch,
+      onFork,
+      onErrorAction,
+    }),
+    [
+      onDeleteMessage,
+      onEditMessage,
+      onRegenerateMessage,
+      onRetryMessage,
+      onSwitchBranch,
+      onFork,
+      onErrorAction,
+    ],
+  );
 
   useEffect(() => {
     if (userScrolledUp) {
@@ -168,14 +238,6 @@ export const MessageList: React.FC<MessageListProps> = ({
     }
   }, []);
 
-  const streamingMsgId =
-    streamingMessageId ??
-    (visibleMessages.length > 0 && isStreaming
-      ? visibleMessages[visibleMessages.length - 1].role === "assistant"
-        ? visibleMessages[visibleMessages.length - 1].id
-        : undefined
-      : undefined);
-
   const containerClass = [css.container, compact ? css.compact : ""]
     .filter(Boolean)
     .join(" ");
@@ -209,43 +271,31 @@ export const MessageList: React.FC<MessageListProps> = ({
             )}
           </div>
         )}
-        {visibleMessages.map((msg, index) => {
-          const isStreamingMsg = msg.id === streamingMsgId;
-          const displayMsg =
-            isStreamingMsg && streamingContent != null
-              ? { ...msg, content: streamingContent }
-              : msg;
-          const isLastAssistant = index === lastAssistantIndex;
-          const showIdentity =
-            msg.role === "assistant" &&
-            (index === 0 || visibleMessages[index - 1].role !== "assistant");
-          return (
-            <RoleContext.Provider
-              key={msg.id}
-              value={index > 0 ? visibleMessages[index - 1].role : undefined}
-            >
-              <MessageBubble
-                message={displayMsg}
-                isStreaming={isStreamingMsg}
-                isReasoningStreaming={isStreamingMsg && isReasoningStreaming}
-                retryStatus={isStreamingMsg ? retryStatus : null}
-                compact={compact}
-                showIdentity={showIdentity}
-                onDelete={onDeleteMessage}
-                onEdit={onEditMessage}
-                onRegenerate={isLastAssistant ? onRegenerateMessage : undefined}
-                onRetry={
-                  msg.error?.retryable
-                    ? () => onRetryMessage?.(msg.id)
-                    : undefined
-                }
-                onSwitchBranch={onSwitchBranch}
-                onFork={onFork}
-                onErrorAction={onErrorAction}
-              />
-            </RoleContext.Provider>
-          );
-        })}
+        {groups.map((group) => (
+          <TurnGroup
+            key={
+              group.turnIndex !== null
+                ? `turn:${group.turnIndex}`
+                : `unresolved:${
+                    group.nodes[0]?.kind === "message"
+                      ? group.nodes[0].message.id
+                      : group.nodes[0]?.callId
+                  }`
+            }
+            group={group}
+            handlers={handlers}
+            prevRoleById={prevRoleById}
+            isStreaming={isStreaming}
+            isReasoningStreaming={isReasoningStreaming}
+            streamingMessageId={streamingMsgId ?? null}
+            streamingContent={streamingContent ?? null}
+            retryStatus={retryStatus}
+            compact={compact}
+            lastAssistantId={lastAssistantId}
+            docPanelPath={docPanelPath}
+            onOpenDocument={onOpenDocument}
+          />
+        ))}
       </div>
       <button
         className={[

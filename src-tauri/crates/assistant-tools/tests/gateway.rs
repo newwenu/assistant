@@ -399,6 +399,7 @@ async fn file_storage_persists_result_and_reports_bytes() {
         .persist(PersistToolResult {
             tool_call_id: "call/1:abc".to_string(),
             tool_name: "bash".to_string(),
+            session_id: None,
             content: "hello world".to_string(),
         })
         .await
@@ -411,7 +412,10 @@ async fn file_storage_persists_result_and_reports_bytes() {
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    assert_eq!(name, "call_1_abc.txt");
+    assert!(
+        name.ends_with("-bash-call_1_abc.txt"),
+        "unexpected name: {name}"
+    );
     let written = std::fs::read_to_string(&persisted.path).unwrap();
     assert_eq!(written, "hello world");
 }

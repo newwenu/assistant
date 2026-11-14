@@ -251,7 +251,7 @@ async fn results_are_capped_at_one_thousand_with_a_notice() {
     assert_eq!(data["matches"].as_array().unwrap().len(), MAX_MATCHES);
     let text = result.assistant_text();
     assert!(text.contains(&format!(
-        "[truncated: showing {} of {} matches",
+        "[truncated: showing {} of {} items",
         MAX_MATCHES,
         MAX_MATCHES + 1
     )));

@@ -257,7 +257,8 @@ fn assistant_text(outcome: &SearchOutcome, lines: &[String], budget: Duration) -
         push_line(
             &mut text,
             &format!(
-                "[truncated: showing the first {} matching lines; narrow 'path' or 'include']",
+                "[truncated: showing the first {} matching lines; total unknown; narrow 'path' \
+                 or 'include']",
                 MAX_MATCHES
             ),
         );
@@ -265,8 +266,8 @@ fn assistant_text(outcome: &SearchOutcome, lines: &[String], budget: Duration) -
         push_line(
             &mut text,
             &format!(
-                "[truncated: output line limit ({}) reached; narrow 'path', 'include', or reduce \
-                 'context']",
+                "[truncated: output line limit ({}) reached; total unknown; narrow 'path', \
+                 'include', or reduce 'context']",
                 MAX_OUTPUT_LINES
             ),
         );

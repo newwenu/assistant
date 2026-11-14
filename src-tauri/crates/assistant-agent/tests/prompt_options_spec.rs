@@ -47,6 +47,8 @@ fn make_message_row(role: &str, content: &str) -> MessageRow {
         is_error: false,
         status: "completed".to_string(),
         mode_id: None,
+        turn_index: None,
+        iteration: 0,
     }
 }
 
@@ -156,6 +158,25 @@ fn compose_system_prompt_appends_fact_after_prompt() {
 }
 
 #[test]
+fn compose_system_prompt_strips_verbatim_prefix_from_fact() {
+    let drive = PromptFacts {
+        working_directory: Some(r"\\?\G:\codeversion\assistant\temp-backup".to_string()),
+    };
+    assert_eq!(
+        prompt_builder::compose_system_prompt("", &drive),
+        r"Working directory: G:\codeversion\assistant\temp-backup"
+    );
+
+    let unc = PromptFacts {
+        working_directory: Some(r"\\?\UNC\server\share\dir".to_string()),
+    };
+    assert_eq!(
+        prompt_builder::compose_system_prompt("", &unc),
+        r"Working directory: \\server\share\dir"
+    );
+}
+
+#[test]
 fn compose_system_prompt_fact_only_when_prompt_empty() {
     let facts = PromptFacts {
         working_directory: Some("G:/ws".to_string()),
@@ -247,6 +268,28 @@ fn prepare_messages_rebuilds_tool_history() {
     assert_eq!(wire[4].tool_call_id.as_deref(), Some("c2"));
     assert_eq!(wire[4].name.as_deref(), Some("list"));
     assert!(wire[4].is_error);
+}
+
+#[test]
+fn prepare_messages_uses_placeholder_stage_text() {
+    let mut pending = make_tool_row("p1", "c1", "", false);
+    pending.status = assistant_storage::conversations::TOOL_ROW_PENDING.to_string();
+    let mut running = make_tool_row("p2", "c2", "", false);
+    running.status = assistant_storage::conversations::TOOL_ROW_RUNNING.to_string();
+    let detail = make_detail(vec![
+        make_message_row("user", "go"),
+        make_assistant_with_calls("a1", &[("c1", "read", "{}"), ("c2", "write", "{}")]),
+        pending,
+        running,
+    ]);
+
+    let wire = prompt_builder::prepare_messages(&detail, "", None);
+
+    assert_eq!(wire.len(), 4, "占位行本身已在链上，不再额外合成");
+    assert_eq!(wire[2].content, prompt_builder::TOOL_NOT_STARTED_RESULT);
+    assert!(wire[2].is_error);
+    assert_eq!(wire[3].content, prompt_builder::INTERRUPTED_TOOL_RESULT);
+    assert!(wire[3].is_error);
 }
 
 #[test]
@@ -358,6 +401,8 @@ fn tool_history_roundtrip_rebuilds_wire_shape() {
         is_error: false,
         status: "completed".to_string(),
         mode_id: None,
+        turn_index: None,
+        iteration: 0,
     };
 
     assistant_storage::conversations::insert_message(

@@ -47,7 +47,9 @@ pub fn init_db_localized(
             updated_at INTEGER NOT NULL,
             active_branch_id TEXT,
             tool_config_json TEXT,
-            workspace_root TEXT NOT NULL DEFAULT ''
+            workspace_root TEXT NOT NULL DEFAULT '',
+            -- 会话内下一个可用 turn 序号（I46 D2）。取号即自增，不回退、不复用。
+            next_turn_index INTEGER NOT NULL DEFAULT 1
         );
 
         -- 模式级工具装配（`ModeToolConfig` 的 JSON）由 `agent_modes` 模块负责编解码；
@@ -71,8 +73,13 @@ pub fn init_db_localized(
             avatar TEXT
         );
 
-        -- `tool_calls_json` 为 agentloop 预留列（当前写入恒 NULL），禁止 DROP；
-        -- 后续接入时必须使用结构化线格式，不得把该列的 JSON 文本直接搬进 DTO。
+        -- `tool_calls_json` 存 assistant 行的工具调用线格式（id / name / arguments），
+        -- 结果文本仍由 `role = 'tool'` 行的 `content` 承载（I46 F15），禁止 DROP；
+        -- 读取时必须经结构化 DTO 转换，不得把该列的 JSON 文本直接搬进 DTO。
+        --
+        -- 工具结果行的 `status` 额外承载执行阶段（D27）：`pending` = 已声明、未进入
+        -- 执行队列；`running` = 已进入执行队列、结果未落库；`completed` = 有真实结果。
+        -- 占位行在声明时即插入（正文为空），结果到达时原地回填——拓扑一经确定不再改写。
         CREATE TABLE IF NOT EXISTS messages (
             id TEXT PRIMARY KEY,
             conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
@@ -90,7 +97,12 @@ pub fn init_db_localized(
             status TEXT NOT NULL DEFAULT 'completed',
             tool_call_id TEXT,
             is_error INTEGER NOT NULL DEFAULT 0,
-            mode_id TEXT
+            mode_id TEXT,
+            -- 节点坐标（I46 D2）：`turn_index` 为会话内单调 turn 序号，`NULL` = 未知
+            -- （存量行 / 压缩摘要）；`iteration` 为 turn 内迭代序号，0 = 非迭代行。
+            -- 两者只由后端写入，渲染层禁止猜测。
+            turn_index INTEGER,
+            iteration INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS tool_favorites (
@@ -242,6 +254,24 @@ pub fn init_db_localized(
         info!("Added workspace_root column to conversations table");
     }
 
+    // 会话级 turn 取号器（I46 §2.1）：存量会话初始化为 1，不回填历史行的
+    // `messages.turn_index`（存量行保持 `NULL`，渲染侧走降级分支）。
+    let has_conv_next_turn_index: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'next_turn_index'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_conv_next_turn_index {
+        conn.execute_batch(
+            "ALTER TABLE conversations ADD COLUMN next_turn_index INTEGER NOT NULL DEFAULT 1;",
+        )
+        .map_err(|e| e.to_string())?;
+        info!("Added next_turn_index column to conversations table");
+    }
+
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_messages_parent_id
           ON messages(conversation_id, parent_id, sibling_index);",
@@ -357,11 +387,51 @@ pub fn init_db_localized(
             info!("Added mode_id column to messages table");
         }
 
+        // 节点坐标列（I46 §2.1）：只追加列，不回填存量行。
+        let has_turn_index: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'turn_index'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())?
+            > 0;
+        if !has_turn_index {
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN turn_index INTEGER;")
+                .map_err(|e| e.to_string())?;
+            info!("Added turn_index column to messages table");
+        }
+
+        let has_iteration: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'iteration'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())?
+            > 0;
+        if !has_iteration {
+            conn.execute_batch(
+                "ALTER TABLE messages ADD COLUMN iteration INTEGER NOT NULL DEFAULT 0;",
+            )
+            .map_err(|e| e.to_string())?;
+            info!("Added iteration column to messages table");
+        }
+
         #[allow(unused)]
         {
             migrations::run_migrations(&conn)?;
         }
     }
+
+    // 坐标索引（I46 §2.1）：必须在列补齐之后创建，否则存量库加列前会失败。
+    // 顺序为 (conversation_id, turn_index, iteration)，`turn_index IS NULL` 的
+    // 存量行落在索引尾部，不影响新行排序。
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_messages_conv_coord
+          ON messages(conversation_id, turn_index, iteration);",
+    )
+    .map_err(|e| e.to_string())?;
 
     info!("Database initialized at {:?}", db_path);
     Ok(conn)

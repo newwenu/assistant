@@ -80,10 +80,13 @@ export interface TurnOrchestrator {
     conversationId: string,
     attemptId: string,
     messageId: string,
+    turnIndex: number | null,
+    iteration: number | null,
   ) => void;
   onUserMessageConfirmed: (
     userMessageId: string,
     userMessageContent: string,
+    turnIndex: number | null,
   ) => void;
   onAgentToolCall: (call: AgentToolCall) => void;
   onSessionState: (payload: SessionStateChangedPayload) => void;
@@ -465,11 +468,19 @@ export function createTurnOrchestrator(
     conversationId: string,
     attemptId: string,
     messageId: string,
+    turnIndex: number | null,
+    iteration: number | null,
   ) {
     turnIdByConversation.set(conversationId, attemptId);
+    // 坐标是 wire 事实（I46 §3.2）：本轮 turn 序号落进会话无关的瞬时字段，
+    // 供后续迭代与占位消息赋坐标，不从相邻关系推算。
+    deps.state.setCurrentTurnIndex(turnIndex);
     if (conversationId !== deps.env.getActiveConversationId()) return;
     const previousId = deps.env.getStreamingMessageId();
     deps.state.setActiveAttemptId(attemptId, messageId);
+    if (turnIndex !== null && iteration !== null) {
+      deps.state.setMessageCoords(messageId, turnIndex, iteration);
+    }
     // 占位消息换成真实行 id 时，策略侧（agent 段表）需要同步改名（§3.7）
     if (previousId !== null && previousId !== messageId) {
       strategyFor(conversationId).onMessageIdResolved(previousId, messageId);
@@ -479,8 +490,9 @@ export function createTurnOrchestrator(
   function onUserMessageConfirmed(
     userMessageId: string,
     userMessageContent: string,
+    turnIndex: number | null,
   ) {
-    deps.state.confirmUserMessage(userMessageId, userMessageContent);
+    deps.state.confirmUserMessage(userMessageId, userMessageContent, turnIndex);
   }
 
   /**

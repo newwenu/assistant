@@ -4,7 +4,11 @@ use assistant_agent::agent::round_executor::{
     ToolErrorClass, ToolExecCtx, ToolExecResult, ToolExecutionPort, ToolStage, TurnObserver,
 };
 use assistant_agent::agent::tool_call::FinalizedToolCall;
-use assistant_agent::agent::tool_event::{ToolEvent, ToolEventPayload};
+use assistant_agent::agent::tool_event::{
+    CompactAnchor, CompactLineRange, CompactPersisted, CompactTruncated, CompactUnit, ToolCompact,
+    ToolEvent, ToolEventPayload,
+};
+use assistant_tools::compact::{ToolResultCompact, TruncatedUnit};
 use assistant_tools::{
     PipelineEvent, PipelineEventSink, PipelineStage, ResolvedPermissionPolicy, ToolCall,
     ToolErrorKind, ToolOutcome, ToolPipeline, ToolUseContext,
@@ -31,17 +35,19 @@ impl ObserverPipelineSink<'_> {
             PipelineEvent::Started {
                 tool_call_id,
                 tool_name,
+                args_preview,
             } => ToolEvent {
                 turn_id: self.turn_id.to_string(),
                 iteration: self.iteration,
                 call_id: tool_call_id,
                 name: tool_name,
-                payload: ToolEventPayload::Started,
+                payload: ToolEventPayload::Started { args_preview },
             },
             PipelineEvent::Finished {
                 tool_call_id,
                 tool_name,
                 assistant_text,
+                compact,
             } => {
                 let confirmation_wait_ms = self.waits.peek(&tool_call_id);
                 ToolEvent {
@@ -52,6 +58,7 @@ impl ObserverPipelineSink<'_> {
                     payload: ToolEventPayload::Finished {
                         result: assistant_text,
                         confirmation_wait_ms,
+                        compact: compact.map(into_compact),
                     },
                 }
             }
@@ -60,6 +67,7 @@ impl ObserverPipelineSink<'_> {
                 tool_name,
                 error,
                 error_kind,
+                compact,
             } => {
                 let confirmation_wait_ms = self.waits.peek(&tool_call_id);
                 ToolEvent {
@@ -76,6 +84,7 @@ impl ObserverPipelineSink<'_> {
                             ToolErrorClass::Internal
                         }),
                         confirmation_wait_ms,
+                        compact: compact.map(into_compact),
                     },
                 }
             }
@@ -232,5 +241,42 @@ fn into_error_class(kind: ToolErrorKind) -> ToolErrorClass {
         ToolErrorKind::Cancelled => ToolErrorClass::Cancelled,
         ToolErrorKind::Internal => ToolErrorClass::Internal,
         ToolErrorKind::Denied => ToolErrorClass::Denied,
+    }
+}
+
+/// 工具侧信封 → 内核中性信封：只搬字段，不做任何判定。
+fn into_compact(compact: ToolResultCompact) -> ToolCompact {
+    ToolCompact {
+        head: compact.head,
+        truncated: compact.truncated.map(|info| CompactTruncated {
+            unit: into_unit(info.unit),
+            returned: info.returned,
+            total: info.total,
+        }),
+        persisted: compact.persisted.map(|info| CompactPersisted {
+            path: info.path,
+            bytes: info.bytes,
+        }),
+        error_kind: compact.error_kind.map(into_error_class),
+        anchor: compact.anchor.map(|anchor| CompactAnchor {
+            path: anchor.path,
+            ranges: anchor
+                .ranges
+                .into_iter()
+                .map(|range| CompactLineRange {
+                    start: range.start,
+                    end: range.end,
+                })
+                .collect(),
+        }),
+    }
+}
+
+fn into_unit(unit: TruncatedUnit) -> CompactUnit {
+    match unit {
+        TruncatedUnit::Lines => CompactUnit::Lines,
+        TruncatedUnit::Items => CompactUnit::Items,
+        TruncatedUnit::Bytes => CompactUnit::Bytes,
+        TruncatedUnit::Unknown => CompactUnit::Unknown,
     }
 }

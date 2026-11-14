@@ -460,7 +460,7 @@ assistant/
 │   │   ├── assistant-agent/       # kernel（turn 状态机 / 端口 / 流消费）+ agent（RoundExecutor / tool_call 累积器 / 阶梯 / 中间件）+ chat 侧（compaction / prompt_builder / multimodal）
 │   │   ├── assistant-storage/     # db / conversations / providers / agent_modes / attachments / token_usage / tool_* / permission_*
 │   │   ├── assistant-i18n/        # 后端文案（zh-CN / en-US）
-│   │   ├── assistant-tools/       # 工具控制层（trait / registry / policy / gateway / pipeline / exec / question）+ os 工具实现（read/ls/glob/grep/write/edit/mkdir/move/delete/ask_user/fs_link）
+│   │   ├── assistant-tools/       # 工具控制层（trait / registry / policy / gateway / pipeline / exec / question）+ os 工具实现（read/ls/glob/grep/write/edit/mkdir/move/delete/ask_user/fs_link）+ 结果信封（compact / storage 落盘与清理）+ os/output 采集与截断三态
 │   │   ├── assistant-crypto/      # 加密原语（KDF / AEAD）与 API Key 加密
 │   │   ├── assistant-security/    # unlock_dialog（Win32 / macOS / Linux 原生）/ hibp / ssh_agent / screen_lock / clipboard_guard / reveal_guard
 │   │   ├── assistant-sync/        # git_sync（git / ssh）+ types

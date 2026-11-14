@@ -632,6 +632,11 @@
       "message_deleted": "Message deleted",
       "delete_failed": "Delete failed",
       "interrupted": "Interrupted",
+      "group": {
+        "process": "Process",
+        "steps": "{{count}} steps",
+        "failed": "{{count}} failed"
+      },
       "identity": {
         "unknown_mode": "Unknown mode",
         "separator": "·",
@@ -687,6 +692,14 @@
       },
       "result_persisted": "Output saved to",
       "result_size": "{{lines}} lines · {{size}}",
+      "result_truncated": "Truncated · {{scale}}",
+      "doc_jump": "Jump to line {{line}}",
+      "unit": {
+        "lines": "lines",
+        "items": "items",
+        "bytes": "bytes",
+        "unknown": "units"
+      },
       "expand": "Expand",
       "collapse": "Collapse",
       "no_result": "No output",

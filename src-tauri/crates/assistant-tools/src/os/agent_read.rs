@@ -271,7 +271,10 @@ fn optional_u64(object: &serde_json::Map<String, Value>, key: &str) -> Result<Op
     }
 }
 
-/// 截断提示（结果正文尾部，footer 之前）：EOF 已达时给精确总数，否则只报下界。
+/// 截断提示（结果正文尾部，footer 之前）：三态收敛（I46 compact §2.2 D2）。
+///
+/// EOF 已达时给精确总数；尚未读完时必须显式写 `total unknown`，
+/// 不得用「more content follows」这类既无总数也无未知标记的写法。
 fn truncation_notice(outcome: &window::WindowOutcome) -> String {
     match outcome.total_lines {
         Some(total) => format!(
@@ -279,7 +282,7 @@ fn truncation_notice(outcome: &window::WindowOutcome) -> String {
             outcome.returned_lines, total, outcome.rendered_bytes, outcome.total_rendered_bytes
         ),
         None => format!(
-            "[truncated: showing {} lines, {} bytes; more content follows]",
+            "[truncated: showing {} lines, {} bytes; total unknown]",
             outcome.returned_lines, outcome.rendered_bytes
         ),
     }

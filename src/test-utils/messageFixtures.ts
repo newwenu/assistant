@@ -23,6 +23,8 @@ const messageBase: Omit<Message, "id"> = {
   providerId: null,
   modelId: null,
   modeId: null,
+  turnIndex: null,
+  iteration: 0,
 };
 
 export function makeMessage(

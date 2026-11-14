@@ -51,15 +51,9 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     {
         let conn = db::init_db_localized(&dirs.database(), &|key| assistant_i18n::t(key))
             .map_err(Box::<dyn std::error::Error>::from)?;
-        match assistant_storage::conversations::mark_streaming_messages_interrupted(&conn) {
-            Ok(0) => {}
-            Ok(count) => {
-                log::warn!("startup sweep: {count} streaming messages -> interrupted");
-            }
-            Err(e) => {
-                log::warn!("startup sweep failed: {e}");
-            }
-        }
+        // 启动不做任何全表收尾：占位行机制（D27）让拓扑在声明时定死，残留的在途行
+        // 由投影期按 `status` 补文案（`pending` → 未开始、`running` → 结果未知），
+        // 工具结果读取也会过滤在途行，因此无需在启动时扫表改写状态。
         handle.manage(DbState(std::sync::Mutex::new(conn)));
     }
 

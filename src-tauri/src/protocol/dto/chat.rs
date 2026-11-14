@@ -4,6 +4,8 @@ use assistant_storage::conversations::{ConversationRow, MessageRow};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::agent::ToolResultCompactDto;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub enum ProviderErrorCodeDto {
@@ -114,6 +116,8 @@ pub struct MessageToolCallDto {
     pub arguments: serde_json::Value,
     pub status: MessageToolCallStatusDto,
     pub result: Option<String>,
+    /// 展示投影：历史重载的渲染事实源（旧数据由后端重建，重建不出则为 `null`）。
+    pub compact: Option<ToolResultCompactDto>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
@@ -163,6 +167,10 @@ pub struct MessageDto {
     pub status: MessageStatusDto,
     #[serde(default)]
     pub tool_calls: Vec<MessageToolCallDto>,
+    /// 会话内单调 turn 序号（从 1 起）。`null` = 未知（存量行 / 未确认的乐观行）。
+    pub turn_index: Option<u32>,
+    /// turn 内迭代序号。`0` = 非迭代行（user / compact_summary）。
+    pub iteration: u32,
 }
 
 impl From<MessageRow> for MessageDto {
@@ -184,6 +192,8 @@ impl From<MessageRow> for MessageDto {
             mode_id: r.mode_id,
             status: MessageStatusDto::from_db(&r.status),
             tool_calls: Vec::new(),
+            turn_index: r.turn_index.and_then(|v| u32::try_from(v).ok()),
+            iteration: u32::try_from(r.iteration).unwrap_or(0),
         }
     }
 }
@@ -250,8 +260,10 @@ pub struct ConversationQueryOptsDto {
     pub mode: ConversationQueryModeDto,
     #[serde(default = "default_limit")]
     pub limit: i64,
+    /// 分页游标（I46 §7.1）：取该 turn 序号之前的页；`null` = 最新一页。
+    /// 由 `beforeTimestamp` 改为 turn 边界，保证一页内不切开 turn。
     #[ts(optional = nullable)]
-    pub before_timestamp: Option<i64>,
+    pub before_turn_index: Option<u32>,
 }
 
 fn default_limit() -> i64 {
@@ -500,6 +512,10 @@ pub struct ChatStreamStartPayloadDto {
     /// 起始 phase；缺省为 `starting`，与内核 `TurnEvent::StreamStart` 同源。
     #[serde(default)]
     pub phase: TurnPhaseDto,
+    /// 本轮 turn 序号（I46 §2.6）：键恒在、值 `null` = 无坐标（存量分支点）。
+    pub turn_index: Option<u32>,
+    /// 首个 assistant 行的迭代号，恒 `1`。
+    pub iteration: Option<u32>,
 }
 
 /// 与内核 `TurnPhase` 同源：`From` 用穷尽 `match`，内核新增 phase 时此处编译失败。
@@ -581,6 +597,8 @@ pub struct ChatUserMessageConfirmedPayloadDto {
     pub conversation_id: String,
     pub user_message_id: String,
     pub user_message_content: String,
+    /// 本轮 turn 序号（I46 §2.6）：键恒在、值 `null` = 无坐标。
+    pub turn_index: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]

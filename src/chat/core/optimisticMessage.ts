@@ -17,6 +17,10 @@ export interface OptimisticMessageFields {
   providerId?: string | null;
   modelId?: string | null;
   modeId?: string | null;
+  /** 会话内 turn 序号（I46 §3.1）；`null` = 坐标未知，渲染侧走平铺降级分支。 */
+  turnIndex?: number | null;
+  /** turn 内迭代序号；`0` = 非迭代行。 */
+  iteration?: number;
 }
 
 export function createOptimisticMessage(
@@ -37,5 +41,7 @@ export function createOptimisticMessage(
     providerId: fields.providerId ?? null,
     modelId: fields.modelId ?? null,
     modeId: fields.modeId ?? null,
+    turnIndex: fields.turnIndex ?? null,
+    iteration: fields.iteration ?? 0,
   };
 }

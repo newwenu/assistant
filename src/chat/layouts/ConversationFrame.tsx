@@ -27,6 +27,10 @@ interface ConversationFrameProps extends ConversationLayoutProps {
   toolPanel?: React.ReactNode;
   /** 消息区下方追加插槽（审批 / 提问卡片）。 */
   belowMessages?: React.ReactNode;
+  /** 文档面板当前打开的文件路径（仅 `AgentLayout` 传入）。 */
+  docPanelPath?: string | null;
+  /** 文档批注跳转回调。 */
+  onOpenDocument?: (path: string, line: number) => void;
 }
 
 const AttachmentPreviewBar: React.FC = () => {
@@ -40,6 +44,7 @@ const AttachmentPreviewBar: React.FC = () => {
 /** 两个布局共享的 chrome / 消息区 / 输入区 / 上下文栏组合，差异只用插槽表达。 */
 export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
   const {
+    link,
     providerId,
     providers,
     modelId,
@@ -79,6 +84,8 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
     toolToolbar,
     toolPanel,
     belowMessages,
+    docPanelPath = null,
+    onOpenDocument,
   } = props;
   const { t } = useTranslation();
 
@@ -126,6 +133,7 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
       ) : (
         <MessageList
           messages={messages}
+          link={link}
           isStreaming={isStreaming}
           isReasoningStreaming={isReasoningStreaming}
           streamingMessageId={streamingMessageId}
@@ -142,6 +150,8 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
           onFork={onFork}
           onErrorAction={onErrorAction}
           retryStatus={retryStatus}
+          docPanelPath={docPanelPath}
+          onOpenDocument={onOpenDocument}
         />
       )}
       {belowMessages}

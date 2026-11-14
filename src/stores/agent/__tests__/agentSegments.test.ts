@@ -13,7 +13,7 @@ function startedCall(iteration: number, callId = "call-1"): AgentToolCall {
     iteration,
     callId,
     name: "read_file",
-    payload: { phase: "started" },
+    payload: { phase: "started", argsPreview: null },
   };
 }
 
@@ -24,7 +24,7 @@ function finishedCall(iteration: number, callId = "call-1"): AgentToolCall {
     iteration,
     callId,
     name: "read_file",
-    payload: { phase: "finished", result: "ok" } as ToolPayload,
+    payload: { phase: "finished", result: "ok", compact: null } as ToolPayload,
   };
 }
 

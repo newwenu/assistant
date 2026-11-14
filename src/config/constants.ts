@@ -33,7 +33,10 @@ export const CHAT_INPUT_MIN_ROWS = 1;
 export const CHAT_INPUT_MAX_ROWS = 4;
 export const CHAT_AUTO_TITLE_LENGTH = 20;
 export const STREAM_COALESCE_TIMER_MS = 32;
+/** 单页消息护栏（I46 §7.1）：只在 turn 边界截断，后端页容量另由 `TURNS_PER_PAGE` 控制。 */
 export const MESSAGES_PAGE_SIZE = 50;
+/** 过程行折叠阈值（I46 §5.4）：达到该条数且已 settled 才允许折叠。 */
+export const PROCESS_COLLAPSE_THRESHOLD = 3;
 export const VIRTUAL_SCROLL_THRESHOLD = 100;
 export const VIRTUAL_SCROLL_OVERSCAN = 5;
 export const SCROLL_LOAD_THRESHOLD_PX = 100;
