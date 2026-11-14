@@ -473,7 +473,7 @@ mount → orb-settling (opacity:0, transition:none, animation:none)
 
 ### 2026-10-30 死代码清理 + 特性清单动态装载
 
-**清理**：`docs/store/` 6 份过期规格移入 `docs/achievement2/`（逐字节一致，该目录只留活跃规格）；删除零引用的 `assistant-vault/src/contract/mod.rs`（仅含未使用的 `Precondition` 枚举）与 `assistant-config/tests/constant.rs`；后端 `constant.rs` 删 12 个、前端 `constants.ts` 删 19 个无引用常量；`assistant-vault/Cargo.toml` 补登 `git-tests` feature，使 `tests/sync_engine.rs` 的 feature 门控真正生效
+**清理**：`docs/store/` 6 份过期规格移入 `docs/archived/vault/`（逐字节一致，该目录只留活跃规格）；删除零引用的 `assistant-vault/src/contract/mod.rs`（仅含未使用的 `Precondition` 枚举）与 `assistant-config/tests/constant.rs`；后端 `constant.rs` 删 12 个、前端 `constants.ts` 删 19 个无引用常量；`assistant-vault/Cargo.toml` 补登 `git-tests` feature，使 `tests/sync_engine.rs` 的 feature 门控真正生效
 
 **特性清单**：`__VAULT_ENABLED__ ? [vaultModule] : aggregate([])` 静态三元折叠在 `VAULT_ENABLED=0` 下仍残留 7 个 vault chunk 与入口字段字面量。根因：折叠只删引用不删 import，`import { vaultModule } from "./vault/module"` 退化为副作用 import，模块内 `load: () => import("@/vault")` 等箭头函数里的 `import()` 照常被物化。对照实验：同一 import 只要源码完全不引用（`aggregate([])`）产物即 0 chunk，证明模块本身无副作用
 

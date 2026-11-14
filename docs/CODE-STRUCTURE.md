@@ -13,7 +13,7 @@
 | `src-tauri/` | Tauri 应用层（`src/`）+ Rust workspace 子 crate（`crates/`） |
 | `config/features.json` | 可选功能清单唯一事实源（当前仅 `vault`），前端 Vite define 与后端 Cargo feature 都据此派生 |
 | `scripts/` | 构建与维护脚本：`copy-rive-wasm.mjs`（prebuild）、`feature-build.ps1` / `assert-feature-absent.mjs`（可选功能构建校验）、`update-models-dev-snapshot.mjs`（模型目录快照）、`fetch-fonts.mjs`、`generate-icon.cjs` |
-| `docs/` | 设计与实现文档；`achievement*/` 为归档区，`store/` 为活跃设计区，`analysis/` 为预分析区，`principle/` 为规范 |
+| `docs/` | 设计与实现文档；`archived/` 为归档区（按域分目录），`store/` 为活跃设计区，`analysis/` 为预分析区，`principle/` 为规范 |
 | `references/` | 参考项目源码（13 个，已分组），仅供检索，不参与构建 |
 | `temp-backup/` | 备份与临时脚本产物，不参与构建 |
 | `dist/` | Vite 构建产物 |
