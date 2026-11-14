@@ -169,12 +169,15 @@
 
 - [x] 新建 `src/chat/message/groupNodeRows.ts`：纯函数，输入节点数组输出「轮 + 组 + 平铺节点」视图；不读 `modeId` / `link` / `TurnKind`
 - [x] 折叠判据只由坐标与 transcript 边界驱动，禁定时器；`isStreaming === false` 且非当前 turn 恒 `settled`；`currentTurnIndex` 未下发时由 `streamingMessageId`（流式占位行）兜住 `collecting`，避免运行中的 turn 提前收起、组头步数随增量跳动
-- [x] 折叠单位为**连续可折叠步段（run）**而非 turn：`planRuns` 按「`success` 且有摘要」切段，每段独立计数（`NodeRunStats.steps`）、独立判定阈值、独立展开
-- [x] run 在节点序列里严格连续：正文 / 推理行、失败 / 待处理 / 无摘要的步、`compact_summary` 边界行一律切断 run；组头每段只出现一次，`run.steps` 恒等于其下实际步行行数（禁止同一 run 被气泡打断后重复渲染组头、每处都显示整段总步数）
+- [x] 折叠单位为**连续可折叠步段（run）**而非 turn：`planRuns` 按「`success` / `error` 且有摘要」切段，每段独立计数（`NodeRunStats.steps`）、独立判定阈值（阈值 1，1～2 步也成组）、独立展开
+- [x] run 在节点序列里严格连续：正文行、待处理（`awaiting_user`）/ 无摘要的步、`compact_summary` 边界行一律切断 run（失败步不切段）；组头每段只出现一次，`run.steps` 恒等于其下实际步行行数（禁止同一 run 被气泡打断后重复渲染组头、每处都显示整段总步数）
+- [x] 思考行节点化（2026-11-14 口径调整）：本 turn 存在工具步时，`reasoning` 上移为独立节点（`kind === "reasoning"`，键 `reasoning:<messageId>`），与工具步同 run、同组头、同展开开关，且**不切断** run；节点序固定为「思考 → 正文气泡 → 工具步」。零工具 turn 的思考仍留在气泡内，外观与现状一致；纯思考段（`run === null`）不成组，避免「执行过程 · 1 思考」这类只有一行且文案重复的组头
+- [x] 组头计数分离：`NodeRunStats.steps` 只计工具步，`NodeRunStats.reasoning` 单独计思考行，组头分别显示「N 步」/「M 思考」
 - [x] 同一 turn 内重复 `callId` 只计一次、只渲染一次（`planRuns` 与节点构建同一口径），组头步数不虚高、无重复 React key
-- [x] 安全阀下沉到步级：`error` / `awaiting_user` / 无摘要的步**切断当前 run** 并留在气泡内完整显示，不影响其他成功步折叠；`compact_summary` 命中 `hasBoundaryNode` 时整 turn 不折叠；`needsAttention` 只作组级汇总与断言
+- [x] 安全阀下沉到步级：`awaiting_user` / 无摘要的步**切断当前 run** 并整卡显示；失败步（`error`）可折叠，原因由 `compact.head` 承载、组头显示失败数；`compact_summary` 命中 `hasBoundaryNode` 时整 turn 不折叠；`needsAttention` 只作组级汇总与断言
+- [x] 气泡只承载正文与 chrome：所有工具步按消息原序输出为独立节点（`run` 内为单行、`run` 外为卡片），气泡不再承载 `toolCalls` / `reasoning`；纯工具行仅在需要挂身份行 / `TurnTail` / 错误时产出 `chromeOnly` 空壳气泡（不画气泡壳），避免节点顺序被气泡抢占（`ask_user` 不再被顶到工具步之前）
 - [x] 回复行恒在组外（含正文节点不折叠）；`unresolved` 组不折叠（跨页兜底），且 `phase` 恒 `settled`、`tailAnchor` 恒 `null`
-- [x] 投影前后 `messages` 引用 / 内容不变，展开后节点顺序与 `id` 一致（折叠态只产出浅拷贝，`toolCalls` 仅保留 run 外的步，不改原数组）
+- [x] 投影前后 `messages` 引用 / 内容不变，展开后节点顺序与 `id` 一致（折叠态只产出浅拷贝，`toolCalls` 保留在 `message` 上仅作数据、不再由气泡渲染，不改原数组）
 - [x] 新增 `TurnGroup.tsx` 承接一组渲染：`[身份行] + [过程组（组头 + 步行），每 run 一组] + [回复行] + [TurnTail]`；展开态是组件本地 `useState`，**按 run id 各自持有**，一个 run 的展开不影响其他 run；`key` 取 `turnIndex`（`unresolved` 组取首节点 id）保证切会话重建
 - [x] `MessageList.tsx` 改为按组渲染，`RoleContext` 由 `prevRoleById` 映射逐行传入，组间间距沿用 `MessageBubble.module.css` 的相邻规则
 
@@ -183,17 +186,20 @@
 对应规格 §6 / 门禁 8、9、11。
 
 - [x] 新建 `src/chat/message/GroupHeader.tsx`：组头计数 + 展开 / 收起，无正文读取
+- [x] 新建 `src/chat/message/ReasoningNode.tsx`：思考节点三档密度（`single` 单行取首个非空行 / `expanded` 展开全文 / `block` 复用 `ReasoningBlock` 自折叠），不显示工具列（状态、耗时、工具名）
 - [x] 新建 `src/chat/tool/ToolCallRenderer.tsx`：`single` 单行档 / `card` 卡片档；单行档取 `view.compact.head`，`compact == null`（旧数据）才走降级分支（工具名 + 状态 + 参数摘要 + 耗时），不现场统计字节（P1 已于 2026-11-14 关闭，正式分支已接通）
 - [x] `MessageBubble.tsx` 内 `toolCalls.map(...)` 改为 `ToolCallRenderer`；卡片档直通 `ToolCallBubble`，单行档不调用 `parsePersistedOutput` / `resultStats` / markdown 解析（门禁 9）
 - [x] 选路只看 `density` 与 `compact.anchor` 是否命中当前文档，不看身份（门禁 11）；`onOpenDocument` 随 `compact` 落地已加入接口
-- [x] `constants.ts` 加 `PROCESS_COLLAPSE_THRESHOLD = 3`
-- [x] 组头文案进 `zh-CN` / `en-US` 的 `chat.message.group.*`（`process` / `steps` / `failed`）
+- [x] `constants.ts` 加 `PROCESS_COLLAPSE_THRESHOLD = 1`（2026-11-14 由 3 下调：1～2 步也成组，单步 run 仍低于一张卡片）
+- [x] 组头文案进 `zh-CN` / `en-US` 的 `chat.message.group.*`（`process` / `steps` / `thought` / `thoughts` / `failed`）
 
 ### S5.3 自验
 
-- [x] `src/chat/message/__tests__/groupNodeRows.test.ts`：15 例覆盖分组、相位、折叠判据、节点投影、尾锚点（门禁 3、4、5、6、7、8、10、16）
+- [x] `src/chat/message/__tests__/groupNodeRows.test.ts`：41 例覆盖分组、相位、折叠判据、节点投影、步段、思考节点化、尾锚点（门禁 3、4、5、6、7、8、10、16）
+- [x] 思考节点化用例（6 例）：有工具步时上移且气泡 `reasoning` 置空、与工具步共用 run 且 `steps + reasoning` 恒等于同 run 节点数、同消息内「思考 → 正文 → 工具」原序、正文切断 run 使前后思考各归其段、零工具 turn 思考留在气泡、collecting 期思考节点 `run === null`
 - [x] `src/chat/message/__tests__/nodeLayoutGates.test.ts`：源码级断言门禁 6、8、9、11、16 与 `TURNS_PER_PAGE` 单一来源（仓库无 React 渲染测试环境，组件级断言改为静态扫描）
-- [x] 8 迭代 × 2 调用场景可折叠，回复行恒在组外
+- [x] 8 迭代 × 2 调用场景可折叠；1～2 步 run 与失败步同样成组（阈值 1）；回复行恒在组外
+- [x] 口径调整（2026-11-14）：折叠阈值 3 → 1；失败步（`error`）由「切断 run 并整卡常驻」改为「可折叠、单行显示原因」；`awaiting_user` / 无摘要的步仍切断；思考行由「气泡内附属块」改为「独立节点」（同 run、同组头、同展开开关，纯思考段不成组）（同步 ADR D8 与规格 §5.4 / §5.5 / §6.1 / §6.4 / 门禁 7）
 
 ---
 

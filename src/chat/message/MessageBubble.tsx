@@ -43,6 +43,11 @@ interface MessageBubbleProps {
   suppressAssistantChrome?: boolean;
   /** 本行是所在 turn 的尾锚点：由它挂载唯一的 `TurnTail`。 */
   isTurnTail?: boolean;
+  /**
+   * 气泡只承载 chrome（身份行 / 尾锚点 / 错误），没有正文可渲染（I46 §6.1）：
+   * 折叠态下工具步已上移为独立节点，此时不画空气泡壳。
+   */
+  chromeOnly?: boolean;
   onDelete?: (id: string) => void;
   onEdit?: (id: string, newContent: string) => void;
   onRegenerate?: (id: string) => void;
@@ -66,6 +71,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     showBranchPicker = true,
     suppressAssistantChrome = false,
     isTurnTail = false,
+    chromeOnly = false,
     onDelete,
     onEdit,
     onRegenerate,
@@ -190,7 +196,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
       (message.toolCalls?.length ?? 0) > 0 ||
       isCompactSummary ||
       editing;
-    const showBubble = hasBody || (!hasError && !retryStatus);
+    const showBubble = hasBody || (!hasError && !retryStatus && !chromeOnly);
 
     const rootClass = [
       css.root,
@@ -388,6 +394,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     if (prev.suppressAssistantChrome !== next.suppressAssistantChrome)
       return false;
     if (prev.isTurnTail !== next.isTurnTail) return false;
+    if (prev.chromeOnly !== next.chromeOnly) return false;
     if (prev.message.turnIndex !== next.message.turnIndex) return false;
     if (prev.message.iteration !== next.message.iteration) return false;
     if (prev.message.status !== next.message.status) return false;

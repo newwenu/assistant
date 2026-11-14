@@ -620,6 +620,8 @@
       "group": {
         "process": "执行过程",
         "steps": "{{count}} 步",
+        "thought": "思考",
+        "thoughts": "{{count}} 思考",
         "failed": "{{count}} 失败"
       },
       "identity": {

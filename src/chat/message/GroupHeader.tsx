@@ -5,6 +5,8 @@ import css from "./GroupHeader.module.css";
 
 interface GroupHeaderProps {
   steps: number;
+  /** run 内的思考行数：与工具步共用同一展开开关，但单独计数。 */
+  reasoning: number;
   failed: number;
   durationMs: number | null;
   expanded: boolean;
@@ -22,6 +24,7 @@ function formatDuration(ms: number): string {
  */
 export const GroupHeader: React.FC<GroupHeaderProps> = ({
   steps,
+  reasoning,
   failed,
   durationMs,
   expanded,
@@ -34,9 +37,16 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
         {expanded ? <DownOutlined /> : <RightOutlined />}
       </span>
       <span className={css.label}>{t("chat.message.group.process")}</span>
-      <span className={css.count}>
-        {t("chat.message.group.steps", { count: steps })}
-      </span>
+      {steps > 0 && (
+        <span className={css.count}>
+          {t("chat.message.group.steps", { count: steps })}
+        </span>
+      )}
+      {reasoning > 0 && (
+        <span className={css.count}>
+          {t("chat.message.group.thoughts", { count: reasoning })}
+        </span>
+      )}
       {failed > 0 && (
         <span className={css.failed}>
           {t("chat.message.group.failed", { count: failed })}

@@ -440,13 +440,20 @@ export interface NodeRunStats {
 }
 
 export type NodeView =
-  | { kind: "message"; message: Message; showIdentity: boolean; ownsAssistantChrome: boolean }
+  | {
+      kind: "message";
+      message: Message;
+      showIdentity: boolean;
+      ownsAssistantChrome: boolean;
+      /** true：气泡无正文，只承载身份行 / 尾锚点 / 错误，不画空气泡壳。 */
+      chromeOnly: boolean;
+    }
   | {
       kind: "tool";
       callId: string;
       view: ToolCallView;
-      /** 所属折叠 run；步行只在 run 内产生，故恒非空（D8 安全阀已由切段切断）。 */
-      run: NodeRunStats;
+      /** 所属折叠 run；null 表示 run 外的步（待处理 / 无摘要 / 流式中），恒以卡片显示。 */
+      run: NodeRunStats | null;
     };
 
 export interface NodeGroupView {
@@ -458,7 +465,7 @@ export interface NodeGroupView {
   needsAttention: boolean;
   link: "chat" | "agent";              // 只读，禁止参与决策
   stats: { steps: number; failed: number; durationMs: number | null };
-  /** 本 turn 内是否存在可折叠 run；`false` 时全部步留在气泡内。 */
+  /** 本 turn 内是否存在可折叠 run；`false` 时全部步为 run 外卡片节点。 */
   collapsible: boolean;
   /** turn 尾锚点；null 时本组不渲染 TurnTail。 */
   tailAnchor: Message | null;
@@ -466,7 +473,7 @@ export interface NodeGroupView {
 ```
 
 - 组内**不含**「是否展开」字段：展开态是 UI 本地状态（ADR D6），**且按 run 各自持有**（§6.1）。
-- 密度不是投影字段：`kind === "tool"` 的步行只在 run 内产生，是否单行由该 run 的展开态决定（§6.1）；投影不预判 UI 状态。
+- 密度不是投影字段：`run === null` 的步恒为卡片，`run !== null` 的步是否单行由该 run 的展开态决定（§6.1）；投影不预判 UI 状态。
 - `stats` 只由 `view.status` / `view.startedAt` / `view.finishedAt` 与节点数算出，**不读正文**（门禁 8）。
 - `isLastGroupInTurn` 供未来「末组不折叠」类规则使用；本文的实现不使用它做折叠判定（折叠只看 §5.4 判据）。
 
@@ -497,30 +504,40 @@ phase = (isStreaming && group.turnIndex !== null
 **步是否可折叠（`isFoldableStep`）**：
 
 ```ts
-isFoldableStep(view) = view.status === "success" && hasStepSummary(view)
+isFoldableStep(view) = (view.status === "success" || view.status === "error")
+                     && hasStepSummary(view)
 // hasStepSummary：compact.head 非空串，或 summarizeArguments(arguments) 非空串
 ```
 
-`running` / `error` / `awaiting_user` / `missing` / `cancelled` 一律**不可折叠**，且**切断**当前 run——失败原因是结论的一部分，不能藏进折叠组。
+`running` / `awaiting_user` / `missing` / `cancelled` 一律**不可折叠**，且**切断**当前 run。
+
+失败步（`status === "error"`）**允许折叠**（2026-11-14 口径调整）：失败原因已由 `compact.head`（`err <kind> <tool> · <subject> · <reason>`）与 `compact.errorKind` 承载，单行同时显示失败图标、原因与状态文案，组头显示本段失败数；点开该行即还原完整卡片（`ToolCallBubble`）。于是「一个失败就把整轮铺开」不再发生，原因也不会被藏掉——它在单行里。
 
 **切段规则（`planRuns`）**：按消息顺序遍历，遇下列任一情况 `flush()` 当前 run 并置 `cutNext`：
 
 - 不可折叠的步（见上）；
 - 消息级 `error != null` 的 assistant 行；
 - `compact_summary` 边界行；
-- **任何带可见正文（`content` 非空或 `reasoning` 存在）的行**。
+- **任何带正文（`content` 非空）的行**。
 
 正文行必须切断 run：它在节点序列里会插入一个气泡节点，若不切断，同一 run 的步会被气泡打断，组头在该段前重复渲染，且**每处都显示整段总步数**——组头计数与实际行数不符（「所有节点共用一个步数」「12 步但下面没那么多行」）。切段后每个 run 在节点序列里严格连续，组头出现且仅出现一次，`run.steps` 恒等于该 run 的步行行数。
+
+**思考行（2026-11-14 口径调整）与工具步同权**：`reasoning` 不再折算进气泡，而是投影为独立的 `kind === "reasoning"` 节点，与同段工具步共享同一 run、同一组头、同一展开开关。因此思考行**不切断** run（否则「思考 + 本轮工具」会被拆成两段、组头出现两次）。仅当 turn 内**存在工具步**时才上移思考节点；零工具 turn（chat 轮、agent 纯问答轮）思考仍留在气泡内，外观与现状一致。思考节点先于同消息的正文气泡、工具步之前输出（思考发生在该轮动作之前）。
 
 同一 turn 内重复下发的 `callId` 只计一次、只渲染一次（`seenCallIds` 与 `emittedCallIds` 同一口径）：否则组头步数虚高，且重复的 React key 会让实际渲染行数少于计数。
 
 **run 成立**：
 
 ```ts
-const PROCESS_COLLAPSE_THRESHOLD = 3;   // src/config/constants.ts
+const PROCESS_COLLAPSE_THRESHOLD = 1;   // src/config/constants.ts
 
-run = 连续可折叠步，且 pending.length >= PROCESS_COLLAPSE_THRESHOLD
+run = 连续可折叠步（含思考行），且 pending.length >= PROCESS_COLLAPSE_THRESHOLD
+     且 pending 内至少 1 个工具步
 ```
+
+阈值取 **1**（2026-11-14 口径调整，ADR OQ9 定案）：1～2 步也成组。单步 run 渲染「组头 + 1 行」≈ 52 px，仍远低于一张卡片（≈ 160–400 px），所以每个可折叠步都有压行收益，不再出现「两三个工具永远铺成卡片」。阈值只决定「是否成组」，不决定组头形态：`0` 步的 turn 仍落单条档。
+
+run 必须含至少 1 个工具步：纯思考段若也成组，会渲染出「执行过程 · 1 思考」这种只有一行、且与思考行自身文案重复的组头。纯思考段（如「思考 → 中间正文 → 工具」里的前置思考）的 `run === null`，思考节点走 `density="block"`，由 `ReasoningBlock` 自带开关折叠，仍是独立节点而非气泡内容。
 
 **组级 `collapsible`**：
 
@@ -533,10 +550,12 @@ foldAllowed = phase === "settled"
 ```
 
 - `foldAllowed` 只拦「整个 turn 都不能折叠」的情形（流式中 / 无坐标 / 含边界节点）；单步失败**不再**参与组级判定；
-- `processCount` 按 run 计（`NodeRunStats.steps`），不计回复行（ADR D5）。`reasoning` 属于消息行的一部分，折叠态仍以气泡呈现，不折算成步；
-- 回复行永不进折叠组：任何 `kind === "message"` 且 `message.content` 非空（或 `role === "assistant"` 且非空正文）的节点都留在组外；折叠态下只有 run 内的工具调用被抽成独立步行，气泡只去掉这些步的 `toolCalls`，其余（含 `reasoning` 与 run 外的步）原样保留；
+- `processCount` 按 run 计（`NodeRunStats.steps`），不计回复行（ADR D5）。思考行单独计入 `NodeRunStats.reasoning`：它与工具步共用展开开关，但组头文案分开显示（`N 步` / `M 思考`），不把思考折算成工具步；
+- 回复行永不进折叠组：任何 `kind === "message"` 且 `message.content` 非空（或 `role === "assistant"` 且非空正文）的节点都留在组外；
+- **气泡只承载正文与 chrome，不再承载任何 `toolCalls` / `reasoning`**（2026-11-14 口径调整）：可折叠步上移为单行，run 外的步（`awaiting_user` / 无摘要 / 流式中）同样上移为**独立卡片节点**（`density="card"`）。这样「步 → 等待卡 → 步」的时间顺序不会被气泡挤到最前面，`ask_user` 也不再被顶到工具步之前；
+- 纯工具行若既无正文、也不承载身份行 / 尾锚点 / 错误，则**不产生气泡节点**；需要承载时只留一个 `chromeOnly` 气泡（不画空气泡壳），保证身份行与 `TurnTail` 恒有挂载点；
 - `needsAttention` 来自 `view.status === "error"` / `"awaiting_user"` 与消息级 `error`，**只作组级汇总与断言**，不参与 `collapsible` 计算（D8 安全阀已下沉到步级切段）；
-- 组头显示本 run 的待处理数量（`NodeRunStats.failed`，即该 run 内 `error` / `cancelled` 工具数）。
+- 组头显示本 run 的失败数（`NodeRunStats.failed`，即该 run 内 `error` / `cancelled` 工具数）：失败步可折叠，但失败数必须外显；`awaiting_user` 与无摘要的步仍在气泡内常驻。
 
 ### 5.5 挂载顺序
 
@@ -546,13 +565,17 @@ foldAllowed = phase === "settled"
 [身份行] + [回复行 / 过程组（组头 + 步行）] + [TurnTail]
 ```
 
-一个 turn 内可以有**多个过程组**（每个 run 一组），组头在 run 的首步之前渲染：
+一个 turn 内可以有**多个过程组**（每个 run 一组），组头在 run 的首步之前渲染；节点严格按消息顺序输出，气泡不再抢占步的位置：
 
 ```
-[身份行] + [run₁ 组头 + run₁ 步行] + [run 外的步（留在气泡内）] + [run₂ 组头 + run₂ 步行] + [回复行] + [TurnTail]
+[身份行] + [run₁ 组头 + run₁ 步行] + [run 外的步（独立卡片节点）] + [run₂ 组头 + run₂ 步行] + [回复行] + [TurnTail]
 ```
+
+投影层的输出顺序是「每条消息先气泡（仅当需要）、再该消息的全部步」，因此 `[c1(success), ask_user(awaiting_user)]` 渲染为 `tool(c1) → 组头? → tool(ask_user, card)`，`ask_user` 不会被顶到 `c1` 之前；纯工具 turn 仍由 `chromeOnly` 气泡挂身份行与 `TurnTail`。
 
 - 组内顺序沿用消息顺序，不重排（`reasoning < reply < process < boundary` 的类顺序只用于同迭代内的稳定排序，实现在投影内，不改消息数组）；
+- 单条消息的节点输出序固定为「思考节点 → 正文气泡（仅当需要）→ 工具步」：思考发生在该轮动作之前，正文是该轮小结；同一 run 内的思考行与工具步在节点序列里连续，组头只在 run 首个节点前出现一次；
+- 正文行仍切断 run（§5.4）：保证「组头 + 步」连续，组头计数等于其下实际行数（`run.steps` + `run.reasoning`）。
 - `TurnTail` 挂在尾锚点行（§4.2 三级优先级）；锚点通常是该组最后一条回复行，故渲染位置即组末。若该 turn 在回复行之后还有无正文的 assistant 节点（如后续迭代的纯工具行），尾锚点仍是回复行，`TurnTail` 随该行渲染；
 - `unresolved` 组不产生组头、不产生 `TurnTail`（chrome 留在各气泡，形态与现状一致）。
 
@@ -566,9 +589,9 @@ foldAllowed = phase === "settled"
 
 | 档 | 条件 | 渲染 |
 |---|---|---|
-| 单条 | 该 run 未展开 | 组头 + 每步一行；回复行与 run 外的步在组外 |
+| 单条 | 该 run 未展开 | 组头 + 每步一行；回复行与 run 外的步（独立卡片节点）在组外 |
 | 展开 | 用户点击该 run 的组头 | 该 run 的步逐条还原为卡片（复用现有卡片），其他 run 不受影响 |
-| 不折叠 | `foldAllowed === false`（流式中 / 无坐标 / 含边界节点），或该段步数不足阈值 | 现状逐节点卡片，无组头 |
+| 不折叠 | `foldAllowed === false`（流式中 / 无坐标 / 含边界节点），或该 run 内无可折叠步（阈值 1 时等价于 0 步） | 现状逐节点卡片，无组头 |
 
 展开态由 `TurnGroup` 的本地 state 持有，**键为 run id（`run:<首步 callId>`）**；`turnIndex` 变化时随父级 key 重建，切会话时重置。**禁止**把展开态写进 `NodeGroupView`、store 持久层或 `messages`。一个 run 的展开/收起**不得**影响同 turn 内其他 run 的密度。
 
@@ -595,6 +618,8 @@ foldAllowed = phase === "settled"
 | 耗时 | `view.startedAt` / `view.finishedAt` | 任一为 `null` 时省略 |
 | 文档位置引用 | **不存在** | 见 §6.3 |
 
+失败步同样走单行档：状态图标为失败、状态文案取 `view.status`，原因已包含在 `compact.head` 的 `err <kind> <tool> · <subject> · <reason>` 中，因此失败步不再享有「整卡常驻」特权；需要完整输出时点开该行即还原卡片（ADR D8，2026-11-14 口径调整）。`awaiting_user` 与无摘要的步仍整卡常驻，但它们是**独立的卡片节点**（`run === null`），不再塞回气泡（§5.5）。
+
 两分支的**形态完全一致**（同一行、同一列序），只是取值来源不同；渲染层不得为「让单行好看」自行拼 head 或现算规模。
 
 ### 6.3 选路单点
@@ -613,6 +638,22 @@ interface ToolCallRendererProps {
 - **禁止**读 `role` / `modeId` / `TurnKind` / 工具名（门禁 11）；
 - 旧数据 `compact == null` 时 `anchor` 恒不存在 → 走 `density` 分支；
 - `MessageBubble` 内 `toolCalls.map(...)` 改为 `ToolCallRenderer`；步行在 `TurnGroup` 内按 run 展开态给出 `density`，投影不产出该字段（§6.1）。
+
+### 6.4 思考行形态
+
+思考节点（`ReasoningNode`，`src/chat/message/ReasoningNode.tsx`）与工具步同权，三档密度同样按 **run** 判定：
+
+| 档 | 条件 | 渲染 |
+|---|---|---|
+| `single` | `run !== null` 且该 run 未展开 | 单行：`💭 思考` + 首个非空行（单行省略号截断）+ 流式标记 |
+| `expanded` | `run !== null` 且该 run 已展开 | `💭 思考` 标签行 + 全文 `pre`（不二次折叠，避免「组头展开后还要再点一次」） |
+| `block` | `run === null`（流式中 / 纯思考段 / 边界行） | 复用 `ReasoningBlock`：自带开关的单行 + 展开后全文 |
+
+- 单行档只取**首个非空行**（与门禁 8 同口径：不解析、不截断正文代替结构信息），全文只在展开态出现；
+- 思考行**不显示**状态图标、耗时、工具名等工具列（思考没有这些字段）；
+- 组头计数：`run.steps` 显示「N 步」，`run.reasoning` 显示「M 思考」，两者独立；`run.reasoning` 为 0 时不显示该文案；
+- 思考节点不修改 wire、不落库、不新增字段：投影键由 `reasoningKeyOf(message)` 派生稳定键 `reasoning:<messageId>`（一条消息至多一段思考），仅用于 `runByKey` 映射与 React key；
+- 上移思考节点时，气泡消息体的 `reasoning` 置为 `null`（投影副本，不改原 `messages`），保证「思考只出现一次」。
 
 ---
 
@@ -668,7 +709,7 @@ SELECT {MSG_SELECT} FROM messages
 | S2 | 写路径：7 处 + 取号函数 + `insert_chat_messages` 事务化 + `InsertedMessages.turn_index` + 内核 `TurnContext` 透传 | `cmd/chat/insert.rs`、`adapters/message_store.rs`、`cmd/compaction.rs`、`ops.rs`、`kernel/ids.rs`、`persist.rs`、`round_executor.rs`、`cmd/agent/mod.rs` | 新建会话一轮后，库中无 `turn_index IS NULL` 的新行（门禁 18 的 chat 段） |
 | S3 | 事件与前端数据层：两载荷 + `event_sink` 注入 + handler 签名 + 乐观消息坐标 + store `currentTurnIndex` + 段表 `rebuildFromMessages` | `event_sink.rs`、`transport.ts`、`turnOrchestrator.ts`、`optimisticMessage.ts`、`chatStreamStore.ts`、`chatStorePorts.ts`、`agentSegments.ts` | 流式期当前 turn 节点已有坐标（门禁 17）；刷新后段表可重建（门禁 2 的前端侧） |
 | S4 | 容器层：`showIdentity` 改坐标 + `MessageBubble` 两 prop + `TurnTail` | `MessageList.tsx`、`MessageBubble.tsx`、`TurnTail.tsx` | chat 与 agent 单轮零工具渲染与现状逐项一致（门禁 15） |
-| S5 | 分组与密度：`groupNodeRows` + 切段（`planRuns`）+ `GroupHeader` + 三档 + 步级安全阀 + `ToolCallRenderer` 单行取值（正式分支 `compact.head`，旧数据降级） | `groupNodeRows.ts`、`TurnGroup.tsx`、`GroupHeader.tsx`、`ToolCallRenderer.tsx`、`ToolCallBubble.tsx` | 8 迭代 × 2 调用场景可折叠；单步失败只切断当前段，其他段照常折叠；回复行恒在组外（门禁 4、5、7） |
+| S5 | 分组与密度：`groupNodeRows` + 切段（`planRuns`）+ `GroupHeader` + 三档 + 步级安全阀 + `ToolCallRenderer` 单行取值（正式分支 `compact.head`，旧数据降级） | `groupNodeRows.ts`、`TurnGroup.tsx`、`GroupHeader.tsx`、`ToolCallRenderer.tsx`、`ToolCallBubble.tsx` | 8 迭代 × 2 调用场景可折叠；1～2 步 run 与失败步同样成组；`awaiting_user` / 无摘要的步只切断当前段；回复行恒在组外（门禁 4、5、7） |
 | S6 | 分页按 turn | `msg_ops.rs`、command 层、`chatService.ts`、`constants.ts` | 一次 turn 不被切成两页（门禁 10） |
 
 依赖顺序：S1 → S2 → S3 → S4 → S5 → S6。S4 可在 S2 完成后先做（`turnIndex === null` 全量兜底时形态与现状一致），S5 必须等 S3（否则折叠判据拿不到 `phase`）。
@@ -684,10 +725,10 @@ SELECT {MSG_SELECT} FROM messages
 | 1 坐标一致 | `src-tauri/tests/conversations.rs` 新增用例 + `tests/protocol_dto_roundtrip.rs` | assistant 行 `iteration` 等于 `chat-delta` / `chat-stream-start` 的 `iteration`；tool 行等于 `agent-tool-call` 的 `iteration`；tool 行不写 `0` |
 | 2 重启等价 | `src-tauri/tests/conversations.rs` | 同一库重新打开后，按新排序键得到的 `(turn_index, iteration)` 序列与写入时一致 |
 | 3 禁用启发式 | `src/chat/message/__tests__/groupNodeRows.test.ts` | 两个相邻 assistant 行、坐标不同时不被合并；坐标缺失时落 `unresolved` |
-| 4 回复行不折 | 同上 | 「结论后继续迭代一次」的序列中，含正文节点全部在组外；run 外的步留在气泡内 |
+| 4 回复行不折 | 同上 | 「结论后继续迭代一次」的序列中，含正文节点全部在组外；run 外的步为独立卡片节点，气泡不承载 `toolCalls` |
 | 5 折叠纯投影 | 同上 | 投影前后 `messages` 引用/内容不变；展开后节点顺序与 `id` 一致；同一 turn 的多个 run 各自计数 |
 | 6 相位不靠定时器 | 同上 | 注入长静默不改变 `phase`；`isStreaming=false` 且非当前 turn 时恒 `settled`；流式增量期间不产生 run |
-| 7 安全阀 | 同上 | `error` / `awaiting_user` / 无摘要的步**切断 run** 且留在气泡内；单步失败不阻止其他成功步（≥ 阈值）折叠；`running` 或 `compact_summary` 存在时该段不折叠 |
+| 7 安全阀 | 同上 | `awaiting_user` / 无摘要的步**切断 run** 且渲染为独立卡片节点（不进 run、不被折叠吞掉）；失败步（`error`）可折叠且单行显示原因、组头显示失败数；1 步 run 也成组（阈值 1）；`running` 或 `compact_summary` 存在时该段不折叠 |
 | 8 收起态不读正文 | 同上（spy） | `parsePersistedOutput` / `resultStats` / markdown 解析零调用 |
 | 9 单行可读 | 同上 | `arguments` 可解析时单行非空；不可解析时仍有工具名 + 状态 |
 | 10 跨页不重建 | `src/chat/message/__tests__/groupNodeRows.test.ts` + 后端分页用例 | 页边界处不合并非相邻节点；`unresolved` 组不折叠 |

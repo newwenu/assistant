@@ -2,7 +2,9 @@ import React, { useState } from "react";
 import type { Message, RetryNotification } from "../core/chatTypes";
 import type { RecoveryActionCode } from "../core/chatErrorRecovery";
 import { GroupHeader } from "./GroupHeader";
+import { IdentityNode } from "./IdentityNode";
 import { MessageBubble, RoleContext } from "./MessageBubble";
+import { ReasoningNode } from "./ReasoningNode";
 import { ToolCallRenderer } from "../tool/ToolCallRenderer";
 import type { NodeGroupView } from "./groupNodeRows";
 import css from "./TurnGroup.module.css";
@@ -62,32 +64,77 @@ export const TurnGroup: React.FC<TurnGroupProps> = ({
   const toggleRun = (runId: string) =>
     setExpandedRuns((prev) => ({ ...prev, [runId]: !prev[runId] }));
 
-  const nodes = group.nodes.map((node, index) => {
+  // 组头只在 run 的首个节点前渲染。run 的节点之间可能夹着同一消息的
+  // 身份行 / `chromeOnly` 气泡壳（无正文的 assistant 行），它们不承载 run，
+  // 不能把「上一次见到的 run」重置为 `null`——否则第一个工具节点会再次判定成
+  // run 起点，组头在同一段里渲染两遍（「每个节点都显示 M 思考」）。
+  let lastRunId: string | null = null;
+  const nodes = group.nodes.map((node) => {
+    if (node.kind === "reasoning") {
+      const run = node.run;
+      const isRunStart = run !== null && lastRunId !== run.id;
+      if (run !== null) lastRunId = run.id;
+      const expanded = run !== null && expandedRuns[run.id] === true;
+      const density = run === null ? "block" : expanded ? "expanded" : "single";
+      return (
+        <React.Fragment key={`reasoning:${node.messageId}`}>
+          {isRunStart && run !== null && (
+            <GroupHeader
+              steps={run.steps}
+              reasoning={run.reasoning}
+              failed={run.failed}
+              durationMs={run.durationMs}
+              expanded={expanded}
+              onToggle={() => toggleRun(run.id)}
+            />
+          )}
+          <ReasoningNode
+            text={node.text}
+            density={density}
+            isStreaming={
+              isStreaming &&
+              node.messageId === streamingMessageId &&
+              isReasoningStreaming
+            }
+          />
+        </React.Fragment>
+      );
+    }
+
     if (node.kind === "tool") {
-      const prev = index > 0 ? group.nodes[index - 1] : undefined;
-      const isRunStart =
-        prev === undefined ||
-        prev.kind !== "tool" ||
-        prev.run.id !== node.run.id;
-      const expanded = expandedRuns[node.run.id] === true;
+      const run = node.run;
+      const isRunStart = run !== null && lastRunId !== run.id;
+      if (run !== null) lastRunId = run.id;
+      const expanded = run !== null && expandedRuns[run.id] === true;
       return (
         <React.Fragment key={`tool:${node.callId}`}>
-          {isRunStart && (
+          {isRunStart && run !== null && (
             <GroupHeader
-              steps={node.run.steps}
-              failed={node.run.failed}
-              durationMs={node.run.durationMs}
+              steps={run.steps}
+              reasoning={run.reasoning}
+              failed={run.failed}
+              durationMs={run.durationMs}
               expanded={expanded}
-              onToggle={() => toggleRun(node.run.id)}
+              onToggle={() => toggleRun(run.id)}
             />
           )}
           <ToolCallRenderer
             view={node.view}
-            density={expanded ? "card" : "single"}
+            density={run !== null && !expanded ? "single" : "card"}
             docPanelPath={docPanelPath}
             onOpenDocument={onOpenDocument}
           />
         </React.Fragment>
+      );
+    }
+
+    if (node.kind === "identity") {
+      return (
+        <IdentityNode
+          key={`identity:${node.message.id}`}
+          message={node.message}
+          compact={compact}
+        />
       );
     }
 
@@ -111,6 +158,7 @@ export const TurnGroup: React.FC<TurnGroupProps> = ({
           compact={compact}
           showIdentity={node.showIdentity}
           suppressAssistantChrome={!node.ownsAssistantChrome}
+          chromeOnly={node.chromeOnly}
           isTurnTail={anchor !== null && anchor.id === message.id}
           onDelete={handlers.onDelete}
           onEdit={handlers.onEdit}

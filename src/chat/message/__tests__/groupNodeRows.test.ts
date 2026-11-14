@@ -116,7 +116,7 @@ describe("groupNodeRows 折叠判据", () => {
     expect(groups[0].stats.steps).toBe(3);
   });
 
-  it("不足阈值不折叠", () => {
+  it("1～2 步也成组（阈值 1）", () => {
     const groups = groupNodeRows({
       ...base,
       messages: [
@@ -127,10 +127,28 @@ describe("groupNodeRows 折叠判据", () => {
         }),
       ],
     });
-    expect(groups[0].collapsible).toBe(false);
+    expect(groups[0].collapsible).toBe(true);
+    expect(groups[0].stats.steps).toBe(2);
   });
 
-  it("失败步切断 run，残余段不足阈值时不折叠（安全阀）", () => {
+  it("单步也成组（阈值 1）", () => {
+    const groups = groupNodeRows({
+      ...base,
+      messages: [
+        msg("a1", "assistant", {
+          turnIndex: 0,
+          content: "",
+          toolCalls: [toolView("c1")],
+        }),
+      ],
+    });
+    expect(groups[0].collapsible).toBe(true);
+    expect(groups[0].nodes.map((n) => n.kind)).toEqual(["message", "tool"]);
+    const bubble = groups[0].nodes[0];
+    expect(bubble.kind === "message" && bubble.chromeOnly).toBe(true);
+  });
+
+  it("失败步可折叠，组头仍暴露失败数（2026-11-14 口径）", () => {
     const groups = groupNodeRows({
       ...base,
       messages: [
@@ -146,13 +164,52 @@ describe("groupNodeRows 折叠判据", () => {
       ],
     });
     expect(groups[0].needsAttention).toBe(true);
-    expect(groups[0].collapsible).toBe(false);
     expect(groups[0].stats.failed).toBe(1);
-    // 失败步留在气泡里完整显示，不能被折叠吞掉
+    expect(groups[0].collapsible).toBe(true);
+    expect(groups[0].nodes.map((n) => n.kind)).toEqual([
+      "message",
+      "tool",
+      "tool",
+      "tool",
+    ]);
+    expect(
+      groups[0].nodes.map((n) => (n.kind === "tool" ? n.view.status : "")),
+    ).toEqual(["", "success", "error", "success"]);
+  });
+
+  it("awaiting_user 的步切断 run，不阻止折叠也不被吞掉（安全阀）", () => {
+    const groups = groupNodeRows({
+      ...base,
+      messages: [
+        msg("a1", "assistant", {
+          turnIndex: 0,
+          content: "",
+          toolCalls: [
+            toolView("c1"),
+            toolView("c2", { status: "awaiting_user" }),
+            toolView("c3"),
+          ],
+        }),
+      ],
+    });
+    expect(groups[0].collapsible).toBe(true);
+    expect(groups[0].nodes.map((n) => n.kind)).toEqual([
+      "message",
+      "tool",
+      "tool",
+      "tool",
+    ]);
     const bubble = groups[0].nodes[0];
-    expect(bubble.kind === "message" && bubble.message.toolCalls).toHaveLength(
-      3,
+    expect(
+      bubble.kind === "message" && bubble.message.toolCalls,
+    ).toBeUndefined();
+    const steps = groups[0].nodes.flatMap((n) =>
+      n.kind === "tool" ? [n] : [],
     );
+    expect(steps.map((n) => n.callId)).toEqual(["c1", "c2", "c3"]);
+    expect(steps[1].run).toBeNull();
+    expect(steps[0].run?.steps).toBe(1);
+    expect(steps[2].run?.steps).toBe(1);
   });
 
   it("含边界节点时不折叠", () => {
@@ -210,7 +267,7 @@ describe("groupNodeRows 折叠判据", () => {
     expect(groups[0].collapsible).toBe(true);
   });
 
-  it("compact 与参数都缺失时不折叠（宁可高，不可空）", () => {
+  it("无摘要的步不折叠，但同 turn 其他步照常成组", () => {
     const groups = groupNodeRows({
       ...base,
       messages: [
@@ -225,7 +282,23 @@ describe("groupNodeRows 折叠判据", () => {
         }),
       ],
     });
-    expect(groups[0].collapsible).toBe(false);
+    expect(groups[0].collapsible).toBe(true);
+    expect(groups[0].nodes.map((n) => n.kind)).toEqual([
+      "message",
+      "tool",
+      "tool",
+      "tool",
+    ]);
+    const bubble = groups[0].nodes[0];
+    expect(
+      bubble.kind === "message" && bubble.message.toolCalls,
+    ).toBeUndefined();
+    const steps = groups[0].nodes.flatMap((n) =>
+      n.kind === "tool" ? [n] : [],
+    );
+    expect(steps.map((n) => n.callId)).toEqual(["c1", "c2", "c3"]);
+    expect(steps[2].run).toBeNull();
+    expect(steps[0].run?.steps).toBe(2);
   });
 
   it("compact.head 为空串视同缺失，退回参数摘要", () => {
@@ -272,6 +345,7 @@ describe("groupNodeRows 折叠判据", () => {
       .map((n) => (n.kind === "tool" ? n.callId : ""));
     expect(collapsedIds).toEqual(["c1", "c2", "c3"]);
     expect(groups[0].nodes.map((n) => n.kind)).toEqual([
+      "message",
       "tool",
       "tool",
       "tool",
@@ -280,7 +354,7 @@ describe("groupNodeRows 折叠判据", () => {
     const messageNodes = groups[0].nodes.filter((n) => n.kind === "message");
     expect(
       messageNodes.map((n) => (n.kind === "message" ? n.message.id : "")),
-    ).toEqual(["a2"]);
+    ).toEqual(["a1", "a2"]);
   });
 });
 
@@ -298,29 +372,72 @@ describe("groupNodeRows 节点投影", () => {
       ],
     });
     const kinds = groups[0].nodes.map((n) => n.kind);
-    expect(kinds).toEqual(["tool", "tool", "tool", "message"]);
-    const toolNode = groups[0].nodes[0];
-    expect(toolNode.kind === "tool" && toolNode.run.steps).toBe(3);
-    const replyNode = groups[0].nodes[3];
+    expect(kinds).toEqual(["message", "tool", "tool", "tool", "message"]);
+    const toolNode = groups[0].nodes[1];
+    expect(toolNode.kind === "tool" && toolNode.run?.steps).toBe(3);
+    const replyNode = groups[0].nodes[4];
     expect(replyNode.kind === "message" && replyNode.message.content).toBe(
       "answer",
     );
   });
 
-  it("非折叠态工具留在气泡内，不产生步行", () => {
+  it("run 外的步渲染为独立卡片节点，气泡不再承载 toolCalls", () => {
     const groups = groupNodeRows({
       ...base,
       messages: [
         msg("a1", "assistant", {
           turnIndex: 0,
           content: "partial",
-          toolCalls: [toolView("c1")],
+          toolCalls: [toolView("c1", { status: "running" })],
         }),
       ],
     });
-    expect(groups[0].nodes.map((n) => n.kind)).toEqual(["message"]);
+    expect(groups[0].nodes.map((n) => n.kind)).toEqual(["message", "tool"]);
     const node = groups[0].nodes[0];
-    expect(node.kind === "message" && node.message.toolCalls).toHaveLength(1);
+    expect(node.kind === "message" && node.message.toolCalls).toBeUndefined();
+    const step = groups[0].nodes[1];
+    expect(step.kind === "tool" && step.run).toBeNull();
+  });
+
+  it("等待步排在末尾时工具步序不倒置，气泡壳留在最前挂身份行", () => {
+    const groups = groupNodeRows({
+      ...base,
+      messages: [
+        msg("a1", "assistant", {
+          turnIndex: 0,
+          content: "",
+          toolCalls: [
+            toolView("c1"),
+            toolView("c2"),
+            toolView("wait", { status: "awaiting_user" }),
+          ],
+        }),
+      ],
+    });
+    const kinds = groups[0].nodes.map((n) => n.kind);
+    expect(kinds).toEqual(["message", "tool", "tool", "tool"]);
+    const steps = groups[0].nodes.flatMap((n) =>
+      n.kind === "tool" ? [n] : [],
+    );
+    expect(steps.map((n) => n.callId)).toEqual(["c1", "c2", "wait"]);
+    expect(steps[2].run).toBeNull();
+  });
+
+  it("纯工具 turn 仍保留身份行与尾锚点（气泡只承载 chrome）", () => {
+    const groups = groupNodeRows({
+      ...base,
+      messages: [
+        msg("a1", "assistant", {
+          turnIndex: 0,
+          content: "",
+          toolCalls: [toolView("c1"), toolView("c2")],
+        }),
+      ],
+    });
+    const bubble = groups[0].nodes[0];
+    expect(bubble.kind === "message" && bubble.chromeOnly).toBe(true);
+    expect(bubble.kind === "message" && bubble.showIdentity).toBe(true);
+    expect(groups[0].tailAnchor?.id).toBe("a1");
   });
 
   it("身份行只在 turn 起点出现", () => {
@@ -363,7 +480,7 @@ describe("groupNodeRows 步段（run）", () => {
   const tools = (group: NodeGroupView) =>
     group.nodes.flatMap((node) => (node.kind === "tool" ? [node] : []));
 
-  it("失败步切断 run，前后成功步各自折叠、各自计数", () => {
+  it("失败步不切断 run：整段工具调用共用一个 run（2026-11-14 口径）", () => {
     const groups = groupNodeRows({
       ...base,
       messages: [
@@ -388,18 +505,20 @@ describe("groupNodeRows 步段（run）", () => {
       "c1",
       "c2",
       "c3",
+      "bad",
       "c4",
       "c5",
       "c6",
     ]);
-    expect(steps[0].run.id).toBe("run:c1");
-    expect(steps[0].run.steps).toBe(3);
-    expect(steps[3].run.id).toBe("run:c4");
-    expect(steps[3].run.steps).toBe(3);
+    expect(new Set(steps.map((node) => node.run?.id ?? ""))).toEqual(
+      new Set(["run:c1"]),
+    );
+    expect(steps[0].run?.steps).toBe(7);
+    expect(steps[0].run?.failed).toBe(1);
     expect(groups[0].collapsible).toBe(true);
   });
 
-  it("失败步留在气泡内，不被同条消息的折叠步吞掉", () => {
+  it("turn 内所有工具调用（含失败步）全部折叠成步行，气泡不残留", () => {
     const groups = groupNodeRows({
       ...base,
       messages: [
@@ -419,17 +538,18 @@ describe("groupNodeRows 步段（run）", () => {
       (node) => node.kind === "message" && node.message.id === "a1",
     );
     expect(
-      bubble?.kind === "message" &&
-        bubble.message.toolCalls?.map((view) => view.callId),
-    ).toEqual(["bad"]);
+      bubble === undefined ||
+        (bubble.kind === "message" && bubble.message.toolCalls === undefined),
+    ).toBe(true);
     expect(tools(groups[0]).map((node) => node.callId)).toEqual([
       "c1",
       "c2",
       "c3",
+      "bad",
     ]);
   });
 
-  it("单节点错误不阻止其他节点折叠（不再整组失效）", () => {
+  it("失败步计入 run 失败数，但仍与其他步同段折叠", () => {
     const groups = groupNodeRows({
       ...base,
       messages: [
@@ -447,10 +567,11 @@ describe("groupNodeRows 步段（run）", () => {
     });
     expect(groups[0].needsAttention).toBe(true);
     expect(groups[0].collapsible).toBe(true);
-    expect(tools(groups[0])[0].run.steps).toBe(3);
+    expect(tools(groups[0])[0].run?.steps).toBe(4);
+    expect(tools(groups[0])[0].run?.failed).toBe(1);
   });
 
-  it("待处理步同样切断 run", () => {
+  it("待处理步切断 run，前后各自成段（阈值 1 时单步段也成组）", () => {
     const groups = groupNodeRows({
       ...base,
       messages: [
@@ -470,14 +591,21 @@ describe("groupNodeRows 步段（run）", () => {
     });
     expect(groups[0].collapsible).toBe(true);
     expect(tools(groups[0]).map((node) => node.callId)).toEqual([
+      "c1",
+      "c2",
+      "wait",
       "c3",
       "c4",
       "c5",
     ]);
-    expect(tools(groups[0])[0].run.steps).toBe(3);
+    const steps = tools(groups[0]);
+    expect(steps[0].run?.steps).toBe(2);
+    expect(steps[2].run).toBeNull();
+    expect(steps[3].run?.steps).toBe(3);
+    expect(steps[0].run?.id).not.toBe(steps[3].run?.id);
   });
 
-  it("无摘要步切断 run", () => {
+  it("无摘要步切断 run，前后各自成段", () => {
     const groups = groupNodeRows({
       ...base,
       messages: [
@@ -497,10 +625,17 @@ describe("groupNodeRows 步段（run）", () => {
     });
     expect(groups[0].collapsible).toBe(true);
     expect(tools(groups[0]).map((node) => node.callId)).toEqual([
+      "c1",
+      "c2",
+      "blank",
       "c3",
       "c4",
       "c5",
     ]);
+    const steps = tools(groups[0]);
+    expect(steps[0].run?.steps).toBe(2);
+    expect(steps[2].run).toBeNull();
+    expect(steps[3].run?.steps).toBe(3);
   });
 
   it("run id 与计数跨消息更新稳定", () => {
@@ -517,9 +652,9 @@ describe("groupNodeRows 步段（run）", () => {
           }),
         ],
       });
-    expect(tools(build(3)[0])[0].run.id).toBe(tools(build(4)[0])[0].run.id);
-    expect(tools(build(3)[0])[0].run.steps).toBe(3);
-    expect(tools(build(4)[0])[0].run.steps).toBe(4);
+    expect(tools(build(3)[0])[0].run?.id).toBe(tools(build(4)[0])[0].run?.id);
+    expect(tools(build(3)[0])[0].run?.steps).toBe(3);
+    expect(tools(build(4)[0])[0].run?.steps).toBe(4);
   });
 
   it("流式增量期间不产生 run，组头计数不随全局更新跳动", () => {
@@ -547,7 +682,8 @@ describe("groupNodeRows 步段（run）", () => {
       const group = build(count)[0];
       expect(group.phase).toBe("collecting");
       expect(group.collapsible).toBe(false);
-      expect(tools(group)).toHaveLength(0);
+      expect(tools(group)).toHaveLength(count);
+      expect(tools(group).every((node) => node.run === null)).toBe(true);
     }
   });
 
@@ -601,11 +737,12 @@ describe("groupNodeRows 步段（run）", () => {
     expect(steps).toHaveLength(6);
     const byRun = new Map<string, number>();
     for (const node of steps) {
-      byRun.set(node.run.id, (byRun.get(node.run.id) ?? 0) + 1);
+      const runId = node.run?.id ?? "";
+      byRun.set(runId, (byRun.get(runId) ?? 0) + 1);
     }
     expect(byRun.size).toBe(2);
     for (const node of steps) {
-      expect(node.run.steps).toBe(byRun.get(node.run.id));
+      expect(node.run?.steps).toBe(byRun.get(node.run?.id ?? ""));
     }
     expect(group.stats.steps).toBe(6);
   });
@@ -626,9 +763,9 @@ describe("groupNodeRows 步段（run）", () => {
     const group = groupNodeRows({ ...base, messages })[0];
     const toolNodes = tools(group);
     expect(toolNodes).toHaveLength(12);
-    expect(new Set(toolNodes.map((node) => node.run.id)).size).toBe(1);
-    expect(toolNodes[0].run.steps).toBe(12);
-    expect(toolNodes.every((node) => node.run.steps === 12)).toBe(true);
+    expect(new Set(toolNodes.map((node) => node.run?.id ?? "")).size).toBe(1);
+    expect(toolNodes[0].run?.steps).toBe(12);
+    expect(toolNodes.every((node) => node.run?.steps === 12)).toBe(true);
   });
 
   it("重复 callId 只计一次、只渲染一次", () => {
@@ -655,6 +792,186 @@ describe("groupNodeRows 步段（run）", () => {
       "c4",
     ]);
     expect(groups[0].stats.steps).toBe(4);
+  });
+});
+
+describe("groupNodeRows 思考节点化", () => {
+  const thoughts = (group: NodeGroupView) =>
+    group.nodes.flatMap((node) => (node.kind === "reasoning" ? [node] : []));
+  const tools = (group: NodeGroupView) =>
+    group.nodes.flatMap((node) => (node.kind === "tool" ? [node] : []));
+
+  it("有工具步时思考上移为独立节点，气泡不再承载 reasoning", () => {
+    const groups = groupNodeRows({
+      ...base,
+      messages: [
+        msg("a1", "assistant", {
+          turnIndex: 0,
+          content: "",
+          reasoning: "先读文件",
+          toolCalls: [toolView("c1"), toolView("c2"), toolView("c3")],
+        }),
+        msg("a2", "assistant", { turnIndex: 0, content: "done" }),
+      ],
+    });
+    expect(groups[0].nodes.map((node) => node.kind)).toEqual([
+      "identity",
+      "reasoning",
+      "message",
+      "tool",
+      "tool",
+      "tool",
+      "message",
+    ]);
+    const thought = groups[0].nodes[1];
+    expect(thought.kind === "reasoning" && thought.text).toBe("先读文件");
+    const bubble = groups[0].nodes[2];
+    expect(bubble.kind === "message" && bubble.message.reasoning).toBeNull();
+    // 身份行上移为节点后，气泡不再重复渲染身份行，否则头像会出现两次。
+    expect(bubble.kind === "message" && bubble.showIdentity).toBe(false);
+  });
+
+  it("思考与工具步共用同一 run，组头计数分离且总数恒等", () => {
+    const groups = groupNodeRows({
+      ...base,
+      messages: [
+        msg("a1", "assistant", {
+          turnIndex: 0,
+          content: "",
+          reasoning: "想一下",
+          toolCalls: [toolView("c1"), toolView("c2"), toolView("c3")],
+        }),
+      ],
+    });
+    const group = groups[0];
+    const thought = thoughts(group)[0];
+    const steps = tools(group);
+    const run = thought.run;
+    expect(run).not.toBeNull();
+    expect(steps.every((node) => node.run?.id === run?.id)).toBe(true);
+    expect(run?.steps).toBe(3);
+    expect(run?.reasoning).toBe(1);
+    const sameRun = group.nodes.filter(
+      (node) =>
+        (node.kind === "tool" || node.kind === "reasoning") &&
+        node.run?.id === run?.id,
+    );
+    expect(sameRun).toHaveLength((run?.steps ?? 0) + (run?.reasoning ?? 0));
+  });
+
+  it("同一消息内按「思考 → 正文 → 工具」原序输出节点", () => {
+    const groups = groupNodeRows({
+      ...base,
+      messages: [
+        msg("a1", "assistant", {
+          turnIndex: 0,
+          content: "中间结论",
+          reasoning: "先分析",
+          toolCalls: [toolView("c1"), toolView("c2"), toolView("c3")],
+        }),
+      ],
+    });
+    expect(groups[0].nodes.map((node) => node.kind)).toEqual([
+      "identity",
+      "reasoning",
+      "message",
+      "tool",
+      "tool",
+      "tool",
+    ]);
+    const bubble = groups[0].nodes[2];
+    expect(bubble.kind === "message" && bubble.message.content).toBe(
+      "中间结论",
+    );
+    expect(bubble.kind === "message" && bubble.message.reasoning).toBeNull();
+    expect(thoughts(groups[0])[0].run).toBeNull();
+    expect(tools(groups[0])[0].run?.steps).toBe(3);
+  });
+
+  it("正文切断 run：思考随其后工具步成段，不跨气泡合段", () => {
+    const groups = groupNodeRows({
+      ...base,
+      messages: [
+        msg("a1", "assistant", {
+          turnIndex: 0,
+          content: "",
+          reasoning: "第一轮思考",
+          toolCalls: [toolView("c1"), toolView("c2"), toolView("c3")],
+        }),
+        msg("a2", "assistant", {
+          turnIndex: 0,
+          content: "看看结果",
+        }),
+        msg("a3", "assistant", {
+          turnIndex: 0,
+          content: "",
+          reasoning: "第二轮思考",
+          toolCalls: [toolView("c4"), toolView("c5"), toolView("c6")],
+        }),
+      ],
+    });
+    const group = groups[0];
+    expect(group.nodes.map((node) => node.kind)).toEqual([
+      "identity",
+      "reasoning",
+      "message",
+      "tool",
+      "tool",
+      "tool",
+      "message",
+      "reasoning",
+      "tool",
+      "tool",
+      "tool",
+    ]);
+    const firstRun = thoughts(group)[0].run;
+    const secondRun = thoughts(group)[1].run;
+    expect(firstRun?.id).not.toBe(secondRun?.id);
+    expect(firstRun?.steps).toBe(3);
+    expect(secondRun?.steps).toBe(3);
+  });
+
+  it("零工具 turn 思考留在气泡内，外观与现状一致", () => {
+    const groups = groupNodeRows({
+      ...base,
+      messages: [
+        msg("a1", "assistant", {
+          turnIndex: 0,
+          content: "答案",
+          reasoning: "想一想",
+        }),
+      ],
+    });
+    expect(groups[0].nodes.map((node) => node.kind)).toEqual(["message"]);
+    const bubble = groups[0].nodes[0];
+    expect(bubble.kind === "message" && bubble.message.reasoning).toBe(
+      "想一想",
+    );
+  });
+
+  it("run 外（collecting）思考节点 run 为 null，仍独立成行", () => {
+    const groups = groupNodeRows({
+      ...base,
+      phase: "collecting",
+      currentTurnIndex: 0,
+      messages: [
+        msg("a1", "assistant", {
+          turnIndex: 0,
+          content: "",
+          reasoning: "正在思考",
+          toolCalls: [toolView("c1"), toolView("c2"), toolView("c3")],
+        }),
+      ],
+    });
+    expect(groups[0].nodes.map((node) => node.kind)).toEqual([
+      "identity",
+      "reasoning",
+      "message",
+      "tool",
+      "tool",
+      "tool",
+    ]);
+    expect(thoughts(groups[0])[0].run).toBeNull();
   });
 });
 

@@ -277,9 +277,12 @@ export const MessageList: React.FC<MessageListProps> = ({
               group.turnIndex !== null
                 ? `turn:${group.turnIndex}`
                 : `unresolved:${
-                    group.nodes[0]?.kind === "message"
+                    group.nodes[0]?.kind === "message" ||
+                    group.nodes[0]?.kind === "identity"
                       ? group.nodes[0].message.id
-                      : group.nodes[0]?.callId
+                      : group.nodes[0]?.kind === "tool"
+                        ? group.nodes[0].callId
+                        : group.nodes[0]?.messageId
                   }`
             }
             group={group}

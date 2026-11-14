@@ -181,7 +181,7 @@ turn 内后续迭代**不新增事件**：前端用「本 turn 已知的 `turnIn
 |---|---|---|
 | **单行** | 过程行，收起态 | 一行：状态图标 + 工具名 + `compact.head` + 耗时；**不读正文** |
 | **展开** | 用户点开该行 | 完整卡片（复用现有 `ToolCallBubble`） |
-| **整组** | 过程行数量达到阈值且 turn 已结束 | 组头一行 + 每步一行（回复行仍在组外，按序显示） |
+| **整组** | 至少 1 个可折叠过程行（阈值 1）且 turn 已结束 | 组头一行 + 每步一行（回复行仍在组外，按序显示） |
 
 单行的字段映射（全部来自结构化字段，无一读正文）：
 
@@ -239,11 +239,13 @@ group 带 `phase: collecting | settled`：
 | 类 | 理由 |
 |---|---|
 | `running` 的 turn | 折叠会让用户看不见进展，组高在增量中反复跳动 |
-| `error` 节点 | 失败原因是结论的一部分，不是过程 |
 | `awaiting_user`（审批 / 提问） | 把需要点确认的东西藏进折叠组是事故 |
 | `boundary` 节点（压缩提示 / token 上限 / turn 错误） | 属于 turn 级事实，本就不在过程组内 |
+| 无摘要的步（`compact.head` 与参数摘要皆空） | 压行只会得到空行，宁可高不可空 |
 
-**安全阀是节点级，不是 turn 级**：失败 / 待处理 / 无摘要的步切断它所在的折叠段（run）并留在气泡内完整显示，但**不得**因此否决同一 turn 内其他成功步的折叠——否则一个节点出错就让整轮全部展开，既违背「每个收起的 node 各自处理」，也让流式期与终态的组头计数互相污染。`running` 与 `boundary` 仍是 turn 级：前者整轮处于 `collecting`、不产生任何 run；后者使该 turn 不可折叠。
+失败步（`error`）**允许折叠**（2026-11-14 口径调整）：失败原因已由 `compact.head` 的 `err <kind> <tool> · <subject> · <reason>` 与 `compact.errorKind` 承载，单行同时显示失败图标、原因与状态文案，组头显示本段失败数，点开该行即还原完整卡片。因此「失败原因是结论的一部分」这条旧理由被「单行即可读到原因」取代，不再构成安全阀。
+
+**安全阀是节点级，不是 turn 级**：待处理 / 无摘要的步切断它所在的折叠段（run）并整卡显示，但**不得**因此否决同一 turn 内其他步的折叠——否则一个节点出错就让整轮全部展开，既违背「每个收起的 node 各自处理」，也让流式期与终态的组头计数互相污染。2026-11-14 口径调整后，这些步以**独立卡片节点**渲染（`run === null`），不再塞回气泡：气泡只承载正文与 chrome，这样「步 → 等待卡 → 步」的原始时间顺序不会被气泡抢占。`running` 与 `boundary` 仍是 turn 级：前者整轮处于 `collecting`、不产生任何 run；后者使该 turn 不可折叠。
 
 ### 2.9 D9 折叠不改数据，且必须可逆
 
@@ -389,24 +391,24 @@ interface NodeGroupView {
 ### 3.4 折叠判据与三档密度
 
 ```
-可折叠 = 过程行数 >= 阈值（默认 3）
+可折叠 = 过程行数 >= 阈值（默认 1）
       && phase === "settled"
-      && 无 error / awaiting_user 节点
+      && 无 awaiting_user / 无摘要节点（它们只切断所在 run，不否决整组）
       && turnIndex !== null（unresolved 不折叠）
 展开态 = 用户手动展开 || phase !== "settled"
 ```
 
 | 档 | 条件 | 渲染 |
 |---|---|---|
-| 单条 | 过程行 < 阈值，或 `turnIndex === null` | 现状：回复行 + 逐节点卡片 |
-| 折叠 | 过程行 ≥ 阈值且 `settled` | 组头 + 每步一行；**回复行全部留在组外** |
+| 单条 | 无可折叠过程行（0 步），或 `turnIndex === null` | 现状：回复行 + 逐节点卡片 |
+| 折叠 | 过程行 ≥ 阈值（1）且 `settled` | 组头 + 每步一行；**回复行全部留在组外** |
 | 展开 | 手动展开或非 `settled` | 逐节点还原 |
 
 高度账（单步行 24 px、组头 28 px、回复行约 22 px/行）：
 
 | 场景 | 现状 | 折叠后 |
 |---|---|---|
-| 1 迭代 × 2 调用 | ≈ 1 气泡 chrome + 2 卡片 ≈ 160–400 px | **不变**（过程行 2 < 阈值） |
+| 1 迭代 × 2 调用 | ≈ 1 气泡 chrome + 2 卡片 ≈ 160–400 px | ≈ 组头 28 + 2 步 × 24 ≈ 76 px |
 | 8 迭代 × 2 调用 | ≈ 8 份气泡 chrome + 16 张卡片 ≈ 1300–3000 px | ≈ 组头 28 + 16 步 × 24 + 回复行 ≈ 600 px |
 
 注意最后一行：因为回复行不折叠（D5），折叠后高度不会压到「只有组头」。这是**刻意的代价**——把结论留在视口里，比把高度压到最小更重要。
@@ -420,7 +422,7 @@ interface NodeGroupView {
 ├ ✓ read  src/a.ts · 120 行 · 40ms                        ← 步行，一行
 ├ ✓ grep  "compact" · 12 命中 · 90ms
 ├ ✓ edit  src/b.ts · 第 40-52 行 · 13 行
-└ ✗ bash  npm test · 失败                                 ← 失败节点：整卡展开，不压行
+└ ✗ bash  npm test · 失败                                 ← 失败步同样压行，原因取自 compact.head，点开即还原整卡
   （组外）回答正文……                                      ← 回复行，始终可见
 ```
 
@@ -434,7 +436,7 @@ interface NodeGroupView {
 | 位置 | 改动 | 不改 |
 |---|---|---|
 | `MessageList` | 新增 `groupNodeRows(messages, link)` 纯函数 + `TurnTail`；**props 增加 `link: "chat" \| "agent"`**（由 `ConversationFrame` / `ConversationView` 从 `route.link` 透传） | `role !== "tool"` 过滤、流式滚动逻辑 |
-| `MessageBubble` | `showIdentity` 判据改为「本 turn 内首个 assistant 节点」；`toolCalls.map` 换成 `NodeRow` 渲染 | 正文 markdown、reasoning、error / retry 行为、`compact_summary` 渲染 |
+| `MessageBubble` | `showIdentity` 判据改为「本 turn 内首个 assistant 节点」；`toolCalls.map` 换成 `NodeRow` 渲染；本 turn 有工具步时 `reasoning` 上移为独立 `ReasoningNode`（气泡不再承载） | 正文 markdown、零工具 turn 的气泡内 reasoning、error / retry 行为、`compact_summary` 渲染 |
 | `TurnTail` | 新增：只承接 assistant 侧时间戳 / 操作 / 分支，锚点按 D3 三级优先级 | user 侧 chrome 不动 |
 | `ToolCallRenderer` | 单点选路（卡片 / 单行 / 文档引用） | 不读 `role` / `modeId` / `TurnKind` / 工具名 |
 | `agentSegments` | 保留（仍是写入侧的段表）；新增「本 turn `turnIndex`」的会话级缓存，供流式期赋坐标 | **不因折叠而改**；坐标持久化后它降级为缓存 |
@@ -465,7 +467,7 @@ interface NodeGroupView {
 4. **回复行不折**：任何含正文的节点永不进入折叠组；测试须覆盖「结论给出后仍继续迭代一次」，结论仍在视口内（§8.2 的真实故障形态）。
 5. **折叠纯投影**：折叠前后 `messages` 数组、wire、落库逐项不变；展开后节点顺序与 `id` 与折叠前一致。
 6. **相位不靠定时器**：`phase` 只有两个取值，`settled` 只在「终态 `chat-messages-changed` 已并入 store 且 `session-state-changed` 为 `Idle` / `Error`」时置位；测试注入长时间静默、以及「终态事件已到但快照未并入」都不改变 `phase`。
-7. **安全阀**：`error` / `awaiting_user` / 无摘要的步切断其所在折叠段并留在气泡内，不阻止同 turn 其他成功步折叠；`running` 期间整轮不产生 run；含 `boundary` 的 turn 不折叠；组头须显示该段待处理数。
+7. **安全阀**：`awaiting_user` / 无摘要的步切断其所在折叠段并渲染为独立卡片节点（`run === null`），不阻止同 turn 其他步折叠；失败步（`error`）允许折叠，其单行必须同时显示失败状态与 `compact.head` 中的原因，组头须显示该段失败数；`running` 期间整轮不产生 run；含 `boundary` 的 turn 不折叠。
 8. **收起态不读正文**：收起态不得调用 `parsePersistedOutput` / `resultStats` / markdown 解析（用 spy 断言零调用）。
 9. **单行可读**：`compact == null`（旧数据）时单行退化为「工具名 + `summarizeArguments` + 状态 + 耗时」，不得渲染为空行，也不得为凑信息量去解析 `resultText`（规模列留白，见 D4）。
 10. **跨页不重建**：分页边界不得合并「非持久化相邻」的同 turn 节点；`unresolved` 组不折叠。
@@ -531,7 +533,7 @@ interface NodeGroupView {
 6. 子 agent 会话是否共用坐标空间（I38f）：倾向独立会话、独立 `turnIndex`，父 turn 只引用其 id。
 7. `TurnTail` 是否收纳 token 用量与模型名（当前挂在消息上）：收纳后「一轮一份」更一致，但会与身份行重复。
 8. 单行节点是否允许两行（如失败原因需要一行摘要 + 一行原因）：会破坏「每步一行」的高度账。
-9. 折叠阈值：过程行 ≥ 3（当前默认）是否合适；「读一个文件再改一处」（2 步）是否该折叠。
+9. 折叠阈值：**已定案（2026-11-14）为 1**——1～2 步也成组，「读一个文件再改一处」（2 步）折叠为两行；单步 run 渲染「组头 + 1 行」（≈ 52 px）仍低于一张卡片，故不再保留「≥ 3」口径。
 10. 是否需要「整组一次性展开」快捷操作，及其与消息级操作的冲突边界。
 11. `settled` 之后是否自动收起（参考项目有 `collapseTiming` 设置项）：倾向不自动，改为可选设置。
 12. 分页改 turn 游标：需要后端新命令，还是前端聚合现有 50 条消息页（后者无法保证不切 turn）。

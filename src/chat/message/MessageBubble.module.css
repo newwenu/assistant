@@ -34,6 +34,23 @@
   user-select: none;
 }
 
+/* 身份行独立节点（I46 §5.5）：思考上移为节点时身份行从气泡拆出、排在过程节点之前。
+   变量与行高必须与气泡内身份行完全一致（`.rootRoleAssistant` 20px / `.compact` 18px），
+   否则拆出后头像与行高会跳变；`flex: 0 0 auto` 防止在列的 flex 容器里被压缩变矮。 */
+.identityNode {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  margin: 2px 0 0;
+  --msg-avatar-size: 20px;
+}
+
+.identityNodeCompact {
+  --msg-avatar-size: 18px;
+}
+
 .identityMode,
 .identityModel {
   overflow: hidden;

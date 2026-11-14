@@ -635,6 +635,8 @@
       "group": {
         "process": "Process",
         "steps": "{{count}} steps",
+        "thought": "Thinking",
+        "thoughts": "{{count}} thinking",
         "failed": "{{count}} failed"
       },
       "identity": {

@@ -4,10 +4,13 @@ import { PROCESS_COLLAPSE_THRESHOLD } from "../../config/constants";
 
 export type GroupPhase = "collecting" | "settled";
 
-/** 一个连续步段（run）的统计；`id` 由首步 `callId` 生成，跨渲染稳定。 */
+/** 一个连续步段（run）的统计；`id` 由首步键（`callId` 或 `reasoning:<messageId>`）生成，跨渲染稳定。 */
 export interface NodeRunStats {
   id: string;
+  /** 工具步数（不含思考行，思考行单独计数）。 */
   steps: number;
+  /** 思考行数：与工具步同一 run、同一展开开关，但组头单独外显。 */
+  reasoning: number;
   failed: number;
   durationMs: number | null;
 }
@@ -18,14 +21,28 @@ export type NodeView =
       message: Message;
       showIdentity: boolean;
       ownsAssistantChrome: boolean;
+      /** `true`：气泡无正文可渲染，只承载身份行 / 尾锚点 / 错误，不画空壳（§6.1）。 */
+      chromeOnly: boolean;
     }
   | {
       kind: "tool";
       callId: string;
       view: ToolCallView;
-      /** 所属折叠 run：步行只在 run 内产生，故恒非空（D8 安全阀已由 `planRuns` 切断）。 */
-      run: NodeRunStats;
-    };
+      /** 所属折叠 run；`null` 表示 run 外的步（待处理 / 无摘要 / 流式中），恒以卡片显示。 */
+      run: NodeRunStats | null;
+    }
+  | {
+      kind: "reasoning";
+      messageId: string;
+      text: string;
+      /** 所属折叠 run；`null` 表示 run 外的思考（流式中 / 纯思考段），走 `ReasoningBlock` 自折叠。 */
+      run: NodeRunStats | null;
+    }
+  /**
+   * 身份行节点：同一消息的思考上移为节点时，身份行从气泡拆出、排在最前，
+   * 否则思考节点会渲染在头像之前（§5.5 挂载顺序）。
+   */
+  | { kind: "identity"; message: Message };
 
 export interface NodeGroupStats {
   steps: number;
@@ -65,8 +82,16 @@ function isAssistant(message: Message): boolean {
   return message.role === "assistant";
 }
 
-function hasVisibleBody(message: Message): boolean {
-  return message.content.trim().length > 0 || !!message.reasoning;
+function hasContent(message: Message): boolean {
+  return message.content.trim().length > 0;
+}
+
+/** 思考行的稳定键：思考没有独立 id，按所属消息派生（`reasoning:<messageId>`）。 */
+function reasoningKeyOf(message: Message): string | null {
+  if (!isAssistant(message)) return null;
+  const text = message.reasoning;
+  if (typeof text !== "string" || text.trim().length === 0) return null;
+  return `reasoning:${message.id}`;
 }
 
 function collectToolViews(message: Message): ToolCallView[] {
@@ -126,52 +151,93 @@ function hasStepSummary(view: ToolCallView): boolean {
 }
 
 /**
- * 可折叠的步（D8 安全阀）：只有成功且能取到摘要的步允许被压成单行。
- * `running` / `error` / `awaiting_user` / `missing` / `cancelled` 一律完整显示，
- * 并且**切断**所在的 run——失败原因是结论的一部分，不能藏进折叠组。
+ * 可折叠的步（D8 安全阀，2026-11-14 口径调整）：成功与失败的步只要能取到摘要就压成单行。
+ * 失败原因已由 `compact.head`（`err <kind> <tool> · <subject> · <reason>`）承载，
+ * 单行同时显示失败状态与原因，因此失败步不再整卡常驻；
+ * `running` / `awaiting_user` / `missing` / `cancelled` 仍完整显示，并且**切断**所在的 run。
  */
 function isFoldableStep(view: ToolCallView): boolean {
-  return view.status === "success" && hasStepSummary(view);
+  return (
+    (view.status === "success" || view.status === "error") &&
+    hasStepSummary(view)
+  );
 }
 
-function runStats(id: string, entries: ToolCallView[]): NodeRunStats {
-  const { failed, durationMs } = computeStats(entries);
-  return { id, steps: entries.length, failed, durationMs };
+/** run 内的一个步：`view` 非空为工具步，`null` 为思考行（思考行没有工具视图）。 */
+interface RunEntry {
+  /** 稳定键：工具取 `callId`，思考取 `reasoning:<messageId>`。 */
+  key: string;
+  view: ToolCallView | null;
+}
+
+function runStats(id: string, entries: RunEntry[]): NodeRunStats {
+  const views = entries.flatMap((entry) => (entry.view ? [entry.view] : []));
+  const { failed, durationMs } = computeStats(views);
+  return {
+    id,
+    steps: views.length,
+    reasoning: entries.length - views.length,
+    failed,
+    durationMs,
+  };
 }
 
 /**
  * 按「连续可折叠步」切 run（I46 §5.4）：run 是折叠的最小单位，
  * 每个 run 各自计数、各自判定阈值与展开态，互不污染。
  *
- * 切断条件：失败 / 待处理 / 无摘要的步、带消息级错误的行、边界行，
- * **以及任何带可见正文的行**。正文行会在节点序列里插进一个气泡节点，
+ * 切断条件：待处理 / 无摘要的步、带消息级错误的行、边界行，
+ * **以及任何带正文的行**。正文行会在节点序列里插进一个气泡节点，
  * 若不切断，同一 run 的步会被气泡打断，组头在该段前重复渲染且每处都
  * 显示整段总步数——组头计数与实际行数不符（「所有节点共用一个步数」）。
+ *
+ * 思考行（`reasoningAsNode` 为 true 时）与工具步同权：只要非空就是可折叠步，
+ * 不切断 run，从而「思考 + 本轮工具」合成同一段、组头只出现一次。
  */
 function planRuns(
   slice: Message[],
   foldAllowed: boolean,
-): { runs: NodeRunStats[]; runByCallId: Map<string, NodeRunStats> } {
+  reasoningAsNode: boolean,
+): { runs: NodeRunStats[]; runByKey: Map<string, NodeRunStats> } {
   const runs: NodeRunStats[] = [];
-  const runByCallId = new Map<string, NodeRunStats>();
+  const runByKey = new Map<string, NodeRunStats>();
   const seenCallIds = new Set<string>();
-  let pending: ToolCallView[] = [];
+  let pending: RunEntry[] = [];
   let cutNext = false;
 
   const flush = () => {
     if (pending.length === 0) return;
-    if (foldAllowed && pending.length >= PROCESS_COLLAPSE_THRESHOLD) {
-      const stats = runStats(`run:${pending[0].callId}`, pending);
+    // run 必须有工具步才算「过程段」：纯思考段不成组，否则会出现
+    // 「执行过程 · 1 思考」这种只有一行、且与思考行自身文案重复的组头。
+    // 纯思考段按 `density="block"` 自折叠呈现（`ReasoningBlock` 自带开关）。
+    const hasToolStep = pending.some((entry) => entry.view !== null);
+    if (
+      foldAllowed &&
+      hasToolStep &&
+      pending.length >= PROCESS_COLLAPSE_THRESHOLD
+    ) {
+      const stats = runStats(`run:${pending[0].key}`, pending);
       runs.push(stats);
-      for (const view of pending) runByCallId.set(view.callId, stats);
+      for (const entry of pending) runByKey.set(entry.key, stats);
     }
     pending = [];
   };
 
+  const push = (entry: RunEntry) => {
+    if (cutNext) {
+      flush();
+      cutNext = false;
+    }
+    pending.push(entry);
+  };
+
   for (const message of slice) {
     const blocked = message.role === "compact_summary" || message.error != null;
-    // 正文 / 推理行在节点序列里自成一段，必须切断 run 以保证「组头 + 步」连续。
-    if (blocked || hasVisibleBody(message)) flush();
+    const reasoningKey = reasoningAsNode ? reasoningKeyOf(message) : null;
+    // 思考行在节点序列里排在正文之前，因此先入 run、再按正文切段。
+    if (reasoningKey !== null) push({ key: reasoningKey, view: null });
+    // 正文行在节点序列里自成一段，必须切断 run 以保证「组头 + 步」连续。
+    if (blocked || hasContent(message)) flush();
     for (const view of collectToolViews(message)) {
       // 同一 turn 内重复下发的 `callId` 只计一次：否则组头步数会虚高，
       // 且重复的 React key 会让实际渲染行数少于计数。
@@ -182,17 +248,13 @@ function planRuns(
         cutNext = true;
         continue;
       }
-      if (cutNext) {
-        flush();
-        cutNext = false;
-      }
       seenCallIds.add(view.callId);
-      pending.push(view);
+      push({ key: view.callId, view });
     }
     if (blocked) cutNext = true;
   }
   flush();
-  return { runs, runByCallId };
+  return { runs, runByKey };
 }
 
 /** ADR D3 三级优先级：有正文且 settled 的 assistant 行 → 末个 assistant 行 → null。 */
@@ -256,8 +318,12 @@ export function groupNodeRows(input: GroupNodeRowsInput): NodeGroupView[] {
     const foldAllowed =
       groupPhase === "settled" && turnIndex !== null && !hasBoundaryNode(slice);
 
-    const { runs, runByCallId } = planRuns(slice, foldAllowed);
+    // 思考是否上移为节点：只有本 turn 存在工具步（即存在「过程」）时才上移。
+    // 零工具 turn（chat 轮、agent 纯问答轮）思考仍留在气泡内，外观与现状一致（门禁 15）。
+    const reasoningAsNode = toolViews.length > 0;
+    const { runs, runByKey } = planRuns(slice, foldAllowed, reasoningAsNode);
 
+    const tailAnchor = turnIndex === null ? null : pickTailAnchor(slice);
     const nodes: NodeView[] = [];
     // 同一 turn 内重复下发的 `callId` 只渲染一次，与 `planRuns` 的去重口径一致：
     // 否则气泡里会多出一张重复卡片，且 React key 冲突会让实际行数少于计数。
@@ -268,44 +334,62 @@ export function groupNodeRows(input: GroupNodeRowsInput): NodeGroupView[] {
         emittedCallIds.add(view.callId);
         return true;
       });
-      // 只有 run 内的步上移为独立步行；run 外的步（失败 / 待处理 / 无摘要）
-      // 必须留在气泡里完整显示（D8 安全阀）——不能因为同条消息里还有可折叠步而消失。
-      const folded = messageToolViews.filter((view) =>
-        runByCallId.has(view.callId),
-      );
-      const remaining = messageToolViews.filter(
-        (view) => !runByCallId.has(view.callId),
-      );
       const prevMessage = offset > 0 ? slice[offset - 1] : prev;
-      if (
-        folded.length === 0 ||
-        remaining.length > 0 ||
-        hasVisibleBody(message)
-      ) {
-        const showIdentity =
-          isAssistant(message) &&
-          (prevMessage === undefined ||
-            prevMessage.role !== "assistant" ||
-            (turnIndex !== null &&
-              (prevMessage.turnIndex ?? null) !== turnIndex));
+      const hasBody = hasContent(message);
+      const reasoningKey = reasoningAsNode ? reasoningKeyOf(message) : null;
+      const showIdentity =
+        isAssistant(message) &&
+        (prevMessage === undefined ||
+          prevMessage.role !== "assistant" ||
+          (turnIndex !== null &&
+            (prevMessage.turnIndex ?? null) !== turnIndex));
+      const isTurnTail = tailAnchor !== null && tailAnchor.id === message.id;
+      // 身份行是 turn 的起始标识，必须排在所有过程节点之前：思考上移为节点时
+      // 把身份行从气泡拆出、单独成节点，否则思考节点会渲染在头像前面（§5.5）。
+      const identityAsNode = reasoningKey !== null && showIdentity;
+      if (identityAsNode) {
+        nodes.push({ kind: "identity", message });
+      }
+      // 思考与工具步同权：按消息内的原始顺序先出思考节点，再出正文气泡，最后出工具步。
+      if (reasoningKey !== null) {
         nodes.push({
-          kind: "message",
-          // 折叠态下工具行上移为独立步行，气泡只保留 run 外的步（§6.1）。
-          message:
-            folded.length === 0
-              ? message
-              : {
-                  ...message,
-                  toolCalls: remaining.length > 0 ? remaining : undefined,
-                },
-          showIdentity,
-          ownsAssistantChrome: turnIndex === null || !isAssistant(message),
+          kind: "reasoning",
+          messageId: message.id,
+          text: message.reasoning ?? "",
+          run: runByKey.get(reasoningKey) ?? null,
         });
       }
-      for (const view of folded) {
-        const run = runByCallId.get(view.callId);
-        if (run === undefined) continue;
-        nodes.push({ kind: "tool", callId: view.callId, view, run });
+      // 气泡只承载正文与 chrome，工具步一律按原序下移为独立节点（§6.1）：
+      // 这样「步 → 等待卡 → 步」的时间顺序不会被气泡挤到最前面。
+      // 无正文的纯工具行仅在需要挂身份行 / 尾锚点 / 错误时才留气泡壳。
+      const needsBubble =
+        hasBody ||
+        message.error != null ||
+        !isAssistant(message) ||
+        showIdentity ||
+        isTurnTail;
+      if (needsBubble) {
+        nodes.push({
+          kind: "message",
+          // 折叠态下工具步与思考全部上移为独立节点，气泡不再承载它们（§6.1）。
+          message: {
+            ...message,
+            ...(messageToolViews.length > 0 ? { toolCalls: undefined } : {}),
+            ...(reasoningKey !== null ? { reasoning: null } : {}),
+          },
+          // 身份行已单独成节点时气泡不再重复渲染（§5.5）。
+          showIdentity: identityAsNode ? false : showIdentity,
+          ownsAssistantChrome: turnIndex === null || !isAssistant(message),
+          chromeOnly: !hasBody,
+        });
+      }
+      for (const view of messageToolViews) {
+        nodes.push({
+          kind: "tool",
+          callId: view.callId,
+          view,
+          run: runByKey.get(view.callId) ?? null,
+        });
       }
     });
 
