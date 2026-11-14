@@ -1,28 +1,11 @@
+mod common;
+
 use assistant_agent::agent::ladder::{
     budget_of, hard_trim, microcompact, restore_tool_bodies, split_input_allowance,
     CLEARED_PLACEHOLDER_PREFIX,
 };
 use assistant_providers::types::{ChatMessage, MessageRole, ToolCall};
-
-fn text_msg(role: MessageRole, content: &str) -> ChatMessage {
-    ChatMessage {
-        role,
-        content: content.to_string(),
-        tool_calls: None,
-        tool_call_id: None,
-        name: None,
-        is_error: false,
-        thinking_signature: None,
-        content_blocks: None,
-    }
-}
-
-fn tool_msg(name: &str, id: &str, body: &str) -> ChatMessage {
-    let mut msg = text_msg(MessageRole::Tool, body);
-    msg.name = Some(name.to_string());
-    msg.tool_call_id = Some(id.to_string());
-    msg
-}
+use common::chat::{text_msg, tool_msg};
 
 fn assistant_call(id: &str, name: &str) -> ChatMessage {
     let mut msg = text_msg(MessageRole::Assistant, "");

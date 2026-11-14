@@ -9,16 +9,10 @@ use assistant_agent::kernel::ports::test_doubles::ManualClock;
 use assistant_agent::kernel::stream::consume;
 use assistant_agent::kernel::Clock;
 use assistant_providers::base::{ChatDelta, ProviderError};
-use common::PacedStream;
+use common::chat::delta_text as text_delta;
+use common::stream::PacedStream;
 use futures::stream;
 use tokio_util::sync::CancellationToken;
-
-fn text_delta(text: &str) -> ChatDelta {
-    ChatDelta {
-        delta_text: Some(text.to_string()),
-        ..Default::default()
-    }
-}
 
 #[tokio::test]
 async fn ttft_is_none_when_stream_emits_no_delta() {

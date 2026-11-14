@@ -14,7 +14,8 @@ use assistant_agent::kernel::stream::{
 };
 use assistant_agent::kernel::Clock;
 use assistant_providers::base::{ChatDelta, ProviderError, TokenUsage};
-use common::PacedStream;
+use common::chat::delta_text as text_delta;
+use common::stream::PacedStream;
 use futures::stream::{self, Stream};
 use tokio_util::sync::CancellationToken;
 
@@ -32,13 +33,6 @@ where
     let clock = FixedClock::default();
     let request_started = clock.now();
     consume_with_clock(stream, token, timeout, &clock, request_started, on_delta).await
-}
-
-fn text_delta(text: &str) -> ChatDelta {
-    ChatDelta {
-        delta_text: Some(text.to_string()),
-        ..Default::default()
-    }
 }
 
 fn reasoning_delta(text: &str) -> ChatDelta {

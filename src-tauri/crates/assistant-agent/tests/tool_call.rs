@@ -1,3 +1,5 @@
+mod common;
+
 use assistant_agent::agent::tool_call::repair_truncated_json;
 use assistant_agent::agent::tool_call::ToolCallAccumulator;
 use assistant_agent::agent::tool_call::ToolCallBoundary;
@@ -5,15 +7,7 @@ use assistant_agent::agent::tool_call::ToolCallStreamKey;
 use assistant_providers::base::ChatDelta;
 use assistant_providers::types::unified::UnifiedResponse;
 use assistant_providers::types::unified::UnifiedToolCall;
-
-fn delta(id: Option<&str>, name: Option<&str>, args: Option<&str>) -> ChatDelta {
-    ChatDelta {
-        delta_tool_call_id: id.map(str::to_string),
-        delta_tool_call_name: name.map(str::to_string),
-        delta_tool_call_arguments: args.map(str::to_string),
-        ..Default::default()
-    }
-}
+use common::chat::delta_tool_call as delta;
 
 #[test]
 fn accumulates_fragments_across_chunks() {

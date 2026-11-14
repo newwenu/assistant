@@ -1,16 +1,7 @@
-use std::path::{Path, PathBuf};
+mod common;
 
-fn collect_kernel_sources(dir: &Path, out: &mut Vec<PathBuf>) {
-    let entries = std::fs::read_dir(dir).expect("read kernel dir");
-    for entry in entries {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            collect_kernel_sources(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            out.push(path);
-        }
-    }
-}
+use common::scan::{assert_no_forbidden, kernel_sources};
+use std::path::Path;
 
 /// I36b V1 / G1：本 crate 的依赖清单不得出现 `tauri`。
 ///
@@ -35,25 +26,9 @@ fn manifest_declares_no_tauri_dependency() {
 
 #[test]
 fn kernel_sources_have_no_tauri_types() {
-    let kernel_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src")
-        .join("kernel");
-    let mut sources = Vec::new();
-    collect_kernel_sources(&kernel_dir, &mut sources);
-    assert!(!sources.is_empty(), "kernel sources not found");
-
+    let sources = kernel_sources();
     let forbidden = ["tauri::", "AppHandle", "WebviewWindow", "tauri::State"];
-    for path in sources {
-        let text = std::fs::read_to_string(&path).expect("read kernel source");
-        for needle in forbidden {
-            assert!(
-                !text.contains(needle),
-                "{} contains forbidden tauri token {}",
-                path.display(),
-                needle
-            );
-        }
-    }
+    assert_no_forbidden(&sources, &forbidden, "tauri token");
 }
 
 // 原 `turn_event_carries_turn_id_and_status_on_termination` 已删除：它在测试内构造三个

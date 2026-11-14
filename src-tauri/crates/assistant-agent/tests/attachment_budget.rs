@@ -1,3 +1,5 @@
+mod common;
+
 use assistant_agent::kernel::request;
 use assistant_agent::multimodal::{self, MultimodalConfig, ProjectionPurpose};
 use assistant_agent::prompt_builder::PromptFacts;
@@ -9,6 +11,7 @@ use assistant_providers::types::{
 use assistant_storage::attachment_store::AttachmentStore;
 use assistant_storage::conversations::{ConversationDetail, ConversationRow, MessageRow};
 use assistant_storage::providers::ProviderRow;
+use common::rows::{conversation_row, message_row};
 
 fn store() -> (tempfile::TempDir, AttachmentStore) {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -506,43 +509,16 @@ fn detail_with_file(model: &str, file_content: &str) -> ConversationDetail {
     };
     ConversationDetail {
         conversation: ConversationRow {
-            id: "c1".to_string(),
             title: "t".to_string(),
-            title_source: "user".to_string(),
             provider_id: Some("p1".to_string()),
-            model_id: model.to_string(),
             system_prompt: Some("sys".to_string()),
-            is_pinned: false,
-            sort_order: 0,
-            generation: 0,
-            created_at: 0,
-            updated_at: 0,
-            is_full: false,
-            active_branch_id: None,
-            mode_id: None,
-            tool_config_json: None,
-            workspace_root: String::new(),
+            ..conversation_row("c1", model)
         },
         messages: vec![MessageRow {
-            id: "m1".to_string(),
-            conversation_id: "c1".to_string(),
-            role: "user".to_string(),
             content: serde_json::to_string(&vec![file, text("summarize")]).unwrap(),
-            tokens: None,
-            timestamp: 0,
-            parent_id: None,
-            is_pinned: false,
-            reasoning: None,
-            tool_calls_json: None,
-            sibling_index: 0,
             provider_id: Some("p1".to_string()),
             model_id: Some(model.to_string()),
-            tool_call_id: None,
-            is_error: false,
-            status: "completed".to_string(),
-            mode_id: None,
-            turn_index: None,
-            iteration: 0,
+            ..message_row("m1", "c1", "user", "")
         }],
     }
 }

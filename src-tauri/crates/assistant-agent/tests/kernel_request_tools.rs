@@ -1,40 +1,22 @@
 #![cfg(feature = "test-doubles")]
 
+mod common;
+
 use assistant_agent::kernel::ports::test_doubles::FixtureSource;
 use assistant_agent::kernel::ports::{TurnInput, TurnInputSource};
 use assistant_agent::kernel::request;
 use assistant_agent::prompt_builder::PromptFacts;
 use assistant_providers::base::MessageRole;
 use assistant_providers::types::ToolSpec;
-use assistant_storage::agent_modes::AgentModeRow;
+use common::chat::tool_spec;
+use common::modes::mode_row;
 
 fn spec(name: &str) -> ToolSpec {
-    ToolSpec {
-        name: name.to_string(),
-        description: String::new(),
-        input_schema: serde_json::json!({ "type": "object", "properties": {} }),
-    }
-}
-
-fn mode(kind: &str) -> AgentModeRow {
-    AgentModeRow {
-        id: format!("mode-{kind}"),
-        name: kind.to_string(),
-        description: String::new(),
-        kind: kind.to_string(),
-        prompt: String::new(),
-        model: None,
-        temperature: None,
-        max_tokens: None,
-        reasoning_enabled: None,
-        reasoning_effort: None,
-        presentation_rank: 0,
-        is_builtin: false,
-        created_at: 0,
-        updated_at: 0,
-        tool_config_json: None,
-        avatar: None,
-    }
+    tool_spec(
+        name,
+        "",
+        serde_json::json!({ "type": "object", "properties": {} }),
+    )
 }
 
 async fn input_with_mode(kind: &str) -> TurnInput {
@@ -43,7 +25,7 @@ async fn input_with_mode(kind: &str) -> TurnInput {
         .conversation_detail("conv-tools")
         .await
         .expect("fixture detail");
-    input.mode = Some(mode(kind));
+    input.mode = Some(mode_row(kind));
     input
 }
 

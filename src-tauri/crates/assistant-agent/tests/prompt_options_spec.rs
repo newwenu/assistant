@@ -1,75 +1,35 @@
+mod common;
+
 use assistant_agent::chat_options::{self, ReasoningOverride};
 use assistant_agent::prompt_builder::{self, AgentKind, PromptFacts};
 use assistant_providers::base;
 use assistant_storage::agent_modes::AgentModeRow;
 use assistant_storage::conversations::{ConversationDetail, ConversationRow, MessageRow};
+use common::modes::mode_row;
+use common::rows::{conversation_row, message_row};
 
 fn make_detail(messages: Vec<MessageRow>) -> ConversationDetail {
     ConversationDetail {
         conversation: ConversationRow {
-            id: "test-conv".to_string(),
             title: "Test".to_string(),
             title_source: "manual".to_string(),
             provider_id: Some("test-provider".to_string()),
-            model_id: "test-model".to_string(),
             system_prompt: Some("You are helpful".to_string()),
-            is_pinned: false,
-            sort_order: 0,
-            generation: 0,
-            created_at: 0,
-            updated_at: 0,
-            is_full: false,
-            active_branch_id: None,
-            mode_id: None,
-            tool_config_json: None,
-            workspace_root: String::new(),
+            ..conversation_row("test-conv", "test-model")
         },
         messages,
     }
 }
 
 fn make_message_row(role: &str, content: &str) -> MessageRow {
-    MessageRow {
-        id: format!("msg-{}", role),
-        conversation_id: "test-conv".to_string(),
-        role: role.to_string(),
-        content: content.to_string(),
-        tokens: None,
-        timestamp: 0,
-        parent_id: None,
-        is_pinned: false,
-        reasoning: None,
-        tool_calls_json: None,
-        sibling_index: 0,
-        provider_id: None,
-        model_id: None,
-        tool_call_id: None,
-        is_error: false,
-        status: "completed".to_string(),
-        mode_id: None,
-        turn_index: None,
-        iteration: 0,
-    }
+    message_row(&format!("msg-{role}"), "test-conv", role, content)
 }
 
 fn make_mode(kind: &str, temperature: Option<f32>, max_tokens: Option<u32>) -> AgentModeRow {
     AgentModeRow {
-        id: format!("mode-{}", kind),
-        name: kind.to_string(),
-        description: String::new(),
-        kind: kind.to_string(),
-        prompt: String::new(),
-        model: None,
         temperature,
         max_tokens,
-        reasoning_enabled: None,
-        reasoning_effort: None,
-        presentation_rank: 0,
-        is_builtin: true,
-        created_at: 0,
-        updated_at: 0,
-        tool_config_json: None,
-        avatar: None,
+        ..mode_row(kind)
     }
 }
 
@@ -364,45 +324,16 @@ fn tool_history_roundtrip_rebuilds_wire_shape() {
     let dir = tempfile::tempdir().unwrap();
     let conn = assistant_storage::db::init_db(&dir.path().join("wire.db")).unwrap();
     let conv = ConversationRow {
-        id: "wire-conv".to_string(),
         title: "Wire".to_string(),
         title_source: "manual".to_string(),
-        provider_id: None,
-        model_id: "test-model".to_string(),
-        system_prompt: None,
-        is_pinned: false,
-        sort_order: 0,
-        generation: 0,
-        created_at: 0,
-        updated_at: 0,
-        is_full: false,
-        active_branch_id: None,
-        mode_id: None,
-        tool_config_json: None,
-        workspace_root: String::new(),
+        ..conversation_row("wire-conv", "test-model")
     };
     assistant_storage::conversations::insert_conversation(&conn, &conv).unwrap();
 
     let row = |id: &str, role: &str, content: &str, ts: i64, parent: Option<&str>| MessageRow {
-        id: id.to_string(),
-        conversation_id: "wire-conv".to_string(),
-        role: role.to_string(),
-        content: content.to_string(),
-        tokens: None,
         timestamp: ts,
         parent_id: parent.map(str::to_string),
-        is_pinned: false,
-        reasoning: None,
-        tool_calls_json: None,
-        sibling_index: 0,
-        provider_id: None,
-        model_id: None,
-        tool_call_id: None,
-        is_error: false,
-        status: "completed".to_string(),
-        mode_id: None,
-        turn_index: None,
-        iteration: 0,
+        ..message_row(id, "wire-conv", role, content)
     };
 
     assistant_storage::conversations::insert_message(

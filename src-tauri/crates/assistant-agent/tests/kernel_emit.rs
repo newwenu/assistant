@@ -1,115 +1,17 @@
 #![cfg(feature = "test-doubles")]
 
+mod common;
+
 use std::sync::Arc;
 
 use assistant_agent::agent::tool_event::ToolEvent;
-use assistant_agent::kernel::ports::test_doubles::{
-    FixedClock, FixtureSource, InMemoryStore, RecordingSink, ScriptedAdapter, ScriptedResponse,
-};
-use assistant_agent::kernel::{
-    OnBusy, SessionStates, TurnContext, TurnEmitter, TurnEvent, TurnRunner, TurnSpec, TurnTasks,
-};
-use assistant_providers::base::BaseProviderAdapter;
-use assistant_storage::conversations::{ConversationDetail, ConversationRow, MessageRow};
-use assistant_storage::providers::ProviderRow;
+use assistant_agent::kernel::ports::test_doubles::{RecordingSink, ScriptedResponse};
+use assistant_agent::kernel::{OnBusy, TurnEmitter, TurnEvent, TurnSpec, TurnTasks};
+use common::harness::started_ctx;
+use common::runner::{scripted_harness, Harness};
 
-fn fixture_input(conversation_id: &str, adapter: Arc<dyn BaseProviderAdapter>) -> FixtureSource {
-    let conversation = ConversationRow {
-        id: conversation_id.to_string(),
-        title: "fixture".to_string(),
-        title_source: "user".to_string(),
-        provider_id: Some("fixture-provider".to_string()),
-        model_id: "fixture-model".to_string(),
-        system_prompt: None,
-        is_pinned: false,
-        sort_order: 0,
-        generation: 0,
-        created_at: 0,
-        updated_at: 0,
-        is_full: false,
-        active_branch_id: None,
-        mode_id: None,
-        tool_config_json: None,
-        workspace_root: String::new(),
-    };
-    let messages = vec![MessageRow {
-        id: "user-1".to_string(),
-        conversation_id: conversation_id.to_string(),
-        role: "user".to_string(),
-        content: "hi".to_string(),
-        tokens: None,
-        timestamp: 0,
-        parent_id: None,
-        is_pinned: false,
-        reasoning: None,
-        tool_calls_json: None,
-        sibling_index: 0,
-        provider_id: None,
-        model_id: None,
-        tool_call_id: None,
-        is_error: false,
-        status: "completed".to_string(),
-        mode_id: None,
-        turn_index: None,
-        iteration: 0,
-    }];
-    let provider = assistant_agent::kernel::ProviderCredential {
-        row: ProviderRow {
-            id: "fixture-provider".to_string(),
-            name: "fixture".to_string(),
-            type_: "openai".to_string(),
-            base_url: "scripted://local".to_string(),
-            api_key_encrypted: String::new(),
-            models_json: "[]".to_string(),
-            default_model: "fixture-model".to_string(),
-            updated_at: 0,
-        },
-        api_key: "fixture-key".to_string(),
-    };
-    FixtureSource::new(
-        ConversationDetail {
-            conversation,
-            messages,
-        },
-        provider,
-        "fixture-attachments",
-        adapter,
-    )
-}
-
-struct Harness {
-    runner: TurnRunner,
-    sink: Arc<RecordingSink>,
-    tasks: Arc<TurnTasks>,
-}
-
-fn harness(scripts: Vec<ScriptedResponse>) -> Harness {
-    let sink = Arc::new(RecordingSink::new());
-    let store = Arc::new(InMemoryStore::new());
-    let tasks = Arc::new(TurnTasks::new());
-    let states = Arc::new(SessionStates::new());
-    let adapter: Arc<dyn BaseProviderAdapter> = Arc::new(ScriptedAdapter::new(scripts));
-    let runner = TurnRunner::new(
-        sink.clone(),
-        store,
-        Arc::new(fixture_input("conv-1", adapter)),
-        states,
-        tasks.clone(),
-        Arc::new(FixedClock::default()),
-        None,
-    );
-    Harness {
-        runner,
-        sink,
-        tasks,
-    }
-}
-
-fn started_ctx(tasks: &TurnTasks, conversation_id: &str) -> TurnContext {
-    let (turn_id, _token) = tasks
-        .begin(conversation_id, OnBusy::Replace)
-        .expect("begin");
-    TurnContext::new(conversation_id, turn_id, "assistant-1")
+fn harness(scripts: Vec<ScriptedResponse>) -> Harness<RecordingSink> {
+    scripted_harness(scripts)
 }
 
 /// `UserMessageConfirmed` 是会话级事件，其余事件都是轮级事件。

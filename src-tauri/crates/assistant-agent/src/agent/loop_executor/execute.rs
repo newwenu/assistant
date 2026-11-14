@@ -10,7 +10,7 @@ use crate::agent::round_executor::{
 use crate::agent::tool_call::FinalizedToolCall;
 use crate::kernel::TurnPhase;
 
-use super::budget::{argument_fingerprint, cancellable, not_executed, split_by_budget};
+use super::budget::{argument_fingerprint, cancellable, not_executed, split_by_budget, tool_scope};
 use super::terminal::cancelled_tool_exec;
 use super::RoundState;
 
@@ -76,7 +76,7 @@ pub(super) async fn execute_tools(
                     (
                         call.tool_id.clone(),
                         argument_fingerprint(call),
-                        call.tool_name.clone(),
+                        tool_scope(call),
                     )
                 })
                 .collect();
@@ -92,7 +92,7 @@ pub(super) async fn execute_tools(
                 .filter_map(|r| r.confirmation_wait_ms)
                 .sum::<u64>();
             for result in results.iter_mut() {
-                let Some((_, fingerprint, tool_name)) =
+                let Some((_, fingerprint, scope)) =
                     meta.iter().find(|(id, _, _)| id == &result.call_id)
                 else {
                     log::warn!(
@@ -105,7 +105,7 @@ pub(super) async fn execute_tools(
                     result,
                     arguments: fingerprint.as_str(),
                     argument_fingerprint: fingerprint.as_str(),
-                    scope: tool_name.as_str(),
+                    scope: scope.as_str(),
                 };
                 if let MiddlewareOutcome::StopTurn { middleware, reason } =
                     state.chain.after_tool(&mut view, turn_ctx).await

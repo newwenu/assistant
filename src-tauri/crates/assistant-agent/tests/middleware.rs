@@ -1,3 +1,5 @@
+mod common;
+
 use assistant_agent::agent::ladder::CLEARED_PLACEHOLDER_PREFIX;
 use assistant_agent::agent::middleware::{
     classify_failure, FailureClass, MiddlewareChain, MiddlewareOutcome, ModelRequestView,
@@ -6,6 +8,7 @@ use assistant_agent::agent::middleware::{
 };
 use assistant_agent::agent::round_executor::{ToolErrorClass, ToolExecResult, ToolStage};
 use assistant_providers::types::{ChatMessage, MessageRole};
+use common::chat::{text_msg, tool_msg};
 
 fn ctx() -> TurnCtx<'static> {
     TurnCtx {
@@ -15,26 +18,6 @@ fn ctx() -> TurnCtx<'static> {
         max_iterations: 12,
         model: "custom",
     }
-}
-
-fn text_msg(role: MessageRole, content: &str) -> ChatMessage {
-    ChatMessage {
-        role,
-        content: content.to_string(),
-        tool_calls: None,
-        tool_call_id: None,
-        name: None,
-        is_error: false,
-        thinking_signature: None,
-        content_blocks: None,
-    }
-}
-
-fn tool_msg(name: &str, id: &str, body: &str) -> ChatMessage {
-    let mut msg = text_msg(MessageRole::Tool, body);
-    msg.name = Some(name.to_string());
-    msg.tool_call_id = Some(id.to_string());
-    msg
 }
 
 fn result(
@@ -223,6 +206,32 @@ async fn success_resets_generic_counter() {
     assert!(chain.take_pending_nudges().is_empty());
     assert_eq!(
         chain.after_iteration(&ctx).await,
+        MiddlewareOutcome::Continue
+    );
+}
+
+#[tokio::test]
+async fn generic_counter_is_scoped_by_tool_name() {
+    let chain = MiddlewareChain::p4(6);
+    let mut read = result(
+        "read",
+        true,
+        ToolStage::Persist,
+        Some(ToolErrorClass::Internal),
+    );
+    let mut grep = result(
+        "grep",
+        true,
+        ToolStage::Persist,
+        Some(ToolErrorClass::Internal),
+    );
+
+    // 参数文本跨工具不唯一：两个工具用同一段参数各失败一次，不应合并成「重复调用」。
+    let _ = run_after_tool(&chain, &mut read, "same-args", "read").await;
+    let _ = run_after_tool(&chain, &mut grep, "same-args", "grep").await;
+    assert!(chain.take_pending_nudges().is_empty());
+    assert_eq!(
+        chain.after_iteration(&ctx()).await,
         MiddlewareOutcome::Continue
     );
 }

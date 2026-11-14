@@ -1,3 +1,5 @@
+mod common;
+
 use assistant_agent::kernel::limits::{
     derived_tool_call_limit, effective_tool_call_limit, DEFAULT_MAX_ITERATIONS,
     DEFAULT_MICROCOMPACT_KEEP_RECENT, DEFAULT_MODEL_CALL_TIMEOUT, DEFAULT_TURN_WALL_CLOCK,
@@ -5,7 +7,7 @@ use assistant_agent::kernel::limits::{
 use assistant_agent::kernel::{
     EventRoute, LadderPolicy, OnBusy, SessionState, TurnLimits, TurnPhase, TurnSpec, TurnStatus,
 };
-use std::path::Path;
+use common::scan::{assert_absent, assert_no_forbidden, kernel_sources};
 use std::time::Duration;
 
 #[test]
@@ -148,39 +150,11 @@ fn turn_status_serializes_as_camel_case() {
     }
 }
 
-fn collect_kernel_sources(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
-    let entries = std::fs::read_dir(dir).expect("read kernel dir");
-    for entry in entries {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            collect_kernel_sources(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            out.push(path);
-        }
-    }
-}
-
 #[test]
 fn kernel_sources_have_no_branch_on_agent_kind() {
-    let kernel_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src")
-        .join("kernel");
-    let mut sources = Vec::new();
-    collect_kernel_sources(&kernel_dir, &mut sources);
-    assert!(!sources.is_empty(), "kernel sources not found");
-
+    let sources = kernel_sources();
     let forbidden = ["is_agent", "is_chat"];
-    for path in sources {
-        let text = std::fs::read_to_string(&path).expect("read kernel source");
-        for needle in forbidden {
-            assert!(
-                !text.contains(needle),
-                "{} contains forbidden token {}",
-                path.display(),
-                needle
-            );
-        }
-    }
+    assert_no_forbidden(&sources, &forbidden, "token");
 }
 
 /// I36b H7：未接线字段显式登记，防止「字段存在即视为已实现」的误判。
@@ -189,23 +163,13 @@ fn kernel_sources_have_no_branch_on_agent_kind() {
 /// 内核没有任何读取点（P4 才接线）。一旦有人接线，本用例会失败并要求同步更新清单。
 #[test]
 fn unwired_turn_spec_fields_have_no_read_points_yet() {
-    let kernel_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src")
-        .join("kernel");
-    let mut sources = Vec::new();
-    collect_kernel_sources(&kernel_dir, &mut sources);
-    assert!(!sources.is_empty(), "kernel sources not found");
-
+    let sources = kernel_sources();
     let unwired = ["spec.ladder", "spec.wrap_up", "spec.stop_hooks"];
-    for path in sources {
-        let text = std::fs::read_to_string(&path).expect("read kernel source");
-        for needle in unwired {
-            assert!(
-                !text.contains(needle),
-                "{} 已读取 {}，请同步更新 I36b H7 未接线清单",
-                path.display(),
-                needle
-            );
-        }
-    }
+    assert_absent(&sources, &unwired, |path, needle| {
+        format!(
+            "{} 已读取 {}，请同步更新 I36b H7 未接线清单",
+            path.display(),
+            needle
+        )
+    });
 }

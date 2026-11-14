@@ -1,29 +1,23 @@
 #![cfg(feature = "test-doubles")]
 
+mod common;
+
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use assistant_agent::kernel::ports::test_doubles::{
-    FixedClock, FixtureSource, InMemoryStore, RecordingSink, ScriptedAdapter, ScriptedResponse,
-    StepClock, StoreCall,
+    FixedClock, InMemoryStore, RecordingSink, ScriptedAdapter, ScriptedResponse, StepClock,
+    StoreCall,
 };
 use assistant_agent::kernel::ports::EventSink;
 use assistant_agent::kernel::{
-    CompactionConfig, CompactionSink, MessageStatus, SessionState, SessionStates, TurnContext,
-    TurnError, TurnEvent, TurnLimits, TurnRunner, TurnSpec, TurnStatus, TurnTasks,
+    CompactionConfig, CompactionSink, MessageStatus, SessionState, TurnError, TurnEvent,
+    TurnLimits, TurnSpec, TurnStatus, TurnTasks,
 };
-use assistant_providers::base::{
-    BaseProviderAdapter, ChatDelta, ProviderError, ProviderErrorCode, TokenUsage,
-};
-use assistant_storage::conversations::{ConversationDetail, ConversationRow, MessageRow};
-use assistant_storage::providers::ProviderRow;
-
-fn delta_text(text: &str) -> ChatDelta {
-    ChatDelta {
-        delta_text: Some(text.to_string()),
-        ..Default::default()
-    }
-}
+use assistant_providers::base::{ChatDelta, ProviderError, ProviderErrorCode, TokenUsage};
+use common::chat::{delta_finish, delta_text};
+use common::harness::started_ctx;
+use common::runner::{build, harness, harness_with, harness_with_options};
 
 /// 两段正文 + 带 usage 的收尾：正文拼成 `Hello world`，usage 为 10/4/14。
 fn completed_script() -> ScriptedResponse {
@@ -31,153 +25,15 @@ fn completed_script() -> ScriptedResponse {
         delta_text("Hello"),
         delta_text(" world"),
         ChatDelta {
-            finish_reason: Some("stop".to_string()),
             usage: Some(TokenUsage {
                 prompt_tokens: 10,
                 completion_tokens: 4,
                 total_tokens: 14,
                 ..Default::default()
             }),
-            ..Default::default()
+            ..delta_finish("stop")
         },
     ])
-}
-
-fn fixture_input(conversation_id: &str, adapter: Arc<dyn BaseProviderAdapter>) -> FixtureSource {
-    fixture_input_with_models(conversation_id, adapter, "[]")
-}
-
-fn fixture_input_with_models(
-    conversation_id: &str,
-    adapter: Arc<dyn BaseProviderAdapter>,
-    models_json: &str,
-) -> FixtureSource {
-    let conversation = ConversationRow {
-        id: conversation_id.to_string(),
-        title: "fixture".to_string(),
-        title_source: "user".to_string(),
-        provider_id: Some("fixture-provider".to_string()),
-        model_id: "fixture-model".to_string(),
-        system_prompt: None,
-        is_pinned: false,
-        sort_order: 0,
-        generation: 0,
-        created_at: 0,
-        updated_at: 0,
-        is_full: false,
-        active_branch_id: None,
-        mode_id: None,
-        tool_config_json: None,
-        workspace_root: String::new(),
-    };
-    let messages = vec![MessageRow {
-        id: "user-1".to_string(),
-        conversation_id: conversation_id.to_string(),
-        role: "user".to_string(),
-        content: "hi".to_string(),
-        tokens: None,
-        timestamp: 0,
-        parent_id: None,
-        is_pinned: false,
-        reasoning: None,
-        tool_calls_json: None,
-        sibling_index: 0,
-        provider_id: None,
-        model_id: None,
-        tool_call_id: None,
-        is_error: false,
-        status: "completed".to_string(),
-        mode_id: None,
-        turn_index: None,
-        iteration: 0,
-    }];
-    let provider = assistant_agent::kernel::ProviderCredential {
-        row: ProviderRow {
-            id: "fixture-provider".to_string(),
-            name: "fixture".to_string(),
-            type_: "openai".to_string(),
-            base_url: "scripted://local".to_string(),
-            api_key_encrypted: String::new(),
-            models_json: models_json.to_string(),
-            default_model: "fixture-model".to_string(),
-            updated_at: 0,
-        },
-        api_key: "fixture-key".to_string(),
-    };
-    FixtureSource::new(
-        ConversationDetail {
-            conversation,
-            messages,
-        },
-        provider,
-        "fixture-attachments",
-        adapter,
-    )
-}
-
-struct Harness<S: EventSink + 'static> {
-    runner: TurnRunner,
-    sink: Arc<S>,
-    store: Arc<InMemoryStore>,
-    tasks: Arc<TurnTasks>,
-    states: Arc<SessionStates>,
-}
-
-fn harness(
-    adapter: Arc<dyn BaseProviderAdapter>,
-    sink: RecordingSink,
-    store: InMemoryStore,
-) -> Harness<RecordingSink> {
-    harness_with(
-        adapter,
-        Arc::new(sink),
-        Arc::new(store),
-        Arc::new(TurnTasks::new()),
-    )
-}
-
-fn harness_with<S: EventSink + 'static>(
-    adapter: Arc<dyn BaseProviderAdapter>,
-    sink: Arc<S>,
-    store: Arc<InMemoryStore>,
-    tasks: Arc<TurnTasks>,
-) -> Harness<S> {
-    harness_with_options(adapter, sink, store, tasks, "[]", None)
-}
-
-/// 允许指定 provider 的模型元数据（如 `contextWindow`）与压缩配置，用于验证终止式压缩触发。
-fn harness_with_options<S: EventSink + 'static>(
-    adapter: Arc<dyn BaseProviderAdapter>,
-    sink: Arc<S>,
-    store: Arc<InMemoryStore>,
-    tasks: Arc<TurnTasks>,
-    models_json: &str,
-    compaction: Option<CompactionConfig>,
-) -> Harness<S> {
-    let states = Arc::new(SessionStates::new());
-    let runner = TurnRunner::new(
-        sink.clone(),
-        store.clone(),
-        Arc::new(fixture_input_with_models("conv-1", adapter, models_json)),
-        states.clone(),
-        tasks.clone(),
-        Arc::new(FixedClock::default()),
-        compaction,
-    );
-    Harness {
-        runner,
-        sink,
-        store,
-        tasks,
-        states,
-    }
-}
-
-fn started_ctx(tasks: &TurnTasks, conversation_id: &str) -> TurnContext {
-    let (turn_id, _token) = tasks
-        .begin(conversation_id, assistant_agent::kernel::OnBusy::Replace)
-        .expect("begin");
-    TurnContext::new(conversation_id, turn_id, "assistant-1")
 }
 
 /// DT6：每次 `run` 恰好 1 次 `Terminated`，且它是最后一条事件。
@@ -388,10 +244,7 @@ async fn empty_response_retries_once_then_fails_without_bumping_iteration() {
 #[tokio::test]
 async fn output_limit_truncation_is_not_retried() {
     let adapter = Arc::new(ScriptedAdapter::new(vec![
-        ScriptedResponse::Deltas(vec![ChatDelta {
-            finish_reason: Some("length".to_string()),
-            ..Default::default()
-        }]),
+        ScriptedResponse::Deltas(vec![delta_finish("length")]),
         ScriptedResponse::Deltas(vec![delta_text("should not be requested")]),
     ]));
     let h = harness(adapter, RecordingSink::new(), InMemoryStore::new());
@@ -550,19 +403,15 @@ async fn model_call_timeout_fails_turn_after_call_started() {
         model_call: Some(Duration::from_millis(120)),
         ..TurnLimits::default()
     };
-    let runner = TurnRunner::new(
+    let runner = build(
+        adapter,
         sink.clone(),
         store.clone(),
-        Arc::new(fixture_input("conv-1", adapter)),
-        Arc::new(SessionStates::new()),
         tasks.clone(),
         Arc::new(FixedClock::default()),
-        None,
-    );
-    let (turn_id, _token) = tasks
-        .begin("conv-1", assistant_agent::kernel::OnBusy::Replace)
-        .expect("begin");
-    let ctx = TurnContext::new("conv-1", turn_id, "assistant-1");
+    )
+    .runner;
+    let ctx = started_ctx(&tasks, "conv-1");
 
     let mut spec = TurnSpec::chat();
     spec.limits = limits;
@@ -596,19 +445,15 @@ async fn wall_clock_timeout_halts_turn_before_model_call() {
         model_call: Some(Duration::from_secs(5)),
         ..TurnLimits::default()
     };
-    let runner = TurnRunner::new(
+    let runner = build(
+        adapter,
         sink.clone(),
         store.clone(),
-        Arc::new(fixture_input("conv-1", adapter)),
-        Arc::new(SessionStates::new()),
         tasks.clone(),
         Arc::new(StepClock::starting_now(Duration::from_secs(2))),
-        None,
-    );
-    let (turn_id, _token) = tasks
-        .begin("conv-1", assistant_agent::kernel::OnBusy::Replace)
-        .expect("begin");
-    let ctx = TurnContext::new("conv-1", turn_id, "assistant-1");
+    )
+    .runner;
+    let ctx = started_ctx(&tasks, "conv-1");
 
     // 墙钟预算由 `StopHook` 判定，故必须用装了钩子的 agent spec（chat 不装钩子）。
     // `wrap_up = false` 走「根因摘要」分支，模型调用数保持 0（A21 预算耗尽出口）。
@@ -889,9 +734,8 @@ async fn completed_turn_triggers_terminal_compaction() {
         Arc::new(ScriptedAdapter::new(vec![ScriptedResponse::Deltas(vec![
             delta_text("Hello"),
             ChatDelta {
-                finish_reason: Some("stop".to_string()),
                 usage: Some(heavy_usage()),
-                ..Default::default()
+                ..delta_finish("stop")
             },
         ])])),
         Arc::new(RecordingSink::new()),

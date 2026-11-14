@@ -186,8 +186,11 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 #[derive(Default)]
 struct FailureLedger {
-    /// 同参指纹 → 连续失败次数（D19 通用阶梯）。
-    generic: HashMap<String, u32>,
+    /// (工具名, 同参指纹) → 连续失败次数（D19 通用阶梯）。
+    ///
+    /// 必须带工具名：参数文本跨工具不唯一，只按指纹会让两个不同工具的同一段
+    /// 参数（含解析失败的 `{}`）共用计数，误判成「重复了同一调用」。
+    generic: HashMap<(String, String), u32>,
     /// (分类, 工具, scope) → 已失败次数（D25 分类预算）。
     classified: HashMap<(FailureClass, String, String), u32>,
     nudges: Vec<String>,
@@ -388,9 +391,12 @@ impl TurnMiddleware for RepeatedFailureMiddleware {
         let result = &res.result;
         let mut ledger = lock(&self.shared.failures);
 
-        // 成功一次即重置：同参计数清空，该 scope 的分类计数也清空（D25）。
+        // 成功一次即重置：同工具同参计数清空，该 scope 的分类计数也清空（D25）。
         if !result.is_error {
-            ledger.generic.remove(res.argument_fingerprint);
+            ledger.generic.remove(&(
+                result.tool_name.clone(),
+                res.argument_fingerprint.to_string(),
+            ));
             ledger
                 .classified
                 .retain(|(_, tool, scope), _| !(tool == &result.tool_name && scope == res.scope));
@@ -420,10 +426,11 @@ impl TurnMiddleware for RepeatedFailureMiddleware {
                 }
             }
             None => {
-                let count = ledger
-                    .generic
-                    .entry(res.argument_fingerprint.to_string())
-                    .or_insert(0);
+                let key = (
+                    result.tool_name.clone(),
+                    res.argument_fingerprint.to_string(),
+                );
+                let count = ledger.generic.entry(key).or_insert(0);
                 *count += 1;
                 let attempts = *count;
                 if attempts >= REPEATED_FAILURE_HALT_AT {

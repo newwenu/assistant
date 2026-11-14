@@ -5,6 +5,8 @@
 
 #![cfg(feature = "test-doubles")]
 
+mod common;
+
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -17,19 +19,20 @@ use assistant_agent::agent::round_executor::{
 use assistant_agent::agent::tool_call::FinalizedToolCall;
 use assistant_agent::agent::tool_event::ToolEvent;
 use assistant_agent::kernel::ports::test_doubles::{
-    FixedClock, FixtureSource, InMemoryStore, RecordedRequest, ReplayMessage, ScriptedAdapter,
-    ScriptedResponse, ScriptedToolExec, StepClock, StoreCall,
+    FixedClock, InMemoryStore, RecordedRequest, ReplayMessage, ScriptedAdapter, ScriptedResponse,
+    ScriptedToolExec, StepClock, StoreCall,
 };
 use assistant_agent::kernel::{
-    Clock, MessageStatus, ProviderCredential, ProviderDelta, TurnError, TurnGeneration, TurnInput,
-    TurnInputSource, TurnLimits, TurnPhase, TurnSpec, TurnStatus,
+    Clock, MessageStatus, ProviderDelta, TurnError, TurnGeneration, TurnInput, TurnInputSource,
+    TurnLimits, TurnPhase, TurnSpec, TurnStatus,
 };
 use assistant_providers::base::{BaseProviderAdapter, ChatDelta, ProviderError};
 use assistant_providers::types::ToolSpec;
 use assistant_storage::agent_modes::AgentModeRow;
-use assistant_storage::conversations::{ConversationDetail, ConversationRow, MessageRow};
-use assistant_storage::providers::ProviderRow;
 use async_trait::async_trait;
+use common::chat::{delta_finish, delta_text, delta_tool_call_at, tool_spec};
+use common::fixtures::fixture_input;
+use common::modes::mode_row;
 use tokio_util::sync::CancellationToken;
 
 const CONVERSATION_ID: &str = "conv-1";
@@ -176,21 +179,8 @@ impl ToolExecutionPort for CancelOnExecToolExec {
 // fixture 构造
 // ---------------------------------------------------------------------------
 
-fn delta_text(text: &str) -> ChatDelta {
-    ChatDelta {
-        delta_text: Some(text.to_string()),
-        ..Default::default()
-    }
-}
-
 fn tool_call_delta(index: usize, id: &str, name: &str, args: &str) -> ChatDelta {
-    ChatDelta {
-        delta_tool_call_id: Some(id.to_string()),
-        delta_tool_call_name: Some(name.to_string()),
-        delta_tool_call_arguments: Some(args.to_string()),
-        delta_tool_call_index: Some(index),
-        ..Default::default()
-    }
+    delta_tool_call_at(index, id, name, args)
 }
 
 /// 单个工具调用 + `finish_reason = tool_calls`。
@@ -205,10 +195,7 @@ fn multi_tool_script(calls: &[(&str, &str, &str)]) -> ScriptedResponse {
         .enumerate()
         .map(|(index, (id, name, args))| tool_call_delta(index, id, name, args))
         .collect();
-    deltas.push(ChatDelta {
-        finish_reason: Some("tool_calls".to_string()),
-        ..Default::default()
-    });
+    deltas.push(delta_finish("tool_calls"));
     ScriptedResponse::Deltas(deltas)
 }
 
@@ -243,96 +230,27 @@ fn err_result(
 }
 
 fn echo_tool() -> ToolSpec {
-    ToolSpec {
-        name: "echo".to_string(),
-        description: "echo back".to_string(),
-        input_schema: serde_json::json!({"type": "object"}),
-    }
+    tool_spec("echo", "echo back", serde_json::json!({"type": "object"}))
+}
+
+fn read_tool() -> ToolSpec {
+    tool_spec(
+        "read",
+        "read a file",
+        serde_json::json!({
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"]
+        }),
+    )
 }
 
 fn agent_mode() -> AgentModeRow {
     AgentModeRow {
-        id: "mode-agent".to_string(),
-        name: "agent".to_string(),
-        description: String::new(),
-        kind: "agent".to_string(),
         prompt: "you are a fixture".to_string(),
-        model: None,
-        temperature: None,
         max_tokens: Some(4096),
-        reasoning_enabled: None,
-        reasoning_effort: None,
-        presentation_rank: 0,
-        is_builtin: false,
-        created_at: 0,
-        updated_at: 0,
-        tool_config_json: None,
-        avatar: None,
+        ..mode_row("agent")
     }
-}
-
-fn fixture_source(adapter: Arc<dyn BaseProviderAdapter>) -> FixtureSource {
-    let conversation = ConversationRow {
-        id: CONVERSATION_ID.to_string(),
-        title: "fixture".to_string(),
-        title_source: "user".to_string(),
-        provider_id: Some("fixture-provider".to_string()),
-        model_id: "fixture-model".to_string(),
-        system_prompt: None,
-        is_pinned: false,
-        sort_order: 0,
-        generation: 0,
-        created_at: 0,
-        updated_at: 0,
-        is_full: false,
-        active_branch_id: None,
-        mode_id: None,
-        tool_config_json: None,
-        workspace_root: String::new(),
-    };
-    let messages = vec![MessageRow {
-        id: "user-1".to_string(),
-        conversation_id: CONVERSATION_ID.to_string(),
-        role: "user".to_string(),
-        content: "hi".to_string(),
-        tokens: None,
-        timestamp: 0,
-        parent_id: None,
-        is_pinned: false,
-        reasoning: None,
-        tool_calls_json: None,
-        sibling_index: 0,
-        provider_id: None,
-        model_id: None,
-        tool_call_id: None,
-        is_error: false,
-        status: "completed".to_string(),
-        mode_id: None,
-        turn_index: None,
-        iteration: 0,
-    }];
-    let provider = ProviderCredential {
-        row: ProviderRow {
-            id: "fixture-provider".to_string(),
-            name: "fixture".to_string(),
-            type_: "openai".to_string(),
-            base_url: "scripted://local".to_string(),
-            api_key_encrypted: String::new(),
-            models_json: "[]".to_string(),
-            default_model: "fixture-model".to_string(),
-            updated_at: 0,
-        },
-        api_key: "fixture-key".to_string(),
-    };
-    FixtureSource::new(
-        ConversationDetail {
-            conversation,
-            messages,
-        },
-        provider,
-        "fixture-attachments",
-        adapter,
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -488,7 +406,10 @@ async fn run_loop(args: LoopArgs) -> LoopRun {
     let clock = args.clock;
     let started_at = clock.now();
 
-    let mut source = fixture_source(adapter.clone() as Arc<dyn BaseProviderAdapter>);
+    let mut source = fixture_input(
+        CONVERSATION_ID,
+        adapter.clone() as Arc<dyn BaseProviderAdapter>,
+    );
     let has_tools = !args.tools.is_empty();
     if has_tools {
         source = source.with_mode(agent_mode());
@@ -524,6 +445,7 @@ async fn run_loop(args: LoopArgs) -> LoopRun {
 
     let ctx = TurnRunCtx {
         turn_id: TURN_ID,
+        turn_index: None,
         conversation_id: CONVERSATION_ID,
         initial_message_id: INITIAL_MESSAGE_ID,
         start_iteration: 1,
@@ -1202,6 +1124,49 @@ async fn a17_validation_nudges_once_then_halts() {
 }
 
 #[tokio::test]
+async fn a17_distinct_targets_do_not_share_validation_budget() {
+    let run = run_loop(
+        LoopArgs::new(vec![
+            tool_call_script("call-1", "read", "{\"path\":\"a.rs\"}"),
+            tool_call_script("call-2", "read", "{\"path\":\"b.rs\"}"),
+            ScriptedResponse::text(&["recovered"]),
+        ])
+        .with_tools(vec![read_tool()])
+        .with_results(vec![
+            err_result(
+                "call-1",
+                "read",
+                "missing a.rs",
+                ToolStage::Execute,
+                Some(ToolErrorClass::Business),
+            ),
+            err_result(
+                "call-2",
+                "read",
+                "missing b.rs",
+                ToolStage::Execute,
+                Some(ToolErrorClass::Business),
+            ),
+        ])
+        .with_iterations(3),
+    )
+    .await;
+
+    assert_eq!(run.outcome.status, TurnStatus::Completed);
+    assert_eq!(
+        run.outcome.iterations, 3,
+        "不同目标的两次失败不得合并成「连续失败 2 次」"
+    );
+    assert_eq!(run.outcome.text, "recovered");
+    let last = last_user_contents(&run.requests());
+    assert!(
+        last[2].contains("上次调用未通过校验"),
+        "每个目标各自 nudge 一次：{}",
+        last[2]
+    );
+}
+
+#[tokio::test]
 async fn a17_transient_allows_two_retries_without_nudge() {
     let run = run_loop(
         LoopArgs::new(vec![
@@ -1741,10 +1706,7 @@ async fn a22_second_iteration_failure_keeps_first_row() {
             ScriptedResponse::Deltas(vec![
                 delta_text("step1"),
                 tool_call_delta(0, "call-1", "echo", "{\"q\":\"a\"}"),
-                ChatDelta {
-                    finish_reason: Some("tool_calls".to_string()),
-                    ..Default::default()
-                },
+                delta_finish("tool_calls"),
             ]),
             ScriptedResponse::Error(ProviderError::RequestFailed("boom".to_string())),
         ])
@@ -1916,10 +1878,7 @@ async fn a23_text_deltas_carry_advancing_iteration() {
             ScriptedResponse::Deltas(vec![
                 delta_text("one"),
                 tool_call_delta(0, "call-1", "echo", "{\"q\":\"a\"}"),
-                ChatDelta {
-                    finish_reason: Some("tool_calls".to_string()),
-                    ..Default::default()
-                },
+                delta_finish("tool_calls"),
             ]),
             ScriptedResponse::text(&["two"]),
         ])

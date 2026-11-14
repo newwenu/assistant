@@ -116,6 +116,54 @@ pub(super) fn argument_fingerprint(call: &FinalizedToolCall) -> String {
     }
 }
 
+/// 分类预算的 `scope`：工具的稳定目标标识（D25），不由端口回传。
+///
+/// 优先取参数里的目标字段（`path` / `paths` / `url`），URL 去掉 query 与 fragment；
+/// 参数解析失败或没有目标字段时回落到工具名（无目标类工具与替身工具）。
+pub(super) fn tool_scope(call: &FinalizedToolCall) -> String {
+    if call.is_error {
+        return call.tool_name.clone();
+    }
+    scope_of_arguments(&call.arguments).unwrap_or_else(|| call.tool_name.clone())
+}
+
+fn scope_of_arguments(arguments: &serde_json::Value) -> Option<String> {
+    let object = arguments.as_object()?;
+    if let Some(path) = object.get("path").and_then(|value| value.as_str()) {
+        return Some(normalize_target(path));
+    }
+    if let Some(paths) = object.get("paths").and_then(|value| value.as_array()) {
+        let mut targets: Vec<String> = paths
+            .iter()
+            .filter_map(|value| value.as_str())
+            .map(normalize_target)
+            .collect();
+        if !targets.is_empty() {
+            targets.sort();
+            return Some(targets.join("|"));
+        }
+    }
+    for key in ["url", "uri"] {
+        if let Some(url) = object.get(key).and_then(|value| value.as_str()) {
+            return Some(normalize_target(url));
+        }
+    }
+    None
+}
+
+/// URL 去 query / fragment；文件路径只去掉首尾空白。
+fn normalize_target(target: &str) -> String {
+    let target = target.trim();
+    let is_url = target.starts_with("http://") || target.starts_with("https://");
+    if !is_url {
+        return target.to_string();
+    }
+    match target.find(['?', '#']) {
+        Some(index) => target[..index].to_string(),
+        None => target.to_string(),
+    }
+}
+
 pub(super) fn tool_calls_json(calls: &[FinalizedToolCall]) -> String {
     let payload: Vec<ToolCall> = calls
         .iter()
@@ -175,5 +223,59 @@ pub(super) fn decide_stop_phase(reason: &Option<(&'static str, String)>, phase: 
             hook,
             why
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn call(name: &str, arguments: serde_json::Value) -> FinalizedToolCall {
+        FinalizedToolCall {
+            tool_id: "call-1".to_string(),
+            tool_name: name.to_string(),
+            raw_arguments: arguments.to_string(),
+            arguments,
+            is_error: false,
+            parse_error: None,
+        }
+    }
+
+    #[test]
+    fn tool_scope_is_the_target_path() {
+        assert_eq!(
+            tool_scope(&call("read", json!({"path": "src/main.rs", "offset": 1}))),
+            "src/main.rs"
+        );
+    }
+
+    #[test]
+    fn tool_scope_keeps_distinct_targets_apart() {
+        assert_ne!(
+            tool_scope(&call("read", json!({"path": "a.rs"}))),
+            tool_scope(&call("read", json!({"path": "b.rs"})))
+        );
+    }
+
+    #[test]
+    fn tool_scope_sorts_multi_paths() {
+        assert_eq!(
+            tool_scope(&call("delete", json!({"paths": ["b.rs", "a.rs"]}))),
+            "a.rs|b.rs"
+        );
+    }
+
+    #[test]
+    fn tool_scope_strips_url_query() {
+        assert_eq!(
+            tool_scope(&call("fetch", json!({"url": "https://x.test/a?b=1#c"}))),
+            "https://x.test/a"
+        );
+    }
+
+    #[test]
+    fn tool_scope_falls_back_to_tool_name() {
+        assert_eq!(tool_scope(&call("echo", json!({"q": "a"}))), "echo");
     }
 }
