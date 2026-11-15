@@ -269,7 +269,7 @@ M1 无后端改动，快照由前端 `Message` 投影而来。**禁止**直接 `
 约束：
 
 - 时间戳必须是本地时间且带日期（现状 markdown 无任何时间信息）；
-- `turn_index IS NULL` 的存量行坐标段输出 `T? i?`，**禁止**编造序号；
+- `turn_index IS NULL` 的存量行坐标段输出 `T?`，`iteration` 仍按落库值输出（该列非空），**禁止**编造 `turnIndex`；
 - 多模态 `content` 里的内联图片（`data:` 前缀）**必须**替换为 `![image omitted]` 占位 + 块计数，禁止把 base64 写进 md（现状经 `content_plain_text` 天然规避，扩展时必须保持）；
 - 工具结果超过 500 字符截断并标注，避免导出文件爆量；
 - 参数必须是单行 JSON（表格内不能换行）。
@@ -289,7 +289,7 @@ M1 无后端改动，快照由前端 `Message` 投影而来。**禁止**直接 `
 新增 `format = "jsonl"`：每行一条 `MessageRecordDto`（§6.1），行序 = `get_messages` 的坐标排序。准入条件：
 
 - 单行必须自包含（含 `conversationId`），可直接 `jq` 过滤；
-- 必须带 `schema` 版本号；
+- 必须带 `schema` 版本号：**首行写一条 schema 头**（`schema` / `conversationId` / `messageCount`），其后每行一条 `MessageRecordDto`。禁止把 `schema` 塞进 `MessageRecordDto`（它同时是 `get_conversation` 的返回类型，加版本字段会污染在线契约）；
 - 该格式只允许从详情页与侧栏菜单进入，默认不展示在批量导出里（批量导出保持 md/json）。
 
 ---
@@ -335,19 +335,25 @@ pub struct MessageRecordDto {
 - `From<MessageRow>` 显式降级（`u32::try_from(...).ok()` / `unwrap_or(0)`），越界不 panic；
 - 这是**输出专用** DTO，禁止作为任何命令的入参。
 
-### 6.2 新命令
+### 6.2 命令落点（并入 `get_conversation`，不新增命令）
+
+原文行随会话详情一起返回，字段落在既有 DTO 上：
 
 ```rust
-#[command]
-pub fn get_message_record(app: AppHandle, id: String) -> Result<Option<MessageRecordDto>, String>
+// ConversationDetailDto
+pub records: Option<Vec<MessageRecordDto>>,
+
+// ConversationQueryOptsDto
+pub include_records: bool,   // #[serde(default)]，默认 false
 ```
 
 约束：
 
-- 只读，单条查询（`MSG_SELECT` + `WHERE id = ?1`，复用 `conversations::get_message_by_id`）；
-- 不存在时返回 `Ok(None)`，**禁止**返回错误串（与 `get_conversation` 的空值口径一致）；
-- 必须注册到 `src-tauri/src/ipc.rs`；
-- 前端服务落点 `src/services/historyService.ts`：`getMessageRecord(id)`。
+- 只有 `include_records == true` 时填充 `records`；其余查询模式键恒在、值为 `null`（输出 `Option` 不加 `skip_serializing_if`）；
+- 数据源仍是 `get_messages` / `get_conversation_detail` 已取回的 `MessageRow`，`MessageRecordDto::from` 直接复用，不额外查库；
+- 会话不存在时 `get_conversation` 仍返回 `Ok(None)`，与既有空值口径一致；
+- 前端服务落点 `src/services/historyService.ts`：`getMessageRecords(conversationId)`，内部以 `mode: "all"` + `includeRecords: true` 调用 `get_conversation`，只返回 `records`；
+- **不新增独立命令**：逐条 IPC 在原始视图下会产生 N 次调用，合并到详情查询后一次拉全，且虚拟列表卸载行不会造成重复请求。
 
 ### 6.3 前端切换
 
@@ -358,10 +364,11 @@ type RecordSource = "dto" | "raw";
 ```
 
 - `"dto"`（M1）：`toRecordSnapshot(message)`；
-- `"raw"`（M2）：`getMessageRecord(id)` 的结果；
+- `"raw"`（M2）：`getMessageRecords(conversationId)` 的结果（一次拉全会话，按 `id` 取用）；
 - 原始块头部必须显示来源标签（`history.detail.source_dto` / `history.detail.source_raw`），让使用者知道当前看到的是「前端快照」还是「落库原文」；
 - 拉取失败必须降级回 `"dto"` 并在块内标注失败（禁止静默空白）；
-- 拉取必须按行惰性（只有展开到该行且处于原始模式时请求），并缓存于组件内 `Map<id, MessageRecordDto>`（不进全局 store）。
+- 失败不留「已加载」标记：再次进入原始模式时允许重试，避免一次瞬时失败让该会话永久停在降级态；
+- 缓存于 `HistoryBranchView` 内的 `Map<id, MessageRecordDto>`（不进全局 store），会话切换时随 `HistoryDetail` 的 `selectedId` effect 一并清空。
 
 ---
 
@@ -407,12 +414,28 @@ M3 不在本文验收范围内，本文只固定准入条件。
 
 | 文件 | 改动 |
 |---|---|
-| `src-tauri/src/protocol/dto/chat.rs` | 新增 `MessageRecordDto` + `From<MessageRow>` |
-| `src-tauri/src/cmd/conversation.rs` | 新增 `get_message_record`；扩展 `export_conversation` 的 `"jsonl"` 分支与 markdown 模板 |
-| `src-tauri/src/ipc.rs` | 注册新命令 |
-| `src-tauri/crates/assistant-storage/src/conversations/ops.rs` | markdown 导出扩写（§5.2）；JSON 导出加 `schema` 包装（§5.3）；新增 `export_conversation_raw_jsonl` |
-| `src-tauri/src/protocol/mod.rs` | 导出新 DTO（若该文件集中 re-export） |
+| `src-tauri/src/protocol/dto/chat.rs` | 新增 `MessageRecordDto` + `From<MessageRow>`；`ConversationDetailDto` 增 `records`、`ConversationQueryOptsDto` 增 `include_records` |
+| `src-tauri/tests/protocol_bindings.rs` | `declarations` 注册 `MessageRecordDto::decl(&cfg)`（该测试扫描 `src/protocol/dto/*.rs` 的 `#[derive(..., TS)]` 结构体并与 `declarations` 双向比对，漏注册直接失败） |
+| `src-tauri/tests/protocol_contract.rs`、`tests/protocol_dto_roundtrip.rs` | 同步 `ConversationDetailDto` / `ConversationQueryOptsDto` 的结构体字面量 |
+| `src-tauri/src/cmd/conversation.rs` | `get_conversation` 按 `include_records` 填充 `records`（不新增命令）；扩展 `export_conversation` 的 `"jsonl"` 分支（JSONL 组装在此处完成）与 markdown 模板 |
+| `src-tauri/src/ipc.rs` | 无需改动（无新命令） |
+| `src-tauri/crates/assistant-storage/src/conversations/ops.rs` | markdown 导出扩写（§5.2）；JSON 导出加 `schema` 包装（§5.3）。**JSONL 不落此处**：`assistant-storage` 不依赖 `assistant-app`，无法复用 `MessageRecordDto`，禁止重复定义镜像结构 |
+| `src-tauri/crates/assistant-storage/src/content_codec.rs` | 新增 `content_markdown_text`（导出专用派生：图片块 → `![image omitted]` 并计数）。**不复用 `content_plain_text`**：后者被全文检索与预览共用，占位口径不能因导出而改 |
+| `src/services/historyService.ts` | 新增 `getMessageRecords(conversationId)`（`mode: "all"` + `includeRecords: true`） |
+| `src-tauri/src/protocol/mod.rs` | 无需改动（`dto/mod.rs` 已 `pub use chat::*`，`protocol/mod.rs` 已 `pub use dto::*`） |
 | `src/types/protocol.contract.ts` | `npm run contract:gen` 产物，禁止手改 |
+
+### 8.3 前端（M2.2 / M2.3）
+
+| 文件 | 改动 |
+|---|---|
+| `src/history/detail/recordSnapshot.ts` | 新增 `RecordSource` 枚举与 `toRawRecordJson(record, message)`（有落库原文用原文，无原文退回 `toRecordSnapshot` 快照） |
+| `src/history/detail/HistoryBranchView.tsx` | 新增 `conversationId` 入参；原始模式首次进入时一次性拉全并缓存 `Map<id, MessageRecordDto>`（**必须挂在此常驻组件**，禁止挂行组件）；会话切换清空 |
+| `src/history/detail/HistoryBranchRow.tsx` | 新增 `record` / `recordError` 入参；原始块头部加来源标签与失败提示 |
+| `src/history/detail/HistoryDetail.tsx` | 透传 `conversationId`；导出菜单加 `jsonl` |
+| `src/history/sidebar/ConversationListItem.tsx`、`src/history/HistoryManager.tsx` | 右键菜单加 `jsonl`；导出文件后缀 / filter 名按 format 分支 |
+| `src/i18n/locales/zh-CN.json`、`en-US.json` | 新增 `history.export_jsonl`、`history.detail.source_dto` / `source_raw` / `source_raw_failed` |
+| `src/history/detail/__tests__/recordSnapshot.test.ts` | 补 `toRawRecordJson` 的「用原文」与「退回快照」两条用例 |
 
 ---
 
@@ -465,7 +488,7 @@ M3 不在本文验收范围内，本文只固定准入条件。
 | 阶段 | 内容 | 依赖 | 契约变更 | 可独立合并 |
 |---|---|---|---|---|
 | M1 | 身份归并、元数据行、原始视图（DTO 快照）、导出菜单接线、命名修正 | 无 | 无 | 是 |
-| M2 | `MessageRecordDto` + `get_message_record`、markdown/JSON 导出增强、原始来源切换、可选 JSONL | M1 的 `recordSnapshot` 抽象已就位（§6.3） | 有（`contract:gen`） | 是（在 M1 之后） |
+| M2 | `MessageRecordDto`（随 `get_conversation` 返回）、markdown/JSON 导出增强、原始来源切换、可选 JSONL | M1 的 `recordSnapshot` 抽象已就位（§6.3） | 有（`contract:gen`） | 是（在 M1 之后） |
 | M3 | 请求体采集 | 独立规格；需新表 + 开关 + 保留策略 | 有 | 否（需独立评审） |
 
 顺序约束：

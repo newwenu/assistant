@@ -2,11 +2,11 @@
 
 > 规格：[I51-history-detail-inspector-spec.md](./I51-history-detail-inspector-spec.md)
 > 事实基线：规格 §1.3 的 H1–H8（编写规格时对 `src/history/`、`src/chat/message/`、`src/services/`、`src-tauri/crates/assistant-storage/` 的实读结果）
-> 前置：无。M1 零后端改动、零契约变更；M2 新增 `MessageRecordDto` 与 `get_message_record`，必须 `npm run contract:gen`。
+> 前置：无。M1 零后端改动、零契约变更；M2 新增 `MessageRecordDto` 并把原文行并入 `get_conversation` 详情返回，必须 `npm run contract:gen`。
 
-批次对应规格章节：M1.1 身份归并（§2）→ M1.2 元数据行（§3）→ M1.3 原始视图（§4）→ M1.4 导出接线与命名修正（§5.1 / §4.1）→ M1.5 测试与文案门禁（§9）→ M2.1 原文 DTO 与命令（§6.1 / §6.2）→ M2.2 导出内容增强（§5.2 / §5.3 / §5.4）→ M2.3 来源切换（§6.3）→ M3 请求体采集（§7，阻塞，需独立规格）。
+批次对应规格章节：M1.1 身份归并（§2）→ M1.2 元数据行（§3）→ M1.3 原始视图（§4）→ M1.4 导出接线与命名修正（§5.1 / §4.1）→ M1.5 测试与文案门禁（§9）→ M2.1 原文 DTO 与详情合并（§6.1 / §6.2）→ M2.2 导出内容增强（§5.2 / §5.3 / §5.4）→ M2.3 来源切换（§6.3）→ M3 请求体采集（§7，阻塞，需独立规格）。
 
-依赖：M1.1 必须先于 M1.2 / M1.3（元数据行与原始块的挂载位置以「身份行 → 元数据行 → 内容」的层序为前提）；M1.3 依赖 M1.2 的行结构与 CSS 口径（`.rawBlock` 与 `.metaLine` 同属 `HistoryBranchView.module.css`）；M2.3 依赖 M2.1 与 M2.2；M1 与 M2 可分批合并，M1 不得夹带 `src-tauri/` 改动（门禁 G11）。
+依赖：M1.1 必须先于 M1.2 / M1.3（元数据行与原始块的挂载位置以「身份行 → 元数据行 → 内容」的层序为前提）；M1.3 依赖 M1.2 的行结构与 CSS 口径（`.rawRow` 与 `.metaLine` 同属 `HistoryBranchView.module.css`）；M2.3 依赖 M2.1 与 M2.2；M1 与 M2 可分批合并，M1 不得夹带 `src-tauri/` 改动（门禁 G11）。
 
 > 本清单不管理提交。提交粒度按代码依赖与可编译性现场决定；这里只回答「代码改没改、验收跑没跑」。
 > 全部任务初始未实施；勾选表示代码已改且对应验收已跑。
@@ -42,7 +42,7 @@
 - [x] `timestamp` 折叠态时分秒、展开态 `YYYY-MM-DD HH:MM:SS`（本地时区）
 - [x] 挂载在 `HistoryBranchRow` 内、`MessageBubble` 之上；`role === "tool"` 的原始工具行同样挂载
 - [x] 禁止把元数据行放进 `MessageBubble`（保证主会话 DOM 零变化，门禁 G3）
-- [x] 折叠态高度与现状行高同量级（±8px），禁止为元数据行引入固定高度或 `ESTIMATED_ROW_HEIGHT` 特例
+- [x] 折叠态高度与现状行高同量级（实测约 18px：`.metaChips` 的 `line-height: 16px` + `.metaLine` 的 `margin-bottom: 2px`），禁止为元数据行引入固定高度或 `ESTIMATED_ROW_HEIGHT` 特例（行高由 `HistoryVirtualList` 的 `ResizeObserver` 实测兜底）
 - [x] 新增样式 `.metaLine` / `.metaTable` 到 `src/history/detail/HistoryBranchView.module.css`（10px 等宽、`--color-text-tertiary`）
 
 **依赖**：M1.1
@@ -96,34 +96,35 @@
 
 ## 阶段 M2 — 后端原文能力（契约变更）
 
-### M2.1 `MessageRecordDto` 与只读命令（§6.1 / §6.2）
+### M2.1 `MessageRecordDto` 与详情查询合并（§6.1 / §6.2）
 
 对应规格 §6.1 / §6.2；验收走后端单测 + `npm run contract:check`。
 
-- [ ] `src-tauri/src/protocol/dto/chat.rs` 新增 `MessageRecordDto`，字段严格按规格 §6.1 表
-- [ ] `Option` 输出字段**不加** `skip_serializing_if`（键恒在、值 `null`）；`deny_unknown_fields` 只加在输入 DTO 上，本 DTO 是输出专用，禁止作为任何命令入参
-- [ ] `From<MessageRow>` 显式降级：`u32::try_from(...).ok()` / `iteration` 用 `unwrap_or(0)`，越界不 panic
-- [ ] `src-tauri/src/cmd/conversation.rs` 新增 `get_message_record(id: String) -> Result<Option<MessageRecordDto>, String>`：复用 `conversations::get_message_by_id`，不存在返回 `Ok(None)`，禁止返回错误串
-- [ ] `src-tauri/src/ipc.rs` 注册命令
-- [ ] `src-tauri/src/protocol/mod.rs` 补 re-export（若该文件集中导出 DTO）
-- [ ] `src/services/historyService.ts` 新增 `getMessageRecord(id)`
-- [ ] 跑 `npm run contract:gen`，提交 `src/types/protocol.contract.ts`，禁止手改生成物
+- [x] `src-tauri/src/protocol/dto/chat.rs` 新增 `MessageRecordDto`，字段严格按规格 §6.1 表
+- [x] `Option` 输出字段**不加** `skip_serializing_if`（键恒在、值 `null`）；`deny_unknown_fields` 只加在输入 DTO 上，本 DTO 是输出专用，禁止作为任何命令入参
+- [x] `From<MessageRow>` 显式降级：`u32::try_from(...).ok()` / `iteration` 用 `unwrap_or(0)`，越界不 panic
+- [x] **不新增独立命令**：`ConversationDetailDto` 增 `records: Option<Vec<MessageRecordDto>>`，`ConversationQueryOptsDto` 增 `include_records: bool`（`#[serde(default)]`，默认 `false`）；`get_conversation` 按开关填充，其余查询模式键恒在、值为 `null`。理由：逐条 IPC 在原始视图下会产生 N 次调用，合并到详情查询后一次拉全
+- [x] `src-tauri/src/protocol/mod.rs` 补 re-export（已验证无需改动：`dto/mod.rs` 已 `pub use chat::*`、`protocol/mod.rs` 已 `pub use dto::*`）
+- [x] `src-tauri/tests/protocol_bindings.rs` 的 `declarations` 注册 `MessageRecordDto::decl(&cfg)`（**硬依赖**：该测试会扫描 `src/protocol/dto/*.rs` 的 `#[derive(..., TS)]` 结构体并与 `declarations` 双向比对，漏注册直接失败）
+- [x] `ConversationDetailDto` 加字段后同步 `tests/protocol_contract.rs`、`tests/protocol_dto_roundtrip.rs` 的结构体字面量
+- [x] `src/services/historyService.ts` 新增 `getMessageRecords(conversationId)`（调 `get_conversation` 的 `mode: "all"` + `includeRecords: true`，只返回 `records`）
+- [x] 跑 `npm run contract:gen`，提交 `src/types/protocol.contract.ts`，禁止手改生成物
 
 **依赖**：M1（无代码依赖，但同一模块的 `recordSnapshot.ts` 抽象要先在 M1 定稿）
 
 ### M2.2 导出内容增强（§5.2 / §5.3 / §5.4）
 
-对应规格 §5.2 / §5.3 / §5.4；验收走 `cargo test -p assistant-storage`。
+对应规格 §5.2 / §5.3 / §5.4；验收走 `cargo test -p assistant-storage --test conversations`（markdown / JSON 模板）+ `cargo test --lib cmd::conversation`（JSONL 组装）。
 
-- [ ] `assistant-storage/src/conversations/ops.rs::export_conversation_markdown` 改固定模板：标题 + 元信息头 + `## {role} · T{turnIndex} i{iteration} · {本地时间}`
-- [ ] `reasoning` 以引用块输出；`turn_index IS NULL` 输出 `T? i?`，禁止编造序号
-- [ ] 工具调用以表格输出（call / status / 单行 `arguments` JSON / 结果前 500 字 + 截断标记）
-- [ ] 多模态内联图片替换为 `![image omitted]` 占位 + 块计数，禁止把 base64 写进 md
-- [ ] 时间戳改本地时间且带日期（现状 markdown 无任何时间信息）
-- [ ] `export_conversation_json` 外层包 `{ "schema": "assistant.conversation.raw.v1", ... }`，禁止把 `schema` 塞进 `ConversationDetail` 结构体本身
-- [ ] 新增 `export_conversation_raw_jsonl`（每行一条 `MessageRecordDto`，含 `conversationId`，带 schema 版本号）
-- [ ] `src-tauri/src/cmd/conversation.rs` 的 `export_conversation` 增加 `"jsonl"` 分支；未知 format 仍回落 markdown（现状行为不变）
-- [ ] JSONL 只从详情页 / 侧栏菜单进入，批量导出保持 md / json
+- [x] `assistant-storage/src/conversations/ops.rs::export_conversation_markdown` 改固定模板：标题 + 元信息头 + `## {role} · T{turnIndex} i{iteration} · {本地时间}`
+- [x] `reasoning` 以引用块输出；`turn_index IS NULL` 输出 `T?`，`iteration` 仍按落库值输出，禁止编造序号
+- [x] 工具调用以表格输出（call / status / 单行 `arguments` JSON / 结果前 500 字 + 截断标记）
+- [x] 多模态内联图片替换为 `![image omitted]` 占位 + 块计数，禁止把 base64 写进 md（派生在 `content_codec::content_markdown_text`，与全文检索用的 `content_plain_text` 分开，后者口径不动）
+- [x] 时间戳改本地时间且带日期（现状 markdown 无任何时间信息）
+- [x] `export_conversation_json` 外层包 `{ "schema": "assistant.conversation.raw.v1", ... }`，禁止把 `schema` 塞进 `ConversationDetail` 结构体本身
+- [x] JSONL 每行一条 `MessageRecordDto`，首行是 schema 元信息（`schema` / `conversationId` / `messageCount`）。**落点定稿**：`assistant-storage` 不依赖 `assistant-app`，无法复用该 DTO，故组装在 `src-tauri/src/cmd/conversation.rs` 的 `export_conversation_jsonl` 内完成（`get_conversation_detail` → `MessageRecordDto` → 逐行 `serde_json::to_string`），不在 `ops.rs` 内重复定义镜像结构
+- [x] `src-tauri/src/cmd/conversation.rs` 的 `export_conversation` 增加 `"jsonl"` 分支；未知 format 仍回落 markdown（现状行为不变）
+- [x] JSONL 只从详情页 / 侧栏菜单进入（`HistoryDetail` 导出菜单 + `ConversationListItem` 右键菜单新增 `history.export_jsonl`），批量导出保持 md / json
 
 **依赖**：M2.1（JSONL 直接复用 `MessageRecordDto`）
 
@@ -131,11 +132,11 @@
 
 对应规格 §6.3；验收走手测 + 门禁 G6 扩展。
 
-- [ ] `recordSnapshot.ts` 增加来源枚举 `RecordSource = "dto" | "raw"`
-- [ ] 原始块按行惰性请求 `getMessageRecord(id)`：只有该行处于原始模式且展开时才拉取，缓存于组件内 `Map<id, MessageRecordDto>`，禁止进全局 store
-- [ ] 拉取失败降级回 `"dto"` 并在块内标注失败，禁止静默空白
-- [ ] 原始块头部显示来源标签（`history.detail.source_dto` / `source_raw`）
-- [ ] 详情页新增 JSONL 导出入口（若 M2.2 已提供后端能力）
+- [x] `recordSnapshot.ts` 增加来源枚举 `RecordSource = "dto" | "raw"`，并新增 `toRawRecordJson(record, message)`（有原文用原文，无原文退回快照）
+- [x] 原始模式首次进入时调用 `historyService.getMessageRecords(conversationId)` 一次性拉全会话原文（M1 的原始行常显 `<pre>`，无逐行折叠，故「已渲染且处于原始模式」即为展开态），结果缓存于 `HistoryBranchView` 的 `Map<id, MessageRecordDto>`（**不得**放 `HistoryBranchRow`：虚拟列表会卸载滚出窗口的行，行内缓存会被反复丢弃），禁止进全局 store；会话切换时随 `HistoryDetail` 的 `selectedId` effect 一并清空
+- [x] 拉取失败降级回 `"dto"` 并在块内标注失败（来源标签转 `error` 色 + Tooltip 展示原因），禁止静默空白
+- [x] 原始块头部显示来源标签（`history.detail.source_dto` / `source_raw`）
+- [x] 详情页新增 JSONL 导出入口（若 M2.2 已提供后端能力）
 
 **依赖**：M2.1、M2.2
 
