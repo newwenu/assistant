@@ -51,7 +51,7 @@
 | `assistant-sync` | 无（仅 `assistant-vault`） | 随 vault 消失 | crate-architecture 已核：唯一消费者是 vault |
 | `assistant-security` | 无（仅 `src-tauri/src/cmd/vault/*`） | 随 vault 消失 | 59 处引用全部在 `cmd/vault` 内；不排除就是零消费者死重 |
 | `assistant-crypto` | 有（api_key 等主功能） | **保留** | 内部 `vault_crypto` 与主功能模块混装，属 L5 独立议题 |
-| `assistant-config` | 有 | **保留** | `VaultConf` 只是 JSON 读写，不依赖任何 vault crate |
+| `assistant-config` | 有 | **保留** | 配置机制库（`ConfGroup` / `apply_patch`）；`VaultConf` 已迁入 `assistant-vault/src/conf.rs`，该 crate 不依赖任何 vault crate |
 | `rusqlite` / `libsqlite3-sys` | 有 | **保留** | 主功能 DB 固定成本，10.3s |
 
 关键判断：`assistant-vault` 不依赖 `assistant-security`，二者是主 app 直接依赖的**并列** crate，耦合只发生在 `src-tauri/src/cmd/vault/*` 的代码层。因此排除必须在同一层同时切断三个依赖边，否则会出现「security 还在图里但没人用」的状态。
@@ -106,8 +106,8 @@
 
 | 项 | 位置 | 是否依赖 vault 代码 |
 |---|---|---|
-| `VaultConf`（13 字段） | `src-tauri/crates/assistant-config` | 否 |
-| `VaultConfDto` | `src-tauri/src/protocol/dto/config.rs` | 否 |
+| `VaultConf`（13 字段） | `src-tauri/crates/assistant-vault/src/conf.rs` | 否（仅依赖 `assistant-config` 机制层） |
+| `VaultConfDto` | `src-tauri/crates/assistant-vault/src/dto/conf.rs`（vault 契约域） | 否 |
 | `get_vault_conf` | `src-tauri/src/cmd/config.rs:147` | 否 |
 | `patch_conf` 的 `"vault"` 分支 | `src-tauri/src/cmd/config.rs:167-173` | 否（写 JSON） |
 | `apply_vault_side_effects` | `src-tauri/src/cmd/config.rs:96-98` | **是** |
@@ -294,8 +294,8 @@ quote::quote!(move |#invoke| {
 
 | 项 | 决策 | 原因 |
 |---|---|---|
-| `assistant-config::vault_conf` | 保留 | 纯 JSON，无 vault 代码依赖；`src-tauri/crates/assistant-config` 本身是主功能依赖 |
-| `VaultConfDto` | 保留 | 同上 |
+| `assistant-config::vault_conf` | 保留（**已被 `feature-config-ownership-spec.md` 替代**：`VaultConf` 现位于 `assistant-vault/src/conf.rs`） | 纯 JSON，无 vault 代码依赖；`src-tauri/crates/assistant-config` 本身是主功能依赖 |
+| `VaultConfDto` | 保留（**已被 `feature-config-ownership-spec.md` 替代**：现位于 vault 契约域 `assistant-vault/src/dto/conf.rs`） | 同上 |
 | `get_vault_conf` 命令 | 保留 | `src/main.tsx:44` 启动期无条件调用，删了会让排除构建启动即 invoke 失败 |
 | `patch_conf` 的 `"vault"` 分支 | 保留 | 只是写 JSON 文件，无副作用即可 |
 | `apply_vault_side_effects` | 门控 | 唯一真实 vault 调用点 |

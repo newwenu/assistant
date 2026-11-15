@@ -425,7 +425,7 @@
 对应规格 §2.3「`vault_lock` 的归因」/ 差异表 F5。
 
 - [x] `src-tauri/crates/assistant-vault/src/dto/lifecycle.rs` 新增 `LockReasonDto`：`user` / `autoLock` / `screenLock` / `appExit` / `reset` / `panic`，`#[serde(rename_all = "camelCase")]`
-  - 落地说明：放在 vault 契约域（`#[ts(export, export_to = "vault.contract.ts")]`），与 `security_db::LockReason` 同 crate；`protocol/dto/config.rs` 只留配置 DTO（`VaultConfDto` / `VaultCipherAlgorithmDto`），不承载运行时归因枚举
+  - 落地说明：放在 vault 契约域（`#[ts(export, export_to = "vault.contract.ts")]`），与 `security_db::LockReason` 同 crate；配置 DTO（`VaultConfDto` / `VaultCipherAlgorithmDto`）亦在 vault 契约域（`assistant-vault/src/dto/conf.rs`），不承载运行时归因枚举
 - [x] 输入 DTO 的 `Option` 加 `#[ts(optional = nullable)]` 并加 `deny_unknown_fields`（输入侧规则）
   - 落地说明：本项为命令参数 `Option<LockReasonDto>`，非结构体输入 DTO；命令参数由 Tauri 逐项反序列化，缺键即 `None`，无需 `ts(optional = nullable)` / `deny_unknown_fields`
 - [x] `src-tauri/src/cmd/vault/lifecycle.rs::vault_lock` 签名改为 `async fn vault_lock(app, reason: Option<LockReasonDto>)`：`reason` 随 `move` 进 `spawn_blocking` 闭包，缺省映射 `LockReason::User`

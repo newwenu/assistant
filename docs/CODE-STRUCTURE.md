@@ -264,7 +264,7 @@ Agent kernel 只定义端口，宿主实现全部集中在 `adapters/`，每个�
 
 ### 4.5 Rust workspace（`src-tauri/crates/`，12 个）
 
-**依赖图**（仅 workspace 内部边，共 5 条，无环、无跨层回指）：
+**依赖图**（仅 workspace 内部边，共 6 条，无环、无跨层回指）：
 
 ```
 assistant-app (根包, src-tauri/src)
@@ -279,7 +279,7 @@ assistant-app (根包, src-tauri/src)
 ├── assistant-sync          叶子
 ├── assistant-security  → assistant-crypto
 ├── assistant-agent     → assistant-providers, assistant-storage
-└── assistant-vault     → assistant-crypto, assistant-sync
+└── assistant-vault     → assistant-crypto, assistant-sync, assistant-config
 ```
 
 **分层**：
@@ -295,7 +295,7 @@ assistant-app (根包, src-tauri/src)
 
 | crate | 职责 | 关键模块 |
 |---|---|---|
-| `assistant-config` | 纯 JSON 配置读写（不依赖 tauri / 业务 crate） | `app_conf` `orb_conf` `mascot_conf` `vault_conf` `shortcut` `atomic_write` `json_config` `constant` |
+| `assistant-config` | 配置机制库：`ConfGroup` 加载/保存/校验/`apply_patch` 机制 + 三个核心配置组 schema（不依赖 tauri / 业务 crate） | `conf_group` `app_conf` `orb_conf` `mascot_conf` `shortcut` `atomic_write` `json_config` `constant` |
 | `assistant-i18n` | 后端文案与语言目录；`build.rs` 生成语言 revision 常量，`locales/*.json` 经 `include_str!` 编译期嵌入 | `lib.rs`（`t` / `t_with_args` / `set_locale`） |
 | `assistant-crypto` | 加密原语：Provider API Key 加密、vault 加密与 TOTP | `api_key` `vault_crypto/`（`mod` `totp` `types`）`error` |
 | `assistant-storage` | SQLite 持久化（会话、附件、工具历史、Provider、模式、工作区、token 用量） | `db` `migrations` `conversations/`（`crud` `msg_ops` `branch` `tree_ops` `compression` `ops`）`attachment_store` `content_codec` `providers` `agent_modes` `workspaces` `tool_history` `tool_favorites` `token_usage` |
@@ -329,7 +329,7 @@ config/features.json (vault)
 |---|---|
 | 生成 | `npm run contract:gen`：`cargo test -p assistant-vault --lib export_bindings` + `cargo test -p assistant-app --test protocol_bindings` |
 | 校验 | `npm run contract:check`：重新生成并比对 `src/types/protocol.contract.ts`、`src/vault/core/contract/vault.contract.ts`、`src/types/shortcutDefaults.generated.ts` |
-| 规则 | 生成文件禁止手改；新增设置项需 Rust `assistant-config` struct 与 `protocol/dto` `*ConfDto` 同步加字段 |
+| 规则 | 生成文件禁止手改；新增设置项需 Rust 配置组 struct 与对应 `*ConfDto` 同步加字段（核心 group 在 `assistant-config`，特性 group 在特性 crate 的 `conf.rs`） |
 | 类型安全 | `as unknown as` 仅允许 `settings/core/types/confUtils.ts` 的 `toConfRecord()` 与 `i18n/index.ts` 的 `translateKey()` |
 
 ---
@@ -368,7 +368,7 @@ config/features.json (vault)
 |---|---|
 | 新增 IPC 命令 | `src-tauri/src/cmd/<domain>.rs` + `src-tauri/src/ipc.rs`（宿主）或 `vault_plugin.rs`（feature） |
 | 新增前端命令封装 | `src/services/<domain>Service.ts`（命令名字面量写在调用处）+ `src/test-utils/rustCommands.ts` 声明清单 |
-| 新增设置项 | `src-tauri/crates/assistant-config/src/*_conf.rs` + `src-tauri/src/protocol/dto/settings.rs` + `src/settings/core/field/fieldDefinitions.ts` → `npm run contract:gen` |
+| 新增设置项 | 核心 group：`src-tauri/crates/assistant-config/src/*_conf.rs`；特性 group：`src-tauri/crates/<feature>/src/conf.rs` + `src-tauri/src/protocol/dto/settings.rs` + `src/settings/core/field/fieldDefinitions.ts` → `npm run contract:gen` |
 | 新增设置页 | `src/settings/pages/` + `src/settings/core/builtinRegistry.ts` 注册 |
 | 新增工具箱工具 | `src/tools/<tool>/`（三件套）+ `src/tools/registry.ts` |
 | 新增 Agent 工具 | `src-tauri/crates/assistant-tools/src/os/` + `gateway` 注册 + `src-tauri/src/tool_setup.rs` |

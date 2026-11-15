@@ -83,7 +83,7 @@
 |---|---|
 | F-装配点 | 每个声明特性必须齐备 6 个装配点 + 2 处本体（前端 `module.ts` / 后端 `*_plugin.rs`）；`env` 必须等于 `${name.toUpperCase()}_ENABLED`；插件文件必须含 `feature = "<name>"` |
 | F-双向一致 | `commandGroups()` 分组名、`src/*_plugin.rs` 文件名、清单键三者集合相等；`permissions/*` 目录分支仍保留但已随目录删除而恒空（见 §1.4） |
-| F-足迹冻结 | 特性名在 core 文件中出现的集合必须与 `FEATURE_FOOTPRINT_ALLOWLIST` 逐字相等；vault 现为 **3** 个文件，且明确注明"非新特性可复制先例" |
+| F-足迹冻结 | 特性名在 core 文件中出现的集合必须与 `FEATURE_FOOTPRINT_ALLOWLIST` 逐字相等；vault 现为 **2** 个文件，且明确注明"非新特性可复制先例" |
 | F-动态 import | `registry.ts` 只允许 `await import("./<id>/module")` + 编译期守卫，静态 import 直接失败 |
 | F-env 声明 | `vite-env.d.ts` 必须含 `declare const __<ENV>__: boolean` |
 | F-遍历化反向 | `TRAVERSAL_FILES` 五个文件内不得出现任何特性 id |
@@ -94,7 +94,7 @@
 | 项 | 旧说法 | 代码事实 | 影响 |
 |---|---|---|---|
 | 装配点计数 | v1 记为 **8 条**（含 `build.rs` / `capabilities/default.json` / `plugins.rs`） | `ASSEMBLY_POINTS` 现为 **6 条**，上述三项与 `lifecycle.rs` / `setup.rs` 移入 `TRAVERSAL_FILES`（"不得出现特性名"） | **无功能影响**；v1 的"每特性成本"按 8 条计已作废，现按 6 + 5 两套口径计（§7） |
-| 足迹计数 | v1 记为 vault 保留 **7 个** core 文件 | `FEATURE_FOOTPRINT_ALLOWLIST` 现为 **3 个**：`cmd/mod.rs`、`protocol/dto/config.rs`、`protocol/events.rs` | `cmd/config.rs` 已退出足迹（`get_vault_conf` 迁为 `vault_get_conf`，见 `cmd/vault/conf.rs`） |
+| 足迹计数 | v1 记为 vault 保留 **7 个** core 文件 | `FEATURE_FOOTPRINT_ALLOWLIST` 现为 **2 个**：`cmd/mod.rs`、`protocol/events.rs` | `cmd/config.rs` 已退出足迹（`get_vault_conf` 迁为 `vault_get_conf`，见 `cmd/vault/conf.rs`）；`protocol/dto/config.rs` 已由 `feature-config-ownership-spec.md` 迁入 vault 契约域（`assistant-vault/src/dto/conf.rs`） |
 | ACL 覆盖窗口 | I24 §11.1 称 `["main","orb","settings"]`（三窗口） | 代码只有两个窗口：`src/config/constants.ts` 仅定义 `WINDOW_MAIN` / `WINDOW_ORB`，`window.rs` 的 `WINDOW_SPECS` 只注册 `main`；`capabilities/default.json` 与 `capabilities/vault.json` 均为 `["main","orb"]` | 该行确为归档遗留（`settings` 是主窗口内的页面而非独立窗口）；本文不采信"三窗口"表述 |
 | `permissions/<name>/default.toml` | v1 称"该目录对运行期与门禁均无作用，不应再作为装配点" | `src-tauri/permissions/` 根目录仍为空且已删除；ACL 授权改由 `build.rs` 的 `AllowAllCommands` 烘焙 + **每特性一份 `capabilities/<id>.json`** | v1 的结论需修正：**capability 文件拆分是新的必建装配物**（B8 + F-装配点双重断言），但它落在 `capabilities/` 而非 `permissions/` |
 | vault cfg 行数 | v1 称 5 行，上限 6 | 实际 **3 行**，上限 `FEATURE_CFG_LIMIT = 3` | 从"接近上限"变为**顶格 3/3，零余量** |

@@ -70,7 +70,7 @@
 | `src-tauri/src/setup.rs` | 启动期 `VaultConf::load()` 播种 | 调用型 |
 | `src-tauri/src/ipc.rs` | `cmd::get_vault_conf` 注册行 | 调用型（声明式写法，但是命令名） |
 | `src-tauri/src/cmd/config.rs` | `get_vault_conf` 命令本体 | 调用型（同上，与上一行是同一条边的两半） |
-| `src-tauri/src/protocol/dto/config.rs` | `VaultConfDto` | 声明型（契约） |
+| `src-tauri/src/protocol/dto/config.rs` | `VaultConfDto` | 声明型（契约）；**已由 `feature-config-ownership-spec.md` 迁入 vault 契约域，此项归零** |
 | `src-tauri/src/protocol/events.rs` | 3 个 vault 事件名常量 | 声明型（跨端协议名） |
 
 **已不存在的旧边**：`cmd/config.rs` 的 `apply_vault_side_effects` 直调已被 `register_conf_applier("vault", ...)` 取代——注册动作发生在 `vault_plugin::init()` 内，方向是"特性调 core"，不是"core 调特性"。这是遍历化思路**已被采纳过的先例**，也是本文判定它可行的直接依据。
@@ -143,16 +143,17 @@ R2 最容易忽略：派生代码若写成 `#[cfg(feature = "vault")] fn mount()
 |---|---|---|
 | `cfg` 配额（`VAULT_CFG_LIMIT = 6`） | 5 行（`cmd/mod.rs` 3 + 插件文件 2） | **3 行**（`cmd/mod.rs` 1 + 插件文件 2）；钩子增加不再增加 cfg 行（§4.4） |
 | 调用型足迹 | 5 个文件（`cmd/mod.rs`、`lifecycle.rs`、`setup.rs`、`ipc.rs`、`cmd/config.rs`） | **0** |
-| 声明型足迹 | `protocol/dto/config.rs`、`protocol/events.rs` | **不变**（契约与协议名不是挂载边） |
-| 足迹 allowlist | 7 文件 | **3 文件**（`cmd/mod.rs`、`protocol/dto/config.rs`、`protocol/events.rs`） |
+| 声明型足迹 | `protocol/dto/config.rs`、`protocol/events.rs` | **`protocol/dto/config.rs` 已归零**（配置 DTO 迁入 vault 契约域，见 `feature-config-ownership-spec.md`），`protocol/events.rs` 不变（协议名不是挂载边） |
+| 足迹 allowlist | 7 文件 | **2 文件**（`cmd/mod.rs`、`protocol/events.rs`） |
 
-**"足迹 7 → 0"不可达**，原因是剩余 3 个文件的"特性名字"不是挂载成本：
+**"足迹 7 → 0"不可达**，原因是剩余 2 个文件的"特性名字"不是挂载成本：
 
 1. `cmd/mod.rs` 的 `#[cfg(feature = "vault")] mod vault;`——Rust 要求 `mod` 由父模块声明。把它挪到别处只会换文件（`lib.rs` 会因此进入足迹，更糟），或用 `#[path]` 下沉到挂载表（`cmd/vault` 内部的 `super::` 解析会改变，连带改动全部引用）。
-2. `protocol/dto/config.rs` 的 `VaultConfDto`——项目规则要求 conf DTO 统一在 `protocol/dto` 声明并参与 `contract:gen`，把它移进特性边界会破坏"DTO 单一存放点"。
-3. `protocol/events.rs` 的 3 个事件名——跨端协议命名空间，集中声明是既有惯例；迁出仅省 1 个足迹文件，收益低于一致性损失。
+2. `protocol/events.rs` 的 3 个事件名——跨端协议命名空间，集中声明是既有惯例；迁出仅省 1 个足迹文件，收益低于一致性损失。
 
-判定：**足迹目标应从"0"改为"3"，并把足迹断言从"允许列表"改成"允许列表 + 类型说明"**——只允许声明型足迹，调用型足迹一律为 0。
+> 原第 2 项「`protocol/dto/config.rs` 的 `VaultConfDto`」已由 `feature-config-ownership-spec.md` 收口：配置 schema 归特性 crate、配置 DTO 归特性契约域，因此该足迹归零，足迹目标由「3」进一步收缩为「2」。
+
+判定：**足迹目标应从"0"改为"2"，并把足迹断言从"允许列表"改成"允许列表 + 类型说明"**——只允许声明型足迹，调用型足迹一律为 0。
 
 ### 4.4 契约形状的判定
 
@@ -314,9 +315,9 @@ if (__<ENV>__) { ... await import("./<id>/module") ... }
 | "零声明成本" | **不成立**，cargo 与清单语义要求静态声明，且随依赖闭包增长 |
 | "零生成物" | **不成立**，模块树与 `vite-env.d.ts` 无法在无生成层时派生 |
 | 现有三道门禁 | **需替换而非叠加**：存在性断言退役，反向足迹 / 三方一致 / 结构约束 / 行为断言上位 |
-| 对 vault 的意义 | 把已完成的 L1 从"一个特例"提升为"一类机制"：调用型边 5 → 0、`cfg` 5 → 3、足迹 7 → 3 |
+| 对 vault 的意义 | 把已完成的 L1 从"一个特例"提升为"一类机制"：调用型边 5 → 0、`cfg` 5 → 3、足迹 7 → 3（配置 DTO 迁出后进一步收缩为 7 → 2） |
 
-最终判定：**设计思路合理，但必须成套落地**——"成本口径拆分 + 遍历化 + 门禁换挡"三件事缺一不可。**"M=0 + 足迹 0"是原方案的两个不可达目标**：前者在手写阶段不可达、在 N=1 时引入生成器是负收益；后者与 Rust 模块树、DTO 契约、协议命名空间冲突。可达目标应改写为 **"调用型足迹 0、声明型足迹 3、M 4 文件（N≥3 时转生成器归零）"**。
+最终判定：**设计思路合理，但必须成套落地**——"成本口径拆分 + 遍历化 + 门禁换挡"三件事缺一不可。**"M=0 + 足迹 0"是原方案的两个不可达目标**：前者在手写阶段不可达、在 N=1 时引入生成器是负收益；后者与 Rust 模块树、DTO 契约、协议命名空间冲突。可达目标应改写为 **"调用型足迹 0、声明型足迹 2、M 4 文件（N≥3 时转生成器归零）"**（声明型原为 3，配置 DTO 一项已由 `feature-config-ownership-spec.md` 归零）。
 
 ---
 
@@ -326,7 +327,7 @@ if (__<ENV>__) { ... await import("./<id>/module") ... }
 |---|---|---|---|
 | 1 | `cmd/config.rs` 的 `apply_vault_side_effects` 是第四条调名边 | 该函数已不存在；conf 副作用改由 `vault_plugin::init()` 调 `register_conf_applier("vault", ...)` 注册，方向是"特性调 core" | 删除该边，改列为**遍历化已落地的先例** |
 | 2 | 调名边共 4 条 | 实为 5 条：`plugins.rs`、`lifecycle.rs`、`cmd/mod.rs`（cfg + 空桩）、`ipc.rs` + `cmd/config.rs`（`get_vault_conf`）、`setup.rs`（`VaultConf::load()`） | 补齐 `ipc.rs` / `cmd/config.rs` / `setup.rs` 三条 |
-| 3 | 足迹目标 7 → 0 | 剩余 3 个文件的特性名字是声明型（模块树、DTO 契约、协议事件名），迁出会破坏既有规则或只是搬家 | 目标改为 **7 → 3**，并区分调用型 / 声明型 |
+| 3 | 足迹目标 7 → 0 | 剩余 3 个文件的特性名字是声明型（模块树、DTO 契约、协议事件名），迁出会破坏既有规则或只是搬家 | 目标改为 **7 → 2**（配置 DTO 一项已由 `feature-config-ownership-spec.md` 迁入 vault 契约域而归零），并区分调用型 / 声明型 |
 | 4 | "core 代码里不再出现任何特性名字"，同时要求生成含特性名的 `feature_mounts.rs` | 自相矛盾：表必然含特性名 | 改为"core 不再出现**调用型**特性名；唯一允许的是挂载表的数据条目" |
 | 5 | "关闭态的表是空切片，core 遍历 0 次" | Rust 中 cfg-free 的表与开关无关，无法在关闭态变空 | 改为"表恒定，关闭态命中空实现"，并记账空插件 / ACL 残余 |
 | 6 | "D 恒为 2 项" | 每个可选依赖还需 `dep:` + `optional = true` 两行；vault 一项即 3 个 crate | 改为"D = 2 项 + 依赖闭包线性增长" |
@@ -343,7 +344,7 @@ if (__<ENV>__) { ... await import("./<id>/module") ... }
 | 调名边 | 5 → 0 | 5 → 0（`plugins.rs` / `lifecycle.rs` / `setup.rs` 改为遍历；`ipc.rs` + `cmd/config.rs` 的 `get_vault_conf` 迁入 `cmd/vault/conf.rs` 并由插件注册；`cmd/mod.rs` 只剩 `mod` 声明） | 一致 |
 | `cfg` 配额 | 5 → 3 | 3 行（`vault_plugin.rs` 互斥块 2 行 + `cmd/mod.rs` 1 行），常量由 `VAULT_CFG_LIMIT = 6` 收紧为 `FEATURE_CFG_LIMIT = 3` | 一致，且配额随之下调 |
 | 调用型足迹 | 5 文件 → 0 | 0（B3 / F6 断言调用方不含特性名字面量） | 一致 |
-| 声明型足迹 | 3 文件 | 3 文件（`cmd/mod.rs`、`protocol/dto/config.rs`、`protocol/events.rs`），`FEATURE_FOOTPRINT_ALLOWLIST` 由 7 项收缩为 3 项 | 一致 |
+| 声明型足迹 | 3 文件 | 2 文件（`cmd/mod.rs`、`protocol/events.rs`），`FEATURE_FOOTPRINT_ALLOWLIST` 由 7 项收缩为 2 项；原第 3 项 `protocol/dto/config.rs` 已由 `feature-config-ownership-spec.md` 迁入 vault 契约域而归零 | 一致（且优于分析预期） |
 | 装配点 | 8 → 6 | 6（`plugins.rs`、`build.rs`、`capabilities/default.json` 退出逐特性集合：前者改遍历，后两者按文件 / 按特性名泛化） | 一致 |
 | 手写 M | 4 文件 8 行 | 4 文件（`config/features.json`、`src-tauri/Cargo.toml`、`src/vite-env.d.ts`、`src-tauri/src/feature_mounts.rs` 条目）+ `lib.rs` 的 1 行 `mod <id>_plugin;` | 一致 |
 | 关闭态残余 | 空插件 + ACL + capability 文件 | 三项均在；`cargo tree --no-default-features -i assistant-vault` 报包不在依赖图内，证明残余不引入运行时成本 | 一致 |

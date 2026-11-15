@@ -28,7 +28,7 @@
 - 不做全量生成器（M=0、调用型足迹全归零）。理由见分析文档：N=1 下生成器成本高于收益，且会引入「生成物入库 vs 真删除」的第三态维护负担。条件化升级判据见 §10。
 - 不改任何业务逻辑、命令签名、DTO 结构、wire 字段。
 - 不动 `src-tauri/tauri.conf.json`、`src-tauri/.cargo/config.toml`、根 `.cargo/config.toml`。
-- 不迁移 3 项本期保留足迹（`cmd/mod.rs`、`protocol/dto/config.rs`、`protocol/events.rs`，见 §6.1）；其余 4 项（`lifecycle.rs`、`setup.rs`、`ipc.rs`、`cmd/config.rs`）由 S4–S7 迁出。其中 `cmd/mod.rs` 属「本期保留」而非「原理不可归零」，零化形态与未采纳理由见 §3.2。
+- 不迁移 3 项本期保留足迹（`cmd/mod.rs`、`protocol/dto/config.rs`、`protocol/events.rs`，见 §6.1）；其中配置 DTO 一项已由 `feature-config-ownership-spec.md` 迁出（该规格收口后此项归零，保留足迹为 2 项）。其余 4 项（`lifecycle.rs`、`setup.rs`、`ipc.rs`、`cmd/config.rs`）由 S4–S7 迁出。其中 `cmd/mod.rs` 属「本期保留」而非「原理不可归零」，零化形态与未采纳理由见 §3.2。
 
 ### 1.3 编号空间
 
@@ -272,13 +272,14 @@ for mount in crate::feature_mounts::mounts() {
 | A6 的「桩 vs 真实现签名比对」 | S6 删除 `cmd/mod.rs` 的空桩后该比对失去一侧对象，`normalized_signature` 会直接 panic；改由 B5 承接为「同一 `*_plugin.rs` 内启用块与关闭块三函数签名一致」，A6 只保留「宿主与插件注册不重叠」 |
 | A7 的「build.rs 引用真源」子断言 | S8 泛化后 `build.rs` 不再含逐特性的 `"src/<id>_plugin.rs"` 字面量（只剩 `format!` 模板），`build_rs_plugin_sources()` 会解析出模板串并误判「未引用真源」；改为「`build.rs` 含 `*_plugin.rs` 遍历逻辑且不含清单内特性 id 字面量」，A7 的「注册表 ↔ ACL 双向一致」保留 |
 
-收缩后的 3 项本期保留足迹（由现有 `FEATURE_FOOTPRINT_ALLOWLIST` 的 7 项扣除 S4/S5/S7 迁出的 4 项后确定）：
+收缩后的 2 项本期保留足迹（由现有 `FEATURE_FOOTPRINT_ALLOWLIST` 的 7 项扣除 S4/S5/S7 迁出的 4 项与 `feature-config-ownership-spec.md` 迁出的配置 DTO 一项后确定）：
 
 | 文件 | 残留内容 | 保留理由 |
 |---|---|---|
 | `src-tauri/src/cmd/mod.rs` | `#[cfg(feature = "vault")]` + `pub(crate) mod vault;` | 本期不移动命令目录，故模块声明留在 core；零化形态见 §3.2，代价是改动 4 处路径解析口径 |
-| `src-tauri/src/protocol/dto/config.rs` | `VaultConfDto` | 契约类型被配置面共用，迁移会改动 DTO 归属 |
 | `src-tauri/src/protocol/events.rs` | 3 个 vault 事件名常量 | 跨端协议名集中登记，拆散会让事件名失去唯一来源 |
+
+> `src-tauri/src/protocol/dto/config.rs` 的 `VaultConfDto` 一项已由 `feature-config-ownership-spec.md` 迁入 vault 契约域（`assistant-vault/src/dto/conf.rs`），上表因此由 3 项收缩为 2 项。
 
 ### 6.2 后端新增断言
 
@@ -321,7 +322,7 @@ A7 保留部分：`plugin_feature_names()` 遍历出的每个插件，其 `gener
 | 编号 | 断言 | 失败含义 |
 |---|---|---|
 | F1 | `ASSEMBLY_POINTS` 收缩为 6 项：移除 `src-tauri/build.rs`、`src-tauri/capabilities/default.json`、`src-tauri/src/plugins.rs`，新增 `src-tauri/src/feature_mounts.rs`；保留 `config/features.json`、`src/vite-env.d.ts`、`src/features/registry.ts`、`src-tauri/Cargo.toml`、`src-tauri/src/lib.rs`。同时「装配点齐备」测试里三条**按特性点名调用型文件**的检查必须改写：删掉 `build.rs.includes("\"<name>\"")`（由 F6 + A7 的泛化断言覆盖）、删掉 `plugins.rs.includes("<name>_plugin::init()")`（由 B2/B3 覆盖）、`capabilities/default.json` 的 `"<name>:default"` 检查改为「存在 `capabilities/<name>.json` 且其 `permissions` 含 `<name>:default`」 | 已遍历化的文件仍按特性逐处断言（存在性断言残留），或挂载表未登记导致其 id 被误判为足迹；或泛化后仍留着「build.rs 必须写特性名」这类与遍历化直接矛盾的检查 |
-| F2 | `FEATURE_FOOTPRINT_ALLOWLIST` 每特性条目从 7 项收缩为 3 项（`cmd/mod.rs`、`protocol/dto/config.rs`、`protocol/events.rs`），且只减不增 | 已消除的足迹被重新引入，或豁免清单被当成新增足迹的通行证 |
+| F2 | `FEATURE_FOOTPRINT_ALLOWLIST` 每特性条目从 7 项收缩为 2 项（`cmd/mod.rs`、`protocol/events.rs`；`protocol/dto/config.rs` 一项已由 `feature-config-ownership-spec.md` 归零），且只减不增 | 已消除的足迹被重新引入，或豁免清单被当成新增足迹的通行证 |
 | F3 | `registry.ts` 的 import 形态为「动态 import + 编译期守卫」，静态 import 一律失败 | 退回静态 import 后 chunk 无法裁剪 |
 | F4 | `config/features.json` 每个条目的 `env` 字段都能在 `src/vite-env.d.ts` 找到 `declare const __<env>__: boolean`（如 `env: "VAULT_ENABLED"` ↔ `__VAULT_ENABLED__`） | define 注入缺失，`registry.ts` 的守卫恒为 `undefined`，特性永不加载 |
 | F5 | 关闭态产物探针：`node scripts/assert-feature-absent.mjs --feature vault --dist dist` 断言 `dist/assets` 内无特性专有字符串（取该特性 i18n 键或路由字面量）。vitest 包装层的语义必须是「无关闭态声明则显式 `ctx.skip()`，声明了关闭态（`env=0`）却缺 `dist/assets` 则失败」——静默 `return` 会让该断言在新鲜检出下永远为绿，等于不存在 | chunk 泄漏 |
@@ -360,7 +361,7 @@ F5 新增脚本 `scripts/assert-feature-absent.mjs`：探针字面量**不写进
 |---|---|---|---|
 | 7 | `src-tauri/src/cmd/mod.rs` | M（足迹，非装配点） | +2 行（`#[cfg(feature = "x")]` + `mod x;`） |
 
-足迹合计：**1 文件 2 行**，即 §6.1 所列 3 项保留足迹中唯一可被 S6 压到「每特性恒定 1 条 cfg 属性 + 1 行 `mod`」的一项；若要归零（把 `mod` 声明搬进特性边界），见 §3.2 的目录迁移方案与代价。另两项（`protocol/dto/config.rs` 的 `*ConfDto`、`protocol/events.rs` 的事件名常量）只在特性自带 DTO / 事件时才 +1 条目，属特性本体（B），不是装配成本；无 DTO、无事件的特性不触碰它们。
+足迹合计：**1 文件 2 行**，即 §6.1 所列 2 项保留足迹中唯一可被 S6 压到「每特性恒定 1 条 cfg 属性 + 1 行 `mod`」的一项；若要归零（把 `mod` 声明搬进特性边界），见 §3.2 的目录迁移方案与代价。另一项（`protocol/events.rs` 的事件名常量）只在特性自带事件时才 +1 条目，属特性本体（B），不是装配成本；无事件的特性不触碰它。（原「`protocol/dto/config.rs` 的 `*ConfDto`」一项已由 `feature-config-ownership-spec.md` 迁入 vault 契约域，不再计入。）
 
 口径区分：B6 数的是 `#[cfg(...)]` **属性行数**（每特性 1 条），§7.2 数的是**新增总行数**（属性行 + `mod` 行 = 2）。两者不冲突，`cmd/mod.rs` 的当前形态正是「属性行 + `mod` 行」两行（vault 在 19–20 行）。
 

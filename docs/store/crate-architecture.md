@@ -64,20 +64,21 @@ assistant-app  (根包, src/)
 ├── assistant-sync          无内部依赖
 ├── assistant-security  ──→ assistant-crypto
 ├── assistant-agent     ──→ assistant-providers, assistant-storage
-└── assistant-vault     ──→ assistant-crypto, assistant-sync
+└── assistant-vault     ──→ assistant-crypto, assistant-sync, assistant-config
 ```
 
-内部依赖边共 **5 条**：
+内部依赖边共 **6 条**：
 
 | 边 | 性质 |
 |---|---|
 | `assistant-security → assistant-crypto` | security 复用 crypto 的加密原语 |
 | `assistant-vault → assistant-crypto` | vault 复用 crypto 的加密原语 |
 | `assistant-vault → assistant-sync` | vault 用 sync 做 git 同步 |
+| `assistant-vault → assistant-config` | vault 配置组复用 `ConfGroup` 机制层 |
 | `assistant-agent → assistant-providers` | agent 调用 provider 发起请求 |
 | `assistant-agent → assistant-storage` | agent 读写会话与工具历史 |
 
-其余 9 个 crate（config / i18n / crypto / orb / tools / storage / crash / providers / sync）均为叶子节点，无内部依赖。**没有环，也没有跨层回指。**
+其余 8 个 crate（i18n / crypto / orb / tools / storage / crash / providers / sync）均为叶子节点，无内部依赖。**没有环，也没有跨层回指。**
 
 ### 1.4 分层视图
 
@@ -99,9 +100,9 @@ assistant-app  (根包, src/)
 | 行数 / 文件 | 1,354 / 14 |
 | 直接依赖 | 4（serde、serde_json、log、dirs） |
 | 内部依赖 | 无 |
-| 模块 | `app_conf` `orb_conf` `mascot_conf` `vault_conf` `atomic_write` `json_config` `constant` |
+| 模块 | `app_conf` `orb_conf` `mascot_conf` `conf_group` `atomic_write` `json_config` `constant` |
 
-纯 JSON 配置读写，不依赖 tauri，也不依赖任何业务 crate。`vault_conf` 模块只负责读写 vault 配置结构，**不引用 vault 的任何代码**，因此配置层与 vault 功能本身是零耦合的。
+配置机制库：提供 `ConfGroup` 机制层（加载策略、原子写入、`apply_patch`）与三个核心配置组的 schema，纯 JSON 配置读写，不依赖 tauri，也不依赖任何业务 crate。只提供配置机制，vault 配置 schema 位于 `assistant-vault/src/conf.rs`，因此配置机制层与各特性本身仍是零耦合的。
 
 ### 2.2 assistant-i18n
 
