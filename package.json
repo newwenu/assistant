@@ -14,7 +14,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write src scripts vite.config.ts vitest.config.ts eslint.config.ts",
     "format:check": "prettier --check src scripts vite.config.ts vitest.config.ts eslint.config.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "contract:gen": "cd src-tauri && cargo test -p assistant-vault --lib export_bindings && cargo test -p assistant-app --test protocol_bindings",

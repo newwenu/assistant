@@ -16,7 +16,7 @@ import {
   ORB_HISTORY_LIST_LIMIT,
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
-import { formatConversationTitle } from "../utils/formatConversationTitle";
+import { formatConversationTitle } from "../history/core/formatConversationTitle";
 import { isOrbBlurCollapseSuppressed, useOrbExpand } from "./OrbExpand";
 import { isOrbBusy } from "./orbBusy";
 import { closeOrbOverlays } from "./orbOverlays";

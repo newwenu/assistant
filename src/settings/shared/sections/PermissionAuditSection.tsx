@@ -16,7 +16,7 @@ import {
   permissionService,
   type PermissionAuditEntry,
 } from "@/services/permissionService";
-import { permissionAuditOutcomeText } from "@/services/auditLexicon";
+import { permissionAuditOutcomeText } from "@/audit/lexicon";
 import { chatService } from "@/services/chatService";
 import type { Conversation } from "@/chat/core/chatTypes";
 

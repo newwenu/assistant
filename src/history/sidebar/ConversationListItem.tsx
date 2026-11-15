@@ -13,7 +13,7 @@ import {
 import type { MenuProps } from "antd";
 import type { Conversation } from "../../chat/core/chatTypes";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
-import { formatConversationTitle } from "../../utils/formatConversationTitle";
+import { formatConversationTitle } from "../core/formatConversationTitle";
 import css from "./ConversationListItem.module.css";
 
 interface ConversationListItemProps {

@@ -19,7 +19,7 @@ import {
 import type { Conversation, Message } from "../../chat/core/chatTypes";
 import { HistoryBranchView } from "./HistoryBranchView";
 import type { HistoryViewMode } from "./HistoryBranchRow";
-import { formatConversationTitle } from "../../utils/formatConversationTitle";
+import { formatConversationTitle } from "../core/formatConversationTitle";
 import css from "./HistoryDetail.module.css";
 
 interface HistoryDetailProps {

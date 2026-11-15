@@ -1,6 +1,7 @@
 # 代码结构整理
 
 > 性质：本文只描述仓库**当前代码组织的事实**（目录、分层、模块职责、依赖方向），不包含目标架构与施工计划。
+> 更新日期：2026-11-15（按实测刷新模块清单、脚本与测试布局；规模数据见 `docs/store/code-structure-optimization-spec.md` §2）。
 > 相关文档：`ARCHITECTURE.md`（组件职责与交互语义）、`FRONTEND.md`（UI 设计与参考项目）、`docs/store/crate-architecture.md`（后端 crate 规模与编译归属实测）、`docs/principle/CODE-SPLIT-PRINCIPLE.md`（文件拆分判据）、`docs/store/vault-optional-build.md`（vault 可选构建）。
 
 ---
@@ -12,9 +13,9 @@
 | `src/` | React 前端（Webview 侧全部代码） |
 | `src-tauri/` | Tauri 应用层（`src/`）+ Rust workspace 子 crate（`crates/`） |
 | `config/features.json` | 可选功能清单唯一事实源（当前仅 `vault`），前端 Vite define 与后端 Cargo feature 都据此派生 |
-| `scripts/` | 构建与维护脚本：`copy-rive-wasm.mjs`（prebuild）、`feature-build.ps1` / `assert-feature-absent.mjs`（可选功能构建校验）、`update-models-dev-snapshot.mjs`（模型目录快照）、`fetch-fonts.mjs`、`generate-icon.cjs` |
-| `docs/` | 设计与实现文档；`archived/` 为归档区（按域分目录），`store/` 为活跃设计区，`analysis/` 为预分析区，`principle/` 为规范 |
-| `references/` | 参考项目源码（13 个，已分组），仅供检索，不参与构建 |
+| `scripts/` | 构建与维护脚本：`copy-rive-wasm.mjs`（prebuild）、`contract-check.mjs`（契约比对）、`feature-build.ps1` / `assert-feature-absent.mjs`（可选功能构建校验）、`update-models-dev-snapshot.mjs`（模型目录快照）、`cluster-tools.mjs`（工具分类聚类）、`fetch-fonts.mjs`、`generate-icon.cjs` |
+| `docs/` | 设计与实现文档；`archived/` 为归档区（按域分目录，冻结），`store/` 为活跃设计区，`analysis/` 为预分析区，`principle/` 为规范，`achievement/` 为待归档区 |
+| `references/` | 参考项目源码（14 个，已分组；gitignored、不入仓），仅供检索，不参与构建；文档引用时写「项目名 + 相对其仓库根的路径」，不写 `references/` 前缀 |
 | `temp-backup/` | 备份与临时脚本产物，不参与构建 |
 | `dist/` | Vite 构建产物 |
 
@@ -83,9 +84,10 @@
 | `tools/` | 工具箱与 23 个内置工具（见 3.4） |
 | `vault/` | 密码保险库全部 UI 与状态（可选功能，见 3.5） |
 | `settings/` | 声明式设置系统（注册表 + 运行时 + 页面，见 3.4） |
-| `services/` | 后端调用与跨窗口通信（无 UI） |
+| `services/` | 后端调用与跨窗口通信（含审计记录的展示解析；无 UI 组件） |
 | `stores/` | Zustand 状态切片（见 3.4） |
 | `hooks/` | 跨模块复用 Hook：初始化、主题、导航监听、错误通知、文件拖放 |
+| `utils/` | 通用工具：字节/时间格式化、懒加载恢复、模块载入、持久化队列、会话标题格式化 |
 | `i18n/` | i18next 初始化、`locales/*.json`、`localeApplier.ts`（语言生效链路） |
 | `mascot/` | Mascot 形象：策略表 + 多渲染器 + 状态同步 |
 | `orb/` | 悬浮球交互：拖拽、吸附、展开、指针手势、配置同步 |
@@ -122,7 +124,8 @@
 | `crossWindowEvent.ts` | 跨窗口事件广播与订阅 |
 | `settingService.ts` / `settingEvents.ts` | 设置读写与跨窗口生效 |
 | `historyService.ts` / `historyEvents.ts` | 历史查询与刷新事件 |
-| `providerService.ts` / `agentModeService.ts` / `toolService.ts` / `permissionService.ts` | 对应领域命令封装 |
+| `providerService.ts` / `agentModeService.ts` / `toolService.ts` / `permissionService.ts` / `mcpService.ts` | 对应领域命令封装 |
+| `auditDetail.ts` / `auditLexicon.ts` | 审计记录的展示解析与事件词表（纯前端，无后端调用；消费方为 vault 安全日志与权限审计页） |
 | `storageService.ts` / `workspaceService.ts` / `orbService.ts` / `windowService.ts` | 存储统计、工作区、悬浮球、窗口控制 |
 | `featureIpc.ts` | 可选功能（vault）命令通道 |
 | `logger.ts` / `globalErrorHandler.ts` / `reactProductionError.ts` | 日志与错误上报 |
@@ -136,16 +139,16 @@
 | `chatStorePorts.ts` | 向编排器暴露 StatePort / EnvPort，隔离 store 实现 |
 | `chatStreamStore.ts` | 高频流式状态独立存放，避免整树重渲染 |
 | `agent/agentSegments.ts` | Agent 轮次分段与展示折叠 |
-| 其余 | `historyStore` / `toolStore` / `providerStore` / `settingsStore` / `agentModeStore` / `attachmentStore` / `orbStore` / `themeStore` / `localeStore` / `notifyStore` / `windowModeStore` |
+| 其余 | `historyStore` / `toolStore` / `providerStore` / `settingsStore` / `agentModeStore` / `mcpServerStore` / `attachmentStore` / `orbStore` / `themeStore` / `localeStore` / `notifyStore` / `windowModeStore` |
 
 **`settings/`** —— 声明式设置系统，四层结构：
 
 | 层 | 位置 | 内容 |
 |---|---|---|
 | 声明 | `core/{field,provider,agentKind}/` | 字段定义、Provider 定义与格式/预设、Agent 模式定义 |
-| 注册表 | `core/{confRegistry,confSlot,pageRegistry,builtinRegistry,sideEffectRegistry}.ts` | 设置组、页面、副作用登记 |
-| 运行时 | `core/{confRuntime,snapshot,settingsDispatcher,optimisticUpdate,query,insertUnique}.ts` | 快照、统一保存链路、乐观更新 |
-| 视图 | `pages/`、`provider/`、`overview/`、`shared/` | 设置页、Provider 管理、总览、通用渲染器与页面外壳 |
+| 注册表 | `core/types/{confRegistry,confSlot}.ts` + `core/{pageRegistry,builtinRegistry,sideEffectRegistry}.ts` | 设置组与槽位类型、页面、副作用登记 |
+| 运行时 | `core/{confRuntime,snapshot,settingsDispatcher,optimisticUpdate,query,insertUnique,useConfGroup,useConfPatchHandlers,definePage,initSettingSystem}.ts` | 快照、统一保存链路、乐观更新、初始化与注册入口 |
+| 视图 | `pages/`、`provider/`、`overview/`、`shared/`、`mcp/` | 设置页、Provider 管理、总览、通用渲染器与页面外壳、MCP server 设置 |
 
 **`tools/`** —— 23 个工具采用统一三件套，外层是工具箱框架：
 
@@ -153,8 +156,8 @@
 |---|---|
 | 单个工具 | `<tool>/index.tsx` + `<tool>/<tool>.service.ts`（纯逻辑）+ `<tool>.module.css` |
 | 框架 | `registry.ts`（工具注册）、`types.ts`、`categories.ts`（关键词分类）、`capabilities.tsx`（文件拖放等能力）、`os.ts`（平台判定） |
-| 界面 | `ToolBox`（主窗口）、`MiniToolBox` + `miniNavigate`（迷你形态）、`ToolPage`、`ToolCard`、`ToolSearchBar`、`FavoriteButton`、`CollapsibleToolMenu` |
-| 工具清单 | base64 / calculator / clock / color / cron / date-time / fs-link / hash / image-compressor / integer-base / ip-info / json-viewer / jwt / password-generator / qrcode / regex / sql-formatter / svg-preview / text-diff / text-statistics / unit-converter / url-encoder / uuid |
+| 界面 | `ToolBox`（主窗口）、`MiniToolBox` + `miniNavigate`（迷你形态）、`ToolPage`、`ToolCard`、`ToolSearchBar`、`FavoriteButton`、`CollapsibleToolMenu`、`ToolCapabilityWrapper` |
+| 工具清单 | base64-string-converter / calculator / clock / color-converter / cron-parser / date-time-converter / fs-link / hash-text / image-compressor / integer-base-converter / ip-info / json-viewer / jwt-parser / password-generator / qrcode-generator / regex-tester / sql-formatter / svg-preview / text-diff / text-statistics / unit-converter / url-encoder / uuid-generator |
 
 **`vault/`** —— 保险库前端按"核心 / 详情 / 表单 / 设置 / 解锁"分层：
 
@@ -218,6 +221,7 @@ config/features.json
 | `clock.rs` | 世界时钟/计时器后端状态机 |
 | `tool_setup.rs` | 工具基础设施生产装配：注册表 → 分组注册 → 授权/审计 → 审批 → 网关 → 流水线 → 执行器端口 |
 | `app_dirs/` | 受管目录解析：`roots`（local / config / cache 基根）、`dir_name`、`form` |
+| `mcp/` | MCP 宿主侧装配：`config`（启动配置加密、校验与 server id 派生）、`transport`（子进程传输）；纯协议状态机在 `assistant-tools::mcp` |
 | `adapters/` | Agent kernel 端口的宿主实现（见 4.4） |
 | `cmd/` | 命令域模块（见 4.2） |
 | `protocol/` | DTO 与事件（见 4.3） |
@@ -236,13 +240,14 @@ config/features.json
 | `config.rs` / `app.rs` | 配置读写与 patch、版本信息、退出 |
 | `orb.rs` | 鼠标位置、屏幕尺寸、吸附、穿透 |
 | `tool.rs` / `os_tool_exec.rs` / `permission.rs` | 工具清单、OS 工具执行、权限授权 |
+| `mcp.rs` | MCP server 增删改查、启动/停止、状态查询与 DTO 转换 |
 | `storage.rs` / `attachment.rs` / `token_usage_record.rs` / `compaction.rs` / `mascot_asset.rs` / `clock.rs` | 存储统计与附件、token 用量、手动压缩、Mascot 资源、时钟 |
 
 ### 4.3 协议层（`protocol/`）
 
 | 部分 | 内容 |
 |---|---|
-| `dto/` | 按域拆分的 DTO：`agent` `branch` `chat` `clock` `config` `orb` `os_tool` `settings` `storage` `workspace`，`dto/mod.rs` 汇总导出并承载 ts-rs 导出 |
+| `dto/` | 按域拆分的 DTO：`agent` `branch` `chat` `clock` `config` `mcp` `orb` `os_tool` `settings` `storage` `workspace`，`dto/mod.rs` 汇总导出并承载 ts-rs 导出 |
 | `events.rs` | 事件名与 payload DTO、`emit_broadcast` 等广播辅助 |
 | 生成物 | `src/types/protocol.contract.ts`（前端契约）、`src/vault/core/contract/vault.contract.ts`（vault 契约，由 vault crate 导出） |
 
@@ -298,15 +303,15 @@ assistant-app (根包, src-tauri/src)
 | `assistant-config` | 配置机制库：`ConfGroup` 加载/保存/校验/`apply_patch` 机制 + 三个核心配置组 schema（不依赖 tauri / 业务 crate） | `conf_group` `app_conf` `orb_conf` `mascot_conf` `shortcut` `atomic_write` `json_config` `constant` |
 | `assistant-i18n` | 后端文案与语言目录；`build.rs` 生成语言 revision 常量，`locales/*.json` 经 `include_str!` 编译期嵌入 | `lib.rs`（`t` / `t_with_args` / `set_locale`） |
 | `assistant-crypto` | 加密原语：Provider API Key 加密、vault 加密与 TOTP | `api_key` `vault_crypto/`（`mod` `totp` `types`）`error` |
-| `assistant-storage` | SQLite 持久化（会话、附件、工具历史、Provider、模式、工作区、token 用量） | `db` `migrations` `conversations/`（`crud` `msg_ops` `branch` `tree_ops` `compression` `ops`）`attachment_store` `content_codec` `providers` `agent_modes` `workspaces` `tool_history` `tool_favorites` `token_usage` |
+| `assistant-storage` | SQLite 持久化（会话、附件、工具历史、Provider、模式、工作区、MCP server、token 用量） | `db` `migrations` `conversations/`（`crud` `msg_ops` `branch` `tree_ops` `compression` `ops`）`attachment_store` `content_codec` `providers` `agent_modes` `workspaces` `tool_history` `tool_favorites` `mcp_servers` `token_usage` |
 | `assistant-providers` | 三家 LLM 的请求构造、SSE 解析、工具调用累积、视觉与模型目录 | `openai/` `anthropic/` `gemini/`（各含 `request` `stream` `message_converter` `types` `discovery`；openai 另有 `chat` `responses_*`）`client/` `stream/` `types/` `base` `capability` `model_catalog` `vision` `sse_log` `trace` `diagnostics` |
-| `assistant-agent` | Agent 运行时与对话编排：kernel 抽象 + 循环执行 + 请求组装 | `kernel/`（`runner` `request` `stream` `persist` `emit` `outcome` `state` `phase` `tasks` `limits` `ids` `ports`）`agent/`（`loop_executor/` `round_executor` `ladder` `middleware` `tool_call` `tool_event` `stop`）`chat_options` `compaction` `normalization` `prompt_builder` `provider_config` `request_projection` `multimodal` `pdf_text` `token_estimate` |
-| `assistant-tools` | Agent OS 工具定义、网关与执行 | `gateway` `definition` `exec` `context` `os/`（`agent_read` `agent_write` `agent_edit/` `agent_grep` `agent_glob` `agent_list` `agent_mkdir` `agent_move` `agent_delete` `agent_ask_user`） |
+| `assistant-agent` | Agent 运行时与对话编排：kernel 抽象 + 循环执行 + 请求组装 | `kernel/`（`runner` `request` `stream` `persist` `emit` `outcome` `state` `phase` `tasks` `limits` `ids` `ports`/`test_doubles`）`agent/`（`loop_executor/` `round_executor` `ladder` `middleware` `tool_call` `tool_event` `stop`）`chat_options` `compaction` `normalization` `prompt_builder` `provider_config` `request_projection` `multimodal` `pdf_text` `token_estimate` `error` |
+| `assistant-tools` | Agent OS 工具定义、网关、MCP 与执行 | `gateway` `policy` `exec` `pipeline` `registry` `definition` `context` `result` `storage` `compact` `question` `trait`；`os/`（`agent_read/` `agent_write` `agent_edit/` `agent_grep` `agent_glob` `agent_list` `agent_mkdir` `agent_move` `agent_delete` `agent_ask_user` `fs_link/` `path` `output` `text_encoding` `process_output`）；`mcp/`（`stdio` `manager` `bridge`）；`sandbox/`（后端/探测/隔离强度契约，平台后端尚未接入） |
 | `assistant-orb` | 悬浮球纯计算：几何、悬停、屏幕放置（仅 `placement` 触达 tauri） | `geometry` `hover` `placement` |
 | `assistant-crash` | 崩溃捕获与 minidump 落盘（目录由应用层传入） | `crash_dump` |
 | `assistant-security` | 安全能力：剪贴板守卫、揭示守卫、SSH Agent、屏幕锁定、HIBP、原生解锁对话框 | `clipboard_guard` `reveal_guard` `ssh_agent/` `screen_lock/` `unlock_dialog/`（Windows 自绘实现按 `layout` `paint` `wnd_proc` `subclass` 等拆分）`hibp/` `vault_crypto/` |
 | `assistant-sync` | Git 同步底层：仓库操作、SSH 凭据、敏感信息脱敏 | `git_sync/`（`git` `ssh`）`types/` `redact` |
-| `assistant-vault` | 保险库领域实现：加密库、文件格式、同步引擎、生物识别、恢复密钥、审计 | `security_db/`（`entries/` 与 `biometric_ops` `crypto_ops` `rekey` `schema` `import_export` `meta`）`vault_file/` `sync_engine/`（`export` `history` `lifecycle` `preview` `pull_push` `remote_admin`）`biometric/` `recovery_key/` `audit/` `password_strength/` `plaintext_export` `dto/` `types/` `shared/` `lifecycle` |
+| `assistant-vault` | 保险库领域实现：加密库、文件格式、同步引擎、生物识别、恢复密钥、审计 | `security_db/`（`entries/`（`tx` `field_crypto` `snapshot` `query` `write` `deleted` `import`）与 `biometric_ops` `crypto_ops` `rekey` `schema` `import_export` `meta`）`vault_file/` `sync_engine/`（`export` `history` `lifecycle` `preview` `pull_push` `remote_admin` `emergency`）`biometric/` `recovery_key/` `audit/` `password_strength/` `plaintext_export` `dto/` `types/` `shared/` `lifecycle` `conf` |
 
 ### 4.6 可选功能的后端挂载
 
@@ -342,7 +347,7 @@ config/features.json (vault)
 | 命令名一致性 | `src/services/__tests__/commandNames.test.ts` | 扫描前端 `invoke` / `tauriInvoke` 字面量，与 `rustCommands.ts` 声明清单做双向差集校验 |
 | 前端配置快照 | `src/settings/__tests__/fixtures/*.json` | golden 快照（full / vaultless / diff） |
 | Rust crate | 各 crate `tests/` 集成测试 | 共享夹具放 `tests/common/mod.rs` |
-| 应用层 | `src-tauri/tests/`（如 `protocol_bindings`、`assembly_contract`） | 契约与装配校验 |
+| 应用层 | `src-tauri/tests/`（`protocol_bindings` / `protocol_contract` / `protocol_dto_roundtrip` / `assembly_contract` / `mcp_e2e` / `approval_timing` / `permission_policy` / `tool_resolver` / `app_dirs_contract` / `clock_runtime`；MCP 测试服务在 `tests/fixtures/`） | 契约、装配与跨模块集成校验 |
 | 构建校验 | `scripts/assert-feature-absent.mjs` / `feature-build.ps1` | 验证关闭 feature 后产物不含 vault |
 
 ---
@@ -357,7 +362,7 @@ config/features.json (vault)
 | 后端边界 | 命令层只做参数校验、状态取用与错误翻译；业务规则下沉到 crate；宿主能力通过 `adapters/` 注入 kernel |
 | 依赖方向 | 前端：组件 → store/service → `tauriInvoke`；后端：`cmd` → `adapters` / crate，crate 不回指 `assistant-app` |
 | 样式 | 组件同目录 `<Name>.module.css`；页面级样式集中在 `settings/styles`、`tools/tool-page.css` |
-| 命名 | Rust 文件按单一职责命名（`*_conf`、`*_slice`、`*_ops`）；前端服务以 `xxxService.ts` 结尾，事件以 `xxxEvents.ts` 结尾 |
+| 命名 | Rust 文件按单一职责命名（如 `*_conf`、`*_ops`、`*_store`）；前端服务以 `xxxService.ts` 结尾，事件以 `xxxEvents.ts` 结尾，状态切片以 `xxxSlice.ts` 结尾 |
 | 文档 | `docs/` 只用仓库相对路径；归档文档冻结不再修改 |
 
 ---
@@ -372,6 +377,8 @@ config/features.json (vault)
 | 新增设置页 | `src/settings/pages/` + `src/settings/core/builtinRegistry.ts` 注册 |
 | 新增工具箱工具 | `src/tools/<tool>/`（三件套）+ `src/tools/registry.ts` |
 | 新增 Agent 工具 | `src-tauri/crates/assistant-tools/src/os/` + `gateway` 注册 + `src-tauri/src/tool_setup.rs` |
+| 新增/调整 MCP server | `assistant-tools/src/mcp/`（协议、管理与工具桥）+ `src-tauri/src/mcp/`（宿主传输与配置加密）+ `src-tauri/src/cmd/mcp.rs` + `src-tauri/src/protocol/dto/mcp.rs` |
+| 调整沙箱探测/后端 | `assistant-tools/src/sandbox/` + `src-tauri/src/tool_setup.rs`（当前仅有契约与类型，平台后端与 `shell` 工具尚未接入） |
 | 调整对话链路 | `src/services/stream/{turnOrchestrator,turnStrategy}.ts` + `src-tauri/crates/assistant-agent/src/kernel/` |
 | 调整 Agent 循环 | `src-tauri/crates/assistant-agent/src/agent/{loop_executor,round_executor,ladder}.rs` |
 | 新增 Provider | `src-tauri/crates/assistant-providers/src/<vendor>/` + `src/settings/core/provider/` 定义 |

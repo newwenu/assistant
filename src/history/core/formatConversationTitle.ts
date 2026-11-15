@@ -1,5 +1,5 @@
-import { translateKey } from "../i18n";
-import type { Conversation } from "../chat/core/chatTypes";
+import { translateKey } from "../../i18n";
+import type { Conversation } from "../../chat/core/chatTypes";
 
 export const COPY_TITLE_SOURCE = "copy";
 

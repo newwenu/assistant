@@ -7,7 +7,7 @@ import {
   VAULT_AUDIT_EVENT_TYPES,
   permissionAuditOutcomeText,
   vaultAuditEventText,
-} from "../auditLexicon";
+} from "../lexicon";
 
 function displayStrings(): string[] {
   const source = readRepoFile(
