@@ -3,6 +3,7 @@ pub mod context;
 pub mod definition;
 pub mod exec;
 pub mod gateway;
+pub mod mcp;
 pub mod os;
 pub mod pipeline;
 pub mod policy;

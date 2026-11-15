@@ -4,6 +4,7 @@ pub mod content_codec;
 pub mod conversations;
 pub mod db;
 pub mod error;
+pub mod mcp_servers;
 pub mod migrations;
 pub mod providers;
 pub mod token_usage;

@@ -5,9 +5,9 @@ use tauri::Manager;
 
 use assistant_config::app_conf::AppConf;
 use assistant_tools::{
-    cleanup_expired_results, os, ApprovalPrompter, FileToolResultStorage, InMemoryReadReceiptStore,
-    PermissionAuditStore, PermissionGrantStore, ReadReceiptStore, ToolGateway, ToolPipeline,
-    ToolRegistry, ToolResultStorage,
+    cleanup_expired_results, mcp::McpServerManager, os, ApprovalPrompter, FileToolResultStorage,
+    InMemoryReadReceiptStore, PermissionAuditStore, PermissionGrantStore, ReadReceiptStore,
+    ToolGateway, ToolPipeline, ToolRegistry, ToolResultStorage,
 };
 
 use crate::adapters::{
@@ -220,6 +220,15 @@ pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
 
     handle.manage(registry);
     log::info!("OS tool registry initialized");
+
+    // P7-C4：MCP 状态机只管注册表与生命周期，进程细节在宿主侧传输层。
+    // 先 manage 再拉起：启动序列要用同一份实例，避免两套状态。
+    let mcp_manager = Arc::new(McpServerManager::new(
+        handle.state::<Arc<ToolRegistry>>().inner().clone(),
+        Arc::new(crate::mcp::transport::StdioTransport::new()),
+    ));
+    handle.manage(mcp_manager);
+    crate::mcp::config::start_enabled_servers(handle);
     Ok(())
 }
 

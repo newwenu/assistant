@@ -9,6 +9,8 @@ mod cmd;
 mod feature_mounts;
 mod ipc;
 mod lifecycle;
+#[doc(hidden)]
+pub mod mcp;
 mod menu;
 mod plugins;
 pub mod protocol;

@@ -6,6 +6,7 @@
       "shortcuts": { "title": "Shortcuts" },
       "providers": { "title": "Provider Management" },
       "agents": { "title": "Agent Modes" },
+      "mcp": { "title": "MCP Servers" },
       "storage": { "title": "Storage Management" },
       "about": { "title": "About" },
       "vault": "Password Vault",
@@ -421,6 +422,50 @@
       "saved": "Changes saved",
       "created": "Mode created",
       "save_failed": "Save failed: {{error}}"
+    },
+    "mcp": {
+      "add": "Add MCP Server",
+      "edit": "Edit MCP Server",
+      "empty": "No MCP servers configured",
+      "search_placeholder": "Search MCP servers",
+      "saved": "Saved",
+      "created": "MCP server created",
+      "save_failed": "Save failed: {{error}}",
+      "toggle_failed": "Failed to toggle: {{error}}",
+      "delete_failed": "Delete failed: {{error}}",
+      "section": {
+        "enabled": "Enabled",
+        "disabled": "Disabled"
+      },
+      "status": {
+        "stopped": "Stopped",
+        "starting": "Starting",
+        "ready": "Ready",
+        "error": "Error"
+      },
+      "isolation_notice": "Isolation boundary: MCP servers run locally with your user privileges. This page only gates them by tool name + approval key; it is not an OS sandbox.",
+      "env_masked_notice": "This server has {{count}} environment variable(s); values are never echoed back, so re-enter them when changing the launch config.",
+      "env_refill_required": "This server has {{count}} environment variable(s). Changing the launch config requires re-entering their values (values are never echoed back).",
+      "env_invalid": "These lines are not in KEY=VALUE form: {{lines}}",
+      "field": {
+        "id": "ID (read-only after creation)",
+        "name": "Name",
+        "name_placeholder": "e.g. filesystem",
+        "name_required": "Name is required",
+        "command": "Command",
+        "command_extra": "Executable or command name, not resolved through a shell",
+        "command_required": "Command is required",
+        "args": "Arguments",
+        "args_extra": "One argument per line",
+        "cwd": "Working directory",
+        "cwd_extra": "Leave empty to inherit the current process directory",
+        "env": "Environment variables",
+        "env_extra": "One KEY=VALUE per line; values are not echoed back, re-enter them when editing"
+      },
+      "confirm_delete": {
+        "title": "Delete MCP server \"{{name}}\"?",
+        "content": "Its tools will be removed from the tool list and in-flight calls will be terminated."
+      }
     },
     "provider": {
       "title": "AI Provider Settings",

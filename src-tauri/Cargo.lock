@@ -237,6 +237,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tempfile",
  "tokio",
+ "tokio-util",
  "ts-rs",
  "uuid",
 ]
@@ -346,6 +347,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
+ "hex",
  "log",
  "proptest",
  "rusqlite",
@@ -381,12 +383,15 @@ dependencies = [
  "globset",
  "grep-regex",
  "grep-searcher",
+ "hex",
  "ignore",
  "log",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "tokio",
+ "tokio-util",
  "trash",
  "windows",
 ]

@@ -24,6 +24,11 @@ grep-searcher = { workspace = true }
 grep-regex = { workspace = true }
 tempfile = { workspace = true }
 trash = { workspace = true }
+# P7 MCP：工具名短哈希与参数指纹（规格 I38e §3.1 / §3.5）
+sha2 = { workspace = true }
+hex = { workspace = true }
+# P7 MCP：取消令牌（规格 I38e §4.3）
+tokio-util = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true }

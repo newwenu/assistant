@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 publish = false
+default-run = "assistant-app"
 
 [workspace]
 resolver = "2"
@@ -143,6 +144,11 @@ vault = [
     "dep:assistant-security",
 ]
 
+# P7-C5 端到端夹具：仅测试用，不进 Tauri bundle
+[[bin]]
+name = "dev_mcp_server"
+path = "tests/fixtures/dev_mcp_server.rs"
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -201,3 +207,4 @@ strip = true
 [dev-dependencies]
 minidump = "0.27.0"
 tempfile = { workspace = true }
+tokio-util = { workspace = true }

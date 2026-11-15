@@ -19,7 +19,7 @@ pub use compaction_sink::TauriCompactionSink;
 pub use event_sink::TauriEventSink;
 pub use input_source::TauriInputSource;
 pub use message_store::DbMessageStore;
-pub use permission_policy::{load_project_permissions, policy_for_tool_config};
+pub use permission_policy::{load_project_permissions, mcp_disabled_layer, policy_for_tool_config};
 pub(crate) use permission_store::{decode_grant_key, encode_grant_key, outcome_str};
 pub use permission_store::{DbPermissionAuditStore, DbPermissionGrantStore};
 pub use question::{PendingQuestionRegistry, TauriQuestionPrompter};

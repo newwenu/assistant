@@ -58,6 +58,22 @@ pub fn load_project_permissions(workspace_root: Option<&str>) -> Option<Permissi
     }
 }
 
+/// 已禁用 MCP server 的拒绝层（I38e §5）：`mcp` 动作 + `mcp:{server_id}:*` 资源一律 `Deny`。
+///
+/// 禁用时工具已从 Registry 注销，这一层是「当前 turn 的工具清单里仍残留旧工具」时的兜底：
+/// 模型发出迟到调用会被策略拒绝，而不是落到「找不到工具」的内部错误。
+/// 资源串中的 `:` 不是路径分隔符，`*` 可以跨过它，因此无需知道 `config_hash`。
+pub fn mcp_disabled_layer(disabled_ids: &[String]) -> Option<PermissionConstraintLayer> {
+    if disabled_ids.is_empty() {
+        return None;
+    }
+    let rules = disabled_ids
+        .iter()
+        .map(|id| PermissionRule::new("mcp", format!("mcp:{id}:*"), PermissionEffect::Deny))
+        .collect();
+    Some(PermissionConstraintLayer::new(rules))
+}
+
 fn deny_all_layer() -> PermissionConstraintLayer {
     PermissionConstraintLayer::new(vec![PermissionRule::new("*", "*", PermissionEffect::Deny)])
 }

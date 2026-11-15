@@ -11,8 +11,9 @@ use assistant_storage::attachment_store::AttachmentStore;
 use assistant_tools::{ApprovalDecision, QuestionAnswerItem, ToolRegistry};
 
 use crate::adapters::{
-    build_turn_runner, policy_for_tool_config, resolve_available_tools, PendingApprovalRegistry,
-    PendingQuestionRegistry, PipelineToolExecution, TauriEventSink, TauriInputSource,
+    build_turn_runner, mcp_disabled_layer, policy_for_tool_config, resolve_available_tools,
+    PendingApprovalRegistry, PendingQuestionRegistry, PipelineToolExecution, TauriEventSink,
+    TauriInputSource,
 };
 use crate::protocol::{
     AgentQuestionAnswerDto, AgentToolCallDto, ConversationToolConfigDto, SendChatMessageArgsDto,
@@ -54,9 +55,36 @@ fn policy_executor(
     tool_config: &ConversationToolConfigDto,
 ) -> Arc<dyn assistant_agent::agent::round_executor::ToolExecutionPort> {
     let base = app.state::<Arc<PipelineToolExecution>>().inner().clone();
-    let policy =
+    let mut policy =
         policy_for_tool_config(tool_config, workspace_root(app, conversation_id).as_deref());
+    // 已禁用 server 的迟到调用按 `Deny` 兜底（工具此时已注销，见 I38e §5）。
+    if let Some(layer) = mcp_disabled_layer(&disabled_mcp_servers(app)) {
+        policy = policy.with_constraint_layer(layer);
+    }
     Arc::new(base.with_policy(policy))
+}
+
+/// 当前 `enabled = 0` 的 server id：策略层只关心「开关为关」，与运行时状态无关。
+fn disabled_mcp_servers(app: &AppHandle) -> Vec<String> {
+    let state = app.state::<crate::setup::DbState>();
+    let rows = match state.0.lock() {
+        Ok(conn) => assistant_storage::mcp_servers::list_servers(&conn),
+        Err(e) => {
+            log::warn!("Failed to lock db for mcp policy: {e}");
+            return Vec::new();
+        }
+    };
+    match rows {
+        Ok(rows) => rows
+            .into_iter()
+            .filter(|row| !row.enabled)
+            .map(|row| row.id)
+            .collect(),
+        Err(e) => {
+            log::warn!("Failed to load mcp servers for policy: {e}");
+            Vec::new()
+        }
+    }
 }
 
 /// 工作区根目录：与执行期同源（`tool_setup::resolve_workspace`），

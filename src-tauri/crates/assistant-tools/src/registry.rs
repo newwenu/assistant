@@ -57,6 +57,16 @@ impl ToolRegistry {
         self.tools.get(id).map(|entry| entry.value().clone())
     }
 
+    /// 注销工具：id 与 name 映射一并清除，避免留下悬空别名。
+    ///
+    /// 若同名已指向别的 id（注册时后者覆盖前者），只按 id 精确清理，
+    /// 不动其它 id 的映射。
+    pub fn unregister(&self, id: &str) -> bool {
+        let removed = self.tools.remove(id).is_some();
+        self.names.retain(|_, mapped| mapped.as_str() != id);
+        removed
+    }
+
     /// 按模型可见名查找。模型回传的调用名走这条路径。
     pub fn find_by_name(&self, name: &str) -> Option<RegisteredTool> {
         let id = self.names.get(name).map(|entry| entry.value().clone())?;
@@ -244,6 +254,23 @@ mod tests {
             registry.register(stub_named(name, name, *tier));
         }
         registry
+    }
+
+    #[test]
+    fn unregister_clears_both_indexes() {
+        let registry = registry_with(&[("alpha", ToolTier::Os), ("beta", ToolTier::Os)]);
+
+        assert!(registry.unregister("alpha"));
+        assert!(registry.find("alpha").is_none());
+        assert!(
+            registry.find_by_name("alpha").is_none(),
+            "名字映射不留悬空别名"
+        );
+        assert!(registry.find("beta").is_some());
+        assert_eq!(registry.tool_ids(), vec!["beta"]);
+
+        assert!(!registry.unregister("alpha"), "重复注销是幂等的 false");
+        assert!(!registry.unregister("missing"), "不存在的 id 返回 false");
     }
 
     #[tokio::test(flavor = "multi_thread")]

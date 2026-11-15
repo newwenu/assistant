@@ -288,6 +288,128 @@ async fn empty_key_never_hits_the_cache() {
     assert_eq!(store.len(), 1);
 }
 
+fn mcp_key(resource: &str, tool: &str, input: &Value) -> Option<ApprovalKey> {
+    ApprovalKey::from_intent(
+        tool,
+        &PermissionIntent::new("mcp", resource),
+        resource,
+        input,
+        &ctx(),
+        ToolTier::External,
+    )
+}
+
+fn mcp_scope(key: &ApprovalKey) -> &ApprovalScope {
+    match &key.scope {
+        scope @ ApprovalScope::Mcp { .. } => scope,
+        other => panic!("expected mcp scope, got {:?}", other),
+    }
+}
+
+#[test]
+fn mcp_key_carries_all_four_fields() {
+    let key = mcp_key(
+        "mcp:srv-1:cfg-abc",
+        "mcp__srv-1__search",
+        &json!({ "query": "rust" }),
+    )
+    .unwrap();
+
+    let ApprovalScope::Mcp {
+        server_id,
+        tool,
+        args_fingerprint,
+        config_hash,
+    } = mcp_scope(&key).clone()
+    else {
+        unreachable!()
+    };
+
+    assert_eq!(server_id, "srv-1");
+    assert_eq!(tool, "search");
+    assert_eq!(config_hash, "cfg-abc");
+    assert_eq!(args_fingerprint.len(), 64);
+    assert!(args_fingerprint.chars().all(|ch| ch.is_ascii_hexdigit()));
+    assert_eq!(key.tool, "mcp__srv-1__search");
+}
+
+#[test]
+fn mcp_key_requires_object_input() {
+    assert!(mcp_key("mcp:srv-1:cfg-abc", "mcp__srv-1__search", &Value::Null).is_none());
+    assert!(mcp_key("mcp:srv-1:cfg-abc", "mcp__srv-1__search", &json!([1, 2])).is_none());
+}
+
+#[test]
+fn mcp_args_fingerprint_is_canonical() {
+    let left = mcp_key(
+        "mcp:srv-1:cfg-abc",
+        "mcp__srv-1__search",
+        &json!({ "b": 1, "a": { "y": 2, "x": 3 } }),
+    )
+    .unwrap();
+    let right = mcp_key(
+        "mcp:srv-1:cfg-abc",
+        "mcp__srv-1__search",
+        &json!({ "a": { "x": 3, "y": 2 }, "b": 1 }),
+    )
+    .unwrap();
+    assert_eq!(left, right);
+
+    let different = mcp_key(
+        "mcp:srv-1:cfg-abc",
+        "mcp__srv-1__search",
+        &json!({ "a": { "x": 3, "y": 2 }, "b": 2 }),
+    )
+    .unwrap();
+    assert_ne!(left, different);
+}
+
+#[test]
+fn mcp_array_order_changes_fingerprint() {
+    let left = mcp_key(
+        "mcp:srv-1:cfg-abc",
+        "mcp__srv-1__search",
+        &json!({ "items": [1, 2] }),
+    )
+    .unwrap();
+    let right = mcp_key(
+        "mcp:srv-1:cfg-abc",
+        "mcp__srv-1__search",
+        &json!({ "items": [2, 1] }),
+    )
+    .unwrap();
+    assert_ne!(left, right);
+}
+
+#[test]
+fn mcp_key_differs_on_config_hash() {
+    let args = json!({ "query": "rust" });
+    let old = mcp_key("mcp:srv-1:cfg-old", "mcp__srv-1__search", &args).unwrap();
+    let new = mcp_key("mcp:srv-1:cfg-new", "mcp__srv-1__search", &args).unwrap();
+    assert_ne!(old, new);
+}
+
+#[test]
+fn mcp_key_differs_on_tool() {
+    let args = json!({ "query": "rust" });
+    let search = mcp_key("mcp:srv-1:cfg-abc", "mcp__srv-1__search", &args).unwrap();
+    let fetch = mcp_key("mcp:srv-1:cfg-abc", "mcp__srv-1__fetch", &args).unwrap();
+    assert_ne!(search, fetch);
+}
+
+#[test]
+fn mcp_resource_with_extra_colon_is_empty_key() {
+    assert!(mcp_key("mcp:srv-1:cfg-abc:extra", "mcp__srv-1__search", &json!({})).is_none());
+    assert!(mcp_key("srv-1:cfg-abc", "mcp__srv-1__search", &json!({})).is_none());
+    assert!(mcp_key("mcp::cfg-abc", "mcp__srv-1__search", &json!({})).is_none());
+}
+
+#[test]
+fn mcp_tool_name_prefix_mismatch_is_empty_key() {
+    assert!(mcp_key("mcp:srv-1:cfg-abc", "mcp__srv-2__search", &json!({})).is_none());
+    assert!(mcp_key("mcp:srv-1:cfg-abc", "search", &json!({})).is_none());
+}
+
 /// 永不返回的审批替身：模拟「无人应答」。
 ///
 /// `tokio::time::timeout` 先轮询内部 future、再查截止时间；若用 `with_delay(200ms)`

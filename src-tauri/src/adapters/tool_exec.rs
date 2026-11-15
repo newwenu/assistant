@@ -194,6 +194,8 @@ impl ToolExecutionPort for PipelineToolExecution {
             turn_id: Some(ctx.turn_id.to_string()),
             iteration: Some(ctx.iteration),
             tool_call_id: None,
+            // 本轮取消令牌：MCP 客户端据此中止在途 `tools/call`（I38e §4.3）。
+            cancel: Some(ctx.child_token.clone()),
             ..Default::default()
         };
         let policy = self.policy.as_ref();

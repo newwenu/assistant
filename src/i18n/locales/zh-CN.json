@@ -6,6 +6,7 @@
       "shortcuts": { "title": "快捷键" },
       "providers": { "title": "Provider 管理" },
       "agents": { "title": "Agent 模式" },
+      "mcp": { "title": "MCP 服务" },
       "storage": { "title": "存储管理" },
       "about": { "title": "关于" },
       "vault": "密码保险库",
@@ -409,6 +410,50 @@
       "saved": "已保存修改",
       "created": "已创建模式",
       "save_failed": "保存失败: {{error}}"
+    },
+    "mcp": {
+      "add": "新建 MCP 服务",
+      "edit": "编辑 MCP 服务",
+      "empty": "暂无 MCP 服务",
+      "search_placeholder": "搜索 MCP 服务",
+      "saved": "已保存",
+      "created": "已创建 MCP 服务",
+      "save_failed": "保存失败: {{error}}",
+      "toggle_failed": "启停失败: {{error}}",
+      "delete_failed": "删除失败: {{error}}",
+      "section": {
+        "enabled": "已启用",
+        "disabled": "未启用"
+      },
+      "status": {
+        "stopped": "已停止",
+        "starting": "启动中",
+        "ready": "就绪",
+        "error": "错误"
+      },
+      "isolation_notice": "隔离边界: MCP server 以当前用户权限在本机运行, 这里只按「工具名 + 审批键」做准入控制, 不是操作系统沙箱。",
+      "env_masked_notice": "该服务已有 {{count}} 个环境变量, 其值不回显; 修改启动配置时需重新填写完整值。",
+      "env_refill_required": "该服务已有 {{count}} 个环境变量, 修改启动配置需重新填写它们的值 (值不回显)。",
+      "env_invalid": "以下行不符合 KEY=VALUE 格式: {{lines}}",
+      "field": {
+        "id": "ID (创建后不可修改)",
+        "name": "名称",
+        "name_placeholder": "例如 filesystem",
+        "name_required": "请填写名称",
+        "command": "命令",
+        "command_extra": "可执行文件或命令名, 不经过 shell 解析",
+        "command_required": "请填写命令",
+        "args": "参数",
+        "args_extra": "每行一个参数",
+        "cwd": "工作目录",
+        "cwd_extra": "留空表示继承当前进程目录",
+        "env": "环境变量",
+        "env_extra": "每行 KEY=VALUE; 值不回显, 编辑时需重新填写"
+      },
+      "confirm_delete": {
+        "title": "删除 MCP 服务「{{name}}」？",
+        "content": "删除后其工具会从工具清单移除, 正在进行的调用会被终止。"
+      }
     },
     "provider": {
       "title": "AI Provider 设置",

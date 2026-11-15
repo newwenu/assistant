@@ -5,6 +5,7 @@ import {
   ApiOutlined,
   RobotOutlined,
   DatabaseOutlined,
+  CloudServerOutlined,
   InfoCircleOutlined,
 } from "@ant-design/icons";
 import { definePage } from "./definePage";
@@ -103,6 +104,20 @@ const agents = definePage({
     })),
 });
 
+const mcpServers = definePage({
+  id: "mcp-servers",
+  categoryId: "provider",
+  label: "common.navigation.mcp.title",
+  keywords: ["mcp", "server", "stdio", "tool", "外部工具", "服务"],
+  icon: CloudServerOutlined,
+  order: 55,
+  emptyPage: true,
+  load: () =>
+    import("../mcp/McpServerSettings").then((m) => ({
+      default: m.McpServerSettings,
+    })),
+});
+
 const about = definePage({
   id: "about",
   categoryId: "about",
@@ -136,6 +151,7 @@ const builtinPages: readonly SettingsPageManifest[] = [
   shortcuts,
   providers,
   agents,
+  mcpServers,
   storage,
   about,
 ];

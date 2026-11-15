@@ -137,8 +137,27 @@ pub fn init_db_localized(
             used_at INTEGER NOT NULL
         );
 
+        -- MCP server 配置（I38e §6.1）：唯一运行时配置源。
+        -- `id` 不可变（模型工具名与授权键都用它）；`name` 只是展示名。
+        -- `config_encrypted` 是 `{command,args,cwd,env}` 的密文（base64 文本），
+        -- `config_hash` 是明文规范 JSON 的 SHA-256。运行时状态（Ready / Error /
+        -- 重试次数）不落库，只有 `enabled` 持久化。
+        CREATE TABLE IF NOT EXISTS mcp_servers (
+            id               TEXT PRIMARY KEY,
+            name             TEXT NOT NULL,
+            transport        TEXT NOT NULL DEFAULT 'stdio',
+            config_encrypted TEXT NOT NULL,
+            config_hash      TEXT NOT NULL,
+            enabled          INTEGER NOT NULL DEFAULT 0,
+            created_at       INTEGER NOT NULL,
+            updated_at       INTEGER NOT NULL
+        );
+
         -- 审批授权与审计（D14）：幂等建表，不做 ALTER 迁移。
-        -- `grant_key` 为 `ApprovalKey` 的规范 JSON；审计只追加不更新，不设 TTL。
+        -- `grant_key` 为 `ApprovalKey` 的规范 JSON；审计只追加不更新，
+        -- 过期行由 `cleanup_expired_audit` 按保留期删除。
+        -- 归属坐标（conversation_id / turn_id / iteration）必须与决策同行落库：
+        -- 靠时间戳事后关联不可行（毫秒既非唯一标识也不单调）。
         CREATE TABLE IF NOT EXISTS permission_grants (
             grant_key TEXT PRIMARY KEY,
             tool      TEXT NOT NULL,

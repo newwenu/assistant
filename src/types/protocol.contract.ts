@@ -154,6 +154,19 @@ export type InstallMascotAssetResultDto = {
  */
 relPath: string, bytes: number, version: number, };
 export type MascotConfDto = { renderer: string, primaryColor: string | null, secondaryColor: string | null, riveIdlePoseRotation: boolean, riveSrc: string | null, svgAnimated: boolean, gifSrc: string | null, gifBorderRadius: number, };
+export type McpLaunchInputDto = { command: string, args: Array<string>, cwd?: string | null, env: { [key in string]: string }, callTimeoutMs?: number | null, };
+export type McpServerCreateDto = { name: string, launch: McpLaunchInputDto, };
+export type McpServerDto = { id: string, name: string, transport: string, enabled: boolean, status: McpServerStatusDto, lastError: string | null, command: string, args: Array<string>, cwd: string | null, 
+/**
+ * `env` 的键（有序）；值不回显，编辑需重新填写。
+ */
+envKeys: Array<string>, callTimeoutMs: number | null, 
+/**
+ * 密文无法解密或明文非法时的原因；非空时该 server 不可启动。
+ */
+configError: string | null, createdAt: number, updatedAt: number, };
+export type McpServerStatusDto = "stopped" | "starting" | "ready" | "error";
+export type McpServerUpdateDto = { id: string, name?: string | null, launch?: McpLaunchInputDto | null, };
 export type MessageChangeKindDto = "branch_created" | "branch_switched" | "branch_forked" | "message_deleted" | "messages_compacted" | "stream_finished";
 export type MessageDto = { id: string, conversationId: string, role: string, content: string, tokens: number | null, timestamp: number, parentId: string | null, isPinned: boolean, reasoning: string | null, siblingIndex: number, siblingCount: number | null, providerId: string | null, modelId: string | null, 
 /**

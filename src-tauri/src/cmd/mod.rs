@@ -9,6 +9,7 @@ mod config;
 mod conversation;
 pub(crate) mod conversation_utils;
 mod mascot_asset;
+mod mcp;
 mod orb;
 mod os_tool_exec;
 mod permission;
@@ -31,6 +32,7 @@ pub use config::*;
 pub use conversation::*;
 
 pub use mascot_asset::*;
+pub use mcp::*;
 pub use orb::*;
 pub use os_tool_exec::*;
 pub use permission::*;

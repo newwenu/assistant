@@ -1,6 +1,6 @@
 {
   "counts": {
-    "pages": 8,
+    "pages": 9,
     "categories": 4,
     "sections": 9,
     "fields": 41,
@@ -45,6 +45,14 @@
       "id": "agents",
       "categoryId": "provider",
       "order": 50,
+      "visibility": "sidebar",
+      "navParent": null,
+      "emptyPage": true
+    },
+    {
+      "id": "mcp-servers",
+      "categoryId": "provider",
+      "order": 55,
       "visibility": "sidebar",
       "navParent": null,
       "emptyPage": true

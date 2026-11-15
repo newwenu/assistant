@@ -6,6 +6,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::context::ToolUseContext;
 use crate::os::path::{workspace_membership, WorkspaceMembership};
@@ -40,6 +41,15 @@ pub enum ApprovalScope {
     },
     Opaque {
         fingerprint: String,
+    },
+    /// MCP 外部工具的精确键（I38e §3.5）：四个字段全等才命中。
+    ///
+    /// 不存在工具级宽授权：同 server 的其它工具、其它参数、其它配置都不命中。
+    Mcp {
+        server_id: String,
+        tool: String,
+        args_fingerprint: String,
+        config_hash: String,
     },
 }
 
@@ -82,6 +92,17 @@ impl ApprovalKey {
             "network" | "fetch" | "http" => {
                 let (host, method) = parse_endpoint(resource, input)?;
                 ApprovalScope::Endpoint { host, method }
+            }
+            // MCP 键必须精确到一次调用：server + 工具 + 规范化参数指纹 + 配置哈希
+            // 全等才命中（I38e §3.5），不得退化为工具级或 server 级放行。
+            "mcp" => {
+                let (server_id, config_hash) = parse_mcp_resource(resource)?;
+                ApprovalScope::Mcp {
+                    tool: mcp_tool_segment(tool, &server_id)?,
+                    args_fingerprint: canonical_json_sha256(input)?,
+                    server_id,
+                    config_hash,
+                }
             }
             _ => ApprovalScope::Opaque {
                 fingerprint: opaque_fingerprint(resource)?,
@@ -1165,5 +1186,67 @@ fn opaque_fingerprint(resource: &str) -> Option<String> {
         None
     } else {
         Some(trimmed.to_string())
+    }
+}
+
+/// 解析 MCP intent 资源 `mcp:{server_id}:{config_hash}`。
+///
+/// 恰好两段；两段均非空且均不得含 `:`（否则无法与后续字段区分，返回空键）。
+fn parse_mcp_resource(resource: &str) -> Option<(String, String)> {
+    let rest = resource.trim().strip_prefix("mcp:")?;
+    let (server_id, config_hash) = rest.split_once(':')?;
+    if server_id.is_empty() || config_hash.is_empty() || config_hash.contains(':') {
+        return None;
+    }
+    Some((server_id.to_string(), config_hash.to_string()))
+}
+
+/// 从模型可见全名 `mcp__{server_id}__{tool}` 反解第二段（规范化后的 MCP 工具名）。
+///
+/// 前缀不符返回 `None`（空键）：宁可直接审批，也不构造跨工具的宽键。
+fn mcp_tool_segment(full_name: &str, server_id: &str) -> Option<String> {
+    let tool = full_name.strip_prefix(&format!("mcp__{server_id}__"))?;
+    if tool.is_empty() {
+        None
+    } else {
+        Some(tool.to_string())
+    }
+}
+
+/// 参数指纹：`SHA-256(canonical_json(arguments))`（I38e §3.5）。
+///
+/// 非对象参数返回 `None`：审批键只能描述「这一次调用」，不接受其它形状。
+fn canonical_json_sha256(input: &Value) -> Option<String> {
+    if !input.is_object() {
+        return None;
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(canonical_json(input).as_bytes());
+    Some(hex::encode(hasher.finalize()))
+}
+
+/// 规范 JSON：对象键递归排序、无多余空白、数组顺序保留。
+///
+/// 不依赖 `serde_json::Map` 的迭代顺序（该顺序受 feature 影响），
+/// 保证同一参数在不同构建、不同进程下得到同一指纹。
+fn canonical_json(value: &Value) -> String {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            let fields: Vec<String> = keys
+                .into_iter()
+                .map(|key| {
+                    let encoded = serde_json::to_string(key).unwrap_or_default();
+                    format!("{encoded}:{}", canonical_json(&map[key]))
+                })
+                .collect();
+            format!("{{{}}}", fields.join(","))
+        }
+        Value::Array(items) => {
+            let items: Vec<String> = items.iter().map(canonical_json).collect();
+            format!("[{}]", items.join(","))
+        }
+        other => serde_json::to_string(other).unwrap_or_default(),
     }
 }

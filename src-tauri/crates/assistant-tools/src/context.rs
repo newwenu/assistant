@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +23,10 @@ pub struct ToolUseContext {
     pub iteration: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    /// turn 取消信号：MCP 客户端在 `call_tool` 内用它中止在途请求（I38e §4.3）。
+    /// 运行时信号，不是 wire 字段，故不参与序列化。
+    #[serde(skip)]
+    pub cancel: Option<CancellationToken>,
 }
 
 impl ToolUseContext {
@@ -37,6 +42,7 @@ impl ToolUseContext {
             turn_id: None,
             iteration: None,
             tool_call_id: None,
+            cancel: None,
         }
     }
 }
