@@ -100,8 +100,8 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | P10 AI 审批顾问（`EscalateOnly` / `RelaxOnly` / 审计与度量） | [I38g](./I38g-agent-approval-advisor-spec.md) | 实施规格 |
 | P12 工作区（会话绑定 / 目录簿 / 唯一解析点） | I38h（已归档） | 实施规格 |
 | assistant 消息身份指示（头像 / 模式 / 模型、消息级 `mode_id`） | I43-assistant-identity-spec.md（已归档） | 实施规格 |
-| 模型能力事实（三态 + 来源 + 主体 key；内容/列表/推理三处止损） | [I45](./I45-model-capability-facts-spec.md) | 实施规格 |
-| 模型能力事实任务级进度（C1–C3 勾选） | [I45 tasklist](./I45-model-capability-facts-tasklist.md) | 任务清单（唯一任务级进度） |
+| 模型能力事实（三态 + 来源 + 主体 key；内容/列表/推理三处止损） | I45-model-capability-facts-spec.md（已归档） | 实施规格 |
+| 模型能力事实任务级进度（C1–C3 勾选） | I45 tasklist（已归档） | 任务清单（唯一任务级进度） |
 | Agent 节点布局（坐标 / 容器 / 分组 / 密度 / 挂载） | [I46 design](./I46-agent-node-layout-design.md) · [I46 spec](./I46-agent-node-layout-spec.md) | 设计 ADR + 实施规格 |
 | 工具结果紧凑信封（三段信封 / 省略三态 / 落盘生命周期 / `compact` wire 字段 / 渲染形态选路） | [I46 紧凑消息格式设计](./I46-agent-compact-message-format-design.md) | 参考记录（被 I46 节点布局设计取代为权威源；信封、省略、落盘、预算与门禁 1–12 仍有效） |
 | P13 任务级进度（C1–C10 勾选） | [I46 compact tasklist](./I46-agent-compact-message-format-tasklist.md) | 任务清单（唯一任务级进度） |

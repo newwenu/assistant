@@ -8,7 +8,7 @@
 
 | 域 | 内容 | 文件数 |
 |---|---|---|
-| [agent/](./agent/) | Agent 运行时、工具框架、Agent Loop、审批、压缩、身份与能力事实、代码规模审计 | 42 |
+| [agent/](./agent/) | Agent 运行时、工具框架、Agent Loop、审批、压缩、身份与能力事实、代码规模审计 | 45 |
 | [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 36 |
 | [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、Token Usage | 32 |
 | [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 35 |
@@ -16,7 +16,7 @@
 
 ## 文档清单
 
-### agent/ (42)
+### agent/ (45)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -62,6 +62,9 @@
 | [`I41-cancel-consistency-patch-spec.md`](./agent/I41-cancel-consistency-patch-spec.md) | achievement4 | I41 — 用户取消的跨链路一致性补丁规格 |
 | [`I43-assistant-identity-spec.md`](./agent/I43-assistant-identity-spec.md) | achievement5 | I43 — Assistant 消息身份指示规格（头像 / 模式 / 模型） |
 | [`MODEL-CAPABILITY-EVOLUTION-ANALYSIS.md`](./agent/MODEL-CAPABILITY-EVOLUTION-ANALYSIS.md) | achievement5 | 模型能力描述与演进兼容性分析 |
+| [`I45-model-capability-facts-spec.md`](./agent/I45-model-capability-facts-spec.md) | achievement6 | I45 — 模型能力事实规格（止损、三态与主体 key） |
+| [`I45-model-capability-facts-tasklist.md`](./agent/I45-model-capability-facts-tasklist.md) | achievement6 | I45 — 模型能力事实任务清单 |
+| [`I49-delete-trash-spec.md`](./agent/I49-delete-trash-spec.md) | achievement6 | I49-delete-trash — `delete` 默认移入回收站 + 显式永久删除 |
 
 ### vault/ (36)
 
