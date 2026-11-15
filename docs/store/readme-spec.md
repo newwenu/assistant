@@ -4,8 +4,8 @@
 |---|---|
 | 状态 | 现行 |
 | 日期 | 2026-11-04 |
-| 适用 | 仓库根 `README.md`、crate / 子应用 README、`references/` 下自写的参考快照 README |
-| 依据 | `references/` 各分组项目的根 README（ChatGPT、goose、OpenBitFun、onepoint、BongoCat、WindowPet、vaultwarden、keyring-rs、rust-keepass、memos、notes、pomatez、stretchly 等）与 `references/3-screen-capture/Cap/README.md` |
+| 适用 | 仓库根 `README.md`、crate / 子应用 README、本机参考检出 `references/` 下自写的参考快照 README |
+| 依据 | 各参考项目的根 README（ChatGPT、goose、OpenBitFun、onepoint、BongoCat、WindowPet、vaultwarden、keyring-rs、rust-keepass、memos、notes、pomatez、stretchly 等）与 `Cap` 的自写快照 README |
 
 > README 是仓库**唯一面向外部读者的入口**。它只回答四件事：这是什么、能做什么、怎么跑起来、细节去哪看。内部迭代过程、决策推演、阶段门禁一律不进 README。
 
@@ -105,7 +105,7 @@ tagline
 
 ### 5.3 参考快照型
 
-本仓库 `references/` 下的自写 README 不是上游 README，必须包含：
+本机参考检出 `references/`（已被 `.gitignore` 忽略、不入仓）下的自写 README 不是上游 README，必须包含：
 
 | 字段 | 要求 |
 |---|---|
@@ -115,7 +115,7 @@ tagline
 | 为什么选它 | 用表格把“本项目关心的问题 → 对应上游文件”对齐 |
 | 对本项目的结论 | 采纳 / 不采纳的具体理由与替代方案 |
 
-参考 [Cap 参考快照](../../references/3-screen-capture/Cap/README.md)。
+参考 `Cap` 的自写快照 README（在本机参考检出中，不入仓）。
 
 ---
 

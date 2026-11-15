@@ -5,7 +5,7 @@
 | 状态 | Draft（rev4） |
 | 日期 | 2026-11-03（rev4：2026-11-08） |
 | 修订 | rev4：抓屏只隐藏覆盖层宿主 `orb`，`main` 不再隐藏，底图与用户触发瞬间所见一致；rev3：取消新增 webview，改为复用 Orb 窗口做全屏覆盖层；chat 自隐藏且保留草稿；快捷键注册改为表驱动并更换默认组合；补充 Cap 参考项目 |
-| 上游调研 | 本仓库代码核对 + `references/1-ai-agent/OpenBitFun`、`references/2-desktop-orb/airi`、`references/3-screen-capture/Cap`、`references/3-screen-capture/Kiri`、`references/3-screen-capture/shiping` 对照 |
+| 上游调研 | 本仓库代码核对 + OpenBitFun、airi、Cap、Kiri、shiping 五个参考项目对照 |
 | 关联规格 | I2e-multimodal-attachments-spec（已归档，附件链路）、I4-spec（已归档，全局快捷键） |
 | 影响范围 | 复用 Orb 窗口（**不新增 webview**）、Rust 模块 `screenshot`、6 条命令、3 个 DTO、2 个事件、快捷键注册重构与默认值调整、临时目录与清理、i18n、设置提示；`assistant-storage` / `assistant-agent` 各一处受控清理；`Cargo.toml` 新增 `xcap` 与直接 `image` 依赖 |
 
@@ -126,8 +126,8 @@
 | F40 | `expand_orb_panel` / `collapse_orb_panel` 基于当前 position/size 计算 | `src-tauri/src/window.rs` | 恢复必须写回精确的原物理几何，store 的 `isExpanded` 才能继续成立 |
 | F41 | `ChatView` 的附件按钮在流式时禁用；`supportVision` 由当前模型决定 | `src/chat/ChatView.tsx` | 截图按钮应沿用同样的禁用条件 |
 | F42 | `ShortcutSettings` 使用 `appConf.keybindings ?? DEFAULT_KEYBINDINGS`；`KeybindingField` 只检测内部重复 | `src/settings/pages/ShortcutSettings.tsx`、`src/settings/shared/renderers/KeybindingField.tsx` | 默认值漂移会让设置页显示与实际注册不一致；外部冲突无法可靠静态枚举，以注册失败为准 |
-| F43 | `references/3-screen-capture/Cap` 已加入部分快照 | 本仓库 references（gitignored） | 作为原生覆盖层、捕获排除、权限校验的只读参考 |
-| F44 | `references/3-screen-capture/Kiri`（MIT）与 `shiping`（CC BY-NC 4.0）已完整克隆 | 本仓库 references（gitignored） | Kiri 可复制 Rust 抓屏实现；shiping 仅读流程与几何换算，禁止复制代码 |
+| F43 | Cap 已加入部分快照 | 本机参考检出 `references/`（gitignored，不入仓） | 作为原生覆盖层、捕获排除、权限校验的只读参考 |
+| F44 | Kiri（MIT）与 shiping（CC BY-NC 4.0）已完整克隆 | 本机参考检出 `references/`（gitignored，不入仓） | Kiri 可复制 Rust 抓屏实现；shiping 仅读流程与几何换算，禁止复制代码 |
 
 ---
 
@@ -974,7 +974,7 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 
 ### 14.1 Cap（新增，部分快照）
 
-`references/3-screen-capture/Cap/` 是上游 `CapSoftware/Cap` 的部分检出（提交 `620f65b`，AGPL-3.0；仅阅读，不复制代码）：
+Cap（上游 `CapSoftware/Cap`）是部分检出（提交 `620f65b`，AGPL-3.0；仅阅读，不复制代码）：
 
 | 文件 | 可借鉴内容 |
 |---|---|
@@ -992,23 +992,23 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 
 | 项目 | 可参考内容 | 用途 |
 |---|---|---|
-| `references/1-ai-agent/OpenBitFun` | `windows_wgc_capture.rs`、`macos_capture.rs`、`AGENTS.md` | 原生捕获的失败语义与平台差异 |
-| `references/1-ai-agent/OpenBitFun` | `imagePayload.ts` / `imageUtils.ts` | 截图作为「图片上下文」的前端结构 |
-| `references/2-desktop-orb/airi` | `services/computer-use-mcp/src/utils/screenshot.ts` | 截图压缩、尺寸上限、失败兜底 |
-| `references/1-ai-agent/openhuman` | `capabilities/default.json` 的 `screen_intelligence_capture_now` | 能力命名与权限声明 |
+| OpenBitFun | `windows_wgc_capture.rs`、`macos_capture.rs`、`AGENTS.md` | 原生捕获的失败语义与平台差异 |
+| OpenBitFun | `imagePayload.ts` / `imageUtils.ts` | 截图作为「图片上下文」的前端结构 |
+| airi | `services/computer-use-mcp/src/utils/screenshot.ts` | 截图压缩、尺寸上限、失败兜底 |
+| openhuman | `capabilities/default.json` 的 `screen_intelligence_capture_now` | 能力命名与权限声明 |
 
 第三方开源截图工具（Flameshot / ShareX，均为 GPL-3）只可参考交互习惯，**不可复制代码**。
 
 ### 14.3 Kiri / shiping（新增，完整克隆）
 
-两个项目位于 `references/3-screen-capture/`（`references/` 已被 `.gitignore` 忽略，不参与构建与分发）。
+Kiri 与 shiping 需从本地参考检出中取得（`references/` 已被 `.gitignore` 忽略，不参与构建与分发）。
 
 | 项目 | 许可证 | 可借鉴内容 | 用途 |
 |---|---|---|---|
-| `references/3-screen-capture/Kiri` | MIT，可复制 | `src-tauri/src/capture/mod.rs` 的 `CaptureHealth`（`expected_stop` / `unexpected_failure` 边界）与 `VIDEO_FRAME_QUEUE_CAPACITY = 2` 有界帧队列；`capture/{windows,macos,linux}.rs` 三平台实现 | Rust 抓屏错误分类与平台差异 |
-| `references/3-screen-capture/Kiri` | MIT | `docs/adr/0107-windows-capture-visibility-and-pin-drag.md`（隐藏后 DWM flush 与可见性校验）、`0029` / `0047`（macOS 全屏 Space 覆盖层）、`0051` / `0052`（Linux 边界与授权恢复） | 跨平台风险与验收口径 |
-| `references/3-screen-capture/shiping` | **CC BY-NC 4.0，禁止商用** | `src/main/take-screenshot.ts`（首抓空帧重试、按 DIP 尺寸 resize 后再编码）、`src/shared/capture-region.ts`（`RegionRect` / `regionToPixels`） | 只读借鉴流程与几何换算，**不得复制代码** |
-| `references/3-screen-capture/shiping` | CC BY-NC 4.0 | `src/main/window-privacy.ts`（`setContentProtection` + Windows 软隐藏后重置）、`src/main/region-picker.ts`（框选窗口生命周期） | 自身窗口隐身与框选交互 |
+| Kiri | MIT，可复制 | `src-tauri/src/capture/mod.rs` 的 `CaptureHealth`（`expected_stop` / `unexpected_failure` 边界）与 `VIDEO_FRAME_QUEUE_CAPACITY = 2` 有界帧队列；`capture/{windows,macos,linux}.rs` 三平台实现 | Rust 抓屏错误分类与平台差异 |
+| Kiri | MIT | `docs/adr/0107-windows-capture-visibility-and-pin-drag.md`（隐藏后 DWM flush 与可见性校验）、`0029` / `0047`（macOS 全屏 Space 覆盖层）、`0051` / `0052`（Linux 边界与授权恢复） | 跨平台风险与验收口径 |
+| shiping | **CC BY-NC 4.0，禁止商用** | `src/main/take-screenshot.ts`（首抓空帧重试、按 DIP 尺寸 resize 后再编码）、`src/shared/capture-region.ts`（`RegionRect` / `regionToPixels`） | 只读借鉴流程与几何换算，**不得复制代码** |
+| shiping | CC BY-NC 4.0 | `src/main/window-privacy.ts`（`setContentProtection` + Windows 软隐藏后重置）、`src/main/region-picker.ts`（框选窗口生命周期） | 自身窗口隐身与框选交互 |
 
 与 rev4 的关系：Kiri ADR 0107 证明「隐藏窗口后不能只等固定延时，必须确认窗口真的不可见并 flush DWM」，这是 `SCREENSHOT_HIDE_SETTLE_MS` 之外仍需在 Windows 上补可见性校验的依据；shiping 的 `take-screenshot.ts` 说明「先抓空帧重试一次」是必要兜底。
 
@@ -1028,7 +1028,7 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 | §9 | 新布局、跨窗口事件、`useScreenshotResult` | `OrbWindow` 条件渲染、`screenshotStore`、直接 ingest、chat 只隐藏不卸载 |
 | §9.7 | 无冲突检测边界说明 | 明确只检测内部重复；外部冲突以 OS 注册失败为准，不维护静态表 |
 | §10 | 新窗口文件 | 移除 `ScreenshotWindow`，新增 `orb_overlay.rs` / `screenshotStore.ts` / `useScreenshotSession.ts` |
-| §14 | 无截屏参考项目 | 新增 `references/3-screen-capture/Cap` 部分快照 |
+| §14 | 无截屏参考项目 | 新增 Cap 部分快照 |
 
 ---
 

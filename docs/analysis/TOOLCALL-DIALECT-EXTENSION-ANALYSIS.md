@@ -136,7 +136,7 @@ match serde_json::from_str::<Value>(arguments) {
 - 只能靠「试着按 JSON 解析，失败就当空对象」——正是 §2.4 的静默降级
 - 会话恢复（重放历史）时同样无法判断，因为 DB 里只有裸文本
 
-openhuman 对此的处理是显式的：`agent.tool_dispatcher` 作为配置项被**持久化并在会话恢复时复用**（见 `references/1-ai-agent/openhuman/gitbooks/developing/architecture/agent-harness.md` 的 "Tool dispatch and tool-call dialects" 一节，明确写 "Persisted session histories can contain suffixes in any of these shapes, so the session shell keeps the dispatcher around to parse and replay them faithfully when a transcript is resumed"）。它把「方言」当成**会话级上下文**，而不是一次性解析参数。
+openhuman 对此的处理是显式的：`agent.tool_dispatcher` 作为配置项被**持久化并在会话恢复时复用**（见 `openhuman/gitbooks/developing/architecture/agent-harness.md` 的 "Tool dispatch and tool-call dialects" 一节，明确写 "Persisted session histories can contain suffixes in any of these shapes, so the session shell keeps the dispatcher around to parse and replay them faithfully when a transcript is resumed"）。它把「方言」当成**会话级上下文**，而不是一次性解析参数。
 
 ### 3.2 布尔累积反模式
 
@@ -182,8 +182,8 @@ openhuman 对此的处理是显式的：`agent.tool_dispatcher` 作为配置项�
 
 | 证据 | 位置 |
 | --- | --- |
-| openhuman `xml` 方言 | `references/1-ai-agent/openhuman/crates/openhuman-core/src/config/ops/tool_dispatcher.rs` |
-| goose 剥壳解析 | `references/1-ai-agent/goose/crates/goose-provider-types/src/json.rs` 的 `parse_tool_arguments` |
+| openhuman `xml` 方言 | `openhuman/crates/openhuman-core/src/config/ops/tool_dispatcher.rs` |
+| goose 剥壳解析 | `goose/crates/goose-provider-types/src/json.rs` 的 `parse_tool_arguments` |
 
 **成本评估**：这是**最划算的一格**。参数仍是 JSON，A3 不被打破；缺的只是 A1（无 id）与 A7（形态标记）。若接受「文本方言一律合成 id + 约定成 JSON」，可**不动结构**落地。
 
@@ -224,7 +224,7 @@ read_file({path: "src/main.rs", limit: 20});
 | 证据 | 位置 |
 | --- | --- |
 | openhuman `python` / `typescript`，且明说 `python` 是默认代码方言 | `tool_dispatcher.rs`、`agent-harness.md` |
-| codex code mode：工具目录渲染为 TS 声明 | `references/1-ai-agent/codex/codex-rs/tools/src/code_mode_tests.rs` |
+| codex code mode：工具目录渲染为 TS 声明 | `codex/codex-rs/tools/src/code_mode_tests.rs` |
 
 **成本评估**：同 P-Format 打破 A3/A7，但**模型先验更强**——代码训练充分的模型写过大量函数调用，误判率低于位置式。openhuman 文档直说 "Compact like P-Format but a syntax small code-trained models already write"。
 
@@ -253,8 +253,8 @@ read_file({path: "src/main.rs", limit: 20});
 
 | 证据 | 位置 |
 | --- | --- |
-| codex `FreeformToolFormat { type: "grammar", syntax: "lark" }` | `references/1-ai-agent/codex/codex-rs/tools/src/tool_spec_tests.rs` |
-| `apply_patch` 指令文本 | `references/1-ai-agent/codex/codex-rs/protocol/src/prompts/base_instructions/default.md` |
+| codex `FreeformToolFormat { type: "grammar", syntax: "lark" }` | `codex/codex-rs/tools/src/tool_spec_tests.rs` |
+| `apply_patch` 指令文本 | `codex/codex-rs/protocol/src/prompts/base_instructions/default.md` |
 
 **成本评估**：本质是「结构化输出」而非「工具调用」。它把参数变成 DSL，好处是 diff 这类天然非 JSON 的内容不用嵌套转义。但：
 - 绑定 provider 的 grammar 解码能力，非该 provider 无法复现
@@ -273,7 +273,7 @@ functions.shell:0 <|tool_call_argument_begin|> {"command":"ls"}
 
 | 证据 | 位置 |
 | --- | --- |
-| goose 双格式回退：有标记 / 无标记（`name {json}`） | `references/1-ai-agent/goose/crates/goose/src/providers/toolshim.rs` |
+| goose 双格式回退：有标记 / 无标记（`name {json}`） | `goose/crates/goose/src/providers/toolshim.rs` |
 
 **成本评估**：仅特定模型族（DeepSeek 系）原生。参数仍是 JSON，但**解析必须按 token 切分**，与普通文本解析器不同路径。
 
@@ -283,7 +283,7 @@ functions.shell:0 <|tool_call_argument_begin|> {"command":"ls"}
 
 | 证据 | 位置 |
 | --- | --- |
-| goose tool shim（默认 Ollama `mistral-nemo`） | `references/1-ai-agent/goose/documentation/docs/guides/tool-shim.md` |
+| goose tool shim（默认 Ollama `mistral-nemo`） | `goose/documentation/docs/guides/tool-shim.md` |
 
 **成本评估**：完全不挑模型，但每次工具调用多一次推理。延迟与成本翻倍，且失败模式变成「解释器幻觉」——它可能编造一个模型没写的调用。
 
@@ -389,7 +389,7 @@ functions.shell:0 <|tool_call_argument_begin|> {"command":"ls"}
 
 ### 6.5 误判（文本模拟的固有代价）
 
-goose 在 `references/1-ai-agent/goose/crates/goose-local-inference/src/tool_emulation.rs` 的文件头注释里老实写了已知误判：「`$` 出现在行首的说明文字会被当成命令」。这是**文本模拟的固有代价**，不是实现 bug。
+goose 在 `goose/crates/goose-local-inference/src/tool_emulation.rs` 的文件头注释里老实写了已知误判：「`$` 出现在行首的说明文字会被当成命令」。这是**文本模拟的固有代价**，不是实现 bug。
 
 缓解手段（按可靠性排序）：
 1. **解码期约束**（grammar）——最可靠，但绑定 provider

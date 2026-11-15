@@ -1,7 +1,7 @@
 # Agent 审批链中的 AI 判定：参考项目分析
 
 > 日期：2026-11-06
-> 范围：`references/1-ai-agent/` 下 goose、codex、openhuman、OpenBitFun 四个项目的审批链路
+> 范围：goose、codex、openhuman、OpenBitFun 四个参考项目的审批链路
 > 性质：**纯参考分析**。只描述「审批决策由谁做出、AI 被允许做什么」，不讨论本项目实现、不产出待办。
 > 阅读约定：结论（§1、§7、§8）讨论的是结构，不随任一项目的代码演进失效；基线证据（§2–§6）是某一时刻的代码快照，可能过期。
 
@@ -118,7 +118,7 @@ LLM 只读检测（仅 SmartApprove，且该工具未被缓存为非只读）
 
 第三句是整个 goose 方案的安全基石：**默认答案是否定的**。模型不需要证明「危险」，它必须证明「只读」才能换取免打扰。
 
-系统提示词来自模板 `permission_judge.md`（`render_template("permission_judge.md", ...)`），该模板在本仓库的 `references/` 快照中未随源码落盘，只在 `documentation/docs/guides/context-engineering/prompt-templates.md` 里登记了用途。这一点值得注意：**如果模板加载失败，代码会回落到一句极简的兜底提示**——
+系统提示词来自模板 `permission_judge.md`（`render_template("permission_judge.md", ...)`），该模板在本机参考检出（`references/`，不入仓）的快照中未随源码落盘，只在 `documentation/docs/guides/context-engineering/prompt-templates.md` 里登记了用途。这一点值得注意：**如果模板加载失败，代码会回落到一句极简的兜底提示**——
 
 ```rust
 .unwrap_or_else(|_| "You are a good analyst and can detect operations whether they have read-only operations.".to_string());
@@ -146,7 +146,7 @@ goose 的形态可以概括为：**AI 只有「免除打扰」的授权，没有
 
 ### 4.1 配置入口与默认值
 
-`codex-rs/protocol/src/config_types.rs`：
+`codex/codex-rs/protocol/src/config_types.rs`：
 
 ```rust
 pub enum ApprovalsReviewer {
@@ -205,7 +205,7 @@ pub struct GuardianAssessment {
 
 ### 4.4 决策阈值
 
-`codex-rs/prompts/templates/guardian/policy_template.md` 的默认阈值：
+`codex/codex-rs/prompts/templates/guardian/policy_template.md` 的默认阈值：
 
 | 风险等级 | 默认结果 |
 |---|---|
@@ -261,7 +261,7 @@ Guardian 不是「一次模型调用」，是一套带降级路径的服务：
 
 ### 4.7 上下文预算
 
-`codex-rs/guardian-context/src/` 给每类证据都设了硬上限：
+`codex/codex-rs/guardian-context/src/` 给每类证据都设了硬上限：
 
 | 证据类型 | token 上限 |
 |---|---|
@@ -419,7 +419,7 @@ export const DISPATCH_PERMISSION_MODES = ['ask', 'auto', 'reject'];
 
 注意 `ask` 映射到 `remote` 而不是一个「询问」策略：它表达的是「把决策权交回发起端」，本身仍是一个转发规则，不涉及任何判定。
 
-审批策略由用户选择的 permission mode 直接决定，链路中没有模型调用。`references/1-ai-agent/OpenBitFun` 全库检索 `smart_approve` / `auto_review` 无命中。
+审批策略由用户选择的 permission mode 直接决定，链路中没有模型调用。OpenBitFun 全库检索 `smart_approve` / `auto_review` 无命中。
 
 **这个「什么都不做」的样本仍然有价值**：它说明「AI 审批」不是 agent 产品的必备组件。一个成熟产品完全可以用 `ask / auto / reject` 三档模式满足需求，把复杂度留给用户的选择。
 
@@ -558,25 +558,25 @@ OpenBitFun ┌ 用户模式 ┐ → Allow | 问人 | 拒绝
 
 | 主题 | 文件 |
 |---|---|
-| goose 模式枚举 | `references/1-ai-agent/goose/crates/goose-provider-types/src/goose_mode.rs` |
-| goose 判定瀑布 | `references/1-ai-agent/goose/crates/goose/src/permission/permission_inspector.rs` |
-| goose 只读判定与提示词 | `references/1-ai-agent/goose/crates/goose/src/permission/permission_judge.rs` |
-| goose 模式文档 | `references/1-ai-agent/goose/documentation/docs/guides/managing-tools/goose-permissions.md` |
-| goose 无会话沙箱的自述 | `references/1-ai-agent/goose/crates/goose-roaming/SECURITY.md` |
-| codex 审批员枚举 | `references/1-ai-agent/codex/codex-rs/protocol/src/config_types.rs` |
-| codex 评审员权限 | `references/1-ai-agent/codex/codex-rs/ext/guardian-reviewer/src/settings.rs` |
-| codex 输出契约 | `references/1-ai-agent/codex/codex-rs/ext/guardian-reviewer/src/assessment.rs` |
-| codex 决策阈值 | `references/1-ai-agent/codex/codex-rs/prompts/templates/guardian/policy_template.md` |
-| codex 路由与回落 | `references/1-ai-agent/codex/codex-rs/ext/guardian-reviewer/src/routing.rs` |
-| codex 熔断 | `references/1-ai-agent/codex/codex-rs/ext/guardian-reviewer/src/circuit_breaker.rs` |
-| codex 结果分类 | `references/1-ai-agent/codex/codex-rs/ext/guardian-reviewer/src/outcome.rs` |
-| codex 评审截止时间 | `references/1-ai-agent/codex/codex-rs/ext/guardian-reviewer/src/deadline.rs` |
-| codex 上下文预算 | `references/1-ai-agent/codex/codex-rs/guardian-context/src/` |
+| goose 模式枚举 | `goose/crates/goose-provider-types/src/goose_mode.rs` |
+| goose 判定瀑布 | `goose/crates/goose/src/permission/permission_inspector.rs` |
+| goose 只读判定与提示词 | `goose/crates/goose/src/permission/permission_judge.rs` |
+| goose 模式文档 | `goose/documentation/docs/guides/managing-tools/goose-permissions.md` |
+| goose 无会话沙箱的自述 | `goose/crates/goose-roaming/SECURITY.md` |
+| codex 审批员枚举 | `codex/codex-rs/protocol/src/config_types.rs` |
+| codex 评审员权限 | `codex/codex-rs/ext/guardian-reviewer/src/settings.rs` |
+| codex 输出契约 | `codex/codex-rs/ext/guardian-reviewer/src/assessment.rs` |
+| codex 决策阈值 | `codex/codex-rs/prompts/templates/guardian/policy_template.md` |
+| codex 路由与回落 | `codex/codex-rs/ext/guardian-reviewer/src/routing.rs` |
+| codex 熔断 | `codex/codex-rs/ext/guardian-reviewer/src/circuit_breaker.rs` |
+| codex 结果分类 | `codex/codex-rs/ext/guardian-reviewer/src/outcome.rs` |
+| codex 评审截止时间 | `codex/codex-rs/ext/guardian-reviewer/src/deadline.rs` |
+| codex 上下文预算 | `codex/codex-rs/guardian-context/src/` |
 | 沙箱与操作范围检测（四层模型、各项目实现、降级语义） | `docs/store/agent-sandbox-reference-analysis.md` §5.4 |
-| openhuman 访问预设 | `references/1-ai-agent/openhuman/crates/openhuman-embed/src/harness/access.rs` |
-| openhuman 门决策类型 | `references/1-ai-agent/openhuman/crates/openhuman-core/src/security/policy/types.rs` |
-| openhuman 策略说明 | `references/1-ai-agent/openhuman/crates/openhuman-core/src/security/policy/README.md` |
-| openhuman 模型声明加码 | `references/1-ai-agent/openhuman/crates/openhuman-core/src/agent/tinyagents/host/security_gate.rs` |
-| openhuman 审批门 | `references/1-ai-agent/openhuman/crates/openhuman-core/src/security/approval/README.md` |
-| openhuman 注入检测 | `references/1-ai-agent/openhuman/crates/openhuman-core/src/security/prompt_injection/detector.rs` |
-| OpenBitFun 模式映射 | `references/1-ai-agent/OpenBitFun/src/web-ui/src/features/dispatch/approvalPolicy.ts` |
+| openhuman 访问预设 | `openhuman/crates/openhuman-embed/src/harness/access.rs` |
+| openhuman 门决策类型 | `openhuman/crates/openhuman-core/src/security/policy/types.rs` |
+| openhuman 策略说明 | `openhuman/crates/openhuman-core/src/security/policy/README.md` |
+| openhuman 模型声明加码 | `openhuman/crates/openhuman-core/src/agent/tinyagents/host/security_gate.rs` |
+| openhuman 审批门 | `openhuman/crates/openhuman-core/src/security/approval/README.md` |
+| openhuman 注入检测 | `openhuman/crates/openhuman-core/src/security/prompt_injection/detector.rs` |
+| OpenBitFun 模式映射 | `OpenBitFun/src/web-ui/src/features/dispatch/approvalPolicy.ts` |

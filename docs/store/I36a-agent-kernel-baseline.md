@@ -141,7 +141,7 @@
 
 ### 3.1 Goose：Operation + StateMachine（事件溯源式循环）
 
-`references/1-ai-agent/goose/crates/goose-agent/src/` 把整个 turn 表达为**一组可组合的 Operation**，`StateMachine` 逐个尝试，命中即停：
+Goose 的 `crates/goose-agent/src/` 把整个 turn 表达为**一组可组合的 Operation**，`StateMachine` 逐个尝试，命中即停：
 
 - `operation.rs`：`Operation::run` 返回 `NotApplicable` / `Applied(StepResult)`；`Applied` 携带**效果列表**（`AppendMessage` / `ReplaceConversation` / `PatchToolRequestMeta` / `SetMessageVisibility`），由 `EffectHandler` 统一施加。内核不改状态，只产出「状态变更意图」。
 - `machine.rs`：每轮循环**重新加载会话**（`runtime.load(session_id)`）再跑一步，因此**落库会话就是唯一真源**，进程内没有第二份可变状态。
@@ -155,7 +155,7 @@
 
 ### 3.2 OpenHuman：harness + middleware 栈（顺序即语义）
 
-`references/1-ai-agent/openhuman/crates/openhuman-core/src/agent/tinyagents/` 的循环体交给通用 harness，产品语义全部落在中间件：
+OpenHuman 的 `crates/openhuman-core/src/agent/tinyagents/` 的循环体交给通用 harness，产品语义全部落在中间件：
 
 - `harness_assembly.rs`：`push_middleware` 的**注册顺序就是 `before_model` / `after_tool` 的执行顺序**，每条注释都写明「为什么必须在这个位置」。
 - `harness_context_ladder.rs`：阶梯顺序固定为 **压缩 → 微压缩 → 收尾还原 → 确定性裁剪**。注释记录了一次真实事故：早期顺序是「微压缩 → 压缩」，摘要器拿到的正文已被清空，摘要里永远缺关键结果。这条顺序教训直接对应我们 I38b D23 / D24。
@@ -168,7 +168,7 @@
 
 ### 3.3 DeepSeek Harness：能力接缝 + 不变量
 
-`references/1-ai-agent/deepseek-harness/.agents/notes/archived/architecture/` 的设计笔记，几乎每条都对应我们内核的一条不变式：
+DeepSeek Harness 的 `.agents/notes/archived/architecture/` 设计笔记，几乎每条都对应我们内核的一条不变式：
 
 - `2026-06-17-filesystem-capability-seam.md`：能力按**三包**拆——接口包（`dsh-fs`）、实现包（`dsh-fs-local`）、消费包（`dsh-tool-fs`）；**消费包只依赖接口包，永不依赖实现包**。文件访问策略、路径解析、原子写属于实现；工具 schema 与结果格式属于消费。并明确写明：**接缝本身不蕴含权限与沙箱**，containment 由独立策略包在 `tools/execute` 前否决。这条直接印证我们「Policy 不在内核、在 Pipeline」的取舍，也提示需要一条「不得绕过 Pipeline」的不变式。
 - `2026-06-15-turn-enclosure-invariant.md`：**每个会话事件都必须落在一个 turn 内**（`turn/start` 与 `turn/end` 之间），因为 turn 是崩溃恢复边界。排队消息改为在 `turn/start` 之后写入；空闲期注入包成一次性 turn。规则由**生产方**强制并加 dev 断言，而不是让读取方容忍。
@@ -179,7 +179,7 @@
 
 ### 3.4 Codex：控制面与执行面分离
 
-`references/1-ai-agent/codex/codex-rs/core/src/agent/control/` 把「多 agent 的生命周期」抽成控制面：
+Codex 的 `codex-rs/core/src/agent/control/` 把「多 agent 的生命周期」抽成控制面：
 
 - `api.rs`：`AgentControl` 暴露 `resolve / spawn / send / interrupt / resume / ...`；`spawn` 的输入必须是「启动子 turn」的消息模式，不允许静默排队。
 - `interrupt.rs`：**根 agent 不可被中断，agent 不可中断自己**；未加载或已死的运行时视为中断成功，且**绝不为了中断而重新加载**。
@@ -190,7 +190,7 @@
 
 ### 3.5 OpenBitFun：turn 统计与事件路由
 
-`references/1-ai-agent/OpenBitFun/src/crates/execution/agent-runtime/src/` 把 turn 作为一等事实：
+OpenBitFun 的 `src/crates/execution/agent-runtime/src/` 把 turn 作为一等事实：
 
 - `dialog_turn.rs`：`TurnStats`（轮数 / 工具数 / token / 耗时）与 `TurnTokenUsage`（按 `turn_id` 聚合，忽略其它 turn 的用量事件）都是**provider 中立**的值类型，不绑定会话存储。
 - `turn_cancellation.rs`：`DialogTurnCancellationTokenStore` 按 turn id 复用同一令牌（`get_or_insert_new`），取消即 `cancel()`，不 `abort`。
