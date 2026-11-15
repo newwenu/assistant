@@ -7,14 +7,26 @@ import {
   RedoOutlined,
   ForkOutlined,
 } from "@ant-design/icons";
+import { App } from "antd";
 import { useTranslation } from "react-i18next";
 import css from "./MessageActions.module.css";
+
+/** 写入剪贴板并返回是否成功；失败不抛出，由调用方决定提示文案。 */
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 interface MessageActionsProps {
   role: string;
   isStreaming?: boolean;
   isBranchAtLimit?: boolean;
-  onCopy?: () => void;
+  /** 返回 `false` 表示复制失败：此时不显示「已复制」并提示失败（I46 §4.2）。 */
+  onCopy?: () => boolean | Promise<boolean>;
   onDelete?: () => void;
   onEdit?: () => void;
   onRegenerate?: () => void;
@@ -38,6 +50,7 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<number | null>(null);
   const { t } = useTranslation();
+  const { message } = App.useApp();
 
   const canEdit = !isStreaming && !isBranchAtLimit;
   const canRegenerate = !isStreaming && !isBranchAtLimit;
@@ -51,22 +64,32 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
     : t("chat.branch.atLimitDisableRegenerate");
   const forkDisabledReason = t("chat.branch.streamingDisableFork");
 
-  const handleCopy = useCallback(() => {
-    onCopy?.();
+  const handleCopy = useCallback(async () => {
+    if (!onCopy) return;
+    let succeeded = false;
+    try {
+      succeeded = (await onCopy()) !== false;
+    } catch {
+      succeeded = false;
+    }
+    if (!succeeded) {
+      void message.error(t("common.actions.copy_failed"));
+      return;
+    }
     setCopied(true);
     if (timerRef.current !== null) clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(
       () => setCopied(false),
       COPY_FEEDBACK_MS,
     );
-  }, [onCopy]);
+  }, [onCopy, message, t]);
 
   return (
     <div className={css.root}>
       {onCopy && (
         <button
           className={copied ? css.btnCopied : css.btn}
-          onClick={handleCopy}
+          onClick={() => void handleCopy()}
           title={copied ? t("common.actions.copied") : t("common.actions.copy")}
           type="button"
         >

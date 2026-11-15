@@ -1,14 +1,18 @@
 import React from "react";
 import type { Message } from "../../chat/core/chatTypes";
 import { getErrorPresentation } from "../core/chatErrorRecovery";
+import { extractDerivedText } from "../core/contentBlockUtils";
 import { translateKey } from "../../i18n";
 import { BranchPicker } from "../blocks/BranchPicker";
 import { MessageActions } from "./MessageActions";
 import css from "./MessageBubble.module.css";
 
-/** 复制文本的唯一构造点（I46 §4.2）：失败消息把错误标题与详情一并带上。 */
+/**
+ * 复制文本的唯一构造点（I46 §4.2）：失败消息把错误标题与详情一并带上；
+ * 多模态消息按块派生可读文本（`[图片]` / `[文件 name]`），不复制原始 JSON。
+ */
 export function buildCopyText(message: Message): string {
-  let text = message.content;
+  let text = extractDerivedText(message.content);
   if (message.error) {
     const presentation = getErrorPresentation(message.error);
     const parts: string[] = [];
@@ -29,7 +33,8 @@ interface TurnTailProps {
   onRegenerate?: (id: string) => void;
   onSwitchBranch?: (id: string, direction: "prev" | "next") => void;
   onFork?: (id: string) => void;
-  onCopy?: (text: string) => void;
+  /** 返回 `false` 表示复制失败，由 `MessageActions` 决定是否展示「已复制」。 */
+  onCopy?: (text: string) => boolean | Promise<boolean>;
 }
 
 /**

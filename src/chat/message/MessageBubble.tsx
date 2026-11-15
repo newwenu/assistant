@@ -19,7 +19,7 @@ import { ToolCallRenderer } from "../tool/ToolCallRenderer";
 import { EditBlock } from "../blocks/EditBlock";
 import { BranchPicker } from "../blocks/BranchPicker";
 import { MessageContent } from "./MessageContent";
-import { MessageActions } from "./MessageActions";
+import { MessageActions, copyTextToClipboard } from "./MessageActions";
 import { MessageAvatar } from "./MessageAvatar";
 import { TurnTail, buildCopyText } from "./TurnTail";
 import { resolveMessageIdentity } from "./messageIdentity";
@@ -106,9 +106,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     const [editImageBlocks, setEditImageBlocks] = useState<ImageBlock[]>([]);
     const [editFileBlocks, setEditFileBlocks] = useState<FileBlock[]>([]);
 
-    const handleCopy = useCallback(() => {
-      navigator.clipboard.writeText(buildCopyText(message)).catch(() => {});
-    }, [message]);
+    const handleCopy = useCallback(
+      () => copyTextToClipboard(buildCopyText(message)),
+      [message],
+    );
 
     const handleDelete = useCallback(() => {
       onDelete?.(message.id);
@@ -358,9 +359,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
               onRegenerate={onRegenerate}
               onSwitchBranch={onSwitchBranch}
               onFork={onFork}
-              onCopy={(text) => {
-                navigator.clipboard.writeText(text).catch(() => {});
-              }}
+              onCopy={copyTextToClipboard}
             />
           )}
         </div>

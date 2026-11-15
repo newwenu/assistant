@@ -35,6 +35,7 @@
       "export": "Export",
       "copy": "Copy",
       "copied": "Copied",
+      "copy_failed": "Copy failed, check clipboard permission",
       "rename": "Rename",
       "pin": "Pin",
       "unpin": "Unpin",
