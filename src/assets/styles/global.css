@@ -318,13 +318,18 @@ div[data-orb-window].orb-expanded .orb-dropdown {
  * 收起兜底：浮层都挂在 orb 窗口根节点（`OrbWindow` 的 `getPopupContainer`），
  * 收起后必须整体隐藏。即使某个组件漏订阅「关闭浮层」广播，
  * 残留弹层也不可能再盖住小球。
+ *
+ * 必须用 `visibility` 而不是 `display: none`：收起广播会让浮层进入离场动画，
+ * 而 `display: none` 会取消动画、不触发 animationend，rc-motion 因此无法卸载节点；
+ * 下次展开时该节点恢复显示并补播离场动画，表现为「浮层再次展开然后立刻关闭」。
  */
 div[data-orb-window]:not(.orb-expanded) .ant-select-dropdown,
 div[data-orb-window]:not(.orb-expanded) .ant-dropdown,
 div[data-orb-window]:not(.orb-expanded) .ant-popover,
 div[data-orb-window]:not(.orb-expanded) .ant-tooltip,
 div[data-orb-window]:not(.orb-expanded) .ant-modal-root {
-  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 div[data-orb-window].orb-expand-left {
