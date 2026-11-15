@@ -135,6 +135,27 @@ pub(crate) fn convert_tools(tools: &[ToolSpec]) -> Vec<Value> {
         .collect()
 }
 
+/// 出站工具参数必须是合法 JSON 文本：OpenAI 侧会二次解析，非法即整请求 400。
+///
+/// 历史里可能存有流式中断留下的截断片段（`{"path":`），一旦原样重放，该会话每一轮都会被
+/// 拒绝且无法靠重试恢复。这里与 Anthropic / Gemini 同一口径降级为 `{}`，让坏行自愈；
+/// 合法参数原样下发，保持字节稳定（利于 prompt 缓存命中）。
+fn tool_arguments_json(arguments: &str) -> String {
+    if arguments.trim().is_empty() {
+        return "{}".to_string();
+    }
+    match serde_json::from_str::<Value>(arguments) {
+        Ok(Value::Object(_)) => arguments.to_string(),
+        _ => {
+            log::warn!(
+                "[openai] 工具参数不是合法 JSON 对象，已降级为 {{}}: len={}",
+                arguments.len()
+            );
+            "{}".to_string()
+        }
+    }
+}
+
 pub(crate) fn convert_messages(messages: &[ChatMessage], target: OpenAiTarget) -> Vec<Value> {
     messages
         .iter()
@@ -160,7 +181,7 @@ pub(crate) fn convert_messages(messages: &[ChatMessage], target: OpenAiTarget) -
                                     "type": "function",
                                     "function": {
                                         "name": tc.name,
-                                        "arguments": tc.arguments
+                                        "arguments": tool_arguments_json(&tc.arguments)
                                     }
                                 })
                             })
@@ -364,6 +385,53 @@ mod tests {
         assert_eq!(out[1]["role"], json!("tool"));
         assert_eq!(out[1]["tool_call_id"], json!("call_1"));
         assert_eq!(out[1]["content"], json!("file body"));
+    }
+
+    #[test]
+    fn invalid_tool_arguments_fall_back_to_empty_object_string() {
+        let assistant = ChatMessage {
+            role: MessageRole::Assistant,
+            content: String::new(),
+            tool_calls: Some(vec![crate::base::ToolCall {
+                id: "call_1".to_string(),
+                name: "read_file".to_string(),
+                arguments: r#"{"path":"#.to_string(),
+            }]),
+            tool_call_id: None,
+            name: None,
+            is_error: true,
+            thinking_signature: None,
+            content_blocks: None,
+        };
+        let out = convert_messages(&[assistant], OpenAiTarget::ChatCompletions);
+        let sent = out[0]["tool_calls"][0]["function"]["arguments"]
+            .as_str()
+            .expect("arguments 必须是字符串");
+        assert_eq!(sent, "{}");
+        assert!(serde_json::from_str::<Value>(sent).is_ok());
+    }
+
+    #[test]
+    fn empty_tool_arguments_fall_back_to_empty_object_string() {
+        let assistant = ChatMessage {
+            role: MessageRole::Assistant,
+            content: String::new(),
+            tool_calls: Some(vec![crate::base::ToolCall {
+                id: "call_1".to_string(),
+                name: "read_file".to_string(),
+                arguments: "   ".to_string(),
+            }]),
+            tool_call_id: None,
+            name: None,
+            is_error: false,
+            thinking_signature: None,
+            content_blocks: None,
+        };
+        let out = convert_messages(&[assistant], OpenAiTarget::Responses);
+        assert_eq!(
+            out[0]["tool_calls"][0]["function"]["arguments"],
+            json!("{}")
+        );
     }
 
     #[test]

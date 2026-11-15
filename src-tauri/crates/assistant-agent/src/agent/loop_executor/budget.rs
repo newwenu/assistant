@@ -164,13 +164,31 @@ fn normalize_target(target: &str) -> String {
     }
 }
 
+/// 落库的 `arguments` 必须是合法 JSON 对象：`tool_calls_json` 会被原样重放进下一次请求，
+/// 截断片段一旦写进库，该会话的每一轮都会带上毒数据（provider 侧 400，且重试不可恢复）。
+///
+/// 合法时保留原始文本（字节稳定），非法时回落到已解析值（解析失败即 `{}`）。
+fn replayable_arguments(call: &FinalizedToolCall) -> String {
+    if matches!(
+        serde_json::from_str::<serde_json::Value>(&call.raw_arguments),
+        Ok(serde_json::Value::Object(_))
+    ) {
+        return call.raw_arguments.clone();
+    }
+    if call.arguments.is_object() {
+        call.arguments.to_string()
+    } else {
+        "{}".to_string()
+    }
+}
+
 pub(super) fn tool_calls_json(calls: &[FinalizedToolCall]) -> String {
     let payload: Vec<ToolCall> = calls
         .iter()
         .map(|call| ToolCall {
             id: call.tool_id.clone(),
             name: call.tool_name.clone(),
-            arguments: call.raw_arguments.clone(),
+            arguments: replayable_arguments(call),
         })
         .collect();
     serde_json::to_string(&payload).unwrap_or_else(|err| {
@@ -277,5 +295,50 @@ mod tests {
     #[test]
     fn tool_scope_falls_back_to_tool_name() {
         assert_eq!(tool_scope(&call("echo", json!({"q": "a"}))), "echo");
+    }
+
+    #[test]
+    fn tool_calls_json_keeps_valid_arguments_verbatim() {
+        let json = tool_calls_json(&[call("read", json!({"path": "a.rs"}))]);
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).expect("合法 JSON");
+        assert_eq!(parsed[0]["arguments"], json!(r#"{"path":"a.rs"}"#));
+    }
+
+    #[test]
+    fn tool_calls_json_replaces_unparsable_arguments_with_empty_object() {
+        let broken = FinalizedToolCall {
+            tool_id: "call-1".to_string(),
+            tool_name: "read".to_string(),
+            raw_arguments: r#"{"path":"#.to_string(),
+            arguments: json!({}),
+            is_error: true,
+            parse_error: Some("eof while parsing".to_string()),
+        };
+        let json = tool_calls_json(&[broken]);
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).expect("合法 JSON");
+        assert_eq!(parsed[0]["arguments"], json!("{}"));
+        assert!(serde_json::from_str::<serde_json::Value>(
+            parsed[0]["arguments"].as_str().expect("arguments 是字符串")
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn tool_calls_json_keeps_repaired_arguments_as_valid_json() {
+        let repaired = FinalizedToolCall {
+            tool_id: "call-1".to_string(),
+            tool_name: "read".to_string(),
+            raw_arguments: r#"{"path":"a.rs""#.to_string(),
+            arguments: json!({"path": "a.rs"}),
+            is_error: false,
+            parse_error: Some("eof while parsing".to_string()),
+        };
+        let json = tool_calls_json(&[repaired]);
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).expect("合法 JSON");
+        let inner = parsed[0]["arguments"].as_str().expect("arguments 是字符串");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(inner).unwrap(),
+            json!({"path": "a.rs"})
+        );
     }
 }
