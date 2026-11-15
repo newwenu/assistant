@@ -53,7 +53,7 @@ pub fn vault_totp_generate(app: AppHandle, id: String) -> Result<TotpCodeDto, Va
 
         let guard = state.get_conn().map_err(VaultErrorDto::from)?;
         if let Some(conn) = guard.as_ref() {
-            let _ = audit_log(
+            audit_log(
                 conn,
                 AuditEvent::VaultCopyField,
                 Some(&format!("totp:{}", id)),
@@ -85,7 +85,9 @@ pub fn vault_copy_totp(app: AppHandle, id: String) -> Result<(), VaultErrorDto> 
 
         let guard = state.get_conn().map_err(VaultErrorDto::from)?;
         if let Some(conn) = guard.as_ref() {
-            let _ = audit_log(
+            // `vault_copy_field` 语义为「字段明文被读出」，复制 TOTP 亦属读出（规格 §2.3 R16）：
+            // 前端文案不得一律写「复制」。
+            audit_log(
                 conn,
                 AuditEvent::VaultCopyField,
                 Some(&format!("totp:{}", id)),
@@ -109,13 +111,17 @@ pub fn vault_totp_parse_uri(uri: String) -> Result<ParsedOtpAuthDto, VaultErrorD
 pub fn vault_query_audit_log(
     app: AppHandle,
     limit: Option<i64>,
+    since: Option<i64>,
+    event_types: Option<Vec<String>>,
 ) -> Result<Vec<AuditLogEntry>, VaultErrorDto> {
     super::with_unlocked(&app, |state| {
         let guard = state.get_conn().map_err(VaultErrorDto::from)?;
         let conn = guard
             .as_ref()
             .ok_or_else(|| VaultErrorDto::from(VaultError::NotInitialized))?;
-        assistant_vault::audit::query_log(conn, limit.unwrap_or(100)).map_err(VaultErrorDto::from)
+        let limit = assistant_vault::audit::clamp_query_limit(limit);
+        assistant_vault::audit::query_log(conn, limit, since, event_types.as_deref())
+            .map_err(VaultErrorDto::from)
     })
 }
 
@@ -143,7 +149,7 @@ pub async fn vault_hibp_check(app: AppHandle, id: String) -> Result<u32, VaultEr
         super::with_unlocked(&app, |state| {
             let guard = state.get_conn().map_err(VaultErrorDto::from)?;
             if let Some(conn) = guard.as_ref() {
-                let _ = audit_log(
+                audit_log(
                     conn,
                     AuditEvent::HibpLeakFound,
                     Some(&format!("{}:{}", id, count)),
@@ -234,7 +240,7 @@ pub async fn vault_hibp_audit(app: AppHandle) -> Result<Vec<HibpAuditEntryDto>, 
     super::with_unlocked(&app, |state| {
         let guard = state.get_conn().map_err(VaultErrorDto::from)?;
         if let Some(conn) = guard.as_ref() {
-            let _ = audit_log(conn, AuditEvent::HibpAudit, None);
+            audit_log(conn, AuditEvent::HibpAudit, None);
         }
         Ok(())
     })?;

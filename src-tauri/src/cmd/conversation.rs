@@ -317,18 +317,26 @@ fn patch_conversation_blocking(
         assistant_storage::workspaces::set_conversation_workspace(&tx, &id, value)?;
         assistant_storage::workspaces::clear_session_grants(&tx, &id)?;
         // 审计：`tool = "workspace"`，清除绑定记 `resource = "none"`（不落空串）。
-        tx.execute(
+        // 路径必须过 `redact_resource`：主库是明文 SQLite，工作区绝对路径不落原文，
+        // 与网关决策行、授权管理行保持同一摘要口径。
+        // 写失败只 `warn`：审计不得回滚工作区切换（§3.6 与 §4 的边界）。
+        let resource = match target.as_deref() {
+            Some(path) => assistant_tools::redact_resource(path),
+            None => "none".to_string(),
+        };
+        if let Err(err) = tx.execute(
             "INSERT INTO permission_audit (tool, action, resource, outcome, at_millis)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![
                 "workspace",
                 "switch",
-                target.as_deref().unwrap_or("none"),
+                resource,
                 "allowed",
                 Utc::now().timestamp_millis()
             ],
-        )
-        .map_err(|e| e.to_string())?;
+        ) {
+            log::warn!("workspace switch audit write failed: {err}");
+        }
         tx.commit().map_err(|e| e.to_string())?;
     }
 

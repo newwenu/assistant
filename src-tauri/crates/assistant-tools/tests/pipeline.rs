@@ -270,9 +270,12 @@ async fn invalid_input_returns_business_and_skips_gateway() {
         "validation must run before gateway: no approval for invalid input"
     );
     assert!(
-        h.audit.entries().is_empty(),
-        "gateway must not be reached, so it must not audit either"
+        h.audit.entries().len() == 1,
+        "validation failure must be audited as ValidateRejected"
     );
+    assert_eq!(h.audit.entries()[0].outcome, AuditOutcome::ValidateRejected);
+    assert_eq!(h.audit.entries()[0].action, "none");
+    assert_eq!(h.audit.entries()[0].resource, "validate:rejected");
     assert_eq!(h.executed.load(Ordering::SeqCst), 0);
 }
 
@@ -301,7 +304,8 @@ async fn blocked_validation_never_reaches_gateway() {
         .unwrap()
         .contains("E_BLOCK"));
     assert_eq!(h.prompter.request_count(), 0);
-    assert!(h.audit.entries().is_empty());
+    assert_eq!(h.audit.entries().len(), 1);
+    assert_eq!(h.audit.entries()[0].outcome, AuditOutcome::ValidateRejected);
 }
 
 #[tokio::test]
@@ -773,16 +777,26 @@ async fn production_os_tools_round_trip_through_the_pipeline() {
         "the write tool must hit the real file system"
     );
 
-    // `read` 当前不声明权限意图，网关走 `intents.is_empty()` 短路、不留审计（I38 G1）；
-    // 因此这里只锁「write 走完真实网关并留下审计」，不锁条目总数，避免 G1 定稿后误伤。
+    // `read` 现在声明 `read` intent（I50 T3.1），因此走策略求值并记 `Allowed`；
+    // 这里只锁「两个工具都走完真实网关并留下审计」。
     let entries = audit.entries();
     assert!(
         entries.iter().any(|entry| entry.tool == "write"),
         "the write call must pass through the real gateway audit: {entries:?}"
     );
+    let read_entries: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry.tool == "read")
+        .collect();
     assert!(
-        entries.iter().all(|entry| entry.tool == "write"),
-        "the read call has no intents today, so it must not audit: {entries:?}"
+        !read_entries.is_empty(),
+        "the read call must be audited: {entries:?}"
+    );
+    assert!(
+        read_entries
+            .iter()
+            .all(|entry| entry.outcome == AuditOutcome::Allowed && entry.action == "read"),
+        "read declares a read intent, so it must be audited as Allowed: {entries:?}"
     );
     assert_eq!(
         storage.calls().len(),

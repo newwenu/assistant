@@ -8,8 +8,13 @@ import RecoveryTab from "./RecoveryTab";
 import ImportExportTab from "./ImportExportTab";
 import ChangePasswordTab from "./ChangePasswordTab";
 import DangerZoneTab from "./DangerZoneTab";
+import SecurityLogTab from "./SecurityLogTab";
 
-export default function VaultSettings() {
+interface VaultSettingsProps {
+  onOpenEntry?: (entryId: string) => void;
+}
+
+export default function VaultSettings({ onOpenEntry }: VaultSettingsProps) {
   const { t } = useTranslation();
   const {
     sshAgentKeys,
@@ -83,6 +88,11 @@ export default function VaultSettings() {
               importVault={importVault}
             />
           ),
+        },
+        {
+          key: "security_log",
+          label: t("vault.tab.security_log"),
+          children: <SecurityLogTab onOpenEntry={onOpenEntry} />,
         },
         {
           key: "danger_zone",

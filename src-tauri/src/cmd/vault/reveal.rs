@@ -1,7 +1,7 @@
 use tauri::{command, AppHandle};
 
 use assistant_crypto::vault_crypto::types::SecureString;
-use assistant_vault::audit::{log as audit_log, AuditEvent};
+use assistant_vault::audit::{log as audit_log, sanitized_entry_id, AuditEvent};
 use assistant_vault::dto::{RevealResult, VaultErrorDto};
 
 // precondition: Unlocked
@@ -20,7 +20,7 @@ pub fn vault_copy_password(app: AppHandle, id: String) -> Result<(), VaultErrorD
 
         let guard = state.get_conn().map_err(VaultErrorDto::from)?;
         if let Some(conn) = guard.as_ref() {
-            let _ = audit_log(conn, AuditEvent::VaultCopyPassword, Some(&id));
+            audit_log(conn, AuditEvent::VaultCopyPassword, Some(&id));
         }
 
         Ok(())
@@ -49,7 +49,7 @@ pub fn vault_copy_field(
 
         let guard = state.get_conn().map_err(VaultErrorDto::from)?;
         if let Some(conn) = guard.as_ref() {
-            let _ = audit_log(conn, AuditEvent::VaultCopyField, Some(&id));
+            audit_log(conn, AuditEvent::VaultCopyField, Some(&id));
         }
 
         Ok(())
@@ -65,7 +65,8 @@ pub fn vault_reveal_password(app: AppHandle, id: String) -> Result<RevealResult,
         if let Err(e) = guard.check_and_record() {
             let conn_guard = state.get_conn().map_err(VaultErrorDto::from)?;
             if let Some(conn) = conn_guard.as_ref() {
-                let _ = audit_log(conn, AuditEvent::VaultRevealRateLimited, Some(&id));
+                let id = sanitized_entry_id(&id);
+                audit_log(conn, AuditEvent::VaultRevealRateLimited, Some(&id));
             }
             return Err(VaultErrorDto::from(e));
         }
@@ -78,7 +79,7 @@ pub fn vault_reveal_password(app: AppHandle, id: String) -> Result<RevealResult,
         {
             let conn_guard = state.get_conn().map_err(VaultErrorDto::from)?;
             if let Some(conn) = conn_guard.as_ref() {
-                let _ = audit_log(conn, AuditEvent::VaultReveal, Some(&id));
+                audit_log(conn, AuditEvent::VaultReveal, Some(&id));
             }
         }
 
@@ -98,7 +99,8 @@ pub fn vault_reveal_notes(app: AppHandle, id: String) -> Result<RevealResult, Va
         if let Err(e) = guard.check_and_record() {
             let conn_guard = state.get_conn().map_err(VaultErrorDto::from)?;
             if let Some(conn) = conn_guard.as_ref() {
-                let _ = audit_log(conn, AuditEvent::VaultRevealRateLimited, Some(&id));
+                let id = sanitized_entry_id(&id);
+                audit_log(conn, AuditEvent::VaultRevealRateLimited, Some(&id));
             }
             return Err(VaultErrorDto::from(e));
         }
@@ -111,7 +113,7 @@ pub fn vault_reveal_notes(app: AppHandle, id: String) -> Result<RevealResult, Va
         {
             let conn_guard = state.get_conn().map_err(VaultErrorDto::from)?;
             if let Some(conn) = conn_guard.as_ref() {
-                let _ = audit_log(conn, AuditEvent::VaultReveal, Some(&id));
+                audit_log(conn, AuditEvent::VaultReveal, Some(&id));
             }
         }
 

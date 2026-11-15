@@ -1,6 +1,6 @@
 use tauri::{command, AppHandle};
 
-use assistant_vault::dto::{RecoveryKeyDto, VaultErrorCode, VaultErrorDto};
+use assistant_vault::dto::{LockReasonDto, RecoveryKeyDto, VaultErrorCode, VaultErrorDto};
 use assistant_vault::security_db::LockReason;
 use assistant_vault::types::VaultError;
 
@@ -42,6 +42,10 @@ pub async fn vault_unlock(app: AppHandle, master_password: String) -> Result<(),
             }
             Err(VaultError::InvalidPassword) => {
                 log::warn!("Vault unlock failed: invalid password");
+                state.audit_jsonl(
+                    assistant_vault::audit::AuditEvent::VaultUnlockFailed,
+                    Some("wrong_password"),
+                );
                 Err(VaultErrorDto::from(VaultError::InvalidPassword))
             }
             Err(e) => {
@@ -52,7 +56,7 @@ pub async fn vault_unlock(app: AppHandle, master_password: String) -> Result<(),
                 };
                 if let Some(detail) = version_detail {
                     // 版本拒绝时库尚未打开：只写 JSONL。
-                    let _ = state.audit_jsonl(
+                    state.audit_jsonl(
                         assistant_vault::audit::AuditEvent::VaultUnsupportedVersion,
                         Some(detail),
                     );
@@ -81,12 +85,14 @@ pub fn vault_is_initialized(app: AppHandle) -> Result<bool, VaultErrorDto> {
 
 // precondition: AnyState
 #[command]
-pub async fn vault_lock(app: AppHandle) -> Result<(), VaultErrorDto> {
+pub async fn vault_lock(
+    app: AppHandle,
+    reason: Option<LockReasonDto>,
+) -> Result<(), VaultErrorDto> {
+    let reason = reason.map(LockReason::from).unwrap_or(LockReason::User);
     tauri::async_runtime::spawn_blocking(move || {
         let state = super::vault_state(&app)?;
-        state
-            .lock_session(LockReason::User)
-            .map_err(VaultErrorDto::from)?;
+        state.lock_session(reason).map_err(VaultErrorDto::from)?;
         super::on_locked(&app);
         Ok(())
     })
@@ -137,6 +143,10 @@ pub async fn vault_show_unlock_window(app: AppHandle) -> Result<(), VaultErrorDt
                 }
                 Err(VaultError::InvalidPassword) => {
                     log::warn!("Native unlock dialog: invalid password");
+                    state.audit_jsonl(
+                        assistant_vault::audit::AuditEvent::VaultUnlockFailed,
+                        Some("wrong_password"),
+                    );
                     Err(VaultErrorDto::from(VaultError::InvalidPassword))
                 }
                 Err(e) => Err(VaultErrorDto::from(e)),
@@ -193,6 +203,10 @@ pub async fn vault_rebuild_local_db(
             }
             Err(VaultError::InvalidPassword) => {
                 log::warn!("Local db rebuild failed: invalid password");
+                state.audit_jsonl(
+                    assistant_vault::audit::AuditEvent::VaultUnlockFailed,
+                    Some("wrong_password"),
+                );
                 Err(VaultErrorDto::from(VaultError::InvalidPassword))
             }
             Err(e) => {
@@ -259,4 +273,19 @@ pub async fn vault_reset_repository(
     })
     .await
     .map_err(|e| super::internal_error(format!("vault_reset_repository task failed: {}", e)))?
+}
+
+#[cfg(test)]
+mod lock_reason_tests {
+    use super::*;
+
+    /// 手动锁定不传 `reason`，命令层缺省归因必须是 `user`。
+    #[test]
+    fn missing_reason_defaults_to_user() {
+        let resolved = Option::<LockReasonDto>::None
+            .map(LockReason::from)
+            .unwrap_or(LockReason::User);
+        assert_eq!(resolved, LockReason::User);
+        assert_eq!(resolved.as_str(), "user");
+    }
 }

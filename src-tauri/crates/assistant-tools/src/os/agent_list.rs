@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 
 use crate::context::ToolUseContext;
 use crate::os::path;
-use crate::r#trait::{BehaviorHints, Tool, ToolAudience, ToolTier, ValidationResult};
+use crate::r#trait::{
+    BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier, ValidationResult,
+};
 use crate::result::ToolResult;
 
 /// 内部唯一标识（注册表键、白名单匹配、审计）。模型可见名默认与它同名。
@@ -83,6 +85,19 @@ impl Tool for AgentListTool {
             },
             Err(error) => ValidationResult::invalid(error),
         }
+    }
+
+    fn permission_intents(
+        &self,
+        input: &Value,
+        context: &ToolUseContext,
+    ) -> Result<Vec<PermissionIntent>, String> {
+        let request = ListRequest::parse(input)?;
+        let resolved = path::resolve(&request.path, context)?;
+        Ok(vec![PermissionIntent::new(
+            "read",
+            resolved.display().to_string(),
+        )])
     }
 
     async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult, String> {

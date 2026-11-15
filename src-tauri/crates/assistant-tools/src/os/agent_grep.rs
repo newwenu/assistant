@@ -14,7 +14,9 @@ use crate::exec::DEFAULT_TOOL_TIMEOUT;
 use crate::os::agent_glob;
 use crate::os::path;
 use crate::os::text_encoding::{parse_optional_encoding, BINARY_PROBE_BYTES};
-use crate::r#trait::{BehaviorHints, Tool, ToolAudience, ToolTier, ValidationResult};
+use crate::r#trait::{
+    BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier, ValidationResult,
+};
 use crate::result::ToolResult;
 
 /// 内部唯一标识（注册表键、白名单匹配、审计）。模型可见名默认与它同名。
@@ -138,6 +140,19 @@ impl Tool for AgentGrepTool {
             Ok(_) => ValidationResult::ok(),
             Err(error) => ValidationResult::invalid(error),
         }
+    }
+
+    fn permission_intents(
+        &self,
+        input: &Value,
+        context: &ToolUseContext,
+    ) -> Result<Vec<PermissionIntent>, String> {
+        let request = GrepRequest::parse(input)?;
+        let base = base_directory(request.path.as_deref(), context)?;
+        Ok(vec![PermissionIntent::new(
+            "read",
+            base.display().to_string(),
+        )])
     }
 
     async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult, String> {

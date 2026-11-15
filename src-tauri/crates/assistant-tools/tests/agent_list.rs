@@ -48,9 +48,34 @@ fn tool_metadata_matches_the_readonly_contract() {
     assert!(!tool.behavior_hints().destructive);
     assert!(!tool.behavior_hints().open_world);
     assert!(tool.is_concurrency_safe(None));
+}
+
+#[test]
+fn permission_intents_declare_read_on_the_resolved_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path());
+    let tool = tool();
+    let intents = tool
+        .permission_intents(&json!({ "path": "." }), &ctx)
+        .expect("permission intents");
+    assert_eq!(intents.len(), 1, "ls 必须声明 1 条 intent");
+    assert_eq!(intents[0].action, "read");
     assert_eq!(
-        tool.permission_intents(&json!({ "path": "." }), &ToolUseContext::default()),
-        Ok(vec![])
+        intents[0].resources,
+        vec![dir.path().display().to_string()],
+        "意图必须是解析后的绝对路径，策略按绝对路径匹配"
+    );
+}
+
+#[test]
+fn permission_intents_report_errors_instead_of_empty() {
+    let tool = tool();
+    let error = tool
+        .permission_intents(&json!({ "path": "." }), &ToolUseContext::default())
+        .expect_err("无工作区基准时必须报错，不能静默返回空意图");
+    assert!(
+        error.contains("cannot be resolved"),
+        "unexpected error: {error}"
     );
 }
 

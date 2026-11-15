@@ -1,9 +1,32 @@
 use log::info;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use std::path::Path;
 
 use crate::agent_modes;
 use crate::migrations;
+
+/// 按保留期删除 `permission_audit` 的过期行，返回删除行数。
+///
+/// `retention_days = 0` 表示不清理（与 `result_retention_days` 的「0 = 禁用」一致）。
+/// 审计是只追加表，没有删除机制就会随使用时间单调增长；清理只在启动时跑一次，
+/// 不做后台定时，避免与工具决策的高频写入争用同一把连接锁。
+///
+/// `now_millis` 由调用方注入而非内部取时钟：边界行为可在单测里确定性验证。
+pub fn cleanup_expired_audit(
+    conn: &Connection,
+    retention_days: u32,
+    now_millis: i64,
+) -> Result<usize, String> {
+    if retention_days == 0 {
+        return Ok(0);
+    }
+    let cutoff = now_millis.saturating_sub(i64::from(retention_days) * 86_400_000);
+    conn.execute(
+        "DELETE FROM permission_audit WHERE at_millis < ?1",
+        params![cutoff],
+    )
+    .map_err(|e| e.to_string())
+}
 
 pub fn init_db(db_path: &Path) -> Result<Connection, String> {
     init_db_localized(db_path, &|key| key.to_string())
@@ -123,12 +146,15 @@ pub fn init_db_localized(
         );
 
         CREATE TABLE IF NOT EXISTS permission_audit (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            tool      TEXT NOT NULL,
-            action    TEXT NOT NULL,
-            resource  TEXT NOT NULL,
-            outcome   TEXT NOT NULL,
-            at_millis INTEGER NOT NULL
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            tool            TEXT NOT NULL,
+            action          TEXT NOT NULL,
+            resource        TEXT NOT NULL,
+            outcome         TEXT NOT NULL,
+            at_millis       INTEGER NOT NULL,
+            conversation_id TEXT,
+            turn_id         TEXT,
+            iteration       INTEGER
         );
 
         CREATE TABLE IF NOT EXISTS compression_state (
@@ -422,6 +448,28 @@ pub fn init_db_localized(
         {
             migrations::run_migrations(&conn)?;
         }
+
+        // 审计归属坐标（I50 §5）：只追加可空列，不回填存量行。
+        // 存量行没有会话信息是事实，不能用空串或占位 id 伪造归属。
+        for column in ["conversation_id", "turn_id", "iteration"] {
+            let has_column: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('permission_audit') WHERE name = ?1",
+                    [column],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|e| e.to_string())?
+                > 0;
+            if !has_column {
+                let ddl = if column == "iteration" {
+                    "ALTER TABLE permission_audit ADD COLUMN iteration INTEGER;".to_string()
+                } else {
+                    format!("ALTER TABLE permission_audit ADD COLUMN {column} TEXT;")
+                };
+                conn.execute_batch(&ddl).map_err(|e| e.to_string())?;
+                info!("Added {column} column to permission_audit table");
+            }
+        }
     }
 
     // 坐标索引（I46 §2.1）：必须在列补齐之后创建，否则存量库加列前会失败。
@@ -430,6 +478,14 @@ pub fn init_db_localized(
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_messages_conv_coord
           ON messages(conversation_id, turn_index, iteration);",
+    )
+    .map_err(|e| e.to_string())?;
+
+    // 权限审计时间索引（I50 §5 O3）：查询面按 `at_millis` 范围过滤，无索引即全表扫描。
+    // 与其它索引同批执行；`IF NOT EXISTS` 对存量库幂等，不需要 `has_*` 守卫。
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_permission_audit_at
+          ON permission_audit(at_millis);",
     )
     .map_err(|e| e.to_string())?;
 
@@ -472,4 +528,92 @@ pub fn init_db_localized(
 fn migrate_chain_parent_ids(_conn: &Connection) -> Result<(), String> {
     log::info!("migrate_chain_parent_ids disabled — breaks branch sibling semantics");
     Ok(())
+}
+
+#[cfg(test)]
+mod audit_retention_tests {
+    use super::*;
+
+    fn temp_conn() -> (Connection, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = init_db(&dir.path().join("audit.db")).unwrap();
+        (conn, dir)
+    }
+
+    fn insert(conn: &Connection, at_millis: i64) {
+        conn.execute(
+            "INSERT INTO permission_audit (tool, action, resource, outcome, at_millis)
+             VALUES ('agent_write', 'write', '…/a.txt', 'allowed', ?1)",
+            params![at_millis],
+        )
+        .unwrap();
+    }
+
+    fn count(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM permission_audit", [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    /// `0` 是「不清理」而不是「删光」：与 `result_retention_days` 的约定一致。
+    #[test]
+    fn zero_retention_keeps_everything() {
+        let (conn, _dir) = temp_conn();
+        insert(&conn, 0);
+        assert_eq!(
+            cleanup_expired_audit(&conn, 0, 10_000_000_000_000).unwrap(),
+            0
+        );
+        assert_eq!(count(&conn), 1);
+    }
+
+    /// 边界行（恰好 `retention_days` 天前）必须保留：判据是严格早于截断点。
+    #[test]
+    fn deletes_rows_older_than_cutoff_and_keeps_boundary() {
+        let (conn, _dir) = temp_conn();
+        let day = 86_400_000i64;
+        let now = 100 * day;
+        insert(&conn, now - 91 * day);
+        insert(&conn, now - 90 * day);
+        insert(&conn, now);
+
+        assert_eq!(cleanup_expired_audit(&conn, 90, now).unwrap(), 1);
+        assert_eq!(count(&conn), 2);
+    }
+
+    /// 存量库没有归属列时必须由迁移补齐：`CREATE TABLE IF NOT EXISTS` 不会改结构。
+    #[test]
+    fn migration_adds_ownership_columns_to_existing_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("old.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO app_settings (key, value) VALUES ('schema_version', '1');
+                 CREATE TABLE permission_audit (
+                    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tool      TEXT NOT NULL,
+                    action    TEXT NOT NULL,
+                    resource  TEXT NOT NULL,
+                    outcome   TEXT NOT NULL,
+                    at_millis INTEGER NOT NULL
+                );",
+            )
+            .unwrap();
+        }
+
+        let conn = init_db(&path).unwrap();
+        for column in ["conversation_id", "turn_id", "iteration"] {
+            let present: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('permission_audit') WHERE name = ?1",
+                    [column],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(present, 1, "{column} 必须由迁移补齐");
+        }
+    }
 }

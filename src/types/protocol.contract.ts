@@ -35,7 +35,11 @@ export type AppConfDto = { theme: ThemeModeDto, language: string, hotkey: string
 /**
  * 工具结果落盘文件保留天数；`0` 表示禁用清理（I46 compact §2.9 D9）。
  */
-resultRetentionDays: number, };
+resultRetentionDays: number, 
+/**
+ * 审计 JSONL 日文件保留天数；`0` 表示禁用清理（I50 §5 G12）。
+ */
+auditRetentionDays: number, };
 export type ApprovalContextDto = { tier: ToolTierDto, behavior: ToolBehaviorDto, reasons: Array<ApprovalReasonDto>, preview: ApprovalPreviewDto | null, extensions: Array<ApprovalExtensionDto>, };
 export type ApprovalExtensionDto = { kind: string, label: string, value: string, severity: ApprovalExtensionSeverityDto, };
 export type ApprovalExtensionSeverityDto = "info" | "caution" | "danger";
@@ -214,6 +218,8 @@ export type OrbConfDto = { clickThrough: boolean, alwaysOnTop: boolean, scalePer
 export type OsToolExecRequestDto = { tool: string, action: string, params: unknown, };
 export type OsToolResultDto = { ok: boolean, data: unknown, resultForAssistant: string | null, error: string | null, errorKind: ToolErrorKindDto | null, };
 export type PermissionGrantDto = { grantKey: string, tool: string, scope: GrantScopeDto, conversationId: string | null, scopeSummary: string, createdAt: number, };
+export type PermissionAuditEntryDto = { tool: string, action: string, resource: string, outcome: string, atMillis: number, conversationId: string | null, turnId: string | null, iteration: number | null, };
+export type PermissionAuditPageDto = { entries: Array<PermissionAuditEntryDto>, hasMore: boolean, };
 export type PermissionIntentDto = { action: string, resources: Array<string>, };
 export type PersistedResultDto = { path: string, bytes: number | null, };
 export type ProviderErrorCodeDto = "ApiKeyMissing" | "AuthFailed" | "RateLimited" | "ModelNotFound" | "ContextOverflow" | "NetworkError" | "Timeout" | "ServerError" | "RequestRejected" | "ParseError" | "Cancelled" | "StreamError" | "InternalError";

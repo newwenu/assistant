@@ -7,6 +7,7 @@ import type {
   VaultEntryDetail,
   RevealedField,
   VaultErrorCode,
+  LockReason,
 } from "../vault.types";
 
 const log = createLogger("vaultStore");
@@ -33,7 +34,7 @@ export interface VaultLifecycleSlice {
 
   init: (masterPassword: string) => Promise<void>;
   unlock: (masterPassword: string) => Promise<void>;
-  lock: () => Promise<void>;
+  lock: (reason?: LockReason) => Promise<void>;
   changeMasterPassword: (current: string, newPassword: string) => Promise<void>;
   resetRepository: (confirmToken: string) => Promise<void>;
   rebuildLocalDb: (masterPassword: string) => Promise<void>;
@@ -117,10 +118,10 @@ export function createLifecycleSlice(
       }
     },
 
-    lock: async () => {
+    lock: async (reason) => {
       get().clearAutoLockTimer();
       try {
-        await vaultService.lock();
+        await vaultService.lock(reason);
         set({
           isLocked: true,
           entries: [],
@@ -267,7 +268,7 @@ export function createLifecycleSlice(
       autoLockTimer = setTimeout(() => {
         autoLockTimer = null;
         void get()
-          .lock()
+          .lock("autoLock")
           .catch(() => {});
       }, deadline - now);
       set({ autoLockDeadline: deadline });

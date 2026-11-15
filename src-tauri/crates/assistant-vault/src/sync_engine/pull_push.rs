@@ -64,6 +64,7 @@ impl SyncEngine {
         ids: &[String],
     ) -> Result<u32, SyncError> {
         self.prepare()?;
+        // `"remote"` 是**来源标签**（写进 `{entryId}@remote` 的 suffix），不是整条 `detail`。
         let deleted = security_db
             .delete_entries_tx(ids, Some("remote"))
             .map_err(|e| SyncError::Other(e.to_string()))?;

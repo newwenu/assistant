@@ -71,7 +71,7 @@ pub fn vault_ssh_add_to_agent(
 
         let guard = state.get_conn().map_err(VaultErrorDto::from)?;
         if let Some(conn) = guard.as_ref() {
-            let _ = audit_log(conn, AuditEvent::SshKeyLoaded, Some(&id));
+            audit_log(conn, AuditEvent::SshKeyLoaded, Some(&id));
         }
 
         log::info!(
@@ -106,7 +106,9 @@ pub fn vault_ssh_remove_from_agent(
 
         let guard = state.get_conn().map_err(VaultErrorDto::from)?;
         if let Some(conn) = guard.as_ref() {
-            let _ = audit_log(conn, AuditEvent::SshKeyRemoved, Some(&fingerprint));
+            // `fingerprint` 是未校验的前端入参：写入前收敛到 `SHA256:{digest}` 形态，否则写 `unknown`。
+            let detail = assistant_vault::audit::sanitized_fingerprint(&fingerprint);
+            audit_log(conn, AuditEvent::SshKeyRemoved, Some(&detail));
         }
 
         log::info!("SSH key removed from agent: {}", fingerprint);

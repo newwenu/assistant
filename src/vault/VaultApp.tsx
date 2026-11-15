@@ -269,7 +269,12 @@ export default function VaultApp() {
         size="min(480px, 100vw)"
         destroyOnHidden
       >
-        <VaultSettings />
+        <VaultSettings
+          onOpenEntry={(entryId) => {
+            setSettingsOpen(false);
+            handleSelect(entryId);
+          }}
+        />
       </Drawer>
     </div>
   );

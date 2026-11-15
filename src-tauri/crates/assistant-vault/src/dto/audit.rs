@@ -32,6 +32,7 @@ pub enum StrengthWarning {
 pub struct AuditLogEntry {
     pub id: String,
     pub event_type: String,
+    pub entry_id: Option<String>,
     pub detail: Option<String>,
     pub timestamp: i64,
 }

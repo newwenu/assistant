@@ -216,3 +216,35 @@ async fn the_injected_action_key_does_not_break_the_new_tools() {
     assert!(result.ok, "{:?}", result.error);
     assert!(!dir.path().join("made/a.txt").exists());
 }
+
+/// T3.3：`ask_user` 明确不声明权限意图，其可见性由网关的 `bypassed` 口径保证。
+/// 这条测试防止后人「顺手」补一个 intent 把审计口径改掉。
+#[tokio::test]
+async fn ask_user_declares_no_permission_intents() {
+    struct NeverAsked;
+
+    #[async_trait::async_trait]
+    impl assistant_tools::QuestionPrompter for NeverAsked {
+        async fn ask(
+            &self,
+            _request: assistant_tools::QuestionRequest,
+        ) -> assistant_tools::QuestionOutcome {
+            assistant_tools::QuestionOutcome::Cancelled
+        }
+    }
+
+    let tool = assistant_tools::os::agent_ask_user::AgentAskUserTool::new(
+        Arc::new(NeverAsked),
+        Arc::new(|| None),
+    );
+    let intents = assistant_tools::Tool::permission_intents(
+        &tool,
+        &json!({ "questions": [{ "question": "q", "header": "h", "options": [] }] }),
+        &assistant_tools::ToolUseContext::default(),
+    )
+    .expect("ask_user must not fail intent evaluation");
+    assert!(
+        intents.is_empty(),
+        "ask_user must not declare any permission intent: {intents:?}"
+    );
+}

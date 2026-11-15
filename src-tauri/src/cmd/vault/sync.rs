@@ -400,7 +400,10 @@ pub fn vault_conflict_reveal(
         if let Err(e) = guard.check_and_record() {
             if let Ok(conn_guard) = db.get_conn() {
                 if let Some(conn) = conn_guard.as_ref() {
-                    let _ = audit_log(conn, AuditEvent::VaultRevealRateLimited, Some(&path));
+                    let detail = assistant_vault::sync_engine::conflict_audit_detail(
+                        &path, &side, &field, false,
+                    );
+                    audit_log(conn, AuditEvent::VaultRevealRateLimited, Some(&detail));
                 }
             }
             return Err(VaultErrorDto::from(e));
@@ -423,11 +426,9 @@ pub fn vault_conflict_reveal(
 
         if let Ok(conn_guard) = db.get_conn() {
             if let Some(conn) = conn_guard.as_ref() {
-                let _ = audit_log(
-                    conn,
-                    AuditEvent::VaultReveal,
-                    Some(&format!("conflict:{}:{}:{}", path, side, field)),
-                );
+                let detail =
+                    assistant_vault::sync_engine::conflict_audit_detail(&path, &side, &field, true);
+                audit_log(conn, AuditEvent::VaultReveal, Some(&detail));
             }
         }
 

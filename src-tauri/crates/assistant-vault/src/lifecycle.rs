@@ -303,12 +303,12 @@ pub fn rotate_dek(
             .map_err(VaultError::Database)?;
 
         let writer = state.audit_writer();
-        let _ = crate::audit::log_dual(
+        crate::audit::log_dual(
             Some(&session.conn),
             Some(&writer),
             crate::audit::AuditEvent::DekRotated,
             Some(&format!(
-                "{}->{} entries {}",
+                "{}:{}:{}",
                 meta.dek_version, dek_version_new, reencrypted
             )),
         );
@@ -369,7 +369,7 @@ pub fn reset_repository(
         }
     }
 
-    let _ = state.audit_jsonl(crate::audit::AuditEvent::VaultRepositoryReset, None);
+    state.audit_jsonl(crate::audit::AuditEvent::VaultRepositoryReset, None);
 
     log::info!("Vault repository reset completed");
     Ok(())
@@ -414,7 +414,7 @@ pub fn export_recovery_key(
             .map_err(VaultError::Database)?;
 
         let writer = state.audit_writer();
-        let _ = crate::audit::log_dual(
+        crate::audit::log_dual(
             Some(&session.conn),
             Some(&writer),
             crate::audit::AuditEvent::RecoveryKeyExported,

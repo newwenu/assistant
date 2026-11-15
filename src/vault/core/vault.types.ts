@@ -14,6 +14,7 @@ export type { EntryPreviewDto as EntryPreview } from "./contract/vault.contract"
 export type { ExportResultDto as ExportResult } from "./contract/vault.contract";
 export type { HibpAuditEntryDto as HibpAuditEntry } from "./contract/vault.contract";
 export type { HistoryCommitDto as HistoryCommit } from "./contract/vault.contract";
+export type { LockReasonDto as LockReason } from "./contract/vault.contract";
 export type { ParsedOtpAuthDto as ParsedOtpAuth } from "./contract/vault.contract";
 export type { PendingRemovalsDto as PendingRemovals } from "./contract/vault.contract";
 export type { ReadynessDto as Readyness } from "./contract/vault.contract";

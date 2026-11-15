@@ -164,7 +164,11 @@ describe("vaultStore lifecycle", () => {
   });
 
   it("lock → clears entries and selectedEntry", async () => {
-    mockCmd("vault_lock", () => Promise.resolve(undefined));
+    let lockArgs: unknown;
+    mockCmd("vault_lock", (args) => {
+      lockArgs = args;
+      return Promise.resolve(undefined);
+    });
 
     useVaultStore.setState({
       isLocked: false,
@@ -200,6 +204,7 @@ describe("vaultStore lifecycle", () => {
     expect(state.entries).toEqual([]);
     expect(state.selectedEntry).toBeNull();
     expect(state.revealedField).toBeNull();
+    expect(lockArgs).toEqual({ reason: undefined });
   });
 
   it("checkStatus → sets isLocked and isInitialized", async () => {
@@ -260,9 +265,13 @@ describe("vaultStore lock paths", () => {
     expect(cmdCalls()).not.toContain("vault_lock");
   });
 
-  it("autoLock>0 → schedules deadline and locks when it elapses", async () => {
+  it("autoLock>0 → schedules deadline and locks with autoLock attribution", async () => {
     confMock.vault = { vaultAutoLockMinutes: 5 };
-    mockCmd("vault_lock", () => Promise.resolve(undefined));
+    let lockArgs: unknown;
+    mockCmd("vault_lock", (args) => {
+      lockArgs = args;
+      return Promise.resolve(undefined);
+    });
 
     vi.useFakeTimers();
     try {
@@ -277,6 +286,7 @@ describe("vaultStore lock paths", () => {
       await Promise.resolve();
 
       expect(cmdCalls()).toContain("vault_lock");
+      expect(lockArgs).toEqual({ reason: "autoLock" });
     } finally {
       vi.useRealTimers();
     }

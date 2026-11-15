@@ -1,5 +1,7 @@
 use crate::protocol::{OsToolExecRequestDto, OsToolResultDto};
-use assistant_tools::{invoke, ToolRegistry, ToolUseContext, DEFAULT_TOOL_TIMEOUT};
+use assistant_tools::{
+    invoke, AuditEntry, PermissionAuditStore, ToolRegistry, ToolUseContext, DEFAULT_TOOL_TIMEOUT,
+};
 use serde_json::Value;
 use std::sync::Arc;
 use tauri::State;
@@ -7,6 +9,7 @@ use tauri::State;
 #[tauri::command]
 pub async fn os_tool_exec(
     registry: State<'_, Arc<ToolRegistry>>,
+    audit: State<'_, Arc<dyn PermissionAuditStore>>,
     request: OsToolExecRequestDto,
 ) -> Result<OsToolResultDto, String> {
     let registered = registry
@@ -22,6 +25,13 @@ pub async fn os_tool_exec(
 
     // ToolBox 没有会话、没有基准、没有边界（I38h §4.2）：相对路径直接报错。
     let context = ToolUseContext::for_toolbox(None);
+
+    // ToolBox 直调不经网关：必须在执行前留 `bypassed`，与「策略允许」区分。
+    // 审计失败只 warn，执行照常；放在 invoke 之前才能覆盖 panic / 超时路径。
+    let entry = AuditEntry::bypassed(registered.tool.id(), "toolbox");
+    if let Err(e) = audit.log_decision(entry).await {
+        log::warn!("ToolBox audit failed for '{}': {}", registered.tool.id(), e);
+    }
 
     let result = invoke(
         registered.tool.as_ref(),

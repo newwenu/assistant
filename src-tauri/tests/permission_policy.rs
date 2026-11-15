@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use assistant_app::adapters::{load_project_permissions, policy_for_tool_config};
+use assistant_app::adapters::{
+    load_project_permissions, mcp_disabled_layer, policy_for_tool_config,
+};
 use assistant_app::protocol::{ApprovalLevelDto, ConversationToolConfigDto, ToolTierDto};
 use assistant_tools::PermissionEffect;
 
@@ -87,6 +89,26 @@ fn an_invalid_project_file_denies_everything() {
     assert_eq!(policy.evaluate("read", "/ws/a.txt"), PermissionEffect::Deny);
     assert_eq!(policy.evaluate("edit", "/ws/a.txt"), PermissionEffect::Deny);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_disabled_mcp_server_is_denied_while_others_stay_allowed() {
+    assert!(mcp_disabled_layer(&[]).is_none());
+
+    let mut policy =
+        policy_for_tool_config(&config(ToolTierDto::External, ApprovalLevelDto::None), None);
+    let layer = mcp_disabled_layer(&["srv-a".to_string()]).expect("layer");
+    policy = policy.with_constraint_layer(layer);
+
+    // 资源串形如 `mcp:{server_id}:{config_hash}`，禁用层用 `*` 跨过哈希。
+    assert_eq!(
+        policy.evaluate("mcp", "mcp:srv-a:abc123"),
+        PermissionEffect::Deny
+    );
+    assert_eq!(
+        policy.evaluate("mcp", "mcp:srv-b:abc123"),
+        PermissionEffect::Allow
+    );
 }
 
 #[test]

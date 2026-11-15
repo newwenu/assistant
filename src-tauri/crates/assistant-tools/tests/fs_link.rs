@@ -139,14 +139,19 @@ fn permission_intents_do_not_require_link_kind() {
 }
 
 #[test]
-fn permission_intents_are_empty_for_check() {
+fn permission_intents_declare_read_for_check() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let context = context_with_root(dir.path());
     let intents = FsLinkTool
-        .permission_intents(
-            &json!({"action": "check", "source": "a.txt"}),
-            &ToolUseContext::default(),
-        )
+        .permission_intents(&json!({"action": "check", "source": "a.txt"}), &context)
         .expect("permission intents");
-    assert!(intents.is_empty());
+    assert_eq!(intents.len(), 1, "check 只读，必须声明 1 条 read");
+    assert_eq!(intents[0].action, "read");
+    assert_eq!(
+        intents[0].resources,
+        vec![dir.path().join("a.txt").display().to_string()],
+        "意图必须是解析后的绝对路径"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

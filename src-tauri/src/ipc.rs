@@ -55,6 +55,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         cmd::revoke_permission_grant,
         cmd::set_permission_grant_scope,
         cmd::clear_permission_grants,
+        cmd::list_permission_audit,
         cmd::delete_message_persist,
         cmd::get_message_subtree_size,
         cmd::search_conversations,

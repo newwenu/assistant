@@ -42,7 +42,7 @@ impl SecurityDbState {
             write_imported_entry_in(conn, dek, &entry, revision, algo)?;
             let snapshot = read_snapshot(conn, dek, dek_version, &entry.id)?;
             export(dek, &snapshot)?;
-            let _ = audit_log(conn, AuditEvent::VaultEntryUpdated, Some(&entry.id));
+            audit_log(conn, AuditEvent::VaultEntryUpdated, Some(&entry.id));
             Ok(snapshot)
         })
     }
@@ -71,7 +71,7 @@ impl SecurityDbState {
             write_imported_entry_in(conn, dek, &entry, revision, algo)?;
             let snapshot = read_snapshot(conn, dek, dek_version, &entry.id)?;
             export(dek, &snapshot)?;
-            let _ = audit_log(conn, AuditEvent::VaultEntryCreated, Some(&entry.id));
+            audit_log(conn, AuditEvent::VaultEntryCreated, Some(&entry.id));
             Ok(snapshot)
         })
     }
@@ -276,6 +276,7 @@ fn upsert_imported_in(
             )
             .map_err(|e| VaultError::Database(e.to_string()))?;
 
+            audit_log(conn, AuditEvent::VaultEntryUpdated, Some(&entry.id));
             Ok(ImportOutcome::Updated)
         }
         None => {
@@ -316,7 +317,7 @@ fn upsert_imported_in(
             )
             .map_err(|e| VaultError::Database(e.to_string()))?;
 
-            let _ = audit_log(conn, AuditEvent::VaultEntryCreated, Some(&entry.id));
+            audit_log(conn, AuditEvent::VaultEntryCreated, Some(&entry.id));
             Ok(ImportOutcome::Inserted)
         }
     }

@@ -128,7 +128,16 @@ impl Tool for FsLinkTool {
             .ok_or_else(|| "input must be a JSON object".to_string())?;
         match object.get("action").and_then(Value::as_str) {
             Some("create") => {}
-            Some("check") => return Ok(vec![]),
+            // `check` 只读：声明 `read` 而不是空 intent，避免与「未声明意图」混为一谈。
+            // 解析失败返回 `Err`，由网关记 `intentError`。
+            Some("check") => {
+                let source = validate::parse_check_input(input)?;
+                let source = validate::resolve_path(&source, context)?;
+                return Ok(vec![PermissionIntent::new(
+                    "read",
+                    source.display().to_string(),
+                )]);
+            }
             Some(other) => return Err(format!("unknown action '{}'", other)),
             None => return Err("missing 'action' field".to_string()),
         }

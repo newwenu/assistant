@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Manager};
 
+use assistant_config::app_conf::AppConf;
 use assistant_config::vault_conf::VaultConf;
 use assistant_security::clipboard_guard::ClipboardGuard;
 use assistant_security::reveal_guard::RevealGuard;
@@ -181,9 +182,21 @@ pub(crate) fn ssh_remove_all_on_lock(app: &AppHandle) {
         return;
     }
     let bridge = ssh_bridge_from_conf();
+    let db_state = app.state::<SecurityDbState>();
     for fp in &fingerprints {
-        if let Err(e) = bridge.remove_key(fp) {
-            log::warn!("Failed to remove SSH key {} from agent: {}", fp, e);
+        match bridge.remove_key(fp) {
+            Ok(()) => {
+                // 锁库时 DB 连接已关闭，只能写 JSONL，解锁后由补录回填。
+                // 与单条移除路径共用同一入参校验，保证同事件只有一个 detail 形态。
+                let detail = assistant_vault::audit::sanitized_fingerprint(fp);
+                db_state.audit_jsonl(
+                    assistant_vault::audit::AuditEvent::SshKeyRemoved,
+                    Some(&detail),
+                );
+            }
+            Err(e) => {
+                log::warn!("Failed to remove SSH key {} from agent: {}", fp, e);
+            }
         }
     }
     log::info!(
@@ -302,7 +315,17 @@ pub fn vault_setup(handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>>
     let db_path_str = db_path.to_str().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::InvalidData, "安全库路径不是 UTF-8")
     })?;
-    handle.manage(SecurityDbState::new(db_path_str));
+    let db_state = SecurityDbState::new(db_path_str);
+    // 审计 JSONL 保留天数由 app 层注入：库层不读配置（I50 §5 G12）。
+    // 读配置失败时保持库层默认值 `0`（不清理），宁可多占磁盘也不误删审计文件。
+    match AppConf::load() {
+        Ok(conf) => db_state.set_audit_retention_days(conf.audit_retention_days),
+        Err(e) => log::warn!(
+            "Failed to load app config for audit retention, JSONL prune disabled: {}",
+            e
+        ),
+    }
+    handle.manage(db_state);
     handle.manage(RevealGuard::new());
     handle.manage(ClipboardGuard::new());
     handle.manage(SshAgentState {

@@ -116,7 +116,7 @@ pub async fn vault_recover_from_paper(
 
         // 恢复态没有 `security.db` 连接：只写 JSONL，解锁后由补录回填。
         let state = super::vault_state(&app)?;
-        let _ = state.audit_jsonl(
+        state.audit_jsonl(
             assistant_vault::audit::AuditEvent::RecoveryExportUsed,
             Some(&export.entries.len().to_string()),
         );

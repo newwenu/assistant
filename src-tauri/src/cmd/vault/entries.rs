@@ -360,7 +360,7 @@ pub async fn vault_export_to_file(
             if let Err(err) = write_private_file(&target, &content) {
                 if let Ok(guard) = state.get_conn() {
                     if let Some(conn) = guard.as_ref() {
-                        let _ = audit_log(
+                        audit_log(
                             conn,
                             AuditEvent::VaultEntriesExported,
                             Some(&format!("{}:failed", audit_detail)),
@@ -373,7 +373,7 @@ pub async fn vault_export_to_file(
 
             if let Ok(guard) = state.get_conn() {
                 if let Some(conn) = guard.as_ref() {
-                    let _ = audit_log(conn, AuditEvent::VaultEntriesExported, Some(&audit_detail));
+                    audit_log(conn, AuditEvent::VaultEntriesExported, Some(&audit_detail));
                 }
             }
 
@@ -454,7 +454,7 @@ pub async fn vault_import(
 
             if let Ok(guard) = state.get_conn() {
                 if let Some(conn) = guard.as_ref() {
-                    let _ = audit_log(
+                    audit_log(
                         conn,
                         AuditEvent::VaultEntriesImported,
                         Some(&format!(

@@ -11,8 +11,9 @@ use assistant_tools::gateway::{
 use assistant_tools::os::path::ensure_within_root;
 use assistant_tools::storage::{FileToolResultStorage, PersistToolResult, ToolResultStorage};
 use assistant_tools::{
-    ApprovalPreview, BehaviorHints, GatewayDecision, PermissionEffect, PermissionIntent,
-    PermissionRule, ResolvedPermissionPolicy, Tool, ToolResult, ToolTier, ToolUseContext,
+    ApprovalPreview, BehaviorHints, GatewayDecision, PermissionConstraintLayer, PermissionEffect,
+    PermissionIntent, PermissionRule, ResolvedPermissionPolicy, Tool, ToolResult, ToolTier,
+    ToolUseContext,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -384,6 +385,9 @@ async fn in_memory_audit_store_records_entries_in_order() {
         resource: "a.txt".to_string(),
         outcome: AuditOutcome::Denied,
         at_millis: 1700000000000,
+        conversation_id: None,
+        turn_id: None,
+        iteration: None,
     };
     store.log_decision(entry.clone()).await.unwrap();
 
@@ -446,6 +450,7 @@ async fn scripted_prompter_falls_back_to_deny_when_exhausted() {
 struct FakeTool {
     tier: ToolTier,
     intents: Vec<PermissionIntent>,
+    intents_error: Option<String>,
 }
 
 impl FakeTool {
@@ -453,6 +458,7 @@ impl FakeTool {
         Self {
             tier: ToolTier::Os,
             intents,
+            intents_error: None,
         }
     }
 }
@@ -480,7 +486,10 @@ impl Tool for FakeTool {
         _input: &Value,
         _context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
-        Ok(self.intents.clone())
+        match self.intents_error.as_ref() {
+            Some(error) => Err(error.clone()),
+            None => Ok(self.intents.clone()),
+        }
     }
 
     async fn execute(
@@ -567,7 +576,7 @@ async fn gateway_denies_immediately_without_asking() {
 }
 
 #[tokio::test]
-async fn gateway_readonly_tool_without_intents_is_allowed() {
+async fn gateway_readonly_tool_without_intents_is_audited_as_bypassed() {
     let prompter = Arc::new(ScriptedApprovalPrompter::new(vec![]));
     let (gateway, _, audit) = gateway_with(prompter.clone());
     let tool = FakeTool::new(vec![]);
@@ -579,7 +588,194 @@ async fn gateway_readonly_tool_without_intents_is_allowed() {
 
     assert_eq!(decision, GatewayDecision::Allowed);
     assert_eq!(prompter.request_count(), 0);
-    assert!(audit.entries().is_empty());
+    let entries = audit.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].outcome, AuditOutcome::Bypassed);
+    assert_eq!(entries[0].action, "none");
+    assert_eq!(entries[0].resource, "intent:none");
+}
+
+#[tokio::test]
+async fn gateway_intent_error_is_audited_before_returning() {
+    let prompter = Arc::new(ScriptedApprovalPrompter::new(vec![]));
+    let (gateway, _, audit) = gateway_with(prompter.clone());
+    let mut tool = FakeTool::new(vec![]);
+    tool.intents_error = Some("bad input".to_string());
+
+    let error = gateway
+        .evaluate(&tool, &Value::Null, &ctx(), &allow_all())
+        .await
+        .unwrap_err();
+
+    assert_eq!(error, "bad input");
+    let entries = audit.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].outcome, AuditOutcome::IntentError);
+    assert_eq!(entries[0].action, "none");
+    assert_eq!(
+        entries[0].resource, "intent:error",
+        "错误文本不得写进 resource"
+    );
+    assert_eq!(prompter.request_count(), 0);
+}
+
+#[tokio::test]
+async fn gateway_decision_branches_each_audit_exactly_once() {
+    async fn run(
+        prompter: Arc<dyn ApprovalPrompter>,
+        tool: &FakeTool,
+        policy: &ResolvedPermissionPolicy,
+        timeout: Duration,
+    ) -> (GatewayDecision, Arc<InMemoryAuditStore>) {
+        let grants = Arc::new(InMemoryGrantStore::default());
+        let audit = Arc::new(InMemoryAuditStore::default());
+        let gateway = ToolGateway::new(grants, audit.clone(), prompter, timeout);
+        let decision = gateway
+            .evaluate(tool, &Value::Null, &ctx(), policy)
+            .await
+            .unwrap();
+        (decision, audit)
+    }
+
+    // tier 上限拒绝：动作与资源固定为 `*` / `tier:<tier>`。
+    let ceiling = allow_all().with_constraint_layer(PermissionConstraintLayer::new(vec![
+        PermissionRule::new("*", "tier:os", PermissionEffect::Deny),
+    ]));
+    let (decision, audit) = run(
+        Arc::new(ScriptedApprovalPrompter::new(vec![])),
+        &FakeTool::new(vec![PermissionIntent::new("read", "C:/ws/a.txt")]),
+        &ceiling,
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(matches!(decision, GatewayDecision::Denied { .. }));
+    assert_eq!(audit.entries().len(), 1);
+    assert_eq!(audit.entries()[0].outcome, AuditOutcome::Denied);
+    assert_eq!(audit.entries()[0].action, "*");
+    assert_eq!(audit.entries()[0].resource, "tier:os");
+
+    // 策略允许 / 策略拒绝。
+    for (policy, expected) in [
+        (allow_all(), AuditOutcome::Allowed),
+        (deny_all(), AuditOutcome::Denied),
+    ] {
+        let (_, audit) = run(
+            Arc::new(ScriptedApprovalPrompter::new(vec![])),
+            &FakeTool::new(vec![PermissionIntent::new("read", "C:/ws/a.txt")]),
+            &policy,
+            Duration::from_secs(5),
+        )
+        .await;
+        let entries = audit.entries();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].outcome, expected);
+        assert!(!entries[0].action.is_empty());
+        assert!(!entries[0].resource.is_empty());
+    }
+
+    // 缓存命中：放行原因与策略允许必须分开记。
+    let (grants, audit, gateway) = {
+        let grants = Arc::new(InMemoryGrantStore::default());
+        let audit = Arc::new(InMemoryAuditStore::default());
+        let gateway = ToolGateway::new(
+            grants.clone(),
+            audit.clone(),
+            Arc::new(ScriptedApprovalPrompter::new(vec![])),
+            Duration::from_secs(5),
+        );
+        (grants, audit, gateway)
+    };
+    let key = path_key("fake_tool", "read", "C:/ws/a.txt").unwrap();
+    grants
+        .save_grant(&key, GrantScope::Global, None)
+        .await
+        .unwrap();
+    let tool = FakeTool::new(vec![PermissionIntent::new("read", "C:/ws/a.txt")]);
+    let decision = gateway
+        .evaluate(&tool, &Value::Null, &ctx(), &deny_all())
+        .await
+        .unwrap();
+    assert_eq!(decision, GatewayDecision::Allowed);
+    assert_eq!(audit.entries().len(), 1);
+    assert_eq!(audit.entries()[0].outcome, AuditOutcome::GrantHit);
+
+    // 审批四分支：Approve / AllowSession / AllowAlways / Deny。
+    for (choice, expected) in [
+        (ApprovalDecision::Approve, AuditOutcome::Approved),
+        (
+            ApprovalDecision::AllowSession,
+            AuditOutcome::SessionApproved,
+        ),
+        (ApprovalDecision::AllowAlways, AuditOutcome::AlwaysApproved),
+        (
+            ApprovalDecision::Deny {
+                reason: Some("no".to_string()),
+            },
+            AuditOutcome::Rejected,
+        ),
+    ] {
+        let (_, audit) = run(
+            Arc::new(ScriptedApprovalPrompter::new(vec![choice])),
+            &FakeTool::new(vec![PermissionIntent::new("edit", "C:/ws/a.txt")]),
+            &ResolvedPermissionPolicy::default_global(),
+            Duration::from_secs(5),
+        )
+        .await;
+        let entries = audit.entries();
+        assert_eq!(entries.len(), 1, "each decision audits exactly one entry");
+        assert_eq!(entries[0].outcome, expected);
+        assert!(!entries[0].action.is_empty());
+        assert!(!entries[0].resource.is_empty());
+    }
+
+    // 超时：审计为 TimedOut，不是 Rejected。
+    let (decision, audit) = run(
+        Arc::new(
+            ScriptedApprovalPrompter::new(vec![ApprovalDecision::Approve])
+                .with_delay(Duration::from_millis(200)),
+        ),
+        &FakeTool::new(vec![PermissionIntent::new("edit", "C:/ws/a.txt")]),
+        &ResolvedPermissionPolicy::default_global(),
+        Duration::from_millis(20),
+    )
+    .await;
+    assert!(matches!(decision, GatewayDecision::ApprovalTimedOut { .. }));
+    assert_eq!(audit.entries().len(), 1);
+    assert_eq!(audit.entries()[0].outcome, AuditOutcome::TimedOut);
+
+    // 空 intent 短路：`bypassed`，与 `allowed` 区分。
+    let (decision, audit) = run(
+        Arc::new(ScriptedApprovalPrompter::new(vec![])),
+        &FakeTool::new(vec![]),
+        &deny_all(),
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(decision, GatewayDecision::Allowed);
+    assert_eq!(audit.entries().len(), 1);
+    assert_eq!(audit.entries()[0].outcome, AuditOutcome::Bypassed);
+
+    // intent 求值失败：先落 `intentError` 再返回错误。
+    let mut broken = FakeTool::new(vec![]);
+    broken.intents_error = Some("boom".to_string());
+    let (grants, audit, gateway) = {
+        let grants = Arc::new(InMemoryGrantStore::default());
+        let audit = Arc::new(InMemoryAuditStore::default());
+        let gateway = ToolGateway::new(
+            grants.clone(),
+            audit.clone(),
+            Arc::new(ScriptedApprovalPrompter::new(vec![])),
+            Duration::from_secs(5),
+        );
+        (grants, audit, gateway)
+    };
+    let _ = grants;
+    assert!(gateway
+        .evaluate(&broken, &Value::Null, &ctx(), &allow_all())
+        .await
+        .is_err());
+    assert_eq!(audit.entries().len(), 1);
+    assert_eq!(audit.entries()[0].outcome, AuditOutcome::IntentError);
 }
 
 #[tokio::test]

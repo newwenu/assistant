@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::compact::{args_preview, build_compact, ToolResultCompact};
 use crate::context::ToolUseContext;
 use crate::exec::{self, DEFAULT_TOOL_TIMEOUT};
-use crate::gateway::{GatewayDecision, ToolGateway};
+use crate::gateway::{AuditOutcome, GatewayDecision, ToolGateway};
 use crate::policy::ResolvedPermissionPolicy;
 use crate::registry::ToolRegistry;
 use crate::result::{ToolErrorKind, ToolResult};
@@ -273,6 +273,17 @@ impl ToolPipeline {
 
         let validation = tool.validate_input(&call.arguments, &call_context);
         if !validation.ok {
+            // 校验失败必须可审计：`blocks_input_rewrite` 的两种取值都记同一 outcome，
+            // 审计不改变返回的 `ToolOutcome`。
+            self.gateway
+                .audit_external(
+                    &call_context,
+                    &call.tool_name,
+                    "none",
+                    "validate:rejected",
+                    AuditOutcome::ValidateRejected,
+                )
+                .await;
             let message = validation
                 .message
                 .unwrap_or_else(|| "input validation failed".to_string());

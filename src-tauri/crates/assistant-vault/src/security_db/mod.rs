@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use log::info;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::audit::{log_dual, AuditEvent, AuditJsonlWriter};
 use assistant_crypto::error::VaultError;
@@ -33,11 +33,30 @@ const MAX_BACKUPS: usize = 5;
 const JSONL_SYNC_KEY: &str = "audit_jsonl_synced_at";
 
 /// 只补录「库不可用期间发生」的事件；其余事件解锁态本来就能直接写库。
-const BACKFILL_EVENTS: &[&str] = &[
+///
+/// 必须覆盖全部 J 通道事件（含锁库批量移除的 `ssh_key_removed`）；双写事件留在白名单内
+/// 无害（去重会挡掉），但白名单缺少任一 J 事件即导致该事件永久不入库。
+pub const BACKFILL_EVENTS: &[&str] = &[
     "recovery_export_used",
     "dek_rotated",
     "local_db_rebuilt",
     "vault_repository_reset",
+    "vault_unlock_failed",
+    "vault_unsupported_version",
+    "biometric_failed",
+    "ssh_key_removed",
+];
+
+/// J 通道事件全集（规格 §2.5 第 2 条的唯一事实来源）。
+///
+/// 断言 `J_CHANNEL_EVENTS ⊆ BACKFILL_EVENTS`：新增 J 事件却漏改白名单必须让测试失败。
+pub const J_CHANNEL_EVENTS: &[&str] = &[
+    "vault_unlock_failed",
+    "recovery_export_used",
+    "vault_repository_reset",
+    "vault_unsupported_version",
+    "biometric_failed",
+    "ssh_key_removed",
 ];
 
 const BACKUP_PREFIX: &str = "security-";
@@ -154,6 +173,7 @@ pub struct SecurityDbState {
     db_path: String,
     audit_dir: PathBuf,
     epoch: AtomicU64,
+    audit_retention_days: AtomicU32,
 }
 
 pub struct SessionConnGuard<'a> {
@@ -192,11 +212,25 @@ impl SecurityDbState {
             db_path: db_path.to_string(),
             audit_dir,
             epoch: AtomicU64::new(0),
+            // 未注入前不清理：库层不读配置，也不在无显式保留策略时删用户数据。
+            audit_retention_days: AtomicU32::new(0),
         }
     }
 
     pub fn audit_dir(&self) -> &Path {
         &self.audit_dir
+    }
+
+    /// 设置 JSONL 审计文件的保留天数（`0` = 不清理）。
+    ///
+    /// 由 app 层从 `AppConf` 注入：库层不读配置文件，避免在库内部做隐式 I/O，
+    /// 也避免测试被本机配置污染。
+    pub fn set_audit_retention_days(&self, days: u32) {
+        self.audit_retention_days.store(days, Ordering::SeqCst);
+    }
+
+    pub fn audit_retention_days(&self) -> u32 {
+        self.audit_retention_days.load(Ordering::SeqCst)
     }
 
     pub fn audit_writer(&self) -> AuditJsonlWriter {
@@ -206,7 +240,8 @@ impl SecurityDbState {
     /// 双写审计：已解锁时同时写 DB 与 JSONL，未解锁时只写 JSONL。
     ///
     /// 恢复通道（无连接）用 [`Self::audit_jsonl`]，不要走这里。
-    pub fn audit_dual(&self, event: AuditEvent, detail: Option<&str>) -> Result<(), VaultError> {
+    /// 返回 `()`：审计失败只 `warn`，不阻断业务（规格 §4）。
+    pub fn audit_dual(&self, event: AuditEvent, detail: Option<&str>) {
         let writer = self.audit_writer();
         let guard = self.get_conn().ok();
         let conn = guard.as_ref().and_then(|guard| guard.as_ref());
@@ -214,14 +249,16 @@ impl SecurityDbState {
     }
 
     /// 只写 JSONL：库不可用（恢复通道、重置后）的审计落点。
-    pub fn audit_jsonl(&self, event: AuditEvent, detail: Option<&str>) -> Result<(), VaultError> {
+    ///
+    /// 返回 `()`：审计失败只 `warn`，不阻断业务（规格 §4）。
+    pub fn audit_jsonl(&self, event: AuditEvent, detail: Option<&str>) {
         let writer = self.audit_writer();
         log_dual(None, Some(&writer), event, detail)
     }
 
     /// 解锁后补录 JSONL 中「库不可用期间」产生的事件。
     ///
-    /// 去重键 `jsonl-{at}-{event}` 保证重复解锁不重复插入；失败只 `warn`，不阻断解锁。
+    /// 去重键 `jsonl-{at}-{event}-{文件名}:{行号}` 保证重复解锁不重复插入；失败只 `warn`，不阻断解锁。
     fn backfill_jsonl_audit(&self, conn: &Connection) {
         if let Err(e) = self.try_backfill_jsonl_audit(conn) {
             log::warn!("Audit jsonl backfill failed: {}", e);
@@ -229,30 +266,81 @@ impl SecurityDbState {
     }
 
     fn try_backfill_jsonl_audit(&self, conn: &Connection) -> Result<(), VaultError> {
-        let since_ms = meta::get_meta(conn, JSONL_SYNC_KEY)
+        let stored = meta::get_meta(conn, JSONL_SYNC_KEY)
             .map_err(VaultError::Database)?
             .and_then(|value| value.parse::<i64>().ok())
             .unwrap_or(0);
+        // 游标在未来 = 时钟回拨或元数据损坏：按损坏处理，本次全量扫描一次（去重键挡重复），
+        // 否则「回拨期间写入」的记录会因早于游标而永久漏补。补录结束后游标被改写成实际 max(at)，
+        // 下一轮自动回到增量路径。
         let now = crate::types::now_millis();
+        let since_ms = if stored > now { 0 } else { stored };
         let records = self.audit_writer().read_since(since_ms)?;
+        let max_at = records.iter().map(|record| record.at).max();
+
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| VaultError::Database(e.to_string()))?;
 
         for record in records
             .iter()
             .filter(|record| BACKFILL_EVENTS.contains(&record.event.as_str()))
         {
-            let id = format!("jsonl-{}-{}", record.at, record.event);
-            conn.execute(
-                "INSERT OR IGNORE INTO security_audit_log (id, event_type, detail, timestamp)
-                 SELECT ?1, ?2, ?3, ?4
-                 WHERE NOT EXISTS (
-                     SELECT 1 FROM security_audit_log WHERE event_type = ?2 AND timestamp = ?4
-                 )",
+            // 自回响防护：既双写又在白名单内的事件（`dek_rotated` / `local_db_rebuilt`）在
+            // 原生行里已存在，按原生键跳过。只认非 `jsonl-` 行，否则同毫秒的补录行会互相
+            // 挡掉（那正是 V2.3 要解决的场景）。
+            let native_exists: bool = tx
+                .query_row(
+                    "SELECT 1 FROM security_audit_log \
+                     WHERE event_type = ?1 AND timestamp = ?2 AND id NOT LIKE 'jsonl-%' \
+                     LIMIT 1",
+                    rusqlite::params![record.event, record.at],
+                    |_| Ok(true),
+                )
+                .optional()
+                .map_err(|e| VaultError::Database(e.to_string()))?
+                .unwrap_or(false);
+            if native_exists {
+                continue;
+            }
+
+            // 去重键必须能区分同毫秒多条记录：`(文件名, 行号)` 是记录在文件里的稳定身份，
+            // 且历史行无需迁移（读入时现算）。前提是审计文件只追加、不重写/不压缩。
+            let origin = record.origin.as_deref().unwrap_or("unknown:0");
+            let id = format!("jsonl-{}-{}-{}", record.at, record.event, origin);
+            tx.execute(
+                "INSERT OR IGNORE INTO security_audit_log (id, event_type, detail, timestamp) \
+                 VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![id, record.event, record.detail, record.at],
             )
             .map_err(|e| VaultError::Database(e.to_string()))?;
         }
 
-        meta::set_meta(conn, JSONL_SYNC_KEY, &now.to_string()).map_err(VaultError::Database)?;
+        // 游标推进到「已处理的最大 at」：若用 now()，则本批尚未写入的记录会因时间更早而永久漏补。
+        // 无记录时保持原游标不动。
+        if let Some(max_at) = max_at {
+            meta::set_meta(&tx, JSONL_SYNC_KEY, &max_at.to_string())
+                .map_err(VaultError::Database)?;
+        }
+        tx.commit()
+            .map_err(|e| VaultError::Database(e.to_string()))?;
+
+        // 保留清理（规格 §5 G12）：补录成功后才谈得上「文件已被补录」，判据用刚推进的
+        // 游标，**禁止用 `now`** —— 用 `now` 会把尚未补录的历史文件一起判为「可删」。
+        // 无记录时游标不动，也不清理（缺少「已补录到哪」的判据）。
+        if let Some(max_at) = max_at {
+            let report = self
+                .audit_writer()
+                .prune_before(max_at, self.audit_retention_days());
+            if report.removed > 0 || report.failed > 0 {
+                log::info!(
+                    "Audit jsonl prune before cursor {}: removed {} file(s), {} failure(s)",
+                    max_at,
+                    report.removed,
+                    report.failed
+                );
+            }
+        }
         Ok(())
     }
 
@@ -322,7 +410,7 @@ impl SecurityDbState {
         let anchor = anchor.ok_or(VaultError::VaultRollbackDetected)?;
         if anchor.meta_hash != expected.meta_hash || anchor.dek_version != expected.dek_version {
             let writer = self.audit_writer();
-            let _ = log_dual(
+            log_dual(
                 Some(&session.conn),
                 Some(&writer),
                 AuditEvent::AnchorRollbackRejected,
@@ -332,7 +420,7 @@ impl SecurityDbState {
         }
 
         let writer = self.audit_writer();
-        let _ = log_dual(
+        log_dual(
             Some(&session.conn),
             Some(&writer),
             AuditEvent::VaultUnlock,
@@ -373,7 +461,7 @@ impl SecurityDbState {
         };
 
         let writer = self.audit_writer();
-        let _ = log_dual(
+        log_dual(
             Some(&session.conn),
             Some(&writer),
             AuditEvent::VaultLock,

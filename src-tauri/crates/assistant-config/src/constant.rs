@@ -33,3 +33,7 @@ pub const MAX_SUMMARY_OUTPUT_TOKENS: u32 = 2000;
 
 /// 工具结果落盘文件的保留天数（I46 compact §2.9 D9）：`0` 表示完全禁用清理。
 pub const RESULT_RETENTION_DAYS: u32 = 30;
+
+/// 审计 JSONL 日文件的保留天数（I50 §5 G12）：`0` 表示完全禁用清理。
+/// 只有「已补录进加密库且早于游标」的文件才会被删，故该值不构成数据丢失风险。
+pub const AUDIT_RETENTION_DAYS: u32 = 90;

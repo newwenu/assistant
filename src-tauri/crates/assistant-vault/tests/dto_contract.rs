@@ -4,12 +4,14 @@ use assistant_sync::types::{
     RepositoryState, SyncConfig, SyncError, SyncResult,
 };
 use assistant_vault::dto::{
-    ConflictFileDto, EntryPreviewDto, HibpAuditEntryDto, PaperErrorPosDto, PendingRemovalsDto,
-    ReadynessDto, RecoveryBackupDto, RecoveryEntryDto, RecoveryExportDto, RecoveryKeyDto,
-    RecoverySkipDto, RemoteModeDto, RemoteStatusDto, RemoteStatusErrorKindDto, RepositoryStateDto,
-    SshKeyInfoDto, SshKeyMetaDto, SyncActionDto, SyncConfigDto, SyncResultDto, TotpCodeDto,
-    UnreadableEntriesDto, UnreadableReasonDto, VaultErrorCode, VaultErrorDto,
+    AuditLogEntry, ConflictFileDto, EntryPreviewDto, HibpAuditEntryDto, LockReasonDto,
+    PaperErrorPosDto, PendingRemovalsDto, ReadynessDto, RecoveryBackupDto, RecoveryEntryDto,
+    RecoveryExportDto, RecoveryKeyDto, RecoverySkipDto, RemoteModeDto, RemoteStatusDto,
+    RemoteStatusErrorKindDto, RepositoryStateDto, SshKeyInfoDto, SshKeyMetaDto, SyncActionDto,
+    SyncConfigDto, SyncResultDto, TotpCodeDto, UnreadableEntriesDto, UnreadableReasonDto,
+    VaultErrorCode, VaultErrorDto,
 };
+use assistant_vault::security_db::LockReason;
 use serde_json::{json, to_value};
 
 fn sample_sync_config() -> SyncConfig {
@@ -104,6 +106,29 @@ fn ssh_key_meta_dto_wire_is_frozen() {
 }
 
 #[test]
+fn audit_log_entry_wire_always_has_entry_id() {
+    let dto = AuditLogEntry {
+        id: "jsonl-1-2-3".into(),
+        event_type: "vault_unlock".into(),
+        entry_id: None,
+        detail: None,
+        timestamp: 1_700_000_000_000,
+    };
+    let value = to_value(&dto).unwrap();
+    assert_eq!(
+        value,
+        json!({
+            "id": "jsonl-1-2-3",
+            "eventType": "vault_unlock",
+            "entryId": null,
+            "detail": null,
+            "timestamp": 1_700_000_000_000i64,
+        }),
+        "AuditLogEntry must keep every key present; entryId is nullable but never omitted"
+    );
+}
+
+#[test]
 fn totp_code_dto_wire_format() {
     let dto = TotpCodeDto {
         code: "000000".into(),
@@ -114,6 +139,41 @@ fn totp_code_dto_wire_format() {
     assert_eq!(value["code"], "000000");
     assert_eq!(value["timeRemaining"], 12);
     assert_eq!(value["period"], 30);
+}
+
+#[test]
+fn lock_reason_dto_wire_is_frozen() {
+    let pairs = [
+        (LockReasonDto::User, "user"),
+        (LockReasonDto::AutoLock, "autoLock"),
+        (LockReasonDto::ScreenLock, "screenLock"),
+        (LockReasonDto::AppExit, "appExit"),
+        (LockReasonDto::Reset, "reset"),
+        (LockReasonDto::Panic, "panic"),
+    ];
+    for (dto, wire) in pairs {
+        assert_eq!(to_value(dto).unwrap(), json!(wire));
+    }
+}
+
+#[test]
+fn lock_reason_dto_maps_one_to_one_to_domain() {
+    let pairs = [
+        (LockReasonDto::User, LockReason::User, "user"),
+        (LockReasonDto::AutoLock, LockReason::AutoLock, "auto_lock"),
+        (
+            LockReasonDto::ScreenLock,
+            LockReason::ScreenLock,
+            "screen_lock",
+        ),
+        (LockReasonDto::AppExit, LockReason::AppExit, "app_exit"),
+        (LockReasonDto::Reset, LockReason::Reset, "reset"),
+        (LockReasonDto::Panic, LockReason::Panic, "panic"),
+    ];
+    for (dto, expected, detail) in pairs {
+        assert_eq!(LockReason::from(dto), expected);
+        assert_eq!(LockReason::from(dto).as_str(), detail);
+    }
 }
 
 #[test]

@@ -119,7 +119,7 @@ impl SecurityDbState {
             };
             meta::set_anchor(&session.conn, &anchor).map_err(VaultError::Database)?;
 
-            let _ = log_dual(
+            log_dual(
                 Some(&session.conn),
                 Some(&audit_writer),
                 AuditEvent::MasterPasswordChange,
@@ -192,8 +192,18 @@ impl SecurityDbState {
             return Err(err);
         }
 
+        // 重建出的库是全新空表：把补录游标对齐到此刻，否则首次解锁会把全部历史 JSONL 重扫一遍。
+        // 写失败不阻断重建（审计补录是观测链路，下次解锁最多多扫一次）。
+        if let Err(e) = meta::set_meta(
+            &conn,
+            super::JSONL_SYNC_KEY,
+            &crate::types::now_millis().to_string(),
+        ) {
+            log::warn!("Failed to align audit jsonl cursor after rebuild: {}", e);
+        }
+
         let audit_writer = self.audit_writer();
-        let _ = log_dual(
+        log_dual(
             Some(&conn),
             Some(&audit_writer),
             AuditEvent::LocalDbRebuilt,

@@ -41,7 +41,7 @@ const PAYLOAD_AAD: &[u8] = b"";
 /// 失败原因：封闭集合，禁止自由文本进审计。
 fn audit_failure_jsonl(state: &SecurityDbState, reason: &'static str) {
     let writer = state.audit_writer();
-    let _ = log_dual(
+    log_dual(
         None,
         Some(&writer),
         AuditEvent::BiometricFailed,
@@ -149,7 +149,7 @@ fn restore_keys_from_plaintext(
 
     let writer = state.audit_writer();
     let _ = state.with_conn(|conn| {
-        let _ = log_dual(
+        log_dual(
             Some(conn),
             Some(&writer),
             AuditEvent::BiometricUnlocked,
@@ -202,7 +202,7 @@ impl SecurityDbState {
 
         key_store.set_key(KEY_ID_FINGERPRINT, fingerprint.as_bytes())?;
 
-        let _ = self.audit_dual(AuditEvent::BiometricEnrolled, None);
+        self.audit_dual(AuditEvent::BiometricEnrolled, None);
 
         log::info!("Biometric enrolled successfully");
         Ok(())
@@ -234,7 +234,7 @@ impl SecurityDbState {
     pub fn disenroll_biometric(&self, key_store: &dyn BiometricKeyStore) -> Result<(), VaultError> {
         clear_all_biometric_entries(key_store)?;
 
-        let _ = self.audit_dual(AuditEvent::BiometricRevoked, None);
+        self.audit_dual(AuditEvent::BiometricRevoked, None);
 
         log::info!("Biometric disenrolled");
         Ok(())
@@ -257,7 +257,7 @@ impl SecurityDbState {
             }
         }
 
-        let _ = self.audit_dual(AuditEvent::BiometricRevoked, None);
+        self.audit_dual(AuditEvent::BiometricRevoked, None);
 
         log::info!("Biometric revoked for dek rotation");
         Ok(())

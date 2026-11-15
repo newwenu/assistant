@@ -49,10 +49,14 @@ impl SecurityDbState {
         self.with_conn(|conn| delete_entry_in(conn, id))
     }
 
+    /// 批量软删除：`source` 是**来源标签**（如 `remote`），不是整条 `detail`。
+    ///
+    /// 每条成功删除的行各写一行 `vault_entry_deleted`，`detail` 为 `{entryId}@{source}`（规格 §2.4）：
+    /// 条目 ID 必须落在可定位固定段，否则面板无法按条目检索。
     pub fn delete_entries_tx(
         &self,
         ids: &[String],
-        detail: Option<&str>,
+        source: Option<&str>,
     ) -> Result<usize, VaultError> {
         self.with_transaction(|conn, _session| {
             let now = crate::types::now_millis();
@@ -66,10 +70,14 @@ impl SecurityDbState {
                     .map_err(|e| VaultError::Database(e.to_string()))?;
                 if affected > 0 {
                     deleted += 1;
-                    let _ = audit_log(
+                    let audit_detail = match source {
+                        Some(source) => format!("{}@{}", id, source),
+                        None => id.clone(),
+                    };
+                    audit_log(
                         conn,
                         AuditEvent::VaultEntryDeleted,
-                        Some(detail.unwrap_or(id.as_str())),
+                        Some(&audit_detail),
                     );
                 }
             }
@@ -195,7 +203,7 @@ fn create_entry_in(
     )
     .map_err(|e| VaultError::Database(e.to_string()))?;
 
-    let _ = audit_log(conn, AuditEvent::VaultEntryCreated, Some(&id));
+    audit_log(conn, AuditEvent::VaultEntryCreated, Some(&id));
     read_snapshot(conn, dek, dek_version, &id)
 }
 
@@ -305,7 +313,7 @@ fn update_entry_in(
         return Err(VaultError::NotFound(id.to_string()));
     }
 
-    let _ = audit_log(conn, AuditEvent::VaultEntryUpdated, Some(id));
+    audit_log(conn, AuditEvent::VaultEntryUpdated, Some(id));
     Ok(())
 }
 
@@ -323,7 +331,7 @@ fn set_favorite_in(conn: &Connection, id: &str, is_favorite: bool) -> Result<(),
         return Err(VaultError::NotFound(id.to_string()));
     }
 
-    let _ = audit_log(conn, AuditEvent::VaultEntryUpdated, Some(id));
+    audit_log(conn, AuditEvent::VaultEntryUpdated, Some(id));
     Ok(())
 }
 
@@ -340,6 +348,6 @@ fn delete_entry_in(conn: &Connection, id: &str) -> Result<(), VaultError> {
         return Err(VaultError::NotFound(id.to_string()));
     }
 
-    let _ = audit_log(conn, AuditEvent::VaultEntryDeleted, Some(id));
+    audit_log(conn, AuditEvent::VaultEntryDeleted, Some(id));
     Ok(())
 }

@@ -50,7 +50,7 @@ impl SecurityDbState {
 
             let snapshot = read_snapshot(conn, dek, dek_version, id)?;
             export(dek, &snapshot)?;
-            let _ = audit_log(conn, AuditEvent::VaultEntryRestored, Some(id));
+            audit_log(conn, AuditEvent::VaultEntryRestored, Some(id));
             Ok(snapshot)
         })
     }
@@ -178,7 +178,7 @@ impl SecurityDbState {
 
             let snapshot = read_snapshot(conn, dek, dek_version, &entry.id)?;
             export(dek, &snapshot)?;
-            let _ = audit_log(
+            audit_log(
                 conn,
                 AuditEvent::VaultEntryRestored,
                 Some(&format!("{}@{}", entry.id, source)),
@@ -193,7 +193,7 @@ impl SecurityDbState {
                 .execute("DELETE FROM vault_entries WHERE deleted_at IS NOT NULL", [])
                 .map_err(|e| VaultError::Database(e.to_string()))?;
             if purged > 0 {
-                let _ = audit_log(
+                audit_log(
                     conn,
                     AuditEvent::VaultEntryPurged,
                     Some(&purged.to_string()),

@@ -402,6 +402,14 @@
   border-bottom: none;
 }
 
+.auditRowClickable {
+  cursor: pointer;
+}
+
+.auditRowClickable:hover {
+  background: var(--ant-color-fill-quaternary);
+}
+
 .listItemMeta {
   display: flex;
   flex-direction: column;

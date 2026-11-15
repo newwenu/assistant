@@ -34,6 +34,7 @@ import {
 } from "../core/agentKind/agentModeRegistry";
 import "../core/agentKind/agentModeDefinitions";
 import { useSettingMessage } from "../shared/useSettingMessage";
+import { PermissionAuditSection } from "../shared/sections/PermissionAuditSection";
 import { PermissionGrantsSection } from "../shared/sections/PermissionGrantsSection";
 import { ToolAssemblySection } from "../shared/sections/ToolAssemblySection";
 import { REASONING_EFFORTS, type ReasoningEffort } from "@/chat/core/reasoning";
@@ -477,6 +478,7 @@ export const AgentModeSettings: React.FC = () => {
           emptyDescription={t("settings.agent_mode.empty")}
         />
         <PermissionGrantsSection />
+        <PermissionAuditSection />
         <Drawer
           title={
             editingMode

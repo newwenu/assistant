@@ -1,6 +1,7 @@
 import { featureInvoke } from "@/services/featureIpc";
 import { vaultModule } from "@/features/vault/module";
 import type {
+  LockReason,
   VaultEntrySummary,
   VaultEntryDetail,
   RevealResult,
@@ -81,7 +82,8 @@ export const vaultService = {
 
   isInitialized: (): Promise<boolean> => invoke("vault_is_initialized"),
 
-  lock: (): Promise<void> => invoke("vault_lock"),
+  lock: (reason?: LockReason): Promise<void> =>
+    invoke("vault_lock", { reason }),
 
   resetRepository: (confirmToken: string): Promise<void> =>
     invoke("vault_reset_repository", { confirmToken }),
@@ -156,8 +158,12 @@ export const vaultService = {
   totpParseUri: (uri: string): Promise<ParsedOtpAuth> =>
     invoke("vault_totp_parse_uri", { uri }),
 
-  queryAuditLog: (limit?: number): Promise<AuditLogEntry[]> =>
-    invoke("vault_query_audit_log", { limit }),
+  queryAuditLog: (
+    limit?: number,
+    since?: number,
+    eventTypes?: string[],
+  ): Promise<AuditLogEntry[]> =>
+    invoke("vault_query_audit_log", { limit, since, eventTypes }),
 
   showUnlockWindow: (): Promise<void> => invoke("vault_show_unlock_window"),
 

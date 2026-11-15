@@ -549,6 +549,38 @@ pub struct PermissionGrantDto {
     pub created_at: i64,
 }
 
+/// 工具权限审计的一行（`permission_audit`）。
+///
+/// 只承载决策事实：`tool` / `action` / `resource` / `outcome` 都是后端落库的原始串，
+/// 前端按封闭词表映射文案、未命中时原样展示（规格 §6）。`id` 与自增序不外发：
+/// 追溯面板按 `atMillis` 倒序展示，主键对用户无意义。
+///
+/// `conversationId` / `turnId` / `iteration` 是归属坐标：`null` 表示该行不属于任何
+/// 会话（ToolBox 直调、授权管理动作）。它们是审计可定位的前提，前端不自行推断。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionAuditEntryDto {
+    pub tool: String,
+    pub action: String,
+    pub resource: String,
+    pub outcome: String,
+    pub at_millis: i64,
+    pub conversation_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub iteration: Option<u32>,
+}
+
+/// 权限审计的一页（`list_permission_audit` 的返回体）。
+///
+/// `hasMore` 必须由后端给出：`limit` 恰好等于窗口内总数时，「本页条数 == limit」与
+/// 「还有更早记录」同形，前端无法自行区分，猜错就会让用户误以为「只有这些条目」。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionAuditPageDto {
+    pub entries: Vec<PermissionAuditEntryDto>,
+    pub has_more: bool,
+}
+
 /// 修改授权作用域（输入 DTO）。`scope = session` 时 `conversationId` 必填。
 #[derive(Debug, Clone, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

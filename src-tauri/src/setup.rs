@@ -54,6 +54,19 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         // 启动不做任何全表收尾：占位行机制（D27）让拓扑在声明时定死，残留的在途行
         // 由投影期按 `status` 补文案（`pending` → 未开始、`running` → 结果未知），
         // 工具结果读取也会过滤在途行，因此无需在启动时扫表改写状态。
+        //
+        // 审计表是例外：它只追加、无上限，必须在启动时按保留期裁剪一次。
+        // 配置读取失败时按 `0` 处理（不清理），宁可保留也不要误删历史决策。
+        let audit_retention_days = AppConf::load().map(|c| c.audit_retention_days).unwrap_or(0);
+        match db::cleanup_expired_audit(
+            &conn,
+            audit_retention_days,
+            chrono::Utc::now().timestamp_millis(),
+        ) {
+            Ok(0) => {}
+            Ok(pruned) => log::info!("Pruned {} expired permission audit rows", pruned),
+            Err(e) => log::warn!("Failed to prune permission audit rows: {}", e),
+        }
         handle.manage(DbState(std::sync::Mutex::new(conn)));
     }
 

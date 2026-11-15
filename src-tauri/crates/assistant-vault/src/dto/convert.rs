@@ -8,6 +8,7 @@ use assistant_sync::types::{
 
 use super::error::{VaultErrorCode, VaultErrorDto};
 use super::hibp::HibpAuditEntryDto;
+use super::lifecycle::LockReasonDto;
 use super::sync::{
     ConflictFileDto, ConflictPreviewDto, ConflictResolutionDto, EntryPreviewDto,
     EntryPreviewFieldDto, HistoryCommitDto, PendingRemovalEntryDto, PendingRemovalsDto,
@@ -16,6 +17,7 @@ use super::sync::{
 };
 use super::totp::{ParsedOtpAuthDto, TotpAlgorithmDto};
 use super::{VaultEntryDetail, VaultEntrySummary};
+use crate::security_db::LockReason;
 use crate::types::VaultEntrySnapshot;
 
 impl From<RepositoryState> for RepositoryStateDto {
@@ -316,6 +318,19 @@ impl From<TotpAlgorithm> for TotpAlgorithmDto {
             TotpAlgorithm::Sha1 => Self::Sha1,
             TotpAlgorithm::Sha256 => Self::Sha256,
             TotpAlgorithm::Sha512 => Self::Sha512,
+        }
+    }
+}
+
+impl From<LockReasonDto> for LockReason {
+    fn from(v: LockReasonDto) -> Self {
+        match v {
+            LockReasonDto::User => Self::User,
+            LockReasonDto::AutoLock => Self::AutoLock,
+            LockReasonDto::ScreenLock => Self::ScreenLock,
+            LockReasonDto::AppExit => Self::AppExit,
+            LockReasonDto::Reset => Self::Reset,
+            LockReasonDto::Panic => Self::Panic,
         }
     }
 }

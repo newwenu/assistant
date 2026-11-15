@@ -26,6 +26,8 @@ export interface VaultAuditSlice {
   totpParseUri: (uri: string) => Promise<ParsedOtpAuth>;
   queryAuditLog: (
     limit?: number,
+    since?: number,
+    eventTypes?: string[],
   ) => Promise<import("../vault.types").AuditLogEntry[]>;
   showUnlockWindow: () => Promise<void>;
   hibpCheck: (id: string) => Promise<number>;
@@ -108,8 +110,12 @@ export function createAuditSlice(
       return vaultService.totpParseUri(uri);
     },
 
-    queryAuditLog: async (limit?: number) => {
-      return vaultService.queryAuditLog(limit);
+    queryAuditLog: async (
+      limit?: number,
+      since?: number,
+      eventTypes?: string[],
+    ) => {
+      return vaultService.queryAuditLog(limit, since, eventTypes);
     },
 
     showUnlockWindow: async () => {

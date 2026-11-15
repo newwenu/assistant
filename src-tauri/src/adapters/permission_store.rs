@@ -53,7 +53,7 @@ pub(crate) fn decode_grant_key(raw: &str) -> (GrantScope, Option<&str>, &str) {
     }
 }
 
-fn outcome_str(outcome: AuditOutcome) -> &'static str {
+pub(crate) fn outcome_str(outcome: AuditOutcome) -> &'static str {
     match outcome {
         AuditOutcome::Allowed => "allowed",
         AuditOutcome::GrantHit => "grantHit",
@@ -63,6 +63,9 @@ fn outcome_str(outcome: AuditOutcome) -> &'static str {
         AuditOutcome::AlwaysApproved => "alwaysApproved",
         AuditOutcome::Rejected => "rejected",
         AuditOutcome::TimedOut => "timedOut",
+        AuditOutcome::ValidateRejected => "validateRejected",
+        AuditOutcome::IntentError => "intentError",
+        AuditOutcome::Bypassed => "bypassed",
     }
 }
 
@@ -132,7 +135,8 @@ impl PermissionGrantStore for DbPermissionGrantStore {
     }
 }
 
-/// 审计的生产实现：`permission_audit` 只追加，不更新、不设 TTL。
+/// 审计的生产实现：`permission_audit` 只追加，不更新；过期行由启动清理按
+/// `audit_retention_days` 删除（`0` 表示不清理）。
 pub struct DbPermissionAuditStore {
     app: tauri::AppHandle,
 }
@@ -149,14 +153,18 @@ impl PermissionAuditStore for DbPermissionAuditStore {
         let outcome = outcome_str(entry.outcome);
         with_conn(&self.app, |conn| {
             conn.execute(
-                "INSERT INTO permission_audit (tool, action, resource, outcome, at_millis)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO permission_audit
+                   (tool, action, resource, outcome, at_millis, conversation_id, turn_id, iteration)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     entry.tool,
                     entry.action,
                     entry.resource,
                     outcome,
-                    entry.at_millis
+                    entry.at_millis,
+                    entry.conversation_id,
+                    entry.turn_id,
+                    entry.iteration.map(i64::from)
                 ],
             )
             .map_err(|e| e.to_string())?;

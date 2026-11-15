@@ -541,3 +541,58 @@ fn init_db_adds_identity_columns_to_legacy_tables() {
         "A2: 列已存在时必须跳过重复 ALTER"
     );
 }
+
+/// I50 §5 O3：`permission_audit` 必须按 `at_millis` 建时间索引，
+/// 否则查询面（§3.7）的时间范围过滤会全表扫描。
+#[test]
+fn init_db_creates_permission_audit_time_index() {
+    let (conn, _dir) = init_temp_db();
+
+    let index_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master \
+             WHERE type = 'index' AND name = 'idx_permission_audit_at' \
+               AND tbl_name = 'permission_audit'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        index_count, 1,
+        "permission_audit 必须存在 idx_permission_audit_at 时间索引"
+    );
+
+    // 灌入足够多的行并更新统计信息，查询计划器才会倾向走索引。
+    for at in 0..500 {
+        conn.execute(
+            "INSERT INTO permission_audit (tool, action, resource, outcome, at_millis) \
+             VALUES ('read', 'read', 'workspace', 'allowed', ?1)",
+            rusqlite::params![at],
+        )
+        .unwrap();
+    }
+    conn.execute("ANALYZE permission_audit", []).unwrap();
+
+    let plan = {
+        let mut stmt = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN \
+                 SELECT id FROM permission_audit WHERE at_millis BETWEEN ?1 AND ?2",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map(rusqlite::params![10, 20], |row| row.get::<_, String>(3))
+            .unwrap();
+        rows.map(|row| row.unwrap())
+            .collect::<Vec<String>>()
+            .join(" | ")
+    };
+    assert!(
+        !plan.contains("SCAN permission_audit"),
+        "at_millis 范围查询不得全表扫描：{plan}"
+    );
+    assert!(
+        plan.contains("idx_permission_audit_at"),
+        "范围查询必须命中 idx_permission_audit_at：{plan}"
+    );
+}

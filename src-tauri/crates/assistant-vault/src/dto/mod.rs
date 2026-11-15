@@ -6,6 +6,7 @@ mod convert;
 pub mod error;
 pub mod hibp;
 pub mod integrity;
+pub mod lifecycle;
 pub mod recovery;
 pub mod ssh;
 pub mod sync;
@@ -16,6 +17,7 @@ pub use audit::{AuditLogEntry, StrengthResult, StrengthWarning};
 pub use error::{VaultErrorCode, VaultErrorDto};
 pub use hibp::HibpAuditEntryDto;
 pub use integrity::IntegrityResult;
+pub use lifecycle::LockReasonDto;
 pub use recovery::{
     ExportResultDto, PaperErrorPosDto, RecoveryBackupDto, RecoveryEntryDto, RecoveryExportDto,
     RecoveryKeyDto, RecoverySkipDto,

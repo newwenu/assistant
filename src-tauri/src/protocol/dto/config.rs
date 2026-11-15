@@ -44,6 +44,8 @@ pub struct AppConfDto {
     pub user_question_timeout_secs: Option<u32>,
     /// 工具结果落盘文件保留天数；`0` 表示禁用清理（I46 compact §2.9 D9）。
     pub result_retention_days: u32,
+    /// 审计 JSONL 日文件保留天数；`0` 表示禁用清理（I50 §5 G12）。
+    pub audit_retention_days: u32,
 }
 
 impl From<assistant_config::app_conf::AppConf> for AppConfDto {
@@ -69,6 +71,7 @@ impl From<assistant_config::app_conf::AppConf> for AppConfDto {
             approval_timeout_secs: c.approval_timeout_secs,
             user_question_timeout_secs: c.user_question_timeout_secs,
             result_retention_days: c.result_retention_days,
+            audit_retention_days: c.audit_retention_days,
         }
     }
 }

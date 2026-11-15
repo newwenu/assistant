@@ -171,6 +171,9 @@ pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
         Arc::new(DbPermissionGrantStore::new(handle.clone()));
     let audit: Arc<dyn PermissionAuditStore> =
         Arc::new(DbPermissionAuditStore::new(handle.clone()));
+    // ToolBox 直调（`os_tool_exec`）不走网关，但必须落到同一个审计存储：
+    // 命令层按类型取用这一份实例，禁止另建第二套。
+    handle.manage(audit.clone());
     let waits = ApprovalWaitRegistry::new();
     let pending = PendingApprovalRegistry::new();
     handle.manage(pending.clone());

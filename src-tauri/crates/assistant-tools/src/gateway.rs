@@ -258,6 +258,13 @@ pub enum AuditOutcome {
     Rejected,
     /// 审批等待超时：用户没做决定，与 `Rejected` 分开统计（超时率是 UX 指标）。
     TimedOut,
+    /// 入参校验失败：工具参数未通过自身校验，未进入策略求值。
+    ValidateRejected,
+    /// `permission_intents` 求值失败：工具无法声明权限意图。
+    IntentError,
+    /// **未经权限策略求值即执行**：只允许「空 intent 短路」与「ToolBox 直调」两个触发点，
+    /// 不得用它表示「策略允许」（策略允许是 `Allowed`）。
+    Bypassed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -268,6 +275,84 @@ pub struct AuditEntry {
     pub resource: String,
     pub outcome: AuditOutcome,
     pub at_millis: i64,
+    /// 归属会话：`None` 表示无会话的写入（ToolBox 直调、授权管理动作）。
+    ///
+    /// 审计要能回答「哪次对话、哪一轮」被批准，因此会话坐标必须与决策同行落库，
+    /// 而不是靠时间戳事后关联（时间戳既非唯一标识也不单调）。
+    #[serde(default)]
+    pub conversation_id: Option<String>,
+    /// 归属轮次：与 `conversation_id` 一起定位到具体一轮。
+    #[serde(default)]
+    pub turn_id: Option<String>,
+    /// 归属迭代序号：同一轮内的第几次工具调用。
+    #[serde(default)]
+    pub iteration: Option<u32>,
+}
+
+/// 绝对路径判定：Unix 根、UNC（`\\\\`）、盘符（`X:\` / `X:/`）。
+fn is_absolute_path(value: &str) -> bool {
+    if value.starts_with('/') || value.starts_with("\\\\") {
+        return true;
+    }
+    let bytes = value.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
+}
+
+/// 写入前的资源摘要：绝对路径只留末段，其余原样。
+///
+/// 主库是明文 SQLite（只有 vault 的 `security.db` 走 SQLCipher），把绝对路径原文
+/// 落进 `permission_audit` 等于明文持久化用户目录结构。折叠成 `…/<basename>`
+/// 既去掉目录层级，又保留「被操作的是哪个文件」这一追溯要素。
+pub fn redact_resource(resource: &str) -> String {
+    if !is_absolute_path(resource) {
+        return resource.to_string();
+    }
+    match resource
+        .rsplit(['/', '\\'])
+        .find(|segment| !segment.is_empty())
+    {
+        Some(base) => format!("…/{}", base),
+        None => resource.to_string(),
+    }
+}
+
+impl AuditEntry {
+    /// 管理动作（撤销授权 / 清除授权 / 改作用域）的固定形态：`outcome = Allowed`。
+    ///
+    /// 管理动作不改写业务结果，一律记 `allowed`；**禁止**用 `denied` / `bypassed`
+    /// 表示管理动作。时间源与网关内部审计同一处 `now_millis()`，
+    /// 命令层不得另造毫秒函数、也不得硬编码 outcome 串。
+    pub fn allowed(tool: &str, action: &str, resource: &str) -> Self {
+        Self {
+            tool: tool.to_string(),
+            action: action.to_string(),
+            resource: redact_resource(resource),
+            outcome: AuditOutcome::Allowed,
+            at_millis: now_millis(),
+            conversation_id: None,
+            turn_id: None,
+            iteration: None,
+        }
+    }
+
+    /// ToolBox 直调（未过策略）的固定形态：`action = "none"`、`outcome = Bypassed`。
+    ///
+    /// 时间源与网关内部审计同一处 `now_millis()`，命令层不得另造毫秒函数。
+    pub fn bypassed(tool: &str, resource: &str) -> Self {
+        Self {
+            tool: tool.to_string(),
+            action: "none".to_string(),
+            resource: redact_resource(resource),
+            outcome: AuditOutcome::Bypassed,
+            at_millis: now_millis(),
+            conversation_id: None,
+            turn_id: None,
+            iteration: None,
+        }
+    }
 }
 
 #[async_trait]
@@ -352,16 +437,45 @@ impl ToolGateway {
         // 也不得执行（可用性层过滤之外的第二道闸，I38d A7）。
         let tier_resource = format!("tier:{}", tier.as_str());
         if policy.evaluate_tier_ceiling(tier) == PermissionEffect::Deny {
-            self.audit(tool_name, "*", &tier_resource, AuditOutcome::Denied)
-                .await;
+            self.audit(
+                context,
+                tool_name,
+                "*",
+                &tier_resource,
+                AuditOutcome::Denied,
+            )
+            .await;
             return Ok(GatewayDecision::Denied {
                 action: "*".to_string(),
                 resource: tier_resource,
             });
         }
 
-        let intents = tool.permission_intents(input, context)?;
+        let intents = match tool.permission_intents(input, context) {
+            Ok(intents) => intents,
+            Err(error) => {
+                // 求值失败同样要可审计：detail 只记固定串，不把错误文本（可能夹带入参片段）写进 resource。
+                self.audit(
+                    context,
+                    tool_name,
+                    "none",
+                    "intent:error",
+                    AuditOutcome::IntentError,
+                )
+                .await;
+                return Err(error);
+            }
+        };
         if intents.is_empty() {
+            // 空 intent 是「未经策略求值即执行」，与「策略允许」必须分开记。
+            self.audit(
+                context,
+                tool_name,
+                "none",
+                "intent:none",
+                AuditOutcome::Bypassed,
+            )
+            .await;
             return Ok(GatewayDecision::Allowed);
         }
         let mut pending: Vec<PendingApproval> = Vec::new();
@@ -378,19 +492,37 @@ impl ToolGateway {
                         .is_granted(key, context.session_id.as_deref())
                         .await
                     {
-                        self.audit(tool_name, &intent.action, resource, AuditOutcome::GrantHit)
-                            .await;
+                        self.audit(
+                            context,
+                            tool_name,
+                            &intent.action,
+                            resource,
+                            AuditOutcome::GrantHit,
+                        )
+                        .await;
                         continue;
                     }
                 }
                 match policy.evaluate(&intent.action, resource) {
                     PermissionEffect::Allow => {
-                        self.audit(tool_name, &intent.action, resource, AuditOutcome::Allowed)
-                            .await;
+                        self.audit(
+                            context,
+                            tool_name,
+                            &intent.action,
+                            resource,
+                            AuditOutcome::Allowed,
+                        )
+                        .await;
                     }
                     PermissionEffect::Deny => {
-                        self.audit(tool_name, &intent.action, resource, AuditOutcome::Denied)
-                            .await;
+                        self.audit(
+                            context,
+                            tool_name,
+                            &intent.action,
+                            resource,
+                            AuditOutcome::Denied,
+                        )
+                        .await;
                         return Ok(GatewayDecision::Denied {
                             action: intent.action.clone(),
                             resource: resource.clone(),
@@ -426,6 +558,7 @@ impl ToolGateway {
             ApprovalWait::Decided(ApprovalDecision::Approve) => {
                 for item in &pending {
                     self.audit(
+                        context,
                         tool_name,
                         &item.action,
                         &item.resource,
@@ -460,6 +593,7 @@ impl ToolGateway {
                         }
                     }
                     self.audit(
+                        context,
                         tool_name,
                         &item.action,
                         &item.resource,
@@ -486,6 +620,7 @@ impl ToolGateway {
                         }
                     }
                     self.audit(
+                        context,
                         tool_name,
                         &item.action,
                         &item.resource,
@@ -498,6 +633,7 @@ impl ToolGateway {
             ApprovalWait::Decided(ApprovalDecision::Deny { reason }) => {
                 for item in &pending {
                     self.audit(
+                        context,
                         tool_name,
                         &item.action,
                         &item.resource,
@@ -511,6 +647,7 @@ impl ToolGateway {
             ApprovalWait::TimedOut { timeout } => {
                 for item in &pending {
                     self.audit(
+                        context,
                         tool_name,
                         &item.action,
                         &item.resource,
@@ -524,13 +661,26 @@ impl ToolGateway {
     }
 
     /// 审计失败只记日志，不改变决策：审计是观测，不是事实源。
-    async fn audit(&self, tool: &str, action: &str, resource: &str, outcome: AuditOutcome) {
+    ///
+    /// 会话坐标取自 `context`：网关的每条决策都发生在某次工具调用内，
+    /// 归属信息必须随行落库，否则事后无法从时间戳反推是哪一轮。
+    async fn audit(
+        &self,
+        context: &ToolUseContext,
+        tool: &str,
+        action: &str,
+        resource: &str,
+        outcome: AuditOutcome,
+    ) {
         let entry = AuditEntry {
             tool: tool.to_string(),
             action: action.to_string(),
-            resource: resource.to_string(),
+            resource: redact_resource(resource),
             outcome,
             at_millis: now_millis(),
+            conversation_id: context.session_id.clone(),
+            turn_id: context.turn_id.clone(),
+            iteration: context.iteration,
         };
         if let Err(error) = self.audit_store.log_decision(entry).await {
             log::warn!(
@@ -541,6 +691,22 @@ impl ToolGateway {
                 error
             );
         }
+    }
+
+    /// 供 pipeline 使用的唯一外部写入口：校验阶段发生在网关 `evaluate` 之前，
+    /// 但仍必须落到同一个审计存储，禁止在 `ToolPipeline` 里另注入一个 `PermissionAuditStore`。
+    ///
+    /// `context` 必传：校验失败同样要能归属到具体会话与轮次，否则这类行会成为
+    /// 审计里唯一无法定位来源的记录。
+    pub async fn audit_external(
+        &self,
+        context: &ToolUseContext,
+        tool: &str,
+        action: &str,
+        resource: &str,
+        outcome: AuditOutcome,
+    ) {
+        self.audit(context, tool, action, resource, outcome).await;
     }
 }
 
