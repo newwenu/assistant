@@ -112,7 +112,7 @@ pub async fn get_storage_breakdown(app: AppHandle) -> Result<StorageBreakdownDto
         }
     }
 
-    conversations.sort_by(|a, b| b.total_bytes.cmp(&a.total_bytes));
+    conversations.sort_by_key(|c| std::cmp::Reverse(c.total_bytes));
 
     let total_bytes: u64 = all_entries.iter().map(|e| e.bytes).sum();
     let total_count =

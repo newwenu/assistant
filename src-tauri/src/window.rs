@@ -544,11 +544,9 @@ pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                 }
             }
         }
-        tauri::WindowEvent::Focused(false) => {
-            if window.label() == WINDOW_ORB {
-                use tauri::Emitter;
-                let _ = window.emit(event_name::ORB_BLUR, ());
-            }
+        tauri::WindowEvent::Focused(false) if window.label() == WINDOW_ORB => {
+            use tauri::Emitter;
+            let _ = window.emit(event_name::ORB_BLUR, ());
         }
         _ => {}
     }

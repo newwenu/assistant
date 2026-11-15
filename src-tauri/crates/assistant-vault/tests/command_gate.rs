@@ -210,13 +210,11 @@ fn violations(command: &CommandGate) -> Vec<String> {
                 ));
             }
         }
-        "AnyState" => {
-            if !touches_state {
-                out.push(format!(
-                    "{}: `AnyState` command does not access vault state",
-                    label
-                ));
-            }
+        "AnyState" if !touches_state => {
+            out.push(format!(
+                "{}: `AnyState` command does not access vault state",
+                label
+            ));
         }
         _ => {}
     }

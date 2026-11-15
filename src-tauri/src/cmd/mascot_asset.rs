@@ -63,10 +63,8 @@ fn validate_mime(data: &[u8], asset_type: &str) -> Result<(), String> {
                 return Err("not a valid SVG file".to_string());
             }
         }
-        "rive" => {
-            if data.len() < 4 || &data[0..4] != b"RIVE" {
-                return Err("not a valid Rive runtime file (missing RIVE header)".to_string());
-            }
+        "rive" if data.len() < 4 || &data[0..4] != b"RIVE" => {
+            return Err("not a valid Rive runtime file (missing RIVE header)".to_string());
         }
         _ => {}
     }

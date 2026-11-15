@@ -813,10 +813,7 @@ fn recycle_bin_available(dir: &Path) -> bool {
         .into_iter()
         .filter(|item| assistant_tools::os::path::same_path(&item.original_path(), &probe))
         .collect();
-    if trash::os_limited::purge_all(&probes).is_err() {
-        return false;
-    }
-    true
+    trash::os_limited::purge_all(&probes).is_ok()
 }
 
 /// 永久模式不得留下回收站条目（证明没被静默改成移动）。

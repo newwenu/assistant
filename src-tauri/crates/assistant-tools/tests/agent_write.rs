@@ -668,8 +668,10 @@ async fn utf16_target_always_writes_a_bom() {
     let written = std::fs::read(dir.path().join("u16.txt")).unwrap();
     assert!(written.starts_with(b"\xFF\xFE"));
     let text: String = written[2..]
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
         .map(|unit| char::from_u32(unit as u32).unwrap_or('\u{FFFD}'))
         .collect();
     assert_eq!(text, "hi\n");
