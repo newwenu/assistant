@@ -3,10 +3,10 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
 use assistant_config::app_conf::AppConf;
-use assistant_config::vault_conf::VaultConf;
 use assistant_security::clipboard_guard::ClipboardGuard;
 use assistant_security::reveal_guard::RevealGuard;
 use assistant_security::screen_lock::ScreenLockMonitor;
+use assistant_vault::conf::VaultConf;
 use assistant_vault::dto::VaultErrorDto;
 use assistant_vault::security_db::{LockReason, SecurityDbState};
 use assistant_vault::sync_engine::SyncEngine;
@@ -422,11 +422,7 @@ pub fn apply_vault_side_effects(prev: &VaultConf, conf: &VaultConf) {
 }
 
 pub fn apply_conf(_app: &tauri::AppHandle, patch: serde_json::Value) -> Result<(), String> {
-    let conf = VaultConf::load().map_err(|e| e.to_string())?;
-    let prev = conf.clone();
-    let merged = conf.amend(patch)?;
-    merged.validate()?;
-    merged.save().map_err(|e| e.to_string())?;
+    let (prev, merged) = assistant_config::apply_patch::<VaultConf>(patch)?;
     apply_vault_side_effects(&prev, &merged);
     Ok(())
 }

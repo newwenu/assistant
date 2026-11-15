@@ -1,7 +1,5 @@
 import type { ConfSlot } from "@/settings/core/types/confSlot";
-import type { VaultConfDto } from "@/types/protocol.contract";
-
-export type VaultConf = VaultConfDto;
+import type { VaultConf } from "@/vault/core/vault.types";
 
 declare module "@/settings/core/types/confRegistry" {
   interface ConfTypeRegistry {

@@ -10,6 +10,7 @@ slow-tests = []
 git-tests = []
 
 [dependencies]
+assistant-config = { workspace = true }
 assistant-crypto = { workspace = true }
 assistant-sync = { workspace = true }
 serde = { workspace = true }

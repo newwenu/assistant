@@ -3,16 +3,18 @@ use assistant_sync::types::{
     EntryPreview, EntryPreviewField, Readyness, RemoteStatus, RemoteStatusErrorKind,
     RepositoryState, SyncConfig, SyncError, SyncResult,
 };
+use assistant_vault::conf::VaultConf;
 use assistant_vault::dto::{
     AuditLogEntry, ConflictFileDto, EntryPreviewDto, HibpAuditEntryDto, LockReasonDto,
     PaperErrorPosDto, PendingRemovalsDto, ReadynessDto, RecoveryBackupDto, RecoveryEntryDto,
     RecoveryExportDto, RecoveryKeyDto, RecoverySkipDto, RemoteModeDto, RemoteStatusDto,
     RemoteStatusErrorKindDto, RepositoryStateDto, SshKeyInfoDto, SshKeyMetaDto, SyncActionDto,
     SyncConfigDto, SyncResultDto, TotpCodeDto, UnreadableEntriesDto, UnreadableReasonDto,
-    VaultErrorCode, VaultErrorDto,
+    VaultCipherAlgorithmDto, VaultConfDto, VaultErrorCode, VaultErrorDto,
 };
 use assistant_vault::security_db::LockReason;
 use serde_json::{json, to_value};
+use std::collections::BTreeSet;
 
 fn sample_sync_config() -> SyncConfig {
     SyncConfig {
@@ -645,5 +647,100 @@ fn option_fields_serialize_as_null() {
             "sshKeyPath": null,
         }),
         "Option must serialize as null, never be skipped"
+    );
+}
+
+fn snake_from_camel(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    for ch in name.chars() {
+        if ch.is_ascii_uppercase() {
+            out.push('_');
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn object_keys(value: serde_json::Value) -> BTreeSet<String> {
+    value
+        .as_object()
+        .expect("serialized config must be a JSON object")
+        .keys()
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn vault_conf_dto_covers_every_disk_key() {
+    let disk_keys: Vec<&str> = vec![
+        "vault_auto_lock_minutes",
+        "vault_lock_on_screen_lock",
+        "vault_clipboard_clear_seconds",
+        "vault_cipher_algorithm",
+        "vault_hibp_auto_audit",
+        "vault_sync_remote_url",
+        "vault_ssh_auto_add",
+        "vault_ssh_use_pageant",
+        "vault_ssh_use_openssh_agent",
+        "vault_ssh_auth_sock_override",
+        "vault_sync_last_at",
+        "vault_sync_ssh_hosts",
+    ];
+    let wire_keys: Vec<&str> = vec![
+        "vaultAutoLockMinutes",
+        "vaultLockOnScreenLock",
+        "vaultClipboardClearSeconds",
+        "vaultCipherAlgorithm",
+        "vaultHibpAutoAudit",
+        "vaultSyncRemoteUrl",
+        "vaultSshAutoAdd",
+        "vaultSshUsePageant",
+        "vaultSshUseOpensshAgent",
+        "vaultSshAuthSockOverride",
+        "vaultSyncLastAt",
+        "vaultSyncSshHosts",
+    ];
+
+    let conf = VaultConf::new();
+    let actual_disk = object_keys(to_value(&conf).unwrap());
+    let actual_wire = object_keys(to_value(VaultConfDto::from(conf)).unwrap());
+
+    assert_eq!(
+        actual_disk,
+        disk_keys.iter().map(|k| k.to_string()).collect(),
+        "VaultConf 的磁盘键集合已变化，迁移前后的配置文件将不再互通"
+    );
+    assert_eq!(
+        actual_wire,
+        wire_keys.iter().map(|k| k.to_string()).collect(),
+        "VaultConfDto 的 wire 键集合已变化，前端契约将失配"
+    );
+    assert_eq!(
+        actual_wire
+            .iter()
+            .map(|key| snake_from_camel(key))
+            .collect::<BTreeSet<String>>(),
+        actual_disk,
+        "VaultConfDto 与 VaultConf 的字段集合必须一一对应"
+    );
+}
+
+#[test]
+fn vault_cipher_algorithm_wire_is_frozen() {
+    assert_eq!(
+        to_value(VaultCipherAlgorithmDto::from(
+            assistant_vault::conf::VaultCipherAlgorithm::Aes256Gcm
+        ))
+        .unwrap(),
+        json!("aes256Gcm")
+    );
+    assert_eq!(
+        to_value(VaultCipherAlgorithmDto::from(
+            assistant_vault::conf::VaultCipherAlgorithm::Chacha20Poly1305
+        ))
+        .unwrap(),
+        json!("chacha20Poly1305")
     );
 }

@@ -30,6 +30,8 @@ export type { SyncResultDto as SyncResult } from "./contract/vault.contract";
 export type { TotpAlgorithmDto as TotpAlgorithm } from "./contract/vault.contract";
 export type { TotpCodeDto as TotpCode } from "./contract/vault.contract";
 export type { UnreadableEntriesDto as UnreadableEntries } from "./contract/vault.contract";
+export type { VaultCipherAlgorithmDto as VaultCipherAlgorithm } from "./contract/vault.contract";
+export type { VaultConfDto as VaultConf } from "./contract/vault.contract";
 
 export interface RevealedField {
   entryId: string;

@@ -11,7 +11,7 @@ fn src_root() -> PathBuf {
 }
 
 fn vault_conf_source() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../assistant-config/src/vault_conf.rs")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/conf.rs")
 }
 
 fn vault_source_files() -> Vec<PathBuf> {
@@ -60,7 +60,7 @@ fn accessed_keys() -> Vec<String> {
 }
 
 fn declared_keys() -> Vec<String> {
-    let text = fs::read_to_string(vault_conf_source()).expect("vault_conf.rs is readable");
+    let text = fs::read_to_string(vault_conf_source()).expect("conf.rs is readable");
     let mut keys = Vec::new();
     for line in text.lines() {
         let trimmed = line.trim_start();
@@ -105,6 +105,16 @@ fn vault_conf_keys_used_by_commands_are_declared() {
         missing_keys(&accessed, &declared),
         Vec::<String>::new(),
         "cmd sources access vault config keys missing from VaultConf"
+    );
+}
+
+#[test]
+fn vault_conf_declares_at_least_twelve_fields() {
+    let declared = declared_keys();
+    assert!(
+        declared.len() >= 12,
+        "conf.rs 只声明了 {} 个 pub vault_* 字段，搬家可能漏字段",
+        declared.len()
     );
 }
 

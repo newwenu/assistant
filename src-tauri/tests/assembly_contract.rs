@@ -14,6 +14,7 @@ const ACL_ALLOW_PREFIX: &str = "allow-";
 const ACL_PARSER_FLOOR: usize = 60;
 const CONF_APPLIER_OPEN: &str = "register_conf_applier(";
 const CONFIG_CONF_MODULE_SUFFIX: &str = "_conf";
+const CONF_GROUP_DECL: &str = "GROUP: &'static str = \"";
 const MOUNT_ID_MARKER: &str = "id: \"";
 const MOUNT_TABLE_TYPE: &str = "&[FeatureMount]";
 const MOUNT_ACCESSOR: &str = "fn mounts(";
@@ -449,6 +450,62 @@ fn config_conf_groups() -> Vec<String> {
         .collect()
 }
 
+fn conf_group_literal(text: &str) -> Option<String> {
+    let cleaned = strip_rust_comments(text);
+    let idx = cleaned.find(CONF_GROUP_DECL)?;
+    let rest = &cleaned[idx + CONF_GROUP_DECL.len()..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+fn config_conf_file_groups() -> Vec<(String, String)> {
+    let dir = manifest_dir()
+        .join("crates")
+        .join("assistant-config")
+        .join("src");
+    let mut out = Vec::new();
+    let entries = fs::read_dir(&dir).expect("assistant-config/src 可读");
+    for entry in entries {
+        let path = entry.expect("assistant-config/src 目录项可读").path();
+        let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let Some(module) = stem.strip_suffix(CONFIG_CONF_MODULE_SUFFIX) else {
+            continue;
+        };
+        let text =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("{} 可读: {}", path.display(), e));
+        let group = conf_group_literal(&text)
+            .unwrap_or_else(|| panic!("{} 缺少 {} 字面量", path.display(), CONF_GROUP_DECL));
+        out.push((module.to_string(), group));
+    }
+    out.sort();
+    out
+}
+
+fn feature_conf_groups() -> Vec<String> {
+    let crates_dir = manifest_dir().join("crates");
+    let mut out = Vec::new();
+    let entries = fs::read_dir(&crates_dir).expect("crates 目录可读");
+    for entry in entries {
+        let conf = entry
+            .expect("crates 目录项可读")
+            .path()
+            .join("src")
+            .join("conf.rs");
+        if !conf.is_file() {
+            continue;
+        }
+        let text =
+            fs::read_to_string(&conf).unwrap_or_else(|e| panic!("{} 可读: {}", conf.display(), e));
+        let group = conf_group_literal(&text)
+            .unwrap_or_else(|| panic!("{} 缺少 {} 字面量", conf.display(), CONF_GROUP_DECL));
+        out.push(group);
+    }
+    out.sort();
+    out
+}
+
 fn shorten_paths(text: &str) -> String {
     fn flush(token: &mut String, out: &mut String) {
         if token.is_empty() {
@@ -707,13 +764,30 @@ fn a7_plugin_command_list_matches_build_acl() {
 
 #[test]
 fn a8_conf_applier_groups_match_config_structs() {
-    let expected = config_conf_groups();
+    for (module, group) in config_conf_file_groups() {
+        assert_eq!(
+            module, group,
+            "{} 的 GROUP 常量 `{}` 必须与模块名逐字相等",
+            module, group
+        );
+    }
+
+    let core = config_conf_groups();
     assert!(
-        !expected.is_empty(),
+        !core.is_empty(),
         "assistant-config 未解析到任何 *_conf 模块，解析器可能已失效"
     );
+    let feature = feature_conf_groups();
+    assert!(
+        !feature.is_empty(),
+        "未从 crates/*/src/conf.rs 解析到任何配置组，解析器可能已失效"
+    );
 
-    let expected_set: BTreeSet<&str> = expected.iter().map(String::as_str).collect();
+    let expected_set: BTreeSet<&str> = core
+        .iter()
+        .chain(feature.iter())
+        .map(String::as_str)
+        .collect();
 
     let actual = conf_applier_groups();
     let actual_set: BTreeSet<&str> = actual.iter().map(String::as_str).collect();

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub mod audit;
+pub mod conf;
 mod convert;
 pub mod error;
 pub mod hibp;
@@ -14,6 +15,7 @@ pub mod totp;
 
 pub use crate::shared::{CustomFieldInput, VaultCategory};
 pub use audit::{AuditLogEntry, StrengthResult, StrengthWarning};
+pub use conf::{VaultCipherAlgorithmDto, VaultConfDto};
 pub use error::{VaultErrorCode, VaultErrorDto};
 pub use hibp::HibpAuditEntryDto;
 pub use integrity::IntegrityResult;

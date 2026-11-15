@@ -98,7 +98,7 @@ mod mounted {
     }
 
     pub(crate) fn on_setup(_app: &tauri::AppHandle) -> Result<(), String> {
-        match assistant_config::vault_conf::VaultConf::load() {
+        match assistant_vault::conf::VaultConf::load() {
             Ok(_) => Ok(()),
             Err(e) => {
                 // 配置损坏或非法时不覆盖用户文件、也不阻塞应用启动；

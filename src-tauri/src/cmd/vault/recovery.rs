@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use tauri::{command, AppHandle};
 
-use assistant_config::vault_conf::VaultConf;
 use assistant_sync::git_sync::GitSync;
 use assistant_sync::types::SyncConfig;
+use assistant_vault::conf::VaultConf;
 use assistant_vault::dto::{
     PaperErrorPosDto, RecoveryBackupDto, RecoveryEntryDto, RecoveryExportDto, RecoveryKeyDto,
     RecoverySkipDto, VaultErrorDto,

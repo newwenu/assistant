@@ -87,6 +87,13 @@ export type UnreadableReasonDto = "keyMismatch" | "corrupt";
 
 export type VaultCategory = "login" | "note" | "card" | "identity" | "sshKey" | "custom";
 
+/**
+ * 保险库加密算法（封闭集合，线格式与前端联合一致）。
+ */
+export type VaultCipherAlgorithmDto = "aes256Gcm" | "chacha20Poly1305";
+
+export type VaultConfDto = { vaultAutoLockMinutes: number, vaultLockOnScreenLock: boolean, vaultClipboardClearSeconds: number, vaultCipherAlgorithm: VaultCipherAlgorithmDto, vaultHibpAutoAudit: boolean, vaultSyncRemoteUrl: string | null, vaultSshAutoAdd: boolean, vaultSshUsePageant: boolean, vaultSshUseOpensshAgent: boolean, vaultSshAuthSockOverride: string, vaultSyncLastAt: number | null, vaultSyncSshHosts: Array<string>, };
+
 export type VaultEntryCreate = { category: VaultCategory, title: string, username?: string | null, url?: string | null, password?: string | null, notes?: string | null, totp?: TotpInputDto | null, tags: Array<string>, customFields: Array<CustomFieldInput>, isFavorite: boolean, };
 
 export type VaultEntryDetail = { id: string, category: VaultCategory, title: string, username: string | null, url: string | null, hasPassword: boolean, hasNotes: boolean, hasTotp: boolean, totpDigits: number, totpPeriod: number, totpAlgorithm: TotpAlgorithmDto, customFieldNames: Array<string>, tags: Array<string>, isFavorite: boolean, revision: number, createdAt: number, updatedAt: number, };

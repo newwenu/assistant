@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
-use super::json_config::{amend_json_config, get_conf_dir, load_json_config, save_json_config};
+use super::conf_group::{ConfGroup, LoadPolicy};
 
 fn default_renderer() -> String {
     "svg".to_string()
@@ -48,32 +47,15 @@ impl MascotConf {
             gif_border_radius: default_gif_border_radius(),
         }
     }
+}
 
-    pub fn get_conf_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-        get_conf_dir()
-    }
+impl ConfGroup for MascotConf {
+    const GROUP: &'static str = "mascot";
+    const LOG_TAG: &'static str = "MascotConf";
+    const FILE_NAME: &'static str = "mascot-config.json";
+    const LOAD_POLICY: LoadPolicy = LoadPolicy::Lenient;
 
-    pub fn get_conf_path() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-        Ok(get_conf_dir()?.join("mascot-config.json"))
-    }
-
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        Self::load_from(&Self::get_conf_path()?)
-    }
-
-    pub fn load_from(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
-        load_json_config(path, Self::new, "MascotConf")
-    }
-
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.save_to(&Self::get_conf_path()?)
-    }
-
-    pub fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        save_json_config(path, self)
-    }
-
-    pub fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), String> {
         let valid_renderers = ["rive", "svg", "gif", "disabled"];
         if !valid_renderers.contains(&self.renderer.as_str()) {
             return Err(format!(
@@ -109,11 +91,9 @@ impl MascotConf {
         }
         Ok(())
     }
-
-    pub fn amend(self, patch: serde_json::Value) -> Result<Self, String> {
-        amend_json_config(&self, patch)
-    }
 }
+
+crate::conf_group_shims!(MascotConf);
 
 impl Default for MascotConf {
     fn default() -> Self {

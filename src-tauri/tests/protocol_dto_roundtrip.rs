@@ -11,7 +11,6 @@ use assistant_app::protocol::{
     ScreenSizeDto, SendChatMessageArgsDto, SessionStateChangedPayloadDto, SessionStateDto,
     SettingProviderChangedActionDto, SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto,
     ThemeChangedPayloadDto, TokenUsageDto, ToolErrorKindDto, ToolResultCompactDto, TurnPhaseDto,
-    VaultConfDto,
 };
 use assistant_storage::agent_modes::AgentModeRow;
 use serde::{Deserialize, Serialize};
@@ -744,9 +743,6 @@ fn config_dtos_cover_every_config_field() {
 
     let mascot = assistant_config::mascot_conf::MascotConf::new();
     assert_dto_covers_config("MascotConf", &mascot, &MascotConfDto::from(mascot.clone()));
-
-    let vault = assistant_config::vault_conf::VaultConf::new();
-    assert_dto_covers_config("VaultConf", &vault, &VaultConfDto::from(vault.clone()));
 }
 
 #[test]

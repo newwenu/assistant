@@ -30,11 +30,7 @@ const CORE_EXTENSIONS = /\.(ts|tsx|rs|json|toml)$/;
 const RESERVED_COMMAND_GROUPS = ["core"];
 
 const FEATURE_FOOTPRINT_ALLOWLIST: Record<string, string[]> = {
-  vault: [
-    "src-tauri/src/cmd/mod.rs",
-    "src-tauri/src/protocol/dto/config.rs",
-    "src-tauri/src/protocol/events.rs",
-  ],
+  vault: ["src-tauri/src/cmd/mod.rs", "src-tauri/src/protocol/events.rs"],
 };
 
 interface FeatureEntry {
@@ -308,6 +304,23 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
       for (const name of names) {
         if (text.includes(name.toLowerCase())) {
           problems.push(`${file} 仍出现特性名 ${name}`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it("特性自有契约类型不回流主契约", () => {
+    const problems: string[] = [];
+    for (const name of names) {
+      const bodyFiles = collect(`src/features/${name}`).filter(
+        (file) => !isTestArtifact(file),
+      );
+      for (const file of bodyFiles) {
+        if (read(file).includes("@/types/protocol.contract")) {
+          problems.push(
+            `${file}: 特性契约类型应从自身契约域导入，不得依赖 @/types/protocol.contract`,
+          );
         }
       }
     }

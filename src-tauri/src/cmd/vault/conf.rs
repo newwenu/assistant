@@ -1,9 +1,9 @@
 use log::error;
 use tauri::command;
 
-use assistant_config::vault_conf::VaultConf;
+use assistant_vault::conf::VaultConf;
 
-use crate::protocol::VaultConfDto;
+use assistant_vault::dto::VaultConfDto;
 use assistant_vault::dto::VaultErrorDto;
 
 // precondition: None

@@ -8,6 +8,10 @@ use std::path::{Path, PathBuf};
 
 pub const STRONG_PW: &str = "Str0ng#P@ssw0rd!2025";
 
+pub fn conf_path(name: &str) -> PathBuf {
+    tempfile::tempdir().unwrap().path().join(name)
+}
+
 pub fn temp_db_path() -> PathBuf {
     let dir = std::env::temp_dir()
         .join("assistant-security-test")

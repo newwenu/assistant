@@ -137,7 +137,7 @@ pub fn vault_ssh_list_agent(app: AppHandle) -> Result<Vec<SshKeyInfoDto>, VaultE
 // precondition: Unlocked
 #[command]
 pub fn vault_ssh_auto_add_all(app: AppHandle) -> Result<Vec<String>, VaultErrorDto> {
-    let conf = assistant_config::vault_conf::VaultConf::load()
+    let conf = assistant_vault::conf::VaultConf::load()
         .map_err(|e| super::internal_error(format!("Failed to load vault config: {}", e)))?;
     if !conf.vault_ssh_auto_add {
         return Ok(Vec::new());

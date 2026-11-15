@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
-use super::json_config::{amend_json_config, get_conf_dir, load_json_config, save_json_config};
+use super::conf_group::{ConfGroup, LoadPolicy};
 
 fn default_idle_opacity() -> u8 {
     85
@@ -37,32 +36,15 @@ impl OrbConf {
             position_y: None,
         }
     }
+}
 
-    pub fn get_conf_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-        get_conf_dir()
-    }
+impl ConfGroup for OrbConf {
+    const GROUP: &'static str = "orb";
+    const LOG_TAG: &'static str = "OrbConf";
+    const FILE_NAME: &'static str = "orb-config.json";
+    const LOAD_POLICY: LoadPolicy = LoadPolicy::Lenient;
 
-    pub fn get_conf_path() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-        Ok(get_conf_dir()?.join("orb-config.json"))
-    }
-
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        Self::load_from(&Self::get_conf_path()?)
-    }
-
-    pub fn load_from(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
-        load_json_config(path, Self::new, "OrbConf")
-    }
-
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.save_to(&Self::get_conf_path()?)
-    }
-
-    pub fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        save_json_config(path, self)
-    }
-
-    pub fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), String> {
         if self.scale_percent < 10 || self.scale_percent > 300 {
             return Err(format!(
                 "scale_percent must be 10-300, got {}",
@@ -89,11 +71,9 @@ impl OrbConf {
         }
         Ok(())
     }
-
-    pub fn amend(self, patch: serde_json::Value) -> Result<Self, String> {
-        amend_json_config(&self, patch)
-    }
 }
+
+crate::conf_group_shims!(OrbConf);
 
 impl Default for OrbConf {
     fn default() -> Self {

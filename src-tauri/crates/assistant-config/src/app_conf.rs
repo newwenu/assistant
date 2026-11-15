@@ -1,11 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 use std::collections::HashMap;
 
-use super::json_config::{
-    amend_json_config, get_conf_dir, load_json_config_with_migrate, save_json_config,
-};
+use super::conf_group::{ConfGroup, LoadPolicy};
 
 fn default_true() -> bool {
     true
@@ -146,22 +143,13 @@ impl AppConf {
             audit_retention_days: super::constant::AUDIT_RETENTION_DAYS,
         }
     }
+}
 
-    pub fn get_conf_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-        get_conf_dir()
-    }
-
-    pub fn get_conf_path() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-        Ok(get_conf_dir()?.join("config.json"))
-    }
-
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        Self::load_from(&Self::get_conf_path()?)
-    }
-
-    pub fn load_from(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
-        load_json_config_with_migrate(path, Self::new, Self::migrate, "AppConf")
-    }
+impl ConfGroup for AppConf {
+    const GROUP: &'static str = "app";
+    const LOG_TAG: &'static str = "AppConf";
+    const FILE_NAME: &'static str = "config.json";
+    const LOAD_POLICY: LoadPolicy = LoadPolicy::LenientWithMigrate;
 
     /// 配置迁移入口。当前没有待执行的迁移，仅保留空实现与下方模板。
     ///
@@ -174,19 +162,11 @@ impl AppConf {
     ///
     /// 已移除的迁移：`compact_threshold_percent` → `compact_threshold_percent_of_budget`
     /// （分母由「完整窗口」改为「可用预算」，I29 引入，2026-11-06 关闭迁移窗口）。
-    fn migrate(config: Self) -> Self {
-        config
+    fn migrate(self) -> Self {
+        self
     }
 
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.save_to(&Self::get_conf_path()?)
-    }
-
-    pub fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        save_json_config(path, self)
-    }
-
-    pub fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), String> {
         if self.language.is_empty() {
             return Err("language must not be empty".to_string());
         }
@@ -195,11 +175,9 @@ impl AppConf {
         }
         Ok(())
     }
-
-    pub fn amend(self, patch: serde_json::Value) -> Result<Self, String> {
-        amend_json_config(&self, patch)
-    }
 }
+
+crate::conf_group_shims!(AppConf);
 
 impl Default for AppConf {
     fn default() -> Self {

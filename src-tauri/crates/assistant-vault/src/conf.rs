@@ -1,10 +1,6 @@
+use assistant_config::conf_group::{ConfGroup, LoadPolicy};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-
-use super::atomic_write::recover_temp;
-use super::json_config::{
-    amend_json_config, get_conf_dir, load_json_config_strict, save_json_config,
-};
 
 /// 自动锁定分钟数上限（24 小时）。
 pub const MAX_AUTO_LOCK_MINUTES: u16 = 24 * 60;
@@ -88,79 +84,6 @@ impl VaultConf {
         }
     }
 
-    pub fn get_conf_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-        get_conf_dir()
-    }
-
-    pub fn get_conf_path() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-        Ok(get_conf_dir()?.join("vault-config.json"))
-    }
-
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        Self::load_from(&Self::get_conf_path()?)
-    }
-
-    pub fn load_from(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
-        if let Some(tmp_bytes) = recover_temp(path) {
-            if let Ok(conf) = serde_json::from_slice::<Self>(&tmp_bytes) {
-                conf.validate()?;
-                save_json_config(path, &conf)?;
-                return Ok(conf);
-            }
-            log::error!("[VaultConf] temp file invalid, discarding");
-        }
-
-        if !path.exists() {
-            if let Some(legacy) = Self::migrate_from_app_conf(path) {
-                legacy.validate()?;
-                legacy.save_to(path)?;
-                return Ok(legacy);
-            }
-            let default = Self::new();
-            default.save_to(path)?;
-            return Ok(default);
-        }
-
-        let conf: Self = load_json_config_strict(path, "VaultConf")?;
-        conf.validate()?;
-        Ok(conf)
-    }
-
-    fn migrate_from_app_conf(vault_path: &Path) -> Option<Self> {
-        let legacy_path = vault_path.parent()?.join("config.json");
-        let contents = std::fs::read_to_string(legacy_path).ok()?;
-        let value: serde_json::Value = serde_json::from_str(&contents).ok()?;
-        serde_json::from_value(value).ok()
-    }
-
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.save_to(&Self::get_conf_path()?)
-    }
-
-    pub fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        save_json_config(path, self)
-    }
-
-    pub fn validate(&self) -> Result<(), String> {
-        // 加密算法已是封闭枚举，非法值会在反序列化阶段被拒绝。
-        if self.vault_auto_lock_minutes > MAX_AUTO_LOCK_MINUTES {
-            return Err(format!(
-                "vault_auto_lock_minutes must be <= {} (0 disables auto-lock), got {}",
-                MAX_AUTO_LOCK_MINUTES, self.vault_auto_lock_minutes
-            ));
-        }
-        if self.vault_clipboard_clear_seconds > MAX_CLIPBOARD_CLEAR_SECONDS {
-            return Err(format!(
-                "vault_clipboard_clear_seconds must be <= {} (0 keeps clipboard), got {}",
-                MAX_CLIPBOARD_CLEAR_SECONDS, self.vault_clipboard_clear_seconds
-            ));
-        }
-        self.validate_auth_sock()?;
-        self.validate_remote_url()?;
-        self.validate_ssh_hosts()?;
-        Ok(())
-    }
-
     fn validate_auth_sock(&self) -> Result<(), String> {
         let raw = &self.vault_ssh_auth_sock_override;
         let trimmed = raw.trim();
@@ -222,11 +145,44 @@ impl VaultConf {
         }
         Ok(())
     }
+}
 
-    pub fn amend(self, patch: serde_json::Value) -> Result<Self, String> {
-        amend_json_config(&self, patch)
+impl ConfGroup for VaultConf {
+    const GROUP: &'static str = "vault";
+    const LOG_TAG: &'static str = "VaultConf";
+    const FILE_NAME: &'static str = "vault-config.json";
+    const LOAD_POLICY: LoadPolicy = LoadPolicy::Strict;
+
+    /// 首次启用保险库时从旧的 `config.json` 接管 vault 字段，随后主文件成为唯一来源。
+    fn adopt_legacy(vault_path: &Path) -> Option<Self> {
+        let legacy_path = vault_path.parent()?.join("config.json");
+        let contents = std::fs::read_to_string(legacy_path).ok()?;
+        let value: serde_json::Value = serde_json::from_str(&contents).ok()?;
+        serde_json::from_value(value).ok()
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        // 加密算法已是封闭枚举，非法值会在反序列化阶段被拒绝。
+        if self.vault_auto_lock_minutes > MAX_AUTO_LOCK_MINUTES {
+            return Err(format!(
+                "vault_auto_lock_minutes must be <= {} (0 disables auto-lock), got {}",
+                MAX_AUTO_LOCK_MINUTES, self.vault_auto_lock_minutes
+            ));
+        }
+        if self.vault_clipboard_clear_seconds > MAX_CLIPBOARD_CLEAR_SECONDS {
+            return Err(format!(
+                "vault_clipboard_clear_seconds must be <= {} (0 keeps clipboard), got {}",
+                MAX_CLIPBOARD_CLEAR_SECONDS, self.vault_clipboard_clear_seconds
+            ));
+        }
+        self.validate_auth_sock()?;
+        self.validate_remote_url()?;
+        self.validate_ssh_hosts()?;
+        Ok(())
     }
 }
+
+assistant_config::conf_group_shims!(VaultConf);
 
 fn is_absolute_local_path(value: &str) -> bool {
     if value.starts_with('/') || value.starts_with("\\\\") {

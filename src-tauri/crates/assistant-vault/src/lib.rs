@@ -2,6 +2,7 @@
 
 pub mod audit;
 pub mod biometric;
+pub mod conf;
 pub mod dto;
 pub mod lifecycle;
 pub mod password_strength;

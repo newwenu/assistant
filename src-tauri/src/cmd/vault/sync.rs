@@ -55,7 +55,7 @@ pub async fn vault_sync(
 // precondition: None
 #[command]
 pub fn vault_sync_last_time() -> Result<Option<i64>, VaultErrorDto> {
-    let conf = assistant_config::vault_conf::VaultConf::load()
+    let conf = assistant_vault::conf::VaultConf::load()
         .map_err(|e| super::internal_error(format!("Failed to load vault config: {}", e)))?;
     Ok(conf.vault_sync_last_at)
 }

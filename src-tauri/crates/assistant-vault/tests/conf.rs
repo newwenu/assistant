@@ -1,6 +1,6 @@
 mod common;
 
-use assistant_config::vault_conf::{VaultCipherAlgorithm, VaultConf};
+use assistant_vault::conf::{VaultCipherAlgorithm, VaultConf};
 use common::conf_path;
 
 #[test]
@@ -281,4 +281,51 @@ fn amend_rejects_invalid_auto_lock_through_validate() {
         .amend(serde_json::json!({ "vault_auto_lock_minutes": 2000 }))
         .unwrap();
     assert!(merged.validate().is_err());
+}
+
+fn crate_source_files() -> Vec<std::path::PathBuf> {
+    fn collect(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let entries = std::fs::read_dir(dir).expect("vault crate src directory is readable");
+        for entry in entries {
+            let path = entry.expect("vault crate src entry is readable").path();
+            if path.is_dir() {
+                collect(&path, out);
+            } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    collect(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+        &mut files,
+    );
+    files.sort();
+    files
+}
+
+#[test]
+fn vault_crate_does_not_reference_core_conf_groups() {
+    let offenders: Vec<String> = crate_source_files()
+        .into_iter()
+        .filter_map(|file| {
+            let text = std::fs::read_to_string(&file).ok()?;
+            let hits: Vec<&str> = ["app_conf", "orb_conf", "mascot_conf"]
+                .into_iter()
+                .filter(|marker| text.contains(marker))
+                .collect();
+            if hits.is_empty() {
+                None
+            } else {
+                Some(format!("{}: {:?}", file.display(), hits))
+            }
+        })
+        .collect();
+
+    assert!(
+        offenders.is_empty(),
+        "assistant-vault 不得引用核心配置组（R9 禁止跨组依赖）: {:?}",
+        offenders
+    );
 }

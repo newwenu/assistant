@@ -120,11 +120,7 @@ fn apply_orb_side_effects(app: &AppHandle, prev: &OrbConf, conf: &OrbConf) {
 }
 
 pub(crate) fn apply_app_conf(app: &AppHandle, patch: serde_json::Value) -> Result<(), String> {
-    let conf = AppConf::load().map_err(|e| e.to_string())?;
-    let prev = conf.clone();
-    let merged = conf.amend(patch)?;
-    merged.validate()?;
-    merged.save().map_err(|e| e.to_string())?;
+    let (prev, merged) = assistant_config::apply_patch::<AppConf>(patch)?;
     apply_app_side_effects(app, &prev, &merged);
     Ok(())
 }
@@ -136,20 +132,13 @@ pub(crate) fn update_app_conf(app: &AppHandle, patch: serde_json::Value) -> Resu
 }
 
 pub(crate) fn apply_orb_conf(app: &AppHandle, patch: serde_json::Value) -> Result<(), String> {
-    let conf = OrbConf::load().map_err(|e| e.to_string())?;
-    let prev = conf.clone();
-    let merged = conf.amend(patch)?;
-    merged.validate()?;
-    merged.save().map_err(|e| e.to_string())?;
+    let (prev, merged) = assistant_config::apply_patch::<OrbConf>(patch)?;
     apply_orb_side_effects(app, &prev, &merged);
     Ok(())
 }
 
 pub(crate) fn apply_mascot_conf(_app: &AppHandle, patch: serde_json::Value) -> Result<(), String> {
-    let conf = MascotConf::load().map_err(|e| e.to_string())?;
-    let merged = conf.amend(patch)?;
-    merged.validate()?;
-    merged.save().map_err(|e| e.to_string())?;
+    let (_prev, _next) = assistant_config::apply_patch::<MascotConf>(patch)?;
     Ok(())
 }
 
