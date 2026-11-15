@@ -1,15 +1,20 @@
-import React, { useCallback } from "react";
-import { Tag } from "antd";
-import { AimOutlined } from "@ant-design/icons";
+import React, { useCallback, useMemo } from "react";
+import { Button, Tag, Tooltip } from "antd";
+import { AimOutlined, CopyOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { MessageBubble } from "../../chat/message/MessageBubble";
 import { BRANCH_COLORS, type HistoryMessageRow } from "./historyTree";
+import { MessageMetaLine } from "./MessageMetaLine";
+import { toRecordSnapshot } from "./recordSnapshot";
 import css from "./HistoryBranchView.module.css";
 
 const MAX_INDENT = 6;
 
+export type HistoryViewMode = "read" | "raw";
+
 interface HistoryBranchRowProps {
   row: HistoryMessageRow;
+  viewMode: HistoryViewMode;
   isFocusLeaf: boolean;
   onDeleteMessage: (id: string) => void;
   onFocusNode: (nodeId: string) => void;
@@ -19,12 +24,28 @@ const INTERACTIVE_SELECTOR =
   "button, a, input, textarea, select, [role='button']";
 
 export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
-  ({ row, isFocusLeaf, onDeleteMessage, onFocusNode }) => {
+  ({ row, viewMode, isFocusLeaf, onDeleteMessage, onFocusNode }) => {
     const { t } = useTranslation();
     const message = row.node.message;
     const indent = Math.min(row.indent, MAX_INDENT);
     const color = BRANCH_COLORS[row.lane % BRANCH_COLORS.length];
     const isRawTool = message.role === "tool";
+
+    const recordJson = useMemo(
+      () =>
+        viewMode === "raw"
+          ? JSON.stringify(toRecordSnapshot(message), null, 2)
+          : "",
+      [message, viewMode],
+    );
+
+    const coord =
+      message.turnIndex == null
+        ? t("history.detail.coord_unknown")
+        : t("history.detail.coord", {
+            turn: message.turnIndex,
+            iteration: message.iteration,
+          });
 
     const handleClick = useCallback(
       (event: React.MouseEvent<HTMLDivElement>) => {
@@ -35,6 +56,14 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
       [message.id, onFocusNode],
     );
 
+    const handleCopyRecord = useCallback(() => {
+      navigator.clipboard.writeText(recordJson).catch(() => {});
+    }, [recordJson]);
+
+    const handleDelete = useCallback(() => {
+      onDeleteMessage(message.id);
+    }, [message.id, onDeleteMessage]);
+
     const rowClass = [
       css.row,
       row.dimmed ? css.rowDimmed : "",
@@ -42,6 +71,64 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
     ]
       .filter(Boolean)
       .join(" ");
+
+    const renderBody = () => {
+      if (viewMode === "raw") {
+        return (
+          <div className={css.rawRow}>
+            <div className={css.rawHeader}>
+              <Tag color="default" style={{ margin: 0 }}>
+                {message.role}
+              </Tag>
+              <span>{new Date(message.timestamp).toLocaleString()}</span>
+              <span>{coord}</span>
+              <span className={css.rawSpacer}>{message.id}</span>
+              <Tooltip title={t("history.detail.copy_record")}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<CopyOutlined />}
+                  onClick={handleCopyRecord}
+                />
+              </Tooltip>
+              <Tooltip title={t("common.actions.delete")}>
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={handleDelete}
+                />
+              </Tooltip>
+            </div>
+            <pre className={css.rawBody}>{recordJson}</pre>
+          </div>
+        );
+      }
+      if (isRawTool) {
+        return (
+          <div className={css.rawRow}>
+            <div className={css.rawHeader}>
+              <Tag color="default" style={{ margin: 0 }}>
+                {message.role}
+              </Tag>
+              <span>{new Date(message.timestamp).toLocaleString()}</span>
+              <span>{message.id}</span>
+            </div>
+            <div>{message.content}</div>
+          </div>
+        );
+      }
+      return (
+        <MessageBubble
+          message={message}
+          isStreaming={false}
+          showIdentity={row.showIdentity}
+          showBranchPicker={false}
+          onDelete={onDeleteMessage}
+        />
+      );
+    };
 
     return (
       <div
@@ -58,25 +145,8 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
           )}
         </div>
         <div className={css.bubbleWrap}>
-          {isRawTool ? (
-            <div className={css.rawRow}>
-              <div className={css.rawHeader}>
-                <Tag color="default" style={{ margin: 0 }}>
-                  {message.role}
-                </Tag>
-                <span>{new Date(message.timestamp).toLocaleString()}</span>
-                <span>{message.id}</span>
-              </div>
-              <div>{message.content}</div>
-            </div>
-          ) : (
-            <MessageBubble
-              message={message}
-              isStreaming={false}
-              showBranchPicker={false}
-              onDelete={onDeleteMessage}
-            />
-          )}
+          <MessageMetaLine message={message} />
+          {renderBody()}
           {isFocusLeaf && (
             <span className={css.focusBadge}>
               <AimOutlined /> {t("history.tree.focus_hint")}

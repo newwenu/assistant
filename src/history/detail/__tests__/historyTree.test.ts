@@ -16,15 +16,20 @@ const flatten = (
   messages: Message[],
   focusLeafId: string | null,
   expanded: ReadonlySet<string> = noExpand,
-  rawRows = false,
+  showToolRows = false,
 ) =>
   flattenHistoryRows(buildHistoryTree(messages), focusLeafId, expanded, {
-    rawRows,
+    showToolRows,
   });
 
 const messageIds = (rows: HistoryRow[]): string[] =>
   rows
     .filter((row) => row.kind === "message")
+    .map((row) => (row.kind === "message" ? row.node.message.id : ""));
+
+const identityIds = (rows: HistoryRow[]): string[] =>
+  rows
+    .filter((row) => row.kind === "message" && row.showIdentity)
     .map((row) => (row.kind === "message" ? row.node.message.id : ""));
 
 describe("buildHistoryTree", () => {
@@ -43,7 +48,9 @@ describe("buildHistoryTree", () => {
     expect(tree.nodeById.get("a2")!.depth).toBe(3);
     expect(tree.nodeById.get("u1")!.subtreeSize).toBe(4);
 
-    const rows = flattenHistoryRows(tree, "a2", noExpand, { rawRows: false });
+    const rows = flattenHistoryRows(tree, "a2", noExpand, {
+      showToolRows: false,
+    });
     expect(rows).toHaveLength(4);
     expect(rows.every((row) => row.kind === "message")).toBe(true);
     expect(messageIds(rows)).toEqual(["u1", "a1", "u2", "a2"]);
@@ -96,7 +103,9 @@ describe("buildHistoryTree", () => {
       tree.orphanGroups.get("missing-id-2")!.map((node) => node.message.id),
     ).toEqual(["ghost2"]);
 
-    const rows = flattenHistoryRows(tree, null, noExpand, { rawRows: false });
+    const rows = flattenHistoryRows(tree, null, noExpand, {
+      showToolRows: false,
+    });
     expect(rows.filter((row) => row.kind === "stub")).toHaveLength(0);
     const orphanRows = rows.filter(
       (row) => row.kind === "message" && row.dimmed,
@@ -123,7 +132,9 @@ describe("buildHistoryTree", () => {
     ];
     const tree = buildHistoryTree(messages);
 
-    const rows = flattenHistoryRows(tree, "g1", noExpand, { rawRows: false });
+    const rows = flattenHistoryRows(tree, "g1", noExpand, {
+      showToolRows: false,
+    });
     const stubs = rows.filter((row) => row.kind === "stub");
     expect(stubs).toHaveLength(1);
     if (stubs[0].kind === "stub") {
@@ -140,7 +151,9 @@ describe("buildHistoryTree", () => {
       makeMessage("y", { parentId: "x", timestamp: 300 }),
     ];
     const tree = buildHistoryTree(messages);
-    const rows = flattenHistoryRows(tree, null, noExpand, { rawRows: false });
+    const rows = flattenHistoryRows(tree, null, noExpand, {
+      showToolRows: false,
+    });
     expect(
       tree.nodeById.get("x")!.orphan || tree.nodeById.get("y")!.orphan,
     ).toBe(true);
@@ -168,7 +181,9 @@ describe("flattenHistoryRows", () => {
     const messages = branchMessages();
     messages[1].siblingIndex = 0;
     const tree = buildHistoryTree(messages);
-    const rows = flattenHistoryRows(tree, "a2", noExpand, { rawRows: false });
+    const rows = flattenHistoryRows(tree, "a2", noExpand, {
+      showToolRows: false,
+    });
 
     const stubs = rows.filter((row) => row.kind === "stub");
     expect(stubs).toHaveLength(1);
@@ -187,7 +202,7 @@ describe("flattenHistoryRows", () => {
     messages.push(makeMessage("u3", { parentId: "a1b", timestamp: 600 }));
     const tree = buildHistoryTree(messages);
     const rows = flattenHistoryRows(tree, "a2", new Set(["stub:u1"]), {
-      rawRows: false,
+      showToolRows: false,
     });
 
     const ids = messageIds(rows);
@@ -207,7 +222,7 @@ describe("flattenHistoryRows", () => {
     expect(resolveDefaultFocusLeaf(tree, "a1b")).toBe("a1b");
   });
 
-  it("T8: raw row mode emits tool rows", () => {
+  it("T8: tool row mode emits tool rows", () => {
     const messages = [
       makeMessage("u1", { timestamp: 100 }),
       makeMessage("a1", { role: "assistant", parentId: "u1", timestamp: 200 }),
@@ -231,7 +246,9 @@ describe("flattenHistoryRows", () => {
       makeMessage("a3", { role: "assistant", parentId: "t2", timestamp: 400 }),
     ];
     const tree = buildHistoryTree(messages);
-    const rows = flattenHistoryRows(tree, "a3", noExpand, { rawRows: false });
+    const rows = flattenHistoryRows(tree, "a3", noExpand, {
+      showToolRows: false,
+    });
     expect(messageIds(rows)).toEqual(["u1", "a1", "a2", "a3"]);
     const indents = rows.map((row) => row.indent);
     expect(indents).toEqual([0, 0, 0, 0]);
@@ -260,5 +277,144 @@ describe("flattenHistoryRows", () => {
       computeFocusPath(buildHistoryTree([makeMessage("u1")]), "u1"),
     ).toEqual(new Set(["u1"]));
     expect(ROOT_GROUP_ID).toBe("__root__");
+  });
+});
+
+describe("identity pass", () => {
+  it("I1: single turn with one assistant shows identity once", () => {
+    const messages = [
+      makeMessage("u1", { timestamp: 100, turnIndex: 1, iteration: 0 }),
+      makeMessage("a1", {
+        role: "assistant",
+        parentId: "u1",
+        timestamp: 200,
+        turnIndex: 1,
+        iteration: 1,
+      }),
+    ];
+    const rows = flatten(messages, "a1");
+    expect(identityIds(rows)).toEqual(["a1"]);
+  });
+
+  it("I2: three iterations in one turn show identity only on the first", () => {
+    const messages = [
+      makeMessage("u1", { timestamp: 100, turnIndex: 1, iteration: 0 }),
+      makeMessage("a1", {
+        role: "assistant",
+        parentId: "u1",
+        timestamp: 200,
+        turnIndex: 1,
+        iteration: 1,
+      }),
+      makeMessage("t1", { role: "tool", parentId: "a1", timestamp: 250 }),
+      makeMessage("a2", {
+        role: "assistant",
+        parentId: "t1",
+        timestamp: 300,
+        turnIndex: 1,
+        iteration: 2,
+      }),
+      makeMessage("t2", { role: "tool", parentId: "a2", timestamp: 350 }),
+      makeMessage("a3", {
+        role: "assistant",
+        parentId: "t2",
+        timestamp: 400,
+        turnIndex: 1,
+        iteration: 3,
+      }),
+    ];
+    const rows = flatten(messages, "a3");
+    expect(identityIds(rows)).toEqual(["a1"]);
+  });
+
+  it("I3: two turns each show their own identity row", () => {
+    const messages = [
+      makeMessage("u1", { timestamp: 100, turnIndex: 1, iteration: 0 }),
+      makeMessage("a1", {
+        role: "assistant",
+        parentId: "u1",
+        timestamp: 200,
+        turnIndex: 1,
+        iteration: 1,
+      }),
+      makeMessage("u2", {
+        parentId: "a1",
+        timestamp: 300,
+        turnIndex: 2,
+        iteration: 0,
+      }),
+      makeMessage("a2", {
+        role: "assistant",
+        parentId: "u2",
+        timestamp: 400,
+        turnIndex: 2,
+        iteration: 1,
+      }),
+    ];
+    const rows = flatten(messages, "a2");
+    expect(identityIds(rows)).toEqual(["a1", "a2"]);
+  });
+
+  it("I4: expanded side branch does not take the turn identity row", () => {
+    const messages = [
+      makeMessage("u1", { timestamp: 100, turnIndex: 1, iteration: 0 }),
+      makeMessage("a1", {
+        role: "assistant",
+        parentId: "u1",
+        siblingIndex: 0,
+        siblingCount: 2,
+        timestamp: 200,
+        turnIndex: 1,
+        iteration: 1,
+      }),
+      makeMessage("a1b", {
+        role: "assistant",
+        parentId: "u1",
+        siblingIndex: 1,
+        siblingCount: 2,
+        timestamp: 500,
+        turnIndex: 1,
+        iteration: 1,
+      }),
+      makeMessage("u2", {
+        parentId: "a1",
+        timestamp: 300,
+        turnIndex: 2,
+        iteration: 0,
+      }),
+      makeMessage("a2", {
+        role: "assistant",
+        parentId: "u2",
+        timestamp: 400,
+        turnIndex: 2,
+        iteration: 1,
+      }),
+    ];
+    const rows = flatten(messages, "a2", new Set(["stub:u1"]));
+    expect(identityIds(rows)).toEqual(["a1", "a2"]);
+  });
+
+  it("I5: legacy rows without turn index show identity on every assistant row", () => {
+    const messages = [
+      makeMessage("u1", { timestamp: 100 }),
+      makeMessage("a1", { role: "assistant", parentId: "u1", timestamp: 200 }),
+      makeMessage("a2", { role: "assistant", parentId: "a1", timestamp: 300 }),
+    ];
+    const rows = flatten(messages, "a2");
+    expect(identityIds(rows)).toEqual(["a1", "a2"]);
+  });
+
+  it("I6: non-assistant roles never show identity", () => {
+    const messages = [
+      makeMessage("u1", { timestamp: 100, turnIndex: 1, iteration: 0 }),
+      makeMessage("s1", {
+        role: "compact_summary",
+        parentId: "u1",
+        timestamp: 200,
+      }),
+      makeMessage("t1", { role: "tool", parentId: "s1", timestamp: 250 }),
+    ];
+    const rows = flatten(messages, "t1", noExpand, true);
+    expect(identityIds(rows)).toEqual([]);
   });
 });

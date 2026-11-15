@@ -966,8 +966,42 @@
       "expand": "展开",
       "collapse": "收起",
       "focus_hint": "当前查看分支",
-      "raw_rows": "原始行",
       "collapse_all": "收起分支"
+    },
+    "detail": {
+      "view_read": "阅读",
+      "view_raw": "原始",
+      "show_tool_rows": "显示工具行",
+      "coord": "T{{turn}} · i{{iteration}}",
+      "coord_unknown": "坐标未知",
+      "tokens": "{{value}} tok",
+      "status_interrupted": "已中断",
+      "status_failed": "失败",
+      "status_streaming": "生成中",
+      "toggle_details": "展开或收起元数据",
+      "copy_record": "复制记录",
+      "root_parent": "根",
+      "empty": "—",
+      "chars": "{{value}} 字符",
+      "blocks": "{{value}} 块",
+      "calls": "{{value}} 调用",
+      "fields": {
+        "id": "ID",
+        "conversation": "会话",
+        "role": "角色",
+        "coord": "坐标",
+        "parent": "父消息",
+        "siblings": "兄弟",
+        "status": "状态",
+        "tokens": "Tokens",
+        "provider": "通道",
+        "model": "模型",
+        "mode": "模式",
+        "timestamp": "时间",
+        "content": "正文",
+        "reasoning": "推理",
+        "tool_calls": "工具调用"
+      }
     },
     "errors": {
       "deleteConversationFailed": {

@@ -1,6 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Typography, Button, Empty, Spin, Tag, Popconfirm, Switch } from "antd";
+import {
+  Typography,
+  Button,
+  Dropdown,
+  Empty,
+  Segmented,
+  Spin,
+  Tag,
+  Popconfirm,
+  Switch,
+} from "antd";
 import {
   DeleteOutlined,
   ExportOutlined,
@@ -8,6 +18,7 @@ import {
 } from "@ant-design/icons";
 import type { Conversation, Message } from "../../chat/core/chatTypes";
 import { HistoryBranchView } from "./HistoryBranchView";
+import type { HistoryViewMode } from "./HistoryBranchRow";
 import { formatConversationTitle } from "../../utils/formatConversationTitle";
 import css from "./HistoryDetail.module.css";
 
@@ -44,12 +55,13 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
     const [expandedKeys, setExpandedKeys] = useState<ReadonlySet<string>>(
       () => new Set<string>(),
     );
-    const [rawRows, setRawRows] = useState(false);
+    const [showToolRows, setShowToolRows] = useState(false);
+    const [viewMode, setViewMode] = useState<HistoryViewMode>("read");
 
     useEffect(() => {
       setFocusLeafId(null);
       setExpandedKeys(new Set<string>());
-      setRawRows(false);
+      setShowToolRows(false);
       setScrollTop(0);
       setUserScrolledUp(false);
       autoScrolledRef.current = null;
@@ -137,13 +149,23 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
             {formatConversationTitle(selectedConv)}
           </Typography.Text>
           <Tag>{t("history.message_count", { count: totalCount })}</Tag>
-          <Button
-            size="small"
-            icon={<ExportOutlined />}
-            onClick={() => onExport(selectedId, "markdown")}
+          <Dropdown
+            trigger={["click"]}
+            menu={{
+              items: [
+                {
+                  key: "markdown",
+                  label: t("history.export_markdown"),
+                },
+                { key: "json", label: t("history.export_json") },
+              ],
+              onClick: ({ key }) => onExport(selectedId, key),
+            }}
           >
-            {t("common.actions.export")}
-          </Button>
+            <Button size="small" icon={<ExportOutlined />}>
+              {t("common.actions.export")}
+            </Button>
+          </Dropdown>
           <Popconfirm
             title={t("history.confirm_delete_conversation")}
             onConfirm={() => onDeleteConversation(selectedId)}
@@ -155,13 +177,22 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
         </div>
         {messages.length > 0 && (
           <div className={css.toolbar}>
+            <Segmented<HistoryViewMode>
+              size="small"
+              value={viewMode}
+              onChange={setViewMode}
+              options={[
+                { value: "read", label: t("history.detail.view_read") },
+                { value: "raw", label: t("history.detail.view_raw") },
+              ]}
+            />
             <span className={css.toolbarLabel}>
-              {t("history.tree.raw_rows")}
+              {t("history.detail.show_tool_rows")}
             </span>
             <Switch
               size="small"
-              checked={rawRows}
-              onChange={(checked) => setRawRows(checked)}
+              checked={showToolRows}
+              onChange={(checked) => setShowToolRows(checked)}
             />
             {expandedKeys.size > 0 && (
               <Button type="link" size="small" onClick={collapseAll}>
@@ -187,7 +218,8 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
               activeBranchId={selectedConv.activeBranchId}
               focusLeafId={focusLeafId}
               expandedKeys={expandedKeys}
-              rawRows={rawRows}
+              showToolRows={showToolRows}
+              viewMode={viewMode}
               scrollTop={scrollTop}
               viewportHeight={viewportHeight}
               scrollContainerRef={messageListRef}

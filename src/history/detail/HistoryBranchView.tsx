@@ -7,7 +7,7 @@ import {
   resolveFocusLeafId,
   type HistoryRow,
 } from "./historyTree";
-import { HistoryBranchRow } from "./HistoryBranchRow";
+import { HistoryBranchRow, type HistoryViewMode } from "./HistoryBranchRow";
 import { HistoryStubRow } from "./HistoryStubRow";
 import { HistoryVirtualList } from "./HistoryVirtualList";
 
@@ -16,7 +16,8 @@ interface HistoryBranchViewProps {
   activeBranchId: string | null;
   focusLeafId: string | null;
   expandedKeys: ReadonlySet<string>;
-  rawRows: boolean;
+  showToolRows: boolean;
+  viewMode: HistoryViewMode;
   scrollTop: number;
   viewportHeight: number;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -33,7 +34,8 @@ export const HistoryBranchView: React.FC<HistoryBranchViewProps> = ({
   activeBranchId,
   focusLeafId,
   expandedKeys,
-  rawRows,
+  showToolRows,
+  viewMode,
   scrollTop,
   viewportHeight,
   scrollContainerRef,
@@ -53,8 +55,10 @@ export const HistoryBranchView: React.FC<HistoryBranchViewProps> = ({
 
   const rows = useMemo(
     () =>
-      flattenHistoryRows(tree, effectiveFocusLeafId, expandedKeys, { rawRows }),
-    [tree, effectiveFocusLeafId, expandedKeys, rawRows],
+      flattenHistoryRows(tree, effectiveFocusLeafId, expandedKeys, {
+        showToolRows,
+      }),
+    [tree, effectiveFocusLeafId, expandedKeys, showToolRows],
   );
 
   const renderRow = React.useCallback(
@@ -71,13 +75,20 @@ export const HistoryBranchView: React.FC<HistoryBranchViewProps> = ({
       return (
         <HistoryBranchRow
           row={row}
+          viewMode={viewMode}
           isFocusLeaf={row.node.message.id === effectiveFocusLeafId}
           onDeleteMessage={onDeleteMessage}
           onFocusNode={onFocusNode}
         />
       );
     },
-    [effectiveFocusLeafId, onDeleteMessage, onFocusNode, onToggleStub],
+    [
+      effectiveFocusLeafId,
+      viewMode,
+      onDeleteMessage,
+      onFocusNode,
+      onToggleStub,
+    ],
   );
 
   return (

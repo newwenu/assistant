@@ -39,6 +39,8 @@ export interface HistoryMessageRow {
   lane: number;
   dimmed: boolean;
   onFocusPath: boolean;
+  /** 是否渲染身份行（头像 + 模式 + 模型）；由 `applyIdentityPass` 派生。 */
+  showIdentity: boolean;
 }
 
 export interface HistoryStubRow {
@@ -55,7 +57,8 @@ export interface HistoryStubRow {
 export type HistoryRow = HistoryMessageRow | HistoryStubRow;
 
 export interface HistoryFlattenOptions {
-  rawRows: boolean;
+  /** 是否把 `role === "tool"` 的链式行渲染为独立行。 */
+  showToolRows: boolean;
 }
 
 function compareSiblings(a: HistoryNode, b: HistoryNode): number {
@@ -241,6 +244,35 @@ export function resolveDefaultFocusLeaf(
   return last.deepestLeafId;
 }
 
+/**
+ * 身份行归并（I51 §2.2）：同一 turn 内仅首个非旁支 assistant 行渲染身份行。
+ *
+ * 用输出后处理而非递归内传递状态，原因有二：可见序列会被 stub 行隔开，
+ * 「上一行是否同 turn」不可用；旁支展开的 `dimmed` 行不应抢占该 turn 的身份行。
+ * `turnIndex === null` 的存量行逐行显示，禁止用相邻关系或时间戳推断轮次。
+ */
+function applyIdentityPass(rows: HistoryRow[]): void {
+  const seenTurn = new Set<number>();
+  for (const row of rows) {
+    if (row.kind !== "message") continue;
+    const message = row.node.message;
+    if (message.role !== "assistant") {
+      row.showIdentity = false;
+      continue;
+    }
+    if (message.turnIndex == null) {
+      row.showIdentity = true;
+      continue;
+    }
+    if (row.dimmed) {
+      row.showIdentity = false;
+      continue;
+    }
+    row.showIdentity = !seenTurn.has(message.turnIndex);
+    seenTurn.add(message.turnIndex);
+  }
+}
+
 export function flattenHistoryRows(
   tree: HistoryTree,
   focusLeafId: string | null,
@@ -248,7 +280,7 @@ export function flattenHistoryRows(
   opts: HistoryFlattenOptions,
 ): HistoryRow[] {
   const rows: HistoryRow[] = [];
-  const rawRows = opts.rawRows;
+  const showToolRows = opts.showToolRows;
   const effectiveFocusId =
     focusLeafId && tree.nodeById.has(focusLeafId)
       ? focusLeafId
@@ -328,7 +360,7 @@ export function flattenHistoryRows(
     lane: number,
     dimmed: boolean,
   ): void => {
-    if (node.message.role === "tool" && !rawRows) {
+    if (node.message.role === "tool" && !showToolRows) {
       emitGroup(node.message.id, node.children, indent, lane, dimmed);
       return;
     }
@@ -340,6 +372,7 @@ export function flattenHistoryRows(
       lane,
       dimmed,
       onFocusPath: focusPath.has(node.message.id),
+      showIdentity: false,
     });
     emitGroup(node.message.id, node.children, indent, lane, dimmed);
   };
@@ -349,5 +382,6 @@ export function flattenHistoryRows(
     emitGroup(groupKey, group, 0, 0, true, true);
   }
 
+  applyIdentityPass(rows);
   return rows;
 }

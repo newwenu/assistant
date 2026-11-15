@@ -35,7 +35,7 @@ interface MessageBubbleProps {
   compact?: boolean;
   /**
    * 是否渲染头像与身份行（I43 §4.4）：`MessageList` 按轮次起点显式传入，
-   * 历史树详情等无列表上下文的场景走缺省 `true`。
+   * 历史树详情同样必须显式传入（I51 §2.2）。缺省 `true` 仅服务无坐标上下文的调用方。
    */
   showIdentity?: boolean;
   showBranchPicker?: boolean;

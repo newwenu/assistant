@@ -981,8 +981,42 @@
       "expand": "Expand",
       "collapse": "Collapse",
       "focus_hint": "Viewing branch",
-      "raw_rows": "Raw rows",
       "collapse_all": "Collapse branches"
+    },
+    "detail": {
+      "view_read": "Read",
+      "view_raw": "Raw",
+      "show_tool_rows": "Show tool rows",
+      "coord": "T{{turn}} · i{{iteration}}",
+      "coord_unknown": "Coord unknown",
+      "tokens": "{{value}} tok",
+      "status_interrupted": "Interrupted",
+      "status_failed": "Failed",
+      "status_streaming": "Streaming",
+      "toggle_details": "Toggle metadata",
+      "copy_record": "Copy record",
+      "root_parent": "Root",
+      "empty": "—",
+      "chars": "{{value}} chars",
+      "blocks": "{{value}} blocks",
+      "calls": "{{value}} calls",
+      "fields": {
+        "id": "ID",
+        "conversation": "Conversation",
+        "role": "Role",
+        "coord": "Coord",
+        "parent": "Parent",
+        "siblings": "Siblings",
+        "status": "Status",
+        "tokens": "Tokens",
+        "provider": "Provider",
+        "model": "Model",
+        "mode": "Mode",
+        "timestamp": "Time",
+        "content": "Content",
+        "reasoning": "Reasoning",
+        "tool_calls": "Tool calls"
+      }
     },
     "errors": {
       "deleteConversationFailed": {
