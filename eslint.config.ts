@@ -2,7 +2,6 @@ import js from "@eslint/js";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
-import prettier from "eslint-plugin-prettier";
 import prettierConfig from "eslint-config-prettier";
 import { defineConfig } from "eslint/config";
 import type { Linter } from "eslint";
@@ -45,6 +44,7 @@ export default defineConfig(
       "dist",
       "src-tauri",
       "src/vault/core/contract",
+      "src/types/protocol.contract.ts",
       "src/types/shortcutDefaults.generated.ts",
       "references",
       "temp-backup",
@@ -63,18 +63,22 @@ export default defineConfig(
     },
     plugins: {
       "react-hooks": { rules: reactHooks.rules },
-      prettier,
     },
     rules: {
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
-      "prettier/prettier": "error",
-      "@typescript-eslint/no-deprecated": "warn",
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/no-explicit-any": "warn",
+    },
+  },
+  {
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: ["**/__tests__/**"],
+    rules: {
+      "@typescript-eslint/no-deprecated": "warn",
     },
   },
   {
