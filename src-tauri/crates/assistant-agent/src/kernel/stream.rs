@@ -127,11 +127,13 @@ pub fn is_output_limit_reached(finish_reason: Option<&str>) -> bool {
     )
 }
 
+/// 流式调用的失败形态；`PartialOutcome` 一律装箱，避免撑大 `Result` 的 `Err` 通道
+/// （`PartialOutcome` 约 96 字节，内联会让整个 `StreamError` 超过 clippy 阈值）。
 #[derive(Debug)]
 pub enum StreamError {
-    Cancelled(PartialOutcome),
-    Timeout(PartialOutcome),
-    Provider(ProviderError, PartialOutcome),
+    Cancelled(Box<PartialOutcome>),
+    Timeout(Box<PartialOutcome>),
+    Provider(ProviderError, Box<PartialOutcome>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -269,7 +271,7 @@ where
             Some(total) => {
                 let remaining = total.saturating_sub(clock.now().duration_since(call_started));
                 if remaining.is_zero() {
-                    return Err(StreamError::Timeout(accum.into_partial()));
+                    return Err(StreamError::Timeout(Box::new(accum.into_partial())));
                 }
                 Some(remaining)
             }
@@ -279,7 +281,7 @@ where
         let item = next_item(&mut stream, &token, budget).await;
 
         if token.is_cancelled() {
-            return Err(StreamError::Cancelled(accum.into_partial()));
+            return Err(StreamError::Cancelled(Box::new(accum.into_partial())));
         }
 
         match item {
@@ -293,11 +295,11 @@ where
                 }
             }
             TimedStreamItem::Item(Err(error)) => {
-                return Err(StreamError::Provider(error, accum.into_partial()));
+                return Err(StreamError::Provider(error, Box::new(accum.into_partial())));
             }
             TimedStreamItem::End => return Ok(accum.into_outcome()),
             TimedStreamItem::TimedOut => {
-                return Err(StreamError::Timeout(accum.into_partial()));
+                return Err(StreamError::Timeout(Box::new(accum.into_partial())));
             }
         }
     }
