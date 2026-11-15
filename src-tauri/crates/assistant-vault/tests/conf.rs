@@ -82,7 +82,7 @@ fn get_conf_path_uses_vault_config_file() {
 
 #[test]
 fn load_from_creates_default_when_missing() {
-    let path = conf_path("vault-config.json");
+    let (_dir, path) = conf_path("vault-config.json");
     let conf = VaultConf::load_from(&path).unwrap();
     assert_eq!(conf.vault_auto_lock_minutes, 5);
     assert!(path.exists());
@@ -90,7 +90,7 @@ fn load_from_creates_default_when_missing() {
 
 #[test]
 fn save_to_and_load_from_roundtrip() {
-    let path = conf_path("vault-config.json");
+    let (_dir, path) = conf_path("vault-config.json");
     let mut conf = VaultConf::new();
     conf.vault_auto_lock_minutes = 15;
     conf.vault_sync_ssh_hosts = vec!["github.com".to_string()];
@@ -103,7 +103,7 @@ fn save_to_and_load_from_roundtrip() {
 
 #[test]
 fn load_from_migrates_legacy_app_conf() {
-    let legacy = conf_path("config.json");
+    let (_dir, legacy) = conf_path("config.json");
     std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
     std::fs::write(
         &legacy,
@@ -148,7 +148,7 @@ fn t_c4_excessive_auto_lock_is_rejected() {
 
 #[test]
 fn t_c4_out_of_range_auto_lock_fails_deserialization() {
-    let path = conf_path("vault-config.json");
+    let (_dir, path) = conf_path("vault-config.json");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let raw = br#"{"vault_auto_lock_minutes": 99999}"#;
     std::fs::write(&path, raw).unwrap();
@@ -178,7 +178,7 @@ fn t_c5_zero_clipboard_clear_is_valid_but_excessive_rejected() {
 
 #[test]
 fn t_c6_unknown_cipher_is_rejected_on_load() {
-    let path = conf_path("vault-config.json");
+    let (_dir, path) = conf_path("vault-config.json");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, br#"{"vault_cipher_algorithm":"des"}"#).unwrap();
     assert!(VaultConf::load_from(&path).is_err());
@@ -186,7 +186,7 @@ fn t_c6_unknown_cipher_is_rejected_on_load() {
 
 #[test]
 fn t_c12_corrupt_config_reports_error_and_is_not_overwritten() {
-    let path = conf_path("vault-config.json");
+    let (_dir, path) = conf_path("vault-config.json");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let corrupt = br#"{"vault_auto_lock_minutes": 5, broken json"#;
     std::fs::write(&path, corrupt).unwrap();
@@ -198,7 +198,7 @@ fn t_c12_corrupt_config_reports_error_and_is_not_overwritten() {
 
 #[test]
 fn t_c12_invalid_value_is_not_overwritten() {
-    let path = conf_path("vault-config.json");
+    let (_dir, path) = conf_path("vault-config.json");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let raw = br#"{"vault_auto_lock_minutes": 2000}"#;
     std::fs::write(&path, raw).unwrap();

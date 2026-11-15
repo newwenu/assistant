@@ -98,7 +98,7 @@ fn get_conf_path_under_app_dir() {
 
 #[test]
 fn load_from_creates_default_when_missing() {
-    let path = conf_path("orb-config.json");
+    let (_dir, path) = conf_path("orb-config.json");
     let conf = OrbConf::load_from(&path).unwrap();
     assert_eq!(conf.scale_percent, 100);
     assert!(path.exists());
@@ -106,7 +106,7 @@ fn load_from_creates_default_when_missing() {
 
 #[test]
 fn save_to_and_load_from_roundtrip() {
-    let path = conf_path("orb-config.json");
+    let (_dir, path) = conf_path("orb-config.json");
     let mut conf = OrbConf::new();
     conf.scale_percent = 150;
     conf.opacity_percent = 80;
@@ -124,7 +124,7 @@ fn save_to_and_load_from_roundtrip() {
 
 #[test]
 fn load_from_falls_back_on_corrupt_file() {
-    let path = conf_path("orb-config.json");
+    let (_dir, path) = conf_path("orb-config.json");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, b"broken json").unwrap();
 
@@ -134,7 +134,7 @@ fn load_from_falls_back_on_corrupt_file() {
 
 #[test]
 fn load_from_recovers_from_temp_file() {
-    let path = conf_path("orb-config.json");
+    let (_dir, path) = conf_path("orb-config.json");
     let conf = OrbConf::new();
     conf.save_to(&path).unwrap();
 

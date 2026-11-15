@@ -134,12 +134,8 @@ fn backup_creates_file() {
 #[cfg(feature = "slow-tests")]
 #[test]
 fn backup_keeps_latest_five() {
-    let dir = std::env::temp_dir().join(format!(
-        "assistant-security-test-rotation-{}",
-        uuid::Uuid::new_v4()
-    ));
-    let _ = std::fs::create_dir_all(&dir);
-    let path = dir.join("vault.db");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("vault.db");
     let db = SecurityDbState::new(path.to_str().unwrap());
     initialize_at(&db, STRONG_PW);
 
@@ -147,11 +143,9 @@ fn backup_keeps_latest_five() {
         db.backup(&path).unwrap();
     }
 
-    let backup_dir = dir.join("backups");
+    let backup_dir = dir.path().join("backups");
     let count = std::fs::read_dir(&backup_dir).unwrap().count();
     assert_eq!(count, 5, "should keep exactly 5 backups, got {}", count);
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[cfg(feature = "slow-tests")]

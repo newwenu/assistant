@@ -6,7 +6,7 @@ use assistant_crypto::vault_crypto::types::CipherAlgorithm;
 use assistant_vault::dto::VaultEntryCreate;
 use assistant_vault::security_db::SecurityDbState;
 use assistant_vault::types::{ImportOutcome, VaultCategory, VaultEntryImport, VaultError};
-use common::{cleanup, init_vault, temp_db_path, STRONG_PW};
+use common::{cleanup, init_vault, temp_db_path, TempDbDir, STRONG_PW};
 
 const ALGO: CipherAlgorithm = CipherAlgorithm::Aes256Gcm;
 
@@ -44,7 +44,7 @@ fn import(id: &str, revision: i64, title: &str, updated_at: i64) -> VaultEntryIm
     }
 }
 
-fn db() -> (std::path::PathBuf, SecurityDbState) {
+fn db() -> (TempDbDir, SecurityDbState) {
     let path = temp_db_path();
     let db = init_vault(&path, STRONG_PW);
     (path, db)

@@ -365,7 +365,8 @@ fn t_a10_export_detail_uses_path_digest() {
     assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
     assert!(!digest.contains("Downloads"));
 
-    let writer = AuditJsonlWriter::new(temp_db_path().parent().unwrap().join("audit"));
+    let tmp = temp_db_path();
+    let writer = AuditJsonlWriter::new(tmp.parent().unwrap().join("audit"));
     writer
         .append(
             AuditEvent::VaultEntriesExported,

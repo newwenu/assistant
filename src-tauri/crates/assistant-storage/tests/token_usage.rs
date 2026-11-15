@@ -1,13 +1,10 @@
-use assistant_storage::db;
+mod common;
+
 use assistant_storage::token_usage::{
     get_cache_stats, get_cumulative, get_occupancy, get_summary, insert_record, TokenUsageRecord,
 };
+use common::init_db;
 use rusqlite::Connection;
-
-fn init_db() -> Connection {
-    let dir = tempfile::tempdir().unwrap();
-    db::init_db(&dir.path().join("test.db")).unwrap()
-}
 
 fn chat_record(conv_id: &str, prompt: u32, ts: i64) -> TokenUsageRecord {
     TokenUsageRecord {

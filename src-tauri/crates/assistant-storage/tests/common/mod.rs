@@ -6,9 +6,33 @@ use assistant_storage::providers::ProviderRow;
 use rusqlite::Connection;
 use std::path::Path;
 
-pub fn init_db() -> Connection {
+/// 测试数据库句柄：`TempDir` 必须与连接同生命周期。
+///
+/// 字段按声明顺序析构，`conn` 在前保证先关闭 SQLite 连接，`_dir` 之后才能删除目录；
+/// 否则 Windows 上打开中的 `test.db` 会让 `remove_dir_all` 静默失败并泄漏到 `%TEMP%`。
+pub struct TestDb {
+    conn: Connection,
+    _dir: tempfile::TempDir,
+}
+
+impl std::ops::Deref for TestDb {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        &self.conn
+    }
+}
+
+impl std::ops::DerefMut for TestDb {
+    fn deref_mut(&mut self) -> &mut Connection {
+        &mut self.conn
+    }
+}
+
+pub fn init_db() -> TestDb {
     let dir = tempfile::tempdir().unwrap();
-    db::init_db(&dir.path().join("test.db")).unwrap()
+    let conn = db::init_db(&dir.path().join("test.db")).unwrap();
+    TestDb { conn, _dir: dir }
 }
 
 pub fn init_db_at(path: &Path) -> Connection {

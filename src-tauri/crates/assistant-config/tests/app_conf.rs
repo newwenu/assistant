@@ -105,7 +105,7 @@ fn get_conf_path_under_app_dir() {
 
 #[test]
 fn load_from_creates_default_when_missing() {
-    let path = conf_path("config.json");
+    let (_dir, path) = conf_path("config.json");
     let conf = AppConf::load_from(&path).unwrap();
     assert_eq!(conf.theme, ThemeMode::System);
     assert!(path.exists());
@@ -113,7 +113,7 @@ fn load_from_creates_default_when_missing() {
 
 #[test]
 fn save_to_and_load_from_roundtrip() {
-    let path = conf_path("config.json");
+    let (_dir, path) = conf_path("config.json");
     let mut conf = AppConf::new();
     conf.theme = ThemeMode::Dark;
     conf.language = "en-US".to_string();
@@ -129,7 +129,7 @@ fn save_to_and_load_from_roundtrip() {
 
 #[test]
 fn load_from_falls_back_on_corrupt_file() {
-    let path = conf_path("config.json");
+    let (_dir, path) = conf_path("config.json");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, b"not json at all").unwrap();
 
@@ -139,7 +139,7 @@ fn load_from_falls_back_on_corrupt_file() {
 
 #[test]
 fn load_from_recovers_from_temp_file() {
-    let path = conf_path("config.json");
+    let (_dir, path) = conf_path("config.json");
     let conf = AppConf::new();
     conf.save_to(&path).unwrap();
 
@@ -156,7 +156,7 @@ fn load_from_recovers_from_temp_file() {
 
 #[test]
 fn legacy_threshold_key_is_ignored_after_migration_window() {
-    let path = conf_path("config.json");
+    let (_dir, path) = conf_path("config.json");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let mut json = serde_json::to_value(AppConf::new()).unwrap();
     json["compact_threshold_percent"] = serde_json::json!(50);

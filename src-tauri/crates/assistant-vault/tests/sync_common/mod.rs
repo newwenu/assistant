@@ -37,10 +37,58 @@ fn test_dir() -> PathBuf {
     dir
 }
 
-pub fn temp_db_path() -> PathBuf {
-    let dir = test_dir().join(uuid::Uuid::new_v4().to_string());
-    std::fs::create_dir_all(&dir).unwrap();
-    dir.join("vault.db")
+/// 测试库目录 guard：持有 `TempDir`，测试结束（含 panic）后自动回收。
+///
+/// 只返回 `PathBuf` 时临时目录没有所有者，测试末尾手工 `cleanup` 一旦被断言
+/// 打断就会把库目录泄漏到 `%TEMP%`。字段声明顺序保证 `Drop` 里删除时已无连接。
+pub struct TempDbDir {
+    dir: tempfile::TempDir,
+    db_path: PathBuf,
+}
+
+impl TempDbDir {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("vault.db");
+        Self { dir, db_path }
+    }
+}
+
+impl std::ops::Deref for TempDbDir {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.db_path
+    }
+}
+
+impl AsRef<Path> for TempDbDir {
+    fn as_ref(&self) -> &Path {
+        &self.db_path
+    }
+}
+
+impl AsRef<std::ffi::OsStr> for TempDbDir {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        self.db_path.as_os_str()
+    }
+}
+
+impl Drop for TempDbDir {
+    fn drop(&mut self) {
+        // 重试覆盖连接 / git 子进程句柄的滞后释放。
+        for _ in 0..20 {
+            match std::fs::remove_dir_all(self.dir.path()) {
+                Ok(()) => return,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(25)),
+            }
+        }
+    }
+}
+
+pub fn temp_db_path() -> TempDbDir {
+    TempDbDir::new()
 }
 
 fn template_dir() -> &'static Path {

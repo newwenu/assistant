@@ -1,7 +1,6 @@
 mod common;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 use assistant_crypto::error::VaultError;
@@ -10,7 +9,7 @@ use assistant_crypto::vault_crypto::types::{CipherAlgorithm, PerEntryKey, VaultP
 use assistant_vault::biometric::BiometricKeyStore;
 use assistant_vault::security_db::SecurityDbState;
 use assistant_vault::vault_file::VaultFileManager;
-use common::{cleanup, repo_for, temp_db_path, STRONG_PW};
+use common::{cleanup, repo_for, temp_db_path, TempDbDir, STRONG_PW};
 use sha2::{Digest, Sha256};
 
 const KEY_ID_PAYLOAD: &str = "vault-payload";
@@ -100,7 +99,7 @@ impl BiometricKeyStore for MockStore {
     }
 }
 
-fn setup() -> (PathBuf, SecurityDbState, VaultFileManager) {
+fn setup() -> (TempDbDir, SecurityDbState, VaultFileManager) {
     let path = temp_db_path();
     let db = SecurityDbState::new(path.to_str().unwrap());
     let repo = repo_for(&path);
@@ -242,7 +241,7 @@ fn t_b2_reset_clears_all_biometric_entries() {
     db.lock().unwrap();
     let targets = vec![
         meta_path.clone(),
-        path.clone(),
+        path.to_path_buf(),
         entries_dir.clone(),
         audit_dir.clone(),
         recovery_dir.clone(),
@@ -282,7 +281,7 @@ fn t_b3_reset_aborts_when_keystore_clear_fails() {
 
     let failing = MockStore::failing_delete(KEY_ID_FINGERPRINT);
     db.lock().unwrap();
-    let targets = vec![meta_path.clone(), path.clone(), entries_dir.clone()];
+    let targets = vec![meta_path.clone(), path.to_path_buf(), entries_dir.clone()];
     let err = assistant_vault::lifecycle::reset_repository(&db, &failing, &targets).unwrap_err();
     assert!(
         matches!(err, VaultError::BiometricFailed(_)),
