@@ -761,7 +761,7 @@ assistant/
 | 前端 Agent 管理 | OpenBitFun | web-ui/src/app/scenes/agents/agentsStore.ts | `AgentFilterLevel`（all/builtin/user/project/external）+ 创建/编辑页面 |
 | 模式配置 profile | OpenBitFun | agents.rs L22-27 | `STANDARD_HARNESS_CONFIG`：mode 可组合为 profile，支持子代理 |
 
-> **Function Calling / 内置工具已实现**（I38 P4 / P5）；**MCP 客户端未实现**（I38 P7，见 [I38e](./store/I38e-mcp-tools-spec.md)）。参考方案已验证：OpenBitFun `mcp_tool_bridge.rs` 命名规范 + 三维安全标记(read_only/destructive/open_world)。
+> **Function Calling / 内置工具已实现**（I38 P4 / P5）；**MCP 客户端未实现**（I38 P7，见 I38e（已归档））。参考方案已验证：OpenBitFun `mcp_tool_bridge.rs` 命名规范 + 三维安全标记(read_only/destructive/open_world)。
 
 **验收：** 可切换 Agent 模式（内置 + 自定义），可创建/编辑/删除自定义模式，不同模式 system prompt / 温度不同，token 用量可见，Prompt 模板管理页合并到 Agent 模式页
 

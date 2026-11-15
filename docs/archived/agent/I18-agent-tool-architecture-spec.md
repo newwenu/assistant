@@ -4,7 +4,7 @@
 |---|---|
 | 状态 | 现行（框架层规格；进度见 [roadmap](../../store/I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-04（结构重构） |
-| 关联 | [I38 roadmap](../../store/I38-agent-roadmap.md)（阶段入口）、[I18 design](../../store/I18-agent-tool-architecture-design.md)（决策依据） |
+| 关联 | [I38 roadmap](../../store/I38-agent-roadmap.md)（阶段入口）、[I18 design](./I18-agent-tool-architecture-design.md)（决策依据） |
 | 影响范围 | `assistant-tools`（框架层）、`src-tauri/src/cmd/os_tool_exec.rs`、`src-tauri/src/protocol/dto/os_tool.rs`、前端 `src/tools/os.ts` |
 
 > **本文职责已收窄**：只覆盖**词汇层与框架层**（Step 0-3、Step 8 桥接）。
@@ -16,10 +16,10 @@
 > | Agent Loop（RoundExecutor / 累积器 / tools 注入） | I38b（已归档） |
 > | OS 工具逐个实现与 Schema | [I38c](./I38c-os-tools-spec.md) |
 > | 前端五态 / 审批 UI / Agent 模式 | [I38d](./I38d-agent-frontend-modes-spec.md) |
-> | MCP 外部工具 | [I38e](../../store/I38e-mcp-tools-spec.md) |
+> | MCP 外部工具 | [I38e](./I38e-mcp-tools-spec.md) |
 > | 运行时内核（turn / 状态机 / 端口） | I36 spec（已归档） |
 >
-> 决策依据（为什么这样分层、参考了什么、取舍）见 [I18 design](../../store/I18-agent-tool-architecture-design.md)，本文不重复论证。
+> 决策依据（为什么这样分层、参考了什么、取舍）见 [I18 design](./I18-agent-tool-architecture-design.md)，本文不重复论证。
 
 ---
 
@@ -414,12 +414,12 @@ pub async fn os_tool_exec(
 | 文档 | 关系 |
 |---|---|
 | [I38 roadmap](../../store/I38-agent-roadmap.md) | 阶段、状态、门禁的唯一入口 |
-| [I18 design](../../store/I18-agent-tool-architecture-design.md) | 分层、权限、双入口、安全原则的决策依据 |
+| [I18 design](./I18-agent-tool-architecture-design.md) | 分层、权限、双入口、安全原则的决策依据 |
 | [I38a](./I38a-tool-control-layer-spec.md) | 控制层（Policy / Gateway / Pipeline / 审批 / 预算） |
 | I38b（已归档） | RoundExecutor、累积器、`ChatOptions.tools` |
 | [I38c](./I38c-os-tools-spec.md) | OS 工具清单与 Schema |
 | [I38d](./I38d-agent-frontend-modes-spec.md) | 五态 UI、审批 UI、Agent 模式 |
-| [I38e](../../store/I38e-mcp-tools-spec.md) | MCP 外部工具 |
+| [I38e](./I38e-mcp-tools-spec.md) | MCP 外部工具 |
 | [I18b](./I18b-tool-unified-bridge-spec.md) | ToolBox 桥接与新增工具 5 步流程 |
 | I31（已归档） | 阶段一框架（T1/T2 已落地，T3 待做） |
 | [OSCALLDESIGN](../../designed/OSCALLDESIGN.md) | Shell 洋葱模型 |

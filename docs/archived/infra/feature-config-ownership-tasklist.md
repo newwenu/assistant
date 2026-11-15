@@ -253,13 +253,13 @@
 
 对应规格 §7 与 §5 S9。文档归档后不再用路径指向 `docs/archived/`，一律写「文档名 +（已归档）」。
 
-- [x] `docs/store/vault-optional-build.md`：§2 依赖表第 54 行改写为「`VaultConf` 已迁入 `assistant-vault/src/conf.rs`」；§3.4 第 109–110 行两行归属改为 vault crate 与 vault 契约域；§4.6 配置层取舍表前两条结论标记「已被本规格替代」
-- [x] `docs/store/feature-mount-traversal-spec.md`：§1.2 非目标中「不迁移 `protocol/dto/config.rs`」加注「配置 DTO 一项已由本规格迁出」；§6.1 保留足迹表删除该行（表由 3 项变 2 项）
-- [x] `docs/store/I50-runtime-audit-tasklist.md`：P1.1 落地说明中「`protocol/dto/config.rs` 只留配置 DTO（`VaultConfDto` / `VaultCipherAlgorithmDto`）」改为「配置 DTO 亦在 vault 契约域」
-- [x] `docs/store/crate-architecture.md`：`assistant-config` 职责段去掉 `vault_conf`、补「配置机制库」定位；§1.3 依赖图（第 70 行「内部依赖边共 **5 条**」）补 `assistant-vault → assistant-config` 后改 6，第 80 行「其余 9 个 crate（config / …）均为叶子」改为「其余 8 个 crate（i18n / crypto / orb / tools / storage / crash / providers / sync）均为叶子节点」（`config` 从括号内移除，因为它不再是叶子）；§2.1 的「`vault_conf` 只负责读写 vault 配置结构，不引用 vault 的任何代码」整句替换为「只提供配置机制，vault 配置 schema 位于 `assistant-vault/src/conf.rs`」
-- [x] `docs/CODE-STRUCTURE.md`：§4.5 依赖图「共 5 条」改 6、`assistant-vault` 行依赖补 `assistant-config`；§4.5 职责表 `assistant-config` 的「关键模块」去掉 `vault_conf`；§5「新增设置项」一行改为「核心 group 在 `assistant-config`，特性 group 在特性 crate 的 `conf.rs`」
-- [x] `docs/analysis/FEATURE-OPTIONAL-BINARY-ANALYSIS.md`：「`FEATURE_FOOTPRINT_ALLOWLIST` 现为 3 个」改 2 个
-- [x] `docs/analysis/FEATURE-ZERO-COST-MOUNT-ANALYSIS.md`：足迹 7 → 3 的结论保持，补注「3 项中配置 DTO 一项后续归零」
+- [x] `../../store/vault-optional-build.md`：§2 依赖表第 54 行改写为「`VaultConf` 已迁入 `assistant-vault/src/conf.rs`」；§3.4 第 109–110 行两行归属改为 vault crate 与 vault 契约域；§4.6 配置层取舍表前两条结论标记「已被本规格替代」
+- [x] `../../store/feature-mount-traversal-spec.md`：§1.2 非目标中「不迁移 `protocol/dto/config.rs`」加注「配置 DTO 一项已由本规格迁出」；§6.1 保留足迹表删除该行（表由 3 项变 2 项）
+- [x] `../agent/I50-runtime-audit-tasklist.md`：P1.1 落地说明中「`protocol/dto/config.rs` 只留配置 DTO（`VaultConfDto` / `VaultCipherAlgorithmDto`）」改为「配置 DTO 亦在 vault 契约域」
+- [x] `../../store/crate-architecture.md`：`assistant-config` 职责段去掉 `vault_conf`、补「配置机制库」定位；§1.3 依赖图（第 70 行「内部依赖边共 **5 条**」）补 `assistant-vault → assistant-config` 后改 6，第 80 行「其余 9 个 crate（config / …）均为叶子」改为「其余 8 个 crate（i18n / crypto / orb / tools / storage / crash / providers / sync）均为叶子节点」（`config` 从括号内移除，因为它不再是叶子）；§2.1 的「`vault_conf` 只负责读写 vault 配置结构，不引用 vault 的任何代码」整句替换为「只提供配置机制，vault 配置 schema 位于 `assistant-vault/src/conf.rs`」
+- [x] `../../CODE-STRUCTURE.md`：§4.5 依赖图「共 5 条」改 6、`assistant-vault` 行依赖补 `assistant-config`；§4.5 职责表 `assistant-config` 的「关键模块」去掉 `vault_conf`；§5「新增设置项」一行改为「核心 group 在 `assistant-config`，特性 group 在特性 crate 的 `conf.rs`」
+- [x] `../../analysis/FEATURE-OPTIONAL-BINARY-ANALYSIS.md`：「`FEATURE_FOOTPRINT_ALLOWLIST` 现为 3 个」改 2 个
+- [x] `../../analysis/FEATURE-ZERO-COST-MOUNT-ANALYSIS.md`：足迹 7 → 3 的结论保持，补注「3 项中配置 DTO 一项后续归零」
 - [x] `.trae/rules/project_rules.md`：类型安全规范的「新增设置项」段补一句：特性自有配置组的 struct 位于特性 crate，DTO 位于该特性契约域，仍需 `npm run contract:gen`
 
 ### B4 验收

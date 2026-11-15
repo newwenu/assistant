@@ -2,12 +2,12 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 已归档（2026-11-09）；P1 / P1b / P2 / P4 已落地，P3 未落地（实现落点移交 [I38e](../../store/I38e-mcp-tools-spec.md) §4.3，随 P7 落地）。实施复核与已知缺口见 §9 |
-| 归属 | P3 / P6 收口补丁；P7（[I38e](../../store/I38e-mcp-tools-spec.md)）前置落点 |
-| 关联 | [I36 spec](./I36-agent-runtime-spec.md) Step 2 / Step 7、[I39](./I39-compaction-chat-merge-spec.md) §3.4 / §4.1 / §8、[I38e](../../store/I38e-mcp-tools-spec.md) §4.3、[I38a](./I38a-tool-control-layer-spec.md) A5、[I38c](./I38c-os-tools-spec.md) §9 / §13、[I38d](./I38d-agent-frontend-modes-spec.md) §3.5 / §4.8 |
+| 状态 | 已归档（2026-11-09）；P1 / P1b / P2 / P4 已落地，P3 未落地（实现落点移交 [I38e](./I38e-mcp-tools-spec.md) §4.3，随 P7 落地）。实施复核与已知缺口见 §9 |
+| 归属 | P3 / P6 收口补丁；P7（[I38e](./I38e-mcp-tools-spec.md)）前置落点 |
+| 关联 | [I36 spec](./I36-agent-runtime-spec.md) Step 2 / Step 7、[I39](./I39-compaction-chat-merge-spec.md) §3.4 / §4.1 / §8、[I38e](./I38e-mcp-tools-spec.md) §4.3、[I38a](./I38a-tool-control-layer-spec.md) A5、[I38c](./I38c-os-tools-spec.md) §9 / §13、[I38d](./I38d-agent-frontend-modes-spec.md) §3.5 / §4.8 |
 | 影响面 | `src-tauri/crates/assistant-agent/src/kernel/{tasks,runner}.rs` 与 `tests/*`；`src-tauri/crates/assistant-storage/src/conversations/{mod,msg_ops,ops}.rs`；`src-tauri/src/protocol/dto/chat.rs`；`src-tauri/src/cmd/{compaction,conversation}.rs`、`src-tauri/src/cmd/chat/insert.rs`；`src-tauri/src/adapters/{tool_exec,message_store}.rs`；`src-tauri/tests/{protocol_bindings,protocol_dto_roundtrip}.rs`；`src-tauri/crates/assistant-tools/src/{context,exec}.rs` 与 `mcp/`；`src/services/{chatService.ts,stream/turnOrchestrator.ts,stream/turnStrategy.ts}`；`src/stores/{chatCompactSlice.ts,chatStorePorts.ts}`；`src/chat/{core/chatTypes.ts,message/MessageBubble.tsx,message/MessageBubble.module.css}`；`src/i18n/locales/*.json`；`src/types/protocol.contract.ts`（生成物） |
 
-> 本文已归档并冻结，只作历史参照：不再修改、不再作为权威源。P1 / P1b / P2 / P4 的现行行为以代码为准；P3 的现行契约在 [I38e](../../store/I38e-mcp-tools-spec.md) §4.3，本文 §3 只作设计依据。
+> 本文已归档并冻结，只作历史参照：不再修改、不再作为权威源。P1 / P1b / P2 / P4 的现行行为以代码为准；P3 的现行契约在 [I38e](./I38e-mcp-tools-spec.md) §4.3，本文 §3 只作设计依据。
 
 ## 0 定位
 
@@ -207,7 +207,7 @@
 | 4 | P2 | 无 | 已落地 | 内核 + 两个命令守卫，需补并发测试（A3–A5） |
 | 5 | P3 | P7 开工 | 未落地 | 随首个 MCP 工具同批落地，不阻塞 P1/P2/P4 |
 
-P3 的实现落点已在 [I38e](../../store/I38e-mcp-tools-spec.md) §4.3 登记；P7 落地时只需按 A6 验收，不再改动规格。
+P3 的实现落点已在 [I38e](./I38e-mcp-tools-spec.md) §4.3 登记；P7 落地时只需按 A6 验收，不再改动规格。
 
 ---
 
@@ -255,7 +255,7 @@ P3 的实现落点已在 [I38e](../../store/I38e-mcp-tools-spec.md) §4.3 登记
 | P1b | `messages.status` + `MessageStatusDto` + `from_db` 兜底；`carried_status`；`markMessageInterrupted`；「已中断」渲染与 i18n | 已落地 |
 | P2 | `TurnTasks::is_busy`；`OnBusy::Reject` 对已取消代际按 `Replace`；`conversation.rs` / `compaction.rs` 改用 `is_busy` | 已落地 |
 | P4 | `kernel/runner.rs` 收尾按 `Completed \| Failed` 判定触发 | 已落地 |
-| P3 | `ToolUseContext.cancel`、MCP 客户端 `call_tool` select | 未落地，落点移交 [I38e](../../store/I38e-mcp-tools-spec.md) §4.3 |
+| P3 | `ToolUseContext.cancel`、MCP 客户端 `call_tool` select | 未落地，落点移交 [I38e](./I38e-mcp-tools-spec.md) §4.3 |
 
 ### 9.2 已知缺口
 
@@ -269,4 +269,4 @@ P3 的实现落点已在 [I38e](../../store/I38e-mcp-tools-spec.md) §4.3 登记
 
 - G1 / G2 已补齐，不再遗留；G3 属记录口径，已修正。
 - 自动压缩走宿主侧 `adapters/compaction_sink.rs`，无前端调用方，其 `spawn` 包装只影响日志、不影响分支可达性，故不改。
-- P3 的现行契约由 [I38e](../../store/I38e-mcp-tools-spec.md) §4.3 承载，本文 §3 冻结为设计依据，P7 落地时不再回改本文。
+- P3 的现行契约由 [I38e](./I38e-mcp-tools-spec.md) §4.3 承载，本文 §3 冻结为设计依据，P7 落地时不再回改本文。

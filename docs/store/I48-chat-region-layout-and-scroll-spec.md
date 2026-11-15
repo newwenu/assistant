@@ -4,7 +4,7 @@
 |---|---|
 | 状态 | 已实施（S1a / S1b / S2 / S3 全部落地；本文不记录进度，实施偏差见 §13） |
 | 日期 | 2026-11-13 |
-| 关联 | I38d-agent-frontend-modes-spec（已归档）§4.4 / §4.7 / §4.10；I46-agent-node-layout-spec（活跃）§1.3；docs/principle/CODE-SPLIT-PRINCIPLE.md |
+| 关联 | I38d-agent-frontend-modes-spec（已归档）§4.4 / §4.7 / §4.10；I46-agent-node-layout-spec（已归档）§1.3；docs/principle/CODE-SPLIT-PRINCIPLE.md |
 | 改动范围 | 前端 `src/chat` 域：布局骨架、工具区域、消息区滚动；无后端改动、无 DTO 变更、无 i18n 新增 |
 | 阶段 | S1a 单骨架 · S1b 工具区域 · S2 滚动意图 · S3 位置记忆 |
 

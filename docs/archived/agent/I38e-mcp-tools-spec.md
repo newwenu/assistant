@@ -2,9 +2,9 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 现行（P7 规格；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
+| 状态 | 现行（P7 规格；进度见 [roadmap](../../store/I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-04（2026-11-09 定稿：配置落点、启停持久化、MCP 审批键、resources/prompts 结论；工具名改用稳定 server id） |
-| 阶段 | P7（见 [I38 roadmap](./I38-agent-roadmap.md)） |
+| 阶段 | P7（见 [I38 roadmap](../../store/I38-agent-roadmap.md)） |
 | 关联 | [I18 design](./I18-agent-tool-architecture-design.md) §3.8 / §4.3、I18 spec（已归档）（框架层）、I38a（已归档）（Policy/Gateway/Pipeline/ApprovalKey）、I38c（已归档）（工具实现范式）、I36 spec（已归档；超时与取消） |
 | 影响范围 | `assistant-tools/src/mcp/`（桥接）、`assistant-tools/src/gateway.rs`（`ApprovalScope::Mcp`）、`assistant-storage/src/db.rs`（`mcp_servers` 表）、`src-tauri/src/mcp/`（进程与配置）、`src-tauri/src/adapters/`（配置加解密）、`tool_setup.rs`、设置页最小 server 配置面 |
 
@@ -255,7 +255,7 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
 ### 6.2 凭据与加密
 
 - `config_encrypted` 加密整块启动配置（`command` / `args` / `cwd` / `env`），避免 `args` 中的 token 或 `env` 值进入明文 DB / 备份。
-- 复用 [api_key.rs](../../src-tauri/crates/assistant-crypto/src/api_key.rs) 的 machine-id AES-GCM 路径（与 provider API key 同源）；加密/解密只在宿主层完成，`assistant-tools` 不感知。
+- 复用 [api_key.rs](../../../src-tauri/crates/assistant-crypto/src/api_key.rs) 的 machine-id AES-GCM 路径（与 provider API key 同源）；加密/解密只在宿主层完成，`assistant-tools` 不感知。
 - 解密失败或配置非法：server 不启动，状态 `Error`，只记日志；不得把密文或明文密钥写日志。
 - `config_hash` 在保存时用**明文规范 JSON**（对象键排序、无多余空白）计算 SHA-256；用于授权键失效判断（§3.5），不得存储可逆信息。
 

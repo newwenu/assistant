@@ -5,7 +5,7 @@
 | 状态 | 现行（P2 工具控制层规格；进度见 [roadmap](../../store/I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-04（2026-11-09 增补 `ApprovalScope::Mcp`，供 P7 MCP 精确审批键使用） |
 | 阶段 | P2（见 [I38 roadmap](../../store/I38-agent-roadmap.md)） |
-| 关联 | [I18 design](../../store/I18-agent-tool-architecture-design.md) §3.5 / §3.9 / §3.12-§3.15、[I18 spec](./I18-agent-tool-architecture-spec.md) Step 4-6（已迁移至本文）、I31（已归档）§5（`os/path.rs`） |
+| 关联 | [I18 design](./I18-agent-tool-architecture-design.md) §3.5 / §3.9 / §3.12-§3.15、[I18 spec](./I18-agent-tool-architecture-spec.md) Step 4-6（已迁移至本文）、I31（已归档）§5（`os/path.rs`） |
 | 影响范围 | `assistant-tools` crate（新增 `policy.rs` / `gateway.rs` / `pipeline.rs` / `storage.rs`）；`trait.rs` / `result.rs` 增量扩展。**无 tauri 依赖** |
 
 > 本文是 P2 的唯一权威规格。I18 spec 的 Step 4-6 已迁入本文并在原文件删除，避免双份定义。
@@ -226,7 +226,7 @@ pub struct ApprovalRequest {
 - 生产实现（P6）：发 `agent-tool-awaiting-approval` 事件 → 前端审批 → Tauri command 回填决策。
 - 测试实现：脚本化返回 `Approve / Deny / AlwaysApprove / 超时`。
 - **超时语义**：超时视为 `Deny`，不得默认放行，也不得无限挂起。
-- **预留扩展（不实现）**：AI 审批顾问（`ApprovalAdvisor`）不在 P2 范围，P2–P7 也**不预留空 trait / 空字段**。插入点（策略之后、人审批之前）、方向性约束（`fuse` 纯函数）、输入分层与启用门禁见 [I18 design §3.17](../../store/I18-agent-tool-architecture-design.md)；本节 `ApprovalPrompter` / `ApprovalDecision` / `GatewayDecision` 契约不因此改变。
+- **预留扩展（不实现）**：AI 审批顾问（`ApprovalAdvisor`）不在 P2 范围，P2–P7 也**不预留空 trait / 空字段**。插入点（策略之后、人审批之前）、方向性约束（`fuse` 纯函数）、输入分层与启用门禁见 [I18 design §3.17](./I18-agent-tool-architecture-design.md)；本节 `ApprovalPrompter` / `ApprovalDecision` / `GatewayDecision` 契约不因此改变。
 
 #### 2.8.1 P6 追加：单个审批信息包裹（`ApprovalContext`）
 

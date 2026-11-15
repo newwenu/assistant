@@ -5,12 +5,12 @@
 | 状态 | Draft（设计文档，不记录实施进度） |
 | 日期 | 2026-11-13 |
 | 取代 | [I46 紧凑消息格式设计](./I46-agent-compact-message-format-design.md)（保留为参考记录，不再作为权威源；其信封 / 省略 / 落盘 / 预算结论仍然有效，见 §9） |
-| 关联 | [I46 节点布局规格](./I46-agent-node-layout-spec.md)（实施落地：字段、SQL、写路径、切片、门禁用例）、[I18 工具架构 ADR](./I18-agent-tool-architecture-design.md)、[I38 阶段总纲](./I38-agent-roadmap.md)（阶段与门禁唯一入口）、[I36a 内核能力基线](./I36a-agent-kernel-baseline.md)（turn 事件不变式）、[I36b 内核一致性规格](./I36b-agent-kernel-conformance-spec.md)、[I38f 子 Agent 规格](./I38f-agent-subagent-spec.md)（独立会话坐标空间） |
+| 关联 | [I46 节点布局规格](./I46-agent-node-layout-spec.md)（实施落地：字段、SQL、写路径、切片、门禁用例）、[I18 工具架构 ADR](./I18-agent-tool-architecture-design.md)、[I38 阶段总纲](../../store/I38-agent-roadmap.md)（阶段与门禁唯一入口）、[I36a 内核能力基线](../../store/I36a-agent-kernel-baseline.md)（turn 事件不变式）、[I36b 内核一致性规格](../../store/I36b-agent-kernel-conformance-spec.md)、[I38f 子 Agent 规格](../../store/I38f-agent-subagent-spec.md)（独立会话坐标空间） |
 | 影响范围 | 设计层：定义 agent 输出的**节点形态**（节点 = 行、turn = 容器）、**坐标持久化**、**容器归属**、**分组投影**、**折叠密度**、**挂载单位**。新增 `MessageDto` 两个坐标字段与两列存储；给两个**既有**事件载荷各加一个只读 `turnIndex`（不新增事件、不改事件语义）；不改分支链拓扑、不改工具结果信封。前置依赖见 §1.4 |
 
 > 本文只回答六件事：一个 agent 节点**凭什么知道自己属于哪一轮**（坐标）；**谁拥有 chrome 与折叠**（容器）；节点**如何被聚合与收起**（分组投影）；一个多迭代 turn **占多少高度**（密度）；节点**按什么单位挂载与分页**（窗口化）；**两类 mode（有工具 / 普通 chat）如何共用同一套形态**（链路只在容器层判定）。
 >
-> 本文的主轴是**布局形态**。工具结果的信封语法、省略三态、落盘生命周期、预算归属不在本文重述，仍以参考记录为准（§9 给出处置表）。实施批次与进度归 [I38 §2](./I38-agent-roadmap.md) 与对应 tasklist。
+> 本文的主轴是**布局形态**。工具结果的信封语法、省略三态、落盘生命周期、预算归属不在本文重述，仍以参考记录为准（§9 给出处置表）。实施批次与进度归 [I38 §2](../../store/I38-agent-roadmap.md) 与对应 tasklist。
 
 ---
 

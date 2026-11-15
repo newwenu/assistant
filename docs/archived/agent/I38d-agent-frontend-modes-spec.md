@@ -119,7 +119,7 @@
 - **`arguments` 是已解析的 JSON 对象，不是字符串**：后端从 `ToolCall.arguments`（`Value`，已在 `agent/tool_call.rs` 完成一次解析 + 截断修复）直接 clone 进审批请求，前端拿到即对象，**不得**再 `JSON.parse`。也**不得**复用消息历史里 `ContentBlockDto::ToolUse.input`（那是 `String`，双重编码）——两者可能因截断修复而不同，审批必须用 `arguments`，才能保证「审批看到的」与「实际执行的」是同一份。
 - 命令：`approve_agent_tool_call` / `deny_agent_tool_call`（或统一 `resolve_agent_tool_approval`，只保留一个入口）。
 - 前端倒计时基于 `timeoutMs`；超时后后端自动 Deny，前端同时置灰按钮，避免重复提交。
-- **预留扩展（P10 不落地）**：`ApprovalReasonDto::Advisor` 与 `ApprovalPreviewDto` 的顾问分支由 [I18 design §3.17](../../store/I18-agent-tool-architecture-design.md) 定义；P6 只渲染 `preview` 与 L0/L1 原因，**不得**调用顾问、不得假定 `advisor` 一定存在。
+- **预留扩展（P10 不落地）**：`ApprovalReasonDto::Advisor` 与 `ApprovalPreviewDto` 的顾问分支由 [I18 design §3.17](./I18-agent-tool-architecture-design.md) 定义；P6 只渲染 `preview` 与 L0/L1 原因，**不得**调用顾问、不得假定 `advisor` 一定存在。
 
 ### 2.3 状态事件
 
@@ -248,7 +248,7 @@ user
 - 审批卡片动作固定四个：`[允许]`（仅本次）、`[拒绝]`、`[本会话允许]`、`[始终允许]`。后两者是授权动作，分别落 `session` / `global` 作用域（§3.3.1）；`[始终允许]` 需二次确认。卡片不提供下拉或隐藏菜单，四个动作平铺，用户无需展开即可区分作用域。
 - 授权文案（`[本会话允许]`）：本会话内同类操作不再询问；`[始终允许]`：所有会话的同类操作都不再询问。两者都注明可在设置页撤销或修改作用域。
 - 线格式枚举同步：`approve` / `deny` / `allowSession` / `allowAlways`，取代旧 `alwaysApprove`（语义收窄为会话级后名称自解释，避免「always」与实际作用域不符）。
-- **AI 顾问启用后（P10，非 P6）**：AI 免审不得静默，卡片须标注「AI 判定只读，本次免审」并提供「撤销该免审」；AI 加码时标注「AI 标记为高风险」并展示 `rationale`。免审不写 grant，只对本次调用生效（[I18 design §3.17.6](../../store/I18-agent-tool-architecture-design.md)）。
+- **AI 顾问启用后（P10，非 P6）**：AI 免审不得静默，卡片须标注「AI 判定只读，本次免审」并提供「撤销该免审」；AI 加码时标注「AI 标记为高风险」并展示 `rationale`。免审不写 grant，只对本次调用生效（[I18 design §3.17.6](./I18-agent-tool-architecture-design.md)）。
 - 大结果默认折叠，展示行数 / 字节数与「展开」。
 
 ### 3.2.1 审批信息分级（用户判断依据）
@@ -261,7 +261,7 @@ user
 | **L1 参数推导** | `intents`（action + 规范化 resources）、路径分类（工作区内/外、符号链接、受保护目录）、`context.reasons`（命中哪条策略） | `permission_intents` + `os/path.rs` + `Policy::explain` | 零（纯函数，无 IO） | 必做 | 不可能缺失 |
 | **L2 预演** | `context.preview`：一句话 `summary`（后端已格式化，如「删除 128 个条目（3.4 MB）」）+ `truncated` / `estimated` 两个不确定性标记 | `Tool::preview_for_approval` | 一次 IO，**仅 `Ask` 时执行** | 必做（可为 `null`） | 卡片只显示 L0+L1 |
 | **L2 扩展** | `context.extensions[]`：后端检测结论（`kind` + `label` + `value` + `severity`） | 各检测方（路径守卫、MCP 来源等，见 I38a §2.8.1） | 零或一次 IO，与预演共用 2s 预算 | 必做（可为空数组） | 不渲染扩展区 |
-| **L3 顾问** | AI 结论 + `rationale` | `ApprovalAdvisor`（[I18 design §3.17](../../store/I18-agent-tool-architecture-design.md)） | 模型调用 | **P6 不做**（归 P10） | 不显示 |
+| **L3 顾问** | AI 结论 + `rationale` | `ApprovalAdvisor`（[I18 design §3.17](./I18-agent-tool-architecture-design.md)） | 模型调用 | **P6 不做**（归 P10） | 不显示 |
 
 **所有审批信息都在 `context` 一个包裹内**，顶层不再加字段。理由：这四个问题（在哪执行 / 能不能撤销 / 为什么问我 / 有多大）之外，将来还会出现新问题（P7 的 MCP 来源可信度、P10 的顾问证据），每加一个就改一次顶层 wire 并让前端按 `tool_name` 分支判断「哪些字段有意义」，成本会随工具数增长。包裹后，新增信息只动 `context` 内部，`ApprovalRequest` 与 `ToolApprovalRequestDto` 的签名稳定。
 

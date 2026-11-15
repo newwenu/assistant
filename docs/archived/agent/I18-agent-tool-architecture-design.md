@@ -1,10 +1,10 @@
 # I18 — Agent Tool 架构决策记录（ADR）
 
 > 本文档记录架构**决策**：为什么这样设计、参考了什么、做了什么取舍。
-> **阶段、状态与门禁**见 [I38-agent-roadmap.md](./I38-agent-roadmap.md)（唯一阶段入口）。
+> **阶段、状态与门禁**见 [I38-agent-roadmap.md](../../store/I38-agent-roadmap.md)（唯一阶段入口）。
 > **框架层实施规格**（Step 0-3、8）见 I18-agent-tool-architecture-spec（已归档）。
 > **控制层**见 I38a（已归档）；**Agent Loop** 见 I38b（已归档）；**OS 工具**见 I38c（已归档）；**前端与模式**见 I38d（已归档）；**MCP** 见 [I38e](./I38e-mcp-tools-spec.md)。
-> **Shell 安全子域**见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
+> **Shell 安全子域**见 [OSCALLDESIGN.md](../../designed/OSCALLDESIGN.md)。
 > **ToolBox 双入口桥接**见 I18b-tool-unified-bridge-spec（已归档）。
 
 ---
@@ -302,7 +302,7 @@ pub trait Tool: Send + Sync {
 - 纯 argv 数组执行（`execvp` 语义）可提供更强确定性保证，但丧失管道、重定向、变量展开等 shell 能力，对开发工作流影响过大
 - **选择 shell 执行 + 纵深防御组合**：结构守卫 + 环境隔离 + 命令分类 + heredoc 处理，与 OpenHuman 的生产验证策略一致
 
-> 洋葱模型完整设计、层间契约、BareExec 纵深防御见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
+> 洋葱模型完整设计、层间契约、BareExec 纵深防御见 [OSCALLDESIGN.md](../../designed/OSCALLDESIGN.md)。
 
 #### 3.7.1 决策：Shell 守卫按「审批 / 校验 / 执行」三层归属
 
@@ -320,7 +320,7 @@ pub trait Tool: Send + Sync {
 
 **对 `shell` 的约束**：受众仍为 `BOTH`（ToolBox 未来提供 shell 组件时可直接复用），但 `execute()` 内部**必须**包含执行层守卫——这是该工具的实现不变量，不能假设「反正 Pipeline 会拦」。
 
-> 完整分层表、调用链与反例见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §3.3–§3.4。
+> 完整分层表、调用链与反例见 [OSCALLDESIGN.md](../../designed/OSCALLDESIGN.md) §3.3–§3.4。
 
 ### 3.8 决策：MCP 工具安全标记推断
 
@@ -339,7 +339,7 @@ pub trait Tool: Send + Sync {
 
 ### 3.10 决策：先安全框架再加能力
 
-**决策**：实施顺序为「框架 → 安全网关 → OS 工具 → MCP」，对应 [I38 roadmap](./I38-agent-roadmap.md) 的 P0/P1 → P2 → P5 → P7；Agent Loop（P4）在框架与内核之后接入。
+**决策**：实施顺序为「框架 → 安全网关 → OS 工具 → MCP」，对应 [I38 roadmap](../../store/I38-agent-roadmap.md) 的 P0/P1 → P2 → P5 → P7；Agent Loop（P4）在框架与内核之后接入。
 
 **理由**：如果先加 OS 工具再建安全框架，LLM 一旦调 `shell("rm -rf /")` 就直接执行——没有任何拦截。
 
@@ -450,7 +450,7 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 - 规范化过度（如按命令前缀匹配）→ 批准 `cargo test` 顺带放行 `cargo publish`
 - **选择全 argv 精确 + cwd 作为默认**：前缀匹配只能由工具显式声明，不得作为默认策略
 
-**委托**：子 Agent 可读父 `GrantStore` 的记忆，但其新增批准不写入父库——与 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §4.3 一致。完整的权限继承与作用域规则见 §3.16。
+**委托**：子 Agent 可读父 `GrantStore` 的记忆，但其新增批准不写入父库——与 [OSCALLDESIGN.md](../../designed/OSCALLDESIGN.md) §4.3 一致。完整的权限继承与作用域规则见 §3.16。
 
 **参考**：codex `with_cached_approval(keys, fetch)`（空 keys 直接走审批，防误命中）+ `ApplyPatchApprovalKey { environment_id, path }` + `UnifiedExecApprovalKey { environment_id, executable, command, cwd, tty, sandbox_permissions }`。
 
@@ -488,13 +488,13 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 
 **取舍**：P2/P4 只实现父作用域内的审批与 ceiling，**不实现**子 agent；本节在 P8.1 落地时验收。不得为了「以后可能用到」在 P2 把 agent 作用域做成 `ApprovalKey` 的必填字段——以可选字段落地，缺省即当前会话，存量行为不变。
 
-**参考**：DSH `SubagentCapabilities`；OpenHuman `allowed_subagent_ids`；本文 §3.14 与 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §4.3。
+**参考**：DSH `SubagentCapabilities`；OpenHuman `allowed_subagent_ids`；本文 §3.14 与 [OSCALLDESIGN.md](../../designed/OSCALLDESIGN.md) §4.3。
 
 ### 3.17 决策：AI 审批链路的预留扩展（只定形状，不实现）
 
 **决策**：当前不引入任何 AI 参与审批决策；本节只固化「未来若要引入，允许长成什么形状」——插入点、方向性约束、输入契约、启用门禁与反模式。P0–P7 **不写代码、不加空 trait、不加 wire 字段**。
 
-**理由**：参考分析的结论是「AI 在审批链上占据哪个位置」决定失败模式，而不是「有没有 AI」（[AI 审批参考分析](../analysis/AGENT-AI-APPROVAL-REFERENCE-ANALYSIS.md) §1 / §8.2）。位置是结构决策，一旦写进 Gateway 流程就很难回退；先定决策、后写实现，比先实现再收窄便宜。
+**理由**：参考分析的结论是「AI 在审批链上占据哪个位置」决定失败模式，而不是「有没有 AI」（[AI 审批参考分析](../../analysis/AGENT-AI-APPROVAL-REFERENCE-ANALYSIS.md) §1 / §8.2）。位置是结构决策，一旦写进 Gateway 流程就很难回退；先定决策、后写实现，比先实现再收窄便宜。
 
 #### 3.17.1 三种形态与本项目的可达性
 
@@ -504,7 +504,7 @@ pub enum ToolErrorKind { Business, Timeout, Cancelled, Internal, Denied }
 | 声明式收紧（Declared hint） | 只能把「放行」改成「更严」 | openhuman `class.max(declared)` | 有确定性基线可作 `max()` 的左值 | **可达**（阶段 B） |
 | 双向裁决（Reviewer） | 可 allow 也可 deny | codex Guardian | **必须有 L4 内核级 OS 沙箱** | **不可达** |
 
-本项目只有 L2（字符串/规则）+ L3（`canonicalize` 后真实路径 + 受保护目录 + workspace 边界，见 [os/path.rs](../../src-tauri/crates/assistant-tools/src/os/path.rs)），没有 bwrap / Seatbelt / restricted token 这一层。因此**允许的上限是「单向顾问」**：把 codex 的双向裁决搬到只有 L2/L3 的环境，得到的不是更聪明的审批，而是把确定性的拒绝换成了概率性的放行（分析 §7.6 / §8.2）。
+本项目只有 L2（字符串/规则）+ L3（`canonicalize` 后真实路径 + 受保护目录 + workspace 边界，见 [os/path.rs](../../../src-tauri/crates/assistant-tools/src/os/path.rs)），没有 bwrap / Seatbelt / restricted token 这一层。因此**允许的上限是「单向顾问」**：把 codex 的双向裁决搬到只有 L2/L3 的环境，得到的不是更聪明的审批，而是把确定性的拒绝换成了概率性的放行（分析 §7.6 / §8.2）。
 
 #### 3.17.2 预留插入点：策略之后、人审批之前
 
@@ -619,7 +619,7 @@ pub struct AdvisorInput {
 
 **取舍**：不在 P2–P7 预留空 trait / 空字段。空 trait 会成为死代码（clippy 与覆盖率都会报），空 wire 字段会进契约生成并污染前端类型；本文用「决策 + 插入点 + 纯函数语义」记录形状，等 P10 立项时再按 §3.17.2 的类型落地。
 
-**参考**：goose `permission_judge.rs`（输出契约无 deny 能力）；codex `guardian-reviewer/src/settings.rs`（评审员只读）与 `assessment.rs` / `policy_template.md`（风险阈值与 `rationale` 必填）；openhuman `security_gate.rs`（`class.max(declared)`）与 `approval/README.md`（脱敏、TTL、审计双写）；完整证据见 [AI 审批参考分析](../analysis/AGENT-AI-APPROVAL-REFERENCE-ANALYSIS.md)。
+**参考**：goose `permission_judge.rs`（输出契约无 deny 能力）；codex `guardian-reviewer/src/settings.rs`（评审员只读）与 `assessment.rs` / `policy_template.md`（风险阈值与 `rationale` 必填）；openhuman `security_gate.rs`（`class.max(declared)`）与 `approval/README.md`（脱敏、TTL、审计双写）；完整证据见 [AI 审批参考分析](../../analysis/AGENT-AI-APPROVAL-REFERENCE-ANALYSIS.md)。
 
 ---
 
@@ -645,7 +645,7 @@ pub struct AdvisorInput {
 - 不采纳 codex `apply_patch` 的自定义 patch 语法——需额外解析器与格式教学成本，收益仅在批量多文件编辑场景
 
 > 工具清单、安全标记、每个工具的 JSON Schema 规格和实现见 I38c（已归档）。
-> Shell 安全守卫（SafetyBelt / AllowlistGate / ApprovalGate / BareExec）见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md)。
+> Shell 安全守卫（SafetyBelt / AllowlistGate / ApprovalGate / BareExec）见 [OSCALLDESIGN.md](../../designed/OSCALLDESIGN.md)。
 
 ### 4.3 L2: MCP/外部工具
 
@@ -653,7 +653,7 @@ pub struct AdvisorInput {
 
 **隔离边界声明**：MCP server 以独立子进程运行，但当前**不提供 cgroup / seccomp / namespace 级别的 OS 隔离**。权限策略对 External 层的作用是逻辑层控制（决定是否调用），不是执行层隔离（限制调用后的行为）。严格策略禁用某 MCP server 时，必须**拒绝调用**而非宣称"沙箱内安全执行"。
 
-> 详见 [OSCALLDESIGN.md](../designed/OSCALLDESIGN.md) §1.2。
+> 详见 [OSCALLDESIGN.md](../../designed/OSCALLDESIGN.md) §1.2。
 
 ---
 
@@ -672,7 +672,7 @@ pub struct AdvisorInput {
 
 ## 6. Crate 组织
 
-> 本节表达**目标态**的模块边界与归属，不是进度表；阶段状态见 [I38 roadmap](I38-agent-roadmap.md) §2，任务级进度见对应 tasklist。
+> 本节表达**目标态**的模块边界与归属，不是进度表；阶段状态见 [I38 roadmap](../../store/I38-agent-roadmap.md) §2，任务级进度见对应 tasklist。
 
 ```
 src-tauri/
@@ -746,7 +746,7 @@ src-tauri/
 
 ## 7. 实施路径
 
-> 阶段划分、状态与门禁已统一到 [I38 roadmap](./I38-agent-roadmap.md)，本节只保留**顺序决策**（为什么这个先建），不记录进度。
+> 阶段划分、状态与门禁已统一到 [I38 roadmap](../../store/I38-agent-roadmap.md)，本节只保留**顺序决策**（为什么这个先建），不记录进度。
 
 **顺序决策**：
 
@@ -774,7 +774,7 @@ src-tauri/
 2. **多层策略取最严**：应用默认 + 项目配置 + Agent 模式三层叠加，`most_restrictive` 组合
 3. **委托只能收紧不能放宽**：`PermissionRuntimeCeiling` 禁止携带 `Allow` 规则
 4. **审批流统一**：`Ask` 效果 → `awaiting_user` 状态 → 前端审批 UI → approve/reject
-5. **先建框架再加能力**：P0/P1 只建执行框架，P2 安全网关先行，P5 才加 OS 能力（阶段定义见 [I38 roadmap](./I38-agent-roadmap.md)）
+5. **先建框架再加能力**：P0/P1 只建执行框架，P2 安全网关先行，P5 才加 OS 能力（阶段定义见 [I38 roadmap](../../store/I38-agent-roadmap.md)）
 6. **最小权限**：工具默认声明最高限制，Agent 模式按需放宽
 7. **超时隔离**：所有工具执行带超时，Shell 执行默认 30s，防止命令挂起
 8. **审计日志**：工具调用决策经 `PermissionAuditStore` 端口记录；是否新建 `tool_calls` 表在 P4 定稿（P2 不建表）

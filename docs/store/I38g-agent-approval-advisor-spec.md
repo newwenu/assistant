@@ -5,7 +5,7 @@
 | 状态 | 现行（P10 规格；进度见 [roadmap](./I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-09 |
 | 阶段 | P10（审批链后续轴；见 [I38 roadmap](./I38-agent-roadmap.md) §2 / §2.1） |
-| 关联 | [I18 design §3.17](./I18-agent-tool-architecture-design.md)（AI 审批链路预留）、[AI 审批参考分析](../analysis/AGENT-AI-APPROVAL-REFERENCE-ANALYSIS.md)、I38a §2.8 / §2.9 / §4.5（已归档）（审批端口 / 审计端口 / Pipeline）、I38d §3.2 / §3.2.1（已归档）（审批卡片 L0–L3） |
+| 关联 | I18 design §3.17（已归档）（AI 审批链路预留）、[AI 审批参考分析](../analysis/AGENT-AI-APPROVAL-REFERENCE-ANALYSIS.md)、I38a §2.8 / §2.9 / §4.5（已归档）（审批端口 / 审计端口 / Pipeline）、I38d §3.2 / §3.2.1（已归档）（审批卡片 L0–L3） |
 | 影响范围 | `assistant-tools`（`ApprovalAdvisor` / `fuse` / `ToolGateway` / `AuditEntry` / `AuditOutcome`）、`assistant-config`（`AppConf`）、`protocol/dto`（`AppConfDto`，P10-b 另有 tool call 事件字段）、`src-tauri`（advisor 适配器 / 审计写入 / 设置命令）、`assistant-storage`（`permission_audit.advisor_json` 列）、前端设置与工具气泡 |
 
 > 本文是 P10 的唯一权威规格。P10 只允许**单向顾问**：`EscalateOnly`（只会更严）与 `RelaxOnly`（只会放宽 `Ask`）。
@@ -47,6 +47,7 @@
 | **P10-c** | `Adjudicate` | L4 内核级沙箱独立 ADR（不属本文） | 另立规格 |
 
 > **P10-b 的现实阻塞**：现状 `read` / `ls` / `glob` / `grep` 的 `permission_intents` 为空，`ToolGateway` 在 `intents.is_empty()` 时直接 `Allowed`，顾问不会被调用；P10-b 不得在没有消费方时开工，否则只是死代码。
+> **P14 的 `readToolOutput` 不算消费方**：`read` 在工具输出域（`ReadableScope::ToolOutput`）会产生 `Ask`，形式上满足「只读工具产生 Ask」，但它**恒 `Ask`、任何审批级别不放宽**（`I52-shell-sandbox-spec.md` §5.11.4(3)）：它是「跨出工作区边界」的额外许可，被顾问自动放宽等于消掉这道边界。故 P10-b 仍等 P7 MCP / G1，且必须在分类器里显式排除 `readToolOutput`。
 > **P10-a 的有效场景**：`approval_level = none` 的全放行配置下，带 intent 的写类工具 base = `Allow`，顾问才有加严空间；`dangerous_only` / `all_os_tools` 下写类工具已是 `Ask`，`EscalateOnly` 按 §3.3 不调用顾问。
 
 ---

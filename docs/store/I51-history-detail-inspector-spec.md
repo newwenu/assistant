@@ -6,7 +6,7 @@
 | 日期 | 2026-11-15 |
 | 依据 | 现状缺口 H1–H8 见 §1.3，全部来自本次对 `src/history/`、`src/chat/message/`、`src/services/`、`src-tauri/crates/assistant-storage/` 的实读；身份口径冲突见 §2.1 |
 | 落地对象 | 前端：`src/history/detail/`、`src/chat/message/`（仅新增可选 prop）、`src/services/historyService.ts`、`src/stores/historyStore.ts`、`src/i18n/locales/`；后端（仅 M2 / M3）：`src-tauri/src/cmd/conversation.rs`、`src-tauri/crates/assistant-storage/src/conversations/`、`src-tauri/src/protocol/dto/` |
-| 关联 | [I46 节点布局规格](./I46-agent-node-layout-spec.md)（坐标判据与 `turn` 语义唯一出处）、[I46 紧凑消息格式设计](./I46-agent-compact-message-format-design.md)（`compact` 信封，仍在用）、I40-history-message-tree-spec（已归档，树渲染基线）、[I50 运行时审计规格](./I50-runtime-audit-spec.md)（相邻域，**口径不通用**：审计是安全事件，本文是会话内容） |
+| 关联 | I46 节点布局规格（已归档）（坐标判据与 `turn` 语义唯一出处）、I46 紧凑消息格式设计（已归档）（`compact` 信封，仍在用）、I40-history-message-tree-spec（已归档，树渲染基线）、I50 运行时审计规格（已归档）（相邻域，**口径不通用**：审计是安全事件，本文是会话内容） |
 | 替代 | I43-assistant-identity-spec（已归档）§4.4 N7 中「历史树详情每条 assistant 行都渲染身份指示」一条；其余 N1–N6、N8–N11 继续有效 |
 
 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离需在代码注释里写明理由。
@@ -504,8 +504,8 @@ M3 不在本文验收范围内，本文只固定准入条件。
 | 文档 | 关系 |
 |---|---|
 | I43-assistant-identity-spec（已归档） | 本文 §2.1 作废其 N7（历史树逐行显示身份），其余条款继续有效；该文档冻结，不再修改，本表即为替代声明 |
-| [I46 节点布局规格](./I46-agent-node-layout-spec.md) | 坐标语义（`turn_index` / `iteration`）与「不猜测未知坐标」的唯一出处，本文只引用不复述；本文 §2.2 是其在历史树上的等价判据，不改变聊天页的 `groupNodeRows` |
-| [I46 紧凑消息格式设计](./I46-agent-compact-message-format-design.md) | `compact` 信封仍是工具结果渲染的唯一事实源；本文 §4.2 原始模式显示 `compact` 投影而非重新解析结果正文 |
+| I46 节点布局规格（已归档） | 坐标语义（`turn_index` / `iteration`）与「不猜测未知坐标」的唯一出处，本文只引用不复述；本文 §2.2 是其在历史树上的等价判据，不改变聊天页的 `groupNodeRows` |
+| I46 紧凑消息格式设计（已归档） | `compact` 信封仍是工具结果渲染的唯一事实源；本文 §4.2 原始模式显示 `compact` 投影而非重新解析结果正文 |
 | I40-history-message-tree-spec（已归档） | 树构建 / 折叠 / 轨道色的基线；本文不改变其语义，只在 `flattenHistoryRows` 输出上追加派生字段 |
-| [I50 运行时审计规格](./I50-runtime-audit-spec.md) | 相邻但**不通用**：审计记录安全事件（`security_audit_log` / `permission_audit`），本文记录会话内容；禁止把本文的元数据行当作审计来源，也禁止把审计事件塞进历史页 |
+| I50 运行时审计规格（已归档） | 相邻但**不通用**：审计记录安全事件（`security_audit_log` / `permission_audit`），本文记录会话内容；禁止把本文的元数据行当作审计来源，也禁止把审计事件塞进历史页 |
 | [I38 Agent 阶段总纲](./I38-agent-roadmap.md) | 本文不进阶段门禁；`turn` 坐标的前置条件（I46 S1/S2 已落地）已满足 |

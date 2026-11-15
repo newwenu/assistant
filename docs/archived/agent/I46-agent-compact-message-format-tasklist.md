@@ -2,7 +2,7 @@
 
 > 状态：✅ 已完成（2026-11-14 关闭；C1–C10 全部勾选，门禁 1–15 有测试映射，全量验收记录见 C10）
 > 规格：[I46-agent-compact-message-format-design.md](./I46-agent-compact-message-format-design.md)（参考记录，信封 / 省略 / 落盘 / 预算与门禁 1–15 仍有效）
-> 阶段登记：[I38 §2](./I38-agent-roadmap.md) P13
+> 阶段登记：[I38 §2](../../store/I38-agent-roadmap.md) P13
 > 前置：P2 工具控制层、P5 OS 工具能力（均已完成）。本阶段关闭 I46 节点布局 §1.2 的 P1 开工门。
 
 十个批次按依赖排序：C1 信封核心 → C2 Pipeline 与事件 → C3 DTO 契约 → C4 历史重建 → C5 落盘布局与清理 → C6 采集策略与截断三态 → C7 前端消费 → C8 渲染选路 → C9 密度折叠 → C10 验收。C5 与 C6 可在 C1 后与 C2–C4 并行；C7/C8/C9 依赖 C3 的生成类型。

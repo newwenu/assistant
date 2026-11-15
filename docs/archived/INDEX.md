@@ -8,15 +8,15 @@
 
 | 域 | 内容 | 文件数 |
 |---|---|---|
-| [agent/](./agent/) | Agent 运行时、工具框架、Agent Loop、审批、压缩、身份与能力事实、代码规模审计 | 45 |
+| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、代码规模审计 | 57 |
 | [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 36 |
 | [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、Token Usage | 32 |
 | [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 35 |
-| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、命令层、日志、应用目录、横切分析 | 26 |
+| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、横切分析 | 28 |
 
 ## 文档清单
 
-### agent/ (45)
+### agent/ (57)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -65,6 +65,18 @@
 | [`I45-model-capability-facts-spec.md`](./agent/I45-model-capability-facts-spec.md) | achievement6 | I45 — 模型能力事实规格（止损、三态与主体 key） |
 | [`I45-model-capability-facts-tasklist.md`](./agent/I45-model-capability-facts-tasklist.md) | achievement6 | I45 — 模型能力事实任务清单 |
 | [`I49-delete-trash-spec.md`](./agent/I49-delete-trash-spec.md) | achievement6 | I49-delete-trash — `delete` 默认移入回收站 + 显式永久删除 |
+| [`I18-agent-tool-architecture-design.md`](./agent/I18-agent-tool-architecture-design.md) | achievement7 | I18 — Agent 工具架构决策记录（ADR） |
+| [`I38e-mcp-tools-spec.md`](./agent/I38e-mcp-tools-spec.md) | achievement7 | I38e — P7：MCP 外部工具规格 |
+| [`I38e-mcp-tools-tasklist.md`](./agent/I38e-mcp-tools-tasklist.md) | achievement7 | I38e — P7 MCP 外部工具任务清单 |
+| [`I46-agent-compact-message-format-design.md`](./agent/I46-agent-compact-message-format-design.md) | achievement7 | I46 — 工具结果紧凑消息格式设计（参考记录） |
+| [`I46-agent-compact-message-format-tasklist.md`](./agent/I46-agent-compact-message-format-tasklist.md) | achievement7 | I46 — 工具结果紧凑信封任务清单 |
+| [`I46-agent-node-layout-design.md`](./agent/I46-agent-node-layout-design.md) | achievement7 | I46 — Agent 节点布局设计（ADR） |
+| [`I46-agent-node-layout-spec.md`](./agent/I46-agent-node-layout-spec.md) | achievement7 | I46 — Agent 节点布局实施规格 |
+| [`I46-agent-node-layout-tasklist.md`](./agent/I46-agent-node-layout-tasklist.md) | achievement7 | I46 — Agent 节点布局任务清单 |
+| [`I46-tool-result-preview-spec.md`](./agent/I46-tool-result-preview-spec.md) | achievement7 | I46 — 工具结果落盘回填预览规格 |
+| [`I50-runtime-audit-spec.md`](./agent/I50-runtime-audit-spec.md) | achievement7 | I50 — 运行时审计链路规格 |
+| [`I50-runtime-audit-tasklist.md`](./agent/I50-runtime-audit-tasklist.md) | achievement7 | I50 — 运行时审计任务清单 |
+| [`audit-coverage-audit-1.md`](./agent/audit-coverage-audit-1.md) | achievement7 | 运行时审计覆盖盘点（后端缺口与观察项） |
 
 ### vault/ (36)
 
@@ -184,7 +196,7 @@
 | [`I47-orb-runtime-state-spec.md`](./ui/I47-orb-runtime-state-spec.md) | achievement5 | I47 — Orb 运行态与可见性 实施规格 |
 | [`I47-orb-runtime-state-tasklist.md`](./ui/I47-orb-runtime-state-tasklist.md) | achievement5 | I47 — Orb 运行态与可见性 任务清单 |
 
-### infra/ (26)
+### infra/ (28)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -214,4 +226,6 @@
 | [`I42-logging-strategy-spec.md`](./infra/I42-logging-strategy-spec.md) | achievement4 | I42 — 日志策略规格（`tauri-plugin-log` 配置 + 高频日志治理） |
 | [`I44-app-dir-management-spec.md`](./infra/I44-app-dir-management-spec.md) | achievement5 | I44 — 应用目录管理规格（受管目录的解析、归属与边界） |
 | [`path-handling-inconsistency-analysis.md`](./infra/path-handling-inconsistency-analysis.md) | achievement5 | 路径处理不统一分析（前端 / Rust） |
+| [`feature-config-ownership-spec.md`](./infra/feature-config-ownership-spec.md) | achievement7 | 特性配置归属规格（配置 schema 与 DTO 迁入特性边界） |
+| [`feature-config-ownership-tasklist.md`](./infra/feature-config-ownership-tasklist.md) | achievement7 | 特性配置归属任务清单 |
 

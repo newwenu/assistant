@@ -3,7 +3,7 @@
 //! 本模块只回答「MCP 工具如何变成一个 `Tool`」：命名、安全标记推断、结果映射、
 //! 精确审批键所需的身份信息。不做 IO、不持有子进程、不碰 `ToolRegistry`。
 //!
-//! 规格：[`docs/store/I38e-mcp-tools-spec.md`](../../../../../docs/store/I38e-mcp-tools-spec.md) §3。
+//! 规格：[`docs/archived/agent/I38e-mcp-tools-spec.md`](../../../../../docs/archived/agent/I38e-mcp-tools-spec.md) §3。
 
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;

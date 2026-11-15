@@ -2,7 +2,7 @@
 
 > 日期：2026-11-11｜性质：**预先分析**（只判定管理机制能否成立、成立需要哪些范式、哪些部分不可归零；不含实施步骤与排期）
 > 判据来源：`docs/principle/CODE-REVIEW-PRINCIPLE.md`、`docs/principle/CODE-SPLIT-PRINCIPLE.md`
-> 事实基线：仓库当前代码；`docs/store/I38e-mcp-tools-spec.md`（MCP 进程与重连规格，**未实施**）
+> 事实基线：仓库当前代码；`I38e-mcp-tools-spec.md`（已归档）（MCP 进程与重连规格，**未实施**）
 > 范围界定：**本文的主体是「管理机制」——任务如何被登记、准入、调度、状态化、可见、治理、回收。终止只是「回收」要素的一个子项，不作为主线。**
 > 范围例外：§8「自身占用监控」不属管理机制，但因与任务观测共用投影通道、且决定 DTO 字段与用户文案，需一并定案。
 > 引用已归档规格时只写「文档名 +（已归档）」，不给路径。
@@ -195,7 +195,7 @@
 | **拒绝 / 顶替双策略** | `TurnTasks::begin` 的 `OnBusy`：`Reject` 返回 `Busy` 且旧令牌原样继续；`Replace` 取消旧令牌并递增 counter（旧代际已取消时按 `Replace` 顶替） | **这是抢占**：`Replace` = 新任务抢占旧任务，`Reject` = 不抢占、拒绝新任务 |
 | **声明式并发分组** | `partition_tool_batches`：`is_concurrency_safe` 自报 + 连续合并 + 未注册按不可并发（fail-closed） | **这是分组**：串行 / 并行由任务自报，不由机制层指定 |
 | **限速闸** | `src-tauri/src/cmd/vault/audit.rs`：`HIBP_CONCURRENCY = 2`、`HIBP_MIN_INTERVAL_MS = 1500`、`Semaphore::new(1)` | **这是速率调度**（不是并发调度）：许可证 + 最小间隔 |
-| **消费方专属退避** | `docs/store/I38e-mcp-tools-spec.md` §4.2：指数退避 1s / 2s / 4s / 8s 上限 60s、最多 5 次；握手超时 30s；调用超时 30s 且受 turn 剩余预算约束 | **这是重试调度**：但只写在 MCP 规格里，机制层未定「重试归谁」 |
+| **消费方专属退避** | `I38e-mcp-tools-spec.md`（已归档）§4.2：指数退避 1s / 2s / 4s / 8s 上限 60s、最多 5 次；握手超时 30s；调用超时 30s 且受 turn 剩余预算约束 | **这是重试调度**：但只写在 MCP 规格里，机制层未定「重试归谁」 |
 
 另有一处**被写成调度、但没被识别**的决策：I38e §4.2 第 1 条「从 `mcp_servers` 读取 `enabled = 1` 的 server 并全部启动，失败只记日志、不阻塞启动」——这是「启动即全启、非懒启动、失败不阻塞」的调度选择，但规格里没有作为调度判定出现。
 

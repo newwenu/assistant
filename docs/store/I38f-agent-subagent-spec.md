@@ -5,7 +5,7 @@
 | 状态 | 草稿（可选备选，暂缓接入；未进入阶段表 / 门禁） |
 | 日期 | 2026-11-09 |
 | 阶段 | P8.1（可选候选；见 [roadmap](./I38-agent-roadmap.md) §2.1） |
-| 关联 | [I18 design §3.16](./I18-agent-tool-architecture-design.md)（子 Agent 权限继承）、I36 design D16–D18（已归档）、[I36a §3.3/§3.4/§5](./I36a-agent-kernel-baseline.md)、I38a（已归档）（Policy / Gateway / Pipeline / `ApprovalKey`）、I38b（已归档）§2.4 / §4.5（委派预留与工具执行端口）、I38c（已归档）（工具实现范式）、I38d §4.2 / §4.6 / §4.7（已归档）（审批级别、策略装配、工具面板） |
+| 关联 | I18 design §3.16（已归档）（子 Agent 权限继承）、I36 design D16–D18（已归档）、[I36a §3.3/§3.4/§5](./I36a-agent-kernel-baseline.md)、I38a（已归档）（Policy / Gateway / Pipeline / `ApprovalKey`）、I38b（已归档）§2.4 / §4.5（委派预留与工具执行端口）、I38c（已归档）（工具实现范式）、I38d §4.2 / §4.6 / §4.7（已归档）（审批级别、策略装配、工具面板） |
 | 影响范围 | `assistant-tools`（`ToolUseContext` / `ApprovalKey` / `ToolPipeline::with_storage`）、`assistant-agent`（`TurnSpec` / `TurnRunCtx` / `ToolExecCtx` / `TurnTasks` / `TurnLimits`）、`src-tauri`（`spawn_agent` 工具与子代理 runner 装配）、相关测试；**不改 wire DTO** |
 
 > **备选状态（2026-11-09）**：子代理暂缓接入，本文留档为可选规格；不进入 roadmap §2 阶段表与门禁。

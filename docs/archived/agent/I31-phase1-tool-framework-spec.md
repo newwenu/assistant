@@ -4,7 +4,7 @@
 |---|---|
 | 状态 | 已归档（阶段一工具框架规格；进度见 [roadmap](../../store/I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-04 |
-| 关联 | [I38 roadmap](../../store/I38-agent-roadmap.md)（P0/P1）、[I18 design](../../store/I18-agent-tool-architecture-design.md)、[I18 spec](./I18-agent-tool-architecture-spec.md)（Step 0-3 / 8）、[I30](./I30-phase1-toolcall-separation-spec.md)、[I18b](./I18b-tool-unified-bridge-spec.md)、[I38c](./I38c-os-tools-spec.md)（工具能力去向） |
+| 关联 | [I38 roadmap](../../store/I38-agent-roadmap.md)（P0/P1）、[I18 design](./I18-agent-tool-architecture-design.md)、[I18 spec](./I18-agent-tool-architecture-spec.md)（Step 0-3 / 8）、[I30](./I30-phase1-toolcall-separation-spec.md)、[I18b](./I18b-tool-unified-bridge-spec.md)、[I38c](./I38c-os-tools-spec.md)（工具能力去向） |
 | 影响范围 | `src-tauri/crates/assistant-tools` 单 crate |
 
 > 执行清单：[I31-phase1-tool-framework-tasklist.md](./I31-phase1-tool-framework-tasklist.md)（T3 逐项勾选与验收映射）。

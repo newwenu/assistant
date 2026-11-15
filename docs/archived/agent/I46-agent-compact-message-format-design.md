@@ -4,11 +4,11 @@
 |---|---|
 | 状态 | 参考记录（已被 [I46 节点布局设计](./I46-agent-node-layout-design.md) 取代，**不再作为权威源**；信封 / 省略 / 落盘 / 预算部分仍有效，见该文档 §9） |
 | 日期 | 2026-11-13（2026-11-13 修订：补入参考项目研究结论，见 §7） |
-| 关联 | [I18 工具架构 ADR](./I18-agent-tool-architecture-design.md)（工具分层与权限网关）、[I38 阶段总纲](./I38-agent-roadmap.md)（阶段与门禁唯一入口）、[I36a 内核能力基线](./I36a-agent-kernel-baseline.md)（turn 事件不变式）、[I36b 内核一致性规格](./I36b-agent-kernel-conformance-spec.md)、[I27 工具数据存储规格](./I27-tool-data-store-spec.md)、[I38f 子 Agent 规格](./I38f-agent-subagent-spec.md)（`data` 进程内消费的现例）；参考项目：DeepSeek Harness `architecture` notes（规范工具输出契约、工具结果保留库、工具输出 spill 策略、本地 spill 启动清理、结果时刻 applied-hunk diff、结构化错误分类、会话持久化、zstd JSONL 日志） |
+| 关联 | [I18 工具架构 ADR](./I18-agent-tool-architecture-design.md)（工具分层与权限网关）、[I38 阶段总纲](../../store/I38-agent-roadmap.md)（阶段与门禁唯一入口）、[I36a 内核能力基线](../../store/I36a-agent-kernel-baseline.md)（turn 事件不变式）、[I36b 内核一致性规格](../../store/I36b-agent-kernel-conformance-spec.md)、[I27 工具数据存储规格](../../store/I27-tool-data-store-spec.md)、[I38f 子 Agent 规格](../../store/I38f-agent-subagent-spec.md)（`data` 进程内消费的现例）；参考项目：DeepSeek Harness `architecture` notes（规范工具输出契约、工具结果保留库、工具输出 spill 策略、本地 spill 启动清理、结果时刻 applied-hunk diff、结构化错误分类、会话持久化、zstd JSONL 日志） |
 | 影响范围 | 设计层：定义 Agent 输出的文本信封语法、省略口径、wire 增量字段、预算归属、落盘生命周期、渲染形态选路（卡片 / 文档批注）与 **turn 级密度控制**（迭代折叠）。不修改现有 DTO 定义，不改 turn 事件语义 |
 
 > 本文只回答六件事：Agent 的一次工具输出在**四个消费面**（模型回填 / 落库 / 事件 / 前端）各是什么形状；**谁负责收缩**；收缩之后**如何说明省略**；**落盘产物如何命名、定位与过期**；**前端按什么条件选卡片还是文档批注**；**一个多迭代 turn 占多少高度、如何折叠**。
-> 实施批次与进度不在本文维护，归 [I38 §2](./I38-agent-roadmap.md) 与对应 tasklist。新增阶段须先改 I38 §2/§3，本文不自行编号。
+> 实施批次与进度不在本文维护，归 [I38 §2](../../store/I38-agent-roadmap.md) 与对应 tasklist。新增阶段须先改 I38 §2/§3，本文不自行编号。
 
 ---
 
@@ -91,7 +91,7 @@
 
 - `result` 文本保留，继续承担「模型回填 + 历史正文 + 字节相等基准」。
 - `compact ≡ 展示投影`，作为 **UI 唯一解析来源**：`head` / `truncated` / `persisted` / `errorKind`。
-- **显式声明：不引入跨 seam 的规范值通道。** `ToolResult.data` 的合法消费者只有「同进程内的程序化调用方」（现例：subagent 的父 turn 记账，见 [I38f §3.5.1](./I38f-agent-subagent-spec.md)）。一旦出现跨 seam 需求（code-mode / 链式编排 / 结构化剪枝 / 文本装不下的全保真值），**跨 seam 的也必须是它的持久化投影，而不是值本身**。引入条件写在 §7.4，避免将来「因为加了某工具所以加 value」。
+- **显式声明：不引入跨 seam 的规范值通道。** `ToolResult.data` 的合法消费者只有「同进程内的程序化调用方」（现例：subagent 的父 turn 记账，见 [I38f §3.5.1](../../store/I38f-agent-subagent-spec.md)）。一旦出现跨 seam 需求（code-mode / 链式编排 / 结构化剪枝 / 文本装不下的全保真值），**跨 seam 的也必须是它的持久化投影，而不是值本身**。引入条件写在 §7.4，避免将来「因为加了某工具所以加 value」。
 - **重建判据（纯函数边界）**：`compact` 的字段分两类——
   - 可由 `(args, 结果文本)` **纯函数算出**的 → 允许在读取时重建，不落库；
   - **算不出**的（如结果时刻的文件前后内容、耗时、退出码之外的进程事实）→ 必须随结果一起持久化，不得指望重建。

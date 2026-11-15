@@ -5,7 +5,7 @@
 | 状态 | 现行（P4 规格，决策已全部拍板；进度见 [roadmap](../../store/I38-agent-roadmap.md) §2） |
 | 日期 | 2026-11-05 |
 | 阶段 | P4（见 [I38 roadmap](../../store/I38-agent-roadmap.md)） |
-| 关联 | [I36 spec](./I36-agent-runtime-spec.md)（turn 生命周期与端口）、[I38a](./I38a-tool-control-layer-spec.md)（ToolPipeline）、[I30](./I30-phase1-toolcall-separation-spec.md) §6（B 段决策）、[I18 design](../../store/I18-agent-tool-architecture-design.md) §3.4 / §3.15 |
+| 关联 | [I36 spec](./I36-agent-runtime-spec.md)（turn 生命周期与端口）、[I38a](./I38a-tool-control-layer-spec.md)（ToolPipeline）、[I30](./I30-phase1-toolcall-separation-spec.md) §6（B 段决策）、[I18 design](./I18-agent-tool-architecture-design.md) §3.4 / §3.15 |
 | 影响范围 | `assistant-agent`（`agent/` 累积器与 RoundExecutor trait）、`assistant-providers`（`ChatOptions.tools` 与三 adapter 注入）、`assistant-agent/src/agent/loop_executor.rs`（RoundExecutor 实现）、`src-tauri/src/adapters/` + `src-tauri/src/tool_setup.rs`（`ToolExecutionPort` 适配器、`TimingApprovalPrompter`、装配）、`src-tauri/src/protocol/dto/agent.rs`（新增 agent 事件 DTO 模块，§6.1.1）、`assistant-storage`（`messages` 新增 `tool_call_id` / `is_error` 两列（D11）+ `permission_grants` / `permission_audit` 两表（D14）） |
 
 > 本文是 P4 的唯一权威规格。I18 spec 的 Step 7 与 I30 §6 的 B 段内容已迁入本文。

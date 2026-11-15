@@ -294,8 +294,8 @@ quote::quote!(move |#invoke| {
 
 | 项 | 决策 | 原因 |
 |---|---|---|
-| `assistant-config::vault_conf` | 保留（**已被 `feature-config-ownership-spec.md` 替代**：`VaultConf` 现位于 `assistant-vault/src/conf.rs`） | 纯 JSON，无 vault 代码依赖；`src-tauri/crates/assistant-config` 本身是主功能依赖 |
-| `VaultConfDto` | 保留（**已被 `feature-config-ownership-spec.md` 替代**：现位于 vault 契约域 `assistant-vault/src/dto/conf.rs`） | 同上 |
+| `assistant-config::vault_conf` | 保留（**已被 `feature-config-ownership-spec.md`（已归档） 替代**：`VaultConf` 现位于 `assistant-vault/src/conf.rs`） | 纯 JSON，无 vault 代码依赖；`src-tauri/crates/assistant-config` 本身是主功能依赖 |
+| `VaultConfDto` | 保留（**已被 `feature-config-ownership-spec.md`（已归档） 替代**：现位于 vault 契约域 `assistant-vault/src/dto/conf.rs`） | 同上 |
 | `get_vault_conf` 命令 | 保留 | `src/main.tsx:44` 启动期无条件调用，删了会让排除构建启动即 invoke 失败 |
 | `patch_conf` 的 `"vault"` 分支 | 保留 | 只是写 JSON 文件，无副作用即可 |
 | `apply_vault_side_effects` | 门控 | 唯一真实 vault 调用点 |

@@ -5,7 +5,7 @@
 > 实施规格见 [I36-agent-runtime-spec.md](./I36-agent-runtime-spec.md)；Agent Loop 见 [I38b](./I38b-agent-loop-spec.md)；
 > 内核能力基线与参考实现对照见 [I36a-agent-kernel-baseline.md](../../store/I36a-agent-kernel-baseline.md)；
 > 内核一致性判定（确定性要求 / 验证矩阵 / 实检缺口）见 [I36b-agent-kernel-conformance-spec.md](../../store/I36b-agent-kernel-conformance-spec.md)。
-> 工具框架见 [I18-agent-tool-architecture-design.md](../../store/I18-agent-tool-architecture-design.md)；
+> 工具框架见 [I18-agent-tool-architecture-design.md](./I18-agent-tool-architecture-design.md)；
 > ToolBox 桥接见 [I18b-tool-unified-bridge-spec.md](./I18b-tool-unified-bridge-spec.md)；
 > chat 构建剥离见 [I30-phase1-toolcall-separation-spec.md](./I30-phase1-toolcall-separation-spec.md)。
 

@@ -6,8 +6,8 @@
 | 审计日期 | 2026-11-14 |
 | 审计对象 | 两条运行时审计链路在**前端**的读写情况：① vault 审计查询链；② Agent 工具权限审计（`permission_audit`）的展示与触发面 |
 | 审计范围 | `src/vault/**`（`core/vault.service.ts`、`core/slices/vaultAuditSlice.ts`、`core/vaultStore.ts`、`settings/*.tsx`、`VaultUnlock.tsx`、`VaultToolbar.tsx`）、`src/services/permissionService.ts`、`src/services/chatService.ts`、`src/settings/shared/sections/PermissionGrantsSection.tsx`、`src/settings/pages/AgentModeSettings.tsx`、`src/stores/chatConversationSlice.ts`、`src/chat/tool/ApprovalCard.tsx`、`src/chat/core/toolCallView.ts`、`src/tools/os.ts`、`src/i18n/locales/*.json`、`src/test-utils/rustCommands.ts`、`src/services/__tests__/commandNames.test.ts` |
-| 审计方法 | ① 前端命令字面量全量扫描，按「命令 → 后端 `#[command]` → 是否写审计」三跳对齐；② 每个审计查询能力反查 `.tsx` 消费点；③ 前端可触发的权限/密钥动作逐个核对后端落点；④ 对照 `I50-runtime-audit-spec.md` §2–§4 与 `I50-runtime-audit-tasklist.md` 的 V3 / T4 条目核对现状 |
-| 证据基准 | 只采当前工作区源码。第 1 轮审计（`audit-coverage-audit-1.md`）只作为后端侧结论的对照基线，不作为前端现状依据 |
+| 审计方法 | ① 前端命令字面量全量扫描，按「命令 → 后端 `#[command]` → 是否写审计」三跳对齐；② 每个审计查询能力反查 `.tsx` 消费点；③ 前端可触发的权限/密钥动作逐个核对后端落点；④ 对照 `I50-runtime-audit-spec.md`（已归档）§2–§4 与 `I50-runtime-audit-tasklist.md`（已归档）的 V3 / T4 条目核对现状 |
+| 证据基准 | 只采当前工作区源码。第 1 轮审计（`audit-coverage-audit-1.md`（已归档））只作为后端侧结论的对照基线，不作为前端现状依据 |
 | 引用口径 | 定位优先用 `文件::符号`；行号仅作本次审计时的参考，会随迭代漂移 |
 | 修订记录 | 2026-11-14 首轮前端审计：建立「前端入口 → 后端审计」映射表，登记缺口 F1–F8、观察项 OF1–OF5、有意例外 EF1–EF3 |
 

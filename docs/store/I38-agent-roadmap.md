@@ -4,7 +4,7 @@
 |---|---|
 | 状态 | 现行（agent 实施的唯一阶段入口） |
 | 日期 | 2026-11-04 |
-| 关联 | [I18 工具架构决策](./I18-agent-tool-architecture-design.md)、I18 工具框架规格（已归档）、I36 运行时决策（已归档）、I36 运行时规格（已归档） |
+| 关联 | I18 工具架构决策（已归档）、I18 工具框架规格（已归档）、I36 运行时决策（已归档）、I36 运行时规格（已归档） |
 | 影响范围 | 文档结构；不改变任何代码契约 |
 
 > 本文只回答三件事：**现在处在哪个阶段、下一阶段从哪开始、每份文档归谁管**。
@@ -33,10 +33,11 @@
 | **P4 Agent Loop 闭环** | RoundExecutor 多迭代循环；tool call 累积器；`ChatOptions.tools` 注入；停止钩子三维预算；阶梯 ③④⑤ 与中间件链（② 不随 P4）；审批默认 fail-closed 装配 | I38b | ✅ 已完成（2026-11-06；C1–C6、C8（除 C8.6）、C9 全部完成，`cargo test -p assistant-agent` / `assistant-providers` / `assistant-storage` 全绿，`clippy -D warnings` 与 `cargo fmt --check` 通过。**C7 端到端批次整体跳过**（用户决策）：`agent_loop_e2e.rs` / `agent_loop_dialect.rs` 未编写，C7.1–C7.17 与 C8.6 不计完成，端到端链路无自动化覆盖为已知缺口；组件级等价覆盖见 tasklist C7 说明） | P2、P3；I30 B 段决策 |
 | **P5 OS 工具能力** | `agent_*.rs` 九个文件工具（注册名 `read` / `ls` / `glob` / `grep` / `write` / `edit` / `mkdir` / `move` / `delete`）、`ask_user` 逐个落地；**`shell` 暂不提供**（I38c §13，已归档）；白名单工具解析 `resolve_available_tools` 替换 P4 的 `RegistryToolCatalog`（deny-by-default + 显式白名单/黑名单）；清理 P4 接入代码（`ToolCatalog` trait、`RegistryToolCatalog`、`TurnSpec.tools` 类型收窄） | I38c | ✅ 已完成（2026-11-06；C1–C4、C6、C6b、C7、C8 全部完成，`cargo test --workspace` 全绿，`cargo clippy --workspace --all-targets -- -D warnings` 与 `cargo fmt --check` 通过，`npm run contract:check` 幂等。`ask_user` 不属 P5 退出条件，阻塞点登记在 I38c §9（已归档），归 P6；`shell` 按 §13 暂不提供） | P1、P2 |
 | **P6 前端与模式** | 五态 ToolCallBubble、审批 UI、AgentMode / 对话级工具配置；chat / agent **同会话内可切换**（每次发送按会话 `mode.kind` 选路，默认 chat，turn 进行中禁止切换）；**共同视图 + 双布局**（`ConversationView` + `ChatLayout` / `AgentLayout`）；**审批卡片携带用户判断信息**（单个 `ApprovalContext` 包裹：L0 `tier`/`behavior` + L1 `Policy::explain` 原因 + L2 `preview_for_approval` 量级预演 + `extensions` 后端检测出口，I38d §3.2.1（已归档）） | I38d | ✅ 已完成（2026-11-07 开工，2026-11-09 关闭）：开放问题全部定稿——`alwaysApprove` 跨会话持久 + 设置页撤销入口、审批等待计入墙钟（P4 D12）、`workspace_root` 用全局配置（会话级绑定已提取为独立阶段 P12，见 §2，2026-11-09）、审批超时默认 120s；`ask_user` 归 P6-C8 且**不属主体退出条件**。C1（DTO 契约）→ C1a（模式收敛）→ C1b（链路选路）→ C1c（审批信息装配）→ C1d（共同视图 + 双布局）→ C2–C7 → C8（`ask_user`）代码与单测全部落地，`contract:gen` / `clippy -D warnings` / `fmt --check` / `npm run lint` / `typecheck` / `vitest` 均通过；2026-11-07 决策调整：**会话内锁定改为同会话可切换**，C1b.4 锁定项作废；2026-11-08 C5a 流式分层重构落地（`stream/transport.ts` / `stream/turnOrchestrator.ts` / `chatTurn` + `agentTurn` 双策略 / `agent/agentSegments.ts`，`chatOrchestrator.ts` 已删除），相关 4 个测试文件 79 项与 `typecheck` 通过，A27 满足；A26 根因（turn 内 `active_branch_id` 停在首行导致全量刷新缺行、前端合并丢弃同轮后续消息，切换分支可恢复）已修复——追加 `assistant`/`tool` 行即推进活动分支叶子（`advance_active_branch`），存储层新增 2 个单测、`cargo check` 与 `typecheck` 通过，待实机回归；2026-11-09 C9.5a / C9.5b 落地：P5-R2 修改组（`write` / `edit` / `mkdir` / `move`）与 P5-R3 危险组（`delete`）先后接入生产注册（`tool_setup` 显式调用 `register_write_tools` / `register_dangerous_tools`，A2 已于同日通过）；同日 C9.6 / C9.6a 实机回归通过（同会话模式切换、切回 agent 复用配置、重启后装配恢复、审批三态与超时置灰），A2 / A23 满足；C1a.10 自定义双形态行为验证 2026-11-09 实机通过，A24 满足；A28 满足（修改组与危险组均已注册）。**推迟验证项**：C2.4 / C9.6b「多窗口同一会话 phase 一致」——用户决策（2026-11-09）推迟至后续阶段，当前构建无可控的双窗口同会话入口，不阻塞本阶段完成；代码侧后端 `session-state-changed` 与前端订阅均已接线 | P4、P5 |
-| **P7 MCP 外部工具** | MCP 客户端、进程管理、`mcp__{server_id}__{tool}` 桥接；`mcp_servers` 配置与精确审批键 | I38e | ✅ 已完成（2026-11-14；C1–C6 全部完成：C5 端到端 11 项全绿（`tests/mcp_e2e.rs` + Rust 夹具二进制 `dev_mcp_server`，无解释器依赖），C6 最小配置页（`settings/mcp/`，列表 / 增删改 / 启停 / `env` 掩码 / 隔离边界文案 / i18n），`cargo test`（`assistant-app`：lib 74 项 + 集成 84 项）全绿、`cargo test --test mcp_e2e` 11 项全绿、`npm run contract:check` 幂等、`typecheck` / `lint` / `vitest` 650 项通过；任务级进度见 [I38e tasklist](./I38e-mcp-tools-tasklist.md)。**范围外登记**：turn task panic 无终态事件（`cmd/agent/mod.rs`），见 tasklist 文末） | P2、P5 |
+| **P7 MCP 外部工具** | MCP 客户端、进程管理、`mcp__{server_id}__{tool}` 桥接；`mcp_servers` 配置与精确审批键 | I38e | ✅ 已完成（2026-11-14；C1–C6 全部完成：C5 端到端 11 项全绿（`tests/mcp_e2e.rs` + Rust 夹具二进制 `dev_mcp_server`，无解释器依赖），C6 最小配置页（`settings/mcp/`，列表 / 增删改 / 启停 / `env` 掩码 / 隔离边界文案 / i18n），`cargo test`（`assistant-app`：lib 74 项 + 集成 84 项）全绿、`cargo test --test mcp_e2e` 11 项全绿、`npm run contract:check` 幂等、`typecheck` / `lint` / `vitest` 650 项通过；任务级进度见 I38e tasklist（已归档）。**范围外登记**：turn task panic 无终态事件（`cmd/agent/mod.rs`），见 tasklist 文末） | P2、P5 |
 | **P10 AI 审批顾问（后续轴）** | 在策略与人工审批之间插入单向 AI 顾问：P10-a `EscalateOnly` → P10-b `RelaxOnly`；`Adjudicate` 需 L4 沙箱 ADR | I38g | ❌ 未开始（规格已就绪，2026-11-09；不进入 P0–P7 门禁） | P6 |
 | **P12 工作区（后续轴）** | 工作区一级概念：`conversations.workspace_root` 会话绑定（**唯一来源，空串 `''` = 未配置、列 `NOT NULL`，不占用 `null`，无默认层**）+ `workspaces` 目录簿（仅展示，不参与解析）；唯一解析点 `resolve_workspace(conversation_id)` 与四处消费点同源；ToolBox 不解析工作区；遗留全局值直接作废（不迁移）；会话内切换（不必进设置页）；切换即失效该会话会话级授权；解析结果同时作为未来 MCP `roots` 的唯一输入 | I38h | ✅ 已完成（2026-11-09；代码与单测全绿，`contract:gen` / `typecheck` / `vitest` 通过；实机验收 C4.13 / C6.11 待补，不阻塞阶段关闭） | P5、P6 |
-| **P13 工具结果紧凑信封（compact）** | 把「一次工具结果长什么样」收敛为单一展示投影：三段信封（head / body / tail）、省略三态、口径分离、保留策略分裂（`head` / `tail` / `headTail`）、落盘生命周期（会话命名空间 + 启动年龄清理）、`compact` 增量 wire 字段（`Started.argsPreview` / `Finished.compact` / `Failed.compact` / `MessageToolCallDto.compact`）、历史重载重建与字节相等；**不改变 turn 事件语义、不改压缩投影与审批链** | I46 紧凑消息格式设计（参考记录，信封与门禁仍有效） | ✅ 已完成（2026-11-14；C1–C10 全部勾选，门禁 1–15 有测试映射，`cargo test --workspace` / clippy / fmt / typecheck / lint / vitest / `contract:check` 全绿；任务级进度见 [I46 compact tasklist](./I46-agent-compact-message-format-tasklist.md)） | P2、P5；I46 节点布局 P1 门已由本阶段关闭 |
+| **P13 工具结果紧凑信封（compact）** | 把「一次工具结果长什么样」收敛为单一展示投影：三段信封（head / body / tail）、省略三态、口径分离、保留策略分裂（`head` / `tail` / `headTail`）、落盘生命周期（会话命名空间 + 启动年龄清理）、`compact` 增量 wire 字段（`Started.argsPreview` / `Finished.compact` / `Failed.compact` / `MessageToolCallDto.compact`）、历史重载重建与字节相等；**不改变 turn 事件语义、不改压缩投影与审批链** | I46 紧凑消息格式设计（参考记录，信封与门禁仍有效） | ✅ 已完成（2026-11-14；C1–C10 全部勾选，门禁 1–15 有测试映射，`cargo test --workspace` / clippy / fmt / typecheck / lint / vitest / `contract:check` 全绿；任务级进度见 I46 compact tasklist（已归档）） | P2、P5；I46 节点布局 P1 门已由本阶段关闭 |
+| **P14 沙箱执行层与 `shell` 工具** | 把「声明式权限」闭环成「内核强制边界」：`SandboxBackend` 抽象 + 平台后端（Windows Token+ACL+Job / Linux Landlock / macOS Seatbelt）+ 链式探测与 fail-closed；`shell` 工具（`execute` 意图、命令级审批键、进程级超时与杀进程树、输出截断）；审批卡片显示实际隔离强度 | [I52](./I52-shell-sandbox-spec.md) | ❌ 未开始（规格已就绪，2026-11-15；不进入 P0–P7 门禁） | P2、P5、P6、P12 |
 
 **P0 的完成判据**（P0 时点复核；后续 P5/P6 新增工具不改变该判据的时点含义）：`assistant-agent` 与前端不再持有 chat tool call 累积器与渲染组件；`ToolRegistry` 具备 `<=` 语义与受众过滤；`os_tool_exec` 已走 `exec::invoke`；P0 时点生产注册表只有 `fs_link`（`TOOLBOX_ONLY`）。
 
@@ -64,6 +65,7 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 - P9 的持久化运行不得绕过 I36 D13a 的现行边界，必须单独决策。
 - P10 只允许单向顾问形态（`EscalateOnly` / `RelaxOnly`）；`Adjudicate` 需先有 L4 内核级沙箱的独立 ADR，不得在现有 L2/L3 检测层上直接启用（I18 design §3.17.1）。
 - P11 只做文件工具的编码支持：不引入 `iconv` / 外部转码进程 / 新依赖，不做逐文件编码猜测（`read` 是唯一编码发现点，`edit` / `write` 只消费回执），不做大文件转码写回（I38c §11 OQ7，已归档）。UTF-8 路径行为不变，唯一例外是 §14.3 的二进制检测顺序修正。
+- P14 只做「沙箱边界 + `shell` 工具」：沙箱**不替代**审批（`execute` 仍走 Policy/Gateway 求值），命令字符串黑名单**不是边界**（禁止作为拦截依据），不提供无沙箱执行路径（探测失败即不注册工具），不做容器 / microVM / 内核驱动级后端（虚拟化层 L3+ 留作后续轴）。
 
 
 | 关系 | 说明 |
@@ -78,6 +80,11 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | P5 + P6 → P12 | 工作区解析复用 P5 的路径语义（`os/path.rs`），chip 与切换入口挂在 P6 的共同视图；P12 不改工具面与审批链 |
 | P5 → P13 | 信封 head 的 `subject` / `scale` 只能取各工具已有结果事实（`data`）与参数，工具侧不新增 wire 字段；`compact` 的锚点取 `edit` 结果时刻行区间，与 P5 的写入回执同源 |
 | P13 → I46 节点布局 | I46 §1.2 的 P1 开工门（`compact`）已由本阶段关闭（2026-11-14）；I46 节点布局的 §6.2 / §6.3 形态不变，单行走正式分支取 `compact.head`，降级分支只作旧数据（`compact == null`）兜底 |
+| P2 + P5 → P14 | `execute` 意图复用既有 Policy/Gateway 求值，沙箱只加边界、不参与审批决策；`ApprovalScope::Command` 是 P2 已实现但无生产者的分支，P14 是首个生产者 |
+| P12 → P14 | 沙箱可写根 = `resolve_workspace` 的唯一解析结果；不解析工作区的入口（ToolBox）不提供 `shell` |
+| P14 → P10-b | `RelaxOnly` 的前置是「存在确实会产生 `Ask` 的只读调用」；`shell` 的 `execute` 意图在 `dangerous_only` 档恒为 `Ask`，该前置由 P14 关闭（I38g §1.3） |
+| P14 → P10-c | `Adjudicate` 的门禁 1（内核强制隔离）由 P14 关闭；仍需独立 ADR，**不因 P14 完成而自动开工**（I18 design §3.17.6） |
+| P13 → P14 | `shell` 结果的 `compact` 信封只消费既有 `data`（退出码 / 输出规模），不新增 wire 字段 |
 
 **可并行**：P1 完成后，P2 与 P3 可并行（一个改 `assistant-tools`，一个改 `assistant-agent`，无文件交叠）。P5 在 P2 完成后可与 P3/P4 并行。
 
@@ -89,24 +96,25 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 |---|---|---|
 | 阶段与门禁 | 本文 | 总纲 |
 | 工具词汇层 / Tool trait / Registry / Tauri 桥接 | I18 spec（已归档） | 实施规格（Step 0-3、8） |
-| 工具架构决策（分层、权限、双入口、安全原则） | [I18 design](./I18-agent-tool-architecture-design.md) | ADR |
+| 工具架构决策（分层、权限、双入口、安全原则） | I18 design（已归档） | ADR |
 | 工具控制层 | I38a（已归档） | 实施规格 |
 | Agent Loop / 累积器 / tools 注入 | I38b（已归档） | 实施规格 |
 | Agent Loop 实施指南（未完成步骤细化） | I38b 指南（已归档） | 实施指南 |
 | OS 工具逐个实现 | I38c（已归档） | 实施规格 |
 | 前端五态 / 审批 UI / Agent 模式 | I38d（已归档） | 实施规格 |
-| MCP 外部工具 | [I38e](./I38e-mcp-tools-spec.md) | 实施规格 |
-| P7 任务级进度（C1–C6 勾选） | [I38e tasklist](./I38e-mcp-tools-tasklist.md) | 任务清单（唯一任务级进度） |
+| MCP 外部工具 | I38e（已归档） | 实施规格 |
+| P7 任务级进度（C1–C6 勾选） | I38e tasklist（已归档） | 任务清单（唯一任务级进度） |
 | P8.1 子代理（`spawn_agent` / 子作用域 / 取消树 / 结果回传；**可选，暂缓接入**） | [I38f](./I38f-agent-subagent-spec.md) | 可选实施规格 |
 | P10 AI 审批顾问（`EscalateOnly` / `RelaxOnly` / 审计与度量） | [I38g](./I38g-agent-approval-advisor-spec.md) | 实施规格 |
 | P12 工作区（会话绑定 / 目录簿 / 唯一解析点） | I38h（已归档） | 实施规格 |
+| P14 沙箱执行层与 `shell` 工具（后端抽象 / 链式探测 / 命令级审批键 / 隔离强度上报） | [I52](./I52-shell-sandbox-spec.md) | 实施规格 |
 | assistant 消息身份指示（头像 / 模式 / 模型、消息级 `mode_id`） | I43-assistant-identity-spec.md（已归档） | 实施规格 |
 | 模型能力事实（三态 + 来源 + 主体 key；内容/列表/推理三处止损） | I45-model-capability-facts-spec.md（已归档） | 实施规格 |
 | 模型能力事实任务级进度（C1–C3 勾选） | I45 tasklist（已归档） | 任务清单（唯一任务级进度） |
-| Agent 节点布局（坐标 / 容器 / 分组 / 密度 / 挂载） | [I46 design](./I46-agent-node-layout-design.md) · [I46 spec](./I46-agent-node-layout-spec.md) | 设计 ADR + 实施规格 |
-| 工具结果紧凑信封（三段信封 / 省略三态 / 落盘生命周期 / `compact` wire 字段 / 渲染形态选路） | [I46 紧凑消息格式设计](./I46-agent-compact-message-format-design.md) | 参考记录（被 I46 节点布局设计取代为权威源；信封、省略、落盘、预算与门禁 1–12 仍有效） |
-| P13 任务级进度（C1–C10 勾选） | [I46 compact tasklist](./I46-agent-compact-message-format-tasklist.md) | 任务清单（唯一任务级进度） |
-| I46 任务级进度（S1–S6 勾选） | [I46 tasklist](./I46-agent-node-layout-tasklist.md) | 任务清单（唯一任务级进度） |
+| Agent 节点布局（坐标 / 容器 / 分组 / 密度 / 挂载） | I46 design（已归档） · I46 spec（已归档） | 设计 ADR + 实施规格 |
+| 工具结果紧凑信封（三段信封 / 省略三态 / 落盘生命周期 / `compact` wire 字段 / 渲染形态选路） | I46 紧凑消息格式设计（已归档） | 参考记录（被 I46 节点布局设计取代为权威源；信封、省略、落盘、预算与门禁 1–12 仍有效） |
+| P13 任务级进度（C1–C10 勾选） | I46 compact tasklist（已归档） | 任务清单（唯一任务级进度） |
+| I46 任务级进度（S1–S6 勾选） | I46 tasklist（已归档） | 任务清单（唯一任务级进度） |
 | Orb 运行态与可见性（失焦门控 / 档位常驻 / 窗口属性 / 冷启动锚点） | I47-orb-runtime-state-spec.md（已归档） | 实施规格 |
 | Orb 运行态任务级进度（C1–C4 勾选） | I47 tasklist（已归档） | 任务清单（唯一任务级进度） |
 | P8.2+ 演进候选（Worker / Router / continuity / 多编码） | 本文 §2.1 | 候选清单 |

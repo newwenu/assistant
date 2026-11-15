@@ -5,7 +5,7 @@
 | 状态 | Draft（实施规格，不含进度记录） |
 | 日期 | 2026-11-13 |
 | 决策源 | [I46 Agent 节点布局设计（ADR）](./I46-agent-node-layout-design.md)（决策 D1–D13、事实 F1–F15、缺口 G1–G9、门禁 1–20 的唯一出处，本文不复述理由） |
-| 关联 | [I46 任务清单](./I46-agent-node-layout-tasklist.md)（任务级进度唯一来源，S1–S6 勾选）；[I38 阶段总纲](./I38-agent-roadmap.md)（阶段与门禁唯一入口）、[I36a 内核能力基线](./I36a-agent-kernel-baseline.md)（turn 事件不变式）、[I36b 内核一致性规格](./I36b-agent-kernel-conformance-spec.md)、[I46 紧凑消息格式设计](./I46-agent-compact-message-format-design.md)（参考记录，`compact` 信封定义仍在用） |
+| 关联 | [I46 任务清单](./I46-agent-node-layout-tasklist.md)（任务级进度唯一来源，S1–S6 勾选）；[I38 阶段总纲](../../store/I38-agent-roadmap.md)（阶段与门禁唯一入口）、[I36a 内核能力基线](../../store/I36a-agent-kernel-baseline.md)（turn 事件不变式）、[I36b 内核一致性规格](../../store/I36b-agent-kernel-conformance-spec.md)、[I46 紧凑消息格式设计](./I46-agent-compact-message-format-design.md)（参考记录，`compact` 信封定义仍在用） |
 | 影响范围 | 存储两列 + 会话计数器一列；`MessageDto` 两字段；两个既有事件载荷各加坐标；7 条写路径进事务；读取排序键与索引；前端渲染拆 chrome、新增分组投影与 turn 尾；分页游标由时间戳改 turn。**不改**分支链拓扑、工具结果信封、事件名与事件语义 |
 
 > 本文回答「怎么做、改哪些签名、怎么验收」。**为什么这样设计**只在 ADR 里，本文不重述；两文冲突时以 ADR 为准，本文只允许在「实现细节」上细化，不允许推翻决策。

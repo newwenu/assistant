@@ -2,7 +2,7 @@
 
 > **本文档职责**：ToolBox 双入口桥接的**权威源**——os_tool_exec 统一 Tauri command、os.ts 前端代理、新增 OS 工具标准 5 步流程、fs_link 完整设计。
 > **阶段与状态**见 [I38-agent-roadmap.md](../../store/I38-agent-roadmap.md)（P0/P1/P6）。
-> **架构决策记录**见 [I18-agent-tool-architecture-design.md](../../store/I18-agent-tool-architecture-design.md)（§3.6 双入口分流决策）。
+> **架构决策记录**见 [I18-agent-tool-architecture-design.md](./I18-agent-tool-architecture-design.md)（§3.6 双入口分流决策）。
 > **框架规格**见 [I18-agent-tool-architecture-spec.md](./I18-agent-tool-architecture-spec.md) Step 8；**工具能力**见 [I38c](./I38c-os-tools-spec.md)。
 > **Shell 安全架构**见 [OSCALLDESIGN.md](../../designed/OSCALLDESIGN.md)。
 >

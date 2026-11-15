@@ -3,7 +3,7 @@
 > **状态（2026-11-06）**：本文的 Shell 执行层设计**暂不实施**——`shell` 工具已改为暂不提供，理由与恢复条件见 I38c §13（已归档）。本文保留为评估留档，不构成实施要求。
 
 > **本文档职责**：Shell 执行层安全架构的**权威源**——信任模型、洋葱模型、层间契约、委托约束。
-> **架构决策记录**见 [I18-agent-tool-architecture-design.md](../store/I18-agent-tool-architecture-design.md)（§3.7 洋葱模型决策、§3.7.1 守卫分层归属、§3.8 MCP 隔离边界）。
+> **架构决策记录**见 I18-agent-tool-architecture-design.md（已归档）（§3.7 洋葱模型决策、§3.7.1 守卫分层归属、§3.8 MCP 隔离边界）。
 > **实施规格**见 I38c §13（已归档）（`shell` 暂不提供）、I38a（已归档）（Policy / Gateway）。
 > **ToolBox 桥接**见 I18b-tool-unified-bridge-spec（已归档）。
 > **Tool Call 状态追踪**见 I38d（已归档）。
@@ -218,7 +218,7 @@ ApprovalGate 通过审批通道与用户交互，其架构属性如下：
 | 空键不命中 | 无法生成指纹（如命令解析失败）时直接走审批，不允许命中缓存 |
 | 审计记录 | 所有审批决策（含 Allow 自动放行）写入 AuditStore，只追加不可修改 |
 
-> GrantStore / AuditStore 接口规格与 `ApprovalKey` 归一规则见 I38a（已归档）§2.6 / §2.9；设计理由见 [I18-design](../store/I18-agent-tool-architecture-design.md) §3.14。
+> GrantStore / AuditStore 接口规格与 `ApprovalKey` 归一规则见 I38a（已归档）§2.6 / §2.9；设计理由见 I18 design（已归档） §3.14。
 
 ### 4.2 超时语义
 

@@ -1,7 +1,7 @@
 # I50 — 运行时审计 任务清单
 
 > 规格：[I50-runtime-audit-spec.md](./I50-runtime-audit-spec.md)
-> 事实基线：[audit-coverage-audit-1.md](./audit-coverage-audit-1.md)（后端缺口 G1–G10 / 观察项 O1–O7；`G11`–`G14` 为本规格编写时新增）、[audit-coverage-audit-2.md](./audit-coverage-audit-2.md)（前端缺口 F1–F8 / 观察项 OF1–OF5）
+> 事实基线：[audit-coverage-audit-1.md](./audit-coverage-audit-1.md)（后端缺口 G1–G10 / 观察项 O1–O7；`G11`–`G14` 为本规格编写时新增）、[audit-coverage-audit-2.md](../../store/audit-coverage-audit-2.md)（前端缺口 F1–F8 / 观察项 OF1–OF5）
 > 前置：无。主体为「补生产调用点 + 收敛口径 + 加约束测试」，契约变更有三处：`AuditLogEntry` 追加 `entryId`、新增 `PermissionAuditEntryDto`、`vault_lock` 新增 `LockReasonDto`（前两处落主契约、第三处落 vault 契约，均需 `npm run contract:gen`）。
 
 十四个批次对应规格章节：V1 vault 事件补点（§2.3）→ V2 补录正确性（§2.5）→ V3 查询面与 detail 收敛（§2.4 / §2.6）→ V4 实现整齐性收敛（§2.7）→ T1 outcome 词表（§3.1）→ T2 决策点覆盖（§3.2 / §3.3）→ T3 intent 声明（§3.4）→ T4 ToolBox 直调（§3.5）→ T5 保留与索引（§5）→ P1 锁定归因（§2.3 F5）→ P2 授权管理审计（§3.6 F3）→ P3 vault 审计面板（§2.6 F1）→ P4 权限审计查询命令（§3.7 F2）→ P5 词表映射与前端面板（§6 F7 / F8）。
