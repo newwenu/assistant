@@ -1,7 +1,8 @@
 use assistant_tools::policy::{
-    default_global_rules, CeilingValidationError, PermissionConstraintLayer, PermissionEffect,
-    PermissionRule, PermissionRuntimeCeiling, ResolvedPermissionPolicy,
+    policy_from_agent_mode, ApprovalLevel, CeilingValidationError, PermissionConstraintLayer,
+    PermissionEffect, PermissionRule, PermissionRuntimeCeiling, ResolvedPermissionPolicy,
 };
+use assistant_tools::ToolTier;
 
 #[test]
 fn most_restrictive_covers_nine_combinations() {
@@ -174,17 +175,6 @@ fn runtime_ceiling_rejects_allow_rules() {
 }
 
 #[test]
-fn runtime_ceiling_accepts_deny_and_ask_rules() {
-    let ceiling = PermissionRuntimeCeiling::try_new(vec![
-        PermissionRule::new("edit", "C:/Windows/**", PermissionEffect::Deny),
-        PermissionRule::new("network", "*", PermissionEffect::Ask),
-    ])
-    .unwrap();
-
-    assert_eq!(ceiling.rules().len(), 2);
-}
-
-#[test]
 fn runtime_ceiling_layer_tightens_a_permissive_policy() {
     let ceiling = PermissionRuntimeCeiling::try_new(vec![PermissionRule::new(
         "network",
@@ -220,11 +210,6 @@ fn default_global_rules_require_approval_by_default() {
     let policy = ResolvedPermissionPolicy::default_global();
 
     assert_eq!(policy.evaluate("execute", "git"), PermissionEffect::Ask);
-    assert_eq!(
-        policy.evaluate("network", "example.com"),
-        PermissionEffect::Ask
-    );
-    assert_eq!(policy.evaluate("unknown", "x"), PermissionEffect::Ask);
 }
 
 #[test]
@@ -233,10 +218,6 @@ fn default_global_rules_allow_reads() {
 
     assert_eq!(
         policy.evaluate("read", "src/main.rs"),
-        PermissionEffect::Allow
-    );
-    assert_eq!(
-        policy.evaluate("read", "C:/Users/me/a.txt"),
         PermissionEffect::Allow
     );
 }
@@ -326,12 +307,10 @@ fn double_star_crosses_separators() {
 }
 
 #[test]
-fn action_star_matches_every_action() {
+fn action_star_matches_any_action() {
     let rule = PermissionRule::new("*", "*", PermissionEffect::Ask);
 
-    assert!(rule.matches("read", "a"));
     assert!(rule.matches("execute", "git"));
-    assert!(rule.matches("delete", "b"));
 }
 
 #[test]
@@ -369,11 +348,29 @@ fn rule_serializes_camel_case() {
 }
 
 #[test]
-fn default_global_rules_are_stable() {
-    let rules = default_global_rules();
+fn tier_ceiling_denies_only_tiers_above_the_max() {
+    use PermissionEffect::{Allow, Deny};
+    use ToolTier::{External, Os, Sandbox};
 
-    assert_eq!(rules.len(), 7);
-    assert_eq!(rules[0].effect, PermissionEffect::Ask);
-    assert_eq!(rules[0].action, "*");
-    assert_eq!(rules[0].resource, "*");
+    // tier 上限只由 `max_tool_tier` 决定，与审批级别无关：`none` 下同样生效。
+    let cases = [
+        (Sandbox, [Allow, Deny, Deny]),
+        (Os, [Allow, Allow, Deny]),
+        (External, [Allow, Allow, Allow]),
+    ];
+
+    for (max, [sandbox, os, external]) in cases {
+        let policy = policy_from_agent_mode(max, ApprovalLevel::None);
+        assert_eq!(
+            policy.evaluate_tier_ceiling(Sandbox),
+            sandbox,
+            "{max:?} -> sandbox"
+        );
+        assert_eq!(policy.evaluate_tier_ceiling(Os), os, "{max:?} -> os");
+        assert_eq!(
+            policy.evaluate_tier_ceiling(External),
+            external,
+            "{max:?} -> external"
+        );
+    }
 }

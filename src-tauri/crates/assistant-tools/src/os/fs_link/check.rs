@@ -65,6 +65,7 @@ fn is_hardlink(path: &Path, metadata: &std::fs::Metadata) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
+        let _ = path;
         metadata.nlink() > 1
     }
     #[cfg(windows)]

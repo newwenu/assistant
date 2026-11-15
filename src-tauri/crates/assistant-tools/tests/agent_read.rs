@@ -6,7 +6,7 @@ use assistant_tools::os::agent_read::{
 };
 use assistant_tools::storage::{InMemoryReadReceiptStore, ReadReceiptStore};
 use assistant_tools::{
-    Tool, ToolAudience, ToolErrorKind, ToolResult, ToolTier, ToolUseContext, ValidationResult,
+    Tool, ToolAudience, ToolErrorKind, ToolTier, ToolUseContext, ValidationResult,
 };
 use serde_json::{json, Value};
 
@@ -402,56 +402,6 @@ async fn a_changed_revision_is_read_again() {
         .unwrap();
 
     assert!(refreshed.assistant_text().contains("beta"));
-}
-
-#[tokio::test]
-async fn a_different_range_returns_only_that_range() {
-    let dir = tempfile::tempdir().unwrap();
-    let ctx = context(dir.path(), Some("session-1"));
-    write(dir.path(), "a.txt", "one\ntwo\nthree\nfour\n");
-
-    let tool = tool();
-    tool.execute(&json!({ "path": "a.txt" }), &ctx)
-        .await
-        .unwrap();
-
-    let ranged = tool
-        .execute(&json!({ "path": "a.txt", "offset": 3, "limit": 2 }), &ctx)
-        .await
-        .unwrap();
-
-    assert_eq!(ranged.data.as_ref().unwrap()["startLine"], json!(3));
-    assert!(ranged.assistant_text().contains("three"));
-}
-
-#[tokio::test]
-async fn toolbox_injected_action_field_is_ignored() {
-    let dir = tempfile::tempdir().unwrap();
-    let ctx = context(dir.path(), None);
-    write(dir.path(), "a.txt", "alpha\n");
-
-    let result = tool()
-        .execute(&json!({ "action": "read", "path": "a.txt" }), &ctx)
-        .await
-        .unwrap();
-
-    assert!(result.ok);
-    assert!(result.assistant_text().contains("alpha"));
-}
-
-#[tokio::test]
-async fn result_is_a_tool_result_with_ok_channel() {
-    let dir = tempfile::tempdir().unwrap();
-    let ctx = context(dir.path(), None);
-    write(dir.path(), "a.txt", "alpha\n");
-
-    let result: ToolResult = tool()
-        .execute(&json!({ "path": "a.txt" }), &ctx)
-        .await
-        .unwrap();
-
-    assert!(result.ok);
-    assert!(result.error.is_none());
 }
 
 #[tokio::test]

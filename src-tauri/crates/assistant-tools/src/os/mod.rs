@@ -14,6 +14,9 @@ pub mod path;
 pub mod process_output;
 pub mod text_encoding;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 use std::sync::Arc;
 
 use crate::os::agent_ask_user::QuestionTimeoutSource;

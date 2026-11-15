@@ -4,6 +4,10 @@ use assistant_tools::os::agent_list::{AgentListTool, MAX_DEPTH, MAX_ENTRIES_PER_
 use assistant_tools::{Tool, ToolAudience, ToolErrorKind, ToolTier, ToolUseContext};
 use serde_json::json;
 
+mod support;
+
+use support::link::dir_link;
+
 fn context(root: &Path) -> ToolUseContext {
     ToolUseContext {
         workspace_root: Some(root.display().to_string()),
@@ -242,7 +246,7 @@ async fn symlinked_directories_are_listed_but_not_followed() {
     std::fs::create_dir(&real).unwrap();
     touch(&real.join("inner.txt"));
 
-    if !create_dir_link(&real, &dir.path().join("link")) {
+    if !dir_link(&real, &dir.path().join("link")) {
         eprintln!("skipping: this environment cannot create directory symlinks");
         return;
     }
@@ -265,29 +269,4 @@ async fn symlinked_directories_are_listed_but_not_followed() {
     assert!(entries
         .iter()
         .any(|entry| entry["name"] == json!("link") && entry["isSymlink"] == json!(true)));
-}
-
-#[tokio::test]
-async fn toolbox_injected_action_field_is_ignored() {
-    let dir = tempfile::tempdir().unwrap();
-    let ctx = context(dir.path());
-    touch(&dir.path().join("a.txt"));
-
-    let result = tool()
-        .execute(&json!({ "action": "ls", "path": "." }), &ctx)
-        .await
-        .unwrap();
-
-    assert!(result.ok);
-    assert_eq!(result.assistant_text(), "a.txt");
-}
-
-#[cfg(windows)]
-fn create_dir_link(target: &Path, link: &Path) -> bool {
-    std::os::windows::fs::symlink_dir(target, link).is_ok()
-}
-
-#[cfg(unix)]
-fn create_dir_link(target: &Path, link: &Path) -> bool {
-    std::os::unix::fs::symlink(target, link).is_ok()
 }

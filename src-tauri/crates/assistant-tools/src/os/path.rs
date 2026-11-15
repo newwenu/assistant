@@ -313,29 +313,32 @@ pub(crate) fn resolution_base(context: &ToolUseContext) -> Option<&str> {
         .or(context.workspace_root.as_deref())
 }
 
+/// 盘符相对路径（`C:foo`）在 Windows 上会按进程 cwd 补全，非 Windows 无此形态。
+///
+/// 按平台定义两份而不是在一个函数体内套 `cfg` 块：后者必须用 `let _ = (path, original)`
+/// 消掉本平台用不到参数的警告，等于在签名上隐瞒「此处不参与」。
+#[cfg(windows)]
 fn reject_drive_relative(path: &Path, original: &str) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let mut has_prefix = false;
-        let mut has_root = false;
-        for component in path.components() {
-            match component {
-                Component::Prefix(_) => has_prefix = true,
-                Component::RootDir => has_root = true,
-                _ => {}
-            }
-        }
-        if has_prefix && !has_root {
-            return Err(format!(
-                "relative path with drive prefix is not supported: '{}'",
-                original
-            ));
+    let mut has_prefix = false;
+    let mut has_root = false;
+    for component in path.components() {
+        match component {
+            Component::Prefix(_) => has_prefix = true,
+            Component::RootDir => has_root = true,
+            _ => {}
         }
     }
-    #[cfg(not(windows))]
-    {
-        let _ = (path, original);
+    if has_prefix && !has_root {
+        return Err(format!(
+            "relative path with drive prefix is not supported: '{}'",
+            original
+        ));
     }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn reject_drive_relative(_path: &Path, _original: &str) -> Result<(), String> {
     Ok(())
 }
 
@@ -481,7 +484,7 @@ fn reject_credential_dirs(path: &Path) -> Result<(), String> {
         .map(|component| component.as_os_str())
         .collect();
 
-    for (index, component) in components.iter().enumerate() {
+    for component in &components {
         let name = component.to_string_lossy();
         if CREDENTIAL_DIR_COMPONENTS
             .iter()
@@ -493,8 +496,12 @@ fn reject_credential_dirs(path: &Path) -> Result<(), String> {
                 name
             ));
         }
+    }
 
-        #[cfg(windows)]
+    // `Microsoft\Protect\...` 形态只在 Windows 上成立，且要读相邻组件，故单独遍历。
+    #[cfg(windows)]
+    for (index, component) in components.iter().enumerate() {
+        let name = component.to_string_lossy();
         if name.eq_ignore_ascii_case("Microsoft") {
             if let Some(next) = components.get(index + 1) {
                 let next_name = next.to_string_lossy();
@@ -530,31 +537,6 @@ mod tests {
     /// ToolBox 形态：只给解析基准，没有权限边界（I18b §2.2）。
     fn toolbox_context(base: &Path) -> ToolUseContext {
         ToolUseContext::for_toolbox(Some(base.display().to_string()))
-    }
-
-    fn create_dir_link(link: &Path, target: &Path) -> bool {
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(target, link).is_ok()
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            std::process::Command::new("cmd")
-                .args(["/c", "mklink", "/J"])
-                .arg(link)
-                .arg(target)
-                .creation_flags(CREATE_NO_WINDOW)
-                .output()
-                .map(|output| output.status.success())
-                .unwrap_or(false)
-        }
-        #[cfg(not(any(unix, windows)))]
-        {
-            let _ = (link, target);
-            false
-        }
     }
 
     fn protected_root_for_test() -> Option<PathBuf> {
@@ -917,7 +899,7 @@ mod tests {
         let real = dir.path().join("real");
         std::fs::create_dir(&real).expect("create real dir");
         let link = dir.path().join("link");
-        if !create_dir_link(&link, &real) {
+        if !crate::os::test_support::link::dir_link(&real, &link) {
             return;
         }
         let context = context_with_root(&link);

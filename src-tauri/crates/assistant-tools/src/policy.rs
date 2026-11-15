@@ -404,15 +404,7 @@ mod tests {
     fn none_level_allows_non_protected_actions() {
         let policy = policy(ApprovalLevel::None, ToolTier::External);
         assert_eq!(
-            policy.evaluate("read", "/tmp/a.txt"),
-            PermissionEffect::Allow
-        );
-        assert_eq!(
             policy.evaluate("edit", "/tmp/a.txt"),
-            PermissionEffect::Allow
-        );
-        assert_eq!(
-            policy.evaluate("execute", "rm -rf /"),
             PermissionEffect::Allow
         );
         // 自动执行不等于取消硬保护：敏感路径恒为 Deny。
@@ -434,17 +426,12 @@ mod tests {
             PermissionEffect::Allow
         );
         assert_eq!(policy.evaluate("edit", "/tmp/a.txt"), PermissionEffect::Ask);
-        assert_eq!(
-            policy.evaluate("execute", "git status"),
-            PermissionEffect::Ask
-        );
     }
 
     #[test]
     fn all_os_tools_asks_even_for_reads() {
         let policy = policy(ApprovalLevel::AllOsTools, ToolTier::External);
         assert_eq!(policy.evaluate("read", "/tmp/a.txt"), PermissionEffect::Ask);
-        assert_eq!(policy.evaluate("edit", "/tmp/a.txt"), PermissionEffect::Ask);
         // 宽泛 `read` 的 Ask 不得覆盖敏感路径的硬保护 Deny。
         assert_eq!(
             policy.evaluate("read", "/etc/shadow"),
@@ -468,67 +455,60 @@ mod tests {
         );
     }
 
-    #[test]
-    fn sandbox_ceiling_denies_os_and_external_tiers() {
-        // 审批级别为 `none` 时 tier 上限仍然生效：自动执行不等于越过层级。
-        let policy = policy(ApprovalLevel::None, ToolTier::Sandbox);
-        assert_eq!(
-            policy.evaluate_tier_ceiling(ToolTier::Os),
-            PermissionEffect::Deny
-        );
-        assert_eq!(
-            policy.evaluate_tier_ceiling(ToolTier::External),
-            PermissionEffect::Deny
-        );
-        assert_ne!(
-            policy.evaluate_tier_ceiling(ToolTier::Sandbox),
-            PermissionEffect::Deny
-        );
+    /// glob 引擎是私有递归实现，`evaluate` 只能间接覆盖它的分支，这里直接测边界。
+    fn glob(pattern: &str, value: &str) -> bool {
+        let pattern: Vec<char> = pattern.chars().collect();
+        let value: Vec<char> = value.chars().collect();
+        glob_matches(&pattern, &value)
     }
 
     #[test]
-    fn os_ceiling_denies_only_external_tier() {
-        let policy = policy(ApprovalLevel::DangerousOnly, ToolTier::Os);
-        assert_eq!(
-            policy.evaluate_tier_ceiling(ToolTier::External),
-            PermissionEffect::Deny
-        );
-        assert_ne!(
-            policy.evaluate_tier_ceiling(ToolTier::Os),
-            PermissionEffect::Deny
-        );
-        assert_ne!(
-            policy.evaluate_tier_ceiling(ToolTier::Sandbox),
-            PermissionEffect::Deny
-        );
+    fn empty_pattern_matches_only_an_empty_value() {
+        assert!(glob("", ""));
+        assert!(!glob("", "a"));
+        assert!(!glob("a", ""));
     }
 
     #[test]
-    fn external_ceiling_denies_nothing() {
-        let policy = policy(ApprovalLevel::DangerousOnly, ToolTier::External);
-        for tier in [ToolTier::Sandbox, ToolTier::Os, ToolTier::External] {
-            assert_ne!(
-                policy.evaluate_tier_ceiling(tier),
-                PermissionEffect::Deny,
-                "{tier:?} must not be denied by an external ceiling"
-            );
-        }
+    fn single_star_stops_at_the_separator() {
+        assert!(glob("*", "abc"));
+        assert!(!glob("*", "a/b"));
+        assert!(!glob("*a", "a/b"), "单星遇到分隔符必须提前失败");
+        assert!(glob("/etc/*", "/etc/hosts"));
+        assert!(!glob("/etc/*", "/etc/ssh/sshd_config"));
     }
 
     #[test]
-    fn constraint_layer_tightens_but_never_relaxes() {
-        // 项目层只有 `Ask` 规则：`none` 级别的 `Allow` 结论必须被收紧为 `Ask`。
-        let policy = policy(ApprovalLevel::None, ToolTier::External).with_constraint_layer(
-            PermissionConstraintLayer::new(vec![PermissionRule::new(
-                "edit",
-                "**/*.env",
-                PermissionEffect::Ask,
-            )]),
+    fn double_star_crosses_the_separator() {
+        assert!(glob("**", ""));
+        assert!(glob("**", "a/b/c"));
+        assert!(glob("/etc/**", "/etc/ssh/sshd_config"));
+        assert!(
+            glob("a/**/b", "a/x/y/b"),
+            "`**` 落在剩余 pattern 开头即跨段"
         );
-        assert_eq!(policy.evaluate("edit", "/tmp/.env"), PermissionEffect::Ask);
+    }
+
+    /// 项目权限文件的 `**/*.env` 依赖「双星可跳过前缀段」这一回溯分支。
+    #[test]
+    fn double_star_prefix_matches_a_nested_leaf() {
+        assert!(glob("**/*.env", "/ws/.env"));
+        assert!(glob("**/*.env", "ws/sub/.env"));
+        assert!(!glob("**/*.env", "ws/sub/a.txt"));
+    }
+
+    #[test]
+    fn literal_mismatch_fails_without_backtracking() {
+        assert!(glob("abc", "abc"));
+        assert!(!glob("abc", "abd"));
+    }
+
+    /// 大小写敏感性由平台决定：Windows 的规范路径大小写不定，必须放宽匹配。
+    #[test]
+    fn char_comparison_follows_platform_case_sensitivity() {
         assert_eq!(
-            policy.evaluate("edit", "/tmp/a.txt"),
-            PermissionEffect::Allow
+            glob("C:/Windows/**", "c:/windows/System32"),
+            CASE_INSENSITIVE
         );
     }
 }

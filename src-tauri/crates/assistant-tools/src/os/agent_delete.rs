@@ -4,6 +4,7 @@ use std::io::ErrorKind;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(any(windows, target_os = "linux"))]
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::context::ToolUseContext;
@@ -634,6 +635,7 @@ fn move_to_trash(
         ));
     }
 
+    #[cfg(any(windows, target_os = "linux"))]
     let deleted_after = trash_guard_time();
     match std::panic::catch_unwind(AssertUnwindSafe(|| {
         log::debug!("moving '{}' to the system recycle bin", target.display());
@@ -673,6 +675,7 @@ fn move_to_trash(
 ///
 /// `SystemTime` 的减法在边界上会 panic，因此用 `checked_sub`；取不到下界时返回 `None`，
 /// 校验退化为「只按路径匹配」，不得因此 panic。
+#[cfg(any(windows, target_os = "linux"))]
 fn trash_guard_time() -> Option<i64> {
     SystemTime::now()
         .checked_sub(Duration::from_secs(2))
@@ -908,7 +911,7 @@ mod tests {
         std::fs::write(target.join("keep.txt"), "keep\n").unwrap();
         let link = dir.path().join("link");
 
-        if !try_link_dir(&target, &link) {
+        if !crate::os::test_support::link::dir_link(&target, &link) {
             eprintln!("directory links unavailable on this host; skipping");
             return;
         }
@@ -956,28 +959,5 @@ mod tests {
         );
         assert_eq!(data["bytesDeleted"].as_u64().unwrap(), scan.bytes);
         assert_eq!(data["truncated"].as_bool().unwrap(), scan.truncated);
-    }
-
-    #[cfg(unix)]
-    fn try_link_dir(target: &Path, link: &Path) -> bool {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-
-    #[cfg(windows)]
-    fn try_link_dir(target: &Path, link: &Path) -> bool {
-        if std::os::windows::fs::symlink_dir(target, link).is_ok() {
-            return true;
-        }
-        std::process::Command::new("cmd")
-            .args([
-                "/c",
-                "mklink",
-                "/J",
-                &link.display().to_string(),
-                &target.display().to_string(),
-            ])
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
     }
 }

@@ -11,28 +11,28 @@ pub(super) fn create_link(source: &Path, target: &Path, kind: LinkKind) -> Resul
     }
 }
 
+/// Unix 与 Windows 的目录 / 文件判定方式不同（Windows 需要先看目标是目录才能选
+/// `symlink_dir`），因此按平台各定义一份，而不是在一个函数体内套 `cfg` 块——后者
+/// 必须在「不支持」分支用 `let _ = (source, target, is_dir)` 消掉未使用参数的警告。
+#[cfg(unix)]
 fn create_symlink(source: &Path, target: &Path) -> Result<(), String> {
-    let is_dir = target.is_dir();
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, source)
-            .map_err(|e| format!("symlink create failed: {}", e))
+    std::os::unix::fs::symlink(target, source).map_err(|e| format!("symlink create failed: {}", e))
+}
+
+#[cfg(windows)]
+fn create_symlink(source: &Path, target: &Path) -> Result<(), String> {
+    if target.is_dir() {
+        std::os::windows::fs::symlink_dir(target, source)
+            .map_err(|e| format!("symlink_dir create failed: {} (may require Developer Mode or SeCreateSymbolicLinkPrivilege)", e))
+    } else {
+        std::os::windows::fs::symlink_file(target, source)
+            .map_err(|e| format!("symlink_file create failed: {} (may require Developer Mode or SeCreateSymbolicLinkPrivilege)", e))
     }
-    #[cfg(windows)]
-    {
-        if is_dir {
-            std::os::windows::fs::symlink_dir(target, source)
-                .map_err(|e| format!("symlink_dir create failed: {} (may require Developer Mode or SeCreateSymbolicLinkPrivilege)", e))
-        } else {
-            std::os::windows::fs::symlink_file(target, source)
-                .map_err(|e| format!("symlink_file create failed: {} (may require Developer Mode or SeCreateSymbolicLinkPrivilege)", e))
-        }
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = (source, target, is_dir);
-        Err("symlink not supported on this platform".to_string())
-    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn create_symlink(_source: &Path, _target: &Path) -> Result<(), String> {
+    Err("symlink not supported on this platform".to_string())
 }
 
 fn create_hardlink(source: &Path, target: &Path) -> Result<(), String> {

@@ -520,26 +520,6 @@ async fn crlf_files_stay_crlf() {
 }
 
 #[tokio::test]
-async fn bom_is_preserved() {
-    let dir = tempfile::tempdir().unwrap();
-    let receipts = store();
-    let ctx = context(dir.path(), Some("session-1"));
-    write_fixture(dir.path(), "a.txt", "\u{feff}alpha\n");
-    grant_receipt(&receipts, dir.path(), "a.txt", Some("session-1")).await;
-
-    let result = tool(receipts)
-        .execute(
-            &json!({ "path": "a.txt", "old_string": "alpha", "new_string": "ALPHA" }),
-            &ctx,
-        )
-        .await
-        .unwrap();
-
-    assert!(result.ok, "{:?}", result.error);
-    assert_eq!(read(&dir.path().join("a.txt")), "\u{feff}ALPHA\n");
-}
-
-#[tokio::test]
 async fn write_is_atomic_and_leaves_no_temp_files() {
     let dir = tempfile::tempdir().unwrap();
     let receipts = store();

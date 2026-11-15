@@ -18,6 +18,10 @@ use assistant_tools::{
 use serde_json::{json, Value};
 use tempfile::tempdir;
 
+mod support;
+
+use support::link::file_link;
+
 fn ctx() -> ToolUseContext {
     ToolUseContext::default()
 }
@@ -63,16 +67,6 @@ fn approval_request(timeout: Duration) -> ApprovalRequest {
     }
 }
 
-#[cfg(unix)]
-fn try_symlink_file(target: &Path, link: &Path) -> bool {
-    std::os::unix::fs::symlink(target, link).is_ok()
-}
-
-#[cfg(windows)]
-fn try_symlink_file(target: &Path, link: &Path) -> bool {
-    std::os::windows::fs::symlink_file(target, link).is_ok()
-}
-
 #[test]
 fn path_key_normalizes_dotdot() {
     let dir = tempdir().unwrap();
@@ -99,7 +93,7 @@ fn path_key_resolves_symlink_target() {
     std::fs::write(&target, b"x").unwrap();
     let link = dir.path().join("link.txt");
 
-    if !try_symlink_file(&target, &link) {
+    if !file_link(&target, &link) {
         eprintln!("symlink unavailable on this host; skipping");
         return;
     }
@@ -148,7 +142,7 @@ fn path_key_rejects_target_with_unpaired_surrogate() {
     }
 
     let link = dir.path().join("link.txt");
-    if !try_symlink_file(&target, &link) {
+    if !file_link(&target, &link) {
         eprintln!("symlink unavailable on this host; skipping");
         return;
     }
@@ -174,7 +168,7 @@ fn path_key_rejects_target_with_invalid_utf8() {
     }
 
     let link = dir.path().join("link.txt");
-    if !try_symlink_file(&target, &link) {
+    if !file_link(&target, &link) {
         eprintln!("symlink unavailable on this host; skipping");
         return;
     }

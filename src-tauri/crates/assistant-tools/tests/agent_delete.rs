@@ -11,6 +11,10 @@ use assistant_tools::{
 };
 use serde_json::json;
 
+mod support;
+
+use support::link::{dir_link, file_link};
+
 fn context(root: &Path, session: Option<&str>) -> ToolUseContext {
     ToolUseContext {
         workspace_root: Some(root.display().to_string()),
@@ -235,7 +239,6 @@ fn validate_input_rejects_the_home_directory_itself() {
         .contains("home directory"));
 }
 
-#[cfg(any(windows, target_os = "linux"))]
 #[tokio::test]
 async fn a_file_goes_to_the_recycle_bin_by_default() {
     let dir = tempfile::tempdir().unwrap();
@@ -254,7 +257,7 @@ async fn a_file_goes_to_the_recycle_bin_by_default() {
 
     assert!(result.ok, "{:?}", result.error);
     assert!(!target.exists(), "the target must leave the workspace");
-    let trashed = trash_items_under(dir.path());
+    let trashed = trash_items_under(dir.path()).expect("listing works once the probe succeeded");
     assert_eq!(
         trashed.len(),
         1,
@@ -312,7 +315,6 @@ async fn a_file_is_permanently_deleted_on_request() {
     assert_no_trash_entry_for(&target);
 }
 
-#[cfg(any(windows, target_os = "linux"))]
 #[tokio::test]
 async fn a_directory_goes_to_the_recycle_bin_recursively() {
     let dir = tempfile::tempdir().unwrap();
@@ -333,7 +335,7 @@ async fn a_directory_goes_to_the_recycle_bin_recursively() {
 
     assert!(result.ok, "{:?}", result.error);
     assert!(!tree.exists());
-    let trashed = trash_items_under(dir.path());
+    let trashed = trash_items_under(dir.path()).expect("listing works once the probe succeeded");
     assert_eq!(trashed.len(), 1, "the whole tree must land in the bin");
     purge_trash_under(dir.path());
 
@@ -410,7 +412,6 @@ async fn a_non_empty_directory_needs_recursive_in_both_modes() {
     }
 }
 
-#[cfg(any(windows, target_os = "linux"))]
 #[tokio::test]
 async fn an_empty_directory_goes_to_the_recycle_bin_without_recursive() {
     let dir = tempfile::tempdir().unwrap();
@@ -476,7 +477,7 @@ async fn deleting_a_file_link_keeps_its_target() {
     let target = dir.path().join("target.txt");
     let link = dir.path().join("link.txt");
     std::fs::write(&target, "alpha\n").unwrap();
-    if !try_symlink_file(&target, &link) {
+    if !file_link(&target, &link) {
         eprintln!("file symlinks unavailable on this host; skipping");
         return;
     }
@@ -513,7 +514,7 @@ async fn deleting_a_directory_link_keeps_its_contents() {
     for recursive in [false, true] {
         let name = format!("link-{}", recursive);
         let link = dir.path().join(&name);
-        if !try_link_dir(&target, &link) {
+        if !dir_link(&target, &link) {
             eprintln!("directory links unavailable on this host; skipping");
             return;
         }
@@ -540,7 +541,7 @@ async fn deleting_a_dangling_link_succeeds() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), None);
     let link = dir.path().join("dangling.txt");
-    if !try_symlink_file(&dir.path().join("missing.txt"), &link) {
+    if !file_link(&dir.path().join("missing.txt"), &link) {
         eprintln!("file symlinks unavailable on this host; skipping");
         return;
     }
@@ -723,39 +724,6 @@ async fn deleting_a_directory_invalidates_receipts_of_its_subtree() {
     );
 }
 
-#[cfg(unix)]
-fn try_symlink_file(target: &Path, link: &Path) -> bool {
-    std::os::unix::fs::symlink(target, link).is_ok()
-}
-
-#[cfg(windows)]
-fn try_symlink_file(target: &Path, link: &Path) -> bool {
-    std::os::windows::fs::symlink_file(target, link).is_ok()
-}
-
-#[cfg(unix)]
-fn try_link_dir(target: &Path, link: &Path) -> bool {
-    std::os::unix::fs::symlink(target, link).is_ok()
-}
-
-#[cfg(windows)]
-fn try_link_dir(target: &Path, link: &Path) -> bool {
-    if std::os::windows::fs::symlink_dir(target, link).is_ok() {
-        return true;
-    }
-    std::process::Command::new("cmd")
-        .args([
-            "/c",
-            "mklink",
-            "/J",
-            &link.display().to_string(),
-            &target.display().to_string(),
-        ])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
 #[cfg(windows)]
 fn set_readonly(path: &Path, readonly: bool) -> bool {
     let flag = if readonly { "+R" } else { "-R" };
@@ -767,29 +735,42 @@ fn set_readonly(path: &Path, readonly: bool) -> bool {
 }
 
 /// 回收站里的条目（只统计落在测试目录内的，避免被本机其它文件干扰）。
+///
+/// 返回 `None` 表示本机没有列举能力（`trash` 的 `os_limited` 只覆盖 Windows /
+/// freedesktop，macOS 缺失），由调用方显式跳过——空 `Vec` 会被误读成「回收站里没有条目」。
 #[cfg(any(windows, target_os = "linux"))]
-fn trash_items_under(dir: &Path) -> Vec<trash::TrashItem> {
-    let Ok(items) = trash::os_limited::list() else {
-        return Vec::new();
-    };
-    let Ok(root) = assistant_tools::os::path::canonicalize_lenient(dir) else {
-        return Vec::new();
-    };
-    items
-        .into_iter()
-        .filter(|item| assistant_tools::os::path::is_component_prefix(&item.original_path(), &root))
-        .collect()
+fn trash_items_under(dir: &Path) -> Option<Vec<trash::TrashItem>> {
+    let items = trash::os_limited::list().ok()?;
+    let root = assistant_tools::os::path::canonicalize_lenient(dir).ok()?;
+    Some(
+        items
+            .into_iter()
+            .filter(|item| {
+                assistant_tools::os::path::is_component_prefix(&item.original_path(), &root)
+            })
+            .collect(),
+    )
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn trash_items_under(_dir: &Path) -> Option<Vec<trash::TrashItem>> {
+    None
 }
 
 /// 清掉测试留在回收站里的条目，避免污染开发机与后续用例。
 #[cfg(any(windows, target_os = "linux"))]
 fn purge_trash_under(dir: &Path) {
-    let items = trash_items_under(dir);
+    let Some(items) = trash_items_under(dir) else {
+        return;
+    };
     assert!(
         trash::os_limited::purge_all(&items).is_ok(),
         "cleanup must leave no test leftovers in the recycle bin"
     );
 }
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn purge_trash_under(_dir: &Path) {}
 
 /// 探测该卷是否真的能用回收站：写探针 → 移入回收站 → 清掉探针。
 ///
@@ -806,7 +787,7 @@ fn recycle_bin_available(dir: &Path) -> bool {
         let _ = std::fs::remove_file(&probe);
         return false;
     }
-    let Ok(items) = trash::os_limited::list() else {
+    let Some(items) = trash_items_under(dir) else {
         return false;
     };
     let probes: Vec<_> = items
@@ -816,12 +797,23 @@ fn recycle_bin_available(dir: &Path) -> bool {
     trash::os_limited::purge_all(&probes).is_ok()
 }
 
+/// macOS 能移入回收站，但 `trash` 不提供列举 / 清理，探针会永久留在用户的废纸篓里。
+/// 因此不做探测，直接跳过——宁可少覆盖，也不污染开发机。
+#[cfg(not(any(windows, target_os = "linux")))]
+fn recycle_bin_available(_dir: &Path) -> bool {
+    false
+}
+
 /// 永久模式不得留下回收站条目（证明没被静默改成移动）。
 ///
-/// 无法列举回收站时不做断言：那是环境限制，与本次行为无关。
+/// 无法列举回收站时跳过并打印原因：跳过必须是可见的，否则这条断言会在不支持列举的
+/// 平台上凭空消失，回归时无人察觉。
 fn assert_no_trash_entry_for(target: &Path) {
-    let listed = std::panic::catch_unwind(trash::os_limited::list);
-    let Ok(Ok(items)) = listed else {
+    let Some(parent) = target.parent() else {
+        return;
+    };
+    let Some(items) = trash_items_under(parent) else {
+        eprintln!("recycle-bin listing unavailable on this host; skipping the trash assertion");
         return;
     };
     assert!(

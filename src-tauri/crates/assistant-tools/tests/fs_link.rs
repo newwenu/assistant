@@ -5,6 +5,10 @@ use assistant_tools::result::ToolResult;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
+mod support;
+
+use support::link::{dir_link, file_link};
+
 /// Agent 链路形态：只填 `workspace_root`（ToolBox 形态没有边界，不能用来断言越界）。
 fn context_with_root(root: &Path) -> ToolUseContext {
     ToolUseContext {
@@ -42,47 +46,6 @@ async fn run_check(source: &Path, context: &ToolUseContext) -> Result<ToolResult
             context,
         )
         .await
-}
-
-fn try_create_file_symlink(link: &Path, target: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-    #[cfg(windows)]
-    {
-        std::os::windows::fs::symlink_file(target, link).is_ok()
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = (link, target);
-        false
-    }
-}
-
-fn try_create_dir_link(link: &Path, target: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        std::process::Command::new("cmd")
-            .args(["/c", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = (link, target);
-        false
-    }
 }
 
 fn protected_root_for_test() -> Option<PathBuf> {
@@ -251,7 +214,7 @@ async fn create_rejects_escape_through_symlinked_directory() {
     let root_dir = tempfile::tempdir().expect("tempdir");
     let outside_dir = tempfile::tempdir().expect("tempdir");
     let escape = root_dir.path().join("escape");
-    if !try_create_dir_link(&escape, outside_dir.path()) {
+    if !dir_link(outside_dir.path(), &escape) {
         return;
     }
     let context = context_with_root(root_dir.path());
@@ -279,7 +242,7 @@ async fn create_never_writes_through_existing_source_symlink() {
     let outside_file = outside_dir.path().join("outside.txt");
     std::fs::write(&outside_file, b"data").expect("write outside file");
     let source = root_dir.path().join("escape.txt");
-    if !try_create_file_symlink(&source, &outside_file) {
+    if !file_link(&outside_file, &source) {
         return;
     }
     let context = context_with_root(root_dir.path());
@@ -300,7 +263,7 @@ async fn check_does_not_follow_source_symlink() {
     let outside_file = outside_dir.path().join("outside.txt");
     std::fs::write(&outside_file, b"data").expect("write outside file");
     let source = root_dir.path().join("link.txt");
-    if !try_create_file_symlink(&source, &outside_file) {
+    if !file_link(&outside_file, &source) {
         return;
     }
     let context = context_with_root(root_dir.path());

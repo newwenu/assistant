@@ -71,9 +71,14 @@ impl Tool for FsLinkTool {
     }
 
     fn input_schema(&self) -> Value {
-        let mut kind_enum = vec!["symlink".to_string(), "hardlink".to_string()];
         #[cfg(windows)]
-        kind_enum.push("junction".to_string());
+        let kind_enum = vec![
+            "symlink".to_string(),
+            "hardlink".to_string(),
+            "junction".to_string(),
+        ];
+        #[cfg(not(windows))]
+        let kind_enum = vec!["symlink".to_string(), "hardlink".to_string()];
 
         serde_json::json!({
             "type": "object",

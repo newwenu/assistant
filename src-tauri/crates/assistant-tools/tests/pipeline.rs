@@ -682,10 +682,21 @@ async fn round_budget_persists_only_the_overflowing_result() {
         .starts_with("<persisted-output path="));
 }
 
-#[tokio::test]
-async fn pipeline_source_has_no_tauri_dependency() {
+/// `pipeline` 必须与 UI 无关：它同时被 Tauri 命令和测试驱动，一旦引入 tauri 依赖
+/// 就把执行核心绑死在桌面上。
+///
+/// 只匹配精确 token：裸 `Window` 会命中 `Windows`（平台条件编译），裸 `tauri`
+/// 会命中普通英文单词，两者都会让这条门禁误报。
+#[test]
+fn pipeline_source_has_no_tauri_dependency() {
     let source = include_str!("../src/pipeline.rs");
-    for forbidden in ["tauri", "AppHandle", "Window"] {
+    for forbidden in [
+        "tauri::",
+        "use tauri",
+        "AppHandle",
+        "WebviewWindow",
+        "WindowBuilder",
+    ] {
         assert!(
             !source.contains(forbidden),
             "pipeline must stay UI-agnostic: found '{}'",

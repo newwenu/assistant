@@ -175,45 +175,57 @@ async fn the_registered_groups_carry_the_expected_metadata() {
     );
 }
 
-/// `os_tool_exec` 会把 `action` 注入 `params`；新工具必须忽略这个多余键照常执行。
+/// `os_tool_exec` 会把 `action` 注入 `params`；所有 toolbox 可见工具都必须忽略这个多余键照常执行。
 #[tokio::test]
-async fn the_injected_action_key_does_not_break_the_new_tools() {
+async fn every_toolbox_tool_ignores_the_injected_action_key() {
     let registry = production_registry();
 
     let dir = tempfile::tempdir().unwrap();
     let context =
         assistant_tools::ToolUseContext::for_toolbox(Some(dir.path().display().to_string()));
+    std::fs::write(dir.path().join("seed.txt"), "alpha\n").unwrap();
 
-    let mkdir = registry.find_for_toolbox("mkdir").unwrap();
-    let result = assistant_tools::invoke(
-        mkdir.tool.as_ref(),
-        &json!({ "action": "create", "path": "made" }),
-        &context,
-        assistant_tools::DEFAULT_TOOL_TIMEOUT,
-    )
-    .await;
-    assert!(result.ok, "{:?}", result.error);
+    let calls = [
+        ("ls", json!({ "action": "ls", "path": "." })),
+        ("read", json!({ "action": "read", "path": "seed.txt" })),
+        (
+            "glob",
+            json!({ "action": "glob", "pattern": "**/*.txt", "path": "." }),
+        ),
+        (
+            "grep",
+            json!({ "action": "grep", "pattern": "alpha", "path": "." }),
+        ),
+        ("mkdir", json!({ "action": "create", "path": "made" })),
+        (
+            "write",
+            json!({ "action": "write", "path": "made/a.txt", "content": "alpha\n" }),
+        ),
+        (
+            "delete",
+            json!({ "action": "delete", "path": "made/a.txt" }),
+        ),
+    ];
+
+    for (id, input) in calls {
+        let registered = registry
+            .find_for_toolbox(id)
+            .unwrap_or_else(|| panic!("'{}' missing from the toolbox registry", id));
+        let result = assistant_tools::invoke(
+            registered.tool.as_ref(),
+            &input,
+            &context,
+            assistant_tools::DEFAULT_TOOL_TIMEOUT,
+        )
+        .await;
+        assert!(
+            result.ok,
+            "'{}' must ignore the injected action key: {:?}",
+            id, result.error
+        );
+    }
+
     assert!(dir.path().join("made").is_dir());
-
-    let write = registry.find_for_toolbox("write").unwrap();
-    let result = assistant_tools::invoke(
-        write.tool.as_ref(),
-        &json!({ "action": "write", "path": "made/a.txt", "content": "alpha\n" }),
-        &context,
-        assistant_tools::DEFAULT_TOOL_TIMEOUT,
-    )
-    .await;
-    assert!(result.ok, "{:?}", result.error);
-
-    let delete = registry.find_for_toolbox("delete").unwrap();
-    let result = assistant_tools::invoke(
-        delete.tool.as_ref(),
-        &json!({ "action": "delete", "path": "made/a.txt" }),
-        &context,
-        assistant_tools::DEFAULT_TOOL_TIMEOUT,
-    )
-    .await;
-    assert!(result.ok, "{:?}", result.error);
     assert!(!dir.path().join("made/a.txt").exists());
 }
 

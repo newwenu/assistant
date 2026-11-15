@@ -478,24 +478,6 @@ async fn an_empty_result_is_reported_explicitly() {
 }
 
 #[tokio::test]
-async fn toolbox_injected_action_field_is_ignored() {
-    let dir = tempfile::tempdir().unwrap();
-    let ctx = context(dir.path());
-    write_file(dir.path(), "a.txt", "hit\n");
-
-    let result = tool()
-        .execute(
-            &json!({ "action": "grep", "pattern": "hit", "path": "." }),
-            &ctx,
-        )
-        .await
-        .unwrap();
-
-    assert!(result.ok);
-    assert_eq!(result.assistant_text(), "a.txt:1:hit");
-}
-
-#[tokio::test]
 async fn defaults_the_base_directory_to_the_workspace_root() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path());

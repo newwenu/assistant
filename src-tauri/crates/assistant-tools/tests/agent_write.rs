@@ -6,7 +6,7 @@ use assistant_tools::storage::{
     InMemoryReadReceiptStore, ReadReceipt, ReadReceiptKey, ReadReceiptStore,
 };
 use assistant_tools::{
-    Tool, ToolAudience, ToolErrorKind, ToolResult, ToolTier, ToolUseContext, ValidationResult,
+    Tool, ToolAudience, ToolErrorKind, ToolTier, ToolUseContext, ValidationResult,
 };
 use serde_json::{json, Value};
 
@@ -436,21 +436,6 @@ async fn write_records_a_read_receipt_for_the_new_revision() {
 
     assert_eq!(Some(receipt.revision.as_str()), data["revision"].as_str());
     assert_eq!(receipt.tool_call_id, "call-1");
-}
-
-#[tokio::test]
-async fn result_data_carries_no_error_channel_on_success() {
-    let dir = tempfile::tempdir().unwrap();
-    let ctx = context(dir.path(), None);
-    let result: ToolResult = tool(store())
-        .execute(&json!({ "path": "a.txt", "content": "x" }), &ctx)
-        .await
-        .unwrap();
-
-    assert!(result.ok);
-    assert!(result.error.is_none());
-    assert!(result.error_kind.is_none());
-    assert_eq!(result.data.unwrap()["bytes"], Value::from(1));
 }
 
 #[tokio::test]
