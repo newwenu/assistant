@@ -132,6 +132,32 @@ pub fn content_plain_text(content: &str) -> String {
     }
 }
 
+/// 导出专用派生文本（I51 §5.2）：`text` 块取原文，`image` 块输出
+/// `![image omitted]` 占位（图片正文是 base64 / 附件引用，禁止写进导出文件），
+/// 其余非文本块沿用既有占位符。返回 `(正文, 被省略的图片块数)`。
+///
+/// 与 [`content_plain_text`] 分开实现的原因：后者被全文检索复用，占位口径不能改。
+pub fn content_markdown_text(content: &str) -> (String, usize) {
+    let Some(blocks) = parse_content_blocks(content) else {
+        return (content.to_string(), 0);
+    };
+    let mut images = 0usize;
+    let parts: Vec<String> = blocks
+        .iter()
+        .filter_map(|block| {
+            if is_text_block(block) {
+                return text_of_block(block);
+            }
+            if block.get("type").and_then(|t| t.as_str()) == Some("image") {
+                images += 1;
+                return Some("![image omitted]".to_string());
+            }
+            block_placeholder(block)
+        })
+        .collect();
+    (parts.join("\n"), images)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +237,19 @@ mod tests {
         assert!(!is_content_empty(json));
         assert_eq!(content_plain_text(json), "look at this\n[图片]");
         assert_eq!(content_text_preview(json, 100), "look at this [图片]");
+    }
+
+    #[test]
+    fn test_markdown_text_omits_image_payload() {
+        let json = r#"[{"type":"text","text":"look at this"},{"type":"image","source":{"type":"base64","data":"QUJD"}}]"#;
+        let (body, images) = content_markdown_text(json);
+        assert!(body.contains("look at this"));
+        assert!(body.contains("![image omitted]"));
+        assert_eq!(images, 1);
+        assert!(
+            !body.contains("QUJD"),
+            "base64 payload must never reach the exported markdown"
+        );
     }
 
     #[test]

@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { toRecordSnapshot } from "../recordSnapshot";
+import { toRawRecordJson, toRecordSnapshot } from "../recordSnapshot";
 import { makeMessage } from "../../../test-utils/messageFixtures";
-import type { MessageDto } from "../../../types/protocol.contract";
+import type {
+  MessageDto,
+  MessageRecordDto,
+} from "../../../types/protocol.contract";
 
 const DTO_KEY_ORDER: Array<keyof MessageDto> = [
   "id",
@@ -105,5 +108,48 @@ describe("toRecordSnapshot", () => {
     const toolCalls = before.toolCalls as Array<Record<string, unknown>>;
     toolCalls[0].name = "mutated";
     expect(message.toolCalls?.[0].name).toBe("read_file");
+  });
+});
+
+const rawRecord: MessageRecordDto = {
+  id: "m1",
+  conversationId: "c1",
+  role: "assistant",
+  content: '{"blocks":1}',
+  reasoning: "raw reasoning",
+  toolCallsJson: '[{"id":"c1","name":"read_file"}]',
+  tokens: 12,
+  timestamp: 1000,
+  parentId: null,
+  siblingIndex: 0,
+  isPinned: false,
+  providerId: null,
+  modelId: null,
+  modeId: null,
+  status: "completed",
+  toolCallId: null,
+  isError: false,
+  turnIndex: 1,
+  iteration: 0,
+};
+
+describe("toRawRecordJson", () => {
+  it("uses the stored raw row when available", () => {
+    const json = JSON.parse(
+      toRawRecordJson(rawRecord, makeMessage("m1")),
+    ) as Record<string, unknown>;
+    expect(json.toolCallsJson).toBe('[{"id":"c1","name":"read_file"}]');
+    expect(json.content).toBe('{"blocks":1}');
+    expect(json.toolCalls).toBeUndefined();
+  });
+
+  it("falls back to the frontend snapshot when the raw row is missing", () => {
+    const json = JSON.parse(toRawRecordJson(null, makeMessage("m1"))) as Record<
+      string,
+      unknown
+    >;
+    expect(json.id).toBe("m1");
+    expect(json).toHaveProperty("toolCalls");
+    expect(json).not.toHaveProperty("toolCallsJson");
   });
 });

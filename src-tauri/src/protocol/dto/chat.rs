@@ -198,12 +198,73 @@ impl From<MessageRow> for MessageDto {
     }
 }
 
+/// 落库原文视图（I51 §6.1）：字段与 `MessageRow` 一一对应，`content` / `tool_calls_json`
+/// 均为未解析的存储原串，供历史详情页「原始来源」与 JSONL 导出使用。
+/// 输出专用 DTO，禁止作为任何命令入参。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MessageRecordDto {
+    pub id: String,
+    pub conversation_id: String,
+    pub role: String,
+    /// 落库原文：可能是纯文本，也可能是 content blocks 的 JSON 串。
+    pub content: String,
+    pub reasoning: Option<String>,
+    /// `tool_calls_json` 落库原串，未解析。
+    pub tool_calls_json: Option<String>,
+    pub tokens: Option<i64>,
+    pub timestamp: i64,
+    pub parent_id: Option<String>,
+    pub sibling_index: i64,
+    pub is_pinned: bool,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    pub mode_id: Option<String>,
+    /// 存储层原始状态串（`completed` / `interrupted` / `failed` / `pending` / `running`），
+    /// 不做封闭集合收窄，保留落库事实。
+    pub status: String,
+    pub tool_call_id: Option<String>,
+    pub is_error: bool,
+    pub turn_index: Option<u32>,
+    pub iteration: u32,
+}
+
+impl From<MessageRow> for MessageRecordDto {
+    fn from(r: MessageRow) -> Self {
+        Self {
+            id: r.id,
+            conversation_id: r.conversation_id,
+            role: r.role,
+            content: r.content,
+            reasoning: r.reasoning,
+            tool_calls_json: r.tool_calls_json,
+            tokens: r.tokens,
+            timestamp: r.timestamp,
+            parent_id: r.parent_id,
+            sibling_index: r.sibling_index,
+            is_pinned: r.is_pinned,
+            provider_id: r.provider_id,
+            model_id: r.model_id,
+            mode_id: r.mode_id,
+            status: r.status,
+            tool_call_id: r.tool_call_id,
+            is_error: r.is_error,
+            turn_index: r.turn_index.and_then(|v| u32::try_from(v).ok()),
+            iteration: u32::try_from(r.iteration).unwrap_or(0),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationDetailDto {
     pub conversation: ConversationDto,
     pub messages: Vec<MessageDto>,
     pub total_count: i64,
+    /// 落库原文行（I51 §6.3）：仅当 `ConversationQueryOptsDto::include_records` 为真时填充，
+    /// 其余查询模式下键恒在、值为 `null`。历史详情页的「原始来源」视图消费该字段，
+    /// 避免为每行单独发一次 IPC。
+    pub records: Option<Vec<MessageRecordDto>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
@@ -264,6 +325,10 @@ pub struct ConversationQueryOptsDto {
     /// 由 `beforeTimestamp` 改为 turn 边界，保证一页内不切开 turn。
     #[ts(optional = nullable)]
     pub before_turn_index: Option<u32>,
+    /// 是否随详情一并返回落库原文行（I51 §6.3）。默认 `false`，只有历史详情页的
+    /// 原始视图需要时才置 `true`，避免主会话链路为空载字段付出体积成本。
+    #[serde(default)]
+    pub include_records: bool,
 }
 
 fn default_limit() -> i64 {

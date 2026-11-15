@@ -45,6 +45,7 @@ const sampleConversationDetail: ConversationDetail = {
   conversation: sampleConversation,
   messages: [sampleMessage],
   totalCount: 1,
+  records: null,
 };
 
 describe("protocol DTO — camelCase contract", () => {

@@ -158,6 +158,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
                   label: t("history.export_markdown"),
                 },
                 { key: "json", label: t("history.export_json") },
+                { key: "jsonl", label: t("history.export_jsonl") },
               ],
               onClick: ({ key }) => onExport(selectedId, key),
             }}
@@ -214,6 +215,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
             <Empty description={t("history.no_messages")} />
           ) : (
             <HistoryBranchView
+              conversationId={selectedId}
               messages={messages}
               activeBranchId={selectedConv.activeBranchId}
               focusLeafId={focusLeafId}

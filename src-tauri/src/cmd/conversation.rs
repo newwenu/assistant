@@ -6,8 +6,8 @@ use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
     ChatMessagesChangedPayloadDto, ConversationDetailDto, ConversationDto,
     ConversationListChangeKindDto, ConversationListChangedPayloadDto, ConversationPatchDto,
-    ConversationQueryOptsDto, MessageChangeKindDto, MessageDto, TokenUsageEstimatedSourceDto,
-    TokenUsageSummaryDto,
+    ConversationQueryOptsDto, MessageChangeKindDto, MessageDto, MessageRecordDto,
+    TokenUsageEstimatedSourceDto, TokenUsageSummaryDto,
 };
 use assistant_agent::kernel::request;
 use assistant_storage::{
@@ -98,16 +98,17 @@ pub fn get_conversation(
     let conn = super::get_db_conn(&state)?;
 
     let mode = opts.as_ref().map(|o| o.mode.as_str()).unwrap_or("detail");
+    let include_records = opts.as_ref().map(|o| o.include_records).unwrap_or(false);
 
     match mode {
-        "all" => get_conversation_all_impl(&conn, &id),
+        "all" => get_conversation_all_impl(&conn, &id, include_records),
         "paginated" => {
             let o = opts.as_ref();
             let limit = o.map(|o| o.limit).unwrap_or(50);
             let before_turn = o.and_then(|o| o.before_turn_index);
-            get_conversation_paginated_impl(&conn, &id, limit, before_turn)
+            get_conversation_paginated_impl(&conn, &id, limit, before_turn, include_records)
         }
-        _ => get_conversation_detail_impl(&conn, &id),
+        _ => get_conversation_detail_impl(&conn, &id, include_records),
     }
 }
 
@@ -117,19 +118,29 @@ fn build_detail_dto(
     conv: ConversationRow,
     messages: Vec<MessageRow>,
     total_count: i64,
+    include_records: bool,
 ) -> Result<ConversationDetailDto, String> {
     let message_dtos: Vec<MessageDto> =
         super::conversation_utils::messages_with_sibling_counts(conn, conv_id, &messages)?;
+    let records = include_records.then(|| {
+        messages
+            .iter()
+            .cloned()
+            .map(MessageRecordDto::from)
+            .collect()
+    });
     Ok(ConversationDetailDto {
         conversation: conv.into(),
         messages: message_dtos,
         total_count,
+        records,
     })
 }
 
 fn get_conversation_detail_impl(
     conn: &rusqlite::Connection,
     id: &str,
+    include_records: bool,
 ) -> Result<Option<ConversationDetailDto>, String> {
     let detail = conversations::get_conversation_detail(conn, id)?;
     match detail {
@@ -141,6 +152,7 @@ fn get_conversation_detail_impl(
                 d.conversation,
                 d.messages,
                 total_count,
+                include_records,
             )?))
         }
         None => Ok(None),
@@ -152,6 +164,7 @@ fn get_conversation_paginated_impl(
     id: &str,
     limit: i64,
     before_turn_index: Option<u32>,
+    include_records: bool,
 ) -> Result<Option<ConversationDetailDto>, String> {
     match conversations::get_conversation_by_id(conn, id)? {
         Some(conv) => {
@@ -171,6 +184,7 @@ fn get_conversation_paginated_impl(
                 conv,
                 messages,
                 total_count,
+                include_records,
             )?))
         }
         None => Ok(None),
@@ -180,6 +194,7 @@ fn get_conversation_paginated_impl(
 fn get_conversation_all_impl(
     conn: &rusqlite::Connection,
     id: &str,
+    include_records: bool,
 ) -> Result<Option<ConversationDetailDto>, String> {
     match conversations::get_conversation_by_id(conn, id)? {
         Some(conv) => {
@@ -191,6 +206,7 @@ fn get_conversation_all_impl(
                 conv,
                 messages,
                 total_count,
+                include_records,
             )?))
         }
         None => Ok(None),
@@ -391,6 +407,32 @@ pub fn search_conversations(app: AppHandle, query: String) -> Result<Vec<Convers
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
+/// JSONL 组装落在 app 层（I51 §5.4）：`assistant-storage` 是下层 crate，看不到
+/// `MessageRecordDto`，在 `ops.rs` 里另造镜像结构会与 DTO 漂移。
+/// 首行是 schema 元信息（DTO 本身不含版本字段），其后每行一条落库原文，可直接 `jq` 过滤。
+fn export_conversation_jsonl(conn: &rusqlite::Connection, id: &str) -> Result<String, String> {
+    let detail = conversations::get_conversation_detail(conn, id)?
+        .ok_or_else(|| assistant_i18n::t("conversation.not_found"))?;
+    let conversation_id = detail.conversation.id.clone();
+    let message_count = detail.messages.len();
+
+    let mut out = String::new();
+    let header = serde_json::json!({
+        "schema": conversations::CONVERSATION_RAW_SCHEMA,
+        "conversationId": conversation_id,
+        "messageCount": message_count,
+    });
+    out.push_str(&serde_json::to_string(&header).map_err(|e| e.to_string())?);
+    out.push('\n');
+    for row in detail.messages {
+        let line =
+            serde_json::to_string(&MessageRecordDto::from(row)).map_err(|e| e.to_string())?;
+        out.push_str(&line);
+        out.push('\n');
+    }
+    Ok(out)
+}
+
 #[command]
 pub fn export_conversation(
     app: AppHandle,
@@ -403,6 +445,7 @@ pub fn export_conversation(
     let content = match format.as_str() {
         "json" => conversations::export_conversation_json(&conn, &id)
             .map_err(super::translate_storage_error)?,
+        "jsonl" => export_conversation_jsonl(&conn, &id)?,
         "markdown" | "md" => conversations::export_conversation_markdown(&conn, &id)
             .map_err(super::translate_storage_error)?,
         _ => conversations::export_conversation_markdown(&conn, &id)
@@ -708,4 +751,91 @@ pub fn fork_to_new_conversation(
     );
 
     Ok(new_conv_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assistant_storage::db;
+
+    fn conv_row(id: &str) -> ConversationRow {
+        ConversationRow {
+            id: id.to_string(),
+            title: "test".to_string(),
+            title_source: "placeholder".to_string(),
+            provider_id: None,
+            model_id: "gpt-4".to_string(),
+            system_prompt: None,
+            is_pinned: false,
+            sort_order: 0,
+            generation: 0,
+            created_at: 1000,
+            updated_at: 1000,
+            is_full: false,
+            active_branch_id: None,
+            mode_id: None,
+            tool_config_json: None,
+            workspace_root: String::new(),
+        }
+    }
+
+    fn msg_row(id: &str, conv_id: &str, role: &str, content: &str, ts: i64) -> MessageRow {
+        MessageRow {
+            id: id.to_string(),
+            conversation_id: conv_id.to_string(),
+            role: role.to_string(),
+            content: content.to_string(),
+            tokens: None,
+            timestamp: ts,
+            parent_id: None,
+            is_pinned: false,
+            reasoning: None,
+            tool_calls_json: None,
+            sibling_index: 0,
+            provider_id: None,
+            model_id: None,
+            tool_call_id: None,
+            is_error: false,
+            status: "completed".to_string(),
+            mode_id: None,
+            turn_index: None,
+            iteration: 0,
+        }
+    }
+
+    #[test]
+    fn jsonl_header_then_one_self_contained_line_per_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = db::init_db(&dir.path().join("t.db")).unwrap();
+        conversations::insert_conversation(&conn, &conv_row("c1")).unwrap();
+        conversations::insert_message(&conn, &msg_row("m1", "c1", "user", "hi\n世界", 100))
+            .unwrap();
+        conversations::insert_message(&conn, &msg_row("m2", "c1", "assistant", "ok", 200)).unwrap();
+
+        let out = export_conversation_jsonl(&conn, "c1").unwrap();
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 3, "schema header + one line per message");
+
+        let header: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(header["schema"], conversations::CONVERSATION_RAW_SCHEMA);
+        assert_eq!(header["conversationId"], "c1");
+        assert_eq!(header["messageCount"], 2);
+
+        for line in &lines[1..] {
+            let row: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert_eq!(
+                row["conversationId"], "c1",
+                "every line must be jq-filterable"
+            );
+            assert!(
+                row.get("toolCallsJson").is_some(),
+                "raw json fields keep their keys (null when absent)"
+            );
+        }
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(lines[1]).unwrap()["content"],
+            "hi\n世界",
+            "newlines must be escaped so one message stays one line"
+        );
+    }
 }

@@ -95,6 +95,11 @@ export const ConversationListItem: React.FC<ConversationListItemProps> =
           icon: <ExportOutlined />,
           label: t("history.export_json"),
         },
+        {
+          key: "export-jsonl",
+          icon: <ExportOutlined />,
+          label: t("history.export_jsonl"),
+        },
         { type: "divider" },
         {
           key: "delete",
@@ -110,6 +115,7 @@ export const ConversationListItem: React.FC<ConversationListItemProps> =
         else if (key === "duplicate") onDuplicate(conversation.id);
         else if (key === "export-md") onExport(conversation.id, "markdown");
         else if (key === "export-json") onExport(conversation.id, "json");
+        else if (key === "export-jsonl") onExport(conversation.id, "jsonl");
         else if (key === "delete") onDelete(conversation.id);
       };
 

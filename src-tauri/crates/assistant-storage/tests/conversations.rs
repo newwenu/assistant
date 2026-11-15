@@ -454,7 +454,48 @@ fn export_json_roundtrip() {
 
     let json = conversations::export_conversation_json(&conn, "c1").unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed["schema"], conversations::CONVERSATION_RAW_SCHEMA);
+    assert_eq!(parsed["conversation"]["id"], "c1");
     assert_eq!(parsed["messages"][0]["content"], "hello 世界");
+}
+
+#[test]
+fn export_markdown_renders_reasoning_and_tool_table() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "hi", 100)).unwrap();
+
+    let mut assistant = msg_with_parent("a1", "c1", "assistant", "", 200, Some("u1"), 0);
+    assistant.reasoning = Some("first line\nsecond line".to_string());
+    assistant.tool_calls_json =
+        Some(r#"[{"id":"call_1","name":"fs_read","arguments":"{\"path\":\"a|b\"}"}]"#.to_string());
+    conversations::insert_message(&conn, &assistant).unwrap();
+
+    let mut tool = msg_with_parent("t1", "c1", "tool", "line1\nline2", 300, Some("a1"), 0);
+    tool.tool_call_id = Some("call_1".to_string());
+    conversations::insert_message(&conn, &tool).unwrap();
+
+    let md = conversations::export_conversation_markdown(&conn, "c1").unwrap();
+    assert!(md.starts_with("# test\n"), "title is the h1");
+    assert!(
+        md.contains("## user · T? i0 ·"),
+        "role/turn/iteration header"
+    );
+    assert!(md.contains("### Reasoning"));
+    assert!(md.contains("> first line\n> second line"));
+    assert!(md.contains("### Tool calls"));
+    assert!(
+        md.contains("| fs_read | success |"),
+        "tool status comes from the result row"
+    );
+    assert!(
+        md.contains(r"a\|b"),
+        "table cells must escape pipes so columns stay aligned"
+    );
+    assert!(
+        md.contains("| line1 line2 |"),
+        "multi-line tool results are flattened inside the table"
+    );
 }
 
 #[test]

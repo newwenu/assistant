@@ -228,6 +228,7 @@ fn conversation_detail_dto_wire_format() {
         conversation: ConversationDto::from(sample_conversation_row()),
         messages: vec![MessageDto::from(sample_message_row())],
         total_count: 1,
+        records: None,
     };
     let v = serde_json::to_value(&dto).unwrap();
     let obj = v.as_object().unwrap();

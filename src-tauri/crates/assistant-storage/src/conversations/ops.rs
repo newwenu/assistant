@@ -90,17 +90,157 @@ pub fn search_conversations(
     Ok(results)
 }
 
+/// 导出文件的 schema 版本号（I51 §5.3）：导出的 `messages` 是落库 `MessageRow`
+/// 结构（含 `tool_calls_json` 原串），不是前端 `MessageDto`，消费方据此判读。
+pub const CONVERSATION_RAW_SCHEMA: &str = "assistant.conversation.raw.v1";
+
+/// 导出文件里超过该字符数的工具结果会被截断并标注，避免导出体积失控（I51 §5.2）。
+const EXPORT_TOOL_RESULT_MAX_CHARS: usize = 500;
+
+#[derive(serde::Deserialize)]
+struct ExportToolCall {
+    id: String,
+    name: String,
+    #[serde(default)]
+    arguments: String,
+}
+
+fn export_local_time(ts_millis: i64) -> String {
+    use chrono::TimeZone;
+    chrono::Local
+        .timestamp_millis_opt(ts_millis)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|| "—".to_string())
+}
+
+fn meta_or_dash(value: Option<&str>) -> &str {
+    match value {
+        Some(v) if !v.is_empty() => v,
+        _ => "—",
+    }
+}
+
+/// 表格单元转义：竖线会切开列、换行会切开行。
+fn md_cell(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '|' => out.push_str("\\|"),
+            '\r' | '\n' => out.push(' '),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for (idx, ch) in text.chars().enumerate() {
+        if idx >= max_chars {
+            out.push('…');
+            return out;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// 参数必须是单行 JSON（表格内不能换行）；解析失败时退化为去换行的原串。
+fn single_line_json(raw: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(v) => serde_json::to_string(&v).unwrap_or_else(|_| raw.replace(['\r', '\n'], " ")),
+        Err(_) => raw.replace(['\r', '\n'], " "),
+    }
+}
+
 pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<String, StorageError> {
     let detail =
         super::get_conversation_detail(conn, id)?.ok_or(StorageError::ConversationNotFound)?;
-    let mut md = format!("# {}\n\n", detail.conversation.title);
+    let results: std::collections::HashMap<String, (String, bool)> =
+        super::get_tool_results(conn, id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(call_id, content, is_error)| (call_id, (content, is_error)))
+            .collect();
+
+    let conv = &detail.conversation;
+    let mut md = format!("# {}\n\n", conv.title);
+    md.push_str(&format!(
+        "> provider: {} · model: {} · mode: {}\n> exported at {}\n\n",
+        meta_or_dash(conv.provider_id.as_deref()),
+        meta_or_dash(Some(conv.model_id.as_str())),
+        meta_or_dash(conv.mode_id.as_deref()),
+        export_local_time(chrono::Utc::now().timestamp_millis()),
+    ));
+
     for msg in &detail.messages {
-        let plain = crate::content_codec::content_plain_text(&msg.content);
-        match msg.role.as_str() {
-            "user" => md.push_str(&format!("## User\n\n{}\n\n", plain)),
-            "assistant" => md.push_str(&format!("## Assistant\n\n{}\n\n", plain)),
-            "system" => md.push_str(&format!("## System\n\n{}\n\n", plain)),
-            _ => md.push_str(&format!("## {}\n\n{}\n\n", msg.role, plain)),
+        let turn = match msg.turn_index {
+            Some(t) => t.to_string(),
+            None => "?".to_string(),
+        };
+        md.push_str(&format!(
+            "## {} · T{} i{} · {}\n\n",
+            msg.role,
+            turn,
+            msg.iteration,
+            export_local_time(msg.timestamp),
+        ));
+
+        let (body, omitted_images) = crate::content_codec::content_markdown_text(&msg.content);
+        md.push_str(body.trim_end());
+        md.push_str("\n\n");
+        if omitted_images > 0 {
+            md.push_str(&format!(
+                "> 已省略 {} 个内联图片块（原文为 base64 / 附件引用）\n\n",
+                omitted_images
+            ));
+        }
+
+        if let Some(reasoning) = msg
+            .reasoning
+            .as_deref()
+            .map(str::trim)
+            .filter(|r| !r.is_empty())
+        {
+            md.push_str("### Reasoning\n\n");
+            for line in reasoning.lines() {
+                md.push_str(&format!("> {}\n", line));
+            }
+            md.push('\n');
+        }
+
+        let calls = msg
+            .tool_calls_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str::<Vec<ExportToolCall>>(json).ok())
+            .unwrap_or_default();
+        if !calls.is_empty() {
+            md.push_str(
+                "### Tool calls\n\n| call | status | arguments | result |\n|---|---|---|---|\n",
+            );
+            for call in calls {
+                let status = match results.get(&call.id) {
+                    Some((_, true)) => "error",
+                    Some((_, false)) => "success",
+                    None => "missing",
+                };
+                let arguments = format!("`{}`", single_line_json(&call.arguments));
+                let result = match results.get(&call.id) {
+                    Some((content, _)) => {
+                        truncate_chars(content.trim(), EXPORT_TOOL_RESULT_MAX_CHARS)
+                    }
+                    None => "—".to_string(),
+                };
+                md.push_str(&format!(
+                    "| {} | {} | {} | {} |\n",
+                    md_cell(&call.name),
+                    status,
+                    md_cell(&arguments),
+                    md_cell(&result),
+                ));
+            }
+            md.push('\n');
         }
     }
     Ok(md)
@@ -109,7 +249,12 @@ pub fn export_conversation_markdown(conn: &Connection, id: &str) -> Result<Strin
 pub fn export_conversation_json(conn: &Connection, id: &str) -> Result<String, StorageError> {
     let detail =
         super::get_conversation_detail(conn, id)?.ok_or(StorageError::ConversationNotFound)?;
-    serde_json::to_string_pretty(&detail).map_err(|e| StorageError::other(e.to_string()))
+    let doc = serde_json::json!({
+        "schema": CONVERSATION_RAW_SCHEMA,
+        "conversation": detail.conversation,
+        "messages": detail.messages,
+    });
+    serde_json::to_string_pretty(&doc).map_err(|e| StorageError::other(e.to_string()))
 }
 
 pub fn toggle_pin(conn: &Connection, id: &str) -> Result<bool, String> {

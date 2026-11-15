@@ -103,7 +103,13 @@ startedAtMs: number | null, elapsedBeforeMs: number, };
 export type ClockStatusDto = "idle" | "running" | "paused" | "finished";
 export type ContentBlockDto = { "type": "text", text: string, } | { "type": "image", attachment: ImageAttachmentRefDto, } | { "type": "file", attachment: FileAttachmentRefDto, } | { "type": "thinking", thinking: string, signature: string | null, } | { "type": "tool_use", tool_use_id: string, name: string, input: string, } | { "type": "tool_result", tool_use_id: string, output: string, };
 export type ConversationAttachmentSummary = { conversationId: string, title: string, attachments: Array<AttachmentSummary>, totalBytes: number, updatedAt: number, };
-export type ConversationDetailDto = { conversation: ConversationDto, messages: Array<MessageDto>, totalCount: number, };
+export type ConversationDetailDto = { conversation: ConversationDto, messages: Array<MessageDto>, totalCount: number, 
+/**
+ * 落库原文行（I51 §6.3）：仅当 `ConversationQueryOptsDto::include_records` 为真时填充，
+ * 其余查询模式下键恒在、值为 `null`。历史详情页的「原始来源」视图消费该字段，
+ * 避免为每行单独发一次 IPC。
+ */
+records: Array<MessageRecordDto> | null, };
 export type ConversationDto = { id: string, title: string, titleSource: string, providerId: string | null, modelId: string, systemPrompt: string | null, isPinned: boolean, sortOrder: number, generation: number, createdAt: number, updatedAt: number, isFull: boolean, activeBranchId: string | null, modeId: string | null, 
 /**
  * 会话绑定的工作区根；空串表示未配置，wire 上永不出现 `null`（I38h §8.1）。
@@ -139,7 +145,12 @@ export type ConversationQueryOptsDto = { mode: ConversationQueryModeDto, limit: 
  * 分页游标（I46 §7.1）：取该 turn 序号之前的页；`null` = 最新一页。
  * 由 `beforeTimestamp` 改为 turn 边界，保证一页内不切开 turn。
  */
-beforeTurnIndex?: number | null, };
+beforeTurnIndex?: number | null, 
+/**
+ * 是否随详情一并返回落库原文行（I51 §6.3）。默认 `false`，只有历史详情页的
+ * 原始视图需要时才置 `true`，避免主会话链路为空载字段付出体积成本。
+ */
+includeRecords: boolean, };
 export type ConversationTerminatedPayloadDto = { conversationId: string, isFull: boolean, };
 export type ConversationToolConfigDto = { maxToolTier: ToolTierDto, approvalLevel: ApprovalLevelDto, enabledTools: Array<string>, disabledTools: Array<string>, };
 export type ConversationUnlockedPayloadDto = { conversationId: string, };
@@ -187,6 +198,20 @@ turnIndex: number | null,
  * turn 内迭代序号。`0` = 非迭代行（user / compact_summary）。
  */
 iteration: number, };
+export type MessageRecordDto = { id: string, conversationId: string, role: string, 
+/**
+ * 落库原文：可能是纯文本，也可能是 content blocks 的 JSON 串。
+ */
+content: string, reasoning: string | null, 
+/**
+ * `tool_calls_json` 落库原串，未解析。
+ */
+toolCallsJson: string | null, tokens: number | null, timestamp: number, parentId: string | null, siblingIndex: number, isPinned: boolean, providerId: string | null, modelId: string | null, modeId: string | null, 
+/**
+ * 存储层原始状态串（`completed` / `interrupted` / `failed` / `pending` / `running`），
+ * 不做封闭集合收窄，保留落库事实。
+ */
+status: string, toolCallId: string | null, isError: boolean, turnIndex: number | null, iteration: number, };
 export type MessageStatusDto = "streaming" | "completed" | "interrupted" | "failed";
 export type MessageToolCallDto = { callId: string, name: string, arguments: unknown, status: MessageToolCallStatusDto, result: string | null, 
 /**

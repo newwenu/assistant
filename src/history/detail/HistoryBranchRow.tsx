@@ -3,9 +3,10 @@ import { Button, Tag, Tooltip } from "antd";
 import { AimOutlined, CopyOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { MessageBubble } from "../../chat/message/MessageBubble";
+import type { MessageRecordDto } from "../../types/protocol.contract";
 import { BRANCH_COLORS, type HistoryMessageRow } from "./historyTree";
 import { MessageMetaLine } from "./MessageMetaLine";
-import { toRecordSnapshot } from "./recordSnapshot";
+import { toRawRecordJson, type RecordSource } from "./recordSnapshot";
 import css from "./HistoryBranchView.module.css";
 
 const MAX_INDENT = 6;
@@ -15,6 +16,8 @@ export type HistoryViewMode = "read" | "raw";
 interface HistoryBranchRowProps {
   row: HistoryMessageRow;
   viewMode: HistoryViewMode;
+  record: MessageRecordDto | null;
+  recordError: string | null;
   isFocusLeaf: boolean;
   onDeleteMessage: (id: string) => void;
   onFocusNode: (nodeId: string) => void;
@@ -24,19 +27,27 @@ const INTERACTIVE_SELECTOR =
   "button, a, input, textarea, select, [role='button']";
 
 export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
-  ({ row, viewMode, isFocusLeaf, onDeleteMessage, onFocusNode }) => {
+  ({
+    row,
+    viewMode,
+    record,
+    recordError,
+    isFocusLeaf,
+    onDeleteMessage,
+    onFocusNode,
+  }) => {
     const { t } = useTranslation();
     const message = row.node.message;
     const indent = Math.min(row.indent, MAX_INDENT);
     const color = BRANCH_COLORS[row.lane % BRANCH_COLORS.length];
     const isRawTool = message.role === "tool";
 
+    // 有落库原文用原文，否则退回前端快照（I51 §6.3 的降级路径）。
+    const recordSource: RecordSource = record ? "raw" : "dto";
+
     const recordJson = useMemo(
-      () =>
-        viewMode === "raw"
-          ? JSON.stringify(toRecordSnapshot(message), null, 2)
-          : "",
-      [message, viewMode],
+      () => (viewMode === "raw" ? toRawRecordJson(record, message) : ""),
+      [message, record, viewMode],
     );
 
     const coord =
@@ -72,6 +83,26 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
       .filter(Boolean)
       .join(" ");
 
+    const sourceTag =
+      recordError !== null ? (
+        <Tooltip
+          title={t("history.detail.source_raw_failed", { reason: recordError })}
+        >
+          <Tag color="error" style={{ margin: 0 }}>
+            {t("history.detail.source_dto")}
+          </Tag>
+        </Tooltip>
+      ) : (
+        <Tag
+          color={recordSource === "raw" ? "blue" : "default"}
+          style={{ margin: 0 }}
+        >
+          {recordSource === "raw"
+            ? t("history.detail.source_raw")
+            : t("history.detail.source_dto")}
+        </Tag>
+      );
+
     const renderBody = () => {
       if (viewMode === "raw") {
         return (
@@ -83,6 +114,7 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
               <span>{new Date(message.timestamp).toLocaleString()}</span>
               <span>{coord}</span>
               <span className={css.rawSpacer}>{message.id}</span>
+              {sourceTag}
               <Tooltip title={t("history.detail.copy_record")}>
                 <Button
                   size="small"

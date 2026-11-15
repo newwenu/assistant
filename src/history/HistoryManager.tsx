@@ -169,8 +169,14 @@ export const HistoryManager: React.FC = () => {
 
   const exportConversation = useCallback(
     async (id: string, format: string = "markdown") => {
-      const ext = format === "json" ? "json" : "md";
-      const filterName = format === "json" ? "JSON" : "Markdown";
+      const ext =
+        format === "json" ? "json" : format === "jsonl" ? "jsonl" : "md";
+      const filterName =
+        format === "json"
+          ? "JSON"
+          : format === "jsonl"
+            ? "JSON Lines"
+            : "Markdown";
       const filePath = await save({
         defaultPath: `conversation.${ext}`,
         filters: [

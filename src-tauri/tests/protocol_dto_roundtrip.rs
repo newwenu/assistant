@@ -340,6 +340,7 @@ fn conversation_detail_dto_roundtrip() {
         },
         messages: vec![],
         total_count: 0,
+        records: None,
     };
     roundtrip(&dto);
 }
@@ -684,6 +685,7 @@ fn conversation_query_opts_dto_roundtrip() {
         mode: ConversationQueryModeDto::Paginated,
         limit: 50,
         before_turn_index: Some(7),
+        include_records: false,
     };
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
