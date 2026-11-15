@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 实施规格（分阶段，未实施；本文不记录进度） |
+| 状态 | 已实施（S1a / S1b / S2 / S3 全部落地；本文不记录进度，实施偏差见 §13） |
 | 日期 | 2026-11-13 |
 | 关联 | I38d-agent-frontend-modes-spec（已归档）§4.4 / §4.7 / §4.10；I46-agent-node-layout-spec（活跃）§1.3；docs/principle/CODE-SPLIT-PRINCIPLE.md |
 | 改动范围 | 前端 `src/chat` 域：布局骨架、工具区域、消息区滚动；无后端改动、无 DTO 变更、无 i18n 新增 |
@@ -482,3 +482,22 @@ export function planResize(input: {
 | 7 | 组件级时序缺少自动化测试 | 决策全部下沉到纯函数（§6.2），时序核对降级为 §9.3 人工清单；不为此引入 jsdom / testing-library 依赖 |
 | 8 | 取舍：不做持久化位置记忆、不做程序性平滑跳转 | 前者收益低于复杂度；后者与"纠正应瞬时"冲突，`smooth` 只留给用户主动操作 |
 | 9 | 取舍：不做消息 id 锚点恢复 | 属 I46 投影范围，本文不越界 |
+| 10 | 消息异步到达时 `entry` 可能先以「内容不足一屏」判定为贴底 | 若切会话首帧 `messages` 仍为空，`entry` 落 `top = 0, pinned = true`，随后消息到达走 `follow` 到底，保存的靠上位置失效。现状依赖「`entry` 时内容已就绪」（`switchConversation` 先 `await` 详情再 `set`），尚未覆盖流式期间切回或分页首帧为空的场景；出现时需在 `entry` 加「内容就绪」判据，不在本次实施范围 |
+
+---
+
+## 13 实施记录（as-built 偏差）
+
+实施结果与 §4 ~ §7 的契约一致，下列是规格文本未写、实施时补上的必要细节：
+
+| # | 偏差 | 原因 |
+|---|---|---|
+| 1 | 新增 `writeScrollTop`：程序性位移的唯一写入点，先按 `maxTop` 钳制、与当前值比较，**只有真正产生位移才置 `programScrollRef`** | 规格只说「在 `programScrollRef` 保护下写入」。若写入值与现值相同，浏览器不发 `scroll` 事件，标志不会被消费而滞留，会把用户下一次真实滚动的判定吞掉（含加载更多） |
+| 2 | 新增 `requestLoadMore`：滚动触顶与「加载更早」按钮**共用**同一入口 | §6.7 只写了滚动触发路径。按钮原本直连 `onLoadMore`，不记录 `pendingPrepend` 基线，前插后无法补偿，视口会跳 |
+| 3 | `MessageList` 新增必填 `conversationId`，由 `ConversationFrame` 透传 | §4 已约定 `ConversationLayoutProps.conversationId`，实施时补上消费端 prop 与骨架传递 |
+| 4 | `entry` 的 `saved` 来自 `readPosition(conversationId)`（S2 落地时先传 `null`，S3 接上） | §6.2 契约本就包含 `saved`，分阶段实施时先留空再接入，避免 S2 依赖 S3 |
+| 5 | 卸载保存位置用 `conversationIdRef` 取最新 id，不依赖闭包快照 | 卸载 effect 的依赖必须为空（否则每次会话变化都重挂），闭包会捕获旧 id |
+| 6 | `ToolRegionView.panel.canSetDefault` 由 hook 恒给 `true` | 与 §4「`link === "agent"` 时 `mode.kind` 必为 `agent`」一致，避免一个永远为真的字段进入外部契约 |
+| 7 | `enabled === false` 时 hook 直接返回空视图（`open: false`、`toolbar` / `panel` 为空实现、`notice: null`） | §5 已约定；实施时以早返回实现，保证 `chat` 链路不注册任何副作用 |
+| 8 | 离开 `agent` 链路与切会话合并为同一个重置 effect（`[enabled, conversationId]`） | 两者都是「收起面板」，分开写会在 `link` 切换时重复触发一次 |
+| 9 | 降级分支（无 `ResizeObserver`）只在 `!pinned` 时跳过，且用基线比较 | 与 §6.5「同样只发一次 `follow`」对齐；`entry` 仍走 `useLayoutEffect`，不依赖 RO |

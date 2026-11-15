@@ -16,22 +16,13 @@ import { ReasoningSelector } from "../selectors/ReasoningSelector";
 import { CompactBanner } from "../compact/CompactBanner";
 import { AttachmentPreview } from "../message/AttachmentPreview";
 import { useAttachmentStore } from "../../stores/attachmentStore";
-import type { ConversationLayoutProps } from "./layoutProps";
-
-interface ConversationFrameProps extends ConversationLayoutProps {
-  /** 顶部 chrome bar 的工作区选择器（仅 `AgentLayout` 传入）。 */
-  workspaceControl?: React.ReactNode;
-  /** 输入区工具栏内追加控件（`AgentLayout` 的 `ToolToolbar`）。 */
-  toolToolbar?: React.ReactNode;
-  /** 输入区工具栏上方追加面板（`AgentLayout` 的 `ToolConfigPanel`）。 */
-  toolPanel?: React.ReactNode;
-  /** 消息区下方追加插槽（审批 / 提问卡片）。 */
-  belowMessages?: React.ReactNode;
-  /** 文档面板当前打开的文件路径（仅 `AgentLayout` 传入）。 */
-  docPanelPath?: string | null;
-  /** 文档批注跳转回调。 */
-  onOpenDocument?: (path: string, line: number) => void;
-}
+import type { ConversationFrameProps } from "./layoutProps";
+import { WorkspaceSelector } from "../selectors/WorkspaceSelector";
+import {
+  ToolRegionNotice,
+  ToolRegionPanel,
+  ToolRegionToolbar,
+} from "./ToolRegion";
 
 const AttachmentPreviewBar: React.FC = () => {
   const attachments = useAttachmentStore((s) => s.attachments);
@@ -41,10 +32,11 @@ const AttachmentPreviewBar: React.FC = () => {
   );
 };
 
-/** 两个布局共享的 chrome / 消息区 / 输入区 / 上下文栏组合，差异只用插槽表达。 */
-export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
+/** 两个链路共享的 chrome / 消息区 / 输入区 / 上下文栏组合，差异只由 `link` 条件挂载（I48 §3）。 */
+export function ConversationFrame(props: ConversationFrameProps) {
   const {
     link,
+    conversationId,
     providerId,
     providers,
     modelId,
@@ -80,14 +72,12 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
     onPaste,
     onAttach,
     onCompact,
-    workspaceControl,
-    toolToolbar,
-    toolPanel,
-    belowMessages,
     docPanelPath = null,
     onOpenDocument,
   } = props;
   const { t } = useTranslation();
+  /** 联合类型收窄点：`agent` 链路才具备工作区与工具区域数据。 */
+  const agentProps = props.link === "agent" ? props : null;
 
   return (
     <>
@@ -107,7 +97,15 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
           variant="chip"
           openRef={modelOpenRef}
         />
-        {workspaceControl}
+        {agentProps ? (
+          <WorkspaceSelector
+            workspaceRoot={agentProps.workspace.root}
+            disabled={agentProps.workspace.disabled}
+            openRef={agentProps.workspace.openRef}
+            onSwitch={agentProps.workspace.onSwitch}
+            onClear={agentProps.workspace.onClear}
+          />
+        ) : null}
         <Button
           type="text"
           size="small"
@@ -133,6 +131,7 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
       ) : (
         <MessageList
           messages={messages}
+          conversationId={conversationId}
           link={link}
           isStreaming={isStreaming}
           isReasoningStreaming={isReasoningStreaming}
@@ -154,9 +153,9 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
           onOpenDocument={onOpenDocument}
         />
       )}
-      {belowMessages}
+      {agentProps ? <ToolRegionNotice view={agentProps.toolRegion} /> : null}
       <AttachmentPreviewBar />
-      {toolPanel}
+      {agentProps ? <ToolRegionPanel view={agentProps.toolRegion} /> : null}
       <div className="chat-tool-bar">
         {modeControls}
         <ReasoningSelector variant="chip" />
@@ -179,7 +178,7 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
           disabled={isStreaming}
           title={t("chat.input.attach")}
         />
-        {toolToolbar}
+        {agentProps ? <ToolRegionToolbar view={agentProps.toolRegion} /> : null}
       </div>
       <MessageInput
         value={draft}
@@ -195,4 +194,4 @@ export const ConversationFrame: React.FC<ConversationFrameProps> = (props) => {
       <ContextBar usage={contextUsage} />
     </>
   );
-};
+}

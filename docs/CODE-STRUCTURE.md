@@ -100,13 +100,13 @@
 
 | 子目录 | 内容 |
 |---|---|
-| `ConversationView.tsx` | 对话区总装 |
-| `layouts/` | `ChatLayout` / `AgentLayout` 两种链路形态、`ConversationFrame`、`layoutProps` |
+| `ConversationView.tsx` | 对话区总装：会话数据与命令，不 import 工具 / 工作区组件，不构造布局 JSX |
+| `layouts/` | `ConversationFrame` 单骨架（按 `link` 条件挂载工具区域，无状态）、`ToolRegion`（三挂点展示适配）、`layoutProps`（数据契约） |
 | `core/` | 纯逻辑：消息树、内容块、流合并、错误恢复、推理展示、工具调用视图、工作区显示、类型与 Hook |
-| `message/` | 消息气泡、列表、输入框、附件预览、头像、操作条、消息身份 |
+| `message/` | 消息气泡、列表、输入框、附件预览、头像、操作条、消息身份；`scrollIntent`（滚动决策纯函数）、`scrollPositionMemory`（会话级位置记忆） |
 | `blocks/` | 分支选择、编辑块、错误块、推理块、重试条、Fork 对话框 |
 | `selectors/` | 模式 / 模型 / Provider / 推理强度 / 工作区选择器 |
-| `tool/` | 工具调用气泡、审批卡、提问卡、工具配置面板、工具栏、变更提示 |
+| `tool/` | 工具调用气泡、审批卡、提问卡、工具配置面板、工具栏、变更提示；`useToolRegionState`（工具区域状态唯一持有者） |
 | `attachment/` | 附件摄入：`intake` / `admit` / `factory` / `paths` / `sources`（拖放、选择、粘贴） |
 | `compact/`、`context/` | 压缩提示条、上下文栏 |
 

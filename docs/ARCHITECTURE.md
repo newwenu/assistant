@@ -477,7 +477,7 @@ assistant/
 │   ├── layouts/                   # 各窗口布局（AppShell / MainLayout / NormalLayout / MiniLayout / OrbWindow）
 │   ├── orb/                       # OrbBall / OrbPanel / OrbDrag / OrbExpand / OrbCoord / OrbContextMenu / useOrbConfSync
 │   ├── mascot/                    # core（types / expressionPolicy / registry / resolve）+ renderers（rive / svg / gif）+ MascotRenderer / mascotStore / useMascotChatSync
-│   ├── chat/                      # ConversationView（共同视图）/ ChatLayout + AgentLayout / message / tool（ToolCallBubble / ApprovalCard / QuestionCard / ToolConfigPanel）/ compact / selectors
+│   ├── chat/                      # ConversationView（共同视图）/ ConversationFrame 单骨架（按 link 挂载工具区域）/ ToolRegion / message（含 scrollIntent / scrollPositionMemory）/ tool（ToolCallBubble / ApprovalCard / QuestionCard / ToolConfigPanel / useToolRegionState）/ compact / selectors
 │   ├── tools/                     # ToolBox / MiniToolBox / ToolPage / registry.ts + 23 个工具实现
 │   ├── history/                   # 历史管理（列表 / 详情 / 分支 / 批量操作 / 导出）
 │   ├── settings/                  # 设置（core 字段与页面注册 / pages 各设置页 / provider / agentMode / overview）

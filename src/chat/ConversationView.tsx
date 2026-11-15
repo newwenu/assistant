@@ -10,29 +10,24 @@ import { Modal } from "antd";
 import { useTranslation } from "react-i18next";
 import { chatService } from "../services/chatService";
 import { openFromPanel } from "@/orb/panelActions";
-import { useOrbOverlayClose, resolveOverlayContainer } from "@/orb/orbOverlays";
+import { resolveOverlayContainer } from "@/orb/orbOverlays";
 import { useChatStore } from "../stores/chatStore";
 import { useChatStreamStore } from "../stores/chatStreamStore";
 import { useProviderStore } from "../stores/providerStore";
 import { useAgentModeStore } from "../stores/agentModeStore";
 import { resolveDefaultModel } from "./core/providerModel";
 import { resolveConversationRoute } from "./core/conversationLink";
-import {
-  DEFAULT_TOOL_CONFIG,
-  diffToolConfig,
-  isEmptyToolConfigDiff,
-} from "./core/toolConfig";
+import { DEFAULT_TOOL_CONFIG } from "./core/toolConfig";
 import type { ConversationToolConfig } from "./core/chatTypes";
 import { notifyInfo, notifyError } from "../stores/notifyStore";
 import type { RecoveryActionCode } from "./core/chatErrorRecovery";
-import { AgentLayout } from "./layouts/AgentLayout";
-import { ChatLayout } from "./layouts/ChatLayout";
+import { ConversationFrame } from "./layouts/ConversationFrame";
+import type {
+  ConversationFrameProps,
+  ConversationLayoutProps,
+} from "./layouts/layoutProps";
 import { ModeSelector } from "./selectors/ModeSelector";
-import { WorkspaceSelector } from "./selectors/WorkspaceSelector";
-import { ToolConfigPanel } from "./tool/ToolConfigPanel";
-import { ToolToolbar } from "./tool/ToolToolbar";
-import { ToolChangeNotice } from "./tool/ToolChangeNotice";
-import { useToolCatalog } from "./tool/useToolCatalog";
+import { useToolRegionState } from "./tool/useToolRegionState";
 import { ForkDialog } from "./blocks/ForkDialog";
 import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
 import { createLogger } from "@/services/logger";
@@ -40,25 +35,6 @@ import { useAttachmentIntake } from "./attachment";
 import { prefetchAttachmentLimits } from "./attachment/limits";
 
 const log = createLogger("ConversationView");
-
-/**
- * 工具面板的「内部」区域：面板根、概览条 chip，以及面板内 `Select` 的弹层。
- * 弹层由 antd 挂到 orb 窗口根节点（见 `OrbWindow` 的 `getPopupContainer`），
- * 不在面板 DOM 子树内，必须按类名单独放行，否则点选项会被判成「点外部」，
- * 面板连同弹层一起卸载，选择动作丢失。
- */
-const TOOL_PANEL_INNER_SELECTORS = [
-  "[data-tool-panel]",
-  "[data-tool-panel-anchor]",
-  ".tool-panel-dropdown",
-];
-
-function isToolPanelInner(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  return TOOL_PANEL_INNER_SELECTORS.some(
-    (selector) => target.closest(selector) !== null,
-  );
-}
 
 interface ConversationViewProps {
   modelOpenRef?: RefObject<boolean>;
@@ -140,137 +116,55 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
   const noProviders = provider.providers.length === 0;
   const isBusy = stream.isStreaming;
 
-  const { tools, loading: toolsLoading } = useToolCatalog(
-    route.link === "agent",
-  );
-  const [toolPanelOpen, setToolPanelOpen] = useState(false);
-  const [settingDefault, setSettingDefault] = useState(false);
-
-  /** 切会话即收起面板：面板内容属于当前会话的工具配置。 */
-  useEffect(() => {
-    setToolPanelOpen(false);
-  }, [conversationId]);
-
-  /** 面板不设「完成」按钮：点击面板外部（对话区任意位置）即收起。 */
-  useEffect(() => {
-    if (!toolPanelOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (isToolPanelInner(event.target)) return;
-      setToolPanelOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown, true);
-    return () =>
-      document.removeEventListener("pointerdown", onPointerDown, true);
-  }, [toolPanelOpen]);
-
-  /**
-   * orb 收起时同步关闭工具面板：面板与它弹出的下拉都必须归零，
-   * 否则球上会残留展开中的面板/弹层。
-   */
-  const closeToolPanel = useCallback(() => setToolPanelOpen(false), []);
-  useOrbOverlayClose(closeToolPanel);
-
   const currentMode = useMemo(
     () => modes.find((m) => m.id === conversation?.modeId) ?? null,
     [modes, conversation?.modeId],
   );
 
   /**
-   * 面板 / 概览条展示用的有效配置：`route.toolConfig` 只在 agent 链路有值，
+   * 工具区域展示用的有效配置：`route.toolConfig` 只在 agent 链路有值，
    * 缺失时回退 `DEFAULT_TOOL_CONFIG`，保证组件拿到完整结构而不是 `null`。
    */
   const effectiveToolConfig = route.toolConfig ?? DEFAULT_TOOL_CONFIG;
 
-  /** 装配变更的系统提示：只展示当前一条，定时自清（I38d §4.7）。 */
-  const [toolNotice, setToolNotice] = useState<string | null>(null);
-  const noticeTimerRef = useRef<number | null>(null);
-  const showToolNotice = useCallback((text: string) => {
-    setToolNotice(text);
-    if (noticeTimerRef.current !== null) {
-      window.clearTimeout(noticeTimerRef.current);
-    }
-    noticeTimerRef.current = window.setTimeout(() => setToolNotice(null), 6000);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (noticeTimerRef.current !== null) {
-        window.clearTimeout(noticeTimerRef.current);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    setToolNotice(null);
-  }, [conversationId]);
-
+  /** 工具配置的唯一写入函数：提示文案与进行态由 `useToolRegionState` 负责（I48 §5）。 */
   const handleToolConfigChange = useCallback(
     (next: ConversationToolConfig) => {
       if (!conversationId) return;
-      const diff = diffToolConfig(effectiveToolConfig, next);
-      if (!isEmptyToolConfigDiff(diff)) {
-        const nameOf = (id: string) =>
-          tools.find((tool) => tool.id === id)?.name ?? id;
-        const parts: string[] = [];
-        if (diff.addedTools.length > 0) {
-          parts.push(
-            t("chat.tool.notice.enabled", {
-              names: diff.addedTools.map(nameOf).join(", "),
-            }),
-          );
-        }
-        if (diff.removedTools.length > 0) {
-          parts.push(
-            t("chat.tool.notice.disabled", {
-              names: diff.removedTools.map(nameOf).join(", "),
-            }),
-          );
-        }
-        if (diff.tierChanged) {
-          parts.push(
-            t("chat.tool.notice.tier", {
-              tier: t(`chat.tool.approval.tier.${diff.tierChanged}`),
-            }),
-          );
-        }
-        if (diff.levelChanged) {
-          parts.push(
-            t("chat.tool.notice.level", {
-              level: t(`chat.tool.approval.level.${diff.levelChanged}`),
-            }),
-          );
-        }
-        showToolNotice(parts.join(t("chat.tool.notice.separator")));
-      }
       void chat.setConversationToolConfig(conversationId, next);
     },
-    [conversationId, chat, effectiveToolConfig, tools, t, showToolNotice],
+    [conversationId, chat],
   );
 
   /** 把当前会话有效配置写回模式初始值，影响之后新建的会话（I38d §4.7）。 */
-  const handleSetModeDefault = useCallback(() => {
+  const handleSetModeDefault = useCallback(async () => {
     const config = route.toolConfig;
     if (!currentMode || !config) return;
-    setSettingDefault(true);
-    void useAgentModeStore
-      .getState()
-      .saveMode({ ...currentMode, toolConfig: config })
-      .then(() =>
-        notifyInfo(
-          "chat.tool.panel.set_default_done_title",
-          "chat.tool.panel.set_default_done_desc",
-        ),
-      )
-      .catch((e) => {
-        log.error("setModeDefault failed", e);
-        notifyError(
-          "chat.tool.panel.set_default_failed_title",
-          "chat.tool.panel.set_default_failed_desc",
-        );
-      })
-      .finally(() => setSettingDefault(false));
+    try {
+      await useAgentModeStore
+        .getState()
+        .saveMode({ ...currentMode, toolConfig: config });
+      notifyInfo(
+        "chat.tool.panel.set_default_done_title",
+        "chat.tool.panel.set_default_done_desc",
+      );
+    } catch (e) {
+      log.error("setModeDefault failed", e);
+      notifyError(
+        "chat.tool.panel.set_default_failed_title",
+        "chat.tool.panel.set_default_failed_desc",
+      );
+    }
   }, [currentMode, route.toolConfig]);
+
+  /** 工具区域（面板 / 概览条 / 变更提示）状态的唯一持有者（I48 §5）。 */
+  const toolRegion = useToolRegionState({
+    enabled: route.link === "agent",
+    conversationId,
+    config: effectiveToolConfig,
+    onChange: handleToolConfigChange,
+    onSetDefault: handleSetModeDefault,
+  });
 
   const handleSend = useCallback(
     (content: string) => {
@@ -520,8 +414,8 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     });
   }, [modal, t, chat]);
 
-  const layoutProps = {
-    link: route.link,
+  const baseProps: Omit<ConversationLayoutProps, "link"> = {
+    conversationId,
     providerId: currentProviderId,
     providers: provider.providers,
     modelId: currentModelId,
@@ -571,6 +465,23 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     onCompact: handleCompact,
   };
 
+  /** 联合类型收窄点：`agent` 链路必须同时给出工作区与工具区域数据（I48 §4）。 */
+  const frameProps: ConversationFrameProps =
+    route.link === "agent"
+      ? {
+          ...baseProps,
+          link: "agent",
+          workspace: {
+            root: chat.workspaceRoot,
+            disabled: isBusy,
+            openRef: modelOpenRef,
+            onSwitch: handleWorkspaceSwitch,
+            onClear: handleWorkspaceClear,
+          },
+          toolRegion,
+        }
+      : { ...baseProps, link: "chat" };
+
   return (
     <FeatureErrorBoundary featureName="对话">
       <div className="chat-view chat-view-compact">
@@ -581,46 +492,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
           onCancel={() => setForkTarget(null)}
         />
         <div className="chat-main">
-          {route.link === "agent" ? (
-            <AgentLayout
-              {...layoutProps}
-              workspaceControl={
-                <WorkspaceSelector
-                  workspaceRoot={chat.workspaceRoot}
-                  disabled={isBusy}
-                  openRef={modelOpenRef}
-                  onSwitch={handleWorkspaceSwitch}
-                  onClear={handleWorkspaceClear}
-                />
-              }
-              toolToolbar={
-                <ToolToolbar
-                  config={effectiveToolConfig}
-                  total={tools.length}
-                  open={toolPanelOpen}
-                  onToggle={() => setToolPanelOpen((prev) => !prev)}
-                />
-              }
-              toolPanel={
-                toolPanelOpen ? (
-                  <ToolConfigPanel
-                    config={effectiveToolConfig}
-                    tools={tools}
-                    loading={toolsLoading}
-                    canSetDefault={currentMode?.kind === "agent"}
-                    settingDefault={settingDefault}
-                    onChange={handleToolConfigChange}
-                    onSetDefault={handleSetModeDefault}
-                  />
-                ) : null
-              }
-              belowMessages={
-                toolNotice ? <ToolChangeNotice text={toolNotice} /> : null
-              }
-            />
-          ) : (
-            <ChatLayout {...layoutProps} />
-          )}
+          <ConversationFrame {...frameProps} />
         </div>
       </div>
     </FeatureErrorBoundary>

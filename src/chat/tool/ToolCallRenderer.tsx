@@ -21,7 +21,7 @@ import css from "./ToolCallRenderer.module.css";
 interface ToolCallRendererProps {
   view: ToolCallView;
   density: "single" | "card";
-  /** 文档面板当前打开的文件路径；`ChatLayout` 不传即 `null`，恒走卡片（I46 §3.7.4）。 */
+  /** 文档面板当前打开的文件路径；`link === "chat"` 时恒为 `null`，恒走卡片（I46 §3.7.4）。 */
   docPanelPath?: string | null;
   onOpenDocument?: (path: string, line: number) => void;
 }
