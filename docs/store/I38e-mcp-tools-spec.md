@@ -54,8 +54,8 @@ ToolRegistry
    └── McpTool 桥接（ToolTier::External）
           │
           ▼
-   McpServerManager（src-tauri/src/mcp/）
-          │  stdio
+   McpServerManager（assistant-tools/src/mcp/manager.rs）
+          │  McpTransport（进程装配在宿主层）
           ▼
    MCP server 子进程
 ```
@@ -65,8 +65,9 @@ ToolRegistry
 | 组件 | 位置 | 说明 |
 |---|---|---|
 | `McpTool` / 命名与标记推断 | `assistant-tools/src/mcp/bridge.rs` | 纯 Rust，依赖 MCP 协议类型，不依赖 tauri |
-| MCP 客户端 | `assistant-tools/src/mcp/client.rs` | stdio 读写；不管理进程 |
-| 进程与重连 | `src-tauri/src/mcp/server_manager.rs` | 依赖 `tokio::process` / `AppHandle`；动态注册到 `ToolRegistry` |
+| MCP 客户端 | `assistant-tools/src/mcp/stdio.rs` | 行分隔 JSON-RPC 读写、超时与取消；不管理进程 |
+| 状态机与注册 | `assistant-tools/src/mcp/manager.rs` | `McpServerManager`；状态机 / 启停 / 重连 / 注册注销，经 `McpTransport` / `McpConnection` 抽象，不依赖 tauri |
+| 进程装配 | `src-tauri/src/mcp/` | `tokio::process` 启动子进程并实现 `McpTransport` / `McpConnection`；`AppHandle` 侧接线启停命令与启动序列 |
 | 配置 | `src-tauri` + `assistant-storage` | `mcp_servers` 表持久化；凭据加密；见 §6 定稿 |
 
 **隔离边界（必须写进用户可见文案）**：
@@ -195,6 +196,23 @@ Stopped → Starting → Ready → Error → Stopped
 - turn 取消（用户停止）时，所有在途 MCP 调用随 child token 取消。
 - 实现落点：令牌经 `ToolUseContext.cancel` 下发（新增字段，由执行侧从 `ToolExecCtx.child_token` 填充）；客户端在 `call_tool` 内以 `select! { biased; _ = token.cancelled() => ..., r = request => r }` 等待，取消分支返回 `ToolErrorKind::Cancelled` 并尽力发送 `notifications/cancelled`（携带 `requestId`）；只中止本次请求，**不**杀进程、不注销工具，后续调用照常可用。设计依据见 I41（已归档）§3。
 
+### 4.4 崩溃隔离（2026-11-14 补充）
+
+先划清两条互不相干的故障线，不要混为一谈：
+
+| 故障 | 归属 | 结局 |
+|---|---|---|
+| MCP server **子进程**崩溃 / 退出 / 管道断开 | P7 | 在途请求收敛为 `ServerUnavailable` → `Internal`；C3 按 §4.2 退避重连 |
+| **宿主**侧 panic（客户端解析、桥接层缺陷） | 跨 P2/P7 | 见下三条硬约束 |
+
+**硬约束一：客户端解析零 panic。** `assistant-tools/src/mcp/` 内禁止 `unwrap` / `expect` / 直接索引 / 无检查切片；非法 JSON 帧、超长行、非 UTF-8 分片、缺字段响应一律走 `match` 降级为 `Internal` 或「跳过该帧继续读」。MCP 面对的是不可信外部输入，一次切片越界就能带走整个进程。
+
+**硬约束二：读取循环必须自带收敛。** 读取任务在独立 task 中运行；任务结束（EOF / panic / 出错）时必须把所有在途 `pending` 请求收敛为 `ServerUnavailable`，不得让调用方永久等待。收敛用 drop guard 实现，不依赖任务正常返回。
+
+**硬约束三：`call_tool` 外层用 `catch_unwind` 兜底，但不作为唯一防线。** release 构建是 `panic = "abort"`（见 workspace `Cargo.toml`），该构建下 `catch_unwind` 完全失效；因此前两条才是真正的防线，第三条只在 dev / unwind 构建里把「一次调用失败」与「整个 turn 失败」隔开。
+
+**已知缺口（不在 P7 范围，单独登记）：** turn 任务在 `cmd/agent` 中丢弃了 `JoinHandle`，dev 构建下工具 panic 会让 turn 静默中止、前端收不到终态事件；release 构建下 `panic = "abort"` 直接退出进程。修复点在 turn 生命周期（补发终态事件 + 保留 `JoinHandle`），与 MCP 无关，登记为独立事项，不塞进 P7 批次。
+
 ---
 
 ## 5 注册与可用性
@@ -293,6 +311,7 @@ P7 需要一个**最小 server 配置面**（不是工具卡片 UI）：
 | A10 | `config_encrypted` 中看不到明文 `command` / `args` / `env`；解密失败 server 不启动且日志不含密钥 |
 | A11 | MCP 审批键为 `ApprovalScope::Mcp`：参数变化 / `config_hash` 变化不命中旧授权；展示名变更与重连仍命中；不存在工具级宽授权 |
 | A12 | server 配置变更在下一 turn 生效，当前 turn 工具清单不变；`resources` / `prompts` / sampling 不被调用 |
+| A13 | 崩溃隔离（§4.4）：`mcp/` 内无 `unwrap` / `expect` / 直接索引；非法帧只跳过不断流；读取任务异常结束时在途请求收敛为 `ServerUnavailable`；`call_tool` panic 在 unwind 构建下归一化为 `Internal` |
 
 ---
 
@@ -302,6 +321,7 @@ P7 需要一个**最小 server 配置面**（不是工具卡片 UI）：
 |---|---|
 | 误把逻辑权限当执行隔离 | §2 文案硬约束；设置页展示提示 |
 | server 崩溃拖垮主应用 | 独立子进程 + 启动失败只记日志；调用失败归一化 |
+| 宿主 panic 拖垮应用（MCP 放大） | §4.4 三条硬约束：解析零 panic、读取任务自带收敛、`catch_unwind` 兜底（release `panic = "abort"` 下不依赖它） |
 | 工具名漂移破坏 prompt 缓存 | 稳定 `server_id` + 规范化命名；展示名不参与工具名 |
 | 重连注册竞态 | 注销先于杀进程；注册在 `Ready` 后单点完成 |
 | 凭据进入明文配置 | `mcp_servers.config_encrypted`；整块启动配置加密；日志不写密钥 |
