@@ -1,6 +1,6 @@
 # 参考项目沙盒实现深度分析
 
-> **本文档职责**：对 `references/` 中 3 个有沙盒实现的参考项目进行源码级深度分析，提取架构模式、关键数据结构、平台策略、安全边界及设计取舍，为本项目沙盒实现提供可直接对照的工程参考。
+> **本文档职责**：对参考检出（`references/`，本机 clone、已被 `.gitignore` 忽略、不入仓）中 3 个有沙盒实现的参考项目进行源码级深度分析，提取架构模式、关键数据结构、平台策略、安全边界及设计取舍，为本项目沙盒实现提供可直接对照的工程参考。
 > **关联文档**：[agent-sandbox-research.md](./agent-sandbox-research.md)（开源项目调研与演进路线） · I18 架构决策（已归档） · I18 实施规格（已归档）
 > **参考项目**：Codex（OpenAI Codex CLI）· OpenHuman · DeepSeek Harness（DSH）
 > **补充样本**：§5.4 另引 goose 与 OpenBitFun 作为「无沙箱」对照组（goose 无任何沙箱原语；OpenBitFun 无沙箱但有边界层路径检查），用于说明「路径检查」与「操作范围检测」的区别。
@@ -1034,49 +1034,49 @@ const SANDBOX_DENIED_KEYWORDS: [(FileSystemSandboxViolationReason, &str); 7] = [
 
 | 文件 | 职责 |
 |------|------|
-| `references/1-ai-agent/codex/codex-rs/protocol/src/sandbox.rs` | SandboxType 枚举 + SandboxOverride |
-| `references/1-ai-agent/codex/codex-rs/protocol/src/permissions.rs` | FileSystemAccessMode, NetworkSandboxPolicy, 受保护路径 |
-| `references/1-ai-agent/codex/codex-rs/sandboxing/src/lib.rs` | 模块入口，条件编译 |
-| `references/1-ai-agent/codex/codex-rs/sandboxing/src/manager.rs` | SandboxManager，平台选择 + 策略转换 |
-| `references/1-ai-agent/codex/codex-rs/sandboxing/src/bwrap.rs` | Linux bubblewrap 命令构建 |
-| `references/1-ai-agent/codex/codex-rs/sandboxing/src/seatbelt.rs` | macOS Seatbelt profile 生成 |
-| `references/1-ai-agent/codex/codex-rs/sandboxing/src/seatbelt_base_policy.sbpl` | 基础 SBPL 策略 |
-| `references/1-ai-agent/codex/codex-rs/sandboxing/src/violation.rs` | 违规检测与记录 |
-| `references/1-ai-agent/codex/codex-rs/sandboxing/src/denial.rs` | 拒绝推断 |
-| `references/1-ai-agent/codex/codex-rs/linux-sandbox/src/seccomp.rs` | seccomp-bpf 过滤器 |
-| `references/1-ai-agent/codex/codex-rs/mxc-sandbox/README.md` | MXC 后端说明 |
+| `codex/codex-rs/protocol/src/sandbox.rs` | SandboxType 枚举 + SandboxOverride |
+| `codex/codex-rs/protocol/src/permissions.rs` | FileSystemAccessMode, NetworkSandboxPolicy, 受保护路径 |
+| `codex/codex-rs/sandboxing/src/lib.rs` | 模块入口，条件编译 |
+| `codex/codex-rs/sandboxing/src/manager.rs` | SandboxManager，平台选择 + 策略转换 |
+| `codex/codex-rs/sandboxing/src/bwrap.rs` | Linux bubblewrap 命令构建 |
+| `codex/codex-rs/sandboxing/src/seatbelt.rs` | macOS Seatbelt profile 生成 |
+| `codex/codex-rs/sandboxing/src/seatbelt_base_policy.sbpl` | 基础 SBPL 策略 |
+| `codex/codex-rs/sandboxing/src/violation.rs` | 违规检测与记录 |
+| `codex/codex-rs/sandboxing/src/denial.rs` | 拒绝推断 |
+| `codex/codex-rs/linux-sandbox/src/seccomp.rs` | seccomp-bpf 过滤器 |
+| `codex/codex-rs/mxc-sandbox/README.md` | MXC 后端说明 |
 
 ### OpenHuman
 
 | 文件 | 职责 |
 |------|------|
-| `references/1-ai-agent/openhuman/crates/openhuman-core/src/sandbox/mod.rs` | 模块入口 |
-| `references/1-ai-agent/openhuman/crates/openhuman-core/src/sandbox/types.rs` | SandboxBackendKind, SandboxPolicy, SandboxStatus |
-| `references/1-ai-agent/openhuman/crates/openhuman-core/src/sandbox/ops.rs` | 策略解析 + 执行路由 |
-| `references/1-ai-agent/openhuman/crates/openhuman-core/src/sandbox/docker.rs` | Docker 一次性容器后端 |
+| `openhuman/crates/openhuman-core/src/sandbox/mod.rs` | 模块入口 |
+| `openhuman/crates/openhuman-core/src/sandbox/types.rs` | SandboxBackendKind, SandboxPolicy, SandboxStatus |
+| `openhuman/crates/openhuman-core/src/sandbox/ops.rs` | 策略解析 + 执行路由 |
+| `openhuman/crates/openhuman-core/src/sandbox/docker.rs` | Docker 一次性容器后端 |
 
 ### DSH
 
 | 文件 | 职责 |
 |------|------|
-| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox/src/index.ts` | 核心 seam：SandboxMode, SandboxPolicy, ConfinedArgv |
-| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox/src/escalation.ts` | 升级词汇 + 严格宽化阶梯 |
-| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-policy/src/index.ts` | 策略解析 + 渲染 |
-| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-policy/src/session-mode.ts` | per-session 模式覆盖 |
-| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-local/src/index.ts` | 链式探测 + confine() |
-| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-local/src/profiles.ts` | bwrap/Landlock/Seatbelt profile 构建 |
-| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-windows-acl/src/token.ts` | WRITE_RESTRICTED Token 构建 |
-| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-windows-acl/src/acl.ts` | ACL 编辑 + 并发 lock |
-| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-windows-acl/src/runner.ts` | Windows ACL runner：`windows-acl-run:` 前缀 + 127 退出契约 |
-| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-windows-acl/README.md` | 声明「目录必须由调用者拥有并授予 `WRITE_OWNER`」（§4.6「权限前置条件实测」） |
-| `references/1-ai-agent/deepseek-harness/packages/sandbox/sandbox-windows-acl/assets/diagnose-windows-sandbox-acl/` | 诊断技能：检测 `WRITE_DAC`/`WRITE_OWNER`，缺位时补 FullControl |
+| `deepseek-harness/packages/sandbox/sandbox/src/index.ts` | 核心 seam：SandboxMode, SandboxPolicy, ConfinedArgv |
+| `deepseek-harness/packages/sandbox/sandbox/src/escalation.ts` | 升级词汇 + 严格宽化阶梯 |
+| `deepseek-harness/packages/sandbox/sandbox-policy/src/index.ts` | 策略解析 + 渲染 |
+| `deepseek-harness/packages/sandbox/sandbox-policy/src/session-mode.ts` | per-session 模式覆盖 |
+| `deepseek-harness/packages/sandbox/sandbox-local/src/index.ts` | 链式探测 + confine() |
+| `deepseek-harness/packages/sandbox/sandbox-local/src/profiles.ts` | bwrap/Landlock/Seatbelt profile 构建 |
+| `deepseek-harness/packages/sandbox/sandbox-windows-acl/src/token.ts` | WRITE_RESTRICTED Token 构建 |
+| `deepseek-harness/packages/sandbox/sandbox-windows-acl/src/acl.ts` | ACL 编辑 + 并发 lock |
+| `deepseek-harness/packages/sandbox/sandbox-windows-acl/src/runner.ts` | Windows ACL runner：`windows-acl-run:` 前缀 + 127 退出契约 |
+| `deepseek-harness/packages/sandbox/sandbox-windows-acl/README.md` | 声明「目录必须由调用者拥有并授予 `WRITE_OWNER`」（§4.6「权限前置条件实测」） |
+| `deepseek-harness/packages/sandbox/sandbox-windows-acl/assets/diagnose-windows-sandbox-acl/` | 诊断技能：检测 `WRITE_DAC`/`WRITE_OWNER`，缺位时补 FullControl |
 
 ### 对照组（无沙箱，仅用于 §5.4 分层对照）
 
 | 文件 | 职责 |
 |------|------|
-| `references/1-ai-agent/goose/crates/goose-roaming/SECURITY.md` | 自述无 per-peer capability scoping / read-only mode / session sandboxing |
-| `references/1-ai-agent/goose/crates/goose/src/security/patterns.rs` | 正则威胁特征库（advisory，L2） |
-| `references/1-ai-agent/goose/crates/goose/src/security/scanner.rs` | 仅对 shell 工具文本评分，不产生拒绝 |
-| `references/1-ai-agent/OpenBitFun/src/crates/interfaces/app-server/src/server/host_policy.rs` | App Server 边界路径检查：绝对路径 + `dunce::canonicalize` + 包含性判断（L3） |
-| `references/1-ai-agent/deepseek-harness/packages/workspace/workspace/src/paths.ts` | `realpathNormalize`：workspace 身份的 canonical 基准（L3） |
+| `goose/crates/goose-roaming/SECURITY.md` | 自述无 per-peer capability scoping / read-only mode / session sandboxing |
+| `goose/crates/goose/src/security/patterns.rs` | 正则威胁特征库（advisory，L2） |
+| `goose/crates/goose/src/security/scanner.rs` | 仅对 shell 工具文本评分，不产生拒绝 |
+| `OpenBitFun/src/crates/interfaces/app-server/src/server/host_policy.rs` | App Server 边界路径检查：绝对路径 + `dunce::canonicalize` + 包含性判断（L3） |
+| `deepseek-harness/packages/workspace/workspace/src/paths.ts` | `realpathNormalize`：workspace 身份的 canonical 基准（L3） |

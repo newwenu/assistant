@@ -5,9 +5,10 @@ use tauri::Manager;
 
 use assistant_config::app_conf::AppConf;
 use assistant_tools::{
-    cleanup_expired_results, mcp::McpServerManager, os, ApprovalPrompter, FileToolResultStorage,
-    InMemoryReadReceiptStore, PermissionAuditStore, PermissionGrantStore, ReadReceiptStore,
-    ToolGateway, ToolPipeline, ToolRegistry, ToolResultStorage,
+    cleanup_expired_results, mcp::McpServerManager, os, sandbox, ApprovalPrompter,
+    FileToolResultStorage, InMemoryReadReceiptStore, PermissionAuditStore, PermissionGrantStore,
+    ReadReceiptStore, SandboxEnforcement, SandboxHostPaths, SandboxProbe, ToolGateway,
+    ToolPipeline, ToolRegistry, ToolResultStorage,
 };
 
 use crate::adapters::{
@@ -135,6 +136,53 @@ pub fn resolve_workspace(conn: &rusqlite::Connection, conversation_id: &str) -> 
     }
 }
 
+/// 沙箱读拒绝的固定列表（I53 §5.4）：只由本函数构造，不读用户配置、不受模型输入影响。
+///
+/// 三类来源：凭据目录、本应用写入的受管目录、平台凭据存储目录。
+/// 不存在的项**不加入**，且**禁止**创建——探测时点只读系统能力（I53 §6）。
+fn sandbox_host_paths(
+    dirs: &crate::app_dirs::AppDirs,
+    home: Option<&std::path::Path>,
+) -> SandboxHostPaths {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(home) = home {
+        for name in [".ssh", ".aws", ".gnupg", ".netrc"] {
+            candidates.push(home.join(name));
+        }
+    }
+    candidates.extend([
+        dirs.data().to_path_buf(),
+        dirs.local().to_path_buf(),
+        dirs.database(),
+        dirs.attachments(),
+        dirs.tool_results(),
+        dirs.mascot_assets(),
+        dirs.logs(),
+        dirs.crashes(),
+    ]);
+    // 系统凭据目录：路径由 `dirs` 给出，不硬编码盘符或用户名。
+    #[cfg(windows)]
+    if let Some(roaming) = dirs::data_dir() {
+        candidates.push(roaming.join("Microsoft").join("Credentials"));
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(home) = home {
+        candidates.push(home.join("Library").join("Keychains"));
+    }
+    candidates.retain(|path| path.exists());
+    SandboxHostPaths {
+        sensitive_read_deny: candidates,
+    }
+}
+
+/// 注册期门禁（I53 §4.4 规则 3 / A-S4）：`enforcement == None` 一律不注册 `shell`。
+///
+/// 判据只读探测结论，不看工具白名单与用户配置：白名单里的 `shell` 名字自然落空，
+/// 模型也看不到一个「存在但必然报错」的工具。
+fn shell_registration_allowed(probe: &SandboxProbe) -> bool {
+    probe.enforcement != SandboxEnforcement::None
+}
+
 /// 装配工具基础设施，并把所有实例 `manage` 进 Tauri 状态。
 ///
 /// 顺序固定，后一步依赖前一步的产物；网关只认 `ApprovalPrompter` trait，
@@ -145,6 +193,30 @@ pub fn resolve_workspace(conn: &rusqlite::Connection, conversation_id: &str) -> 
 /// 三项门禁（P2 控制层可用、前端审批卡片上线、A2 审批三态验收）已于 2026-11-09
 /// 全部满足，故此处接入。
 pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    // 受管目录只解析一次：沙箱读拒绝列表与落盘根目录共用这一份 `AppDirs`。
+    let dirs = crate::app_dirs::AppDirs::resolve()?;
+
+    // I53 C4（§4.4）：探测只在注册期做一次，结论决定 `shell` 是否存在。
+    // 结论缓存进进程内 `OnceLock`，运行期只读缓存，不再探测（A-S8）。
+    let host = sandbox_host_paths(&dirs, dirs::home_dir().as_deref());
+    let probe = sandbox::detect(&host);
+    log::info!(
+        "sandbox probe: kind={} enforcement={} missing={:?} detail={:?}",
+        probe.kind.as_str(),
+        probe.enforcement.as_str(),
+        probe.missing,
+        probe.detail
+    );
+    if shell_registration_allowed(probe) {
+        // I52 C5 归属：`register_shell_tools` 尚未存在，本批只落门禁与分支占位。
+        // 禁止在此注册任何空工具或临时 `shell`。
+    } else {
+        log::warn!(
+            "sandbox unavailable (detail={:?}): shell tool not registered",
+            probe.detail
+        );
+    }
+
     let registry = Arc::new(ToolRegistry::new());
     os::register_os_tools(&registry);
 
@@ -190,7 +262,7 @@ pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
 
     // 落盘根目录必须是稳定路径：它会写进 `<persisted-output path="…">`，
     // 跨进程重放一致性依赖它（§4.5），不得用临时目录。
-    let results_dir = crate::app_dirs::AppDirs::resolve()?.tool_results();
+    let results_dir = dirs.tool_results();
     spawn_result_cleanup(results_dir.clone());
     let storage: Arc<dyn ToolResultStorage> = Arc::new(FileToolResultStorage::new(results_dir));
     let pipeline = Arc::new(ToolPipeline::new(registry.clone(), gateway, storage));
@@ -366,6 +438,66 @@ mod tests {
             resolve_workspace(&conn, "c1"),
             None,
             "目录簿只是展示缓存，不参与解析"
+        );
+    }
+
+    /// A-S4（注册侧）：探测结论为 `None` 时注册表内不得出现 `shell`。
+    #[test]
+    fn registry_has_no_shell_when_probe_reports_none() {
+        let registry = Arc::new(ToolRegistry::new());
+        os::register_os_tools(&registry);
+
+        let probe = SandboxProbe::unavailable(
+            assistant_tools::SandboxKind::WindowsRestrictedToken,
+            "no_write_boundary",
+        );
+        assert!(!shell_registration_allowed(&probe));
+        assert!(
+            registry.find("shell").is_none() && registry.find_by_name("shell").is_none(),
+            "注册期结论为 None 时 shell 必须不存在"
+        );
+    }
+
+    #[test]
+    fn shell_registration_gate_follows_enforcement() {
+        let partial = SandboxProbe {
+            kind: assistant_tools::SandboxKind::WindowsRestrictedToken,
+            enforcement: SandboxEnforcement::Partial,
+            missing: vec![assistant_tools::SandboxDimension::FsRead],
+            detail: None,
+        };
+        assert!(shell_registration_allowed(&partial), "partial 仍注册");
+
+        let full = SandboxProbe {
+            kind: assistant_tools::SandboxKind::Landlock,
+            enforcement: SandboxEnforcement::Full,
+            missing: Vec::new(),
+            detail: None,
+        };
+        assert!(shell_registration_allowed(&full));
+    }
+
+    #[test]
+    fn sandbox_host_paths_skip_missing_entries_without_creating_them() {
+        let dir = TempDir::new("host");
+        let data = dir.path().join("data");
+        let local = dir.path().join("local");
+        let home = dir.path().join("home");
+        let dirs = crate::app_dirs::AppDirs::with_bases(data.clone(), local.clone());
+        std::fs::create_dir_all(dirs.database()).unwrap();
+        std::fs::create_dir_all(home.join(".ssh")).unwrap();
+
+        let paths = sandbox_host_paths(&dirs, Some(&home));
+        assert!(paths.sensitive_read_deny.contains(&dirs.database()));
+        assert!(paths.sensitive_read_deny.contains(&home.join(".ssh")));
+        assert!(
+            !paths.sensitive_read_deny.contains(&home.join(".aws")),
+            "不存在的项不加入"
+        );
+        assert!(!local.exists(), "探测期不得创建任何目录");
+        assert!(
+            paths.sensitive_read_deny.iter().all(|path| path.exists()),
+            "列表内每一项都必须已存在"
         );
     }
 }

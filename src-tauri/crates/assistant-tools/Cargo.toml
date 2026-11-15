@@ -33,5 +33,13 @@ tokio-util = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true }
 
+# P14-a 沙箱：Landlock 后端（仅 Linux 目标编译，见 I53 §5.5）
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = { workspace = true }
+
+# Unix 后端共用的 `setsid(2)` / `kill(-pgid)`（Linux Landlock、macOS Seatbelt）
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+libc = { workspace = true }
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

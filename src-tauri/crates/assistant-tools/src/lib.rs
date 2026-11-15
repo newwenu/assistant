@@ -10,6 +10,7 @@ pub mod policy;
 pub mod question;
 pub mod registry;
 pub mod result;
+pub mod sandbox;
 pub mod storage;
 pub mod r#trait;
 
@@ -23,4 +24,5 @@ pub use question::*;
 pub use r#trait::*;
 pub use registry::*;
 pub use result::*;
+pub use sandbox::*;
 pub use storage::*;

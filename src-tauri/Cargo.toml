@@ -114,7 +114,11 @@ windows = { version = "0.62", features = [
     "Storage_Streams",
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",
+    "Win32_System_JobObjects",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
     "Win32_System_WinRT",
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
@@ -127,6 +131,9 @@ windows = { version = "0.62", features = [
     "Win32_UI_Controls",
     "Win32_UI_HiDpi",
 ] }
+# P14-a 沙箱：Linux Landlock 后端（仅 Linux 目标编译，见 I53 §5.5）
+landlock = "0.4"
+libc = "0.2"
 eventsource-stream = "0.2"
 tempfile = "3"
 windows-future = "0.3"
