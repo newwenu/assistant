@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { chatService } from "../../services/chatService";
-import { useChatStore } from "../../stores/chatStore";
-import { createLogger } from "@/services/logger";
+import { chatService } from "../../services/chat/chatService";
+import { useChatStore } from "../../stores/chat/chatStore";
+import { createLogger } from "@/services/system/logger";
 
 const log = createLogger("useHistoryRefresh");
 

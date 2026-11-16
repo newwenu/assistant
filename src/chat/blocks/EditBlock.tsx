@@ -1,7 +1,7 @@
 import React from "react";
 import { CheckOutlined, CloseOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import type { ImageBlock, FileBlock } from "../core/contentBlockTypes";
+import type { ImageBlock, FileBlock } from "../core/message/contentBlockTypes";
 import { ImageThumbnail } from "../message/ImageThumbnail";
 import { FileCard } from "../message/FileCard";
 import css from "./EditBlock.module.css";

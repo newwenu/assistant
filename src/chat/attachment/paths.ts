@@ -1,7 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import type { AssetDirsDto } from "@/types/protocol.contract";
-import { storageService } from "@/services/storageService";
+import { storageService } from "@/services/desktop/storageService";
 
 let assetDirsPromise: Promise<AssetDirsDto> | null = null;
 

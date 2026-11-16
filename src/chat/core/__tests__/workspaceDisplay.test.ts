@@ -4,7 +4,7 @@ import {
   workspaceBasename,
   workspaceDisplay,
 } from "../workspaceDisplay";
-import type { WorkspaceEntry } from "../../../services/workspaceService";
+import type { WorkspaceEntry } from "../../../services/desktop/workspaceService";
 
 const entries: WorkspaceEntry[] = [
   { path: "G:\\code\\alpha", name: "alpha", missing: false },

@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { providerService } from "../services/providerService";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 import {
   dispatchProviderSaved,
   dispatchProviderDeleted,
-} from "../settings/core/settingsDispatcher";
+} from "../settings/core/runtime/settingsDispatcher";
 export type {
   ModelConfig,
   Provider,

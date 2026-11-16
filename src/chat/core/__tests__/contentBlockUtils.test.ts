@@ -6,7 +6,7 @@ import {
   extractPlainText,
   extractDerivedText,
   rebuildContent,
-} from "../contentBlockUtils";
+} from "../message/contentBlockUtils";
 import type { Attachment } from "../../attachment/types";
 
 describe("parseContent", () => {

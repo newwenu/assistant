@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Button, Tooltip } from "antd";
 import { PushpinOutlined, PushpinFilled } from "@ant-design/icons";
-import { useConfGroup } from "@/settings/core/useConfGroup";
-import { dispatchConfPatch } from "@/settings/core/settingsDispatcher";
+import { useConfGroup } from "@/settings/core/runtime/useConfGroup";
+import { dispatchConfPatch } from "@/settings/core/runtime/settingsDispatcher";
 import { useSettingMessage } from "@/settings/shared/useSettingMessage";
 import { useTranslation } from "react-i18next";
 

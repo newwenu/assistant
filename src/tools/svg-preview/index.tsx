@@ -7,7 +7,7 @@ import {
   svgToDataUrl,
   isValidSvg,
 } from "./svg-preview.service";
-import { useFileDropCapability } from "../capabilities";
+import { useFileDropCapability } from "../framework/capabilities";
 import styles from "./svg-preview.module.css";
 
 const { TextArea } = Input;

@@ -12,12 +12,12 @@ import {
   useMascotStore,
 } from "../../mascot";
 import { buildRendererConfig } from "../../mascot/core/mascotConfig";
-import { useConfGroup } from "@/settings/core/useConfGroup";
+import { useConfGroup } from "@/settings/core/runtime/useConfGroup";
 import { useAttachmentStore } from "../../stores/attachmentStore";
 import {
   buildContentBlocksAsync,
   serializeContent,
-} from "../core/contentBlockUtils";
+} from "../core/message/contentBlockUtils";
 
 interface MessageInputProps {
   /** 受控草稿：由 `ConversationView` 按 `conversationId` 持有，布局替换不丢草稿。 */

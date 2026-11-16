@@ -1,0 +1,525 @@
+#!/usr/bin/env node
+// 结构探测：为 docs/store/crate-architecture.md 与 docs/CODE-STRUCTURE.md 输出实测数字
+// 数据来源：cargo metadata（依赖/成员）+ 文件系统遍历（文件数/行数/模块/深度）
+//
+// 用法：
+//   node scripts/probe-structure.mjs              全量（rust + frontend）
+//   node scripts/probe-structure.mjs rust         仅 Rust workspace
+//   node scripts/probe-structure.mjs frontend     仅前端 src/
+//   node scripts/probe-structure.mjs --json       机器可读输出（默认 .json 后缀）
+//   node scripts/probe-structure.mjs --limit 30   调整长列表条数（默认 20）
+//   node scripts/probe-structure.mjs --out <path> 指定输出文件（默认 temp-backup/structure-probe.md）
+//
+// 报告写入文件，命令行只打印一行摘要。
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const SKIP_DIRS = new Set([
+  "node_modules",
+  "target",
+  "dist",
+  ".git",
+  "temp-backup",
+  "gen",
+]);
+
+const FRONTEND_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
+
+function parseArgs(argv) {
+  const opts = { scope: "all", json: false, limit: 20, out: null };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--json") opts.json = true;
+    else if (arg === "--limit") opts.limit = Number(argv[++i]) || 20;
+    else if (arg === "--out") opts.out = argv[++i];
+    else if (!arg.startsWith("--")) opts.scope = arg;
+  }
+  return opts;
+}
+
+function walkFiles(dir, predicate, acc = []) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return acc;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      walkFiles(full, predicate, acc);
+    } else if (predicate(entry.name)) {
+      acc.push(full);
+    }
+  }
+  return acc;
+}
+
+function readFile(file) {
+  return fs.readFileSync(file, "utf8");
+}
+
+function countLines(text) {
+  if (!text) return { total: 0, nonBlank: 0 };
+  const rows = text.split("\n");
+  const total = text.endsWith("\n") ? rows.length - 1 : rows.length;
+  let nonBlank = 0;
+  for (let i = 0; i < total; i += 1) {
+    if (rows[i].trim()) nonBlank += 1;
+  }
+  return { total, nonBlank };
+}
+
+function sum(values) {
+  return values.reduce((acc, value) => acc + value, 0);
+}
+
+function fmt(value) {
+  return value.toLocaleString("en-US");
+}
+
+function relPosix(file) {
+  return path.relative(ROOT, file).split(path.sep).join("/");
+}
+
+function isGeneratedName(name) {
+  return name.includes(".generated.") || name.endsWith(".contract.ts");
+}
+
+function isTestPath(relPath) {
+  return (
+    relPath.includes("__tests__") ||
+    relPath.endsWith(".test.ts") ||
+    relPath.endsWith(".test.tsx")
+  );
+}
+
+// ---------------------------------------------------------------- rust
+
+function cargoMetadata() {
+  const result = spawnSync(
+    "cargo",
+    ["metadata", "--no-deps", "--format-version", "1"],
+    {
+      cwd: path.join(ROOT, "src-tauri"),
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `cargo metadata 失败（退出码 ${result.status}）\n${result.stderr ?? result.error ?? ""}`,
+    );
+  }
+  return JSON.parse(result.stdout);
+}
+
+function moduleInfo(crateDir) {
+  const entry = [
+    path.join(crateDir, "src", "lib.rs"),
+    path.join(crateDir, "src", "main.rs"),
+  ].find((candidate) => fs.existsSync(candidate));
+  if (!entry) return [];
+  const text = readFile(entry);
+  const names = [
+    ...text.matchAll(
+      /^(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/gm,
+    ),
+  ].map((match) => match[1]);
+  return names.map((name) => {
+    const dir = path.join(crateDir, "src", name);
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+      return { name, files: [], subdirs: [] };
+    }
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    return {
+      name,
+      files: entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".rs"))
+        .map((entry) => entry.name.slice(0, -3))
+        .filter((name) => name !== "mod")
+        .sort(),
+      subdirs: entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort(),
+    };
+  });
+}
+
+function flatModuleViolations(crateDir) {
+  const violations = [];
+  for (const file of walkFiles(path.join(crateDir, "src"), (name) =>
+    name.endsWith(".rs"),
+  )) {
+    if (file.endsWith(`${path.sep}mod.rs`)) continue;
+    const sibling = file.slice(0, -".rs".length);
+    if (fs.existsSync(sibling) && fs.statSync(sibling).isDirectory()) {
+      violations.push(relPosix(file));
+    }
+  }
+  return violations;
+}
+
+function probeRust() {
+  const meta = cargoMetadata();
+  const members = new Set(meta.workspace_members);
+  const appManifest = path.resolve(path.join(ROOT, "src-tauri", "Cargo.toml"));
+  const packages = meta.packages.filter((pkg) => members.has(pkg.id));
+  const rows = packages.map((pkg) => {
+    const crateDir = path.dirname(pkg.manifest_path);
+    const isMainApp = path.resolve(pkg.manifest_path) === appManifest;
+    const srcFiles = walkFiles(path.join(crateDir, "src"), (name) =>
+      name.endsWith(".rs"),
+    );
+    let lines = 0;
+    let nonBlank = 0;
+    let unitTests = 0;
+    for (const file of srcFiles) {
+      const text = readFile(file);
+      const counts = countLines(text);
+      lines += counts.total;
+      nonBlank += counts.nonBlank;
+      unitTests += (text.match(/#\[(?:tokio::)?test\]/g) ?? []).length;
+    }
+    const buildRsPath = path.join(crateDir, "build.rs");
+    const buildRs = fs.existsSync(buildRsPath)
+      ? countLines(readFile(buildRsPath)).total
+      : 0;
+    const normalDeps = pkg.dependencies.filter(
+      (dep) => !dep.kind || dep.kind === "normal",
+    );
+    const externalDeps = normalDeps
+      .filter((dep) => !dep.path)
+      .map((dep) => dep.rename ?? dep.name)
+      .sort();
+    const internalDeps = normalDeps
+      .filter((dep) => dep.path)
+      .map((dep) => dep.rename ?? dep.name)
+      .sort();
+    const testsDir = path.join(crateDir, "tests");
+    const integrationTests = fs.existsSync(testsDir)
+      ? fs
+          .readdirSync(testsDir, { withFileTypes: true })
+          .filter((entry) => entry.isFile() && entry.name.endsWith(".rs"))
+          .length
+      : 0;
+    const modules = moduleInfo(crateDir);
+    return {
+      name: pkg.name,
+      dir: relPosix(crateDir),
+      isMainApp,
+      files: srcFiles.length,
+      lines,
+      nonBlank,
+      buildRs,
+      externalDeps,
+      internalDeps,
+      unitTests,
+      integrationTests,
+      modules,
+      flatViolations: flatModuleViolations(crateDir),
+    };
+  });
+  rows.sort((a, b) => b.lines - a.lines);
+  const app = rows.find((row) => row.isMainApp) ?? null;
+  const crates = rows.filter((row) => !row.isMainApp);
+  return {
+    packages: rows,
+    app,
+    crates,
+    totalFiles: sum(rows.map((row) => row.files)),
+    totalLines: sum(rows.map((row) => row.lines)),
+    totalNonBlank: sum(rows.map((row) => row.nonBlank)),
+    crateFiles: sum(crates.map((row) => row.files)),
+    crateLines: sum(crates.map((row) => row.lines)),
+    crateNonBlank: sum(crates.map((row) => row.nonBlank)),
+  };
+}
+
+// ------------------------------------------------------------ frontend
+
+function probeFrontend() {
+  const srcRoot = path.join(ROOT, "src");
+  const files = walkFiles(srcRoot, (name) =>
+    FRONTEND_EXTS.has(path.extname(name)),
+  );
+  const dirs = new Map();
+
+  const ensureDir = (key) => {
+    if (!dirs.has(key)) {
+      dirs.set(key, {
+        key,
+        directFiles: 0,
+        directLines: 0,
+        totalFiles: 0,
+        totalLines: 0,
+        children: new Set(),
+      });
+    }
+    return dirs.get(key);
+  };
+
+  let totalLines = 0;
+  let totalNonBlank = 0;
+  let testFiles = 0;
+  let testLines = 0;
+  let tsxFiles = 0;
+  const fileRows = [];
+
+  for (const file of files) {
+    const rel = relPosix(file);
+    const segments = rel.split("/").slice(1);
+    const counts = countLines(readFile(file));
+    const lines = counts.total;
+    totalLines += counts.total;
+    totalNonBlank += counts.nonBlank;
+    const ext = path.extname(file);
+    if (ext === ".tsx") tsxFiles += 1;
+    const isTest = isTestPath(rel);
+    if (isTest) {
+      testFiles += 1;
+      testLines += lines;
+    }
+    const dirSegments = segments.slice(0, -1);
+    const dirKey = dirSegments.join("/") || ".";
+    const direct = ensureDir(dirKey);
+    direct.directFiles += 1;
+    direct.directLines += lines;
+    for (let depth = 0; depth <= dirSegments.length; depth += 1) {
+      const key = dirSegments.slice(0, depth).join("/") || ".";
+      const record = ensureDir(key);
+      record.totalFiles += 1;
+      record.totalLines += lines;
+    }
+    if (dirSegments.length > 0) {
+      ensureDir(dirSegments.slice(0, -1).join("/") || ".").children.add(
+        dirSegments.at(-1),
+      );
+    }
+    fileRows.push({
+      path: rel,
+      lines,
+      nonBlank: counts.nonBlank,
+      dirDepth: dirSegments.length,
+      generated: isGeneratedName(path.basename(file)),
+      test: isTest,
+    });
+  }
+
+  const dirRows = [...dirs.values()]
+    .map((record) => ({
+      key: record.key,
+      directFiles: record.directFiles,
+      directLines: record.directLines,
+      subdirs: record.children.size,
+      totalFiles: record.totalFiles,
+      totalLines: record.totalLines,
+    }))
+    .sort((a, b) => b.totalLines - a.totalLines);
+
+  const deepFiles = fileRows
+    .filter((row) => !row.generated && row.dirDepth > 3)
+    .sort((a, b) => b.dirDepth - a.dirDepth || b.lines - a.lines);
+
+  const flatDirs = dirRows
+    .filter((row) => row.directFiles >= 12)
+    .sort((a, b) => b.directFiles - a.directFiles);
+
+  const bigFiles = [...fileRows].sort((a, b) => b.lines - a.lines);
+
+  return {
+    root: relPosix(srcRoot),
+    totalFiles: files.length,
+    totalLines,
+    totalNonBlank,
+    tsxFiles,
+    testFiles,
+    testLines,
+    dirs: dirRows,
+    deepFiles,
+    flatDirs,
+    bigFiles,
+  };
+}
+
+// ------------------------------------------------------------- output
+
+function moduleText(mod) {
+  const files = mod.files;
+  const dirs = mod.subdirs;
+  if (!files.length && !dirs.length) return mod.name;
+  const parts = [];
+  if (files.length) parts.push(files.join("/"));
+  if (dirs.length) parts.push(`[${dirs.join("/")}]`);
+  return `${mod.name}(${parts.join(" + ")})`;
+}
+
+function buildRust(rust) {
+  const lines = [];
+  const rows = rust.packages;
+  lines.push("## Rust（src-tauri workspace）", "");
+  lines.push(
+    "> 口径：行数/文件数只统计各 crate `src/**/*.rs`；`行数` 含空行（等价 `wc -l`），`非空行` 为去掉纯空白行后的计数；`build.rs` 单列；单测数按 `#[test]` / `#[tokio::test]` 计数；集成测试为 `tests/*.rs` 文件数。",
+    "",
+    "| 组成部分 | 行数 | 非空行 | 文件数 |",
+    "|---|---|---|---|",
+  );
+  if (rust.app) {
+    lines.push(
+      `| 主 app（\`src-tauri/src\`） | ${fmt(rust.app.lines)} | ${fmt(rust.app.nonBlank)} | ${rust.app.files} |`,
+    );
+  }
+  lines.push(
+    `| ${rust.crates.length} 个子 crate | ${fmt(rust.crateLines)} | ${fmt(rust.crateNonBlank)} | ${rust.crateFiles} |`,
+    `| **合计** | **${fmt(rust.totalLines)}** | **${fmt(rust.totalNonBlank)}** | **${rust.totalFiles}** |`,
+    "",
+    "### 逐 crate 实测",
+    "",
+    "| crate | 行数 | 非空行 | 文件 | 外部依赖 | 内部依赖 | build.rs | 单测 | 集成测试 |",
+    "|---|---|---|---|---|---|---|---|---|",
+  );
+  for (const row of rows) {
+    const name = row.isMainApp ? `**${row.name}**（主 app）` : row.name;
+    lines.push(
+      `| ${name} | ${fmt(row.lines)} | ${fmt(row.nonBlank)} | ${row.files} | ${
+        row.externalDeps.length
+      } | ${row.internalDeps.length} | ${row.buildRs || "-"} | ${row.unitTests} | ${row.integrationTests || "-"} |`,
+    );
+  }
+  lines.push("", "### 依赖与模块", "");
+  for (const row of rows) {
+    const internal = row.internalDeps.length
+      ? row.internalDeps.join("、")
+      : "无";
+    lines.push(`- \`${row.name}\`（${row.dir}）`);
+    lines.push(`  - 内部依赖：${internal}`);
+    lines.push(
+      `  - 外部依赖：${row.externalDeps.length}（${row.externalDeps.join(" ") || "无"}）`,
+    );
+    if (row.modules.length) {
+      lines.push(`  - 模块：${row.modules.map(moduleText).join(" ")}`);
+    }
+    if (row.flatViolations.length) {
+      lines.push(
+        `  - R3 违规（foo.rs + foo/ 并存）：${row.flatViolations.join("、")}`,
+      );
+    }
+  }
+  lines.push("");
+  return lines;
+}
+
+function buildFrontend(frontend, limit) {
+  const lines = [];
+  lines.push("## 前端（src/）", "");
+  lines.push(
+    "> 口径：统计 `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`（含测试与生成物，均在表内标记）；目录深度按 `src/` 之后的目录段计；R6 阈值 3 段。",
+    "",
+  );
+  lines.push(
+    `文件 ${fmt(frontend.totalFiles)}（.tsx ${fmt(frontend.tsxFiles)}）｜行数 ${fmt(
+      frontend.totalLines,
+    )}（非空 ${fmt(frontend.totalNonBlank)}）｜测试文件 ${fmt(frontend.testFiles)}（${fmt(frontend.testLines)} 行）`,
+    "",
+    `### 目录规模（累计行数前 ${limit}）`,
+    "",
+    "| 目录 | 直接文件 | 子目录 | 累计文件 | 累计行数 |",
+    "|---|---|---|---|---|",
+  );
+  for (const row of frontend.dirs.slice(0, limit)) {
+    lines.push(
+      `| ${row.key} | ${row.directFiles} | ${row.subdirs} | ${row.totalFiles} | ${fmt(
+        row.totalLines,
+      )} |`,
+    );
+  }
+  lines.push("", "### R11 审查项（直接子文件 ≥12）", "");
+  if (!frontend.flatDirs.length) lines.push("无");
+  else {
+    lines.push("| 目录 | 直接文件 | 子目录 | 累计行数 |", "|---|---|---|---|");
+    for (const row of frontend.flatDirs) {
+      lines.push(
+        `| ${row.key} | ${row.directFiles} | ${row.subdirs} | ${fmt(row.totalLines)} |`,
+      );
+    }
+  }
+  lines.push("", "### R6 深度超限（src/ 之后目录段 >3，已排除生成物）", "");
+  if (!frontend.deepFiles.length) lines.push("无");
+  else {
+    for (const row of frontend.deepFiles.slice(0, limit)) {
+      lines.push(`- ${row.path}（目录 ${row.dirDepth} 段，${row.lines} 行）`);
+    }
+  }
+  lines.push(
+    "",
+    `### 最大文件（前 ${limit}）`,
+    "",
+    "| 文件 | 行数 | 标记 |",
+    "|---|---|---|",
+  );
+  for (const row of frontend.bigFiles.slice(0, limit)) {
+    const marks = [row.generated ? "生成物" : "", row.test ? "测试" : ""]
+      .filter(Boolean)
+      .join("/");
+    lines.push(`| ${row.path} | ${fmt(row.lines)} | ${marks || "-"} |`);
+  }
+  lines.push("");
+  return lines;
+}
+
+// --------------------------------------------------------------- main
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const scope = opts.scope === "src" ? "frontend" : opts.scope;
+  const payload = {};
+  if (scope === "all" || scope === "rust") payload.rust = probeRust();
+  if (scope === "all" || scope === "frontend")
+    payload.frontend = probeFrontend();
+
+  const ext = opts.json ? "json" : "md";
+  const outPath = path.resolve(
+    ROOT,
+    opts.out ?? path.join("temp-backup", `structure-probe.${ext}`),
+  );
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+
+  let content;
+  if (opts.json) content = `${JSON.stringify(payload, null, 2)}\n`;
+  else {
+    const lines = [
+      "# 结构探测报告",
+      "",
+      `> 生成时间：${new Date().toISOString()}｜脚本：scripts/probe-structure.mjs｜范围：${scope}`,
+      "",
+    ];
+    if (payload.rust) lines.push(...buildRust(payload.rust));
+    if (payload.frontend)
+      lines.push(...buildFrontend(payload.frontend, opts.limit));
+    content = `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`;
+  }
+  fs.writeFileSync(outPath, content, "utf8");
+
+  const summary = [];
+  if (payload.rust) {
+    summary.push(
+      `rust ${payload.rust.crates.length} 子 crate + 主 app / ${fmt(payload.rust.totalLines)} 行 / ${payload.rust.totalFiles} 文件`,
+    );
+  }
+  if (payload.frontend) {
+    summary.push(
+      `frontend ${fmt(payload.frontend.totalFiles)} 文件 / ${fmt(payload.frontend.totalLines)} 行`,
+    );
+  }
+  console.log(
+    `已写入 ${relPosix(outPath)}（${fmt(content.length)} 字符）｜${summary.join("｜")}`,
+  );
+}
+
+main();

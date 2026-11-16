@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SettingOutlined } from "@ant-design/icons";
-import { definePage } from "@/settings/core/definePage";
+import { definePage } from "@/settings/core/registry/definePage";
 import { resolveSidebarKeys, resolveSidebarTarget } from "@/features/nav";
 import type { PreparedRoute } from "@/features/aggregate";
 import type { SettingsPageManifest } from "@/settings/core/types/pageTypes";

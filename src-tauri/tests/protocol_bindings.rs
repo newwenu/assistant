@@ -38,9 +38,18 @@ use ts_rs::{Config, TS};
 fn ts_derived_dto_names() -> BTreeSet<String> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/protocol/dto");
     let mut names = BTreeSet::new();
-    let entries = fs::read_dir(&dir).expect("protocol dto directory is readable");
+    collect_ts_derived_dto_names(&dir, &mut names);
+    names
+}
+
+fn collect_ts_derived_dto_names(dir: &Path, names: &mut BTreeSet<String>) {
+    let entries = fs::read_dir(dir).expect("protocol dto directory is readable");
     for entry in entries {
         let path = entry.expect("dto entry is readable").path();
+        if path.is_dir() {
+            collect_ts_derived_dto_names(&path, names);
+            continue;
+        }
         if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
             continue;
         }
@@ -75,7 +84,6 @@ fn ts_derived_dto_names() -> BTreeSet<String> {
             pending = false;
         }
     }
-    names
 }
 
 fn declared_dto_names(declarations: &[String]) -> BTreeSet<String> {

@@ -2,8 +2,8 @@ import { Tooltip } from "antd";
 import { WarningOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultShallow } from "./core/vaultStore";
-import { deriveSyncDisplay, remoteErrorText } from "./core/syncDisplay";
-import { VAULT_TONES } from "./core/vaultColors";
+import { deriveSyncDisplay, remoteErrorText } from "./core/display/syncDisplay";
+import { VAULT_TONES } from "./core/display/vaultColors";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import styles from "./vault.module.css";
 

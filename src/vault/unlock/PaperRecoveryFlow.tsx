@@ -12,10 +12,10 @@ import {
 import { CopyOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultShallow, useVaultStore } from "../core/vaultStore";
-import { vaultErrorText } from "../core/vaultErrorText";
-import { normalizePaperInput, paperInputError } from "../core/paperKey";
+import { vaultErrorText } from "../core/display/vaultErrorText";
+import { normalizePaperInput, paperInputError } from "../core/display/paperKey";
 import type { PaperErrorPosDto, RecoveryExportDto } from "../core/vault.types";
-import RecoveryKeyForm from "../settings/RecoveryKeyForm";
+import RecoveryKeyForm from "../settings/recovery/RecoveryKeyForm";
 
 interface PaperRecoveryFlowProps {
   open: boolean;

@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../tauriInvoke", () => ({
+vi.mock("../system/tauriInvoke", () => ({
   tauriInvoke: vi.fn(),
 }));
 
-import { tauriInvoke as invoke } from "../tauriInvoke";
-import { mcpService } from "../mcpService";
+import { tauriInvoke as invoke } from "../system/tauriInvoke";
+import { mcpService } from "../tool/mcpService";
 import type { McpServerDto } from "@/types/protocol.contract";
 
 const mockInvoke = vi.mocked(invoke);

@@ -3,7 +3,7 @@ import {
   linkFromModeKind,
   resolveConversationRoute,
   type ModeLinkFields,
-} from "../conversationLink";
+} from "../message/conversationLink";
 
 function mode(partial: Partial<ModeLinkFields> & { id: string }) {
   return {

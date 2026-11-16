@@ -8,14 +8,14 @@ vi.mock("@tauri-apps/api/path", () => ({
     Promise.resolve(`${base}/${name}`),
   ),
 }));
-vi.mock("@/services/storageService", () => ({
+vi.mock("@/services/desktop/storageService", () => ({
   storageService: {
     getAssetDirs: vi.fn(),
     openAttachment: vi.fn(),
   },
 }));
 
-const { storageService } = await import("@/services/storageService");
+const { storageService } = await import("@/services/desktop/storageService");
 const getAssetDirs = vi.mocked(storageService.getAssetDirs);
 const openAttachment = vi.mocked(storageService.openAttachment);
 

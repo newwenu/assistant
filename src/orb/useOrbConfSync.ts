@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { fetchConf } from "@/settings/core/confRuntime";
-import { orbService } from "../services/orbService";
+import { fetchConf } from "@/settings/core/runtime/confRuntime";
+import { orbService } from "../services/desktop/orbService";
 import type { OrbConf } from "@/settings/core/types/confTypes";
 import { SettingEvent, SettingAction } from "../types/events";
 import type { SettingEventPayload } from "../types/events";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 
 const log = createLogger("useOrbConfSync");
 

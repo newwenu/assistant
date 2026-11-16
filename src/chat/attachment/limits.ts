@@ -1,5 +1,5 @@
 import type { AttachmentLimitsDto } from "@/types/protocol.contract";
-import { storageService } from "@/services/storageService";
+import { storageService } from "@/services/desktop/storageService";
 
 let cached: AttachmentLimitsDto | null = null;
 let limitsPromise: Promise<AttachmentLimitsDto> | null = null;

@@ -6,11 +6,11 @@ import {
   type PointerEventHandler,
 } from "react";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
-import { orbService } from "../services/orbService";
-import { createLogger } from "@/services/logger";
+import { orbService } from "../services/desktop/orbService";
+import { createLogger } from "@/services/system/logger";
 import { LONG_PRESS_DURATION_MS, ORB_SNAP_DELAY_MS } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
-import { getConfValue } from "@/settings/core/useConfGroup";
+import { getConfValue } from "@/settings/core/runtime/useConfGroup";
 import { useOrbExpand } from "./OrbExpand";
 import {
   advanceDrag,

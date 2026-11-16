@@ -32,7 +32,7 @@ function summary(input: SummaryInput = {}): TokenUsageSummary {
   };
 }
 
-vi.mock("../../services/chatService", () => ({
+vi.mock("../../services/chat/chatService", () => ({
   chatService: {
     listConversations: vi.fn(() => Promise.resolve([])),
     listProviders: vi.fn(() => Promise.resolve([])),
@@ -64,7 +64,7 @@ vi.mock("../../services/providerService", () => ({
   },
 }));
 
-vi.mock("../../services/logger", () => ({
+vi.mock("../../services/system/logger", () => ({
   createLogger: () => ({
     error: vi.fn(),
     warn: vi.fn(),
@@ -73,7 +73,7 @@ vi.mock("../../services/logger", () => ({
   }),
 }));
 
-vi.mock("../notifyStore", () => ({
+vi.mock("../system/notifyStore", () => ({
   notifyError: vi.fn(),
   notifyWarning: vi.fn(),
   notifyInfo: vi.fn(),
@@ -87,7 +87,7 @@ vi.mock("../notifyStore", () => ({
   },
 }));
 
-vi.mock("../agentModeStore", () => ({
+vi.mock("../agent/agentModeStore", () => ({
   useAgentModeStore: {
     getState: () => ({
       selectedModeId: null,
@@ -111,10 +111,10 @@ vi.mock("../../utils/persistQueue", () => ({
   },
 }));
 
-import { useChatStore } from "../chatStore";
-import { useChatStreamStore } from "../chatStreamStore";
-import { createStatePort } from "../chatStorePorts";
-import { chatService } from "../../services/chatService";
+import { useChatStore } from "../chat/chatStore";
+import { useChatStreamStore } from "../chat/chatStreamStore";
+import { createStatePort } from "../chat/chatStorePorts";
+import { chatService } from "../../services/chat/chatService";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 

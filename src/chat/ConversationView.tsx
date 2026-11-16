@@ -8,18 +8,18 @@ import React, {
 } from "react";
 import { Modal } from "antd";
 import { useTranslation } from "react-i18next";
-import { chatService } from "../services/chatService";
+import { chatService } from "../services/chat/chatService";
 import { openFromPanel } from "@/orb/panelActions";
 import { resolveOverlayContainer } from "@/orb/orbOverlays";
-import { useChatStore } from "../stores/chatStore";
-import { useChatStreamStore } from "../stores/chatStreamStore";
+import { useChatStore } from "../stores/chat/chatStore";
+import { useChatStreamStore } from "../stores/chat/chatStreamStore";
 import { useProviderStore } from "../stores/providerStore";
-import { useAgentModeStore } from "../stores/agentModeStore";
+import { useAgentModeStore } from "../stores/agent/agentModeStore";
 import { resolveDefaultModel } from "./core/providerModel";
-import { resolveConversationRoute } from "./core/conversationLink";
+import { resolveConversationRoute } from "./core/message/conversationLink";
 import { DEFAULT_TOOL_CONFIG } from "./core/toolConfig";
 import type { ConversationToolConfig } from "./core/chatTypes";
-import { notifyInfo, notifyError } from "../stores/notifyStore";
+import { notifyInfo, notifyError } from "../stores/system/notifyStore";
 import type { RecoveryActionCode } from "./core/chatErrorRecovery";
 import { ConversationFrame } from "./layouts/ConversationFrame";
 import type {
@@ -30,7 +30,7 @@ import { ModeSelector } from "./selectors/ModeSelector";
 import { useToolRegionState } from "./tool/useToolRegionState";
 import { ForkDialog } from "./blocks/ForkDialog";
 import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 import { useAttachmentIntake } from "./attachment";
 import { prefetchAttachmentLimits } from "./attachment/limits";
 

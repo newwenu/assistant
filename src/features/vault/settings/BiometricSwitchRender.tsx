@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { useVaultShallow } from "@/vault/core/vaultStore";
 import { vaultService } from "@/vault/core/vault.service";
-import { vaultErrorMessage } from "@/vault/core/vaultError";
+import { vaultErrorMessage } from "@/vault/core/display/vaultError";
 import { useSettingMessage } from "@/settings/shared/useSettingMessage";
 
 export function BiometricSwitchRender() {

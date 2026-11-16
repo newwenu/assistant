@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useChatStreamStore } from "../chatStreamStore";
+import { useChatStreamStore } from "../chat/chatStreamStore";
 import type { RetryNotification } from "../../chat/core/chatTypes";
 
 describe("chatStreamStore", () => {

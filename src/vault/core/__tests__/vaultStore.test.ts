@@ -7,12 +7,12 @@ const confMock = vi.hoisted(() => ({
   vault: undefined as { vaultAutoLockMinutes: number } | undefined,
 }));
 
-vi.mock("@/settings/core/useConfGroup", () => ({
+vi.mock("@/settings/core/runtime/useConfGroup", () => ({
   getConfValue: (group: string) => (group === "vault" ? confMock.vault : null),
   useConfGroup: () => null,
 }));
 
-vi.mock("@/services/tauriInvoke", () => ({
+vi.mock("@/services/system/tauriInvoke", () => ({
   tauriInvoke: (cmd: string, args?: unknown): Promise<unknown> => {
     mockInvokeCalls.push(cmd);
     const fn = mockInvokeMap.get(cmd);

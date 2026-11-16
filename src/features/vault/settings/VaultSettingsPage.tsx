@@ -5,12 +5,12 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useVaultStore } from "@/vault/core/vaultStore";
-import { useVaultStatusReady } from "@/vault/core/useVaultStatusReady";
+import { useVaultStatusReady } from "@/vault/core/hooks/useVaultStatusReady";
 import { SettingsGroup } from "@/settings/shared/sections/SettingsGroup";
 import { SettingsSection } from "@/settings/shared/layout/SettingsSection";
 import { SettingsPageShell } from "@/settings/shared/layout/SettingsPageShell";
 import { getDefinitionsBySection } from "@/settings/core/field/fieldRegistry";
-import { useConfPatchHandlers } from "@/settings/core/useConfPatchHandlers";
+import { useConfPatchHandlers } from "@/settings/core/runtime/useConfPatchHandlers";
 
 export const VaultSettingsPage: React.FC = () => {
   const { t } = useTranslation();

@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { mcpService } from "@/services/mcpService";
-import { createLogger } from "@/services/logger";
+import { mcpService } from "@/services/tool/mcpService";
+import { createLogger } from "@/services/system/logger";
 import type {
   McpServerCreateDto,
   McpServerDto,

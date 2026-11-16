@@ -9,7 +9,7 @@ import {
   COMPACT_SETTINGS,
   AGENT_TOOL_SETTINGS,
 } from "../core/field/fieldDefinitions";
-import { useConfPatchHandlers } from "../core/useConfPatchHandlers";
+import { useConfPatchHandlers } from "../core/runtime/useConfPatchHandlers";
 
 export const GeneralSettings: React.FC = () => {
   const loadConf = useSettingsStore((s) => s.loadConf);

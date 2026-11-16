@@ -1,5 +1,5 @@
-import { useChatStreamStore } from "../stores/chatStreamStore";
-import { useChatStore } from "../stores/chatStore";
+import { useChatStreamStore } from "../stores/chat/chatStreamStore";
+import { useChatStore } from "../stores/chat/chatStore";
 import { hasPendingToolCalls } from "../chat/core/toolCallView";
 import type { Message } from "../chat/core/chatTypes";
 

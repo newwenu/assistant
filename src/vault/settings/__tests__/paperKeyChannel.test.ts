@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readRepoFile } from "@/test-utils/paths";
-import { buildPaperKeyPrintHtml } from "../printPaperKey";
+import { buildPaperKeyPrintHtml } from "../recovery/printPaperKey";
 
 const groups = ["K7M2QXF9", "3TBAWZE5", "RNCJ4YD6", "PHK2SVG9", "MTB7XQFD"];
 
@@ -37,8 +37,8 @@ describe("T-P9 恢复码展示通道", () => {
 
   it("恢复码展示组件不写入剪贴板", () => {
     for (const file of [
-      "src/vault/settings/RecoveryKeyDialog.tsx",
-      "src/vault/settings/RotateDekDialog.tsx",
+      "src/vault/settings/recovery/RecoveryKeyDialog.tsx",
+      "src/vault/settings/recovery/RotateDekDialog.tsx",
     ]) {
       const source = readRepoFile(file);
       expect(source).not.toContain("navigator.clipboard");

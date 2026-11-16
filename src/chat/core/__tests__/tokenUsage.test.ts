@@ -5,9 +5,9 @@ import {
   fetchTokenUsage,
 } from "../chatUtils";
 import type { ContextUsage, TokenUsageSummary } from "../chatTypes";
-import { chatService } from "@/services/chatService";
+import { chatService } from "@/services/chat/chatService";
 
-vi.mock("@/services/chatService", () => ({
+vi.mock("@/services/chat/chatService", () => ({
   chatService: {
     getConversationTokenUsage: vi.fn(),
   },

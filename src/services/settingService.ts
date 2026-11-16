@@ -1,5 +1,5 @@
 import type { InstallMascotAssetResultDto } from "@/types/protocol.contract";
-import { tauriInvoke as invoke } from "./tauriInvoke";
+import { tauriInvoke as invoke } from "./system/tauriInvoke";
 
 function toSnakeCaseKey(key: string): string {
   return key.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);

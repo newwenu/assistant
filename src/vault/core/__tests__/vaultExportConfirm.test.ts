@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const calls: { command: string; args: unknown }[] = [];
 
-vi.mock("@/services/tauriInvoke", () => ({
+vi.mock("@/services/system/tauriInvoke", () => ({
   tauriInvoke: (command: string, args?: unknown): Promise<unknown> => {
     calls.push({ command, args });
     if (command === "plugin:vault|vault_conflict_reveal") {

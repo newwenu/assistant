@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { Conversation } from "../../chat/core/chatTypes";
 import { historyService } from "../../services/historyService";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 
 const log = createLogger("useHistorySearch");
 

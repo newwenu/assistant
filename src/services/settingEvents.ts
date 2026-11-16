@@ -5,10 +5,10 @@ import {
   type SettingEventPayload,
 } from "../types/events";
 import { useProviderStore } from "../stores/providerStore";
-import { useThemeStore } from "../stores/themeStore";
+import { useThemeStore } from "../stores/system/themeStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { createLogger } from "./logger";
-import { isConfGroupAvailable } from "@/settings/core/confRuntime";
+import { createLogger } from "./system/logger";
+import { isConfGroupAvailable } from "@/settings/core/runtime/confRuntime";
 
 const log = createLogger("setting-events");
 

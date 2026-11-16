@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveNavigateMode } from "@/tools/miniNavigate";
+import { resolveNavigateMode } from "@/tools/framework/miniNavigate";
 
 describe("mini 路由形态判断", () => {
   it("启动器与 miniFriendly 工具允许保持 mini", () => {

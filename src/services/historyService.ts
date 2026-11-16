@@ -1,5 +1,5 @@
-import { tauriInvoke as invoke } from "./tauriInvoke";
-import { chatService } from "./chatService";
+import { tauriInvoke as invoke } from "./system/tauriInvoke";
+import { chatService } from "./chat/chatService";
 import type { Conversation } from "../chat/core/chatTypes";
 import type {
   ConversationDetailDto,

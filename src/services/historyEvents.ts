@@ -7,9 +7,9 @@ import type {
 } from "../chat/core/chatTypes";
 import { ChatEvent } from "../chat/core/chatTypes";
 import { useHistoryStore } from "../stores/historyStore";
-import { useChatStore } from "../stores/chatStore";
-import { chatService } from "./chatService";
-import { createLogger } from "./logger";
+import { useChatStore } from "../stores/chat/chatStore";
+import { chatService } from "./chat/chatService";
+import { createLogger } from "./system/logger";
 
 const log = createLogger("historyEvents");
 

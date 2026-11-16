@@ -6,7 +6,7 @@ import {
   DEFAULT_SETTINGS_PAGE_ID,
   getSettingsPageManifest,
   isSettingsPageId,
-} from "@/settings/core/pageRegistry";
+} from "@/settings/core/registry/pageRegistry";
 
 const SettingsPageNotFound: React.FC<{ pageId: string }> = ({ pageId }) => {
   const { t } = useTranslation();

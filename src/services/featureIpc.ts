@@ -1,4 +1,4 @@
-import { tauriInvoke } from "./tauriInvoke";
+import { tauriInvoke } from "./system/tauriInvoke";
 import type { FeatureModule } from "@/features/types";
 
 export function pluginCommand(namespace: string, command: string): string {

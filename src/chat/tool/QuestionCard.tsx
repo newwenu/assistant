@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Button, Input } from "antd";
 import { useTranslation } from "react-i18next";
 import type { AgentQuestion, AgentQuestionRequest } from "../core/chatTypes";
-import { chatService } from "@/services/chatService";
+import { chatService } from "@/services/chat/chatService";
 import css from "./QuestionCard.module.css";
 
 interface QuestionCardProps {

@@ -14,13 +14,13 @@ import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from "@/config/constants";
 import {
   getSettingsDetailPages,
   getSettingsPages,
-} from "@/settings/core/pageRegistry";
+} from "@/settings/core/registry/pageRegistry";
 import {
   favoriteMenuKey,
   resolveMenuKey,
   useToolMenuItems,
-} from "@/tools/CollapsibleToolMenu";
-import { toolsMap } from "@/tools/registry";
+} from "@/tools/ui/CollapsibleToolMenu";
+import { toolsMap } from "@/tools/framework/registry";
 import { useToolStore } from "@/stores/toolStore";
 import { getFeatures } from "@/features/registry";
 import { resolveSidebarKeys, resolveSidebarTarget } from "@/features/nav";

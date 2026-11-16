@@ -3,7 +3,10 @@ import { Button, Divider, Typography } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { useNavigate, useParams } from "react-router-dom";
 import { translateKey } from "@/i18n";
-import { getSettingsPageMap, isSettingsPageId } from "../../core/pageRegistry";
+import {
+  getSettingsPageMap,
+  isSettingsPageId,
+} from "../../core/registry/pageRegistry";
 
 interface SettingsPageShellProps {
   children: React.ReactNode;

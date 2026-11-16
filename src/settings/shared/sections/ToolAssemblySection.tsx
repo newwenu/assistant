@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Checkbox, Select, Spin, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
-import { chatService } from "@/services/chatService";
-import { createLogger } from "@/services/logger";
+import { chatService } from "@/services/chat/chatService";
+import { createLogger } from "@/services/system/logger";
 import type {
   ApprovalLevelDto,
   ToolDescriptorDto,

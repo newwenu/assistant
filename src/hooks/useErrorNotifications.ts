@@ -3,7 +3,7 @@ import { notification } from "antd";
 import { listen } from "@tauri-apps/api/event";
 import { UiEvent, type ShortcutWarningPayload } from "@/types/events";
 import { translateKey } from "@/i18n";
-import { useNotifyStore } from "@/stores/notifyStore";
+import { useNotifyStore } from "@/stores/system/notifyStore";
 
 export function useErrorNotifications() {
   const [api, contextHolder] = notification.useNotification();

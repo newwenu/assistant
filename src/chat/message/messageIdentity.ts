@@ -1,5 +1,5 @@
 import type { Message } from "../core/chatTypes";
-import type { AgentMode } from "../../stores/agentModeStore";
+import type { AgentMode } from "../../stores/agent/agentModeStore";
 import type { Provider } from "../../settings/provider/types";
 
 /** 身份行解析结果；`null` 表示该段缺失，由渲染层兜底或省略（I43 §4.3）。 */

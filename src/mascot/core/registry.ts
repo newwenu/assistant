@@ -10,7 +10,7 @@ import {
   type SettingDefinition,
 } from "@/settings/core/field/fieldRegistry";
 import type { ConfGroup } from "@/settings/core/types/confRegistry";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 
 const log = createLogger("mascot-registry");
 

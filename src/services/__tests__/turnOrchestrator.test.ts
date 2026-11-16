@@ -9,7 +9,7 @@ import type { TurnEnvPort } from "../stream/turnOrchestrator";
 import { createChatTurnStrategy } from "../stream/strategies/chatTurn";
 import { createAgentTurnStrategy } from "../stream/strategies/agentTurn";
 import type { AgentSegments } from "../../stores/agent/agentSegments";
-import { chatService } from "../chatService";
+import { chatService } from "../chat/chatService";
 import type { ReasoningChoice } from "../../chat/core/reasoning";
 import type {
   ChatDeltaPayload,
@@ -68,7 +68,7 @@ function makeDelta(input: DeltaInput = {}): ChatDeltaPayload {
   };
 }
 
-vi.mock("../chatService", () => ({
+vi.mock("../chat/chatService", () => ({
   chatService: {
     listProviders: vi.fn(() =>
       Promise.resolve([{ id: "p1", defaultModel: "m1" }]),

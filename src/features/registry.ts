@@ -1,9 +1,9 @@
 import { aggregate } from "./aggregate";
 import type { AggregatedFeatures } from "./aggregate";
 import type { FeatureModule } from "./types";
-import { bindExtensionInput } from "@/settings/core/snapshot";
+import { bindExtensionInput } from "@/settings/core/runtime/snapshot";
 import { EMPTY_EXTENSION_INPUT } from "@/settings/core/types/snapshot";
-import { registerConfSlot } from "@/settings/core/confRuntime";
+import { registerConfSlot } from "@/settings/core/runtime/confRuntime";
 
 let features: AggregatedFeatures = aggregate([]);
 

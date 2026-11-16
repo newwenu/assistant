@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { AgentToolCall, Message } from "../../chat/core/chatTypes";
 import { makeMessage } from "../../test-utils/messageFixtures";
 
-vi.mock("../../services/chatService", () => ({
+vi.mock("../../services/chat/chatService", () => ({
   chatService: {
     listConversations: vi.fn(() => Promise.resolve([])),
     createConversation: vi.fn(() => Promise.resolve("conv-1")),
@@ -33,7 +33,7 @@ vi.mock("../../services/providerService", () => ({
   },
 }));
 
-vi.mock("../../services/logger", () => ({
+vi.mock("../../services/system/logger", () => ({
   createLogger: () => ({
     error: vi.fn(),
     warn: vi.fn(),
@@ -42,7 +42,7 @@ vi.mock("../../services/logger", () => ({
   }),
 }));
 
-vi.mock("../notifyStore", () => ({
+vi.mock("../system/notifyStore", () => ({
   notifyError: vi.fn(),
   notifyWarning: vi.fn(),
   notifyInfo: vi.fn(),
@@ -56,7 +56,7 @@ vi.mock("../notifyStore", () => ({
   },
 }));
 
-vi.mock("../agentModeStore", () => ({
+vi.mock("../agent/agentModeStore", () => ({
   useAgentModeStore: {
     getState: () => ({
       selectedModeId: null,
@@ -67,9 +67,9 @@ vi.mock("../agentModeStore", () => ({
   },
 }));
 
-import { useChatStore } from "../chatStore";
-import { useChatStreamStore } from "../chatStreamStore";
-import { chatService } from "../../services/chatService";
+import { useChatStore } from "../chat/chatStore";
+import { useChatStreamStore } from "../chat/chatStreamStore";
+import { chatService } from "../../services/chat/chatService";
 
 const MESSAGE_ID = "msg-1";
 const CALL_ID = "call-1";

@@ -10,15 +10,15 @@ import { useTranslation } from "react-i18next";
 import {
   workspaceService,
   type WorkspaceEntry,
-} from "../../services/workspaceService";
+} from "../../services/desktop/workspaceService";
 import {
   workspaceDisplay,
   stripVerbatimPrefix,
 } from "../core/workspaceDisplay";
 import { switchWorkspace } from "../core/workspaceSwitch";
 import { onOrbCloseOverlays } from "../../orb/orbOverlays";
-import { notifyError, notifyInfo } from "../../stores/notifyStore";
-import { createLogger } from "../../services/logger";
+import { notifyError, notifyInfo } from "../../stores/system/notifyStore";
+import { createLogger } from "../../services/system/logger";
 
 const log = createLogger("WorkspaceSelector");
 

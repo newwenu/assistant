@@ -1,7 +1,7 @@
 import React from "react";
 import type { Message } from "../../chat/core/chatTypes";
 import { getErrorPresentation } from "../core/chatErrorRecovery";
-import { extractDerivedText } from "../core/contentBlockUtils";
+import { extractDerivedText } from "../core/message/contentBlockUtils";
 import { translateKey } from "../../i18n";
 import { BranchPicker } from "../blocks/BranchPicker";
 import { MessageActions } from "./MessageActions";

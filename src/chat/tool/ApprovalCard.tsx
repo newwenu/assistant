@@ -7,7 +7,7 @@ import type {
   ToolApprovalDecision,
   ToolApprovalRequest,
 } from "../core/chatTypes";
-import { chatService } from "@/services/chatService";
+import { chatService } from "@/services/chat/chatService";
 import { sortApprovalExtensions } from "./toolCallDisplay";
 import css from "./ApprovalCard.module.css";
 

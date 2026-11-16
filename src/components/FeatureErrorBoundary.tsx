@@ -1,5 +1,5 @@
 import React from "react";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 import { isChatError } from "@/chat/core/chatErrors";
 import { translateKey } from "@/i18n";
 

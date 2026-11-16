@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("../../services/chatService", async () => {
+vi.mock("../../services/chat/chatService", async () => {
   const actual = await vi.importActual<
-    typeof import("../../services/chatService")
-  >("../../services/chatService");
+    typeof import("../../services/chat/chatService")
+  >("../../services/chat/chatService");
   return {
     isCompactCancelled: actual.isCompactCancelled,
     chatService: {
@@ -38,7 +38,7 @@ vi.mock("../../services/providerService", () => ({
   },
 }));
 
-vi.mock("../../services/logger", () => ({
+vi.mock("../../services/system/logger", () => ({
   createLogger: () => ({
     error: vi.fn(),
     warn: vi.fn(),
@@ -47,7 +47,7 @@ vi.mock("../../services/logger", () => ({
   }),
 }));
 
-vi.mock("../notifyStore", () => ({
+vi.mock("../system/notifyStore", () => ({
   notifyError: vi.fn(),
   notifyWarning: vi.fn(),
   notifyInfo: vi.fn(),
@@ -61,7 +61,7 @@ vi.mock("../notifyStore", () => ({
   },
 }));
 
-vi.mock("../agentModeStore", () => ({
+vi.mock("../agent/agentModeStore", () => ({
   useAgentModeStore: {
     getState: () => ({
       selectedModeId: null,
@@ -85,10 +85,10 @@ vi.mock("../../utils/persistQueue", () => ({
   },
 }));
 
-import { useChatStore } from "../chatStore";
-import { useChatStreamStore } from "../chatStreamStore";
-import { chatService } from "../../services/chatService";
-import { notifyError } from "../notifyStore";
+import { useChatStore } from "../chat/chatStore";
+import { useChatStreamStore } from "../chat/chatStreamStore";
+import { chatService } from "../../services/chat/chatService";
+import { notifyError } from "../system/notifyStore";
 
 describe("chatStreamStore behavior equivalence (post-integration)", () => {
   beforeEach(() => {

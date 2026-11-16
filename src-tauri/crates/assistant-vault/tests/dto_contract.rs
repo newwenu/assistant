@@ -510,7 +510,7 @@ fn vault_error_code_strings_are_frozen() {
 
 fn frontend_error_codes() -> Vec<String> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../src/vault/core/vaultError.ts");
+        .join("../../../src/vault/core/display/vaultError.ts");
     let text = std::fs::read_to_string(&path).expect("vaultError.ts must be readable");
     let body = text
         .split_once("VAULT_ERROR_CODE_FLAGS")

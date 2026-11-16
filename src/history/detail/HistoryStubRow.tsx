@@ -1,7 +1,7 @@
 import React, { useCallback } from "react";
 import { BranchesOutlined, WarningOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { extractDerivedText } from "../../chat/core/contentBlockUtils";
+import { extractDerivedText } from "../../chat/core/message/contentBlockUtils";
 import {
   BRANCH_COLORS,
   type HistoryStubRow as HistoryStubRowModel,

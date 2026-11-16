@@ -15,7 +15,7 @@ import {
   useMascotStore,
 } from "../mascot";
 import { buildRendererConfig } from "../mascot/core/mascotConfig";
-import { useConfGroup } from "@/settings/core/useConfGroup";
+import { useConfGroup } from "@/settings/core/runtime/useConfGroup";
 
 export const OrbBall: React.FC = () => {
   const { ready: confReady } = useOrbConfSync();

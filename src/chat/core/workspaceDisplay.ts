@@ -1,4 +1,4 @@
-import type { WorkspaceEntry } from "../../services/workspaceService";
+import type { WorkspaceEntry } from "../../services/desktop/workspaceService";
 
 /** 会话工作区 chip 的三态（I38h §9.3）。 */
 export type WorkspaceDisplayState = "unconfigured" | "valid" | "missing";

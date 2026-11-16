@@ -14,8 +14,8 @@ import { useTranslation } from "react-i18next";
 import {
   permissionService,
   type PermissionGrant,
-} from "@/services/permissionService";
-import { chatService } from "@/services/chatService";
+} from "@/services/tool/permissionService";
+import { chatService } from "@/services/chat/chatService";
 import type { Conversation } from "@/chat/core/chatTypes";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import { useSettingMessage } from "../useSettingMessage";

@@ -9,25 +9,28 @@ import {
   GlobalOutlined,
 } from "@ant-design/icons";
 import type { NavigateFunction } from "react-router-dom";
-import { tools } from "@/tools/registry";
+import { tools } from "@/tools/framework/registry";
 import {
   getSettingsPages,
   getSettingsCategories,
-} from "@/settings/core/pageRegistry";
+} from "@/settings/core/registry/pageRegistry";
 import {
   getAllDefinitions,
   getAllSections,
 } from "@/settings/core/field/fieldRegistry";
-import { getSettingsSnapshot } from "@/settings/core/snapshot";
+import { getSettingsSnapshot } from "@/settings/core/runtime/snapshot";
 import "@/settings/core/field/fieldDefinitions";
-import { getConfValue } from "@/settings/core/useConfGroup";
+import { getConfValue } from "@/settings/core/runtime/useConfGroup";
 import {
   dispatchConfPatch,
   dispatchThemeChanged,
-} from "@/settings/core/settingsDispatcher";
+} from "@/settings/core/runtime/settingsDispatcher";
 import { defineCommand, clearCommands } from "./commandRegistry";
 import { getFeatures } from "@/features/registry";
-import { navigateInCurrentMode, openTool } from "@/tools/miniNavigate";
+import {
+  navigateInCurrentMode,
+  openTool,
+} from "@/tools/framework/miniNavigate";
 import { translateKey } from "@/i18n";
 import type { ThemeModeDto } from "@/types/protocol.contract";
 

@@ -1,6 +1,6 @@
 import type { AdmitError } from "./types";
 import { attachmentLimits } from "./limits";
-import { notifyInfo, notifyWarning } from "../../stores/notifyStore";
+import { notifyInfo, notifyWarning } from "../../stores/system/notifyStore";
 
 const MEGABYTE = 1024 * 1024;
 

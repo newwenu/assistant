@@ -6,7 +6,7 @@ import {
 } from "./types";
 import { attachmentLimits } from "./limits";
 import { attachmentUrl } from "./paths";
-import { storageService } from "@/services/storageService";
+import { storageService } from "@/services/desktop/storageService";
 
 export type AttachmentResult =
   { ok: true; attachment: Attachment } | { ok: false; error: AdmitError };

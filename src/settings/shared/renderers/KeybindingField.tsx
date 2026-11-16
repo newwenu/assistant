@@ -10,7 +10,7 @@ import {
   normalizeBinding,
   type ConflictInfo,
 } from "../../core/types/shortcutTypes";
-import { useConfGroup } from "@/settings/core/useConfGroup";
+import { useConfGroup } from "@/settings/core/runtime/useConfGroup";
 
 const { Text } = Typography;
 

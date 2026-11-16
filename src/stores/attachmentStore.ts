@@ -6,7 +6,7 @@ import type {
 } from "../chat/attachment/types";
 import { admitAttachment } from "../chat/attachment/admit";
 import { resolveVisionSupport } from "../chat/attachment/vision";
-import { useChatStore } from "./chatStore";
+import { useChatStore } from "./chat/chatStore";
 import { useProviderStore } from "./providerStore";
 
 interface AttachmentState {

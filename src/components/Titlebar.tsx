@@ -6,7 +6,7 @@ import { WindowControls } from "./WindowControls";
 import { PinToggle } from "./PinToggle";
 import { SettingsEntry } from "./SettingsEntry";
 import { translateKey } from "@/i18n";
-import type { WindowMode } from "@/stores/windowModeStore";
+import type { WindowMode } from "@/stores/system/windowModeStore";
 import {
   TITLEBAR_HEIGHT,
   MINI_TITLEBAR_HEIGHT,

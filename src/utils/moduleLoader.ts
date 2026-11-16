@@ -1,4 +1,4 @@
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 
 const log = createLogger("moduleLoader");
 

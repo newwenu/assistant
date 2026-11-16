@@ -1,6 +1,6 @@
 import { Layout } from "antd";
 import type { ReactNode } from "react";
-import type { WindowMode } from "@/stores/windowModeStore";
+import type { WindowMode } from "@/stores/system/windowModeStore";
 import { NormalLayout } from "./NormalLayout";
 import { MiniLayout } from "./MiniLayout";
 

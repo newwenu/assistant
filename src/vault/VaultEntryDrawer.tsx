@@ -14,7 +14,7 @@ import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultShallow } from "./core/vaultStore";
 import { vaultService } from "./core/vault.service";
-import { vaultCategoryOptions } from "./core/vaultCategory";
+import { vaultCategoryOptions } from "./core/display/vaultCategory";
 import type {
   VaultCategory,
   CustomFieldInput,

@@ -13,7 +13,7 @@ import {
   getAllProviderPresets,
   getApiFormatByType as getApiFormatByTypeFromRegistry,
 } from "./providerPresetRegistry";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 import "./providerDefinitions";
 
 const log = createLogger("providerLookup");

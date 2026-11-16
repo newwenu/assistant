@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import { parseContent } from "../core/contentBlockUtils";
+import { parseContent } from "../core/message/contentBlockUtils";
 import { ImageThumbnail } from "./ImageThumbnail";
 import { FileCard } from "./FileCard";
 import css from "./MessageContent.module.css";

@@ -6,7 +6,7 @@ import {
   groupPaperKey,
   normalizePaperInput,
   paperInputError,
-} from "../paperKey";
+} from "../display/paperKey";
 
 const SAMPLE = "0123456789ABCDEFGHJKMNPQRSTVWXYZ01234567";
 

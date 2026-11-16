@@ -3,7 +3,7 @@ import { type FC, useEffect, useRef } from "react";
 import type { MascotRendererId, MascotRendererProps } from "./core/types";
 import { getRenderer } from "./core/registry";
 import { BUILTIN_RENDERER_IDS, asFace } from "./core/types";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 
 const log = createLogger("MascotRenderer");
 

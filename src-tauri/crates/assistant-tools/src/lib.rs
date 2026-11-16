@@ -1,18 +1,12 @@
-pub mod compact;
-pub mod context;
-pub mod definition;
-pub mod exec;
-pub mod gateway;
+mod contract;
+mod runtime;
+
 pub mod mcp;
 pub mod os;
-pub mod pipeline;
-pub mod policy;
-pub mod question;
-pub mod registry;
-pub mod result;
 pub mod sandbox;
-pub mod storage;
-pub mod r#trait;
+
+pub use contract::{context, definition, r#trait, result};
+pub use runtime::{compact, exec, gateway, pipeline, policy, question, registry, storage};
 
 pub use context::*;
 pub use definition::*;

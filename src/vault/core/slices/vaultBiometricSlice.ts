@@ -1,6 +1,6 @@
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 import { vaultService } from "../vault.service";
-import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
+import { vaultErrorCode, vaultErrorMessage } from "../display/vaultError";
 import type { VaultErrorCode } from "../vault.types";
 
 const log = createLogger("vaultStore");

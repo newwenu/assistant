@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveSyncDisplay, redactUrlUserInfo } from "../syncDisplay";
+import { deriveSyncDisplay, redactUrlUserInfo } from "../display/syncDisplay";
 import type { RemoteStatus } from "../vault.types";
 
 function remoteStatus(overrides: Partial<RemoteStatus> = {}): RemoteStatus {

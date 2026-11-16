@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { historyService } from "../services/historyService";
-import { chatService } from "../services/chatService";
-import { useChatStore } from "./chatStore";
+import { chatService } from "../services/chat/chatService";
+import { useChatStore } from "./chat/chatStore";
 import type { Message } from "../chat/core/chatTypes";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 
 const log = createLogger("historyStore");
 

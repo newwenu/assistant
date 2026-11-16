@@ -13,8 +13,8 @@ import {
 } from "antd";
 import { useTranslation } from "react-i18next";
 import { vaultService } from "../core/vault.service";
-import { vaultCategoryLabel } from "../core/vaultCategory";
-import { vaultErrorCode, vaultErrorMessage } from "../core/vaultError";
+import { vaultCategoryLabel } from "../core/display/vaultCategory";
+import { vaultErrorCode, vaultErrorMessage } from "../core/display/vaultError";
 import { useVaultShallow } from "../core/vaultStore";
 import type { EntryPreview, HistoryCommit } from "../core/vault.types";
 import styles from "../vault.module.css";

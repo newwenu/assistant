@@ -1,9 +1,9 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { openAttachmentFile } from "@/chat/attachment/paths";
 import { WINDOW_ORB } from "@/config/constants";
-import { orbService } from "../services/orbService";
-import { createLogger } from "@/services/logger";
-import { notifyError } from "@/stores/notifyStore";
+import { orbService } from "../services/desktop/orbService";
+import { createLogger } from "@/services/system/logger";
+import { notifyError } from "@/stores/system/notifyStore";
 import { useOrbStore } from "../stores/orbStore";
 import { collapseOrbPanel, suppressOrbBlurCollapse } from "./OrbExpand";
 

@@ -1,10 +1,10 @@
 import { useCallback } from "react";
 import { flushSync } from "react-dom";
-import { orbService } from "../services/orbService";
+import { orbService } from "../services/desktop/orbService";
 import { useOrbStore } from "../stores/orbStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { getConfValue } from "@/settings/core/useConfGroup";
-import { createLogger } from "@/services/logger";
+import { getConfValue } from "@/settings/core/runtime/useConfGroup";
+import { createLogger } from "@/services/system/logger";
 import { isOrbBusy } from "./orbBusy";
 import { closeOrbOverlays } from "./orbOverlays";
 import {

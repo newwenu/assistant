@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../tauriInvoke", () => ({
+vi.mock("../system/tauriInvoke", () => ({
   tauriInvoke: vi.fn(),
 }));
 
-import { tauriInvoke as invoke } from "../tauriInvoke";
-import { chatService } from "../chatService";
+import { tauriInvoke as invoke } from "../system/tauriInvoke";
+import { chatService } from "../chat/chatService";
 
 const mockInvoke = vi.mocked(invoke);
 

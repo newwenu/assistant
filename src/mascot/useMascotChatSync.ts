@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { useChatStore } from "../stores/chatStore";
-import { useChatStreamStore } from "../stores/chatStreamStore";
+import { useChatStore } from "../stores/chat/chatStore";
+import { useChatStreamStore } from "../stores/chat/chatStreamStore";
 import { useMascotStore } from "./mascotStore";
 import type { MascotFace, ExpressionPolicy, AckRule } from "./core/types";
 import { DEFAULT_EXPRESSION_POLICY } from "./core/expressionPolicy";

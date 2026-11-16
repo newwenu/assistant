@@ -1,6 +1,6 @@
 # 后端 Crate 架构现状
 
-> 更新日期：2026-10-30
+> 更新日期：2026-11-16
 > 数据口径：`src-tauri` workspace 实测（`Cargo.toml` + 源码行数 + `cargo tree`）
 > 关联文档：`docs/store/compile-time-attribution.md`（编译耗时归属实测）
 > 历史决策与施工记录：crate-architecture-analysis（已归档，不再维护）
@@ -26,9 +26,9 @@
 
 | 组成部分 | 文件数 | 行数 | 说明 |
 |---|---|---|---|
-| 主 app（`src/`） | 39 | 6,702 | Tauri 命令层、协议层、初始化 |
-| 12 个子 crate | 198 | 31,201 | 业务与基础设施（含 3 个 `build.rs`） |
-| **合计** | **237** | **37,903** | |
+| 主 app（`src/`） | 95 | 14,345 | Tauri 命令层、协议层、初始化 |
+| 12 个子 crate | 325 | 55,254 | 业务与基础设施（含 3 个 `build.rs`） |
+| **合计** | **420** | **69,599** | |
 
 ### 1.2 workspace 成员（12 个）
 
@@ -97,10 +97,10 @@ assistant-app  (根包, src/)
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 1,354 / 14 |
-| 直接依赖 | 4（serde、serde_json、log、dirs） |
+| 行数 / 文件 | 731 / 9 |
+| 直接依赖 | 5（`serde`、`serde_json`、`serde_ignored`、`log`、`dirs`） |
 | 内部依赖 | 无 |
-| 模块 | `app_conf` `orb_conf` `mascot_conf` `conf_group` `atomic_write` `json_config` `constant` |
+| 模块 | `app_conf` `orb_conf` `mascot_conf` `conf_group` `atomic_write` `json_config` `constant` `shortcut` |
 
 配置机制库：提供 `ConfGroup` 机制层（加载策略、原子写入、`apply_patch`）与三个核心配置组的 schema，纯 JSON 配置读写，不依赖 tauri，也不依赖任何业务 crate。只提供配置机制，vault 配置 schema 位于 `assistant-vault/src/conf.rs`，因此配置机制层与各特性本身仍是零耦合的。
 
@@ -108,8 +108,8 @@ assistant-app  (根包, src/)
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 202 / 3 |
-| 直接依赖 | 2（serde、serde_json） |
+| 行数 / 文件 | 138 / 2 |
+| 直接依赖 | 1（`serde_json`） |
 | 内部依赖 | 无 |
 | build.rs | 有（14 行，生成语言目录 revision 常量） |
 | 导出 | 无 `pub mod`，纯函数 + 常量（`DEFAULT_LOCALE`、`SHIPPED_LOCALES`、`text`、`t`、`t_with_args`、`format_text`、`set_locale`、`current_locale`、`locale_code`、`init_global`） |
@@ -120,7 +120,7 @@ assistant-app  (根包, src/)
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 956 / 9 |
+| 行数 / 文件 | 1,071 / 6 |
 | 直接依赖 | 16 |
 | 内部依赖 | 无 |
 | 模块 | `api_key` `error` `vault_crypto` |
@@ -140,55 +140,55 @@ assistant-app  (根包, src/)
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 3,046 / 24 |
-| 直接依赖 | 10（含 `rusqlite`、`tokio`） |
+| 行数 / 文件 | 4,044 / 22 |
+| 直接依赖 | 11（含 `rusqlite`、`tokio`） |
 | 内部依赖 | 无 |
 | build.rs | 有（8 行，Windows 链接 crypt32/advapi32/ws2_32/user32） |
-| 模块 | `db` `conversations` `migrations` `providers` `attachment_store` `content_codec` `tool_history` `tool_favorites` `agent_modes` `error` |
+| 模块 | `db` `conversations` `migrations` `providers` `attachment_store` `content_codec` `agent_modes` `token_usage` `workspaces` `error`；`tools`（私有聚合：`mcp_servers` `tool_favorites` `tool_history`） |
 
-会话、附件、工具历史、agent 模式的 SQLite 持久化。`rusqlite` 走 `bundled-sqlcipher`（`workspace.dependencies` 中声明 `features = ["bundled-sqlcipher"]`）。
+会话、附件、工具历史、agent 模式的 SQLite 持久化。`rusqlite` 走 `bundled-sqlcipher`（`workspace.dependencies` 中声明 `features = ["bundled-sqlcipher"]`）。`tools/` 为 B4 分组产物，`lib.rs` 以 `pub use tools::{mcp_servers, tool_favorites, tool_history}` 保持原公开路径。
 
-**重要事实**：主 app 自身也直接依赖 `rusqlite`（`src-tauri/src/setup.rs` 的 `DbState` 持有 `rusqlite::Connection`，`src-tauri/src/cmd/chat/conversation.rs` / `storage.rs` / `conversation_utils.rs` 直接使用 `rusqlite::params!`）。因此 `rusqlite` + `libsqlite3-sys`（合计约 10.3s）是**主功能固定成本，排除 vault 也无法省掉**。
+**重要事实**：主 app 自身也直接依赖 `rusqlite`（`src-tauri/src/setup.rs` 的 `DbState` 持有 `rusqlite::Connection`，`src-tauri/src/cmd/chat/insert.rs` / `cmd/storage.rs` / `cmd/conversation_utils.rs` 等直接使用 `rusqlite::params!`）。因此 `rusqlite` + `libsqlite3-sys`（合计约 10.3s）是**主功能固定成本，排除 vault 也无法省掉**。
 
 ### 2.5 assistant-providers
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 8,573 / 44 |
-| 直接依赖 | 12（`reqwest` `tokio` `futures` `async-stream` `bytes` `eventsource-stream` 等） |
+| 行数 / 文件 | 9,300 / 47 |
+| 直接依赖 | 12（`reqwest` `tokio` `tokio-util` `futures` `async-stream` `bytes` `urlencoding` `eventsource-stream` 等） |
 | 内部依赖 | 无 |
-| 模块 | `openai` `anthropic` `gemini` `base` `client` `stream` `sse_log` `types` `vision` `trace` `diagnostics` `model_catalog` `tool_call_accumulator` |
+| 模块 | `openai` `anthropic` `gemini` `base` `capability` `client` `stream` `sse_log` `types` `vision` `trace` `diagnostics` `model_catalog` |
 
-行数第二、文件数第二的 crate（8.5k 行、44 文件，仅次于 `assistant-vault`）。承载三家 LLM 的请求构造、SSE 流解析、工具调用累积、视觉输入。无内部依赖，是纯能力层。
+行数第三、文件数第三的 crate（9.3k 行、47 文件）。承载三家 LLM 的请求构造、SSE 流解析、工具调用累积、视觉输入。无内部依赖，是纯能力层。
 
 ### 2.6 assistant-agent
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 2,192 / 13 |
-| 直接依赖 | 10（含 `image`） |
+| 行数 / 文件 | 7,911 / 39 |
+| 直接依赖 | 16（含 `image`、`pdf-extract`） |
 | 内部依赖 | `assistant-providers`、`assistant-storage` |
-| 模块 | `chat_request` `chat_runtime` `chat_tasks` `compaction` `normalization` `prompt_builder` `provider_config` `request_projection` `multimodal` `error` |
+| 模块 | `agent` `kernel` `compaction` `multimodal` `normalization` `prompt_builder` `provider_config` `request_projection` `pdf_text` `token_estimate` `chat_options` `error`；`kernel` 内含 `turn/`（runner / phase / state / outcome / emit / persist / stream）与 `ports/` |
 
-会话编排层：把用户输入 + 历史 + 工具结果组装成 provider 请求，并把结果落回 storage。`image`（9.8s）与 `moxcms` / `pfxm` / `png` / `tiff` 等图像栈由该 crate 的 `multimodal` 引入。
+会话编排层：把用户输入 + 历史 + 工具结果组装成 provider 请求，并把结果落回 storage。`image`（9.8s）与 `moxcms` / `pfxm` / `png` / `tiff` 等图像栈由该 crate 的 `multimodal` 引入；`pdf-extract` 服务于 `pdf_text`。`kernel/turn/` 为 B4 分组产物，`kernel/mod.rs` 以 `pub use turn::{...}` 保持原路径。
 
 ### 2.7 assistant-tools
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 702 / 8 |
-| 直接依赖 | 6（`async-trait` `dashmap` `chardetng` `encoding_rs` 等） |
+| 行数 / 文件 | 17,482 / 93 |
+| 直接依赖 | 19（`async-trait` `dashmap` `chardetng` `encoding_rs` `ignore` `globset` `grep-searcher` `grep-regex` `tempfile` `trash` 等） |
 | 内部依赖 | 无 |
-| 模块 | `registry` `context` `result` `os` `r#trait` |
-| 平台依赖 | `windows`（`Win32::Storage::FileSystem` 用于 `fs_link.rs` 的路径与句柄校验） |
+| 模块 | `contract`（trait / definition / context / result）、`runtime`（gateway / policy / exec / pipeline / registry / compact / question / storage）、`mcp`（bridge / manager / stdio）、`os`（tools / shared）、`sandbox` |
+| 平台依赖 | `windows`（`Win32::Storage::FileSystem` 用于 `fs_link` 的路径与句柄校验） |
 
-工具注册表与平台适配（文件链接、编码探测）。**这是唯一使用 `windows` crate 且属于主功能的子 crate**，其所需 feature 仅 `Win32_Foundation` + `Win32_Storage_FileSystem`。
+工具契约、执行运行时与平台适配（文件读写/编辑/搜索、链接、编码探测、MCP 桥接、沙箱）。**这是唯一使用 `windows` crate 且属于主功能的子 crate**，其所需 feature 仅 `Win32_Foundation` + `Win32_Storage_FileSystem`。`contract/`、`runtime/` 为 B4 分组产物，`lib.rs` 的 `pub use` 面保持不变（`assistant_tools::gateway` / `pipeline` / `policy` / `compact` / `storage` 等外部路径仍可解析）。
 
 ### 2.8 assistant-orb
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 759 / 6 |
+| 行数 / 文件 | 381 / 4 |
 | 直接依赖 | 2（`log`、`tauri`） |
 | 内部依赖 | 无 |
 | 模块 | `geometry` `hover` `placement` |
@@ -199,21 +199,21 @@ assistant-app  (根包, src/)
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 89 / 2 |
-| 直接依赖 | 4（`crash-handler` `minidump-writer` `dirs` `chrono`） |
+| 行数 / 文件 | 146 / 2 |
+| 直接依赖 | 3（`crash-handler` `minidump-writer` `chrono`） |
 | 内部依赖 | 无 |
 | 模块 | 无 `pub mod`，私有 `mod crash_dump` + `pub use crash_dump::install` |
 
-最小 crate（89 行）。`minidump-common`（7.6s）由 `minidump-writer` 引入。
+最小 crate（146 行）。`minidump-common`（7.6s）由 `minidump-writer` 引入。
 
 ### 2.10 assistant-sync
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 1,432 / 8 |
+| 行数 / 文件 | 1,462 / 11 |
 | 直接依赖 | 3（`serde` `log` `thiserror`） |
 | 内部依赖 | 无 |
-| 模块 | `git_sync` `types` |
+| 模块 | `git_sync` `redact` `types` |
 
 vault 的 git 同步实现。**唯一消费者是 `assistant-vault`**，主 app 对它的直接依赖（`Cargo.toml` 中声明）仅用于在 `cmd/vault/*` 里访问，因此它与 vault 属同一排除单元。
 
@@ -221,7 +221,7 @@ vault 的 git 同步实现。**唯一消费者是 `assistant-vault`**，主 app 
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 2,753 / 20 |
+| 行数 / 文件 | 2,771 / 27 |
 | 直接依赖 | 10（`assistant-crypto` `arboard` `ssh-key` `rsa` `reqwest` `sha1` `hex` `zeroize` `serde` `log`） |
 | 内部依赖 | `assistant-crypto` |
 | 模块 | `clipboard_guard` `reveal_guard` `screen_lock` `ssh_agent` `unlock_dialog` `hibp` `vault_crypto` |
@@ -237,15 +237,15 @@ vault 的安全外围：剪贴板守卫、防截屏、锁屏/休眠监听、SSH 
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 9,143 / 47 |
-| 直接依赖 | 21（20 个 workspace + `ts-rs = "12"`） |
-| 内部依赖 | `assistant-crypto`、`assistant-sync` |
+| 行数 / 文件 | 9,817 / 63 |
+| 直接依赖 | 22（21 个 workspace + `ts-rs = "12"`） |
+| 内部依赖 | `assistant-crypto`、`assistant-sync`、`assistant-config` |
 | build.rs | 有（9 行，Windows 链接 crypt32/advapi32/ws2_32/user32） |
-| 模块 | `security_db` `vault_file` `audit` `biometric` `password_strength` `recovery_key` `dto` `types` `shared` `sync_engine` |
+| 模块 | `security_db` `vault_file` `audit` `biometric` `lifecycle` `password_strength` `recovery_key` `plaintext_export` `conf` `dto` `types` `shared` `sync_engine` |
 | feature | `slow-tests`、`git-tests`（仅测试用） |
 | 平台依赖 | Windows：`windows` + `windows-future`；macOS：`core-foundation` + `security-framework`；Linux：`libsecret` |
 
-全库第二大 crate（9.1k 行、47 文件）。重依赖集中地：`zxcvbn`（5.0s）、`argon2`（2.1s）、`keyring`（0.3s）、`rusqlite`（共享）、`ts-rs` + `ts-rs-macros`（6.1s，用于 DTO 类型生成）。
+全库第二大 crate（9.8k 行、63 文件，仅次于 `assistant-tools`）。重依赖集中地：`zxcvbn`（5.0s）、`argon2`（2.1s）、`keyring`（0.3s）、`rusqlite`（共享）、`ts-rs` + `ts-rs-macros`（6.1s，用于 DTO 类型生成）。
 
 三个平台专属依赖段是 vault 独有的：主 app 不声明 `core-foundation` / `security-framework` / `libsecret`。
 
@@ -257,18 +257,18 @@ vault 的安全外围：剪贴板守卫、防截屏、锁屏/休眠监听、SSH 
 
 | 排名 | crate | 行数 | 文件数 |
 |---|---|---|---|
-| 1 | assistant-vault | 9,143 | 47 |
-| 2 | assistant-providers | 8,573 | 44 |
-| 3 | assistant-storage | 3,046 | 24 |
-| 4 | assistant-security | 2,753 | 20 |
-| 5 | assistant-agent | 2,192 | 13 |
-| 6 | assistant-sync | 1,432 | 8 |
-| 7 | assistant-config | 1,354 | 14 |
-| 8 | assistant-crypto | 956 | 9 |
-| 9 | assistant-orb | 759 | 6 |
-| 10 | assistant-tools | 702 | 8 |
-| 11 | assistant-i18n | 202 | 3 |
-| 12 | assistant-crash | 89 | 2 |
+| 1 | assistant-tools | 17,482 | 93 |
+| 2 | assistant-vault | 9,817 | 63 |
+| 3 | assistant-providers | 9,300 | 47 |
+| 4 | assistant-agent | 7,911 | 39 |
+| 5 | assistant-storage | 4,044 | 22 |
+| 6 | assistant-security | 2,771 | 27 |
+| 7 | assistant-sync | 1,462 | 11 |
+| 8 | assistant-crypto | 1,071 | 6 |
+| 9 | assistant-config | 731 | 9 |
+| 10 | assistant-orb | 381 | 4 |
+| 11 | assistant-crash | 146 | 2 |
+| 12 | assistant-i18n | 138 | 2 |
 
 ### 3.2 编译耗时（中位数）
 
@@ -370,7 +370,7 @@ storage 与 vault 的 build.rs 内容一致，都服务于 `rusqlite`（SQLCiphe
 
 ### 4.5 主 app 直接持有 `rusqlite`
 
-`src-tauri/src/setup.rs` 的 `DbState` 与 `src-tauri/src/cmd/` 下的 `conversation.rs`、`storage.rs`、`conversation_utils.rs` 直接使用 `rusqlite`，而 `assistant-storage` 也依赖 `rusqlite`。这意味着 SQLCipher 的链接成本（`rusqlite` 3.4s + `libsqlite3-sys` 6.9s + 两份 build.rs）由两个位置共同承担，且无法通过排除任一业务 crate 消除。
+`src-tauri/src/setup.rs` 的 `DbState` 与 `src-tauri/src/cmd/` 下的 `chat/insert.rs`、`storage.rs`、`conversation_utils.rs`、`conversation/*` 直接使用 `rusqlite`，而 `assistant-storage` 也依赖 `rusqlite`。这意味着 SQLCipher 的链接成本（`rusqlite` 3.4s + `libsqlite3-sys` 6.9s + 两份 build.rs）由两个位置共同承担，且无法通过排除任一业务 crate 消除。
 
 ### 4.6 `assistant-orb` 依赖 `tauri`
 
@@ -387,8 +387,8 @@ storage 与 vault 的 build.rs 内容一致，都服务于 `rusqlite`（SQLCiphe
 | ① | 多消费者 | 被 ≥2 个上游 crate 引用 | `assistant-crypto`（3：app / security / vault）、`assistant-storage`（2）、`assistant-providers`（2）、`assistant-sync`（2：app / vault） |
 | ② | 可脱 tauri 独立测试 | 核心逻辑不依赖 `AppHandle` / 窗口系统，且可测逻辑 >100 行 | `assistant-crash`（纯文件 IO）、`assistant-orb`（纯几何部分已有 `tests/`）、`assistant-config`、`assistant-i18n` |
 | ③ | 编译隔离 | 拉入重依赖（单项编译 >3s），需 feature gate 让开发时跳过 | `assistant-crash`（`minidump-common` 7.6s）、`assistant-vault`（`zxcvbn` 5.0s、`ts-rs` 6.1s） |
-| ④ | 独立领域 + 体量 | 自有类型体系与错误处理，且 >300 行 | `vault`(9.1k) `providers`(8.6k) `storage`(3.0k) `security`(2.8k) `agent`(2.2k) `sync`(1.4k) `config`(1.4k) `crypto`(1.0k) `orb`(0.8k) `tools`(0.7k) |
-| ⑤ | 以上均不命中 | 留在主 app：tauri 胶水 / 单消费者 / 轻依赖 / 体量小 | `src-tauri/src/cmd/mascot_asset.rs`（138 行，两个 `#[command]` 均持有 `AppHandle`） |
+| ④ | 独立领域 + 体量 | 自有类型体系与错误处理，且 >300 行 | `tools`(17.5k) `vault`(9.8k) `providers`(9.3k) `agent`(7.9k) `storage`(4.0k) `security`(2.8k) `sync`(1.5k) `crypto`(1.1k) `config`(0.7k) `orb`(0.4k) |
+| ⑤ | 以上均不命中 | 留在主 app：tauri 胶水 / 单消费者 / 轻依赖 / 体量小 | `src-tauri/src/cmd/mascot_asset.rs`（182 行，两个 `#[command]` 均持有 `AppHandle`） |
 
 > **对旧文档示例的两处修正**：① 旧文把 `assistant-config` 列为"多消费者"示例，实测 `cargo tree -i assistant-config` 只有 `assistant-app` 一个上游，其独立依据应记为 ②+④；② 旧文 `security` 的 ③ 示例写"zxcvbn 9.7s"，但 zxcvbn 已随拆分迁入 vault，security 现自身编译 1.2s，其 ③ 依据应改记为"独占 20+ 外部依赖（arboard / ssh-key / rsa / reqwest 等），无第二消费者"。
 

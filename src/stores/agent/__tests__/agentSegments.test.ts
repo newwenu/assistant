@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createAgentSegments } from "../agentSegments";
-import { useChatStreamStore } from "../../chatStreamStore";
+import { useChatStreamStore } from "../../chat/chatStreamStore";
 import type { AgentToolCall, Message } from "../../../chat/core/chatTypes";
 import { makeMessage } from "../../../test-utils/messageFixtures";
 

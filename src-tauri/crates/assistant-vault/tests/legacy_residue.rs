@@ -41,10 +41,10 @@ const V1_SYMBOLS: [&str; 4] = [
 
 const ALLOWED_V1_RESIDUE: [(&str, &str); 2] = [
     (
-        "crates/assistant-vault/src/vault_file/mod.rs",
+        "crates/assistant-vault/src/vault_file/meta.rs",
         "master_key_salt",
     ),
-    ("crates/assistant-vault/src/vault_file/mod.rs", "emergency"),
+    ("crates/assistant-vault/src/vault_file/meta.rs", "emergency"),
 ];
 
 #[test]

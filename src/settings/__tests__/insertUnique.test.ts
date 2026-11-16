@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { insertUnique } from "@/settings/core/insertUnique";
+import { insertUnique } from "@/settings/core/runtime/insertUnique";
 
 function setup() {
   const list: string[] = [];

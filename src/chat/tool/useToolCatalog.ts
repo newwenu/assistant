@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { chatService } from "@/services/chatService";
-import { createLogger } from "@/services/logger";
+import { chatService } from "@/services/chat/chatService";
+import { createLogger } from "@/services/system/logger";
 import type { ToolDescriptorDto } from "@/types/protocol.contract";
 
 const log = createLogger("toolCatalog");

@@ -3,13 +3,13 @@ import { Form, Typography } from "antd";
 import { LockOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { App } from "antd";
-import { useVaultUnlock } from "./core/useVaultUnlock";
+import { useVaultUnlock } from "./core/hooks/useVaultUnlock";
 import {
   needsAppUpgrade,
   needsDbRepair,
   needsRepositoryReset,
-} from "./core/vaultError";
-import { vaultErrorText } from "./core/vaultErrorText";
+} from "./core/display/vaultError";
+import { vaultErrorText } from "./core/display/vaultErrorText";
 import PasswordForm from "./unlock/PasswordForm";
 import BiometricButton from "./unlock/BiometricButton";
 import DisasterRecovery from "./unlock/DisasterRecovery";

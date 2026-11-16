@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { Message } from "../core/chatTypes";
 import { MessageAvatar } from "./MessageAvatar";
 import { resolveMessageIdentity } from "./messageIdentity";
-import { useAgentModeStore } from "../../stores/agentModeStore";
+import { useAgentModeStore } from "../../stores/agent/agentModeStore";
 import { useProviderStore } from "../../stores/providerStore";
 import css from "./MessageBubble.module.css";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SettingOutlined } from "@ant-design/icons";
-import { definePage } from "@/settings/core/definePage";
-import { validateSnapshot } from "@/settings/core/snapshot";
+import { definePage } from "@/settings/core/registry/definePage";
+import { validateSnapshot } from "@/settings/core/runtime/snapshot";
 import { EMPTY_EXTENSION_INPUT } from "@/settings/core/types/snapshot";
 import type {
   SnapshotSidebarEntry,

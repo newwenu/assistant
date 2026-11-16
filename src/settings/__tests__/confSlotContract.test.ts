@@ -3,7 +3,7 @@ import fs from "node:fs";
 import {
   getBuiltinConfSlots,
   getBuiltinPages,
-} from "@/settings/core/builtinRegistry";
+} from "@/settings/core/registry/builtinRegistry";
 import { commandGroups } from "@/test-utils/rustCommands";
 import { readRepoFile, repoFileExists, repoPath } from "@/test-utils/paths";
 

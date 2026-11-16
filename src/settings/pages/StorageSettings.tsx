@@ -9,7 +9,7 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { SettingsPageShell } from "../shared/layout/SettingsPageShell";
-import { storageService } from "@/services/storageService";
+import { storageService } from "@/services/desktop/storageService";
 import type {
   AttachmentSummary,
   ConversationAttachmentSummary,

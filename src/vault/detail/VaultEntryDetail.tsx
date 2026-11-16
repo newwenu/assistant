@@ -22,8 +22,8 @@ import {
 import { useTranslation } from "react-i18next";
 import { useVaultShallow } from "../core/vaultStore";
 import type { SshKeyMeta, VaultErrorCode } from "../core/vault.types";
-import { vaultCategoryIcon } from "../core/vaultCategory";
-import { VAULT_TONES } from "../core/vaultColors";
+import { vaultCategoryIcon } from "../core/display/vaultCategory";
+import { VAULT_TONES } from "../core/display/vaultColors";
 import TotpDisplay from "./TotpDisplay";
 import RevealFieldButton from "./RevealFieldButton";
 import VaultEntryHistory from "./VaultEntryHistory";

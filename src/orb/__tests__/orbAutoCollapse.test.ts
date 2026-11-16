@@ -5,21 +5,21 @@ const mocks = vi.hoisted(() => ({
   setOrbClickThrough: vi.fn(async () => {}),
 }));
 
-vi.mock("../../services/orbService", () => ({
+vi.mock("../../services/desktop/orbService", () => ({
   orbService: {
     collapseOrbPanel: mocks.collapseOrbPanel,
     setOrbClickThrough: mocks.setOrbClickThrough,
   },
 }));
 
-vi.mock("@/settings/core/useConfGroup", () => ({
+vi.mock("@/settings/core/runtime/useConfGroup", () => ({
   getConfValue: () => ({ clickThrough: true }),
 }));
 
 import { autoCollapseOrb, collapseOrbPanel } from "../OrbExpand";
 import { useOrbStore } from "../../stores/orbStore";
-import { useChatStore } from "../../stores/chatStore";
-import { useChatStreamStore } from "../../stores/chatStreamStore";
+import { useChatStore } from "../../stores/chat/chatStore";
+import { useChatStreamStore } from "../../stores/chat/chatStreamStore";
 import type { Message, ToolCallView } from "../../chat/core/chatTypes";
 
 function awaitingMessage(): Message {

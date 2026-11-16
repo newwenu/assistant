@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { open } from "@tauri-apps/plugin-dialog";
-import { storageService } from "@/services/storageService";
+import { storageService } from "@/services/desktop/storageService";
 import { admitAttachment } from "../admit";
 import {
   prefetchAttachmentLimits,
@@ -10,7 +10,7 @@ import type { Attachment, VisionSupport } from "../types";
 import { ALLOWED_FILE_EXTENSIONS, ALLOWED_IMAGE_EXTENSIONS } from "../types";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
-vi.mock("@/services/storageService", () => ({
+vi.mock("@/services/desktop/storageService", () => ({
   storageService: { getAttachmentLimits: vi.fn() },
 }));
 

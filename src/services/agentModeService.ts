@@ -1,4 +1,4 @@
-import { tauriInvoke as invoke } from "./tauriInvoke";
+import { tauriInvoke as invoke } from "./system/tauriInvoke";
 import type {
   AgentModeDto,
   AgentModeInputDto,

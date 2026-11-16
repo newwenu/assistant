@@ -5,7 +5,7 @@ import { vaultModule } from "@/features/vault/module";
 import {
   bindExtensionInput,
   getSettingsSnapshot,
-} from "@/settings/core/snapshot";
+} from "@/settings/core/runtime/snapshot";
 import { EMPTY_EXTENSION_INPUT } from "@/settings/core/types/snapshot";
 import type { SettingsSnapshot } from "@/settings/core/types/snapshot";
 import {
@@ -15,8 +15,8 @@ import {
   getDefinitionsBySection,
   getSectionById,
   getSectionsByPage,
-} from "@/settings/core/query";
-import { defineSection } from "@/settings/core/builtinRegistry";
+} from "@/settings/core/runtime/query";
+import { defineSection } from "@/settings/core/registry/builtinRegistry";
 
 interface ProjectedCollections {
   pages: {

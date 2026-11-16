@@ -7,12 +7,12 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
-import { DEFAULT_SETTINGS_PAGE_ID } from "@/settings/core/pageRegistry";
+import { DEFAULT_SETTINGS_PAGE_ID } from "@/settings/core/registry/pageRegistry";
 import { FeatureErrorBoundary } from "@/components/FeatureErrorBoundary";
 import { HistoryManager } from "@/history";
-import { ToolBox } from "@/tools/ToolBox";
-import { ToolPage } from "@/tools/ToolPage";
-import { resolveNavigateMode } from "@/tools/miniNavigate";
+import { ToolBox } from "@/tools/ui/ToolBox";
+import { ToolPage } from "@/tools/ui/ToolPage";
+import { resolveNavigateMode } from "@/tools/framework/miniNavigate";
 import { CommandPalette } from "@/components/commandPalette/CommandPalette";
 import { SettingsContent } from "@/settings/SettingsContent";
 import { useAppInitialization } from "@/hooks/useAppInitialization";
@@ -20,8 +20,8 @@ import { useErrorNotifications } from "@/hooks/useErrorNotifications";
 import { useNavigationListener } from "@/hooks/useNavigationListener";
 import { getFeatures } from "@/features/registry";
 import { UiEvent } from "@/types/events";
-import { useWindowModeStore } from "@/stores/windowModeStore";
-import { notifyInfo } from "@/stores/notifyStore";
+import { useWindowModeStore } from "@/stores/system/windowModeStore";
+import { notifyInfo } from "@/stores/system/notifyStore";
 import { AppShell } from "./AppShell";
 
 export const MainLayout: React.FC = () => {

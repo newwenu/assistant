@@ -1,21 +1,16 @@
-pub mod agent_ask_user;
-pub mod agent_delete;
-pub mod agent_edit;
-pub mod agent_glob;
-pub mod agent_grep;
-pub mod agent_list;
-pub mod agent_mkdir;
-pub mod agent_move;
-pub mod agent_read;
-pub mod agent_write;
-pub mod fs_link;
-pub mod output;
-pub mod path;
-pub mod process_output;
-pub mod text_encoding;
+mod shared;
+mod tools;
+
+pub(crate) use shared::{fs_util, scope, walk};
+pub use shared::{output, path, process_output, text_encoding};
 
 #[cfg(test)]
-pub(crate) mod test_support;
+pub(crate) use shared::test_support;
+
+pub use tools::{
+    agent_ask_user, agent_delete, agent_edit, agent_glob, agent_grep, agent_list, agent_mkdir,
+    agent_move, agent_read, agent_write, fs_link,
+};
 
 use std::sync::Arc;
 

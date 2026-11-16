@@ -4,7 +4,7 @@ import type {
   TokenUsage,
   TokenUsageSummary,
 } from "./chatTypes";
-import { chatService } from "@/services/chatService";
+import { chatService } from "@/services/chat/chatService";
 
 export interface FetchTokenUsageDeps {
   isActiveConv: (convId: string) => boolean;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MessageTree } from "../messageTree";
+import { MessageTree } from "../message/messageTree";
 import type { Message } from "../chatTypes";
 import { makeMessage } from "../../../test-utils/messageFixtures";
 

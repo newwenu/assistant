@@ -16,7 +16,7 @@ import {
   FORMAT_OPTIONS,
   type CompressedResult,
 } from "./image-compressor.service";
-import { useFileDropCapability } from "../capabilities";
+import { useFileDropCapability } from "../framework/capabilities";
 import styles from "./image-compressor.module.css";
 
 export default function ImageCompressor() {

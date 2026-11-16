@@ -1,7 +1,7 @@
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 import { vaultService } from "../vault.service";
-import { getConfValue } from "@/settings/core/useConfGroup";
-import { vaultErrorCode, vaultErrorMessage } from "../vaultError";
+import { getConfValue } from "@/settings/core/runtime/useConfGroup";
+import { vaultErrorCode, vaultErrorMessage } from "../display/vaultError";
 import type {
   VaultEntrySummary,
   VaultEntryDetail,

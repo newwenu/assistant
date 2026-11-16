@@ -3,7 +3,10 @@ import { Form, Input, Button, Progress, Typography, Divider } from "antd";
 import { LockOutlined, UnlockOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { StrengthResult } from "../core/vault.types";
-import { STRENGTH_COLORS, STRENGTH_FALLBACK_COLOR } from "../core/vaultColors";
+import {
+  STRENGTH_COLORS,
+  STRENGTH_FALLBACK_COLOR,
+} from "../core/display/vaultColors";
 import styles from "../vault.module.css";
 
 const STRENGTH_SUFFIXES = [

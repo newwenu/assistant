@@ -1,4 +1,4 @@
-import { tauriInvoke as invoke } from "@/services/tauriInvoke";
+import { tauriInvoke as invoke } from "@/services/system/tauriInvoke";
 import type { ClockModeDto, ClockSnapshotDto } from "@/types/protocol.contract";
 
 export const clockService = {

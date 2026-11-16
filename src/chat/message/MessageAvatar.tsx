@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { useAgentModeStore } from "../../stores/agentModeStore";
-import type { AgentMode } from "../../stores/agentModeStore";
+import { useAgentModeStore } from "../../stores/agent/agentModeStore";
+import type { AgentMode } from "../../stores/agent/agentModeStore";
 import { BUILTIN_AVATARS, resolveBuiltinAvatar } from "./avatars";
 import css from "./MessageAvatar.module.css";
 

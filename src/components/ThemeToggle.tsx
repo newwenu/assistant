@@ -1,6 +1,6 @@
 import { Button, Tooltip } from "antd";
 import { DesktopOutlined, SunOutlined, MoonOutlined } from "@ant-design/icons";
-import { useThemeStore } from "@/stores/themeStore";
+import { useThemeStore } from "@/stores/system/themeStore";
 import { useTranslation } from "react-i18next";
 
 const THEME_ICONS = {

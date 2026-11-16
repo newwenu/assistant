@@ -1,6 +1,6 @@
 import React from "react";
-import { createLogger } from "@/services/logger";
-import { buildReactCrashLogPayload } from "@/services/reactProductionError";
+import { createLogger } from "@/services/system/logger";
+import { buildReactCrashLogPayload } from "@/services/system/reactProductionError";
 
 const log = createLogger("AppErrorBoundary");
 

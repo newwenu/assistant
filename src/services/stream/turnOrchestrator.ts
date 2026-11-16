@@ -5,28 +5,26 @@ import type {
   ChatDeltaPayload,
   SendChatMessageArgs,
   SessionStateChangedPayload,
-  SessionState,
-  TurnPhase,
 } from "../../chat/core/chatTypes";
-import type { ConversationRoute } from "../../chat/core/conversationLink";
-import { extractDerivedText } from "../../chat/core/contentBlockUtils";
-import { createOptimisticMessage } from "../../chat/core/optimisticMessage";
+import type { ConversationRoute } from "../../chat/core/message/conversationLink";
+import { createOptimisticMessage } from "../../chat/core/stream/optimisticMessage";
 import { contextUsageFromTokenUsage } from "../../chat/core/chatUtils";
 import {
   toReasoningLevel,
   type ReasoningChoice,
 } from "../../chat/core/reasoning";
 import { ChatErrorCode, toChatError } from "../../chat/core/chatErrors";
-import { CHAT_AUTO_TITLE_LENGTH } from "../../config/constants";
 import type { Provider } from "../../settings/provider/types";
-import { createLogger } from "../logger";
+import { createLogger } from "../system/logger";
 import type { StreamTextChunk } from "./transport";
 import type { StreamStatePort, TurnKind, TurnStrategy } from "./turnStrategy";
+import { stateToPhase, type ChatPhase } from "./phase";
+import { fallbackTitleFromUserMessage } from "./title";
+
+export type { ChatPhase } from "./phase";
+export { fallbackTitleFromUserMessage } from "./title";
 
 const log = createLogger("turnOrchestrator");
-
-export type ChatPhase =
-  "idle" | "sending" | "streaming" | "tool_executing" | "error";
 
 export interface TurnEnvPort {
   getActiveConversationId: () => string | null;
@@ -111,46 +109,6 @@ export interface TurnOrchestrator {
   getSendInProgress: () => boolean;
   getPhase: () => ChatPhase;
   getActiveConversationId: () => string | null;
-}
-
-export function fallbackTitleFromUserMessage(
-  userMessage: string,
-  maxLength = CHAT_AUTO_TITLE_LENGTH,
-): string {
-  const plainText = extractDerivedText(userMessage);
-  const firstLine = plainText.split("\n").find((l) => l.trim()) || "";
-  if (firstLine.length <= maxLength) return firstLine.trim();
-  const puncts = ["。", "？", "！", ".", "?", "!", "；", ";", "，", ","];
-  for (const p of puncts) {
-    const idx = firstLine.indexOf(p);
-    if (idx > 0 && idx < maxLength) {
-      return firstLine.slice(0, idx + 1).trim();
-    }
-  }
-  return firstLine.slice(0, maxLength).trim() + "…";
-}
-
-/** 后端 `TurnPhaseDto` → UI `ChatPhase`（I38d §2.3：phase 由后端驱动，前端不再自行推导）。 */
-function phaseFromTurnPhase(turnPhase: TurnPhase): ChatPhase {
-  switch (turnPhase) {
-    case "starting":
-      return "sending";
-    case "toolCalling":
-    case "awaitingApproval":
-      return "tool_executing";
-    case "compacting":
-    case "thinking":
-    case "streaming":
-    case "finalizing":
-      return "streaming";
-  }
-}
-
-/** 后端 `SessionStateDto` → UI `ChatPhase`；`error` 是终态（等下一次 `session-state-changed` 复位）。 */
-function stateToPhase(state: SessionState): ChatPhase {
-  if (state === "idle") return "idle";
-  if ("processing" in state) return phaseFromTurnPhase(state.processing.phase);
-  return "error";
 }
 
 export function createTurnOrchestrator(

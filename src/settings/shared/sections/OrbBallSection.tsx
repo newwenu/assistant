@@ -8,7 +8,7 @@ import {
   MASCOT_COLOR_SETTING,
 } from "../../core/field/fieldDefinitions";
 import { getDefinitionsByGroup } from "../../core/field/fieldRegistry";
-import { useConfPatchHandlers } from "../../core/useConfPatchHandlers";
+import { useConfPatchHandlers } from "../../core/runtime/useConfPatchHandlers";
 
 const MASCOT_FIXED_SETTINGS = [MASCOT_RENDERER_SETTING, MASCOT_COLOR_SETTING];
 

@@ -13,8 +13,8 @@ import {
   createSeqDedupFilter,
   textChunkScheduler,
   type CoalescibleDelta,
-} from "../../chat/core/streamCoalescer";
-import { createLogger } from "@/services/logger";
+} from "../../chat/core/stream/streamCoalescer";
+import { createLogger } from "@/services/system/logger";
 
 const log = createLogger("streamTransport");
 

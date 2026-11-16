@@ -20,8 +20,8 @@ import {
 import { aggregateCommands } from "./commandAggregation";
 import { useCommandPaletteShortcut } from "./commandPaletteBindings";
 import { COMMAND_PALETTE_MAX_PER_CATEGORY } from "@/config/constants";
-import { useConfGroup } from "@/settings/core/useConfGroup";
-import { notifyError } from "@/stores/notifyStore";
+import { useConfGroup } from "@/settings/core/runtime/useConfGroup";
+import { notifyError } from "@/stores/system/notifyStore";
 import { IS_MAC } from "@/settings/core/types/shortcutTypes";
 import styles from "./CommandPalette.module.css";
 

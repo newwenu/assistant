@@ -2,13 +2,13 @@ import { useState } from "react";
 import { Tabs } from "antd";
 import { useTranslation } from "react-i18next";
 import { useVaultShallow } from "../core/vaultStore";
-import VaultSyncSettings from "./VaultSyncSettings";
-import SshAgentTab from "./SshAgentTab";
-import RecoveryTab from "./RecoveryTab";
+import VaultSyncSettings from "./sync/VaultSyncSettings";
+import SshAgentTab from "./sync/SshAgentTab";
+import RecoveryTab from "./recovery/RecoveryTab";
 import ImportExportTab from "./ImportExportTab";
-import ChangePasswordTab from "./ChangePasswordTab";
-import DangerZoneTab from "./DangerZoneTab";
-import SecurityLogTab from "./SecurityLogTab";
+import ChangePasswordTab from "./security/ChangePasswordTab";
+import DangerZoneTab from "./security/DangerZoneTab";
+import SecurityLogTab from "./security/SecurityLogTab";
 
 interface VaultSettingsProps {
   onOpenEntry?: (entryId: string) => void;

@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import { lazyWithRecovery } from "@/utils/lazyWithRecovery";
-import { definePage } from "@/settings/core/definePage";
-import { insertUnique } from "@/settings/core/insertUnique";
+import { definePage } from "@/settings/core/registry/definePage";
+import { insertUnique } from "@/settings/core/runtime/insertUnique";
 import type { SettingsPageManifest } from "@/settings/core/types/pageTypes";
 import type {
   SettingDefinition,

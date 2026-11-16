@@ -1,7 +1,7 @@
 import { Tag, Button, Typography } from "antd";
 import { CloseOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { vaultCategoryOptions } from "./core/vaultCategory";
+import { vaultCategoryOptions } from "./core/display/vaultCategory";
 import type { VaultCategory } from "./core/vault.types";
 import styles from "./vault.module.css";
 

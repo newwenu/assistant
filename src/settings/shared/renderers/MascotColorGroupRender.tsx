@@ -3,7 +3,7 @@ import { ColorPicker, Button, Space } from "antd";
 import type { AggregationColor } from "antd/es/color-picker/color";
 import { useTranslation } from "react-i18next";
 import type { FieldRenderProps } from "../../core/types/fieldSchema";
-import { dispatchConfPatch } from "../../core/settingsDispatcher";
+import { dispatchConfPatch } from "../../core/runtime/settingsDispatcher";
 import { getAllRendererMetas, asRendererId } from "@/mascot";
 import { useSettingMessage } from "../useSettingMessage";
 

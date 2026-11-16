@@ -3,9 +3,9 @@ import { Select, Tooltip } from "antd";
 import { DownOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "../../i18n";
-import { useChatStore } from "../../stores/chatStore";
+import { useChatStore } from "../../stores/chat/chatStore";
 import { useProviderStore } from "../../stores/providerStore";
-import { useAgentModeStore } from "../../stores/agentModeStore";
+import { useAgentModeStore } from "../../stores/agent/agentModeStore";
 import { onOrbCloseOverlays } from "../../orb/orbOverlays";
 import {
   reasoningChoices,

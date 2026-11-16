@@ -4,7 +4,7 @@ import { LinkOutlined, SearchOutlined } from "@ant-design/icons";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { DragDropEvent } from "@tauri-apps/api/webview";
 import type { Event } from "@tauri-apps/api/event";
-import { os } from "../os";
+import { os } from "../framework/os";
 import {
   LINK_KIND_OPTIONS,
   KIND_DESCRIPTIONS,

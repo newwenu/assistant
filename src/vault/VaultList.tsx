@@ -4,7 +4,7 @@ import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultShallow } from "./core/vaultStore";
 import TrashDrawer from "./TrashDrawer";
-import VaultConflictResolve from "./settings/VaultConflictResolve";
+import VaultConflictResolve from "./settings/sync/VaultConflictResolve";
 import VaultToolbar from "./VaultToolbar";
 import VaultAlerts from "./VaultAlerts";
 import VaultActiveFilters from "./VaultActiveFilters";

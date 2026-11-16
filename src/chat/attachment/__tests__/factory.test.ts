@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { storageService } from "@/services/storageService";
+import { storageService } from "@/services/desktop/storageService";
 import type { AttachmentLimitsDto } from "@/types/protocol.contract";
 import {
   createFileAttachmentFromFile,
@@ -19,7 +19,7 @@ const LIMITS: AttachmentLimitsDto = {
   maxFileBytes: 16 * 1024 * 1024,
 };
 
-vi.mock("@/services/storageService", () => ({
+vi.mock("@/services/desktop/storageService", () => ({
   storageService: { importAttachment: vi.fn(), getAttachmentLimits: vi.fn() },
 }));
 vi.mock("../paths", () => ({

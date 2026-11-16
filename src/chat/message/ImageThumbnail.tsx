@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileImageOutlined, ReloadOutlined } from "@ant-design/icons";
-import type { ImageAttachmentRef } from "../core/contentBlockTypes";
+import type { ImageAttachmentRef } from "../core/message/contentBlockTypes";
 import { attachmentUrl } from "../attachment/paths";
 import { openFromPanel } from "@/orb/panelActions";
 import css from "./ImageThumbnail.module.css";

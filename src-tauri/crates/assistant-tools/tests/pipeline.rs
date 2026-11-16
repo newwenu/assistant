@@ -689,7 +689,7 @@ async fn round_budget_persists_only_the_overflowing_result() {
 /// 会命中普通英文单词，两者都会让这条门禁误报。
 #[test]
 fn pipeline_source_has_no_tauri_dependency() {
-    let source = include_str!("../src/pipeline.rs");
+    let source = include_str!("../src/runtime/pipeline.rs");
     for forbidden in [
         "tauri::",
         "use tauri",

@@ -3,7 +3,7 @@ import { Select, Tooltip } from "antd";
 import type { SelectProps } from "antd";
 import { DownOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useAgentModeStore } from "../../stores/agentModeStore";
+import { useAgentModeStore } from "../../stores/agent/agentModeStore";
 import { onOrbCloseOverlays } from "../../orb/orbOverlays";
 
 interface ModeSelectorProps {

@@ -7,9 +7,9 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultShallow } from "./core/vaultStore";
-import { useVaultStatusReady } from "./core/useVaultStatusReady";
-import { useVaultEvents } from "./core/useVaultEvents";
-import { useVaultAutoLock } from "./core/useVaultAutoLock";
+import { useVaultStatusReady } from "./core/hooks/useVaultStatusReady";
+import { useVaultEvents } from "./core/hooks/useVaultEvents";
+import { useVaultAutoLock } from "./core/hooks/useVaultAutoLock";
 import VaultUnlock from "./VaultUnlock";
 import VaultList from "./VaultList";
 import VaultStatusBar from "./VaultStatusBar";

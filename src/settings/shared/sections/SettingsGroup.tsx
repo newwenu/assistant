@@ -2,19 +2,19 @@ import { useEffect, useRef } from "react";
 import { Form } from "antd";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { translateKey } from "@/i18n";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 import type { SettingDefinition } from "../../core/field/fieldRegistry";
 import type { ConfGroup } from "../../core/types/confRegistry";
 import {
   getDefinitionsByGroup,
   INTERMEDIATE_TYPES,
 } from "../../core/field/fieldRegistry";
-import { runSideEffects } from "../../core/sideEffectRegistry";
+import { runSideEffects } from "../../core/registry/sideEffectRegistry";
 import { SettingField } from "../renderers/SettingField";
 import { toConfRecord } from "../../core/types/confUtils";
-import { useConfGroup } from "../../core/useConfGroup";
-import { optimisticConfUpdate } from "../../core/optimisticUpdate";
-import { useConfPatchHandlers } from "../../core/useConfPatchHandlers";
+import { useConfGroup } from "../../core/runtime/useConfGroup";
+import { optimisticConfUpdate } from "../../core/runtime/optimisticUpdate";
+import { useConfPatchHandlers } from "../../core/runtime/useConfPatchHandlers";
 import { useSettingMessage } from "../useSettingMessage";
 
 const log = createLogger("SettingsGroup");

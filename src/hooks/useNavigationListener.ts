@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { UiEvent } from "@/types/events";
 import type { NavigateFunction } from "react-router-dom";
-import { navigateInCurrentMode } from "@/tools/miniNavigate";
+import { navigateInCurrentMode } from "@/tools/framework/miniNavigate";
 
 export function useNavigationListener(navigate: NavigateFunction) {
   useEffect(() => {

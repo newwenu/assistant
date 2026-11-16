@@ -1,3 +1,12 @@
+use std::path::Path;
+
+use rusqlite::Connection;
+
+use assistant_crypto::error::VaultError;
+use assistant_crypto::vault_crypto::types::DbKey;
+
+use super::{SQLCIPHER_HARDENING_PRAGMAS, SQLCIPHER_PRAGMAS};
+
 pub const SCHEMA_VERSION: u32 = 2;
 
 pub const INIT_SQL: &str = r#"
@@ -48,3 +57,30 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp
 CREATE INDEX IF NOT EXISTS idx_audit_log_event_type
     ON security_audit_log(event_type);
 "#;
+
+pub(crate) fn open_connection(path: &Path, db_key: &DbKey) -> Result<Connection, VaultError> {
+    let conn = Connection::open(path).map_err(|e| VaultError::Database(e.to_string()))?;
+    apply_db_key(&conn, db_key)?;
+    Ok(conn)
+}
+
+pub(crate) fn apply_db_key(conn: &Connection, db_key: &DbKey) -> Result<(), VaultError> {
+    conn.execute_batch(SQLCIPHER_HARDENING_PRAGMAS)
+        .map_err(|e| VaultError::Database(format!("PRAGMA hardening failed: {}", e)))?;
+    let key_hex = hex::encode(db_key.expose());
+    conn.execute_batch(&format!("PRAGMA key = \"x'{}'\";", key_hex))
+        .map_err(|e| VaultError::Database(format!("PRAGMA key set failed: {}", e)))?;
+    conn.execute_batch(SQLCIPHER_PRAGMAS)
+        .map_err(|e| VaultError::Database(format!("PRAGMA cipher settings failed: {}", e)))?;
+    Ok(())
+}
+
+pub(crate) fn probe_read(conn: &Connection) -> Result<(), VaultError> {
+    conn.query_row(
+        "SELECT value FROM vault_meta WHERE key = 'schema_version'",
+        [],
+        |row| row.get::<_, String>(0),
+    )
+    .map(|_| ())
+    .map_err(|_| VaultError::LocalDbKeyMismatch)
+}

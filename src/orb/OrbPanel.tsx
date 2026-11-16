@@ -22,12 +22,12 @@ import { isOrbBusy } from "./orbBusy";
 import { closeOrbOverlays } from "./orbOverlays";
 import { openFromPanel } from "./panelActions";
 import { ConversationView } from "../chat/ConversationView";
-import { useChatStore, getChatOrchestrator } from "../stores/chatStore";
+import { useChatStore, getChatOrchestrator } from "../stores/chat/chatStore";
 import {
   subscribeChatStreamEvents,
   setChatOrchestrator,
-} from "../services/chatStreamEvents";
-import { subscribeChatLifecycleEvents } from "../services/chatLifecycleEvents";
+} from "../services/chat/chatStreamEvents";
+import { subscribeChatLifecycleEvents } from "../services/chat/chatLifecycleEvents";
 import { useMascotChatSync } from "../mascot/useMascotChatSync";
 import {
   getMouseLogicalPos,
@@ -35,7 +35,7 @@ import {
   isPointInRect,
 } from "./OrbCoord";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
-import { useNotifyStore } from "../stores/notifyStore";
+import { useNotifyStore } from "../stores/system/notifyStore";
 import { translateKey } from "../i18n";
 
 function isHoverCapable(): boolean {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { classifyKeywords } from "@/tools/categories";
-import { tools } from "@/tools/registry";
+import { classifyKeywords } from "@/tools/framework/categories";
+import { tools } from "@/tools/framework/registry";
 
 const EXPECTED_CATEGORIES: Record<string, string> = {
   "hash-text": "security",

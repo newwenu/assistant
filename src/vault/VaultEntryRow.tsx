@@ -7,8 +7,8 @@ import {
   WarningOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { vaultCategoryIcon } from "./core/vaultCategory";
-import { VAULT_TONES } from "./core/vaultColors";
+import { vaultCategoryIcon } from "./core/display/vaultCategory";
+import { VAULT_TONES } from "./core/display/vaultColors";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import type { VaultEntrySummary } from "./core/vault.types";
 import styles from "./vault.module.css";

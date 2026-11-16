@@ -1,4 +1,4 @@
-import { orbService } from "../services/orbService";
+import { orbService } from "../services/desktop/orbService";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 
 export interface LogicalPos {

@@ -17,7 +17,7 @@ import {
   defineSection,
   registerSettingType,
   getSettingTypeRenderer,
-} from "../builtinRegistry";
+} from "../registry/builtinRegistry";
 import {
   getAllDefinitions,
   getDefinitionsByGroup,
@@ -25,7 +25,7 @@ import {
   getAllSections,
   getSectionsByPage,
   getSectionById,
-} from "../query";
+} from "../runtime/query";
 
 export {
   defineSetting,

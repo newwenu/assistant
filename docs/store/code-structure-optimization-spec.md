@@ -132,7 +132,7 @@ Rust 按包（`src/`，主 app 含 `build.rs`）：
 
 | 文件（非空行） | 变化原因 | 目标结构 |
 |---|---|---|
-| `assistant-tools/src/gateway.rs`（1170） | 审批域类型 / 网关决策 / 审批上下文构建 / 授权与审计存储 / 审批键归一化 / 测试替身 | `gateway/{mod,types,decision,context,stores,approval_key,testing}.rs` |
+| `assistant-tools/src/gateway.rs`（1170） | 审批域类型 / 网关决策 / 审批上下文构建 / 授权与审计存储 / 审批键归一化 / 测试替身 | `gateway/{mod,approval_key,context,decision,stores,testing}.rs` |
 | `assistant-tools/src/os/path.rs`（983） | 路径归一化 / 受保护目录与凭据目录 / 工作区归属 / 参数解析 | `os/path/{mod,resolve,protected,membership,args}.rs` |
 | `assistant-tools/src/mcp/stdio.rs`（937） | JSON-RPC 帧编解码 / 客户端与挂起表 / 超时与生命周期 / stderr 日志 | `mcp/stdio/{mod,client,transport,codec,stderr}.rs` |
 | `assistant-tools/src/os/agent_delete.rs`（899） | 安全边界 / 预扫描与预览 / 删除执行 / 回收站与卷判定 | `os/agent_delete/{mod,target,attrs,scan,exec,trash}.rs` |
@@ -246,10 +246,38 @@ Rust 按包（`src/`，主 app 含 `build.rs`）：
 
 次序：**先共享叶子下沉，再按文件拆**。`assistant-tools` 的三处重复（`base_directory`、`WalkBuilder` 配置、`ensure_empty_directory`）必须先按 REFACTOR-SPLIT-PLAN（已归档）§1.2 下沉到 `os/{scope,walk,fs_util}.rs`，否则拆完只是把第二份拷贝搬进子模块。
 
+> 前置下沉已完成（2026-11-16）：`os/scope.rs`、`os/walk.rs`、`os/fs_util.rs` 三个 `pub(crate)` 叶子落地，`agent_grep` / `agent_glob` / `agent_move` / `agent_delete` 的本地副本删除并改为调用共享叶子；对外 API 与契约不变，`cargo check` / `cargo clippy` / 全量单测通过。
+>
+> 已完成（2026-11-16）：`protocol/dto/chat.rs`（810）→ `dto/chat/{conversation,message,usage,event,content}.rs` + `chat/mod.rs` 重导出，对外路径 `dto::*` 不变；`tests/protocol_bindings.rs` 的 DTO 源码扫描改为递归子目录（原为单层 `dto/*.rs`），生成物 `protocol.contract.ts` 无 diff。
+>
+> 已完成（2026-11-16，`assistant-tools`）：`gateway.rs`（1252）→ `gateway/{mod,approval_key,context,decision,stores,testing}.rs`（`mod.rs` 保留 `ToolGateway` 与全部 `pub use`，对外导出集合不变）；`os/path.rs`（1065）→ `os/path/{mod,args,membership,protected,resolve}.rs`（组件前缀与同路径判定留在 `mod.rs`，`resolution_base` 以 `pub(crate)` 重导出）；`os/agent_delete.rs`（946）→ `os/agent_delete/{mod,attrs,exec,scan,target,trash}.rs`。三项均保持 `cargo check` / `cargo clippy` / 单测与集成测试通过。
+>
+> 已完成（2026-11-16，`assistant-tools` P1 收尾）：`mcp/stdio.rs`（979）→ `mcp/stdio/{mod,client,transport,codec,stderr}.rs`（`mod.rs` 保留三个公开常量与 `MAX_TOOL_PAGES`，`McpClient` / `RpcFailure` / `spawn_stderr_logger` 原样重导出）；`compact.rs`（915）→ `compact/{mod,types,head,anchor,truncation,preview}.rs`（`build_compact` / `rebuild_compact` / `error_kind_from_text` 与取值辅助函数留在 `mod.rs`，公开常量移入 `types.rs` 后重导出）。`cargo check` / `cargo clippy` / `cargo fmt --check` / 全量单测（212 + 16 组集成测试）全部通过。
+
+> 已完成（2026-11-16，`assistant-app`）：`cmd/conversation.rs`（841）→ `cmd/conversation/{mod,list,detail,detail_dto,mutate,branch,export}.rs`（列表/搜索、详情与分页、DTO 组装、变更与批量删除、分支与分叉、导出）。`mod.rs` 只保留 `emit_list_changed` 与 glob 重导出：`#[command]` 生成的 `__cmd__*` 宏随 `pub use x::*` 一起导出，逐项 `pub use x::{f}` 只导出函数、会让 `ipc.rs` 的 `generate_handler!` 找不到宏，因此必须保持 glob。对外命令名与签名全部不变，`cargo check` / `cargo clippy` / `cargo fmt --check` / 全量单测通过。
+
+> 已完成（2026-11-16，`assistant-app`）：`cmd/permission.rs`（721）→ `cmd/permission/{mod,grants,audit}.rs`（授权 CRUD 与 DTO 映射、审计写入词表、审计查询与分页夹取）。`tier_label` / `short_hash` 两处列表与审计共用的取值辅助下沉到 `mod.rs`；`audit_resource_from_key` / `write_grant_audit` 与 `GRANT_ACTION_*` 词表留在 `audit.rs` 以 `pub(super)` 供 `grants.rs` 复用，脱敏摘要与展示摘要仍是两份独立函数（不合并）。对外命令名与签名不变，`cargo check` / `cargo clippy` / `cargo fmt --check` / 全量单测通过。
+
+> 已完成（2026-11-16，`assistant-vault`）：`security_db/mod.rs`（740）→ `security_db/{mod,state,session,anchor}.rs`，连接与 pragma 归入既有 `schema.rs`。`mod.rs` 只留模块声明、重导出与跨子模块共享的常量（两个 pragma 串、`BACKFILL_EVENTS` / `J_CHANNEL_EVENTS`、备份前后缀与 `MAX_BACKUPS`、`JSONL_SYNC_KEY`）；`session.rs` 承载 `VaultSession` 与两个 DEK/连接守卫，`anchor.rs` 承载 `AnchorExpectation`，`state.rs` 承载 `SecurityDbState` 与其全部方法。`rekey.rs` 直接读 `self.session`、调用 `backup_dir_for` / `prune_backups`，故 `session` 字段与这两个辅助函数改为 `pub(super)`；`open_connection` / `probe_read` 由 `schema.rs` 定义并在 `mod.rs` 以 `pub(crate) use` 重导出，外部路径不变。对外 API 与契约不变，`cargo check` / `cargo clippy` / `cargo fmt --check` / 全量单测（含 vault 15 组集成测试）通过。
+
+> 已完成（2026-11-16，`assistant-tools` P2 首批）：`os/agent_grep.rs`（752）→ `os/agent_grep/{mod,request,outcome,search,sink,probe,render}.rs`（`mod.rs` 保留 `AgentGrepTool`、`TOOL_ID` 与全部 `pub const`，`GrepRequest` 解析与 `build_include` 移入 `request.rs`，`SearchOutcome` / `NonUtf8Probe` 移入 `outcome.rs`，遍历与文件判定移入 `search.rs`，`FileSink` 移入 `sink.rs`，零命中探测移入 `probe.rs`，footer 与结果渲染移入 `render.rs`）；`os/agent_write.rs`（523）→ `os/agent_write/{mod,encoding,atomic,lines,preview}.rs`（`mod.rs` 保留 `AgentWriteTool`、`WriteRequest`、两个公开常量与 `too_large_message`，编码解析与 payload 组装移入 `encoding.rs`，原子写与现有内容读取移入 `atomic.rs`，行数统计移入 `lines.rs`，审批预演移入 `preview.rs`）。两者对外导出集合不变，`cargo check` / `cargo clippy` / `cargo fmt --check` / 全量单测（212 + 16 组集成测试）通过。
+
+> 已完成（2026-11-16，`assistant-tools` P2 续）：`mcp/manager.rs`（781）→ `mcp/manager/{mod,types,lifecycle}.rs`。`mod.rs` 只保留 `McpServerManager` 结构、`new` / `with_backoff_base` / `snapshot` / `snapshots` / `with_entry` 与 `pub use types::*`，以及全部 8 项状态机单测；`types.rs` 承载状态机定义（`McpServerStatus` 与 `allows` 迁移表）、`backoff_delay` 与退避常量、`McpServerConfig` / `McpConnection` / `McpTransport` / `ServerCaller` / `McpServerSnapshot` / `ServerEntry` 与 `transition`；`lifecycle.rs` 承载 `enable` / `disable` / `mark_config_error` / `forget` / `reconnect` / `start` / `stop` / `mark_error` / `sync_tools`。`ServerEntry` 字段与 `DEFAULT_BACKOFF_BASE` 改 `pub(super)` 供 `lifecycle.rs` 跨子模块访问，对外导出集合不变，`cargo check` / `cargo clippy` / `cargo fmt --check` / 全量单测（212 + 16 组集成测试）通过。
+
+> 已完成（2026-11-16，`assistant-tools` P2 续）：`mcp/bridge.rs`（731）→ `mcp/bridge/{mod,naming,defs,call}.rs`。`naming.rs` 承载 `TOOL_PREFIX` / `McpToolName` / `normalize_segment` / `build_tool_names` / `short_hash`；`defs.rs` 承载 `McpAnnotations` / `McpToolDef` / `McpTool` 与 `impl Tool`、`build_tools`；`call.rs` 承载 `McpCallOutcome` / `McpCaller` / `guarded_call` / `map_outcome` / `map_content`。`mod.rs` 只留模块声明、`pub use` 与全部 26 项单测（跨命名、安全标记推断与结果映射三层，测试辅助桩 `StubCaller` / `def` / `tool` 不再重复）；`McpTool.description` 与 `short_hash` 改 `pub(super)` 供测试与同级子模块访问，对外导出集合不变，`cargo check` / `cargo clippy` / `cargo fmt --check` / 全量单测通过。
+
+> 已完成（2026-11-16，`assistant-vault` P2 续）：`vault_file/mod.rs`（714）→ `vault_file/{mod,entry,meta}.rs`。`mod.rs` 只保留常量、`CipherProvider`、`VaultFileManager` 结构与其仓库布局/路径方法（`new` / `cipher_algorithm` / `vault_dir` / `entries_dir` / `ensure_structure` / `ensure_gitignore` / `clean_temp_files` / `check_repository_layout` / `entry_file_path`）以及私有的 `write_atomically`；`entry.rs` 承载条目文件读写（`export_entry` / `import_entry` / `decode_entry_file` / `reencrypt_entries` / `read_all_entries` / `remove_entry_file` / `list_entry_files`、`decode_entry_content` / `peek_entry_dek_version` / `ImportedEntry::into_import`）；`meta.rs` 承载 `.vault-meta` 与清单/完整性（`meta_path` / `read_vault_meta_v2` / `write_vault_meta_v2` / `compute_manifest` / `meta_file_hash` / `verify_manifest` / `verify_meta_integrity` / `canonical_meta_bytes` 及全部校验辅助函数）。三个公开自由函数经 `mod.rs` 的 `pub use` 重导出，外部路径 `crate::vault_file::*` 不变；`tests/legacy_residue.rs` 的 v1 残留白名单随符号迁移同步指向 `vault_file/meta.rs`。`cargo check` / `cargo clippy` / `cargo fmt --check` / 全量单测通过。
+
+> 已完成（2026-11-16，`assistant-vault` P2 续）：`dto/convert.rs`（472）→ `dto/convert/{mod,sync,error,misc,entry}.rs`。`sync.rs` 承载全部同步域 DTO 转换（仓库状态、就绪度、远端状态、待删除条目、不可读原因、`SyncResult`、冲突文件/预览、`SyncConfig` 双向、`HistoryCommit`、`EntryPreview` 系列）；`error.rs` 承载 `VaultError` / `SyncError` → `VaultErrorDto`；`misc.rs` 承载 TOTP 算法、`LockReason`、`otpauth` 解析与 HIBP 条目；`entry.rs` 承载 `VaultEntrySnapshot` → `VaultEntryDetail` / `VaultEntrySummary`。四个子模块只含 `impl` 块、不导出新符号，`dto/mod.rs` 的 `mod convert;` 与对外路径不变；`cargo check` / `cargo clippy` / `cargo fmt --check` / 全量单测通过。
+
+> 已完成（2026-11-16，`assistant-app` P2 续）：`adapters/question.rs`（580）→ `adapters/question/{mod,registry,prompter,dto}.rs`。`registry.rs` 承载 `PendingQuestionRegistry`、`PendingQuestion` 与答案语义校验 `validate_answer_semantics`，并保留全部 15 项登记表单测；`prompter.rs` 承载 `TauriQuestionPrompter`、`PendingQuestionGuard` 与 `QuestionPrompter::ask` 的 fail-closed 分支；`dto.rs` 承载 `ASK_USER_TOOL_NAME` 常量与 `question_dto` 映射及其单测。`register` / `discard` 改 `pub(super)` 供 `prompter.rs` 跨子模块访问，`mod.rs` 以 `pub use` 重导出 `PendingQuestionRegistry` / `TauriQuestionPrompter`，`adapters/mod.rs` 的对外路径不变；`cargo check` / `cargo clippy` / `cargo fmt --check` / 全量单测通过。
+
+> 已完成（2026-11-16，`assistant-sync` P2 收尾）：`git_sync/git.rs`（531）→ `git_sync/git/{mod,repo,branch,remote,log,plumbing}.rs`。`plumbing.rs` 承载命令构造与输出断言（`cmd_git` / `cmd_assert_status` / `git_output` / `git_stdout_ok` / `git_stdout_ok_or`）、`BIN_NAME`、`sanitize_git_stderr` 与 `git` 主入口；`repo.rs` 承载仓库初始化/克隆、暂存提交、状态与冲突处理、`git_state` / `git_abort`、`git_rev_list_left_right_count`；`branch.rs` 承载当前分支、上游与 `branch.<name>.remote` 配置、引用哈希；`remote.rs` 承载 `push` / `pull` / `fetch`、远端增删查与 `git_ls_remote`；`log.rs` 承载 `git_last_pull_time`、`git_last_commit_info` 与 `RawLogEntry` / `git_log`。底层封装在 `plumbing.rs` 内以 `pub(super)` 暴露、`mod.rs` 只以 `pub(crate) use plumbing::git` 回挂主入口，其余 `pub use` 保持 `assistant_sync::git_sync::git::*` 对外导出集合完全不变；`cargo check` / `cargo clippy` / `cargo fmt --check` / 全量单测（含 `git_sync` 19 项集成测试）通过。
+
 | 优先级 | 条目 | 依赖 |
 |---|---|---|
 | P1 | `gateway.rs`、`os/path.rs`、`os/agent_delete.rs`、`compact.rs`、`mcp/stdio.rs` | 无；纯搬移为主 |
-| P1 | `cmd/conversation.rs`、`protocol/dto/chat.rs`、`cmd/permission.rs`、`security_db/mod.rs` | 无 |
+| P1 | `protocol/dto/chat.rs` | 无 |
 | P2 | `os/agent_grep.rs`、`os/agent_write.rs`、`mcp/manager.rs`、`mcp/bridge.rs`、`vault_file/mod.rs`、`dto/convert.rs` | 共享叶子下沉完成 |
 | P2 | `gemini/message_converter.rs`、`anthropic/message_converter.rs`、`git_sync/git.rs`、`adapters/question.rs` | 无 |
 | P3 | `multimodal.rs`、`openai/responses_stream.rs` | 需新状态结构；先补 fixture，独立 PR |
@@ -263,6 +291,25 @@ Rust 按包（`src/`，主 app 含 `build.rs`）：
 | P1 | `PermissionAuditSection`、`VaultSyncSettings`、`VaultConflictResolve` | 三者为「编排 + 状态 + 布局」混合，拆分前先补关键交互手测清单 |
 | P2 | `AgentModeSettings`、`MessageList`、`GhostyMascot`、`ConnectDialog` | B0-4 完成后 |
 | P3 | `turnOrchestrator`（仅抽 `phase.ts` / `title.ts`） | 与 `services/stream` 测试同步 |
+
+**P1 拆分前手测清单**（拆分后逐条回归，确保行为零变更）：
+
+- `PermissionAuditSection`：范围切换与 limit 切换均重置分页并重新拉取；翻页窗口上界冻结在首页首行 `atMillis`；刷新按钮重置分页 + 重新拉取并显示 loading；上一页/下一页受 `hasMore` 约束；列宽拖拽（pointerdown/move/up）实时改宽、`body` 光标 `col-resize` 且 `userSelect: none`、结束后恢复；列宽双击恢复默认；统计条决策数/拒绝率/批准率（分母 0 显示 `—`）；turn 列标题与 iteration 拼接、未归属提示；加载态 / 空态 / 错误态；定高滚动区与表头吸顶。
+- `VaultSyncSettings`：就绪度全部分支 alert（unknown / failed / repoState / noSync / noRemote / dirty / ahead / behind / diverged / inSync / readyUnchecked）；`repoState` 分支 abort 确认后提示成功；`noRemote` CTA 聚焦远端 URL 输入框；测试连接成功 toast 显示分支数；SSH hosts 保存时 split / trim / lowercase 并 patch `vault` 配置（Windows 隐藏该输入）；`noSync` 下初始化 / 克隆（本地已有条目时克隆禁用并提示）；非 `noSync` 下立即同步 / pull / push（`pendingRemovals` 非空时 push 禁用）；待删除条目 banner 的全量 / 部分标题与确认回调；不可读条目与 `keyMismatch` 告警的导出入口跳 Recovery；error alert 关闭时同时清理 `error` 与 `syncError`；上次同步相对时间与 Danger Zone 入口。
+- `VaultConflictResolve`：打开时重置选择与遮蔽状态并拉取 preview；preview 加载中 / 失败 / 成功三态；对比表「仅本地 / 仅远程 / 已变更」标签与未变更行隐藏、勾选后显示未变更并提示隐藏条数；敏感字段点击显示后按 `expiresAt` 自动重新遮蔽、关闭弹窗清理计时器；`useLocal` / `useRemote` 走确认弹窗、`mergeBoth` / `skip` 直接提交且 `mergeBoth` 传 `remote_copy_suffix`；提交成功 toast 后 `onClose`；local / remote 任一 preview 缺失时回退为双卡片视图。
+
+> 已完成（2026-11-16，前端 P1 全批）：`PermissionAuditSection.tsx`（666）→ `PermissionAuditSection/{index,range,columns,format,stats,useColumnResize,AuditTable}.ts(x)`（范围常量与 `rangeToSince`、列键与宽度夹取、时间与资源摘要格式化、统计口径、pointer 拖拽生命周期与 `body` 光标/选中锁定、定高滚动表格各自独立）；`VaultSyncSettings.tsx`（652）→ `VaultSyncSettings/{index,syncResult,statusAlert,SyncNotices,RemoteConfigForm,SyncActions}.ts(x)`（错误文案映射与同步结果/不可读条目派生、就绪度→告警装配、四类提示、远端与 SSH 表单、同步动作与 Danger Zone 入口）；`VaultConflictResolve.tsx`（635）→ `VaultConflictResolve/{index,types,useRevealSecrets,secretCells,compareRows,VersionCard,ConflictCompare}.ts(x)`（对比行类型与时间格式化、遮蔽值与自动重遮蔽计时、遮蔽单元格与标签渲染、字段摊平、单侧版本卡片、对比表与未变更折叠）。三者对外默认导出与导入路径不变，交互与行为零变更，`npm run typecheck` / `npm run lint` / `npx vitest run src/vault` 通过。
+
+**P2 关键交互基线**（拆分后逐条回归）：
+
+- `AgentModeSettings`：搜索框同时过滤内置/自定义两段；新增与编辑共用同一抽屉（编辑内置项时 `kind` 与 `name` 禁用，自定义项可删）；`reasoningEnabled` 关闭时 `reasoningEffort` 归零；`kind === "agent"` 才展示工具装配区，切回 `chat` 时保存沿用编辑态工具配置；内置项重置 / 自定义项删除均走确认弹窗；保存成功 toast 文案按新增/编辑区分；头像预览随 `kind` 回退到 agent/chat 默认；页面底部权限授权与权限审计两段常驻。
+- `MessageList`：进入会话按位置记忆落位（记住 pinned 与否）；流式中贴底自动跟随、用户上滑后停止跟随并累计未读数；停止流式且回到贴底阈值内自动恢复跟随并清零未读；触顶自动前插分页只触发一次且补偿后保持视口；「加载更早」按钮走同一补偿入口；程序性位移保护期内的滚动事件被吞掉；`ResizeObserver` 不可用时按渲染高度降级跟随；切换会话不写旧会话位置、卸载时保存最后位置；空消息时仍渲染滚动容器。
+- `GhostyMascot`：17 种表情预设的眼睛缩放/眉毛倾角/腮红浓度；`speaking` 走 viseme 嘴形、其余走固定嘴形；`waving` / `celebrating` / `dancing` 显示手臂并摆动；`thinking` 眨眼周期 4200ms、其余 2600ms，眨眼期间高光隐藏；浮动、光点挤压与地面缩放同步；`animated: false` 时不注册动画帧；`flat` 变体下暗部透明度降级。
+- `ConnectDialog`：编辑态隐藏类型字段并锁定格式；预设与自定义格式的标题/描述文案分支；`local` 格式隐藏 API Key 且不校验必填；新增态 API Key 与地址必填、类型仅在自定义时必填；编辑态空密钥按 `keepIfEmpty` 保留；「获取模型」在新增态缺密钥时给出警告、编辑态无密钥走 `listModels`、其余走 `previewModels`；获取成功后回填默认模型选项并 toast 数量；模型清单最多展示 20 条且点击回填 `defaultModel`，超出部分提示剩余条数；打开时按编辑/新增分别回填。
+
+> 已完成（2026-11-16，前端 P2 全批）：`AgentModeSettings.tsx`（约 560）→ `pages/agentMode/{index,avatar,fieldSchemas,useModeForm}.ts(x)`（头像预览与选项、字段定义与推理档位、抽屉生命周期与保存/重置/删除、列表与搜索装配各自独立）；`MessageList.tsx`（约 505）→ 保留装配 + 新增 `useMessageScroll.ts`（落位、跟随、前插补偿、未读计数与位置记忆整体下沉，源码门禁按原路径仍生效）；`GhostyMascot.tsx`（约 494）→ `svg/ghosty/{facePresets,paths,useGhostyAnimation}.ts(x)`（表情预设表、固定嘴形、逐帧动画写入）；`ConnectDialog.tsx`（约 397）→ `ConnectDialog/{index,fieldSchemas,useConnectForm,ModelPreviewList}.ts(x)`（字段与获取模型动作、表单状态与提交装配、模型清单预览、弹窗装配）。对外默认导出与导入路径不变（`ConnectDialog` 目录名与导入路径一致），交互与行为零变更，`npm run typecheck` / `npm run lint` / `npx vitest run src/mascot src/settings src/chat`（366 项）通过。
+
+> 已完成（2026-11-16，前端 P3）：`turnOrchestrator.ts`（约 520）→ 仅抽 `stream/phase.ts`（`ChatPhase` 与 `TurnPhase`/`SessionState` → UI phase 映射）与 `stream/title.ts`（`fallbackTitleFromUserMessage`），`turnOrchestrator.ts` 以 `export type` / `export { ... } from` 保持原有导出面，编排骨架与策略分派未动。`npx vitest run src/services`（67 项）通过。
 
 ### B4 扁平目录分组
 
@@ -292,13 +339,21 @@ Rust 按包（`src/`，主 app 含 `build.rs`）：
 
 `os/` 分组是原 B4 的正式化：不再按「模块数 ≥20」延后，而是作为 P2 执行；若在 B2 拆分 `os/agent_*` 文件时已建立子目录，则在同一 PR 内顺带完成 `shared/` 下沉，避免二次搬移。
 
+> 已完成（2026-11-16，B4 全批）：P1 三项 —— `src/vault/settings` → `sync/`（3）、`recovery/`（5）、`security/`（5），`VaultSettings` / `ImportExportTab` 留根层；`src/tools` → `framework/`（6）、`ui/`（8），23 个工具目录不动（`registry.ts` 的 `import("./<tool>")` 同步改为 `../<tool>`）；`src/chat/core` → `stream/`（3）、`message/`（4），其余 10 个文件留根层。P2 四项 —— `src/services` → `chat/`、`tool/`、`system/`、`desktop/`（根层剩 7 个单文件）；`src/stores` → `chat/`（6）、`system/`（4），`agentModeStore` 并入已有 `agent/`（根层剩 7 个领域 store）；`assistant-tools/src/os` → `tools/`（9 个工具文件 + `agent_edit/` / `agent_read/` / `fs_link/`）、`shared/`（path / output / text_encoding / process_output / fs_util / scope / walk / test_support），`os/mod.rs` 保留原 `pub use` 导出面；`src/settings/core` → `registry/`（5）、`runtime/`（8），`types/` / `field/` / `agentKind/` / `provider/` 不动。P3 四项 —— `src/vault/core` → `hooks/`（4）、`display/`（6），`vaultStore` / `vault.service` / `vault.types` 留根层；`assistant-storage/src` → `tools/`（mcp_servers / tool_favorites / tool_history），`lib.rs` 以 `pub use tools::{...}` 保持 `assistant_storage::tool_history` 等外部路径；`assistant-agent/src/kernel` → `turn/`（runner / phase / state / outcome / emit / persist / stream），`ports/` / `request` / `tasks` / `limits` / `ids` 留根层；`assistant-tools/src` → `contract/`（trait / definition / context / result）、`runtime/`（gateway / policy / exec / pipeline / registry / compact / question / storage），`lib.rs` 的 `pub use` 路径保持不变。
+>
+> 暂不分组项复核结论不变：`src/chat/message`（18，同一「消息行渲染」变化原因）、`src/vault`（12，同一「保险库页面装配」变化原因）、`src-tauri/src/cmd`（19，多数文件即域入口，改动面大于收益）维持扁平；`src/chat/tool`（11）、`src/orb`（10）未达 12 的审查阈值。
+>
+> 源码门禁随搬移同步（行为不变、仅路径）：`assistant-tools/tests/pipeline.rs` 的 `include_str!("../src/pipeline.rs")` → `../src/runtime/pipeline.rs`；`assistant-vault/tests/dto_contract.rs` 的 `vaultError.ts` 读取路径 → `src/vault/core/display/vaultError.ts`。另清理 `assistant-i18n` 的未使用 `serde` 依赖（仅 `serde_json` 在用），消除 `cargo check` 的 unused dependency 警告。
+>
+> 验证：`npm run typecheck` / `npm run lint` / `npx vitest run`（58 个测试文件）与 `cargo check --workspace --all-targets` / `cargo clippy --workspace --all-targets -- -D warnings` / `cargo test --workspace` 全部通过，零错误零警告；对外 API 与运行时行为零变更。
+
 ### B5 文档刷新
 
 | 条目 | 动作 | 状态 |
 |---|---|---|
 | B5-1 | 更新 `CODE-STRUCTURE.md` 的模块清单（补 `mcp/`、`kernel/`、`agent/`、`sandbox/`）、脚本清单、测试布局与定位索引 | ✅ 2026-11-15 |
 | B5-2 | 更新 `crate-architecture.md` 各 crate 行数/文件数与模块列表 | 待做 |
-| B5-3 | REFACTOR-SPLIT-PLAN 已移入 `docs/achievement/`（待归档），不再需要顶部标注 | ✅ 2026-11-15（作废） |
+| B5-3 | REFACTOR-SPLIT-PLAN（已归档），不再需要顶部标注 | ✅ 2026-11-15（作废） |
 
 ---
 

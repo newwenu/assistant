@@ -1,5 +1,5 @@
 import type { Message } from "@/chat/core/chatTypes";
-import type { ConversationRoute } from "@/chat/core/conversationLink";
+import type { ConversationRoute } from "@/chat/core/message/conversationLink";
 import type { MessageDto } from "@/types/protocol.contract";
 
 /**

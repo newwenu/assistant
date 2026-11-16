@@ -1,8 +1,11 @@
 import { Tag, Select } from "antd";
 import { WarningOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { vaultCategoryIcon, vaultCategoryOptions } from "./core/vaultCategory";
-import { VAULT_TONES } from "./core/vaultColors";
+import {
+  vaultCategoryIcon,
+  vaultCategoryOptions,
+} from "./core/display/vaultCategory";
+import { VAULT_TONES } from "./core/display/vaultColors";
 import type { VaultCategory } from "./core/vault.types";
 import type { VaultSortBy } from "./core/slices/vaultEntriesSlice";
 import styles from "./vault.module.css";

@@ -1,11 +1,14 @@
 import { create } from "zustand";
-import { toolService } from "../services/toolService";
+import { toolService } from "../services/tool/toolService";
 import Fuse from "fuse.js";
 import i18n, { translateKey } from "@/i18n";
-import { tools, toolsByCategory } from "../tools/registry";
-import type { ToolDefinition, ToolCategoryGroup } from "../tools/types";
+import { tools, toolsByCategory } from "../tools/framework/registry";
+import type {
+  ToolDefinition,
+  ToolCategoryGroup,
+} from "../tools/framework/types";
 import { TOOL_SEARCH_THRESHOLD, RECENT_TOOLS_LIMIT } from "../config/constants";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 
 const log = createLogger("toolStore");
 

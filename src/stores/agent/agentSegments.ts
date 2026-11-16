@@ -5,8 +5,8 @@ import {
   cancelPendingToolCalls,
   findToolCallOwner,
 } from "../../chat/core/toolCallView";
-import { createOptimisticMessage } from "../../chat/core/optimisticMessage";
-import { useChatStreamStore } from "../chatStreamStore";
+import { createOptimisticMessage } from "../../chat/core/stream/optimisticMessage";
+import { useChatStreamStore } from "../chat/chatStreamStore";
 
 interface SegmentsWritable {
   messages: Message[];

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PushpinOutlined } from "@ant-design/icons";
 import type { Message, MessageStatus } from "../../chat/core/chatTypes";
-import { parseContent } from "../../chat/core/contentBlockUtils";
+import { parseContent } from "../../chat/core/message/contentBlockUtils";
 import css from "./HistoryBranchView.module.css";
 
 interface MessageMetaLineProps {

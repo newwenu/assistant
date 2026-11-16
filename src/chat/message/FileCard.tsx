@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import type { FileAttachmentRef } from "../core/contentBlockTypes";
+import type { FileAttachmentRef } from "../core/message/contentBlockTypes";
 import { openFromPanel } from "@/orb/panelActions";
 import { formatBytes } from "@/utils/formatBytes";
 import css from "./FileCard.module.css";

@@ -8,12 +8,15 @@ import type {
   ImageBlock,
   FileBlock,
   ContentBlock,
-} from "../core/contentBlockTypes";
+} from "../core/message/contentBlockTypes";
 import { ErrorBlock } from "../blocks/ErrorBlock";
 import { RetryBanner } from "../blocks/RetryBanner";
 import { getErrorPresentation } from "../core/chatErrorRecovery";
 import type { RecoveryActionCode } from "../core/chatErrorRecovery";
-import { extractPlainText, parseContent } from "../core/contentBlockUtils";
+import {
+  extractPlainText,
+  parseContent,
+} from "../core/message/contentBlockUtils";
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
 import { ToolCallRenderer } from "../tool/ToolCallRenderer";
 import { EditBlock } from "../blocks/EditBlock";
@@ -23,7 +26,7 @@ import { MessageActions, copyTextToClipboard } from "./MessageActions";
 import { MessageAvatar } from "./MessageAvatar";
 import { TurnTail, buildCopyText } from "./TurnTail";
 import { resolveMessageIdentity } from "./messageIdentity";
-import { useAgentModeStore } from "../../stores/agentModeStore";
+import { useAgentModeStore } from "../../stores/agent/agentModeStore";
 import { useProviderStore } from "../../stores/providerStore";
 import css from "./MessageBubble.module.css";
 

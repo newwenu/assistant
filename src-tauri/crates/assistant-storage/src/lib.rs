@@ -4,10 +4,11 @@ pub mod content_codec;
 pub mod conversations;
 pub mod db;
 pub mod error;
-pub mod mcp_servers;
 pub mod migrations;
 pub mod providers;
 pub mod token_usage;
-pub mod tool_favorites;
-pub mod tool_history;
 pub mod workspaces;
+
+mod tools;
+
+pub use tools::{mcp_servers, tool_favorites, tool_history};

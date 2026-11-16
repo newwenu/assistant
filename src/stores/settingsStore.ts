@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 import type { ConfGroup, ConfStore } from "@/settings/core/types/confRegistry";
-import { fetchConf, getConfSlot } from "@/settings/core/confRuntime";
+import { fetchConf, getConfSlot } from "@/settings/core/runtime/confRuntime";
 import { applyLocaleChange } from "@/i18n/localeApplier";
 
 export type {

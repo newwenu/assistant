@@ -10,7 +10,7 @@ import {
   type LazyExoticComponent,
 } from "react";
 import { Button, Typography } from "antd";
-import { createLogger } from "@/services/logger";
+import { createLogger } from "@/services/system/logger";
 import { translateKey } from "@/i18n";
 import {
   createModuleLoader,

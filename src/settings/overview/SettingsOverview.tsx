@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { getSettingsDetailPages } from "../core/pageRegistry";
+import { getSettingsDetailPages } from "../core/registry/pageRegistry";
 import type { SettingsPageManifest } from "../core/types/pageTypes";
 import type { ConfGroup } from "../core/types/confRegistry";
 import {

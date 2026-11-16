@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "../../core/chatTypes";
 import { ChatErrorCode } from "../../core/chatErrors";
-import { serializeContent } from "../../core/contentBlockUtils";
+import { serializeContent } from "../../core/message/contentBlockUtils";
 import { buildCopyText } from "../TurnTail";
 
 function makeMessage(overrides: Partial<Message>): Message {
