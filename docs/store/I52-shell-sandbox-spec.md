@@ -5,7 +5,7 @@
 | 状态 | 草稿（P14 实施规格；进度只在 [I38 roadmap](./I38-agent-roadmap.md) §2 维护） |
 | 日期 | 2026-11-15 |
 | 阶段 | P14（工具能力轴；见 [I38 roadmap](./I38-agent-roadmap.md) §2 / §3） |
-| 关联 | [I53](./I53-sandbox-preparation-spec.md)（沙箱准备：后端抽象 / 链式探测 / 三平台实现；本文 §3–§4 已拆出，本文只引用不复述）、I18 design §3.17（已归档）（审批链路预留与检测分层）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱模型，执行层边界）、[沙箱开源调研](./agent-sandbox-research.md)（后端选型与 ADR-1–ADR-4）、[沙箱参考分析](./agent-sandbox-reference-analysis.md)（Codex / OpenHuman / DSH 实现细节）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问与本阶段的三个接入点）、I50（已归档）（审计口径；本文**不改**其封闭词表） |
+| 关联 | [I53](./I53-sandbox-preparation-spec.md)（沙箱准备：后端抽象 / 链式探测 / 三平台实现；本文 §3–§4 已拆出，本文只引用不复述）、[I52-Ext](./I52-ext-background-task.md)（阶段扩展：后台任务改动面，未立项）、I18 design §3.17（已归档）（审批链路预留与检测分层）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱模型，执行层边界）、[沙箱开源调研](./agent-sandbox-research.md)（后端选型与 ADR-1–ADR-4）、[沙箱参考分析](./agent-sandbox-reference-analysis.md)（Codex / OpenHuman / DSH 实现细节）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问与本阶段的三个接入点）、I50（已归档）（审计口径；本文**不改**其封闭词表） |
 | 影响范围 | `assistant-tools`（`os/agent_shell.rs`、`trait.rs` 新增一个方法、`gateway.rs` 键字段与求值顺序、输出 sink 与回读作用域）；`src-tauri/src/adapters/tool_exec.rs`（输出域注入）、前端 i18n 与模式预置。沙箱模块、`tool_setup.rs` 探测收口与 `Cargo.toml` 依赖变更见 [I53](./I53-sandbox-preparation-spec.md) |
 
 > 一句话：本阶段把「审批」从**纸面声明**变成**可执行边界**。审批回答「要不要做」，沙箱回答「最多能做到哪」；
@@ -47,7 +47,7 @@
 - 不替代审批：沙箱不改变 Policy/Gateway 的决策（§2.3、§6.5）；
 - 不做容器 / microVM / 内核驱动级后端（虚拟化层 L3+，见 §2.1），不做云端沙箱；
 - 不做 `shell` 的交互式会话（PTY / stdin 注入 / 长驻进程），一次调用 = 一次执行；
-- **不做后台任务**（异步执行 / 任务 id / 状态机 / 轮询回收）：后台任务的发起点只能是 turn kernel 或 app supervisor——它们决定「一次工具调用何时算结束」与「进程归谁回收」，而 P14 的改动面是 `assistant-tools` 的工具实现与审批链，这两处都不在其中。故不在 P14（属独立轴，与 P9 持久化运行同类）；运行期无进度见 §12 OQ8；
+- **不做后台任务**（异步执行 / 任务 id / 状态机 / 轮询回收）：后台任务的发起点只能是 turn kernel 或 app supervisor——它们决定「一次工具调用何时算结束」与「进程归谁回收」，而 P14 的改动面是 `assistant-tools` 的工具实现与审批链，这两处都不在其中。故不在 P14（属独立轴，与 P9 持久化运行同类）；运行期无进度见 §12 OQ8，将来引入时的改动面见 [I52-Ext](./I52-ext-background-task.md)（未立项）；
 - 不做命令级授权归一化（「同 `argv[0]` 合并键」是 S1 候选，见 §12 OQ2）；
 - 不开放跨会话输出读取：回读只作用于**本会话**输出命名空间（§5.11.4）；
 - 不改 I50 的 `AuditOutcome` 封闭词表（隔离强度走工具结果与审批卡，不进审计词表，§8）。
@@ -809,6 +809,16 @@ S1 / S2（P14-b / P14-c，不在本规格验收范围）：S1 追加降级后端
 | R6 | 输出域读取被误当成「普通读」而免审 | `readToolOutput` 独立动作名 + 恒 `Ask` + 输出域优先判定（§5.11.4），三重各自独立；任一缺失都不构成放行 |
 | R7 | 落盘文件被外部删除 / 截断（30 天清理与并发读取竞争） | 回读失败按普通 IO 失败回填（`Business`），不重建、不缓存；模型据此改跑命令或缩短读取范围。清理只删过期会话目录，不删正在写的文件（写入侧持句柄，删除在 Windows 上会失败并被跳过） |
 | R8 | 线程占用与滞留：一个活跃 `shell` 常驻 3 个 blocking 池线程（stdout 读 / stderr 读 / 收尸），长命令期间不释放；第 9 步有界 join 放弃时，被放弃的 `spawn_blocking` 读任务**不会停止**，会卡在阻塞 `read` 上直到管道关闭 | 接受：`is_concurrency_safe = false` 已限制同轮并行，跨会话并发在 512 线程上限下约有 170 个 `shell` 的余量，够用。滞留只发生在「孙进程逃逸整树回收」这一后端缺陷路径上，属已知成本：缓解手段是正常结束也 `kill_tree()` 扫尾（§5.8），使管道写端在 join 前必然关闭；滞留线程若在 `finish` 之后继续读，命中的是已被 `lock().take()` 取走的 sink（§5.11.1 约束 5），只丢弃字节，不会污染已收尾的文件；不在 `shell` 内自建线程或改用异步管道来绕开（异步管道会引入第二套读取模型，收益为零） |
+
+### 12.1 阶段扩展：后台任务（未立项）
+
+后台任务（异步执行 / 任务 id / 状态机 / 轮询回收 / 跨 turn 存活）属 [roadmap §2.1](./I38-agent-roadmap.md) 的 P9 continuity 轴，需单独 ADR；§1.3 已将其列为 P14 非目标。**改动面（E1–E8）、与 P14 的接口约定与立项前置（G1–G6）的唯一来源是 [I52-Ext](./I52-ext-background-task.md)**，本节不复述。
+
+本文只留三条约束：
+
+1. §5.7 / §5.8 的正确性论证建立在「一次工具调用 = 一次同步执行」上（deadline 在调用栈、`kill_tree()` 与 `sink.finish()` 返回前必调、进程归属由 `TurnTasks` 代际收口）；工具内部提前返回会让这四条同时悬空，因此后台形态不在本阶段「顺手接」；
+2. P14 **不得**为后台任务预留 `task_id` / `job_*` 字段、状态分支或半成品路径——预留即半实现，会让 §5.8 的终态矩阵出现第三态；
+3. 判据：P14 的不变量是「**调用结束 = 进程树已回收**」，后台任务要把它改成「**任务结束 = 进程树已回收**」；因此第一件事是换持有者，不是加参数。
 
 ---
 

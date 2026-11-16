@@ -53,7 +53,7 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 |---|---|---|---|
 | **P8.2 Worker 会话** | 可继续的子会话、roster / 任务板、steer / cancel、后台活动投影 | DSH continuable subagent + Agent Teams；OpenBitFun `subagentProjection`；OpenHuman `spawn_async_subagent` | P8.1、P6 |
 | **P8.3 Router** | 会话之上的全局协调、跨会话记忆、事件入口与任务分派 | DeepSeek Harness Super-agent 的 Router / Worker | P8.2；P9 的持久化前置 |
-| **P9 continuity** | 重启恢复、Watchdog、事件唤醒与主动执行 | DSH goal / schedule / webhook；OpenHuman `reaper.rs` | 单独 ADR；I36 D13b |
+| **P9 continuity** | 重启恢复、Watchdog、事件唤醒与主动执行；**后台任务**（进程归属上移，改动面见 [I52-Ext](./I52-ext-background-task.md)，未立项） | DSH goal / schedule / webhook；OpenHuman `reaper.rs` | 单独 ADR；I36 D13b |
 | **P11 多编码工具支持** | 文件工具（`read` / `write` / `edit` / `grep`）支持非 UTF-8 文本：自动检测（BOM → UTF-8 → 二进制 → chardetng）、按原编码写回、footer 一次性呈现、`grep` 显式 `encoding` + 零命中探测 | ripgrep `searcher`（`DecodeReaderBytes` / `Encoding` / `binary_detection`）；encoding_rs_io；helix `document.rs`（BOM → chardetng → 按原编码保存） | P5（工具面已上线）；规格见 I38c §14（已归档）；任务见 C9（已归档）；**C9 已全部完成（2026-11-07）** |
 | **P8.1 子代理（可选，暂缓接入）** | `spawn_agent` 作为工具接入 ToolPipeline；父 turn 内一次性只读委派；`max_depth = 1`、结果摘要回父；规格已留档于 [I38f](./I38f-agent-subagent-spec.md)，**当前不进入 §2 / §3** | DSH `ctx.subagents`；Codex collaboration tools；Goose `SubagentRunner` | P4、P5；I36 D16-D18；**恢复实施前需重新立项** |
 
@@ -62,7 +62,7 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 - P8.1 只做「父 turn 内的一次性委派」，不做跨会话路由。
 - P8.2 的子会话必须继承 I36 D18 的取消树；父 turn 结束不得留下孤儿 worker。
 - P8.3 的 Router 是**会话之上的新层**，不得把单会话内核改造成全局调度器。
-- P9 的持久化运行不得绕过 I36 D13a 的现行边界，必须单独决策。
+- P9 的持久化运行不得绕过 I36 D13a 的现行边界，必须单独决策；后台任务的进程归属 / 沙箱上下文 / 输出 sink 改动面见 [I52-Ext](./I52-ext-background-task.md)，不得在 P14 内预留。
 - P10 只允许单向顾问形态（`EscalateOnly` / `RelaxOnly`）；`Adjudicate` 需先有 L4 内核级沙箱的独立 ADR，不得在现有 L2/L3 检测层上直接启用（I18 design §3.17.1）。
 - P11 只做文件工具的编码支持：不引入 `iconv` / 外部转码进程 / 新依赖，不做逐文件编码猜测（`read` 是唯一编码发现点，`edit` / `write` 只消费回执），不做大文件转码写回（I38c §11 OQ7，已归档）。UTF-8 路径行为不变，唯一例外是 §14.3 的二进制检测顺序修正。
 - P14 只做「沙箱边界 + `shell` 工具」：沙箱**不替代**审批（`execute` 仍走 Policy/Gateway 求值），命令字符串黑名单**不是边界**（禁止作为拦截依据），不提供无沙箱执行路径（探测失败即不注册工具），不做容器 / microVM / 内核驱动级后端（虚拟化层 L3+ 留作后续轴）。
@@ -85,6 +85,7 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | P14 → P10-b | `RelaxOnly` 的前置是「存在确实会产生 `Ask` 的只读调用」；`shell` 的 `execute` 意图在 `dangerous_only` 档恒为 `Ask`，该前置由 P14 关闭（I38g §1.3） |
 | P14 → P10-c | `Adjudicate` 的门禁 1（内核强制隔离）由 P14 关闭；仍需独立 ADR，**不因 P14 完成而自动开工**（I18 design §3.17.6） |
 | P13 → P14 | `shell` 结果的 `compact` 信封只消费既有 `data`（退出码 / 输出规模），不新增 wire 字段 |
+| P14 → P9 | P14 交付的 `kill_tree` 幂等、`persisted` 输出域与 `enforcement` 审批键是后台任务的可复用资产；但进程归属与终态语义必须由 P9 重新持有（改动面与前置见 [I52-Ext](./I52-ext-background-task.md)），P14 不预留 |
 
 **可并行**：P1 完成后，P2 与 P3 可并行（一个改 `assistant-tools`，一个改 `assistant-agent`，无文件交叠）。P5 在 P2 完成后可与 P3/P4 并行。
 
@@ -108,6 +109,7 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | P10 AI 审批顾问（`EscalateOnly` / `RelaxOnly` / 审计与度量） | [I38g](./I38g-agent-approval-advisor-spec.md) | 实施规格 |
 | P12 工作区（会话绑定 / 目录簿 / 唯一解析点） | I38h（已归档） | 实施规格 |
 | P14 沙箱执行层与 `shell` 工具（后端抽象 / 链式探测 / 命令级审批键 / 隔离强度上报） | [I52](./I52-shell-sandbox-spec.md) | 实施规格 |
+| P14 阶段扩展：后台任务改动面（E1–E8 / 接口约定 / 立项前置 G1–G6；**未立项**） | [I52-Ext](./I52-ext-background-task.md) | 阶段扩展登记 |
 | assistant 消息身份指示（头像 / 模式 / 模型、消息级 `mode_id`） | I43-assistant-identity-spec.md（已归档） | 实施规格 |
 | 模型能力事实（三态 + 来源 + 主体 key；内容/列表/推理三处止损） | I45-model-capability-facts-spec.md（已归档） | 实施规格 |
 | 模型能力事实任务级进度（C1–C3 勾选） | I45 tasklist（已归档） | 任务清单（唯一任务级进度） |
