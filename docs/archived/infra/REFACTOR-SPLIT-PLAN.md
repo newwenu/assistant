@@ -1,7 +1,7 @@
 # 超长文件拆分与职责归位规划
 
 > 更新日期: 2026-11-07
-> 性质: **执行计划**（待办方案 + 已完成基线 + 进度）。拆分判据、目录模块模式、禁止事项的唯一来源是 [`docs/principle/CODE-SPLIT-PRINCIPLE.md`](../principle/CODE-SPLIT-PRINCIPLE.md)，本文不复述条款。
+> 性质: **执行计划**（待办方案 + 已完成基线 + 进度）。拆分判据、目录模块模式、禁止事项的唯一来源是 [`docs/principle/CODE-SPLIT-PRINCIPLE.md`](../../principle/CODE-SPLIT-PRINCIPLE.md)，本文不复述条款。
 > 范围: `src-tauri/` 下全部 `.rs`（排除 `tests/`、`examples/`、`target/`）
 > 统计口径: 非空行（含注释与内联测试），2026-11-07 快照，仅用于初筛定位与横向对比，允许偏差，不作为验收标准。
 
@@ -202,4 +202,4 @@ Phase C 与 `multimodal` 无自动化测试覆盖，除上述三条命令外还�
 
 ## 4. 拆分规范
 
-拆分判据、目录模块模式、职责边界判据、依赖方向与禁止事项的唯一来源是 [`docs/principle/CODE-SPLIT-PRINCIPLE.md`](../principle/CODE-SPLIT-PRINCIPLE.md)；本文不复述条款，只保留与具体文件相关的归属结论。
+拆分判据、目录模块模式、职责边界判据、依赖方向与禁止事项的唯一来源是 [`docs/principle/CODE-SPLIT-PRINCIPLE.md`](../../principle/CODE-SPLIT-PRINCIPLE.md)；本文不复述条款，只保留与具体文件相关的归属结论。

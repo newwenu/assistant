@@ -12,7 +12,7 @@
 | [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 36 |
 | [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、Token Usage | 32 |
 | [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 35 |
-| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、横切分析 | 28 |
+| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析 | 30 |
 
 ## 文档清单
 
@@ -196,7 +196,7 @@
 | [`I47-orb-runtime-state-spec.md`](./ui/I47-orb-runtime-state-spec.md) | achievement5 | I47 — Orb 运行态与可见性 实施规格 |
 | [`I47-orb-runtime-state-tasklist.md`](./ui/I47-orb-runtime-state-tasklist.md) | achievement5 | I47 — Orb 运行态与可见性 任务清单 |
 
-### infra/ (28)
+### infra/ (30)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -228,4 +228,6 @@
 | [`path-handling-inconsistency-analysis.md`](./infra/path-handling-inconsistency-analysis.md) | achievement5 | 路径处理不统一分析（前端 / Rust） |
 | [`feature-config-ownership-spec.md`](./infra/feature-config-ownership-spec.md) | achievement7 | 特性配置归属规格（配置 schema 与 DTO 迁入特性边界） |
 | [`feature-config-ownership-tasklist.md`](./infra/feature-config-ownership-tasklist.md) | achievement7 | 特性配置归属任务清单 |
+| [`REFACTOR-SPLIT-PLAN.md`](./infra/REFACTOR-SPLIT-PLAN.md) | achievement8 | 超长文件拆分与职责归位规划 |
+| [`FEATURE-ZERO-COST-MOUNT-ANALYSIS.md`](./infra/FEATURE-ZERO-COST-MOUNT-ANALYSIS.md) | achievement8 | 可选特性零成本挂载：设计思路合理性分析 |
 

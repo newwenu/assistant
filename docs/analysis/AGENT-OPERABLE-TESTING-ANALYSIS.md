@@ -52,7 +52,7 @@
 
 ### 1.2 三个成本项
 
-沿用可选特性分析的分项口径（`docs/analysis/FEATURE-ZERO-COST-MOUNT-ANALYSIS.md` §1.2），把「为 agent 提供支持」的改动分成三项：
+沿用可选特性分析的分项口径（FEATURE-ZERO-COST-MOUNT-ANALYSIS.md（已归档）§1.2），把「为 agent 提供支持」的改动分成三项：
 
 | 记号 | 定义 | 是否可归零 |
 |---|---|---|
