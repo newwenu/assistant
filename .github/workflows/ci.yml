@@ -1,0 +1,122 @@
+name: CI
+
+# 目的：把「开发机只有 Windows」的验证缺口交给 GitHub Actions 的真实虚拟机。
+#
+# 平台结论差异（见 docs/store/I53-sandbox-preparation-tasklist.md 验收记录）：
+# - Linux：Landlock 用例会真实执行（A-S1 / A-S2 / A-S3），失败即边界失效；
+# - macOS：Seatbelt 仍是占位，只能验证「编译通过 + probe 不可用 → 不注册 shell」的 fail-closed；
+# - Windows：受限令牌 + 可写根 ACE + Job 用例在 runner 的管理员会话下执行。
+#
+# 本文件是草稿：首次接入时若某平台因 runner 环境（缺失系统库、内核 Landlock 不可用）失败，
+# 先修环境或把该步拆成独立 job，不要用 continue-on-error 掩盖失败。
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  # 与开发机一致；升级工具链时同步本行与 Cargo.lock。
+  RUST_TOOLCHAIN: "1.100.0"
+  NODE_VERSION: "26"
+
+jobs:
+  frontend:
+    name: 前端检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 格式检查
+        run: npm run format:check
+
+      # CI 里不跑 `npm run lint`（它会先 prettier --write），避免把改写后的文件带入后续比对。
+      - name: ESLint
+        run: npx eslint . --max-warnings 0
+
+      - name: 单元测试
+        run: npm test
+
+  rust:
+    name: Rust 实机测试（${{ matrix.os }}）
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # 主 app 依赖 Tauri（Linux 需要 WebKitGTK 系列），vault 的 Linux 后端链接 libsecret。
+      - name: 安装 Linux 原生依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsecret-1-dev \
+            libssl-dev \
+            libxdo-dev \
+            pkg-config \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: 格式检查
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+
+      # 沙箱用例单独一步：失败时直接从步骤名定位到 I53 验收项（A-S1 / A-S2 / A-S3 / A-S5 / A-S7）。
+      - name: 沙箱实机用例（I53）
+        working-directory: src-tauri
+        run: cargo test -p assistant-tools --all-targets --no-fail-fast
+
+      # --no-fail-fast：一个 target 失败不吞掉其余 target 的结果，便于一次看清三平台差异。
+      - name: 工作区测试
+        working-directory: src-tauri
+        run: cargo test --workspace --all-targets --no-fail-fast
+
+      # 契约生成需要 Node + 上面装的 Tauri 依赖，只在 Linux 跑一次，避免三平台重复编译。
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Linux'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: 契约生成物同步校验（Linux）
+        if: runner.os == 'Linux'
+        run: |
+          npm ci
+          npm run contract:check
