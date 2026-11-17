@@ -1,8 +1,9 @@
 # I35 — 截屏提问规格
 
-- **状态**：Draft（rev10）
-- **日期**：2026-11-03（rev10：2026-11-17）
+- **状态**：已实现（rev11；M1 完成、M2 完成，标注能力移入 M3；§11.3 手动验收待执行）
+- **日期**：2026-11-03（rev11：2026-11-17）
 - **修订**：按版本倒序记录
+  - rev11：**把规格与已落地实现对齐并收口**，状态由 Draft 转「已实现」。回写 §6.4 的 M0 结论（保留 Orb 复用，§6.2 无需改动）；把「标注能力」从 M2 移入 M3，与 §3 非目标一致。按实现修正六处正文差异：① §8.1 快照**不记录焦点**（实现只快照 position/size/visible/always_on_top/click_through，恢复时不抢焦点）；② §8.4 缩放滤镜实为 `CatmullRom`（非 Lanczos3）；③ §7.3 补错误码 `screenshot.err.cancel_failed`（`restore` 部分步骤失败时返回）；④ §8.2 步骤 12 与 §11.1 修正「无显示器失败」的时序（`preparing` 已在步骤 3 发出，由 `screenshot-error` 复位）；⑤ §10 文件清单校正（截图按钮在 `ConversationFrame` 内实现、不经 `layoutProps` 透传；新增 `Overlay.module.css`；事件为 3 个）；⑥ §8.8 `archive_bytes` 实际签名为 `archive_bytes(app, bytes, file_name, media_type)`。§11.2 补记本轮自动化验证结果，§11.3 标记为待执行的手动清单。
   - rev10：真机验收发现「开始截图时小球出现在屏幕左上角」——根因是菜单/托盘入口由 Rust 直接发起，前端没有工具栏入口那次 `beginPreparing()`，窗口被撑成全屏时仍渲染小球，绝对定位落到新窗口原点（F58）。新增 `screenshot-preparing` 事件，`start` 在抓屏前先通知前端进入覆盖层模式（不变式 25）。同时把 `restore` 的顺序由「先改几何后显影」改为「先隐藏 → 改几何 → 按快照恢复可见性」：可见的全屏窗口上 `set_size`/`set_position` 是两次独立主线程消息，中间会合成一帧「小球在原点」（F59，不变式 26）。另记一条构建口径：dev `opt-level=0` 下抓屏+JPEG 预览编码实测慢约 6 倍，`profile.dev` 已设 `opt-level = 1`（§13 风险 19）。**菜单淡出等待由「固定毫秒」改为「按帧排空」**：实测 Win11 默认动画的菜单关闭是 19 个 DWM 合成帧的线性过渡，与菜单项数量无关；固定毫秒在高刷屏上白等、低刷屏上漏帧，这正是此前「等待时长对不上」的根因（F60，`SCREENSHOT_MENU_FADE_FRAMES = 20` + `SCREENSHOT_MENU_FADE_CAP_MS = 800`）。
   - rev9：撤回菜单「捕获排除」路线（看护线程 + `WDA_EXCLUDEFROMCAPTURE`）：`TrackPopupMenu` 返回时菜单窗口可能已销毁，枚举不到窗口不等于屏幕上没有残影，打标时机也无法与点击对齐（F56）。改为「点击即锚定 + 抓屏前排空」：菜单事件回调（`menu.rs` / `tray.rs` 的截图项，即点击那一刻）无条件隐藏残余菜单并写入淡出起点，抓屏前按 `SCREENSHOT_MENU_FADE_MS` 补齐剩余时长再双 `DwmFlush`；锚点带新鲜度判定，避免上一次交互的旧锚点压住本次（否则等待会被算成 0）。F56/F57、不变式 23/24 与 §8.2 步骤 7、§8.7 测试口径同步改写。
   - rev8：几何写入按 §8.5.1 回退方案定稿——核对 Tauri 2.12.5 源码确认 `WebviewWindow` 没有 `set_bounds`（仅 `Webview` 有），覆盖层与恢复统一走「先 size 后 position」并写回快照值；macOS 权限前置校验补 `CGPreflightScreenCaptureAccess` 预检 + 显示器实测 + 成功缓存/失败短间隔重试，前端错误描述改为 `screenshot.permission_guide` 引导文案；`orb_overlay` 补 `FakeOps` 单测（隐藏序列、兜底、失败码、快照与还原）；DWM 过渡禁用扩到「隐藏 / 显影 / 还原」三段，写回值改用 `DwmGetWindowAttribute` 读到的原值；Windows 弹出菜单（`#32768`）从「只 `SW_HIDE`」升级为两层——菜单可见期由看护线程打 `WDA_EXCLUDEFROMCAPTURE`（F56），排除失败时抓屏前按 `SCREENSHOT_MENU_FADE_MS` 补齐淡出并双 `DwmFlush`（F57）。
@@ -13,7 +14,7 @@
   - rev3：取消新增 webview，改为复用 Orb 窗口做全屏覆盖层；chat 自隐藏且保留草稿；快捷键注册改为表驱动并更换默认组合。
 - **上游调研**：本仓库代码核对 + OpenBitFun、airi、Cap、Kiri、shiping 五个参考项目对照
 - **关联规格**：I2e-multimodal-attachments-spec（已归档，附件链路）、I44-app-dir-management-spec（已归档，附件归档与 `import_attachment`）、I4-spec（已归档，全局快捷键）
-- **影响范围**：复用 Orb 窗口（**不新增 webview**）、Rust 模块 `screenshot`、5 条命令、3 个 DTO、2 个事件、i18n、设置提示；`cmd/attachment.rs` 抽出 `archive_bytes` 供截图复用；`Cargo.toml` 新增 `xcap` 与直接 `image` 依赖。**不改** `tauri.conf.json`（asset scope 无改动）、`assistant-storage`、`assistant-agent` 的准入判断与上限
+- **影响范围**：复用 Orb 窗口（**不新增 webview**）、Rust 模块 `screenshot`、5 条命令、3 个 DTO、3 个事件、i18n、设置提示；`cmd/attachment.rs` 抽出 `archive_bytes` 供截图复用；`Cargo.toml` 新增 `xcap` 与直接 `image` 依赖。**不改** `tauri.conf.json`（asset scope 无改动）、`assistant-storage`、`assistant-agent` 的准入判断与上限
 
 本文是落地规格。所有「既有事实」均已对照源码核对，标注了文件位置；**未核对的第三方库 API 单独标注为「落地时核实」**，不作为契约。
 
@@ -38,7 +39,7 @@
 - **结果直通**：裁剪在 Orb 的同一 JS 上下文里完成，`crop_screenshot` 直接返回已归档的 `attachmentId`，不需要 `screenshot-captured` 事件、跨 webview 状态同步或 `get_screenshot_session` 的常规路径（只保留兜底）。
 - **chat 自隐藏**：`OrbWindow` 是唯一的覆盖层宿主；截图期间用 CSS 隐藏 `OrbBall`/`OrbPanel`，`ConversationView` **保持挂载**，因此输入草稿、附件列表和流式状态都不丢。
 - **只隐藏宿主**：抓屏前只隐藏 `orb` 一个窗口，`main` / `settings` 保持用户原状并进入底图，因此「用户触发瞬间所见 = 冻结底图」，也不需要为它们维护可见性快照。
-- **代价**：Orb 窗口的几何、可见性、焦点、置顶、点击穿透需要快照/恢复；`spawn_screen_inspection` 与 `ORB_BLUR` 必须暂停，否则会把全屏几何写回 `OrbConf` 或触发折叠。
+- **代价**：Orb 窗口的几何、可见性、置顶、点击穿透需要快照/恢复（焦点不恢复，见 §8.1）；`spawn_screen_inspection` 与 `ORB_BLUR` 必须暂停，否则会把全屏几何写回 `OrbConf` 或触发折叠。
 
 本规格**不改动** `assistant-agent` 的附件准入判断与上限、`assistant-storage` 的附件存储格式、`contentBlockUtils` 的序列化、Provider 的请求投影，也**不改动** `tauri.conf.json` 的 asset scope。后端只在 `cmd/attachment.rs` 抽出 `archive_bytes`（`import_attachment` 与 `crop_screenshot` 共用同一段「大小上限 + `save_attachment`」逻辑），不改变任何准入结果；截图链路**不落地任何临时文件**。
 
@@ -79,7 +80,7 @@
 2. 框选结果以图片附件形式进入 Orb 输入区，用户补一句话即可发送；不自动发送。
 3. 截图附件与「粘贴 / 文件选择 / 拖拽」走完全相同的准入、上限、预览、存储路径。
 4. 取消（ESC / 右键 / 关闭）后不留下任何临时文件，不残留覆盖层；截图链路全程不写临时文件（底图在内存，产物直接入库）。
-5. 截图前后的 Orb 可见性、焦点、位置与尺寸恢复到用户原本状态；`main` / `settings` 全程不受影响。
+5. 截图前后的 Orb 可见性、位置与尺寸恢复到用户原本状态（**不抢用户前台焦点**，rev11）；`main` / `settings` 全程不受影响。
 6. **不新增 webview**；整个覆盖层运行在现有 Orb webview 中。
 7. 截图期间 chat/Orb 面板自隐藏，输入草稿不丢，Orb 不折叠、不被巡检线程写回错误位置。
 8. 4K / 混合 DPI 下选区与最终产物一致，产物 ≤ 8MB。
@@ -188,7 +189,7 @@
   - 影响：新增 DTO 只需在 `protocol/dto/mod.rs` 登记并重跑 `contract:gen`，无需改常量
 - **F29**：`MessageInput` 没有暴露 focus 句柄
   - 位置：`src/chat/message/MessageInput.tsx`
-  - 影响：需要补 ref 或焦点事件
+  - 影响：需要补 ref 或焦点事件（**rev11：已落地 `ref` + `chat-focus-input` 监听**）
 - **F30**：`ScreenLockMonitor` 只在 `#[cfg(feature = "vault")]` 的 vault 模块内构造，未作为全局 State 管理
   - 位置：`src-tauri/src/cmd/mod.rs`、`src-tauri/src/cmd/vault/mod.rs`
   - 影响：V1 无法直接复用锁屏 gate
@@ -385,6 +386,15 @@ V2 可评估实时覆盖层 + 捕获排除（Cap 的 `overlay_backdrop.rs`）：
 - **判据**：若（1）可接受且（2）可规避、（4）可用，则改用专用窗口并删掉 §8.6 的 Orb 守卫；否则保留 Orb 复用，把（3）（4）的结论回写 §6.3。
 - **成本边界**：spike 代码不进主干；结论以「一条修订 + §6.2 表格更新」回收。
 
+#### 6.4.1 M0 结论（rev11 回写）
+
+**结论：保留 Orb 复用，不改专用覆盖层窗口；§6.2 表格无需改动（与现表一致）。**
+
+- 落地事实：M1/M2 全部功能已在 Orb 复用路线上完成并通过单测（§11.1、§11.2），没有出现「必须换宿主窗口」的阻塞。
+- **未留下实测数据的项**：本项 spike 的四组数据（运行时窗口耗时、主线程回调建窗口是否触发 WebView2 `AppHangB1`、副屏首帧、`SetWindowDisplayAffinity` 返回值）没有留下可引用的测量记录；实现是以真机现象驱动修正的——副屏首帧走了「先 `set_size` 后 `set_position`」（§8.5.1），菜单残影走了「点击锚定 + 按帧排空」（§8.5.2），捕获排除按 F54 的分层窗口限制直接推到 V2。
+- **专用窗口路线**：未评估，仍留在 V2（§12 M3）。若 V2 要上捕获排除，先按 §6.3/F54 解决 `SetWindowDisplayAffinity` error 8，再考虑换宿主。
+- 判据回归：§6.4 的「（1）可接受且（2）可规避、（4）可用则换专用窗口」在缺少实测的情况下不能成立，因此**维持现状是唯一有证据支撑的选择**；后续若要翻案，必须补上这四项数据。
+
 ### 6.5 预览为什么仍然编码（rev10 新增）
 
 一个被认真评估并**否决**的提案：抓屏后直接把全分辨率原始像素（BMP / RGBA）留在内存，不做任何编码，等用户框选后再编码。它听起来能省掉预览编码，但实际是亏的。
@@ -565,6 +575,7 @@ pub fn screenshot_permission_granted(app: AppHandle) -> bool;
 - `screenshot.err.too_large`：JPEG 兜底后仍超 8MB
 - `screenshot.err.encode_failed`：编码失败
 - `screenshot.err.archive_failed`：`AttachmentStore` 写入失败（含超限二次校验不过）
+- `screenshot.err.cancel_failed`：恢复 Orb 现场时部分步骤失败（`restore` 会走完剩余步骤再返回它，标志已复位；rev11 按实现补入）
 
 分层：`cmd/screenshot.rs` 只是薄壳，真正逻辑在 `screenshot::mod.rs` 的 `start()` / `cancel()` / `crop()` / `cleanup()`；命令负责「State 取出 + 调用方 label 校验 + 错误转字符串」。归档不复用 `import_attachment` 命令（避免 IPC 绕一圈），而是调用 `cmd::attachment::archive_bytes()`，与 `import_attachment` 共享同一段「大小上限 + `save_attachment`」。
 
@@ -736,11 +747,12 @@ struct OrbWindowSnapshot {
     position: PhysicalPosition<i32>,
     size: PhysicalSize<u32>,
     visible: bool,
-    focused: bool,
     always_on_top: bool,
     click_through: bool,
 }
 ```
+
+- **rev11：快照不含焦点**。实现只快照 `position` / `size` / `visible` / `always_on_top` / `click_through`（`snapshot_with`），恢复时**不主动抢焦点**——用户当前前台窗口应保持焦点（`restore_with` 注释即此口径）。成功路径的焦点由前端 `expand()` + `chat-focus-input` 交给输入框；取消路径只还原可见性。
 
 - `SCREENSHOT_ACTIVE: AtomicBool`，由 `orb_overlay` 维护；巡检线程、`snap_orb_to_*`、`save_orb_position_sync`、`expand/collapse_orb_panel`、`ORB_BLUR`、`apply_orb_window_attrs` 都读取它。
 - `OrbWindowSnapshot.click_through` 必须与 `ORB_CLICK_THROUGH` atomic 一起快照/恢复（F45）：只写窗口 API 会让镜像与实际状态分叉。
@@ -756,7 +768,7 @@ struct OrbWindowSnapshot {
 3. **通知前端进入覆盖层模式**（不变式 25）：`emit_orb_only(SCREENSHOT_PREPARING)`。菜单 / 托盘 / 快捷键入口都由 Rust 直接发起，前端没有工具栏入口那次 `beginPreparing()`，此刻仍在渲染小球；而步骤 11 会把同一个窗口撑成全屏，`OrbBall` 的绝对定位会落到新窗口原点（左上角，F58）。必须在这里发，不能等到步骤 10 的会话事件——那一步紧邻 `present`，前端来不及渲染。
 4. 光标位置（物理坐标）：优先 `app.cursor_position()`（F49）→ 失败回退 `get_mouse_position()` 并按该显示器 `scale_factor` 换算（F24）→ 再失败回退 Orb 窗口中心 → 最后回退主屏中心；用 `placement::nearest_screen`（提为 `pub`，零尺寸 `WindowBounds` 表示一个点）选显示器。
 5. 从 `CaptureBackend::monitors()` 中按物理 bounds 匹配显示器；`scale_factor` 以 Tauri `available_monitors()` 为准。
-6. 快照 Orb 几何/可见性/焦点/置顶/点击穿透（F35/F39/F45）；只隐藏 `orb`（若其可见），`main` / `settings` 保持用户原状并进入底图；`SCREENSHOT_ACTIVE = true`。
+6. 快照 Orb 几何/可见性/置顶/点击穿透（F35/F39/F45；**不记焦点**，rev11）；只隐藏 `orb`（若其可见），`main` / `settings` 保持用户原状并进入底图；`SCREENSHOT_ACTIVE = true`。
 7. **确认 Orb 真的不可见**（不变式 22）：`set_visible(false)` 后先查可见性，仍可见则对残留 HWND 补 `ShowWindow(SW_HIDE)`，再 `DwmFlush`；`SCREENSHOT_HIDE_SETTLE_MS` 只作为兜底上限，不是正常路径的固定等待（F53）。
    在此之前先做 **Windows 弹出菜单清理**（不变式 23）：枚举本进程的 `#32768` 窗口（**不过滤可见性**，淡出期间窗口仍存活但已不可见），可见的逐个 `ShowWindow(SW_HIDE)`，预算内仍可见则返回 `capture_failed`。从 Orb 右键菜单 / 托盘菜单触发时，菜单窗口在 `TrackPopupMenu` 返回后可能仍在关闭动画或未隐藏，而它不是 Orb 的子窗口，只隐藏 Orb 会把它冻进底图（F55）。
    隐藏完成后做 **菜单淡出排空**（不变式 24）：淡出起点已在菜单事件回调（点击那一刻）无条件锚定，抓屏前按「锚点已过去的帧数」算出剩余帧并逐帧 `DwmFlush` 排空（`SCREENSHOT_MENU_FADE_FRAMES`，兜底 `SCREENSHOT_MENU_FADE_CAP_MS`），确保 `BitBlt` 读到的是动画之后的合成帧（F56、F57、F60）。
@@ -764,7 +776,7 @@ struct OrbWindowSnapshot {
 9. 生成一次性令牌（uuid v4 32 hex），写入 `PendingSession`（含 `preview`），`Phase = Selecting`。
 10. **在 Orb 仍隐藏时** `emit_orb_only(SCREENSHOT_SESSION, session)`，让 orb 在隐藏状态下隐藏 chat 并挂载 Overlay。
 11. 把 Orb 窗口设为 `always_on_top(true)`、`apply_orb_click_through(false)`、几何写成目标显示器物理矩形（先 `set_size` 后 `set_position`，§8.5.1）；`show()` + `set_focus()`。返回 `Ok(())`。
-12. 任一步失败 → 释放预览与内存原图 → 恢复 Orb 窗口/几何 → `SCREENSHOT_ACTIVE = false` → `Phase = Idle` → 返回错误码。步骤 3 之后失败时，前端的 `preparing` 由 `screenshot-error` 事件的 `endPreparing()` 复位；步骤 3 之前（权限/无显示器）失败不碰前端状态。
+12. 任一步失败 → 释放预览与内存原图 → 恢复 Orb 窗口/几何 → `SCREENSHOT_ACTIVE = false` → `Phase = Idle` → 返回错误码。步骤 3 之后失败时，前端的 `preparing` 由 `screenshot-error` 事件的 `endPreparing()` 复位；步骤 3 之前（权限预检）失败不碰前端状态。**rev11 按实现校正**：`no_monitor` 发生在步骤 5，此时 `preparing` 已经发出，同样由 `screenshot-error` 复位，不是「完全没碰前端」。
 
 > **步骤 3 与步骤 10 的分工**：步骤 3 是「提前把 UI 切到覆盖层形态」，只服务于窗口撑大那一刻的渲染正确性；步骤 10 才是「下发会话」。两者都发，不是重复——只有步骤 10 时，`present` 会抢在前端 React 提交之前执行（F58）。
 
@@ -787,10 +799,10 @@ struct OrbWindowSnapshot {
 1. 取 `op` 锁；校验调用方 label；校验 token 与 `Phase == Selecting`，否则 `token_invalid`。
 2. 置 `Phase = Cropping`；克隆 `Arc<RgbaImage>` 与 target 后释放 inner 锁。
 3. 归一化选区 → 原图像素：`sx = round(x * image_w)`、`ex = round((x + width) * image_w)`，y 同理；夹到图片边界；宽或高为 0 → `too_small`。
-4. `spawn_blocking`：`crop_imm` → 长边 > 2048 时 `resize(2048, 2048, Lanczos3)` → **一次** `PngEncoder::new_with_quality(Fast, Sub)` 编码。
+4. `spawn_blocking`：`crop_imm` → 长边 > 2048 时 `resize(2048, 2048, CatmullRom)` → **一次** `PngEncoder::new_with_quality(Fast, Sub)` 编码。**rev11 按实现校正**：滤镜是 `FilterType::CatmullRom`（非 Lanczos3）；理由是同为高质量重采样，CatmullRom 的耗时更低，而截图缩小的画质差异肉眼不可辨。
 5. 体积兜底：若结果 > `SCREENSHOT_MAX_BYTES`，改用 `JpegEncoder::new_with_quality(&mut out, 85)` 重编码为 JPEG；仍超限 → `too_large`。
-6. 调 `cmd::attachment::archive_bytes(bytes, "<uuid>.png|.jpg", media_type)` **直接归档**，返回 `attachmentId`；失败 → `archive_failed`（令牌保留，用户可重选）。
-7. 成功：再次校验 token 仍匹配（防止裁剪期间被取消）→ 清除会话并释放原图/预览 → `Phase = Idle` → 恢复 Orb 几何/可见性/焦点/置顶/点击穿透（含 `ORB_CLICK_THROUGH` 镜像）→ `SCREENSHOT_ACTIVE = false` → 返回 `ScreenshotCropResultDto`。
+6. 调 `cmd::attachment::archive_bytes(&app, bytes, "<uuid>.png|.jpg", media_type)` **直接归档**，返回 `attachmentId`；失败 → `archive_failed`（令牌保留，用户可重选）。**rev11 按实现校正**：签名带 `&AppHandle`（要取 `AttachmentStore` State），与 `import_attachment` 共用同一实现。
+7. 成功：再次校验 token 仍匹配（防止裁剪期间被取消）→ 清除会话并释放原图/预览 → `Phase = Idle` → 恢复 Orb 几何/可见性/置顶/点击穿透（含 `ORB_CLICK_THROUGH` 镜像；**不抢焦点**，rev11）→ `SCREENSHOT_ACTIVE = false` → 返回 `ScreenshotCropResultDto`。
 8. 失败：若 token 仍匹配，`Phase` 回到 `Selecting` 并保留会话，让用户可以重选；若已取消则丢弃中间结果并返回 `token_invalid`。
 
 > **只编码一次**：剪出的 `RgbaImage` 是内存对象，`resize` 后直接编码即可。不要「先编码 PNG 再交给 `normalize_image`」——那是 decode + Lanczos3 + 再编码的第二次完整往返（F52）。我们生成的字节不需要「校验不可信输入」式的解码，长边与体积上限在这里就地保证。
@@ -829,7 +841,7 @@ if snapshot.visible { window.show()?; } // ④ 快照本来不可见时不再补
 - **异常残留复位同理**：`recover_leftover` 面对的也是「可见的全屏覆盖层停在原点」，缩回小球前必须先 `hide()`。
 - **点击穿透必须走 `apply_orb_click_through`**（不变式 19）：直接 `set_ignore_cursor_events` 不会更新 `ORB_CLICK_THROUGH`，恢复后 `apply_orb_click_through(true)` 会早退，用户的穿透设置永久失效（F45）。
 - **DWM 过渡在「隐藏 / 显影 / 还原」三段内都要禁用，离开时写回原值**（Windows）：只禁隐藏不够——`orb` 是 `transparent: true` 的分层窗口，显影与缩回小球时的淡入淡出会把实时桌面透出来，和「冻结底图」冲突；写回值必须用 `DwmGetWindowAttribute` 读到的原值，不能无条件写成「启用」，否则会覆盖系统「关闭动画」设置。
-- 成功时无论 Orb 原先是否可见，都 `show()` + 聚焦 + 事件驱动 `expand()`；取消时按快照恢复可见性/焦点。
+- 成功时无论 Orb 原先是否可见，都 `show()` + 聚焦 + 事件驱动 `expand()`；取消时按快照恢复可见性，**不主动抢焦点**（rev11：焦点交给用户当前前台窗口，`snapshot` 也不含焦点字段）。
 - `SCREENSHOT_ACTIVE` 在进入前置 true、退出后置 false；任何失败路径都必须复位。
 
 #### 8.5.1 几何写入与恢复（`set_bounds` 回退已定稿）
@@ -906,7 +918,7 @@ fn drain_menu_fade_frames(age: Duration) -> u32 {
 
 截图链路不落盘，所以「清理」只剩释放内存与复位窗口：
 
-- **取消（ESC / 右键 / `cancel_screenshot`）**：清会话（释放原图与预览 data URL）；恢复 Orb 几何/可见性/焦点/置顶/穿透；`Phase = Idle`
+- **取消（ESC / 右键 / `cancel_screenshot`）**：清会话（释放原图与预览 data URL）；恢复 Orb 几何/可见性/置顶/穿透（不抢焦点）；`Phase = Idle`
 - **Orb `CloseRequested` 且截图活跃**：`prevent_close` + 取消清理
 - **抓屏/编码/建覆盖层失败**：释放已产生的中间结果；恢复 Orb；`SCREENSHOT_ACTIVE = false`；`Phase = Idle`
 - **裁剪成功**：字节已进 `AttachmentStore`；清会话、释放原图与预览；恢复 Orb 几何
@@ -916,7 +928,7 @@ fn drain_menu_fade_frames(age: Duration) -> u32 {
 实现要点：
 
 - `AttachmentStore` **不新增任何函数**（无 `is_screenshot_tmp_path` / `remove_screenshot_tmp` / `sweep_screenshot_tmp`），`clean_tmp()`（F21）保持原语义。
-- `cmd/attachment.rs` 只新增 `archive_bytes(bytes, file_name, media_type) -> Result<AttachmentImportDto>`：校验 `bytes.len() <= ATTACHMENT_LIMITS.max_image_bytes` → `save_attachment`。`import_attachment` 改为「`plan_import` → 读文件 → 调 `archive_bytes`」，行为不变（F51）。
+- `cmd/attachment.rs` 只新增 `archive_bytes(app, bytes, file_name, media_type) -> Result<AttachmentImportDto>`（rev11 补 `&AppHandle` 参数）：校验 `bytes.len() <= ATTACHMENT_LIMITS.max_image_bytes` → `save_attachment`。`import_attachment` 改为「`plan_import` → 读文件 → 调 `archive_bytes`」，行为不变（F51）。
 - 「发送失败后重试」直接复用已归档的 `attachmentId`；「移除未发送的截图」走既有 `removeAttachment` 的归档删除流程，截图侧无需配合。
 - 唯一需要长期存在的是 `SCREENSHOT_SESSION_TTL_MS`：覆盖层宿主消失（reload / 崩溃）后，Rust 侧残留会话要能自行释放那 33MB。
 
@@ -1196,6 +1208,7 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 - `src-tauri/src/cmd/screenshot.rs`：五条命令与调用方校验
 - `src-tauri/src/protocol/dto/screenshot.rs`：三个 DTO
 - `src/screenshot/Overlay.tsx`：覆盖层组件（data URL 底图、`img.decode()` 揭示、`finishing` 态）
+- `src/screenshot/Overlay.module.css`：覆盖层样式（遮罩、选框、8 向手柄；rev11 补登记）
 - `src/screenshot/selection.ts`：选区几何纯函数（含归一化）
 - `src/screenshot/session.ts`：invoke 封装、错误码翻译与 `notifyScreenshotError`、`requestChatInputFocus`
 - `src/screenshot/useScreenshotSession.ts`：preparing / 会话 / 错误事件订阅 + 兜底拉取
@@ -1208,7 +1221,7 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 - `src-tauri/src/ipc.rs`：五条命令登记
 - `src-tauri/src/cmd/mod.rs`：`mod screenshot` + re-export
 - `src-tauri/src/protocol/dto/mod.rs`：`pub mod screenshot;` + `pub use screenshot::*;`
-- `src-tauri/src/protocol/events.rs`：两个事件常量
+- `src-tauri/src/protocol/events.rs`：三个事件常量（session / preparing / error）
 - `src-tauri/src/setup.rs`：`ScreenshotState` 注册 + 巡检线程守卫（**不建目录、不做 sweep**；快捷键表驱动已落地，只加一项）
 - `src-tauri/src/window.rs`：右键菜单加项；Orb 关闭/失焦守卫；`expand/collapse_orb_panel` 与 `apply_orb_window_attrs` 守卫
 - `src-tauri/src/menu.rs`：`orb_screenshot` 事件分支
@@ -1225,13 +1238,11 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 - `src/types/shortcutDefaults.generated.ts`：`contract:gen` 生成（禁止手改）
 - `src/settings/core/types/shortcutTypes.ts`：`SHORTCUT_DEFINITIONS` 加 `capture_screenshot` 项（`defaultBinding` 从生成文件展开，不手写）
 - `src/settings/__tests__/fixtures/snapshot.full.json`、`snapshot.vaultless.json`：新增 `keybindings.capture_screenshot` 一行（`-u` 重新生成后人工核对）
-- `src/types/events.ts`：`UiEvent.ScreenshotSession` / `ScreenshotError`
+- `src/types/events.ts`：`UiEvent.ScreenshotPreparing` / `ScreenshotSession` / `ScreenshotError`
 - `src/config/constants.ts`：`SCREENSHOT_MIN_SELECTION_CSS_PX`
 - `src/i18n/locales/*.json`：§9.9 前端键
 - `src/chat/attachment/factory.ts`：新增 `attachmentFromImport(dto, meta)`（`createPathAttachment` **不改**）
-- `src/chat/ConversationView.tsx`：截图按钮（`onScreenshot` 回调传给 `ConversationFrame`）
-- `src/chat/layouts/layoutProps.ts`：`ConversationLayoutProps` 加 `onScreenshot: () => void`（`chat`/`agent` 两条链路共用）
-- `src/chat/layouts/ConversationFrame.tsx`：工具栏加 `ScissorOutlined` 按钮
+- `src/chat/layouts/ConversationFrame.tsx`：工具栏加 `ScissorOutlined` 按钮 + 截图入口（`beginPreparing()` → `start_screenshot` → 兜底 `getSession`；rev11 按实现校正：入口在本组件内，**不经** `layoutProps` 透传，`ConversationView` 与 `layoutProps.ts` 均未改）
 - `src/chat/message/MessageInput.tsx`：`ref` + `chat-focus-input` 监听
 - `src/orb/OrbExpand.ts`：`isOrbBlurCollapseSuppressed()` 增加「截图会话活跃」条件
 - `src/layouts/OrbWindow.tsx`：覆盖层条件渲染 + `orb-screenshot` class
@@ -1253,7 +1264,7 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 - **状态机**：忙时 `start` 忽略；`cancel` 幂等；裁剪期间取消丢弃产物
 - **`orb_overlay`**：只快照/隐藏 `orb`；`main` / `settings` 不进入快照；隐藏序列为「可见性 → `ShowWindow(SW_HIDE)` → `DwmFlush`」；隐藏失败时按快照复位 Orb
 - **`orb_overlay` 恢复序列（rev10）**：`restore_hides_before_geometry_change` 断言 `hide` 的调用顺序**早于** `set_size` / `set_position`（不变式 26、F59）；`restore_writes_snapshot_and_click_through` 断言按快照写回置顶/几何/可见性并把 `click_through` 交给回调；`restore_keeps_going_and_reports_cancel_failed` 断言任一步失败仍走完剩余步骤并返回 `cancel_failed`
-- **`start` 的 preparing 事件（rev10）**：`FakeBackend` 下断言 `SCREENSHOT_PREPARING` 在 `capture()` 之前发出（不变式 25、F58）；权限/无显示器失败时不发
+- **`start` 的 preparing 事件（rev10）**：`FakeBackend` 下断言 `SCREENSHOT_PREPARING` 在 `capture()` 之前发出（不变式 25、F58）；**权限预检失败（步骤 2）时不发**。**rev11 校正**：`no_monitor` 在步骤 5，此时 `preparing` 已发出，断言改为「由 `screenshot-error` 复位 `preparing`」，不再要求「无显示器失败时不发」
 - **`archive_bytes`**：正常返回 `attachmentId` 与 `bytes`；超 8MB → `too_large`；同一内容重复归档命中 sha256 去重、不产生第二份
 - **`setup.rs`**：快捷键解析——默认、覆盖、显式清空、非法、重复、缺默认，逻辑下沉到 `assistant-config::shortcut::resolve_bindings`，由 `crates/assistant-config/tests/shortcut.rs` 覆盖
 
@@ -1267,7 +1278,19 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 - `cargo test` 干净（含 `setup.rs` 快捷键解析用例）。
 - **CSP 守卫**：确认 `tauri.conf.json` 的 `img-src` 仍含 `data:`（删掉会让底图白屏）；同时确认 `assetProtocol.scope.allow` 与 `AppDirs::asset_scopes()` **没有**因本规格发生改动。
 
+#### 11.2.1 本轮已执行结果（2026-11-17）
+
+| 命令 | 范围 | 结果 |
+|---|---|---|
+| `cargo test --lib screenshot` | 截图模块单测（`mod.rs` / `capture.rs` / `crop.rs` / `orb_overlay.rs`） | 20 passed，0 failed |
+| `npx vitest run src/screenshot` | `selection.test.ts` 选区几何 | 13 passed |
+| `npm run contract:check` | 4 个生成物与源码比对 | 一致，无需重新生成 |
+| `npm run typecheck` | 全仓 TS（`tsc -p` + `tsc -b`） | 通过 |
+| `npx eslint <截图相关文件> --max-warnings 0` | `src/screenshot/**`、`screenshotStore.ts`、`factory.ts`、`ConversationFrame.tsx`、`OrbWindow.tsx`、`OrbExpand.ts`、`events.ts`、`constants.ts` | 通过 |
+
 ### 11.3 手动
+
+> **rev11 状态：待执行**。以下清单尚未逐项跑过；每项通过后回填「日期 + 结论（含日志片段）」，M1/M2 的交付判据以此节全部通过为准。
 
 - **快捷键触发**：该屏变暗进入框选；没有新窗口出现；Orb 不可见，主窗/设置窗保持原状并出现在底图
 - **三个入口都不出小球（rev10）**：右键菜单、托盘菜单、全局快捷键各触发多次，从按下到覆盖层铺满的整个过程**任何一帧**都不能看到小球（尤其左上角）；聊天工具栏入口同样。这一项直接对应 F58：Rust 直接发起的入口必须先收到 `screenshot-preparing` 才能撑大窗口
@@ -1276,7 +1299,7 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 - **从 Orb 触发且主窗可见**：底图包含主窗内容，框选主窗区域后产物与所见一致；主窗未被隐藏或移动
 - **chat 自隐藏**：截图期间看不到 OrbBall/OrbPanel；结束或取消后恢复
 - **草稿保留**：在输入框输入文字后触发截图、取消，文字仍在
-- **取消 / 右键 / ESC**：覆盖层消失，Orb 回到原位置/尺寸/可见性/焦点；`attachments/` 无任何新增（全链路不落盘）
+- **取消 / 右键 / ESC**：覆盖层消失，Orb 回到原位置/尺寸/可见性（**不抢前台焦点**，rev11）；`attachments/` 无任何新增（全链路不落盘）
 - **框选确认**：Orb 展开并聚焦输入框，输入区出现缩略图，未自动发送
 - **确认瞬间无闪帧**：框选大区域确认后 Orb 直接展开并显示缩略图，看不到全屏底图被压进 88px 窗口的一帧
 - **底图走 data URL**：覆盖层不请求 asset 协议，仓库里没有 `screenshot-tmp` 目录，`tauri.conf.json` 未改
@@ -1306,10 +1329,10 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 
 ## 12 里程碑
 
-- **M0（spike）**：§6.4 的窗口模型实验（运行时窗口耗时、WebView2 二次初始化、副屏首帧、`SetWindowDisplayAffinity` 可用性）；产出一份结论，决定保留 Orb 复用还是改专用覆盖层窗口（副屏首帧在 Orb 路线已改为「先 size 后 position」的实测项，见 §8.5.1）
-- **M1**：覆盖层宿主（按 M0 结论）+ 会话引导 + 框选 + 裁剪 + 命令内归档 + 快捷键表新增一项 + 默认值调整 + 隐藏校验与全部状态守卫；交付判据 §11.3 全部通过
-- **M2**：Orb 右键菜单、托盘菜单、macOS 权限引导（`permission_denied` 标题 + `permission_guide` 系统设置路径说明，不新开引导页）、标注能力；交付判据 设置页可改快捷键、macOS 未授权时有明确引导
-- **M3**：多屏拼接框选、实时覆盖层 + 捕获排除（须先解决分层窗口限制）、截图历史、无 vision 时的 OCR 降级、锁屏 gate、原生覆盖层评估；交付判据 与 `pdf_text.rs` 的降级策略一致、锁屏 gate 抽为公共 State
+- **M0（spike）**：§6.4 的窗口模型实验（运行时窗口耗时、WebView2 二次初始化、副屏首帧、`SetWindowDisplayAffinity` 可用性）；产出一份结论，决定保留 Orb 复用还是改专用覆盖层窗口（副屏首帧在 Orb 路线已改为「先 size 后 position」的实测项，见 §8.5.1）。**rev11 结论：保留 Orb 复用**（见 §6.4.1；四项实测数据未留存，专用窗口路线未评估）
+- **M1**：覆盖层宿主（按 M0 结论）+ 会话引导 + 框选 + 裁剪 + 命令内归档 + 快捷键表新增一项 + 默认值调整 + 隐藏校验与全部状态守卫；交付判据 §11.3 全部通过（**rev11：代码已完成、自动化验证已过（§11.2.1），§11.3 手动项待执行**）
+- **M2**：Orb 右键菜单、托盘菜单、macOS 权限引导（`permission_denied` 标题 + `permission_guide` 系统设置路径说明，不新开引导页）；交付判据 设置页可改快捷键、macOS 未授权时有明确引导（**rev11：已完成；原列的「标注能力」移入 M3**）
+- **M3**：标注能力（箭头、矩形、马赛克、文字）、多屏拼接框选、实时覆盖层 + 捕获排除（须先解决分层窗口限制）、截图历史、无 vision 时的 OCR 降级、锁屏 gate、原生覆盖层评估；交付判据 标注产物与裁剪产物走同一归档链路、与 `pdf_text.rs` 的降级策略一致、锁屏 gate 抽为公共 State
 
 ---
 
@@ -1503,4 +1526,23 @@ rev8 的定位是**把 M2 剩余项与实现细节对齐到真实代码**：几�
 - **§9.9 / 前端**：`screenshot.err.permission_denied` 的 toast 描述改为 `screenshot.permission_guide` 引导文案（`zh-CN` / `en-US` 均已补键），未知错误码仍原样回显
 - **§8.2 / §5 不变式 23 / F55**：隐藏前新增「Windows 弹出菜单清理」——弹出菜单（`#32768`）是独立顶层窗口，Orb 只是 owner，`ShowWindow(orb)` 带不走它；从右键菜单项触发截图时菜单可能仍在关闭动画而被冻进底图，改为枚举本进程可见菜单窗口、逐个禁用 DWM 过渡后 `SW_HIDE`，预算内仍可见返回 `capture_failed`
 - **§11.3**：新增「右键菜单触发」验收项（Orb 右键菜单与托盘菜单均不残留）
-- **M2 交付**：Orb 右键菜单、托盘菜单、macOS 未授权引导已落地；标注能力尚未实现，仍是 M2 唯一未完成项
+- **M2 交付**：Orb 右键菜单、托盘菜单、macOS 未授权引导已落地；~~标注能力尚未实现，仍是 M2 唯一未完成项~~ → **rev11：标注能力按 §3 非目标移入 M3，M2 因此全部完成**
+
+---
+
+## 21 rev11 修订摘要
+
+rev11 的定位是**收口**：不改代码，把规格与已落地实现对齐，消除文档内部矛盾，并把验收状态写清楚。
+
+- **状态行**：`Draft（rev10）` → `已实现（rev11）`，并在状态里标明「M1/M2 完成、标注能力移入 M3、§11.3 手动验收待执行」，避免继续被当作待开发规格
+- **§6.4 → §6.4.1**：回写 M0 结论「保留 Orb 复用，§6.2 无需改动」；如实标注四项 spike 数据**未留存**、专用窗口路线**未评估**，并写明翻案所需补的数据。原文「结论以一条修订 + §6.2 表格更新回收」的要求由此闭环
+- **§12 里程碑**：M2 删掉「标注能力」（与 §3 非目标一致），M3 增加「标注能力」并补交付判据；M0/M1/M2 各追加 rev11 状态标注
+- **§8.1 / §8.2 / §8.4 / §8.5 / §8.8 / §2 / §1**：按实现校正「快照含 `focused` 并恢复焦点」这一表述——实现只快照 position/size/visible/always_on_top/click_through，恢复时**不抢焦点**；相关行（§1 代价、§2 目标 5、§8.2 步骤 6、§8.4 步骤 7、§8.5 要点、§8.8 取消、§11.3 取消项）全部同步
+- **§8.4**：缩放滤镜由 Lanczos3 改为实现的 `CatmullRom`，并说明理由；`archive_bytes` 签名补 `&AppHandle`
+- **§8.2 步骤 12 / §11.1**：修正「权限/无显示器失败都不碰前端状态」的错误表述——`no_monitor` 在步骤 5，`preparing` 已发出，由 `screenshot-error` 复位
+- **§7.3**：错误码补 `screenshot.err.cancel_failed`（`restore` 部分失败时返回）
+- **§1 影响范围 / §7.4 / §10.2**：事件数由「2 个」校正为 3 个（session / preparing / error）
+- **§10**：新建清单补 `src/screenshot/Overlay.module.css`；修改清单校正截图入口位置（在 `ConversationFrame` 内实现，**不经** `layoutProps` 透传，`ConversationView.tsx` 与 `layoutProps.ts` 未改）
+- **§11.2.1**：新增本轮已执行结果表（`cargo test --lib screenshot` 20 passed、`vitest src/screenshot` 13 passed、`contract:check`、`typecheck`、定向 `eslint`），并显式列出「未执行」的三类
+- **§11.3**：标注为「待执行」，并规定回填口径（日期 + 结论 + 日志片段）
+- **结构账目**：本规格产出的三个 ≥400 非空行文件（`screenshot/orb_overlay.rs`、`screenshot/mod.rs`、`src/screenshot/Overlay.tsx`）的保留/拆分判定登记在 `docs/store/code-structure-followups.md`，不在本规格内重复结论
