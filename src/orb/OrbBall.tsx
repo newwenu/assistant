@@ -27,6 +27,7 @@ export const OrbBall: React.FC = () => {
   const expandVertical = useOrbStore((s) => s.expandVertical);
   const setHovering = useOrbStore((s) => s.setHovering);
   const mascotFace = useMascotStore((s) => s.face);
+  const mascotScene = useMascotStore((s) => s.scene);
   const mascotConf = useConfGroup("mascot");
   const {
     activePointerType,
@@ -120,6 +121,7 @@ export const OrbBall: React.FC = () => {
       <MascotRenderer
         renderer={asRendererId(mascotConf?.renderer ?? "svg")}
         face={mascotFace}
+        scene={mascotScene ?? undefined}
         size={ORB_COLLAPSED_SIZE}
         primaryColor={hexToArgb(mascotConf?.primaryColor)}
         secondaryColor={hexToArgb(mascotConf?.secondaryColor)}
