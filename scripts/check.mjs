@@ -70,6 +70,9 @@ const PHASE1 = [
     commands: [
       `"${bin("prettier")}" --check src scripts vite.config.ts vitest.config.ts eslint.config.ts`,
     ],
+    fix: [
+      `"${bin("prettier")}" --write src scripts vite.config.ts vitest.config.ts eslint.config.ts`,
+    ],
   },
   {
     id: "types",
@@ -85,6 +88,9 @@ const PHASE1 = [
     commands: [
       `"${bin("eslint")}" . --max-warnings 0 --cache --cache-location node_modules/.cache/eslint`,
     ],
+    fix: [
+      `"${bin("eslint")}" . --fix --cache --cache-location node_modules/.cache/eslint`,
+    ],
   },
 ];
 
@@ -96,20 +102,25 @@ const PHASE2 = [
   },
 ];
 
-function report(results) {
+function printStatuses(results) {
   for (const { step, result } of results) {
     const status = result.ok ? "ok" : "FAIL";
     console.log(
       `[check] ${step.label} ${status} ${(result.ms / 1000).toFixed(1)}s`,
     );
   }
-  const failed = results.filter(({ result }) => !result.ok);
-  for (const { step, result } of failed) {
+}
+
+function printFailures(results) {
+  for (const { step, result } of results.filter(({ result }) => !result.ok)) {
     console.log(`\n----- ${step.label} 输出 -----`);
     const trimmed = result.out.trim();
     console.log(trimmed.length > 0 ? trimmed : `(exit ${result.code})`);
   }
-  return failed.length === 0;
+}
+
+function allOk(results) {
+  return results.every(({ result }) => result.ok);
 }
 
 async function runGroup(steps) {
@@ -121,10 +132,62 @@ async function runGroup(steps) {
   );
 }
 
+/**
+ * 前置检查失败时先跑一遍自动修复，再复检失败项。
+ * 修好就继续往下走（契约照常校验），修不好才真正失败退出。
+ */
+async function fixThenRetry(results) {
+  const failed = results.filter(({ result }) => !result.ok);
+  const fixable = failed
+    .map(({ step }) => step)
+    .filter((step) => step.fix?.length);
+
+  if (fixable.length === 0) {
+    console.log("[check] 失败项没有自动修复能力，直接退出");
+    printFailures(failed);
+    return null;
+  }
+
+  console.log(
+    `[check] 前置检查未通过，先自动修复：${fixable
+      .map((step) => step.label)
+      .join("、")}`,
+  );
+  const fixResults = await runGroup(
+    fixable.map((step) => ({ ...step, commands: step.fix })),
+  );
+  for (const { step, result } of fixResults) {
+    console.log(
+      `[check] 修复 ${step.label} ${result.ok ? "ok" : "FAIL"} ${(
+        result.ms / 1000
+      ).toFixed(1)}s`,
+    );
+    if (!result.ok) {
+      console.log(`\n----- ${step.label} 修复输出 -----`);
+      console.log(result.out.trim() || `(exit ${result.code})`);
+    }
+  }
+
+  const retryTargets = failed.map(({ step }) => step);
+  const retried = await runGroup(retryTargets);
+  console.log("[check] 复检");
+  printStatuses(retried);
+  if (!allOk(retried)) {
+    printFailures(retried);
+    return null;
+  }
+  return results;
+}
+
 const phase1 = await runGroup(PHASE1);
-if (!report(phase1)) {
-  console.log("\n[check] 前置检查未通过，跳过契约校验");
-  process.exit(1);
+printStatuses(phase1);
+if (!allOk(phase1)) {
+  const recovered = await fixThenRetry(phase1);
+  if (recovered === null) {
+    console.log("[check] 前置检查仍然未通过，跳过契约校验");
+    process.exit(1);
+  }
+  console.log("[check] 自动修复后通过，继续契约校验");
 }
 
 if (!contractNeeded()) {
@@ -132,4 +195,7 @@ if (!contractNeeded()) {
   process.exit(0);
 }
 
-process.exit(report(await runGroup(PHASE2)) ? 0 : 1);
+const phase2 = await runGroup(PHASE2);
+printStatuses(phase2);
+if (!allOk(phase2)) printFailures(phase2);
+process.exit(allOk(phase2) ? 0 : 1);
