@@ -19,6 +19,9 @@ pub mod event_name {
     pub const VAULT_LOCKED: &str = "vault:locked";
     pub const VAULT_UNLOCKED: &str = "vault:unlocked";
     pub const BIOMETRIC_ENROLL_STEP: &str = "vault:biometric-enroll-step";
+    pub const SCREENSHOT_SESSION: &str = "screenshot-session";
+    pub const SCREENSHOT_PREPARING: &str = "screenshot-preparing";
+    pub const SCREENSHOT_ERROR: &str = "screenshot-error";
 }
 
 pub fn emit_broadcast(app: &tauri::AppHandle, event: &str, payload: impl serde::Serialize + Clone) {

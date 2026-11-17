@@ -27,6 +27,28 @@ pub const ORB_HITBOX_SIZE: u32 = ORB_COLLAPSED_WINDOW_SIZE;
 pub const ORB_SNAP_BORDER_X: i32 = 24;
 pub const ORB_SNAP_ANIMATION_MS: u64 = 250;
 
+/// 隐藏覆盖层宿主 `orb` 后的兜底等待上限（毫秒）；正常路径靠可见性校验 + DwmFlush 提前返回。
+pub const SCREENSHOT_HIDE_SETTLE_MS: u64 = 150;
+/// 会话事件发出后、显示覆盖层前的兜底等待上限（毫秒）；前端以 `img.decode()` 完成为准。
+pub const SCREENSHOT_OVERLAY_SETTLE_MS: u64 = 100;
+/// 弹出菜单关闭淡出动画的帧数：菜单窗口在 `TrackPopupMenu` 返回时已被销毁，无法再
+/// `ShowWindow`，只能从点击那一刻起把动画帧排空，否则淡出帧会被冻进底图。
+/// 实测（Win11 默认动画）淡出是 **19 个 DWM 合成帧的线性过渡**，与菜单项数量无关；
+/// 因此按帧而非毫秒计：60Hz 下约 317ms、144Hz 下约 132ms。固定毫秒常量在高刷屏上白等、
+/// 在低刷屏上漏帧，是这套逻辑此前「时长对不上」的根因。这里取 19 帧 + 1 帧余量。
+pub const SCREENSHOT_MENU_FADE_FRAMES: u32 = 20;
+/// 排空淡出帧的兜底上限（毫秒）：远程桌面、窗口被遮挡等场景下 `DwmFlush` 可能提前返回，
+/// 用时间上限防止帧数循环退化成忙等（30Hz 下 20 帧约 667ms，故上限取 800）。
+pub const SCREENSHOT_MENU_FADE_CAP_MS: u64 = 800;
+/// 无覆盖层宿主时的孤儿会话存活时间。
+pub const SCREENSHOT_SESSION_TTL_MS: u64 = 10 * 60 * 1000;
+/// 与 assistant-agent / 前端一致的图片单张上限。
+pub const SCREENSHOT_MAX_BYTES: u64 = 8 * 1024 * 1024;
+/// 底图预览的长边上限（CSS px）；只影响底图清晰度，不影响裁剪产物。
+pub const SCREENSHOT_PREVIEW_LONG_EDGE: u32 = 2560;
+/// 底图预览的 JPEG 质量。
+pub const SCREENSHOT_PREVIEW_JPEG_QUALITY: u8 = 80;
+
 pub const COMPACTION_THRESHOLD_PERCENT: u8 = 80;
 pub const MAX_SUMMARY_REQUEST_TOKENS: u32 = 4096;
 pub const MAX_SUMMARY_OUTPUT_TOKENS: u32 = 2000;

@@ -14,6 +14,7 @@ pub mod mcp;
 mod menu;
 mod plugins;
 pub mod protocol;
+mod screenshot;
 mod setup;
 mod tool_setup;
 mod tray;

@@ -6,8 +6,8 @@ use tauri::AppHandle;
 use super::hover::ScreenBounds;
 
 pub use super::geometry::{
-    bounds_inside_screens, correction_for_screens, snap_orb_to_edge, snap_to_nearest_screen,
-    WindowBounds,
+    bounds_inside_screens, correction_for_screens, nearest_screen, snap_orb_to_edge,
+    snap_to_nearest_screen, WindowBounds,
 };
 
 pub const PLACEMENT_SETTLE_DELAY: Duration = Duration::from_millis(1000);

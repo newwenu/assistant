@@ -90,6 +90,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     handle.manage(Arc::new(assistant_agent::kernel::TurnTasks::new()));
     handle.manage(Arc::new(assistant_agent::kernel::SessionStates::new()));
     handle.manage(std::sync::Arc::new(crate::clock::ClockRuntime::new()));
+    handle.manage(crate::screenshot::ScreenshotState::new());
 
     crate::tool_setup::init(handle)?;
 
@@ -145,7 +146,17 @@ static SHORTCUT_SPECS: &[(&str, ShortcutAction)] = &[
     ("toggle_orb", toggle_orb_action),
     ("toggle_main", toggle_main_action),
     ("new_chat", new_chat_action),
+    ("capture_screenshot", capture_screenshot_action),
 ];
+
+fn capture_screenshot_action(app: &tauri::AppHandle) {
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(code) = crate::screenshot::start(&handle).await {
+            crate::screenshot::emit_error(&handle, &code);
+        }
+    });
+}
 
 fn toggle_orb_action(app: &tauri::AppHandle) {
     let _ = crate::window::toggle(app, WINDOW_ORB);
@@ -269,6 +280,9 @@ fn spawn_screen_inspection(handle: tauri::AppHandle) {
         std::thread::sleep(placement::PLACEMENT_INSPECTION_INTERVAL);
         if crate::lifecycle::should_exit() {
             break;
+        }
+        if crate::screenshot::is_active() {
+            continue;
         }
         let Some(window) = handle.get_webview_window(WINDOW_ORB) else {
             continue;

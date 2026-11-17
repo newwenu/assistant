@@ -6,6 +6,7 @@
     "new_chat": "New Chat",
     "show_main": "Open Main Window",
     "show_orb": "Show Orb",
+    "screenshot": "Screenshot",
     "settings_general": "General Settings",
     "settings_appearance": "Appearance Settings",
     "settings_shortcuts": "Shortcuts",
@@ -14,6 +15,7 @@
   "orb": {
     "context_new_chat": "New Chat",
     "context_open_main": "Open Main Window",
+    "context_screenshot": "Screenshot",
     "context_quit": "Quit"
   },
   "chat": {

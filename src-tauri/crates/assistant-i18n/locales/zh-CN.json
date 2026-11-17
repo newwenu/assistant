@@ -6,6 +6,7 @@
     "new_chat": "新建对话",
     "show_main": "打开主窗口",
     "show_orb": "显示悬浮球",
+    "screenshot": "截图提问",
     "settings_general": "通用设置",
     "settings_appearance": "外观设置",
     "settings_shortcuts": "快捷键",
@@ -14,6 +15,7 @@
   "orb": {
     "context_new_chat": "新建对话",
     "context_open_main": "打开主窗口",
+    "context_screenshot": "截图提问",
     "context_quit": "退出"
   },
   "chat": {

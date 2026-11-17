@@ -52,6 +52,11 @@ pub fn set_orb_click_through(app: AppHandle, enabled: bool) -> Result<(), String
     Ok(())
 }
 
+/// 穿透镜像的只读视图：截图会话快照/恢复必须与窗口 API 保持同步（F45）。
+pub(crate) fn orb_click_through() -> bool {
+    ORB_CLICK_THROUGH.load(Ordering::Acquire)
+}
+
 pub(crate) fn apply_orb_click_through(app: &AppHandle, enabled: bool) -> Result<(), String> {
     if ORB_CLICK_THROUGH.load(Ordering::Acquire) == enabled {
         return Ok(());
@@ -74,14 +79,8 @@ pub fn get_screen_size(
     let cx_phys = center_x * scale_factor;
     let cy_phys = center_y * scale_factor;
     let screens = placement::get_available_screens(&app);
-    let best = screens.iter().min_by_key(|s| {
-        let sx = s.x + s.width as i32 / 2;
-        let sy = s.y + s.height as i32 / 2;
-        let dx = cx_phys as i64 - sx as i64;
-        let dy = cy_phys as i64 - sy as i64;
-        dx * dx + dy * dy
-    });
-    let rect = match best {
+    let point = placement::WindowBounds::new(cx_phys as i32, cy_phys as i32, 0, 0);
+    let rect = match placement::nearest_screen(&screens, point) {
         Some(s) => ScreenRectDto {
             x: s.x,
             y: s.y,
@@ -100,6 +99,9 @@ pub fn get_screen_size(
 
 #[command]
 pub fn snap_orb_to_screen(app: AppHandle) -> Result<(), String> {
+    if crate::screenshot::is_active() {
+        return Ok(());
+    }
     let window = crate::window::get_or_error(&app, WINDOW_ORB)?;
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
@@ -136,6 +138,10 @@ pub fn cancel_orb_snap() {
 #[command]
 pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
     ORB_SNAP_CANCEL.store(true, Ordering::Release);
+
+    if crate::screenshot::is_active() {
+        return Ok(());
+    }
 
     let window = crate::window::get_or_error(&app, WINDOW_ORB)?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
@@ -190,7 +196,7 @@ pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
             let y = (start_y + (end_y - start_y) * t).round() as i32;
             let _ = window.set_position(PhysicalPosition::new(x, y));
         }
-        if !cancelled {
+        if !cancelled && !crate::screenshot::is_active() {
             if let Ok(pos) = window.outer_position() {
                 if let Ok(mut conf) = OrbConf::load() {
                     conf.position_x = Some(pos.x);
@@ -205,6 +211,9 @@ pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
 }
 
 fn save_orb_position_sync(app: &AppHandle) -> Result<(), String> {
+    if crate::screenshot::is_active() {
+        return Ok(());
+    }
     let window = crate::window::get_or_error(app, WINDOW_ORB)?;
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let mut conf = OrbConf::load().map_err(|e| e.to_string())?;

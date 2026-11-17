@@ -124,6 +124,33 @@ fn plan_import(path: &str) -> Result<ImportPlan, String> {
     })
 }
 
+/// 归档已就绪的字节：校验图片单张上限后写入内容寻址存储。
+///
+/// `import_attachment` 与截屏裁剪共用这一段，保证「大小上限 + 去重」只有一份实现。
+pub(crate) async fn archive_bytes(
+    app: &AppHandle,
+    bytes: &[u8],
+    file_name: &str,
+    media_type: &str,
+) -> Result<AttachmentImportDto, String> {
+    if bytes.len() as u64 > ATTACHMENT_LIMITS.max_image_bytes {
+        return Err("too_large".to_string());
+    }
+
+    let saved = app
+        .state::<AttachmentStore>()
+        .save_attachment(bytes, media_type)
+        .await
+        .map_err(|_| IMPORT_FAILED.to_string())?;
+
+    Ok(AttachmentImportDto {
+        attachment_id: saved.id,
+        media_type: saved.media_type,
+        bytes: saved.bytes,
+        file_name: file_name.to_string(),
+    })
+}
+
 #[command]
 pub async fn import_attachment(
     app: AppHandle,
@@ -133,18 +160,7 @@ pub async fn import_attachment(
 
     let data = std::fs::read(&plan.path).map_err(|_| IMPORT_FAILED.to_string())?;
 
-    let saved = app
-        .state::<AttachmentStore>()
-        .save_attachment(&data, plan.media_type)
-        .await
-        .map_err(|_| IMPORT_FAILED.to_string())?;
-
-    Ok(AttachmentImportDto {
-        attachment_id: saved.id,
-        media_type: saved.media_type,
-        bytes: saved.bytes,
-        file_name: plan.file_name,
-    })
+    archive_bytes(&app, &data, &plan.file_name, plan.media_type).await
 }
 
 #[cfg(test)]

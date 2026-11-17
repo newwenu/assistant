@@ -114,7 +114,8 @@ fn screen_edges(screen: ScreenBounds) -> (i64, i64, i64, i64) {
     )
 }
 
-fn nearest_screen(screens: &[ScreenBounds], bounds: WindowBounds) -> Option<ScreenBounds> {
+/// 选出与 `bounds` 重叠面积最大、距离最近的屏幕；`bounds` 宽高为 0 时退化为「按中心点距离」。
+pub fn nearest_screen(screens: &[ScreenBounds], bounds: WindowBounds) -> Option<ScreenBounds> {
     let (left, top, right, bottom) = window_edges(bounds);
     let center_x = left.saturating_add(right) / 2;
     let center_y = top.saturating_add(bottom) / 2;

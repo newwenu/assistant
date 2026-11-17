@@ -107,6 +107,7 @@ pub static DEFAULT_SHORTCUT_PATTERNS: &[(&str, &str)] = &[
     ("toggle_orb", "{primary}+Shift+Alt+O"),
     ("toggle_main", "{primary}+Shift+Alt+M"),
     ("new_chat", "{primary}+Shift+Alt+N"),
+    ("capture_screenshot", "{primary}+Shift+Alt+S"),
 ];
 
 pub fn default_keybindings() -> HashMap<String, String> {

@@ -72,6 +72,9 @@ pub fn effective_on_top(stay_on_top: bool) -> bool {
 /// 失败只记 warn：窗口属性是尽力而为，不阻断启动。
 /// 不加平台分支——tao 0.37.2 在 Windows 上 `set_visible_on_all_workspaces` 为空实现且不报错。
 pub fn apply_orb_window_attrs(app: &AppHandle) {
+    if crate::screenshot::is_active() {
+        return;
+    }
     let Ok(conf) = OrbConf::load() else {
         log::warn!("Failed to load orb config for window attributes");
         return;
@@ -382,6 +385,9 @@ pub fn expand_orb_panel(
     horizontal: String,
     vertical: String,
 ) -> Result<(), String> {
+    if crate::screenshot::is_active() {
+        return Ok(());
+    }
     let window = get_or_error(&app, WINDOW_ORB)?;
 
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
@@ -444,6 +450,9 @@ pub fn collapse_orb_panel(
     horizontal: String,
     vertical: String,
 ) -> Result<(), String> {
+    if crate::screenshot::is_active() {
+        return Ok(());
+    }
     let window = get_or_error(&app, WINDOW_ORB)?;
 
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
@@ -492,6 +501,11 @@ pub fn collapse_orb_panel(
 
 #[command]
 pub fn show_orb_context_menu(app: AppHandle, x: f64, y: f64) -> Result<(), String> {
+    // 截图期间禁止再弹菜单：抓屏时新弹出的菜单会直接进入底图。
+    if crate::screenshot::is_active() {
+        return Ok(());
+    }
+
     let new_chat = MenuItem::with_id(
         &app,
         "orb_new_chat",
@@ -508,6 +522,14 @@ pub fn show_orb_context_menu(app: AppHandle, x: f64, y: f64) -> Result<(), Strin
         None::<&str>,
     )
     .map_err(|e| e.to_string())?;
+    let screenshot = MenuItem::with_id(
+        &app,
+        "orb_screenshot",
+        assistant_i18n::t("orb.context_screenshot"),
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
     let separator = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
     let quit = MenuItem::with_id(
         &app,
@@ -518,21 +540,35 @@ pub fn show_orb_context_menu(app: AppHandle, x: f64, y: f64) -> Result<(), Strin
     )
     .map_err(|e| e.to_string())?;
 
-    let menu = Menu::with_items(&app, &[&new_chat, &open_main, &separator, &quit])
-        .map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(
+        &app,
+        &[&new_chat, &open_main, &screenshot, &separator, &quit],
+    )
+    .map_err(|e| e.to_string())?;
 
     let webview_window = get_or_error(&app, WINDOW_ORB)?;
-
     let window = webview_window.as_ref().window();
-    menu.popup_at(window, tauri::LogicalPosition::new(x, y))
-        .map_err(|e: tauri::Error| e.to_string())?;
 
-    Ok(())
+    // 菜单是独立顶层窗口（Orb 只是 owner），点中菜单项后系统会播放关闭淡出，这段时间窗口仍在合成。
+    // 截图项的淡出起点已在菜单事件回调（点击那一刻）锚定；这里只做兜底：把仍在关闭动画中的
+    // 菜单窗口立刻隐藏，避免残留菜单继续被合成进后续抓屏。
+    let result = menu.popup_at(window, tauri::LogicalPosition::new(x, y));
+    crate::screenshot::orb_overlay::dismiss_menus_now();
+
+    result.map_err(|e: tauri::Error| e.to_string())
 }
 
 pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     match event {
         tauri::WindowEvent::CloseRequested { api, .. } => {
+            if window.label() == WINDOW_ORB && crate::screenshot::is_active() {
+                api.prevent_close();
+                let app = window.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::screenshot::cancel_active(&app).await;
+                });
+                return;
+            }
             if window.label() == WINDOW_MAIN {
                 let _ = persist_main_geometry(window.app_handle());
                 let close_to_tray = assistant_config::app_conf::AppConf::load()
@@ -545,6 +581,9 @@ pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             }
         }
         tauri::WindowEvent::Focused(false) if window.label() == WINDOW_ORB => {
+            if crate::screenshot::is_active() {
+                return;
+            }
             use tauri::Emitter;
             let _ = window.emit(event_name::ORB_BLUR, ());
         }

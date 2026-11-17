@@ -281,6 +281,21 @@ export type ResolvedThemeDto = "light" | "dark";
 export type RetryNotificationDto = { attempt: number, maxAttempts: number, delayMs: number, message: string, errorCode: ProviderErrorCodeDto | null, };
 export type ScreenRectDto = { x: number, y: number, width: number, height: number, };
 export type ScreenSizeDto = { screen: ScreenRectDto, };
+export type ScreenshotCropArgsDto = { token: string, x: number, y: number, width: number, height: number, };
+export type ScreenshotCropResultDto = { attachmentId: string, fileName: string, mediaType: string, bytes: number, width: number, height: number, };
+export type ScreenshotSessionDto = { 
+/**
+ * 一次性令牌：裁剪/取消只认它
+ */
+token: string, 
+/**
+ * 底图预览：`data:image/jpeg;base64,...`，内存生成，按逻辑分辨率压缩
+ */
+preview: string, 
+/**
+ * 预览的像素尺寸（仅用于尺寸标注与诊断，不作为换算依据）
+ */
+previewWidth: number, previewHeight: number, };
 export type SendChatMessageArgsDto = { content: string, modeId?: string | null, branchPointMessageId?: string | null, providerId: string, modelId: string, reasoningLevel?: string | null, 
 /**
  * 每轮有效工具配置（agent 链路 = 会话持久值 ?? 模式初始值；chat 链路恒 `null`）。

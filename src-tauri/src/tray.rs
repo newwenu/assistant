@@ -37,6 +37,14 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
         None::<&str>,
     )
     .expect("failed to create show_orb menu item");
+    let screenshot = MenuItem::with_id(
+        app,
+        "screenshot",
+        assistant_i18n::t("tray.screenshot"),
+        true,
+        None::<&str>,
+    )
+    .expect("failed to create screenshot menu item");
     let separator1 = PredefinedMenuItem::separator(app).expect("failed to create separator");
     let settings_general = MenuItem::with_id(
         app,
@@ -78,6 +86,7 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
             &new_chat,
             &show_main,
             &show_orb,
+            &screenshot,
             &separator1,
             &settings_general,
             &settings_appearance,
@@ -102,6 +111,17 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
             }
             "show_orb" => {
                 let _ = window::show_or_create(app, WINDOW_ORB);
+            }
+            "screenshot" => {
+                // 与 Orb 右键菜单同一时序问题：点中菜单项后系统会播放关闭淡出，
+                // 必须在点击这一刻隐藏残余菜单并锚定淡出起点，否则抓屏会冻进动画中间帧。
+                crate::screenshot::orb_overlay::dismiss_menus_now();
+                let handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(code) = crate::screenshot::start(&handle).await {
+                        crate::screenshot::emit_error(&handle, &code);
+                    }
+                });
             }
             "settings_general" => {
                 let _ = window::show_or_create(app, WINDOW_MAIN);
@@ -160,6 +180,14 @@ pub fn rebuild_tray(app: &AppHandle) {
             None::<&str>,
         )
         .expect("failed to create show_orb menu item");
+        let screenshot = MenuItem::with_id(
+            app,
+            "screenshot",
+            assistant_i18n::t("tray.screenshot"),
+            true,
+            None::<&str>,
+        )
+        .expect("failed to create screenshot menu item");
         let separator1 = PredefinedMenuItem::separator(app).expect("failed to create separator");
         let settings_general = MenuItem::with_id(
             app,
@@ -201,6 +229,7 @@ pub fn rebuild_tray(app: &AppHandle) {
                 &new_chat,
                 &show_main,
                 &show_orb,
+                &screenshot,
                 &separator1,
                 &settings_general,
                 &settings_appearance,

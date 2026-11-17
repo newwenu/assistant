@@ -85,6 +85,8 @@ async-stream = "0.3"
 rand = "0.8"
 bytes = "1"
 urlencoding = "2"
+# 截屏抓帧（I35）：枚举显示器 + 抓整屏 RGBA，多屏与 DPI 由库处理
+xcap = "0.9"
 proptest = "1"
 crash-handler = "0.6"
 minidump-writer = "0.10"
@@ -180,6 +182,11 @@ futures = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 csv = { workspace = true }
+# 截屏（I35）：抓帧后端 + 裁剪/编码直接使用 RgbaImage / crop_imm / PngEncoder / JpegEncoder
+xcap = { workspace = true }
+image = { workspace = true }
+# 预览 JPEG 内联为 data URL，全程不落盘
+base64 = { workspace = true }
 
 assistant-config = { workspace = true }
 assistant-orb = { workspace = true }
@@ -195,10 +202,18 @@ assistant-vault = { workspace = true, optional = true }
 assistant-crash = { workspace = true }
 rustc_version_runtime.workspace = true
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# 截屏隐藏序列：禁用 DWM 过渡动画 + ShowWindow 兜底 + DwmFlush
+windows = { workspace = true }
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [profile.dev]
+# 图像编解码（截屏预览 JPEG、裁剪 PNG）在 opt-level=0 下慢约 6 倍：实测 2520x1680
+# 抓帧+编码 807ms，opt-level=1 降到 142ms，opt-level=3 为 131ms。取 1 拿到几乎全部收益，
+# 又不至于像 3 那样把日常增量编译拖慢太多。
+opt-level = 1
 # 调试信息降为 1（仅文件/行号，不含变量与类型全量信息）：本 workspace 有 80+ 个
 # 集成测试 target，每个都静态链接整条依赖图，完整 debug=2 的 PDB 单个可达 0.21 GB，
 # 且依赖哈希变化后旧产物不回收。降级后 backtrace 仍可读，PDB 体积显著缩小。
