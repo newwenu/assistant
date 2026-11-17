@@ -57,9 +57,11 @@
 
 **优先级定位**：`responses_stream.rs`（688）在 900 行优先审查线以下，且 §2 已明确「行数不作拆分义务」。它是归档规格的遗留项、价值中等，**不是**「唯一剩余的代码工作」；当前真实的结构风险在 F3 的组 A。
 
+**前置门（2026-11-17 复核新增）**：该文件对应的 `ProviderKind::OpenAIResponses` 无前端正式入口——`ApiFormat` 只有 `openai` / `anthropic` / `local`，仅「自定义 Provider ID」自由文本手输可达，且 I9 规格（已归档）H2 运行验证 8 项全未勾选。处置决策与影响面见 [responses-endpoint-disposition.md](./responses-endpoint-disposition.md)：选 A（补入口）则先补后拆，选 B（保留记录）则维持低优先级，选 C（移除）则 F1-b 作废转删除任务。决策落地前不动 `responses_stream.rs`。
+
 ### F2 `crate-architecture.md` 口径统一（已收口）
 
-口径与非空行数字已随本次结构文档批提交收口（2026-11-17）：主 app 101 文件 / 16,303 非空行，12 个子 crate 338 / 55,327，合计 439 / 71,630（`probe-structure.mjs` 实测，含 F3-A 与 F1-a 未提交的拆分）。后续「重刷 `crate-architecture.md` 的 §1.1 / §3.1 / 逐 crate 行数」固定为**结构变更批提交前的随批动作**，不再当作一次性待办；纯功能批不追数字。重刷时同步补齐 B2 / B4 的实际落点分组（`runtime/`、`os/tools/`、`os/shared/`、`kernel/turn/`、`storage/tools/`、`vault/security_db/{state,session,anchor}`）。
+口径与非空行数字已随本次结构文档批提交收口（2026-11-17）：主 app 116 文件 / 16,607 非空行，12 个子 crate 338 / 55,327，合计 454 / 71,934（`probe-structure.mjs` 实测，含 F3-A、F1-a 与 F3-C 的拆分）。后续「重刷 `crate-architecture.md` 的 §1.1 / §3.1 / 逐 crate 行数」固定为**结构变更批提交前的随批动作**，不再当作一次性待办；纯功能批不追数字。重刷时同步补齐 B2 / B4 的实际落点分组（`runtime/`、`os/tools/`、`os/shared/`、`kernel/turn/`、`storage/tools/`、`vault/security_db/{state,session,anchor}`）。
 
 ### F3 ≥400 非空行的账目重建（原账目不可用）
 
@@ -70,11 +72,11 @@
 | A `mod.rs` 内含实现 | 2 | **已拆分**（`git_sync` / `runtime/compact`） |
 | A′ `mod.rs` 实现合规、内联测试超标 | 4 | 判定「不拆实现」，见 F3-G |
 | B 装配型 `mod.rs` / 状态集中 | 2 | 可判「保留」，需确认 |
-| C 新增功能产出（I35 截图 / I53 沙箱） | 5 | I35 2 个**已判定**（见 F3-C）；I53 3 个待判定（前端 `Overlay.tsx` 在 F3-E，已判定） |
+| C 新增功能产出（I35 截图 / I53 沙箱） | 5 | I35 2 个**已判定并执行**（`screenshot/mod.rs` 与 `orb_overlay.rs`，见 F3-C）；I53 3 个待判定（前端 `Overlay.tsx` 在 F3-E，已判定） |
 | D 存量未判定 | 21 | 待判定 |
 | 已判定（F1 两个 + 归档 §2.9 六个） | 8 | 已判定 |
 
-> 这 42 是「复核当时的账目」。已拆掉的 `git_sync/mod.rs`、`runtime/compact/mod.rs`、`multimodal.rs` 三个不再 ≥400，故**现存 ≥400 的 Rust 文件为 39**（probe 同口径实测：A′4 + B2 + C5 + D21 + §2.9 六个 + `responses_stream.rs`）。F1-b 完成后为 38。归档 §2.9 六个即 `test_doubles.rs`（801，`#[cfg(any(test, feature = "test-doubles"))]` 门控的测试替身）、`middleware.rs`（524）、`db.rs`（583）、`policy.rs`（458）、`os/shared/output.rs`（479）、`os/shared/text_encoding.rs`（455）。
+> 这 42 是「复核当时的账目」。已拆掉的 `git_sync/mod.rs`、`runtime/compact/mod.rs`、`multimodal.rs`、`screenshot/mod.rs`、`orb_overlay.rs` 五个不再 ≥400，故**现存 ≥400 的 Rust 文件为 37**（probe 同口径：A′4 + B2 + C3 + D21 + §2.9 六个 + `responses_stream.rs`）。F1-b 完成后为 36。归档 §2.9 六个即 `test_doubles.rs`（801，`#[cfg(any(test, feature = "test-doubles"))]` 门控的测试替身）、`middleware.rs`（524）、`db.rs`（583）、`policy.rs`（458）、`os/shared/output.rs`（479）、`os/shared/text_encoding.rs`（455）。
 
 #### F3-A `mod.rs` 内含实现（复核修正：实际只有 2 个，且已完成）
 
@@ -107,23 +109,23 @@
 
 | 文件 | 非空行 | 来源 | 结论 |
 |---|---|---|---|
-| `src-tauri/src/screenshot/orb_overlay.rs` | 720 | I35 截图 | **拆分（待执行）** |
+| `src-tauri/src/screenshot/orb_overlay.rs` | 720（拆分前） | I35 截图 | **已完成**（拆为 `orb_overlay/{mod,snapshot,platform,menu_fade}`；见 F3-C 判定） |
 | `assistant-tools/src/sandbox/macos.rs` | 462 | I53 沙箱 | 待判定 |
 | `assistant-tools/src/sandbox/linux.rs` | 440 | I53 沙箱 | 待判定 |
-| `src-tauri/src/screenshot/mod.rs` | 436 | I35 截图 | **拆分（待执行）** |
+| `src-tauri/src/screenshot/mod.rs` | 34（拆分前 436） | I35 截图 | **已完成**（`mod.rs` 只留声明、错误码常量与 `pub use`；见 F3-C 判定） |
 | `assistant-tools/src/sandbox/mod.rs` | 428 | I53 沙箱 | 待判定 |
 
 这 5 个文件在功能开发中产生，既不在归档 §2.7 / §2.8 的清单里，也没有在本文登记过结论（2026-11-17 已全部登记，见下表与本节判定）。
 
-I35 三个文件的判定（2026-11-17，随 `I35-screenshot-qa-spec.md` rev11 收口登记）：
+I35 三个文件的判定（2026-11-17，随 I35 截屏提问规格（已归档） rev11 收口登记）：
 
 | 文件 | 实现/测试非空行 | 变化原因 | 判定 |
 |---|---|---|---|
-| `src-tauri/src/screenshot/orb_overlay.rs` | 实现 ~620 / 测试 ~100 | ① Orb 窗口快照-隐藏-全屏-恢复编排；② Windows 弹出菜单淡出排空（DWM 帧 + `#32768` 枚举，约 300 行）与其它平台 stub | **拆分**：`orb_overlay/{mod,snapshot,menu_fade}.rs`。理由是两个变化原因确实独立——菜单淡出只在 Windows 生效且以平台 `mod` 分叉，改它不应触碰几何/可见性编排。搬移为纯搬移，对外 API（`begin`/`present`/`exit`/`recover_leftover`/`dismiss_menus_now`/`SCREENSHOT_ACTIVE`）零变更 |
-| `src-tauri/src/screenshot/mod.rs` | 实现 ~415 / 测试 ~20 | `mod.rs` 内含状态机实现（`start` 130 行、`crop` 100 行、清理与相位辅助），违反「`mod.rs` 只做声明与 `pub use`」 | **拆分**：`screenshot/{mod,state,start,crop,cleanup}.rs`；`mod.rs` 只留 `pub mod` 声明、错误码常量与 `pub use` |
+| `src-tauri/src/screenshot/orb_overlay.rs` | 实现 ~620 / 测试 ~100 | ① Orb 窗口快照-隐藏-全屏-恢复编排；② Windows 弹出菜单淡出排空（DWM 帧 + `#32768` 枚举，约 300 行）与其它平台 stub | **拆分**：`orb_overlay/{mod,snapshot,platform,menu_fade}`。理由是两个变化原因确实独立——菜单淡出只在 Windows 生效且以平台 `mod` 分叉，改它不应触碰几何/可见性编排。`platform` 单独成目录：DWM 过渡禁用 / `ShowWindow` 兜底 / `DwmFlush` 是 Tauri 未暴露的原生原语，被 `snapshot` 与 `menu_fade` 共同调用。搬移为纯搬移，对外 API（`begin`/`present`/`exit`/`recover_leftover`/`dismiss_menus_now`/`SCREENSHOT_ACTIVE`）零变更 |
+| `src-tauri/src/screenshot/mod.rs` | 实现 ~415 / 测试 ~20 | `mod.rs` 内含状态机实现（`start` 130 行、`crop` 100 行、清理与相位辅助），违反「`mod.rs` 只做声明与 `pub use`」 | **拆分**：`screenshot/{mod,state,start,crop_command,cleanup}.rs`；`mod.rs` 只留 `pub mod` 声明、错误码常量与 `pub use`。`crop_command` 而非 `crop`：`screenshot/crop.rs` 已是几何换算 + 编码模块，两者不能同名 |
 | `src/screenshot/Overlay.tsx` | 427 | 单一职责：覆盖层交互（指针拖拽/8 向手柄 + 取消/确认副作用 + 渲染）。纯函数已外移到 `selection.ts`，会话逻辑已外移到 `useScreenshotSession.ts` | **保留**：未出现第二个变化原因，无职责混杂。约束：M3 标注能力落地前必须先抽出 `useSelectionDrag`，否则标注与框选会在同一文件叠加第二个变化原因 |
 
-两个 Rust 文件登记为**待执行**（不在 rev11 改动范围内，规格收口只登记结论）：执行时按「纯搬移 + 对外 API 零变更 + 单测随文件移动」三条件，验证 `cargo test --lib screenshot` 仍 20 passed。
+两个 Rust 文件按「纯搬移 + 对外 API 零变更 + 单测随文件移动」三条件执行。`screenshot/mod.rs` 已于 2026-11-17 执行完毕：落点 `mod`(34) / `state`(137) / `start`(138) / `crop_command`(97) / `cleanup`(88)，3 个内联测试随职责移到 `state` 与 `cleanup`。`orb_overlay.rs`（750 非空行）同批执行完毕：落点 `orb_overlay/mod`(133) / `snapshot`(374，含 8 个内联测试) / `platform/{mod,windows,fallback}`(9/71/14) / `menu_fade/{mod,windows,fallback}`(11/212/12)，7 个内联测试随职责移到 `snapshot`。同批把 `capture.rs` 的 macOS 授权门控（`#[cfg]` 内联模块 + 两个平铺函数）拆为 `capture/permission/{mod,macos,fallback}`，`capture` 由单文件改为目录（`capture/mod.rs` 295 非空行）；平台差异一律「每平台一个实现模块 + 分派 `mod.rs` 只做 `pub use`」，不再逐函数 `#[cfg]` 平铺。`cargo test --lib screenshot` 21 passed、`clippy --all-targets -D warnings` 无告警。
 
 #### F3-D 存量未判定（21 个）
 
@@ -230,7 +232,7 @@ npm run contract:check
 | 扁平度 | 直接子模块 ≥12 **只是审查触发线**，不是分组义务；分组条件是存在 ≥2 个独立变化原因的子域且各 ≥3 文件；uniform peers 永远保持扁平 | 参考项目中 `codex core/src` 根目录平铺 138 个文件，说明数量线无上游依据 |
 | 职责清晰 | 唯一判据是一个文件对应一个变化原因；行数只作初筛（≥900 优先审查），不作拆分义务与验收标准 | [CODE-SPLIT-PRINCIPLE.md](../principle/CODE-SPLIT-PRINCIPLE.md) §1–§2 |
 | `mod.rs` 内容 | 只放类型定义、共享常量、模块声明、组合入口与对外 `pub use`；`mod.rs` 内出现成规模实现即属回潮，与总行数无关 | 同上 §4.1、§6 |
-| 新增大文件 | 功能开发新增 ≥400 非空行文件时，必须在功能验收时给出结论（保留 / 拆分 / 待判）并登记到 F3 账目；未登记即视为「待判」 | I35 的 3 个已于 2026-11-17 判定并登记（F3-C 两个拆分待执行、F3-E 一个保留）；仍未判定的只剩 I53 的 `sandbox/{macos,linux,mod}.rs` |
+| 新增大文件 | 功能开发新增 ≥400 非空行文件时，必须在功能验收时给出结论（保留 / 拆分 / 待判）并登记到 F3 账目；未登记即视为「待判」 | I35 的 3 个已于 2026-11-17 判定并登记（F3-C 两个均已执行、F3-E 一个保留）；仍未判定的只剩 I53 的 `sandbox/{macos,linux,mod}.rs` |
 | 结构数字 | 只认 `node scripts/probe-structure.mjs`；文档内不得维护独立统计命令 | 避免口径漂移 |
 | 数字时刻 | probe 统计含未跟踪与未提交改动，跨批比较只作量级参考；结构数字在结构变更批提交时同批重刷 | 复核当天数分钟内 `orb_overlay.rs` 从 674 变为 720 非空行 |
 
@@ -244,10 +246,12 @@ npm run contract:check
 |---|---|---|---|
 | 1 | F3-A 两项真实回潮 | 纯机械搬移：`mod.rs` 只留声明与组合入口，实现下沉为具名子模块；对外路径不变 | **已完成**（`git_sync` 403→18、`runtime/compact` 492→声明+`pub use`；clippy 与测试全绿） |
 | 2 | F1-a `multimodal.rs` | 先补 `rehydrate_images` 一条用例，再按六个变化原因拆成目录模块 | **已完成**（用例先过；`mod.rs` 45 非空行，clippy 与测试全绿） |
-| 3 | F1-b `responses_stream.rs` | 先补 SSE 增量 / 工具完成 / 重试三类 fixture，再按 §5 抽纯函数，宏内留 `yield` 循环 | 待开始 |
-| 4 | F3-B / C / D 判定 | 逐个给结论；判「不拆」的写明唯一变化原因，判「拆」的登记目标结构 | 部分完成（I35 的 3 个已判定并登记，见 F3-C / F3-E）；I53 3 个与 F3-B / D 待开始 |
-| 5 | F3-G 内联测试外移 | 4 个文件按 §3 移测试；已判定「暂不执行」 | 暂不执行 |
-| 6 | F2 重刷 + F4 验收 | 结构变更批提交前同批跑 probe 重刷 `crate-architecture.md`，再跑 F4 全量 | 随结构变更批 |
+| 3 | F3-C-a `screenshot/mod.rs` | 纯搬移：状态机实现下沉为 `state` / `start` / `crop_command` / `cleanup`，`mod.rs` 只留声明、错误码常量与 `pub use` | **已完成**（2026-11-17，`mod.rs` 436→34 非空行；20 个单测随职责落位，clippy 与测试全绿） |
+| 4 | F3-C-b `orb_overlay.rs` | 纯搬移：拆 `mod` / `snapshot` / `platform` / `menu_fade`，对外 API 不变 | **已完成**（2026-11-17，`orb_overlay.rs` 750→`mod`(133) / `snapshot`(374) / `platform`(94) / `menu_fade`(235)；同批把 `capture.rs` 的 macOS 授权门控拆为 `capture/permission/{mod,macos,fallback}`；21 passed、clippy 无告警） |
+| 5 | F1-b `responses_stream.rs` | 先补 SSE 增量 / 工具完成 / 重试三类 fixture，再按 §5 抽纯函数，宏内留 `yield` 循环 | 待开始 |
+| 6 | F3-B / D 判定 + I53 判定 | 逐个给结论；判「不拆」的写明唯一变化原因，判「拆」的登记目标结构 | 部分完成（I35 的 3 个已判定并登记，见 F3-C / F3-E）；I53 3 个与 F3-B / D 待开始 |
+| 7 | F3-G 内联测试外移 | 4 个文件按 §3 移测试；已判定「暂不执行」 | 暂不执行 |
+| 8 | F2 重刷 + F4 验收 | 结构变更批提交前同批跑 probe 重刷 `crate-architecture.md`，再跑 F4 全量 | 随结构变更批 |
 
 ---
 

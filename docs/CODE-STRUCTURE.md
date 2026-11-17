@@ -247,7 +247,7 @@ config/features.json
 
 | 部分 | 内容 |
 |---|---|
-| `dto/` | 按域拆分的 DTO：`agent` `branch` `chat` `clock` `config` `mcp` `orb` `os_tool` `settings` `storage` `workspace`，`dto/mod.rs` 汇总导出并承载 ts-rs 导出 |
+| `dto/` | 按域拆分的 DTO：`agent` `branch` `chat` `clock` `config` `error` `mcp` `orb` `os_tool` `settings` `storage` `workspace`，`dto/mod.rs` 汇总导出并承载 ts-rs 导出 |
 | `events.rs` | 事件名与 payload DTO、`emit_broadcast` 等广播辅助 |
 | 生成物 | `src/types/protocol.contract.ts`（前端契约）、`src/vault/core/contract/vault.contract.ts`（vault 契约，由 vault crate 导出） |
 
@@ -310,7 +310,7 @@ assistant-app (根包, src-tauri/src)
 | `assistant-orb` | 悬浮球纯计算：几何、悬停、屏幕放置（仅 `placement` 触达 tauri） | `geometry` `hover` `placement` |
 | `assistant-crash` | 崩溃捕获与 minidump 落盘（目录由应用层传入） | `crash_dump` |
 | `assistant-security` | 安全能力：剪贴板守卫、揭示守卫、SSH Agent、屏幕锁定、HIBP、原生解锁对话框 | `clipboard_guard` `reveal_guard` `ssh_agent/` `screen_lock/` `unlock_dialog/`（Windows 自绘实现按 `layout` `paint` `wnd_proc` `subclass` 等拆分）`hibp/` `vault_crypto/` |
-| `assistant-sync` | Git 同步底层：仓库操作、SSH 凭据、敏感信息脱敏 | `git_sync/`（`git` `ssh`）`types/` `redact` |
+| `assistant-sync` | Git 同步底层：仓库操作、SSH 凭据、敏感信息脱敏 | `git_sync/`（`commit` `conflict` `git` `helpers` `lifecycle` `remote` `ssh` `state`）`types/` `redact` |
 | `assistant-vault` | 保险库领域实现：加密库、文件格式、同步引擎、生物识别、恢复密钥、审计 | `security_db/`（`entries/`（`tx` `field_crypto` `snapshot` `query` `write` `deleted` `import`）与 `biometric_ops` `crypto_ops` `rekey` `schema` `import_export` `meta`）`vault_file/` `sync_engine/`（`export` `history` `lifecycle` `preview` `pull_push` `remote_admin` `emergency`）`biometric/` `recovery_key/` `audit/` `password_strength/` `plaintext_export` `dto/` `types/` `shared/` `lifecycle` `conf` |
 
 ### 4.6 可选功能的后端挂载
