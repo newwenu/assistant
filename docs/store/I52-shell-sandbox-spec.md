@@ -5,15 +5,15 @@
 | 状态 | 草稿（P14 实施规格；进度只在 [I38 roadmap](./I38-agent-roadmap.md) §2 维护） |
 | 日期 | 2026-11-15 |
 | 阶段 | P14（工具能力轴；见 [I38 roadmap](./I38-agent-roadmap.md) §2 / §3） |
-| 关联 | [I53](./I53-sandbox-preparation-spec.md)（沙箱准备：后端抽象 / 链式探测 / 三平台实现；本文 §3–§4 已拆出，本文只引用不复述）、[I52-Ext](./I52-ext-background-task.md)（阶段扩展：后台任务改动面，未立项）、I18 design §3.17（已归档）（审批链路预留与检测分层）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱模型，执行层边界）、[沙箱开源调研](./agent-sandbox-research.md)（后端选型与 ADR-1–ADR-4）、[沙箱参考分析](./agent-sandbox-reference-analysis.md)（Codex / OpenHuman / DSH 实现细节）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问与本阶段的三个接入点）、I50（已归档）（审计口径；本文**不改**其封闭词表） |
-| 影响范围 | `assistant-tools`（`os/agent_shell.rs`、`trait.rs` 新增一个方法、`gateway.rs` 键字段与求值顺序、输出 sink 与回读作用域）；`src-tauri/src/adapters/tool_exec.rs`（输出域注入）、前端 i18n 与模式预置。沙箱模块、`tool_setup.rs` 探测收口与 `Cargo.toml` 依赖变更见 [I53](./I53-sandbox-preparation-spec.md) |
+| 关联 | I53（已归档）（沙箱准备：后端抽象 / 链式探测 / 三平台实现；本文 §3–§4 已拆出，本文只引用不复述）、[I52-Ext](./I52-ext-background-task.md)（阶段扩展：后台任务改动面，未立项）、I18 design §3.17（已归档）（审批链路预留与检测分层）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱模型，执行层边界）、沙箱开源调研（已归档）（后端选型与 ADR-1–ADR-4）、[沙箱参考分析](./agent-sandbox-reference-analysis.md)（Codex / OpenHuman / DSH 实现细节）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问与本阶段的三个接入点）、I50（已归档）（审计口径；本文**不改**其封闭词表） |
+| 影响范围 | `assistant-tools`（`os/agent_shell.rs`、`trait.rs` 新增一个方法、`gateway.rs` 键字段与求值顺序、输出 sink 与回读作用域）；`src-tauri/src/adapters/tool_exec.rs`（输出域注入）、前端 i18n 与模式预置。沙箱模块、`tool_setup.rs` 探测收口与 `Cargo.toml` 依赖变更见 I53（已归档） |
 
 > 一句话：本阶段把「审批」从**纸面声明**变成**可执行边界**。审批回答「要不要做」，沙箱回答「最多能做到哪」；
 > `shell` 让 `execute` 意图第一次真正出现在生产链路上，从而让审批链（含 P10 顾问）第一次有真实消费方。
 
 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离需在代码注释里写明理由。
 
-**编号约定**：调研文档 [agent-sandbox-research](./agent-sandbox-research.md) 用 `P0 / P1 / P2` 指沙箱**实施批次**，与 roadmap 的阶段号 `P0–P14` 同形易混。本文一律写 **S0 / S1 / S2**，映射为 P14-a / P14-b / P14-c，见 §11。
+**编号约定**：调研文档 agent-sandbox-research（已归档） 用 `P0 / P1 / P2` 指沙箱**实施批次**，与 roadmap 的阶段号 `P0–P14` 同形易混。本文一律写 **S0 / S1 / S2**，映射为 P14-a / P14-b / P14-c，见 §11。
 
 ---
 
@@ -34,7 +34,7 @@
 
 ### 1.2 目标
 
-1. 交付一个**可验收的边界**：可写根之外的写入必须失败、进程树必须可被整体回收、敏感目录不可读（后端实现与判据见 [I53](./I53-sandbox-preparation-spec.md)）；
+1. 交付一个**可验收的边界**：可写根之外的写入必须失败、进程树必须可被整体回收、敏感目录不可读（后端实现与判据见 I53（已归档））；
 2. 交付 `shell` 工具：`execute` 意图、命令级审批键、进程级超时、输出落盘与回读、结果可被模型纠错；
 3. 让审批卡片如实回答「这次执行被什么边界包着」（隔离强度 / 可写根 / 网络可达）；
 4. 让 P10 的三个接入点有稳定事实源（`execute` 恒 `Ask` 的消费方、命令分类器、内核隔离已就绪）；
@@ -56,7 +56,7 @@
 
 | 恢复条件 | 本阶段结论 |
 |---|---|
-| 具备真正的 OS 级隔离（而非仅字符串守卫） | **满足**：[I53 §5](./I53-sandbox-preparation-spec.md) 三个平台后端均为系统强制（Token+ACL / Landlock / Seatbelt） |
+| 具备真正的 OS 级隔离（而非仅字符串守卫） | **满足**：I53 §5（已归档） 三个平台后端均为系统强制（Token+ACL / Landlock / Seatbelt） |
 | 或具备结构化执行（不经过 shell 解释器） | **不采用**：模型需要的是通用命令能力；结构化执行会把能力砍到白名单，且仍无法限制子进程行为 |
 | 或具备可验证的 dry-run | **部分满足**：`preview_for_approval` 只报「命令类别 + 隔离强度 + 规模未知」，不承诺 dry-run 语义（§5.6） |
 
@@ -73,13 +73,13 @@
 | 轴 | 取值 | 出处 | 含义 |
 |---|---|---|---|
 | **检测层** | L2 字符串/规则匹配 → L3 解析后判定（`canonicalize` / argv）→ L4 内核强制 | I18 design §3.17.1（已归档）、[参考分析 §5.4](./agent-sandbox-reference-analysis.md) | 判定「这次操作到底碰了什么」的手段强度 |
-| **虚拟化层** | L1 OS 原生虚拟化（Token+Job / Landlock / Seatbelt / bwrap）→ L2 LSM / seccomp → L3 用户态内核（gVisor）→ L4 硬件虚拟化 | [沙箱调研 §2–§7](./agent-sandbox-research.md) | 隔离由谁提供 |
+| **虚拟化层** | L1 OS 原生虚拟化（Token+Job / Landlock / Seatbelt / bwrap）→ L2 LSM / seccomp → L3 用户态内核（gVisor）→ L4 硬件虚拟化 | 沙箱调研 §2–§7（已归档） | 隔离由谁提供 |
 
 **约束**：本文及后续文档禁止裸写「L4 沙箱」，必须写「检测层 L4」或「虚拟化层 L1/L2」。I18 design §3.17.6 的 `Adjudicate` 门禁指的是**检测层 L4**（内核强制隔离），由本阶段的虚拟化层 L1/L2 后端关闭（§6.6）。
 
 ### 2.2 封闭词汇
 
-沙箱三词（`SandboxKind` / `SandboxEnforcement` / `SandboxDimension`）的唯一定义已移至 [I53 §3](./I53-sandbox-preparation-spec.md)，本文只使用不定义。本文自有词汇：
+沙箱三词（`SandboxKind` / `SandboxEnforcement` / `SandboxDimension`）的唯一定义已移至 I53 §3（已归档），本文只使用不定义。本文自有词汇：
 
 | 词 | 定义 | 取值 |
 |---|---|---|
@@ -93,7 +93,7 @@
 |---|---|---|---|
 | Policy | 「这个意图按规则该不该问」 | `policy.rs` | 未知 → `Ask` |
 | 审批 | 「用户要不要放行这一次」 | `gateway.rs` + 审批卡 | 无审批通道 → `Deny` |
-| 沙箱 | 「放行之后最多能做到哪」 | [I53](./I53-sandbox-preparation-spec.md)（本文只消费其结论） | 无边界 → 不注册工具 |
+| 沙箱 | 「放行之后最多能做到哪」 | I53（已归档）（本文只消费其结论） | 无边界 → 不注册工具 |
 
 三条硬规则：
 
@@ -105,7 +105,7 @@
 
 ## 3 沙箱准备（拆分为独立规格）
 
-沙箱后端抽象、`SandboxPlan` 推导、链式探测与注册期收口、`enforcement` 判据、三平台后端实现、固定敏感目录、依赖变更与「不做的事」的**唯一来源**是 [I53 沙箱准备规格](./I53-sandbox-preparation-spec.md)。本节不再复述。
+沙箱后端抽象、`SandboxPlan` 推导、链式探测与注册期收口、`enforcement` 判据、三平台后端实现、固定敏感目录、依赖变更与「不做的事」的**唯一来源**是 I53 沙箱准备规格（已归档）。本节不再复述。
 
 本文只消费其中三条结论（写入 I53，此处不重复判据）：
 
@@ -115,9 +115,9 @@
 
 ## 4 平台后端（拆分为独立规格）
 
-Windows（Token + ACL + Job）/ Linux（Landlock）/ macOS（Seatbelt）三个后端的部件、时序、敏感目录列表与依赖变更，全部见 [I53 §5](./I53-sandbox-preparation-spec.md)。
+Windows（Token + ACL + Job）/ Linux（Landlock）/ macOS（Seatbelt）三个后端的部件、时序、敏感目录列表与依赖变更，全部见 I53 §5（已归档）。
 
-沙箱准备与清理的幂等要求见 [I53 §6](./I53-sandbox-preparation-spec.md)；沙箱侧失败矩阵与验收见 [I53 §7 / §8](./I53-sandbox-preparation-spec.md)。
+沙箱准备与清理的幂等要求见 I53 §6（已归档）；沙箱侧失败矩阵与验收见 I53 §7 / §8（已归档）。
 
 ---
 
@@ -145,7 +145,7 @@ Windows（Token + ACL + Job）/ Linux（Landlock）/ macOS（Seatbelt）三个�
 | `cwd` | string | 否 | 相对路径按 `writable_root` 解析；解析后必须落在 `writable_root` 内 |
 | `timeout_ms` | integer | 否 | 1000–600000；缺省 120000 |
 
-无 `shell` / `program` / `env` / `stdin` 字段：可执行程序与可写根都不接受模型输入（[I53 §4.3](./I53-sandbox-preparation-spec.md)）。`additionalProperties: false`。
+无 `shell` / `program` / `env` / `stdin` 字段：可执行程序与可写根都不接受模型输入（I53 §4.3（已归档））。`additionalProperties: false`。
 
 ### 5.3 `validate_input`
 
@@ -200,8 +200,8 @@ Windows（Token + ACL + Job）/ Linux（Landlock）/ macOS（Seatbelt）三个�
 顺序不是风格问题，而是正确性：**先建 sink、先接管管道、最后才进入等待**。反过来（先 `wait()` 再读管道）会死锁——子进程写满匿名管道缓冲区（Windows 4–64 KiB、Unix 64 KiB）后阻塞，父进程在 `wait()` 上等子进程退出，双方互等。`yes` / `cargo build` / 任何有进度输出的命令都会立刻触达这个缓冲区。
 
 1. 取 `writable_root`（`ToolUseContext.workspace_root`）；缺失 → `Business` + `sandbox_root_missing`；
-2. 读 [I53 §4.4](./I53-sandbox-preparation-spec.md) 的缓存探测结论；`enforcement == none` → `Business` + `sandbox_unavailable`（**不得**无沙箱执行）；
-3. 构造 `SandboxPlan`（[I53 §4.3](./I53-sandbox-preparation-spec.md)）：`program` = 平台固定 shell，`args` = Windows `["/C", command]` / Unix `["-c", command]`；
+2. 读 I53 §4.4（已归档） 的缓存探测结论；`enforcement == none` → `Business` + `sandbox_unavailable`（**不得**无沙箱执行）；
+3. 构造 `SandboxPlan`（I53 §4.3（已归档））：`program` = 平台固定 shell，`args` = Windows `["/C", command]` / Unix `["-c", command]`；
 4. **先 `open_sink`**（§5.11.1）：失败 → `Business` + `output_spill_failed`，**此时尚未创建任何子进程**。落盘是执行的前置条件，不是事后收尾——否则「磁盘满」会先跑完命令再判失败；
 5. `backend.spawn(&plan)`：stdin 一律 `Stdio::null()`，stdout / stderr 走管道；失败 → 删除第 4 步刚建的空文件（尽力而为），错误码按失败来源区分（§7 F4 / F5 / F6）：边界建立失败 → `sandbox_setup_failed`；程序不存在或进程创建失败 → `spawn_failed`；
 6. **立刻起两个并发读取任务**（各占一个 blocking 池线程）接管 stdout / stderr：逐块读字节 → `sink.write(stream, chunk)`（§5.11.1），读到 EOF 结束。本步必须在第 7 步之前落地，否则回到死锁；
@@ -563,13 +563,13 @@ PermissionRule::new("readToolOutput", "*", PermissionEffect::Ask),
 输出域**只读**，三条各自独立成立：
 
 - `write` / `edit` / `delete` / `move` 在该域内仍由 `path::resolve` 的 workspace 边界拒绝（`ValidationResult::blocked`）——`resolve_readable` 只被 `read` 使用，不被其它工具调用；
-- 子进程不得写该域：可写根仍是 `workspace_root`（[I53 §4.3](./I53-sandbox-preparation-spec.md)），模型在命令里重定向到输出域会写失败（I53 A-S1 同口径）；
+- 子进程不得写该域：可写根仍是 `workspace_root`（I53 §4.3（已归档）），模型在命令里重定向到输出域会写失败（I53 A-S1 同口径）；
 - 读过的输出文件不产生可编辑入口：`edit` 的读回执校验仍以 workspace 边界为前提（回执存在不等于可编辑）。
 
 #### 5.11.5 写入者是父进程，不是子进程
 
 1. 输出文件由工具进程（父进程、沙箱外）创建与写入，子进程只经管道交出 stdout / stderr；
-2. 子进程**不需要**对输出域的写权限，可写根保持单一（[I53 §4.3](./I53-sandbox-preparation-spec.md)），`SandboxPlan` 不新增字段，I53 A-S1 / A-S2 判据不受影响；
+2. 子进程**不需要**对输出域的写权限，可写根保持单一（I53 §4.3（已归档）），`SandboxPlan` 不新增字段，I53 A-S1 / A-S2 判据不受影响；
 3. 父进程写文件失败（磁盘满 / 权限）→ `Business` 失败（§5.11.1 第 4 条），不静默降级为内联全文。
 
 ### 5.12 信封投影（`compact`）
@@ -678,7 +678,7 @@ grant_store.is_granted(key)
 |---|---|---|
 | `Ask` 消费方 | `execute` 意图在 `dangerous_only` 档恒 `Ask` | 关闭 I38g §1.3 的 P10-b 前置（`RelaxOnly` 终于有只读调用可放宽） |
 | 命令类别 | `CommandClass`（§5.5，纯函数） | P10-b 的**唯一**输入事实；顾问不得自行再判命令语义 |
-| 内核隔离 | `enforcement`（[I53 §4.5](./I53-sandbox-preparation-spec.md)） | 关闭 I18 design §3.17.6 的 `Adjudicate` 门禁 1（检测层 L4） |
+| 内核隔离 | `enforcement`（I53 §4.5（已归档）） | 关闭 I18 design §3.17.6 的 `Adjudicate` 门禁 1（检测层 L4） |
 
 边界约束：
 
@@ -741,11 +741,11 @@ grant_store.is_granted(key)
 
 | 编号 | 验收项 | 判据 |
 |---|---|---|
-| A1 | 写边界 | 见 [I53 A-S1](./I53-sandbox-preparation-spec.md) |
-| A2 | 敏感读边界 | 见 [I53 A-S2](./I53-sandbox-preparation-spec.md) |
-| A3 | 进程树回收 | 见 [I53 A-S3](./I53-sandbox-preparation-spec.md) |
-| A4 | 无沙箱不执行 | 见 [I53 A-S4](./I53-sandbox-preparation-spec.md) |
-| A5 | 边界建立失败不降级 | 见 [I53 A-S5](./I53-sandbox-preparation-spec.md) |
+| A1 | 写边界 | 见 I53 A-S1（已归档） |
+| A2 | 敏感读边界 | 见 I53 A-S2（已归档） |
+| A3 | 进程树回收 | 见 I53 A-S3（已归档） |
+| A4 | 无沙箱不执行 | 见 I53 A-S4（已归档） |
+| A5 | 边界建立失败不降级 | 见 I53 A-S5（已归档） |
 | A6 | 审批键 | 同命令 + 同 `cwd` + 同 `enforcement` 两次调用：第一次 `Ask`，`AllowSession` 后第二次 `GrantHit`；命令文本差一个字符 → 重新 `Ask` |
 | A7 | 降级不复用授权 | 同一键在 `full` 下授权后把 `enforcement` 置 `partial` → 必须重新 `Ask` |
 | A8 | `Deny` 先于授权 | 已授权键 + 策略改判 `Deny` → `Denied`（§6.4 顺序修正） |
@@ -757,7 +757,7 @@ grant_store.is_granted(key)
 | A14 | 审批卡 | `Ask` 时卡片含 `sandbox.enforcement` 与 `sandbox.root` 两条扩展，`preview.summary` 含 `CommandClass` 文案 |
 | A15 | 环境变量 | 注入 `MY_API_TOKEN=…` 后子进程看不到该变量；`PATH` / `SystemRoot` 等白名单可见 |
 | A16 | 审计脱敏 | `set TOKEN=abc` 落库为 `set TOKEN=<redacted>`，实际执行仍用原值 |
-| A17 | 依赖边界 | 见 [I53 A-S6](./I53-sandbox-preparation-spec.md) |
+| A17 | 依赖边界 | 见 I53 A-S6（已归档） |
 | A18 | 工具可见性 | 未启用时模型 `tools` 列表不含 `shell`；启用且探测可用时含 |
 | A19 | 落盘与回读闭环 | `shell` 输出 10 万行 → `data.outputPath` 指向 `tool-results/<本会话命名空间>/` 下文件；`read` 该路径在授权后成功，内容与文件一致，可分页读到末尾 |
 | A20 | 额外许可恒定 | `readToolOutput` 在 `dangerous_only` 与 `none` 两档均为 `Ask`；`AllowSession` 后读同域**另一个**文件为 `GrantHit`（不再弹框） |
@@ -777,14 +777,14 @@ grant_store.is_granted(key)
 | 批次 | 内容 | 交付物 | 前置 |
 |---|---|---|---|
 | **C1 审批链前置** | §6.2 键字段 + `sandbox_enforcement()`；§6.4 求值顺序；A7 / A8 单测 | `trait.rs`、`gateway.rs`、`policy.rs` 单测 | 无（不依赖沙箱） |
-| **C2–C4 沙箱准备（S0）** | 三平台后端 + 探测与注册收口；判据、交付物与前置全部见 [I53 §9](./I53-sandbox-preparation-spec.md) | 见 I53 §9 | C1 |
+| **C2–C4 沙箱准备（S0）** | 三平台后端 + 探测与注册收口；判据、交付物与前置全部见 I53 §9（已归档） | 见 I53 §9 | C1 |
 | **C4b 输出存储与回读** | §5.11.1 sink + §5.11.2 标签渲染 + §5.11.3 `ToolResult.persisted` + §5.11.4 `resolve_readable` / `readToolOutput` / `base_rules` 新规则 / 卡片扩展；A19–A23 / A26 | `storage.rs`、`result.rs`、`pipeline.rs`、`os/path.rs`、`os/agent_read.rs`、`policy.rs`、`gateway.rs` | C1（不依赖沙箱，可与 C2 / C3 并行） |
 | **C5 工具本体** | schema / validate / intents / 分类器 / preview / execute / 超时 / 输出落盘 / §5.12 信封分支；A6 / A9–A13 / A15 / A24 / A25 / A27 / A28 | `os/agent_shell.rs`、`compact.rs` | C2–C4（I53）、C4b |
 | **C6 卡片与审计** | §6.3 扩展 + §8 脱敏；A14 / A16 | `gateway.rs`、审计写入点 | C5 |
 | **C7 前端与配置** | i18n、模式预置入口、默认不勾选 | `src/i18n/locales/`、模式设置 | C5 |
 | **C8 端到端** | 真实命令 + 越界写失败 + 无沙箱不执行 + 审批三态回归；`clippy -D warnings` / `fmt --check` / `typecheck` / `vitest` | 集成测试 | C1–C7 |
 
-S1 / S2（P14-b / P14-c，不在本规格验收范围）：S1 追加降级后端（Linux bwrap）与 Windows 双模式评估；S2 为高安全场景的可选后端（Sandboxie / OpenShell / 容器 / microVM），须独立立项（[沙箱调研 §10.5](./agent-sandbox-research.md)）。
+S1 / S2（P14-b / P14-c，不在本规格验收范围）：S1 追加降级后端（Linux bwrap）与 Windows 双模式评估；S2 为高安全场景的可选后端（Sandboxie / OpenShell / 容器 / microVM），须独立立项（沙箱调研 §10.5（已归档））。
 
 任务级进度在本阶段开工后建 tasklist（[roadmap §7 第 2 条](./I38-agent-roadmap.md)），本文不记进度。
 
@@ -792,7 +792,7 @@ S1 / S2（P14-b / P14-c，不在本规格验收范围）：S1 追加降级后端
 
 ## 12 风险与开放问题
 
-沙箱侧的开放问题与风险（原 OQ1 / OQ3 / OQ5 / R1 及新增的平台能力变更项）已移至 [I53 §10](./I53-sandbox-preparation-spec.md)；下表只保留 `shell` 工具与审批链的风险，编号不重排以免断链。
+沙箱侧的开放问题与风险（原 OQ1 / OQ3 / OQ5 / R1 及新增的平台能力变更项）已移至 I53 §10（已归档）；下表只保留 `shell` 工具与审批链的风险，编号不重排以免断链。
 
 | 编号 | 问题 | 倾向与处置 |
 |---|---|---|
@@ -828,12 +828,12 @@ S1 / S2（P14-b / P14-c，不在本规格验收范围）：S1 追加降级后端
 
 - I18 design §3.17（已归档）：审批链路预留、检测分层、`Adjudicate` 门禁；
 - [OSCALLDESIGN](../designed/OSCALLDESIGN.md)：Shell 洋葱模型（SafetyBelt / 结构守卫 / 环境隔离 / 命令分类），本文 §2.3 与 §5.10 与其边界划分一致，不重复其条目；
-- [agent-sandbox-research](./agent-sandbox-research.md)：后端选型（ADR-1 Windows Token+Job、ADR-2 Linux Landlock、ADR-3 不选 gVisor、ADR-4 fail-closed）；
+- agent-sandbox-research（已归档）：后端选型（ADR-1 Windows Token+Job、ADR-2 Linux Landlock、ADR-3 不选 gVisor、ADR-4 fail-closed）；
 - [agent-sandbox-reference-analysis](./agent-sandbox-reference-analysis.md)：Codex 四后端与违规检测、OpenHuman 诚实 Noop、DSH 链式探测与升级阶梯；
 - [I38g](./I38g-agent-approval-advisor-spec.md)：P10 单向顾问与失败矩阵；
 - I50（已归档）：审计词表（本文不改）。
 
-**参考实现**（沙箱后端的借鉴点已移至 [I53 §11](./I53-sandbox-preparation-spec.md)，此处只留 `shell` 侧相关项）
+**参考实现**（沙箱后端的借鉴点已移至 I53 §11（已归档），此处只留 `shell` 侧相关项）
 
 | 项目 | 借鉴点 |
 |---|---|

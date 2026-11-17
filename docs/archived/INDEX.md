@@ -8,15 +8,15 @@
 
 | 域 | 内容 | 文件数 |
 |---|---|---|
-| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、代码规模审计 | 58 |
+| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计 | 61 |
 | [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 36 |
-| [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、Token Usage | 32 |
+| [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、截图提问、Token Usage | 33 |
 | [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 35 |
-| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析 | 31 |
+| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析 | 32 |
 
 ## 文档清单
 
-### agent/ (58)
+### agent/ (61)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -78,6 +78,9 @@
 | [`I50-runtime-audit-tasklist.md`](./agent/I50-runtime-audit-tasklist.md) | achievement7 | I50 — 运行时审计任务清单 |
 | [`audit-coverage-audit-1.md`](./agent/audit-coverage-audit-1.md) | achievement7 | 运行时审计覆盖盘点（后端缺口与观察项） |
 | [`audit-coverage-audit-2.md`](./agent/audit-coverage-audit-2.md) | achievement9 | 运行时审计覆盖盘点（前端缺口与观察项） |
+| [`I53-sandbox-preparation-spec.md`](./agent/I53-sandbox-preparation-spec.md) | achievement10 | I53 — P14-a 沙箱准备规格（后端抽象 / 链式探测 / 三平台实现；Linux/macOS 实机用例待 CI 验证） |
+| [`I53-sandbox-preparation-tasklist.md`](./agent/I53-sandbox-preparation-tasklist.md) | achievement10 | I53 — P14-a 沙箱准备任务清单（3 项实机验证未勾选，随归档保留原貌） |
+| [`agent-sandbox-research.md`](./agent/agent-sandbox-research.md) | achievement10 | Agent 命令行隔离环境开源项目调研（后端选型 ADR-1–ADR-4） |
 
 ### vault/ (36)
 
@@ -120,7 +123,7 @@
 | [`I9-vault-sync-crypto-spec.md`](./vault/I9-vault-sync-crypto-spec.md) | achievement5 | I9 密码箱 — 仓库与同步完整性规格（S3） |
 | [`I9-vault-v15-tasklist.md`](./vault/I9-vault-v15-tasklist.md) | achievement5 | I9 — 密码箱 v1.5 任务清单 |
 
-### chat/ (32)
+### chat/ (33)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -156,6 +159,7 @@
 | [`I2g-tasklist.md`](./chat/I2g-tasklist.md) | achievement3 | I2g — 任务清单（已归档） |
 | [`I2h-attachment-budget-tasklist.md`](./chat/I2h-attachment-budget-tasklist.md) | achievement3 | I2h — 附件链路收敛（长文本预算 + PDF 降级） |
 | [`I40-history-message-tree-spec.md`](./chat/I40-history-message-tree-spec.md) | achievement4 | I40 — 主窗口历史消息树渲染规格 |
+| [`I35-screenshot-qa-spec.md`](./chat/I35-screenshot-qa-spec.md) | achievement10 | I35 — 截屏提问规格（rev11 已实现；§11.3 手动验收待执行） |
 
 ### ui/ (35)
 
@@ -197,7 +201,7 @@
 | [`I47-orb-runtime-state-spec.md`](./ui/I47-orb-runtime-state-spec.md) | achievement5 | I47 — Orb 运行态与可见性 实施规格 |
 | [`I47-orb-runtime-state-tasklist.md`](./ui/I47-orb-runtime-state-tasklist.md) | achievement5 | I47 — Orb 运行态与可见性 任务清单 |
 
-### infra/ (31)
+### infra/ (32)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -232,4 +236,5 @@
 | [`REFACTOR-SPLIT-PLAN.md`](./infra/REFACTOR-SPLIT-PLAN.md) | achievement8 | 超长文件拆分与职责归位规划 |
 | [`FEATURE-ZERO-COST-MOUNT-ANALYSIS.md`](./infra/FEATURE-ZERO-COST-MOUNT-ANALYSIS.md) | achievement8 | 可选特性零成本挂载：设计思路合理性分析 |
 | [`code-structure-optimization-spec.md`](./infra/code-structure-optimization-spec.md) | achievement9 | 代码组织与深度扁平度优化规格（未完成项移交 code-structure-followups） |
+| [`compat-tech-debt-audit-1.md`](./infra/compat-tech-debt-audit-1.md) | achievement10 | 前后端兼容技术债审计（C6 已立项并首批落地 chat / agent，仍开放） |
 

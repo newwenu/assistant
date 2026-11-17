@@ -5,7 +5,7 @@
 | 状态 | 草稿（阶段扩展登记；**未立项**，进度只在 [I38 roadmap](./I38-agent-roadmap.md) §2 维护） |
 | 日期 | 2026-11-15 |
 | 阶段 | P9（continuity 轴；**不属 P14**，见 [roadmap §2.1](./I38-agent-roadmap.md)） |
-| 关联 | [I52](./I52-shell-sandbox-spec.md)（P14 spec：§1.3 非目标、§5.7 / §5.8 终态矩阵、§5.11 输出存储、§6.1 / §6.2 审批键）、[I53](./I53-sandbox-preparation-spec.md)（沙箱准备）、I36 design D13a / D13b（已归档，持久化边界）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问）、P12 工作区（`resolve_workspace` 唯一解析点） |
+| 关联 | [I52](./I52-shell-sandbox-spec.md)（P14 spec：§1.3 非目标、§5.7 / §5.8 终态矩阵、§5.11 输出存储、§6.1 / §6.2 审批键）、I53（已归档）（沙箱准备）、I36 design D13a / D13b（已归档，持久化边界）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问）、P12 工作区（`resolve_workspace` 唯一解析点） |
 | 影响范围 | 文档登记，**不改任何代码契约**；开工前必须先改 roadmap §2 / §3（roadmap §7 第 5 条） |
 
 > 一句话：本文回答「如果将来要引入后台任务，P14 已交付的哪些资产可复用、哪些必须换持有者」。
@@ -104,4 +104,4 @@
 | OpenHuman | `wait_subagent` 的超时即成功；`reaper.rs` 的进程回收 |
 | OpenBitFun | `wait` action 与默认非阻塞 |
 | [I52](./I52-shell-sandbox-spec.md) §5.7 / §5.8 | 同步执行的终态矩阵与「正常结束也扫尾」，是本文 §2 四条不变量的出处 |
-| [I53](./I53-sandbox-preparation-spec.md) | fail-closed 探测与注册收口、`kill_tree` 幂等 |
+| I53（已归档） | fail-closed 探测与注册收口、`kill_tree` 幂等 |

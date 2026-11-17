@@ -2,7 +2,7 @@ name: CI
 
 # 目的：把「开发机只有 Windows」的验证缺口交给 GitHub Actions 的真实虚拟机。
 #
-# 平台结论差异（见 docs/store/I53-sandbox-preparation-tasklist.md 验收记录）：
+# 平台结论差异（见 I53 沙箱准备任务清单（已归档） 验收记录）：
 # - Linux：Landlock 用例会真实执行（A-S1 / A-S2 / A-S3），失败即边界失效；
 # - macOS：Seatbelt 仍是占位，只能验证「编译通过 + probe 不可用 → 不注册 shell」的 fail-closed；
 # - Windows：本机可完整执行（fmt / 编译 / 用例），因此 CI 不再重复跑 Windows，只保留开发机跑不到的 Linux 与 macOS。

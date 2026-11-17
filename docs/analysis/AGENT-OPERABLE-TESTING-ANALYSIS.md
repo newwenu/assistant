@@ -2,7 +2,7 @@
 
 > 日期：2026-11-12｜性质：**预先分析**（只判定 agent 代劳能否成立、成立需要哪些内部支持、哪些部分注定不可自动化；不含实施步骤与排期）
 > 判据来源：`docs/principle/CODE-REVIEW-PRINCIPLE.md`、`docs/principle/CODE-SPLIT-PRINCIPLE.md`
-> 事实基线：仓库当前代码（逐点核对，见 §2）；`docs/store/I35-screenshot-qa-spec.md`（Draft rev4，未实施）、`docs/store/feature-mount-traversal-spec.md`（已落地）
+> 事实基线：仓库当前代码（逐点核对，见 §2）；I35 截屏提问规格（已归档，已实现）、`docs/store/feature-mount-traversal-spec.md`（已落地）
 > 范围界定：**本文的主体是「App 侧的可操控面」——可构造、可枚举、可注入、可判定、可观测、可取证、可隔离七项。** 消费者口径为 **agent 在开发期自测**（§1.5），不是「在 release 中向 agent 开放操控」。agent 侧工具能力、UI 观感、系统弹窗、真实网络属边界（§6）。
 > 引用已归档规格时只写「文档名 +（已归档）」，不给路径。
 
@@ -184,7 +184,7 @@
 |---|---|---|
 | 文件日志已接 | `plugins.rs` 的 `log_plugin()`，落 `local` 根，按 `debug_assertions` 分档，`KeepSome(3)` + 10 MB 轮转 | 可读，但无「按 run 归档」 |
 | 崩溃转储已接 | `main.rs` 在启动前 `AppDirs::resolve()` 后装 `assistant-crash` | 有，但与测试失败无关 |
-| 截图能力 | `docs/store/I35-screenshot-qa-spec.md` 为 **Draft rev4，未实施**；`xcap` 不在依赖中 | **无** |
+| 截图能力 | I35 截屏提问规格（已归档，已实现）；`xcap` 不在依赖中 | **无** |
 | 图像处理依赖 | `image = { features = ["png","jpeg","bmp","tiff"] }` 已在 workspace 依赖 | 已有（供附件/图标用） |
 
 判定：**取证链的三段里有两段已存在**（日志、崩溃转储），缺的是「按测试 run 归档 + 事件 trace + 状态快照」的组装。截图是独立一段，且它属于渲染面基础设施（§6），不应与语义面取证捆绑。

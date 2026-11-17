@@ -12,6 +12,7 @@
 > - 2026-11-06 关闭 `compact_threshold_percent` 迁移窗口：删除 `AppConf::legacy_compact_threshold_percent` 与 `migrate()` 内的搬运逻辑，`migrate()` 保留空实现 + 迁移模板注释；原「明确不列为死代码」条目改为已移除，C3/C4 中对该迁移字段的引用同步改写
 > - 2026-11-12 关闭 C1 / C2 / C3 / C4 / C7 / C8 / C9：`theme` 与 `resolved` 收窄为封闭枚举并在后端解析、错误码映射改编译期穷举、`patch_conf` 命名转换补用例、配置 DTO 字段集合测试覆盖四个结构体、死代码与 `Omit` 垫片删除、快捷键默认值改生成单源；同时修掉未登记的 `AppConf::workspace_root` 死字段。数字类结论（错误码条数、`Result<_, String>` 处数）不再逐条写死，改为「以生成物/检索命令为准」，避免下一轮复核时先怀疑文档本身
 > - 2026-11-12 口径修正：新增「修法必须落到既有设施」要求——补日志写 `createLogger("<scope>")`（`src/services/logger.ts`，53 个文件在用），补测试写进 `cargo test` / `vitest` 且注明可执行范围；不写「补一条日志/补一个测试」这类无载体表述
+> - 2026-11-17 C6 立项：实施规格拆到 [命令错误契约规格](../../store/command-error-contract-spec.md)（通用 `CommandErrorDto`、错误码单源、首批 chat / agent 六命令），本文 C6 节与 §5 阶段 8 只保留现状分析与指向，不再复述修法细节。**立项不改变 C6 的开放状态**：首批只覆盖 chat / agent，conversation / provider / storage / config 等域仍是字符串错误，关闭判据（`Result<[^>]*, String>` 匹配数降为 0）写在规格 §6.1
 
 ---
 
@@ -19,7 +20,7 @@
 
 1. 上一轮（2026-10-30 / 11-03）审计登记的 D1、D2、D4、D8、D9、D11 **六项已确认关闭**，见 §2。
 2. C 类 9 项中 **C1 / C2 / C3 / C4 / C5 / C7 / C8 / C9 已全部关闭**（C5 于 2026-11-06，其余于 2026-11-12），见各节首行状态标记与 §2.1。
-3. 仍开放 **1 项**：C6（chat 域命令错误仍是 `Result<_, String>`），属结构性改造，需单独立项。
+3. 仍开放 **1 项**：C6（chat 域命令错误仍是 `Result<_, String>`），属结构性改造，已于 2026-11-17 立项，实施规格见 [命令错误契约规格](../../store/command-error-contract-spec.md)。立项后仍为开放：首批只迁 chat / agent，关闭判据见规格 §6.1。
 4. 有 **2 项**属**无需改代码的有意例外**（role/title_source 开放集合、`tool_use_id` snake_case）；`ApiFormat` 类型保留，其 `as ApiFormat` 静默错标已于 2026-11-12 补运行时校验与回落日志（`createLogger("providerLookup")`），见 §4。
 5. 判定兼容债的口径是「不同步时不产生编译错误或测试失败」。凡是靠人工记忆维持的一致性，一律记为债——不是因为当前错了，而是因为下一次改错不会被发现。
 6. **数字类结论以生成物与检索命令为准**：错误码条数、`Result<_, String>` 处数这类计数会随迭代漂移，本文不再把它们写成判定依据，只保留「用什么命令复核」。
@@ -245,7 +246,7 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 ---
 
-### C6 错误通道不对称：chat 域仍是 `Result<_, String>`（优先级 P3，结构性）
+### C6 错误通道不对称：chat 域仍是 `Result<_, String>`（优先级 P3，结构性）—— **已立项 2026-11-17，仍开放**，实施规格见 [命令错误契约规格](../../store/command-error-contract-spec.md)
 
 **现象**：`src-tauri/src/cmd` 下 17 个文件共 72 处 `Result<_, String>`（含内部 helper），其中 chat / conversation / provider / storage / config 域的命令全部是纯字符串错误；只有 vault 域（`src-tauri/src/cmd/vault/sync.rs` 等）返回结构化 `VaultErrorDto`。数量比上一版（69 处 / 16 文件）增加，说明新增命令仍在沿用旧签名。
 
@@ -259,6 +260,8 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 即「发送消息」本身失败（如 provider 限流、鉴权失败）与「流中断」失败，在 UI 上的呈现和可操作性不一致。
 
 **修法**：定一个通用 `CommandErrorDto`（`code` / `message` / `retryable` / `retryAfterMs` / `details`），新命令按新契约写；存量命令不必一次性改完——前端 `toChatError` 已同时接受 `string` 与结构化对象，可以逐个迁移而不破坏调用点。**建议单独立项**，因为它会触及 `#[command]` 签名、前端 chat / conversation 等域的调用点（如 `src/services/chatService.ts`）返回类型与错误分支。
+
+> 2026-11-17 立项时对修法的两处调整（详见规格 §1.3）：`details` 去掉，改由前端 `toChatError(extra)` 本地注入；`VaultErrorDto` 不合并。首批只迁 chat / agent 六命令，**conversation / provider / storage / config 等域仍是字符串错误**，因此首批完成只算「部分关闭」——C6 完全关闭的判据是 `src-tauri/src/cmd` 下 `Result<[^>]*, String>` 匹配数降为 0，见规格 §6.1。
 
 **验证**：迁移单个命令（如 `send_chat_message`）后，确认前端仍走 `toChatError` 且能拿到 `retryAfterMs`。
 
@@ -373,7 +376,7 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 | 5 | C8 快捷键默认值单源（**已完成 2026-11-12**，走生成方案） | `npm run contract:gen`；`npm run test`；`cargo test -p assistant-config --test shortcut` |
 | 6 | C4 配置 DTO 字段集合测试（**已完成 2026-11-12**，覆盖四个结构体） | `cargo test -p assistant-app --test protocol_dto_roundtrip`；`cargo test -p assistant-app --test protocol_contract` |
 | 7 | C7 死代码与兼容垫片清理（**已完成 2026-11-12**，`patchToSnakeCase` 按 C3 修法 4 保留） | `npm run typecheck`；`npm run lint`；全局检索无残留引用 |
-| 8 | C6 命令错误契约（**仍开放**，另立项） | 视迁移范围 |
+| 8 | C6 命令错误契约（**已立项 2026-11-17，仍开放**；首批 chat / agent 六命令 + 三个 helper，完成后仅「部分关闭」，关闭判据见规格 §6.1） | `npm run contract:gen`；`cargo test -p assistant-app --test protocol_dto_roundtrip`；`cargo test -p assistant-app --test protocol_bindings`；`npm run contract:check`；`npm run typecheck`；`npm run lint`；`npm run test`；`rg -c --stats "Result<[^>]*, String>" src/cmd`（在 `src-tauri` 下） |
 
 通用收尾：`npm run contract:check`（确认生成契约与源码一致、无遗漏提交）、`npm run lint`、`npm run typecheck`、`npm run test`；并逐项确认 C7 表中的遗留物已删除，或已在「明确不列为死代码」中写明保留原因。
 
@@ -398,7 +401,7 @@ C 类修法（加测试）会引入新副本。副本算不算债，取决于「
 | C3 | `fn amend`、`amend_json_config`、`patchToSnakeCase`、`patch_conf`、`dispatchConfPatch`、`amend_unknown_key_rejected` |
 | C4 | `assert_dto_covers_config`、`config_dtos_cover_every_config_field`、`AppConfDto` |
 | C5 | `InstallMascotAssetResultDto`、`StorageBreakdownDto`、`MousePositionDto` |
-| C6 | `Result<(), String>`、`VaultErrorDto`、`toChatError` |
+| C6 | `Result<(), String>`、`VaultErrorDto`、`toChatError`、`CommandErrorDto`、`CommandErrorCodeDto`、`command-error-contract-spec` |
 | C7 | `EntryPreviewField`、`PendingRemovalEntry`、`TotpInput`、`UnreadableReason`、`patchToSnakeCase`、`tool_calls_json` |
 | C8 | `DEFAULT_SHORTCUT_PATTERNS`、`shortcutDefaults.generated`、`SHORTCUT_SPECS`、`SHORTCUT_DEFINITIONS`、`DEFAULT_KEYBINDINGS` |
 | C9 | `ThemeMode`、`ThemeModeDto`、`SYSTEM_THEME_CYCLE`、`THEME_SETTING`、`THEME_OPTIONS`、`NEXT_THEME` |

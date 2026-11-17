@@ -1201,10 +1201,11 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 
 ### 10.1 新建
 
-- `src-tauri/src/screenshot/mod.rs`：`Phase` 状态机、`start` / `cancel` / `crop` / `cleanup`、op lock
+- `src-tauri/src/screenshot/mod.rs`：对外门面（`pub mod` 声明、错误码常量、`pub use`、`emit_error`）
 - `src-tauri/src/screenshot/capture.rs`：`CaptureBackend` trait + `XcapBackend`、显示器定位、抓屏、预览 JPEG 与 data URL 编码
-- `src-tauri/src/screenshot/crop.rs`：令牌校验、归一化→原图换算、裁剪、单次编码、JPEG 兜底、调用 `archive_bytes`
+- `src-tauri/src/screenshot/crop.rs`：归一化→原图换算、裁剪、单次编码、JPEG 兜底
 - `src-tauri/src/screenshot/orb_overlay.rs`：Orb 隐藏校验（`ShowWindow` + `DwmFlush`）、全屏与恢复快照（恢复先隐藏再改几何）、`SCREENSHOT_ACTIVE`
+- `src-tauri/src/screenshot/state.rs` / `start.rs` / `crop_command.rs` / `cleanup.rs`：`Phase` 状态机与 op lock（state）、`start` 采集编排、`crop` 令牌校验与归档编排、`cancel` / 孤儿会话清理（2026-11-17 按 `code-structure-followups.md` F3-C 从 `mod.rs` 拆出，对外路径不变）
 - `src-tauri/src/cmd/screenshot.rs`：五条命令与调用方校验
 - `src-tauri/src/protocol/dto/screenshot.rs`：三个 DTO
 - `src/screenshot/Overlay.tsx`：覆盖层组件（data URL 底图、`img.decode()` 揭示、`finishing` 态）

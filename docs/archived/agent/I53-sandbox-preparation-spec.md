@@ -2,17 +2,17 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 草稿（P14-a 实施规格；进度只在 [I38 roadmap](./I38-agent-roadmap.md) §2 维护） |
+| 状态 | 草稿（P14-a 实施规格；进度只在 [I38 roadmap](../../store/I38-agent-roadmap.md) §2 维护） |
 | 日期 | 2026-11-15 |
-| 阶段 | P14-a（P14 的沙箱准备批次；见 [I38 roadmap](./I38-agent-roadmap.md) §2 / §3） |
-| 关联 | [I52](./I52-shell-sandbox-spec.md)（`shell` 工具、审批链、输出存储；本文是其沙箱章节的**唯一来源**）、I18 design §3.17（已归档）（检测分层与 `Adjudicate` 门禁）、[沙箱调研](./agent-sandbox-research.md)（后端选型 ADR-1–ADR-4）、[沙箱参考分析](./agent-sandbox-reference-analysis.md)（Codex / OpenHuman / DSH 实现细节） |
+| 阶段 | P14-a（P14 的沙箱准备批次；见 [I38 roadmap](../../store/I38-agent-roadmap.md) §2 / §3） |
+| 关联 | [I52](../../store/I52-shell-sandbox-spec.md)（`shell` 工具、审批链、输出存储；本文是其沙箱章节的**唯一来源**）、I18 design §3.17（已归档）（检测分层与 `Adjudicate` 门禁）、[沙箱调研](./agent-sandbox-research.md)（后端选型 ADR-1–ADR-4）、[沙箱参考分析](../../store/agent-sandbox-reference-analysis.md)（Codex / OpenHuman / DSH 实现细节） |
 | 影响范围 | `assistant-tools`（新增 `sandbox/` 模块）、`src-tauri/src/tool_setup.rs`（注册期探测收口）、`src-tauri/Cargo.toml`（Windows 特性与 `landlock` 依赖） |
 
 > 一句话：把「审批放行之后最多能做到哪」变成系统强制的边界——抽象一个后端、探测一次、注册期收口、三平台各自实现，全程 fail-closed。
 
 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离需在代码注释里写明理由。
 
-**批次编号**：调研文档 [agent-sandbox-research](./agent-sandbox-research.md) 用 `P0 / P1 / P2` 指沙箱**实施批次**，与 roadmap 的阶段号 `P0–P14` 同形易混。本文一律写 **S0 / S1 / S2**，映射 P14-a / P14-b / P14-c（映射表见 [I52 §11](./I52-shell-sandbox-spec.md)）。
+**批次编号**：调研文档 [agent-sandbox-research](./agent-sandbox-research.md) 用 `P0 / P1 / P2` 指沙箱**实施批次**，与 roadmap 的阶段号 `P0–P14` 同形易混。本文一律写 **S0 / S1 / S2**，映射 P14-a / P14-b / P14-c（映射表见 [I52 §11](../../store/I52-shell-sandbox-spec.md)）。
 
 ---
 
@@ -22,7 +22,7 @@
 
 | # | 事实 | 落点 |
 |---|---|---|
-| S-N1 | 无 `sandbox` 模块：`ToolTier` 只用于装配过滤与 tier 上限，**不产生任何运行时隔离**（同 [I52](./I52-shell-sandbox-spec.md) N2） | `assistant-tools/src/trait.rs`、`policy.rs` |
+| S-N1 | 无 `sandbox` 模块：`ToolTier` 只用于装配过滤与 tier 上限，**不产生任何运行时隔离**（同 [I52](../../store/I52-shell-sandbox-spec.md) N2） | `assistant-tools/src/trait.rs`、`policy.rs` |
 | S-N2 | `ToolUseContext.workspace_root` 是唯一权限边界，P12 已改为按会话解析（同 I52 N5） | `assistant-tools/src/context.rs`、`src-tauri/src/tool_setup.rs` |
 | S-N3 | `windows` crate 已启 `Win32_Security`（`CreateRestrictedToken` 可用），未启 Job Objects / Threading | `src-tauri/Cargo.toml` |
 | S-N4 | 无 `landlock` 依赖；`sandbox-exec` 走系统自带可执行文件 | `assistant-tools/Cargo.toml` |
@@ -38,7 +38,7 @@
 
 ### 1.3 非目标
 
-- 不做 `shell` 工具本体：schema / 审批意图 / 执行流程 / 输出落盘与回读都在 [I52 §5–§6](./I52-shell-sandbox-spec.md)，本文只负责「把受限子进程交回给调用方」；
+- 不做 `shell` 工具本体：schema / 审批意图 / 执行流程 / 输出落盘与回读都在 [I52 §5–§6](../../store/I52-shell-sandbox-spec.md)，本文只负责「把受限子进程交回给调用方」；
 - 不参与审批决策（I52 §2.3）：沙箱不改变 Policy / Gateway 的结论；
 - 不做容器 / microVM / 内核驱动级后端（虚拟化层 L3+，见 I52 §2.1），不做云端沙箱；
 - 不做降级后端（Linux bwrap）与 Windows 双模式评估（S1）；不做高安全场景后端（S2，须独立立项）；
@@ -50,7 +50,7 @@
 
 ## 2 术语
 
-两根轴（检测层 vs 虚拟化层）与三层职责（Policy / 审批 / 沙箱）的**唯一定义**在 [I52 §2.1 / §2.3](./I52-shell-sandbox-spec.md)，本文不复述。本文只补沙箱自身的封闭词汇（§3）。
+两根轴（检测层 vs 虚拟化层）与三层职责（Policy / 审批 / 沙箱）的**唯一定义**在 [I52 §2.1 / §2.3](../../store/I52-shell-sandbox-spec.md)，本文不复述。本文只补沙箱自身的封闭词汇（§3）。
 
 ---
 
@@ -62,7 +62,7 @@
 | `SandboxEnforcement` | 实际隔离强度（判据见 §4.5） | `full` / `partial` / `none` |
 | `SandboxDimension` | 隔离维度 | `fsWrite` / `fsRead` / `processTree` / `network` |
 
-`SandboxEnforcement` 同时是审批键的一部分（[I52 §6.2](./I52-shell-sandbox-spec.md)）：它进键的目的是「降级后不复用授权」，不是「有沙箱就免审」。
+`SandboxEnforcement` 同时是审批键的一部分（[I52 §6.2](../../store/I52-shell-sandbox-spec.md)）：它进键的目的是「降级后不复用授权」，不是「有沙箱就免审」。
 
 ---
 
@@ -132,11 +132,11 @@ impl SandboxChild {
 
 **与调研草案的差异**（[沙箱调研 §10.3](./agent-sandbox-research.md) 的 `prepare / exec / cleanup` 三方法）：本规格改为单方法 `spawn` + `SandboxChild`，理由三条，调研草案不再作为实现依据：
 
-1. `exec` 返回「已收集完的输出」会丢掉流式读取、进程级超时与中途 kill 的能力，而 [I52 §5.8](./I52-shell-sandbox-spec.md) 的取消与超时必须在「阻塞 `wait` 任务」与「deadline / 取消令牌」之间竞争；
+1. `exec` 返回「已收集完的输出」会丢掉流式读取、进程级超时与中途 kill 的能力，而 [I52 §5.8](../../store/I52-shell-sandbox-spec.md) 的取消与超时必须在「阻塞 `wait` 任务」与「deadline / 取消令牌」之间竞争；
 2. Windows 后端必须「挂起创建 → 加入 Job → 恢复线程」，创建与限制是同一段时序，不能拆成 `prepare` + `exec`；
 3. `cleanup` 在 Windows 上是 `Job` 句柄 drop（`KILL_ON_JOB_CLOSE`）、在 Unix 上是进程组回收，属于 `SandboxChild` 的生命周期，不是后端的状态。
 
-`SandboxChild` 的 `stdout` / `stderr` 交回后由调用方接管（[I52 §5.7](./I52-shell-sandbox-spec.md) 的读取任务）；本文**不**定义输出读取、解码或落盘。
+`SandboxChild` 的 `stdout` / `stderr` 交回后由调用方接管（[I52 §5.7](../../store/I52-shell-sandbox-spec.md) 的读取任务）；本文**不**定义输出读取、解码或落盘。
 
 **读取器类型必须是 `Box<dyn Read + Send>`，不得写成 `std::process::ChildStdout` / `ChildStderr`**：Windows 后端不能用 `std::process::Command`——受限令牌要求 `CreateProcessAsUser` / `CreateProcessWithTokenW`，`CREATE_SUSPENDED` 后需 `ResumeThread` 而 `std::Child` 不暴露线程句柄，故只能裸调 `CreateProcess` + 自建 `CreatePipe`，产出的是裸 `HANDLE`；而 `ChildStdout` 没有公开构造器，无法从裸句柄造出来。`Box<dyn Read + Send>` 不丢任何能力：调用方本来就是「阻塞读 + `spawn_blocking`」，Windows 侧用 `File::from_raw_handle` 包一层、Unix 侧直接给 `ChildStdout` 即可。
 
@@ -146,15 +146,15 @@ impl SandboxChild {
 |---|---|---|
 | `writable_root` | `ToolUseContext.workspace_root`（P12 按会话解析的结果） | 必须已 canonicalize；`None` → 不执行（§7 F-S5） |
 | `cwd` | 输入 `cwd`，相对路径按 `writable_root` 解析 | 必须通过 `os::path::ensure_within_root`；Windows 交给 `CreateProcess` 前必须剥掉 `\\?\` 前缀（见下） |
-| `program` | 平台固定 shell（[I52 §5.7](./I52-shell-sandbox-spec.md)） | 绝对路径；Windows 从 `%SystemRoot%\System32\cmd.exe` 取，Unix 固定 `/bin/sh` |
+| `program` | 平台固定 shell（[I52 §5.7](../../store/I52-shell-sandbox-spec.md)） | 绝对路径；Windows 从 `%SystemRoot%\System32\cmd.exe` 取，Unix 固定 `/bin/sh` |
 | `network` | 常量 `false` | 不读输入、不读配置；后端做不到就进 `missing` |
-| `env` | [I52 §5.10](./I52-shell-sandbox-spec.md) 白名单 | 禁止透传敏感名 |
+| `env` | [I52 §5.10](../../store/I52-shell-sandbox-spec.md) 白名单 | 禁止透传敏感名 |
 
 **禁止**由工具输入直接指定 `writable_root`、`program`、`network`。这三个字段一旦可被模型影响，「边界」就退化为建议。
 
 **`cwd` 的 `\\?\` 前缀必须剥掉**：`canonicalize` 的产物带 verbatim 前缀（`\\?\C:\...`），`cmd.exe` 把它当成 UNC 起点，`cd` 失败后回退到 `Windows` 目录，命令里的相对路径随之落到可写根之外。故 Windows 后端传给 `CreateProcess` 的 `cwd` 是剥掉前缀的普通路径（`\\?\UNC\srv\share` → `\\srv\share`），ACL 侧仍用带前缀的 canonicalize 结果——两处口径不同，不可统一。
 
-**输出域不是可写根**：工具输出文件由父进程（沙箱外）写入（[I52 §5.11](./I52-shell-sandbox-spec.md)），子进程只经管道交出其 stdout / stderr，故 `SandboxPlan` 不新增输出目录字段，可写根恒为单一 `workspace_root`。模型在命令里把输出重定向到输出域同样会失败（写边界不认「这是自家目录」）。
+**输出域不是可写根**：工具输出文件由父进程（沙箱外）写入（[I52 §5.11](../../store/I52-shell-sandbox-spec.md)），子进程只经管道交出其 stdout / stderr，故 `SandboxPlan` 不新增输出目录字段，可写根恒为单一 `workspace_root`。模型在命令里把输出重定向到输出域同样会失败（写边界不认「这是自家目录」）。
 
 ### 4.4 链式探测与注册期收口
 
@@ -179,7 +179,7 @@ tool_setup::init
 2. 候选列表按强度降序；第一个 `enforcement != None` 的候选胜出，胜出后不再探测后续候选。P14 每个平台只有一个候选，S1 才追加降级候选（Linux bwrap）。
 3. 候选列表**为空**（对应平台后端尚未落地，如 C4 先行接桩时的 Unix）时，结论固定为 `kind = None` + `detail = "no_backend"` + `missing = [fsWrite]` → `enforcement = None`。此时该平台确实「没有可用后端」，**不得**用候选的类型标识（`landlock` / `seatbelt`）冒充——`SandboxKind::None` 的语义即「不注册 `shell`」。所有候选都探测失败时保留**首个**候选的结论（含它的 `kind` 与 `detail`）供诊断。
 4. `enforcement == None` → **不注册** `shell`，而不是注册后运行期拒绝。理由：模型看不到不存在的工具，比看到工具再报错少一轮无效迭代；`enabled_tools` 白名单里的 `shell` 名字自然落空（`resolve_available_tools` 是 deny-by-default）。
-5. 注册期结论同时用于审批卡扩展（[I52 §6.3](./I52-shell-sandbox-spec.md)）与执行前置校验（运行期再读一次缓存，仍为 `None` 则拒绝执行）。
+5. 注册期结论同时用于审批卡扩展（[I52 §6.3](../../store/I52-shell-sandbox-spec.md)）与执行前置校验（运行期再读一次缓存，仍为 `None` 则拒绝执行）。
 6. **注册期不做任何收敛**：`detect` 是纯查询（§6「探测」时点）。Windows 唯一的持久产物是可写根 ACE，而 `writable_root` 按会话解析、注册期不可知，故收敛只能发生在 `spawn` 前的 `prepare`（§6「准备」时点，`SET_ACCESS` 语义）。
 
 ### 4.5 `enforcement` 判据
@@ -201,7 +201,7 @@ tool_setup::init
 | Linux（Landlock ABI < 4） | 强制 | 强制 | 强制 | 缺失 | `partial` |
 | macOS（Seatbelt） | 强制 | 强制 | 强制（进程组） | 强制 | `full` |
 
-`partial` 不是「降级放行」：它只影响审批卡的展示文案与 P10-b 的放宽条件（P10-b 要求 `full`，见 [I52 §6.6](./I52-shell-sandbox-spec.md)），不改变是否注册工具（`partial` 仍注册）。
+`partial` 不是「降级放行」：它只影响审批卡的展示文案与 P10-b 的放宽条件（P10-b 要求 `full`，见 [I52 §6.6](../../store/I52-shell-sandbox-spec.md)），不改变是否注册工具（`partial` 仍注册）。
 
 ---
 
@@ -325,7 +325,7 @@ tool_setup::init
 2. **只碰可写根**：Windows 的 ACL 改动只落在 `plan.writable_root`；敏感目录、系统目录、用户主目录本身、其它任意路径一律不动（§5.1 / §5.6）；
 3. **幂等优先于性能**：准备阶段允许重复执行；不要为省一次 ACL 查询引入「是否已准备」的进程内布尔状态（跨重启即失效，且会让残留无法收敛）；
 4. **崩溃残留不得阻断后续执行**：进程被杀后可能留下 ACE；下一次 `spawn` 的准备按 SID 替换它，不依赖「上次是否正常退出」；
-5. **回收必须整棵树**：Windows 一次 `TerminateJobObject` 杀光 Job 内全部进程，Unix `kill(-pgid)`；只杀直接子进程会让孙进程继承管道写端，导致调用方 join 等不到 EOF（[I52 §5.7 第 9 步](./I52-shell-sandbox-spec.md)）。
+5. **回收必须整棵树**：Windows 一次 `TerminateJobObject` 杀光 Job 内全部进程，Unix `kill(-pgid)`；只杀直接子进程会让孙进程继承管道写端，导致调用方 join 等不到 EOF（[I52 §5.7 第 9 步](../../store/I52-shell-sandbox-spec.md)）。
 
 ---
 
@@ -369,7 +369,7 @@ tool_setup::init
 | **C3 Unix 后端（S0）** | Landlock（含 ABI 探测与 `missing` 计算）+ Seatbelt profile；A-S1 / A-S2 / A-S3 在对应平台通过 | `sandbox/linux.rs`、`sandbox/macos.rs` | I52 的 C1 |
 | **C4 探测与注册收口** | `detect()` + `OnceLock` 缓存 + `tool_setup` 条件注册；A-S4 / A-S7 / A-S8 | `sandbox/mod.rs`、`tool_setup.rs` | C2 / C3（可先接桩） |
 
-C4 完成后，[I52](./I52-shell-sandbox-spec.md) 的 C5（`shell` 工具本体）才具备可执行前置。
+C4 完成后，[I52](../../store/I52-shell-sandbox-spec.md) 的 C5（`shell` 工具本体）才具备可执行前置。
 
 S1 / S2（P14-b / P14-c，不在本文验收范围）：S1 追加降级后端（Linux bwrap）与 Windows 双模式评估；S2 为高安全场景的可选后端（Sandboxie / OpenShell / 容器 / microVM），须独立立项（[沙箱调研 §10.5](./agent-sandbox-research.md)）。
 
@@ -394,11 +394,11 @@ S1 / S2（P14-b / P14-c，不在本文验收范围）：S1 追加降级后端（
 
 **本仓文档**
 
-- [I52](./I52-shell-sandbox-spec.md)：`shell` 工具、审批链集成、输出存储与回读、整体验收与分批；
+- [I52](../../store/I52-shell-sandbox-spec.md)：`shell` 工具、审批链集成、输出存储与回读、整体验收与分批；
 - I18 design §3.17（已归档）：检测分层、`Adjudicate` 门禁；
-- [OSCALLDESIGN](../designed/OSCALLDESIGN.md)：Shell 洋葱模型（SafetyBelt / 结构守卫 / 环境隔离 / 命令分类）；
+- [OSCALLDESIGN](../../designed/OSCALLDESIGN.md)：Shell 洋葱模型（SafetyBelt / 结构守卫 / 环境隔离 / 命令分类）；
 - [沙箱调研](./agent-sandbox-research.md)：后端选型（ADR-1 Windows Token+Job、ADR-2 Linux Landlock、ADR-3 不选 gVisor、ADR-4 fail-closed）；
-- [沙箱参考分析](./agent-sandbox-reference-analysis.md)：Codex 四后端与违规检测、OpenHuman 诚实 Noop、DSH 链式探测与升级阶梯。
+- [沙箱参考分析](../../store/agent-sandbox-reference-analysis.md)：Codex 四后端与违规检测、OpenHuman 诚实 Noop、DSH 链式探测与升级阶梯。
 
 **参考实现**
 
