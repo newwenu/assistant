@@ -89,6 +89,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         cmd::get_conversation_token_usage,
         cmd::install_mascot_asset,
         cmd::uninstall_mascot_asset,
+        cmd::get_mascot_manifest,
+        cmd::set_mascot_manifest,
         cmd::manual_compact_conversation,
         cmd::unlock_conversation,
         cmd::os_tool_exec,

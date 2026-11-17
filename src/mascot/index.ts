@@ -7,6 +7,8 @@ export {
 export { useMascotChatSync } from "./useMascotChatSync";
 export type {
   MascotFace,
+  MascotScene,
+  MascotSceneGroup,
   BuiltinFace,
   MascotRendererId,
   MascotRendererProps,
@@ -17,7 +19,7 @@ export type {
   RiveRendererConfig,
   SvgRendererConfig,
   GifRendererConfig,
-  ChatFacePolicy,
+  ChatScenePolicy,
   AckRule,
   ExpressionPolicy,
   EmotionEvent,
@@ -27,12 +29,19 @@ export {
   asFace,
   asRendererId,
   BUILTIN_FACES,
+  MASCOT_SCENES,
   BUILTIN_RENDERER_IDS,
 } from "./core/types";
 export {
   DEFAULT_ACK_RULES,
-  DEFAULT_CHAT_FACE_POLICY,
+  DEFAULT_CHAT_SCENE_POLICY,
   DEFAULT_EXPRESSION_POLICY,
+  MASCOT_SCENE_DEFS,
+  MASCOT_SCENE_GROUPS,
+  MASCOT_SCENE_GROUP_LABEL_KEYS,
+  isMascotScene,
+  sceneFace,
+  scenesInGroup,
 } from "./core/expressionPolicy";
 export {
   getAllRendererMetas,

@@ -1,3 +1,5 @@
+import type { AssetConfig } from "@/settings/core/types/fieldSchema";
+
 export type MascotFace = string & { __brand: "MascotFace" };
 
 export function asFace(s: string): MascotFace {
@@ -25,6 +27,29 @@ export const BUILTIN_FACES = [
 ] as const;
 
 export type BuiltinFace = (typeof BUILTIN_FACES)[number];
+
+export const MASCOT_SCENES = [
+  "idle",
+  "listening",
+  "streamStartReasoning",
+  "streamStartToolCall",
+  "streamStart",
+  "reasoningEndToolCall",
+  "reasoningEnd",
+  "streamEnd",
+  "error",
+  "ackError",
+  "ackWarning",
+  "ackPraise",
+  "ackDoneTool",
+  "ackDone",
+  "ackWriting",
+  "ackReading",
+] as const;
+
+export type MascotScene = (typeof MASCOT_SCENES)[number];
+
+export type MascotSceneGroup = "runtime" | "ack";
 
 export type MascotRendererId = string & { __brand: "MascotRendererId" };
 
@@ -70,11 +95,7 @@ export interface RendererSettingDef {
   marks?: Record<number, string>;
   extra?: string;
   saveMessage?: string | false;
-  assetConfig?: {
-    assetType: string;
-    fileFilter: { name: string; extensions: string[] };
-    urlInput?: boolean;
-  };
+  assetConfig?: AssetConfig;
 }
 
 export interface RiveRendererConfig {
@@ -100,6 +121,7 @@ export type RendererConfig =
 
 export interface MascotRendererProps {
   face: MascotFace;
+  scene?: MascotScene;
   size?: number | string;
   visemeCode?: string;
   primaryColor?: number | null;
@@ -107,26 +129,26 @@ export interface MascotRendererProps {
   rendererConfig?: RendererConfig;
 }
 
-export interface ChatFacePolicy {
+export interface ChatScenePolicy {
   onStreamStart: {
-    reasoning: MascotFace;
-    toolCall: MascotFace;
-    default: MascotFace;
+    reasoning: MascotScene;
+    toolCall: MascotScene;
+    default: MascotScene;
   };
-  onStreamEnd: MascotFace;
-  onReasoningEnd: { toolCall: MascotFace; default: MascotFace };
-  onError: MascotFace;
+  onStreamEnd: MascotScene;
+  onReasoningEnd: { toolCall: MascotScene; default: MascotScene };
+  onError: MascotScene;
 }
 
 export interface AckRule {
   pattern: RegExp;
-  face: MascotFace;
+  scene: MascotScene;
   priority?: number;
   requiresToolCall?: boolean;
 }
 
 export interface ExpressionPolicy {
-  chatFace: ChatFacePolicy;
+  chatScene: ChatScenePolicy;
   ackRules: AckRule[];
 }
 

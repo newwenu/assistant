@@ -1,6 +1,7 @@
 import { create } from "zustand";
-import type { MascotFace, EmotionEngine } from "./core/types";
+import type { MascotFace, MascotScene, EmotionEngine } from "./core/types";
 import { asFace } from "./core/types";
+import { sceneFace } from "./core/expressionPolicy";
 
 const ACK_FACE_HOLD_MS = 700;
 const VISEME_DECAY_MS = 180;
@@ -8,9 +9,16 @@ const LISTENING_DEBOUNCE_MS = 2_000;
 
 interface MascotState {
   face: MascotFace;
+  /**
+   * 触发当前表情的场景。`null` 表示表情由外部直接设置（EmotionEngine），
+   * 此时无法追溯到场景，按表情映射兜底。
+   */
+  scene: MascotScene | null;
   visemeCode: string;
   setFace: (face: MascotFace) => void;
+  setScene: (scene: MascotScene) => void;
   setVisemeCode: (code: string) => void;
+  holdSceneThenIdle: (scene: MascotScene, ms?: number) => void;
   holdThenIdle: (ackFace: MascotFace, ms?: number) => void;
   notifyListening: () => void;
 }
@@ -42,12 +50,19 @@ function clearListeningTimer() {
 
 export const useMascotStore = create<MascotState>((set, get) => ({
   face: asFace("idle"),
+  scene: "idle",
   visemeCode: "sil",
 
   setFace: (face: MascotFace) => {
     clearAckTimer();
     clearListeningTimer();
-    set({ face });
+    set({ face, scene: null });
+  },
+
+  setScene: (scene: MascotScene) => {
+    clearAckTimer();
+    clearListeningTimer();
+    set({ scene, face: sceneFace(scene) });
   },
 
   setVisemeCode: (code: string) => {
@@ -59,13 +74,23 @@ export const useMascotStore = create<MascotState>((set, get) => ({
     }, VISEME_DECAY_MS);
   },
 
+  holdSceneThenIdle: (scene: MascotScene, ms = ACK_FACE_HOLD_MS) => {
+    clearAckTimer();
+    clearListeningTimer();
+    set({ scene, face: sceneFace(scene) });
+    ackTimer = setTimeout(() => {
+      ackTimer = null;
+      set({ scene: "idle", face: sceneFace("idle") });
+    }, ms);
+  },
+
   holdThenIdle: (ackFace: MascotFace, ms = ACK_FACE_HOLD_MS) => {
     clearAckTimer();
     clearListeningTimer();
-    set({ face: ackFace });
+    set({ face: ackFace, scene: null });
     ackTimer = setTimeout(() => {
       ackTimer = null;
-      set({ face: asFace("idle") });
+      set({ scene: "idle", face: sceneFace("idle") });
     }, ms);
   },
 
@@ -73,10 +98,10 @@ export const useMascotStore = create<MascotState>((set, get) => ({
     const { face } = get();
     if (face !== asFace("idle") && face !== asFace("listening")) return;
     clearListeningTimer();
-    set({ face: asFace("listening") });
+    set({ scene: "listening", face: sceneFace("listening") });
     listeningTimer = setTimeout(() => {
       listeningTimer = null;
-      set({ face: asFace("idle") });
+      set({ scene: "idle", face: sceneFace("idle") });
     }, LISTENING_DEBOUNCE_MS);
   },
 }));

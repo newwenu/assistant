@@ -18,10 +18,16 @@ export interface SelectOption {
   value: string;
 }
 
+export interface AssetManifestEditorProps {
+  assetType: string;
+}
+
 export interface AssetConfig {
   assetType: string;
   fileFilter: { name: string; extensions: string[] };
   urlInput?: boolean;
+  /** 素材伴生声明的编辑入口；仅当 `src` 指向本地安装素材时渲染。 */
+  manifestEditor?: FC<AssetManifestEditorProps>;
 }
 
 export interface FieldContext {

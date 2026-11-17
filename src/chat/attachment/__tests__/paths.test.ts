@@ -60,6 +60,19 @@ describe("attachment paths", () => {
     expect(getAssetDirs).toHaveBeenCalledTimes(1);
   });
 
+  it("recognizes only local asset urls", async () => {
+    const { isLocalAssetUrl } = await loadPaths();
+    expect(
+      isLocalAssetUrl(
+        "http://asset.localhost/C%3A%5Cdata%5Cmascot-assets%5Crive%5Ccustom.riv",
+      ),
+    ).toBe(true);
+    expect(isLocalAssetUrl("asset://localhost/data/app/a.riv")).toBe(true);
+    expect(isLocalAssetUrl("https://example.com/a.riv")).toBe(false);
+    expect(isLocalAssetUrl("/mascot.riv")).toBe(false);
+    expect(isLocalAssetUrl("")).toBe(false);
+  });
+
   it("retries the lookup after a failure instead of caching the error", async () => {
     const { attachmentUrl } = await loadPaths();
     getAssetDirs.mockRejectedValueOnce("not managed");

@@ -12,12 +12,14 @@ export enum SettingAction {
   ProviderDeleted = "provider-deleted",
   ThemeChanged = "theme-changed",
   ConfPatched = "conf-patched",
+  MascotManifestChanged = "mascot-manifest-changed",
 }
 
 export enum SettingEvent {
   ProviderChanged = "setting:provider-changed",
   ThemeChanged = "setting:theme-changed",
   ConfPatched = "setting:conf-patched",
+  MascotManifestChanged = "setting:mascot-manifest-changed",
 }
 
 export interface SettingEventPayload {

@@ -7,17 +7,30 @@ import {
   useViewModelInstanceColor,
   useViewModelInstanceEnum,
 } from "@rive-app/react-webgl2";
-import { type FC, useEffect, useRef } from "react";
+import { type FC, useEffect, useMemo, useRef } from "react";
 
-import type { MascotRendererProps, RiveRendererConfig } from "../../core/types";
+import type { RiveManifestDto } from "@/types/protocol.contract";
+import type {
+  MascotFace,
+  MascotRendererProps,
+  MascotScene,
+  RiveRendererConfig,
+} from "../../core/types";
 import { asFace } from "../../core/types";
 import { resolveVisemeCode, pickIdleFlourish } from "../../core/resolve";
 import { MASCOT_STATE_MACHINE, toRiveVisemeCode } from "./riveMaps";
 import {
+  EMPTY_RIVE_SCHEMA,
+  readRiveSchema,
+  resolveRiveBindings,
+} from "./riveIntrospect";
+import {
   type RiveStateEngine,
-  resolveFaceToPose,
+  resolveScenePose,
   buildStateEngine,
 } from "./riveStateEngine";
+import { useRiveManifest } from "./useRiveManifest";
+import { useRiveStateMachineNames } from "./useRiveStateMachineNames";
 
 const AMBIENT_IDLE_MIN_MS = 6_000;
 const AMBIENT_IDLE_MAX_MS = 12_000;
@@ -175,23 +188,37 @@ export interface RiveMascotProps extends MascotRendererProps {
   stateEngine?: RiveStateEngine;
 }
 
-export const RiveMascot: FC<RiveMascotProps> = ({
-  face = asFace("idle"),
-  size = "100%",
+interface RiveStageProps {
+  face: MascotFace;
+  scene?: MascotScene;
+  size: number | string;
+  primaryColor?: number | null;
+  secondaryColor?: number | null;
+  visemeCode?: string;
+  config: RiveRendererConfig | undefined;
+  stateEngine?: RiveStateEngine;
+  manifest: RiveManifestDto | null;
+  isCustomAsset: boolean;
+  stateMachine: string | null;
+}
+
+const RiveStage: FC<RiveStageProps> = ({
+  face,
+  scene,
+  size,
   primaryColor,
   secondaryColor,
   visemeCode = "sil",
-  rendererConfig,
+  config,
   stateEngine,
+  manifest,
+  isCustomAsset,
+  stateMachine,
 }) => {
-  const config = rendererConfig as RiveRendererConfig | undefined;
   const idlePoseRotation = config?.idlePoseRotation ?? false;
   const src = config?.src ?? DEFAULT_MASCOT_SRC;
   const buffer = config?.buffer ?? undefined;
-  const stateMachine = config?.stateMachine ?? MASCOT_STATE_MACHINE;
-
-  const engine: RiveStateEngine =
-    stateEngine ?? buildStateEngine(config?.faceToPose);
+  const configFaceToPose = config?.faceToPose;
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -199,7 +226,7 @@ export const RiveMascot: FC<RiveMascotProps> = ({
   const { rive, RiveComponent } = useRive(
     {
       ...riveSource,
-      stateMachines: stateMachine,
+      ...(stateMachine ? { stateMachine } : {}),
       autoplay: true,
       layout: RIVE_LAYOUT,
     },
@@ -215,15 +242,58 @@ export const RiveMascot: FC<RiveMascotProps> = ({
     useDefault: true,
     rive,
   });
-  const { setValue: setPose } = useViewModelInstanceEnum("pose", vmInstance);
+
+  const schema = useMemo(
+    () =>
+      isCustomAsset
+        ? readRiveSchema(rive, viewModel, vmInstance)
+        : EMPTY_RIVE_SCHEMA,
+    [isCustomAsset, rive, viewModel, vmInstance],
+  );
+
+  const bindings = useMemo(
+    () => resolveRiveBindings(schema, manifest),
+    [schema, manifest],
+  );
+
+  const { setValue: setPose } = useViewModelInstanceEnum(
+    bindings.pose,
+    vmInstance,
+  );
   const { setValue: setMouthVisemeCode } = useViewModelInstanceEnum(
-    "mouthVisemeCode",
+    bindings.viseme,
     vmInstance,
   );
   const { value: primaryColorValue, setValue: setPrimaryColor } =
-    useViewModelInstanceColor("primaryColor", vmInstance);
+    useViewModelInstanceColor(bindings.primaryColor, vmInstance);
   const { value: secondaryColorValue, setValue: setSecondaryColor } =
-    useViewModelInstanceColor("secondaryColor", vmInstance);
+    useViewModelInstanceColor(bindings.secondaryColor, vmInstance);
+
+  const engine = useMemo<RiveStateEngine>(() => {
+    if (stateEngine) return stateEngine;
+    if (!isCustomAsset) return buildStateEngine(configFaceToPose);
+    const poses = manifest?.poses?.length
+      ? manifest.poses
+      : (schema.enumValues[bindings.pose] ?? []);
+    const visemes = manifest?.visemes?.length
+      ? manifest.visemes
+      : (schema.enumValues[bindings.viseme] ?? []);
+    return buildStateEngine(configFaceToPose, {
+      poses,
+      visemes,
+      idlePoseCycle: manifest?.idlePoseCycle ?? undefined,
+      faceToPose: manifest?.faceToPose ?? undefined,
+      sceneToPose: manifest?.sceneToPose ?? undefined,
+    });
+  }, [
+    stateEngine,
+    isCustomAsset,
+    configFaceToPose,
+    manifest,
+    schema,
+    bindings.pose,
+    bindings.viseme,
+  ]);
 
   const defaultPrimaryRef = useRef<number | null>(null);
   const defaultSecondaryRef = useRef<number | null>(null);
@@ -251,7 +321,7 @@ export const RiveMascot: FC<RiveMascotProps> = ({
     }
   }, [secondaryColor, setSecondaryColor]);
 
-  const basePose = resolveFaceToPose(face, engine);
+  const basePose = resolveScenePose(scene, face, engine);
 
   useEffect(() => {
     setPose(basePose);
@@ -259,13 +329,14 @@ export const RiveMascot: FC<RiveMascotProps> = ({
 
   const setPoseRef = useRef(setPose);
   setPoseRef.current = setPose;
+  const idlePose = engine.states.idle ?? "idle";
   useEffect(() => {
-    if (!idlePoseRotation || basePose !== "idle") return;
+    if (!idlePoseRotation || basePose !== idlePose) return;
     let timer: number | undefined;
-    let current: string = "idle";
+    let current: string = idlePose;
     const toIdle = () => {
-      current = "idle";
-      setPoseRef.current("idle");
+      current = idlePose;
+      setPoseRef.current(idlePose);
       timer = window.setTimeout(
         toAmbient,
         randBetween(AMBIENT_IDLE_MIN_MS, AMBIENT_IDLE_MAX_MS),
@@ -274,7 +345,7 @@ export const RiveMascot: FC<RiveMascotProps> = ({
     const toAmbient = () => {
       current = pickIdleFlourish(
         engine.idlePoseCycle,
-        current === "idle" ? undefined : current,
+        current === idlePose ? undefined : current,
       );
       setPoseRef.current(current);
       timer = window.setTimeout(
@@ -288,9 +359,9 @@ export const RiveMascot: FC<RiveMascotProps> = ({
     );
     return () => {
       if (timer !== undefined) window.clearTimeout(timer);
-      setPoseRef.current("idle");
+      setPoseRef.current(idlePose);
     };
-  }, [idlePoseRotation, basePose, engine]);
+  }, [idlePoseRotation, basePose, engine, idlePose]);
 
   useEffect(() => {
     const riveCode = toRiveVisemeCode(visemeCode);
@@ -316,5 +387,75 @@ export const RiveMascot: FC<RiveMascotProps> = ({
         }}
       />
     </div>
+  );
+};
+
+export const RiveMascot: FC<RiveMascotProps> = ({
+  face = asFace("idle"),
+  scene,
+  size = "100%",
+  primaryColor,
+  secondaryColor,
+  visemeCode = "sil",
+  rendererConfig,
+  stateEngine,
+}) => {
+  const config = rendererConfig as RiveRendererConfig | undefined;
+  const src = config?.src ?? DEFAULT_MASCOT_SRC;
+  const isCustomAsset = src !== DEFAULT_MASCOT_SRC;
+  const { manifest, ready } = useRiveManifest(
+    isCustomAsset ? "rive" : null,
+    src,
+  );
+
+  const declaredStateMachine =
+    config?.stateMachine ?? manifest?.stateMachine ?? null;
+  const probeSrc = isCustomAsset && !config?.buffer ? src : null;
+  const probe = useRiveStateMachineNames(probeSrc);
+
+  const probed = probe.names;
+  const declaredValid =
+    declaredStateMachine != null &&
+    (probed == null || probed.includes(declaredStateMachine));
+  const preferredProbed =
+    probed && probed.length > 0
+      ? (probed.find(
+          (name) => name.toLowerCase() === MASCOT_STATE_MACHINE.toLowerCase(),
+        ) ?? probed[0])
+      : null;
+  const stateMachine =
+    (declaredValid ? declaredStateMachine : null) ??
+    preferredProbed ??
+    (isCustomAsset ? null : MASCOT_STATE_MACHINE);
+
+  const sizeStyle = typeof size === "number" ? `${size}px` : size;
+
+  if (!ready || !probe.ready) {
+    return (
+      <div
+        style={{
+          width: sizeStyle,
+          height: sizeStyle,
+        }}
+        data-face={face}
+      />
+    );
+  }
+
+  return (
+    <RiveStage
+      key={`${src}|${stateMachine ?? "auto"}`}
+      face={face}
+      scene={scene}
+      size={size}
+      primaryColor={primaryColor}
+      secondaryColor={secondaryColor}
+      visemeCode={visemeCode}
+      config={config}
+      stateEngine={stateEngine}
+      manifest={manifest}
+      isCustomAsset={isCustomAsset}
+      stateMachine={stateMachine}
+    />
   );
 };

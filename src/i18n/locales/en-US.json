@@ -172,6 +172,76 @@
       "always_on_top": { "label": "Always on Top" }
     },
     "mascot": {
+      "scene_group": {
+        "runtime": "Runtime state",
+        "ack": "Tone at reply end"
+      },
+      "scene": {
+        "idle": {
+          "label": "Idle",
+          "hint": "Default state when no chat is active"
+        },
+        "listening": {
+          "label": "Listening",
+          "hint": "Shown briefly when voice input is detected"
+        },
+        "stream_start_reasoning": {
+          "label": "Start reasoning",
+          "hint": "Stream starts and reasoning comes first"
+        },
+        "stream_start_tool_call": {
+          "label": "Start tool call",
+          "hint": "Stream starts and this turn already has a tool call"
+        },
+        "stream_start": {
+          "label": "Start reply",
+          "hint": "Stream starts and content is written directly"
+        },
+        "reasoning_end_tool_call": {
+          "label": "Reasoning end, to tool",
+          "hint": "Reasoning stream ends and a tool call follows"
+        },
+        "reasoning_end": {
+          "label": "Reasoning end, to content",
+          "hint": "Reasoning stream ends and content starts"
+        },
+        "stream_end": {
+          "label": "Stream end",
+          "hint": "Stream ends without matching any tone rule below"
+        },
+        "error": {
+          "label": "Error",
+          "hint": "Assistant message carries an error"
+        },
+        "ack_error": {
+          "label": "Error tone",
+          "hint": "Reply contains words like failed or unable"
+        },
+        "ack_warning": {
+          "label": "Warning tone",
+          "hint": "Reply contains words like caution or warning"
+        },
+        "ack_praise": {
+          "label": "Praise tone",
+          "hint": "Reply contains words like congratulations or awesome"
+        },
+        "ack_done_tool": {
+          "label": "Tool done tone",
+          "hint": "Reply contains words like done or success and a tool was used"
+        },
+        "ack_done": {
+          "label": "Done tone",
+          "hint": "Reply contains words like done or success"
+        },
+        "ack_writing": {
+          "label": "Writing tone",
+          "hint": "Reply mentions writing, creating or editing files"
+        },
+        "ack_reading": {
+          "label": "Reading tone",
+          "hint": "Reply mentions reading, finding or searching"
+        }
+      },
       "renderer": {
         "label": "Renderer",
         "description": "Choose the mascot rendering method",
@@ -237,7 +307,44 @@
       "installed": "File installed ({{size}} KB)",
       "install_failed": "Install failed: {{error}}",
       "reset_success": "Reset to default",
-      "reset_failed": "Reset failed: {{error}}"
+      "reset_failed": "Reset failed: {{error}}",
+      "manifest": {
+        "open": "Edit manifest",
+        "title": "Custom Rive manifest",
+        "hint": "The manifest sits next to the asset and only carries intent that runtime introspection cannot infer. Omitted fields fall back to introspection and built-in defaults.",
+        "clear": "Clear manifest",
+        "saved": "Manifest saved",
+        "cleared": "Manifest cleared",
+        "save_failed": "Save failed: {{error}}",
+        "load_failed": "Load failed: {{error}}",
+        "state_machine": "State machine",
+        "state_machine_hint": "Omitted selects automatically",
+        "state_machine_placeholder": "State machine name",
+        "properties": "ViewModel property names",
+        "properties_hint": "Omitted uses introspection",
+        "property_pose": "Pose",
+        "property_viseme": "Viseme",
+        "property_primary_color": "Primary",
+        "property_secondary_color": "Secondary",
+        "poses": "Pose enum values",
+        "poses_hint": "Omitted uses introspection",
+        "visemes": "Viseme enum values",
+        "visemes_hint": "Omitted uses introspection",
+        "tags_placeholder": "Type and press Enter",
+        "scene_to_pose": "Scene to pose",
+        "scene_to_pose_hint": "Scenes are the real runtime triggers; omitted falls back to the default expression",
+        "scene_placeholder": "Auto match",
+        "legacy_face_to_pose": "Legacy expression mapping (disabled)",
+        "legacy_face_to_pose_hint": "Only used when a scene mapping is missing; migrate then clear",
+        "legacy_face_to_pose_count": "{{count}} entries left",
+        "legacy_migrate": "Migrate to scenes",
+        "legacy_clear": "Clear legacy",
+        "face_to_pose": "Expression to pose",
+        "face_to_pose_hint": "Omitted expressions match by name",
+        "face_to_pose_placeholder": "Auto match",
+        "idle_pose_cycle": "Idle pose cycle",
+        "idle_pose_cycle_hint": "Omitted uses all poses except idle"
+      }
     },
     "entity_list": {
       "search_placeholder": "Search {{title}}"
@@ -491,13 +598,18 @@
       "format": {
         "openai": "OpenAI Compatible",
         "openai.description": "Chat Completions /v1 endpoint",
+        "responses": "OpenAI Responses",
+        "responses.description": "Responses /v1/responses endpoint",
         "anthropic": "Anthropic Compatible",
         "anthropic.description": "Messages /v1 endpoint",
+        "gemini": "Google Gemini",
+        "gemini.description": "generateContent v1beta endpoint",
         "local": "Local Runtime",
         "local.description": "Ollama / LM Studio and other local services"
       },
       "preset": {
         "openai": "OpenAI",
+        "openairesponses": "OpenAI Responses",
         "deepseek": "DeepSeek",
         "groq": "Groq",
         "openrouter": "OpenRouter",
@@ -505,6 +617,8 @@
         "zhipu": "Zhipu GLM",
         "qwen": "Qwen",
         "anthropic": "Anthropic",
+        "gemini": "Google Gemini",
+        "geminicodeassist": "Gemini Code Assist",
         "ollama": "Ollama",
         "lmstudio": "LM Studio"
       },
@@ -517,6 +631,7 @@
         "type": {
           "label": "Provider ID",
           "placeholder": "lowercase, e.g. my-gateway",
+          "default_hint": "Leave empty to use the default for this format: {{type}}",
           "required": "Please enter an ID"
         },
         "api_key": {

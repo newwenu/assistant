@@ -416,10 +416,13 @@ const darkTheme = {
 **Rive 路径**（参考 openhuman RiveMascot.tsx）：
 
 ```
-对话事件 → MascotFace → faceToPose() → RivePose → setPose()
+对话事件 → MascotScene → resolveScenePose(scene, face, engine) → RivePose → setPose()
 TTS 输出 → visemeCode → toRiveVisemeCode() → setMouthVisemeCode()
 主题色 → primaryColor / secondaryColor → setPrimaryColor() / setSecondaryColor()
 ```
+
+场景是运行时唯一触发源（对话流开始/结束、推理流结束、工具调用、错误、文本语气），
+`sceneToPose` 命中时直接决定 pose；未声明时回退到表情映射 `faceToPose`。
 
 **CSS 路径**（参考 OpenBitFun mood facet）：
 

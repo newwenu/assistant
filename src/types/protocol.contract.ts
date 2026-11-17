@@ -280,6 +280,32 @@ toggle: boolean,
 efforts: Array<string>, };
 export type ResolvedThemeDto = "light" | "dark";
 export type RetryNotificationDto = { attempt: number, maxAttempts: number, delayMs: number, message: string, errorCode: CommandErrorCodeDto | null, };
+export type RiveManifestDto = { stateMachine?: string | null, properties?: RiveManifestPropertiesDto | null, 
+/**
+ * 该素材的 pose 枚举值全集，缺省时取自省结果。
+ */
+poses?: Array<string> | null, 
+/**
+ * 该素材的 viseme 枚举值全集，缺省时取自省结果。
+ */
+visemes?: Array<string> | null, 
+/**
+ * 运行时场景到 pose 的映射，优先级高于 `face_to_pose`。
+ *
+ * 场景是前端唯一的触发源（对话流开始/结束、工具调用、错误等），
+ * 表情只是场景的中间产物；按场景映射可以绕过“哪个表情在什么时候出现”
+ * 这层不可见的推导。缺省时回退到 `face_to_pose` 与名称启发式。
+ */
+sceneToPose?: { [key in string]: string } | null, 
+/**
+ * 面部表情到 pose 的映射，缺省时按名称启发式匹配。
+ */
+faceToPose?: { [key in string]: string } | null, 
+/**
+ * idle 时的轮转 pose，缺省时取 `poses` 去掉当前基准 pose。
+ */
+idlePoseCycle?: Array<string> | null, };
+export type RiveManifestPropertiesDto = { pose?: string | null, viseme?: string | null, primaryColor?: string | null, secondaryColor?: string | null, };
 export type ScreenRectDto = { x: number, y: number, width: number, height: number, };
 export type ScreenSizeDto = { screen: ScreenRectDto, };
 export type ScreenshotCropArgsDto = { token: string, x: number, y: number, width: number, height: number, };

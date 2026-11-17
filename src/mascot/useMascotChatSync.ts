@@ -2,26 +2,26 @@ import { useEffect, useRef } from "react";
 import { useChatStore } from "../stores/chat/chatStore";
 import { useChatStreamStore } from "../stores/chat/chatStreamStore";
 import { useMascotStore } from "./mascotStore";
-import type { MascotFace, ExpressionPolicy, AckRule } from "./core/types";
+import type { MascotScene, ExpressionPolicy, AckRule } from "./core/types";
 import { DEFAULT_EXPRESSION_POLICY } from "./core/expressionPolicy";
 import type { Message } from "../chat/core/chatTypes";
 
 export type { ExpressionPolicy, AckRule } from "./core/types";
 export { DEFAULT_EXPRESSION_POLICY } from "./core/expressionPolicy";
 
-function pickAckFace(
+function pickAckScene(
   fullText: string,
   hadToolCall: boolean,
   rules: AckRule[],
-  fallback: MascotFace,
-): MascotFace {
+  fallback: MascotScene,
+): MascotScene {
   if (!fullText.trim()) return fallback;
   const sorted = [...rules].sort(
     (a, b) => (b.priority ?? 0) - (a.priority ?? 0),
   );
   for (const rule of sorted) {
     if (rule.requiresToolCall && !hadToolCall) continue;
-    if (rule.pattern.test(fullText)) return rule.face;
+    if (rule.pattern.test(fullText)) return rule.scene;
   }
   return fallback;
 }
@@ -60,21 +60,21 @@ export function useMascotChatSync(
       const justStoppedStreaming = !isStreaming && prevStreamingRef.current;
       const justStoppedReasoning =
         !isReasoningStreaming && prevReasoningRef.current;
-      const { chatFace, ackRules } = policy;
+      const { chatScene, ackRules } = policy;
 
       if (justStartedStreaming && isReasoningStreaming) {
-        useMascotStore.getState().setFace(chatFace.onStreamStart.reasoning);
+        useMascotStore.getState().setScene(chatScene.onStreamStart.reasoning);
       } else if (justStartedStreaming && toolCallDetected) {
-        useMascotStore.getState().setFace(chatFace.onStreamStart.toolCall);
+        useMascotStore.getState().setScene(chatScene.onStreamStart.toolCall);
       } else if (justStartedStreaming) {
-        useMascotStore.getState().setFace(chatFace.onStreamStart.default);
+        useMascotStore.getState().setScene(chatScene.onStreamStart.default);
       }
 
       if (justStoppedReasoning && isStreaming) {
         if (toolCallDetected) {
-          useMascotStore.getState().setFace(chatFace.onReasoningEnd.toolCall);
+          useMascotStore.getState().setScene(chatScene.onReasoningEnd.toolCall);
         } else {
-          useMascotStore.getState().setFace(chatFace.onReasoningEnd.default);
+          useMascotStore.getState().setScene(chatScene.onReasoningEnd.default);
         }
       }
 
@@ -83,17 +83,17 @@ export function useMascotChatSync(
           .reverse()
           .find((m) => m.role === "assistant");
         const fullText = lastAssistantMsg?.content ?? "";
-        const ackFace = pickAckFace(
+        const ackScene = pickAckScene(
           fullText,
           toolCallDetected,
           ackRules,
-          chatFace.onStreamEnd,
+          chatScene.onStreamEnd,
         );
-        useMascotStore.getState().holdThenIdle(ackFace);
+        useMascotStore.getState().holdSceneThenIdle(ackScene);
       }
 
       if (hasError && !prevErrorRef.current) {
-        useMascotStore.getState().holdThenIdle(chatFace.onError);
+        useMascotStore.getState().holdSceneThenIdle(chatScene.onError);
       }
 
       prevStreamingRef.current = isStreaming;

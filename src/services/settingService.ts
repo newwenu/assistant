@@ -1,4 +1,7 @@
-import type { InstallMascotAssetResultDto } from "@/types/protocol.contract";
+import type {
+  InstallMascotAssetResultDto,
+  RiveManifestDto,
+} from "@/types/protocol.contract";
 import { tauriInvoke as invoke } from "./system/tauriInvoke";
 
 function toSnakeCaseKey(key: string): string {
@@ -31,6 +34,14 @@ export const settingService = {
 
   uninstallMascotAsset: (assetType: string): Promise<void> =>
     invoke("uninstall_mascot_asset", { assetType }),
+
+  getMascotManifest: (assetType: string): Promise<RiveManifestDto | null> =>
+    invoke<RiveManifestDto | null>("get_mascot_manifest", { assetType }),
+
+  setMascotManifest: (
+    assetType: string,
+    manifest: RiveManifestDto,
+  ): Promise<void> => invoke("set_mascot_manifest", { assetType, manifest }),
 
   patchConf: (group: string, patch: Record<string, unknown>): Promise<void> =>
     invoke("patch_conf", { group, patch: patchToSnakeCase(patch) }),

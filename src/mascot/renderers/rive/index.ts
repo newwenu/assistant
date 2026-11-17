@@ -1,5 +1,6 @@
 import { registerRenderer } from "../../core/registry";
 import { BUILTIN_RENDERER_IDS, BUILTIN_FACES, asFace } from "../../core/types";
+import { RiveManifestEditor } from "@/settings/shared/renderers/RiveManifestEditor";
 import { RiveMascot } from "./RiveMascot";
 
 registerRenderer({
@@ -31,6 +32,7 @@ registerRenderer({
         assetConfig: {
           assetType: "rive",
           fileFilter: { name: "Rive", extensions: ["riv"] },
+          manifestEditor: RiveManifestEditor,
         },
       },
     ],

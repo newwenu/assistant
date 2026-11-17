@@ -166,6 +166,64 @@
       "always_on_top": { "label": "始终置顶" }
     },
     "mascot": {
+      "scene_group": {
+        "runtime": "运行时状态",
+        "ack": "回复结束时的语气"
+      },
+      "scene": {
+        "idle": { "label": "空闲", "hint": "无对话时的默认状态" },
+        "listening": {
+          "label": "聆听",
+          "hint": "识别到用户语音输入时短暂出现"
+        },
+        "stream_start_reasoning": {
+          "label": "开始推理",
+          "hint": "对话流开始，且先输出推理内容"
+        },
+        "stream_start_tool_call": {
+          "label": "开始调用工具",
+          "hint": "对话流开始，本轮已出现工具调用"
+        },
+        "stream_start": {
+          "label": "开始回复",
+          "hint": "对话流开始，直接输出正文"
+        },
+        "reasoning_end_tool_call": {
+          "label": "推理结束·转工具",
+          "hint": "推理流结束，接下来调用工具"
+        },
+        "reasoning_end": {
+          "label": "推理结束·转正文",
+          "hint": "推理流结束，开始输出正文"
+        },
+        "stream_end": {
+          "label": "流结束",
+          "hint": "对话流结束，且未命中下方语气规则"
+        },
+        "error": { "label": "出错", "hint": "助手消息带错误" },
+        "ack_error": { "label": "报错语气", "hint": "回复含失败、无法等字样" },
+        "ack_warning": {
+          "label": "提醒语气",
+          "hint": "回复含注意、警告等字样"
+        },
+        "ack_praise": {
+          "label": "夸赞语气",
+          "hint": "回复含恭喜、太棒了等字样"
+        },
+        "ack_done_tool": {
+          "label": "工具完成语气",
+          "hint": "回复含完成、成功等字样，且本轮用过工具"
+        },
+        "ack_done": { "label": "完成语气", "hint": "回复含完成、成功等字样" },
+        "ack_writing": {
+          "label": "写作语气",
+          "hint": "回复含写入、创建、修改等字样"
+        },
+        "ack_reading": {
+          "label": "阅读语气",
+          "hint": "回复含读取、查找、搜索等字样"
+        }
+      },
       "renderer": {
         "label": "渲染方式",
         "description": "选择吉祥物的渲染方式",
@@ -228,7 +286,44 @@
       "installed": "已安装文件 ({{size}} KB)",
       "install_failed": "安装失败: {{error}}",
       "reset_success": "已重置为默认",
-      "reset_failed": "重置失败: {{error}}"
+      "reset_failed": "重置失败: {{error}}",
+      "manifest": {
+        "open": "编辑伴生声明",
+        "title": "自定义 Rive 声明",
+        "hint": "声明与素材同目录，只写运行时自省推不出的意图。留空的字段按自省结果与内置兜底表处理。",
+        "clear": "清除声明",
+        "saved": "声明已保存",
+        "cleared": "声明已清除",
+        "save_failed": "保存失败: {{error}}",
+        "load_failed": "读取失败: {{error}}",
+        "state_machine": "状态机",
+        "state_machine_hint": "留空则自动选择",
+        "state_machine_placeholder": "状态机名称",
+        "properties": "ViewModel 属性名",
+        "properties_hint": "留空按自省推导",
+        "property_pose": "表情",
+        "property_viseme": "口型",
+        "property_primary_color": "主色",
+        "property_secondary_color": "辅色",
+        "poses": "pose 枚举值",
+        "poses_hint": "留空则取自省结果",
+        "visemes": "viseme 枚举值",
+        "visemes_hint": "留空则取自省结果",
+        "tags_placeholder": "输入后回车添加",
+        "scene_to_pose": "场景 → pose 映射",
+        "scene_to_pose_hint": "场景是运行时的实际触发点，留空按默认表情自动匹配",
+        "scene_placeholder": "留空自动匹配",
+        "legacy_face_to_pose": "旧表情映射（已停用）",
+        "legacy_face_to_pose_hint": "仅在场景映射缺失时兜底，建议迁移后清除",
+        "legacy_face_to_pose_count": "剩余 {{count}} 条",
+        "legacy_migrate": "迁移到场景",
+        "legacy_clear": "清除旧映射",
+        "face_to_pose": "表情 → pose 映射",
+        "face_to_pose_hint": "留空的表情按名称自动匹配",
+        "face_to_pose_placeholder": "留空自动匹配",
+        "idle_pose_cycle": "空闲轮转 pose",
+        "idle_pose_cycle_hint": "留空则取 pose 全集去掉当前 idle"
+      }
     },
     "entity_list": {
       "search_placeholder": "搜索{{title}}"
@@ -479,13 +574,18 @@
       "format": {
         "openai": "OpenAI 兼容",
         "openai.description": "Chat Completions /v1 端点",
+        "responses": "OpenAI Responses",
+        "responses.description": "Responses /v1/responses 端点",
         "anthropic": "Anthropic 兼容",
         "anthropic.description": "Messages /v1 端点",
+        "gemini": "Google Gemini",
+        "gemini.description": "generateContent v1beta 端点",
         "local": "本地运行时",
         "local.description": "Ollama / LM Studio 等本地服务"
       },
       "preset": {
         "openai": "OpenAI",
+        "openairesponses": "OpenAI Responses",
         "deepseek": "DeepSeek",
         "groq": "Groq",
         "openrouter": "OpenRouter",
@@ -493,6 +593,8 @@
         "zhipu": "智谱 GLM",
         "qwen": "通义千问",
         "anthropic": "Anthropic",
+        "gemini": "Google Gemini",
+        "geminicodeassist": "Gemini Code Assist",
         "ollama": "Ollama",
         "lmstudio": "LM Studio"
       },
@@ -505,6 +607,7 @@
         "type": {
           "label": "Provider ID",
           "placeholder": "小写英文，如 my-gateway",
+          "default_hint": "留空则使用当前格式的默认值 {{type}}",
           "required": "请输入 ID"
         },
         "api_key": {

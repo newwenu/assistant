@@ -37,6 +37,7 @@ export const MascotRenderer: FC<Props> = (props) => {
     return (
       <Component
         face={props.face}
+        scene={props.scene}
         size={props.size}
         visemeCode={props.visemeCode}
         primaryColor={props.primaryColor}
@@ -57,6 +58,7 @@ export const MascotRenderer: FC<Props> = (props) => {
   return (
     <Component
       face={effectiveFace}
+      scene={props.scene}
       size={props.size}
       visemeCode={capabilities.visemeSync ? props.visemeCode : undefined}
       primaryColor={

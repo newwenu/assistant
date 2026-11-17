@@ -1,5 +1,10 @@
-import type { MascotFace } from "../../core/types";
-import { RIVE_VISEME_SET } from "./riveMaps";
+import type { MascotFace, MascotScene } from "../../core/types";
+import {
+  deriveFaceToPose,
+  filterFaceToPose,
+  filterSceneToPose,
+} from "./riveIntrospect";
+import { RIVE_POSES, RIVE_VISEME_SET } from "./riveMaps";
 
 export interface RiveChannel {
   key: string;
@@ -14,7 +19,10 @@ export interface RiveChannel {
 
 export interface RiveStateEngine {
   visemeCodes: readonly string[];
-  states: Record<string, string> & { idle: string; thinking: string };
+  /** 表情 → pose（场景缺失或场景未声明时的兜底）。 */
+  states: Record<string, string>;
+  /** 场景 → pose；存在时优先于 `states`。 */
+  sceneStates?: Record<string, string>;
   idlePoseCycle: string[];
   channels?: RiveChannel[];
 }
@@ -52,23 +60,88 @@ export const BUILTIN_RIVE_STATE_ENGINE: RiveStateEngine = {
   ],
 };
 
+export interface RiveStateEngineOptions {
+  poses?: readonly string[];
+  visemes?: readonly string[];
+  idlePoseCycle?: readonly string[];
+  faceToPose?: Record<string, string>;
+  sceneToPose?: Record<string, string>;
+}
+
 export function resolveFaceToPose(
   face: MascotFace,
   engine: RiveStateEngine,
 ): string {
   const mapped = engine.states[face];
   if (mapped) return mapped;
-  return engine.states.idle;
+  return engine.states.idle ?? "idle";
+}
+
+/**
+ * 场景优先：场景是运行时的真实触发源，表情只是它的中间产物。
+ * 场景未声明或引擎里没有该场景时，回退到表情映射。
+ */
+export function resolveScenePose(
+  scene: MascotScene | null | undefined,
+  face: MascotFace,
+  engine: RiveStateEngine,
+): string {
+  const mapped = scene ? engine.sceneStates?.[scene] : undefined;
+  if (mapped) return mapped;
+  return resolveFaceToPose(face, engine);
 }
 
 export function buildStateEngine(
   faceToPose?: Record<string, string>,
+  options?: RiveStateEngineOptions,
 ): RiveStateEngine {
-  if (!faceToPose || Object.keys(faceToPose).length === 0) {
-    return BUILTIN_RIVE_STATE_ENGINE;
+  if (!faceToPose && !options) return BUILTIN_RIVE_STATE_ENGINE;
+
+  const poses = options?.poses?.length ? options.poses : RIVE_POSES;
+  const visemeCodes = options?.visemes?.length
+    ? options.visemes
+    : RIVE_VISEME_SET;
+  const introspected = options?.poses?.length ? options.poses : null;
+
+  const states: Record<string, string> = {
+    ...BUILTIN_RIVE_STATE_ENGINE.states,
+    ...deriveFaceToPose(poses, BUILTIN_RIVE_STATE_ENGINE.states),
+  };
+
+  const declared = options?.faceToPose;
+  if (declared) {
+    const { kept } = introspected
+      ? filterFaceToPose(declared, introspected)
+      : { kept: declared };
+    Object.assign(states, kept);
   }
+  if (faceToPose) Object.assign(states, faceToPose);
+
+  const declaredScenes = options?.sceneToPose;
+  let sceneStates: Record<string, string> | undefined;
+  if (declaredScenes) {
+    const { kept } = introspected
+      ? filterSceneToPose(declaredScenes, introspected)
+      : { kept: declaredScenes };
+    sceneStates = kept;
+    const sceneIdle = kept.idle;
+    if (sceneIdle) states.idle = sceneIdle;
+  }
+
+  const idlePose = states.idle || poses[0] || "idle";
+  states.idle = idlePose;
+
+  const idlePoseCycle = options?.idlePoseCycle?.length
+    ? [...options.idlePoseCycle]
+    : options?.poses?.length
+      ? poses.filter((pose) => pose !== idlePose)
+      : [...BUILTIN_RIVE_STATE_ENGINE.idlePoseCycle];
+
   return {
-    ...BUILTIN_RIVE_STATE_ENGINE,
-    states: { ...BUILTIN_RIVE_STATE_ENGINE.states, ...faceToPose },
+    visemeCodes,
+    states,
+    sceneStates,
+    idlePoseCycle,
+    channels: BUILTIN_RIVE_STATE_ENGINE.channels,
   };
 }

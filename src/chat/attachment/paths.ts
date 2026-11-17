@@ -42,6 +42,20 @@ export async function mascotAssetUrl(
 }
 
 /**
+ * `src` 是否指向本地素材文件（`convertFileSrc` 产物），而非远端 URL。
+ * 伴生声明只属于安装进本地素材目录的那份文件，手填的远端 URL 不能套用本地声明。
+ * Windows 为 `http://asset.localhost/<encoded>`，其它平台为 `asset://localhost/<encoded>`。
+ */
+export function isLocalAssetUrl(src: string): boolean {
+  const lower = src.toLowerCase();
+  return (
+    lower.startsWith("http://asset.localhost/") ||
+    lower.startsWith("https://asset.localhost/") ||
+    lower.startsWith("asset://")
+  );
+}
+
+/**
  * 由后端完成校验、存在性判定与打开。
  * 返回 `false` 表示附件文件不存在（或 id 非法），调用方据此提示而不依赖 shell 报错。
  */

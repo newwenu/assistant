@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { Button, Space, Input } from "antd";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
-import { mascotAssetUrl } from "@/chat/attachment/paths";
+import { mascotAssetUrl, isLocalAssetUrl } from "@/chat/attachment/paths";
 import { settingService } from "../../../services/settingService";
 import type { SettingFieldProps } from "../../core/types/fieldSchema";
 import { useSettingMessage } from "../useSettingMessage";
@@ -15,6 +15,7 @@ export function AssetPickerField({
   const { t } = useTranslation();
   const msg = useSettingMessage();
   const config = schema.assetConfig;
+  const ManifestEditor = config?.manifestEditor;
   const [urlInput, setUrlInput] = useState<string>((value as string) ?? "");
 
   const handleFilePick = useCallback(async () => {
@@ -83,6 +84,11 @@ export function AssetPickerField({
               {t("settings.asset_picker.reset_default")}
             </Button>
           )}
+          {ManifestEditor &&
+            typeof value === "string" &&
+            isLocalAssetUrl(value) && (
+              <ManifestEditor assetType={config.assetType} />
+            )}
         </Space>
         {config.urlInput && (
           <Input
