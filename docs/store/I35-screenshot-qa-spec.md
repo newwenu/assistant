@@ -1,8 +1,11 @@
 # I35 — 截屏提问规格
 
-- **状态**：Draft（rev7）
-- **日期**：2026-11-03（rev7：2026-11-16）
+- **状态**：Draft（rev10）
+- **日期**：2026-11-03（rev10：2026-11-17）
 - **修订**：按版本倒序记录
+  - rev10：真机验收发现「开始截图时小球出现在屏幕左上角」——根因是菜单/托盘入口由 Rust 直接发起，前端没有工具栏入口那次 `beginPreparing()`，窗口被撑成全屏时仍渲染小球，绝对定位落到新窗口原点（F58）。新增 `screenshot-preparing` 事件，`start` 在抓屏前先通知前端进入覆盖层模式（不变式 25）。同时把 `restore` 的顺序由「先改几何后显影」改为「先隐藏 → 改几何 → 按快照恢复可见性」：可见的全屏窗口上 `set_size`/`set_position` 是两次独立主线程消息，中间会合成一帧「小球在原点」（F59，不变式 26）。另记一条构建口径：dev `opt-level=0` 下抓屏+JPEG 预览编码实测慢约 6 倍，`profile.dev` 已设 `opt-level = 1`（§13 风险 19）。**菜单淡出等待由「固定毫秒」改为「按帧排空」**：实测 Win11 默认动画的菜单关闭是 19 个 DWM 合成帧的线性过渡，与菜单项数量无关；固定毫秒在高刷屏上白等、低刷屏上漏帧，这正是此前「等待时长对不上」的根因（F60，`SCREENSHOT_MENU_FADE_FRAMES = 20` + `SCREENSHOT_MENU_FADE_CAP_MS = 800`）。
+  - rev9：撤回菜单「捕获排除」路线（看护线程 + `WDA_EXCLUDEFROMCAPTURE`）：`TrackPopupMenu` 返回时菜单窗口可能已销毁，枚举不到窗口不等于屏幕上没有残影，打标时机也无法与点击对齐（F56）。改为「点击即锚定 + 抓屏前排空」：菜单事件回调（`menu.rs` / `tray.rs` 的截图项，即点击那一刻）无条件隐藏残余菜单并写入淡出起点，抓屏前按 `SCREENSHOT_MENU_FADE_MS` 补齐剩余时长再双 `DwmFlush`；锚点带新鲜度判定，避免上一次交互的旧锚点压住本次（否则等待会被算成 0）。F56/F57、不变式 23/24 与 §8.2 步骤 7、§8.7 测试口径同步改写。
+  - rev8：几何写入按 §8.5.1 回退方案定稿——核对 Tauri 2.12.5 源码确认 `WebviewWindow` 没有 `set_bounds`（仅 `Webview` 有），覆盖层与恢复统一走「先 size 后 position」并写回快照值；macOS 权限前置校验补 `CGPreflightScreenCaptureAccess` 预检 + 显示器实测 + 成功缓存/失败短间隔重试，前端错误描述改为 `screenshot.permission_guide` 引导文案；`orb_overlay` 补 `FakeOps` 单测（隐藏序列、兜底、失败码、快照与还原）；DWM 过渡禁用扩到「隐藏 / 显影 / 还原」三段，写回值改用 `DwmGetWindowAttribute` 读到的原值；Windows 弹出菜单（`#32768`）从「只 `SW_HIDE`」升级为两层——菜单可见期由看护线程打 `WDA_EXCLUDEFROMCAPTURE`（F56），排除失败时抓屏前按 `SCREENSHOT_MENU_FADE_MS` 补齐淡出并双 `DwmFlush`（F57）。
   - rev7：底图与产物链路去掉文件系统——预览改「内存 JPEG data URL」，裁剪产物由 `crop_screenshot` 直接归档返回 `attachmentId`；删除 `screenshot-tmp` 目录、`release_screenshot` 命令、TTL 清扫、asset scope 改动与 `AttachmentStore` 新增函数；抓屏隐藏补「可见性校验 + `ShowWindow` 兜底 + `DwmFlush`」；裁剪管线收敛为单次编码；修正「`clearSession` 晚于几何恢复」的闪帧顺序；新增 §6.4 落地前置 spike 与「分层窗口无法捕获排除」的限制说明。
   - rev6：§14 参考项目对照逐条补「采用 / 部分采用 / 暂缓 / 不采用」决定，并新增 §14.4 采纳结论一览，明确「只借鉴语义与参数、不搬实现」的口径。
   - rev5：按当前代码重校既有事实——附件链路已改为「`import_attachment` 归档 + `attachmentId`」，`file_path` 通道被后端封闭；asset scope 是单层通配，须显式放行 `screenshot-tmp`；补 `ORB_CLICK_THROUGH` 镜像、`apply_orb_window_attrs` 两处守卫；`ChatView` 更正为 `ConversationView`；契约测试无数字断言。
@@ -65,6 +68,8 @@
 - **rev6：裁剪 → PNG → `normalize_image`（再次 decode/resize/encode）** → **rev7：裁剪 → resize ≤2048 → 单次 Fast 压缩编码，超限才 JPEG q85（§8.4）**
 - **rev6：前端 `await ingestPath` 之后才 `clearSession()`** → **rev7：先卸载覆盖层并进入处理中态，再归档/展开；否则全屏底图会闪进小球窗口（§9.4、不变式 21）**
 - **rev6：把捕获排除整体推到 V2** → **rev7：写明 V2 捕获排除在 Orb 上大概率不可用（透明分层窗口 + `SetWindowDisplayAffinity` error 8），并新增 §6.4 前置 spike 决定窗口模型**
+- **rev9 漏了「入口不在前端」这一层** → **rev10：菜单 / 托盘 / 快捷键入口由 Rust 直接调 `start`，前端没有工具栏那次 `beginPreparing()`；窗口撑成全屏时小球仍按绝对定位渲染，被钉在新窗口原点（左上角）。新增 `screenshot-preparing` 事件，`start` 在抓屏前先通知前端进入覆盖层模式（不变式 25、F58、§8.2 步骤 3）**
+- **rev8 的恢复顺序「先改几何后显影」** → **rev10：可见的全屏窗口上 `set_size` 与 `set_position` 是两次独立主线程消息，中间会合成一帧「窗口已缩成小球但仍在原点」；改为「先隐藏 → 改几何 → 按快照恢复可见性」，异常残留复位同改（不变式 26、F59、§8.5.1）**
 
 ---
 
@@ -259,6 +264,24 @@
 - **F54**：Orb 窗口是 `transparent: true` 的分层窗口；`set_ignore_cursor_events` 在 Tao 里会追加 `WS_EX_LAYERED | WS_EX_TRANSPARENT`
   - 位置：`src-tauri/tauri.conf.json` `orb` 窗口、`src-tauri/src/cmd/orb.rs` `apply_orb_click_through`
   - 影响：Windows 对这类未初始化分层的窗口调 `SetWindowDisplayAffinity` 会失败（error 8，§14.3），所以 V2 的捕获排除路线挂在「复用 Orb」上大概率走不通
+- **F55**：Windows 弹出菜单是**独立顶层窗口**，窗口类名 `#32768`，Orb 只是它的 owner 而非父窗口
+  - 位置：Muda 0.20.0 `show_context_menu_for_hwnd`（`TrackPopupMenu`）；Tauri 2.12.5 `menu.popup_at` 走同一路径
+  - 影响：`ShowWindow(orb)` / `set_visible(false)` 带不走菜单；从右键菜单项触发截图时，菜单可能仍在关闭动画，必须单独处理（不变式 23）
+- **F56**：菜单的关闭淡出由 DWM 在合成器侧播完，`TrackPopupMenu` 返回时菜单窗口可能已被销毁——`EnumWindows` 枚举不到窗口，不等于屏幕上没有残影
+  - 位置：`src-tauri/src/window.rs` `show_orb_context_menu`、`src-tauri/src/menu.rs` / `src-tauri/src/tray.rs` 菜单事件回调、`src-tauri/src/screenshot/orb_overlay.rs` `dismiss_menus_now` / `settle_menu_fade`
+  - 影响：rev8 的「可见期打 `WDA_EXCLUDEFROMCAPTURE`」路线撤回（打标要求窗口存活，且打标时机无法与点击对齐）；改为按**时间**兜底——淡出起点锚定在菜单事件回调（点击那一刻）且**无条件写入**，抓屏前补齐剩余时长。若按「枚举到菜单窗口」才记时刻，实际枚举为空会把整段等待跳过，动画中间帧照样被冻进底图
+- **F57**：`DwmFlush` 只保证「已提交的合成帧落地」，不保证「窗口关闭动画已经播完」；`BitBlt(GetDesktopWindow)` 读的是**当前合成结果**，菜单淡出的中间帧会被直接冻进底图
+  - 位置：`xcap` 0.9.10 `src/windows/gdi.rs`（未开 `wgc` feature 时的默认路径）；`src-tauri/src/screenshot/orb_overlay.rs` `settle_menu_fade`
+  - 影响：可见性校验只能证明「窗口已不可见」，不能证明「残影已消失」；抓屏前必须额外排空动画——从点击时刻起按帧排空剩余淡出（F60），而不是按固定毫秒等待
+- **F58**：截图有三个入口，只有「聊天工具栏」在发起前把前端切进覆盖层模式；菜单 / 托盘 / 快捷键入口由 Rust 直接调 `start`，前端状态仍是「小球形态」（`session = null`、`preparing = false`，因此不加 `.orb-screenshot`）
+  - 位置：`src/chat/layouts/ConversationFrame.tsx` `onScreenshot`（唯一调 `beginPreparing()` 的地方）、`src-tauri/src/menu.rs` / `src-tauri/src/tray.rs` 截图项、`src-tauri/src/setup.rs` 快捷键分派、`src/layouts/OrbWindow.tsx` `overlayActive`、`src/orb/OrbBall.tsx`（`position: absolute; top: ballTop; left: ballLeft`）
+  - 影响：`present()` 把同一个窗口撑成显示器物理矩形并移到 `(0, 0)` 后，仍按小球窗口坐标系绝对定位的 `OrbBall` 会落到**新窗口原点**，即屏幕左上角——全屏窗口 + 左上角小球。必须在撑大之前让前端先进入覆盖层模式（不变式 25、§8.2 步骤 3）
+- **F59**：`set_size` 与 `set_position` 是两次独立的主线程消息，两者之间会回到消息循环，DWM 可合成一帧；恢复几何时窗口仍可见，因此这一帧会被真实画出来
+  - 位置：`src-tauri/src/screenshot/orb_overlay.rs` `restore_with` / `apply_geometry`（`WebviewWindow` 无 `set_bounds`，见 §8.5.1）
+  - 影响：可见的全屏覆盖层缩回小球时，中间帧是「88×88 的窗口停在 `(0, 0)`」——用户看到左上角闪出小球。恢复必须先把窗口隐藏，改完几何再按快照恢复可见性（不变式 26）；`present()` 不受影响，因为它执行时窗口本就隐藏
+- **F60**：菜单关闭淡出是**按合成帧推进**的线性过渡（Win11 默认动画实测 19 帧，与菜单项数量无关），不是按墙钟毫秒推进；同一段动画在 60Hz 上是约 317ms、在 144Hz 上只有约 132ms
+  - 位置：`src-tauri/src/screenshot/orb_overlay.rs` `settle_menu_fade` / `drain_menu_fade_frames` / `frame_period` / `menu_animation_enabled`；`src-tauri/crates/assistant-config/src/constant.rs` `SCREENSHOT_MENU_FADE_FRAMES` / `SCREENSHOT_MENU_FADE_CAP_MS`
+  - 影响：用固定毫秒等待必然两头不对——高刷屏白等（用户感知为「点了没反应」），低刷屏漏帧（残影冻进底图）。必须按帧排空：`DwmFlush` 即使空闲也会等到下一个合成帧，连打 N 次恰好消费 N 帧动画，与刷新率解耦；已过去的时间按 `DwmGetCompositionTimingInfo` 回报的刷新周期折算成已消费帧数，避免重复等待。系统关掉「菜单动画」时没有淡出，直接跳过（`SPI_GETMENUANIMATION`）
 
 ---
 
@@ -285,9 +308,13 @@
 - **17**：抓屏前只隐藏覆盖层宿主 `orb`；`main` / `settings` 保持用户原状并进入底图；成功后显示并聚焦 Orb，取消时按快照恢复 Orb（依据：目标 5 / §6.3）
 - **18**：抓屏预览只以内存 data URL 下发，不落盘、不依赖 asset scope 或自定义 URI scheme；CSP 必须保持允许 `data:`（依据：F19 / F50）
 - **19**：任何 `set_ignore_cursor_events` 必须与 `ORB_CLICK_THROUGH` atomic 同步；禁止只调窗口 API（依据：F45）
-- **20**：覆盖层几何用一次 `set_bounds`（物理）写入与恢复；恢复值来自快照，不用 `inner_size()` 重算（依据：F35 / F40）
+- **20**：覆盖层几何用回退序列「先 `set_size` 后 `set_position`」写入与恢复（`WebviewWindow` 无 `set_bounds`，见 §8.5.1）；恢复值来自快照，不用 `inner_size()` 重算（依据：F35 / F40）
 - **21**：Rust 恢复 Orb 几何之前，前端必须已卸载覆盖层；顺序固定为「收到裁剪结果 → 卸载覆盖层并进入处理中态 → 落地附件 → 展开并聚焦」（依据：§8.4 步骤 7 / §9.4）
 - **22**：隐藏 Orb 后必须做「可见性查询确认 → 对残留 HWND 补 `ShowWindow(SW_HIDE)` → `DwmFlush`」；`SCREENSHOT_HIDE_SETTLE_MS` 只能作为兜底上限（依据：F53）
+- **23**：Windows 上隐藏 Orb 前必须先清掉本进程残留的弹出菜单窗口（类名 `#32768`，Orb 右键菜单与托盘菜单都是它）；菜单是**独立顶层窗口**，不是 Orb 的子窗口，隐藏 Orb 影响不到它，不清理就会被冻进底图（依据：§8.2、F55）
+- **24**：菜单淡出的起点必须锚定在**菜单事件回调（点击那一刻）**且无条件写入，不依赖「是否枚举到菜单窗口」；抓屏前**按帧**排空剩余淡出帧（`SCREENSHOT_MENU_FADE_FRAMES`，兜底上限 `SCREENSHOT_MENU_FADE_CAP_MS`），不得用固定毫秒；「窗口已不可见 / 已销毁」都不等于「残影已消失」（依据：F56、F57、F60）
+- **25**：`start` 必须在撑大全屏窗口**之前**先 `emit_orb_only(SCREENSHOT_PREPARING)`，让前端把 UI 切进覆盖层模式（加 `.orb-screenshot`、隐藏 `OrbBall`/`OrbPanel`）；不得只依赖紧邻 `present` 的 `screenshot-session` 事件——那是异步 IPC，Rust 不等前端渲染（依据：F58、§8.2 步骤 3）
+- **26**：恢复 Orb 几何必须在窗口**不可见**状态下完成：`set_visible(false)` → `set_always_on_top` / 点击穿透 → `set_size` → `set_position` → 按快照恢复可见性。禁止在可见的全屏窗口上直接改几何（依据：F59、§8.5.1）
 
 ---
 
@@ -325,7 +352,7 @@
 
 复用 Orb 的可行性：
 
-- Orb 窗口已经是透明、无边框、置顶、`skipTaskbar`、不可缩放；可以临时 `set_bounds` 成显示器物理矩形（F35）。
+- Orb 窗口已经是透明、无边框、置顶、`skipTaskbar`、不可缩放；可以临时改成显示器物理矩形（先 `set_size` 后 `set_position`，见 §8.5.1；F35）。
 - 覆盖层是**静态截图**：先隐藏 `orb` → 抓屏 → 把 Orb 放大并显示截图；宿主窗口自身不会入镜，也不需要透明穿透。`main` / `settings` 不隐藏，因此底图包含它们的内容。
 - Orb 的 JS 上下文与 `ConversationView` 共享；`crop_screenshot` 在命令内归档后返回 `attachmentId`，前端直接 `addAttachment` 进 `attachmentStore`（不变式 14 的附加收益）。
 - 主要风险是 Orb 的状态机（巡检、失焦、点击穿透、位置持久化），在 §8.6 逐条加守卫。
@@ -352,11 +379,33 @@ V2 可评估实时覆盖层 + 捕获排除（Cap 的 `overlay_backdrop.rs`）：
 - **必须测的项**：
   1. 运行时窗口（`WebviewWindowBuilder`）首屏到可交互的耗时；第二次触发是复用还是重建，各多少毫秒。
   2. 从主线程回调里创建窗口是否触发 WebView2 嵌套初始化卡死（Kiri 的 AppHangB1 事故，§14.3）；正确做法是把创建投递到事件循环边界或专用线程。
-  3. `set_bounds` 到副屏（不同 DPI）后首帧是否铺满、有无黑边或沿用旧尺寸——**这一项两条路线都要测**。
+  3. 副屏（不同 DPI）首帧是否铺满、有无黑边或沿用旧尺寸——**这一项两条路线都要测**。专用窗口路线用 `WebviewWindowBuilder` 的初始几何；Orb 复用路线只能走「先 `set_size` 后 `set_position`」（`WebviewWindow` 无 `set_bounds`，rev8 已定稿，见 §8.5.1），重点观察是否出现一帧错位。
   4. 在该窗口上调 `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` 是否返回 0，用于判断 V2 捕获排除是否可行。
   5. `viewMap` 加一个 label、`capabilities/default.json` 的 `windows` 加一个 label 的真实改动量。
 - **判据**：若（1）可接受且（2）可规避、（4）可用，则改用专用窗口并删掉 §8.6 的 Orb 守卫；否则保留 Orb 复用，把（3）（4）的结论回写 §6.3。
 - **成本边界**：spike 代码不进主干；结论以「一条修订 + §6.2 表格更新」回收。
+
+### 6.5 预览为什么仍然编码（rev10 新增）
+
+一个被认真评估并**否决**的提案：抓屏后直接把全分辨率原始像素（BMP / RGBA）留在内存，不做任何编码，等用户框选后再编码。它听起来能省掉预览编码，但实际是亏的。
+
+**前半段已经是现状**：抓到的 `Arc<RgbaImage>` 全程留在内存（2520×1680 约 16.1MB），不落盘；`crop` 直接对这张原图 `crop_imm` 再编码，所以**最终产物的画质只取决于原图，与预览编码质量无关**。预览编码只是一次性的「给 WebView 显示用的临时底图」。
+
+**后半段（不编码直接下发）的代价**（以 2520×1680 为例，原始 RGBA 实测 16.1MB）：
+
+| 方案 | 下发内容 | 走 IPC 的负载 |
+|---|---|---|
+| 现方案：预览 JPEG q80 | 0.3–1MB（§13 风险 14 口径） | base64 再 +33% |
+| 不编码：24bit BMP | 12.1MB | base64 约 16.1MB |
+| 不编码：RGBA | 16.1MB | base64 约 21.5MB |
+
+- 省下：一次预览 JPEG 编码（几十毫秒量级，见 §13 风险 19）。
+- 新增：base64 编码、十几 MB 字符串在 JSON 里的序列化 / 跨 IPC 拷贝 / JS 侧解析，以及前端还要再走一遍 BMP 解码或 `createImageBitmap`。
+- 结论：**净亏**。被省掉的那段编码在整条链路里也不是主要部分。
+
+**真要做「零编码」的正确形态**是自定义 URI scheme 直接把内存帧喂给 `<img src>`（Kiri 做法），省掉 base64 这一层；但它是另一条独立优化，与「编码 / 不编码」无关——底图仍必须是浏览器可解码的格式。该方向保留在 §13 风险 14 的备选里，不进 V1。
+
+**这条结论的意义**：后续如果又有人提「全内存 BMP 不做编码」，直接指回本节，不要重新做一遍。
 
 ---
 
@@ -371,6 +420,11 @@ V2 可评估实时覆盖层 + 捕获排除（Cap 的 `overlay_backdrop.rs`）：
 pub const SCREENSHOT_HIDE_SETTLE_MS: u64 = 150;
 /// 会话事件发出后、显示覆盖层前的兜底等待上限（毫秒）；前端以 `img.decode()` 完成为准
 pub const SCREENSHOT_OVERLAY_SETTLE_MS: u64 = 100;
+/// 弹出菜单关闭淡出的帧数（Win11 默认动画实测 19 帧线性过渡，取 19 + 1 帧余量）；
+/// 按帧而非毫秒计：60Hz 约 317ms、144Hz 约 132ms，固定毫秒在高刷屏白等、低刷屏漏帧
+pub const SCREENSHOT_MENU_FADE_FRAMES: u32 = 20;
+/// 排空淡出帧的兜底上限（毫秒）：远程桌面、窗口被遮挡时 `DwmFlush` 可能提前返回，防止退化成忙等
+pub const SCREENSHOT_MENU_FADE_CAP_MS: u64 = 800;
 /// 无覆盖层宿主时的孤儿会话存活时间
 pub const SCREENSHOT_SESSION_TTL_MS: u64 = 10 * 60 * 1000;
 /// 与 assistant-agent / 前端一致的图片单张上限
@@ -381,7 +435,9 @@ pub const SCREENSHOT_PREVIEW_LONG_EDGE: u32 = 2560;
 pub const SCREENSHOT_PREVIEW_JPEG_QUALITY: u8 = 80;
 ```
 
-两个 settle 值都降级为「兜底上限」，不再是正常路径的固定等待：隐藏走「可见性校验 + `DwmFlush`」（不变式 22），揭示走 `img.decode()`（§9.4）。调大它们只影响异常路径的最坏耗时。
+前两个 settle 值都降级为「兜底上限」，不再是正常路径的固定等待：隐藏走「可见性校验 + `DwmFlush`」（不变式 22），揭示走 `img.decode()`（§9.4）。调大它们只影响异常路径的最坏耗时。
+
+菜单淡出是唯一按**帧**而非时间计的等待（F60、不变式 24）：`DwmFlush` 连打 N 次恰好消费 N 个合成帧，与刷新率解耦；锚点之后已过去的时间按 `DwmGetCompositionTimingInfo` 回报的刷新周期折算成已消费帧数，不重复等待。`SCREENSHOT_MENU_FADE_CAP_MS` 只防「`DwmFlush` 提前返回导致循环退化成忙等」，不是正常路径的耗时。
 
 最小选区阈值是**纯前端 CSS 像素概念**，不放这里（Rust 只保证换算后的物理宽高 ≥ 1）：放 `src/config/constants.ts`，与 `ORB_*` 一组：
 
@@ -520,13 +576,15 @@ pub fn screenshot_permission_granted(app: AppHandle) -> bool;
 
 ```rust
 pub const SCREENSHOT_SESSION: &str = "screenshot-session";
+pub const SCREENSHOT_PREPARING: &str = "screenshot-preparing";
 pub const SCREENSHOT_ERROR: &str = "screenshot-error";
 ```
 
+- `screenshot-preparing` 用 `emit_orb_only` 发送空载荷；在权限检查通过后、抓屏之前发出，只做一件事：让前端 `beginPreparing()`（`§8.2` 步骤 3、不变式 25）。菜单 / 托盘 / 快捷键入口没有前端那一跳，缺了它窗口撑大时会渲染出小球（F58）。
 - `screenshot-session` 用 `emit_orb_only` 发送 `ScreenshotSessionDto`（含底图 data URL，约 0.3–1MB）；在抓屏与预览编码完成、覆盖层显示之前发出。
 - `screenshot-error` 用 `emit_orb_only` 发送错误码字符串；只服务「快捷键 / 右键菜单 / 托盘」这类没有 invoke 返回值的入口；工具栏入口直接用 `start_screenshot` 的 `Err`。
 - **不新增** `screenshot-captured` / `screenshot-cancelled`：裁剪结果由 orb 直接拿 invoke 返回值；取消由 Rust 恢复，不需要事件。
-- 前端 `src/types/events.ts` 增加 `UiEvent.ScreenshotSession = "screenshot-session"` 与 `UiEvent.ScreenshotError = "screenshot-error"`。
+- 前端 `src/types/events.ts` 增加 `UiEvent.ScreenshotPreparing = "screenshot-preparing"`、`UiEvent.ScreenshotSession = "screenshot-session"` 与 `UiEvent.ScreenshotError = "screenshot-error"`。
 
 ### 7.5 快捷键注册与默认值
 
@@ -609,6 +667,16 @@ image = { workspace = true }   # 截图/裁剪直接使用 RgbaImage、crop_imm�
 - 令牌用既有 `uuid` v4（app crate 已依赖 `uuid = { workspace = true }`），不新增随机数依赖。
 - `image` feature 不扩 webp。
 
+**构建口径（rev10 新增）**：`[profile.dev]` 设 `opt-level = 1`。
+
+```toml
+[profile.dev]
+opt-level = 1
+debug = 1
+```
+
+这不是截图链路独享的开关，但它由截图的实测数据推动，且直接影响本规格的可感知延迟。`image` 的 JPEG 编码与 `xcap` 的 `BitBlt` + 像素格式转换在 `opt-level = 0` 下慢约 6 倍（实测见 §13 风险 19）；取 `1` 而非 `3` 是因为 `1` 已拿到几乎全部收益，而 `3` 会显著拖慢日常增量编译。`debug = 1` 维持原有设定（本 workspace 集成测试 target 多，完整调试信息会产出大量 PDB）。
+
 ---
 
 ## 8 Rust 设计
@@ -685,18 +753,25 @@ struct OrbWindowSnapshot {
 0. 取 `op` 锁；`prune_stale(app)`：清理无覆盖层宿主且超 TTL 的孤儿会话；关闭异常的残留全屏 Orb。
 1. `Phase != Idle` 且覆盖层活跃 → 记日志并返回 `Ok(())`；无覆盖层宿主则视为孤儿，已在上一步清理。
 2. macOS 权限预检（未授权 → 返回错误码，**不隐藏任何窗口**）。
-3. 光标位置（物理坐标）：优先 `app.cursor_position()`（F49）→ 失败回退 `get_mouse_position()` 并按该显示器 `scale_factor` 换算（F24）→ 再失败回退 Orb 窗口中心 → 最后回退主屏中心；用 `placement::nearest_screen`（提为 `pub`，零尺寸 `WindowBounds` 表示一个点）选显示器。
-4. 从 `CaptureBackend::monitors()` 中按物理 bounds 匹配显示器；`scale_factor` 以 Tauri `available_monitors()` 为准。
-5. 快照 Orb 几何/可见性/焦点/置顶/点击穿透（F35/F39/F45）；只隐藏 `orb`（若其可见），`main` / `settings` 保持用户原状并进入底图；`SCREENSHOT_ACTIVE = true`。
-6. **确认 Orb 真的不可见**（不变式 22）：`set_visible(false)` 后先查可见性，仍可见则对残留 HWND 补 `ShowWindow(SW_HIDE)`，再 `DwmFlush`；`SCREENSHOT_HIDE_SETTLE_MS` 只作为兜底上限，不是正常路径的固定等待（F53）。
-7. `spawn_blocking`：抓 RGBA（首帧为空或全黑重试一次）→ 生成预览 JPEG（长边 `SCREENSHOT_PREVIEW_LONG_EDGE`、质量 `SCREENSHOT_PREVIEW_JPEG_QUALITY`）→ base64 成 data URL。
-8. 生成一次性令牌（uuid v4 32 hex），写入 `PendingSession`（含 `preview`），`Phase = Selecting`。
-9. **在 Orb 仍隐藏时** `emit_orb_only(SCREENSHOT_SESSION, session)`，让 orb 在隐藏状态下隐藏 chat 并挂载 Overlay。
-10. 把 Orb 窗口设为 `always_on_top(true)`、`apply_orb_click_through(false)`、`set_bounds(物理矩形 = 目标显示器)`；`show()` + `set_focus()`。返回 `Ok(())`。
-11. 任一步失败 → 释放预览与内存原图 → 恢复 Orb 窗口/几何 → `SCREENSHOT_ACTIVE = false` → `Phase = Idle` → 返回错误码。
+3. **通知前端进入覆盖层模式**（不变式 25）：`emit_orb_only(SCREENSHOT_PREPARING)`。菜单 / 托盘 / 快捷键入口都由 Rust 直接发起，前端没有工具栏入口那次 `beginPreparing()`，此刻仍在渲染小球；而步骤 11 会把同一个窗口撑成全屏，`OrbBall` 的绝对定位会落到新窗口原点（左上角，F58）。必须在这里发，不能等到步骤 10 的会话事件——那一步紧邻 `present`，前端来不及渲染。
+4. 光标位置（物理坐标）：优先 `app.cursor_position()`（F49）→ 失败回退 `get_mouse_position()` 并按该显示器 `scale_factor` 换算（F24）→ 再失败回退 Orb 窗口中心 → 最后回退主屏中心；用 `placement::nearest_screen`（提为 `pub`，零尺寸 `WindowBounds` 表示一个点）选显示器。
+5. 从 `CaptureBackend::monitors()` 中按物理 bounds 匹配显示器；`scale_factor` 以 Tauri `available_monitors()` 为准。
+6. 快照 Orb 几何/可见性/焦点/置顶/点击穿透（F35/F39/F45）；只隐藏 `orb`（若其可见），`main` / `settings` 保持用户原状并进入底图；`SCREENSHOT_ACTIVE = true`。
+7. **确认 Orb 真的不可见**（不变式 22）：`set_visible(false)` 后先查可见性，仍可见则对残留 HWND 补 `ShowWindow(SW_HIDE)`，再 `DwmFlush`；`SCREENSHOT_HIDE_SETTLE_MS` 只作为兜底上限，不是正常路径的固定等待（F53）。
+   在此之前先做 **Windows 弹出菜单清理**（不变式 23）：枚举本进程的 `#32768` 窗口（**不过滤可见性**，淡出期间窗口仍存活但已不可见），可见的逐个 `ShowWindow(SW_HIDE)`，预算内仍可见则返回 `capture_failed`。从 Orb 右键菜单 / 托盘菜单触发时，菜单窗口在 `TrackPopupMenu` 返回后可能仍在关闭动画或未隐藏，而它不是 Orb 的子窗口，只隐藏 Orb 会把它冻进底图（F55）。
+   隐藏完成后做 **菜单淡出排空**（不变式 24）：淡出起点已在菜单事件回调（点击那一刻）无条件锚定，抓屏前按「锚点已过去的帧数」算出剩余帧并逐帧 `DwmFlush` 排空（`SCREENSHOT_MENU_FADE_FRAMES`，兜底 `SCREENSHOT_MENU_FADE_CAP_MS`），确保 `BitBlt` 读到的是动画之后的合成帧（F56、F57、F60）。
+8. `spawn_blocking`：抓 RGBA（首帧为空或全黑重试一次）→ 生成预览 JPEG（长边 `SCREENSHOT_PREVIEW_LONG_EDGE`、质量 `SCREENSHOT_PREVIEW_JPEG_QUALITY`）→ base64 成 data URL。
+9. 生成一次性令牌（uuid v4 32 hex），写入 `PendingSession`（含 `preview`），`Phase = Selecting`。
+10. **在 Orb 仍隐藏时** `emit_orb_only(SCREENSHOT_SESSION, session)`，让 orb 在隐藏状态下隐藏 chat 并挂载 Overlay。
+11. 把 Orb 窗口设为 `always_on_top(true)`、`apply_orb_click_through(false)`、几何写成目标显示器物理矩形（先 `set_size` 后 `set_position`，§8.5.1）；`show()` + `set_focus()`。返回 `Ok(())`。
+12. 任一步失败 → 释放预览与内存原图 → 恢复 Orb 窗口/几何 → `SCREENSHOT_ACTIVE = false` → `Phase = Idle` → 返回错误码。步骤 3 之后失败时，前端的 `preparing` 由 `screenshot-error` 事件的 `endPreparing()` 复位；步骤 3 之前（权限/无显示器）失败不碰前端状态。
+
+> **步骤 3 与步骤 10 的分工**：步骤 3 是「提前把 UI 切到覆盖层形态」，只服务于窗口撑大那一刻的渲染正确性；步骤 10 才是「下发会话」。两者都发，不是重复——只有步骤 10 时，`present` 会抢在前端 React 提交之前执行（F58）。
 
 > 先确定显示器再隐藏窗口：鼠标位置不受隐藏影响，权限/无显示器错误不会造成窗口闪烁。
 > 隐藏不能只靠固定延时：Tao 的 `set_visible` 只比对标志位，可能变成空操作；必须查可见性、必要时补 `ShowWindow(SW_HIDE)`，再 `DwmFlush`（F53，参考 Kiri ADR 0107）。
+> 隐藏范围不只是 Orb：Windows 弹出菜单（`#32768`）是**独立顶层窗口**，Orb 是它的 owner 而非父窗口，`ShowWindow(orb)` 不会带走它。从右键菜单项触发截图时，菜单可能仍处于关闭动画，必须按不变式 23 主动清掉，否则会被冻进底图（F55）。
+> 清理菜单不等于清掉残影：DWM 会为关闭中的菜单继续合成淡出帧，而 `xcap` 走的是 GDI `BitBlt(GetDesktopWindow)`（未开 `wgc` feature），读到的就是这些中间帧（F57）。因此 `popup_at` 期间就要给菜单打 `WDA_EXCLUDEFROMCAPTURE`（F56），打标失败才退回「等淡出时长」；不要靠加长 `SCREENSHOT_HIDE_SETTLE_MS` 来掩盖，它只兜底「隐藏是否落地」。
 > 抓屏前若首帧为空或全黑，重试一次再判定失败（参考 shiping `take-screenshot.ts`）。
 > 预览编码用 JPEG 而非 PNG：底图只用于框选参照，PNG 在 4K 上的编码耗时是 JPEG 的数倍，且没有收益。
 > 覆盖层揭示不靠 `SCREENSHOT_OVERLAY_SETTLE_MS`：前端在 `img.decode()` 完成后才显形（§9.4），固定值只兜底。
@@ -730,43 +805,80 @@ struct OrbWindowSnapshot {
 let snapshot = OrbWindowSnapshot::capture(&window)?;
 window.set_always_on_top(true)?;
 apply_orb_click_through(app, false)?;   // 同步 ORB_CLICK_THROUGH 镜像，不直接调窗口 API
-window.set_bounds(tauri::Rect {
-    position: tauri::Position::Physical(PhysicalPosition::new(target.monitor_x, target.monitor_y)),
-    size: tauri::Size::Physical(PhysicalSize::new(target.monitor_width, target.monitor_height)),
-})?;
+// WebviewWindow 没有 set_bounds（见 §8.5.1），先 size 后 position
+window.set_size(PhysicalSize::new(target.monitor_width, target.monitor_height))?;
+window.set_position(PhysicalPosition::new(target.monitor_x, target.monitor_y))?;
 window.show()?;
 window.set_focus()?;
 
-// 退出覆盖层（取消/成功）
-window.set_bounds(tauri::Rect {
-    position: tauri::Position::Physical(snapshot.position),
-    size: tauri::Size::Physical(snapshot.size),
-})?;
+// 退出覆盖层（取消/成功）：先隐藏，再改几何，最后按快照恢复可见性
+window.hide()?;                         // ① 必须在不可见状态下改几何（不变式 26）
+window.set_size(snapshot.size)?;        // ②
+window.set_position(snapshot.position)?;// ③
 window.set_always_on_top(snapshot.always_on_top)?;
 apply_orb_click_through(app, snapshot.click_through)?;
-if snapshot.visible { window.show()?; } else { window.hide()?; }
-if snapshot.focused { window.set_focus()?; }
+if snapshot.visible { window.show()?; } // ④ 快照本来不可见时不再补 show
 ```
 
 要点：
 
 - Orb 窗口本来是透明、无边框、置顶、`skipTaskbar`、不可缩放；程序化写几何仍有效（F35）。
 - 恢复必须写回**精确物理几何**（F40）；前端 `useOrbStore.isExpanded` 不需要改。
-- **几何用一次 `set_bounds` 写、一次 `set_bounds` 恢复**，不要 `set_position` + `set_size` 两步（不变式 20）：Orb 在副屏（不同 scale）时两步写入会触发一次跨屏 DPI 迁移，出现一帧错位。`set_bounds` 不可用时的回退方案见 §8.5.1。
+- **几何写入用回退序列（先 size 后 position），恢复同样写回快照值**（不变式 20）：rev8 核对 Tauri 2.12.5 源码，`set_bounds` 只存在于 `Webview`，`WebviewWindow` 没有该方法，因此直接采用 §8.5.1 的回退方案；写入与恢复都必须来自快照，不要用 `inner_size()` 重算。
+- **恢复必须先隐藏**（不变式 26）：两次几何写入之间会回到消息循环，DWM 可合成一帧；窗口此刻可见且位于显示器原点，那一帧就是「小球停在左上角」（F59）。`present()` 无需隐藏前置——它执行时窗口本就不可见。
+- **异常残留复位同理**：`recover_leftover` 面对的也是「可见的全屏覆盖层停在原点」，缩回小球前必须先 `hide()`。
 - **点击穿透必须走 `apply_orb_click_through`**（不变式 19）：直接 `set_ignore_cursor_events` 不会更新 `ORB_CLICK_THROUGH`，恢复后 `apply_orb_click_through(true)` 会早退，用户的穿透设置永久失效（F45）。
+- **DWM 过渡在「隐藏 / 显影 / 还原」三段内都要禁用，离开时写回原值**（Windows）：只禁隐藏不够——`orb` 是 `transparent: true` 的分层窗口，显影与缩回小球时的淡入淡出会把实时桌面透出来，和「冻结底图」冲突；写回值必须用 `DwmGetWindowAttribute` 读到的原值，不能无条件写成「启用」，否则会覆盖系统「关闭动画」设置。
 - 成功时无论 Orb 原先是否可见，都 `show()` + 聚焦 + 事件驱动 `expand()`；取消时按快照恢复可见性/焦点。
 - `SCREENSHOT_ACTIVE` 在进入前置 true、退出后置 false；任何失败路径都必须复位。
 
-#### 8.5.1 `set_bounds` 的回退方案
+#### 8.5.1 几何写入与恢复（`set_bounds` 回退已定稿）
 
-`set_bounds` 在 Tauri 2 上接受物理 `Rect`，一次写入即可避免跨屏 DPI 迁移。落地时先按它实现；若在目标平台实测出现「先迁移 DPI 再应用尺寸」的抖动或报错，回退为：
+规格原计划用一次 `set_bounds`（物理 `Rect`）写入覆盖层几何，以规避「先迁移 DPI 再应用尺寸」的一帧错位。rev8 核对 Tauri 2.12.5 源码后确认**这条路不可用**：
+
+- `set_bounds` 定义在 `tauri::webview::Webview`（`src/webview/mod.rs`），`WebviewWindow`（`src/webview/webview_window.rs`）只暴露 `set_size` / `set_position`，没有 `set_bounds`。
+- Orb 覆盖层宿主持有的是 `WebviewWindow`，因此直接采用回退方案：
 
 ```rust
 window.set_size(PhysicalSize::new(w, h))?;
 window.set_position(PhysicalPosition::new(x, y))?;
 ```
 
-回退时**先 size 后 position**，并在恢复路径写回快照值而不是重算。回退方案要在 §11 的双屏不同 DPI 用例里逐条复验；只有实测失败才允许启用，且必须在规格里补一条修订说明。
+- **先 size 后 position**，恢复路径同样写回快照值而不是 `inner_size()` 重算；实测依据是副屏首帧铺满与取消后位置一致（§11.3「混合 DPI」「Orb 在副屏」两条）。
+- **写入覆盖层时窗口不可见，恢复时必须先隐藏**（不变式 26）：这两次写入之间会回到消息循环，DWM 可合成一帧。进入路径上窗口是隐藏的，中间帧不可见；恢复路径上窗口是可见的全屏覆盖层，中间帧就是「缩成小球的窗口停在原点」——必须先 `set_visible(false)` 再改几何，最后按快照恢复可见性（F59）。
+- 若后续 Tauri 为 `WebviewWindow` 补上 `set_bounds`，再切回单次写入，并同步更新不变式 20（「恢复前先隐藏」仍然保留，它与写入次数无关）。
+
+#### 8.5.2 菜单淡出排空：按帧，不按毫秒
+
+`src-tauri/src/screenshot/orb_overlay.rs`（Windows `platform` 模块）负责这一段，分两个时机：
+
+- **点击那一刻**（`menu.rs` / `tray.rs` 的截图项分支）：`dismiss_menus_now()` 先 `SW_HIDE` 掉仍存活的菜单窗口，再**无条件**写入淡出锚点。写锚点与「枚举到几个窗口」无关——DWM 会在合成器侧用缓存表面把关闭动画播完，枚举为空不代表没有残影（F56）。
+- **抓屏之前**（`settle_menu_fade()`）：读取锚点，算剩余帧并逐帧消费。
+
+```rust
+fn drain_menu_fade_frames(age: Duration) -> u32 {
+    let period = frame_period();                                  // DwmGetCompositionTimingInfo，失败按 60Hz 兜底
+    let already = (age.as_micros() / period.as_micros().max(1)) as u32;
+    let remaining = SCREENSHOT_MENU_FADE_FRAMES.saturating_sub(already);
+    let started = Instant::now();
+    let mut flushed = 0u32;
+    for _ in 0..remaining {
+        unsafe { let _ = DwmFlush(); }                            // 空闲时也会等到下一个合成帧
+        flushed += 1;
+        if started.elapsed() >= Duration::from_millis(SCREENSHOT_MENU_FADE_CAP_MS) { break; }
+    }
+    flushed
+}
+```
+
+要点：
+
+- **帧数而非毫秒**（F60）：实测 Win11 默认动画是 19 个合成帧的线性过渡，与菜单项数量无关。固定毫秒在高刷屏上白等、低刷屏上漏帧，正是此前「等待时长对不上」的根因。
+- **帧周期用查询而不是测量**：`DwmGetCompositionTimingInfo` 直接回报 `rateRefresh`，不需要靠 `DwmFlush` 消费帧来反推——后者会在关键路径上白等两帧。
+- **已过去的帧要扣掉**：从点击到抓屏之间还有枚举显示器、取光标、隐藏 Orb 等步骤，这段时间里动画已经播掉一部分；按 `age / period` 折算成已消费帧数，避免重复等待。
+- **系统关掉「菜单动画」时不等待**：`SPI_GETMENUANIMATION` 为 0 时没有淡出，只做常规合成刷新（隐藏序列自带的那次 `DwmFlush`）。
+- **上限只防退化**：`DwmFlush` 在远程桌面、窗口被遮挡等场景可能提前返回，`SCREENSHOT_MENU_FADE_CAP_MS` 防止循环变成忙等，不是正常路径的耗时。
+- **日志口径**：`screenshot: menu fade anchor={age}ms period={period}ms flushed_frames={n} animation={bool} live_windows={n}`——`anchor` 远小于帧数 × 周期说明锚点确实落在点击那一刻；`flushed_frames` 明显小于剩余帧说明被上限截断（异常路径）。
 
 ### 8.6 状态守卫（关键）
 
@@ -783,7 +895,7 @@ window.set_position(PhysicalPosition::new(x, y))?;
 
 ### 8.7 隐私与权限
 
-- macOS：`CGPreflightScreenCaptureAccess` 预检后，还要用 `CaptureBackend::monitors()` / `SCShareableContent` 验证「预检通过但实际无显示器可抓」的陈旧 TCC 状态；验证成功可缓存，失败按短间隔重试（参考 Cap `permissions/screen_capture.rs`）。
+- macOS：`CGPreflightScreenCaptureAccess` 预检后，还要用 `CaptureBackend::monitors()` / `SCShareableContent` 验证「预检通过但实际无显示器可抓」的陈旧 TCC 状态；验证成功可缓存，失败按短间隔重试（参考 Cap `permissions/screen_capture.rs`）。预检走 `CoreGraphics` 框架的 C 接口；该分支受 `cfg(target_os = "macos")` 保护，Windows 构建只做语法审查，须由 macOS 构建与真机验收确认。
 - Windows / Linux：预检恒 `true`。
 - 保险库锁屏、系统空闲锁定：`ScreenLockMonitor` 只在 vault feature 内构造（F30），宿主层拿不到。**V1 明确不做锁屏 gate，在验收里标注为已知缺口；V2 把 monitor 提升为全局 `ScreenLockState` 后再接入。**
 - 令牌一次性、只发给 orb；`crop/cancel` 校验调用方 label 与令牌。
@@ -816,7 +928,9 @@ window.set_position(PhysicalPosition::new(x, y))?;
 - TTL 判断注入 `now`，避免测试 sleep。
 - `preview` 生成：给定 `FakeBackend` 的固定图与 `scale_factor`，断言 JPEG 长边 ≤ `SCREENSHOT_PREVIEW_LONG_EDGE`、data URL 以 `data:image/jpeg;base64,` 开头、`preview_width/height` 与实际编码一致。
 - `archive_bytes` 单测：正常归档返回 `attachmentId` 且 `bytes` 与入参一致；超 8MB 返回 `too_large`；同一内容重复归档命中内容寻址、不产生第二份。
-- `orb_overlay` 的 `enter()/exit()`：用 `FakeWindowOps` 断言隐藏序列「`set_visible(false)` → 可见性仍为真时补 `ShowWindow(SW_HIDE)` → `DwmFlush`」，以及「进入后 `ORB_CLICK_THROUGH` atomic 为 false、退出后回到快照值」。
+- `orb_overlay` 的 `begin()/exit()`：用 `FakeOps` 断言隐藏序列「`set_visible(false)` → 可见性仍为真时补 `ShowWindow(SW_HIDE)` → `DwmFlush`」与「补 `ShowWindow` 仍可见时返回 `capture_failed`」，以及「快照读全字段、还原按快照写回置顶/几何/可见性并把 `click_through` 交给回调」「任一项失败仍走完剩余步骤并返回 `cancel_failed`」。
+- Windows 弹出菜单清理（不变式 23）：无菜单时为空操作、不阻塞；有菜单时 `SW_HIDE`；预算内仍可见返回 `capture_failed`。`#32768` 枚举与 `DwmFlush` 属 Win32 副作用，不入单测，由 §11.3「右键菜单触发」一项人工验收。
+- 菜单淡出排空（不变式 24、F60）：`dismiss_menus_now` 的锚定是无条件写入的内存状态（不依赖枚举结果）；`settle_menu_fade` / `drain_menu_fade_frames` 是 Win32 副作用（`DwmFlush`、`DwmGetCompositionTimingInfo`、`SPI_GETMENUANIMATION`），不入单测；由 §11.3 人工验收（对照日志里的 `screenshot: menu fade anchor=…ms period=…ms flushed_frames=…`）。「剩余帧数」的折算公式（`age / period` 向下取整、饱和相减）若要单测，应抽成不依赖 Win32 的纯函数再测，不要为了测它去 mock 合成器。
 - `setup.rs` 的快捷键解析：逻辑已下沉到 `assistant-config::shortcut::resolve_bindings`（无 tauri 依赖），由 `crates/assistant-config/tests/shortcut.rs` 覆盖默认、覆盖、显式清空、非法、重复、缺默认六类场景；`setup.rs` 只保留副作用（`parse_shortcut` 回调 + 注册 + 告警广播）。
 
 ---
@@ -866,6 +980,9 @@ div[data-orb-window].orb-screenshot .orb-panel {
 
 ```ts
 useEffect(() => {
+  const unPreparing = listen(UiEvent.ScreenshotPreparing, () => {
+    useScreenshotStore.getState().beginPreparing();
+  });
   const unSession = listen<ScreenshotSessionDto>(
     UiEvent.ScreenshotSession,
     (e) => {
@@ -886,12 +1003,14 @@ useEffect(() => {
     })
     .catch(() => {});
   return () => {
+    void unPreparing.then((f) => f());
     void unSession.then((f) => f());
     void unError.then((f) => f());
   };
 }, []);
 ```
 
+- `screenshot-preparing` 只做 `beginPreparing()`：这是菜单 / 托盘 / 快捷键入口进入覆盖层模式的**唯一**途径（工具栏入口自己已经先调过一次，重复设置幂等）。缺了它，窗口被撑成全屏时小球会落在左上角（F58、不变式 25）。
 - `get_screenshot_session` 是兜底：reload、错过事件、启动时序。
 - `no_session` 错误静默忽略；其他错误走 toast。
 - `notifyScreenshotError(code)` 放 `src/screenshot/session.ts`：用既有 `notifyError(translateKey(code), translateKey(code))`（`src/stores/notifyStore.ts`），未知错误码原样作为文本，不新建通知组件。
@@ -1023,6 +1142,7 @@ requestChatInputFocus();
 - **聊天工具栏**：位置 `src/chat/ConversationView.tsx`（按钮在 `src/chat/layouts/ConversationFrame.tsx`）；改动 在 `PaperClipOutlined` 旁加 `ScissorOutlined`，`beginPreparing()` 后 `start()`，失败 toast（F41）
 - **托盘菜单**：位置 `src-tauri/src/tray.rs`；改动 新增 `screenshot` 菜单项（可选，M2）
 
+> **前三个 Rust 侧入口都不在前端发起**：它们直接调 `screenshot::start()`，前端状态仍是「小球形态」。覆盖层模式的切换统一由 `start` 里的 `SCREENSHOT_PREPARING` 事件驱动（不变式 25）；工具栏入口自己先调一次 `beginPreparing()` 只是让 UI 更早消失，不能因此省掉事件——否则同一个 `start` 会有两套前置条件，后续新增入口又会漏（F58）。
 > 全局快捷键不受 `supportVision` 限制：无 vision 模型时仍会截图，但落进输入区时会得到与粘贴一致的 `no_vision` 提示。
 
 ### 9.7 冲突检测的边界
@@ -1072,13 +1192,13 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 - `src-tauri/src/screenshot/mod.rs`：`Phase` 状态机、`start` / `cancel` / `crop` / `cleanup`、op lock
 - `src-tauri/src/screenshot/capture.rs`：`CaptureBackend` trait + `XcapBackend`、显示器定位、抓屏、预览 JPEG 与 data URL 编码
 - `src-tauri/src/screenshot/crop.rs`：令牌校验、归一化→原图换算、裁剪、单次编码、JPEG 兜底、调用 `archive_bytes`
-- `src-tauri/src/screenshot/orb_overlay.rs`：Orb 隐藏校验（`ShowWindow` + `DwmFlush`）、全屏与恢复快照、`SCREENSHOT_ACTIVE`
+- `src-tauri/src/screenshot/orb_overlay.rs`：Orb 隐藏校验（`ShowWindow` + `DwmFlush`）、全屏与恢复快照（恢复先隐藏再改几何）、`SCREENSHOT_ACTIVE`
 - `src-tauri/src/cmd/screenshot.rs`：五条命令与调用方校验
 - `src-tauri/src/protocol/dto/screenshot.rs`：三个 DTO
 - `src/screenshot/Overlay.tsx`：覆盖层组件（data URL 底图、`img.decode()` 揭示、`finishing` 态）
 - `src/screenshot/selection.ts`：选区几何纯函数（含归一化）
 - `src/screenshot/session.ts`：invoke 封装、错误码翻译与 `notifyScreenshotError`、`requestChatInputFocus`
-- `src/screenshot/useScreenshotSession.ts`：会话/错误事件订阅 + 兜底拉取
+- `src/screenshot/useScreenshotSession.ts`：preparing / 会话 / 错误事件订阅 + 兜底拉取
 - `src/stores/screenshotStore.ts`：`session` / `preparing` / `finishing`
 - `src/screenshot/__tests__/selection.test.ts`：几何单测
 
@@ -1094,7 +1214,7 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 - `src-tauri/src/menu.rs`：`orb_screenshot` 事件分支
 - `src-tauri/src/lib.rs`：`mod screenshot;`
 - `src-tauri/tests/protocol_bindings.rs`：三个 DTO 登记（无数字断言）
-- `src-tauri/crates/assistant-config/src/constant.rs`：六个常量（含两个预览参数）
+- `src-tauri/crates/assistant-config/src/constant.rs`：八个常量（两个 settle 兜底、菜单淡出帧数 + 排空上限、会话 TTL、单张上限、两个预览参数）
 - `src-tauri/crates/assistant-config/src/app_conf.rs`：`DEFAULT_SHORTCUT_PATTERNS` 加 `capture_screenshot`（其余已落地）
 - `src-tauri/src/cmd/attachment.rs`：抽出 `pub(crate) async fn archive_bytes(bytes, file_name, media_type)`；`import_attachment` 改为复用它（行为不变）
 - `src-tauri/crates/assistant-orb/src/geometry.rs`：`nearest_screen` 由 `fn` 提为 `pub fn`（实现不变）
@@ -1132,6 +1252,8 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 - **`capture.rs`**：显示器选择——单屏、双屏（光标在副屏）、副屏负坐标；`FakeBackend`
 - **状态机**：忙时 `start` 忽略；`cancel` 幂等；裁剪期间取消丢弃产物
 - **`orb_overlay`**：只快照/隐藏 `orb`；`main` / `settings` 不进入快照；隐藏序列为「可见性 → `ShowWindow(SW_HIDE)` → `DwmFlush`」；隐藏失败时按快照复位 Orb
+- **`orb_overlay` 恢复序列（rev10）**：`restore_hides_before_geometry_change` 断言 `hide` 的调用顺序**早于** `set_size` / `set_position`（不变式 26、F59）；`restore_writes_snapshot_and_click_through` 断言按快照写回置顶/几何/可见性并把 `click_through` 交给回调；`restore_keeps_going_and_reports_cancel_failed` 断言任一步失败仍走完剩余步骤并返回 `cancel_failed`
+- **`start` 的 preparing 事件（rev10）**：`FakeBackend` 下断言 `SCREENSHOT_PREPARING` 在 `capture()` 之前发出（不变式 25、F58）；权限/无显示器失败时不发
 - **`archive_bytes`**：正常返回 `attachmentId` 与 `bytes`；超 8MB → `too_large`；同一内容重复归档命中 sha256 去重、不产生第二份
 - **`setup.rs`**：快捷键解析——默认、覆盖、显式清空、非法、重复、缺默认，逻辑下沉到 `assistant-config::shortcut::resolve_bindings`，由 `crates/assistant-config/tests/shortcut.rs` 覆盖
 
@@ -1148,6 +1270,9 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 ### 11.3 手动
 
 - **快捷键触发**：该屏变暗进入框选；没有新窗口出现；Orb 不可见，主窗/设置窗保持原状并出现在底图
+- **三个入口都不出小球（rev10）**：右键菜单、托盘菜单、全局快捷键各触发多次，从按下到覆盖层铺满的整个过程**任何一帧**都不能看到小球（尤其左上角）；聊天工具栏入口同样。这一项直接对应 F58：Rust 直接发起的入口必须先收到 `screenshot-preparing` 才能撑大窗口
+- **取消/成功后无左上角闪帧（rev10）**：取消、ESC、右键退出各做 5 次，Orb 直接从全屏回到原位，不出现「88px 小球停在左上角」的中间帧（不变式 26、F59）
+- **耗时基线（rev10）**：dev 构建下从点击到覆盖层可框选，`captured` 阶段应在百毫秒量级而非数秒；日志里 `captured` / `menu-fade` 的占比不再出现「抓图+编码占七成」的形态。若仍明显偏慢，先确认 `[profile.dev] opt-level = 1` 是否生效（`cargo build -v` 看 `-C opt-level`），不要去改链路（§13 风险 19）
 - **从 Orb 触发且主窗可见**：底图包含主窗内容，框选主窗区域后产物与所见一致；主窗未被隐藏或移动
 - **chat 自隐藏**：截图期间看不到 OrbBall/OrbPanel；结束或取消后恢复
 - **草稿保留**：在输入框输入文字后触发截图、取消，文字仍在
@@ -1156,6 +1281,10 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 - **确认瞬间无闪帧**：框选大区域确认后 Orb 直接展开并显示缩略图，看不到全屏底图被压进 88px 窗口的一帧
 - **底图走 data URL**：覆盖层不请求 asset 协议，仓库里没有 `screenshot-tmp` 目录，`tauri.conf.json` 未改
 - **Orb 隐藏可靠**：连续触发 10 次，底图中都不出现 Orb 小球（验证可见性校验 + `ShowWindow` 兜底）
+- **右键菜单触发**：从 Orb 右键菜单点「截图」、菜单仍处于关闭动画时进入框选，底图与覆盖层上都没有菜单残留；托盘菜单触发同样不残留（验证 `#32768` 清理 + 淡出排空，不变式 23/24）。连续触发 5 次，每次底图菜单区域与周围桌面像素一致（无半透明矩形、无菜单文字的鬼影）；日志中出现 `screenshot: menu fade anchor=…ms period=…ms flushed_frames=… animation=… live_windows=…`，其中 `anchor` 远小于「`SCREENSHOT_MENU_FADE_FRAMES` × `period`」（说明锚定确实落在点击那一刻）、`period` 与该屏刷新率一致（60Hz≈16.7ms、144Hz≈6.9ms）、`flushed_frames` 等于剩余帧数（未撞上限）
+- **高刷屏不白等（rev10）**：在 120Hz/144Hz 显示器上从右键菜单触发，点击到覆盖层可框选不应有明显停顿；同一操作在 60Hz 上也应看到动画排空完成、底图无残影（验证按帧排空而非固定毫秒，F60）
+- **关闭系统菜单动画**：控制面板关闭「菜单动画」后从右键菜单触发，底图仍无菜单残留，且不出现额外的固定等待（日志 `animation=false`、`flushed_frames=0`）
+- **无过渡动画透出**：显影瞬间底图直接铺满（看不到实时桌面透过渐显的底图），取消后 Orb 瞬间回到小球位置（无淡入淡出）；系统「关闭动画」辅助功能开启时行为一致
 - **归档即完成**：确认后 `attachments/` 直接出现一个 sha256 命名的文件，无任何中间临时文件
 - **发送失败后重试**：重试直接复用已归档 `attachmentId`，不报「附件丢失」
 - **移除未发送的截图**：缩略图消失，归档文件随 `removeAttachment` 删除
@@ -1177,9 +1306,9 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 
 ## 12 里程碑
 
-- **M0（spike）**：§6.4 的窗口模型实验（运行时窗口耗时、WebView2 二次初始化、副屏 `set_bounds` 首帧、`SetWindowDisplayAffinity` 可用性）；产出一份结论，决定保留 Orb 复用还是改专用覆盖层窗口
+- **M0（spike）**：§6.4 的窗口模型实验（运行时窗口耗时、WebView2 二次初始化、副屏首帧、`SetWindowDisplayAffinity` 可用性）；产出一份结论，决定保留 Orb 复用还是改专用覆盖层窗口（副屏首帧在 Orb 路线已改为「先 size 后 position」的实测项，见 §8.5.1）
 - **M1**：覆盖层宿主（按 M0 结论）+ 会话引导 + 框选 + 裁剪 + 命令内归档 + 快捷键表新增一项 + 默认值调整 + 隐藏校验与全部状态守卫；交付判据 §11.3 全部通过
-- **M2**：Orb 右键菜单、托盘菜单、macOS 权限引导页、标注能力；交付判据 设置页可改快捷键、macOS 未授权时有明确引导
+- **M2**：Orb 右键菜单、托盘菜单、macOS 权限引导（`permission_denied` 标题 + `permission_guide` 系统设置路径说明，不新开引导页）、标注能力；交付判据 设置页可改快捷键、macOS 未授权时有明确引导
 - **M3**：多屏拼接框选、实时覆盖层 + 捕获排除（须先解决分层窗口限制）、截图历史、无 vision 时的 OCR 降级、锁屏 gate、原生覆盖层评估；交付判据 与 `pdf_text.rs` 的降级策略一致、锁屏 gate 抽为公共 State
 
 ---
@@ -1204,6 +1333,19 @@ Rust 侧文案（托盘 / 右键菜单）走 `assistant_i18n::t()`，键名同�
 - **16**：主窗/设置窗遮挡用户想截的目标 → 与系统截图工具一致，由用户自行挪开或最小化；V2 可提供「抓屏时隐藏本应用窗口」的可选项
 - **17**：捕获排除在分层窗口上不可用 → V2 若要做实时覆盖层，必须先换覆盖层宿主窗口（F54、§6.3、§6.4）
 - **18**：归档在裁剪命令内，`AttachmentStore` 写失败时用户已框选却拿不到附件 → 保留令牌允许重选，用 `screenshot.err.archive_failed` 显式提示
+- **19**：dev 构建（`opt-level = 0`）下抓屏与编码慢约 6 倍，整条链路可感知延迟达数秒 → `[profile.dev]` 设 `opt-level = 1`（§7.7）；这是构建口径问题，不是链路设计问题，**不要**为它去改链路结构
+
+  实测基线（本机 2520×1680、`cargo test --release` 与 dev 对照，用一次性 bench 测试取得，测试本身已删除）：
+
+  | 阶段 | `opt-level = 0`（dev 默认） | 说明 |
+  |---|---|---|
+  | `monitors()` | 0ms | 显示器枚举 |
+  | `capture()`（`BitBlt` + 格式转换） | 240ms | 抓图本身 |
+  | `to_rgb8()`（RGBA→RGB） | 38ms | 编码前转换 |
+  | 全分辨率 JPEG q80 | 567ms | 预览编码的主要成本 |
+
+  结论：`captured` 阶段（抓图 + 编码 + base64）占总耗时 74%，菜单淡出排空只占 18%——**瓶颈不在淡出，在编码**。设 `opt-level = 1` 后编码耗时降到几十毫秒量级，与淡出排空同一数量级。若要复测，按 §11.1 的方式临时加 bench 测试，测完删除，不留在主干。
+- **20**：`profile.dev` 的 `opt-level` 是**全 workspace** 口径，改动会影响所有 crate 的 dev 增量编译时间 → 取 `1` 不取 `3`；若后续有人再提「dev 太慢」，先看是不是把 `opt-level` 又抬高了，而不是去拆截图链路（§7.7、风险 19）
 
 ---
 
@@ -1346,3 +1488,19 @@ rev7 的定位是**把链路里的文件系统与重复编码删掉**，并用�
 - **§9.2/§9.4/§9.5**：`screenshotStore` 增加 `finishing`；`Overlay` 用 `img.decode()` 揭示、确认/取消先 `beginFinishing()`；结果接入改为 `attachmentFromImport` + `addAttachment`，不再用 `ingestPath`/`release`
 - **§10/§11/§12/§13**：文件清单按新链路重写（明确 `tauri.conf.json`、`app_dirs`、`attachment_store`、`intake.ts` 不改）；验收新增「确认瞬间无闪帧」「底图走 data URL」「Orb 隐藏可靠」「CSP 守卫」；里程碑增加 M0 spike；风险 14/17/18 重写
 - **§14**：Cap 追加采用 Fast 压缩、捕获排除暂缓理由改为分层窗口限制；Kiri 追加「冻结图不落盘」「GDI 后端与 Fast + Sub」「第二 WebView2 控制器 AppHangB1」「分层窗口 affinity error 8」；shiping 追加「底图 data URL」；§14.4 汇总同步
+
+---
+
+## 20 rev8 修订摘要
+
+rev8 的定位是**把 M2 剩余项与实现细节对齐到真实代码**：几何写入的库能力结论、macOS 权限前置校验、以及 `orb_overlay` 的可测性补测。
+
+- **§8.5.1**：`set_bounds` 回退方案从「待实测」改为「已定稿」——核对 Tauri 2.12.5 源码，`set_bounds` 只存在于 `Webview`，`WebviewWindow` 没有该方法；覆盖层写入与恢复统一为「先 `set_size` 后 `set_position`」，恢复写回快照值
+- **§5 不变式 20**：同步改为「回退序列写入与恢复」，不再要求单次 `set_bounds`
+- **§6.2 / §8.3 步骤 10**：几何描述同步为回退序列，避免与 §8.5.1 冲突
+- **§8.7**：macOS 权限前置校验补 `CGPreflightScreenCaptureAccess` 预检 + `CaptureBackend::monitors()` 实测，成功缓存、失败按 3 秒间隔重试；Windows / Linux 仍恒真。该分支只能在 macOS 构建上验证，已标注为跨平台验收项
+- **§8.9**：`orb_overlay` 测试缝由 `FakeWindowOps` 改为 `FakeOps`（实现里对应 `WindowOps` trait 的假实现），并明确断言项：隐藏序列、`ShowWindow` 兜底、兜底失败返回 `capture_failed`、快照读全字段、还原按快照写回、任一步失败仍走完并返回 `cancel_failed`
+- **§9.9 / 前端**：`screenshot.err.permission_denied` 的 toast 描述改为 `screenshot.permission_guide` 引导文案（`zh-CN` / `en-US` 均已补键），未知错误码仍原样回显
+- **§8.2 / §5 不变式 23 / F55**：隐藏前新增「Windows 弹出菜单清理」——弹出菜单（`#32768`）是独立顶层窗口，Orb 只是 owner，`ShowWindow(orb)` 带不走它；从右键菜单项触发截图时菜单可能仍在关闭动画而被冻进底图，改为枚举本进程可见菜单窗口、逐个禁用 DWM 过渡后 `SW_HIDE`，预算内仍可见返回 `capture_failed`
+- **§11.3**：新增「右键菜单触发」验收项（Orb 右键菜单与托盘菜单均不残留）
+- **M2 交付**：Orb 右键菜单、托盘菜单、macOS 未授权引导已落地；标注能力尚未实现，仍是 M2 唯一未完成项
