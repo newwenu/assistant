@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
 import {
   getApiFormatByType,
+  getFormatCustomType,
   getFormatInfo,
 } from "@/settings/core/provider/providerLookup";
 import type {
@@ -50,10 +51,11 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
   const formatInfo = getFormatInfo(effectiveFormat);
   const isPreset = isEdit ? !!getProviderPreset(provider.type) : !!preset;
   const isLocal = effectiveFormat === "local";
+  const customType = getFormatCustomType(effectiveFormat);
   const showType = !isEdit && !isPreset;
 
   const { form, saving, models, setModels, handleOk, handleAfterOpen } =
-    useConnectForm({ provider, preset, isPreset, onSubmit });
+    useConnectForm({ provider, preset, isPreset, customType, onSubmit });
 
   const formValues = Form.useWatch([], form) as
     Record<string, unknown> | undefined;
@@ -77,10 +79,21 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
         isEdit,
         isLocal,
         showType,
+        customType,
         formatInfo,
         msg,
       }),
-    [t, showType, isLocal, isEdit, formatInfo, models, setModels, msg],
+    [
+      t,
+      showType,
+      isLocal,
+      isEdit,
+      customType,
+      formatInfo,
+      models,
+      setModels,
+      msg,
+    ],
   );
 
   const getTitle = () => {

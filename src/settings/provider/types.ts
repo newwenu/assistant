@@ -14,7 +14,8 @@ export type Provider = ProviderListDto;
 
 export type ProviderInput = ProviderInputDto;
 
-export type ApiFormat = "openai" | "anthropic" | "local";
+export type ApiFormat =
+  "openai" | "responses" | "anthropic" | "gemini" | "local";
 
 export interface ApiFormatInfo {
   format: ApiFormat;
@@ -22,6 +23,7 @@ export interface ApiFormatInfo {
   description: string;
   needsApiKey: boolean;
   keyPlaceholder?: string;
+  customType: string;
 }
 
 export interface ProviderPreset {

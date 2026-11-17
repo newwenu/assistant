@@ -13,6 +13,8 @@ interface BuildFieldSchemasOptions {
   isEdit: boolean;
   isLocal: boolean;
   showType: boolean;
+  /** 所选 format 对应的落库 type 值，作为 Provider ID 的默认值 */
+  customType: string;
   formatInfo: ReturnType<typeof getFormatInfo>;
   msg: ReturnType<typeof useSettingMessage>;
 }
@@ -28,6 +30,7 @@ export function buildFieldSchemas({
   isEdit,
   isLocal,
   showType,
+  customType,
   formatInfo,
   msg,
 }: BuildFieldSchemasOptions): FieldSchema[] {
@@ -45,7 +48,9 @@ export function buildFieldSchemas({
       key: "type",
       type: "string",
       label: t("settings.provider.field.type.label"),
-      placeholder: t("settings.provider.field.type.placeholder"),
+      description: () =>
+        t("settings.provider.field.type.default_hint", { type: customType }),
+      placeholder: customType,
       visible: () => showType,
     },
     {

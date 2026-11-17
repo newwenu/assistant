@@ -6,12 +6,12 @@ import type {
 import {
   getAllProviderFormats,
   getProviderFormat,
+  getProviderFormatByCustomType,
   providerFormatNeedsApiKey,
 } from "./providerFormatRegistry";
 import {
   getProviderPreset,
   getAllProviderPresets,
-  getApiFormatByType as getApiFormatByTypeFromRegistry,
 } from "./providerPresetRegistry";
 import { createLogger } from "@/services/system/logger";
 import "./providerDefinitions";
@@ -25,6 +25,7 @@ export const API_FORMATS: ApiFormatInfo[] = getAllProviderFormats().map(
     description: f.description,
     needsApiKey: f.needsApiKey,
     keyPlaceholder: f.keyPlaceholder,
+    customType: f.customType,
   }),
 );
 
@@ -57,14 +58,19 @@ export function getPresetByType(type: string): ProviderPreset | undefined {
 }
 
 export function getApiFormatByType(type: string): ApiFormat {
-  const format = getApiFormatByTypeFromRegistry(type) as ApiFormat;
-  if (!PRESET_MAP.has(type)) {
-    log.warn("unknown provider type, falling back to default api format", {
-      type,
-      format,
-    });
-  }
-  return format;
+  const preset = PRESET_MAP.get(type);
+  if (preset) return preset.format;
+  const byCustomType = getProviderFormatByCustomType(type);
+  if (byCustomType) return byCustomType.id as ApiFormat;
+  log.warn("unknown provider type, falling back to default api format", {
+    type,
+  });
+  return "openai";
+}
+
+/** 自定义 Provider 落库时的 type 值；保证 format 与后端 kind 分派一致 */
+export function getFormatCustomType(format: string): string {
+  return getProviderFormat(format)?.customType ?? "custom";
 }
 
 export function getFormatInfo(format: ApiFormat): ApiFormatInfo | undefined {
@@ -76,6 +82,7 @@ export function getFormatInfo(format: ApiFormat): ApiFormatInfo | undefined {
     description: def.description,
     needsApiKey: def.needsApiKey,
     keyPlaceholder: def.keyPlaceholder,
+    customType: def.customType,
   };
 }
 

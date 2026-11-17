@@ -22,6 +22,8 @@
   --color-warning-bg: #fffbe6;
   --color-warning-border: #ffe58f;
   --color-format-anthropic: #d97757;
+  --color-format-responses: #10a37f;
+  --color-format-gemini: #4285f4;
   --color-shadow: rgba(0, 0, 0, 0.06);
   --color-shadow-secondary: rgba(0, 0, 0, 0.04);
   --shadow-orb: 0 1px 4px rgba(0, 0, 0, 0.15);
@@ -87,6 +89,8 @@
   --color-warning-bg: #1a1912;
   --color-warning-border: #3a3620;
   --color-format-anthropic: #e8916a;
+  --color-format-responses: #3ecf9c;
+  --color-format-gemini: #7ba7f7;
   --color-shadow: rgba(0, 0, 0, 0.2);
   --color-shadow-secondary: rgba(0, 0, 0, 0.12);
   --shadow-orb: 0 1px 4px rgba(0, 0, 0, 0.3);

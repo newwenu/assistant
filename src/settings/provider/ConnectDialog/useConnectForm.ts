@@ -12,6 +12,8 @@ interface UseConnectFormOptions {
   provider: Provider | null;
   preset: ProviderPreset | null;
   isPreset: boolean;
+  /** 自定义 Provider 落库时的 type 值，由所选 format 决定 */
+  customType: string;
   onSubmit: (input: ProviderInput) => void;
 }
 
@@ -23,6 +25,7 @@ export function useConnectForm({
   provider,
   preset,
   isPreset,
+  customType,
   onSubmit,
 }: UseConnectFormOptions) {
   const [form] = Form.useForm();
@@ -47,7 +50,7 @@ export function useConnectForm({
           ? provider.type
           : isPreset && preset
             ? preset.slug
-            : values.type || "custom",
+            : values.type || customType,
         baseUrl:
           values.baseUrl || (isPreset && preset ? preset.defaultBaseUrl : ""),
         apiKey: values.apiKey || "",
@@ -74,7 +77,7 @@ export function useConnectForm({
     } else {
       form.setFieldsValue({
         name: isPreset && preset ? preset.label : "",
-        type: isPreset && preset ? preset.slug : "",
+        type: isPreset && preset ? preset.slug : customType,
         baseUrl: isPreset && preset ? preset.defaultBaseUrl : "",
         apiKey: "",
         defaultModel: undefined,
