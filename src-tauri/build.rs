@@ -1,4 +1,4 @@
-// 参考: docs/store/feature-mount-traversal-spec.md §4 S8 — build.rs 从插件真源派生命令清单
+// 参考: feature-mount-traversal-spec.md（已归档） §4 S8 — build.rs 从插件真源派生命令清单
 
 use std::fs;
 use std::path::Path;

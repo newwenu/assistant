@@ -7,6 +7,14 @@ name: CI
 # - macOS：Seatbelt 仍是占位，只能验证「编译通过 + probe 不可用 → 不注册 shell」的 fail-closed；
 # - Windows：本机可完整执行（fmt / 编译 / 用例），因此 CI 不再重复跑 Windows，只保留开发机跑不到的 Linux 与 macOS。
 #
+# 可选特性关闭态（full / slim 两态）的落点：
+# - 前端在 ubuntu 上跑 full build + `VAULT_ENABLED=0` slim build + 产物字符串探针；
+#   slim build 同时由 Vite 产物图断言（F7）硬失败兜底；
+# - 后端关闭态只在 Linux 跑（`-p assistant-app --no-default-features`），并追加
+#   `assert-feature-shed.mjs` 的 normal-edge 依赖图断言（CI-2），不跑 workspace 全量——
+#   workspace 成员的测试目标仍会编译 assistant-vault 自身，不能作为关闭态证据；
+# - Windows 仍不进 CI（同上平台结论），关闭态由开发机 `feature-build.ps1 -Task check/test -Without vault` 覆盖。
+#
 # 本文件是草稿：首次接入时若某平台因 runner 环境（缺失系统库、内核 Landlock 不可用）失败，
 # 先修环境或把该步拆成独立 job，不要用 continue-on-error 掩盖失败。
 
@@ -59,6 +67,18 @@ jobs:
       - name: 单元测试
         run: npm test
 
+      # full 态：确认默认（含 vault）构建不误报，F7 落地后这里同时守产物图断言。
+      - name: 前端构建（full）
+        run: npm run build
+
+      # slim 态：VAULT_ENABLED=0 时特性模块不得进入产物图（F7 落地后由此步硬失败）。
+      - name: 前端构建（slim / VAULT_ENABLED=0）
+        run: VAULT_ENABLED=0 npm run build
+
+      # 字符串探针作为 slim 态的补充证据：产物中不得出现 settings.vault.* 文案。
+      - name: 关闭态产物字符串探针
+        run: node scripts/assert-feature-absent.mjs --feature vault --dist dist
+
   rust:
     name: Rust 实机测试（${{ matrix.os }}）
     strategy:
@@ -108,6 +128,18 @@ jobs:
         working-directory: src-tauri
         run: cargo test --workspace --all-targets --no-fail-fast
 
+      # 关闭态只在 Linux 跑一次：--no-default-features 必须落在 assistant-app 这个 package 上，
+      # workspace 全量的测试目标仍会编译 assistant-vault 自身，不能当关闭态证据。
+      - name: 关闭态编译（slim）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: cargo check -p assistant-app --no-default-features
+
+      - name: 关闭态装配契约（slim）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: cargo test -p assistant-app --no-default-features --test assembly_contract
+
       # 契约生成需要 Node + 上面装的 Tauri 依赖，只在 Linux 跑一次，避免三平台重复编译。
       - uses: actions/setup-node@v4
         if: runner.os == 'Linux'
@@ -120,3 +152,10 @@ jobs:
         run: |
           npm ci
           npm run contract:check
+
+      # CI-2：关闭态依赖图断言。禁用特性的 `dep:` crate 不得出现在 normal-edge 图，
+      # 否则「关闭」只是不注册，依赖仍被编进二进制。脚本内部 cwd = src-tauri。
+      - name: 关闭态依赖断开断言（slim）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: node ../scripts/assert-feature-shed.mjs

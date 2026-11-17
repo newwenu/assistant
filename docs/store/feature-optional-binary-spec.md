@@ -4,7 +4,7 @@
 |---|---|
 | 状态 | 规格（定义终态与判定，不含实施记录） |
 | 日期 | 2026-11-16 |
-| 关联 | 分析《FEATURE-OPTIONAL-BINARY-ANALYSIS.md》；前置规格《feature-mount-traversal-spec.md》；L1 基线《vault-optional-build.md》；成本模型分析《FEATURE-ZERO-COST-MOUNT-ANALYSIS.md》；拆分判据 `docs/principle/CODE-SPLIT-PRINCIPLE.md` |
+| 关联 | 分析《FEATURE-OPTIONAL-BINARY-ANALYSIS.md》；前置规格《feature-mount-traversal-spec.md》（已归档）；L1 基线《vault-optional-build.md》；成本模型分析《FEATURE-ZERO-COST-MOUNT-ANALYSIS.md》；拆分判据 `docs/principle/CODE-SPLIT-PRINCIPLE.md` |
 | 影响面 | 配置 1、后端 3、前端 3、capabilities 2、门禁 2、脚本 1、CI 1；不新增第三方依赖 |
 
 定位：本规格把「可选功能在编译期整体移出二进制」的终态固定下来。分析文档回答「哪种引入方式合理」，前置规格回答「挂载如何遍历化」，本规格回答**「什么算真的关掉、由什么证据证明、边界在哪里」**。
@@ -26,7 +26,7 @@
 | # | 结论 | 判定 | 处置 |
 |---|---|---|---|
 | 1 | 现有 D1 机制（清单 + 插件边界 + 挂载表 + A/B/F 门禁）方向正确 | **保留** | 不换框架，只补证据 |
-| 2 | 「关闭态」目前只在本地人工跑过，没有 CI 常驻 | **最大缺口** | 新增 CI 关闭态 lane |
+| 2 | 「关闭态」原只在本地人工跑过，没有 CI 常驻 | **最大缺口** | 新增 CI 关闭态 lane（CI-1 已落地，见 §2.3） |
 | 3 | `cargo tree -i <crate>` 的退出码 + dev 依赖语义不适合做断开证明 | **不可靠** | 改为 normal-edge 依赖图成员判定 |
 | 4 | 前端关闭态只做字符串探针，证明力弱于产物图 | **需加强** | 加构建期 bundle graph 断言，字符串探针降为补充 |
 | 5 | 清单里的 `env` / `cargoFeature` 是 `id` 的派生值 | **可简化** | 改为可省略 + 派生，旧值保留必须逐字相等 |
@@ -83,13 +83,13 @@
 
 | 项 | 当前事实 | 证据 |
 |---|---|---|
-| 特性清单 | 仅 `vault` 一条，`default: true`，`cargoFeature: "vault"`，`env: "VAULT_ENABLED"` | `config/features.json` |
+| 特性清单 | 仅 `vault` 一条，条目只写 `default: true`；`cargoFeature` / `env` 由 `id` 派生（显式写出须逐字相等） | `config/features.json` |
 | Cargo 镜像 | `default = ["vault"]`；`vault = ["dep:assistant-vault", "dep:assistant-sync", "dep:assistant-security"]` | `src-tauri/Cargo.toml` `[features]` |
 | 挂载表 | 1 张 `MOUNTS`、1 个 `mounts()` 读入口；表项含 `id` + `plugin` + `on_setup` + `on_exit` | `src-tauri/src/feature_mounts.rs` |
 | 插件边界 | `vault_plugin.rs` 一对互斥 cfg 块；启用块含 1 个 `generate_handler!` 注册块，关闭块为无命令空插件 | `src-tauri/src/vault_plugin.rs` |
 | 后端 cfg | 全后端 3 行：`vault_plugin.rs` 2 + `cmd/mod.rs` 1，恰为 `FEATURE_CFG_LIMIT = 3` | `src-tauri/tests/assembly_contract.rs` |
 | 装配点 | 6 条：清单、`vite-env.d.ts`、`registry.ts`、`Cargo.toml`、`feature_mounts.rs`、`lib.rs` | `src/features/__tests__/coreBoundary.test.ts` |
-| 遍历化调用方 | 5 条：`build.rs`、`capabilities/default.json`、`plugins.rs`、`lifecycle.rs`、`setup.rs`；断言文本内不出现特性名 | 同上 `TRAVERSAL_FILES` |
+| 遍历化调用方 | 12 条：`build.rs`、`capabilities/default.json`、`plugins.rs`、`lifecycle.rs`、`setup.rs`、`ipc.rs`、`window.rs`、`tray.rs`、`cmd/config.rs`、`tauri.conf.json`、`App.tsx`、`AppShell.tsx`；断言文本内不出现特性名 | 同上 `TRAVERSAL_FILES` |
 | 足迹豁免 | 2 条：`src-tauri/src/cmd/mod.rs`、`src-tauri/src/protocol/events.rs` | 同上 `FEATURE_FOOTPRINT_ALLOWLIST` |
 | 前端 loader | `registry.ts` 3 行守卫 + `vite-env.d.ts` 1 行 declare | `src/features/registry.ts`、`src/vite-env.d.ts` |
 
@@ -103,24 +103,25 @@
 | assetProtocol | `security.assetProtocol.scope.allow` 含 `$APPDATA/mascot-assets/**` | mascot 不能低成本 feature 化 |
 | 托盘菜单 | `tray.rs` 两处硬编码 `show_orb` 等条目 | orb 的形态入口在 core，不能随 feature 消失 |
 | orb 启动路径 | `setup.rs` 无条件调用 `position_orb_window` / `show_orb_window`；`window.rs` 引用 `assistant_orb::placement`；`App.tsx` 的 `viewMap` 含 `OrbWindow` | orb 与 mascot 应作为一个簇，先迁运行期提供者，再谈 feature |
-| capability | `default.json` 授 `main`/`orb` 的 core 与常驻插件权限；`vault.json` 只授 `vault:default` | 拆分已做；权限面与窗口标签仍无断言 |
-| 单产物 | `lib.rs` 只有一处 `generate_context!("tauri.conf.json")`；`src-tauri` 只有一份 `tauri.conf.json` | 当前无多产物；应加断言防止就地加第二份 |
+| capability | `default.json` 授 `main`/`orb` 的 core 与常驻插件权限；`vault.json` 只授 `vault:default` | 拆分已做；权限面与窗口标签由 B10 断言 |
+| 单产物 | `lib.rs` 只有一处 `generate_context!("tauri.conf.json")`；`src-tauri` 只有一份 `tauri.conf.json` | 当前无多产物；B11 守「持有配置文件的 package 恰一份」 |
 
 ### 2.3 门禁与 CI
 
 | 项 | 当前事实 | 状态 |
 |---|---|---|
-| 后端门禁 | A1–A8 + B1–B9 | 已落地 |
-| 前端门禁 | F1–F6（含产物探针 F-产物探针） | 已落地 |
-| 关闭态编译 | 本地 `.\scripts\feature-build.ps1 -Task check -Without vault` 通过 | 人工证据 |
-| 关闭态单测 | 本地 `assembly_contract` 两种组合通过 | 人工证据 |
-| 关闭态产物 | 本地 74 个产物 / 18 条探针无泄漏 | 人工证据 |
-| CI | 只跑默认特性：`cargo test --workspace --all-targets`、前端 typecheck/lint/test；**无 `--no-default-features` lane，无 `npm run build`** | **缺口** |
-| 依赖断开 | 无脚本；只有人工 `cargo tree --no-default-features -i assistant-vault` | **缺口** |
-| capability 权限面 | B8 只断言存在与授予，不限制可授权限、不校验窗口标签 | **缺口** |
-| 门禁空转 | A5/A7 有下限；F 组与部分解析器无空输入失败保护 | **缺口** |
+| 后端门禁 | A1–A8 + B1–B12（`assembly_contract`）；B2 已含 schema v2（id 正则 / 闭键 / 派生值一致 / 无隐式 optional feature） | 已落地 |
+| 前端门禁 | F1–F6（含产物探针 F-产物探针；F1 已含 schema v2，F6 边界文件集合 12 条）；F7 产物图断言在 `scripts/feature-bundle-guard.mjs`（Vite `generateBundle` 只读） | 已落地 |
+| 关闭态编译 | CI Linux lane：`cargo check -p assistant-app --no-default-features` | CI 常驻 |
+| 关闭态单测 | CI Linux lane：`cargo test -p assistant-app --no-default-features --test assembly_contract` | CI 常驻 |
+| 关闭态产物 | CI ubuntu lane：full build + `VAULT_ENABLED=0` slim build（F7 产物图断言硬失败）+ `assert-feature-absent.mjs` 字符串探针 | CI 常驻 |
+| 关闭态依赖 | CI Linux lane：`node ../scripts/assert-feature-shed.mjs`（normal-edge 图成员判定，cwd = `src-tauri`） | CI 常驻 |
+| CI | 前端 typecheck / `format:check` / eslint / test / full+slim build / 产物探针；后端 matrix 仅 `ubuntu-latest` + `macos-latest`，跑 `cargo test --workspace --all-targets`，Linux 额外跑 `contract:check` 与两条 slim 命令 + 依赖断开断言 | CI-1 / CI-2 均已落地 |
+| 依赖断开 | `scripts/assert-feature-shed.mjs`：禁用特性的独占 `dep:` crate 不得出现在 normal-edge 图 | 已落地 |
+| capability 权限面 | B10 断言存在、权限全部以 `<id>:` 开头、`windows` ⊆ `tauri.conf.json` 已声明标签、`default.json` 不含 `<id>:*` | 已落地 |
+| 门禁空转 | A5/A7 有下限；B10/B11/B12 与 F6 边界文件集合均带空输入失败守卫；F7（无 chunk / 无模块 id）与 CI-2（无可关闭特性 / 无独占 dep crate）同规则 | 已落地 |
 
-> 关闭态编译/单测/产物的「人工证据」来自《vault-optional-build.md》与《feature-mount-traversal-spec.md》的实施记录；本次只核对代码结构，未重跑关闭态构建。
+> 关闭态编译/单测/产物已从人工证据升级为 CI 常驻证据（S2）；Windows 关闭态仍由开发机 `feature-build.ps1 -Task check/test -Without vault` 覆盖，平台分工见 `.github/workflows/ci.yml` 文件头。
 
 ### 2.4 与分析文档的偏差
 
@@ -156,7 +157,7 @@
 | O5 | 特性 id 语法 | 连字符 id 会派生非法环境变量名，只能在门禁报错时才发现 | 明确 `^[a-z][a-z0-9_]*$`；环境变量为 `ID.toUpperCase() + "_ENABLED"` | 分析文档 E1 的直接结论 |
 | O6 | capability 最小权限 | 特性 capability 可被加进任意 core 权限，且 `windows` 可写不存在的标签 | 特性 capability 的 `permissions` 只能是 `<id>:*`（白名单为空）；`windows` ⊆ `tauri.conf.json` 的窗口标签；`default.json` 不得出现 `<id>:*` | 参考项目按窗口/能力拆 capability 的做法；Tauri 2 capability 按文件整体生效 |
 | O7 | 边界文件反向断言 | D2/D3 只写在分析里，后人可用新 feature 绕过 | `ipc.rs`、`window.rs`、`tray.rs`、`cmd/config.rs`、`tauri.conf.json`、`src/App.tsx`、`src/layouts/AppShell.tsx` 不得出现任何清单内特性名字面量 | 把「形态/产物不进 feature 体系」变成可失败断言 |
-| O8 | 单 package 单产物 | 有人可能在 `src-tauri` 内加第二份 `tauri.conf.json` 或第二个 `generate_context!` | 每个 package 恰一份 `tauri.conf.json`、恰一处 `generate_context!`；多产物必须新建 package | 参考项目 OpenBitFun 的 `src/apps/desktop` 与 `src/apps/data-migrator` 各自持有 `tauri.conf.json`、`build.rs`、`capabilities` |
+| O8 | 单 package 单产物 | 有人可能在 `src-tauri` 内加第二份 `tauri.conf.json` 或第二个 `generate_context!` | 持有 `tauri.conf.json` 的 package 恰一份、其 `src/` 下恰一处 `generate_context!`（library crate 两者皆为 0，合法）；多产物必须新建 package | 参考项目 OpenBitFun 的 `src/apps/desktop` 与 `src/apps/data-migrator` 各自持有 `tauri.conf.json`、`build.rs`、`capabilities` |
 | O9 | guard-the-guard | 清单为空或解析器失效时，遍历型测试会全绿 | 所有清单/插件/命令/产物解析器在「解析结果为空」时以非零退出，而不是返回空集合 | 参考项目 openhuman 的 forwarding 检查把「解析到 0 个 gate」视为检查本身失败（exit 2） |
 | O10 | 显式无隐式可选特性 | `optional = true` 的依赖若未写成 `dep:`，会生成隐式 feature，使清单与 Cargo 集合出现未声明项 | 清单特性所拥有的 optional 依赖必须用 `dep:` 引用；B2 只做子集，不把隐式 feature 当合法特性 | Cargo 现代做法：用 `dep:` 抑制隐式 feature |
 
@@ -238,7 +239,7 @@
 | R10 | `register_conf_applier("<id>", ...)` 只能出现在启用块内 | A8 要求已注册分组 == 配置模块集合；core 不得知道特性分组 |
 | R11 | `build.rs` 不读 `CARGO_FEATURE_*` 决定是否声明 `InlinedPlugin` | 关闭态 capability 仍引用 `<id>:default`，门控会导致构建失败 |
 | R12 | `feature_mounts.rs` 保持 cfg-free、单一 `MOUNTS`、单一 `mounts()` | 表结构恒定，开关只影响函数体（B1/B7） |
-| R13 | 每个 package 恰一份 `tauri.conf.json`、恰一处 `generate_context!` | 第二份 conf 需要第二个 package，不得就地叠加 |
+| R13 | 持有 `tauri.conf.json` 的 package 恰一份；该 package 的 `src/` 下恰一处 `generate_context!`。library crate 两者皆为 0，合法；第二份必须新建 package | 第二份 conf 需要第二个 package，不得就地叠加 |
 
 ### 4.3 前端终态
 
@@ -312,7 +313,7 @@ D3 = 产物身份/安装包不同，例如 `productName`、`identifier`、图标
 | 组 | 处置 |
 |---|---|
 | A1–A8 | 保持；A2 的白名单与 R8 一致；A7 的 ACL 派生保持 |
-| B1–B9 | 保持；B2 扩展清单 schema/派生值/无隐式 optional feature；B3 扩展边界文件集合；B8 保持存在性断言 |
+| B1–B9 | 保持；B2 扩展清单 schema/派生值/无隐式 optional feature；B3 扩展边界文件集合；B8 保持（其「`default.json` 不含 `<id>:*`」子项已落地，B10 只补权限面与窗口标签） |
 | F1–F6 | 保持；F1 扩展清单 schema/派生值；F6 扩展边界文件集合 |
 | 门禁总数 | 只随「规则类别」增长，不随 N 增长；所有循环按清单/磁盘集合驱动 |
 
@@ -323,11 +324,11 @@ D3 = 产物身份/安装包不同，例如 `productName`、`identifier`、图标
 | **B2 扩展** | 清单非空；`id` 匹配 `^[a-z][a-z0-9_]*$`；只允许已知键；`cargoFeature`/`env` 省略时派生、显式时逐字相等；清单特性所拥有的 optional 依赖必须用 `dep:` 引用，不得靠隐式 feature 启用 | `assembly_contract.rs` | 清单拼写错误、隐式 feature、派生值漂移 |
 | **B3 扩展** | `plugins.rs`、`lifecycle.rs`、`setup.rs`、`ipc.rs`、`window.rs`、`tray.rs`、`cmd/config.rs` 的字符串字面量中不出现任何清单内特性名 | 同上 | core 又直接点名特性，遍历化/形态边界被绕过 |
 | **B10** | 特性 capability：`permissions` 只允许字符串 `<id>:*`（白名单为空，不接受内联权限对象）；`windows` ⊆ `tauri.conf.json` 窗口标签；`default.json` 不含 `<id>:*` | 同上 | 特性借 capability 拿到无关权限，或窗口标签拼错 |
-| **B11** | 每个 package 的根目录恰一份 `tauri.conf.json`；其 `src/` 内（去注释后）恰一处 `generate_context!` | 同上 | 有人就地加第二产物，导致 conf/ACL 语义分裂 |
+| **B11** | 持有 `tauri.conf.json` 的 package 恰一份；该 package 的 `src/` 内（去注释后）恰一处 `generate_context!`；无持有者的 library crate 两者皆为 0，判通过 | 同上 | 有人就地加第二产物，导致 conf/ACL 语义分裂 |
 | **B12** | `<id>_plugin.rs` 的 `generate_handler!` 每条命令以 `crate::cmd::<id>::` 开头 | 同上 | 命令注册与 ACL 派生前缀不一致，运行期权限失败 |
 | **F1 扩展** | 与 B2 相同的清单规则；清单非空 | `coreBoundary.test.ts` | 前端与脚本读到不同的派生值 |
 | **F6 扩展** | 边界文件集合加入 `src/App.tsx`、`src/layouts/AppShell.tsx`、`src-tauri/src/ipc.rs`、`src-tauri/src/window.rs`、`src-tauri/src/tray.rs`、`src-tauri/src/cmd/config.rs`、`src-tauri/tauri.conf.json` | 同上 | 形态/静态声明把特性名带进 core |
-| **F7** | Vite `generateBundle`：关闭态产物中 `chunk.modules` 的键（规范化路径）不得落在 `src/features/<id>/` 下 | `vite.config.ts` 插件 | 关闭态仍产出特性 chunk |
+| **F7** | Vite `generateBundle`：关闭态产物中 `chunk.modules` / `chunk.moduleIds` 的键（规范化路径）不得落在 `src/features/<id>/` 下。插件**只读**，不得修改 bundle；判定抽成纯函数，用合成 chunk 列表跑「含/不含特性模块」两次作为负向自测 | `vite.config.ts` 插件 | 关闭态仍产出特性 chunk |
 | **CI-1** | CI 常驻跑 `full` 与 `slim` 两态：编译、`assembly_contract`、前端 build、产物探针 | `.github/workflows/ci.yml` | 关闭态只在本地可用，迟早腐烂 |
 | **CI-2** | `scripts/assert-feature-shed.mjs`：禁用特性的 `dep:` crate 不在 normal-edge 依赖图 | 新脚本 | 「关闭」只是不注册，依赖仍被编进二进制 |
 
@@ -393,12 +394,14 @@ CI 必须两种都跑；不能只跑默认态。
 | Lane | 步骤 | 说明 |
 |---|---|---|
 | 前端 | `npm run build`（full） | 确认 F7 不误报 |
-| 前端 | `VAULT_ENABLED=0 npm run build`（slim） | F7 必须失败于任何特性模块 |
+| 前端 | `VAULT_ENABLED=0 npm run build`（slim） | 产物无 `src/features/<id>/` 模块时构建成功；出现任何特性模块即让构建失败（F7） |
 | 前端 | `node scripts/assert-feature-absent.mjs --feature vault --dist dist` | 字符串探针作为补充 |
 | 后端 Linux | `cargo check -p assistant-app --no-default-features` | 关闭态编译 |
 | 后端 Linux | `cargo test -p assistant-app --no-default-features --test assembly_contract` | 关闭态门禁 |
 | 后端 Linux | `node ../scripts/assert-feature-shed.mjs` | normal-edge 依赖图断言；脚本内部 `cwd = src-tauri` |
-| 后端 Windows | 同两项 `cargo` 命令（要求） | vault 含 Windows 专属代码，关闭态应在 Windows 也编译一次 |
+| 后端 Windows | **不进 CI** | 平台策略以 `.github/workflows/ci.yml` 文件头结论为准（Windows 由开发机覆盖）；关闭态由开发机 `feature-build.ps1 -Task check/test -Without vault` 承担，即 AC2/AC4。若将来需要 CI 硬证据，只加 `cargo check -p assistant-app --no-default-features` 一个 Windows job，并同步改 ci.yml 文件头与本节 |
+
+上表已全部落地（S2 的 CI-1、S5 的 F7、S6 的 CI-2）：slim build 由「构建成功 + 探针」升级为「构建成功 + 产物图断言 + 探针」，后端 Linux lane 追加 `assert-feature-shed.mjs`。
 
 注意：`cargo test --workspace --no-default-features` **不能**替代上述命令——workspace 成员的测试目标仍会编译 `assistant-vault` 自身；关闭态要针对 `assistant-app` 这个 package。
 
@@ -495,7 +498,7 @@ node scripts/assert-feature-absent.mjs --feature vault --dist dist
 
 | 风险 | 触发点 | 处置 |
 |---|---|---|
-| 关闭态 CI 变慢 | 每平台都跑两态 cargo | 后端关闭态只跑 Linux + Windows；macOS 依赖默认态覆盖 |
+| 关闭态 CI 变慢 | 每平台都跑两态 cargo | 后端关闭态只跑 Linux；macOS 与 Windows 依赖默认态 CI + 开发机 `-Without vault` 验收（AC2/AC4） |
 | F7 误报 | 模块 id 含绝对路径/虚拟模块 | 只匹配规范化后的 `/src/features/<id>/` 子串；虚拟模块不参与 |
 | F7 漏报 | 特性代码被复制进 core chunk | 保留字符串探针；代码复制本身应按「core 引用特性」审查 |
 | `assert-feature-shed` 假阳性 | `-e normal` 仍显示 dev/build 边 | 只解析 normal 边；脚本输出中同时打印图命令，便于复核 |
@@ -522,6 +525,8 @@ node scripts/assert-feature-absent.mjs --feature vault --dist dist
 
 每步自包含、可单独回滚；S1 不改变任何运行期行为。
 
+当前进度：S1–S7 已落地（B10/B11/B12 与 B3/F6 边界扩展、CI full/slim lane、清单 schema v2 四处消费方改为派生 + B2/F1 扩展、F7 产物图断言、CI-2 依赖断开断言、文档交叉引用）；S8 按设计不在本次实施。
+
 ---
 
 ## 12 与既有文档的关系
@@ -529,9 +534,11 @@ node scripts/assert-feature-absent.mjs --feature vault --dist dist
 | 文档 | 关系 |
 |---|---|
 | 《FEATURE-OPTIONAL-BINARY-ANALYSIS.md》 | 本规格保留其 D1/D2/D3 判定，并把 §8 的 G-1/G-2/G-5/G-7 落成具体门禁；G-4 维持「按文件名匹配」并记录为暂缓项 |
-| 《feature-mount-traversal-spec.md》 | 本规格沿用其 R1–R6、S1–S9 终态与 B1–B9/F1–F6；只追加不推翻 |
+| 《feature-mount-traversal-spec.md》（已归档） | 本规格沿用其 R1–R6、S1–S9 终态与 B1–B9/F1–F6；只追加不推翻 |
 | 《vault-optional-build.md》 | L1 基线；本规格不重做 L1，只补关闭态证据 |
 | 《FEATURE-ZERO-COST-MOUNT-ANALYSIS.md》 | 成本模型与「不可归零项」的唯一来源；本规格不重复计量，只引用其 R1–R4 约束 |
 | `docs/principle/CODE-SPLIT-PRINCIPLE.md` | 拆分判据唯一来源；本规格不另立阈值 |
 
 冲突时的优先级：**当前代码 + 本规格 > 前置规格 > 分析文档**。实施时若发现本规格与代码事实不符，先修规格再改代码，不把偏差留成「文档滞后」。
+
+平台 lane 类冲突（某平台在 CI 跑什么、不跑什么）以 `.github/workflows/ci.yml` 文件头的结论为准；本规格只描述「关闭态需要什么证据」，不复述平台分工。若需改结论，同一提交内双向同步 ci.yml 文件头与本文 §7.4。

@@ -1,7 +1,5 @@
 {
   "vault": {
-    "default": true,
-    "cargoFeature": "vault",
-    "env": "VAULT_ENABLED"
+    "default": true
   }
 }

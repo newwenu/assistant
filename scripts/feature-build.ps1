@@ -9,18 +9,19 @@
         避免 PowerShell / npm / cargo 混排输出时中文乱码。
 
     环境变量
-        特性清单读仓库级 config/features.json（手写、唯一真源），每项声明
-        default / cargoFeature / env；脚本按 env 注入 <ENV>=1 或 0
-        （vault → VAULT_ENABLED，与 vite.config.ts 的 define 完全一致）。
+        特性清单读仓库级 config/features.json（手写、唯一真源），每项只写
+        default；cargoFeature 与 env 由 id 派生（显式写出时必须逐字相等）。
+        脚本按 env 注入 <ENV>=1 或 0（vault → VAULT_ENABLED，与 vite.config.ts
+        的 define 完全一致）。
         vite.config.ts 也直接读同一份清单，因此前端 vite define 与后端 cargo feature
         在同一次进程调用里取到同一份开关，不存在「前端开 / 后端关」的混合态。
-        启动时校验清单与 src-tauri/Cargo.toml 的 [features] 段：cargoFeature 必须
-        存在、默认启用集合必须一致、两侧不得有孤儿条目，不一致即中止。
+        启动时校验清单 schema（id 正则 / 闭键 / 派生值一致）与 src-tauri/Cargo.toml
+        的 [features] 段：默认启用集合必须一致、两侧不得有孤儿条目，不一致即中止。
 
     cargo 配置的加载方式
         cargo 按「当前工作目录 → 各级父目录」查找 .cargo/config.toml，与 --manifest-path
         无关。因此本脚本在 src-tauri/ 下执行 cargo，同时拿到：
-            src-tauri/.cargo/config.toml   OPENSSL_DIR / OPENSSL_STATIC、镜像源
+            src-tauri/.cargo/config.toml   OPENSSL_DIR（仅 Windows 必需）、镜像源
             <仓库根>/.cargo/config.toml    TS_RS_EXPORT_DIR / TS_RS_LARGE_INT
         脚本不解析、不覆盖这两个文件，仅按 cargo 自身的规则让它们生效——
         镜像源、[env]、[build]、[target] 等全部配置项都保持项目原样。
@@ -270,17 +271,35 @@ function Get-FeatureTable {
         $id = $property.Name
         $spec = $property.Value
 
-        if (-not $spec.cargoFeature) { throw "特性 '$id' 缺少 cargoFeature" }
-        if (-not $spec.env) { throw "特性 '$id' 缺少 env" }
-        if ($spec.env -notmatch '^[A-Z][A-Z0-9_]*$') {
-            throw "特性 '$id' 的 env '$($spec.env)' 必须是大写字母/数字/下划线"
+        if ($id -notmatch '^[a-z][a-z0-9_]*$') {
+            throw "特性 id '$id' 必须匹配 ^[a-z][a-z0-9_]*$（单段蛇形，不含连字符）"
+        }
+        $specKeys = @($spec.PSObject.Properties.Name)
+        foreach ($key in $specKeys) {
+            if ($key -notin @('default', 'cargoFeature', 'env')) {
+                throw "特性 '$id' 含未知键 '$key'"
+            }
+        }
+        if ($spec.default -isnot [bool]) {
+            throw "特性 '$id' 的 default 必须是布尔值"
+        }
+
+        $derivedEnv = $id.ToUpperInvariant() + '_ENABLED'
+        $cargoFeature = if ($specKeys -contains 'cargoFeature') { [string]$spec.cargoFeature } else { $id }
+        $envName = if ($specKeys -contains 'env') { [string]$spec.env } else { $derivedEnv }
+
+        if ($cargoFeature -ne $id) {
+            throw "特性 '$id' 的 cargoFeature '$cargoFeature' 必须等于 id"
+        }
+        if ($envName -ne $derivedEnv) {
+            throw "特性 '$id' 的 env '$envName' 必须等于 $derivedEnv"
         }
 
         $table += [pscustomobject]@{
             Id           = $id
             Default      = [bool]$spec.default
-            CargoFeature = [string]$spec.cargoFeature
-            Env          = [string]$spec.env
+            CargoFeature = $cargoFeature
+            Env          = $envName
         }
     }
 
@@ -369,8 +388,14 @@ function Set-FeatureEnvironment {
 function Assert-CargoConfigPresent {
     if (Test-Path -LiteralPath $CargoConfigPath) { return $true }
 
+    $isWindowsHost = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsWindows } else { $true }
+    if (-not $isWindowsHost) {
+        Write-Host '·· 未找到 src-tauri/.cargo/config.toml，按非 Windows 平台继续（Linux 用系统 OpenSSL，macOS 不需要）。' -ForegroundColor DarkGray
+        return $true
+    }
+
     Write-Host '!! 缺少 src-tauri/.cargo/config.toml' -ForegroundColor Red
-    Write-Host '   该文件提供 OPENSSL_DIR / OPENSSL_STATIC；缺失时 libsqlite3-sys（bundled-sqlcipher）构建会失败。' -ForegroundColor Yellow
+    Write-Host '   该文件提供 Windows 必需的 OPENSSL_DIR；缺失时 libsqlite3-sys（bundled-sqlcipher）构建会失败。' -ForegroundColor Yellow
     Write-Host ("   执行：Copy-Item '{0}' '{1}'，再把 OPENSSL_DIR 填成本机 vcpkg 路径。" -f $CargoConfigExamplePath, $CargoConfigPath) -ForegroundColor Yellow
     return $false
 }

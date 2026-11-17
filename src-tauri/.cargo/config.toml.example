@@ -1,5 +1,16 @@
+# 本机 Cargo 配置模板：复制为同目录的 config.toml 后按本机情况填写
+#   Copy-Item src-tauri/.cargo/config.toml.example src-tauri/.cargo/config.toml
+#
+# 分发边界：config.toml 已在 .gitignore 中忽略，只存本机差异、不进仓库。
+# GitHub Actions checkout 后没有这个文件，直接走 crates.io 默认源，
+# 因此 CI 不需要任何镜像配置，也不要在 workflow 里生成它。
+
+# ── 镜像源（可选，只影响本机）────────────────────────────────────
+# 默认不启用：`replace-with` 保持注释即走 crates.io 官方源，对海外网络零副作用。
+# 国内网络慢时，取消下面那一行注释即可切到 USTC（或把取值改成 "tuna"）。
+# [source.*] 只是源的定义，未被 replace-with 引用时完全不生效。
 [source.crates-io]
-replace-with = "ustc"
+# replace-with = "ustc"
 
 [source.tuna]
 registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
@@ -7,6 +18,18 @@ registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
 [source.ustc]
 registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"
 
+# ── 平台专属环境变量（下面这段只适用于 Windows）──────────────────
+# [env] 是全局表，对所有 target 生效、无法按平台区分。Linux / macOS 上必须整段删除，
+# 否则 OPENSSL_DIR 指向 Windows 路径，构建会直接失败。
+#
+# 各平台的实际需要：
+# - Windows：必须设 OPENSSL_DIR。rusqlite 的 bundled-sqlcipher 由 libsqlite3-sys 编译
+#   SQLCipher，其 build.rs 在 windows 目标上找不到 OPENSSL_DIR 会 panic。
+# - Linux：不写本段，装 libssl-dev + pkg-config 即可（native-tls 经 openssl-sys、
+#   libsqlite3-sys 直连 libcrypto，两者都从系统 OpenSSL 取头文件与库）。
+# - macOS：不写本段，也不需要 OpenSSL（libsqlite3-sys 走 CommonCrypto，
+#   native-tls 走 Security 框架）。
+#
+# 无需 OPENSSL_STATIC：只有 openssl-sys 读它，而 windows 目标上不编译 openssl-sys。
 [env]
 OPENSSL_DIR = "<vcpkg 安装树绝对路径>/installed/x64-windows-static"
-OPENSSL_STATIC = "1"

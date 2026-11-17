@@ -1,4 +1,4 @@
-// 参考: docs/store/feature-mount-traversal-spec.md §6 — 装配契约 A1–A8 / B1–B9 断言
+// 参考: feature-mount-traversal-spec.md（已归档） §6 — 装配契约 A1–A8 / B1–B12 断言
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -23,7 +23,18 @@ const PLUGIN_DISCOVERY_MARKER: &str = "read_dir";
 const CAPABILITIES_DIR: &str = "capabilities";
 const FEATURE_MANIFEST: &str = "config/features.json";
 const CARGO_MANIFEST: &str = "Cargo.toml";
-const CALLER_FILES: [&str; 3] = ["plugins.rs", "lifecycle.rs", "setup.rs"];
+const TAURI_CONF_FILE: &str = "tauri.conf.json";
+const CONTEXT_MACRO: &str = "generate_context!";
+const MANIFEST_KEYS: [&str; 3] = ["default", "cargoFeature", "env"];
+const CALLER_FILES: [&str; 7] = [
+    "plugins.rs",
+    "lifecycle.rs",
+    "setup.rs",
+    "ipc.rs",
+    "window.rs",
+    "tray.rs",
+    "cmd/config.rs",
+];
 
 fn manifest_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
@@ -151,9 +162,9 @@ fn is_valid_entry(entry: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == ':')
 }
 
-fn registered_names(text: &str) -> Result<Vec<String>, String> {
+fn registration_entries(text: &str) -> Result<Vec<String>, String> {
     let cleaned = strip_rust_comments(text);
-    let mut names = Vec::new();
+    let mut entries = Vec::new();
     for body in registration_bodies(&cleaned) {
         for entry in body.split(',') {
             let trimmed = entry.trim();
@@ -163,9 +174,17 @@ fn registered_names(text: &str) -> Result<Vec<String>, String> {
             if !is_valid_entry(trimmed) {
                 return Err(format!("注册表条目不是纯标识符路径: {:?}", trimmed));
             }
-            let segment = trimmed.rsplit("::").next().unwrap_or(trimmed);
-            names.push(segment.to_string());
+            entries.push(trimmed.to_string());
         }
+    }
+    Ok(entries)
+}
+
+fn registered_names(text: &str) -> Result<Vec<String>, String> {
+    let mut names = Vec::new();
+    for entry in registration_entries(text)? {
+        let segment = entry.rsplit("::").next().unwrap_or(entry.as_str());
+        names.push(segment.to_string());
     }
     Ok(names)
 }
@@ -217,11 +236,11 @@ fn manifest_feature_ids() -> Vec<String> {
 fn manifest_cargo_features() -> Vec<String> {
     let mut features: Vec<String> = manifest_feature_entries()
         .into_iter()
-        .map(|(_, entry)| {
+        .map(|(id, entry)| {
             entry
                 .get("cargoFeature")
                 .and_then(|value| value.as_str())
-                .unwrap_or_else(|| panic!("features.json 条目缺少 cargoFeature"))
+                .unwrap_or(id.as_str())
                 .to_string()
         })
         .collect();
@@ -874,6 +893,151 @@ fn b2_feature_drift() {
     );
 }
 
+fn is_valid_feature_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        && chars.all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
+}
+
+fn optional_dependency_names() -> Vec<String> {
+    let text =
+        fs::read_to_string(manifest_dir().join(CARGO_MANIFEST)).expect("Cargo.toml is readable");
+    let mut names = Vec::new();
+    let mut seen_section = false;
+    let mut in_dependencies = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_dependencies = trimmed == "[dependencies]";
+            seen_section |= in_dependencies;
+            continue;
+        }
+        if !in_dependencies {
+            continue;
+        }
+        let Some((key, rest)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty() {
+            continue;
+        }
+        if rest.contains("optional = true") {
+            names.push(key.to_string());
+        }
+    }
+    assert!(
+        seen_section,
+        "Cargo.toml 缺少 [dependencies] 段，optional 依赖解析失去基准"
+    );
+    names.sort();
+    names
+}
+
+fn feature_dep_references() -> Vec<String> {
+    let text =
+        fs::read_to_string(manifest_dir().join(CARGO_MANIFEST)).expect("Cargo.toml is readable");
+    let mut seen_section = false;
+    let mut in_features = false;
+    let mut refs = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_features = trimmed == "[features]";
+            seen_section |= in_features;
+            continue;
+        }
+        if !in_features {
+            continue;
+        }
+        for literal in string_literals(trimmed) {
+            if let Some(name) = literal.strip_prefix("dep:") {
+                refs.push(name.to_string());
+            }
+        }
+    }
+    assert!(
+        seen_section,
+        "Cargo.toml 缺少 [features] 段，dep: 引用解析失去基准"
+    );
+    refs.sort();
+    refs
+}
+
+#[test]
+fn b2_manifest_schema_and_implicit_features() {
+    let entries = manifest_feature_entries();
+    assert!(
+        !entries.is_empty(),
+        "config/features.json 未声明任何特性，schema 断言失去基准"
+    );
+
+    let mut problems = Vec::new();
+    for (id, entry) in &entries {
+        if !is_valid_feature_id(id) {
+            problems.push(format!(
+                "特性 id {:?} 必须匹配 ^[a-z][a-z0-9_]*$（单段蛇形，不含连字符）",
+                id
+            ));
+        }
+        let Some(object) = entry.as_object() else {
+            problems.push(format!("特性 {} 的条目必须是对象", id));
+            continue;
+        };
+        for key in object.keys() {
+            if !MANIFEST_KEYS.iter().any(|known| known == key) {
+                problems.push(format!("特性 {} 含未知键 {}", id, key));
+            }
+        }
+        match object.get("default") {
+            Some(value) if value.is_boolean() => {}
+            Some(_) => problems.push(format!("特性 {} 的 default 必须是布尔值", id)),
+            None => problems.push(format!("特性 {} 缺少 default", id)),
+        }
+        if let Some(value) = object.get("cargoFeature") {
+            match value.as_str() {
+                Some(text) if text == id => {}
+                Some(text) => problems.push(format!(
+                    "特性 {} 的 cargoFeature {:?} 必须逐字等于 id",
+                    id, text
+                )),
+                None => problems.push(format!("特性 {} 的 cargoFeature 必须是字符串", id)),
+            }
+        }
+        if let Some(value) = object.get("env") {
+            let expected = format!("{}_ENABLED", id.to_uppercase());
+            match value.as_str() {
+                Some(text) if text == expected => {}
+                Some(text) => problems.push(format!(
+                    "特性 {} 的 env {:?} 必须逐字等于 {}",
+                    id, text, expected
+                )),
+                None => problems.push(format!("特性 {} 的 env 必须是字符串", id)),
+            }
+        }
+    }
+
+    let optional = optional_dependency_names();
+    let referenced = feature_dep_references();
+    for dep in &optional {
+        if !referenced.iter().any(|name| name == dep) {
+            problems.push(format!(
+                "optional 依赖 {} 未用 dep: 引用，会生成隐式 feature",
+                dep
+            ));
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "清单 schema v2 / 隐式 feature 违规: {:?}",
+        problems
+    );
+}
+
 #[test]
 fn b3_callers_do_not_name_features() {
     let mut problems = Vec::new();
@@ -1117,6 +1281,320 @@ fn b9_single_handler_block_per_plugin() {
     assert!(
         problems.is_empty(),
         "插件注册块数量异常（build.rs 与 ACL 派生只读首个块）: {:?}",
+        problems
+    );
+}
+
+fn workspace_member_paths() -> Vec<String> {
+    let text =
+        fs::read_to_string(manifest_dir().join(CARGO_MANIFEST)).expect("Cargo.toml is readable");
+    let mut members = Vec::new();
+    let mut in_workspace = false;
+    let mut in_members = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_workspace = trimmed == "[workspace]";
+            in_members = false;
+            continue;
+        }
+        if !in_workspace {
+            continue;
+        }
+        if !in_members {
+            let Some(rest) = trimmed.strip_prefix("members") else {
+                continue;
+            };
+            let Some(rest) = rest.trim_start().strip_prefix('=') else {
+                continue;
+            };
+            let Some(rest) = rest.trim_start().strip_prefix('[') else {
+                continue;
+            };
+            in_members = !rest.contains(']');
+            members.extend(string_literals(rest));
+            continue;
+        }
+        if trimmed.starts_with(']') {
+            in_members = false;
+            continue;
+        }
+        members.extend(string_literals(trimmed));
+    }
+    members
+}
+
+fn collect_named_files(dir: &Path, name: &str, out: &mut Vec<PathBuf>) {
+    let entries = fs::read_dir(dir).expect("package directory is readable");
+    for entry in entries {
+        let path = entry.expect("directory entry is readable").path();
+        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if path.is_dir() {
+            if matches!(file_name, "target" | "node_modules" | ".git") {
+                continue;
+            }
+            collect_named_files(&path, name, out);
+        } else if file_name == name {
+            out.push(path);
+        }
+    }
+}
+
+fn context_macro_count(src_dir: &Path) -> usize {
+    if !src_dir.is_dir() {
+        return 0;
+    }
+    let mut sources = Vec::new();
+    collect_rs_files(src_dir, &mut sources);
+    let mut total = 0usize;
+    for source in sources {
+        let text = fs::read_to_string(&source).expect("source file is readable");
+        total += strip_rust_comments(&text).matches(CONTEXT_MACRO).count();
+    }
+    total
+}
+
+fn window_labels() -> Vec<String> {
+    let path = manifest_dir().join(TAURI_CONF_FILE);
+    let text =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("{} 不可读: {}", path.display(), e));
+    let value: serde_json::Value =
+        serde_json::from_str(&text).expect("tauri.conf.json 是合法 JSON");
+    let mut labels = Vec::new();
+    if let Some(windows) = value
+        .get("app")
+        .and_then(|app| app.get("windows"))
+        .and_then(|windows| windows.as_array())
+    {
+        for window in windows {
+            if let Some(label) = window.get("label").and_then(|label| label.as_str()) {
+                labels.push(label.to_string());
+            }
+        }
+    }
+    labels
+}
+
+fn capability_permissions(value: &serde_json::Value, path: &Path) -> Vec<serde_json::Value> {
+    value
+        .get("permissions")
+        .and_then(|permissions| permissions.as_array())
+        .cloned()
+        .unwrap_or_else(|| panic!("{} 的 permissions 是数组", path.display()))
+}
+
+#[test]
+fn b10_feature_capabilities_are_minimal() {
+    let features = manifest_feature_ids();
+    assert!(
+        !features.is_empty(),
+        "config/features.json 未声明任何特性，capability 权限面断言失去基准"
+    );
+
+    let labels = window_labels();
+    assert!(
+        !labels.is_empty(),
+        "{} 未解析到任何窗口标签，解析器可能已失效",
+        TAURI_CONF_FILE
+    );
+
+    let default_path = manifest_dir().join(CAPABILITIES_DIR).join("default.json");
+    let default_text = fs::read_to_string(&default_path)
+        .unwrap_or_else(|e| panic!("{} 可读: {}", default_path.display(), e))
+        .replace('\u{feff}', "");
+    let default: serde_json::Value =
+        serde_json::from_str(&default_text).expect("capabilities/default.json 是合法 JSON");
+    let default_permissions: Vec<String> = capability_permissions(&default, &default_path)
+        .iter()
+        .filter_map(|item| item.as_str().map(|value| value.to_string()))
+        .collect();
+
+    let mut problems = Vec::new();
+    for feature in &features {
+        let path = manifest_dir()
+            .join(CAPABILITIES_DIR)
+            .join(format!("{}.json", feature));
+        if !path.is_file() {
+            problems.push(format!("缺少 {}", path.display()));
+            continue;
+        }
+        let text =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("{} 可读: {}", path.display(), e));
+        let value: serde_json::Value =
+            serde_json::from_str(&text).expect("capability 文件是合法 JSON");
+
+        let permissions = capability_permissions(&value, &path);
+        if permissions.is_empty() {
+            problems.push(format!(
+                "{} 的 permissions 为空，权限面断言失去基准",
+                path.display()
+            ));
+        }
+        let own_prefix = format!("{}:", feature);
+        for item in &permissions {
+            let Some(permission) = item.as_str() else {
+                problems.push(format!(
+                    "{} 含非字符串权限项 {}，不接受内联权限对象",
+                    path.display(),
+                    item
+                ));
+                continue;
+            };
+            if !permission.starts_with(&own_prefix) {
+                problems.push(format!(
+                    "{} 含非自身权限 {}，只允许 {}*",
+                    path.display(),
+                    permission,
+                    own_prefix
+                ));
+            }
+        }
+
+        let windows = value
+            .get("windows")
+            .and_then(|windows| windows.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if windows.is_empty() {
+            problems.push(format!(
+                "{} 的 windows 为空，窗口作用域断言失去基准",
+                path.display()
+            ));
+        }
+        for window in &windows {
+            let Some(label) = window.as_str() else {
+                problems.push(format!(
+                    "{} 的 windows 含非字符串项 {}",
+                    path.display(),
+                    window
+                ));
+                continue;
+            };
+            if !labels.iter().any(|known| known == label) {
+                problems.push(format!(
+                    "{} 的窗口标签 {} 未在 {} 声明",
+                    path.display(),
+                    label,
+                    TAURI_CONF_FILE
+                ));
+            }
+        }
+
+        for permission in &default_permissions {
+            if permission.starts_with(&own_prefix) {
+                problems.push(format!(
+                    "default.json 仍授予 {}，特性权限未拆分",
+                    permission
+                ));
+            }
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "特性 capability 权限面越界: {:?}",
+        problems
+    );
+}
+
+#[test]
+fn b11_single_tauri_conf_per_package() {
+    let members = workspace_member_paths();
+    assert!(
+        !members.is_empty(),
+        "Cargo.toml 的 [workspace] members 未解析到任何成员，解析器可能已失效"
+    );
+
+    let mut packages = vec![manifest_dir()];
+    packages.extend(members.iter().map(|member| manifest_dir().join(member)));
+
+    let mut problems = Vec::new();
+    let mut holders = 0usize;
+    for package in &packages {
+        let mut confs = Vec::new();
+        collect_named_files(package, TAURI_CONF_FILE, &mut confs);
+        if confs.len() > 1 {
+            problems.push(format!(
+                "{} 有 {} 份 {}，第二份必须新建 package",
+                package.display(),
+                confs.len(),
+                TAURI_CONF_FILE
+            ));
+            continue;
+        }
+        let contexts = context_macro_count(&package.join("src"));
+        if confs.is_empty() {
+            if contexts != 0 {
+                problems.push(format!(
+                    "{} 无 {} 却出现 {} 共 {} 次",
+                    package.display(),
+                    TAURI_CONF_FILE,
+                    CONTEXT_MACRO,
+                    contexts
+                ));
+            }
+        } else {
+            holders += 1;
+            if contexts != 1 {
+                problems.push(format!(
+                    "{} 持有 {} 但 {} 出现 {} 次，必须恰为 1",
+                    package.display(),
+                    TAURI_CONF_FILE,
+                    CONTEXT_MACRO,
+                    contexts
+                ));
+            }
+        }
+    }
+
+    assert!(
+        holders > 0,
+        "workspace 内没有任何 package 持有 {}，解析器可能已失效",
+        TAURI_CONF_FILE
+    );
+    assert!(
+        problems.is_empty(),
+        "单 package 单产物边界被破坏: {:?}",
+        problems
+    );
+}
+
+#[test]
+fn b12_plugin_commands_use_feature_prefix() {
+    let features = manifest_feature_ids();
+    assert!(
+        !features.is_empty(),
+        "config/features.json 未声明任何特性，命令前缀断言失去基准"
+    );
+
+    let mut problems = Vec::new();
+    for feature in &features {
+        let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
+        let entries = registration_entries(&read(&plugin_file))
+            .unwrap_or_else(|e| panic!("{} 注册表可解析: {}", plugin_file, e));
+        if entries.is_empty() {
+            problems.push(format!(
+                "{} 未解析到任何注册命令，解析器可能已失效",
+                plugin_file
+            ));
+            continue;
+        }
+        let expected = format!("crate::cmd::{}::", feature.replace('-', "_"));
+        for entry in &entries {
+            if !entry.starts_with(&expected) {
+                problems.push(format!(
+                    "{} 的命令 {} 未以 {} 开头（ACL 派生只认此前缀）",
+                    plugin_file, entry, expected
+                ));
+            }
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "命令注册前缀与 ACL 派生前缀不一致: {:?}",
         problems
     );
 }

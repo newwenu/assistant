@@ -12,7 +12,7 @@
 | [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 36 |
 | [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、截图提问、Token Usage | 33 |
 | [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 35 |
-| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析 | 32 |
+| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析 | 33 |
 
 ## 文档清单
 
@@ -201,7 +201,7 @@
 | [`I47-orb-runtime-state-spec.md`](./ui/I47-orb-runtime-state-spec.md) | achievement5 | I47 — Orb 运行态与可见性 实施规格 |
 | [`I47-orb-runtime-state-tasklist.md`](./ui/I47-orb-runtime-state-tasklist.md) | achievement5 | I47 — Orb 运行态与可见性 任务清单 |
 
-### infra/ (32)
+### infra/ (33)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -237,4 +237,5 @@
 | [`FEATURE-ZERO-COST-MOUNT-ANALYSIS.md`](./infra/FEATURE-ZERO-COST-MOUNT-ANALYSIS.md) | achievement8 | 可选特性零成本挂载：设计思路合理性分析 |
 | [`code-structure-optimization-spec.md`](./infra/code-structure-optimization-spec.md) | achievement9 | 代码组织与深度扁平度优化规格（未完成项移交 code-structure-followups） |
 | [`compat-tech-debt-audit-1.md`](./infra/compat-tech-debt-audit-1.md) | achievement10 | 前后端兼容技术债审计（C6 已立项并首批落地 chat / agent，仍开放） |
+| [`feature-mount-traversal-spec.md`](./infra/feature-mount-traversal-spec.md) | achievement11 | 可选特性装配点遍历化规格（S1–S7 已落地，关闭态证据由 feature-optional-binary-spec 接续） |
 

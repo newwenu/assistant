@@ -22,6 +22,13 @@ const TRAVERSAL_FILES = [
   "src-tauri/src/plugins.rs",
   "src-tauri/src/lifecycle.rs",
   "src-tauri/src/setup.rs",
+  "src-tauri/src/ipc.rs",
+  "src-tauri/src/window.rs",
+  "src-tauri/src/tray.rs",
+  "src-tauri/src/cmd/config.rs",
+  "src-tauri/tauri.conf.json",
+  "src/App.tsx",
+  "src/layouts/AppShell.tsx",
 ];
 
 const CORE_SCAN_ROOTS = ["src/settings", "src/features", "src-tauri/src"];
@@ -33,15 +40,26 @@ const FEATURE_FOOTPRINT_ALLOWLIST: Record<string, string[]> = {
   vault: ["src-tauri/src/cmd/mod.rs", "src-tauri/src/protocol/events.rs"],
 };
 
+const FEATURE_ID_PATTERN = /^[a-z][a-z0-9_]*$/;
+const FEATURE_KEYS = ["default", "cargoFeature", "env"];
+
 interface FeatureEntry {
   default: boolean;
-  cargoFeature: string;
-  env: string;
+  cargoFeature?: string;
+  env?: string;
 }
 
 function declaredFeatures(): Record<string, FeatureEntry> {
   const raw = readRepoFile("config/features.json");
   return JSON.parse(raw) as Record<string, FeatureEntry>;
+}
+
+function featureEnv(name: string): string {
+  return `${name.toUpperCase()}_ENABLED`;
+}
+
+function featureCargo(name: string, entry: FeatureEntry): string {
+  return entry.cargoFeature ?? name;
 }
 
 function read(relative: string): string {
@@ -120,6 +138,40 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
   const features = declaredFeatures();
   const names = Object.keys(features).sort();
 
+  it("清单 schema v2：id 正则 / 闭键 / 派生值一致", () => {
+    const problems: string[] = [];
+    const raw = JSON.parse(readRepoFile("config/features.json")) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const entries = Object.entries(raw);
+    if (entries.length === 0) {
+      problems.push("config/features.json 未声明任何特性，schema 断言失去基准");
+    }
+    for (const [name, spec] of entries) {
+      if (!FEATURE_ID_PATTERN.test(name)) {
+        problems.push(
+          `${name}: id 必须匹配 ${FEATURE_ID_PATTERN.source}（单段蛇形，不含连字符）`,
+        );
+      }
+      for (const key of Object.keys(spec)) {
+        if (!FEATURE_KEYS.includes(key)) {
+          problems.push(`${name}: 清单条目含未知键 ${key}`);
+        }
+      }
+      if (typeof spec.default !== "boolean") {
+        problems.push(`${name}: default 必须是布尔值`);
+      }
+      if (spec.cargoFeature !== undefined && spec.cargoFeature !== name) {
+        problems.push(`${name}: 显式 cargoFeature 必须逐字等于 id`);
+      }
+      if (spec.env !== undefined && spec.env !== featureEnv(name)) {
+        problems.push(`${name}: 显式 env 必须逐字等于 ${featureEnv(name)}`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
   it("声明特性的装配点齐备", () => {
     const problems: string[] = [];
     const registry = read("src/features/registry.ts");
@@ -143,26 +195,26 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
 
     for (const name of names) {
       const entry = features[name];
-      if (entry.env !== `${name.toUpperCase()}_ENABLED`) {
-        problems.push(`${name}: env 应为 ${name.toUpperCase()}_ENABLED`);
+      const env = featureEnv(name);
+      const cargoFeature = featureCargo(name, entry);
+      if (entry.env !== undefined && entry.env !== env) {
+        problems.push(`${name}: 显式 env 必须逐字等于 ${env}`);
       }
-      if (!viteEnv.includes(`declare const __${entry.env}__`)) {
-        problems.push(`${name}: vite-env.d.ts 缺少 __${entry.env}__`);
+      if (!viteEnv.includes(`declare const __${env}__`)) {
+        problems.push(`${name}: vite-env.d.ts 缺少 __${env}__`);
       }
-      if (!registry.includes(`__${entry.env}__`)) {
-        problems.push(`${name}: registry.ts 未消费 __${entry.env}__`);
+      if (!registry.includes(`__${env}__`)) {
+        problems.push(`${name}: registry.ts 未消费 __${env}__`);
       }
       if (!exists(`src/features/${name}/module.ts`)) {
         problems.push(`${name}: 缺少前端模块 src/features/${name}/module.ts`);
       }
-      if (!cargoFeatures.includes(`${entry.cargoFeature} = `)) {
-        problems.push(
-          `${name}: Cargo.toml [features] 缺少 ${entry.cargoFeature}`,
-        );
+      if (!cargoFeatures.includes(`${cargoFeature} = `)) {
+        problems.push(`${name}: Cargo.toml [features] 缺少 ${cargoFeature}`);
       }
       if (
         entry.default &&
-        !cargoFeatures.includes(`"${entry.cargoFeature}"`) &&
+        !cargoFeatures.includes(`"${cargoFeature}"`) &&
         !cargoFeatures.includes(`"${name}"`)
       ) {
         problems.push(`${name}: Cargo.toml default 集合未包含该特性`);
@@ -285,7 +337,10 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
     const viteEnv = read("src/vite-env.d.ts");
     const problems: string[] = [];
     for (const name of names) {
-      const env = features[name].env;
+      const env = featureEnv(name);
+      if (features[name].env !== undefined && features[name].env !== env) {
+        problems.push(`${name}: 显式 env 必须逐字等于 ${env}`);
+      }
       if (
         !new RegExp(`declare const __${env}__\\s*:\\s*boolean`).test(viteEnv)
       ) {
@@ -330,7 +385,7 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
   it("关闭态产物不含特性专有字符串", (ctx) => {
     const distDir = repoPath("dist");
     const closed = names.filter(
-      (name) => process.env[features[name].env] === "0",
+      (name) => process.env[featureEnv(name)] === "0",
     );
     if (closed.length === 0) {
       ctx.skip();

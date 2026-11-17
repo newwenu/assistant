@@ -9,8 +9,8 @@ import { readRepoFile, repoFileExists, repoPath } from "@/test-utils/paths";
 
 interface FeatureEntry {
   default: boolean;
-  cargoFeature: string;
-  env: string;
+  cargoFeature?: string;
+  env?: string;
 }
 
 interface SlotDecl {

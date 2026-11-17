@@ -13,7 +13,7 @@
 | `src/` | React 前端（Webview 侧全部代码） |
 | `src-tauri/` | Tauri 应用层（`src/`）+ Rust workspace 子 crate（`crates/`） |
 | `config/features.json` | 可选功能清单唯一事实源（当前仅 `vault`），前端 Vite define 与后端 Cargo feature 都据此派生 |
-| `scripts/` | 构建与维护脚本：`copy-rive-wasm.mjs`（prebuild）、`contract-check.mjs`（契约比对）、`feature-build.ps1` / `assert-feature-absent.mjs`（可选功能构建校验）、`update-models-dev-snapshot.mjs`（模型目录快照）、`cluster-tools.mjs`（工具分类聚类）、`fetch-fonts.mjs`、`generate-icon.cjs` |
+| `scripts/` | 构建与维护脚本：`copy-rive-wasm.mjs`（prebuild）、`contract-check.mjs`（契约比对）、`feature-build.ps1` / `assert-feature-absent.mjs` / `assert-feature-shed.mjs` / `feature-bundle-guard.mjs`（可选功能构建校验与关闭态证据）、`update-models-dev-snapshot.mjs`（模型目录快照）、`cluster-tools.mjs`（工具分类聚类）、`fetch-fonts.mjs`、`generate-icon.cjs` |
 | `docs/` | 设计与实现文档；`archived/` 为归档区（按域分目录，冻结），`store/` 为活跃设计区，`analysis/` 为预分析区，`principle/` 为规范，`achievement/` 为待归档区 |
 | `references/` | 参考项目源码（14 个，已分组；gitignored、不入仓），仅供检索，不参与构建；文档引用时写「项目名 + 相对其仓库根的路径」，不写 `references/` 前缀 |
 | `temp-backup/` | 备份与临时脚本产物，不参与构建 |
@@ -348,7 +348,7 @@ config/features.json (vault)
 | 前端配置快照 | `src/settings/__tests__/fixtures/*.json` | golden 快照（full / vaultless / diff） |
 | Rust crate | 各 crate `tests/` 集成测试 | 共享夹具放 `tests/common/mod.rs` |
 | 应用层 | `src-tauri/tests/`（`protocol_bindings` / `protocol_contract` / `protocol_dto_roundtrip` / `assembly_contract` / `mcp_e2e` / `approval_timing` / `permission_policy` / `tool_resolver` / `app_dirs_contract` / `clock_runtime`；MCP 测试服务在 `tests/fixtures/`） | 契约、装配与跨模块集成校验 |
-| 构建校验 | `scripts/assert-feature-absent.mjs` / `feature-build.ps1` | 验证关闭 feature 后产物不含 vault |
+| 构建校验 | `scripts/assert-feature-absent.mjs` / `assert-feature-shed.mjs` / `feature-bundle-guard.mjs` / `feature-build.ps1` | 验证关闭 feature 后产物不含 vault：字符串探针、Vite 产物图断言（F7）、normal-edge 依赖图断言（CI-2） |
 
 ---
 

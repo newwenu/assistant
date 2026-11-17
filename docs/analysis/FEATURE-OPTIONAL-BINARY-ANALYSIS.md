@@ -2,7 +2,7 @@
 
 > 日期：2026-11-11（v2）｜性质：**预先分析**（只判定是否合理，不含执行计划）
 > 判据来源：`docs/principle/CODE-REVIEW-PRINCIPLE.md`、`docs/principle/CODE-SPLIT-PRINCIPLE.md`
-> 修订说明：v1（2026-11-10）的事实基线是「8 装配点 + 7 足迹 + 5 行 cfg + 单插件写死的 build.rs」。该形态已于同日被 `docs/store/feature-mount-traversal-spec.md` 的 S1–S8 改造取代并落地。**本文 D1/D2/D3 三条判定不变，§1、§3、§5、§8、§9 的证据全部按改造后代码重算**。
+> 修订说明：v1（2026-11-10）的事实基线是「8 装配点 + 7 足迹 + 5 行 cfg + 单插件写死的 build.rs」。该形态已于同日被 《feature-mount-traversal-spec.md》（已归档） 的 S1–S8 改造取代并落地。**本文 D1/D2/D3 三条判定不变，§1、§3、§5、§8、§9 的证据全部按改造后代码重算**。
 > 本文所有结论以**当前代码**为准；与 I24-feature-extension-spec（已归档）冲突处已单独标注（归档设计稿允许滞后）。
 
 ---
@@ -242,7 +242,7 @@ v1 的 E5（"`build.rs` 单真源、单前缀、单插件，第二个插件必 p
 - 当前每特性前端成本是 **4 行**：`registry.ts` 的 `if (__X__) { const {...} = await import(...); modules.push(...); }` 3 行 + `vite-env.d.ts` 的 `declare const __X__: boolean` 1 行。
 - 若改为生成物，必须保证**不入库**（否则漂移必然发生），但 `ASSEMBLY_POINTS` 断言读的是文件内容，生成物不入库会让断言在干净检出时失效。
 
-结论：生成方案在"收益 = 省 4 行/特性"与"新增漂移面 + 断言复杂化"之间明显不划算。`docs/store/feature-mount-traversal-spec.md` §10 已把它列为条件化升级项（N≥3 时才重新评估）。
+结论：生成方案在"收益 = 省 4 行/特性"与"新增漂移面 + 断言复杂化"之间明显不划算。《feature-mount-traversal-spec.md》（已归档） §10 已把它列为条件化升级项（N≥3 时才重新评估）。
 
 ---
 

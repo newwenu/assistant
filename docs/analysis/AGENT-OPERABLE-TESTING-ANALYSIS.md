@@ -2,7 +2,7 @@
 
 > 日期：2026-11-12｜性质：**预先分析**（只判定 agent 代劳能否成立、成立需要哪些内部支持、哪些部分注定不可自动化；不含实施步骤与排期）
 > 判据来源：`docs/principle/CODE-REVIEW-PRINCIPLE.md`、`docs/principle/CODE-SPLIT-PRINCIPLE.md`
-> 事实基线：仓库当前代码（逐点核对，见 §2）；I35 截屏提问规格（已归档，已实现）、`docs/store/feature-mount-traversal-spec.md`（已落地）
+> 事实基线：仓库当前代码（逐点核对，见 §2）；I35 截屏提问规格（已归档，已实现）、feature-mount-traversal-spec.md（已归档，已落地）（已落地）
 > 范围界定：**本文的主体是「App 侧的可操控面」——可构造、可枚举、可注入、可判定、可观测、可取证、可隔离七项。** 消费者口径为 **agent 在开发期自测**（§1.5），不是「在 release 中向 agent 开放操控」。agent 侧工具能力、UI 观感、系统弹窗、真实网络属边界（§6）。
 > 引用已归档规格时只写「文档名 +（已归档）」，不给路径。
 

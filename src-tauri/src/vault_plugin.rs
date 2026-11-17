@@ -1,4 +1,4 @@
-// 参考: docs/store/feature-mount-traversal-spec.md §3 — vault 走插件边界，可选性只体现一次
+// 参考: feature-mount-traversal-spec.md（已归档） §3 — vault 走插件边界，可选性只体现一次
 
 use tauri::plugin::TauriPlugin;
 
