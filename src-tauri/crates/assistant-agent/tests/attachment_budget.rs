@@ -484,6 +484,52 @@ async fn admission_rejects_forged_mime() {
     assert!(result.is_err());
 }
 
+#[tokio::test]
+async fn rehydrate_images_restores_cached_data_and_degrades_missing_ids() {
+    let (_dir, store) = store();
+    let saved = store
+        .save_attachment(b"png-bytes", "image/png")
+        .await
+        .expect("save");
+
+    let mut messages = vec![message(
+        MessageRole::User,
+        vec![
+            ContentBlock::Image {
+                attachment: ImageAttachmentRef {
+                    attachment_id: saved.id.clone(),
+                    media_type: Some("image/png".to_string()),
+                    bytes: Some(saved.bytes),
+                    width: Some(1),
+                    height: Some(1),
+                    name: Some("a.png".to_string()),
+                },
+                cached_data: None,
+                file_path: None,
+            },
+            image_block("missing-image", 1, 1),
+        ],
+    )];
+
+    multimodal::rehydrate_images(&mut messages, &store).await;
+
+    let blocks = messages[0].content_blocks.as_ref().expect("blocks");
+    assert!(
+        matches!(
+            &blocks[0],
+            ContentBlock::Image {
+                cached_data: Some(_),
+                ..
+            }
+        ),
+        "落盘附件必须回填 cached_data"
+    );
+    assert!(
+        matches!(&blocks[1], ContentBlock::Text { text } if text == "[Image not found]"),
+        "缺失附件必须降级为占位文本"
+    );
+}
+
 fn provider_row(model: &str, models_json: &str) -> ProviderRow {
     ProviderRow {
         id: "p1".to_string(),
