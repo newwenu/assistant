@@ -98,64 +98,9 @@ impl CaptureBackend for XcapBackend {
     }
 }
 
-/// macOS 需屏幕录制授权；授权缺失时枚举不到显示器，用实际可用性做前置校验。
-#[cfg(target_os = "macos")]
-pub fn permission_granted(_app: &AppHandle) -> bool {
-    macos_permission::granted()
-}
+mod permission;
 
-/// 预检 + 实测校验：`CGPreflightScreenCaptureAccess` 之后仍要枚举一次显示器，
-/// 因为 TCC 授权可能陈旧（预检通过但实际抓不到）；成功即缓存，失败按短间隔重试。
-#[cfg(target_os = "macos")]
-mod macos_permission {
-    use super::{CaptureBackend, XcapBackend};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Mutex;
-    use std::time::{Duration, Instant};
-
-    #[link(name = "CoreGraphics", kind = "framework")]
-    extern "C" {
-        fn CGPreflightScreenCaptureAccess() -> u8;
-    }
-
-    const RETRY_INTERVAL: Duration = Duration::from_secs(3);
-
-    static GRANTED: AtomicBool = AtomicBool::new(false);
-    static LAST_CHECK: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
-
-    pub(super) fn granted() -> bool {
-        if GRANTED.load(Ordering::Acquire) {
-            return true;
-        }
-
-        let mut last = LAST_CHECK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some((checked_at, ok)) = *last {
-            if !ok && checked_at.elapsed() < RETRY_INTERVAL {
-                return false;
-            }
-        }
-
-        let preflight = unsafe { CGPreflightScreenCaptureAccess() != 0 };
-        let usable = preflight
-            && XcapBackend
-                .monitors()
-                .map(|monitors| !monitors.is_empty())
-                .unwrap_or(false);
-
-        if usable {
-            GRANTED.store(true, Ordering::Release);
-        }
-        *last = Some((Instant::now(), usable));
-        usable
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn permission_granted(_app: &AppHandle) -> bool {
-    true
-}
+pub use permission::permission_granted;
 
 /// 按光标物理坐标选屏：命中包含它的显示器优先，否则复用 Orb 的 `nearest_screen` 度量。
 pub fn select_monitor(monitors: &[MonitorInfo], point: (i32, i32)) -> Option<MonitorInfo> {
