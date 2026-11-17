@@ -8,15 +8,15 @@
 
 | 域 | 内容 | 文件数 |
 |---|---|---|
-| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、代码规模审计 | 57 |
+| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、代码规模审计 | 58 |
 | [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 36 |
 | [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、Token Usage | 32 |
 | [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 35 |
-| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析 | 30 |
+| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析 | 31 |
 
 ## 文档清单
 
-### agent/ (57)
+### agent/ (58)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -77,6 +77,7 @@
 | [`I50-runtime-audit-spec.md`](./agent/I50-runtime-audit-spec.md) | achievement7 | I50 — 运行时审计链路规格 |
 | [`I50-runtime-audit-tasklist.md`](./agent/I50-runtime-audit-tasklist.md) | achievement7 | I50 — 运行时审计任务清单 |
 | [`audit-coverage-audit-1.md`](./agent/audit-coverage-audit-1.md) | achievement7 | 运行时审计覆盖盘点（后端缺口与观察项） |
+| [`audit-coverage-audit-2.md`](./agent/audit-coverage-audit-2.md) | achievement9 | 运行时审计覆盖盘点（前端缺口与观察项） |
 
 ### vault/ (36)
 
@@ -196,7 +197,7 @@
 | [`I47-orb-runtime-state-spec.md`](./ui/I47-orb-runtime-state-spec.md) | achievement5 | I47 — Orb 运行态与可见性 实施规格 |
 | [`I47-orb-runtime-state-tasklist.md`](./ui/I47-orb-runtime-state-tasklist.md) | achievement5 | I47 — Orb 运行态与可见性 任务清单 |
 
-### infra/ (30)
+### infra/ (31)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -230,4 +231,5 @@
 | [`feature-config-ownership-tasklist.md`](./infra/feature-config-ownership-tasklist.md) | achievement7 | 特性配置归属任务清单 |
 | [`REFACTOR-SPLIT-PLAN.md`](./infra/REFACTOR-SPLIT-PLAN.md) | achievement8 | 超长文件拆分与职责归位规划 |
 | [`FEATURE-ZERO-COST-MOUNT-ANALYSIS.md`](./infra/FEATURE-ZERO-COST-MOUNT-ANALYSIS.md) | achievement8 | 可选特性零成本挂载：设计思路合理性分析 |
+| [`code-structure-optimization-spec.md`](./infra/code-structure-optimization-spec.md) | achievement9 | 代码组织与深度扁平度优化规格（未完成项移交 code-structure-followups） |
 

@@ -1,7 +1,7 @@
 # 代码结构整理
 
 > 性质：本文只描述仓库**当前代码组织的事实**（目录、分层、模块职责、依赖方向），不包含目标架构与施工计划。
-> 更新日期：2026-11-15（按实测刷新模块清单、脚本与测试布局；规模数据见 `docs/store/code-structure-optimization-spec.md` §2）。
+> 更新日期：2026-11-15（按实测刷新模块清单、脚本与测试布局；规模数据见代码组织与深度扁平度优化规格（已归档）§2，后续待办见 `docs/store/code-structure-followups.md`）。
 > 相关文档：`ARCHITECTURE.md`（组件职责与交互语义）、`FRONTEND.md`（UI 设计与参考项目）、`docs/store/crate-architecture.md`（后端 crate 规模与编译归属实测）、`docs/principle/CODE-SPLIT-PRINCIPLE.md`（文件拆分判据）、`docs/store/vault-optional-build.md`（vault 可选构建）。
 
 ---

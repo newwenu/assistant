@@ -2,14 +2,17 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 草案（待评审） |
-| 日期 | 2026-11-15 |
+| 状态 | 已归档（冻结，2026-11-16） |
+| 日期 | 2026-11-16 |
 | 范围 | `src/`（前端）、`src-tauri/src`、`src-tauri/crates/*/src`；不含 `tests/`、`examples/`、`dist/`、`target/`、生成物 |
-| 口径 | 非空行（剔除纯空白行）。目录深度按仓库根起算，同时给出「crate/src 之后」的相对深度；扁平度按单个目录的直接子文件数计 |
-| 关联 | [ARCHITECTURE.md](../ARCHITECTURE.md)（组件职责）、[CODE-STRUCTURE.md](../CODE-STRUCTURE.md)（现状事实，刷新要求见 §4 B5）、[CODE-SPLIT-PRINCIPLE.md](../principle/CODE-SPLIT-PRINCIPLE.md)（拆分判据唯一来源）、REFACTOR-SPLIT-PLAN（已归档，2026-11-07 执行计划）、[crate-architecture.md](./crate-architecture.md)（crate 边界，不在本文范围） |
+| 口径 | 非空行（剔除纯空白行）。全部数字由 `scripts/probe-structure.mjs` 生成（见 §8），不手工统计；扁平度按单个目录的直接子文件数计 |
+| 关联 | [ARCHITECTURE.md](../../ARCHITECTURE.md)（组件职责）、[CODE-STRUCTURE.md](../../CODE-STRUCTURE.md)（现状事实，刷新要求见 §4 B5）、[CODE-SPLIT-PRINCIPLE.md](../../principle/CODE-SPLIT-PRINCIPLE.md)（拆分判据唯一来源）、REFACTOR-SPLIT-PLAN（已归档，2026-11-07 执行计划）、[crate-architecture.md](../../store/crate-architecture.md)（crate 边界，不在本文范围） |
+| 未完成项 | 移交 [code-structure-followups.md](../../store/code-structure-followups.md) |
 
-> 本文回答五件事：代码放在哪（组织）、层次多深（深度）、同级文件是否过多（扁平度）、中间层是否必要（间接层）、数据与逻辑是否混装。
-> **「什么时候把一个文件拆开」的判据不在本文重述**，唯一来源是 [CODE-SPLIT-PRINCIPLE.md](../principle/CODE-SPLIT-PRINCIPLE.md)；本文只补组织、深度、扁平度、间接层与数据混装五类判据。
+> 本文回答四件事：代码放在哪（组织）、同级文件是否过多（扁平度）、中间层是否必要（间接层）、数据与逻辑是否混装。
+> **「什么时候把一个文件拆开」的判据不在本文重述**，唯一来源是 [CODE-SPLIT-PRINCIPLE.md](../../principle/CODE-SPLIT-PRINCIPLE.md)；本文只补组织、扁平度、间接层与数据混装四类判据。
+> 目录深度只作观察信号：路径段数不等于语义层数，段数不设上限（理由见 §2.2）。
+> **§2.7 / §2.8 两张清单是拆分前的历史快照**，其中多数路径已在 B2 / B3 落地后改变，不得当作现状引用；未完成项与现存清单见 [code-structure-followups.md](../../store/code-structure-followups.md)。
 
 ---
 
@@ -20,7 +23,7 @@
 | `principle/CODE-SPLIT-PRINCIPLE.md` | 文件拆分、目录模块、依赖方向的唯一判据。本文所有条目都不得与之冲突 |
 | REFACTOR-SPLIT-PLAN（已归档） | 2026-11-07 的执行计划。本文 §4 复核其全部未完成项并重新定级；两者冲突时以本文批次与目标结构为准，其 §2 已完成基线仍不得回退 |
 | `CODE-STRUCTURE.md` | 只描述事实。本文 §2 的测量结果与它已有显著偏差（见 §2.10），落地后必须同步刷新 |
-| `store/crate-architecture.md` | crate 划分与编译归属。本文**不增减 crate、不改依赖图** |
+| `../../store/crate-architecture.md` | crate 划分与编译归属。本文**不增减 crate、不改依赖图** |
 
 ---
 
@@ -29,7 +32,7 @@
 | 编号 | 目标 | 判定方式 |
 |---|---|---|
 | S1 | 文件的职责数等于它需要响应的变化原因数 | 承接原则 §1；本文负责发现「长度未到 900 行但职责已混杂」的文件 |
-| S2 | 非生成代码的目录深度不超过「域 / 子域 / 职责」三层（crate 内 `src/` 之后 ≤3 段） | 目录深度直方图 |
+| S2 | 每个非生成目录都对应一个可命名的变化原因（域 / 子域 / 职责），且不新增只做转发的中间层；组件自身的拆分目录（含 `index.tsx` 且只承载该组件 parts）是叶子容器，不是语义层。**深度段数只作观察信号，不作门槛**（依据见 §2.2） | 目录名与变化原因逐条对照；深度直方图仅记录 |
 | S3 | 每个模块只有一个入口；不存在父子 barrel 重复同一导出清单；barrel 不含业务实现 | 依赖扫描 + 导出清单比对 |
 | S4 | 静态数据与算法分离，单个逻辑文件不因数据表变长而变长 | 数据块占比 |
 | S5 | `services/` 只放后端调用与传输，不放纯展示解析；`utils/` 不含业务语义 | import 图与调用面 |
@@ -40,71 +43,89 @@
 
 ---
 
-## 2 现状测量（2026-11-15 快照）
+## 2 现状测量（2026-11-16 快照）
 
 ### 2.1 规模
 
 | 部分 | 文件数 | 非空行 |
 |---|---|---|
-| 前端 `src/`（不含测试） | 425 | 48,819 |
+| 前端 `src/`（不含测试与生成物） | 449 | 49,002 |
 | 前端测试（`__tests__` / `*.test.*`） | 58 | 10,851 |
-| Rust 子 crate 源码 | 254 | 52,736 |
-| Rust 主 app 源码（`src-tauri/src` + `build.rs`） | 80 | 14,211 |
-| Rust 测试（各 crate `tests/`、`src-tauri/tests`、`examples`） | 114 | 31,107 |
+| Rust 子 crate 源码 | 322 | 55,237 |
+| Rust 主 app 源码（`src-tauri/src` + `build.rs`） | 101 | 15,639 |
+| Rust 测试（各 crate `tests/`） | 96 | 30,789 |
 
-前端按顶层模块（不含测试）：
+前端按顶层模块（不含测试与生成物）：
 
 | 模块 | 文件 | 非空行 | 模块 | 文件 | 非空行 |
 |---|---|---|---|---|---|
-| `vault` | 67 | 9,566 | `history` | 17 | 2,614 |
-| `tools` | 66 | 8,674 | `services` | 29 | 2,403 |
-| `chat` | 76 | 8,589 | `stores` | 19 | 2,368 |
-| `settings` | 63 | 7,112 | `mascot` | 24 | 2,054 |
-| `components` | 13 | 1,516 | `orb` | 10 | 1,654 |
+| `vault` | 76 | 9,793 | `mascot` | 26 | 2,061 |
+| `chat` | 77 | 8,643 | `orb` | 10 | 1,654 |
+| `tools` | 67 | 8,681 | `components` | 13 | 1,519 |
+| `settings` | 74 | 7,336 | `features` | 9 | 738 |
+| `history` | 18 | 2,625 | `utils` | 5 | 309 |
+| `stores` | 19 | 2,383 | `audit` | 2 | 264 |
+| `services` | 29 | 2,146 | `layouts` | 6 | 236 |
 
 Rust 按包（`src/`，主 app 含 `build.rs`）：
 
 | 包 | 文件 | 非空行 | 包 | 文件 | 非空行 |
 |---|---|---|---|---|---|
-| `assistant-tools` | 43 | 15,069 | `assistant-storage` | 21 | 4,042 |
-| `assistant-app`（主 app） | 80 | 14,211 | `assistant-security` | 27 | 2,771 |
-| `assistant-vault` | 54 | 9,774 | `assistant-sync` | 6 | 1,427 |
-| `assistant-providers` | 42 | 9,277 | `assistant-crypto` | 6 | 1,071 |
-| `assistant-agent` | 38 | 7,909 | `assistant-config` | 9 | 731 |
-| `assistant-orb` / `assistant-crash` / `assistant-i18n` | 4 / 2 / 2 | 381 / 146 / 138 | | | |
+| `assistant-tools` | 93 | 17,482 | `assistant-security` | 27 | 2,771 |
+| `assistant-app`（主 app） | 101 | 15,639 | `assistant-sync` | 11 | 1,462 |
+| `assistant-vault` | 62 | 9,808 | `assistant-crypto` | 6 | 1,071 |
+| `assistant-providers` | 47 | 9,300 | `assistant-config` | 9 | 744 |
+| `assistant-agent` | 39 | 7,911 | `assistant-orb` / `assistant-crash` / `assistant-i18n` | 4 / 2 / 1 | 382 / 146 / 124 |
+| `assistant-storage` | 21 | 4,036 | | | |
+
+数据来源：`node scripts/probe-structure.mjs`（`cargo metadata` + 文件系统遍历），每次结构改动后重跑，本文不再手工维护数字。
 
 事实：`assistant-tools` 已是**源码量第一**的包（原 `crate-architecture.md` 记录的 702 行已失效），主 app 与 `assistant-vault` 次之。
 
-### 2.2 目录深度与扁平度
+### 2.2 目录深度（观察项）与扁平度
 
-**深度**（`src/` 之后）：
+**深度是观察信号，不是门槛。** 原因：路径段数不等于语义层数。`vault/settings/sync/VaultSyncSettings/index.tsx` 是 4 段，但语义只有 3 层——`VaultSyncSettings/` 是该组件自己的 parts 桶（含 `index.tsx`，只承载该组件零件），不是「职责」层；`vault/core/contract/serde_json/JsonValue.ts` 的 4 段则来自生成物。反过来，`assistant-tools/src/os/tools/agent_grep/request.rs` 是 3 段且 3 层都真实存在（原则 §4 的 `foo/mod.rs` 形态）。用段数做门槛会把这两种情况判反。
 
-| 侧 | 深度分布 | 最大深度 |
-|---|---|---|
-| 前端 | 1 段 19 个目录、2 段 64、3 段 31、4 段 1 | 4 段，仅生成物 `vault/core/contract/serde_json/` |
-| Rust | crate 内 1 段 30 个目录、2 段 7 | 2 段 |
+更直接的证据：本文自身的 B3 + B4 计划按规则执行后必然产出 4 段——B3 把 `VaultSyncSettings.tsx` 拆成 `VaultSyncSettings/`（组件名目录），B4 又把这三项收进 `sync/`。一个从设计上就会被自身计划违反的门槛不能当判据。
 
-**扁平度**（单个目录的直接子文件数，含 `mod.rs` / `index.ts`，不含测试与生成物）：
+实测直方图（`node scripts/probe-structure.mjs`，`src/` 之后的目录段数，已排除仅含生成物的目录）：
 
-| 侧 | ≥10 个直接子文件的目录 |
+| 侧 | 深度分布 |
 |---|---|
-| 前端 | `services` 24、`stores` 18、`chat/message` 18、`chat/core` 17、`vault/settings` 15、`tools` 14、`settings/core` 13、`vault/core` 13、`vault` 12、`chat/tool` 11、`orb` 10、`settings/core/types` 10 |
-| Rust | `src-tauri/src/cmd` 19、`assistant-tools/src/os` 14、`src-tauri/src` 13、`adapters` 13、`assistant-tools/src` 13、`assistant-storage/src` 13、`assistant-agent/src/kernel` 13、`assistant-vault/src/dto` 12、`src-tauri/src/protocol/dto` 12、`unlock_dialog/windows` 11、`assistant-agent/src` 11 |
+| 前端 | 1 段 20 个目录、2 段 69、3 段 38、4 段 3（另有仅含生成物的 `vault/core/contract`、`vault/core/contract/serde_json`，不计入） |
+| Rust | crate `src/` 之后 1 段 39 个目录、2 段 24、3 段 8 |
 
-结论：**深度健康，扁平度是当前的主要结构问题**。判断分三种情况：
+前端那 3 处 4 段逐条说明（每一条都必须能被解释，解释不出的才算问题）：
+
+| 路径 | 4 段来源 | 判定 |
+|---|---|---|
+| `vault/settings/sync/VaultSyncSettings/` | `sync/` 是子域（B4），`VaultSyncSettings/` 是组件 parts 桶（B3，含 `index.tsx`） | 合法：语义 3 层 |
+| `vault/settings/sync/VaultConflictResolve/` | 同上 | 合法：语义 3 层 |
+| `settings/shared/sections/PermissionAuditSection/` | `shared/sections/` 是既有父级，`PermissionAuditSection/` 是组件 parts 桶（B3，含 `index.tsx`） | 合法：语义 3 层 |
+
+**扁平度**（单个目录的直接子文件数，含 `mod.rs` / `index.ts`，不含测试与生成物；这是真正作数的判据，见 R11）：
+
+| 侧 | 直接子文件 ≥10 的目录 |
+|---|---|
+| 前端 | `chat/message` 19、`vault` 12（两处均达 R11 审查线，已按 uniform peers 判定维持扁平，理由见 §2.9） |
+| Rust | `assistant-app/src/cmd` 18、`assistant-app/src` 13、`assistant-app/src/adapters` 12、`assistant-app/src/protocol/dto` 12、`assistant-vault/src/dto` 11、`assistant-agent/src` 11、`assistant-security/src/unlock_dialog/windows` 11、`assistant-app/src/cmd/vault` 10、`assistant-vault/src/security_db` 10、`assistant-storage/src` 10 |
+
+结论：**深度不是当前的结构问题，扁平度才是**（B3/B4 落地后前端直接子文件 ≥12 的目录从 12 个降到 2 个，且这 2 个都已判定为 uniform peers）。判断分三种情况：
 
 1. 若目录内文件全部响应同一类变化（`cmd` 的域入口、`adapters` 的端口实现、`protocol/dto` 的域 DTO、`unlock_dialog/windows` 的平台实现、各 crate `tests/`、23 个工具目录、`settings/core/types` 的类型文件），扁平是正确形态，不分组（R11）。
 2. 若目录内可按**独立变化原因**归入 ≥2 个子域、且每个子域 ≥3 个文件，则判定为过扁，按子域建子目录（B4）。
 3. `foo.rs` 与同名目录 `foo/` 并存是另一类问题，与扁平度无关（§2.4）。
 
-深度不是问题，因此 B4 的分组**只增加语义子目录，不增加无意义的中间层**：分组后仍在 S2 的 3 段上限内（当前非生成代码最深 3 段，分组后最多到 3 段）。
+深度不是问题，因此 B4 的分组**只增加语义子目录，不增加无意义的中间层**。分组与 B3 的组件目录叠加后会出现 4 段路径，这不需要处置——它不违反 R6（R6 判的是「有没有转发层」，不是段数），也不需要为了压回 3 段而撤销 `sync/` 这类真子域分组。
 
 ### 2.3 逻辑嵌套
 
 | 侧 | 最深 | ≥10 层文件数 |
 |---|---|---|
-| Rust | 13 层：`assistant-providers/src/openai/responses_stream.rs`；12 层：`anthropic/request.rs`；11 层：`security/src/screen_lock/windows.rs`、`os/agent_ask_user.rs`（后者为 JSON schema 字面量） | 9 |
-| 前端 | 16 层：`settings/provider/ConnectDialog.tsx`；15 层：`settings/shared/sections/PermissionAuditSection.tsx`；14 层：`tools/text-diff/index.tsx`、`chat/tool/ToolConfigPanel.tsx` | 36 |
+| Rust | 13 层：`assistant-providers/src/openai/responses_stream.rs`（743 行）；12 层：`anthropic/request.rs`（432）；11 层：`assistant-tools/src/os/tools/agent_ask_user.rs`（548，JSON schema 字面量）、`assistant-security/src/screen_lock/windows.rs`（284）；其余 5 个为 10 层（openai `message_converter` / `chat`、gemini `request` / `code_assist` / `message_converter/schema`） | 9 |
+| 前端 | 16 层：`settings/provider/ConnectDialog/index.tsx`（226 行）；14 层：`chat/tool/ToolConfigPanel.tsx`（240）、`tools/text-diff/index.tsx`（160）；13 层：`components/commandPalette/CommandPalette.tsx`（286）、`tools/ui/ToolBox.tsx`（244）、`chat/message/MessageList.tsx`（241）、`settings/shared/sections/ToolAssemblySection.tsx`（209）等 | 36 |
+
+口径与数据来源：`node scripts/probe-structure.mjs` 的「逻辑嵌套」章节（每文件取最大前导空白，Rust 除以 4、前端除以 2，跳过空行与 `//` 注释）。
 
 说明：JSX 缩进天然较深，缩进本身不是缺陷判据；只有「≥13 层且单组件 >400 非空行」时，才视为需要按可见区块拆子组件的信号（S7）。Rust 侧深缩进集中在 `async_stream::stream!` 的 `match` 内，处理方式按原则 §5「宏边界不可搬移」执行。
 
@@ -114,7 +135,7 @@ Rust 按包（`src/`，主 app 含 `build.rs`）：
 |---|---|---|
 | 死 barrel | `src/mascot/core/index.ts`、`src/settings/core/types/index.ts` | 全仓无任何 import 解析到这两个文件（消费方都直接引用子模块） |
 | 重复导出清单 | `src/mascot/index.ts` 与 `src/mascot/core/index.ts` | `core/index.ts` 的全部导出在 `mascot/index.ts` 中再列一遍，改一处需同步两处 |
-| 文件与同名目录并存 | `assistant-agent/src/kernel/ports.rs` + `ports/test_doubles.rs`；`assistant-tools/src/os/agent_read.rs` + `agent_read/window.rs` | 与原则 §4「`foo.rs` → `foo/mod.rs`」不一致，且让模块深度多算一层 |
+| 文件与同名目录并存 | `assistant-agent/src/kernel/ports.rs` + `ports/test_doubles.rs`；`assistant-tools/src/os/agent_read.rs` + `agent_read/window.rs`；`assistant-tools/src/sandbox/windows.rs` + `windows/acl.rs`（2026-11-16 已改为 `windows/mod.rs`，对外路径 `sandbox::windows` 不变） | 与原则 §4「`foo.rs` → `foo/mod.rs`」不一致，且让模块深度多算一层 |
 
 ### 2.5 放置错位
 
@@ -187,15 +208,15 @@ Rust 按包（`src/`，主 app 含 `build.rs`）：
 
 `CODE-STRUCTURE.md` 与 `crate-architecture.md` 的数字和模块清单已落后于实测：
 
-| 项 | 文档值 | 实测 |
+| 项 | 文档原值 | 实测（2026-11-16） |
 |---|---|---|
-| `assistant-tools` | 702 行 / 8 文件 | 15,069 行 / 43 文件（另含 `mcp/`、`compact.rs`、`policy.rs`、`pipeline.rs` 等文档未列模块） |
-| `assistant-agent` | 2,192 行 / 13 文件 | 7,909 行 / 38 文件（含 `kernel/`、`agent/`） |
-| `assistant-vault` | 9,143 行 / 47 文件 | 9,774 行 / 54 文件 |
-| 主 app | 6,702 行 / 39 文件 | 14,123 行 / 79 文件 |
-| Rust 合计 | 37,903 行 | 源码 66,947 行（不含测试） |
+| `assistant-tools` | 702 行 / 8 文件 | 17,482 非空行 / 93 文件（另含 `mcp/`、`compact.rs`、`policy.rs`、`runtime/pipeline.rs` 等文档未列模块） |
+| `assistant-agent` | 2,192 行 / 13 文件 | 7,911 非空行 / 39 文件（含 `kernel/`、`agent/`） |
+| `assistant-vault` | 9,143 行 / 47 文件 | 9,808 非空行 / 62 文件 |
+| 主 app | 6,702 行 / 39 文件 | 15,639 非空行 / 101 文件 |
+| Rust 合计 | 37,903 行 | 源码 70,876 非空行（不含测试） |
 
-这些偏差会让后续结构判断建立在错误的规模认知上，属本规格的附带交付（§4 B5）。B5-1 已按上表刷新 `CODE-STRUCTURE.md`，上表保留为刷新前快照；B5-2 / B5-3 待做。
+这些偏差会让后续结构判断建立在错误的规模认知上，属本规格的附带交付（§4 B5）。B5-1 已按上表刷新 `CODE-STRUCTURE.md`，上表保留为刷新前快照；B5-2 待做。
 
 ---
 
@@ -210,7 +231,7 @@ Rust 按包（`src/`，主 app 含 `build.rs`）：
 | R3 | **目录模块统一**：需要子模块时一律 `foo/mod.rs`，禁止 `foo.rs` + `foo/` 并存 | `Test-Path foo` 与 `foo.rs` 同时为真即违规 |
 | R4 | **单一入口**：一个模块只有一个对外入口；父子目录不得各维护一份相同导出清单；barrel 只 re-export | 导出名集合比对；`index.*` 内不得有业务实现（组件族唯一入口除外）；ESLint 门禁（`no-restricted-syntax`）禁止显式 `/index` 引用、域内文件引用自身 barrel、`index.*` 内 `export *` |
 | R5 | **数据与逻辑分离**：≥200 行的静态表独立为 `*.data.ts`，不得与算法同文件 | 单文件内连续字面量占比 |
-| R6 | **深度上限**：非生成代码在 `src/` 之后不超过 3 段；不新增只做转发的中间目录 | 目录深度直方图 |
+| R6 | **无转发层**（原「深度上限」已降级）：新增目录必须对应可命名的变化原因（子域或职责）；不得新增只做转发的中间目录；同层不得出现两个仅靠路径区分、职责相同的目录。**路径段数本身不是判据**——一个路径段不等于一个语义层（组件 parts 桶、生成物目录都会占段而不占层） | 目录名与变化原因对照；转发层用 import 图判定（该目录是否只有 re-export） |
 | R7 | **组件三类职责分离**：数据编排（store/service 调用）、表单与交互状态、布局渲染，三者同处一个组件时必须拆 hook 或区块组件 | 组件内 store 选择器数、effect 数、JSX 区块数 |
 | R8 | **嵌套信号**：Rust 控制流 >4 层抽返回值纯函数；前端 JSX ≥13 层且组件 >400 行按可见区块拆 | 缩进深度直方图（信号，不作门禁） |
 | R9 | **观察项触发**：列入 §2.8 末段与 §2.9 的文件，只有出现第二个变化原因时才重新评估；**不因行数增长自动触发** | 改动时在提交说明写明新增变化原因 |
@@ -298,7 +319,7 @@ Rust 按包（`src/`，主 app 含 `build.rs`）：
 - `VaultSyncSettings`：就绪度全部分支 alert（unknown / failed / repoState / noSync / noRemote / dirty / ahead / behind / diverged / inSync / readyUnchecked）；`repoState` 分支 abort 确认后提示成功；`noRemote` CTA 聚焦远端 URL 输入框；测试连接成功 toast 显示分支数；SSH hosts 保存时 split / trim / lowercase 并 patch `vault` 配置（Windows 隐藏该输入）；`noSync` 下初始化 / 克隆（本地已有条目时克隆禁用并提示）；非 `noSync` 下立即同步 / pull / push（`pendingRemovals` 非空时 push 禁用）；待删除条目 banner 的全量 / 部分标题与确认回调；不可读条目与 `keyMismatch` 告警的导出入口跳 Recovery；error alert 关闭时同时清理 `error` 与 `syncError`；上次同步相对时间与 Danger Zone 入口。
 - `VaultConflictResolve`：打开时重置选择与遮蔽状态并拉取 preview；preview 加载中 / 失败 / 成功三态；对比表「仅本地 / 仅远程 / 已变更」标签与未变更行隐藏、勾选后显示未变更并提示隐藏条数；敏感字段点击显示后按 `expiresAt` 自动重新遮蔽、关闭弹窗清理计时器；`useLocal` / `useRemote` 走确认弹窗、`mergeBoth` / `skip` 直接提交且 `mergeBoth` 传 `remote_copy_suffix`；提交成功 toast 后 `onClose`；local / remote 任一 preview 缺失时回退为双卡片视图。
 
-> 已完成（2026-11-16，前端 P1 全批）：`PermissionAuditSection.tsx`（666）→ `PermissionAuditSection/{index,range,columns,format,stats,useColumnResize,AuditTable}.ts(x)`（范围常量与 `rangeToSince`、列键与宽度夹取、时间与资源摘要格式化、统计口径、pointer 拖拽生命周期与 `body` 光标/选中锁定、定高滚动表格各自独立）；`VaultSyncSettings.tsx`（652）→ `VaultSyncSettings/{index,syncResult,statusAlert,SyncNotices,RemoteConfigForm,SyncActions}.ts(x)`（错误文案映射与同步结果/不可读条目派生、就绪度→告警装配、四类提示、远端与 SSH 表单、同步动作与 Danger Zone 入口）；`VaultConflictResolve.tsx`（635）→ `VaultConflictResolve/{index,types,useRevealSecrets,secretCells,compareRows,VersionCard,ConflictCompare}.ts(x)`（对比行类型与时间格式化、遮蔽值与自动重遮蔽计时、遮蔽单元格与标签渲染、字段摊平、单侧版本卡片、对比表与未变更折叠）。三者对外默认导出与导入路径不变，交互与行为零变更，`npm run typecheck` / `npm run lint` / `npx vitest run src/vault` 通过。
+> 已完成（2026-11-16，前端 P1 全批）：`PermissionAuditSection.tsx`（666）→ `PermissionAuditSection/{index,range,columns,format,stats,useColumnResize,AuditTable}.ts(x)`（范围常量与 `rangeToSince`、列键与宽度夹取、时间与资源摘要格式化、统计口径、pointer 拖拽生命周期与 `body` 光标/选中锁定、定高滚动表格各自独立）；`VaultSyncSettings.tsx`（652）→ `VaultSyncSettings/{index,syncResult,statusAlert,SyncNotices,RemoteConfigForm,SyncActions}.ts(x)`（错误文案映射与同步结果/不可读条目派生、就绪度→告警装配、四类提示、远端与 SSH 表单、同步动作与 Danger Zone 入口）；`VaultConflictResolve.tsx`（635）→ `VaultConflictResolve/{index,types,useRevealSecrets,secretCells,compareRows,VersionCard,ConflictCompare}.ts(x)`（对比行类型与时间格式化、遮蔽值与自动重遮蔽计时、遮蔽单元格与标签渲染、字段摊平、单侧版本卡片、对比表与未变更折叠）。三者对外默认导出与导入路径不变，交互与行为零变更，`npm run typecheck` / `npm run lint` / `npx vitest run src/vault` 通过。2026-11-16 复核：`PermissionAuditSection/` 保留在 `settings/shared/sections/`（同级 `sections` 全部是单页消费者，`shared/` 的现状命名与它们一致；搬出只服务于压段数，故撤销）。
 
 **P2 关键交互基线**（拆分后逐条回归）：
 
@@ -307,7 +328,7 @@ Rust 按包（`src/`，主 app 含 `build.rs`）：
 - `GhostyMascot`：17 种表情预设的眼睛缩放/眉毛倾角/腮红浓度；`speaking` 走 viseme 嘴形、其余走固定嘴形；`waving` / `celebrating` / `dancing` 显示手臂并摆动；`thinking` 眨眼周期 4200ms、其余 2600ms，眨眼期间高光隐藏；浮动、光点挤压与地面缩放同步；`animated: false` 时不注册动画帧；`flat` 变体下暗部透明度降级。
 - `ConnectDialog`：编辑态隐藏类型字段并锁定格式；预设与自定义格式的标题/描述文案分支；`local` 格式隐藏 API Key 且不校验必填；新增态 API Key 与地址必填、类型仅在自定义时必填；编辑态空密钥按 `keepIfEmpty` 保留；「获取模型」在新增态缺密钥时给出警告、编辑态无密钥走 `listModels`、其余走 `previewModels`；获取成功后回填默认模型选项并 toast 数量；模型清单最多展示 20 条且点击回填 `defaultModel`，超出部分提示剩余条数；打开时按编辑/新增分别回填。
 
-> 已完成（2026-11-16，前端 P2 全批）：`AgentModeSettings.tsx`（约 560）→ `pages/agentMode/{index,avatar,fieldSchemas,useModeForm}.ts(x)`（头像预览与选项、字段定义与推理档位、抽屉生命周期与保存/重置/删除、列表与搜索装配各自独立）；`MessageList.tsx`（约 505）→ 保留装配 + 新增 `useMessageScroll.ts`（落位、跟随、前插补偿、未读计数与位置记忆整体下沉，源码门禁按原路径仍生效）；`GhostyMascot.tsx`（约 494）→ `svg/ghosty/{facePresets,paths,useGhostyAnimation}.ts(x)`（表情预设表、固定嘴形、逐帧动画写入）；`ConnectDialog.tsx`（约 397）→ `ConnectDialog/{index,fieldSchemas,useConnectForm,ModelPreviewList}.ts(x)`（字段与获取模型动作、表单状态与提交装配、模型清单预览、弹窗装配）。对外默认导出与导入路径不变（`ConnectDialog` 目录名与导入路径一致），交互与行为零变更，`npm run typecheck` / `npm run lint` / `npx vitest run src/mascot src/settings src/chat`（366 项）通过。
+> 已完成（2026-11-16，前端 P2 全批）：`AgentModeSettings.tsx`（约 560）→ `pages/agentMode/{index,avatar,fieldSchemas,useModeForm}.ts(x)`（头像预览与选项、字段定义与推理档位、抽屉生命周期与保存/重置/删除、列表与搜索装配各自独立）；`MessageList.tsx`（约 505）→ 保留装配 + 新增 `useMessageScroll.ts`（落位、跟随、前插补偿、未读计数与位置记忆整体下沉，源码门禁按原路径仍生效）；`GhostyMascot.tsx`（约 494）→ `svg/{facePresets,mouthPaths,useGhostyAnimation}.ts(x)`（表情预设表、固定嘴形、逐帧动画写入；2026-11-16 由 `svg/ghosty/` 平铺回 `svg/`，`ghosty/` 无 `index.tsx`、只是上一级组件的 parts 容器，属无独立变化原因的零件桶（违反 R6）故撤）；`ConnectDialog.tsx`（约 397）→ `ConnectDialog/{index,fieldSchemas,useConnectForm,ModelPreviewList}.ts(x)`（字段与获取模型动作、表单状态与提交装配、模型清单预览、弹窗装配）。对外默认导出与导入路径不变（`ConnectDialog` 目录名与导入路径一致），交互与行为零变更，`npm run typecheck` / `npm run lint` / `npx vitest run src/mascot src/settings src/chat`（366 项）通过。
 
 > 已完成（2026-11-16，前端 P3）：`turnOrchestrator.ts`（约 520）→ 仅抽 `stream/phase.ts`（`ChatPhase` 与 `TurnPhase`/`SessionState` → UI phase 映射）与 `stream/title.ts`（`fallbackTitleFromUserMessage`），`turnOrchestrator.ts` 以 `export type` / `export { ... } from` 保持原有导出面，编排骨架与策略分派未动。`npx vitest run src/services`（67 项）通过。
 
@@ -319,15 +340,15 @@ Rust 按包（`src/`，主 app 含 `build.rs`）：
 
 | 优先级 | 目录（直接文件数） | 子域与目标 | 备注 |
 |---|---|---|---|
-| P1 | `src/vault/settings`（15） | `sync/`（3：VaultSyncSettings / VaultConflictResolve / SshAgentTab）、`recovery/`（5：RecoveryKeyDialog / RecoveryKeyForm / RecoveryTab / RotateDekDialog / printPaperKey）、`security/`（5：ChangePasswordTab / SecurityLogTab / DangerZone / DangerZoneConfirm / DangerZoneTab）；`VaultSettings`、`ImportExportTab` 留根层 | 先完成 B3 对 VaultSyncSettings / VaultConflictResolve 的拆分，再搬移 |
+| P1 | `src/vault/settings`（15） | `sync/`（3：VaultSyncSettings / VaultConflictResolve / SshAgentTab）、`recovery/`（5：RecoveryKeyDialog / RecoveryKeyForm / RecoveryTab / RotateDekDialog / printPaperKey）、`security/`（5：ChangePasswordTab / SecurityLogTab / DangerZone / DangerZoneConfirm / DangerZoneTab）；`VaultSettings`、`ImportExportTab` 留根层 | 先完成 B3 对 VaultSyncSettings / VaultConflictResolve 的拆分，再搬移；2026-11-16 复核保留 `sync/`：三项同属「远端同步」一个变化原因，与 `recovery/`、`security/` 对称并对应 `VaultSettings` 的 tab 分组，不因拆分后直接子文件降至 3 而撤销 |
 | P1 | `src/tools`（14） | `framework/`（6：registry / types / categories / capabilities / os / miniNavigate）、`ui/`（8：ToolBox / MiniToolBox / ToolPage / ToolCard / ToolSearchBar / FavoriteButton / CollapsibleToolMenu / ToolCapabilityWrapper）；23 个工具目录不动 | `registry.ts` 内 23 条 `import("./<tool>")` 需改为 `../<tool>`，导入面集中在 `tools/` 与少量设置页 |
 | P1 | `src/chat/core`（17） | `stream/`（3：streamCoalescer / useTypewriter / optimisticMessage）、`message/`（4：messageTree / contentBlockTypes / contentBlockUtils / conversationLink，纯逻辑消息模型，区别于 UI 层 `chat/message/`）；其余 10 个文件留根层 | 其余子域各 2 个文件，未达 3 个，不再细分 |
 | P2 | `src/services`（24） | `chat/`（3）、`tool/`（3：toolService / permissionService / mcpService）、`system/`（5：tauriInvoke / crossWindowEvent / logger / globalErrorHandler / reactProductionError）、`desktop/`（4：storageService / workspaceService / orbService / windowService）；`history` / `settings` / `model` 各 2 个留根层 | B1 移出 `audit*` 后剩 22 个；分组后根层约 7 个单文件 |
 | P2 | `src/stores`（18） | `chat/`（6：chatStore / chatConversationSlice / chatMessageSlice / chatCompactSlice / chatStorePorts / chatStreamStore）、`system/`（4：themeStore / localeStore / notifyStore / windowModeStore）；`agentModeStore` 并入已有 `agent/` | 其余 7 个领域 store 留根层 |
 | P2 | `assistant-tools/src/os`（14 + 3 目录） | `tools/`（9 个工具文件 + `agent_edit/` / `agent_read/` / `fs_link/`）、`shared/`（path / output / text_encoding / process_output） | 触碰 17 个文件的 26 处 `crate::os::*` 引用；`os/mod.rs` 保留 `pub use` |
 | P2 | `src/settings/core`（13） | `registry/`（5：builtinRegistry / definePage / initSettingSystem / pageRegistry / sideEffectRegistry）、`runtime/`（8：confRuntime / snapshot / settingsDispatcher / optimisticUpdate / query / insertUnique / useConfGroup / useConfPatchHandlers）；`types/` 已存在 | 导入面集中在 `settings/` 与 `features/` |
-| P3 | `src/chat/message`（18） | 暂不分组：18 个文件同属「消息行渲染」一个变化原因；仅当 `input/` 或 `scroll/` 出现独立变化时再建子目录 | 观察项，触发条件见 R11 |
-| P3 | `src/vault/core`（13） | `hooks/`（4：useVaultAutoLock / useVaultEvents / useVaultStatusReady / useVaultUnlock）、`display/`（6：paperKey / syncDisplay / vaultError / vaultErrorText / vaultColors / vaultCategory）；`vaultStore` / `vault.service` / `vault.types` 留根层 | 与 `slices/`、`contract/` 同级，分组后仍在 3 段内 |
+| P3 | `src/chat/message`（19） | 暂不分组：19 个文件同属「消息行渲染」一个变化原因；仅当 `input/` 或 `scroll/` 出现独立变化时再建子目录 | 观察项，触发条件见 R11 |
+| P3 | `src/vault/core`（13） | `hooks/`（4：useVaultAutoLock / useVaultEvents / useVaultStatusReady / useVaultUnlock）、`display/`（6：paperKey / syncDisplay / vaultError / vaultErrorText / vaultColors / vaultCategory）；`vaultStore` / `vault.service` / `vault.types` 留根层 | 与 `slices/`、`contract/` 同级，不新增转发层 |
 | P3 | `src/vault`（12） | 暂不分组：列表 / 外壳 / 抽屉同属「保险库页面装配」一个变化原因 | 页面装配出现独立子变化时再评估 |
 | — | `src/chat/tool`（11）、`src/orb`（10） | 未达 12 的审查阈值，不分组 | — |
 | P3 | `assistant-storage/src`（13） | `tools/`（3：tool_history / tool_favorites / mcp_servers）；`db` / `migrations` / `attachment_store` / `content_codec` 等各 1–2 个文件留根层，不建目录 | 触碰各 crate 调用点，收益中等 |
@@ -341,7 +362,7 @@ Rust 按包（`src/`，主 app 含 `build.rs`）：
 
 > 已完成（2026-11-16，B4 全批）：P1 三项 —— `src/vault/settings` → `sync/`（3）、`recovery/`（5）、`security/`（5），`VaultSettings` / `ImportExportTab` 留根层；`src/tools` → `framework/`（6）、`ui/`（8），23 个工具目录不动（`registry.ts` 的 `import("./<tool>")` 同步改为 `../<tool>`）；`src/chat/core` → `stream/`（3）、`message/`（4），其余 10 个文件留根层。P2 四项 —— `src/services` → `chat/`、`tool/`、`system/`、`desktop/`（根层剩 7 个单文件）；`src/stores` → `chat/`（6）、`system/`（4），`agentModeStore` 并入已有 `agent/`（根层剩 7 个领域 store）；`assistant-tools/src/os` → `tools/`（9 个工具文件 + `agent_edit/` / `agent_read/` / `fs_link/`）、`shared/`（path / output / text_encoding / process_output / fs_util / scope / walk / test_support），`os/mod.rs` 保留原 `pub use` 导出面；`src/settings/core` → `registry/`（5）、`runtime/`（8），`types/` / `field/` / `agentKind/` / `provider/` 不动。P3 四项 —— `src/vault/core` → `hooks/`（4）、`display/`（6），`vaultStore` / `vault.service` / `vault.types` 留根层；`assistant-storage/src` → `tools/`（mcp_servers / tool_favorites / tool_history），`lib.rs` 以 `pub use tools::{...}` 保持 `assistant_storage::tool_history` 等外部路径；`assistant-agent/src/kernel` → `turn/`（runner / phase / state / outcome / emit / persist / stream），`ports/` / `request` / `tasks` / `limits` / `ids` 留根层；`assistant-tools/src` → `contract/`（trait / definition / context / result）、`runtime/`（gateway / policy / exec / pipeline / registry / compact / question / storage），`lib.rs` 的 `pub use` 路径保持不变。
 >
-> 暂不分组项复核结论不变：`src/chat/message`（18，同一「消息行渲染」变化原因）、`src/vault`（12，同一「保险库页面装配」变化原因）、`src-tauri/src/cmd`（19，多数文件即域入口，改动面大于收益）维持扁平；`src/chat/tool`（11）、`src/orb`（10）未达 12 的审查阈值。
+> 暂不分组项复核结论不变：`src/chat/message`（19，同一「消息行渲染」变化原因）、`src/vault`（12，同一「保险库页面装配」变化原因）、`src-tauri/src/cmd`（18，多数文件即域入口，改动面大于收益）维持扁平；`src/chat/tool`（11）、`src/orb`（10）未达 12 的审查阈值。以上数字来自 2026-11-16 的 `probe-structure.mjs` 实测。
 >
 > 源码门禁随搬移同步（行为不变、仅路径）：`assistant-tools/tests/pipeline.rs` 的 `include_str!("../src/pipeline.rs")` → `../src/runtime/pipeline.rs`；`assistant-vault/tests/dto_contract.rs` 的 `vaultError.ts` 读取路径 → `src/vault/core/display/vaultError.ts`。另清理 `assistant-i18n` 的未使用 `serde` 依赖（仅 `serde_json` 在用），消除 `cargo check` 的 unused dependency 警告。
 >
@@ -381,7 +402,7 @@ npm run contract:check
 
 结构验收（人工）：
 
-1. S2 / R6：新增目录后重跑目录深度统计，`src/` 之后不得出现第 4 段（生成物除外）。
+1. S2 / R6：重跑目录统计，**逐条解释**每个 ≥4 段目录的成因（子域？组件 parts 桶？生成物？）。解释不出的即失败，典型形态是只做转发的中间层、无 `index.tsx` 的零件桶、只装 1 个文件的空壳目录。段数本身不设上限，第 5 段、第 6 段同理按成因判定。
 2. S9 / R11：重跑直接子文件统计；分组后原目录应 ≤11 个直接子文件，新子目录内不得残留「≥3 个同子域文件仍平铺」的遗漏。
 3. S3 / R4：全仓搜索是否存在未被引用的 `index.*`；父子 barrel 的导出名集合必须无重复；显式 `/index` 引用、域内引用自身 barrel、`index.*` 内 `export *` 由 ESLint 直接报错（`npm run lint`）。
 4. S5 / R1–R2：`services/` 与 `utils/` 的文件 import 检查。
@@ -417,49 +438,28 @@ npm run contract:check
 
 ## 8 复现命令
 
+本文全部数字的唯一来源是仓库内脚本，不手工统计：
+
 ```powershell
-# 非空行
-function NB($p){ $n=0; foreach($l in [System.IO.File]::ReadLines($p)){ if($l.Trim().Length -gt 0){$n++} }; $n }
+# 生成完整报告（Markdown）
+node scripts/probe-structure.mjs --limit 40 --out temp-backup/structure-probe.md
 
-# 前端各模块规模（src 之后深度 = 路径段数 - 1）
-Get-ChildItem src -Recurse -File -Include *.ts,*.tsx |
-  Where-Object { $_.FullName -notmatch 'node_modules|__tests__|\.test\.' } |
-  ForEach-Object { [PSCustomObject]@{ Top=($_.FullName -split '\\src\\')[1].Split('\\')[0]; NB=(NB $_.FullName) } } |
-  Group-Object Top |
-  ForEach-Object { "{0}|files={1}|nonblank={2}" -f $_.Name,$_.Count,(($_.Group|Measure-Object NB -Sum).Sum) }
-
-# 目录深度（src 之后）
-Get-ChildItem src -Recurse -Directory |
-  ForEach-Object { (($_.FullName -split '\\src\\')[1] -split '\\').Count } |
-  Group-Object | Sort-Object Name
-
-# 扁平度（直接子文件数 >=10；前端）
-Get-ChildItem src -Recurse -Directory |
-  ForEach-Object {
-    $n = (Get-ChildItem (Join-Path $_.FullName '*') -File -Include *.ts,*.tsx -ErrorAction SilentlyContinue).Count
-    if ($n -ge 10) { "{0}|files={1}" -f $_.FullName, $n }
-  }
-
-# 扁平度（直接子文件数 >=10；Rust，排除生成/测试目录）
-Get-ChildItem src-tauri -Recurse -Directory |
-  Where-Object { $_.FullName -notmatch '\\target\\|\\tests\\' } |
-  ForEach-Object {
-    $n = (Get-ChildItem (Join-Path $_.FullName '*') -File -Include *.rs -ErrorAction SilentlyContinue).Count
-    if ($n -ge 10) { "{0}|files={1}" -f $_.FullName, $n }
-  }
-
-# 逻辑嵌套深度（Rust，缩进 /4；前端缩进 /2）
-Get-ChildItem src-tauri -Recurse -File -Include *.rs |
-  Where-Object { $_.FullName -notmatch '\\target\\|\\tests\\' } |
-  ForEach-Object {
-    $max=0
-    foreach($l in [System.IO.File]::ReadLines($_.FullName)){
-      if($l.Trim().Length -eq 0 -or $l.TrimStart().StartsWith('//')){ continue }
-      $m=[regex]::Match($l,'^[ \t]*').Value.Length; if($m -gt $max){$max=$m}
-    }
-    [PSCustomObject]@{ Depth=[math]::Floor($max/4); Path=$_.FullName }
-  } | Sort-Object Depth -Descending
+# 生成机读快照（JSON，便于逐项核对）
+node scripts/probe-structure.mjs --json --out temp-backup/structure-probe.json
 ```
+
+脚本输出章节与本文对应关系：
+
+| 脚本章节 | 对应本文 | 口径 |
+|---|---|---|
+| 规模（Rust 各 crate / 前端） | §2.1 | 非空行；前端区分「非测试非生成」与测试 |
+| 顶层模块（非测试非生成） | §2.1 前端表 | 按 `src/` 之后第一段目录聚合 |
+| 目录深度直方图 | §2.2 | `src/` 之后目录段数；仅含生成物的目录单列 |
+| 深度观察（≥4 段） | §2.2 / §5 验收第 1 条 | 逐条解释成因，不作失败判定 |
+| 扁平度（直接子 `.rs` ≥10 / 直接子文件 ≥12） | §2.2 / R11 | 含 `mod.rs`、`index.ts`；不含测试与生成物 |
+| 逻辑嵌套 | §2.3 | 最大前导空白，Rust `/4`、前端 `/2`，跳过空行与 `//` |
+
+改了统计口径就改脚本，本文只引用脚本输出，不再维护 PowerShell 片段（避免文档与脚本两套口径再次漂移）。
 
 ---
 
@@ -471,7 +471,8 @@ Get-ChildItem src-tauri -Recurse -File -Include *.rs |
 | 新增前端跨域展示逻辑 | 独立领域目录（如 `src/audit/`），禁止放 `services/` 或让一方领域依赖另一方 |
 | 新增静态大表 | `<tool>/<name>.data.ts`，与算法文件分离 |
 | 新增 Rust 子模块 | `foo.rs` → `foo/mod.rs`；共享叶子下沉到被依赖方都不依赖的独立模块 |
+| 判断能否新增一层目录 | 问「这层对应哪个可命名的变化原因」：答得出（子域 / 职责）就建，答不出（只转发、只是零件桶、只装 1 个文件）就不建；不看段数（R6） |
 | 某目录同级文件增多 | 先按 R11 归类：≥2 个独立变化原因的子域且各 ≥3 个文件才建子目录；同一变化原因的 uniform peers 保持扁平 |
 | 新增工具实现 | `assistant-tools/src/os/<tool>.rs`；出现第二个变化原因时再升级为目录模块 |
-| 判断是否该拆 | `principle/CODE-SPLIT-PRINCIPLE.md` |
-| 判断放哪个 crate | `store/crate-architecture.md` §5 |
+| 判断是否该拆 | `../../principle/CODE-SPLIT-PRINCIPLE.md` |
+| 判断放哪个 crate | `../../store/crate-architecture.md` §5 |
