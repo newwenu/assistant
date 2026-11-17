@@ -101,6 +101,8 @@ elapsedMs: number,
  */
 startedAtMs: number | null, elapsedBeforeMs: number, };
 export type ClockStatusDto = "idle" | "running" | "paused" | "finished";
+export type CommandErrorCodeDto = "ApiKeyMissing" | "AuthFailed" | "RateLimited" | "ModelNotFound" | "ContextOverflow" | "NetworkError" | "Timeout" | "ServerError" | "RequestRejected" | "ParseError" | "Cancelled" | "StreamError" | "InternalError" | "SessionBusy" | "ConversationNotFound" | "ProviderNotFound" | "Validation" | "StorageFailure" | "NoPendingInteraction";
+export type CommandErrorDto = { code: CommandErrorCodeDto, message: string, retryable: boolean, retryAfterMs: number | null, };
 export type ContentBlockDto = { "type": "text", text: string, } | { "type": "image", attachment: ImageAttachmentRefDto, } | { "type": "file", attachment: FileAttachmentRefDto, } | { "type": "thinking", thinking: string, signature: string | null, } | { "type": "tool_use", tool_use_id: string, name: string, input: string, } | { "type": "tool_result", tool_use_id: string, output: string, };
 export type ConversationAttachmentSummary = { conversationId: string, title: string, attachments: Array<AttachmentSummary>, totalBytes: number, updatedAt: number, };
 export type ConversationDetailDto = { conversation: ConversationDto, messages: Array<MessageDto>, totalCount: number, 
@@ -260,8 +262,7 @@ export type PermissionAuditEntryDto = { tool: string, action: string, resource: 
 export type PermissionAuditPageDto = { entries: Array<PermissionAuditEntryDto>, hasMore: boolean, };
 export type PermissionIntentDto = { action: string, resources: Array<string>, };
 export type PersistedResultDto = { path: string, bytes: number | null, };
-export type ProviderErrorCodeDto = "ApiKeyMissing" | "AuthFailed" | "RateLimited" | "ModelNotFound" | "ContextOverflow" | "NetworkError" | "Timeout" | "ServerError" | "RequestRejected" | "ParseError" | "Cancelled" | "StreamError" | "InternalError";
-export type ProviderErrorPayloadDto = { code: ProviderErrorCodeDto, message: string, retryAfterMs: number | null, retryable: boolean, httpStatus: number | null, provider: string | null, providerCode: string | null, };
+export type ProviderErrorPayloadDto = { code: CommandErrorCodeDto, message: string, retryAfterMs: number | null, retryable: boolean, httpStatus: number | null, provider: string | null, providerCode: string | null, };
 export type ProviderInputDto = { id: string, name: string, type: string, baseUrl: string, apiKey: string, apiKeyChanged?: boolean | null, models: Array<ModelConfigDto>, defaultModel: string, };
 export type ProviderListDto = { id: string, name: string, type: string, baseUrl: string, apiKeyMasked: string, models: Array<ModelConfigDto>, defaultModel: string, updatedAt: number, 
 /**
@@ -278,7 +279,7 @@ toggle: boolean,
  */
 efforts: Array<string>, };
 export type ResolvedThemeDto = "light" | "dark";
-export type RetryNotificationDto = { attempt: number, maxAttempts: number, delayMs: number, message: string, errorCode: ProviderErrorCodeDto | null, };
+export type RetryNotificationDto = { attempt: number, maxAttempts: number, delayMs: number, message: string, errorCode: CommandErrorCodeDto | null, };
 export type ScreenRectDto = { x: number, y: number, width: number, height: number, };
 export type ScreenSizeDto = { screen: ScreenRectDto, };
 export type ScreenshotCropArgsDto = { token: string, x: number, y: number, width: number, height: number, };

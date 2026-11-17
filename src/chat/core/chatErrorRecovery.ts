@@ -14,6 +14,11 @@ import {
   PauseCircleOutlined,
   ApiOutlined,
   WarningOutlined,
+  HourglassOutlined,
+  FileSearchOutlined,
+  DisconnectOutlined,
+  ExclamationCircleOutlined,
+  DatabaseOutlined,
 } from "@ant-design/icons";
 
 const ERROR_ICONS: Record<ChatErrorCode, React.ComponentType> = {
@@ -30,6 +35,12 @@ const ERROR_ICONS: Record<ChatErrorCode, React.ComponentType> = {
   [ChatErrorCode.Cancelled]: PauseCircleOutlined,
   [ChatErrorCode.StreamError]: ApiOutlined,
   [ChatErrorCode.InternalError]: WarningOutlined,
+  [ChatErrorCode.SessionBusy]: HourglassOutlined,
+  [ChatErrorCode.ConversationNotFound]: FileSearchOutlined,
+  [ChatErrorCode.ProviderNotFound]: DisconnectOutlined,
+  [ChatErrorCode.Validation]: ExclamationCircleOutlined,
+  [ChatErrorCode.StorageFailure]: DatabaseOutlined,
+  [ChatErrorCode.NoPendingInteraction]: StopOutlined,
 };
 
 export type RecoveryActionCode =
@@ -105,6 +116,9 @@ const DEFAULT_ACTIONS: Record<ChatErrorCategory, RecoveryActionCode[]> = {
   [ChatErrorCategory.ContentPolicy]: ["copy_diagnostics"],
   [ChatErrorCategory.ModelError]: ["retry", "switch_model", "copy_diagnostics"],
   [ChatErrorCategory.Cancelled]: ["copy_diagnostics"],
+  [ChatErrorCategory.Busy]: ["wait_and_retry", "copy_diagnostics"],
+  // 存储故障重试必然再次失败，只给「复制诊断」：禁止出现 retry / wait_and_retry
+  [ChatErrorCategory.Storage]: ["copy_diagnostics"],
   [ChatErrorCategory.Unknown]: ["retry", "switch_model", "copy_diagnostics"],
 };
 
@@ -176,6 +190,16 @@ const CATEGORY_INFO: Record<
     titleKey: "chat.error.Cancelled",
     messageKey: "chat.error.category_cancelled_message",
     severity: "warning",
+  },
+  [ChatErrorCategory.Busy]: {
+    titleKey: "chat.error.SessionBusy",
+    messageKey: "chat.error.category_busy_message",
+    severity: "warning",
+  },
+  [ChatErrorCategory.Storage]: {
+    titleKey: "chat.error.StorageFailure",
+    messageKey: "chat.error.category_storage_message",
+    severity: "error",
   },
   [ChatErrorCategory.Unknown]: {
     titleKey: "chat.error.InternalError",

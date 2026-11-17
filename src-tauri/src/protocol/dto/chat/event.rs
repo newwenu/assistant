@@ -1,47 +1,10 @@
-use assistant_providers::base::{ProviderErrorCode, ProviderErrorPayload};
+use assistant_providers::base::ProviderErrorPayload;
 use assistant_providers::types::chat_delta::RetryNotification;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::super::error::CommandErrorCodeDto;
 use super::usage::TokenUsageDto;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
-pub enum ProviderErrorCodeDto {
-    ApiKeyMissing,
-    AuthFailed,
-    RateLimited,
-    ModelNotFound,
-    ContextOverflow,
-    NetworkError,
-    Timeout,
-    ServerError,
-    RequestRejected,
-    ParseError,
-    Cancelled,
-    StreamError,
-    InternalError,
-}
-
-impl From<ProviderErrorCode> for ProviderErrorCodeDto {
-    fn from(code: ProviderErrorCode) -> Self {
-        match code {
-            ProviderErrorCode::ApiKeyMissing => Self::ApiKeyMissing,
-            ProviderErrorCode::AuthFailed => Self::AuthFailed,
-            ProviderErrorCode::RateLimited => Self::RateLimited,
-            ProviderErrorCode::ModelNotFound => Self::ModelNotFound,
-            ProviderErrorCode::ContextOverflow => Self::ContextOverflow,
-            ProviderErrorCode::NetworkError => Self::NetworkError,
-            ProviderErrorCode::Timeout => Self::Timeout,
-            ProviderErrorCode::ServerError => Self::ServerError,
-            ProviderErrorCode::RequestRejected => Self::RequestRejected,
-            ProviderErrorCode::ParseError => Self::ParseError,
-            ProviderErrorCode::Cancelled => Self::Cancelled,
-            ProviderErrorCode::StreamError => Self::StreamError,
-            ProviderErrorCode::InternalError => Self::InternalError,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -51,7 +14,7 @@ pub struct RetryNotificationDto {
     pub delay_ms: u64,
     pub message: String,
     #[serde(default)]
-    pub error_code: Option<ProviderErrorCodeDto>,
+    pub error_code: Option<CommandErrorCodeDto>,
 }
 
 impl From<RetryNotification> for RetryNotificationDto {
@@ -61,7 +24,7 @@ impl From<RetryNotification> for RetryNotificationDto {
             max_attempts: r.max_attempts,
             delay_ms: r.delay_ms,
             message: r.message,
-            error_code: r.error_code.map(ProviderErrorCodeDto::from),
+            error_code: r.error_code.map(CommandErrorCodeDto::from),
         }
     }
 }
@@ -69,7 +32,7 @@ impl From<RetryNotification> for RetryNotificationDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderErrorPayloadDto {
-    pub code: ProviderErrorCodeDto,
+    pub code: CommandErrorCodeDto,
     pub message: String,
     #[serde(default)]
     pub retry_after_ms: Option<u64>,
@@ -85,7 +48,7 @@ pub struct ProviderErrorPayloadDto {
 impl From<ProviderErrorPayload> for ProviderErrorPayloadDto {
     fn from(p: ProviderErrorPayload) -> Self {
         Self {
-            code: ProviderErrorCodeDto::from(p.code),
+            code: CommandErrorCodeDto::from(p.code),
             message: p.message,
             retry_after_ms: p.retry_after_ms,
             retryable: p.retryable,

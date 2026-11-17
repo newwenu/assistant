@@ -1,20 +1,39 @@
+import type { CommandErrorCodeDto } from "../../types/protocol.contract";
 import { translateKey } from "../../i18n";
 
-export enum ChatErrorCode {
-  ApiKeyMissing = "ApiKeyMissing",
-  AuthFailed = "AuthFailed",
-  RateLimited = "RateLimited",
-  ModelNotFound = "ModelNotFound",
-  ContextOverflow = "ContextOverflow",
-  NetworkError = "NetworkError",
-  Timeout = "Timeout",
-  ServerError = "ServerError",
-  RequestRejected = "RequestRejected",
-  ParseError = "ParseError",
-  Cancelled = "Cancelled",
-  StreamError = "StreamError",
-  InternalError = "InternalError",
-}
+/**
+ * 错误码的唯一来源是生成契约 `CommandErrorCodeDto`（Rust 侧
+ * `CommandErrorCodeDto`）。此处不再手写第二份枚举，只保留值等于键的
+ * 对象，让既有 `ChatErrorCode.X` 属性访问写法继续成立。
+ *
+ * `SameKeys` 同时约束「漏键 / 多键」与「值写错」：后端新增码后前端
+ * 未同步时 `npm run typecheck` 直接失败。
+ */
+type SameKeys = { [K in CommandErrorCodeDto]: K };
+
+export const ChatErrorCode: SameKeys = {
+  ApiKeyMissing: "ApiKeyMissing",
+  AuthFailed: "AuthFailed",
+  RateLimited: "RateLimited",
+  ModelNotFound: "ModelNotFound",
+  ContextOverflow: "ContextOverflow",
+  NetworkError: "NetworkError",
+  Timeout: "Timeout",
+  ServerError: "ServerError",
+  RequestRejected: "RequestRejected",
+  ParseError: "ParseError",
+  Cancelled: "Cancelled",
+  StreamError: "StreamError",
+  InternalError: "InternalError",
+  SessionBusy: "SessionBusy",
+  ConversationNotFound: "ConversationNotFound",
+  ProviderNotFound: "ProviderNotFound",
+  Validation: "Validation",
+  StorageFailure: "StorageFailure",
+  NoPendingInteraction: "NoPendingInteraction",
+};
+
+export type ChatErrorCode = CommandErrorCodeDto;
 
 export enum ChatErrorCategory {
   Network = "network",
@@ -28,6 +47,8 @@ export enum ChatErrorCategory {
   ContentPolicy = "content_policy",
   ModelError = "model_error",
   Cancelled = "cancelled",
+  Busy = "busy",
+  Storage = "storage",
   Unknown = "unknown",
 }
 
@@ -46,9 +67,10 @@ export interface ChatError {
 export function isChatError(value: unknown): value is ChatError {
   if (typeof value !== "object" || value === null) return false;
   const obj = value as Record<string, unknown>;
+  // 不校验码是否在枚举内：契约生成漏跑 / 手工改生成物时仍要保留后端文案，
+  // 分类由 inferCategory 回落 Unknown，message 原样透出。
   return (
     typeof obj.code === "string" &&
-    Object.values(ChatErrorCode).includes(obj.code as ChatErrorCode) &&
     (obj.message === undefined || typeof obj.message === "string") &&
     typeof obj.retryable === "boolean" &&
     (obj.retryAfterMs === undefined ||
@@ -80,10 +102,17 @@ const CODE_TO_CATEGORY = {
   [ChatErrorCode.StreamError]: ChatErrorCategory.Network,
   [ChatErrorCode.Cancelled]: ChatErrorCategory.Cancelled,
   [ChatErrorCode.InternalError]: ChatErrorCategory.Unknown,
+  [ChatErrorCode.SessionBusy]: ChatErrorCategory.Busy,
+  [ChatErrorCode.ConversationNotFound]: ChatErrorCategory.InvalidRequest,
+  [ChatErrorCode.ProviderNotFound]: ChatErrorCategory.InvalidRequest,
+  [ChatErrorCode.Validation]: ChatErrorCategory.InvalidRequest,
+  [ChatErrorCode.StorageFailure]: ChatErrorCategory.Storage,
+  [ChatErrorCode.NoPendingInteraction]: ChatErrorCategory.Cancelled,
 } as const satisfies Record<ChatErrorCode, ChatErrorCategory>;
 
 export function inferCategory(error: ChatError): ChatErrorCategory {
-  return CODE_TO_CATEGORY[error.code];
+  // 未知码（契约漏跑 / 手工改生成物）回落 Unknown，但 message 原样保留。
+  return CODE_TO_CATEGORY[error.code] ?? ChatErrorCategory.Unknown;
 }
 
 export function toChatError(

@@ -1,17 +1,18 @@
 use assistant_app::protocol::{
     AgentModeDto, AgentModeKindDto, AgentToolCallDto, AgentToolCallPayloadDto, AppConfDto,
     CapabilitySourceDto, CapabilitySupportDto, ChatDeltaPayloadDto, ChatRegeneratePayloadDto,
-    ChatStreamStartPayloadDto, ConversationDetailDto, ConversationDto, ConversationPatchDto,
-    ConversationQueryModeDto, ConversationQueryOptsDto, ConversationTerminatedPayloadDto,
-    ConversationToolConfigDto, ConversationUnlockedPayloadDto, InstallMascotAssetResultDto,
-    MascotConfDto, MessageDto, MessageStatusDto, MessageToolCallDto, MessageToolCallStatusDto,
-    ModelCapabilityDto, ModelConfigDto, ModelEffortSupportDto, MousePositionDto, OrbConfDto,
-    OsToolExecRequestDto, OsToolResultDto, ProviderErrorCodeDto, ProviderErrorPayloadDto,
+    ChatStreamStartPayloadDto, CommandErrorCodeDto, CommandErrorDto, ConversationDetailDto,
+    ConversationDto, ConversationPatchDto, ConversationQueryModeDto, ConversationQueryOptsDto,
+    ConversationTerminatedPayloadDto, ConversationToolConfigDto, ConversationUnlockedPayloadDto,
+    InstallMascotAssetResultDto, MascotConfDto, MessageDto, MessageStatusDto, MessageToolCallDto,
+    MessageToolCallStatusDto, ModelCapabilityDto, ModelConfigDto, ModelEffortSupportDto,
+    MousePositionDto, OrbConfDto, OsToolExecRequestDto, OsToolResultDto, ProviderErrorPayloadDto,
     ProviderListDto, ReasoningLevelsDto, ResolvedThemeDto, RetryNotificationDto, ScreenRectDto,
     ScreenSizeDto, SendChatMessageArgsDto, SessionStateChangedPayloadDto, SessionStateDto,
     SettingProviderChangedActionDto, SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto,
     ThemeChangedPayloadDto, TokenUsageDto, ToolErrorKindDto, ToolResultCompactDto, TurnPhaseDto,
 };
+use assistant_providers::base::ProviderError;
 use assistant_storage::agent_modes::AgentModeRow;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -195,7 +196,7 @@ fn retry_notification_dto_roundtrip() {
 #[test]
 fn provider_error_payload_dto_roundtrip() {
     let dto = ProviderErrorPayloadDto {
-        code: ProviderErrorCodeDto::RateLimited,
+        code: CommandErrorCodeDto::RateLimited,
         message: "rate limited".into(),
         retry_after_ms: Some(5000),
         retryable: true,
@@ -206,6 +207,69 @@ fn provider_error_payload_dto_roundtrip() {
     roundtrip(&dto);
     let json = serde_json::to_string(&dto).unwrap();
     assert!(json.contains("retryAfterMs"), "camelCase: {}", json);
+}
+
+#[test]
+fn command_error_dto_roundtrip() {
+    let dto = CommandErrorDto::new(CommandErrorCodeDto::Validation, "content is empty");
+    roundtrip(&dto);
+    let json = serde_json::to_string(&dto).unwrap();
+    assert!(
+        json.contains("\"retryAfterMs\":null"),
+        "None field present as null: {}",
+        json
+    );
+    assert!(
+        json.contains("\"code\":\"Validation\""),
+        "PascalCase: {}",
+        json
+    );
+    assert!(json.contains("\"retryable\":false"), "derived: {}", json);
+}
+
+#[test]
+fn command_error_dto_from_provider_error_keeps_retry_after_ms() {
+    let dto = CommandErrorDto::from(ProviderError::RateLimited {
+        retry_after_ms: Some(5000),
+    });
+    roundtrip(&dto);
+    assert_eq!(dto.code, CommandErrorCodeDto::RateLimited);
+    assert_eq!(dto.retry_after_ms, Some(5000), "倒计时必须保留");
+    assert!(dto.retryable, "可重试由码推导");
+}
+
+#[test]
+fn command_error_code_retryable_matrix() {
+    use CommandErrorCodeDto::*;
+    let retryable = [
+        RateLimited,
+        NetworkError,
+        Timeout,
+        ServerError,
+        StreamError,
+        SessionBusy,
+    ];
+    for code in retryable {
+        assert!(code.is_retryable(), "{:?} 应可重试", code);
+    }
+    let non_retryable = [
+        ApiKeyMissing,
+        AuthFailed,
+        ModelNotFound,
+        ContextOverflow,
+        RequestRejected,
+        ParseError,
+        Cancelled,
+        InternalError,
+        ConversationNotFound,
+        ProviderNotFound,
+        Validation,
+        StorageFailure,
+        NoPendingInteraction,
+    ];
+    for code in non_retryable {
+        assert!(!code.is_retryable(), "{:?} 不应可重试", code);
+    }
 }
 
 #[test]
