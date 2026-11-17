@@ -332,6 +332,26 @@ div[data-orb-window]:not(.orb-expanded) .ant-modal-root {
   pointer-events: none !important;
 }
 
+/*
+ * 截屏覆盖层模式：orb 窗口临时被撑成全屏并显示底图，此时球体与对话面板必须整体消失，
+ * 否则底图揭示瞬间会看到旧 UI 叠在截屏画面之上。用 `visibility` 保留布局，
+ * 退出模式后无需重新测量。
+ */
+div[data-orb-window].orb-screenshot .orb-hitbox,
+div[data-orb-window].orb-screenshot .orb-panel {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* 浮层挂在根节点而不是面板子树里，单独再压一层，避免残留气泡盖在截屏底图上。 */
+div[data-orb-window].orb-screenshot .ant-tooltip,
+div[data-orb-window].orb-screenshot .ant-dropdown,
+div[data-orb-window].orb-screenshot .ant-popover,
+div[data-orb-window].orb-screenshot .ant-select-dropdown {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 div[data-orb-window].orb-expand-left {
   --orb-origin-x: 100%;
 }

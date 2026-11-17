@@ -1,4 +1,5 @@
 import type { AdmitError, AllowedImageMimeType, Attachment } from "./types";
+import type { AttachmentImportDto } from "@/types/protocol.contract";
 import {
   ALLOWED_IMAGE_MIME_TYPES,
   FILE_EXT_TO_MIME,
@@ -116,6 +117,37 @@ function mapImportError(e: unknown): AdmitError {
   if (message === "too_large") return "too_large";
   if (message === "invalid_file_type") return "invalid_file_type";
   return "import_failed";
+}
+
+/**
+ * 把已归档的导入结果包成 Attachment；不触发任何 IPC（截屏裁剪已由 Rust 入库）。
+ *
+ * 与 `createPathAttachment` 共用后半段构造逻辑，区别只是不调用 `import_attachment`；
+ * 类型 / 大小一律以 `dto` 为准，`meta` 只补宽高，避免缩略图首帧布局跳变。
+ */
+export async function attachmentFromImport(
+  dto: AttachmentImportDto,
+  meta?: { width?: number; height?: number },
+): Promise<AttachmentResult> {
+  const mimeType = dto.mediaType as AllowedImageMimeType;
+  if (!ALLOWED_IMAGE_MIME_TYPES.includes(mimeType))
+    return reject("invalid_type");
+  /** 不变式 12：`mediaType` 必须与扩展名一致，两个来源不一致就不收。 */
+  if (IMAGE_EXT_TO_MIME[extOf(dto.fileName)] !== mimeType)
+    return reject("invalid_type");
+
+  return accept({
+    id: generateAttachmentId(),
+    kind: "image",
+    file: new File([], dto.fileName, { type: mimeType }),
+    originalSizeBytes: dto.bytes,
+    attachmentId: dto.attachmentId,
+    mimeType,
+    previewUrl: await attachmentUrl(dto.attachmentId).catch(() => ""),
+    ...(meta?.width && meta.height
+      ? { width: meta.width, height: meta.height }
+      : {}),
+  });
 }
 
 export function createFileAttachmentFromFile(file: File): AttachmentResult {

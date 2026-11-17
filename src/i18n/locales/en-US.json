@@ -217,6 +217,7 @@
       "toggle_main": "Show/Hide Main Window",
       "new_chat": "New Chat",
       "command_palette": "Command Palette",
+      "capture_screenshot": "Screenshot",
       "not_set": "Not Set",
       "recording": "Press shortcut...",
       "modified": "Modified",
@@ -694,6 +695,7 @@
       "send": "Send message",
       "stop": "Stop generating",
       "attach": "Attach",
+      "screenshot": "Screenshot",
       "model_no_vision": "Current model does not support images",
       "model_vision_unknown": "Cannot confirm whether this model supports images. Attachment kept; it will be treated as text if unsupported",
       "too_many_images": "Maximum {{max}} images allowed",
@@ -1217,6 +1219,22 @@
     "toggle_to_normal": "Expand to full window",
     "page_unsupported": "This page does not support mini mode",
     "page_unsupported_desc": "This page needs the full window width; the current mode is kept."
+  },
+  "screenshot": {
+    "select_hint": "Drag to select (captures the monitor under the cursor). Enter to confirm, Esc to cancel",
+    "permission_guide": "Open System Settings → Privacy & Security → Screen Recording, grant access, then retry",
+    "err": {
+      "no_session": "The screenshot session expired; take another screenshot",
+      "token_invalid": "The screenshot session expired; take another screenshot",
+      "no_monitor": "No usable monitor found",
+      "capture_failed": "Screenshot failed",
+      "too_small": "Selection is too small",
+      "encode_failed": "Failed to process the screenshot",
+      "too_large": "Screenshot is too large; select a smaller area",
+      "archive_failed": "Failed to save the screenshot",
+      "permission_denied": "Screen Recording permission is required",
+      "cancel_failed": "Failed to cancel the screenshot"
+    }
   },
   "vault": {
     "name": "Password Vault",

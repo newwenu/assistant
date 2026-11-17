@@ -44,6 +44,13 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     kind: "global",
   },
   {
+    id: "capture_screenshot",
+    group: "global",
+    label: "settings.shortcuts.capture_screenshot",
+    defaultBinding: expandPrimary(DEFAULT_SHORTCUT_PATTERNS.capture_screenshot),
+    kind: "global",
+  },
+  {
     id: "commandPalette",
     group: "main",
     label: "settings.shortcuts.command_palette",

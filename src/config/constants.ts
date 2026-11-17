@@ -29,6 +29,9 @@ export const ORB_SNAP_DELAY_MS = 1000;
 export const LONG_PRESS_DURATION_MS = 500;
 export const CONTEXT_MENU_DEDUPE_MS = 700;
 
+/** 截图选区最小边长（CSS 逻辑像素）：小于它视为误触，不提交裁剪。 */
+export const SCREENSHOT_MIN_SELECTION_CSS_PX = 8;
+
 export const CHAT_INPUT_MIN_ROWS = 1;
 export const CHAT_INPUT_MAX_ROWS = 4;
 export const CHAT_AUTO_TITLE_LENGTH = 20;

@@ -3,7 +3,7 @@
     "pages": 9,
     "categories": 4,
     "sections": 9,
-    "fields": 41,
+    "fields": 42,
     "routes": 1,
     "sidebar": 1,
     "confPageMap": 4
@@ -267,6 +267,12 @@
     },
     {
       "key": "keybindings.new_chat",
+      "group": "app",
+      "section": "shortcuts-main",
+      "type": "keybinding"
+    },
+    {
+      "key": "keybindings.capture_screenshot",
       "group": "app",
       "section": "shortcuts-main",
       "type": "keybinding"

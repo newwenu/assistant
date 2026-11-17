@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { flushSync } from "react-dom";
 import { orbService } from "../services/desktop/orbService";
 import { useOrbStore } from "../stores/orbStore";
+import { useScreenshotStore } from "../stores/screenshotStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { getConfValue } from "@/settings/core/runtime/useConfGroup";
 import { createLogger } from "@/services/system/logger";
@@ -58,7 +59,10 @@ export function suppressOrbBlurCollapse(ms = 600): void {
 }
 
 export function isOrbBlurCollapseSuppressed(): boolean {
-  return Date.now() < blurCollapseSuppressedUntil;
+  if (Date.now() < blurCollapseSuppressedUntil) return true;
+  /** 截图会话期间窗口被撑成全屏且必然失焦，此时折叠会把几何写坏（不变式 16）。 */
+  const shot = useScreenshotStore.getState();
+  return shot.session !== null || shot.preparing || shot.finishing;
 }
 
 /** 收起唯一入口：并发调用合并为同一次，已收起时直接返回。 */

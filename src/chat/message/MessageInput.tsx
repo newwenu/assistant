@@ -1,5 +1,6 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { Input } from "antd";
+import type { TextAreaRef } from "antd/es/input/TextArea";
 import { useTranslation } from "react-i18next";
 import {
   CHAT_INPUT_MIN_ROWS,
@@ -14,6 +15,10 @@ import {
 import { buildRendererConfig } from "../../mascot/core/mascotConfig";
 import { useConfGroup } from "@/settings/core/runtime/useConfGroup";
 import { useAttachmentStore } from "../../stores/attachmentStore";
+import {
+  CHAT_FOCUS_INPUT_EVENT,
+  consumeChatInputFocusRequest,
+} from "../../screenshot/session";
 import {
   buildContentBlocksAsync,
   serializeContent,
@@ -46,6 +51,20 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const attachments = useAttachmentStore((s) => s.attachments);
   const clearAttachments = useAttachmentStore((s) => s.clearAttachments);
   const { t } = useTranslation();
+  const inputRef = useRef<TextAreaRef>(null);
+
+  /** 截图确认后由覆盖层派发：输入框已恢复可见，聚焦即可直接打字（§9.8）。 */
+  useEffect(() => {
+    const onFocusRequest = () => {
+      consumeChatInputFocusRequest();
+      inputRef.current?.focus();
+    };
+    window.addEventListener(CHAT_FOCUS_INPUT_EVENT, onFocusRequest);
+    /** 展开期间请求可能早于挂载，挂载时补消费一次。 */
+    if (consumeChatInputFocusRequest()) inputRef.current?.focus();
+    return () =>
+      window.removeEventListener(CHAT_FOCUS_INPUT_EVENT, onFocusRequest);
+  }, []);
 
   const doSend = useCallback(async () => {
     const hasText = value.trim().length > 0;
@@ -94,6 +113,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   return (
     <div className="chat-input">
       <Input.TextArea
+        ref={inputRef}
         value={value}
         onChange={(e) => {
           onValueChange(e.target.value);

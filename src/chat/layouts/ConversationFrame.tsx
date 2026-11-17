@@ -5,6 +5,7 @@ import {
   SettingOutlined,
   ThunderboltOutlined,
   PaperClipOutlined,
+  ScissorOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { ContextBar } from "../context/ContextBar";
@@ -16,6 +17,11 @@ import { ReasoningSelector } from "../selectors/ReasoningSelector";
 import { CompactBanner } from "../compact/CompactBanner";
 import { AttachmentPreview } from "../message/AttachmentPreview";
 import { useAttachmentStore } from "../../stores/attachmentStore";
+import { useScreenshotStore } from "../../stores/screenshotStore";
+import {
+  notifyScreenshotError,
+  screenshotService,
+} from "../../screenshot/session";
 import type { ConversationFrameProps } from "./layoutProps";
 import { WorkspaceSelector } from "../selectors/WorkspaceSelector";
 import {
@@ -78,6 +84,36 @@ export function ConversationFrame(props: ConversationFrameProps) {
   const { t } = useTranslation();
   /** 联合类型收窄点：`agent` 链路才具备工作区与工具区域数据。 */
   const agentProps = props.link === "agent" ? props : null;
+
+  /**
+   * 工具栏截图入口（I35 F41）：先 `beginPreparing()` 让 orb 窗口立刻进入覆盖层模式、
+   * 聊天 UI 在抓屏前消失；成功后由 `screenshot-session` 事件复位 `preparing`。
+   */
+  const onScreenshot = React.useCallback(() => {
+    useScreenshotStore.getState().beginPreparing();
+    void screenshotService
+      .start()
+      .then(async () => {
+        /**
+         * 忙时 `start` 直接返回 Ok 且不发会话事件（Rust 忽略重复入口），
+         * 这里补一次拉取：拿到会话就正常显影，拿不到就复位 `preparing`，
+         * 否则球体会一直停在隐藏状态。
+         */
+        if (useScreenshotStore.getState().session) return;
+        try {
+          const session = await screenshotService.getSession();
+          if (!useScreenshotStore.getState().session) {
+            useScreenshotStore.getState().setSession(session);
+          }
+        } catch {
+          useScreenshotStore.getState().endPreparing();
+        }
+      })
+      .catch((error: unknown) => {
+        useScreenshotStore.getState().endPreparing();
+        notifyScreenshotError(error);
+      });
+  }, []);
 
   return (
     <>
@@ -177,6 +213,14 @@ export function ConversationFrame(props: ConversationFrameProps) {
           onClick={onAttach}
           disabled={isStreaming}
           title={t("chat.input.attach")}
+        />
+        <Button
+          size="small"
+          type="text"
+          icon={<ScissorOutlined />}
+          onClick={onScreenshot}
+          disabled={isStreaming}
+          title={t("chat.input.screenshot")}
         />
         {agentProps ? <ToolRegionToolbar view={agentProps.toolRegion} /> : null}
       </div>
