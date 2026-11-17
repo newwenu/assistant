@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 
-import { useMascotAnimation } from "../useMascotAnimation";
+import { useMascotAnimation } from "./useMascotAnimation";
 
 import type { FacePreset } from "./facePresets";
 

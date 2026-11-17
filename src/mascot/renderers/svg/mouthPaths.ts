@@ -1,5 +1,5 @@
-import type { MascotFace } from "../../../core/types";
-import { REST_SMILE_PATH } from "../visemes";
+import type { MascotFace } from "../../core/types";
+import { REST_SMILE_PATH } from "./visemes";
 
 /** 非说话态嘴形：按表情给出固定路径，说话态由 viseme 覆盖。 */
 export function restMouthPath(face: MascotFace): string {

@@ -13,9 +13,9 @@ import {
   VIEWBOX,
 } from "./paths";
 import { resolveSvgViseme, visemePath, VISEMES } from "./visemes";
-import { FACE_PRESETS } from "./ghosty/facePresets";
-import { restMouthPath } from "./ghosty/paths";
-import { useGhostyAnimation } from "./ghosty/useGhostyAnimation";
+import { FACE_PRESETS } from "./facePresets";
+import { restMouthPath } from "./mouthPaths";
+import { useGhostyAnimation } from "./useGhostyAnimation";
 
 const DEFAULT_BODY_COLOR = "#3DD87E";
 const BLUSH_COLOR = "#f4a3a3";
