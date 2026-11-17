@@ -30,8 +30,8 @@
 | 组成部分 | 文件数 | 非空行 | 说明 |
 |---|---|---|---|
 | 主 app（`src/`） | 101 | 16,303 | Tauri 命令层、协议层、初始化 |
-| 12 个子 crate | 322 | 55,246 | 业务与基础设施 |
-| **合计** | **423** | **71,549** | |
+| 12 个子 crate | 338 | 55,327 | 业务与基础设施 |
+| **合计** | **439** | **71,630** | |
 
 ### 1.2 workspace 成员（12 个）
 
@@ -198,7 +198,7 @@ vault = ["dep:assistant-vault", "dep:assistant-sync", "dep:assistant-security"]
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 7,911 / 39 |
+| 行数 / 文件 | 7,948 / 45 |
 | 直接依赖 | 14（含 `image`、`pdf-extract`） |
 | 内部依赖 | `assistant-providers`、`assistant-storage` |
 | feature | `slow-tests`、`test-doubles`（仅测试用） |
@@ -210,10 +210,10 @@ vault = ["dep:assistant-vault", "dep:assistant-sync", "dep:assistant-security"]
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 17,482 / 93 |
+| 行数 / 文件 | 17,499 / 97 |
 | 直接依赖 | 22（`async-trait` `dashmap` `chardetng` `encoding_rs` `ignore` `globset` `grep-searcher` `grep-regex` `tempfile` `trash` `windows` `libc` `landlock` 等） |
 | 内部依赖 | 无 |
-| 模块 | `contract`（`context` `definition` `result` `trait`）、`runtime`（`exec` `pipeline` `policy` `question` `registry` `storage` + `compact/{anchor,head,preview,truncation,types}` + `gateway/{approval_key,context,decision,stores,testing}`）、`mcp`（`bridge/{call,defs,naming}` `manager/{lifecycle,types}` `stdio/{client,codec,stderr,transport}`）、`os`（`shared/{fs_util,output,process_output,scope,test_support,text_encoding,walk,path/{args,membership,protected,resolve}}` `tools/{agent_ask_user,agent_glob,agent_list,agent_mkdir,agent_move,agent_delete/{attrs,exec,scan,target,trash},agent_edit/{apply,locate,normalize,report,text},agent_grep/{outcome,probe,render,request,search,sink},agent_read/{window},agent_write/{atomic,encoding,lines,preview},fs_link/{check,create,validate}}`）、`sandbox`（`linux` `macos` + `windows/{acl}`） |
+| 模块 | `contract`（`context` `definition` `result` `trait`）、`runtime`（`exec` `pipeline` `policy` `question` `registry` `storage` + `compact/{access,anchor,envelope,error_kind,head,preview,text,truncation,types}` + `gateway/{approval_key,context,decision,stores,testing}`）、`mcp`（`bridge/{call,defs,naming}` `manager/{lifecycle,types}` `stdio/{client,codec,stderr,transport}`）、`os`（`shared/{fs_util,output,process_output,scope,test_support,text_encoding,walk,path/{args,membership,protected,resolve}}` `tools/{agent_ask_user,agent_glob,agent_list,agent_mkdir,agent_move,agent_delete/{attrs,exec,scan,target,trash},agent_edit/{apply,locate,normalize,report,text},agent_grep/{outcome,probe,render,request,search,sink},agent_read/{window},agent_write/{atomic,encoding,lines,preview},fs_link/{check,create,validate}}`）、`sandbox`（`linux` `macos` + `windows/{acl}`） |
 | 平台依赖 | Windows：`windows`（声明于 `[target.'cfg(windows)'.dependencies]`） |
 
 工具契约、执行运行时与平台适配（文件读写/编辑/搜索、链接、编码探测、MCP 桥接、沙箱）。全库最大 crate。`windows` crate 的实际使用点集中在 `sandbox/windows/`（`mod.rs` + `acl.rs`），feature 归属见 §3.4。
@@ -244,11 +244,11 @@ vault = ["dep:assistant-vault", "dep:assistant-sync", "dep:assistant-security"]
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 1,462 / 11 |
+| 行数 / 文件 | 1,489 / 17 |
 | 直接依赖 | 3（`serde` `log` `thiserror`） |
 | 内部依赖 | 无 |
 | feature | `git-tests`（仅测试用） |
-| 模块 | `redact` `types`；`git_sync`（`ssh`） |
+| 模块 | `redact` `types`；`git_sync`（`commit` `conflict` `helpers` `lifecycle` `remote` `state` `ssh`） |
 
 vault 的 git 同步实现。**唯一 crate 级消费者是 `assistant-vault`**；主 app 对它的直接声明（optional，由 feature `vault` 激活）仅用于 `cmd/vault/*`，因此它与 vault 属同一排除单元。
 
@@ -291,13 +291,13 @@ vault 的安全外围：剪贴板守卫、防截屏、锁屏/休眠监听、SSH 
 
 | 排名 | crate | 非空行 | 文件数 |
 |---|---|---|---|
-| 1 | assistant-tools | 17,482 | 93 |
+| 1 | assistant-tools | 17,499 | 97 |
 | 2 | assistant-vault | 9,808 | 62 |
 | 3 | assistant-providers | 9,300 | 47 |
-| 4 | assistant-agent | 7,911 | 39 |
+| 4 | assistant-agent | 7,948 | 45 |
 | 5 | assistant-storage | 4,036 | 21 |
 | 6 | assistant-security | 2,771 | 27 |
-| 7 | assistant-sync | 1,462 | 11 |
+| 7 | assistant-sync | 1,489 | 17 |
 | 8 | assistant-crypto | 1,071 | 6 |
 | 9 | assistant-config | 753 | 9 |
 | 10 | assistant-orb | 382 | 4 |

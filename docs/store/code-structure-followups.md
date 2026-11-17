@@ -37,44 +37,64 @@
 | `assistant-agent/src/multimodal.rs` | 692 | 配置与信任级别 / 校验 / 准入 / 重水化 / 投影 / 文本回退 | `multimodal/{mod,validate,blocks,admit,rehydrate,project,text}.rs` | 仅 `rehydrate_images` 无覆盖；其余路径已有 ≥17 个 `#[tokio::test]`（`tests/attachment_budget.rs`，其中 `project_files` 8 处、`admit_attachments` 5 处直接调用） |
 | `assistant-providers/src/openai/responses_stream.rs` | 688（743 含空行） | 重试循环 / SSE 事件分支 / 工具调用累积 / 推理摘要分段 | `responses_stream/{mod,state,event_handler,in_progress,helpers}.rs` | 无流式与重试 fixture（providers 的 `tests/` 只有 `base` / `diagnostics` / `quirks`，文件内无 `#[cfg(test)]`）；主体是单函数内 `'retry: loop` + `async_stream::stream!`，探针缩进 13 层（全仓 Rust 最深） |
 
-动作要求：
+**F1-a 已完成（2026-11-17）**：
 
-1. 先补缺口 fixture，再动结构。`multimodal` 只缺一条：往 `AttachmentStore` 放入图片附件后调用 `rehydrate_images`，断言 `ContentBlock::Image` 复原；`responses_stream` 需覆盖 SSE 增量、`response.output_item.done` 与重试分支。
+| 项 | 结果 |
+|---|---|
+| 前置用例 | `tests/attachment_budget.rs` 新增 `rehydrate_images_restores_cached_data_and_degrades_missing_ids`，覆盖「回填 `cached_data`」与「缺失 id 降级为 `[Image not found]`」两条分支；先跑该用例单独通过（1 passed） |
+| 拆分结果 | `multimodal.rs`（692 非空行）→ `multimodal/{mod,validate,blocks,admit,rehydrate,project,text}.rs`；`mod.rs` 45 非空行，只留类型 / 常量 / 模块声明 / `pub use`；最大子模块 `text.rs` 184 |
+| 变化原因落点 | `validate` = 信任级别配置 + 扩展名与路径校验；`blocks` = 消息块读写；`admit` = 准入与落盘；`rehydrate` = 图片回填；`project` = 预算分配与投影；`text` = 正文解码 / 截断 / 渲染与占位 |
+| 对外 API | 零变更：`AttachmentLimits` / `ATTACHMENT_LIMITS` / `MAX_UNKNOWN_WINDOW_FILE_TOKENS` / `ProjectionPurpose` / `MultimodalConfig` / `admit_attachments` / `rehydrate_images` / `project_images_for_text_model` / `project_files` / `text_only_image_text` / `offloaded_image_text` / `file_handle_text` 全部保持原路径 |
+| 验证 | `cargo clippy -p assistant-agent --all-targets -- -D warnings` 全绿；`cargo test -p assistant-agent` 全绿（lib 36 + attachment_budget 19 等）；`cargo check --all-targets` 全绿 |
+
+动作要求（仅 F1-b 仍适用，F1-a 已收口）：
+
+1. 先补缺口 fixture，再动结构。`responses_stream` 需覆盖 SSE 增量、`response.output_item.done` 与重试分支；crate 内无 HTTP mock 设施（`tests/` 只有 `base` / `diagnostics` / `quirks`，dev-dependencies 只有 `proptest`），因此 fixture 只能喂给「事件 JSON → 状态迁移」的纯函数，不引入 mock server。
 2. 拆分按原则 §5「宏边界不可搬移」执行：状态与分支抽成返回值的纯函数，宏内只保留 `for ... { yield }`；`mod.rs` 按 §4.1 只放类型、常量、模块声明、组合入口与 `pub use`。
 3. 纯搬移与语义改写分开提交，便于回滚。
-4. 对外 API 零变更：`multimodal` 与 `responses_stream` 的模块路径、导出集合保持不变。
+4. 对外 API 零变更：`responses_stream` 的模块路径与导出集合保持不变。
 5. 完成后在 `src-tauri` 目录跑 `cargo check` / `cargo clippy --all-targets -- -D warnings` / `cargo test`。
 
-**优先级定位**：这两个文件都在 900 行优先审查线以下，且 §2 已明确「行数不作拆分义务」。它们是归档规格的遗留项、价值中等，**不是**「唯一剩余的代码工作」；当前真实的结构风险在 F3 的组 A。
+**优先级定位**：`responses_stream.rs`（688）在 900 行优先审查线以下，且 §2 已明确「行数不作拆分义务」。它是归档规格的遗留项、价值中等，**不是**「唯一剩余的代码工作」；当前真实的结构风险在 F3 的组 A。
 
 ### F2 `crate-architecture.md` 口径统一（已收口）
 
-口径与非空行数字已随本次结构文档批提交收口（2026-11-17）：主 app 101 文件 / 16,303 非空行，12 个子 crate 322 / 55,246，合计 423 / 71,549（`probe-structure.mjs` 实测）。后续「重刷 `crate-architecture.md` 的 §1.1 / §3.1 / 逐 crate 行数」固定为**结构变更批提交前的随批动作**，不再当作一次性待办；纯功能批不追数字。重刷时同步补齐 B2 / B4 的实际落点分组（`runtime/`、`contract/`、`os/tools/`、`os/shared/`、`kernel/turn/`、`storage/tools/`、`vault/security_db/{state,session,anchor}`）。
+口径与非空行数字已随本次结构文档批提交收口（2026-11-17）：主 app 101 文件 / 16,303 非空行，12 个子 crate 338 / 55,327，合计 439 / 71,630（`probe-structure.mjs` 实测，含 F3-A 与 F1-a 未提交的拆分）。后续「重刷 `crate-architecture.md` 的 §1.1 / §3.1 / 逐 crate 行数」固定为**结构变更批提交前的随批动作**，不再当作一次性待办；纯功能批不追数字。重刷时同步补齐 B2 / B4 的实际落点分组（`runtime/`、`os/tools/`、`os/shared/`、`kernel/turn/`、`storage/tools/`、`vault/security_db/{state,session,anchor}`）。
 
 ### F3 ≥400 非空行的账目重建（原账目不可用）
 
-实测（probe 同口径，非测试、非生成物）：Rust **42 个**、前端 **9 个**。按「是否已有结论」分成四组，合计 42：
+实测（probe 同口径，非测试、非生成物）：Rust **42 个**、前端 **9 个**。按「是否已有结论」分成六组，合计 42：
 
 | 组 | 数量 | 判定状态 |
 |---|---|---|
-| A `mod.rs` 内含实现 | 6 | 待判定，**优先级最高**（违反原则 §4.1） |
+| A `mod.rs` 内含实现 | 2 | **已拆分**（`git_sync` / `runtime/compact`） |
+| A′ `mod.rs` 实现合规、内联测试超标 | 4 | 判定「不拆实现」，见 F3-G |
 | B 装配型 `mod.rs` / 状态集中 | 2 | 可判「保留」，需确认 |
-| C 新增功能产出（I35 截图 / I53 沙箱） | 5 | 待判定 |
+| C 新增功能产出（I35 截图 / I53 沙箱） | 5 | I35 2 个**已判定**（见 F3-C）；I53 3 个待判定（前端 `Overlay.tsx` 在 F3-E，已判定） |
 | D 存量未判定 | 21 | 待判定 |
 | 已判定（F1 两个 + 归档 §2.9 六个） | 8 | 已判定 |
 
-#### F3-A `mod.rs` 内含实现（6 个）
+> 这 42 是「复核当时的账目」。已拆掉的 `git_sync/mod.rs`、`runtime/compact/mod.rs`、`multimodal.rs` 三个不再 ≥400，故**现存 ≥400 的 Rust 文件为 39**（probe 同口径实测：A′4 + B2 + C5 + D21 + §2.9 六个 + `responses_stream.rs`）。F1-b 完成后为 38。归档 §2.9 六个即 `test_doubles.rs`（801，`#[cfg(any(test, feature = "test-doubles"))]` 门控的测试替身）、`middleware.rs`（524）、`db.rs`（583）、`policy.rs`（458）、`os/shared/output.rs`（479）、`os/shared/text_encoding.rs`（455）。
 
-原则 §4.1 规定 `mod.rs` 只放类型定义、共享常量、模块声明、组合入口与 `pub use`。下列文件均超过 400 行且 `mod.rs` 内直接含大量 `fn`，属拆分后回潮，机械搬移即可解决：
+#### F3-A `mod.rs` 内含实现（复核修正：实际只有 2 个，且已完成）
 
-| 文件 | 非空行 | `mod.rs` 内 `fn` 数 |
-|---|---|---|
-| `assistant-tools/src/sandbox/windows/mod.rs` | 759 | 45（另 8 个 `impl`） |
-| `assistant-tools/src/os/shared/path/mod.rs` | 549 | 40 |
-| `assistant-tools/src/runtime/compact/mod.rs` | 492 | 31 |
-| `assistant-tools/src/mcp/stdio/mod.rs` | 482 | 19 |
-| `assistant-tools/src/mcp/bridge/mod.rs` | 405 | 31 |
-| `assistant-sync/src/git_sync/mod.rs` | 403 | 37 |
+> 2026-11-17 执行时复核：原判「6 个 `mod.rs` 内含实现」是把内联测试的 `fn` 算进了实现。以 `#[cfg(test)]` 为界重新统计后，**只有 2 个属实现回潮**，其余 4 个 `mod.rs` 实现部分仅 12–56 非空行。
+
+| 文件 | 非空行 | `#[cfg(test)]` 前非空行 | 前段 `fn` | 结论 |
+|---|---|---|---|---|
+| `assistant-sync/src/git_sync/mod.rs` | 403 | 403（无内联测试） | 37 | **已拆** |
+| `assistant-tools/src/runtime/compact/mod.rs` | 492 | 140 | 9 | **已拆** |
+| `assistant-tools/src/os/shared/path/mod.rs` | 549 | 56 | 4 | 合规，超长来自内联测试 |
+| `assistant-tools/src/mcp/stdio/mod.rs` | 482 | 26 | 0 | 合规，超长来自内联测试 |
+| `assistant-tools/src/sandbox/windows/mod.rs` | 759 | 26 | 0 | 合规，超长来自内联测试 |
+| `assistant-tools/src/mcp/bridge/mod.rs` | 405 | 12 | 0 | 合规，超长来自内联测试 |
+
+已完成的两项（纯搬移，对外 API 零变更）：
+
+| 文件 | 动作 | 目标结构 | 验证 |
+|---|---|---|---|
+| `assistant-sync/src/git_sync/mod.rs` | 403 → 18 非空行，按「状态 / 生命周期 / 远端 / 提交 / 冲突 / 纯函数」六分 | `git_sync/{mod,state,lifecycle,remote,commit,conflict,helpers}.rs` | `cargo test -p assistant-sync --features git-tests`：19 passed |
+| `assistant-tools/src/runtime/compact/mod.rs` | 140 行实现下沉，`mod.rs` 只留模块声明与 `pub use` | `compact/{mod,envelope,error_kind,access,text}.rs` | `cargo test -p assistant-tools`：全绿 |
 
 #### F3-B 装配型 `mod.rs` / 状态集中（2 个）
 
@@ -83,17 +103,27 @@
 | `assistant-agent/src/agent/loop_executor/mod.rs` | 432 | 7 个 `fn` + 2 个 `impl` + 5 个 `mod`，符合 §4.1 的组合入口定位，倾向「保留」 |
 | `assistant-vault/src/security_db/state.rs` | 472 | 33 个 `fn`、无 `mod`；是 §5「状态集中」的产物，需确认是否只承载单一状态职责 |
 
-#### F3-C 新增功能产出（5 个，无判定记录）
+#### F3-C 新增功能产出（5 个：I35 已判定、I53 待判定）
 
-| 文件 | 非空行 | 来源 |
-|---|---|---|
-| `src-tauri/src/screenshot/orb_overlay.rs` | 720 | I35 截图 |
-| `assistant-tools/src/sandbox/macos.rs` | 462 | I53 沙箱 |
-| `assistant-tools/src/sandbox/linux.rs` | 440 | I53 沙箱 |
-| `src-tauri/src/screenshot/mod.rs` | 436 | I35 截图 |
-| `assistant-tools/src/sandbox/mod.rs` | 428 | I53 沙箱 |
+| 文件 | 非空行 | 来源 | 结论 |
+|---|---|---|---|
+| `src-tauri/src/screenshot/orb_overlay.rs` | 720 | I35 截图 | **拆分（待执行）** |
+| `assistant-tools/src/sandbox/macos.rs` | 462 | I53 沙箱 | 待判定 |
+| `assistant-tools/src/sandbox/linux.rs` | 440 | I53 沙箱 | 待判定 |
+| `src-tauri/src/screenshot/mod.rs` | 436 | I35 截图 | **拆分（待执行）** |
+| `assistant-tools/src/sandbox/mod.rs` | 428 | I53 沙箱 | 待判定 |
 
-这 5 个文件在功能开发中产生，既不在归档 §2.7 / §2.8 的清单里，也没有在本文登记过结论。
+这 5 个文件在功能开发中产生，既不在归档 §2.7 / §2.8 的清单里，也没有在本文登记过结论（2026-11-17 已全部登记，见下表与本节判定）。
+
+I35 三个文件的判定（2026-11-17，随 `I35-screenshot-qa-spec.md` rev11 收口登记）：
+
+| 文件 | 实现/测试非空行 | 变化原因 | 判定 |
+|---|---|---|---|
+| `src-tauri/src/screenshot/orb_overlay.rs` | 实现 ~620 / 测试 ~100 | ① Orb 窗口快照-隐藏-全屏-恢复编排；② Windows 弹出菜单淡出排空（DWM 帧 + `#32768` 枚举，约 300 行）与其它平台 stub | **拆分**：`orb_overlay/{mod,snapshot,menu_fade}.rs`。理由是两个变化原因确实独立——菜单淡出只在 Windows 生效且以平台 `mod` 分叉，改它不应触碰几何/可见性编排。搬移为纯搬移，对外 API（`begin`/`present`/`exit`/`recover_leftover`/`dismiss_menus_now`/`SCREENSHOT_ACTIVE`）零变更 |
+| `src-tauri/src/screenshot/mod.rs` | 实现 ~415 / 测试 ~20 | `mod.rs` 内含状态机实现（`start` 130 行、`crop` 100 行、清理与相位辅助），违反「`mod.rs` 只做声明与 `pub use`」 | **拆分**：`screenshot/{mod,state,start,crop,cleanup}.rs`；`mod.rs` 只留 `pub mod` 声明、错误码常量与 `pub use` |
+| `src/screenshot/Overlay.tsx` | 427 | 单一职责：覆盖层交互（指针拖拽/8 向手柄 + 取消/确认副作用 + 渲染）。纯函数已外移到 `selection.ts`，会话逻辑已外移到 `useScreenshotSession.ts` | **保留**：未出现第二个变化原因，无职责混杂。约束：M3 标注能力落地前必须先抽出 `useSelectionDrag`，否则标注与框选会在同一文件叠加第二个变化原因 |
+
+两个 Rust 文件登记为**待执行**（不在 rev11 改动范围内，规格收口只登记结论）：执行时按「纯搬移 + 对外 API 零变更 + 单测随文件移动」三条件，验证 `cargo test --lib screenshot` 仍 20 passed。
 
 #### F3-D 存量未判定（21 个）
 
@@ -132,7 +162,7 @@
 | `src/stores/chat/chatConversationSlice.ts` | 454 | 不动（状态切片） |
 | `src/settings/core/runtime/snapshot.ts` | 438 | 不动（单一快照契约流水线） |
 | `src/vault/detail/VaultEntryDetail.tsx` | 429 | 不动（未出现第二个变化原因） |
-| `src/screenshot/Overlay.tsx` | 427 | **待判定**（I35 新增，未登记） |
+| `src/screenshot/Overlay.tsx` | 427 | 保留（I35，判定见 F3-C） |
 | `src/orb/OrbDrag.tsx` | 402 | 不动（未出现第二个变化原因） |
 
 #### F3-F 归档规格两张清单的失效映射（保留为历史记录）
@@ -150,7 +180,16 @@
 | `src/mascot/renderers/svg/GhostyMascot.tsx` | `svg/GhostyMascot.tsx` + `svg/{facePresets,mouthPaths,useGhostyAnimation}.ts(x)` |
 | `src/settings/provider/ConnectDialog.tsx` | `ConnectDialog/{index,fieldSchemas,useConnectForm,ModelPreviewList}.ts(x)` |
 
-结论：两张清单只能当「已完成记录」读，不能当待办读。归档 §2.7 的 21 条中只有 `multimodal.rs` 与 `responses_stream.rs` 仍指向现存文件，其余路径已被 B2 / B4 拆掉。
+结论：两张清单只能当「已完成记录」读，不能当待办读。归档 §2.7 的 21 条中只有 `multimodal.rs` 与 `responses_stream.rs` 仍指向现存文件，其余路径已被 B2 / B4 拆掉（`multimodal.rs` 已于 F1-a 拆完，仅剩 `responses_stream.rs`）。
+
+#### F3-G 内联测试超标（4 个，判定「暂不执行」）
+
+`os/shared/path/mod.rs`（493 行测试）、`mcp/stdio/mod.rs`（456）、`mcp/bridge/mod.rs`（393）、`sandbox/windows/mod.rs`（733）的实现部分都合规，文件超 400 行完全来自内联测试。原则 §3 规定的动作是**把测试外移、实现文件不动**：
+
+- 被测项是公开 API 的（`mcp/bridge`、`mcp/stdio`）→ 移到 `crates/assistant-tools/tests/<主题>.rs`；
+- 被测项非公开的（`sandbox/windows` 的 `acl`、`os/shared/path` 的 `join_input` / `simplify_verbatim`）→ 按 crate 既有先例加 `internal-tests` feature（`assistant-providers` 已在用 `#[cfg(all(test, feature = "internal-tests"))]`）。
+
+判定为**暂不执行**，理由：这些文件没有职责混杂，移测试只改可导航性、不改结构判据；`sandbox/windows` 的 733 行测试是本机唯一的 Windows 沙箱行为证据，搬移会牵动 `internal-tests` 门禁与特性组合。等 F3-B / C / D 判定收口、且确有可导航性诉求时再执行。
 
 ### F4 归档后的全量验收
 
@@ -191,7 +230,7 @@ npm run contract:check
 | 扁平度 | 直接子模块 ≥12 **只是审查触发线**，不是分组义务；分组条件是存在 ≥2 个独立变化原因的子域且各 ≥3 文件；uniform peers 永远保持扁平 | 参考项目中 `codex core/src` 根目录平铺 138 个文件，说明数量线无上游依据 |
 | 职责清晰 | 唯一判据是一个文件对应一个变化原因；行数只作初筛（≥900 优先审查），不作拆分义务与验收标准 | [CODE-SPLIT-PRINCIPLE.md](../principle/CODE-SPLIT-PRINCIPLE.md) §1–§2 |
 | `mod.rs` 内容 | 只放类型定义、共享常量、模块声明、组合入口与对外 `pub use`；`mod.rs` 内出现成规模实现即属回潮，与总行数无关 | 同上 §4.1、§6 |
-| 新增大文件 | 功能开发新增 ≥400 非空行文件时，必须在功能验收时给出结论（保留 / 拆分 / 待判）并登记到 F3 账目；未登记即视为「待判」 | I35 / I53 产出的无判定大文件见 F3-A 与 F3-C（共 6 个） |
+| 新增大文件 | 功能开发新增 ≥400 非空行文件时，必须在功能验收时给出结论（保留 / 拆分 / 待判）并登记到 F3 账目；未登记即视为「待判」 | I35 的 3 个已于 2026-11-17 判定并登记（F3-C 两个拆分待执行、F3-E 一个保留）；仍未判定的只剩 I53 的 `sandbox/{macos,linux,mod}.rs` |
 | 结构数字 | 只认 `node scripts/probe-structure.mjs`；文档内不得维护独立统计命令 | 避免口径漂移 |
 | 数字时刻 | probe 统计含未跟踪与未提交改动，跨批比较只作量级参考；结构数字在结构变更批提交时同批重刷 | 复核当天数分钟内 `orb_overlay.rs` 从 674 变为 720 非空行 |
 
@@ -201,13 +240,14 @@ npm run contract:check
 
 按「风险 × 机械程度」排序，前两项可独立提交、互不阻塞：
 
-| 序 | 事项 | 动作要点 | 提交粒度 |
+| 序 | 事项 | 动作要点 | 状态 |
 |---|---|---|---|
-| 1 | F3-A 六个 `mod.rs` | 纯机械搬移：`mod.rs` 只留声明与组合入口，实现下沉为具名子模块；对外路径不变 | 每个文件一次提交 |
-| 2 | F1-a `multimodal.rs` | 先补 `rehydrate_images` 一条用例，再按六个变化原因拆成目录模块 | 用例一次、搬移一次 |
-| 3 | F1-b `responses_stream.rs` | 先补 SSE 增量 / 工具完成 / 重试三类 fixture，再按 §5 抽纯函数，宏内留 `yield` 循环 | fixture 一次、抽函数一次 |
-| 4 | F3-B / C / D 判定 | 逐个给结论；判「不拆」的写明唯一变化原因，判「拆」的登记目标结构 | 批量一次（仅文档） |
-| 5 | F2 重刷 + F4 验收 | 结构变更批提交前同批跑 probe 重刷 `crate-architecture.md`，再跑 F4 全量 | 随结构变更批 |
+| 1 | F3-A 两项真实回潮 | 纯机械搬移：`mod.rs` 只留声明与组合入口，实现下沉为具名子模块；对外路径不变 | **已完成**（`git_sync` 403→18、`runtime/compact` 492→声明+`pub use`；clippy 与测试全绿） |
+| 2 | F1-a `multimodal.rs` | 先补 `rehydrate_images` 一条用例，再按六个变化原因拆成目录模块 | **已完成**（用例先过；`mod.rs` 45 非空行，clippy 与测试全绿） |
+| 3 | F1-b `responses_stream.rs` | 先补 SSE 增量 / 工具完成 / 重试三类 fixture，再按 §5 抽纯函数，宏内留 `yield` 循环 | 待开始 |
+| 4 | F3-B / C / D 判定 | 逐个给结论；判「不拆」的写明唯一变化原因，判「拆」的登记目标结构 | 部分完成（I35 的 3 个已判定并登记，见 F3-C / F3-E）；I53 3 个与 F3-B / D 待开始 |
+| 5 | F3-G 内联测试外移 | 4 个文件按 §3 移测试；已判定「暂不执行」 | 暂不执行 |
+| 6 | F2 重刷 + F4 验收 | 结构变更批提交前同批跑 probe 重刷 `crate-architecture.md`，再跑 F4 全量 | 随结构变更批 |
 
 ---
 
