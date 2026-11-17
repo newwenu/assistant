@@ -77,17 +77,6 @@ export function formatRetryAfter(ms: number | null): string {
   return translateKey("chat.error.retry_after_minutes", { count: mins });
 }
 
-export interface RecoveryContext {
-  conversationId: string;
-  failedMessageId: string;
-  error: ChatError;
-  switchModel: (conversationId: string) => void;
-  compressContext: (conversationId: string) => Promise<void>;
-  openSettings: () => void;
-  startNewChat: () => void;
-  retryFromError: (messageId: string) => Promise<void>;
-}
-
 const DEFAULT_ACTIONS: Record<ChatErrorCategory, RecoveryActionCode[]> = {
   [ChatErrorCategory.Network]: ["retry", "switch_model", "copy_diagnostics"],
   [ChatErrorCategory.Auth]: ["open_model_settings", "copy_diagnostics"],
@@ -237,44 +226,4 @@ export function getErrorPresentation(error: ChatError): ChatErrorPresentation {
     actions,
     diagnostics,
   };
-}
-
-export function getRecoveryActions(
-  category: ChatErrorCategory,
-): RecoveryAction[] {
-  return DEFAULT_ACTIONS[category].map((code) => ({
-    code,
-    labelKey: ACTION_LABEL_KEYS[code],
-  }));
-}
-
-export async function executeRecoveryAction(
-  action: RecoveryActionCode,
-  context: RecoveryContext,
-): Promise<void> {
-  switch (action) {
-    case "retry":
-      await context.retryFromError(context.failedMessageId);
-      break;
-    case "wait_and_retry":
-      await context.retryFromError(context.failedMessageId);
-      break;
-    case "switch_model":
-      context.switchModel(context.conversationId);
-      break;
-    case "compress_context":
-      await context.compressContext(context.conversationId);
-      break;
-    case "start_new_chat":
-      context.startNewChat();
-      break;
-    case "open_model_settings":
-      context.openSettings();
-      break;
-    case "copy_diagnostics": {
-      const presentation = getErrorPresentation(context.error);
-      await navigator.clipboard.writeText(presentation.diagnostics);
-      break;
-    }
-  }
 }

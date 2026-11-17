@@ -11,7 +11,6 @@ const PATHS_FILE = path.join(MODULE_ROOT, "paths.ts");
 const CREATED_SOURCE_FILE_NAMES = ["paste", "filePicker", "dragDrop"];
 const FACTORY_EXPORT_NAMES = [
   "createImageAttachmentFromFile",
-  "createFileAttachmentFromFile",
   "createPathAttachment",
 ];
 

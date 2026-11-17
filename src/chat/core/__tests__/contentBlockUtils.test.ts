@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  buildContentBlocks,
+  buildContentBlocksAsync,
   parseContent,
   serializeContent,
   extractPlainText,
@@ -78,19 +78,19 @@ describe("serializeContent", () => {
   });
 });
 
-describe("buildContentBlocks", () => {
-  it("builds TextBlock from text only", () => {
-    const blocks = buildContentBlocks("hello", []);
+describe("buildContentBlocksAsync", () => {
+  it("builds TextBlock from text only", async () => {
+    const blocks = await buildContentBlocksAsync("hello", []);
     expect(blocks.length).toBe(1);
     expect(blocks[0].type).toBe("text");
   });
 
-  it("skips empty text", () => {
-    const blocks = buildContentBlocks("  ", []);
+  it("skips empty text", async () => {
+    const blocks = await buildContentBlocksAsync("  ", []);
     expect(blocks.length).toBe(0);
   });
 
-  it("builds ImageBlock from image attachment", () => {
+  it("builds ImageBlock from image attachment", async () => {
     const att: Attachment = {
       id: "att-1",
       kind: "image",
@@ -98,14 +98,15 @@ describe("buildContentBlocks", () => {
       previewUrl: "blob://test",
       mimeType: "image/png",
       originalSizeBytes: 100,
+      attachmentId: "abc.png",
     };
-    const blocks = buildContentBlocks("hello", [att]);
+    const blocks = await buildContentBlocksAsync("hello", [att]);
     expect(blocks.length).toBe(2);
     expect(blocks[0].type).toBe("text");
     expect(blocks[1].type).toBe("image");
   });
 
-  it("never emits file_path, even without an attachment id", () => {
+  it("never emits file_path", async () => {
     const image: Attachment = {
       id: "att-1",
       kind: "image",
@@ -113,6 +114,7 @@ describe("buildContentBlocks", () => {
       previewUrl: "",
       mimeType: "image/png",
       originalSizeBytes: 100,
+      attachmentId: "abc.png",
     };
     const doc: Attachment = {
       id: "att-2",
@@ -121,18 +123,19 @@ describe("buildContentBlocks", () => {
       previewUrl: "",
       mimeType: "text/markdown",
       originalSizeBytes: 10,
+      attachmentId: "def.md",
     };
-    const blocks = buildContentBlocks("hello", [image, doc]);
+    const blocks = await buildContentBlocksAsync("hello", [image, doc]);
     for (const block of blocks) {
       expect(block).not.toHaveProperty("file_path");
     }
     expect(blocks[1]).toMatchObject({
       type: "image",
-      attachment: { attachmentId: "" },
+      attachment: { attachmentId: "abc.png" },
     });
     expect(blocks[2]).toMatchObject({
       type: "file",
-      attachment: { attachmentId: "" },
+      attachment: { attachmentId: "def.md" },
     });
   });
 });

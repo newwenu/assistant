@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { storageService } from "@/services/desktop/storageService";
 import type { AttachmentLimitsDto } from "@/types/protocol.contract";
 import {
-  createFileAttachmentFromFile,
   createImageAttachmentFromFile,
   createPathAttachment,
   validateImageFile,
@@ -93,24 +92,6 @@ describe("image factories", () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("invalid_type");
-  });
-});
-
-describe("file factories", () => {
-  it("createFileAttachmentFromFile returns file attachment", () => {
-    const result = createFileAttachmentFromFile(
-      new File([], "notes.md", { type: "text/markdown" }),
-    );
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.attachment.kind).toBe("file");
-  });
-
-  it("createFileAttachmentFromFile rejects invalid extension", () => {
-    const result = createFileAttachmentFromFile(
-      new File([], "binary.exe", { type: "application/octet-stream" }),
-    );
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toBe("invalid_file_type");
   });
 });
 

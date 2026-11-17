@@ -149,19 +149,3 @@ export async function attachmentFromImport(
       : {}),
   });
 }
-
-export function createFileAttachmentFromFile(file: File): AttachmentResult {
-  const mimeType = FILE_EXT_TO_MIME[extOf(file.name)];
-  if (!mimeType) return reject("invalid_file_type");
-  if (file.size > attachmentLimits().maxFileBytes)
-    return reject("file_too_large");
-
-  return accept({
-    id: generateAttachmentId(),
-    kind: "file",
-    file,
-    previewUrl: "",
-    mimeType,
-    originalSizeBytes: file.size,
-  });
-}

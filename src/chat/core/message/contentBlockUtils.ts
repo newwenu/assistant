@@ -8,40 +8,6 @@ import type {
 } from "./contentBlockTypes";
 import type { Attachment } from "../../attachment/types";
 
-export function buildContentBlocks(
-  text: string,
-  attachments: Attachment[],
-): ContentBlock[] {
-  const blocks: ContentBlock[] = [];
-
-  if (text.trim().length > 0) {
-    blocks.push({ type: "text", text: text.trim() } satisfies TextBlock);
-  }
-
-  for (const att of attachments) {
-    if (att.kind === "image") {
-      const ref: ImageAttachmentRef = {
-        attachmentId: att.attachmentId ?? "",
-        mediaType: att.mimeType,
-        bytes: att.originalSizeBytes,
-        width: att.width,
-        height: att.height,
-        name: att.file.name,
-      };
-      blocks.push({ type: "image", attachment: ref } satisfies ImageBlock);
-    } else if (att.kind === "file") {
-      const ref: FileAttachmentRef = {
-        attachmentId: att.attachmentId ?? "",
-        name: att.file.name,
-        bytes: att.originalSizeBytes,
-      };
-      blocks.push({ type: "file", attachment: ref } satisfies FileBlock);
-    }
-  }
-
-  return blocks;
-}
-
 export async function buildContentBlocksAsync(
   text: string,
   attachments: Attachment[],
