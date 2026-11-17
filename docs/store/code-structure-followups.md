@@ -59,6 +59,8 @@
 
 **前置门（2026-11-17 复核新增）**：该文件对应的 `ProviderKind::OpenAIResponses` 无前端正式入口——`ApiFormat` 只有 `openai` / `anthropic` / `local`，仅「自定义 Provider ID」自由文本手输可达，且 I9 规格（已归档）H2 运行验证 8 项全未勾选。处置决策与影响面见 [responses-endpoint-disposition.md](./responses-endpoint-disposition.md)：选 A（补入口）则先补后拆，选 B（保留记录）则维持低优先级，选 C（移除）则 F1-b 作废转删除任务。决策落地前不动 `responses_stream.rs`。
 
+**前置门结论（2026-11-17）**：已选 **A**，前端 `responses` / `gemini` format 与 preset 已落地（后端零改动）。但 [responses-endpoint-disposition.md](./responses-endpoint-disposition.md) §5.3 的 4 项运行时验收仍未执行，F1-b 维持**暂缓**——拆分前提「先补 fixture」的收益在验收前无法兑现。恢复条件：运行验收有结论，且确认该端点长期保留。
+
 ### F2 `crate-architecture.md` 口径统一（已收口）
 
 口径与非空行数字已随本次结构文档批提交收口（2026-11-17）：主 app 116 文件 / 16,607 非空行，12 个子 crate 338 / 55,327，合计 454 / 71,934（`probe-structure.mjs` 实测，含 F3-A、F1-a 与 F3-C 的拆分）。后续「重刷 `crate-architecture.md` 的 §1.1 / §3.1 / 逐 crate 行数」固定为**结构变更批提交前的随批动作**，不再当作一次性待办；纯功能批不追数字。重刷时同步补齐 B2 / B4 的实际落点分组（`runtime/`、`os/tools/`、`os/shared/`、`kernel/turn/`、`storage/tools/`、`vault/security_db/{state,session,anchor}`）。
@@ -248,7 +250,7 @@ npm run contract:check
 | 2 | F1-a `multimodal.rs` | 先补 `rehydrate_images` 一条用例，再按六个变化原因拆成目录模块 | **已完成**（用例先过；`mod.rs` 45 非空行，clippy 与测试全绿） |
 | 3 | F3-C-a `screenshot/mod.rs` | 纯搬移：状态机实现下沉为 `state` / `start` / `crop_command` / `cleanup`，`mod.rs` 只留声明、错误码常量与 `pub use` | **已完成**（2026-11-17，`mod.rs` 436→34 非空行；20 个单测随职责落位，clippy 与测试全绿） |
 | 4 | F3-C-b `orb_overlay.rs` | 纯搬移：拆 `mod` / `snapshot` / `platform` / `menu_fade`，对外 API 不变 | **已完成**（2026-11-17，`orb_overlay.rs` 750→`mod`(133) / `snapshot`(374) / `platform`(94) / `menu_fade`(235)；同批把 `capture.rs` 的 macOS 授权门控拆为 `capture/permission/{mod,macos,fallback}`；21 passed、clippy 无告警） |
-| 5 | F1-b `responses_stream.rs` | 先补 SSE 增量 / 工具完成 / 重试三类 fixture，再按 §5 抽纯函数，宏内留 `yield` 循环 | 待开始 |
+| 5 | F1-b `responses_stream.rs` | 先补 SSE 增量 / 工具完成 / 重试三类 fixture，再按 §5 抽纯函数，宏内留 `yield` 循环 | 暂缓（前置门结论为 A 已落地，等 §5.3 运行验收；688 行未达 900 拆分线） |
 | 6 | F3-B / D 判定 + I53 判定 | 逐个给结论；判「不拆」的写明唯一变化原因，判「拆」的登记目标结构 | 部分完成（I35 的 3 个已判定并登记，见 F3-C / F3-E）；I53 3 个与 F3-B / D 待开始 |
 | 7 | F3-G 内联测试外移 | 4 个文件按 §3 移测试；已判定「暂不执行」 | 暂不执行 |
 | 8 | F2 重刷 + F4 验收 | 结构变更批提交前同批跑 probe 重刷 `crate-architecture.md`，再跑 F4 全量 | 随结构变更批 |

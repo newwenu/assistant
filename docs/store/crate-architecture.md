@@ -29,9 +29,9 @@
 
 | 组成部分 | 文件数 | 非空行 | 说明 |
 |---|---|---|---|
-| 主 app（`src/`） | 116 | 16,607 | Tauri 命令层、协议层、初始化 |
-| 12 个子 crate | 338 | 55,327 | 业务与基础设施 |
-| **合计** | **454** | **71,934** | |
+| 主 app（`src/`） | 116 | 16,799 | Tauri 命令层、协议层、初始化 |
+| 12 个子 crate | 338 | 55,385 | 业务与基础设施 |
+| **合计** | **454** | **72,184** | |
 
 ### 1.2 workspace 成员（12 个）
 
@@ -233,12 +233,12 @@ vault = ["dep:assistant-vault", "dep:assistant-sync", "dep:assistant-security"]
 
 | 项 | 值 |
 |---|---|
-| 行数 / 文件 | 146 / 2 |
+| 行数 / 文件 | 203 / 2 |
 | 直接依赖 | 3（`crash-handler` `minidump-writer` `chrono`） |
 | 内部依赖 | 无 |
 | 模块 | 无 `pub mod`，私有 `mod crash_dump` + `pub use crash_dump::install` |
 
-最小 crate（146 行）。`minidump-common`（7.6s）由 `minidump-writer` 引入。
+最小 crate（203 行）。`minidump-common`（7.6s）由 `minidump-writer` 引入。Windows 走 `dump_crash_context`，Linux 走 `new(pid, tid) + set_crash_context`，macOS 走 `with_crash_context`；`CrashContext` 字段三平台各异，日志字段随平台裁剪。
 
 ### 2.10 assistant-sync
 
