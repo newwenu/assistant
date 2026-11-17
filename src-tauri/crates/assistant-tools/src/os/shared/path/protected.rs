@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use super::component_prefix_match;
-use super::resolve::canonicalize_lenient;
 
 /// 拒绝落在受保护系统目录或凭据目录内的路径。
 ///
@@ -41,7 +40,7 @@ fn protected_dirs() -> Vec<PathBuf> {
             let Some(value) = std::env::var_os(key) else {
                 continue;
             };
-            match canonicalize_lenient(Path::new(&value)) {
+            match super::resolve::canonicalize_lenient(Path::new(&value)) {
                 Ok(canonical) => dirs.push(canonical),
                 Err(error) => log::warn!("skip protected dir from '{}': {}", key, error),
             }

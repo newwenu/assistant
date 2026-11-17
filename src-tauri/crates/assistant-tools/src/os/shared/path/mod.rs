@@ -65,7 +65,6 @@ fn component_eq(left: &Component, right: &Component) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve::{join_input, simplify_verbatim};
     use super::*;
     use crate::context::ToolUseContext;
     use std::path::PathBuf;
@@ -166,11 +165,11 @@ mod tests {
     #[test]
     fn unc_verbatim_prefix_is_simplified() {
         assert_eq!(
-            simplify_verbatim(Path::new(r"\\?\UNC\server\share\dir\file.txt")),
+            resolve::simplify_verbatim(Path::new(r"\\?\UNC\server\share\dir\file.txt")),
             Path::new(r"\\server\share\dir\file.txt")
         );
         assert_eq!(
-            simplify_verbatim(Path::new(r"\\?\C:\Windows")),
+            resolve::simplify_verbatim(Path::new(r"\\?\C:\Windows")),
             Path::new(r"C:\Windows")
         );
     }
@@ -239,7 +238,7 @@ mod tests {
     #[test]
     fn unc_path_is_treated_as_absolute() {
         let context = ToolUseContext::default();
-        let joined = join_input(r"\\server\share\file.txt", &context)
+        let joined = resolve::join_input(r"\\server\share\file.txt", &context)
             .expect("UNC path is absolute, must not require workspace_root");
         assert_eq!(joined, Path::new(r"\\server\share\file.txt"));
     }

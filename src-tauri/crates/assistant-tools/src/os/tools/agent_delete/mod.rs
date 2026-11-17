@@ -213,11 +213,10 @@ mod tests {
     use super::exec::describe_failure;
     use super::scan::scan_tree;
     use super::target::{resolve_target, DeleteRequest};
-    use super::trash::{trash_failure_message, volume_has_recycle_bin};
+    use super::trash::trash_failure_message;
     use super::*;
     use crate::storage::InMemoryReadReceiptStore;
     use std::io::ErrorKind;
-    use std::path::Path;
 
     /// 失败后重查目标：仍存在 → 「未删除或已部分删除」；已不存在 → 「已完成，但随后失败」。
     #[test]
@@ -264,23 +263,6 @@ mod tests {
             rejected.err().unwrap(),
             "'permanent' must be a boolean".to_string()
         );
-    }
-
-    /// 卷根没有 `$Recycle.Bin` 或落在 UNC 共享上时必须判否（不依赖真实卷）。
-    #[cfg(windows)]
-    #[test]
-    fn a_volume_without_a_recycle_bin_is_detected() {
-        let dir = tempfile::tempdir().unwrap();
-        let plain = dir.path().join("plain-volume");
-        std::fs::create_dir(&plain).unwrap();
-        assert!(!volume_has_recycle_bin(&plain));
-
-        let with_bin = dir.path().join("volume-with-bin");
-        std::fs::create_dir(&with_bin).unwrap();
-        std::fs::create_dir(with_bin.join("$Recycle.Bin")).unwrap();
-        assert!(volume_has_recycle_bin(&with_bin));
-
-        assert!(!volume_has_recycle_bin(Path::new(r"\\server\share\folder")));
     }
 
     /// 回收站失败文案必须与磁盘现状一致：仍存在 → 可能已部分移动；已消失 → 已完成但随后失败。
@@ -380,5 +362,28 @@ mod tests {
         );
         assert_eq!(data["bytesDeleted"].as_u64().unwrap(), scan.bytes);
         assert_eq!(data["truncated"].as_bool().unwrap(), scan.truncated);
+    }
+}
+
+/// Windows 专属：回收站前置筛查（卷根缺 `$Recycle.Bin`、UNC 共享均判否）。
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::trash::volume_has_recycle_bin;
+    use std::path::Path;
+
+    /// 卷根没有 `$Recycle.Bin` 或落在 UNC 共享上时必须判否（不依赖真实卷）。
+    #[test]
+    fn a_volume_without_a_recycle_bin_is_detected() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("plain-volume");
+        std::fs::create_dir(&plain).unwrap();
+        assert!(!volume_has_recycle_bin(&plain));
+
+        let with_bin = dir.path().join("volume-with-bin");
+        std::fs::create_dir(&with_bin).unwrap();
+        std::fs::create_dir(with_bin.join("$Recycle.Bin")).unwrap();
+        assert!(volume_has_recycle_bin(&with_bin));
+
+        assert!(!volume_has_recycle_bin(Path::new(r"\\server\share\folder")));
     }
 }
