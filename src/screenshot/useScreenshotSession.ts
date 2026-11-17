@@ -4,7 +4,11 @@ import type { ScreenshotSessionDto } from "@/types/protocol.contract";
 import { UiEvent } from "@/types/events";
 import { useScreenshotStore } from "@/stores/screenshotStore";
 import { createLogger } from "@/services/system/logger";
-import { notifyScreenshotError, screenshotService } from "./session";
+import {
+  notifyScreenshotError,
+  NO_SESSION,
+  screenshotService,
+} from "./session";
 
 const log = createLogger("ScreenshotSession");
 
@@ -40,7 +44,7 @@ export function useScreenshotSession(): void {
         }
       })
       .catch((error: unknown) => {
-        if (typeof error === "string" && error.includes("no_session")) return;
+        if (typeof error === "string" && error === NO_SESSION) return;
         log.debug("initial session probe failed", { error });
       });
 

@@ -24,7 +24,9 @@ export const screenshotService = {
   start: (): Promise<void> => tauriInvoke("start_screenshot"),
 
   getSession: (): Promise<ScreenshotSessionDto> =>
-    tauriInvoke<ScreenshotSessionDto>("get_screenshot_session"),
+    tauriInvoke<ScreenshotSessionDto>("get_screenshot_session", undefined, {
+      expectedError: true,
+    }),
 
   crop: (args: ScreenshotCropArgsDto): Promise<ScreenshotCropResultDto> =>
     tauriInvoke<ScreenshotCropResultDto>("crop_screenshot", { args }),
