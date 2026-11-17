@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::truncate_end;
+use super::text::truncate_end;
 use super::types::{ARGS_PREVIEW_MAX_CHARS, PREVIEW_VALUE_MAX_CHARS};
 
 /// `ArgsDelta` 的受控回退：只抽关键参数，总长 ≤ 200 字符。

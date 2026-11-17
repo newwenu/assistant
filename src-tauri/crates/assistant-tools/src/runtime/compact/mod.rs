@@ -1,16 +1,15 @@
-use serde_json::Value;
-
-use crate::result::{ToolErrorKind, ToolResult};
-use crate::storage::PersistedRef;
-
+mod access;
 mod anchor;
+mod envelope;
+mod error_kind;
 mod head;
 mod preview;
+mod text;
 mod truncation;
 mod types;
 
-use anchor::build_anchor;
-
+pub use envelope::{build_compact, rebuild_compact};
+pub use error_kind::error_kind_from_text;
 pub use head::build_head;
 pub use preview::args_preview;
 pub use truncation::{parse_persisted_tag, parse_truncation};
@@ -19,142 +18,11 @@ pub use types::{
     ARGS_PREVIEW_MAX_CHARS, HEAD_MAX_CHARS, SUBJECT_MAX_CHARS,
 };
 
-/// 由结果事实渲染信封。`persisted` 必须来自存储后端返回的引用，
-/// 不得由文本解析产生（门禁 8）。
-pub fn build_compact(
-    tool: &str,
-    arguments: &Value,
-    result: &ToolResult,
-    persisted: Option<&PersistedRef>,
-) -> ToolResultCompact {
-    let text = result.assistant_text();
-    let data = result.data.as_ref();
-    ToolResultCompact {
-        head: build_head(tool, arguments, data, result),
-        truncated: parse_truncation(&text),
-        persisted: persisted.map(|reference| PersistedInfo {
-            path: reference.path.clone(),
-            bytes: Some(reference.bytes as u64),
-        }),
-        error_kind: if result.ok {
-            None
-        } else {
-            Some(result.error_kind.unwrap_or(ToolErrorKind::Business))
-        },
-        anchor: build_anchor(tool, arguments, data),
-    }
-}
-
-/// 从历史行重建信封：结果文本 + 参数 + 状态。`error_kind` 只在文本可判定时给出。
-///
-/// 这条路径是读取回退（§3.4 第三行），允许解析 `<persisted-output>` 标签；
-/// 标签本身由 `PersistedRef` 渲染，round-trip 保证一致。
-pub fn rebuild_compact(
-    tool: &str,
-    arguments: &Value,
-    result_text: Option<&str>,
-    is_error: bool,
-) -> ToolResultCompact {
-    let text = result_text.unwrap_or_default();
-    let result = if is_error {
-        ToolResult {
-            ok: false,
-            data: None,
-            result_for_assistant: None,
-            error: Some(text.to_string()),
-            error_kind: error_kind_from_text(text),
-        }
-    } else {
-        ToolResult {
-            ok: true,
-            data: None,
-            result_for_assistant: Some(text.to_string()),
-            error: None,
-            error_kind: None,
-        }
-    };
-    ToolResultCompact {
-        head: build_head(tool, arguments, None, &result),
-        truncated: parse_truncation(text),
-        persisted: parse_persisted_tag(text),
-        error_kind: result.error_kind,
-        anchor: None,
-    }
-}
-
-/// 历史错误的分类：写入侧 `ToolResult::from_exec_error_kind` 的文案前缀是稳定契约，
-/// 读取侧据此还原同一分类（门禁 9）。未知文案归 `Business`。
-pub fn error_kind_from_text(text: &str) -> Option<ToolErrorKind> {
-    let text = text.trim_start();
-    if !text.starts_with("tool '") {
-        return Some(ToolErrorKind::Business);
-    }
-    let message = text.split_once("': ").map(|(_, rest)| rest).unwrap_or(text);
-    if message.starts_with("permission denied for") || message.starts_with("rejected by user") {
-        return Some(ToolErrorKind::Denied);
-    }
-    if message.starts_with("approval timed out") {
-        return Some(ToolErrorKind::Timeout);
-    }
-    Some(ToolErrorKind::Internal)
-}
-
-fn data_str(data: Option<&Value>, key: &str) -> Option<String> {
-    data.and_then(|value| value.get(key))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-}
-
-fn data_u64(data: Option<&Value>, key: &str) -> Option<u64> {
-    data.and_then(|value| value.get(key))
-        .and_then(Value::as_u64)
-}
-
-fn data_bool(data: Option<&Value>, key: &str) -> Option<bool> {
-    data.and_then(|value| value.get(key))
-        .and_then(Value::as_bool)
-}
-
-fn args_str(arguments: &Value, key: &str) -> Option<String> {
-    arguments
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::to_string)
-}
-
-fn truncate_end(text: &str, max_chars: usize) -> String {
-    let count = text.chars().count();
-    if count <= max_chars {
-        return text.to_string();
-    }
-    let mut truncated: String = text.chars().take(max_chars.saturating_sub(1)).collect();
-    truncated.push('…');
-    truncated
-}
-
-/// 中间省略：首 40 + `…` + 尾 38（`SUBJECT_MAX_CHARS` 的既定口径）。
-fn truncate_middle(text: &str, max_chars: usize) -> String {
-    let count = text.chars().count();
-    if count <= max_chars {
-        return text.to_string();
-    }
-    let head_chars = max_chars / 2;
-    let tail_chars = max_chars.saturating_sub(head_chars + 1);
-    let head: String = text.chars().take(head_chars).collect();
-    let tail: String = text
-        .chars()
-        .rev()
-        .take(tail_chars)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    format!("{}…{}", head, tail)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::result::{ToolErrorKind, ToolResult};
+    use crate::storage::PersistedRef;
     use serde_json::json;
 
     fn persisted(path: &str, bytes: usize) -> PersistedRef {

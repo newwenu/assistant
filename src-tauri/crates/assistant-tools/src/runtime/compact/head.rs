@@ -3,8 +3,9 @@ use serde_json::Value;
 use crate::os::output::human_bytes;
 use crate::result::{ToolErrorKind, ToolResult};
 
+use super::access::{args_str, data_bool, data_str, data_u64};
+use super::text::{truncate_end, truncate_middle};
 use super::types::{HEAD_MAX_CHARS, HEAD_SEPARATOR, SUBJECT_MAX_CHARS};
-use super::{args_str, data_bool, data_str, data_u64, truncate_end, truncate_middle};
 
 /// head：`ok <tool> · <subject> · <scale>` / `err <kind> <tool> · <subject> · <reason>`。
 pub fn build_head(

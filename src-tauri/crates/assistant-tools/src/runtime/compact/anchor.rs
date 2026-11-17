@@ -1,7 +1,7 @@
 use serde_json::Value;
 
+use super::access::{args_str, data_str, data_u64};
 use super::types::{DocAnchor, LineRange};
-use super::{args_str, data_str, data_u64};
 
 /// 锚点只在结果时刻取（门禁 11）；`edit` 的行区间来自实际写入，不由 `args` 估算。
 pub(super) fn build_anchor(
