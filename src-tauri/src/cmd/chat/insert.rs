@@ -7,6 +7,8 @@ use assistant_storage::{
     providers::{self as provider_store},
 };
 
+use crate::protocol::{CommandErrorCodeDto, CommandErrorDto};
+
 pub(crate) struct InsertedMessages {
     pub assistant_msg_id: String,
     pub user_msg_id: Option<String>,
@@ -43,7 +45,7 @@ struct TurnCoords {
 pub(crate) fn insert_chat_messages(
     conn: &rusqlite::Connection,
     input: InsertChatInput<'_>,
-) -> Result<InsertedMessages, String> {
+) -> Result<InsertedMessages, CommandErrorDto> {
     let InsertChatInput {
         conversation_id,
         content,
@@ -54,30 +56,53 @@ pub(crate) fn insert_chat_messages(
     } = input;
 
     if conversations::is_conversation_full(conn, conversation_id)
-        .map_err(super::super::translate_storage_error)?
+        .map_err(super::super::command_error_from_storage)?
     {
-        return Err("Conversation is full, cannot send".to_string());
+        return Err(CommandErrorDto::new(
+            CommandErrorCodeDto::Validation,
+            assistant_i18n::t("chat.conversation_full"),
+        ));
     }
 
     let now = Utc::now().timestamp_millis();
 
-    let detail_before = conversations::get_conversation_detail(conn, conversation_id)?
-        .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+    let detail_before = conversations::get_conversation_detail(conn, conversation_id)
+        .map_err(CommandErrorDto::internal)?
+        .ok_or_else(|| {
+            CommandErrorDto::new(
+                CommandErrorCodeDto::ConversationNotFound,
+                assistant_i18n::t("error.conversation_not_found"),
+            )
+        })?;
 
-    provider_store::get_provider_by_id(conn, provider_id)?
-        .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
+    provider_store::get_provider_by_id(conn, provider_id)
+        .map_err(CommandErrorDto::internal)?
+        .ok_or_else(|| {
+            CommandErrorDto::new(
+                CommandErrorCodeDto::ProviderNotFound,
+                assistant_i18n::t("error.provider_not_found"),
+            )
+        })?;
 
     // 取号、写行、递增计数器必须同事务（I46 §2.4）：任一失败整体回滚，
     // 计数器不会因写行失败而空转。
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| CommandErrorDto::internal(e.to_string()))?;
 
     {
-        let mut conv = conversations::get_conversation_by_id(&tx, conversation_id)?
-            .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
+        let mut conv = conversations::get_conversation_by_id(&tx, conversation_id)
+            .map_err(CommandErrorDto::internal)?
+            .ok_or_else(|| {
+                CommandErrorDto::new(
+                    CommandErrorCodeDto::ConversationNotFound,
+                    assistant_i18n::t("error.conversation_not_found"),
+                )
+            })?;
         conv.provider_id = Some(provider_id.to_string());
         conv.model_id = model_id.to_string();
         conv.updated_at = now;
-        conversations::update_conversation(&tx, &conv)?;
+        conversations::update_conversation(&tx, &conv).map_err(CommandErrorDto::internal)?;
     }
 
     // 模式来源统一：本次所选（非空串）优先，否则回退会话现值（I43 §3.4）。
@@ -106,9 +131,11 @@ pub(crate) fn insert_chat_messages(
             )?
         };
 
-    conversations::update_active_branch_id(&tx, conversation_id, &assistant_msg_id)?;
+    conversations::update_active_branch_id(&tx, conversation_id, &assistant_msg_id)
+        .map_err(CommandErrorDto::internal)?;
 
-    tx.commit().map_err(|e| e.to_string())?;
+    tx.commit()
+        .map_err(|e| CommandErrorDto::internal(e.to_string()))?;
 
     Ok(InsertedMessages {
         assistant_msg_id,
@@ -131,19 +158,27 @@ fn insert_on_branch(
     bp_id: &str,
     now: i64,
     identity: &MessageIdentity<'_>,
-) -> Result<(String, Option<String>, Option<u32>, u32), String> {
-    let branch_point = conversations::get_message_by_id(conn, bp_id)?
-        .ok_or_else(|| format!("Branch point message {} not found", bp_id))?;
+) -> Result<(String, Option<String>, Option<u32>, u32), CommandErrorDto> {
+    let branch_point = conversations::get_message_by_id(conn, bp_id)
+        .map_err(CommandErrorDto::internal)?
+        .ok_or_else(|| {
+            CommandErrorDto::new(
+                CommandErrorCodeDto::ConversationNotFound,
+                format!("Branch point message {} not found", bp_id),
+            )
+        })?;
 
     let bp_parent_id = branch_point.parent_id.clone();
 
     if branch_point.role == "user" {
         let user_parent_id = bp_parent_id.clone();
         let user_sibling_index =
-            conversations::get_sibling_count(conn, conversation_id, user_parent_id.as_deref())?
+            conversations::get_sibling_count(conn, conversation_id, user_parent_id.as_deref())
+                .map_err(CommandErrorDto::internal)?
                 .max(0);
 
-        let turn_index = conversations::allocate_turn_index(conn, conversation_id)?;
+        let turn_index = conversations::allocate_turn_index(conn, conversation_id)
+            .map_err(CommandErrorDto::internal)?;
 
         let uid = insert_user_message_with_attachments(
             conn,
@@ -174,17 +209,17 @@ fn insert_on_branch(
         Ok((aid, Some(uid), Some(turn_index), 1))
     } else {
         let assistant_parent_id = bp_parent_id.clone();
-        let assistant_sibling_index = conversations::get_sibling_count(
-            conn,
-            conversation_id,
-            assistant_parent_id.as_deref(),
-        )?
-        .max(0);
+        let assistant_sibling_index =
+            conversations::get_sibling_count(conn, conversation_id, assistant_parent_id.as_deref())
+                .map_err(CommandErrorDto::internal)?
+                .max(0);
 
         let (turn_index, iteration) = match branch_point.turn_index {
             Some(raw) => {
-                let t = u32::try_from(raw).map_err(|_| format!("invalid turn_index {raw}"))?;
-                let it = conversations::allocate_iteration(conn, conversation_id, t)?;
+                let t = u32::try_from(raw)
+                    .map_err(|_| CommandErrorDto::internal(format!("invalid turn_index {raw}")))?;
+                let it = conversations::allocate_iteration(conn, conversation_id, t)
+                    .map_err(CommandErrorDto::internal)?;
                 (Some(t), it)
             }
             None => (None, 0),
@@ -214,12 +249,15 @@ fn insert_normal_append(
     detail_before: &conversations::ConversationDetail,
     now: i64,
     identity: &MessageIdentity<'_>,
-) -> Result<(String, Option<String>, Option<u32>, u32), String> {
+) -> Result<(String, Option<String>, Option<u32>, u32), CommandErrorDto> {
     let user_parent_id = detail_before.messages.last().map(|m| m.id.clone());
     let user_sibling_index =
-        conversations::get_sibling_count(conn, conversation_id, user_parent_id.as_deref())?.max(0);
+        conversations::get_sibling_count(conn, conversation_id, user_parent_id.as_deref())
+            .map_err(CommandErrorDto::internal)?
+            .max(0);
 
-    let turn_index = conversations::allocate_turn_index(conn, conversation_id)?;
+    let turn_index = conversations::allocate_turn_index(conn, conversation_id)
+        .map_err(CommandErrorDto::internal)?;
 
     let uid = insert_user_message_with_attachments(
         conn,
@@ -258,7 +296,7 @@ fn insert_user_message_with_attachments(
     sibling_index: i64,
     now: i64,
     coords: TurnCoords,
-) -> Result<String, String> {
+) -> Result<String, CommandErrorDto> {
     let uid = Uuid::new_v4().to_string();
     conversations::insert_message(
         conn,
@@ -283,12 +321,14 @@ fn insert_user_message_with_attachments(
             turn_index: coords.turn_index.map(i64::from),
             iteration: i64::from(coords.iteration),
         },
-    )?;
+    )
+    .map_err(CommandErrorDto::internal)?;
 
     {
         let attachment_ids = extract_attachment_ids(content);
         if !attachment_ids.is_empty() {
-            attachment_store::insert_attachment_refs(conn, &attachment_ids, conversation_id, &uid)?;
+            attachment_store::insert_attachment_refs(conn, &attachment_ids, conversation_id, &uid)
+                .map_err(CommandErrorDto::internal)?;
         }
     }
 
@@ -303,7 +343,7 @@ fn insert_placeholder_assistant_message(
     timestamp: i64,
     identity: &MessageIdentity<'_>,
     coords: TurnCoords,
-) -> Result<String, String> {
+) -> Result<String, CommandErrorDto> {
     let aid = Uuid::new_v4().to_string();
     conversations::insert_message(
         conn,
@@ -328,8 +368,10 @@ fn insert_placeholder_assistant_message(
             turn_index: coords.turn_index.map(i64::from),
             iteration: i64::from(coords.iteration),
         },
-    )?;
-    conversations::update_message_status(conn, &aid, "streaming")?;
+    )
+    .map_err(CommandErrorDto::internal)?;
+    conversations::update_message_status(conn, &aid, "streaming")
+        .map_err(CommandErrorDto::internal)?;
     Ok(aid)
 }
 

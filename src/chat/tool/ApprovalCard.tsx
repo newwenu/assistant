@@ -8,6 +8,7 @@ import type {
   ToolApprovalRequest,
 } from "../core/chatTypes";
 import { chatService } from "@/services/chat/chatService";
+import { toChatError } from "../core/chatErrors";
 import { sortApprovalExtensions } from "./toolCallDisplay";
 import css from "./ApprovalCard.module.css";
 
@@ -27,7 +28,9 @@ function formatRemaining(ms: number): string {
 
 function errorText(err: unknown): string {
   if (err instanceof Error) return err.message;
-  return String(err);
+  // `resolve_agent_tool_call` 已返回结构化错误：直接 `String(err)` 会得到
+  // `[object Object]`，必须经 `toChatError` 取后端已本地化的 message。
+  return toChatError(err).message ?? "";
 }
 
 /**

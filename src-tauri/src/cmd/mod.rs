@@ -125,3 +125,36 @@ pub(crate) fn translate_agent_error(e: assistant_agent::error::AgentError) -> St
         AgentError::Other(s) => s,
     }
 }
+
+/// 结构化版 `translate_agent_error`：首批命令用，未迁域继续用字符串版。
+///
+/// 附件类校验失败归 `Validation`（重试必然再次失败），`Other` 无法判别，
+/// 显式降级为 `InternalError`。
+pub(crate) fn command_error_from_agent(
+    e: assistant_agent::error::AgentError,
+) -> crate::protocol::CommandErrorDto {
+    use crate::protocol::{CommandErrorCodeDto, CommandErrorDto};
+    let code = match e {
+        assistant_agent::error::AgentError::Other(_) => CommandErrorCodeDto::InternalError,
+        _ => CommandErrorCodeDto::Validation,
+    };
+    CommandErrorDto::new(code, translate_agent_error(e))
+}
+
+/// 结构化版 `translate_storage_error`：`ConversationNotFound` 同名码，
+/// 模式类为 `Validation`，`Other` 归 `StorageFailure`（本地存储故障，
+/// 重试必然再次失败，前端只给「复制诊断」动作）。
+pub(crate) fn command_error_from_storage(
+    e: assistant_storage::error::StorageError,
+) -> crate::protocol::CommandErrorDto {
+    use crate::protocol::{CommandErrorCodeDto, CommandErrorDto};
+    use assistant_storage::error::StorageError;
+    let code = match e {
+        StorageError::ConversationNotFound => CommandErrorCodeDto::ConversationNotFound,
+        StorageError::BuiltinModeCannotDelete | StorageError::NotBuiltinModeCannotReset => {
+            CommandErrorCodeDto::Validation
+        }
+        StorageError::Other(_) => CommandErrorCodeDto::StorageFailure,
+    };
+    CommandErrorDto::new(code, translate_storage_error(e))
+}

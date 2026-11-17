@@ -27,6 +27,7 @@
     "attachments_not_allowed": "该通道不允许发送附件",
     "file_too_large": "文件大小超过限制（最大 {{max_mb}} MB）",
     "image_too_large": "图片大小超过限制（最大 {{max_mb}} MB）",
+    "conversation_full": "该对话已满，无法继续发送消息",
     "compaction": {
       "summary_truncated": "[摘要已截断，完整信息请通过 search_history 检索]"
     }
@@ -53,6 +54,9 @@
     "workspace_empty": "工作区路径不能为空；清除绑定请使用清除操作",
     "workspace_patch_conflict": "不能同时设置与清除工作区绑定",
     "path_not_utf8": "该路径包含无法表示的字符（非 UTF-8），请换一个目录"
+  },
+  "agent": {
+    "no_pending_interaction": "本次提交已失效：可能已超时、已处理过，或不属于当前对话"
   },
   "agent_mode": {
     "builtin_cannot_delete": "内置模式不可删除",

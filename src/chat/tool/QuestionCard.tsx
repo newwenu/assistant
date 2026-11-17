@@ -3,6 +3,7 @@ import { Button, Input } from "antd";
 import { useTranslation } from "react-i18next";
 import type { AgentQuestion, AgentQuestionRequest } from "../core/chatTypes";
 import { chatService } from "@/services/chat/chatService";
+import { toChatError } from "../core/chatErrors";
 import css from "./QuestionCard.module.css";
 
 interface QuestionCardProps {
@@ -26,7 +27,9 @@ function formatRemaining(ms: number): string {
 
 function errorText(err: unknown): string {
   if (err instanceof Error) return err.message;
-  return String(err);
+  // `resolve_agent_question` 已返回结构化错误：直接 `String(err)` 会得到
+  // `[object Object]`，必须经 `toChatError` 取后端已本地化的 message。
+  return toChatError(err).message ?? "";
 }
 
 function newDraft(): QuestionDraft {

@@ -16,8 +16,9 @@ use crate::adapters::{
     TauriInputSource,
 };
 use crate::protocol::{
-    AgentQuestionAnswerDto, AgentToolCallDto, ConversationToolConfigDto, SendChatMessageArgsDto,
-    ToolApprovalDecisionDto, ToolApprovalKindDto, ToolDescriptorDto,
+    AgentQuestionAnswerDto, AgentToolCallDto, CommandErrorCodeDto, CommandErrorDto,
+    ConversationToolConfigDto, SendChatMessageArgsDto, ToolApprovalDecisionDto,
+    ToolApprovalKindDto, ToolDescriptorDto,
 };
 
 #[command]
@@ -25,7 +26,7 @@ pub async fn send_agent_message(
     app: AppHandle,
     conversation_id: String,
     args: SendChatMessageArgsDto,
-) -> Result<(), String> {
+) -> Result<(), CommandErrorDto> {
     let registry = app.state::<Arc<ToolRegistry>>().inner().clone();
 
     // 缺省配置即 deny-by-default：空白名单 → 空工具集，模型看不到任何工具。
@@ -102,7 +103,7 @@ fn workspace_root(app: &AppHandle, conversation_id: &str) -> Option<String> {
 }
 
 #[command]
-pub fn cancel_agent(app: AppHandle, conversation_id: String) -> Result<(), String> {
+pub fn cancel_agent(app: AppHandle, conversation_id: String) -> Result<(), CommandErrorDto> {
     let tasks = app.state::<Arc<TurnTasks>>().inner().clone();
     tasks.cancel(&conversation_id);
     Ok(())
@@ -118,7 +119,7 @@ pub fn cancel_agent(app: AppHandle, conversation_id: String) -> Result<(), Strin
 pub fn resolve_agent_tool_call(
     app: AppHandle,
     args: ToolApprovalDecisionDto,
-) -> Result<(), String> {
+) -> Result<(), CommandErrorDto> {
     let pending = app.state::<PendingApprovalRegistry>();
     let decision = match args.decision {
         ToolApprovalKindDto::Approve => ApprovalDecision::Approve,
@@ -131,9 +132,9 @@ pub fn resolve_agent_tool_call(
     if pending.resolve(&args.call_id, &args.conversation_id, decision) {
         Ok(())
     } else {
-        Err(format!(
-            "no pending approval for call '{}' (already decided or timed out)",
-            args.call_id
+        Err(CommandErrorDto::new(
+            CommandErrorCodeDto::NoPendingInteraction,
+            assistant_i18n::t("agent.no_pending_interaction"),
         ))
     }
 }
@@ -145,14 +146,24 @@ pub fn resolve_agent_tool_call(
 /// 提交无效（已超时 / 已作答 / 会话不匹配 / 答案条数不符）返回错误，
 /// 让前端提示这次提交无效，而不是假装成功。
 #[command]
-pub fn resolve_agent_question(app: AppHandle, args: AgentQuestionAnswerDto) -> Result<(), String> {
+pub fn resolve_agent_question(
+    app: AppHandle,
+    args: AgentQuestionAnswerDto,
+) -> Result<(), CommandErrorDto> {
     let pending = app.state::<PendingQuestionRegistry>();
     let answers: Vec<QuestionAnswerItem> = args
         .answers
         .into_iter()
         .map(|item| QuestionAnswerItem::new(item.selected, item.other))
         .collect();
-    pending.resolve(&args.call_id, &args.conversation_id, answers)
+    pending
+        .resolve(&args.call_id, &args.conversation_id, answers)
+        .map_err(|_msg| {
+            CommandErrorDto::new(
+                CommandErrorCodeDto::NoPendingInteraction,
+                assistant_i18n::t("agent.no_pending_interaction"),
+            )
+        })
 }
 
 /// 挂起提问的补拉：窗口重连 / 切回运行中的会话时，用快照重建 `ask_user` 卡片。
@@ -192,7 +203,7 @@ pub(crate) async fn start_turn(
     args: SendChatMessageArgsDto,
     spec: TurnSpec,
     tool_exec: Option<Arc<dyn assistant_agent::agent::round_executor::ToolExecutionPort>>,
-) -> Result<(), String> {
+) -> Result<(), CommandErrorDto> {
     let SendChatMessageArgsDto {
         content,
         mode_id,
@@ -207,25 +218,30 @@ pub(crate) async fn start_turn(
 
     // `begin` 先于建消息：`Reject` 链路被拒时不得在库里留下孤儿消息。
     let tasks = app.state::<Arc<TurnTasks>>().inner().clone();
-    let (turn_id, _token) = tasks
-        .begin(conversation_id, spec.on_busy)
-        .map_err(|_| assistant_i18n::t("chat.session_busy"))?;
+    let (turn_id, _token) = tasks.begin(conversation_id, spec.on_busy).map_err(|_| {
+        CommandErrorDto::new(
+            CommandErrorCodeDto::SessionBusy,
+            assistant_i18n::t("chat.session_busy"),
+        )
+    })?;
 
     let inserted = {
         let state = app.state::<crate::setup::DbState>();
-        super::get_db_conn(&state).and_then(|conn| {
-            super::chat::insert::insert_chat_messages(
-                &conn,
-                super::chat::insert::InsertChatInput {
-                    conversation_id,
-                    content: &content,
-                    branch_point_message_id: branch_point_message_id.as_deref(),
-                    provider_id: &provider_id,
-                    model_id: &model_id,
-                    mode_id: mode_id.as_deref(),
-                },
-            )
-        })
+        super::get_db_conn(&state)
+            .map_err(|msg| CommandErrorDto::new(CommandErrorCodeDto::StorageFailure, msg))
+            .and_then(|conn| {
+                super::chat::insert::insert_chat_messages(
+                    &conn,
+                    super::chat::insert::InsertChatInput {
+                        conversation_id,
+                        content: &content,
+                        branch_point_message_id: branch_point_message_id.as_deref(),
+                        provider_id: &provider_id,
+                        model_id: &model_id,
+                        mode_id: mode_id.as_deref(),
+                    },
+                )
+            })
     };
     let inserted = match inserted {
         Ok(inserted) => inserted,
@@ -283,16 +299,22 @@ pub(crate) async fn start_turn(
     Ok(())
 }
 
-async fn validate_and_preprocess(app: &AppHandle, content: &str) -> Result<String, String> {
+async fn validate_and_preprocess(
+    app: &AppHandle,
+    content: &str,
+) -> Result<String, CommandErrorDto> {
     if super::chat::insert::is_content_empty(content) {
-        return Err(assistant_i18n::t("chat.empty_content"));
+        return Err(CommandErrorDto::new(
+            CommandErrorCodeDto::Validation,
+            assistant_i18n::t("chat.empty_content"),
+        ));
     }
 
     let attachment_store = app.state::<AttachmentStore>();
     let config = multimodal::MultimodalConfig::trusted_channel_input();
     let content = multimodal::admit_attachments(content, &attachment_store, &config)
         .await
-        .map_err(super::translate_agent_error)?;
+        .map_err(super::command_error_from_agent)?;
 
     Ok(content)
 }

@@ -27,6 +27,7 @@
     "attachments_not_allowed": "Attachments are not allowed on this channel",
     "file_too_large": "File too large (max {{max_mb}} MB)",
     "image_too_large": "Image too large (max {{max_mb}} MB)",
+    "conversation_full": "This conversation is full and cannot accept new messages",
     "compaction": {
       "summary_truncated": "[Summary truncated. Use search_history for full details]"
     }
@@ -53,6 +54,9 @@
     "workspace_empty": "Workspace path cannot be empty; use the clear action to unbind",
     "workspace_patch_conflict": "Setting and clearing the workspace binding at the same time is not allowed",
     "path_not_utf8": "This path contains characters that cannot be represented (non-UTF-8); choose another directory"
+  },
+  "agent": {
+    "no_pending_interaction": "This submission is no longer valid: it may have timed out, been decided already, or belong to another conversation"
   },
   "agent_mode": {
     "builtin_cannot_delete": "Built-in modes cannot be deleted",
