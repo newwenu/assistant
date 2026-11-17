@@ -4,6 +4,7 @@ use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::os::fs_util;
+#[cfg(any(windows, target_os = "linux"))]
 use crate::os::path;
 
 use super::attrs::is_link_like;

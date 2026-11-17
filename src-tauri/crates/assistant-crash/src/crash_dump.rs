@@ -76,33 +76,10 @@ fn install_crash_handler(crash_dir: &Path) {
             let dump_path = dir.join(format!("crash_{}.dmp", ts));
             let log_path = dir.join(format!("crash_{}.log", ts));
 
-            let mut info = String::new();
-            info.push_str(&format!("=== CRASH at {} ===\n", ts));
-            info.push_str(&format!(
-                "exception_code: 0x{:08X}\n",
-                context.exception_code
-            ));
-            info.push_str(&format!("process_id: {}\n", context.process_id));
-            info.push_str(&format!("thread_id: {}\n", context.thread_id));
-            info.push_str(&format!("crash_dump: {}\n", dump_path.display()));
-
-            let _ = fs::write(&log_path, &info);
+            let _ = fs::write(&log_path, crash_report(context, &ts, &dump_path));
 
             match fs::File::create(&dump_path) {
-                Ok(mut file) => {
-                    let cc = crash_handler::CrashContext {
-                        exception_pointers: context.exception_pointers,
-                        exception_code: context.exception_code,
-                        process_id: context.process_id,
-                        thread_id: context.thread_id,
-                    };
-                    match minidump_writer::minidump_writer::MinidumpWriter::dump_crash_context(
-                        cc, None, &mut file,
-                    ) {
-                        Ok(()) => eprintln!("crash dump written to {}", dump_path.display()),
-                        Err(e) => eprintln!("failed to write crash dump: {}", e),
-                    }
-                }
+                Ok(mut file) => write_dump(context, &mut file, &dump_path),
                 Err(e) => eprintln!("failed to create dump file: {}", e),
             }
 
@@ -112,6 +89,91 @@ fn install_crash_handler(crash_dir: &Path) {
 
     if let Ok(h) = handler {
         std::mem::forget(h);
+    }
+}
+
+fn crash_report(context: &crash_handler::CrashContext, ts: &str, dump_path: &Path) -> String {
+    let mut info = format!("=== CRASH at {} ===\n", ts);
+    info.push_str(&crash_fields(context));
+    info.push_str(&format!("crash_dump: {}\n", dump_path.display()));
+    info
+}
+
+#[cfg(target_os = "windows")]
+fn crash_fields(context: &crash_handler::CrashContext) -> String {
+    format!(
+        "exception_code: 0x{:08X}\nprocess_id: {}\nthread_id: {}\n",
+        context.exception_code, context.process_id, context.thread_id
+    )
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn crash_fields(context: &crash_handler::CrashContext) -> String {
+    format!(
+        "signal: {} (0x{:X})\nsignal_code: {}\nsignal_address: 0x{:016X}\nprocess_id: {}\nthread_id: {}\n",
+        context.siginfo.ssi_signo,
+        context.siginfo.ssi_signo,
+        context.siginfo.ssi_code,
+        context.siginfo.ssi_addr,
+        context.pid,
+        context.tid
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn crash_fields(context: &crash_handler::CrashContext) -> String {
+    let mut info = format!(
+        "task: {}\nthread: {}\nhandler_thread: {}\n",
+        context.task, context.thread, context.handler_thread
+    );
+    if let Some(exc) = context.exception.as_ref() {
+        info.push_str(&format!(
+            "exception_kind: {}\nexception_code: {}\nexception_subcode: {:?}\n",
+            exc.kind, exc.code, exc.subcode
+        ));
+    }
+    info
+}
+
+#[cfg(target_os = "windows")]
+fn write_dump(context: &crash_handler::CrashContext, file: &mut fs::File, dump_path: &Path) {
+    let cc = crash_handler::CrashContext {
+        exception_pointers: context.exception_pointers,
+        exception_code: context.exception_code,
+        process_id: context.process_id,
+        thread_id: context.thread_id,
+    };
+    match minidump_writer::minidump_writer::MinidumpWriter::dump_crash_context(cc, None, file) {
+        Ok(()) => eprintln!("crash dump written to {}", dump_path.display()),
+        Err(e) => eprintln!("failed to write crash dump: {}", e),
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn write_dump(context: &crash_handler::CrashContext, file: &mut fs::File, dump_path: &Path) {
+    let mut writer =
+        minidump_writer::minidump_writer::MinidumpWriter::new(context.pid, context.tid);
+    writer.set_crash_context(minidump_writer::crash_context::CrashContext {
+        inner: context.clone(),
+    });
+    match writer.dump(file) {
+        Ok(_) => eprintln!("crash dump written to {}", dump_path.display()),
+        Err(e) => eprintln!("failed to write crash dump: {}", e),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn write_dump(context: &crash_handler::CrashContext, file: &mut fs::File, dump_path: &Path) {
+    let cc = crash_handler::CrashContext {
+        task: context.task,
+        thread: context.thread,
+        handler_thread: context.handler_thread,
+        exception: context.exception,
+    };
+    let mut writer = minidump_writer::minidump_writer::MinidumpWriter::with_crash_context(cc);
+    match writer.dump(file) {
+        Ok(_) => eprintln!("crash dump written to {}", dump_path.display()),
+        Err(e) => eprintln!("failed to write crash dump: {}", e),
     }
 }
 

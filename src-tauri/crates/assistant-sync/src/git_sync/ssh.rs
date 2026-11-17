@@ -172,6 +172,7 @@ fn ssh_uri_host(uri: &str) -> Option<&str> {
 #[cfg(unix)]
 pub fn kill_ssh_sessions() {
     use std::fs;
+    use std::os::unix::fs::FileTypeExt;
 
     let dir = match fs::read_dir("/tmp") {
         Ok(d) => d,
