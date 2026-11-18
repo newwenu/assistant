@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::storage::PersistedRef;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ToolErrorKind {
@@ -29,6 +31,12 @@ pub struct ToolResult {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_kind: Option<ToolErrorKind>,
+    /// 工具自己落盘的输出引用（`shell` 流式落盘用）。
+    ///
+    /// **不进 wire**：`OsToolResultDto` 是显式字段映射，因此无 `contract:gen`。
+    /// Pipeline 见到 `Some` 即跳过自己的 `persist()`，避免对「预览 + 标签」二次落盘。
+    #[serde(skip)]
+    pub persisted: Option<PersistedRef>,
 }
 
 impl ToolResult {
@@ -39,6 +47,7 @@ impl ToolResult {
             result_for_assistant: None,
             error: None,
             error_kind: None,
+            persisted: None,
         }
     }
 
@@ -49,6 +58,7 @@ impl ToolResult {
             result_for_assistant: Some(text.into()),
             error: None,
             error_kind: None,
+            persisted: None,
         }
     }
 
@@ -64,7 +74,34 @@ impl ToolResult {
             result_for_assistant: None,
             error: Some(error.into()),
             error_kind: Some(kind),
+            persisted: None,
         }
+    }
+
+    /// 失败但保留已产出的部分结果（`shell` 超时 / 取消路径用）。
+    ///
+    /// 失败前已产出的日志正是模型纠错所需（构建中断、测试挂死），
+    /// 丢掉它等于让超时退化成「一无所知」。
+    pub fn err_with_data(
+        kind: ToolErrorKind,
+        error: impl Into<String>,
+        data: Value,
+        text: impl Into<String>,
+    ) -> Self {
+        Self {
+            ok: false,
+            data: Some(data),
+            result_for_assistant: Some(text.into()),
+            error: Some(error.into()),
+            error_kind: Some(kind),
+            persisted: None,
+        }
+    }
+
+    /// 挂上工具自己产出的落盘引用（`shell` 的四种终态都会调用）。
+    pub fn with_persisted(mut self, reference: Option<PersistedRef>) -> Self {
+        self.persisted = reference;
+        self
     }
 
     /// `Err` 通道归一化：统一前缀工具名，便于日志检索与模型纠错。

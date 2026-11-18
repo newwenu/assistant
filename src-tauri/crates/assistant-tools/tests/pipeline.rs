@@ -9,8 +9,8 @@ use assistant_tools::pipeline::{
     InMemoryEventSink, PipelineEvent, PipelineStage, ToolCall, ToolPipeline,
 };
 use assistant_tools::storage::{
-    PersistToolResult, PersistedRef, ToolResultStorage, PER_ROUND_LIMIT_CHARS,
-    PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS,
+    persisted_reference, PersistToolResult, PersistedRef, ToolResultSink, ToolResultStorage,
+    PER_ROUND_LIMIT_CHARS, PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS,
 };
 use assistant_tools::{
     ApprovalDecision, AuditOutcome, PermissionEffect, PermissionIntent, PermissionRule,
@@ -163,6 +163,10 @@ impl ToolResultStorage for RecordingStorage {
         let path = format!("store/{}.txt", req.tool_call_id);
         self.persisted.lock().unwrap().push(req);
         Ok(PersistedRef { path, bytes })
+    }
+
+    async fn open_sink(&self, _req: PersistToolResult) -> Result<Box<dyn ToolResultSink>, String> {
+        Err("recording storage does not support streaming".to_string())
     }
 }
 
@@ -490,6 +494,45 @@ async fn large_result_is_persisted_with_preview() {
     assert_eq!(
         reported, outcomes[0].assistant_text,
         "门禁 1：Finished.result 与落库 tool 行正文同源"
+    );
+}
+
+/// A23：工具自带落盘引用时，Pipeline 不得再落一份（目录下只该有一次调用的输出）。
+#[tokio::test]
+async fn streamed_persisted_result_is_not_persisted_again() {
+    let big = "y".repeat(PER_TOOL_LIMIT_CHARS + 1);
+    let reference = PersistedRef {
+        path: "store/streamed.log".to_string(),
+        bytes: big.len(),
+    };
+    // 流式落盘由工具自己完成，回填文本也已由它渲染好定位符与尾窗口。
+    let text = persisted_reference(&reference.path, &big);
+    let h = harness(vec![]);
+    h.add(
+        ProbeSpec::new("probe").with_result(
+            ToolResult::ok_with_assistant(json!({ "streamed": true }), text.clone())
+                .with_persisted(Some(reference.clone())),
+        ),
+    );
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(&[call("c1", "probe")], &ctx(), &allow_all(), &sink)
+        .await;
+
+    assert!(
+        h.storage.calls().is_empty(),
+        "自带落盘引用的结果不得触发二次落盘"
+    );
+    assert_eq!(
+        outcomes[0].persisted.as_ref(),
+        Some(&reference),
+        "outcome 必须原样继承工具给出的引用"
+    );
+    assert_eq!(
+        outcomes[0].assistant_text, text,
+        "已落盘结果的回填文本不得被再次改写"
     );
 }
 

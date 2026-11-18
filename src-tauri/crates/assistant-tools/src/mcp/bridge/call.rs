@@ -103,6 +103,7 @@ fn map_content(blocks: Vec<Value>, is_error: bool) -> ToolResult {
             result_for_assistant: None,
             error: Some(message),
             error_kind: Some(ToolErrorKind::Business),
+            persisted: None,
         };
     }
 
@@ -120,6 +121,7 @@ fn map_content(blocks: Vec<Value>, is_error: bool) -> ToolResult {
         result_for_assistant: Some(assistant),
         error: None,
         error_kind: None,
+        persisted: None,
     }
 }
 

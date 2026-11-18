@@ -53,6 +53,7 @@ pub fn rebuild_compact(
             result_for_assistant: None,
             error: Some(text.to_string()),
             error_kind: error_kind_from_text(text),
+            persisted: None,
         }
     } else {
         ToolResult {
@@ -61,6 +62,7 @@ pub fn rebuild_compact(
             result_for_assistant: Some(text.to_string()),
             error: None,
             error_kind: None,
+            persisted: None,
         }
     };
     ToolResultCompact {

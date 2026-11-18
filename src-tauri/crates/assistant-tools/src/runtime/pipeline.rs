@@ -148,6 +148,11 @@ impl ToolPipeline {
         self
     }
 
+    /// 落盘存储：输出域的**唯一来源**（`PipelineToolExecution` 据此填 `tool_output_root`）。
+    pub fn storage(&self) -> &Arc<dyn ToolResultStorage> {
+        &self.storage
+    }
+
     /// 按并发安全切分 batch：连续可并发的工具合并为一组，其余各自单独成组。
     /// 未注册的工具无法判断并发安全性，按不可并发处理（fail-closed）。
     pub fn partition_tool_batches(&self, tool_calls: &[ToolCall]) -> Vec<Vec<usize>> {
@@ -223,9 +228,16 @@ impl ToolPipeline {
         }
 
         let mut outcomes: Vec<ToolOutcome> = slots.into_iter().flatten().collect();
+        // 已自带落盘引用的结果（`shell`）不再占内联预算：它回填的只是预览。
         let sizes: Vec<usize> = outcomes
             .iter()
-            .map(|outcome| outcome.assistant_text.chars().count())
+            .map(|outcome| {
+                if outcome.persisted.is_some() {
+                    0
+                } else {
+                    outcome.assistant_text.chars().count()
+                }
+            })
             .collect();
         let targets = select_persist_targets(&sizes);
 
@@ -373,8 +385,10 @@ impl ToolPipeline {
 
     /// 阶段 5：落盘单个结果，回填改为引用 + 预览。
     /// 只有成功结果落盘；失败结果的错误文本本身就该完整回填给模型。
+    /// 工具已自带落盘引用（`shell` 流式落盘）时跳过：否则会对「预览 + 标签」二次落盘，
+    /// 且 `compact.persisted` 指向二次产物，模型按它回读读不到全文。
     async fn persist(&self, outcome: &mut ToolOutcome, session_id: Option<&str>) {
-        if !outcome.result.ok {
+        if !outcome.result.ok || outcome.persisted.is_some() {
             return;
         }
 
@@ -423,6 +437,9 @@ impl ToolPipeline {
 impl ToolOutcome {
     fn new(call: &ToolCall, stage: PipelineStage, result: ToolResult) -> Self {
         let assistant_text = result.assistant_text();
+        // 工具自带的落盘引用（`shell`）原样继承：失败结果同样带，
+        // 超时信封因此能同时显示失败原因与输出文件。
+        let persisted = result.persisted.clone();
         Self {
             tool_call_id: call.tool_call_id.clone(),
             tool_name: call.tool_name.clone(),
@@ -430,7 +447,7 @@ impl ToolOutcome {
             blocks_input_rewrite: false,
             result,
             assistant_text,
-            persisted: None,
+            persisted,
             arguments: call.arguments.clone(),
             compact: None,
         }

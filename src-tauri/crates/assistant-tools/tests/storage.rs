@@ -1,10 +1,12 @@
 use std::path::Path;
 
 use assistant_tools::storage::{
-    cleanup_expired_results, persisted_reference, select_persist_targets, session_namespace,
-    CleanupReport, FileToolResultStorage, InMemoryReadReceiptStore, PersistToolResult, ReadReceipt,
-    ReadReceiptKey, ReadReceiptStore, ToolResultStorage, PER_ROUND_LIMIT_CHARS,
+    cleanup_expired_results, persisted_reference, persisted_reference_from_tail,
+    select_persist_targets, session_namespace, CleanupReport, FileToolResultStorage,
+    InMemoryReadReceiptStore, OutputStream, PersistToolResult, ReadReceipt, ReadReceiptKey,
+    ReadReceiptStore, ToolResultStorage, MAX_SPILL_BYTES, PER_ROUND_LIMIT_CHARS,
     PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS, PREVIEW_HEAD_CHARS, PREVIEW_TAIL_CHARS,
+    SPILL_TRUNCATED_MARKER, STDERR_RING_CHARS,
 };
 
 #[test]
@@ -210,6 +212,265 @@ async fn file_storage_namespaces_by_session_and_prefixes_names() {
         name.ends_with("-read-call-1.txt"),
         "unexpected name: {name}"
     );
+}
+
+fn sink_request(call_id: &str, session: Option<&str>) -> PersistToolResult {
+    PersistToolResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "shell".to_string(),
+        session_id: session.map(str::to_string),
+        content: String::new(),
+    }
+}
+
+#[tokio::test]
+async fn sink_preview_keeps_only_the_tail() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(dir.path());
+    let content = format!("HEAD{}TAIL", "x".repeat(4_000));
+    let mut sink = storage
+        .open_sink(sink_request("call-1", Some("session-a")))
+        .await
+        .unwrap();
+
+    sink.write(OutputStream::Stdout, content.as_bytes())
+        .unwrap();
+    let spilled = sink.finish().unwrap();
+
+    let reference = spilled.reference.expect("non-empty output must persist");
+    assert_eq!(std::fs::read_to_string(&reference.path).unwrap(), content);
+    assert_eq!(reference.bytes, content.len());
+    assert_eq!(spilled.total_chars, 4_008);
+    let expected_tail: String = content.chars().skip(4_008 - PREVIEW_CHARS).collect();
+    assert_eq!(
+        spilled.preview, expected_tail,
+        "preview must be the file tail, not head + tail"
+    );
+    assert!(
+        !spilled.preview.contains("HEAD"),
+        "head window must not be included"
+    );
+    assert_eq!(spilled.output_bytes, content.len());
+    assert_eq!(spilled.output_lines, 1);
+}
+
+#[tokio::test]
+async fn sink_short_output_preview_is_the_whole_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(dir.path());
+    let mut sink = storage
+        .open_sink(sink_request("call-2", None))
+        .await
+        .unwrap();
+
+    sink.write(OutputStream::Stdout, b"hello\nworld\n").unwrap();
+    let spilled = sink.finish().unwrap();
+
+    assert_eq!(spilled.preview, "hello\nworld\n");
+    assert_eq!(spilled.total_chars, 12);
+    assert_eq!(spilled.output_lines, 2);
+    assert!(!spilled.truncated);
+    assert!(!spilled.stderr_truncated);
+}
+
+#[tokio::test]
+async fn sink_empty_output_removes_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(dir.path());
+    let sink = storage
+        .open_sink(sink_request("call-3", Some("session-b")))
+        .await
+        .unwrap();
+
+    let spilled = sink.finish().unwrap();
+
+    assert!(spilled.reference.is_none(), "empty output must not persist");
+    assert!(spilled.preview.is_empty());
+    assert_eq!(spilled.total_chars, 0);
+    assert_eq!(spilled.output_bytes, 0);
+    let namespace = storage
+        .namespace_root(Some("session-b"))
+        .expect("file storage always exposes a namespace root");
+    let leftovers: Vec<_> = std::fs::read_dir(&namespace)
+        .map(|entries| entries.filter_map(Result::ok).collect())
+        .unwrap_or_default();
+    assert!(leftovers.is_empty(), "0-byte file must be deleted");
+}
+
+#[tokio::test]
+async fn sink_appends_stderr_section_and_preview_ends_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(dir.path());
+    let mut sink = storage
+        .open_sink(sink_request("call-4", Some("session-c")))
+        .await
+        .unwrap();
+
+    sink.write(OutputStream::Stdout, b"building...\n").unwrap();
+    sink.write(OutputStream::Stderr, b"error: boom\n").unwrap();
+    let spilled = sink.finish().unwrap();
+
+    let reference = spilled.reference.expect("output must persist");
+    let file = std::fs::read_to_string(&reference.path).unwrap();
+    assert_eq!(file, "building...\n--- stderr ---\nerror: boom\n");
+    assert!(
+        spilled.preview.ends_with("error: boom\n"),
+        "tail must land on the stderr last line: {:?}",
+        spilled.preview
+    );
+    assert_eq!(spilled.output_bytes, 12 + 12);
+    assert_eq!(spilled.output_lines, 2);
+}
+
+#[tokio::test]
+async fn sink_decodes_multibyte_chars_split_across_chunks() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(dir.path());
+    let mut sink = storage
+        .open_sink(sink_request("call-5", None))
+        .await
+        .unwrap();
+
+    let bytes = "中文".as_bytes();
+    sink.write(OutputStream::Stdout, &bytes[..4]).unwrap();
+    sink.write(OutputStream::Stdout, &bytes[4..]).unwrap();
+    let spilled = sink.finish().unwrap();
+
+    assert_eq!(
+        spilled.total_chars, 2,
+        "a split char must not be counted twice"
+    );
+    assert_eq!(spilled.preview, "中文");
+    assert_eq!(spilled.output_bytes, 6);
+}
+
+#[tokio::test]
+async fn sink_marks_stdout_truncation_in_file_and_preview() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(dir.path());
+    let mut sink = storage
+        .open_sink(sink_request("call-6", None))
+        .await
+        .unwrap();
+
+    let chunk = vec![b'a'; 1024 * 1024];
+    let total = MAX_SPILL_BYTES + 1024 * 1024;
+    let mut written = 0;
+    while written < total {
+        sink.write(OutputStream::Stdout, &chunk).unwrap();
+        written += chunk.len();
+    }
+    let spilled = sink.finish().unwrap();
+
+    assert!(spilled.truncated);
+    assert_eq!(spilled.output_bytes, total, "total bytes stay exact");
+    let reference = spilled.reference.expect("output must persist");
+    assert_eq!(
+        reference.bytes,
+        MAX_SPILL_BYTES + 1 + SPILL_TRUNCATED_MARKER.len()
+    );
+    assert!(
+        spilled.preview.ends_with(SPILL_TRUNCATED_MARKER),
+        "marker must land at the preview tail"
+    );
+    assert_eq!(
+        spilled.preview.matches(SPILL_TRUNCATED_MARKER).count(),
+        1,
+        "marker must not be duplicated"
+    );
+}
+
+#[tokio::test]
+async fn sink_keeps_the_truncation_marker_when_stderr_pushes_it_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(dir.path());
+    let mut sink = storage
+        .open_sink(sink_request("call-7", None))
+        .await
+        .unwrap();
+
+    let chunk = vec![b'a'; 1024 * 1024];
+    let total = MAX_SPILL_BYTES + 1024 * 1024;
+    let mut written = 0;
+    while written < total {
+        sink.write(OutputStream::Stdout, &chunk).unwrap();
+        written += chunk.len();
+    }
+    sink.write(OutputStream::Stderr, &vec![b'e'; PREVIEW_CHARS + 100])
+        .unwrap();
+    let spilled = sink.finish().unwrap();
+
+    assert!(spilled.truncated);
+    assert!(
+        spilled.preview.ends_with(SPILL_TRUNCATED_MARKER),
+        "stderr must not hide the truncation marker from the tail"
+    );
+    assert_eq!(spilled.preview.matches(SPILL_TRUNCATED_MARKER).count(), 1);
+    let reference = spilled.reference.expect("output must persist");
+    let file = std::fs::read_to_string(&reference.path).unwrap();
+    assert_eq!(
+        file.matches(SPILL_TRUNCATED_MARKER).count(),
+        1,
+        "file must contain the marker exactly once"
+    );
+}
+
+#[tokio::test]
+async fn sink_truncates_stderr_ring_and_counts_full_stream() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(dir.path());
+    let mut sink = storage
+        .open_sink(sink_request("call-8", None))
+        .await
+        .unwrap();
+
+    let overflow = STDERR_RING_CHARS + 1_000;
+    sink.write(OutputStream::Stderr, &vec![b'x'; overflow])
+        .unwrap();
+    let spilled = sink.finish().unwrap();
+
+    assert!(spilled.stderr_truncated);
+    assert_eq!(spilled.output_bytes, overflow, "counters stay exact");
+    let reference = spilled.reference.expect("output must persist");
+    let file = std::fs::read_to_string(&reference.path).unwrap();
+    assert!(
+        file.contains(&format!(
+            "--- stderr (last {} of {} chars) ---",
+            STDERR_RING_CHARS, overflow
+        )),
+        "header must state the ring window: {file:.40}"
+    );
+}
+
+#[test]
+fn streamed_reference_renders_the_same_tag_and_marker() {
+    let short = persisted_reference_from_tail("p.txt", "abc", 3);
+    assert_eq!(short, "<persisted-output path=\"p.txt\">\nabc");
+
+    let total = PREVIEW_CHARS + 1_000;
+    let long = persisted_reference_from_tail("p.txt", &"b".repeat(PREVIEW_CHARS), total);
+    let expected = format!(
+        "<persisted-output path=\"p.txt\">\n[… {} chars omitted; full output in the file above …]\n{}",
+        1_000,
+        "b".repeat(PREVIEW_CHARS)
+    );
+    assert_eq!(long, expected);
+    assert_eq!(
+        assistant_tools::compact::parse_persisted_tag(&long)
+            .map(|tag| tag.path)
+            .as_deref(),
+        Some("p.txt")
+    );
+}
+
+#[test]
+fn namespace_root_matches_the_persist_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(dir.path());
+    let root = storage
+        .namespace_root(Some("session-a"))
+        .expect("file storage always exposes a namespace root");
+    assert_eq!(root, dir.path().join(session_namespace(Some("session-a"))));
 }
 
 #[test]
