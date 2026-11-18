@@ -46,7 +46,9 @@ async fn grant_receipt(
     name: &str,
     session: Option<&str>,
 ) {
-    let resolved = root.join(name);
+    // 回执键与工具解析结果一致：`resolve` 会归一（macOS 上 `/var` → `/private/var`）。
+    let resolved = assistant_tools::os::path::canonicalize_lenient(&root.join(name))
+        .expect("canonical fixture");
     let revision = assistant_tools::os::agent_read::file_revision(&resolved).unwrap();
     receipts
         .record(
@@ -68,7 +70,9 @@ async fn grant_encoded_receipt(
     encoding: &str,
     has_bom: bool,
 ) {
-    let resolved = root.join(name);
+    // 回执键与工具解析结果一致：`resolve` 会归一（macOS 上 `/var` → `/private/var`）。
+    let resolved = assistant_tools::os::path::canonicalize_lenient(&root.join(name))
+        .expect("canonical fixture");
     let revision = assistant_tools::os::agent_read::file_revision(&resolved).unwrap();
     receipts
         .record(
@@ -170,6 +174,30 @@ fn validate_input_rejects_bad_arguments() {
         ValidationResult::ok(),
         "an empty new_string is a valid deletion"
     );
+}
+
+#[test]
+fn the_output_namespace_stays_read_only_for_edit() {
+    let workspace = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    std::fs::write(output.path().join("run.log"), "old\n").unwrap();
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_output_root = Some(output.path().to_path_buf());
+    let target = output.path().join("run.log");
+
+    let result = tool(store()).validate_input(
+        &json!({
+            "path": target.display().to_string(),
+            "old_string": "old",
+            "new_string": "new"
+        }),
+        &ctx,
+    );
+    assert!(!result.ok, "输出域只读：edit 不得改写本会话输出文件");
+    assert!(result
+        .message
+        .unwrap_or_default()
+        .contains("outside workspace"));
 }
 
 #[test]

@@ -159,6 +159,26 @@ fn validate_input_rejects_paths_outside_the_workspace() {
         .contains("outside workspace"));
 }
 
+#[test]
+fn the_output_namespace_stays_read_only_for_write() {
+    let workspace = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_output_root = Some(output.path().to_path_buf());
+    let target = output.path().join("run.log");
+
+    // `write` 仍走 `path::resolve`：只放行工作区，输出域不在任何写方向的白名单里。
+    let result = tool(store()).validate_input(
+        &json!({ "path": target.display().to_string(), "content": "x" }),
+        &ctx,
+    );
+    assert!(!result.ok, "输出域只读：write 不得改写本会话输出文件");
+    assert!(result
+        .message
+        .unwrap_or_default()
+        .contains("outside workspace"));
+}
+
 #[tokio::test]
 async fn creates_a_new_file_and_its_parent_directories() {
     let dir = tempfile::tempdir().unwrap();

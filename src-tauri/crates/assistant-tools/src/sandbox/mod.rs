@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::sync::OnceLock;
 
+use serde::{Deserialize, Serialize};
+
 #[cfg(windows)]
 mod windows;
 
@@ -44,7 +46,11 @@ impl SandboxKind {
 }
 
 /// 隔离强度档位。判据固定为维度集合（`missing`），不由后端自报。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// `Serialize` / `Deserialize` 只服务审批键 JSON（`ApprovalScope::Command.enforcement`），
+/// 与 `as_str()` 同形（`full` / `partial` / `none`）；不进 wire DTO。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SandboxEnforcement {
     /// `missing` 为空：四项维度全部系统强制。
     Full,

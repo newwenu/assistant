@@ -188,14 +188,18 @@ impl ToolExecutionPort for PipelineToolExecution {
         // `tool_call_id` 由 Pipeline 在每次调用内部逐条填充。
         // Agent 链路只填 `workspace_root`：它兼作权限边界，同时经 `resolution_base`
         // 的回退作为相对路径基准。不额外填 `resolve_base`，避免出现「有基准无边界」的上下文。
+        // `tool_output_root` 取自 Pipeline 的落盘存储（唯一来源），不在此处重算路径。
+        let session_id = ctx.conversation_id.to_string();
+        let tool_output_root = self.pipeline.storage().namespace_root(Some(&session_id));
         let context = ToolUseContext {
             workspace_root: (self.workspace_root)(ctx.conversation_id),
-            session_id: Some(ctx.conversation_id.to_string()),
+            session_id: Some(session_id),
             turn_id: Some(ctx.turn_id.to_string()),
             iteration: Some(ctx.iteration),
             tool_call_id: None,
             // 本轮取消令牌：MCP 客户端据此中止在途 `tools/call`（I38e §4.3）。
             cancel: Some(ctx.child_token.clone()),
+            tool_output_root,
             ..Default::default()
         };
         let policy = self.policy.as_ref();

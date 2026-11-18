@@ -117,32 +117,32 @@ impl ToolGateway {
             return Ok(GatewayDecision::Allowed);
         }
         let mut pending: Vec<PendingApproval> = Vec::new();
+        // 隔离强度取一次：同一次求值内所有 resource 共用同一份探测结论。
+        // `None` 表示该工具不是沙箱工具，命令键形状与旧版一致。
+        let enforcement = tool.sandbox_enforcement();
 
         for intent in &intents {
             for resource in &intent.resources {
-                let key =
-                    ApprovalKey::from_intent(tool_name, intent, resource, input, context, tier);
-                // 空键不查缓存：无法归一即无法证明「批准的正是这次操作」。
-                // 命中缓存也要留审计：放行原因（此前授权）与策略 Allow 不同。
-                if let Some(key) = key.as_ref() {
-                    if self
-                        .grant_store
-                        .is_granted(key, context.session_id.as_deref())
-                        .await
-                    {
-                        self.audit(
-                            context,
-                            tool_name,
-                            &intent.action,
-                            resource,
-                            Outcome::GrantHit,
-                        )
-                        .await;
-                        continue;
-                    }
-                }
+                let key = ApprovalKey::from_intent(
+                    tool_name,
+                    intent,
+                    resource,
+                    input,
+                    context,
+                    tier,
+                    enforcement,
+                );
+                // 顺序固定（§6.4）：策略先求值，`Deny` 立即拒绝；只有 `Allow` / `Ask`
+                // 才查授权缓存。反过来（先查缓存）会让「此后被策略改判 Deny 的键」
+                // 因为历史授权继续放行——方向是放宽权限。
                 match policy.evaluate(&intent.action, resource) {
                     PermissionEffect::Allow => {
+                        if self
+                            .grant_hit(key.as_ref(), context, tool_name, &intent.action, resource)
+                            .await
+                        {
+                            continue;
+                        }
                         self.audit(
                             context,
                             tool_name,
@@ -166,11 +166,19 @@ impl ToolGateway {
                             resource: resource.clone(),
                         });
                     }
-                    PermissionEffect::Ask => pending.push(PendingApproval {
-                        key,
-                        action: intent.action.clone(),
-                        resource: resource.clone(),
-                    }),
+                    PermissionEffect::Ask => {
+                        if self
+                            .grant_hit(key.as_ref(), context, tool_name, &intent.action, resource)
+                            .await
+                        {
+                            continue;
+                        }
+                        pending.push(PendingApproval {
+                            key,
+                            action: intent.action.clone(),
+                            resource: resource.clone(),
+                        });
+                    }
                 }
             }
         }
@@ -296,6 +304,33 @@ impl ToolGateway {
                 Ok(GatewayDecision::ApprovalTimedOut { timeout })
             }
         }
+    }
+
+    /// 授权缓存命中：命中则记 `GrantHit` 并返回 `true`。
+    ///
+    /// 空键不查缓存：无法归一即无法证明「批准的正是这次操作」。
+    /// 命中缓存也要留审计：放行原因（此前授权）与策略 `Allow` 不同。
+    async fn grant_hit(
+        &self,
+        key: Option<&ApprovalKey>,
+        context: &ToolUseContext,
+        tool: &str,
+        action: &str,
+        resource: &str,
+    ) -> bool {
+        let Some(key) = key else {
+            return false;
+        };
+        if !self
+            .grant_store
+            .is_granted(key, context.session_id.as_deref())
+            .await
+        {
+            return false;
+        }
+        self.audit(context, tool, action, resource, Outcome::GrantHit)
+            .await;
+        true
     }
 
     /// 审计失败只记日志，不改变决策：审计是观测，不是事实源。

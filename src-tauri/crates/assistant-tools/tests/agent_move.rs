@@ -313,7 +313,11 @@ async fn the_source_receipt_is_invalidated() {
 
     let key = ReadReceiptKey {
         session_id: Some("session-1".to_string()),
-        path: source.display().to_string(),
+        // 回执键必须与工具解析后的路径一致（macOS 上 `/var` → `/private/var`）。
+        path: assistant_tools::os::path::canonicalize_lenient(&source)
+            .expect("canonical path")
+            .display()
+            .to_string(),
     };
     receipts
         .record(

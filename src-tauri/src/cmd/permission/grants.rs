@@ -32,10 +32,13 @@ fn scope_from_dto(scope: GrantScopeDto) -> GrantScope {
 fn scope_summary(scope: &ApprovalScope) -> String {
     match scope {
         ApprovalScope::Path { canonical } => canonical.clone(),
+        // 摘要不展示隔离强度：同一命令行在不同强度下是两条授权行，
+        // 展示层只需要让人认出「是哪条命令」，避免把内部判据铺进 UI。
         ApprovalScope::Command {
             argv,
             cwd,
             sandbox_tier,
+            ..
         } => format!(
             "[{}] {} · {}",
             tier_label(*sandbox_tier),

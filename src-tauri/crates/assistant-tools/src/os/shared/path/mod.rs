@@ -11,7 +11,7 @@ pub use protected::reject_system_dirs;
 pub(crate) use resolve::resolution_base;
 pub use resolve::{
     canonicalize_lenient, resolve, resolve_external_input, resolve_leaf_preserving,
-    ExternalInputMode,
+    resolve_readable, ExternalInputMode, ReadablePath, ReadableScope,
 };
 
 /// 判断 `path` 是否以 `base` 为组件级前缀（`path == base` 允许）。
@@ -413,12 +413,106 @@ mod tests {
     }
 
     #[test]
+    fn resolve_readable_marks_workspace_and_output_scopes() {
+        let workspace = tempfile::tempdir().expect("tempdir");
+        let output = tempfile::tempdir().expect("tempdir");
+        std::fs::write(workspace.path().join("a.txt"), b"x").expect("write workspace file");
+        std::fs::write(output.path().join("out.txt"), b"y").expect("write output file");
+
+        let context = ToolUseContext {
+            workspace_root: Some(workspace.path().display().to_string()),
+            tool_output_root: Some(output.path().to_path_buf()),
+            ..Default::default()
+        };
+
+        let inside = resolve_readable("a.txt", &context).expect("workspace file is readable");
+        assert_eq!(inside.scope, ReadableScope::Workspace);
+        assert_eq!(
+            inside.path,
+            canonicalize_lenient(&workspace.path().join("a.txt")).expect("canonical")
+        );
+
+        let spilled = resolve_readable(
+            &output.path().join("out.txt").display().to_string(),
+            &context,
+        )
+        .expect("output file is readable outside the workspace");
+        assert_eq!(spilled.scope, ReadableScope::ToolOutput);
+    }
+
+    #[test]
+    fn resolve_readable_rejects_foreign_output_namespace() {
+        let workspace = tempfile::tempdir().expect("tempdir");
+        let session = tempfile::tempdir().expect("tempdir");
+        let other_session = tempfile::tempdir().expect("tempdir");
+        std::fs::write(other_session.path().join("secret.txt"), b"z").expect("write file");
+
+        let context = ToolUseContext {
+            workspace_root: Some(workspace.path().display().to_string()),
+            tool_output_root: Some(session.path().to_path_buf()),
+            ..Default::default()
+        };
+
+        // 越域必须在路径判定阶段被拒，不能落到「弹个框让用户批准」。
+        let error = resolve_readable(
+            &other_session
+                .path()
+                .join("secret.txt")
+                .display()
+                .to_string(),
+            &context,
+        )
+        .expect_err("cross-session output must be rejected");
+        assert!(
+            error.contains("outside workspace root"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn resolve_readable_prefers_output_scope_over_workspace() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let nested_output = dir.path().join("outputs");
+        std::fs::create_dir(&nested_output).expect("create nested output");
+        std::fs::write(nested_output.join("run.log"), b"log").expect("write file");
+
+        // 输出域与工作区重叠（配置失误）：必须走更严的 `ToolOutput` 分支，
+        // 不得因为「也在工作区内」而落回 `read` 的默认 `Allow`。
+        let context = ToolUseContext {
+            workspace_root: Some(dir.path().display().to_string()),
+            tool_output_root: Some(nested_output.clone()),
+            ..Default::default()
+        };
+        let resolved = resolve_readable(
+            &nested_output.join("run.log").display().to_string(),
+            &context,
+        )
+        .expect("nested output resolves");
+        assert_eq!(resolved.scope, ReadableScope::ToolOutput);
+    }
+
+    #[test]
+    fn resolve_readable_without_output_root_keeps_workspace_boundary() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let other = tempfile::tempdir().expect("tempdir");
+        std::fs::write(other.path().join("b.txt"), b"x").expect("write file");
+        let context = context_with_root(dir.path());
+        let error = resolve_readable(&other.path().join("b.txt").display().to_string(), &context)
+            .expect_err("no output root means no extra allowance");
+        assert!(
+            error.contains("outside workspace root"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
     fn workspace_membership_matches_the_boundary_check() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let inside = dir.path().join("a.txt");
+        // `workspace_membership` 的契约是「输入已归一」（macOS 上 `/var` → `/private/var`）。
+        let inside = canonicalize_lenient(&dir.path().join("a.txt")).expect("canonical inside");
         std::fs::write(&inside, b"x").expect("write file");
         let other = tempfile::tempdir().expect("tempdir");
-        let outside = other.path().join("b.txt");
+        let outside = canonicalize_lenient(&other.path().join("b.txt")).expect("canonical outside");
 
         let context = context_with_root(dir.path());
         assert_eq!(

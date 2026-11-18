@@ -77,14 +77,16 @@ fn permission_intents_use_edit_vocabulary() {
     for intent in &intents {
         assert_eq!(intent.action, "edit");
     }
+    let canonical_root =
+        assistant_tools::os::path::canonicalize_lenient(dir.path()).expect("canonical root");
     assert_eq!(
         intents[0].resources,
-        vec![dir.path().join("a.txt").display().to_string()],
+        vec![canonical_root.join("a.txt").display().to_string()],
         "意图必须是解析后的绝对路径，策略按绝对路径匹配"
     );
     assert_eq!(
         intents[1].resources,
-        vec![dir.path().join("b.txt").display().to_string()]
+        vec![canonical_root.join("b.txt").display().to_string()]
     );
 }
 
@@ -112,7 +114,11 @@ fn permission_intents_declare_read_for_check() {
     assert_eq!(intents[0].action, "read");
     assert_eq!(
         intents[0].resources,
-        vec![dir.path().join("a.txt").display().to_string()],
+        vec![assistant_tools::os::path::canonicalize_lenient(dir.path())
+            .expect("canonical root")
+            .join("a.txt")
+            .display()
+            .to_string()],
         "意图必须是解析后的绝对路径"
     );
 }

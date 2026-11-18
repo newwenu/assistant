@@ -8,12 +8,15 @@ use assistant_tools::gateway::{
     AuditEntry, AuditOutcome, ChildGrantStore, GrantScope, InMemoryAuditStore, InMemoryGrantStore,
     PermissionAuditStore, PermissionGrantStore, ScriptedApprovalPrompter, ToolGateway,
 };
-use assistant_tools::os::path::ensure_within_root;
-use assistant_tools::storage::{FileToolResultStorage, PersistToolResult, ToolResultStorage};
+use assistant_tools::os::agent_read::AgentReadTool;
+use assistant_tools::os::path::{canonicalize_lenient, ensure_within_root};
+use assistant_tools::storage::{
+    FileToolResultStorage, InMemoryReadReceiptStore, PersistToolResult, ToolResultStorage,
+};
 use assistant_tools::{
-    ApprovalPreview, BehaviorHints, GatewayDecision, PermissionConstraintLayer, PermissionEffect,
-    PermissionIntent, PermissionRule, ResolvedPermissionPolicy, Tool, ToolResult, ToolTier,
-    ToolUseContext,
+    policy_from_agent_mode, ApprovalLevel, ApprovalPreview, BehaviorHints, GatewayDecision,
+    PermissionConstraintLayer, PermissionEffect, PermissionIntent, PermissionRule,
+    ResolvedPermissionPolicy, SandboxEnforcement, Tool, ToolResult, ToolTier, ToolUseContext,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -26,6 +29,18 @@ fn ctx() -> ToolUseContext {
     ToolUseContext::default()
 }
 
+/// 跨平台绝对路径夹具：路径键要求可归一的绝对路径。
+///
+/// 写死 `C:/ws/...` 在 Unix 上是相对路径，`canonical_path_for_key` 归一失败
+/// 会返回空键，于是授权不落库、缓存永不命中，用例在 Linux/macOS 上必挂。
+fn ws_path(name: &str) -> String {
+    std::env::temp_dir()
+        .join("assistant-gateway-tests")
+        .join(name)
+        .display()
+        .to_string()
+}
+
 fn path_key(tool: &str, action: &str, resource: &str) -> Option<ApprovalKey> {
     ApprovalKey::from_intent(
         tool,
@@ -34,6 +49,7 @@ fn path_key(tool: &str, action: &str, resource: &str) -> Option<ApprovalKey> {
         &Value::Null,
         &ctx(),
         ToolTier::Os,
+        None,
     )
 }
 
@@ -43,6 +59,16 @@ fn command_key(
     context: &ToolUseContext,
     tier: ToolTier,
 ) -> Option<ApprovalKey> {
+    command_key_with_enforcement(resource, input, context, tier, None)
+}
+
+fn command_key_with_enforcement(
+    resource: &str,
+    input: &Value,
+    context: &ToolUseContext,
+    tier: ToolTier,
+    enforcement: Option<SandboxEnforcement>,
+) -> Option<ApprovalKey> {
     ApprovalKey::from_intent(
         "bash",
         &PermissionIntent::new("execute", resource),
@@ -50,6 +76,7 @@ fn command_key(
         input,
         context,
         tier,
+        enforcement,
     )
 }
 
@@ -234,6 +261,7 @@ fn endpoint_key_normalizes_host_case() {
         &json!({ "method": "post" }),
         &ctx(),
         ToolTier::External,
+        None,
     )
     .unwrap();
 
@@ -255,6 +283,7 @@ fn opaque_key_uses_resource_fingerprint() {
         &Value::Null,
         &ctx(),
         ToolTier::External,
+        None,
     )
     .unwrap();
 
@@ -273,7 +302,7 @@ async fn empty_key_never_hits_the_cache() {
     assert!(empty.is_none());
     assert!(store.is_empty());
 
-    let real = path_key("fs_read", "read", "C:/tmp/a.txt").unwrap();
+    let real = path_key("fs_read", "read", &ws_path("a.txt")).unwrap();
     store
         .save_grant(&real, GrantScope::Global, None)
         .await
@@ -290,6 +319,7 @@ fn mcp_key(resource: &str, tool: &str, input: &Value) -> Option<ApprovalKey> {
         input,
         &ctx(),
         ToolTier::External,
+        None,
     )
 }
 
@@ -447,7 +477,7 @@ async fn approval_within_timeout_is_approved() {
 #[tokio::test]
 async fn always_approve_only_writes_the_current_key() {
     let store = InMemoryGrantStore::default();
-    let granted = path_key("fs_edit", "edit", "C:/tmp/a.txt").unwrap();
+    let granted = path_key("fs_edit", "edit", &ws_path("a.txt")).unwrap();
     store
         .save_grant(&granted, GrantScope::Global, None)
         .await
@@ -455,13 +485,13 @@ async fn always_approve_only_writes_the_current_key() {
 
     assert!(store.is_granted(&granted, None).await);
 
-    let similar = path_key("fs_edit", "edit", "C:/tmp/a.txt.bak").unwrap();
+    let similar = path_key("fs_edit", "edit", &ws_path("a.txt.bak")).unwrap();
     assert!(!store.is_granted(&similar, None).await);
 
-    let other_action = path_key("fs_read", "read", "C:/tmp/a.txt").unwrap();
+    let other_action = path_key("fs_read", "read", &ws_path("a.txt")).unwrap();
     assert!(!store.is_granted(&other_action, None).await);
 
-    let normalized = path_key("fs_edit", "edit", "C:/tmp/./a.txt").unwrap();
+    let normalized = path_key("fs_edit", "edit", &ws_path("./a.txt")).unwrap();
     assert_eq!(normalized, granted);
     assert!(store.is_granted(&normalized, None).await);
 }
@@ -471,7 +501,7 @@ async fn child_grant_store_reads_parent_but_writes_local() {
     let parent_concrete = Arc::new(InMemoryGrantStore::default());
     let parent: Arc<dyn PermissionGrantStore> = parent_concrete.clone();
 
-    let parent_key = path_key("fs_read", "read", "C:/tmp/parent.txt").unwrap();
+    let parent_key = path_key("fs_read", "read", &ws_path("parent.txt")).unwrap();
     parent
         .save_grant(&parent_key, GrantScope::Global, None)
         .await
@@ -480,7 +510,7 @@ async fn child_grant_store_reads_parent_but_writes_local() {
     let child = ChildGrantStore::new(parent.clone());
     assert!(child.is_granted(&parent_key, None).await);
 
-    let child_key = path_key("fs_edit", "edit", "C:/tmp/child.txt").unwrap();
+    let child_key = path_key("fs_edit", "edit", &ws_path("child.txt")).unwrap();
     child
         .save_grant(&child_key, GrantScope::Global, None)
         .await
@@ -567,6 +597,7 @@ struct FakeTool {
     tier: ToolTier,
     intents: Vec<PermissionIntent>,
     intents_error: Option<String>,
+    enforcement: Option<SandboxEnforcement>,
 }
 
 impl FakeTool {
@@ -575,7 +606,13 @@ impl FakeTool {
             tier: ToolTier::Os,
             intents,
             intents_error: None,
+            enforcement: None,
         }
+    }
+
+    fn with_enforcement(mut self, enforcement: SandboxEnforcement) -> Self {
+        self.enforcement = Some(enforcement);
+        self
     }
 }
 
@@ -595,6 +632,10 @@ impl Tool for FakeTool {
 
     fn tier(&self) -> ToolTier {
         self.tier
+    }
+
+    fn sandbox_enforcement(&self) -> Option<SandboxEnforcement> {
+        self.enforcement
     }
 
     fn permission_intents(
@@ -653,7 +694,7 @@ fn deny_all() -> ResolvedPermissionPolicy {
 async fn gateway_allows_without_asking_when_policy_allows() {
     let prompter = Arc::new(ScriptedApprovalPrompter::new(vec![]));
     let (gateway, _, audit) = gateway_with(prompter.clone());
-    let tool = FakeTool::new(vec![PermissionIntent::new("read", "C:/ws/a.txt")]);
+    let tool = FakeTool::new(vec![PermissionIntent::new("read", ws_path("a.txt"))]);
 
     let decision = gateway
         .evaluate(&tool, &Value::Null, &ctx(), &allow_all())
@@ -673,7 +714,7 @@ async fn gateway_denies_immediately_without_asking() {
         ApprovalDecision::Approve,
     ]));
     let (gateway, _, audit) = gateway_with(prompter.clone());
-    let tool = FakeTool::new(vec![PermissionIntent::new("delete", "C:/ws/a.txt")]);
+    let tool = FakeTool::new(vec![PermissionIntent::new("delete", ws_path("a.txt"))]);
 
     let decision = gateway
         .evaluate(&tool, &Value::Null, &ctx(), &deny_all())
@@ -684,7 +725,7 @@ async fn gateway_denies_immediately_without_asking() {
         decision,
         GatewayDecision::Denied {
             action: "delete".to_string(),
-            resource: "C:/ws/a.txt".to_string(),
+            resource: ws_path("a.txt"),
         }
     );
     assert_eq!(prompter.request_count(), 0, "Deny must not prompt");
@@ -759,7 +800,7 @@ async fn gateway_decision_branches_each_audit_exactly_once() {
     ]));
     let (decision, audit) = run(
         Arc::new(ScriptedApprovalPrompter::new(vec![])),
-        &FakeTool::new(vec![PermissionIntent::new("read", "C:/ws/a.txt")]),
+        &FakeTool::new(vec![PermissionIntent::new("read", ws_path("a.txt"))]),
         &ceiling,
         Duration::from_secs(5),
     )
@@ -777,7 +818,7 @@ async fn gateway_decision_branches_each_audit_exactly_once() {
     ] {
         let (_, audit) = run(
             Arc::new(ScriptedApprovalPrompter::new(vec![])),
-            &FakeTool::new(vec![PermissionIntent::new("read", "C:/ws/a.txt")]),
+            &FakeTool::new(vec![PermissionIntent::new("read", ws_path("a.txt"))]),
             &policy,
             Duration::from_secs(5),
         )
@@ -801,14 +842,16 @@ async fn gateway_decision_branches_each_audit_exactly_once() {
         );
         (grants, audit, gateway)
     };
-    let key = path_key("fake_tool", "read", "C:/ws/a.txt").unwrap();
+    let key = path_key("fake_tool", "read", &ws_path("a.txt")).unwrap();
     grants
         .save_grant(&key, GrantScope::Global, None)
         .await
         .unwrap();
-    let tool = FakeTool::new(vec![PermissionIntent::new("read", "C:/ws/a.txt")]);
+    let tool = FakeTool::new(vec![PermissionIntent::new("read", ws_path("a.txt"))]);
+    // 策略必须是 `Allow`：`Deny` 先于授权命中求值（§6.4），此处只想验证
+    // 「命中缓存时审计原因与策略 `Allow` 分开记」。
     let decision = gateway
-        .evaluate(&tool, &Value::Null, &ctx(), &deny_all())
+        .evaluate(&tool, &Value::Null, &ctx(), &allow_all())
         .await
         .unwrap();
     assert_eq!(decision, GatewayDecision::Allowed);
@@ -832,7 +875,7 @@ async fn gateway_decision_branches_each_audit_exactly_once() {
     ] {
         let (_, audit) = run(
             Arc::new(ScriptedApprovalPrompter::new(vec![choice])),
-            &FakeTool::new(vec![PermissionIntent::new("edit", "C:/ws/a.txt")]),
+            &FakeTool::new(vec![PermissionIntent::new("edit", ws_path("a.txt"))]),
             &ResolvedPermissionPolicy::default_global(),
             Duration::from_secs(5),
         )
@@ -850,7 +893,7 @@ async fn gateway_decision_branches_each_audit_exactly_once() {
             ScriptedApprovalPrompter::new(vec![ApprovalDecision::Approve])
                 .with_delay(Duration::from_millis(200)),
         ),
-        &FakeTool::new(vec![PermissionIntent::new("edit", "C:/ws/a.txt")]),
+        &FakeTool::new(vec![PermissionIntent::new("edit", ws_path("a.txt"))]),
         &ResolvedPermissionPolicy::default_global(),
         Duration::from_millis(20),
     )
@@ -901,8 +944,8 @@ async fn gateway_merges_multiple_asks_into_one_request() {
     ]));
     let (gateway, _, audit) = gateway_with(prompter.clone());
     let tool = FakeTool::new(vec![
-        PermissionIntent::new("edit", "C:/ws/a.txt"),
-        PermissionIntent::new("edit", "C:/ws/b.txt"),
+        PermissionIntent::new("edit", ws_path("a.txt")),
+        PermissionIntent::new("edit", ws_path("b.txt")),
     ]);
 
     let decision = gateway
@@ -934,7 +977,7 @@ async fn gateway_always_approve_persists_key_and_skips_second_prompt() {
         ApprovalDecision::AllowAlways,
     ]));
     let (gateway, grants, audit) = gateway_with(prompter.clone());
-    let tool = FakeTool::new(vec![PermissionIntent::new("edit", "C:/ws/a.txt")]);
+    let tool = FakeTool::new(vec![PermissionIntent::new("edit", ws_path("a.txt"))]);
     let policy = ResolvedPermissionPolicy::default_global();
 
     let first = gateway
@@ -976,7 +1019,7 @@ async fn gateway_always_approve_does_not_cover_a_different_resource() {
 
     gateway
         .evaluate(
-            &FakeTool::new(vec![PermissionIntent::new("edit", "C:/ws/a.txt")]),
+            &FakeTool::new(vec![PermissionIntent::new("edit", ws_path("a.txt"))]),
             &Value::Null,
             &ctx(),
             &policy,
@@ -987,7 +1030,7 @@ async fn gateway_always_approve_does_not_cover_a_different_resource() {
 
     let second = gateway
         .evaluate(
-            &FakeTool::new(vec![PermissionIntent::new("edit", "C:/ws/b.txt")]),
+            &FakeTool::new(vec![PermissionIntent::new("edit", ws_path("b.txt"))]),
             &Value::Null,
             &ctx(),
             &policy,
@@ -1010,7 +1053,7 @@ async fn gateway_rejected_by_user_carries_reason() {
         },
     ]));
     let (gateway, grants, audit) = gateway_with(prompter.clone());
-    let tool = FakeTool::new(vec![PermissionIntent::new("write", "C:/ws/a.txt")]);
+    let tool = FakeTool::new(vec![PermissionIntent::new("write", ws_path("a.txt"))]);
 
     let decision = gateway
         .evaluate(
@@ -1046,7 +1089,7 @@ async fn gateway_timeout_is_not_user_rejection() {
         prompter,
         Duration::from_millis(20),
     );
-    let tool = FakeTool::new(vec![PermissionIntent::new("edit", "C:/ws/a.txt")]);
+    let tool = FakeTool::new(vec![PermissionIntent::new("edit", ws_path("a.txt"))]);
 
     let decision = gateway
         .evaluate(
@@ -1204,7 +1247,7 @@ async fn gateway_ask_path_carries_l0_l1_l2_context() {
     let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
     let (gateway, _, _) = gateway_with(prompter);
     let tool = PreviewingTool::new(
-        vec![PermissionIntent::new("delete", "C:/ws/tmp/cache")],
+        vec![PermissionIntent::new("delete", ws_path("tmp/cache"))],
         Some(ApprovalPreview {
             summary: "删除 128 个条目（3.4 MB）".to_string(),
             truncated: true,
@@ -1254,6 +1297,9 @@ async fn workspace_extension_agrees_with_the_execution_boundary() {
     std::fs::write(&inside, b"x").unwrap();
     let other = tempdir().unwrap();
     let outside = other.path().join("outside.txt");
+    // `ensure_within_root` 的契约是「输入已归一」（macOS 上 `/var` → `/private/var`）。
+    let inside = canonicalize_lenient(&inside).expect("canonical inside");
+    let outside = canonicalize_lenient(&outside).expect("canonical outside");
 
     let seen = Arc::new(Mutex::new(Vec::new()));
     let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
@@ -1311,12 +1357,206 @@ async fn workspace_extension_agrees_with_the_execution_boundary() {
 }
 
 #[tokio::test]
+async fn output_scope_extension_marks_the_session_output_namespace() {
+    let output = tempdir().unwrap();
+    std::fs::write(output.path().join("run.log"), b"log").unwrap();
+
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
+    let (gateway, _, _) = gateway_with(prompter);
+
+    // `readToolOutput` 恒 `Ask`（不受审批级别影响），因此一定走到卡片构造。
+    let context = ToolUseContext {
+        workspace_root: Some(output.path().display().to_string()),
+        tool_output_root: Some(output.path().to_path_buf()),
+        ..Default::default()
+    };
+    let tool = PreviewingTool::new(
+        vec![PermissionIntent::new(
+            "readToolOutput",
+            output.path().display().to_string(),
+        )],
+        None,
+    );
+    let decision = gateway
+        .evaluate(
+            &tool,
+            &Value::Null,
+            &context,
+            &ResolvedPermissionPolicy::default_global(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(decision, GatewayDecision::Allowed, "用户批准后网关放行");
+
+    let seen = seen.lock().unwrap();
+    let extension = seen[0]
+        .context
+        .extensions
+        .iter()
+        .find(|extension| extension.kind == "output.scope")
+        .expect("output namespace must carry a read-scope conclusion");
+    assert_eq!(
+        extension.value,
+        "this session's tool output directory (read-only)"
+    );
+    assert_eq!(extension.severity, ApprovalExtensionSeverity::Info);
+}
+
+#[tokio::test]
+async fn output_scope_extension_is_absent_without_an_output_root() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
+    let (gateway, _, _) = gateway_with(prompter);
+    let tool = PreviewingTool::new(
+        vec![PermissionIntent::new(
+            "readToolOutput",
+            ws_path("tmp/run.log"),
+        )],
+        None,
+    );
+    gateway
+        .evaluate(
+            &tool,
+            &Value::Null,
+            &ctx(),
+            &ResolvedPermissionPolicy::default_global(),
+        )
+        .await
+        .unwrap();
+
+    let seen = seen.lock().unwrap();
+    assert!(
+        seen[0]
+            .context
+            .extensions
+            .iter()
+            .all(|extension| extension.kind != "output.scope"),
+        "no output root means no read-scope conclusion"
+    );
+}
+
+#[tokio::test]
+async fn read_tool_output_grant_covers_the_whole_session_namespace() {
+    let workspace = tempdir().unwrap();
+    let output = tempdir().unwrap();
+    std::fs::write(output.path().join("a.log"), b"first").unwrap();
+    std::fs::write(output.path().join("b.log"), b"second").unwrap();
+
+    let prompter = Arc::new(ScriptedApprovalPrompter::new(vec![
+        ApprovalDecision::AllowSession,
+    ]));
+    let (gateway, grants, audit) = gateway_with(prompter.clone());
+    let tool = AgentReadTool::new(Arc::new(InMemoryReadReceiptStore::new()));
+    let policy = ResolvedPermissionPolicy::default_global();
+    let context = ToolUseContext {
+        workspace_root: Some(workspace.path().display().to_string()),
+        session_id: Some("conv-1".to_string()),
+        tool_output_root: Some(output.path().to_path_buf()),
+        ..Default::default()
+    };
+
+    for name in ["a.log", "b.log"] {
+        let decision = gateway
+            .evaluate(
+                &tool,
+                &json!({ "path": output.path().join(name).display().to_string() }),
+                &context,
+                &policy,
+            )
+            .await
+            .unwrap();
+        assert_eq!(decision, GatewayDecision::Allowed, "用户批准后放行");
+    }
+
+    assert_eq!(
+        prompter.request_count(),
+        1,
+        "resource 取命名空间目录：同域第二个文件不再弹框"
+    );
+    assert_eq!(grants.len(), 1, "一次授权只落一条键");
+    assert_eq!(
+        audit.entries()[1].outcome,
+        AuditOutcome::GrantHit,
+        "第二次读取必须记 GrantHit，而不是静默放行"
+    );
+}
+
+#[tokio::test]
+async fn read_tool_output_stays_ask_under_every_approval_level() {
+    let output = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    std::fs::write(output.path().join("run.log"), b"log").unwrap();
+    let context = ToolUseContext {
+        workspace_root: Some(workspace.path().display().to_string()),
+        session_id: Some("conv-1".to_string()),
+        tool_output_root: Some(output.path().to_path_buf()),
+        ..Default::default()
+    };
+    let input = json!({ "path": output.path().join("run.log").display().to_string() });
+    let tool = AgentReadTool::new(Arc::new(InMemoryReadReceiptStore::new()));
+
+    // `dangerous_only` 与 `none` 两档都不得放宽输出域读取（I52 §5.11.4(4)）。
+    for level in [ApprovalLevel::DangerousOnly, ApprovalLevel::None] {
+        let policy = policy_from_agent_mode(ToolTier::External, level);
+        let intents = tool.permission_intents(&input, &context).unwrap();
+        let effect = policy.evaluate(&intents[0].action, &intents[0].resources[0]);
+        assert_eq!(
+            effect,
+            PermissionEffect::Ask,
+            "输出域读取在 {:?} 档必须仍为 Ask",
+            level
+        );
+    }
+}
+
+#[tokio::test]
+async fn read_tool_output_request_hides_the_absolute_namespace_path() {
+    let workspace = tempdir().unwrap();
+    let output = tempdir().unwrap();
+    std::fs::write(output.path().join("run.log"), b"log").unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
+    let (gateway, _, _) = gateway_with(prompter);
+    let tool = AgentReadTool::new(Arc::new(InMemoryReadReceiptStore::new()));
+    let context = ToolUseContext {
+        workspace_root: Some(workspace.path().display().to_string()),
+        session_id: Some("conv-1".to_string()),
+        tool_output_root: Some(output.path().to_path_buf()),
+        ..Default::default()
+    };
+    let input = json!({ "path": output.path().join("run.log").display().to_string() });
+    gateway
+        .evaluate(
+            &tool,
+            &input,
+            &context,
+            &ResolvedPermissionPolicy::default_global(),
+        )
+        .await
+        .unwrap();
+
+    let seen = seen.lock().unwrap();
+    let intent = &seen[0].intents[0];
+    assert_eq!(intent.action, "readToolOutput");
+    let resource = &intent.resources[0];
+    assert!(
+        resource.starts_with('…'),
+        "卡片资源名必须脱敏，实际: {resource}"
+    );
+    assert!(
+        !resource.contains(&output.path().display().to_string()),
+        "本机绝对路径不得进入审批卡: {resource}"
+    );
+}
+
+#[tokio::test]
 async fn gateway_allow_path_never_pays_the_preview_cost() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let prompter = Arc::new(CapturingPrompter { seen });
     let (gateway, _, _) = gateway_with(prompter);
     let tool = PreviewingTool::new(
-        vec![PermissionIntent::new("delete", "C:/ws/tmp/cache")],
+        vec![PermissionIntent::new("delete", ws_path("tmp/cache"))],
         Some(ApprovalPreview {
             summary: "不该被调用".to_string(),
             truncated: false,
@@ -1331,4 +1571,128 @@ async fn gateway_allow_path_never_pays_the_preview_cost() {
 
     assert_eq!(decision, GatewayDecision::Allowed);
     assert_eq!(tool.preview_calls(), 0, "Allow 路径不得为卡片付出 IO");
+}
+
+fn session_ctx() -> ToolUseContext {
+    ToolUseContext {
+        session_id: Some("conv-1".to_string()),
+        ..Default::default()
+    }
+}
+
+/// A7：`sandbox_tier` 对命令键是常量，隔离强度降级后旧授权不得复用。
+#[tokio::test]
+async fn command_grant_is_not_reused_after_enforcement_downgrade() {
+    let prompter = Arc::new(ScriptedApprovalPrompter::new(vec![
+        ApprovalDecision::AllowSession,
+        ApprovalDecision::Deny { reason: None },
+    ]));
+    let (gateway, grants, _) = gateway_with(prompter.clone());
+    let context = session_ctx();
+    let policy = ResolvedPermissionPolicy::default_global();
+
+    let full = FakeTool::new(vec![PermissionIntent::new("execute", "git status")])
+        .with_enforcement(SandboxEnforcement::Full);
+    let first = gateway
+        .evaluate(&full, &Value::Null, &context, &policy)
+        .await
+        .unwrap();
+    assert_eq!(first, GatewayDecision::Allowed);
+    assert_eq!(grants.len(), 1, "session grant must persist");
+
+    let partial = FakeTool::new(vec![PermissionIntent::new("execute", "git status")])
+        .with_enforcement(SandboxEnforcement::Partial);
+    let second = gateway
+        .evaluate(&partial, &Value::Null, &context, &policy)
+        .await
+        .unwrap();
+    match second {
+        GatewayDecision::RejectedByUser { .. } => {}
+        other => panic!("enforcement downgrade must re-ask, got {:?}", other),
+    }
+    assert_eq!(
+        prompter.request_count(),
+        2,
+        "强边界下的授权不得在弱边界上复用"
+    );
+}
+
+/// A8：策略 `Deny` 先于授权命中，历史授权不能覆盖策略改判。
+#[tokio::test]
+async fn policy_deny_wins_over_existing_grant() {
+    let prompter = Arc::new(ScriptedApprovalPrompter::new(vec![]));
+    let (gateway, grants, audit) = gateway_with(prompter.clone());
+    let context = session_ctx();
+
+    let key = command_key_with_enforcement(
+        "git status",
+        &Value::Null,
+        &context,
+        ToolTier::Os,
+        Some(SandboxEnforcement::Full),
+    )
+    .unwrap();
+    grants
+        .save_grant(&key, GrantScope::Session, Some("conv-1"))
+        .await
+        .unwrap();
+    assert!(grants.is_granted(&key, Some("conv-1")).await);
+
+    let tool = FakeTool::new(vec![PermissionIntent::new("execute", "git status")])
+        .with_enforcement(SandboxEnforcement::Full);
+    let decision = gateway
+        .evaluate(&tool, &Value::Null, &context, &deny_all())
+        .await
+        .unwrap();
+
+    match decision {
+        GatewayDecision::Denied { .. } => {}
+        other => panic!("policy Deny must win over a grant, got {:?}", other),
+    }
+    assert_eq!(prompter.request_count(), 0, "Deny must not prompt");
+    assert_eq!(audit.entries()[0].outcome, AuditOutcome::Denied);
+}
+
+#[test]
+fn command_key_carries_enforcement_and_decodes_legacy_rows() {
+    let full = command_key_with_enforcement(
+        "git status",
+        &Value::Null,
+        &ctx(),
+        ToolTier::Os,
+        Some(SandboxEnforcement::Full),
+    )
+    .unwrap();
+    let partial = command_key_with_enforcement(
+        "git status",
+        &Value::Null,
+        &ctx(),
+        ToolTier::Os,
+        Some(SandboxEnforcement::Partial),
+    )
+    .unwrap();
+    let legacy =
+        command_key_with_enforcement("git status", &Value::Null, &ctx(), ToolTier::Os, None)
+            .unwrap();
+
+    assert_ne!(full, partial, "enforcement must be part of the key");
+    assert_ne!(full, legacy, "enforced key must not equal the legacy key");
+
+    let json = serde_json::to_value(&full).unwrap();
+    assert_eq!(json["scope"]["enforcement"], json!("full"));
+    let decoded: ApprovalKey = serde_json::from_value(json).unwrap();
+    assert_eq!(decoded, full, "round-trip must preserve enforcement");
+
+    let legacy_json = serde_json::to_value(&legacy).unwrap();
+    assert!(
+        legacy_json["scope"]["enforcement"].is_null(),
+        "键恒在、值可为 null"
+    );
+    let mut stripped = legacy_json;
+    stripped["scope"]
+        .as_object_mut()
+        .unwrap()
+        .remove("enforcement");
+    let decoded: ApprovalKey = serde_json::from_value(stripped).unwrap();
+    assert_eq!(decoded, legacy, "旧 grant_key 行必须解出 None");
 }

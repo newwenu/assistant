@@ -66,7 +66,10 @@ fn permission_intents_declare_read_on_the_resolved_path() {
     assert_eq!(intents[0].action, "read");
     assert_eq!(
         intents[0].resources,
-        vec![dir.path().display().to_string()],
+        vec![assistant_tools::os::path::canonicalize_lenient(dir.path())
+            .expect("canonical root")
+            .display()
+            .to_string()],
         "意图必须是解析后的绝对路径，策略按绝对路径匹配"
     );
 }

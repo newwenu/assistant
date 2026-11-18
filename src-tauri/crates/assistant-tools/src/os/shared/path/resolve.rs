@@ -25,6 +25,53 @@ pub fn resolve(input: &str, context: &ToolUseContext) -> Result<PathBuf, String>
     Ok(canonical)
 }
 
+/// 可读路径的归属域：决定 `read` 用哪个动作、走哪条审批规则。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadableScope {
+    /// 工作区内：`read` 的默认 `Allow` 覆盖。
+    Workspace,
+    /// 本会话工具输出目录：跨出工作区边界，恒 `Ask`（`readToolOutput`）。
+    ToolOutput,
+}
+
+/// 可读路径：规范化后的绝对路径 + 它落在哪个域。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadablePath {
+    pub path: PathBuf,
+    pub scope: ReadableScope,
+}
+
+/// `read` 专用解析：在 workspace 之外额外放行**本会话工具输出目录**（I52 §5.11.4）。
+///
+/// 判定顺序固定为「输出域优先于工作区域」：若两者意外重叠（配置失误），
+/// 路径必须走**更严**的 `ToolOutput` 分支，不得因为「也在工作区内」而落回 `read` 的 `Allow`。
+/// `reject_system_dirs` 仍在一切边界判定之前——凭据目录在任何作用域内都不可读。
+///
+/// 只被 `read` 调用；`write` / `edit` / `delete` / `move` 仍用 [`resolve`]，
+/// 因此输出域对它们天然只读。
+pub fn resolve_readable(input: &str, context: &ToolUseContext) -> Result<ReadablePath, String> {
+    let joined = join_input(input, context)?;
+    let canonical = canonicalize_lenient(&joined)?;
+    reject_system_dirs(&canonical)?;
+
+    if let Some(output_root) = context.tool_output_root.as_deref() {
+        if ensure_within_root(&canonical, output_root).is_ok() {
+            return Ok(ReadablePath {
+                path: canonical,
+                scope: ReadableScope::ToolOutput,
+            });
+        }
+    }
+
+    if let Some(root) = context.workspace_root.as_deref() {
+        ensure_within_root(&canonical, Path::new(root))?;
+    }
+    Ok(ReadablePath {
+        path: canonical,
+        scope: ReadableScope::Workspace,
+    })
+}
+
 /// 与 `resolve` 相同的边界检查，但**保留叶子组件**，只规范化父目录。
 ///
 /// 输入：原始路径字符串 + 上下文。

@@ -4,6 +4,7 @@ use serde_json::Value;
 
 use crate::context::ToolUseContext;
 use crate::result::ToolResult;
+use crate::sandbox::SandboxEnforcement;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -181,6 +182,14 @@ pub trait Tool: Send + Sync {
 
     fn is_readonly(&self) -> bool {
         self.behavior_hints().read_only
+    }
+
+    /// 本工具命令类操作的实际隔离强度；进审批键，避免「强边界下批准」的授权被弱边界执行复用。
+    ///
+    /// 默认 `None`：非沙箱工具的命令键形状不变（旧 `grant_key` 解出 `None` 即不复用）。
+    /// `shell` 返回 `Some(..)`（只在探测 `>= partial` 时注册），故新旧键必然不相等。
+    fn sandbox_enforcement(&self) -> Option<SandboxEnforcement> {
+        None
     }
 
     /// 纯检查、无 IO。Pipeline 的 validate 阶段调用，先于审批，

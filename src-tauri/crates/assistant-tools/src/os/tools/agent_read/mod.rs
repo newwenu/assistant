@@ -6,10 +6,12 @@ use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use crate::context::ToolUseContext;
+use crate::os::output::human_bytes;
 use crate::os::path;
 use crate::os::text_encoding::{parse_optional_encoding, DecodedInfo, EncodingSource};
 use crate::r#trait::{
-    BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier, ValidationResult,
+    ApprovalPreview, BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier,
+    ValidationResult,
 };
 use crate::result::ToolResult;
 use crate::storage::{ReadReceipt, ReadReceiptKey, ReadReceiptStore};
@@ -75,7 +77,9 @@ impl Tool for AgentReadTool {
              use `offset` (1-based, 0 is treated as 1) and `limit` to page through larger files. \
              `totalLines` is null when the file is too large to count to the end in one call. \
              Binary files are rejected. Non-UTF-8 files are decoded via BOM detection, via the \
-             `encoding` label, or by a confident guess. Does not follow `.gitignore`."
+             `encoding` label, or by a confident guess. Does not follow `.gitignore`. Tool \
+             output files referenced by a `<persisted-output path=\"...\">` tag can be read with \
+             this tool; the first such read asks the user for permission."
                 .to_string(),
         )
     }
@@ -114,7 +118,7 @@ impl Tool for AgentReadTool {
 
     fn validate_input(&self, input: &Value, context: &ToolUseContext) -> ValidationResult {
         match ReadRequest::parse(input) {
-            Ok(request) => match path::resolve(&request.path, context) {
+            Ok(request) => match path::resolve_readable(&request.path, context) {
                 Ok(_) => ValidationResult::ok(),
                 Err(error) => ValidationResult::invalid(error),
             },
@@ -128,11 +132,63 @@ impl Tool for AgentReadTool {
         context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
         let request = ReadRequest::parse(input)?;
-        let resolved = path::resolve(&request.path, context)?;
-        Ok(vec![PermissionIntent::new(
-            "read",
-            resolved.display().to_string(),
-        )])
+        let resolved = path::resolve_readable(&request.path, context)?;
+        // 输出域落在工作区之外，必须走更严的独立动作，不能借 `read` 的默认 `Allow` 混过去。
+        // `resource` 取命名空间**目录**：审批键覆盖本会话全部输出，读第 2、第 3 个文件不再弹框。
+        match resolved.scope {
+            path::ReadableScope::Workspace => Ok(vec![PermissionIntent::new(
+                "read",
+                resolved.path.display().to_string(),
+            )]),
+            path::ReadableScope::ToolOutput => {
+                let root = context
+                    .tool_output_root
+                    .as_deref()
+                    .ok_or_else(|| "tool output root is unavailable".to_string())?;
+                Ok(vec![PermissionIntent::new(
+                    "readToolOutput",
+                    root.display().to_string(),
+                )])
+            }
+        }
+    }
+
+    async fn preview_for_approval(
+        &self,
+        input: &Value,
+        context: &ToolUseContext,
+    ) -> Option<ApprovalPreview> {
+        let request = ReadRequest::parse(input).ok()?;
+        let context = context.clone();
+        tokio::task::spawn_blocking(move || {
+            let resolved = path::resolve_readable(&request.path, &context).ok()?;
+            // 工作区内读取由 `read` 的默认 `Allow` 覆盖，不会走到审批卡片；
+            // 只有跨出边界的输出域读取才需要量级摘要。
+            if resolved.scope != path::ReadableScope::ToolOutput {
+                return None;
+            }
+            let bytes = std::fs::metadata(&resolved.path).ok()?.len();
+            // 文件名只取末段：卡片不暴露本机绝对路径（I52 §5.11.4(5)）。
+            let file_name = resolved.path.file_name()?.to_string_lossy().to_string();
+            let first = request.offset;
+            let line_cap = request
+                .limit
+                .map_or(DEFAULT_MAX_LINES, |value| value.min(DEFAULT_MAX_LINES));
+            let last = first.saturating_add(line_cap as u64 - 1);
+            Some(ApprovalPreview {
+                summary: format!(
+                    "读本会话输出 {} · 第 {}–{} 行 · {}",
+                    file_name,
+                    first,
+                    last,
+                    human_bytes(bytes as usize)
+                ),
+                truncated: false,
+                estimated: false,
+            })
+        })
+        .await
+        .ok()?
     }
 
     async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult, String> {
@@ -144,7 +200,7 @@ impl Tool for AgentReadTool {
         let resolve_context = context.clone();
         let raw_path = request.path.clone();
         let prepared = tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve(&raw_path, &resolve_context)?;
+            let resolved = path::resolve_readable(&raw_path, &resolve_context)?.path;
             let metadata = std::fs::metadata(&resolved)
                 .map_err(|error| format!("failed to stat '{}': {}", resolved.display(), error))?;
             if metadata.is_dir() {

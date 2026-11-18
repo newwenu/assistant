@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 
 use crate::context::ToolUseContext;
 use crate::r#trait::{PermissionIntent, ToolTier};
+use crate::sandbox::SandboxEnforcement;
 
 /// 审批缓存键的作用域。键必须精确描述「用户批准了什么」，
 /// 不允许前缀匹配：批准 `git status` 不等于批准 `git status --short`。
@@ -23,6 +24,13 @@ pub enum ApprovalScope {
         argv: Vec<String>,
         cwd: String,
         sandbox_tier: ToolTier,
+        /// 实际隔离强度（§6.2）：`sandbox_tier` 对 `shell` 是常量 `Os`，
+        /// 只有它能把「全隔离下批准的授权」与「弱边界执行」区分开。
+        ///
+        /// `#[serde(default)]` 让旧 `grant_key` JSON 解出 `None`；
+        /// 不加 `skip_serializing_if`（键恒在、值可为 `null`，与全仓 Option 口径一致）。
+        #[serde(default)]
+        enforcement: Option<SandboxEnforcement>,
     },
     Endpoint {
         host: String,
@@ -68,15 +76,19 @@ impl ApprovalKey {
         input: &Value,
         context: &ToolUseContext,
         tier: ToolTier,
+        enforcement: Option<SandboxEnforcement>,
     ) -> Option<Self> {
         let scope = match intent.action.as_str() {
-            "read" | "edit" | "write" | "delete" | "move" | "copy" => ApprovalScope::Path {
-                canonical: canonical_path_for_key(resource)?,
-            },
+            "read" | "readToolOutput" | "edit" | "write" | "delete" | "move" | "copy" => {
+                ApprovalScope::Path {
+                    canonical: canonical_path_for_key(resource)?,
+                }
+            }
             "execute" | "run" | "shell" => ApprovalScope::Command {
                 argv: split_argv(resource)?,
                 cwd: command_cwd(input, context),
                 sandbox_tier: tier,
+                enforcement,
             },
             "network" | "fetch" | "http" => {
                 let (host, method) = parse_endpoint(resource, input)?;

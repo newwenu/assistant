@@ -331,6 +331,10 @@ fn base_rules() -> Vec<PermissionRule> {
     vec![
         PermissionRule::new("*", "*", PermissionEffect::Ask),
         PermissionRule::new("read", "*", PermissionEffect::Allow),
+        // 读取本会话输出域：跨出工作区边界，因此恒 `Ask`（I52 §5.11.4(3)）。
+        // 排在 `("*", "*")` 与 `("read", "*")` 之后 → `none` 档改写首条也压不住它；
+        // 动作名与 `read` 不同 → 不会被 `read` 的默认 `Allow` 漏过来。
+        PermissionRule::new("readToolOutput", "*", PermissionEffect::Ask),
     ]
 }
 
@@ -436,6 +440,38 @@ mod tests {
         assert_eq!(
             policy.evaluate("read", "/etc/shadow"),
             PermissionEffect::Deny
+        );
+    }
+
+    #[test]
+    fn read_tool_output_asks_at_every_approval_level() {
+        // 输出域在工作区之外：`none` 档的「免审」只覆盖工作区内，压不住这条更具体的规则。
+        for level in [
+            ApprovalLevel::None,
+            ApprovalLevel::DangerousOnly,
+            ApprovalLevel::AllOsTools,
+        ] {
+            let policy = policy(level, ToolTier::External);
+            assert_eq!(
+                policy.evaluate("readToolOutput", "/tmp/outputs/abc"),
+                PermissionEffect::Ask,
+                "readToolOutput must stay Ask under {:?}",
+                level
+            );
+        }
+    }
+
+    #[test]
+    fn read_tool_output_is_not_covered_by_reads_default_allow() {
+        let policy = policy(ApprovalLevel::DangerousOnly, ToolTier::External);
+        // 动作名精确匹配：`("read", "*", Allow)` 不得漏给 `readToolOutput`。
+        assert_eq!(
+            policy.evaluate("read", "/tmp/a.txt"),
+            PermissionEffect::Allow
+        );
+        assert_eq!(
+            policy.evaluate("readToolOutput", "/tmp/a.txt"),
+            PermissionEffect::Ask
         );
     }
 

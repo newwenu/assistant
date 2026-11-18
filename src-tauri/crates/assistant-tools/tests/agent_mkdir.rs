@@ -204,5 +204,11 @@ async fn a_parent_that_is_a_file_is_rejected() {
         .unwrap();
 
     assert!(!result.ok);
-    assert!(result.error.unwrap_or_default().contains("not a directory"));
+    // Unix 的 io 错误文案是 `Not a directory (os error 20)`，Windows 走父目录判定；
+    // 断言只看语义，不绑定平台措辞大小写。
+    assert!(result
+        .error
+        .unwrap_or_default()
+        .to_lowercase()
+        .contains("not a directory"));
 }

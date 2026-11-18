@@ -14,8 +14,16 @@ use super::component_prefix_match;
 /// 凭据目录（`.ssh` / `.gnupg` / `.aws` / `.azure` / `.kube` / `keychains` 等）
 /// 无论位于何处一律拒绝，判定先于 `workspace_root` 授权。
 pub fn reject_system_dirs(path: &Path) -> Result<(), String> {
+    // macOS 的 `/etc` / `/tmp` / `/var` 是符号链接（真实路径在 `/private/` 下），
+    // Debian 系的 `/bin` / `/sbin` 也指向 `/usr`。调用方传入的是归一后的路径
+    // （`resolve` 已 canonicalize），只按字面比较会漏判受保护目录。
+    // 两侧都按归一结果比较；归一失败时保留原形态，方向只会更严。
+    let canonical =
+        super::resolve::canonicalize_lenient(path).unwrap_or_else(|_| path.to_path_buf());
     for protected in protected_dirs() {
-        if component_prefix_match(path, &protected) {
+        if component_prefix_match(path, &protected)
+            || component_prefix_match(&canonical, &protected)
+        {
             return Err(format!(
                 "path '{}' is inside a protected system directory '{}'",
                 path.display(),
@@ -23,7 +31,11 @@ pub fn reject_system_dirs(path: &Path) -> Result<(), String> {
             ));
         }
     }
-    reject_credential_dirs(path)
+    reject_credential_dirs(path)?;
+    if canonical.as_path() != path {
+        reject_credential_dirs(&canonical)?;
+    }
+    Ok(())
 }
 
 fn protected_dirs() -> Vec<PathBuf> {
@@ -51,8 +63,10 @@ fn protected_dirs() -> Vec<PathBuf> {
     {
         ["/etc", "/usr", "/bin", "/sbin", "/System", "/Library"]
             .iter()
-            .copied()
-            .map(PathBuf::from)
+            .map(|entry| {
+                let path = PathBuf::from(entry);
+                super::resolve::canonicalize_lenient(&path).unwrap_or(path)
+            })
             .collect()
     }
     #[cfg(not(any(unix, windows)))]

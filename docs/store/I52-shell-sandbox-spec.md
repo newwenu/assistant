@@ -285,7 +285,9 @@ pub fn err_with_data(
 
 `outputLines` 统计 stdout + stderr 的换行数（末尾无换行的残行也计 1 行），同样在触达上限后继续计数。
 
-**回填文本**：`result_for_assistant` = 落盘引用（标签 + 头窗口 + 省略标记 + 尾窗口，由 §5.11.2 的 `persisted_reference_from_windows` 渲染）+ 末尾标记行。**禁止**手写标签或自行拼省略标记。
+**回填文本**：`result_for_assistant` = 落盘引用（标签 + **尾窗口** + 省略标记，由 §5.11.2 的 `persisted_reference_from_tail` 渲染）+ 末尾标记行。**禁止**手写标签或自行拼省略标记。
+
+**只取尾窗口，不取头窗口**：命令输出的信息密度集中在末尾——失败栈、测试摘要、最后一条进度、`[exit code]` 前的现场。头部通常是启动横幅、依赖解析、进度条重绘，占窗口预算却几乎不含判断依据（`cargo build` 的 60 MiB 日志即典型）。因此 `shell` 的回填预览**整块**取自文件末（`PREVIEW_CHARS` 字符），不与头部分享预算。这与 P13 的整段生产者（`persisted_reference`，`read` / `grep` 用）刻意不同：那里预览的是**文档**，开头就是内容本身；这里预览的是**日志**，结尾才是结论。
 
 标记词汇固定（模型按这些串判断结果性质，实现不得各自发明）：
 
@@ -299,7 +301,7 @@ pub fn err_with_data(
 | 文本末尾 | `[timed out after <N>ms]` | 超时 |
 | 文本末尾 | `[stopped: turn cancelled]` | turn 取消 |
 
-顺序固定：**正文在前、标记在末尾**。理由是 `parse_truncation` 从尾部 `rfind`，且尾部窗口本就为「抓住末行」而设；标记若前置会被头窗口淹没。空输出时正文位置写 `(no output)`（与 Codex / DSH 一致，避免模型面对空串无从判断）。
+顺序固定：**正文在前、标记在末尾**。理由是 `parse_truncation` 从尾部 `rfind`，且尾窗口本就为「抓住末行」而设；标记若前置会被省略标记与正文隔断，模型按尾读的路径就断了。空输出时正文位置写 `(no output)`（与 Codex / DSH 一致，避免模型面对空串无从判断）。
 
 **文件内布局**（单文件，顺序固定）：
 
@@ -317,7 +319,7 @@ pub fn err_with_data(
 五条口径：
 
 1. **非零退出码不是工具失败**：`ok = true` + `exitCode != 0`，由模型判断（与 `grep` 零命中同理）。工具失败只保留给「无法执行」（spawn 失败、超时、取消、落盘失败）；
-2. **输出不驻留内存**：stdout 边读边写入落盘文件，内存只留头 / 尾窗口（各 `PREVIEW_HEAD_CHARS` / `PREVIEW_TAIL_CHARS` 字符）与计数器；stderr 额外驻留一个**有界**的 2 MiB 环形窗口（常量内存，非无界放大）。旧稿的「8 MiB 采集上限 → 杀树」作废：它会让「日志很大但合法」的命令被判失败，而内存放大问题本可用落盘消除；
+2. **输出不驻留内存**：stdout 边读边写入落盘文件，内存只留**尾窗口**（`PREVIEW_CHARS` 字符）与计数器；stderr 额外驻留一个**有界**的 2 MiB 环形窗口（常量内存，非无界放大）。旧稿的「8 MiB 采集上限 → 杀树」作废：它会让「日志很大但合法」的命令被判失败，而内存放大问题本可用落盘消除；
 3. **stdout 上限 `MAX_SPILL_BYTES = 60 MiB`**：触达后**继续读取并丢弃**（只计数），不杀进程（产出大量输出是合法结果，不是错误）；置 `outputTruncated = true`，并在文件 stdout 段末尾写一行 `[truncated: output exceeded 60 MiB; total unknown]`。该行同时保证出现在 `SpilledOutput.tail` 末尾（文件里只写一处；若 stderr 段把它挤出尾窗口，由 sink 在 `tail` 末尾补一行，两处不重复），`parse_truncation` 直接可判。`total unknown` 是必写标记（P13 门禁 3）：此处无法给出总字节，故不得写精确数；
 4. **`truncated` 语义单一**：`outputTruncated` 只表示「落盘文件被上限截断」，不表示「预览窗口被裁剪」；预览裁剪用 `[… N chars omitted; full output in the file above …]` 标记，二者不得混用，也不得让 `[truncated:` 出现在预览裁剪场景（P13 §2.2 口径）；
 5. **空输出不落盘**：`total_chars == 0` 时 `finish` 删除已建的空文件并返回 `reference = None`，`outputPath = null`，回填文本为 `(no output)` + 标记行。留着 0 字节文件只会让回读拿到空串，且给 30 天清理增加无意义条目。
@@ -371,14 +373,13 @@ pub trait ToolResultSink: Send {
     /// 逐块写入原始字节；`stream` 决定落盘区还是 stderr 环形窗口。
     /// 同步签名：调用方是 blocking 池里的读取循环，无法 `await`（§5.7「执行器归属」）。
     fn write(&mut self, stream: OutputStream, chunk: &[u8]) -> Result<(), String>;
-    /// 同步收尾（追加 stderr 段 / 删空文件 / 解码头尾窗口），由调用方置于 `spawn_blocking`。
+    /// 同步收尾（追加 stderr 段 / 删空文件 / 解码尾窗口），由调用方置于 `spawn_blocking`。
     fn finish(self: Box<Self>) -> Result<SpilledOutput, String>;
 }
 
 pub struct SpilledOutput {
     pub reference: Option<PersistedRef>, // 空输出为 None（文件已删除）
-    pub head: String,                    // 文件首个 PREVIEW_HEAD_CHARS 字符
-    pub tail: String,                    // 文件末个 PREVIEW_TAIL_CHARS 字符（truncated 时以 [truncated: …] 结尾）
+    pub preview: String,                 // 文件末 PREVIEW_CHARS 字符（total_chars 不足时即全文；truncated 时以 [truncated: …] 结尾）
     pub total_chars: usize,              // 已写入文件的字符数（truncated 时为截至上限的计数）
     pub output_bytes: usize,             // 子进程总产出字节（精确，含被丢弃部分）
     pub output_lines: usize,             // 子进程总产出行数（精确，含被丢弃部分）
@@ -397,20 +398,19 @@ pub const STDERR_RING_CHARS: usize = 2 * 1024 * 1024;  // stderr 内存环形窗
 六条约束：
 
 1. `open_sink` 与 `persist` 必须写同一根目录、同一 `session_namespace`、同一文件名规则（`<unique_prefix>-<tool>-<call_id>.txt`，复用既有 `unique_prefix` / `safe_component` / `result_file_name`）。两套路径会让清理与回读出现两个事实源；`open_sink` 只用 `req` 的 `tool_call_id` / `tool_name` / `session_id`，`content` 字段忽略（内容由 sink 逐块写入）；
-2. `head` 取**文件首**的前 N 字符，`tail` 取**文件末**的后 N 字符（stderr 非空时即 stderr 末行），中间只落盘、不进内存；`output_bytes` / `output_lines` 对**全流**计数，触达上限后继续计数（因此仍是精确值，见 §5.9「两个字节数不混用」）；
+2. `preview` 取**文件末**的后 `PREVIEW_CHARS` 字符（stderr 非空时即 stderr 末行），**不取头窗口**（§5.9「只取尾窗口」），中间只落盘、不进内存；`output_bytes` / `output_lines` 对**全流**计数，触达上限后继续计数（因此仍是精确值，见 §5.9「两个字节数不混用」）；
 3. `write` **永不因超限返回 `Err`**：stdout 超过 `MAX_SPILL_BYTES` 后只计数不落盘，stderr 超过 `STDERR_RING_CHARS` 后环形覆盖并置 `stderr_truncated`。二者都必须继续消费管道，否则子进程写阻塞 → §5.7 的死锁；
 4. 落盘失败 → `finish` 返回 `Err`，工具按 `Business` 失败回填（§7 F14），**不得**退回「全文内联」：那会把已经消除的内存放大问题重新引回来；
 5. **并发写入由 sink 内部串行化**：sink 由 `Arc<std::sync::Mutex<Option<Box<dyn ToolResultSink>>>>` 持有，两个读取任务（blocking 池线程）逐块 `lock()` 写入。临界区只有一次 `write`，内部**禁止**再取其它锁、禁止做跨进程等待，因此不会与「读管道」互相卡死；用 `std::sync::Mutex` 而非 `tokio::sync::Mutex` 是因为 `write` 是同步签名（§5.7「执行器归属」）。stdout 与 stderr 落在文件的不同区域（stderr 在 `finish` 时追加），因此**不需要**交错顺序保证。`finish` 在 §5.7 第 9 步 join 之后用 `lock().take()` **取走** box 再调用，**不得**依赖 `Arc::try_unwrap`：有界 join 放弃后仍可能有读取线程滞留（§12 R8），引用计数归零不可保证，而 `take()` 与线程数无关。取走之后滞留线程再 `write` 命中 `None`，只丢弃字节、不再触碰文件；
 6. `finish` 负责四件收尾：`total_chars == 0` → 删除空文件并返回 `reference = None`；stdout 触达上限 → 在 stdout 段末尾补 `[truncated: …]` 行；stderr 非空 → 追加 `--- stderr ---` 段（超窗口时头行写 `--- stderr (last <N> of <M> chars) ---`）；`reference.bytes` 取**文件实际字节**；
-7. **编码边界**：`write` 收的是**原始字节**，文件按字节原样写入（不改编码、不做 CRLF 转换）；`total_chars` / 头尾窗口需要字符，但分块边界可能切在多字节 UTF-8 序列中间——因此**禁止**对每个 chunk 各自 `String::from_utf8_lossy` 后拼窗口（会把一个汉字拆成两个 `U+FFFD`）。正确做法：字节先落盘、同时累计字符数用**增量** UTF-8 解码器（非法序列计 1 字符，不 panic）；窗口在 `finish` 时对**已缓冲的字节**统一解码（尾部窗口从首个合法 UTF-8 起始字节开始解码，跳过被切掉的前导续字节）。
+7. **编码边界**：`write` 收的是**原始字节**，文件按字节原样写入（不改编码、不做 CRLF 转换）；`total_chars` / 尾窗口需要字符，但分块边界可能切在多字节 UTF-8 序列中间——因此**禁止**对每个 chunk 各自 `String::from_utf8_lossy` 后拼窗口（会把一个汉字拆成两个 `U+FFFD`）。正确做法：字节先落盘、字符计数与尾窗口由一个**增量** UTF-8 解码器推进（非法序列计 1 字符、不 panic，跨块未完成的尾字节留到下一块），`finish` 时把解码器里剩下的不完整字节按 1 字符收口；尾窗口只由已解码字符组成，因此天然从合法字符边界开始。
 
 #### 5.11.2 引用标签的唯一渲染点
 
 ```rust
-/// 流式落盘后的回填文本：标签 + 头窗口 + 省略标记 + 尾窗口。
-pub fn persisted_reference_from_windows(
+/// 流式落盘后的回填文本：标签 + 省略标记 + 尾窗口（不取头窗口）。
+pub fn persisted_reference_from_tail(
     path: &str,
-    head: &str,
     tail: &str,
     total_chars: usize,
 ) -> String
@@ -421,7 +421,7 @@ pub fn persisted_reference_from_windows(
 | 元素 | 形态 |
 |---|---|
 | 标签 | `<persisted-output path="…">`，**只带 `path`**（现状不写 `bytes`；`parse_persisted_tag` 虽容忍 `bytes`，但两个生产者不得各自发明形态） |
-| 省略标记 | `[… N chars omitted; full output in the file above …]`，`N = total - PREVIEW_HEAD_CHARS - PREVIEW_TAIL_CHARS` |
+| 省略标记 | `[… N chars omitted; full output in the file above …]`，`N = total - PREVIEW_CHARS`（流式）/ `total - PREVIEW_CHARS`（整段，头尾各半） |
 | 短内容 | `total <= PREVIEW_CHARS` 时不加省略标记，直接标签 + 全文 |
 
 `parse_persisted_tag` 才能对历史行 round-trip（`rebuild_compact` 的回退路径依赖这一点）。`compact.persisted.bytes` 取自 `PersistedRef.bytes`，**不**取自标签。
@@ -552,7 +552,7 @@ PermissionRule::new("readToolOutput", "*", PermissionEffect::Ask),
 
 | `kind` | `label` | `value` | `severity` |
 |---|---|---|---|
-| `output.scope` | 读取范围 | `本会话工具输出目录（只读）` | `Info` |
+| `output.scope` | `Output` | `this session's tool output directory (read-only)` | `Info` |
 
 分工的理由：`ApprovalExtension` 只承载**能从待审批资源直接推出的事实**（纯函数、无 IO），与 `workspace_extensions` 完全同构；任何需要 `stat` 的量级信息留在 `preview` 里，才不会把 IO 预算和超时降级扩散到扩展构造路径。
 

@@ -35,7 +35,11 @@ fn tool(receipts: Arc<dyn ReadReceiptStore>) -> AgentDeleteTool {
 async fn record(receipts: &Arc<dyn ReadReceiptStore>, path: &Path) -> ReadReceiptKey {
     let key = ReadReceiptKey {
         session_id: Some("session-1".to_string()),
-        path: path.display().to_string(),
+        // 回执键必须与工具解析后的路径一致（macOS 上 `/var` → `/private/var`）。
+        path: assistant_tools::os::path::canonicalize_lenient(path)
+            .expect("canonical path")
+            .display()
+            .to_string(),
     };
     receipts
         .record(
@@ -164,6 +168,24 @@ fn validate_input_rejects_bad_arguments() {
         tool(store()).validate_input(&json!({ "path": "a.txt" }), &ctx),
         ValidationResult::ok()
     );
+}
+
+#[test]
+fn the_output_namespace_stays_read_only_for_delete() {
+    let workspace = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    std::fs::write(output.path().join("run.log"), "log").unwrap();
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_output_root = Some(output.path().to_path_buf());
+    let target = output.path().join("run.log");
+
+    let result =
+        tool(store()).validate_input(&json!({ "path": target.display().to_string() }), &ctx);
+    assert!(!result.ok, "输出域只读：delete 不得删除本会话输出文件");
+    assert!(result
+        .message
+        .unwrap_or_default()
+        .contains("outside workspace"));
 }
 
 #[test]

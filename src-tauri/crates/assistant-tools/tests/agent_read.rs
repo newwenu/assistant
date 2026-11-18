@@ -4,7 +4,10 @@ use std::sync::Arc;
 use assistant_tools::os::agent_read::{
     AgentReadTool, LINE_NUMBER_WIDTH, LINE_TRUNCATED_MARKER, MAX_LINE_CHARS,
 };
-use assistant_tools::storage::{InMemoryReadReceiptStore, ReadReceiptStore};
+use assistant_tools::storage::{
+    FileToolResultStorage, InMemoryReadReceiptStore, OutputStream, PersistToolResult,
+    ReadReceiptStore, ToolResultStorage,
+};
 use assistant_tools::{
     Tool, ToolAudience, ToolErrorKind, ToolTier, ToolUseContext, ValidationResult,
 };
@@ -83,8 +86,213 @@ fn permission_intents_declare_read_on_the_resolved_path() {
     assert_eq!(intents[0].action, "read");
     assert_eq!(
         intents[0].resources,
-        vec![dir.path().join("a.txt").display().to_string()],
+        vec![assistant_tools::os::path::canonicalize_lenient(dir.path())
+            .expect("canonical root")
+            .join("a.txt")
+            .display()
+            .to_string()],
         "意图必须是解析后的绝对路径，策略按绝对路径匹配"
+    );
+}
+
+#[test]
+fn permission_intents_use_read_tool_output_for_the_output_namespace() {
+    let workspace = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    std::fs::write(output.path().join("run.log"), b"log").unwrap();
+
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_output_root = Some(output.path().to_path_buf());
+
+    let intents = tool()
+        .permission_intents(
+            &json!({ "path": output.path().join("run.log").display().to_string() }),
+            &ctx,
+        )
+        .expect("permission intents");
+    assert_eq!(intents.len(), 1);
+    assert_eq!(
+        intents[0].action, "readToolOutput",
+        "输出域必须走更严的独立动作"
+    );
+    assert_eq!(
+        intents[0].resources,
+        vec![output.path().display().to_string()],
+        "resource 取命名空间目录：一次授权覆盖本会话全部输出"
+    );
+
+    // 工作区内仍走 `read`，resource 是具体文件。
+    let inside = tool()
+        .permission_intents(&json!({ "path": "a.txt" }), &ctx)
+        .expect("workspace intent");
+    assert_eq!(inside[0].action, "read");
+}
+
+#[tokio::test]
+async fn execute_reads_a_file_in_the_output_namespace() {
+    let workspace = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    std::fs::write(output.path().join("run.log"), b"line one\nline two\n").unwrap();
+
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_output_root = Some(output.path().to_path_buf());
+
+    let result = tool()
+        .execute(
+            &json!({ "path": output.path().join("run.log").display().to_string() }),
+            &ctx,
+        )
+        .await
+        .expect("execute must not fail");
+    assert!(
+        result.ok,
+        "output file read must succeed: {:?}",
+        result.error
+    );
+}
+
+#[test]
+fn validate_input_rejects_a_foreign_output_namespace() {
+    let workspace = tempfile::tempdir().unwrap();
+    let own_output = tempfile::tempdir().unwrap();
+    let foreign_output = tempfile::tempdir().unwrap();
+    std::fs::write(foreign_output.path().join("run.log"), b"log").unwrap();
+
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_output_root = Some(own_output.path().to_path_buf());
+
+    let result = tool().validate_input(
+        &json!({ "path": foreign_output.path().join("run.log").display().to_string() }),
+        &ctx,
+    );
+    assert!(
+        !result.ok,
+        "其它会话的输出目录既不在工作区也不在本会话输出域，必须在边界处拒绝"
+    );
+    assert!(result
+        .message
+        .unwrap_or_default()
+        .contains("outside workspace"));
+}
+
+#[tokio::test]
+async fn preview_for_approval_describes_the_output_window() {
+    let workspace = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    let path = output.path().join("build.log");
+    std::fs::write(&path, "line one\nline two\n").unwrap();
+
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_output_root = Some(output.path().to_path_buf());
+
+    let preview = tool()
+        .preview_for_approval(
+            &json!({ "path": path.display().to_string(), "offset": 10, "limit": 5 }),
+            &ctx,
+        )
+        .await
+        .expect("output-domain read must carry a magnitude summary");
+    assert_eq!(
+        preview.summary,
+        "读本会话输出 build.log · 第 10–14 行 · 18 B"
+    );
+    assert!(!preview.truncated, "行窗口已知，不存在扫描上限");
+    assert!(!preview.estimated, "字节数来自 stat，不是估算");
+}
+
+#[tokio::test]
+async fn preview_for_approval_is_absent_inside_the_workspace() {
+    let workspace = tempfile::tempdir().unwrap();
+    write(workspace.path(), "a.txt", "hello\n");
+
+    let preview = tool()
+        .preview_for_approval(
+            &json!({ "path": "a.txt" }),
+            &context(workspace.path(), None),
+        )
+        .await;
+    assert!(
+        preview.is_none(),
+        "工作区内读取由 `read` 的默认 Allow 覆盖，不该产出审批量级摘要"
+    );
+}
+
+#[tokio::test]
+async fn spilled_output_is_readable_and_pageable_to_the_end() {
+    let workspace = tempfile::tempdir().unwrap();
+    let storage_root = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(storage_root.path());
+    let session = "conv-1";
+
+    let mut sink = storage
+        .open_sink(PersistToolResult {
+            tool_call_id: "call-1".to_string(),
+            tool_name: "shell".to_string(),
+            session_id: Some(session.to_string()),
+            content: String::new(),
+        })
+        .await
+        .expect("open sink");
+
+    let mut chunk = String::new();
+    for line in 1..=100_000u32 {
+        chunk.push_str(&format!("line {}\n", line));
+        if chunk.len() >= 8192 {
+            sink.write(OutputStream::Stdout, chunk.as_bytes())
+                .expect("sink write must not fail");
+            chunk.clear();
+        }
+    }
+    if !chunk.is_empty() {
+        sink.write(OutputStream::Stdout, chunk.as_bytes())
+            .expect("sink write must not fail");
+    }
+    let spilled = sink.finish().expect("finish must succeed");
+    let reference = spilled
+        .reference
+        .expect("non-empty output must leave a file behind");
+    assert_eq!(spilled.output_lines, 100_000);
+
+    let namespace = storage
+        .namespace_root(Some(session))
+        .expect("file storage provides a read-back root");
+    assert!(
+        Path::new(&reference.path).starts_with(&namespace),
+        "输出必须落在本会话命名空间目录内: {}",
+        reference.path
+    );
+
+    let mut ctx = context(workspace.path(), Some(session));
+    ctx.tool_output_root = Some(namespace);
+    let read_tool = tool();
+
+    let head = read_tool
+        .execute(&json!({ "path": reference.path, "limit": 10 }), &ctx)
+        .await
+        .expect("execute must not fail");
+    assert!(head.ok, "输出域文件必须可读: {:?}", head.error);
+    let head_text = head.result_for_assistant.unwrap_or_default();
+    assert!(
+        head_text.contains("line 1\n"),
+        "unexpected head: {head_text}"
+    );
+    assert!(
+        !head_text.contains("line 11\n"),
+        "limit 必须截住窗口: {head_text}"
+    );
+
+    let tail = read_tool
+        .execute(
+            &json!({ "path": reference.path, "offset": 99_991, "limit": 10 }),
+            &ctx,
+        )
+        .await
+        .expect("execute must not fail");
+    assert!(tail.ok, "输出域文件必须可分页: {:?}", tail.error);
+    let tail_text = tail.result_for_assistant.unwrap_or_default();
+    assert!(
+        tail_text.contains("line 100000\n"),
+        "必须能分页读到末尾: {tail_text}"
     );
 }
 
@@ -591,7 +799,11 @@ async fn receipt_records_the_detected_encoding_and_bom_state() {
 
     let key = assistant_tools::storage::ReadReceiptKey {
         session_id: ctx.session_id.clone(),
-        path: path.display().to_string(),
+        // `read` 记录的是归一后的路径（macOS 上 `/var` → `/private/var`）。
+        path: assistant_tools::os::path::canonicalize_lenient(&path)
+            .expect("canonical path")
+            .display()
+            .to_string(),
     };
     let receipt = store.lookup(&key).await.expect("receipt recorded");
     assert_eq!(receipt.encoding, "GBK");

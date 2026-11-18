@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
@@ -27,6 +29,12 @@ pub struct ToolUseContext {
     /// 运行时信号，不是 wire 字段，故不参与序列化。
     #[serde(skip)]
     pub cancel: Option<CancellationToken>,
+    /// 本会话工具输出的落盘目录（回读域，I52 §5.11.4）。
+    ///
+    /// 运行时字段，不进 wire；由 `ToolResultStorage::namespace_root` 派生，
+    /// **不得**在第二处重算路径。`None` = 不提供回读（ToolBox 无会话归属）。
+    #[serde(skip)]
+    pub tool_output_root: Option<PathBuf>,
 }
 
 impl ToolUseContext {
@@ -43,6 +51,8 @@ impl ToolUseContext {
             iteration: None,
             tool_call_id: None,
             cancel: None,
+            // ToolBox 无会话归属，因此没有输出域可读。
+            tool_output_root: None,
         }
     }
 }

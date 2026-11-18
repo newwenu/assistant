@@ -361,7 +361,12 @@ mod tests {
                     ("PATH".to_string(), "/usr/bin:/bin".to_string()),
                     ("OUT".to_string(), outside.display().to_string()),
                 ],
-                ..plan_for(&root, "echo inside > inside.txt; echo outside > \"$OUT\"")
+                // 越界重定向会被 Landlock 拒绝，最后一条命令因此非零；
+                // 追加 `:` 让脚本以 0 退出，退出码断言只校验「沙箱正常收尸」。
+                ..plan_for(
+                    &root,
+                    "echo inside > inside.txt; echo outside > \"$OUT\"; :",
+                )
             })
             .expect("spawn");
         let (code, stdout, stderr) = collect(child);

@@ -26,10 +26,13 @@ pub(super) const GRANT_AUDIT_NO_RESOURCE: &str = "none";
 fn audit_scope_summary(scope: &ApprovalScope) -> String {
     match scope {
         ApprovalScope::Path { canonical } => redact_resource(canonical),
+        // 审计词表不承载隔离强度（§8）：强度走工具结果与审批卡扩展，
+        // 这里只落「哪条命令、在哪个目录」。
         ApprovalScope::Command {
             argv,
             cwd,
             sandbox_tier,
+            ..
         } => format!(
             "[{}] {} · {}",
             tier_label(*sandbox_tier),

@@ -5,8 +5,11 @@ use std::time::Duration;
 use serde_json::Value;
 
 use super::approval_key::ApprovalKey;
+use super::stores::redact_resource;
 use crate::context::ToolUseContext;
-use crate::os::path::{workspace_membership, WorkspaceMembership};
+use crate::os::path::{
+    canonicalize_lenient, ensure_within_root, workspace_membership, WorkspaceMembership,
+};
 use crate::policy::{PermissionEffect, PermissionRule, ResolvedPermissionPolicy, RuleOrigin};
 use crate::r#trait::{ApprovalPreview, BehaviorHints, PermissionIntent, Tool, ToolTier};
 
@@ -105,22 +108,36 @@ pub(crate) struct PendingApproval {
 pub(crate) fn merge_pending(pending: &[PendingApproval]) -> Vec<PermissionIntent> {
     let mut merged: Vec<PermissionIntent> = Vec::new();
     for item in pending {
+        let resource = displayed_resource(item);
         match merged
             .iter_mut()
             .find(|intent| intent.action == item.action)
         {
             Some(intent) => {
-                if !intent.resources.contains(&item.resource) {
-                    intent.resources.push(item.resource.clone());
+                if !intent.resources.contains(&resource) {
+                    intent.resources.push(resource);
                 }
             }
             None => merged.push(PermissionIntent {
                 action: item.action.clone(),
-                resources: vec![item.resource.clone()],
+                resources: vec![resource],
             }),
         }
     }
     merged
+}
+
+/// 审批卡上展示的资源名。
+///
+/// 输出域读取的 resource 是会话命名空间目录（应用数据目录下的绝对路径），
+/// 只用于审批键覆盖整段命名空间；展示时按既有 `redact_resource` 只留末段，
+/// 不把本机绝对路径带进卡片（I52 §5.11.4(5)）。其余动作的资源名保持原样。
+fn displayed_resource(item: &PendingApproval) -> String {
+    if item.action == "readToolOutput" {
+        redact_resource(&item.resource)
+    } else {
+        item.resource.clone()
+    }
 }
 
 /// 装配审批卡片的 L0 / L1 / L2 信息（I38d §3.2.1）。
@@ -157,8 +174,43 @@ pub(crate) async fn build_approval_context(
         behavior: tool.behavior_hints(),
         reasons,
         preview,
-        extensions: workspace_extensions(pending, context),
+        extensions: {
+            let mut extensions = workspace_extensions(pending, context);
+            extensions.extend(output_extensions(pending, context));
+            extensions
+        },
     }
+}
+
+/// 输出域检测方（I52 §5.11.4(5)）：本次待审批资源是否落在本会话工具输出目录内。
+///
+/// 与 [`workspace_extensions`] 完全同构：只凭 `pending.resource` 判定，零 IO。
+/// 任何需要 `stat` 的量级信息（文件大小、行窗口）留在 `preview_for_approval`，
+/// 不得把 IO 预算与超时降级扩散到扩展构造路径。
+fn output_extensions(
+    pending: &[PendingApproval],
+    context: &ToolUseContext,
+) -> Vec<ApprovalExtension> {
+    let Some(root) = context.tool_output_root.as_deref() else {
+        return Vec::new();
+    };
+    // 与执行期边界校验同源：`ensure_within_root` 内部对根做宽松规范化，
+    // 因此这里不新造第二套路径比较（否则审批卡片与实际判定会分叉）。
+    let inside = pending.iter().any(|item| {
+        canonicalize_lenient(Path::new(&item.resource))
+            .map(|path| ensure_within_root(&path, root).is_ok())
+            .unwrap_or(false)
+    });
+    if !inside {
+        return Vec::new();
+    }
+    // 文案与既有 `workspace` 扩展保持同一种语言（英文），同一张卡片不混排中英。
+    vec![ApprovalExtension {
+        kind: "output.scope".to_string(),
+        label: "Output".to_string(),
+        value: "this session's tool output directory (read-only)".to_string(),
+        severity: ApprovalExtensionSeverity::Info,
+    }]
 }
 
 /// 路径守卫检测方（I38d §3.2.1 L1 / §4.9）：给出「工作区内/外」结论。
