@@ -12,7 +12,7 @@
 > - 2026-11-06 关闭 `compact_threshold_percent` 迁移窗口：删除 `AppConf::legacy_compact_threshold_percent` 与 `migrate()` 内的搬运逻辑，`migrate()` 保留空实现 + 迁移模板注释；原「明确不列为死代码」条目改为已移除，C3/C4 中对该迁移字段的引用同步改写
 > - 2026-11-12 关闭 C1 / C2 / C3 / C4 / C7 / C8 / C9：`theme` 与 `resolved` 收窄为封闭枚举并在后端解析、错误码映射改编译期穷举、`patch_conf` 命名转换补用例、配置 DTO 字段集合测试覆盖四个结构体、死代码与 `Omit` 垫片删除、快捷键默认值改生成单源；同时修掉未登记的 `AppConf::workspace_root` 死字段。数字类结论（错误码条数、`Result<_, String>` 处数）不再逐条写死，改为「以生成物/检索命令为准」，避免下一轮复核时先怀疑文档本身
 > - 2026-11-12 口径修正：新增「修法必须落到既有设施」要求——补日志写 `createLogger("<scope>")`（`src/services/logger.ts`，53 个文件在用），补测试写进 `cargo test` / `vitest` 且注明可执行范围；不写「补一条日志/补一个测试」这类无载体表述
-> - 2026-11-17 C6 立项：实施规格拆到 [命令错误契约规格](../../store/command-error-contract-spec.md)（通用 `CommandErrorDto`、错误码单源、首批 chat / agent 六命令），本文 C6 节与 §5 阶段 8 只保留现状分析与指向，不再复述修法细节。**立项不改变 C6 的开放状态**：首批只覆盖 chat / agent，conversation / provider / storage / config 等域仍是字符串错误，关闭判据（`Result<[^>]*, String>` 匹配数降为 0）写在规格 §6.1
+> - 2026-11-17 C6 立项：实施规格拆到 [命令错误契约规格](./command-error-contract-spec.md)（通用 `CommandErrorDto`、错误码单源、首批 chat / agent 六命令），本文 C6 节与 §5 阶段 8 只保留现状分析与指向，不再复述修法细节。**立项不改变 C6 的开放状态**：首批只覆盖 chat / agent，conversation / provider / storage / config 等域仍是字符串错误，关闭判据（`Result<[^>]*, String>` 匹配数降为 0）写在规格 §6.1
 
 ---
 
@@ -20,7 +20,7 @@
 
 1. 上一轮（2026-10-30 / 11-03）审计登记的 D1、D2、D4、D8、D9、D11 **六项已确认关闭**，见 §2。
 2. C 类 9 项中 **C1 / C2 / C3 / C4 / C5 / C7 / C8 / C9 已全部关闭**（C5 于 2026-11-06，其余于 2026-11-12），见各节首行状态标记与 §2.1。
-3. 仍开放 **1 项**：C6（chat 域命令错误仍是 `Result<_, String>`），属结构性改造，已于 2026-11-17 立项，实施规格见 [命令错误契约规格](../../store/command-error-contract-spec.md)。立项后仍为开放：首批只迁 chat / agent，关闭判据见规格 §6.1。
+3. 仍开放 **1 项**：C6（chat 域命令错误仍是 `Result<_, String>`），属结构性改造，已于 2026-11-17 立项，实施规格见 [命令错误契约规格](./command-error-contract-spec.md)。立项后仍为开放：首批只迁 chat / agent，关闭判据见规格 §6.1。
 4. 有 **2 项**属**无需改代码的有意例外**（role/title_source 开放集合、`tool_use_id` snake_case）；`ApiFormat` 类型保留，其 `as ApiFormat` 静默错标已于 2026-11-12 补运行时校验与回落日志（`createLogger("providerLookup")`），见 §4。
 5. 判定兼容债的口径是「不同步时不产生编译错误或测试失败」。凡是靠人工记忆维持的一致性，一律记为债——不是因为当前错了，而是因为下一次改错不会被发现。
 6. **数字类结论以生成物与检索命令为准**：错误码条数、`Result<_, String>` 处数这类计数会随迭代漂移，本文不再把它们写成判定依据，只保留「用什么命令复核」。
@@ -246,7 +246,7 @@ dispatchThemeChanged(mode)                  // 本地解析出 light/dark → �
 
 ---
 
-### C6 错误通道不对称：chat 域仍是 `Result<_, String>`（优先级 P3，结构性）—— **已立项 2026-11-17，仍开放**，实施规格见 [命令错误契约规格](../../store/command-error-contract-spec.md)
+### C6 错误通道不对称：chat 域仍是 `Result<_, String>`（优先级 P3，结构性）—— **已立项 2026-11-17，仍开放**，实施规格见 [命令错误契约规格](./command-error-contract-spec.md)
 
 **现象**：`src-tauri/src/cmd` 下 17 个文件共 72 处 `Result<_, String>`（含内部 helper），其中 chat / conversation / provider / storage / config 域的命令全部是纯字符串错误；只有 vault 域（`src-tauri/src/cmd/vault/sync.rs` 等）返回结构化 `VaultErrorDto`。数量比上一版（69 处 / 16 文件）增加，说明新增命令仍在沿用旧签名。
 

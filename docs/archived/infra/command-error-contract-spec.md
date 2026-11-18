@@ -58,7 +58,7 @@ E-N5 是 C6 的隐性半场：只把命令错误结构化、不动枚举单源�
 - 不迁移 `conversation` / `provider` / `storage` / `config` / `tool` / `mcp` / `orb` 等域命令（第二批及以后，见 §6）；
 - 不重构 `assistant-storage` / `assistant-agent` 的错误类型：`StorageError` / `AgentError` 仍是既有定义，只在命令边界做结构化映射；
 - 不做错误码到 UI 文案的后端本地化改造：`CommandErrorDto.message` 仍是后端已本地化的原文（沿用 `assistant_i18n::t`），前端只负责在码上做分类；
-- **偏离原始修法（须记档）**：不引入 `details` 字段。原 C6 修法写的是 `CommandErrorDto`（`code` / `message` / `retryable` / `retryAfterMs` / `details`），本文去掉 `details`——依据 [CODE-REVIEW-PRINCIPLE](../principle/CODE-REVIEW-PRINCIPLE.md) D2「传输类型不得承载本地 UI 状态，本地扩展必须用交叉类型叠加」。前端 `ChatError.details` 由 `toChatError(extra)` 本地注入（`command` / `conversationId`）。偏离理由已在此写明，后续复核不要当作漏项补回；
+- **偏离原始修法（须记档）**：不引入 `details` 字段。原 C6 修法写的是 `CommandErrorDto`（`code` / `message` / `retryable` / `retryAfterMs` / `details`），本文去掉 `details`——依据 [CODE-REVIEW-PRINCIPLE](../../principle/CODE-REVIEW-PRINCIPLE.md) D2「传输类型不得承载本地 UI 状态，本地扩展必须用交叉类型叠加」。前端 `ChatError.details` 由 `toChatError(extra)` 本地注入（`command` / `conversationId`）。偏离理由已在此写明，后续复核不要当作漏项补回；
 - 不合并 `VaultErrorDto`：vault 的 36 个码是保险库域专用，与通用命令错误同形但码域不同，共用会让一个域的新码污染另一域的分类表。**这也是范围收缩**：vault 域不在 C6 的关闭判据内（见 §6.1）。
 
 ---
@@ -67,7 +67,7 @@ E-N5 是 C6 的隐性半场：只把命令错误结构化、不动枚举单源�
 
 ### 2.1 位置与命名
 
-新建 `src-tauri/src/protocol/dto/error.rs`，在 `protocol/dto/mod.rs` 注册 `pub mod error;` 并 `pub use error::*;`。同步更新 [CODE-STRUCTURE](../CODE-STRUCTURE.md) §4.3 的 `dto/` 目录清单（当前列了 `agent` `branch` `chat` `clock` `config` `mcp` `orb` `os_tool` `settings` `storage` `workspace`，需补 `error`）。
+新建 `src-tauri/src/protocol/dto/error.rs`，在 `protocol/dto/mod.rs` 注册 `pub mod error;` 并 `pub use error::*;`。同步更新 [CODE-STRUCTURE](../../CODE-STRUCTURE.md) §4.3 的 `dto/` 目录清单（当前列了 `agent` `branch` `chat` `clock` `config` `mcp` `orb` `os_tool` `settings` `storage` `workspace`，需补 `error`）。
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
@@ -242,7 +242,7 @@ export type ChatErrorCode = CommandErrorCodeDto;
 
 ### 4.2 新增分类 `Busy` / `Storage`
 
-`ChatErrorCategory` 从 11 项增至 **13 项**，新增 `Busy = "busy"` 与 `Storage = "storage"`。码到类别映射（末列对齐 [CODE-REVIEW-PRINCIPLE](../principle/CODE-REVIEW-PRINCIPLE.md) D3 的四类语义）：
+`ChatErrorCategory` 从 11 项增至 **13 项**，新增 `Busy = "busy"` 与 `Storage = "storage"`。码到类别映射（末列对齐 [CODE-REVIEW-PRINCIPLE](../../principle/CODE-REVIEW-PRINCIPLE.md) D3 的四类语义）：
 
 | 新码 | 类别 | D3 语义类 | 理由 |
 |---|---|---|---|

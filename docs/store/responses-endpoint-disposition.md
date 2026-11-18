@@ -5,7 +5,7 @@
 | 状态 | 已决策（A：补正式入口）｜前端已实施，运行验收待真实端点 |
 | 日期 | 2026-11-17 |
 | 来源 | I9-provider-multi-api-spec.md（已归档）Phase 7 交付项的运行可达性复核 |
-| 关联 | [code-structure-followups.md](./code-structure-followups.md)（F1-b）、[crate-architecture.md](./crate-architecture.md) |
+| 关联 | code-structure-followups.md（已归档）（F1-b）、[crate-architecture.md](./crate-architecture.md) |
 | 判据 | [CODE-SPLIT-PRINCIPLE.md](../principle/CODE-SPLIT-PRINCIPLE.md)（结构整理不改语义） |
 
 ---
@@ -100,7 +100,7 @@ A 落地后：自定义 Provider 的 type 默认取所选 format 的 `customType
 
 1. B 的理由是「没有真实 API 验收前，把 A 做完仍只是另一份未验证的代码」——该风险没有消失，已转为 §9.2 的验收待办，而不是阻止入口落地。
 2. C 是功能删除，且牵动 7 处能力声明与存量数据，收益（少 688 行 + 若干分支）不足以在没有产品决策的情况下承担迁移风险。
-3. B 的交付物是本文 §2 的事实清单，以及 [code-structure-followups.md](./code-structure-followups.md) F1-b 条目里补一句可达性说明；这部分内容已保留为历史依据。
+3. B 的交付物是本文 §2 的事实清单，以及 code-structure-followups.md（已归档） F1-b 条目里补一句可达性说明；这部分内容已保留为历史依据。
 
 ---
 
@@ -156,7 +156,7 @@ A 落地后：自定义 Provider 的 type 默认取所选 format 的 `customType
 
 ## 7 对 F1-b 的门
 
-[code-structure-followups.md](./code-structure-followups.md) 的 F1-b（拆分 `responses_stream.rs`）价值完全取决于本节决策，**决策已定为 A**：
+code-structure-followups.md（已归档） 的 F1-b（拆分 `responses_stream.rs`）价值完全取决于本节决策，**决策已定为 A**：
 
 | 决策 | 对 F1-b 的影响 |
 |---|---|

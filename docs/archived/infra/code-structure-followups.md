@@ -5,8 +5,8 @@
 | 状态 | 待办（活跃） |
 | 日期 | 2026-11-16 立；2026-11-17 复核并重排 |
 | 来源 | 代码组织与深度扁平度优化规格（已归档）的未完成项 |
-| 判据来源 | 文件拆分判据唯一来源为 [CODE-SPLIT-PRINCIPLE.md](../principle/CODE-SPLIT-PRINCIPLE.md)；结构事实唯一来源为 `scripts/probe-structure.mjs` |
-| 关联 | [CODE-STRUCTURE.md](../CODE-STRUCTURE.md)（现状事实）、[crate-architecture.md](./crate-architecture.md)（crate 边界） |
+| 判据来源 | 文件拆分判据唯一来源为 [CODE-SPLIT-PRINCIPLE.md](../../principle/CODE-SPLIT-PRINCIPLE.md)；结构事实唯一来源为 `scripts/probe-structure.mjs` |
+| 关联 | [CODE-STRUCTURE.md](../../CODE-STRUCTURE.md)（现状事实）、[crate-architecture.md](../../store/crate-architecture.md)（crate 边界） |
 
 > 本文只承载「尚未完成的事项」。规格本体已归档冻结，其 §2.7 / §2.8 两张清单是 2026-11-16 的历史快照，**不得当作现状引用**（失效原因见 F3）。
 > 结构数字一律以 `node scripts/probe-structure.mjs` 的输出为准；本文只记录复核当时的实测值并标注时刻，不维护第二套统计口径。
@@ -57,9 +57,9 @@
 
 **优先级定位**：`responses_stream.rs`（688）在 900 行优先审查线以下，且 §2 已明确「行数不作拆分义务」。它是归档规格的遗留项、价值中等，**不是**「唯一剩余的代码工作」；当前真实的结构风险在 F3 的组 A。
 
-**前置门（2026-11-17 复核新增）**：该文件对应的 `ProviderKind::OpenAIResponses` 无前端正式入口——`ApiFormat` 只有 `openai` / `anthropic` / `local`，仅「自定义 Provider ID」自由文本手输可达，且 I9 规格（已归档）H2 运行验证 8 项全未勾选。处置决策与影响面见 [responses-endpoint-disposition.md](./responses-endpoint-disposition.md)：选 A（补入口）则先补后拆，选 B（保留记录）则维持低优先级，选 C（移除）则 F1-b 作废转删除任务。决策落地前不动 `responses_stream.rs`。
+**前置门（2026-11-17 复核新增）**：该文件对应的 `ProviderKind::OpenAIResponses` 无前端正式入口——`ApiFormat` 只有 `openai` / `anthropic` / `local`，仅「自定义 Provider ID」自由文本手输可达，且 I9 规格（已归档）H2 运行验证 8 项全未勾选。处置决策与影响面见 [responses-endpoint-disposition.md](../../store/responses-endpoint-disposition.md)：选 A（补入口）则先补后拆，选 B（保留记录）则维持低优先级，选 C（移除）则 F1-b 作废转删除任务。决策落地前不动 `responses_stream.rs`。
 
-**前置门结论（2026-11-17）**：已选 **A**，前端 `responses` / `gemini` format 与 preset 已落地（后端零改动）。但 [responses-endpoint-disposition.md](./responses-endpoint-disposition.md) §5.3 的 4 项运行时验收仍未执行，F1-b 维持**暂缓**——拆分前提「先补 fixture」的收益在验收前无法兑现。恢复条件：运行验收有结论，且确认该端点长期保留。
+**前置门结论（2026-11-17）**：已选 **A**，前端 `responses` / `gemini` format 与 preset 已落地（后端零改动）。但 [responses-endpoint-disposition.md](../../store/responses-endpoint-disposition.md) §5.3 的 4 项运行时验收仍未执行，F1-b 维持**暂缓**——拆分前提「先补 fixture」的收益在验收前无法兑现。恢复条件：运行验收有结论，且确认该端点长期保留。
 
 ### F2 `crate-architecture.md` 口径统一（已收口）
 
@@ -232,7 +232,7 @@ npm run contract:check
 |---|---|---|
 | 目录深度 | **观察信号，不设上限**。判据是「每个非生成目录对应一个可命名的变化原因」与「无转发层」，不是段数 | 路径段数不等于语义层数；组件 parts 桶、生成物目录占段不占层 |
 | 扁平度 | 直接子模块 ≥12 **只是审查触发线**，不是分组义务；分组条件是存在 ≥2 个独立变化原因的子域且各 ≥3 文件；uniform peers 永远保持扁平 | 参考项目中 `codex core/src` 根目录平铺 138 个文件，说明数量线无上游依据 |
-| 职责清晰 | 唯一判据是一个文件对应一个变化原因；行数只作初筛（≥900 优先审查），不作拆分义务与验收标准 | [CODE-SPLIT-PRINCIPLE.md](../principle/CODE-SPLIT-PRINCIPLE.md) §1–§2 |
+| 职责清晰 | 唯一判据是一个文件对应一个变化原因；行数只作初筛（≥900 优先审查），不作拆分义务与验收标准 | [CODE-SPLIT-PRINCIPLE.md](../../principle/CODE-SPLIT-PRINCIPLE.md) §1–§2 |
 | `mod.rs` 内容 | 只放类型定义、共享常量、模块声明、组合入口与对外 `pub use`；`mod.rs` 内出现成规模实现即属回潮，与总行数无关 | 同上 §4.1、§6 |
 | 新增大文件 | 功能开发新增 ≥400 非空行文件时，必须在功能验收时给出结论（保留 / 拆分 / 待判）并登记到 F3 账目；未登记即视为「待判」 | I35 的 3 个已于 2026-11-17 判定并登记（F3-C 两个均已执行、F3-E 一个保留）；仍未判定的只剩 I53 的 `sandbox/{macos,linux,mod}.rs` |
 | 结构数字 | 只认 `node scripts/probe-structure.mjs`；文档内不得维护独立统计命令 | 避免口径漂移 |
