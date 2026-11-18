@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 状态 | 现行（能力基线，只读对照） |
-| 日期 | 2026-11-05 |
+| 日期 | 2026-11-05（基线快照）；2026-11-18 去时态化收口（§4.3 定型结果、G5/G7/G8 归属、§4.4 沙箱归属） |
 | 关联 | [I38 阶段总纲](./I38-agent-roadmap.md)、I36 运行时决策（已归档）、I36 运行时规格（已归档）、I36 任务清单（已归档）、[I36b 一致性验证](./I36b-agent-kernel-conformance-spec.md)、I38b Agent Loop（已归档）、I38a 工具控制层（已归档） |
 | 影响范围 | 仅文档；不改变任何代码契约 |
 
@@ -21,10 +21,10 @@
 
 | 层 | 职责 | 权威文档 | 判据 |
 |---|---|---|---|
-| turn 编排（kernel） | turn 生命周期、状态机、预算、取消、阶梯、落库、事件 | I36 spec | 跨迭代 |
-| 迭代循环（RoundExecutor） | 模型调用 → 工具执行 → 回填 → 下一迭代 | I38b | 跨迭代，但只跨「一次 turn 内」 |
-| 工具控制（Policy/Gateway/Pipeline） | 权限、审批、校验、并发分批、结果持久化 | I38a | 单次工具调用前后 |
-| 工具实现（fs / shell / MCP） | 具体能力与参数语义 | I38c / I38e | 单次调用内部 |
+| turn 编排（kernel） | turn 生命周期、状态机、预算、取消、阶梯、落库、事件 | I36 spec（已归档） | 跨迭代 |
+| 迭代循环（RoundExecutor） | 模型调用 → 工具执行 → 回填 → 下一迭代 | I38b（已归档） | 跨迭代，但只跨「一次 turn 内」 |
+| 工具控制（Policy/Gateway/Pipeline） | 权限、审批、校验、并发分批、结果持久化 | I38a（已归档） | 单次工具调用前后 |
+| 工具实现（fs / shell / MCP） | 具体能力与参数语义 | I38c / I38e（均已归档） | 单次调用内部 |
 
 ### 1.2 能力入阶段的判据
 
@@ -42,7 +42,7 @@
 |---|---|---|
 | K1 | 一轮只有一个入口（`TurnRunner::run`），宿主只做 begin / spawn / 映射 | `kernel/runner.rs` |
 | K2 | 内核零 tauri，外部世界只经四端口 | `kernel/ports.rs` |
-| K3 | 工具执行唯一入口是 `ToolPipeline`，不得裸调 `Tool::execute` | Pipeline 契约；`Tool::execute` 仍是 `pub`，裸调只靠调用点约束（G5 待补） |
+| K3 | 工具执行唯一入口是 `ToolPipeline`，不得裸调 `Tool::execute` | Pipeline 契约；`Tool::execute` 仍是 `pub`，裸调只靠调用点约束（G5 未收口） |
 | K4 | 事实以落库为准，内存状态只是投影 | `kernel/state.rs` + `kernel/persist.rs` |
 | K5 | 取消只置位令牌，不做 `abort`；旧代际的迟到写入一律丢弃 | `kernel/tasks.rs` |
 | K6 | 事件恒带 `turn_id`，同 turn `seq` 严格单调；终态只有一个出口 | `kernel/emit.rs` + `runner.rs` |
@@ -57,8 +57,8 @@
 | 类别 | 内容 | 占比 | 是否会改动现有文档 |
 |---|---|---|---|
 | **转述** | §2 能力矩阵的「能力」列与「阶段」列（对应 I36 spec Step 0–8、I38b D1–D26、I38a、roadmap §2.1）；§3 的机制描述 | 约 6 成 | 不改。已有决策已定稿，本文只做横向索引 |
-| **核对** | §4.2 开工前缺口快照（一次性历史记录）；§4.3 接口冲突清单 | 约 2 成 | **会**：口径与代码不符的文档需修正（已修 5 处，见 §4.2 末注） |
-| **新增** | §1.2 入阶段三判据；§1.3 不变式的强制点；§4.3 接口冲突清单；§5 扩展点表；§6 门禁 G5/G7/G8；§7 优先级 | 约 2 成 | 部分会：G7/G8 需并入 I38b 验收，G5 需可见性收口 |
+| **核对** | §4.2 开工前缺口快照（一次性历史记录）；§4.3 接口冲突清单（历史记录，四项已在 P4 定型） | 约 2 成 | **会**：口径与代码不符的文档需修正（已修 5 处，见 §4.2 末注） |
+| **新增** | §1.2 入阶段三判据；§1.3 不变式的强制点；§4.3 接口冲突清单；§5 扩展点表；§6 门禁 G5/G7/G8；§7 优先级 | 约 2 成 | 部分会：G8 归 P13（`compact` 省略三态）；G7 尚无判定用例；G5 属 review 门禁（`Tool::execute` 无可见性强制） |
 
 判定方法：凡是能在既有 spec 里找到原文的，归入「转述」；凡是从参考项目**机制**推出、但本项目文档未写的，归入「新增」。**新增项一律不直接改设计**，只登记为门禁或验收候选，由对应阶段开工时决定是否采纳。
 
@@ -115,7 +115,7 @@
 
 | 能力 | 归属 | 参考 | 决策 / 阶段 |
 |---|---|---|---|
-| 轮级用量汇总（迭代 / 调用 / token / 工具数） | kernel | OpenBitFun `TurnStats` / `TurnTokenUsage` | P3 C8（工具数随 P4 填充） |
+| 轮级用量汇总（迭代 / 调用 / token / 工具数） | kernel | OpenBitFun `TurnStats` / `TurnTokenUsage` | P3 C8 / P4（工具数） |
 | TTFT | kernel | OpenBitFun 首 token 计时 | P3 C8 |
 | 事件 seq 与终态去重 | kernel | OpenBitFun `event_router.rs` / `event_queue.rs` | P3 C6 |
 | 崩溃后「停在哪个 turn」可判定 | storage | DSH turn enclosure（§3.3） | P3 C7 |
@@ -236,25 +236,25 @@ OpenBitFun 的 `src/crates/execution/agent-runtime/src/` 把 turn 作为一等�
 | I36 tasklist C5.14 | 落点写 `agent/mod.rs` | 实际落点 `kernel/mod.rs`；P4 再迁 `agent/round_executor.rs` |
 | I38c §1.2 | 「RoundExecutor（P4 已完成）」 | 「P4，未开始，规格见 I38b」 |
 
-### 4.3 P4 开工前必须统一的接口
+### 4.3 P4 开工前必须统一的接口（历史记录，四项已在 P4 定型）
 
-P3 用了占位 trait，I38b 另起了一套签名；两边不一致会导致 P4 返工。
+> 本节是 2026-11-05 P3 收尾时的接口差异清单，**只作历史记录**。四项均已在 P4 定型，定型结果见「现状落点」列；当前契约以代码与各 spec 为准，本文不维护签名。
 
-| 符号 | 代码现状 | I38b 要求 | 建议落点 |
+| 符号 | P3 时的代码现状 | I38b 要求 | 现状落点（P4 定型结果） |
 |---|---|---|---|
-| `RoundExecutor` | `kernel/mod.rs`，`run_iterations(&self, ctx, iteration)` | `agent/round_executor.rs`，携带迭代状态与工具批次 | `agent/`，内核只留 trait 引用 |
-| `RoundOutcome` | 两字段（`tool_calls` / `executed`） | 多字段：`confirmation_wait_ms` + 与 `TurnOutcome` 同名的 `reasoning` / `total_tokens` / `attempt_usages` / `ttft_ms` | 与 I38b §2.3 对齐后一次定型 |
-| `ToolCatalog` | 空同步 trait | `async` + `agent_tools()` | `kernel/ports.rs`，改 async（D16） |
-| `StopHook` | 只有 `name()` | 补齐 `check(&TurnState<'_>) -> StopDecision`（同步、禁止 IO / await） | trait 留 `kernel/ports.rs`，内置钩子实现落 `agent/stop.rs` |
+| `RoundExecutor` | `kernel/mod.rs`，`run_iterations(&self, ctx, iteration)` | `agent/round_executor.rs`，携带迭代状态与工具批次 | `agent/round_executor.rs`，`run_iterations(&self, ctx: TurnRunCtx<'_>) -> RoundOutcome` |
+| `RoundOutcome` | 两字段（`tool_calls` / `executed`） | 多字段：`confirmation_wait_ms` + 与 `TurnOutcome` 同名的 `reasoning` / `total_tokens` / `attempt_usages` / `ttft_ms` | 五个字段均已落地（另有 `hit_cap` / `wrap_up_injected` / `final_message_id` 等） |
+| `ToolCatalog` | 空同步 trait | `async` + `agent_tools()` | **已删除**（P5 改为 `adapters/tool_resolver.rs` 的 `resolve_available_tools`），全仓无引用 |
+| `StopHook` | 只有 `name()` | 补齐 `check(&TurnState<'_>) -> StopDecision`（同步、禁止 IO / await） | trait 在 `kernel/ports/mod.rs`；内置钩子实现落 `agent/stop.rs` |
 
-文档口径已在 §4.2 末表统一：C5.14 的落点改为 `kernel/mod.rs`（并注明 P4 迁至 `agent/round_executor.rs`），I38c §1.2 改为「P4 未开始」。四个符号的签名差异**仍待 P4 开工时一次定型**，属实现决策，本次不动。
+文档口径已在 §4.2 末表统一：C5.14 的落点改为 `kernel/mod.rs`（并注明 P4 迁至 `agent/round_executor.rs`），I38c §1.2 改为「P4 未开始」。这四行**不再需要**在 P4 开工时重新定型。
 
 ### 4.4 推迟与不做
 
 | 能力 | 结论 | 理由 |
 |---|---|---|
 | 子代理 / 多 agent | P8.1 起 | 单 turn 闭环不需要；预留字段已够 |
-| 沙箱隔离 | P8+ | `ToolTier::Sandbox` 已定义但零实现；P5 的 `shell` 靠审批兜底 |
+| 沙箱隔离 | P14 | `SandboxBackend` 抽象与平台后端已由 I53 前置落地（`assistant-tools/src/sandbox/`），但无生产工具使用 `ToolTier::Sandbox`；`shell` 工具尚未提供，P5 的工具仍靠审批兜底 |
 | 成本预算 | P8+ | 需要定价目录与账本，属宿主能力 |
 | 排队输入 / steering | P8+ | 先要定「注入消息是否落库、落哪个 turn」 |
 | 重启续跑 / 后台常驻 | P9 | 跨重启状态，单独 ADR |
@@ -290,12 +290,12 @@ P3 用了占位 trait，I38b 另起了一套签名；两边不一致会导致 P4
 | G2 | `kernel/` 无 `is_agent` / `is_chat` 分支 | 文件扫描用例（已存在） |
 | G3 | `TurnSpec::chat()` / `agent()` 逐字段断言 | 单测（已存在） |
 | G4 | 仅用端口替身可跑完整轮 | 集成测试 |
-| G5 | 工具执行只经 Pipeline（无裸 `Tool::execute` 调用点） | grep 调用点；当前无可见性强制，属 review 门禁，P4 可改为 `pub(crate)` 收口 |
+| G5 | 工具执行只经 Pipeline（无裸 `Tool::execute` 调用点） | grep 调用点；`Tool::execute` 仍是 `pub`，无可见性强制，属 review 门禁（**未收口**） |
 | G6 | 每条 turn 事件带 `turn_id`，同 turn `seq` 单调、跨 turn 归零 | 集成测试 |
-| G7 | 同一 turn 重跑不产生重复副作用（幂等） | 重放用例（P4 起） |
-| G8 | 工具结果被裁剪 / 省略时，省略量可精确说明 | 结果契约测试（P4 起） |
+| G7 | 同一 turn 重跑不产生重复副作用（幂等） | 重放用例；**判定用例尚未建立** |
+| G8 | 工具结果被裁剪 / 省略时，省略量可精确说明 | P13 的 `compact` 省略三态：`runtime/compact/truncation.rs` 的「无省略 / 精确（`returned`+`total`）/ `Unknown`」，用例在 `runtime/compact/mod.rs` |
 
-G7 / G8 取自 Goose 的 operation notes 与 DSH 的 retention library；它们不是当前实现的一部分，但**接口形状必须现在就容得下**（例如结果里保留 `omitted` 语义位），否则以后加要动 DTO 与落库格式。
+G7 / G8 取自 Goose 的 operation notes 与 DSH 的 retention library。G8 的语义位归 P13（`TruncatedInfo` 保留 `returned` / `total` / `Unknown`）；G7 的接口形状已经容得下，但「同一 turn 重跑」的判定用例尚未建立。
 
 ---
 
@@ -308,10 +308,10 @@ G7 / G8 取自 Goose 的 operation notes 与 DSH 的 retention library；它们�
 | P0 | 单一公开停止原语 + 不可中断根 | DSH / Codex | P3 已对齐，P8 复用 |
 | P1 | 阶梯顺序不变式（压缩先于微压缩） | OpenHuman | ② 落地批次（P4 无 ②，顺序断言不可达，I38b D13） |
 | P1 | 可恢复失败单独余量 + 轮询工具豁免 | OpenHuman | P4 |
-| P1 | 结果保留量精确说明 | DSH | P4 契约预留 |
+| P1 | 结果保留量精确说明 | DSH | P13（`compact` 省略三态） |
 | P1 | 预算能力做成宿主端口 | OpenHuman `BudgetGate` | P8 |
 | P2 | 子代理表达为 Operation / 控制面 | Goose / Codex | P8.1 |
-| P2 | 能力三包接缝（接口 / 实现 / 消费） | DSH | P8，若引入沙箱后端 |
+| P2 | 能力三包接缝（接口 / 实现 / 消费） | DSH | P14（沙箱后端落地时） |
 
 ---
 
