@@ -37,7 +37,10 @@
 | **P10 AI 审批顾问（后续轴）** | 在策略与人工审批之间插入单向 AI 顾问：P10-a `EscalateOnly` → P10-b `RelaxOnly`；`Adjudicate` 需 L4 沙箱 ADR | I38g | ❌ 未开始（规格已就绪，2026-11-09；不进入 P0–P7 门禁） | P6 |
 | **P12 工作区（后续轴）** | 工作区一级概念：`conversations.workspace_root` 会话绑定（**唯一来源，空串 `''` = 未配置、列 `NOT NULL`，不占用 `null`，无默认层**）+ `workspaces` 目录簿（仅展示，不参与解析）；唯一解析点 `resolve_workspace(conversation_id)` 与四处消费点同源；ToolBox 不解析工作区；遗留全局值直接作废（不迁移）；会话内切换（不必进设置页）；切换即失效该会话会话级授权；解析结果同时作为未来 MCP `roots` 的唯一输入 | I38h | ✅ 已完成（2026-11-09；代码与单测全绿，`contract:gen` / `typecheck` / `vitest` 通过；实机验收 C4.13 / C6.11 待补，不阻塞阶段关闭） | P5、P6 |
 | **P13 工具结果紧凑信封（compact）** | 把「一次工具结果长什么样」收敛为单一展示投影：三段信封（head / body / tail）、省略三态、口径分离、保留策略分裂（`head` / `tail` / `headTail`）、落盘生命周期（会话命名空间 + 启动年龄清理）、`compact` 增量 wire 字段（`Started.argsPreview` / `Finished.compact` / `Failed.compact` / `MessageToolCallDto.compact`）、历史重载重建与字节相等；**不改变 turn 事件语义、不改压缩投影与审批链** | I46 紧凑消息格式设计（参考记录，信封与门禁仍有效） | ✅ 已完成（2026-11-14；C1–C10 全部勾选，门禁 1–15 有测试映射，`cargo test --workspace` / clippy / fmt / typecheck / lint / vitest / `contract:check` 全绿；任务级进度见 I46 compact tasklist（已归档）） | P2、P5；I46 节点布局 P1 门已由本阶段关闭 |
-| **P14 沙箱执行层与 `shell` 工具** | 把「声明式权限」闭环成「内核强制边界」：`SandboxBackend` 抽象 + 平台后端（Windows Token+ACL+Job / Linux Landlock / macOS Seatbelt）+ 链式探测与 fail-closed；`shell` 工具（`execute` 意图、命令级审批键、进程级超时与杀进程树、输出截断）；审批卡片显示实际隔离强度 | [I52](./I52-shell-sandbox-spec.md) | 🚧 进行中（2026-11-18 开工；C1 审批链前置已验收（A6/A7/A8 通过）；C2–C4 沙箱准备由 I53 交付；下一批 C4b 输出存储与回读；任务级进度见 [I52 tasklist](./I52-shell-sandbox-tasklist.md)） | P2、P5、P6、P12 |
+| **P14 沙箱执行层与 `shell` 工具** | 把「声明式权限」闭环成「内核强制边界」：`SandboxBackend` 抽象 + 平台后端（Windows Token+ACL+Job / Linux Landlock / macOS Seatbelt）+ 链式探测与 fail-closed；`shell` 工具（`execute` 意图、命令级审批键、进程级超时与杀进程树、输出落盘与回读）；审批卡片显示实际隔离强度 | [I52](./I52-shell-sandbox-spec.md)（阶段）· [I56](./I56-shell-tool-spec.md)（工具） | 🚧 进行中（2026-11-18：C1 审批链前置与 C4b 输出存储/回读已验收（A6–A8、A19–A23 通过）；C2–C4 沙箱准备由 I53 交付；下一批 C5 工具本体，规格见 I56；任务级进度见 [I52 tasklist](./I52-shell-sandbox-tasklist.md)） | P2、P5、P6、P12 |
+| **P15 Turn 观测面** | 一轮 agent turn 的 12 个既有节点出声（单一 `agent-node-event` + 7 值节点状态闭集 + 三投影），供主窗口按 `(conversationId, turnId)` 渲染 orb agent 的完整执行过程；**只读事实、不参与控制**（观测 sink 不作控制通道；将来的编排器经独立控制端口接入，见 I55 §11）、不改既有事件语义 | [I55](./I55-agent-turn-observability-spec.md) | 🚧 进行中（2026-11-18 立项）：V0 立项完成，V1 出声（后端只加不改）开工；观测轴只读既有事实、不参与控制，不阻塞任何在途阶段；任务级进度见 [I55 tasklist](./I55-agent-turn-observability-tasklist.md) | P4（`TurnObserver` 已存在）、P6（`transport` 已接线） |
+| **P16 长行读取（有界水平窗口）** | 把 `read` 的「无界」收口成「有界 + 如实报告」，**不新增任何读取侧状态**：扫描宽限改字节口径 `EOF_GRACE_BYTES`（8 MiB）+ **整行计费**（预算耗尽时即使窗口未满也停）；超长行带截断标记、`data` 增 `truncatedLines`；footer 增 `[long-lines]`；`ReadReceipt` 增 `truncated_lines` / `line_window_max_chars` 并驱动 `edit` fail-closed 闸门；**不做**行内水平窗口（`column` / `maxLineChars` 已移交 P17，I57 §0.1）、行索引 / seek / 精确 `totalLines`（I57 §9 L1 / L3 / L6 / L7 是边界，不是缺陷） | [I57](./I57-long-line-read-spec.md) | ✅ 已完成（2026-11-18；T1–T4 全部勾选，G1–G8 / G10–G12 有测试映射，`cargo test -p assistant-tools` 全绿、clippy 无警告、fmt 无 diff；P17 的 T2–T6 前置解除；任务级进度见 [I57 tasklist](./I57-long-line-read-tasklist.md)） | P5、P13 |
+| **P17 超级工具（能力发现与索引型读取）** | 新增三个工具：`request_tool`（`Tool::manual()` + 本轮可用集透传，按需返回清单与手册，**不改变本轮工具集**）、`super_read`（落盘行索引 + 按行 `seek` + 精确 `totalLines` + `unit: char\|byte`）、`super_edit`（行地址区间替换 + `expected` 校验，不做子串匹配）；索引目录 / revision 失效 / 单飞 / 容量淘汰；**契约对齐、实现独立**（I58 §0.3）：B 自写扫描 / 渲染 / 索引，只对齐 P16 的行格式字面量、footer 标记集、`data` 键名与回执字段，`data` 只增 `index` 一项并回写 I57 §3.3 | [I58](./I58-super-tool-spec.md) | 🚧 进行中（2026-11-18：T1 能力发现已落地并通过 G1–G5（`cargo test -p assistant-tools --test request_tool` 10/10）；T2–T6 无 P16 实现依赖、可开工；任务级进度见 [I58 tasklist](./I58-super-tool-tasklist.md)。2026-11-19：T7 准入语义 + 伴随展示已落地；T8 升级通道契约与实现已落地（`ToolEscalationPort` / `EscalationSink` / 轮内尾部追加 / 适配器装配），G21·G22·G4·G23 用例待补） | P2、P4、P5、P13（格式字面量对齐 I57，非实现依赖） |
 
 **P0 的完成判据**（P0 时点复核；后续 P5/P6 新增工具不改变该判据的时点含义）：`assistant-agent` 与前端不再持有 chat tool call 累积器与渲染组件；`ToolRegistry` 具备 `<=` 语义与受众过滤；`os_tool_exec` 已走 `exec::invoke`；P0 时点生产注册表只有 `fs_link`（`TOOLBOX_ONLY`）。
 
@@ -45,7 +48,7 @@
 
 参考项目（DeepSeek Harness、Codex、Goose、OpenBitFun、OpenHuman）都在单 agent 闭环之上提供了会话级编排能力。本表只登记候选，**不改变 §2 的 P0–P7 门禁**；任何候选开工前必须先按 §7 第 5 条修改本文 §2/§3，再写 spec。
 
-P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8.2 仍以 P8.1 为前提，P8.1 暂缓期间 P8.2 不得开工。P10 已立项（规格 [I38g](./I38g-agent-approval-advisor-spec.md)，后续轴）；P15 规格已留档但**未立项**（[I55](./I55-agent-turn-observability-spec.md)，观测轴：只读既有事实、不参与控制，见本表末行）。P8.2–P9 属「会话编排」轴，P10 属「审批链」轴，P11 属「工具能力」轴，P12 属「环境（工作区）」轴，P15 属「观测」轴，五条轴不互相前置。
+P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8.2 仍以 P8.1 为前提，P8.1 暂缓期间 P8.2 不得开工。P10 已立项（规格 [I38g](./I38g-agent-approval-advisor-spec.md)，后续轴）；P15 **已立项**（2026-11-18，见 §2，规格 [I55](./I55-agent-turn-observability-spec.md)，观测轴：只读既有事实、不参与控制，范围约束见本节末）。P8.2–P9 属「会话编排」轴，P10 属「审批链」轴，P11 属「工具能力」轴，P12 属「环境（工作区）」轴，P15 属「观测」轴，五条轴不互相前置。
 
 工作区（原 I38d §4.9（已归档）的推迟项，早期口径挂 P8.2）已于 2026-11-09 **提取为独立阶段 P12**（见 §2，规格 I38h（已归档））：它只依赖 P5 + P6，与 P8.1 无关，不应被 P8.1 的暂缓连带阻塞。
 
@@ -56,7 +59,6 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | **P9 continuity** | 重启恢复、Watchdog、事件唤醒与主动执行；**后台任务**（进程归属上移，改动面见 [I52-Ext](./I52-ext-background-task.md)，未立项） | DSH goal / schedule / webhook；OpenHuman `reaper.rs` | 单独 ADR；I36 D13b |
 | **P11 多编码工具支持** | 文件工具（`read` / `write` / `edit` / `grep`）支持非 UTF-8 文本：自动检测（BOM → UTF-8 → 二进制 → chardetng）、按原编码写回、footer 一次性呈现、`grep` 显式 `encoding` + 零命中探测 | ripgrep `searcher`（`DecodeReaderBytes` / `Encoding` / `binary_detection`）；encoding_rs_io；helix `document.rs`（BOM → chardetng → 按原编码保存） | P5（工具面已上线）；规格见 I38c §14（已归档）；任务见 C9（已归档）；**C9 已全部完成（2026-11-07）** |
 | **P8.1 子代理（可选，暂缓接入）** | `spawn_agent` 作为工具接入 ToolPipeline；父 turn 内一次性只读委派；`max_depth = 1`、结果摘要回父；规格已留档于 [I38f](./I38f-agent-subagent-spec.md)，**当前不进入 §2 / §3** | DSH `ctx.subagents`；Codex collaboration tools；Goose `SubagentRunner` | P4、P5；I36 D16-D18；**恢复实施前需重新立项** |
-| **P15 Turn 观测面（候选，未立项）** | 一轮 agent turn 的 12 个既有节点出声（单一 `agent-node-event` + 7 值节点状态闭集 + 三投影），供主窗口按 `(conversationId, turnId)` 渲染 orb agent 的完整执行过程；**只读事实、不参与控制**（观测 sink 不作控制通道；将来的编排器经独立控制端口接入，见 I55 §11）、不改既有事件语义；规格已留档于 [I55](./I55-agent-turn-observability-spec.md) | n8n 逐节点执行投影（`executionStatusByNodeId`）；ComfyUI `NodeState`；DSH 微内核事件分类与子代理生命周期事件 | P4（`TurnObserver` 已存在）、P6（`transport` 已接线）；与 P8.1 / P10 / P14 无前置关系；**开工前需先按 §7 第 5 条进入 §2** |
 
 **范围约束**：
 
@@ -88,6 +90,9 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | P13 → P14 | `shell` 结果的 `compact` 信封只消费既有 `data`（退出码 / 输出规模），不新增 wire 字段 |
 | P14 → P9 | P14 交付的 `kill_tree` 幂等、`persisted` 输出域与 `enforcement` 审批键是后台任务的可复用资产；但进程归属与终态语义必须由 P9 重新持有（改动面与前置见 [I52-Ext](./I52-ext-background-task.md)），P14 不预留 |
 | P4 + P6 → P15 | 观测面复用 P4 的 `TurnObserver`（已有 4 个方法，只加 1 个）与 P6 的 `transport` / `turnOrchestrator` 分层；只加方法与事件，不改既有事件语义（I55 O8），因此不阻塞任何在途阶段 |
+| P5 + P13 → P16 | 水平窗口复用 P5 的 `read` 分块扫描（`window.rs`）与 `append` 截断点；`[truncated: …]` 四态与 `data` 开放 JSON 口径取自 P13（不新增 wire 字段、无 DTO 变更、前端零改动） |
+| P4 + P5 + P13 → P17（T1） | `request_tool` 的可用集取自 P4 已持有的 `TurnRunCtx.tools`（`Option<&[ToolSpec]>`），其生产者是 P5 的 `resolve_available_tools`；`super_read` / `super_edit` 复用 P2 的 Pipeline 与回执存储（`ReadReceiptStore`）、P13 的落盘与预览口径 |
+| P16 → P17（T2–T6） | **只是格式对齐，不是实现依赖**（I58 §0.3「契约对齐、实现独立」）：P17 自写扫描 / 渲染 / 索引，只须保证行格式**字面量**（`{number:>6}` + `\t`、` [truncated]`）、footer 标记集、`data` 既有键名与 `ReadReceipt` 字段与 P16 一致，否则 `edit` 的前缀剥离与闸门会失效（I58 §12 R6）。P16 已完成，无排期阻塞 |
 
 **可并行**：P1 完成后，P2 与 P3 可并行（一个改 `assistant-tools`，一个改 `assistant-agent`，无文件交叠）。P5 在 P2 完成后可与 P3/P4 并行。
 
@@ -110,10 +115,16 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | P8.1 子代理（`spawn_agent` / 子作用域 / 取消树 / 结果回传；**可选，暂缓接入**） | [I38f](./I38f-agent-subagent-spec.md) | 可选实施规格 |
 | P10 AI 审批顾问（`EscalateOnly` / `RelaxOnly` / 审计与度量） | [I38g](./I38g-agent-approval-advisor-spec.md) | 实施规格 |
 | P12 工作区（会话绑定 / 目录簿 / 唯一解析点） | I38h（已归档） | 实施规格 |
-| P14 沙箱执行层与 `shell` 工具（后端抽象 / 链式探测 / 命令级审批键 / 隔离强度上报） | [I52](./I52-shell-sandbox-spec.md) | 实施规格 |
+| P14 阶段规格（沙箱执行层：范围 / 术语分层 / 分批 / 阶段验收归属） | [I52](./I52-shell-sandbox-spec.md) | 阶段规格 |
+| P14 `shell` 工具规格（身份 / 输入 / 审批键 / 执行 / 输出与回读 / 失败矩阵 / 文案 / 验收 A6–A36） | [I56](./I56-shell-tool-spec.md) | 实施规格（工具侧唯一来源） |
 | P14 任务级进度（C1–C8 勾选） | [I52 tasklist](./I52-shell-sandbox-tasklist.md) | 任务清单（唯一任务级进度） |
 | P14 阶段扩展：后台任务改动面（E1–E8 / 接口约定 / 立项前置 G1–G6；**未立项**） | [I52-Ext](./I52-ext-background-task.md) | 阶段扩展登记 |
-| P15 Turn 观测面（节点级事件 / 7 值节点状态闭集 / 三投影 / 回放形态；**未立项**） | [I55](./I55-agent-turn-observability-spec.md) | 实施规格（候选） |
+| P15 Turn 观测面（节点级事件 / 7 值节点状态闭集 / 三投影 / 回放形态） | [I55](./I55-agent-turn-observability-spec.md) | 实施规格 |
+| P15 任务级进度（V0–V3 勾选） | [I55 tasklist](./I55-agent-turn-observability-tasklist.md) | 任务清单（唯一任务级进度） |
+| P16 长行读取规格（水平窗口 / 字节口径扫描宽限 / 截断报告 / 回执与 `edit` 闸门 / 门禁 G1–G12） | [I57](./I57-long-line-read-spec.md) | 实施规格（`read` 长行与扫描收口唯一来源） |
+| P16 任务级进度（T1–T4 勾选） | [I57 tasklist](./I57-long-line-read-tasklist.md) | 任务清单（唯一任务级进度） |
+| P17 超级工具规格（`request_tool` / `super_read` / `super_edit` / 索引生命周期 / 失败矩阵 / 门禁 G1–G23） | [I58](./I58-super-tool-spec.md) | 实施规格（三个新工具唯一来源；与 I57 逐节对齐） |
+| P17 任务级进度（T1–T8 勾选） | [I58 tasklist](./I58-super-tool-tasklist.md) | 任务清单（唯一任务级进度） |
 | assistant 消息身份指示（头像 / 模式 / 模型、消息级 `mode_id`） | I43-assistant-identity-spec.md（已归档） | 实施规格 |
 | 模型能力事实（三态 + 来源 + 主体 key；内容/列表/推理三处止损） | I45-model-capability-facts-spec.md（已归档） | 实施规格 |
 | 模型能力事实任务级进度（C1–C3 勾选） | I45 tasklist（已归档） | 任务清单（唯一任务级进度） |

@@ -4,15 +4,17 @@
 |---|---|
 | 状态 | 草稿（观测面规格；不含图编排器、不含画布交互） |
 | 日期 | 2026-11-18 |
-| 关联 | [I36a Agent 内核基线](./I36a-agent-kernel-baseline.md)（内核分层与「必须动内核」清单）、[I38 Agent 阶段总纲](./I38-agent-roadmap.md)（阶段门禁唯一台账）、[I38f 子代理规格](./I38f-agent-subagent-spec.md)（`agent_id` / `parent_turn_id` / `delegation_depth` 的语义来源）、[I54 资源监视器规格](./I54-resource-monitor-spec.md)（「不得用 0 冒充读不到」的显示口径）、[CODE-SPLIT-PRINCIPLE](../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则唯一来源，本文只引用不复述） |
-| 影响范围 | 后端：`src-tauri/crates/assistant-agent/src/agent/round_executor.rs`（`TurnObserver` 加一方法）、`src-tauri/crates/assistant-agent/src/kernel/ports/mod.rs`（`TurnEvent` 加一变体）、`src-tauri/crates/assistant-agent/src/kernel/turn/emit.rs`（`TurnEmitter` 加一入口）、新增 `src-tauri/crates/assistant-agent/src/agent/node_event.rs`、`src-tauri/crates/assistant-agent/src/agent/loop_executor/{mod,call,execute,persist}.rs`（12 处出声点）、`src-tauri/crates/assistant-agent/src/agent/middleware.rs`（阶梯与 `after_tool` 裁决）、`src-tauri/crates/assistant-agent/src/agent/stop.rs`（刹车裁决）、`src-tauri/crates/assistant-tools/src/runtime/pipeline.rs`（`PipelineEvent` 加 `StageEntered`）、`src-tauri/src/protocol/dto/agent.rs`、`src-tauri/src/protocol/events.rs`、`src-tauri/src/adapters/event_sink.rs`。前端：`src/types/protocol.contract.ts`（生成，禁止手改）、`src/services/stream/transport.ts`（去掉活跃会话过滤）、新增 `src/stores/agent/observation/`、新增 `src/services/stream/observation.ts`。文档：本文 + [I38](./I38-agent-roadmap.md) §2.1 候选行 / §3 依赖行 / §4 文档地图（已登记为**未立项候选 P15**）。 |
+| 关联 | [I55 任务清单](./I55-agent-turn-observability-tasklist.md)（V0–V3 任务拆解与验收；任务级进度只在其中勾选）、[I36a Agent 内核基线](./I36a-agent-kernel-baseline.md)（内核分层与「必须动内核」清单）、[I38 Agent 阶段总纲](./I38-agent-roadmap.md)（阶段门禁唯一台账）、[I38f 子代理规格](./I38f-agent-subagent-spec.md)（`agent_id` / `parent_turn_id` / `delegation_depth` 的语义来源）、[I54 资源监视器规格](./I54-resource-monitor-spec.md)（「不得用 0 冒充读不到」的显示口径）、[CODE-SPLIT-PRINCIPLE](../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则唯一来源，本文只引用不复述） |
+| 影响范围 | 后端：`src-tauri/crates/assistant-agent/src/agent/round_executor.rs`（`TurnObserver` 加一方法）、`src-tauri/crates/assistant-agent/src/kernel/ports/mod.rs`（`TurnEvent` 加一变体）、`src-tauri/crates/assistant-agent/src/kernel/turn/emit.rs`（`TurnEmitter` 加一入口）、新增 `src-tauri/crates/assistant-agent/src/agent/node_event.rs`、`src-tauri/crates/assistant-agent/src/agent/loop_executor/{mod,call,execute,persist}.rs`（12 处出声点）、`src-tauri/crates/assistant-agent/src/agent/middleware.rs`（阶梯与 `after_tool` 裁决）、`src-tauri/crates/assistant-agent/src/agent/stop.rs`（刹车裁决）、`src-tauri/crates/assistant-tools/src/runtime/pipeline.rs`（`PipelineEvent` 加 `StageEntered`）、`src-tauri/src/protocol/dto/agent.rs`、`src-tauri/src/protocol/events.rs`、`src-tauri/src/adapters/event_sink.rs`。前端：`src/types/protocol.contract.ts`（生成，禁止手改）、`src/chat/core/chatTypes.ts`（`ChatEvent` 增 `agent-node-event`）、`src/services/stream/transport.ts`（增节点事件监听、去掉 `agent-tool-call` 的活跃会话过滤）、`src/services/chat/chatStreamEvents.ts`、`src/services/stream/turnOrchestrator.ts`、新增 `src/stores/agent/observation/`（store / reducer / template / restore / projections）、新增 `src/features/observation/`（画布与 inspector）。文档：本文 + [I38](./I38-agent-roadmap.md) §2.1 候选行 / §3 依赖行 / §4 文档地图（已登记为**未立项候选 P15**）。 |
 | 参考实现 | deepseek-harness（微内核事件分类体系 / GUI 分层与 RPC 四象限 / 子代理生命周期事件）、ComfyUI（`NodeState` + `value/max` 进度）、n8n（`ExecutionStatus` 八值 + 按 `executionId` 键控的执行数据 store 与逐节点投影）、langgraph（检查点回放）。以上均为稀疏检出的参考项目，不在仓内；本文标注「参考实现」的形态判断分别出自上述条目，不外推到未检出的部分。 |
 
 > 一句话：本规格**不新建编排器**，只把「一轮 agent turn 已经发生的事」补成可被图渲染消费的完整观测面——内核在 12 个既有节点上出声，wire 只增加一族事件，前端只增加一层按 `(conversationId, turnId)` 键控的投影存储；三者都不改变现有对话链路的行为，也**不阻挡将来的编排器**（编排器是同一份事件流的只读订阅者 + 独立控制端口，见 §11）。
+>
+> 一句话的边界：它是**节点级事件日志**，不是全保真执行追踪。节点边界的**状态迁移是实测**，`pending` / `skipped` / 圈数 / 恢复态是**推导**；两者的区别由 §6.6 的 `source` 显式标注，不靠用户猜。需要「节点内部连续过程」的地方用 `transition: false` 的过程事实（§4.6 第 5 条）承载，绝不借状态通道。
 
 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离需在代码注释里写明理由。
 
-**编号约定**：`N1–N18` 是现状事实；`O1–O10` 是不变式（观测面自身的约束）；`G1–G11` 是门禁；`V1–V4` 是交付批次。节点编号沿用现行口头口径 ①–⑫，与 [I38](./I38-agent-roadmap.md) 的 `RoundExecutor` 术语一致。
+**编号约定**：`N1–N18` 是现状事实；`O1–O11` 是不变式（观测面自身的约束）；`G1–G14` 是门禁；`V1–V4` 是交付批次。节点编号沿用现行口头口径 ①–⑫，与 [I38](./I38-agent-roadmap.md) 的 `RoundExecutor` 术语一致。
 
 ---
 
@@ -100,12 +102,14 @@
 
 **投影不是唯一的消费形态**：编排器接入后，它会直接消费**原始事件**（而非任何投影），因为投影是为「人看」而裁剪过的，丢失了编排需要的标识与因果。所以原始事件必须自带完整标识（§11.4 第 1 条），不能指望从投影反推。
 
+**投影是纯函数，但「谁在什么时候调用它」不是自由的**：折叠（写入事实副本）逐事件同步完成，投影（读取）可按帧合并、由统一节流层驱动，且无变化时必须返回原引用以抑制下游重算（O11）。这三条调度约束见 §6.7——它们与 §6.2 的「纯函数」不矛盾：纯函数保证可测试，调度保证在事件密度下不浪费。
+
 ### 2.4 不变式
 
 | # | 不变式 | 违反的后果 | 守住它的地方 |
 |---|---|---|---|
 | **O1** | **单一事实源**：节点状态只能由 `agent-node-event` 产生；禁止从既有 turn 级事件反推节点状态 | 两套推导必然漂移，图与实际执行不一致且无法定位谁的错 | §4.6（`pending` 不发事件、`skipped` 由 `branch` 批量标记）；唯一例外是 §6.4 的恢复映射，且只允许出现在一个函数里 |
-| **O2** | **终态不可覆盖**：每个 `(node, iteration)` 恰好一条终态事件，写入后不得修改 | 图会在完成后「倒退」，用户无法信任 | 写侧：§4.6 第 4 条；读侧：reducer 丢弃终态后的事件并记日志（G4） |
+| **O2** | **终态不可覆盖**：每个 `(node, iteration)` 恰好一条终态事件，写入后不得修改。唯一例外是 `persist-assistant`：同一迭代内可能写多行 assistant（行已 `finalize` 后只能新建行，见 `persist_final_text` 的择行规则），此时允许同迭代多条 `finished`，但**状态值恒为终态**、reducer 只累加 `rows` / `messageIds`，不覆盖状态 | 图会在完成后「倒退」，用户无法信任 | 写侧：§4.6 第 4 条；读侧：reducer 丢弃终态后的状态变更并记日志（G4），仅 `persist-assistant` 的 detail 累加 |
 | **O3** | **序列唯一**：`seq` 与 `Delta` 共用同一单调计数器，无重复、无回退 | 时间线投影无法把增量与节点事实对齐 | `TurnEmitter` 是唯一分配点（N2）；executor 不持 `EventSink`（N3） |
 | **O4** | **模板静态**：节点表 / 边表 / 出口表是编译期常量，不进 wire、不由后端下发 | 首帧无法布局；模板漂移静默改变 UI | §3.3；G2 用单测锁死集合相等 |
 | **O5** | **不造第二载体**：`waiting`、工具相位、工具阶段分别复用既有载体（N5 / N6），禁止为同一事实并行新增事件 | 双源必然不同步，前端要写两套合并逻辑 | §5.2、§4.7；新增的 `StageEntered` 是「进入阶段」这一**新事实**，不是既有终态阶段的重复 |
@@ -114,6 +118,7 @@
 | **O8** | **新增不改旧语义**：既有事件字段与消费方行为保持不变 | 对话链路回归，且回归点分散在 5 个事件 | §4.7；G10 |
 | **O9** | **失败隔离**：观测面的任何失败（sink 失败、前端解码失败、存储淘汰）不得影响 turn 完成与对话渲染 | 观测拖垮主链路——这是观测面最不可接受的失效模式 | 写侧 N2；读侧 §4.8；G5 / G8 |
 | **O10** | **控制与观测分离**：跨 turn / 跨节点的控制决策（调度、取消、重试策略）必须经**独立控制端口**；`agent-node-event` 及其 sink 永远只是只读输入，不得被赋予改写、回执或调度能力 | 观测面被改造成控制通道后，既失去失败隔离，也无法同时服务「视图」与「调度」两类需求不同的消费者 | §11.2；G11 |
+| **O11** | **变更抑制**：折叠在「事件未产生任何可观测变化」时必须返回**原状态引用**（不造新对象），下游一律以引用相等（`Object.is`）判定是否重算投影 | 每条事件都触发全部视图全量重算；一个 10 迭代的 turn 每秒数十条事件即数百次重算，而其中绝大多数输出与上次逐字段相同，画布开销与事件密度线性挂钩 | §6.7 第 2 条；G14 |
 
 ---
 
@@ -198,6 +203,7 @@ pub struct AgentNodeEvent {
     pub node: AgentNode,
     pub iteration: u32,                 // 迭代内节点从 1 起；迭代外节点为 0
     pub state: NodeState,
+    pub transition: bool,               // true = 构成状态迁移；false = 仅过程事实（只进时间线，不改格子状态）
     pub at_ms: u64,                     // 相对 turn 起点的毫秒，取自 Clock 端口
     pub agent_id: String,               // 预留：当前恒 "root"（N17），子代理/编排器接入后非 root
     pub parent_turn_id: Option<String>, // 预留：当前恒 None；`Option` 不加 `skip_serializing_if`（键恒在、值 null）
@@ -208,6 +214,10 @@ pub struct AgentNodeEvent {
 wire DTO 同形（`AgentNodeEventDto`），字段 `camelCase`，`detail` 用 `kind` 标签的闭集 union。
 
 **`conversation_id` 与 `agent_id` / `parent_turn_id` 是「路由键」，不是展示字段**：前端用前两个键定位实例，将来的编排器用后两个键把事件归到自己的调度单元（§11.4 第 1 条）。三个键都必须在 V1 就存在——补键是 wire 破坏性变更，补值不是。
+
+**`transition` 是「这条事件是否改变格子状态」的显式声明，不是可由前端推测的冗余位**：`true` 只允许出现在 §5.1 迁移表的合法迁移上；`false` 专用于「节点内部的子阶段进入」这类**过程事实**（当前只有 `pipeline` 的 `StageEntered`，见 §4.6 第 5 条）。若缺这个字段，`pipeline` 的 5 个子阶段就只能借 `state: running` 表达，于是同一 `(node, iteration)` 会收到 5N 条 `running`，`sinceMs` 被反复重置（§5.3 的「已持续时长」失真），并直接违反 §4.6 第 3 条。
+
+**`transition` 与前端 `source`（§6.6）正交，禁止互相替代**：前者是后端对「本事件改不改状态」的声明，后者是前端对「该格子当前值的证据等级」的标注。一个是写侧语义，一个是读侧可信度。
 
 **`seq` 必须与 `Delta` 共用同一个计数器**：两者混排才有意义——「第 37 条增量落在 `model` 节点的 `running` 期内」是时间线投影的核心判据。若各用一套计数器，两个序列无法对齐。
 
@@ -252,6 +262,8 @@ wire DTO 同形（`AgentNodeEventDto`），字段 `camelCase`，`detail` 用 `ki
 
 **`PipelineStage` 复用 `ToolStage` 的 5 值**（N6 已有 `Find` / `Validate` / `Gateway` / `Execute` / `Persist`），不新造枚举。语义差别只在「终态阶段」与「进入阶段」：前者已存在，后者由本规格新增的 `PipelineEvent::StageEntered` 提供（§4.7）。
 
+**`stage` / `index` / `total` 只出现在 `StageEntered` 上，终态事件恒 `None`**：⑨ `pipeline` 的 `finished` / `error` / `cancelled` 不携带子阶段信息（一次执行有多个子阶段与多个并发调用，塞进单值字段只会得到「最后一个」的误导值）。因此 `PipelineDetail` 有两种形态：**过程形态**（`stage` + `index` / `total` + `toolName` / `toolCallId`，随 `transition: false`）与**终态形态**（全字段 `None`，随 `transition: true`）。`toolCallId` 在多调用批次里只能是 `Option`：它标识「当前正在进入子阶段的那一个调用」，而不是「本批次全部调用」。
+
 **`LadderDetail.applied` 的事实来源已有**：`MiddlewareChain::names()` 返回「已注册的中间件名，顺序即执行顺序」，因此 `applied` 不需要新造清单，只需在链执行时记录「实际改写过请求」的那些项（见 Q2）。
 
 ### 4.5 M 级与 D 级的划分
@@ -270,7 +282,8 @@ D 级字段示例：`ladder` 的 `estTokensAfter`、`model` 的 `ttftMs`、`pipe
 1. **`pending` 不发事件**：图投影在收到某个节点的第一条 `running` 时，用**静态模板**推导「同迭代中排在它后面的节点仍是 pending」，不依赖后端补发（O4 的直接收益）；
 2. **`skipped` 由 ⑦ `branch` 一次性批量标记**：`branch` 的 `finished` 事件携带 `BranchDetail`，前端据此把 ⑧–⑫ 全部标为 `skipped`；
 3. **`running` 每条节点每次迭代只发一次**；重试不重发 `running`，而是更新 `ModelDetail.attempt`（`model` 节点用 `waiting` 表示内层重试等待）；
-4. **`finished` / `error` 每条节点每次迭代恰好一条**（O2 的写侧保证）。
+4. **`finished` / `error` / `cancelled` 每条节点每次迭代恰好一条**（O2 的写侧保证）。唯一例外是 `persist-assistant`：一行已 `finalize` 后只能新建行，因此同一迭代可能落库多行（收尾 / 取消 / 预算中止路径），此时按**每次落库**发一条 `finished`（`rows = 1`、`messageIds = [行 id]`），**不重发 `running`**；reducer 按 detail 累加，状态值保持终态（O2 例外条）。
+5. **过程事实发 `transition: false`，不借状态通道**：`pipeline` 的 5 个子阶段进入（`StageEntered`）携带 `state` 只为让事件形状保持单一，但 `transition: false` 明确表示**不改格子状态、不重置 `sinceMs`**，reducer 只把它写入 `timeline`。⑨ 的 `running` / `finished` / `error` / `cancelled` 仍由 `execute_tools` 单点发且 `transition: true`。没有这条，「每节点每迭代一条 `running`」与「子阶段可观测」不可兼得——两者的唯一出路是让 `running` 兼职承载进度，代价是 `sinceMs` 失真（§5.3）。
 
 ### 4.7 与既有事件的关系
 
@@ -334,13 +347,15 @@ D 级字段示例：`ladder` 的 `estTokensAfter`、`model` 的 `ttftMs`、`pipe
 
 **V1 的替代**：图投影用「节点是否 running + 已持续时长（`atMs` 差）」表达进行中，**不画百分比**。V2 若引入进度，必须同时给出分母来源与「未知分母」的显示形态，禁止用 `0/0`。
 
+**「已持续时长」有三个可信前提**，缺一个就不许显示：① `running` 每条每迭代只发一次（§4.6 第 3 条）；② 过程事实（`transition: false`）不重置基准（§4.6 第 5 条）；③ 该格子是 `observed` 而非 `assumed`（§6.6）——恢复映射点亮的格子只有「看起来在跑」，起点是猜的。
+
 ### 5.4 圈数
 
 `iteration` 是图上的「第几圈」徽标。规则：
 
 1. 迭代外节点（`admit` / `prepare`）的 `iteration` 恒为 0，渲染时不带徽标；
 2. 迭代内节点的 `iteration` 从 1 起，**与 `chat-stream-start` 的 `iteration` 同源**，不得各自推算；
-3. 回边 A 的圈数 = 当前最大 `iteration`，由图投影从事件里取最大值得到，不由后端下发。
+3. 回边 A 的圈数 = 当前最大 `iteration`，由图投影从事件里取最大值得到，不由后端下发；该值 `source = derived`（§6.6），inspector 必须标「推导值」，不得当成实测圈数展示。
 
 ---
 
@@ -387,13 +402,15 @@ interface NodeCell {
 
 三者**都是纯函数**，输入同一份 `TurnObservation`，输出互不引用。这条保证「加一个视图」不需要改存储。
 
+纯度只解决「可测试」，不解决「调用开销」：投影什么时候被调用、调几次，由 §6.7 的调度约束规定（单订阅驱动、引用相等抑制、按帧合并）。
+
 ### 6.3 后台实例
 
 **现状缺陷（N10）**：`transport.ts` 对 `agent-tool-call` 与 `chat-user-message-confirmed` 都做了活跃会话过滤（`handlers.getActiveConversationId() === payload.conversationId` 不成立即丢弃），导致切走后台上限内的工具事件被丢弃。修法：
 
 1. 传输层**不再按活跃会话丢弃**，改为**总是**把事件写入观测存储；`chat-user-message-confirmed` 保留过滤（它只影响当前会话的占位消息归属，与图无关）；
 2. 「是否影响当前可见对话」的判定上移到策略层（`strategyFor` 已经是唯一判据点，N12 的纪律不变）；
-3. 保留一个**容量上限**：观测存储最多保留 N 个 `observationKey`（建议 32），按「最近有事件」LRU 淘汰，淘汰时只丢 `cells` 与 `timeline`，保留 `status` 摘要。
+3. 保留一个**容量上限**：观测存储最多保留 N 个 `observationKey`（建议 32），按「最近有事件」LRU 淘汰，淘汰时只丢 `cells` 与 `timeline`，保留 `status` 摘要；单个实例内部的时间线与事实条数上限另见 §6.7 第 5 条（两级上限管的是两件事：实例数量与单实例体积）。
 
 **禁止**在传输层做任何 `route.link` 判断（既有纪律）；会话级过滤属于编排层。
 
@@ -430,6 +447,61 @@ interface NodeCell {
 理由：观测面一旦参与控制，它就从「事实镜像」变成「第二套状态机」，与内核状态机必然漂移。
 
 本节约束的是**前端观测存储**；将来的编排器同样不得读取它来做控制决策（O10）——编排器若需要事实，应订阅 wire 原始事件，而不是读前端折叠后的投影（§11.4 第 5 条）。
+
+### 6.6 忠实度标注（`source`）
+
+本观测面**不是全保真的执行追踪**：节点边界的状态迁移是真实采样，`pending` / `skipped` / 圈数 / 恢复态是推导。若不在存储里区分这两类，画布上「我看到了」与「我推出来的」就是同一种视觉，用户无法审计。
+
+| `source` | 含义 | 产生方式 |
+|---|---|---|
+| `observed` | 由 `agent-node-event` 的 `transition: true` 直接写入 | reducer 收到状态迁移事件 |
+| `derived` | 由静态模板（`pending`）/ ⑦ 的 `BranchDetail`（`skipped`）/ `max(iteration)`（圈数）推出 | reducer 或投影在无对应事件时补齐 |
+| `assumed` | 由恢复映射（`nodeFromPhase` / `onPendingToolCalls`）点亮 | 窗口重载 / 切会话补拉（§6.4） |
+
+规则：
+
+1. **不进 wire**：`source` 完全由前端本地推导，后端不发这个字段（O4：模板与推导规则都是编译期常量，不需要往返）；
+2. **可升级不可降级**：格子一旦收到 `transition: true` 的事件，`source` 从 `derived` / `assumed` 升为 `observed`，此后不再回退。这与 O2 无关——O2 管**状态值**，`source` 管**证据等级**；
+3. **必须可见**：格子徽标与 inspector 都要显示 `source`；`derived` / `assumed` **禁止**与 `observed` 同形渲染；
+4. **`assumed` 不参与量化**：耗时分解（§6.2 的 `projectTurnSummary`）必须跳过 `assumed` 格子的 `sinceMs`（§5.3 第三个前提）；
+5. **`derived` 允许为假且不纠正值**：`skipped` 的批量标记依赖 ⑦ 的判断，若 ⑦ 之后走了未预料的出口（取消 / 预算中止），`derived` 的 `skipped` 可能与事实不符。此类冲突**不改值**，只在 inspector 标「推导值」，并把矛盾写进时间线（与 §4.7 的 `session-state-changed` 粗校验同口径）。
+
+**这不是新增载体**（O5）：`source` 是既有格子的附加标注，不产生第二份状态，也不参与任何判定（O6 / O7）。
+
+**`source` 不能弥补的固定缺口**（这些在图上表现为「格子缺失」而非「格子错误」，必须由文档明示而非让用户猜）：
+
+| 缺口 | 成因 | 图上表现 |
+|---|---|---|
+| 被拒绝的 turn（`Busy`） | 准入失败不发声（Q1） | 无实例，不是 `error` |
+| 被取代 turn 的尾部事件 | 代际不符静默丢弃（§4.8 第 1 条） | 时间线中途截断且无标记 |
+| sink 失败丢掉的事件 | 失败隔离优先于完整性（O9 / G5） | 格子停在最后一条成功事件的状态 |
+| 压缩 turn 的「不适用」节点 | 复用同一模板，只点亮部分节点（Q5） | 与「未执行」同为 `pending` |
+
+要区分最后一行需要「适用性」这一新事实，属 V3 之后的可选扩展；V1 / V2 不做，也不预留字段（预留字段即隐性承诺）。
+
+### 6.7 投影调度与变更抑制
+
+§6.2 保证三投影是纯函数，但没有回答「谁在什么时候调用它们」。在事件密度下，这个问题比纯度更影响可用性：一个 10 迭代、每迭代 5 条子阶段事实的 turn 会产出约 5N 条 `transition: false` 事件，叠加 `chat-delta` 后每秒可达数十条，而每条事件都触发 12 格 × 三投影的全量重算，其中绝大多数输出与上一次逐字段相同。
+
+参考实现给出三条可借用的机制：
+
+| 机制 | 参考来源 | 本项目落地 |
+|---|---|---|
+| **单订阅全局驱动**：一份事件流只挂一个订阅，eager 折叠进存储；视图按需读投影，不各自订阅 | deepseek-harness `session-projection`（「框架驱动、领域计算」分离 + 单订阅 eager 驱动） | 传输层只有一个 `onNodeEvent` → 一次 `applyNodeEvent`；禁止每个视图模块各挂 `listen` |
+| **引用相等抑制**：折叠无变化时返回原状态引用，下游以 `Object.is` 跳过重算 | deepseek-harness `session-turn-outline/src/projection.ts`（非相关事件直接 `return state`） | 立为不变式 O11；`applyNodeEvent` / `applyDeltaSeq` / `applyToolCall` 的返回值契约 |
+| **廉价标记 + 节流重建**：每次变更只 bump 一个「最后更新时间」标记，昂贵的派生结构由节流 watcher 重建 | n8n `executionData.store.ts`（`executionResultDataLastUpdate` + `throttledWatch(rebuildExecutionRunDataOutputMap)`） | 折叠（`cells` / `timeline`）逐事件同步完成；三投影按帧合并（第 3 条） |
+
+规则：
+
+1. **折叠同步且完整，投影可合并**：`applyNodeEvent` / `applyDeltaSeq` / `applyToolCall` 必须**同步**处理每一个事件（不排队、不丢弃、不合并），因为它们写的是事实副本；`projectGraph` / `projectTimeline` / `projectTurnSummary` 允许**按帧合并**（同一帧内多次变更只重算一次），因为它们只读。
+2. **无变化必返原引用**（O11）：被终态保护丢弃的事件（G4）、未知取值、`persist-assistant` 重复 `finished` 中不改变 `rows` 的部分，一律 `return obs` 而非 `return { ...obs }`。判据是「`cells` 与 `timeline` 是否真的变了」，不是「是否进入了某个分支」——后者是最常见的误判来源（进了分支但什么都没改，仍造新对象，抑制完全失效）。
+3. **投影不各自订阅**：禁止 `GraphCanvas` / `InspectorPanel` 各自 `listen(agent-node-event)`。它们读 store 里同一份 `TurnObservation`，重算由统一节流层驱动。反例是 ComfyUI 的 `ProgressHandler`：每个 handler 被逐事件同步调用，handler 一慢就拖慢执行；本项目 handler 是前端纯函数，但**仍不允许逐事件同步重算**。
+4. **节流不等于丢事件**：合并只发生在「重算」这一步，不发生在「写入」这一步。因此时间线投影不会缺事实——只是同一帧内的多条事实一起出现在下一次重算里。这条与第 1 条互为一体：写入同步保证完整性，重算合并保证开销。
+5. **`timeline` 有界**：单实例最多保留 2000 条事实，超出后按固定顺序丢弃——先丢最早的过程事实（`transition: false`），再丢最早的非首条 `running`，**状态迁移的终态永不丢弃**。丢弃必须在 `timeline` 上留一条「已省略 N 条」的合成事实（`source = derived`），禁止静默截断（§6.6 的缺口明示口径）。这与 §7.2 的落库保留策略同口径（丢顺序确定、可解释），但两者独立：前端有界是为了内存，落库有界是为了表大小。
+
+**为什么不是「投影自带缓存」**：投影是纯函数（§6.2），缓存必须放在调用方（store 或渲染层）并以 `Object.is` 作失效判据；投影内部自缓存会引入隐藏状态，破坏「输入相同则输出相同」的可测试性，也让 V3 的回放等价性测试失去意义。
+
+**为什么不用深比较（`isEqual`）**：n8n 用它是因为它的状态是就地追加/替换的普通对象，不保证不可变。本项目的折叠产出的本来就是**不可变替换**（每格 `NodeCell` 变更即换新对象，未变更的格子复用原引用），所以引用相等已经足够，深比较是多余成本。
 
 ---
 
@@ -488,10 +560,19 @@ CREATE TABLE agent_node_events (
 | 轮次与步骤边界由持久会话事件拥有，不由 UI 事件拥有 | 同上 | 采纳：`chat-stream-start` / `Terminated` 仍是 turn 边界的唯一来源，节点事件不得充当边界 |
 | 注册表成员变化以类型化事件广播，消费方镜像而非假设顺序 | deepseek-harness 子代理生命周期事件 | 采纳其**精神**：节点集合变化靠静态模板（O4）+ 单测锁死（G2），不引入运行时注册表广播 |
 | 四象限消息模型（谁发起 × request/response），wire 可校验可对账 | deepseek-harness GUI 分层与 RPC 协议 | 部分采纳：本项目观测事件是**纯推送**（server → client 单向），四象限中的 ③ 单向推送格；不引入 rpcId/应答语义 |
+| 一份事件流只挂一个订阅，eager 折叠进状态；视图按需读投影而非各自订阅 | deepseek-harness `session-projection`（单订阅全局驱动） | 采纳：§6.7 第 1 / 3 条；禁止每个视图模块各挂 `listen` |
+| 折叠无变化时返回原状态引用，下游以 `Object.is` 抑制重算 | deepseek-harness `session-turn-outline/src/projection.ts` | 采纳为不变式 O11 + 门禁 G14：判据是「数据是否真的变了」，不是「是否进入了分支」 |
 | 节点状态四值 `pending` / `running` / `finished` / `error` + `value`/`max` 进度 | ComfyUI `comfy_execution/progress.py` | 采纳状态四值作为子集，扩展 `waiting` / `skipped` / `cancelled`；**不采纳**进度值（§5.3 给出理由） |
+| 单 registry + 多 handler，逐事件同步通知所有 handler | ComfyUI `ProgressRegistry` / `ProgressHandler` | 采纳「一份事实、多个消费者」；**不采纳**逐事件同步调用——handler 一慢就拖慢执行，故 §6.7 第 3 条要求投影按帧合并 |
+| 节点进入时无条件把进度 `value` 清零（`start_progress`） | ComfyUI `comfy_execution/progress.py` | **反例**：它不测时长，所以清零无代价；本项目按 `atMs` 差算「已持续时长」，同形实现会让子阶段进入反复重置基准，故必须用 `transition: false` 隔离（§4.6 第 5 条 / §5.3） |
 | 执行状态八值，且分「可崩溃覆盖的中间态」与「终态」 | n8n `execution-status.ts` | 采纳「中间态 vs 终态」的二分（§4.3 末条），不采纳 `unknown` / `crashed`（本项目无跨进程恢复语义） |
 | 按 `executionId` 键控的执行数据 store，画布只消费逐节点派生投影 | n8n `workflowExecutionState.store.ts` | 采纳：观测存储单例 + 纯函数投影（§6.1 / §6.2） |
+| 过程事实与状态迁移分**两个通道**：`executionStartedData` 纯追加、`runData` 按 `executionIndex` 原地替换 | n8n `executionData.store.ts` | 采纳其**分离意图**，不采纳其**双通道实现**：本项目只有一条 wire 流，故用 `transition` 字段在单流内分离（§4.2 / §4.6 第 5 条）——不同手段，同一目的 |
+| 同槽位允许多条任务堆叠，读侧靠「`canceled` 顶栈回看一条」修正真实终态 | 同上 `computeExecutionStatus` | **不采纳**：那是「允许追加」的补丁；本项目每槽位恰好一条终态（O2），不存在无意义顶栈，也就不需要回看规则 |
+| 处理层按「当前活跃执行」丢弃其他执行的事件 | n8n `nodeExecuteBefore` 的 `activeExecutionId` 过滤 | **不采纳**：本项目要求后台会话继续累积（G6），过滤只能上移到可见性策略层（§6.3） |
+| 变更抑制：`structuralComputed` + `isEqual` 深比较；昂贵派生 Map 由 `throttledWatch` 重建 | n8n `executionData.store.ts` | 采纳「廉价标记 + 节流重建」的分层（§6.7 第 3 条）；以引用相等（O11）替代深比较——本项目折叠产出的是不可变替换，深比较是多余成本 |
 | 检查点回放 | langgraph `checkpoint` | 采纳其「回放走同一解码路径」的原则；不引入检查点快照（§7.2 第 2 条） |
+| 检查点元数据带 `source`（`input` / `loop` / `update` / `fork`） | langgraph `checkpoint/base` | **仅作命名冲突提示**：它表示「检查点怎么产生的」，与本项目 §6.6 的忠实度三值（`observed` / `derived` / `assumed`）**同名不同义**，禁止互相参照或复用同一字段名到 wire |
 
 ---
 
@@ -504,12 +585,15 @@ CREATE TABLE agent_node_events (
 | **G3** | `seq` 与 `Delta` 共用同一单调序列，且严格递增 | 组件测试：混排 delta 与 node 事件，断言 `seq` 无重复无回退 |
 | **G4** | 每个 `(node, iteration)` 恰好一条终态；终态不可被覆盖 | reducer 单测：构造终态后的事件，断言状态不变并记日志 |
 | **G5** | `EventSink` 抛错 / 不可用时 turn 仍正常完成 | 端口替身测试：注入永远失败的 sink，断言 turn 状态为 `completed` |
-| **G6** | 后台会话的工具事件**不被丢弃** | 前端单测：非活跃会话的 `agent-tool-call` 仍写入观测存储 |
+| **G6** | 后台会话的工具与节点事件**不被丢弃** | 前端单测：非活跃会话的 `agent-tool-call` 与 `agent-node-event` 仍写入观测存储（只有 `chat-user-message-confirmed` 仍按活跃会话过滤） |
 | **G7** | 观测面不参与控制：无任何发送/取消路径读取观测状态 | 代码审查 + 依赖方向检查（观测模块不得被 `turnOrchestrator` 的 send/cancel 路径 import） |
 | **G8** | 未知 `node` / `state` 不渲染、不崩溃、不吞事件 | 前端单测：喂入未知取值，断言时间线有记录、图无该格 |
 | **G9** | `contract:gen` 幂等，`protocol.contract.ts` 为生成产物；新增 DTO 已登记 `src-tauri/tests/protocol_bindings.rs` 的 `declarations` 数组 | `npm run contract:gen` + `npm run contract:check`；`protocol_bindings` 测试 |
 | **G10** | 既有对话链路行为不变 | 现有 `turnOrchestrator` / `transport` / `agentSegments` 测试全绿，无快照变更 |
 | **G11** | 观测 sink 签名恒无返回值（`EventSink::emit(&self, TurnEvent)` / `PipelineEventSink::emit` 均返回 `()`），且任何控制决策路径不依赖观测 sink | 签名断言 + 代码审查；编排器（若存在）的控制路径不得 import 观测 sink 类型（§11.2） |
+| **G12** | 过程事实与状态迁移分离：`StageEntered` 发 `transition: false`，reducer 只写 `timeline`，**不改格子状态、不重置 `sinceMs`**；每个 `(node, iteration)` 的 `transition: true` 的 `running` 仍恰好一条 | 写侧：组件测试断言 `StageEntered` 的 `transition` 为 `false`；读侧：reducer 单测断言格子状态与 `sinceMs` 不变（§4.6 第 5 条） |
+| **G13** | 忠实度可审计：每格 `source ∈ {observed, derived, assumed}`，可升级不可降级，且 `derived` / `assumed` 与 `observed` 不同形渲染；`assumed` 不参与耗时分解 | reducer / 投影单测：`source` 升级路径、`projectTurnSummary` 跳过 `assumed`；渲染层快照对比两种形态（§6.6） |
+| **G14** | 变更抑制与投影调度：无变化的事件返回**原引用**（`Object.is` 相等）；折叠逐事件同步完成、不排队不丢弃；投影重算可按帧合并且视图不各自订阅；`timeline` 有界且丢弃顺序确定 | reducer 单测：被终态保护丢弃的事件 / 未知取值 / 重复 `finished` 的返回值 `toBe` 原对象；投影层单测：同一帧内 N 条事件只触发一次重算（spy 计数），且 `timeline` 事实数等于事件数（§6.7） |
 
 **回归口径**：本规格的门禁只覆盖**新增观测面**；既有链路的等价性由现有测试集合保证，不新增「观测等价」类测试（那会变成第二套事实）。
 
@@ -519,12 +603,14 @@ CREATE TABLE agent_node_events (
 
 | 批次 | 内容 | 退出条件 |
 |---|---|---|
-| **V1 出声** | `TurnObserver::node` + `TurnEvent::Node` + `TurnEmitter::node` + `agent/node_event.rs` + 12 处出声点 + `PipelineEvent::StageEntered` + wire DTO/事件名/适配层 + `contract:gen` | G1 / G3 / G5 / G9 通过；`cargo test -p assistant-agent` 全绿；clippy / fmt 通过 |
-| **V2 投影与渲染** | 观测存储 + 三投影 + 传输层去掉活跃会话过滤 + 图渲染器（主窗口 feature module）+ 节点 inspector（D 级字段） | G2 / G4 / G6 / G8 / G10 通过；`typecheck` / `lint` / `vitest` 全绿 |
+| **V1 出声** | `TurnObserver::node` + `TurnEvent::Node` + `TurnEmitter::node` + `agent/node_event.rs` + 12 处出声点 + `PipelineEvent::StageEntered` + wire DTO/事件名/适配层 + `contract:gen` | G1 / G3 / G5 / G9 / G12（写侧）通过；`cargo test -p assistant-agent` 全绿；clippy / fmt 通过 |
+| **V2 投影与渲染** | 观测存储（含 `source` 分级）+ 三投影（含 §6.7 的调度与变更抑制）+ 传输层去掉活跃会话过滤 + 图渲染器（主窗口 feature module）+ 节点 inspector（D 级字段） | G2 / G4 / G6 / G7 / G8 / G10 / G12（读侧）/ G13 / G14 通过；`typecheck` / `lint` / `vitest` 全绿 |
 | **V3 回放** | `agent_node_events` 表 + 迁移 + 保留策略 + 回放 reducer | 需先按 [I38](./I38-agent-roadmap.md) §7 第 5 条把 P15 从 §2.1 候选移入 §2 阶段表并立项；本文不自行改变阶段门禁 |
 | **V4 多实例与并发** | 后台会话列表、按会话切换图实例、`TurnTasks` 键策略（若需要并行节点） | 依赖编排层阶段（§11.4 第 4 条），不在本文范围 |
 
 **V1 与 V2 的边界**：V1 只保证「事件完整且可校验」，此时前端可以不渲染；V2 才出现画布。这条边界的作用是让 V1 的验收不依赖任何 UI 决策。
+
+**任务级进度**：只在 [I55 任务清单](./I55-agent-turn-observability-tasklist.md) 勾选（[I38](./I38-agent-roadmap.md) §7 第 2 条）；本文不设进度列、不记录实现状态。
 
 ---
 
@@ -579,6 +665,7 @@ CREATE TABLE agent_node_events (
 | O8 新增不改旧语义 | **持久** | 不变 |
 | O9 失败隔离 | **持久** | 扩展到编排层：编排器订阅失败也不得回灌 |
 | O10 控制与观测分离 | **持久** | 正是为编排器而写的边界：它不禁止编排器，只规定控制走哪个端口 |
+| O11 变更抑制 | **持久** | 与「是否有多消费者」无关：单消费者下同样存在无意义重算，只是代价小到不易察觉 |
 | §3.1 的 12 节点表 | **会变**（节点数随内核结构变） | 新增节点（如 `spawn_agent`、后台任务）时两侧同批改并更新 G2 断言 |
 | §6.1 的 `observationKey` 双键 | **持久** | 编排器可按同一键索引实例 |
 | §7.1「V1 不落库」 | **会变**（V3 起落库） | 形态已由 §7.2 给出 |
@@ -611,3 +698,4 @@ CREATE TABLE agent_node_events (
 | Q6 | 节点事件是否在 V1 就带 `agentId` / `parentTurnId` | 不带则将来子代理 / 编排器接入要同时改 wire、适配层与 reducer（§11.4 第 1 条） | 建议**V1 就带**：两者都可从 `TurnRunCtx` 直接取（N17），零成本；`Option` 键恒在 |
 | Q7 | 「turn 模板」（常量）与「工作流模板」（数据）的命名与归属 | 命名混用会导致将来把静态模板改成 wire 数据，破坏 O4 与首帧布局 | 建议现在就固定命名，且工作流模板**独立立项**，不并入 P15 |
 | Q8 | 编排器若需在节点粒度「跳过」某个节点，跳过事实由谁产生 | 若编排器直接往 wire 发节点事件，就出现两个发射者（违 O1） | 建议：跳过仍由内核侧中间件裁决并以同一 emitter 发声（`MiddlewareOutcome` 已是现成入口）；编排器只表达「策略」，不直接发声 |
+| Q9 | 观测面是否要「全保真」：`pending` / `skipped` / 圈数 / 恢复态是推导值，与实测同形渲染会让用户误以为都是看到的 | 要补全完整性就得新增事件与状态载体，违 O4 / O6 / O9；非侵入是本设计的绝对优先项 | 建议**明确放弃完整性**：节点边界实测 + 推导补全，前端用 `source` 三级标注证据等级（§6.6）；准入失败 / 代际丢弃 / sink 失败 / 压缩适用性四类缺口**不在 V1 / V2 补全**，只由文档明示，不预留字段 |
