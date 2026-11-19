@@ -16,6 +16,7 @@ interface HistoryState {
   multiSelectMode: boolean;
   selectedConversationIds: Set<string>;
   focusedIndex: number;
+  sidebarCollapsed: boolean;
 
   selectConversation: (id: string) => Promise<void>;
   clearSelection: () => void;
@@ -28,6 +29,7 @@ interface HistoryState {
   selectAllConversations: (ids: string[]) => void;
   clearConversationSelections: () => void;
   setFocusedIndex: (index: number) => void;
+  toggleSidebarCollapsed: () => void;
 }
 
 export const useHistoryStore = create<HistoryState>()((set, get) => ({
@@ -39,6 +41,7 @@ export const useHistoryStore = create<HistoryState>()((set, get) => ({
   multiSelectMode: false,
   selectedConversationIds: new Set(),
   focusedIndex: -1,
+  sidebarCollapsed: false,
 
   selectConversation: async (id: string) => {
     set({ selectedId: id, loadingMessages: true, messages: [] });
@@ -97,7 +100,11 @@ export const useHistoryStore = create<HistoryState>()((set, get) => ({
   },
 
   enterMultiSelect: () => {
-    set({ multiSelectMode: true, selectedConversationIds: new Set() });
+    set({
+      multiSelectMode: true,
+      selectedConversationIds: new Set(),
+      sidebarCollapsed: false,
+    });
   },
 
   exitMultiSelect: () => {
@@ -123,5 +130,9 @@ export const useHistoryStore = create<HistoryState>()((set, get) => ({
 
   setFocusedIndex: (index: number) => {
     set({ focusedIndex: index });
+  },
+
+  toggleSidebarCollapsed: () => {
+    set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed }));
   },
 }));

@@ -1119,6 +1119,9 @@
     "no_messages": "No messages yet",
     "back_to_bottom": "↓ Back to bottom",
     "select_to_view": "Select a conversation on the left to view message history",
+    "collapse_sidebar": "Collapse conversation list",
+    "expand_sidebar": "Expand conversation list",
+    "expand_sidebar_hint": "Expand the conversation list to pick a conversation",
     "tree": {
       "other_branches": "Other branches ({{count}})",
       "orphan_group": "Detached messages ({{count}})",

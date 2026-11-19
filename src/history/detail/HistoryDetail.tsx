@@ -17,6 +17,7 @@ import {
 } from "@ant-design/icons";
 import type { Conversation, Message } from "../../chat/core/chatTypes";
 import { HistoryBranchView } from "./HistoryBranchView";
+import { HistorySidebarToggle } from "./HistorySidebarToggle";
 import { formatConversationTitle } from "../core/formatConversationTitle";
 import css from "./HistoryDetail.module.css";
 
@@ -26,6 +27,9 @@ interface HistoryDetailProps {
   messages: Message[];
   totalCount: number;
   loadingMessages: boolean;
+  sidebarCollapsed: boolean;
+  sidebarToggleDisabled: boolean;
+  onToggleSidebar: () => void;
   onExport: (id: string, format: string) => void;
   onDeleteConversation: (id: string) => void;
   onDeleteMessage: (id: string) => void;
@@ -38,6 +42,9 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
     messages,
     totalCount,
     loadingMessages,
+    sidebarCollapsed,
+    sidebarToggleDisabled,
+    onToggleSidebar,
     onExport,
     onDeleteConversation,
     onDeleteMessage,
@@ -45,6 +52,10 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
     const { t } = useTranslation();
     const messageListRef = useRef<HTMLDivElement>(null);
     const autoScrolledRef = useRef<string | null>(null);
+    const toggleRef = useRef<HTMLButtonElement | HTMLAnchorElement>(null);
+    const pendingAnchorRef = useRef<{ key: string; offset: number } | null>(
+      null,
+    );
     const [userScrolledUp, setUserScrolledUp] = useState(false);
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
@@ -103,6 +114,61 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
       setUserScrolledUp(false);
     }, []);
 
+    const handleToggleSidebar = useCallback(() => {
+      const element = messageListRef.current;
+      if (element) {
+        const containerTop = element.getBoundingClientRect().top;
+        const rows = Array.from(
+          element.querySelectorAll<HTMLElement>("[data-row-key]"),
+        );
+        const anchorRow = rows.find(
+          (row) => row.getBoundingClientRect().bottom > containerTop,
+        );
+        const key = anchorRow?.dataset.rowKey;
+        if (key) {
+          pendingAnchorRef.current = {
+            key,
+            offset: anchorRow.getBoundingClientRect().top - containerTop,
+          };
+        }
+      }
+      onToggleSidebar();
+      requestAnimationFrame(() => toggleRef.current?.focus());
+    }, [onToggleSidebar]);
+
+    useEffect(() => {
+      const anchor = pendingAnchorRef.current;
+      if (!anchor) return;
+      pendingAnchorRef.current = null;
+      const element = messageListRef.current;
+      if (!element) return;
+
+      let innerFrame = 0;
+      const outerFrame = requestAnimationFrame(() => {
+        innerFrame = requestAnimationFrame(() => {
+          const rows = Array.from(
+            element.querySelectorAll<HTMLElement>("[data-row-key]"),
+          );
+          const anchorRow = rows.find(
+            (row) => row.dataset.rowKey === anchor.key,
+          );
+          if (!anchorRow) return;
+          const delta =
+            anchorRow.getBoundingClientRect().top -
+            element.getBoundingClientRect().top -
+            anchor.offset;
+          if (Math.abs(delta) < 1) return;
+          element.scrollTop += delta;
+          setScrollTop(element.scrollTop);
+        });
+      });
+
+      return () => {
+        cancelAnimationFrame(outerFrame);
+        cancelAnimationFrame(innerFrame);
+      };
+    }, [sidebarCollapsed]);
+
     const handleFocusNode = useCallback((nodeId: string) => {
       setFocusLeafId(nodeId);
       setRevealNonce((value) => value + 1);
@@ -124,10 +190,20 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
     if (!selectedId || !selectedConv) {
       return (
         <div className={css.detail}>
+          <div className={css.header}>
+            <HistorySidebarToggle
+              ref={toggleRef}
+              collapsed={sidebarCollapsed}
+              disabled={sidebarToggleDisabled}
+              onToggle={handleToggleSidebar}
+            />
+          </div>
           <div className={css.emptyState}>
             <MessageOutlined style={{ fontSize: 48, opacity: 0.3 }} />
             <Typography.Text type="secondary">
-              {t("history.select_to_view")}
+              {sidebarCollapsed
+                ? t("history.expand_sidebar_hint")
+                : t("history.select_to_view")}
             </Typography.Text>
           </div>
         </div>
@@ -137,6 +213,12 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
     return (
       <div className={css.detail}>
         <div className={css.header}>
+          <HistorySidebarToggle
+            ref={toggleRef}
+            collapsed={sidebarCollapsed}
+            disabled={sidebarToggleDisabled}
+            onToggle={handleToggleSidebar}
+          />
           <Typography.Text
             strong
             ellipsis

@@ -1092,6 +1092,9 @@
     "no_messages": "暂无消息",
     "back_to_bottom": "↓ 回到底部",
     "select_to_view": "选择左侧对话查看消息历史",
+    "collapse_sidebar": "收起对话列表",
+    "expand_sidebar": "展开对话列表",
+    "expand_sidebar_hint": "展开对话列表以选择要查看的对话",
     "tree": {
       "other_branches": "其他分支（{{count}} 条）",
       "orphan_group": "未挂载消息（{{count}} 条）",

@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { App } from "antd";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -55,6 +55,12 @@ export const HistoryManager: React.FC = () => {
     (s) => s.clearConversationSelections,
   );
   const setFocusedIndex = useHistoryStore((s) => s.setFocusedIndex);
+  const sidebarCollapsed = useHistoryStore((s) => s.sidebarCollapsed);
+  const toggleSidebarCollapsed = useHistoryStore(
+    (s) => s.toggleSidebarCollapsed,
+  );
+
+  const [autoFocusSearch, setAutoFocusSearch] = useState(false);
 
   const {
     searchQuery,
@@ -72,6 +78,18 @@ export const HistoryManager: React.FC = () => {
   useEffect(() => {
     void loadConversations();
   }, [loadConversations]);
+
+  useEffect(() => {
+    if (!sidebarCollapsed) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key !== "f") return;
+      event.preventDefault();
+      setAutoFocusSearch(true);
+      toggleSidebarCollapsed();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sidebarCollapsed, toggleSidebarCollapsed]);
 
   // 身份解析依赖模式与 provider 目录（I43 §4.3）：历史页可能被直接进入，
   // 不预先加载会让所有历史消息退化为「未知模式 + 原始 modelId」。
@@ -310,39 +328,46 @@ export const HistoryManager: React.FC = () => {
 
   return (
     <div className={css.root}>
-      <HistorySidebar
-        conversations={conversations}
-        isLoadingConversations={isLoadingConversations}
-        selectedId={selectedId}
-        searchQuery={searchQuery}
-        searchResults={searchResults}
-        searchFullText={searchFullText}
-        refreshing={refreshing}
-        collapsedGroups={collapsedGroups}
-        multiSelectMode={multiSelectMode}
-        selectedConversationIds={selectedConversationIds}
-        focusedIndex={focusedIndex}
-        onSearch={handleSearch}
-        onToggleFullText={() => setSearchFullText((prev) => !prev)}
-        onRefresh={() => void handleRefresh()}
-        onSelect={(id) => void selectConversation(id)}
-        onDelete={(id) => void deleteConversation(id)}
-        onRename={(id, title) => void renameConversation(id, title)}
-        onExport={(id, format) => void exportConversation(id, format)}
-        onTogglePin={(id) => void togglePin(id)}
-        onDuplicate={(id) => void duplicateConversation(id)}
-        onToggleGroup={toggleGroup}
-        onEnterMultiSelect={enterMultiSelect}
-        onExitMultiSelect={exitMultiSelect}
-        onToggleConversationSelection={toggleConversationSelection}
-        onSetFocusedIndex={setFocusedIndex}
-      />
+      {!sidebarCollapsed && (
+        <HistorySidebar
+          conversations={conversations}
+          isLoadingConversations={isLoadingConversations}
+          selectedId={selectedId}
+          searchQuery={searchQuery}
+          searchResults={searchResults}
+          searchFullText={searchFullText}
+          refreshing={refreshing}
+          collapsedGroups={collapsedGroups}
+          multiSelectMode={multiSelectMode}
+          selectedConversationIds={selectedConversationIds}
+          focusedIndex={focusedIndex}
+          autoFocusSearch={autoFocusSearch}
+          onAutoFocusSearchConsumed={() => setAutoFocusSearch(false)}
+          onSearch={handleSearch}
+          onToggleFullText={() => setSearchFullText((prev) => !prev)}
+          onRefresh={() => void handleRefresh()}
+          onSelect={(id) => void selectConversation(id)}
+          onDelete={(id) => void deleteConversation(id)}
+          onRename={(id, title) => void renameConversation(id, title)}
+          onExport={(id, format) => void exportConversation(id, format)}
+          onTogglePin={(id) => void togglePin(id)}
+          onDuplicate={(id) => void duplicateConversation(id)}
+          onToggleGroup={toggleGroup}
+          onEnterMultiSelect={enterMultiSelect}
+          onExitMultiSelect={exitMultiSelect}
+          onToggleConversationSelection={toggleConversationSelection}
+          onSetFocusedIndex={setFocusedIndex}
+        />
+      )}
       <HistoryDetail
         selectedId={selectedId}
         selectedConv={selectedConv}
         messages={messages}
         totalCount={totalCount}
         loadingMessages={loadingMessages}
+        sidebarCollapsed={sidebarCollapsed}
+        sidebarToggleDisabled={multiSelectMode}
+        onToggleSidebar={toggleSidebarCollapsed}
         onExport={(id, format) => void exportConversation(id, format)}
         onDeleteConversation={(id) => void deleteConversation(id)}
         onDeleteMessage={(id) => void deleteMessage(id)}

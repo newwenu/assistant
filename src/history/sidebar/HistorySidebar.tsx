@@ -27,6 +27,8 @@ interface HistorySidebarProps {
   multiSelectMode: boolean;
   selectedConversationIds: Set<string>;
   focusedIndex: number;
+  autoFocusSearch: boolean;
+  onAutoFocusSearchConsumed: () => void;
   onSearch: (value: string) => void;
   onToggleFullText: () => void;
   onRefresh: () => void;
@@ -55,6 +57,8 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = React.memo(
     multiSelectMode,
     selectedConversationIds,
     focusedIndex,
+    autoFocusSearch,
+    onAutoFocusSearchConsumed,
     onSearch,
     onToggleFullText,
     onRefresh,
@@ -88,6 +92,12 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = React.memo(
         collapsedGroups.has(g.key) ? [] : g.conversations,
       );
     }, [searchQuery, searchResults, displayConvs, groups, collapsedGroups]);
+
+    useEffect(() => {
+      if (!autoFocusSearch) return;
+      searchBarRef.current?.focusSearchInput();
+      onAutoFocusSearchConsumed();
+    }, [autoFocusSearch, onAutoFocusSearchConsumed]);
 
     useEffect(() => {
       const el = sidebarRef.current;
@@ -225,7 +235,12 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = React.memo(
     );
 
     return (
-      <div className={css.sidebar} ref={sidebarRef} tabIndex={-1}>
+      <div
+        className={css.sidebar}
+        id="history-sidebar"
+        ref={sidebarRef}
+        tabIndex={-1}
+      >
         <HistorySearchBar
           ref={searchBarRef}
           searchQuery={searchQuery}
