@@ -488,10 +488,10 @@ pub const IGNORED_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 
 1. **范围**：对**整棵基根树**（`AppDirs::data()` 与 `AppDirs::local()`）做只读递归，**包含**受管目录内部——这是 G2 的显式例外，理由只有一个：余量需要「扫描总量」作为被减数，而只有拿到受管目录的真实子树字节，减法才成立（否则 `unregistered` 恒等于扫描值、减法形同虚设，X13 的「不减去登记值」也就无从区分）。例外的边界由三条硬约束守住：①**只读**（不删、不移、不写、不写日志）；②产出**绝不回流** `entries`（G10 / V20）；③有界（第 5 条）；
 2. **首层分类**：首层条目名 → 匹配 `MANAGED_ROOTS` 的**首段**（`SingleFile` 条目的首段即文件名）；命中 `Always` → `declared`；命中 `Feature` 但 provider 未注入 → `optionalNotMounted`；命中 `IGNORED_NAMES` → `ignored`；命中伴生后缀 → `companion`；其余 → `unregistered`（§3.11.3）；
-3. **子树字节**：对每个首段递归累加**常规文件**长度；口径与 §3.9 完全一致（不跟随符号链接、跳过非常规文件、目录自身不计），并且**必须与 owner stats 用同一套遍历规则**（§3.10 接口形状 2）——口径一旦分叉，减法就会常年出现假余量；
-4. **伴生文件**：无论在哪一层，`-journal` / `-wal` / `-shm` / `.tmp` / `.lock` 都计入 `scanBytes`（它们确实占盘），但不计入任何 `declaredBytes`（§3.9），因此会表现为该节点的 `residualBytes > 0`。这是**预期噪声**，不是报警（报警只看 `overRegistered`，见理念 6）；
-5. **有界**：深度 ≤ 8、条目 ≤ 50 000、耗时 ≤ 5 s（软上限）；触界时该节点 `scanBytes = null` + `partial = true` + 记入 `truncatedNodes`（宁可「知道有、不知多大」也不做无界扫描）；
-6. **vault 锁定 / 无权限**：该子树 `scanBytes = null`，不影响其它首段；不解锁、不提权；
+3. **子树字节与条数**：对每个首段递归累加**常规文件**长度并同时计数（同一次遍历产出 `scanBytes` 与 `scanCount`，**不分两次遍历**，否则两份数字会在扫描期间漂移）；口径与 §3.9 完全一致（不跟随符号链接、跳过非常规文件、目录自身不计），并且**必须与 owner stats 用同一套遍历规则**（§3.10 接口形状 2）——口径一旦分叉，减法就会常年出现假余量；
+4. **伴生文件**：无论在哪一层，`-journal` / `-wal` / `-shm` / `.tmp` / `.lock` 都计入 `scanBytes` / `scanCount`（它们确实占盘），但不计入任何 `declaredBytes` / `declaredCount`（§3.9），因此会表现为该节点的 `residualBytes > 0`。这是**预期噪声**，不是报警（报警只看 `overRegistered`，见理念 6）；
+5. **有界**：深度 ≤ 8、条目 ≤ 50 000、耗时 ≤ 5 s（软上限）；触界时该节点 `scanBytes` / `scanCount` = `null` + `partial = true` + 记入 `truncatedNodes`（宁可「知道有、不知多大」也不做无界扫描）；
+6. **vault 锁定 / 无权限**：该子树 `scanBytes` / `scanCount` = `null`，不影响其它首段；不解锁、不提权；
 7. **只读**：不删除、不移动、不写任何东西（含应用日志——扫描本身不写日志，避免污染 `E12` 的自指字节）；`symlink_metadata` 判断类型，**不跟随**符号链接；
 8. 扫描在**后台任务**里跑，结果落快照（§3.11.4），不进 `get_storage_breakdown` 的关键路径。
 
@@ -515,9 +515,12 @@ pub const IGNORED_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 
 ```
 节点扫描字节 = 该首段下所有常规文件长度之和（递归，不跟随符号链接）
+节点扫描条数 = 同一次遍历计到的常规文件个数（与字节同源，不分两次遍历）
 节点登记字节 = Σ 覆盖范围落在该节点内的 declared 条目 bytes
-节点余量     = 节点扫描字节 − 节点登记字节
-overRegistered = 节点登记字节 > 节点扫描字节
+节点登记条数 = Σ 覆盖范围落在该节点内的 declared 条目 count
+节点余量字节 = 节点扫描字节 − 节点登记字节
+节点余量条数 = 节点扫描条数 − 节点登记条数
+overRegistered = 节点登记字节 > 节点扫描字节（字节维度报警；条数维度只随之下沉为 null，不单独报警）
 ```
 
 - 被减数唯一（扫描树，一份），减数唯一（登记条目在同一节点上的 `bytes`）；
@@ -820,9 +823,11 @@ snapshot（只读）
 | `scope` | `StorageLayer` | 该首段所在基根 |
 | `entry` | `String \| null` | `declared` / `optionalNotMounted` 时给出对应 `E` 编号；其余 `null` |
 | `scanBytes` | `u64 \| null` | 该子树扫描字节；触界为 `null` |
+| `scanCount` | `u64 \| null` | 该子树扫描到的**常规文件条数**（与 `scanBytes` 同一次遍历、同一口径）；触界为 `null` |
 | `declaredBytes` | `u64 \| null` | `declared` 节点：该首段下 `declared` 条目 `bytes` 之和（任一为 `null` 则 `null`）；其余类节点恒 `0`（该节点**没有**登记，是已知事实，不是「不知道」） |
+| `declaredCount` | `u64 \| null` | `declared` 节点：该首段下 `declared` 条目 `count` 之和（任一为 `null` 则 `null`）；其余类节点恒 `0` |
 | `residualBytes` | `u64 \| null` | `scanBytes − declaredBytes`；`scanBytes` 为 `null` 时 `null` |
-| `residualCount` | `u64 \| null` | 同上，条数维度 |
+| `residualCount` | `u64 \| null` | `scanCount − declaredCount`；`scanCount` 为 `null` 时 `null` |
 | `overRegistered` | `bool` | `declaredBytes > scanBytes`（理念 6 的报警位） |
 | `children` | `Vec<StorageInventoryItemDto>` | 仅 `unregistered` 节点有明细，其余为空数组 |
 
@@ -977,7 +982,7 @@ snapshot（只读）
 | V15 | 回收留痕只含 `planId` / key / 动作 / 计数 / `sampledAt`，不含路径与文件名；`logs` 条目不被管理器删除 | 日志断言 + 代码审查 |
 | V16 | **超集不窄化**：`StorageBreakdownDto` 既有 4 字段键名 / 类型 / 含义不变；`delete_attachments` / `open_attachment` / `import_attachment` / `get_asset_dirs` / `get_attachment_limits` 签名与语义不变；前端附件明细区（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除）逐项仍可用 | 既有测试全绿 + 手动回归清单逐项打勾（G13 / G14） |
 | V17 | **资格与可执行一致**：任意切片下，`eligibility = eligible` ⇔ 该 `key + action` 在 §3.3 白名单且 owner 方法存在（`reclaim_storage` 会接受）；不存在「显示可回收、执行被拒」的条目；`confirmation` 在非 `eligible` 时恒 `none` | golden 断言逐切片（§11 切片期资格表）+ 白名单负例 |
-| V18 | **余量守恒与互斥**：`inventory.nodes` 的 `class` 互斥且穷尽；`declared + optionalNotMounted + companion + ignored + unregistered` 的首层条目数等于基根首层实际条目数；`declared` 节点 `residualBytes = scanBytes − Σ declaredBytes`（且 `residualBytes ≥ 0`，负值走 `overRegistered`）；非 `declared` 节点 `declaredBytes = 0`、`residualBytes = scanBytes`；`unregisteredBytes = Σ unregistered 节点 residualBytes`（`null` 传染，不填 0） | 单测：构造 `attachments/`（含 `derived/` 与一个未统计的额外子目录）+ `security/` + 未知目录 + `-wal` + `.DS_Store` 的临时基根，逐类与逐节点断言 |
+| V18 | **余量守恒与互斥**：`inventory.nodes` 的 `class` 互斥且穷尽；`declared + optionalNotMounted + companion + ignored + unregistered` 的首层条目数等于基根首层实际条目数；`declared` 节点 `residualBytes = scanBytes − Σ declaredBytes`、`residualCount = scanCount − Σ declaredCount`（且两项均 `≥ 0`，负值走 `overRegistered`）；非 `declared` 节点 `declaredBytes = declaredCount = 0`、`residualBytes = scanBytes`、`residualCount = scanCount`；`unregisteredBytes = Σ unregistered 节点 residualBytes`、`unregisteredCount = Σ residualCount`（`null` 传染，不填 0） | 单测：构造 `attachments/`（含 `derived/` 与一个未统计的额外子目录）+ `security/` + 未知目录 + `-wal` + `.DS_Store` 的临时基根，逐类与逐节点断言 |
 | V19 | **登记表双向一致**：`MANAGED_ROOTS` 的 `entry` 集合 == 13 条 key 集合 == `entries[*].key`；`dir_name` 每新增常量若无对应登记则测试失败（`E2` 子项与 `E7`–`E11` `Feature` 挂载按例外处理）；`segments` 首段与 `roots.rs` getter 解析出的路径段一致 | 单测：集合比对 + 临时新增一条 `dir_name` 常量的负例（构造 `&[ManagedRoot]` 缺项） |
 | V20 | **余量不影响条目**：`inventory` 任何数字变化（含 `failed` / `partial` / `overRegistered`）都不改变 `entries` 的 `bytes` / `count` / `eligibility`，也不改变 `totalBytes`；`get_storage_breakdown` 耗时与扫描状态无关（`running` 下仍立即返回）；`reclaim_storage` 拒绝任何 `inventory` 节点名作为 `key` | 单测：`running` / `failed` 两态各拉一次 breakdown，逐字段比对；负例请求 `key = "unregistered-name"` |
 
