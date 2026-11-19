@@ -8,7 +8,7 @@
 
 | 域 | 内容 | 文件数 |
 |---|---|---|
-| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计 | 61 |
+| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计、Turn 观测面 | 63 |
 | [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 36 |
 | [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、截图提问、Token Usage | 33 |
 | [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 35 |
@@ -16,7 +16,7 @@
 
 ## 文档清单
 
-### agent/ (61)
+### agent/ (63)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -81,6 +81,8 @@
 | [`I53-sandbox-preparation-spec.md`](./agent/I53-sandbox-preparation-spec.md) | achievement10 | I53 — P14-a 沙箱准备规格（后端抽象 / 链式探测 / 三平台实现；Linux/macOS 实机用例待 CI 验证） |
 | [`I53-sandbox-preparation-tasklist.md`](./agent/I53-sandbox-preparation-tasklist.md) | achievement10 | I53 — P14-a 沙箱准备任务清单（3 项实机验证未勾选，随归档保留原貌） |
 | [`agent-sandbox-research.md`](./agent/agent-sandbox-research.md) | achievement10 | Agent 命令行隔离环境开源项目调研（后端选型 ADR-1–ADR-4） |
+| [`I55-agent-turn-observability-spec.md`](./agent/I55-agent-turn-observability-spec.md) | achievement | I55 — Agent Turn 图观测规格（节点级事件与三投影；P15 V0–V2 已交付，V3 回放受闸未开工） |
+| [`I55-agent-turn-observability-tasklist.md`](./agent/I55-agent-turn-observability-tasklist.md) | achievement | I55 — Agent Turn 观测面任务清单（V1 / V2 全部勾选，V3 保留未开工原貌） |
 
 ### vault/ (36)
 

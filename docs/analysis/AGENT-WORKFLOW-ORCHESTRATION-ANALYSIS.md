@@ -2,7 +2,7 @@
 
 > 日期：2026-11-18｜性质：**预先分析**（只判定「能不能做、做成什么形状、哪些口径必须先定案」；不含实施步骤与排期）
 > 判据来源：`docs/principle/CODE-REVIEW-PRINCIPLE.md`、`docs/principle/CODE-SPLIT-PRINCIPLE.md`
-> 事实基线：仓库当前代码（2026-11-18）；I55 观测规格（草稿，`docs/store/I55-agent-turn-observability-spec.md`）、I38 阶段总纲 §2.1（`docs/store/I38-agent-roadmap.md`）、I38f 子代理规格（`docs/store/I38f-agent-subagent-spec.md`）、I36a 内核基线（`docs/store/I36a-agent-kernel-baseline.md`）
+> 事实基线：仓库当前代码（2026-11-18）；I55 观测规格（已归档）、I38 阶段总纲 §2.1（`docs/store/I38-agent-roadmap.md`）、I38f 子代理规格（`docs/store/I38f-agent-subagent-spec.md`）、I36a 内核基线（`docs/store/I36a-agent-kernel-baseline.md`）
 > 参考实现：`references/9-workflow-orchestration/` 的稀疏检出——ComfyUI（`comfy_execution/graph.py`、`progress.py`、`execution.py`）、n8n（`packages/core/src/execution-engine/workflow-execute.ts`）、langgraph（`libs/langgraph/pregel/`）、Dify（`api/core/workflow/`：`graph_topology.py`、`node_execution.py`、`nodes/agent_v2/`、`nodes/human_input/`）、litegraph.js（画布）。凡标「参考」的形态判断只出自上述检出部分，不外推到未检出的部分。
 > 范围界定：本文主体是**编排层的结构可行性**——节点是什么、图由谁调度、状态存在哪、控制从哪进，以及它与现有内核 / 观测面 / 审批 / 预算 / 取消的边界。**不含**画布交互细节、**不含**具体 DAG 编辑器设计、**不含**排期。
 > 范围例外：§7 的取舍表虽接近实施决策，但它决定 schema、wire 与 DTO 字段，必须与结构一并定案。
@@ -420,7 +420,7 @@ P8.1（`spawn_agent`）与 P8.2（Worker 会话）在编排语境下不是「另
 
 ## 参考
 
-- 观测面规格：I55 观测规格（`docs/store/I55-agent-turn-observability-spec.md`）
+- 观测面规格：I55 观测规格（已归档）
 - 阶段总纲：I38 阶段总纲 §2.1（`docs/store/I38-agent-roadmap.md`）
 - 子代理规格：I38f 子代理规格（`docs/store/I38f-agent-subagent-spec.md`）
 - 内核基线：I36a 内核基线（`docs/store/I36a-agent-kernel-baseline.md`）

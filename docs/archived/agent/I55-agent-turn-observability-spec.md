@@ -2,10 +2,10 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 草稿（观测面规格；不含图编排器、不含画布交互） |
+| 状态 | 已完成并归档（V0–V2 交付；V3 回放受闸未开工；观测面规格，不含图编排器与画布交互） |
 | 日期 | 2026-11-18 |
-| 关联 | [I55 任务清单](./I55-agent-turn-observability-tasklist.md)（V0–V3 任务拆解与验收；任务级进度只在其中勾选）、[I36a Agent 内核基线](./I36a-agent-kernel-baseline.md)（内核分层与「必须动内核」清单）、[I38 Agent 阶段总纲](./I38-agent-roadmap.md)（阶段门禁唯一台账）、[I38f 子代理规格](./I38f-agent-subagent-spec.md)（`agent_id` / `parent_turn_id` / `delegation_depth` 的语义来源）、[I54 资源监视器规格](./I54-resource-monitor-spec.md)（「不得用 0 冒充读不到」的显示口径）、[CODE-SPLIT-PRINCIPLE](../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则唯一来源，本文只引用不复述） |
-| 影响范围 | 后端：`src-tauri/crates/assistant-agent/src/agent/round_executor.rs`（`TurnObserver` 加一方法）、`src-tauri/crates/assistant-agent/src/kernel/ports/mod.rs`（`TurnEvent` 加一变体）、`src-tauri/crates/assistant-agent/src/kernel/turn/emit.rs`（`TurnEmitter` 加一入口）、新增 `src-tauri/crates/assistant-agent/src/agent/node_event.rs`、`src-tauri/crates/assistant-agent/src/agent/loop_executor/{mod,call,execute,persist}.rs`（12 处出声点）、`src-tauri/crates/assistant-agent/src/agent/middleware.rs`（阶梯与 `after_tool` 裁决）、`src-tauri/crates/assistant-agent/src/agent/stop.rs`（刹车裁决）、`src-tauri/crates/assistant-tools/src/runtime/pipeline.rs`（`PipelineEvent` 加 `StageEntered`）、`src-tauri/src/protocol/dto/agent.rs`、`src-tauri/src/protocol/events.rs`、`src-tauri/src/adapters/event_sink.rs`。前端：`src/types/protocol.contract.ts`（生成，禁止手改）、`src/chat/core/chatTypes.ts`（`ChatEvent` 增 `agent-node-event`）、`src/services/stream/transport.ts`（增节点事件监听、去掉 `agent-tool-call` 的活跃会话过滤）、`src/services/chat/chatStreamEvents.ts`、`src/services/stream/turnOrchestrator.ts`、新增 `src/stores/agent/observation/`（store / reducer / template / restore / projections）、新增 `src/features/observation/`（画布与 inspector）。文档：本文 + [I38](./I38-agent-roadmap.md) §2.1 候选行 / §3 依赖行 / §4 文档地图（已登记为**未立项候选 P15**）。 |
+| 关联 | [I55 任务清单](./I55-agent-turn-observability-tasklist.md)（V0–V3 任务拆解与验收；任务级进度只在其中勾选）、[I36a Agent 内核基线](../../store/I36a-agent-kernel-baseline.md)（内核分层与「必须动内核」清单）、[I38 Agent 阶段总纲](../../store/I38-agent-roadmap.md)（阶段门禁唯一台账）、[I38f 子代理规格](../../store/I38f-agent-subagent-spec.md)（`agent_id` / `parent_turn_id` / `delegation_depth` 的语义来源）、[I54 资源监视器规格](../../store/I54-resource-monitor-spec.md)（「不得用 0 冒充读不到」的显示口径）、[CODE-SPLIT-PRINCIPLE](../../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则唯一来源，本文只引用不复述） |
+| 影响范围 | 后端：`src-tauri/crates/assistant-agent/src/agent/round_executor.rs`（`TurnObserver` 加一方法）、`src-tauri/crates/assistant-agent/src/kernel/ports/mod.rs`（`TurnEvent` 加一变体）、`src-tauri/crates/assistant-agent/src/kernel/turn/emit.rs`（`TurnEmitter` 加一入口）、新增 `src-tauri/crates/assistant-agent/src/agent/node_event.rs`、`src-tauri/crates/assistant-agent/src/agent/loop_executor/{mod,call,execute,persist}.rs`（12 处出声点）、`src-tauri/crates/assistant-agent/src/agent/middleware.rs`（阶梯与 `after_tool` 裁决）、`src-tauri/crates/assistant-agent/src/agent/stop.rs`（刹车裁决）、`src-tauri/crates/assistant-tools/src/runtime/pipeline.rs`（`PipelineEvent` 加 `StageEntered`）、`src-tauri/src/protocol/dto/agent.rs`、`src-tauri/src/protocol/events.rs`、`src-tauri/src/adapters/event_sink.rs`。前端：`src/types/protocol.contract.ts`（生成，禁止手改）、`src/chat/core/chatTypes.ts`（`ChatEvent` 增 `agent-node-event`）、`src/services/stream/transport.ts`（增节点事件监听、去掉 `agent-tool-call` 的活跃会话过滤）、`src/services/chat/chatStreamEvents.ts`、`src/services/stream/turnOrchestrator.ts`、新增 `src/stores/agent/observation/`（store / reducer / template / restore / projections）、新增 `src/features/observation/`（画布与 inspector）。文档：本文 + [I38](../../store/I38-agent-roadmap.md) §2.1 候选行 / §3 依赖行 / §4 文档地图（已登记为**未立项候选 P15**）。 |
 | 参考实现 | deepseek-harness（微内核事件分类体系 / GUI 分层与 RPC 四象限 / 子代理生命周期事件）、ComfyUI（`NodeState` + `value/max` 进度）、n8n（`ExecutionStatus` 八值 + 按 `executionId` 键控的执行数据 store 与逐节点投影）、langgraph（检查点回放）。以上均为稀疏检出的参考项目，不在仓内；本文标注「参考实现」的形态判断分别出自上述条目，不外推到未检出的部分。 |
 
 > 一句话：本规格**不新建编排器**，只把「一轮 agent turn 已经发生的事」补成可被图渲染消费的完整观测面——内核在 12 个既有节点上出声，wire 只增加一族事件，前端只增加一层按 `(conversationId, turnId)` 键控的投影存储；三者都不改变现有对话链路的行为，也**不阻挡将来的编排器**（编排器是同一份事件流的只读订阅者 + 独立控制端口，见 §11）。
@@ -14,7 +14,7 @@
 
 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离需在代码注释里写明理由。
 
-**编号约定**：`N1–N18` 是现状事实；`O1–O11` 是不变式（观测面自身的约束）；`G1–G14` 是门禁；`V1–V4` 是交付批次。节点编号沿用现行口头口径 ①–⑫，与 [I38](./I38-agent-roadmap.md) 的 `RoundExecutor` 术语一致。
+**编号约定**：`N1–N18` 是现状事实；`O1–O11` 是不变式（观测面自身的约束）；`G1–G14` 是门禁；`V1–V4` 是交付批次。节点编号沿用现行口头口径 ①–⑫，与 [I38](../../store/I38-agent-roadmap.md) 的 `RoundExecutor` 术语一致。
 
 ---
 
@@ -60,7 +60,7 @@
 - **不做画布交互**（拖拽 / 缩放 / 编辑）与节点参数表单：这些属于后续编排层阶段；
 - **不新增执行语义**：不加并行节点、不加条件路由、不改迭代循环结构；
 - **不改既有事件语义**：`chat-stream-start` / `chat-delta` / `agent-tool-call` 的字段与消费方行为保持不变（O8）；
-- **不做性能采样**：CPU / 内存 / 磁盘属于 [I54](./I54-resource-monitor-spec.md)，本文只观测 turn 自身；
+- **不做性能采样**：CPU / 内存 / 磁盘属于 [I54](../../store/I54-resource-monitor-spec.md)，本文只观测 turn 自身；
 - **不做跨 turn 汇总统计**：token 计量归既有 usage 记录，不在此重复造账；
 - **不落正文**：节点事件只带事实与标识，不复制模型输出正文（正文的唯一来源仍是消息行）。
 
@@ -76,7 +76,7 @@
 | **承载者** | 分配 `seq`、做代际校验、序列化到 wire | `TurnEmitter` + `TauriEventSink` | 不能改写事实；不能合并两条事实；不能给事实加回执或背压 |
 | **只读订阅者** | 把事实折叠成可渲染状态 / 供上层决策参考 | 前端投影存储；将来的编排器（§11） | **不能**经观测 sink 发起控制（O6 / O10）；控制走独立端口 |
 
-这条分工沿用 [I36a](./I36a-agent-kernel-baseline.md) 的端口隔离：内核零 tauri 依赖，外部世界只经端口交互。观测面的新增同样走端口，不走直接调用。
+这条分工沿用 [I36a](../../store/I36a-agent-kernel-baseline.md) 的端口隔离：内核零 tauri 依赖，外部世界只经端口交互。观测面的新增同样走端口，不走直接调用。
 
 **订阅者 ≠ 视图**：本规格的读者容易被「投影」二字误导，以为观测面的消费者只能是 UI。实际上「谁订阅事件」与「谁能控制执行」是两个正交的问题——将来的编排器会是同一份事件流的**只读订阅者**，而它的控制能力来自**另一个端口**（§11.2）。这条区分是本文档能否被编排层复用的关键，故在 §2.1 就写明。
 
@@ -221,7 +221,7 @@ wire DTO 同形（`AgentNodeEventDto`），字段 `camelCase`，`detail` 用 `ki
 
 **`seq` 必须与 `Delta` 共用同一个计数器**：两者混排才有意义——「第 37 条增量落在 `model` 节点的 `running` 期内」是时间线投影的核心判据。若各用一套计数器，两个序列无法对齐。
 
-**`at_ms` 必须取自 `Clock` 端口**，禁止在内核里用 `SystemTime::now()`：内核的可测试性依赖时间可注入（[I36a](./I36a-agent-kernel-baseline.md) 的端口纪律）。
+**`at_ms` 必须取自 `Clock` 端口**，禁止在内核里用 `SystemTime::now()`：内核的可测试性依赖时间可注入（[I36a](../../store/I36a-agent-kernel-baseline.md) 的端口纪律）。
 
 ### 4.3 `NodeState`（7 值闭集）
 
@@ -258,7 +258,7 @@ wire DTO 同形（`AgentNodeEventDto`），字段 `camelCase`，`detail` 用 `ki
 | `after-iteration` | `AfterIterationDetail` | `nudges: Vec<String>`、`nextIteration: u32` |
 | `admit` / `prepare` | `None` | — |
 
-**`BudgetRemaining` 的每个字段都是 `Option`，且 `None` 表示「未配置」而非 0**：`token-budget` 钩子未配置时不安装（N13），此时余量是「不设限」，显示为 0 会被读成「已用尽」。这是 [I54](./I54-resource-monitor-spec.md) §1.2 第 6 条同一口径的复用。
+**`BudgetRemaining` 的每个字段都是 `Option`，且 `None` 表示「未配置」而非 0**：`token-budget` 钩子未配置时不安装（N13），此时余量是「不设限」，显示为 0 会被读成「已用尽」。这是 [I54](../../store/I54-resource-monitor-spec.md) §1.2 第 6 条同一口径的复用。
 
 **`PipelineStage` 复用 `ToolStage` 的 5 值**（N6 已有 `Find` / `Validate` / `Gateway` / `Execute` / `Persist`），不新造枚举。语义差别只在「终态阶段」与「进入阶段」：前者已存在，后者由本规格新增的 `PipelineEvent::StageEntered` 提供（§4.7）。
 
@@ -513,7 +513,7 @@ V1 **不落库**。理由：
 
 1. 节点事件的完整价值在**运行期**（用户看的是正在跑的那一轮）；历史轮次已有消息行 + 工具行可看；
 2. 落库需要新表 + 迁移 + 保留策略，而保留策略必须先有真实事件量数据才能定；
-3. [I38](./I38-agent-roadmap.md) §7 第 5 条规定：任何候选开工前必须先改阶段表。落库属于新阶段，不在本文 V1 范围。
+3. [I38](../../store/I38-agent-roadmap.md) §7 第 5 条规定：任何候选开工前必须先改阶段表。落库属于新阶段，不在本文 V1 范围。
 
 ### 7.2 回放路径（V3）
 
@@ -605,12 +605,12 @@ CREATE TABLE agent_node_events (
 |---|---|---|
 | **V1 出声** | `TurnObserver::node` + `TurnEvent::Node` + `TurnEmitter::node` + `agent/node_event.rs` + 12 处出声点 + `PipelineEvent::StageEntered` + wire DTO/事件名/适配层 + `contract:gen` | G1 / G3 / G5 / G9 / G12（写侧）通过；`cargo test -p assistant-agent` 全绿；clippy / fmt 通过 |
 | **V2 投影与渲染** | 观测存储（含 `source` 分级）+ 三投影（含 §6.7 的调度与变更抑制）+ 传输层去掉活跃会话过滤 + 图渲染器（主窗口 feature module）+ 节点 inspector（D 级字段） | G2 / G4 / G6 / G7 / G8 / G10 / G12（读侧）/ G13 / G14 通过；`typecheck` / `lint` / `vitest` 全绿 |
-| **V3 回放** | `agent_node_events` 表 + 迁移 + 保留策略 + 回放 reducer | 需先按 [I38](./I38-agent-roadmap.md) §7 第 5 条把 P15 从 §2.1 候选移入 §2 阶段表并立项；本文不自行改变阶段门禁 |
+| **V3 回放** | `agent_node_events` 表 + 迁移 + 保留策略 + 回放 reducer | 需先按 [I38](../../store/I38-agent-roadmap.md) §7 第 5 条把 P15 从 §2.1 候选移入 §2 阶段表并立项；本文不自行改变阶段门禁 |
 | **V4 多实例与并发** | 后台会话列表、按会话切换图实例、`TurnTasks` 键策略（若需要并行节点） | 依赖编排层阶段（§11.4 第 4 条），不在本文范围 |
 
 **V1 与 V2 的边界**：V1 只保证「事件完整且可校验」，此时前端可以不渲染；V2 才出现画布。这条边界的作用是让 V1 的验收不依赖任何 UI 决策。
 
-**任务级进度**：只在 [I55 任务清单](./I55-agent-turn-observability-tasklist.md) 勾选（[I38](./I38-agent-roadmap.md) §7 第 2 条）；本文不设进度列、不记录实现状态。
+**任务级进度**：只在 [I55 任务清单](./I55-agent-turn-observability-tasklist.md) 勾选（[I38](../../store/I38-agent-roadmap.md) §7 第 2 条）；本文不设进度列、不记录实现状态。
 
 ---
 
@@ -693,7 +693,7 @@ CREATE TABLE agent_node_events (
 | Q1 | `admit` 的失败（会话忙碌拒绝）是否应产生节点事件 | 该 turn 从未 `begin`，`turn_id` 可能尚未分配，事件无坐标 | 建议**不产生**，走既有命令错误通道；观测面只覆盖已准入的 turn，图中不显示这一格 |
 | Q2 | `ladder` 的 `applied` 是否包含未生效的中间件名 | 中间件可能因前置条件跳过 | 建议只报**实际改写过请求**的项；跳过项不报，避免图上一堆「动了但没动」 |
 | Q3 | `pipeline` 的 `index` / `total` 在分批并发下的语义 | 一批 N 个调用并行，`index` 是全局序号还是批内序号 | 建议**全局序号**（按发起顺序），批次信息走 D 级 `concurrencyBatch` |
-| Q4 | 子代理（[I38f](./I38f-agent-subagent-spec.md)）接入后，子 turn 的节点事件如何归并 | 子 turn 有自己的 `turnId`，父图要不要显示子图 | 建议：子 turn 是**独立实例**（独立 `observationKey`），父图只显示 `pipeline` 节点的 `waiting` + 一个「有子实例」徽标；不内联子图 |
+| Q4 | 子代理（[I38f](../../store/I38f-agent-subagent-spec.md)）接入后，子 turn 的节点事件如何归并 | 子 turn 有自己的 `turnId`，父图要不要显示子图 | 建议：子 turn 是**独立实例**（独立 `observationKey`），父图只显示 `pipeline` 节点的 `waiting` + 一个「有子实例」徽标；不内联子图 |
 | Q5 | 压缩 turn（`CompactionStarted`）是否复用同一套节点事件 | 压缩是 turn 外的独立流程，可能没有 12 节点 | 建议复用事件族，但节点子集不同；模板需允许「本轮只点亮部分节点」，这一点已由 `pending` 语义天然支持 |
 | Q6 | 节点事件是否在 V1 就带 `agentId` / `parentTurnId` | 不带则将来子代理 / 编排器接入要同时改 wire、适配层与 reducer（§11.4 第 1 条） | 建议**V1 就带**：两者都可从 `TurnRunCtx` 直接取（N17），零成本；`Option` 键恒在 |
 | Q7 | 「turn 模板」（常量）与「工作流模板」（数据）的命名与归属 | 命名混用会导致将来把静态模板改成 wire 数据，破坏 O4 与首帧布局 | 建议现在就固定命名，且工作流模板**独立立项**，不并入 P15 |

@@ -2,11 +2,11 @@
 
 | 项 | 值 |
 |---|---|
-| 阶段 | **缺陷修复**（B 级：错误展示失真，可归因性丢失）；切片 T1–T3 全部在本阶段内（§11） |
-| 状态 | 定稿；T1–T3 未开工 |
+| 阶段 | **缺陷修复**（B 级：错误展示失真，可归因性丢失）；切片 T1–T4 全部在本阶段内（§11） |
+| 状态 | 已完成（T1–T4 落地，见 §15）；同类判据与同类文档已合并（§14） |
 | 日期 | 2026-11-19 |
 | 引入点 | `ddca9bb`（2026-11-03 20:19，`feat(dto): 协议契约生成与语义统一`）——该提交移除输出 DTO 的 `skip_serializing_if`、统一为「键恒在、值 `null`」，但**未同步放宽前端守卫** |
-| 关联 | I16 frontend-backend protocol spec（已归档）（契约生成的起点与 `null` 语义的来源）、I19 error-system-spec（已归档）（错误边界与日志系统）、I38d agent-frontend-modes-spec（已归档）（phase 由后端驱动，本文不改）、I55（观测面只读副本，不受本文影响） |
+| 关联 | I16 frontend-backend protocol spec（已归档）（契约生成的起点与 `null` 语义的来源）、I19 error-system-spec（已归档）（错误边界与日志系统）、I38d agent-frontend-modes-spec（已归档）（phase 由后端驱动，本文不改）、I55（观测面只读副本，不受本文影响）、dto-frontend-backend-sync-audit（已归档）（同一漂移的前史：声明 `\| null` 而运行时收 `undefined`）、command-error-contract-spec（已归档）（`toChatError` 为归一化单点）、compat-tech-debt-audit-1（已归档）（守卫过窄 → 静默退化 `InternalError` 的故障模式）、[PROJECT-DESIGN-GUIDELINES](../analysis/PROJECT-DESIGN-GUIDELINES.md)（「输出 DTO `Option` 不加 `skip_serializing_if`」为项目级硬规则） |
 | 影响范围 | `src/chat/core/chatErrors.ts`（唯一生产改动）；新增 `src/chat/core/__tests__/chatErrors.test.ts`；`src/services/__tests__/turnOrchestrator.test.ts` 增一条断言。**零改动**：后端 DTO / `src/types/protocol.contract.ts` / `src/services/stream/*` / UI 组件 |
 
 > 一句话：流内 provider 错误的 wire 载荷自 `ddca9bb` 起把 `httpStatus` / `provider` / `providerCode` 三个可选字段改成**键恒在、值 `null`**，而前端类型守卫 `isChatError` 仍只接受 `undefined`。于是**凡是不带 HTTP 元信息的 provider 错误**（流空闲超时、SSE 断流、网络失败等）在守卫处判定失败，被 `toChatError` 兜底成 `InternalError` + 「未知错误」，**后端已分类的 `Timeout` 与原始文案被丢弃**。本文把守卫判据与生成契约对齐，并用最小样本把该对齐固化成测试。
@@ -248,7 +248,7 @@ const timeoutPayload = {
 ## §8 验收
 
 - 新增断言落在 `src/chat/core/__tests__/chatErrors.test.ts`（T2）与 `src/services/__tests__/turnOrchestrator.test.ts`（T2 的一条路由断言）。
-- 每条门禁（§10）至少对应一条断言；无断言的项视为未交付。
+- 每条门禁（§10）至少对应一条断言；无断言的项视为未交付。唯一例外是 G9：判据形态是静态代码事实，由 §14.1 的全仓检索人工核对，不做运行期断言。
 - 回归口径：`npm run typecheck`、`npm run lint`、`npm test`（cwd = 仓库根）。后端零改动，不需要 `cargo test`。
 
 ---
@@ -272,11 +272,12 @@ const timeoutPayload = {
 | G1 | 主缺陷修复 | §3.5 样本 → `toChatError` 得 `code = "Timeout"`、`message` 逐字一致、`retryable = true`、`category = "timeout"`，且不含 `unknown_error` 文案 |
 | G2 | 正样本零回归 | 带 `httpStatus: 429` / `provider: "openai"` 的合法载荷仍通过，字段逐字段保留 |
 | G3 | 兜底零回归 | `{}` / `null` / `123` 仍得 `InternalError` + 「未知错误」；字符串输入仍保留 `message` 且 `code = InternalError` |
-| G4 | `details: null` 放行 | `details: null` 的载荷通过守卫，`details` 合并结果为空对象（若 OQ2 采纳） |
+| G4 | `details: null` 放行 | `details: null` 的载荷通过守卫；`toChatError` 不因此造出空 `details`（保持 `undefined`） |
 | G5 | 类型对齐 | `ChatError` 三字段声明为 `T \| null`；`npm run typecheck` 通过；新增测试中的样本字面量可直接赋给 `ProviderErrorPayloadDto`（编译期兜住契约漂移） |
 | G6 | 路由透传 | `turnOrchestrator.handleDeltaEvent` 收到 §3.5 载荷时调用 `onDeltaError`，且传入对象的 `code === "Timeout"`（不是 `InternalError`） |
 | G7 | 零后端改动 | `git diff` 不含 `src-tauri/**` 与 `src/types/protocol.contract.ts`；`npm run contract:gen` 无 diff |
 | G8 | 消费方不回归 | `FeatureErrorBoundary` 对普通 `Error` 仍判为非 `ChatError`（不因判据变宽而吞掉 crash 上报） |
+| G9 | 同类判据零残留 | 全仓检索「`: value is` 守卫」与「`=== undefined \|\|` 判据」后，把 wire 可空字段写成 `undefined` 单侧判据的地方**仅剩零处**（§14.1 逐项核对） |
 
 ---
 
@@ -287,8 +288,9 @@ const timeoutPayload = {
 | T1 | 类型与守卫对齐 | `ChatError` 三字段改 `T \| null`；`isChatError` 的 `httpStatus` / `provider` / `providerCode` / `details` 判据接受 `null`；G5 / G7 | — |
 | T2 | 回归测试 | 新增 `src/chat/core/__tests__/chatErrors.test.ts`（G1–G4、G8）；`turnOrchestrator.test.ts` 增一条路由断言（G6） | T1 |
 | T3 | 门禁核对 | `npm run typecheck` / `npm run lint` / `npm test` 全绿；人工复核 `git diff` 仅含 T1 / T2 文件 | T2 |
+| T4 | 同类文档合并 | §14：全仓同类守卫 / 判据检索表、U1–U5 通用约束、与三份已归档文档的关系；G9 | T1–T3（结论需建立在已落地的判据上） |
 
-T1 与 T2 是**串行**（测试要引用修复后的判据）；T3 与任何并行开发无冲突。
+T1 与 T2 是**串行**（测试要引用修复后的判据）；T3 与任何并行开发无冲突；T4 只写本文档，与 T1–T3 的文件完全不重叠（但结论依赖它们已落地，故排在最后）。
 
 ---
 
@@ -311,6 +313,59 @@ T1 与 T2 是**串行**（测试要引用修复后的判据）；T3 与任何并
 | 编号 | 问题 | 影响 |
 |---|---|---|
 | OQ1 | `ChatError` 是否改为从生成契约派生（`type ChatError = ProviderErrorPayloadDto & { category?: ChatErrorCategory; details?: Record<string, unknown> }`），彻底消除手写字段漂移 | 若采纳，需同步调整 `isChatError` 的字段表来源；本文暂按手写接口对齐（§9 L5） |
-| OQ2 | `details` 判据是否接受 `null` | 当前 wire 不承载 `details`，纯防御性改动；采纳则 G4 生效，不采纳则维持 N4 |
+| OQ2 | `details` 判据是否接受 `null` | **已决（采纳）**：纯防御性改动，G4 生效；wire 不承载 `details`，故类型上仍不引入 `\| null`（§3.2） |
 | OQ3 | provider `message` 是否做前端本地化（按 `code` 映射 i18n 键） | 影响 `C1`；若做，需登记码 → 键映射表并补 i18n 条目 |
 | OQ4 | `errorStream` 在无 `streamingMessageId` 时静默丢弃错误，是否另立规格 | 首 token 前失败的场景会「无任何可见错误」；与本文正交 |
+
+---
+
+## §14 同类判据与同类文档合并
+
+> 本节回答「项目里还有没有同一类问题、同类文档怎么一起解决」：先做全仓检索，再把三份已归档同类文档的共性规则固化为可复用约束（U 编号），并作为 G9 的判据。
+
+### 14.1 全仓同类判据检索（2026-11-19）
+
+检索口径：① `src/**` 内全部 `: value is` 形式的类型守卫；② 全部 `=== undefined ||` 单侧判据；③ wire 可空字段（`httpStatus` / `providerCode` / `retryAfterMs`）的消费点。
+
+| 位置 | 判据形态 | 与契约的关系 | 结论 |
+|---|---|---|---|
+| `src/chat/core/chatErrors.ts`（`isChatError`） | 逐字段 `undefined \|\| typeof` | 三字段在契约中是 `T \| null` | **缺陷**（N3 / N4），本文修复（T1） |
+| `src/vault/core/display/vaultError.ts`（`isVaultErrorDto`） | 只判必填字段：`code`（含枚举校验）+ `message` + `retryable` | 契约中三者均不可空，可空字段不参与判据 | 安全；可作「只判必填字段」的参照范式（U3） |
+| `src/mascot/renderers/gif/gifUrlValidator.ts`（`isValidGifSrc`） | 字符串 URL 前缀校验 | 非 wire 数据 | 无关 |
+| `src/stores/chat/chatStorePorts.ts`（`errorStream`） | `error.retryAfterMs != null && > 0` | `number \| null` | null-safe，无需改 |
+| `src/chat/core/chatErrorRecovery.ts` | `error.httpStatus ? … : null`、`error.providerCode ? … : null` | `T \| null` | null-safe（`null` 与 `undefined` 同为假值） |
+| `src/chat/message/groupNodeRows.ts`、`src/audit/detail.ts` | `=== undefined \|\|` | 本地 UI 值（分组游标、可选入参），非 wire | 无关 |
+
+结论：`isChatError` 是**全仓唯一**把 wire 可空字段写成 `undefined` 单侧判据的地方；其余守卫与消费点要么不碰可空字段，要么本身 null-safe。故本次修复不需要扩散到其它文件（G9）。
+
+### 14.2 固化为通用约束（U）
+
+| 编号 | 约束 | 来源 | 落点 |
+|---|---|---|---|
+| U1 | 输出 DTO 的 `Option` 字段**不加** `skip_serializing_if`：键恒在、值 `null`；前端对应声明为 `T \| null`（必填）或 `?: T \| null`（可选） | [PROJECT-DESIGN-GUIDELINES](../analysis/PROJECT-DESIGN-GUIDELINES.md)；I16（已归档） | §3.1 / §3.2；R1 |
+| U2 | 前端守卫对 wire 可空字段必须「`undefined` / `null` 双放行 + 精确类型校验」，**禁止** `typeof x !== "undefined"` 之类反向判断 | 本文 N3 / N4 的成因 | §3.3 |
+| U3 | 守卫只对**必填字段**做「存在 + 类型」校验；可选字段一律放行 `null` 与 `undefined`，不额外收窄 | `isVaultErrorDto` 范式（§14.1） | §3.3 |
+| U4 | 一致性由测试固定，不由文档约定：样本字面量必须能赋给生成契约类型（编译期），运行时行为由单测断言 | dto-frontend-backend-sync-audit（已归档）记录的「type lying」前史 | §3.5 / G5 / T2 |
+| U5 | 改输出 DTO 的序列化语义（尤其移除 / 增加 `skip_serializing_if`）时，**同一次提交内**必须扫描前端守卫与可空字段消费点 | compat-tech-debt-audit-1（已归档）记录的故障模式；本文引入点 `ddca9bb` 正是漏了这一步 | §1 N13；G9 |
+
+### 14.3 与同类文档的关系
+
+| 文档 | 记录的同一问题 | 本文如何承接 |
+|---|---|---|
+| dto-frontend-backend-sync-audit（已归档） | 前端手写类型声明 `\| null`、运行时却收到 `undefined`（type lying） | 本文是它的镜像形态：声明 `number`、运行时收到 `null`；U4 由此而来 |
+| command-error-contract-spec（已归档） | `toChatError` 是错误归一化单点，禁止 UI 直读 wire 字段 | §3.4 保持兜底语义不变；R5 拒绝绕行 |
+| compat-tech-debt-audit-1（已归档） | 后端新增错误码 / 改序列化后，前端守卫过窄 → 静默退化为 `InternalError` | §1 N6 与 §4.1 的对照表；U5 由此而来 |
+| I16 frontend-backend protocol spec（已归档） | `ts-rs` 单源生成契约、`null` 语义的来源 | §3.1 直接引用生成契约，不手抄字段表 |
+
+### 14.4 为何不顺手「防御性放宽」其它守卫
+
+`isVaultErrorDto` 的契约字段全部不可空。若给它加 `null` 放行，等于让类型守卫接受契约禁止的形态——那是**把 type lying 换个方向**（U2 的镜像错误）。同理，`chatStorePorts` 的 `!= null` 与 `chatErrorRecovery` 的真值判断本就 null-safe，改成 `!== undefined` 反而引入回归。**判据只跟随契约，不做无契约依据的放宽**（与 R2 拒绝「放宽兜底」是同一条原则）。
+
+---
+
+## §15 验收记录
+
+- **T1 类型与守卫对齐**：`ChatError` 的 `httpStatus` / `provider` / `providerCode` 改为 `number | null` / `string | null`（仍可选），与生成契约 `ProviderErrorPayloadDto` 一致；`isChatError` 的四个判据（`httpStatus` / `provider` / `providerCode` / `details`）改为「`undefined` / `null` 双放行 + 精确类型」的对称写法，未引入反向判断。`toChatError` 零改动（`details` 为 `null` 时因假值不参与合并，天然不造空对象）（G4 / G5 / G7）。
+- **T2 回归测试**：新增 `src/chat/core/__tests__/chatErrors.test.ts`，10 条用例覆盖：全 `null` 载荷通过（G1）、键缺失（`undefined`）仍通过、`details: null` 通过（G4）、类型错误的可选字段仍拒绝、缺 `retryable` / 非对象 / `Error` 实例仍拒绝（G3 / G8）、`Timeout` 载荷经 `toChatError` 保留 `code` / `message` / `retryable` / `category` 且不含 `unknown_error` 文案（G1）、HTTP 元信息逐字段保留（G2）、字符串输入保留 `message`（G3）、`null` / `{}` / `123` 仍走兜底（G3）。`src/services/__tests__/turnOrchestrator.test.ts` 的 `handleDeltaEvent — routing` 增一条：载荷可选字段全 `null` 时 `errorStream` 收到 `code = "Timeout"`、`category = "timeout"`、`retryable = true`（G6）。
+- **T3 门禁核对**：`npm run typecheck` 通过；三个改动文件经 `eslint --fix` / `prettier --write` 无残留问题；`npm test` 全量 72 个文件、857 用例通过（1 skipped，为既有跳过项）。零后端改动：`src-tauri/**` 与 `src/types/protocol.contract.ts` 均未改动，`contract:gen` 无需重跑（G7）。
+- **T4 同类文档合并**：§14 的检索表、U1–U5 通用约束、与三份已归档同类文档的关系；G9 由 §14.1 的逐项核对兜住。

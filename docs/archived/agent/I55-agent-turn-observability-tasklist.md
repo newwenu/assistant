@@ -2,8 +2,8 @@
 
 > 规格：[I55-agent-turn-observability-spec.md](./I55-agent-turn-observability-spec.md)（节点表 §3.1 / 事件词汇 §4 / 状态机 §5 / 投影 §6 / 门禁 §9 / 批次 §10 / 编排器前瞻 §11）
 > 事实基线：I55 §1.1 的 N1–N18（已按代码核对，见下方「前置核对」）
-> 前置：P4（`TurnObserver` / `TurnEmitter` / `RecordingSink` 已就绪）、P6（`transport` / `turnOrchestrator` 已接线）均已完成；P15 当前为 **I38 §2.1 未立项候选**，本清单的 V0 是唯一的开工闸门
-> 阶段台账：[I38-agent-roadmap.md](./I38-agent-roadmap.md) §2 阶段表（唯一状态来源）
+> 前置：P4（`TurnObserver` / `TurnEmitter` / `RecordingSink` 已就绪）、P6（`transport` / `turnOrchestrator` 已接线）均已完成；P15 已于 2026-11-18 立项，V0–V2 已全部交付，V3 回放受闸未开工
+> 阶段台账：[I38-agent-roadmap.md](../../store/I38-agent-roadmap.md) §2 阶段表（唯一状态来源）
 
 批次对应规格章节：**V0 立项前置**（I38 §7 第 5 条）→ **V1 出声**（I55 §4 / §5 / §9 G1·G3·G5·G9·G12写侧 / §10）→ **V2 投影与渲染**（I55 §6 / §6.7 / §9 G2·G4·G6·G7·G8·G10·G12读侧·G13·G14）→ **V3 回放**（I55 §7，受闸）→ **V4 多实例与并发**（I55 §11.4 第 4 条，不在本清单）。
 

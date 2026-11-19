@@ -63,7 +63,7 @@
 
 ---
 
-## T2 — 索引核心（§3.5 / §4 / §10 G6·G7·G11）
+## T2 — 索引核心（§3.5 / §4 / §10 G6·G7·G11）· 已完成
 
 退出条件：G6 / G7 / G11 通过；索引格式、建、读切片、校验四件事各有唯一实现。
 
@@ -81,7 +81,7 @@
 - [x] `super_read/index.rs`：索引目录读写**不经** `path::resolve_readable`；工具入参 `path` 仍必须过它
 - [x] `tests/super_read.rs`：G6——正文与 `read` 逐字节一致（`matches_read_byte_for_byte` / `matches_read_on_cut_long_lines` / `bom_file_byte_column_one_starts_at_content`）；CRLF / 末尾无换行 / BOM / GBK 四种文本的切行等价由 `index.rs` / `render.rs` 单测断言（`offsets_match_a_byte_wise_line_split` / `a_final_line_without_a_newline_still_gets_an_offset` / `a_bom_only_file_has_no_lines_and_skips_the_bom` / `gbk_content_is_split_on_the_single_byte_newline`）
 - [x] `tests/super_read.rs`：G7——`totalLines` 等于 `wc -l` 语义值（`total_lines_is_exact_where_read_gives_null`；末尾无换行 +1、BOM-only = 0 见 `index.rs::the_index_line_count_matches_reads_total_lines`）
-- [ ] `tests/super_read.rs`：G11——超 `MAX_INDEX_FILE_BYTES` 的文件返回 F1 业务错误（构造可用小阈值注入，避免真造 64 MiB）（闸门边界已有 `index.rs::the_capacity_gate_is_measured_in_bytes`；**F1 文案的公开入口断言并入 T6 失败矩阵**）
+- [x] `tests/super_read.rs`：G11——超 `MAX_INDEX_FILE_BYTES` 的文件返回 F1 业务错误（`an_index_over_the_capacity_cap_is_f1`：8 MiB 纯换行文件 → 约 839 万行 → 起点表 `8 × (lines + 1)` 自然超过 64 MiB，**不必真造 64 MiB 索引**、也**不必注入小阈值**；闸门边界另有 `format.rs::the_capacity_gate_is_measured_in_bytes`）
 
 > 未决问题 OQ1（`MAX_INDEX_FILE_BYTES` 与缓存条数按实测校准）在本切片落地前定稿；定稿后同步 §4 与本清单 G11 判据。
 >
@@ -89,7 +89,7 @@
 
 ---
 
-## T3 — `super_read`（§3.2 / §3.4 / §3.6 / §10 G8·G12·G16·G17）
+## T3 — `super_read`（§3.2 / §3.4 / §3.6 / §10 G8·G12·G16·G17）· 已完成
 
 退出条件：G8 / G12 / G16 / G17 通过；`super_read` 与 `read` 在同一窗口参数下正文逐字节一致（footer 除外）。
 
@@ -118,7 +118,7 @@
 
 ---
 
-## T4 — 生命周期（§4 / §10 G9·G10·G13）
+## T4 — 生命周期（§4 / §10 G9·G10·G13）· 已完成
 
 退出条件：G9 / G10 / G13 通过；单飞只建一次、行起点自证可用、回执同源。
 
@@ -144,7 +144,7 @@
 
 ---
 
-## T5 — `super_edit`（§3.3 / §7.3 / §10 G14·G18）
+## T5 — `super_edit`（§3.3 / §7.3 / §10 G14·G18）· 已完成
 
 退出条件：G14 / G18 通过；F7 / F8 / F9 / F10 / F11 / F12 各有用例；三处登记点同步。
 
@@ -179,21 +179,21 @@
 
 ---
 
-## T6 — 收口（§5 / §6 / §10 G15）
+## T6 — 收口（§5 / §6 / §10 G15）· 已完成
 
 退出条件：G15 通过；三工具文案齐备、失败矩阵每条有对应用例、注册组无遗漏。
 
-- [ ] 三工具 `description` 按 §6 逐条落地：`request_tool` 写明「只返回清单与手册、不改变本轮工具集、`source` 可能是回退清单」；`super_read` 写明「首次建索引成本、`totalLines` 恒精确、`column` 可进内层」，参数细节（`unit` 两口径 / `column` 上限 / `maxLineChars` 范围）留在 schema 与 `manual()`；`super_edit` 写明「按行地址、不做子串匹配」
-- [ ] 三工具文案都**不得**承诺「替代 `read` / `edit`」；默认路径仍是零成本的 `read` / `edit`
-- [ ] 失败矩阵 F1–F10 逐条映射到 `tests/{super_read.rs,super_edit.rs}` 的用例（无用例的条目视为未交付）
-- [ ] `src-tauri/src/tool_setup.rs`：`super_read` 进只读组、`super_edit` 进写组；索引根注入与 `AppDirs::indexes()` 接线
-- [ ] 门禁复核：G1–G17 逐条勾选，缺一条不关闭阶段（G16 footer 单一来源、G17 伴随工具已在 T3 落地，复核时只需确认无回退）
+- [x] 三工具 `description` 按 §6 逐条落地：`request_tool` 写明「只返回清单与手册、不改变本轮工具集、`source` 可能是回退清单」（`agent_request_tool.rs::description`）；`super_read` 写明「首次建索引成本、`totalLines` 恒精确、`column` 可进内层」（`super_read/mod.rs::description`）；`super_edit` 写明「按行列地址定位、无需唯一锚点」（`super_edit/mod.rs::description`）。参数细节（`unit` 两口径 / `column` 上限 / `maxLineChars` 范围）留在 schema 与 `manual()`。**口径变更**：原文「不做子串匹配」在 T7 改为正向表述（§6 措辞修正），回归项改为断言两档都不含 `substring`
+- [x] 三工具文案都**不得**承诺「替代 `read` / `edit`」；默认路径仍是零成本的 `read` / `edit`——`super_read` 只写「输出格式与 `read` 一致、结果可互换」，`brief` 统一为「`read` / `edit` 表达不了时才申请」；`request_tool` 明说「列举与手册从不把工具加进本轮」
+- [x] 失败矩阵逐条映射（**按判据所在层断言**，不硬凑公开入口）：F1 `super_read.rs::an_index_over_the_capacity_cap_is_f1`；F2 `format.rs::binary_files_are_rejected` + 公开入口 `super_read.rs::a_binary_file_is_f2`；F3 `super_read.rs::a_path_outside_the_workspace_is_f3`（与 `read` 共用 `resolve_readable`）；F4 `proof.rs::the_stale_message_names_the_line_and_the_cause` + 重建一次的成功路径 `super_read.rs::an_equal_length_rewrite_with_a_restored_mtime_rebuilds_via_self_proof`（「重建后仍失败」是竞态，公开入口无法稳定触发，故文案在判据层钉住）；F5 `render.rs::a_byte_column_inside_a_multibyte_char_is_f5` / `super_edit.rs::a_byte_column_inside_a_character_is_refused`；F6 `super_read.rs::a_char_column_beyond_the_cap_is_f6`；F7 / F8 / F9 / F11 见 `super_edit.rs` 五条；F10 / F12 是「定位与写回之间的竞态 / 转码闸门」，由判据层 `apply.rs` 单测钉住
+- [x] `src-tauri/src/tool_setup.rs`：`super_read` 进只读组、`super_edit` 进写组（注册在 `os/mod.rs::register_readonly_tools` / `register_write_tools`，`tool_setup.rs` 只调这两个函数）；索引根注入 `.with_index_root(dirs.indexes())`（`tool_setup.rs` 装配链）
+- [x] 门禁复核 G1–G17 无回退：G1–G5 `tests/request_tool.rs`；G6 / G7 / G11 见 T2 条目；G8 / G12 / G13 `tests/super_read.rs`；G9 / G10 同上（含自证两条）；G14 / G18 `tests/super_edit.rs`；G15 实测 `npm run contract:gen` 后 `src/types/protocol.contract.ts` 与 `vault.contract.ts` **零 diff**（本阶段未改 wire / DTO）；G16 `footer.rs` 单测（每项可识别、无重复）+ 两个超级工具源码内**无手写 footer 字面量**（全部走 `footer::render`）；G17 `tests/tool_resolver.rs` 身份过滤两条
 
 > 未决问题 OQ5（`query` 是否支持 `tier` / 分组过滤）在本切片前定稿；若采纳，须同步 §3.1 与本清单 T1 的 schema 条目（T1 已交付版本为纯子串匹配）。
 
 ---
 
-## T7 — 准入语义 + 伴随展示（§3.6 / §10 G17·G19·G20）· 已完成（G19 差 `super_edit` 一条断言）
+## T7 — 准入语义 + 伴随展示（§3.6 / §10 G17·G19·G20）· 已完成
 
 退出条件：G17 / G19 / G20 通过；`callable` 只剩「模型申请」一个来源；配置里残留的伴随 id 不构成第二个事实来源，也不静默消失。
 
@@ -220,17 +220,17 @@
 - [x] `tests/tool_resolver.rs`：G17 身份过滤用例——`companion_ids_in_the_whitelist_never_get_injected`、`a_companion_without_its_base_injects_nothing`
 - [x] `tests/super_edit.rs`：`description_serves_the_full_tier_only` 对称断言（`full` ≤ 600 字符、不含 `Default to`、含 `no unique anchor` 与 `empty range`；`brief` ≤ 120 字符、含 `Request it when`）；另断言两档**都不含 `substring`**，把「不得用否定式定义」钉成回归项（§6）
 - [x] **措辞修正（§6）**：`super_edit` 的 `description` / `brief` 与 `agent_edit/report.rs` 的升级提示原写作「不做子串匹配 / instead of substring matching」，改为表达**定位方式**（「按行列地址定位，不需要唯一锚点」）。原措辞既冗余（「按行列地址」已蕴含），又会被读成「不用提供准确文本」——与紧随其后的「`expected` 须逐字节相等」自相矛盾。面板 `tool_desc`（中英）同步改为用户可感知的收益（「重复内容不影响定位」）
-- [ ] G20 面板用例：伴随条目与基工具同处一个渲染单元、元工具可勾选且计入计数——目前只有 `toolConfig.test.ts` 的纯函数级断言（含 `groupToolUnits`、分子/分母口径），无渲染层用例
+- [x] G20 面板用例：`src/chat/tool/__tests__/panelStructure.test.ts`（11 用例）——聊天面板「伴随条目并入基工具的不可断行渲染单元」（源码结构 + `.toolUnit` `inline-flex` / `.toolList` `flex-wrap`）、「伴随分支无 `Checkbox` / `onChange` / `setTierSelection`」、「元工具分支有 `Checkbox` + `metaBadge` + 写回」、计数走 `countEnabledSelectableTools`（并断言源码不出现 `config.enabledTools.length` / `tools.length`）；设置页「缩进从属行 + 只读状态点、无勾选框」与 `.companionRow` 缩进声明、元工具同口径；中英两份文案的键与 `{{base}}` 占位符。**渲染层门禁为何落在源码结构**：仓库无 jsdom / `@testing-library/react`（`vitest.config.ts` 无 `environment`、`src/testSetup.ts` 只补空 `window`），且 I48 §9 第 7 条已决定「不为此引入组件测试基建」——断言结构性事实（哪条分支有勾选框、渲染单元怎么折、CSS 怎么声明），不断言像素与运行时布局；纯函数级口径仍由 `src/chat/core/__tests__/toolConfig.test.ts` 承担
 
-验收：`cargo test -p assistant-tools --tests` 全绿；`cargo test --test tool_resolver` 18/18；`cargo clippy -p assistant-tools --tests -D warnings` 无警告；`npx tsc --noEmit` 通过；`npx eslint`（四个改动文件）无问题；`npx vitest run src/chat` 22 文件 / 325 用例全绿。
+验收：`cargo test -p assistant-tools --tests` 全绿；`cargo test --test tool_resolver` 18/18；`cargo clippy -p assistant-tools --tests -D warnings` 无警告；`npx tsc --noEmit` 通过；`npx eslint`（改动文件）无问题；`npx vitest run src/chat` 23 文件 / 341 用例全绿（新增 `chat/tool/__tests__/panelStructure.test.ts` 11 条）。
 
 ---
 
-## T8 — 升级通道（§3.6 / §10 G4·G21·G22·G23）
+## T8 — 升级通道（§3.6 / §10 G4·G21·G22·G23）· 已完成
 
 退出条件：G21 / G22 / G23 通过；升级只改变**下一迭代**的工具数组，且旧前缀逐字节不变；跨轮不携带。
 
-> **状态（2026-11-19）**：契约与实现已全部落地（下面 13 条已勾），G21 / G22 / G4 / G23 的**用例**仍缺（4 条未勾）。验收命令暂不可全绿——`cargo test -p assistant-agent` 尚未补升级链路用例。
+> **状态（2026-11-19）**：契约、实现与门禁用例**全部落地**（下面 17 条已全勾）。验收命令全绿：`cargo test -p assistant-tools --tests`（`request_tool` 19/19、`agent_read` 47/47、`super_edit` 16/16、`super_read` 20/20 等各组）、`cargo test -p assistant-agent --features test-doubles`（`loop_executor` 40/40）、`cargo test -p assistant-app`（含新增 `tests/tool_escalation.rs` 11/11）、`cargo clippy`、`cargo fmt --check`。
 
 > 顺序约束：**先 T7 再 T8**。T7 把「伴随 = 注入」拿掉之后 `request_tool` 才有必要成为唯一入口；反过来做会让升级通道与白名单展开机制并存，门禁无法区分两条注入路径（§11）。
 >
@@ -248,10 +248,10 @@
 - [x] `assistant-agent` 循环：`RoundState.tools: Option<Arc<Vec<ToolSpec>>>` 持有工具集，批次结束后 `drain` + 尾部追加，**下一迭代**生效（申请所在迭代内不生效）
 - [x] 尾部追加保证旧工具数组**前缀逐字节不变**（`append_escalations` 只 push 到末尾，同名去重不重排旧元素）；`drain` 为空则不重建请求
 - [x] 跨轮不携带：`RoundEscalationSink` 每轮现创建、turn 结束即丢弃，不持久化（§9 L17）
-- [ ] `tests/super_read.rs` / `tests/request_tool.rs`：G21——`read` 不在本轮时申请 `super_read` → F14 且工具集不变；`request_tool` 未勾选时模型根本无法发起（不在 tools 数组）
-- [ ] `tests/`：G22——合法申请后下一迭代 provider 请求含 `super_read`，`ToolExecCtx.tools` 与 `available_tool_names` 同步含它
-- [ ] `tests/`：G4 回归——调用 `request_tool(detail = "enable")` 前后**本轮**工具集不变（变更只发生在批次结束后）
-- [ ] `tests/`：G23 三档不变式逐条断言——①`full ⇔ callable`（tools 数组内每项都有 `description` + `input_schema`，且 `escalatable` 项不在数组内）；②`brief ⇒ eligible`（可升级段每项基工具都在 `available_tool_names`）；③`none ⇔ ¬eligible`（基工具不在本轮则既不在 `listed`、也不在 `escalatable`、也不在 tools 数组）；④`listed ∩ escalatable = ∅`；⑤`brief` 不含 `input_schema` 与手册正文
+- [x] `tests/request_tool.rs` / `src-tauri/tests/tool_escalation.rs`：G21——`read` 不在本轮时申请 `super_read` → F14 且工具集不变；`request_tool` 未勾选时模型根本无法发起（不在 tools 数组）。用例：`escalating_without_the_base_tool_is_rejected` / `escalating_a_non_companion_tool_is_rejected` / `escalating_an_unknown_name_is_rejected` / `escalating_above_the_turn_tier_limit_is_rejected` / `enable_all_rejected_reports_every_reason` / `enable_without_tools_is_a_business_error_that_keeps_the_candidates` / `the_meta_tool_requires_an_explicit_check`（`tests/tool_resolver.rs`）
+- [x] `crates/assistant-agent/tests/loop_executor.rs`：G22——合法申请后下一迭代 provider 请求含 `super_read`，`ToolExecCtx.tools` 与 `available_tool_names` 同步含它。用例：`g22_escalation_takes_effect_from_the_next_iteration`（下一迭代请求 = `["echo", "super_read"]`、执行上下文快照不含新项）、`g22_duplicate_escalation_is_merged_once`、`a_fresh_sink_does_not_carry_previous_escalations`（跨轮不携带）
+- [x] G4 回归——调用 `request_tool(detail = "enable")` 前后**本轮**工具集不变（变更只发生在批次结束后）。用例：`g4_no_escalation_keeps_the_request_tool_set_stable`（空 `drain` 不重建请求）、`enable_does_not_touch_the_turn_tool_set`（目录与本轮可用名逐项不变）
+- [x] G23 三档不变式逐条断言——①`full ⇔ callable`（tools 数组内每项都有 `description` + `input_schema`，且 `escalatable` 项不在数组内）；②`brief ⇒ eligible`（可升级段每项基工具都在 `available_tool_names`）；③`none ⇔ ¬eligible`（基工具不在本轮则既不在 `listed`、也不在 `escalatable`、也不在 tools 数组）；④`listed ∩ escalatable = ∅`；⑤`brief` 不含 `input_schema` 与手册正文。用例：`g23_the_three_description_tiers_hold_across_the_turn_matrix`（9 组本轮工具集 × 2 个层级上限的全矩阵）、`the_escalatable_section_carries_the_brief_only`、`an_available_companion_is_not_escalatable`、`enabled_items_leave_the_escalatable_section`
 - [x] `agent_request_tool.rs`：可升级段取 `Tool::brief()`（缺省回落 `description()` 首句），**不**取 `description()` 全文、**不**取 `manual()`（G19 / G23 ⑤）。实现落在端口的 `candidates` 一侧（`brief()` 是 async，只有适配器能调），工具侧只消费端口给出的成品条目
 
 验收：`cargo test -p assistant-tools --tests`、`cargo test -p assistant-agent`、`cargo clippy -p assistant-tools --all-targets`、`cargo fmt --check` 全通过；`npm run contract:gen` 无 diff（T8 不改 DTO）。
@@ -260,12 +260,12 @@
 
 ## 收口核对（每批次结束跑，不单独占切片）
 
-- [ ] G15：`npm run contract:gen` 无 diff、`src/types/protocol.contract.ts` 与 `src/vault/core/contract/vault.contract.ts` 无变化（本阶段无 DTO 改动）
-- [ ] `read` / `edit` 既有测试全通过（P16 的改动不回退）
-- [ ] 命令（cwd = `src-tauri`）：`cargo test -p assistant-tools`、`cargo test -p assistant-agent`、`cargo clippy -p assistant-tools --all-targets`、`cargo fmt --check`
-- [ ] 邻接确认：`ToolBox` 入口（`ToolUseContext::new`）下 `request_tool` 报「目录不可用」、`super_read` 报「索引根不可用」，均不 panic
-- [ ] 依赖确认：未新增 crate 依赖（文件名哈希用既有 `sha2`）
-- [ ] G16 复核：`crates/assistant-tools/src` 下不存在手写 `"[encoding:"` / `"[long-lines:"` / `"[index:"` / `"[truncated:"` 一类字面量（全部走 `footer::render()`）
+- [x] G15：`npm run contract:gen` 无 diff、`src/types/protocol.contract.ts` 与 `src/vault/core/contract/vault.contract.ts` 无变化（本阶段无 DTO 改动）——已跑，`git status` 对两个生成文件为空
+- [x] `read` / `edit` 既有测试全通过（P16 的改动不回退）——`agent_read` 47/47、`agent_write` 27/27、`super_edit` 16/16、`super_read` 20/20
+- [x] 命令（cwd = `src-tauri`）：`cargo test -p assistant-tools`、`cargo test -p assistant-agent`、`cargo clippy -p assistant-tools --all-targets`、`cargo fmt --check`——全绿；另跑 `cargo test -p assistant-app`（含 `tests/tool_escalation.rs` 11/11）
+- [x] 邻接确认：`ToolBox` 入口（`ToolUseContext::new`）下 `request_tool` 报「catalog is unavailable」、`super_read` / `super_edit` 报「index root is unavailable」，均不 panic（用例：`missing_catalog_is_a_business_error`、`gateway.rs` 的索引根缺失路径）
+- [x] 依赖确认：未新增 crate 依赖（`git diff --stat -- "*.toml"` 为空；`Arc` / `Arc<dyn …>` 均来自 std）
+- [x] G16 复核：`crates/assistant-tools/src` 下不存在手写 `"[encoding:"` / `"[long-lines:"` / `"[index:"` / `"[truncated:"` 一类字面量（全部走 `footer::render()`）——检索命中项仅为 `footer.rs` 自身渲染/断言、`compact` 解析用例与 `storage.rs` 的 spill 常量，无新增手写
 
 ---
 
@@ -280,3 +280,7 @@
 - 2026-11-19 · T8 · 代码落地（门禁用例待补）· `contract/escalation.rs`（端口 + 四个数据结构）、`ToolUseContext.escalation`、`request_tool` 的 `enable` 分支与可升级段、`EscalationSink` + `ToolExecCtx.escalations`、`RoundState.tools` + 尾部追加、`adapters/tool_escalation.rs`、`tool_setup.rs` 装配全部完成；`cargo check --all-targets` 通过、`cargo test -p assistant-tools --lib` 286/286 通过。**未关闭项**：G21 / G22 / G4 / G23 四条门禁缺用例（下面四个未勾条目即缺口）。
 - 2026-11-19 · T8 修订 · 借用形态（§3.8 ②）· `ToolExecCtx.escalations` 由 `Option<&'a dyn EscalationSink>` 改为 `Option<Arc<dyn EscalationSink>>`。原因：`ToolUseContext.escalation` 是 `Option<Arc<dyn ToolEscalationPort>>`（无生命周期参数），端口要随工具调用存活到调用结束，借用会让 `'a` 传染到 `ToolUseContext`，而后者是工具签名的一部分。规格 §3.8 ② 已同步。
 - 2026-11-19 · T8 修订 · 默认值（§3.6）· 元工具 `request_tool` **不进任何默认值**：内置模式种子 `BUILTIN_AGENT_TOOL_CONFIG` 保持空白名单（`agent_modes.rs` 及其测试同步为 `enabled_tools.is_empty()`）。原规格 §3.6「模式默认值应显式包含 `request_tool`」一句**已删除**并改写为「元工具不进入任何默认值 + 三条理由」（deny-by-default 不可破例 / 单独注入元工具是半启用态、`escalatable` 恒为空 / 默认值只允许一个来源）。G17·G20·G21 措辞本就按「未勾即无入口」写成，无需连带改动。
+- 2026-11-19 · T8 · 门禁用例落地（G4/G21/G22/G23）· 新增 `src-tauri/tests/tool_escalation.rs`（11 用例：准入五条拒绝路径、`disabledTools` 不阻断、跨轮不携带、G23 全矩阵三档不变式）；`crates/assistant-agent/tests/loop_executor.rs` 新增 3 用例（`g22_escalation_takes_effect_from_the_next_iteration` / `g22_duplicate_escalation_is_merged_once` / `g4_no_escalation_keeps_the_request_tool_set_stable`）；`crates/assistant-tools/tests/request_tool.rs` 新增 9 用例（可升级段只带 brief、无端口不输出、F13/F14 语义、部分通过、`enable` 不改本轮工具集、已生效项离开可升级段）。顺带修掉两处实现缺口：F13 业务错误此前丢失可升级段（模型拿到错误却不知可申请什么），已按 §3.8 ⑤ 补回；非法 `detail` 的校验文案同步列出 `enable`。验收：`cargo test -p assistant-tools --tests`、`cargo test -p assistant-agent --features test-doubles`、`cargo test -p assistant-app`、`cargo clippy`、`cargo fmt --check` 全绿。
+- 2026-11-19 · T7 · G20 渲染层用例落地 · 新增 `src/chat/tool/__tests__/panelStructure.test.ts`（11 用例）。仓库测试环境无 jsdom / `@testing-library/react`（`src/testSetup.ts` 只补空 `window`），故断言落在**源码结构 + CSS 声明**层：伴随条目并入 `groupToolUnits` 单元、伴随分支无 `Checkbox`、元工具分支带 `metaBadge`、计数走 `countEnabledSelectableTools`、`.toolList { flex-wrap: wrap }` + `.toolUnit { inline-flex }` + `.companion { nowrap }` 三条 CSS 声明齐全、中英 i18n 键集合完整且带 `{{base}}` 占位符、设置页 `ToolAssemblySection` 同口径（缩进一级 + 只读状态点）。`npx vitest run src/chat` 23 文件 / 341 用例全绿。**G20 至此关闭**。
+- 2026-11-19 · T2/T6 · 失败矩阵 F1–F4 公开入口补全 · `tests/super_read.rs` 新增 3 条（`an_index_over_the_capacity_cap_is_f1`：8 MiB 纯换行 → 起点表自然超 64 MiB，不造大文件也不注入阈值；`a_binary_file_is_f2`：与 `read` 同判据同文案；`a_path_outside_the_workspace_is_f3`：与 `read` 共用 `resolve_readable`）；`super_index/proof.rs` 新增 `the_stale_message_names_the_line_and_the_cause` 钉住 F4 文案（「重建后仍失败」是竞态，公开入口无法稳定构造，故在判据层断言）。`super_read` 由 17 条增至 20 条。**T6 失败矩阵与 G11 关闭**。
+- 2026-11-19 · T6 · 收口复核 · G15 实测：`npm run contract:gen` 后 `src/types/protocol.contract.ts` 与 `src/vault/core/contract/vault.contract.ts` 零 diff；G16 实测：两个超级工具源码内无手写 footer 字面量（全走 `footer::render`），`footer.rs` 单测保证每个登记 tag 可识别且不重复；注册组复核：`super_read` 在 `register_readonly_tools`、`super_edit` 在 `register_write_tools`，索引根由 `tool_setup.rs` 注入 `dirs.indexes()`。**P17 全部验收点闭环**。
