@@ -119,12 +119,16 @@ pub(super) fn argument_fingerprint(call: &FinalizedToolCall) -> String {
 /// 分类预算的 `scope`：工具的稳定目标标识（D25），不由端口回传。
 ///
 /// 优先取参数里的目标字段（`path` / `paths` / `url`），URL 去掉 query 与 fragment；
-/// 参数解析失败或没有目标字段时回落到工具名（无目标类工具与替身工具）。
+/// 参数解析失败时回落到工具名，没有目标字段时回落到同参指纹。
+///
+/// 回落不能用工具名：`agent_request_tool` / 省略 `path` 的 `agent_grep` 这类
+/// 没有目标字段的工具会把**所有**失败并进同一个桶，不同参数的两次失败被误判成
+/// 「同一目标连续失败」。用指纹后，只有真正重复的同一调用才会累计预算。
 pub(super) fn tool_scope(call: &FinalizedToolCall) -> String {
     if call.is_error {
         return call.tool_name.clone();
     }
-    scope_of_arguments(&call.arguments).unwrap_or_else(|| call.tool_name.clone())
+    scope_of_arguments(&call.arguments).unwrap_or_else(|| argument_fingerprint(call))
 }
 
 fn scope_of_arguments(arguments: &serde_json::Value) -> Option<String> {
@@ -293,8 +297,20 @@ mod tests {
     }
 
     #[test]
-    fn tool_scope_falls_back_to_tool_name() {
-        assert_eq!(tool_scope(&call("echo", json!({"q": "a"}))), "echo");
+    fn tool_scope_falls_back_to_argument_fingerprint() {
+        assert_eq!(
+            tool_scope(&call("echo", json!({"q": "a"}))),
+            "{\"q\":\"a\"}"
+        );
+    }
+
+    #[test]
+    fn tool_scope_keeps_distinct_arguments_apart_without_target() {
+        assert_ne!(
+            tool_scope(&call("echo", json!({"q": "a"}))),
+            tool_scope(&call("echo", json!({"q": "b"}))),
+            "无目标字段的工具不得把所有失败并进同一个桶"
+        );
     }
 
     #[test]

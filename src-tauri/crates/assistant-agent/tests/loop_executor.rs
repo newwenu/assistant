@@ -1124,6 +1124,57 @@ async fn a17_validation_nudges_once_then_halts() {
 }
 
 #[tokio::test]
+async fn a17_same_batch_duplicate_failures_count_once_per_iteration() {
+    let run = run_loop(
+        LoopArgs::new(vec![
+            multi_tool_script(&[
+                ("call-1", "echo", "{\"q\":\"a\"}"),
+                ("call-2", "echo", "{\"q\":\"a\"}"),
+            ]),
+            tool_call_script("call-3", "echo", "{\"q\":\"a\"}"),
+        ])
+        .with_tools(vec![echo_tool()])
+        .with_results(vec![
+            err_result(
+                "call-1",
+                "echo",
+                "bad",
+                ToolStage::Validate,
+                Some(ToolErrorClass::Business),
+            ),
+            err_result(
+                "call-2",
+                "echo",
+                "bad",
+                ToolStage::Validate,
+                Some(ToolErrorClass::Business),
+            ),
+            err_result(
+                "call-3",
+                "echo",
+                "bad",
+                ToolStage::Validate,
+                Some(ToolErrorClass::Business),
+            ),
+        ])
+        .with_iterations(2),
+    )
+    .await;
+
+    assert_eq!(run.outcome.status, TurnStatus::Failed);
+    assert_eq!(
+        run.outcome.iterations, 2,
+        "同批次同键两次失败只算 1 次，第 2 轮才耗尽 Validation 预算"
+    );
+    assert_eq!(run.outcome.text, "工具 echo 连续失败 2 次，已停止本轮：bad");
+    let last = last_user_contents(&run.requests());
+    assert!(
+        last[1].contains("上次调用未通过校验"),
+        "首轮失败后必须把 nudge 交给模型，不能被同批次的第二次失败吞掉"
+    );
+}
+
+#[tokio::test]
 async fn a17_distinct_targets_do_not_share_validation_budget() {
     let run = run_loop(
         LoopArgs::new(vec![

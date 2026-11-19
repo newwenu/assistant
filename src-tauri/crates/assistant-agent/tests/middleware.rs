@@ -146,6 +146,44 @@ async fn tool_output_cap_is_noop_below_limit() {
 }
 
 #[tokio::test]
+async fn classified_failure_counts_once_per_iteration() {
+    let chain = MiddlewareChain::p4(6);
+    let ctx = ctx();
+    let mut res = result(
+        "read",
+        true,
+        ToolStage::Validate,
+        Some(ToolErrorClass::Business),
+    );
+
+    let _ = run_after_tool(&chain, &mut res, "fp", "a.rs").await;
+    assert_eq!(chain.take_pending_nudges().len(), 1, "首次失败给 nudge");
+
+    let _ = run_after_tool(&chain, &mut res, "fp", "a.rs").await;
+    assert!(
+        chain.take_pending_nudges().is_empty(),
+        "同一迭代内的同键重复失败不再计数、也不再 nudge"
+    );
+    assert_eq!(
+        chain.after_iteration(&ctx).await,
+        MiddlewareOutcome::Continue,
+        "同批次两次同键失败只算 1 次，不得在首轮就熔断"
+    );
+
+    let _ = run_after_tool(&chain, &mut res, "fp", "a.rs").await;
+    match chain.after_iteration(&ctx).await {
+        MiddlewareOutcome::StopTurn { middleware, reason } => {
+            assert_eq!(middleware, "repeated-failure");
+            assert!(
+                reason.contains('2'),
+                "跨两轮才是「连续失败 2 次」：{reason}"
+            );
+        }
+        other => panic!("期望 StopTurn，实际 {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn generic_failure_nudges_at_two_and_halts_at_three() {
     assert_eq!(REPEATED_FAILURE_NUDGE_AT, 2);
     assert_eq!(REPEATED_FAILURE_HALT_AT, 3);

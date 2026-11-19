@@ -6,7 +6,7 @@
 //! 顺序是语义：③ 必须在 ② 之后（P4 无 ②），④ 必须在 ③ 之后（否则还原的是空内容），
 //! `after_tool` 内部顺序固定为 D26（豁免）→ D25（分类预算）→ D19（通用 2/3 阶梯）。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use assistant_providers::types::ChatMessage;
@@ -194,6 +194,14 @@ struct FailureLedger {
     generic: HashMap<(String, String), u32>,
     /// (分类, 工具, scope) → 已失败次数（D25 分类预算）。
     classified: HashMap<(FailureClass, String, String), u32>,
+    /// 本迭代已计过数的通用键：同一批次内同键多次失败只算 1 次。
+    generic_counted_this_iteration: HashSet<(String, String)>,
+    /// 本迭代已计过数的分类键：同一批次内同键多次失败只算 1 次。
+    ///
+    /// 并行批次里两个同键失败若各计 1 次，`Validation`（预算 1）会在**同一次**迭代
+    /// 内直接耗尽预算，模型连 nudge 都看不到就被 halt；按迭代去重后，「连续失败」
+    /// 至少跨两次模型请求，nudge 才有被消费的机会。
+    classified_counted_this_iteration: HashSet<(FailureClass, String, String)>,
     nudges: Vec<String>,
     halt: Option<String>,
 }
@@ -394,13 +402,18 @@ impl TurnMiddleware for RepeatedFailureMiddleware {
 
         // 成功一次即重置：同工具同参计数清空，该 scope 的分类计数也清空（D25）。
         if !result.is_error {
-            ledger.generic.remove(&(
-                result.tool_name.clone(),
-                res.argument_fingerprint.to_string(),
-            ));
+            let fingerprint = res.argument_fingerprint.to_string();
+            let tool = result.tool_name.clone();
+            ledger.generic.remove(&(tool.clone(), fingerprint.clone()));
+            ledger
+                .generic_counted_this_iteration
+                .retain(|(name, fp)| !(name == &tool && fp == &fingerprint));
             ledger
                 .classified
-                .retain(|(_, tool, scope), _| !(tool == &result.tool_name && scope == res.scope));
+                .retain(|(_, name, scope), _| !(name == &tool && scope == res.scope));
+            ledger
+                .classified_counted_this_iteration
+                .retain(|(_, name, scope)| !(name == &tool && scope == res.scope));
             return MiddlewareOutcome::Continue;
         }
 
@@ -415,6 +428,9 @@ impl TurnMiddleware for RepeatedFailureMiddleware {
         match classify_failure(result.stage, result.error_kind) {
             Some(class) => {
                 let key = (class, result.tool_name.clone(), res.scope.to_string());
+                if !ledger.classified_counted_this_iteration.insert(key.clone()) {
+                    return MiddlewareOutcome::Continue;
+                }
                 let count = ledger.classified.entry(key).or_insert(0);
                 *count += 1;
                 let attempts = *count;
@@ -431,6 +447,9 @@ impl TurnMiddleware for RepeatedFailureMiddleware {
                     result.tool_name.clone(),
                     res.argument_fingerprint.to_string(),
                 );
+                if !ledger.generic_counted_this_iteration.insert(key.clone()) {
+                    return MiddlewareOutcome::Continue;
+                }
                 let count = ledger.generic.entry(key).or_insert(0);
                 *count += 1;
                 let attempts = *count;
@@ -448,7 +467,11 @@ impl TurnMiddleware for RepeatedFailureMiddleware {
     }
 
     async fn after_iteration(&self, _ctx: &TurnCtx<'_>) -> MiddlewareOutcome {
-        match lock(&self.shared.failures).halt.take() {
+        let mut ledger = lock(&self.shared.failures);
+        // 迭代边界：下一批次的同键失败重新获得计数机会（连续 = 跨请求）。
+        ledger.generic_counted_this_iteration.clear();
+        ledger.classified_counted_this_iteration.clear();
+        match ledger.halt.take() {
             Some(reason) => MiddlewareOutcome::StopTurn {
                 middleware: self.name(),
                 reason,
