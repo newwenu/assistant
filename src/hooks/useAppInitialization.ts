@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useToolStore } from "@/stores/toolStore";
+import { ensureObservationEvents } from "@/services/observationEvents";
 
 export function useAppInitialization() {
   const loadFavorites = useToolStore((s) => s.loadFavorites);
@@ -8,5 +9,6 @@ export function useAppInitialization() {
   useEffect(() => {
     void loadFavorites();
     void loadRecentTools();
+    ensureObservationEvents();
   }, [loadFavorites, loadRecentTools]);
 }

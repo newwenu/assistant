@@ -102,14 +102,62 @@
   font-size: 12px;
 }
 
-.checkboxGroup {
+/* 普通工具横排换行；每个单元 = 一个条目 + 跟随它的伴随条目。 */
+.toolList {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px 12px;
+}
+
+/* 单元内部不可断行：伴随条目永远紧贴基工具，不会被换行推到下一行。 */
+.toolUnit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 伴随条目：无勾选框、与基工具同高同排，靠弱化字色表达「不是独立能力」（I58 §3.6）。
+   用途说明与从属状态全部收进 tooltip，条目本身只占一个名字的宽度。 */
+.companion {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+/* 基工具未启用：整条减淡，配合 tooltip 的「需先启用」文案。 */
+.companionIdle {
+  opacity: 0.55;
+}
+
+/* 伴随条目的 tooltip：一句用途 + 从属状态，悬停才占位。 */
+.tooltipBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tooltipHint {
+  font-size: 12px;
+  opacity: 0.8;
 }
 
 .checkbox {
   margin-inline-start: 0;
   font-size: 12px;
   font-family: var(--font-mono);
+}
+
+/* 元工具标记：它同样是勾选项，只是需要说明「勾它是开启申请能力」。 */
+.metaBadge {
+  margin-inline-start: 6px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 14px;
+  font-family: var(--font-sans, inherit);
 }

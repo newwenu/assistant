@@ -103,11 +103,46 @@
   font-family: var(--font-mono);
 }
 
+/* 元工具标记：同样是勾选项，只是需要说明「勾它是开启申请能力」。 */
+.metaBadge {
+  margin-inline-start: 6px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 14px;
+  font-family: var(--font-sans, inherit);
+}
+
 .toolDesc {
   display: block;
   font-size: 11px;
   color: var(--color-text-tertiary);
   line-height: 1.4;
+}
+
+.toolText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* 伴随条目：缩进在基工具下方、无勾选框，只表达「跟随谁可用」（I58 §3.6）。 */
+.companionRow {
+  margin-inline-start: 22px;
+  align-items: center;
+}
+
+.statusDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: var(--color-success, #52c41a);
+}
+
+.statusDotIdle {
+  background: var(--color-text-quaternary);
 }
 
 .hint {

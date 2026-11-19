@@ -19,6 +19,8 @@ export async function loadFeatures(): Promise<void> {
     const { vaultModule } = await import("./vault/module");
     modules.push(vaultModule);
   }
+  const { observationModule } = await import("./observation/module");
+  modules.push(observationModule);
   if (modules.length === 0) return;
   features = aggregate(modules);
   for (const slot of features.confs) registerConfSlot(slot);

@@ -24,6 +24,7 @@ import {
   createAgentSegments,
   type AgentSegments,
 } from "../agent/agentSegments";
+import { useObservationStore } from "../agent/observation/store";
 import { useChatStreamStore } from "./chatStreamStore";
 import { useAgentModeStore } from "../agent/agentModeStore";
 import {
@@ -358,6 +359,21 @@ export function createOrchestrator(
     state: statePort,
     env: envPort,
     strategies,
+    // 观测端口只暴露写方法：编排层读不到观测数据（O6 / O10）。
+    observation: {
+      applyNodeEvent: (event) =>
+        useObservationStore.getState().applyNodeEvent(event),
+      applyDeltaSeq: (conversationId, turnId, seq, iteration) =>
+        useObservationStore
+          .getState()
+          .applyDeltaSeq(conversationId, turnId, seq, iteration),
+      applyToolCall: (call) =>
+        useObservationStore.getState().applyToolCall(call),
+      applySessionState: (conversationId, turnId, state) =>
+        useObservationStore
+          .getState()
+          .applySessionState(conversationId, turnId, state),
+    },
     // 命令分派是链路判断的第二个（也是最后一个）落点：命令与服务必须同链
     dispatchSend: (conversationId, args, kind) =>
       kind === "agent"

@@ -7,8 +7,9 @@ import {
   type AgentMode,
 } from "@/stores/agent/agentModeStore";
 import type { ConversationToolConfig } from "@/chat/core/chatTypes";
-import { DEFAULT_TOOL_CONFIG } from "@/chat/core/toolConfig";
+import { DEFAULT_TOOL_CONFIG, stripCompanionIds } from "@/chat/core/toolConfig";
 import { useSettingMessage } from "../../shared/useSettingMessage";
+import { loadToolDescriptors } from "../../shared/sections/ToolAssemblySection";
 import type { FieldSchema } from "../../core/types/fieldSchema";
 
 import { DEFAULT_FORM_DATA, type ModeFormData } from "./fieldSchemas";
@@ -92,7 +93,7 @@ export function useModeForm() {
     const kind = (values.kind || "chat") as AgentMode["kind"];
     const toolConfig =
       kind === "agent"
-        ? toolConfigDraft
+        ? stripCompanionIds(toolConfigDraft, await loadToolDescriptors())
         : (editingMode?.toolConfig ?? DEFAULT_TOOL_CONFIG);
     try {
       if (editingMode) {

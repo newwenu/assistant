@@ -45,6 +45,9 @@ export function subscribeChatStreamEvents(): () => void {
     onToolCall: (call) => {
       orchestratorInstance?.onAgentToolCall(call);
     },
+    onNodeEvent: (event) => {
+      orchestratorInstance?.onAgentNodeEvent(event);
+    },
     onTextDelta: (chunk) => {
       orchestratorInstance?.onTextDelta(chunk);
     },

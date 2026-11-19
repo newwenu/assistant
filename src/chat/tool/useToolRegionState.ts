@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useOrbOverlayClose } from "@/orb/orbOverlays";
 import type { ConversationToolConfig } from "../core/chatTypes";
-import { diffToolConfig, isEmptyToolConfigDiff } from "../core/toolConfig";
+import {
+  countEnabledSelectableTools,
+  countSelectableTools,
+  diffToolConfig,
+  isEmptyToolConfigDiff,
+  stripCompanionIds,
+} from "../core/toolConfig";
 import type { ToolRegionInput, ToolRegionView } from "../layouts/layoutProps";
 import { useToolCatalog } from "./useToolCatalog";
 
@@ -107,8 +113,16 @@ export function useToolRegionState(
     setOpen((prev) => (enabled ? !prev : false));
   }, [enabled]);
 
+  /**
+   * 会话级工具配置的唯一写回口：先剔除名单里的伴随 id（I58 §3.6）。
+   *
+   * 伴随条目没有独立开关，旧面板却把它渲染成勾选项，历史配置里可能残留这些 id；
+   * 这里在写回前静默修掉，用户下一次改动即完成清理，不需要额外提示或迁移。
+   * 先修再算 diff，避免把残留项当成「被禁用」写进提示文案。
+   */
   const applyChange = useCallback(
-    (next: ConversationToolConfig) => {
+    (raw: ConversationToolConfig) => {
+      const next = stripCompanionIds(raw, tools);
       const diff = diffToolConfig(config, next);
       if (!isEmptyToolConfigDiff(diff)) {
         const nameOf = (id: string) =>
@@ -152,11 +166,11 @@ export function useToolRegionState(
   const applySetDefault = useCallback(async () => {
     setSettingDefault(true);
     try {
-      await onSetDefault();
+      await onSetDefault(stripCompanionIds(config, tools));
     } finally {
       setSettingDefault(false);
     }
-  }, [onSetDefault]);
+  }, [onSetDefault, config, tools]);
 
   const handleSetDefault = useCallback(() => {
     void applySetDefault();
@@ -165,7 +179,7 @@ export function useToolRegionState(
   if (!enabled) {
     return {
       open: false,
-      toolbar: { config, total: 0, onToggle: noop },
+      toolbar: { config, enabled: 0, total: 0, onToggle: noop },
       panel: {
         config,
         tools: [],
@@ -181,7 +195,12 @@ export function useToolRegionState(
 
   return {
     open,
-    toolbar: { config, total: tools.length, onToggle: toggle },
+    toolbar: {
+      config,
+      enabled: countEnabledSelectableTools(config, tools),
+      total: countSelectableTools(tools),
+      onToggle: toggle,
+    },
     panel: {
       config,
       tools,

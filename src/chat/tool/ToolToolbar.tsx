@@ -7,7 +7,9 @@ import css from "./ToolToolbar.module.css";
 
 interface ToolToolbarProps {
   config: ConversationToolConfig;
-  /** 清单总条数，用于展示「已启用 / 全部」。 */
+  /** 已启用的可勾选条目数（伴随项不计）。 */
+  enabled: number;
+  /** 可勾选条目总数（伴随项不计）。 */
   total: number;
   open: boolean;
   onToggle: () => void;
@@ -21,12 +23,12 @@ interface ToolToolbarProps {
  */
 export const ToolToolbar: React.FC<ToolToolbarProps> = ({
   config,
+  enabled,
   total,
   open,
   onToggle,
 }) => {
   const { t } = useTranslation();
-  const enabled = config.enabledTools.length;
   const levelLabel = t(`chat.tool.approval.level.${config.approvalLevel}`);
   const summary = t("chat.tool.toolbar.summary", {
     enabled,

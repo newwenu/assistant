@@ -1,9 +1,11 @@
 import type {
   Message,
   Conversation,
+  AgentNodeEvent,
   AgentToolCall,
   ChatDeltaPayload,
   SendChatMessageArgs,
+  SessionState,
   SessionStateChangedPayload,
 } from "../../chat/core/chatTypes";
 import type { ConversationRoute } from "../../chat/core/message/conversationLink";
@@ -41,9 +43,33 @@ export interface TurnEnvPort {
   clearPendingBranchPoint: () => void;
 }
 
+/**
+ * 观测端口：编排层**只写不读**（I55 §6.5 / O6）。
+ *
+ * 刻意在这里声明结构类型而不 import 观测模块：控制路径（`send` / `cancel`）必须对
+ * 观测存储零依赖（G7），实现由组合层注入（`stores/chat/chatStorePorts.ts`）。
+ */
+export interface ObservationSinkPort {
+  applyNodeEvent: (event: AgentNodeEvent) => void;
+  applyDeltaSeq: (
+    conversationId: string,
+    turnId: string,
+    seq: number,
+    iteration: number,
+  ) => void;
+  applyToolCall: (call: AgentToolCall) => void;
+  applySessionState: (
+    conversationId: string,
+    turnId: string,
+    state: SessionState,
+  ) => void;
+}
+
 export interface TurnOrchestratorDeps {
   state: StreamStatePort;
   env: TurnEnvPort;
+  /** 观测副本的唯一写入通道；编排骨架不读它做任何判定（O6 / O10）。 */
+  observation: ObservationSinkPort;
   /** 按链路注入的策略；编排骨架不感知具体链路语义（I38d §3.7）。 */
   strategies: Record<TurnKind, TurnStrategy>;
   /** 发送命令分派：由组合层按 `kind` 选具体命令，骨架不做链路判断。 */
@@ -87,6 +113,8 @@ export interface TurnOrchestrator {
     turnIndex: number | null,
   ) => void;
   onAgentToolCall: (call: AgentToolCall) => void;
+  /** 节点观测事件：只写观测存储，不做活跃会话判断（I55 §6.3 第 1 条）。 */
+  onAgentNodeEvent: (event: AgentNodeEvent) => void;
   onSessionState: (payload: SessionStateChangedPayload) => void;
   /**
    * 切换会话：**不取消**后台 turn，只把本地流式视图换成目标会话的 phase（C5.2 / A4）。
@@ -374,6 +402,14 @@ export function createTurnOrchestrator(
   }
 
   function handleDeltaEvent(payload: ChatDeltaPayload) {
+    // 时间轴对齐：`seq` / `iteration` 只记进观测实例，不参与任何判定（I55 §4.7）。
+    deps.observation.applyDeltaSeq(
+      payload.conversationId,
+      payload.attemptId,
+      payload.seq,
+      payload.iteration,
+    );
+
     if (payload.conversationId !== deps.env.getActiveConversationId()) return;
 
     const activeAttemptId = deps.env.getActiveAttemptId();
@@ -457,11 +493,24 @@ export function createTurnOrchestrator(
    * `agent-tool-call` 事件只负责实时渲染，不作为事实源（I38d §2.1）。
    * 事件不带 `messageId`，因此按 `turnId` 校验轮次、按 `iteration` 归到发起该调用的那条消息
    * （气泡边界 = 迭代，§3.1.1）；旧轮（`turnId` 与当前 attempt 不符）的迟到事件直接丢弃。
+   *
+   * 传输层已取消活跃会话过滤（N10），因此这里分两步：**总是**写观测存储（后台 turn 的
+   * 等待事实不能丢，I55 §6.3 第 2 条），只有当前会话才进策略渲染。
    */
   function onAgentToolCall(call: AgentToolCall) {
+    deps.observation.applyToolCall(call);
+    if (call.conversationId !== deps.env.getActiveConversationId()) return;
     const activeTurnId = deps.env.getActiveAttemptId();
     if (!activeTurnId || call.turnId !== activeTurnId) return;
     strategyFor(call.conversationId).onToolCall(call);
+  }
+
+  /**
+   * `agent-node-event` 只折叠进观测存储：不做活跃会话判断（I55 §6.3 第 1 条），
+   * 也不驱动任何 UI 状态——观测面是只读副本（O6）。
+   */
+  function onAgentNodeEvent(event: AgentNodeEvent) {
+    deps.observation.applyNodeEvent(event);
   }
 
   /**
@@ -470,6 +519,8 @@ export function createTurnOrchestrator(
    */
   function onSessionState(payload: SessionStateChangedPayload) {
     const convId = payload.conversationId;
+    // 实例收尾：只改观测实例的 `status`，不臆造格子终态（I55 §6.1 / O2 / O5）。
+    deps.observation.applySessionState(convId, payload.turnId, payload.state);
     const next = stateToPhase(payload.state);
     if (next === "idle") {
       phaseByConversation.delete(convId);
@@ -537,6 +588,7 @@ export function createTurnOrchestrator(
     onStreamStart,
     onUserMessageConfirmed,
     onAgentToolCall,
+    onAgentNodeEvent,
     onSessionState,
     onConversationSwitch,
     onPendingToolCalls,

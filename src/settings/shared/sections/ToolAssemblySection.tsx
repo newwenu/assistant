@@ -13,9 +13,12 @@ import {
   APPROVAL_LEVELS,
   TIER_RANK,
   TOOL_TIERS,
+  countEnabledSelectableTools,
   groupToolsByTier,
+  isMetaTool,
   selectedIdsInTier,
   setTierSelection,
+  stripCompanionIds,
 } from "@/chat/core/toolConfig";
 import css from "./ToolAssemblySection.module.css";
 
@@ -23,7 +26,13 @@ const log = createLogger("ToolAssemblySection");
 
 let toolsPromise: Promise<ToolDescriptorDto[]> | null = null;
 
-function loadToolDescriptors(): Promise<ToolDescriptorDto[]> {
+/**
+ * 工具清单加载（进程内只请求一次）。
+ *
+ * 导出是为了让 `useModeForm.handleSave` 也能拿到清单做同样的清理，
+ * 保存路径不依赖用户是否点过工具区。
+ */
+export function loadToolDescriptors(): Promise<ToolDescriptorDto[]> {
   if (!toolsPromise) {
     toolsPromise = chatService.listAvailableTools().catch((e) => {
       toolsPromise = null;
@@ -77,11 +86,20 @@ export const ToolAssemblySection: React.FC<ToolAssemblySectionProps> = ({
   const grouped = useMemo(() => groupToolsByTier(tools), [tools]);
   const ceiling = TIER_RANK[config.maxToolTier];
 
+  /**
+   * 唯一写回口：先剔除名单里的伴随 id（I58 §3.6）。
+   *
+   * 历史配置可能残留这些 id（旧面板曾把伴随项渲染成勾选项），
+   * 这里在写回前静默修掉，用户下一次保存即完成清理。
+   */
+  const emit = (next: ConversationToolConfig) =>
+    onChange(stripCompanionIds(next, tools));
+
   const setTier = (maxToolTier: ToolTierDto) =>
-    onChange({ ...config, maxToolTier });
+    emit({ ...config, maxToolTier });
 
   const setLevel = (approvalLevel: ApprovalLevelDto) =>
-    onChange({ ...config, approvalLevel });
+    emit({ ...config, approvalLevel });
 
   return (
     <div className={css.root}>
@@ -91,7 +109,7 @@ export const ToolAssemblySection: React.FC<ToolAssemblySectionProps> = ({
         </Typography.Text>
         <Typography.Text type="secondary" className={css.count}>
           {t("settings.agent_mode.tool_assembly.enabled_count", {
-            count: config.enabledTools.length,
+            count: countEnabledSelectableTools(config, tools),
           })}
         </Typography.Text>
       </div>
@@ -166,34 +184,91 @@ export const ToolAssemblySection: React.FC<ToolAssemblySectionProps> = ({
                     {t("settings.agent_mode.tool_assembly.group_empty")}
                   </Typography.Text>
                 ) : (
-                  <Checkbox.Group
-                    value={selected}
-                    disabled={disabled || beyondCeiling}
-                    onChange={(values) =>
-                      onChange(
-                        setTierSelection(
-                          config,
-                          tools,
-                          tier,
-                          values.map(String),
-                        ),
-                      )
-                    }
-                    className={css.toolList}
-                  >
-                    {items.map((tool) => (
-                      <Checkbox
-                        key={tool.id}
-                        value={tool.id}
-                        className={css.tool}
-                      >
-                        <span className={css.toolName}>{tool.name}</span>
-                        <span className={css.toolDesc}>
-                          {tool.description || tool.name}
-                        </span>
-                      </Checkbox>
-                    ))}
-                  </Checkbox.Group>
+                  <div className={css.toolList}>
+                    {items.map((tool) => {
+                      const baseId = tool.companionOf;
+                      if (baseId !== null) {
+                        const baseEnabled =
+                          config.enabledTools.includes(baseId);
+                        const baseName =
+                          tools.find((item) => item.id === baseId)?.name ??
+                          baseId;
+                        return (
+                          <div
+                            key={tool.id}
+                            className={`${css.tool} ${css.companionRow}`}
+                          >
+                            <span
+                              className={`${css.statusDot} ${
+                                baseEnabled ? "" : css.statusDotIdle
+                              }`}
+                            />
+                            <div className={css.toolText}>
+                              <span className={css.toolName}>{tool.name}</span>
+                              <span className={css.toolDesc}>
+                                {baseEnabled
+                                  ? t(
+                                      "settings.agent_mode.tool_assembly.companion_of",
+                                      { base: baseName },
+                                    )
+                                  : t(
+                                      "settings.agent_mode.tool_assembly.companion_blocked",
+                                      { base: baseName },
+                                    )}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (isMetaTool(tool)) {
+                        return (
+                          <Checkbox
+                            key={tool.id}
+                            checked={selected.includes(tool.id)}
+                            disabled={disabled || beyondCeiling}
+                            onChange={(event) => {
+                              const next = event.target.checked
+                                ? [...selected, tool.id]
+                                : selected.filter((id) => id !== tool.id);
+                              emit(setTierSelection(config, tools, tier, next));
+                            }}
+                            className={css.tool}
+                          >
+                            <span className={css.toolName}>
+                              {tool.name}
+                              <Tag className={css.metaBadge}>
+                                {t(
+                                  "settings.agent_mode.tool_assembly.meta_badge",
+                                )}
+                              </Tag>
+                            </span>
+                            <span className={css.toolDesc}>
+                              {t("settings.agent_mode.tool_assembly.meta_hint")}
+                            </span>
+                          </Checkbox>
+                        );
+                      }
+                      return (
+                        <Checkbox
+                          key={tool.id}
+                          checked={selected.includes(tool.id)}
+                          disabled={disabled || beyondCeiling}
+                          onChange={(event) => {
+                            const next = event.target.checked
+                              ? [...selected, tool.id]
+                              : selected.filter((id) => id !== tool.id);
+                            emit(setTierSelection(config, tools, tier, next));
+                          }}
+                          className={css.tool}
+                        >
+                          <span className={css.toolName}>{tool.name}</span>
+                          <span className={css.toolDesc}>
+                            {tool.description || tool.name}
+                          </span>
+                        </Checkbox>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             );

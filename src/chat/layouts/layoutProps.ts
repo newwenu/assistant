@@ -80,8 +80,8 @@ export interface ToolRegionInput {
   conversationId: string | null;
   config: ConversationToolConfig;
   onChange: (next: ConversationToolConfig) => void;
-  /** 写回模式默认值；由视图负责落库与提示，hook 只管理进行态。 */
-  onSetDefault: () => Promise<void>;
+  /** 写回模式默认值；由视图负责落库与提示，hook 只管理进行态并负责剔除伴随 id。 */
+  onSetDefault: (config: ConversationToolConfig) => Promise<void>;
 }
 
 /** hook 交给骨架的视图数据（展示侧，无状态）。 */
@@ -89,6 +89,9 @@ export interface ToolRegionView {
   open: boolean;
   toolbar: {
     config: ConversationToolConfig;
+    /** 已启用的可勾选条目数（伴随项不计，与面板计数同口径）。 */
+    enabled: number;
+    /** 可勾选条目总数（伴随项不计，它们永远没有独立开关）。 */
     total: number;
     onToggle: () => void;
   };

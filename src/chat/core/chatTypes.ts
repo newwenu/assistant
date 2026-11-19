@@ -1,5 +1,6 @@
 import { type ChatError } from "./chatErrors";
 import type {
+  AgentNodeEventDto,
   AgentQuestionAnswerDto,
   AgentQuestionAnswerItemDto,
   AgentQuestionDto,
@@ -143,6 +144,9 @@ export type SessionStateChangedPayload = SessionStateChangedPayloadDto;
 export type AgentToolCall = AgentToolCallDto;
 export type AgentToolCallPayload = AgentToolCallPayloadDto;
 
+/** 节点观测事件（I55 §4.2）；字面量与后端 `event_name::AGENT_NODE_EVENT` 一致。 */
+export type AgentNodeEvent = AgentNodeEventDto;
+
 export type ToolApprovalRequest = ToolApprovalRequestDto;
 export type ToolApprovalDecision = ToolApprovalDecisionDto;
 export type AgentQuestionRequest = AgentQuestionRequestDto;
@@ -166,6 +170,7 @@ export enum ChatEvent {
   ConversationUnlocked = "conversation-unlocked",
   SessionStateChanged = "session-state-changed",
   AgentToolCall = "agent-tool-call",
+  AgentNodeEvent = "agent-node-event",
 }
 
 export type MessageChangeKind = MessageChangeKindDto;

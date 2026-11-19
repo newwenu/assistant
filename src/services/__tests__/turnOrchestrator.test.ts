@@ -3,6 +3,7 @@ import { createTurnOrchestrator } from "../stream/turnOrchestrator";
 import type {
   TurnOrchestratorDeps,
   TurnOrchestrator,
+  ObservationSinkPort,
 } from "../stream/turnOrchestrator";
 import type { StreamStatePort } from "../stream/turnStrategy";
 import type { TurnEnvPort } from "../stream/turnOrchestrator";
@@ -123,9 +124,17 @@ function createMockDeps(): {
   state: StreamStatePort;
   env: TurnEnvPort;
   segments: AgentSegments;
+  observation: ObservationSinkPort;
 } {
   const state = createMockStatePort();
   const segments = createMockSegments();
+
+  const observation: ObservationSinkPort = {
+    applyNodeEvent: vi.fn(),
+    applyDeltaSeq: vi.fn(),
+    applyToolCall: vi.fn(),
+    applySessionState: vi.fn(),
+  };
 
   const env: TurnEnvPort = {
     getActiveConversationId: vi.fn(() => "conv-1"),
@@ -145,6 +154,7 @@ function createMockDeps(): {
   const deps: TurnOrchestratorDeps = {
     state,
     env,
+    observation,
     strategies: {
       chat: createChatTurnStrategy(state),
       agent: createAgentTurnStrategy(state, segments),
@@ -179,7 +189,7 @@ function createMockDeps(): {
     renameConversation: vi.fn(() => Promise.resolve()),
   };
 
-  return { deps, state, env, segments };
+  return { deps, state, env, segments, observation };
 }
 
 describe("turnOrchestrator", () => {
@@ -418,6 +428,78 @@ describe("turnOrchestrator", () => {
         payload: { phase: "started", argsPreview: null },
       });
       expect(mockDeps.segments.applyToolCall).not.toHaveBeenCalled();
+    });
+
+    it("非活跃会话：仍写观测存储，不进策略（N10 / I55 §6.3 第 2 条）", () => {
+      vi.mocked(mockDeps.env.getActiveConversationId).mockReturnValue("conv-2");
+      orchestrator.onAgentToolCall({
+        conversationId: "conv-1",
+        turnId: "conv-1:1",
+        iteration: 2,
+        callId: "call-1",
+        name: "read_file",
+        payload: {
+          phase: "awaitingAnswer",
+          question: {
+            conversationId: "conv-1",
+            turnId: "conv-1:1",
+            callId: "call-1",
+            questions: [],
+            timeoutMs: 0,
+          },
+        },
+      });
+      expect(mockDeps.observation.applyToolCall).toHaveBeenCalledWith(
+        expect.objectContaining({ callId: "call-1" }),
+      );
+      expect(mockDeps.segments.applyToolCall).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("onAgentNodeEvent — 只写观测存储", () => {
+    it("后台会话的节点事件照样折叠（不做活跃会话判断）", () => {
+      vi.mocked(mockDeps.env.getActiveConversationId).mockReturnValue("conv-2");
+      orchestrator.onAgentNodeEvent({
+        turnId: "conv-1:1",
+        conversationId: "conv-1",
+        seq: 1,
+        node: "ladder",
+        iteration: 1,
+        state: "running",
+        transition: true,
+        atMs: 0,
+        agentId: "agent-1",
+        parentTurnId: null,
+        detail: null,
+      });
+      expect(mockDeps.observation.applyNodeEvent).toHaveBeenCalledTimes(1);
+      expect(mockDeps.state.appendDelta).not.toHaveBeenCalled();
+      expect(mockDeps.segments.applyToolCall).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("观测接线 — 收尾与时间轴", () => {
+    it("session-state-changed 收尾写进观测实例", () => {
+      orchestrator.onSessionState({
+        conversationId: "conv-1",
+        turnId: "conv-1:1",
+        state: "idle",
+      });
+      expect(mockDeps.observation.applySessionState).toHaveBeenCalledWith(
+        "conv-1",
+        "conv-1:1",
+        "idle",
+      );
+    });
+
+    it("delta 的 seq / iteration 记入观测实例（仅时间轴对齐）", () => {
+      orchestrator.handleDeltaEvent(makeDelta({ seq: 7, iteration: 3 }));
+      expect(mockDeps.observation.applyDeltaSeq).toHaveBeenCalledWith(
+        "conv-1",
+        "conv-1:1",
+        7,
+        3,
+      );
     });
   });
 

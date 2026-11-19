@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  AgentNodeEvent,
   AgentToolCall,
   ChatDeltaPayload,
   ChatStreamStartPayload,
@@ -51,6 +52,8 @@ export interface StreamTransportHandlers {
   ) => void;
   onSessionState: (payload: SessionStateChangedPayload) => void;
   onToolCall: (call: AgentToolCall) => void;
+  /** 节点观测事件：**不做**活跃会话过滤，后台 turn 的事实必须完整（I55 §6.3 第 1 条）。 */
+  onNodeEvent: (event: AgentNodeEvent) => void;
   onTextDelta: (chunk: StreamTextChunk) => void;
   onDeltaEvent: (payload: ChatDeltaPayload) => void;
 }
@@ -151,10 +154,17 @@ export function subscribeStreamTransport(
   track(
     listen<AgentToolCall>(ChatEvent.AgentToolCall, (event) => {
       if (disposed) return;
-      const payload = event.payload;
-      if (handlers.getActiveConversationId() === payload.conversationId) {
-        handlers.onToolCall(payload);
-      }
+      // 不做活跃会话过滤：可见性判定上移到编排层 / 策略层（N10，I55 §6.3 第 2 条）。
+      // 传输层仍然禁止任何 `route.link` 判断（既有纪律）。
+      handlers.onToolCall(event.payload);
+    }),
+  );
+
+  track(
+    listen<AgentNodeEvent>(ChatEvent.AgentNodeEvent, (event) => {
+      if (disposed) return;
+      // 观测事件一律全量透传：折叠由观测存储单点完成（I55 §6.7 第 1 条）。
+      handlers.onNodeEvent(event.payload);
     }),
   );
 

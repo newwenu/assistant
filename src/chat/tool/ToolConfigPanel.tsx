@@ -13,7 +13,10 @@ import {
   APPROVAL_LEVELS,
   TIER_RANK,
   TOOL_TIERS,
+  countEnabledSelectableTools,
   groupToolsByTier,
+  groupToolUnits,
+  isMetaTool,
   selectedIdsInTier,
   setTierSelection,
 } from "../core/toolConfig";
@@ -34,6 +37,10 @@ interface ToolConfigPanelProps {
 /**
  * 面板短提示：`ToolDescriptorDto.description` 是给模型看的提示词（`ask_user` 长达数行），
  * 悬停时对用户无意义。这里按工具 id 换成一句话说明；未收录的工具回落到后端描述。
+ *
+ * 伴随条目与元工具**不**回落到 `description`（那是模型的 `full` 档文案，I58 §6）。
+ * 伴随条目的悬停提示由「一句用途 + 从属状态」组成，面板里只留工具名，
+ * 否则小窗口会被这些说明文字撑满（I58 §3.6）。
  */
 const TOOL_DESC_KEYS: Record<string, I18nPath> = {
   read: "chat.tool.panel.tool_desc.read",
@@ -46,6 +53,9 @@ const TOOL_DESC_KEYS: Record<string, I18nPath> = {
   move: "chat.tool.panel.tool_desc.move",
   delete: "chat.tool.panel.tool_desc.delete",
   ask_user: "chat.tool.panel.tool_desc.ask_user",
+  super_read: "chat.tool.panel.tool_desc.super_read",
+  super_edit: "chat.tool.panel.tool_desc.super_edit",
+  request_tool: "chat.tool.panel.tool_desc.request_tool",
 };
 
 /**
@@ -101,13 +111,109 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
     [t],
   );
 
-  const enabledCount = config.enabledTools.length;
+  const enabledCount = countEnabledSelectableTools(config, tools);
 
   const setTier = (maxToolTier: ToolTierDto) =>
     onChange({ ...config, maxToolTier });
 
   const setLevel = (approvalLevel: ApprovalLevelDto) =>
     onChange({ ...config, approvalLevel });
+
+  /**
+   * 渲染单个条目：普通工具与元工具是可勾选项，伴随条目只显示名称。
+   *
+   * 伴随条目必须和基工具渲染在同一个 `.toolUnit` 内（见下方 tier 循环），
+   * 否则 `flex-wrap` 会在两者之间断行，它看起来就像一个无关的独立工具（I58 §3.6）。
+   */
+  const renderEntry = (
+    tool: ToolDescriptorDto,
+    tier: ToolTierDto,
+    selected: string[],
+    beyondCeiling: boolean,
+  ) => {
+    const baseId = tool.companionOf;
+    if (baseId !== null) {
+      const baseEnabled = config.enabledTools.includes(baseId);
+      const baseName = tools.find((item) => item.id === baseId)?.name ?? baseId;
+      const status = baseEnabled
+        ? t("chat.tool.panel.companion_of", { base: baseName })
+        : t("chat.tool.panel.companion_blocked", { base: baseName });
+      const descKey = TOOL_DESC_KEYS[tool.id];
+      return (
+        <Tooltip
+          key={tool.id}
+          placement="top"
+          title={
+            <div className={css.tooltipBody}>
+              {descKey && <span>{t(descKey)}</span>}
+              <span className={css.tooltipHint}>{status}</span>
+            </div>
+          }
+        >
+          <span
+            className={`${css.companion} ${baseEnabled ? "" : css.companionIdle}`}
+          >
+            {tool.name}
+          </span>
+        </Tooltip>
+      );
+    }
+    if (isMetaTool(tool)) {
+      return (
+        <Tooltip
+          key={tool.id}
+          title={
+            TOOL_DESC_KEYS[tool.id]
+              ? t(TOOL_DESC_KEYS[tool.id])
+              : tool.description || tool.name
+          }
+          placement="top"
+        >
+          <Checkbox
+            checked={selected.includes(tool.id)}
+            disabled={beyondCeiling}
+            onChange={(event) => {
+              const next = event.target.checked
+                ? [...selected, tool.id]
+                : selected.filter((id) => id !== tool.id);
+              onChange(setTierSelection(config, tools, tier, next));
+            }}
+            className={css.checkbox}
+          >
+            {tool.name}
+            <Tag className={css.metaBadge}>
+              {t("chat.tool.panel.meta_badge")}
+            </Tag>
+          </Checkbox>
+        </Tooltip>
+      );
+    }
+    return (
+      <Tooltip
+        key={tool.id}
+        title={
+          TOOL_DESC_KEYS[tool.id]
+            ? t(TOOL_DESC_KEYS[tool.id])
+            : tool.description || tool.name
+        }
+        placement="top"
+      >
+        <Checkbox
+          checked={selected.includes(tool.id)}
+          disabled={beyondCeiling}
+          onChange={(event) => {
+            const next = event.target.checked
+              ? [...selected, tool.id]
+              : selected.filter((id) => id !== tool.id);
+            onChange(setTierSelection(config, tools, tier, next));
+          }}
+          className={css.checkbox}
+        >
+          {tool.name}
+        </Checkbox>
+      </Tooltip>
+    );
+  };
 
   return (
     <div className={css.root} data-tool-panel>
@@ -198,37 +304,16 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
                     {t("chat.tool.panel.group_empty")}
                   </Typography.Text>
                 ) : (
-                  <Checkbox.Group
-                    value={selected}
-                    disabled={beyondCeiling}
-                    onChange={(values) =>
-                      onChange(
-                        setTierSelection(
-                          config,
-                          tools,
-                          tier,
-                          values.map(String),
-                        ),
-                      )
-                    }
-                    className={css.checkboxGroup}
-                  >
-                    {items.map((tool) => (
-                      <Tooltip
-                        key={tool.id}
-                        title={
-                          TOOL_DESC_KEYS[tool.id]
-                            ? t(TOOL_DESC_KEYS[tool.id])
-                            : tool.description || tool.name
-                        }
-                        placement="top"
-                      >
-                        <Checkbox value={tool.id} className={css.checkbox}>
-                          {tool.name}
-                        </Checkbox>
-                      </Tooltip>
+                  <div className={css.toolList}>
+                    {groupToolUnits(items).map((unit) => (
+                      <div key={unit.head.id} className={css.toolUnit}>
+                        {renderEntry(unit.head, tier, selected, beyondCeiling)}
+                        {unit.companions.map((companion) =>
+                          renderEntry(companion, tier, selected, beyondCeiling),
+                        )}
+                      </div>
                     ))}
-                  </Checkbox.Group>
+                  </div>
                 )}
               </div>
             );

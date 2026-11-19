@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { SettingOutlined } from "@ant-design/icons";
 import { vaultModule } from "@/features/vault/module";
+import { observationModule } from "@/features/observation/module";
 import type { FeatureModule } from "@/features/types";
 
-const modules: readonly FeatureModule[] = [vaultModule];
+const modules: readonly FeatureModule[] = [vaultModule, observationModule];
 
 function checkModule(module: FeatureModule): string[] {
   const problems: string[] = [];

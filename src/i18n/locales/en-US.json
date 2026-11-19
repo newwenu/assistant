@@ -12,6 +12,7 @@
       "vault": "Password Vault",
       "vault_settings": { "title": "Vault Settings" },
       "chat_history": "Chat History",
+      "agent_observation": "Agent Observation",
       "settings": "Settings",
       "category": {
         "general": "General",
@@ -430,6 +431,10 @@
         "level_label": "Approval level",
         "out_of_tier": "Above max tier, ignored",
         "group_empty": "No tools in this tier",
+        "companion_of": "Available with {{base}}; the model enables it on demand",
+        "companion_blocked": "Enable {{base}} first",
+        "meta_badge": "Escalation",
+        "meta_hint": "When enabled, the model may request super tools; when off, it cannot escalate",
         "load_failed": "Failed to load tools. Try again later.",
         "hint": "Only affects conversations created later; adjust existing conversations inside the chat."
       },
@@ -1006,6 +1011,9 @@
         "set_default_hint": "Writes the current configuration back to the mode's initial value for new conversations",
         "out_of_tier": "Above ceiling, ignored",
         "group_empty": "No tools in this tier",
+        "companion_of": "Available with {{base}}; the model enables it on demand",
+        "companion_blocked": "Enable {{base}} first",
+        "meta_badge": "Escalation",
         "tool_desc": {
           "read": "Read a text file with line numbers, paged by range",
           "ls": "List a directory as an indented tree",
@@ -1016,7 +1024,10 @@
           "mkdir": "Create a directory (parents included)",
           "move": "Move or rename a file or directory",
           "delete": "Delete files or directories (moved to the recycle bin by default)",
-          "ask_user": "Ask you questions mid-run and wait for answers"
+          "ask_user": "Ask you questions mid-run and wait for answers",
+          "super_read": "Read by line index: any range, in-line position, exact total lines",
+          "super_edit": "Replace a text range by line/column address; duplicates do not matter",
+          "request_tool": "List this turn's tools and request extra tools on demand"
         },
         "set_default_done_title": "Default updated",
         "set_default_done_desc": "New conversations with this mode start from the current tool configuration.",
@@ -1919,6 +1930,92 @@
       "audit_all": "Audit All",
       "progress": "Auditing {{done}} / {{total}}",
       "cancel": "Cancel audit"
+    }
+  },
+  "observation": {
+    "title": "Agent Turn Observation",
+    "subtitle": "Read-only copy, never drives control",
+    "instances": "Observation Instances",
+    "empty": {
+      "title": "No observation instances",
+      "description": "Start an agent conversation and node events fold into this graph live; instances keep accumulating after you switch away."
+    },
+    "turn": {
+      "label": "Turn {{index}}",
+      "unnamed": "Unnumbered turn",
+      "background": "Background",
+      "active": "Current",
+      "evicted": "Evicted (status summary only)"
+    },
+    "graph": {
+      "exit": "Exit",
+      "iteration": "Iteration {{iteration}}",
+      "active_edge": "Active edge",
+      "forward": "Forward",
+      "loop": "Loop",
+      "unfinished": "Unfinished",
+      "preview": "Template preview (no node events in this run yet)",
+      "tool_lane": "Tool branch: entered only when ⑦ decides a tool call is needed",
+      "no_percent": "V1 shows states only, no percentages"
+    },
+    "state": {
+      "pending": "Pending",
+      "running": "Running",
+      "waiting": "Waiting",
+      "finished": "Finished",
+      "error": "Error",
+      "skipped": "Skipped",
+      "cancelled": "Cancelled"
+    },
+    "status": {
+      "running": "Running",
+      "completed": "Completed",
+      "stopped": "Stopped",
+      "halted_by_budget": "Halted by budget",
+      "wrap_up": "Wrap up",
+      "cancelled": "Cancelled",
+      "failed": "Failed"
+    },
+    "source": {
+      "observed": "Observed",
+      "derived": "Derived",
+      "assumed": "Assumed",
+      "observed_hint": "From real events",
+      "derived_hint": "Derived from the static template",
+      "assumed_hint": "Restored by backfill; the start time is a guess"
+    },
+    "node": {
+      "admit": "Admit",
+      "prepare": "Snapshot + Projection",
+      "brake": "Brake",
+      "ladder": "Context Ladder",
+      "model": "Model Call",
+      "persist-assistant": "Persist Assistant Row",
+      "branch": "Branch",
+      "budget-split": "Budget Split",
+      "pipeline": "Tool Pipeline",
+      "after-tool": "After Tool",
+      "persist-tools": "Persist Tool Results",
+      "after-iteration": "After Iteration"
+    },
+    "inspector": {
+      "summary": "Summary",
+      "timeline": "Timeline",
+      "iteration": "Iteration",
+      "measured": "Measured time",
+      "budget": "Budget remaining",
+      "assumed_cells": "Assumed cells",
+      "transition": "Transition",
+      "process": "Process fact",
+      "derived_value": "Derived value",
+      "no_facts": "No facts yet",
+      "detail": "Detail",
+      "seconds": "{{value}} s",
+      "milliseconds": "{{value}} ms",
+      "budget_none": "No budget reported for this turn",
+      "budget_iterations": "Iterations left",
+      "budget_tools": "Tool calls left",
+      "budget_wall_clock": "Wall clock left"
     }
   }
 }

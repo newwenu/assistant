@@ -12,6 +12,7 @@
       "vault": "密码保险库",
       "vault_settings": { "title": "密码保险库设置" },
       "chat_history": "消息历史",
+      "agent_observation": "Agent 观测",
       "settings": "设置",
       "category": {
         "general": "通用",
@@ -406,6 +407,10 @@
         "level_label": "审批级别",
         "out_of_tier": "超出上限，不生效",
         "group_empty": "该层级暂无工具",
+        "companion_of": "跟随 {{base}} 可用，模型按需启用",
+        "companion_blocked": "需先启用 {{base}}",
+        "meta_badge": "申请入口",
+        "meta_hint": "勾选后模型可据此申请启用超级工具；取消则模型无法升级",
         "load_failed": "加载工具清单失败，请稍后重试。",
         "hint": "仅影响之后新建的会话；已有会话请在对话内调整。"
       },
@@ -979,6 +984,9 @@
         "set_default_hint": "把当前配置写回模式的初始值，仅影响之后新建的会话",
         "out_of_tier": "超出上限，将被忽略",
         "group_empty": "该层级暂无工具",
+        "companion_of": "跟随 {{base}} 可用，模型按需启用",
+        "companion_blocked": "需先启用 {{base}}",
+        "meta_badge": "申请入口",
         "tool_desc": {
           "read": "读取文本文件（带行号，可按范围分页）",
           "ls": "按缩进树列出目录条目",
@@ -989,7 +997,10 @@
           "mkdir": "创建目录（默认一并创建父目录）",
           "move": "移动或重命名文件与目录",
           "delete": "删除文件或目录，默认移入回收站；可显式永久删除",
-          "ask_user": "执行中向你提问，等你作答后继续"
+          "ask_user": "执行中向你提问，等你作答后继续",
+          "super_read": "按行索引读取：任意行范围、行内定位、恒精确的总行数",
+          "super_edit": "按行列地址替换文本区间，重复内容不影响定位",
+          "request_tool": "列出本轮可用工具，并可按需申请启用超级工具"
         },
         "set_default_done_title": "默认值已更新",
         "set_default_done_desc": "使用该模式新建的会话将从当前工具配置开始。",
@@ -1892,6 +1903,92 @@
       "audit_all": "全库泄露审计",
       "progress": "正在审计 {{done}} / {{total}}",
       "cancel": "取消审计"
+    }
+  },
+  "observation": {
+    "title": "Agent 轮次观测",
+    "subtitle": "只读副本，不参与控制",
+    "instances": "观测实例",
+    "empty": {
+      "title": "暂无观测实例",
+      "description": "发起一次 Agent 对话后，节点事件会在此实时折叠成图；会话切走后实例继续累积。"
+    },
+    "turn": {
+      "label": "第 {{index}} 轮",
+      "unnamed": "未编号轮次",
+      "background": "后台",
+      "active": "当前",
+      "evicted": "已淘汰（仅保留状态摘要）"
+    },
+    "graph": {
+      "exit": "出口",
+      "iteration": "圈数 {{iteration}}",
+      "active_edge": "活动边",
+      "forward": "正向",
+      "loop": "回边",
+      "unfinished": "未完成",
+      "preview": "模板预览（本次运行尚未收到节点事件）",
+      "tool_lane": "工具分支：仅当 ⑦ 判定需要调用工具时才进入",
+      "no_percent": "V1 只显示状态，不显示百分比"
+    },
+    "state": {
+      "pending": "未开始",
+      "running": "进行中",
+      "waiting": "等待中",
+      "finished": "已完成",
+      "error": "出错",
+      "skipped": "已跳过",
+      "cancelled": "已取消"
+    },
+    "status": {
+      "running": "进行中",
+      "completed": "完成",
+      "stopped": "停止",
+      "halted_by_budget": "预算耗尽",
+      "wrap_up": "收尾",
+      "cancelled": "取消",
+      "failed": "失败"
+    },
+    "source": {
+      "observed": "实测",
+      "derived": "推导",
+      "assumed": "补拉",
+      "observed_hint": "来自真实事件",
+      "derived_hint": "由静态模板推导",
+      "assumed_hint": "由补拉恢复，起点是猜的"
+    },
+    "node": {
+      "admit": "准入",
+      "prepare": "快照 + 投影",
+      "brake": "刹车",
+      "ladder": "上下文阶梯",
+      "model": "模型调用",
+      "persist-assistant": "assistant 行落库",
+      "branch": "判定",
+      "budget-split": "预算切分",
+      "pipeline": "工具流水线",
+      "after-tool": "工具后中间件",
+      "persist-tools": "工具结果落库",
+      "after-iteration": "迭代尾"
+    },
+    "inspector": {
+      "summary": "汇总",
+      "timeline": "时间线",
+      "iteration": "迭代",
+      "measured": "已测得耗时",
+      "budget": "预算余量",
+      "assumed_cells": "补拉格子",
+      "transition": "状态迁移",
+      "process": "过程事实",
+      "derived_value": "推导值",
+      "no_facts": "暂无事实",
+      "detail": "细节",
+      "seconds": "{{value}} 秒",
+      "milliseconds": "{{value}} 毫秒",
+      "budget_none": "本轮未给出预算余量",
+      "budget_iterations": "剩余迭代",
+      "budget_tools": "剩余工具调用",
+      "budget_wall_clock": "剩余时长"
     }
   }
 }

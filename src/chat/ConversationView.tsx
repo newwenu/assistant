@@ -137,25 +137,27 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
   );
 
   /** 把当前会话有效配置写回模式初始值，影响之后新建的会话（I38d §4.7）。 */
-  const handleSetModeDefault = useCallback(async () => {
-    const config = route.toolConfig;
-    if (!currentMode || !config) return;
-    try {
-      await useAgentModeStore
-        .getState()
-        .saveMode({ ...currentMode, toolConfig: config });
-      notifyInfo(
-        "chat.tool.panel.set_default_done_title",
-        "chat.tool.panel.set_default_done_desc",
-      );
-    } catch (e) {
-      log.error("setModeDefault failed", e);
-      notifyError(
-        "chat.tool.panel.set_default_failed_title",
-        "chat.tool.panel.set_default_failed_desc",
-      );
-    }
-  }, [currentMode, route.toolConfig]);
+  const handleSetModeDefault = useCallback(
+    async (config: ConversationToolConfig) => {
+      if (!currentMode) return;
+      try {
+        await useAgentModeStore
+          .getState()
+          .saveMode({ ...currentMode, toolConfig: config });
+        notifyInfo(
+          "chat.tool.panel.set_default_done_title",
+          "chat.tool.panel.set_default_done_desc",
+        );
+      } catch (e) {
+        log.error("setModeDefault failed", e);
+        notifyError(
+          "chat.tool.panel.set_default_failed_title",
+          "chat.tool.panel.set_default_failed_desc",
+        );
+      }
+    },
+    [currentMode],
+  );
 
   /** 工具区域（面板 / 概览条 / 变更提示）状态的唯一持有者（I48 §5）。 */
   const toolRegion = useToolRegionState({
