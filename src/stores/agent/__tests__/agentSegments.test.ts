@@ -17,6 +17,17 @@ function startedCall(iteration: number, callId = "call-1"): AgentToolCall {
   };
 }
 
+function preparingCall(iteration: number, callId = "call-1"): AgentToolCall {
+  return {
+    conversationId: "conv-1",
+    turnId: "conv-1:1",
+    iteration,
+    callId,
+    name: "write_file",
+    payload: { phase: "argsDelta", delta: "" },
+  };
+}
+
 function finishedCall(iteration: number, callId = "call-1"): AgentToolCall {
   return {
     conversationId: "conv-1",
@@ -138,6 +149,18 @@ describe("agentSegments — 一次迭代 = 一条消息 = 一个气泡", () => {
     segments.settleToolCalls();
 
     expect(messages[0].toolCalls?.[0]?.status).toBe("cancelled");
+  });
+
+  it("settleToolCalls 也收敛停留在 preparing 的孤儿行（B17）", () => {
+    beginTurn("temp-a1");
+
+    segments.appendDelta(1, "first");
+    segments.applyToolCall(1, preparingCall(1));
+    segments.settleToolCalls();
+
+    const settled = messages[0].toolCalls?.[0];
+    expect(settled?.status).toBe("cancelled");
+    expect(typeof settled?.finishedAt).toBe("number");
   });
 
   it("markUnknownSegment 后首个增量开新段，不覆盖已落库正文", () => {

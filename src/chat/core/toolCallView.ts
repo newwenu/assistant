@@ -71,21 +71,29 @@ export function applyAgentToolCall(
   const payload: AgentToolCallPayload = call.payload;
 
   switch (payload.phase) {
-    case "started":
+    case "started": {
+      const current = views.find((view) => view.callId === call.callId);
       return upsert(views, call.callId, call.name, {
         status: "running",
         startedAt: now,
         finishedAt: null,
         resultText: null,
         compact: null,
-        argsText: "",
+        argsText: current?.argsText ?? "",
         argsPreview: payload.argsPreview,
       });
+    }
     case "argsDelta": {
       const current = views.find((view) => view.callId === call.callId);
       const argsText = `${current?.argsText ?? ""}${payload.delta}`;
+      // 迟到片段不得把已 `Started` 或已终态的调用降级回 `preparing`（I60 §3.3）。
+      const status =
+        current && current.status !== "preparing"
+          ? current.status
+          : "preparing";
       return upsert(views, call.callId, call.name, {
-        status: "running",
+        status,
+        startedAt: current?.startedAt ?? now,
         argsText,
         arguments: parseArgs(argsText) ?? current?.arguments,
       });
@@ -98,15 +106,19 @@ export function applyAgentToolCall(
         finishedAt: now,
         confirmationWaitMs: payload.confirmationWaitMs,
       });
-    case "failed":
+    case "failed": {
+      // `errorKind = cancelled` 是取消批次与重试丢弃的终态形状（I38b §4.4 / I60 B15），
+      // 与落库后回读的 `cancelled` 保持一致，不按 `error` 渲染。
+      const cancelled = payload.errorKind === "cancelled";
       return upsert(views, call.callId, call.name, {
-        status: "error",
+        status: cancelled ? "cancelled" : "error",
         resultText: payload.error,
         compact: payload.compact,
         errorKind: payload.errorKind,
         finishedAt: now,
         confirmationWaitMs: payload.confirmationWaitMs,
       });
+    }
     case "awaitingApproval": {
       const current = views.find((view) => view.callId === call.callId);
       return upsert(views, call.callId, call.name, {
@@ -141,7 +153,11 @@ export function cancelPendingToolCalls(
 ): ToolCallView[] {
   let changed = false;
   const next = views.map((view) => {
-    if (view.status !== "running" && view.status !== "awaiting_user")
+    if (
+      view.status !== "preparing" &&
+      view.status !== "running" &&
+      view.status !== "awaiting_user"
+    )
       return view;
     changed = true;
     return {
@@ -157,7 +173,10 @@ export function cancelPendingToolCalls(
 
 export function hasPendingToolCalls(views: ToolCallView[]): boolean {
   return views.some(
-    (view) => view.status === "running" || view.status === "awaiting_user",
+    (view) =>
+      view.status === "preparing" ||
+      view.status === "running" ||
+      view.status === "awaiting_user",
   );
 }
 

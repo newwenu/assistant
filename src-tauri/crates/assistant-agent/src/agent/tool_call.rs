@@ -41,11 +41,18 @@ impl From<Option<usize>> for ToolCallStreamKey {
     }
 }
 
+/// 单 callId 的 `ArgsDelta` 累计发射上限（UTF-8 字节，按 `char` 边界截断）。
+const MAX_ARGS_DELTA_BYTES: usize = 4096;
+
 #[derive(Debug, Clone, Default)]
 struct PendingToolCall {
     tool_id: String,
     tool_name: String,
     raw_arguments: String,
+    /// 已发出的 `ArgsDelta` 字节数（与 `raw_arguments` 独立，只用于限流）。
+    args_emitted_bytes: usize,
+    /// 触顶或快照不可续后关闭，此后该 callId 不再发 `ArgsDelta`。
+    args_delta_closed: bool,
 }
 
 impl PendingToolCall {
@@ -61,6 +68,8 @@ impl PendingToolCall {
         self.tool_id = tool_id;
         self.tool_name = tool_name.unwrap_or_default();
         self.raw_arguments.clear();
+        self.args_emitted_bytes = 0;
+        self.args_delta_closed = false;
     }
 
     fn update_tool_name_if_missing(&mut self, tool_name: Option<String>) {
@@ -76,6 +85,29 @@ impl PendingToolCall {
     fn replace_arguments(&mut self, arguments_snapshot: &str) {
         self.raw_arguments.clear();
         self.raw_arguments.push_str(arguments_snapshot);
+    }
+
+    /// 产出本次可发射的增量（已按上限截断）；`None` 表示不发。
+    fn take_emit_chunk(&mut self, delta: &str) -> Option<String> {
+        if self.args_delta_closed || delta.is_empty() {
+            return None;
+        }
+        let remaining = MAX_ARGS_DELTA_BYTES.saturating_sub(self.args_emitted_bytes);
+        if remaining == 0 {
+            self.args_delta_closed = true;
+            return None;
+        }
+        let chunk = if delta.len() <= remaining {
+            delta.to_string()
+        } else {
+            self.args_delta_closed = true;
+            delta[..floor_char_boundary(delta, remaining)].to_string()
+        };
+        self.args_emitted_bytes += chunk.len();
+        if self.args_emitted_bytes >= MAX_ARGS_DELTA_BYTES {
+            self.args_delta_closed = true;
+        }
+        Some(chunk)
     }
 
     fn finalize(&mut self, boundary: ToolCallBoundary) -> Option<FinalizedToolCall> {
@@ -212,6 +244,8 @@ pub fn repair_truncated_json(raw: &str) -> Option<String> {
 #[derive(Debug, Clone, Default)]
 pub struct ToolCallDeltaOutcome {
     pub finalized_previous: Option<FinalizedToolCall>,
+    /// 新建 pending 的身份声明（`params_chunk` 为空串），先于 `params_partial` 发出。
+    pub opened: Option<ToolCallParamsChunk>,
     pub params_partial: Option<ToolCallParamsChunk>,
 }
 
@@ -220,6 +254,13 @@ pub struct ToolCallParamsChunk {
     pub tool_id: String,
     pub tool_name: String,
     pub params_chunk: String,
+}
+
+/// 重试丢弃时需要补发终态的调用身份：`ArgsDelta` 已声明过，不能凭空消失。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscardedToolCall {
+    pub tool_id: String,
+    pub tool_name: String,
 }
 
 /// 跨 chunk 累积工具调用参数。provider 只负责透传片段与快照标记，分组与拼接在此完成。
@@ -274,6 +315,7 @@ impl ToolCallAccumulator {
         arguments_is_snapshot: bool,
     ) -> ToolCallDeltaOutcome {
         let mut outcome = ToolCallDeltaOutcome::default();
+        let mut just_opened = false;
 
         let has_tool_id = tool_id.as_ref().is_some_and(|id| !id.is_empty());
         if !self.pending.contains_key(&key) {
@@ -292,6 +334,7 @@ impl ToolCallAccumulator {
             let mut pending = PendingToolCall::default();
             pending.start_new(start_id, tool_name.clone());
             self.pending.insert(key.clone(), pending);
+            just_opened = true;
         }
 
         let Some(pending) = self.pending.get_mut(&key) else {
@@ -303,6 +346,7 @@ impl ToolCallAccumulator {
             if is_new_tool {
                 outcome.finalized_previous = pending.finalize(ToolCallBoundary::NewTool);
                 pending.start_new(tool_id, tool_name.clone());
+                just_opened = true;
             } else {
                 pending.update_tool_name_if_missing(tool_name.clone());
             }
@@ -310,18 +354,39 @@ impl ToolCallAccumulator {
             pending.update_tool_name_if_missing(tool_name.clone());
         }
 
+        if just_opened {
+            outcome.opened = Some(ToolCallParamsChunk {
+                tool_id: pending.tool_id.clone(),
+                tool_name: pending.tool_name.clone(),
+                params_chunk: String::new(),
+            });
+        }
+
         if let Some(arguments) = arguments.filter(|a| !a.is_empty()) {
             if pending.has_pending() {
+                let candidate = if arguments_is_snapshot {
+                    match arguments.strip_prefix(pending.raw_arguments.as_str()) {
+                        Some(suffix) => suffix.to_string(),
+                        None => {
+                            pending.args_delta_closed = true;
+                            String::new()
+                        }
+                    }
+                } else {
+                    arguments.clone()
+                };
                 if arguments_is_snapshot {
                     pending.replace_arguments(&arguments);
                 } else {
                     pending.append_arguments(&arguments);
                 }
-                outcome.params_partial = Some(ToolCallParamsChunk {
-                    tool_id: pending.tool_id.clone(),
-                    tool_name: pending.tool_name.clone(),
-                    params_chunk: arguments,
-                });
+                if let Some(params_chunk) = pending.take_emit_chunk(&candidate) {
+                    outcome.params_partial = Some(ToolCallParamsChunk {
+                        tool_id: pending.tool_id.clone(),
+                        tool_name: pending.tool_name.clone(),
+                        params_chunk,
+                    });
+                }
             }
         }
 
@@ -348,9 +413,23 @@ impl ToolCallAccumulator {
         self.pending.values().any(|p| p.has_pending())
     }
 
-    /// 丢弃本次 attempt 已累积的片段（空响应重发前调用）；已发出的 `ArgsDelta` 不受影响。
-    pub fn reset(&mut self) {
+    /// 丢弃本次 attempt 已累积的片段（重试/重发前调用），返回必须补发终态的调用。
+    ///
+    /// 每个 pending 在建立时都已通过 `ArgsDelta` 对外声明过身份，`clear()` 不会回滚这些声明；
+    /// 调用方必须为返回的每个调用补发终态，否则前端会留下永远停在 `preparing` 的卡片
+    /// （I60 N21 / B15）。
+    pub fn discard_pending(&mut self) -> Vec<DiscardedToolCall> {
+        let discarded = self
+            .pending
+            .values()
+            .filter(|pending| pending.has_pending())
+            .map(|pending| DiscardedToolCall {
+                tool_id: pending.tool_id.clone(),
+                tool_name: pending.tool_name.clone(),
+            })
+            .collect();
         self.pending.clear();
+        discarded
     }
 }
 
@@ -360,4 +439,16 @@ fn synthetic_tool_id(key: &ToolCallStreamKey) -> String {
         ToolCallStreamKey::Indexed(index) => format!("call_{index}"),
         ToolCallStreamKey::Unindexed => "call_0".to_string(),
     }
+}
+
+/// 不超过 `max` 的最大 `char` 边界（`max >= text.len()` 时返回长度）。
+fn floor_char_boundary(text: &str, max: usize) -> usize {
+    if max >= text.len() {
+        return text.len();
+    }
+    let mut end = max;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
 }

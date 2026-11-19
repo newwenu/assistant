@@ -43,6 +43,10 @@ describe("orbBusyFrom", () => {
     );
   });
 
+  it("存在参数生成中的工具调用即为 busy", () => {
+    expect(orbBusyFrom(false, [message([call("a", "preparing")])])).toBe(true);
+  });
+
   it("无流式且工具调用全部收敛时不为 busy", () => {
     expect(
       orbBusyFrom(false, [

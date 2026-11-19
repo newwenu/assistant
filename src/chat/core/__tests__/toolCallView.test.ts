@@ -139,6 +139,68 @@ describe("applyAgentToolCall 五态映射", () => {
     expect(views[0].status).toBe("running");
   });
 
+  it("首个 argsDelta 直接建卡为 preparing（S9）", () => {
+    const views = applyAgentToolCall(
+      [],
+      call({ phase: "argsDelta", delta: '{"pa' }),
+      NOW,
+    );
+    expect(views).toHaveLength(1);
+    expect(views[0]).toMatchObject({
+      callId: "call-1",
+      name: "shell",
+      status: "preparing",
+      startedAt: NOW,
+      argsText: '{"pa',
+    });
+  });
+
+  it("身份声明（空串）即出行（S11）", () => {
+    const views = applyAgentToolCall(
+      [],
+      call({ phase: "argsDelta", delta: "" }),
+      NOW,
+    );
+    expect(views[0]).toMatchObject({
+      status: "preparing",
+      startedAt: NOW,
+      argsText: "",
+    });
+  });
+
+  it("Started 覆写 startedAt 且不清空 argsText（S10）", () => {
+    let views = applyAgentToolCall(
+      [],
+      call({ phase: "argsDelta", delta: '{"pa' }),
+      NOW,
+    );
+    views = applyAgentToolCall(
+      views,
+      call({ phase: "started", argsPreview: "shell ls" }),
+      NOW + 8_000,
+    );
+    expect(views[0]).toMatchObject({
+      status: "running",
+      startedAt: NOW + 8_000,
+      argsText: '{"pa',
+      argsPreview: "shell ls",
+    });
+  });
+
+  it("Started 之后迟到的 argsDelta 不降级为 preparing", () => {
+    let views = applyAgentToolCall([], call({ phase: "started" }), NOW);
+    views = applyAgentToolCall(
+      views,
+      call({ phase: "argsDelta", delta: "tail" }),
+      NOW + 1,
+    );
+    expect(views[0]).toMatchObject({
+      status: "running",
+      startedAt: NOW,
+      argsText: "tail",
+    });
+  });
+
   it("finished 收敛为 success 并带结果", () => {
     let views = applyAgentToolCall([], call({ phase: "started" }), NOW);
     views = applyAgentToolCall(
@@ -244,6 +306,34 @@ describe("applyAgentToolCall 五态映射", () => {
     });
   });
 
+  it("failed + cancelled 收敛为 cancelled 而非 error（S17）", () => {
+    const views = applyAgentToolCall(
+      [],
+      call({ phase: "argsDelta", delta: "" }),
+      NOW,
+    );
+    const failed = applyAgentToolCall(
+      views,
+      call({ phase: "failed", error: "已取消", errorKind: "cancelled" }),
+      NOW + 3,
+    );
+    expect(failed[0]).toMatchObject({
+      status: "cancelled",
+      errorKind: "cancelled",
+      finishedAt: NOW + 3,
+    });
+  });
+
+  it("failed + 非 cancelled 仍为 error（S18）", () => {
+    const views = applyAgentToolCall([], call({ phase: "started" }), NOW);
+    const failed = applyAgentToolCall(
+      views,
+      call({ phase: "failed", error: "超时", errorKind: "timeout" }),
+      NOW + 3,
+    );
+    expect(failed[0]).toMatchObject({ status: "error", errorKind: "timeout" });
+  });
+
   it("同一 callId 只保留一条视图", () => {
     let views = applyAgentToolCall([], call({ phase: "started" }), NOW);
     views = applyAgentToolCall(views, call({ phase: "started" }), NOW + 1);
@@ -279,6 +369,19 @@ describe("cancelPendingToolCalls 终态收敛", () => {
     expect(settled).toBe(views);
   });
 
+  it("把 preparing 收敛为 cancelled（S12）", () => {
+    const views = applyAgentToolCall(
+      [],
+      call({ phase: "argsDelta", delta: '{"pa' }),
+      NOW,
+    );
+    const settled = cancelPendingToolCalls(views, NOW + 4_000);
+    expect(settled[0]).toMatchObject({
+      status: "cancelled",
+      finishedAt: NOW + 4_000,
+    });
+  });
+
   it("无待收尾调用时返回原引用", () => {
     const views = applyAgentToolCall([], call({ phase: "started" }), NOW);
     const done = applyAgentToolCall(
@@ -300,6 +403,15 @@ describe("hasPendingToolCalls", () => {
       NOW + 2,
     );
     expect(hasPendingToolCalls(done)).toBe(false);
+  });
+
+  it("preparing 同样视为未收尾", () => {
+    const preparing = applyAgentToolCall(
+      [],
+      call({ phase: "argsDelta", delta: "" }),
+      NOW,
+    );
+    expect(hasPendingToolCalls(preparing)).toBe(true);
   });
 });
 

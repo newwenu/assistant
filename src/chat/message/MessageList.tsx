@@ -5,6 +5,8 @@ import { TurnGroup } from "./TurnGroup";
 import { groupNodeRows } from "./groupNodeRows";
 import { useMessageScroll } from "./useMessageScroll";
 import { useChatStreamStore } from "../../stores/chat/chatStreamStore";
+import { pickActiveTool } from "../tool/activeTool";
+import { ToolActiveBar } from "../tool/ToolActiveBar";
 import type { Message } from "../../chat/core/chatTypes";
 import type { RetryNotification } from "../../chat/core/chatTypes";
 import type { RecoveryActionCode } from "../core/chatErrorRecovery";
@@ -130,6 +132,11 @@ export const MessageList: React.FC<MessageListProps> = ({
     [visibleMessages, link, isStreaming, currentTurnIndex, streamingMsgId],
   );
 
+  const activeTool = useMemo(
+    () => (isStreaming ? pickActiveTool(visibleMessages) : null),
+    [isStreaming, visibleMessages],
+  );
+
   const handlers = useMemo(
     () => ({
       onDelete: onDeleteMessage,
@@ -215,6 +222,7 @@ export const MessageList: React.FC<MessageListProps> = ({
               onOpenDocument={onOpenDocument}
             />
           ))}
+          {activeTool && <ToolActiveBar view={activeTool} />}
         </div>
       </div>
       <button

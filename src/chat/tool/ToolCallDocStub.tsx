@@ -18,6 +18,7 @@ interface ToolCallDocStubProps {
 
 function StatusIcon({ status }: { status: ToolCallStatus }) {
   switch (status) {
+    case "preparing":
     case "running":
       return <LoadingOutlined spin />;
     case "success":
@@ -35,6 +36,8 @@ function StatusIcon({ status }: { status: ToolCallStatus }) {
 
 function statusClass(status: ToolCallStatus): string {
   switch (status) {
+    case "preparing":
+      return css.statusPreparing;
     case "running":
       return css.statusRunning;
     case "success":

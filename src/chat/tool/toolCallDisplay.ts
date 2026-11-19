@@ -129,6 +129,25 @@ export function formatToolDuration(
   return `${minutes}m${seconds}s`;
 }
 
+/** 运行期耗时：整秒口径，`ms <= 0` 钳为 `0s`（I60 §3.5）。 */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  return `${minutes}m${total % 60}s`;
+}
+
+/** 展示口径单点：按状态选终点，返回 `null` 表示不显示（I60 §3.5）。 */
+export function formatToolTiming(
+  view: Pick<ToolCallView, "status" | "startedAt" | "finishedAt">,
+  now: number,
+): string | null {
+  if (view.status === "preparing" || view.status === "running") {
+    return view.startedAt == null ? null : formatElapsed(now - view.startedAt);
+  }
+  return formatToolDuration(view.startedAt, view.finishedAt);
+}
+
 export interface ResultDisplayPersisted {
   path: string;
   bytes: number | null;

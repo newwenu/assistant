@@ -7,8 +7,9 @@
 use assistant_providers::base::{ChatDelta, ProviderErrorPayload};
 
 use crate::agent::node_event::{AgentNode, AgentNodeDetail, ModelDetail, NodeState};
-use crate::agent::round_executor::{RoundOutcome, TurnRunCtx};
-use crate::agent::tool_call::ToolCallAccumulator;
+use crate::agent::round_executor::{RoundOutcome, ToolErrorClass, TurnRunCtx};
+use crate::agent::tool_call::{DiscardedToolCall, ToolCallAccumulator};
+use crate::agent::tool_event::{ToolEvent, ToolEventPayload};
 use crate::kernel::request::ChatRequest;
 use crate::kernel::stream::{self, StreamError, StreamOutcome};
 use crate::kernel::{MessageStatus, TurnError, TurnPhase, TurnStatus};
@@ -22,6 +23,27 @@ pub(super) enum CallOutcome {
     Done,
     /// 终态只每 turn 返回一次，装箱避免与 `Done` 的尺寸差触发 lint。
     Exit(Box<RoundOutcome>),
+}
+
+/// 重试前为被丢弃的调用补发终态。
+///
+/// `ArgsDelta` 已向外部声明过身份，重试只是丢弃本次 attempt 的参数累积，不会回滚这些声明；
+/// 不补终态会让前端留下永远停在 `preparing` 的卡片（I60 N21 / B15）。
+fn emit_discarded_calls(ctx: &TurnRunCtx<'_>, it: u32, discarded: Vec<DiscardedToolCall>) {
+    for call in discarded {
+        ctx.observer.emit_tool_event(ToolEvent {
+            turn_id: ctx.turn_id.to_string(),
+            iteration: it,
+            call_id: call.tool_id,
+            name: call.tool_name,
+            payload: ToolEventPayload::Failed {
+                error: "已取消".to_string(),
+                error_kind: ToolErrorClass::Cancelled,
+                confirmation_wait_ms: None,
+                compact: None,
+            },
+        });
+    }
 }
 
 pub(super) async fn call_model_with_retries(
@@ -107,7 +129,21 @@ pub(super) async fn call_model_with_retries(
             ctx.clock,
             request_started,
             |_seq, delta: &ChatDelta| {
-                accumulator.apply_chat_delta(delta);
+                let outcome = accumulator.apply_chat_delta(delta);
+                for chunk in [outcome.opened, outcome.params_partial]
+                    .into_iter()
+                    .flatten()
+                {
+                    ctx.observer.emit_tool_event(ToolEvent {
+                        turn_id: ctx.turn_id.to_string(),
+                        iteration: it,
+                        call_id: chunk.tool_id,
+                        name: chunk.tool_name,
+                        payload: ToolEventPayload::ArgsDelta {
+                            delta: chunk.params_chunk,
+                        },
+                    });
+                }
                 ctx.observer.delta(delta);
             },
         )
@@ -146,7 +182,7 @@ pub(super) async fn call_model_with_retries(
                 if retries_used < ctx.limits.empty_response_retries {
                     retries_used += 1;
                     state.model_retries_used = retries_used;
-                    accumulator.reset();
+                    emit_discarded_calls(ctx, it, accumulator.discard_pending());
                     log::warn!(
                         "[agent-loop] provider 失败重试 {}/{}：turn={} iteration={} err={}",
                         retries_used,
@@ -196,7 +232,7 @@ pub(super) async fn call_model_with_retries(
         {
             retries_used += 1;
             state.model_retries_used = retries_used;
-            accumulator.reset();
+            emit_discarded_calls(ctx, it, accumulator.discard_pending());
             log::info!(
                 "[agent-loop] 空响应重试 {}/{}：turn={} iteration={}",
                 retries_used,

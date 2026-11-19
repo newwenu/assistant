@@ -891,12 +891,19 @@
     },
     "tool": {
       "status": {
+        "preparing": "准备中",
         "running": "执行中",
         "success": "已完成",
         "error": "失败",
         "awaiting_user": "等待确认",
         "cancelled": "已取消",
         "missing": "结果缺失"
+      },
+      "active_bar": {
+        "preparing": "正在准备 {{name}} · {{time}}",
+        "preparing_anonymous": "正在准备工具 · {{time}}",
+        "running": "正在执行 {{name}} · {{time}}",
+        "running_anonymous": "正在执行工具 · {{time}}"
       },
       "result_persisted": "结果已落盘",
       "result_size": "{{lines}} 行 · {{size}}",

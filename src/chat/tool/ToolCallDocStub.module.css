@@ -45,6 +45,10 @@
   white-space: nowrap;
 }
 
+.statusPreparing .statusIcon {
+  color: var(--color-text-secondary);
+}
+
 .statusRunning .statusIcon {
   color: var(--color-primary);
 }

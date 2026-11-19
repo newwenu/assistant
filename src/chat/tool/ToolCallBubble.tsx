@@ -15,11 +15,12 @@ import { formatBytes } from "@/utils/formatBytes";
 import { ApprovalCard } from "./ApprovalCard";
 import { QuestionCard } from "./QuestionCard";
 import {
-  formatToolDuration,
+  formatToolTiming,
   resolveResultDisplay,
   resultStats,
   summarizeArguments,
 } from "./toolCallDisplay";
+import { useNowTick } from "./useNowTick";
 import css from "./ToolCallBubble.module.css";
 
 interface ToolCallBubbleProps {
@@ -28,6 +29,7 @@ interface ToolCallBubbleProps {
 
 function StatusIcon({ status }: { status: ToolCallStatus }) {
   switch (status) {
+    case "preparing":
     case "running":
       return <LoadingOutlined spin />;
     case "success":
@@ -45,6 +47,8 @@ function StatusIcon({ status }: { status: ToolCallStatus }) {
 
 function statusClass(status: ToolCallStatus): string {
   switch (status) {
+    case "preparing":
+      return css.statusPreparing;
     case "running":
       return css.statusRunning;
     case "success":
@@ -72,7 +76,9 @@ export const ToolCallBubble: React.FC<ToolCallBubbleProps> = ({ view }) => {
     (view.argsPreview?.trim() ? view.argsPreview.trim() : null) ??
     summarizeArguments(view.arguments) ??
     (view.argsText?.trim() ? view.argsText.trim() : null);
-  const duration = formatToolDuration(view.startedAt, view.finishedAt);
+  const active = view.status === "preparing" || view.status === "running";
+  const now = useNowTick(active);
+  const duration = formatToolTiming(view, now);
   const stats =
     collapsible && display.source === "text" ? resultStats(display.body) : null;
   const truncated = display.truncated

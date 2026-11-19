@@ -10,10 +10,11 @@ import {
 import { useTranslation } from "react-i18next";
 import type { ToolCallView, ToolCallStatus } from "../core/chatTypes";
 import {
-  formatToolDuration,
+  formatToolTiming,
   shouldRenderDocStub,
   summarizeArguments,
 } from "./toolCallDisplay";
+import { useNowTick } from "./useNowTick";
 import { ToolCallBubble } from "./ToolCallBubble";
 import { ToolCallDocStub } from "./ToolCallDocStub";
 import css from "./ToolCallRenderer.module.css";
@@ -28,6 +29,7 @@ interface ToolCallRendererProps {
 
 function StatusIcon({ status }: { status: ToolCallStatus }) {
   switch (status) {
+    case "preparing":
     case "running":
       return <LoadingOutlined spin />;
     case "success":
@@ -45,6 +47,8 @@ function StatusIcon({ status }: { status: ToolCallStatus }) {
 
 function statusClass(status: ToolCallStatus): string {
   switch (status) {
+    case "preparing":
+      return css.statusPreparing;
     case "running":
       return css.statusRunning;
     case "success":
@@ -72,6 +76,8 @@ export const ToolCallRenderer: React.FC<ToolCallRendererProps> = ({
   onOpenDocument,
 }) => {
   const { t } = useTranslation();
+  const active = view.status === "preparing" || view.status === "running";
+  const now = useNowTick(active);
 
   if (shouldRenderDocStub(view, docPanelPath)) {
     return <ToolCallDocStub view={view} onOpenDocument={onOpenDocument} />;
@@ -83,7 +89,7 @@ export const ToolCallRenderer: React.FC<ToolCallRendererProps> = ({
 
   const argsSummary =
     view.argsPreview?.trim() || summarizeArguments(view.arguments) || null;
-  const duration = formatToolDuration(view.startedAt, view.finishedAt);
+  const duration = formatToolTiming(view, now);
   const head = view.compact?.head ?? null;
 
   return (

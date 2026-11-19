@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import type { ToolResultCompactDto } from "../../../types/protocol.contract";
 import {
+  formatElapsed,
   formatToolDuration,
+  formatToolTiming,
   parsePersistedOutput,
   resolveResultDisplay,
   resultStats,
@@ -78,6 +80,64 @@ describe("formatToolDuration", () => {
   it("缺少任一端点返回 null", () => {
     expect(formatToolDuration(null, 100)).toBeNull();
     expect(formatToolDuration(100, null)).toBeNull();
+  });
+});
+
+describe("formatElapsed", () => {
+  it("整秒口径，负值钳为 0s", () => {
+    expect(formatElapsed(1_500)).toBe("1s");
+    expect(formatElapsed(0)).toBe("0s");
+    expect(formatElapsed(-5)).toBe("0s");
+  });
+
+  it("超过一分钟带分钟位", () => {
+    expect(formatElapsed(65_000)).toBe("1m5s");
+    expect(formatElapsed(600_000)).toBe("10m0s");
+  });
+});
+
+describe("formatToolTiming", () => {
+  it("preparing / running 用 now 计运行期（S1 / S2 / S8）", () => {
+    const view = {
+      status: "running" as const,
+      startedAt: 1000,
+      finishedAt: null,
+    };
+    expect(formatToolTiming(view, 13_000)).toBe("12s");
+    expect(formatToolTiming(view, 1000)).toBe("0s");
+    expect(
+      formatToolTiming(
+        { status: "preparing", startedAt: 1000, finishedAt: null },
+        9_000,
+      ),
+    ).toBe("8s");
+  });
+
+  it("无 startedAt 时不显示（S3）", () => {
+    expect(
+      formatToolTiming(
+        { status: "running", startedAt: null, finishedAt: null },
+        13_000,
+      ),
+    ).toBeNull();
+  });
+
+  it("等待态不显示执行时长（S4）", () => {
+    expect(
+      formatToolTiming(
+        { status: "awaiting_user", startedAt: 1000, finishedAt: null },
+        61_000,
+      ),
+    ).toBeNull();
+  });
+
+  it("终态沿用 formatToolDuration（S5）", () => {
+    expect(
+      formatToolTiming(
+        { status: "success", startedAt: 0, finishedAt: 1500 },
+        9_999,
+      ),
+    ).toBe("1.5s");
   });
 });
 

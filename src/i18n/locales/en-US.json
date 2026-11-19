@@ -918,12 +918,19 @@
     },
     "tool": {
       "status": {
+        "preparing": "Preparing",
         "running": "Running",
         "success": "Done",
         "error": "Failed",
         "awaiting_user": "Awaiting approval",
         "cancelled": "Cancelled",
         "missing": "Result missing"
+      },
+      "active_bar": {
+        "preparing": "Preparing {{name}} · {{time}}",
+        "preparing_anonymous": "Preparing tool · {{time}}",
+        "running": "Running {{name}} · {{time}}",
+        "running_anonymous": "Running tool · {{time}}"
       },
       "result_persisted": "Output saved to",
       "result_size": "{{lines}} lines · {{size}}",

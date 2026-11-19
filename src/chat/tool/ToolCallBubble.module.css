@@ -24,6 +24,10 @@
   font-size: 13px;
 }
 
+.statusPreparing .statusIcon {
+  color: var(--color-text-secondary);
+}
+
 .statusRunning .statusIcon {
   color: var(--color-primary);
 }
